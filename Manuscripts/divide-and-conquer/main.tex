@@ -1137,14 +1137,14 @@ to a small stem on one side, and the rest of the structure on the
 other. In such a case, every call to \texttt{generic\_splitter} will
 split into a small subproblem containing a small stem (e.g. only
 removing a constant number of states and residues per split) and a
-large subproblem containing all the remaining states and sequence.
-This case can be avoided. It only arises because of the decision to
-implement a simplified CYK/outside algorithm and always split at the
-highest bifurcations. Better time performance could be guaranteed if
-full CYK/outside and CYK/inside algorithms were implemented, which
-would allow us to choose a split point in a generic problem at any
-state in the CM (for instance, in the middle), regardless of its
-bifurcating structure.
+large subproblem containing all the remaining states and
+sequence. This case can be avoided. It only arises because of the
+decision to implement a simplified CYK/outside algorithm and always
+split at the highest bifurcations. Better time performance could be
+guaranteed if full CYK/outside and CYK/inside algorithms were
+implemented, which would allow us to choose a split point in a generic
+problem at any state in the CM (for instance, in the middle),
+regardless of its bifurcating structure.
 
 In practice, empirical results on a variety of real RNAs (see below)
 indicate that the extra time required to do the divide and conquer is
@@ -1170,36 +1170,31 @@ in consensus base pairs. The number of CM states is consistently about
 states (tRNA) to 9023 (LSU). About 1/150 of the states in each model
 are bifurcations. After optimal reordering of the model states, the
 number of extra decks required by the alignment algorithm is small,
-ranging up to 3 for SSU and 5 for LSU rRNA. Thus the minimum constant
-of 10 decks required in iterations across unbifurcated model segments
-dominates the memory requirement, and the additional $\log N$ memory
-factor for extra decks does not have much impact even for the largest
-structural RNAs. (Even without optimal reordering, the number of extra
-decks required for SSU and LSU are only 7 and 9, respectively. State
-reordering was only done to achieve a provable $O(N^2\log N)$ memory
-complexity bound.)
+ranging up to 3 for SSU and 5 for LSU rRNA. Therefore the minimum
+constant of 10 decks required in iterations across unbifurcated model
+segments dominates the memory requirement. The memory required for
+extra decks does not have much impact even for the largest structural
+RNAs. (Even without optimal reordering, the number of extra decks
+required for SSU and LSU are only 7 and 9, respectively. State
+reordering was only needed to prove a $O(N^2\log N)$ memory complexity
+bound.)
 
 To determine the memory and CPU time requirements for a structural
-alignment, one example sequence from each family was then aligned to
-the CM.  Three algorithms were used: (1) the full CYK/inside
-algorithm, but in memory-saving score-only mode
-(e.g. \texttt{inside(1,M; 1,L}); (2) the full CYK/inside algorithm,
-with shadow matrix and traceback to recover the optimal alignment
-(e.g. \texttt{inside}$^\mathcal{T}$\texttt{(1,M; 1,L))}; and (3) the
-divide and conquer algorithm to recover an optimal alignment
-(e.g. \texttt{generic\_splitter(1,M; 1,L)}). The most important
-comparison is between the full CYK/inside algorithm and the divide and
-conquer algorithm. The score-only CYK/inside algorithm was done
-because full CYK couldn't be done on SSU and LSU rRNA (because of
-memory), and I wanted to be sure that the CPU time requirement of
-divide and conquer did not behave strangely on these large RNAs.
-
-The results of these tests are shown in the bottom half of
-Table~\ref{tbl:results}. The memory required by divide and conquer
-alignment ranges up to 271 MB for LSU rRNA, compared to a prohibitive
-151 GB for the standard CYK algorithm. The extra CPU time required by
-the divide and conquer is small; usually about 20\% more, with a
-maximum of about two-fold more for SRP-RNA.
+alignment, one example sequence from each family was aligned to the
+CM. CPU time was measured and memory requirements were calculated for
+three algorithms: (1) the full CYK/inside algorithm, but in
+memory-saving score-only mode (e.g. \texttt{inside(1,M; 1,L}); (2) the
+full CYK/inside algorithm, with shadow matrix and traceback to recover
+the optimal alignment (e.g. \texttt{inside}$^\mathcal{T}$\texttt{(1,M;
+1,L))}; and (3) the divide and conquer algorithm to recover an optimal
+alignment (e.g. \texttt{generic\_splitter(1,M; 1,L)}). The most
+important comparison is between the full CYK/inside algorithm and the
+divide and conquer algorithm. The score-only CYK/inside algorithm was
+included, because a complete CYK alignment couldn't be done on SSU and
+LSU rRNA (because of the steep memory requirement). In all cases where
+comparison could be done, the scores and alignments produced by the
+divide and conquer algorithm and the standard CYK algorithms were
+verified to be identical.
 
 \begin{table}[ht]
 \begin{tabular}{lrrrrrr}
@@ -1213,8 +1208,8 @@ Maximum extra decks needed   &   1 &    1 &     2 &     2 &      3 &       5\\
 Example sequence length ($N$)&  73 &  120 &   300 &   377 &   1542 &    2904\\
 Full CYK RAM (MB)            & 2.6 & 10.7 & 168.9 & 336.7 &22705.0 &151349.7\\
 Divide \& conquer RAM (MB)   & 0.1 &  0.4 &   2.4 &   3.7 &   66.8 &   270.9\\ 
-CYK CPU time, no trace (sec) & 0.1 &  0.6 &  10.4 &  23.8 & 2614.8 &        \\
 Full CYK CPU time (sec)      & 0.2 &  0.7 &  12.7 &  28.6 &   n.d. &    n.d.\\ 
+CYK CPU time, no trace (sec) & 0.1 &  0.6 &  10.4 &  23.8 & 2614.8 & 25151.2\\
 Divide \& conquer time (sec) & 0.2 &  0.9 &  22.8 &  37.8 & 3594.4 & 31649.4\\\hline
 \end{tabular}
 \caption{Results of empirical tests of memory and CPU time required by
@@ -1223,19 +1218,85 @@ various sizes.}
 \label{tbl:results}
 \end{table}
 
+The results of these tests are shown in the bottom half of
+Table~\ref{tbl:results}. The memory required by divide and conquer
+alignment ranges up to 271 MB for LSU rRNA, compared to a prohibitive
+151 GB for the standard CYK algorithm. The extra CPU time required by
+the divide and conquer is small; usually about 20\% more, with a
+maximum of about two-fold more for SRP-RNA.
 
+\begin{figure}[ht]
+\begin{center}
+\includegraphics[width=5.5in]{Figures/graphs}
+\end{center}
+\caption{\textbf{Empirical time and memory requirements for structural
+alignment.} Plots of data from Table~\ref{tbl:results}. Filled
+circles: divide and conquer algorithm; open circles: standard CYK
+algorithm. Left: Memory use in megabytes on a log-log scale. Lines
+represent weighted least-squares regression fits to the theoretically
+expected memory scaling: $aN^2 \log N$ for divide and conquer (solid
+line) and $aN^3$ for standard CYK (dashed line). Right: CPU times in
+seconds on a log-log scale, for the score-only CYK algorithm. Lines
+represent least-squares regression fits to a power law ($aN^b$).
+According to this fit, divide and conquer time (solid line)
+empirically scales as $N^{3.24}$, and standard CYK without traceback
+(dashed line) scales as $N^{3.29}$. A line representing $O(N^4)$
+scaling (the theoretical upper bound on performance) is shown for
+comparison.}
+\label{fig:graphs}
+\end{figure}
 
+The same results are plotted in Figure~\ref{fig:graphs}. Memory
+requirements scale as expected: $N^3$ for standard CYK alignment, and
+better than $N^2 \log N$ for the divide and conquer algorithm.
+Empirical CPU time requirements scale similarly for the two algorithms
+$(N^{3.24}-N^{3.29})$. This performance is significantly better than
+the theoretical worst case of $O(N^4)$. The proportion of extra time
+required by divide and conquer is roughly constant over a wide range
+of RNAs. (In fact, the difference shown in Figure~\ref{fig:graphs} is
+exaggerated because times are plotted for score-only CYK, not complete
+CYK alignment, in order to include CPU times for SSU and LSU
+rRNA. Because score-only CYK does not keep a shadow traceback matrix
+nor perform the traceback, it is about 20\% faster than complete CYK,
+as seen in the data in Table~\ref{tbl:results}.
 
+\section{Discussion}
+
+The divide and conquer algorithm described here makes it possible to
+align even the largest structural RNAs to secondary structure
+consensus models, without exceeding the available memory on current
+computational hardware. Optimal SSU and LSU rRNA structural alignments
+can be performed in 70 MB and 270 MB of memory, respectively. Previous
+structural alignment algorithms had to sacrifice mathematical
+optimality to achieve ribosomal RNA alignments.
+
+The CPU time requirement of the alignment algorithm is still
+significant, and even prohibitive for certain important
+applications. However, CPU time is generally an easier issue to deal
+with. For example, a variety of parallelization strategies are
+possible. Banded dynamic programming algorithms (e.g. calculating only
+relevant parts of the matrix) of various forms can also be explored,
+including not only heuristic schemes, but also optimal algorithms
+based on branch and bound ideas. (Properly implemented, banded DP
+algorithms would also save additional memory.)
+
+The current implementation of the algorithm is not biologically
+useful. It is meant only a testbed for the algorithm. It outputs a raw
+traceback structure and alignment score, not a standardly formatted
+alignment file. Most importantly, the probability parameters for
+models are calculated in a very quick and simple minded fashion, and
+are far from being reasonable for producing robustly accurate
+structural alignments. The next step along this line is to produce
+good prior distributions for estimating better parameters, by
+estimating mixture Dirichlet priors from known RNA structures
+\cite{Sjolander96}.  At this stage it would not be meaningful to
+compare the biological alignment accuracy of this implementation to
+(for instance) the excellent performance of the RAGA genetic algorithm
+\cite{Notredame97}.  A biologically useful implementation with
+accurate alignment performance is of course the eventual goal of this
+line of work, but is not the point of the present paper.
 
 \bibliography{distilled}
-
-
-
-
-
-
-
-
 
 \end{document}
 
