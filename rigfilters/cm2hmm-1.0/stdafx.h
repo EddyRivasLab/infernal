@@ -57,7 +57,7 @@ extern "C" {
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <malloc.h>
+//#include <malloc.h>
 #include <float.h>
 
 #include "squid.h"		/* general sequence analysis library    */
