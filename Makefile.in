@@ -71,13 +71,16 @@ PROGS = cmalign\
 # all: if we don't have precompiled binaries, compiles all packages, 
 #      and moves the supported executables into binaries/ subdirectory.
 #
-all: 
+all: core $(RIGFILTERS)
+
+core:
 	(cd squid;     make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module)
 	(cd src;       make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module)
 	(cd testsuite; make CC="$(CC)" CFLAGS="$(CFLAGS)")
-ifeq ($(RIGFILTERS),1)
-	(cd rigfilters; make)
-endif
+
+.PHONY: $(RIGFILTERS)
+$(RIGFILTERS): core
+	if test -d $(RIGFILTERS); then (cd rigfilters; make); fi
 
 # dist: build a new distribution directory in infernal-$RELEASE
 #
@@ -191,9 +194,7 @@ clean:
 	-rm -f *.o *~ Makefile.bak core TAGS gmon.out
 	(cd src;       make clean)
 	(cd squid;     make clean)
-ifeq ($(RIGFILTERS),1)
 	(cd rigfilters; make clean)
-endif
 
 # "make distclean" leaves a pristine source distribution.
 #
@@ -203,8 +204,6 @@ distclean:
 	make clean
 	(cd src;       make distclean)
 	(cd squid;     make distclean)
-ifeq ($(RIGFILTERS),1)
 	(cd rigfilters; make distclean)
-endif
 	-rm Makefile
 
