@@ -125,6 +125,7 @@ CreateEmitMap(CM_t *cm)
   }
 
   map->clen = map->rpos[0]-1;
+  FreeNstack(pda);
   return map;
 }
   

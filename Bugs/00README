@@ -11,6 +11,8 @@ CVS $Id$
       env CFLAGS=-g ./configure
       make	
    (If in legacy code, do something else.)
+   (If the problem is a memory leak, instead do:
+      env CC="ccmalloc gcc" CFLAGS=-g ./configure)
 
 2. Reproduce and log the bug. 
    - Develop a small test case, with an absolute minimum of files.
@@ -25,7 +27,9 @@ CVS $Id$
       like h for HMMER, sq for SQUID, i for INFERNAL)
    - Add test case to Bugs/bugs.sqc, at level 1 priority.
      Verify that sqc sees the bug:
-     % sqc 1 Bugs/bugs.sqc (binaries dir)
+       % sqc 1 Bugs/bugs.sqc ../src
+     or, for memory problems:
+       % sqc -m 1 Bugs/bugs.sqc ../src
 
 3. Fix the bug.
    - verify at command line

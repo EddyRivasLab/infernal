@@ -5,7 +5,7 @@
 
 # Regression tests of cmalign.
 #
-1  prep        model/trna           @cmbuild@ -F --rf %TRNA.CM% trna1415G.sto
+1  prep        model/trna           @cmbuild@ -F --rf --wnone %TRNA.CM% trna1415G.sto
 1  regression  cmalign:trna/1       @cmalign@ %TRNA.CM% 3trnas.fa
 1  regression  cmalign:trna/2       @cmalign@ -l %TRNA.CM% 3trnas.fa
 2  prep        model/vault          @cmbuild@ -F --rf %VAULT.CM% vault.sto
@@ -15,7 +15,7 @@
 
 # Regression tests of cmbuild.
 #
-1  regression  cmbuild/rf/trna      @cmbuild@ -F --rf  %MODEL% trna1415G.sto
+1  regression  cmbuild/rf/trna      @cmbuild@ -F --rf --wnone %MODEL% trna1415G.sto
 1  regression  cmbuild/trna         @cmbuild@ -F  %MODEL% trna1415G.sto
 1  regression  cmbuild/rf/RNaseP    @cmbuild@ -F --rf  %MODEL% rnaseP-eubact.sto
 1  regression  cmbuild/RNaseP       @cmbuild@ -F  %MODEL% rnaseP-eubact.sto
@@ -23,8 +23,8 @@
 
 # Regression tests for cmscore.
 #
-1  prep        model/trna1          @cmbuild@ -F %TRNA1.CM% trna1415G.sto
-1  prep        model/trna2          @cmbuild@ -F %TRNA2.CM% trna1415G.sto
+1  prep        model/trna1          @cmbuild@ -F --wnone %TRNA1.CM% trna1415G.sto
+1  prep        model/trna2          @cmbuild@ -F --wnone %TRNA2.CM% trna1415G.sto
 1  regression  cmscore/trna1        @cmscore@  %TRNA1.CM% trna-regression.fa
 1  regression  cmscore/trna2        @cmscore@  %TRNA2.CM% trna-regression.fa
 1  regression  cmscore/local/trna1  @cmscore@ --local  %TRNA1.CM% trna-regression.fa

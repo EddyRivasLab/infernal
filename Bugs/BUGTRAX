@@ -23,3 +23,22 @@ was unbalanced. This situation is now detected properly. A "lone"
 MATP_ML or MATP_MR column gets annotated as a ":" instead of "<" or
 ">" in SS_cons.
 //
+ID              i2
+TITLE		cmalign memory leak.
+STATUS		closed
+XREF            STL7 p.15
+REPORTED_BY     Sam Griffiths-Jones
+CLOSED_DATE     SRE, Sun Jan  5 16:50:51 2003
+DESCRIPTION     
+
+cmalign leaks memory. The smallcyk.c routine vinside() needed
+to init a split set around z, which means that more decks can
+be allocated beyond z; but the free_*_matrix routines were only
+freeing r..z. But, we always alloc/init for all M+1 decks of
+an alpha or beta matrix (M decks for shadows); unused decks are
+NULL. So, fix by simplification: all free_*_matrix() routines
+change to free all 0..M (0..M-1) decks, ignoring NULL decks,
+and setting deck[v] to NULL after each free to avoid problems
+w/ double free's of reused decks (e.g. END decks).
+//
+

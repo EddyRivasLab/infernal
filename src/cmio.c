@@ -359,8 +359,9 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
   char   *tok;
   int     toklen;
 
-  cm = NULL;
-  n  = 0;
+  cm  = NULL;
+  buf = NULL;
+  n   = 0;
   if (feof(cmf->f) || sre_fgets(&buf, &n, cmf->f) == NULL) return 0;
   if (strncmp(buf, "INFERNAL-1", 10) != 0)                 goto FAILURE;
 
@@ -511,11 +512,13 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
    * Renormalize the CM, and return.
    */
   CMRenormalize(cm);
+  if (buf != NULL) free(buf);
   *ret_cm = cm;
   return 1;
 
  FAILURE:
-  if (cm != NULL) FreeCM(cm);
+  if (cm != NULL)  FreeCM(cm);
+  if (buf != NULL) free(buf);
   *ret_cm = NULL;
   return 1;
 }

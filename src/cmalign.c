@@ -38,6 +38,7 @@ Usage: cmalign [-options] <cmfile> <sequence file>\n\
 
 static char experts[] = "\
    --informat <s>: specify that input alignment is in format <s>\n\
+   --nosmall     : use normal alignment algorithm, not d&c\n\
    --regress <f> : save regression test data to file <f>\n\
 ";
 

@@ -2,14 +2,24 @@
 # SRE, Tue Dec 31 12:19:36 2002
 # CVS $Id$
 #
-# To run on all bugs:  ../ssdk/sqc 2 bugs.sqc ../src/
-#     only open bugs:  ../ssdk/sqc 1 bugs.sqc ../src/
+# To run on all bugs:  ../ssdk/sqc -m 2 bugs.sqc ../src/
+#     only open bugs:  ../ssdk/sqc -m 1 bugs.sqc ../src/
+#
+# Code must be compiled w/ ${CC} = ccmalloc gcc
+# to use the -m option and test all bugs, including the
+# memory leaks. Else, omit the -m.
 #
 # Which means, by convention, all open bugs have priority 1
 # in the script; all closed bugs have priority 2.
 #
 # bug tests are in reverse chronological order...
 
-# i1- the vault bad SS_cons bug. 2 Jan 02, xref STL7 p.12
-2 exercise i1/vault  ./i1 @cmbuild@ @cmalign@
+# i1 - vault bad SS_cons bug. 2 Jan 02, xref STL7 p.12
+#
+2 exercise i1/vault-sscons   ./i1 @cmbuild@ @cmalign@
+
+# i2 - cmalign memory leak. 5 Jan 02, xref STL7 p.15
+#
+2 prep       i2/cmalign-leak   @cmbuild@ %CM% i2.sto
+2 exercise   i2/cmalign-leak   @cmalign@ %CM% i2.sto
 

@@ -107,22 +107,22 @@ static void    deckpool_free(struct deckpool_s *d);
 static float **alloc_vjd_deck(int L, int i, int j);
 static float   size_vjd_deck(int L, int i, int j);
 static void    free_vjd_deck(float **a, int i, int j);
-static void    free_vjd_matrix(float ***a, int M, int r, int z, int i, int j);
+static void    free_vjd_matrix(float ***a, int M, int i, int j);
 static char  **alloc_vjd_yshadow_deck(int L, int i, int j);
 static float   size_vjd_yshadow_deck(int L, int i, int j);
 static void    free_vjd_yshadow_deck(char **a, int i, int j);
 static int   **alloc_vjd_kshadow_deck(int L, int i, int j);
 static float   size_vjd_kshadow_deck(int L, int i, int j);
 static void    free_vjd_kshadow_deck(int **a, int i, int j);
-static void    free_vjd_shadow_matrix(void ***shadow, CM_t *cm, int r, int z, int i, int j);
+static void    free_vjd_shadow_matrix(void ***shadow, CM_t *cm, int i, int j);
 static float **alloc_vji_deck(int i0, int i1, int j1, int j0);
 static float   size_vji_deck(int i0, int i1, int j1, int j0);
 static void    free_vji_deck(float **a, int j1, int j0);
-static void    free_vji_matrix(float ***a, int M, int r, int z, int j1, int j0);
+static void    free_vji_matrix(float ***a, int M, int j1, int j0);
 static char  **alloc_vji_shadow_deck(int i0, int i1, int j1, int j0);
 static float   size_vji_shadow_deck(int i0, int i1, int j1, int j0);
 static void    free_vji_shadow_deck(char **a, int j1, int j0);
-static void    free_vji_shadow_matrix(char ***a, int r, int z, int j1, int j0);
+static void    free_vji_shadow_matrix(char ***a, int M, int j1, int j0);
 
 /* BE_EFFICIENT and BE_PARANOID are alternative (exclusive) settings
  * for the do_full? argument to the alignment engines.
@@ -528,7 +528,7 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    * decks in Inside and Outside needed to overlap. 
    * Free 'em all in one call.
    */
-  free_vjd_matrix(alpha, cm->M, r, z, i0, j0);
+  free_vjd_matrix(alpha, cm->M, i0, j0);
 
   /* If we're in EL, instead of B, the optimal alignment is entirely
    * in a V problem that's still above us. The TRUE flag sets useEL.
@@ -726,8 +726,8 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
 
   /* free now, before recursing!
    */
-  free_vjd_matrix(alpha, cm->M, w, z, i0, j0);
-  free_vjd_matrix(beta, cm->M, r, v, i0, j0);
+  free_vjd_matrix(alpha, cm->M, i0, j0);
+  free_vjd_matrix(beta,  cm->M, i0, j0);
 
   /* If we're in EL, instead of the split set, the optimal alignment
    * is entirely in a V problem that's still above us. The TRUE
@@ -892,8 +892,8 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 
   /* Free now, before recursing!
    */
-  free_vji_matrix(alpha, cm->M, r, z, j1, j0);
-  free_vji_matrix(beta,  cm->M, r, z, j1, j0);
+  free_vji_matrix(alpha, cm->M, j1, j0);
+  free_vji_matrix(beta,  cm->M, j1, j0);
 
   /* If we're in EL, instead of the split set, the optimal
    * alignment is entirely in a V problem that's still above us.
@@ -2506,7 +2506,7 @@ insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
     }
   }
   FreeNstack(pda);  /* it should be empty; we could check; naaah. */
-  free_vjd_shadow_matrix(shadow, cm, r, z, i0, j0);
+  free_vjd_shadow_matrix(shadow, cm, i0, j0);
   return sc;
 }
 
@@ -2606,7 +2606,7 @@ vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
   /* We're done. Our traceback has just ended. We have just attached
    * state z for i1,j1; it is in the traceback at node tr->n-1.
    */
-  free_vji_shadow_matrix(shadow, r, z, j1, j0);
+  free_vji_shadow_matrix(shadow, cm->M, j1, j0);
   return sc;
 }
 
@@ -2793,6 +2793,7 @@ deckpool_push(struct deckpool_s *dpool, float **deck)
   }
   dpool->pool[dpool->n] = deck;
   dpool->n++;
+  SQD_DPRINTF3(("deckpool_push\n"));
 }
 static int
 deckpool_pop(struct deckpool_s *d, float ***ret_deck)
@@ -2800,6 +2801,7 @@ deckpool_pop(struct deckpool_s *d, float ***ret_deck)
   if (d->n == 0) { *ret_deck = NULL; return 0;}
   d->n--;
   *ret_deck = d->pool[d->n];
+  SQD_DPRINTF3(("deckpool_pop\n"));
   return 1;
 }
 static void
@@ -2869,14 +2871,12 @@ free_vjd_deck(float **a, int i, int j)
   free(a);
 }
 static void
-free_vjd_matrix(float ***a, int M, int r, int z, int i, int j)
+free_vjd_matrix(float ***a, int M, int i, int j)
 {
   int v;
-  for (v = r; v <= z; v++)
+  for (v = 0; v <= M; v++)
     if (a[v] != NULL)		/* protect against double free's of reused decks (ends) */
       { free_vjd_deck(a[v], i, j); a[v] = NULL; }
-  if (a[M] != NULL) 
-    { free_vjd_deck(a[M], i, j); a[M] = NULL; }	/* EL deck, local alignment */
   free(a);
 }
 static char **
@@ -2939,13 +2939,14 @@ free_vjd_kshadow_deck(int **a, int i, int j)
   free(a);
 }
 static void
-free_vjd_shadow_matrix(void ***shadow, CM_t *cm, int r, int z, int i, int j)
+free_vjd_shadow_matrix(void ***shadow, CM_t *cm, int i, int j)
 {
   int v;
-  for (v = r; v <= z; v++)
+  for (v = 0; v < cm->M; v++)
     if (shadow[v] != NULL) {
       if (cm->sttype[v] == B_st) free_vjd_kshadow_deck((int **)  shadow[v], i, j);
       else                       free_vjd_yshadow_deck((char **) shadow[v], i, j);
+      shadow[v] = NULL;
     }
   free(shadow);
 }
@@ -2974,6 +2975,7 @@ alloc_vji_deck(int i0, int i1, int j1, int j0)
 {
   float **a;
   int     jp;
+  SQD_DPRINTF3(("alloc_vji_deck : %.4f\n", size_vji_deck(i0,i1,j1,j0)));
   a = MallocOrDie(sizeof(float *) * (j0-j1+1));
   for (jp = 0; jp <= j0-j1; jp++)
     a[jp] = MallocOrDie(sizeof(float)*(i1-i0+1));
@@ -2993,17 +2995,21 @@ static void			/* free'ing a score deck */
 free_vji_deck(float **a, int j1, int j0)
 {
   int jp;
+  SQD_DPRINTF3(("free_vji_deck called\n"));
   for (jp = 0; jp <= j0-j1; jp++) 
     if (a[jp] != NULL) free(a[jp]);
   free(a);
 }
 static void
-free_vji_matrix(float ***a, int M, int r, int z, int j1, int j0)
+free_vji_matrix(float ***a, int M, int j1, int j0)
 {
   int v;
-  for (v = r; v <= z; v++) 
-    if (a[v] != NULL) free_vji_deck(a[v], j1, j0);
-  if (a[M] != NULL) free_vji_deck(a[M], j1, j0); /* EL deck, local alignments */
+  /* Free the whole matrix - even if we used only a subset of
+   * the decks, all initialization routines init all decks 0..M
+   * to NULL, so this is safe. (see bug #i2).
+   */                         
+  for (v = 0; v <= M; v++) 
+    if (a[v] != NULL) { free_vji_deck(a[v], j1, j0); a[v] = NULL; }
   free(a);
 }
 static char **		        /* allocation of a traceback ptr (shadow matrix) deck */
@@ -3035,11 +3041,11 @@ free_vji_shadow_deck(char **a, int j1, int j0)
   free(a);
 }
 static void
-free_vji_shadow_matrix(char ***a, int r, int z, int j1, int j0)
+free_vji_shadow_matrix(char ***a, int M, int j1, int j0)
 {
   int v;
-  for (v = r; v <= z; v++) 
-    if (a[v] != NULL) free_vji_shadow_deck(a[v], j1, j0);
+  for (v = 0; v < M; v++) 
+    if (a[v] != NULL) { free_vji_shadow_deck(a[v], j1, j0); a[v] = NULL; }
   free(a);
 }
 
