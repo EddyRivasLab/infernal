@@ -1,3 +1,12 @@
+\documentclass[11pt]{article}
+\usepackage{fullpage}
+\usepackage{times}
+
+
+\def\argmax{\mbox{\rm{argmax}}}      % argmax
+\def\argmin{\mbox{\rm{argmin}}}      % argmin
+
+\begin{document}
 
 \section{Abstract}
 
@@ -201,7 +210,7 @@ grammar, well suited for modeling RNA.
 A stochastic context free grammar (SCFG) consists of the following:
 
 \begin{itemize}
-\item $M$ nonterminal symbols (or, \emph{states})
+\item $M$ nonterminals (here called \emph{states}).
 \item $K$ terminal symbols (e.g. the observable alphabet, {A,C,G,U} for RNA)
 \item a number of \emph{production rules} of the form:
       $V \rightarrow \alpha$,
@@ -213,19 +222,178 @@ A stochastic context free grammar (SCFG) consists of the following:
       nonterminal $V$ is equal to 1.
 \end{itemize} 
 
-A covariance model has seven types of states: call them 
-D (delete)          : $V_D \rightarrow Y$
-P (pair)            : $V_P \rightarrow a Y b$
-L (left)            : $V_L \rightarrow a Y$
-R (right)           : $V_R \rightarrow Y a$
-S (start)           : $V_S \rightarrow Y$
-E (end)             : $V_E \rightarrow \epsilon$
-B (bifurcation)     : $V_B \rightarrow Y_S Z_S$
+A covariance model has seven types of states:
 
-(It may help readers familiar with profile hidden Markov models to
-note that profile HMMs use L, D, S, and E type productions; P, R, and
-B type productions are necessary augmentations to deal with RNA
-secondary structure.)
+\begin{tabular}{llll}
+State              &  Production             & Emission & Transition\\ \hline
+P (pair)           & $V_P \rightarrow a Y b$ & $e_v(a,b)$ & $t_v(y)$  \\
+L (left)           & $V_L \rightarrow a Y$   & $e_v(a)$   & $t_v(y)$  \\
+R (right)          & $V_R \rightarrow Y a$   & $e_v(a)$   & $t_v(y)$  \\
+B (bifurcation)    & $V_B \rightarrow Y_S Z_S$  & 1     &     1     \\ \hline
+D (delete)         & $V_D \rightarrow Y$     &    1     &   $t_v(y)$  \\
+S (start)          & $V_S \rightarrow Y$     &    1     &   $t_v(y)$  \\
+E (end)            & $V_E \rightarrow \epsilon$ & 1     &     1     \\
+\end{tabular}
+
+Each state has one or more distinctive production rules: for example,
+a pair (P) state produces two correlated letters a and b and transits
+to one of several possible new states Y, whereas a bifurcation (B)
+state splits into two new start (S) states Y and Z with probability 1.
+The overall production probability is the product of an emission
+probability $e_v$ and a transition probability $t_v$. 
+
+It may help some readers to note that a covariance model is a
+deliberate extension of profile hidden Markov models to SCFGs and RNA
+secondary structure. Profile HMMs use L, D, S, and E type
+productions. P, R, and B type productions are necessary SCFG-specific
+augmentations to deal with RNA secondary structure. HMMs make the same
+assumption as CMs that emission and transition are statistically
+independent. And as we will describe next, both CMs and profile HMMs
+have a stereotyped, hierarchical, organized structure that is derived
+by an input multiple sequence alignment.
+
+Rather than presenting a terse and possibly cryptic definition of a
+CM, it is perhaps more useful (though considerably more verbose) to
+take the reader through the entire CM construction process, starting
+from a structure annotated multiple sequence alignment.
+
+\subsubsection{From structure to a consensus binary tree of nodes}
+
+Figure~\ref{fig:input_alignment} shows an example input file: a
+multiple sequence alignment of homologous RNAs, with a line describing
+the consensus RNA secondary structure. The first step of building a CM
+is to produce a binary tree of \emph{nodes} representing the consensus
+secondary structure, called the \emph{master tree}. 
+
+The master tree is a parse tree, with nodes as nonterminals and
+alignment columns as terminals. 
+
+There are eight types of nodes:
+
+\begin{tabular}{ll}
+Node                         &  Production           \\ \hline
+MATP  (pair)                 & $V_{\mbox{MATP}} \rightarrow a Y b$  \\
+MATL  (single strand, left)  & $V_{\mbox{MATL}} \rightarrow a Y$   \\
+MATR  (right)                & $V_{\mbox{MATR}} \rightarrow Y a$   \\
+BIF   (bifurcation)          & $V_{\mbox{BIF}}  \rightarrow Y_{\mbox{BEGL}} Z_{\mbox{BEGR}}$ \\
+ROOT  (root)                 & $V_{\mbox{ROOT}} \rightarrow Y$       \\
+BEGL  (begin, left)          & $V_{\mbox{BEGL}} \rightarrow Y$       \\
+BEGR  (begin, left)          & $V_{\mbox{BEGR}} \rightarrow Y$       \\
+END   (end)                  & $V_{\mbox{END}}  \rightarrow \epsilon$ \\ \hline
+\end{tabular}
+ 
+Note the close correspondence between these node types and the CM's
+final state types (above). The master tree deals with the consensus
+structure, but in individual sequences we will need to deal with
+insertions and deletions with respect to this consensus. The master
+tree is the skeleton on which we will organize the CM.
+
+The reason for distinguishing ROOT, BEGL, and BEGR nodes will become
+apparent.
+
+We are given a secondary structure annotation string $x_1..x_L$ for
+the $L$ columns of the multiple alignment. Consensus base paired
+columns are denoted with '$>$', '$<$' symbol pairs. Consensus single
+stranded columns are denoted with an 'x'. Columns that are considered
+to be insertions relative to consensus (and will not become part of
+the master tree) are denoted with a '.'.
+
+We first convert this string to an array $c_1..c_L$. $c_i$ is set to
+-1 if this column is nonconsensus, to 0 if this column is consensus
+single-stranded, and $c_j$ if this column $i$ is in a consensus base
+pair with column $j$. $c$ is constructed using a pushdown stack
+as follows:
+\footnote{The theme of using pushdown stacks will recur. Many operations
+on CMs involve binary tree traversals.}
+
+\begin{verbatim}
+for (i = 1..L)
+   if      x_i == '.':  c_i = -1.
+   else if x_i == 'x':  c_i = 0.
+   else if x_i == '>':  push i.
+   else if x_i == '<':  
+      pop j.
+      c[i] = j.
+      c[j] = i.
+\end{verbatim}
+
+We now use $c$ to construct a binary master tree $m$, with the nodes
+of $m$ numbered in postorder traversal, again using a pushdown stack.
+The stack stores a triplet of numbers $(v,i,j)$ for the current node
+being worked on in the tree: the index $v$ of the parent node for this
+node, and $i$ and $j$ for the subsequence $i..j$ that the subtree
+rooted at this node must account for. We assume a generic function for
+building a binary tree, attach(v, y, t, i, j), which attaches node $v$
+to node $y$ in the growing tree (left child first), and associates
+with node $v$ the information that it is a node of type $t$, and the
+master tree rooted at $v$ is responsible for the subsequence $i..j$.
+
+\begin{verbatim}
+v = 1.
+attach(v, ROOT, 0, i, j)
+while (c_i == -1 && i <= j) i++
+while (c_j == -1 && j >= i) j-- 	
+push(v, i, j)
+
+while (pop (y, i, j))
+   if i > j: 
+      attach(v, y, END, i, j)
+   else if parent y is a BIF:
+      if v == y+1:
+         attach(v, y, BEGL i, j)
+         push(v, i, j)
+      else
+         attach(v, y, BEGR, i, j)
+         while (c_i == -1 && i <= j) i++
+         push(v, i, j)
+   else if c_i == 0:
+      attach(v, y, MATL, i, j)
+      i++
+      while (c_i == -1 && i <= j) i++
+      push(v, i, j)
+   else if c_j == 0:
+      attach(v, y, MATR, i, j)
+      j--
+      while (c_j == -1 && j >= i) j-- 	
+      push(v, i, j)
+   else if c[i] == j:
+      attach(v, y, MATP, i, j)
+      i++
+      j--
+      while (c_i == -1 && i <= j) i++
+      while (c_j == -1 && j >= i) j-- 	
+      push(v, i, j)
+   else 
+      attach(v, y, BIF, i, j)
+      select best bifurcation k into subsequences i..k, k+1..j
+      push(v, k+1, j)
+      push(v, i, k)
+   v++
+\end{verbatim}
+
+There may be several possible choices of a bifurcation point $k$.  The
+choice can be made arbitrarily, but it will somewhat affect the
+performance of the divide and conquer algorithm (SRE: ELABORATE
+HERE). The possible split points can be enumerated efficiently by the
+following procedure:
+
+\begin{verbatim}
+for (k = ct[i]; k < ct[j]-1; k = ct[k])
+   [Check this k as a possible bifurcation point for i..k, k+1..j]
+   while ct[k] <= 0 k++
+\end{verbatim}
+
+The current strategy is to choose $k$ such that i..k and k+1..j are as
+close to the same length as possible.
+
+An example of an output master tree from this procedure, corresponding
+to the input multiple alignment in Figure~\ref{fig:input_alignment},
+is shown in Figure~\ref{fig:cm_nodetree}.
+
+\subsubsection{From a consensus node tree to a covariance model}
+
+
+
 
 Restrictions on transitions:
 
@@ -269,12 +437,12 @@ states of the model, so we know that the optimal alignment \emph{must}
 use any chosen bifurcation state $v$ and its child start states $w$
 and $y$. Thus we know
 
-      $\max_{i,k,j} \beta_{v}(i,j)$ + \alpha_{w}(i,k) + \alpha_{y}(k+1,j) 
+      $\max_{i,k,j} \beta_{v}(i,j) + \alpha_{w}(i,k) + \alpha_{y}(k+1,j)$
 
 is the optimal overall alignment score, and crucially, we also know
 that
 
-      $(i,k,j) = \argmax_{i',k',j'}  \beta_{v}(i',j')$  \alpha_{w}(i',k') + \alpha_{y}(k'+1,j') 
+      $(i,k,j) = \argmax_{i',k',j'}  \beta_{v}(i',j') +  \alpha_{w}(i',k') + \alpha_{y}(k'+1,j') $
 
 determines three cells in the optimal alignment -- $(v,i,j)$,
 $(w,i,k)$, and $(y,k+1,j)$ -- and splits the remaining problem into
@@ -291,7 +459,7 @@ been determined.
 
 At this point the remaining alignment subproblems are usually small
 enough to be solved by straightforward application of the standard
-Inside algorithm (see inside_engine and segment_alignment_engine,
+Inside algorithm (see inside\_engine and segment\_alignment\_engine,
 below). However, this is not guaranteed to be the case. A second
 division strategy is needed that does not depend on splitting at
 bifurcations.
@@ -308,7 +476,7 @@ containing at most 4 states.) Then for any alignment subproblem we can
 choose a provisional split point $\bar{v}$ in the midpoint of the
 model segment, and
 
-(v,i,j) = \argmax_{v' \in N(\hat{v}),i',j'} \alpha_{v'}(i',j') + \beta_{v'}(i',j')
+$(v,i,j) = \argmax_{v' \in N(\hat{v}),i',j'} \alpha_{v'}(i',j') + \beta_{v'}(i',j')$
 
 gives us a new cell (v,i,j) in the alignment and splits the problem
 into two smaller problems. This splitting strategy can be applied
@@ -326,14 +494,14 @@ $v$. Calculations of both Inside bifurcation decks ($\alpha_{v,
 S_v=B}$) and Outside non-root start decks $(\beta_{v, v > 0, S_v =
 S})$ have extensive dependencies on $\alpha_{v,S_v=S}$ start decks in
 the two sequence dimensions.  I believe this means that all start
-decks $(\alpha_v,S_v=S}$ would have to be kept in memory. This leads
+decks $\alpha_{v,S_v=S}$ would have to be kept in memory. This leads
 to an algorithm that required more memory than choosing splits in $v$,
 both asymptotically ($O(L^2B)$ instead of $O(L^2 \log B)$) and in real
 terms (I estimate 350 MB vs. 85 MB for an SSU rRNA alignment).
 
-\subsection{generic_splitter}
+\subsection{generic\_splitter}
 
-The generic_splitter subroutine is given a generic alignment problem
+The generic\_splitter subroutine is given a generic alignment problem
 defined by a CM graph $G$ and a sequence $a_1...a_L$. It solves the
 problem and returns the resulting optimal parse tree, $\cal{T}$. The
 solution may be achieved recursively by splitting the alignment
@@ -341,32 +509,32 @@ problem at a bifurcation state into one V problem and two generic
 problems and solving those smaller problems.
 
 Determine the size of the alignment problem. If it is small enough,
-obtain $\cal{T}$ by calling inside^{\cal{T}}($G, a_1..a_L$);
+obtain $\cal{T}$ by calling inside$^{\cal{T}}(G, a_1..a_L)$;
 terminate.  Else:
 
 If there is no bifurcation in $G$, the problem is a wedge problem:
-obtain \cal{T} by calling wedge_splitter($G, a_1..a_L$); terminate.
+obtain \cal{T} by calling wedge\_splitter($G, a_1..a_L$); terminate.
 Else:
 
 Let $v$ be the lowest numbered (nearest to the root) bifurcation state
 in $G$. Let $w$ and $y$ be the left and right start state children of
 $v$, respectively.
 
-Call outside(G^1_v, a_1..a_L) to obtain deck \beta_v.
-Call inside(G^w, a_1..a_L)    to obtain deck \alpha_w.
-Call inside(G^y, a_1..a_L)    to obtain deck \alpha_y.
+Call outside($G^1_v, a_1..a_L$) to obtain deck $\beta_v$.
+Call inside($G^w, a_1..a_L$)    to obtain deck $\alpha_w$.
+Call inside($G^y, a_1..a_L$)    to obtain deck $\alpha_y$.
 
-Find (i,k,j) = \argmax_{i',k',j'} \alpha_w(i',k') + \alpha_y(k'+1,j') + \beta_v(i',j') 
+Find $(i,k,j) = \argmax_{i',k',j'} \alpha_w(i',k') + \alpha_y(k'+1,j') + \beta_v(i',j')$ 
 
-\cal{T}_1 = V_splitter(G^1_v, a_1..a_i, a_j..a_L).
-\cal{T}_2 = generic_splitter(G^w, a_i..a_k).
-\cal{T}_3 = generic_splitter(G^y, a_{k+1}..a_j). 
+$\cal{T}_1 = \mbox{V\_splitter}(G^1_v, a_1..a_i, a_j..a_L).$
+$\cal{T}_2 = \mbox{generic\_splitter}(G^w, a_i..a_k).$
+$\cal{T}_3 = \mbox{generic\_splitter}(G^y, a_{k+1}..a_j).$
 
-\cal{T} = \cal{T}_1 (\cal{T}_2, \cal{T}_3); terminate.
+$\cal{T} = \cal{T}_1 (\cal{T}_2, \cal{T}_3)$; terminate.
 
-\subsection{wedge_splitter}
+\subsection{wedge\_splitter}
 
-The wedge_splitter subroutine is given a specialized wedge type
+The wedge\_splitter subroutine is given a specialized wedge type
 alignment problem, defined by an unbifurcated CM subgraph $G$ and a
 sequence $a_1..a_L$. It solves the problem and returns the optimal
 parse tree $\cal{T}$. The solution may be achieved recursively by
@@ -374,7 +542,7 @@ splitting the wedge problem into a V problem and a wedge problem, and
 solving those smaller problems.
 
 Determine the size of the alignment problem. If it is small enough,
-obtain $\cal{T}$ by calling inside^{\cal{T}}($G, a_1..a_L$);
+obtain $\cal{T}$ by calling inside$^{\cal{T}}(G, a_1..a_L)$;
 terminate. Else:
 
 Let $w..y$ be a chosen ``split set'' in the states in $G$: all the
@@ -383,19 +551,19 @@ that the optimal alignment passes through one and only one of these
 states. The layout of a CM guarantees that all possible split sets are
 composed of contiguously numbered states.
 
-Call inside(G^w, a_1..a_L) to obtain decks \alpha_w..\alpha_y.  
-Call outside(G^0_y, a_1...a_L) to obtain decks \beta_w..\beta_y.
+Call inside$(G^w, a_1..a_L)$ to obtain decks $\alpha_w..\alpha_y$.  
+Call outside$(G^0_y, a_1...a_L)$ to obtain decks $\beta_w..\beta_y$.
 
-Find (v,i,j) = \max_{v'=w..y, j'=1..L, i'=1..j'} \alpha_{v'}(i',j') + \beta_{v'}(i',j')
+Find $(v,i,j) = \max_{v'=w..y, j'=1..L, i'=1..j'} \alpha_{v'}(i',j') + \beta_{v'}(i',j')$
 
-\cal{T}_1 = V_splitter(G^0_v, a_1..a_i, a_j..a_L)
-\cal{T}_2 = wedge_splitter(G_v, a_i..a_j)
+$\cal{T}_1 = \mbox{V\_splitter}(G^0_v, a_1..a_i, a_j..a_L)$
+$\cal{T}_2 = \mbox{wedge\_splitter}(G_v, a_i..a_j)$
 
-\cal{T} = \cal{T}_1 (\cal{T}_2); terminate.
+$\cal{T} = \cal{T}_1 (\cal{T}_2)$; terminate.
 
-\subsection{V_splitter}
+\subsection{V\_splitter}
 
-The V_splitter subroutine is given a specialized V type alignment
+The V\_splitter subroutine is given a specialized V type alignment
 subproblem, defined by an unbifurcated, unterminated CM segment $G$
 and two subsequences $a_1..a_L//b_1..b_N$ of the original sequence. It
 solves the problem and returns the optimal parse tree $\cal{T}$. The
@@ -403,23 +571,23 @@ solution may be achieved recursively by splitting the V problem into
 two smaller V problems and solving them.
 
 Determine the size of the alignment problem. If it is small enough,
-obtain \cal{T} by calling v_inside^{\cal{T}}($G, a_1..a_L//b_1..b_N$);
+obtain $\cal{T}$ by calling v\_inside$^{\cal{T}}(G, a_1..a_L//b_1..b_N)$;
 terminate.
 
 Let $w..y$ be a chosen ``split set'' in $G$: all the non-insert states
-from a node in the middle of $G$, as in wedge_splitter.
+from a node in the middle of $G$, as in wedge\_splitter.
 
-Call v_inside(G^w, a_1..a_L//b_1..b_N) to obtain decks \alpha_w..\alpha_y.
-Call v_outside(G^0_y, a_1..a_L//b_1..b_N) to obtain decks \beta_w..\beta_y.
+Call v\_inside$(G^w, a_1..a_L//b_1..b_N)$ to obtain decks $\alpha_w..\alpha_y$.
+Call v\_outside$(G^0_y, a_1..a_L//b_1..b_N)$ to obtain decks $\beta_w..\beta_y$.
 
-Find (v,i,j) = \argmax_{v'=w..j, i'=1..L, j'=1..N} \alpha_{v'}(i',j') + \beta_{v'}(i',j')
+Find $(v,i,j) = \argmax_{v'=w..j, i'=1..L, j'=1..N} \alpha_{v'}(i',j') + \beta_{v'}(i',j')$
 
-\cal{T}_1 = V_splitter(G^1_v, a_1..a_i, b_j..b_N)
-\cal{T}_2 = V_splitter(G^v_w, a_i..a_L, b_1..b_j)
+$\cal{T}_1 = \mbox{V\_splitter}(G^1_v, a_1..a_i, b_j..b_N)$
+$\cal{T}_2 = \mbox{V\_splitter}(G^v_w, a_i..a_L, b_1..b_j)$
 
-\cal{T} = \cal{T}_1 (\cal{T}_2); terminate.
+$\cal{T} = \cal{T}_1 (\cal{T}_2)$; terminate.
 
-\subsection{inside and inside^{\cal{T}}}
+\subsection{inside and inside$^{\cal{T}}$}
 
 The subroutine inside implements the Inside/CYK SCFG alignment
 algorithm in a form that minimizes the memory requirement by
@@ -435,6 +603,7 @@ larger and larger subgraphs until it has calculated $\alpha_0(1,L)$ --
 the log probability of the best alignment of the whole CM $G$ to the
 whole sequence $a_1..a_L$.
 
+\begin{verbatim}
 Recursion:
 for v = M to 1:
     Allocate memory for a new deck \alpha_v with rows j=0..L, columns i=1..j+1.
@@ -453,9 +622,10 @@ for v = M to 1:
      E,d=0:   & 0                                                                   & -1\\
 
     for each y \in C(v): if all P(y) > v, free the memory for deck \alpha_y.
+\end{verbatim}
 
 The $\tau$ values are a ``shadow matrix'' that requires further
-explanation. In some cases, we will call inside as inside^{\cal{T}}.
+explanation. In some cases, we will call inside as inside$^{\cal{T}}$.
 In these cases, we know the problem is small enough that a divide and
 conquer is no longer needed, and we want to trace back an optimal
 parse tree $\cal{T}$. One way to do this would be to keep a full
@@ -473,6 +643,7 @@ obtain the optimal sub-alignment that gave the optimal score. The most
 simple explanation of this traceback is a recursive one: we call
 subroutine traceback(v=0, i=1, j=L):
 
+\begin{verbatim}
 subroutine traceback(v,i,j):
   S_v = E:     attach v;
   S_v = S,D :  attach v;           traceback(\tau_v(i,j), i, j).
@@ -480,13 +651,14 @@ subroutine traceback(v,i,j):
   S_v = L :    attach a_i,v;       traceback(\tau_v(j,d), i+1, j).
   S_v = R :    attach v,a_j;       traceback(\tau_v(j,d), i,   j-1).
   S_v = B :    attach v;           traceback(y, i, \tau_v(j,d));   traceback(z, \tau_v(i,j)+1, j).
+\end{verbatim}
 
-When inside is called (as opposed to inside^{\cal{T}}), none of the
+When inside is called (as opposed to inside$^{\cal{T}}$), none of the
 $\tau$ shadow operations are performed in inside. Instead, the 3D
 scoring matrix itself is returned, containing the deck $\alpha_v$ (and
 possibly a few other valid, unfree'd score decks; see below).
 
-The memory handling in inside_engine also needs further explanation.
+The memory handling in inside\_engine also needs further explanation.
 Recall that the key to the memory efficiency of the divide and conquer
 approach is that we don't need to keep the entire $\alpha$ matrix in
 memory to calculate scores. In the above formulation, with the outer
@@ -503,7 +675,7 @@ deck needs to be calculated, and that precalculated deck can be reused
 whenever $S_v = E$.)
 
 This rule, combined with the structure of a CM, has an additional nice
-property. When inside is called by generic_splitter, for a CM graph
+property. When inside is called by generic\_splitter, for a CM graph
 $G$ in which state 1 is always a start state, we only need the deck
 $\alpha_1$ returned -- and since all the states $y$ that a start state
 connects to cannot have another parent higher in the CM, when the
@@ -519,23 +691,24 @@ algorithm completes, $\alpha_1$ is the only deck left unfree'd.
 
 \subsection{outside}
 
-The subroutine outside_engine implements a variant of the SCFG
+The subroutine outside\_engine implements a variant of the SCFG
 Outside/CYK algorithm. Outside/CYK calculates $\beta_v(j,d)$, the log
 probability of the optimal parse tree for a CM generating a sequence
 $x_1..x_L$ \emph{excluding} the optimal parse subtree rooted at state
 $v$ that accounts for the subsequence of length $d$ that ends at $j$.
-The outside_engine has three variations from the standard algorithm.
-Two are analogous to the inside_engine. First, outside_engine can be
+The outside\_engine has three variations from the standard algorithm.
+Two are analogous to the inside\_engine. First, outside\_engine can be
 called not just for the complete model and sequence, but for any CM
 subgraph of $\hat{M}$ states rooted at $\hat{r}$ and any subsequence
-$x_\hat{i}..x_\hat{j}$. Second, it does not keep the entire $\beta$
-matrix in memory -- it returns only the $\beta_\hat{v}$ deck. Third,
-outside_engine will only be called on a linear ``segment''
+$x_{\hat{i}}..x_{\hat{j}}$. Second, it does not keep the entire $\beta$
+matrix in memory -- it returns only the $\beta_{\hat{v}}$ deck. Third,
+outside\_engine will only be called on a linear ``segment''
 $r..\hat{v}$ of the CM that starts in a start state ($S_r = S$), ends
 in a bifurcation state ($S_{\hat{v}} = B$), and has no other start or
 bifurcation states, so the recursion is simpler than the standard
 Outside/CYK algorithm.
 
+\begin{verbatim}
 Initialization:
 Obtain a deck $\beta_r$ for the root state $r$.
 Set $\beta_{r}(\hat{j}, \hat{L}) = 0$.
@@ -561,14 +734,15 @@ for v = r+1 to \hat{v}
               S_y = R: j = \hat{j},     assume \beta_y(j+1,d+1) = -\infty
 
   for each y \in P(v): if all C(y) < v, release the deck \beta_y.
+\end{verbatim}
 
-At the end of the calculation, outside_engine returns the $\beta_v$
+At the end of the calculation, outside\_engine returns the $\beta_v$
 deck.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-\subsection{segment_alignment_engine}
+\subsection{segment\_alignment\_engine}
 
 
 
@@ -576,7 +750,7 @@ deck.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-
+\end{document}
 
 
 

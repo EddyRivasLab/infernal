@@ -117,7 +117,7 @@ HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh,
 
   /* 2. Determine a "ct" array, base-pairing partners for each position.
    *    Disallow/ignore pseudoknots. (That's what the FALSE flag does.)
-   *    ct[] values give the index of a base pairing partner, or -1 for unpaired positions.
+   *    ct[] values give the index of a base pairing partner, or 0 for unpaired positions.
    *    Even though msa->ss_cons is in the 0..alen-1 coord system of msa, ct[]
    *    comes back in the 1..alen coord system of dsq.
    */
@@ -160,7 +160,7 @@ HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh,
    * in both indices and values: e.g. the base pairing partner 
    * j of residue i is ct[i-1]-1. 
    */
-  PushNstack(pda, -1);		/* what state it's attached to */
+  PushNstack(pda, -1);		/* what node it's attached to */
   PushNstack(pda, 1);		/* emitl */
   PushNstack(pda, msa->alen);	/* emitr */
   PushNstack(pda, ROOT_nd);	/* "state" (e.g. node type) */

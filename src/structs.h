@@ -96,7 +96,7 @@ extern int   CMTransitionIndex[20][20];
 /* Structure: CM_t
  * Incept:    SRE, 9 Mar 2000 [San Carlos CA]
  * 
- * A covariance model. M states, arranged logically as a directed acyclic graph
+ * A covariance model. M states, arranged logically as a directed graph
  * (on a binary tree backbone); arranged physically as a set of arrays 0..M-1.
  *
  * State 0 is always the root state. State M-1 is always an end state.
