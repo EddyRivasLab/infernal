@@ -44,7 +44,7 @@ SRE, Thu Jul  4 10:27:28 2002
 
 7. Build for our system (on whelk01 or some such)
 	% cd infernal-xxx
-	% env CFLAGS="-O3" ./configure --enable-lfs prefix=/usr/seshare/ exec_prefix=/usr/seshare/`uname`
+	% env CC=icc CFLAGS="-O3" ./configure --enable-lfs --bindir=/usr/seshare/`uname`/infernal/
 	% make
 	% make check
         % (cd testsuite; ./sqc -p ../squid/ -r ../../infernal-0.52/src 4 regressions.sqc ../src/)
@@ -57,6 +57,7 @@ SRE, Thu Jul  4 10:27:28 2002
 	% logout
 
 8. Put on the FTP site. (on wrasse)
+	$ cd ..                <-- back in dev dir 
 	% make ftpdist
         % emacs /nfs/www/docs/eddy/infernal/index.html   <- edit the web site, if needed.
 	
