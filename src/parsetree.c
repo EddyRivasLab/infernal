@@ -176,13 +176,16 @@ ParsetreeCount(CM_t *cm, Parsetree_t *tr, char *dsq, float wgt)
 		/* trivial preorder traverse, since we're already numbered that way */
   for (tidx = 0; tidx < tr->n; tidx++) {
     v = tr->state[tidx];        	/* index of parent state in CM */
-    if (v == cm->M) continue;	        /* local alignment special case: sttype[v] = EL */
-
-    if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) /* no parameters estimated from B,E */
+    if (v != cm->M && cm->sttype[v] != E_st && cm->sttype[v] != B_st) 
       {
 	z = tr->state[tr->nxtl[tidx]];      /* index of child state in CM  */
-	if (z != cm->M)		            /* watch out for local alignment, z = EL */
-	  cm->t[v][z - cm->cfirst[v]] += wgt; /* z - cm->first[v] gives us offset in transition vecor */
+
+	if (z == cm->M)                
+	  cm->end[v] += wgt;
+	else if (v == 0 && z - cm->cfirst[v] >= cm->cnum[v])
+	  cm->begin[z] += wgt;
+	else
+	  cm->t[v][z - cm->cfirst[v]] += wgt; 
 
 	if (cm->sttype[v] == MP_st) 
 	  PairCount(cm->e[v], dsq[tr->emitl[tidx]], dsq[tr->emitr[tidx]], wgt);
@@ -258,6 +261,14 @@ ParsetreeScore(CM_t *cm, Parsetree_t *tr, char *dsq)
  *
  * Purpose:  Debugging: show a tabular representation of a
  *           parsetree structure.
+ *           
+ *           This just shows information in the
+ *           parsetree structure itself. ParsetreeDump() 
+ *           is more detailed, showing sequence information
+ *           aligned to the tree. PrintParsetree() is
+ *           called by cmbuild.c to print a master guide
+ *           tree, which doesn't have an individual 
+ *           sequence aligned to it.
  *
  * Args:     fp  - output stream (stdout?)
  *           tr  - the tree to show
@@ -314,8 +325,13 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq)
   for (x = 0; x < tr->n; x++)
     {
       v = tr->state[x];
+
+      /* Set syml, symr: one char representation of what we emit, or ' '.
+       * Set esc:        emission score, or 0.
+       * Only P, L, R states have emissions.
+       */
       syml = symr = ' ';
-      esc = tsc = 0.;
+      esc = 0.;
       if (cm->sttype[v] == MP_st) {
 	syml = Alphabet[(int)dsq[tr->emitl[x]]]; 
 	symr = Alphabet[(int)dsq[tr->emitr[x]]];
@@ -328,6 +344,10 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq)
 	esc  = DegenerateSingletScore(cm->esc[v], dsq[tr->emitr[x]]);
       }
 
+      /* Set tsc: transition score, or 0.
+       * B, E, and the special EL state (M, local end) have no transitions.
+       */
+      tsc = 0.;
       if (v != cm->M && cm->sttype[v] != B_st && cm->sttype[v] != E_st) {
 	y = tr->state[tr->nxtl[x]];
 
@@ -337,14 +357,16 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq)
 	  tsc = cm->endsc[v];
 	else 		/* y - cm->first[v] gives us the offset in the transition vector */
 	  tsc = cm->tsc[v][y - cm->cfirst[v]];
-
-	fprintf(fp, "%5d %5d%c %5d%c %5d%-2s %5d %5d %5d %5.2f %5.2f\n",
-		x, tr->emitl[x], syml, tr->emitr[x], symr, tr->state[x], Statetype(cm->sttype[v]),
-		tr->nxtl[x], tr->nxtr[x], tr->prv[x], tsc, esc);
       }
+
+      /* Print the info line for this state
+       */
+      fprintf(fp, "%5d %5d%c %5d%c %5d%-2s %5d %5d %5d %5.2f %5.2f\n",
+	      x, tr->emitl[x], syml, tr->emitr[x], symr, tr->state[x], 
+	      Statetype(cm->sttype[v]), tr->nxtl[x], tr->nxtr[x], tr->prv[x], tsc, esc);
     }
-  fprintf(fp, "%5s %5s %5s %5s %5s %5s %5s %5s %5s\n",
-	  "-----", "-----", "-----", "-----", "-----","-----", "-----","-----", "-----");
+  fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s\n",
+	 "-----", "------", "------", "-------", "-----","-----", "-----","-----", "-----");
   fflush(fp);
 } 
 

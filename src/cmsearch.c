@@ -33,11 +33,13 @@ static char experts[] = "\
    --informat <s>: specify that input alignment is in format <s>, not FASTA\n\
    --toponly     : only search the top strand\n\
    --local       : do local alignment\n\
+   --dumptrees   : dump verbose parse tree information for each hit\n\
 ";
 
 static struct opt_s OPTIONS[] = {
   { "-h", TRUE, sqdARG_NONE }, 
   { "-W", TRUE, sqdARG_INT }, 
+  { "--dumptrees",  FALSE, sqdARG_NONE },
   { "--informat",   FALSE, sqdARG_STRING },
   { "--local",      FALSE, sqdARG_NONE },
   { "--toponly",    FALSE, sqdARG_NONE },
@@ -69,10 +71,12 @@ main(int argc, char **argv)
   int   *hiti;                  /* start positions of hits */
   int   *hitj;                  /* end positions of hits */
   float *hitsc;			/* scores of hits */
+  int    ci, cj;		/* positions in model consensus; start, end */
 
   int    windowlen;		/* maximum len of hit; scanning window size */
   int    do_revcomp;		/* true to do reverse complement too */
   int    do_local;		/* TRUE to do local alignment */
+  int    do_dumptrees;		/* TRUE to dump parse trees */
 
   char *optname;                /* name of option found by Getopt()        */
   char *optarg;                 /* argument found by Getopt()              */
@@ -86,12 +90,14 @@ main(int argc, char **argv)
   windowlen         = 200;
   do_revcomp        = TRUE;
   do_local          = FALSE;
+  do_dumptrees      = FALSE;
   
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
-    if       (strcmp(optname, "-W")          == 0) windowlen  = atoi(optarg);
-    else if  (strcmp(optname, "--local")     == 0) do_local   = TRUE;
-    else if  (strcmp(optname, "--toponly")   == 0) do_revcomp = FALSE;
+    if       (strcmp(optname, "-W")          == 0) windowlen    = atoi(optarg);
+    else if  (strcmp(optname, "--dumptrees") == 0) do_dumptrees = TRUE;
+    else if  (strcmp(optname, "--local")     == 0) do_local     = TRUE;
+    else if  (strcmp(optname, "--toponly")   == 0) do_revcomp   = FALSE;
     else if  (strcmp(optname, "--informat")  == 0) {
       format = String2SeqfileFormat(optarg);
       if (format == SQFILE_UNKNOWN) 
@@ -127,7 +133,7 @@ main(int argc, char **argv)
 
   if (do_local) ConfigLocal(cm, 0.5, 0.5);
   CMLogoddsify(cm);
-  cons = CreateCMConsensus(cm, 1.0, 1.0); 
+  cons = CreateCMConsensus(cm, 3.0, 1.0); 
 
   StopwatchZero(watch);
   StopwatchStart(watch);
@@ -146,9 +152,16 @@ main(int argc, char **argv)
       if (! reversed) printf("sequence: %s\n", sqinfo.name);
       for (i = 0; i < nhits; i++)
 	{
-	  printf("hit %-4d: %6d %6d %8.2f bits\n", i, 
+	  /* Recover start, end position of hit in the model consensus.
+           * Consensus is 0.. but we'll show it as 1..
+	   */
+	  ci = cons->lpos[cm->ndidx[hitr[i]]]+1;
+	  cj = cons->rpos[cm->ndidx[hitr[i]]]+1;
+
+	  printf("hit %-4d: %6d %6d %6d %6d %8.2f bits\n", i, 
 		 reversed ? sqinfo.len - hiti[i] + 1 : hiti[i], 
 		 reversed ? sqinfo.len - hitj[i] + 1 : hitj[i],
+		 ci, cj,
 		 hitsc[i]);
 	  
 	  CYKLocalDivideAndConquer(cm, dsq, sqinfo.len, 
@@ -157,7 +170,11 @@ main(int argc, char **argv)
 	  ali = CreateFancyAli(tr, cm, cons, dsq);
 	  PrintFancyAli(stdout, ali);
 
-	  /* PrintParsetree(stdout, tr); */
+	  if (do_dumptrees) {
+	    ParsetreeDump(stdout, tr, cm, dsq);
+	    printf("\tscore = %.2f\n", ParsetreeScore(cm,tr,dsq));
+	  }
+
 	  FreeFancyAli(ali);
 	  FreeParsetree(tr);
 	}

@@ -34,9 +34,8 @@ extern int   CMTransitionIndex[20][20];
 #define NOT_IMPOSSIBLE(x)  ((x) > -9.999e35) /* can't compare floating point by equality */
 #define sreLOG2(x)  ((x) > 0 ? log(x) * 1.44269504 : IMPOSSIBLE)
 
-/* State types. (9)  (cm->sttype[])
+/* State types. (cm->sttype[])
  */
-#define STATETYPES 9            /* different kinds of states         */
 #define MAXCONNECT 6            /* maximum number of states per node */
 
 #define D_st     0		/* delete       */
@@ -48,6 +47,7 @@ extern int   CMTransitionIndex[20][20];
 #define S_st     6		/* start        */
 #define E_st     7		/* end          */
 #define B_st     8		/* bifurcation  */
+#define EL_st    9              /* local end    */
 
 /* Node types (8) (cm->ndtype[])
  */
@@ -63,9 +63,9 @@ extern int   CMTransitionIndex[20][20];
 #define ROOT_nd   6		
 #define END_nd    7
 
-/* Unique state identifiers (20)   (cm->stid[])
+/* Unique state identifiers  (cm->stid[])
  */
-#define UNIQUESTATES 20
+#define UNIQUESTATES 21
 
 #define DUMMY   -1
 #define ROOT_S  0
@@ -88,6 +88,7 @@ extern int   CMTransitionIndex[20][20];
 #define MATR_IR 17
 #define END_E   18
 #define BIF_B   19
+#define END_EL  20
 
 /* Flags used in InsertTraceNode()
  */
@@ -188,8 +189,8 @@ typedef struct parsetree_s {
 typedef struct consensus_s {
   char *cseq;                   /* consensus sequence display string; 0..clen-1     */
   char *cstr;			/* consensus structure display string; 0..clen-1    */
-  int  *lpos;			/* maps node->consensus position, or -1; 0..nodes-1 */
-  int  *rpos;			/* maps node->consensus position, or -1; 0..nodes-1 */
+  int  *lpos;			/* maps node->consensus position; 0..nodes-1        */
+  int  *rpos;			/* maps node->consensus position; 0..nodes-1        */
   int   clen;			/* length of cseq, cstr                             */
 } CMConsensus_t;
 

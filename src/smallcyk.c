@@ -197,7 +197,8 @@ CYKLocalDivideAndConquer(CM_t *cm, char *dsq, int L, int r0, int i0, int j0,
    * on the whole DP cube.
    */
   z  = CMSubtreeFindEnd(cm, r0);
-  sc = generic_splitter(cm, dsq, L, tr, r0, z, i0, j0);
+  /* sc = insideT(cm, dsq, L, tr, r0, z, i0, j0); */
+  sc = generic_splitter(cm, dsq, L, tr, r0, z, i0, j0); 
 
   /* Free memory and return 
    * (though we don't really expect a NULL ptr for ret_tr)
@@ -448,7 +449,7 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
     for (jp = 0; jp <= W; jp++) 
       {
 	j = i0-1+jp;
-	for (d = 0; d <= jp; d++)
+	for (d = jp; d >= 0; d--)
 	  if ((sc = beta[cm->M][j][d]) > best_sc) {
 	    best_sc = sc;
 	    best_k  = -1;	/* flag for local alignment. */
@@ -1850,7 +1851,7 @@ voutside(CM_t *cm, char *dsq, int L,
       if (useEL && cm->endsc[v] != IMPOSSIBLE) {
 	for (jp = j0-j1; jp >= 0; jp--) 
 	  for (ip = 0; ip <= i1-i0; ip++) 
-	    if ((sc = beta[v][jp][ip]) > beta[cm->M][jp][ip]) 
+	    if ((sc = beta[v][jp][ip] + cm->endsc[v]) > beta[cm->M][jp][ip]) 
 	      beta[cm->M][jp][ip] = sc;
       }
 	

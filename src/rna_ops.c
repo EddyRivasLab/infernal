@@ -10,7 +10,9 @@
  */
 
 #include <ctype.h>
+#include <math.h>
 
+#include "structs.h"
 #include "squid.h"
 #include "nstack.h"
 
@@ -108,3 +110,44 @@ KHS2ct(char *ss, int len, int allow_pseudoknots, int **ret_ct)
   return status;
 }
 
+
+/* Function: IsCompensatory()
+ * Date:     SRE, Sun Jun  2 10:16:59 2002 [Madison]
+ *
+ * Purpose:  Returns TRUE if log[pij/(pi*pj)] is >= 0,
+ *           where pij is the probability of a base pair,
+ *           pi and pj are the marginal probabilities
+ *           for the symbols at i and j.
+ *           
+ *           Currently returns FALSE if symi or symj
+ *           are ambiguous IUPAC nucs. Could do a more
+ *           sophisticated marginalization - prob not
+ *           worth it right now.                                 
+ *           
+ * Args:     pij  - joint emission probability vector [0..15]
+ *                  indexed symi*4 + symj.
+ *           symi - symbol index at i [0..3], equiv to [a..u]
+ *           symj - symbol index at j [0..3], equiv to [a..u]
+ *
+ * Returns:  TRUE or FALSE.
+ */
+int
+IsCompensatory(float *pij, int symi, int symj)
+{
+  int   x;
+  float pi, pj;
+
+  if (symi >= Alphabet_size || symj >= Alphabet_size) 
+    return FALSE;
+
+  pi = pj = 0.;
+  for (x = 0; x < Alphabet_size; x++) 
+    {
+      pi += pij[symi*Alphabet_size + x];
+      pj += pij[x*Alphabet_size    + symi];
+    }
+  if (log(pij[symi*Alphabet_size+symj]) - log(pi) - log(pj) >= 0)
+    return TRUE;
+  else 
+    return FALSE;
+}

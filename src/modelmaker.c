@@ -40,7 +40,6 @@
 
 
 static void         cm_from_guide(CM_t *cm, Parsetree_t *gtr);
-static Parsetree_t *transmogrify(CM_t *cm, Parsetree_t *gtr, char *aseq);
 
 /* Function: HandModelmaker()
  * Incept:   SRE 29 Feb 2000 [Seattle]; from COVE 2.0 code
@@ -49,7 +48,7 @@ static Parsetree_t *transmogrify(CM_t *cm, Parsetree_t *gtr, char *aseq);
  * 
  *           Construct a model given a stated structure. The structure
  *           is provided via a "ss_cons" (consensus structure) line, as would
- *           occur in an annotated SELEX or Stockoholm file. Only > and < characters
+ *           occur in an annotated SELEX or Stockholm file. Only > and < characters
  *           in this line are interpreted (as base pairs). Pseudoknots, 
  *           if annotated, are ignored.
  *           
@@ -65,23 +64,20 @@ static Parsetree_t *transmogrify(CM_t *cm, Parsetree_t *gtr, char *aseq);
  * Args:     msa       - multiple alignment to build model from
  *           dsq       - digitized aligned sequences            
  *           use_rf    - TRUE to use RF annotation to determine match/insert
- *           gapthresh - fraction of gaps to allow in a match column (if use_rf is FALSE)
+ *           gapthresh - fraction of gaps to allow in a match column (if use_rf=FALSE)
  *           ret_cm    - RETURN: new model                      (maybe NULL)
  *           ret_gtr   - RETURN: guide tree for alignment (maybe NULL)
- *           ret_tr    - RETURN: 0..nseq-1 individual tracebacks for seqs (maybe NULL)
  *           
  * Return:   void
  *           cm is allocated here. FreeCM(*ret_cm).
- *           gtr is allocated here. FreeTrace() on each one, then free(*ret_tr).
+ *           gtr is allocated here. FreeTrace().
  */
 void
 HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh, 
-	       CM_t **ret_cm, Parsetree_t **ret_gtr, Parsetree_t ***ret_tr)
+	       CM_t **ret_cm, Parsetree_t **ret_gtr)
 {
   CM_t           *cm;		/* new covariance model                       */
   Parsetree_t    *gtr;		/* guide tree for alignment                   */
-  Parsetree_t    *tr;		/* an individual parse tree                   */
-  Parsetree_t   **savetr;	/* array of individual traces if we're saving */
   Nstack_t       *pda;		/* pushdown stack used in building gtr        */
   int            *matassign;	/* 0..alen-1 array; 0=insert col, 1=match col */
   int            *ct;		/* 0..alen-1 base pair partners array         */
@@ -94,8 +90,10 @@ HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh,
   int  nnodes;			/* number of nodes in CM                      */
   int  nstates;			/* number of states in CM                     */
 
-  if (msa->ss_cons == NULL)      Die("No consensus structure annotation available for that alignment.");
-  if (use_rf && msa->rf == NULL) Die("No reference annotation available for that alignment.");
+  if (msa->ss_cons == NULL)
+    Die("No consensus structure annotation available for that alignment.");
+  if (use_rf && msa->rf == NULL) 
+    Die("No reference annotation available for that alignment.");
 
   /* 1. Determine match/insert assignments
    *    matassign is 1..alen. Values are 1 if a match column, 0 if insert column.
@@ -323,17 +321,9 @@ HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh,
   cm_from_guide(cm, gtr);
   CMZero(cm);
 
-  if (ret_tr != NULL) savetr = MallocOrDie(sizeof(Parsetree_t *) * msa->nseq);
-  for (idx = 0; idx < msa->nseq; idx++)
-    {
-      tr = transmogrify(cm, gtr, dsq[idx]);
-      ParsetreeCount(cm, tr, dsq[idx], msa->wgt[idx]);
-      if (ret_tr != NULL) savetr[idx] = tr; else FreeParsetree(tr);
-    }
   free(matassign);
   if (ret_cm  != NULL) *ret_cm  = cm;  else FreeCM(cm);
   if (ret_gtr != NULL) *ret_gtr = gtr; else FreeParsetree(gtr);
-  if (ret_tr  != NULL) *ret_tr  = savetr; 
 }
 
 
@@ -652,47 +642,153 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
 
 
 
-/* Function: transmogrify()
- * Date:     SRE, Mon Jul 31 14:30:58 2000 [St. Louis]
+
+/* Function: Transmogrify()
+ * Date:     SRE, Thu May 30 15:10:22 2002 [a coffee shop in Madison]
  *
- * Purpose:  Construct a "fake" parsetree for a given aligned sequence (aseq),
- *           given a new CM structure (cm) and a guide tree (gtr).
- *
- * Args:     cm    - the new covariance model
+ * Purpose:  Construct a "fake" tree for a given aligned sequence (aseq)
+ *           and its digitized form dsq, given a new CM structure (cm) and
+ *           a model guide tree (gtr). Same as transmogrify(), above,
+ *           except this version can deal w/ local alignments.
+ *           
+ *           Keep in mind that aseq is 0..alen-1, dsq is 1..alen, and 
+ *           gtr is working in dsq's coordinates - hence the -1's in aseq
+ *           indexing.
+ *           
+ *           We need aseq because we encode local alignment there: all
+ *           non-insert columns marked '~' are local deletions. (Marking
+ *           of gaps in insert columns is ignored.)
+ *           
+ *           Assumes that local begins do not go to insert states, and local
+ *           ends do not come from insert states. To assert otherwise
+ *           is an invalid input.
+ *           
+ *           It expects that local alignment transmogrification is only
+ *           done in two situations: debugging, and training. Therefore,
+ *           users don't provide local alignments to this function, and
+ *           it's polite to Die() on any kind of input error.
+ * 
+ * Args:     cm    - the newly built covariance model, corresponding to gtr
  *           gtr   - guide tree
- *           dsq   - a digitized aligned sequence [1..L]
+ *           dsq   - a digitized aligned sequence [1..alen]
+ *           aseq  - aligned sequence itself [0..alen-1]
+ *           alen  - length of alignment
  *
  * Returns:  the individual parse tree. 
- *           Caller is responsible for free'ing this.
+ *           Caller is responsible for free'ing this w/ FreeParsetree().
  */
-static Parsetree_t *
-transmogrify(CM_t *cm, Parsetree_t *gtr, char *dsq)
+Parsetree_t *
+Transmogrify(CM_t *cm, Parsetree_t *gtr, char *dsq, char *aseq, int alen)
 {
   Parsetree_t *tr;
-  int          node;		/* index of the node in *gtr* we're currently working on */
-  int          state;		/* index of a state in the *CM*                          */
-  int          type;		/* a unique statetype                                    */
-  Nstack_t    *pda;             /* pushdown automaton for remembering positions in tr    */
-  int          tidx;		/* index *in the parsetree tr* of the state we're supposed to attach to next */
-  int          i,j;		/* coords in aseq */
+  int          node;		/* index of node in *gtr* we're working on */
+  int          state;		/* index of a state in the *CM*            */
+  int          type;		/* a unique statetype                      */
+  Nstack_t    *pda;             /* pushdown automaton for positions in tr  */
+  int          tidx;		/* index *in parsetree tr* of state        */
+  int          i,j;		/* coords in aseq                          */
+  int          started;		/* TRUE if we've transited out of ROOT     */
+  int          ended;		/* TRUE if we've transited to EL and ended */
+  int          nstarts;         /* # of local transits out of ROOT: <= 1   */
+  int         *localrun;        /* local alignment gap run lengths         */
+  int          need_leftside;
+  int          need_rightside;
 
   tr  = CreateParsetree();
   pda = CreateNstack();
+  
+  started = FALSE;
+  ended   = FALSE;
+  nstarts = 0;
+
+  /* We preprocess the aseq to help with local alignment.
+   */
+  localrun = MallocOrDie(sizeof(int) * (alen+1));
+  localrun[0] = 0;
+  for (i = 0; i <= alen; i++)
+    if (aseq[i-1] == '~') localrun[i] = localrun[i-1]+1;
+    else                  localrun[i] = 0;
 
   /* Because the gtr is already indexed in a preorder traversal,
    * we can preorder traverse it easily w/ a for loop...
    */
-  tidx = -1;			/* first state to attach to; -1 is special case for attaching root */
+  tidx = -1;	   /* first state to attach to; -1=special case for attaching root */
   for (node = 0; node < cm->nodes; node++)
     {
-      switch (gtr->state[node]) { /* e.g. switch on node type: */
-      case BIF_nd:
-	state = CalculateStateIndex(cm, node, BIF_B);
-	tidx  = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
-	PushNstack(pda, tidx); /* remember this index in tr, we'll use it for BEGL and BEGR */
-	PushNstack(pda, tidx);
+      /* A generic sanity check: we can't end if we haven't started.
+       */
+      if (ended && ! started) goto FAILURE;
+
+      /* A (big) switch on node type.
+       */
+      switch (gtr->state[node]) { 
+
+	/* The root node.
+	 * Assume ROOT_S=0, ROOT_IL=1, ROOT_IR=2.
+	 * started/ended are always FALSE when we get here.
+	 * we can init a local start (in IL or IR).
+	 */
+      case ROOT_nd:
+	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, 
+			       gtr->emitl[node], gtr->emitr[node], 0);
+	for (i = gtr->emitl[node]; i < gtr->emitl[gtr->nxtl[node]]; i++)
+	  if (dsq[i] != DIGITAL_GAP) {
+	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, 
+				   i, gtr->emitr[node], 1);
+	    if (! started) { started = TRUE; nstarts++; }
+	  }
+	for (j = gtr->emitr[node]; j > gtr->emitr[gtr->nxtl[node]]; j--)
+	  if (dsq[j] != DIGITAL_GAP) {
+	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, 2);	
+	    if (! started) { started = TRUE; nstarts++; }
+	  }
 	break;
 
+	/* A bifurcation node.
+	 * Assume that we'll process the BEGL node next; push info
+	 * for BEGR onto the PDA.
+	 * If we ended above here, the B doesn't go into the parsetree.
+	 * If we didn't start yet, the B doesn't go into the parsetree.
+	 */
+      case BIF_nd:
+	if (ended) {
+	  if (aseq[gtr->emitl[node]-1] == '~' && aseq[gtr->emitr[node]-1] == '~') 
+	    break;
+	  else 
+	    goto FAILURE;
+	}
+
+	i = gtr->emitl[gtr->nxtl[node]];
+	j = gtr->emitr[gtr->nxtl[node]];
+	need_leftside = (localrun[j] - localrun[i-1] != j - i + 1) ? TRUE : FALSE; 
+
+	i = gtr->emitl[gtr->nxtr[node]];
+	j = gtr->emitr[gtr->nxtr[node]];
+	need_rightside = (localrun[j] - localrun[i-1] != j - i + 1) ? TRUE : FALSE; 
+	  
+	if (need_leftside && need_rightside) {
+	  state = CalculateStateIndex(cm, node, BIF_B);
+	  tidx  = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, 
+				  gtr->emitl[node], gtr->emitr[node], state);
+	  if (! started) { started = TRUE; nstarts++; }
+	} 
+	PushNstack(pda, ended);   /* remember our ending status */
+	PushNstack(pda, started); /* remember our start status */
+	PushNstack(pda, tidx);    /* remember index in tr; we pop in BEGR */
+	break;
+
+	/* A MATP node.
+	 * If we see *,* in the seq, this is a local deletion.
+         *    If we haven't started yet, just skip the node.
+	 *    If we have ended already, just skip the node; 
+         *    If we haven't ended yet, end on an EL.
+         * (* in only one position is invalid input.)
+         * Else, this is a real state: emission or deletion.
+         *    If we thought we ended, that's invalid input.
+         *    Else, attach this guy. If it's a new start, it gets attached
+         *      to ROOT, and we bump nstarts; we should only do this once
+         *      on valid input. 
+	 */
       case MATP_nd:
 	if (dsq[gtr->emitl[node]] == DIGITAL_GAP) {
 	  if (dsq[gtr->emitr[node]] == DIGITAL_GAP) type = MATP_D;
@@ -701,86 +797,174 @@ transmogrify(CM_t *cm, Parsetree_t *gtr, char *dsq)
 	  if (dsq[gtr->emitr[node]] == DIGITAL_GAP) type = MATP_ML;
 	  else                                      type = MATP_MP;
 	}
+
+	if (type == MATP_D 
+	    && aseq[gtr->emitl[node]-1] == '~' 
+	    && aseq[gtr->emitr[node]-1] == '~')
+	  {
+	    if (! started || ended)  break;
+	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, 
+				   gtr->emitl[node], gtr->emitr[node], cm->M);
+	    ended = TRUE;
+	    break;
+	  }
+	if (aseq[gtr->emitl[node]-1] == '~' || aseq[gtr->emitr[node]-1] == '~')
+	  goto FAILURE;
+
+	if (ended) goto FAILURE;
 	state = CalculateStateIndex(cm, node, type);
-	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
+	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, 
+			       gtr->emitl[node], gtr->emitr[node], state);	      
+	if (! started) { started = TRUE; nstarts++; }
 
 	state = CalculateStateIndex(cm, node, MATP_IL);
 	for (i = gtr->emitl[node]+1; i < gtr->emitl[gtr->nxtl[node]]; i++)
-	  if (dsq[i] != DIGITAL_GAP)
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node]-1, state);
+	  if (dsq[i] != DIGITAL_GAP) {
+	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, 
+				   i, gtr->emitr[node]-1, state);
+	    if (! started) goto FAILURE;
+	  }
 
 	state = CalculateStateIndex(cm, node, MATP_IR);
 	for (j = gtr->emitr[node]-1; j > gtr->emitr[gtr->nxtl[node]]; j--)
-	  if (dsq[j] != DIGITAL_GAP)
+	  if (dsq[j] != DIGITAL_GAP) {
 	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state);	
+	    if (! started) goto FAILURE;
+	  }
 	break;
 
+	/* A MATL node.
+	 * If we see * in the seq, this is a local deletion.
+	 *   If we haven't started yet, skip the node.
+	 *   If we have ended already, skip the node.
+	 *   If we haven't ended yet, end on an EL.
+	 * Else, this is a real state (emission or deletion).
+	 *   If we thought we ended, this is invalid input.
+	 *   Else, attach this guy. If it's a new start, it is
+	 *   attached to root (tidx == -1), and we bump nstarts.
+	 */
       case MATL_nd:
 	if (dsq[gtr->emitl[node]] == DIGITAL_GAP) type = MATL_D;
 	else                                      type = MATL_ML;
 
+	if (type == MATL_D && aseq[gtr->emitl[node]-1] == '~')
+	  {
+	    if (! started || ended) break;
+	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, 
+				   gtr->emitl[node], gtr->emitr[node], cm->M);
+	    ended = TRUE;
+	    break;
+	  }
+
+	if (ended) goto FAILURE;
 	state = CalculateStateIndex(cm, node, type);
-	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
+	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, 
+			       gtr->emitl[node], gtr->emitr[node], state);
+	if (! started) { started = TRUE; nstarts++; }
 
 	state = CalculateStateIndex(cm, node, MATL_IL);
 	for (i = gtr->emitl[node]+1; i < gtr->emitl[gtr->nxtl[node]]; i++)
-	  if (dsq[i] != DIGITAL_GAP)
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], state);
+	  if (dsq[i] != DIGITAL_GAP) {
+	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, 
+				   i, gtr->emitr[node], state);
+	    if (! started) goto FAILURE;
+	  }
 	break;
 
+	/* MATR node. 
+	 * Similar logic as MATL above.
+	 */
       case MATR_nd:
 	if (dsq[gtr->emitr[node]] == DIGITAL_GAP) type = MATR_D;
 	else                                      type = MATR_MR;
 
+	if (type == MATR_D && aseq[gtr->emitl[node]-1] == '~')
+	  {
+	    if (! started || ended)  break;
+	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, 
+				   gtr->emitl[node], gtr->emitr[node], cm->M);
+	    ended = TRUE;
+	    break;
+	  }
+
+	if (ended) goto FAILURE;	
 	state = CalculateStateIndex(cm, node, type);
-	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
+	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, 
+			       gtr->emitl[node], gtr->emitr[node], state);
+	if (! started) { started = TRUE; nstarts++; }
 
 	state = CalculateStateIndex(cm, node, MATR_IR);
 	for (j = gtr->emitr[node]-1; j > gtr->emitr[gtr->nxtl[node]]; j--)
-	  if (dsq[j] != DIGITAL_GAP)
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], j, state);
+	  if (dsq[j] != DIGITAL_GAP) {
+	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, 
+				   gtr->emitl[node], j, state);
+	    if (! started) goto FAILURE;
+	  }
 	break;
 
+	/* BEGL_nd. 
+	 * If not started, or ended, skip node. Else, attach it.
+	 */
       case BEGL_nd:
-	PopNstack(pda, &tidx);	/* recover parent bifurcation's index in trace */
-	
+	if (! started || ended) break;
 	state = CalculateStateIndex(cm, node, BEGL_S);
-	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
+	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, 
+			       gtr->emitl[node], gtr->emitr[node], state);
 	break;
 
+	/* BEGR_nd.
+	 * Pop off info on whether we started or ended above this
+	 *    node in the CM.
+	 * Logic different than BEGL above, because BEGR is dealing
+	 * with an insert left state:
+	 * If we've started, and not ended, attach the node.
+	 * In dealing with inserts, if we think we've ended already,
+	 * that's an invalid input.
+	 */
       case BEGR_nd:
-	PopNstack(pda, &tidx);	/* recover parent bifurcation's index in trace */
-	
-	state = CalculateStateIndex(cm, node, BEGR_S);
-	tidx = InsertTraceNode(tr, tidx, TRACE_RIGHT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
+	PopNstack(pda, &tidx);	  /* recover parent bifurcation's index in trace */
+	PopNstack(pda, &started); /* did we start above here? */
+	PopNstack(pda, &ended);   /* did we end above here? */
 
+	if (started && !ended) 
+	  {
+	    state = CalculateStateIndex(cm, node, BEGR_S);
+	    tidx = InsertTraceNode(tr, tidx, TRACE_RIGHT_CHILD, 
+				   gtr->emitl[node], gtr->emitr[node], state);
+	  }
 	state = CalculateStateIndex(cm, node, BEGR_IL);
 	for (i = gtr->emitl[node]; i < gtr->emitl[gtr->nxtl[node]]; i++)
-	  if (dsq[i] != DIGITAL_GAP)
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], state);
+	  if (dsq[i] != DIGITAL_GAP) {
+	    if (ended) goto FAILURE;
+	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, 
+				   gtr->emitr[node], state);
+	    if (! started) goto FAILURE;
+	  }
 	break;
 
-      case ROOT_nd:
-				/* we assume ROOT_S == 0, ROOT_IL == 1, ROOT_IR == 2 in the CM */
-	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], 0);
-	for (i = gtr->emitl[node]; i < gtr->emitl[gtr->nxtl[node]]; i++)
-	  if (dsq[i] != DIGITAL_GAP)
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], 1);
-	for (j = gtr->emitr[node]; j > gtr->emitr[gtr->nxtl[node]]; j--)
-	  if (dsq[j] != DIGITAL_GAP)
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, 2);	
-	break;
-
+	/* An END node.
+	 * If we've already ended (on EL), skip. 
+	 */
       case END_nd:
-	state = CalculateStateIndex(cm, node, END_E);
-	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, -1, -1, state);
+	if (started && ! ended) {
+	  state = CalculateStateIndex(cm, node, END_E);
+	  tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, -1, -1, state);
+	}
 	break;
 
       default: 
 	Die("bogus node type %d in transmogrify()", gtr->state[node]);
       }
     }
+  if (nstarts > 1) goto FAILURE;
+  free(localrun);
   FreeNstack(pda);
   return tr;
+
+ FAILURE:
+  free(localrun);
+  FreeNstack(pda);
+  FreeParsetree(tr);
+  Die("transmogrification failed: bad input sequence.");
 }
 

@@ -47,9 +47,9 @@ CreateCM(int nnodes, int nstates)
 				/* null model information */
   cm->null   = MallocOrDie(Alphabet_size * sizeof(float));
 				/* structural information */
-  cm->sttype = MallocOrDie(nstates * sizeof(char));
+  cm->sttype = MallocOrDie((nstates+1) * sizeof(char));
   cm->ndidx  = MallocOrDie(nstates * sizeof(int));
-  cm->stid   = MallocOrDie(nstates * sizeof(char));
+  cm->stid   = MallocOrDie((nstates+1) * sizeof(char));
   cm->cfirst = MallocOrDie(nstates * sizeof(int));
   cm->cnum   = MallocOrDie(nstates * sizeof(int));
   cm->plast  = MallocOrDie(nstates * sizeof(int));
@@ -67,6 +67,13 @@ CreateCM(int nnodes, int nstates)
   cm->esc    = FMX2Alloc(nstates, Alphabet_size*Alphabet_size);
   cm->beginsc= MallocOrDie(nstates * sizeof(float));
   cm->endsc  = MallocOrDie(nstates * sizeof(float));
+
+  /* the EL state at M is special: we only need state
+   * type info recorded, so functions looking at parsetrees  
+   * can interpret what an "M" index means.
+   */
+  cm->sttype[cm->M] = EL_st;
+  cm->stid[cm->M]   = END_EL;
 
   cm->flags  = 0;
   return cm;
@@ -418,6 +425,7 @@ Statetype(int type)
   case S_st:  return "S";
   case E_st:  return "E";
   case B_st:  return "B";
+  case EL_st: return "EL";
   default: Die("bogus state type %d\n", type);
   }
   return "";
@@ -464,6 +472,7 @@ UniqueStatetype(int type)
   case MATR_IR: return "MATR_IR";
   case END_E  : return "END_E";
   case BIF_B  : return "BIF_B";
+  case END_EL : return "END_EL";
   default: Die("bogus unique state type %d\n", type);
   }
   return "";

@@ -32,7 +32,6 @@ The alignment file is expected to be in Stockholm format.\n\
 ";
 
 static char experts[] = "\
-   --nobalance   : don't rebalance the CM; number in strict preorder\n\
    --rf          : use #=RF alignment annotation to specify consensus\n\
    --gapthresh   : fraction of gaps to allow in a consensus column (0..1)\n\
    --informat <s>: specify input alignment is in format <s>, not Stockholm\n\
@@ -42,8 +41,10 @@ static char experts[] = "\
    --gtree <f>   : save tree description of master tree to file <f>\n\
    --gtbl  <f>   : save tabular description of master tree to file <f>\n\
    --cmtbl <f>   : save tabular description of CM topology to file <f>\n\
-   --tfile <f>   : dump individual sequence tracebacks to file <f>\n\
-
+   --tfile <f>   : dump individual sequence tracebacks to file <f>\n\n\
+ Debugging, experimentation:\n\
+   --nobalance   : don't rebalance the CM; number in strict preorder.\n\
+   --treeforce   : score first seq in alignment and show parsetree.\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -59,12 +60,10 @@ static struct opt_s OPTIONS[] = {
   { "--informat",  FALSE, sqdARG_STRING },
   { "--rf",        FALSE, sqdARG_NONE },
   { "--tfile",     FALSE, sqdARG_STRING },
-
+  { "--treeforce", FALSE, sqdARG_NONE },
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
-static void dump_traces(char *tracefile, MSA *msa, Parsetree_t **tr, 
-			CM_t *cm, char **dsq); 
 static int  save_countvectors(char *cfile, CM_t *cm);
 static int  clean_cs(char *cs, int alen);
 
@@ -80,7 +79,7 @@ main(int argc, char **argv)
   char           **dsq;		/* digitized aligned sequences             */
   int              nali;	/* number of alignments processed          */
   Parsetree_t     *mtr;         /* master structure tree from the alignment*/
-  Parsetree_t    **tr;		/* inidividual traces from alignment       */
+  Parsetree_t     *tr;		/* individual traces from alignment        */
   CM_t            *cm;          /* a covariance model                      */
   Stopwatch_t     *watch;	/* timer to run                            */
   int              idx;         /* sequence index                          */
@@ -97,6 +96,7 @@ main(int argc, char **argv)
   char  fpopts[3];		/* options to open a file with, e.g. "ab"  */
   int   use_rf;			/* TRUE to use #=RF to define consensus    */
   float gapthresh;		/* 0=all cols inserts; 1=all cols consensus*/
+  int   treeforce;		/* number of seqs to show parsetrees for   */
 
   FILE *ofp;                    /* filehandle to dump info to */
   char *cfile;                  /* file to dump count vectors to */
@@ -116,6 +116,7 @@ main(int argc, char **argv)
   allow_overwrite   = FALSE;
   gapthresh         = 0.5;
   use_rf            = FALSE;
+  treeforce         = 0;
 
   cfile             = NULL;
   tracefile         = NULL;
@@ -128,9 +129,10 @@ main(int argc, char **argv)
     if      (strcmp(optname, "-A") == 0)          do_append         = TRUE; 
     else if (strcmp(optname, "-B") == 0)          format            = MSAFILE_UNKNOWN;
     else if (strcmp(optname, "-F") == 0)          allow_overwrite   = TRUE;
-    else if (strcmp(optname, "--balance")   == 0) do_balance        = TRUE;
+    else if (strcmp(optname, "--nobalance") == 0) do_balance        = FALSE;
     else if (strcmp(optname, "--gapthresh") == 0) gapthresh         = atof(optarg);
     else if (strcmp(optname, "--rf")        == 0) use_rf            = TRUE;
+    else if (strcmp(optname, "--treeforce") == 0) treeforce         = 1;
 
     else if (strcmp(optname, "--cfile")     == 0) cfile             = optarg;
     else if (strcmp(optname, "--gtbl")      == 0) gtblfile          = optarg;
@@ -159,12 +161,6 @@ main(int argc, char **argv)
 
   if (!allow_overwrite && !do_append && FileExists(cmfile))
     Die("CM file %s already exists. Rename or delete it.", cmfile); 
-
-  /* If we're outputting tranmogrified traces, shut CM rebalancing
-   * off; else, our numbering of states in traces will not be consistent with
-   * numbering of states in CM.
-   */
-  if (tracefile != NULL)  do_balance = FALSE;
 
   /*********************************************** 
    * Preliminaries: open our files for i/o
@@ -237,11 +233,29 @@ main(int argc, char **argv)
       dsq = DigitizeAlignment(msa->aseq, msa->nseq, msa->alen);
       printf("%-40s ... [done]\n", "Digitizing alignment"); fflush(stdout);
 
-      /* Construct a model.
+      /* Construct a model, and collect observed counts.
+       * Note on "treeforce": this is the number of sequences that we
+       *   will ignore for the purposes of count-collection and parameterization
+       *   of the CM. We will only use this for debugging. These seqs
+       *   are then dumped as full parsetrees to stdout.
        */
-      HandModelmaker(msa, dsq, use_rf, gapthresh, &cm, &mtr, &tr);
+      HandModelmaker(msa, dsq, use_rf, gapthresh, &cm, &mtr);
+      if (do_balance) 
+	{
+	  CM_t *new;
+	  new = CMRebalance(cm);
+	  FreeCM(cm);
+	  cm = new;
+	}
+      for (idx = treeforce; idx < msa->nseq; idx++)
+	{
+	  tr = Transmogrify(cm, mtr, dsq[idx], msa->aseq[idx], msa->alen);
+	  ParsetreeCount(cm, tr, dsq[idx], msa->wgt[idx]);
+	  FreeParsetree(tr);
+	}
 
-      /* Save a count vector file, if asked.
+      /* Before converting to probabilities,
+       * save a count vector file, if asked.
        * Used primarily for making data files for training priors.
        */
       if (cfile != NULL) {
@@ -251,21 +265,20 @@ main(int argc, char **argv)
 	else                                printf("done. [%s]\n", cfile);
       }
 
+      /* Convert to probabilities, and the global log-odds form
+       * we save the model in.
+       */
       CMSimpleProbify(cm);
       CMSetDefaultNullModel(cm);
       CMLogoddsify(cm);
 
-      /* Rebalance the model (default).
-       * This is shut off by --nobalance option, or if traces
-       * are being saved to a file using --tfile option.
+      /* Save the CM. 
        */
-      if (do_balance) 
-	{
-	  CM_t *new;
-	  new = CMRebalance(cm);
-	  FreeCM(cm);
-	  cm = new;
-	}
+      SummarizeCM(stdout, cm); 
+      puts("");
+      CYKDemands(cm, avlen);
+      puts("");
+      WriteBinaryCM(cmfp, cm);
 
       /* Dump optional information to files:
        */
@@ -298,21 +311,41 @@ main(int argc, char **argv)
 
       /* SummarizeMasterTrace(stdout, mtr); */
 
-      SummarizeCM(stdout, cm); 
-      puts("");
-      CYKDemands(cm, avlen);
-      puts("");
-      
-		/* note: if do_balance is true, the indices on these
-                   tracebacks won't match the model. */
+      /* 4. Detailed traces for the training set.
+       */
       if (tracefile != NULL)       
-	dump_traces(tracefile, msa, tr, cm, dsq);
+	{
+	  if ((ofp = fopen(tracefile,"w")) == NULL)
+	    Die("failed to open trace file %s", tracefile);
+	  for (idx = treeforce; idx < msa->nseq; idx++) 
+	    {
+	      tr = Transmogrify(cm, mtr, dsq[idx], msa->aseq[idx], msa->alen);
+	      fprintf(ofp, "> %s\n", msa->sqname[idx]);
+	      fprintf(ofp, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr, dsq[idx]));;
+	      ParsetreeDump(ofp, tr, cm, dsq[idx]);
+	      fprintf(ofp, "//\n");
+	      FreeParsetree(tr);
+	    }
+	  fclose(ofp);
+	}
 
-      WriteBinaryCM(cmfp, cm);
-
-      for (idx = 0; idx < msa->nseq; idx++)
-	FreeParsetree(tr[idx]);
-      free(tr);
+      /* 5. Detailed parsetrees for the test set of forced parsetrees.
+       *    We reconfig the model into local alignment.
+       */
+      if (treeforce) 
+	{
+	  ConfigLocal(cm, 0.5, 0.5);	  
+	  CMLogoddsify(cm);
+	  for (idx = 0; idx < treeforce; idx++) 
+	    {
+	      tr = Transmogrify(cm, mtr, dsq[idx], msa->aseq[idx], msa->alen);
+	      printf("> %s\n", msa->sqname[idx]);
+	      printf("  SCORE : %.2f bits\n", ParsetreeScore(cm, tr, dsq[idx]));;
+	      ParsetreeDump(stdout, tr, cm, dsq[idx]);
+	      printf("//\n");
+	      FreeParsetree(tr);
+	    }
+	}
 
       FreeParsetree(mtr);
       FreeCM(cm);
@@ -331,30 +364,6 @@ main(int argc, char **argv)
 }
 
 
-/* Function: dump_traces()
- * Date:     SRE, Sun Aug  6 09:36:32 2000 [St. Louis]
- *
- * Purpose:  for debugging information: dump individual 
- *           transmogrified tracebacks and trace scores
- *           to a file.
- */
-static void
-dump_traces(char *tracefile, MSA *msa, Parsetree_t **tr, CM_t *cm, char **dsq)
-{
-  FILE *fp;
-  int   i;
-
-  if ((fp = fopen(tracefile,"w")) == NULL)
-    Die("failed to open trace file %s", tracefile);
-
-  for (i = 0; i < msa->nseq; i++) {
-    fprintf(fp, "> %s\n", msa->sqname[i]);
-    fprintf(fp, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr[i], dsq[i]));;
-    ParsetreeDump(fp, tr[i], cm, dsq[i]);
-    fprintf(fp, "//\n");
-  }
-  fclose(fp);
-}
 
 
 /* Function: save_countvectors()

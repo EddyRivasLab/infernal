@@ -52,7 +52,9 @@ extern void ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
 /* from modelmaker.c
  */
 extern void HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh, 
-			   CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_tr);
+			   CM_t **ret_cm, Parsetree_t **ret_mtr);
+extern Parsetree_t *Transmogrify(CM_t *cm, Parsetree_t *gtr, 
+				 char *dsq, char *aseq, int alen);
 
 /* from parsetree.c
  */
@@ -73,6 +75,7 @@ extern void         MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm);
 /* from rna_ops.c
  */
 extern int KHS2ct(char *ss, int len, int allow_pseudoknots, int **ret_ct);
+extern int IsCompensatory(float *pij, int symi, int symj);
 
 /* from scancyk.c
  */

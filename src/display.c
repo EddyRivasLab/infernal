@@ -12,6 +12,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <ctype.h>
 
 #include "squid.h"
@@ -26,6 +27,7 @@ static void createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface);
  */
 #define PDA_RESIDUE 0
 #define PDA_STATE   1
+#define PDA_MARKER  2
 
 /* Function:  CreateFancyAli()
  * Incept:    SRE, Thu May 23 13:46:09 2002 [St. Louis]
@@ -62,7 +64,6 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
   int         lcons, rcons;	/* chars to put in model consensus line; left, right */
   int         lmid, rmid;	/* chars to put in middle alignment quality line; left, right */
   int         lseq, rseq;	/* chars to put in aligned target seq line; left, right */
-  float       escore;
   int         do_left, do_right;/* flags to generate left, right */
 
   ali = MallocOrDie(sizeof(Fancyali_t));
@@ -80,8 +81,9 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
       v  = tr->state[ti];
       if (v == cm->M) {  /* special case: local exit into EL */
 	ninset     = tr->emitr[ti] - tr->emitl[ti] + 1;
-	ali->len += 4 + ninset/10 + 1;
-	continue;;
+	ali->len += 4;
+	do { ali->len++; ninset /= 10; } while (ninset);
+	continue;
       } else {
 	nd = cm->ndidx[v];
 	if      (cm->sttype[v]  == IL_st   || cm->sttype[v]  == IR_st)   ali->len += 1;
@@ -137,7 +139,8 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
       if (v == cm->M) { 
 	ninset = tr->emitr[ti] - tr->emitl[ti] + 1;
 	sprintf(ali->aseq+pos, "*[%d]*", ninset);
-	pos += 4 + ninset/10 + 1;
+	pos += 4;
+	do { pos++; ninset /= 10; } while (ninset);
 	continue;
       }
 
@@ -157,7 +160,7 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
 	if (cm->annote != NULL) lannote = ' ';
 	lstr    = ' ';
 	lcons   = '.';
-	lseq    = tolower(Alphabet[symj]);
+	lseq    = tolower(Alphabet[symi]);
       } else if (cm->sttype[v] == IR_st) {
 	do_right = TRUE;
 	if (cm->annote != NULL) lannote = cm->annote[rc];
@@ -183,36 +186,29 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
 	}
       }
 
-      /* If we're an emitter - get our score
+      /* Use emission p and score to set lmid, rmid line for emitting states.
        */
+      lmid = rmid = ' ';
       if (cm->sttype[v] == MP_st) {
-	if (symi < Alphabet_size && symj < Alphabet_size)
-	  escore = cm->esc[v][symi*Alphabet_size+symj];
-	else
-	  escore = DegeneratePairScore(cm->esc[v], symi, symj);
-      } else if (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) {
-	if (symi < Alphabet_size)
-	  escore = cm->esc[v][symi];
-	else
-	  escore = DegenerateSingletScore(cm->esc[v], symi);
-      } else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) {
-	if (symi < Alphabet_size)
-	  escore = cm->esc[v][symj];
-	else
-	  escore = DegenerateSingletScore(cm->esc[v], symj);
-      }
-      
-      /* Use the score to set lmid, rmid line.
-       */
-      if (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) {
-	if (lseq == toupper(lcons)) lmid = lseq;
-	else if (escore >= 0)       lmid = '+';
-	else                        lmid = ' ';
-      }
-      if (cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) {
-	if (rseq == toupper(rcons)) rmid = rseq;
-	else if (escore >= 0)       rmid = '+';
-	else                        rmid = ' ';
+	if (lseq == toupper(lcons) && rseq == toupper(rcons))
+	  {
+	    lmid = lseq;
+	    rmid = rseq;
+	  }
+	else if (IsCompensatory(cm->e[v], symi, symj)) 
+	  lmid = rmid = ':';
+	else if (DegeneratePairScore(cm->esc[v], symi, symj) >= 0)
+	  lmid = rmid = '+';
+      } else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) {
+	if (lseq == toupper(lcons)) 
+	  lmid = lseq;
+	else if (DegenerateSingletScore(cm->esc[v], symi) > 0)
+	  lmid = '+';
+      } else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) {
+	if (rseq == toupper(rcons)) 
+	  rmid = rseq;
+	else if (DegenerateSingletScore(cm->esc[v], symj) > 0)
+	  rmid = '+';
       }
 
       /* If we're storing a residue leftwise - just do it.
@@ -261,11 +257,27 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
 void
 PrintFancyAli(FILE *fp, Fancyali_t *ali)
 {
-  if (ali->annote != NULL) fprintf(fp, "%s\n", ali->annote);
-  fprintf(fp, "%s\n", ali->cstr);
-  fprintf(fp, "%s\n", ali->cseq);
-  fprintf(fp, "%s\n", ali->mid);
-  fprintf(fp, "%s\n", ali->aseq);
+  char *buf;
+  int   pos;
+  int   linelength;
+
+  linelength = 60;
+  buf = MallocOrDie(sizeof(char) * (linelength + 1));
+  buf[linelength] = '\0';
+
+  for (pos = 0; pos < ali->len; pos += linelength)
+    {
+      if (ali->annote != NULL) {
+	strncpy(buf, ali->annote+pos, linelength);
+	fprintf(fp, "%s\n", buf);
+      }
+      strncpy(buf, ali->cstr+pos, linelength);  fprintf(fp, "%s\n", buf);
+      strncpy(buf, ali->cseq+pos, linelength);  fprintf(fp, "%s\n", buf);
+      strncpy(buf, ali->mid+pos,  linelength);  fprintf(fp, "%s\n", buf);
+      strncpy(buf, ali->aseq+pos, linelength);  fprintf(fp, "%s\n", buf);
+      fprintf(fp, "\n");
+    }
+  free(buf);
 }
 
 
@@ -300,17 +312,16 @@ FreeFancyAli(Fancyali_t *ali)
  *            Consensus structure annotates
  *            base pairs according to "multifurcation order" (how
  *            many multifurcation loops are beneath this pair).
- *               terminal stems:  ><
+ *               terminal stems:  <>
  *               order 1:         ()
  *               order 2:         []
  *               order >2:        {}
- *            Singlets are annotated . if external, - if hairpin,
- *            bulge, or interior loop, and , for multifurcation loop.
+ *            Singlets are annotated . if external, _ if hairpin,
+ *            - if bulge or interior loop, and , for multifurcation loop.
  *               
  *            Example:
- *                ..(((,,>>>--<<<,>>>--<<-<,,)))..
+ *                ..(((,,<<<__>>>,<<<__>>->,,)))..
  *                AAGGGAACCCTTGGGTGGGTTCCACAACCCAA   
- *
  *
  * Args:      cm         - the model
  *            pthresh    - bit score threshold for base pairs to be lowercased
@@ -367,6 +378,11 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
 	cstr[cpos] = rstruc;
 	cpos++;
       }
+    else if (type == PDA_MARKER) 
+      {
+	PopNstack(pda, &nd);
+	rpos[nd]   = cpos;
+      }
     else if (type == PDA_STATE) 
       {
 	PopNstack(pda, &v);
@@ -386,7 +402,7 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
 	      rchar = tolower(rchar);
 	    }
 	    switch (multiorder[nd]) {
-	    case 0:  lstruc = '>'; rstruc = '<'; break;
+	    case 0:  lstruc = '<'; rstruc = '>'; break;
 	    case 1:  lstruc = '('; rstruc = ')'; break;
 	    case 2:  lstruc = '['; rstruc = ']'; break;
 	    default: lstruc = '{'; rstruc = '}'; break;
@@ -396,7 +412,7 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
 	  lchar = Alphabet[x];
 	  if (cm->esc[v][x] < sthresh) lchar = tolower(lchar);
 	  if      (outface[nd] == 0)                    lstruc = '.'; /* external ss */
-	  else if (inface[nd] == 0 && outface[nd] == 1) lstruc = '-'; /* hairpin loop */
+	  else if (inface[nd] == 0 && outface[nd] == 1) lstruc = '_'; /* hairpin loop */
 	  else if (inface[nd] == 1 && outface[nd] == 1) lstruc = '-'; /* bulge/interior */
 	  else                                          lstruc = ','; /* multiloop */
 	  rstruc = ' ';
@@ -414,8 +430,8 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
 	/* Emit. A left base, we can do now; 
 	 * a right base, we defer onto PDA.
 	 */
+	lpos[nd]   = cpos;	/* we always set lpos, rpos even for nonemitters */
 	if (lchar) {
-	  lpos[nd]   = cpos;
 	  cseq[cpos] = lchar;
 	  cstr[cpos] = lstruc;
 	  cpos++;
@@ -425,7 +441,10 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
 	  PushNstack(pda, rstruc);
 	  PushNstack(pda, rchar);
 	  PushNstack(pda, PDA_RESIDUE);
-	}	
+	} else {
+	  PushNstack(pda, nd);
+	  PushNstack(pda, PDA_MARKER);
+	}
 
 	/* Transit - to consensus states only.
 	 * The obfuscated idiom finds the index of the next consensus
@@ -495,6 +514,8 @@ FreeCMConsensus(CMConsensus_t *con)
  *            Used for figuring out what characters we'll display a
  *            consensus pair with.
  *            
+ *            THIS FUNCTION IS BUGGY (Sat Jun  1 12:24:23 2002)
+ *            
  * Args:      cm - the model.
  *
  * Returns:   [0..cm->nodes-1] array of multifurcation orders, for each node.
@@ -524,11 +545,10 @@ createMultifurcationOrderChart(CM_t *cm)
 	height[nd]        = 0;
       else if (cm->stid[v] == BIF_B) 
 	{
-	  left  = cm->ndidx[cm->cfirst[v]];
+	  left  = cm->ndidx[cm->cfirst[v]]; 
 	  right = cm->ndidx[cm->cnum[v]];
-	  height[nd] = MAX(height[left], height[right]);
-	  if (seg_has_pairs[left] || seg_has_pairs[right])
-	    height[nd]++;
+	  height[nd] = MAX(height[left] + seg_has_pairs[left],
+			   height[right] + seg_has_pairs[right]);
 	}
       else
 	height[nd] = height[nd+1]; 
