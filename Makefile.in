@@ -25,6 +25,7 @@ prefix      = @prefix@
 exec_prefix = @exec_prefix@
 BINDIR      = @bindir@
 MANDIR      = @mandir@
+RF          = @rf@
 
 # how to install the man pages; 
 # cp is generally fine, unless you preformat your pages.
@@ -72,6 +73,9 @@ all:
 	(cd squid;     make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module)
 	(cd src;       make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module)
 	(cd testsuite; make CC="$(CC)" CFLAGS="$(CFLAGS)")
+ifeq ($(RIGFILTERS),1)
+	(cd rigfilters; make)
+endif
 
 # dist: build a new distribution directory in infernal-$RELEASE
 #

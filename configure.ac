@@ -159,6 +159,23 @@ AC_ARG_ENABLE(lfs,
         ;;
 esac])
 
+# --enable-rigfilters     install rigorous filters
+# UNFINISHED!  Must add:
+#	check for existence of CFSQP
+#	look for CFSQP or take as argument?
+AC_ARG_ENABLE(rigfilters,
+[  --enable-rigfilters     enable rigorous filters, requires CFSQP package],
+[case $enable_rigfilters in
+   yes) AC_MSG_NOTICE([rigorous filters installed])
+        AC_DEFINE(RIGFILTERS, 1)
+	rigfilters=1
+	;;
+   no)  AC_DEFINE(RIGFILTERS, 0)
+        ;;
+    *)  echo "Error"
+        ;;
+esac])
+
 #
 # end of optionally configured features
 ################################################################
@@ -178,6 +195,11 @@ AC_CONFIG_HEADERS(src/config.h)
 # Write out Makefiles in src, testsuite subdirectories.
 AC_CONFIG_FILES(src/Makefile)
 AC_CONFIG_FILES(testsuite/Makefile)
+if test "$rigfilters" == 1; then
+AC_CONFIG_FILES(rigfilters/Makefile)
+else
+AC_MSG_NOTICE(Skipping output of rigfilters Makefile)
+fi
 
 # remember that sneaky if statement that wraps the source
 # configuration? well, it ends here.
