@@ -146,6 +146,9 @@ main(int argc, char **argv)
 
   if (projectX) 
     {
+      BandExperiment(cm);
+      exit(1);
+#if 0
       double **mx; 
       int     *min, *max;
       FILE   *ofp;
@@ -164,6 +167,7 @@ main(int argc, char **argv)
       free(min);
       free(max);
       exit(1);
+#endif
     }
 
   while (ReadSeq(sqfp, sqfp->format, &seq, &sqinfo))

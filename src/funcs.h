@@ -14,6 +14,7 @@ extern char **DigitizeAlignment(char **aseq, int nseq, int alen);
 
 /* from bandcyk.c
  */
+extern void     BandExperiment(CM_t *cm);
 extern double **BandDistribution(CM_t *cm, int W);
 extern void     BandBounds(double **gamma, int M, int W, double p, 
 			   int **ret_min, int **ret_max);
@@ -46,6 +47,9 @@ extern int   CalculateStateIndex(CM_t *cm, int node, char utype);
 extern int   TotalStatesInNode(int ndtype);
 extern int   SplitStatesInNode(int ndtype);
 extern int   InsertStatesInNode(int ndtype);
+extern int   StateDelta(int sttype);
+extern int   StateLeftDelta(int sttype);
+extern int   StateRightDelta(int sttype);
 extern void  PrintCM(FILE *fp, CM_t *cm);
 extern void  SummarizeCM(FILE *fp, CM_t *cm);
 extern char *Statetype(int type);

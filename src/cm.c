@@ -505,6 +505,84 @@ InsertStatesInNode(int ndtype)
 }
 
 
+
+
+/* Function:  StateDelta(), StateLeftDelta(), StateRightDelta()
+ * Incept:    SRE, Thu Oct  9 11:23:13 2003 [St. Louis]
+ *
+ * Purpose:   Convenience functions, mirroring some notation in Durbin et al.
+ *            and elsewhere. \Delta notation simplifies some expositions
+ *            of dynamic programming code.
+ *            
+ *            \Delta^R_v = 1 if the state emits right; else 0
+ *            \Delta^L_v = 1 if the state emits left;  else 0
+ *            \Delta_v   = 2 for pairwise, 1 for singlet, 0 for mute states.
+ *            
+ *            B_st, EL_st are special cases - Delta is returned as zero,
+ *            but can't be used the same way.                                
+ *
+ * Args:      sttype   - state type code, e.g. MP_st
+ *
+ * Returns:   (see above)
+ */
+int
+StateDelta(int sttype)
+{
+  switch (sttype) {
+  case D_st:  return 0;
+  case MP_st: return 2;
+  case ML_st: return 1;
+  case MR_st: return 1;
+  case IL_st: return 1;
+  case IR_st: return 1;
+  case S_st:  return 0;
+  case E_st:  return 0;
+  case B_st:  return 0;
+  case EL_st: return 0;
+  default: Die("bogus state type %d\n", sttype);
+  }
+}
+int
+StateLeftDelta(int sttype)
+{
+  switch (sttype) {
+  case D_st:  return 0;
+  case MP_st: return 1;
+  case ML_st: return 1;
+  case MR_st: return 0;
+  case IL_st: return 1;
+  case IR_st: return 0;
+  case S_st:  return 0;
+  case E_st:  return 0;
+  case B_st:  return 0;
+  case EL_st: return 0;
+  default: Die("bogus state type %d\n", sttype);
+  }
+}
+int
+StateRightDelta(int sttype)
+{
+  switch (sttype) {
+  case D_st:  return 0;
+  case MP_st: return 1;
+  case ML_st: return 0;
+  case MR_st: return 1;
+  case IL_st: return 0;
+  case IR_st: return 1;
+  case S_st:  return 0;
+  case E_st:  return 0;
+  case B_st:  return 0;
+  case EL_st: return 0;
+  default: Die("bogus state type %d\n", sttype);
+  }
+}
+
+
+
+
+
+
+
 /* Function: PrintCM()
  * Date:     SRE, Sat Jul 29 10:55:16 2000 [St. Louis]
  *

@@ -14,11 +14,122 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <float.h>
 
 #include "squid.h"
 #include "vectorops.h"
 #include "structs.h"
 #include "funcs.h"
+
+static int band_calculation(CM_t *cm, int W);
+
+void
+BandExperiment(CM_t *cm)
+{
+  int W;
+  int status;
+
+  W = 1000;
+  while (! band_calculation(cm, W))
+    {
+      W += 1000;
+      SQD_DPRINTF1(("increasing W to %d, redoing band calculation...\n", W));
+    }
+}
+
+static int
+band_calculation(CM_t *cm, int W)
+{
+  double **gamma;
+  int      v;			/* counter over states, 0..M-1                    */
+  int      y;			/* counter over connected states                  */
+  int      n;			/* counter over lengths, 0..W */
+  int      dv;			/* Delta for state v */
+  int      leftn;		/* length of left subsequence under a bifurc      */
+  double   pleqn;		/* P(<=n) for this state v */
+
+  gamma = MallocOrDie(sizeof(double *) * cm->M);        
+  for (v = 0; v < cm->M; v++) gamma[v] = NULL;
+
+  /* Allocate and initialize the shared end beam.
+   */
+  gamma[cm->M-1] = MallocOrDie(sizeof(double) * (W+1));
+  DSet(gamma[cm->M-1], W+1, 0.);
+  gamma[cm->M-1][0] = 1.0;
+
+  for (v = cm->M-1; v >= 0; v--)
+    {
+      /* share the end beam; it's initialized already.
+       */
+      if (cm->sttype[v] == E_st) {
+	gamma[v] = gamma[cm->M-1];
+	continue;
+      }
+
+      /* To optimize, replace this malloc with a reused pool of beams.
+       */
+      gamma[v] = MallocOrDie(sizeof(double) * (W+1));
+      DSet(gamma[v], W+1, 0.);
+      
+      /* Recursively calculate the probability density P(length=n) for this state v.
+       */
+      if (cm->sttype[v] == B_st) 
+	{
+	  pleqn = 0.;
+	  for (n = 0; n <= W; n++)
+	    {
+	      for (leftn = 0; leftn <= n; leftn++) 
+		gamma[v][n] += gamma[cm->cfirst[v]][leftn] * gamma[cm->cnum[v]][n-leftn];
+	      pleqn += gamma[v][n];
+	    }
+	}
+      else 
+	{
+	  pleqn = 0.;
+	  dv = StateDelta(cm->sttype[v]);
+	  for (n = dv; n <= W; n++)
+	    {
+	      for (y = 0; y < cm->cnum[v]; y++)
+		gamma[v][n] += cm->t[v][y] * gamma[cm->cfirst[v] + y][n-dv];
+	      pleqn += gamma[v][n];
+	    }
+	}
+
+      /* Make sure we've captured "enough" of the distribution (e.g.,
+       * cumulative probability is 1, within roundoff error). It would 
+       * be nice to have a good way of estimating our expected
+       * numerical error here, instead of making up an epsilon.
+       */
+      if (pleqn < 0.999999 || gamma[v][W] > DBL_EPSILON)
+	{
+	  for (v = 0; v < cm->M; v++) 
+	    if (cm->sttype[v] != E_st && gamma[v] != NULL) 
+	      { free(gamma[v]); gamma[v] = NULL; }
+	  free(gamma[cm->M-1]);
+	  free(gamma);
+	  return 0;		/* fail; caller must increase W and rerun. */
+	}
+      
+      /* Renormalize this beam.
+       */
+      DNorm(gamma[v], W+1);
+    }  
+
+  pleqn = 0.;
+  for (n = 0; n <= W; n++) 
+    {
+      pleqn += gamma[0][n];
+      printf("%d \t %g \t %g\n", n, gamma[0][n], pleqn);
+    }
+
+  for (v = 0; v < cm->M; v++) 
+    if (cm->sttype[v] != E_st && gamma[v] != NULL) 
+      { free(gamma[v]); gamma[v] = NULL; }
+  free(gamma[cm->M-1]);
+  free(gamma);
+  return 1;
+}
+
 
 
 /* Function: BandDistribution()
