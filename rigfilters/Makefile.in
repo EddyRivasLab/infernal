@@ -1,6 +1,6 @@
 all:
 	(cd cfsqp; make)
-	(cd lp_solve_4.0; make)
+	(cd lp_solve_4.0; tar -zxf lp_solve.tar.gz; make)
 	(cd cm2hmm-1.0; make -f Makefile.test)
 
 clean:
@@ -14,4 +14,5 @@ distclean:
 	(cd cm2hmm-1.0; make distclean -f Makefile.test)
 	(cd cfsqp; make distclean)
 	(cd lp_solve_4.0; make distclean)
+	-rm -r lp_solve_4.0/src/*
 	-rm Makefile
