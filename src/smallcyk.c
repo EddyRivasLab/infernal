@@ -29,11 +29,11 @@ struct deckpool_s {
 /* The dividers and conquerors.
  */
 static float generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
-			      int r, int vend, int i0, int j0);
+			      int r, int vend, int i0, int j0, int allow_begin);
 static float wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
-			    int r, int z, int i0, int j0);
+			    int r, int z, int i0, int j0, int allow_begin);
 static void  v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
-			int r, int z, int i0, int i1, int j1, int j0, int useEL);
+			int r, int z, int i0, int i1, int j1, int j0, int useEL, int allow_begin);
 
 /* The alignment engines. 
  */
@@ -103,9 +103,11 @@ static void    free_vji_shadow_matrix(char ***a, int r, int z, int j1, int j0);
 #define BE_PARANOID   1		/* setting for do_full: keep whole matrix */
 
 /*################################################################
- * The API.
+ * smallcyk API:
  * 
- * CYKDivideAndConquer() - the main routine. Align a model to a sequence.
+ * CYKDivideAndConquer()       - the main routine. Align a model to a sequence, globally.
+ * CYKGlocalDivideAndConquer() - glocal mode: whole query model, to i0..j0 in target sequence.
+ * CYKLocalDivideAndConquer()  - local mode: submodel rooted at r0, to i0..j0 in target seq. 
  *################################################################
  */  
 
@@ -152,6 +154,50 @@ CYKDivideAndConquer(CM_t *cm, char *dsq, int L, Parsetree_t **ret_tr)
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
   return sc;
 }
+
+/* Function:  CYKGlocalDivideAndConquer()
+ * Incept:    SRE, Wed Jul 24 09:05:00 2002 [St. Louis]
+ *
+ * Purpose:   Align a CM to a sequence using the divide and
+ *            conquer algorithm in its glocal alignment mode -
+ *            where we know the bounds i0,j0 of the hit on the
+ *            sequence dsq, and we know the alignment starts with
+ *            ROOT in the parse tree. 
+ *            
+ *            Just like the routine above, but we take i0,j0
+ *            as args.
+ *            
+ *            [It might look like you can use CYKLocalDivideAndConquer()
+ *            for this, and indeed that's what I did at first. Some
+ *            minor bookkeeping issues though. For instance, the first
+ *            state after the root 0 might be the insert states 1 or 2.
+ *            You can't pass 1 or 2 as r0; they're not in a split set,
+ *            so they'll fault the d&c algorithm. This bug was reported
+ *            by Sam in infernal 0.3, xref STL6 p.93.]
+ *            
+ * Args:     cm     - the covariance model
+ *           dsq    - the sequence, 1..L
+ *           L      - length of sequence
+ *           i0     - start position for optimal alignment
+ *           j0     - end position for optimal alignment
+ *           ret_tr - RETURN: traceback (pass NULL if trace isn't wanted)
+ *
+ * Returns:  (void)
+ */
+float
+CYKGlocalDivideAndConquer(CM_t *cm, char *dsq, int L, int i0, int j0,
+			  Parsetree_t **ret_tr)
+{
+  Parsetree_t *tr;
+  float        sc;
+
+  tr = CreateParsetree();
+  InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, i0, j0, 0);  /* init: attach the root S */
+  sc = generic_splitter(cm, dsq, L, tr, 0, cm->M-1, i0, j0); 
+  if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
+  return sc;
+}
+
 
 /* Function:  CYKLocalDivideAndConquer()
  * Incept:    SRE, Tue May 21 14:49:38 2002 [St. Louis]
@@ -335,34 +381,37 @@ CYKDemands(CM_t *cm, int L)
  * Date:     SRE, Sat May 12 15:08:38 2001 [CSHL]
  *
  * Purpose:  Solve a "generic problem": best parse of
- *           a possibly bifurcated subgraph cm^r_vend to
- *           a substring dsq[i0..j0]. r is always a start
- *           state (S_st) and vend is always an end 
- *           state (E_st).
- *           Given: a cm subgraph from r..vend
+ *           a possibly bifurcated subgraph cm^r_z to
+ *           a substring dsq[i0..j0]. r is usually a start
+ *           state (S_st) but may be any non-end state type in 
+ *           the case of local alignment begins (ROOT 0->r).
+ *           z is always an end state (E_st).
+ *
+ *           Given: a cm subgraph from r..z
  *                  a subsequence from i0..j0
- *           Attaches the optimal trace T{r..vend}, exclusive of r
- *           and inclusive of vend, to tr.
+ *           Attaches the optimal trace T{r..z}, exclusive of r
+ *           and inclusive of z, to tr.
  *           
  *           A full divide & conquer never terminates
  *           in generic_splitter; the recursion must
  *           terminate in v_splitter and wedge_splitter;
  *           so we don't test an end-of-recursion boundary.
  *           
- * Args:     cm -  model
- *           dsq - digitized sequence 1..L
- *           L   - length of dsq
- *           tr  - the traceback we're adding on to.
- *           r   - index of a start state (S_st) in the model       
- *           z   - index of an end state (E_st) in the model
- *           i0  - start in the sequence (1..L)
- *           j0  - end in the sequence (1..L)
+ * Args:     cm          - model
+ *           dsq         - digitized sequence 1..L
+ *           L           - length of dsq
+ *           tr          - the traceback we're adding on to.
+ *           r           - index of the root state of this problem in the model       
+ *           z           - index of an end state (E_st) in the model
+ *           i0          - start in the sequence (1..L)
+ *           j0          - end in the sequence (1..L)
+ *           allow_begin - TRUE to allow a 0->v local begin transition.
  *
  * Returns:  score of the optimal parse of dsq(i0..j0) with cm^r_z 
  */
 static float
 generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
-		 int r, int z, int i0, int j0)
+		 int r, int z, int i0, int j0, int allow_begin)
 {
   float ***alpha;
   float ***beta;
@@ -378,6 +427,8 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
   int      best_d;		/* optimal d for the optimal split */
   int      best_j;		/* optimal j for the optimal split */
   int      tv;			/* remember the position of a bifurc in the trace. */
+  int      b1,b2;		/* argmax_v for 0->v local begin transitions */
+  float    b1_sc, b2_sc;	/* max_v scores for 0->v local begin transitions */
 
   /* 1. If the generic problem is small enough, solve it with inside^T,
    *    and append the trace to tr.
@@ -385,9 +436,9 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
   if (insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT) {
     SQD_DPRINTF1(("Solving a generic w/ insideT - G%d[%s]..%d[%s], %d..%d\n",
 		  r, UniqueStatetype(cm->stid[r]),
-		  vend, UniqueStatetype(cm->stid[z]),
+		  z, UniqueStatetype(cm->stid[z]),
 		  i0, j0));
-    sc = insideT(cm, dsq, L, tr, r, z, i0, j0);
+    sc = insideT(cm, dsq, L, tr, r, z, i0, j0, allow_begin);
     return sc;
   }
 
@@ -403,7 +454,7 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    */
   if (v > z-5) {		/* no bifurc? it's a wedge problem  */
     if (cm->sttype[z] != E_st) Die("inconceivable.");
-    sc = wedge_splitter(cm, dsq, L, tr, r, z, i0, j0);
+    sc = wedge_splitter(cm, dsq, L, tr, r, z, i0, j0, allow_begin);
     return sc;
   }
 
@@ -416,9 +467,11 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
   else       { yend = w-1; wend = z; }
 
   /* Calculate alpha[w] deck and alpha[y] deck.
+   * We also get b1: best choice for 0->b local begin. b1_sc is the score if we do this.
+   * Analogous for b2, b2_sc on the other side.
    */
-  inside(cm, dsq, L, w, wend, i0, j0, BE_EFFICIENT, NULL,  &alpha, NULL, &pool, NULL);
-  inside(cm, dsq, L, y, yend, i0, j0, BE_EFFICIENT, alpha, &alpha, pool, &pool, NULL);
+  inside(cm, dsq, L, w, wend, i0, j0, BE_EFFICIENT, NULL,  &alpha, NULL, &pool, NULL, &b1, &b1_sc);
+  inside(cm, dsq, L, y, yend, i0, j0, BE_EFFICIENT, alpha, &alpha, pool, &pool, NULL, &b2, &b2_sc);
 
   /* Calculate beta[v] deck (stick it in alpha). Let the pool get free'd.
    * (If we're doing local alignment, deck M is the beta[EL] deck.)
@@ -452,11 +505,28 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 	for (d = jp; d >= 0; d--)
 	  if ((sc = beta[cm->M][j][d]) > best_sc) {
 	    best_sc = sc;
-	    best_k  = -1;	/* flag for local alignment. */
+	    best_k  = -1;	/* special flag for local end, EL. */
 	    best_j  = j;
 	    best_d  = d;
 	  }
       }
+  }
+
+  /* Local alignment only: maybe we're better off in ROOT?
+   */
+  if (allow_begin && cm->flags & CM_LOCAL_BEGIN) {
+    if (b1_sc > best_sc) {
+      best_sc = b1_sc;
+      best_k  = -2;		/* flag for using local begin into left wedge w..wend */
+      best_j  = j0;		
+      best_d  = W;
+    }
+    if (b2_sc > best_sc) {
+      best_sc = b2_sc;
+      best_k  = -3;		/* flag for using local begin into right wedge y..yend */
+      best_j  = j0;		
+      best_d  = W;
+    }
   }
 
   /* Free now, before recursing.
@@ -471,11 +541,24 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    * in a V problem that's still above us. The TRUE flag sets useEL.
    */
   if (best_k == -1) {	
-    v_splitter(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0, TRUE);    
+    v_splitter(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0, TRUE, allow_begin);    
     return best_sc;
   } 
 
-  /* We used B in the optimal split.
+  /* Else: if we're in the root 0, we know which r we did our local begin into.
+   * We have a generic problem rooted there. The FALSE flag disallows
+   * any further local begins.
+   */
+  if (best_k == -2) {
+    generic_splitter(cm, dsq, L, tr, b1, wend, i0, j0, FALSE);
+    return best_sc;
+  }
+  if (best_k == -3) {
+    generic_splitter(cm, dsq, L, tr, b2, yend, i0, j0, FALSE);
+    return best_sc;
+  }
+
+  /* Else (the usual case), ok, we did use B in the optimal split.
    * Split now into a V problem and two generic problems, and recurse
    * left fragment: i1 = j-d+1, j1 = j-k, vroot = w, vend = wend
    * right frag:    i2 = j-k+1, j2 = j,   vroot = y, vend = yend
@@ -497,13 +580,13 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 		yend, UniqueStatetype(cm->stid[yend]),
 		best_j-best_k+1, best_j));
 
-  v_splitter(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0, FALSE);
+  v_splitter(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0, FALSE, allow_begin);
   tv = tr->n-1;
 
   InsertTraceNode(tr, tv, TRACE_LEFT_CHILD, best_j-best_d+1, best_j-best_k, w);
-  generic_splitter(cm, dsq, L, tr, w, wend, best_j-best_d+1, best_j-best_k);
+  generic_splitter(cm, dsq, L, tr, w, wend, best_j-best_d+1, best_j-best_k, FALSE);
   InsertTraceNode(tr, tv, TRACE_RIGHT_CHILD, best_j-best_k+1, best_j, y);
-  generic_splitter(cm, dsq, L, tr, y, yend, best_j-best_k+1, best_j);
+  generic_splitter(cm, dsq, L, tr, y, yend, best_j-best_k+1, best_j, FALSE);
 
   return best_sc;
 }
@@ -517,7 +600,9 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
  *           the wedge problem comes from being a special case
  *           of a generic problem) or a non-insert state
  *           (D, MP, ML, MR) (when the wedge comes from a
- *           previous wedge_splitter). z is always an end state.
+ *           previous wedge_splitter), or indeed, any non-end
+ *           state (when wedge comes from a local begin).
+ *           z, however, is always an end state.
  *           
  *           Attaches the optimal trace T(r..z), exclusive
  *           of r and inclusive of z, to the growing trace tr.
@@ -527,19 +612,21 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
  *           All remaining sequence of i0..j0 that r doesn't emit
  *           must be dealt with by insert states.
  *
- * Args:     cm -  model
- *           dsq - digitized sequence 1..L
- *           L   - length of dsq
- *           tr  - the traceback we're adding on to.
- *           r   - index of the first state in the subgraph (S; or D,ML,MR,or MP)
- *           z   - index of an end state (E_st) in the model
- *           i0  - start in the sequence (1..L)
- *           j0  - end in the sequence (1..L)
+ * Args:     cm          - model
+ *           dsq         - digitized sequence 1..L
+ *           L           - length of dsq
+ *           tr          - the traceback we're adding on to.
+ *           r           - index of the first state in the subgraph
+ *           z           - index of an end state (E_st) in the model
+ *           i0          - start in the sequence (1..L)
+ *           j0          - end in the sequence (1..L)
+ *           allow_begin - TRUE to allow a 0->v local begin transition
  *
  * Returns:  The score of the best parse in bits.
  */
 static float 
-wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0)
+wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0,
+	       int allow_begin)
 {
   float ***alpha;
   float ***beta;
@@ -551,6 +638,8 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
   int   d, jp, j;
   int   best_v, best_d, best_j;
   int   midnode;
+  int   b;			/* optimal local begin: b = argmax_v alpha_v(i0,j0) + t_0(v) */
+  int   bsc;			/* score for optimal local begin      */
   
   /* 1. If the wedge problem is either a boundary condition,
    *    or small enough, solve it with inside^T and append
@@ -567,7 +656,7 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
 		r, UniqueStatetype(cm->stid[r]),
 		z, UniqueStatetype(cm->stid[z]),
 		i0,j0));
-      sc = insideT(cm, dsq, L, tr, r, z, i0, j0);
+      sc = insideT(cm, dsq, L, tr, r, z, i0, j0, allow_begin);
       return sc;
     }
 
@@ -585,9 +674,11 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
    *    We rely on a side effect of how deallocation works
    *    in these routines; the w..y decks are guaranteed
    *    to be retained.
-   *    beta[cm->M] will contain the EL deck, if needed...
+   *    b will contain the optimal 0->v state for a local begin, and bsc
+   *    is the score for using it.
+   *    beta[cm->M] will contain the EL deck, if needed for local ends.
    */
-  inside(cm, dsq, L, w, z, i0, j0, BE_EFFICIENT, NULL, &alpha, NULL, &pool, NULL);
+  inside(cm, dsq, L, w, z, i0, j0, BE_EFFICIENT, NULL, &alpha, NULL, &pool, NULL, &b, &bsc);
   outside(cm, dsq, L, r, y, i0, j0, BE_EFFICIENT, NULL, &beta, pool, NULL);
 
   /* 4. Find the optimal split at the split set: best_v, best_d, best_j
@@ -625,6 +716,17 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
       }
   }
 
+  /* Local alignment begins only: maybe we're better off in the root.
+   */
+  if (allow_begin && (cm->flags & CM_LOCAL_BEGIN)) {
+    if (bsc > best_sc) {
+      best_sc = bsc;
+      best_v  = -2;		/* flag for local alignment */
+      best_j  = j0;
+      best_d  = W;
+    }
+  }
+
   /* free now, before recursing!
    */
   free_vjd_matrix(alpha, cm->M, w, z, i0, j0);
@@ -637,11 +739,21 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
    * initialize the whole thing to IMPOSSIBLE anyway.
    */  
   if (best_v == -1) {
-    v_splitter(cm, dsq, L, tr, r, w, i0, best_j-best_d+1, best_j, j0, TRUE);    
+    v_splitter(cm, dsq, L, tr, r, w, i0, best_j-best_d+1, best_j, j0, TRUE, allow_begin);    
     return best_sc;
   }
 
-  /* 5. The optimal split into a V problem and a wedge problem:
+  /* If we're in the root because of a local begin, the local alignment
+   * is entirely in a wedge problem that's still below us, rooted at b.
+   * The FALSE flag prohibits any more local begins in this and subsequent
+   * problems. 
+   */
+  if (best_v == -2) {
+    wedge_splitter(cm, dsq, L, tr, b, z, i0, j0, FALSE);
+    return best_sc; 
+  }
+
+  /* Else (usual case): the optimal split into a V problem and a wedge problem:
    *    i1 = best_j-best_d+1, j1 = best_j
    *    the V problem:     r..v, i0..i1, j1..j0
    *    the wedge problem: v..z, i1..j1
@@ -659,9 +771,8 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
 		z, UniqueStatetype(cm->stid[z]),
 		best_j-best_d+1, best_j));
 
-  v_splitter(cm, dsq, L, tr, r, best_v, i0, best_j-best_d+1, best_j, j0, FALSE);
-  wedge_splitter(cm, dsq, L, tr, best_v, z, best_j-best_d+1, best_j);
-
+  v_splitter(cm, dsq, L, tr, r, best_v, i0, best_j-best_d+1, best_j, j0, FALSE, allow_begin);
+  wedge_splitter(cm, dsq, L, tr, best_v, z, best_j-best_d+1, best_j, FALSE);
   return best_sc;
 }
 
@@ -679,21 +790,23 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
  *           
  *           r and z can be any non-insert state. 
  *
- * Args:     cm -  model
- *           dsq - digitized sequence 1..L
- *           L   - length of dsq
- *           tr  - the traceback we're adding on to.
- *           r   - index of the first state in the subgraph 
- *           z   - index of the last state in the subgraph
- *           i0,i1 - first part of the subsequence (1..L)
- *           j1,j0 - second part of the subsequence (1..L)
- *           useEL - TRUE if i1,j1 aligned to EL, not z
+ * Args:     cm          -  model
+ *           dsq         - digitized sequence 1..L
+ *           L           - length of dsq
+ *           tr          - the traceback we're adding on to.
+ *           r           - index of the first state in the subgraph 
+ *           z           - index of the last state in the subgraph
+ *           i0,i1       - first part of the subsequence (1..L)
+ *           j1,j0       - second part of the subsequence (1..L)
+ *           useEL       - TRUE if i1,j1 aligned to EL, not z
+ *           allow_begin - TRUE to allow 0->v internal begin transitions.
  * 
  * Returns:  (void)
  */
 static void
 v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
-	   int r, int z, int i0, int i1, int j1, int j0, int useEL)
+	   int r, int z, int i0, int i1, int j1, int j0, 
+	   int useEL, int allow_begin)
 {
   float ***alpha, ***beta;      /* inside and outside matrices */
   struct deckpool_s *pool;      /* pool for holding alloced decks */
@@ -704,6 +817,8 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
   int   best_i, best_j;		/* optimal i', j' split point */
   float best_sc;		/* score at optimal split point */
   int   midnode;
+  int   b;			/* optimal choice for a 0->b local begin  */
+  float bsc;			/* score if we use the local begin */
 
   /* 1. If the V problem is either a boundary condition, or small
    *    enough, solve it with v_inside^T and append the trace to tr.
@@ -717,7 +832,7 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 		r, UniqueStatetype(cm->stid[r]),
 		z, UniqueStatetype(cm->stid[z]),
 		i0,j1,j1,j0));
-      vinsideT(cm, dsq, L, tr, r, z, i0, i1, j1, j0, useEL);
+      vinsideT(cm, dsq, L, tr, r, z, i0, i1, j1, j0, useEL, allow_begin);
       return;
     }
 
@@ -732,9 +847,10 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    *    As with wedge_splitter(), we rely on a side effect of how
    *    deallocation works, so the w..y decks are retained
    *    in alpha and beta even though we're in small memory mode.
+   *    beta[cm->M] is the EL deck, needed for local ends.
    */
   vinside (cm, dsq, L, w, z, i0, i1, j1, j0, useEL, BE_EFFICIENT, 
-	   NULL, &alpha, NULL, &pool, NULL);
+	   NULL, &alpha, NULL, &pool, NULL, &b, &bsc);
   voutside(cm, dsq, L, r, y, i0, i1, j1, j0, useEL, BE_EFFICIENT, 
 	   NULL, &beta,  pool, NULL);
 
@@ -755,7 +871,7 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
   /* Local alignment ends: maybe we're better off in EL, not
    * the split set?
    */
-  if (useEL && cm->flags & CM_LOCAL_END) {
+  if (useEL && (cm->flags & CM_LOCAL_END)) {
     for (ip = 0; ip <= i1-i0; ip++)
       for (jp = 0; jp <= j0-j1; jp++)
 	if ((sc = beta[cm->M][jp][ip]) > best_sc) {
@@ -766,6 +882,17 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 	}
   }
 	
+  /* Local alignment begins: maybe we're better off in root...
+   */
+  if (allow_begin && (cm->flags & CM_LOCAL_BEGIN)) {
+    if (bsc > best_sc) {
+      best_sc = bsc;
+      best_v  = -2;
+      best_i  = i0;
+      best_j  = j0;
+    }
+  }
+
   /* Free now, before recursing!
    */
   free_vji_matrix(alpha, cm->M, r, z, j1, j0);
@@ -773,13 +900,23 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 
   /* If we're in EL, instead of the split set, the optimal
    * alignment is entirely in a V problem that's still above us.
-   * The TRUE flag sets useEL. 
+   * The TRUE flag sets useEL; we propagate allow_begin. 
    */
   if (best_v == -1) {
-    v_splitter(cm, dsq, L, tr, r, w, i0, best_i, best_j, j0, TRUE);    
+    v_splitter(cm, dsq, L, tr, r, w, i0, best_i, best_j, j0, TRUE, allow_begin);    
     return;
   }
 
+  /* If we used a local begin, the optimal alignment is
+   * entirely in a V problem that's still below us, rooted
+   * at b, for the entire one-hole sequence. The FALSE
+   * flag prohibits more local begin transitions; we propagate
+   * useEL.
+   */
+  if (best_v == -2) {
+    v_splitter(cm, dsq, L, tr, b, z, i0, i1, j1, j0, useEL, FALSE);    
+    return;
+  }
 
   /* The optimal split into two V problems:
    *    V:   r..v, i0..i', j'..j0
@@ -797,8 +934,8 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 		z, UniqueStatetype(cm->stid[z]),
 		best_i, i1, j1, best_j));
 
-  v_splitter(cm, dsq, L, tr, r,      best_v, i0,     best_i, best_j, j0, FALSE);
-  v_splitter(cm, dsq, L, tr, best_v, z,      best_i, i1,     j1,     best_j, useEL);
+  v_splitter(cm, dsq, L, tr, r,      best_v, i0,     best_i, best_j, j0, FALSE, allow_begin);
+  v_splitter(cm, dsq, L, tr, best_v, z,      best_i, i1,     j1,     best_j, useEL, FALSE);
   return;
 }
 
@@ -845,6 +982,12 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
  *           Note that the (alpha, ret_alpha) calling idiom allows the
  *           caller to provide an existing matrix or not, and to
  *           retrieve the calculated matrix or not, in any combination.
+ *           
+ *           We also deal with local begins, by keeping track of the optimal
+ *           state that we could enter and account for the whole target 
+ *           sequence: b = argmax_v  alpha_v(1,L) + log t_0(v),
+ *           and bscore is the score for that. We can only ever use these for
+ *           i0==1 && j0==L, but they are nonetheless always returned.
  *
  * Args:     cm        - the model    [0..M-1]
  *           dsq       - the sequence [1..L]   
@@ -870,6 +1013,9 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
  *                       because of the size of the subseq decks.
  *           ret_shadow- if non-NULL, the caller wants a shadow matrix, because
  *                       he intends to do a traceback.
+ *           ret_b     - best local begin state.
+ *           ret_bsc   - score for using ret_b                        
+ *                       
  *
  * Returns:  
  */
@@ -877,7 +1023,7 @@ static float
 inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
        float ***alpha, float ****ret_alpha, 
        struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
-       void ****ret_shadow)
+       void ****ret_shadow, int *ret_b, float *ret_bsc)
 {
   float  **end;                 /* we re-use the end deck. */
   int      nends;               /* counter that tracks when we can release end deck to the pool */
@@ -891,13 +1037,17 @@ inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_f
   void  ***shadow;              /* shadow matrix for tracebacks */
   int    **kshad;               /* a shadow deck for bifurcations */
   char   **yshad;               /* a shadow deck for every other kind of state */
+  int      b;			/* best local begin state */
+  float    bsc;			/* score for using the best local begin state */
+
 
   /* Allocations and initializations
    */
+  b   = -1;
+  bsc = IMPOSSIBLE;
+  W   = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
 				/* if caller didn't give us a deck pool, make one */
   if (dpool == NULL) dpool = deckpool_create();
-
-  W     = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
   if (! deckpool_pop(dpool, &end))
     end = alloc_vjd_deck(L, i0, j0);
   nends = CMSubtreeCountStatetype(cm, vroot, E_st);

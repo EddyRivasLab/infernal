@@ -68,21 +68,8 @@ PROGS = cmbuild\
 #      and moves the supported executables into binaries/ subdirectory.
 #
 all: version.h
-	@if test -d binaries; then\
-	   echo "You appear to already have a compiled INFERNAL distribution.";\
-           echo "You don't need to make.";\
-           echo "";\
-	   echo "If I'm wrong, it's because I'm only looking to see if you have";\
-           echo "a 'binaries' directory; do 'make srcclean' to revert INFERNAL";\
-           echo "to a pristine source distribution.";\
-	else\
-           (cd squid; make CC="$(CC)" CFLAGS="$(CFLAGS)" module);\
-           (cd src;   make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module);\
-           mkdir binaries;\
-              for prog in $(PROGS); do\
-              mv src/$$prog binaries/;\
-           done;\
-	fi
+	(cd squid; make CC="$(CC)" CFLAGS="$(CFLAGS)" module);\
+	(cd src;   make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module);\
 
 # version.h: 
 #   create the version.h file that will define stamps used by 
@@ -162,7 +149,6 @@ clean:
 # "make distclean" leaves a pristine source distribution.
 #
 distclean:
-	-rm -rf binaries
 	-rm config.cache config.log config.status
 	-rm version.h
 	make clean

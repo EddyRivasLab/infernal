@@ -20,6 +20,7 @@ extern void  FreeCM(CM_t *cm);
 extern void  CMSetDefaultNullModel(CM_t *cm);
 extern void  CMSimpleProbify(CM_t *cm);
 extern void  CMLogoddsify(CM_t *cm);
+extern void  CMHackInsertScores(CM_t *cm);
 extern int   CMCountStatetype(CM_t *cm, char type);
 extern int   CMSegmentCountStatetype(CM_t *cm, int r, int z, char type);
 extern int   CMSubtreeCountStatetype(CM_t *cm, int v, char type);
@@ -87,6 +88,8 @@ extern float CYKScanRequires(CM_t *cm, int L, int W);
 /* from smallcyk.c
  */
 extern float CYKDivideAndConquer(CM_t *cm, char *dsq, int L, Parsetree_t **ret_tr);
+extern float CYKGlocalDivideAndConquer(CM_t *cm, char *dsq, int L, int i0, int j0,
+				       Parsetree_t **ret_tr);
 extern float CYKLocalDivideAndConquer(CM_t *cm, char *dsq, int L, int r0, int i0, int j0,
 				      Parsetree_t **ret_tr);
 extern float CYKInside(CM_t *cm, char *dsq, int L, Parsetree_t **ret_tr);

@@ -224,6 +224,41 @@ CMLogoddsify(CM_t *cm)
     }
 }
 
+/* Function:  CMHackInsertScores()
+ * Incept:    SRE, Wed Jul 24 09:48:22 2002 [St. Louis]
+ *
+ * Purpose:   Temporary (I hope): make all insert scores 0.
+ *            If you let inserts train on the data, you can get
+ *            positive insert emission scores. Local alignments,
+ *            in particular, can then consist of just a couple of
+ *            consensus states and a long string of insert 
+ *            states, hitting base-composition-biased sequence
+ *            with very high score. This is a Bad Thing.
+ *            
+ *            The long term solution for this problem will
+ *            go in with mixture Dirichlet priors, but for now
+ *            (with only Laplace coded), this'll appease the
+ *            pitchfork and torches mob at Cambridge.
+ *
+ * Args:      cm - the model 
+ *
+ * Returns:   (void)
+ *
+ * Xref:      STL6 p.93.
+ */
+void
+CMHackInsertScores(CM_t *cm)
+{
+  int v, x;
+  for (v = 0; v < cm->M; v++)
+    {
+      if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
+	for (x = 0; x < Alphabet_size; x++)
+	  cm->esc[v][x] = 0.;
+    }
+}
+
+
 /* Function: CMCountStatetype(), CMSubtreeCountStatetype(), CMSegmentCountStatetype
  * Date:     SRE, Wed Aug  2 09:15:00 2000 [St. Louis]
  *

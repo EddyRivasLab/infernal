@@ -133,6 +133,7 @@ main(int argc, char **argv)
 
   if (do_local) ConfigLocal(cm, 0.5, 0.5);
   CMLogoddsify(cm);
+  CMHackInsertScores(cm);	/* make insert emissions score zero. "TEMPORARY" FIX. */
   cons = CreateCMConsensus(cm, 3.0, 1.0); 
 
   StopwatchZero(watch);
@@ -164,8 +165,12 @@ main(int argc, char **argv)
 		 ci, cj,
 		 hitsc[i]);
 	  
-	  CYKLocalDivideAndConquer(cm, dsq, sqinfo.len, 
-				   hitr[i], hiti[i], hitj[i], &tr);
+	  if (do_local) 
+	    CYKLocalDivideAndConquer(cm, dsq, sqinfo.len, 
+				     hitr[i], hiti[i], hitj[i], &tr);
+	  else
+	    CYKGlocalDivideAndConquer(cm, dsq, sqinfo.len, 
+				      hiti[i], hitj[i], &tr);
 	  
 	  ali = CreateFancyAli(tr, cm, cons, dsq);
 	  PrintFancyAli(stdout, ali);

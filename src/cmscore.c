@@ -23,13 +23,12 @@ static char banner[] = "cmscore - score RNA covariance model against sequences";
 
 static char usage[]  = "\
 Usage: cmscore [-options] <cmfile> <sequence file>\n\
-The sequence file is expected to be in FASTA format.\n\
   Available options are:\n\
    -h     : help; print brief help on version and usage\n\
 ";
 
 static char experts[] = "\
-   --informat <s>: specify that input alignment is in format <s>, not FASTA\n\
+   --informat <s>: specify that input sequence file is in format <s>\n\
    --smallonly   : do only d&c, don't do full CYK/inside\n\
    --scoreonly   : for full CYK/inside stage, do only score, save memory\n\
 ";
