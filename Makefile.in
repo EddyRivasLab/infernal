@@ -75,7 +75,6 @@ all:
 	(cd squid;     make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module)
 	(cd src;       make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module)
 	(cd testsuite; make CC="$(CC)" CFLAGS="$(CFLAGS)")
-	if test -e rigfilters/Makefile;	then cd rigfilters; make; fi
 ifeq ($(RIGFILTERS),1)
 	(cd rigfilters; make)
 endif

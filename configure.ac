@@ -67,6 +67,10 @@ AC_PROG_CC
 AC_PROG_RANLIB
 AC_PATH_PROG([AR], [ar], [:], [$PATH:/usr/ccs/bin:/usr/xpg4/bin])
 
+# Test for LEX, and YACC (for lp_solve)
+AC_PROG_LEX
+AC_PROG_YACC
+
 # GNU make check; makefile dependency lines for executables.
 # original from John Darrington <j.darrington@elvis.murdoch.edu.au> 
 # w/ heavy modifications from me.
@@ -229,7 +233,6 @@ if test "$rigfilters" == 1; then
     AC_MSG_NOTICE([CFSQP located, including rigfilters package in build])
   fi
 fi
-AC_SUBST(CFSQP_PATH,$cfsqp_path)
 AC_SUBST(RIGFILTERS,$rigfilters)
 
 #
@@ -254,6 +257,7 @@ AC_CONFIG_FILES(testsuite/Makefile)
 if test "$rigfilters" == 1; then
 AC_CONFIG_FILES(rigfilters/Makefile)
 AC_CONFIG_FILES(rigfilters/cfsqp/Makefile)
+AC_CONFIG_FILES(rigfilters/lp_solve_4.0/Makefile)
 else
 AC_MSG_NOTICE([Skipping output of rigfilters Makefile])
 fi
