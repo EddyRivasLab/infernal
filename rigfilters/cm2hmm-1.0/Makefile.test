@@ -4,7 +4,7 @@ COMPILE=g++ -c
 LINK=g++
 
 INFERNAL_PATH=/home/dev/infernal
-LPSOLVE_PATH=$(INFERNAL_PATH)/rigfilters/lp_solve_4.0
+LPSOLVE_PATH=$(INFERNAL_PATH)/rigfilters/lp_solve_4.0/src
 CFSQP_PATH=$(INFERNAL_PATH)/rigfilters/cfsqp
 
 LIBS=$(INFERNAL_PATH)/src/libinfernal.a $(INFERNAL_PATH)/squid/libsquid.a $(LPSOLVE_PATH)/liblpk.a $(CFSQP_PATH)/cfsqp.a
