@@ -14,7 +14,7 @@
 #include <math.h>
 
 #include "squid.h"
-
+#include "nstack.h"
 #include "structs.h"
 #include "funcs.h"
 
@@ -440,3 +440,165 @@ UniqueStatetype(int type)
   return "";
 }
 
+
+/* Function: CMRebalance()
+ * Date:     SRE, Mon Apr  8 11:40:46 2002 [St. Louis]
+ *
+ * Purpose:  Rebalance a CM tree to guarantee O(N^2 log N) memory in
+ *           smallcyk.c's divide and conquer algorithm.
+ * 
+ *           Input: a CM that's numbered in preorder traversal: 
+ *           visit root, visit left, visit right. (e.g., left
+ *           child S always visited before right child S, 
+ *           cfirst[w] < cnum[y], as produced by modelmaker.c).
+ *           
+ *           Output: a renumbered CM, in a modified preorder traversal:
+ *           visit root, visit min weight child, visit max weight child,
+ *           where weight is the # of extra CYK decks that'll need to
+ *           be held in memory to calculate this subgraph.
+ *           
+ * Args:     cm - the old CM
+ *
+ * Returns:  A new CM. 
+ *           Caller is responsible for free'ing this with FreeCM().
+ */
+CM_t *
+CMRebalance(CM_t *cm)
+{
+  Nstack_t *pda;          /* stack used for traversing old CM */
+  CM_t     *new;          /* new CM we're creating */
+  int      *wgt;          /* # of extra CYK decks required to calc subgraphs */
+  int      *newidx;       /* newidx[v] = old CM state v's new index in new CM */
+  int       v, w, y,z;	  /* state indices in old CM */
+  int       nv;		  /* state index in new CM */
+  int       x;		  /* counter over transitions, residues, nodes */
+
+  /* Create the new model. Copy information that's unchanged by
+   * renumbering the CM.
+   */
+  new = CreateCM(cm->nodes, cm->M);
+  new->name = sre_strdup(cm->name, -1);
+  new->acc  = sre_strdup(cm->acc,  -1);
+  new->desc = sre_strdup(cm->desc, -1);
+  for (x = 0; x < Alphabet_size; x++) new->null[x] = cm->null[x];
+
+  /* Calculate "weights" (# of required extra decks) on every B and S state.
+   * Recursive rule here is: 1 + min(wgt[left], wgt[right]).
+   */
+  wgt = MallocOrDie(sizeof(int) * cm->M);
+  for (v = cm->M-1; v >= 0; v--) 
+    {
+      if      (cm->sttype[v] == E_st) /* initialize unbifurcated segments with 1 */
+	wgt[v] = 1; 
+      else if (cm->sttype[v] == B_st) /* "cfirst"=left S child. "cnum"=right S child. */
+	wgt[v] = 1 + MIN(wgt[cm->cfirst[v]], wgt[cm->cnum[v]]);
+      else 
+	wgt[v] = wgt[v+1];            /* all other states propagate up to S */
+    }
+
+  /* Now, preorder traverse the new CM. At each bifurcation, we want
+   * to visit the S with minimum weight first. v is an index on the
+   * old CM, and we hop it around using this traversal order and a
+   * pushdown stack. nv is an index on the new CM, which just moves
+   * in preorder traversal 0..cm->M-1.
+   * 
+   */
+  v = 0;
+  z = cm->M-1;
+  pda = CreateNstack();
+  newidx = MallocOrDie(sizeof(int) * cm->M);
+  for (nv = 0; nv < cm->M; nv++)
+    {    
+      newidx[v] = nv;		/* keep a map of where the old states are going in new CM */
+
+      /* Copy old v to new nv. 
+       * First, the easy stuff, that's unaffected by renumbering.
+       */
+      new->sttype[nv] = cm->sttype[v];
+      new->ndidx[nv]  = cm->ndidx[v];
+      new->stid[nv]   = cm->stid[v];
+      new->pnum[nv]   = cm->pnum[v];
+      for (x = 0; x < MAXCONNECT; x++) {
+	new->t[nv][x]   = cm->t[v][x];
+	new->tsc[nv][x] = cm->t[v][x];
+      }
+      for (x = 0; x < Alphabet_size*Alphabet_size; x++) {
+	new->e[nv][x] = cm->e[v][x];
+	new->esc[nv][x] = cm->esc[v][x];
+      }
+
+      /* Slightly harder - the plast connection for nv, to the last
+       * of 1-6 parent states. We use the newidx map to get it from plast[v].
+       */
+      if (nv != 0) new->plast[nv] = newidx[cm->plast[v]];
+      else         new->plast[nv] = -1;	/* ROOT. */
+
+      /* Now, figure out next v, and make cfirst, cnum connections.
+       * 
+       * If we're a B, then traverse to the lighter child S state first.
+       * Remember the overload in CM struct: cfirst = idx of left child; 
+       * cnum = idx of right child. So if we visit left w first, cfirst=nv+1; 
+       * if we visit right y first, cnum=nv+1. Getting the second child
+       * index is a little tricky: we rely on knowing that 
+       * the # of states in the first subgraph we visit is y-w,
+       * so we know the second child index is nv+y-w+1.
+       * 
+       * If we're an E, pop the next v off the stack. cfirst=-1,cnum=0, because
+       * it has no children.
+       * 
+       * Else, the next v is just v++. cfirst for new nv can be calculated by using the
+       * offset in the old model: e.g. nv + (cfirst[v] - v). cnum is unchanged.
+       * 
+       */
+      if (cm->sttype[v] == B_st) 
+	{
+	  w = cm->cfirst[v];	/* left child of v*/
+	  y = cm->cnum[v];	/* right child of v*/
+
+	  if (wgt[w] < wgt[y])	/* left (w) lighter? visit w first, defer y */
+	    { 
+	      PushNstack(pda, y); 
+	      PushNstack(pda, z);
+	      v = w; 
+	      z = y-1;
+	      new->cfirst[nv] = nv+1;     /* left child is nv+1 */
+	      new->cnum[nv]   = nv+y-w+1; 
+	    }  
+	  else			/* right (y) lighter? visit y first, defer w */
+	    { 
+	      PushNstack(pda, w); 
+	      PushNstack(pda, y-1);
+	      v = y;		/* z unchanged. */
+	      new->cfirst[nv] = nv+z-y+2; 
+	      new->cnum[nv]   = nv+1;     /* right child is nv+1 */
+	    }
+	}
+      else if (cm->sttype[v] == E_st) 
+	{
+	  new->cfirst[nv] = -1;
+	  new->cnum[nv]   = 0;
+	  PopNstack(pda, &z);
+	  PopNstack(pda, &v);
+	}
+      else	
+	{
+	  new->cfirst[nv] = nv + (cm->cfirst[v]-v); /* use offset in old model */
+	  new->cnum[nv]   = cm->cnum[v];            /* cnum unchanged. */
+	  v++;
+	}
+    }
+
+  /* Guide tree numbering is unchanged - still in preorder.
+   * Associate nodes with new state numbering.
+   */
+  for (x = 0; x < new->nodes; x++) 
+    {
+      new->nodemap[x] = newidx[cm->nodemap[x]];
+      new->ndtype[x]  = cm->ndtype[x];
+    }
+
+  free(wgt);
+  free(newidx);
+  FreeNstack(pda);
+  return new;
+}

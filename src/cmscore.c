@@ -31,11 +31,13 @@ The sequence file is expected to be in FASTA format.\n\
 static char experts[] = "\
    --informat <s>: specify that input alignment is in format <s>, not FASTA\n\
    --smallonly   : do only d&c, don't do full CYK/inside\n\
+   --scoreonly   : for full CYK/inside stage, do only score, save memory\n\
 ";
 
 static struct opt_s OPTIONS[] = {
   { "-h", TRUE, sqdARG_NONE }, 
   { "--informat",   FALSE, sqdARG_STRING },
+  { "--scoreonly",  FALSE, sqdARG_NONE },
   { "--smallonly",  FALSE, sqdARG_NONE },
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
@@ -56,7 +58,9 @@ main(int argc, char **argv)
   float            sc1,  sc2;	/* score of a sequence */
   Parsetree_t     *tr1, *tr2;	/* a traceback */
   
+  int   do_scoreonly;		/* TRUE for score-only (small mem) full CYK */
   int   do_smallonly;		/* TRUE to do only d&c, not full CYK/inside */
+  
 
   char *optname;                /* name of option found by Getopt()        */
   char *optarg;                 /* argument found by Getopt()              */
@@ -67,11 +71,13 @@ main(int argc, char **argv)
    ***********************************************/
 
   format            = SQFILE_UNKNOWN;
+  do_scoreonly      = FALSE;
   do_smallonly      = FALSE;
   
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
     if      (strcmp(optname, "--smallonly") == 0) do_smallonly = TRUE;
+    else if (strcmp(optname, "--scoreonly") == 0) do_scoreonly = TRUE;
     else if (strcmp(optname, "--informat")  == 0) {
       format = String2SeqfileFormat(optarg);
       if (format == SQFILE_UNKNOWN) 
@@ -116,15 +122,22 @@ main(int argc, char **argv)
       
       dsq = DigitizeSequence(seq, sqinfo.len);
 
+      tr1 = tr2 = NULL;
+
       if (! do_smallonly) {
 	printf("Full inside algorithm:\n");
 	printf("----------------------\n");
 	StopwatchZero(watch);
 	StopwatchStart(watch);
-	sc1 = CYKInside(cm, dsq, sqinfo.len, &tr1);  
-	ParsetreeDump(stdout, tr1, cm, dsq);
-	printf("%-12s : %.2f  %.2f\n", sqinfo.name, sc1/0.693,
-	       ParsetreeScore(cm, tr1, dsq)/0.693);
+	if (do_scoreonly) {
+	  sc1 = CYKInsideScore(cm, dsq, sqinfo.len);
+	  printf("%-12s : %.2f  %.2f\n", sqinfo.name, sc1/0.693);
+	} else {
+	  sc1 = CYKInside(cm, dsq, sqinfo.len, &tr1);  
+	  ParsetreeDump(stdout, tr1, cm, dsq);
+	  printf("%-12s : %.2f  %.2f\n", sqinfo.name, sc1/0.693,
+		 ParsetreeScore(cm, tr1, dsq)/0.693);
+	}
 	StopwatchStop(watch);
 	StopwatchDisplay(stdout, "CPU time: ", watch);
 	puts("");
@@ -142,13 +155,12 @@ main(int argc, char **argv)
       StopwatchDisplay(stdout, "CPU time: ", watch);
       puts("");
 
-      if (! do_smallonly) {
+      if (tr1 != NULL && tr2 != NULL)
 	ParsetreeCompare(tr1, tr2);  
-	FreeParsetree(tr1);  
-      }
-
+      
       FreeSequence(seq, &sqinfo);
-      FreeParsetree(tr2); 
+      if (tr1 != NULL) FreeParsetree(tr1);  
+      if (tr2 != NULL) FreeParsetree(tr2); 
       free(dsq);
     }
 

@@ -20,7 +20,7 @@
  *
  * The "guide tree" is a special use of a Parsetree_t structure. 
  * - tr->state contains a node type (e.g. MATP_nd), not a state index.
- * - The numbering of the guide tree is a postorder traverse, identical to
+ * - The numbering of the guide tree is a preorder traverse, identical to
  *   the numbering in the final CM.
  * - emitl and emitr are relative to the alignment columns, not individual
  *   sequence positions.
@@ -149,7 +149,7 @@ HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh,
   pda = CreateNstack();		/* a pushdown stack for our indices */
 
   /* Construction strategy has to make sure we number the nodes in
-   * postorder traversal: for bifurcations, we can't attach the right 
+   * preorder traversal: for bifurcations, we can't attach the right 
    * child until we've fully traversed the left side. Therefore, we have
    * to push what we intend to attach, and pop it later. And since we
    * don't know an index for the node until we attach it, we have no
@@ -679,8 +679,8 @@ transmogrify(CM_t *cm, Parsetree_t *gtr, char *dsq)
   tr  = CreateParsetree();
   pda = CreateNstack();
 
-  /* Because the gtr is already indexed in a postorder traversal,
-   * we can postorder traverse it easily w/ a for loop...
+  /* Because the gtr is already indexed in a preorder traversal,
+   * we can preorder traverse it easily w/ a for loop...
    */
   tidx = -1;			/* first state to attach to; -1 is special case for attaching root */
   for (node = 0; node < cm->nodes; node++)
@@ -783,3 +783,4 @@ transmogrify(CM_t *cm, Parsetree_t *gtr, char *dsq)
   FreeNstack(pda);
   return tr;
 }
+

@@ -29,6 +29,7 @@ extern void  SummarizeCM(FILE *fp, CM_t *cm);
 extern char *Statetype(int type);
 extern char *Nodetype(int type);
 extern char *UniqueStatetype(int type);
+extern CM_t *CMRebalance(CM_t *cm);
 
 /* from cmio.c
  */
@@ -64,6 +65,7 @@ extern int KHS2ct(char *ss, int len, int allow_pseudoknots, int **ret_ct);
  */
 extern float CYKInside(CM_t *cm, char *dsq, int L, Parsetree_t **ret_tr);
 extern float CYKDivideAndConquer(CM_t *cm, char *dsq, int L, Parsetree_t **ret_tr);
+extern float CYKInsideScore(CM_t *cm, char *dsq, int L);
 extern void  CYKDemands(CM_t *cm, int L);
 extern int   CYKDeckCount(CM_t *cm);
 

@@ -31,9 +31,9 @@ The alignment file is expected to be in Stockholm format.\n\
 ";
 
 static char experts[] = "\
+   --nobalance   : don't rebalance the CM; number in strict preorder\n\
    --rf          : use #=RF alignment annotation to specify consensus\n\
    --gapthresh   : fraction of gaps to allow in a consensus column (0..1)\n\
-   --binary      : save output model (cmfile) in binary, not ASCII text\n\
    --informat <s>: specify input alignment is in format <s>, not Stockholm\n\
 \n\
  Verbose output files, useful for detailed information about the CM:\n\
@@ -48,7 +48,7 @@ static struct opt_s OPTIONS[] = {
   { "-h", TRUE, sqdARG_NONE }, 
   { "-A", TRUE, sqdARG_NONE },
   { "-F", TRUE, sqdARG_NONE },
-  { "--binary",    FALSE, sqdARG_NONE },
+  { "--nobalance", FALSE, sqdARG_NONE },
   { "--cmtbl",     FALSE, sqdARG_STRING },
   { "--gapthresh", FALSE, sqdARG_FLOAT},
   { "--gtbl",      FALSE, sqdARG_STRING },
@@ -86,7 +86,8 @@ main(int argc, char **argv)
   int   optind;                 /* index in argv[]                         */
 
   int   do_append;		/* TRUE to append CM to cmfile             */
-  int   do_binary;		/* TRUE to write CM in binary not ASCII    */
+  int   do_balance;		/* TRUE to balance the CM                  */
+  int   do_binary;		/* TRUE to use binary file format for CM   */
   int   allow_overwrite;	/* true to allow overwriting cmfile        */
   char  fpopts[3];		/* options to open a file with, e.g. "ab"  */
   int   use_rf;			/* TRUE to use #=RF to define consensus    */
@@ -104,7 +105,8 @@ main(int argc, char **argv)
 
   format            = MSAFILE_UNKNOWN;   /* autodetect by default */
   do_append         = FALSE;
-  do_binary         = FALSE;
+  do_balance        = TRUE;
+  do_binary         = TRUE;
   allow_overwrite   = FALSE;
   gapthresh         = 0.5;
   use_rf            = FALSE;
@@ -119,6 +121,7 @@ main(int argc, char **argv)
     if      (strcmp(optname, "-A") == 0)          do_append         = TRUE; 
     else if (strcmp(optname, "-B") == 0)          format            = MSAFILE_UNKNOWN;
     else if (strcmp(optname, "-F") == 0)          allow_overwrite   = TRUE;
+    else if (strcmp(optname, "--balance")   == 0) do_balance        = TRUE;
     else if (strcmp(optname, "--gapthresh") == 0) gapthresh         = atof(optarg);
     else if (strcmp(optname, "--rf")        == 0) use_rf            = TRUE;
 
@@ -148,6 +151,13 @@ main(int argc, char **argv)
 
   if (!allow_overwrite && !do_append && FileExists(cmfile))
     Die("CM file %s already exists. Rename or delete it.", cmfile); 
+
+  /* If we're outputting tranmogrified traces, shut CM rebalancing
+   * off; else, our numbering of states in traces will not be consistent with
+   * numbering of states in CM.
+   */
+  if (tracefile != NULL) 
+    do_balance = FALSE;
 
   /*********************************************** 
    * Preliminaries: open our files for i/o
@@ -212,10 +222,24 @@ main(int argc, char **argv)
       /* Construct a model
        */
       HandModelmaker(msa, dsq, use_rf, gapthresh, &cm, &mtr, &tr);
+      CMSimpleProbify(cm);
+      CMSetDefaultNullModel(cm);
+      CMLogoddsify(cm);
+
+      /* Rebalance the model (default).
+       * This is shut off by --nobalance option, or if traces
+       * are being saved to a file using --tfile option.
+       */
+      if (do_balance) 
+	{
+	  CM_t *new;
+	  new = CMRebalance(cm);
+	  FreeCM(cm);
+	  cm = new;
+	}
 
       /* Dump optional information to files:
        */
-
       /* 1. Tabular description of CM topology */
       if (cmtblfile != NULL) 
 	{
@@ -250,11 +274,9 @@ main(int argc, char **argv)
       CYKDemands(cm, avlen);
       puts("");
       
-      CMSimpleProbify(cm);
-      CMSetDefaultNullModel(cm);
-      CMLogoddsify(cm);
-
-      if (tracefile != NULL) 
+		/* note: if do_balance is true, the indices on these
+                   tracebacks won't match the model. */
+      if (tracefile != NULL)       
 	dump_traces(tracefile, msa, tr, cm, dsq);
 
       WriteBinaryCM(cmfp, cm);

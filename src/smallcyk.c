@@ -179,6 +179,31 @@ CYKInside(CM_t *cm, char *dsq, int L, Parsetree_t **ret_tr)
   return sc;
 }
 
+/* Function: CYKInsideScore()
+ * Date:     SRE, Tue Apr  9 05:21:22 2002 [St. Louis]
+ *
+ * Purpose:  Wrapper for the inside() routine. Solve
+ *           a full alignment problem in one pass of inside,
+ *           in memory-saving mode, returning only the score.
+ *           
+ *           Fairly useless. Written just to obtain timings
+ *           for SSU and LSU alignments, for comparison to
+ *           divide and conquer.
+ *           
+ * Args:     cm     - the covariance model
+ *           dsq    - the sequence, 1..L
+ *           L      - length of sequence
+ *
+ * Returns:  score of the alignment in bits.
+ */
+float
+CYKInsideScore(CM_t *cm, char *dsq, int L)
+{
+  return inside(cm, dsq, L, 0, cm->M-1, 1, L, FALSE, 
+		NULL, NULL, NULL, NULL, NULL);
+}
+
+
 /* Function: CYKDemands()
  * Date:     SRE, Sun Jun  3 20:00:54 2001 [St. Louis]
  *
@@ -262,7 +287,7 @@ CYKDemands(CM_t *cm, int L)
  *           L   - length of dsq
  *           tr  - the traceback we're adding on to.
  *           r   - index of a start state (S_st) in the model       
- *           vend- index of an end state (E_st) in the model
+ *           z   - index of an end state (E_st) in the model
  *           i0  - start in the sequence (1..L)
  *           j0  - end in the sequence (1..L)
  *
@@ -270,12 +295,13 @@ CYKDemands(CM_t *cm, int L)
  */
 static float
 generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
-		 int r, int vend, int i0, int j0)
+		 int r, int z, int i0, int j0)
 {
   float ***alpha;
   float ***beta;
   struct deckpool_s *pool;
-  int      v,y,z;		/* state indices */
+  int      v,w,y;		/* state indices */
+  int      wend, yend;		/* indices for end of subgraphs rooted at w,y */
   int      jp;			/* j': relative position in subseq, 0..W */
   int      W;			/* length of subseq i0..j0 */
   float    sc;			/* tmp variable for a score */
@@ -289,12 +315,12 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
   /* 1. If the generic problem is small enough, solve it with inside^T,
    *    and append the trace to tr.
    */
-  if (insideT_size(cm, L, r, vend, i0, j0) < RAMLIMIT) {
+  if (insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT) {
     SQD_DPRINTF1(("Solving a generic w/ insideT - G%d[%s]..%d[%s], %d..%d\n",
 		  r, UniqueStatetype(cm->stid[r]),
-		  vend, UniqueStatetype(cm->stid[vend]),
+		  vend, UniqueStatetype(cm->stid[z]),
 		  i0, j0));
-    sc = insideT(cm, dsq, L, tr, r, vend, i0, j0);
+    sc = insideT(cm, dsq, L, tr, r, z, i0, j0);
     return sc;
   }
 
@@ -302,28 +328,30 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    *    The lowest a bifurc could be: B-S-E/S-IL-E = vend-5
    *                                   
    */
-  for (v = r; v <= vend-5; v++)
+  for (v = r; v <= z-5; v++)
     if (cm->sttype[v] == B_st) break; /* found the first bifurcation, now v */
 
   /* 3. If there was no bifurcation, this is a wedge problem; solve it
    *    with wedge_splitter. 
    */
-  if (v > vend-5) {		/* no bifurc? it's a wedge problem  */
-    if (cm->sttype[vend] != E_st) Die("inconceivable.");
-    sc = wedge_splitter(cm, dsq, L, tr, r, vend, i0, j0);
+  if (v > z-5) {		/* no bifurc? it's a wedge problem  */
+    if (cm->sttype[z] != E_st) Die("inconceivable.");
+    sc = wedge_splitter(cm, dsq, L, tr, r, z, i0, j0);
     return sc;
   }
 
-  /* Set up the state quartet r,v,y,z, for a divide and conquer
+  /* Set up the state quartet r,v,w,y for a divide and conquer
    * solution of the generic problem.
    */
-  y = cm->cfirst[v];		/* left S  (v+1) */
-  z = cm->cnum[v];		/* right S */
+  w = cm->cfirst[v];		/* index of left S  */
+  y = cm->cnum[v];		/* index right S    */
+  if (w < y) { wend = y-1; yend = z; }
+  else       { yend = w-1; wend = z; }
 
-  /* Calculate alpha[y] deck and alpha[z] deck.
+  /* Calculate alpha[w] deck and alpha[y] deck.
    */
-  inside(cm, dsq, L, y, z-1,  i0, j0, BE_EFFICIENT, NULL,  &alpha, NULL, &pool, NULL);
-  inside(cm, dsq, L, z, vend, i0, j0, BE_EFFICIENT, alpha, &alpha, pool, &pool, NULL);
+  inside(cm, dsq, L, w, wend, i0, j0, BE_EFFICIENT, NULL,  &alpha, NULL, &pool, NULL);
+  inside(cm, dsq, L, y, yend, i0, j0, BE_EFFICIENT, alpha, &alpha, pool, &pool, NULL);
 
   /* Calculate beta[v] deck (stick it in alpha). Let the pool get free'd.
    */
@@ -338,7 +366,7 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
       j = i0-1+jp;
       for (d = 0; d <= jp; d++)
 	for (k = 0; k <= d; k++)
-	  if ((sc = alpha[y][j-k][d-k] + alpha[z][j][k] + beta[v][j][d]) > best_sc) 
+	  if ((sc = alpha[w][j-k][d-k] + alpha[y][j][k] + beta[v][j][d]) > best_sc) 
 	    {
 	      best_sc = sc;
 	      best_k  = k;
@@ -353,11 +381,11 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    * decks in Inside and Outside needed to overlap. 
    * Free 'em all in one call.
    */
-  free_vjd_matrix(alpha, r, vend, i0, j0);
+  free_vjd_matrix(alpha, r, z, i0, j0);
 
   /* now, the optimal split, into a V problem and two generic problems.
-   * left fragment: i1 = j-d+1, j1 = j-k, vroot = y, vend = z-1
-   * right frag:    i2 = j-k+1, j2 = j,   vroot = z, vend = caller's vend
+   * left fragment: i1 = j-d+1, j1 = j-k, vroot = w, vend = wend
+   * right frag:    i2 = j-k+1, j2 = j,   vroot = y, vend = yend
    * 
    * The problems must be solved in a particular order, since we're
    * constructing the trace in a postorder traversal.
@@ -368,21 +396,21 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 		v, UniqueStatetype(cm->stid[v]),
 		i0, best_j-best_d+1, best_j, j0));
   SQD_DPRINTF1(("   generic: G%d[%s]..%d[%s], %d..%d\n", 
-		y, UniqueStatetype(cm->stid[y]),
-		z-1, UniqueStatetype(cm->stid[z-1]),
+		w,    UniqueStatetype(cm->stid[w]),
+		wend, UniqueStatetype(cm->stid[wend]),
 		best_j-best_d+1, best_j-best_k));
   SQD_DPRINTF1(("   generic: G%d[%s]..%d[%s], %d..%d\n", 
-		z, UniqueStatetype(cm->stid[z]),
-		vend, UniqueStatetype(cm->stid[vend]),
+		y,    UniqueStatetype(cm->stid[y]),
+		yend, UniqueStatetype(cm->stid[yend]),
 		best_j-best_k+1, best_j));
 
   v_splitter(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0);
   tv = tr->n-1;
 
-  InsertTraceNode(tr, tv, TRACE_LEFT_CHILD, best_j-best_d+1, best_j-best_k, y);
-  generic_splitter(cm, dsq, L, tr, y, z-1, best_j-best_d+1, best_j-best_k);
-  InsertTraceNode(tr, tv, TRACE_RIGHT_CHILD, best_j-best_k+1, best_j, z);
-  generic_splitter(cm, dsq, L, tr, z, vend, best_j-best_k+1, best_j);
+  InsertTraceNode(tr, tv, TRACE_LEFT_CHILD, best_j-best_d+1, best_j-best_k, w);
+  generic_splitter(cm, dsq, L, tr, w, wend, best_j-best_d+1, best_j-best_k);
+  InsertTraceNode(tr, tv, TRACE_RIGHT_CHILD, best_j-best_k+1, best_j, y);
+  generic_splitter(cm, dsq, L, tr, y, yend, best_j-best_k+1, best_j);
 
   return best_sc;
 }

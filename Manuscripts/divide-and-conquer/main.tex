@@ -40,13 +40,13 @@ programming alignment of a CM to an RNA sequence is $\Theta(N^3)$ in
 memory for an RNA of length $N$. On current computers, this is only
 practical for small RNAs of a few hundred nucleotides or less. Here I
 describe a divide and conquer variant of the CM/SCFG alignment
-algorithm, analogous to the memory-efficient Myers/Miller form of the
-Smith/Waterman algorithm for linear sequence alignment. The algorithm
-has an average memory requirement that scales as $(N^2 \log N)$, at
-the expense of a small constant factor in time. Small subunit
-ribosomal RNA alignments that previously required a prohibitive 20-30
-GB of memory to solve by dynamic programming now require $\approx$ 80
-MB and are well within the capabilities of most modern computers.}
+algorithm, analogous to the memory-efficient Myers/Miller form of
+dynamic programming algorithms for linear sequence alignment. The
+algorithm has an $O(N^2 \log N)$ memory complexity, at the expense of
+a small constant factor in time. Optimal SSU or LSU ribosomal RNA
+structural alignments that previously required a prohibitive 20 GB or
+150 GB of memory now require $\approx$ 70 MB or 270 MB, and are now
+well within current computational capabilities.}
 
 \section{Introduction}
 
@@ -83,18 +83,18 @@ meaningful score that allows ranking candidate hits by their
 statistical significance. It is thus of interest to develop general
 alignment algorithms for RNA secondary structures.
 
-The problem I consider here is that I am given a multiple alignment of
-an RNA sequence family for which I know the consensus secondary
-structure, I build a model of it, and I want to search a sequence
-database for more homologues. The sequence analysis analogue is the
-use of profile hidden Markov models (profile HMMs) to model multiple
-alignments of conserved protein domains, and to discover new
-homologues in sequence databases \cite{Krogh94,Eddy98}. If we had an
-RNA structure equivalent of the HMMER profile HMM program suite
-(\url{http://hmmer.wustl.edu/}) it would be possible to develop and
-maintain a database of conserved RNA structures, analogous to the Pfam
-or SMART databases of conserved protein domains
-\cite{Bateman02,LetunikBork02}.
+The problem I consider here is the following.  I am given a multiple
+alignment of an RNA sequence family for which I know the consensus
+secondary structure, I build a statistical model of it, and I want to
+search a sequence database for more homologues. The sequence analysis
+analogue is the use of profile hidden Markov models (profile HMMs) to
+model multiple alignments of conserved protein domains, and to
+discover new homologues in sequence databases
+\cite{Krogh94,Eddy98}. If we had an RNA structure equivalent of the
+HMMER profile HMM program suite (\url{http://hmmer.wustl.edu/}) it
+would be possible to develop and maintain a database of conserved RNA
+structures, analogous to the Pfam or SMART databases of conserved
+protein domains \cite{Bateman02,LetunikBork02}.
 
 Stochastic context free grammar (SCFG) algorithms have been introduced
 as a general approach to RNA alignment
@@ -126,7 +126,7 @@ tRNAscan-SE, for annotating transfer RNA genes
 \cite{LoweEddy97}. However, many larger RNAs of interest are outside
 the capabilities of published SCFG alignment algorithms. Alignment of
 a small subunit (SSU) ribosomal RNA sequence to the SSU rRNA consensus
-structure would take about 23 Gb of RAM and 8 hours of CPU time. The
+structure would take about 23 GB of RAM and an hour of CPU time. The
 steep memory requirement is particularly galling. It constitutes a
 significant practical barrier to the wider applicability of SCFG
 algorithms.
@@ -145,12 +145,13 @@ Notredame \emph{et al.} pointed specifically to this problem.  They
 described RAGA \cite{Notredame97}, a program that uses a genetic
 algorithm (GA) to optimize a pairwise RNA alignment using an objective
 function that includes base pairing terms. Because GAs have an $O(N)$
-memory requirement, RAGA can effectively find reasonable solutions for
-large RNA alignment problems (such as ribosomal RNA alignments). A
-different memory-efficient approach has also been described
+memory requirement, RAGA can find reasonable solutions for large RNA
+alignment problems, including ribosomal RNA alignments. A different
+memory-efficient approach has also been described
 \cite{Lenhof98,LenhofVingron98}. However, both approaches are
-approximate, and cannot guarantee a mathematically optimal solution,
-in contrast to the more expensive dynamic programming approaches.
+approximate and cannot guarantee a mathematically optimal solution, in
+contrast to the (mathematically) optimal but more expensive dynamic
+programming approaches.
 
 Here, I introduce a dynamic programming solution to the problem of
 structural alignment of large RNAs. The central idea is a ``divide and
@@ -162,12 +163,11 @@ dynamic programming methods for optimal sequence alignment were well
 known, but were considered impractical on 1970's era computers because
 of an ``extreme'' $O(N^2)$ memory requirement.) Myers/Miller reduces
 the memory complexity of a dynamic programming sequence alignment
-algorithm from $O(N^2)$ to $O(N)$, at the cost of a constant (roughly
-two-fold) increase in CPU time. Here I show that a divide and conquer
-strategy can also be applied to a three dimensional SCFG dynamic
-programming matrix, greatly reducing the memory requirement of SCFG
-alignments and making optimal structural alignment of large RNAs
-possible on our current generation of computers.
+algorithm from $O(N^2)$ to $O(N)$, at the cost of a roughly two-fold
+increase in CPU time. Here I show that a divide and conquer strategy
+can also be applied to a three dimensional SCFG dynamic programming
+matrix, greatly reducing the memory requirement of SCFG alignments and
+making optimal structural alignment of large RNAs possible.
 
 I will strictly be dealing with the problem of aligning a target
 sequence of unknown structure to a query RNA of known secondary
@@ -240,9 +240,9 @@ Thus, the complete optimal alignment can be found by a recursive
 series of split point calculations. Although this seems laborious --
 each calculation is giving us only a single point in the alignment --
 if we choose our split row $i$ to be in the middle, the size of the
-two smaller DP problems is decreased by about 4-fold at each
-split. Ideally, a complete alignment costs only about $1 + \frac{2}{4}
-+ \frac{4}{16} + \ldots \simeq 2$ times as much CPU time as doing the
+two smaller DP problems is decreased by about 4-fold at each split. A
+complete alignment thus costs only about $1 + \frac{2}{4} +
+\frac{4}{16} + \ldots \simeq 2$ times as much CPU time as doing the
 alignment in a single DP matrix calculation, but the algorithm is
 $\Theta(N)$ in memory.
 
@@ -257,12 +257,12 @@ CYK/outside (or just \texttt{inside} and \texttt{outside}), but
 readers familiar with SCFG algorithms should not confuse them with the
 SCFG Inside and Outside algorithms \cite{Lari90,Lari91} which sum over
 all possible parse trees rather than finding one optimal parse tree. I
-am always talking about the CYK algorithm, and with ``inside'' and
-``outside'' I am only referring generically to the direction of the
-CYK DP calculation. (The SCFG Inside and Outside algorithms are
-analogous to the Forward and Backward algorithms for HMMs
-\cite{Rabiner89,Durbin98}; CYK/inside is analogous to the Viterbi HMM
-alignment algorithm run in the forward direction; CYK/outside is
+am always talking about the CYK algorithm in this paper, and by
+``inside'' and ``outside'' I am only referring generically to the
+direction of the CYK DP calculation. (The SCFG Inside and Outside
+algorithms are analogous to the Forward and Backward algorithms for
+HMMs \cite{Rabiner89,Durbin98}; CYK/inside is analogous to the Viterbi
+HMM alignment algorithm run in the forward direction; CYK/outside is
 analogous to a Viterbi DP algorithm run in the backwards direction.)
 The CYK/inside and CYK/outside algorithms are not as nicely
 symmetrical as the forward and backward DP fills are in sequence
@@ -405,7 +405,7 @@ annotated alignment in Figure~\ref{fig:input_alignment}. Numbers in
 the circles indicate alignment column coordinates: e.g.  column 4 base
 pairs with column 14, and so on. Right: the CM guide tree
 corresponding to this consensus structure. The nodes of the tree are
-numbered 1..24 in postorder traversal. MATP, MATL, and MATR nodes are
+numbered 1..24 in preorder traversal. MATP, MATL, and MATR nodes are
 associated with the columns they generate: e.g., node 6 is a MATP
 (pair) node that is associated with the base-paired columns 4 and 14.}
 \label{fig:cm_nodetree}
@@ -439,7 +439,7 @@ current strategy is to choose $k$ such that $i..k$ and $k+1..j$ are as
 close to the same length as possible.
 
 The result of this procedure is the guide tree. The nodes of the guide
-tree are numbered in post-traversal order (from root to leaves, so
+tree are numbered in preorder traversal (e.g. from root to leaves, so
 parent nodes always have lower indices). The guide tree corresponding
 to the input multiple alignment in Figure~\ref{fig:input_alignment} is
 shown on the right in Figure~\ref{fig:cm_nodetree}.
@@ -507,15 +507,18 @@ contiguity is exploited by the implementation.
 Thus the final CM structure is an array of M states, connected as a
 directed graph by transitions $t_v(y)$ (or probability 1 transitions
 $v \rightarrow (y,z)$ for bifurcations) with the states numbered such
-that $y,z \geq v$. The numbering of the states is in postorder
-traversal with respect to the guide tree. There are no cycles in the
-directed graph other than cycles of zero length (e.g. the
-self-transitions of the insert states). This is important: since all
-the transition dependencies run in one direction, we can do an
-iterative dynamic programming calculation through the model states,
-starting with the last numbered end state $M$ and ending in the root
-state $1$.  An example CM, corresponding to the input alignment of
-Figure~\ref{fig:input_alignment}, is shown in
+that $y,z \geq v$. The numbering of the states is in preorder
+traversal with respect to the guide tree (see Results section; an
+important optimization can be done here). This means that child states
+always have an index that is $\geq$ the index of their parent state.
+There are no cycles in the directed graph other than cycles of zero
+length (e.g. the self-transitions of the insert states). This
+numbering is important: we can think of the CM as an array of states,
+in which all transition dependencies run in one direction, which means
+we can do an iterative dynamic programming calculation through the
+model states starting with the last numbered end state $M$ and ending
+in the root state $1$.  An example CM, corresponding to the input
+alignment of Figure~\ref{fig:input_alignment}, is shown in
 Figure~\ref{fig:cm_graph}.
 
 \begin{figure}[tp]
@@ -915,9 +918,7 @@ are as follows:
 
 \algname{generic\_splitter}{r,z; g,q}
 \begin{algtab*}
-\algif{alignment problem is small:}
-  \algreturn \algcall{inside$^\mathcal{T}$}{r,z; g,q}\\
-\algelseif{no bifurcation in $G_{r..z}$:}
+\algif{no bifurcation in $G_{r..z}$:}
   \algreturn \algcall{wedge\_splitter}{r,z; g,q}\\
 \algelse
    $v   \leftarrow$ lowest numbered bifurcation state in subgraph $G_{r..z}$.\\
@@ -948,9 +949,6 @@ are as follows:
 
 \algname{wedge\_splitter}{r,z; g,q}
 \begin{algtab*}
-\algif{alignment problem is small:}
-  \algreturn \algcall{inside$^\mathcal{T}$}{r,z; g,q}\\
-\algelse
   $(w..y) \leftarrow$ a split set chosen from middle of $G_{r..z}$\\
   $(\alpha_w..\alpha_y) \leftarrow$ \algcall{inside}{w,z; g,q}\\
   $(\beta_w..\beta_y)   \leftarrow$ \algcall{outside}{r,y; g,q}\\
@@ -973,9 +971,6 @@ are as follows:
 
 \algname{V\_splitter}{r,z; g,h; p,q}
 \begin{algtab*}
-\algif{alignment problem is small:}
-  \algreturn \algcall{vinside$^\mathcal{T}$}{r,z; g,h; p,q}\\
-\algelse
   $(w..y) \leftarrow$ a split set chosen from middle of $G_{r..z}$\\
   $(\alpha_w..\alpha_y) \leftarrow$ \algcall{vinside}{w,z; g,h; p,q}\\
   $(\beta_w..\beta_y)   \leftarrow$ \algcall{voutside}{r,y; g,h; p,q}\\
@@ -1038,21 +1033,197 @@ the two traceback routines \texttt{insideT()} and \texttt{vinsideT()}.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+\section{Results}
 
+\subsection{Memory complexity analysis}
+
+The memory complexity of normal CYK/inside is $\Theta(N^2M)$, for a
+model of $M$ states and a query sequence of $N$ residues, since the
+full 3D dynamic programming matrix is indexed $N \times N \times
+M$. ($\Theta$ means we know both upper and lower bounds on the
+complexity.)
+
+The memory complexity of the divide and conquer algorithm is $O(N^2
+\log M)$. (That is, we can prove this as an upper bound on the
+complexity, but divide and conquer often does better, and can scale as
+well as $N^2$ for certain models.) The analysis that leads to this
+conclusion is as follows.
+
+For a model with no bifurcations, the divide and conquer algorithm
+will never require more than 10 decks in memory at once. In the case
+of two adjacent MATP nodes, we will need six decks to store the scores
+for the current node we're calculating, and four decks for the split
+set of the adjacent node that we're connecting to (and dependent
+upon).
+
+Bifurcations will require some number of additional decks for start
+states (BEGL\_S and BEGR\_S) to be kept. In \texttt{inside}, whenever we
+reach a deck for a start state, we will keep that deck in memory until
+we reach the parent bifurcation state. Half the time, that will mean
+waiting until another complete subgraph of the model is calculated
+(e.g. the subgraph rooted at the other start child of that
+bifurcation); that is, to calculate deck $\alpha_v$ for a bifurcation
+$v$, we need both deck $\alpha_w$ or $\alpha_y$ for its child start
+states $w$ and $y$, so we have to hold on to $\alpha_y$ until we reach
+$\alpha_w$. In turn, the subgraph rooted at $w$ might contain
+bifurcations, so our calculation of $\alpha_w$ might require
+additional decks to be kept. Thus, each start deck we reach in the
+\texttt{inside} iteration means holding one extra deck in memory, and
+each bifurcation we reach means deallocating the two start decks it
+depends on; therefore we can iteratively calculate the maximum number
+of extra decks we will require:
+
+\begin{algorithm}
+\begin{algtab*}
+  $x_M \leftarrow 0$\\
+  \algforto{$v \leftarrow M-1$}{1}
+     $x_v = \left\{ 
+       \begin{array}{rcl} 
+        x_{v+1} + 1 &:& S_v = S\\
+        x_{v+1} - 2 &:& S_v = B\\
+        x_{v+1}     &:& elsewise.\\
+       \end{array} \right.$\\
+  \algreturn{$\max_v x_v - 1$}\\
+\end{algtab*}
+\end{algorithm}
+
+This number depends on the topology and order of evaluation of the
+states in the CM. Think of the bifurcating structure of the CM as a
+binary tree numbered in preorder traversal (e.g. left children are
+visited first, and have lower indices than right children). If this is
+a complete balanced tree with $B$ bifurcations, we will need $\log_2
+B$ extra decks. If it is a maximally unbalanced tree in which
+bifurcations only occur in left children, we will need $B$ extra decks
+(all the right children). If it is a maximally unbalanced tree in
+which bifurcations only occur in right children, we will only ever
+need 1 extra deck. A left-unbalanced binary tree can be converted to a
+right-unbalanced binary tree just by swapping branches, but for a CM,
+we can't swap branches without affecting the order of the sequence
+that's generated. We can, however, get the same effect by reordering
+the CM states in a modified preorder traversal: instead of always
+visiting the left subtree first, we visit the best subtree first,
+where ``best'' means the choice that will optimize memory usage.  This
+reordering is readily calculated (not shown; see
+\texttt{cm.c:CMRebalance()} in the implementation).  This way, we can
+never do worse than the balanced case, and we will often do better. We
+know we will never need more than $\log_2 B$ extra decks. Since $B <
+M$, we can guarantee a $O(N^2 \log M)$ bound on memory complexity.
+
+\subsection{Time complexity analysis}
+
+The time complexity of the full algorithm is $O(MN^2 + BN^3)$, for a
+model of $M$ states ($B$ of which are bifurcations) aligned to a
+sequence of $N$ residues. (Since $B < N$, we can also state the
+complexity as $O(MN^3)$.)
+
+The time complexity of the divide and conquer algorithm depends on how
+close each split is to dividing a problem into equal sized
+subproblems. In the most ideal case, each call to
+\texttt{generic\_splitter} could split into three subproblems that
+each contained $1/3$ of the states and residues: splitting those three
+subproblems would only cost $3 \times \frac{1}{3}^4 \times MN^3$ in
+time, e.g. only about $1/27$ the time it took to split the first
+problem. Thus in principle, the time requirement is almost completely
+dominated by the first split, and the extra time required to do the
+complete divide and conquer algorithm could be negligible. In
+pathological cases, optimal splits might lead to a series very
+unequally sized problems. We do know we will never need to do more
+splits than there are states in the model, so we cannot do worse than
+$O(M^2N^3)$ in time.
+
+An example of a pathological case is an RNA structure composed of a
+series of 3-way multifurcation loops, such that each bifurcation leads
+to a small stem on one side, and the rest of the structure on the
+other. In such a case, every call to \texttt{generic\_splitter} will
+split into a small subproblem containing a small stem (e.g. only
+removing a constant number of states and residues per split) and a
+large subproblem containing all the remaining states and sequence.
+This case can be avoided. It only arises because of the decision to
+implement a simplified CYK/outside algorithm and always split at the
+highest bifurcations. Better time performance could be guaranteed if
+full CYK/outside and CYK/inside algorithms were implemented, which
+would allow us to choose a split point in a generic problem at any
+state in the CM (for instance, in the middle), regardless of its
+bifurcating structure.
+
+In practice, empirical results on a variety of real RNAs (see below)
+indicate that the extra time required to do the divide and conquer is
+a small constant factor. A more complex implementation does not seem
+to be necessary.
+
+\subsection{Empirical results}
+
+Six structural RNA families were chosen for empirical evaluations of
+the algorithm, using available RNA database resources -- tRNA
+\cite{Steinberg93}, 5S ribosomal RNA \cite{Szymanski02}, signal
+recognition particle (SRP) RNA \cite{Larsen91}, RNase P
+\cite{Brown99}, small subunit (SSU) ribosomal RNA \cite{Neefs93}, and
+large subunit (LSU) ribosomal RNA \cite{deRijk94}. For each family, a
+secondary structure annotated multiple alignment of four or five
+example sequences was extracted, and used to construct a CM. 
+
+The top of Table~\ref{tbl:results} shows some statistics about these
+alignments and CMs. The number of consensus columns in the alignments
+ranges from 72 (tRNA) to 2898 (LSU rRNA); about 55-60\% are involved
+in consensus base pairs. The number of CM states is consistently about
+3-fold more than the consensus alignment length, ranging from 230
+states (tRNA) to 9023 (LSU). About 1/150 of the states in each model
+are bifurcations. After optimal reordering of the model states, the
+number of extra decks required by the alignment algorithm is small,
+ranging up to 3 for SSU and 5 for LSU rRNA. Thus the minimum constant
+of 10 decks required in iterations across unbifurcated model segments
+dominates the memory requirement, and the additional $\log N$ memory
+factor for extra decks does not have much impact even for the largest
+structural RNAs. (Even without optimal reordering, the number of extra
+decks required for SSU and LSU are only 7 and 9, respectively. State
+reordering was only done to achieve a provable $O(N^2\log N)$ memory
+complexity bound.)
+
+To determine the memory and CPU time requirements for a structural
+alignment, one example sequence from each family was then aligned to
+the CM.  Three algorithms were used: (1) the full CYK/inside
+algorithm, but in memory-saving score-only mode
+(e.g. \texttt{inside(1,M; 1,L}); (2) the full CYK/inside algorithm,
+with shadow matrix and traceback to recover the optimal alignment
+(e.g. \texttt{inside}$^\mathcal{T}$\texttt{(1,M; 1,L))}; and (3) the
+divide and conquer algorithm to recover an optimal alignment
+(e.g. \texttt{generic\_splitter(1,M; 1,L)}). The most important
+comparison is between the full CYK/inside algorithm and the divide and
+conquer algorithm. The score-only CYK/inside algorithm was done
+because full CYK couldn't be done on SSU and LSU rRNA (because of
+memory), and I wanted to be sure that the CPU time requirement of
+divide and conquer did not behave strangely on these large RNAs.
+
+The results of these tests are shown in the bottom half of
+Table~\ref{tbl:results}. The memory required by divide and conquer
+alignment ranges up to 271 MB for LSU rRNA, compared to a prohibitive
+151 GB for the standard CYK algorithm. The extra CPU time required by
+the divide and conquer is small; usually about 20\% more, with a
+maximum of about two-fold more for SRP-RNA.
+
+\begin{table}[ht]
 \begin{tabular}{lrrrrrr}
-                      & tRNA  & 5S rRNA  & SRP RNA & RNase P & SSU rRNA & LSU rRNA \\\hline
-consensus columns     &   72  &    116   &    301  &    379  &   1545   &    2898\\
-CM states ($M$)       &  230  &    357   &    927  &   1176  &   4789   &    9023\\
-base pairs (MATP)     &   21  &     35   &     89  &    113  &    462   &     794\\
-unpaired (MATL$+$MATR)&   30  &     46   &    123  &    153  &    621   &    1310\\
-bifurcations ($M_B$)  &    2  &      1   &      4  &      7  &     30   &      65\\
-Maximum decks needed  &   13  &     12   &     13  &     13  &     18   &      20\\
-Sequence length ($N$) &   73  &    120   &    300  &    377  &   1542   &    2904\\
-Full CYK RAM, MB      &  2.6  &   10.7   &  168.9  &  336.7  &22705.0   &151349.7\\
-Divide \& conquer RAM &  0.2  &    0.4   &    2.4  &    3.7  &   85.9   &   337.9\\
-Full CYK CPU time, sec&  0.2  &    0.7   &   12.6  &   28.1  &    n.d.  &    n.d.\\
-Divide \& conquer time&  0.2  &    0.9   &   22.7  &   36.8  & 3688.5   & 32089.6\\\hline
+                             & tRNA&5S rRNA&SRP RNA&RNase P&SSU rRNA& LSU rRNA \\\hline 
+\# of consensus columns      &  72 &  116 &   301 &   379 &   1545 &    2898\\ 
+\# of consensus base pairs   &  21 &   35 &    89 &   113 &    462 &     794\\ 
+\# of consensus unpaired     &  30 &   46 &   123 &   153 &    621 &    1310\\ 
+CM states ($M$)              & 230 &  357 &   927 &  1176 &   4789 &    9023\\ 
+bifurcations ($B$)           &   2 &    1 &     4 &     7 &     30 &      65\\ 
+Maximum extra decks needed   &   1 &    1 &     2 &     2 &      3 &       5\\ 
+Example sequence length ($N$)&  73 &  120 &   300 &   377 &   1542 &    2904\\
+Full CYK RAM (MB)            & 2.6 & 10.7 & 168.9 & 336.7 &22705.0 &151349.7\\
+Divide \& conquer RAM (MB)   & 0.1 &  0.4 &   2.4 &   3.7 &   66.8 &   270.9\\ 
+CYK CPU time, no trace (sec) & 0.1 &  0.6 &  10.4 &  23.8 & 2614.8 &        \\
+Full CYK CPU time (sec)      & 0.2 &  0.7 &  12.7 &  28.6 &   n.d. &    n.d.\\ 
+Divide \& conquer time (sec) & 0.2 &  0.9 &  22.8 &  37.8 & 3594.4 & 31649.4\\\hline
 \end{tabular}
+\caption{Results of empirical tests of memory and CPU time required by
+CM structural alignment algorithms on six known structural RNAs of
+various sizes.}
+\label{tbl:results}
+\end{table}
+
+
 
 
 
