@@ -1,16 +1,17 @@
 all:
 	(cd cfsqp; make)
 	(cd lp_solve_4.0; make)
-	(cd cm2hmm-1.0; make)
+	(cd cm2hmm-1.0; make -f Makefile.test)
 
 clean:
 	-rm -f *~
-	(cd cm2hmm-1.0; make clean)
+	(cd cm2hmm-1.0; make clean -f Makefile.test)
 	(cd lp_solve_4.0; make clean)
 	(cd cfsqp; make clean)
 
 distclean:
 	make clean
+	(cd cm2hmm-1.0; make distclean -f Makefile.test)
 	(cd cfsqp; make distclean)
 	(cd lp_solve_4.0; make distclean)
 	-rm Makefile
