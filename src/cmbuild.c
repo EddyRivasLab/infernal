@@ -17,21 +17,25 @@
 #include "funcs.h"		/* external functions                   */
 #include "squid.h"		/* general sequence analysis library    */
 #include "msa.h"                /* squid's multiple alignment i/o       */
+#include "stopwatch.h"          /* squid's process timing module        */
 
 static char banner[] = "cmbuild - build an RNA covariance model from an alignment";
 
 static char usage[]  = "\
 Usage: cmbuild [-options] <cmfile output> <alignment file>\n\
+The alignment file is expected to be in Stockholm format.\n\
   Available options are:\n\
    -h     : help; print brief help on version and usage\n\
    -A     : append; append this CM to <cmfile>\n\
-   -B     : Babelfish; autodetect alignment file format\n\
+   -B     : Babelfish; autodetect alternative alignment file format\n\
    -F     : force; allow overwriting of <cmfile>\n\
 ";
 
 static char experts[] = "\
+   --rf          : use #=RF alignment annotation to specify consensus vs. insertion\n\
+   --gapthresh   : fraction of gaps to allow in a consensus column (0..1)\n\
    --binary      : save output model (cmfile) in binary, not ASCII text\n\
-   --informat <s>: input alignment is in format <s>, not Stockholm\n\
+   --informat <s>: specify that input alignment is in format <s>, not Stockholm\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -39,8 +43,10 @@ static struct opt_s OPTIONS[] = {
   { "-A", TRUE, sqdARG_NONE },
   { "-B", TRUE, sqdARG_NONE },
   { "-F", TRUE, sqdARG_NONE },
-  { "--binary",  FALSE, sqdARG_NONE },
-  { "--informat",FALSE, sqdARG_STRING },
+  { "--binary",    FALSE, sqdARG_NONE },
+  { "--gapthresh", FALSE, sqdARG_FLOAT},
+  { "--informat",  FALSE, sqdARG_STRING },
+  { "--rf",        FALSE, sqdARG_NONE },
 
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
@@ -59,6 +65,7 @@ main(int argc, char **argv)
   Parsetree_t     *mtr;         /* master structure tree from the alignment*/
   Parsetree_t    **tr;		/* inidividual traces from alignment       */
   CM_t            *cm;          /* a covariance model                      */
+  Stopwatch_t     *watch;	/* timer to run  */
 
   char *optname;                /* name of option found by Getopt()        */
   char *optarg;                 /* argument found by Getopt()              */
@@ -68,6 +75,8 @@ main(int argc, char **argv)
   int   do_binary;		/* TRUE to write CM in binary not ASCII    */
   int   allow_overwrite;	/* true to allow overwriting cmfile        */
   char  fpopts[3];		/* options to open a file with, e.g. "ab"  */
+  int   use_rf;			/* TRUE to use #=RF annot to define consensus cols  */
+  float gapthresh;		/* 0=all cols are inserts; 1=all cols are consensus */
 
   /*********************************************** 
    * Parse command line
@@ -77,12 +86,17 @@ main(int argc, char **argv)
   do_append         = FALSE;
   do_binary         = FALSE;
   allow_overwrite   = FALSE;
+  gapthresh         = 0.5;
+  use_rf            = FALSE;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
-    if      (strcmp(optname, "-A") == 0) do_append         = TRUE; 
-    else if (strcmp(optname, "-B") == 0) format            = MSAFILE_UNKNOWN;
-    else if (strcmp(optname, "-F") == 0) allow_overwrite   = TRUE;
+    if      (strcmp(optname, "-A") == 0)          do_append         = TRUE; 
+    else if (strcmp(optname, "-B") == 0)          format            = MSAFILE_UNKNOWN;
+    else if (strcmp(optname, "-F") == 0)          allow_overwrite   = TRUE;
+    else if (strcmp(optname, "--gapthresh") == 0) gapthresh         = atof(optarg);
+    else if (strcmp(optname, "--rf")        == 0) use_rf            = TRUE;
+
     else if (strcmp(optname, "--informat") == 0) {
       format = String2SeqfileFormat(optarg);
       if (format == MSAFILE_UNKNOWN) 
@@ -121,6 +135,8 @@ main(int argc, char **argv)
     Die("Failed to open CM file %s for %s\n", cmfile, 
 	do_append ? "appending" : "writing");
 
+  watch = StopwatchCreate();
+
   /*********************************************** 
    * Show the banner
    ***********************************************/
@@ -157,7 +173,7 @@ main(int argc, char **argv)
 
       /* Construct a model
        */
-      HandModelmaker(msa, FALSE, 1., &cm, &mtr, &tr);
+      HandModelmaker(msa, use_rf, gapthresh, &cm, &mtr, &tr);
       /* PrintParsetree(stdout, mtr);  */
       PrintCM(stdout, cm); 
       SummarizeMasterTrace(stdout, mtr); 
@@ -166,8 +182,11 @@ main(int argc, char **argv)
       CMSimpleProbify(cm);
       CMSetDefaultNullModel(cm);
 
+#if 0
       CMLogoddsify(cm);
-      CYKDeckCount(cm);
+      CYKDemands(cm, msa->alen);
+
+
       for (idx = 0; idx < msa->nseq; idx++)
 	{
 	  char *rseq, *dsq;
@@ -176,11 +195,22 @@ main(int argc, char **argv)
 	  MakeDealignedString(msa->aseq[idx], msa->alen, msa->aseq[idx], &rseq);
 	  L = strlen(rseq);
 	  dsq = DigitizeSequence(rseq, L);
-	  CYKInside(cm, dsq, L);
 
+	  StopwatchZero(watch);
+	  StopwatchStart(watch);
+	  CYKInside(cm, dsq, L);
+	  StopwatchStop(watch);
+	  
+	  StopwatchDisplay(stdout, "CPU time: ", watch);
 	  printf("trace score says: %.2f\n",
 		 ParsetreeScore(cm, tr[idx], msa->aseq[idx])/ 0.693);
+
+	  free(rseq);
+	  free(dsq);
 	}
+#endif
+
+      WriteBinaryCM(cmfp, cm);
 
       FreeParsetree(mtr);
       FreeCM(cm);
@@ -190,6 +220,7 @@ main(int argc, char **argv)
 
   /* Clean up and exit
    */
+  StopwatchFree(watch);
   MSAFileClose(afp);
   fclose(cmfp);
   SqdClean();

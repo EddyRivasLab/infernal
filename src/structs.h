@@ -126,7 +126,7 @@ typedef struct cm_s {
   char *ndtype;			/* type of node, e.g. MATP_nd                            */
 
 				/* Parameters of the probabilistic model:                */
-  float **t;			/*   Transition probabilities [0..M-1][0..ynum-1]        */
+  float **t;			/*   Transition probabilities [0..M-1][0..MAXCONNECT-1]  */
   float **e;			/*   Emission probabilities.  [0..M-1][0..15]            */
 
 				/* Parameters of the log odds model:                     */

@@ -55,12 +55,13 @@ deckpool_push(struct deckpool_s *dpool, float **deck)
   dpool->pool[dpool->n] = deck;
   dpool->n++;
 }
-static float **
-deckpool_pop(struct deckpool_s *d)
+static int
+deckpool_pop(struct deckpool_s *d, float ***ret_deck)
 {
-  if (d->n == 0) return NULL;
+  if (d->n == 0) { *ret_deck = NULL; return 0;}
   d->n--;
-  return d->pool[d->n];
+  *ret_deck = d->pool[d->n];
+  return 1;
 }
 static void
 deckpool_free(struct deckpool_s *d)
@@ -69,37 +70,96 @@ deckpool_free(struct deckpool_s *d)
   free(d);
 }
 
+void
+CYKDemands(CM_t *cm, int L)
+{
+  float Mb_per_deck;		/* megabytes per deck */
+  int   bif_decks;		/* bifurcation decks  */
+  int   nends;			/* end decks (only need 1, even for multiple E's */
+  int   maxdecks;		/* maximum # of decks needed by CYKInside() */
+  float smallmemory;		/* how much memory small version of CYKInside() needs */
+  float bigmemory;		/* how much memory a full CYKInside() would take */
+  float dpcells;		/* # of dp cells */
+  float bifcalcs;		/* # of inner loops executed for bifurcation calculations */
+  float dpcalcs;		/* # of inner loops executed for non-bif calculations */
+  int   j;
+
+  Mb_per_deck = (float)(L+2)*(float)(L+1)*2. / 1000000.;
+  bif_decks   = CMCountStatetype(cm, B_st);
+  nends       = CMCountStatetype(cm, E_st);
+  maxdecks    = CYKDeckCount(cm);
+  smallmemory = (float) maxdecks * Mb_per_deck;
+  bigmemory   = (float) (cm->M - nends +1) * Mb_per_deck;
+  dpcells     = (float) (L+2)*(float)(L+1)*0.5*(float) (cm->M - nends +1);
+  
+  bifcalcs = 0.;
+  for (j = 0; j <= L; j++)
+    bifcalcs += (float)(j+1)*(float)(j+2)/2.;
+  bifcalcs *= (float) bif_decks;
+  
+  dpcalcs = (float) (L+2)*(float)(L+1)*0.5*(float) (cm->M - bif_decks - nends +1);
+
+  printf("CYK cpu/memory demand estimates:\n");
+  printf("Mb per cyk deck:                %.2f\n", Mb_per_deck);
+  printf("# of decks (M):                 %d\n",   cm->M);
+  printf("# of decks needed in small CYK: %d\n",   maxdecks);
+  printf("RAM needed for full CYK, Mb:    %.2f\n", bigmemory);
+  printf("RAM needed for small CYK, Mb:   %.2f\n", smallmemory);
+  printf("# of dp cells, total:           %.0f\n", dpcells);
+  printf("# of non-bifurc dp cells:       %.0f\n", dpcalcs);
+  printf("# of bifurcations:              %d\n",   bif_decks);
+  printf("# of bifurc dp inner loop calcs:%.0f\n", bifcalcs);
+  printf("# of dp inner loops:            %.0f\n", dpcalcs+bifcalcs);
+}
+
 int
 CYKDeckCount(CM_t *cm)
 {
-  Nstack_t *pda;
-  int       v;
-  int       max;
+  Nstack_t *pda;		/* pushdown stack simulating the deck pool */
+  int       v,y,z;		/* state indices */
+  int       nends;
   int       ndecks;
+  int      *touch;		/* keeps track of how many higher decks still need this deck */
 
-  pda = CreateNstack();
+  /* Initializations, mirroring key parts of CYKInside()
+   */
+  ndecks = 1;			/* the end deck, which we always need. */
+  nends  = CMCountStatetype(cm, E_st);
+  pda    = CreateNstack();
+  touch = MallocOrDie(sizeof(int) * cm->M);
+  for (v = 0; v < cm->M; v++)
+    touch[v] = cm->pnum[v];
 
-  ndecks = 1;
-  max    = 1;
-  PushNstack(pda, 0);		/* push root state onto stack       */
-  while (PopNstack(pda, &v)) 
+  for (v = cm->M-1; v >= 0; v--)
     {
-      ndecks--;
-      for (; cm->sttype[v] != B_st && cm->sttype[v] != E_st; v++)
-	{
-	  if (ndecks + cm->cnum[v] + 1 > max) max = ndecks + cm->cnum[v] + 1;
-	}
-      if (cm->sttype[v] == B_st) 
-	{
-	  PushNstack(pda, cm->cnum[v]);	     /* right child S */
-	  PushNstack(pda, cm->cfirst[v]);    /* left child S  */
-	  ndecks+=2;
-	  if (ndecks > max) max = ndecks;
-	}
+      if (cm->sttype[v] != E_st) {
+	if (! PopNstack(pda, &y)) ndecks++; /* simulated allocation of a new deck */
+      }
+      
+      if (cm->sttype[v] == B_st) { /* release both S children of a bifurc */
+	y = cm->cfirst[v];
+	z = cm->cnum[v];
+	PushNstack(pda, y);
+	PushNstack(pda, z);
+      } else {
+	for (y = cm->cfirst[v]; y < cm->cfirst[v]+cm->cnum[v]; y++)
+	  {
+	    touch[y]--;
+	    if (touch[y] == 0) 
+	      {
+		if (cm->sttype[y] == E_st) { 
+		  nends--; 
+		  if (nends == 0) { PushNstack(pda, cm->M-1); }
+		} else 
+		  PushNstack(pda, y);
+	      }
+	  }
+      }
     }
   FreeNstack(pda);
-  printf("Maximum # of decks = %d\n", max);
-  return max;
+  free(touch);
+  printf("Maximum # of decks = %d\n", ndecks);
+  return ndecks;
 }
 
 
@@ -113,6 +173,14 @@ alloc_deck(int L)
   for (j = 0; j <= L; j++)
     a[j] = MallocOrDie(sizeof(float) * (j+1));
   return a;
+}
+static void
+free_deck(float **d, int L)
+{
+  int j;
+  for (j = 0; j <= L; j++)
+    free(d[j]);
+  free(d);
 }
 
 
@@ -128,6 +196,7 @@ CYKInside(CM_t *cm, char *dsq, int L)
   int      j,d,i,k;		/* indices in sequence dimensions */
   float    sc;			/* a temporary variable holding a score */
   int      yoffset;		/* y=base+offset -- counter in child states that v can transit to */
+  int      ndecks;		/* total decks that had to be used in memory */
   
   /* Allocations and initializations
    */
@@ -159,8 +228,10 @@ CYKInside(CM_t *cm, char *dsq, int L)
       if (cm->sttype[v] == E_st) { 
 	alpha[v] = end; continue; 
       }
-      if ((alpha[v] = deckpool_pop(dpool)) == NULL)
+      if (! deckpool_pop(dpool, &(alpha[v]))) {
 	alpha[v] = alloc_deck(L);
+	printf("allocating at deck %d\n", v);
+      } 
 
       if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
 	{
@@ -276,15 +347,15 @@ CYKInside(CM_t *cm, char *dsq, int L)
 	  for (y = cm->cfirst[v]; y < cm->cfirst[v]+cm->cnum[v]; y++)
 	    {
 	      touch[y]--;
-	      if (touch[y] == 0) {
-		if (cm->sttype[y] == E_st) { 
-		  nends--; 
-		  if (nends == 0) { deckpool_push(dpool, alpha[y]); alpha[y] = NULL; }
-		} else {
-		  deckpool_push(dpool, alpha[y]);
+	      if (touch[y] == 0) 
+		{
+		  if (cm->sttype[y] == E_st) { 
+		    nends--; 
+		    if (nends == 0) { deckpool_push(dpool, end); end = NULL;}
+		  } else 
+		    deckpool_push(dpool, alpha[y]);
 		  alpha[y] = NULL;
 		}
-	      }
 	    }
 	}
     } /* end loop over v */
@@ -292,6 +363,22 @@ CYKInside(CM_t *cm, char *dsq, int L)
   printf("Sir, I am proud to tell you my final score is: %.2f bits\n", 
 	 alpha[0][L][L]/0.693);
 
-    
+  /* Now we free our memory. 
+   * In principle, in alpha[], we have one root deck, and everything else is NULL;
+   *               in the dpool, we have some number of decks;
+   *               and end should be NULL.
+   */
+  free_deck(alpha[0], L);
+  for (v = 1; v <= cm->M-1; v++) if (alpha[v] != NULL) Die("oi, stray deck at level %d", v);
+  if (end != NULL) Die("oi, the end deck wasn't nullified");
+
+  ndecks = 0;
+  while (deckpool_pop(dpool, &end)) {
+    free_deck(end, L);
+    ndecks++;
+  }
   deckpool_free(dpool);
+
+  printf("actual number of decks used = %d\n", ndecks+1);
+
 }

@@ -138,7 +138,7 @@ DigitizeSequence(char *seq, int L)
   int   i;
   char  c;
 
-  dsq = MallocOrDie(sizeof(char) * (L+1));
+  dsq = MallocOrDie(sizeof(char) * (L+2));
   dsq[0] = dsq[L+1] = 127;
   for (i = 0; i < L; i++) {
     c = toupper(seq[i]);

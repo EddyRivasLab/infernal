@@ -27,6 +27,11 @@ extern char *Statetype(int type);
 extern char *Nodetype(int type);
 extern char *UniqueStatetype(int type);
 
+/* from cmio.c
+ */
+extern void WriteBinaryCM(FILE *fp, CM_t *cm);
+extern int  ReadBinaryCM(FILE *fp, CM_t **ret_cm);
+
 /* from modelmaker.c
  */
 extern void HandModelmaker(MSA *msa, int use_rf, float gapthresh, 
@@ -50,5 +55,6 @@ extern int KHS2ct(char *ss, int len, int allow_pseudoknots, int **ret_ct);
 
 /* from smallcyk.c
  */
+extern void CYKDemands(CM_t *cm, int L);
 extern int  CYKDeckCount(CM_t *cm);
 extern void CYKInside(CM_t *cm, char *dsq, int L);

@@ -54,6 +54,7 @@ CreateCM(int nnodes, int nstates)
   cm->plast  = MallocOrDie(nstates * sizeof(int));
   cm->pnum   = MallocOrDie(nstates * sizeof(int));
 				/* node->state map information */
+  cm->nodes  = nnodes;
   cm->nodemap= MallocOrDie(nnodes  * sizeof(int));
   cm->ndtype = MallocOrDie(nnodes  * sizeof(char));
 				/* parameter information */

@@ -36,10 +36,11 @@ MODLIBS   = -lsquid
 MODLIBDIR = -L${ARENA}
 MODINCDIR = -I${ARENA}
 
-PROGS = cmbuild
+PROGS = cmbuild cmscore
 
 OBJS  = alphabet.o\
 	cm.o\
+	cmio.o\
 	globals.o\
 	modelmaker.o\
 	nstack.o\
