@@ -38,9 +38,15 @@ MODINCDIR = -I${ARENA}
 
 PROGS = cmbuild
 
-OBJS  = 
+OBJS  = globals.o\
+	modelmaker.o\
+	nstack.o\
+	parsetree.o\
+	rna_ops.o
 
-HDRS  = structs.h
+HDRS  = funcs.h\
+	nstack.h\
+	structs.h
 
 .c.o:
 	$(CC) $(CFLAGS) $(MDEFS) $(MODINCDIR) -c $<

@@ -11,8 +11,10 @@
  * for example, they are all assumed to be threadsafe.
  ************************************************************
  * @LICENSE@
- ************************************************************/
+ ************************************************************
  */
+
+#include "squid.h"
 
 /* The symbol alphabet.
  * The package is designed to be configurable for analysis of

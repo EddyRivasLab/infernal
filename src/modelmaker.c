@@ -23,8 +23,10 @@
 
 
 #include <stdlib.h>
+#include "structs.h"
+#include "funcs.h"
 #include "nstack.h"
-#include "sre_malloc.h"		
+#include "squid.h"		
 #include "msa.h"		/* multiple sequence alignments */
 
 /* Function: HandModelmaker()
@@ -58,7 +60,7 @@
  *           tr is allocated here. FreeTrace() on each one, then free(*ret_tr).
  */
 void
-HandModelmaker(MSA *msa, int use_rf, float gapthresh, struct cm_s **ret_cm, struct trace_s **ret_mtr)
+HandModelmaker(MSA *msa, int use_rf, float gapthresh, CM_t **ret_cm, Parsetree_t **ret_mtr)
 {
   CM_t           *cm;		/* new covariance model                       */
   Parsetree_t    *mtr;		/* master traceback tree for alignment        */
@@ -70,6 +72,7 @@ HandModelmaker(MSA *msa, int use_rf, float gapthresh, struct cm_s **ret_cm, stru
   int             v;		/* index of current node                      */
   int             i,j,k;	/* subsequence indices                        */
   int  diff, bestdiff, bestk;   /* used while finding optimal split points    */   
+  int  nxti, nxtj;		/* used when skipping over insertions         */
 
   if (msa->ss_cons == NULL)      Die("No consensus structure annotation available for that alignment.");
   if (use_rf && msa->rf == NULL) Die("No reference annotation available for that alignment.");
@@ -88,7 +91,7 @@ HandModelmaker(MSA *msa, int use_rf, float gapthresh, struct cm_s **ret_cm, stru
       int gaps;
       for (apos = 0; apos < msa->alen; apos++)
 	{
-	  for (gaps = 0, idx = 0; idx < nseq; idx++)
+	  for (gaps = 0, idx = 0; idx < msa->nseq; idx++)
 	    if (isgap(msa->aseq[idx][apos])) gaps++;
 	  matassign[apos] = ((double) gaps / (double) msa->nseq > gapthresh) ? 0 : 1;
 	}
@@ -143,11 +146,11 @@ HandModelmaker(MSA *msa, int use_rf, float gapthresh, struct cm_s **ret_cm, stru
 	{ /* try to push i,j; but deal with INSL and INSR */
 	  for (; i <= j; i++) if (matassign[i]) break;
 	  for (; j >= i; j--) if (matassign[j]) break;
-	  PushNstack(pda, InsertTraceNode(mtr, v, TRACE_LEFT_CHILD, i, j, -1, DUMMY_nd);
+	  PushNstack(pda, InsertTraceNode(mtr, v, TRACE_LEFT_CHILD, i, j, -1, DUMMY_nd));
 	}
 
       else if (mtr->type[v] == BEGL_nd) /* no inserts */
-	PushNstack(pda, InsertTraceNode(mtr, v, TRACE_LEFT_CHILD, NULL, i, j, -1, DUMMY_nd);
+	PushNstack(pda, InsertTraceNode(mtr, v, TRACE_LEFT_CHILD, i, j, -1, DUMMY_nd));
 
       else if (mtr->type[v] == BEGR_nd) /* look for INSL */
 	{
@@ -202,7 +205,7 @@ HandModelmaker(MSA *msa, int use_rf, float gapthresh, struct cm_s **ret_cm, stru
            * then evaluated, keeping track of the best split so far.
            */
 	  bestdiff = msa->alen;
-	  bestk    = -1;
+	  bestk    = ct[i]+1;
 	  for (k = ct[i] + 1; k < ct[j]; k = ct[k] + 1) 
 	    {
 	      diff = abs(i+j-2*k); /* = len2-len1-1, where len2 = j-k+1, len1= k-i */
@@ -222,6 +225,7 @@ HandModelmaker(MSA *msa, int use_rf, float gapthresh, struct cm_s **ret_cm, stru
   FreeNstack(pda);
   free(ct);
 
+#if 0
   /* OK, we've converted ct into mtr -- mtr is a tree structure telling us the
    * arrangement of consensus nodes. Now do the drill for constructing a full model 
    * using this master trace. First find out how many states we need:
@@ -245,5 +249,8 @@ HandModelmaker(MSA *msa, int use_rf, float gapthresh, struct cm_s **ret_cm, stru
   
   free(matassign);
   if (ret_cm  != NULL) *ret_cm  = cm;  else FreeCM(cm);
-  if (ret_mtr != NULL) *ret_mtr = mtr; else FreeTrace(mtr, NULL);
+#endif /*0*/
+  if (ret_mtr != NULL) *ret_mtr = mtr; else FreeParsetree(mtr);
+  PrintParsetree(stdout, mtr);
+  PrintParsetree(stdout, *ret_mtr);
 }

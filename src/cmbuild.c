@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include "structs.h"		/* data structures, macros, #define's   */
+#include "funcs.h"		/* external functions                   */
 #include "squid.h"		/* general sequence analysis library    */
 #include "msa.h"                /* squid's multiple alignment i/o       */
 
@@ -55,6 +56,8 @@ main(int argc, char **argv)
   MSA             *msa;         /* a multiple sequence alignment           */
   int              nali;	/* number of alignments processed          */
   int              idx;		/* counter over seqs                       */
+  Parsetree_t     *mtr;         /* master structure tree from the alignment*/
+  CM_t            *cm;          /* a covariance model                      */
 
   char *optname;                /* name of option found by Getopt()        */
   char *optarg;                 /* argument found by Getopt()              */
@@ -99,7 +102,7 @@ main(int argc, char **argv)
   alifile = argv[optind++]; 
 
   if (!allow_overwrite && !do_append && FileExists(cmfile))
-    Die("HMM file %s already exists. Rename or delete it.", cmfile); 
+    Die("CM file %s already exists. Rename or delete it.", cmfile); 
 
   /*********************************************** 
    * Preliminaries: open our files for i/o
@@ -151,7 +154,13 @@ main(int argc, char **argv)
       for (idx = 0; idx < msa->nseq; idx++)
 	s2upper(msa->aseq[idx]);
 
+      /* Construct a model
+       */
+      HandModelmaker(msa, FALSE, 1., &cm, &mtr);
+      PrintParsetree(stdout, mtr);
+      SummarizeMasterTrace(stdout, mtr);
       
+      FreeParsetree(mtr);
       MSAFree(msa);
     }
 

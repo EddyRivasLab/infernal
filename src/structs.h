@@ -19,6 +19,22 @@ extern int   Alphabet_size;
 extern int   Alphabet_iupac;
 extern char *Alphabet;
 
+
+/* State types. (9)
+ */
+#define STATETYPES 9            /* different kinds of states         */
+#define MAXCONNECT 6            /* maximum number of states per node */
+
+#define D_st     0		/* delete       */
+#define MP_st    1		/* match-pair   */
+#define ML_st    2		/* match-left   */
+#define MR_st    3		/* match-right  */
+#define IL_st    4		/* insert-left  */
+#define IR_st    5		/* insert-right */
+#define S_st     6		/* start        */
+#define E_st     7		/* end          */
+#define B_st     8		/* bifurcation  */
+
 /* Node types. (8)
  */
 #define NODETYPES 8		
@@ -32,6 +48,37 @@ extern char *Alphabet;
 #define BEGR_nd   5
 #define ROOT_nd   6		
 #define END_nd    7
+
+/* Unique state identifiers. (20)
+ */
+#define UNIQUESTATES 20
+
+#define DUMMY   -1
+#define ROOT_S  0
+#define ROOT_IL 1
+#define ROOT_IR 2
+#define BEGL_S  3
+#define BEGR_S  4
+#define BEGR_IL 5
+#define MATP_D  6
+#define MATP_MP 7
+#define MATP_ML 8
+#define MATP_MR 9
+#define MATP_IL 10
+#define MATP_IR 11
+#define MATL_D  12
+#define MATL_ML 13
+#define MATL_IL 14
+#define MATR_D  15
+#define MATR_MR 16
+#define MATR_IR 17
+#define END_E   18
+#define BIF_B   19
+
+/* Flags used in InsertTraceNode()
+ */
+#define TRACE_LEFT_CHILD  1
+#define TRACE_RIGHT_CHILD 2
 
 
 /* Structure: CM_t
