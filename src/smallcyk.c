@@ -182,6 +182,25 @@ free_deck(float **d, int L)
     free(d[j]);
   free(d);
 }
+static float **
+alloc_subseq_deck(int L, int i, int j)
+{
+  float **a;
+  int     k;
+  
+  a = MallocOrDie(sizeof(float *) * (L+1)); /* always alloc 0..L rows, same as alloc_deck */
+  for (k = 0;   k < i-1;    k++) a[k] = NULL;
+  for (k = j+1; k <= L;     k++) a[k] = NULL;
+  for (k = 0;   k <= j-i+1; k++) a[k] = MallocOrDie(sizeof(float) * (k+1));
+  return a;
+}
+static void
+free_subseq_deck(float **a, int i, int j)
+{
+  int k;
+  for (k = 0; k <= j-i+1; k++) free(a[k]);
+  free(a);
+}
 
 
 void
@@ -383,7 +402,7 @@ CYKInside(CM_t *cm, char *dsq, int L)
  * Date:     SRE, Mon Aug  7 07:45:37 2000 [St. Louis]
  */
 void
-CYKOutside(CM_t *cm, char *dsq, int L)
+CYKOutside(CM_t *cm, char *dsq, int L, float ***alpha)
 {
   float ***beta;		/* the scoring cube [v=0..M-1][j=0..L][d=0..j]*/
   int      v,y,z;		/* indices for states */
@@ -522,3 +541,214 @@ CYKOutside(CM_t *cm, char *dsq, int L)
   /*dpool*/
   /*beta*/
 }
+
+
+/* Function: cyk_inside_engine()
+ * Date:     SRE, Mon Aug  7 13:15:37 2000 [St. Louis]
+ *
+ * Purpose:  Run the inside phase of a CYK alignment algorithm.
+ *
+ * Args:     
+ *
+ * Returns:  
+ *
+ * Example:  
+ */
+float 
+cyk_inside_engine(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, 
+		  float ***ret_alpha, struct deckpool_s **ret_dpool)
+{
+  float  **end;                 /* we re-use the end deck. */
+  int      nends;               /* counter that tracks when we can release end deck to the pool */
+  float ***alpha;               /* the scoring cube [v=0..M-1][j=0..L][d=0..j] */
+  struct deckpool_s *dpool;     /* a pool of decks we can reuse */
+  int     *touch;               /* keeps track of how many higher decks still need this deck */
+  int      v,y,z;		/* indices for states  */
+  int      j,d,i,k;		/* indices in sequence dimensions */
+  float    sc;			/* a temporary variable holding a score */
+  int      yoffset;		/* y=base+offset -- counter in child states that v can transit to */
+  int      ndecks;		/* total decks that had to be used in memory */
+  int      W;			/* subsequence length */
+  
+  /* Allocations and initializations
+   */
+  W     = j0-i0+1;
+  end   = alloc_subseq_deck(L, i0, j0);
+  nends = CMSubtreeCountStatetype(cm, vroot, E_st);
+  for (j = i0-1; j <= j0; j++) {
+    end[j][0] = 0.;
+    for (d = 1; d <= W; d++) end[j][d] = IMPOSSIBLE;
+  }
+  
+  alpha = MallocOrDie(sizeof(float **) * cm->M);
+  for (v = 0; v < cm->M; v++) alpha[v] = NULL;
+
+  dpool = deckpool_create();
+
+  touch = MallocOrDie(sizeof(int) * cm->M);
+  for (v = 0;     v < vroot; v++) touch[v] = 0;
+  for (v = vroot; v <= vend; v++) touch[v] = cm->pnum[v];
+  for (v = vend;  v < cm->M; v++) touch[v] = 0;
+
+  /* Main recursion
+   */
+  for (v = vend; v >= vroot; v--) 
+    {
+      /* First we need a deck to fill in.
+       * 1. if we're an E, reuse the end deck (and it's already calculated)
+       * 2. else, see if we can take something from the pool
+       * 3. else, allocate a new deck.
+       */
+      if (cm->sttype[v] == E_st) { 
+	alpha[v] = end; continue; 
+      }
+      if (! deckpool_pop(dpool, &(alpha[v]))) 
+	alpha[v] = alloc_subseq_deck(L, i0, j0);
+
+      if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
+	{
+	  for (j = i0-1; j <= j0; j++) 
+	    for (d = 0; d <= W; d++)
+	      {
+		y = cm->cfirst[v];
+		alpha[v][j][d] = alpha[y][j][d] + cm->tsc[v][0];
+		for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
+		  if ((sc = alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) >  alpha[v][j][d])
+		    alpha[v][j][d] = sc;
+		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
+	      }
+	}
+      else if (cm->sttype[v] == B_st)
+	{
+	  for (j = i0-1; j <= j0; j++) 
+	    for (d = 0; d <= W; d++)
+	      {
+		y = cm->cfirst[v];
+		z = cm->cnum[v];
+		  
+		alpha[v][j][d] = alpha[y][j][d] + alpha[z][j][0];
+		for (k = 1; k <= d; k++)
+		  if ((sc = alpha[y][j-k][d-k] + alpha[z][j][k]) > alpha[v][j][d])
+		    alpha[v][j][d] = sc;
+		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
+	      }
+	}
+      else if (cm->sttype[v] == MP_st)
+	{
+	  for (j = i0-1; j <= j0; j++) {
+	    alpha[v][j][0] = IMPOSSIBLE;
+	    if (j > 0) alpha[v][j][1] = IMPOSSIBLE;
+	    for (d = 2; d <= W; d++) 
+	      {
+		y = cm->cfirst[v];
+		alpha[v][j][d] = alpha[y][j-1][d-2] + cm->tsc[v][0];
+		for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
+		  if ((sc = alpha[y+yoffset][j-1][d-2] + cm->tsc[v][yoffset]) >  alpha[v][j][d])
+		    alpha[v][j][d] = sc;
+		
+		i = j-d+1;
+		if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
+		  alpha[v][j][d] += cm->esc[v][(int) (dsq[i]*Alphabet_size+dsq[j])];
+		else
+		  alpha[v][j][d] += DegeneratePairScore(cm->esc[v], dsq[i], dsq[j]);
+
+		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
+	      }
+	  }
+	}
+      else if (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st)
+	{
+	  for (j = 0; j <= L; j++) {
+	    alpha[v][j][0] = IMPOSSIBLE;
+	    for (d = 1; d <= j; d++)
+	      {
+		y = cm->cfirst[v];
+		alpha[v][j][d] = alpha[y][j][d-1] + cm->tsc[v][0];
+		for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
+		  if ((sc = alpha[y+yoffset][j][d-1] + cm->tsc[v][yoffset]) >  alpha[v][j][d])
+		    alpha[v][j][d] = sc;
+		
+		i = j-d+1;
+		if (dsq[i] < Alphabet_size)
+		  alpha[v][j][d] += cm->esc[v][(int) dsq[i]];
+		else
+		  alpha[v][j][d] += DegenerateSingletScore(cm->esc[v], dsq[i]);
+		
+		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
+	      }
+	  }
+	}
+      else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st)
+	{
+	  for (j = 0; j <= L; j++) {
+	    alpha[v][j][0] = IMPOSSIBLE;
+	    for (d = 1; d <= j; d++)
+	      {
+		y = cm->cfirst[v];
+		alpha[v][j][d] = alpha[y][j-1][d-1] + cm->tsc[v][0];
+		for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
+		  if ((sc = alpha[y+yoffset][j-1][d-1] + cm->tsc[v][yoffset]) > alpha[v][j][d])
+		    alpha[v][j][d] = sc;
+		
+		if (dsq[j] < Alphabet_size)
+		  alpha[v][j][d] += cm->esc[v][(int) dsq[j]];
+		else
+		  alpha[v][j][d] += DegenerateSingletScore(cm->esc[v], dsq[j]);
+		
+		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
+	      }
+	  }
+	}				/* finished calculating deck v. */
+      
+      
+      /* Now we worry about reuse of memory.
+       * Look at our children; if they're fully released, take their deck
+       * into the pool for reuse.
+       */
+      if (cm->sttype[v] == B_st) 
+	{ /* we can definitely release the S children of a bifurc. */
+	  y = cm->cfirst[v];
+	  z = cm->cnum[v];
+	  deckpool_push(dpool, alpha[y]);
+	  deckpool_push(dpool, alpha[z]);
+	  alpha[y] = NULL;
+	  alpha[z] = NULL;
+	}
+      else
+	{
+	  for (y = cm->cfirst[v]; y < cm->cfirst[v]+cm->cnum[v]; y++)
+	    {
+	      touch[y]--;
+	      if (touch[y] == 0) 
+		{
+		  if (cm->sttype[y] == E_st) { 
+		    nends--; 
+		    if (nends == 0) { deckpool_push(dpool, end); end = NULL;}
+		  } else 
+		    deckpool_push(dpool, alpha[y]);
+		  alpha[y] = NULL;
+		}
+	    }
+	}
+    } /* end loop over v */
+  
+  printf("Sir, I am proud to tell you my final score is: %.2f bits\n", 
+	 alpha[0][L][L]/0.693);
+
+  /* Now we free our memory. 
+   * In principle, in alpha[], we have one root deck, and everything else is NULL;
+   *               in the dpool, we have some number of decks;
+   *               and end should be NULL.
+   */
+  free_deck(alpha[0], L);
+  for (v = 1; v <= cm->M-1; v++) if (alpha[v] != NULL) Die("oi, stray deck at level %d", v);
+  if (end != NULL) Die("oi, the end deck wasn't nullified");
+
+  ndecks = 0;
+  while (deckpool_pop(dpool, &end)) {
+    free_deck(end, L);
+    ndecks++;
+  }
+  deckpool_free(dpool);
+}
+

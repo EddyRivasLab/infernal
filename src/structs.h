@@ -151,8 +151,8 @@ typedef struct cm_s {
  * in a set of arrays. 
  */
 typedef struct parsetree_s {
-  int *emitl;			/* i position (0..N-1) or -1 if nothing */
-  int *emitr;			/* j position (0..N-1) or -1 if nothing */
+  int *emitl;			/* i position in sequence or alignment (1..L or alen) */
+  int *emitr;			/* j position in sequence or alignment (1..L or alen) */
   int *state;			/* y of state (0..M-1)                  */
 
   int *nxtl;			/* index in trace of left child  */

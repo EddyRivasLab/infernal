@@ -190,6 +190,7 @@ main(int argc, char **argv)
       /* PrintParsetree(stdout, mtr);  */
       PrintCM(stdout, cm); 
       SummarizeMasterTrace(stdout, mtr); 
+      MasterTraceDisplay(stdout, mtr, cm);
       SummarizeCM(stdout, cm); 
       
       CMSimpleProbify(cm);

@@ -21,6 +21,7 @@ extern void  CMSetDefaultNullModel(CM_t *cm);
 extern void  CMSimpleProbify(CM_t *cm);
 extern void  CMLogoddsify(CM_t *cm);
 extern int   CMCountStatetype(CM_t *cm, char type);
+extern int   CMSubtreeCountStatetype(CM_t *cm, int v, char type);
 extern int   CalculateStateIndex(CM_t *cm, int node, char utype);
 extern void  PrintCM(FILE *fp, CM_t *cm);
 extern void  SummarizeCM(FILE *fp, CM_t *cm);
@@ -50,6 +51,8 @@ extern float        ParsetreeScore(CM_t *cm, Parsetree_t *tr, char *seq);
 extern void         PrintParsetree(FILE *fp, Parsetree_t *tr);
 extern void         ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq);
 extern void         SummarizeMasterTrace(FILE *fp, Parsetree_t *tr);
+extern void         MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm);
+
 
 /* from rna_ops.c
  */

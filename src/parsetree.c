@@ -366,3 +366,34 @@ SummarizeMasterTrace(FILE *fp, Parsetree_t *tr)
   fprintf(fp, "ROOT:         %d\n", count[6]);
   fprintf(fp, "END:          %d\n", count[7]);
 }
+
+/* Function: MasterTraceDisplay()
+ * Date:     SRE, Mon Aug  7 10:05:16 2000 [St. Louis]
+ *
+ * Purpose:  prettified display of a master trace, for debugging
+ *           and planning purposes. works by recursively calling
+ *           mtd_visit_node().
+ */
+static void
+mtd_visit_node(FILE *fp, Parsetree_t *mtr, CM_t *cm, int v, int depth)
+{
+  int y;
+				/* find next start states in "binary tree" */
+  for (y = v+1; y < mtr->n; y++)
+    if (mtr->state[y] == END_nd || mtr->state[y] == BIF_nd) break;
+				/* visit left */
+  if (mtr->state[y] == BIF_nd)
+    mtd_visit_node(fp, mtr, cm, mtr->nxtl[y], depth+1);
+				/* deal with root */
+  fprintf(fp, "%*s%d: %d[%d]: %d..%d, %d nt\n", depth*6, "", depth, v, cm->nodemap[v], mtr->emitl[v], mtr->emitr[v], mtr->emitr[v] - mtr->emitl[v] +1);
+				/* visit right */
+  if (mtr->state[y] == BIF_nd)
+    mtd_visit_node(fp, mtr, cm, mtr->nxtr[y], depth+1);
+}
+void
+MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm)
+{
+  mtd_visit_node(fp, mtr, cm, 0, 0);
+}
+
+
