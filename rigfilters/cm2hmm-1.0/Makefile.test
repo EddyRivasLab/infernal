@@ -1,10 +1,11 @@
-CFLAGS=-D DISABLE_ZRAND -D CM2HMM_ONLY
-LFLAGS=
+variable_CFLAGS=-D DISABLE_ZRAND -D CM2HMM_ONLY
+variable_LFLAGS=
 COMPILE=g++ -c
 LINK=g++
 
-INFERNAL_PATH=/home/dev/infernal
-LPSOLVE_PATH=$(INFERNAL_PATH)/rigfilters/lp_solve_4.0/src
+INFERNAL_PATH=../..
+#LPSOLVE_PATH=$(INFERNAL_PATH)/rigfilters/lp_solve_4.0/src
+LPSOLVE_PATH=~/zasha/cm2hmm-1.0/NotByZasha/lp_solve_4.0/
 CFSQP_PATH=$(INFERNAL_PATH)/rigfilters/cfsqp
 
 LIBS=$(INFERNAL_PATH)/src/libinfernal.a $(INFERNAL_PATH)/squid/libsquid.a $(LPSOLVE_PATH)/liblpk.a $(CFSQP_PATH)/cfsqp.a
@@ -15,8 +16,8 @@ common_LFLAGS= -g
 #CFLAGS:=$(CFLAGS) $(common_CFLAGS) -g -D_DEBUG
 
 # release build
-CFLAGS:=$(CFLAGS) $(common_CFLAGS) -O3 -g -DNDEBUG
-LFLAGS:=$(LFLAGS) $(common_LFLAGS)
+CFLAGS=$(variable_CFLAGS) $(common_CFLAGS) -O3 -g -DNDEBUG
+LFLAGS=$(variable_LFLAGS) $(common_LFLAGS)
 
 # all .cpp files (or .C files)
 CPPFILES=CovarianceModel.cpp InfernalHmm.cpp cmzashaUtils.cpp ForwardHMM.cpp Cm2HMM.cpp Cm2HmmOptimize.cpp SymbolicMath.cpp Cm2HmmOptimize_cfsqp.cpp MarkovModelStats.cpp HmmType1.cpp CommaSepFileReader.cpp MiscExceptions.cpp NaryCounter.cpp SequenceSet.cpp ScanHMM_NonTemplated.cpp
