@@ -86,12 +86,13 @@ main(int argc, char **argv)
    * Parse command line
    ***********************************************/
 
-  format            = SQFILE_UNKNOWN;
-  do_local          = FALSE;
-  do_scoreonly      = FALSE;
-  do_smallonly      = FALSE;
-  regressfile       = NULL;
-  projectX          = FALSE;
+  format              = SQFILE_UNKNOWN;
+  do_local            = FALSE;
+  do_scoreonly        = FALSE;
+  do_smallonly        = FALSE;
+  regressfile         = NULL;
+  projectX            = FALSE;
+  compare_stringently = TRUE;
   
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {

@@ -2722,8 +2722,9 @@ cyk_deck_count(CM_t *cm, int r, int z)
   nends  = CMSegmentCountStatetype(cm, r, z, E_st);
   pda    = CreateNstack();
   touch  = MallocOrDie(sizeof(int) * cm->M);
-  for (v = r; v < z; v++)
-    touch[v] = cm->pnum[v];
+  for (v = 0; v < r;     v++) touch[v] = 0;
+  for (v = r; v < z;     v++) touch[v] = cm->pnum[v];
+  for (v = z; v < cm->M; v++) touch[v] = 0;
 
   for (v = z; v >= r; v--)
     {

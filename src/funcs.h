@@ -89,6 +89,7 @@ extern void           FreeFancyAli(Fancyali_t *ali);
 extern CMConsensus_t *CreateCMConsensus(CM_t *cm, float pthresh, float sthresh);
 extern void           FreeCMConsensus(CMConsensus_t *con);
 extern void           MainBanner(FILE *fp, char *banner); 
+extern int            IsCompensatory(float *pij, int symi, int symj);
 
 /* in emit.c
  */
@@ -127,11 +128,6 @@ extern int          ParsetreeCompare(Parsetree_t *t1, Parsetree_t *t2);
 extern void         SummarizeMasterTrace(FILE *fp, Parsetree_t *tr);
 extern void         MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm);
 
-
-/* from rna_ops.c
- */
-extern int KHS2ct(char *ss, int len, int allow_pseudoknots, int **ret_ct);
-extern int IsCompensatory(float *pij, int symi, int symj);
 
 /* from scancyk.c
  */
