@@ -37,11 +37,7 @@ BandDistribution(CM_t *cm, int W)
   n     = MAX(MAXCONNECT, W+1);
   gamma = DMX2Alloc(cm->M, W+1);
   
-  for (v = 0; v < cm->M; v++)
-    if (cm->sttype[v] == E_st) gamma[v][0] = 1.0;
-    else gamma[v][0] = 0.0;
-
-  for (n = 1; n <= W; n++)
+  for (n = 0; n <= W; n++)
     for (v = cm->M-1; v >= 0; v--)
       {
 	gamma[v][n] = 0.;
@@ -57,12 +53,14 @@ BandDistribution(CM_t *cm, int W)
 	case MR_st:
 	case IL_st:
 	case IR_st:
-	  for (y = 0; y < cm->cnum[v]; y++)
-	    gamma[v][n] += cm->t[v][y] * gamma[cm->cfirst[v] + y][n-1];
+	  if (n >= 1) {
+	    for (y = 0; y < cm->cnum[v]; y++)
+	      gamma[v][n] += cm->t[v][y] * gamma[cm->cfirst[v] + y][n-1];
+	  }
 	  break;
 
 	case MP_st:
-	  if (n > 1) {
+	  if (n >= 2) {
 	    for (y = 0; y < cm->cnum[v]; y++)
 	      gamma[v][n] += cm->t[v][y] * gamma[cm->cfirst[v] + y][n-2];
 	  } 
@@ -74,12 +72,19 @@ BandDistribution(CM_t *cm, int W)
 	  break;
 
 	case E_st:
+	  if (n == 0) gamma[v][n] = 1.;
 	  break;
 	
 	default: 
 	  Die("gamma on fire");
 	}
       }
+
+  /* Reduce numerical imprecision issues: renormalize the distributions.
+   * Don't do this if you're debugging; it makes all other problems go away too.
+   */
+  for (v = 0; v < cm->M; v++)
+    DNorm(gamma[v], W+1);
 
   /* Convert to cumulative distribution, P(len <= n) 
    */

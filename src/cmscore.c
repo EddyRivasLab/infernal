@@ -146,7 +146,7 @@ main(int argc, char **argv)
     {
       double **mx; 
       mx = BandDistribution(cm, 1000);
-      BandBounds(mx, cm->M, 1000, 0.01);
+      BandBounds(mx, cm->M, 1000, 0.001);
       DMX2Free(mx);
       exit(1);
     }
