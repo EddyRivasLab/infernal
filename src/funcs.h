@@ -149,7 +149,6 @@ extern void  CYKDemands(CM_t *cm, int L);
 /* from prior.c
  */
 extern void LogNorm(double *vec, int n);
-extern double Logp_cvec(double *cvec, int n, double *alpha);
 extern struct prior_s *AllocPrior(void);
 extern void FreePrior(struct prior_s *pri);
 extern struct prior_s * ReadPrior(char *prifile);

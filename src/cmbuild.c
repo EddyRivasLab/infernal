@@ -555,6 +555,7 @@ save_countvectors(char *cfile, CM_t *cm)
   FILE *fp;
   int   v,x;
 
+  /* Print emission counts */
   if ((fp = fopen(cfile, "w")) == NULL) return 0;
   for (v = 0; v < cm->M; v++)
     {
@@ -562,7 +563,7 @@ save_countvectors(char *cfile, CM_t *cm)
 	  cm->sttype[v] == ML_st || 
 	  cm->sttype[v] == MR_st) 
 	{
-	  fprintf(fp, "%-7s ", UniqueStatetype(cm->stid[v]));
+	  fprintf(fp, "E\t%-7s ", UniqueStatetype(cm->stid[v]));
 	  if (cm->sttype[v] == MP_st) {
 	    for (x = 0; x < Alphabet_size*Alphabet_size; x++)
 	      fprintf(fp, "%8.3f ", cm->e[v][x]);
@@ -573,6 +574,21 @@ save_countvectors(char *cfile, CM_t *cm)
 	  fprintf(fp, "\n");
 	}
     }
+
+  /* Print transition counts */
+  for (v = 0; v < cm->M; v++)
+    {
+      if(cm->sttype[v] != B_st && cm->sttype[v] != E_st)
+	{
+	  fprintf(fp, "T\t%-7s : %-2d", UniqueStatetype(cm->stid[v]), cm->ndtype[(cm->ndidx[v] + 1)]);
+	  for (x = 0; x < cm->cnum[v]; x++)
+	    {
+	      fprintf(fp, "%8.3f ", cm->t[v][x]);
+	    }
+	  fprintf(fp, "\n");
+	}
+    }
+
   fclose(fp);
   return 1;
 }
