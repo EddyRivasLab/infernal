@@ -168,30 +168,41 @@ InsertTraceNode(Parsetree_t *tr, int y, int whichway, int emitl, int emitr, int 
  * Returns:  (void)
  */
 void
-ParsetreeCount(CM_t *cm, Parsetree_t *tr, char *seq, float *wgt)
+ParsetreeCount(CM_t *cm, Parsetree_t *tr, char *seq, float wgt)
 {
-  int tidx;			/* counter through positions in the parsetree */
+  int tidx;			/* counter through positions in the parsetree        */
+  int v,z;			/* parent, child state index in CM                   */
+  char syml, symr;		/* symbol indices for emissions, 0..Alphabet_iupac-1 */
 
 		/* trivial preorder traverse, since we're already numbered that way */
   for (tidx = 0; tidx < tr->n; tidx++) {
+    v = tr->state[tidx];        	/* index of parent state in CM */
+    if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) /* no parameters estimated from B,E */
+      {
+	z = tr->state[tr->nxtl[tidx]];      /* index of child state in CM  */
+			/* z - cm->first[v] gives us the offset in the transition vector */
+	cm->t[v][z - cm->cfirst[v]] += wgt;
 
-    v = cm->stid[tr->state[tidx]]; /* unique state type of "from" state */
-    z = cm->stid[tr->state[tidx]]; /* unique state type of "to" state   */
-    if (tr->state[tidx] != END_E)
-      cm->t[tr->state[tidx]][CMTransitionIndex[v][z]] += wgt;
-
-    
-    
-
+	if (cm->sttype[v] == MP_st) 
+	  {
+	    syml = SymbolIndex(seq[tr->emitl[tidx]]);
+	    symr = SymbolIndex(seq[tr->emitr[tidx]]);
+	    PairCount(cm->e[v], syml, symr, wgt);
+	  } 
+	else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) 
+	  {
+	    syml = SymbolIndex(seq[tr->emitl[tidx]]);
+	    SingletCount(cm->e[v], syml, wgt);
+	  } 
+	else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) 
+	  {
+	    symr = SymbolIndex(seq[tr->emitr[tidx]]);
+	    SingletCount(cm->e[v], symr, wgt);
+	  }
+      }
   }
-      
+}    
     
-    
-
-}
-
-
-
 /* Function: PrintParsetree()
  * Date:     SRE, Fri Jul 28 12:47:06 2000 [St. Louis]
  *

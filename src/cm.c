@@ -11,6 +11,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
 #include "squid.h"
 
@@ -42,6 +43,8 @@ CreateCM(int nnodes, int nstates)
   cm->acc  = NULL;
   cm->desc = NULL;
   cm->M    = nstates;
+				/* null model information */
+  cm->null   = MallocOrDie(Alphabet_size * sizeof(float));
 				/* structural information */
   cm->sttype = MallocOrDie(nstates * sizeof(char));
   cm->ndidx  = MallocOrDie(nstates * sizeof(int));
@@ -98,6 +101,7 @@ FreeCM(CM_t *cm)
   if (cm->acc  != NULL) free(cm->acc);
   if (cm->desc != NULL) free(cm->desc);
 
+  free(cm->null);
   free(cm->sttype);
   free(cm->ndidx);
   free(cm->stid);
@@ -114,6 +118,85 @@ FreeCM(CM_t *cm)
   free(cm);
 }
 
+
+/* Function: CMSetDefaultNullModel()
+ * Date:     SRE, Tue Aug  1 15:31:52 2000 [St. Louis]
+ *
+ * Purpose:  Initialize the null model to equiprobable (e.g. 0.25)
+ */
+void
+CMSetDefaultNullModel(CM_t *cm)
+{
+  int x;
+  for (x = 0; x < Alphabet_size; x++)
+    cm->null[x] = 1./(float)Alphabet_size;
+}
+
+
+/* Function: CMSimpleProbify()
+ * Date:     SRE, Tue Aug  1 11:07:17 2000 [St. Louis]
+ *
+ * Purpose:  Convert a counts-based CM to probability form, using
+ *           a plus-one Laplace prior.
+ */
+void
+CMSimpleProbify(CM_t *cm)
+{
+  int v,x;
+
+  for (v = 0; v < cm->M; v++) 
+    {
+      /* Transitions. B, E have no transition probabilities.
+       */
+      if (cm->sttype[v] != B_st && cm->sttype[v] != E_st) 
+	{
+	  for (x = 0; x < cm->cnum[v]; x++) cm->t[v][x] += 1.0; /* Laplace prior */
+	  FNorm(cm->t[v], cm->cnum[v]);	                        /* normalize to a probability */
+	}
+
+      /* Emissions.
+       */
+      if (cm->sttype[v] == MP_st) 
+	{
+	  for (x = 0; x < Alphabet_size*Alphabet_size; x++) cm->e[v][x] += 1.0;
+	  FNorm(cm->e[v], Alphabet_size*Alphabet_size);
+	}
+      else if (cm->sttype[v] == ML_st || cm->sttype[v] == MR_st || 
+	       cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) 
+	{
+	  for (x = 0; x < Alphabet_size; x++) cm->e[v][x] += 1.0;
+	  FNorm(cm->e[v], Alphabet_size);
+	}
+    }
+}
+
+/* Function: CMLogoddsify()
+ * Date:     SRE, Tue Aug  1 15:18:26 2000 [St. Louis]
+ *
+ * Purpose:  Convert the probabilities in a CM to log-odds form.
+ */
+void
+CMLogoddsify(CM_t *cm)
+{
+  int v, x, y;
+
+  for (v = 0; v < cm->M; v++)
+    {
+      if (cm->sttype[v] != B_st && cm->sttype[v] != E_st)
+	for (x = 0; x < cm->cnum[v]; x++)
+	  cm->tsc[v][x] = log(cm->t[v][x]);
+      
+      if (cm->sttype[v] == MP_st)
+	for (x = 0; x < Alphabet_size; x++)
+	  for (y = 0; y < Alphabet_size; y++)
+	    cm->esc[v][x*Alphabet_size+y] = log(cm->e[v][x*Alphabet_size+y] / (cm->null[x]*cm->null[y]));
+
+      if (cm->sttype[v] == ML_st || cm->sttype[v] == MR_st ||
+	  cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
+	for (x = 0; x < Alphabet_size; x++)
+	  cm->esc[v][x] = log(cm->e[v][x] / cm->null[x]);
+    }
+}
 
 /* Function: CalculateStateIndex()
  * Date:     SRE, Mon Jul 31 15:37:55 2000 [St. Louis]

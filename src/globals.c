@@ -15,6 +15,7 @@
  */
 
 #include "squid.h"
+#include "structs.h"
 
 /* The symbol alphabet.
  * The package is designed to be configurable for analysis of
@@ -36,13 +37,37 @@ int   Alphabet_size  = 4;
 int   Alphabet_iupac = 17;
 char *Alphabet       = "ACGUTXRYMKSWHBVDN";
 
+char  Degenerate[17][4] = { 
+  /* A  C  G  T */
+  {  1, 0, 0, 0 },  /* A */
+  {  0, 1, 0, 0 },  /* C */
+  {  0, 0, 1, 0 },  /* G */
+  {  0, 0, 0, 1 },  /* U */
+  {  0, 0, 0, 1 },  /* T */
+  {  1, 1, 1, 1 },  /* X */  
+  {  1, 0, 1, 0 },  /* R */  
+  {  0, 1, 0, 1 },  /* Y */
+  {  1, 1, 0, 0 },  /* M */
+  {  0, 0, 1, 1 },  /* K */
+  {  0, 1, 1, 0 },  /* S */
+  {  1, 0, 0, 1 },  /* W */
+  {  1, 1, 0, 1 },  /* H */
+  {  0, 1, 1, 1 },  /* B */
+  {  1, 1, 1, 0 },  /* V */
+  {  1, 0, 1, 1 },  /* D */
+  {  1, 1, 1, 1 },  /* N */
+};
+                     /*A  C  G  T  U  X  R  Y  M  K  S  W  H  B  V  D  N*/
+int DegenCount[17] = { 1, 1, 1, 1, 1, 4, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 4 };
+
 /* CMTransitionIndex[][]
  * Defines a lookup table that lets us turn two unique state types into
  * a transition vector index in a cm --
  * e.g. the value of t_v(x) is in cm->t[v][CMTransitionIndex[v][x]]
+ * (currently unused -- thought I needed it in ParsetreeCount() but I didn't)
  */
 int CMTransitionIndex[UNIQUESTATES][UNIQUESTATES] = {
-  /* ROOT:S IL IR BEGL:S BEGR: S IL MATP:MP ML MR D IL IR MATL:ML D IL MATR: MR D IR END:E BIF:B
+  /* ROOT:S IL IR BEGL:S BEGR: S IL MATP:MP ML MR D IL IR MATL:ML D IL MATR: MR D IR END:E BIF:B*/
   {      -1, 0, 1,    -1,     -1,-1,      2, 3, 4,5,-1,-1,      2,3,-1,       2,3,-1,    2,    2 }, /* ROOT_S  */
   {      -1, 0, 1,    -1,     -1,-1,      2, 3, 4,5,-1,-1,      2,3,-1,       2,3,-1,    2,    2 }, /* ROOT_IL */
   {      -1,-1, 0,    -1,     -1,-1,      1, 2, 3,4,-1,-1,      1,2,-1,       1,2,-1,    1,    1 }, /* ROOT_IR */

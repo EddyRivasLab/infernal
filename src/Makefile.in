@@ -38,7 +38,8 @@ MODINCDIR = -I${ARENA}
 
 PROGS = cmbuild
 
-OBJS  = cm.o\
+OBJS  = alphabet.o\
+	cm.o\
 	globals.o\
 	modelmaker.o\
 	nstack.o\

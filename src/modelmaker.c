@@ -310,17 +310,13 @@ HandModelmaker(MSA *msa, int use_rf, float gapthresh, CM_t **ret_cm, Parsetree_t
   for (idx = 0; idx < msa->nseq; idx++)
     {
       tr = transmogrify(cm, mtr, msa->aseq[idx]);
-      printf("### parse tree for sequence %d\n", idx);
-      PrintParsetree(stdout, tr); 
-#if 0      
-      if (! TraceCount(cm, aseq[idx], 
-		       (ainfo->sqinfo[idx].flags & SQINFO_WGT) ? (double) ainfo->sqinfo[idx].weight : 1.0,
-		       tr))
-	Die("TraceCount() failed");
-#endif
+      /* printf("### parse tree for sequence %d\n", idx);
+	 PrintParsetree(stdout, tr); 
+      */
+      ParsetreeCount(cm, tr, msa->aseq[idx], msa->wgt[idx]);
       FreeParsetree(tr);
     }
-  /* ProbifyCM(cm, prior); */
+  CMSimpleProbify(cm);
 
   free(matassign);
   if (ret_cm  != NULL) *ret_cm  = cm;  else FreeCM(cm);

@@ -18,8 +18,10 @@ extern int   Alphabet_type;
 extern int   Alphabet_size;
 extern int   Alphabet_iupac;
 extern char *Alphabet;
-
-extern int CMTransitionIndex[][];
+#define MAXABET 4		/* maximum for Alphabet_size (used for static arrays) */
+extern char  Degenerate[17][4];
+extern int   DegenCount[17];
+extern int   CMTransitionIndex[20][20];
 
 /* State types. (9)
  */
@@ -95,6 +97,9 @@ typedef struct cm_s {
   char *name;			/*   name of the model                                   */
   char *acc;			/*   optional accession number for model                 */
   char *desc;			/*   optional description of the model                   */
+
+				/* Information about the null model:                     */
+  float *null;                  /*   residue probabilities [0..3]                        */
 
 				/* Information about the state type:                     */
   int   M;			/*   number of states in the model                       */

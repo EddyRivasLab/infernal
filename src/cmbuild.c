@@ -162,6 +162,9 @@ main(int argc, char **argv)
       SummarizeMasterTrace(stdout, mtr); 
       SummarizeCM(stdout, cm); 
       
+      CMSetDefaultNullModel(cm);
+      CMLogoddsify(cm);
+
       FreeParsetree(mtr);
       FreeCM(cm);
       MSAFree(msa);
