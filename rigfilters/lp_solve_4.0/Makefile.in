@@ -5,6 +5,9 @@
 # with the lp_solve package.  It has be written specially
 # for integration of installation with the infernal 
 # package, and relies on infernal's top-level configure
+#
+# It does NOT build the lp_solve executable, only the
+# compiled library.
 #######################################################
 
 # your compiler and compiler flags
@@ -13,11 +16,6 @@ CFLAGS = @CFLAGS@
 
 #should be OK in most situations:
 #CFLAGS= -O
-
-# HP/UX 9.0X optimized code
-#CFLAGS= +O3 +Oaggressive +Olibcalls -Aa -D_POSIX_SOURCE -DCHECK +FP VZOUiD
-# HP/UX 9.0X debugging
-#CFLAGS= -g -Aa -D_POSIX_SOURCE -DCHECK +FP VZOUiD
 
 # nice for gcc
 #CFLAGS= -O3 -Wall -pedantic -ansi
@@ -33,83 +31,32 @@ CFLAGS = @CFLAGS@
 # if your compiler actually implements them with more bits than a double. But
 # it slows down things quite a bit.
 
-# Choose your favorite or available version of lex and yacc
-
 YACC = @YACC@
-#YACC= yacc
-#especially for linux:
-#YACC= bison -y
 
 LEX = @LEX@
 ifeq ($(LEX),flex)
    LEX := $(LEX) -l
 endif
-#LEX= lex
-#especially for linux:
-#LEX= flex -l
 
 LEXLIB = @LEXLIB@
-#LEXLIB= -ll
-#especially for linux:
-#LEXLIB= -lfl
 
 LIBS = @LIBS@
-#ANSI math lib
-#MATHLIB= -lM
-#non-ANSI math lib, should also work
-#MATHLIB= -lm
 
-LPKSRC.c= lpkit.c solve.c debug.c read.c readmps.c hash.c presolve.c
-LEXFILE.l= lex.l
-YACCFILE.y= lp.y
-#TESTFILES1= lp_examples/*.lp
-#TESTFILES2= lp_examples/*.mps
+LPKSRC.c= src/lpkit.c src/solve.c src/debug.c src/read.c src/readmps.c src/hash.c src/presolve.c
+LEXFILE.l= src/lex.l
+YACCFILE.y= src/lp.y
 
-#TARGET=lp_solve
-LPKLIB=liblpk.a
+LPKLIB=src/liblpk.a
 
 LEXFILE.c= $(LEXFILE.l:.l=.c)
 YACCFILE.c= $(YACCFILE.y:.y=.c)
 YACCFILE.o= $(YACCFILE.y:.y=.o)
-#CSOURCES=lpkit.c solve.c debug.c read.c readmps.c lp_solve.c demo.c hash.c presolve.c $(LEXFILE.c) $(YACCFILE.c)
 CSOURCES= $(LEXFILE.c) $(YACCFILE.c)
 COBJ=$(CSOURCES:.c=.o)
 LPKSRC= $(LPKSRC.c) $(YACCFILE.c)
 LPKOBJ= $(LPKSRC:.c=.o)
-#HEADERS=lpkit.h patchlevel.h debug.h read.h hash.h declare.h ufortify.h fortify.h
 
-#INSTALL = install
-#INSTALL_PROGRAM = $(INSTALL)
-#INSTALL_DATA = $(INSTALL)
-#prefix = /usr/local
-#exec_prefix = $(prefix)
-#bindir = $(exec_prefix)/bin
-#libdir = $(exec_prefix)/lib
-#includedir = $(prefix)/include
-#mandir = $(prefix)/man/man1
-
-#all:	demo $(TARGET) lp2mps mps2lp
 all:	$(LPKLIB)
-
-#$(COBJ): $(HEADERS)
-
-#demo:	demo.o $(LPKLIB)
-#	$(CC) -o demo $(CFLAGS) demo.o $(LPKLIB) $(LEXLIB) $(LIBS)
-
-#lp2mps:	lp2mps.o $(LPKLIB)
-#	$(CC) -o lp2mps $(CFLAGS) lp2mps.o $(LPKLIB) $(LEXLIB) $(LIBS)
-
-#mps2lp: mps2lp.o $(LPKLIB)
-#	$(CC) -o mps2lp $(CFLAGS) mps2lp.o $(LPKLIB) $(LEXLIB) $(LIBS)
-
-#$(TARGET): lp_solve.o $(LPKLIB)
-#	$(CC) -o $(TARGET) $(CFLAGS) lp_solve.o $(LPKLIB) $(LEXLIB) $(LIBS)
-
-#purify: lp_solve.o $(LPKLIB)
-#	purify $(CC) -o $(TARGET) $(CFLAGS) lp_solve.o $(LPKLIB) $(LEXLIB) $(LIBS)
-
-#quantify: lp_solve.o $(LPKLIB)
-#	quantify $(CC) -o $(TARGET) $(CFLAGS) lp_solve.o $(LPKLIB) $(LEXLIB) $(LIBS)
 
 $(LPKLIB): $(LPKOBJ)
 	ar rv $@ $(LPKOBJ)
@@ -127,64 +74,9 @@ $(YACCFILE.c): $(YACCFILE.y)
 	sed -e "s/yy/lp_yy/g" y.tab.c >$(YACCFILE.c)
 	rm y.tab.c
 
-#test:
-#	-for i in $(TESTFILES1); do\
-		./$(TARGET) -s -S1 < $$i > xxx.tmp;\
-		tr -d '\r' < lp_examples/`basename $$i .lp`.out > xxxx.tmp;\
-		if diff -b xxx.tmp xxxx.tmp > /dev/null; then\
-			echo "$$i gives the correct result";\
-		else\
-			echo "*** $$i gives different result, please check ***";\
-		fi;\
-	done;\
-	for i in $(TESTFILES2); do\
-		./$(TARGET) -mps -s -S1 < $$i > xxx.tmp;\
-		tr -d '\r' < lp_examples/`basename $$i .mps`.out > xxxx.tmp;\
-		if diff -b xxx.tmp xxxx.tmp > /dev/null; then\
-			echo "$$i gives the correct result";\
-		else\
-			echo "*** $$i gives different result, please check ***";\
-		fi;\
-	done;\
-        rm xxx.tmp xxxx.tmp
-
-#mktest:
-#	-for i in $(TESTFILES1); do\
-		./$(TARGET) -s -S1 -time < $$i > lp_examples/`basename $$i .lp`.out;\
-	done;\
-	for i in $(TESTFILES2); do\
-		./$(TARGET) -mps -s -S1 -time < $$i > lp_examples/`basename $$i .mps`.out;\
-	done;\
-
-#$(TARGET).man: $(TARGET).1
-#	nroff -man $(TARGET).1 > $(TARGET).man
-
-#MANIFEST: clean
-#	ls -lR > MANIFEST; ls -lR > MANIFEST
-
 clean:
-	rm -f *.a *.o $(LEXFILE.c) $(YACCFILE.c)
+	rm -f src/*.a src/*.o $(LEXFILE.c) $(YACCFILE.c)
 
 distclean:
 	make clean
 	-rm Makefile
-
-#distrib: $(TARGET).man MANIFEST
-#	cd ..; tar -czvf lp_solve_4.0.tar.gz lp_solve_4.0
-
-#install: $(bindir)/$(TARGET) $(libdir)/$(LPKLIB) $(includedir)/lpkit.h $(includedir)/hash.h $(includedir)/fortify.h $(includedir)/declare.h $(mandir)/$(TARGET).1
-
-#$(bindir)/$(TARGET): $(TARGET)
-#	$(INSTALL_PROGRAM) $(TARGET) $(bindir)/$(TARGET)
-
-#$(libdir)/$(LPKLIB): $(LPKLIB)
-#	$(INSTALL_DATA) $(LPKLIB) $(libdir)/$(LPKLIB)
-
-#$(includedir)/%.h: %.h
-#	$(INSTALL_DATA) $< $@
-
-#$(mandir)/$(TARGET).1: $(TARGET).1
-#	-$(INSTALL_DATA) $(TARGET).1 $(mandir)/$(TARGET).1
-
-#TAGS:
-#	etags *.[chyl]
