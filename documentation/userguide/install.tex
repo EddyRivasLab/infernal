@@ -1,0 +1,48 @@
+\section{Installation}
+
+\subsection{Quick installation instructions from source}
+
+Download the source tarball (\prog{infernal.tar.gz}) from 
+\htmladdnormallink{ftp.genetics.wustl.edu/pub/eddy/software/infernal/}
+                  {ftp://ftp.genetics.wustl.edu/pub/eddy/software/infernal/}
+or 
+\htmladdnormallink{www.genetics.wustl.edu/eddy/infernal/}
+                  {http://www.genetics.wustl.edu/eddy/infernal/}.
+
+
+Unpack, configure, make, and test the software:
+  
+\begin{center}\begin{minipage}{5.5in}
+\user{tar xvf infernal.tar.gz}
+\user{cd infernal}
+\user{./configure}
+\user{make}
+\user{make check}
+\end{minipage}\end{center}
+
+All the tests should pass.
+
+The programs are in the \prog{src/} subdirectory. The user's guide
+(this document) is in the \prog{documentation/userguide}
+subdirectory. The man pages are in the \prog{documentation/manpages}
+subdirectory. You can manually move or copy all of these to
+appropriate locations if you want. You will want the programs to be in
+your \$PATH.
+
+More complete instructions follow, including how to install the
+package automatically with \prog{make install}.
+
+\subsection{Detailed installation notes}
+
+\subsection{Supported platforms}
+
+\subsection{Configuration options}
+
+\package{Infernal} uses a GNU configure script to automatically
+configure the source code for your platform. Normally 
+
+\begin{sreitems}
+\item[--enable-lfs] 
+\item[
+
+

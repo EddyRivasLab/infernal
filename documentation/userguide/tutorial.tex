@@ -1,3 +1,74 @@
 \chapter{Tutorial}
 
-Here's a quick walk through of what 
+Here's a quick walk-through of the package. Here, we will:
+ \begin{itemize}
+   \item Build a model of an RNA multiple alignment using
+         \prog{cmbuild}.
+   \item Use that model to search for new homologs using
+         \prog{cmsearch}.
+   \item Use that model to align new sequences, and create a 
+         new multiple alignment, using \prog{cmalign}.
+  \end{itemize}
+
+We'll use the following files, all of which are in the \prog{intro/}
+subdirectory of the distribution:
+
+  \begin{sreitems}{tutorial.sto}
+  \item[\emprog{tutorial.sto}] A multiple alignment of five tRNA
+       sequences. This file is a simple example of \emph{Stockholm
+       format} that \software{Infernal} uses for structurally-annotated alignments.
+  \item[\emprog{tutorial.db}]  A tiny sequence ``database''; a 500 nt fragment
+       of the C. elegans genome which contains 2 tRNAs. The file is
+       in FASTA format, which \software{Infernal} uses for unaligned sequence
+       data.
+  \item[\emprog{tutorial.fa}] The same sequences as in \prog{tutorial.sto}, but
+       in unaligned FASTA format.
+  \end{sreitems}
+
+\subsection{Building a model with \prog{cmbuild}}
+
+
+
+
+\begin{figure}[ht]
+\begin{center}\begin{minipage}{5.5in}
+\footnotesize{
+\begin{verbatim}
+# STOCKHOLM 1.0
+
+tRNA1             GCGGAUUUAGCUCAGUUGGG.AGAGCGCCAGACUGAAGAUCUGGAGGUCC
+tRNA2             UCCGAUAUAGUGUAAC.GGCUAUCACAUCACGCUUUCACCGUGGAGA.CC
+tRNA3             UCCGUGAUAGUUUAAU.GGUCAGAAUGGGCGCUUGUCGCGUGCCAGA.UC
+tRNA4             GCUCGUAUGGCGCAGU.GGU.AGCGCAGCAGAUUGCAAAUCUGUUGGUCC
+tRNA5             GGGCACAUGGCGCAGUUGGU.AGCGCGCUUCCCUUGCAAGGAAGAGGUCA
+#=GC SS_cons      <<<<<<<..<<<<.........>>>>.<<<<<.......>>>>>.....<
+
+tRNA1             UGUGUUCGAUCCACAGAAUUCGCA
+tRNA2             GGGGUUCGACUCCCCGUAUCGGAG
+tRNA3             GGGGUUCAAUUCCCCGUCGCGGAG
+tRNA4             UUAGUUCGAUCCUGAGUGCGAGCU
+tRNA5             UCGGUUCGAUUCCGGUUGCGUCCA
+#=GC SS_cons      <<<<.......>>>>>>>>>>>>.
+//
+\end{verbatim}
+}
+\end{minipage}\end{center}
+\caption{\textbf{The tRNA alignment in \prog{tutorial.sto}.}}
+\label{fig:tutorial.sto}
+\end{figure}
+
+To build a model from this alignment, do:
+
+\begin{center}
+    \user{cmbuild my.cm tutorial.sto}
+\end{center}
+
+
+       
+
+       
+
+
+ 
+ 
+
