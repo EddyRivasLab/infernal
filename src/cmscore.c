@@ -53,6 +53,7 @@ main(int argc, char **argv)
   SQINFO           sqinfo;      /* optional info attached to seq */
   char            *dsq;         /* digitized RNA sequence */
   Stopwatch_t     *watch;
+  float            sc;		/* score of a sequence */
   
   char *optname;                /* name of option found by Getopt()        */
   char *optarg;                 /* argument found by Getopt()              */
@@ -113,8 +114,11 @@ main(int argc, char **argv)
       StopwatchZero(watch);
 
       StopwatchStart(watch);
-      CYKInside(cm, dsq, sqinfo.len);
+      sc = CYKInside(cm, dsq, sqinfo.len);
+      CYKDivideAndConquer(cm, dsq, sqinfo.len);
       StopwatchStop(watch);
+
+      printf("%-12s : %.2f\n", sqinfo.name, sc);
 
       StopwatchDisplay(stdout, "CPU time: ", watch);
       FreeSequence(seq, &sqinfo);

@@ -60,6 +60,7 @@ extern int KHS2ct(char *ss, int len, int allow_pseudoknots, int **ret_ct);
 
 /* from smallcyk.c
  */
-extern void CYKDemands(CM_t *cm, int L);
-extern int  CYKDeckCount(CM_t *cm);
-extern void CYKInside(CM_t *cm, char *dsq, int L);
+extern void  CYKDemands(CM_t *cm, int L);
+extern int   CYKDeckCount(CM_t *cm);
+extern float CYKInside(CM_t *cm, char *dsq, int L);
+extern void  CYKDivideAndConquer(CM_t *cm, char *dsq, int L);

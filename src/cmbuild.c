@@ -66,7 +66,6 @@ main(int argc, char **argv)
   MSA             *msa;         /* a multiple sequence alignment           */
   char           **dsq;		/* digitized aligned sequences             */
   int              nali;	/* number of alignments processed          */
-  int              idx;		/* counter over seqs                       */
   Parsetree_t     *mtr;         /* master structure tree from the alignment*/
   Parsetree_t    **tr;		/* inidividual traces from alignment       */
   CM_t            *cm;          /* a covariance model                      */
