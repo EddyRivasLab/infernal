@@ -578,3 +578,95 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
   return;
 }
 
+
+/* Function: BandedParsetreeDump()
+ * Date:     SRE, Sat Sep 27 15:44:22 2003 [St. Louis]
+ * Xref:     STL7 pg. 119
+ *
+ * Purpose:  Generate a detailed picture of a parsetree data structure,
+ *           annotated with relevant information from the sequence
+ *           and the model -- and show agreement (or disagreement)
+ *           with calculated bands.
+ *           
+ *           Modified from ParsetreeDump().
+ *
+ * Args:    fp    - FILE to write output to.
+ *          tr    - parsetree to examine.
+ *          cm    - model that was aligned to dsq to generate the parsetree
+ *          dsq   - sequence that was aligned to cm to generate the parsetree
+ *          gamma - cumulative subsequence length probability distributions
+ *                  used to generate the bands; from BandDistribution(); [0..v..M-1][0..W]
+ *          W     - maximum window length W (gamma distributions range up to this)        
+ *          dmin  - minimum subseq length for each state; from BandBounds(); [0..v..M-1]
+ *          dmax  - maximum ""
+ *
+ * Returns:  (void)
+ */
+void
+BandedParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq, 
+		    double **gamma, int W, int *dmin, int *dmax)
+{
+  int   x;
+  char  syml, symr;
+  float tsc;
+  float esc;
+  int   v,y;
+  int   L;
+
+  fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s %5s %5s\n",
+	  " idx ", "emitl", "emitr", "state", " nxtl", " nxtr", " prv ", " tsc ", " esc ", 
+	  " L   ", " dmin", " dmax");
+  fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s %5s %5s\n",
+	  "-----", "------", "------", "-------", "-----","-----", "-----","-----", "-----",
+	  "-----", "-----", "-----");
+  for (x = 0; x < tr->n; x++)
+    {
+      v = tr->state[x];
+
+      /* Set syml, symr: one char representation of what we emit, or ' '.
+       * Set esc:        emission score, or 0.
+       * Only P, L, R states have emissions.
+       */
+      syml = symr = ' ';
+      esc = 0.;
+      if (cm->sttype[v] == MP_st) {
+	syml = Alphabet[(int)dsq[tr->emitl[x]]]; 
+	symr = Alphabet[(int)dsq[tr->emitr[x]]];
+	esc  = DegeneratePairScore(cm->esc[v], dsq[tr->emitl[x]], dsq[tr->emitr[x]]);
+      } else if (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) {
+	syml = Alphabet[(int)dsq[tr->emitl[x]]];
+	esc  = DegenerateSingletScore(cm->esc[v], dsq[tr->emitl[x]]);
+      } else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) {
+	symr = Alphabet[(int)dsq[tr->emitr[x]]];
+	esc  = DegenerateSingletScore(cm->esc[v], dsq[tr->emitr[x]]);
+      }
+
+      /* Set tsc: transition score, or 0.
+       * B, E, and the special EL state (M, local end) have no transitions.
+       */
+      tsc = 0.;
+      if (v != cm->M && cm->sttype[v] != B_st && cm->sttype[v] != E_st) {
+	y = tr->state[tr->nxtl[x]];
+
+	if (v == 0 && (cm->flags & CM_LOCAL_BEGIN))
+	  tsc = cm->beginsc[y];
+	else if (y == cm->M) /* CM_LOCAL_END is presumably set, else this wouldn't happen */
+	  tsc = cm->endsc[v];
+	else 		/* y - cm->first[v] gives us the offset in the transition vector */
+	  tsc = cm->tsc[v][y - cm->cfirst[v]];
+      }
+
+      /* Print the info line for this state
+       */
+      L = tr->emitr[x]-tr->emitl[x]+1;
+      fprintf(fp, "%5d %5d%c %5d%c %5d%-2s %5d %5d %5d %5.2f %5.2f %5d %5d %5d %2s\n",
+	      x, tr->emitl[x], syml, tr->emitr[x], symr, tr->state[x], 
+	      Statetype(cm->sttype[v]), tr->nxtl[x], tr->nxtr[x], tr->prv[x], tsc, esc,
+	      L, dmin[v], dmax[v],
+	      (L >= dmin[v] && L <= dmax[v]) ? "" : "!!");
+    }
+  fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s %5s %5s\n",
+	  "-----", "------", "------", "-------", "-----","-----", "-----","-----", "-----",
+	  "-----", "-----", "-----");
+  fflush(fp);
+} 

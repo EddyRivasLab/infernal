@@ -37,9 +37,11 @@ static char experts[] = "\
    --informat <s>: specify that input alignment is in format <s>, not FASTA\n\
    --toponly     : only search the top strand\n\
    --local       : do local alignment\n\
+   --noalign     : find start/stop only; don't do alignments\n\
    --dumptrees   : dump verbose parse tree information for each hit\n\
    --banded      : use experimental banded CYK scanning algorithm\n\
    --bandp       : tail loss prob for --banded (default:0.0001)\n\
+   --X           : project X!\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -48,9 +50,11 @@ static struct opt_s OPTIONS[] = {
   { "--dumptrees",  FALSE, sqdARG_NONE },
   { "--informat",   FALSE, sqdARG_STRING },
   { "--local",      FALSE, sqdARG_NONE },
+  { "--noalign",    FALSE, sqdARG_NONE },
   { "--toponly",    FALSE, sqdARG_NONE },
   { "--banded",     FALSE, sqdARG_NONE },
   { "--bandp",      FALSE, sqdARG_FLOAT},
+  { "--X",          FALSE, sqdARG_NONE },
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -88,8 +92,10 @@ main(int argc, char **argv)
   int    windowlen;		/* maximum len of hit; scanning window size */
   int    do_revcomp;		/* true to do reverse complement too */
   int    do_local;		/* TRUE to do local alignment */
+  int    do_align;              /* TRUE to calculate and show alignments */
   int    do_dumptrees;		/* TRUE to dump parse trees */
   int    do_banded;		/* TRUE to do banded CYK */
+  int    do_projectx;           /* TRUE to activate special in-progress testing code */
 
   char *optname;                /* name of option found by Getopt()        */
   char *optarg;                 /* argument found by Getopt()              */
@@ -103,18 +109,22 @@ main(int argc, char **argv)
   windowlen         = 200;
   do_revcomp        = TRUE;
   do_local          = FALSE;
+  do_align          = TRUE;
   do_dumptrees      = FALSE;
   do_banded         = FALSE;
   bandp             = 0.0001;
+  do_projectx       = FALSE;
   
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
     if       (strcmp(optname, "-W")          == 0) windowlen    = atoi(optarg);
     else if  (strcmp(optname, "--dumptrees") == 0) do_dumptrees = TRUE;
     else if  (strcmp(optname, "--local")     == 0) do_local     = TRUE;
+    else if  (strcmp(optname, "--noalign")   == 0) do_align     = FALSE;
     else if  (strcmp(optname, "--toponly")   == 0) do_revcomp   = FALSE;
     else if  (strcmp(optname, "--banded")    == 0) do_banded    = TRUE;
     else if  (strcmp(optname, "--bandp")     == 0) bandp        = atof(optarg);
+    else if  (strcmp(optname, "--X")         == 0) do_projectx  = TRUE;
     else if  (strcmp(optname, "--informat")  == 0) {
       format = String2SeqfileFormat(optarg);
       if (format == SQFILE_UNKNOWN) 
@@ -153,11 +163,10 @@ main(int argc, char **argv)
   CMHackInsertScores(cm);	/* make insert emissions score zero. "TEMPORARY" FIX. */
   cons = CreateCMConsensus(cm, 3.0, 1.0); 
 
-  if (do_banded)
+  if (do_banded || do_projectx)
     {
       gamma = BandDistribution(cm, windowlen);
       BandBounds(gamma, cm->M, windowlen, bandp, &dmin, &dmax);
-      DMX2Free(gamma);
     }
 
   StopwatchZero(watch);
@@ -186,21 +195,26 @@ main(int argc, char **argv)
 		 reversed ? sqinfo.len - hitj[i] + 1 : hitj[i],
 		 hitsc[i]);
 	  
-	  CYKDivideAndConquer(cm, dsq, sqinfo.len, 
-			      hitr[i], hiti[i], hitj[i], &tr);
+	  if (do_align) 
+	    {
+	      CYKDivideAndConquer(cm, dsq, sqinfo.len, 
+				  hitr[i], hiti[i], hitj[i], &tr);
 
-	  ali = CreateFancyAli(tr, cm, cons, dsq);
-	  PrintFancyAli(stdout, ali);
+	      ali = CreateFancyAli(tr, cm, cons, dsq);
+	      PrintFancyAli(stdout, ali);
 
-	  if (do_dumptrees) {
-	    ParsetreeDump(stdout, tr, cm, dsq);
-	    printf("\tscore = %.2f\n", ParsetreeScore(cm,tr,dsq));
-	  }
+	      if (do_dumptrees) {
+		ParsetreeDump(stdout, tr, cm, dsq);
+		printf("\tscore = %.2f\n", ParsetreeScore(cm,tr,dsq));
+	      }
+	      if (do_projectx) {
+		BandedParsetreeDump(stdout, tr, cm, dsq, gamma, windowlen, dmin, dmax);
+	      }
 
-	  FreeFancyAli(ali);
-	  FreeParsetree(tr);
+	      FreeFancyAli(ali);
+	      FreeParsetree(tr);
+	    }
 	}
-
 	  
       free(hitr);
       free(hiti);
@@ -222,6 +236,7 @@ main(int argc, char **argv)
 
   if (do_banded)
     {
+      DMX2Free(gamma);
       free(dmin);
       free(dmax);
     }
