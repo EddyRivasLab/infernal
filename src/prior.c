@@ -663,6 +663,7 @@ PriorifyTransitionVector(float *vec, struct prior_s *pri,
 				  * Dchlet_logp_counts function which 
 				  * takes double vectors, not float
 				  * vectors) */
+  double total = 0;
 
   mix[0] = 1.0;			/* default is simple one component */
 
@@ -695,7 +696,6 @@ PriorifyTransitionVector(float *vec, struct prior_s *pri,
   //printf("\nafter incorporating priors\n");
   
   totc = DSum(dvec, pri->tasize[setnum]);
-  double total = 0;
   for (x = 0; x < pri->tasize[setnum]; x++) {
     xi = 0.0;
     for (q = 0; q < pri->tnum[setnum]; q++) {
