@@ -37,7 +37,6 @@
        }}
      {\end{list}}
        
-
 % Consistent font styles
 %   \software{} for the name of a software package
 %   \database{} for the name of a database
@@ -47,6 +46,6 @@
 
 \newcommand{\software}[1]{\textsc{#1}}
 \newcommand{\database}[1]{\textsc{#1}}
-\newcommand{\prog}[1]{\texttt{#1}}
-\newcommand{\emprog}[1]{{\bfseries\texttt{#1}}}
-\newcommand{\user}[1]{\noindent{\small\bfseries\texttt{$>$ #1}}\\}
+\newcommand{\prog}[1]{{\small\bfseries\texttt{#1}}}
+\newcommand{\emprog}[1]{{\small\bfseries\texttt{#1}}}
+\newcommand{\user}[1]{\indent\indent{\small\bfseries\texttt{> #1}}}
