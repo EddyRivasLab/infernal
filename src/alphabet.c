@@ -12,6 +12,8 @@
 #include <string.h>
 #include <ctype.h>
 
+#include "squid.h"
+
 #include "structs.h"
 
 /* Function: SymbolIndex()
@@ -89,3 +91,59 @@ PairCount(float *counters, char syml, char symr, float wt)
   }
 }
   
+
+float
+DegeneratePairScore(float *esc, char syml, char symr)
+{
+  float left[MAXABET], right[MAXABET];
+  int l,r;
+  float sc;
+
+  SingletCount(left, syml, 1.);
+  SingletCount(right, symr, 1.);
+
+  sc = 0.;
+  for (l = 0; l < Alphabet_size; l++)
+    for (r = 0; r < Alphabet_size; r++)
+      sc += esc[l*Alphabet_size+r] * left[l] * right[r];
+  return sc;
+}
+float 
+DegenerateSingletScore(float *esc, char sym)
+{
+  float nt[MAXABET];		
+  float sc;
+  int   x;
+
+  SingletCount(nt, sym, 1.);
+  sc = 0.;
+  for (x = 0; x < Alphabet_size; x++)
+    sc += esc[x] * nt[x];
+  return sc;
+}
+
+
+/* Function: DigitizeSequence()
+ * Date:     SRE, Wed Aug  2 13:05:49 2000 [St. Louis]
+ *
+ * Purpose:  Digitize a sequence in preparation for a DP algorithm.
+ *           a dsq is 1..L, with 0 and L+1 filled with flag bytes.
+ *             values in dsq:  0..Alphabet_iupac-1: Symbol index.
+ *                             127                  end byte.
+ */
+char *
+DigitizeSequence(char *seq, int L)
+{
+  char *dsq;
+  int   i;
+  char  c;
+
+  dsq = MallocOrDie(sizeof(char) * (L+1));
+  dsq[0] = dsq[L+1] = 127;
+  for (i = 0; i < L; i++) {
+    c = toupper(seq[i]);
+    if (c == 'T') c = 'U';	/* it's RNA, dammit. */
+    dsq[i+1] = SymbolIndex(c);
+  }
+  return dsq;
+}

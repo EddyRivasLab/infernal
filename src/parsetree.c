@@ -203,6 +203,59 @@ ParsetreeCount(CM_t *cm, Parsetree_t *tr, char *seq, float wgt)
   }
 }    
     
+/* Function: ParsetreeScore()
+ * Date:     SRE, Wed Aug  2 13:54:07 2000 [St. Louis]
+ *
+ * Purpose:  Calculate the score of a given parse tree for a sequence,
+ *           given a CM that's prepared in log-odds form.
+ */
+float
+ParsetreeScore(CM_t *cm, Parsetree_t *tr, char *seq)
+{
+  int tidx;			/* counter through positions in the parsetree        */
+  int v,y;			/* parent, child state index in CM                   */
+  char symi, symj;		/* symbol indices for emissions, 0..Alphabet_iupac-1 */
+  float sc;			/* the log-odds score of the parse tree */
+
+		/* trivial preorder traverse, since we're already numbered that way */
+  sc = 0.;
+  for (tidx = 0; tidx < tr->n; tidx++) {
+    v = tr->state[tidx];        	/* index of parent state in CM */
+    if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) /* no scores in B,E */
+      {
+	y = tr->state[tr->nxtl[tidx]];      /* index of child state in CM  */
+			/* y - cm->first[v] gives us the offset in the transition vector */
+	sc += cm->tsc[v][y - cm->cfirst[v]];
+	
+	if (cm->sttype[v] == MP_st) 
+	  {
+	    symi = SymbolIndex(seq[tr->emitl[tidx]]);
+	    symj = SymbolIndex(seq[tr->emitr[tidx]]);
+	    if (symi < Alphabet_size && symj < Alphabet_size)
+	      sc += cm->esc[v][(int) (symi*Alphabet_size+symj)];
+	    else
+	      sc += DegeneratePairScore(cm->esc[v], symi, symj);
+	  } 
+	else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) 
+	  {
+	    symi = SymbolIndex(seq[tr->emitl[tidx]]);
+	    if (symi < Alphabet_size) sc += cm->esc[v][(int) symi];
+	    else                      sc += DegenerateSingletScore(cm->esc[v], symi);
+	  } 
+	else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) 
+	  {
+	    symj = SymbolIndex(seq[tr->emitr[tidx]]);
+	    if (symi < Alphabet_size) sc += cm->esc[v][(int) symj];
+	    else                      sc += DegenerateSingletScore(cm->esc[v], symj);
+	  }
+      }
+  }
+  return sc;
+}
+
+
+
+
 /* Function: PrintParsetree()
  * Date:     SRE, Fri Jul 28 12:47:06 2000 [St. Louis]
  *

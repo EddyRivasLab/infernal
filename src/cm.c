@@ -198,6 +198,29 @@ CMLogoddsify(CM_t *cm)
     }
 }
 
+/* Function: CMCountStatetype()
+ * Date:     SRE, Wed Aug  2 09:15:00 2000 [St. Louis]
+ *
+ * Purpose:  A convenience for counting the # of occurrences
+ *           of a particular state type in a CM. Useful for
+ *           "how many bifurcations does this model have", etc.
+ *
+ * Args:     cm   - the model
+ *           type - a state type (e.g. E_st or MP_st)    
+ *
+ * Returns:  how many states of that type are in the model
+ */
+int
+CMCountStatetype(CM_t *cm, char type)
+{
+  int v;
+  int count = 0;
+  for (v = 0; v < cm->M; v++)
+    if (cm->sttype[v] == type) count++;
+  return count;
+}
+
+
 /* Function: CalculateStateIndex()
  * Date:     SRE, Mon Jul 31 15:37:55 2000 [St. Louis]
  *

@@ -23,6 +23,12 @@ extern char  Degenerate[17][4];
 extern int   DegenCount[17];
 extern int   CMTransitionIndex[20][20];
 
+/* The "-infinity" value in a DP matrix should be > -FLT_MAX/3, so that 
+ * we can add three of them together (alpha + tsc + esc) and not get an
+ * underflow error. ANSI guarantees us FLT_MAX >= 1e37. 
+ */
+#define IMPOSSIBLE -1e36
+
 /* State types. (9)
  */
 #define STATETYPES 9            /* different kinds of states         */

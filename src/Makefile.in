@@ -44,13 +44,14 @@ OBJS  = alphabet.o\
 	modelmaker.o\
 	nstack.o\
 	parsetree.o\
-	rna_ops.o
+	rna_ops.o\
+	smallcyk.o
 
 HDRS  = funcs.h\
 	nstack.h\
 	structs.h
 
-.c.o:
+.c.o: 
 	$(CC) $(CFLAGS) $(MDEFS) $(MODINCDIR) -c $<
 
 #################################################################

@@ -65,17 +65,20 @@ static Parsetree_t *transmogrify(CM_t *cm, Parsetree_t *mtr, char *aseq);
  *           gapthresh - fraction of gaps to allow in a match column (if use_rf is FALSE)
  *           ret_cm    - RETURN: new model                      (maybe NULL)
  *           ret_mtr   - RETURN: master traceback for alignment (maybe NULL)
+ *           ret_tr    - RETURN: 0..nseq-1 individual tracebacks for seqs (maybe NULL)
  *           
  * Return:   void
  *           cm is allocated here. FreeCM(*ret_cm).
- *           tr is allocated here. FreeTrace() on each one, then free(*ret_tr).
+ *           mtr is allocated here. FreeTrace() on each one, then free(*ret_tr).
  */
 void
-HandModelmaker(MSA *msa, int use_rf, float gapthresh, CM_t **ret_cm, Parsetree_t **ret_mtr)
+HandModelmaker(MSA *msa, int use_rf, float gapthresh, 
+	       CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_tr)
 {
   CM_t           *cm;		/* new covariance model                       */
   Parsetree_t    *mtr;		/* master traceback tree for alignment        */
   Parsetree_t    *tr;		/* an individual parse tree                   */
+  Parsetree_t   **savetr;	/* array of individual traces if we're saving */
   Nstack_t       *pda;		/* pushdown stack used in building mtr        */
   int            *matassign;	/* 0..alen-1 array; 0=insert col, 1=match col */
   int            *ct;		/* 0..alen-1 base pair partners array         */
@@ -307,6 +310,8 @@ HandModelmaker(MSA *msa, int use_rf, float gapthresh, CM_t **ret_cm, Parsetree_t
   cm = CreateCM(nnodes, nstates);
   cm_from_master(cm, mtr);
 
+  if (ret_tr != NULL) savetr = MallocOrDie(sizeof(Parsetree_t *) * msa->nseq);
+
   for (idx = 0; idx < msa->nseq; idx++)
     {
       tr = transmogrify(cm, mtr, msa->aseq[idx]);
@@ -314,13 +319,13 @@ HandModelmaker(MSA *msa, int use_rf, float gapthresh, CM_t **ret_cm, Parsetree_t
 	 PrintParsetree(stdout, tr); 
       */
       ParsetreeCount(cm, tr, msa->aseq[idx], msa->wgt[idx]);
-      FreeParsetree(tr);
-    }
-  CMSimpleProbify(cm);
 
+      if (ret_tr != NULL) savetr[idx] = tr; else FreeParsetree(tr);
+    }
   free(matassign);
   if (ret_cm  != NULL) *ret_cm  = cm;  else FreeCM(cm);
   if (ret_mtr != NULL) *ret_mtr = mtr; else FreeParsetree(mtr);
+  if (ret_tr  != NULL) *ret_tr  = savetr; 
 }
 
 
@@ -681,7 +686,7 @@ transmogrify(CM_t *cm, Parsetree_t *mtr, char *aseq)
 	break;
 
       case MATP_nd:
-	if (isgap(mtr->emitl[node])) {
+	if (isgap(aseq[mtr->emitl[node]])) {
 	  if (isgap(aseq[mtr->emitr[node]])) type = MATP_D;
 	  else                               type = MATP_MR;
 	} else {

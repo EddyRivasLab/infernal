@@ -57,6 +57,7 @@ main(int argc, char **argv)
   int              nali;	/* number of alignments processed          */
   int              idx;		/* counter over seqs                       */
   Parsetree_t     *mtr;         /* master structure tree from the alignment*/
+  Parsetree_t    **tr;		/* inidividual traces from alignment       */
   CM_t            *cm;          /* a covariance model                      */
 
   char *optname;                /* name of option found by Getopt()        */
@@ -156,14 +157,30 @@ main(int argc, char **argv)
 
       /* Construct a model
        */
-      HandModelmaker(msa, FALSE, 1., &cm, &mtr);
+      HandModelmaker(msa, FALSE, 1., &cm, &mtr, &tr);
       /* PrintParsetree(stdout, mtr);  */
       PrintCM(stdout, cm); 
       SummarizeMasterTrace(stdout, mtr); 
       SummarizeCM(stdout, cm); 
       
+      CMSimpleProbify(cm);
       CMSetDefaultNullModel(cm);
+
       CMLogoddsify(cm);
+      CYKDeckCount(cm);
+      for (idx = 0; idx < msa->nseq; idx++)
+	{
+	  char *rseq, *dsq;
+	  int   L;
+	  
+	  MakeDealignedString(msa->aseq[idx], msa->alen, msa->aseq[idx], &rseq);
+	  L = strlen(rseq);
+	  dsq = DigitizeSequence(rseq, L);
+	  CYKInside(cm, dsq, L);
+
+	  printf("trace score says: %.2f\n",
+		 ParsetreeScore(cm, tr[idx], msa->aseq[idx])/ 0.693);
+	}
 
       FreeParsetree(mtr);
       FreeCM(cm);
