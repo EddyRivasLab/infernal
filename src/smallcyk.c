@@ -21,8 +21,16 @@
  * Date:      SRE, Wed Aug  2 10:43:17 2000 [St. Louis]
  *
  * Purpose:   Implementation of a pushdown stack for storing decks
- *            of the inside dynamic programming matrix, with the
- *            usual _create, _push, _pop, and _free API.
+ *            of the inside or outside dynamic programming matrices, with the
+ *            usual _create, _push, _pop, and _free API. 
+ *            
+ *            The deck pool allows us to efficiently reuse memory,
+ *            so long as our DP algorithms step through the decks
+ *            as their outermost loop.
+ *            
+ *            Works for either coordinate system (vjd or vji) 
+ *            and subseq variants, because it's simply managing
+ *            a deck as a float **.
  */
 struct deckpool_s {
   float ***pool;
@@ -74,6 +82,9 @@ static void  cyk_outside_engine(CM_t *cm, char *dsq, int L, int vroot, int vend,
 				int do_full, float ***beta, float ****ret_beta,
 				struct deckpool_s *dpool, struct deckpool_s **ret_dpool);
 static void  splitting_engine(CM_t *cm, char *dsq, int L, int r, int vend, int i0, int j0);
+static void  segment_alignment_engine(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
+				      int r, int i0, int j0,
+				      int s, int i1, int j1);
 
 void
 CYKDemands(CM_t *cm, int L)
@@ -187,25 +198,7 @@ free_deck(float **d, int L)
     free(d[j]);
   free(d);
 }
-static float **
-alloc_subseq_deck(int L, int i, int j)
-{
-  float **a;
-  int     k;
-  
-  a = MallocOrDie(sizeof(float *) * (L+1)); /* always alloc 0..L rows, same as alloc_deck */
-  for (k = 0;   k < i-1;    k++) a[k] = NULL;
-  for (k = j+1; k <= L;     k++) a[k] = NULL;
-  for (k = 0;   k <= j-i+1; k++) a[k] = MallocOrDie(sizeof(float) * (k+1));
-  return a;
-}
-static void
-free_subseq_deck(float **a, int i, int j)
-{
-  int k;
-  for (k = 0; k <= j-i+1; k++) free(a[k]);
-  free(a);
-}
+
 
 float
 CYKInside(CM_t *cm, char *dsq, int L)
@@ -423,9 +416,49 @@ CYKOutside(CM_t *cm, char *dsq, int L, float ***alpha)
  *           ret_dpool - if non-NULL, return the deck pool for reuse -- these will
  *                       *only* be valid on exactly the same i0..j0 subseq,
  *                       because of the size of the subseq decks.
+ *           ret_shadow- if non-NULL, the caller wants a shadow matrix, because
+ *                       he intends to do a traceback.
  *
  * Returns:  
  */
+static float **
+alloc_subseq_deck(int L, int i, int j)
+{
+  float **a;
+  int     k;
+  
+  a = MallocOrDie(sizeof(float *) * (L+1)); /* always alloc 0..L rows, same as alloc_deck */
+  for (k = 0;   k < i-1;    k++) a[k] = NULL;
+  for (k = j+1; k <= L;     k++) a[k] = NULL;
+  for (k = 0;   k <= j-i+1; k++) a[k] = MallocOrDie(sizeof(float) * (k+1));
+  return a;
+}
+static void
+free_subseq_deck(float **a, int i, int j)
+{
+  int k;
+  for (k = 0; k <= j-i+1; k++) free(a[k]);
+  free(a);
+}
+static char **
+alloc_subseq_shadow(int L, int i, int j)
+{
+  char **a;
+  int    k;
+  
+  a = MallocOrDie(sizeof(char *) * (L+1)); /* always alloc 0..L rows, same as alloc_deck */
+  for (k = 0;   k < i-1;    k++) a[k] = NULL;
+  for (k = j+1; k <= L;     k++) a[k] = NULL;
+  for (k = 0;   k <= j-i+1; k++) a[k] = MallocOrDie(sizeof(char) * (k+1));
+  return a;
+}
+static void
+free_subseq_shadow(char **a, int i, int j)
+{
+  int k;
+  for (k = 0; k <= j-i+1; k++) free(a[k]);
+  free(a);
+}
 static float 
 cyk_inside_engine(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
 		  float ***alpha, float ****ret_alpha, 
@@ -438,7 +471,7 @@ cyk_inside_engine(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j
   int      j,d,i,k;		/* indices in sequence dimensions */
   float    sc;			/* a temporary variable holding a score */
   int      yoffset;		/* y=base+offset -- counter in child states that v can transit to */
-   int      W;			/* subsequence length */
+  int      W;			/* subsequence length */
   int      jp;			/* j': relative position in the subsequence  */
 
   /* Allocations and initializations
@@ -477,7 +510,7 @@ cyk_inside_engine(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j
        */
       if (cm->sttype[v] == E_st) { 
 	alpha[v] = end; continue; 
-      }
+      } 
       if (! deckpool_pop(dpool, &(alpha[v]))) 
 	alpha[v] = alloc_subseq_deck(L, i0, j0);
 
@@ -488,9 +521,9 @@ cyk_inside_engine(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j
 	    for (d = 0; d <= jp; d++)
 	      {
 		y = cm->cfirst[v];
-		alpha[v][j][d] = alpha[y][j][d] + cm->tsc[v][0];
+		alpha[v][j][d]  = alpha[y][j][d] + cm->tsc[v][0];
 		for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
-		  if ((sc = alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) >  alpha[v][j][d])
+		  if ((sc = alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) >  alpha[v][j][d]) 
 		    alpha[v][j][d] = sc;
 		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 	      }
@@ -507,7 +540,7 @@ cyk_inside_engine(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j
 		  
 		alpha[v][j][d] = alpha[y][j][d] + alpha[z][j][0];
 		for (k = 1; k <= d; k++)
-		  if ((sc = alpha[y][j-k][d-k] + alpha[z][j][k]) > alpha[v][j][d])
+		  if ((sc = alpha[y][j-k][d-k] + alpha[z][j][k]) > alpha[v][j][d]) 
 		    alpha[v][j][d] = sc;
 		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 	      }
@@ -919,4 +952,257 @@ splitting_engine(CM_t *cm, char *dsq, int L, int r, int vend, int i0, int j0)
 
   /* we've still got two matrices to free... UNFINISHED
    */
+}
+
+
+/* Function: segment_alignment_engine()
+ * Date:     SRE, Thu Aug 10 12:05:48 2000 [St. Louis]
+ *
+ * Purpose:  Given that the splitting_engine has determined
+ *           that the optimal alignment is bounded by
+ *           r,i0,j0 on the outside and s,i1,j1 on the inside;
+ *           find the optimal alignment in between.
+ *           
+ *           r must be a start state.
+ *           s must be a bifurc state. (In principle it could
+ *             also be an end state, but in that case, we would
+ *             have to know the exact position i1,j1 for the end,
+ *             which is not normally known.)
+ *             
+ *           The states r+1..s-1 must be a continuous
+ *           linear model segment -- no bifurcations, no ends.
+ *
+ * Args:     
+ *
+ * Returns:  
+ *
+ * Example:  
+ */
+static float **                 /* allocation of a score deck. */
+alloc_vji_seg_deck(int i0, int j0, int i1, int j1)
+{
+  float **a;
+  int     jp;
+  a = MallocOrDie(sizeof(float *) * (j0-j1+1));
+  for (jp = 0; jp <= j0-j1; jp++)
+    a[jp] = MallocOrDie(sizeof(float)*(i1-i0+1));
+  return a;
+}
+static void			/* free'ing a score deck */
+free_vji_seg_deck(float **a, int j0, int j1)
+{
+  int jp;
+  for (jp = 0; jp <= j0-j1; jp++) 
+    if (a[jp] != NULL) free a[jp];
+  free(a);
+}
+
+static char **		        /* allocation of a traceback ptr (shadow matrix) deck */
+alloc_vji_seg_shadow(int i0, int j0, int i1, int j1)
+{
+  char **a;
+  int     jp;
+  a = MallocOrDie(sizeof(char *) * (j0-j1+1));
+  for (jp = 0; jp <= j0-j1; jp++)
+    a[jp] = MallocOrDie(sizeof(char)*(i1-i0+1));
+  return a;
+}
+static void	                /* free'ing a shadow deck */
+free_vji_seg_shadow(char **a, int j0, int j1)
+{
+  int jp;
+  for (jp = 0; jp <= j0-j1; jp++) 
+    if (a[jp] != NULL) free a[jp];
+  free(a);
+}
+static void
+segment_alignment_engine(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
+			 int r, int i0, int j0,
+			 int s, int i1, int j1)
+{
+  float ***a;                   /* the score matrix -- memory is reused */
+  char  ***shadow;              /* the shadow matrix -- traceback ptrs -- memory is kept */
+  struct deckpool_s *dpool;     /* stack for reuse of score matrix decks */
+  int     v,i,j;
+  int     jp, ip;		/* j' and i' -- in the matrix coords */
+  int    *touch;                /* keeps track of whether we can free a deck yet or not */
+  int     y, yoffset;
+  float   sc;			/* tmp variable holding a score */
+
+  /* Allocations, initializations
+   */
+  dpool = deckpool_create();
+  
+  a = MallocOrDie(sizeof(float **) * cm->M);
+  for (v = 0; v < cm->M; v++) a[v] = NULL;
+
+  shadow = MallocOrDie(sizeof(char **) * cm->M);
+  for (v = 0; v < cm->M; v++) shadow[v] = NULL; 
+
+				/* init the last deck, s; we don't need a shadow for it. */
+  for (jp = 0; jp <= j0-j1; jp++) 
+    for (ip = 0; ip <= i1-i0; ip++) 
+      a[s][jp][ip] = IMPOSSIBLE;
+  a[s][0][i1-i0] = 0.;
+
+  touch = MallocOrDie(sizeof(int) * cm->M);
+  for (v = 0;   v < r;  v++) touch[v] = 0;
+  for (v = r;   v <= s; v++) touch[v] = cm->pnum[v];
+  for (v = s+1; v < cm->M; v++) touch[v] = 0;
+
+  /* Main recursion
+   */
+  for (v = s-1; v >= r; v--)
+    {
+      /* Get a deck and a shadow deck.
+       */
+      if (! deckpool_pop(dpool, &(a[v]))) 
+	a[v] = alloc_vji_seg_deck(i0, j0, i1, j1);
+      shadow[v] = alloc_vji_seg_shadow(i0,j0,i1,j1);
+
+				/* reassert our definition of a model segment */
+      if (cm->sttype[v] == E_st || cm->sttype[v] == B_st || (cm->sttype[v] == S_st && v > r))
+	Die("you told me you wouldn't ever do that again.");
+      
+      if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
+	{
+	  for (jp = 0; jp <= j0-j1; jp++) 
+	    for (ip = i1-i0; ip >= 0; ip--) {
+	      y = cm->cfirst[v];
+	      a[v][jp][ip]      = a[y][jp][ip] + cm->tsc[v][0];
+	      shadow[v][jp][ip] = (char) 0;
+	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
+		if ((sc = a[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) >  a[v][jp][ip])
+		  { a[v][jp][ip] = sc; shadow[v][jp][ip] = (char) yoffset; }
+	      if (a[v][jp][ip] < IMPOSSIBLE) a[v][jp][ip] = IMPOSSIBLE;
+	    }
+	} else if (cm->sttype[v] == MP_st) {
+	  for (ip = i1-i0; ip >= 0; ip--) a[v][0][ip] = IMPOSSIBLE; /* boundary condition */
+
+	  for (jp = 1; jp <= j0-j1; jp++) { 
+	    j = jp+j1;
+	    a[v][jp][i1-i0] = IMPOSSIBLE; /* boundary condition */
+	    for (ip = i1-i0-1; ip >= 0; ip--) {
+	      i = ip+i0;
+	      y = cm->cfirst[v];
+	      a[v][jp][ip] = a[y][jp-1][ip+1] + cm->tsc[v][0];
+	      shadow[v][jp][ip] = 0;
+	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
+		if ((sc = a[y+yoffset][jp-1][ip+1] + cm->tsc[v][yoffset]) >  a[v][jp][ip])
+		   { a[v][jp][ip] = sc; shadow[v][jp][ip] = (char) yoffset; }
+
+	      if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
+		alpha[v][jp][ip] += cm->esc[v][(int) (dsq[i]*Alphabet_size+dsq[j])];
+	      else
+		alpha[v][jp][ip] += DegeneratePairScore(cm->esc[v], dsq[i], dsq[j]);
+	      if (a[v][jp][ip] < IMPOSSIBLE) a[v][jp][ip] = IMPOSSIBLE;  
+	    }
+	  }
+	} else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) {
+	  
+	  for (jp = 0; jp <= j0-j1; jp++) { 
+	    a[v][jp][i1-i0] = IMPOSSIBLE; /* boundary condition */
+	    for (ip = i1-i0-1; ip >= 0; ip--) {
+	      i = ip+i0;
+	      y = cm->cfirst[v];
+	      a[v][jp][ip] = a[y][jp][ip+1] + cm->tsc[v][0];
+	      shadow[v][jp][ip] = 0;
+	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
+		if ((sc = a[y+yoffset][jp][ip+1] + cm->tsc[v][yoffset]) >  a[v][jp][ip])
+		  { a[v][jp][ip] = sc; shadow[v][jp][ip] = (char) yoffset; }
+	      
+	      if (dsq[i] < Alphabet_size)
+		alpha[v][jp][ip] += cm->esc[v][(int) dsq[ip]];
+	      else
+		alpha[v][jp][ip] += DegenerateSingletScore(cm->esc[v], dsq[i]);
+	      if (a[v][jp][ip] < IMPOSSIBLE) a[v][jp][ip] = IMPOSSIBLE;  
+	    }
+	  }
+	} else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) {
+	  for (ip = i1-i0; ip >= 0; ip--) a[v][0][ip] = IMPOSSIBLE; /* boundary condition */
+
+	  for (jp = 1; jp <= j0-j1; jp++) { 
+	    j = jp+j1;
+	    for (ip = i1-i0; ip >= 0; ip--) {
+	      y = cm->cfirst[v];
+	      a[v][jp][ip]      = a[y][jp-1][ip] + cm->tsc[v][0];
+	      shadow[v][jp][ip] = 0;
+	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
+		if ((sc = a[y+yoffset][jp-1][ip] + cm->tsc[v][yoffset]) >  a[v][jp][ip])
+		  { a[v][jp][ip] = sc; shadow[v][jp][ip] = (char) yoffset; }
+	      
+	      if (dsq[j] < Alphabet_size)
+		alpha[v][jp][ip] += cm->esc[v][(int) dsq[j]];
+	      else
+		alpha[v][jp][ip] += DegenerateSingletScore(cm->esc[v], dsq[j]);
+	      if (a[v][jp][ip] < IMPOSSIBLE) a[v][jp][ip] = IMPOSSIBLE;  
+	    }
+	  }
+	} /* finished calculating deck v */
+
+      /* Now, try to reuse memory under v
+       */
+      for (y = cm->cfirst[v]; y < cm->cfirst[v]+cm->cnum[v]; y++)
+	{
+	  touch[y]--;
+	  if (touch[y] == 0) { 
+	    deckpool_push(dpool, a[y]);
+	    a[y] = NULL;
+	  }
+	}
+    } /* end loop over v; we now have a complete matrix */
+	
+  /* We're done with the score matrix, so blow it away, along with the
+   * other machinery -- everything but the shadow matrix.
+   * deck r is active in a[][][], and we have an unknown number of decks in the pool.
+   */
+  free_vji_seg_deck(a[r], j0, j1);
+  while (deckpool_pop(dpool, &(a[r]))) free_vji_seg_deck(a[r], j0, j1);
+  deckpool_free(dpool);
+  free(a);
+  free(touch);
+
+  /* We've got a complete shadow matrix. Trace it back. We know
+   * that the trace will begin with the start state r, at i0,j0
+   * (e.g. jp=j0-j1, ip=0)
+   */
+  v  = r;
+  j = j0;
+  i = i0;
+  while (v < s) {
+    jp = j-j1;
+    ip = i-i0;
+
+    /* 1. figure out the next state (deck) in the shadow matrix.
+     */ 
+    yoffset = shadow[v][jp][ip];
+    y = cm->cfirst[v] + yoffset;
+
+    /* 2. figure out the i,j for state y, which is dependent 
+     *    on what v emits (if anything)
+     */
+    switch (cm->sttype[v]) {
+    case D_st:            break;
+    case MP_st: i++; j--; break;
+    case ML_st: i++;      break;
+    case MR_st:      j--; break;
+    case IL_st: i++;      break;
+    case IR_st:      j--; break;
+    case S_st:            break;
+    default:    Die("'Inconceivable!'\n'You keep using that word...'");
+    }
+    
+    /* 3. Attach y,i,j to the trace. This new node always attaches
+     *    to the end of the growing trace -- e.g. trace node
+     *    tr->n-1.
+     */
+    InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+  }
+  
+  /* We're done. Our traceback has just ended. We have just attached
+   * the bifurcation at s,i1,j1; it is in the traceback at node tr->n-1.
+   * Free the shadow matrix and return.
+   */
+  for (v = r; v < s; v++) free_vji_seg_shadow(shadow[v], j0, j1);
+  free(shadow);
 }
