@@ -3,3 +3,10 @@ SRE, Tue Dec 31 12:18:00 2002
 CVS $Id$
 ---------------------------------------------------------
 
+ID              i1
+STATUS          closed
+DESCRIPTION     vault, bad SS_cons
+XREF            STL7 p.12
+REPORTED_BY     Robin Dowell
+CLOSED_DATE     SRE, Thu Jan  2 07:07:39 2003  
+//

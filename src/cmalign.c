@@ -237,7 +237,8 @@ main(int argc, char **argv)
 
 
 MSA *
-Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt, Parsetree_t **tr, int nseq)
+Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt, 
+		     Parsetree_t **tr, int nseq)
 {
   MSA         *msa;          /* multiple sequence alignment */
   CMEmitMap_t *emap;         /* consensus emit map for the CM */
@@ -510,8 +511,17 @@ Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt, Parsetree
     {
       if (matuse[cpos]) 
 	{ /* CMConsensus is off-by-one right now, 0..clen-1 relative to cpos's 1..clen */
-	  msa->ss_cons[matmap[cpos]] = con->cstr[cpos-1];	
-	  msa->rf[matmap[cpos]]      = con->cseq[cpos-1];
+
+	  /* bug i1, xref STL7 p.12. Before annotating something as a base pair,
+	   * make sure the paired column is also present.
+	   */
+	  if (con->ct[cpos-1] != -1 && matuse[con->ct[cpos-1]+1] == 0) {
+	    msa->ss_cons[matmap[cpos]] = ':';
+	    msa->rf[matmap[cpos]]      = con->cseq[cpos-1];
+	  } else {
+	    msa->ss_cons[matmap[cpos]] = con->cstr[cpos-1];	
+	    msa->rf[matmap[cpos]]      = con->cseq[cpos-1];
+	  }
 	}
       if (maxil[cpos] > 0) 
 	for (apos = ilmap[cpos]; apos < ilmap[cpos] + maxil[cpos]; apos++)

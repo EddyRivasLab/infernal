@@ -3,7 +3,7 @@
 # CVS $Id$
 #
 
-1  prep       rand50               shuffle -i -n 50 -t 90 --dna --seed 42 -o %RAND50%
-1  benchmark  cmbuild:trna         cmbuild -F %TRNA.CM% trna1415G.sto
-1  benchmark  cmalign:trna         cmalign %TRNA.CM% %RAND50%
-1  benchmark  cmscore:trna         cmscore %TRNA.CM% %RAND50%
+1  prep       rand50               @shuffle@ -i -n 50 -t 90 --dna --seed 42 -o %RAND50%
+1  benchmark  cmbuild:trna         @cmbuild@ -F %TRNA.CM% trna1415G.sto
+1  benchmark  cmalign:trna         @cmalign@ %TRNA.CM% %RAND50%
+1  benchmark  cmscore:trna         @cmscore@ %TRNA.CM% %RAND50%

@@ -2,6 +2,14 @@
 # SRE, Tue Dec 31 12:19:36 2002
 # CVS $Id$
 #
-# In reverse chronological order...
+# To run on all bugs:  ../ssdk/sqc 2 bugs.sqc ../src/
+#     only open bugs:  ../ssdk/sqc 1 bugs.sqc ../src/
+#
+# Which means, by convention, all open bugs have priority 1
+# in the script; all closed bugs have priority 2.
+#
+# bug tests are in reverse chronological order...
 
+# i1- the vault bad SS_cons bug. 2 Jan 02, xref STL7 p.12
+2 exercise i1/vault  ./i1 @cmbuild@ @cmalign@
 

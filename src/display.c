@@ -461,6 +461,7 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
   CMConsensus_t *con;           /* growing consensus info */
   char     *cseq;               /* growing consensus sequence display string   */
   char     *cstr;               /* growing consensus structure display string  */
+  int      *ct;			/* growing ct Zuker pairing partnet string     */
   int      *lpos, *rpos;        /* maps node->consensus position, [0..nodes-1] */
   int       cpos;		/* current position in cseq, cstr              */
   int       nalloc;		/* current allocated length of cseq, cstr      */
@@ -473,11 +474,13 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
   char      lchar, rchar;
   char      lstruc, rstruc;
   int       x;
+  int       pairpartner;	/* coord of left pairing partner of a right base */
 
   lpos    = MallocOrDie(sizeof(int) * cm->nodes);
   rpos    = MallocOrDie(sizeof(int) * cm->nodes);
   cseq    = MallocOrDie(sizeof(char) * 100);
   cstr    = MallocOrDie(sizeof(char) * 100);
+  ct      = MallocOrDie(sizeof(int)  * 100);
   nalloc  = 100;
   cpos    = 0;
 
@@ -495,10 +498,13 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
       {
 	PopNstack(pda, &x); rchar  = (char) x;
 	PopNstack(pda, &x); rstruc = (char) x;
+	PopNstack(pda, &pairpartner); 
 	PopNstack(pda, &nd);
 	rpos[nd]   = cpos;
 	cseq[cpos] = rchar;
 	cstr[cpos] = rstruc;
+	ct[cpos]   = pairpartner;
+	if (pairpartner != -1) ct[pairpartner] = cpos;
 	cpos++;
       }
     else if (type == PDA_MARKER) 
@@ -557,10 +563,13 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
 	if (lchar) {
 	  cseq[cpos] = lchar;
 	  cstr[cpos] = lstruc;
+	  ct[cpos]   = -1;	/* will be overwritten, if needed, when right guy is processed */
 	  cpos++;
 	}
 	if (rchar) {
 	  PushNstack(pda, nd);
+	  if (lchar) PushNstack(pda, cpos-1);
+	  else       PushNstack(pda, -1);
 	  PushNstack(pda, rstruc);
 	  PushNstack(pda, rchar);
 	  PushNstack(pda, PDA_RESIDUE);
@@ -589,6 +598,7 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
       nalloc += 100;
       cseq = ReallocOrDie(cseq, sizeof(char) * nalloc);
       cstr = ReallocOrDie(cstr, sizeof(char) * nalloc);
+      ct   = ReallocOrDie(ct,   sizeof(int)  * nalloc);
     }
   }/* PDA now empty... done generating cseq, cstr, and node->consensus residue map */
   cseq[cpos] = '\0';
@@ -602,6 +612,7 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
   con = MallocOrDie(sizeof(CMConsensus_t));
   con->cseq = cseq;
   con->cstr = cstr;
+  con->ct   = ct;
   con->lpos = lpos;
   con->rpos = rpos;
   con->clen = cpos;
@@ -613,6 +624,7 @@ FreeCMConsensus(CMConsensus_t *con)
 {
   if (con->cseq != NULL) free(con->cseq);
   if (con->cstr != NULL) free(con->cstr);
+  if (con->ct   != NULL) free(con->ct);
   if (con->lpos != NULL) free(con->lpos);
   if (con->rpos != NULL) free(con->rpos);
   free(con);

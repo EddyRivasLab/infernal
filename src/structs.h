@@ -208,10 +208,19 @@ typedef struct parsetree_s {
  * Created by display.c:CreateCMConsensus(). 
  * Preprocesses a CM into consensus information that is needed by
  * display.c:CreateFancyAli().
+ *
+ *   ct[x]:  Zuker-style ct map.
+ *           indicates the pairing partner for consensus position ct[x].
+ *           x can be 0..clen-1
+ *           ct[x] is -1 (no partner) or 0..clen-1 (coord of partner)
+ *           
+ *   (lpos, rpos may be redundant w/ CMEmitMap_t now.)
+ *   (off-by-one w.r.t. CMEmitMap_t; 1..clen is better)
  */
 typedef struct consensus_s {
   char *cseq;           /* consensus sequence display string; 0..clen-1     */
   char *cstr;		/* consensus structure display string; 0..clen-1    */
+  int  *ct;             /* Zuker-style ct pairing map; [0..clen-1]          */
   int  *lpos;		/* maps node->consensus position; 0..nodes-1        */
   int  *rpos;		/* maps node->consensus position; 0..nodes-1        */
   int   clen;		/* length of cseq, cstr                             */
@@ -254,7 +263,7 @@ typedef struct fancyali_s {
  * See emitmap.c for implementation and more documentation.
  */
 typedef struct emitmap_s {
-  int *lpos;           /* left bound of consensus for subtree under nd  */
+  int *lpos;           /* left bound of consensus for subtree under nd   */
   int *rpos;           /* right bound of consensus for subtree under nd  */
   int *epos;           /* EL inserts come after this consensus pos */
   int  clen;           /* consensus length */

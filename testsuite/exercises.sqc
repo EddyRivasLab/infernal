@@ -5,47 +5,47 @@
 
 # Exercises of cmalign.
 #
-1  prep      model/trna           cmbuild -F --rf %TRNA.CM% trna1415G.sto
-1  exercise  cmalign:trna/1       cmalign %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna/2       cmalign -l %TRNA.CM% 3trnas.fa
-2  prep      model/vault          cmbuild -F --rf %VAULT.CM% vault.sto
-2  exercise  cmalign:vault/1      cmalign %VAULT.CM% vault.fa
-2  exercise  cmalign:vault/2      cmalign -l %VAULT.CM% vault.fa
+1  prep      model/trna           @cmbuild@ -F --rf %TRNA.CM% trna1415G.sto
+1  exercise  cmalign:trna/1       @cmalign@ %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna/2       @cmalign@ -l %TRNA.CM% 3trnas.fa
+2  prep      model/vault          @cmbuild@ -F --rf %VAULT.CM% vault.sto
+2  exercise  cmalign:vault/1      @cmalign@ %VAULT.CM% vault.fa
+2  exercise  cmalign:vault/2      @cmalign@ -l %VAULT.CM% vault.fa
 
 # Exercises of cmbuild.
 #
-1  exercise    cmbuild/rf/trna      cmbuild -F --rf  %MODEL% trna1415G.sto
-1  exercise    cmbuild/trna         cmbuild -F  %MODEL% trna1415G.sto
-1  exercise    cmbuild/rf/RNaseP    cmbuild -F --rf  %MODEL% rnaseP-eubact.sto
-1  exercise    cmbuild/RNaseP       cmbuild -F  %MODEL% rnaseP-eubact.sto
-1  exercise    cmbuild/SRP          cmbuild -F  %MODEL% srp-euk.sto
+1  exercise    cmbuild/rf/trna    @cmbuild@ -F --rf  %MODEL% trna1415G.sto
+1  exercise    cmbuild/trna       @cmbuild@ -F  %MODEL% trna1415G.sto
+1  exercise    cmbuild/rf/RNaseP  @cmbuild@ -F --rf  %MODEL% rnaseP-eubact.sto
+1  exercise    cmbuild/RNaseP     @cmbuild@ -F  %MODEL% rnaseP-eubact.sto
+1  exercise    cmbuild/SRP        @cmbuild@ -F  %MODEL% srp-euk.sto
 
 
 # Exercises of cmscore.
 #
-1  prep      model/trna1          cmbuild -F %TRNA1.CM% trna1415G.sto
-1  prep      model/trna2          cmbuild --rf -F %TRNA2.CM% trna1415G.sto
-1  exercise  cmscore/trna1        cmscore %TRNA1.CM% trna-regression.fa
-1  exercise  cmscore/trna2        cmscore %TRNA2.CM% trna-regression.fa
-1  exercise  cmscore/local/trna1  cmscore --local %TRNA1.CM% trna-regression.fa
-1  exercise  cmscore/local/trna2  cmscore --local %TRNA2.CM% trna-regression.fa
+1  prep      model/trna1          @cmbuild@ -F %TRNA1.CM% trna1415G.sto
+1  prep      model/trna2          @cmbuild@ --rf -F %TRNA2.CM% trna1415G.sto
+1  exercise  cmscore/trna1        @cmscore@ %TRNA1.CM% trna-regression.fa
+1  exercise  cmscore/trna2        @cmscore@ %TRNA2.CM% trna-regression.fa
+1  exercise  cmscore/local/trna1  @cmscore@ --local %TRNA1.CM% trna-regression.fa
+1  exercise  cmscore/local/trna2  @cmscore@ --local %TRNA2.CM% trna-regression.fa
 
-2  prep      rand50               shuffle -i -n 50 -t 90 --dna --seed 42 -o %RAND50%
-2  exercise  trna1/rand50         cmscore %TRNA1.CM% %RAND50%
-2  exercise  trna2/rand50         cmscore %TRNA2.CM% %RAND50%
-2  exercise  trna1/rand50/local   cmscore --local %TRNA1.CM% %RAND50%
-2  exercise  trna2/rand50/local   cmscore --local %TRNA2.CM% %RAND50%
+2  prep      rand50               @shuffle@ -i -n 50 -t 90 --dna --seed 42 -o %RAND50%
+2  exercise  trna1/rand50         @cmscore@ %TRNA1.CM% %RAND50%
+2  exercise  trna2/rand50         @cmscore@ %TRNA2.CM% %RAND50%
+2  exercise  trna1/rand50/local   @cmscore@ --local %TRNA1.CM% %RAND50%
+2  exercise  trna2/rand50/local   @cmscore@ --local %TRNA2.CM% %RAND50%
 
-2  prep      model/rnaseP         cmbuild --rf -F %RNASEP.CM% rnaseP-eubact.sto
-2  prep      model/srp            cmbuild -F %SRP.CM% srp-euk.sto
-2  exercise  rnaseP/bsu           cmscore %RNASEP.CM% rnaseP-bsu.fa
-2  exercise  rnaseP/bsu/local     cmscore --local %RNASEP.CM% rnaseP-bsu.fa
-2  exercise  srp/ffs              cmscore %SRP.CM% ffs-ecoli.fa
-2  exercise  srp/ffs/local        cmscore --local %SRP.CM% ffs-ecoli.fa
+2  prep      model/rnaseP         @cmbuild@ --rf -F %RNASEP.CM% rnaseP-eubact.sto
+2  prep      model/srp            @cmbuild@ -F %SRP.CM% srp-euk.sto
+2  exercise  rnaseP/bsu           @cmscore@ %RNASEP.CM% rnaseP-bsu.fa
+2  exercise  rnaseP/bsu/local     @cmscore@ --local %RNASEP.CM% rnaseP-bsu.fa
+2  exercise  srp/ffs              @cmscore@ %SRP.CM% ffs-ecoli.fa
+2  exercise  srp/ffs/local        @cmscore@ --local %SRP.CM% ffs-ecoli.fa
 
-3  prep      rand20               shuffle -i -n 20 -t 100 --dna --seed 42 -o %RAND20%
-3  exercise  rnaseP/rand          cmscore %RNASEP.CM% %RAND20%
-3  exercise  rnaseP/rand/local    cmscore --local %RNASEP.CM% %RAND20%
+3  prep      rand20               @shuffle@ -i -n 20 -t 100 --dna --seed 42 -o %RAND20%
+3  exercise  rnaseP/rand          @cmscore@ %RNASEP.CM% %RAND20%
+3  exercise  rnaseP/rand/local    @cmscore@ --local %RNASEP.CM% %RAND20%
 
 
 
