@@ -17,10 +17,11 @@
 /* Function: KHS2ct()
  * Incept:   SRE 29 Feb 2000 [Seattle]; from COVE 1.0 code
  * 
- * Purpose:  Convert a secondary structure string to an array of integers
+ * Purpose:  Convert a secondary structure string (0..len-1) to an array of integers
  *           representing what position each position is base-paired 
- *           to (0..len-1), or -1 if none. This is off-by-one from a
- *           Zuker .ct file representation.
+ *           to (1..len), or 0 if none. This 1..len representation is
+ *           the same as the Zuker .ct file representation, but differs
+ *           from my previous 0..len-1 implementations of ct operations.
  *           
  *           The structure string contains "><" for base pairs and gap symbols
  *           (usually '.') for unpaired bases.
@@ -55,17 +56,17 @@ KHS2ct(char *ss, int len, int allow_pseudoknots, int **ret_ct)
   pda[0] = CreateNstack();
   if (allow_pseudoknots) for (i = 1; i < 27; i++) pda[i] = CreateNstack();
 
-  ct = MallocOrDie (len * sizeof(int));
-  for (pos = 0; pos < len; pos++)
-    ct[pos] = -1;
+  ct = MallocOrDie ((len+1) * sizeof(int));
+  for (pos = 0; pos <= len; pos++)
+    ct[pos] = 0;
 
-  for (pos = 0; pos < len; pos++)
+  for (pos = 1; pos <= len; pos++)
     {
-      if (!isprint(ss[pos])) status = 0; /* armor against garbage strings */
+      if (!isprint(ss[pos-1])) status = 0; /* armor against garbage strings */
 
-      else if (ss[pos] == '>')  /* left side of a pair: push onto stack 0 */
+      else if (ss[pos-1] == '>')  /* left side of a pair: push onto stack 0 */
         PushNstack(pda[0], pos);
-      else if (ss[pos] == '<')  /* right side of a pair; resolve pair */
+      else if (ss[pos-1] == '<')  /* right side of a pair; resolve pair */
         {
           if (! PopNstack(pda[0], &pair))
             { status = 0; }
@@ -76,12 +77,12 @@ KHS2ct(char *ss, int len, int allow_pseudoknots, int **ret_ct)
             }
         }
                                 /* same stuff for pseudoknots */
-      else if (isupper((int) ss[pos])) {
-	if (allow_pseudoknots) PushNstack(pda[ss[pos] - 'A' + 1], pos);
+      else if (isupper((int) ss[pos-1])) {
+	if (allow_pseudoknots) PushNstack(pda[ss[pos-1] - 'A' + 1], pos);
       }
-      else if (islower((int) ss[pos])) {
+      else if (islower((int) ss[pos-1])) {
 	if (allow_pseudoknots) {
-          if (! PopNstack(pda[ss[pos] - 'a' + 1], &pair))
+          if (! PopNstack(pda[ss[pos-1] - 'a' + 1], &pair))
             { status = 0; }
           else
             {
@@ -90,7 +91,7 @@ KHS2ct(char *ss, int len, int allow_pseudoknots, int **ret_ct)
             }
 	}
       }
-      else if (!isgap(ss[pos])) status = 0; /* bogus character */
+      else if (!isgap(ss[pos-1])) status = 0; /* bogus character */
     }
                                 /* nothing should be left on stacks */
   if (! NstackIsEmpty(pda[0])) status = 0;

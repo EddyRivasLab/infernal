@@ -4,12 +4,13 @@
 
 /* from alphabet.c
  */
-extern char  SymbolIndex(char sym);
-extern void  SingletCount(float *counters, char symidx, float wt);
-extern void  PairCount(float *counters, char syml, char symr, float wt);
-extern float DegeneratePairScore(float *esc, char syml, char symr);
-extern float DegenerateSingletScore(float *esc, char sym);
-extern char *DigitizeSequence(char *seq, int L);
+extern char   SymbolIndex(char sym);
+extern void   SingletCount(float *counters, char symidx, float wt);
+extern void   PairCount(float *counters, char syml, char symr, float wt);
+extern float  DegeneratePairScore(float *esc, char syml, char symr);
+extern float  DegenerateSingletScore(float *esc, char sym);
+extern char  *DigitizeSequence(char *seq, int L);
+extern char **DigitizeAlignment(char **aseq, int nseq, int alen);
 
 /* from cm.c
  */
@@ -34,7 +35,7 @@ extern int  ReadBinaryCM(FILE *fp, CM_t **ret_cm);
 
 /* from modelmaker.c
  */
-extern void HandModelmaker(MSA *msa, int use_rf, float gapthresh, 
+extern void HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh, 
 			   CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_tr);
 
 /* from parsetree.c

@@ -36,6 +36,7 @@ static char experts[] = "\
    --gapthresh   : fraction of gaps to allow in a consensus column (0..1)\n\
    --binary      : save output model (cmfile) in binary, not ASCII text\n\
    --informat <s>: specify that input alignment is in format <s>, not Stockholm\n\
+   --tfile <s>   : dump traces to debugging file <s>\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -47,9 +48,12 @@ static struct opt_s OPTIONS[] = {
   { "--gapthresh", FALSE, sqdARG_FLOAT},
   { "--informat",  FALSE, sqdARG_STRING },
   { "--rf",        FALSE, sqdARG_NONE },
+  { "--tfile",     FALSE, sqdARG_STRING },
 
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
+
+static void dump_traces(char *tracefile, MSA *msa, Parsetree_t **tr, CM_t *cm, char **dsq); 
 
 int
 main(int argc, char **argv)
@@ -60,6 +64,7 @@ main(int argc, char **argv)
   MSAFILE         *afp;         /* open alignment file                     */
   FILE            *cmfp;	/* output file for CMs                     */
   MSA             *msa;         /* a multiple sequence alignment           */
+  char           **dsq;		/* digitized aligned sequences             */
   int              nali;	/* number of alignments processed          */
   int              idx;		/* counter over seqs                       */
   Parsetree_t     *mtr;         /* master structure tree from the alignment*/
@@ -77,6 +82,7 @@ main(int argc, char **argv)
   char  fpopts[3];		/* options to open a file with, e.g. "ab"  */
   int   use_rf;			/* TRUE to use #=RF annot to define consensus cols  */
   float gapthresh;		/* 0=all cols are inserts; 1=all cols are consensus */
+  char *tracefile;		/* file to dump debugging traces to */
 
   /*********************************************** 
    * Parse command line
@@ -88,6 +94,7 @@ main(int argc, char **argv)
   allow_overwrite   = FALSE;
   gapthresh         = 0.5;
   use_rf            = FALSE;
+  tracefile         = NULL;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -96,6 +103,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "-F") == 0)          allow_overwrite   = TRUE;
     else if (strcmp(optname, "--gapthresh") == 0) gapthresh         = atof(optarg);
     else if (strcmp(optname, "--rf")        == 0) use_rf            = TRUE;
+    else if (strcmp(optname, "--tfile")     == 0) tracefile         = optarg;
 
     else if (strcmp(optname, "--informat") == 0) {
       format = String2SeqfileFormat(optarg);
@@ -165,15 +173,20 @@ main(int argc, char **argv)
       puts("");
       fflush(stdout);
       
-      /* Make alignment upper case, because some symbol counting
-       * things are case-sensitive.
+      /* Digitize the alignment: this takes care of
+       * case sensivitity (A vs. a), speeds all future
+       * array indexing, and deals with the poor fools
+       * who would give us horrid DNA (T) instead of
+       * lovely RNA (U). It does cause one wee problem:
+       * you need to keep in mind that a digitized seq
+       * is indexed 1..alen, but msa (and its annotation!!)
+       * is indexed 0..alen-1.
        */
-      for (idx = 0; idx < msa->nseq; idx++)
-	s2upper(msa->aseq[idx]);
+      dsq = DigitizeAlignment(msa->aseq, msa->nseq, msa->alen);
 
       /* Construct a model
        */
-      HandModelmaker(msa, use_rf, gapthresh, &cm, &mtr, &tr);
+      HandModelmaker(msa, dsq, use_rf, gapthresh, &cm, &mtr, &tr);
       /* PrintParsetree(stdout, mtr);  */
       PrintCM(stdout, cm); 
       SummarizeMasterTrace(stdout, mtr); 
@@ -182,36 +195,16 @@ main(int argc, char **argv)
       CMSimpleProbify(cm);
       CMSetDefaultNullModel(cm);
 
-o      CMLogoddsify(cm);
-      for (idx = 0; idx < msa->nseq; idx++)
-	{
-	  char *rseq, *dsq;
-	  int   L;
-	  
-	  MakeDealignedString(msa->aseq[idx], msa->alen, msa->aseq[idx], &rseq);
-	  L = strlen(rseq);
-	  dsq = DigitizeSequence(rseq, L);
+      CMLogoddsify(cm);
 
-#if 0
-	  StopwatchZero(watch);
-	  StopwatchStart(watch);
-	  CYKInside(cm, dsq, L);
-	  StopwatchStop(watch);
-	  StopwatchDisplay(stdout, "CPU time: ", watch);
-#endif
-	  ParsetreeDump(stdout, tr[idx], cm, dsq+1);
-	  printf("trace score says: %.2f\n",
-		 ParsetreeScore(cm, tr[idx], msa->aseq[idx])/ 0.693);
-
-	  free(rseq);
-	  free(dsq);
-	}
-
+      if (tracefile != NULL) 
+	dump_traces(tracefile, msa, tr, cm, dsq);
 
       WriteBinaryCM(cmfp, cm);
 
       FreeParsetree(mtr);
       FreeCM(cm);
+      Free2DArray((void**)dsq, msa->nseq);
       MSAFree(msa);
     }
 
@@ -225,4 +218,28 @@ o      CMLogoddsify(cm);
   return 0;
 }
 
- 
+
+/* Function: dump_traces()
+ * Date:     SRE, Sun Aug  6 09:36:32 2000 [St. Louis]
+ *
+ * Purpose:  for debugging information: dump individual 
+ *           transmogrified tracebacks and trace scores
+ *           to a file.
+ */
+static void
+dump_traces(char *tracefile, MSA *msa, Parsetree_t **tr, CM_t *cm, char **dsq)
+{
+  FILE *fp;
+  int   i;
+
+  if ((fp = fopen(tracefile,"w")) == NULL)
+    Die("failed to open trace file %s", tracefile);
+
+  for (i = 0; i < msa->nseq; i++) {
+    fprintf(fp, "> %s\n", msa->sqname[i]);
+    fprintf(fp, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr[i], dsq[i]) / 0.693);;
+    ParsetreeDump(fp, tr[i], cm, dsq[i]);
+    fprintf(fp, "//\n");
+  }
+  fclose(fp);
+}

@@ -14,13 +14,16 @@
 
 /* Alphabet information is declared here, and defined in globals.c.
  */
+#define MAXABET          4	/* maximum for Alphabet_size (used for static arrays) */
+#define MAXDEGEN         17     /* maximum for Alphabet_iupac */
+#define DIGITAL_GAP      126	/* see alphabet.c:DigitizeSequence() */
+#define DIGITAL_SENTINEL 127    
 extern int   Alphabet_type;
 extern int   Alphabet_size;
 extern int   Alphabet_iupac;
 extern char *Alphabet;
-#define MAXABET 4		/* maximum for Alphabet_size (used for static arrays) */
-extern char  Degenerate[17][4];
-extern int   DegenCount[17];
+extern char  Degenerate[MAXDEGEN][MAXABET];
+extern int   DegenCount[MAXDEGEN];
 extern int   CMTransitionIndex[20][20];
 
 /* The "-infinity" value in a DP matrix should be > -FLT_MAX/3, so that 

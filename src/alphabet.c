@@ -11,9 +11,7 @@
 
 #include <string.h>
 #include <ctype.h>
-
 #include "squid.h"
-
 #include "structs.h"
 
 /* Function: SymbolIndex()
@@ -82,6 +80,8 @@ PairCount(float *counters, char syml, char symr, float wt)
     float left[MAXABET],right[MAXABET];
     int   l,r;
     
+    FSet(left, MAXABET, 0.);
+    FSet(right, MAXABET, 0.);
     SingletCount(left, syml, wt);
     SingletCount(right, symr, wt);
 
@@ -102,6 +102,8 @@ DegeneratePairScore(float *esc, char syml, char symr)
   if (syml < Alphabet_size && symr < Alphabet_size) 
     return esc[(int) (syml*Alphabet_size+symr)];
 
+  FSet(left, MAXABET, 0.);
+  FSet(right, MAXABET, 0.);
   SingletCount(left, syml, 1.);
   SingletCount(right, symr, 1.);
 
@@ -120,6 +122,7 @@ DegenerateSingletScore(float *esc, char sym)
 
   if (sym < Alphabet_size) return esc[(int) sym];
 
+  FSet(nt, MAXABET, 0.);
   SingletCount(nt, sym, 1.);
   sc = 0.;
   for (x = 0; x < Alphabet_size; x++)
@@ -133,8 +136,10 @@ DegenerateSingletScore(float *esc, char sym)
  *
  * Purpose:  Digitize a sequence in preparation for a DP algorithm.
  *           a dsq is 1..L, with 0 and L+1 filled with flag bytes.
- *             values in dsq:  0..Alphabet_iupac-1: Symbol index.
- *                             127                  end byte.
+ *             values in dsq:  
+ *             0..Alphabet_iupac-1:      Symbol index.
+ *             DIGITAL_GAP      (126):   gap symbol.
+ *             DIGITAL_SENTINEL (127):   end bytes 0,L+1
  */
 char *
 DigitizeSequence(char *seq, int L)
@@ -144,11 +149,41 @@ DigitizeSequence(char *seq, int L)
   char  c;
 
   dsq = MallocOrDie(sizeof(char) * (L+2));
-  dsq[0] = dsq[L+1] = 127;
+  dsq[0] = dsq[L+1] = DIGITAL_SENTINEL;
   for (i = 0; i < L; i++) {
-    c = toupper(seq[i]);
-    if (c == 'T') c = 'U';	/* it's RNA, dammit. */
-    dsq[i+1] = SymbolIndex(c);
+    if (isgap(seq[i])) dsq[i+1] = DIGITAL_GAP; 
+    else {
+      c = toupper(seq[i]);
+      if (c == 'T') c = 'U';	/* it's RNA, dammit. */
+      dsq[i+1] = SymbolIndex(c);
+    }
   }
+  return dsq;
+}
+
+/* Function: DigitizeAlignment()
+ * Date:     SRE, Sat Aug  5 18:16:21 2000 [St. Louis]
+ *
+ * Purpose:  Convert aseqs to digitized sequences.
+ *           As with unaligned seqs, while the raw sequences
+ *           are 0..L-1, the digitized seqs are 1..L.
+ *           Gaps are digitized as a 126 (127 is used for
+ *           the sentinel byte at 0 and L+1).
+ *
+ * Args:     aseq -- [0..nseq-1][0..alen-1] array of seqs
+ *           nseq -- number of sequences
+ *           alen -- length of alignment
+ *
+ * Returns:  **dsq -- digitized aligned sequences
+ */
+char **
+DigitizeAlignment(char **aseq, int nseq, int alen)
+{
+  char **dsq;
+  int    idx;
+  
+  dsq = MallocOrDie(sizeof(char *) * nseq);
+  for (idx = 0; idx < nseq; idx++)
+    dsq[idx] = DigitizeSequence(aseq[idx], alen);
   return dsq;
 }

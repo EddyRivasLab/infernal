@@ -162,17 +162,16 @@ InsertTraceNode(Parsetree_t *tr, int y, int whichway, int emitl, int emitr, int 
  *
  * Args:     cm   - CM to collect counts in
  *           tr   - the parse tree to collect from.
- *           seq  - sequence that we're counting symbols from
+ *           dsq  - digitized sequence that we're counting symbols from
  *           wgt  - weight on this sequence (often just 1.0)
  *
  * Returns:  (void)
  */
 void
-ParsetreeCount(CM_t *cm, Parsetree_t *tr, char *seq, float wgt)
+ParsetreeCount(CM_t *cm, Parsetree_t *tr, char *dsq, float wgt)
 {
   int tidx;			/* counter through positions in the parsetree        */
   int v,z;			/* parent, child state index in CM                   */
-  char syml, symr;		/* symbol indices for emissions, 0..Alphabet_iupac-1 */
 
 		/* trivial preorder traverse, since we're already numbered that way */
   for (tidx = 0; tidx < tr->n; tidx++) {
@@ -184,21 +183,11 @@ ParsetreeCount(CM_t *cm, Parsetree_t *tr, char *seq, float wgt)
 	cm->t[v][z - cm->cfirst[v]] += wgt;
 
 	if (cm->sttype[v] == MP_st) 
-	  {
-	    syml = SymbolIndex(seq[tr->emitl[tidx]]);
-	    symr = SymbolIndex(seq[tr->emitr[tidx]]);
-	    PairCount(cm->e[v], syml, symr, wgt);
-	  } 
+	  PairCount(cm->e[v], dsq[tr->emitl[tidx]], dsq[tr->emitr[tidx]], wgt);
 	else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) 
-	  {
-	    syml = SymbolIndex(seq[tr->emitl[tidx]]);
-	    SingletCount(cm->e[v], syml, wgt);
-	  } 
+	  SingletCount(cm->e[v], dsq[tr->emitl[tidx]], wgt);
 	else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) 
-	  {
-	    symr = SymbolIndex(seq[tr->emitr[tidx]]);
-	    SingletCount(cm->e[v], symr, wgt);
-	  }
+	  SingletCount(cm->e[v], dsq[tr->emitr[tidx]], wgt);
       }
   }
 }    
@@ -210,7 +199,7 @@ ParsetreeCount(CM_t *cm, Parsetree_t *tr, char *seq, float wgt)
  *           given a CM that's prepared in log-odds form.
  */
 float
-ParsetreeScore(CM_t *cm, Parsetree_t *tr, char *seq)
+ParsetreeScore(CM_t *cm, Parsetree_t *tr, char *dsq)
 {
   int tidx;			/* counter through positions in the parsetree        */
   int v,y;			/* parent, child state index in CM                   */
@@ -229,8 +218,8 @@ ParsetreeScore(CM_t *cm, Parsetree_t *tr, char *seq)
 	
 	if (cm->sttype[v] == MP_st) 
 	  {
-	    symi = SymbolIndex(seq[tr->emitl[tidx]]);
-	    symj = SymbolIndex(seq[tr->emitr[tidx]]);
+	    symi = dsq[tr->emitl[tidx]];
+	    symj = dsq[tr->emitr[tidx]];
 	    if (symi < Alphabet_size && symj < Alphabet_size)
 	      sc += cm->esc[v][(int) (symi*Alphabet_size+symj)];
 	    else
@@ -238,13 +227,13 @@ ParsetreeScore(CM_t *cm, Parsetree_t *tr, char *seq)
 	  } 
 	else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) 
 	  {
-	    symi = SymbolIndex(seq[tr->emitl[tidx]]);
+	    symi = dsq[tr->emitl[tidx]];
 	    if (symi < Alphabet_size) sc += cm->esc[v][(int) symi];
 	    else                      sc += DegenerateSingletScore(cm->esc[v], symi);
 	  } 
 	else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) 
 	  {
-	    symj = SymbolIndex(seq[tr->emitr[tidx]]);
+	    symj = dsq[tr->emitr[tidx]];
 	    if (symi < Alphabet_size) sc += cm->esc[v][(int) symj];
 	    else                      sc += DegenerateSingletScore(cm->esc[v], symj);
 	  }

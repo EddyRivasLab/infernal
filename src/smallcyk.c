@@ -377,3 +377,148 @@ CYKInside(CM_t *cm, char *dsq, int L)
   }
   deckpool_free(dpool);
 }
+
+
+/* Function: CYKOutside()
+ * Date:     SRE, Mon Aug  7 07:45:37 2000 [St. Louis]
+ */
+void
+CYKOutside(CM_t *cm, char *dsq, int L)
+{
+  float ***beta;		/* the scoring cube [v=0..M-1][j=0..L][d=0..j]*/
+  int      v,y,z;		/* indices for states */
+  int      j,d,i,k;		/* indices in sequence dimensions */
+  float    sc;			/* a temporary variable holding a score */
+  struct deckpool_s *dpool;     /* a pool of decks for beta that we can reuse */
+  int     *touch;               /* keeps track of how many lower decks still need this deck */
+  float    escore;		/* an emission score, tmp variable */
+
+  /* Allocations and initializations
+   */
+  beta = MallocOrDie(sizeof(float **) * cm->M);
+  for (v = 0; v < cm->M; v++) beta[v] = NULL;
+
+  dpool = deckpool_create();
+
+  touch = MallocOrDie(sizeof(int) * cm->M);
+  for (v = 0; v < cm->M; v++)
+    if (cm->sttype[v] == B_st) touch[v] = 2;
+    else                       touch[v] = cm->cnum[v];
+				
+  for (j = 0; j <= L; j++)
+    for (d = 0; d <= j; j++)
+      beta[0][j][d] = IMPOSSIBLE; /* can prob speed this initialization up */
+  beta[0][L][L] = 0;		
+  
+  /* Main loop down through the decks
+   */
+  for (v = 2; v < cm->M; v++)
+    {
+      /* First we need to fetch a deck of memory to fill in;
+       * we try to reuse a deck but if one's not available we allocate
+       * a fresh one.
+       */
+      if (! deckpool_pop(dpool, &(beta[v])))
+	beta[v] = alloc_deck(L);
+
+      /* main recursion:
+       */
+      for (j = L; j >= 0; j--)
+	for (d = j; d >= 0; d--) 
+	  {
+	    if (cm->stid[v] == BEGL_S) 
+	      {
+		y = cm->plast[v];	/* the parent bifurcation    */
+		z = cm->cnum[y];	/* the other (right) S state */
+
+		beta[v][j][d] = beta[y][j][d] + alpha[z][j][0]; /* init on k=0 */
+		for (k = 1; k <= L-j; k++)
+		  if ((sc = beta[y][j+k][d+k] + alpha[z][j+k][k]) > beta[v][j][d])
+		    beta[v][j][d] = sc;
+		if (beta[v][j][d] < IMPOSSIBLE) beta[v][j][d] == IMPOSSIBLE;
+	      }
+	    else if (cm->stid[v] == BEGR_S) 
+	      {
+		y = cm->plast[v];	        /* the parent bifurcation    */
+		z = cm->cfirst[y];	/* the other (left) S state */
+
+		beta[v][j][d] = beta[y][j][d] + alpha[z][j-d][0];	/* init on k=0 */
+		for (k = 1; k <= j-d; k++) 
+		  if ((sc = beta[y][j][d+k] + alpha[z][j-d][k]) > beta[v][j][d])
+		    beta[v][j][d] = sc;
+		if (beta[v][j][d] < IMPOSSIBLE) beta[v][j][d] == IMPOSSIBLE;
+	      }
+	    else
+	      {
+		alpha[v][j][d] = IMPOSSIBLE;
+		i = j-d+1;
+		for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
+		  switch(cm->sttype[j]) {
+		  case MP_st: 
+		    if (d == j || d == j-1) continue; /* boundary condition */
+
+		    if (dsq[i-1] < Alphabet_size && dsq[j+1] > Alphabet_size)
+		      escore = cm->esc[y][(int) (dsq[i-1]*Alphabet_size+dsq[j+1])];
+		    else
+		      escore = DegeneratePairScore(cm->esc[y], dsq[i-1], dsq[j+1]);
+
+		    if ((sc = beta[y][j+1][d+2] + cm->tsc[y][v] + escore) > beta[v][j][d])
+		      beta[v][j][d] = sc;
+		    break;
+
+		  case ML_st:
+		  case IL_st: 
+		    if (d == j) continue;	/* boundary condition (note when j=0, d=0*/
+
+		    if (dsq[i-1] < Alphabet_size) 
+		      escore = cm->esc[y][(int) dsq[i-1]];
+		    else
+		      escore = DegenerateSingletScore(cm->esc[y], dsq[i-1]);
+		  
+		    if ((sc = beta[y][j][d+1] + cm->tsc[y][v] + escore) > beta[v][j][d])
+		      beta[v][j][d] = sc;
+		    break;
+		  
+		  case MR_st:
+		  case IR_st:
+		    if (d == j || j == L) continue;
+		  
+		    if (dsq[j+1] < Alphabet_size) 
+		      escore = cm->esc[y][(int) dsq[j+1]];
+		    else
+		      escore = DegenerateSingletScore(cm->esc[y], dsq[j+1]);
+
+		    if ((sc = beta[y][j+1][d+1] + cm->tsc[y][v] + escore) > beta[v][j][d])
+		      beta[v][j][d] = sc;
+		    break;
+		  
+		  case B_st:
+		  case E_st:
+		  case D_st:
+		    if ((sc = beta[y][j][d] + cm->tsc[y][v]) > beta[v][j][d])
+		      beta[v][j][d] = sc;
+		    break;
+
+		  default: Die("bogus parent state %d\n", cm->sttype[y]);
+		  }/* end switch over states*/
+		}
+	      }/*ends our handling of beta[v][j][d] */
+	  }
+
+      /* Finished deck v.
+       * now worry about reuse of memory in beta:
+       */
+      for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--)
+	{
+	  touch[y]--;
+	  if (touch[y] == 0) {
+	    deckpool_push(dpool, beta[y]);
+	    beta[y] = NULL;
+	  }
+	}
+    } /* end loop over decks v. */
+
+  free(touch);
+  /*dpool*/
+  /*beta*/
+}
