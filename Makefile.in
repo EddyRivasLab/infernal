@@ -126,9 +126,10 @@ dist:
 	cvs rtag -F ${BASENAME}_${RELCODE} squid
 	(cd ${BASENAME}-${RELEASE}/; cvs export -r ${BASENAME}_${RELCODE} -d squid squid)
 	# 
-	# Make the configure script from configure.in
+	# Make the configure scripts from configure.in's
 	#
-	(cd ${BASENAME}-${RELEASE}; autoconf)
+	(cd ${BASENAME}-${RELEASE};       autoconf)
+	(cd ${BASENAME}-${RELEASE}/squid; autoconf)
 	#
 	# Attach license stamps on files that need 'em (replace LICENSE keyword)
 	# licenseadd.pl is basically harmless, so we can overannotate here by
@@ -140,6 +141,7 @@ dist:
 	#
 	-rm -rf ${BASENAME}-${RELEASE}/Licenses
 	-rm -rf ${BASENAME}-${RELEASE}/configure.in
+	-rm -rf ${BASENAME}-${RELEASE}/squid/configure.in
 	-rm -rf ${BASENAME}-${RELEASE}/Manuscripts
 	-rm -rf ${BASENAME}-${RELEASE}/testsuite
 	#
