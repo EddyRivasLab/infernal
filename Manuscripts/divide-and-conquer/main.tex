@@ -37,21 +37,21 @@ eddy@genetics.wustl.edu}
 secondary structure consensus model is considered. Stochastic
 context-free grammars (SCFGs) provide a probabilistic framework for
 modeling both sequence conservation and long-distance base pairing
-correlations that are characteristic of RNA secondary structure
-consensus. Covariance models (CMs), a restricted case of SCFGs
-specifically suited to modeling RNA structure consensus, have been
-previously described. The standard CYK algorithm for optimal dynamic
-programming alignment of a CM/SCFG to an RNA sequence requires roughly
-$O(N^3)$ (cubic) memory for an RNA of length $N$. This is only
+correlations of an RNA secondary structure consensus. Covariance
+models (CMs) are a restricted case of SCFGs specifically suited to
+modeling RNA structure consensus, analogous to profile hidden Markov
+models for linear sequence consensus. The standard CYK algorithm for
+optimal dynamic programming alignment of a CM/SCFG to an RNA sequence
+is $\Theta(N^3)$ in memory for an RNA of length $N$. This is only
 practical for small RNAs of a few hundred nucleotides or less. Here I
 describe a divide and conquer variant of the CM/SCFG alignment
 algorithm, analogous to the memory-efficient Myers/Miller form of the
 Smith/Waterman algorithm for linear sequence alignment. The algorithm
-requires roughly $O(N^2 \log N)$ memory, at the expense of a small
-constant factor in time. Small subunit ribosomal RNA alignments that
-previously required a prohibitive 20-30 GB of memory to solve by
-dynamic programming now require $\approx$ 80 MB and are well within
-the capabilities of most modern computers.}
+has an average memory requirement proportional to $(N^2 \log N)$, at
+the expense of a small constant factor in time. Small subunit
+ribosomal RNA alignments that previously required a prohibitive 20-30
+GB of memory to solve by dynamic programming now require $\approx$ 80
+MB and are well within the capabilities of most modern computers.}
 
 \section{Introduction}
 
@@ -316,6 +316,12 @@ the consensus secondary structure. The guide tree is a parse tree for
 the consensus structure, with nodes as nonterminals and alignment
 columns as terminals.
 
+\begin{figure}
+\includegraphics{Figures/input_alignment}
+\caption{input alignment.ai}
+\end{figure}
+
+
 The guide tree has eight types of nodes:
 
 \begin{tabular}{lll}
@@ -342,6 +348,12 @@ structure (Figure~\ref{fig:cm_nodetree}, left) that defines which
 aligned columns will be ignored as non-consensus (and later modeled as
 insertions relative to the consensus), and which consensus alignment
 columns are base-paired to each other.
+
+\begin{figure}
+\includegraphics{Figures/cm_nodetree}
+\caption{cm nodetree.ai}
+\end{figure}
+
 
 Given the consensus structure, consensus base pairs are assigned to
 MATP nodes and consensus unpaired columns are assigned to MATL or MATR
@@ -446,6 +458,11 @@ state $1$.  An example CM, corresponding to the input alignment of
 Figure~\ref{fig:input_alignment}, is shown in
 Figure~\ref{fig:cm_graph}.
 
+\begin{figure}
+\includegraphics{Figures/cm_graph}
+\caption{cm graph.ai}
+\end{figure}
+
 \subsubsection{Parameterization}
 
 Using the guide tree and the final CM, each individual sequence in the
@@ -454,7 +471,12 @@ tree, as shown in Figure~\ref{fig:parsetrees}. Counts for observed
 state transitions and singlet/pair emissions are then collected from
 these parse trees. The observed counts are converted to transition and
 emission probabilities by standard procedures (I calculate maximum a
-posteriori parameters, using Dirichlet priors). 
+posteriori parameters, using Dirichlet priors).
+
+\begin{figure}
+\includegraphics{Figures/parsetrees}
+\caption{parsetrees.ai}
+\end{figure}
 
 \subsubsection{Comparison to profile HMMs}
 
@@ -541,7 +563,7 @@ The \texttt{inside} algorithm is as follows:
 
 \begin{algorithm}
 \alginout{A CM subgraph $G^r_z$ and subsequence $x_g..x_q$.}
-         {scoring matrix decks $\alpha_r..\alpha_z$.}
+         {Scoring matrix decks $\alpha_r..\alpha_z$.}
 \algname{inside}{r,z; g,q} 
 \begin{algtab}
 \algforto{$v \leftarrow z$}{$r$}
@@ -594,20 +616,21 @@ explanation), all (and only) the decks $\alpha_w..\alpha_y$ are active
 when \texttt{inside} returns. 
 
 In some cases we want to recover the optimal parse tree itself, not
-just its score. The \texttt{inside}$\mathcal{T}$ routine is a modified
-version of $\texttt{inside}$. It keeps an additional ``shadow matrix''
-$\tau_v(i,j)$. A $\tau_v(i,j)$ traceback pointer either records the
-index $y$ that maximized $\alpha_v(i,j)$ (for state types D,S,P,L,R)
-or records the split point $k$ that maximized $\alpha_v(i,j)$ for a
-bifurcation (B) state. $\tau$ does not use the deallocation rules (and
-thus, \texttt{inside}$\mathcal{T}$ can only be called for problems
-small enough that they can be solved within our available memory
-space). Thus the \texttt{inside}$\mathcal{T}$ routine works by calling
-\texttt{inside} in a mode that keeps shadow matrix $\tau$, and then
-calls a recursive traceback starting with $r,g,q$:
+just its score. The \texttt{inside}$^{\mathcal{T}}$ routine is a
+modified version of $\texttt{inside}$. It keeps an additional ``shadow
+matrix'' $\tau_v(i,j)$. A $\tau_v(i,j)$ traceback pointer either
+records the index $y$ that maximized $\alpha_v(i,j)$ (for state types
+D,S,P,L,R) or records the split point $k$ that maximized
+$\alpha_v(i,j)$ for a bifurcation (B) state. The $\tau$ shadox matrix
+does not use the deallocation rules (and thus,
+\texttt{inside}$^{\mathcal{T}}$ can only be called for problems small
+enough that they can be solved within our available memory
+space). Thus the \texttt{inside}$^{\mathcal{T}}$ routine works by
+calling \texttt{inside} in a mode that keeps shadow matrix $\tau$, and
+then calls a recursive traceback starting with $v,i,j$:
 
 \begin{algorithm}
-\alginout{A shadow matrix $\tau$ for CM subgraph $G^r_z$ and subsequence $x_g..x_q$.}
+\alginout{A shadow matrix $\tau$ for CM subgraph $G^v$ and subsequence $x_i..x_j$.}
          {Optimal parse tree $\mathcal{T}$.}
 \algname{traceback}{v,i,j}
 \begin{algtab}
@@ -634,15 +657,62 @@ calls a recursive traceback starting with $r,g,q$:
 \end{algtab}
 \end{algorithm}
 
-Thus, for any chosen state $v$, $\argmax_{i,j} \alpha_{v}(i,j) +
-\beta_{v}(i,j)$ tells us which cell $v,i,j$ the optimal parse tree
-passes through, \emph{conditional on using state $v$ in the parse}.
+\subsubsection{outside}
 
-We also know that any parse tree must include all the bifurcation and
-start states of the CM, so we know that the optimal alignment
-\emph{must} use any chosen bifurcation state $v$ and its child start
-states $w$ and $y$. One of the hearts of the divide and conquer
-algorithm is that we are guaranteed that:
+The Outside/CYK algorithm recursively calculates $\beta_v(i,j)$, the
+log probability of the most likely CM parse tree for a CM generating a
+sequence $x_1..x_L$ \emph{excluding} the optimal parse subtree rooted
+at state $v$ that accounts for the subsequence $x_i..x_j$. The
+calculation initializes with the entire sequence excluded (e.g.
+$\beta_1(1,L) = 0$), and iterates inward to progressively shorter and
+shorter excluded subsequences and smaller CM subgraphs.
+
+A complete implementation of the Outside/CYK algorithm requires first
+calculating the Inside numbers $\alpha$, because they are needed to
+calculate $\beta_v$ when the parent of $v$ is a bifurcation
+\cite{Lari90,Lari91,Durbin98}. However, the divide and conquer
+algorithm only needs to call \texttt{outside} on unbifurcated, linear
+CM subgraphs, so the parent of $v$ is never a bifurcation and the
+implementation can be streamlined.
+
+\begin{algorithm}
+\alginout{An unbifurcated CM subgraph $G^r_z$ and subsequence $x_g..x_q$.}
+         {Scoring matrix decks $\beta_r..\beta_z$.}
+\algname{outside}{r,z; g,q}
+\begin{algtab}
+ $\beta_v(i,j) \leftarrow -\infty \forall v,i,j$\\
+ $\beta_r(g,q) \leftarrow 0$\\
+ \algforto{$v \leftarrow r+1$}{$z$}
+   \algforto{$j \leftarrow q$}{$g-1$}
+     \algforto{$i \leftarrow g$}{$j+1$}
+       $\beta_v(i,j) = \max\limits_{y \in P(v)} \left\{
+              \begin{array}{rcl}
+              \beta_y(i,j) + \log t_y(v) &:&  S_y = D,S,E \\
+              \beta_y(i-1,j+1) + \log t_y(v) + \log e_y(x_{i-1}, x_{j+1}) &:& S_y = P\\
+              \beta_y(i-1,j) + \log t_y(v) + \log e_y(x_{i-1}) &:& S_y = L\\
+              \beta_y(i,j-1) + \log t_y(v) + \log e_y(x_{j+1})  &:& S_y = R \\
+              \end{array} \right.$
+\end{algtab}
+\end{algorithm}
+
+As with \texttt{inside}, we do not keep the entire $\beta$ matrix in
+memory. A deck $\beta_v$ can be deallocated when all child decks
+$C(v)$ that depend on the values in $\beta_v$ have been
+calculated. This means that if the last deck $z$ is a bifurcation or
+end state, $\beta_z$ will be the only active allocated deck when
+\texttt{outside} returns. If $z$ is the last state in a split set
+$w..z$, all (and only) the split set decks $\beta_w..\beta_z$ will be
+active when \texttt{outside} returns.
+
+\subsubsection{Using outside and inside to divide and conquer}
+
+Now, for any chosen state $v$, $\argmax_{i,j} \alpha_{v}(i,j) +
+\beta_{v}(i,j)$ will tell us which cell $v,i,j$ the optimal parse tree
+passes through, conditional on using state $v$ in the parse. We know
+that any parse tree must include all the bifurcation and start states
+of the CM, so we know that the optimal alignment \emph{must} use any
+chosen bifurcation state $v$ and its child start states $w$ and
+$y$. Thus, we are guaranteed that:
 
 \[
    \max_{i,k,j} \beta_{v}(i,j) + \alpha_{w}(i,k) + \alpha_{y}(k+1,j)
@@ -728,10 +798,15 @@ for $z$. A V problem is solved by a split set-dependent strategy: an
 optimal $(v,i,j)$ is found, splitting the problem into two V problems.
 \end{itemize}
 
+\begin{figure}
+\includegraphics{Figures/splitter_schematic}
+\caption{splitter schematic.ai}
+\end{figure}
+
 The three recursive splitting algorithms to solve these problems
 are as follows:
 
-\subsection{generic\_splitter}
+\subsubsection{generic\_splitter}
 \begin{algorithm}
 \alginout{A generic problem, for CM subgraph $G_{r..z}$ and
           subsequence $x_{g..q}$.}
@@ -764,7 +839,7 @@ are as follows:
 \end{algtab}
 \end{algorithm}
 
-\subsection{wedge\_splitter}
+\subsubsection{wedge\_splitter}
 \begin{algorithm}
 \alginout{A wedge problem, for unbifurcated CM subgraph $G_{r..z}$ and
           subsequence $x_{g..q}$.}
@@ -789,7 +864,7 @@ are as follows:
 \end{algtab}
 \end{algorithm}
 
-\subsection{V\_splitter}
+\subsubsection{V\_splitter}
 \begin{algorithm}
 \alginout{A V problem, for unbifurcated CM subgraph $G_{r..z}$ and
           two-part subsequence $x_{g..h}//x_{p..q}$.}
@@ -813,77 +888,38 @@ are as follows:
 \end{algtab}
 \end{algorithm}
 
+\subsubsection{vinside and voutside}
 
-
-
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-\subsection{outside}
-
-The subroutine outside\_engine implements a variant of the SCFG
-Outside/CYK algorithm. Outside/CYK calculates $\beta_v(j,d)$, the log
-probability of the optimal parse tree for a CM generating a sequence
-$x_1..x_L$ \emph{excluding} the optimal parse subtree rooted at state
-$v$ that accounts for the subsequence of length $d$ that ends at $j$.
-The outside\_engine has three variations from the standard algorithm.
-Two are analogous to the inside\_engine. First, outside\_engine can be
-called not just for the complete model and sequence, but for any CM
-subgraph of $\hat{M}$ states rooted at $\hat{r}$ and any subsequence
-$x_{\hat{i}}..x_{\hat{j}}$. Second, it does not keep the entire $\beta$
-matrix in memory -- it returns only the $\beta_{\hat{v}}$ deck. Third,
-outside\_engine will only be called on a linear ``segment''
-$r..\hat{v}$ of the CM that starts in a start state ($S_r = S$), ends
-in a bifurcation state ($S_{\hat{v}} = B$), and has no other start or
-bifurcation states, so the recursion is simpler than the standard
-Outside/CYK algorithm.
-
-\begin{verbatim}
-Initialization:
-Obtain a deck $\beta_r$ for the root state $r$.
-Set $\beta_{r}(\hat{j}, \hat{L}) = 0$.
-Set all other $\beta_r$ values to $-\infty$.
-
-Recursion:
-for v = r+1 to \hat{v}
-  Obtain a deck for $\beta_v$ (rows $j = \hat{i}-1..\hat{j}$, columns $d = 0..j-\hat{i}+1$
-  
-  for j = \hat{j} to \hat{i}-1
-    for d = j-\hat{i}+1 to 0
-       
-       \beta_v(j,d) = \max_{y \in P(v)} \left{ 
-              S_y = D,S,E: \beta_y(j,d)     + \log t_y(v) 
-              S_y = P:     \beta_y(j+1,d+2) + \log t_y(v) + \log e_y(x_{i-1}, x_{j+1})
-              S_y = L:     \beta_y(j,d+1)   + \log t_y(v) + \log e_y(x_{i-1})
-              S_y = R:     \beta_y(j+1,d+1) + \log t_y(v) + \log e_y(x_{j+1})
-                    (B impossible)
-
-         boundary conditions:
-              S_y = P: for j = \hat{j} or d = j-\hat{i}+1, assume \beta_y(j+1,d+2) = -\infty
-	      S_y = L: d = j-\hat{i}+1, assume \beta_y(j,d+1) = -\infty
-              S_y = R: j = \hat{j},     assume \beta_y(j+1,d+1) = -\infty
-
-  for each y \in P(v): if all C(y) < v, release the deck \beta_y.
-\end{verbatim}
-
-At the end of the calculation, outside\_engine returns the $\beta_v$
-deck.
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-\subsection{segment\_alignment\_engine}
-
+The \texttt{vinside} and \texttt{voutside} routines are just
+\texttt{inside} and \texttt{outside}, modified to deal with a
+two-piece subsequence $x_g..x_h//x_p..x_q$ instead of a contiguous
+sequence $x_g..x_q$. These modifications are fairly obvious.  Most
+obviously, the range of $i,j$ is restricted so that $i<=h$ and $j>=p$.
+Also, \texttt{vinside(w,z; g,h; p,q)} initializes $\alpha_z(h,p) = 0$:
+that is, we know that sequence $x_h..x_p$ has already been accounted
+for by a CM parse tree rooted at $z$. 
 
 \subsubsection{Implementation}
 
-Full source code for a reference implementation is freely available at
-XXX under a GNU General Public License. This is an ANSI C codebase
-that has been tested on GNU/Linux platforms.
+In the description of the algorithms above, some technical detail has
+been omitted - in particular, a detailed description of efficient
+initialization steps, and details of how the matrix coordinates can be
+transformed for more highly optimized memory usage. (\texttt{inside}
+and \texttt{outside} are actually implemented in a so-called $v,j,d$
+coordinate system, where $d = j-i+1$ is the length of the subsequence
+$x_i..x_j$; \texttt{vinside} and \texttt{voutside} are implemented in
+a so-called $v,j,i$ coordinate system.) 
 
-The CM data structure is defined in \texttt{structs.h}. The CM
-construction procedure is in
+These details are not necessary for a high level understanding of the
+divide and conquer algorithm, but are necessary for reproducing a
+working implementation. Full source code for a reference
+implementation is therefore freely available at
+\url{http://www.genetics.wustl.edu/eddy/infernal/} under a GNU General
+Public License. This is an extensively commented ANSI C codebase that
+has been tested on GNU/Linux platforms.
+
+In this codebase, the CM data structure is defined in
+\texttt{structs.h}. The CM construction procedure is in
 \texttt{modelmaker.c:Handmodelmaker()}. The guide tree is constructed
 in \texttt{HandModelmaker()}. A CM is constructed from the guide tree
 by \texttt{cm\_from\_master()}. Individual parse trees are constructed
