@@ -157,7 +157,6 @@ clean:
 	-rm -f *.o *~ Makefile.bak core TAGS gmon.out
 	(cd src;       make clean)
 	(cd squid;     make clean)
-	(cd testsuite; make clean)
 
 # "make distclean" leaves a pristine source distribution.
 #

@@ -24,8 +24,9 @@ SRE, Thu Jul  4 10:27:28 2002
 
 5. Build for our system (on whelk01 or some such)
 	% cd infernal-xxx
-	% env CFLAGS="-O3" ./configure --enable-lfs prefix=/usr/seshare/ exec_prefix=/usr/seshare/`uname`
+	% env ./configure --enable-lfs prefix=/usr/seshare/ exec_prefix=/usr/seshare/`uname`
 	% make
+ ... eventually, when we worry about installs, we'd do: ...
 	% make check
 	% make install         <-- I don't need root to do this
 	% ssh w001
