@@ -26,7 +26,9 @@ MYLIBS   = -linfernal -lsquid
 MYLIBDIR = -L../squid -L../src
 MYINCDIR = -I../squid -I../src
 
-CHECKPROGS = check-emit
+TESTPROGS = \
+	bandcyk-montecarlo-test\
+	bandcyk-truncation-test
 
 #################################################################
 ## Building the test programs.
@@ -35,9 +37,9 @@ CHECKPROGS = check-emit
 .c.o: 
 	${CC} ${CFLAGS} ${DEFS} ${MYINCDIR} -c $<
 
-all:	${CHECKPROGS}
+all:	${TESTPROGS}
 
-${CHECKPROGS}: @EXEC_DEPENDENCY@ 
+${TESTPROGS}: @EXEC_DEPENDENCY@ 
 	${CC} ${CFLAGS} ${LDFLAGS} ${DEFS} ${MYLIBDIR} -o $@ $@.o $(MYLIBS) $(LIBS)
 
 
@@ -46,7 +48,7 @@ ${CHECKPROGS}: @EXEC_DEPENDENCY@
 ## Miscellaneous targets.
 ##
 clean:
-	-rm -f *.o *~ Makefile.bak core $(CHECKPROGS) TAGS gmon.out 
+	-rm -f *.o *~ Makefile.bak core ${TESTPROGS} TAGS gmon.out 
 
 distclean:
 	make clean

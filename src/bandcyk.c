@@ -431,18 +431,23 @@ BandMonteCarlo(CM_t *cm, int nsample, int W, double ***ret_gamma)
   int           n;		/* subseq length at a parsetree node */
   int           status;		/* return status. */
   
-  /* Allocate gamma, completely. 
-   * For consistency w/ BandCalculationEngine, allocate a single
+  /* Allocate gamma, completely; and initialize to zeros. 
+   * For consistency w/ BandCalculationEngine(), allocate a single
    * shared end deck at M-1, and point other ends at it - even
    * though P(n=0) = 1.0 by definition at the E's and we don't
-   * really need to calculate it.
+   * really need to calculate it. Then we can use FreeBandDensities()
+   * for gamma matrices alloc'ed in either function.
    */                                                     
   gamma          = MallocOrDie(sizeof(double *) * cm->M);
   gamma[cm->M-1] = MallocOrDie(sizeof(double) * (W+1)); 
+  DSet(gamma[cm->M-1], W+1, 0.0);
   for (v = 0; v < cm->M-1; v++)
     {
       if (cm->sttype[v] != E_st)
-	gamma[v] = MallocOrDie(sizeof(double) * (W+1));
+	{
+	  gamma[v] = MallocOrDie(sizeof(double) * (W+1));
+	  DSet(gamma[v], W+1, 0.0);
+	}
       else
 	gamma[v] = gamma[cm->M-1];
     }
