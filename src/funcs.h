@@ -20,6 +20,7 @@ extern int      BandCalculationEngine(CM_t *cm, int W, double p_thresh,
 				      int save_densities,
 				      int **ret_dmin, int **ret_dmax, 
 				      double ***ret_gamma);
+extern int      BandTruncationNegligible(double *density, int b, int W, double *ret_beta);
 extern int      BandMonteCarlo(CM_t *cm, int nsample, int W, double ***ret_gamma);
 extern void     FreeBandDensities(CM_t *cm, double **gamma);
 

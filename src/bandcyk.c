@@ -23,7 +23,6 @@
 #include "structs.h"
 #include "funcs.h"
 
-int BandTruncationError(double *density, int b, int W);
 
 void
 BandExperiment(CM_t *cm)
@@ -72,11 +71,10 @@ BandExperiment(CM_t *cm)
  *               
  *            Note on truncation error:
  *            Of course we can't calculate the sum to \infty; we have
- *            to truncate somewhere. If we know that our width W
- *            is wide enough that we can see a probability mass of
- *            p in the right tail, it is sufficient to be sure
- *            that \gamma[v][W] < DBL_EPSILON * p. (because
- *            1+x = 1 for x < DBL_EPSILON, p + xp = p.)
+ *            to truncate somewhere. Truncation error must be negligible,
+ *            else our choice of bands will depend on the choice of W.
+ *            See BandTruncationNegligible() for the test.
+ *            
  *
  * Args:      cm        - model to build the bands for
  *            W         - maximum subsequence length W.
@@ -100,7 +98,7 @@ BandExperiment(CM_t *cm)
  *                        density Prob(length=n | parse subtree rooted at v).
  *
  * Returns:   1 on success.
- *            0 if W was too small; caller should increase W and
+ *            0 if W was too small; caller needs to increase W and
  *            call the engine again.
  *            
  *            The dependency on a sensible W a priori is an annoyance;
@@ -168,13 +166,14 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
       /* Get a beam of memory from somewhere.
        *   1. If we're an E_st, we're sharing the end beam, and
        *      it's already initialized for us; don't do anything
-       *      else to it.
+       *      else to it. Bounds are 0..0 by definition.
        *   2. If there's a beam in the pool we can reuse, take it
        *      and set it back to 0's. 
        *   3. Else, allocate and initialize to 0's.
        */
       if (cm->sttype[v] == E_st) {
 	gamma[v] = gamma[cm->M-1];
+	dmin[v]  = dmax[v] = 0;
 	continue;
       }
 
@@ -281,8 +280,7 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
 
     } /*end loop up through all states v*/
 
-
-  if (! BandTruncationError(gamma[0], dmax[0], W)) 
+  if (! BandTruncationNegligible(gamma[0], dmax[0], W, NULL)) 
     { status = 0; goto CLEANUP; }
 
   status = 1;
@@ -304,8 +302,71 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
 
 
 
+/* Function:  BandTruncationNegligible()
+ * Incept:    SRE, Sun Oct 19 10:43:21 2003 [St. Louis]
+ *
+ * Purpose:   Verifies that for this choice of W, the truncation error,
+ *                 D = \sum_{n=W+1}{\infty} \gamma_v(n), 
+ *            will not affect our calculation of the right bound, b (dmax),
+ *            based on the probability mass we can observe,
+ *                 C = \sum_{n=b+1}{W} \gamma_v(n).     
+ *                 
+ *            Specifically, we want D such that C + D = C; that is,
+ *                 D < C * DBL_EPSILON.
+ *                 
+ *            We assume that the tail of \gamma is decreasing
+ *            geometrically. This lets us predict the tail is
+ *                  \gamma_v(n) = \gamma_v(W+1) \beta^{n-W-1} 
+ *                  
+ *            and from the sum of an infinite geometric series, combined
+ *            with \gamma_v(W+1) = \beta \gamma_v(W), we obtain:
+ *                            \gamma_v(W) \beta
+ *                    D'  =     -----------------
+ *                                1 - \beta
+ *                                    
+ *            How well D' approximates the true truncated tail mass D
+ *            depends on how valid the assumption of geometrically
+ *            decreasing tails is. For a single insert state, one
+ *            obtains a geometrically decreasing tail.  For a mixture
+ *            of geometric distributions, if one fits the low side,
+ *            one overestimates the rate of convergence to 0, and so
+ *            underestimates D; D' <= D. But if anything, we want D' >= D;
+ *            an upper bound on D lets us prove D < C * epsilon.
+ *            Puzzlingly, this does not seem to be a problem. For
+ *            a variety of models and states, D' is indeed an
+ *            overestimate of D; empirically, the tail density converges to zero
+ *            supergeometrically, which I can't explain.
+ *            
+ *            Using ret_beta to verify:
+ *            
+ *               D' = (beta / (1.-beta)) * density[W];
+ *               D  = \sum_{n=b+1}{\infty} density[W];
+ *               D' >= D.
+ *               
+ *               test for an even stronger criterion:
+ *               let estimated density g(n) = gamma[W] * \beta^(n-W);
+ *               g(n) >= gamma[n] for all n > W.
+ *            
+ *            In the testsuite, "check_bandtruncation" empirically verifies 
+ *            D' > D. 
+ *
+ * Args:      density    - one density \gamma_v() calculated by BandCalculationEngine();
+ *                         usually the root (if W is big enough for the root, it's
+ *                         big enough for every state).
+ *            b          - the left bound dmax[v]
+ *            W          - the maximum length; gamma_v[] runs [0..W]
+ *            ret_beta   - RETURN (optional): the geometric decay constant \beta,
+ *                         obtained by simple linear fit to log gamma().
+ *                         
+ *
+ * Returns:   1 if truncation error is negligible (D' < C * DBL_EPSILON)
+ *            0 if truncation error is not negigible, and caller will
+ *              have to worry about increasing W.
+ *
+ * Xref: STL7 p.128.  
+ */
 int
-BandTruncationError(double *density, int b, int W)
+BandTruncationNegligible(double *density, int b, int W, double *ret_beta)
 {
   double logbeta;
   double beta;		/* geometric decay parameter                  */
@@ -331,12 +392,7 @@ BandTruncationError(double *density, int b, int W)
    */
   D = (beta / (1.-beta)) * density[W];
 
-  /*
-  printf("%d  %g\n", b+1, log(density[b+1]));
-  printf("%d  %g\n", W, log(density[b+1]) + (W-b-1) * logbeta);
-  printf("%d  %g\n", W+1000, log(density[b+1]) + (W-b-1+1000) * logbeta);
-  printf("&\n");
-  */
+  if (ret_beta != NULL) *ret_beta = beta;
 
   if (D < C * DBL_EPSILON) return 1;
   else                     return 0;

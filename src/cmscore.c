@@ -146,15 +146,16 @@ main(int argc, char **argv)
 
   if (projectX) 
     {
+#if 0
       BandExperiment(cm);
       exit(1);
-#if 0
+#endif
       double **mx; 
       int     *min, *max;
       FILE   *ofp;
 
-      mx = BandDistribution(cm, 1000);
-      BandBounds(mx, cm->M, 1000, 0.001, &min, &max);
+      mx = BandDistribution(cm, 2000);
+      BandBounds(mx, cm->M, 2000, 0.001, &min, &max);
       /*      ofp = fopen("projectx.xgr", "w");
 	      PrintBandGraph(ofp, mx, min, max, 3, 1000);
 	      PrintBandGraph(ofp, mx, min, max, 56, 1000);
@@ -167,7 +168,7 @@ main(int argc, char **argv)
       free(min);
       free(max);
       exit(1);
-#endif
+
     }
 
   while (ReadSeq(sqfp, sqfp->format, &seq, &sqinfo))
