@@ -159,6 +159,7 @@ AC_ARG_ENABLE(lfs,
         ;;
 esac])
 
+rigfilters=0;
 # --enable-rigfilters     install rigorous filters
 # UNFINISHED!  Must add:
 #	check for existence of CFSQP
@@ -167,14 +168,27 @@ AC_ARG_ENABLE(rigfilters,
 [  --enable-rigfilters     enable rigorous filters, requires CFSQP package],
 [case $enable_rigfilters in
    yes) AC_MSG_NOTICE([rigorous filters installed])
-        AC_DEFINE(RIGFILTERS, 1)
 	rigfilters=1
 	;;
-   no)  AC_DEFINE(RIGFILTERS, 0)
+   no)  rigfilters=0
         ;;
-    *)  echo "Error"
+    *)  echo "Ignoring unknown argument to --enable-rigfilters: $enable_rigfilters"
         ;;
 esac])
+
+# Default location of cfsqp relative to cm2hmm
+cfsqp_path=$PWD/rigfilters/cfsqp;
+# --with-cfsqp             specify location of cfsqp
+AC_ARG_WITH(cfsqp,
+[  --with-cfsqp=PATH       specify the location of CFSQP source files],
+[case $with_cfsqp in
+   /*)  cfsqp_path=$with_cfsqp
+        ;;
+   *)   #NOTE: relative path not normalized
+        cfsqp_path=$PWD/$with_cfsqp
+        ;;
+esac])
+AC_SUBST(RIGFILTERS,$rigfilters)
 
 #
 # end of optionally configured features
@@ -198,7 +212,7 @@ AC_CONFIG_FILES(testsuite/Makefile)
 if test "$rigfilters" == 1; then
 AC_CONFIG_FILES(rigfilters/Makefile)
 else
-AC_MSG_NOTICE(Skipping output of rigfilters Makefile)
+AC_MSG_NOTICE([Skipping output of rigfilters Makefile])
 fi
 
 # remember that sneaky if statement that wraps the source

@@ -25,7 +25,6 @@ prefix      = @prefix@
 exec_prefix = @exec_prefix@
 BINDIR      = @bindir@
 MANDIR      = @mandir@
-RF          = @rf@
 
 # how to install the man pages; 
 # cp is generally fine, unless you preformat your pages.
@@ -37,6 +36,9 @@ MANSUFFIX = 1
 #
 CC     = @CC@
 CFLAGS = @CFLAGS@
+
+# Flags related to conditional install of rigorous filters
+RIGFILTERS = @RIGFILTERS@
 
 #######
 ## You should not need to modify below this line.
@@ -73,6 +75,7 @@ all:
 	(cd squid;     make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module)
 	(cd src;       make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module)
 	(cd testsuite; make CC="$(CC)" CFLAGS="$(CFLAGS)")
+	if test -e rigfilters/Makefile;	then cd rigfilters; make; fi
 ifeq ($(RIGFILTERS),1)
 	(cd rigfilters; make)
 endif
@@ -189,6 +192,9 @@ clean:
 	-rm -f *.o *~ Makefile.bak core TAGS gmon.out
 	(cd src;       make clean)
 	(cd squid;     make clean)
+ifeq ($(RIGFILTERS),1)
+	(cd rigfilters; make clean)
+endif
 
 # "make distclean" leaves a pristine source distribution.
 #
@@ -198,5 +204,8 @@ distclean:
 	make clean
 	(cd src;       make distclean)
 	(cd squid;     make distclean)
+ifeq ($(RIGFILTERS),1)
+	(cd rigfilters; make distclean)
+endif
 	-rm Makefile
 
