@@ -191,7 +191,8 @@ public:
 	CircularArrayWithMaxSize (int _maxSize) {
 		maxSize=_maxSize;
 		array.resize(maxSize);
-		currHead=0;
+		//currHead=0;	//err: currHead undefined in current context
+		first=0;	// my best guess what Zasha intended...
 		currSize=0;
 	}
 	~CircularArrayWithMaxSize () {
