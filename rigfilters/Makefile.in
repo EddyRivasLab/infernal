@@ -1,6 +1,6 @@
 all:
 	(cd cfsqp; make)
-	(cd lp_solve_4.0; tar -zxf lp_solve.tar.gz; make)
+	(cd lp_solve_4.0; tar -zx -C src -f lp_solve.tar.gz; make)
 	(cd cm2hmm-1.0; make -f Makefile.test)
 
 clean:
