@@ -55,11 +55,11 @@ struct deckpool_s {
 /* The dividers and conquerors.
  */
 static float generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
-			      int r, int vend, int i0, int j0, int allow_begin);
+			      int r, int vend, int i0, int j0);
 static float wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
-			    int r, int z, int i0, int j0, int allow_begin);
+			    int r, int z, int i0, int j0);
 static void  v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
-			int r, int z, int i0, int i1, int j1, int j0, int useEL, int allow_begin);
+			int r, int z, int i0, int i1, int j1, int j0, int useEL);
 
 /* The alignment engines. 
  */
@@ -178,7 +178,6 @@ CYKDivideAndConquer(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree
 {
   Parsetree_t *tr;
   float        sc;
-  int          allow_begin;
   int          z;
 
   /* Create a parse tree structure.
@@ -189,7 +188,6 @@ CYKDivideAndConquer(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree
   InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, i0, j0, 0); /* init: attach the root S */
   z  = cm->M-1;
   sc = 0.;
-  allow_begin = (cm->flags & CM_LOCAL_BEGIN) ? TRUE : FALSE;
 
   /* If r != 0, we already know we're starting with a local entry transition 0->r;
    * add that node too, and count the begin transition towards the score. We have
@@ -200,13 +198,12 @@ CYKDivideAndConquer(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree
       InsertTraceNode(tr, 0,  TRACE_LEFT_CHILD, i0, j0, r);
       z  =  CMSubtreeFindEnd(cm, r);
       sc =  cm->beginsc[r];
-      allow_begin = FALSE;
     }
 
   /* Start the divide and conquer recursion: call the generic_splitter()
    * on the whole DP cube.
    */
-  sc += generic_splitter(cm, dsq, L, tr, r, z, i0, j0, allow_begin);
+  sc += generic_splitter(cm, dsq, L, tr, r, z, i0, j0);
 
   /* Free memory and return
    */
@@ -241,7 +238,6 @@ CYKInside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_t
   Parsetree_t *tr;
   int          z;
   float        sc;
-  int          allow_begin;
 
   /* Create the parse tree, and initialize.
    */
@@ -249,7 +245,6 @@ CYKInside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_t
   InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0); /* init: attach the root S */
   z  = cm->M-1;
   sc = 0.;
-  allow_begin = (cm->flags & CM_LOCAL_BEGIN) ? TRUE : FALSE;
 
   /* Deal with case where we already know a local entry transition 0->r
    */
@@ -258,12 +253,11 @@ CYKInside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_t
       InsertTraceNode(tr, 0,  TRACE_LEFT_CHILD, i0, j0, r);
       z  =  CMSubtreeFindEnd(cm, r);
       sc =  cm->beginsc[r];
-      allow_begin = FALSE;
     }
 
   /* Solve the whole thing with one call to insideT.
    */
-  sc += insideT(cm, dsq, L, tr, r, z, i0, j0, allow_begin);
+  sc += insideT(cm, dsq, L, tr, r, z, i0, j0, (r==0));
 
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
   return sc;
@@ -298,22 +292,19 @@ CYKInsideScore(CM_t *cm, char *dsq, int r, int i0, int j0, int L)
 {
   int    z;
   float  sc;
-  int    allow_begin;
 
   z           = cm->M-1;
   sc          = 0.;
-  allow_begin = (cm->flags & CM_LOCAL_BEGIN) ? TRUE : FALSE;
 
   if (r != 0) 
     {
       z  =  CMSubtreeFindEnd(cm, r);
       sc =  cm->beginsc[r];
-      allow_begin = FALSE;
     }
 
   sc +=  inside(cm, dsq, L, r, z, i0, j0, FALSE, 
 		NULL, NULL, NULL, NULL, NULL,
-		allow_begin, NULL, NULL);
+		(r==0), NULL, NULL);
   return sc;
 }
 
@@ -406,13 +397,12 @@ CYKDemands(CM_t *cm, int L)
  *           z           - index of an end state (E_st) in the model
  *           i0          - start in the sequence (1..L)
  *           j0          - end in the sequence (1..L)
- *           allow_begin - TRUE to allow a 0->v local begin transition.
  *
  * Returns:  score of the optimal parse of dsq(i0..j0) with cm^r_z 
  */
 static float
 generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
-		 int r, int z, int i0, int j0, int allow_begin)
+		 int r, int z, int i0, int j0)
 {
   float ***alpha;
   float ***beta;
@@ -439,7 +429,7 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 		  r, UniqueStatetype(cm->stid[r]),
 		  z, UniqueStatetype(cm->stid[z]),
 		  i0, j0));
-    sc = insideT(cm, dsq, L, tr, r, z, i0, j0, allow_begin);
+    sc = insideT(cm, dsq, L, tr, r, z, i0, j0, (r==0));
     return sc;
   }
 
@@ -455,7 +445,7 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    */
   if (v > z-5) {		/* no bifurc? it's a wedge problem  */
     if (cm->sttype[z] != E_st) Die("inconceivable.");
-    sc = wedge_splitter(cm, dsq, L, tr, r, z, i0, j0, allow_begin);
+    sc = wedge_splitter(cm, dsq, L, tr, r, z, i0, j0);
     return sc;
   }
 
@@ -472,9 +462,9 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    * Analogous for b2, b2_sc on the other side.
    */
   inside(cm, dsq, L, w, wend, i0, j0, BE_EFFICIENT, NULL,  &alpha, NULL, &pool, NULL, 
-	 allow_begin, &b1, &b1_sc);
+	 (r==0), &b1, &b1_sc);
   inside(cm, dsq, L, y, yend, i0, j0, BE_EFFICIENT, alpha, &alpha, pool, &pool, NULL,
-	 allow_begin, &b2, &b2_sc);
+	 (r==0), &b2, &b2_sc);
 
   /* Calculate beta[v] deck (stick it in alpha). Let the pool get free'd.
    * (If we're doing local alignment, deck M is the beta[EL] deck.)
@@ -517,7 +507,7 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 
   /* Local alignment only: maybe we're better off in ROOT?
    */
-  if (allow_begin && cm->flags & CM_LOCAL_BEGIN) {
+  if (r == 0 && cm->flags & CM_LOCAL_BEGIN) {
     if (b1_sc > best_sc) {
       best_sc = b1_sc;
       best_k  = -2;		/* flag for using local begin into left wedge w..wend */
@@ -544,7 +534,7 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    * in a V problem that's still above us. The TRUE flag sets useEL.
    */
   if (best_k == -1) {	
-    v_splitter(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0, TRUE, allow_begin);    
+    v_splitter(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0, TRUE);    
     return best_sc;
   } 
 
@@ -553,11 +543,15 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    * any further local begins.
    */
   if (best_k == -2) {
-    generic_splitter(cm, dsq, L, tr, b1, wend, i0, j0, FALSE);
+    InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b1);
+    z = CMSubtreeFindEnd(cm, b1);
+    generic_splitter(cm, dsq, L, tr, b1, z, i0, j0);
     return best_sc;
   }
   if (best_k == -3) {
-    generic_splitter(cm, dsq, L, tr, b2, yend, i0, j0, FALSE);
+    InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b2);
+    z = CMSubtreeFindEnd(cm, b2);
+    generic_splitter(cm, dsq, L, tr, b2, z, i0, j0);
     return best_sc;
   }
 
@@ -583,13 +577,13 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 		yend, UniqueStatetype(cm->stid[yend]),
 		best_j-best_k+1, best_j));
 
-  v_splitter(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0, FALSE, allow_begin);
+  v_splitter(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0, FALSE);
   tv = tr->n-1;
 
   InsertTraceNode(tr, tv, TRACE_LEFT_CHILD, best_j-best_d+1, best_j-best_k, w);
-  generic_splitter(cm, dsq, L, tr, w, wend, best_j-best_d+1, best_j-best_k, FALSE);
+  generic_splitter(cm, dsq, L, tr, w, wend, best_j-best_d+1, best_j-best_k);
   InsertTraceNode(tr, tv, TRACE_RIGHT_CHILD, best_j-best_k+1, best_j, y);
-  generic_splitter(cm, dsq, L, tr, y, yend, best_j-best_k+1, best_j, FALSE);
+  generic_splitter(cm, dsq, L, tr, y, yend, best_j-best_k+1, best_j);
 
   return best_sc;
 }
@@ -623,13 +617,11 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
  *           z           - index of an end state (E_st) in the model
  *           i0          - start in the sequence (1..L)
  *           j0          - end in the sequence (1..L)
- *           allow_begin - TRUE to allow a 0->v local begin transition
  *
  * Returns:  The score of the best parse in bits.
  */
 static float 
-wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0,
-	       int allow_begin)
+wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0)
 {
   float ***alpha;
   float ***beta;
@@ -659,7 +651,7 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
 		r, UniqueStatetype(cm->stid[r]),
 		z, UniqueStatetype(cm->stid[z]),
 		i0,j0));
-      sc = insideT(cm, dsq, L, tr, r, z, i0, j0, allow_begin);
+      sc = insideT(cm, dsq, L, tr, r, z, i0, j0, (r==0));
       return sc;
     }
 
@@ -683,7 +675,7 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
    */
   inside(cm, dsq, L, w, z, i0, j0, BE_EFFICIENT, 
 	 NULL, &alpha, NULL, &pool, NULL, 
-	 allow_begin, &b, &bsc);
+	 (r==0), &b, &bsc);
   outside(cm, dsq, L, r, y, i0, j0, BE_EFFICIENT, NULL, &beta, pool, NULL);
 
   /* 4. Find the optimal split at the split set: best_v, best_d, best_j
@@ -723,7 +715,7 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
 
   /* Local alignment begins only: maybe we're better off in the root.
    */
-  if (allow_begin && (cm->flags & CM_LOCAL_BEGIN)) {
+  if (r==0 && (cm->flags & CM_LOCAL_BEGIN)) {
     if (bsc > best_sc) {
       best_sc = bsc;
       best_v  = -2;		/* flag for local alignment */
@@ -744,7 +736,7 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
    * initialize the whole thing to IMPOSSIBLE anyway.
    */  
   if (best_v == -1) {
-    v_splitter(cm, dsq, L, tr, r, w, i0, best_j-best_d+1, best_j, j0, TRUE, allow_begin);    
+    v_splitter(cm, dsq, L, tr, r, w, i0, best_j-best_d+1, best_j, j0, TRUE);    
     return best_sc;
   }
 
@@ -755,7 +747,7 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
    */
   if (best_v == -2) {
     InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b);
-    wedge_splitter(cm, dsq, L, tr, b, z, i0, j0, FALSE);
+    wedge_splitter(cm, dsq, L, tr, b, z, i0, j0);
     return best_sc; 
   }
 
@@ -777,8 +769,8 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
 		z, UniqueStatetype(cm->stid[z]),
 		best_j-best_d+1, best_j));
 
-  v_splitter(cm, dsq, L, tr, r, best_v, i0, best_j-best_d+1, best_j, j0, FALSE, allow_begin);
-  wedge_splitter(cm, dsq, L, tr, best_v, z, best_j-best_d+1, best_j, FALSE);
+  v_splitter(cm, dsq, L, tr, r, best_v, i0, best_j-best_d+1, best_j, j0, FALSE);
+  wedge_splitter(cm, dsq, L, tr, best_v, z, best_j-best_d+1, best_j);
   return best_sc;
 }
 
@@ -805,14 +797,13 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
  *           i0,i1       - first part of the subsequence (1..L)
  *           j1,j0       - second part of the subsequence (1..L)
  *           useEL       - TRUE if i1,j1 aligned to EL, not z
- *           allow_begin - TRUE to allow 0->v internal begin transitions.
  * 
  * Returns:  (void)
  */
 static void
 v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 	   int r, int z, int i0, int i1, int j1, int j0, 
-	   int useEL, int allow_begin)
+	   int useEL)
 {
   float ***alpha, ***beta;      /* inside and outside matrices */
   struct deckpool_s *pool;      /* pool for holding alloced decks */
@@ -838,7 +829,7 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 		r, UniqueStatetype(cm->stid[r]),
 		z, UniqueStatetype(cm->stid[z]),
 		i0,j1,j1,j0));
-      vinsideT(cm, dsq, L, tr, r, z, i0, i1, j1, j0, useEL, allow_begin);
+      vinsideT(cm, dsq, L, tr, r, z, i0, i1, j1, j0, useEL, (r==0));
       return;
     }
 
@@ -856,7 +847,7 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    *    beta[cm->M] is the EL deck, needed for local ends.
    */
   vinside (cm, dsq, L, w, z, i0, i1, j1, j0, useEL, BE_EFFICIENT, 
-	   NULL, &alpha, NULL, &pool, NULL, allow_begin, &b, &bsc);
+	   NULL, &alpha, NULL, &pool, NULL, (r==0), &b, &bsc);
   voutside(cm, dsq, L, r, y, i0, i1, j1, j0, useEL, BE_EFFICIENT, 
 	   NULL, &beta,  pool, NULL);
 
@@ -890,7 +881,7 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 	
   /* Local alignment begins: maybe we're better off in root...
    */
-  if (allow_begin && (cm->flags & CM_LOCAL_BEGIN)) {
+  if (r==0 && (cm->flags & CM_LOCAL_BEGIN)) {
     if (bsc > best_sc) {
       best_sc = bsc;
       best_v  = -2;
@@ -909,7 +900,7 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    * The TRUE flag sets useEL; we propagate allow_begin. 
    */
   if (best_v == -1) {
-    v_splitter(cm, dsq, L, tr, r, w, i0, best_i, best_j, j0, TRUE, allow_begin);    
+    v_splitter(cm, dsq, L, tr, r, w, i0, best_i, best_j, j0, TRUE);    
     return;
   }
 
@@ -921,7 +912,7 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    */
   if (best_v == -2) {
     InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b);
-    v_splitter(cm, dsq, L, tr, b, z, i0, i1, j1, j0, useEL, FALSE);    
+    v_splitter(cm, dsq, L, tr, b, z, i0, i1, j1, j0, useEL);    
     return;
   }
 
@@ -941,8 +932,8 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 		z, UniqueStatetype(cm->stid[z]),
 		best_i, i1, j1, best_j));
 
-  v_splitter(cm, dsq, L, tr, r,      best_v, i0,     best_i, best_j, j0, FALSE, allow_begin);
-  v_splitter(cm, dsq, L, tr, best_v, z,      best_i, i1,     j1,     best_j, useEL, FALSE);
+  v_splitter(cm, dsq, L, tr, r,      best_v, i0,     best_i, best_j, j0, FALSE);
+  v_splitter(cm, dsq, L, tr, best_v, z,      best_i, i1,     j1,     best_j, useEL);
   return;
 }
 
@@ -1448,7 +1439,54 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
       for (d = 0; d <= jp; d++)
 	beta[cm->M][j][d] = IMPOSSIBLE;
     }
+    
+    /* We have to worry about vroot -> EL transitions.
+     * since we start the main recursion at w2+1. This requires a 
+     * laborious partial unroll of the main recursion, grabbing
+     * the stuff relevant to a beta[EL] calculation for just the
+     * vroot->EL transition.
+     */
+    if (NOT_IMPOSSIBLE(cm->endsc[vroot])) {
+      switch (cm->sttype[vroot]) {
+      case MP_st:
+	if (W < 2) break;
+	if (dsq[i0] < Alphabet_size && dsq[j0] > Alphabet_size)
+	  escore = cm->esc[vroot][(int) (dsq[i0]*Alphabet_size+dsq[j0])];
+	else
+	  escore = DegeneratePairScore(cm->esc[vroot], dsq[i0], dsq[j0]);
+	beta[cm->M][j0-1][W-2] = cm->endsc[vroot] + escore;
+	if (beta[cm->M][j0-1][W-2] < IMPOSSIBLE) beta[cm->M][j0-1][W-2] = IMPOSSIBLE;
+	break;
+      case ML_st:
+      case IL_st:
+	if (W < 1) break;
+	if (dsq[i0] < Alphabet_size) 
+	  escore = cm->esc[vroot][(int) dsq[i0]];
+	else
+	  escore = DegenerateSingletScore(cm->esc[vroot], dsq[i0]);
+	beta[cm->M][j0][W-1] = cm->endsc[vroot] + escore;
+	if (beta[cm->M][j0][W-1] < IMPOSSIBLE) beta[cm->M][j0][W-1] = IMPOSSIBLE;
+	break;
+      case MR_st:
+      case IR_st:
+	if (W < 1) break;
+	if (dsq[j0] < Alphabet_size) 
+	  escore = cm->esc[vroot][(int) dsq[j0]];
+	else
+	  escore = DegenerateSingletScore(cm->esc[vroot], dsq[j0]);
+	beta[cm->M][j0-1][W-1] = cm->endsc[vroot] + escore;
+	if (beta[cm->M][j0-1][W-1] < IMPOSSIBLE) beta[cm->M][j0-1][W-1] = IMPOSSIBLE;
+	break;
+      case S_st:
+      case D_st:
+	beta[cm->M][j0][W] = cm->endsc[vroot];
+	break;
+      default: Die("bogus parent state %d\n", cm->sttype[vroot]);
+      }
+    }
   }
+  
+
 
   touch = MallocOrDie(sizeof(int) * cm->M);
   for (v = 0;      v < w1; v++) touch[v] = 0; /* note: top of split set w1, not vroot */
@@ -1611,7 +1649,7 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
     } /* end loop over decks v. */
 
 #if 0
-  /* SRE: this code is superfluous, yes???
+  /* SRE: this code is superfluous, yes??? */
   /* Deal with last step needed for local alignment 
    * w.r.t. ends: left-emitting, zero-scoring EL->EL transitions.
    * (EL = deck at M.)
@@ -1746,15 +1784,70 @@ vinside(CM_t *cm, char *dsq, int L,
 	a[v][jp][ip] = IMPOSSIBLE;
   }
 
-  /* if local alignment, we must connect to EL somewhere, and
-   * a[z][0][i1-i0] = IMPOSSIBLE. Else, we connect to z,0,i1-i0.
-   */
-  if (! useEL) a[z][0][i1-i0] = 0.;
-
   if (ret_shadow != NULL) {
     shadow = MallocOrDie(sizeof(char **) * cm->M);
     for (v = 0; v < cm->M; v++) shadow[v] = NULL; 
   }
+
+  /* Initialize the one non-IMPOSSIBLE cell as a boundary
+   * condition.
+   * If local alignment (useEL=1), we must connect z to EL;
+   * we would init a[EL][0][i1-i0] = 0. But, we're not explicitly
+   * keeping an EL deck, we're swallowing it into the recursion.
+   * So, we unroll a chunk of the main recursion;
+   * we have to laboriously figure out from the statetype z 
+   * and our position where and what our initialization is.
+   * Else, for global alignments, we simply connect to z,0,i1-i0.
+   */
+  ip = i1-i0;
+  jp = 0;
+  if (! useEL) 
+    a[z][jp][ip] = 0.;
+  else 
+    {
+      if (ret_shadow != NULL) 
+	shadow[z] = alloc_vji_shadow_deck(i0,i1,j1,j0); 
+
+      switch (cm->sttype[z]) {
+      case D_st:
+      case S_st:
+	a[z][jp][ip] = cm->endsc[z];
+	if (ret_shadow != NULL) shadow[z][jp][ip] = USED_EL;
+	break;
+      case MP_st:
+	if (i0 == i1 || j1 == j0) break;
+	a[z][jp+1][ip-1] = cm->endsc[z];
+	if (dsq[i1-1] < Alphabet_size && dsq[j1+1] < Alphabet_size)
+	  a[z][jp+1][ip-1] += cm->esc[z][(int) (dsq[i1-1]*Alphabet_size+dsq[j1+1])];
+	else
+	  a[z][jp+1][ip-1] += DegeneratePairScore(cm->esc[z], dsq[i1-1], dsq[j1+1]);
+	if (ret_shadow != NULL) shadow[z][jp+1][ip-1] = USED_EL;
+	if (a[z][jp+1][ip-1] < IMPOSSIBLE) a[z][jp+1][ip-1] = IMPOSSIBLE;
+	break;
+      case ML_st:
+      case IL_st:
+	if (i0==i1) break;
+	a[z][jp][ip-1] = cm->endsc[z];
+	if (dsq[i1-1] < Alphabet_size)
+	  a[z][jp][ip-1] += cm->esc[z][(int) dsq[i1-1]];
+	else
+	  a[z][jp][ip-1] += DegenerateSingletScore(cm->esc[z], dsq[i1-1]);
+	if (ret_shadow != NULL) shadow[z][jp][ip-1] = USED_EL;
+	if (a[z][jp][ip-1] < IMPOSSIBLE) a[z][jp][ip-1] = IMPOSSIBLE;
+	break;
+      case MR_st:
+      case IR_st:
+	if (j1==j0) break;
+	a[z][jp+1][ip] = cm->endsc[z];
+	if (dsq[j1+1] < Alphabet_size)
+	  a[z][jp+1][ip] += cm->esc[z][(int) dsq[j1+1]];
+	else
+	  a[z][jp+1][ip] += DegenerateSingletScore(cm->esc[z], dsq[j1+1]);
+	if (ret_shadow != NULL) shadow[z][jp+1][ip] = USED_EL;
+	if (a[z][jp+1][ip] < IMPOSSIBLE) a[z][jp+1][ip] = IMPOSSIBLE;
+	break;
+      }
+    } /* done initializing the appropriate cell for useEL=TRUE */
 
   touch = MallocOrDie(sizeof(int) * cm->M);
   for (v = 0;   v < r;  v++) touch[v] = 0;
@@ -1796,7 +1889,7 @@ vinside(CM_t *cm, char *dsq, int L,
 	      y = cm->cfirst[v];
 	      a[v][jp][ip]      = a[y][jp][ip] + cm->tsc[v][0];
 	      if (ret_shadow != NULL) shadow[v][jp][ip] = (char) 0;
-	      if (useEL && cm->endsc[v] > a[v][jp][ip]) {
+	      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && cm->endsc[v] > a[v][jp][ip]) {
 		a[v][jp][ip]      = cm->endsc[v];
 		if (ret_shadow != NULL) shadow[v][jp][ip] = USED_EL;
 	      }
@@ -1819,7 +1912,7 @@ vinside(CM_t *cm, char *dsq, int L,
 	      y = cm->cfirst[v];
 	      a[v][jp][ip] = a[y][jp-1][ip+1] + cm->tsc[v][0];
 	      if (ret_shadow != NULL) shadow[v][jp][ip] = (char) 0;
-	      if (useEL && cm->endsc[v] > a[v][jp][ip]) {
+	      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && cm->endsc[v] > a[v][jp][ip]) {
 		a[v][jp][ip]      = cm->endsc[v];
 		if (ret_shadow != NULL) shadow[v][jp][ip] = USED_EL;
 	      }
@@ -1845,7 +1938,7 @@ vinside(CM_t *cm, char *dsq, int L,
 	      y = cm->cfirst[v];
 	      a[v][jp][ip] = a[y][jp][ip+1] + cm->tsc[v][0];
 	      if (ret_shadow != NULL) shadow[v][jp][ip] = 0;
-	      if (useEL && cm->endsc[v] > a[v][jp][ip]) {
+	      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && cm->endsc[v] > a[v][jp][ip]) {
 		a[v][jp][ip]      = cm->endsc[v];
 		if (ret_shadow != NULL) shadow[v][jp][ip] = USED_EL;
 	      }
@@ -1872,7 +1965,7 @@ vinside(CM_t *cm, char *dsq, int L,
 	      y = cm->cfirst[v];
 	      a[v][jp][ip]      = a[y][jp-1][ip] + cm->tsc[v][0];
 	      if (ret_shadow != NULL) shadow[v][jp][ip] = 0;
-	      if (useEL && cm->endsc[v] > a[v][jp][ip]) {
+	      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && cm->endsc[v] > a[v][jp][ip]) {
 		a[v][jp][ip]      = cm->endsc[v];
 		if (ret_shadow != NULL) shadow[v][jp][ip] = USED_EL;
 	      }
@@ -2430,6 +2523,14 @@ vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
   int     b;
   float   bsc;
 
+  /* If we can deduce the traceback unambiguously without
+   * doing any DP... do it.
+   */
+  if (r == z) {
+    InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, r);
+    return 0.;
+  }
+
   sc = vinside(cm, dsq, L, r, z, i0, i1, j1, j0, useEL,
 	       BE_EFFICIENT,	/* memory-saving mode */
 	       NULL, NULL,	/* manage your own matrix, I don't want it */
@@ -2445,7 +2546,7 @@ vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
   v = r;
   j = j0;
   i = i0;
-  while (v < z) {
+  while (1) {
     jp = j-j1;
     ip = i-i0;
 
@@ -2473,12 +2574,13 @@ vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
     if (yoffset == USED_EL) 
       {
 	InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M);
-	v = cm->M;
+	break;			/* one way out of the while loop */
       }
     else if (yoffset == USED_LOCAL_BEGIN) 
       {
 	InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, b);
 	v = b;
+	if (! useEL && v == z) break; /* the other way out of the while loop */
       }
     else
       {
@@ -2489,6 +2591,7 @@ vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 	y = cm->cfirst[v] + yoffset;
 	InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
 	v = y;
+	if (! useEL && v == z) break; /* the other way out of the while loop */
       }
   }
   

@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
@@ -30,8 +31,9 @@ Usage: cmscore [-options] <cmfile> <sequence file>\n\
 static char experts[] = "\
    --informat <s>: specify that input sequence file is in format <s>\n\
    --local       : do local alignment (w.r.t. model)\n\
-   --smallonly   : do only d&c, don't do full CYK/inside\n\
    --scoreonly   : for full CYK/inside stage, do only score, save memory\n\
+   --smallonly   : do only d&c, don't do full CYK/inside\n\
+   --stringent   : require the two parse trees to be identical\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -40,6 +42,7 @@ static struct opt_s OPTIONS[] = {
   { "--local",      FALSE, sqdARG_NONE },
   { "--scoreonly",  FALSE, sqdARG_NONE },
   { "--smallonly",  FALSE, sqdARG_NONE },
+  { "--stringent",  FALSE, sqdARG_NONE },
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -62,7 +65,7 @@ main(int argc, char **argv)
   int   do_local;		/* TRUE to align locally w.r.t. model       */
   int   do_scoreonly;		/* TRUE for score-only (small mem) full CYK */
   int   do_smallonly;		/* TRUE to do only d&c, not full CYK/inside */
-  
+  int   compare_stringently;	/* TRUE to demand identical parse trees     */
 
   char *optname;                /* name of option found by Getopt()        */
   char *optarg;                 /* argument found by Getopt()              */
@@ -161,8 +164,15 @@ main(int argc, char **argv)
       StopwatchDisplay(stdout, "CPU time: ", watch);
       puts("");
 
-      if (tr1 != NULL && tr2 != NULL)
-	ParsetreeCompare(tr1, tr2);  
+      if (tr1 != NULL && fabs(sc1 - ParsetreeScore(cm, tr1, dsq)) >= 0.01)
+	Die("CYKInside score differs from its parse tree's score");
+      if (tr2 != NULL && fabs(sc2 - ParsetreeScore(cm, tr2, dsq)) >= 0.01)
+	Die("CYKDivideAndConquer score differs from its parse tree's score");
+      if (!do_smallonly && fabs(sc1 - sc2) >= 0.01) 
+	Die("CYKInside score differs from CYKDivideAndConquer");
+      if (tr1 != NULL && tr2 != NULL && 
+	  compare_stringently && !ParsetreeCompare(tr1, tr2))
+	Die("Parse trees for CYKInside and CYKDivideAndConquer differ");
       
       FreeSequence(seq, &sqinfo);
       if (tr1 != NULL) FreeParsetree(tr1);  

@@ -68,7 +68,7 @@ extern void         ParsetreeCount(CM_t *cm, Parsetree_t *tr, char *seq, float w
 extern float        ParsetreeScore(CM_t *cm, Parsetree_t *tr, char *dsq);
 extern void         PrintParsetree(FILE *fp, Parsetree_t *tr);
 extern void         ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq);
-extern void         ParsetreeCompare(Parsetree_t *t1, Parsetree_t *t2);
+extern int          ParsetreeCompare(Parsetree_t *t1, Parsetree_t *t2);
 extern void         SummarizeMasterTrace(FILE *fp, Parsetree_t *tr);
 extern void         MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm);
 
