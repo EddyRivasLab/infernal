@@ -5,7 +5,12 @@
  * Construct a CM from a given multiple sequence alignment.
  *  
  *****************************************************************
- * @LICENSE@
+ * INFERNAL - inference of RNA secondary structure alignments
+ * Copyright (C) 2002 HHMI & Washington University School of Medicine
+ * 
+ *     This source code is freely distributed under the terms of the
+ *     GNU General Public License. See the files COPYRIGHT and LICENSE
+ *     for details.
  ***************************************************************** 
  */
 
@@ -264,11 +269,11 @@ main(int argc, char **argv)
        */
       printf("%-40s ... ", "Alignment format checks"); fflush(stdout);
       if (use_rf && msa->rf == NULL) 
-	Die("FAILED.\nAlignment has no reference coord annotation.");
+	Die("failed... Alignment has no reference coord annotation.");
       if (msa->ss_cons == NULL) 
-	Die("FAILED.\nAlignment has no consensus structure annotation.");
+	Die("failed... Alignment has no consensus structure annotation.");
       if (! clean_cs(msa->ss_cons, msa->alen))
-	Die("FAILED.\nFailed to parse consensus structure annotation.");
+	Die("failed... Failed to parse consensus structure annotation.");
       printf("done.\n");
 
       /* Sequence weighting. Default: GSC weights. If WGT_GIVEN,
@@ -589,8 +594,9 @@ clean_cs(char *cs, int alen)
   for (i = 0; i < alen; i++)
     {
       if      (isgap(cs[i])) ;
-      else if (cs[i] == '>') nleft++;  
-      else if (cs[i] == '<') nright++; 
+      else if (strchr("{[(<", cs[i]) != NULL) nleft++;  
+      else if (strchr(">)]}", cs[i]) != NULL) nright++; 
+      else if (strchr("._-,", cs[i]) != NULL) ;
       else if (has_pseudoknots && isalpha(cs[i])) cs[i] = '.';
       else {	/* count bad chars; remember first one; replace w/gap */
 	if (nbad == 0) { example = cs[i]; first = i; }
@@ -598,9 +604,11 @@ clean_cs(char *cs, int alen)
 	cs[i] = '.';
       }
     }
-  printf("    [Removed %d bad chars from consensus line. Example: a %c at position %d.]\n",
-	 nbad, example, first);
-  fflush(stdout);
+  if (nbad > 0) {
+    printf("    [Removed %d bad chars from consensus line. Example: a %c at position %d.]\n",
+	   nbad, example, first);
+    fflush(stdout);
+  }
 
   /* Check it again.
    */
@@ -608,6 +616,6 @@ clean_cs(char *cs, int alen)
   free(ct);
   if (status == 1) return 1;
 
-  printf("    [Failed to parse the consensus structure line. %d >, %d <]\n", nleft, nright);
+  printf("    [Failed to parse the consensus structure line.]\n");
   return 0;
 }

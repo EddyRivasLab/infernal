@@ -5,11 +5,17 @@
  * Common functions for manipulating RNA information.
  * 
  ***************************************************************** 
- * @LICENSE@
+ * INFERNAL - inference of RNA secondary structure alignments
+ * Copyright (C) 2002 HHMI & Washington University School of Medicine
+ * 
+ *     This source code is freely distributed under the terms of the
+ *     GNU General Public License. See the files COPYRIGHT and LICENSE
+ *     for details.
  ***************************************************************** 
  */
 
 #include <ctype.h>
+#include <string.h>
 #include <math.h>
 
 #include "squid.h"
@@ -67,14 +73,28 @@ KHS2ct(char *ss, int len, int allow_pseudoknots, int **ret_ct)
     {
       if (!isprint(ss[pos-1])) status = 0; /* armor against garbage strings */
 
-      else if (ss[pos-1] == '>')  /* left side of a pair: push onto stack 0 */
+      /* left side of a pair: push position onto stack 0 (pos = 1..L) */
+      else if (ss[pos-1] == '<' ||
+	       ss[pos-1] == '(' ||
+	       ss[pos-1] == '[' ||
+	       ss[pos-1] == '{')
         PushNstack(pda[0], pos);
-      else if (ss[pos-1] == '<')  /* right side of a pair; resolve pair */
+
+      /* right side of a pair; resolve pair; check for agreement */
+      else if (ss[pos-1] == '>' || 
+	       ss[pos-1] == ')' ||
+	       ss[pos-1] == ']' ||
+	       ss[pos-1] == '}')
         {
           if (! PopNstack(pda[0], &pair))
-            { status = 0; }
-          else
-            {
+            { status = 0; }	/* a failure code */
+          else if ((ss[pair-1] == '<' && ss[pos-1] != '>') ||
+		   (ss[pair-1] == '(' && ss[pos-1] != ')') ||
+		   (ss[pair-1] == '[' && ss[pos-1] != ']') ||
+		   (ss[pair-1] == '{' && ss[pos-1] != '}'))
+	    { status = 0; }	/* a failure code */
+	  else
+	    {
               ct[pos]  = pair;
               ct[pair] = pos;
             }
@@ -94,7 +114,7 @@ KHS2ct(char *ss, int len, int allow_pseudoknots, int **ret_ct)
             }
 	}
       }
-      else if (!isgap(ss[pos-1])) status = 0; /* bogus character */
+      else if (strchr(".,_-", ss[pos-1]) == NULL) status = 0; /* bogus character */
     }
                                 /* nothing should be left on stacks */
   if (! NstackIsEmpty(pda[0])) status = 0;

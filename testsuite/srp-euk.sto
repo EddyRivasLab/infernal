@@ -75,7 +75,7 @@ HOM.S._A             ..GCC.gGGCGC.gGuggcgCGUGCCuguag.UCCC.agcuacuc.GGGA
 #=GR HOM.S._A SS     ..>>>..>>>>>..>.....<<<<<<......>>>>..........<<<<
 HOM.S._B             ..GCC.gGGCGC.gGuggcgCGUGCCuguag.UCCC.agcuacuc.GGGA
 #=GR HOM.S._B SS     ..>>>..>>>>>..>.....<<<<<<......>>>>..........<<<<
-#=GC SS_cons         ..>>>..>>>>>..>.....<<<<<<......>>>>..........<<<<
+#=GC SS_cons         ..<<<..<<<<<..<.....>>>>>>......<<<<..........>>>>
 
 ZEA.M._A             GGCauuaAGGUGGUGugaaUGCUUu.gcGAuggcu...UUCUGggcccug
 #=GR ZEA.M._A SS     <<.....>>>>>>>>....>>>>>....>>........>>>>>.......
@@ -151,7 +151,7 @@ HOM.S._A             GGC...uGAGGCuGGaggaUCGCUu.gaGUcCAGGa.guuCUGggc..ug
 #=GR HOM.S._A SS     <<<....>>>>>.>>....>>>>>....>>.>>>>.....>>>.......
 HOM.S._B             GGC...uGAGGUGGGaggaUCGCUu.gaGCcCAGGa.guuCUGggc..ug
 #=GR HOM.S._B SS     <<<....>>>>>>>>....>>>>>....>>.>>>>.....>>>.......
-#=GC SS_cons         <<<....>>>>>>>>....>>>>>..........................
+#=GC SS_cons         >>>....<<<<<<<<....<<<<<..........................
 
 ZEA.M._A             ...GGCUCG.u.ugUgacacuggcCGGCUUGcCcaUCCCAagUUG.GuAG
 #=GR ZEA.M._A SS     ...>>>>>>.....>.........>>>>>>>.>..>>>>>..>>>.>.>>
@@ -227,7 +227,7 @@ HOM.S._A             ...UAGUGcGC.UAUgcc....gauCGGGUGuCcgCACUAaguUC.GGCA
 #=GR HOM.S._A SS     ...>>>>>.>>.>>>..........>>>>>>.>..>>>>>...>>.>>>>
 HOM.S._B             ...UAGUGcGC.UAUgcc....gaugGGGUGuCcgCACUAaguUC.GGCA
 #=GR HOM.S._B SS     ...>>>>>.>>.>>>...........>>>>>.>..>>>>>...>>.>>>>
-#=GC SS_cons         ...>>>>>>.....>.........>>>>>>>.>..>>>>>..>>>.>.>>
+#=GC SS_cons         ...<<<<<<.....<.........<<<<<<<.<..<<<<<..<<<.<.<<
 
 ZEA.M._A             u...guCUGgu.GGGGgcucuAGCgaaaGCUuuggguCUCUgCAGa.Ccu
 #=GR ZEA.M._A SS     ......>>>...>>>>.....>>>....<<<......<<<<.<<<..>..
@@ -303,7 +303,7 @@ HOM.S._A             ....uCAAUau.GGUGacCUCCCGggagCGGGGGacCACCagGUUG.CCu
 #=GR HOM.S._A SS     .....>>>>...>>>>..>>>>>>....<<<<<<..<<<<..<<<<.>>.
 HOM.S._B             ....uCAAUau.GGUGacCUCCCGggagCGGGGGacCACCagGUUG.CCu
 #=GR HOM.S._B SS     .....>>>>...>>>>..>>>>>>....<<<<<<..<<<<..<<<<.>>.
-#=GC SS_cons         ......>>>...>>>>.....>>>....<<<......<<<<.<<<..>>.
+#=GC SS_cons         ......<<<...<<<<.....<<<....>>>......>>>>.>>>..<<.
 
 ZEA.M._A             ggaGcGGCAGgaauggCGuaaggCUGgcuucaCAGagcagCGaucaCU.G
 #=GR ZEA.M._A SS     ...<.>>>>>......>>.....>>>......<<<.....<<....<<.<
@@ -379,7 +379,7 @@ HOM.S._A             aaGGaGGGGUgaaccGGCccaggUCGgaa..aCGGagcagGUCaaaAC.U
 #=GR HOM.S._A SS     ..<<.>>>>>.....>>>.....>>>......<<<.....<<<...<<.<
 HOM.S._B             aaGGaGGGGUgaaccGGCccaggUCGgaa..aCGGagcagGUCaaaAC.U
 #=GR HOM.S._B SS     ..<<.>>>>>.....>>>.....>>>......<<<.....<<<...<<.<
-#=GC SS_cons         ..<<.>>>>>......>>.....>>>......<<<.....<<....<<.<
+#=GC SS_cons         ..>>.<<<<<......<<.....<<<......>>>.....>>....>>.>
 
 ZEA.M._A             CCgaCUcCCAAcggUGGGAgGauaaCGaAGCCGcugc.Acu.uUGAGCCu
 #=GR ZEA.M._A SS     <<..<<.<<<<...<<<<<.<....<<.<<<<<.....<....<<<<<<.
@@ -455,7 +455,7 @@ HOM.S._A             CCcgUGCUGAucagUAGUGgGaucgCG.CCUGu..gaAUAGC..CACUGc
 #=GR HOM.S._A SS     <<..<<<<<<....<<<<<.<....<<.<<<<.....<<<<<..<<<<<.
 HOM.S._B             CCcgUGCUGAucagUAGUGgGaucgCG.CCUgu..gaAUAGC..CACUGc
 #=GR HOM.S._B SS     <<..<<<<<<....<<<<<.<....<<.<<<......<<<<<..<<<<<.
-#=GC SS_cons         <<..<<.<<<<...<<<<<.<....<<.<<<<<.....<....<<<<<<.
+#=GC SS_cons         >>..>>.>>>>...>>>>>.>....>>.>>>>>.....>....>>>>>>.
 
 ZEA.M._A             aacucaggcu.CAGAA..ccUCacu.AAGCAaacCACCAUCUuu
 #=GR ZEA.M._A SS     ...........<<<<<....<<....<<<<<...<<<<<<<<..
@@ -531,5 +531,5 @@ HOM.S._A             acucCAGCCUGuGC..aacau.....AGCGAgacCCcGUCUCuu
 #=GR HOM.S._A SS     ....<<<<<<<.<<............<<<<<...<<.<<<<<..
 HOM.S._B             acucCAGCCUGaGC..aacau.....AGCGAgacCCCGUCUCu.
 #=GR HOM.S._B SS     ....<<<<<<<.<<............<<<<<...<<<<<<<<..
-#=GC SS_cons         ..........................<<<<<...<<<<<<<<..
+#=GC SS_cons         ..........................>>>>>...>>>>>>>>..
 //
