@@ -1,0 +1,45 @@
+Checklist for an infernal squid release.
+SRE, Thu Jul  4 10:27:28 2002
+-------------------------------------
+
+1. Make sure is up to date w/ CVS. (Worry about commits here, on
+   other machines and other dirs that may have squid modifications)
+        % make distclean
+	% cvs update
+   Clean up any stray files.
+
+2. Update the copyright, year stamps. 
+	- Makefile.in (release, relcode, date)
+	- 00README (year only)
+	- Licenses/COPYRIGHT.gnu (year only)
+        - Licenses/gnu (year only)
+
+3. Commit to CVS.
+	% cvs commit
+
+4. make a distribution package
+	% autoconf             <-- only wrasse. Must be autoconf >=2.52
+	% ./configure          <-- makes a Makefile (needed for "make dist")
+	% make dist
+
+5. Build for our system (on whelk01 or some such)
+	% cd infernal-xxx
+	% env CFLAGS="-O3" ./configure --enable-lfs prefix=/usr/seshare/ exec_prefix=/usr/seshare/`uname`
+	% make
+	% make check
+	% make install         <-- I don't need root to do this
+	% ssh w001
+	% cd /nfs/wol2/people/eddy/src/squid/squid-xxx
+	% ./configure          <-- sets paths to /usr/local
+	% sudo make install
+	% logout
+	% make distclean
+
+6. Put on the FTP site. (on wrasse)
+	% make ftpdist
+
+
+
+
+0.3 - release to Sanger for Rfam construction
+      SRE, Thu Jul  4 10:27:16 2002
