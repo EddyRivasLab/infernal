@@ -2,7 +2,7 @@
 %
 % CVS $Id$
 
-\documentclass[11pt]{report}
+\documentclass[11pt]{article}
 \newif\ifpdf
 \ifx\pdfoutput\undefined
   \pdffalse
@@ -20,20 +20,36 @@
 \usepackage{apalike}
 \usepackage{fullpage}
 \usepackage{times}
+\usepackage{fancyvrb}
 
 \setcounter{secnumdepth}{1}
 
 \input{macros}
 
 \begin{document}
+
 \bibliographystyle{apalike}
 
 \input{titlepage}
 \input{copyright}
+\newpage
 \tableofcontents
-\input{intro}
-\input{install}
-\input{tutorial}
 
+\newpage
+\input{intro}
+\newpage
+\input{install}
+\newpage
+\input{tutorial}
+\newpage
+\input{cmbuild}
+\newpage
+\input{formats}
+
+\newpage
+\section*{Index of frequently asked questions}
+\listoffaqs
+
+\newpage
 \bibliography{master,lab,new}
 \end{document}

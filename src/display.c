@@ -35,7 +35,7 @@ static void createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface);
  * Incept:    SRE, Thu May 23 13:46:09 2002 [St. Louis]
  *
  * Purpose:   Given a trace (and the model and sequence it corresponds
- *            to), create an alignment for display; return in a Fancyali_t
+ *            to), create a pairwise alignment for display; return in a Fancyali_t
  *            structure.
  *
  * Args:      tr    - parsetree for cm aligned to dsq
@@ -57,7 +57,8 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
   int         v;		/* state index       */
   int         nd;		/* node index        */
   int         ti;		/* position in trace */
-  int         ninset;		/* # nt in an EL     */
+  int         qinset, tinset;	/* # consensus nt skipped by an EL, or in an EL */
+  int         ninset;		/* max # nt in an EL     */
   int         pos;		/* position in growing ali */
   int         lc, rc;		/* indices for left, right pos in consensus */
   int         symi, symj;
@@ -84,9 +85,12 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
     {
       v  = tr->state[ti];
       if (v == cm->M) {  /* special case: local exit into EL */
-	ninset     = tr->emitr[ti] - tr->emitl[ti] + 1;
+	nd = cm->ndidx[tr->state[ti-1]]; /* calculate node that EL replaced */
+	qinset     = cons->rpos[nd] - cons->lpos[nd] + 1;
+	tinset     = tr->emitr[ti]  - tr->emitl[ti]  + 1;
+	ninset     = MAX(qinset,tinset);
 	ali->len += 4;
-	do { ali->len++; ninset /= 10; } while (ninset);
+	do { ali->len++; ninset/=10; } while (ninset); /* poor man's (int)log_10(ninset)+1 */
 	continue;
       } else {
 	nd = cm->ndidx[v];
@@ -155,10 +159,17 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
        * memset() the display strings to blank.
        */
       if (v == cm->M) { 
-	ninset = tr->emitr[ti] - tr->emitl[ti] + 1;
-	sprintf(ali->aseq+pos, "*[%d]*", ninset);
-	pos += 4;
-	do { pos++; ninset /= 10; } while (ninset);
+	int numwidth;		/* number of chars to leave for displaying width numbers */
+
+	nd = 1 + cm->ndidx[tr->state[ti-1]]; /* calculate node that EL replaced */
+	qinset     = cons->rpos[nd] - cons->lpos[nd] + 1;
+	tinset     = tr->emitr[ti]  - tr->emitl[ti]  + 1;
+	ninset     = MAX(qinset,tinset);
+	numwidth = 0; do { numwidth++; ninset/=10; } while (ninset); /* poor man's (int)log_10(ninset)+1 */
+	memset(ali->cstr+pos,  '~', numwidth+4);
+	sprintf(ali->cseq+pos, "*[%*d]*", numwidth, qinset);
+	sprintf(ali->aseq+pos, "*[%*d]*", numwidth, tinset);
+	pos += 4 + numwidth;
 	continue;
       }
 
@@ -175,16 +186,16 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
       do_left = do_right = FALSE;
       if (cm->sttype[v] == IL_st) {
 	do_left = TRUE;
-	if (cm->annote != NULL) lannote = ' ';
-	lstr    = ' ';
+	if (cm->annote != NULL) lannote = '.';
+	lstr    = '.';
 	lcons   = '.';
 	lseq    = tolower((int) Alphabet[symi]);
 	cpos_l  = 0;
 	spos_l  = tr->emitl[ti];
       } else if (cm->sttype[v] == IR_st) {
 	do_right = TRUE;
-	if (cm->annote != NULL) lannote = cm->annote[rc];
-	rstr    = ' ';
+	if (cm->annote != NULL) rannote = '.';
+	rstr    = '.';
 	rcons   = '.';
 	rseq    = tolower((int) Alphabet[symj]);
 	cpos_r  = 0;
@@ -439,11 +450,11 @@ FreeFancyAli(Fancyali_t *ali)
  *               order 1:         ()
  *               order 2:         []
  *               order >2:        {}
- *            Singlets are annotated . if external, _ if hairpin,
+ *            Singlets are annotated : if external, _ if hairpin,
  *            - if bulge or interior loop, and , for multifurcation loop.
  *               
  *            Example:
- *                ..(((,,<<<__>>>,<<<__>>->,,)))..
+ *                ::(((,,<<<__>>>,<<<__>>->,,)))::
  *                AAGGGAACCCTTGGGTGGGTTCCACAACCCAA   
  *
  * Args:      cm         - the model
@@ -540,7 +551,7 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
 	  x = FArgMax(cm->esc[v], Alphabet_size);
 	  lchar = Alphabet[x];
 	  if (cm->esc[v][x] < sthresh) lchar = tolower((int) lchar);
-	  if      (outface[nd] == 0)                    lstruc = '.'; /* external ss */
+	  if      (outface[nd] == 0)                    lstruc = ':'; /* external ss */
 	  else if (inface[nd] == 0 && outface[nd] == 1) lstruc = '_'; /* hairpin loop */
 	  else if (inface[nd] == 1 && outface[nd] == 1) lstruc = '-'; /* bulge/interior */
 	  else                                          lstruc = ','; /* multiloop */
@@ -549,7 +560,7 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
 	  x = FArgMax(cm->esc[v], Alphabet_size);
 	  rchar = Alphabet[x];
 	  if (cm->esc[v][x] < sthresh) rchar = tolower((int) rchar);
-	  if      (outface[nd] == 0)                    rstruc = '.'; /* external ss */
+	  if      (outface[nd] == 0)                    rstruc = ':'; /* external ss */
 	  else if (inface[nd] == 0 && outface[nd] == 1) rstruc = '?'; /* doesn't happen */
 	  else if (inface[nd] == 1 && outface[nd] == 1) rstruc = '-'; /* bulge/interior */
 	  else                                          rstruc = ','; /* multiloop */

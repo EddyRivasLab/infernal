@@ -37,6 +37,17 @@
        }}
      {\end{list}}
        
+\DefineVerbatimEnvironment{sreoutput}{Verbatim}{fontsize=\scriptsize,xleftmargin=2.0\parindent}%
+
+\makeatletter
+\newcommand{\listoffaqs}{\@starttoc{faq}}
+\newenvironment{srefaq}[1]
+{\addcontentsline{faq}{faq}{#1}\begin{sloppypar}\noindent\slshape\small\begin{quote}\textbf{$\triangleright$ #1}}
+{\end{quote}\end{sloppypar}}
+\newcommand{\l@faq}[2]{\@dottedtocline{0}{0pt}{0pt}{#1}{#2}}
+\makeatother
+
+
 % Consistent font styles
 %   \software{} for the name of a software package
 %   \database{} for the name of a database

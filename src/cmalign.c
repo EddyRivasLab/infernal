@@ -371,10 +371,13 @@ Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt,
 
   for (i = 0; i < nseq; i++)
     {
-      /* Initialize the aseq with all pads, '.'
+      /* Initialize the aseq with all pads '.' (in insert cols) 
+       * and deletes '-' (in match cols).
        */
       for (apos = 0; apos < alen; apos++)
 	msa->aseq[i][apos] = '.';
+      for (cpos = 0; cpos <= emap->clen; cpos++)
+	if (matmap[cpos] != -1) msa->aseq[i][matmap[cpos]] = '-';
       msa->aseq[i][alen] = '\0';
 
       /* Traverse this guy's trace, and place all his
@@ -500,7 +503,7 @@ Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt,
     }
 
   /* Construct the secondary structure consensus line, msa->ss_cons:
-   *       IL, IR are annotated as :
+   *       IL, IR are annotated as .
    *       EL is annotated as ~
    *       and match columns use the structure code.
    * Also the primary sequence consensus/reference coordinate system line,
@@ -517,7 +520,7 @@ Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt,
 	   * make sure the paired column is also present.
 	   */
 	  if (con->ct[cpos-1] != -1 && matuse[con->ct[cpos-1]+1] == 0) {
-	    msa->ss_cons[matmap[cpos]] = ':';
+	    msa->ss_cons[matmap[cpos]] = '.';
 	    msa->rf[matmap[cpos]]      = con->cseq[cpos-1];
 	  } else {
 	    msa->ss_cons[matmap[cpos]] = con->cstr[cpos-1];	
@@ -527,7 +530,7 @@ Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt,
       if (maxil[cpos] > 0) 
 	for (apos = ilmap[cpos]; apos < ilmap[cpos] + maxil[cpos]; apos++)
 	  {
-	    msa->ss_cons[apos] = ':';
+	    msa->ss_cons[apos] = '.';
 	    msa->rf[apos] = '.';
 	  }
       if (maxel[cpos] > 0)
@@ -539,7 +542,7 @@ Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt,
       if (maxir[cpos] > 0)	/* remember to write backwards */
 	for (apos = irmap[cpos]; apos > irmap[cpos] - maxir[cpos]; apos--)
 	  {
-	    msa->ss_cons[apos] = ':';
+	    msa->ss_cons[apos] = '.';
 	    msa->rf[apos] = '.';
 	  }
     }

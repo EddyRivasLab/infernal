@@ -114,7 +114,7 @@ KHS2ct(char *ss, int len, int allow_pseudoknots, int **ret_ct)
             }
 	}
       }
-      else if (strchr(".,_-", ss[pos-1]) == NULL) status = 0; /* bogus character */
+      else if (strchr(":,_-.~", ss[pos-1]) == NULL) status = 0; /* bogus character */
     }
                                 /* nothing should be left on stacks */
   if (! NstackIsEmpty(pda[0])) status = 0;

@@ -36,7 +36,7 @@ dnl INFERNAL can optionally support LFS, the Large File Summit
 dnl See: http://ftp.sas.com/standards/large.file/x_open.20Mar96.html
 dnl
 AC_ARG_ENABLE(lfs, 
-[  --enable-lfs         enable LFS, Large File Support],
+[  --enable-lfs            enable LFS, Large File Support],
 [case $enable_lfs in
    yes) echo 'Configuring optional LFS, large file support'
         CFLAGS="${CFLAGS} -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64" 

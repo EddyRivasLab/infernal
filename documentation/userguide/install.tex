@@ -157,7 +157,12 @@ LFS is enabled with the \prog{--enable-lfs} option:
 
 \user{./configure --enable-lfs}
 
+\subsection{Example configuration}
 
+The Intel GNU/Linux version installed in St. Louis is configured as
+follows:
+
+\user{env CFLAGS="-O3" ./configure --enable-lfs --prefix=/usr/seshare/ --exec-prefix=/usr/seshare/`uname`}
 
 
 

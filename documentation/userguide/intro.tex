@@ -25,7 +25,7 @@ the strategy used to maintain the \database{Rfam} database of RNA
 multiple alignments and profiles.
 
 \software{Infernal} is comparable to \software{hmmer}
-(\htmladdnormallink{hmmer.wustl.edu}{http://hmmer.wustl.edu}.  The
+(\htmladdnormallink{hmmer.wustl.edu}{http://hmmer.wustl.edu}).  The
 \software{hmmer} software package builds profile hidden Markov models
 (profile HMMs) of multiple sequence alignments. Profile HMMs capture
 only primary sequence consensus features. \software{Infernal} models
@@ -33,13 +33,16 @@ are profile stochastic context-free grammars (profile SCFGs).  Profile
 SCFGs include both sequence and RNA secondary structure consensus
 information.
 
-\software{Infernal} is very slow and CPU-intensive. You will probably
-need a large number of CPUs in order to use it for serious
-work. Future algorithmic improvements should make it more practical.
-We make it available as a documented package now, because it is the
-basis for constructing and maintaining the \database{Rfam} database of
-structurally annotated RNA multiple alignments
-\cite{Griffiths-Jones03}.
+\emph{Currently \software{Infernal} is really just an algorithm
+testbed. Output is rudimentary, and many desired features are
+missing.} Most importantly, \software{Infernal} is very slow and
+CPU-intensive. You will probably need a large number of CPUs in order
+to use it for serious work. Planned algorithmic improvements should
+make it more practical in the future. We are making it available as a
+fully documented package now, only because \software{Infernal} has
+been pressed prematurely into service as the basis for constructing
+and maintaining the \database{Rfam} database of structurally annotated
+RNA multiple alignments \cite{Griffiths-Jones03}.
 
 
 
