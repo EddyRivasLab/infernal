@@ -67,6 +67,7 @@ static float vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 static float insideT_size(CM_t *cm, int L, int r, int z, int i0, int j0);
 static float vinsideT_size(CM_t *cm, int r, int z, int i0, int i1, int j1, int j0);
 static int   cyk_deck_count(CM_t *cm, int r, int z);
+static int   cyk_extra_decks(CM_t *cm);
 
 /* The memory management routines.
  */
@@ -191,25 +192,27 @@ CYKInside(CM_t *cm, char *dsq, int L, Parsetree_t **ret_tr)
 void
 CYKDemands(CM_t *cm, int L)
 {
-  float Mb_per_deck;		/* megabytes per deck */
-  int   bif_decks;		/* bifurcation decks  */
-  int   nends;			/* end decks (only need 1, even for multiple E's */
-  int   maxdecks;		/* maximum # of decks needed by CYKInside() */
-  float smallmemory;		/* how much memory small version of CYKInside() needs */
-  float bigmemory;		/* how much memory a full CYKInside() would take */
-  float dpcells;		/* # of dp cells */
-  float bifcalcs;		/* # of inner loops executed for bifurcation calculations */
-  float dpcalcs;		/* # of inner loops executed for non-bif calculations */
+  float Mb_per_deck;    /* megabytes per deck */
+  int   bif_decks;	/* bifurcation decks  */
+  int   nends;		/* end decks (only need 1, even for multiple E's */
+  int   maxdecks;	/* maximum # of decks needed by CYKInside() */
+  int   extradecks;     /* max # of extra decks needed for bifurcs */
+  float smallmemory;	/* how much memory small version of CYKInside() needs */
+  float bigmemory;	/* how much memory a full CYKInside() would take */
+  float dpcells;	/* # of dp cells */
+  float bifcalcs;	/* # of inner loops executed for bifurcation calculations */
+  float dpcalcs;	/* # of inner loops executed for non-bif calculations */
   int   j;
 
   Mb_per_deck = size_vjd_deck(L, 1, L);
   bif_decks   = CMCountStatetype(cm, B_st);
   nends       = CMCountStatetype(cm, E_st);
   maxdecks    = cyk_deck_count(cm, 0, cm->M-1);
+  extradecks  = cyk_extra_decks(cm);
   smallmemory = (float) maxdecks * Mb_per_deck;
   bigmemory   = (float) (cm->M - nends +1) * Mb_per_deck;
   dpcells     = (float) (L+2)*(float)(L+1)*0.5*(float) (cm->M - nends +1);
-  
+
   bifcalcs = 0.;
   for (j = 0; j <= L; j++)
     bifcalcs += (float)(j+1)*(float)(j+2)/2.;
@@ -218,16 +221,17 @@ CYKDemands(CM_t *cm, int L)
   dpcalcs = (float) (L+2)*(float)(L+1)*0.5*(float) (cm->M - bif_decks - nends +1);
 
   printf("CYK cpu/memory demand estimates:\n");
-  printf("Mb per cyk deck:                 %.4f\n", Mb_per_deck);
-  printf("# of decks (M):                  %d\n",   cm->M);
-  printf("# of decks needed in small CYK:  %d\n",   maxdecks);
-  printf("RAM needed for full CYK, Mb:     %.2f\n", bigmemory);
-  printf("RAM needed for small CYK, Mb:    %.2f\n", smallmemory);
-  printf("# of dp cells, total:            %.3g\n", dpcells);
-  printf("# of non-bifurc dp cells:        %.3g\n", dpcalcs);
-  printf("# of bifurcations:               %d\n",   bif_decks);
-  printf("# of bifurc dp inner loop calcs: %.3g\n", bifcalcs);
-  printf("# of dp inner loops:             %.3g\n", dpcalcs+bifcalcs);
+  printf("Mb per cyk deck:                  %.4f\n", Mb_per_deck);
+  printf("# of decks (M):                   %d\n",   cm->M);
+  printf("# of decks needed in small CYK:   %d\n",   maxdecks);
+  printf("# of extra decks needed:          %d\n",   extradecks);
+  printf("RAM needed for full CYK, Mb:      %.2f\n", bigmemory);
+  printf("RAM needed for small CYK, Mb:     %.2f\n", smallmemory);
+  printf("# of dp cells, total:             %.3g\n", dpcells);
+  printf("# of non-bifurc dp cells:         %.3g\n", dpcalcs);
+  printf("# of bifurcations:                %d\n",   bif_decks);
+  printf("# of bifurc dp inner loop calcs:  %.3g\n", bifcalcs);
+  printf("# of dp inner loops:              %.3g\n", dpcalcs+bifcalcs);
 }
 
 
@@ -1834,15 +1838,23 @@ vinsideT_size(CM_t *cm, int r, int z, int i0, int i1, int j1, int j0)
  *           decks that would be required in memory to
  *           solve an alignment problem involving a CM
  *           subgraph from r..z.
+ *           
+ *           For a whole model, except for trivially small models with no
+ *           stacked base pairs, this is almost invariably 
+ *           10+1+cyk_extra_decks(): MATP-MATP connections require
+ *           10 decks (6 states in current node, 4 states in connected
+ *           split set of next node). We share 1 end state deck. All
+ *           other decks are retained S decks, needed for bifurcation
+ *           calculations.  
  */
 static int
 cyk_deck_count(CM_t *cm, int r, int z)
 {
-  Nstack_t *pda;		/* pushdown stack simulating the deck pool */
-  int       v,w,y;		/* state indices */
+  Nstack_t *pda;	/* pushdown stack simulating the deck pool */
+  int       v,w,y;	/* state indices */
   int       nends;
   int       ndecks;
-  int      *touch;		/* keeps track of how many higher decks still need this deck */
+  int      *touch;	/* keeps track of how many higher decks still need this deck */
 
   /* Initializations, mirroring key parts of CYKInside()
    */
@@ -1879,9 +1891,37 @@ cyk_deck_count(CM_t *cm, int r, int z)
 	  }
       }
     }
-  FreeNstack(pda);
   free(touch);
+  FreeNstack(pda);
   return ndecks;
+}
+
+/* Function: cyk_extra_decks()
+ * Date:     SRE, Sun Apr  7 14:42:48 2002 [St. Louis]
+ *
+ * Purpose:  Calculate the number of extra
+ *           decks that will be needed to accommodate bifurc
+ *           calculations.
+ *
+ * Args:     cm - the model.
+ *
+ * Returns:  # of extra decks.
+ */
+static int
+cyk_extra_decks(CM_t *cm)
+{
+  int  max;
+  int  x;
+  int  v;
+
+  max = x = 0;
+  for (v = cm->M-1; v >= 0; v--) 
+    {
+      if      (cm->sttype[v] == S_st) x++;
+      else if (cm->sttype[v] == B_st) x-=2;
+      if (x > max) max = x;
+    }
+  return max-1;			/* discount ROOT S */
 }
 
 /*################################################################

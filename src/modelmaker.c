@@ -260,31 +260,35 @@ HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh,
 
       else /* i,j paired but not to each other. BIFURC. no INS. */
 	{
-	  /* Here's the first of two places where we can optimize the topology of a CM.
-           * (The other comes from choosing a state traversal order when building the CM.)
-           * Imagine a multifurcation of four domains:
+	  /* Here's the first of two places where we can optimize the topology 
+           * of a CM. (The other comes from choosing a state traversal order when 
+           * building the CM.) Imagine a multifurcation of four domains:
            *   [1]..[2]..[3]..[4]
-           * The "default leftwise" rule means that BEGL/INSL generates the intervening
-           * sequences, so we must model the four stems as:
+           * The "default leftwise" rule means that BEGL/INSL generates the 
+           * intervening sequences, so we must model the four stems as:
            *   [1],    ..[2],    ..[3],   ..[4]
            * but we have a choice of how we bifurcate:
            *   (1,2)(3,4)    1,(2,(3,4))   ((1,2),3),4 
-           * Our choice may affect the time and memory requirements of a divide
-           * conquer alignment algorithm.
+           * Our choice affects the time and memory requirements of a divide
+           * conquer alignment algorithm. (1,(2,(3,4)) is most efficient for
+           * memory; (1,2)(3,4) is most efficient for time.
            * 
-           * So we may have to choose carefully from several possible split points k (3,
-           * in the above example). A priori we only know one possible midpoint precisely:
-           * ct[i]+1, the next base after closing domain 1. We can find the others
-           * by scanning for them, and we can be reasonably efficient about scanning
-           * by using ct[] to instantly skip subdomains.
+           * So we may want to choose carefully from several possible split 
+           * points k (3, in the above example). A priori we only know one 
+           * possible midpoint precisely: ct[i]+1, the next base after closing 
+           * domain 1. We can find the others by scanning for them, and we can 
+           * be reasonably efficient about scanning by using ct[] to instantly 
+           * skip subdomains.
 	   */
 	  /* One possible rule: optimize by finding most balanced split.
            * Each stop of the following loop gives a possible midpoint k, which is
            * then evaluated, keeping track of the best split so far.
            */
 	  v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, BIF_nd);
-	  bestdiff = msa->alen;
+
 	  bestk    = ct[i]+1;
+#if 0
+	  bestdiff = msa->alen;
 	  for (k = ct[i] + 1; k < ct[j]; k = ct[k] + 1) 
 	    {
 	      diff = abs(i+j-2*k); /* = len2-len1-1, where len2 = j-k+1, len1= k-i */
@@ -294,6 +298,7 @@ HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh,
 	      }
 	      while (ct[k] == 0) k++;
 	    }
+#endif
 				/* push the right BEGIN node first */
 	  PushNstack(pda, v);	
 	  PushNstack(pda, bestk);
@@ -351,8 +356,8 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
 {
   Nstack_t   *pda;              /* pushdown stack used for traversing gtr */
   int         v;		/* what node we're working on (in gtr index system)*/
-  int         node;		/* what node this is (preorder traversal numbering of CM) */
-  int         state;		/* what state this is (preorder traversal numbering of CM) */
+  int         node;		/* what node (preorder traversal numbering of CM) */
+  int         state;		/* what state (preorder traversal numbering of CM) */
   int  nxtnodetype;		/* type of a child node (e.g. MATP_nd) */
   int  prvnodetype;		/* type of a parent node (e.g. MATP_nd) */
 
@@ -379,8 +384,8 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
 	cm->ndidx[state]  = node;
 	cm->stid[state]   = BIF_B;
 	cm->cfirst[state] = state+1;
-	cm->cnum[state]   = -1; /* we have to fill this in later, when we see the BEGR... */
-	PushNstack(pda, state);	/* ...and this is the trick we use to remember the connection */
+	cm->cnum[state]   = -1; /* we fill this in later, when we see the BEGR... */
+	PushNstack(pda, state);	/* ... the trick we use to remember the connection */
 	cm->plast[state] = state-1;
 	cm->pnum[state]   = parent_count[prvnodetype];
 	state++;

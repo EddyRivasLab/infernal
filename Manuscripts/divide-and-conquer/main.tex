@@ -1038,6 +1038,24 @@ the two traceback routines \texttt{insideT()} and \texttt{vinsideT()}.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+
+\begin{tabular}{lrrrrrr}
+                      & tRNA  & 5S rRNA  & SRP RNA & RNase P & SSU rRNA & LSU rRNA \\\hline
+consensus columns     &   72  &    116   &    301  &    379  &   1545   &    2898\\
+CM states ($M$)       &  230  &    357   &    927  &   1176  &   4789   &    9023\\
+base pairs (MATP)     &   21  &     35   &     89  &    113  &    462   &     794\\
+unpaired (MATL$+$MATR)&   30  &     46   &    123  &    153  &    621   &    1310\\
+bifurcations ($M_B$)  &    2  &      1   &      4  &      7  &     30   &      65\\
+Maximum decks needed  &   13  &     12   &     13  &     13  &     18   &      20\\
+Sequence length ($N$) &   73  &    120   &    300  &    377  &   1542   &    2904\\
+Full CYK RAM, MB      &  2.6  &   10.7   &  168.9  &  336.7  &22705.0   &151349.7\\
+Divide \& conquer RAM &  0.2  &    0.4   &    2.4  &    3.7  &   85.9   &   337.9\\
+Full CYK CPU time, sec&  0.2  &    0.7   &   12.6  &   28.1  &    n.d.  &    n.d.\\
+Divide \& conquer time&  0.2  &    0.9   &   22.7  &   36.8  & 3688.5   & 32089.6\\\hline
+\end{tabular}
+
+
+
 \bibliography{distilled}
 
 
