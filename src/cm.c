@@ -367,7 +367,61 @@ CalculateStateIndex(CM_t *cm, int node, char utype)
   return base;			/* not used */
 }
 
-
+/* Function:  TotalStatesInNode(), SplitStatesInNode(), InsertStatesInNode()
+ * Incept:    SRE, Thu Aug  8 09:57:59 2002 [St. Louis]
+ *
+ * Purpose:   Returns the number of states in a node type.
+ *
+ * Args:      ndtype  - type of node (cm->ndtype[])
+ */
+int
+TotalStatesInNode(int ndtype)
+{
+  switch (ndtype) {
+  case BIF_nd:   return 1;
+  case MATP_nd:  return 6;
+  case MATL_nd:  return 3;
+  case MATR_nd:  return 3;
+  case BEGL_nd:  return 1;
+  case BEGR_nd:  return 2;
+  case ROOT_nd:  return 3;
+  case END_nd:   return 1;
+  default:       Die("Bogus node type %d", ndtype);
+  }
+  return 0;/*NOTREACHED*/
+}
+int
+SplitStatesInNode(int ndtype)
+{
+  switch (ndtype) {
+  case BIF_nd:   return 1;
+  case MATP_nd:  return 4;
+  case MATL_nd:  return 2;
+  case MATR_nd:  return 2;
+  case BEGL_nd:  return 1;
+  case BEGR_nd:  return 1;
+  case ROOT_nd:  return 1;
+  case END_nd:   return 1;
+  default:       Die("Bogus node type %d", ndtype);
+  }
+  return 0;/*NOTREACHED*/
+}
+int
+InsertStatesInNode(int ndtype)
+{
+  switch (ndtype) {
+  case BIF_nd:   return 0;
+  case MATP_nd:  return 2;
+  case MATL_nd:  return 1;
+  case MATR_nd:  return 1;
+  case BEGL_nd:  return 0;
+  case BEGR_nd:  return 1;
+  case ROOT_nd:  return 2;
+  case END_nd:   return 0;
+  default:       Die("Bogus node type %d", ndtype);
+  }
+  return 0;/*NOTREACHED*/
+}
 
 
 /* Function: PrintCM()

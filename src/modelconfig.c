@@ -38,18 +38,18 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
   }
   /* Spread the entry probability across internal nodes.
    */
-  for (v = 0; v < cm->M; v++) cm->begin[v] = 0.;
-  cm->begin[cm->nodemap[1]] = 1.-p_internal_exit;  /*v=3, the first state.*/
+  for (v = 0; v < cm->M; v++) 
+    cm->begin[v] = 0.;
+  for (v = 0; v < cm->cnum[0]; v++) 
+    {
+      cm->begin[cm->cfirst[0] + v] = cm->t[0][v] * (1.-p_internal_start);
+      cm->t[0][v] = 0.;
+    }
   for (nd = 2; nd < cm->nodes; nd++) {
     if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
     	cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd)  
       cm->begin[cm->nodemap[nd]] = p_internal_start/(float)nstarts;
   }
-  /* Make the begin transition the only way out of the root.
-   */
-  for (v = 0; v < cm->cnum[0]; v++)
-    cm->t[0][v] = 0.;
-
   cm->flags |= CM_LOCAL_BEGIN;
   
   /*****************************************************************

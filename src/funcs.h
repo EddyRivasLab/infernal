@@ -26,6 +26,9 @@ extern int   CMSegmentCountStatetype(CM_t *cm, int r, int z, char type);
 extern int   CMSubtreeCountStatetype(CM_t *cm, int v, char type);
 extern int   CMSubtreeFindEnd(CM_t *cm, int v);
 extern int   CalculateStateIndex(CM_t *cm, int node, char utype);
+extern int   TotalStatesInNode(int ndtype);
+extern int   SplitStatesInNode(int ndtype);
+extern int   InsertStatesInNode(int ndtype);
 extern void  PrintCM(FILE *fp, CM_t *cm);
 extern void  SummarizeCM(FILE *fp, CM_t *cm);
 extern char *Statetype(int type);
@@ -45,6 +48,12 @@ extern void           PrintFancyAli(FILE *fp, Fancyali_t *ali);
 extern void           FreeFancyAli(Fancyali_t *ali);
 extern CMConsensus_t *CreateCMConsensus(CM_t *cm, float pthresh, float sthresh);
 extern void           FreeCMConsensus(CMConsensus_t *con);
+
+/* in emitmap.c
+ */
+extern CMEmitMap_t *CreateEmitMap(CM_t *cm); 
+extern void         DumpEmitMap(FILE *fp, CMEmitMap_t *map, CM_t *cm);
+extern void         FreeEmitMap(CMEmitMap_t *map);
 
 /* from modelconfig.c
  */

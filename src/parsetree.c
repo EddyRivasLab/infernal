@@ -245,7 +245,7 @@ ParsetreeScore(CM_t *cm, Parsetree_t *tr, char *dsq)
 	else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) 
 	  {
 	    symj = dsq[tr->emitr[tidx]];
-	    if (symi < Alphabet_size) sc += cm->esc[v][(int) symj];
+	    if (symj < Alphabet_size) sc += cm->esc[v][(int) symj];
 	    else                      sc += DegenerateSingletScore(cm->esc[v], symj);
 	  }
       }

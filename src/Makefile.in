@@ -1,6 +1,6 @@
 #################################################################
 # INFERNAL
-# src/ Makefile
+# src Makefile
 # CVS $Id$
 #################################################################
 # @LICENSE@
@@ -35,12 +35,13 @@ MYLIBS   = -lsquid
 MYLIBDIR = -L../squid
 MYINCDIR = -I../squid
 
-PROGS = cmbuild cmscore cmsearch
+PROGS = cmalign cmbuild cmscore cmsearch
 
 OBJS  = alphabet.o\
 	cm.o\
 	cmio.o\
 	display.o\
+	emitmap.o\
 	globals.o\
 	modelconfig.o\
 	modelmaker.o\

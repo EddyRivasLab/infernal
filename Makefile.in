@@ -45,9 +45,9 @@ CFLAGS = @CFLAGS@
 #######
 SHELL       = /bin/sh
 BASENAME    = "infernal"
-PACKAGE     = "INFERNAL"
-RELEASE     = "0.31"
-RELCODE     = "rel0_31"
+PACKAGE     = "Infernal"
+RELEASE     = "0.4"
+RELCODE     = "rel0_4"
 RELEASEDATE = "in progress"
 COPYRIGHT   = "Copyright \(C\) 2002 HHMI/Washington University School of Medicine"
 LICENSE     = "Freely distributed under the GNU General Public License \(GPL\)"
@@ -60,7 +60,8 @@ COMPRESS    = gzip
 # in man/. (The list in src/Makefile.in is the complete manifest
 # of INFERNAL programs.)
 #
-PROGS = cmbuild\
+PROGS = cmalign\
+	cmbuild\
 	cmscore\
 	cmsearch
 
@@ -113,6 +114,10 @@ dist:
 	cvs export -r $(RELCODE) -d ${BASENAME}-${RELEASE} ${BASENAME}
 	cvs rtag -F ${BASENAME}_${RELCODE} squid
 	(cd ${BASENAME}-${RELEASE}/; cvs export -r ${BASENAME}_${RELCODE} -d squid squid)
+	# 
+	# Include copies of anything else we need to make the distro fully
+	# portable, such as configuration or test scripts (example: sqc)
+	cp ~/src/sqc/sqc ${BASENAME}-${RELEASE}/testsuite/
 	# 
 	# Make the configure scripts from configure.in's
 	#

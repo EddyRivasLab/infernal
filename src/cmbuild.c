@@ -38,9 +38,10 @@ static char experts[] = "\
 \n\
  Verbose output files, useful for detailed information about the CM:\n\
    --cfile <f>   : save count vectors to file <f>\n\
+   --cmtbl <f>   : save tabular description of CM topology to file <f>\n\
+   --emap  <f>   : save consensus emit map to file <f>\n\
    --gtree <f>   : save tree description of master tree to file <f>\n\
    --gtbl  <f>   : save tabular description of master tree to file <f>\n\
-   --cmtbl <f>   : save tabular description of CM topology to file <f>\n\
    --tfile <f>   : dump individual sequence tracebacks to file <f>\n\n\
  Debugging, experimentation:\n\
    --nobalance   : don't rebalance the CM; number in strict preorder\n\
@@ -55,6 +56,7 @@ static struct opt_s OPTIONS[] = {
   { "--nobalance", FALSE, sqdARG_NONE },
   { "--cfile",     FALSE, sqdARG_STRING },
   { "--cmtbl",     FALSE, sqdARG_STRING },
+  { "--emap",      FALSE, sqdARG_STRING },
   { "--gapthresh", FALSE, sqdARG_FLOAT},
   { "--gtbl",      FALSE, sqdARG_STRING },
   { "--gtree",     FALSE, sqdARG_STRING },
@@ -102,6 +104,7 @@ main(int argc, char **argv)
 
   FILE *ofp;                    /* filehandle to dump info to */
   char *cfile;                  /* file to dump count vectors to */
+  char *emapfile;		/* file to dump emit map to */
   char *tracefile;		/* file to dump debugging traces to        */
   char *cmtblfile;              /* file to dump CM tabular description to  */
   char *gtreefile;              /* file to dump guide tree to              */
@@ -123,6 +126,7 @@ main(int argc, char **argv)
   treeforce         = 0;
 
   cfile             = NULL;
+  emapfile          = NULL;
   tracefile         = NULL;
   cmtblfile         = NULL;
   gtblfile          = NULL;
@@ -140,6 +144,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--treeforce") == 0) treeforce         = 1;
 
     else if (strcmp(optname, "--cfile")     == 0) cfile             = optarg;
+    else if (strcmp(optname, "--emap")      == 0) emapfile          = optarg;
     else if (strcmp(optname, "--gtbl")      == 0) gtblfile          = optarg;
     else if (strcmp(optname, "--gtree")     == 0) gtreefile         = optarg;
     else if (strcmp(optname, "--cmtbl")     == 0) cmtblfile         = optarg;
@@ -294,7 +299,7 @@ main(int argc, char **argv)
 
       /* Dump optional information to files:
        */
-      /* 1. Tabular description of CM topology */
+      /* Tabular description of CM topology */
       if (cmtblfile != NULL) 
 	{
 	  if ((ofp = fopen(cmtblfile, "w")) == NULL) 
@@ -303,7 +308,7 @@ main(int argc, char **argv)
 	  fclose(ofp);
 	}
 
-      /* 2. Tabular description of guide tree topology */
+      /* Tabular description of guide tree topology */
       if (gtblfile != NULL) 
 	{
 	  if ((ofp = fopen(gtblfile, "w")) == NULL) 
@@ -312,7 +317,21 @@ main(int argc, char **argv)
 	  fclose(ofp);
 	}
 
-      /* 3. Tree description of guide tree topology */
+      /* Emit map.
+       */
+      if (emapfile != NULL) 
+	{
+	  CMEmitMap_t *emap;
+
+	  if ((ofp = fopen(emapfile, "w")) == NULL) 
+	    Die("Failed to open emit map file %s", emapfile);
+	  emap = CreateEmitMap(cm);
+	  DumpEmitMap(ofp, emap, cm);
+	  FreeEmitMap(emap);
+	  fclose(ofp);
+	}
+
+      /* Tree description of guide tree topology */
       if (gtreefile != NULL) 
 	{
 	  if ((ofp = fopen(gtreefile, "w")) == NULL) 
@@ -323,7 +342,7 @@ main(int argc, char **argv)
 
       /* SummarizeMasterTrace(stdout, mtr); */
 
-      /* 4. Detailed traces for the training set.
+      /* Detailed traces for the training set.
        */
       if (tracefile != NULL)       
 	{
@@ -341,7 +360,7 @@ main(int argc, char **argv)
 	  fclose(ofp);
 	}
 
-      /* 5. Regression test info.
+      /* Regression test info.
        */
       if (regressionfile != NULL) {
 	SummarizeCM(regressfp, cm);
@@ -358,8 +377,8 @@ main(int argc, char **argv)
 	  }
       }
 
-      /* 6. Detailed parsetrees for the test set of forced parsetrees.
-       *    We reconfig the model into local alignment.
+      /* Detailed parsetrees for the test set of forced parsetrees.
+       * We reconfig the model into local alignment.
        */
       if (treeforce) 
 	{

@@ -1509,13 +1509,26 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
       if (! deckpool_pop(dpool, &(beta[v])))
 	beta[v] = alloc_vjd_deck(L, i0, j0);
 
+      /* Init the whole deck to IMPOSSIBLE
+       */
+      for (jp = W; jp >= 0; jp--) {
+	j = i0-1+jp;
+	for (d = jp; d >= 0; d--) 
+	  beta[v][j][d] = IMPOSSIBLE;
+      }
+
+      /* If we can do a local begin into v, also init with that. 
+       * By definition, beta[0][j0][W] == 0.
+       */ 
+      if (vroot == 0 && i0 == 1 && j0 == L && (cm->flags & CM_LOCAL_BEGIN))
+	beta[v][j0][W] = cm->beginsc[v];
+
       /* main recursion:
        */
       for (jp = W; jp >= 0; jp--) {
 	j = i0-1+jp;
 	for (d = jp; d >= 0; d--) 
 	  {
-	    beta[v][j][d] = IMPOSSIBLE;
 	    i = j-d+1;
 	    for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
 	      if (y < vroot) continue; /* deal with split sets */
@@ -1576,15 +1589,6 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 	  } /* ends loop over d. We know all beta[v][j][d] in this row j*/
       }/* end loop over jp. We know the beta's for the whole deck.*/
 
-      /* Finished with deck v. 
-       * Check for an even better local begin transition. By
-       * definition, beta[0][j0][W] == 0.
-       */ 
-      if (vroot == 0 && i0 == 1 && j0 == L && (cm->flags & CM_LOCAL_BEGIN))
-	{
-	  if (cm->beginsc[v] > beta[v][j0][W])
-	    beta[v][j0][W] = cm->beginsc[v];
-	}
 
       /* Deal with local alignment end transitions v->EL
        * (EL = deck at M.)
@@ -2202,6 +2206,21 @@ voutside(CM_t *cm, char *dsq, int L,
       if (! deckpool_pop(dpool, &(beta[v])))
 	beta[v] = alloc_vji_deck(i0,i1,j1,j0);
 
+      /* Init the whole deck to IMPOSSIBLE.
+       */
+      for (jp = j0-j1; jp >= 0; jp--) 
+	for (ip = 0; ip <= i1-i0; ip++) 
+	  beta[v][jp][ip] = IMPOSSIBLE;
+
+      /* If we can get into deck v by a local begin transition, do an init
+       * with that.
+       */
+      if (r == 0 && i0 == 1 && j0 == L && (cm->flags & CM_LOCAL_BEGIN))
+	{
+	  if (cm->beginsc[v] > beta[v][j0-j1][0]) 
+	    beta[v][j0-j1][0] = cm->beginsc[v];
+	}
+
       /* main recursion:
        */
       for (jp = j0-j1; jp >= 0; jp--) {
@@ -2209,7 +2228,6 @@ voutside(CM_t *cm, char *dsq, int L,
 	for (ip = 0; ip <= i1-i0; ip++) 
 	  {
 	    i = ip+i0;
-	    beta[v][jp][ip] = IMPOSSIBLE;
 
 	    for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
 	      if (y < r) continue; /* deal with split sets */
@@ -2269,16 +2287,6 @@ voutside(CM_t *cm, char *dsq, int L,
 	  } /* ends loop over ip. We know all beta[v][jp][ip] in this row jp */
 
       }/* end loop over jp. We know the beta's for the whole deck.*/
-
-      /* Now that we've got a complete deck v, check for an even
-       * better local begin transition into it, if necessary. By
-       * definition, beta[0][j0-j1][0] == 0.
-       */
-      if (r == 0 && i0 == 1 && j0 == L && (cm->flags & CM_LOCAL_BEGIN))
-	{
-	  if (cm->beginsc[v] > beta[v][j0-j1][0]) 
-	    beta[v][j0-j1][0] = cm->beginsc[v];
-	}
 
       /* Deal with local alignment
        * transitions v->EL, if we're doing local alignment and there's a 
