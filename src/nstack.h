@@ -22,5 +22,5 @@ int       PopNstack(Nstack_t *ns,  int *x);
 void      FreeNstack(Nstack_t *ns);
 int       NstackIsEmpty(Nstack_t *ns);
 
-#endif NSTACKH_INCLUDED
+#endif /*NSTACKH_INCLUDED*/
 

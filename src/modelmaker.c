@@ -9,12 +9,14 @@
  *       specifying which columns are match vs. insert and
  *       how the model tree branches. 
  *    2. The guide tree is converted to a CM by cm_from_guide().
- *    3. Individual tracebacks are constructed from individual aligned sequences 
- *       by transmogrify().
- *    4. The individual tracebacks are counted into a new model with ParsetreeCount().
- * The CM containing counts is returned. The caller has to assign a prior to it,
- * and convert it to probabilities; then assign a null model to it and convert to 
- * log-odds scores.  
+ *    3. Individual tracebacks are constructed from individual 
+ *       aligned sequences by transmogrify().
+ *    4. The individual tracebacks are counted into a new model 
+ *       with ParsetreeCount().
+ *
+ * The CM containing counts is returned. The caller has to assign a 
+ * prior to it, and convert it to probabilities; then assign a null 
+ * model to it and convert to log-odds scores.  
  *
  * The "guide tree" is a special use of a Parsetree_t structure. 
  * - tr->state contains a node type (e.g. MATP_nd), not a state index.
