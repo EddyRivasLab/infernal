@@ -69,8 +69,9 @@ PROGS = cmalign\
 #      and moves the supported executables into binaries/ subdirectory.
 #
 all: 
-	(cd squid; make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module);\
-	(cd src;   make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module);\
+	(cd squid;     make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module)
+	(cd src;       make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module)
+	(cd testsuite; make CC="$(CC)" CFLAGS="$(CFLAGS)")
 
 # dist: build a new distribution directory in infernal-$RELEASE
 #

@@ -60,7 +60,7 @@
  *               FreeParsetree(tr); free(seq); free(dsq);
  */
 void
-EmitParsetree(CM_t *cm, Parsetree_t **ret_tr, char *ret_seq, char *ret_dsq, int *ret_N)
+EmitParsetree(CM_t *cm, Parsetree_t **ret_tr, char **ret_seq, char **ret_dsq, int *ret_N)
 {
   Parsetree_t *tr;              /* parse tree under construction */
   Nstack_t *pda;                /* pushdown automaton for traversing parse tree */              
@@ -86,7 +86,7 @@ EmitParsetree(CM_t *cm, Parsetree_t **ret_tr, char *ret_seq, char *ret_dsq, int 
    */
   PushNstack(pda, -1);		/* doesn't emit an rchar */
   PushNstack(pda, -1);		/* doesn't emit an lchar either */
-  PushNstack(pda, ATTACH_LEFT_CHILD);
+  PushNstack(pda, TRACE_LEFT_CHILD);
   PushNstack(pda, -1);		/* attach this state to parsetree node -1 (init) */  
   PushNstack(pda, 0);		/* it's the root state, v=0 */
   PushNstack(pda, PDA_STATE);
@@ -150,7 +150,7 @@ EmitParsetree(CM_t *cm, Parsetree_t **ret_tr, char *ret_seq, char *ret_dsq, int 
 	       */
 	      PushNstack(pda, -1);		/* doesn't emit right */
 	      PushNstack(pda, -1);		/* doesn't emit left */
-	      PushNstack(pda, ATTACH_RIGHT_CHILD); /* attach as right child of the B */
+	      PushNstack(pda, TRACE_RIGHT_CHILD); /* attach as right child of the B */
 	      PushNstack(pda, tpos);		/* attach it to B, which is tpos in parsetree*/
 	      PushNstack(pda, z);		/* state z */
 	      PushNstack(pda, PDA_STATE);
@@ -159,14 +159,14 @@ EmitParsetree(CM_t *cm, Parsetree_t **ret_tr, char *ret_seq, char *ret_dsq, int 
 	       */
 	      PushNstack(pda, -1);		/* doesn't emit right */
 	      PushNstack(pda, -1);		/* doesn't emit left */
-	      PushNstack(pda, ATTACH_LEFT_CHILD); /* attach as left child of the B */
+	      PushNstack(pda, TRACE_LEFT_CHILD); /* attach as left child of the B */
 	      PushNstack(pda, tpos);		/* attach it to B, which is tpos in parsetree*/
 	      PushNstack(pda, y);		/* state z */
 	      PushNstack(pda, PDA_STATE);
 	    }
 	  else			/* all other parent states v: */
 	    {
-	      y = FChoose(cm->t[v], cm->cnum[v]); /* choose next state, y */
+	      y = cm->cfirst[v] + FChoose(cm->t[v], cm->cnum[v]); /* choose next state, y */
 
 	      switch (cm->sttype[y]) {
 	      case MP_st: 
@@ -194,9 +194,9 @@ EmitParsetree(CM_t *cm, Parsetree_t **ret_tr, char *ret_seq, char *ret_dsq, int 
 	      } else {
 		PushNstack(pda, rchar);		/* does it emit right? */
 		PushNstack(pda, lchar);		/* does it emit left? */
-		PushNstack(pda, ATTACH_LEFT_CHILD); /* non-B's: attach as left child by conv */
+		PushNstack(pda, TRACE_LEFT_CHILD); /* non-B's: attach as left child by conv */
 		PushNstack(pda, tpos);		/* attach it to v, which is tpos in parsetree*/
-		PushNstack(pda, y);		/* state z */
+		PushNstack(pda, y);		/* next state we're going to */
 		PushNstack(pda, PDA_STATE);
 	      }
 	    }
@@ -213,3 +213,4 @@ EmitParsetree(CM_t *cm, Parsetree_t **ret_tr, char *ret_seq, char *ret_dsq, int 
   if (ret_N   != NULL) *ret_N   = N; 
 }
   
+

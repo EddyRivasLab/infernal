@@ -59,8 +59,6 @@ if ((! test -d binaries) && test -d src); then
 AC_MSG_NOTICE([This is a full source distribution - using full config])
 
 
-AC_SUBST(MDEFS)
-
 # Checks for programs.
 # Sets output variables CC, CFLAGS, and RANLIB.
 # AR might be hidden away on Solaris; provide some hints in the PATH.
@@ -177,8 +175,9 @@ AC_CONFIG_SUBDIRS(squid)
 #
 AC_CONFIG_HEADERS(src/config.h)
 
-# Write out Makefiles
+# Write out Makefiles in src, testsuite subdirectories.
 AC_CONFIG_FILES(src/Makefile)
+AC_CONFIG_FILES(testsuite/Makefile)
 
 # remember that sneaky if statement that wraps the source
 # configuration? well, it ends here.

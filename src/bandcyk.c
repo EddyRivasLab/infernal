@@ -23,8 +23,9 @@
 #include "structs.h"
 #include "funcs.h"
 
-static int band_calculation(CM_t *cm, int W, double p_thresh, 
-			    int **ret_dmin, int **ret_dmax);
+static int
+band_calculation(CM_t *cm, int W, double p_thresh, int save_densities,
+		 int **ret_dmin, int **ret_dmax, double ***ret_gamma);
 static int  ok_truncation_error(double *density, int b, int W);
 static void print_band_distribution(double *density, int W);
 
@@ -35,25 +36,32 @@ BandExperiment(CM_t *cm)
   int *dmin, *dmax;
 
   W = 1000;
-  while (! band_calculation(cm, W, 0.00001, &dmin, &dmax))
+  while (! band_calculation(cm, W, 0.00001, FALSE, &dmin, &dmax, NULL))
     {
       W += 1000;
       SQD_DPRINTF1(("increasing W to %d, redoing band calculation...\n", W));
     }
 }
 
-/* Function:  
+/* Function:  BandCalculationEngine()
  * Incept:    SRE, Sat Oct 11 14:17:40 2003 [St. Louis]
  *
- * Purpose:   
- * 
+ * Purpose:   Given a CM and a maximum length W;
+ *            calculate probability densities gamma_v(n), probability
+ *            of a parse subtree rooted at state v emitting a sequence
+ *            of length n;
+ *            use these to return bounds dmin[v] and dmax[v] which
+ *            include a probability mass of >= 1-2(p_thresh).
+ *            Each truncated tail (left and right) contains <= p_thresh
+ *            probability mass.
+ *             
  *            Let L_v(n) be the cumulative probability distribution,
  *            P(length <= n), for state v:
  *                L_v(n) = \sum_{i=0}^{n}  \gamma_v(i)
  *                
  *            For each state v, find a dmin such that the probability
  *            of missing a hit is <= p on the low side:
- *                L_v(dmin-1) <= p
+ *                dmin = max_dmin L_v(dmin-1) <= p
  *                
  *            On the high side, let H_v(n) be 1-L_v(n): e.g.
  *            P(length > n) for state v. But it is important not 
@@ -62,24 +70,29 @@ BandExperiment(CM_t *cm)
  *                H_v(n) = \sum_{i=n+1}{\infty} \gamma_v(i)
  *                
  *            Then for each state v, find a dmax such that the 
- *            probability of missing a hit is >= p:
- *               G_v(dmax) >= p
+ *            probability of missing a hit is <= p on the high
+ *            side:
+ *               dmax = min_dmax  H_v(dmax) <= p
  *               
- *            But we can't calculate the sum to \infty; we have
+ *            Note on truncation error:
+ *            Of course we can't calculate the sum to \infty; we have
  *            to truncate somewhere. If we know that our width W
  *            is wide enough that we can see a probability mass of
  *            p in the right tail, it is sufficient to be sure
  *            that \gamma[v][W] < DBL_EPSILON * p. (because
  *            1+x = 1 for x < DBL_EPSILON, p + xp = p.)
-
  *
  * Args:      
  *
- * Returns:   
+ * Returns:   1 on success.
+ *            0 if W was too small; caller should increase W and
+ *            call the engine again.
  *
- * Xref: */
+ * Xref: 
+ */
 static int
-band_calculation(CM_t *cm, int W, double p_thresh, int **ret_dmin, int **ret_dmax)
+BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
+		      int **ret_dmin, int **ret_dmax, double ***ret_gamma)
 {
   double **gamma;               /* P(length = n) for each state v                 */
   double  *tmp;
@@ -135,7 +148,7 @@ band_calculation(CM_t *cm, int W, double p_thresh, int **ret_dmin, int **ret_dma
        *      it's already initialized for us; don't do anything
        *      else to it.
        *   2. If there's a beam in the pool we can reuse, take it
-       *      and set it back to 0's.
+       *      and set it back to 0's. 
        *   3. Else, allocate and initialize to 0's.
        */
       if (cm->sttype[v] == E_st) {
@@ -183,9 +196,12 @@ band_calculation(CM_t *cm, int W, double p_thresh, int **ret_dmin, int **ret_dma
        *        This must be true if \sum_{i=W+1...\infty} g(i) < p*DBL_EPSILON,
        *        which is really what we're trying to prove
        */
-      if (pdf < 0.999 || gamma[v][W-1000] > p_thresh * DBL_EPSILON)
+      if (pdf <= 0.999 || gamma[v][W-1000] > p_thresh * DBL_EPSILON)
 	{
-	  status = 0;  	/* fail; truncation error unacceptable; caller must increase W and rerun. */
+	  /* fail; truncation error unacceptable; 
+	   * caller is supposed to increase W and rerun. 
+	   */
+	  status = 0; 
 	  goto CLEANUP;
 	}
       
@@ -218,24 +234,30 @@ band_calculation(CM_t *cm, int W, double p_thresh, int **ret_dmin, int **ret_dma
        *     state's numbers; release the memory.
        *   we're reusing the end state for every E, so don't free it
        *   'til we're done.
+       * But it if the save_densities flag is up, don't do this - the
+       * caller is telling us to keep the whole gamma matrix around,
+       * prob because it's going to be returned and examined.
        */
-      if (cm->sttype[v] == B_st)
-	{  /* the connected children of a B st are handled specially, remember */
-	  y = cm->cfirst[v];  PushMstack(beamstack, gamma[y]); gamma[y] = NULL;
-	  y = cm->cnum[v];    PushMstack(beamstack, gamma[y]); gamma[y] = NULL;
-	}
-      else
-	{
-	  for (y = cm->cfirst[v]; y < cm->cfirst[v]+cm->cnum[v]; y++)
-	    {
-	      touch[y]--;
-	      if (touch[y] == 0 && cm->sttype[y] != E_st) {
-		PushMstack(beamstack, gamma[y]); 
-		gamma[y] = NULL;
+      if (! save_densities) {
+	if (cm->sttype[v] == B_st)
+	  {  /* the connected children of a B st are handled specially, remember */
+	    y = cm->cfirst[v];  PushMstack(beamstack, gamma[y]); gamma[y] = NULL;
+	    y = cm->cnum[v];    PushMstack(beamstack, gamma[y]); gamma[y] = NULL;
+	  }
+	else
+	  {
+	    for (y = cm->cfirst[v]; y < cm->cfirst[v]+cm->cnum[v]; y++)
+	      {
+		touch[y]--;
+		if (touch[y] == 0 && cm->sttype[y] != E_st) {
+		  PushMstack(beamstack, gamma[y]); 
+		  gamma[y] = NULL;
+		}
 	      }
-	    }
-	}
-    }
+	  }
+      }
+
+    } /*end loop up through all states v*/
 
 
   print_band_distribution(gamma[0],W);
@@ -258,13 +280,17 @@ band_calculation(CM_t *cm, int W, double p_thresh, int **ret_dmin, int **ret_dma
  CLEANUP:
   free(touch);
 
-  /* Free whatever's left in the gamma beams.
+  /* If we're returning the matrix, pass the ptr back;
+   * else free gamma densities.
    */
-  for (v = 0; v < cm->M; v++) 
-    if (cm->sttype[v] != E_st && gamma[v] != NULL) 
-      { free(gamma[v]); gamma[v] = NULL; }
-  free(gamma[cm->M-1]);		/* free the end state */
-  free(gamma);
+  if (ret_gamma != NULL)   *ret_gamma = gamma;
+  else {
+    for (v = 0; v < cm->M; v++) 
+      if (cm->sttype[v] != E_st && gamma[v] != NULL) 
+	{ free(gamma[v]); gamma[v] = NULL; }
+    free(gamma[cm->M-1]);		/* free the end state */
+    free(gamma);
+  }
   
   /* Free the reused stack of beams.
    */
@@ -284,16 +310,22 @@ ok_truncation_error(double *density, int b, int W)
   double D;			/* area under unseen density from W+1..\infty */
   int    i;
   
+  /* Sum up how much probability mass we do see,
+   * in the truncated tail from b+1..W.
+   */
   C = 0.;
   for (i = b+1; i <= W; i++) C += density[i];
 
-  /* if density is falling off as a geometric, log(beta) is 
-   * the slope of log(p). Estimate slope by a simple 2-point
-   * fit at our boundaries.
+  /* If density is falling off as a geometric, log(beta) is 
+   * the slope of log(p). Estimate slope quickly and crudely, by a
+   * simple 2-point fit at our boundaries b+1 and W.  
    */
   logbeta = (log(density[W]) - log(density[b+1])) / (W - b - 1);
   beta = exp(logbeta);
 	     
+  /* We can now guess at the missing probability mass from W+1...\infty,
+   * because a finite geometric series converges to 1/(1+\beta).
+   */
   D = (beta / (1.-beta)) * density[W];
 
   printf("%d  %g\n", b+1, log(density[b+1]));
