@@ -153,21 +153,18 @@ dist:
 
 # "make ftpdist" installs a new tarball on the FTP site.
 # (StL specific)
+#
 ftpdist:
 	cp -f ${BASENAME}-$(RELEASE).tar.gz ${FTPDIR}/
 	rm -f ${FTPDIR}/${BASENAME}.tar.gz 
-	ln -s ${FTPDIR}/${BASENAME}-${RELEASE}.tar.gz ${FTPDIR}/${BASENAME}.tar.gz 
+	(cd ${FTPDIR}; ln -s ${BASENAME}-${RELEASE}.tar.gz ${BASENAME}.tar.gz)
 
 # "make check" runs a set of sqc exercises in the test suite, at level 4.
 # To run faster, reduce the level (level 1 runs a few tests, level 4
-# runs a lot). Also runs the bug tests, if we're in StL and we have 
-# the dev code's Bugs tracking subdirectory.
+# runs a lot). 
 #
 check:
 	(cd testsuite; ./sqc -p ../squid 4 exercises.sqc ../src)
-	if test -e Bugs; then\
-	   (cd Bugs; ../testsuite/sqc -p ../squid 2 bugs.sqc ../src);\
-        fi
 
 # "make install" installs the programs in BINDIR
 #
