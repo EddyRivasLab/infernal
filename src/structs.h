@@ -32,7 +32,7 @@ extern int   CMTransitionIndex[20][20];
  */
 #define IMPOSSIBLE -1e36
 
-/* State types. (9)
+/* State types. (9)  (cm->sttype[])
  */
 #define STATETYPES 9            /* different kinds of states         */
 #define MAXCONNECT 6            /* maximum number of states per node */
@@ -47,7 +47,7 @@ extern int   CMTransitionIndex[20][20];
 #define E_st     7		/* end          */
 #define B_st     8		/* bifurcation  */
 
-/* Node types. (8)
+/* Node types (8) (cm->ndtype[])
  */
 #define NODETYPES 8		
 
@@ -61,7 +61,7 @@ extern int   CMTransitionIndex[20][20];
 #define ROOT_nd   6		
 #define END_nd    7
 
-/* Unique state identifiers. (20)
+/* Unique state identifiers (20)   (cm->stid[])
  */
 #define UNIQUESTATES 20
 

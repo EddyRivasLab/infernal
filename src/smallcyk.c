@@ -10,6 +10,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "squid.h"
 
@@ -95,6 +96,9 @@ static float   size_vji_shadow_deck(int i0, int i1, int j1, int j0);
 static void    free_vji_shadow_deck(char **a, int j1, int j0);
 static void    free_vji_shadow_matrix(char ***a, int r, int z, int j1, int j0);
 
+/* BE_EFFICIENT and BE_PARANOID are alternative (exclusive) settings
+ * for the do_full? argument to the alignment engines.
+ */
 #define BE_EFFICIENT  0		/* setting for do_full: small memory mode */
 #define BE_PARANOID   1		/* setting for do_full: keep whole matrix */
 
