@@ -4,9 +4,22 @@ CVS $Id$
 ---------------------------------------------------------
 
 ID              i1
+TITLE     	vault; bad SS_cons, lone column bug
 STATUS          closed
-DESCRIPTION     vault, bad SS_cons
 XREF            STL7 p.12
 REPORTED_BY     Robin Dowell
 CLOSED_DATE     SRE, Thu Jan  2 07:07:39 2003  
+DESCRIPTION	
+
+If cmalign was used on a set of sequences that are truncated at their
+5' or 3' ends, such that the column that would contain either the left
+or right pairing partners of a consensus base pair is completely
+missing from the alignment (that is, only one column of a consensus
+base pair appears, because it is aligned to MATP_ML or MATP_MR state),
+the SS_cons line was corrupted; since the consensus annotation was
+directly copied to the alignment, if one of the two columns didn't
+appear, then either the < or > was missing and the SS_cons annotation
+was unbalanced. This situation is now detected properly. A "lone"
+MATP_ML or MATP_MR column gets annotated as a ":" instead of "<" or
+">" in SS_cons.
 //
