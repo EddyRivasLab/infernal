@@ -12,6 +12,13 @@
  ***************************************************************** 
  */
 
+/* Alphabet information is declared here, and defined in globals.c.
+ */
+extern int   Alphabet_type;
+extern int   Alphabet_size;
+extern int   Alphabet_iupac;
+extern char *Alphabet;
+
 /* Node types. (8)
  */
 #define NODETYPES 8		
@@ -90,3 +97,8 @@ typedef struct parsetree_s {
   int  nalloc;			/* number of elements allocated for     */
   int  memblock;		/* size of malloc() chunk, # of elems   */
 } Parsetree_t;
+
+
+
+
+#endif /*STRUCTSH_INCLUDED*/

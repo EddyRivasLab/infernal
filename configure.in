@@ -44,4 +44,4 @@ AC_CHECK_LIB(m, sqrt, LIBS="${LIBS} -lm")
 
 dnl Write out Makefiles
 echo "   Configuration complete. Writing Makefiles and such..."
-AC_OUTPUT(Makefile src/Makefile)
+AC_OUTPUT(Makefile src/Makefile squid/Makefile)

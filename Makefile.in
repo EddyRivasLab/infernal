@@ -66,6 +66,7 @@ PROGS = cmbuild
 #      and moves the supported executables into binaries/ subdirectory.
 #
 all: version.h
+	if ! test -d lib; then mkdir lib; fi
 	@if test -d binaries; then\
 	   echo "You appear to already have a compiled INFERNAL distribution.";\
            echo "You don't need to make.";\
@@ -74,7 +75,7 @@ all: version.h
            echo "a 'binaries' directory; do 'make srcclean' to revert INFERNAL";\
            echo "to a pristine source distribution.";\
 	else\
-           (cd squid; make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module-install);\
+           (cd squid; make CC="$(CC)" CFLAGS="$(CFLAGS)" module-install);\
            (cd src;   make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module-install);\
            mkdir binaries;\
               for prog in $(PROGS); do\
@@ -167,7 +168,6 @@ distclean:
 	-rm version.h
 	(cd src;       make distclean)
 	(cd squid;     make distclean)
-	(cd testsuite; make distclean)
 	-rm Makefile
 
 # "make srcclean" is the most aggressive. It is distclean,

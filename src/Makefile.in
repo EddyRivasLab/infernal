@@ -40,7 +40,7 @@ PROGS = cmbuild
 
 OBJS  = 
 
-HDRS  = 
+HDRS  = structs.h
 
 .c.o:
 	$(CC) $(CFLAGS) $(MDEFS) $(MODINCDIR) -c $<
