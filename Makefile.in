@@ -46,10 +46,10 @@ CFLAGS = @CFLAGS@
 SHELL       = /bin/sh
 BASENAME    = "infernal"
 PACKAGE     = "Infernal"
-RELEASE     = "0.52"
-RELCODE     = "rel0_52"
-RELEASEDATE = "Oct 2002"
-COPYRIGHT   = "Copyright \(C\) 2002 HHMI/Washington University School of Medicine"
+RELEASE     = "0.53"
+RELCODE     = "rel0_53"
+RELEASEDATE = "Jan 2003"
+COPYRIGHT   = "Copyright \(C\) 2002-2003 Washington University, Saint Louis"
 LICENSE     = "Freely distributed under the GNU General Public License \(GPL\)"
 LICENSETAG  = gnu
 COMPRESS    = gzip
@@ -109,16 +109,14 @@ dist:
 	# CVS tag and extract. -c: make sure we committed;
 	#                      -F: allow more than one "make dist" per rel
 	# prep: must have done "cvs commit", and CVSROOT must be set
-	# We also need the squid library, so tag and export it too.
+	# We also need the squid library and ssdk toolkit, so tag and export them too.
 	#
 	cvs tag -F $(RELCODE)
 	cvs export -r $(RELCODE) -d ${BASENAME}-${RELEASE} ${BASENAME}
 	cvs rtag -F ${BASENAME}_${RELCODE} squid
 	(cd ${BASENAME}-${RELEASE}/; cvs export -r ${BASENAME}_${RELCODE} -d squid squid)
-	# 
-	# Include copies of anything else we need to make the distro fully
-	# portable, such as configuration or test scripts (example: sqc)
-	cp ~/src/sqc/sqc ${BASENAME}-${RELEASE}/testsuite/
+	cvs rtag -F ${BASENAME}_${RELCODE} ssdk
+	(cd ${BASENAME}-${RELEASE}/; cvs export -r ${BASENAME}_${RELCODE} -d ssdk ssdk)
 	# 
 	# Make the configure scripts from configure.in's
 	#
@@ -129,7 +127,7 @@ dist:
 	# licenseadd.pl is basically harmless, so we can overannotate here by
 	# trying to licenseadd everything.
 	#
-	find ${BASENAME}-${RELEASE} -type f -exec licenseadd.pl Licenses/$(LICENSETAG) {} \;
+	find ${BASENAME}-${RELEASE} -type f -exec ssdk/licenseadd.pl Licenses/$(LICENSETAG) {} \;
 	#
 	# Remove CVS-controlled files/directories that don't belong in the distro
 	#
@@ -138,6 +136,11 @@ dist:
 	-rm -rf ${BASENAME}-${RELEASE}/configure.in
 	-rm -rf ${BASENAME}-${RELEASE}/squid/configure.in
 	-rm -rf ${BASENAME}-${RELEASE}/Manuscripts
+	#
+	# Set file permissions.
+	#
+	find ${BASENAME}-${RELEASE} -type f -exec chmod +r {} \;
+	chmod +x ${BASENAME}-${RELEASE}/ssdk/sqc
 	#
 	# Packaging commands
 	#
@@ -153,10 +156,21 @@ ftpdist:
 
 # "make check" runs a set of sqc exercises in the test suite, at level 4.
 # To run faster, reduce the level (level 1 runs a few tests, level 4
-# runs a lot).
+# runs a lot). Also runs the bug tests, if we're in StL and we have 
+# the dev code's Bugs tracking subdirectory.
 #
 check:
-	(cd testsuite; ./sqc -p ../squid 4 exercises.sqc ../src)
+	(cd testsuite; ../ssdk/sqc -p ../squid 4 exercises.sqc ../src)
+	if test -e Bugs; then\
+	   (cd Bugs; ../ssdk/sqc -p ../squid 2 bugs.sqc ../src);\
+        fi
+
+# "make install" installs the programs in BINDIR
+#
+install:
+	for file in $(PROGS); do\
+	   cp src/$$file $(BINDIR)/;\
+	done
 
 # "make clean" removes almost everything except configuration files
 #              and binaries.

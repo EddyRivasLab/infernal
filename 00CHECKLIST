@@ -8,21 +8,37 @@ SRE, Thu Jul  4 10:27:28 2002
 	% cvs update
    Clean up any stray files.
 
-2. Update the copyright, year stamps. 
+2. Test dev code before making release: exercises, bugs, and regressions.
+	% autoconf
+     	% env CFLAGS="-O3" ./configure --enable-lfs
+        % make
+	% make check
+        % cd testsuite
+        % ../ssdk/sqc -p ../squid/ -r ../infernal-0.52/src 4 regressions.sqc ../src/
+                                                  ^^^^ replace w/ latest old version
+        % cd ..
+
+3. Write release notes.
+	% ssdk/cvs2cl.pl    <- creates ChangeLog; useful summary of CVS logs
+        % emacs documentation/release-notes/RELEASE-${RELEASE}
+	% cvs add documentation/release-notes/RELEASE-${RELEASE}
+
+4. Update the copyright, year stamps. 
 	- Makefile.in (release, relcode, date)
 	- 00README (year only)
-	- Licenses/COPYRIGHT.gnu (year only)
+	- COPYRIGHT (year only)
         - Licenses/gnu (year only)
 
-3. Commit to CVS.
+5. Commit to CVS; include release number in the log message
 	% cvs commit
 
-4. make a distribution package
+6. make a distribution package
+	% make distclean
 	% autoconf             <-- only wrasse. Must be autoconf >=2.52
 	% ./configure          <-- makes a Makefile (needed for "make dist")
 	% make dist
 
-5. Build for our system (on whelk01 or some such)
+7. Build for our system (on whelk01 or some such)
 	% cd infernal-xxx
 	% env CFLAGS="-O3" ./configure --enable-lfs prefix=/usr/seshare/ exec_prefix=/usr/seshare/`uname`
 	% make
@@ -35,10 +51,12 @@ SRE, Thu Jul  4 10:27:28 2002
 	% logout
 	% make distclean
 
-6. Put on the FTP site. (on wrasse)
+8. Put on the FTP site. (on wrasse)
 	% make ftpdist
         % emacs /nfs/www/docs/eddy/infernal/index.html   <- edit the web site, if needed.
 
 0.3  - SRE, Thu Jul  4 10:27:16 2002
 0.5  - SRE, Sun Oct  6 14:22:47 2002
 0.51 - SRE, Wed Oct  9 09:43:50 2002
+0.52 - SRE, Mon Oct 14 2002
+0.53 - SRE, Thu Jan  2 14:24:07 2003
