@@ -23,8 +23,8 @@
 
 \begin{document}
 
-\title{A memory-efficient algorithm for optimally aligning an RNA sequence to a
-secondary structure consensus model}
+\title{A memory-efficient dynamic programming algorithm for optimal
+alignment of a sequence to an RNA secondary structure consensus model}
 \author{Sean R. Eddy\\
 Howard Hughes Medical Institute \& Department of Genetics, \\
 Washington University School of Medicine \\
@@ -171,67 +171,82 @@ a set of unaligned RNA sequences of unknown structure.
 
 \section{Algorithm}
 
-\subsection{Overview}
+\subsection{Prelude: the simpler case of sequence alignment}
 
-There are three key ideas behind a divide and conquer dynamic
-programming method.
+The essential concepts of a divide and conquer alignment algorithm are
+most easily understood for the case of primary sequence alignment
+\cite{Hirschberg75,MyM-88a}. 
 
-First is the fact that if all we need is the score of the optimal
-alignment, not the alignment itself, the whole DP matrix need not be
-kept in memory. For example, in primary sequence alignment, the
-iterative calculation of each cell in a given row of a two-dimensional
-DP matrix depends only on values in cells in that row and the
-immediately preceding row, so a score-only calculation may be done in
-$O(N)$ space.
+Dynamic programming (DP) algorithms for sequence alignment iteratively
+fill in an $N \times M$ DP matrix of scores $F(i,j)$
+\cite{Needleman70,Smith81}. Each score $F(i,j)$ is the score of the
+optimal alignment of prefix $x_1..x_i$ of one sequence to prefix
+$y_1..y_j$ of the other. These scores are calculated iteratively, e.g.
+for global (Needleman/Wunsch) alignment:
 
-Second is the fact that the fill stage of DP algorithms may be run
-both forwards and backwards. For instance, in primary sequence
-alignment, one usually iteratively calculates the optimal score
-$F(i,j)$ of the best alignment of the prefix $1..i$ of sequence 1
-aligned to the prefix $1..j$ of sequence 2, for increasing $i$ and
-$j$, until one obtains $F(N,M)$, the score of the optimal alignment of
-all of sequence 1 (length $N$) to sequence 2 (length $M$). One can
-also just as easily calculate the optimal score $B(i,j)$ of the best
-alignment of the
-\emph{suffix} $i+1..N$ of sequence 1 to the suffix $j+1..M$ of sequence 2,
-until one obtains $B(0,0)$ -- a number that will be identical to
-$F(N,M)$.
+\[  F(i,j) = \max \left\{ \begin{array}{l}
+                       F(i-1,j-1) + \mbox{score for aligning} x_i, y_j \\
+                       F(i-1,j) - \mbox{cost of a gap character} \\
+                       F(i,j-1) - \mbox{cost of a gap character} \\
+                       \end{array} \right. \]
 
-Third is the fact that the sum of the forwards and backwards numbers
-at any cell in the optimal path though the DP matrix is equal to the
-optimal overall alignment score. In linear sequence alignment I can
-pick a ``split point'' row $i'$ in the sequence; run the forward
-calculation to $i'$ to obtain $F(i',j)$ numbers; run the backwards
-calculation back to $i'$ to get $B(i',j)$ numbers; then find
-$\argmax_j F(i',j) + B(i',j)$, which tells me that the optimal
-alignment passes through cell (i',j). (I am leaving out some important
-details of how indels and local alignments are handled.) This divides
-the alignment into two smaller alignment problems. The complete
-alignment can be found by a recursive series of split point
-calculations. Although this seems laborious -- recovering only a
-single point in the alignment per step -- the size of the DP problems
-is decreased by 4-fold at each split. A complete alignment costs only
-about $1 + 2 \times \frac{1}{4} + 4 \times \frac{1}{16} + \ldots
-\simeq 2$ times as much CPU time as the single step DP calculation,
-but every step in the recursive divide-and-conquer calculation cost
-only $O(N)$ memory.
+At the end, $F(N,M)$ contains the score of the optimal alignment. The
+alignment itself is recovered by tracing the individual optimal steps
+backwards through the matrix, starting from cell $(N,M)$. The
+algorithm is $O(NM)$ in both time and memory.
+
+If we are only interested in the score, not the alignment itself, the
+whole $F$ matrix does not have to be kept in memory. The iterative
+calculation only depends on the current and previous row of the
+matrix. Keeping two rows in memory suffices, so a score-only
+calculation can be done in $O(N)$ space.
+
+The fill stage of DP alignment algorithms may be run either forwards
+and backwards. We can just as easily calculate the optimal score
+$B(i,j)$ of the best alignment of the \emph{suffix} $i+1..N$ of
+sequence 1 to the suffix $j+1..M$ of sequence 2, until one obtains
+$B(0,0)$, the overall optimal score -- the same number as $F(N,M)$.
+
+The sum of $F(i,j)$ and $B(i,j)$ at any cell in the optimal path
+through the DP matrix is also the optimal overall alignment score.
+More generally, $F(i,j) + B(i,j)$ at any cell $(i,j)$ is the score of
+the best alignment that uses that cell. Therefore, since we know the
+optimal alignment must pass through any row $i$ \emph{somewhere}, we
+can pick some row $i$ in the sequence, run the forward calculation to
+$i$ to obtain row $F(i)$, run the backwards calculation back to $i$ to
+get row $B(i)$, and then find $\argmax\nolimits_j F(i,j) + B(i,j)$, which tells
+me that the optimal alignment passes through cell $(i,j)$. (For
+clarity, I am leaving out details of how indels and local alignments
+are handled.)
+
+This divides the alignment into two smaller alignment problems. These
+smaller problems can themselves be subdivided by the same trick.
+Thus, the complete optimal alignment can be found by a recursive
+series of split point calculations. Although this seems laborious --
+each calculation gives us only a single point in the alignment -- if
+we choose our split row $i$ to be in the middle, the size of the two
+smaller DP problems is decreased by about 4-fold at each split. A
+complete alignment costs only about $1 + \frac{2}{4} + \frac{4}{16} +
+\ldots \simeq 2$ times as much CPU time as doing the alignment in a
+single DP matrix calculation, but the recursive divide-and-conquer
+approach costs only $O(N)$ memory.
 
 For SCFG alignment, the standard Cocke-Younger-Kasami (referred to in
-this paper as Inside/CYK) alignment algorithm can also be run in a
+this paper as Inside/CYK) DP alignment algorithm can also be run in a
 memory-saving ``score only'' mode, as can the backwards analogue,
-Outside/CYK. The Inside/Outside splitting procedure one needs for an
-SCFG divide and conquer is not as obvious as it is for
-forwards/backwards splitting in sequence alignment, but it is still
-possible.
+Outside/CYK. However, the Inside/CYK and Outside/CYK algorithms are
+not as nicely symmetrical as the forward and backward sequence
+alignment algorithms, and the splitting procedure that one obtains
+does not generate identical types of subproblems, so the divide and
+conquer procedure for SCFG-based RNA alignment is not as obvious.
 
 Rather than showing generalized memory-efficient SCFG alignment
-algorithms, here I will describe algorithms specific for ``RNA
-covariance models'' (CMs), a specialized form of SCFG suited for RNA
-secondary structure alignment. My divide and conquer algorithm takes
-advantage of features of CMs and does not apply to SCFGs in
-general. Therefore I need to start with an introduction to what CMs
-are, how they correspond to a known RNA secondary structure, and how
-they are built and parameterized.
+algorithms, I will describe algorithms specific for ``RNA covariance
+models'' (CMs), a specialized form of SCFG specifically designed for
+RNA secondary structure alignment. My algorithm takes advantage of
+features of CMs that do not apply to SCFGs in general. I will start
+with an introduction to what CMs are, how they correspond to a known
+RNA secondary structure, and how they are built and parameterized.
       
 \subsection{Definition and construction of a covariance model}
 
@@ -269,20 +284,21 @@ State  & Description             &  Production             & Emission & Transiti
 MP  & (pair emitting)           & $V_P \rightarrow a Y b$ & $e_v(a,b)$ & $t_v(y)$  \\
 ML, IL & (left emitting)       & $V_L \rightarrow a Y$   & $e_v(a)$   & $t_v(y)$  \\
 MR, IR & (right emitting)      & $V_R \rightarrow Y a$   & $e_v(a)$   & $t_v(y)$  \\
-B &  (bifurcation)    & $V_B \rightarrow Y_S Z_S$  & 1     &     1     \\ \hline
+B &  (bifurcation)    & $V_B \rightarrow Y_S Z_S$  & 1     &     1     \\
 D & (delete)         & $V_D \rightarrow Y$     &    1     &   $t_v(y)$  \\
 S & (start)          & $V_S \rightarrow Y$     &    1     &   $t_v(y)$  \\
 E & (end)            & $V_E \rightarrow \epsilon$ & 1     &     1     \\
 \end{tabular}
 
 For example, a consensus (``match'') pair (MP) state produces two
-correlated letters a and b and transits to one of several possible new
-states Y of various types.  A bifurcation (B) state splits into two
-new start (S) states Y$_{S}$ and Z$_{S}$ with probability 1.  The E
-state is a special case that terminates a derivation ($\epsilon$
-represents the empty string). The reason for separate ML and IL states
-instead of just L is to distinguish between consensus (``match'')
-states and non-consensus ``insert'' states.
+correlated letters $a$ and $b$ (e.g. a Watson/Crick base pair) and
+transits to one of several possible new states $Y$ of various types.
+A bifurcation (B) state splits into two new start (S) states Y$_{S}$
+and Z$_{S}$ with probability 1.  The E state is a special case that
+terminates a derivation ($\epsilon$ represents the empty string). The
+reason for separate ML and IL states instead of just L is to
+distinguish between consensus (``match'') states and non-consensus
+``insert'' states.
 
 Each overall production probability is the product of an emission
 probability $e_v$ and a transition probability $t_v$. This is an
@@ -382,11 +398,11 @@ BEGR   & [S] IL IR           &   2     &   1    &  1   \\
 END    & [E]                 &   1     &   1    &  0   \\ \hline
 \end{tabular}
 
-The states are grouped into a ``split set'' of 1-4 (shown in brackets
-above) and an ``insert set'' of 0-2 insert states. The split set
-includes the consensus state, which by convention is first. One and
-only one of the states in the split set must be visited in every parse
-tree (and this fact will be exploited by the divide and conquer
+The states are grouped into a \emph{split set} of 1-4 states (shown in
+brackets above) and an ``insert set'' of 0-2 insert states. The split
+set includes the consensus state, which by convention is first. One
+and only one of the states in the split set must be visited in every
+parse tree (and this fact will be exploited by the divide and conquer
 algorithm). The insert state(s) are not obligately visited, and they
 have self-transitions, so they will be visited zero or more times in
 any given parse tree.
@@ -411,20 +427,24 @@ As a convenient side effect of the ordering of the states, it is
 guaranteed that the transitions from any state are to a
 \emph{contiguous} set of child states, so the transitions for state
 $v$ may be kept as an offset and a count; e.g. state $v$ makes
-transitions to states $v+\mbox{offset}_v..v+{count}_v-1$, with offset
+transitions to states $v+\mbox{offset}_v..v+\mbox{count}_v-1$, with offset
 always $\geq 0$.  Similarly, the parent states which may transition
 into $v$ are also guaranteed to be contiguous in the final CM. This
 contiguity is exploited by the implementation.
 
 Thus the final CM structure is an array of M states, connected as a
 directed graph by transitions $t_v(y)$ (or probability 1 transitions
-$v \rightarrow y,z$ for bifurcations) with the states numbered such
+$v \rightarrow (y,z)$ for bifurcations) with the states numbered such
 that $y,z \geq v$. The numbering of the states is in postorder
 traversal with respect to the guide tree. There are no cycles in the
 directed graph other than cycles of zero length (e.g. the
-self-transitions of the insert states). An example CM, corresponding
-to the input alignment of Figure~\ref{fig:input_alignment}, is shown
-in Figure~\ref{fig:cm_graph}.
+self-transitions of the insert states). This is important; since all
+the transition dependencies run in one direction, we can do an
+iterative dynamic programming calculation through the model states,
+starting with the last numbered end state $M$ and ending in the root
+state $1$.  An example CM, corresponding to the input alignment of
+Figure~\ref{fig:input_alignment}, is shown in
+Figure~\ref{fig:cm_graph}.
 
 \subsubsection{Parameterization}
 
@@ -434,14 +454,14 @@ tree, as shown in Figure~\ref{fig:parsetrees}. Counts for observed
 state transitions and singlet/pair emissions are then collected from
 these parse trees. The observed counts are converted to transition and
 emission probabilities by standard procedures (I calculate maximum a
-posteriori parameters, using Dirichlet priors).
+posteriori parameters, using Dirichlet priors). 
 
 \subsubsection{Comparison to profile HMMs}
 
 The relationship between an SCFG and a covariance model is analogous
 to the relationship of hidden Markov models (HMMs) and profile HMMs
 for modeling multiple sequence alignments
-\cite{Krogh94,Durbin98,Eddy98}.  The contrast may be instructive, at
+\cite{Krogh94,Durbin98,Eddy98}. A comparison may be instructive, at
 least to readers familiar with profile HMMs.  A profile HMM is a
 repetitive HMM architecture that associates each consensus column of a
 multiple alignment with a single type of model node -- a MATL node, in
@@ -458,11 +478,12 @@ and state types (e.g. MP, MR, IR, and B) are SCFG augmentations
 necessary to extend profile HMMs to deal with RNA secondary structure.
 
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 \subsection{Divide and conquer algorithm}
+
+\subsubsection{Notation}
 
 I use $v$, $w$, $y$, and $z$ as indices of states in the model. These
 will range from $1..M$, for a CM with $M$ states. $S_v$ refers to the
@@ -474,130 +495,144 @@ for state $v$ (states that could have transited to state $v$); it will
 contain up to six contiguous indices $y$ with $1 <= y <= v$. (Because
 the sets are guaranteed to be contiguous in the model, the
 implementation stores these as an offset relative to $v$ and a count,
-as described previously.) I use $g$, $h$, $i$, $j$, $k$, $p$, and $q$
-as indices referring to positions in a sequence $x$. These indices
-will range from $1..L$, for a sequence of length $L$.
+as described above.) I use $g$, $h$, $i$, $j$, $k$, $p$, and $q$ as
+indices referring to positions in a sequence $x$. These indices range
+from $1..L$, for a sequence of length $L$.
 
-The Inside/CYK algorithm calculates $\alpha_v(i,j)$ -- the log
-probability of the best alignment of a CM parse subtree rooted at
-state $v$ generating every subsequence $x_i..x_j$ of sequence $x$.
-The Outside/CYK algorithm calculates $\beta_v(i,j)$ -- the log
-probability of the best alignment of the CM and sequence $x$
-\emph{excluding} the best alignment for the CM subgraph rooted at $v$
-generating the subsequence $x_i..x_j$.  For any chosen cell in the 3D
-dynamic programming matrices with coordinates $v,i,j$, $\alpha_v(i,j)
-+ \beta_v(i,j)$ gives us the score of the best alignment that passes
-through that cell. 
+The Inside/CYK algorithm calculates $\alpha_v(i,j)$, the log
+probability of the most likely CM parse subtree rooted at state $v$
+that generates subsequence $x_i..x_j$ of sequence $x$.  The
+Outside/CYK algorithm calculates $\beta_v(i,j)$ -- the log probability
+of the best alignment of the CM and sequence $x$ \emph{excluding} the
+best alignment for the CM subgraph rooted at $v$ generating the
+subsequence $x_i..x_j$.  For any chosen cell in the 3D dynamic
+programming matrices with coordinates $v,i,j$, $\alpha_v(i,j) +
+\beta_v(i,j)$ gives us the score of the best alignment that passes
+through that cell. I will refer to $j$ and $i$ as row and column
+coordinates for these DP matrices, respectively. I will refer to $v$
+as \emph{deck} coordinates in the three-dimensional matrices.
+$\alpha_{v}$ and $\beta_{v}$ refer to whole two-dimensional decks
+containing scores $\alpha_v(i,j)$ and $\beta_v(i,j)$. The dividing and
+conquering will be done in this dimension, by choosing particular
+decks as split points.
 
-\subsection{inside and inside$^{\cal{T}}$}
+\subsubsection{inside and inside$^{\mathcal{T}}$}
 
-The subroutine \texttt{inside} implements the Inside/CYK SCFG
-alignment algorithm in a form that minimizes the memory requirement by
-discarding most of the 3D matrix during the calculation.
+The Inside/CYK algorithm recursively calculates $\alpha_v(i,j)$ -- the
+log probability of the most likely CM parse subtree rooted at state
+$v$ that generates subsequence $x_i..x_j$ of sequence $x$. The
+calculation initializes at the smallest subgraphs and subsequences
+(e.g. subgraphs rooted at E states, generating subsequences of length
+0), and iterates outwards to progessively longer subsequences and
+larger CM subgraphs. 
 
-The algorithm works by iteratively calculating $\alpha_v(i,j)$, the
-log probability of the most likely parse tree that generates a
-subsequence $x_i..x_j$ from a subgraph of the model rooted at state
-$v$. The calculation initializes at the smallest subgraphs and
-subsequences (e.g. subgraphs rooted at E states, generating
-subsequences of length 0). It iterates over longer and longer
-subsequences and larger and larger subgraphs until it has calculated
-$\alpha_r(g,h)$ -- the log probability of the best alignment of the
-whole CM $G$ to the whole sequence $a_1..a_L$.
+For example, if we're calculating $\alpha_v(i,j)$ and $v$ is a P
+(pair) state, $v$ will generate the pair $x_i,x_j$ and transit to a
+new state $y$ (one of its possible transitions $C_v$) which will have
+to account for the smaller subsequence $x_{i+1}..x_{j-1}$. The log
+probability for a particular choice of next state $y$ is the sum of
+three terms: an emission term $\log e_v(x_i,x_j)$, a transition term
+$\log t_v(y)$, and an already calculated solution for the smaller
+optimal parse tree rooted at $y$, $\alpha_y(i+1,j-1)$. The answer for
+$\alpha_v(i,j)$ is then the maximum of these, for all possible choices
+of child states $y$ that $v$ can transit to.
 
-\begin{verbatim}
+The \texttt{inside} algorithm is as follows:
+
 \begin{algorithm}
-\alginout{A CM subgraph $G_{r..z}$ and subsequence $x_g..x_q$.}
-         {inside: scoring matrix \alpha{r..z}.\\
-          inside$\mathcal{T}$: parse subtree $\mathcal{T}$.}
+\alginout{A CM subgraph $G^r_z$ and subsequence $x_g..x_q$.}
+         {scoring matrix decks $\alpha_r..\alpha_z$.}
 \algname{inside}{r,z; g,q} 
-\algname{inside$\mathcal{T}$}{r,z; g,q} 
 \begin{algtab}
-\algforto{$v = z$}{$r$}
-  Allocate deck $\alpha_v$ (rows $j=g-1..q$, columns $i=g..j+1$)//
-  $\alpha_v(i,j) \leftarrow -\infty \forall i,j$//
-  \algforto{$j = g-1$}{$q$} 
-    \algforto{$i = j+1$}{$g$}
-       $d \leftarrow j-1+1$\\
-       $\alpha_v(i,j) = 	
+\algforto{$v \leftarrow z$}{$r$}
+  \algforto{$j \leftarrow g-1$}{$q$} 
+    \algforto{$i \leftarrow j+1$}{$g$}
+       $d \leftarrow j-i+1$\\
+       \algif{$S_v =$ D or S:}
+       	$\alpha_v(i,j) = \max\limits_{y \in C(v)} \left[ \alpha_y(i,j)  + \log t_v(y) \right]$\\
+       \algelseif{$S_v =$ P and $d>=2$:}
+	$\alpha_v(i,j) = \log e(x_i, x_j) + \max\limits_{y \in C(v)} \left[ \alpha_y(i+1,j-1) + \log t_v(y) \right]$\\
+       \algelseif{$S_v =$ L and $d>=1$:}
+        $\alpha_v(i,j) = \log e(x_i) + \max\limits_{y \in C(v)} \left[ \alpha_y(i+1,j)   + \log t_v(y) \right]$\\
+       \algelseif{$S_v =$ R and $d>=1$:}
+        $\alpha_v(i,j) = \log e(x_j) +      \max\limits_{y \in C(v)} \left[ \alpha_y(i,j-1)   + \log t_v(y) \right]$ \\
+       \algelseif{$S_v =$ B:}
+        $(y,z) \leftarrow $ left and right S children of state $v$\\
+        $\alpha_v(i,j) = \max\limits_k \left[ \alpha_y(i,k) + \alpha_z(k+1,j) \right]$ \\
+       \algelseif{$S_v =$ E and $d=0$:}
+	$\alpha_v(i,j) = 0$\\
+       \algelse
+	$\alpha_v(i,j) = -\infty$\\
+\end{algtab}
+\end{algorithm}
 
-    Allocate memory for a new deck \alpha_v with rows j=0..L, columns i=1..j+1.
-    Allocate a shadow deck \tau_v.
-    Set all values in \alpha_v to -\infty, and \tau_v to -1.
+Given a complete sequence $x$ of length $L$ and a CM $G$ of length
+$M$, we could call \texttt{inside(1,M; 1,L)}, and $\alpha_1(1,L)$
+would contain the log probability of the best parse of the complete
+sequence with the complete model.
 
-    for j = 0 to L; for i = j+1 to 1:
-     d = j-i+1;
-     
-     for S_v: &  \alpha_v(i,j) =                                                    & \tau(i,j) = \\
-     D,S:     &\max_{y \in C(v)} \alpha_y(i,j)  + \log t_v(y)	                    & \argmax_y\\
-     P,d>=2:  &\log e(a_i, a_j) + \max_{y \in C(v)} \alpha_y(i+1,j-1) + \log t_v(y) & \argmax_y\\
-     L,d>=1:  &\log e(a_i) +      \max_{y \in C(v)} \alpha_y(i+1,j)   + \log t_v(y) & \argmax_y\\
-     R,d>=1:  &\log e(a_j) +      \max_{y \in C(v)} \alpha_y(i,j-1)   + \log t_v(y) & \argmax_y\\
-     B:       &\max_k \alpha_y(i,k) + \alpha_z(k+1,j)                               & \argmax_k\\
-     E,d=0:   & 0                                                                   & -1\\
+We do not have to keep the entire $\alpha$ matrix in memory to
+calculate this score.  As we reach higher decks $\alpha_v$ in the
+three dimensional dynamic programming matrix, our calculations no
+longer depend on certain lower decks. A lower deck $y$ can be
+deallocated whenever all the parent decks $P(y)$ that depend on it
+have been calculated. \footnote{The implementation goes even further
+and recycles decks when possible, saving some initialization steps and
+many memory allocation calls; for example, since values in all E decks
+are identical, only one E deck needs to be calculated and that
+precalculated deck can be reused whenever $S_v = E$.}
 
-    for each y \in C(v): if all P(y) > v, free the memory for deck \alpha_y.
-\end{verbatim}
+This deallocation rule has a nice property that the divide and conquer
+algorithm takes quiet advantage of when solving smaller subproblems
+for CM subgraphs rooted at some state $w$.  When this root state $w$
+is an S state, the $\alpha$ matrix returned by \texttt{inside}
+contains only one active deck $\alpha_w$. (No lower state $>w$ can be
+reached from any state $<w$ without going through $w$, so all lower
+decks are deallocated once deck $w$ is completed.) But when the root
+state $w$ is the first state in a split set $w..y$ (see below for more
+explanation), all (and only) the decks $\alpha_w..\alpha_y$ are active
+when \texttt{inside} returns. 
 
-The $\tau$ values are a ``shadow matrix'' that requires further
-explanation. In some cases, we will call inside as inside$^{\cal{T}}$.
-In these cases, we know the problem is small enough that a divide and
-conquer is no longer needed, and we want to trace back an optimal
-parse tree $\cal{T}$. One way to do this would be to keep a full
-$\alpha$ matrix in memory and tracing back by recapitulating the
-calculations in reverse. It is easier and more memory efficient to
-keep a ``shadow'' traceback pointer matrix $\tau$. (The memory
-efficiency results from the fact that the non-bifurcation $\tau$'s
-only need a range of 0..5 and fit in a few bits, compared to
-$\alpha$'s which are log probabilities requiring greater dynamic range
-and more bits.)  A $\tau_v(i,j)$ traceback pointer either records the
+In some cases we want to recover the optimal parse tree itself, not
+just its score. The \texttt{inside}$\mathcal{T}$ routine is a modified
+version of $\texttt{inside}$. It keeps an additional ``shadow matrix''
+$\tau_v(i,j)$. A $\tau_v(i,j)$ traceback pointer either records the
 index $y$ that maximized $\alpha_v(i,j)$ (for state types D,S,P,L,R)
 or records the split point $k$ that maximized $\alpha_v(i,j)$ for a
-bifurcation (B) state. We trace back through the shadow matrix to
-obtain the optimal sub-alignment that gave the optimal score. The most
-simple explanation of this traceback is a recursive one: we call
-subroutine traceback(v=0, i=1, j=L):
+bifurcation (B) state. $\tau$ does not use the deallocation rules (and
+thus, \texttt{inside}$\mathcal{T}$ can only be called for problems
+small enough that they can be solved within our available memory
+space). Thus the \texttt{inside}$\mathcal{T}$ routine works by calling
+\texttt{inside} in a mode that keeps shadow matrix $\tau$, and then
+calls a recursive traceback starting with $r,g,q$:
 
-\begin{verbatim}
-subroutine traceback(v,i,j):
-  S_v = E:     attach v;
-  S_v = S,D :  attach v;           traceback(\tau_v(i,j), i, j).
-  S_v = P :    attach a_i,v,a_j;   traceback(\tau_v(i,j), i+1, j-1).
-  S_v = L :    attach a_i,v;       traceback(\tau_v(j,d), i+1, j).
-  S_v = R :    attach v,a_j;       traceback(\tau_v(j,d), i,   j-1).
-  S_v = B :    attach v;           traceback(y, i, \tau_v(j,d));   traceback(z, \tau_v(i,j)+1, j).
-\end{verbatim}
-
-When inside is called (as opposed to inside$^{\cal{T}}$), none of the
-$\tau$ shadow operations are performed in inside. Instead, the 3D
-scoring matrix itself is returned, containing the deck $\alpha_v$ (and
-possibly a few other valid, unfree'd score decks; see below).
-
-The memory handling in inside\_engine also needs further explanation.
-Recall that the key to the memory efficiency of the divide and conquer
-approach is that we don't need to keep the entire $\alpha$ matrix in
-memory to calculate scores. In the above formulation, with the outer
-loop ranging over decks for the CM states $v$, as we reach higher
-decks $v$ in the 3D matrix, our calculations may no longer depend on
-certain lower decks. Since we are moving sequentially ``upwards'' in
-the states from state $M$ to state $1$, a simple test (all P(y) >
-v?)  is sufficient to determine whether the scores in deck y will be
-needed by any higher decks; if deck y is not needed, its memory can be
-released. (Since all the decks are the same size, an implementation
-can recycle ``free'd'' decks, saving memory allocation calls. Also,
-note that the values in all end decks are identical, so only one end
-deck needs to be calculated, and that precalculated deck can be reused
-whenever $S_v = E$.)
-
-This rule, combined with the structure of a CM, has an additional nice
-property. When inside is called by generic\_splitter, for a CM graph
-$G$ in which state 1 is always a start state, we only need the deck
-$\alpha_1$ returned -- and since all the states $y$ that a start state
-connects to cannot have another parent higher in the CM, when the
-algorithm completes, $\alpha_1$ is the only deck left unfree'd.
-[more here]
-
-
+\begin{algorithm}
+\alginout{A shadow matrix $\tau$ for CM subgraph $G^r_z$ and subsequence $x_g..x_q$.}
+         {Optimal parse tree $\mathcal{T}$.}
+\algname{traceback}{v,i,j}
+\begin{algtab}
+  \algif{$S_v =$ E:}
+    attach $v$\\
+  \algelseif{$S_v =$ S or D:}
+    attach $v$ \\
+    \algcall{traceback}{$\tau_v(i,j), i, j$}\\
+  \algelseif{$S_v =$ P:}
+    attach $x_i,v,x_j$\\
+    \algcall{traceback}{$\tau_v(i,j), i+1, j-1$}\\
+  \algelseif{$S_v =$ L:}
+    attach $x_i,v$\\
+    \algcall{traceback}{$\tau_v(i,j), i+1, j$}\\
+  \algelseif{$S_v =$ R:}
+    attach $v,x_j$\\
+    \algcall{traceback}{$\tau_v(i,j), i,   j-1$}\\
+  \algelseif{$S_v =$ B:}
+    $(y,z) \leftarrow $ left and right S children of state $v$\\
+    attach $v$\\
+    \algcall{traceback}{$y, i, \tau_v(i,j)$}\\
+    \algcall{traceback}{$z, \tau_v(i,j)+1, j$}\\
+\algend
+\end{algtab}
+\end{algorithm}
 
 Thus, for any chosen state $v$, $\argmax_{i,j} \alpha_{v}(i,j) +
 \beta_{v}(i,j)$ tells us which cell $v,i,j$ the optimal parse tree

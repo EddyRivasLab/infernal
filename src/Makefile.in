@@ -13,9 +13,9 @@ CC     = @CC@
 CFLAGS = @CFLAGS@
 
 ## other defined flags. 
-#  @DEFS@ contains stuff that autoconf 
-#  decides on. @MDEFS@ contains stuff that we added to
-#  the configure script tests. @LIBS@ contains system
+#  DEFS contains stuff that autoconf 
+#  decides on. MDEFS contains stuff that we added to
+#  the configure script tests. LIBS contains system
 #  libraries that the configure script decides we need.
 #
 MDEFS = @MDEFS@ @DEFS@
