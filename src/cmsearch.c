@@ -157,13 +157,9 @@ main(int argc, char **argv)
 		 reversed ? sqinfo.len - hitj[i] + 1 : hitj[i],
 		 hitsc[i]);
 	  
-	  if (do_local) 
-	    CYKLocalDivideAndConquer(cm, dsq, sqinfo.len, 
-				     hitr[i], hiti[i], hitj[i], &tr);
-	  else
-	    CYKGlocalDivideAndConquer(cm, dsq, sqinfo.len, 
-				      hiti[i], hitj[i], &tr);
-	  
+	  CYKDivideAndConquer(cm, dsq, sqinfo.len, 
+			      hitr[i], hiti[i], hitj[i], &tr);
+
 	  ali = CreateFancyAli(tr, cm, cons, dsq);
 	  PrintFancyAli(stdout, ali);
 

@@ -2,12 +2,38 @@
  * SRE, Wed Aug  2 08:42:49 2000 [St. Louis]
  * CVS $Id$
  * 
- * Divide and conquer CYK alignment.
+ * Alignment of a CM to a target (sub)sequence.
+ *
+ * Implementation of the CM divide and conquer alignment algorithm 
+ * described in [Eddy02]. Also implements standard CYK/Inside 
+ * optimal alignment by dynamic programming [Durbin98]. 
+ *
+ * These algorithms align to the entire target (sub)sequence
+ * (e.g. global alignment). For sequence-local alignment, see
+ * scancyk.c.
  * 
  *****************************************************************
  * @LICENSE@
  *****************************************************************  
  */
+
+/*################################################################
+ * smallcyk's external API:
+ * 
+ * CYKDivideAndConquer()  - The divide and conquer algorithm. Align
+ *                          a model to a (sub)sequence.
+ * CYKInside()            - Align model to (sub)sequence, using normal 
+ *                          CYK/Inside algorithm.
+ * CYKInsideScore()       - Calculate the CYK/Inside score of optimal 
+ *                          alignment, without recovering the alignment; 
+ *                          allows timing CYK/Inside without blowing
+ *                          out memory, for large target RNAs.
+ *                          
+ * CYKDemands()           - Print a bunch of info comparing predicted d&c
+ *                          time/memory requirements to standard CYK/inside
+ *                          time/memory requirements.
+ *################################################################
+ */  
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,7 +77,8 @@ static float vinside(CM_t *cm, char *dsq, int L,
 		     int r, int z, int i0, int i1, int j1, int j0, int useEL,
 		     int do_full, float ***a, float ****ret_a,
 		     struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
-		     char ****ret_shadow);
+		     char ****ret_shadow,
+		     int allow_begin, int *ret_b, float *ret_bsc);
 static void  voutside(CM_t *cm, char *dsq, int L, 
 		      int r, int z, int i0, int i1, int j1, int j0, int useEL,
 		      int do_full, float ***beta, float ****ret_beta,
@@ -60,9 +87,9 @@ static void  voutside(CM_t *cm, char *dsq, int L,
 /* The traceback routines.
  */
 static float insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
-		     int r, int z, int i0, int j0);
+		     int r, int z, int i0, int j0, int allow_begin);
 static float vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
-		      int r, int z, int i0, int i1, int j1, int j0, int useEL);
+		      int r, int z, int i0, int i1, int j1, int j0, int useEL, int allow_begin);
 
 /* The size calculators.
  */
@@ -101,135 +128,57 @@ static void    free_vji_shadow_matrix(char ***a, int r, int z, int j1, int j0);
  * for the do_full? argument to the alignment engines.
  */
 #define BE_EFFICIENT  0		/* setting for do_full: small memory mode */
-#define BE_PARANOID   1		/* setting for do_full: keep whole matrix */
+#define BE_PARANOID   1		/* setting for do_full: keep whole matrix, perhaps for debugging */
 
-/*################################################################
- * smallcyk API:
- * 
- * CYKDivideAndConquer()       - the main routine. Align a model to a sequence, globally.
- * CYKGlocalDivideAndConquer() - glocal mode: whole query model, to i0..j0 in target sequence.
- * CYKLocalDivideAndConquer()  - local mode: submodel rooted at r0, to i0..j0 in target seq. 
- *################################################################
- */  
+/* Special flags for use in shadow (traceback) matrices, instead of
+ * offsets to connected states. When yshad[0][][] is USED_LOCAL_BEGIN,
+ * the b value returned by inside() is the best connected state (a 0->b
+ * local entry). When yshad[v][][] is USED_EL, there is a v->EL transition
+ * and the remaining subsequence is aligned to the EL state. 
+ */
+#define USED_LOCAL_BEGIN 101
+#define USED_EL          102
+
 
 
 /* Function: CYKDivideAndConquer()
  * Date:     SRE, Sun Jun  3 19:32:14 2001 [St. Louis]
  *
- * Purpose:  Align a CM to a sequence using the divide and conquer
+ * Purpose:  Align a CM to a (sub)sequence using the divide and conquer
  *           algorithm. Return the score (in bits) and a traceback
  *           structure.
  *           
- *           Won't work if we're allowing local entry into the model
- *           (CM_LOCAL_BEGIN flag set).
+ *           The simplest call to this, for a model cm and a sequence
+ *           dsq of length L:
+ *               CYKDivideAndConquer(cm, dsq, L, 0, 1, L, &tr);
+ *           which will align the model to the entire sequence. (The alignment
+ *           will be global w.r.t the sequence.) 
+ *           
+ *           Sometimes we already know the second state in the traceback:
+ *           a CYKScan() will tell us r, for a 0->r local begin transition.
+ *           (It also tells us i0, j0: the bounds of a high-scoring subsequence
+ *           hit in the target sequence.)  We take all this information in
+ *           as a shortcut. The 0->r transition is still counted
+ *           towards the score. That is, CYKDivideAndConquer() always
+ *           gives a parsetree rooted at state 0, the root, and the sc
+ *           we return is the score for that complete parse tree.
  *
  * Args:     cm     - the covariance model
  *           dsq    - the sequence, 1..L
  *           L      - length of sequence
+ *           r      - root of subgraph to align to target subseq (usually 0, the model's root)
+ *           i0     - start of target subsequence (often 1, beginning of dsq)
+ *           j0     - end of target subsequence (often L, end of dsq)
  *           ret_tr - RETURN: traceback (pass NULL if trace isn't wanted)
  *
- * Returns:  score of the alignment in bits.
+ * Returns: score of the alignment in bits.  
  */
 float
-CYKDivideAndConquer(CM_t *cm, char *dsq, int L, Parsetree_t **ret_tr)
+CYKDivideAndConquer(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr)
 {
   Parsetree_t *tr;
   float        sc;
-
-  if (cm->flags & CM_LOCAL_BEGIN) Die("don't start that with me.");
-
-  /* Create a parse tree structure.
-   * The traceback machinery expects to build on a start state already
-   * in the parsetree, so initialize by adding the root state.
-   */
-  tr = CreateParsetree();
-  InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0); /* init: attach the root S */
-
-  /* Start the divide and conquer recursion: call the generic_splitter()
-   * on the whole DP cube.
-   */
-  sc = generic_splitter(cm, dsq, L, tr, 0, cm->M-1, 1, L);
-
-  /* Free memory and return
-   */
-  if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
-  return sc;
-}
-
-/* Function:  CYKGlocalDivideAndConquer()
- * Incept:    SRE, Wed Jul 24 09:05:00 2002 [St. Louis]
- *
- * Purpose:   Align a CM to a sequence using the divide and
- *            conquer algorithm in its glocal alignment mode -
- *            where we know the bounds i0,j0 of the hit on the
- *            sequence dsq, and we know the alignment starts with
- *            ROOT in the parse tree. 
- *            
- *            Just like the routine above, but we take i0,j0
- *            as args.
- *            
- *            [It might look like you can use CYKLocalDivideAndConquer()
- *            for this, and indeed that's what I did at first. Some
- *            minor bookkeeping issues though. For instance, the first
- *            state after the root 0 might be the insert states 1 or 2.
- *            You can't pass 1 or 2 as r0; they're not in a split set,
- *            so they'll fault the d&c algorithm. This bug was reported
- *            by Sam in infernal 0.3, xref STL6 p.93.]
- *            
- * Args:     cm     - the covariance model
- *           dsq    - the sequence, 1..L
- *           L      - length of sequence
- *           i0     - start position for optimal alignment
- *           j0     - end position for optimal alignment
- *           ret_tr - RETURN: traceback (pass NULL if trace isn't wanted)
- *
- * Returns:  (void)
- */
-float
-CYKGlocalDivideAndConquer(CM_t *cm, char *dsq, int L, int i0, int j0,
-			  Parsetree_t **ret_tr)
-{
-  Parsetree_t *tr;
-  float        sc;
-
-  tr = CreateParsetree();
-  InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, i0, j0, 0);  /* init: attach the root S */
-  sc = generic_splitter(cm, dsq, L, tr, 0, cm->M-1, i0, j0); 
-  if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
-  return sc;
-}
-
-
-/* Function:  CYKLocalDivideAndConquer()
- * Incept:    SRE, Tue May 21 14:49:38 2002 [St. Louis]
- * Last work: SRE, Tue May 21 14:49:48 2002 [St. Louis]
- *
- * Purpose:   Align a CM to a sequence using the divide and
- *            conquer algorithm in its local alignment mode -
- *            where we know the bounds i0,j0 of the hit on the
- *            sequence dsq, and we know the next state r0 after the
- *            ROOT in the parse tree.
- *            
- *            (aside: we could make this work for global alignment,
- *             by not adding the extra node to initialized parsetree
- *             when r0==0)
- *
- * Args:     cm     - the covariance model
- *           dsq    - the sequence, 1..L
- *           L      - length of sequence
- *           r0     - first state after the ROOT
- *           i0     - start position for optimal alignment
- *           j0     - end position for optimal alignment
- *           ret_tr - RETURN: traceback (pass NULL if trace isn't wanted)
- *
- * Returns:  (void)
- */
-float
-CYKLocalDivideAndConquer(CM_t *cm, char *dsq, int L, int r0, int i0, int j0,
-		         Parsetree_t **ret_tr)
-{
-  Parsetree_t *tr;
-  float        sc;
+  int          allow_begin;
   int          z;
 
   /* Create a parse tree structure.
@@ -237,56 +186,84 @@ CYKLocalDivideAndConquer(CM_t *cm, char *dsq, int L, int r0, int i0, int j0,
    * in the parsetree, so initialize by adding the root state.
    */
   tr = CreateParsetree();
-  InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, i0, j0, 0);  /* init: attach the root S */
-  InsertTraceNode(tr, 0,  TRACE_LEFT_CHILD, i0, j0, r0); /* attach first state r0   */
+  InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, i0, j0, 0); /* init: attach the root S */
+  z  = cm->M-1;
+  sc = 0.;
+  allow_begin = (cm->flags & CM_LOCAL_BEGIN) ? TRUE : FALSE;
+
+  /* If r != 0, we already know we're starting with a local entry transition 0->r;
+   * add that node too, and count the begin transition towards the score. We have
+   * just done our one allowed local begin, so allow_begin becomes FALSE.
+   */
+  if (r != 0) 
+    {
+      InsertTraceNode(tr, 0,  TRACE_LEFT_CHILD, i0, j0, r);
+      z  =  CMSubtreeFindEnd(cm, r);
+      sc =  cm->beginsc[r];
+      allow_begin = FALSE;
+    }
 
   /* Start the divide and conquer recursion: call the generic_splitter()
    * on the whole DP cube.
    */
-  z  = CMSubtreeFindEnd(cm, r0);
-  /* sc = insideT(cm, dsq, L, tr, r0, z, i0, j0); */
-  sc = generic_splitter(cm, dsq, L, tr, r0, z, i0, j0); 
+  sc += generic_splitter(cm, dsq, L, tr, r, z, i0, j0, allow_begin);
 
-  /* Free memory and return 
-   * (though we don't really expect a NULL ptr for ret_tr)
+  /* Free memory and return
    */
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
   return sc;
 }
-
 
 /* Function: CYKInside()
  * Date:     SRE, Sun Jun  3 19:48:33 2001 [St. Louis]
  *
  * Purpose:  Wrapper for the insideT() routine - solve
  *           a full alignment problem, return the traceback
- *           and the score.
+ *           and the score, without dividing & conquering.
+ *           
+ *           Analogous to CYKDivideAndConquer() in many respects;
+ *           see the more extensive comments in that function for
+ *           more details on shared aspects.
  *           
  * Args:     cm     - the covariance model
  *           dsq    - the sequence, 1..L
  *           L      - length of sequence
+ *           r      - root of subgraph to align to target subseq (usually 0, the model's root)
+ *           i0     - start of target subsequence (often 1, beginning of dsq)
+ *           j0     - end of target subsequence (often L, end of dsq)
  *           ret_tr - RETURN: traceback (pass NULL if trace isn't wanted)
  *
  * Returns:  score of the alignment in bits.
  */
 float
-CYKInside(CM_t *cm, char *dsq, int L, Parsetree_t **ret_tr)
+CYKInside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr)
 {
   Parsetree_t *tr;
+  int          z;
   float        sc;
+  int          allow_begin;
 
-  if (cm->flags & CM_LOCAL_BEGIN) Die("don't start that with me.");
-
-  /* Create a parse tree structure.
-   * The traceback machinery expects to build on a start state already
-   * in the parsetree, so initialize by adding the root state.
+  /* Create the parse tree, and initialize.
    */
   tr = CreateParsetree();
   InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0); /* init: attach the root S */
+  z  = cm->M-1;
+  sc = 0.;
+  allow_begin = (cm->flags & CM_LOCAL_BEGIN) ? TRUE : FALSE;
+
+  /* Deal with case where we already know a local entry transition 0->r
+   */
+  if (r != 0)
+    {
+      InsertTraceNode(tr, 0,  TRACE_LEFT_CHILD, i0, j0, r);
+      z  =  CMSubtreeFindEnd(cm, r);
+      sc =  cm->beginsc[r];
+      allow_begin = FALSE;
+    }
 
   /* Solve the whole thing with one call to insideT.
    */
-  sc = insideT(cm, dsq, L, tr, 0, cm->M-1, 1, L);
+  sc += insideT(cm, dsq, L, tr, r, z, i0, j0, allow_begin);
 
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
   return sc;
@@ -302,19 +279,42 @@ CYKInside(CM_t *cm, char *dsq, int L, Parsetree_t **ret_tr)
  *           Fairly useless. Written just to obtain timings
  *           for SSU and LSU alignments, for comparison to
  *           divide and conquer.
+ *
+ *           Analogous to CYKDivideAndConquer() in many respects;
+ *           see the more extensive comments in that function for
+ *           more details on shared aspects.
  *           
  * Args:     cm     - the covariance model
  *           dsq    - the sequence, 1..L
  *           L      - length of sequence
+ *           r      - root of subgraph to align to target subseq (usually 0, the model's root)
+ *           i0     - start of target subsequence (often 1, beginning of dsq)
+ *           j0     - end of target subsequence (often L, end of dsq)
  *
  * Returns:  score of the alignment in bits.
  */
 float
-CYKInsideScore(CM_t *cm, char *dsq, int L)
+CYKInsideScore(CM_t *cm, char *dsq, int r, int i0, int j0, int L)
 {
-  if (cm->flags & CM_LOCAL_BEGIN) Die("don't start that with me.");
-  return inside(cm, dsq, L, 0, cm->M-1, 1, L, FALSE, 
-		NULL, NULL, NULL, NULL, NULL);
+  int    z;
+  float  sc;
+  int    allow_begin;
+
+  z           = cm->M-1;
+  sc          = 0.;
+  allow_begin = (cm->flags & CM_LOCAL_BEGIN) ? TRUE : FALSE;
+
+  if (r != 0) 
+    {
+      z  =  CMSubtreeFindEnd(cm, r);
+      sc =  cm->beginsc[r];
+      allow_begin = FALSE;
+    }
+
+  sc +=  inside(cm, dsq, L, r, z, i0, j0, FALSE, 
+		NULL, NULL, NULL, NULL, NULL,
+		allow_begin, NULL, NULL);
+  return sc;
 }
 
 
@@ -641,8 +641,8 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
   int   d, jp, j;
   int   best_v, best_d, best_j;
   int   midnode;
-  int   b;			/* optimal local begin: b = argmax_v alpha_v(i0,j0) + t_0(v) */
-  int   bsc;			/* score for optimal local begin      */
+  int   b;	/* optimal local begin: b = argmax_v alpha_v(i0,j0) + t_0(v) */
+  float bsc;	/* score for optimal local begin      */
   
   /* 1. If the wedge problem is either a boundary condition,
    *    or small enough, solve it with inside^T and append
@@ -681,7 +681,8 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
    *    is the score for using it.
    *    beta[cm->M] will contain the EL deck, if needed for local ends.
    */
-  inside(cm, dsq, L, w, z, i0, j0, BE_EFFICIENT, NULL, &alpha, NULL, &pool, NULL, 
+  inside(cm, dsq, L, w, z, i0, j0, BE_EFFICIENT, 
+	 NULL, &alpha, NULL, &pool, NULL, 
 	 allow_begin, &b, &bsc);
   outside(cm, dsq, L, r, y, i0, j0, BE_EFFICIENT, NULL, &beta, pool, NULL);
 
@@ -753,6 +754,7 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
    * problems. 
    */
   if (best_v == -2) {
+    InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b);
     wedge_splitter(cm, dsq, L, tr, b, z, i0, j0, FALSE);
     return best_sc; 
   }
@@ -854,7 +856,7 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    *    beta[cm->M] is the EL deck, needed for local ends.
    */
   vinside (cm, dsq, L, w, z, i0, i1, j1, j0, useEL, BE_EFFICIENT, 
-	   NULL, &alpha, NULL, &pool, NULL, &b, &bsc);
+	   NULL, &alpha, NULL, &pool, NULL, allow_begin, &b, &bsc);
   voutside(cm, dsq, L, r, y, i0, i1, j1, j0, useEL, BE_EFFICIENT, 
 	   NULL, &beta,  pool, NULL);
 
@@ -918,6 +920,7 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    * useEL.
    */
   if (best_v == -2) {
+    InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b);
     v_splitter(cm, dsq, L, tr, b, z, i0, i1, j1, j0, useEL, FALSE);    
     return;
   }
@@ -989,9 +992,23 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
  *           
  *           We also deal with local begins, by keeping track of the optimal
  *           state that we could enter and account for the whole target 
- *           sequence: b = argmax_v  alpha_v(1,L) + log t_0(v),
- *           and bscore is the score for that. We can only ever use these for
- *           i0==1 && j0==L, but they are nonetheless always returned.
+ *           sequence: b = argmax_v  alpha_v(i0,j0) + log t_0(v),
+ *           and bsc is the score for that. 
+ *
+ *           If vroot==0, i0==1, and j0==L (e.g. a complete alignment),
+ *           the optimal alignment might use a local begin transition, 0->b,
+ *           and we'd have to be able to trace that back. For any
+ *           problem where the caller sets allow_begin, we return a valid b 
+ *           (the optimal 0->b choice) and bsc (the score if 0->b is used).
+ *           If a local begin is part of the optimal parse tree, the optimal
+ *           alignment score returned by inside() will be bsc and yshad[0][L][L] 
+ *           will be USE_LOCAL_BEGIN, telling insideT() to check b and
+ *           start with a local 0->b entry transition. When inside()
+ *           is called on smaller subproblems (v != 0 || i0 > 1 || j0
+ *           < L), we're using inside() as an engine in divide &
+ *           conquer, and we don't use the overall return score nor
+ *           shadow matrices, but we do need allow_begin, b, and bsc for
+ *           divide&conquer to sort out where a local begin might be used.
  *
  * Args:     cm        - the model    [0..M-1]
  *           dsq       - the sequence [1..L]   
@@ -1018,17 +1035,18 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
  *           ret_shadow- if non-NULL, the caller wants a shadow matrix, because
  *                       he intends to do a traceback.
  *           allow_begin- TRUE to allow 0->b local alignment begin transitions. 
- *           ret_b     - best local begin state.
- *           ret_bsc   - score for using ret_b                        
+ *           ret_b     - best local begin state, or NULL if unwanted
+ *           ret_bsc   - score for using ret_b, or NULL if unwanted                        
  *                       
  *
- * Returns:  Score of the optimal alignment.
+ * Returns: Score of the optimal alignment.  
  */
 static float 
 inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
        float ***alpha, float ****ret_alpha, 
        struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
-       void ****ret_shadow, int allow_begin, int *ret_b, float *ret_bsc)
+       void ****ret_shadow, 
+       int allow_begin, int *ret_b, float *ret_bsc)
 {
   float  **end;                 /* we re-use the end deck. */
   int      nends;               /* counter that tracks when we can release end deck to the pool */
@@ -1128,7 +1146,7 @@ inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_f
 	      {
 		y = cm->cfirst[v];
 		alpha[v][j][d]  = cm->endsc[v];	/* init w/ local end */
-		if (ret_shadow != NULL) yshad[j][d]  = -1; /* -1: EL */
+		if (ret_shadow != NULL) yshad[j][d]  = USED_EL; 
 		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
 		  if ((sc = alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) >  alpha[v][j][d]) {
 		    alpha[v][j][d] = sc; 
@@ -1168,7 +1186,7 @@ inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_f
 	      {
 		y = cm->cfirst[v];
 		alpha[v][j][d] = cm->endsc[v]; /* init w/ local end */
-		if (ret_shadow != NULL) yshad[j][d] = -1; /* -1: EL */
+		if (ret_shadow != NULL) yshad[j][d] = USED_EL;
 		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
 		  if ((sc = alpha[y+yoffset][j-1][d-2] + cm->tsc[v][yoffset]) >  alpha[v][j][d]) {
 		    alpha[v][j][d] = sc;
@@ -1194,7 +1212,7 @@ inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_f
 	      {
 		y = cm->cfirst[v];
 		alpha[v][j][d] = cm->endsc[v]; /* init w/ local end */
-		if (ret_shadow != NULL) yshad[j][d] = -1; /* -1: EL */
+		if (ret_shadow != NULL) yshad[j][d] = USED_EL;
 		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
 		  if ((sc = alpha[y+yoffset][j][d-1] + cm->tsc[v][yoffset]) >  alpha[v][j][d]) {
 		    alpha[v][j][d] = sc;
@@ -1220,7 +1238,7 @@ inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_f
 	      {
 		y = cm->cfirst[v];
 		alpha[v][j][d] = cm->endsc[v]; /* init w/ local end */
-		if (ret_shadow != NULL) yshad[j][d] = -1; /* -1: EL */
+		if (ret_shadow != NULL) yshad[j][d] = USED_EL;
 		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
 		  if ((sc = alpha[y+yoffset][j-1][d-1] + cm->tsc[v][yoffset]) > alpha[v][j][d]) {
 		    alpha[v][j][d] = sc;
@@ -1239,13 +1257,24 @@ inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_f
       
       /* Check for local begin getting us to the root.
        * This is "off-shadow": if/when we trace back, we'll handle this
-       * case separately.
+       * case separately (and we'll know to do it because we'll immediately
+       * see a USED_LOCAL_BEGIN flag in the shadow matrix, telling us
+       * to jump right to state b; see below)
        */
       if (allow_begin && alpha[v][j0][W] + cm->beginsc[v] > bsc) 
 	{
 	  b   = v;
 	  bsc = alpha[v][j0][W] + cm->beginsc[v];
 	}
+
+      /* Check for whether we need to store an optimal local begin score
+       * as the optimal overall score, and if we need to put a flag
+       * in the shadow matrix telling insideT() to use the b we return.
+       */
+      if (allow_begin && v == 0 && bsc > alpha[0][j0][W]) {
+	alpha[0][j0][W] = bsc;
+	if (ret_shadow != NULL) yshad[j0][W] = USED_LOCAL_BEGIN;
+      }
 
       /* Now, if we're trying to reuse memory in our normal mode (e.g. ! do_full):
        * Look at our children; if they're fully released, take their deck
@@ -1283,10 +1312,8 @@ inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_f
    * We could check this status to be sure (and we used to) but now we trust. 
    */
   sc       = alpha[vroot][j0][W];
-  *ret_b   = b;
-  *ret_bsc = bsc;
-  if (allow_begin && bsc > sc) { sc = bsc; }
-
+  if (ret_b != NULL)   *ret_b   = b;    /* b is -1 if allow_begin is FALSE. */
+  if (ret_bsc != NULL) *ret_bsc = bsc;  /* bsc is IMPOSSIBLE if allow_begin is FALSE */
 
   /* If the caller doesn't want the matrix, free it (saving the decks in the pool!)
    * Else, pass it back to him.
@@ -1512,17 +1539,65 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
       }/* end loop over jp. We know the beta's for the whole deck.*/
 
       /* Finished with deck v. 
-       * Deal with local alignment transitions v->EL
+       * Check for an even better local begin transition. By
+       * definition, beta[0][j0][W] == 0.
+       */ 
+      if (vroot == 0 && i0 == 1 && j0 == L && (cm->flags & CM_LOCAL_BEGIN))
+	{
+	  if (cm->beginsc[v] > beta[v][j0][W])
+	    beta[v][j0][W] = cm->beginsc[v];
+	}
+
+      /* Deal with local alignment end transitions v->EL
        * (EL = deck at M.)
        */
       if (NOT_IMPOSSIBLE(cm->endsc[v])) {
 	for (jp = 0; jp <= W; jp++) { 
 	  j = i0-1+jp;
 	  for (d = 0; d <= jp; d++) 
-	    if ((sc = beta[v][j][d] + cm->endsc[v]) > beta[cm->M][j][d])
-	      beta[cm->M][j][d] = sc;
-	}
-      }
+	    {
+	      i = j-d+1;
+	      switch (cm->sttype[v]) {
+	      case MP_st: 
+		if (j == j0 || d == jp) continue; /* boundary condition */
+		if (dsq[i-1] < Alphabet_size && dsq[j+1] > Alphabet_size)
+		  escore = cm->esc[v][(int) (dsq[i-1]*Alphabet_size+dsq[j+1])];
+		else
+		  escore = DegeneratePairScore(cm->esc[v], dsq[i-1], dsq[j+1]);
+		if ((sc = beta[v][j+1][d+2] + cm->endsc[v] + escore) > beta[cm->M][j][d])
+		  beta[cm->M][j][d] = sc;
+		break;
+	      case ML_st:
+	      case IL_st:
+		if (d == jp) continue;	
+		if (dsq[i-1] < Alphabet_size) 
+		  escore = cm->esc[v][(int) dsq[i-1]];
+		else
+		  escore = DegenerateSingletScore(cm->esc[v], dsq[i-1]);
+		if ((sc = beta[v][j][d+1] + cm->endsc[v] + escore) > beta[cm->M][j][d])
+		  beta[cm->M][j][d] = sc;
+		break;
+	      case MR_st:
+	      case IR_st:
+		if (j == j0) continue;
+		if (dsq[j+1] < Alphabet_size) 
+		  escore = cm->esc[v][(int) dsq[j+1]];
+		else
+		  escore = DegenerateSingletScore(cm->esc[v], dsq[j+1]);
+		if ((sc = beta[v][j+1][d+1] + cm->endsc[v] + escore) > beta[cm->M][j][d])
+		  beta[cm->M][j][d] = sc;
+		break;
+	      case S_st:
+	      case D_st:
+	      case E_st:
+		if ((sc = beta[v][j][d] + cm->endsc[v]) > beta[cm->M][j][d])
+		  beta[cm->M][j][d] = sc;
+		break;
+	      default: Die("bogus parent state %d\n", cm->sttype[y]);
+	      } /* end switch over parent state type v */
+	    } /* end inner loop over d */
+	} /* end outer loop over jp */
+      } /* end conditional section for dealing w/ v->EL local end transitions */
 
       /* Look at v's parents; if we're reusing memory (! do_full)
        * push the parents that we don't need any more into the pool.
@@ -1535,6 +1610,8 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
       }
     } /* end loop over decks v. */
 
+#if 0
+  /* SRE: this code is superfluous, yes???
   /* Deal with last step needed for local alignment 
    * w.r.t. ends: left-emitting, zero-scoring EL->EL transitions.
    * (EL = deck at M.)
@@ -1547,6 +1624,7 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 	  beta[cm->M][j][d] = sc;
     }
   }
+#endif
 
   /* If the caller doesn't want the matrix, free it.
    * (though it would be *stupid* for the caller not to want the
@@ -1619,7 +1697,11 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
  *                       *only* be valid on exactly the same i0..i1//j0..j1 subseq
  *                       because of the size of the subseq decks.
  *           ret_shadow- if non-NULL, the caller wants a shadow matrix, because
- *                       he intends to do a traceback.
+ *                       he intends to do a traceback. 
+ *           allow_begin- TRUE to allow 0->b local alignment begin transitions. 
+ *           ret_b     - best local begin state, or NULL if unwanted
+ *           ret_bsc   - score for using ret_b, or NULL if unwanted                        
+
  * 
  * Returns:  score.
  */
@@ -1628,7 +1710,8 @@ vinside(CM_t *cm, char *dsq, int L,
 	int r, int z, int i0, int i1, int j1, int j0, int useEL,
 	int do_full, float ***a, float ****ret_a,
 	struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
-	char ****ret_shadow)
+	char ****ret_shadow,
+	int allow_begin, int *ret_b, float *ret_bsc)
 {
   char  ***shadow;              /* the shadow matrix -- traceback ptrs -- memory is kept */
   int     v,i,j;
@@ -1637,11 +1720,16 @@ vinside(CM_t *cm, char *dsq, int L,
   int    *touch;                /* keeps track of whether we can free a deck yet or not */
   int     y, yoffset;
   float   sc;			/* tmp variable holding a score */
+  int      b;			/* best local begin state */
+  float    bsc;			/* score for using the best local begin state */
+
 
   /* Allocations, initializations.
    * Remember to allocate for M+1 decks, in case we reuse this 
    * memory for a local alignment voutside() calculation.
    */
+  b   = -1;
+  bsc = IMPOSSIBLE;
   if (dpool == NULL) dpool = deckpool_create();
   if (a == NULL) {
     a = MallocOrDie(sizeof(float **) * (cm->M+1));
@@ -1657,7 +1745,8 @@ vinside(CM_t *cm, char *dsq, int L,
       for (ip = 0; ip <= i1-i0; ip++) 
 	a[v][jp][ip] = IMPOSSIBLE;
   }
-  /* if local alignment, we must connect to EL somewhere;
+
+  /* if local alignment, we must connect to EL somewhere, and
    * a[z][0][i1-i0] = IMPOSSIBLE. Else, we connect to z,0,i1-i0.
    */
   if (! useEL) a[z][0][i1-i0] = 0.;
@@ -1671,6 +1760,19 @@ vinside(CM_t *cm, char *dsq, int L,
   for (v = 0;   v < r;  v++) touch[v] = 0;
   for (v = r;   v <= w2; v++) touch[v] = cm->pnum[v]; /* note w2 not z: to bottom of split set */
   for (v = w2+1; v < cm->M; v++) touch[v] = 0;
+
+  /* A special case. If vinside() is called on empty sequences,
+   * we might do a begin transition right into z.
+   */ 
+  if (allow_begin && j0-j1 == 0 && i1-i0 == 0)
+    {
+      b   = z;
+      bsc = a[z][0][0] + cm->beginsc[z];
+      if (z == 0) { 
+	a[0][0][0] = bsc;
+	if (ret_shadow != NULL) shadow[0][0][0] = USED_LOCAL_BEGIN;
+      }
+    }
 
   /* Main recursion
    */
@@ -1696,7 +1798,7 @@ vinside(CM_t *cm, char *dsq, int L,
 	      if (ret_shadow != NULL) shadow[v][jp][ip] = (char) 0;
 	      if (useEL && cm->endsc[v] > a[v][jp][ip]) {
 		a[v][jp][ip]      = cm->endsc[v];
-		if (ret_shadow != NULL) shadow[v][jp][ip] = -1;
+		if (ret_shadow != NULL) shadow[v][jp][ip] = USED_EL;
 	      }
 	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
 		if ((sc = a[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) >  a[v][jp][ip])
@@ -1719,7 +1821,7 @@ vinside(CM_t *cm, char *dsq, int L,
 	      if (ret_shadow != NULL) shadow[v][jp][ip] = (char) 0;
 	      if (useEL && cm->endsc[v] > a[v][jp][ip]) {
 		a[v][jp][ip]      = cm->endsc[v];
-		if (ret_shadow != NULL) shadow[v][jp][ip] = -1;
+		if (ret_shadow != NULL) shadow[v][jp][ip] = USED_EL;
 	      }
 	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
 		if ((sc = a[y+yoffset][jp-1][ip+1] + cm->tsc[v][yoffset]) >  a[v][jp][ip])
@@ -1745,7 +1847,7 @@ vinside(CM_t *cm, char *dsq, int L,
 	      if (ret_shadow != NULL) shadow[v][jp][ip] = 0;
 	      if (useEL && cm->endsc[v] > a[v][jp][ip]) {
 		a[v][jp][ip]      = cm->endsc[v];
-		if (ret_shadow != NULL) shadow[v][jp][ip] = -1;
+		if (ret_shadow != NULL) shadow[v][jp][ip] = USED_EL;
 	      }
 	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
 		if ((sc = a[y+yoffset][jp][ip+1] + cm->tsc[v][yoffset]) >  a[v][jp][ip])
@@ -1772,7 +1874,7 @@ vinside(CM_t *cm, char *dsq, int L,
 	      if (ret_shadow != NULL) shadow[v][jp][ip] = 0;
 	      if (useEL && cm->endsc[v] > a[v][jp][ip]) {
 		a[v][jp][ip]      = cm->endsc[v];
-		if (ret_shadow != NULL) shadow[v][jp][ip] = -1;
+		if (ret_shadow != NULL) shadow[v][jp][ip] = USED_EL;
 	      }
 	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
 		if ((sc = a[y+yoffset][jp-1][ip] + cm->tsc[v][yoffset]) >  a[v][jp][ip])
@@ -1789,6 +1891,24 @@ vinside(CM_t *cm, char *dsq, int L,
 	    }
 	  }
 	} /* finished calculating deck v */
+
+      /* Check for local begin getting us to the root.
+       */
+      if (allow_begin && a[v][j0-j1][0] + cm->beginsc[v] > bsc) 
+	{
+	  b   = v;
+	  bsc = a[v][j0-j1][0] + cm->beginsc[v];
+	}
+
+      /* Check whether we need to store the local begin score
+       * for a possible traceback.
+       */
+      if (allow_begin && v == 0 && bsc > a[0][j0-j1][0]) 
+	{
+	  a[0][j0-j1][0] = bsc;
+	  if (ret_shadow != NULL) shadow[v][j0-j1][0] = USED_LOCAL_BEGIN;
+	}
+
 
       /* Now, try to reuse memory under v.
        */
@@ -1807,6 +1927,9 @@ vinside(CM_t *cm, char *dsq, int L,
   /* Keep the score.
    */
   sc = a[r][j0-j1][0];
+  if (ret_b != NULL)   *ret_b   = b;    /* b is -1 if allow_begin is FALSE. */
+  if (ret_bsc != NULL) *ret_bsc = bsc;  /* bsc is IMPOSSIBLE if allow_begin is FALSE */
+
 
   /* If the caller doesn't want the score matrix back, blow
    * it away (saving decks in the pool). Else, pass it back.
@@ -1916,6 +2039,8 @@ voutside(CM_t *cm, char *dsq, int L,
   beta[r][j0-j1][0] = 0;		
 
   /* Initialize the EL deck, if we're in local mode w.r.t. ends.
+   * Deal with the special initialization case of the root state r
+   * immediately transitioning to EL, if we're supposed to use EL.
    */
   if (useEL && cm->flags & CM_LOCAL_END) {
     if (! deckpool_pop(dpool, &(beta[cm->M])))
@@ -1925,7 +2050,45 @@ voutside(CM_t *cm, char *dsq, int L,
 	beta[cm->M][jp][ip] = IMPOSSIBLE;
     }
   }
-
+  if (useEL && cm->endsc[r] != IMPOSSIBLE) {
+    switch(cm->sttype[r]) {
+    case MP_st:
+      if (i0 == i1 || j1 == j0) break;
+      if (dsq[i0] < Alphabet_size && dsq[j0] > Alphabet_size)
+	escore = cm->esc[r][(int) (dsq[i0]*Alphabet_size+dsq[j0])];
+      else
+	escore = DegeneratePairScore(cm->esc[r], dsq[i0], dsq[j0]);
+      beta[cm->M][j0-j1-1][1] = cm->endsc[r] + escore;
+      break;
+    case ML_st:
+    case IL_st:
+      if (i0 == i1) break;
+      if (dsq[i0] < Alphabet_size) 
+	escore = cm->esc[r][(int) dsq[i0]];
+      else
+	escore = DegenerateSingletScore(cm->esc[r], dsq[i0]);      
+      beta[cm->M][j0-j1][1] = cm->endsc[r] + escore;
+      break;
+    case MR_st:
+    case IR_st:
+      if (j0==j1) break;
+      if (dsq[j0] < Alphabet_size) 
+	escore = cm->esc[r][(int) dsq[j0]];
+      else
+	escore = DegenerateSingletScore(cm->esc[r], dsq[j0]);
+      beta[cm->M][j0-j1-1][0] = cm->endsc[r] + escore;
+      break;
+    case S_st:
+    case D_st:
+      beta[cm->M][j0-j1][0] = cm->endsc[r];
+      break;
+    default:  Die("bogus parent state %d\n", cm->sttype[r]);
+    }
+  }
+      
+  /* Initialize the "touch" array, used for figuring out
+   * when a deck is no longer touched, so it can be free'd.
+   */
   touch = MallocOrDie(sizeof(int) * cm->M);
   for (v = 0;   v < r;     v++) touch[v] = 0;
   for (v = z+1; v < cm->M; v++) touch[v] = 0;
@@ -1933,7 +2096,8 @@ voutside(CM_t *cm, char *dsq, int L,
     if (cm->sttype[v] == B_st) touch[v] = 2; /* well, we never use this, but be complete */
     else                       touch[v] = cm->cnum[v];
   }
-  
+
+
   /* Main loop down through the decks
    */
   for (v = r+1; v <= z; v++)
@@ -2013,15 +2177,66 @@ voutside(CM_t *cm, char *dsq, int L,
 
       }/* end loop over jp. We know the beta's for the whole deck.*/
 
-      /* Now that we've got a complete deck v, deal with local alignment
+      /* Now that we've got a complete deck v, check for an even
+       * better local begin transition into it, if necessary. By
+       * definition, beta[0][j0-j1][0] == 0.
+       */
+      if (r == 0 && i0 == 1 && j0 == L && (cm->flags & CM_LOCAL_BEGIN))
+	{
+	  if (cm->beginsc[v] > beta[v][j0-j1][0]) 
+	    beta[v][j0-j1][0] = cm->beginsc[v];
+	}
+
+      /* Deal with local alignment
        * transitions v->EL, if we're doing local alignment and there's a 
        * possible transition.
        */
       if (useEL && cm->endsc[v] != IMPOSSIBLE) {
-	for (jp = j0-j1; jp >= 0; jp--) 
+	for (jp = j0-j1; jp >= 0; jp--) {
+	  j = jp+j1;
 	  for (ip = 0; ip <= i1-i0; ip++) 
-	    if ((sc = beta[v][jp][ip] + cm->endsc[v]) > beta[cm->M][jp][ip]) 
-	      beta[cm->M][jp][ip] = sc;
+	    {
+	      i = ip+i0;
+	      switch (cm->sttype[v]) {
+	      case MP_st:
+		if (j == j0 || i == i0) continue; /* boundary condition */
+		if (dsq[i-1] < Alphabet_size && dsq[j+1] > Alphabet_size)
+		  escore = cm->esc[v][(int) (dsq[i-1]*Alphabet_size+dsq[j+1])];
+		else
+		  escore = DegeneratePairScore(cm->esc[v], dsq[i-1], dsq[j+1]);
+		if ((sc = beta[v][jp+1][ip-1] + cm->endsc[v] + escore) > beta[cm->M][jp][ip]) 
+		  beta[cm->M][jp][ip] = sc;
+		break;
+	      case ML_st:
+	      case IL_st:
+		if (i == i0) continue;
+		if (dsq[i-1] < Alphabet_size) 
+		  escore = cm->esc[v][(int) dsq[i-1]];
+		else
+		  escore = DegenerateSingletScore(cm->esc[v], dsq[i-1]);
+		if ((sc = beta[v][jp][ip-1] + cm->endsc[v] + escore) > beta[cm->M][jp][ip]) 
+		  beta[cm->M][jp][ip] = sc;
+		break;
+	      case MR_st:
+	      case IR_st:
+		if (j == j0) continue;
+		if (dsq[j+1] < Alphabet_size) 
+		  escore = cm->esc[v][(int) dsq[j+1]];
+		else
+		  escore = DegenerateSingletScore(cm->esc[v], dsq[j+1]);
+		if ((sc = beta[v][jp+1][ip] + cm->endsc[v] + escore) > beta[cm->M][jp][ip]) 
+		  beta[cm->M][jp][ip] = sc;
+		break;
+	      case S_st:
+	      case D_st:
+	      case E_st:
+		if ((sc = beta[v][jp][ip] + cm->endsc[v]) > beta[cm->M][jp][ip]) 
+		  beta[cm->M][jp][ip] = sc;
+		break;
+	      default:  Die("bogus parent state %d\n", cm->sttype[y]);
+	      } /* end switch over parent v state type */
+	    } /* end loop over ip */
+	} /* end loop over jp */
       }
 	
       /* Finished deck v.
@@ -2040,6 +2255,8 @@ voutside(CM_t *cm, char *dsq, int L,
 
     } /* end loop over decks v. */
 
+#if 0 
+  /* superfluous code, I think...*/
   /* Deal with the last step needed for local alignment
    * w.r.t. ends: left-emitting, zero-scoring EL->EL transitions.
    */
@@ -2049,6 +2266,7 @@ voutside(CM_t *cm, char *dsq, int L,
 	if ((sc = beta[cm->M][jp][ip-1]) > beta[cm->M][jp][ip]) 
 	  beta[cm->M][jp][ip] = sc;
   }
+#endif
 
   /* If the caller doesn't want the matrix, free it.
    * (though it would be *stupid* for the caller not to want the
@@ -2092,7 +2310,8 @@ voutside(CM_t *cm, char *dsq, int L,
  */
 static float
 insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
-	int r, int z, int i0, int j0)
+	int r, int z, int i0, int j0, 
+	int allow_begin)
 {
   void   ***shadow;             /* the traceback shadow matrix */
   float     sc;			/* the score of the CYK alignment */
@@ -2101,12 +2320,16 @@ insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
   int       k;			
   int       y, yoffset;
   int       bifparent;
+  int       b;
+  float     bsc;
 
   sc = inside(cm, dsq, L, r, z, i0, j0, 
 	      BE_EFFICIENT,	/* memory-saving mode */
 	      NULL, NULL,	/* manage your own matrix, I don't want it */
 	      NULL, NULL,	/* manage your own deckpool, I don't want it */
-	      &shadow);		/* return a shadow matrix to me. */
+	      &shadow,		/* return a shadow matrix to me. */
+	      allow_begin,      /* TRUE to allow local begins */
+	      &b, &bsc);	/* if allow_begin is TRUE, gives info on optimal b */
 
   pda = CreateNstack();
   v = r;
@@ -2131,8 +2354,8 @@ insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
       y = cm->cfirst[v];
       InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
       v = y;
-    } else if (cm->sttype[v] == E_st) {
-      /* We don't trace back from an E. Instead, we're done with the
+    } else if (cm->sttype[v] == E_st || cm->sttype[v] == EL_st) {
+      /* We don't trace back from an E or EL. Instead, we're done with the
        * left branch of the tree, and we try to swing over to the right
        * branch by popping a right start off the stack and attaching
        * it. If the stack is empty, then we're done with the
@@ -2149,7 +2372,7 @@ insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
       InsertTraceNode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, y);
       v = y;
     } else {
-      yoffset = ((char **)shadow[v])[j][d];
+      yoffset = ((char **) shadow[v])[j][d];
 
       switch (cm->sttype[v]) {
       case D_st:            break;
@@ -2163,14 +2386,22 @@ insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
       }
       d = j-i+1;
 
-      if (yoffset == -1) {	/* a local alignment end */
-	InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M);
-	break;
-      }
-
-      y = cm->cfirst[v] + yoffset;
-      InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
-      v = y;
+      if (yoffset == USED_EL) 
+	{	/* a local alignment end */
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M);
+	  v = cm->M;		/* now we're in EL. */
+	}
+      else if (yoffset == USED_LOCAL_BEGIN) 
+	{ /* local begin; can only happen once, from root */
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, b);
+	  v = b;
+	}
+      else 
+	{
+	  y = cm->cfirst[v] + yoffset;
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+	  v = y;
+	}
     }
   }
   FreeNstack(pda);  /* it should be empty; we could check; naaah. */
@@ -2188,7 +2419,7 @@ insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
  */
 static float
 vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
-	 int r, int z, int i0, int i1, int j1, int j0, int useEL)
+	 int r, int z, int i0, int i1, int j1, int j0, int useEL, int allow_begin)
 {
   char ***shadow;
   float   sc;
@@ -2196,12 +2427,16 @@ vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
   int     j,i;
   int     jp,ip;
   int     yoffset;
+  int     b;
+  float   bsc;
 
   sc = vinside(cm, dsq, L, r, z, i0, i1, j1, j0, useEL,
 	       BE_EFFICIENT,	/* memory-saving mode */
 	       NULL, NULL,	/* manage your own matrix, I don't want it */
 	       NULL, NULL,	/* manage your own deckpool, I don't want it */
-	       &shadow);	/* return a shadow matrix to me. */
+	       &shadow,      	/* return a shadow matrix to me. */
+	       allow_begin,     /* TRUE to allow local begin transitions */
+	       &b, &bsc);       /* info on optimal local begin */
 
   /* We've got a complete shadow matrix. Trace it back. We know
    * that the trace will begin with the start state r, at i0,j0
@@ -2235,18 +2470,26 @@ vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
     /* If the traceback pointer (yoffset) is -1, that's a special
      * flag for a local alignment end, e.g. transition to EL (state "M").
      */
-    if (yoffset == -1) {
-      InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M);
-      break;
-    }
-
-    /* 3. Attach y,i,j to the trace. This new node always attaches
-     *    to the end of the growing trace -- e.g. trace node
-     *    tr->n-1.
-     */
-    y = cm->cfirst[v] + yoffset;
-    InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
-    v = y;
+    if (yoffset == USED_EL) 
+      {
+	InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M);
+	v = cm->M;
+      }
+    else if (yoffset == USED_LOCAL_BEGIN) 
+      {
+	InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, b);
+	v = b;
+      }
+    else
+      {
+	/*    Attach y,i,j to the trace. This new node always attaches
+	 *    to the end of the growing trace -- e.g. trace node
+	 *    tr->n-1.
+	 */
+	y = cm->cfirst[v] + yoffset;
+	InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+	v = y;
+      }
   }
   
   /* We're done. Our traceback has just ended. We have just attached
@@ -2473,6 +2716,16 @@ deckpool_free(struct deckpool_s *d)
  *           a separation into "kshadow" (BIFURC) and "yshadow" (other
  *           states) decks, and some casting shenanigans in
  *           a full ***shadow matrix.
+ *           
+ *           Values in yshad are offsets to the next connected state,
+ *           or a flag for local alignment. Possible offsets range from
+ *           0..5 (maximum of 6 connected states). The flags are
+ *           USED_LOCAL_BEGIN (101) and USED_EL (102), defined at
+ *           the top of this file. Only yshad[0][L][L] (e.g. root state 0,
+ *           aligned to the whole sequence) may be set to USED_LOCAL_BEGIN.
+ *           (Remember that the dynamic range of yshad, as a char, is 
+ *           0..127, in ANSI C; we don't know if a machine will make it
+ *           signed or unsigned.)
  */
 static float **
 alloc_vjd_deck(int L, int i, int j)

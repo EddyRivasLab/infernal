@@ -29,6 +29,7 @@ Usage: cmscore [-options] <cmfile> <sequence file>\n\
 
 static char experts[] = "\
    --informat <s>: specify that input sequence file is in format <s>\n\
+   --local       : do local alignment (w.r.t. model)\n\
    --smallonly   : do only d&c, don't do full CYK/inside\n\
    --scoreonly   : for full CYK/inside stage, do only score, save memory\n\
 ";
@@ -36,6 +37,7 @@ static char experts[] = "\
 static struct opt_s OPTIONS[] = {
   { "-h", TRUE, sqdARG_NONE }, 
   { "--informat",   FALSE, sqdARG_STRING },
+  { "--local",      FALSE, sqdARG_NONE },
   { "--scoreonly",  FALSE, sqdARG_NONE },
   { "--smallonly",  FALSE, sqdARG_NONE },
 };
@@ -57,6 +59,7 @@ main(int argc, char **argv)
   float            sc1,  sc2;	/* score of a sequence */
   Parsetree_t     *tr1, *tr2;	/* a traceback */
   
+  int   do_local;		/* TRUE to align locally w.r.t. model       */
   int   do_scoreonly;		/* TRUE for score-only (small mem) full CYK */
   int   do_smallonly;		/* TRUE to do only d&c, not full CYK/inside */
   
@@ -70,12 +73,14 @@ main(int argc, char **argv)
    ***********************************************/
 
   format            = SQFILE_UNKNOWN;
+  do_local          = FALSE;
   do_scoreonly      = FALSE;
   do_smallonly      = FALSE;
   
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
-    if      (strcmp(optname, "--smallonly") == 0) do_smallonly = TRUE;
+    if      (strcmp(optname, "--local")     == 0) do_local     = TRUE;
+    else if (strcmp(optname, "--smallonly") == 0) do_smallonly = TRUE;
     else if (strcmp(optname, "--scoreonly") == 0) do_scoreonly = TRUE;
     else if (strcmp(optname, "--informat")  == 0) {
       format = String2SeqfileFormat(optarg);
@@ -111,7 +116,9 @@ main(int argc, char **argv)
   if (cm == NULL) 
     Die("%s empty?\n", cmfile);
 
+  if (do_local) ConfigLocal(cm, 0.5, 0.5);
   CMLogoddsify(cm);
+  CMHackInsertScores(cm);	/* TEMPORARY: FIXME */
 
   while (ReadSeq(sqfp, sqfp->format, &seq, &sqinfo))
     {
@@ -129,10 +136,10 @@ main(int argc, char **argv)
 	StopwatchZero(watch);
 	StopwatchStart(watch);
 	if (do_scoreonly) {
-	  sc1 = CYKInsideScore(cm, dsq, sqinfo.len);
+	  sc1 = CYKInsideScore(cm, dsq, sqinfo.len, 0, 1, sqinfo.len);
 	  printf("%-12s : %.2f\n", sqinfo.name, sc1);
 	} else {
-	  sc1 = CYKInside(cm, dsq, sqinfo.len, &tr1);  
+	  sc1 = CYKInside(cm, dsq, sqinfo.len, 0, 1, sqinfo.len, &tr1);  
 	  ParsetreeDump(stdout, tr1, cm, dsq);
 	  printf("%-12s : %.2f  %.2f\n", sqinfo.name, sc1,
 		 ParsetreeScore(cm, tr1, dsq));
@@ -146,7 +153,7 @@ main(int argc, char **argv)
       printf("-------------------------------\n");
       StopwatchZero(watch);
       StopwatchStart(watch);
-      sc2 = CYKDivideAndConquer(cm, dsq, sqinfo.len, &tr2);  
+      sc2 = CYKDivideAndConquer(cm, dsq, sqinfo.len, 0, 1, sqinfo.len, &tr2);  
       ParsetreeDump(stdout, tr2, cm, dsq);
       printf("%-12s : %.2f  %.2f\n", sqinfo.name, sc2,
 	     ParsetreeScore(cm, tr2, dsq));

@@ -87,13 +87,11 @@ extern float CYKScanRequires(CM_t *cm, int L, int W);
 
 /* from smallcyk.c
  */
-extern float CYKDivideAndConquer(CM_t *cm, char *dsq, int L, Parsetree_t **ret_tr);
-extern float CYKGlocalDivideAndConquer(CM_t *cm, char *dsq, int L, int i0, int j0,
-				       Parsetree_t **ret_tr);
-extern float CYKLocalDivideAndConquer(CM_t *cm, char *dsq, int L, int r0, int i0, int j0,
-				      Parsetree_t **ret_tr);
-extern float CYKInside(CM_t *cm, char *dsq, int L, Parsetree_t **ret_tr);
-extern float CYKInsideScore(CM_t *cm, char *dsq, int L);
+extern float CYKDivideAndConquer(CM_t *cm, char *dsq, int L,
+				 int r, int i0, int j0, Parsetree_t **ret_tr);
+extern float CYKInside(CM_t *cm, char *dsq, int L,
+		       int r, int i0, int j0, Parsetree_t **ret_tr);
+extern float CYKInsideScore(CM_t *cm, char *dsq, int L,
+			    int r, int i0, int j0);
 extern void  CYKDemands(CM_t *cm, int L);
-extern int   CYKDeckCount(CM_t *cm);
 

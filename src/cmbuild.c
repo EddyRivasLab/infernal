@@ -43,8 +43,9 @@ static char experts[] = "\
    --cmtbl <f>   : save tabular description of CM topology to file <f>\n\
    --tfile <f>   : dump individual sequence tracebacks to file <f>\n\n\
  Debugging, experimentation:\n\
-   --nobalance   : don't rebalance the CM; number in strict preorder.\n\
-   --treeforce   : score first seq in alignment and show parsetree.\n\
+   --nobalance   : don't rebalance the CM; number in strict preorder\n\
+   --regress <f> : save regression test information to file <f>\n\
+   --treeforce   : score first seq in alignment and show parsetree\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -58,6 +59,7 @@ static struct opt_s OPTIONS[] = {
   { "--gtbl",      FALSE, sqdARG_STRING },
   { "--gtree",     FALSE, sqdARG_STRING },
   { "--informat",  FALSE, sqdARG_STRING },
+  { "--regress",   FALSE, sqdARG_STRING },
   { "--rf",        FALSE, sqdARG_NONE },
   { "--tfile",     FALSE, sqdARG_STRING },
   { "--treeforce", FALSE, sqdARG_NONE },
@@ -104,6 +106,8 @@ main(int argc, char **argv)
   char *cmtblfile;              /* file to dump CM tabular description to  */
   char *gtreefile;              /* file to dump guide tree to              */
   char *gtblfile;               /* file to dump guide tree table to        */
+  char *regressionfile;		/* file to dump regression test info to    */
+  FILE *regressfp;		/* open file to dump regression test info  */
 
   /*********************************************** 
    * Parse command line
@@ -123,6 +127,7 @@ main(int argc, char **argv)
   cmtblfile         = NULL;
   gtblfile          = NULL;
   gtreefile         = NULL;
+  regressionfile    = NULL;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -139,6 +144,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--gtree")     == 0) gtreefile         = optarg;
     else if (strcmp(optname, "--cmtbl")     == 0) cmtblfile         = optarg;
     else if (strcmp(optname, "--tfile")     == 0) tracefile         = optarg;
+    else if (strcmp(optname, "--regress")   == 0) regressionfile    = optarg;
 
     else if (strcmp(optname, "--informat") == 0) {
       format = String2SeqfileFormat(optarg);
@@ -177,6 +183,12 @@ main(int argc, char **argv)
   if ((cmfp = fopen(cmfile, fpopts)) == NULL)
     Die("Failed to open CM file %s for %s\n", cmfile, 
 	do_append ? "appending" : "writing");
+
+				/* open regression test file */
+  if (regressionfile != NULL) {
+    if ((regressfp = fopen(regressionfile, "w")) == NULL) 
+      Die("Failed to open regression test file %s", regressionfile);
+  }
 
   watch = StopwatchCreate();
 
@@ -329,7 +341,24 @@ main(int argc, char **argv)
 	  fclose(ofp);
 	}
 
-      /* 5. Detailed parsetrees for the test set of forced parsetrees.
+      /* 5. Regression test info.
+       */
+      if (regressionfile != NULL) {
+	SummarizeCM(regressfp, cm);
+	PrintCM(regressfp, cm);
+	PrintParsetree(regressfp, mtr);
+	MasterTraceDisplay(regressfp, mtr, cm);
+	for (idx = treeforce; idx < msa->nseq; idx++) 
+	  {
+	    tr = Transmogrify(cm, mtr, dsq[idx], msa->aseq[idx], msa->alen);
+	    fprintf(regressfp, "> %s\n", msa->sqname[idx]);
+	    fprintf(regressfp, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr, dsq[idx]));
+	    ParsetreeDump(regressfp, tr, cm, dsq[idx]);
+	    fprintf(regressfp, "//\n"); 
+	  }
+      }
+
+      /* 6. Detailed parsetrees for the test set of forced parsetrees.
        *    We reconfig the model into local alignment.
        */
       if (treeforce) 
@@ -340,7 +369,7 @@ main(int argc, char **argv)
 	    {
 	      tr = Transmogrify(cm, mtr, dsq[idx], msa->aseq[idx], msa->alen);
 	      printf("> %s\n", msa->sqname[idx]);
-	      printf("  SCORE : %.2f bits\n", ParsetreeScore(cm, tr, dsq[idx]));;
+	      printf("  SCORE : %.2f bits\n", ParsetreeScore(cm, tr, dsq[idx]));
 	      ParsetreeDump(stdout, tr, cm, dsq[idx]);
 	      printf("//\n");
 	      FreeParsetree(tr);
@@ -356,6 +385,7 @@ main(int argc, char **argv)
 
   /* Clean up and exit
    */
+  if (regressionfile != NULL) fclose(regressfp);
   StopwatchFree(watch);
   MSAFileClose(afp);
   fclose(cmfp);
