@@ -10,6 +10,8 @@
  */
 
 #include "squid.h"
+#include "vectorops.h"
+
 #include "structs.h"
 #include "funcs.h"
 

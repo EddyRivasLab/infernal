@@ -26,8 +26,8 @@ SRE, Thu Jul  4 10:27:28 2002
 	% cd infernal-xxx
 	% ./configure --enable-lfs prefix=/usr/seshare/ exec_prefix=/usr/seshare/`uname`
 	% make
- ... eventually, when we worry about installs, we'd do: ...
 	% make check
+ ... eventually, when we worry about installs, we'd do: ...
 	% make install         <-- I don't need root to do this
 	% ssh w001
 	% cd /nfs/wol2/people/eddy/src/squid/squid-xxx
@@ -42,7 +42,6 @@ SRE, Thu Jul  4 10:27:28 2002
 
 
 
-0.3 - release to Sanger for Rfam construction
-      SRE, Thu Jul  4 10:27:16 2002
-0.5 - release to Sanger for Rfam construction
-      SRE, Sun Oct  6 14:22:47 2002
+0.3  - SRE, Thu Jul  4 10:27:16 2002
+0.5  - SRE, Sun Oct  6 14:22:47 2002
+0.51 - SRE, Wed Oct  9 09:43:50 2002

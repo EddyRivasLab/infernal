@@ -11,7 +11,10 @@
 
 #include <string.h>
 #include <ctype.h>
+
 #include "squid.h"
+#include "vectorops.h"
+
 #include "structs.h"
 
 /* Function: SymbolIndex()

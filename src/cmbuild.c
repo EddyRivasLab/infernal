@@ -22,6 +22,7 @@
 #include "squid.h"		/* general sequence analysis library    */
 #include "msa.h"                /* squid's multiple alignment i/o       */
 #include "stopwatch.h"          /* squid's process timing module        */
+#include "vectorops.h"
 
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */

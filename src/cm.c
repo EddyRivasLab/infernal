@@ -11,9 +11,12 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <math.h>
 
 #include "squid.h"
+#include "vectorops.h"
+
 #include "nstack.h"
 #include "structs.h"
 #include "funcs.h"
@@ -162,20 +165,16 @@ CMRenormalize(CM_t *cm)
 {
   int v;
 
-  if (! FNorm(cm->null, Alphabet_size)) Die("FNorm() failed on null model");
+  FNorm(cm->null, Alphabet_size);
   for (v = 0; v < cm->M; v++)
     {
-      if (cm->cnum[v] > 0 &&
-	  cm->sttype[v] != B_st &&
-	  ! FNorm(cm->t[v], cm->cnum[v]))
-	Die("FNorm() failed on a transition");
+      if (cm->cnum[v] > 0 && cm->sttype[v] != B_st)
+	FNorm(cm->t[v], cm->cnum[v]);
       
-      if ((cm->sttype[v] == ML_st || cm->sttype[v] == MR_st || cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) &&
-	  ! FNorm(cm->e[v], Alphabet_size))
-	Die("FNorm() failed on a singlet emission");
-      if (cm->sttype[v] == MP_st &&
-	  ! FNorm(cm->e[v], Alphabet_size * Alphabet_size))
-	Die("FNorm() failed on a pair emission");
+      if (cm->sttype[v] == ML_st || cm->sttype[v] == MR_st || cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
+	FNorm(cm->e[v], Alphabet_size);
+      if (cm->sttype[v] == MP_st)
+	FNorm(cm->e[v], Alphabet_size * Alphabet_size);
     }
   if (cm->flags & CM_LOCAL_BEGIN) FNorm(cm->begin, cm->M);
   if (cm->flags & CM_LOCAL_END)   Die("Renormalization of models in local end mode not supported yet");

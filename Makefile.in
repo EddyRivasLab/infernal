@@ -143,6 +143,13 @@ dist:
 	tar cvf ${BASENAME}-${RELEASE}.tar ${BASENAME}-${RELEASE}
 	$(COMPRESS) ${BASENAME}-$(RELEASE).tar
 
+# "make check" runs the sqc exercises in the test suite, at level 4.
+# To run faster, reduce the level (level 1 runs a few tests, level 4
+# runs a lot).
+#
+check:
+	(cd testsuite; ./sqc 4 exercises.sqc ../src)
+
 # "make clean" removes almost everything except configuration files
 #              and binaries.
 clean:

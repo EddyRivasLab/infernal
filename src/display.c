@@ -16,6 +16,8 @@
 #include <ctype.h>
 
 #include "squid.h"
+#include "vectorops.h"
+
 #include "nstack.h"
 #include "structs.h"
 #include "funcs.h"
@@ -515,7 +517,7 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
 	 */
 	if (cm->stid[v] == MATP_MP) 
 	  {
-	    x = FMax(cm->esc[v], Alphabet_size*Alphabet_size);
+	    x = FArgMax(cm->esc[v], Alphabet_size*Alphabet_size);
 	    lchar = Alphabet[x / Alphabet_size];
 	    rchar = Alphabet[x % Alphabet_size];
 	    if (cm->esc[v][x] < pthresh) {
@@ -529,7 +531,7 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
 	    default: lstruc = '{'; rstruc = '}'; break;
 	    }
 	} else if (cm->stid[v] == MATL_ML) {
-	  x = FMax(cm->esc[v], Alphabet_size);
+	  x = FArgMax(cm->esc[v], Alphabet_size);
 	  lchar = Alphabet[x];
 	  if (cm->esc[v][x] < sthresh) lchar = tolower(lchar);
 	  if      (outface[nd] == 0)                    lstruc = '.'; /* external ss */
@@ -538,7 +540,7 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
 	  else                                          lstruc = ','; /* multiloop */
 	  rstruc = ' ';
 	} else if (cm->stid[v] == MATR_MR) {
-	  x = FMax(cm->esc[v], Alphabet_size);
+	  x = FArgMax(cm->esc[v], Alphabet_size);
 	  rchar = Alphabet[x];
 	  if (cm->esc[v][x] < sthresh) rchar = tolower(rchar);
 	  if      (outface[nd] == 0)                    rstruc = '.'; /* external ss */
