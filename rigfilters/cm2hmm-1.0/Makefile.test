@@ -4,12 +4,10 @@ COMPILE=g++ -c
 LINK=g++
 
 INFERNAL_PATH=../..
-#LPSOLVE_PATH=$(INFERNAL_PATH)/rigfilters/lp_solve_4.0/src
-LPSOLVE_PATH=~/zasha/cm2hmm-1.0/NotByZasha/lp_solve_4.0/
 CFSQP_PATH=$(INFERNAL_PATH)/rigfilters/cfsqp
 
-LIBS=$(INFERNAL_PATH)/src/libinfernal.a $(INFERNAL_PATH)/squid/libsquid.a $(LPSOLVE_PATH)/liblpk.a $(CFSQP_PATH)/cfsqp.a
-common_CFLAGS=-ftemplate-depth-30 -idirafter . -idirafter $(INFERNAL_PATH)/src -idirafter $(INFERNAL_PATH)/squid -idirafter $(LPSOLVE_PATH) -idirafter $(CFSQP_PATH)
+LIBS=$(INFERNAL_PATH)/src/libinfernal.a $(INFERNAL_PATH)/squid/libsquid.a $(CFSQP_PATH)/cfsqp.a
+common_CFLAGS=-ftemplate-depth-30 -idirafter . -idirafter $(INFERNAL_PATH)/src -idirafter $(INFERNAL_PATH)/squid -idirafter $(CFSQP_PATH)
 common_LFLAGS= -g
 
 # debug build
