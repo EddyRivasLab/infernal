@@ -130,7 +130,7 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
 
       alpha[v][1][0] = alpha[v][0][0];
       if (cm->stid[v] == BEGL_S) 
-	for (j = 2; j < W; j++) 
+	for (j = 2; j <= W; j++) 
 	  alpha[v][j][0] = alpha[v][0][0];
     }
   for (d = 1; d <= W; d++)
@@ -234,6 +234,7 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
 	      for (d = 1; d <= W && d <= j; d++) 
 		{
 		  alpha[v][cur][d] = cm->endsc[v];
+
 		  for (k = 0; k <= d; k++) /* k is length of right fragment */
 		    {
 		      jp = (j-k)%(W+1);	   /* jp is rolling index into BEGL_S deck j dimension */

@@ -125,7 +125,7 @@ HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh,
    *    Even though msa->ss_cons is in the 0..alen-1 coord system of msa, ct[]
    *    comes back in the 1..alen coord system of dsq.
    */
-  if (! KHS2ct(msa->ss_cons, msa->alen, FALSE, &ct))  
+  if (! WUSS2ct(msa->ss_cons, msa->alen, FALSE, &ct))  
     Die("Consensus structure string is inconsistent"); 
 
   /* 3. Make sure the consensus structure "ct" is consistent with the match assignments.

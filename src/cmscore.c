@@ -92,15 +92,16 @@ main(int argc, char **argv)
   do_smallonly        = FALSE;
   regressfile         = NULL;
   projectX            = FALSE;
-  compare_stringently = TRUE;
+  compare_stringently = FALSE;
   
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
-    if      (strcmp(optname, "--local")     == 0) do_local     = TRUE;
-    else if (strcmp(optname, "--regress")   == 0) regressfile  = optarg;
-    else if (strcmp(optname, "--smallonly") == 0) do_smallonly = TRUE;
-    else if (strcmp(optname, "--scoreonly") == 0) do_scoreonly = TRUE;
-    else if (strcmp(optname, "--X")         == 0) projectX     = TRUE;
+    if      (strcmp(optname, "--local")     == 0) do_local            = TRUE;
+    else if (strcmp(optname, "--regress")   == 0) regressfile         = optarg;
+    else if (strcmp(optname, "--smallonly") == 0) do_smallonly        = TRUE;
+    else if (strcmp(optname, "--scoreonly") == 0) do_scoreonly        = TRUE;
+    else if (strcmp(optname, "--stringent") == 0) compare_stringently = TRUE;
+    else if (strcmp(optname, "--X")         == 0) projectX            = TRUE;
     else if (strcmp(optname, "--informat")  == 0) {
       format = String2SeqfileFormat(optarg);
       if (format == SQFILE_UNKNOWN) 

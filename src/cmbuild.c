@@ -572,14 +572,14 @@ clean_cs(char *cs, int alen)
 
   /* 1. Maybe we're ok and don't need any cleaning.
    */
-  status = KHS2ct(cs, alen, FALSE, &ct);
+  status = WUSS2ct(cs, alen, FALSE, &ct);
   free(ct);
   if (status == 1) return 1;
 
   /* 2. Maybe we have a good CS line but it annotates one or
    *    or more pseudoknots that have to be deleted.
    */
-  if ((status = KHS2ct(cs, alen, TRUE, &ct)) == 1) { 
+  if ((status = WUSS2ct(cs, alen, TRUE, &ct)) == 1) { 
     has_pseudoknots = TRUE; 
     printf("    [Consensus structure has annotated pseudoknots that will be ignored.]\n");
     fflush(stdout);
@@ -608,7 +608,7 @@ clean_cs(char *cs, int alen)
 
   /* Check it again.
    */
-  status = KHS2ct(cs, alen, FALSE, &ct);
+  status = WUSS2ct(cs, alen, FALSE, &ct);
   free(ct);
   if (status == 1) return 1;
 

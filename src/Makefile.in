@@ -25,7 +25,7 @@ LIBS  = @LIBS@
 #  only used for building the testsuite anyway... e.g. we
 #  make a "libhmmer.a" library for building the testsuite.
 #
-AR     = ar rcv 
+AR     = @AR@ rcv 
 RANLIB = @RANLIB@
 
 # Where the build arena is (module .h and .o files)
@@ -47,7 +47,6 @@ OBJS  = alphabet.o\
 	modelconfig.o\
 	modelmaker.o\
 	parsetree.o\
-	rna_ops.o\
 	scancyk.o\
 	smallcyk.o
 

@@ -59,6 +59,45 @@ nonetheless.)  Second, in modelconfig.c:ConfigLocal(), zero the
 transition p's for state 0; only local begin transitions are
 active. Note that this means we've lost anything we trained for these
 transitions.
+
+//
+ID              i4
+TITLE           test suite fails on 14,15,16,17,22
+STATUS          CLOSED
+XREF            STL8/p4
+REPORTED_BY     Jan Wuyts <jan.wuyts@psb.ugent.be>, 21 Nov 2004;
+		Par Larsson <par.larsson@foi.se>, 23 Jan 2004.
+OPENED_DATE     SRE, Mon Jan 26 10:14:57 2004
+CLOSED_DATE     SRE, Mon Jan 26 10:52:41 2004
+DESCRIPTION     
+
+cmscore fails because optimal parse trees from D&C and normal CYK
+differ, for random sequence targets. These cmscore tests are too
+aggressive. There can be more than one tree tied at the optimal score;
+which one is returned is arbitrary. Looks like I'd already realized
+this was a problem because cmscore has a --stringent option, but this
+option was defaulting to always TRUE, instead of being parsed on the
+cmd line. Made it default to FALSE, and added check on command line.
+//
+ID              i5
+TITLE           weird high-scoring hits with cmsearch --local
+STATUS          
+XREF            STL8/p4; agb email, 9 Jan 2004
+REPORTED_BY     Alex Bateman <agb@sanger.ac.uk>
+OPENED_DATE     SRE, Mon Jan 26 12:22:51 2004
+CLOSED_DATE     
+DESCRIPTION     
+
+Alex sends a hammerhead CM and a sequence (BC050488.1/550-824) which
+has two obviously bogus hits: a hit from 14..6, 31.83 bits, with only
+two nucleotides aligned; and 146..90, 35.42 bits, with a little bit
+more than that aligned but not enough. Does not reproduce on Linux;
+Alex probably used Alpha/Tru64.
+
+Was only initializing d=0 from 0..W-1 for the BEGL_S states; needs to
+be initialized from 0..W. < W becomes <= W at initialization;
+cykscan.c:133.
+
 //
 
 

@@ -21,17 +21,33 @@ to align and score the sequences in
 and output the score and optimal alignment for each one.
 .B cmscore 
 is a testbed 
-for new CM alignment algorithms, and
-is not intended to be particularly useful in the real world. Documentation
-is provided for completeness... and to aid my own memory.
+for new CM alignment algorithms, and it is also used by the testsuite.
+It is not intended to be particularly useful in the real world. Documentation
+is provided for completeness, and to aid my own memory.
 
 .PP
 Currently, 
 .B cmscore
 aligns the sequence(s) by both the full CYK algorithm and
 the divide and conquer variant (SR Eddy, BMC Bioinformatics 3:18,
-2002), and outputs both parse trees; these should be identical
-for any sequence.
+2002), and outputs both parse trees.
+
+
+.PP
+Usually, the two parse trees should be identical for any sequence.
+However, there can be cases of ties, where two or more different parse
+trees have identical scores. In such cases, it is possible for the two
+parse trees to differ. The parse tree selected as "optimal" from
+amongst the ties is arbitrary, dependent on order of evaluation in the
+DP traceback, and the order of evaluation for D&C vs. standard CYK is
+different. 
+Thus, in its testsuite role,
+.B cmscore 
+checks that the scores are within 0.01 bits of each other, but
+does not check that the parse trees are absolutely identical;
+identity can be checked for using the
+.B --stringent
+option.
 
 .PP
 The sequence file can be in most any common biosequence format,
@@ -108,7 +124,12 @@ algorithm.
 .TP
 .B --stringent
 Require the two parse trees to be identical; fail and return a
-non-zero exit code if they are not.
+non-zero exit code if they are not. Normally, 
+.B cmscore 
+only requires that the two parse trees have identical scores
+(within a floating point tolerance of 0.01 bits), because 
+it is possible to have more than one parse tree with the same
+score.
 
 .TP 
 .B --X
