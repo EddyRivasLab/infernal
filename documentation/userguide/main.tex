@@ -1,0 +1,37 @@
+% Organizing document for the Infernal User's Guide
+%
+% CVS $Id$
+
+\documentclass[11pt]{report}
+\newif\ifpdf
+\ifx\pdfoutput\undefined
+  \pdffalse
+  \typeout{Configured for dvips (PS not PDF)}
+\else
+  \pdftrue
+  \typeout{Configured for PDF output.}
+\fi
+\ifpdf
+  \usepackage[pdftex]{graphicx}     % comment out if not using graphicx
+\else  
+  \usepackage[dvips]{graphicx}      % comment out if not using graphicx
+\fi
+\usepackage{html}		% From the LaTeX2html translator
+\usepackage{apalike}
+\usepackage{fullpage}
+\usepackage{times}
+
+\setcounter{secnumdepth}{1}
+
+\input{macros}
+
+\begin{document}
+\bibliographystyle{apalike}
+
+\input{titlepage}
+\input{copyright}
+\tableofcontents
+\input{intro}
+
+\bibliography{master,lab,new}
+\end{document}
