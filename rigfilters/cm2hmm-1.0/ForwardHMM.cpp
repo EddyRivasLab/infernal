@@ -133,11 +133,12 @@ Real /* expected score */ InfiniteLengthForwardAlg_LastStateDoesntEmit_StartWith
 	return InfiniteLengthForwardAlg_LastStateDoesntEmit<Hmm,Real>(hmm,startState,endState,markovModelStats);
 }
 
+/* DLK: commented out this apparently unused function.  Undeclared variable selfLoopSomething causes issues for strict compilers
 // I didn't really implement the following function.  It looks like higher-order Markov models aren't going to help the HMMs all that much, and it's tricky to implement.
 // generalizes InfiniteLengthForwardAlg_LastStateDoesntEmit to arbitrary-order Markov models.  I've re-written the function, since much has to change.  Also, for this function, I'm planning to generate the objective functions to optimize HMMs using a fake 'Real' class that actually does symbolic expressions.  Therefore, there's no need to be able to set a start/end state, or make sure that we don't over/under-count emissions (in InfiniteLengthForwardAlg_LastStateDoesntEmit, I had to make sure it was as if endState didn't emit).  This is really convenient, since emissions will be tricky here.
 // issues: IL self-loops with a general MM -- the infinite geometric series could get weird...
 template <class Hmm,class Real>
-Real /* expected score */ InfiniteLengthForwardAlg_GeneralMarkov (const Hmm& hmm,MarkovModelStats& markovModelStats)
+Real *//* expected score *//* InfiniteLengthForwardAlg_GeneralMarkov (const Hmm& hmm,MarkovModelStats& markovModelStats)
 {
 	typename Hmm::State state;
 	const typename Hmm::State startState=hmm.GetStartState();
@@ -246,6 +247,7 @@ Real /* expected score */ InfiniteLengthForwardAlg_GeneralMarkov (const Hmm& hmm
 
 	return total;
 }
+*/
 
 double CalcExpectedEmitProb_0order_InfernalHmmDouble (const InfernalHmm& infernalHmm,InfernalHmm::State state,MarkovModelStats& markovModelStats)
 {

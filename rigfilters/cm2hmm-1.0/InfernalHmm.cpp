@@ -315,7 +315,7 @@ bool InfernalHmm::LoadInBinary (FILE *file)
 		}
 		fromCmFileName=cmFileNameTemp;
 
-		fullBuildDescription.clear();
+		fullBuildDescription = "";
 		fscanf(file,"hmmBuildCommands: ");
 		while (true) {
 			int ch=fgetc(file);
