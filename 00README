@@ -34,6 +34,6 @@ To run examples:
         % cmscore --smallonly ssu.cm ssu.fa   [Parses/aligns E. coli SSU]
         % cmscore --scoreonly ssu.cm ssu.fa   [Scores SSU]
 
-SRE, Mon Apr 29 16:02:38 2002 [St. Louis]
+SRE, Wed Apr  2 18:13:28 2003 [St. Louis]
 
 

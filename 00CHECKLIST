@@ -13,6 +13,7 @@ SRE, Thu Jul  4 10:27:28 2002
 2. Test dev code before making release: exercises and bugs
    This works anywhere (e.g. wren; don't have to be on wrasse)
    Includes the memory leak tests.
+   ccmalloc 0.3.9 is installed in /usr/local on wren and wrasse.
     	% autoconf
      	% env CC="ccmalloc gcc" ./configure 
         % make
@@ -69,3 +70,4 @@ SRE, Thu Jul  4 10:27:28 2002
 0.52 - SRE, Mon Oct 14 2002
 0.53 - SRE, Thu Jan  2 14:24:07 2003
 0.54 - SRE, Sun Jan  5 18:17:55 2003
+0.55 - SRE, Wed Apr  2 18:12:23 2003
