@@ -287,7 +287,6 @@ HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh,
 	  v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, BIF_nd);
 
 	  bestk    = ct[i]+1;
-#if 0
 	  bestdiff = msa->alen;
 	  for (k = ct[i] + 1; k < ct[j]; k = ct[k] + 1) 
 	    {
@@ -298,7 +297,6 @@ HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh,
 	      }
 	      while (ct[k] == 0) k++;
 	    }
-#endif
 				/* push the right BEGIN node first */
 	  PushNstack(pda, v);	
 	  PushNstack(pda, bestk);
