@@ -49,16 +49,16 @@ PACKAGE     = "INFERNAL"
 RELEASE     = "0.1"
 RELCODE     = "rel0_1"
 RELEASEDATE = "in progress"
-COPYRIGHT   = "Copyright \(C\) 2000 HHMI/Washington University School of Medicine"
+COPYRIGHT   = "Copyright \(C\) 2002 HHMI/Washington University School of Medicine"
 LICENSE     = "Freely distributed under the GNU General Public License \(GPL\)"
 LICENSETAG  = gnu
 COMPRESS    = gzip
 
 # The program lists below for INFERNAL are not necessarily
 # a complete manifest. They are the list of stable programs that the
-# package will install. There must be a man page for each one of them
+# package will install. There must eventually be a man page for each one of them
 # in man/. (The list in src/Makefile.in is the complete manifest
-# of INFERNAL programs)
+# of INFERNAL programs.)
 #
 PROGS = cmbuild\
 	cmscore
@@ -129,12 +129,6 @@ dist:
 	# Make the configure script from configure.in
 	#
 	(cd ${BASENAME}-${RELEASE}; autoconf)
-	# 
-	# Include the appropriate license files and release notes
-	#
-	cp  Licenses/LICENSE.$(LICENSETAG)  ${BASENAME}-$(RELEASE)/LICENSE
-	cp  Licenses/COPYING.$(LICENSETAG)  ${BASENAME}-$(RELEASE)/COPYRIGHT
-	-cp ReleaseNotes/RELEASE-$(RELEASE) ${BASENAME}-$(RELEASE)/NOTES
 	#
 	# Attach license stamps on files that need 'em (replace LICENSE keyword)
 	# licenseadd.pl is basically harmless, so we can overannotate here by
@@ -146,6 +140,8 @@ dist:
 	#
 	-rm -rf ${BASENAME}-${RELEASE}/Licenses
 	-rm -rf ${BASENAME}-${RELEASE}/configure.in
+	-rm -rf ${BASENAME}-${RELEASE}/Manuscripts
+	-rm -rf ${BASENAME}-${RELEASE}/testsuite
 	#
 	# Packaging commands
 	#

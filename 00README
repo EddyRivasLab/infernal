@@ -1,0 +1,32 @@
+infernal - inference of RNA secondary structure alignments
+Sean Eddy (eddy@genetics.wustl.edu)
+HHMI & Washington University School of Medicine, Saint Louis.
+
+This is release 0.1 - a dysfunctional release that's only intended to
+document the paper "A memory efficient dynamic programming algorithm
+for optimal structural alignment of a sequence to an RNA secondary
+structure", SR Eddy, BMC Bioinformatics, submitted (2002).
+
+To build the software:
+	./configure
+	make
+
+To peruse the source code:
+	it's in the src/ subdirectory.
+	The covariance model structure is in structs.h
+	Model construction code is in modelmaker.c
+	The divide and conquer algorithm is in smallcyk.c
+
+To run examples:
+	The data used to generate Table 1 in the paper are in the intro/ subdirectory.
+	To gather the SSU data, for example (deal with path issues yourself; 
+        executables are in the binaries/ subdir after a "make"):
+
+	% cmbuild ssu.cm ssu.sto              [Builds model from alignment.]
+        % cmscore --smallonly ssu.cm ssu.fa   [Parses/aligns E. coli SSU using model ssu.cm]
+        % cmscore --scoreonly ssu.cm ssu.fa   [Scores SSU, using score-only Inside algorithm]
+		
+
+SRE, Mon Apr 29 16:02:38 2002 [St. Louis]
+
+
