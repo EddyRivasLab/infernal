@@ -16,6 +16,9 @@
 \usepackage{alg}
 \bibliographystyle{bmc_bioinformatics}
 
+\def\argmax{\mathop{\mathrm{argmax}}\limits}
+\def\argmin{\mathop{\mathrm{argmin}}\limits}
+
 \setcounter{secnumdepth}{0}
 
 \begin{document}
@@ -29,9 +32,6 @@ Saint Louis, Missouri 63110 USA \\
 eddy@genetics.wustl.edu}  
 \date{\today}
 \maketitle
-
-\def\argmax{\mbox{\rm{argmax}}}      % argmax
-\def\argmin{\mbox{\rm{argmin}}}      % argmin
 
 \abstract{The problem of optimally aligning an RNA sequence to an RNA
 secondary structure consensus model is considered. Stochastic
@@ -489,6 +489,116 @@ dynamic programming matrices with coordinates $v,i,j$, $\alpha_v(i,j)
 + \beta_v(i,j)$ gives us the score of the best alignment that passes
 through that cell. 
 
+\subsection{inside and inside$^{\cal{T}}$}
+
+The subroutine \texttt{inside} implements the Inside/CYK SCFG
+alignment algorithm in a form that minimizes the memory requirement by
+discarding most of the 3D matrix during the calculation.
+
+The algorithm works by iteratively calculating $\alpha_v(i,j)$, the
+log probability of the most likely parse tree that generates a
+subsequence $x_i..x_j$ from a subgraph of the model rooted at state
+$v$. The calculation initializes at the smallest subgraphs and
+subsequences (e.g. subgraphs rooted at E states, generating
+subsequences of length 0). It iterates over longer and longer
+subsequences and larger and larger subgraphs until it has calculated
+$\alpha_r(g,h)$ -- the log probability of the best alignment of the
+whole CM $G$ to the whole sequence $a_1..a_L$.
+
+\begin{verbatim}
+\begin{algorithm}
+\alginout{A CM subgraph $G_{r..z}$ and subsequence $x_g..x_q$.}
+         {inside: scoring matrix \alpha{r..z}.\\
+          inside$\mathcal{T}$: parse subtree $\mathcal{T}$.}
+\algname{inside}{r,z; g,q} 
+\algname{inside$\mathcal{T}$}{r,z; g,q} 
+\begin{algtab}
+\algforto{$v = z$}{$r$}
+  Allocate deck $\alpha_v$ (rows $j=g-1..q$, columns $i=g..j+1$)//
+  $\alpha_v(i,j) \leftarrow -\infty \forall i,j$//
+  \algforto{$j = g-1$}{$q$} 
+    \algforto{$i = j+1$}{$g$}
+       $d \leftarrow j-1+1$\\
+       $\alpha_v(i,j) = 	
+
+    Allocate memory for a new deck \alpha_v with rows j=0..L, columns i=1..j+1.
+    Allocate a shadow deck \tau_v.
+    Set all values in \alpha_v to -\infty, and \tau_v to -1.
+
+    for j = 0 to L; for i = j+1 to 1:
+     d = j-i+1;
+     
+     for S_v: &  \alpha_v(i,j) =                                                    & \tau(i,j) = \\
+     D,S:     &\max_{y \in C(v)} \alpha_y(i,j)  + \log t_v(y)	                    & \argmax_y\\
+     P,d>=2:  &\log e(a_i, a_j) + \max_{y \in C(v)} \alpha_y(i+1,j-1) + \log t_v(y) & \argmax_y\\
+     L,d>=1:  &\log e(a_i) +      \max_{y \in C(v)} \alpha_y(i+1,j)   + \log t_v(y) & \argmax_y\\
+     R,d>=1:  &\log e(a_j) +      \max_{y \in C(v)} \alpha_y(i,j-1)   + \log t_v(y) & \argmax_y\\
+     B:       &\max_k \alpha_y(i,k) + \alpha_z(k+1,j)                               & \argmax_k\\
+     E,d=0:   & 0                                                                   & -1\\
+
+    for each y \in C(v): if all P(y) > v, free the memory for deck \alpha_y.
+\end{verbatim}
+
+The $\tau$ values are a ``shadow matrix'' that requires further
+explanation. In some cases, we will call inside as inside$^{\cal{T}}$.
+In these cases, we know the problem is small enough that a divide and
+conquer is no longer needed, and we want to trace back an optimal
+parse tree $\cal{T}$. One way to do this would be to keep a full
+$\alpha$ matrix in memory and tracing back by recapitulating the
+calculations in reverse. It is easier and more memory efficient to
+keep a ``shadow'' traceback pointer matrix $\tau$. (The memory
+efficiency results from the fact that the non-bifurcation $\tau$'s
+only need a range of 0..5 and fit in a few bits, compared to
+$\alpha$'s which are log probabilities requiring greater dynamic range
+and more bits.)  A $\tau_v(i,j)$ traceback pointer either records the
+index $y$ that maximized $\alpha_v(i,j)$ (for state types D,S,P,L,R)
+or records the split point $k$ that maximized $\alpha_v(i,j)$ for a
+bifurcation (B) state. We trace back through the shadow matrix to
+obtain the optimal sub-alignment that gave the optimal score. The most
+simple explanation of this traceback is a recursive one: we call
+subroutine traceback(v=0, i=1, j=L):
+
+\begin{verbatim}
+subroutine traceback(v,i,j):
+  S_v = E:     attach v;
+  S_v = S,D :  attach v;           traceback(\tau_v(i,j), i, j).
+  S_v = P :    attach a_i,v,a_j;   traceback(\tau_v(i,j), i+1, j-1).
+  S_v = L :    attach a_i,v;       traceback(\tau_v(j,d), i+1, j).
+  S_v = R :    attach v,a_j;       traceback(\tau_v(j,d), i,   j-1).
+  S_v = B :    attach v;           traceback(y, i, \tau_v(j,d));   traceback(z, \tau_v(i,j)+1, j).
+\end{verbatim}
+
+When inside is called (as opposed to inside$^{\cal{T}}$), none of the
+$\tau$ shadow operations are performed in inside. Instead, the 3D
+scoring matrix itself is returned, containing the deck $\alpha_v$ (and
+possibly a few other valid, unfree'd score decks; see below).
+
+The memory handling in inside\_engine also needs further explanation.
+Recall that the key to the memory efficiency of the divide and conquer
+approach is that we don't need to keep the entire $\alpha$ matrix in
+memory to calculate scores. In the above formulation, with the outer
+loop ranging over decks for the CM states $v$, as we reach higher
+decks $v$ in the 3D matrix, our calculations may no longer depend on
+certain lower decks. Since we are moving sequentially ``upwards'' in
+the states from state $M$ to state $1$, a simple test (all P(y) >
+v?)  is sufficient to determine whether the scores in deck y will be
+needed by any higher decks; if deck y is not needed, its memory can be
+released. (Since all the decks are the same size, an implementation
+can recycle ``free'd'' decks, saving memory allocation calls. Also,
+note that the values in all end decks are identical, so only one end
+deck needs to be calculated, and that precalculated deck can be reused
+whenever $S_v = E$.)
+
+This rule, combined with the structure of a CM, has an additional nice
+property. When inside is called by generic\_splitter, for a CM graph
+$G$ in which state 1 is always a start state, we only need the deck
+$\alpha_1$ returned -- and since all the states $y$ that a start state
+connects to cannot have another parent higher in the CM, when the
+algorithm completes, $\alpha_1$ is the only deck left unfree'd.
+[more here]
+
+
+
 Thus, for any chosen state $v$, $\argmax_{i,j} \alpha_{v}(i,j) +
 \beta_{v}(i,j)$ tells us which cell $v,i,j$ the optimal parse tree
 passes through, \emph{conditional on using state $v$ in the parse}.
@@ -583,12 +693,14 @@ for $z$. A V problem is solved by a split set-dependent strategy: an
 optimal $(v,i,j)$ is found, splitting the problem into two V problems.
 \end{itemize}
 
-\subsection{generic\_splitter}
+The three recursive splitting algorithms to solve these problems
+are as follows:
 
+\subsection{generic\_splitter}
 \begin{algorithm}
 \alginout{A generic problem, for CM subgraph $G_{r..z}$ and
           subsequence $x_{g..q}$.}
-         {An optimal parse subtree ${\cal T}^{r..z}_{g..q}$.}
+         {An optimal parse subtree $\mathcal{T}$.}
 
 \algname{generic\_splitter}{r,z; g,q}
 \begin{algtab}
@@ -599,28 +711,29 @@ optimal $(v,i,j)$ is found, splitting the problem into two V problems.
 \algelse
    $v   \leftarrow$ lowest numbered bifurcation state in subgraph $G_{r..z}$.\\
    $w,y \leftarrow$ left and right S children of $v$.\\
-   \\
    $\beta_v \leftarrow$  \algcall{outside}{r,w; g,q}\\
    $\alpha_w \leftarrow$ \algcall{inside}{w,y-1; g,q}\\
    $\alpha_y \leftarrow$ \algcall{inside}{y,z; g,q}\\
 
    $(i,k,j) \leftarrow \argmax_{i',k',j'} \alpha_w(i',k') + \alpha_y(k'+1,j') + \beta_v(i',j')$ \\
 
-   $\mathcal{T}_1 \leftarrow$ \algcall{V\_splitter}{r,v; g,i; j,q}\\
+   $\mathcal{T}_1   \leftarrow$ \algcall{V\_splitter}{r,v; g,i; j,q}\\
    $\mathcal{T}_2 \leftarrow$ \algcall{generic\_splitter}{w,y-1; i,k}\\
    $\mathcal{T}_3 \leftarrow$ \algcall{generic\_splitter}{y,z; k+1,j}\\
 
-   \algreturn $\mathcal{T}_1 (\mathcal{T}_2, \mathcal{T}_3)$\\
+   Attach S state $w$ of $\mathcal{T}_2$ as left child of B state $v$ in $\mathcal{T}_1$.\\
+   Attach S state $y$ of $\mathcal{T}_3$ as right child of B state $v$ in $\mathcal{T}_2$.\\
+  
+   \algreturn $\mathcal{T}_1$.\\
 \algend
 \end{algtab}
 \end{algorithm}
 
 \subsection{wedge\_splitter}
-
 \begin{algorithm}
 \alginout{A wedge problem, for unbifurcated CM subgraph $G_{r..z}$ and
           subsequence $x_{g..q}$.}
-         {An optimal parse subtree ${\cal T}^{r..z}_{g..q}$.}
+         {An optimal parse subtree $\mathcal{T}$.}
 
 \algname{wedge\_splitter}{r,z; g,q}
 \begin{algtab}
@@ -630,135 +743,40 @@ optimal $(v,i,j)$ is found, splitting the problem into two V problems.
   $(w..y) \leftarrow$ a split set chosen from middle of $G_{r..z}$\\
   $(\alpha_w..\alpha_y) \leftarrow$ \algcall{inside}{w,z; g,q}\\
   $(\beta_w..\beta_y)   \leftarrow$ \algcall{outside}{r,y; g,q}\\
-  $(v,i,j) \leftarrow \argmax_{v'=w..y, j'=1..L, i'=1..j'} 
+  $(v,i,j) \leftarrow \argmax\limits_{v',i',j'} 
 	\alpha_{v'}(i',j') + \beta_{v'}(i',j')$\\
   $\mathcal{T}_1 \leftarrow$ \algcall{V\_splitter}{r,v; g,i; j,q}\\
   $\mathcal{T}_2 \leftarrow$ \algcall{wedge\_splitter}{v,z; i,j}\\
-  \algreturn $\mathcal{T}_1 (\mathcal{T}_2)$\\
+  Attach $\mathcal{T}_2$ to $\mathcal{T}_1$ by merging at state $v$.\\
+  
+  \algreturn $\mathcal{T}_1$.\\
 \algend
 \end{algtab}
 \end{algorithm}
 
 \subsection{V\_splitter}
+\begin{algorithm}
+\alginout{A V problem, for unbifurcated CM subgraph $G_{r..z}$ and
+          two-part subsequence $x_{g..h}//x_{p..q}$.}
+         {An optimal parse subtree $\mathcal{T}$.}
 
-The V\_splitter subroutine is given a specialized V type alignment
-subproblem, defined by an unbifurcated, unterminated CM segment $G$
-and two subsequences $a_1..a_L//b_1..b_N$ of the original sequence. It
-solves the problem and returns the optimal parse tree $\cal{T}$. The
-solution may be achieved recursively by splitting the V problem into
-two smaller V problems and solving them.
-
-Determine the size of the alignment problem. If it is small enough,
-obtain $\cal{T}$ by calling v\_inside$^{\cal{T}}(G, a_1..a_L//b_1..b_N)$;
-terminate.
-
-Let $w..y$ be a chosen ``split set'' in $G$: all the non-insert states
-from a node in the middle of $G$, as in wedge\_splitter.
-
-Call v\_inside$(G^w, a_1..a_L//b_1..b_N)$ to obtain decks $\alpha_w..\alpha_y$.
-Call v\_outside$(G^0_y, a_1..a_L//b_1..b_N)$ to obtain decks $\beta_w..\beta_y$.
-
-Find $(v,i,j) = \argmax_{v'=w..j, i'=1..L, j'=1..N} \alpha_{v'}(i',j') + \beta_{v'}(i',j')$
-
-$\cal{T}_1 = \mbox{V\_splitter}(G^1_v, a_1..a_i, b_j..b_N)$
-$\cal{T}_2 = \mbox{V\_splitter}(G^v_w, a_i..a_L, b_1..b_j)$
-
-$\cal{T} = \cal{T}_1 (\cal{T}_2)$; terminate.
-
-\subsection{inside and inside$^{\cal{T}}$}
-
-The subroutine inside implements the Inside/CYK SCFG alignment
-algorithm in a form that minimizes the memory requirement by
-discarding most of the 3D matrix during the calculation.
-
-The algorithm works by iteratively calculating $\alpha_v(i,j)$, the
-log probability of the most likely parse tree that generates a
-subsequence $a_i..a_j$ from a subgraph of the model rooted at state
-$v$. The calculation initializes with the smallest subgraphs and
-subsequences (subgraphs rooted at end states generating subsequences
-of length 0). It iterates over longer and longer subsequences and
-larger and larger subgraphs until it has calculated $\alpha_0(1,L)$ --
-the log probability of the best alignment of the whole CM $G$ to the
-whole sequence $a_1..a_L$.
-
-\begin{verbatim}
-Recursion:
-for v = M to 1:
-    Allocate memory for a new deck \alpha_v with rows j=0..L, columns i=1..j+1.
-    Allocate a shadow deck \tau_v.
-    Set all values in \alpha_v to -\infty, and \tau_v to -1.
-
-    for j = 0 to L; for i = j+1 to 1:
-     d = j-i+1;
-     
-     for S_v: &  \alpha_v(i,j) =                                                    & \tau(i,j) = \\
-     D,S:     &\max_{y \in C(v)} \alpha_y(i,j)  + \log t_v(y)	                    & \argmax_y\\
-     P,d>=2:  &\log e(a_i, a_j) + \max_{y \in C(v)} \alpha_y(i+1,j-1) + \log t_v(y) & \argmax_y\\
-     L,d>=1:  &\log e(a_i) +      \max_{y \in C(v)} \alpha_y(i+1,j)   + \log t_v(y) & \argmax_y\\
-     R,d>=1:  &\log e(a_j) +      \max_{y \in C(v)} \alpha_y(i,j-1)   + \log t_v(y) & \argmax_y\\
-     B:       &\max_k \alpha_y(i,k) + \alpha_z(k+1,j)                               & \argmax_k\\
-     E,d=0:   & 0                                                                   & -1\\
-
-    for each y \in C(v): if all P(y) > v, free the memory for deck \alpha_y.
-\end{verbatim}
-
-The $\tau$ values are a ``shadow matrix'' that requires further
-explanation. In some cases, we will call inside as inside$^{\cal{T}}$.
-In these cases, we know the problem is small enough that a divide and
-conquer is no longer needed, and we want to trace back an optimal
-parse tree $\cal{T}$. One way to do this would be to keep a full
-$\alpha$ matrix in memory and tracing back by recapitulating the
-calculations in reverse. It is easier and more memory efficient to
-keep a ``shadow'' traceback pointer matrix $\tau$. (The memory
-efficiency results from the fact that the non-bifurcation $\tau$'s
-only need a range of 0..5 and fit in a few bits, compared to
-$\alpha$'s which are log probabilities requiring greater dynamic range
-and more bits.)  A $\tau_v(i,j)$ traceback pointer either records the
-index $y$ that maximized $\alpha_v(i,j)$ (for state types D,S,P,L,R)
-or records the split point $k$ that maximized $\alpha_v(i,j)$ for a
-bifurcation (B) state. We trace back through the shadow matrix to
-obtain the optimal sub-alignment that gave the optimal score. The most
-simple explanation of this traceback is a recursive one: we call
-subroutine traceback(v=0, i=1, j=L):
-
-\begin{verbatim}
-subroutine traceback(v,i,j):
-  S_v = E:     attach v;
-  S_v = S,D :  attach v;           traceback(\tau_v(i,j), i, j).
-  S_v = P :    attach a_i,v,a_j;   traceback(\tau_v(i,j), i+1, j-1).
-  S_v = L :    attach a_i,v;       traceback(\tau_v(j,d), i+1, j).
-  S_v = R :    attach v,a_j;       traceback(\tau_v(j,d), i,   j-1).
-  S_v = B :    attach v;           traceback(y, i, \tau_v(j,d));   traceback(z, \tau_v(i,j)+1, j).
-\end{verbatim}
-
-When inside is called (as opposed to inside$^{\cal{T}}$), none of the
-$\tau$ shadow operations are performed in inside. Instead, the 3D
-scoring matrix itself is returned, containing the deck $\alpha_v$ (and
-possibly a few other valid, unfree'd score decks; see below).
-
-The memory handling in inside\_engine also needs further explanation.
-Recall that the key to the memory efficiency of the divide and conquer
-approach is that we don't need to keep the entire $\alpha$ matrix in
-memory to calculate scores. In the above formulation, with the outer
-loop ranging over decks for the CM states $v$, as we reach higher
-decks $v$ in the 3D matrix, our calculations may no longer depend on
-certain lower decks. Since we are moving sequentially ``upwards'' in
-the states from state $M$ to state $1$, a simple test (all P(y) >
-v?)  is sufficient to determine whether the scores in deck y will be
-needed by any higher decks; if deck y is not needed, its memory can be
-released. (Since all the decks are the same size, an implementation
-can recycle ``free'd'' decks, saving memory allocation calls. Also,
-note that the values in all end decks are identical, so only one end
-deck needs to be calculated, and that precalculated deck can be reused
-whenever $S_v = E$.)
-
-This rule, combined with the structure of a CM, has an additional nice
-property. When inside is called by generic\_splitter, for a CM graph
-$G$ in which state 1 is always a start state, we only need the deck
-$\alpha_1$ returned -- and since all the states $y$ that a start state
-connects to cannot have another parent higher in the CM, when the
-algorithm completes, $\alpha_1$ is the only deck left unfree'd.
-[more here]
+\algname{V\_splitter}{r,z; g,h; p,q}
+\begin{algtab}
+\algif{alignment problem is small:}
+  \algreturn \algcall{vinside$^\mathcal{T}$}{r,z; g,h; p,q}\\
+\algelse
+  $(w..y) \leftarrow$ a split set chosen from middle of $G_{r..z}$\\
+  $(\alpha_w..\alpha_y) \leftarrow$ \algcall{vinside}{w,z; g,h; p,q}\\
+  $(\beta_w..\beta_y)   \leftarrow$ \algcall{voutside}{r,y; g,h; p,q}\\
+  $(v,i,j) \leftarrow \argmax_{v'=w..y, i'=g..h, j'=p..q} 
+	\alpha_{v'}(i',j') + \beta_{v'}(i',j')$\\
+  $\mathcal{T}_1 \leftarrow$ \algcall{V\_splitter}{r,v; g,i; j,q}\\
+  $\mathcal{T}_2 \leftarrow$ \algcall{V\_splitter}{v,z; i,h; p,j}\\
+  Attach $\mathcal{T}_2$ to $\mathcal{T}_1$ by merging at state $v$.\\
+  \algreturn $\mathcal{T}_1$.\\
+\algend
+\end{algtab}
+\end{algorithm}
 
 
 
