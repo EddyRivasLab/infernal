@@ -42,14 +42,17 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "cmzasha.h"
 
+/*
 namespace lpsolve {
 #include <lpkit.h>
 }
+*/
 
 // note: what I call "normal states" and "(post) insert states", Sean Eddy calls "split set" and "insert set" in Eddy, S.R. (2002), BMC Bioinformatics, 3:18 (see Table 3 and text on that page).  I guess I should ideally have read that paper before doing this...
 
 // my LP problems were unbounded, so just in case the problem recurs (this was from my very early work, but the lower bound seems pretty conservative)
 #define HACK_LOWERBOUND -8000.0
+#define PARAMETER_GUESS 0.0
 
 #define ENABLE_CACHING // building the HMM can take kind of a while.  Caching is somewhat deprecated (it seems better to deal with loading/saving HMMs in specific files), and I don't expect it to make it into a production version of this code.
 
@@ -1327,6 +1330,7 @@ void DumpInequalities(FILE *file,const HmmAndBuildInfo& newHMM,const CovarianceM
 	fprintf(file,"\n");
 }
 
+/*
 void AddConstraints_set_mat(lpsolve::lprec *linearProgram,const InequalityList& inequalityList,vector<double>& weightedUsesOfVariable,const int numLocalVariables)
 {
 	int result;
@@ -1361,7 +1365,9 @@ void AddConstraints_set_mat(lpsolve::lprec *linearProgram,const InequalityList& 
 		constraintNum++;
 	}
 }
+*/
 
+/*
 // I wonder if using the add_constraint function is faster
 void AddConstraints_add_constraint(lpsolve::lprec *linearProgram,const InequalityList& inequalityList,vector<double>& weightedUsesOfVariable,const int numLocalVariables)
 {
@@ -1389,7 +1395,9 @@ if (ineqIter->rhs > 0) fprintf(stdout,"WARN: rhs = %f\n",ineqIter->rhs);
 		}
 	}
 }
+*/
 
+/*
 void SolveInequalities_SetVariableLowerBound(lpsolve::lprec *linearProgram,const int numLocalVariables)
 {
 	// by default, all variables are constrained to be >0 (I have no idea why, but I'm not about to write my own LP solver...).  Take this off.
@@ -1401,7 +1409,9 @@ void SolveInequalities_SetVariableLowerBound(lpsolve::lprec *linearProgram,const
 		}
 	}
 }
+*/
 
+/*
 void SolveInequalities_SetObjectiveFunction(lpsolve::lprec *linearProgram,int numLocalVariables,const vector<double>& weightedUsesOfVariable)
 {
 	// now the objective function
@@ -1415,7 +1425,9 @@ void SolveInequalities_SetObjectiveFunction(lpsolve::lprec *linearProgram,int nu
 		}
 	}
 }
+*/
 
+/*
 void SolveInequalities_CalcInflation(float& get_avgInflation,lpsolve::lprec *linearProgram,const int numLocalVariables,const vector<float>& localVariableToValue,const InequalityList& inequalityList)
 {
 	REAL *constraints;
@@ -1444,7 +1456,9 @@ void SolveInequalities_CalcInflation(float& get_avgInflation,lpsolve::lprec *lin
 	}
 	get_avgInflation = (float)(totalInflation)/(float)(numRows);
 }
+*/
 
+/*
 void SolveInequalities_FindVariablesValues(lpsolve::lprec *linearProgram,const int numLocalVariables,vector<float>& localVariableToValue)
 {
 	REAL *variables;
@@ -1457,7 +1471,9 @@ void SolveInequalities_FindVariablesValues(lpsolve::lprec *linearProgram,const i
 		localVariableToValue[i]=(float)(variables[i]);
 	}
 }
+*/
 
+/*
 void SolveInequalities_DumpSolution(lpsolve::lprec *linearProgram,const int numLocalVariables,vector<float>& localVariableToValue,HmmCommittee::CommitteeBuildInfo *committeeBuildInfo)
 {
 #if 0
@@ -1475,7 +1491,9 @@ void SolveInequalities_DumpSolution(lpsolve::lprec *linearProgram,const int numL
 	}
 #endif
 }
+*/
 
+/*
 void SolveInequalities_DumpProgram(lpsolve::lprec *linearProgram,const CovarianceModel::Node cmStartPathNode,const CovarianceModel::Node cmEndPathNode,HmmCommittee::CommitteeBuildInfo *committeeBuildInfo)
 {
 #ifdef DEBUG_DUMP
@@ -1485,7 +1503,9 @@ void SolveInequalities_DumpProgram(lpsolve::lprec *linearProgram,const Covarianc
 	}
 #endif
 }
+*/
 
+/*
 void SolveInequalities_ConstructLP(lpsolve::lprec *(&linearProgram),const InequalityList& inequalityList,const int numLocalVariables,const CovarianceModel::Node cmStartPathNode,const CovarianceModel::Node cmEndPathNode,const int nodesToSpanWhileSolvingScores,HmmCommittee::CommitteeBuildInfo *committeeBuildInfo)
 {
 	const bool use_add_constraint=true;
@@ -1511,7 +1531,20 @@ void SolveInequalities_ConstructLP(lpsolve::lprec *(&linearProgram),const Inequa
 
 	SolveInequalities_DumpProgram(linearProgram,cmStartPathNode,cmEndPathNode,committeeBuildInfo);
 }
+*/
 
+void SolveInequalities(vector<float>& localVariableToValue,const InequalityList& inequalityList,const int numLocalVariables,CovarianceModel::Node cmStartPathNode,CovarianceModel::Node cmEndPathNode,float& get_avgInflation,const int nodesToSpanWhileSolvingScores,HmmCommittee::CommitteeBuildInfo *committeeBuildInfo)
+{
+	/* This first resize is very important, as it actually initializes the vector at this point.
+	 * localVariableToValue is a NULL list when received by SolveInequalities()
+	 */
+	localVariableToValue.resize(numLocalVariables);
+	for (int i=0; i<numLocalVariables; i++) {
+		localVariableToValue[i] = PARAMETER_GUESS;
+	}
+}
+
+/*
 void SolveInequalities_BeforeCommittees(vector<float>& localVariableToValue,const InequalityList& inequalityList,const int numLocalVariables,CovarianceModel::Node cmStartPathNode,CovarianceModel::Node cmEndPathNode,float& get_avgInflation,const int nodesToSpanWhileSolvingScores)
 {
 	lpsolve::lprec *linearProgram;
@@ -1533,7 +1566,9 @@ void SolveInequalities_BeforeCommittees(vector<float>& localVariableToValue,cons
 	lpsolve::delete_lp(linearProgram);
 	//fprintf(stderr,"Done LP.\n");
 }
+*/
 
+/*
 void SolveInequality_WithCommittee_RegurgitateSolution(vector<float>& localVariableToValue,const int numLocalVariables,const CovarianceModel::Node cmStartPathNode,const CovarianceModel::Node cmEndPathNode,float& get_avgInflation,HmmCommittee::CommitteeBuildInfo *committeeBuildInfo)
 {
 	assert(committeeBuildInfo!=NULL);
@@ -1562,7 +1597,9 @@ void SolveInequality_WithCommittee_RegurgitateSolution(vector<float>& localVaria
 	localVariableToValue=storedInfo.localVariablesToValuePerSolution[solutionToUse];
 	get_avgInflation=storedInfo.avgInflationPerSolution[solutionToUse];
 }
+*/
 
+/*
 void FindWhichSlackVarsAreZero(_Bvector& slackVariablesFoundWithZero,lpsolve::lprec *linearProgram,size_t numRows,int numLocalVariables)
 {
 	REAL *constraints;
@@ -1587,6 +1624,7 @@ void FindWhichSlackVarsAreZero(_Bvector& slackVariablesFoundWithZero,lpsolve::lp
 		}
 	}
 }
+*/
 
 void StoreSolution(HmmCommittee::LinearProgramStoredInfo& storedInfo,const vector<float>& localVariableToValue,const float get_avgInflation)
 {
@@ -1602,6 +1640,7 @@ void StoreSolution(HmmCommittee::LinearProgramStoredInfo& storedInfo,const vecto
 /*
 Note: lpsolve does weird things if you re-use the linearProgram (i.e. I was creating one linearProgram instance, and then just modifying individual constraints, and I got weird results for the slack vars).  So, I create a new linearProgram instance from scratch every time I want to call lpsolve::solve.
 */
+/*
 void SolveInequality_WithCommittee_FindSolutions(const InequalityList& inequalityList,const int numLocalVariables,CovarianceModel::Node cmStartPathNode,CovarianceModel::Node cmEndPathNode,const int nodesToSpanWhileSolvingScores,HmmCommittee::CommitteeBuildInfo *committeeBuildInfo)
 {
 	assert(committeeBuildInfo!=NULL);
@@ -1717,7 +1756,9 @@ void SolveInequality_WithCommittee_FindSolutions(const InequalityList& inequalit
 	fprintf(dumpFile,"Found %u distinct optimal solutions\n",storedInfo.localVariablesToValuePerSolution.size());
 #endif
 }
+*/
 
+/*
 void SolveInequality_WithCommittee(vector<float>& localVariableToValue,const InequalityList& inequalityList,const int numLocalVariables,CovarianceModel::Node cmStartPathNode,CovarianceModel::Node cmEndPathNode,float& get_avgInflation,const int nodesToSpanWhileSolvingScores,HmmCommittee::CommitteeBuildInfo *committeeBuildInfo)
 {
 	assert(committeeBuildInfo!=NULL);
@@ -1739,7 +1780,9 @@ void SolveInequality_WithCommittee(vector<float>& localVariableToValue,const Ine
 	}
 
 }
+*/
 
+/* The new SolveInequalities() above replaces this one
 void SolveInequalities(vector<float>& localVariableToValue,const InequalityList& inequalityList,const int numLocalVariables,CovarianceModel::Node cmStartPathNode,CovarianceModel::Node cmEndPathNode,float& get_avgInflation,const int nodesToSpanWhileSolvingScores,HmmCommittee::CommitteeBuildInfo *committeeBuildInfo)
 {
 	if (committeeBuildInfo==NULL) {
@@ -1749,6 +1792,7 @@ void SolveInequalities(vector<float>& localVariableToValue,const InequalityList&
 		SolveInequality_WithCommittee(localVariableToValue,inequalityList,numLocalVariables,cmStartPathNode,cmEndPathNode,get_avgInflation,nodesToSpanWhileSolvingScores,committeeBuildInfo);
 	}
 }
+*/
 
 void SetHmmScores(HmmAndBuildInfo& newHMM,const ScoreVariablesInfo& scoreVariablesInfo,const vector<int>& globalToLocalVariables,const vector<float>& localVariablesToValue)
 {
