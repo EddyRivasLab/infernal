@@ -10,18 +10,20 @@
 
 \section{Abstract}
 
-Optimal alignment algorithms that deal with both linear sequence and
-long-distance, pairwise RNA secondary structure correlations have been
-developed, but they require roughly $O(N^3)$ (cubic) memory for an RNA
-of length $N$ and become impractical for RNAs of more than a few
-hundred nucleotides. I describe a divide and conquer variant of these
-RNA dynamic programming algorithms, analogous to the memory-efficient
-Myers/Miller variant of the Smith/Waterman algorithm for linear
-sequence alignment. The algorithm requires $O(N^2 \log N)$ memory, at
-the expense of a small constant factor (<2) in time. Small subunit
-ribosomal RNA alignments that previously required a prohibitive 20-30
-GB of memory to solve by dynamic programming now require $\approx$ 80
-MB, and are well within the capabilities of most modern computers.
+Optimal alignment algorithms that can deal with both linear sequence
+and long-distance, pairwise RNA secondary structure correlations have
+been developed using stochastic context free grammar
+formalisms. However, they require roughly $O(N^3)$ (cubic) memory for
+an RNA of length $N$ and become impractical for RNAs of more than a
+few hundred nucleotides. Here I describe a divide and conquer variant
+of these RNA dynamic programming algorithms, analogous to the
+memory-efficient Myers/Miller variant of the Smith/Waterman algorithm
+for linear sequence alignment. The algorithm requires $O(N^2 \log N)$
+memory, at the expense of a small constant factor (<2) in time. Small
+subunit ribosomal RNA alignments that previously required a
+prohibitive 20-30 GB of memory to solve by dynamic programming now
+require $\approx$ 80 MB, and are well within the capabilities of most
+modern computers.
 
 \section{Introduction}
 
@@ -244,13 +246,13 @@ probability $e_v$ and a transition probability $t_v$.
 
 It may help some readers to note that a covariance model is a
 deliberate extension of profile hidden Markov models to SCFGs and RNA
-secondary structure. Profile HMMs use L, D, S, and E type
-productions. P, R, and B type productions are necessary SCFG-specific
-augmentations to deal with RNA secondary structure. HMMs make the same
-assumption as CMs that emission and transition are statistically
-independent. And as we will describe next, both CMs and profile HMMs
-have a stereotyped, hierarchical, organized structure that is derived
-by an input multiple sequence alignment.
+secondary structure. Profile HMMs as defined by Krogh, Haussler, and
+colleagues use L, D, S, and E type productions. P, R, and B type
+productions are necessary SCFG-specific augmentations to deal with RNA
+secondary structure. HMMs and CMs both assume that emission and
+transition are statistically independent, and, as we will describe
+next, both CMs and profile HMMs have a stereotyped hierarchical
+structure that is derived by an input multiple sequence alignment.
 
 Rather than presenting a terse and possibly cryptic definition of a
 CM, it is perhaps more useful (though considerably more verbose) to
@@ -263,10 +265,9 @@ Figure~\ref{fig:input_alignment} shows an example input file: a
 multiple sequence alignment of homologous RNAs, with a line describing
 the consensus RNA secondary structure. The first step of building a CM
 is to produce a binary tree of \emph{nodes} representing the consensus
-secondary structure, called the \emph{master tree}. 
-
-The master tree is a parse tree, with nodes as nonterminals and
-alignment columns as terminals. 
+secondary structure, called the \emph{master tree}. The master tree
+can be thought of as a parse tree for a consensus structure, with
+nodes as nonterminals and alignment columns as terminals.
 
 There are eight types of nodes:
 
@@ -391,6 +392,9 @@ to the input multiple alignment in Figure~\ref{fig:input_alignment},
 is shown in Figure~\ref{fig:cm_nodetree}.
 
 \subsubsection{From a consensus node tree to a covariance model}
+
+
+
 
 
 
