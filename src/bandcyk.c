@@ -44,12 +44,38 @@ band_calculation(CM_t *cm, int W)
   int      v;			/* counter over states, 0..M-1                    */
   int      y;			/* counter over connected states                  */
   int      n;			/* counter over lengths, 0..W */
+  int      i;			/* generic counter */
   int      dv;			/* Delta for state v */
   int      leftn;		/* length of left subsequence under a bifurc      */
   double   pleqn;		/* P(<=n) for this state v */
 
+  double **bpool;		/* pool of beams we can reuse      */
+  int      npool;		/* # of beams in the memory pool   */
+  int      nalloc;		/* # of slots alloc'ed in the pool */
+
+  /* gamma[v][n] is Prob(state v generates subseq of length n)
+   */
   gamma = MallocOrDie(sizeof(double *) * cm->M);        
   for (v = 0; v < cm->M; v++) gamma[v] = NULL;
+
+  /* bpool is a trick for reusing memory: a pushdown stack of 
+   * "beams" (gamma[v] rows) we can reuse. We arbitrarily extend
+   * the stack in blocks of 20.
+   */
+  bpool  = MallocOrDie(sizeof(double *) * 20);
+  npool  = 0;
+  nalloc = 20;
+  for (i = 0; i < nalloc; i++) bpool[i] = NULL;
+
+  /* The second component of memory saving is the "touch" array.
+   * touch[y] is the number of states above state [y] that will
+   * depend on y but haven't been calculated yet. When we're done
+   * calculating a new state v, we decrement touch[y] for all
+   * y \in C_v. Any time touch[y] reaches 0, we put that beam
+   * back into the pool for reuse.
+   */
+  touch  = MallocOrDie(sizeof(int) * cm->M);
+  for (v = 0; v < cm->M; v++) touch[v] = cm->pnum[v];
 
   /* Allocate and initialize the shared end beam.
    */
@@ -59,18 +85,31 @@ band_calculation(CM_t *cm, int W)
 
   for (v = cm->M-1; v >= 0; v--)
     {
-      /* share the end beam; it's initialized already.
+      /* Get a beam from somewhere.
+       *   1. If we're an E_st, we're sharing the end beam, and
+       *      it's already initialized for us; don't do anything
+       *      else to it.
+       *   2. If there's a beam in the pool we can reuse, take it
+       *      and set it back to 0's.
+       *   3. Else, allocate and initialize to 0's.
        */
-      if (cm->sttype[v] == E_st) {
-	gamma[v] = gamma[cm->M-1];
-	continue;
+      if (cm->sttype[v] == E_st) 
+	{
+	  gamma[v] = gamma[cm->M-1];
+	  continue;
+	}
+      else if (npool > 0) 
+	{ /* pop off the stack: last filled position is npool-1. */
+	  gamma[v] = bpool[npool-1];
+	  DSet(gamma[v], W+1, 0.);
+	  bpool[npool-1] = NULL;
+	  npool--;
+	}
+      else {
+	gamma[v] = MallocOrDie(sizeof(double) * (W+1));	
+	DSet(gamma[v], W+1, 0.);
       }
 
-      /* To optimize, replace this malloc with a reused pool of beams.
-       */
-      gamma[v] = MallocOrDie(sizeof(double) * (W+1));
-      DSet(gamma[v], W+1, 0.);
-      
       /* Recursively calculate the probability density P(length=n) for this state v.
        */
       if (cm->sttype[v] == B_st) 
@@ -113,6 +152,19 @@ band_calculation(CM_t *cm, int W)
       /* Renormalize this beam.
        */
       DNorm(gamma[v], W+1);
+
+      /* Reuse memory where possible, using the "touch" trick:
+       *   look at all children y \in C_v.
+       *   decrement touch[y]
+       *   if touch[y] reaches 0, no higher state v depends on this
+       *     state's numbers; release the memory.
+       */
+      if (cm->sttype[v] == B_st)
+	{  /* the connected children of a B st are handled specially, remember */
+	  y = cm->cfirst[v]; 
+	  bpool[npool] = 
+	    /* YOU STOPPED HERE. */
+
     }  
 
   pleqn = 0.;

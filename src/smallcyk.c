@@ -1060,20 +1060,20 @@ inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_f
        void ****ret_shadow, 
        int allow_begin, int *ret_b, float *ret_bsc)
 {
-  float  **end;                 /* we re-use the end deck. */
-  int      nends;               /* counter that tracks when we can release end deck to the pool */
-  int     *touch;               /* keeps track of how many higher decks still need this deck */
-  int      v,y,z;		/* indices for states  */
-  int      j,d,i,k;		/* indices in sequence dimensions */
-  float    sc;			/* a temporary variable holding a score */
-  int      yoffset;		/* y=base+offset -- counter in child states that v can transit to */
-  int      W;			/* subsequence length */
-  int      jp;			/* j': relative position in the subsequence  */
-  void  ***shadow;              /* shadow matrix for tracebacks */
-  int    **kshad;               /* a shadow deck for bifurcations */
-  char   **yshad;               /* a shadow deck for every other kind of state */
-  int      b;			/* best local begin state */
-  float    bsc;			/* score for using the best local begin state */
+  float  **end;         /* we re-use the end deck. */
+  int      nends;       /* counter that tracks when we can release end deck to the pool */
+  int     *touch;       /* keeps track of how many higher decks still need this deck */
+  int      v,y,z;	/* indices for states  */
+  int      j,d,i,k;	/* indices in sequence dimensions */
+  float    sc;		/* a temporary variable holding a score */
+  int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
+  int      W;		/* subsequence length */
+  int      jp;		/* j': relative position in the subsequence  */
+  void  ***shadow;      /* shadow matrix for tracebacks */
+  int    **kshad;       /* a shadow deck for bifurcations */
+  char   **yshad;       /* a shadow deck for every other kind of state */
+  int      b;		/* best local begin state */
+  float    bsc;		/* score for using the best local begin state */
 
 
   /* Allocations and initializations
