@@ -46,9 +46,9 @@ CFLAGS = @CFLAGS@
 SHELL       = /bin/sh
 BASENAME    = "infernal"
 PACKAGE     = "Infernal"
-RELEASE     = "0.54"
-RELCODE     = "infernal0_54"
-RELEASEDATE = "Jan 2003"
+RELEASE     = "0.55"
+RELCODE     = "infernal0_55"
+RELEASEDATE = "April 2003"
 COPYRIGHT   = "Copyright \(C\) 2002-2003 Washington University, Saint Louis"
 LICENSELINE = "Freely distributed under the GNU General Public License \(GPL\)"
 LICENSETAG  = gnu
@@ -109,7 +109,7 @@ dist:
 	cvs tag -F $(RELCODE)
 	cvs export -r $(RELCODE) -d ${BASENAME}-${RELEASE} ${BASENAME}
 	cvs rtag -F ${RELCODE} squid
-	(cd ${BASENAME}-${RELEASE}/; cvs export -r ${BASENAME}_${RELCODE} -d squid squid)
+	(cd ${BASENAME}-${RELEASE}/; cvs export -r ${RELCODE} -d squid squid)
 	# 
 	# Put a copy of sqc in testsuite; that's the only script
 	# we need from ssdk.
