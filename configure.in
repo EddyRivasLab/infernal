@@ -1,0 +1,47 @@
+dnl Process this file with autoconf to produce a configure script.
+dnl SRE, Thu Jul 27 13:30:41 2000
+
+AC_INIT(src/cmbuild.c)
+
+echo "   Welcome to INFERNAL... configuring for your system."
+
+AC_SUBST(MDEFS)
+
+dnl Checks for programs.
+AC_PROG_CC
+AC_PROG_LN_S
+AC_PROG_RANLIB
+
+dnl Sets the build arena: where we're looking for
+dnl module .a and .h files during the build, relative
+dnl to top_srcdir: a Makefile.in will set the path
+dnl to be top_srcdir/ARENA.
+ARENA="lib"
+AC_SUBST(ARENA)
+
+dnl GNU make check; makefile dependency lines for executables.
+dnl original from John Darrington <j.darrington@elvis.murdoch.edu.au> 
+dnl w/ heavy modifications from me.
+dnl We need this because GNU make and SYSV make use different systems
+dnl specifying variables for dependencies: $$@ in sysv, %: %.o in GNU.
+dnl Would love to hear a better way of doing this.
+dnl 
+AC_DEFUN(CHECK_GNU_MAKE,[ 
+  AC_MSG_CHECKING(whether your make is GNU make)
+  foundGNUmake='nope.' ;
+  STD_EXEC_DEPENDENCY=[\$\$\@.o] ;
+  if ( make --version nothing 2> /dev/null | grep GNU > /dev/null ) ;  then
+     foundGNUmake='yes, it is.' ;
+     STD_EXEC_DEPENDENCY='%: %.o' ;
+  fi
+  AC_MSG_RESULT($foundGNUmake)
+  AC_SUBST(STD_EXEC_DEPENDENCY)
+])
+CHECK_GNU_MAKE
+
+dnl Checks for system libraries
+AC_CHECK_LIB(m, sqrt, LIBS="${LIBS} -lm")
+
+dnl Write out Makefiles
+echo "   Configuration complete. Writing Makefiles and such..."
+AC_OUTPUT(Makefile src/Makefile)
