@@ -617,32 +617,27 @@ optimal $(v,i,j)$ is found, splitting the problem into two V problems.
 
 \subsection{wedge\_splitter}
 
-The wedge\_splitter subroutine is given a specialized wedge type
-alignment problem, defined by an unbifurcated CM subgraph $G$ and a
-sequence $a_1..a_L$. It solves the problem and returns the optimal
-parse tree $\cal{T}$. The solution may be achieved recursively by
-splitting the wedge problem into a V problem and a wedge problem, and
-solving those smaller problems.
+\begin{algorithm}
+\alginout{A wedge problem, for unbifurcated CM subgraph $G_{r..z}$ and
+          subsequence $x_{g..q}$.}
+         {An optimal parse subtree ${\cal T}^{r..z}_{g..q}$.}
 
-Determine the size of the alignment problem. If it is small enough,
-obtain $\cal{T}$ by calling inside$^{\cal{T}}(G, a_1..a_L)$;
-terminate. Else:
-
-Let $w..y$ be a chosen ``split set'' in the states in $G$: all the
-non-insert states from a node in the middle of $G$. We are guaranteed
-that the optimal alignment passes through one and only one of these
-states. The layout of a CM guarantees that all possible split sets are
-composed of contiguously numbered states.
-
-Call inside$(G^w, a_1..a_L)$ to obtain decks $\alpha_w..\alpha_y$.  
-Call outside$(G^0_y, a_1...a_L)$ to obtain decks $\beta_w..\beta_y$.
-
-Find $(v,i,j) = \max_{v'=w..y, j'=1..L, i'=1..j'} \alpha_{v'}(i',j') + \beta_{v'}(i',j')$
-
-$\cal{T}_1 = \mbox{V\_splitter}(G^0_v, a_1..a_i, a_j..a_L)$
-$\cal{T}_2 = \mbox{wedge\_splitter}(G_v, a_i..a_j)$
-
-$\cal{T} = \cal{T}_1 (\cal{T}_2)$; terminate.
+\algname{wedge\_splitter}{r,z; g,q}
+\begin{algtab}
+\algif{alignment problem is small:}
+  \algreturn \algcall{inside$^\mathcal{T}$}{r,z; g,q}\\
+\algelse
+  $(w..y) \leftarrow$ a split set chosen from middle of $G_{r..z}$\\
+  $(\alpha_w..\alpha_y) \leftarrow$ \algcall{inside}{w,z; g,q}\\
+  $(\beta_w..\beta_y)   \leftarrow$ \algcall{outside}{r,y; g,q}\\
+  $(v,i,j) \leftarrow \argmax_{v'=w..y, j'=1..L, i'=1..j'} 
+	\alpha_{v'}(i',j') + \beta_{v'}(i',j')$\\
+  $\mathcal{T}_1 \leftarrow$ \algcall{V\_splitter}{r,v; g,i; j,q}\\
+  $\mathcal{T}_2 \leftarrow$ \algcall{wedge\_splitter}{v,z; i,j}\\
+  \algreturn $\mathcal{T}_1 (\mathcal{T}_2)$\\
+\algend
+\end{algtab}
+\end{algorithm}
 
 \subsection{V\_splitter}
 
