@@ -127,9 +127,9 @@ typedef struct cm_s {
   char *stid;		/*   unique state identifier; e.g. MATP-MP         */
 
 			/* Information about its connectivity in CM:       */
-  int  *cfirst;		/*   index of first child state                    */
+  int  *cfirst;		/*   index of left child state                     */
   int  *cnum;		/*   overloaded: for non-BIF: # connections;       */
-			/*               for BIF: second child S_st        */
+			/*               for BIF: right child S_st         */
   int  *plast;          /*   index to first parent state                   */
   int  *pnum;           /*   number of parent connections                  */
 

@@ -12,6 +12,11 @@ extern float  DegenerateSingletScore(float *esc, char sym);
 extern char  *DigitizeSequence(char *seq, int L);
 extern char **DigitizeAlignment(char **aseq, int nseq, int alen);
 
+/* from bandcyk.c
+ */
+extern double **BandDistribution(CM_t *cm, int W);
+extern void     BandBounds(double **gamma, int M, int W, double p);
+
 /* from cm.c
  */
 extern CM_t *CreateCM(int nnodes, int nstates);

@@ -38,6 +38,7 @@ MYINCDIR = -I../squid
 PROGS = cmalign cmbuild cmscore cmsearch
 
 OBJS  = alphabet.o\
+	bandcyk.o\
 	cm.o\
 	cmio.o\
 	display.o\

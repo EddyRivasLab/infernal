@@ -37,6 +37,7 @@ static char experts[] = "\
    --scoreonly   : for full CYK/inside stage, do only score, save memory\n\
    --smallonly   : do only d&c, don't do full CYK/inside\n\
    --stringent   : require the two parse trees to be identical\n\
+   --X           : muy peligroso! project X!\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -47,6 +48,7 @@ static struct opt_s OPTIONS[] = {
   { "--scoreonly",  FALSE, sqdARG_NONE },
   { "--smallonly",  FALSE, sqdARG_NONE },
   { "--stringent",  FALSE, sqdARG_NONE },
+  { "--X",          FALSE, sqdARG_NONE },
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -72,6 +74,7 @@ main(int argc, char **argv)
   int   compare_stringently;	/* TRUE to demand identical parse trees     */
   char *regressfile;		/* name of regression data file to save     */
   FILE *regressfp;              /* open filehandle for writing regressions  */
+  int   projectX;               /* TRUE to run testbed stuff                */
 
   char *optname;                /* name of option found by Getopt()        */
   char *optarg;                 /* argument found by Getopt()              */
@@ -86,6 +89,7 @@ main(int argc, char **argv)
   do_scoreonly      = FALSE;
   do_smallonly      = FALSE;
   regressfile       = NULL;
+  projectX          = FALSE;
   
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -93,6 +97,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--regress")   == 0) regressfile  = optarg;
     else if (strcmp(optname, "--smallonly") == 0) do_smallonly = TRUE;
     else if (strcmp(optname, "--scoreonly") == 0) do_scoreonly = TRUE;
+    else if (strcmp(optname, "--X")         == 0) projectX     = TRUE;
     else if (strcmp(optname, "--informat")  == 0) {
       format = String2SeqfileFormat(optarg);
       if (format == SQFILE_UNKNOWN) 
@@ -109,7 +114,6 @@ main(int argc, char **argv)
   if (argc - optind != 2) Die("Incorrect number of arguments.\n%s\n", usage);
   cmfile = argv[optind++];
   seqfile = argv[optind++]; 
-
   
   /*********************************************** 
    * Preliminaries: open our files for i/o; get a CM
@@ -137,6 +141,15 @@ main(int argc, char **argv)
   if (do_local) ConfigLocal(cm, 0.5, 0.5);
   CMLogoddsify(cm);
   CMHackInsertScores(cm);	/* TEMPORARY: FIXME */
+
+  if (projectX) 
+    {
+      double **mx; 
+      mx = BandDistribution(cm, 1000);
+      BandBounds(mx, cm->M, 1000, 0.01);
+      DMX2Free(mx);
+      exit(1);
+    }
 
   while (ReadSeq(sqfp, sqfp->format, &seq, &sqinfo))
     {
