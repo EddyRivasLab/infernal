@@ -643,7 +643,6 @@ cm_from_master(CM_t *cm, Parsetree_t *mtr)
 
 
 
-
 /* Function: transmogrify()
  * Date:     SRE, Mon Jul 31 14:30:58 2000 [St. Louis]
  *

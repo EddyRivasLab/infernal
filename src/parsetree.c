@@ -48,7 +48,6 @@ CreateParsetree(void)
   new->nxtl     = MallocOrDie(sizeof(int) * new->nalloc);
   new->nxtr     = MallocOrDie(sizeof(int) * new->nalloc);
   new->prv      = MallocOrDie(sizeof(int) * new->nalloc);
-  
   new->n = 0;
   return new;
 }
@@ -153,6 +152,44 @@ InsertTraceNode(Parsetree_t *tr, int y, int whichway, int emitl, int emitr, int 
   tr->n++;
   return n;
 }
+
+
+/* Function: ParsetreeCount()
+ * Date:     SRE, Mon Jul 31 19:19:08 2000 [St. Louis]
+ *
+ * Purpose:  Count a parsetree into a counts-based CM structure,
+ *           in the course of estimating new CM probability parameters.
+ *
+ * Args:     cm   - CM to collect counts in
+ *           tr   - the parse tree to collect from.
+ *           seq  - sequence that we're counting symbols from
+ *           wgt  - weight on this sequence (often just 1.0)
+ *
+ * Returns:  (void)
+ */
+void
+ParsetreeCount(CM_t *cm, Parsetree_t *tr, char *seq, float *wgt)
+{
+  int tidx;			/* counter through positions in the parsetree */
+
+		/* trivial preorder traverse, since we're already numbered that way */
+  for (tidx = 0; tidx < tr->n; tidx++) {
+
+    v = cm->stid[tr->state[tidx]]; /* unique state type of "from" state */
+    z = cm->stid[tr->state[tidx]]; /* unique state type of "to" state   */
+    if (tr->state[tidx] != END_E)
+      cm->t[tr->state[tidx]][CMTransitionIndex[v][z]] += wgt;
+
+    
+    
+
+  }
+      
+    
+    
+
+}
+
 
 
 /* Function: PrintParsetree()

@@ -5,6 +5,7 @@
 /* from cm.c
  */
 extern CM_t *CreateCM(int nnodes, int nstates);
+extern void  CMZero(CM_t *cm);
 extern void  FreeCM(CM_t *cm);
 extern int   CalculateStateIndex(CM_t *cm, int node, char utype);
 extern void  PrintCM(FILE *fp, CM_t *cm);

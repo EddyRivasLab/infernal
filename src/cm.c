@@ -62,6 +62,26 @@ CreateCM(int nnodes, int nstates)
   return cm;
 }
 
+/* Function: CMZero()
+ * Date:     SRE, Mon Jul 31 19:14:31 2000 [St. Louis]
+ *
+ * Purpose:  Initialize the probability parameters of a CM to zero.
+ *
+ * Returns:  (void)
+ */
+void 
+CMZero(CM_t *cm)
+{
+  int v;			/* counter over states                 */
+  int x;			/* counter over symbols or transitions */
+
+  for (v = 0; v < cm->M; v++) {
+    for (x = 0; x < Alphabet_size * Alphabet_size; x++) cm->e[v][x] = 0.0;
+    for (x = 0; x < MAXCONNECT; x++)                    cm->t[v][x] = 0.0;
+  }
+}
+
+
 /* Function: FreeCM()
  * Date:     SRE, Sat Jul 29 11:22:32 2000 [St. Louis]
  *
@@ -93,6 +113,7 @@ FreeCM(CM_t *cm)
   FMX2Free(cm->esc);
   free(cm);
 }
+
 
 /* Function: CalculateStateIndex()
  * Date:     SRE, Mon Jul 31 15:37:55 2000 [St. Louis]

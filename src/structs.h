@@ -19,6 +19,7 @@ extern int   Alphabet_size;
 extern int   Alphabet_iupac;
 extern char *Alphabet;
 
+extern int CMTransitionIndex[][];
 
 /* State types. (9)
  */
@@ -69,8 +70,8 @@ extern char *Alphabet;
 #define MATL_ML 12
 #define MATL_D  13
 #define MATL_IL 14
-#define MATR_D  15
-#define MATR_MR 16
+#define MATR_MR 15
+#define MATR_D  16
 #define MATR_IR 17
 #define END_E   18
 #define BIF_B   19
