@@ -60,8 +60,12 @@ CreateCM(int nnodes, int nstates)
 				/* parameter information */
   cm->t      = FMX2Alloc(nstates, MAXCONNECT);
   cm->e      = FMX2Alloc(nstates, Alphabet_size*Alphabet_size);
+  cm->begin  = MallocOrDie(nstates * sizeof(float));
+  cm->end    = MallocOrDie(nstates * sizeof(float));
   cm->tsc    = FMX2Alloc(nstates, MAXCONNECT);
   cm->esc    = FMX2Alloc(nstates, Alphabet_size*Alphabet_size);
+  cm->beginsc= MallocOrDie(nstates * sizeof(float));
+  cm->endsc  = MallocOrDie(nstates * sizeof(float));
 
   return cm;
 }
@@ -82,6 +86,7 @@ CMZero(CM_t *cm)
   for (v = 0; v < cm->M; v++) {
     for (x = 0; x < Alphabet_size * Alphabet_size; x++) cm->e[v][x] = 0.0;
     for (x = 0; x < MAXCONNECT; x++)                    cm->t[v][x] = 0.0;
+    cm->begin[v] = cm->end[v] = 0.;
   }
 }
 
@@ -114,8 +119,12 @@ FreeCM(CM_t *cm)
   free(cm->ndtype);
   FMX2Free(cm->t);
   FMX2Free(cm->e);
+  free(cm->begin);
+  free(cm->end);
   FMX2Free(cm->tsc);
   FMX2Free(cm->esc);
+  free(cm->beginsc);
+  free(cm->endsc);
   free(cm);
 }
 
@@ -196,6 +205,12 @@ CMLogoddsify(CM_t *cm)
 	  cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
 	for (x = 0; x < Alphabet_size; x++)
 	  cm->esc[v][x] = log(cm->e[v][x] / cm->null[x]);
+
+      /* Configure for global w.r.t. model by default: 
+       * local alignment begin/end are impossible
+       */
+      cm->beginsc[v] = IMPOSSIBLE;
+      cm->endsc[v]   = IMPOSSIBLE;
     }
 }
 

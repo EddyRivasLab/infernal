@@ -2,7 +2,8 @@
  * SRE, Thu May  2 11:50:48 2002 [AA 3050 SFO->STL]
  * CVS $Id$
  * 
- * CYK alignment, database scanning mode.
+ * CYK alignment: multihit, local, database scanning mode.
+ * [xref STL6 p47]
  * 
  ***************************************************************** 
  * @LICENSE@
@@ -22,7 +23,8 @@
 /* Function: CYKScan()
  * Date:     SRE, Thu May  2 11:56:11 2002 [AA 3050 SFO->STL]
  *
- * Purpose:  
+ * Purpose:  Scan a sequence for matches to a covariance model.
+ *           Multiple nonoverlapping hits and local alignment.
  *
  * Args:     cm        - the covariance model
  *           dsq       - digitized sequence to search; 1..L
@@ -41,14 +43,14 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
 	int *ret_nhits, int **ret_hiti, int **ret_hitj, float **ret_hitsc)
 
 {
-  float  ***alpha;     
-  float    *gamma;
-  int      *gback; 
+  float  ***alpha;              /* CYK DP score matrix, [v][j][d] */
+  float    *gamma;              /* SHMM DP matrix for optimum nonoverlap resolution */
+  int      *gback;              /* traceback pointers for SHMM */ 
   float    *savesc;             /* saves score of hit added to best parse at j */
   int       v;			/* a state index, 0..M-1 */
   int       w, y;		/* child state indices */
   int       yoffset;		/* offset to a child state */
-  int       j;			/* index of an end position in sequence, 0..L */
+  int       i,j;		/* index of start/end positions in sequence, 0..L */
   int       d;			/* a subsequence length, 0..W */
   int       k;			/* used in bifurc calculations: length of right subseq */
   int       prv, cur;		/* previous, current j row (0 or 1) */
@@ -72,10 +74,10 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
    * Note that E memory is shared: all E decks point at M-1 deck.
    *****************************************************************/
   alpha = MallocOrDie (sizeof(float **) * cm->M);
-  for (v = 0; v < cm->M; v++) {
+  for (v = cm->M-1; v >= 0; v--) {	/* reverse, because we allocate E_M-1 first */
     if (cm->stid[v] == BEGL_S)
       {
-	alpha[v] = MallocOrDie(sizeof(float) * (W+1));
+	alpha[v] = MallocOrDie(sizeof(float *) * (W+1));
 	for (j = 0; j <= W; j++)
 	  alpha[v][j] = MallocOrDie(sizeof(float) * (W+1));
       }
@@ -104,10 +106,11 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
       else if (cm->sttype[v] == S_st || cm->sttype[v] == D_st) 
 	{
 	  y = cm->cfirst[v];
-	  alpha[v][0][0] = cm->esc[v]; 
+	  alpha[v][0][0] = cm->endsc[v]; 
 	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 	    if ((sc = alpha[y+yoffset][0][0] + cm->tsc[v][yoffset]) > alpha[v][0][0]) 
 	      alpha[v][0][0] = sc;
+          /* ...we don't bother to look at local alignment starts here... */
 	  if (alpha[v][0][0] < IMPOSSIBLE) alpha[v][0][0] = IMPOSSIBLE;	
 	}
       else if (cm->sttype[v] == B_st) 
@@ -121,13 +124,15 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
       alpha[v][1][0] = alpha[v][0][0];
       if (cm->stid[v] == BEGL_S) 
 	for (j = 2; j < W; j++) 
-	  alpha[v][j][d] = alpha[v][0][0];
+	  alpha[v][j][0] = alpha[v][0][0];
     }
   for (d = 1; d <= W; d++)
     alpha[cm->M-1][0][d] = alpha[cm->M-1][1][d] = IMPOSSIBLE;
 
   /*****************************************************************
    * gamma allocation and initialization.
+   * This is a little SHMM that finds an optimal scoring parse
+   * of multiple nonoverlapping hits.
    *****************************************************************/ 
   gamma    = MallocOrDie(sizeof(float) * (L+1));
   gamma[0] = 0;
@@ -136,7 +141,7 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
   savesc   = MallocOrDie(sizeof(float) * (L+1));
 
   /*****************************************************************
-   * The main loop.
+   * The main loop: scan the sequence from position 1 to L.
    *****************************************************************/
   for (j = 1; j <= L; j++) 
     {
@@ -152,10 +157,20 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
 		  y = cm->cfirst[v];
 		  alpha[v][jp][d] = cm->endsc[v]; 
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		    if ((sc = alpha[y+yoffset][jp][d] + cm->tsc[v][yoffset]) > alpha[v][jp][d]) 
+		    if ((sc = alpha[y+yoffset][cur][d] + cm->tsc[v][yoffset]) > alpha[v][jp][d]) 
 		      alpha[v][jp][d] = sc;
+
+		  if (cm->stid[v] == ROOT_S) 
+		    { /* local alignment starts */
+		      for (y = 1; y < cm->M; y++) {
+			if (cm->stid[y] == BEGL_S) sc = alpha[y][j%(W+1)][d] + cm->beginsc[y];
+			else                       sc = alpha[y][cur][d]     + cm->beginsc[y];
+			if (sc > alpha[v][jp][d])
+			  alpha[v][jp][d] = sc;
+		      }
+		    }
+
 		  if (alpha[v][jp][d] < IMPOSSIBLE) alpha[v][jp][d] = IMPOSSIBLE;
-		  
 		}
 	    }
 	  else if (cm->sttype[v] == MP_st) 
@@ -219,7 +234,7 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
 	      w = cm->cfirst[v];
 	      y = cm->cnum[v];
 	      i = j-d+1;
-	      for (d = 1; d <= W; j++) 
+	      for (d = 1; d <= W && d <= j; d++) 
 		{
 		  alpha[v][cur][d] = cm->endsc[v];
 		  for (k = 0; k <= d; k++) /* k is length of right fragment */
@@ -238,10 +253,12 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
       gamma[j]  = gamma[j-1] + 0; /* extend without adding a new hit */
       gback[j]  = -1;
       savesc[j] = IMPOSSIBLE;
-      for (d = 1; d <= W; d++) 
+      for (d = 1; d <= W && d <= j; d++) 
 	{
 	  i = j-d+1;
-	  if ((sc = gamma[i-1] + alpha[0][cur][d]) > gamma[j]) 
+	  if (i == 0) sc = alpha[0][cur][d];
+	  else        sc = gamma[i-1] + alpha[0][cur][d];
+	  if (sc > gamma[j]) 
 	    {
 	      gamma[j]  = sc;
 	      gback[j]  = i;
@@ -253,7 +270,20 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
   /*****************************************************************
    * we're done with alpha, free it; everything we need is in gamma.
    *****************************************************************/ 
-  /* STOPPED HERE */
+  for (v = 0; v < cm->M; v++) 
+    {
+      if (cm->stid[v] == BEGL_S) {                     /* big BEGL_S decks */
+	for (j = 0; j <= W; j++) free(alpha[v][j]);
+	free(alpha[v]);
+      } else if (cm->sttype[v] == E_st && v < cm->M-1) { /* avoid shared E decks */
+	continue;
+      } else {
+	free(alpha[v][0]);
+	free(alpha[v][1]);
+	free(alpha[v]);
+      }
+    }
+  free(alpha);
 
   /*****************************************************************
    * Traceback stage.
@@ -273,7 +303,7 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
       {
 	hitj[nhits]   = j;
 	hiti[nhits]   = gback[j];
-	hitsc[nhits]  = savesc[j]
+	hitsc[nhits]  = savesc[j];
 	nhits++;
 	j = gback[j]-1;
 	
@@ -287,6 +317,7 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
   }
   free(gback);
   free(gamma);
+  free(savesc);
 
   *ret_nhits = nhits;
   *ret_hiti  = hiti;

@@ -35,7 +35,7 @@ MYLIBS   = -lsquid
 MYLIBDIR = -L../squid
 MYINCDIR = -I../squid
 
-PROGS = cmbuild cmscore
+PROGS = cmbuild cmscore cmsearch
 
 OBJS  = alphabet.o\
 	cm.o\
@@ -45,6 +45,7 @@ OBJS  = alphabet.o\
 	nstack.o\
 	parsetree.o\
 	rna_ops.o\
+	scancyk.o\
 	smallcyk.o
 
 HDRS  = funcs.h\

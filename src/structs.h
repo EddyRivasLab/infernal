@@ -131,10 +131,14 @@ typedef struct cm_s {
 				/* Parameters of the probabilistic model:                */
   float **t;			/*   Transition probabilities [0..M-1][0..MAXCONNECT-1]  */
   float **e;			/*   Emission probabilities.  [0..M-1][0..15]            */
+  float  *begin;		/*   Local alignment start probabilities [0..M-1]        */
+  float  *end;			/*   Local alignment ending probabilities [0..M-1]       */
 
 				/* Parameters of the log odds model:                     */
   float **tsc;			/*   Transition score vector, log odds                   */
   float **esc;			/*   Emission score vector, log odds                     */
+  float *beginsc;		/*   Score for ROOT_S -> state v (local alignment)       */
+  float *endsc;   		/*   Score for state_v -> EL (local alignment)           */
 } CM_t;
 
 
