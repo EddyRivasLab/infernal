@@ -1,29 +1,57 @@
 \documentclass[11pt]{article}
-\usepackage{fullpage}
 \usepackage{times}
+\newif\ifpdf
+\ifx\pdfoutput\undefined
+  \pdffalse
+  \usepackage[dvips]{graphicx}    
+  \usepackage[dvips]{color}  
+\else
+  \pdftrue
+  \usepackage[pdftex]{graphicx}    
+  \usepackage[pdftex]{color}  
+\fi
+\usepackage{fullpage}
+\usepackage{cell}
+\usepackage{url}
+\usepackage{cite}
+\bibliographystyle{cell}
+
+\setcounter{secnumdepth}{0}
+
+\begin{document}
+\title{A memory-efficient algorithm for optimally aligning an RNA sequence to a
+secondary structure consensus model}
+\author{Sean R. Eddy\\
+Howard Hughes Medical Institute \& Department of Genetics, \\
+Washington University School of Medicine \\
+Saint Louis, Missouri 63110 USA \\
+eddy@genetics.wustl.edu}  
+\date{\today}
+\maketitle
 
 
 \def\argmax{\mbox{\rm{argmax}}}      % argmax
 \def\argmin{\mbox{\rm{argmin}}}      % argmin
 
-\begin{document}
-
-\section{Abstract}
-
-Optimal alignment algorithms that can deal with both linear sequence
-and long-distance, pairwise RNA secondary structure correlations have
-been developed using stochastic context free grammar
-formalisms. However, they require roughly $O(N^3)$ (cubic) memory for
-an RNA of length $N$ and become impractical for RNAs of more than a
-few hundred nucleotides. Here I describe a divide and conquer variant
-of these RNA dynamic programming algorithms, analogous to the
-memory-efficient Myers/Miller variant of the Smith/Waterman algorithm
-for linear sequence alignment. The algorithm requires $O(N^2 \log N)$
-memory, at the expense of a small constant factor (<2) in time. Small
-subunit ribosomal RNA alignments that previously required a
-prohibitive 20-30 GB of memory to solve by dynamic programming now
-require $\approx$ 80 MB, and are well within the capabilities of most
-modern computers.
+\abstract{The problem of optimally aligning an RNA sequence to an RNA
+secondary structure consensus model is considered. Stochastic
+context-free grammars (SCFGs) provide a probabilistic framework for
+modeling both sequence conservation and long-distance base pairing
+correlations that are characteristic of RNA secondary structure
+consensus. Covariance models (CMs), a restricted case of SCFGs
+specifically suited to modeling RNA structure consensus, have been
+previously described. The standard CYK algorithm for optimal dynamic
+programming alignment of a CM/SCFG to an RNA sequence requires roughly
+$O(N^3)$ (cubic) memory for an RNA of length $N$. This is only
+practical for small RNAs of a few hundred nucleotides or less. Here I
+describe a divide and conquer variant of the CM/SCFG alignment
+algorithm, analogous to the memory-efficient Myers/Miller form of the
+Smith/Waterman algorithm for linear sequence alignment. The algorithm
+requires roughly $O(N^2 \log N)$ memory, at the expense of a small
+constant factor in time. Small subunit ribosomal RNA alignments that
+previously required a prohibitive 20-30 GB of memory to solve by
+dynamic programming now require $\approx$ 80 MB and are well within
+the capabilities of most modern computers.}
 
 \section{Introduction}
 
@@ -100,34 +128,33 @@ algorithms.
 %    Full CYK = 22.7 Gb. 2.4e10 cycles. ~ 8 hr.
 %    Small = 86 Mb.
 
-Notredame \emph{et al.} have pointed specifically at this problem, and
-they described RAGA \cite{Notredame97}, a program that uses a genetic
+Notredame \emph{et al.} have pointed specifically at this problem.
+They described RAGA \cite{Notredame97}, a program that uses a genetic
 algorithm (GA) to optimize a pairwise RNA alignment using an objective
 function that includes base pairing terms. Because GAs have an $O(N)$
 memory requirement, RAGA can effectively find reasonable solutions for
 large RNA alignment problems (such as ribosomal RNA
-alignments). Although RAGA can't guarantee a mathematically optimal
-solution or efficiently search databases for local matches the way the
-SCFG-based dynamic programming algorithms can, RAGA is probably the
-current state of the art for structural alignment of large RNAs.
+alignments). Although RAGA does not guarantee a mathematically optimal
+solution, it is probably the current state of the art for structural
+alignment of large RNAs.
 
-In this paper, I introduce a dynamic programming solution to the
-problem of structural alignment of large RNAs. The central idea is a
-``divide and conquer'' strategy. There is an interesting historical
-parallel.  For linear sequence alignment, a divide and conquer
-algorithm was introduced by Hirschberg \cite{Hirschberg75}, an
-algorithm better known in the computational biology community as the
-Myers/Miller algorithm \cite{MyM-88a}.  Ironically, at the time,
-dynamic programming methods for optimal sequence alignment were well
-known, but were considered impractical on 1970's era computers because
-of an ``extreme'' $O(N^2)$ memory requirement. Myers/Miller reduces
-the memory complexity of a dynamic programming sequence alignment
-algorithm from $O(N^2)$ to $O(N)$, at the cost of a constant (roughly
-two-fold) increase in CPU time. Here I show that a divide and conquer
-strategy can also be applied to a three dimensional SCFG dynamic
-programming matrix, greatly reducing the memory requirement of SCFG
-alignments and making optimal structural alignment of large RNAs
-possible on our current generation of computers.
+Here, I introduce a dynamic programming solution to the problem of
+structural alignment of large RNAs. The central idea is a ``divide and
+conquer'' strategy. There is a historical parallel.  For linear
+sequence alignment, a divide and conquer algorithm was introduced by
+Hirschberg \cite{Hirschberg75}, an algorithm better known in the
+computational biology community as the Myers/Miller algorithm
+\cite{MyM-88a}.  Ironically, at the time, dynamic programming methods
+for optimal sequence alignment were well known, but were considered
+impractical on 1970's era computers because of an ``extreme'' $O(N^2)$
+memory requirement. Myers/Miller reduces the memory complexity of a
+dynamic programming sequence alignment algorithm from $O(N^2)$ to
+$O(N)$, at the cost of a constant (roughly two-fold) increase in CPU
+time. Here I show that a divide and conquer strategy can also be
+applied to a three dimensional SCFG dynamic programming matrix,
+greatly reducing the memory requirement of SCFG alignments and making
+optimal structural alignment of large RNAs possible on our current
+generation of computers.
 
 I will strictly be dealing with the problem of aligning a target
 sequence of unknown structure to a query RNA of known secondary
@@ -142,7 +169,9 @@ each other, nor the problem of trying to simultaneously infer both a
 consensus secondary structure and a secondary structure alignment for
 a set of unaligned RNA sequences of unknown structure.
 
-\subsection{Outline of the method}
+\section{Algorithm}
+
+\subsection{Overview}
 
 There are three key ideas behind a divide and conquer dynamic
 programming method.
@@ -207,7 +236,7 @@ they are built and parameterized.
 \subsection{Description of a covariance model}
 
 A covariance model is a restricted form of stochastic context free
-grammar, well suited for modeling RNA.
+grammar that is well suited for modeling RNA.
 
 A stochastic context free grammar (SCFG) consists of the following:
 
@@ -405,6 +434,8 @@ For any transition $V \rightarrow Y$ or $V \rightarrow YZ$, $y,z >=
 v$. The states and state transitions in a standard SCFG are a directed
 graph that may include cycles. 
 
+\subsection{Divide and conquer algorithm}
+
 \subsection{Definitions}
 
 I use $v$, $w$, $y$, and $z$ as indices referring to particular states
@@ -419,7 +450,7 @@ $y$ with $1 <= y <= v$.
 I use $i$, $j$, and $k$ as indices referring to positions in the
 sequence; they will range from $1..L$.
 
-\subsection{Overall algorithm}
+\subsection{Divide and conquer algorithm}
 
 The Inside/CYK algorithm calculates $\alpha_v(i,j)$ -- the log
 probability of the best alignment of the CM subgraph rooted at state
