@@ -62,7 +62,7 @@ static char experts[] = "\
    --treeforce    : score first seq in alignment and show parsetree\n\
 \n\
  * priors from a file:\n\
-   --prior       : read priors from a disk file in specific format\n\
+   --priorfile    : read priors from a disk file in specific format\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -87,7 +87,7 @@ static struct opt_s OPTIONS[] = {
   { "--wnone",     FALSE, sqdARG_NONE },
   { "--wgsc",      FALSE, sqdARG_NONE },
   //ADDED EPN 01.31.05
-  { "--prior",    FALSE, sqdARG_NONE },
+  { "--priorfile", FALSE, sqdARG_NONE },
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -189,7 +189,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--regress")   == 0) regressionfile    = optarg;
 
     //EPN ADDED 01.31.05
-    else if (strcmp(optname, "--prior")     == 0) prifile         = optarg;
+    else if (strcmp(optname, "--priorfile") == 0) prifile         = optarg;
 
     else if (strcmp(optname, "--informat") == 0) {
       format = String2SeqfileFormat(optarg);
