@@ -23,11 +23,7 @@
 #include "structs.h"
 #include "funcs.h"
 
-static int
-band_calculation(CM_t *cm, int W, double p_thresh, int save_densities,
-		 int **ret_dmin, int **ret_dmax, double ***ret_gamma);
 static int  ok_truncation_error(double *density, int b, int W);
-static void print_band_distribution(double *density, int W);
 
 void
 BandExperiment(CM_t *cm)
@@ -36,7 +32,7 @@ BandExperiment(CM_t *cm)
   int *dmin, *dmax;
 
   W = 1000;
-  while (! band_calculation(cm, W, 0.00001, FALSE, &dmin, &dmax, NULL))
+  while (! BandCalculationEngine(cm, W, 0.00001, FALSE, &dmin, &dmax, NULL))
     {
       W += 1000;
       SQD_DPRINTF1(("increasing W to %d, redoing band calculation...\n", W));
@@ -49,8 +45,8 @@ BandExperiment(CM_t *cm)
  * Purpose:   Given a CM and a maximum length W;
  *            calculate probability densities gamma_v(n), probability
  *            of a parse subtree rooted at state v emitting a sequence
- *            of length n;
- *            use these to return bounds dmin[v] and dmax[v] which
+ *            of length n.
+ *            Then use these to return bounds dmin[v] and dmax[v] which
  *            include a probability mass of >= 1-2(p_thresh).
  *            Each truncated tail (left and right) contains <= p_thresh
  *            probability mass.
@@ -59,7 +55,7 @@ BandExperiment(CM_t *cm)
  *            P(length <= n), for state v:
  *                L_v(n) = \sum_{i=0}^{n}  \gamma_v(i)
  *                
- *            For each state v, find a dmin such that the probability
+ *            For each state v, find dmin such that the probability
  *            of missing a hit is <= p on the low side:
  *                dmin = max_dmin L_v(dmin-1) <= p
  *                
@@ -82,15 +78,42 @@ BandExperiment(CM_t *cm)
  *            that \gamma[v][W] < DBL_EPSILON * p. (because
  *            1+x = 1 for x < DBL_EPSILON, p + xp = p.)
  *
- * Args:      
+ * Args:      cm        - model to build the bands for
+ *            W         - maximum subsequence length W.
+ *            p_thresh  - tail probability mass; bounds will be set
+ *                        so that we miss <= p_thresh of the mass in
+ *                        the left tail and the right tail.
+ *            save_densities - TRUE if we want to keep all of the
+ *                        gamma matrix. Probably only useful if you're
+ *                        also asking * for gamma to be
+ *                        returned. Memory usage is * O(WM). If 
+ *                        FALSE, uses a memory-efficient O(W lnM) 
+ *                        algorithm instead; if you get the gamma matrix
+ *                        back, you're guaranteed the root gamma[0]
+ *                        is valid, but don't count on anything else.
+ *            ret_dmin  - RETURN: dmin[v] is the minimum subsequence length
+ *                        (inclusive) that satisfies p_thresh for the left tail.
+ *                        Pass NULL if you don't want dmin back.
+ *            ret_dmax  - RETURN: dmax[v] is the maximum subsequence length
+ *                        (inclusive) that satisfies p_thresh for the right tail.
+ *                        Pass NULL if you don't want dmax back.
+ *            ret_gamma - RETURN: gamma[v][n], [0..M-1][0..W], is the probability
+ *                        density Prob(length=n | parse subtree rooted at v).
  *
  * Returns:   1 on success.
  *            0 if W was too small; caller should increase W and
  *            call the engine again.
+ *            
+ *            The dependency on a sensible W a priori is an annoyance;
+ *            it may be possible to write an algorithm that calculates
+ *            W on the fly, but I don't see it.
  *
- * Xref: 
+ * Xref:      STL7 p.127 - rearranged calculations of previous BandBounds()
+ *                         imp., for better numerical precision
+ *            STL7 p.128 - justification of truncation error calculations. 
+ *            STL7 p.130 - tests/evaluations.
  */
-static int
+int
 BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
 		      int **ret_dmin, int **ret_dmax, double ***ret_gamma)
 {
@@ -196,7 +219,7 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
        *        This must be true if \sum_{i=W+1...\infty} g(i) < p*DBL_EPSILON,
        *        which is really what we're trying to prove
        */
-      if (pdf <= 0.999 || gamma[v][W-1000] > p_thresh * DBL_EPSILON)
+      if (pdf <= 0.999 || gamma[v][W] > p_thresh * DBL_EPSILON)
 	{
 	  /* fail; truncation error unacceptable; 
 	   * caller is supposed to increase W and rerun. 
@@ -260,18 +283,7 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
     } /*end loop up through all states v*/
 
 
-  print_band_distribution(gamma[0],W);
-  printf ("%d  %d\n", dmin[0], -800);
-  printf ("%d  %d\n", dmin[0], 0);
-  printf ("&\n");
-  printf ("%d  %d\n", dmax[0], -800);
-  printf ("%d  %d\n", dmax[0], 0);
-  printf ("&\n");
-  printf ("%d  %d\n", W-1000, -800);
-  printf ("%d  %d\n", W-1000, 0);
-  printf ("&\n");
-
-  if (! ok_truncation_error(gamma[0], dmax[0], W-1000)) { status = 0; goto CLEANUP; }
+  if (! ok_truncation_error(gamma[0], dmax[0], W)) { status = 0; goto CLEANUP; }
 
   *ret_dmin = dmin;
   *ret_dmax = dmax;
@@ -284,13 +296,7 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
    * else free gamma densities.
    */
   if (ret_gamma != NULL)   *ret_gamma = gamma;
-  else {
-    for (v = 0; v < cm->M; v++) 
-      if (cm->sttype[v] != E_st && gamma[v] != NULL) 
-	{ free(gamma[v]); gamma[v] = NULL; }
-    free(gamma[cm->M-1]);		/* free the end state */
-    free(gamma);
-  }
+  else                     FreeBandDensities(cm, gamma);
   
   /* Free the reused stack of beams.
    */
@@ -299,6 +305,35 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
 
   return status;
 }
+
+/* Function:  FreeBandDensities()
+ * Incept:    SRE, Thu Oct 16 08:30:47 2003 [St. Louis]
+ *
+ * Purpose:   Free a gamma[] array that was returned by BandCalculationEngine().
+ *            Best to handle this with a special function because of the reuse
+ *            of the END rows - only cm->M-1 is actually allocated, and other
+ *            ENDs just point at that one. Too easy to double free() if we
+ *            leave this tricky business to the caller.                 
+ *            
+ * Args:      cm    - the model we build the band densities, gamma[], for.
+ *            gamma - the band densities. Doesn't matter if this is a full
+ *                    matrix (save_densities = TRUE) or a partial matrix
+ *                    (save_densities = FALSE).
+ *
+ * Returns:   (void)
+ *
+ * Xref:      STL7 p130.
+ */
+void
+FreeBandDensities(CM_t *cm, double **gamma)
+{
+  int v;
+  for (v = 0; v < cm->M; v++) 
+    if (cm->sttype[v] != E_st && gamma[v] != NULL) 
+      { free(gamma[v]); gamma[v] = NULL; }
+  free(gamma[cm->M-1]);		/* free the end state */
+  free(gamma);
+}  
 
 
 static int
@@ -328,45 +363,17 @@ ok_truncation_error(double *density, int b, int W)
    */
   D = (beta / (1.-beta)) * density[W];
 
+  /*
   printf("%d  %g\n", b+1, log(density[b+1]));
   printf("%d  %g\n", W, log(density[b+1]) + (W-b-1) * logbeta);
   printf("%d  %g\n", W+1000, log(density[b+1]) + (W-b-1+1000) * logbeta);
   printf("&\n");
+  */
 
   if (D < C * DBL_EPSILON) return 1;
   else                     return 0;
 }  
   
-
-
-static void
-print_band_distribution(double *density, int W)
-{
-  int    i;
-  double pdf;
-
-  /* Set 0. The density.
-   */
-  for (i = 0; i <= W; i++)
-    printf("%d\t%g\n", i, density[i]);
-  printf("&\n");
-
-  /* Set 1. The cumulative pdf.
-   */
-  pdf = 0.;
-  for (i = 0; i <= W; i++) {
-    pdf += density[i];
-    printf("%d\t%g\n", i, pdf);
-  }
-  printf("&\n");
-
-  /* Set 2. log(density). For fitting & determining geometric 
-   *        decay parameter.
-   */
-  for (i = 0; i <= W; i++) 
-    printf("%d\t%g\n", i, log(density[i]));
-  printf("&\n");
-}
 
 
 /* Function: BandDistribution()

@@ -1,4 +1,6 @@
 # STOCKHOLM 1.0
+#  Structures, alignment from deWachter database
+#  Reference coord system imposes E. coli coordinates
 
 Esccol.BPG         ---AAAUUGAAGAGUUUGAUCAUGGCUCAGAUUGAACGCUGGCGGCAGGC
 #=GR Esccol.BPG SS ...................<<<<......<<<<.<<<<<<.<<<<<<<<<
@@ -9,6 +11,7 @@ Haeinf.BPG         NNNNAAUUGAAGAGUUUGAUCAUGGCUCAGAUUGAACGCUGGCGGCAGGC
 Yerpes.BPG         ----------NNNNNNNNNNNNNGGCUCAGAUUGAACGCUGGCGGCAGGC
 #=GR Yerpes.BPG SS ...........<<<<<.......>>>>>.<<<<.<<<<<<.<<<<<<<<<
 #=GC SS_cons       ...................<<<<......<<<<.<<<<<<.<<<<<<<<<
+#=GC RF            ---xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 Esccol.BPG         CUAACACAUGCAAGUCGAACGGUAACAG-GAAGAAGCUUGCUUCUUU-GC
 #=GR Esccol.BPG SS ....<<<.<<<..<<<..<<.<<..<<<.<<<<<<<....>>>>>>>..>
@@ -19,6 +22,7 @@ Haeinf.BPG         UUAACACAUGCAAGUCGAACGGUAGCAG-GAGAAAGCUUGCUUUCUU-GC
 Yerpes.BPG         CUAACACAUGCAAGUCGAGCGGCAGCGGGAAGUAG-UUUA-CUACUUUGC
 #=GR Yerpes.BPG SS ....<<<.<<<..<<<..<<..<..<<<<<<<<<<......>>>>>>>.>
 #=GC SS_cons       ....<<<.<<<..<<<..<<.<<..<<<.<<<<<<<....>>>>>>>..>
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxxxx-xxxxxxxxxxxxxxxxxx-xx
 
 Esccol.BPG         UGACGAGUGGCGGACGGGUGAGUAAUGUCUGGGAAACUGCCUGAUGGAGG
 #=GR Esccol.BPG SS >>>>..>>>>>......<<<.......<<<<<<..<<...<<<<<<<.<<
@@ -29,6 +33,7 @@ Haeinf.BPG         UGACGAGUGGCGGACGGGUGAGUAAUGCUUGGGAAUCUGGCUUAUGGAGG
 Yerpes.BPG         CGGCGAGCGGCGGACGGGUGAGUAAUGUCUGGGGAUCUGCCUGAUGGAGG
 #=GR Yerpes.BPG SS >>>...>>>>>......<<<.......<<<<<<..<<...<<<<<<<.<<
 #=GC SS_cons       >>>>..>>>>>......<<<.......<<<<<<..<<...<<<<<<<.<<
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 Esccol.BPG         GGGAUAACUACUGGAAACGGUAGCUAAUACCGCAUAACGUCGCAAGACCA
 #=GR Esccol.BPG SS <<.....<<<<<<....>>>>>>......>>>>.....<<<....>>>..
@@ -39,6 +44,7 @@ Haeinf.BPG         GGGAUAACGACGGGAAACUGUCGCUAAUACCGCGUAUUAUCGGAAGAUGA
 Yerpes.BPG         GGGAUAACUACUGGAAACGGUAGCUAAUACCGCAUGACCUCGCAAGAGCA
 #=GR Yerpes.BPG SS <<.....<<<<<<....>>>>>>......>>>>.....<<<....>>>..
 #=GC SS_cons       <<.....<<<<<<....>>>>>>......>>>>.....<<<....>>>..
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 Esccol.BPG         AAGAGGGGGACCUUCGGGCCUCUUGCCAUCGGAUGUGCCCAGAUGGGAUU
 #=GR Esccol.BPG SS ..<<<<<<..<<....>>>>>>>>.>>>>>>>..>>.>>>>>>.<<<<<<
@@ -49,6 +55,7 @@ Haeinf.BPG         AAGUGCGGGACUGAGAGGCCGCAUGCCAUAGGAUGAGCCCAAGUGGGAUU
 Yerpes.BPG         AAGUGGGGGACCUUAGGGCCUCACGCCAUCGGAUGAACCCAGAUGGGAUU
 #=GR Yerpes.BPG SS ..<<<<<<..<<....>>>>>>>>.>>>>>>>..>>.>>>>>>.<<<<<<
 #=GC SS_cons       ..<<<<<<..<<....>>>>>>>>.>>>>>>>..>>.>>>>>>.<<<<<<
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 Esccol.BPG         AGCUAGUAGGUGGGGUAACGGCUCACCUAGGCGACGAUCCCUAGCUGGUC
 #=GR Esccol.BPG SS .<<<..<<<<<<<<<<...>>>>>>>>>>>>>...>>>>>>..<<<<<<<
@@ -59,6 +66,7 @@ Haeinf.BPG         AGGUAGUUGGUGGGGUAAAUGCCUACCAAGCCUGCGAUCUCUAGCUGGUC
 Yerpes.BPG         AGCUAGUAGGUGGGGUAAUGGCUCACCUAGGCGACGAUCCCUAGCUGGUC
 #=GR Yerpes.BPG SS .<<<..<<<<<<<<<<...>>>>>>>>>>>>>...>>>>>>..<<<<<<<
 #=GC SS_cons       .<<<..<<<<<<<<<<...>>>>>>>>>>>>>...>>>>>>..<<<<<<<
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 Esccol.BPG         UGAGAGGAUGACCAGCCACACUGGAACUGAGACACGGUCCAGACUCCUAC
 #=GR Esccol.BPG SS <....>>>>...>>>>>>>.<<<<<<<........>>>>>>>.<<<<...
@@ -69,6 +77,7 @@ Haeinf.BPG         UGAGAGGAUGACCAGCCACACUGGAACUGAGACACGGUCCAGACUCCUAC
 Yerpes.BPG         UGAGAGGAUGACCAGCCACACUGGAACUGAGACACGGUCCAGACUCCUAC
 #=GR Yerpes.BPG SS <....>>>>...>>>>>>>.<<<<<<<........>>>>>>>.<<<<...
 #=GC SS_cons       <....>>>>...>>>>>>>.<<<<<<<........>>>>>>>.<<<<...
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 Esccol.BPG         GGGAGGCAGCAGUGGGGAAUAUUGCACAAUGGGCGCAAGCCUGAUGCAGC
 #=GR Esccol.BPG SS .>>>>...>>>>>>........<<<<...<<<<<....>>>>>.>>>>>>
@@ -79,6 +88,7 @@ Haeinf.BPG         GGGAGGCAGCAGUGGGGAAUAUUGCGCNAUGGGGGGAACCCUGACGCAGC
 Yerpes.BPG         GGGAGGCAGCAGUGGGGAAUAUUGCACAAUGGGCGCAAGCCUGAUGCAGC
 #=GR Yerpes.BPG SS .>>>>...>>>>>>........<<<<...<<<<<....>>>>>.>>>>>>
 #=GC SS_cons       .>>>>...>>>>>>........<<<<...<<<<<....>>>>>.>>>>>>
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 Esccol.BPG         CAUGCCGCGUGUAUGAAGAAGGCCUUCGGGUUGUAAAGUACUUUCAGCGG
 #=GR Esccol.BPG SS >.>>>>>>..<<<<......<<<<....>>>>.....>>>>.<<<<<<<<
@@ -89,6 +99,7 @@ Haeinf.BPG         CAUGCCGCGUGAAUGAAGAAGGCCUUCGGGUUGUAAAGUUCUUUCGGUAU
 Yerpes.BPG         CAUGCCGCGUGUGUGAAGAAGGCCUUCGGGUUGUAAAGCACUUUCAGCGA
 #=GR Yerpes.BPG SS >.>>>>>>..<<<<......<<<<....>>>>.....>>>>.<<<<<<<<
 #=GC SS_cons       >.>>>>>>..<<<<......<<<<....>>>>.....>>>>.<<<<<<<<
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 Esccol.BPG         GGAGGAAGGGAGUAAAGUUAAUACCUUUGCUCAUUGACGUUACCCGCAGA
 #=GR Esccol.BPG SS <.....<<<<<<<<<<<.......>>>>>>>>>>>.......>>>>>>>>
@@ -99,6 +110,7 @@ Haeinf.BPG         UGAGGAAGGUUGAUGUGUUAAUAGCACAUCAAAUUGACGUUAAAUACAGA
 Yerpes.BPG         GGAGGAAGGGGUUGAGUUUAAUACGCUCAAUCAUUGACGUUACUCGCAGA
 #=GR Yerpes.BPG SS <.....<<<<<<<<<<<.......>>>>>>>>>>>.......>>>>>>>>
 #=GC SS_cons       <.....<<<<<<<<<<<.......>>>>>>>>>>>.......>>>>>>>>
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 Esccol.BPG         AGAAGCACCGGCUAACUCCGUGCCAGCAGCCGCGGUAAUACGGAGGGUGC
 #=GR Esccol.BPG SS >...<<<<<......<<<<<....................>>>>>>>>>>
@@ -109,6 +121,7 @@ Haeinf.BPG         AGAAGCACCGGCUAACUCCGUGCCAGCAGCCGCGGUAAUACGGAGNGUGC
 Yerpes.BPG         AGAAGCACCGGCUAACUCCGUGCCAGCAGCCGCGGUAAUACGGAGGGUGC
 #=GR Yerpes.BPG SS >...<<<<<......<<<<<....................>>>>>>>>>>
 #=GC SS_cons       >...<<<<<......<<<<<....................>>>>>>>>>>
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 Esccol.BPG         AAGCGUUAAUCGGAAUUACUGGGCGUAAAGCGCACGCAGGCGGUUUGUUA
 #=GR Esccol.BPG SS .>>>>>>>>>>.......<<<<<<<......<<<<...<<<<<<<<<<<.
@@ -119,6 +132,7 @@ Haeinf.BPG         GAGCGUUAAUCGGAAUAACUGGGCGUAAAGGGCACGCAGGCGGUUAUUUA
 Yerpes.BPG         AAGCGUUAAUCGGAAUUACUGGGCGUAAAGCGCACGCAGGCGGUUUGUUA
 #=GR Yerpes.BPG SS .>>>>>>>>>>.......<<<<<<<......<<<<...<<<<<<<<<<<.
 #=GC SS_cons       .>>>>>>>>>>.......<<<<<<<......<<<<...<<<<<<<<<<<.
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 Esccol.BPG         AGUCAGAUGUGAAAUCCCCGGGCUCAACCUGGGA-ACUGCAUCUGAUACU
 #=GR Esccol.BPG SS <<<<<<<<<.......<<<<<<.....>>>>>>......>>>>>>>..>>
@@ -129,6 +143,7 @@ Haeinf.BPG         AGUGAGGUGUGAAAGCCCCGGGCUUAACCUGGGNAU-UGCAUUUCAGACU
 Yerpes.BPG         AGUCAGAUGUGAAAUCCCCGCGCUUAACGUGGGAAC-UGCAUUUGAAACU
 #=GR Yerpes.BPG SS <<<<<<<<<.......<<<<<<.....>>>>>>......>>>>>>>..>>
 #=GC SS_cons       <<<<<<<<<.......<<<<<<.....>>>>>>......>>>>>>>..>>
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-xxxxxxxxxxxxxxx
 
 Esccol.BPG         GGCAAGCUUGAGUCUCGUAGAGGGGGGUAGAAUUCCAGGUGUAGCGGUGA
 #=GR Esccol.BPG SS >>>>>>>...<<<<<<<<...<<<<<<<....<<<<<<<<...<<<....
@@ -139,6 +154,7 @@ Haeinf.BPG         GGGUAACUAGAGUACUUUAGGGAGGGGUAGAAUUCCACGUGUAGCGGUGA
 Yerpes.BPG         GGCAAGCUAGAGUCUUGUAGAGGGGGGUAGAAUUCCAGGUGUAGCGGUGA
 #=GR Yerpes.BPG SS >>>>>>>...<<<<<<<<...<<<<<<<....<<<<<<<<...<<<....
 #=GC SS_cons       >>>>>>>...<<<<<<<<...<<<<<<<....<<<<<<<<...<<<....
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 Esccol.BPG         AAUGCGUAGAGAUCUGGAGGAAUACCGGUGGCGAAGGCGGCCCCCUGGAC
 #=GR Esccol.BPG SS ..>>>......>>>>>>>>...........<<....>>.>>>>>>>..>>
@@ -149,6 +165,7 @@ Haeinf.BPG         AAUGCGUAGAGAUGUGGAGGAAUACCGAAGGCGAAGGCAGCCCCUUGGGA
 Yerpes.BPG         AAUGCGUAGAGAUCUGGAGGAAUACCGGUGGCGAAGGCGGCCCCCUGGAC
 #=GR Yerpes.BPG SS ..>>>......>>>>>>>>...........<<....>>.>>>>>>>..>>
 #=GC SS_cons       ..>>>......>>>>>>>>...........<<....>>.>>>>>>>..>>
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 Esccol.BPG         GAAGACUGACGCUCAGGUGCGAAAGCGUGGGGAGCAAACAGGAUUAGAUA
 #=GR Esccol.BPG SS >.>>>>>..>>>>...>>>>....<<<<<<<...<...<<<<........
@@ -159,6 +176,7 @@ Haeinf.BPG         AUGUACUGACGCUCAUGUGCGAAAGCGUGGGGAGCAAACAGGAUUAGAUA
 Yerpes.BPG         AAAGACUGACGCUCAGGUGCGAAAGCGUGGGGAGCAAACAGGAUUAGAUA
 #=GR Yerpes.BPG SS >>.>>>>..>>>>...>>>>....<<<<<<<...<...<<<<........
 #=GC SS_cons       >.>>>>>..>>>>...>>>>....<<<<<<<...<...<<<<........
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 Esccol.BPG         CCCUGGUAGUCCACGCCGUAAACGAUGUCGACUUGGAGGUUGUGCCCUUG
 #=GR Esccol.BPG SS .>>>>...>>>>>>>>..........<<<<<<<<<<<<<<<<<<<<....
@@ -169,6 +187,7 @@ Haeinf.BPG         CCCUGGUAGUCCACGCUGUAAACGCUGUCGAUUUGGGGGUUGGGGUUUA-
 Yerpes.BPG         CCCUGGUAGUCCACGCUGUAAACGAUGUCGACUUGGAGGUUGUGCCCUUG
 #=GR Yerpes.BPG SS .>>>>...>>>>>>>>..........<<<<<<<<<<<<<<<<<<<<....
 #=GC SS_cons       .>>>>...>>>>>>>>..........<<<<<<<<<<<<<<<<<<<<....
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 Esccol.BPG         AGGCGUGGCUUCCGGAGCUAACGCGUUAAGUCGACCGCCUGGGGAGUACG
 #=GR Esccol.BPG SS .>>>>>>>>>>>>...<<....>>...>>>>>>>>>>>>>>>.<<<<..<
@@ -179,6 +198,7 @@ Haeinf.BPG         -ACUCUGGCACCCGUAGCUAACGUGAUAAAUCGACCGCCUGGGGAGUACG
 Yerpes.BPG         AGGCGUGGCUUCCGGAGCUAACGCGUUAAGUCGACCGCCUGGGGAGUACG
 #=GR Yerpes.BPG SS .>>>>>>>>>>>>...<<....>>...>>>>>>>>>>>>>>>.<<<<..<
 #=GC SS_cons       .>>>>>>>>>>>>...<<....>>...>>>>>>>>>>>>>>>.<<<<..<
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 Esccol.BPG         GCCGCAAGGUUAAAACUCAAAUGAAUUGACGGGGGCCCGCACAAGCGGUG
 #=GR Esccol.BPG SS <<<....>>>>...>>>>..>>>>..<<<<.<<<<<<<<.....<<<<<.
@@ -189,6 +209,7 @@ Haeinf.BPG         GCCGCAAGGUUAAAACUCAAAUGAAUUGACGGGGGCCNGCACAAGCGGUG
 Yerpes.BPG         GCCGCAAGGUUAAAACUCAAAUUAAUUGACGGGGGCCCGCACAAGCGGUG
 #=GR Yerpes.BPG SS <<<....>>>>...>>>>........<<<<.<<<<<<<<.....<<<<<.
 #=GC SS_cons       <<<....>>>>...>>>>..>>>>..<<<<.<<<<<<<<.....<<<<<.
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 Esccol.BPG         GAGCAUGUGGUUUAAUUCGAUGCAACGCGAAGAACCUUACCUGGUCUUGA
 #=GR Esccol.BPG SS .<<<<<<<<<<....<<<<........>>>>........<<<<<<<....
@@ -199,6 +220,7 @@ Haeinf.BPG         GAGCAUGUGGUUUAAUUCGAUGCAACGCGAAGAACCUUACCUACUCUUGA
 Yerpes.BPG         GAGCAUGUGGUUUAAUUCGAUGCAACGCGAAGAACCUUACCUACUCUUGA
 #=GR Yerpes.BPG SS .<<<<<<<<<<....<<<<........>>>>........<<<<<<<....
 #=GC SS_cons       .<<<<<<<<<<....<<<<........>>>>........<<<<<<<....
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 Esccol.BPG         CAUCCACGGAAGUUUUCAGAGAUGAGAAUGUGCCUUCGGGAACCGUGAGA
 #=GR Esccol.BPG SS ..<<<<<<<..<<<<<<<....>>>>>>>...<<....>>..>>>>>.>>
@@ -209,6 +231,7 @@ Haeinf.BPG         CAUCCUAAGAAGAGCUCAGAGAUGAGCUUGUGCCUUCGGGAACUUAGAGA
 Yerpes.BPG         CAUCCACAGAAUUUGGCAGAGAUGCUAAAGUGCCUUCGGGAACUGUGAGA
 #=GR Yerpes.BPG SS ..<<<<<<<..<<<<<<<....>>>>>>>...<<....>>..>>>>>.>>
 #=GC SS_cons       ..<<<<<<<..<<<<<<<....>>>>>>>...<<....>>..>>>>>.>>
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 Esccol.BPG         CAGGUGCUGCAUGGCUGUCGUCAGCUCGUGUUGUGAAAUGUUGGGUUAAG
 #=GR Esccol.BPG SS .<<<.<<..<<<<<<<<<<<<<.<<<<<<<<<....>>>>><<<<.....
@@ -219,6 +242,7 @@ Haeinf.BPG         CAGGUGCUGCAUGGCUGUCGUCAGCUCGUGUUGUGAAAUGUUGGGUUAAG
 Yerpes.BPG         CAGGUGCUGCAUGGCUGUCGUCAGCUCGUGUUGUGAAAUGUUGGGUUAAG
 #=GR Yerpes.BPG SS .<<<.<<..<<<<<<<<<<<<<.<<<<<<<<<....>>>>><<<<.....
 #=GC SS_cons       .<<<.<<..<<<<<<<<<<<<<.<<<<<<<<<....>>>>><<<<.....
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 Esccol.BPG         UCCCGCAACGAGCGCAACCCUUAUCCUUUGUUGCCAGCGGUC-CGGCCGG
 #=GR Esccol.BPG SS .>>>>....>>>>.....<<<<<<<<<<<<<<.<<..<<<<....>>>>>
@@ -229,6 +253,7 @@ Haeinf.BPG         UCCCGCAACGAGCGCAACCCUUAUCCUUUGUUGCCAGCGACU-UGGUCGG
 Yerpes.BPG         UCCCGCAACGAGCGCAACCCUUAUCCUUUGUUGCCAGCACGUAAUGGUGG
 #=GR Yerpes.BPG SS .>>>>....>>>>.....<<<<<<<<<<<<<<.<<..<<<......>>>>
 #=GC SS_cons       .>>>>....>>>>.....<<<<<<<<<<<<<<.<<..<<<<....>>>>>
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-xxxxxxx
 
 Esccol.BPG         GAACUCAAAGGAGACUGCCAGUGAUAAACUGGAGGAAGGUGGGGAUGACG
 #=GR Esccol.BPG SS >>>..>>>>>>>..<<<<<<<<.....>>>>>>>>....>>>>>..>>>>
@@ -239,6 +264,7 @@ Haeinf.BPG         GAACUCAAAGGAGACUGCCAGUGAUAAACUGGAGGAAGGUNGGGAUGACG
 Yerpes.BPG         GAACUCAAGGGAGACUGCCGGUGACAAACCGGAGGAAGGUGGGGAUGACG
 #=GR Yerpes.BPG SS >>>..>>>>>>>..<<<<<<<<.....>>>>>>>>....>>>>>..>>>>
 #=GC SS_cons       >>>..>>>>>>>..<<<<<<<<.....>>>>>>>>....>>>>>..>>>>
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 Esccol.BPG         UCAAGUCAUCAUGGCCCUUACGACCAGGGCUACACACGUGCUACAAUGGC
 #=GR Esccol.BPG SS >>.>>>...>>>>>>>>>...>>>>>>>...>>.>>>>>>>>...<<<<<
@@ -249,6 +275,7 @@ Haeinf.BPG         UCAAGUCAUCAUGGCCCUUACGAGUAGGGCUACACACGUGCUACAAUGGC
 Yerpes.BPG         UCAAGUCAUCAUGGCCCUUACGAGUAGGGCUACACACGUGCUACAAUGGC
 #=GR Yerpes.BPG SS >>.>>>...>>>>>>>>>...>>>>>>>...>>.>>>>>>>>...<<<<<
 #=GC SS_cons       >>.>>>...>>>>>>>>>...>>>>>>>...>>.>>>>>>>>...<<<<<
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 Esccol.BPG         GCAUACAAAGAGAAGCGA-CCUCGCGA-GAGCAAGCGGACCUCAUAAAGU
 #=GR Esccol.BPG SS <<<<.....<<<..<<....<<<.....>>>...>>....>>>.....>>
@@ -259,6 +286,7 @@ Haeinf.BPG         GUAUACAGAGGGAAGCGA-AGCUGCGA-GGUGGAGCGAAUCUCAUAAAGU
 Yerpes.BPG         AGAUACAAAGUGAAGCGA-ACUCGCGA-GAGCCAGCGGACCACAUAAAGU
 #=GR Yerpes.BPG SS <<<<.....<<<..<<....<<<.....>>>...>>....>>>.....>>
 #=GC SS_cons       <<<<.....<<<..<<....<<<.....>>>...>>....>>>.....>>
+#=GC RF            xxxxxxxxxxxxxxxxxx-xxxxxxxx-xxxxxxxxxxxxxxxxxxxxxx
 
 Esccol.BPG         GCGUCGUAGUCCGGAUUGGAGUCUGCAACUCGACUCCAUGAAGUCGGAAU
 #=GR Esccol.BPG SS >>>>>>>.........<<<<<<<........>>>>>>>..........>>
@@ -269,6 +297,7 @@ Haeinf.BPG         ACGUCUAAGUCCGGAUUGGAGUCUGCAACUCGACUCCAUGAAGUCGGAAU
 Yerpes.BPG         CUGUCGUAGUCCGGAUUGGAGUCUGCAACUCGACUCCAUGAAGUCGGAAU
 #=GR Yerpes.BPG SS >>>>>>>.........<<<<<<<........>>>>>>>..........>>
 #=GC SS_cons       >>>>>>>.........<<<<<<<........>>>>>>>..........>>
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 Esccol.BPG         CGCUAGUAAUCGUGGAUCAGAAUGCCACGGUGAAUACGUUCCCGGGCCUU
 #=GR Esccol.BPG SS >>>.....<<<<<<<.........>>>>>>>...........>>>>>>>>
@@ -279,6 +308,7 @@ Haeinf.BPG         CGCUAGUAAUCGCGAAUCAGAAUGUCGCGGUGAAUACGUUCCCGGGCNUU
 Yerpes.BPG         CGCUAGUAAUCGUAGAUCAGAAUGCUACGGUGAAUACGUUCCCGGGCCUU
 #=GR Yerpes.BPG SS >>>.....<<<<<<<.........>>>>>>>...........>>>>>>>>
 #=GC SS_cons       >>>.....<<<<<<<.........>>>>>>>...........>>>>>>>>
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 Esccol.BPG         GUACACACCGCCCGUCACACCAUGGGAGUGGGUUGCAAAAGAAGUAGGUA
 #=GR Esccol.BPG SS >>.>>............<<<<<<<<..<<<<<<<<<<<<....<<<<<<.
@@ -289,6 +319,7 @@ Haeinf.BPG         GUACACACCGCCCGUCACACCAUGGGAGUGGGUUGUACCAGAAGUAGAUA
 Yerpes.BPG         GUACACACCGCCCGUCACACCAUGGGAGUGGGUUGCAAAAGAAGUAGGUA
 #=GR Yerpes.BPG SS >>.>>............<<<<<<<<..<<<<<<<<<<<<....<<<<<<.
 #=GC SS_cons       >>.>>............<<<<<<<<..<<<<<<<<<<<<....<<<<<<.
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 Esccol.BPG         GCUUAACCUUCGGGAGGGCGCUUACC-ACUUUGUGAUUCAUGACUGGGGU
 #=GR Esccol.BPG SS .<<<..<<....>>.>>>.>>>>>>....>>>>>>>>>>>>..>>>>>>>
@@ -299,6 +330,7 @@ Haeinf.BPG         GCUUAACCUUUUGGAGGGCGUUUACC-ACGGUAUGAUUCAUGACUGGGGN
 Yerpes.BPG         GCUUAACCUUCGGGAGGGCGCUUACC-ACUUUGUGAUUCAUGACUGNNNN
 #=GR Yerpes.BPG SS .<<<..<<....>>.>>>.>>>>>>....>>>>>>>>>>>>..>>>>>>>
 #=GC SS_cons       .<<<..<<....>>.>>>.>>>>>>....>>>>>>>>>>>>..>>>>>>>
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxx
 
 Esccol.BPG         GAAGUCGUAACAAGGUAACCGUAGGGGAACCUGCGGUUGGAUCACCUCCU
 #=GR Esccol.BPG SS >..............<<<<<<<<<<....>>>>>>>>>>...........
@@ -309,6 +341,7 @@ Haeinf.BPG         NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN
 Yerpes.BPG         NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN
 #=GR Yerpes.BPG SS >..............<<<<<<<<<<....>>>>>>>>>>...........
 #=GC SS_cons       >..............<<<<<<<<<<....>>>>>>>>>>...........
+#=GC RF            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 Esccol.BPG         UA--
 #=GR Esccol.BPG SS ....
@@ -319,4 +352,5 @@ Haeinf.BPG         NNNN
 Yerpes.BPG         NN--
 #=GR Yerpes.BPG SS ....
 #=GC SS_cons       ....
+#=GC RF            xx--
 //

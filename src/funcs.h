@@ -16,6 +16,12 @@ extern char **DigitizeAlignment(char **aseq, int nseq, int alen);
  */
 extern void     BandExperiment(CM_t *cm);
 extern double **BandDistribution(CM_t *cm, int W);
+extern int      BandCalculationEngine(CM_t *cm, int W, double p_thresh, 
+				      int save_densities,
+				      int **ret_dmin, int **ret_dmax, 
+				      double ***ret_gamma);
+extern void     FreeBandDensities(CM_t *cm, double **gamma);
+
 extern void     BandBounds(double **gamma, int M, int W, double p, 
 			   int **ret_min, int **ret_max);
 extern void     PrintBandGraph(FILE *fp, double **gamma, int *min, int *max, int v, int W);
