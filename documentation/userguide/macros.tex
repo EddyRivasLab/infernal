@@ -60,3 +60,17 @@
 \newcommand{\prog}[1]{{\small\bfseries\texttt{#1}}}
 \newcommand{\emprog}[1]{{\small\bfseries\texttt{#1}}}
 \newcommand{\user}[1]{\indent\indent{\small\bfseries\texttt{> #1}}}
+
+% The ``wideitem'' environment is mostly obsolete, but
+% it gets used in converted manpages.
+\newenvironment{wideitem}{\begin{list} 
+     {}
+     { \setlength{\labelwidth}{2in}\setlength{\leftmargin}{1.5in}}}
+     {\end{list}}
+
+
+% The following are used as temp vars in how man pages are 
+% converted into LaTeX w/ rman; see ``make manpages'' in Makefile.
+\newlength{\sresavei}
+\newlength{\sresaves}
+

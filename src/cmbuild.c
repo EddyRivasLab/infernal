@@ -33,37 +33,37 @@ static char banner[] = "cmbuild - build RNA covariance model from alignment";
 static char usage[]  = "\
 Usage: cmbuild [-options] <cmfile output> <alignment file>\n\
 The alignment file is expected to be in Stockholm format.\n\
-  Available options are:\n\
+  Most commonly used options are:\n\
    -h     : help; print brief help on version and usage\n\
-   -n <s> : name this HMM <s>\n\
+   -n <s> : name this CM <s>\n\
    -A     : append; append this CM to <cmfile>\n\
    -F     : force; allow overwriting of <cmfile>\n\
 ";
 
 static char experts[] = "\
-   --binary      : save the model in binary format\n\
-   --rf          : use #=RF alignment annotation to specify consensus\n\
-   --gapthresh   : fraction of gaps to allow in a consensus column (0..1)\n\
-   --wnone       : shut off sequence weighting\n\
-   --informat <s>: specify input alignment is in format <s>, not Stockholm\n\
+  Expert, in development, or infrequently used options are:\n\
+   --binary       : save the model in binary format\n\
+   --rf           : use reference coordinate annotation to specify consensus\n\
+   --gapthresh <x>: fraction of gaps to allow in a consensus column (0..1)\n\
+   --informat <s> : specify input alignment is in format <s>, not Stockholm\n\
 \n\
- Sequence weighting options (default: GSC weighting):\n\
-   --wgiven      : use weights as annotated in alignment file\n\
-   --wnone       : no weighting; re-set all weights to 1.\n\
-   --wgsc        : use Gerstein/Sonnhammer/Chothia tree weights (default)\n\
+ * sequence weighting options (default: GSC weighting):\n\
+   --wgiven       : use weights as annotated in alignment file\n\
+   --wnone        : no weighting; re-set all weights to 1.\n\
+   --wgsc         : use Gerstein/Sonnhammer/Chothia tree weights (default)\n\
 \n\
- Verbose output files, useful for detailed information about the CM:\n\
-   --cfile <f>   : save count vectors to file <f>\n\
-   --cmtbl <f>   : save tabular description of CM topology to file <f>\n\
-   --emap  <f>   : save consensus emit map to file <f>\n\
-   --gtree <f>   : save tree description of master tree to file <f>\n\
-   --gtbl  <f>   : save tabular description of master tree to file <f>\n\
-   --tfile <f>   : dump individual sequence tracebacks to file <f>\n\
+ * verbose output files, useful for detailed information about the CM:\n\
+   --cfile <f>    : save count vectors to file <f>\n\
+   --cmtbl <f>    : save tabular description of CM topology to file <f>\n\
+   --emap  <f>    : save consensus emit map to file <f>\n\
+   --gtree <f>    : save tree description of master tree to file <f>\n\
+   --gtbl  <f>    : save tabular description of master tree to file <f>\n\
+   --tfile <f>    : dump individual sequence tracebacks to file <f>\n\
 \n\
- Debugging, experimentation:\n\
-   --nobalance   : don't rebalance the CM; number in strict preorder\n\
-   --regress <f> : save regression test information to file <f>\n\
-   --treeforce   : score first seq in alignment and show parsetree\n\
+ * debugging, experimentation:\n\
+   --nobalance    : don't rebalance the CM; number in strict preorder\n\
+   --regress <f>  : save regression test information to file <f>\n\
+   --treeforce    : score first seq in alignment and show parsetree\n\
 ";
 
 static struct opt_s OPTIONS[] = {

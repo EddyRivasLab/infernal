@@ -1,20 +1,20 @@
 
 .SH SEE ALSO
 
-This man page is only intended to be a reminder of program
-options. For more complete documentation, see the User's Guide
-(userguide.pdf) that came with the distribution; or see the Infernal
-web page, http://infernal.wustl.edu/.
+For complete documentation, see the User's Guide (userguide.pdf) that
+came with the distribution; or see the Infernal web page,
+http://infernal.wustl.edu/.
+
+.SH COPYRIGHT
+
+.nf
+@COPYRIGHT@.
+@LICENSELINE@.
+.fi
+See the file COPYING that came with the source
+for details on redistribution conditions.
 
 .SH AUTHOR
-
-The Infernal software and its documentation are
-.nf
-@COPYRIGHT@
-@LICENSE@
-.fi
-See the file COPYING that came with your distribution
-for details.
 
 .nf
 Sean Eddy

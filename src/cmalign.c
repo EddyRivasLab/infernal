@@ -29,7 +29,7 @@ static char banner[] = "cmalign - align sequences to an RNA CM";
 
 static char usage[]  = "\
 Usage: cmalign [-options] <cmfile> <sequence file>\n\
-  Available options are:\n\
+  Most commonly used options are:\n\
    -h     : help; print brief help on version and usage\n\
    -l     : local; align locally w.r.t. the model\n\
    -o <f> : output the alignment file to file <f>\n\
@@ -37,6 +37,7 @@ Usage: cmalign [-options] <cmfile> <sequence file>\n\
 ";
 
 static char experts[] = "\
+  Expert, in development, or infrequently used options are:\n\
    --informat <s>: specify that input alignment is in format <s>\n\
    --nosmall     : use normal alignment algorithm, not d&c\n\
    --regress <f> : save regression test data to file <f>\n\

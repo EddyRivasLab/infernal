@@ -1,0 +1,107 @@
+.TH "cmalign" 1 @RELEASEDATE@ "@PACKAGE@" "@PACKAGE@ Manual"
+
+.SH NAME
+.TP 
+cmalign - use a CM to make a structure RNA multiple alignment
+
+.SH SYNOPSIS
+.B cmalign
+.I [options]
+.I cmfile
+.I seqfile
+
+.SH DESCRIPTION
+
+.B cmalign
+aligns the RNA sequences in
+.I seqfile
+to the covariance model (CM) in
+.I cmfile,
+and outputs a multiple sequence alignment.
+
+.PP
+The sequence file can be in most any common biosequence format,
+including alignment file formats (in which case the sequences
+will be read as if they were unaligned). FASTA format is
+recommended.
+
+.PP
+CM files are profiles of RNA consensus secondary structure. A
+CM file is produced by the 
+.B cmbuild 
+program, from a given RNA sequence alignment of known 
+consensus structure.
+
+.PP
+The alignment that 
+.B cmbuild
+makes is written in Stockholm format.
+It can be redirected to a file
+using the
+.I -o
+option.
+
+.SH OPTIONS
+
+.TP
+.B -h
+Print brief help; includes version number and summary of
+all options, including expert options.
+
+.TP
+.B -l
+Turn on the local alignment algorithm, which allows the alignment
+to span two or more subsequences if necessary (e.g. if the structures
+of the query model and target sequence are only partially shared),
+allowing certain large insertions and deletions in the structure
+to be penalized differently than normal indels.
+The default is to globally align the query model to the target
+sequences.
+
+.TP
+.BI -o " <f>"
+Save the alignment in Stockholm format to a file
+.I <f>.
+The default is to write it to standard output.
+
+.TP
+.B -q
+Quiet; suppress the verbose banner, and only print the resulting
+alignment to stdout. This allows piping the alignment to the input 
+of other programs, for example.
+
+.SH EXPERT OPTIONS
+
+.TP
+.BI --informat " <s>"
+Assert that the input 
+.I seqfile
+is in format
+.I <s>.
+Do not run Babelfish format autodection. This increases
+the reliability of the program somewhat, because 
+the Babelfish can make mistakes; particularly
+recommended for unattended, high-throughput runs
+of @PACKAGE@. 
+.I <s>
+is case-insensitive;
+valid formats include FASTA,
+GENBANK, EMBL, GCG, PIR, STOCKHOLM, SELEX, MSF,
+CLUSTAL, and PHYLIP. 
+See the User's Guide for a complete
+list.
+
+.TP
+.B --nosmall
+Use the normal CYK alignment algorithm. The default is
+to use the divide and conquer algorithm described in SR Eddy, 
+BMC Bioinformatics 3:18, 2002. This
+is useful for debugging, and checking that the
+two algorithms give identical results. The "normal" algorithm requires
+too much memory for most uses.
+
+.TP
+.BI --regress " <f>"
+Save regression test information to a file
+.I <f>. 
+This is part of the automated testing procedure at each release. 

@@ -1,0 +1,208 @@
+.TH "cmbuild" 1 @RELEASEDATE@ "@PACKAGE@" "@PACKAGE@ Manual"
+
+.SH NAME
+.TP 
+cmbuild - construct a CM from an RNA multiple sequence alignment
+
+.SH SYNOPSIS
+.B cmbuild
+.I [options]
+.I cmfile
+.I alifile
+
+.SH DESCRIPTION
+
+.B cmbuild
+reads an RNA multiple sequence alignment from
+.I alifile,
+constructs a covariance model (CM),
+and saves the CM to
+.I cmfile.
+
+.PP
+The alignment file must be in Stockholm format, and
+must contain consensus secondary structure annotation.
+.B cmbuild
+uses the consensus structure to determine the architecture
+of the CM.
+
+.PP
+The alignment file may be a database containing more than one
+alignment.  If it does, the resulting
+.I cmfile
+will be a database of CMs, one per alignment. In this case, each
+alignment must have a name (a #=GF ID tag, in Stockholm
+format).
+
+
+.SH OPTIONS
+
+.TP
+.B -h
+Print brief help; includes version number and summary of
+all options, including expert options.
+
+.TP
+.BI -n " <s>"
+Name the covariance model 
+.I <s>. 
+(Does not work if 
+.I alifile
+contains more than one alignment.)
+The default is to use the name of the alignment
+(given by the #=GF ID tag, in Stockholm format),
+or if that is not present, to use the name of
+the alignment file minus any file type extension
+(that is, a file "myrnas.sto" would give
+a CM named "myrnas").
+
+.TP
+.B -A
+Append the CM to 
+.I cmfile,
+if
+.I cmfile
+already exists.
+
+.TP
+.B -F
+Allow 
+.I cmfile
+to be overwritten. Normally, if
+.I cmfile
+already exists, 
+.B cmbuild 
+exits with an error unless the
+.I -A
+or 
+.I -F
+option is set.
+
+.SH EXPERT OPTIONS
+
+.TP
+.B --binary 
+Save the model in a compact binary format. The default
+is a more readable ASCII text format.
+
+.TP
+.B --rf
+Use reference coordinate annotation (#=GC RF line, in Stockholm)
+to determine which columns are consensus, and which are inserts.
+Any non-gap character indicates a consensus column. (For example,
+mark consensus columns with "x", and insert columns with ".".)
+The default is to determine this automatically; if the
+frequency of gap characters in a column is
+greater than a threshold, gapthresh (default 0.5), the column
+is called an insertion.
+
+.TP
+.BI --gapthresh " <x>"
+Set the gap threshold (used for determining which columns
+are insertions versus consensus; see above) to 
+.I <x>.
+The default is 0.5.
+
+.TP
+.BI --informat " <s>"
+Assert that the input 
+.I alifile
+is in format
+.I <s>.
+Do not run Babelfish format autodection. This increases
+the reliability of the program somewhat, because 
+the Babelfish can make mistakes; particularly
+recommended for unattended, high-throughput runs
+of @PACKAGE@. 
+.I <s>
+is case-insensitive.
+This option is a bit forward-looking;
+.B cmbuild 
+currently only accepts Stockholm format, but
+this may not be true in the future.
+
+.TP
+.B --wgiven
+Use sequence weights as given in annotation in the input alignment
+file. If no weights were given, assume they are all 1.0.  The default
+is to determine new sequence weights by the
+Gerstein/Sonnhammer/Chothia algorithm, ignoring any annotated weights.
+
+.TP 
+.B --wnone
+Turn sequence weighting off; e.g. explicitly set all
+sequence weights to 1.0.
+
+.TP 
+.B --wgsc
+Use the Gerstein/Sonnhammer/Chothia weighting algorithm. This
+is the default, so this option is probably useless.
+
+.TP
+.BI --cfile " <f>"
+Save a file containing observed count vectors (both emissions and
+transitions) to a counts file
+.I <f>.
+One use for this file is as the starting point for estimating
+Dirichlet priors from observed RNA structure data.
+
+.TP
+.BI --cmtbl " <f>"
+Save a tabular description of the CM's topology to a file
+.I <f>.
+Primarily useful for debugging CM architecture construction.
+
+.TP
+.BI --emap " <f>"
+Save a consensus emission map to a file 
+.I <f>.
+This file relates the numbering system of states in the CM's tree-like
+directed graph to the linear numbering of consensus columns. 
+Primarily useful for debugging.
+
+.TP
+.BI --gtree " <f>"
+Save an ASCII picture of the high level structure of the CM's
+guide tree to a file 
+.I <f>.
+Primarily useful for debugging.
+
+.TP
+.BI --gtbl " <f>"
+Save a tabular description of the nodes in CM's guide tree to a file
+.I <f>.
+Primarily useful for debugging.
+
+.TP
+.BI --tfile " <f>"
+Dump tabular inferred sequence tracebacks for each individual
+training sequence to a file 
+.I <f>.
+Primarily useful for debugging.
+
+.TP 
+.B --nobalance
+Turn off the architecture "rebalancing" algorithm. The nodes in a CM
+are initially numbered in standard preorder traversal. The rebalancing
+algorithm is an optimizer that reorders the numbering of the CM in
+order to absolutely guarantee certain algorithmic performance
+bounds. However, it is a stylistic riff that has almost no real
+empirical impact on performance, and is a tricky algorithm to get
+right. This option was inserted for debugging purposes. It is
+sometimes also useful to obtain a simple preorder traversal numbering
+system in the CM architecture (for illustrative purposes,
+for example).
+
+.TP
+.BI --regress " <f>"
+Save regression test information to a file
+.I <f>. 
+This is part of the automated testing procedure at each release. 
+
+.TP
+.B --treeforce
+After building the model, score the first sequence in the alignment
+using its inferred parsetree, and show both the score and the
+parsetree. This is a debugging tool, used to specify and score a 
+particular desired parsetree.
+

@@ -26,12 +26,13 @@ static char banner[] = "cmsearch - search a sequence database with an RNA covari
 static char usage[]  = "\
 Usage: cmsearch [-options] <cmfile> <sequence file>\n\
 The sequence file is expected to be in FASTA format.\n\
-  Available options are:\n\
+  Most commonly used options are:\n\
    -h     : help; print brief help on version and usage\n\
    -W <n> : set scanning window size to <n> (default: 200)\n\
 ";
 
 static char experts[] = "\
+  Expert, in development, or infrequently used options are:\n\
    --informat <s>: specify that input alignment is in format <s>, not FASTA\n\
    --toponly     : only search the top strand\n\
    --local       : do local alignment\n\

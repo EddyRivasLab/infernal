@@ -26,11 +26,12 @@ static char banner[] = "cmscore - score RNA covariance model against sequences";
 
 static char usage[]  = "\
 Usage: cmscore [-options] <cmfile> <sequence file>\n\
-  Available options are:\n\
+  Most commonly used options are:\n\
    -h     : help; print brief help on version and usage\n\
 ";
 
 static char experts[] = "\
+  Expert, in development, or infrequently used options are:\n\
    --informat <s>: specify that input sequence file is in format <s>\n\
    --local       : do local alignment (w.r.t. model)\n\
    --regress <f> : save regression test data to file <f>\n\

@@ -472,11 +472,11 @@ By default, the sequences are weighted, instead of counting as 1
 observation each, such that similar sequences are downweighted. This
 partially compensates for phylogenetic and sampling bias in the data,
 where some sequences are oversampled relative to the rest.  Weights
-are calculated by the Gerstein/Sonnhammer/Chothia algorithm
-\cite{Gerstein94}. (The \prog{--wgsc} option forces G/S/C weights, but
+are calculated by the Gerstein, Sonnhammer, Chothia algorithm
+\cite{Gerstein94}. (The \prog{--wgsc} option forces GSC weights, but
 is redundant since that's the default.)
 
-\begin{srefaq}{Why is cmbuild taking so much time?} The weighting algorithm
+\begin{srefaq}{Why is cmbuild taking so much time?} The GSC weighting algorithm
 scales as $O(N^2)$ with the number of sequences $N$. Weighting may
 become rate-limiting for \prog{cmbuild} if your alignment contains
 many sequences. Model construction itself is fast. You might want to
@@ -540,8 +540,9 @@ estimated probabilities $p$ using a simple Dirichlet prior:
 \hat{p}_x = \frac{c_x + \alpha_x}{\sum_y c_y + \alpha_y}
 \]
 
-where the Dirichlet parameters $\alpha$ are all set to 1.0 (e.g. an
-uninformative plus-one, or Laplace, prior).
+where the Dirichlet parameters $\alpha$ are currently all hardcoded to
+1.0 (e.g. an uninformative plus-one, or Laplace, prior). (This is
+actually a pretty bad prior.)
 
 There are currently no available options at this stage, but this will
 change in the future when better priors are made.

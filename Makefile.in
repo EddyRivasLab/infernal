@@ -1,5 +1,5 @@
 #################################################################
-# INFERNAL
+# Infernal
 # top level Makefile: installation, documentation
 # CVS $Id$
 #################################################################
@@ -47,18 +47,17 @@ SHELL       = /bin/sh
 BASENAME    = "infernal"
 PACKAGE     = "Infernal"
 RELEASE     = "0.54"
-RELCODE     = "rel0_54"
+RELCODE     = "infernal0_54"
 RELEASEDATE = "Jan 2003"
 COPYRIGHT   = "Copyright \(C\) 2002-2003 Washington University, Saint Louis"
-LICENSE     = "Freely distributed under the GNU General Public License \(GPL\)"
+LICENSELINE = "Freely distributed under the GNU General Public License \(GPL\)"
 LICENSETAG  = gnu
 COMPRESS    = gzip
 FTPDIR      = /nfs/ftp/eddy/software/infernal
 
 # The program lists below for INFERNAL are not necessarily
 # a complete manifest. They are the list of stable programs that the
-# package will install. There must eventually be a man page for each one of them
-# in man/. (The list in src/Makefile.in is the complete manifest
+# package will install. (The list in src/Makefile.in is the complete manifest
 # of INFERNAL programs.)
 #
 PROGS = cmalign\
@@ -88,16 +87,12 @@ version.h:
 	@echo "#define RELEASE     \"$(RELEASE)\""     >> version.h
 	@echo "#define RELEASEDATE \"$(RELEASEDATE)\"" >> version.h
 	@echo "#define COPYRIGHT   \"$(COPYRIGHT)\""   >> version.h
-	@echo "#define LICENSE     \"$(LICENSE)\""     >> version.h
+	@echo "#define LICENSE     \"$(LICENSELINE)\"" >> version.h
 	@cp version.h squid/
 	@cp version.h src/
 
 # dist: build a new distribution directory in infernal-$RELEASE
-#       Exports from the CVS repository.
-#       tags RCS files with $(RELCODE) for later reconstruction
-#       squid RCS files are tagged with infernal_(RELCODE).
-#       Adds a license statement to each file that has a @ LICENSE @ line.
-#       Virtually identical to squid's make dist -- keep them in sync!
+#
 dist:
 	# Delete old versions of the same release
 	#
@@ -113,7 +108,7 @@ dist:
 	#
 	cvs tag -F $(RELCODE)
 	cvs export -r $(RELCODE) -d ${BASENAME}-${RELEASE} ${BASENAME}
-	cvs rtag -F ${BASENAME}_${RELCODE} squid
+	cvs rtag -F ${RELCODE} squid
 	(cd ${BASENAME}-${RELEASE}/; cvs export -r ${BASENAME}_${RELCODE} -d squid squid)
 	# 
 	# Put a copy of sqc in testsuite; that's the only script
@@ -126,13 +121,31 @@ dist:
 	(cd ${BASENAME}-${RELEASE};       autoconf)
 	(cd ${BASENAME}-${RELEASE}/squid; autoconf)
 	#
-	# Attach license stamps on files that need 'em (replace LICENSE keyword)
-	# licenseadd.pl is basically harmless, so we can overannotate here by
-	# trying to licenseadd everything.
+	# Attach license stamps on all files that need 'em
+	# (e.g. replace LICENSE keyword everywhere)
 	#
-	find ${BASENAME}-${RELEASE} -type f -exec ssdk/licenseadd.pl Licenses/$(LICENSETAG) {} \;
+	find ${BASENAME}-${RELEASE} -type f -exec ssdk/sedition-pp LICENSE Licenses/$(LICENSETAG) {} \;
+	# 
+	# All other keyword replacements are in the documentation.
 	#
-	# Remove CVS-controlled files/directories that don't belong in the distro
+	find ${BASENAME}-${RELEASE}/documentation -type f -exec ssdk/sedition RELEASE ${RELEASE} RELEASEDATE ${RELEASEDATE} PACKAGE ${PACKAGE} COPYRIGHT ${COPYRIGHT} LICENSELINE ${LICENSELINE} {} \;
+	#
+	# Make the User's Guide, and copy to top level.
+	#
+	(cd ${BASENAME}-${RELEASE}/documentation/userguide; make pdf)
+	cp ${BASENAME}-${RELEASE}/documentation/userguide/main.pdf Userguide.pdf
+	# 
+	# Finish the man pages off, adding necessary boilerplate.
+	# Must be done *after* the user guide is created, since the user guide
+	# steals and uses the pre-boilerplate man pages.
+	#
+	for prog in $(PROGS); do\
+	   cat documentation/manpages/boilerplate.trailer >> ${BASENAME}-${RELEASE}/documentation/manpages/$$prog.man;\
+	done
+	rm ${BASENAME}-${RELEASE}/documentation/manpages/boilerplate.trailer
+	#
+	# Remove CVS-controlled files/directories that don't belong in the
+	# distro
 	#
 	-rm -rf ${BASENAME}-${RELEASE}/Licenses
 	-rm -rf ${BASENAME}-${RELEASE}/00CHECKLIST
@@ -140,6 +153,7 @@ dist:
 	-rm -rf ${BASENAME}-${RELEASE}/squid/configure.in
 	-rm -rf ${BASENAME}-${RELEASE}/Bugs
 	-rm -rf ${BASENAME}-${RELEASE}/Manuscripts
+	-rm -rf ${BASENAME}-${RELEASE}/documentation/userguide
 	#
 	# Set file permissions.
 	#

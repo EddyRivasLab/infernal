@@ -1,0 +1,102 @@
+.TH "cmsearch" 1 @RELEASEDATE@ "@PACKAGE@" "@PACKAGE@ Manual"
+
+.SH NAME
+.TP 
+cmsearch - search a sequence database for RNAs homologous to a CM
+
+.SH SYNOPSIS
+.B cmsearch
+.I [options]
+.I cmfile
+.I seqfile
+
+.SH DESCRIPTION
+
+.B cmsearch
+uses the
+covariance model (CM) in
+.I cmfile
+to search for homologous RNAs in
+.I seqfile,
+and outputs high-scoring alignments.
+
+.PP
+The sequence file can be in most any common biosequence format,
+including alignment file formats (in which case the sequences
+will be read as if they were unaligned). FASTA format is
+recommended.
+
+.PP
+CM files are profiles of RNA consensus secondary structure. A
+CM file is produced by the 
+.B cmbuild 
+program, from a given RNA sequence alignment of known 
+consensus structure.
+
+.PP
+The output that 
+.B cmsearch
+produces is currently extremely rudimentary. All hits of
+score greater than zero bits are output as alignments, in
+the order they are found. Niceties like ranking hits by
+their score, E-values, and reporting thresholds will come
+later.
+
+.SH OPTIONS
+
+.TP
+.B -h
+Print brief help; includes version number and summary of
+all options, including expert options.
+
+.TP
+.BI -W " <n>"
+Set the scanning window width to 
+.I <n>.
+This is the maximum length of a homologous sequence. 
+By default, this is set to 200, which will be too small
+for many RNAs. In the future, this
+number will be automatically set to something sensible, instead
+of relying on you setting it sensibly on the command line.
+
+.SH EXPERT OPTIONS
+
+.TP
+.BI --informat " <s>"
+Assert that the input 
+.I seqfile
+is in format
+.I <s>.
+Do not run Babelfish format autodection. This increases
+the reliability of the program somewhat, because 
+the Babelfish can make mistakes; particularly
+recommended for unattended, high-throughput runs
+of @PACKAGE@. 
+.I <s>
+is case-insensitive;
+valid formats include FASTA,
+GENBANK, EMBL, GCG, PIR, STOCKHOLM, SELEX, MSF,
+CLUSTAL, and PHYLIP. 
+See the User's Guide for a complete
+list.
+
+.TP 
+.B --toponly
+Only search the top (Watson) strand of the sequences in
+.I seqfile.
+By default, both strands are searched.
+
+.TP
+.B --local
+Turn on the local alignment algorithm, which allows the alignment
+to span two or more subsequences if necessary (e.g. if the structures
+of the query model and target sequence are only partially shared),
+allowing certain large insertions and deletions in the structure
+to be penalized differently than normal indels.
+The default is to globally align the query model to the target
+sequences.
+
+.TP 
+.B --dumptrees
+Dump verbose, ugly parse trees for each hit. Useful only for
+debugging purposes.

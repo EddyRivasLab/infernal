@@ -62,8 +62,7 @@ This is a simple example of a multiple RNA sequence alignment with
 secondary structure annotation, in \emph{Stockholm format}. Stockholm
 format, the native alignment format used by \software{hmmer} and
 \software{Infernal} and the \database{Pfam} and \database{Rfam}
-databases, is documented in detail later in the guide (see page
-\pageref{pg:stockholm}). 
+databases, is documented in detail later in the guide.
 
 For now, what you need to know about the key features of the input file is:
 \begin{itemize}
@@ -209,6 +208,7 @@ To align these sequences to the model we made in \prog{my.cm}, do:
 
 This results in an alignment that looks like:
 
+{\samepage
 \begin{sreoutput}
 # STOCKHOLM 1.0
 #=GF AU    Infernal 0.54
@@ -232,6 +232,7 @@ tRNA6             UGUGUUCGAUCCACAGAAUUCGCA
 #=GC RF           ggggUUCGAUuccccguaucggcg
 //
 \end{sreoutput}
+}
 
 In the aligned sequences, a \verb@.@ character indicates an inserted
 column relative to consensus; the \verb@.@ character is an alignment
@@ -375,6 +376,7 @@ stripping off everything by the name/sequence part of the alignment,
 and sticking non-sequence characters like *[5]* in the
 alignment would prevent that.}
 
+{\samepage
 \begin{sreoutput}
 # STOCKHOLM 1.0
 #=GF AU    Infernal 0.54
@@ -398,6 +400,7 @@ tRNA6             GGUCCUGUGUUCGAUCCACAGAAUUCGCA
 #=GC RF           GgUCcggggUUCGAUuccccguaucggcg
 //
 \end{sreoutput}
+}
 
 Note how the local alignment is represented for tRNA6. The deleted
 consensus columns are marked by - characters. The unaligned
@@ -434,10 +437,59 @@ something appropriate to the query CM, rather than hardcoding the 200
 nt default. This will come in a future version of the software.
 
 
+\subsubsection{Getting more information}
 
+For a quick refresher on the command line usage of any program and its
+commonly used options, just type the name of the program with no other
+arguments: e.g.\
 
+\user{cmbuild}
 
+and you'll get a brief help:
 
+\begin{sreoutput}
+FATAL: Incorrect number of arguments.
+Usage: cmbuild [-options] <cmfile output> <alignment file>
+The alignment file is expected to be in Stockholm format.
+  Available options are:
+   -h     : help; print brief help on version and usage
+   -n <s> : name this CM <s>
+   -A     : append; append this CM to <cmfile>
+   -F     : force; allow overwriting of <cmfile>
+\end{sreoutput}
+
+For version information and a complete listing of options, use the
+\prog{-h} option with any program, e.g.\
+
+\user{cmsearch -h}
+
+and you'll see something like:
+
+\begin{sreoutput}
+Infernal 0.54 (Jan 2003)
+Copyright (C) 2002-2003 Washington University, Saint Louis
+Freely distributed under the GNU General Public License (GPL)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Usage: cmsearch [-options] <cmfile> <sequence file>
+The sequence file is expected to be in FASTA format.
+  Most commonly used options are:
+   -h     : help; print brief help on version and usage
+   -W <n> : set scanning window size to <n> (default: 200)
+
+  Expert, in development, or infrequently used options are:
+   --informat <s>: specify that input alignment is in format <s>, not FASTA
+   --toponly     : only search the top strand
+   --local       : do local alignment
+   --dumptrees   : dump verbose parse tree information for each hit
+\end{sreoutput}
+
+More detailed information on usage and command line options is
+available in UNIX manual pages. If they have been installed for your
+system, you can see this information with, e.g.:
+
+\user{man cmalign}
+
+Copies of the man pages are also provided at the end of this guide.
 
 
 
