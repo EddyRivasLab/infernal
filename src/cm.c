@@ -24,13 +24,14 @@
  * Purpose:  Create a covariance model, given the number of states 
  *           that should be in it.
  *
- * Args:     nstates = number of states in the model
+ * Args:     nnodes  =  number of nodes in the model
+ *           nstates = number of states in the model
  *
  * Returns:  ptr to allocated cm. 
  *           Caller is responsible for free'ing the cm.
  */
 CM_t *
-CreateCM(int nstates)
+CreateCM(int nnodes, int nstates)
 {
   CM_t *cm;
 
@@ -44,12 +45,14 @@ CreateCM(int nstates)
 				/* structural information */
   cm->sttype = MallocOrDie(nstates * sizeof(char));
   cm->ndidx  = MallocOrDie(nstates * sizeof(int));
-  cm->ndtype = MallocOrDie(nstates * sizeof(char));
   cm->stid   = MallocOrDie(nstates * sizeof(char));
   cm->cfirst = MallocOrDie(nstates * sizeof(int));
   cm->cnum   = MallocOrDie(nstates * sizeof(int));
   cm->plast  = MallocOrDie(nstates * sizeof(int));
   cm->pnum   = MallocOrDie(nstates * sizeof(int));
+				/* node->state map information */
+  cm->nodemap= MallocOrDie(nnodes  * sizeof(int));
+  cm->ndtype = MallocOrDie(nnodes  * sizeof(char));
 				/* parameter information */
   cm->t      = FMX2Alloc(nstates, MAXCONNECT);
   cm->e      = FMX2Alloc(nstates, Alphabet_size*Alphabet_size);
@@ -77,18 +80,70 @@ FreeCM(CM_t *cm)
 
   free(cm->sttype);
   free(cm->ndidx);
-  free(cm->ndtype);
   free(cm->stid);
   free(cm->cfirst);
   free(cm->cnum);
   free(cm->plast);
   free(cm->pnum);
+  free(cm->nodemap);
+  free(cm->ndtype);
   FMX2Free(cm->t);
   FMX2Free(cm->e);
   FMX2Free(cm->tsc);
   FMX2Free(cm->esc);
   free(cm);
 }
+
+/* Function: CalculateStateIndex()
+ * Date:     SRE, Mon Jul 31 15:37:55 2000 [St. Louis]
+ *
+ * Purpose:  Given a node index and a unique state type, use the CM's
+ *           nodemap to calculate and return a state index in the CM.
+ *
+ *           Doesn't check that the node type matches what's implied
+ *           by the utype! (e.g., if you pass utype==MATP_MP, the node
+ *           had better be a MATP.)
+ *
+ * Args:     cm     - the covariance model
+ *           node   - node index, 0..cm->nodes-1
+ *           utype  - unique statetype, e.g. MATP_MP
+ *
+ * Returns:  a state index, 0..cm->M-1
+ *
+ * Used in:  modelmaker.c:transmogrify() 
+ */
+int
+CalculateStateIndex(CM_t *cm, int node, char utype)
+{
+  int base;
+
+  base = cm->nodemap[node];
+  switch (utype) {
+  case ROOT_S:  return base;
+  case ROOT_IL: return base+1;
+  case ROOT_IR: return base+2;
+  case BEGL_S:  return base;
+  case BEGR_S:  return base;
+  case BEGR_IL: return base+1;
+  case MATP_MP: return base;
+  case MATP_ML: return base+1;
+  case MATP_MR: return base+2;
+  case MATP_D:  return base+3;  
+  case MATP_IL: return base+4;
+  case MATP_IR: return base+5; 
+  case MATL_ML: return base;
+  case MATL_D:  return base+1;
+  case MATL_IL: return base+2;
+  case MATR_MR: return base;
+  case MATR_D:  return base+1;
+  case MATR_IR: return base+2;
+  case END_E:   return base;
+  case BIF_B:   return base;
+  default: Die("bogus utype %d in CalculateStateIndex()", utype);
+  }
+  return base;			/* not used */
+}
+
 
 
 
@@ -116,7 +171,7 @@ PrintCM(FILE *fp, CM_t *cm)
     {
       fprintf(fp, "%5d %-6s %5d %6s %-7s %6d %5d %5d %5d\n",
 	      x, Statetype(cm->sttype[x]), cm->ndidx[x], 
-	      Nodetype(cm->ndtype[x]), UniqueStatetype(cm->stid[x]),
+	      Nodetype(cm->ndtype[cm->ndidx[x]]), UniqueStatetype(cm->stid[x]),
 	      cm->cfirst[x], cm->cnum[x],
 	      cm->plast[x], cm->pnum[x]);
     }
@@ -142,7 +197,7 @@ SummarizeCM(FILE *fp, CM_t *cm)
   for (x = 0; x < UNIQUESTATES; x++) count[x] = 0;
 
   for (x = 0; x < cm->M; x++)
-    count[cm->stid[x]]++;
+    count[(int) cm->stid[x]]++;
   
   fprintf(fp, "Summary report for a covariance model:\n");
   fprintf(fp, "------------------------------------\n");
@@ -208,17 +263,17 @@ UniqueStatetype(int type)
   case BEGL_S : return "BEGL_S";
   case BEGR_S : return "BEGR_S";
   case BEGR_IL: return "BEGR_IL";
-  case MATP_D : return "MATP_D";
   case MATP_MP: return "MATP_MP";
   case MATP_ML: return "MATP_ML";
   case MATP_MR: return "MATP_MR";
+  case MATP_D : return "MATP_D";
   case MATP_IL: return "MATP_IL";
   case MATP_IR: return "MATP_IR";
-  case MATL_D : return "MATL_D";
   case MATL_ML: return "MATL_ML";
+  case MATL_D : return "MATL_D";
   case MATL_IL: return "MATL_IL";
-  case MATR_D : return "MATR_D";
   case MATR_MR: return "MATR_MR";
+  case MATR_D : return "MATR_D";
   case MATR_IR: return "MATR_IR";
   case END_E  : return "END_E";
   case BIF_B  : return "BIF_B";

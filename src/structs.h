@@ -60,14 +60,14 @@ extern char *Alphabet;
 #define BEGL_S  3
 #define BEGR_S  4
 #define BEGR_IL 5
-#define MATP_D  6
-#define MATP_MP 7
-#define MATP_ML 8
-#define MATP_MR 9
+#define MATP_MP 6
+#define MATP_ML 7
+#define MATP_MR 8
+#define MATP_D  9
 #define MATP_IL 10
 #define MATP_IR 11
-#define MATL_D  12
-#define MATL_ML 13
+#define MATL_ML 12
+#define MATL_D  13
 #define MATL_IL 14
 #define MATR_D  15
 #define MATR_MR 16
@@ -94,13 +94,11 @@ typedef struct cm_s {
   char *name;			/*   name of the model                                   */
   char *acc;			/*   optional accession number for model                 */
   char *desc;			/*   optional description of the model                   */
-  int   nodes;			/*   number of nodes in the model                        */
-  int   M;			/*   number of states in the model                       */
 
 				/* Information about the state type:                     */
+  int   M;			/*   number of states in the model                       */
   char *sttype;			/*   type of state this is; e.g. MP_st                   */
   int  *ndidx;			/*   index of node this state belongs to                 */
-  char *ndtype;			/*   type of node this state belongs to; e.g. MATP_nd    */
   char *stid;			/*   unique identifier for this state type; e.g. MATP-MP */
 
 				/* Information about its connectivity in the CM:         */
@@ -109,6 +107,11 @@ typedef struct cm_s {
 				/*               for BIF,     = second child S_st        */
   int  *plast;                  /*   index to first parent state we connect to           */
   int  *pnum;                   /*   number of parent connections                        */
+
+				/* Information mapping nodes->states                     */
+  int   nodes;			/*   number of nodes in the model                        */
+  int  *nodemap;                /* i.e. nodemap[5] = index of first state of node 5      */
+  char *ndtype;			/* type of node, e.g. MATP_nd                            */
 
 				/* Parameters of the probabilistic model:                */
   float **t;			/*   Transition probabilities [0..M-1][0..ynum-1]        */
@@ -136,7 +139,6 @@ typedef struct parsetree_s {
   int *emitl;			/* i position (0..N-1) or -1 if nothing */
   int *emitr;			/* j position (0..N-1) or -1 if nothing */
   int *state;			/* y of state (0..M-1)                  */
-  int *type;			/* type of state                        */
 
   int *nxtl;			/* index in trace of left child  */
   int *nxtr;			/* index in trace of right child */

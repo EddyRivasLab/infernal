@@ -9,9 +9,7 @@
  * the traceback of a CM is a tree structure. Here
  * we provide support for the traceback data structure.
  * 
- * The trace tree structure has a dummy node at its beginning,
- * and dummy end nodes at the termination of each branch. Non-BIFURC
- * states have a NULL right branch. 
+ * Non-BIFURC states have a NULL right branch. 
  * 
  * The pushdown stack structure has a dummy begin node, and the
  * end is signified by a final NULL ptr.
@@ -29,8 +27,11 @@
 /* Function: CreateParsetree()
  * Incept:   SRE 29 Feb 2000 [Seattle] from cove2.0 code.
  * 
- * Purpose:  Creates a parse tree tree structure.
- *            
+ * Purpose:  Creates a parse tree structure.
+ *           The first operation on a newly created tree is
+ *           generally to add the root:
+ *           InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 0, L-1, 0);
+ * 
  * Return:   ptr to the new tree.
  */          
 Parsetree_t * 
@@ -44,31 +45,11 @@ CreateParsetree(void)
   new->emitl    = MallocOrDie(sizeof(int) * new->nalloc);
   new->emitr    = MallocOrDie(sizeof(int) * new->nalloc);
   new->state    = MallocOrDie(sizeof(int) * new->nalloc);
-  new->type     = MallocOrDie(sizeof(int) * new->nalloc);
   new->nxtl     = MallocOrDie(sizeof(int) * new->nalloc);
   new->nxtr     = MallocOrDie(sizeof(int) * new->nalloc);
   new->prv      = MallocOrDie(sizeof(int) * new->nalloc);
   
-				/* state 0 is always the dummy beginning. */
-  new->state[0] = 0;
-  new->type[0]  = DUMMY;
-  new->emitl[0] = -1;
-  new->emitr[0] = -1;
-  new->nxtl[0]  = 1;		/* connects to dummy end */
-  new->nxtr[0]  = 1;		/* connects to dummy end */
-  new->prv[0]   = -1;		/* no parent */
-
-				/* state 1 is always the dummy end. */
-  new->state[1] = 1;
-  new->type[1]  = DUMMY;
-  new->emitl[1] = -1;
-  new->emitr[1] = -1;
-  new->nxtl[1]  = -1;
-  new->nxtr[1]  = -1;
-  new->prv[1]   = -1;		/* end state is shared: has multiple parents, and forgets them. */
-
-  new->n = 2;
-
+  new->n = 0;
   return new;
 }
 
@@ -84,7 +65,6 @@ GrowParsetree(Parsetree_t *tr)
   tr->emitl = ReallocOrDie(tr->emitl, sizeof(int) * tr->nalloc);
   tr->emitr = ReallocOrDie(tr->emitr, sizeof(int) * tr->nalloc);
   tr->state = ReallocOrDie(tr->state, sizeof(int) * tr->nalloc);
-  tr->type  = ReallocOrDie(tr->type,  sizeof(int) * tr->nalloc);
   tr->nxtl  = ReallocOrDie(tr->nxtl,  sizeof(int) * tr->nalloc);
   tr->nxtr  = ReallocOrDie(tr->nxtr,  sizeof(int) * tr->nalloc);
   tr->prv   = ReallocOrDie(tr->prv,   sizeof(int) * tr->nalloc);
@@ -101,7 +81,6 @@ FreeParsetree(Parsetree_t *tr)
   free(tr->emitl);
   free(tr->emitr);
   free(tr->state);
-  free(tr->type);
   free(tr->nxtl);
   free(tr->nxtr);
   free(tr->prv);
@@ -135,33 +114,41 @@ FreeParsetree(Parsetree_t *tr)
  *           terminal dummy state 1, which does not remember its
  *           parents.
  *           
+ *           For the special case of initializing the root node, use y==-1
+ *           and whichway==TRACE_LEFT_CHILD. 
+ *           
  * Returns:  index of new node.
  */          
 int
-InsertTraceNode(Parsetree_t *tr, int y, int whichway,
-		int emitl, int emitr, int state, int type)
+InsertTraceNode(Parsetree_t *tr, int y, int whichway, int emitl, int emitr, int state)
 {
   int a;
   int n;
 
   n = tr->n;
-  a = (whichway == TRACE_LEFT_CHILD ? tr->nxtl[y] : tr->nxtr[y]);
+	/* a==-1 unless we're inserting a node into an existing tree, which is rare */
+  if (y >= 0)
+    a = (whichway == TRACE_LEFT_CHILD ? tr->nxtl[y] : tr->nxtr[y]);
+  else 
+    a = -1;			/* special case of initializing the root. */
 
   if (tr->n == tr->nalloc) GrowParsetree(tr);
 				/* information in new node */
   tr->emitl[n] = emitl;
   tr->emitr[n] = emitr;
   tr->state[n] = state;
-  tr->type[n]  = type;
 				/* connectivity of new node */
   tr->nxtl[n]  = a;
-  tr->nxtr[n]  = 1;
+  tr->nxtr[n]  = -1;
   tr->prv[n]   = y;
 				/* connectivity of parent   */
-  if (whichway == TRACE_LEFT_CHILD)  tr->nxtl[y] = n;
-  else                               tr->nxtr[y] = n;
-				/* connectivity of child    */
-  if (a != 1)  tr->prv[a] = n;
+  if (y >= 0) {
+    if (whichway == TRACE_LEFT_CHILD)  tr->nxtl[y] = n;
+    else                               tr->nxtr[y] = n;
+  }
+				/* connectivity of child, 
+				   if we're inserting instead of just adding  */
+  if (a != -1)  tr->prv[a] = n;
 				/* bump counter, return index of new node */
   tr->n++;
   return n;
@@ -184,16 +171,16 @@ PrintParsetree(FILE *fp, Parsetree_t *tr)
 {
   int x;
 
-  fprintf(fp, "%5s %5s %5s %5s %5s %5s %5s %5s\n",
-	  " idx ","emitl", "emitr", "state", " type", " nxtl", " nxtr", " prv ");
-  fprintf(fp, "%5s %5s %5s %5s %5s %5s %5s %5s\n",
-	 "-----", "-----", "-----", "-----","-----","-----","-----", "-----");
+  fprintf(fp, "%5s %5s %5s %5s %5s %5s %5s\n",
+	  " idx ","emitl", "emitr", "state", " nxtl", " nxtr", " prv ");
+  fprintf(fp, "%5s %5s %5s %5s %5s %5s %5s\n",
+	 "-----", "-----", "-----", "-----", "-----","-----", "-----");
   for (x = 0; x < tr->n; x++)
-    fprintf(fp, "%5d %5d %5d %5d %5d %5d %5d %5d\n",
-	   x, tr->emitl[x], tr->emitr[x], tr->state[x], tr->type[x],
+    fprintf(fp, "%5d %5d %5d %5d %5d %5d %5d\n",
+	   x, tr->emitl[x], tr->emitr[x], tr->state[x], 
 	   tr->nxtl[x], tr->nxtr[x], tr->prv[x]);
-  fprintf(fp, "%5s %5s %5s %5s %5s %5s %5s %5s\n",
-	 "-----", "-----", "-----", "-----","-----","-----","-----", "-----");
+  fprintf(fp, "%5s %5s %5s %5s %5s %5s %5s\n",
+	 "-----", "-----", "-----", "-----","-----","-----", "-----");
 
   fprintf(fp, "n      = %d\n", tr->n);
   fprintf(fp, "nalloc = %d\n", tr->nalloc);
@@ -204,6 +191,9 @@ PrintParsetree(FILE *fp, Parsetree_t *tr)
  * Date:     SRE, Fri Jul 28 13:42:30 2000 [St. Louis]
  *
  * Purpose:  Debugging: count the nodes used in a master trace.
+ *           Note that it takes advantage of the overloading of
+ *           tr->state; in a master trace, this is a node type
+ *           (e.g. MATP_nd), not a state index.
  *
  * Args:     fp - output file (e.g. stdout)
  *           tr - master trace to summarize
@@ -217,13 +207,11 @@ SummarizeMasterTrace(FILE *fp, Parsetree_t *tr)
   int count[NODETYPES];
   
   for (x = 0; x < NODETYPES; x++) count[x] = 0;
-				/* start at 2 to skip the dummies */
-  for (x = 2; x < tr->n; x++)
-    count[tr->type[x]]++;
+  for (x = 0; x < tr->n; x++)     count[tr->state[x]]++;
 
   fprintf(fp, "Summary report for the master trace:\n");
   fprintf(fp, "------------------------------------\n");
-  fprintf(fp, "Total nodes:  %d\n", tr->n-2); /* -2 because first 2 are dummies */
+  fprintf(fp, "Total nodes:  %d\n", tr->n);
   fprintf(fp, "Bifurcations: %d\n", count[0]);
   fprintf(fp, "MATP:         %d\n", count[1]);
   fprintf(fp, "MATL:         %d\n", count[2]);

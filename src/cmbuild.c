@@ -157,10 +157,10 @@ main(int argc, char **argv)
       /* Construct a model
        */
       HandModelmaker(msa, FALSE, 1., &cm, &mtr);
-      /* PrintParsetree(stdout, mtr); */
-      PrintCM(stdout, cm);
+      /* PrintParsetree(stdout, mtr);  */
+      PrintCM(stdout, cm); 
       SummarizeMasterTrace(stdout, mtr); 
-      SummarizeCM(stdout, cm);
+      SummarizeCM(stdout, cm); 
       
       FreeParsetree(mtr);
       FreeCM(cm);
