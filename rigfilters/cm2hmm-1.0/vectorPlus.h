@@ -80,8 +80,8 @@ public:
 #endif
 #ifndef _MSC_VER
 	inline void assign(size_type n, const T& x = T()) {
-		clear();
-		std::vector<T>::insert(begin(),n,x);
+		this->clear();
+		std::vector<T>::insert(this->begin(),n,x);
 	}
 #endif
 #ifdef COMPILER_HAS_DEFAULT_PARAMS
