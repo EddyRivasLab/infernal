@@ -1481,6 +1481,7 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
       case D_st:
 	beta[cm->M][j0][W] = cm->endsc[vroot];
 	break;
+      case B_st:		/* can't start w/ bifurcation at vroot. */
       default: Die("bogus parent state %d\n", cm->sttype[vroot]);
       }
     }
@@ -1580,7 +1581,7 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 		  beta[v][j][d] = sc;
 		break;
 
-	      default: Die("bogus parent state %d\n", cm->sttype[y]);
+	      default: Die("bogus child state %d\n", cm->sttype[y]);
 	      }/* end switch over states*/
 	    } /* ends for loop over parent states. we now know beta[v][j][d] for this d */
 	    if (beta[v][j][d] < IMPOSSIBLE) beta[v][j][d] = IMPOSSIBLE;
@@ -1635,7 +1636,17 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 		if ((sc = beta[v][j][d] + cm->endsc[v]) > beta[cm->M][j][d])
 		  beta[cm->M][j][d] = sc;
 		break;
-	      default: Die("bogus parent state %d\n", cm->sttype[y]);
+	      case B_st:  
+	      default: Die("bogus parent state %d\n", cm->sttype[v]);
+		/* note that although B is a valid vend for a segment we'd do
+                   outside on, B->EL is set to be impossible, by the local alignment
+                   config. There's no point in having a B->EL because B is a nonemitter
+                   (indeed, it would introduce an alignment ambiguity). The same
+		   alignment case is handled by the X->EL transition where X is the
+		   parent consensus state (S, MP, ML, or MR) above the B. Thus,
+		   this code is relying on the NOT_IMPOSSIBLE() test, above,
+		   to make sure the sttype[vend]=B case gets into this switch.
+		*/
 	      } /* end switch over parent state type v */
 	    } /* end inner loop over d */
 	} /* end outer loop over jp */
