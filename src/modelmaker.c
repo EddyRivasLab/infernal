@@ -5,20 +5,20 @@
  * Construct a model from an alignment. 
  *
  * Outline of the process:
- *    1. construct a "master" traceback (mtr) for the alignment, 
+ *    1. construct a "guide" tree (gtr) for the alignment, 
  *       specifying which columns are match vs. insert and
  *       how the model tree branches. 
- *    2. This traceback is assigned a numbering system by NumberMasterTrace(),
- *       which returns the number of nodes; the caller then allocates a new CM. 
- *    3. This new model is numbered (assigned a branching structure) by TopofyNewCM(). 
- *    4. Individual tracebacks are constructed from individual aligned sequences 
- *       by Transmogrify().
- *    5. The individual tracebacks are counted into a new model with TraceCount().
- *    6. The counts converted to probabilities with ProbifyCM().
+ *    2. The guide tree is converted to a CM by cm_from_guide().
+ *    3. Individual tracebacks are constructed from individual aligned sequences 
+ *       by transmogrify().
+ *    4. The individual tracebacks are counted into a new model with ParsetreeCount().
+ * The CM containing counts is returned. The caller has to assign a prior to it,
+ * and convert it to probabilities; then assign a null model to it and convert to 
+ * log-odds scores.  
  *
- * The "master trace" is a special use of a Parsetree_t structure. 
+ * The "guide tree" is a special use of a Parsetree_t structure. 
  * - tr->state contains a node type (e.g. MATP_nd), not a state index.
- * - The numbering of the master trace is a postorder traverse, identical to
+ * - The numbering of the guide tree is a postorder traverse, identical to
  *   the numbering in the final CM.
  * - emitl and emitr are relative to the alignment columns, not individual
  *   sequence positions.
@@ -37,8 +37,8 @@
 #include "msa.h"		/* multiple sequence alignments */
 
 
-static void         cm_from_master(CM_t *cm, Parsetree_t *mtr);
-static Parsetree_t *transmogrify(CM_t *cm, Parsetree_t *mtr, char *aseq);
+static void         cm_from_guide(CM_t *cm, Parsetree_t *gtr);
+static Parsetree_t *transmogrify(CM_t *cm, Parsetree_t *gtr, char *aseq);
 
 /* Function: HandModelmaker()
  * Incept:   SRE 29 Feb 2000 [Seattle]; from COVE 2.0 code
@@ -65,22 +65,22 @@ static Parsetree_t *transmogrify(CM_t *cm, Parsetree_t *mtr, char *aseq);
  *           use_rf    - TRUE to use RF annotation to determine match/insert
  *           gapthresh - fraction of gaps to allow in a match column (if use_rf is FALSE)
  *           ret_cm    - RETURN: new model                      (maybe NULL)
- *           ret_mtr   - RETURN: master traceback for alignment (maybe NULL)
+ *           ret_gtr   - RETURN: guide tree for alignment (maybe NULL)
  *           ret_tr    - RETURN: 0..nseq-1 individual tracebacks for seqs (maybe NULL)
  *           
  * Return:   void
  *           cm is allocated here. FreeCM(*ret_cm).
- *           mtr is allocated here. FreeTrace() on each one, then free(*ret_tr).
+ *           gtr is allocated here. FreeTrace() on each one, then free(*ret_tr).
  */
 void
 HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh, 
-	       CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_tr)
+	       CM_t **ret_cm, Parsetree_t **ret_gtr, Parsetree_t ***ret_tr)
 {
   CM_t           *cm;		/* new covariance model                       */
-  Parsetree_t    *mtr;		/* master traceback tree for alignment        */
+  Parsetree_t    *gtr;		/* guide tree for alignment                   */
   Parsetree_t    *tr;		/* an individual parse tree                   */
   Parsetree_t   **savetr;	/* array of individual traces if we're saving */
-  Nstack_t       *pda;		/* pushdown stack used in building mtr        */
+  Nstack_t       *pda;		/* pushdown stack used in building gtr        */
   int            *matassign;	/* 0..alen-1 array; 0=insert col, 1=match col */
   int            *ct;		/* 0..alen-1 base pair partners array         */
   int             apos;		/* counter over columns of alignment          */
@@ -135,7 +135,7 @@ HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh,
 	ct[apos] = 0;
       }
 
-  /* 4. Construct a master traceback tree.
+  /* 4. Construct a guide tree.
    *    This code is borrowed from yarn's KHS2Trace().
    *    
    *    We also keep track of how many states we'll need in the final CM,
@@ -143,7 +143,7 @@ HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh,
    *    for informational purposes.
    */
   nstates = nnodes = 0;
-  mtr = CreateParsetree();	/* the parse tree we'll grow        */
+  gtr = CreateParsetree();	/* the parse tree we'll grow        */
   pda = CreateNstack();		/* a pushdown stack for our indices */
 
   /* Construction strategy has to make sure we number the nodes in
@@ -169,7 +169,7 @@ HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh,
     {
       PopNstack(pda, &j);
       PopNstack(pda, &i);	/* i..j == subseq we're responsible for */
-      PopNstack(pda, &v);	/* v = index of parent node in mtr */
+      PopNstack(pda, &v);	/* v = index of parent node in gtr */
 
       /* This node accounts for i..j, but we usually don't know how yet.
        * Six possibilities:
@@ -183,13 +183,13 @@ HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh,
        *        and push BEGIN mid+1,j and working mid+1,j
        */
       if (i > j) {
-	v = InsertTraceNode(mtr, v, TRACE_LEFT_CHILD, i, j, END_nd);
+	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, END_nd);
 	nstates += 1;		/* END_nd -> E_st */
 	nnodes++;
       }
 
       else if (type == ROOT_nd) { /* try to push i,j; but deal with INSL and INSR */
-	v = InsertTraceNode(mtr, v, TRACE_LEFT_CHILD, i, j, ROOT_nd);
+	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, ROOT_nd);
 	for (; i <= j; i++) if (matassign[i]) break;
 	for (; j >= i; j--) if (matassign[j]) break;
 	PushNstack(pda, v);	/* here v==0 always. */
@@ -201,7 +201,7 @@ HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh,
       }
 
       else if (type == BEGL_nd) {    /* no inserts */
-	v = InsertTraceNode(mtr, v, TRACE_LEFT_CHILD, i, j, BEGL_nd);
+	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, BEGL_nd);
 	PushNstack(pda, v);	
 	PushNstack(pda, i);
 	PushNstack(pda, j);
@@ -211,7 +211,7 @@ HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh,
       }
 
       else if (type == BEGR_nd)  { /* look for INSL */
-	v = InsertTraceNode(mtr, v, TRACE_RIGHT_CHILD, i, j, BEGR_nd);
+	v = InsertTraceNode(gtr, v, TRACE_RIGHT_CHILD, i, j, BEGR_nd);
 	for (; i <= j; i++) if (matassign[i]) break; 
 	PushNstack(pda, v);	
 	PushNstack(pda, i);
@@ -223,7 +223,7 @@ HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh,
 
       else if (ct[i] == 0) {
 	 	/* i unpaired. This is a MATL node; allow INSL */
-	v = InsertTraceNode(mtr, v, TRACE_LEFT_CHILD, i, j, MATL_nd);
+	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, MATL_nd);
 	for (i = i+1; i <= j; i++)  if (matassign[i]) break;
 	PushNstack(pda, v);
 	PushNstack(pda, i);
@@ -234,7 +234,7 @@ HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh,
       }
 
       else if (ct[j] == 0) { 	/* j unpaired. MATR node. Deal with INSR */
-	v = InsertTraceNode(mtr, v, TRACE_LEFT_CHILD, i, j, MATR_nd);
+	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, MATR_nd);
 	for (j = j-1; j >= i; j--) if (matassign[j]) break;
 	PushNstack(pda, v);
 	PushNstack(pda, i);
@@ -245,7 +245,7 @@ HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh,
       }
 
       else if (ct[i] == j) { /* i,j paired to each other. MATP. deal with INSL, INSR */
-	v = InsertTraceNode(mtr, v, TRACE_LEFT_CHILD, i, j, MATP_nd);
+	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, MATP_nd);
 	for (i = i+1; i <= j; i++) if (matassign[i]) break;
 	for (j = j-1; j >= i; j--) if (matassign[j]) break;
 	PushNstack(pda, v);
@@ -280,7 +280,7 @@ HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh,
            * Each stop of the following loop gives a possible midpoint k, which is
            * then evaluated, keeping track of the best split so far.
            */
-	  v = InsertTraceNode(mtr, v, TRACE_LEFT_CHILD, i, j, BIF_nd);
+	  v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, BIF_nd);
 	  bestdiff = msa->alen;
 	  bestk    = ct[i]+1;
 	  for (k = ct[i] + 1; k < ct[j]; k = ct[k] + 1) 
@@ -310,45 +310,45 @@ HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh,
   FreeNstack(pda);
   free(ct);
 
-  /* OK, we've converted ct into mtr -- mtr is a tree structure telling us the
+  /* OK, we've converted ct into gtr -- gtr is a tree structure telling us the
    * arrangement of consensus nodes. Now do the drill for constructing a full model 
-   * using this master trace.
+   * using this guide tree.
    */
   cm = CreateCM(nnodes, nstates);
-  cm_from_master(cm, mtr);
+  cm_from_guide(cm, gtr);
   CMZero(cm);
 
   if (ret_tr != NULL) savetr = MallocOrDie(sizeof(Parsetree_t *) * msa->nseq);
   for (idx = 0; idx < msa->nseq; idx++)
     {
-      tr = transmogrify(cm, mtr, dsq[idx]);
+      tr = transmogrify(cm, gtr, dsq[idx]);
       ParsetreeCount(cm, tr, dsq[idx], msa->wgt[idx]);
       if (ret_tr != NULL) savetr[idx] = tr; else FreeParsetree(tr);
     }
   free(matassign);
   if (ret_cm  != NULL) *ret_cm  = cm;  else FreeCM(cm);
-  if (ret_mtr != NULL) *ret_mtr = mtr; else FreeParsetree(mtr);
+  if (ret_gtr != NULL) *ret_gtr = gtr; else FreeParsetree(gtr);
   if (ret_tr  != NULL) *ret_tr  = savetr; 
 }
 
 
 
-/* Function: cm_from_master()
+/* Function: cm_from_guide()
  * Date:     SRE, Sat Jul 29 09:25:49 2000 [St. Louis]
  *
- * Purpose:  given a master traceback and an allocated CM, 
+ * Purpose:  given a guide tree and an allocated CM, 
  *           fill in all the structural information of the CM.
  *           
  * Args:     cm  - allocated cm to construct
- *           mtr - master trace
+ *           gtr - guide tree
  *
  * Returns:  (void)
  */
 static void
-cm_from_master(CM_t *cm, Parsetree_t *mtr)
+cm_from_guide(CM_t *cm, Parsetree_t *gtr)
 {
-  Nstack_t   *pda;              /* pushdown stack used for traversing mtr */
-  int         v;		/* what node we're working on (in mtr index system)*/
+  Nstack_t   *pda;              /* pushdown stack used for traversing gtr */
+  int         v;		/* what node we're working on (in gtr index system)*/
   int         node;		/* what node this is (preorder traversal numbering of CM) */
   int         state;		/* what state this is (preorder traversal numbering of CM) */
   int  nxtnodetype;		/* type of a child node (e.g. MATP_nd) */
@@ -367,8 +367,8 @@ cm_from_master(CM_t *cm, Parsetree_t *mtr)
   PushNstack(pda, 0);		/* push ROOT_nd onto the stack */
   while (PopNstack(pda, &v))
     {
-      if      (mtr->state[v] == BIF_nd) {
-	prvnodetype = mtr->state[mtr->prv[v]];
+      if      (gtr->state[v] == BIF_nd) {
+	prvnodetype = gtr->state[gtr->prv[v]];
 
 	cm->nodemap[node] = state;
 	cm->ndtype[node ] = BIF_nd;
@@ -384,13 +384,13 @@ cm_from_master(CM_t *cm, Parsetree_t *mtr)
 	state++;
 	
 	node++;
-	PushNstack(pda, mtr->nxtr[v]);
-	PushNstack(pda, mtr->nxtl[v]);
+	PushNstack(pda, gtr->nxtr[v]);
+	PushNstack(pda, gtr->nxtl[v]);
       }
 
-      else if (mtr->state[v] == MATP_nd) {
-	nxtnodetype = mtr->state[mtr->nxtl[v]];
-	prvnodetype = mtr->state[mtr->prv[v]];
+      else if (gtr->state[v] == MATP_nd) {
+	nxtnodetype = gtr->state[gtr->nxtl[v]];
+	prvnodetype = gtr->state[gtr->prv[v]];
 
 	cm->nodemap[node] = state;
 	cm->ndtype[node ] = MATP_nd;
@@ -450,12 +450,12 @@ cm_from_master(CM_t *cm, Parsetree_t *mtr)
 	state++;
 
 	node++;
-	PushNstack(pda, mtr->nxtl[v]);
+	PushNstack(pda, gtr->nxtl[v]);
       }
 
-      else if (mtr->state[v] == MATL_nd) {
-	nxtnodetype = mtr->state[mtr->nxtl[v]];
-	prvnodetype = mtr->state[mtr->prv[v]];
+      else if (gtr->state[v] == MATL_nd) {
+	nxtnodetype = gtr->state[gtr->nxtl[v]];
+	prvnodetype = gtr->state[gtr->prv[v]];
 
 	cm->nodemap[node] = state;
 	cm->ndtype[node ] = MATL_nd;
@@ -488,12 +488,12 @@ cm_from_master(CM_t *cm, Parsetree_t *mtr)
 	state++;
 
 	node++;
-	PushNstack(pda, mtr->nxtl[v]);
+	PushNstack(pda, gtr->nxtl[v]);
       }
       
-      else if (mtr->state[v] == MATR_nd) {
-	nxtnodetype = mtr->state[mtr->nxtl[v]];
-	prvnodetype = mtr->state[mtr->prv[v]];
+      else if (gtr->state[v] == MATR_nd) {
+	nxtnodetype = gtr->state[gtr->nxtl[v]];
+	prvnodetype = gtr->state[gtr->prv[v]];
 
 	cm->nodemap[node] = state;
 	cm->ndtype[node ] = MATR_nd;
@@ -526,11 +526,11 @@ cm_from_master(CM_t *cm, Parsetree_t *mtr)
 	state++;
 
 	node++;
-	PushNstack(pda, mtr->nxtl[v]);
+	PushNstack(pda, gtr->nxtl[v]);
       }
 
-      else if (mtr->state[v] == BEGL_nd) {
-	nxtnodetype = mtr->state[mtr->nxtl[v]];
+      else if (gtr->state[v] == BEGL_nd) {
+	nxtnodetype = gtr->state[gtr->nxtl[v]];
 
 	cm->nodemap[node] = state;
 	cm->ndtype[node]  = BEGL_nd;
@@ -545,13 +545,13 @@ cm_from_master(CM_t *cm, Parsetree_t *mtr)
 	state++;
 
 	node++;
-	PushNstack(pda, mtr->nxtl[v]);
+	PushNstack(pda, gtr->nxtl[v]);
       }
 
-      else if (mtr->state[v] == BEGR_nd) {
+      else if (gtr->state[v] == BEGR_nd) {
 	int bifparent;
 
-	nxtnodetype = mtr->state[mtr->nxtl[v]];
+	nxtnodetype = gtr->state[gtr->nxtl[v]];
 
 	cm->nodemap[node] = state;
 	cm->ndtype[node]  = BEGR_nd;
@@ -582,11 +582,11 @@ cm_from_master(CM_t *cm, Parsetree_t *mtr)
 	state++;
 
 	node++;
-	PushNstack(pda, mtr->nxtl[v]);
+	PushNstack(pda, gtr->nxtl[v]);
       }
 
-      else if (mtr->state[v] == ROOT_nd) {
-	nxtnodetype = mtr->state[mtr->nxtl[v]];
+      else if (gtr->state[v] == ROOT_nd) {
+	nxtnodetype = gtr->state[gtr->nxtl[v]];
 
 	cm->nodemap[node] = state;
 	cm->ndtype[node]  = ROOT_nd;
@@ -619,11 +619,11 @@ cm_from_master(CM_t *cm, Parsetree_t *mtr)
 	state++;
 
 	node++;
-	PushNstack(pda, mtr->nxtl[v]);
+	PushNstack(pda, gtr->nxtl[v]);
       }
 
-      else if (mtr->state[v] == END_nd) {
-	prvnodetype = mtr->state[mtr->prv[v]];
+      else if (gtr->state[v] == END_nd) {
+	prvnodetype = gtr->state[gtr->prv[v]];
 
 	cm->nodemap[node] = state;
 	cm->ndtype[node]  = END_nd;
@@ -651,20 +651,20 @@ cm_from_master(CM_t *cm, Parsetree_t *mtr)
  * Date:     SRE, Mon Jul 31 14:30:58 2000 [St. Louis]
  *
  * Purpose:  Construct a "fake" parsetree for a given aligned sequence (aseq),
- *           given a new CM structure (cm) and a master structure tree (mtr).
+ *           given a new CM structure (cm) and a guide tree (gtr).
  *
  * Args:     cm    - the new covariance model
- *           mtr   - master parsetree
+ *           gtr   - guide tree
  *           dsq   - a digitized aligned sequence [1..L]
  *
  * Returns:  the individual parse tree. 
  *           Caller is responsible for free'ing this.
  */
 static Parsetree_t *
-transmogrify(CM_t *cm, Parsetree_t *mtr, char *dsq)
+transmogrify(CM_t *cm, Parsetree_t *gtr, char *dsq)
 {
   Parsetree_t *tr;
-  int          node;		/* index of the node in *mtr* we're currently working on */
+  int          node;		/* index of the node in *gtr* we're currently working on */
   int          state;		/* index of a state in the *CM*                          */
   int          type;		/* a unique statetype                                    */
   Nstack_t    *pda;             /* pushdown automaton for remembering positions in tr    */
@@ -674,94 +674,94 @@ transmogrify(CM_t *cm, Parsetree_t *mtr, char *dsq)
   tr  = CreateParsetree();
   pda = CreateNstack();
 
-  /* Because the mtr is already indexed in a postorder traversal,
+  /* Because the gtr is already indexed in a postorder traversal,
    * we can postorder traverse it easily w/ a for loop...
    */
   tidx = -1;			/* first state to attach to; -1 is special case for attaching root */
   for (node = 0; node < cm->nodes; node++)
     {
-      switch (mtr->state[node]) { /* e.g. switch on node type: */
+      switch (gtr->state[node]) { /* e.g. switch on node type: */
       case BIF_nd:
 	state = CalculateStateIndex(cm, node, BIF_B);
-	tidx  = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, mtr->emitl[node], mtr->emitr[node], state);
+	tidx  = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
 	PushNstack(pda, tidx); /* remember this index in tr, we'll use it for BEGL and BEGR */
 	PushNstack(pda, tidx);
 	break;
 
       case MATP_nd:
-	if (dsq[mtr->emitl[node]] == DIGITAL_GAP) {
-	  if (dsq[mtr->emitr[node]] == DIGITAL_GAP) type = MATP_D;
+	if (dsq[gtr->emitl[node]] == DIGITAL_GAP) {
+	  if (dsq[gtr->emitr[node]] == DIGITAL_GAP) type = MATP_D;
 	  else                                      type = MATP_MR;
 	} else {
-	  if (dsq[mtr->emitr[node]] == DIGITAL_GAP) type = MATP_ML;
+	  if (dsq[gtr->emitr[node]] == DIGITAL_GAP) type = MATP_ML;
 	  else                                      type = MATP_MP;
 	}
 	state = CalculateStateIndex(cm, node, type);
-	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, mtr->emitl[node], mtr->emitr[node], state);
+	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
 
 	state = CalculateStateIndex(cm, node, MATP_IL);
-	for (i = mtr->emitl[node]+1; i < mtr->emitl[mtr->nxtl[node]]; i++)
+	for (i = gtr->emitl[node]+1; i < gtr->emitl[gtr->nxtl[node]]; i++)
 	  if (dsq[i] != DIGITAL_GAP)
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, mtr->emitr[node]-1, state);
+	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node]-1, state);
 
 	state = CalculateStateIndex(cm, node, MATP_IR);
-	for (j = mtr->emitr[node]-1; j > mtr->emitr[mtr->nxtl[node]]; j--)
+	for (j = gtr->emitr[node]-1; j > gtr->emitr[gtr->nxtl[node]]; j--)
 	  if (dsq[j] != DIGITAL_GAP)
 	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state);	
 	break;
 
       case MATL_nd:
-	if (dsq[mtr->emitl[node]] == DIGITAL_GAP) type = MATL_D;
+	if (dsq[gtr->emitl[node]] == DIGITAL_GAP) type = MATL_D;
 	else                                      type = MATL_ML;
 
 	state = CalculateStateIndex(cm, node, type);
-	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, mtr->emitl[node], mtr->emitr[node], state);
+	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
 
 	state = CalculateStateIndex(cm, node, MATL_IL);
-	for (i = mtr->emitl[node]+1; i < mtr->emitl[mtr->nxtl[node]]; i++)
+	for (i = gtr->emitl[node]+1; i < gtr->emitl[gtr->nxtl[node]]; i++)
 	  if (dsq[i] != DIGITAL_GAP)
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, mtr->emitr[node], state);
+	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], state);
 	break;
 
       case MATR_nd:
-	if (dsq[mtr->emitr[node]] == DIGITAL_GAP) type = MATR_D;
+	if (dsq[gtr->emitr[node]] == DIGITAL_GAP) type = MATR_D;
 	else                                      type = MATR_MR;
 
 	state = CalculateStateIndex(cm, node, type);
-	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, mtr->emitl[node], mtr->emitr[node], state);
+	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
 
 	state = CalculateStateIndex(cm, node, MATR_IR);
-	for (j = mtr->emitr[node]-1; j > mtr->emitr[mtr->nxtl[node]]; j--)
+	for (j = gtr->emitr[node]-1; j > gtr->emitr[gtr->nxtl[node]]; j--)
 	  if (dsq[j] != DIGITAL_GAP)
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, mtr->emitl[node], j, state);
+	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], j, state);
 	break;
 
       case BEGL_nd:
 	PopNstack(pda, &tidx);	/* recover parent bifurcation's index in trace */
 	
 	state = CalculateStateIndex(cm, node, BEGL_S);
-	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, mtr->emitl[node], mtr->emitr[node], state);
+	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
 	break;
 
       case BEGR_nd:
 	PopNstack(pda, &tidx);	/* recover parent bifurcation's index in trace */
 	
 	state = CalculateStateIndex(cm, node, BEGR_S);
-	tidx = InsertTraceNode(tr, tidx, TRACE_RIGHT_CHILD, mtr->emitl[node], mtr->emitr[node], state);
+	tidx = InsertTraceNode(tr, tidx, TRACE_RIGHT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
 
 	state = CalculateStateIndex(cm, node, BEGR_IL);
-	for (i = mtr->emitl[node]; i < mtr->emitl[mtr->nxtl[node]]; i++)
+	for (i = gtr->emitl[node]; i < gtr->emitl[gtr->nxtl[node]]; i++)
 	  if (dsq[i] != DIGITAL_GAP)
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, mtr->emitr[node], state);
+	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], state);
 	break;
 
       case ROOT_nd:
 				/* we assume ROOT_S == 0, ROOT_IL == 1, ROOT_IR == 2 in the CM */
-	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, mtr->emitl[node], mtr->emitr[node], 0);
-	for (i = mtr->emitl[node]; i < mtr->emitl[mtr->nxtl[node]]; i++)
+	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], 0);
+	for (i = gtr->emitl[node]; i < gtr->emitl[gtr->nxtl[node]]; i++)
 	  if (dsq[i] != DIGITAL_GAP)
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, mtr->emitr[node], 1);
-	for (j = mtr->emitr[node]; j > mtr->emitr[mtr->nxtl[node]]; j--)
+	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], 1);
+	for (j = gtr->emitr[node]; j > gtr->emitr[gtr->nxtl[node]]; j--)
 	  if (dsq[j] != DIGITAL_GAP)
 	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, 2);	
 	break;
@@ -772,7 +772,7 @@ transmogrify(CM_t *cm, Parsetree_t *mtr, char *dsq)
 	break;
 
       default: 
-	Die("bogus node type %d in transmogrify()", mtr->state[node]);
+	Die("bogus node type %d in transmogrify()", gtr->state[node]);
       }
     }
   FreeNstack(pda);

@@ -11,14 +11,15 @@
   \usepackage[pdftex]{color}  
 \fi
 \usepackage{fullpage}
-\usepackage{cell}
 \usepackage{url}
 \usepackage{cite}
-\bibliographystyle{cell}
+\usepackage{alg}
+\bibliographystyle{bmc_bioinformatics}
 
 \setcounter{secnumdepth}{0}
 
 \begin{document}
+
 \title{A memory-efficient algorithm for optimally aligning an RNA sequence to a
 secondary structure consensus model}
 \author{Sean R. Eddy\\
@@ -28,7 +29,6 @@ Saint Louis, Missouri 63110 USA \\
 eddy@genetics.wustl.edu}  
 \date{\today}
 \maketitle
-
 
 \def\argmax{\mbox{\rm{argmax}}}      % argmax
 \def\argmin{\mbox{\rm{argmin}}}      % argmin
@@ -218,7 +218,7 @@ only $O(N)$ memory.
 
 For SCFG alignment, the standard Cocke-Younger-Kasami (referred to in
 this paper as Inside/CYK) alignment algorithm can also be run in a
-memory-saving ``score only'' mode, as can the ``backwards'' analogue,
+memory-saving ``score only'' mode, as can the backwards analogue,
 Outside/CYK. The Inside/Outside splitting procedure one needs for an
 SCFG divide and conquer is not as obvious as it is for
 forwards/backwards splitting in sequence alignment, but it is still
@@ -233,10 +233,13 @@ general. Therefore I need to start with an introduction to what CMs
 are, how they correspond to a known RNA secondary structure, and how
 they are built and parameterized.
       
-\subsection{Description of a covariance model}
+\subsection{Definition and construction of a covariance model}
 
 A covariance model is a restricted form of stochastic context free
-grammar that is well suited for modeling RNA.
+grammar that is well suited for modeling a consensus RNA secondary
+structure.
+
+\subsubsection{Definition of a stochastic context free grammar}
 
 A stochastic context free grammar (SCFG) consists of the following:
 
@@ -253,319 +256,364 @@ A stochastic context free grammar (SCFG) consists of the following:
       nonterminal $V$ is equal to 1.
 \end{itemize} 
 
-A covariance model has seven types of states:
+\subsubsection{Relationship between SCFGs and covariance models}
 
-\begin{tabular}{llll}
-State              &  Production             & Emission & Transition\\ \hline
-P (pair)           & $V_P \rightarrow a Y b$ & $e_v(a,b)$ & $t_v(y)$  \\
-L (left)           & $V_L \rightarrow a Y$   & $e_v(a)$   & $t_v(y)$  \\
-R (right)          & $V_R \rightarrow Y a$   & $e_v(a)$   & $t_v(y)$  \\
-B (bifurcation)    & $V_B \rightarrow Y_S Z_S$  & 1     &     1     \\ \hline
-D (delete)         & $V_D \rightarrow Y$     &    1     &   $t_v(y)$  \\
-S (start)          & $V_S \rightarrow Y$     &    1     &   $t_v(y)$  \\
-E (end)            & $V_E \rightarrow \epsilon$ & 1     &     1     \\
+A covariance model is a specific repetitive SCFG architecture
+consisting of groups of model states that are associated with base
+pairs and single-stranded positions in an RNA secondary structure
+consensus. A covariance model has nine types of states with seven
+kinds of production rules:
+
+\begin{tabular}{lllll}
+State  & Description             &  Production             & Emission & Transition\\ \hline
+MP  & (pair emitting)           & $V_P \rightarrow a Y b$ & $e_v(a,b)$ & $t_v(y)$  \\
+ML, IL & (left emitting)       & $V_L \rightarrow a Y$   & $e_v(a)$   & $t_v(y)$  \\
+MR, IR & (right emitting)      & $V_R \rightarrow Y a$   & $e_v(a)$   & $t_v(y)$  \\
+B &  (bifurcation)    & $V_B \rightarrow Y_S Z_S$  & 1     &     1     \\ \hline
+D & (delete)         & $V_D \rightarrow Y$     &    1     &   $t_v(y)$  \\
+S & (start)          & $V_S \rightarrow Y$     &    1     &   $t_v(y)$  \\
+E & (end)            & $V_E \rightarrow \epsilon$ & 1     &     1     \\
 \end{tabular}
 
-Each state has one or more distinctive production rules: for example,
-a pair (P) state produces two correlated letters a and b and transits
-to one of several possible new states Y, whereas a bifurcation (B)
-state splits into two new start (S) states Y and Z with probability 1.
-The overall production probability is the product of an emission
-probability $e_v$ and a transition probability $t_v$. 
+For example, a consensus (``match'') pair (MP) state produces two
+correlated letters a and b and transits to one of several possible new
+states Y of various types.  A bifurcation (B) state splits into two
+new start (S) states Y$_{S}$ and Z$_{S}$ with probability 1.  The E
+state is a special case that terminates a derivation ($\epsilon$
+represents the empty string). The reason for separate ML and IL states
+instead of just L is to distinguish between consensus (``match'')
+states and non-consensus ``insert'' states.
 
-It may help some readers to note that a covariance model is a
-deliberate extension of profile hidden Markov models to SCFGs and RNA
-secondary structure. Profile HMMs as defined by Krogh, Haussler, and
-colleagues use L, D, S, and E type productions. P, R, and B type
-productions are necessary SCFG-specific augmentations to deal with RNA
-secondary structure. HMMs and CMs both assume that emission and
-transition are statistically independent, and, as we will describe
-next, both CMs and profile HMMs have a stereotyped hierarchical
-structure that is derived by an input multiple sequence alignment.
+Each overall production probability is the product of an emission
+probability $e_v$ and a transition probability $t_v$. This is an
+independence assumption. The analogous assumption is made by hidden
+Markov models, which are a special case of stochastic regular
+grammars.
 
-Rather than presenting a terse and possibly cryptic definition of a
-CM, it is perhaps more useful (though considerably more verbose) to
-take the reader through the entire CM construction process, starting
-from a structure annotated multiple sequence alignment.
-
-\subsubsection{From structure to a consensus binary tree of nodes}
+\subsubsection{From consensus structural alignment to guide tree}
 
 Figure~\ref{fig:input_alignment} shows an example input file: a
 multiple sequence alignment of homologous RNAs, with a line describing
 the consensus RNA secondary structure. The first step of building a CM
-is to produce a binary tree of \emph{nodes} representing the consensus
-secondary structure, called the \emph{master tree}. The master tree
-can be thought of as a parse tree for a consensus structure, with
-nodes as nonterminals and alignment columns as terminals.
+is to produce a binary \emph{guide tree} of \emph{nodes} representing
+the consensus secondary structure. The guide tree is a parse tree for
+the consensus structure, with nodes as nonterminals and alignment
+columns as terminals.
 
-There are eight types of nodes:
+The guide tree has eight types of nodes:
 
-\begin{tabular}{ll}
-Node                         &  Production           \\ \hline
-MATP  (pair)                 & $V_{\mbox{MATP}} \rightarrow a Y b$  \\
-MATL  (single strand, left)  & $V_{\mbox{MATL}} \rightarrow a Y$   \\
-MATR  (right)                & $V_{\mbox{MATR}} \rightarrow Y a$   \\
-BIF   (bifurcation)          & $V_{\mbox{BIF}}  \rightarrow Y_{\mbox{BEGL}} Z_{\mbox{BEGR}}$ \\
-ROOT  (root)                 & $V_{\mbox{ROOT}} \rightarrow Y$       \\
-BEGL  (begin, left)          & $V_{\mbox{BEGL}} \rightarrow Y$       \\
-BEGR  (begin, left)          & $V_{\mbox{BEGR}} \rightarrow Y$       \\
-END   (end)                  & $V_{\mbox{END}}  \rightarrow \epsilon$ \\ \hline
+\begin{tabular}{lll}
+Node      & Description      &  Production           \\ \hline
+MATP  & (pair)                 & $V_{\mbox{\tiny MATP}} \rightarrow a Y b$  \\
+MATL  & (single strand, left)  & $V_{\mbox{\tiny MATL}} \rightarrow a Y$   \\
+MATR  & (single strand, right) & $V_{\mbox{\tiny MATR}} \rightarrow Y a$   \\
+BIF   & (bifurcation)          & $V_{\mbox{\tiny BIF}}  \rightarrow
+Y_{\mbox{\tiny BEGL}} Z_{\mbox{\tiny BEGR}}$ \\
+ROOT  & (root)                 & $V_{\mbox{\tiny ROOT}} \rightarrow Y$       \\
+BEGL  & (begin, left)          & $V_{\mbox{\tiny BEGL}} \rightarrow Y$       \\
+BEGR  & (begin, left)          & $V_{\mbox{\tiny BEGR}} \rightarrow Y$       \\
+END   & (end)                  & $V_{\mbox{\tiny END}}  \rightarrow \epsilon$ \\ \hline
 \end{tabular}
  
-Note the close correspondence between these node types and the CM's
-final state types (above). The master tree deals with the consensus
-structure, but in individual sequences we will need to deal with
-insertions and deletions with respect to this consensus. The master
-tree is the skeleton on which we will organize the CM.
+These node types correspond closely with a CM's final state types.
+The guide tree deals with the consensus structure; for individual
+sequences we will need to deal with insertions and deletions with
+respect to this consensus. The guide tree is the skeleton on which we
+will later organize the CM.
 
-The reason for distinguishing ROOT, BEGL, and BEGR nodes will become
-apparent.
+The input alignment is first used to construct a consensus secondary
+structure (Figure~\ref{fig:cm_nodetree}, left) that defines which
+aligned columns will be ignored as non-consensus (and later modeled as
+insertions relative to the consensus), and which consensus alignment
+columns are base-paired to each other.
 
-We are given a secondary structure annotation string $x_1..x_L$ for
-the $L$ columns of the multiple alignment. Consensus base paired
-columns are denoted with '$>$', '$<$' symbol pairs. Consensus single
-stranded columns are denoted with an 'x'. Columns that are considered
-to be insertions relative to consensus (and will not become part of
-the master tree) are denoted with a '.'.
+Given the consensus structure, consensus base pairs are assigned to
+MATP nodes and consensus unpaired columns are assigned to MATL or MATR
+nodes. One ROOT node is used at the head of the tree.  Multifurcation
+loops and/or multiple stems are dealt with by assigning one or more
+BIF nodes that branch to subtrees starting with BEGL or BEGR head
+nodes. (ROOT, BEGL, and BEGR start nodes are labeled differently
+because they will be expanded to different groups of states; this has
+to do with avoiding ambiguous parse trees for individual sequences, as
+will soon become apparent.) Alignment columns that are considered to
+be insertions relative to the consensus structure are ignored at this
+stage.
 
-We first convert this string to an array $c_1..c_L$. $c_i$ is set to
--1 if this column is nonconsensus, to 0 if this column is consensus
-single-stranded, and $c_j$ if this column $i$ is in a consensus base
-pair with column $j$. $c$ is constructed using a pushdown stack
-as follows:
-\footnote{The theme of using pushdown stacks will recur. Many operations
-on CMs involve binary tree traversals.}
-
-\begin{verbatim}
-for (i = 1..L)
-   if      x_i == '.':  c_i = -1.
-   else if x_i == 'x':  c_i = 0.
-   else if x_i == '>':  push i.
-   else if x_i == '<':  
-      pop j.
-      c[i] = j.
-      c[j] = i.
-\end{verbatim}
-
-We now use $c$ to construct a binary master tree $m$, with the nodes
-of $m$ numbered in postorder traversal, again using a pushdown stack.
-The stack stores a triplet of numbers $(v,i,j)$ for the current node
-being worked on in the tree: the index $v$ of the parent node for this
-node, and $i$ and $j$ for the subsequence $i..j$ that the subtree
-rooted at this node must account for. We assume a generic function for
-building a binary tree, attach(v, y, t, i, j), which attaches node $v$
-to node $y$ in the growing tree (left child first), and associates
-with node $v$ the information that it is a node of type $t$, and the
-master tree rooted at $v$ is responsible for the subsequence $i..j$.
-
-\begin{verbatim}
-v = 1.
-attach(v, ROOT, 0, i, j)
-while (c_i == -1 && i <= j) i++
-while (c_j == -1 && j >= i) j-- 	
-push(v, i, j)
-
-while (pop (y, i, j))
-   if i > j: 
-      attach(v, y, END, i, j)
-   else if parent y is a BIF:
-      if v == y+1:
-         attach(v, y, BEGL i, j)
-         push(v, i, j)
-      else
-         attach(v, y, BEGR, i, j)
-         while (c_i == -1 && i <= j) i++
-         push(v, i, j)
-   else if c_i == 0:
-      attach(v, y, MATL, i, j)
-      i++
-      while (c_i == -1 && i <= j) i++
-      push(v, i, j)
-   else if c_j == 0:
-      attach(v, y, MATR, i, j)
-      j--
-      while (c_j == -1 && j >= i) j-- 	
-      push(v, i, j)
-   else if c[i] == j:
-      attach(v, y, MATP, i, j)
-      i++
-      j--
-      while (c_i == -1 && i <= j) i++
-      while (c_j == -1 && j >= i) j-- 	
-      push(v, i, j)
-   else 
-      attach(v, y, BIF, i, j)
-      select best bifurcation k into subsequences i..k, k+1..j
-      push(v, k+1, j)
-      push(v, i, k)
-   v++
-\end{verbatim}
-
-There may be several possible choices of a bifurcation point $k$.  The
-choice can be made arbitrarily, but it will somewhat affect the
-performance of the divide and conquer algorithm (SRE: ELABORATE
-HERE). The possible split points can be enumerated efficiently by the
-following procedure:
-
-\begin{verbatim}
-for (k = ct[i]; k < ct[j]-1; k = ct[k])
-   [Check this k as a possible bifurcation point for i..k, k+1..j]
-   while ct[k] <= 0 k++
-\end{verbatim}
-
-The current strategy is to choose $k$ such that i..k and k+1..j are as
+There will in general be more than one possible guide tree for any
+given consensus structure. Almost all of this ambiguity is eliminated
+by three conventions: (1) only MATL nodes are used for hairpin loops;
+(2) in describing interior loops, MATL nodes are used before MATR
+nodes; and (3) BIF nodes are only invoked where necessary to explain
+branching secondary structure stems (as opposed to unnecessarily
+bifurcating in single stranded sequence). One source of ambiguity
+remains. In invoking a bifurcation to explain alignment columns $i..j$
+by two substructures on columns $i..k$ and $k+1..j$, there may be
+several possible choices of $k$ (e.g. in a single stranded region
+between the two substructures). The choice of bifurcation point $k$
+impacts the performance of the divide and conquer algorithm.  My
+current strategy is to choose $k$ such that $i..k$ and $k+1..j$ are as
 close to the same length as possible.
 
-An example of an output master tree from this procedure, corresponding
-to the input multiple alignment in Figure~\ref{fig:input_alignment},
-is shown in Figure~\ref{fig:cm_nodetree}.
+The result of this procedure is the guide tree. The nodes of the guide
+tree are numbered in post-traversal order (from root to leaves, so
+parent nodes always have lower indices). The guide tree corresponding
+to the input multiple alignment in Figure~\ref{fig:input_alignment} is
+shown on the right in Figure~\ref{fig:cm_nodetree}.
 
-\subsubsection{From a consensus node tree to a covariance model}
+\subsubsection{From guide tree to covariance model}
+
+A CM must deal with insertions and deletions in individual sequences
+relative to the consensus structure. For example, for a consensus base
+pair, either partner may be deleted leaving a single unpaired residue,
+or the pair may be entirely deleted; additionally, there may be
+inserted nonconsensus residues between this pair and the next pair in
+the stem. Accordingly, each node in the master tree is expanded into
+one or more \emph{states} in the CM as follows:
+
+\begin{tabular}{clccc}
+Node   &  States             & nstates & nsplit & ninsert \\ \hline
+MATP   & [MP ML MR D] IL IR  &   6     &   4    &  2   \\
+MATL   & [ML D] IL           &   3     &   2    &  1   \\
+MATR   & [MR D] IR           &   3     &   2    &  1   \\
+BIF    & [B]                 &   1     &   1    &  0   \\
+ROOT   & [S] IL IR           &   3     &   1    &  2   \\
+BEGL   & [S] IL              &   1     &   1    &  0   \\
+BEGR   & [S] IL IR           &   2     &   1    &  1   \\
+END    & [E]                 &   1     &   1    &  0   \\ \hline
+\end{tabular}
+
+The states are grouped into a ``split set'' of 1-4 (shown in brackets
+above) and an ``insert set'' of 0-2 insert states. The split set
+includes the consensus state, which by convention is first. One and
+only one of the states in the split set must be visited in every parse
+tree (and this fact will be exploited by the divide and conquer
+algorithm). The insert state(s) are not obligately visited, and they
+have self-transitions, so they will be visited zero or more times in
+any given parse tree.
+
+State transitions are then assigned as follows. For bifurcation nodes,
+the B state makes transitions to the S states of the child BEGL and
+BEGR nodes. Each state in a split set of a non-bifurcation node makes
+a possible transition to every insert state in the \emph{same} node,
+and to every state in the split set of the \emph{next} node. An IL
+state makes a transition to itself, to the IR state in the same node
+(if present), and to every state in the split set of the next node. An
+IR state makes a transition to itself and to every state in the split
+set of the next node.
+
+This arrangement of transitions guarantees that there is unambiguously
+one and only one parse tree for any given individual structure. This
+is important, because the algorithm will find a maximum likelihood
+parse tree for a given sequence, and we wish to interpret this result
+as a maximum likelihood structure.
+
+As a convenient side effect of the ordering of the states, it is
+guaranteed that the transitions from any state are to a
+\emph{contiguous} set of child states, so the transitions for state
+$v$ may be kept as an offset and a count; e.g. state $v$ makes
+transitions to states $v+\mbox{offset}_v..v+{count}_v-1$, with offset
+always $\geq 0$.  Similarly, the parent states which may transition
+into $v$ are also guaranteed to be contiguous in the final CM. This
+contiguity is exploited by the implementation.
+
+Thus the final CM structure is an array of M states, connected as a
+directed graph by transitions $t_v(y)$ (or probability 1 transitions
+$v \rightarrow y,z$ for bifurcations) with the states numbered such
+that $y,z \geq v$. The numbering of the states is in postorder
+traversal with respect to the guide tree. There are no cycles in the
+directed graph other than cycles of zero length (e.g. the
+self-transitions of the insert states). An example CM, corresponding
+to the input alignment of Figure~\ref{fig:input_alignment}, is shown
+in Figure~\ref{fig:cm_graph}.
+
+\subsubsection{Parameterization}
+
+Using the guide tree and the final CM, each individual sequence in the
+input multiple alignment can be converted unambiguously to a CM parse
+tree, as shown in Figure~\ref{fig:parsetrees}. Counts for observed
+state transitions and singlet/pair emissions are then collected from
+these parse trees. The observed counts are converted to transition and
+emission probabilities by standard procedures (I calculate maximum a
+posteriori parameters, using Dirichlet priors).
+
+\subsubsection{Comparison to profile HMMs}
+
+The relationship between an SCFG and a covariance model is analogous
+to the relationship of hidden Markov models (HMMs) and profile HMMs
+for modeling multiple sequence alignments
+\cite{Krogh94,Durbin98,Eddy98}.  The contrast may be instructive, at
+least to readers familiar with profile HMMs.  A profile HMM is a
+repetitive HMM architecture that associates each consensus column of a
+multiple alignment with a single type of model node -- a MATL node, in
+the above notation. Each node contains a ``match'', ``delete'', and
+``insert'' HMM state -- ML, IL, and D states, in the above notation.
+The profile HMM also has special begin and end states. Profile HMMs
+are therefore essentially a special case of CMs. An unstructured RNA
+multiple alignment would be modeled by a guide tree of all MATL nodes,
+and converted to an unbifurcated CM that would essentially be
+identical to a profile HMM. (The only difference is trivial; the CM
+root node includes a IR state, whereas the start node of a profile HMM
+does not.) All the other node types (especially MATP, MATR, and BIF)
+and state types (e.g. MP, MR, IR, and B) are SCFG augmentations
+necessary to extend profile HMMs to deal with RNA secondary structure.
 
 
 
-
-
-
-
-Restrictions on transitions:
-
-For any transition $V \rightarrow Y$ or $V \rightarrow YZ$, $y,z >=
-v$. The states and state transitions in a standard SCFG are a directed
-graph that may include cycles. 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 \subsection{Divide and conquer algorithm}
 
-\subsection{Definitions}
-
-I use $v$, $w$, $y$, and $z$ as indices referring to particular states
-in the model; they will range from $1..M$. $S_v$ refers to the
-\emph{type} of state $v$; it will be one of the seven types
-{D,P,L,R,S,E,B}. $C_v$ is a list of children for state $v$ (states $y$
-that $v$ can transit to); it will contain up to six indices $y$ with
-$v <= y <= M$. $P_v$ is a list of parents for state $v$ (states that
-could have transited to state $v$); it will contain up to six indices
-$y$ with $1 <= y <= v$.
-
-I use $i$, $j$, and $k$ as indices referring to positions in the
-sequence; they will range from $1..L$.
-
-\subsection{Divide and conquer algorithm}
+I use $v$, $w$, $y$, and $z$ as indices of states in the model. These
+will range from $1..M$, for a CM with $M$ states. $S_v$ refers to the
+\emph{type} of state $v$; it will be one of the nine types
+\{D,P,ML,IL,MR,IL,S,E,B\}. $C_v$ is a list of children for state $v$
+(states $y$ that $v$ can transit to); it will contain up to six
+contiguous indices $y$ with $v <= y <= M$. $P_v$ is a list of parents
+for state $v$ (states that could have transited to state $v$); it will
+contain up to six contiguous indices $y$ with $1 <= y <= v$. (Because
+the sets are guaranteed to be contiguous in the model, the
+implementation stores these as an offset relative to $v$ and a count,
+as described previously.) I use $g$, $h$, $i$, $j$, $k$, $p$, and $q$
+as indices referring to positions in a sequence $x$. These indices
+will range from $1..L$, for a sequence of length $L$.
 
 The Inside/CYK algorithm calculates $\alpha_v(i,j)$ -- the log
-probability of the best alignment of the CM subgraph rooted at state
-$v$ generating every subsequence $x_i..x_j$ of sequence $x$.  The
-Outside/CYK algorithm calculates $\beta_v(i,j)$ -- the log probability
-of the best alignment of the CM and sequence $x$
-\emph{excluding} the best alignment for the CM subgraph rooted at
-$v$ generating the subsequence $x_i..x_j$.  For any chosen cell in the
-3D DP matrices with coordinates $v,i,j$, $\alpha_v(i,j) +
-\beta_v(i,j)$ gives us the optimal alignment score for all alignments
-that pass through that cell. Thus, for any chosen single coordinate
-(say, state $v$), $\argmax_{i,j} \alpha_{v}(i,j) +
-\beta_{v}(i,j)$ tells us which cell the optimal alignment
-passes through.
+probability of the best alignment of a CM parse subtree rooted at
+state $v$ generating every subsequence $x_i..x_j$ of sequence $x$.
+The Outside/CYK algorithm calculates $\beta_v(i,j)$ -- the log
+probability of the best alignment of the CM and sequence $x$
+\emph{excluding} the best alignment for the CM subgraph rooted at $v$
+generating the subsequence $x_i..x_j$.  For any chosen cell in the 3D
+dynamic programming matrices with coordinates $v,i,j$, $\alpha_v(i,j)
++ \beta_v(i,j)$ gives us the score of the best alignment that passes
+through that cell. 
 
-The central idea of the divide and conquer algorithm is shown in
-Figure~XX. Any parse tree must include all the bifurcation and start
-states of the model, so we know that the optimal alignment \emph{must}
-use any chosen bifurcation state $v$ and its child start states $w$
-and $y$. Thus we know
+Thus, for any chosen state $v$, $\argmax_{i,j} \alpha_{v}(i,j) +
+\beta_{v}(i,j)$ tells us which cell $v,i,j$ the optimal parse tree
+passes through, \emph{conditional on using state $v$ in the parse}.
 
-      $\max_{i,k,j} \beta_{v}(i,j) + \alpha_{w}(i,k) + \alpha_{y}(k+1,j)$
+We also know that any parse tree must include all the bifurcation and
+start states of the CM, so we know that the optimal alignment
+\emph{must} use any chosen bifurcation state $v$ and its child start
+states $w$ and $y$. One of the hearts of the divide and conquer
+algorithm is that we are guaranteed that:
 
-is the optimal overall alignment score, and crucially, we also know
-that
+\[
+   \max_{i,k,j} \beta_{v}(i,j) + \alpha_{w}(i,k) + \alpha_{y}(k+1,j)
+\]
 
-      $(i,k,j) = \argmax_{i',k',j'}  \beta_{v}(i',j') +  \alpha_{w}(i',k') + \alpha_{y}(k'+1,j') $
+is the optimal overall alignment score, and we also know that
 
-determines three cells in the optimal alignment -- $(v,i,j)$,
-$(w,i,k)$, and $(y,k+1,j)$ -- and splits the remaining problem into
-three smaller subproblems -- an alignment of the sequence
-$x_{i}..x_{k}$ to a parse tree constrained to root at $w$, an
-alignment of the sequence $x_{k+1}..x_{j}$ to a parse tree constrained
-to root at $y$, and an alignment of the split sequence
-$x_1..x_{i-1}//x_{j+1}..x_L$ to a parse tree constrained to end at
-$v$.
+\[
+      (i,k,j) = \argmax_{i',k',j'}  \beta_{v}(i',j') +
+      \alpha_{w}(i',k') + \alpha_{y}(k'+1,j') 
+\]
+
+gives us a triplet that identifies three cells that must be in the
+optimal alignment -- $(v,i,j)$, $(w,i,k)$, and $(y,k+1,j)$. This
+splits the remaining problem into three smaller subproblems -- an
+alignment of the sequence $x_{i}..x_{k}$ to a CM subgraph $w..y-1$, an
+alignment of the sequence $x_{k+1}..x_{j}$ to a CM subgraph $y..M$,
+and an alignment of the two-piece sequence
+$x_1..x_{i-1}//x_{j+1}..x_L$ to a CM subgraph $1..v$.
 
 The subproblems are then themselves split, and this splitting can
-continue recursively until all the optimal bifurcation points have
-been determined.
+continue recursively until all the optimal bifurcation points on the
+optimal parsetree have been determined.
 
-At this point the remaining alignment subproblems are usually small
+At this point the remaining alignment subproblems might be small
 enough to be solved by straightforward application of the standard
-Inside algorithm (see inside\_engine and segment\_alignment\_engine,
-below). However, this is not guaranteed to be the case. A second
-division strategy is needed that does not depend on splitting at
-bifurcations.
+Inside/CYK algorithm . However, this is not guaranteed to be the
+case. A second division strategy is needed that does not depend on
+splitting at bifurcations.
 
-For the second strategy we note that although we have no guarantees
-that any given non-B, non-S state must appear in the optimal parse
-tree, we do know that for each \emph{node} in the CM structure, one
-and only one non-insert state in that node must appear in the optimal
-path. Let $N(\bar{v})$ represent a list of the non-insert states in
-the node that includes state $\bar{v}$ (it is possible that $\bar{v}$
-is not a member of $N(\bar{v})$, if $\bar{v}$ is an insert
-state). (Importantly, we know that $N(\bar{v})$ is of fixed size,
-containing at most 4 states.) Then for any alignment subproblem we can
-choose a provisional split point $\bar{v}$ in the midpoint of the
-model segment, and
+For the second strategy, we take advantage of the fact that we know
+that the optimal parse tree must also include one and only one state
+from the split set of each node (e.g. the non-insert states in the
+node). Let $N(\bar{v})$ represent a list of the indices for the split
+set in the node that includes state $\bar{v}$ (where it is possible
+that $\bar{v}$ is not a member of $N(\bar{v})$, if $\bar{v}$ is an
+insert state). ($N(\bar{v})$ contains at most 4 states.) Then for any
+alignment subproblem we can choose a provisional split point $\bar{v}$
+in the midpoint of the model graph. We know that
 
-$(v,i,j) = \argmax_{v' \in N(\hat{v}),i',j'} \alpha_{v'}(i',j') + \beta_{v'}(i',j')$
+\[
+(v,i,j) = \argmax_{v' \in N(\hat{v}),i',j'} \alpha_{v'}(i',j') + \beta_{v'}(i',j')
+\]
 
-gives us a new cell (v,i,j) in the alignment and splits the problem
-into two smaller problems. This splitting strategy can be applied
-recursively all the way down to single nodes. This guarantees that we
-will never need to carry out a full Inside/CYK alignment algorithm on
-any subproblem. The most memory-intensive alignment problem that needs
-to be solved is the very first split, so we focus on the properties of
-the first split to determine the memory complexity of the overall
-algorithm.
+gives us a new cell $(v,i,j)$ in the optimal parse tree, and splits
+the problem into two smaller problems. This strategy can be applied
+recursively all the way down to single nodes. We can therefore
+guarantee that we will never need to carry out a full Inside/CYK
+alignment algorithm on any subproblem. The most memory-intensive
+alignment problem that needs to be solved is the very first split.
+The properties of the first split determine the memory complexity of
+the algorithm.
 
-Choosing split points in one of the sequence dimensions $i$ or $j$ is
-a possible alternative strategy. However, I do not think it would be
-as memory efficient as dividing in the model dimension
-$v$. Calculations of both Inside bifurcation decks ($\alpha_{v,
-S_v=B}$) and Outside non-root start decks $(\beta_{v, v > 0, S_v =
-S})$ have extensive dependencies on $\alpha_{v,S_v=S}$ start decks in
-the two sequence dimensions.  I believe this means that all start
-decks $\alpha_{v,S_v=S}$ would have to be kept in memory. This leads
-to an algorithm that required more memory than choosing splits in $v$,
-both asymptotically ($O(L^2B)$ instead of $O(L^2 \log B)$) and in real
-terms (I estimate 350 MB vs. 85 MB for an SSU rRNA alignment).
+Therefore we will have to deal with three types of problems
+(Figure~\ref{fig:splitter_schematic}):
+
+\begin{itemize}
+\item A \emph{generic problem} means finding the optimal alignment of
+a CM subgraph $G_{r..z}$ to a contiguous subsequence $x_g..x_q$. The
+subgraph $G_{r..z}$ corresponds to a complete subtree of the CM's
+guide tree -- e.g. state $r$ is a start (S), and state $z$ is an end
+(E). $G_{r..z}$ may contain bifurcations. The problem is solved in one
+of two ways. If $G_{r..z}$ contains no bifurcations, it is solved as a
+wedge problem (see below). Else, the problem is subdivided by the
+bifurcation-dependent strategy; an optimal triple $(i,k,j)$ is found
+for a bifurcation state $v$ and its children $w,y$, splitting the
+problem into a V problem and two generic problems.
+
+\item A \emph{wedge problem} means finding the optimal alignment of an
+unbifurcated CM subgraph $G_{r..z}$ to a contiguous subsequence
+$x_g..x_q$. State $r$ does not have to be a start state (S); it may be
+a state in a split set (MP, ML, MR, or D). State $z$ is an end (E).  A
+wedge problem is solved by the split set-dependent strategy: an
+optimal $(v,i,j)$ is found, splitting the problem into a V
+problem and a smaller wedge problem.
+
+\item A \emph{V problem} consists of finding the optimal alignment of
+an unbifurcated CM subgraph $G_{r..z}$ to a noncontiguous, two-piece
+sequence $x_g..x_h//x_p..x_q$, exclusive of the residues $x_h$ and
+$x_p$ (open circles in Figure~\ref{fig:splitter_schematic}).  State
+$r$ can be a start state or any state in a split set; the same is true
+for $z$. A V problem is solved by a split set-dependent strategy: an
+optimal $(v,i,j)$ is found, splitting the problem into two V problems.
+\end{itemize}
 
 \subsection{generic\_splitter}
 
-The generic\_splitter subroutine is given a generic alignment problem
-defined by a CM graph $G$ and a sequence $a_1...a_L$. It solves the
-problem and returns the resulting optimal parse tree, $\cal{T}$. The
-solution may be achieved recursively by splitting the alignment
-problem at a bifurcation state into one V problem and two generic
-problems and solving those smaller problems.
+\begin{algorithm}
+\alginout{A generic problem, for CM subgraph $G_{r..z}$ and
+          subsequence $x_{g..q}$.}
+         {An optimal parse subtree ${\cal T}^{r..z}_{g..q}$.}
 
-Determine the size of the alignment problem. If it is small enough,
-obtain $\cal{T}$ by calling inside$^{\cal{T}}(G, a_1..a_L)$;
-terminate.  Else:
+\algname{generic\_splitter}{r,z; g,q}
+\begin{algtab}
+\algif{alignment problem is small:}
+  \algreturn \algcall{inside$^\mathcal{T}$}{r,z; g,q}\\
+\algelseif{no bifurcation in $G_{r..z}$:}
+  \algreturn \algcall{wedge\_splitter}{r,z; g,q}\\
+\algelse
+   $v   \leftarrow$ lowest numbered bifurcation state in subgraph $G_{r..z}$.\\
+   $w,y \leftarrow$ left and right S children of $v$.\\
+   \\
+   $\beta_v \leftarrow$  \algcall{outside}{r,w; g,q}\\
+   $\alpha_w \leftarrow$ \algcall{inside}{w,y-1; g,q}\\
+   $\alpha_y \leftarrow$ \algcall{inside}{y,z; g,q}\\
 
-If there is no bifurcation in $G$, the problem is a wedge problem:
-obtain \cal{T} by calling wedge\_splitter($G, a_1..a_L$); terminate.
-Else:
+   $(i,k,j) \leftarrow \argmax_{i',k',j'} \alpha_w(i',k') + \alpha_y(k'+1,j') + \beta_v(i',j')$ \\
 
-Let $v$ be the lowest numbered (nearest to the root) bifurcation state
-in $G$. Let $w$ and $y$ be the left and right start state children of
-$v$, respectively.
+   $\mathcal{T}_1 \leftarrow$ \algcall{V\_splitter}{r,v; g,i; j,q}\\
+   $\mathcal{T}_2 \leftarrow$ \algcall{generic\_splitter}{w,y-1; i,k}\\
+   $\mathcal{T}_3 \leftarrow$ \algcall{generic\_splitter}{y,z; k+1,j}\\
 
-Call outside($G^1_v, a_1..a_L$) to obtain deck $\beta_v$.
-Call inside($G^w, a_1..a_L$)    to obtain deck $\alpha_w$.
-Call inside($G^y, a_1..a_L$)    to obtain deck $\alpha_y$.
-
-Find $(i,k,j) = \argmax_{i',k',j'} \alpha_w(i',k') + \alpha_y(k'+1,j') + \beta_v(i',j')$ 
-
-$\cal{T}_1 = \mbox{V\_splitter}(G^1_v, a_1..a_i, a_j..a_L).$
-$\cal{T}_2 = \mbox{generic\_splitter}(G^w, a_i..a_k).$
-$\cal{T}_3 = \mbox{generic\_splitter}(G^y, a_{k+1}..a_j).$
-
-$\cal{T} = \cal{T}_1 (\cal{T}_2, \cal{T}_3)$; terminate.
+   \algreturn $\mathcal{T}_1 (\mathcal{T}_2, \mathcal{T}_3)$\\
+\algend
+\end{algtab}
+\end{algorithm}
 
 \subsection{wedge\_splitter}
 
@@ -780,11 +828,32 @@ deck.
 \subsection{segment\_alignment\_engine}
 
 
+\subsubsection{Implementation}
+
+Full source code for a reference implementation is freely available at
+XXX under a GNU General Public License. This is an ANSI C codebase
+that has been tested on GNU/Linux platforms.
+
+The CM data structure is defined in \texttt{structs.h}. The CM
+construction procedure is in
+\texttt{modelmaker.c:Handmodelmaker()}. The guide tree is constructed
+in \texttt{HandModelmaker()}. A CM is constructed from the guide tree
+by \texttt{cm\_from\_master()}. Individual parse trees are constructed
+using the guide tree by \texttt{transmogrify()}.
+
+The divide and conquer algorithm is implemented in
+\texttt{smallcyk.c:CYKDivideAndConquer()}, which will recursively call
+a set of functions: the three splitting routines
+\texttt{generic\_splitter()}, \texttt{wedge\_splitter()}, and
+\texttt{V\_splitter}; the four alignment engines \texttt{inside()},
+\texttt{outside()}, \texttt{vinside()}, and \texttt{voutside()}; and
+the two traceback routines \texttt{insideT()} and \texttt{vinsideT()}.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+\bibliography{distilled}
 \end{document}
 
 

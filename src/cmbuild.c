@@ -192,6 +192,7 @@ main(int argc, char **argv)
       SummarizeMasterTrace(stdout, mtr); 
       MasterTraceDisplay(stdout, mtr, cm);
       SummarizeCM(stdout, cm); 
+      CYKDemands(cm, 1542);
       
       CMSimpleProbify(cm);
       CMSetDefaultNullModel(cm);
