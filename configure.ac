@@ -67,14 +67,6 @@ AC_PROG_CC
 AC_PROG_RANLIB
 AC_PATH_PROG([AR], [ar], [:], [$PATH:/usr/ccs/bin:/usr/xpg4/bin])
 
-# Test for LEX, and YACC (for lp_solve)
-AC_PROG_YACC
-AC_PROG_LEX
-if test "$LEX" = flex; then
-  LEX="flex -l"
-fi
-AC_SUBST(LEX,$LEX)
-
 # GNU make check; makefile dependency lines for executables.
 # original from John Darrington <j.darrington@elvis.murdoch.edu.au> 
 # w/ heavy modifications from me.
@@ -262,7 +254,6 @@ AC_CONFIG_FILES(src/Makefile)
 AC_CONFIG_FILES(testsuite/Makefile)
 AC_CONFIG_FILES(rigfilters/Makefile)
 AC_CONFIG_FILES(rigfilters/cfsqp/Makefile)
-AC_CONFIG_FILES(rigfilters/lp_solve_4.0/Makefile)
 
 # remember that sneaky if statement that wraps the source
 # configuration? well, it ends here.
