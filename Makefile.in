@@ -109,14 +109,17 @@ dist:
 	# CVS tag and extract. -c: make sure we committed;
 	#                      -F: allow more than one "make dist" per rel
 	# prep: must have done "cvs commit", and CVSROOT must be set
-	# We also need the squid library and ssdk toolkit, so tag and export them too.
+	# We also need the squid library, so tag and export it too.
 	#
 	cvs tag -F $(RELCODE)
 	cvs export -r $(RELCODE) -d ${BASENAME}-${RELEASE} ${BASENAME}
 	cvs rtag -F ${BASENAME}_${RELCODE} squid
 	(cd ${BASENAME}-${RELEASE}/; cvs export -r ${BASENAME}_${RELCODE} -d squid squid)
-	cvs rtag -F ${BASENAME}_${RELCODE} ssdk
-	(cd ${BASENAME}-${RELEASE}/; cvs export -r ${BASENAME}_${RELCODE} -d ssdk ssdk)
+	# 
+	# Put a copy of sqc in testsuite; that's the only script
+	# we need from ssdk.
+	#
+	cp ssdk/sqc ${BASENAME}-${RELEASE}/testsuite/
 	# 
 	# Make the configure scripts from configure.in's
 	#
@@ -135,12 +138,13 @@ dist:
 	-rm -rf ${BASENAME}-${RELEASE}/00CHECKLIST
 	-rm -rf ${BASENAME}-${RELEASE}/configure.in
 	-rm -rf ${BASENAME}-${RELEASE}/squid/configure.in
+	-rm -rf ${BASENAME}-${RELEASE}/Bugs
 	-rm -rf ${BASENAME}-${RELEASE}/Manuscripts
 	#
 	# Set file permissions.
 	#
 	find ${BASENAME}-${RELEASE} -type f -exec chmod +r {} \;
-	chmod +x ${BASENAME}-${RELEASE}/ssdk/sqc
+	chmod +x ${BASENAME}-${RELEASE}/testsuite/sqc
 	#
 	# Packaging commands
 	#
@@ -160,9 +164,9 @@ ftpdist:
 # the dev code's Bugs tracking subdirectory.
 #
 check:
-	(cd testsuite; ../ssdk/sqc -p ../squid 4 exercises.sqc ../src)
+	(cd testsuite; ./sqc -p ../squid 4 exercises.sqc ../src)
 	if test -e Bugs; then\
-	   (cd Bugs; ../ssdk/sqc -p ../squid 2 bugs.sqc ../src);\
+	   (cd Bugs; ../testsuite/sqc -p ../squid 2 bugs.sqc ../src);\
         fi
 
 # "make install" installs the programs in BINDIR
