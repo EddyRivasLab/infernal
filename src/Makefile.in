@@ -48,7 +48,8 @@ OBJS  = alphabet.o\
 	modelmaker.o\
 	parsetree.o\
 	scancyk.o\
-	smallcyk.o
+	smallcyk.o\
+	prior.o
 
 HDRS  = funcs.h\
 	structs.h

@@ -314,4 +314,54 @@ typedef struct emitmap_s {
   int  clen;           /* consensus length */
 } CMEmitMap_t;
 
+/* Structure: prior_s
+ * 
+ * Dirichlet priors on emision parameters.  Hacked out of HMMER.
+ * This structure contains all the priors - transitions, match bp emissions,
+ * singlet emissions, and insert emissions.
+ *
+ */
+
+#define MAXDCHLET 200 /* Maximum number dirichlet components */
+#define MAXTRANSSETS 100 /* maximum number of transition sets */
+#define PRI_DCHLET 0  /*type of prior strategy*/
+#define PRI_PAM 1  /*type of prior strategy*/
+struct prior_s {
+
+  int strategy;               /* PRI_DCHLET, etc. */
+
+  /*transition priors*/
+  int tsetnum;                /* number of transition sets to read in */
+  int tsetmap[UNIQUESTATES][NODETYPES]; /*tsetmap[a][b] is for 
+					  transition set from state a to
+					  node b */
+  int tnum[MAXTRANSSETS];                   /* number of transition Dirichlet mixtures */
+  int tasize[MAXTRANSSETS];    /* alphabet size for each transition set */
+  float tq[MAXTRANSSETS][MAXDCHLET];         /* weights of Dirichlet mixture terms*/
+  float t[MAXTRANSSETS][MAXDCHLET][MAXABET]; /* transition terms per component */
+
+  /*match base pair priors*/
+  int   mbpnum;                   /* number of match Dirichlet mixture terms      */
+  int   mbpasize;                 /* Number of base pair events/alphabet size         */
+  float mbpq[MAXDCHLET];          /* weights of Dirichlet mixture terms     */
+  float mbp[MAXDCHLET][(MAXABET*MAXABET)]; /* match emission terms per mix component */
+  
+  /*match singlet priors*/
+  int   mntnum;                   /* number of match Dirichlet mixture terms      */
+  int   mntasize;                 /* Number of base pair events/alphabet size         */
+  float mntq[MAXDCHLET];          /* weights of Dirichlet mixture terms     */
+  float mnt[MAXDCHLET][(MAXABET*MAXABET)]; /* match emission terms per mix component */
+  
+  /*insert priors */
+  int   inum;                   /* number of Dirichlet mixture terms      */
+  int   iasize;                 /* Number of events/alphabet size         */
+  float iq[MAXDCHLET];          /* weights of Dirichlet mixture terms     */
+  float i[MAXDCHLET][(MAXABET*MAXABET)]; /* insert emission terms per mix component */
+
+  /* NOTE EPN : mnt and i 2D arrays are [MAXDCHLET][(MAXABET * MAXABET)] just so 
+   * that I can use a single PriorifyEmissionVector() function for all emissions.  
+   * There must be a better way to do this, but I don't know what it is.
+   */
+};
+
 #endif /*STRUCTSH_INCLUDED*/

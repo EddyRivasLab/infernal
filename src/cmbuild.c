@@ -60,6 +60,9 @@ static char experts[] = "\
    --nobalance    : don't rebalance the CM; number in strict preorder\n\
    --regress <f>  : save regression test information to file <f>\n\
    --treeforce    : score first seq in alignment and show parsetree\n\
+\n\
+ * priors from a file:\n\
+   --priors       : read priors from a disk file in specific format\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -83,6 +86,8 @@ static struct opt_s OPTIONS[] = {
   { "--wgiven",    FALSE, sqdARG_NONE },
   { "--wnone",     FALSE, sqdARG_NONE },
   { "--wgsc",      FALSE, sqdARG_NONE },
+  //ADDED EPN 01.31.05
+  { "--priors",    FALSE, sqdARG_NONE },
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -133,6 +138,11 @@ main(int argc, char **argv)
   char *regressionfile;		/* file to dump regression test info to    */
   FILE *regressfp;		/* open file to dump regression test info  */
 
+  //ADDED EPN 01.31.05
+  char *prifile;                /* file with prior data */
+  struct prior_s *pri;          /* prior structure */
+
+
   /*********************************************** 
    * Parse command line
    ***********************************************/
@@ -177,6 +187,9 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--cmtbl")     == 0) cmtblfile         = optarg;
     else if (strcmp(optname, "--tfile")     == 0) tracefile         = optarg;
     else if (strcmp(optname, "--regress")   == 0) regressionfile    = optarg;
+
+    //EPN ADDED 01.31.05
+    else if (strcmp(optname, "--prior")     == 0) prifile         = optarg;
 
     else if (strcmp(optname, "--informat") == 0) {
       format = String2SeqfileFormat(optarg);
@@ -339,7 +352,18 @@ main(int argc, char **argv)
        * we save the model in.
        */
       printf("%-40s ... ", "Converting counts to probabilities"); fflush(stdout);
-      CMSimpleProbify(cm);
+
+      //EPN CHANGED 01.31.05
+      if(prifile == NULL) 
+	{
+	  CMSimpleProbify(cm);
+	}
+      else 
+	{
+	  pri = ReadPrior(prifile);
+	  PriorifyCM(cm, pri);
+	}
+
       CMSetDefaultNullModel(cm);
       CMLogoddsify(cm);
       printf("done.\n");
