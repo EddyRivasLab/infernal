@@ -70,6 +70,7 @@ main(int argc, char **argv)
   Parsetree_t    **tr;		/* inidividual traces from alignment       */
   CM_t            *cm;          /* a covariance model                      */
   Stopwatch_t     *watch;	/* timer to run  */
+  int              idx;
 
   char *optname;                /* name of option found by Getopt()        */
   char *optarg;                 /* argument found by Getopt()              */
@@ -201,6 +202,10 @@ main(int argc, char **argv)
 	dump_traces(tracefile, msa, tr, cm, dsq);
 
       WriteBinaryCM(cmfp, cm);
+
+      for (idx = 0; idx < msa->nseq; idx++)
+	FreeParsetree(tr[idx]);
+      free(tr);
 
       FreeParsetree(mtr);
       FreeCM(cm);

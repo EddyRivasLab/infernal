@@ -41,6 +41,8 @@ CHECK_GNU_MAKE
 
 dnl Checks for system libraries
 AC_CHECK_LIB(m, sqrt, LIBS="${LIBS} -lm")
+AC_CHECK_LIB(m, sqrt, LIBS="${LIBS} -lccmalloc")
+AC_CHECK_LIB(m, sqrt, LIBS="${LIBS} -ldl")
 
 dnl Write out Makefiles
 echo "   Configuration complete. Writing Makefiles and such..."

@@ -47,7 +47,7 @@ extern void         FreeParsetree(Parsetree_t *tr);
 extern int          InsertTraceNode(Parsetree_t *tr, int y, int whichway, 
 				    int emitl, int emitr, int state);
 extern void         ParsetreeCount(CM_t *cm, Parsetree_t *tr, char *seq, float wgt);
-extern float        ParsetreeScore(CM_t *cm, Parsetree_t *tr, char *seq);
+extern float        ParsetreeScore(CM_t *cm, Parsetree_t *tr, char *dsq);
 extern void         PrintParsetree(FILE *fp, Parsetree_t *tr);
 extern void         ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq);
 extern void         ParsetreeCompare(Parsetree_t *t1, Parsetree_t *t2);

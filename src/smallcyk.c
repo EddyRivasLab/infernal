@@ -112,7 +112,7 @@ static void
 free_vjd_deck(float **a, int i, int j)
 {
   int jp;
-  for (jp = 0; jp <= j-i+1; jp++) if (a[jp+i-1] != NULL) free(a[jp]);
+  for (jp = 0; jp <= j-i+1; jp++) if (a[jp+i-1] != NULL) free(a[jp+i-1]);
   free(a);
 }
 static void
@@ -140,7 +140,7 @@ static void
 free_vjd_yshadow_deck(char **a, int i, int j)
 {
   int jp;
-  for (jp = 0; jp <= j-i+1; jp++) if (a[jp+i-1] != NULL) free(a[jp]);
+  for (jp = 0; jp <= j-i+1; jp++) if (a[jp+i-1] != NULL) free(a[jp+i-1]);
   free(a);
 }
 static int **

@@ -329,6 +329,7 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq)
     }
   fprintf(fp, "%5s %5s %5s %5s %5s %5s %5s %5s %5s\n",
 	  "-----", "-----", "-----", "-----", "-----","-----", "-----","-----", "-----");
+  fflush(fp);
 } 
 
 
@@ -344,7 +345,7 @@ ParsetreeCompare(Parsetree_t *t1, Parsetree_t *t2)
 {
   int x;
 
-  if (t1->n != t2->n) Die("nope");
+  if (t1->n != t2->n) Die("nope -- n's not equal, %d/%d", t1->n, t2->n);
   for (x = 0; x < t1->n; x++) 
     {
       if (t1->emitl[x] != t2->emitl[x]) Die("nope");

@@ -118,9 +118,11 @@ main(int argc, char **argv)
       sc1 = CYKInside(cm, dsq, sqinfo.len, &tr1);  
       sc2 = CYKDivideAndConquer(cm, dsq, sqinfo.len, &tr2);  
       ParsetreeDump(stdout, tr1, cm, dsq);
-      printf("%-12s : %.2f\n", sqinfo.name, sc1/0.693);
+      printf("%-12s : %.2f  %.2f\n", sqinfo.name, sc1/0.693,
+	     ParsetreeScore(cm, tr1, dsq)/0.693);
       ParsetreeDump(stdout, tr2, cm, dsq);
-      printf("%-12s : %.2f\n", sqinfo.name, sc2/0.693);
+      printf("%-12s : %.2f  %.2f\n", sqinfo.name, sc2/0.693,
+	     ParsetreeScore(cm, tr2, dsq)/0.693);
       ParsetreeCompare(tr1, tr2);
       StopwatchStop(watch);
 
@@ -133,6 +135,7 @@ main(int argc, char **argv)
       free(dsq);
     }
 
+  FreeCM(cm);
   fclose(cmfp);
   SeqfileClose(sqfp);
   StopwatchFree(watch);

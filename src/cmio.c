@@ -86,9 +86,12 @@ tagged_bin_string_read(int expected_tag, char **ret_s, FILE *fp)
   fread(&tag, sizeof(int), 1, fp);
   if (tag != expected_tag) return 0;
   fread(&nbytes, sizeof(int), 1, fp);
-  s = MallocOrDie(sizeof(char) * (nbytes+1));
-  s[nbytes] = '\0';
-  fread(s, sizeof(char), nbytes, fp);
+  if (nbytes > 0) {
+    s = MallocOrDie(sizeof(char) * (nbytes+1));
+    s[nbytes] = '\0';
+    fread(s, sizeof(char), nbytes, fp);
+  } else s = NULL; 
+  *ret_s = s;
   return 1;
 }
 
