@@ -9,6 +9,8 @@
  *****************************************************************
  */
 
+#include "config.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,7 +22,6 @@
 
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
-#include "version.h"            /* versioning info for Infernal         */
 
 MSA *Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt, 
 			  Parsetree_t **tr, int nseq);
@@ -110,7 +111,7 @@ main(int argc, char **argv)
 	Die("unrecognized sequence file format \"%s\"", optarg);
     }
     else if (strcmp(optname, "-h") == 0) {
-      Banner(stdout, banner);
+      MainBanner(stdout, banner);
       puts(usage);
       puts(experts);
       exit(EXIT_SUCCESS);
@@ -160,7 +161,7 @@ main(int argc, char **argv)
 
   if (! be_quiet) 
     {
-      Banner(stdout, banner);
+      MainBanner(stdout, banner);
       printf(   "CM file:              %s\n", cmfile);
       printf(   "Sequence file:        %s\n", seqfile);
       printf("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n\n");
@@ -484,8 +485,8 @@ Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt,
   con = CreateCMConsensus(cm, 3.0, 1.0);
 
   /* "author" info */
-  msa->au   = MallocOrDie(sizeof(char) * (strlen(RELEASE)+10));
-  sprintf(msa->au, "Infernal %s", RELEASE);
+  msa->au   = MallocOrDie(sizeof(char) * (strlen(PACKAGE_VERSION)+10));
+  sprintf(msa->au, "Infernal %s", PACKAGE_VERSION);
 
   for (i = 0; i < nseq; i++)
     {

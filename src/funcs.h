@@ -18,8 +18,11 @@ extern double **BandDistribution(CM_t *cm, int W);
 extern void     BandBounds(double **gamma, int M, int W, double p, 
 			   int **ret_min, int **ret_max);
 extern void     PrintBandGraph(FILE *fp, double **gamma, int *min, int *max, int v, int W);
-extern void     PrintDPCellsSaved(CM_t *cm, int *min, int *max, int W);
 
+extern void     PrintDPCellsSaved(CM_t *cm, int *min, int *max, int W);
+extern void     CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W, 
+			      int *ret_nhits, int **ret_hitr, 
+			      int **ret_hiti, int **ret_hitj, float **ret_hitsc);
 
 /* from cm.c
  */
@@ -70,6 +73,7 @@ extern void           PrintFancyAli(FILE *fp, Fancyali_t *ali);
 extern void           FreeFancyAli(Fancyali_t *ali);
 extern CMConsensus_t *CreateCMConsensus(CM_t *cm, float pthresh, float sthresh);
 extern void           FreeCMConsensus(CMConsensus_t *con);
+extern void MainBanner(FILE *fp, char *banner); 
 
 /* in emitmap.c
  */

@@ -5,14 +5,11 @@
  * Construct a CM from a given multiple sequence alignment.
  *  
  *****************************************************************
- * INFERNAL - inference of RNA secondary structure alignments
- * Copyright (C) 2002 HHMI & Washington University School of Medicine
- * 
- *     This source code is freely distributed under the terms of the
- *     GNU General Public License. See the files COPYRIGHT and LICENSE
- *     for details.
- ***************************************************************** 
+ * @LICENSE@
+ *****************************************************************
  */
+
+#include "config.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,7 +23,6 @@
 
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
-#include "version.h"
 
 static char banner[] = "cmbuild - build RNA covariance model from alignment";
 
@@ -190,7 +186,7 @@ main(int argc, char **argv)
 	Die("%s is an unaligned format, can't read as an alignment", optarg);
     }
     else if (strcmp(optname, "-h") == 0) {
-      Banner(stdout, banner);
+      MainBanner(stdout, banner);
       puts(usage);
       puts(experts);
       exit(EXIT_SUCCESS);
@@ -231,7 +227,7 @@ main(int argc, char **argv)
    * Show the banner
    ***********************************************/
   
-  Banner(stdout, banner);
+  MainBanner(stdout, banner);
   printf("Alignment file:                    %s\n", alifile);
   printf("File format:                       %s\n", 
 	 SeqfileFormat2String(afp->format));

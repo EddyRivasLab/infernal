@@ -9,6 +9,8 @@
  ***************************************************************** 
  */
 
+#include "config.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,7 +22,6 @@
 
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
-#include "version.h"
 
 static char banner[] = "cmscore - score RNA covariance model against sequences";
 
@@ -105,7 +106,7 @@ main(int argc, char **argv)
 	Die("unrecognized sequence file format \"%s\"", optarg);
     }
     else if (strcmp(optname, "-h") == 0) {
-      Banner(stdout, banner);
+      MainBanner(stdout, banner);
       puts(usage);
       puts(experts);
       exit(EXIT_SUCCESS);

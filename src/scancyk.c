@@ -10,12 +10,12 @@
  ***************************************************************** 
  */
 
+#include "config.h"
 #include <stdio.h>
 #include <stdlib.h>
 
 #include "squid.h"
 
-#include "config.h"
 #include "structs.h"
 #include "funcs.h"
 

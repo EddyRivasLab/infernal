@@ -9,6 +9,8 @@
  ***************************************************************** 
  */
 
+#include "config.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,7 +21,6 @@
 
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
-#include "version.h"
 
 static char banner[] = "cmsearch - search a sequence database with an RNA covariance model";
 
@@ -37,6 +38,8 @@ static char experts[] = "\
    --toponly     : only search the top strand\n\
    --local       : do local alignment\n\
    --dumptrees   : dump verbose parse tree information for each hit\n\
+   --banded      : use experimental banded CYK scanning algorithm\n\
+   --bandp       : tail loss prob for --banded (default:0.0001)\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -46,6 +49,8 @@ static struct opt_s OPTIONS[] = {
   { "--informat",   FALSE, sqdARG_STRING },
   { "--local",      FALSE, sqdARG_NONE },
   { "--toponly",    FALSE, sqdARG_NONE },
+  { "--banded",     FALSE, sqdARG_NONE },
+  { "--bandp",      FALSE, sqdARG_FLOAT},
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -69,6 +74,11 @@ main(int argc, char **argv)
   CMConsensus_t   *cons;	/* precalculated consensus info for display */
   Fancyali_t      *ali;         /* alignment, formatted for display */
 
+  double  **gamma;		/* cumulative distribution p(len <= n) for state v */
+  int     *dmin;		/* minimum d bound for state v, [0..v..M-1] */
+  int     *dmax; 		/* maximum d bound for state v, [0..v..M-1] */
+  double   bandp;		/* tail loss probability for banding */
+
   int    nhits;			/* number of hits in a seq */
   int   *hitr;			/* initial states for hits */
   int   *hiti;                  /* start positions of hits */
@@ -79,6 +89,7 @@ main(int argc, char **argv)
   int    do_revcomp;		/* true to do reverse complement too */
   int    do_local;		/* TRUE to do local alignment */
   int    do_dumptrees;		/* TRUE to dump parse trees */
+  int    do_banded;		/* TRUE to do banded CYK */
 
   char *optname;                /* name of option found by Getopt()        */
   char *optarg;                 /* argument found by Getopt()              */
@@ -93,6 +104,8 @@ main(int argc, char **argv)
   do_revcomp        = TRUE;
   do_local          = FALSE;
   do_dumptrees      = FALSE;
+  do_banded         = FALSE;
+  bandp             = 0.0001;
   
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -100,13 +113,15 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--dumptrees") == 0) do_dumptrees = TRUE;
     else if  (strcmp(optname, "--local")     == 0) do_local     = TRUE;
     else if  (strcmp(optname, "--toponly")   == 0) do_revcomp   = FALSE;
+    else if  (strcmp(optname, "--banded")    == 0) do_banded    = TRUE;
+    else if  (strcmp(optname, "--bandp")     == 0) bandp        = atof(optarg);
     else if  (strcmp(optname, "--informat")  == 0) {
       format = String2SeqfileFormat(optarg);
       if (format == SQFILE_UNKNOWN) 
 	Die("unrecognized sequence file format \"%s\"", optarg);
     }
     else if (strcmp(optname, "-h") == 0) {
-      Banner(stdout, banner);
+      MainBanner(stdout, banner);
       puts(usage);
       puts(experts);
       exit(EXIT_SUCCESS);
@@ -138,6 +153,13 @@ main(int argc, char **argv)
   CMHackInsertScores(cm);	/* make insert emissions score zero. "TEMPORARY" FIX. */
   cons = CreateCMConsensus(cm, 3.0, 1.0); 
 
+  if (do_banded)
+    {
+      gamma = BandDistribution(cm, windowlen);
+      BandBounds(gamma, cm->M, windowlen, bandp, &dmin, &dmax);
+      DMX2Free(gamma);
+    }
+
   StopwatchZero(watch);
   StopwatchStart(watch);
 
@@ -149,8 +171,12 @@ main(int argc, char **argv)
       if (sqinfo.len > maxlen) maxlen = sqinfo.len;
       dsq = DigitizeSequence(seq, sqinfo.len);
 
-      CYKScan(cm, dsq, sqinfo.len, windowlen, 
-	      &nhits, &hitr, &hiti, &hitj, &hitsc);
+      if (do_banded)
+	CYKBandedScan(cm, dsq, dmin, dmax, sqinfo.len, windowlen, 
+		      &nhits, &hitr, &hiti, &hitj, &hitsc);
+      else
+	CYKScan(cm, dsq, sqinfo.len, windowlen, 
+		&nhits, &hitr, &hiti, &hitj, &hitsc);
 
       if (! reversed) printf("sequence: %s\n", sqinfo.name);
       for (i = 0; i < nhits; i++)
@@ -194,6 +220,11 @@ main(int argc, char **argv)
   StopwatchDisplay(stdout, "\nCPU time: ", watch);
   printf("memory:   %.2f MB\n\n", CYKScanRequires(cm, maxlen, windowlen));
 
+  if (do_banded)
+    {
+      free(dmin);
+      free(dmax);
+    }
   FreeCMConsensus(cons);
   FreeCM(cm);
   CMFileClose(cmfp);

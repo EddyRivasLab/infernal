@@ -84,7 +84,7 @@ libinfernal.a: $(OBJS)
 ##
 distclean:
 	make clean
-	-rm -f Makefile version.h
+	-rm -f Makefile config.h
 
 clean:
 	-rm -f *.o *~ Makefile.bak core $(PROGS) TAGS gmon.out libinfernal.a

@@ -10,6 +10,8 @@
  *****************************************************************  
  */
 
+#include "config.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -801,4 +803,36 @@ createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface)
   *ret_outface = outface;
 }
 	
-	    
+
+
+/* Function: MainBanner()
+ * Date:     SRE, Fri Sep 26 11:29:02 2003 [AA 886, from Salk Institute]
+ *
+ * Purpose:  Print a package version and copyright banner.
+ *           Used by all the main()'s that use the squid library.
+ *           
+ *    Expects to be able to pick up defined preprocessor variables:
+ *    variable          example
+ *    --------           --------------  
+ *    PACKAGE_NAME      "Infernal"
+ *    PACKAGE_VERSION   "0.42"
+ *    PACKAGE_DATE      "Sept 2003"
+ *    PACKAGE_COPYRIGHT "Copyright (C) 2001-2003 Washington University School of Medicine"
+ *    PACKAGE_LICENSE   "Freely distributed under the GNU General Public License (GPL)."
+ *    This gives us a general mechanism to update release information
+ *    without changing multiple points in the code.
+ * 
+ * Args:     fp     - where to print it
+ *           banner - one-line program description, e.g.:
+ *                    "foobar - make bars from foo with elan" 
+ * Returns:  (void)
+ */
+void
+MainBanner(FILE *fp, char *banner)
+{
+  fprintf(fp, "%s\n", banner);
+  fprintf(fp, "%s %s (%s)\n", PACKAGE_NAME, PACKAGE_VERSION, PACKAGE_DATE);
+  fprintf(fp, "%s\n", PACKAGE_COPYRIGHT);
+  fprintf(fp, "%s\n", PACKAGE_LICENSE);
+  fprintf(fp, "- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n");
+}

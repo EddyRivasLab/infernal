@@ -28,15 +28,28 @@ extern char  Degenerate[MAXDEGEN][MAXABET];
 extern int   DegenCount[MAXDEGEN];
 extern int   CMTransitionIndex[20][20];
 
-/* The "-infinity" value in a DP matrix must be > -FLT_MAX/3, so that 
- * we can add three of them together (alpha + tsc + esc) and not get an
- * underflow error. ANSI guarantees us FLT_MAX >= 1e37. 
+/* We're moderately paranoid about underflow and overflow errors,
+ * we do some checking on the magnitude of the scores.
+ * 
+ * IMPOSSIBLE, the "-infinity" value in a DP matrix must be > -FLT_MAX/3, so that 
+ *   we can add three of them together (alpha + tsc + esc) and not get an
+ *   underflow error. ANSI guarantees us FLT_MAX >= 1e37. 
+ * 
+ * MAXSCOREVAL is the maximum value we allow in any alpha cell, tsc, or esc.
+ *
+ * IMPROBABLE must be > IMPOSSIBLE + 2* MAXSCOREVAL; such that adding
+ *  any two valid score values (say, an alpha and a tsc) to IMPOSSIBLE
+ *  gives us a number < IMPROBABLE, and we can reset it to IMPOSSIBLE.
+ *  
  * NOT_IMPOSSIBLE() exists because we can't compare floating point by 
  * equality.
+ *  
  * sreLOG2() exists because we want to work in bits, and we will need
  * to take log(0).
  */
-#define IMPOSSIBLE -1e36
+#define IMPOSSIBLE  -1e36
+#define MAXSCOREVAL  1e35
+#define IMPROBABLE  -5e35
 #define NOT_IMPOSSIBLE(x)  ((x) > -9.999e35) 
 #define sreLOG2(x)  ((x) > 0 ? log(x) * 1.44269504 : IMPOSSIBLE)
 

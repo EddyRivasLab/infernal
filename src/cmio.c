@@ -9,6 +9,8 @@
  ***************************************************************** 
  */ 
 
+#include "config.h"
+
 #include <stdio.h>
 #include <string.h>
 
@@ -16,7 +18,6 @@
 #include "ssi.h"
 
 #include "structs.h"
-#include "version.h"
 #include "funcs.h"
 
 /* Magic numbers identifying binary formats.
@@ -293,7 +294,7 @@ write_ascii_cm(FILE *fp, CM_t *cm)
 {
   int v,x,y,nd;
 
-  fprintf(fp, "INFERNAL-1 [%s]\n", RELEASE);
+  fprintf(fp, "INFERNAL-1 [%s]\n", PACKAGE_VERSION);
 
   fprintf(fp, "NAME   %s\n", cm->name);
   if (cm->acc  != NULL)  fprintf(fp, "ACC    %s\n", cm->acc);
