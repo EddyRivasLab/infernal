@@ -657,9 +657,9 @@ BandBounds(double **gamma, int M, int W, double p, int **ret_dmin, int **ret_dma
   for (v = 0; v < M; v++)
     {
       if (dmin[v] > 0) 
-	assert(gamma[v][dmax[v]] - gamma[v][dmin[v]-1] >= 1.-2*p);
+        {assert(gamma[v][dmax[v]] - gamma[v][dmin[v]-1] >= 1.-2*p);}
       else
-	assert(gamma[v][dmax[v]] >= 1.-2*p);
+        {assert(gamma[v][dmax[v]] >= 1.-2*p);}
       assert(dmin[v] >= 0 && dmin[v] <= W);
       assert(dmax[v] >= 0 && dmax[v] <= W);
       assert(dmax[v] >= dmin[v]);
