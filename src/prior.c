@@ -140,7 +140,7 @@ ReadPrior(char *prifile)
   /* First entry is the strategy: 
    * Only standard Dirichlet prior (simple or mixture) is supported so far
    */
-  //  sptr = Getword(fp, sqdARG_STRING);
+  /*  sptr = Getword(fp, sqdARG_STRING); */
   n = 0;
   buf = NULL;
   
@@ -171,50 +171,50 @@ ReadPrior(char *prifile)
       s = buf;
       if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) Die("ERROR : (A1) reading in transitions in prior file\n");
       curr_state_id = atoi(tok);
-      //      printf("current state id is %d\n", curr_state_id);
+      /*      printf("current state id is %d\n", curr_state_id); */
       if(curr_state_id > UNIQUESTATES) Die("ERROR : (A2) reading in transitions in prior file\n");
       if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) Die("Wrong format of prior file\n");
 
       curr_next_node_id = atoi(tok);
       if(curr_next_node_id > NODETYPES) Die("ERROR : (A3) reading in transitions in prior file\n");
-      //printf("current next node id is %d\n", curr_next_node_id);
+      /*printf("current next node id is %d\n", curr_next_node_id); */
       
-      // add information to setmap
+      /* add information to setmap */
       pri->tsetmap[curr_state_id][curr_next_node_id] = i;
 
-      //get alphabet size for current transition set
+      /*get alphabet size for current transition set */
       sre_fgets(&buf, &n, fp);
       s = buf;
       if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) Die("Wrong format of prior file\n");
-      //printf("A4 tok is %s\n", tok);
+      /*printf("A4 tok is %s\n", tok); */
       pri->tasize[i] = atoi(tok);
       if(pri->tasize[i] > MAXTRANSABET) Die("ERROR : (A4) reading in transitions in prior file\nalph size is %d\n", pri->tasize[i]);
 
-      //get number of components for current transition set
+      /*get number of components for current transition set */
       sre_fgets(&buf, &n, fp);
-      //printf("A5 buf is %s\n", buf);
+      /*printf("A5 buf is %s\n", buf); */
       pri->tnum[i] = atoi(buf);
       if(pri->tnum[i] > MAXDCHLET) Die("ERROR : (A5) reading in transitions in prior file\n");
 
       for(j = 0; j < pri->tnum[i]; j++)
 	{
-	  //get mixture coefficient for current transition set i
-	  //and current component j
+	  /*get mixture coefficient for current transition set i */
+	  /*and current component j */
 	  sre_fgets(&buf, &n, fp);
-	  //printf("A6 buf is %s\n", buf);
+	  /*printf("A6 buf is %s\n", buf); */
 	  pri->tq[i][j] = (double) atof(buf);
 	  if(pri->tq[i][j] > 1.0) Die("ERROR : (A6) reading in transitions in prior file\npri->tq[%d][%d] is %d\n", i, j, pri->tq[i][j]);
 
-	  //get alphas
+	  /*get alphas */
 	  sre_fgets(&buf, &n, fp);
 	  s = buf;
 	  for(k = 0; k < pri->tasize[i]; k++)
 	    {
 	      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) Die("ERROR : (A7) reading in transitions in prior file\nalph size is %d\n", pri->tasize[i]);
 	      pri->t[i][j][k] = (double) atof(tok);
-	      //	      printf("reading in transition priors\n");
-	      //printf("tok is %s\n", tok);
-	      //printf("pri->[%d][%d][%d] is %f\n", i, j, k, pri->t[i][j][k]);
+	      /*	      printf("reading in transition priors\n"); */
+	      /*printf("tok is %s\n", tok); */
+	      /*printf("pri->[%d][%d][%d] is %f\n", i, j, k, pri->t[i][j][k]); */
 	    }
 	}
     }
@@ -228,19 +228,19 @@ ReadPrior(char *prifile)
    *            <alphas> (sep by space)
    */
   
-  //get number of components for match base pair prior
+  /*get number of components for match base pair prior */
   sre_fgets(&buf, &n, fp);
   pri->mbpnum = atoi(buf);
   if(pri->mbpnum > MAXDCHLET) Die("ERROR : (B1) reading in emission bps\n");
   for(j = 0; j < pri->mbpnum; j++)
     {
-      //get mixture coefficient for current transition set i
-      //and current component j
+      /*get mixture coefficient for current transition set i */
+      /*and current component j */
       sre_fgets(&buf, &n, fp);
       pri->mbpq[j] = (double) atof(buf);
       if(pri->mbpq[j] > 1.0) Die("ERROR : (B2) reading in emission bps\n");
       
-      //get alphas
+      /*get alphas */
       sre_fgets(&buf, &n, fp);
       s = buf;
       for(k = 0; k < pri->mbpasize; k++)
@@ -258,19 +258,19 @@ ReadPrior(char *prifile)
    *            <alphas> (sep by space)
    */
 
-  //get number of components for match singlet prior
+  /*get number of components for match singlet prior */
   sre_fgets(&buf, &n, fp);
   pri->mntnum = atoi(buf);
   if(pri->mntnum > MAXDCHLET) Die("ERROR : (C1) reading in emission nts\n");
   for(j = 0; j < pri->mntnum; j++)
     {
-      //get mixture coefficient for current transition set i
-      //and current component j
+      /*get mixture coefficient for current transition set i */
+      /*and current component j */
       sre_fgets(&buf, &n, fp);
       pri->mntq[j] = (double) atof(buf);
       if(pri->mntq[j] > 1.0) Die("ERROR : (C2) reading in emission nts\n");
       
-      //get alphas
+      /*get alphas */
       sre_fgets(&buf, &n, fp);
       s = buf;
       for(k = 0; k < pri->mntasize; k++)
@@ -288,20 +288,20 @@ ReadPrior(char *prifile)
    *            <alphas> (sep by space)
    */
 
-  //get number of components for match singlet prior
+  /*get number of components for match singlet prior */
   sre_fgets(&buf, &n, fp);
   pri->inum = atoi(buf);
   if(pri->inum > MAXDCHLET) Die("ERROR : (E1) reading in emission inserts\n");
   
   for(j = 0; j < pri->inum; j++)
     {
-      //get mixture coefficient for current transition set i
-      //and current component j
+      /*get mixture coefficient for current transition set i */
+      /*and current component j */
       sre_fgets(&buf, &n, fp);
       pri->iq[j] = (double) atof(buf);
       if(pri->iq[j] > 1.0) Die("ERROR : (E2) reading in emission inserts\n");
       
-      //get alphas
+      /*get alphas */
       sre_fgets(&buf, &n, fp);
       s = buf;
       for(k = 0; k < pri->iasize; k++)
@@ -346,12 +346,12 @@ PriorifyCM(struct cm_s *cm, struct prior_s *pri)
 
   /* Model-dependent transitions are handled simply; Laplace.
    */
-    //  FSet(hmm->begin+2, hmm->M-1, 0.);     /* wipe internal BM entries */
-    //FSet(hmm->end+1, hmm->M-1, 0.);	/* wipe internal ME exits   */
-    //d = hmm->tbd1 + hmm->begin[1] + 2.;
-    //hmm->tbd1        = (hmm->tbd1 + 1.)/ d;
-    //hmm->begin[1]    = (hmm->begin[1] + 1.)/ d;
-    //hmm->end[hmm->M] = 1.0;
+    /*  FSet(hmm->begin+2, hmm->M-1, 0.);   */  /* wipe internal BM entries */
+    /*FSet(hmm->end+1, hmm->M-1, 0.);	*/  /* wipe internal ME exits   */
+    /*d = hmm->tbd1 + hmm->begin[1] + 2.; */
+    /*hmm->tbd1        = (hmm->tbd1 + 1.)/ d; */
+    /*hmm->begin[1]    = (hmm->begin[1] + 1.)/ d; */
+    /*hmm->end[hmm->M] = 1.0; */
 
   /* Main model transitions and emissions
    */
@@ -577,14 +577,14 @@ PriorifyBPEmissionVector(float *vec, struct prior_s *pri,
    *  with num=1!!]
    */
 
-  // Some debugging print statements
-  //printf("in PriorifyEmissionVector num is %d\n", num);
-  //for(q = 0; q < num; q++)
-  //  {
-  //   printf("vec %d is %f\n", q, vec[q]);
-  //    printf("eq %d is %f\n", q, eq[q]);
-  //  }
-  //printf("Alphabet size is %d\n\n", asize);
+  /* Some debugging print statements */
+  /*printf("in PriorifyEmissionVector num is %d\n", num); */
+  /*for(q = 0; q < num; q++) */
+  /*  { */
+  /*   printf("vec %d is %f\n", q, vec[q]); */
+  /*    printf("eq %d is %f\n", q, eq[q]); */
+  /*  } */
+  /*printf("Alphabet size is %d\n\n", asize); */
 
   for(q = 0; q < asize; q++)
     {
@@ -682,18 +682,18 @@ PriorifyTransitionVector(float *vec, struct prior_s *pri,
       LogNorm(mix, pri->tnum[setnum]); /* mix[q] is now P(q | counts) */
     }
 
-  //Chunk below copied and modified from ProbifyEmissionVector()
+  /*Chunk below copied and modified from ProbifyEmissionVector() */
   /* Convert the counts to probabilities, following Sjolander (1996) 
    */
 
   /* Debugging print statements */
-  //printf("\nin priorify transition vec setnum is %d\n", setnum);
-  //printf("before incorporating priors\n");
-  //  for(x = 0; x < pri->tasize[setnum]; x++) 
-  //  {
-  //    printf("counts t[%d] is %f\n", x, t[x]);
-  //  }
-  //printf("\nafter incorporating priors\n");
+  /*printf("\nin priorify transition vec setnum is %d\n", setnum); */
+  /*printf("before incorporating priors\n"); */
+  /*  for(x = 0; x < pri->tasize[setnum]; x++)  */
+  /*  { */
+  /*    printf("counts t[%d] is %f\n", x, t[x]); */
+  /*  } */
+  /*printf("\nafter incorporating priors\n"); */
   
   totc = DSum(dvec, pri->tasize[setnum]);
   for (x = 0; x < pri->tasize[setnum]; x++) {
@@ -706,11 +706,11 @@ PriorifyTransitionVector(float *vec, struct prior_s *pri,
     dvec[x] = xi;
     total += xi;
   }
-  assert(abs(total-1) < 1e-6); // Check that we actually have probabilities.
+  assert(abs(total-1) < 1e-6); /* Check that we actually have probabilities. */
   DNorm(dvec, pri->tasize[setnum]);
   for (x = 0; x < pri->tasize[setnum]; x++) {
-    //printf("normalized t[%d] is %f\n", x, t[x]);
-    //printf("about to assert t[%d] = %f is > 0\n", x, t[x]);
+    /*printf("normalized t[%d] is %f\n", x, t[x]); */
+    /*printf("about to assert t[%d] = %f is > 0\n", x, t[x]); */
     assert(dvec[x] > 0);
   }  
 
