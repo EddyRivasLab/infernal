@@ -1,3 +1,0 @@
-all:
-	(cd lp_solve_4.0; make)
-	(cd cm2hmm-1.0; make)
