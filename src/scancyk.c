@@ -101,6 +101,8 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
    *****************************************************************/ 
   for (v = cm->M-1; v >= 0; v--)
     {
+      alpha[v][0][0] = IMPOSSIBLE;
+
       if      (cm->sttype[v] == E_st)  alpha[v][0][0] = 0;
       else if (cm->sttype[v] == MP_st) alpha[v][0][1] = alpha[v][1][1] = IMPOSSIBLE;
       else if (cm->sttype[v] == S_st || cm->sttype[v] == D_st) 
@@ -119,7 +121,6 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
 	  y = cm->cnum[v];
 	  alpha[v][0][0] = alpha[w][0][0] + alpha[y][0][0]; 
 	}
-      else alpha[v][0][0] = IMPOSSIBLE;
 
       alpha[v][1][0] = alpha[v][0][0];
       if (cm->stid[v] == BEGL_S) 

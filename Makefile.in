@@ -46,8 +46,8 @@ CFLAGS = @CFLAGS@
 SHELL       = /bin/sh
 BASENAME    = "infernal"
 PACKAGE     = "INFERNAL"
-RELEASE     = "0.1"
-RELCODE     = "rel0_1"
+RELEASE     = "0.2"
+RELCODE     = "rel0_2"
 RELEASEDATE = "in progress"
 COPYRIGHT   = "Copyright \(C\) 2002 HHMI/Washington University School of Medicine"
 LICENSE     = "Freely distributed under the GNU General Public License \(GPL\)"
@@ -61,7 +61,8 @@ COMPRESS    = gzip
 # of INFERNAL programs.)
 #
 PROGS = cmbuild\
-	cmscore
+	cmscore\
+	cmsearch
 
 # all: if we don't have precompiled binaries, compiles all packages, 
 #      and moves the supported executables into binaries/ subdirectory.
@@ -75,7 +76,7 @@ all: version.h
            echo "a 'binaries' directory; do 'make srcclean' to revert INFERNAL";\
            echo "to a pristine source distribution.";\
 	else\
-           (cd squid; make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module);\
+           (cd squid; make CC="$(CC)" CFLAGS="$(CFLAGS)" module);\
            (cd src;   make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module);\
            mkdir binaries;\
               for prog in $(PROGS); do\
