@@ -14,8 +14,8 @@
 
 /* Alphabet information is declared here, and defined in globals.c.
  */
-#define MAXABET          4	/* maximum for Alphabet_size (used for static arrays) */
-#define MAXDEGEN         17     /* maximum for Alphabet_iupac */
+#define MAXABET          4	/* max for Alphabet_size             */
+#define MAXDEGEN         17     /* maximum for Alphabet_iupac        */
 #define DIGITAL_GAP      126	/* see alphabet.c:DigitizeSequence() */
 #define DIGITAL_SENTINEL 127    
 extern int   Alphabet_type;
@@ -26,12 +26,16 @@ extern char  Degenerate[MAXDEGEN][MAXABET];
 extern int   DegenCount[MAXDEGEN];
 extern int   CMTransitionIndex[20][20];
 
-/* The "-infinity" value in a DP matrix should be > -FLT_MAX/3, so that 
+/* The "-infinity" value in a DP matrix must be > -FLT_MAX/3, so that 
  * we can add three of them together (alpha + tsc + esc) and not get an
  * underflow error. ANSI guarantees us FLT_MAX >= 1e37. 
+ * NOT_IMPOSSIBLE() exists because we can't compare floating point by 
+ * equality.
+ * sreLOG2() exists because we want to work in bits, and we will need
+ * to take log(0).
  */
 #define IMPOSSIBLE -1e36
-#define NOT_IMPOSSIBLE(x)  ((x) > -9.999e35) /* can't compare floating point by equality */
+#define NOT_IMPOSSIBLE(x)  ((x) > -9.999e35) 
 #define sreLOG2(x)  ((x) > 0 ? log(x) * 1.44269504 : IMPOSSIBLE)
 
 /* State types. (cm->sttype[])
@@ -105,52 +109,52 @@ extern int   CMTransitionIndex[20][20];
  * State 0 is always the root state. State M-1 is always an end state.
  */
 typedef struct cm_s {			
-				/* General information about the model:                  */
-  char *name;			/*   name of the model                                   */
-  char *acc;			/*   optional accession number for model                 */
-  char *desc;			/*   optional description of the model                   */
-  char *annote;                 /*   consensus column annotation line                    */
+			/* General information about the model:            */
+  char *name;		/*   name of the model                             */
+  char *acc;		/*   optional accession number for model           */
+  char *desc;		/*   optional description of the model             */
+  char *annote;         /*   consensus column annotation line              */
 
-				/* Information about the null model:                     */
-  float *null;                  /*   residue probabilities [0..3]                        */
+			/* Information about the null model:               */
+  float *null;          /*   residue probabilities [0..3]                  */
 
-				/* Information about the state type:                     */
-  int   M;			/*   number of states in the model                       */
-  char *sttype;			/*   type of state this is; e.g. MP_st                   */
-  int  *ndidx;			/*   index of node this state belongs to                 */
-  char *stid;			/*   unique identifier for this state type; e.g. MATP-MP */
+			/* Information about the state type:               */
+  int   M;		/*   number of states in the model                 */
+  char *sttype;		/*   type of state this is; e.g. MP_st             */
+  int  *ndidx;		/*   index of node this state belongs to           */
+  char *stid;		/*   unique state identifier; e.g. MATP-MP         */
 
-				/* Information about its connectivity in the CM:         */
-  int  *cfirst;			/*   index to first child state we connect to            */
-  int  *cnum;			/*   overloaded: for non-BIF, = number of connections;   */
-				/*               for BIF,     = second child S_st        */
-  int  *plast;                  /*   index to first parent state we connect to           */
-  int  *pnum;                   /*   number of parent connections                        */
+			/* Information about its connectivity in CM:       */
+  int  *cfirst;		/*   index of first child state                    */
+  int  *cnum;		/*   overloaded: for non-BIF: # connections;       */
+			/*               for BIF: second child S_st        */
+  int  *plast;          /*   index to first parent state                   */
+  int  *pnum;           /*   number of parent connections                  */
 
-				/* Information mapping nodes->states                     */
-  int   nodes;			/*   number of nodes in the model                        */
-  int  *nodemap;                /* i.e. nodemap[5] = index of first state of node 5      */
-  char *ndtype;			/* type of node, e.g. MATP_nd                            */
+			/* Information mapping nodes->states               */
+  int   nodes;		/*   number of nodes in the model                  */
+  int  *nodemap;        /*   nodemap[5] = idx first state, node 5          */
+  char *ndtype;		/*   type of node, e.g. MATP_nd                    */
 
-				/* Parameters of the probabilistic model:                */
-  float **t;			/*   Transition probabilities [0..M-1][0..MAXCONNECT-1]  */
-  float **e;			/*   Emission probabilities.  [0..M-1][0..15]            */
-  float  *begin;		/*   Local alignment start probabilities [0..M-1]        */
-  float  *end;			/*   Local alignment ending probabilities [0..M-1]       */
+                        /* Parameters of the probabilistic model:          */
+  float **t;		/*   Transition prob's [0..M-1][0..MAXCONNECT-1]   */
+  float **e;		/*   Emission probabilities.  [0..M-1][0..15]      */
+  float  *begin;	/*   Local alignment start probabilities [0..M-1]  */
+  float  *end;		/*   Local alignment ending probabilities [0..M-1] */
 
-				/* Parameters of the log odds model:                     */
-  float **tsc;			/*   Transition score vector, log odds                   */
-  float **esc;			/*   Emission score vector, log odds                     */
-  float *beginsc;		/*   Score for ROOT_S -> state v (local alignment)       */
-  float *endsc;   		/*   Score for state_v -> EL (local alignment)           */
+			/* Parameters of the log odds model:               */
+  float **tsc;		/*   Transition score vector, log odds             */
+  float **esc;		/*   Emission score vector, log odds               */
+  float *beginsc;	/*   Score for ROOT_S -> state v (local alignment) */
+  float *endsc;   	/*   Score for state_v -> EL (local alignment)     */
 
-  int    flags;			/* status flags */
+  int    flags;		/* status flags                                    */
 } CM_t;
 
 /* Status flags for a CM, cm->flags
  */
-#define CM_LOCAL_BEGIN  (1<<0)	/* Begin distribution is active (local alignment) */
-#define CM_LOCAL_END    (1<<1)  /* End distribution is active (local alignment)   */
+#define CM_LOCAL_BEGIN  (1<<0)	/* Begin distribution is active (local ali) */
+#define CM_LOCAL_END    (1<<1)  /* End distribution is active (local ali)   */
 
 
 /* Structure: Parsetree_t
@@ -165,17 +169,17 @@ typedef struct cm_s {
  * in a set of arrays. 
  */
 typedef struct parsetree_s {
-  int *emitl;			/* i position in sequence or alignment (1..L or alen) */
-  int *emitr;			/* j position in sequence or alignment (1..L or alen) */
-  int *state;			/* y of state (0..M-1)                  */
+  int *emitl;		/* i position in seq or ali (1..L or alen) */
+  int *emitr;		/* j position in seq or ali (1..L or alen) */
+  int *state;		/* y of state (0..M-1)                     */
 
-  int *nxtl;			/* index in trace of left child  */
-  int *nxtr;			/* index in trace of right child */
-  int *prv;			/* index in trace of parent      */
+  int *nxtl;		/* index in trace of left child            */
+  int *nxtr;		/* index in trace of right child           */
+  int *prv;		/* index in trace of parent                */
 
-  int  n;			/* number of elements in use so far     */
-  int  nalloc;			/* number of elements allocated for     */
-  int  memblock;		/* size of malloc() chunk, # of elems   */
+  int  n;		/* number of elements in use so far        */
+  int  nalloc;		/* number of elements allocated for        */
+  int  memblock;	/* size of malloc() chunk, # of elems      */
 } Parsetree_t;
 
 
@@ -187,20 +191,30 @@ typedef struct parsetree_s {
  * display.c:CreateFancyAli().
  */
 typedef struct consensus_s {
-  char *cseq;                   /* consensus sequence display string; 0..clen-1     */
-  char *cstr;			/* consensus structure display string; 0..clen-1    */
-  int  *lpos;			/* maps node->consensus position; 0..nodes-1        */
-  int  *rpos;			/* maps node->consensus position; 0..nodes-1        */
-  int   clen;			/* length of cseq, cstr                             */
+  char *cseq;           /* consensus sequence display string; 0..clen-1     */
+  char *cstr;		/* consensus structure display string; 0..clen-1    */
+  int  *lpos;		/* maps node->consensus position; 0..nodes-1        */
+  int  *rpos;		/* maps node->consensus position; 0..nodes-1        */
+  int   clen;		/* length of cseq, cstr                             */
 } CMConsensus_t;
 
+/* Structure: Fancyali_t
+ * Incept:    SRE, May 2002 [St. Louis]
+ * 
+ * See display.c:CreateFancyAli(). 
+ * An alignment of a CM to a target sequence, formatted for display.
+ */
 typedef struct fancyali_s {
-  char *annote;                 /* reference annotation line (NULL if unavail) */
-  char *cstr;			/* CM consensus structure line */
-  char *cseq;			/* CM consensus sequence line  */
-  char *mid;			/* alignment identity middle line */
-  char *aseq;			/* aligned target sequence */
-  int   len;
+  char *annote;         /* reference annotation line (NULL if unavail) */
+  char *cstr;		/* CM consensus structure line                 */
+  char *cseq;		/* CM consensus sequence line                  */
+  char *mid;		/* alignment identity middle line              */
+  char *aseq;		/* aligned target sequence                     */
+  int  *scoord;		/* coords 1..L for aligned dsq chars           */
+  int  *ccoord;		/* coords 1..clen for aligned consensus chars  */
+  int   len;		/* len of the strings above                    */
+  int   cfrom, cto;	/* max bounds in ccoord                        */
+  int   sqfrom, sqto;	/* max bounds in scoord                        */
 } Fancyali_t;
 
 

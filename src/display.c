@@ -49,9 +49,9 @@ static void createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface);
 Fancyali_t *
 CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
 {
-  Fancyali_t *ali;              /* alignment structure we're building, and returning */
-  Nstack_t   *pda;              /* pushdown automaton used to traverse the trace. */
-  int         type;		/* type of move on automaton: PDA_RESIDUE or PDA_STATE */
+  Fancyali_t *ali;              /* alignment structure we're building        */
+  Nstack_t   *pda;              /* pushdown automaton used to traverse trace */
+  int         type;		/* type of pda move: PDA_RESIDUE, PDA_STATE  */
   int         v;		/* state index       */
   int         nd;		/* node index        */
   int         ti;		/* position in trace */
@@ -59,12 +59,14 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
   int         pos;		/* position in growing ali */
   int         lc, rc;		/* indices for left, right pos in consensus */
   int         symi, symj;
-  int         lannote, rannote; /* characters to put in annotation line; left, right */
-  int         lstr, rstr;	/* chars to put in structure line; left, right */
-  int         lcons, rcons;	/* chars to put in model consensus line; left, right */
-  int         lmid, rmid;	/* chars to put in middle alignment quality line; left, right */
-  int         lseq, rseq;	/* chars to put in aligned target seq line; left, right */
-  int         do_left, do_right;/* flags to generate left, right */
+  int         lannote, rannote; /* chars in annotation line; left, right     */
+  int         lstr, rstr;	/* chars in structure line; left, right      */
+  int         lcons, rcons;	/* chars in consensus line; left, right      */
+  int         lmid, rmid;	/* chars in ali quality line; left, right    */
+  int         lseq, rseq;	/* chars in aligned target line; left, right */
+  int         do_left, do_right;/* flags to generate left, right             */
+  int cpos_l, cpos_r;   	/* positions in consensus (1..clen)          */
+  int spos_l, spos_r;		/* positions in dsq (1..L)                   */
 
   ali = MallocOrDie(sizeof(Fancyali_t));
   
@@ -86,28 +88,37 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
 	continue;
       } else {
 	nd = cm->ndidx[v];
-	if      (cm->sttype[v]  == IL_st   || cm->sttype[v]  == IR_st)   ali->len += 1;
-	else if (cm->ndtype[nd] == MATL_nd || cm->ndtype[nd] == MATR_nd) ali->len += 1;
-	else if (cm->ndtype[nd] == MATP_nd)                              ali->len += 2;
+	if      (cm->sttype[v]  == IL_st   || cm->sttype[v]  == IR_st)  
+	  ali->len += 1;
+	else if (cm->ndtype[nd] == MATL_nd || cm->ndtype[nd] == MATR_nd) 
+	  ali->len += 1;
+	else if (cm->ndtype[nd] == MATP_nd)                              
+	  ali->len += 2;
       }	
     }
 
   /* Allocate and initialize.
    * Blank the annotation lines (memset calls) - only needed
-   * because of the way we deal w/ EL.                                            
+   * because of the way we deal w/ EL. 
    */
-  if (cm->annote != NULL ) ali->annote = MallocOrDie(sizeof(char) * (ali->len+1));
-  else                     ali->annote = NULL;
+  if (cm->annote != NULL ) 
+    ali->annote = MallocOrDie(sizeof(char) * (ali->len+1));
+  else                     
+    ali->annote = NULL;
   ali->cstr     = MallocOrDie(sizeof(char) * (ali->len+1));
   ali->cseq     = MallocOrDie(sizeof(char) * (ali->len+1));
   ali->mid      = MallocOrDie(sizeof(char) * (ali->len+1));
   ali->aseq     = MallocOrDie(sizeof(char) * (ali->len+1));
+  ali->scoord   = MallocOrDie(sizeof(int)  * ali->len);
+  ali->ccoord   = MallocOrDie(sizeof(int)  * ali->len);
 
   if (cm->annote != NULL) memset(ali->annote, ' ', ali->len);
   memset(ali->cstr, ' ', ali->len);
   memset(ali->cseq, ' ', ali->len);
   memset(ali->mid,  ' ', ali->len);
   memset(ali->aseq, ' ', ali->len);
+  for (pos = 0; pos < ali->len; pos++) 
+    ali->ccoord[pos] = ali->scoord[pos] = 0;
 
   /* Fill in the lines: traverse the traceback.
    */
@@ -118,11 +129,16 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
   while (PopNstack(pda, &type))
     {
       if (type == PDA_RESIDUE) {
-	if (cm->annote != NULL) { PopNstack(pda, &rannote); ali->annote[pos] = rannote;}
-	PopNstack(pda, &rstr); 	ali->cstr[pos] = rstr;
-	PopNstack(pda, &rcons);	ali->cseq[pos] = rcons;
-	PopNstack(pda, &rmid);	ali->mid[pos]  = rmid;
-	PopNstack(pda, &rseq);	ali->aseq[pos] = rseq;
+	if (cm->annote != NULL) { 
+	  PopNstack(pda, &rannote); 
+	  ali->annote[pos] = rannote;
+	}
+	PopNstack(pda, &rstr); 	  ali->cstr[pos]   = rstr;
+	PopNstack(pda, &rcons);	  ali->cseq[pos]   = rcons;
+	PopNstack(pda, &rmid);	  ali->mid[pos]    = rmid;
+	PopNstack(pda, &rseq);    ali->aseq[pos]   = rseq;
+	PopNstack(pda, &cpos_r);  ali->ccoord[pos] = cpos_r;
+	PopNstack(pda, &spos_r);  ali->scoord[pos] = spos_r;
 	pos++;
 	continue;
       }
@@ -147,9 +163,9 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
       /* Fetch some info into tmp variables, for "clarity"
        */
       nd = cm->ndidx[v];	  /* what CM node we're in */
-      lc   = cons->lpos[nd];	  /* where this CM node aligns to in the consensus */
+      lc   = cons->lpos[nd];	  /* where CM node aligns to in consensus */
       rc   = cons->rpos[nd];
-      symi = dsq[tr->emitl[ti]];  /* residue indices this trace node is aligned to */
+      symi = dsq[tr->emitl[ti]];  /* residue indices that node is aligned to */
       symj = dsq[tr->emitr[ti]];
 
       /* Calculate four of the five lines: annote, str, cons, and seq.
@@ -161,28 +177,44 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
 	lstr    = ' ';
 	lcons   = '.';
 	lseq    = tolower(Alphabet[symi]);
+	cpos_l  = 0;
+	spos_l  = tr->emitl[ti];
       } else if (cm->sttype[v] == IR_st) {
 	do_right = TRUE;
 	if (cm->annote != NULL) lannote = cm->annote[rc];
 	rstr    = ' ';
 	rcons   = '.';
 	rseq    = tolower(Alphabet[symj]);
+	cpos_r  = 0;
+	spos_r  = tr->emitr[ti];
       } else {
 	if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd) {
 	  do_left = TRUE;
 	  if (cm->annote != NULL) lannote = cm->annote[lc];
-	  lstr  = cons->cstr[lc];
-	  lcons = cons->cseq[lc];
-	  if (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st) lseq  = Alphabet[symi];
-	  else                                                  lseq  = '-';
+	  lstr   = cons->cstr[lc];
+	  lcons  = cons->cseq[lc];
+	  cpos_l = lc+1;
+	  if (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st) {
+	    lseq   = Alphabet[symi];
+	    spos_l = tr->emitl[ti];
+	  } else {
+	    lseq   = '-';
+	    spos_l = 0;
+	  }
 	}
 	if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd) {
 	  do_right = TRUE;
 	  if (cm->annote != NULL) rannote = cm->annote[rc];
-	  rstr  = cons->cstr[rc];
-	  rcons = cons->cseq[rc];
-	  if (cm->sttype[v] == MP_st || cm->sttype[v] == MR_st) rseq  = Alphabet[symj];
-	  else                                                  rseq  = '-';
+	  rstr   = cons->cstr[rc];
+	  rcons  = cons->cseq[rc];
+	  cpos_r = rc+1;
+	  if (cm->sttype[v] == MP_st || cm->sttype[v] == MR_st) {
+	    rseq   = Alphabet[symj];
+	    spos_r = tr->emitr[ti];
+	  } else {
+	    rseq   = '-';
+	    spos_r = 0;
+	  }
 	}
       }
 
@@ -216,13 +248,17 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
        */
       if (do_left) {
 	if (cm->annote != NULL) ali->annote[pos] = lannote;
-	ali->cstr[pos] = lstr;
-	ali->cseq[pos] = lcons;
-	ali->mid[pos]  = lmid;
-	ali->aseq[pos] = lseq;
+	ali->cstr[pos]   = lstr;
+	ali->cseq[pos]   = lcons;
+	ali->mid[pos]    = lmid;
+	ali->aseq[pos]   = lseq;
+	ali->ccoord[pos] = cpos_l;
+	ali->scoord[pos] = spos_l;
 	pos++;
       }
       if (do_right) {
+	PushNstack(pda, spos_r);
+	PushNstack(pda, cpos_r);
 	PushNstack(pda, (int) rseq);
 	PushNstack(pda, (int) rmid);
 	PushNstack(pda, (int) rcons);
@@ -250,34 +286,117 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
   ali->mid[ali->len]  = '\0';
   ali->aseq[ali->len] = '\0';
 
+  /* Laboriously determine the maximum bounds.
+   */
+  ali->sqfrom = 0;
+  for (pos = 0; pos < ali->len; pos++)
+    if (ali->scoord[pos] != 0) {
+      ali->sqfrom = ali->scoord[pos];
+      break;
+    }
+  ali->sqto = 0;
+  for (pos = 0; pos < ali->len; pos++)
+    if (ali->scoord[pos] != 0) ali->sqto = ali->scoord[pos];
+  ali->cfrom = 0; 
+  for (pos = 0; pos < ali->len; pos++)
+    if (ali->ccoord[pos] != 0) {
+      ali->cfrom = ali->ccoord[pos];
+      break;
+    }
+  ali->cto = 0;
+  for (pos = 0; pos < ali->len; pos++)
+    if (ali->ccoord[pos] != 0) ali->cto = ali->ccoord[pos];
+
   FreeNstack(pda);
   return ali;
 }
 
+/* Function: PrintFancyAli()
+ * Date:     SRE, Thu Jun 13 02:23:18 2002 [Aula Magna, Stockholm]
+ *
+ * Purpose:  Write a CM/sequence alignment to a stream, from a
+ *           Fancyali_t structure. Line length currently hardcoded
+ *           but this could be changed. Modeled on HMMER's 
+ *           eponymous function.
+ *
+ * Args:     fp  - where to print it (stdout or open FILE)
+ *           ali - alignment structure t print.      
+ *
+ * Returns:  (void)
+ */
 void
 PrintFancyAli(FILE *fp, Fancyali_t *ali)
 {
   char *buf;
   int   pos;
   int   linelength;
+  int   ci,  cj;		/* positions in CM consensus 1..clen */
+  int   sqi, sqj;		/* positions in target seq 1..L      */
+  int   i;
 
   linelength = 60;
   buf = MallocOrDie(sizeof(char) * (linelength + 1));
   buf[linelength] = '\0';
-
   for (pos = 0; pos < ali->len; pos += linelength)
     {
+      /* Laboriously determine our coord bounds on dsq
+       * and consensus line for this alignment section.
+       */
+      sqi = 0;
+      for (i = pos; ali->aseq[i] != '\0' && i < pos + linelength; i++) {
+	if (ali->scoord[i] != 0) {
+	  sqi = ali->scoord[i];
+	  break;
+	}
+      }
+      sqj = 0;
+      for (i = pos; ali->aseq[i] != '\0' && i < pos + linelength; i++) {
+	if (ali->scoord[i] != 0) sqj = ali->scoord[i];
+      }
+      ci = 0; 
+      for (i = pos; ali->aseq[i] != '\0' && i < pos + linelength; i++) {
+	if (ali->ccoord[i] != 0) {
+	  ci = ali->ccoord[i];
+	  break;
+	}
+      }
+      cj = 0;
+      for (i = pos; ali->aseq[i] != '\0' && i < pos + linelength; i++) {
+	if (ali->ccoord[i] != 0) cj = ali->ccoord[i];
+      }
+
+      /* Formats and print the alignment section.
+       */
       if (ali->annote != NULL) {
 	strncpy(buf, ali->annote+pos, linelength);
-	fprintf(fp, "%s\n", buf);
+	fprintf(fp, "  %8s %s\n", " ", buf);
       }
-      strncpy(buf, ali->cstr+pos, linelength);  fprintf(fp, "%s\n", buf);
-      strncpy(buf, ali->cseq+pos, linelength);  fprintf(fp, "%s\n", buf);
-      strncpy(buf, ali->mid+pos,  linelength);  fprintf(fp, "%s\n", buf);
-      strncpy(buf, ali->aseq+pos, linelength);  fprintf(fp, "%s\n", buf);
+      if (ali->cstr != NULL) {
+	strncpy(buf, ali->cstr+pos, linelength);  
+	fprintf(fp, "  %8s %s\n", " ", buf);
+      }
+      if (ali->cseq != NULL) {
+	strncpy(buf, ali->cseq+pos, linelength);  
+	if (ci && cj)
+	  fprintf(fp, "  %8d %s %-8d\n", ci, buf, cj);
+	else
+	  fprintf(fp, "  %8s %s %-8s\n", "-", buf, "-");
+      }
+      if (ali->mid != NULL) {
+	strncpy(buf, ali->mid+pos,  linelength);  
+	fprintf(fp, "  %8s %s\n", " ", buf);
+      }
+      if (ali->aseq != NULL) {
+	strncpy(buf, ali->aseq+pos, linelength);  
+	if (sqj && sqi) 
+	  fprintf(fp, "  %8d %s %-8d\n", sqi, buf, sqj);
+	else
+	  fprintf(fp, "  %8s %s %-8s\n", "-", buf, "-");
+      }
       fprintf(fp, "\n");
     }
   free(buf);
+  fflush(fp);
 }
 
 
@@ -292,6 +411,8 @@ FreeFancyAli(Fancyali_t *ali)
   if (ali->cseq   != NULL) free(ali->cseq);
   if (ali->mid    != NULL) free(ali->mid);
   if (ali->aseq   != NULL) free(ali->aseq);
+  if (ali->ccoord != NULL) free(ali->ccoord);
+  if (ali->scoord != NULL) free(ali->scoord);
   free(ali);
 }
 

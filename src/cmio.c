@@ -10,6 +10,7 @@
  */ 
 
 #include <stdio.h>
+#include <string.h>
 #include "squid.h"
 #include "structs.h"
 #include "funcs.h"

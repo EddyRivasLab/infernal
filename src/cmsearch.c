@@ -71,7 +71,6 @@ main(int argc, char **argv)
   int   *hiti;                  /* start positions of hits */
   int   *hitj;                  /* end positions of hits */
   float *hitsc;			/* scores of hits */
-  int    ci, cj;		/* positions in model consensus; start, end */
 
   int    windowlen;		/* maximum len of hit; scanning window size */
   int    do_revcomp;		/* true to do reverse complement too */
@@ -153,16 +152,9 @@ main(int argc, char **argv)
       if (! reversed) printf("sequence: %s\n", sqinfo.name);
       for (i = 0; i < nhits; i++)
 	{
-	  /* Recover start, end position of hit in the model consensus.
-           * Consensus is 0.. but we'll show it as 1..
-	   */
-	  ci = cons->lpos[cm->ndidx[hitr[i]]]+1;
-	  cj = cons->rpos[cm->ndidx[hitr[i]]]+1;
-
-	  printf("hit %-4d: %6d %6d %6d %6d %8.2f bits\n", i, 
+	  printf("hit %-4d: %6d %6d %8.2f bits\n", i, 
 		 reversed ? sqinfo.len - hiti[i] + 1 : hiti[i], 
 		 reversed ? sqinfo.len - hitj[i] + 1 : hitj[i],
-		 ci, cj,
 		 hitsc[i]);
 	  
 	  if (do_local) 

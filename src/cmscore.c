@@ -130,7 +130,7 @@ main(int argc, char **argv)
 	StopwatchStart(watch);
 	if (do_scoreonly) {
 	  sc1 = CYKInsideScore(cm, dsq, sqinfo.len);
-	  printf("%-12s : %.2f  %.2f\n", sqinfo.name, sc1);
+	  printf("%-12s : %.2f\n", sqinfo.name, sc1);
 	} else {
 	  sc1 = CYKInside(cm, dsq, sqinfo.len, &tr1);  
 	  ParsetreeDump(stdout, tr1, cm, dsq);

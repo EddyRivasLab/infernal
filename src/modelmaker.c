@@ -966,5 +966,6 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, char *dsq, char *aseq, int alen)
   FreeNstack(pda);
   FreeParsetree(tr);
   Die("transmogrification failed: bad input sequence.");
+  return NULL;			/* not reached */
 }
 

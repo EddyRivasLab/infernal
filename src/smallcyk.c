@@ -42,7 +42,8 @@ static float inside(CM_t *cm, char *dsq, int L,
 		    int do_full,
 		    float ***alpha, float ****ret_alpha, 
 		    struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
-		    void ****ret_shadow);
+		    void ****ret_shadow, 
+		    int allow_begin, int *ret_b, float *ret_bsc);
 static void  outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 		     int do_full, float ***beta, float ****ret_beta,
 		     struct deckpool_s *dpool, struct deckpool_s **ret_dpool);
@@ -470,8 +471,10 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    * We also get b1: best choice for 0->b local begin. b1_sc is the score if we do this.
    * Analogous for b2, b2_sc on the other side.
    */
-  inside(cm, dsq, L, w, wend, i0, j0, BE_EFFICIENT, NULL,  &alpha, NULL, &pool, NULL, &b1, &b1_sc);
-  inside(cm, dsq, L, y, yend, i0, j0, BE_EFFICIENT, alpha, &alpha, pool, &pool, NULL, &b2, &b2_sc);
+  inside(cm, dsq, L, w, wend, i0, j0, BE_EFFICIENT, NULL,  &alpha, NULL, &pool, NULL, 
+	 allow_begin, &b1, &b1_sc);
+  inside(cm, dsq, L, y, yend, i0, j0, BE_EFFICIENT, alpha, &alpha, pool, &pool, NULL,
+	 allow_begin, &b2, &b2_sc);
 
   /* Calculate beta[v] deck (stick it in alpha). Let the pool get free'd.
    * (If we're doing local alignment, deck M is the beta[EL] deck.)
@@ -678,7 +681,8 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
    *    is the score for using it.
    *    beta[cm->M] will contain the EL deck, if needed for local ends.
    */
-  inside(cm, dsq, L, w, z, i0, j0, BE_EFFICIENT, NULL, &alpha, NULL, &pool, NULL, &b, &bsc);
+  inside(cm, dsq, L, w, z, i0, j0, BE_EFFICIENT, NULL, &alpha, NULL, &pool, NULL, 
+	 allow_begin, &b, &bsc);
   outside(cm, dsq, L, r, y, i0, j0, BE_EFFICIENT, NULL, &beta, pool, NULL);
 
   /* 4. Find the optimal split at the split set: best_v, best_d, best_j
@@ -1013,17 +1017,18 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
  *                       because of the size of the subseq decks.
  *           ret_shadow- if non-NULL, the caller wants a shadow matrix, because
  *                       he intends to do a traceback.
+ *           allow_begin- TRUE to allow 0->b local alignment begin transitions. 
  *           ret_b     - best local begin state.
  *           ret_bsc   - score for using ret_b                        
  *                       
  *
- * Returns:  
+ * Returns:  Score of the optimal alignment.
  */
 static float 
 inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
        float ***alpha, float ****ret_alpha, 
        struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
-       void ****ret_shadow, int *ret_b, float *ret_bsc)
+       void ****ret_shadow, int allow_begin, int *ret_b, float *ret_bsc)
 {
   float  **end;                 /* we re-use the end deck. */
   int      nends;               /* counter that tracks when we can release end deck to the pool */
@@ -1232,6 +1237,16 @@ inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_f
 	}				/* finished calculating deck v. */
       
       
+      /* Check for local begin getting us to the root.
+       * This is "off-shadow": if/when we trace back, we'll handle this
+       * case separately.
+       */
+      if (allow_begin && alpha[v][j0][W] + cm->beginsc[v] > bsc) 
+	{
+	  b   = v;
+	  bsc = alpha[v][j0][W] + cm->beginsc[v];
+	}
+
       /* Now, if we're trying to reuse memory in our normal mode (e.g. ! do_full):
        * Look at our children; if they're fully released, take their deck
        * into the pool for reuse.
@@ -1259,7 +1274,7 @@ inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_f
 	      }
 	  }
       }
-  } /* end loop over v */
+  } /* end loop over all v */
 
   /* Now we free our memory. 
    * if we've got do_full set, all decks vroot..vend are now valid (end is shared).
@@ -1267,7 +1282,11 @@ inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_f
    * and end is NULL.
    * We could check this status to be sure (and we used to) but now we trust. 
    */
-  sc = alpha[vroot][j0][W];
+  sc       = alpha[vroot][j0][W];
+  *ret_b   = b;
+  *ret_bsc = bsc;
+  if (allow_begin && bsc > sc) { sc = bsc; }
+
 
   /* If the caller doesn't want the matrix, free it (saving the decks in the pool!)
    * Else, pass it back to him.
