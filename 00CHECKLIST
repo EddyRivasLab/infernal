@@ -4,8 +4,10 @@ SRE, Thu Jul  4 10:27:28 2002
 
 1. Make sure is up to date w/ CVS. (Worry about commits here, on
    other machines and other dirs that may have squid modifications)
+	% ./configure
         % make distclean
 	% cvs update
+	% cvs commit
    Clean up any stray files.
 
 2. Test dev code before making release: exercises and bugs

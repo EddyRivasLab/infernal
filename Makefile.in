@@ -49,7 +49,7 @@ PACKAGE     = "Infernal"
 RELEASE     = "0.55"
 RELCODE     = "infernal0_55"
 RELEASEDATE = "April 2003"
-COPYRIGHT   = "Copyright \(C\) 2002-2003 Washington University, Saint Louis"
+COPYRIGHT   = "Copyright \(C\) 2001-2003 Washington University, Saint Louis"
 LICENSELINE = "Freely distributed under the GNU General Public License \(GPL\)"
 LICENSETAG  = gnu
 COMPRESS    = gzip
@@ -111,15 +111,23 @@ dist:
 	cvs rtag -F ${RELCODE} squid
 	(cd ${BASENAME}-${RELEASE}/; cvs export -r ${RELCODE} -d squid squid)
 	# 
-	# Put a copy of sqc in testsuite; that's the only script
-	# we need from ssdk.
+	# We won't include the ssdk, but we need it temporarily,
+	# for rmanprocess.pl (when making the user guide); we also 
+	# need to put a copy of sqc in testsuite. 
 	#
 	cp ssdk/sqc ${BASENAME}-${RELEASE}/testsuite/
+	mkdir ${BASENAME}-${RELEASE}/ssdk
+	cp ssdk/rmanprocess.pl ${BASENAME}-${RELEASE}/ssdk/
 	# 
 	# Make the configure scripts from configure.in's
 	#
 	(cd ${BASENAME}-${RELEASE};       autoconf)
 	(cd ${BASENAME}-${RELEASE}/squid; autoconf)
+	#
+	# We'll need a basic squid Makefile for some steps; later
+	# we'll delete it.
+	#
+	(cd ${BASENAME}-${RELEASE}/squid; ./configure)
 	#
 	# Attach license stamps on all files that need 'em
 	# (e.g. replace LICENSE keyword everywhere)
@@ -130,19 +138,20 @@ dist:
 	#
 	find ${BASENAME}-${RELEASE}/documentation -type f -exec ssdk/sedition RELEASE ${RELEASE} RELEASEDATE ${RELEASEDATE} PACKAGE ${PACKAGE} COPYRIGHT ${COPYRIGHT} LICENSELINE ${LICENSELINE} {} \;
 	#
-	# Make the User's Guide, and copy to top level.
+	# Make the User's Guide, and copy to top level. (We'll
+	# destroy the userguide source soon.)
 	#
 	(cd ${BASENAME}-${RELEASE}/documentation/userguide; make pdf)
-	cp ${BASENAME}-${RELEASE}/documentation/userguide/main.pdf Userguide.pdf
+	cp ${BASENAME}-${RELEASE}/documentation/userguide/main.pdf  ${BASENAME}-${RELEASE}/Userguide.pdf
 	# 
 	# Finish the man pages off, adding necessary boilerplate.
 	# Must be done *after* the user guide is created, since the user guide
 	# steals and uses the pre-boilerplate man pages.
 	#
 	for prog in $(PROGS); do\
-	   cat documentation/manpages/boilerplate.trailer >> ${BASENAME}-${RELEASE}/documentation/manpages/$$prog.man;\
+	   cat ${BASENAME}-${RELEASE}/documentation/manpages/boilerplate.trailer >> ${BASENAME}-${RELEASE}/documentation/manpages/$$prog.man;\
 	done
-	rm ${BASENAME}-${RELEASE}/documentation/manpages/boilerplate.trailer
+	-rm -f ${BASENAME}-${RELEASE}/documentation/manpages/boilerplate.trailer
 	#
 	# Remove CVS-controlled files/directories that don't belong in the
 	# distro
@@ -150,10 +159,11 @@ dist:
 	-rm -rf ${BASENAME}-${RELEASE}/Licenses
 	-rm -rf ${BASENAME}-${RELEASE}/00CHECKLIST
 	-rm -rf ${BASENAME}-${RELEASE}/configure.in
-	-rm -rf ${BASENAME}-${RELEASE}/squid/configure.in
 	-rm -rf ${BASENAME}-${RELEASE}/Bugs
 	-rm -rf ${BASENAME}-${RELEASE}/Manuscripts
+	-rm -rf ${BASENAME}-${RELEASE}/ssdk
 	-rm -rf ${BASENAME}-${RELEASE}/documentation/userguide
+	(cd ${BASENAME}-${RELEASE}/squid; make implode; make distclean)
 	#
 	# Set file permissions.
 	#

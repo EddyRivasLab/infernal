@@ -1,4 +1,4 @@
-.TH "cmscore" 1 @RELEASEDATE@ "@PACKAGE@" "@PACKAGE@ Manual"
+.TH "cmscore" 1 "@RELEASEDATE@" "@PACKAGE@ @RELEASE@" "@PACKAGE@ Manual"
 
 .SH NAME
 .TP 

@@ -1,4 +1,4 @@
-.TH "cmbuild" 1 @RELEASEDATE@ "@PACKAGE@" "@PACKAGE@ Manual"
+.TH "cmbuild" 1 "@RELEASEDATE@" "@PACKAGE@ @RELEASE@" "@PACKAGE@ Manual"
 
 .SH NAME
 .TP 
