@@ -148,14 +148,19 @@ extern void  CYKDemands(CM_t *cm, int L);
 
 /* from prior.c
  */
-extern void LogNorm(float *vec, int n);
+extern void LogNorm(double *vec, int n);
+extern double Logp_cvec(double *cvec, int n, double *alpha);
 extern struct prior_s *AllocPrior(void);
 extern void FreePrior(struct prior_s *pri);
 extern struct prior_s * ReadPrior(char *prifile);
 extern void PriorifyCM(struct cm_s *cm, struct prior_s *pri);
-extern void PriorifyEmissionVector(float *vec, struct prior_s *pri, 
-		       int num, int asize, float eq[MAXDCHLET], 
-		       float e[MAXDCHLET][(MAXABET*MAXABET)],
-		       float *ret_mix);
-extern void PriorifyTransitionVector(float *t, struct prior_s *prior, 
-				     float tq[MAXDCHLET], int setnum);
+extern void PriorifyNTEmissionVector(float *vec, struct prior_s *pri, 
+		       int num, int asize, double eq[MAXDCHLET], 
+		       double e[MAXDCHLET][MAXABET],
+		       double *ret_mix);
+extern void PriorifyBPEmissionVector(float *vec, struct prior_s *pri, 
+		       int num, int asize, double eq[MAXDCHLET], 
+		       double e[MAXDCHLET][(MAXABET*MAXABET)],
+		       double *ret_mix);
+extern void PriorifyTransitionVector(float *vec, struct prior_s *prior, 
+				     double tq[MAXDCHLET], int setnum);

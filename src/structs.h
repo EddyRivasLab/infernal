@@ -16,10 +16,11 @@
 
 /* Alphabet information is declared here, and defined in globals.c.
  */
-#define MAXABET          4	/* max for Alphabet_size             */
+#define MAXABET           4	/* max for Alphabet_size             */
 #define MAXDEGEN         17     /* maximum for Alphabet_iupac        */
 #define DIGITAL_GAP      126	/* see alphabet.c:DigitizeSequence() */
 #define DIGITAL_SENTINEL 127    
+#define MAXTRANSABET      6     /* maximum # of transitions from a state */
 extern int   Alphabet_type;
 extern int   Alphabet_size;
 extern int   Alphabet_iupac;
@@ -337,31 +338,26 @@ struct prior_s {
 					  node b */
   int tnum[MAXTRANSSETS];                   /* number of transition Dirichlet mixtures */
   int tasize[MAXTRANSSETS];    /* alphabet size for each transition set */
-  float tq[MAXTRANSSETS][MAXDCHLET];         /* weights of Dirichlet mixture terms*/
-  float t[MAXTRANSSETS][MAXDCHLET][MAXABET]; /* transition terms per component */
+  double tq[MAXTRANSSETS][MAXDCHLET];         /* weights of Dirichlet mixture terms*/
+  double t[MAXTRANSSETS][MAXDCHLET][MAXTRANSABET]; /* transition terms per component */
 
   /*match base pair priors*/
   int   mbpnum;                   /* number of match Dirichlet mixture terms      */
   int   mbpasize;                 /* Number of base pair events/alphabet size         */
-  float mbpq[MAXDCHLET];          /* weights of Dirichlet mixture terms     */
-  float mbp[MAXDCHLET][(MAXABET*MAXABET)]; /* match emission terms per mix component */
+  double mbpq[MAXDCHLET];          /* weights of Dirichlet mixture terms     */
+  double mbp[MAXDCHLET][(MAXABET*MAXABET)]; /* match emission terms per mix component */
   
   /*match singlet priors*/
   int   mntnum;                   /* number of match Dirichlet mixture terms      */
   int   mntasize;                 /* Number of base pair events/alphabet size         */
-  float mntq[MAXDCHLET];          /* weights of Dirichlet mixture terms     */
-  float mnt[MAXDCHLET][(MAXABET*MAXABET)]; /* match emission terms per mix component */
+  double mntq[MAXDCHLET];          /* weights of Dirichlet mixture terms     */
+  double mnt[MAXDCHLET][MAXABET]; /* match emission terms per mix component */
   
   /*insert priors */
   int   inum;                   /* number of Dirichlet mixture terms      */
   int   iasize;                 /* Number of events/alphabet size         */
-  float iq[MAXDCHLET];          /* weights of Dirichlet mixture terms     */
-  float i[MAXDCHLET][(MAXABET*MAXABET)]; /* insert emission terms per mix component */
-
-  /* NOTE EPN : mnt and i 2D arrays are [MAXDCHLET][(MAXABET * MAXABET)] just so 
-   * that I can use a single PriorifyEmissionVector() function for all emissions.  
-   * There must be a better way to do this, but I don't know what it is.
-   */
+  double iq[MAXDCHLET];          /* weights of Dirichlet mixture terms     */
+  double i[MAXDCHLET][MAXABET]; /* insert emission terms per mix component */
 };
 
 #endif /*STRUCTSH_INCLUDED*/

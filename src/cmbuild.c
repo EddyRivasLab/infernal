@@ -62,7 +62,7 @@ static char experts[] = "\
    --treeforce    : score first seq in alignment and show parsetree\n\
 \n\
  * priors from a file:\n\
-   --priorfile    : read priors from a disk file in specific format\n\
+   --priorfile <f> : read priors from file <f>\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -87,7 +87,7 @@ static struct opt_s OPTIONS[] = {
   { "--wnone",     FALSE, sqdARG_NONE },
   { "--wgsc",      FALSE, sqdARG_NONE },
   //ADDED EPN 01.31.05
-  { "--priorfile", FALSE, sqdARG_NONE },
+  { "--priorfile", FALSE, sqdARG_STRING },
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -165,6 +165,8 @@ main(int argc, char **argv)
   gtblfile          = NULL;
   gtreefile         = NULL;
   regressionfile    = NULL;
+
+  prifile           = NULL;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {

@@ -15,6 +15,7 @@
 #include "sre_stack.h"
 #include "structs.h"
 #include "funcs.h"
+#include "dirichlet.h"
 
 /* Function: LogNorm()
  * 
@@ -30,11 +31,11 @@
  *              mathsupport.c file in HMMER 2.3.2
  */
 void
-LogNorm(float *vec, int n)
+LogNorm(double *vec, int n)
 {
   int   x;
-  float max   = -1.0e30;
-  float denom = 0.;
+  double max   = -1.0e30;
+  double denom = 0.;
 
   for (x = 0; x < n; x++)
     if (vec[x] > max) max = vec[x];
@@ -47,7 +48,7 @@ LogNorm(float *vec, int n)
     else
       vec[x] = 0.0;
 }
- 
+
 /* Function: AllocPrior(), FreePrior()
  * 
  * Purpose:  Allocation and free'ing of a prior structure.
@@ -75,7 +76,6 @@ ReadPrior(char *prifile)
   char             *s;
   int               n;
   int               toklen;
-  int               q, x;
   int               i;       /*counter over transition sets*/
   int               j;       /*counter over components in a mixture*/
   int               k;       /*counter over alphas*/
@@ -134,7 +134,7 @@ ReadPrior(char *prifile)
    *            <mixture coefficients> (separated by a space)
    *            <alphas> (sep by space)
    *
-   *     
+   */     
 
 
   /* First entry is the strategy: 
@@ -188,7 +188,7 @@ ReadPrior(char *prifile)
       if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) Die("Wrong format of prior file\n");
       //printf("A4 tok is %s\n", tok);
       pri->tasize[i] = atoi(tok);
-      if(pri->tasize[i] > MAXABET) Die("ERROR : (A4) reading in transitions in prior file\nalph size is %d\n", pri->tasize[i]);
+      if(pri->tasize[i] > MAXTRANSABET) Die("ERROR : (A4) reading in transitions in prior file\nalph size is %d\n", pri->tasize[i]);
 
       //get number of components for current transition set
       sre_fgets(&buf, &n, fp);
@@ -202,7 +202,7 @@ ReadPrior(char *prifile)
 	  //and current component j
 	  sre_fgets(&buf, &n, fp);
 	  //printf("A6 buf is %s\n", buf);
-	  pri->tq[i][j] = (float) atof(buf);
+	  pri->tq[i][j] = (double) atof(buf);
 	  if(pri->tq[i][j] > 1.0) Die("ERROR : (A6) reading in transitions in prior file\npri->tq[%d][%d] is %d\n", i, j, pri->tq[i][j]);
 
 	  //get alphas
@@ -211,7 +211,7 @@ ReadPrior(char *prifile)
 	  for(k = 0; k < pri->tasize[i]; k++)
 	    {
 	      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) Die("ERROR : (A7) reading in transitions in prior file\nalph size is %d\n", pri->tasize[i]);
-	      pri->t[i][j][k] = (float) atof(tok);
+	      pri->t[i][j][k] = (double) atof(tok);
 	      //	      printf("reading in transition priors\n");
 	      //printf("tok is %s\n", tok);
 	      //printf("pri->[%d][%d][%d] is %f\n", i, j, k, pri->t[i][j][k]);
@@ -237,7 +237,7 @@ ReadPrior(char *prifile)
       //get mixture coefficient for current transition set i
       //and current component j
       sre_fgets(&buf, &n, fp);
-      pri->mbpq[j] = (float) atof(buf);
+      pri->mbpq[j] = (double) atof(buf);
       if(pri->mbpq[j] > 1.0) Die("ERROR : (B2) reading in emission bps\n");
       
       //get alphas
@@ -246,8 +246,7 @@ ReadPrior(char *prifile)
       for(k = 0; k < pri->mbpasize; k++)
 	{
 	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) Die("ERROR : (B3) reading in emission bps\n");
-	  pri->mbp[j][k] = (float) atof(tok);
-	  printf("read bp prior mbp[%d][%d] %f\n", j, k, pri->mbp[j][k]);
+	  pri->mbp[j][k] = (double) atof(tok);
 	}
     }
   
@@ -268,7 +267,7 @@ ReadPrior(char *prifile)
       //get mixture coefficient for current transition set i
       //and current component j
       sre_fgets(&buf, &n, fp);
-      pri->mntq[j] = (float) atof(buf);
+      pri->mntq[j] = (double) atof(buf);
       if(pri->mntq[j] > 1.0) Die("ERROR : (C2) reading in emission nts\n");
       
       //get alphas
@@ -277,7 +276,7 @@ ReadPrior(char *prifile)
       for(k = 0; k < pri->mntasize; k++)
 	{
 	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) Die("ERROR : (C3) reading in emission nts\n");
-	  pri->mnt[j][k] = (float) atof(tok);
+	  pri->mnt[j][k] = (double) atof(tok);
 	}
     }
   
@@ -299,7 +298,7 @@ ReadPrior(char *prifile)
       //get mixture coefficient for current transition set i
       //and current component j
       sre_fgets(&buf, &n, fp);
-      pri->iq[j] = (float) atof(buf);
+      pri->iq[j] = (double) atof(buf);
       if(pri->iq[j] > 1.0) Die("ERROR : (E2) reading in emission inserts\n");
       
       //get alphas
@@ -308,17 +307,12 @@ ReadPrior(char *prifile)
       for(k = 0; k < pri->iasize; k++)
 	{
 	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) Die("ERROR : (E3) reading in emission inserts\n");
-	  pri->i[j][k] = (float) atof(tok);
+	  pri->i[j][k] = (double) atof(tok);
 	}
     }
 
-  printf("LEAVING READPRIOR\n");
-
   fclose(fp);
   return pri;
-
- FAILURE:
-  Die("Error with the prior file.\n");
 
 }
 
@@ -337,7 +331,6 @@ void
 PriorifyCM(struct cm_s *cm, struct prior_s *pri)
 {
   int v;			/* counter for model position   */
-  float d;			/* a denominator */
   int setnum;                   /* number of set to use */
   int nxtndtype;                /* type of next node */
   int nselfndtrans;             /* number of 'self-node' transitions,
@@ -418,35 +411,36 @@ PriorifyCM(struct cm_s *cm, struct prior_s *pri)
       /* Now add in the emission priors */
       if(cm->sttype[v] == MP_st)
 	{
-	  PriorifyEmissionVector(cm->e[v], pri, pri->mbpnum, pri->mbpasize, pri->mbpq, pri->mbp, NULL);
+	  PriorifyBPEmissionVector(cm->e[v], pri, pri->mbpnum, pri->mbpasize, pri->mbpq, pri->mbp, NULL);
 	}
       else if (cm->sttype[v] == ML_st || cm->sttype[v] == MR_st)
 	{
-	  PriorifyEmissionVector(cm->e[v], pri, pri->mntnum, pri->mntasize, pri->mntq, pri->mnt, NULL);
+	  PriorifyNTEmissionVector(cm->e[v], pri, pri->mntnum, pri->mntasize, pri->mntq, pri->mnt, NULL);
 	}
       else if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
 	{
-	  PriorifyEmissionVector(cm->e[v], pri, pri->inum, pri->iasize, pri->iq, pri->i, NULL);
+	  PriorifyNTEmissionVector(cm->e[v], pri, pri->inum, pri->iasize, pri->iq, pri->i, NULL);
 	}
 
     }
 }
 
-/* Function: PriorifyEmissionVector()
+/* Function: PriorifyNTEmissionVector()
  * 
  * Purpose:  Add prior pseudocounts to an observed 
- *           emission count vector and renormalize. 
+ *           emission count vector of length 4 (for nucletodies) 
+ *           and renormalize. 
  *
  *           Can return the posterior mixture probabilities
  *           P(q | counts) if ret_mix[MAXDCHLET] is passed.
  *           Else, pass NULL.  
  * 
- * Args:     vec     - the 4 or 20-long vector of counts to modify
+ * Args:     vec     - the 4-long vector of counts to modify
  *           pri     - prior data structure
- *           num     - pri->mbpnum, pri->mntnum or pri->inum; # of mixtures
- *           asize   - pri->mbpasize (16), pri->mntasize (4), or pri->iasize (4)
- *           eq      - pri->mbpq, pri->mntq or pri->iq; prior mixture probabilities
- *           e       - pri->i or pri->mnt, or pri->mbp; Dirichlet components          
+ *           num     - pri->mntnum or pri->inum; # of components
+ *           asize   - pri->mntasize or pri->iasize (always 4)
+ *           eq      - pri->mntq or pri->iq; prior mixture probabilities
+ *           e       - pri->i or pri->mnt; Dirichlet components          
  *           ret_mix - filled with posterior mixture probabilities, or NULL
  *                   
  * Return:   (void)
@@ -455,16 +449,20 @@ PriorifyCM(struct cm_s *cm, struct prior_s *pri)
  * NOTE : Copied and morphed from HMMER 2.3.2
  */                  
 void
-PriorifyEmissionVector(float *vec, struct prior_s *pri, 
-		       int num, int asize, float eq[MAXDCHLET], float e[MAXDCHLET][(MAXABET * MAXABET)],
-		       float *ret_mix)
+PriorifyNTEmissionVector(float *vec, struct prior_s *pri, 
+		       int num, int asize, double eq[MAXDCHLET], double e[MAXDCHLET][MAXABET],
+		       double *ret_mix)
 {
   int   x;                      /* counter over vec                     */
   int   q;                      /* counter over mixtures                */
-  float mix[MAXDCHLET];         /* posterior distribution over mixtures */
-  float totc;                   /* total counts                         */
-  float tota;                   /* total alpha terms                    */
-  float xi;                     /* X_i term, Sjolander eq. 41           */
+  double mix[MAXDCHLET];         /* posterior distribution over mixtures */
+  double totc;                   /* total counts                         */
+  double tota;                   /* total alpha terms                    */
+  double xi;                     /* X_i term, Sjolander eq. 41           */
+  double dvec[MAXABET];          /* vec except in doubles (needed for 
+				  * Dchlet_logp_counts function which 
+				  * takes double vectors, not float
+				  * vectors) */
 
   /* Calculate mix[], which is the posterior probability
    * P(q | n) of mixture component q given the count vector n
@@ -478,14 +476,13 @@ PriorifyEmissionVector(float *vec, struct prior_s *pri,
    *  but I don't even understand that. The insert vectors aren't passed
    *  with num=1!!]
    */
-  printf("in PriorifyEmissionVector num is %d\n", num);
-  for(q = 0; q < num; q++)
-    {
-      printf("vec %d is %f\n", q, vec[q]);
-      printf("eq %d is %f\n", q, eq[q]);
-    }
-  printf("Alphabet size is %d\n\n", asize);
 
+  /* the dirichlet.c functions take a double vector, so we need to
+     get a copy of vec that is double */
+  for(q = 0; q < asize; q++)
+    {
+      dvec[q] = (double) vec[q];
+    }
 
   mix[0] = 1.0;
   if (pri->strategy == PRI_DCHLET && num > 1) 
@@ -493,29 +490,141 @@ PriorifyEmissionVector(float *vec, struct prior_s *pri,
       for (q = 0; q < num; q++) 
 	{
 	  mix[q] =  eq[q] > 0.0 ? log(eq[q]) : -999.;
-	  mix[q] += Dchlet_logp_counts(vec, asize, e[q]);
+	  mix[q] += Dchlet_logp_counts(dvec, e[q], asize);
 	}
       LogNorm(mix, num);      /* now mix[q] is P(component_q | n) */
     }
   else if (pri->strategy == PRI_PAM && num > 1) 
     {		/* pam prior uses aa frequencies as `P(q|n)' */
       for (q = 0; q < asize; q++) 
-	mix[q] = vec[q];
-      FNorm(mix, asize);
+	mix[q] = dvec[q];
+      DNorm(mix, asize);
     }
 
   /* Convert the counts to probabilities, following Sjolander (1996) 
    */
-  totc = FSum(vec, asize);
+  totc = DSum(dvec, asize);
   for (x = 0; x < asize; x++) {
     xi = 0.0;
     for (q = 0; q < num; q++) {
-      tota = FSum(e[q], asize);
-      xi += mix[q] * (vec[x] + e[q][x]) / (totc + tota);
+      tota = DSum(e[q], asize);
+      xi += mix[q] * (dvec[x] + e[q][x]) / (totc + tota);
     }
-    vec[x] = xi;
+    dvec[x] = xi;
   }
-  FNorm(vec, asize);
+  DNorm(dvec, asize);
+
+  for(q = 0; q < asize; q++)
+    {
+      vec[q] = (float) dvec[q];
+    }
+
+  if (ret_mix != NULL)
+    for (q = 0; q < num; q++)
+      ret_mix[q] = mix[q];
+}
+
+
+/* Function: PriorifyBPEmissionVector()
+ * 
+ * Purpose:  Add prior pseudocounts to an observed 
+ *           emission count vector of length 16 (for base pairs) 
+ *           and renormalize. 
+ *
+ *           Can return the posterior mixture probabilities
+ *           P(q | counts) if ret_mix[MAXDCHLET] is passed.
+ *           Else, pass NULL.  
+ * 
+ * Args:     vec     - the 16-long vector of counts to modify
+ *           pri     - prior data structure
+ *           num     - pri->mbpnum # of components
+ *           asize   - pri->mbpasize
+ *           eq      - pri->mbpq 
+ *           e       - pri->mbp - Dirichlet alphas          
+ *           ret_mix - filled with posterior mixture probabilities, or NULL
+ * Return:   (void)
+ *           The counts in vec are changed and normalized to probabilities.
+ *
+ * NOTE : Copied and morphed from HMMER 2.3.2
+ */                  
+void
+PriorifyBPEmissionVector(float *vec, struct prior_s *pri, 
+		       int num, int asize, double eq[MAXDCHLET], double e[MAXDCHLET][(MAXABET * MAXABET)],
+		       double *ret_mix)
+{
+  int   x;                      /* counter over vec                     */
+  int   q;                      /* counter over mixtures                */
+  double mix[MAXDCHLET];         /* posterior distribution over mixtures */
+  double totc;                   /* total counts                         */
+  double tota;                   /* total alpha terms                    */
+  double xi;                     /* X_i term, Sjolander eq. 41           */
+  double dvec[(MAXABET * MAXABET)];  /* vec except in doubles (needed for 
+				  * Dchlet_logp_counts function which 
+				  * takes double vectors, not float
+				  * vectors) */
+
+
+  /* Calculate mix[], which is the posterior probability
+   * P(q | n) of mixture component q given the count vector n
+   *
+   * (side effect note: note that an insert vector in a PAM prior
+   * is passed with num = 1, bypassing pam prior code; this means
+   * that inserts cannot be mixture Dirichlets...)
+   * [SRE, 12/24/00: the above comment is cryptic! what the hell does that
+   *  mean, inserts can't be mixtures? doesn't seem to be true. it 
+   *  may mean that in a PAM prior, you can't have a mixture for inserts,
+   *  but I don't even understand that. The insert vectors aren't passed
+   *  with num=1!!]
+   */
+
+  // Some debugging print statements
+  //printf("in PriorifyEmissionVector num is %d\n", num);
+  //for(q = 0; q < num; q++)
+  //  {
+  //   printf("vec %d is %f\n", q, vec[q]);
+  //    printf("eq %d is %f\n", q, eq[q]);
+  //  }
+  //printf("Alphabet size is %d\n\n", asize);
+
+  for(q = 0; q < asize; q++)
+    {
+      dvec[q] = (double) vec[q];
+    }
+
+  mix[0] = 1.0;
+  if (pri->strategy == PRI_DCHLET && num > 1) 
+    {
+      for (q = 0; q < num; q++) 
+	{
+	  mix[q] =  eq[q] > 0.0 ? log(eq[q]) : -999.;
+	  mix[q] += Dchlet_logp_counts(dvec, e[q], asize);
+	}
+      LogNorm(mix, num);      /* now mix[q] is P(component_q | n) */
+    }
+  else if (pri->strategy == PRI_PAM && num > 1) 
+    {		/* pam prior uses aa frequencies as `P(q|n)' */
+      for (q = 0; q < asize; q++) 
+	mix[q] = dvec[q];
+      DNorm(mix, asize);
+    }
+
+  /* Convert the counts to probabilities, following Sjolander (1996) 
+   */
+  totc = DSum(dvec, asize);
+  for (x = 0; x < asize; x++) {
+    xi = 0.0;
+    for (q = 0; q < num; q++) {
+      tota = DSum(e[q], asize);
+      xi += mix[q] * (dvec[x] + e[q][x]) / (totc + tota);
+    }
+    dvec[x] = xi;
+  }
+  DNorm(dvec, asize);
+
+  for(q = 0; q < asize; q++)
+    {
+      vec[q] = (float) dvec[q];
+    }
 
   if (ret_mix != NULL)
     for (q = 0; q < num; q++)
@@ -528,80 +637,49 @@ PriorifyEmissionVector(float *vec, struct prior_s *pri,
  * 
  * Purpose:  Add prior pseudocounts to transition vector,
  *           
- * Args:     t     - state transitions, counts   
+ * Args:     vec   - state transitions, counts to modify  
  *           pri   - Dirichlet prior information
  *           tq    - prior distribution over Dirichlet components.
  *                   (overrides pri->tq[]; used for alternative
  *                   methods of conditioning prior on structural data)  
  *           setnum - the transition set number
+ *
  * Return:   (void)
  *           t is changed, and renormalized -- comes back as
  *           probability vectors.
  * NOTE : Copied and morphed from HMMER 2.3.2
  */          
 void
-PriorifyTransitionVector(float *t, struct prior_s *pri, 
-			   float tq[MAXDCHLET], int setnum)
+PriorifyTransitionVector(float *vec, struct prior_s *pri, 
+			   double tq[MAXDCHLET], int setnum)
 {
-  int   ts;
   int   q;
-  float mix[MAXDCHLET];
-  float totc;                   /* total counts */
-  float tota;                   /* alpha terms */
-  float xi;                     /* Sjolander's X_i term */
-  int   x;                      /* counter over t */
+  double mix[MAXDCHLET];
+  double totc;                   /* total counts */
+  double tota;                   /* alpha terms */
+  double xi;                     /* Sjolander's X_i term */
+  int   x;                       /* counter over t */
+  double dvec[MAXTRANSABET];     /* vec except in doubles (needed for 
+				  * Dchlet_logp_counts function which 
+				  * takes double vectors, not float
+				  * vectors) */
 
   mix[0] = 1.0;			/* default is simple one component */
+
+  for(q = 0; q < pri->tasize[setnum]; q++)
+    {
+      dvec[q] = (double) vec[q];
+    }
+
   if ((pri->strategy == PRI_DCHLET || pri->strategy == PRI_PAM) && pri->tnum[setnum] > 1)
     {
       for (q = 0; q < pri->tnum[setnum]; q++)
         {
           mix[q] =  tq[q] > 0.0 ? log(tq[q]) : -999.;
-	  mix[q] += Dchlet_logp_counts(t, pri->tasize[setnum], pri->t[setnum][q]);
-	  //LINES BELOW ARE FROM HMMER CODE
-	  //mix[q] += Dchlet_logp_counts(t,   3, pri->t[setnum][q]);   /* 3 match  */
-          //mix[q] += Dchlet_logp_counts(t+3, 2, pri->t[setnum][q]+3); /* 2 insert */
-	  //mix[q] += Dchlet_logp_counts(t+5, 2, pri->t[q]+5); /* 2 delete */
+	  mix[q] += Dchlet_logp_counts(dvec, pri->t[setnum][q], pri->tasize[setnum]);
         }
       LogNorm(mix, pri->tnum[setnum]); /* mix[q] is now P(q | counts) */
     }
-				/* precalc some denominators */
-
-  /*Code chunk below from HMMER 2.3.2 because a transition
-   *vector passed into this function is in fact 3 transition vectors
-   *for the 3 states in each node - Match, Insert, and Delete
-   *This is not the current strategy here for INFERNAL, but might be useful if
-   *that strategy changes 
-   */
-  /*  totm = FSum(t,3);		
-  toti = t[TIM] + t[TII];
-  totd = t[TDM] + t[TDD];
-
-  for (ts = 0; ts < 7; ts++)  
-    {
-      xi = 0.0;
-      for (q = 0; q < pri->tnum; q++)
-        {
-	  switch (ts) {
-	  case TMM: case TMI: case TMD: 
-	    xi += mix[q] * (t[ts] + pri->t[q][ts]) / 
-	      (totm + FSum(pri->t[q], 3)); 
-	    break;
-	  case TIM: case TII: 
-	    xi += mix[q] * (t[ts] + pri->t[q][ts]) / 
-	      (toti + pri->t[q][TIM] + pri->t[q][TII]);
-	    break;
-	  case TDM: case TDD: 
-	    xi += mix[q] * (t[ts] + pri->t[q][ts]) / 
-	      (totd + pri->t[q][TDM] + pri->t[q][TDD]);
-	    break;
-	  }
-        }
-      t[ts] = xi;
-      }*/
-  //  FNorm(t,   3);		/* match  */
-  //FNorm(t+3, 2);		/* insert */
-  //FNorm(t+5, 2);		/* delete */
 
   //Chunk below copied and modified from ProbifyEmissionVector()
   /* Convert the counts to probabilities, following Sjolander (1996) 
@@ -616,30 +694,30 @@ PriorifyTransitionVector(float *t, struct prior_s *pri,
   //  }
   //printf("\nafter incorporating priors\n");
   
-  totc = FSum(t, pri->tasize[setnum]);
-  float total = 0;
+  totc = DSum(dvec, pri->tasize[setnum]);
+  double total = 0;
   for (x = 0; x < pri->tasize[setnum]; x++) {
     xi = 0.0;
     for (q = 0; q < pri->tnum[setnum]; q++) {
-      tota = FSum(pri->t[setnum][q], pri->tasize[setnum]);
-      //      printf("pri->t[%d][%d][%d] is %f\n", setnum, q, x, pri->t[setnum][q][x]);
-      xi += mix[q] * (t[x] + pri->t[setnum][q][x]) / (totc + tota);
+      tota = DSum(pri->t[setnum][q], pri->tasize[setnum]);
+      xi += mix[q] * (dvec[x] + pri->t[setnum][q][x]) / (totc + tota);
       assert(!isnan(xi));
     }
-    t[x] = xi;
-    //printf("new counts t[%d] is %f\n", x, t[x]);
-
+    dvec[x] = xi;
     total += xi;
-    //    printf("%1.3f\n", xi);    
   }
-  //  printf("\n");
   assert(abs(total-1) < 1e-6); // Check that we actually have probabilities.
-  FNorm(t, pri->tasize[setnum]);
+  DNorm(dvec, pri->tasize[setnum]);
   for (x = 0; x < pri->tasize[setnum]; x++) {
     //printf("normalized t[%d] is %f\n", x, t[x]);
     //printf("about to assert t[%d] = %f is > 0\n", x, t[x]);
-    assert(t[x] > 0);
+    assert(dvec[x] > 0);
   }  
+
+  for(q = 0; q < pri->tasize[setnum]; q++)
+    {
+      vec[q] = (float) dvec[q];
+    }
 }
 
 
@@ -648,17 +726,17 @@ PriorifyTransitionVector(float *t, struct prior_s *pri,
  * morphed into the correct structure.  I've kept them here to save the
  * numbers. EPN 01.31.05
  */
-
+/*
 struct prior_s *default_single_prior(void) {
   struct prior_s *pri;
   int i, j;
 #define numcomponents 8
   assert(numcomponents < MAXDCHLET);
-  float q[numcomponents] = {
+  double q[numcomponents] = {
     0.085091850427, 0.015935406086, 0.102013232739, 0.415954530541,
     0.074470557341, 0.055442639402, 0.118379098369, 0.132712685095
   };
-  float m[numcomponents][MAXABET] = {
+  double m[numcomponents][MAXABET] = {
     {0.575686380127, 0.756214632926, 0.340269621276, 13.774558068728, },
     {153.865583955384, 0.235000107300, 0.356622653787, 0.006812718667, },
     {176.440373997567, 0.935905951648, 1.292808081312, 1.617069444109, },
@@ -686,12 +764,12 @@ struct prior_s *default_basepair_prior(void) {
   int i, j;
 #define numcomponents 9
   assert(numcomponents < MAXDCHLET);
-  float q[numcomponents] = {
+  double q[numcomponents] = {
     0.030512242264, 0.070312169889, 0.118499696300, 0.181025557995,
     0.188791659665, 0.157630937531, 0.041708924031, 0.095930656547,
     0.115588155778    
   };
-  float m[numcomponents][MAXABET*MAXABET] = {
+  double m[numcomponents][MAXABET*MAXABET] = {
     {0.571860339721, 0.605642194896, 0.548004739487, 1.570353271532, 0.591611867703, 0.469713257214, 1.447411319683, 0.600381079228, 0.520096937350, 1.867142019076, 0.470428282443, 1.165356324744, 1.528348208160, 0.686072963473, 1.072148274499, 0.659833749087},
     {0.116757286812, 0.052661180881, 0.067541712113, 0.258482314714, 0.152527972588, 0.034460232010, 0.416430364713, 0.051541326273, 0.079542103337, 0.162883420833, 0.042615616796, 0.123363759874, 0.922897266376, 0.078567729294, 0.315242459757, 0.116457644231},
     {0.028961414077, 0.022849036260, 0.120089637379, 0.509884713979, 0.142464495045, 0.079507804767, 21.835608089779, 0.070200164694, 0.005189494879, 0.540651647339, 0.117833357497, 0.128182594376, 1.766866842025, 0.016341625779, 0.832665494899, 0.058379188171},
@@ -714,3 +792,4 @@ struct prior_s *default_basepair_prior(void) {
 #undef numcomponents
   return pri;
 }
+*/
