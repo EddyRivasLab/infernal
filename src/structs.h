@@ -87,13 +87,15 @@ extern char *Alphabet;
  * A covariance model. M states, arranged logically as a directed acyclic graph
  * (on a binary tree backbone); arranged physically as a set of arrays 0..M-1.
  *
- * State 0 is always the root state. State M-1 is always the end state.
+ * State 0 is always the root state. State M-1 is always an end state.
  */
 typedef struct cm_s {			
 				/* General information about the model:                  */
   char *name;			/*   name of the model                                   */
   char *acc;			/*   optional accession number for model                 */
   char *desc;			/*   optional description of the model                   */
+  int   nodes;			/*   number of nodes in the model                        */
+  int   M;			/*   number of states in the model                       */
 
 				/* Information about the state type:                     */
   char *sttype;			/*   type of state this is; e.g. MP_st                   */
@@ -105,7 +107,7 @@ typedef struct cm_s {
   int  *cfirst;			/*   index to first child state we connect to            */
   int  *cnum;			/*   overloaded: for non-BIF, = number of connections;   */
 				/*               for BIF,     = second child S_st        */
-  int  *pfirst;                 /*   index to first parent state we connect to           */
+  int  *plast;                  /*   index to first parent state we connect to           */
   int  *pnum;                   /*   number of parent connections                        */
 
 				/* Parameters of the probabilistic model:                */
@@ -113,8 +115,8 @@ typedef struct cm_s {
   float **e;			/*   Emission probabilities.  [0..M-1][0..15]            */
 
 				/* Parameters of the log odds model:                     */
-  int   **tsc;			/*   Transition score vector, integer log odds           */
-  int   **esc;			/*   Emission score vector, integer log odds             */
+  float **tsc;			/*   Transition score vector, log odds                   */
+  float **esc;			/*   Emission score vector, log odds                     */
 } CM_t;
 
 

@@ -221,6 +221,9 @@ SummarizeMasterTrace(FILE *fp, Parsetree_t *tr)
   for (x = 2; x < tr->n; x++)
     count[tr->type[x]]++;
 
+  fprintf(fp, "Summary report for the master trace:\n");
+  fprintf(fp, "------------------------------------\n");
+  fprintf(fp, "Total nodes:  %d\n", tr->n-2); /* -2 because first 2 are dummies */
   fprintf(fp, "Bifurcations: %d\n", count[0]);
   fprintf(fp, "MATP:         %d\n", count[1]);
   fprintf(fp, "MATL:         %d\n", count[2]);

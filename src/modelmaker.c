@@ -29,6 +29,9 @@
 #include "squid.h"		
 #include "msa.h"		/* multiple sequence alignments */
 
+
+static void cm_from_master(CM_t *cm, Parsetree_t *mtr);
+
 /* Function: HandModelmaker()
  * Incept:   SRE 29 Feb 2000 [Seattle]; from COVE 2.0 code
  * 
@@ -73,6 +76,8 @@ HandModelmaker(MSA *msa, int use_rf, float gapthresh, CM_t **ret_cm, Parsetree_t
   int             i,j,k;	/* subsequence indices                        */
   int  diff, bestdiff, bestk;   /* used while finding optimal split points    */   
   int  nxti, nxtj;		/* used when skipping over insertions         */
+  int  nnodes;			/* number of nodes in CM                      */
+  int  nstates;			/* number of states in CM                     */
 
   if (msa->ss_cons == NULL)      Die("No consensus structure annotation available for that alignment.");
   if (use_rf && msa->rf == NULL) Die("No reference annotation available for that alignment.");
@@ -118,7 +123,11 @@ HandModelmaker(MSA *msa, int use_rf, float gapthresh, CM_t **ret_cm, Parsetree_t
   /* 4. Construct a master traceback tree.
    *    This code is borrowed from yarn's KHS2Trace().
    *    mtr's emitl, emitr, and type are properly set by this section.
+   *    We also keep track of how many states we'll need in the final CM,
+   *    so we'll know how much to allocate -- and the number of nodes,
+   *    for informational purposes.
    */
+  nstates = nnodes = 0;
   mtr = CreateParsetree();	/* the parse tree we'll grow        */
   pda = CreateNstack();		/* a pushdown stack for our indices */
 				/* attach the root, push onto stack */
@@ -140,45 +149,59 @@ HandModelmaker(MSA *msa, int use_rf, float gapthresh, CM_t **ret_cm, Parsetree_t
        *        pick mid ip <= mid < jp; push BEGIN i,mid and working i,mid,
        *        and push BEGIN mid+1,j and working mid+1,j
        */
-      if (i > j) mtr->type[v] = END_nd;
+      if (i > j) {
+	mtr->type[v] = END_nd;
+	nstates += 1;		/* END_nd -> E_st */
+	nnodes++;
+      }
 
-      else if (mtr->type[v] == ROOT_nd)
-	{ /* try to push i,j; but deal with INSL and INSR */
-	  for (; i <= j; i++) if (matassign[i]) break;
-	  for (; j >= i; j--) if (matassign[j]) break;
-	  PushNstack(pda, InsertTraceNode(mtr, v, TRACE_LEFT_CHILD, i, j, -1, DUMMY_nd));
-	}
-
-      else if (mtr->type[v] == BEGL_nd) /* no inserts */
+      else if (mtr->type[v] == ROOT_nd) { /* try to push i,j; but deal with INSL and INSR */
+	for (; i <= j; i++) if (matassign[i]) break;
+	for (; j >= i; j--) if (matassign[j]) break;
 	PushNstack(pda, InsertTraceNode(mtr, v, TRACE_LEFT_CHILD, i, j, -1, DUMMY_nd));
+	nstates += 3;		/* ROOT_nd -> S_st, IL_st, IR_st */
+	nnodes++;
+      }
 
-      else if (mtr->type[v] == BEGR_nd) /* look for INSL */
-	{
-	  for (; i <= j; i++) if (matassign[i]) break;
-	  PushNstack(pda, InsertTraceNode(mtr, v, TRACE_LEFT_CHILD, i, j, -1, DUMMY_nd));
-	}
+      else if (mtr->type[v] == BEGL_nd) {    /* no inserts */
+	PushNstack(pda, InsertTraceNode(mtr, v, TRACE_LEFT_CHILD, i, j, -1, DUMMY_nd));
+	nstates += 1;		/* BEGL_nd -> S_st */
+	nnodes++;
+      }
 
-      else if (ct[i] == -1) 	/* i unpaired. This is a MATL node; allow INSL */
-	{
-	  mtr->type[v] = MATL_nd;
-	  for (i = i+1; i <= j; i++)  if (matassign[i]) break;
-	  PushNstack(pda, InsertTraceNode(mtr, v, TRACE_LEFT_CHILD, i, j, -1, DUMMY_nd));
-	}
 
-      else if (ct[j] == -1) 	/* j unpaired. MATR node. Deal with INSR */
-	{
-	  mtr->type[v] = MATR_nd;
-	  for (nxtj = j-1; nxtj >= i; nxtj--) if (matassign[nxtj]) break;
-	  PushNstack(pda, InsertTraceNode(mtr, v, TRACE_LEFT_CHILD, i, nxtj, -1, DUMMY_nd));
-	}
+      else if (mtr->type[v] == BEGR_nd)  { /* look for INSL */
+	for (; i <= j; i++) if (matassign[i]) break; 
+	PushNstack(pda, InsertTraceNode(mtr, v, TRACE_LEFT_CHILD, i, j, -1, DUMMY_nd));
+	nstates += 2;		/* BEGR_nd -> S_st IL_st */
+	nnodes++;
+      }
 
-      else if (ct[i] == j) 	/* i,j paired to each other. MATP. deal with INSL, INSR */
-	{
-	  mtr->type[v] = MATP_nd;
-	  for (nxti = i+1; nxti <= j; nxti++)    if (matassign[nxti]) break;
-	  for (nxtj = j-1; nxtj >= nxti; nxtj--) if (matassign[nxtj]) break;
-	  PushNstack(pda, InsertTraceNode(mtr, v, TRACE_LEFT_CHILD, nxti, nxtj, -1,DUMMY_nd));
-	}
+      else if (ct[i] == -1) {
+	 	/* i unpaired. This is a MATL node; allow INSL */
+	mtr->type[v] = MATL_nd;
+	for (i = i+1; i <= j; i++)  if (matassign[i]) break;
+	PushNstack(pda, InsertTraceNode(mtr, v, TRACE_LEFT_CHILD, i, j, -1, DUMMY_nd));
+	nstates += 3;		/* MATL_nd -> ML_st, D_st, IL_st */
+	nnodes++;
+      }
+
+      else if (ct[j] == -1) { 	/* j unpaired. MATR node. Deal with INSR */
+	mtr->type[v] = MATR_nd;
+	for (nxtj = j-1; nxtj >= i; nxtj--) if (matassign[nxtj]) break;
+	PushNstack(pda, InsertTraceNode(mtr, v, TRACE_LEFT_CHILD, i, nxtj, -1, DUMMY_nd));
+	nstates += 3;		/* MATR_nd -> MR_st, D_st, IL_st */
+	nnodes++;
+      }
+
+      else if (ct[i] == j) { 	/* i,j paired to each other. MATP. deal with INSL, INSR */
+	mtr->type[v] = MATP_nd;
+	for (nxti = i+1; nxti <= j; nxti++)    if (matassign[nxti]) break;
+	for (nxtj = j-1; nxtj >= nxti; nxtj--) if (matassign[nxtj]) break;
+	PushNstack(pda, InsertTraceNode(mtr, v, TRACE_LEFT_CHILD, nxti, nxtj, -1,DUMMY_nd));
+	nstates += 6;		/* MATP_nd -> MP_st, ML_st, MR_st, D_st, IL_st, IR_st */
+	nnodes++;
+      }
 
       else /* i,j paired but not to each other. BIFURC. no INS. */
 	{
@@ -219,23 +242,22 @@ HandModelmaker(MSA *msa, int use_rf, float gapthresh, CM_t **ret_cm, Parsetree_t
 	  mtr->type[v] = BIF_nd;
 	  PushNstack(pda, InsertTraceNode(mtr, v, TRACE_RIGHT_CHILD, bestk, j,   -1,BEGR_nd));
 	  PushNstack(pda, InsertTraceNode(mtr, v, TRACE_LEFT_CHILD,  i, bestk-1, -1,BEGL_nd));
+	  nstates += 1;		/* BIF_nd -> B_st */
+	  nnodes++;
 	}
 
     }	/* while something's on the stack */
   FreeNstack(pda);
   free(ct);
 
-#if 0
   /* OK, we've converted ct into mtr -- mtr is a tree structure telling us the
    * arrangement of consensus nodes. Now do the drill for constructing a full model 
-   * using this master trace. First find out how many states we need:
+   * using this master trace.
    */
-  NumberMasterTrace(mtr, &nodes);
-  if ((cm = AllocCM(nodes)) == NULL)
-    Die("failed to allocate for new model of %d nodes\n", nodes);
-  TopofyNewCM(cm, mtr);
+  cm = CreateCM(nstates);
+  cm_from_master(cm, mtr);
 
-  
+#if 0
   for (idx = 0; idx < nseq; idx++)
     {
       Transmogrify(mtr, aseq[idx], &tr, &pool);
@@ -248,9 +270,324 @@ HandModelmaker(MSA *msa, int use_rf, float gapthresh, CM_t **ret_cm, Parsetree_t
   ProbifyCM(cm, prior);
   
   free(matassign);
-  if (ret_cm  != NULL) *ret_cm  = cm;  else FreeCM(cm);
 #endif /*0*/
+  if (ret_cm  != NULL) *ret_cm  = cm;  else FreeCM(cm);
   if (ret_mtr != NULL) *ret_mtr = mtr; else FreeParsetree(mtr);
-  PrintParsetree(stdout, mtr);
-  PrintParsetree(stdout, *ret_mtr);
 }
+
+
+
+/* Function: cm_from_master()
+ * Date:     SRE, Sat Jul 29 09:25:49 2000 [St. Louis]
+ *
+ * Purpose:  given a master traceback and an allocated CM, 
+ *           fill in all the structural information of the CM.
+ *           
+ * Args:     cm  - allocated cm to construct
+ *           mtr - master trace
+ *
+ * Returns:  (void)
+ */
+static void
+cm_from_master(CM_t *cm, Parsetree_t *mtr)
+{
+  Nstack_t   *pda;              /* pushdown stack used for traversing mtr */
+  int         v;		/* what node we're working on (in mtr index system)*/
+  int         node;		/* what node this is (preorder traversal numbering of CM) */
+  int         state;		/* what state this is (preorder traversal numbering of CM) */
+  int  nxtnodetype;		/* type of a child node (e.g. MATP_nd) */
+  int  prvnodetype;		/* type of a parent node (e.g. MATP_nd) */
+
+  /* Some CM structural configuration info:
+   * child_count[] gives how many states are connectable in a child node. 
+   * parent_count[] gives how many states are connectable in a parent node.
+   */
+ 				/* BIF, MATP, MATL, MATR, BEGL, BEGR, ROOT, END */  
+  int child_count[] =             {  1,    4,    2,    2,    1,    1,    0,   1};
+  int parent_count[] =            {  1,    6,    3,    3,    1,    2,    3,   0};
+
+  node = state = 0;
+  pda = CreateNstack();
+  PushNstack(pda, 2);		/* push the ROOT_nd onto the stack. (0,1 are dummies) */
+  while (PopNstack(pda, &v))
+    {
+      if      (mtr->type[v] == BIF_nd) {
+	prvnodetype = mtr->type[mtr->prv[v]];
+
+	cm->sttype[state] = B_st;
+	cm->ndidx[state]  = node;
+	cm->ndtype[state] = BIF_nd;
+	cm->stid[state]   = BIF_B;
+	cm->cfirst[state] = state+1;
+	cm->cnum[state]   = -1; /* we have to fill this in later, when we see the BEGR... */
+	PushNstack(pda, state);	/* ...and this is the trick we use to remember the connection */
+	cm->plast[state] = state-1;
+	cm->pnum[state]   = parent_count[prvnodetype];
+	state++;
+	
+	node++;
+	PushNstack(pda, mtr->nxtr[v]);
+	PushNstack(pda, mtr->nxtl[v]);
+      }
+
+      else if (mtr->type[v] == MATP_nd) {
+	nxtnodetype = mtr->type[mtr->nxtl[v]];
+	prvnodetype = mtr->type[mtr->prv[v]];
+
+	cm->sttype[state] = MP_st;
+	cm->ndidx[state]  = node;
+	cm->ndtype[state] = MATP_nd;
+	cm->stid[state]   = MATP_MP;
+	cm->cfirst[state] = state+4;
+	cm->cnum[state]   = 2 + child_count[nxtnodetype];
+	cm->plast[state] = state-1;
+	cm->pnum[state]   = parent_count[prvnodetype];
+	state++;
+
+	cm->sttype[state] = ML_st;
+	cm->ndidx[state]  = node;
+	cm->ndtype[state] = MATP_nd;
+	cm->stid[state]   = MATP_ML;
+	cm->cfirst[state] = state+3;
+	cm->cnum[state]   = 2 + child_count[nxtnodetype];
+	cm->plast[state] = state-2;
+	cm->pnum[state]   = parent_count[prvnodetype];
+	state++;
+
+	cm->sttype[state] = MR_st;
+	cm->ndidx[state]  = node;
+	cm->ndtype[state] = MATP_nd;
+	cm->stid[state]   = MATP_MR;
+	cm->cfirst[state] = state+2;
+	cm->cnum[state]   = 2 + child_count[nxtnodetype];
+	cm->plast[state] = state-3;
+	cm->pnum[state]   = parent_count[prvnodetype];
+	state++;
+
+	cm->sttype[state] = D_st;
+	cm->ndidx[state]  = node;
+	cm->ndtype[state] = MATP_nd;
+	cm->stid[state]   = MATP_D;
+	cm->cfirst[state] = state+1;
+	cm->cnum[state]   = 2 + child_count[nxtnodetype];
+	cm->plast[state] = state-4;
+	cm->pnum[state]   = parent_count[prvnodetype];
+	state++;
+
+	cm->sttype[state] = IL_st;
+	cm->ndidx[state]  = node;
+	cm->ndtype[state] = MATP_nd;
+	cm->stid[state]   = MATP_IL;
+	cm->cfirst[state] = state;
+	cm->cnum[state]   = 2 + child_count[nxtnodetype];
+	cm->plast[state] = state;
+	cm->pnum[state]   = 5;
+	state++;
+
+	cm->sttype[state] = IR_st;
+	cm->ndidx[state]  = node;
+	cm->ndtype[state] = MATP_nd;
+	cm->stid[state]   = MATP_IR;
+	cm->cfirst[state] = state;
+	cm->cnum[state]   = 1 + child_count[nxtnodetype];
+	cm->plast[state] = state;
+	cm->pnum[state]   = 6;
+	state++;
+
+	node++;
+	PushNstack(pda, mtr->nxtl[v]);
+      }
+
+      else if (mtr->type[v] == MATL_nd) {
+	nxtnodetype = mtr->type[mtr->nxtl[v]];
+	prvnodetype = mtr->type[mtr->prv[v]];
+
+	cm->sttype[state] = ML_st;
+	cm->ndidx[state]  = node;
+	cm->ndtype[state] = MATL_nd;
+	cm->stid[state]   = MATL_ML;
+	cm->cfirst[state] = state+2;
+	cm->cnum[state]   = 1 + child_count[nxtnodetype];
+	cm->plast[state] = state-1;
+	cm->pnum[state]   = parent_count[prvnodetype];
+	state++;
+
+	cm->sttype[state] = D_st;
+	cm->ndidx[state]  = node;
+	cm->ndtype[state] = MATL_nd;
+	cm->stid[state]   = MATL_D;
+	cm->cfirst[state] = state+1;
+	cm->cnum[state]   = 1 + child_count[nxtnodetype];
+	cm->plast[state] = state-2;
+	cm->pnum[state]   = parent_count[prvnodetype];
+	state++;
+
+	cm->sttype[state] = IL_st;
+	cm->ndidx[state]  = node;
+	cm->ndtype[state] = MATL_nd;
+	cm->stid[state]   = MATL_IL;
+	cm->cfirst[state] = state;
+	cm->cnum[state]   = 1 + child_count[nxtnodetype];
+	cm->plast[state] = state;
+	cm->pnum[state]   = 3;
+	state++;
+
+	node++;
+	PushNstack(pda, mtr->nxtl[v]);
+      }
+      
+      else if (mtr->type[v] == MATR_nd) {
+	nxtnodetype = mtr->type[mtr->nxtl[v]];
+	prvnodetype = mtr->type[mtr->prv[v]];
+
+	cm->sttype[state] = MR_st;
+	cm->ndidx[state]  = node;
+	cm->ndtype[state] = MATR_nd;
+	cm->stid[state]   = MATR_MR;
+	cm->cfirst[state] = state+2;
+	cm->cnum[state]   = 1 + child_count[nxtnodetype];
+	cm->plast[state] = state-1;
+	cm->pnum[state]   = parent_count[prvnodetype];
+	state++;
+
+	cm->sttype[state] = D_st;
+	cm->ndidx[state]  = node;
+	cm->ndtype[state] = MATR_nd;
+	cm->stid[state]   = MATR_D;
+	cm->cfirst[state] = state+1;
+	cm->cnum[state]   = 1 + child_count[nxtnodetype];
+	cm->plast[state] = state-2;
+	cm->pnum[state]   = parent_count[prvnodetype];
+	state++;
+
+	cm->sttype[state] = IR_st;
+	cm->ndidx[state]  = node;
+	cm->ndtype[state] = MATR_nd;
+	cm->stid[state]   = MATR_IR;
+	cm->cfirst[state] = state;
+	cm->cnum[state]   = 1 + child_count[nxtnodetype];
+	cm->plast[state] = state;
+	cm->pnum[state]   = 3;
+	state++;
+
+	node++;
+	PushNstack(pda, mtr->nxtl[v]);
+      }
+
+      else if (mtr->type[v] == BEGL_nd) {
+	nxtnodetype = mtr->type[mtr->nxtl[v]];
+
+	cm->sttype[state] = S_st;
+	cm->ndidx[state]  = node;
+	cm->ndtype[state] = BEGL_nd;
+	cm->stid[state]   = BEGL_S;
+	cm->cfirst[state] = state+1;
+	cm->cnum[state]   = child_count[nxtnodetype];
+	cm->plast[state] = state-1;
+	cm->pnum[state]   = 1;
+	state++;
+
+	node++;
+	PushNstack(pda, mtr->nxtl[v]);
+      }
+
+      else if (mtr->type[v] == BEGR_nd) {
+	int bifparent;
+
+	nxtnodetype = mtr->type[mtr->nxtl[v]];
+
+	/* A trick: we need to attach this start state to the previous
+	 * bifurcation. We stored the bif state index by pushing it onto
+	 * the pda -- retrieve it now.
+	 */
+	PopNstack(pda, &bifparent);
+	cm->cnum[bifparent] = state; /* remember, cnum overloaded for bif: idx of right child */
+
+	cm->sttype[state] = S_st;
+	cm->ndidx[state]  = node;
+	cm->ndtype[state] = BEGR_nd;
+	cm->stid[state]   = BEGR_S;
+	cm->cfirst[state] = state+1;
+	cm->cnum[state]   = 1 + child_count[nxtnodetype];
+	cm->plast[state] = bifparent;
+	cm->pnum[state]   = 1;
+	state++;
+
+	cm->sttype[state] = IL_st;
+	cm->ndidx[state]  = node;
+	cm->ndtype[state] = BEGR_nd;
+	cm->stid[state]   = BEGR_IL;
+	cm->cfirst[state] = state;
+	cm->cnum[state]   = 1 + child_count[nxtnodetype];
+	cm->plast[state] = state;
+	cm->pnum[state]   = 2;
+	state++;
+
+	node++;
+	PushNstack(pda, mtr->nxtl[v]);
+      }
+
+      else if (mtr->type[v] == ROOT_nd) {
+	nxtnodetype = mtr->type[mtr->nxtl[v]];
+
+	cm->sttype[state] = S_st;
+	cm->ndidx[state]  = node;
+	cm->ndtype[state] = ROOT_nd;
+	cm->stid[state]   = ROOT_S;
+	cm->cfirst[state] = state+1;
+	cm->cnum[state]   = 2 + child_count[nxtnodetype]; 
+	cm->plast[state] = -1;
+	cm->pnum[state]   = 0;
+	state++;
+
+	cm->sttype[state] = IL_st;
+	cm->ndidx[state]  = node;
+	cm->ndtype[state] = ROOT_nd;
+	cm->stid[state]   = ROOT_IL;
+	cm->cfirst[state] = state;
+	cm->cnum[state]   = 2 + child_count[nxtnodetype]; 
+	cm->plast[state] = state;
+	cm->pnum[state]   = 2;
+	state++;
+
+	cm->sttype[state] = IR_st;
+	cm->ndidx[state]  = node;
+	cm->ndtype[state] = ROOT_nd;
+	cm->stid[state]   = ROOT_IR;
+	cm->cfirst[state] = state;
+	cm->cnum[state]   = 1 + child_count[nxtnodetype]; 
+	cm->plast[state] = state;
+	cm->pnum[state]   = 3;
+	state++;
+
+	node++;
+	PushNstack(pda, mtr->nxtl[v]);
+      }
+
+      else if (mtr->type[v] == END_nd) {
+	prvnodetype = mtr->type[mtr->prv[v]];
+
+	cm->sttype[state] = E_st;
+	cm->ndidx[state]  = node;
+	cm->ndtype[state] = END_nd;
+	cm->stid[state]   = END_E;
+	cm->cfirst[state] = -1;
+	cm->cnum[state]   = 0;
+	cm->plast[state] = state-1;
+	cm->pnum[state]   = parent_count[prvnodetype];
+	state++;
+
+	node++;
+      }
+    }
+  FreeNstack(pda);
+  cm->M     = state;
+  cm->nodes = node;
+}
+
+
+
+
+
+
+

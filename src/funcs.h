@@ -2,6 +2,16 @@
 #include "msa.h"
 #include "structs.h"
 
+/* from cm.c
+ */
+extern CM_t *CreateCM(int nstates);
+extern void  FreeCM(CM_t *cm);
+extern void  PrintCM(FILE *fp, CM_t *cm);
+extern void  SummarizeCM(FILE *fp, CM_t *cm);
+extern char *Statetype(int type);
+extern char *Nodetype(int type);
+extern char *UniqueStatetype(int type);
+
 /* from modelmaker.c
  */
 extern void HandModelmaker(MSA *msa, int use_rf, float gapthresh, CM_t **ret_cm, Parsetree_t **ret_mtr);

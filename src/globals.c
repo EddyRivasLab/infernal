@@ -36,3 +36,4 @@ int   Alphabet_size  = 4;
 int   Alphabet_iupac = 17;
 char *Alphabet       = "ACGUTXRYMKSWHBVDN";
 
+
