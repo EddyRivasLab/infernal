@@ -31,6 +31,8 @@ extern int   CMTransitionIndex[20][20];
  * underflow error. ANSI guarantees us FLT_MAX >= 1e37. 
  */
 #define IMPOSSIBLE -1e36
+#define NOT_IMPOSSIBLE(x)  ((x) > -9.999e35) /* can't compare floating point by equality */
+#define sreLOG2(x)  ((x) > 0 ? log(x) * 1.44269504 : IMPOSSIBLE)
 
 /* State types. (9)  (cm->sttype[])
  */
@@ -106,6 +108,7 @@ typedef struct cm_s {
   char *name;			/*   name of the model                                   */
   char *acc;			/*   optional accession number for model                 */
   char *desc;			/*   optional description of the model                   */
+  char *annote;                 /*   consensus column annotation line                    */
 
 				/* Information about the null model:                     */
   float *null;                  /*   residue probabilities [0..3]                        */
@@ -139,7 +142,14 @@ typedef struct cm_s {
   float **esc;			/*   Emission score vector, log odds                     */
   float *beginsc;		/*   Score for ROOT_S -> state v (local alignment)       */
   float *endsc;   		/*   Score for state_v -> EL (local alignment)           */
+
+  int    flags;			/* status flags */
 } CM_t;
+
+/* Status flags for a CM, cm->flags
+ */
+#define CM_LOCAL_BEGIN  (1<<0)	/* Begin distribution is active (local alignment) */
+#define CM_LOCAL_END    (1<<1)  /* End distribution is active (local alignment)   */
 
 
 /* Structure: Parsetree_t
@@ -147,9 +157,8 @@ typedef struct cm_s {
  * 
  * Binary tree structure for storing a traceback of an alignment.
  * 
- * Also used for tracebacks of model constructions. Then, some
- * fields are misused: "state" is used for a node (not state) index,
- * and "type" is used for a node (not state) type.
+ * Also used for tracebacks of model constructions. Then, 
+ * "state" is misused for a node (not state) index.
  *
  * For reasons of malloc() efficiency, the binary tree is organized
  * in a set of arrays. 
@@ -168,6 +177,30 @@ typedef struct parsetree_s {
   int  memblock;		/* size of malloc() chunk, # of elems   */
 } Parsetree_t;
 
+
+/* Structure: CMConsensus_t
+ * Incept:    SRE, Thu May 23 16:55:04 2002 [St. Louis]
+ * 
+ * Created by display.c:CreateCMConsensus(). 
+ * Preprocesses a CM into consensus information that is needed by
+ * display.c:CreateFancyAli().
+ */
+typedef struct consensus_s {
+  char *cseq;                   /* consensus sequence display string; 0..clen-1     */
+  char *cstr;			/* consensus structure display string; 0..clen-1    */
+  int  *lpos;			/* maps node->consensus position, or -1; 0..nodes-1 */
+  int  *rpos;			/* maps node->consensus position, or -1; 0..nodes-1 */
+  int   clen;			/* length of cseq, cstr                             */
+} CMConsensus_t;
+
+typedef struct fancyali_s {
+  char *annote;                 /* reference annotation line (NULL if unavail) */
+  char *cstr;			/* CM consensus structure line */
+  char *cseq;			/* CM consensus sequence line  */
+  char *mid;			/* alignment identity middle line */
+  char *aseq;			/* aligned target sequence */
+  int   len;
+} Fancyali_t;
 
 
 

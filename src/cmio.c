@@ -137,6 +137,10 @@ WriteBinaryCM(FILE *fp, CM_t *cm)
   }
 
   tagged_fwrite(CMIO_END_DATA, NULL, 0, 0, fp);
+
+  /* Note: begin, end, and flags not written out. Local alignment is
+   * run-time configuration right now.
+   */
 }
 
 

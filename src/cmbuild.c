@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
@@ -37,6 +38,7 @@ static char experts[] = "\
    --informat <s>: specify input alignment is in format <s>, not Stockholm\n\
 \n\
  Verbose output files, useful for detailed information about the CM:\n\
+   --cfile <f>   : save count vectors to file <f>\n\
    --gtree <f>   : save tree description of master tree to file <f>\n\
    --gtbl  <f>   : save tabular description of master tree to file <f>\n\
    --cmtbl <f>   : save tabular description of CM topology to file <f>\n\
@@ -49,6 +51,7 @@ static struct opt_s OPTIONS[] = {
   { "-A", TRUE, sqdARG_NONE },
   { "-F", TRUE, sqdARG_NONE },
   { "--nobalance", FALSE, sqdARG_NONE },
+  { "--cfile",     FALSE, sqdARG_STRING },
   { "--cmtbl",     FALSE, sqdARG_STRING },
   { "--gapthresh", FALSE, sqdARG_FLOAT},
   { "--gtbl",      FALSE, sqdARG_STRING },
@@ -62,6 +65,8 @@ static struct opt_s OPTIONS[] = {
 
 static void dump_traces(char *tracefile, MSA *msa, Parsetree_t **tr, 
 			CM_t *cm, char **dsq); 
+static int  save_countvectors(char *cfile, CM_t *cm);
+static int  clean_cs(char *cs, int alen);
 
 int
 main(int argc, char **argv)
@@ -94,6 +99,7 @@ main(int argc, char **argv)
   float gapthresh;		/* 0=all cols inserts; 1=all cols consensus*/
 
   FILE *ofp;                    /* filehandle to dump info to */
+  char *cfile;                  /* file to dump count vectors to */
   char *tracefile;		/* file to dump debugging traces to        */
   char *cmtblfile;              /* file to dump CM tabular description to  */
   char *gtreefile;              /* file to dump guide tree to              */
@@ -111,6 +117,7 @@ main(int argc, char **argv)
   gapthresh         = 0.5;
   use_rf            = FALSE;
 
+  cfile             = NULL;
   tracefile         = NULL;
   cmtblfile         = NULL;
   gtblfile          = NULL;
@@ -125,6 +132,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--gapthresh") == 0) gapthresh         = atof(optarg);
     else if (strcmp(optname, "--rf")        == 0) use_rf            = TRUE;
 
+    else if (strcmp(optname, "--cfile")     == 0) cfile             = optarg;
     else if (strcmp(optname, "--gtbl")      == 0) gtblfile          = optarg;
     else if (strcmp(optname, "--gtree")     == 0) gtreefile         = optarg;
     else if (strcmp(optname, "--cmtbl")     == 0) cmtblfile         = optarg;
@@ -156,8 +164,7 @@ main(int argc, char **argv)
    * off; else, our numbering of states in traces will not be consistent with
    * numbering of states in CM.
    */
-  if (tracefile != NULL) 
-    do_balance = FALSE;
+  if (tracefile != NULL)  do_balance = FALSE;
 
   /*********************************************** 
    * Preliminaries: open our files for i/o
@@ -208,6 +215,16 @@ main(int argc, char **argv)
       puts("");
       fflush(stdout);
       
+      /* Some input data cleaning. 
+       */
+      if (use_rf && msa->rf == NULL) 
+	Die("Alignment has no reference coord annotation.");
+      if (msa->ss_cons == NULL) 
+	Die("Alignment has no consensus structure annotation.");
+      if (! clean_cs(msa->ss_cons, msa->alen))
+	Die("Failed to parse consensus structure annotation.");
+      printf("%-40s ... [done]\n", "Alignment format checks"); fflush(stdout);
+
       /* Digitize the alignment: this takes care of
        * case sensivitity (A vs. a), speeds all future
        * array indexing, and deals with the poor fools
@@ -218,10 +235,22 @@ main(int argc, char **argv)
        * is indexed 0..alen-1.
        */
       dsq = DigitizeAlignment(msa->aseq, msa->nseq, msa->alen);
+      printf("%-40s ... [done]\n", "Digitizing alignment"); fflush(stdout);
 
-      /* Construct a model
+      /* Construct a model.
        */
       HandModelmaker(msa, dsq, use_rf, gapthresh, &cm, &mtr, &tr);
+
+      /* Save a count vector file, if asked.
+       * Used primarily for making data files for training priors.
+       */
+      if (cfile != NULL) {
+	printf("%-40s ... ", "Saving count vector file");
+	fflush(stdout);
+	if (! save_countvectors(cfile, cm)) printf("[FAILED]\n");
+	else                                printf("done. [%s]\n", cfile);
+      }
+
       CMSimpleProbify(cm);
       CMSetDefaultNullModel(cm);
       CMLogoddsify(cm);
@@ -320,9 +349,111 @@ dump_traces(char *tracefile, MSA *msa, Parsetree_t **tr, CM_t *cm, char **dsq)
 
   for (i = 0; i < msa->nseq; i++) {
     fprintf(fp, "> %s\n", msa->sqname[i]);
-    fprintf(fp, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr[i], dsq[i]) / 0.693);;
+    fprintf(fp, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr[i], dsq[i]));;
     ParsetreeDump(fp, tr[i], cm, dsq[i]);
     fprintf(fp, "//\n");
   }
   fclose(fp);
+}
+
+
+/* Function: save_countvectors()
+ * Date:     SRE, Tue May  7 16:21:10 2002 [St. Louis]
+ *
+ * Purpose:  Save emission count vectors to a file.
+ *           Used to gather data for training Dirichlet priors.
+ *
+ * Args:     cfile  - name of file to save vectors to.
+ *           cm     - a model containing counts (before probify'ing)
+ *
+ */
+static int
+save_countvectors(char *cfile, CM_t *cm)
+{
+  FILE *fp;
+  int   v,x;
+
+  if ((fp = fopen(cfile, "w")) == NULL) return 0;
+  for (v = 0; v < cm->M; v++)
+    {
+      if (cm->sttype[v] == MP_st || 
+	  cm->sttype[v] == ML_st || 
+	  cm->sttype[v] == MR_st) 
+	{
+	  fprintf(fp, "%-7s ", UniqueStatetype(cm->stid[v]));
+	  if (cm->sttype[v] == MP_st) {
+	    for (x = 0; x < Alphabet_size*Alphabet_size; x++)
+	      fprintf(fp, "%8.3f ", cm->e[v][x]);
+	  } else {
+	    for (x = 0; x < Alphabet_size; x++)
+	      fprintf(fp, "%8.3f ", cm->e[v][x]);
+	  }
+	  fprintf(fp, "\n");
+	}
+    }
+  fclose(fp);
+  return 1;
+}
+
+
+/* Functions: clean_cs()
+ * Date:      SRE, Fri May 17 14:52:42 2002 [St. Louis]
+ *
+ * Purpose:   Verify and (if needed) clean the consensus structure annotation.
+ */
+static int
+clean_cs(char *cs, int alen)
+{
+  int   i;
+  int  *ct;
+  int   status;
+  int   nright = 0;
+  int   nleft = 0;
+  int   nbad = 0;
+  char  example;
+  int   first;
+  int   has_pseudoknots = FALSE;
+
+  /* 1. Maybe we're ok and don't need any cleaning.
+   */
+  status = KHS2ct(cs, alen, FALSE, &ct);
+  free(ct);
+  if (status == 1) return 1;
+
+  /* 2. Maybe we have a good CS line but it annotates one or
+   *    or more pseudoknots that have to be deleted.
+   */
+  if ((status = KHS2ct(cs, alen, TRUE, &ct)) == 1) { 
+    has_pseudoknots = TRUE; 
+    printf("    [Consensus structure has annotated pseudoknots that will be ignored.]\n");
+    fflush(stdout);
+  }
+  free(ct);
+
+  /* 3. Delete everything we don't recognize.
+   */
+  for (i = 0; i < alen; i++)
+    {
+      if      (isgap(cs[i])) ;
+      else if (cs[i] == '>') nleft++;  
+      else if (cs[i] == '<') nright++; 
+      else if (has_pseudoknots && isalpha(cs[i])) cs[i] = '.';
+      else {	/* count bad chars; remember first one; replace w/gap */
+	if (nbad == 0) { example = cs[i]; first = i; }
+	nbad++;
+	cs[i] = '.';
+      }
+    }
+  printf("    [Removed %d bad chars from consensus line. Example: a %c at position %d.]\n",
+	 nbad, example, first);
+  fflush(stdout);
+
+  /* Check it again.
+   */
+  status = KHS2ct(cs, alen, FALSE, &ct);
+  free(ct);
+  if (status == 1) return 1;
+
+  printf("    [Failed to parse the consensus structure line. %d >, %d <]\n", nleft, nright);
+  return 0;
 }

@@ -33,7 +33,7 @@ static float generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 static float wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
 			    int r, int z, int i0, int j0);
 static void  v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
-			int r, int z, int i0, int i1, int j1, int j0);
+			int r, int z, int i0, int i1, int j1, int j0, int useEL);
 
 /* The alignment engines. 
  */
@@ -47,12 +47,12 @@ static void  outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, in
 		     int do_full, float ***beta, float ****ret_beta,
 		     struct deckpool_s *dpool, struct deckpool_s **ret_dpool);
 static float vinside(CM_t *cm, char *dsq, int L, 
-		     int r, int z, int i0, int i1, int j1, int j0,
+		     int r, int z, int i0, int i1, int j1, int j0, int useEL,
 		     int do_full, float ***a, float ****ret_a,
 		     struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
 		     char ****ret_shadow);
 static void  voutside(CM_t *cm, char *dsq, int L, 
-		      int r, int z, int i0, int i1, int j1, int j0,
+		      int r, int z, int i0, int i1, int j1, int j0, int useEL,
 		      int do_full, float ***beta, float ****ret_beta,
 		      struct deckpool_s *dpool, struct deckpool_s **ret_dpool);
 
@@ -61,7 +61,7 @@ static void  voutside(CM_t *cm, char *dsq, int L,
 static float insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
 		     int r, int z, int i0, int j0);
 static float vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
-		      int r, int z, int i0, int i1, int j1, int j0);
+		      int r, int z, int i0, int i1, int j1, int j0, int useEL);
 
 /* The size calculators.
  */
@@ -79,7 +79,7 @@ static void    deckpool_free(struct deckpool_s *d);
 static float **alloc_vjd_deck(int L, int i, int j);
 static float   size_vjd_deck(int L, int i, int j);
 static void    free_vjd_deck(float **a, int i, int j);
-static void    free_vjd_matrix(float ***a, int r, int z, int i, int j);
+static void    free_vjd_matrix(float ***a, int M, int r, int z, int i, int j);
 static char  **alloc_vjd_yshadow_deck(int L, int i, int j);
 static float   size_vjd_yshadow_deck(int L, int i, int j);
 static void    free_vjd_yshadow_deck(char **a, int i, int j);
@@ -90,7 +90,7 @@ static void    free_vjd_shadow_matrix(void ***shadow, CM_t *cm, int r, int z, in
 static float **alloc_vji_deck(int i0, int i1, int j1, int j0);
 static float   size_vji_deck(int i0, int i1, int j1, int j0);
 static void    free_vji_deck(float **a, int j1, int j0);
-static void    free_vji_matrix(float ***a, int r, int z, int j1, int j0);
+static void    free_vji_matrix(float ***a, int M, int r, int z, int j1, int j0);
 static char  **alloc_vji_shadow_deck(int i0, int i1, int j1, int j0);
 static float   size_vji_shadow_deck(int i0, int i1, int j1, int j0);
 static void    free_vji_shadow_deck(char **a, int j1, int j0);
@@ -116,6 +116,9 @@ static void    free_vji_shadow_matrix(char ***a, int r, int z, int j1, int j0);
  * Purpose:  Align a CM to a sequence using the divide and conquer
  *           algorithm. Return the score (in bits) and a traceback
  *           structure.
+ *           
+ *           Won't work if we're allowing local entry into the model
+ *           (CM_LOCAL_BEGIN flag set).
  *
  * Args:     cm     - the covariance model
  *           dsq    - the sequence, 1..L
@@ -129,6 +132,8 @@ CYKDivideAndConquer(CM_t *cm, char *dsq, int L, Parsetree_t **ret_tr)
 {
   Parsetree_t *tr;
   float        sc;
+
+  if (cm->flags & CM_LOCAL_BEGIN) Die("don't start that with me.");
 
   /* Create a parse tree structure.
    * The traceback machinery expects to build on a start state already
@@ -147,6 +152,60 @@ CYKDivideAndConquer(CM_t *cm, char *dsq, int L, Parsetree_t **ret_tr)
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
   return sc;
 }
+
+/* Function:  CYKLocalDivideAndConquer()
+ * Incept:    SRE, Tue May 21 14:49:38 2002 [St. Louis]
+ * Last work: SRE, Tue May 21 14:49:48 2002 [St. Louis]
+ *
+ * Purpose:   Align a CM to a sequence using the divide and
+ *            conquer algorithm in its local alignment mode -
+ *            where we know the bounds i0,j0 of the hit on the
+ *            sequence dsq, and we know the next state r0 after the
+ *            ROOT in the parse tree.
+ *            
+ *            (aside: we could make this work for global alignment,
+ *             by not adding the extra node to initialized parsetree
+ *             when r0==0)
+ *
+ * Args:     cm     - the covariance model
+ *           dsq    - the sequence, 1..L
+ *           L      - length of sequence
+ *           r0     - first state after the ROOT
+ *           i0     - start position for optimal alignment
+ *           j0     - end position for optimal alignment
+ *           ret_tr - RETURN: traceback (pass NULL if trace isn't wanted)
+ *
+ * Returns:  (void)
+ */
+float
+CYKLocalDivideAndConquer(CM_t *cm, char *dsq, int L, int r0, int i0, int j0,
+		         Parsetree_t **ret_tr)
+{
+  Parsetree_t *tr;
+  float        sc;
+  int          z;
+
+  /* Create a parse tree structure.
+   * The traceback machinery expects to build on a start state already
+   * in the parsetree, so initialize by adding the root state.
+   */
+  tr = CreateParsetree();
+  InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, i0, j0, 0);  /* init: attach the root S */
+  InsertTraceNode(tr, 0,  TRACE_LEFT_CHILD, i0, j0, r0); /* attach first state r0   */
+
+  /* Start the divide and conquer recursion: call the generic_splitter()
+   * on the whole DP cube.
+   */
+  z  = CMSubtreeFindEnd(cm, r0);
+  sc = generic_splitter(cm, dsq, L, tr, r0, z, i0, j0);
+
+  /* Free memory and return 
+   * (though we don't really expect a NULL ptr for ret_tr)
+   */
+  if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
+  return sc;
+}
+
 
 /* Function: CYKInside()
  * Date:     SRE, Sun Jun  3 19:48:33 2001 [St. Louis]
@@ -167,6 +226,8 @@ CYKInside(CM_t *cm, char *dsq, int L, Parsetree_t **ret_tr)
 {
   Parsetree_t *tr;
   float        sc;
+
+  if (cm->flags & CM_LOCAL_BEGIN) Die("don't start that with me.");
 
   /* Create a parse tree structure.
    * The traceback machinery expects to build on a start state already
@@ -203,6 +264,7 @@ CYKInside(CM_t *cm, char *dsq, int L, Parsetree_t **ret_tr)
 float
 CYKInsideScore(CM_t *cm, char *dsq, int L)
 {
+  if (cm->flags & CM_LOCAL_BEGIN) Die("don't start that with me.");
   return inside(cm, dsq, L, 0, cm->M-1, 1, L, FALSE, 
 		NULL, NULL, NULL, NULL, NULL);
 }
@@ -358,10 +420,11 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
   inside(cm, dsq, L, y, yend, i0, j0, BE_EFFICIENT, alpha, &alpha, pool, &pool, NULL);
 
   /* Calculate beta[v] deck (stick it in alpha). Let the pool get free'd.
+   * (If we're doing local alignment, deck M is the beta[EL] deck.)
    */
   outside(cm, dsq, L, r, v, i0, j0, BE_EFFICIENT, alpha, &beta, pool, NULL);
 
-  /* Find the optimal split.
+  /* Find the optimal split at the B.
    */
   W = j0-i0+1;
   best_sc = IMPOSSIBLE;
@@ -379,15 +442,40 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 	    }
     }
 
+  /* Local alignment only: maybe we're better off in EL?
+   */
+  if (cm->flags & CM_LOCAL_END) {
+    for (jp = 0; jp <= W; jp++) 
+      {
+	j = i0-1+jp;
+	for (d = 0; d <= jp; d++)
+	  if ((sc = beta[cm->M][j][d]) > best_sc) {
+	    best_sc = sc;
+	    best_k  = -1;	/* flag for local alignment. */
+	    best_j  = j;
+	    best_d  = d;
+	  }
+      }
+  }
+
   /* Free now, before recursing.
    * The two alpha matrices and the beta matrix
    * actually all point to the same memory, since no
    * decks in Inside and Outside needed to overlap. 
    * Free 'em all in one call.
    */
-  free_vjd_matrix(alpha, r, z, i0, j0);
+  free_vjd_matrix(alpha, cm->M, r, z, i0, j0);
 
-  /* now, the optimal split, into a V problem and two generic problems.
+  /* If we're in EL, instead of B, the optimal alignment is entirely
+   * in a V problem that's still above us. The TRUE flag sets useEL.
+   */
+  if (best_k == -1) {	
+    v_splitter(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0, TRUE);    
+    return best_sc;
+  } 
+
+  /* We used B in the optimal split.
+   * Split now into a V problem and two generic problems, and recurse
    * left fragment: i1 = j-d+1, j1 = j-k, vroot = w, vend = wend
    * right frag:    i2 = j-k+1, j2 = j,   vroot = y, vend = yend
    * 
@@ -408,7 +496,7 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 		yend, UniqueStatetype(cm->stid[yend]),
 		best_j-best_k+1, best_j));
 
-  v_splitter(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0);
+  v_splitter(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0, FALSE);
   tv = tr->n-1;
 
   InsertTraceNode(tr, tv, TRACE_LEFT_CHILD, best_j-best_d+1, best_j-best_k, w);
@@ -471,7 +559,7 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
    *    couldn't be done with inside^T - but that'd be a silly
    *    thing to do, so we ignore RAMLIMIT in that case.
    */
-  if (cm->ndidx[z] == cm->ndidx[r] + 1 ||
+  if (cm->ndidx[z] == cm->ndidx[r] + 1 || 
       insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT) 
     {
       SQD_DPRINTF1(("Solving a wedge:   G%d[%s]..%d[%s], %d..%d\n", 
@@ -496,11 +584,12 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
    *    We rely on a side effect of how deallocation works
    *    in these routines; the w..y decks are guaranteed
    *    to be retained.
+   *    beta[cm->M] will contain the EL deck, if needed...
    */
   inside(cm, dsq, L, w, z, i0, j0, BE_EFFICIENT, NULL, &alpha, NULL, &pool, NULL);
   outside(cm, dsq, L, r, y, i0, j0, BE_EFFICIENT, NULL, &beta, pool, NULL);
 
-  /* 4. Find the optimal split: best_v, best_d, best_j
+  /* 4. Find the optimal split at the split set: best_v, best_d, best_j
    */
   W = j0-i0+1;
   best_sc = IMPOSSIBLE;
@@ -518,10 +607,38 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
 	    }
       }
 
+  /* Local alignment ends only: maybe we're better off in EL, 
+   * not in the split set?
+   */
+  if (cm->flags & CM_LOCAL_END) {
+    for (jp = 0; jp <= W; jp++) 
+      {
+	j = i0-1+jp;
+	for (d = 0; d <= jp; d++)
+	  if ((sc = beta[cm->M][j][d]) > best_sc) {
+	    best_sc = sc;
+	    best_v  = -1;	/* flag for local alignment. */
+	    best_j  = j;
+	    best_d  = d;
+	  }
+      }
+  }
+
   /* free now, before recursing!
    */
-  free_vjd_matrix(alpha, w, z, i0, j0);
-  free_vjd_matrix(beta, r, v, i0, j0);
+  free_vjd_matrix(alpha, cm->M, w, z, i0, j0);
+  free_vjd_matrix(beta, cm->M, r, v, i0, j0);
+
+  /* If we're in EL, instead of the split set, the optimal alignment
+   * is entirely in a V problem that's still above us. The TRUE
+   * flag sets useEL. It doesn't matter which state in the split
+   * set w..y we use as the end of the graph; vinside() will have to
+   * initialize the whole thing to IMPOSSIBLE anyway.
+   */  
+  if (best_v == -1) {
+    v_splitter(cm, dsq, L, tr, r, w, i0, best_j-best_d+1, best_j, j0, TRUE);    
+    return best_sc;
+  }
 
   /* 5. The optimal split into a V problem and a wedge problem:
    *    i1 = best_j-best_d+1, j1 = best_j
@@ -541,7 +658,7 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
 		z, UniqueStatetype(cm->stid[z]),
 		best_j-best_d+1, best_j));
 
-  v_splitter(cm, dsq, L, tr, r, best_v, i0, best_j-best_d+1, best_j, j0);
+  v_splitter(cm, dsq, L, tr, r, best_v, i0, best_j-best_d+1, best_j, j0, FALSE);
   wedge_splitter(cm, dsq, L, tr, best_v, z, best_j-best_d+1, best_j);
 
   return best_sc;
@@ -569,12 +686,13 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
  *           z   - index of the last state in the subgraph
  *           i0,i1 - first part of the subsequence (1..L)
  *           j1,j0 - second part of the subsequence (1..L)
+ *           useEL - TRUE if i1,j1 aligned to EL, not z
  * 
  * Returns:  (void)
  */
 static void
 v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
-	   int r, int z, int i0, int i1, int j1, int j0)
+	   int r, int z, int i0, int i1, int j1, int j0, int useEL)
 {
   float ***alpha, ***beta;      /* inside and outside matrices */
   struct deckpool_s *pool;      /* pool for holding alloced decks */
@@ -588,15 +706,17 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 
   /* 1. If the V problem is either a boundary condition, or small
    *    enough, solve it with v_inside^T and append the trace to tr.
+   *    (With local alignment, we might even see a lone B state
+   *     get handed to v_splitter(); hence the r==z case.)
    */
-   if (cm->ndidx[z] == cm->ndidx[r] + 1 ||
+   if (cm->ndidx[z] == cm->ndidx[r] + 1 || r == z || 
       vinsideT_size(cm, r, z, i0, i1, j1, j0) < RAMLIMIT)
     {
       SQD_DPRINTF1(("Solving a V:   G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
 		r, UniqueStatetype(cm->stid[r]),
 		z, UniqueStatetype(cm->stid[z]),
 		i0,j1,j1,j0));
-      vinsideT(cm, dsq, L, tr, r, z, i0, i1, j1, j0);
+      vinsideT(cm, dsq, L, tr, r, z, i0, i1, j1, j0, useEL);
       return;
     }
 
@@ -612,8 +732,10 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    *    deallocation works, so the w..y decks are retained
    *    in alpha and beta even though we're in small memory mode.
    */
-  vinside (cm, dsq, L, w, z, i0, i1, j1, j0, BE_EFFICIENT, NULL, &alpha, NULL, &pool, NULL);
-  voutside(cm, dsq, L, r, y, i0, i1, j1, j0, BE_EFFICIENT, NULL, &beta,  pool, NULL);
+  vinside (cm, dsq, L, w, z, i0, i1, j1, j0, useEL, BE_EFFICIENT, 
+	   NULL, &alpha, NULL, &pool, NULL);
+  voutside(cm, dsq, L, r, y, i0, i1, j1, j0, useEL, BE_EFFICIENT, 
+	   NULL, &beta,  pool, NULL);
 
   /* 4. Find the optimal split: v, ip, jp. 
    */
@@ -629,10 +751,34 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 	    best_j  = jp + j1;
 	  }
 
+  /* Local alignment ends: maybe we're better off in EL, not
+   * the split set?
+   */
+  if (useEL && cm->flags & CM_LOCAL_END) {
+    for (ip = 0; ip <= i1-i0; ip++)
+      for (jp = 0; jp <= j0-j1; jp++)
+	if ((sc = beta[cm->M][jp][ip]) > best_sc) {
+	  best_sc = sc;
+	  best_v  = -1;
+	  best_i  = ip + i0;
+	  best_j  = jp + j1;
+	}
+  }
+	
   /* Free now, before recursing!
    */
-  free_vji_matrix(alpha, r, z, j1, j0);
-  free_vji_matrix(beta,  r, z, j1, j0);
+  free_vji_matrix(alpha, cm->M, r, z, j1, j0);
+  free_vji_matrix(beta,  cm->M, r, z, j1, j0);
+
+  /* If we're in EL, instead of the split set, the optimal
+   * alignment is entirely in a V problem that's still above us.
+   * The TRUE flag sets useEL. 
+   */
+  if (best_v == -1) {
+    v_splitter(cm, dsq, L, tr, r, w, i0, best_i, best_j, j0, TRUE);    
+    return;
+  }
+
 
   /* The optimal split into two V problems:
    *    V:   r..v, i0..i', j'..j0
@@ -650,8 +796,8 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 		z, UniqueStatetype(cm->stid[z]),
 		best_i, i1, j1, best_j));
 
-  v_splitter(cm, dsq, L, tr, r,      best_v, i0,     best_i, best_j, j0);
-  v_splitter(cm, dsq, L, tr, best_v, z,      best_i, i1,     j1,     best_j);
+  v_splitter(cm, dsq, L, tr, r,      best_v, i0,     best_i, best_j, j0, FALSE);
+  v_splitter(cm, dsq, L, tr, best_v, z,      best_i, i1,     j1,     best_j, useEL);
   return;
 }
 
@@ -759,10 +905,15 @@ inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_f
     end[j][0] = 0.;
     for (d = 1; d <= jp; d++) end[j][d] = IMPOSSIBLE;
   }
-				/* if caller didn't give us a matrix, make one */
+
+  /* if caller didn't give us a matrix, make one.
+   * It's important to allocate for M+1 decks (deck M is for EL, local
+   * alignment) - even though Inside doesn't need EL, Outside does,
+   * and we might reuse this memory in a call to Outside.  
+   */
   if (alpha == NULL) {
-    alpha = MallocOrDie(sizeof(float **) * cm->M);
-    for (v = 0; v < cm->M; v++) alpha[v] = NULL;
+    alpha = MallocOrDie(sizeof(float **) * (cm->M+1));
+    for (v = 0; v <= cm->M; v++) alpha[v] = NULL;
   }
 
   touch = MallocOrDie(sizeof(int) * cm->M);
@@ -820,9 +971,9 @@ inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_f
 	    for (d = 0; d <= jp; d++)
 	      {
 		y = cm->cfirst[v];
-		alpha[v][j][d]  = alpha[y][j][d] + cm->tsc[v][0];
-		if (ret_shadow != NULL) yshad[j][d]  = 0;
-		for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
+		alpha[v][j][d]  = cm->endsc[v];	/* init w/ local end */
+		if (ret_shadow != NULL) yshad[j][d]  = -1; /* -1: EL */
+		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
 		  if ((sc = alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) >  alpha[v][j][d]) {
 		    alpha[v][j][d] = sc; 
 		    if (ret_shadow != NULL) yshad[j][d] = yoffset;
@@ -860,9 +1011,9 @@ inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_f
 	    for (d = 2; d <= jp; d++) 
 	      {
 		y = cm->cfirst[v];
-		alpha[v][j][d] = alpha[y][j-1][d-2] + cm->tsc[v][0];
-		if (ret_shadow != NULL) yshad[j][d] = 0;
-		for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
+		alpha[v][j][d] = cm->endsc[v]; /* init w/ local end */
+		if (ret_shadow != NULL) yshad[j][d] = -1; /* -1: EL */
+		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
 		  if ((sc = alpha[y+yoffset][j-1][d-2] + cm->tsc[v][yoffset]) >  alpha[v][j][d]) {
 		    alpha[v][j][d] = sc;
 		    if (ret_shadow != NULL) yshad[j][d] = yoffset;
@@ -886,9 +1037,9 @@ inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_f
 	    for (d = 1; d <= jp; d++)
 	      {
 		y = cm->cfirst[v];
-		alpha[v][j][d] = alpha[y][j][d-1] + cm->tsc[v][0];
-		if (ret_shadow != NULL) yshad[j][d] = 0;
-		for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
+		alpha[v][j][d] = cm->endsc[v]; /* init w/ local end */
+		if (ret_shadow != NULL) yshad[j][d] = -1; /* -1: EL */
+		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
 		  if ((sc = alpha[y+yoffset][j][d-1] + cm->tsc[v][yoffset]) >  alpha[v][j][d]) {
 		    alpha[v][j][d] = sc;
 		    if (ret_shadow != NULL) yshad[j][d] = yoffset;
@@ -912,9 +1063,9 @@ inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_f
 	    for (d = 1; d <= jp; d++)
 	      {
 		y = cm->cfirst[v];
-		alpha[v][j][d] = alpha[y][j-1][d-1] + cm->tsc[v][0];
-		if (ret_shadow != NULL) yshad[j][d] = 0;
-		for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
+		alpha[v][j][d] = cm->endsc[v]; /* init w/ local end */
+		if (ret_shadow != NULL) yshad[j][d] = -1; /* -1: EL */
+		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
 		  if ((sc = alpha[y+yoffset][j-1][d-1] + cm->tsc[v][yoffset]) > alpha[v][j][d]) {
 		    alpha[v][j][d] = sc;
 		    if (ret_shadow != NULL) yshad[j][d] = yoffset;
@@ -961,7 +1112,8 @@ inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_f
 
   /* Now we free our memory. 
    * if we've got do_full set, all decks vroot..vend are now valid (end is shared).
-   * else, only vroot deck is valid now and all others vroot+1..vend are NULL, and end is NULL.
+   * else, only vroot deck is valid now and all others vroot+1..vend are NULL, 
+   * and end is NULL.
    * We could check this status to be sure (and we used to) but now we trust. 
    */
   sc = alpha[vroot][j0][W];
@@ -1059,17 +1211,24 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
   			/* if caller didn't give us a deck pool, make one */
   if (dpool == NULL) dpool = deckpool_create();
 
-                        /* if caller didn't give us a matrix, make one */
+  /* if caller didn't give us a matrix, make one.
+   * Allocate room for M+1 decks because we might need the EL deck (M)
+   * if we're doing local alignment.
+   */
   if (beta == NULL) {
-    beta = MallocOrDie(sizeof(float **) * cm->M);
-    for (v = 0; v < cm->M; v++) beta[v] = NULL;
+    beta = MallocOrDie(sizeof(float **) * (cm->M+1));
+    for (v = 0; v < cm->M+1; v++) beta[v] = NULL;
   }
 
   /* Initialize the root deck.
    * If the root is in a split set, initialize the whole split set.
    */
   w1 = cm->nodemap[cm->ndidx[vroot]]; /* first state in split set */
-  w2 = cm->cfirst[w1]-1;	      /* last state in split set w1<=vroot<=w2 */
+  if (cm->sttype[vroot] == B_st) {    /* special boundary case of Outside on a single B state. */
+    w2 = w1;
+    if (vend != vroot) Die("oh no. not again.");
+  } else
+    w2 = cm->cfirst[w1]-1;	      /* last state in split set w1<=vroot<=w2 */
 
   for (v = w1; v <= w2; v++) {
     if (! deckpool_pop(dpool, &(beta[v])))
@@ -1081,6 +1240,18 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
     }
   }
   beta[vroot][j0][W] = 0;		
+
+  /* Initialize the EL deck at M, if we're doing local alignment w.r.t. ends.
+   */
+  if (cm->flags & CM_LOCAL_END) {
+    if (! deckpool_pop(dpool, &(beta[cm->M])))
+      beta[cm->M] = alloc_vjd_deck(L, i0, j0);
+    for (jp = 0; jp <= W; jp++) {
+      j = i0-1+jp;
+      for (d = 0; d <= jp; d++)
+	beta[cm->M][j][d] = IMPOSSIBLE;
+    }
+  }
 
   touch = MallocOrDie(sizeof(int) * cm->M);
   for (v = 0;      v < w1; v++) touch[v] = 0; /* note: top of split set w1, not vroot */
@@ -1166,12 +1337,24 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 	    } /* ends for loop over parent states. we now know beta[v][j][d] for this d */
 	    if (beta[v][j][d] < IMPOSSIBLE) beta[v][j][d] = IMPOSSIBLE;
 
-	  } /* ends loop over d. We know all beta[v][j][d] in this row j*/
 
+	  } /* ends loop over d. We know all beta[v][j][d] in this row j*/
       }/* end loop over jp. We know the beta's for the whole deck.*/
 
-      /* Finished deck v.
-       * now look at its parents; if we're reusing memory (! do_full)
+      /* Finished with deck v. 
+       * Deal with local alignment transitions v->EL
+       * (EL = deck at M.)
+       */
+      if (NOT_IMPOSSIBLE(cm->endsc[v])) {
+	for (jp = 0; jp <= W; jp++) { 
+	  j = i0-1+jp;
+	  for (d = 0; d <= jp; d++) 
+	    if ((sc = beta[v][j][d] + cm->endsc[v]) > beta[cm->M][j][d])
+	      beta[cm->M][j][d] = sc;
+	}
+      }
+
+      /* Look at v's parents; if we're reusing memory (! do_full)
        * push the parents that we don't need any more into the pool.
        */
       if (! do_full) {
@@ -1180,8 +1363,20 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 	  if (touch[y] == 0) { deckpool_push(dpool, beta[y]); beta[y] = NULL; }
 	}
       }
-
     } /* end loop over decks v. */
+
+  /* Deal with last step needed for local alignment 
+   * w.r.t. ends: left-emitting, zero-scoring EL->EL transitions.
+   * (EL = deck at M.)
+   */
+  if (cm->flags & CM_LOCAL_END) {
+    for (jp = W; jp > 0; jp--) { /* careful w/ boundary here */
+      j = i0-1+jp;
+      for (d = jp-1; d >= 0; d--) /* careful w/ boundary here */
+	if ((sc = beta[cm->M][j][d+1]) > beta[cm->M][j][d])
+	  beta[cm->M][j][d] = sc;
+    }
+  }
 
   /* If the caller doesn't want the matrix, free it.
    * (though it would be *stupid* for the caller not to want the
@@ -1190,6 +1385,10 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
   if (ret_beta == NULL) {
     for (v = w1; v <= vend; v++) /* start at w1 - top of split set - not vroot */
       if (beta[v] != NULL) { deckpool_push(dpool, beta[v]); beta[v] = NULL; }
+    if (cm->flags & CM_LOCAL_END) {
+      deckpool_push(dpool, beta[cm->M]);
+      beta[cm->M] = NULL; 
+    }
     free(beta);
   } else *ret_beta = beta;
 
@@ -1233,6 +1432,7 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
  *           z         - last end state of subtree (cm->M-1, for whole model)
  *           i0,i1     - first subseq part of the V problem
  *           j1,j0     - second subseq part 
+ *           useEL     - if TRUE, V problem ends at EL/i1/j1, not z/i1/j1
  *           do_full   - if TRUE, we save all the decks in alpha, instead of
  *                       working in our default memory-efficient mode where 
  *                       we reuse decks and only the uppermost deck (r) is valid
@@ -1255,7 +1455,7 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
  */
 static float
 vinside(CM_t *cm, char *dsq, int L, 
-	int r, int z, int i0, int i1, int j1, int j0,
+	int r, int z, int i0, int i1, int j1, int j0, int useEL,
 	int do_full, float ***a, float ****ret_a,
 	struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
 	char ****ret_shadow)
@@ -1268,13 +1468,14 @@ vinside(CM_t *cm, char *dsq, int L,
   int     y, yoffset;
   float   sc;			/* tmp variable holding a score */
 
-  /* Allocations, initializations
+  /* Allocations, initializations.
+   * Remember to allocate for M+1 decks, in case we reuse this 
+   * memory for a local alignment voutside() calculation.
    */
   if (dpool == NULL) dpool = deckpool_create();
-  
   if (a == NULL) {
-    a = MallocOrDie(sizeof(float **) * cm->M);
-    for (v = 0; v < cm->M; v++) a[v] = NULL;
+    a = MallocOrDie(sizeof(float **) * (cm->M+1));
+    for (v = 0; v <= cm->M; v++) a[v] = NULL;
   }
 				/* the whole split set w<=z<=y must be initialized */
   w1 = cm->nodemap[cm->ndidx[z]];
@@ -1286,7 +1487,10 @@ vinside(CM_t *cm, char *dsq, int L,
       for (ip = 0; ip <= i1-i0; ip++) 
 	a[v][jp][ip] = IMPOSSIBLE;
   }
-  a[z][0][i1-i0] = 0.;
+  /* if local alignment, we must connect to EL somewhere;
+   * a[z][0][i1-i0] = IMPOSSIBLE. Else, we connect to z,0,i1-i0.
+   */
+  if (! useEL) a[z][0][i1-i0] = 0.;
 
   if (ret_shadow != NULL) {
     shadow = MallocOrDie(sizeof(char **) * cm->M);
@@ -1320,6 +1524,10 @@ vinside(CM_t *cm, char *dsq, int L,
 	      y = cm->cfirst[v];
 	      a[v][jp][ip]      = a[y][jp][ip] + cm->tsc[v][0];
 	      if (ret_shadow != NULL) shadow[v][jp][ip] = (char) 0;
+	      if (useEL && cm->endsc[v] > a[v][jp][ip]) {
+		a[v][jp][ip]      = cm->endsc[v];
+		if (ret_shadow != NULL) shadow[v][jp][ip] = -1;
+	      }
 	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
 		if ((sc = a[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) >  a[v][jp][ip])
 		  { 
@@ -1339,6 +1547,10 @@ vinside(CM_t *cm, char *dsq, int L,
 	      y = cm->cfirst[v];
 	      a[v][jp][ip] = a[y][jp-1][ip+1] + cm->tsc[v][0];
 	      if (ret_shadow != NULL) shadow[v][jp][ip] = (char) 0;
+	      if (useEL && cm->endsc[v] > a[v][jp][ip]) {
+		a[v][jp][ip]      = cm->endsc[v];
+		if (ret_shadow != NULL) shadow[v][jp][ip] = -1;
+	      }
 	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
 		if ((sc = a[y+yoffset][jp-1][ip+1] + cm->tsc[v][yoffset]) >  a[v][jp][ip])
 		   { 
@@ -1361,6 +1573,10 @@ vinside(CM_t *cm, char *dsq, int L,
 	      y = cm->cfirst[v];
 	      a[v][jp][ip] = a[y][jp][ip+1] + cm->tsc[v][0];
 	      if (ret_shadow != NULL) shadow[v][jp][ip] = 0;
+	      if (useEL && cm->endsc[v] > a[v][jp][ip]) {
+		a[v][jp][ip]      = cm->endsc[v];
+		if (ret_shadow != NULL) shadow[v][jp][ip] = -1;
+	      }
 	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
 		if ((sc = a[y+yoffset][jp][ip+1] + cm->tsc[v][yoffset]) >  a[v][jp][ip])
 		  { 
@@ -1384,6 +1600,10 @@ vinside(CM_t *cm, char *dsq, int L,
 	      y = cm->cfirst[v];
 	      a[v][jp][ip]      = a[y][jp-1][ip] + cm->tsc[v][0];
 	      if (ret_shadow != NULL) shadow[v][jp][ip] = 0;
+	      if (useEL && cm->endsc[v] > a[v][jp][ip]) {
+		a[v][jp][ip]      = cm->endsc[v];
+		if (ret_shadow != NULL) shadow[v][jp][ip] = -1;
+	      }
 	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
 		if ((sc = a[y+yoffset][jp-1][ip] + cm->tsc[v][yoffset]) >  a[v][jp][ip])
 		  { 
@@ -1460,7 +1680,7 @@ vinside(CM_t *cm, char *dsq, int L,
  *           matrix runs [0..j0-j1][0..i1-i0].
  *           
  *           Much of the behavior in calling conventions, etc., is
- *           analogous to the cyk_inside_engine(); see its preface
+ *           analogous to inside() and vinside(); see their prefaces
  *           for more info. Unlike the inside engines, we never 
  *           need to calculate a shadow matrix - outside engines are
  *           only used for divide and conquer steps.
@@ -1472,6 +1692,7 @@ vinside(CM_t *cm, char *dsq, int L,
  *           z         - last state of linear model segment (B; MP, ML, MR, or D)
  *           i0,i1     - subsequence before the hole  (1..L)
  *           j1,j0     - subsequence after the hole (1..L)
+ *           useEL     - if TRUE, worry about local alignment.
  *           do_full   - if TRUE, we save all the decks in beta, instead of
  *                       working in our default memory-efficient mode where 
  *                       we reuse decks and only the lowermost decks (inc. z) are valid
@@ -1490,7 +1711,7 @@ vinside(CM_t *cm, char *dsq, int L,
  */
 static void
 voutside(CM_t *cm, char *dsq, int L, 
-	 int r, int z, int i0, int i1, int j1, int j0,
+	 int r, int z, int i0, int i1, int j1, int j0, int useEL,
 	 int do_full, float ***beta, float ****ret_beta,
 	 struct deckpool_s *dpool, struct deckpool_s **ret_dpool)
 {
@@ -1507,10 +1728,12 @@ voutside(CM_t *cm, char *dsq, int L,
   			/* if caller didn't give us a deck pool, make one */
   if (dpool == NULL) dpool = deckpool_create();
 
-                        /* if caller didn't give us a matrix, make one */
+  /* If caller didn't give us a matrix, make one.
+   * Remember to allow for deck M, the EL deck, for local alignments.
+   */
   if (beta == NULL) {
-    beta = MallocOrDie(sizeof(float **) * cm->M);
-    for (v = 0; v < cm->M; v++) beta[v] = NULL;
+    beta = MallocOrDie(sizeof(float **) * (cm->M+1));
+    for (v = 0; v <= cm->M; v++) beta[v] = NULL;
   }
   /* Initialize the root deck. This probably isn't the most efficient way to do it.
    */
@@ -1521,6 +1744,17 @@ voutside(CM_t *cm, char *dsq, int L,
       beta[r][jp][ip] = IMPOSSIBLE;
   }
   beta[r][j0-j1][0] = 0;		
+
+  /* Initialize the EL deck, if we're in local mode w.r.t. ends.
+   */
+  if (useEL && cm->flags & CM_LOCAL_END) {
+    if (! deckpool_pop(dpool, &(beta[cm->M])))
+      beta[cm->M] = alloc_vji_deck(i0,i1,j1,j0);
+    for (jp = 0; jp <= j0-j1; jp++) {
+      for (ip = 0; ip <= i1-i0; ip++)
+	beta[cm->M][jp][ip] = IMPOSSIBLE;
+    }
+  }
 
   touch = MallocOrDie(sizeof(int) * cm->M);
   for (v = 0;   v < r;     v++) touch[v] = 0;
@@ -1609,6 +1843,17 @@ voutside(CM_t *cm, char *dsq, int L,
 
       }/* end loop over jp. We know the beta's for the whole deck.*/
 
+      /* Now that we've got a complete deck v, deal with local alignment
+       * transitions v->EL, if we're doing local alignment and there's a 
+       * possible transition.
+       */
+      if (useEL && cm->endsc[v] != IMPOSSIBLE) {
+	for (jp = j0-j1; jp >= 0; jp--) 
+	  for (ip = 0; ip <= i1-i0; ip++) 
+	    if ((sc = beta[v][jp][ip]) > beta[cm->M][jp][ip]) 
+	      beta[cm->M][jp][ip] = sc;
+      }
+	
       /* Finished deck v.
        * now look at its parents; if we're reusing memory (! do_full)
        * push the parents that we don't need any more into the pool.
@@ -1625,6 +1870,16 @@ voutside(CM_t *cm, char *dsq, int L,
 
     } /* end loop over decks v. */
 
+  /* Deal with the last step needed for local alignment
+   * w.r.t. ends: left-emitting, zero-scoring EL->EL transitions.
+   */
+  if (useEL && cm->flags & CM_LOCAL_END) {
+    for (jp = j0-j1; jp >= 0; jp--) 
+      for (ip = 1; ip <= i1-i0; ip++) /* careful w/ boundary here */
+	if ((sc = beta[cm->M][jp][ip-1]) > beta[cm->M][jp][ip]) 
+	  beta[cm->M][jp][ip] = sc;
+  }
+
   /* If the caller doesn't want the matrix, free it.
    * (though it would be *stupid* for the caller not to want the
    * matrix in the current implementation!)
@@ -1632,6 +1887,10 @@ voutside(CM_t *cm, char *dsq, int L,
   if (ret_beta == NULL) {
     for (v = r; v <= z; v++)
       if (beta[v] != NULL) { deckpool_push(dpool, beta[v]); beta[v] = NULL; }
+    if (cm->flags & CM_LOCAL_END) {
+      deckpool_push(dpool, beta[cm->M]);
+      beta[cm->M] = NULL; 
+    }
     free(beta);
   } else *ret_beta = beta;
 
@@ -1721,7 +1980,6 @@ insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
       v = y;
     } else {
       yoffset = ((char **)shadow[v])[j][d];
-      y = cm->cfirst[v] + yoffset;
 
       switch (cm->sttype[v]) {
       case D_st:            break;
@@ -1735,6 +1993,12 @@ insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
       }
       d = j-i+1;
 
+      if (yoffset == -1) {	/* a local alignment end */
+	InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M);
+	break;
+      }
+
+      y = cm->cfirst[v] + yoffset;
       InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
       v = y;
     }
@@ -1754,7 +2018,7 @@ insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
  */
 static float
 vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
-	 int r, int z, int i0, int i1, int j1, int j0)
+	 int r, int z, int i0, int i1, int j1, int j0, int useEL)
 {
   char ***shadow;
   float   sc;
@@ -1763,7 +2027,7 @@ vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
   int     jp,ip;
   int     yoffset;
 
-  sc = vinside(cm, dsq, L, r, z, i0, i1, j1, j0,
+  sc = vinside(cm, dsq, L, r, z, i0, i1, j1, j0, useEL,
 	       BE_EFFICIENT,	/* memory-saving mode */
 	       NULL, NULL,	/* manage your own matrix, I don't want it */
 	       NULL, NULL,	/* manage your own deckpool, I don't want it */
@@ -1783,7 +2047,6 @@ vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
     /* 1. figure out the next state (deck) in the shadow matrix.
      */ 
     yoffset = shadow[v][jp][ip];
-    y = cm->cfirst[v] + yoffset;
 
     /* 2. figure out the i,j for state y, which is dependent 
      *    on what v emits (if anything)
@@ -1798,11 +2061,20 @@ vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
     case S_st:            break;
     default:    Die("'Inconceivable!'\n'You keep using that word...'");
     }
-    
+
+    /* If the traceback pointer (yoffset) is -1, that's a special
+     * flag for a local alignment end, e.g. transition to EL (state "M").
+     */
+    if (yoffset == -1) {
+      InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M);
+      break;
+    }
+
     /* 3. Attach y,i,j to the trace. This new node always attaches
      *    to the end of the growing trace -- e.g. trace node
      *    tr->n-1.
      */
+    y = cm->cfirst[v] + yoffset;
     InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
     v = y;
   }
@@ -2063,12 +2335,14 @@ free_vjd_deck(float **a, int i, int j)
   free(a);
 }
 static void
-free_vjd_matrix(float ***a, int r, int z, int i, int j)
+free_vjd_matrix(float ***a, int M, int r, int z, int i, int j)
 {
   int v;
   for (v = r; v <= z; v++)
     if (a[v] != NULL)		/* protect against double free's of reused decks (ends) */
       { free_vjd_deck(a[v], i, j); a[v] = NULL; }
+  if (a[M] != NULL) 
+    { free_vjd_deck(a[M], i, j); a[M] = NULL; }	/* EL deck, local alignment */
   free(a);
 }
 static char **
@@ -2190,11 +2464,12 @@ free_vji_deck(float **a, int j1, int j0)
   free(a);
 }
 static void
-free_vji_matrix(float ***a, int r, int z, int j1, int j0)
+free_vji_matrix(float ***a, int M, int r, int z, int j1, int j0)
 {
   int v;
   for (v = r; v <= z; v++) 
     if (a[v] != NULL) free_vji_deck(a[v], j1, j0);
+  if (a[M] != NULL) free_vji_deck(a[M], j1, j0); /* EL deck, local alignments */
   free(a);
 }
 static char **		        /* allocation of a traceback ptr (shadow matrix) deck */

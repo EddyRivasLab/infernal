@@ -39,10 +39,11 @@ CreateCM(int nnodes, int nstates)
   cm = MallocOrDie(sizeof(CM_t));
 
 				/* general information: added later */
-  cm->name = NULL;
-  cm->acc  = NULL;
-  cm->desc = NULL;
-  cm->M    = nstates;
+  cm->name   = NULL;
+  cm->acc    = NULL;
+  cm->desc   = NULL;
+  cm->annote = NULL;
+  cm->M      = nstates;
 				/* null model information */
   cm->null   = MallocOrDie(Alphabet_size * sizeof(float));
 				/* structural information */
@@ -67,6 +68,7 @@ CreateCM(int nnodes, int nstates)
   cm->beginsc= MallocOrDie(nstates * sizeof(float));
   cm->endsc  = MallocOrDie(nstates * sizeof(float));
 
+  cm->flags  = 0;
   return cm;
 }
 
@@ -103,9 +105,10 @@ CMZero(CM_t *cm)
 void
 FreeCM(CM_t *cm)
 {
-  if (cm->name != NULL) free(cm->name);
-  if (cm->acc  != NULL) free(cm->acc);
-  if (cm->desc != NULL) free(cm->desc);
+  if (cm->name   != NULL) free(cm->name);
+  if (cm->acc    != NULL) free(cm->acc);
+  if (cm->desc   != NULL) free(cm->desc);
+  if (cm->annote != NULL) free(cm->annote);
 
   free(cm->null);
   free(cm->sttype);
@@ -194,23 +197,23 @@ CMLogoddsify(CM_t *cm)
     {
       if (cm->sttype[v] != B_st && cm->sttype[v] != E_st)
 	for (x = 0; x < cm->cnum[v]; x++)
-	  cm->tsc[v][x] = log(cm->t[v][x]);
+	  cm->tsc[v][x] = sreLOG2(cm->t[v][x]);
       
       if (cm->sttype[v] == MP_st)
 	for (x = 0; x < Alphabet_size; x++)
 	  for (y = 0; y < Alphabet_size; y++)
-	    cm->esc[v][x*Alphabet_size+y] = log(cm->e[v][x*Alphabet_size+y] / (cm->null[x]*cm->null[y]));
+	    cm->esc[v][x*Alphabet_size+y] = sreLOG2(cm->e[v][x*Alphabet_size+y] / (cm->null[x]*cm->null[y]));
 
       if (cm->sttype[v] == ML_st || cm->sttype[v] == MR_st ||
 	  cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
 	for (x = 0; x < Alphabet_size; x++)
-	  cm->esc[v][x] = log(cm->e[v][x] / cm->null[x]);
+	  cm->esc[v][x] = sreLOG2(cm->e[v][x] / cm->null[x]);
 
-      /* Configure for global w.r.t. model by default: 
-       * local alignment begin/end are impossible
+      /* These work even if begin/end distributions are inactive 0's,
+       * sreLOG2 will set beginsc, endsc to -infinity.
        */
-      cm->beginsc[v] = IMPOSSIBLE;
-      cm->endsc[v]   = IMPOSSIBLE;
+      cm->beginsc[v] = sreLOG2(cm->begin[v]);
+      cm->endsc[v]   = sreLOG2(cm->end[v]);
     }
 }
 
@@ -259,7 +262,18 @@ CMCountStatetype(CM_t *cm, char type)
 {
   return CMSubtreeCountStatetype(cm, 0, type);
 }
+int 
+CMSubtreeFindEnd(CM_t *cm, int r)
+{
+  int unsatisfied_starts = 1;
 
+  while (unsatisfied_starts) {
+    if (cm->sttype[r] == B_st) unsatisfied_starts++;
+    if (cm->sttype[r] == E_st) unsatisfied_starts--; 
+    r++;
+  }
+  return (r-1);
+}
 
 /* Function: CalculateStateIndex()
  * Date:     SRE, Mon Jul 31 15:37:55 2000 [St. Louis]

@@ -40,7 +40,9 @@ PROGS = cmbuild cmscore cmsearch
 OBJS  = alphabet.o\
 	cm.o\
 	cmio.o\
+	display.o\
 	globals.o\
+	modelconfig.o\
 	modelmaker.o\
 	nstack.o\
 	parsetree.o\

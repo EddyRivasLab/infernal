@@ -176,11 +176,13 @@ ParsetreeCount(CM_t *cm, Parsetree_t *tr, char *dsq, float wgt)
 		/* trivial preorder traverse, since we're already numbered that way */
   for (tidx = 0; tidx < tr->n; tidx++) {
     v = tr->state[tidx];        	/* index of parent state in CM */
+    if (v == cm->M) continue;	        /* local alignment special case: sttype[v] = EL */
+
     if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) /* no parameters estimated from B,E */
       {
 	z = tr->state[tr->nxtl[tidx]];      /* index of child state in CM  */
-			/* z - cm->first[v] gives us the offset in the transition vector */
-	cm->t[v][z - cm->cfirst[v]] += wgt;
+	if (z != cm->M)		            /* watch out for local alignment, z = EL */
+	  cm->t[v][z - cm->cfirst[v]] += wgt; /* z - cm->first[v] gives us offset in transition vecor */
 
 	if (cm->sttype[v] == MP_st) 
 	  PairCount(cm->e[v], dsq[tr->emitl[tidx]], dsq[tr->emitr[tidx]], wgt);
@@ -210,11 +212,17 @@ ParsetreeScore(CM_t *cm, Parsetree_t *tr, char *dsq)
   sc = 0.;
   for (tidx = 0; tidx < tr->n; tidx++) {
     v = tr->state[tidx];        	/* index of parent state in CM */
+    if (v == cm->M) continue;      	/* special case: v is EL, local alignment end */
     if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) /* no scores in B,E */
       {
 	y = tr->state[tr->nxtl[tidx]];      /* index of child state in CM  */
-			/* y - cm->first[v] gives us the offset in the transition vector */
-	sc += cm->tsc[v][y - cm->cfirst[v]];
+
+	if (v == 0 && (cm->flags & CM_LOCAL_BEGIN))
+	  sc += cm->beginsc[y];
+	else if (y == cm->M) /* CM_LOCAL_END is presumably set, else this wouldn't happen */
+	  sc += cm->endsc[v];
+	else 		/* y - cm->first[v] gives us the offset in the transition vector */
+	  sc += cm->tsc[v][y - cm->cfirst[v]];
 	
 	if (cm->sttype[v] == MP_st) 
 	  {
@@ -297,7 +305,7 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq)
   char  syml, symr;
   float tsc;
   float esc;
-  int   v;
+  int   v,y;
 
   fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s\n",
 	  " idx ","emitl", "emitr", "state", " nxtl", " nxtr", " prv ", " tsc ", " esc ");
@@ -319,13 +327,21 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq)
 	symr = Alphabet[(int)dsq[tr->emitr[x]]];
 	esc  = DegenerateSingletScore(cm->esc[v], dsq[tr->emitr[x]]);
       }
-      if (cm->sttype[v] != B_st && cm->sttype[v] != E_st)
-	tsc = cm->tsc[v][tr->state[tr->nxtl[x]] - cm->cfirst[v]];
 
-      fprintf(fp, "%5d %5d%c %5d%c %5d%-2s %5d %5d %5d %5.2f %5.2f\n",
-	      x, tr->emitl[x], syml, tr->emitr[x], symr, tr->state[x], Statetype(cm->sttype[v]),
-	      tr->nxtl[x], tr->nxtr[x], tr->prv[x], tsc, esc);
+      if (v != cm->M && cm->sttype[v] != B_st && cm->sttype[v] != E_st) {
+	y = tr->state[tr->nxtl[x]];
 
+	if (v == 0 && (cm->flags & CM_LOCAL_BEGIN))
+	  tsc = cm->beginsc[y];
+	else if (y == cm->M) /* CM_LOCAL_END is presumably set, else this wouldn't happen */
+	  tsc = cm->endsc[v];
+	else 		/* y - cm->first[v] gives us the offset in the transition vector */
+	  tsc = cm->tsc[v][y - cm->cfirst[v]];
+
+	fprintf(fp, "%5d %5d%c %5d%c %5d%-2s %5d %5d %5d %5.2f %5.2f\n",
+		x, tr->emitl[x], syml, tr->emitr[x], symr, tr->state[x], Statetype(cm->sttype[v]),
+		tr->nxtl[x], tr->nxtr[x], tr->prv[x], tsc, esc);
+      }
     }
   fprintf(fp, "%5s %5s %5s %5s %5s %5s %5s %5s %5s\n",
 	  "-----", "-----", "-----", "-----", "-----","-----", "-----","-----", "-----");
@@ -406,14 +422,14 @@ mtd_visit_node(FILE *fp, Parsetree_t *mtr, CM_t *cm, int v, int depth)
 				/* find next start states in "binary tree" */
   for (y = v+1; y < mtr->n; y++)
     if (mtr->state[y] == END_nd || mtr->state[y] == BIF_nd) break;
-				/* visit left */
-  if (mtr->state[y] == BIF_nd)
-    mtd_visit_node(fp, mtr, cm, mtr->nxtl[y], depth+1);
-				/* deal with root */
-  fprintf(fp, "%*s%d: %d[%d]: %d..%d, %d nt\n", depth*6, "", depth, v, cm->nodemap[v], mtr->emitl[v], mtr->emitr[v], mtr->emitr[v] - mtr->emitl[v] +1);
 				/* visit right */
   if (mtr->state[y] == BIF_nd)
     mtd_visit_node(fp, mtr, cm, mtr->nxtr[y], depth+1);
+				/* deal with root */
+  fprintf(fp, "%*s%d: %d[%d]: %d..%d, %d nt\n", depth*6, "", depth, v, cm->nodemap[v], mtr->emitl[v], mtr->emitr[v], mtr->emitr[v] - mtr->emitl[v] +1);
+				/* visit left */
+  if (mtr->state[y] == BIF_nd)
+    mtd_visit_node(fp, mtr, cm, mtr->nxtl[y], depth+1);
 }
 void
 MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm)

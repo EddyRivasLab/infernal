@@ -3,10 +3,6 @@
  * An efficient pushdown stack for integers. 
  * CVS $Id$
  *
- *****************************************************************
- * Compile-time dependencies:
- *   requires sre_memory.h and sre_memory.c
- *****************************************************************
  * Basic API:
  *   say I want to push the numbers 42, 7, and 3 onto a stack,
  *   then pop them off and print them: 

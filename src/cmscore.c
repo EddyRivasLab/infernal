@@ -131,12 +131,12 @@ main(int argc, char **argv)
 	StopwatchStart(watch);
 	if (do_scoreonly) {
 	  sc1 = CYKInsideScore(cm, dsq, sqinfo.len);
-	  printf("%-12s : %.2f  %.2f\n", sqinfo.name, sc1/0.693);
+	  printf("%-12s : %.2f  %.2f\n", sqinfo.name, sc1);
 	} else {
 	  sc1 = CYKInside(cm, dsq, sqinfo.len, &tr1);  
 	  ParsetreeDump(stdout, tr1, cm, dsq);
-	  printf("%-12s : %.2f  %.2f\n", sqinfo.name, sc1/0.693,
-		 ParsetreeScore(cm, tr1, dsq)/0.693);
+	  printf("%-12s : %.2f  %.2f\n", sqinfo.name, sc1,
+		 ParsetreeScore(cm, tr1, dsq));
 	}
 	StopwatchStop(watch);
 	StopwatchDisplay(stdout, "CPU time: ", watch);
@@ -149,8 +149,8 @@ main(int argc, char **argv)
       StopwatchStart(watch);
       sc2 = CYKDivideAndConquer(cm, dsq, sqinfo.len, &tr2);  
       ParsetreeDump(stdout, tr2, cm, dsq);
-      printf("%-12s : %.2f  %.2f\n", sqinfo.name, sc2/0.693,
-	     ParsetreeScore(cm, tr2, dsq)/0.693);
+      printf("%-12s : %.2f  %.2f\n", sqinfo.name, sc2,
+	     ParsetreeScore(cm, tr2, dsq));
       StopwatchStop(watch);
       StopwatchDisplay(stdout, "CPU time: ", watch);
       puts("");

@@ -23,6 +23,7 @@ extern void  CMLogoddsify(CM_t *cm);
 extern int   CMCountStatetype(CM_t *cm, char type);
 extern int   CMSegmentCountStatetype(CM_t *cm, int r, int z, char type);
 extern int   CMSubtreeCountStatetype(CM_t *cm, int v, char type);
+extern int   CMSubtreeFindEnd(CM_t *cm, int v);
 extern int   CalculateStateIndex(CM_t *cm, int node, char utype);
 extern void  PrintCM(FILE *fp, CM_t *cm);
 extern void  SummarizeCM(FILE *fp, CM_t *cm);
@@ -35,6 +36,18 @@ extern CM_t *CMRebalance(CM_t *cm);
  */
 extern void WriteBinaryCM(FILE *fp, CM_t *cm);
 extern int  ReadBinaryCM(FILE *fp, CM_t **ret_cm);
+
+/* from display.c
+ */
+extern Fancyali_t    *CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq);
+extern void           PrintFancyAli(FILE *fp, Fancyali_t *ali);
+extern void           FreeFancyAli(Fancyali_t *ali);
+extern CMConsensus_t *CreateCMConsensus(CM_t *cm, float pthresh, float sthresh);
+extern void           FreeCMConsensus(CMConsensus_t *con);
+
+/* from modelconfig.c
+ */
+extern void ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit);
 
 /* from modelmaker.c
  */
@@ -63,14 +76,17 @@ extern int KHS2ct(char *ss, int len, int allow_pseudoknots, int **ret_ct);
 
 /* from scancyk.c
  */
-extern float CYKScan(CM_t *cm, char *dsq, int L, int W, 
-		     int *ret_nhits, int **ret_hiti, int **ret_hitj, float **ret_hitsc);
+extern void  CYKScan(CM_t *cm, char *dsq, int L, int W, 
+		     int *ret_nhits, int **ret_hitr, 
+		     int **ret_hiti, int **ret_hitj, float **ret_hitsc);
 extern float CYKScanRequires(CM_t *cm, int L, int W);
 
 /* from smallcyk.c
  */
-extern float CYKInside(CM_t *cm, char *dsq, int L, Parsetree_t **ret_tr);
 extern float CYKDivideAndConquer(CM_t *cm, char *dsq, int L, Parsetree_t **ret_tr);
+extern float CYKLocalDivideAndConquer(CM_t *cm, char *dsq, int L, int r0, int i0, int j0,
+				      Parsetree_t **ret_tr);
+extern float CYKInside(CM_t *cm, char *dsq, int L, Parsetree_t **ret_tr);
 extern float CYKInsideScore(CM_t *cm, char *dsq, int L);
 extern void  CYKDemands(CM_t *cm, int L);
 extern int   CYKDeckCount(CM_t *cm);
