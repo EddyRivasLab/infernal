@@ -325,3 +325,39 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
   *ret_hitsc = hitsc;
   return;
 }
+
+/* Function: CYKScanRequires()
+ * Date:     SRE, Mon May  6 18:48:18 2002 [St. Louis]
+ *
+ * Purpose:  Return the memory required by CYKScan(), in megabytes.
+ */
+float
+CYKScanRequires(CM_t *cm, int L, int W)
+{
+  float ram;
+  int   v,j;
+
+				/* alpha allocations */
+  ram = (float) (sizeof(float **) * cm->M);
+  for (v = cm->M-1; v >= 0; v--)
+    {
+      if (cm->stid[v] == BEGL_S)
+	{
+	  ram += (float) (sizeof(float *) * (W+1));
+	  for (j = 0; j <= W; j++)
+	    ram += (float) (sizeof(float) * (W+1));
+	}
+      else if (cm->sttype[v] == E_st && v < cm->M-1) 
+	continue;
+      else 
+	{
+	  ram += (float) (sizeof(float *) * 2);
+	  for (j = 0; j < 2; j++) 
+	    ram += (float) (sizeof(float) * (W+1));
+	}
+    }
+  ram += (float) (sizeof(float) * (L+1)); /* gamma allocation */
+  ram += (float) (sizeof(int)   * (L+1)); /* gback allocation */
+  ram += (float) (sizeof(float) * (L+1)); /* savesc allocation */
+  return (ram / 1000000.);
+}

@@ -61,6 +61,12 @@ extern void         MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm);
  */
 extern int KHS2ct(char *ss, int len, int allow_pseudoknots, int **ret_ct);
 
+/* from scancyk.c
+ */
+extern float CYKScan(CM_t *cm, char *dsq, int L, int W, 
+		     int *ret_nhits, int **ret_hiti, int **ret_hitj, float **ret_hitsc);
+extern float CYKScanRequires(CM_t *cm, int L, int W);
+
 /* from smallcyk.c
  */
 extern float CYKInside(CM_t *cm, char *dsq, int L, Parsetree_t **ret_tr);

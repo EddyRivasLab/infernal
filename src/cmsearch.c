@@ -115,16 +115,22 @@ main(int argc, char **argv)
       if (sqinfo.len == 0) continue; 	/* silently skip len 0 seqs */
       dsq = DigitizeSequence(seq, sqinfo.len);
 
+      StopwatchZero(watch);
+      StopwatchStart(watch);
       CYKScan(cm, dsq, sqinfo.len, windowlen, 
 	      &nhits, &hiti, &hitj, &hitsc);
 
+      printf("sequence: %s\n", sqinfo.name);
       for (i = 0; i < nhits; i++)
 	printf("hit %-4d: %6d %6d %8.2f bits\n", i, hiti[i], hitj[i], hitsc[i]/0.693);
 	  
       free(hiti);
       free(hitj);
       free(hitsc);
-      
+
+      StopwatchStop(watch);
+      StopwatchDisplay(stdout, "CPU time: ", watch);
+      printf("memory:   %.2f MB\n\n", CYKScanRequires(cm, sqinfo.len, windowlen));
       FreeSequence(seq, &sqinfo);
       free(dsq);
     }
