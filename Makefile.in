@@ -68,7 +68,7 @@ PROGS = cmbuild\
 #      and moves the supported executables into binaries/ subdirectory.
 #
 all: version.h
-	(cd squid; make CC="$(CC)" CFLAGS="$(CFLAGS)" module);\
+	(cd squid; make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module);\
 	(cd src;   make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module);\
 
 # version.h: 

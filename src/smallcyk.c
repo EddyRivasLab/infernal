@@ -911,7 +911,7 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    * useEL.
    */
   if (best_v == -2) {
-    InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b);
+    if (b != z) InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b);
     v_splitter(cm, dsq, L, tr, b, z, i0, i1, j1, j0, useEL);    
     return;
   }

@@ -31,6 +31,7 @@ Usage: cmscore [-options] <cmfile> <sequence file>\n\
 static char experts[] = "\
    --informat <s>: specify that input sequence file is in format <s>\n\
    --local       : do local alignment (w.r.t. model)\n\
+   --regress <f> : save regression test data to file <f>\n\
    --scoreonly   : for full CYK/inside stage, do only score, save memory\n\
    --smallonly   : do only d&c, don't do full CYK/inside\n\
    --stringent   : require the two parse trees to be identical\n\
@@ -40,6 +41,7 @@ static struct opt_s OPTIONS[] = {
   { "-h", TRUE, sqdARG_NONE }, 
   { "--informat",   FALSE, sqdARG_STRING },
   { "--local",      FALSE, sqdARG_NONE },
+  { "--regress",    FALSE, sqdARG_STRING },
   { "--scoreonly",  FALSE, sqdARG_NONE },
   { "--smallonly",  FALSE, sqdARG_NONE },
   { "--stringent",  FALSE, sqdARG_NONE },
@@ -66,6 +68,8 @@ main(int argc, char **argv)
   int   do_scoreonly;		/* TRUE for score-only (small mem) full CYK */
   int   do_smallonly;		/* TRUE to do only d&c, not full CYK/inside */
   int   compare_stringently;	/* TRUE to demand identical parse trees     */
+  char *regressfile;		/* name of regression data file to save     */
+  FILE *regressfp;              /* open filehandle for writing regressions  */
 
   char *optname;                /* name of option found by Getopt()        */
   char *optarg;                 /* argument found by Getopt()              */
@@ -79,10 +83,12 @@ main(int argc, char **argv)
   do_local          = FALSE;
   do_scoreonly      = FALSE;
   do_smallonly      = FALSE;
+  regressfile       = NULL;
   
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
     if      (strcmp(optname, "--local")     == 0) do_local     = TRUE;
+    else if (strcmp(optname, "--regress")   == 0) regressfile  = optarg;
     else if (strcmp(optname, "--smallonly") == 0) do_smallonly = TRUE;
     else if (strcmp(optname, "--scoreonly") == 0) do_scoreonly = TRUE;
     else if (strcmp(optname, "--informat")  == 0) {
@@ -119,6 +125,13 @@ main(int argc, char **argv)
   if (cm == NULL) 
     Die("%s empty?\n", cmfile);
 
+				/* open regression test data file */
+  if (regressfile != NULL) {
+    if ((regressfp = fopen(regressfile, "w")) == NULL)
+      Die("Failed to open regression test file %s", regressfile);
+  }
+
+  
   if (do_local) ConfigLocal(cm, 0.5, 0.5);
   CMLogoddsify(cm);
   CMHackInsertScores(cm);	/* TEMPORARY: FIXME */
@@ -164,6 +177,11 @@ main(int argc, char **argv)
       StopwatchDisplay(stdout, "CPU time: ", watch);
       puts("");
 
+      /* Test that the two solutions are identical; or if not identical,
+       * at least they're alternative solutions w/ equal score.
+       * If not, fail w/ non-zero exit status, so qc protocols
+       * can catch the problem.
+       */
       if (tr1 != NULL && fabs(sc1 - ParsetreeScore(cm, tr1, dsq)) >= 0.01)
 	Die("CYKInside score differs from its parse tree's score");
       if (tr2 != NULL && fabs(sc2 - ParsetreeScore(cm, tr2, dsq)) >= 0.01)
@@ -174,12 +192,20 @@ main(int argc, char **argv)
 	  compare_stringently && !ParsetreeCompare(tr1, tr2))
 	Die("Parse trees for CYKInside and CYKDivideAndConquer differ");
       
+      /* Save regression test data
+       */
+      if (regressfile != NULL) {
+	if (tr1 != NULL) ParsetreeDump(regressfp, tr1, cm, dsq);
+	if (tr2 != NULL) ParsetreeDump(regressfp, tr2, cm, dsq);
+      }
+
       FreeSequence(seq, &sqinfo);
       if (tr1 != NULL) FreeParsetree(tr1);  
       if (tr2 != NULL) FreeParsetree(tr2); 
       free(dsq);
     }
 
+  if (regressfile != NULL) fclose(regressfp);
   FreeCM(cm);
   fclose(cmfp);
   SeqfileClose(sqfp);

@@ -47,7 +47,8 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
   }
   /* Make the begin transition the only way out of the root.
    */
-  cm->t[0][0] = cm->t[0][1] = cm->t[0][2] = 0.;
+  for (v = 0; v < cm->cnum[0]; v++)
+    cm->t[0][v] = 0.;
 
   cm->flags |= CM_LOCAL_BEGIN;
   
