@@ -12,4 +12,5 @@ clean:
 distclean:
 	make clean
 	(cd cfsqp; make distclean)
-	-rm -f Makefile
+	(cd lp_solve_4.0; make distclean)
+	-rm Makefile
