@@ -199,31 +199,38 @@ CMLogoddsify(CM_t *cm)
     }
 }
 
-/* Function: CMCountStatetype(), CMSubtreeCountStatetype()
+/* Function: CMCountStatetype(), CMSubtreeCountStatetype(), CMSegmentCountStatetype
  * Date:     SRE, Wed Aug  2 09:15:00 2000 [St. Louis]
  *
- * Purpose:  A convenience for counting the # of occurrences
+ * Purpose:  Conveniences for counting the # of occurrences
  *           of a particular state type in a CM. Useful for
  *           "how many bifurcations does this model have", etc.
  *          
  *           CMSubtreeCountStatetype() only counts underneath     
- *           a particular subtree rooted at an S (and yes, it
- *           checks that the root is an S). 
+ *           a particular subtree rooted at state v
  *
  * Args:     cm   - the model
- *           v    - the root of the subtree to start from
+ *           r    - the root of the subtree to start from (inclusive)
+ *           z    - end of the subtree to stop at (inclusive) 
  *           type - a state type (e.g. E_st or MP_st)    
  *
  * Returns:  how many states of that type are in the model
  */
+int
+CMSegmentCountStatetype(CM_t *cm, int r, int z, char type)
+{
+  int count = 0;
+  int v;
+  for (v = r; v <= z; v++) 
+    if (cm->sttype[v] == type) count++;
+  return count;
+}
 int
 CMSubtreeCountStatetype(CM_t *cm, int v, char type)
 {
   int unsatisfied_starts = 1;
   int count = 0;
 
-  if (cm->sttype[v] != S_st) Die("please, sir, don't ask me to do that again.");
-  
   while (unsatisfied_starts) {
     if (cm->sttype[v] == B_st) unsatisfied_starts++;
     if (cm->sttype[v] == E_st) unsatisfied_starts--; 
