@@ -100,11 +100,11 @@ EmitParsetree(CM_t *cm, Parsetree_t **ret_tr, char **ret_seq, char **ret_dsq, in
 	  PopNstack(pda, &tpos);
 	  PopNstack(pda, &rchar);
 
-	  tr->emitr[tpos] = N;
 	  if (rchar != -1) {
 	    PushCstack(gsq, Alphabet[rchar]);
 	    N++;
 	  }
+	  tr->emitr[tpos] = N;
 	}
       else if (type == PDA_STATE) 
 	{

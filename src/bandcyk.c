@@ -23,7 +23,7 @@
 #include "structs.h"
 #include "funcs.h"
 
-static int  ok_truncation_error(double *density, int b, int W);
+int BandTruncationError(double *density, int b, int W);
 
 void
 BandExperiment(CM_t *cm)
@@ -85,19 +85,18 @@ BandExperiment(CM_t *cm)
  *                        the left tail and the right tail.
  *            save_densities - TRUE if we want to keep all of the
  *                        gamma matrix. Probably only useful if you're
- *                        also asking * for gamma to be
- *                        returned. Memory usage is * O(WM). If 
- *                        FALSE, uses a memory-efficient O(W lnM) 
+ *                        also asking for gamma to be returned. Memory usage
+ *                        is O(WM). If FALSE, uses a memory-efficient O(W lnM) 
  *                        algorithm instead; if you get the gamma matrix
  *                        back, you're guaranteed the root gamma[0]
  *                        is valid, but don't count on anything else.
  *            ret_dmin  - RETURN: dmin[v] is the minimum subsequence length
- *                        (inclusive) that satisfies p_thresh for the left tail.
+ *                        (inclusive) that satisfies p_thresh for left tail.
  *                        Pass NULL if you don't want dmin back.
  *            ret_dmax  - RETURN: dmax[v] is the maximum subsequence length
- *                        (inclusive) that satisfies p_thresh for the right tail.
+ *                        (inclusive) that satisfies p_thresh for right tail.
  *                        Pass NULL if you don't want dmax back.
- *            ret_gamma - RETURN: gamma[v][n], [0..M-1][0..W], is the probability
+ *            ret_gamma - RETURN: gamma[v][n], [0..M-1][0..W], is the prob
  *                        density Prob(length=n | parse subtree rooted at v).
  *
  * Returns:   1 on success.
@@ -117,17 +116,17 @@ int
 BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
 		      int **ret_dmin, int **ret_dmax, double ***ret_gamma)
 {
-  double **gamma;               /* P(length = n) for each state v                 */
+  double **gamma;               /* P(length = n) for each state v            */
   double  *tmp;
   int     *dmin;                /* lower bound for band. */
   int     *dmax;                /* upper bound for band. */
-  int      v;			/* counter over states, 0..M-1                    */
-  int      y;			/* counter over connected states                  */
+  int      v;			/* counter over states, 0..M-1               */
+  int      y;			/* counter over connected states             */
   int      n;			/* counter over lengths, 0..W */
   int      dv;			/* Delta for state v */
-  int      leftn;		/* length of left subsequence under a bifurc      */
-  double   pdf; 		/* P(<=n) or P(>=n) for this state v */
-  int     *touch;               /* touch[y] = # of higher states that depend on y */
+  int      leftn;		/* length of left subsequence under a bifurc */
+  double   pdf; 		/* P(<=n) or P(>=n) for this state v         */
+  int     *touch;               /* touch[y] = # higher states depending on y */
   Mstack_t *beamstack;          /* pool of beams we can reuse  */
   int      status;		/* return status. */
 
@@ -140,8 +139,8 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
    */
   dmin = MallocOrDie(sizeof(int) * cm->M);
   dmax = MallocOrDie(sizeof(int) * cm->M);  
-  *ret_dmin = NULL;
-  *ret_dmax = NULL;
+  if (ret_dmin != NULL) *ret_dmin = NULL;
+  if (ret_dmax != NULL) *ret_dmax = NULL;
 
   /* beamstack is a trick for reusing memory: a pushdown stack of 
    * "beams" (gamma[v] rows) we can reuse.
@@ -184,7 +183,7 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
       DSet(gamma[v], W+1, 0.);
 
 
-      /* Recursively calculate the probability density P(length=n) for this state v.
+      /* Recursively calculate prob density P(length=n) for this state v.
        * (The heart of the algorithm is right here.)
        */
       if (cm->sttype[v] == B_st) 
@@ -216,12 +215,12 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
        *     1. we're on the right side of the density (pdf is > 0.5
        *        would be enough, but we use .999)
        *     2. gamma_v(W) < p * DBL_EPSILON
-       *        This must be true if \sum_{i=W+1...\infty} g(i) < p*DBL_EPSILON,
+       *        Must be true if \sum_{i=W+1...\infty} g(i) < p*DBL_EPSILON,
        *        which is really what we're trying to prove
        */
       if (pdf <= 0.999 || gamma[v][W] > p_thresh * DBL_EPSILON)
 	{
-	  /* fail; truncation error unacceptable; 
+	  /* fail; truncation error is unacceptable; 
 	   * caller is supposed to increase W and rerun. 
 	   */
 	  status = 0; 
@@ -263,9 +262,9 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
        */
       if (! save_densities) {
 	if (cm->sttype[v] == B_st)
-	  {  /* the connected children of a B st are handled specially, remember */
-	    y = cm->cfirst[v];  PushMstack(beamstack, gamma[y]); gamma[y] = NULL;
-	    y = cm->cnum[v];    PushMstack(beamstack, gamma[y]); gamma[y] = NULL;
+	  {  /* connected children of a B st are handled specially, remember */
+	    y = cm->cfirst[v]; PushMstack(beamstack, gamma[y]); gamma[y] = NULL;
+	    y = cm->cnum[v];   PushMstack(beamstack, gamma[y]); gamma[y] = NULL;
 	  }
 	else
 	  {
@@ -283,20 +282,17 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
     } /*end loop up through all states v*/
 
 
-  if (! ok_truncation_error(gamma[0], dmax[0], W)) { status = 0; goto CLEANUP; }
+  if (! BandTruncationError(gamma[0], dmax[0], W)) 
+    { status = 0; goto CLEANUP; }
 
-  *ret_dmin = dmin;
-  *ret_dmax = dmax;
   status = 1;
 
  CLEANUP:
   free(touch);
 
-  /* If we're returning the matrix, pass the ptr back;
-   * else free gamma densities.
-   */
-  if (ret_gamma != NULL)   *ret_gamma = gamma;
-  else                     FreeBandDensities(cm, gamma);
+  if (ret_dmin  != NULL) *ret_dmin = dmin;   else free(dmin);
+  if (ret_dmax  != NULL) *ret_dmax = dmax;   else free(dmax);
+  if (ret_gamma != NULL) *ret_gamma = gamma; else FreeBandDensities(cm, gamma);
   
   /* Free the reused stack of beams.
    */
@@ -306,43 +302,15 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
   return status;
 }
 
-/* Function:  FreeBandDensities()
- * Incept:    SRE, Thu Oct 16 08:30:47 2003 [St. Louis]
- *
- * Purpose:   Free a gamma[] array that was returned by BandCalculationEngine().
- *            Best to handle this with a special function because of the reuse
- *            of the END rows - only cm->M-1 is actually allocated, and other
- *            ENDs just point at that one. Too easy to double free() if we
- *            leave this tricky business to the caller.                 
- *            
- * Args:      cm    - the model we build the band densities, gamma[], for.
- *            gamma - the band densities. Doesn't matter if this is a full
- *                    matrix (save_densities = TRUE) or a partial matrix
- *                    (save_densities = FALSE).
- *
- * Returns:   (void)
- *
- * Xref:      STL7 p130.
- */
-void
-FreeBandDensities(CM_t *cm, double **gamma)
-{
-  int v;
-  for (v = 0; v < cm->M; v++) 
-    if (cm->sttype[v] != E_st && gamma[v] != NULL) 
-      { free(gamma[v]); gamma[v] = NULL; }
-  free(gamma[cm->M-1]);		/* free the end state */
-  free(gamma);
-}  
 
 
-static int
-ok_truncation_error(double *density, int b, int W)
+int
+BandTruncationError(double *density, int b, int W)
 {
   double logbeta;
-  double beta;			/* geometric decay parameter */
-  double C;			/* area under density from b+1..W inclusive */
-  double D;			/* area under unseen density from W+1..\infty */
+  double beta;		/* geometric decay parameter                  */
+  double C;		/* area under density from b+1..W inclusive   */
+  double D;		/* area under unseen density from W+1..\infty */
   int    i;
   
   /* Sum up how much probability mass we do see,
@@ -374,6 +342,119 @@ ok_truncation_error(double *density, int b, int W)
   else                     return 0;
 }  
   
+/* Function:  BandMonteCarlo()
+ * Incept:    SRE, Fri Oct 17 08:01:42 2003 [St. Louis]
+ *
+ * Purpose:   Calculate the gamma_v densities by Monte Carlo simulation,
+ *            by sampling parsetrees from the CM. 
+ *
+ * Args:      cm         - the model to sample from
+ *            nsample    - number of Monte Carlo sampled parsetrees    
+ *            W          - maximum subsequence length in densities
+ *            ret_gamma  - RETURN: gamma[v][n], [0..M-1][0..W] 
+ *
+ * Returns:   1 on success.
+ *            0 if one or more samples had a length too great to be
+ *              captured by W, so the densities have been truncated
+ *              and renormalized, which may be a Bad Thing for the
+ *              caller.
+ *
+ *            Caller frees the returned gamma with FreeBandDensities().
+ *
+ * Xref:      
+ */
+int
+BandMonteCarlo(CM_t *cm, int nsample, int W, double ***ret_gamma)
+{
+  Parsetree_t  *tr;             /* sampled parsetree */
+  double      **gamma;          /* RETURN: the densities */
+  int           i;		/* counter over samples */
+  int           seqlen;		/* length of sampled sequence */
+  int           tidx;		/* index on parsetree */
+  int           v;		/* state used at a parsetree node */
+  int           n;		/* subseq length at a parsetree node */
+  int           status;		/* return status. */
+  
+  /* Allocate gamma, completely. 
+   * For consistency w/ BandCalculationEngine, allocate a single
+   * shared end deck at M-1, and point other ends at it - even
+   * though P(n=0) = 1.0 by definition at the E's and we don't
+   * really need to calculate it.
+   */                                                     
+  gamma          = MallocOrDie(sizeof(double *) * cm->M);
+  gamma[cm->M-1] = MallocOrDie(sizeof(double) * (W+1)); 
+  for (v = 0; v < cm->M-1; v++)
+    {
+      if (cm->sttype[v] != E_st)
+	gamma[v] = MallocOrDie(sizeof(double) * (W+1));
+      else
+	gamma[v] = gamma[cm->M-1];
+    }
+
+  /* Count Monte Carlo samples of subsequence lengths for
+   * all nodes of sampled parsetrees.
+   */
+  status = 1;			
+  for (i = 0; i < nsample; i++)
+    {
+      EmitParsetree(cm, &tr, NULL, NULL, &seqlen);
+      if (seqlen > W) {
+	FreeParsetree(tr);
+	status = 0;		/* set status to FAILED */
+	continue;
+      }
+
+      /* The parsetree, though it's a tree, is stored as an
+       * array - so traversing it in preorder is trivial. It's
+       * already arranged in preorder.
+       */        
+      for (tidx = 0; tidx < tr->n; tidx++) 
+	{
+	  v = tr->state[tidx];
+	  n = (cm->sttype[v] == E_st) ? 0 : tr->emitr[tidx] - tr->emitl[tidx] + 1;
+	  gamma[v][n] += 1.;
+	}
+      FreeParsetree(tr);
+    }
+
+  /* Normalize all the densities.
+   */
+  for (v = 0; v < cm->M; v++)
+    DNorm(gamma[v], W+1);
+  
+  *ret_gamma = gamma;
+  return status;
+}
+
+
+/* Function:  FreeBandDensities()
+ * Incept:    SRE, Thu Oct 16 08:30:47 2003 [St. Louis]
+ *
+ * Purpose:   Free a gamma[] array that was returned by BandCalculationEngine().
+ *            Best to handle this with a special function because of the reuse
+ *            of the END rows - only cm->M-1 is actually allocated, and other
+ *            ENDs just point at that one. Too easy to double free() if we
+ *            leave this tricky business to the caller.                 
+ *            
+ * Args:      cm    - the model we build the band densities, gamma[], for.
+ *            gamma - the band densities. Doesn't matter if this is a full
+ *                    matrix (save_densities = TRUE) or a partial matrix
+ *                    (save_densities = FALSE).
+ *
+ * Returns:   (void)
+ *
+ * Xref:      STL7 p130.
+ */
+void
+FreeBandDensities(CM_t *cm, double **gamma)
+{
+  int v;
+  for (v = 0; v < cm->M; v++) 
+    if (cm->sttype[v] != E_st && gamma[v] != NULL) 
+      { free(gamma[v]); gamma[v] = NULL; }
+  free(gamma[cm->M-1]);		/* free the end state */
+  free(gamma);
+}  
 
 
 /* Function: BandDistribution()
@@ -558,7 +639,7 @@ PrintDPCellsSaved(CM_t *cm, int *min, int *max, int W)
   int after, before;
 
   before = after = 0;
-  for (v = 0; v <= cm->M; v++) 
+  for (v = 0; v < cm->M; v++) 
     {
       if (cm->sttype[v] != E_st) {
 	after  += max[v] - min[v] + 1;
