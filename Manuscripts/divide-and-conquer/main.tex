@@ -145,8 +145,12 @@ tRNAscan-SE, for annotating transfer RNA genes
 the capabilities of the standard SCFG alignment algorithm. Alignment
 of a small subunit (SSU) ribosomal RNA sequence to the SSU rRNA
 consensus structure would take about 23 GB of RAM and an hour of CPU
-time. The steep memory requirement constitutes a significant barrier
-to the practicality of SCFG algorithms.
+time. Applying SCFG methods to RNAs this large has required clever
+heuristics, such as using a precalculation of confidently predicted
+regions of primary sequence alignment to strongly constrain which
+parts of the SCFG dynamic programming matrix need to be calculated
+\cite{Brown00}. The steep memory requirement remains a significant
+barrier to the practicality of SCFG algorithms.
 
 Notredame \emph{et al.} pointed specifically to this problem
 \cite{Notredame97}.  They described RAGA, a program that uses a
@@ -185,7 +189,7 @@ structural alignment problem is different from the problem of aligning
 two known RNA secondary structures together \cite{Shapiro90}, and from
 the problem of aligning two RNA sequences of unknown structure
 together under a secondary structure-aware scoring system
-\cite{Sankoff85,Gorodkin01,MathewsTurner02}.
+\cite{Sankoff85,KnudsenHein99,Gorodkin01,HolmesRubin02,MathewsTurner02}.
 
 \section{Algorithm}
 
@@ -253,12 +257,12 @@ $O(N)$ in memory.
 A standard dynamic programming alignment algorithm for SCFGs is the
 Cocke-Younger-Kasami (CYK) algorithm, which finds an optimal parse
 tree (e.g. alignment) for a model and a sequence
-\cite{Kasami65,Younger67,HopcroftUllman79,Durbin98}.\footnote{CYK is
-usually described in the literature as a dynamic programming
-recognition algorithm for nonstochastic CFGs in Chomsky normal form,
-rather than as a dynamic programming parsing algorithm for SCFGs in
-any form. The use of the name ``CYK'' here is therefore a little imprecise
-\cite{Durbin98}.}  CYK can be run in a memory-saving ``score only''
+\cite{Kasami65,Younger67,HopcroftUllman79,Durbin98}. (CYK is usually
+described in the literature as a dynamic programming recognition
+algorithm for nonstochastic CFGs in Chomsky normal form, rather than
+as a dynamic programming parsing algorithm for SCFGs in any form. The
+use of the name ``CYK'' here is therefore a little imprecise
+\cite{Durbin98}.)  CYK can be run in a memory-saving ``score only''
 mode. The DP matrix for CYK can also be filled in two opposite
 directions - either ``inside'' or ``outside'', analogous to forward
 and backward DP matrix fills for linear sequence alignment.  I will
@@ -302,17 +306,7 @@ A stochastic context free grammar (SCFG) consists of the following:
 \item a number of \emph{production rules} of the form: $V \rightarrow
 \gamma$, where $\gamma$ can be any string of nonterminal and/or
 terminal symbols, including (as a special case) the empty string
-$\epsilon$.\footnote{$\epsilon$ productions are ``shrinking'' rules,
-in which the right hand side of the production is shorter than the
-left. These are technically not allowed in CFGs. This restriction is
-important in proofs of the properties of CFGs. A CFG with $\epsilon$
-productions can always be converted to an equivalent, formally correct
-CFG without $\epsilon$ productions; for example, two rules $V
-\rightarrow a V b; V \rightarrow \epsilon$ are equivalent to $V
-\rightarrow a V b; V \rightarrow ab$. $\epsilon$ productions are no
-problem in dynamic programming alignment, and indeed are more
-convenient, because they reduce redundancy and simplify initialization
-of dynamic programming parsing algorithms.}
+$\epsilon$.
 \item Each production rule is associated with a probability, such that
       the sum of the production probabilities for any given
       nonterminal $V$ is equal to 1.
@@ -329,25 +323,26 @@ production rules:
 \vspace{0.5em}
 \begin{tabular}{lllll}
 State type & Description             &  Production             & Emission & Transition\\ \hline
-P & (pair emitting)   & $P \rightarrow a Y b$ & $e(a,b)$ & $t(Y)$  \\
-L & (left emitting)   & $L \rightarrow a Y$   & $e(a)$   & $t(Y)$  \\
-R & (right emitting)  & $R \rightarrow Y a$   & $e(a)$   & $t(Y)$  \\
+P & (pair emitting)   & $P \rightarrow a Y b$ & $e_v(a,b)$ & $t_v(Y)$  \\
+L & (left emitting)   & $L \rightarrow a Y$   & $e_v(a)$   & $t_v(Y)$  \\
+R & (right emitting)  & $R \rightarrow Y a$   & $e_v(a)$   & $t_v(Y)$  \\
 B & (bifurcation)     & $B \rightarrow S S$   & 1     &     1     \\
-D & (delete)          & $D \rightarrow Y$     & 1     &   $t(Y)$  \\
-S & (start)           & $S \rightarrow Y$     &    1     & $t(Y)$  \\
+D & (delete)          & $D \rightarrow Y$     & 1     &   $t_v(Y)$  \\
+S & (start)           & $S \rightarrow Y$     &    1     & $t_v(Y)$  \\
 E & (end)             & $E \rightarrow \epsilon$ & 1     &     1     \\
 \end{tabular}
 \vspace{0.5em}
 
 Each overall production probability is the independent product of an
-emission probability $e$ and a transition probability $t$ (analogous
-to hidden Markov models). For example, a pair state $P$ produces two
-correlated letters $a$ and $b$ (e.g. one of 16 possible base pairs)
-with probability $e(a,b)$ and transits to one of several possible new
-states $Y$ of various types with probability $t(Y)$.  A bifurcation
-(B) state splits into two new start ($S$) states with probability 1.
-The E state is a special case $\epsilon$ production that terminates a
-derivation.
+emission probability $e_v$ and a transition probability $t_v$, both of
+which are position-dependent parameters that depend on the state $v$
+(analogous to hidden Markov models). For example, a particular pair
+(P) state $v$ produces two correlated letters $a$ and $b$ (e.g. one of
+16 possible base pairs) with probability $e_v(a,b)$ and transits to
+one of several possible new states $Y$ of various types with
+probability $t_v(Y)$.  A bifurcation (B) state splits into two new
+start ($S$) states with probability 1.  The E state is a special case
+$\epsilon$ production that terminates a derivation.
 
 A CM consists of many states of these seven basic types, each with its
 own emission and transition probability distributions, and its own set
@@ -544,8 +539,8 @@ The final CM is an array of $M$ states, connected as a directed graph
 by transitions $t_v(y)$ (or probability 1 transitions $v \rightarrow
 (y,z)$ for bifurcations) with the states numbered such that $(y,z)
 \geq v$. There are no cycles in the directed graph other than cycles
-of zero length (e.g. the self-transitions of the insert states). We
-can think of the CM as an array of states in which all transition
+of length one (e.g. the self-transitions of the insert states). We can
+think of the CM as an array of states in which all transition
 dependencies run in one direction; we can do an iterative dynamic
 programming calculation through the model states starting with the
 last numbered end state $M$ and ending in the root state $1$.  An
@@ -664,13 +659,13 @@ Viterbi DP algorithm run in the backwards direction.
 \subsubsection{Notation}
 
 I use $r$, $v$, $w$, $y$, and $z$ as indices of states in the model,
-where $r \leq (v,w,y) \leq z$. These indices will range from $1..M$, for
-a CM with $M$ states. $G$. $G^r_z$ refers to a subgraph of the model,
-rooted at state $r$ and ending at state $z$, for a contiguous set of
-states $r..z$. $G^r$, without a subscript, refers to a subgraph of the
-model rooted at state $r$ and ending at the highest numbered E state
-descendant from state $r$. The complete model is $G^1_M$, or $G^1$, or
-just $G$.
+where $r \leq (v,w,y) \leq z$. These indices will range from $1..M$,
+for a CM $G$ that contains $M$ states. $G^r_z$ refers to a subgraph of
+the model, rooted at state $r$ and ending at state $z$, for a
+contiguous set of states $r..z$. $G^r$, without a subscript, refers to
+a subgraph of the model rooted at state $r$ and ending at the highest
+numbered E state descendant from state $r$. The complete model is
+$G^1_M$, or $G^1$, or just $G$.
 
 $S_v$ refers to the \emph{type} of state $v$; it will be one of seven
 types \{D,P,L,R,S,E,B\}. $C_v$ is a list of children for state $v$
@@ -764,13 +759,13 @@ memory to calculate these scores.  As we reach higher decks $\alpha_v$
 in the three dimensional dynamic programming matrix, our calculations
 no longer depend on certain lower decks. A lower deck $y$ can be
 deallocated whenever all the parent decks $P_y$ that depend on it
-have been calculated. \footnote{The implementation goes even further
+have been calculated. (The implementation goes even further
 and recycles decks when possible, saving some initialization steps and
 many memory allocation calls; for example, since values in all E decks
 are identical, only one E deck needs to be calculated and that
-precalculated deck can be reused whenever $S_v = E$.}
+precalculated deck can be reused whenever $S_v = E$.)
 
-This deallocation rule has a important property that the divide and
+This deallocation rule has an important property that the divide and
 conquer algorithm takes advantage of when solving smaller subproblems
 for CM subgraphs rooted at some state $w$.  When the root state $w$ is
 an S state, the $\alpha$ matrix returned by \texttt{inside} contains
@@ -839,9 +834,10 @@ calculating the CYK/inside matrix $\alpha$, because it is needed to
 calculate $\beta_v$ when the parent of $v$ is a bifurcation
 \cite{Lari90,Lari91,Durbin98}. However, the divide and conquer
 algorithm described here only calls \texttt{outside} on
-\emph{unbifurcated, linear CM subgraphs}; the parent of $v$ is never a
-bifurcation, and the implementation can therefore be streamlined as
-follows:
+\emph{unbifurcated, linear CM subgraphs} (only the final state $z$ may
+be a B state; there are no internal bifurcations that lead to branches
+in the model). Thus the parent of a state $v$ is never a bifurcation,
+and the implementation can therefore be streamlined as follows:
 
 \begin{algorithm}
 \alginout{An unbifurcated CM subgraph $G^r_z$ and subsequence $x_g..x_q$.}
@@ -1151,6 +1147,7 @@ of extra decks we will require:
         x_{v+1} - 2 &:& S_v = B,\\
         x_{v+1}     &:& \mbox{elsewise.}\\
        \end{array} \right.$\\
+  \algend
   \algreturn{$\max_v x_v$}\\
 \end{algtab*}
 \end{algorithm}
@@ -1351,12 +1348,24 @@ including not only heuristic schemes, but also optimal algorithms
 based on branch and bound ideas. (Properly implemented, banded DP
 algorithms would also save additional memory.)
 
+The algorithm takes advantage of the structure of covariance models
+(profile SCFGs), splitting in the dimension of the states of the model
+rather than in the sequence dimensions. The approach does not readily
+apply, therefore, to unprofiled SCFG applications in RNA secondary
+structure prediction
+\cite{RivasEddy99,RivasEddy00a,KnudsenHein99,HolmesRubin02}, where the
+states are fewer and more fully interconnected. For these
+applications, it would seem to be necessary to divide and conquer in
+the sequence dimensions to obtain any significant improvement in
+memory requirements, and it is not immediately apparent how one would
+do this.
+
 The current implementation of the algorithm is not biologically
-useful. It is meant only a testbed for the algorithm. It outputs a raw
-traceback structure and alignment score, not a standardly formatted
-alignment file. Most importantly, the probability parameters for
-models are calculated in a very quick and simple minded fashion, and
-are far from being reasonable for producing robustly accurate
+useful. It is meant only as a testbed for the algorithm. It outputs a
+raw traceback structure and alignment score, not a standardly
+formatted alignment file. Most importantly, the probability parameters
+for models are calculated in a very quick and simple minded fashion,
+and are far from being reasonable for producing robustly accurate
 structural alignments. The next step along this line is to produce
 good prior distributions for estimating better parameters, by
 estimating mixture Dirichlet priors from known RNA structures

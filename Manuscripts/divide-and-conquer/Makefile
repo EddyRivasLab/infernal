@@ -18,3 +18,6 @@ dvi:
 
 ps:	main.dvi
 	dvips -o main.ps main.dvi	
+
+clean:
+	\rm -f *~ main.aux main.bbl main.blg main.log main.ps main.pdf
