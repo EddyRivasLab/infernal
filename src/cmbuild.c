@@ -62,7 +62,7 @@ static char experts[] = "\
    --treeforce    : score first seq in alignment and show parsetree\n\
 \n\
  * priors from a file:\n\
-   --priors       : read priors from a disk file in specific format\n\
+   --prior       : read priors from a disk file in specific format\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -87,7 +87,7 @@ static struct opt_s OPTIONS[] = {
   { "--wnone",     FALSE, sqdARG_NONE },
   { "--wgsc",      FALSE, sqdARG_NONE },
   //ADDED EPN 01.31.05
-  { "--priors",    FALSE, sqdARG_NONE },
+  { "--prior",    FALSE, sqdARG_NONE },
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
