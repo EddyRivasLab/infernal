@@ -159,15 +159,13 @@ AC_ARG_ENABLE(lfs,
         ;;
 esac])
 
+# Default option for rigfilters is OFF
 rigfilters=0;
 # --enable-rigfilters     install rigorous filters
-# UNFINISHED!  Must add:
-#	check for existence of CFSQP
-#	look for CFSQP or take as argument?
 AC_ARG_ENABLE(rigfilters,
 [  --enable-rigfilters     enable rigorous filters, requires CFSQP package],
 [case $enable_rigfilters in
-   yes) AC_MSG_NOTICE([rigorous filters installed])
+   yes) AC_MSG_NOTICE([Rigorous filters selected])
 	rigfilters=1
 	;;
    no)  rigfilters=0
@@ -176,7 +174,7 @@ AC_ARG_ENABLE(rigfilters,
         ;;
 esac])
 
-# Default location of cfsqp relative to cm2hmm
+# Default location of cfsqp
 cfsqp_path=$PWD/rigfilters/cfsqp;
 # --with-cfsqp             specify location of cfsqp
 AC_ARG_WITH(cfsqp,
@@ -184,10 +182,54 @@ AC_ARG_WITH(cfsqp,
 [case $with_cfsqp in
    /*)  cfsqp_path=$with_cfsqp
         ;;
+   ~*)  cfsqp_path=`echo $with_cfsqp | sed 's/^~//'`
+        cfsqp_path=$HOME/../$cfsqp_path
+        ;;
    *)   #NOTE: relative path not normalized
         cfsqp_path=$PWD/$with_cfsqp
         ;;
-esac])
+  esac
+#  if test -d $cfsqp_path; then
+#    AC_MSG_NOTICE([path recognized as directory])
+#  else
+#    AC_MSG_NOTICE([path not recognized as directory!: $cfsqp_path])
+#  fi
+  if test -f $cfsqp_path/cfsqp.c; then
+    cp $cfsqp_path/cfsqp.c rigfilters/cfsqp/.
+  fi
+  if test -f $cfsqp_path/cfsqpusr.h; then
+    cp $cfsqp_path/cfsqpusr.h rigfilters/cfsqp/.
+  fi
+  if test -f $cfsqp_path/qld.c; then
+    cp $cfsqp_path/qld.c rigfilters/cfsqp/.
+  fi
+])
+if test "$rigfilters" == 1; then
+  if test -f rigfilters/cfsqp/cfsqp.c; then
+    :
+  else
+    AC_MSG_NOTICE([CFSQP: Unable to locate cfsqp.c])
+    rigfilters=0;
+  fi
+  if test -f rigfilters/cfsqp/cfsqpusr.h; then
+    :
+  else
+    AC_MSG_NOTICE([CFSQP: Unable to locate cfsqpusr.h])
+    rigfilters=0
+  fi
+  if test -f rigfilters/cfsqp/qld.c; then
+    :
+  else
+    AC_MSG_NOTICE([CFSQP: Unable to locate qld.c])
+    rigfilters=0
+  fi
+  if test "$rigfilters" == 0; then
+    AC_MSG_NOTICE([CFSQP: Source not found; disabling rigorous filters])
+  else
+    AC_MSG_NOTICE([CFSQP located, including rigfilters package in build])
+  fi
+fi
+AC_SUBST(CFSQP_PATH,$cfsqp_path)
 AC_SUBST(RIGFILTERS,$rigfilters)
 
 #
@@ -211,6 +253,7 @@ AC_CONFIG_FILES(src/Makefile)
 AC_CONFIG_FILES(testsuite/Makefile)
 if test "$rigfilters" == 1; then
 AC_CONFIG_FILES(rigfilters/Makefile)
+AC_CONFIG_FILES(rigfilters/cfsqp/Makefile)
 else
 AC_MSG_NOTICE([Skipping output of rigfilters Makefile])
 fi
