@@ -1,12 +1,11 @@
 /* emitmap.c
  * SRE, Thu Aug  8 12:57:59 2002
- * CVS $Id$
  * 
  * Implementation of CMEmitMap_t structure:
  * map of a CM's nodes onto consensus sequence positions.
  * Structure is declared in structs.h.
  * 
- * Used for consructing multiple alignments.
+ * Used for constructing multiple alignments.
  * 
  *   clen              : consensus length.
  *       clen is 2* n(MATP) + n(MATL) + n(MATR).
@@ -39,6 +38,7 @@
  *****************************************************************
  * @LICENSE@
  *****************************************************************  
+ * CVS $Id$
  */
 
 #include <stdio.h>

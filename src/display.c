@@ -27,12 +27,6 @@
 static int *createMultifurcationOrderChart(CM_t *cm);
 static void createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface);
 
-/* Flags used to define PDA moves
- */
-#define PDA_RESIDUE 0
-#define PDA_STATE   1
-#define PDA_MARKER  2
-
 /* Function:  CreateFancyAli()
  * Incept:    SRE, Thu May 23 13:46:09 2002 [St. Louis]
  *

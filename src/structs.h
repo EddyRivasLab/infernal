@@ -28,7 +28,7 @@ extern char  Degenerate[MAXDEGEN][MAXABET];
 extern int   DegenCount[MAXDEGEN];
 extern int   CMTransitionIndex[20][20];
 
-/* We're moderately paranoid about underflow and overflow errors,
+/* We're moderately paranoid about underflow and overflow errors, so
  * we do some checking on the magnitude of the scores.
  * 
  * IMPOSSIBLE, the "-infinity" value in a DP matrix must be > -FLT_MAX/3, so that 
@@ -114,6 +114,14 @@ extern int   CMTransitionIndex[20][20];
 #define TRACE_LEFT_CHILD  1
 #define TRACE_RIGHT_CHILD 2
 
+/* Flags used to define PDA moves, 
+ * in display.c and emit.c (if not elsewhere)
+ *
+ */
+#define PDA_RESIDUE 0
+#define PDA_STATE   1
+#define PDA_MARKER  2
+
 
 /* Structure: CM_t
  * Incept:    SRE, 9 Mar 2000 [San Carlos CA]
@@ -195,8 +203,32 @@ typedef struct cmfile_s {
  * Binary tree structure for storing a traceback of an alignment.
  * 
  * Also used for tracebacks of model constructions. Then, 
- * "state" is misused for a node (not state) index.
- *
+ * "state" is misused for a node (not state) index. 
+ * 
+ * Example of a traceback (from ParsetreeDump(), from a tRNA
+ * model:
+ * 
+ * > DF6280
+ * idx   emitl  emitr   state  nxtl  nxtr  prv   tsc   esc
+ * ----- ------ ------ ------- ----- ----- ----- ----- -----
+ *    0     1     74      0S      1    -1    -1 -0.58  0.00
+ *    1     1     74A     3MR     2    -1     0 -0.74  0.41
+ *    2     1G    73C     6MP     3    -1     1 -0.87  1.58
+ * ...<snip>...
+ *   11    10     66     54B     12    43    10  0.00  0.00
+ *   12    10     44    124S     13    -1    11  0.00  0.00
+ *   13    10     44    125B     14    28    12  0.00  0.00
+ * ...<snip>...
+ *   60    61U    61    120ML    61    -1    59 -0.22  0.87
+ *   61    -1     -1    123E     -1    -1    60  0.00  0.00
+ * ----- ------ ------ ------- ----- ----- ----- ----- -----
+ *    
+ * That is, emitl and emitr are always valid and always represent
+ * the bounds of the subsequence accounted for by the parse
+ * subtree rooted at this state. (Except for end states, which
+ * are -1,-1). nxtl is always a valid state (again except for E
+ * states, which are -1. nxtr is only != -1 for bifurcation states.
+ *    
  * For reasons of malloc() efficiency, the binary tree is organized
  * in a set of arrays. 
  */
