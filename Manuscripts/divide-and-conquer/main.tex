@@ -1,0 +1,582 @@
+
+\section{Abstract}
+
+Optimal alignment algorithms that deal with both linear sequence and
+long-distance, pairwise RNA secondary structure correlations have been
+developed, but they require roughly $O(N^3)$ (cubic) memory for an RNA
+of length $N$ and become impractical for RNAs of more than a few
+hundred nucleotides. I describe a divide and conquer variant of these
+RNA dynamic programming algorithms, analogous to the memory-efficient
+Myers/Miller variant of the Smith/Waterman algorithm for linear
+sequence alignment. The algorithm requires $O(N^2 \log N)$ memory, at
+the expense of a small constant factor (<2) in time. Small subunit
+ribosomal RNA alignments that previously required a prohibitive 20-30
+GB of memory to solve by dynamic programming now require $\approx$ 80
+MB, and are well within the capabilities of most modern computers.
+
+\section{Introduction}
+
+Given a structural RNA of known secondary structure, I want to
+identify homologous structural RNAs in a sequence database. Because
+RNAs often tend to conserve a base-paired secondary structure more
+than they conserve primary sequence, it would be best if database
+searches for homologous RNAs took into account both the primary and
+secondary structure of the query RNA.
+
+Some excellent approaches already exist in the literature. For
+example, exact- and approximate-match pattern searches (a la PROSITE
+patterns) can and have been extended to allow patterns to specify
+long-range base pairing constraints. Three such programs are PATSCAN,
+RNAMOT, and RNABOB. Another approach involves developing a specialized
+program to recognize a specific type of RNA -- for example, several
+programs exist for detecting transfer RNA genes, one for group I
+catalytic introns, and several groups, including mine, have recently
+used computational searches for new small nucleolar RNAs.
+
+In primary sequence analysis, a technologically more mature field, the
+main techniques are neither pattern searches nor specialized
+programs. The main techniques are sequence alignment algorithms with
+probabilistically-based scoring systems -- for example, the BLAST or
+FASTA algorithms, and the PAM or BLOSUM score matrices. Unlike
+specialized programs, a general alignment algorithm can be applied to
+any query sequence. Unlike pattern searches, which give yes/no answers
+for whether a candidate sequence is a match, a scoring system gives a
+meaningful score that allows ranking candidate hits by their
+statistical significance. It is thus of interest to develop general
+alignment algorithms for structural RNA queries.
+
+Eddy and Durbin and Sakakibara \emph{et al.} introduced stochastic
+context free grammar (SCFG) algorithms as a general approach to RNA
+alignment \cite{Eddy94,Sakakibara94c,Durbin98}. SCFGs allow the strong
+pairwise residue correlations in non-pseudoknotted RNA secondary
+structure to be taken into account in pairwise or profile RNA
+alignments, while using a dynamic programming algorithm that
+guarantees finding a mathematically optimal alignment in polynomial
+time. SCFG alignment algorithms are a natural extension of standard
+linear sequence alignment algorithms (particularly those with fully
+probabilistic, hidden Markov model formulations) into an additional
+dimension necessary to deal with 2D RNA secondary structure.
+
+While SCFGs may provide a natural mathematical framework for RNA
+secondary structure alignment problems \cite{Durbin98}, SCFG
+algorithms have high computational complexity. Optimal SCFG-based
+structural alignment of an RNA structure to a sequence costs $O(N^3)$
+memory and $O(N^4)$ time for a sequence of length $N$, compared to
+$O(N^2)$ memory and time for sequence alignment algorithms. Corpet and
+Michot have described RNAlign, a program that also implements a
+different general dynamic programming algorithm for RNA alignment; the
+RNAlign algorithm solves the same problem as SCFGs even less
+efficiently, requiring $O(N^5)$ time and $O(N^4)$ memory.  SCFG-based
+alignments of small structural RNAs are feasible. Using my COVE
+software, transfer RNA alignments (~75 nucleotides) take about 1 cpu
+second and 3 Mb of memory. Most genome centers now use an SCFG-based
+search program, tRNAscan-SE, for annotating transfer RNA genes
+\cite{LoweEddy97}. However, many larger RNAs of interest are outside
+the capabilities of published SCFG alignment algorithms. Alignment of
+a small subunit (SSU) ribosomal RNA sequence to the SSU rRNA consensus
+structure would take about 23 Gb of RAM and 8 hours of CPU time. The
+steep memory requirement is particularly galling. It constitutes a
+significant practical barrier to the wider applicability of SCFG
+algorithms.
+
+% The above figures come from INFERNAL with manually set L.
+% cmbuild --rf foo.cm tRNA1415.sto:
+%    M=233 L=75 
+%    Full CYK = 2.7 Mb. 822206 cycles.  ~ 1 sec.
+%    Small = 0.14 Mb.
+% cmbuild foo.cm ssu.sto
+%    M=4789 L=1542
+%    Full CYK = 22.7 Gb. 2.4e10 cycles. ~ 8 hr.
+%    Small = 86 Mb.
+
+Notredame \emph{et al.} have pointed specifically at this problem, and
+they described RAGA \cite{Notredame97}, a program that uses a genetic
+algorithm (GA) to optimize a pairwise RNA alignment using an objective
+function that includes base pairing terms. Because GAs have an $O(N)$
+memory requirement, RAGA can effectively find reasonable solutions for
+large RNA alignment problems (such as ribosomal RNA
+alignments). Although RAGA can't guarantee a mathematically optimal
+solution or efficiently search databases for local matches the way the
+SCFG-based dynamic programming algorithms can, RAGA is probably the
+current state of the art for structural alignment of large RNAs.
+
+In this paper, I introduce a dynamic programming solution to the
+problem of structural alignment of large RNAs. The central idea is a
+``divide and conquer'' strategy. There is an interesting historical
+parallel.  For linear sequence alignment, a divide and conquer
+algorithm was introduced by Hirschberg \cite{Hirschberg75}, an
+algorithm better known in the computational biology community as the
+Myers/Miller algorithm \cite{MyM-88a}.  Ironically, at the time,
+dynamic programming methods for optimal sequence alignment were well
+known, but were considered impractical on 1970's era computers because
+of an ``extreme'' $O(N^2)$ memory requirement. Myers/Miller reduces
+the memory complexity of a dynamic programming sequence alignment
+algorithm from $O(N^2)$ to $O(N)$, at the cost of a constant (roughly
+two-fold) increase in CPU time. Here I show that a divide and conquer
+strategy can also be applied to a three dimensional SCFG dynamic
+programming matrix, greatly reducing the memory requirement of SCFG
+alignments and making optimal structural alignment of large RNAs
+possible on our current generation of computers.
+
+I will strictly be dealing with the problem of aligning a target
+sequence of unknown structure to a query RNA of known secondary
+structure. By ``secondary structure'' I mean nested (nonpseudoknotted)
+pairwise RNA secondary structure interactions, primarily Watson-Crick
+but also allowing other noncanonical RNA base pairs. I refer to this
+as an RNA structural alignment problem to distinguish it from linear
+sequence alignment. I am not addressing the problem of structurally
+superposing molecules of known three-dimensional structure, nor the
+problem of structurally aligning known RNA secondary structures to
+each other, nor the problem of trying to simultaneously infer both a
+consensus secondary structure and a secondary structure alignment for
+a set of unaligned RNA sequences of unknown structure.
+
+\subsection{Outline of the method}
+
+There are three key ideas behind a divide and conquer dynamic
+programming method.
+
+First is the fact that if all we need is the score of the optimal
+alignment, not the alignment itself, the whole DP matrix need not be
+kept in memory. For example, in primary sequence alignment, the
+iterative calculation of each cell in a given row of a two-dimensional
+DP matrix depends only on values in cells in that row and the
+immediately preceding row, so a score-only calculation may be done in
+$O(N)$ space.
+
+Second is the fact that the fill stage of DP algorithms may be run
+both forwards and backwards. For instance, in primary sequence
+alignment, one usually iteratively calculates the optimal score
+$F(i,j)$ of the best alignment of the prefix $1..i$ of sequence 1
+aligned to the prefix $1..j$ of sequence 2, for increasing $i$ and
+$j$, until one obtains $F(N,M)$, the score of the optimal alignment of
+all of sequence 1 (length $N$) to sequence 2 (length $M$). One can
+also just as easily calculate the optimal score $B(i,j)$ of the best
+alignment of the
+\emph{suffix} $i+1..N$ of sequence 1 to the suffix $j+1..M$ of sequence 2,
+until one obtains $B(0,0)$ -- a number that will be identical to
+$F(N,M)$.
+
+Third is the fact that the sum of the forwards and backwards numbers
+at any cell in the optimal path though the DP matrix is equal to the
+optimal overall alignment score. In linear sequence alignment I can
+pick a ``split point'' row $i'$ in the sequence; run the forward
+calculation to $i'$ to obtain $F(i',j)$ numbers; run the backwards
+calculation back to $i'$ to get $B(i',j)$ numbers; then find
+$\argmax_j F(i',j) + B(i',j)$, which tells me that the optimal
+alignment passes through cell (i',j). (I am leaving out some important
+details of how indels and local alignments are handled.) This divides
+the alignment into two smaller alignment problems. The complete
+alignment can be found by a recursive series of split point
+calculations. Although this seems laborious -- recovering only a
+single point in the alignment per step -- the size of the DP problems
+is decreased by 4-fold at each split. A complete alignment costs only
+about $1 + 2 \times \frac{1}{4} + 4 \times \frac{1}{16} + \ldots
+\simeq 2$ times as much CPU time as the single step DP calculation,
+but every step in the recursive divide-and-conquer calculation cost
+only $O(N)$ memory.
+
+For SCFG alignment, the standard Cocke-Younger-Kasami (referred to in
+this paper as Inside/CYK) alignment algorithm can also be run in a
+memory-saving ``score only'' mode, as can the ``backwards'' analogue,
+Outside/CYK. The Inside/Outside splitting procedure one needs for an
+SCFG divide and conquer is not as obvious as it is for
+forwards/backwards splitting in sequence alignment, but it is still
+possible.
+
+Rather than showing generalized memory-efficient SCFG alignment
+algorithms, here I will describe algorithms specific for ``RNA
+covariance models'' (CMs), a specialized form of SCFG suited for RNA
+secondary structure alignment. My divide and conquer algorithm takes
+advantage of features of CMs and does not apply to SCFGs in
+general. Therefore I need to start with an introduction to what CMs
+are, how they correspond to a known RNA secondary structure, and how
+they are built and parameterized.
+      
+\subsection{Description of a covariance model}
+
+A covariance model is a restricted form of stochastic context free
+grammar, well suited for modeling RNA.
+
+A stochastic context free grammar (SCFG) consists of the following:
+
+\begin{itemize}
+\item $M$ nonterminal symbols (or, \emph{states})
+\item $K$ terminal symbols (e.g. the observable alphabet, {A,C,G,U} for RNA)
+\item a number of \emph{production rules} of the form:
+      $V \rightarrow \alpha$,
+      where $\alpha$ can be any string of nonterminal and/or terminal
+      symbols, including the empty string
+      $\epsilon$.
+\item Each production rule is associated with a probability, such that
+      the sum of the production probabilities for any given
+      nonterminal $V$ is equal to 1.
+\end{itemize} 
+
+A covariance model has seven types of states: call them 
+D (delete)          : $V_D \rightarrow Y$
+P (pair)            : $V_P \rightarrow a Y b$
+L (left)            : $V_L \rightarrow a Y$
+R (right)           : $V_R \rightarrow Y a$
+S (start)           : $V_S \rightarrow Y$
+E (end)             : $V_E \rightarrow \epsilon$
+B (bifurcation)     : $V_B \rightarrow Y_S Z_S$
+
+(It may help readers familiar with profile hidden Markov models to
+note that profile HMMs use L, D, S, and E type productions; P, R, and
+B type productions are necessary augmentations to deal with RNA
+secondary structure.)
+
+Restrictions on transitions:
+
+For any transition $V \rightarrow Y$ or $V \rightarrow YZ$, $y,z >=
+v$. The states and state transitions in a standard SCFG are a directed
+graph that may include cycles. 
+
+\subsection{Definitions}
+
+I use $v$, $w$, $y$, and $z$ as indices referring to particular states
+in the model; they will range from $1..M$. $S_v$ refers to the
+\emph{type} of state $v$; it will be one of the seven types
+{D,P,L,R,S,E,B}. $C_v$ is a list of children for state $v$ (states $y$
+that $v$ can transit to); it will contain up to six indices $y$ with
+$v <= y <= M$. $P_v$ is a list of parents for state $v$ (states that
+could have transited to state $v$); it will contain up to six indices
+$y$ with $1 <= y <= v$.
+
+I use $i$, $j$, and $k$ as indices referring to positions in the
+sequence; they will range from $1..L$.
+
+\subsection{Overall algorithm}
+
+The Inside/CYK algorithm calculates $\alpha_v(i,j)$ -- the log
+probability of the best alignment of the CM subgraph rooted at state
+$v$ generating every subsequence $x_i..x_j$ of sequence $x$.  The
+Outside/CYK algorithm calculates $\beta_v(i,j)$ -- the log probability
+of the best alignment of the CM and sequence $x$
+\emph{excluding} the best alignment for the CM subgraph rooted at
+$v$ generating the subsequence $x_i..x_j$.  For any chosen cell in the
+3D DP matrices with coordinates $v,i,j$, $\alpha_v(i,j) +
+\beta_v(i,j)$ gives us the optimal alignment score for all alignments
+that pass through that cell. Thus, for any chosen single coordinate
+(say, state $v$), $\argmax_{i,j} \alpha_{v}(i,j) +
+\beta_{v}(i,j)$ tells us which cell the optimal alignment
+passes through.
+
+The central idea of the divide and conquer algorithm is shown in
+Figure~XX. Any parse tree must include all the bifurcation and start
+states of the model, so we know that the optimal alignment \emph{must}
+use any chosen bifurcation state $v$ and its child start states $w$
+and $y$. Thus we know
+
+      $\max_{i,k,j} \beta_{v}(i,j)$ + \alpha_{w}(i,k) + \alpha_{y}(k+1,j) 
+
+is the optimal overall alignment score, and crucially, we also know
+that
+
+      $(i,k,j) = \argmax_{i',k',j'}  \beta_{v}(i',j')$  \alpha_{w}(i',k') + \alpha_{y}(k'+1,j') 
+
+determines three cells in the optimal alignment -- $(v,i,j)$,
+$(w,i,k)$, and $(y,k+1,j)$ -- and splits the remaining problem into
+three smaller subproblems -- an alignment of the sequence
+$x_{i}..x_{k}$ to a parse tree constrained to root at $w$, an
+alignment of the sequence $x_{k+1}..x_{j}$ to a parse tree constrained
+to root at $y$, and an alignment of the split sequence
+$x_1..x_{i-1}//x_{j+1}..x_L$ to a parse tree constrained to end at
+$v$.
+
+The subproblems are then themselves split, and this splitting can
+continue recursively until all the optimal bifurcation points have
+been determined.
+
+At this point the remaining alignment subproblems are usually small
+enough to be solved by straightforward application of the standard
+Inside algorithm (see inside_engine and segment_alignment_engine,
+below). However, this is not guaranteed to be the case. A second
+division strategy is needed that does not depend on splitting at
+bifurcations.
+
+For the second strategy we note that although we have no guarantees
+that any given non-B, non-S state must appear in the optimal parse
+tree, we do know that for each \emph{node} in the CM structure, one
+and only one non-insert state in that node must appear in the optimal
+path. Let $N(\bar{v})$ represent a list of the non-insert states in
+the node that includes state $\bar{v}$ (it is possible that $\bar{v}$
+is not a member of $N(\bar{v})$, if $\bar{v}$ is an insert
+state). (Importantly, we know that $N(\bar{v})$ is of fixed size,
+containing at most 4 states.) Then for any alignment subproblem we can
+choose a provisional split point $\bar{v}$ in the midpoint of the
+model segment, and
+
+(v,i,j) = \argmax_{v' \in N(\hat{v}),i',j'} \alpha_{v'}(i',j') + \beta_{v'}(i',j')
+
+gives us a new cell (v,i,j) in the alignment and splits the problem
+into two smaller problems. This splitting strategy can be applied
+recursively all the way down to single nodes. This guarantees that we
+will never need to carry out a full Inside/CYK alignment algorithm on
+any subproblem. The most memory-intensive alignment problem that needs
+to be solved is the very first split, so we focus on the properties of
+the first split to determine the memory complexity of the overall
+algorithm.
+
+Choosing split points in one of the sequence dimensions $i$ or $j$ is
+a possible alternative strategy. However, I do not think it would be
+as memory efficient as dividing in the model dimension
+$v$. Calculations of both Inside bifurcation decks ($\alpha_{v,
+S_v=B}$) and Outside non-root start decks $(\beta_{v, v > 0, S_v =
+S})$ have extensive dependencies on $\alpha_{v,S_v=S}$ start decks in
+the two sequence dimensions.  I believe this means that all start
+decks $(\alpha_v,S_v=S}$ would have to be kept in memory. This leads
+to an algorithm that required more memory than choosing splits in $v$,
+both asymptotically ($O(L^2B)$ instead of $O(L^2 \log B)$) and in real
+terms (I estimate 350 MB vs. 85 MB for an SSU rRNA alignment).
+
+\subsection{generic_splitter}
+
+The generic_splitter subroutine is given a generic alignment problem
+defined by a CM graph $G$ and a sequence $a_1...a_L$. It solves the
+problem and returns the resulting optimal parse tree, $\cal{T}$. The
+solution may be achieved recursively by splitting the alignment
+problem at a bifurcation state into one V problem and two generic
+problems and solving those smaller problems.
+
+Determine the size of the alignment problem. If it is small enough,
+obtain $\cal{T}$ by calling inside^{\cal{T}}($G, a_1..a_L$);
+terminate.  Else:
+
+If there is no bifurcation in $G$, the problem is a wedge problem:
+obtain \cal{T} by calling wedge_splitter($G, a_1..a_L$); terminate.
+Else:
+
+Let $v$ be the lowest numbered (nearest to the root) bifurcation state
+in $G$. Let $w$ and $y$ be the left and right start state children of
+$v$, respectively.
+
+Call outside(G^1_v, a_1..a_L) to obtain deck \beta_v.
+Call inside(G^w, a_1..a_L)    to obtain deck \alpha_w.
+Call inside(G^y, a_1..a_L)    to obtain deck \alpha_y.
+
+Find (i,k,j) = \argmax_{i',k',j'} \alpha_w(i',k') + \alpha_y(k'+1,j') + \beta_v(i',j') 
+
+\cal{T}_1 = V_splitter(G^1_v, a_1..a_i, a_j..a_L).
+\cal{T}_2 = generic_splitter(G^w, a_i..a_k).
+\cal{T}_3 = generic_splitter(G^y, a_{k+1}..a_j). 
+
+\cal{T} = \cal{T}_1 (\cal{T}_2, \cal{T}_3); terminate.
+
+\subsection{wedge_splitter}
+
+The wedge_splitter subroutine is given a specialized wedge type
+alignment problem, defined by an unbifurcated CM subgraph $G$ and a
+sequence $a_1..a_L$. It solves the problem and returns the optimal
+parse tree $\cal{T}$. The solution may be achieved recursively by
+splitting the wedge problem into a V problem and a wedge problem, and
+solving those smaller problems.
+
+Determine the size of the alignment problem. If it is small enough,
+obtain $\cal{T}$ by calling inside^{\cal{T}}($G, a_1..a_L$);
+terminate. Else:
+
+Let $w..y$ be a chosen ``split set'' in the states in $G$: all the
+non-insert states from a node in the middle of $G$. We are guaranteed
+that the optimal alignment passes through one and only one of these
+states. The layout of a CM guarantees that all possible split sets are
+composed of contiguously numbered states.
+
+Call inside(G^w, a_1..a_L) to obtain decks \alpha_w..\alpha_y.  
+Call outside(G^0_y, a_1...a_L) to obtain decks \beta_w..\beta_y.
+
+Find (v,i,j) = \max_{v'=w..y, j'=1..L, i'=1..j'} \alpha_{v'}(i',j') + \beta_{v'}(i',j')
+
+\cal{T}_1 = V_splitter(G^0_v, a_1..a_i, a_j..a_L)
+\cal{T}_2 = wedge_splitter(G_v, a_i..a_j)
+
+\cal{T} = \cal{T}_1 (\cal{T}_2); terminate.
+
+\subsection{V_splitter}
+
+The V_splitter subroutine is given a specialized V type alignment
+subproblem, defined by an unbifurcated, unterminated CM segment $G$
+and two subsequences $a_1..a_L//b_1..b_N$ of the original sequence. It
+solves the problem and returns the optimal parse tree $\cal{T}$. The
+solution may be achieved recursively by splitting the V problem into
+two smaller V problems and solving them.
+
+Determine the size of the alignment problem. If it is small enough,
+obtain \cal{T} by calling v_inside^{\cal{T}}($G, a_1..a_L//b_1..b_N$);
+terminate.
+
+Let $w..y$ be a chosen ``split set'' in $G$: all the non-insert states
+from a node in the middle of $G$, as in wedge_splitter.
+
+Call v_inside(G^w, a_1..a_L//b_1..b_N) to obtain decks \alpha_w..\alpha_y.
+Call v_outside(G^0_y, a_1..a_L//b_1..b_N) to obtain decks \beta_w..\beta_y.
+
+Find (v,i,j) = \argmax_{v'=w..j, i'=1..L, j'=1..N} \alpha_{v'}(i',j') + \beta_{v'}(i',j')
+
+\cal{T}_1 = V_splitter(G^1_v, a_1..a_i, b_j..b_N)
+\cal{T}_2 = V_splitter(G^v_w, a_i..a_L, b_1..b_j)
+
+\cal{T} = \cal{T}_1 (\cal{T}_2); terminate.
+
+\subsection{inside and inside^{\cal{T}}}
+
+The subroutine inside implements the Inside/CYK SCFG alignment
+algorithm in a form that minimizes the memory requirement by
+discarding most of the 3D matrix during the calculation.
+
+The algorithm works by iteratively calculating $\alpha_v(i,j)$, the
+log probability of the most likely parse tree that generates a
+subsequence $a_i..a_j$ from a subgraph of the model rooted at state
+$v$. The calculation initializes with the smallest subgraphs and
+subsequences (subgraphs rooted at end states generating subsequences
+of length 0). It iterates over longer and longer subsequences and
+larger and larger subgraphs until it has calculated $\alpha_0(1,L)$ --
+the log probability of the best alignment of the whole CM $G$ to the
+whole sequence $a_1..a_L$.
+
+Recursion:
+for v = M to 1:
+    Allocate memory for a new deck \alpha_v with rows j=0..L, columns i=1..j+1.
+    Allocate a shadow deck \tau_v.
+    Set all values in \alpha_v to -\infty, and \tau_v to -1.
+
+    for j = 0 to L; for i = j+1 to 1:
+     d = j-i+1;
+     
+     for S_v: &  \alpha_v(i,j) =                                                    & \tau(i,j) = \\
+     D,S:     &\max_{y \in C(v)} \alpha_y(i,j)  + \log t_v(y)	                    & \argmax_y\\
+     P,d>=2:  &\log e(a_i, a_j) + \max_{y \in C(v)} \alpha_y(i+1,j-1) + \log t_v(y) & \argmax_y\\
+     L,d>=1:  &\log e(a_i) +      \max_{y \in C(v)} \alpha_y(i+1,j)   + \log t_v(y) & \argmax_y\\
+     R,d>=1:  &\log e(a_j) +      \max_{y \in C(v)} \alpha_y(i,j-1)   + \log t_v(y) & \argmax_y\\
+     B:       &\max_k \alpha_y(i,k) + \alpha_z(k+1,j)                               & \argmax_k\\
+     E,d=0:   & 0                                                                   & -1\\
+
+    for each y \in C(v): if all P(y) > v, free the memory for deck \alpha_y.
+
+The $\tau$ values are a ``shadow matrix'' that requires further
+explanation. In some cases, we will call inside as inside^{\cal{T}}.
+In these cases, we know the problem is small enough that a divide and
+conquer is no longer needed, and we want to trace back an optimal
+parse tree $\cal{T}$. One way to do this would be to keep a full
+$\alpha$ matrix in memory and tracing back by recapitulating the
+calculations in reverse. It is easier and more memory efficient to
+keep a ``shadow'' traceback pointer matrix $\tau$. (The memory
+efficiency results from the fact that the non-bifurcation $\tau$'s
+only need a range of 0..5 and fit in a few bits, compared to
+$\alpha$'s which are log probabilities requiring greater dynamic range
+and more bits.)  A $\tau_v(i,j)$ traceback pointer either records the
+index $y$ that maximized $\alpha_v(i,j)$ (for state types D,S,P,L,R)
+or records the split point $k$ that maximized $\alpha_v(i,j)$ for a
+bifurcation (B) state. We trace back through the shadow matrix to
+obtain the optimal sub-alignment that gave the optimal score. The most
+simple explanation of this traceback is a recursive one: we call
+subroutine traceback(v=0, i=1, j=L):
+
+subroutine traceback(v,i,j):
+  S_v = E:     attach v;
+  S_v = S,D :  attach v;           traceback(\tau_v(i,j), i, j).
+  S_v = P :    attach a_i,v,a_j;   traceback(\tau_v(i,j), i+1, j-1).
+  S_v = L :    attach a_i,v;       traceback(\tau_v(j,d), i+1, j).
+  S_v = R :    attach v,a_j;       traceback(\tau_v(j,d), i,   j-1).
+  S_v = B :    attach v;           traceback(y, i, \tau_v(j,d));   traceback(z, \tau_v(i,j)+1, j).
+
+When inside is called (as opposed to inside^{\cal{T}}), none of the
+$\tau$ shadow operations are performed in inside. Instead, the 3D
+scoring matrix itself is returned, containing the deck $\alpha_v$ (and
+possibly a few other valid, unfree'd score decks; see below).
+
+The memory handling in inside_engine also needs further explanation.
+Recall that the key to the memory efficiency of the divide and conquer
+approach is that we don't need to keep the entire $\alpha$ matrix in
+memory to calculate scores. In the above formulation, with the outer
+loop ranging over decks for the CM states $v$, as we reach higher
+decks $v$ in the 3D matrix, our calculations may no longer depend on
+certain lower decks. Since we are moving sequentially ``upwards'' in
+the states from state $M$ to state $1$, a simple test (all P(y) >
+v?)  is sufficient to determine whether the scores in deck y will be
+needed by any higher decks; if deck y is not needed, its memory can be
+released. (Since all the decks are the same size, an implementation
+can recycle ``free'd'' decks, saving memory allocation calls. Also,
+note that the values in all end decks are identical, so only one end
+deck needs to be calculated, and that precalculated deck can be reused
+whenever $S_v = E$.)
+
+This rule, combined with the structure of a CM, has an additional nice
+property. When inside is called by generic_splitter, for a CM graph
+$G$ in which state 1 is always a start state, we only need the deck
+$\alpha_1$ returned -- and since all the states $y$ that a start state
+connects to cannot have another parent higher in the CM, when the
+algorithm completes, $\alpha_1$ is the only deck left unfree'd.
+[more here]
+
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{outside}
+
+The subroutine outside_engine implements a variant of the SCFG
+Outside/CYK algorithm. Outside/CYK calculates $\beta_v(j,d)$, the log
+probability of the optimal parse tree for a CM generating a sequence
+$x_1..x_L$ \emph{excluding} the optimal parse subtree rooted at state
+$v$ that accounts for the subsequence of length $d$ that ends at $j$.
+The outside_engine has three variations from the standard algorithm.
+Two are analogous to the inside_engine. First, outside_engine can be
+called not just for the complete model and sequence, but for any CM
+subgraph of $\hat{M}$ states rooted at $\hat{r}$ and any subsequence
+$x_\hat{i}..x_\hat{j}$. Second, it does not keep the entire $\beta$
+matrix in memory -- it returns only the $\beta_\hat{v}$ deck. Third,
+outside_engine will only be called on a linear ``segment''
+$r..\hat{v}$ of the CM that starts in a start state ($S_r = S$), ends
+in a bifurcation state ($S_{\hat{v}} = B$), and has no other start or
+bifurcation states, so the recursion is simpler than the standard
+Outside/CYK algorithm.
+
+Initialization:
+Obtain a deck $\beta_r$ for the root state $r$.
+Set $\beta_{r}(\hat{j}, \hat{L}) = 0$.
+Set all other $\beta_r$ values to $-\infty$.
+
+Recursion:
+for v = r+1 to \hat{v}
+  Obtain a deck for $\beta_v$ (rows $j = \hat{i}-1..\hat{j}$, columns $d = 0..j-\hat{i}+1$
+  
+  for j = \hat{j} to \hat{i}-1
+    for d = j-\hat{i}+1 to 0
+       
+       \beta_v(j,d) = \max_{y \in P(v)} \left{ 
+              S_y = D,S,E: \beta_y(j,d)     + \log t_y(v) 
+              S_y = P:     \beta_y(j+1,d+2) + \log t_y(v) + \log e_y(x_{i-1}, x_{j+1})
+              S_y = L:     \beta_y(j,d+1)   + \log t_y(v) + \log e_y(x_{i-1})
+              S_y = R:     \beta_y(j+1,d+1) + \log t_y(v) + \log e_y(x_{j+1})
+                    (B impossible)
+
+         boundary conditions:
+              S_y = P: for j = \hat{j} or d = j-\hat{i}+1, assume \beta_y(j+1,d+2) = -\infty
+	      S_y = L: d = j-\hat{i}+1, assume \beta_y(j,d+1) = -\infty
+              S_y = R: j = \hat{j},     assume \beta_y(j+1,d+1) = -\infty
+
+  for each y \in P(v): if all C(y) < v, release the deck \beta_y.
+
+At the end of the calculation, outside_engine returns the $\beta_v$
+deck.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{segment_alignment_engine}
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+
+
+
