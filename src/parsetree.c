@@ -332,6 +332,30 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq)
 } 
 
 
+/* Function: ParsetreeCompare()
+ * Date:     SRE, Sat Aug 12 22:05:38 2000 [Titusville]
+ *
+ * Purpose:  Compare two parse trees to each other, for debugging
+ *           purposes. If they are not exactly alike, die.
+ *
+ */
+void
+ParsetreeCompare(Parsetree_t *t1, Parsetree_t *t2)
+{
+  int x;
+
+  if (t1->n != t2->n) Die("nope");
+  for (x = 0; x < t1->n; x++) 
+    {
+      if (t1->emitl[x] != t2->emitl[x]) Die("nope");
+      if (t1->emitr[x] != t2->emitr[x]) Die("nope");
+      if (t1->state[x] != t2->state[x]) Die("nope");
+      if (t1->nxtl[x]  != t2->nxtl[x])  Die("nope");
+      if (t1->nxtr[x]  != t2->nxtr[x])  Die("nope");
+    }
+}
+
+
 /* Function: SummarizeMasterTrace()
  * Date:     SRE, Fri Jul 28 13:42:30 2000 [St. Louis]
  *

@@ -53,7 +53,8 @@ main(int argc, char **argv)
   SQINFO           sqinfo;      /* optional info attached to seq */
   char            *dsq;         /* digitized RNA sequence */
   Stopwatch_t     *watch;
-  float            sc;		/* score of a sequence */
+  float            sc1,  sc2;	/* score of a sequence */
+  Parsetree_t     *tr1, *tr2;	/* a traceback */
   
   char *optname;                /* name of option found by Getopt()        */
   char *optarg;                 /* argument found by Getopt()              */
@@ -114,14 +115,21 @@ main(int argc, char **argv)
       StopwatchZero(watch);
 
       StopwatchStart(watch);
-      sc = CYKInside(cm, dsq, sqinfo.len);
-      CYKDivideAndConquer(cm, dsq, sqinfo.len);
+      sc1 = CYKInside(cm, dsq, sqinfo.len, &tr1);  
+      sc2 = CYKDivideAndConquer(cm, dsq, sqinfo.len, &tr2);  
+      ParsetreeDump(stdout, tr1, cm, dsq);
+      printf("%-12s : %.2f\n", sqinfo.name, sc1/0.693);
+      ParsetreeDump(stdout, tr2, cm, dsq);
+      printf("%-12s : %.2f\n", sqinfo.name, sc2/0.693);
+      ParsetreeCompare(tr1, tr2);
       StopwatchStop(watch);
 
-      printf("%-12s : %.2f\n", sqinfo.name, sc);
+
 
       StopwatchDisplay(stdout, "CPU time: ", watch);
       FreeSequence(seq, &sqinfo);
+      FreeParsetree(tr1);
+      FreeParsetree(tr2);
       free(dsq);
     }
 
