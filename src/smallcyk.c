@@ -218,16 +218,16 @@ CYKDemands(CM_t *cm, int L)
   dpcalcs = (float) (L+2)*(float)(L+1)*0.5*(float) (cm->M - bif_decks - nends +1);
 
   printf("CYK cpu/memory demand estimates:\n");
-  printf("Mb per cyk deck:                %.4f\n", Mb_per_deck);
-  printf("# of decks (M):                 %d\n",   cm->M);
-  printf("# of decks needed in small CYK: %d\n",   maxdecks);
-  printf("RAM needed for full CYK, Mb:    %.2f\n", bigmemory);
-  printf("RAM needed for small CYK, Mb:   %.2f\n", smallmemory);
-  printf("# of dp cells, total:           %.0f\n", dpcells);
-  printf("# of non-bifurc dp cells:       %.0f\n", dpcalcs);
-  printf("# of bifurcations:              %d\n",   bif_decks);
-  printf("# of bifurc dp inner loop calcs:%.0f\n", bifcalcs);
-  printf("# of dp inner loops:            %.0f\n", dpcalcs+bifcalcs);
+  printf("Mb per cyk deck:                 %.4f\n", Mb_per_deck);
+  printf("# of decks (M):                  %d\n",   cm->M);
+  printf("# of decks needed in small CYK:  %d\n",   maxdecks);
+  printf("RAM needed for full CYK, Mb:     %.2f\n", bigmemory);
+  printf("RAM needed for small CYK, Mb:    %.2f\n", smallmemory);
+  printf("# of dp cells, total:            %.3g\n", dpcells);
+  printf("# of non-bifurc dp cells:        %.3g\n", dpcalcs);
+  printf("# of bifurcations:               %d\n",   bif_decks);
+  printf("# of bifurc dp inner loop calcs: %.3g\n", bifcalcs);
+  printf("# of dp inner loops:             %.3g\n", dpcalcs+bifcalcs);
 }
 
 

@@ -351,13 +351,19 @@ SummarizeCM(FILE *fp, CM_t *cm)
   for (x = 0; x < cm->M; x++)
     count[(int) cm->stid[x]]++;
   
-  fprintf(fp, "Summary report for a covariance model:\n");
-  fprintf(fp, "------------------------------------\n");
+  fprintf(fp, "Summary report for CM structure:\n");
+  fprintf(fp, "--------------------------------------\n");
   fprintf(fp, "Total states:       %d\n", cm->M);
   fprintf(fp, "Total nodes:        %d\n", cm->nodes);
   fprintf(fp, "Bifurcations:       %d\n", count[BIF_B]);
-  fprintf(fp, "Consensus pairs:    %d\n", count[MATP_MP]);
-  fprintf(fp, "Consensus singlets: %d\n", count[MATL_ML]+count[MATR_MR]);
+  fprintf(fp, "MATP nodes:         %d\n", count[MATP_MP]);
+  fprintf(fp, "MATL nodes:         %d\n", count[MATL_ML]);
+  fprintf(fp, "MATR nodes:         %d\n", count[MATR_MR]);
+  fprintf(fp, "Consensus columns:  %d    (2*MATP+MATL+MATR)\n",
+	  count[MATP_MP]*2+count[MATL_ML]+count[MATR_MR]);
+  fprintf(fp, "Base pairs:         %d    (MATP)\n", count[MATP_MP]);
+  fprintf(fp, "Single stranded:    %d    (MATL+MATR)\n", count[MATL_ML]+count[MATR_MR]);
+
 }
 
 /* Functions: Statetype(), Nodetype(), UniqueStatetype()

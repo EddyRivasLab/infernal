@@ -19,7 +19,7 @@
 #include "msa.h"                /* squid's multiple alignment i/o       */
 #include "stopwatch.h"          /* squid's process timing module        */
 
-static char banner[] = "cmbuild - build an RNA covariance model from an alignment";
+static char banner[] = "cmbuild - build RNA covariance model from alignment";
 
 static char usage[]  = "\
 Usage: cmbuild [-options] <cmfile output> <alignment file>\n\
@@ -27,25 +27,32 @@ The alignment file is expected to be in Stockholm format.\n\
   Available options are:\n\
    -h     : help; print brief help on version and usage\n\
    -A     : append; append this CM to <cmfile>\n\
-   -B     : Babelfish; autodetect alternative alignment file format\n\
    -F     : force; allow overwriting of <cmfile>\n\
 ";
 
 static char experts[] = "\
-   --rf          : use #=RF alignment annotation to specify consensus vs. insertion\n\
+   --rf          : use #=RF alignment annotation to specify consensus\n\
    --gapthresh   : fraction of gaps to allow in a consensus column (0..1)\n\
    --binary      : save output model (cmfile) in binary, not ASCII text\n\
-   --informat <s>: specify that input alignment is in format <s>, not Stockholm\n\
-   --tfile <s>   : dump traces to debugging file <s>\n\
+   --informat <s>: specify input alignment is in format <s>, not Stockholm\n\
+\n\
+ Verbose output files, useful for detailed information about the CM:\n\
+   --gtree <f>   : save tree description of master tree to file <f>\n\
+   --gtbl  <f>   : save tabular description of master tree to file <f>\n\
+   --cmtbl <f>   : save tabular description of CM topology to file <f>\n\
+   --tfile <f>   : dump individual sequence tracebacks to file <f>\n\
+
 ";
 
 static struct opt_s OPTIONS[] = {
   { "-h", TRUE, sqdARG_NONE }, 
   { "-A", TRUE, sqdARG_NONE },
-  { "-B", TRUE, sqdARG_NONE },
   { "-F", TRUE, sqdARG_NONE },
   { "--binary",    FALSE, sqdARG_NONE },
+  { "--cmtbl",     FALSE, sqdARG_STRING },
   { "--gapthresh", FALSE, sqdARG_FLOAT},
+  { "--gtbl",      FALSE, sqdARG_STRING },
+  { "--gtree",     FALSE, sqdARG_STRING },
   { "--informat",  FALSE, sqdARG_STRING },
   { "--rf",        FALSE, sqdARG_NONE },
   { "--tfile",     FALSE, sqdARG_STRING },
@@ -53,7 +60,8 @@ static struct opt_s OPTIONS[] = {
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
-static void dump_traces(char *tracefile, MSA *msa, Parsetree_t **tr, CM_t *cm, char **dsq); 
+static void dump_traces(char *tracefile, MSA *msa, Parsetree_t **tr, 
+			CM_t *cm, char **dsq); 
 
 int
 main(int argc, char **argv)
@@ -69,8 +77,9 @@ main(int argc, char **argv)
   Parsetree_t     *mtr;         /* master structure tree from the alignment*/
   Parsetree_t    **tr;		/* inidividual traces from alignment       */
   CM_t            *cm;          /* a covariance model                      */
-  Stopwatch_t     *watch;	/* timer to run  */
-  int              idx;
+  Stopwatch_t     *watch;	/* timer to run                            */
+  int              idx;         /* sequence index                          */
+  int              avlen;	/* average sequence length in MSA          */
 
   char *optname;                /* name of option found by Getopt()        */
   char *optarg;                 /* argument found by Getopt()              */
@@ -80,21 +89,30 @@ main(int argc, char **argv)
   int   do_binary;		/* TRUE to write CM in binary not ASCII    */
   int   allow_overwrite;	/* true to allow overwriting cmfile        */
   char  fpopts[3];		/* options to open a file with, e.g. "ab"  */
-  int   use_rf;			/* TRUE to use #=RF annot to define consensus cols  */
-  float gapthresh;		/* 0=all cols are inserts; 1=all cols are consensus */
-  char *tracefile;		/* file to dump debugging traces to */
+  int   use_rf;			/* TRUE to use #=RF to define consensus    */
+  float gapthresh;		/* 0=all cols inserts; 1=all cols consensus*/
+
+  FILE *ofp;                    /* filehandle to dump info to */
+  char *tracefile;		/* file to dump debugging traces to        */
+  char *cmtblfile;              /* file to dump CM tabular description to  */
+  char *gtreefile;              /* file to dump guide tree to              */
+  char *gtblfile;               /* file to dump guide tree table to        */
 
   /*********************************************** 
    * Parse command line
    ***********************************************/
 
-  format            = MSAFILE_STOCKHOLM;
+  format            = MSAFILE_UNKNOWN;   /* autodetect by default */
   do_append         = FALSE;
   do_binary         = FALSE;
   allow_overwrite   = FALSE;
   gapthresh         = 0.5;
   use_rf            = FALSE;
+
   tracefile         = NULL;
+  cmtblfile         = NULL;
+  gtblfile          = NULL;
+  gtreefile         = NULL;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -103,6 +121,10 @@ main(int argc, char **argv)
     else if (strcmp(optname, "-F") == 0)          allow_overwrite   = TRUE;
     else if (strcmp(optname, "--gapthresh") == 0) gapthresh         = atof(optarg);
     else if (strcmp(optname, "--rf")        == 0) use_rf            = TRUE;
+
+    else if (strcmp(optname, "--gtbl")      == 0) gtblfile          = optarg;
+    else if (strcmp(optname, "--gtree")     == 0) gtreefile         = optarg;
+    else if (strcmp(optname, "--cmtbl")     == 0) cmtblfile         = optarg;
     else if (strcmp(optname, "--tfile")     == 0) tracefile         = optarg;
 
     else if (strcmp(optname, "--informat") == 0) {
@@ -164,12 +186,15 @@ main(int argc, char **argv)
   nali = 0;
   while ((msa = MSAFileRead(afp)) != NULL)
     {
+      avlen = (int) MSAAverageSequenceLength(msa);
+
       /* Print some stuff about what we're about to do.
        */
       if (msa->name != NULL) printf("Alignment:           %s\n",  msa->name);
       else                   printf("Alignment:           #%d\n", nali+1);
       printf                       ("Number of sequences: %d\n",  msa->nseq);
       printf                       ("Number of columns:   %d\n",  msa->alen);
+      printf                       ("Average seq length:  %d\n",  avlen);
       puts("");
       fflush(stdout);
       
@@ -187,16 +212,46 @@ main(int argc, char **argv)
       /* Construct a model
        */
       HandModelmaker(msa, dsq, use_rf, gapthresh, &cm, &mtr, &tr);
-      /* PrintParsetree(stdout, mtr);  */
-      PrintCM(stdout, cm); 
-      SummarizeMasterTrace(stdout, mtr); 
-      MasterTraceDisplay(stdout, mtr, cm);
+
+      /* Dump optional information to files:
+       */
+
+      /* 1. Tabular description of CM topology */
+      if (cmtblfile != NULL) 
+	{
+	  if ((ofp = fopen(cmtblfile, "w")) == NULL) 
+	    Die("Failed to open cm table file %s", cmtblfile);
+	  PrintCM(ofp, cm); 	  
+	  fclose(ofp);
+	}
+
+      /* 2. Tabular description of guide tree topology */
+      if (gtblfile != NULL) 
+	{
+	  if ((ofp = fopen(gtblfile, "w")) == NULL) 
+	    Die("Failed to open guide tree table file %s", gtblfile);
+	  PrintParsetree(ofp, mtr);  
+	  fclose(ofp);
+	}
+
+      /* 3. Tree description of guide tree topology */
+      if (gtreefile != NULL) 
+	{
+	  if ((ofp = fopen(gtreefile, "w")) == NULL) 
+	    Die("Failed to open guide tree file %s", gtreefile);
+	  MasterTraceDisplay(ofp, mtr, cm);
+	  fclose(ofp);
+	}
+
+      /* SummarizeMasterTrace(stdout, mtr); */
+
       SummarizeCM(stdout, cm); 
-      CYKDemands(cm, 1542);
+      puts("");
+      CYKDemands(cm, avlen);
+      puts("");
       
       CMSimpleProbify(cm);
       CMSetDefaultNullModel(cm);
-
       CMLogoddsify(cm);
 
       if (tracefile != NULL) 
