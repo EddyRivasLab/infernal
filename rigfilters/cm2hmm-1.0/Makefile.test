@@ -39,12 +39,8 @@ cm2hmm : $(OBJS) Cm2HmmMain.o
 cm2hmmsearch : $(OBJS) Cm2HmmSearchMain.o
 	$(LINK) -o cm2hmmsearch $(LFLAGS) Cm2HmmSearchMain.o $(OBJS) $(LIBS)
 
-Cm2HmmMain.o : Cm2HmmMain.cpp
-	$(COMPILE) $(CFLAGS) -o $@ $<
-Cm2HmmSearchMain.o : Cm2HmmSearchMain.cpp
-	$(COMPILE) $(CFLAGS) -o $@ $<
-
-%.o : %.cpp
+.SUFFIXES: .cpp .o
+.cpp.o:
 	$(COMPILE) $(CFLAGS) -o $@ $<
 
 clean:
