@@ -12,6 +12,8 @@
  ***************************************************************** 
  */
 
+#include "ssi.h"               /* CMFILE supports SSI indexes */
+
 /* Alphabet information is declared here, and defined in globals.c.
  */
 #define MAXABET          4	/* max for Alphabet_size             */
@@ -111,9 +113,9 @@ extern int   CMTransitionIndex[20][20];
 typedef struct cm_s {			
 			/* General information about the model:            */
   char *name;		/*   name of the model                             */
-  char *acc;		/*   optional accession number for model           */
-  char *desc;		/*   optional description of the model             */
-  char *annote;         /*   consensus column annotation line              */
+  char *acc;		/*   optional accession number for model, or NULL  */
+  char *desc;		/*   optional description of the model, or NULL    */
+  char *annote;         /*   consensus column annotation line, or NULL     */ /* ONLY PARTIALLY IMPLEMENTED, BEWARE */
 
 			/* Information about the null model:               */
   float *null;          /*   residue probabilities [0..3]                  */
@@ -155,6 +157,23 @@ typedef struct cm_s {
  */
 #define CM_LOCAL_BEGIN  (1<<0)	/* Begin distribution is active (local ali) */
 #define CM_LOCAL_END    (1<<1)  /* End distribution is active (local ali)   */
+
+
+/* Structure: CMFILE
+ * Incept:    SRE, Tue Aug 13 10:16:39 2002 [St. Louis]
+ *
+ * An open CM database for reading. 
+ * (When writing, we just use a normal stdio.h FILE.)
+ * API is implemented in cmio.c
+ */
+typedef struct cmfile_s {
+  FILE     *f;                  /* open file for reading */
+  SSIFILE  *ssi;                /* ptr to open SSI index, or NULL if unavailable */
+  int       is_binary;		/* TRUE if file is in binary format */
+  int       byteswap;		/* TRUE if binary and we need to swap byte order */
+  SSIOFFSET offset;		/* disk offset of the CM that was read last */
+  int       mode;		/* type of SSI offset (part of SSI API) */
+} CMFILE;
 
 
 /* Structure: Parsetree_t

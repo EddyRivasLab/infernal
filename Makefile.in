@@ -47,8 +47,8 @@ SHELL       = /bin/sh
 BASENAME    = "infernal"
 PACKAGE     = "Infernal"
 RELEASE     = "0.4"
-RELCODE     = "rel0_4"
-RELEASEDATE = "in progress"
+RELCODE     = "rel0_5"
+RELEASEDATE = "Oct 2002"
 COPYRIGHT   = "Copyright \(C\) 2002 HHMI/Washington University School of Medicine"
 LICENSE     = "Freely distributed under the GNU General Public License \(GPL\)"
 LICENSETAG  = gnu
@@ -137,7 +137,6 @@ dist:
 	-rm -rf ${BASENAME}-${RELEASE}/configure.in
 	-rm -rf ${BASENAME}-${RELEASE}/squid/configure.in
 	-rm -rf ${BASENAME}-${RELEASE}/Manuscripts
-	-rm -rf ${BASENAME}-${RELEASE}/testsuite
 	#
 	# Packaging commands
 	#

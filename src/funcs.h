@@ -15,7 +15,10 @@ extern char **DigitizeAlignment(char **aseq, int nseq, int alen);
 /* from cm.c
  */
 extern CM_t *CreateCM(int nnodes, int nstates);
+extern CM_t *CreateCMShell(void);
+extern void  CreateCMBody(CM_t *cm, int nnodes, int nstates);
 extern void  CMZero(CM_t *cm);
+extern void  CMRenormalize(CM_t *cm);
 extern void  FreeCM(CM_t *cm);
 extern void  CMSetDefaultNullModel(CM_t *cm);
 extern void  CMSimpleProbify(CM_t *cm);
@@ -32,14 +35,24 @@ extern int   InsertStatesInNode(int ndtype);
 extern void  PrintCM(FILE *fp, CM_t *cm);
 extern void  SummarizeCM(FILE *fp, CM_t *cm);
 extern char *Statetype(int type);
+extern int   StateCode(char *s);
 extern char *Nodetype(int type);
+extern int   NodeCode(char *s);
 extern char *UniqueStatetype(int type);
+extern int   UniqueStateCode(char *s);
+extern int   DeriveUniqueStateCode(int ndtype, int sttype);
 extern CM_t *CMRebalance(CM_t *cm);
 
 /* from cmio.c
  */
-extern void WriteBinaryCM(FILE *fp, CM_t *cm);
-extern int  ReadBinaryCM(FILE *fp, CM_t **ret_cm);
+extern CMFILE *CMFileOpen(char *cmfile, char *env);
+extern int     CMFileRead(CMFILE *cmf, CM_t **ret_cm);
+extern void    CMFileClose(CMFILE *cmf);
+extern void    CMFileRewind(CMFILE *cmf);
+extern int     CMFilePositionByIndex(CMFILE *cmf, int idx);
+extern int     CMFilePositionByKey(CMFILE *cmf, char *key);
+extern void    CMFileWrite(FILE *fp, CM_t *cm, int do_binary);
+
 
 /* from display.c
  */

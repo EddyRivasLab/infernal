@@ -14,11 +14,13 @@
 #include <string.h>
 #include <ctype.h>
 
-#include "structs.h"		/* data structures, macros, #define's   */
-#include "funcs.h"		/* external functions                   */
 #include "squid.h"		/* general sequence analysis library    */
 #include "msa.h"                /* squid's multiple alignment i/o       */
 #include "stopwatch.h"          /* squid's process timing module        */
+
+#include "structs.h"		/* data structures, macros, #define's   */
+#include "funcs.h"		/* external functions                   */
+#include "version.h"
 
 static char banner[] = "cmbuild - build RNA covariance model from alignment";
 
@@ -27,14 +29,22 @@ Usage: cmbuild [-options] <cmfile output> <alignment file>\n\
 The alignment file is expected to be in Stockholm format.\n\
   Available options are:\n\
    -h     : help; print brief help on version and usage\n\
+   -n <s> : name this HMM <s>\n\
    -A     : append; append this CM to <cmfile>\n\
    -F     : force; allow overwriting of <cmfile>\n\
 ";
 
 static char experts[] = "\
+   --binary      : save the model in binary format\n\
    --rf          : use #=RF alignment annotation to specify consensus\n\
    --gapthresh   : fraction of gaps to allow in a consensus column (0..1)\n\
+   --wnone       : shut off sequence weighting\n\
    --informat <s>: specify input alignment is in format <s>, not Stockholm\n\
+\n\
+ Sequence weighting options (default: GSC weighting):\n\
+   --wgiven      : use weights as annotated in alignment file\n\
+   --wnone       : no weighting; re-set all weights to 1.\n\
+   --wgsc        : use Gerstein/Sonnhammer/Chothia tree weights (default)\n\
 \n\
  Verbose output files, useful for detailed information about the CM:\n\
    --cfile <f>   : save count vectors to file <f>\n\
@@ -42,7 +52,8 @@ static char experts[] = "\
    --emap  <f>   : save consensus emit map to file <f>\n\
    --gtree <f>   : save tree description of master tree to file <f>\n\
    --gtbl  <f>   : save tabular description of master tree to file <f>\n\
-   --tfile <f>   : dump individual sequence tracebacks to file <f>\n\n\
+   --tfile <f>   : dump individual sequence tracebacks to file <f>\n\
+\n\
  Debugging, experimentation:\n\
    --nobalance   : don't rebalance the CM; number in strict preorder\n\
    --regress <f> : save regression test information to file <f>\n\
@@ -51,8 +62,10 @@ static char experts[] = "\
 
 static struct opt_s OPTIONS[] = {
   { "-h", TRUE, sqdARG_NONE }, 
+  { "-n", TRUE, sqdARG_STRING },
   { "-A", TRUE, sqdARG_NONE },
   { "-F", TRUE, sqdARG_NONE },
+  { "--binary",    FALSE, sqdARG_NONE },
   { "--nobalance", FALSE, sqdARG_NONE },
   { "--cfile",     FALSE, sqdARG_STRING },
   { "--cmtbl",     FALSE, sqdARG_STRING },
@@ -65,6 +78,9 @@ static struct opt_s OPTIONS[] = {
   { "--rf",        FALSE, sqdARG_NONE },
   { "--tfile",     FALSE, sqdARG_STRING },
   { "--treeforce", FALSE, sqdARG_NONE },
+  { "--wgiven",    FALSE, sqdARG_NONE },
+  { "--wnone",     FALSE, sqdARG_NONE },
+  { "--wgsc",      FALSE, sqdARG_NONE },
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -101,6 +117,9 @@ main(int argc, char **argv)
   int   use_rf;			/* TRUE to use #=RF to define consensus    */
   float gapthresh;		/* 0=all cols inserts; 1=all cols consensus*/
   int   treeforce;		/* number of seqs to show parsetrees for   */
+  char *setname;                /* name to give to HMM, overriding others  */
+  enum  weight_flags {		/* sequence weighting strategy to use      */
+    WGT_GIVEN, WGT_NONE, WGT_GSC } weight_strategy;
 
   FILE *ofp;                    /* filehandle to dump info to */
   char *cfile;                  /* file to dump count vectors to */
@@ -119,11 +138,13 @@ main(int argc, char **argv)
   format            = MSAFILE_UNKNOWN;   /* autodetect by default */
   do_append         = FALSE;
   do_balance        = TRUE;
-  do_binary         = TRUE;
+  do_binary         = FALSE;	/* default: save CMs in ASCII flatfile format */
   allow_overwrite   = FALSE;
   gapthresh         = 0.5;
   use_rf            = FALSE;
   treeforce         = 0;
+  weight_strategy   = WGT_GSC;	/* default: GSC sequence weighting */
+  setname           = NULL;	/* default: get CM name from alifile, or filename */
 
   cfile             = NULL;
   emapfile          = NULL;
@@ -138,11 +159,15 @@ main(int argc, char **argv)
     if      (strcmp(optname, "-A") == 0)          do_append         = TRUE; 
     else if (strcmp(optname, "-B") == 0)          format            = MSAFILE_UNKNOWN;
     else if (strcmp(optname, "-F") == 0)          allow_overwrite   = TRUE;
+    else if (strcmp(optname, "-n") == 0)          setname           = optarg;
+    else if (strcmp(optname, "--binary")    == 0) do_binary         = TRUE;
     else if (strcmp(optname, "--nobalance") == 0) do_balance        = FALSE;
     else if (strcmp(optname, "--gapthresh") == 0) gapthresh         = atof(optarg);
     else if (strcmp(optname, "--rf")        == 0) use_rf            = TRUE;
     else if (strcmp(optname, "--treeforce") == 0) treeforce         = 1;
-
+    else if (strcmp(optname, "--wgiven")    == 0) weight_strategy   = WGT_GIVEN;
+    else if (strcmp(optname, "--wgsc")      == 0) weight_strategy   = WGT_GSC;
+    else if (strcmp(optname, "--wnone")     == 0) weight_strategy   = WGT_NONE;
     else if (strcmp(optname, "--cfile")     == 0) cfile             = optarg;
     else if (strcmp(optname, "--emap")      == 0) emapfile          = optarg;
     else if (strcmp(optname, "--gtbl")      == 0) gtblfile          = optarg;
@@ -184,7 +209,6 @@ main(int argc, char **argv)
 				/* Open the CM output file */
   if (do_append) strcpy(fpopts, "a");
   else           strcpy(fpopts, "w");
-  if (do_binary) strcat(fpopts, "b");
   if ((cmfp = fopen(cmfile, fpopts)) == NULL)
     Die("Failed to open CM file %s for %s\n", cmfile, 
 	do_append ? "appending" : "writing");
@@ -205,6 +229,14 @@ main(int argc, char **argv)
   printf("Alignment file:                    %s\n", alifile);
   printf("File format:                       %s\n", 
 	 SeqfileFormat2String(afp->format));
+  printf("Model construction strategy:       %s\n",
+	 (use_rf)? "Manual, from RF annotation" : "Fast/ad-hoc");
+  printf("Sequence weighting strategy:       ");
+  switch (weight_strategy) {
+  case WGT_GIVEN: puts("use annotation in alifile, if any"); break;
+  case WGT_NONE:  puts("no weights"); break;
+  case WGT_GSC:   puts("GSC tree weights"); break;
+  }
   printf("New CM file:                       %s %s\n",
 	 cmfile, do_append? "[appending]" : "");
   printf("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n\n");
@@ -230,13 +262,29 @@ main(int argc, char **argv)
       
       /* Some input data cleaning. 
        */
+      printf("%-40s ... ", "Alignment format checks"); fflush(stdout);
       if (use_rf && msa->rf == NULL) 
-	Die("Alignment has no reference coord annotation.");
+	Die("FAILED.\nAlignment has no reference coord annotation.");
       if (msa->ss_cons == NULL) 
-	Die("Alignment has no consensus structure annotation.");
+	Die("FAILED.\nAlignment has no consensus structure annotation.");
       if (! clean_cs(msa->ss_cons, msa->alen))
-	Die("Failed to parse consensus structure annotation.");
-      printf("%-40s ... [done]\n", "Alignment format checks"); fflush(stdout);
+	Die("FAILED.\nFailed to parse consensus structure annotation.");
+      printf("done.\n");
+
+      /* Sequence weighting. Default: GSC weights. If WGT_GIVEN,
+       * do nothing.
+       */
+      if (weight_strategy == WGT_NONE) 
+	{
+	  FSet(msa->wgt, msa->nseq, 1.0);
+	}
+      else if (weight_strategy == WGT_GSC)
+	{
+	  printf("%-40s ... ", "Weighting sequences by GSC rule");
+	  fflush(stdout);
+	  GSCWeights(msa->aseq, msa->nseq, msa->alen, msa->wgt);
+	  printf("done.\n");
+	}
 
       /* Digitize the alignment: this takes care of
        * case sensivitity (A vs. a), speeds all future
@@ -247,8 +295,9 @@ main(int argc, char **argv)
        * is indexed 1..alen, but msa (and its annotation!!)
        * is indexed 0..alen-1.
        */
+      printf("%-40s ... ", "Digitizing alignment"); fflush(stdout);
       dsq = DigitizeAlignment(msa->aseq, msa->nseq, msa->alen);
-      printf("%-40s ... [done]\n", "Digitizing alignment"); fflush(stdout);
+      printf("done.\n");
 
       /* Construct a model, and collect observed counts.
        * Note on "treeforce": this is the number of sequences that we
@@ -256,6 +305,8 @@ main(int argc, char **argv)
        *   of the CM. We will only use this for debugging. These seqs
        *   are then dumped as full parsetrees to stdout.
        */
+      printf("%-40s ... ", "Constructing model architecture");
+      fflush(stdout);
       HandModelmaker(msa, dsq, use_rf, gapthresh, &cm, &mtr);
       if (do_balance) 
 	{
@@ -270,14 +321,14 @@ main(int argc, char **argv)
 	  ParsetreeCount(cm, tr, dsq[idx], msa->wgt[idx]);
 	  FreeParsetree(tr);
 	}
+      printf("done.\n");
 
       /* Before converting to probabilities,
        * save a count vector file, if asked.
        * Used primarily for making data files for training priors.
        */
       if (cfile != NULL) {
-	printf("%-40s ... ", "Saving count vector file");
-	fflush(stdout);
+	printf("%-40s ... ", "Saving count vector file"); fflush(stdout);
 	if (! save_countvectors(cfile, cm)) printf("[FAILED]\n");
 	else                                printf("done. [%s]\n", cfile);
       }
@@ -285,36 +336,67 @@ main(int argc, char **argv)
       /* Convert to probabilities, and the global log-odds form
        * we save the model in.
        */
+      printf("%-40s ... ", "Converting counts to probabilities"); fflush(stdout);
       CMSimpleProbify(cm);
       CMSetDefaultNullModel(cm);
       CMLogoddsify(cm);
+      printf("done.\n");
+
+      /* Give the model a name (mandatory in the CM file).
+       * Order of precedence:
+       *      1. -n option  (only if a single alignment in file)
+       *      2. msa->name  (only in Stockholm or SELEX files)
+       *      3. filename, without tail (e.g. "rnaseP.msa" becomes "rnaseP")
+       * Also, add any optional annotations.     
+       */
+      printf("%-40s ... ", "Naming and annotating model"); fflush(stdout);
+      if (nali == 0)
+	{
+	  if      (setname != NULL)   cm->name = Strdup(setname);
+	  else if (msa->name != NULL) cm->name = Strdup(msa->name);
+	  else                        cm->name = FileTail(alifile, TRUE);
+	}
+      else
+	{
+	  if (setname != NULL)
+	    Die("FAILED.\nOops. Wait. You can't use -n w/ an alignment database");
+	  else if (msa->name != NULL)
+	    cm->name = Strdup(msa->name);
+	  else
+	    Die("FAILED.\nOops. Wait. I need a name annotated in each alignment");
+	}
+      if (msa->acc  != NULL) cm->acc  = Strdup(msa->acc);
+      if (msa->desc != NULL) cm->desc = Strdup(msa->desc);
+      printf("done.\n");
 
       /* Save the CM. 
        */
-      SummarizeCM(stdout, cm); 
-      puts("");
-      CYKDemands(cm, avlen);
-      puts("");
-      WriteBinaryCM(cmfp, cm);
+      printf("%-40s ... ", "Saving model to file"); fflush(stdout);
+      CMFileWrite(cmfp, cm, do_binary);
+      printf("done. [%s]\n", cmfile);
 
       /* Dump optional information to files:
        */
       /* Tabular description of CM topology */
       if (cmtblfile != NULL) 
 	{
+	  printf("%-40s ... ", "Saving CM topology table"); fflush(stdout);
 	  if ((ofp = fopen(cmtblfile, "w")) == NULL) 
 	    Die("Failed to open cm table file %s", cmtblfile);
 	  PrintCM(ofp, cm); 	  
 	  fclose(ofp);
+	  printf("done. [%s]\n", cmtblfile);
 	}
 
       /* Tabular description of guide tree topology */
       if (gtblfile != NULL) 
 	{
+	  printf("%-40s ... ", "Saving guide tree table"); fflush(stdout);
 	  if ((ofp = fopen(gtblfile, "w")) == NULL) 
 	    Die("Failed to open guide tree table file %s", gtblfile);
 	  PrintParsetree(ofp, mtr);  
 	  fclose(ofp);
+	  printf("done. [%s]\n", gtblfile);
 	}
 
       /* Emit map.
@@ -323,29 +405,32 @@ main(int argc, char **argv)
 	{
 	  CMEmitMap_t *emap;
 
+	  printf("%-40s ... ", "Saving emit map"); fflush(stdout);
 	  if ((ofp = fopen(emapfile, "w")) == NULL) 
 	    Die("Failed to open emit map file %s", emapfile);
 	  emap = CreateEmitMap(cm);
 	  DumpEmitMap(ofp, emap, cm);
 	  FreeEmitMap(emap);
 	  fclose(ofp);
+	  printf("done. [%s]\n", emapfile);
 	}
 
       /* Tree description of guide tree topology */
       if (gtreefile != NULL) 
 	{
+	  printf("%-40s ... ", "Saving guide tree dendrogram"); fflush(stdout);
 	  if ((ofp = fopen(gtreefile, "w")) == NULL) 
 	    Die("Failed to open guide tree file %s", gtreefile);
 	  MasterTraceDisplay(ofp, mtr, cm);
 	  fclose(ofp);
+	  printf("done. [%s]\n", gtreefile);
 	}
-
-      /* SummarizeMasterTrace(stdout, mtr); */
 
       /* Detailed traces for the training set.
        */
       if (tracefile != NULL)       
 	{
+	  printf("%-40s ... ", "Saving parsetrees"); fflush(stdout);
 	  if ((ofp = fopen(tracefile,"w")) == NULL)
 	    Die("failed to open trace file %s", tracefile);
 	  for (idx = treeforce; idx < msa->nseq; idx++) 
@@ -358,11 +443,13 @@ main(int argc, char **argv)
 	      FreeParsetree(tr);
 	    }
 	  fclose(ofp);
+	  printf("done. [%s]\n", tracefile);
 	}
 
       /* Regression test info.
        */
       if (regressionfile != NULL) {
+	printf("%-40s ... ", "Saving regression test data"); fflush(stdout);
 	SummarizeCM(regressfp, cm);
 	PrintCM(regressfp, cm);
 	PrintParsetree(regressfp, mtr);
@@ -375,6 +462,7 @@ main(int argc, char **argv)
 	    ParsetreeDump(regressfp, tr, cm, dsq[idx]);
 	    fprintf(regressfp, "//\n"); 
 	  }
+	  printf("done. [%s]\n", regressionfile);
       }
 
       /* Detailed parsetrees for the test set of forced parsetrees.
@@ -395,10 +483,18 @@ main(int argc, char **argv)
 	    }
 	}
 
+      puts("");
+      SummarizeCM(stdout, cm);  
+      puts("");
+      CYKDemands(cm, avlen);     
+
       FreeParsetree(mtr);
       FreeCM(cm);
       Free2DArray((void**)dsq, msa->nseq);
       MSAFree(msa);
+      fflush(cmfp);
+      puts("//\n");
+      nali++;
     }
 
 

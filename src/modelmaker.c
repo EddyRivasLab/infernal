@@ -32,11 +32,14 @@
 
 
 #include <stdlib.h>
+
+#include "squid.h"		
+#include "msa.h"		/* multiple sequence alignments */
+
 #include "structs.h"
 #include "funcs.h"
 #include "nstack.h"
-#include "squid.h"		
-#include "msa.h"		/* multiple sequence alignments */
+
 
 
 static void         cm_from_guide(CM_t *cm, Parsetree_t *gtr);

@@ -13,11 +13,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "structs.h"		/* data structures, macros, #define's   */
-#include "funcs.h"		/* external functions                   */
 #include "squid.h"		/* general sequence analysis library    */
 #include "msa.h"                /* squid's multiple alignment i/o       */
 #include "stopwatch.h"          /* squid's process timing module        */
+
+#include "structs.h"		/* data structures, macros, #define's   */
+#include "funcs.h"		/* external functions                   */
+#include "version.h"
 
 static char banner[] = "cmsearch - search a sequence database with an RNA covariance model";
 
@@ -52,7 +54,7 @@ main(int argc, char **argv)
   char            *cmfile;      /* file to read CM from */	
   char            *seqfile;     /* file to read sequences from */
   int              format;      /* format of sequence file */
-  FILE            *cmfp;        /* open CM file for reading */
+  CMFILE          *cmfp;        /* open CM file for reading */
   SQFILE	  *sqfp;        /* open seqfile for reading */
   CM_t            *cm;          /* a covariance model       */
   char            *seq;         /* RNA sequence */
@@ -122,10 +124,10 @@ main(int argc, char **argv)
 
   if ((sqfp = SeqfileOpen(seqfile, format, NULL)) == NULL)
     Die("Failed to open sequence database file %s\n%s\n", seqfile, usage);
-  if ((cmfp = fopen(cmfile, "rb")) == NULL)
+  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
     Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
 
-  if (! ReadBinaryCM(cmfp, &cm))
+  if (! CMFileRead(cmfp, &cm))
     Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
   if (cm == NULL) 
     Die("%s empty?\n", cmfile);
@@ -193,7 +195,7 @@ main(int argc, char **argv)
 
   FreeCMConsensus(cons);
   FreeCM(cm);
-  fclose(cmfp);
+  CMFileClose(cmfp);
   SeqfileClose(sqfp);
   StopwatchFree(watch);
   SqdClean();

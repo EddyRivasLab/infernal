@@ -12,8 +12,9 @@
 #include <ctype.h>
 #include <math.h>
 
-#include "structs.h"
 #include "squid.h"
+
+#include "structs.h"
 #include "nstack.h"
 
 /* Function: KHS2ct()

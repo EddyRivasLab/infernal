@@ -19,11 +19,19 @@
 #include "funcs.h"
 
 
-/* Function: CreateCM()
+/* Function: CreateCM(); CreateCMShell(); CreateCMBody()
  * Date:     SRE, Sat Jul 29 09:02:16 2000 [St. Louis]
  *
  * Purpose:  Create a covariance model, given the number of states 
- *           that should be in it.
+ *           and nodes that should be in it.
+ *
+ *           Allocation is usually one step: CreateCM(N, M).
+ *           
+ *           In cmio.c, allocation is two-step: CreateCMShell()
+ *           then CreateCMBody(cm, N, M). This way we can create
+ *           a model, start storing header info in it (including M
+ *           and N themselves), and only after we read M and N
+ *           do we allocate the bulk of the model.
  *
  * Args:     nnodes  =  number of nodes in the model
  *           nstates = number of states in the model
@@ -36,6 +44,15 @@ CreateCM(int nnodes, int nstates)
 {
   CM_t *cm;
 
+  cm = CreateCMShell();
+  if (cm != NULL) CreateCMBody(cm, nnodes, nstates);
+  return cm;
+}
+CM_t *
+CreateCMShell(void)
+{
+  CM_t *cm;
+
   cm = MallocOrDie(sizeof(CM_t));
 
 				/* general information: added later */
@@ -43,10 +60,40 @@ CreateCM(int nnodes, int nstates)
   cm->acc    = NULL;
   cm->desc   = NULL;
   cm->annote = NULL;
-  cm->M      = nstates;
+
 				/* null model information */
   cm->null   = MallocOrDie(Alphabet_size * sizeof(float));
 				/* structural information */
+  cm->M      = 0;
+  cm->sttype = NULL;
+  cm->ndidx  = NULL;
+  cm->stid   = NULL;
+  cm->cfirst = NULL;
+  cm->cnum   = NULL;
+  cm->plast  = NULL;
+  cm->pnum   = NULL;
+				/* node->state map information */
+  cm->nodes  = 0;
+  cm->nodemap= NULL;
+  cm->ndtype = NULL;
+				/* parameter information */
+  cm->t      = NULL;
+  cm->e      = NULL;
+  cm->begin  = NULL;
+  cm->end    = NULL;
+  cm->tsc    = NULL;
+  cm->esc    = NULL;
+  cm->beginsc= NULL;
+  cm->endsc  = NULL;
+
+  cm->flags  = 0;
+  return cm;
+}
+void
+CreateCMBody(CM_t *cm, int nnodes, int nstates)
+{
+				/* structural information */
+  cm->M      = nstates;
   cm->sttype = MallocOrDie((nstates+1) * sizeof(char));
   cm->ndidx  = MallocOrDie(nstates * sizeof(int));
   cm->stid   = MallocOrDie((nstates+1) * sizeof(char));
@@ -76,13 +123,13 @@ CreateCM(int nnodes, int nstates)
   cm->stid[cm->M]   = END_EL;
 
   cm->flags  = 0;
-  return cm;
 }
+
 
 /* Function: CMZero()
  * Date:     SRE, Mon Jul 31 19:14:31 2000 [St. Louis]
  *
- * Purpose:  Initialize the probability parameters of a CM to zero.
+ * Purpose:  Initialize the probability parameters and scores of a CM to zero.
  *
  * Returns:  (void)
  */
@@ -93,10 +140,45 @@ CMZero(CM_t *cm)
   int x;			/* counter over symbols or transitions */
 
   for (v = 0; v < cm->M; v++) {
-    for (x = 0; x < Alphabet_size * Alphabet_size; x++) cm->e[v][x] = 0.0;
-    for (x = 0; x < MAXCONNECT; x++)                    cm->t[v][x] = 0.0;
+    for (x = 0; x < Alphabet_size * Alphabet_size; x++) cm->e[v][x]   = 0.0;
+    for (x = 0; x < MAXCONNECT; x++)                    cm->t[v][x]   = 0.0;
+    for (x = 0; x < Alphabet_size * Alphabet_size; x++) cm->esc[v][x] = 0.0;
+    for (x = 0; x < MAXCONNECT; x++)                    cm->tsc[v][x] = 0.0;
     cm->begin[v] = cm->end[v] = 0.;
+    cm->beginsc[v] = cm->endsc[v] = 0.;
   }
+}
+
+/* Function:  CMRenormalize()
+ * Incept:    SRE, Wed Aug 14 14:16:55 2002 [St. Louis]
+ *
+ * Purpose:   Renormalize all the probability distributions in a CM.
+ *            Used by cmio.c's flatfile parser, for example.
+ *
+ * Xref:      STL6 p.108
+ */
+void
+CMRenormalize(CM_t *cm)
+{
+  int v;
+
+  if (! FNorm(cm->null, Alphabet_size)) Die("FNorm() failed on null model");
+  for (v = 0; v < cm->M; v++)
+    {
+      if (cm->cnum[v] > 0 &&
+	  cm->sttype[v] != B_st &&
+	  ! FNorm(cm->t[v], cm->cnum[v]))
+	Die("FNorm() failed on a transition");
+      
+      if ((cm->sttype[v] == ML_st || cm->sttype[v] == MR_st || cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) &&
+	  ! FNorm(cm->e[v], Alphabet_size))
+	Die("FNorm() failed on a singlet emission");
+      if (cm->sttype[v] == MP_st &&
+	  ! FNorm(cm->e[v], Alphabet_size * Alphabet_size))
+	Die("FNorm() failed on a pair emission");
+    }
+  if (cm->flags & CM_LOCAL_BEGIN) FNorm(cm->begin, cm->M);
+  if (cm->flags & CM_LOCAL_END)   Die("Renormalization of models in local end mode not supported yet");
 }
 
 
@@ -491,15 +573,18 @@ SummarizeCM(FILE *fp, CM_t *cm)
 
 }
 
-/* Functions: Statetype(), Nodetype(), UniqueStatetype()
+/* Functions: Statetype(), Nodetype(), UniqueStatetype();
+ *            StateCode(), NodeCode(), UniqueStateCode()
  * Date:      SRE, Sat Jul 29 11:07:47 2000 [St. Louis]
  *
  * Purpose:   Translate internal flags into human-readable strings, 
- *            for clearer debugging output.
+ *            for clearer debugging output (*type functions);
+ *            or vice versa (*Code functions)
  * 
- * Args:      type - a state type, node type, or unique statetype
+ * Args:      type - a state type, node type, or unique statetype code
+ *            s    - string representing a code
  *
- * Returns:   an appropriate string
+ * Returns:   the appropriate string; or the appropriate code.
  */
 char *
 Statetype(int type) 
@@ -517,7 +602,22 @@ Statetype(int type)
   case EL_st: return "EL";
   default: Die("bogus state type %d\n", type);
   }
-  return "";
+  return ""; /*NOTREACHED*/
+}
+int
+StateCode(char *s)
+{
+  if      (strcmp(s, "D")  == 0) return D_st;
+  else if (strcmp(s, "MP") == 0) return MP_st;
+  else if (strcmp(s, "ML") == 0) return ML_st;
+  else if (strcmp(s, "MR") == 0) return MR_st;
+  else if (strcmp(s, "IL") == 0) return IL_st;
+  else if (strcmp(s, "IR") == 0) return IR_st;
+  else if (strcmp(s, "S")  == 0) return S_st;
+  else if (strcmp(s, "E")  == 0) return E_st;
+  else if (strcmp(s, "B")  == 0) return B_st;
+  else if (strcmp(s, "EL") == 0) return EL_st;
+  return -1;
 }
 char *
 Nodetype(int type) 
@@ -535,6 +635,19 @@ Nodetype(int type)
   default: Die("bogus node type %d\n", type);
   }
   return "";
+}
+int
+NodeCode(char *s)
+{
+  if      (strcmp(s, "BIF")  == 0) return BIF_nd;
+  else if (strcmp(s, "MATP") == 0) return MATP_nd;
+  else if (strcmp(s, "MATL") == 0) return MATL_nd;
+  else if (strcmp(s, "MATR") == 0) return MATR_nd;
+  else if (strcmp(s, "BEGL") == 0) return BEGL_nd;
+  else if (strcmp(s, "BEGR") == 0) return BEGR_nd;
+  else if (strcmp(s, "ROOT") == 0) return ROOT_nd;
+  else if (strcmp(s, "END")  == 0) return END_nd;
+  return -1;
 }
 char *
 UniqueStatetype(int type)
@@ -566,7 +679,93 @@ UniqueStatetype(int type)
   }
   return "";
 }
-
+int
+UniqueStateCode(char *s)
+{
+  if      (strcmp(s, "ROOT_S")  == 0) return ROOT_S;
+  else if (strcmp(s, "ROOT_IL") == 0) return ROOT_IL;  
+  else if (strcmp(s, "ROOT_IR") == 0) return ROOT_IR;  
+  else if (strcmp(s, "BEGL_S")  == 0) return BEGL_S;  
+  else if (strcmp(s, "BEGR_S")  == 0) return BEGR_S;  
+  else if (strcmp(s, "BEGR_IL") == 0) return BEGR_IL;  
+  else if (strcmp(s, "MATP_MP") == 0) return MATP_MP;  
+  else if (strcmp(s, "MATP_ML") == 0) return MATP_ML;  
+  else if (strcmp(s, "MATP_MR") == 0) return MATP_MR;  
+  else if (strcmp(s, "MATP_D")  == 0) return MATP_D;  
+  else if (strcmp(s, "MATP_IL") == 0) return MATP_IL;  
+  else if (strcmp(s, "MATP_IR") == 0) return MATP_IR;  
+  else if (strcmp(s, "MATL_ML") == 0) return MATL_ML;  
+  else if (strcmp(s, "MATL_D")  == 0) return MATL_D;  
+  else if (strcmp(s, "MATL_IL") == 0) return MATL_IL;  
+  else if (strcmp(s, "MATR_MR") == 0) return MATR_MR;  
+  else if (strcmp(s, "MATR_D")  == 0) return MATR_D;  
+  else if (strcmp(s, "MATR_IR") == 0) return MATR_IR;  
+  else if (strcmp(s, "BIF_B")   == 0) return BIF_B;
+  else if (strcmp(s, "END_E")   == 0) return END_E;
+  else if (strcmp(s, "END_EL")  == 0) return END_EL;
+  else Die("bogus unique statetype %s\n", s);
+  return 0; /*NOTREACHED*/
+}
+int
+DeriveUniqueStateCode(int ndtype, int sttype)
+{
+  switch (ndtype) {
+  case BIF_nd:   
+    switch (sttype) {
+    case B_st:  return BIF_B;
+    default:    return -1;
+    }
+  case MATP_nd:  
+    switch (sttype) {
+    case D_st:  return MATP_D;
+    case MP_st: return MATP_MP;
+    case ML_st: return MATP_ML;
+    case MR_st: return MATP_MR;
+    case IL_st: return MATP_IL;
+    case IR_st: return MATP_IR;
+    default:    return -1;
+    }
+  case MATL_nd:  
+    switch (sttype) {
+    case D_st:  return MATL_D;
+    case ML_st: return MATL_ML;
+    case IL_st: return MATL_IL;
+    default:    return -1;
+    }
+  case MATR_nd:  
+    switch (sttype) {
+    case D_st:  return MATR_D;
+    case MR_st: return MATR_MR;
+    case IR_st: return MATR_IR;
+    default:    return -1;
+    }
+  case BEGL_nd:  
+    switch (sttype) {
+    case S_st:  return BEGL_S;
+    default:    return -1;
+    }
+  case BEGR_nd:  
+    switch (sttype) {
+    case S_st:  return BEGR_S;
+    case IL_st: return BEGR_IL;
+    default:    return -1;
+    }
+  case ROOT_nd:  
+    switch (sttype) {
+    case S_st:  return ROOT_S;
+    case IL_st: return ROOT_IL;
+    case IR_st: return ROOT_IR;
+    default:    return -1;
+    }
+  case END_nd:   
+    switch (sttype) {
+    case E_st:  return END_E;
+    default:    return -1;
+    }
+  default: 
+    return -1;
+  }
+}
 
 /* Function: CMRebalance()
  * Date:     SRE, Mon Apr  8 11:40:46 2002 [St. Louis]

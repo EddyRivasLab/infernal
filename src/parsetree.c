@@ -20,9 +20,11 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include "squid.h"
+
 #include "structs.h"
 #include "funcs.h"
-#include "squid.h"
+
 
 /* Function: CreateParsetree()
  * Incept:   SRE 29 Feb 2000 [Seattle] from cove2.0 code.

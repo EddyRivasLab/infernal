@@ -15,11 +15,11 @@
 #include <ctype.h>
 #include <float.h>
 
+#include "squid.h"		/* general sequence analysis library    */
+#include "msa.h"                /* squid's multiple alignment i/o       */
 
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
-#include "squid.h"		/* general sequence analysis library    */
-#include "msa.h"                /* squid's multiple alignment i/o       */
 #include "version.h"            /* versioning info for Infernal         */
 
 MSA *Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt, 
@@ -56,9 +56,9 @@ int
 main(int argc, char **argv)
 {
   char            *cmfile;      /* file to read CM from */	
+  CMFILE          *cmfp;	/* open CM file */
   char            *seqfile;     /* file to read sequences from */
   int              format;      /* format of sequence file */
-  FILE            *cmfp;        /* open CM file for reading */
   CM_t            *cm;          /* a covariance model       */
   char           **rseq;        /* RNA sequences to align */
   int              nseq;	/* number of rseq */
@@ -130,13 +130,13 @@ main(int argc, char **argv)
    * Input and configure the CM
    *****************************************************************/
 
-  if ((cmfp = fopen(cmfile, "rb")) == NULL)
+  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
     Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
-  if (! ReadBinaryCM(cmfp, &cm))
+  if (! CMFileRead(cmfp, &cm))
     Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
   if (cm == NULL) 
     Die("%s empty?\n", cmfile);
-  fclose(cmfp);
+  CMFileClose(cmfp);
 
   if (do_local) ConfigLocal(cm, 0.5, 0.5);
   CMLogoddsify(cm);
