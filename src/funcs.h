@@ -47,6 +47,7 @@ extern int          InsertTraceNode(Parsetree_t *tr, int y, int whichway,
 extern void         ParsetreeCount(CM_t *cm, Parsetree_t *tr, char *seq, float wgt);
 extern float        ParsetreeScore(CM_t *cm, Parsetree_t *tr, char *seq);
 extern void         PrintParsetree(FILE *fp, Parsetree_t *tr);
+extern void         ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq);
 extern void         SummarizeMasterTrace(FILE *fp, Parsetree_t *tr);
 
 /* from rna_ops.c

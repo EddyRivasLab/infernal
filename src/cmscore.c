@@ -49,6 +49,10 @@ main(int argc, char **argv)
   FILE            *cmfp;        /* open CM file for reading */
   SQFILE	  *sqfp;        /* open seqfile for reading */
   CM_t            *cm;          /* a covariance model       */
+  char            *seq;         /* RNA sequence */
+  SQINFO           sqinfo;      /* optional info attached to seq */
+  char            *dsq;         /* digitized RNA sequence */
+  Stopwatch_t     *watch;
   
   char *optname;                /* name of option found by Getopt()        */
   char *optarg;                 /* argument found by Getopt()              */
@@ -85,6 +89,8 @@ main(int argc, char **argv)
    * Preliminaries: open our files for i/o; get a CM
    ***********************************************/
 
+  watch = StopwatchCreate();
+
   if ((sqfp = SeqfileOpen(seqfile, format, NULL)) == NULL)
     Die("Failed to open sequence database file %s\n%s\n", seqfile, usage);
   if ((cmfp = fopen(cmfile, "rb")) == NULL)
@@ -98,9 +104,26 @@ main(int argc, char **argv)
   CMLogoddsify(cm);
   CYKDemands(cm, 100); 
 
+  while (ReadSeq(sqfp, sqfp->format, &seq, &sqinfo))
+    {
+      if (sqinfo.len == 0) continue; 	/* silently skip len 0 seqs */
+      
+      dsq = DigitizeSequence(seq, sqinfo.len);
+
+      StopwatchZero(watch);
+
+      StopwatchStart(watch);
+      CYKInside(cm, dsq, sqinfo.len);
+      StopwatchStop(watch);
+
+      StopwatchDisplay(stdout, "CPU time: ", watch);
+      FreeSequence(seq, &sqinfo);
+      free(dsq);
+    }
 
   fclose(cmfp);
   SeqfileClose(sqfp);
+  StopwatchFree(watch);
   SqdClean();
   return EXIT_SUCCESS;
 }

@@ -309,17 +309,13 @@ HandModelmaker(MSA *msa, int use_rf, float gapthresh,
    */
   cm = CreateCM(nnodes, nstates);
   cm_from_master(cm, mtr);
+  CMZero(cm);
 
   if (ret_tr != NULL) savetr = MallocOrDie(sizeof(Parsetree_t *) * msa->nseq);
-
   for (idx = 0; idx < msa->nseq; idx++)
     {
       tr = transmogrify(cm, mtr, msa->aseq[idx]);
-      /* printf("### parse tree for sequence %d\n", idx);
-	 PrintParsetree(stdout, tr); 
-      */
       ParsetreeCount(cm, tr, msa->aseq[idx], msa->wgt[idx]);
-
       if (ret_tr != NULL) savetr[idx] = tr; else FreeParsetree(tr);
     }
   free(matassign);
@@ -758,7 +754,7 @@ transmogrify(CM_t *cm, Parsetree_t *mtr, char *aseq)
 	for (i = mtr->emitl[node]; i < mtr->emitl[mtr->nxtl[node]]; i++)
 	  if (! isgap(aseq[i]))
 	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, mtr->emitr[node], 1);
-	for (j = mtr->emitr[node]; j > mtr->emitr[mtr->nxtr[node]]; j--)
+	for (j = mtr->emitr[node]; j > mtr->emitr[mtr->nxtl[node]]; j--)
 	  if (! isgap(aseq[j]))
 	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, 2);	
 	break;

@@ -99,6 +99,9 @@ DegeneratePairScore(float *esc, char syml, char symr)
   int l,r;
   float sc;
 
+  if (syml < Alphabet_size && symr < Alphabet_size) 
+    return esc[(int) (syml*Alphabet_size+symr)];
+
   SingletCount(left, syml, 1.);
   SingletCount(right, symr, 1.);
 
@@ -114,6 +117,8 @@ DegenerateSingletScore(float *esc, char sym)
   float nt[MAXABET];		
   float sc;
   int   x;
+
+  if (sym < Alphabet_size) return esc[(int) sym];
 
   SingletCount(nt, sym, 1.);
   sc = 0.;

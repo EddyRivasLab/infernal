@@ -102,7 +102,6 @@ void
 WriteBinaryCM(FILE *fp, CM_t *cm)
 {
   int v;
-  int tag;
 
   fwrite((char *) &(v01magic), sizeof(unsigned int), 1, fp);
 
@@ -127,7 +126,7 @@ WriteBinaryCM(FILE *fp, CM_t *cm)
   tagged_fwrite(CMIO_PLAST,        cm->plast,      sizeof(int),   cm->M, fp); 
   tagged_fwrite(CMIO_PNUM,         cm->pnum,       sizeof(int),   cm->M, fp);  
   tagged_fwrite(CMIO_NODEMAP,      cm->nodemap,    sizeof(int),   cm->nodes, fp);
-  tagged_fwrite(CMIO_NDTYPE,       cm->ndtype,     sizeof(int),   cm->nodes, fp);
+  tagged_fwrite(CMIO_NDTYPE,       cm->ndtype,     sizeof(char),  cm->nodes, fp);
 
   for (v = 0; v < cm->M; v++) {
     tagged_fwrite(CMIO_T, cm->t[v], sizeof(float), MAXCONNECT, fp);
@@ -150,7 +149,6 @@ ReadBinaryCM(FILE *fp, CM_t **ret_cm)
   unsigned int  magic;
   int           M;
   int           nodes;
-  int           tag;
   int           atype;
   int           asize;
   int           v;
@@ -160,8 +158,8 @@ ReadBinaryCM(FILE *fp, CM_t **ret_cm)
   if (! fread((char *) &magic, sizeof(unsigned int), 1, fp)) return 0;
   if (magic != v01magic) goto FAILURE;
   
-  if (! fread((char *) &M,     sizeof(int), 1, fp)) goto FAILURE;
-  if (! fread((char *) &nodes, sizeof(int), 1, fp)) goto FAILURE;
+  if (! tagged_fread(CMIO_M,     (void *) &M,     sizeof(int), 1, fp)) goto FAILURE;
+  if (! tagged_fread(CMIO_NODES, (void *) &nodes, sizeof(int), 1, fp)) goto FAILURE;
   cm = CreateCM(nodes, M);
 
   if (! tagged_bin_string_read(CMIO_NAME, &(cm->name),  fp)) goto FAILURE;
@@ -179,7 +177,7 @@ ReadBinaryCM(FILE *fp, CM_t **ret_cm)
   if (! tagged_fread(CMIO_PLAST,        (void *) cm->plast,      sizeof(int),   cm->M, fp))         goto FAILURE; 
   if (! tagged_fread(CMIO_PNUM,         (void *) cm->pnum,       sizeof(int),   cm->M, fp))         goto FAILURE;  
   if (! tagged_fread(CMIO_NODEMAP,      (void *) cm->nodemap,    sizeof(int),   cm->nodes, fp))     goto FAILURE;
-  if (! tagged_fread(CMIO_NDTYPE,       (void *) cm->ndtype,     sizeof(int),   cm->nodes, fp))     goto FAILURE;
+  if (! tagged_fread(CMIO_NDTYPE,       (void *) cm->ndtype,     sizeof(char),  cm->nodes, fp))     goto FAILURE;
 
   for (v = 0; v < cm->M; v++) {
     if (! tagged_fread(CMIO_T, (void *) cm->t[v], sizeof(float), MAXCONNECT, fp)) goto FAILURE;

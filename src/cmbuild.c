@@ -182,11 +182,7 @@ main(int argc, char **argv)
       CMSimpleProbify(cm);
       CMSetDefaultNullModel(cm);
 
-#if 0
-      CMLogoddsify(cm);
-      CYKDemands(cm, msa->alen);
-
-
+o      CMLogoddsify(cm);
       for (idx = 0; idx < msa->nseq; idx++)
 	{
 	  char *rseq, *dsq;
@@ -196,19 +192,21 @@ main(int argc, char **argv)
 	  L = strlen(rseq);
 	  dsq = DigitizeSequence(rseq, L);
 
+#if 0
 	  StopwatchZero(watch);
 	  StopwatchStart(watch);
 	  CYKInside(cm, dsq, L);
 	  StopwatchStop(watch);
-	  
 	  StopwatchDisplay(stdout, "CPU time: ", watch);
+#endif
+	  ParsetreeDump(stdout, tr[idx], cm, dsq+1);
 	  printf("trace score says: %.2f\n",
 		 ParsetreeScore(cm, tr[idx], msa->aseq[idx])/ 0.693);
 
 	  free(rseq);
 	  free(dsq);
 	}
-#endif
+
 
       WriteBinaryCM(cmfp, cm);
 

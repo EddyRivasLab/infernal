@@ -288,6 +288,61 @@ PrintParsetree(FILE *fp, Parsetree_t *tr)
   fprintf(fp, "block  = %d\n", tr->memblock);
 }
 
+/* Function: ParsetreeDump()
+ * Date:     SRE, Fri Aug  4 10:43:20 2000 [St. Louis]
+ *
+ * Purpose:  Generate a detailed picture of a parsetree data structure,
+ *           annotated with relevant information from the sequence
+ *           and the model.
+ *
+ * Args:    
+ *
+ * Returns:  
+ *
+ * Example:  
+ */
+void
+ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq)
+{
+  int   x;
+  char  syml, symr;
+  float tsc;
+  float esc;
+  int   v;
+
+  fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s\n",
+	  " idx ","emitl", "emitr", "state", " nxtl", " nxtr", " prv ", " tsc ", " esc ");
+  fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s\n",
+	 "-----", "------", "------", "-------", "-----","-----", "-----","-----", "-----");
+  for (x = 0; x < tr->n; x++)
+    {
+      v = tr->state[x];
+      syml = symr = ' ';
+      esc = tsc = 0.;
+      if (cm->sttype[v] == MP_st) {
+	syml = Alphabet[(int)dsq[tr->emitl[x]]]; 
+	symr = Alphabet[(int)dsq[tr->emitr[x]]];
+	esc  = DegeneratePairScore(cm->esc[v], dsq[tr->emitl[x]], dsq[tr->emitr[x]]);
+      } else if (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) {
+	syml = Alphabet[(int)dsq[tr->emitl[x]]];
+	esc  = DegenerateSingletScore(cm->esc[v], dsq[tr->emitl[x]]);
+      } else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) {
+	symr = Alphabet[(int)dsq[tr->emitr[x]]];
+	esc  = DegenerateSingletScore(cm->esc[v], dsq[tr->emitr[x]]);
+      }
+      if (cm->sttype[v] != B_st && cm->sttype[v] != E_st)
+	tsc = cm->tsc[v][tr->state[tr->nxtl[x]] - cm->cfirst[v]];
+
+      fprintf(fp, "%5d %5d%c %5d%c %5d%-2s %5d %5d %5d %5.2f %5.2f\n",
+	      x, tr->emitl[x], syml, tr->emitr[x], symr, tr->state[x], Statetype(cm->sttype[v]),
+	      tr->nxtl[x], tr->nxtr[x], tr->prv[x], tsc, esc);
+
+    }
+  fprintf(fp, "%5s %5s %5s %5s %5s %5s %5s %5s %5s\n",
+	  "-----", "-----", "-----", "-----", "-----","-----", "-----","-----", "-----");
+} 
+
+
 /* Function: SummarizeMasterTrace()
  * Date:     SRE, Fri Jul 28 13:42:30 2000 [St. Louis]
  *

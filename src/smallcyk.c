@@ -228,10 +228,8 @@ CYKInside(CM_t *cm, char *dsq, int L)
       if (cm->sttype[v] == E_st) { 
 	alpha[v] = end; continue; 
       }
-      if (! deckpool_pop(dpool, &(alpha[v]))) {
+      if (! deckpool_pop(dpool, &(alpha[v]))) 
 	alpha[v] = alloc_deck(L);
-	printf("allocating at deck %d\n", v);
-      } 
 
       if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
 	{
@@ -378,7 +376,4 @@ CYKInside(CM_t *cm, char *dsq, int L)
     ndecks++;
   }
   deckpool_free(dpool);
-
-  printf("actual number of decks used = %d\n", ndecks+1);
-
 }
