@@ -1,0 +1,60 @@
+# STOCKHOLM 1.0
+#=GF ID    SRP_euk
+#=GF DE    [Larsen91]
+
+HOM.S._A             ..GCC.GGGCGC.GGUGGCGCGUGCCUGUAG.UCCC.AGCUACUC.GGGA
+XEN.LAE.             ..GCC.GGGCGC.UGUGGCGUGUGCCUGUAA.UCCA..GCUACU..UGGA
+DRO.MEL.             ..GACUGGAAG..GUUGGCAG.CUUCUGUAA.CUCA.CGCUUCUG.UGAG
+ZEA.M._A             ..NCC.GAGCUC.UGUAGCGAGAGCUUGUAA.CCCG...AG.....CGGG
+SCH.POM.             .CGC......................UGUAA........UG.........
+#=GC SS_cons         ..>>>..>>>>>..>.....<<<<<<......>>>>..........<<<<
+#=GC RF              ..xxx.xxxxxx.xxxxxxxxxxxxxxxxxx.xxxx.xxxxxxxx.xxxx
+
+HOM.S._A             GGC...UGAGGCUGGAGGAUCGCUU.GAGUCCAGGA.GUUCUGGGC..UG
+XEN.LAE.             GGC...UUGGGCUGUCGGAUCGCUU.GAGUCCAGGA.GUUCUGGGC..UG
+DRO.MEL.             GUC....UGAUUGUG.GGAUGGCCU.GAGGCUGGGAUCUACUGCGUAGCG
+ZEA.M._A             GGCAUUAAGGUGGUGUGAAUGCUUU.GCGAUGGCU...UUCUGGGCCCUG
+SCH.POM.             .GC.....UUGGUCGAAGUGUUUAGUA.CUCCCAAU..AGUGCAUGUU..
+#=GC SS_cons         <<<....>>>>>.>>....>>>>>....>>.>>>>.....>>>.......
+#=GC RF              xxx...xxxxxxxxxxxxxxxxxxx.xxxxxxxxxx.xxxxxxxxx..xx
+
+HOM.S._A             ...UAGUGCGC.UAUGCC....GAUCGGGUGUCCGCACUAAGUUC.GGCA
+XEN.LAE.             ...CACUGAGC.UAUGUC....GAUCGGGUGUCCGCACUAAGUUC.GGUA
+DRO.MEL.             G..ACCAG.CU.CAUGUU....GACGGAACGUCCGCACUAAGCUU.GCCA
+ZEA.M._A             ...GGCUCG.U.UGUGACACUGGCCGGCUUGCCCAUCCCAAGUUG.GUAG
+SCH.POM.             ...CGGUGGUC.UCGGGUU...CGAGUCUCGCUU.UCGAUCCCUC.GAUC
+#=GC SS_cons         ...>>>>>.>>.>>>..........>>>>>>.>..>>>>>...>>.>>>>
+#=GC RF              ...xxxxxxxx.xxxxxx....xxxxxxxxxxxxxxxxxxxxxxx.xxxx
+
+HOM.S._A             ....UCAAUAU.GGUGACCUCCCGGGAGCGGGGGACCACCAGGUUG.CCU
+XEN.LAE.             ....UCAAUAU.GGUGUUCCUGGGGGAGCCUCGGAUCACCAGGUUGCUCU
+DRO.MEL.             ....UCAAUAU.GGGUGCCAUGGAGGAGUCCGUGGCAUUCAGGUUGGCU.
+ZEA.M._A             U...GUCUGGU.GGGGGCUCUAGCGAAAGCUUUGGGUCUCUGCAGA.CCU
+SCH.POM.             ....UGCCACG.UCUGUUCGAAGAGUAGUCUUCGU.GGCAACUGGCAGUU
+#=GC SS_cons         .....>>>>...>>>>..>>>>>>....<<<<<<..<<<<..<<<<.>>.
+#=GC RF              ....xxxxxxx.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.xxx
+
+HOM.S._A             AAGGAGGGGUGAACCGGCCCAGGUCGGAA..ACGGAGCAGGUCAAAAC.U
+XEN.LAE.             AAGGAGGGGUGAACCGGCCCAGGUCGGAA..ACGGAGCAGGUCAAAAC.C
+DRO.MEL.             AAGGAGGGAUGAACCGGGCCAGGGGUGAA..AACCAGCAGCCAAGAGU.U
+ZEA.M._A             GGAGCGGCAGGAAUGGCGUAAGGCUGGCUUCACAGAGCAGCGAUCACU.G
+SCH.POM.             AAACCGUGUAGUACCGAUGGAGGUUGGAA..ACAAUGCACAUCAC.UA.C
+#=GC SS_cons         ..<<.>>>>>.....>>>.....>>>......<<<.....<<<...<<.<
+#=GC RF              xxxxxxxxxxxxxxxxxxxxxxxxxxxxx..xxxxxxxxxxxxxxxxx.x
+
+HOM.S._A             CCCGUGCUGAUCAGUAGUGGGAUCGCG.CCUGU..GAAUAGC..CACUGC
+XEN.LAE.             CCCGUGCCGAUCAGUAGUGGGAUCGCG.CCUGU..GAAUAGC..CGGUGC
+DRO.MEL.             CCCGUGGUAGGCAGUAGUGGGAUAGCG.UACCG..GAGUGGA..CUGCCG
+ZEA.M._A             CCGACUCCCAACGGUGGGAGGAUAACGAAGCCGCUGC.ACU.UUGAGCCU
+SCH.POM.             CGGGUCUUGGGCAGUGCGAUAGCGAUG.GGAUU..CACCUU...CGCAGG
+#=GC SS_cons         <<..<<<<<<....<<<<<.<....<<.<<<<.....<<<<<..<<<<<.
+#=GC RF              xxxxxxxxxxxxxxxxxxxxxxxxxxx.xxxxx..xxxxxxx..xxxxxx
+
+HOM.S._A             ACUCCAGCCUGUGC..AACAU.....AGCGAGACCCCGUCUCUU
+XEN.LAE.             AGAACAGCCUGAAC..AACAC.....AGCGAGACACAGUUCU..
+DRO.MEL.             UUAUCAGCCCAACC..GAUAU.....GGUUGGACCACAAUCUUU
+ZEA.M._A             AACUCAGGCU.CAGAA..CCUCACU.AAGCAAACCACCAUCUUU
+SCH.POM.             AUGUGCA.UGGAAG..UAUAA......ACACAACGGUCGUU...
+#=GC SS_cons         ....<<<<<<<.<<............<<<<<...<<.<<<<<..
+#=GC RF              xxxxxxxxxxxxxx..xxxxx.....xxxxxxxxxxxxxxxxxx
+//

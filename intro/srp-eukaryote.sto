@@ -1,0 +1,535 @@
+# STOCKHOLM 1.0
+#=GF AU    Koala
+
+ZEA.M._A             ..NCC.gAGCUC.uguagcgaGAGCUuguaa.CCCG...ag.....CGGG
+#=GR ZEA.M._A SS     ...>>..>>>>>.........<<<<<......>>>>..........<<<<
+ZEA.M._B             ..NCC.gAGCUC.uguagcgaGAGCUuguaa.CCCG...ag.....CGGG
+#=GR ZEA.M._B SS     ...>>..>>>>>.........<<<<<......>>>>..........<<<<
+ZEA.M._C             ..NCC.gAGCUC.uguagcgaGAGCUuguaa.CCCG...ag.....CGGG
+#=GR ZEA.M._C SS     ...>>..>>>>>.........<<<<<......>>>>..........<<<<
+ZEA.M._D             ..NCC.gAGCUC.uguagcgaGAGCUuguaa.CCCG...ag.....CGGG
+#=GR ZEA.M._D SS     ...>>..>>>>>.........<<<<<......>>>>..........<<<<
+ZEA.M._E             ..NCC.gAGCUC.uguagcgaGAGCUuguaa.CCCG...ag.....CGGG
+#=GR ZEA.M._E SS     ...>>..>>>>>.........<<<<<......>>>>..........<<<<
+ZEA.M._F             ..NCC.gAGCUC.uguagcgaGAGCUuguaa.CCUa...ag.....cGGG
+#=GR ZEA.M._F SS     ...>>..>>>>>.........<<<<<......>>>............<<<
+ZEA.M._G             ..NCC.gAGCUC.uguagcgaGAGCUuguaa.CCCG...ag.....CGGG
+#=GR ZEA.M._G SS     ...>>..>>>>>.........<<<<<......>>>>..........<<<<
+ZEA.M._H             ..NCC.gAGCuC.uguagcgaGuGCUuguaa.CCCG...ag.....CGGG
+#=GR ZEA.M._H SS     ...>>..>>>.>.........<.<<<......>>>>..........<<<<
+TRI.A._A             ..NCC.gAGCUC.aguugcgaGAGCUuguaa.CCCG...ag.....UGGG
+#=GR TRI.A._A SS     ...>>..>>>>>.........<<<<<......>>>>..........<<<<
+TRI.A._B             ..NCC.gAGCU..aguugcgggAGCUuguca.CCCA...ug.....UGGG
+#=GR TRI.A._B SS     ...>>..>>>>...........<<<<......>>>>..........<<<<
+TRI.A._C             ..................................................
+#=GR TRI.A._C SS     ..................................................
+ARA.THA.             ..GUC.gAGCUA.aguaacaaUAGCUuguaa.CCCA...ug.....UGGG
+#=GR ARA.THA. SS     ..>>>..>>>>>.........<<<<<......>>>>..........<<<<
+HUM.JAP.             .......GGCCU.aGcaacgUGGGCCuguaa.CCCA...ag.....UGGG
+#=GR HUM.JAP. SS     .......>>>>>..>.....<<<<<<......>>>>..........<<<<
+HUM.L._A             ..GCC..GGUCUuaGcaacgUGGGCCuguaa.CCCA...ag.....UGGG
+#=GR HUM.L._A SS     ..>>>..>>>>>..>.....<<<<<<......>>>>..........<<<<
+HUM.L._B             .......GGCCUuaGcaacgUGGGCCuguaa.CCCA...ag.....UGGG
+#=GR HUM.L._B SS     .......>>>>>..>.....<<<<<<......>>>>..........<<<<
+HUM.L._C             .......GGuCUuaGcaacuUGGuCCuguaa.CCCA...ag.....UGGG
+#=GR HUM.L._C SS     .......>>.>>..>.....<<<.<<......>>>>..........<<<<
+LYC.ESC.             ..GgC.gAGCUU.aGuaacgUGGGCUuguaa.UCCA...ag.....UGGA
+#=GR LYC.ESC. SS     ..>.>..>>>>>..>.....<<<<<<......>>>>..........<<<<
+CIN.HYB.             ..ACC.gGGCUu.gGuaacgCuAGUCuauaa.CUCA...ag.....UGAG
+#=GR CIN.HYB. SS     ..>>>..>>>>...>.....<.<<<<......>>>>..........<<<<
+PER.AME.             ........GaUC.cGuaacgCGAgCuuauaa.CUCG...ag.....CGGG
+#=GR PER.AME. SS     ........>.>>..>.....<<<.<.......>>>>..........<<<<
+COL.BLU.             ...CC.gaaCCu.cAuuaccUuGGccuguuacCCCA...agu....UGGG
+#=GR COL.BLU. SS     ...>>....>>...>.....<.<<........>>>>..........<<<<
+CRY.MOR.             ..................................................
+#=GR CRY.MOR. SS     ..................................................
+GYN.AUR.             ..ACC.gGGCuu.gGcaacgCuuGCCuauaa.CUCA...ag.....UGAG
+#=GR GYN.AUR. SS     ..>>>..>>>....>.....<..<<<......>>>>..........<<<<
+BEN.HIS.             ..GCC.gAGCUC.aGcagugUGAGCUugcaa.YUCG...aa.....CGGG
+#=GR BEN.HIS. SS     ..>>>..>>>>>..>.....<<<<<<......>>>>..........<<<<
+YAR.L._A             ..CUU...........agc.......uguaa.UGGCa..uuu...uGUCG
+#=GR YAR.L._A SS     ..>>>...........................>>>>..........<<<<
+YAR.L._B             ................agc.......uguaa.UGGCa..uuu...uGUCG
+#=GR YAR.L._B SS     ................................>>>>..........<<<<
+SCH.POM.             .cGC......................uguaa........ug.........
+#=GR SCH.POM. SS     ..>>..............................................
+TET.THE.             ..GCCagGGUAg....ca...aUACCugugu......cuauaugu.....
+#=GR TET.THE. SS     ..>>>..>>>>...........<<<<........................
+TET.ROS.             ..GCCagGGUAg....ca...aUGCCuguga......ccucgugu.....
+#=GR TET.ROS. SS     ..>>>..>>>>...........<<<<........................
+TRY.BRU.             ..AGCcgGAGCG....cau..UGCUCuguaa.CCU....ucg.....GGG
+#=GR TRY.BRU. SS     ..>>>..>>>>>.........<<<<<......>>>............<<<
+XEN.LAE.             ..GCC.gGGCGC.uGuggcgUGUGCCuguaa.UCCA..gcuacu..UGGA
+#=GR XEN.LAE. SS     ..>>>..>>>>>..>.....<<<<<<......>>>>..........<<<<
+DRO.MEL.             ..GACugGAAG..gUuggcaG.CUUCuguaa.CUCA.cgcuucug.UGAG
+#=GR DRO.MEL. SS     ..>>>..>>>>...>.....<.<<<<......>>>>..........<<<<
+RAT.RAT.             ..GCC.gGGCGc.gGuggcgCaCGCCuguag.UCCC.agcuacuc.GGGA
+#=GR RAT.RAT. SS     ..>>>..>>>>...>.....<.<<<<......>>>>..........<<<<
+MUS.M.B1             gaGCC.gGGUGU.gGuggcgCACACCuuuaa.UCCC.agc.acuc.GGGA
+#=GR MUS.M.B1 SS     ..>>>..>>>>>..>.....<<<<<<......>>>>..........<<<<
+MUS.MUS.             ..GCC.....................uguag.UUCC.agcuacuc.GGGA
+#=GR MUS.MUS. SS     ..>>>...........................>>>>..........<<<<
+CAN.SPE.             ..GCC.gGGCGC.gGuggcgCGCGCCuguag.UCCC.agcuacuc.GGGA
+#=GR CAN.SPE. SS     ..>>>..>>>>>..>.....<<<<<<......>>>>..........<<<<
+HOM.S._A             ..GCC.gGGCGC.gGuggcgCGUGCCuguag.UCCC.agcuacuc.GGGA
+#=GR HOM.S._A SS     ..>>>..>>>>>..>.....<<<<<<......>>>>..........<<<<
+HOM.S._B             ..GCC.gGGCGC.gGuggcgCGUGCCuguag.UCCC.agcuacuc.GGGA
+#=GR HOM.S._B SS     ..>>>..>>>>>..>.....<<<<<<......>>>>..........<<<<
+#=GC SS_cons         ..>>>..>>>>>..>.....<<<<<<......>>>>..........<<<<
+
+ZEA.M._A             GGCauuaAGGUGGUGugaaUGCUUu.gcGAuggcu...UUCUGggcccug
+#=GR ZEA.M._A SS     <<.....>>>>>>>>....>>>>>....>>........>>>>>.......
+ZEA.M._B             GGCauuaAGGUGGcGcggaUGCUuu.gcGAuggu....uUCUGggcc.ug
+#=GR ZEA.M._B SS     <<.....>>>>>>.>....>>>>.....>>.........>>>>.......
+ZEA.M._C             GGCauuaAGGUGGUGuggaUGCUUg.g.uaccgu....GUCUuugcc.ug
+#=GR ZEA.M._C SS     <<.....>>>>>>>>....>>>>>..............>>>>........
+ZEA.M._D             GGCauuaAGGUGGUGcggaUuCUUu.gcGAuggcu...UUCUGggcc.cg
+#=GR ZEA.M._D SS     <<.....>>>>>>>>....>.>>>....>>........>>>>>.......
+ZEA.M._E             GGCauuaAGGUGGUGcggaUUCUUu.gcGAuggcu...UUCUGggcc.cg
+#=GR ZEA.M._E SS     <<.....>>>>>>>>....>.>>>....>>........>>>>>.......
+ZEA.M._F             GGCauuaAGGUGGUGuggaUGUUUc.cuGAcgga....UUCUGggcc.ug
+#=GR ZEA.M._F SS     <<.....>>>>>>>>....>>>>>....>>........>>>>>.......
+ZEA.M._G             GGCauuaAGGUGGUGcggaUuCUUu.gcGAuggcu...UUCUGggcc.cg
+#=GR ZEA.M._G SS     <<.....>>>>>>>>....>.>>>....>>........>>>>>.......
+ZEA.M._H             GGCaauaagguaguguggaugucaa.uugu.ggu....gcaugugcc.ug
+#=GR ZEA.M._H SS     <<................................................
+TRI.A._A             GGCauuaaaguGaUGugaacGCUGu.ugUA.gcg....CUGCGggcc.ug
+#=GR TRI.A._A SS     <<.........>.>>.....>>>>....>>........>>>>>.......
+TRI.A._B             GGCauugAGGcGGUGuggaUGCUug..gUGcggu....uUGuuggcc.ug
+#=GR TRI.A._B SS     <<.....>>>.>>>>....>>>>.....>>.........>>.........
+TRI.A._C             ..................................................
+#=GR TRI.A._C SS     ..................................................
+ARA.THA.             GACauuaAGAUGGUG.ggaCAcUG...gUUcggu....UccUCggau.cg
+#=GR ARA.THA. SS     <<<....>>>>>>>>....>>.>>....>>........>..>>.......
+HUM.JAP.             ggcauguGGGAGAUG.ggacuuug...gGUcagc....ccauuggau.cg
+#=GR HUM.JAP. SS     .......>>>>>>>>.............>>....................
+HUM.L._A             GGCauguGGGAAAUG.ggacuuug...gGUcaac....CUAGuggau.cg
+#=GR HUM.L._A SS     <<<....>>>>>>>>.............>>........>>>>........
+HUM.L._B             ggcauguGGGAAAUG.gaacauug...gGUcagc....CCAGuggau.cg
+#=GR HUM.L._B SS     .......>>>>>>>>.............>>........>>>>........
+HUM.L._C             ggcauguGGGAAAUG.gaacuuug...gGUcaac....CCAGuggun.cg
+#=GR HUM.L._C SS     .......>>>>>>>>.............>>........>>>>........
+LYC.ESC.             GaCaucaAaGUGGUU.gaaUAUUG...gGCuuua....CCAgaaggu.ug
+#=GR LYC.ESC. SS     <.<....>.>>>>>>....>>>>>....>>........>>>.........
+CIN.HYB.             GGUaucaAAGUGGGUugaaCUuUg...aGCuuggc...UUAGcuagu.ug
+#=GR CIN.HYB. SS     <<<....>>>>>>>>....>>.>.....>>........>>>>........
+PER.AME.             ggcuauaaagguggu.guggaacg...agcugacucgaccugccggguug
+#=GR PER.AME. SS     ..................................................
+COL.BLU.             GGucuuuaagguuauuugaukuukggccuaugcuacckgcckggcucugg
+#=GR COL.BLU. SS     <<................................................
+CRY.MOR.             ...aaagugguuggacuuugucuuggancagnugguuggguncgcccgcg
+#=GR CRY.MOR. SS     ..................................................
+GYN.AUR.             GGUaagaaaaaggguuggaauugaaaggg.....................
+#=GR GYN.AUR. SS     <<<...............................................
+BEN.HIS.             GGCaucaagg.ugguuggagguuggacagnacacagagcagggcauuucg
+#=GR BEN.HIS. SS     <<<...............................................
+YAR.L._A             GAG.ugguaAAUCGU.cuucUUGUu.guGcgUUCga.gucuUGggcucug
+#=GR YAR.L._A SS     <<<......>>>>>>.....>>>>....>..>>>.......>>.......
+YAR.L._B             gag.ugguaAaUCGc.cuucUUGUu.guGCgUUCga.guucUGgacucug
+#=GR YAR.L._B SS     .........>.>>>......>>>>....>>.>>>.......>>.......
+SCH.POM.             .GC.....uUGGUCgaaGUGUUUAgUA.CUcCCAau..agUGCAUguu..
+#=GR SCH.POM. SS     .<<......>>>>>...>>>>>>>.>>.>>.>>>......>>>>>.....
+TET.THE.             GGCau.aaacAAUguaGGUUgUGAUAGaUAgGAUau..gaGAguuugaug
+#=GR TET.THE. SS     <<<.......>>>...>>>>.>>>>>>.>>.>>>......>>........
+TET.ROS.             GGCau.aaacAaUguaGGUUaGAAUAGuCAgAGUau..gaGAguuugaug
+#=GR TET.ROS. SS     <<<.......>.>...>>>>.>>>>>>.>>.>>>......>>........
+TRY.BRU.             GCU...gaucCCGCU.uaGCGGgGACGuCUuGGaca...aGCGgg...gg
+#=GR TRY.BRU. SS     <<<.......>>>>>...>>>>.>>>>.>>.>>.......>>>.......
+XEN.LAE.             GGC...uuGGGCUGUcggaUCGCUu.gaGUcCAGGa.guuCUGggc..ug
+#=GR XEN.LAE. SS     <<<.....>>>>>>>....>>>>>....>>.>>>>.....>>>.......
+DRO.MEL.             GUC....uGAUUGUG.ggaUGGCCu.gaGGcUGGGaucuaCUGcguagcg
+#=GR DRO.MEL. SS     <<<.....>>>>>>>....>>>>>....>>.>>>>.....>>>.......
+RAT.RAT.             GGC...uGAGGacaGaggaUCGCUu.gaGUcCAGGa.guuCUGggc..ug
+#=GR RAT.RAT. SS     <<<....>>>>...>....>>>>>....>>.>>>>.....>>>.......
+MUS.M.B1             GGC...aGAGGCAGGcggaUUUCU..gaGUucgaggccagccugguc.ua
+#=GR MUS.M.B1 SS     <<<....>>>>>>>>....>>>>>....>>....................
+MUS.MUS.             GGC...ugagacaggaggaucgcuu.gaguccaaga.guucugggc..ug
+#=GR MUS.MUS. SS     <<<...............................................
+CAN.SPE.             GGC...uGAGGCaGGaggaUCGCUu.gaGCcCAGGa.guuCUGggc..ug
+#=GR CAN.SPE. SS     <<<....>>>>>.>>....>>>>>....>>.>>>>.....>>>.......
+HOM.S._A             GGC...uGAGGCuGGaggaUCGCUu.gaGUcCAGGa.guuCUGggc..ug
+#=GR HOM.S._A SS     <<<....>>>>>.>>....>>>>>....>>.>>>>.....>>>.......
+HOM.S._B             GGC...uGAGGUGGGaggaUCGCUu.gaGCcCAGGa.guuCUGggc..ug
+#=GR HOM.S._B SS     <<<....>>>>>>>>....>>>>>....>>.>>>>.....>>>.......
+#=GC SS_cons         <<<....>>>>>>>>....>>>>>..........................
+
+ZEA.M._A             ...GGCUCG.u.ugUgacacuggcCGGCUUGcCcaUCCCAagUUG.GuAG
+#=GR ZEA.M._A SS     ...>>>>>>.....>.........>>>>>>>.>..>>>>>..>>>.>.>>
+ZEA.M._B             ...GGCUCG.u.ugUgacucuagcCGGCUUGcCcaUCCCAagUUG.GuAG
+#=GR ZEA.M._B SS     ...>>>>>>.....>.........>>>>>>>.>..>>>>>..>>>.>.>>
+ZEA.M._C             ...GGUUCAuggugUgccuuug.uUGGCCUGcCcgUUCCAagUUG.GuAG
+#=GR ZEA.M._C SS     ...>>>>>>.....>.........>>>>>>>.>..>>>>>..>>>.>.>>
+ZEA.M._D             ...GGCUCGcuaugUgccuuuggcCGGCCUGcCcgUCCCAagUUG.GuAG
+#=GR ZEA.M._D SS     ...>>>>>>.....>.........>>>>>>>.>..>>>>>..>>>.>.>>
+ZEA.M._E             ...GGCUCGcuaugUgccuuuggcCGGCCUGcCcgUCCCAagUUG.GuAG
+#=GR ZEA.M._E SS     ...>>>>>>.....>.........>>>>>>>.>..>>>>>..>>>.>.>>
+ZEA.M._F             ...GGCUUG.uaugUgccacuggcCGGCCUGcCcgUUCCAagUUG.GuuG
+#=GR ZEA.M._F SS     ...>>>>>>.....>.........>>>>>>>.>..>>>>>..>>>.>..>
+ZEA.M._G             ...GGCUCGcuaugUgccuuuggcCGGCCUGcCcgUCCCAagUUG.GuAG
+#=GR ZEA.M._G SS     ...>>>>>>.....>.........>>>>>>>.>..>>>>>..>>>.>.>>
+ZEA.M._H             ...GGUCUA..gugCuacaaacugUGGacCAcCcaUUCCAagUUGcGuaG
+#=GR ZEA.M._H SS     ...>>>>>>.....>.........>>>..>>.>..>>>>>..>>>.>..>
+TRI.A._A             ...GUCUGG..gugUgcuacug.cUGGCCCGcCcgUUCCAagUUGcGuAG
+#=GR TRI.A._A SS     ...>>>>>>.....>.........>>>>>>>.>..>>>>>..>>>.>.>>
+TRI.A._B             ...GGCUUGugaugUaaccuug.cUGGCCUGcCcgUUCCAagUUG.GuAG
+#=GR TRI.A._B SS     ...>>>>>>.....>.........>>>>>>>.>..>>>>>..>>>.>.>>
+TRI.A._C             ......................ggUGGUCUGcCcgUUCCAagUUGaGuAG
+#=GR TRI.A._C SS     ........................>>>>>>>.>..>>>>>..>>>.>.>>
+ARA.THA.             ...GUUCUGaugugGgcauguuucUGAGCUGcCcaGUCCAagCUG.UgAG
+#=GR ARA.THA. SS     ...>>>>>>.....>.........>>>>>>>.>..>>>>>..>>>.>.>>
+HUM.JAP.             ...GGUCCAguguuAgcugcuugcUGGUCUGcCcaUUCCAagCCG.AgAG
+#=GR HUM.JAP. SS     ...>>>>>>.....>.........>>>>>>>.>..>>>>>..>>>.>.>>
+HUM.L._A             ...GGUCCAguguuAgcugcuuacUGGUCUGcCcaUUCCAagCCG.GgAG
+#=GR HUM.L._A SS     ...>>>>>>.....>.........>>>>>>>.>..>>>>>..>>>.>.>>
+HUM.L._B             ...GGuCCAguguuAgcugcuuacUGGUCUGcCcaUUCCAagCCG.GgAG
+#=GR HUM.L._B SS     ...>>.>>>.....>.........>>>>>>>.>..>>>>>..>>>.>.>>
+HUM.L._C             ...GGncCAgugcuagcugcuuacCcGgCUGcCcaUUCCAagCCG.GgAG
+#=GR HUM.L._C SS     ...>>..>>...............>.>.>>>.>..>>>>>..>>>.>.>>
+LYC.ESC.             ...GGCUUG..gugGgcuuaguucUGGCCUGcCcugUCCAagCAC.AgAG
+#=GR LYC.ESC. SS     ...>>>>>>.....>.........>>>>>>>.>...>>>>..>>>.>.>>
+CIN.HYB.             ...GGUCUGu.agaCaccgc.accUGGCUUGcCcgUUCCAagUCG.AgAG
+#=GR CIN.HYB. SS     ...>>>>>>.....>.........>>>>>>>.>..>>>>>..>>>.>.>>
+PER.AME.             ...ggccag...ggacugcggugcuggcucgcccguuccaagucggguag
+#=GR PER.AME. SS     ..................................................
+COL.BLU.             uccugcuua............uucuggcccgcccguuccaagccg.ggag
+#=GR COL.BLU. SS     ..................................................
+CRY.MOR.             cagc.................acccggcccgnncauuncaagccg.agag
+#=GR CRY.MOR. SS     ..................................................
+GYN.AUR.             ..................................................
+#=GR GYN.AUR. SS     ..................................................
+BEN.HIS.             agacaca...........................................
+#=GR BEN.HIS. SS     ..................................................
+YAR.L._A             ...CAcuugGC.CAU.........UUGGUUGuCcuUuCCGaaUUC.UGCg
+#=GR YAR.L._A SS     ...>>....>>.>>>.........>>>>>>>.>..>.>>>..>>>.>>>.
+YAR.L._B             ...CAcuggGC.UAC.........UUUGUUGuCcuUuCCGaaUUC.UGCg
+#=GR YAR.L._B SS     ...>>....>>.>>>.........>>>>>>>.>..>.>>>..>>>.>>>.
+SCH.POM.             ...CgGUGguc.ucggguu...cgAGUCUCGcUu.UCGauccCUC.GAuc
+#=GR SCH.POM. SS     ...>.>>>................>>>>>>>.>..>>>....>>>.>>..
+TET.THE.             ....aGAC.AG.UUugcu....aaGAGUGUGcCcgCUCCAaaCAA.UGAG
+#=GR TET.THE. SS     .....>>>.>>.>>..........>>>>>>>.>...>>>>..>>>.>>>>
+TET.ROS.             ....aGAC.AG.UUugcu....aaGAGUGUGcCcgUUCCAaaCAG.UGAG
+#=GR TET.ROS. SS     .....>>>.>>.>>..........>>>>>>>.>..>>>>>..>>>.>>>>
+TRY.BRU.             ...UUCUG..u.UGCguu....gaCUUGGUGuUcugCuugguuGC.GUGu
+#=GR TRY.BRU. SS     ...>>>>>....>>>.........>>>>>>>.>...>......>>.>>>.
+XEN.LAE.             ...CACUGaGC.UAUguc....gauCGGGUGuCcgCACUAaguUC.GGUA
+#=GR XEN.LAE. SS     ...>>>>>.>>.>>>..........>>>>>>.>..>>>>>...>>.>>>>
+DRO.MEL.             g..acCAG.cU.CAUguu....gaCGGaACGuCcgCACUAagCUU.GCCA
+#=GR DRO.MEL. SS     .....>>>..>.>>>.........>>>.>>>.>..>>>>>..>>>.>>>>
+RAT.RAT.             ...UAGUGcGC.UAUgcc....gauCGGGUGuCcgCACUAaguUC.GGCA
+#=GR RAT.RAT. SS     ...>>>>>.>>.>>>..........>>>>>>.>..>>>>>...>>.>>>>
+MUS.M.B1             ..................................................
+#=GR MUS.M.B1 SS     ..................................................
+MUS.MUS.             ...uagugcgc.uaugcc....gaucggguguccgcacuaaguuc.ggca
+#=GR MUS.MUS. SS     ..................................................
+CAN.SPE.             ...CAGUGcGC.UAUgcc....gauCGGGUGuCcgCACUAaguUC.GGCA
+#=GR CAN.SPE. SS     ...>>>>>.>>.>>>..........>>>>>>.>..>>>>>...>>.>>>>
+HOM.S._A             ...UAGUGcGC.UAUgcc....gauCGGGUGuCcgCACUAaguUC.GGCA
+#=GR HOM.S._A SS     ...>>>>>.>>.>>>..........>>>>>>.>..>>>>>...>>.>>>>
+HOM.S._B             ...UAGUGcGC.UAUgcc....gaugGGGUGuCcgCACUAaguUC.GGCA
+#=GR HOM.S._B SS     ...>>>>>.>>.>>>...........>>>>>.>..>>>>>...>>.>>>>
+#=GC SS_cons         ...>>>>>>.....>.........>>>>>>>.>..>>>>>..>>>.>.>>
+
+ZEA.M._A             u...guCUGgu.GGGGgcucuAGCgaaaGCUuuggguCUCUgCAGa.Ccu
+#=GR ZEA.M._A SS     ......>>>...>>>>.....>>>....<<<......<<<<.<<<..>..
+ZEA.M._B             u...guCUGac.GGGG.cucuAGCgaaaGCUuuggguCUCUgCAGa.Ccu
+#=GR ZEA.M._B SS     ......>>>...>>>>.....>>>....<<<......<<<<.<<<..>..
+ZEA.M._C             u...ggCCGuu.GGAAgcuugGGCguagGCCcugggcUUCCuUGGa.Ccu
+#=GR ZEA.M._C SS     ......>>>...>>>>.....>>>....<<<......<<<<.<<<..>..
+ZEA.M._D             u...ggCUGgc.GGAGgcuuuAGCggaaGCUuug.guCUCUcCAGa.Ccu
+#=GR ZEA.M._D SS     ......>>>...>>>>.....>>>....<<<......<<<<.<<<..>..
+ZEA.M._E             u...ggCUGgc.GGAGgcuuuAGCggaaGCUuug.guCUCUcCAGa.Ccu
+#=GR ZEA.M._E SS     ......>>>...>>>>.....>>>....<<<......<<<<.<<<..>..
+ZEA.M._F             u...ggCUGgu.GGGG.cucgGGCgaagGCCugg.gcCUCUuUAGa.Ccu
+#=GR ZEA.M._F SS     ......>>>...>>>>.....>>>....<<<......<<<<.<<<..>..
+ZEA.M._G             u...ggCUGgc.GGAGgcuuuAGCggaaGCUuug.guCUCUcCAGa.Ccu
+#=GR ZEA.M._G SS     ......>>>...>>>>.....>>>....<<<......<<<<.<<<..>..
+ZEA.M._H             u...ggGUUuc.GGAUgccuuGGCgaaaGCUuug..cAUCCcAACa.CUa
+#=GR ZEA.M._H SS     ......>>>...>>>>.....>>>....<<<......<<<<.<<<..>>.
+TRI.A._A             u...ggACCgccUGGGgcuuauGCgaaaGC.ugg.guCUCAcGGUc.CAu
+#=GR TRI.A._A SS     ......>>>...>>>>......>>....<<.......<<<<.<<<..>>.
+TRI.A._B             u...gggCUg..GGuGgcuggGGCgaaaGCUucg.ccUuCUcAGgc.CUu
+#=GR TRI.A._B SS     .......>>...>>.>.....>>>....<<<......<.<<.<<...>>.
+TRI.A._C             u...ggACCgcuUGGGgccuauGCgaaaGU.ugg.gcCUCAcGGUc.CAu
+#=GR TRI.A._C SS     ......>>>...>>>>......>>....<<.......<<<<.<<<..>>.
+ARA.THA.             u....aAUUaguGUugaguugAGCgaagGCUuggcucauGCaGGUu.cUa
+#=GR ARA.THA. SS     ......>>>...>>.......>>>....<<<........<<.<<<...>.
+HUM.JAP.             u...ugGGCuguGUGa.ucugGGCgaagGCUggggucgCACaGCUc.CUa
+#=GR HUM.JAP. SS     ......>>>...>>>......>>>....<<<.......<<<.<<<..>>.
+HUM.L._A             u...ugggcugaGUGa.ccugGgCgaagGgCuggguugCGCacguc.CUa
+#=GR HUM.L._A SS     ............>>>......>.>....<.<.......<<<......>>.
+HUM.L._B             u...ugGGCugaGUGa.ccugGGCgaagGCCuggguugCGCaGCUc.CUa
+#=GR HUM.L._B SS     ......>>>...>>>......>>>....<<<.......<<<.<<<..>>.
+HUM.L._C             g...ugGGcugaGgGa.ccugGGCgaagGCUnnnggngCgCa.CUc.cUa
+#=GR HUM.L._C SS     ......>>....>.>......>>>....<<<.......<.<..<<...>.
+LYC.ESC.             u...ugGAUCucGAGG.CCCAaAUgaaaAUaUGGGCUUCuuGAuUC.CUa
+#=GR LYC.ESC. SS     ......>>>>..>>>>.>>>>.>>....<<.<<<<<<<<..<<.<<.>>.
+CIN.HYB.             u...ggGUUC.AUGUUuCCUGAGCgaagGCUCGGGuGAUGUGAGCu.uUa
+#=GR CIN.HYB. SS     ......>>>>.>>>>>.>>>>>>>....<<<<<<<.<<<<<<<<<...>.
+PER.AME.             ....ugGGCC.AuGuGGCUUGGGCgaagGCCUGGGUUuCuUGGCC.....
+#=GR PER.AME. SS     ......>>>>.>.>.>>>>>>>>>....<<<<<<<<<.<.<<<<<.....
+COL.BLU.             u...ugGCCc.auGuGGUUUAUGCgaagGUAUAGGCUuCgguGGUucc..
+#=GR COL.BLU. SS     ......>>>....>.>>>>>>>>>....<<<<<<<<<.<...<<<.....
+CRY.MOR.             g....ccggnnang....................................
+#=GR CRY.MOR. SS     ..................................................
+GYN.AUR.             ..................................................
+#=GR GYN.AUR. SS     ..................................................
+BEN.HIS.             ..................................................
+#=GR BEN.HIS. SS     ..................................................
+YAR.L._A             guugaUGGGcg.UCUCg.GuCUGAguaaUCGGcUuuGAGAuuUCCGuUCu
+#=GR YAR.L._A SS     .....>>>>...>>>>..>.>>>>....<<<<.<..<<<<..<<<<.>>.
+YAR.L._B             guugaUGGGcg.UCUCg.GuCUGAguaaUCGGcUuuGAGAuuUCCGuUCu
+#=GR YAR.L._B SS     .....>>>>...>>>>..>.>>>>....<<<<.<..<<<<..<<<<.>>.
+SCH.POM.             ....uGCCAcg.UcUguuCGAAGAguagUCUUCGu.gGcAacUGGCaGUu
+#=GR SCH.POM. SS     .....>>>>...>.>...>>>>>>....<<<<<<...<.<..<<<<.>>.
+TET.THE.             ....uUGCUau.GGUGguaaCCUAguaaUAGGacucCACCagGGCA.UUa
+#=GR TET.THE. SS     .....>>>>...>>>>....>>>>....<<<<....<<<<..<<<<.>>.
+TET.ROS.             ....uUGCUau.GGUGgaaaCCUAguaaUAGGacuuCACCagGGCA.UUa
+#=GR TET.ROS. SS     .....>>>>...>>>>....>>>>....<<<<....<<<<..<<<<.>>.
+TRY.BRU.             ....cGGUGuu.GAGGucGCCaCUguagAGaGGCguUCUCg.CGCCgUU.
+#=GR TRY.BRU. SS     .....>>>>...>>>>..>>>.>>....<<.<<<..<<<<..<<<<.>>.
+XEN.LAE.             ....uCAAUau.GGUGuuCCuGGGggagCCUcGGauCACCagGUUGcUCu
+#=GR XEN.LAE. SS     .....>>>>...>>>>..>>.>>>....<<<.<<..<<<<..<<<<.>>.
+DRO.MEL.             ....uCAAUau.GGGUgcCAUGGAggagUCCGUGgcAUUCagGUUGgCU.
+#=GR DRO.MEL. SS     .....>>>>...>>>>..>>>>>>....<<<<<<..<<<<..<<<<.>>.
+RAT.RAT.             ....uCAAUau.GGUGacCUCCCGggagCGGGGGacCACCagGUUG.CCu
+#=GR RAT.RAT. SS     .....>>>>...>>>>..>>>>>>....<<<<<<..<<<<..<<<<.>>.
+MUS.M.B1             ..................................................
+#=GR MUS.M.B1 SS     ..................................................
+MUS.MUS.             ....aCAAUau.GGUGacCUCCCGggagCGGGGGacCACCaaGUUG.c..
+#=GR MUS.MUS. SS     .....>>>>...>>>>..>>>>>>....<<<<<<..<<<<..<<<<....
+CAN.SPE.             ....uCAAUau.GGUGacCUCCCGggagCGGGGGacCACCagGUUG.CCu
+#=GR CAN.SPE. SS     .....>>>>...>>>>..>>>>>>....<<<<<<..<<<<..<<<<.>>.
+HOM.S._A             ....uCAAUau.GGUGacCUCCCGggagCGGGGGacCACCagGUUG.CCu
+#=GR HOM.S._A SS     .....>>>>...>>>>..>>>>>>....<<<<<<..<<<<..<<<<.>>.
+HOM.S._B             ....uCAAUau.GGUGacCUCCCGggagCGGGGGacCACCagGUUG.CCu
+#=GR HOM.S._B SS     .....>>>>...>>>>..>>>>>>....<<<<<<..<<<<..<<<<.>>.
+#=GC SS_cons         ......>>>...>>>>.....>>>....<<<......<<<<.<<<..>>.
+
+ZEA.M._A             ggaGcGGCAGgaauggCGuaaggCUGgcuucaCAGagcagCGaucaCU.G
+#=GR ZEA.M._A SS     ...<.>>>>>......>>.....>>>......<<<.....<<....<<.<
+ZEA.M._B             acaGcGGCAGgaauggCGuaaggCUGgcuucaCAGagcagCGaucaCUcG
+#=GR ZEA.M._B SS     ...<.>>>>>......>>.....>>>......<<<.....<<....<<.<
+ZEA.M._C             auaGuGGCAGgaacggCGugaggCUGucuucaCAGagcagCGaucaCU.G
+#=GR ZEA.M._C SS     ...<.>>>>>......>>.....>>>......<<<.....<<....<<.<
+ZEA.M._D             gaaGuGGCAGgaauggCGugaggCUGgcuucaCAGagcagCGaucaCUcG
+#=GR ZEA.M._D SS     ...<.>>>>>......>>.....>>>......<<<.....<<....<<.<
+ZEA.M._E             gaaGuGGCAGgaauggCGugaggCUGgcuucaCAGagcagCGaucaCUcG
+#=GR ZEA.M._E SS     ...<.>>>>>......>>.....>>>......<<<.....<<....<<.<
+ZEA.M._F             gaaGcGGCAGgcauggCGugaggCUGgcuucaCAGagcagCGaucaCUcG
+#=GR ZEA.M._F SS     ...<.>>>>>......>>.....>>>......<<<.....<<....<<.<
+ZEA.M._G             gaaGuGGCAGgaauggCGugaggCUGgcuucaCAGagcagCGaucaCU.G
+#=GR ZEA.M._G SS     ...<.>>>>>......>>.....>>>......<<<.....<<....<<.<
+ZEA.M._H             a.AGuGGCGGacauugCGugaggCUGgcuucaUAGagcagCGaguaCC.G
+#=GR ZEA.M._H SS     ..<<.>>>>>......>>.....>>>......<<<.....<<....<<.<
+TRI.A._A             aaUGuGGCAGgcacagCGugaggCUGgcuucaCAGagcagCGacaaCU.G
+#=GR TRI.A._A SS     ..<<.>>>>>......>>.....>>>......<<<.....<<....<<.<
+TRI.A._B             a.AGuGGCAGgcaccaCGuuaggCUGguuucaCAGagcagCGacaaCU.G
+#=GR TRI.A._B SS     ..<<.>>>>>......>>.....>>>......<<<.....<<....<<.<
+TRI.A._C             aaUGuGGCAGgcaccgCGugaggCUGgcuucaCAGagcagCGacaaCU.G
+#=GR TRI.A._C SS     ..<<.>>>>>......>>.....>>>......<<<.....<<....<<.<
+ARA.THA.             gaGucGGAGGguaaugCGugaggCUGgcuucaCAGagcagCGacuaCU.U
+#=GR ARA.THA. SS     ..<..>>>>>......>>.....>>>......<<<.....<<....<<.<
+HUM.JAP.             a.AGaGGAGGgcaaugCGugaggCUGguuucaCAGagcagCGaccaCC.U
+#=GR HUM.JAP. SS     ..<<.>>>>>......>>.....>>>......<<<.....<<....<<.<
+HUM.L._A             g.AGuGGAGGgcaaugCGugaggCUGgcuucaCAGagcagCGacuaCC.U
+#=GR HUM.L._A SS     ..<<.>>>>>......>>.....>>>......<<<.....<<....<<.<
+HUM.L._B             g.AGuGGAGGgcaaugCGugaggCUGguuucaCAGagcagCGacuaCC.U
+#=GR HUM.L._B SS     ..<<.>>>>>......>>.....>>>......<<<.....<<....<<.<
+HUM.L._C             g.AcuGGAGGgcaaugCGugaggCUGgcuucaCAGagcagCGacuaCC.U
+#=GR HUM.L._C SS     ..<..>>>>>......>>.....>>>......<<<.....<<....<<.<
+LYC.ESC.             a.AGuGGGGCggaccgCAugaggCUGgcuucaCAGagcagUGaac.GC.U
+#=GR LYC.ESC. SS     ..<<.>>>>>......>>.....>>>......<<<.....<<....<<.<
+CIN.HYB.             gaAucGGGGGgcaaugCGuuaggCUGguuucaCAGagcugCGaaaaCC.U
+#=GR CIN.HYB. SS     ..<..>>>>>......>>.....>>>......<<<.....<<....<<.<
+PER.AME.             ..................................................
+#=GR PER.AME. SS     ..................................................
+COL.BLU.             ..................................................
+#=GR COL.BLU. SS     ..................................................
+CRY.MOR.             ..................................................
+#=GR CRY.MOR. SS     ..................................................
+GYN.AUR.             ..................................................
+#=GR GYN.AUR. SS     ..................................................
+BEN.HIS.             ..................................................
+#=GR BEN.HIS. SS     ..................................................
+YAR.L._A             aaGAuUAACUgggaaaCUucaguGGAgca..aUCCagcagAGauccAG.U
+#=GR YAR.L._A SS     ..<<.>>>>>......>>.....>>>......<<<.....<<....<<.<
+YAR.L._B             aaGAuUAACUgggauaCUucaguGGAgca..aUCCagcagAGauccAG.U
+#=GR YAR.L._B SS     ..<<.>>>>>......>>.....>>>......<<<.....<<....<<.<
+SCH.POM.             aaACcguGUAguaccGAUggaggUUGgaa..aCAAugcacAUCac.UA.C
+#=GR SCH.POM. SS     ..<<...>>>.....>>>.....>>>......<<<.....<<<...<<.<
+TET.THE.             aaGAgcUAAGgaaacgCCucaggCUGgca..aCAGaacagGGaaaaCU.U
+#=GR TET.THE. SS     ..<<..>>>>......>>.....>>>......<<<.....<<....<<.<
+TET.ROS.             aaGAgcUGAGgaaccgCCucaggCUGgca..aCAGaacagGGaaaaCU.U
+#=GR TET.ROS. SS     ..<<..>>>>......>>.....>>>......<<<.....<<....<<.<
+TRY.BRU.             aaAG.UgGGGggaacGGGucaggCCGgug..aCGGagcagCCCac.CU.U
+#=GR TRY.BRU. SS     ..<<.>.>>>.....>>>.....>>>......<<<.....<<<...<<.<
+XEN.LAE.             aaGGaGGGGUgaaccGGCccaggUCGgaa..aCGGagcagGUCaaaAC.C
+#=GR XEN.LAE. SS     ..<<.>>>>>.....>>>.....>>>......<<<.....<<<...<<.<
+DRO.MEL.             aaGGaGGGAUgaaccgGGccaggGGUgaa..aACCagcagCCaagaGU.U
+#=GR DRO.MEL. SS     ..<<.>>>>>......>>.....>>>......<<<.....<<....<<.<
+RAT.RAT.             aaGGaGGGGUgaaccGGCccaggUCGgaa..aCGGagcagGUCaaaAC.U
+#=GR RAT.RAT. SS     ..<<.>>>>>.....>>>.....>>>......<<<.....<<<...<<.<
+MUS.M.B1             ..........................................caaa....
+#=GR MUS.M.B1 SS     ..................................................
+MUS.MUS.             ..................................................
+#=GR MUS.MUS. SS     ..................................................
+CAN.SPE.             aaGGaGGGGUgaaccGGCccaggUCGgaa..aCGGagcagGUCaaaAC.U
+#=GR CAN.SPE. SS     ..<<.>>>>>.....>>>.....>>>......<<<.....<<<...<<.<
+HOM.S._A             aaGGaGGGGUgaaccGGCccaggUCGgaa..aCGGagcagGUCaaaAC.U
+#=GR HOM.S._A SS     ..<<.>>>>>.....>>>.....>>>......<<<.....<<<...<<.<
+HOM.S._B             aaGGaGGGGUgaaccGGCccaggUCGgaa..aCGGagcagGUCaaaAC.U
+#=GR HOM.S._B SS     ..<<.>>>>>.....>>>.....>>>......<<<.....<<<...<<.<
+#=GC SS_cons         ..<<.>>>>>......>>.....>>>......<<<.....<<....<<.<
+
+ZEA.M._A             CCgaCUcCCAAcggUGGGAgGauaaCGaAGCCGcugc.Acu.uUGAGCCu
+#=GR ZEA.M._A SS     <<..<<.<<<<...<<<<<.<....<<.<<<<<.....<....<<<<<<.
+ZEA.M._B             CCcaCUuCCAAcggUGGGAgGauaaCA.AGCCGcugc.Acu.uUGAGCCc
+#=GR ZEA.M._B SS     <<..<<.<<<<...<<<<<.<....<<.<<<<<.....<....<<<<<<.
+ZEA.M._C             CCggCUaUUAAcggUGGAAgGauaaCA.GGCCAcugc.Agc.aUGGGCUc
+#=GR ZEA.M._C SS     <<..<<.<<<<...<<<<<.<....<<.<<<<<.....<....<<<<<<.
+ZEA.M._D             CCcgCUuCCAAcggUGGGAgGauaaCA.GGCCGcugc.Acu.uCGAGCCc
+#=GR ZEA.M._D SS     <<..<<.<<<<...<<<<<.<....<<.<<<<<.....<....<<<<<<.
+ZEA.M._E             CCggCUuCCAAcggUGGGAgGauaaCG.GGCCGcugc.Acu.uCGAGCCc
+#=GR ZEA.M._E SS     <<..<<.<<<<...<<<<<.<....<<.<<<<<.....<....<<<<<<.
+ZEA.M._F             CCcgCuuCCAAcggUGGGAgGauaaCA.GGCCGcugc.Auu.gCAAGCCc
+#=GR ZEA.M._F SS     <<..<..<<<<...<<<<<.<....<<.<<<<<.....<....<<<<<<.
+ZEA.M._G             CCcgCUuCCAAcggUGGGAgGauaaCG.GGCCGcugc.Acu.uCGAGCCc
+#=GR ZEA.M._G SS     <<..<<.<<<<...<<<<<.<....<<.<<<<<.....<....<<<<<<.
+ZEA.M._H             CCcgCcaCCAGcggUGGAAgGauaaUG.agUCGcuau.Gcu.aUAGGCCc
+#=GR ZEA.M._H SS     <<..<..<<<<...<<<<<.<....<<...<<<.....<....<<<<<<.
+TRI.A._A             CCcgCUuCCAAcggUGGAAgGauaaUG.GGCCGcugc.Acu.cCUAGGCc
+#=GR TRI.A._A SS     <<..<<.<<<<...<<<<<.<....<<.<<<<<.....<....<<<<<<.
+TRI.A._B             CC.gCUuCCAAcggUGGAAgGauaaCA.GGCCGcugc.Agc.aUGGGCCc
+#=GR TRI.A._B SS     <<..<<.<<<<...<<<<<.<....<<.<<<<<.....<....<<<<<<.
+TRI.A._C             CCcgCUuCCAAcggUGGAAgGauaaCG.GGCCGcugc.acu.ccuaggcc
+#=GR TRI.A._C SS     <<..<<.<<<<...<<<<<.<....<<.<<<<<.................
+ARA.THA.             CCcgCUuACAGcagUGGACgGaucaCG.GUUUAgcgu.Cgc.uCAGAACc
+#=GR ARA.THA. SS     <<..<<.<<<<...<<<<<.<....<<.<<<<<.....<....<<<<<<.
+HUM.JAP.             CCcgCUcUCGGcagUGGAAgGauaaCG.GGUCGgugc.Uac.uUGGGCCa
+#=GR HUM.JAP. SS     <<..<<.<<<<...<<<<<.<....<<.<<<<<.....<....<<<<<<.
+HUM.L._A             CCcgCUcUCGGcagUGGAAgGauaaCG.GGCCGgugc.Uac.cUGGGUCc
+#=GR HUM.L._A SS     <<..<<.<<<<...<<<<<.<....<<.<<<<<.....<....<<<<<<.
+HUM.L._B             CCcgCUcCCGGcagUGGAAgGauaaCG.GGCCGgugc.Uac.uUGGuCC.
+#=GR HUM.L._B SS     <<..<<.<<<<...<<<<<.<....<<.<<<<<.....<....<<<.<<.
+HUM.L._C             CCcgCUcUCGGcagUGGAAgGauaaCG.GgCcGgugc.gcc.uUGagCCa
+#=GR HUM.L._C SS     <<..<<.<<<<...<<<<<.<....<<.<.<.<..........<<..<<.
+LYC.ESC.             CCcgCUcUGUGcagUGGAagGauaaUG.GGUCGgugu.CuuauCAAGUUc
+#=GR LYC.ESC. SS     <<..<<.<<<<...<<<<..<....<<.<<<<<.....<....<<<<<<.
+CIN.HYB.             CUacCUcUCGAcugUGGAAgGauuaCA.AGCCGgagu.Guc.uUAGGCUc
+#=GR CIN.HYB. SS     <<..<<.<<<<...<<<<<.<....<<.<<<<<.....<....<<<<<<.
+PER.AME.             ..................................................
+#=GR PER.AME. SS     ..................................................
+COL.BLU.             ..................................................
+#=GR COL.BLU. SS     ..................................................
+CRY.MOR.             ..................................................
+#=GR CRY.MOR. SS     ..................................................
+GYN.AUR.             ..................................................
+#=GR GYN.AUR. SS     ..................................................
+BEN.HIS.             ..................................................
+#=GR BEN.HIS. SS     ..................................................
+YAR.L._A             UGccGUGGGuAuggCGGuGgGaucgCA.ACCAA....GUGGU..auaUG.
+#=GR YAR.L._A SS     <<..<<<<<.<...<<<.<.<....<<.<<<<<....<<<<<.....<<.
+YAR.L._B             UGccGUGGGuAuggCGGuGgGauagCA.ACAAA....GUGGU..auaUG.
+#=GR YAR.L._B SS     <<..<<<<<.<...<<<.<.<....<<.<<<<<....<<<<<.....<<.
+SCH.POM.             cgggucUUGGGcagugCGAuAgcgaUG.GGAUU..caccuu...CGCaGg
+#=GR SCH.POM. SS     ......<<<<<.....<<<.<....<<.<<<<<...........<<<.<.
+TET.THE.             GccgCUUGUUGuggUGGAAgGauaaCA.UACUC..auuAACU..GUCaa.
+#=GR TET.THE. SS     <...<<<<<<<...<<<<..<....<<.<<<<<.....<<<<..<<<...
+TET.ROS.             GccgCUUAUUGuggUGGAAgGauaaCA.UACUC..auuAACU..GUCaa.
+#=GR TET.ROS. SS     <...<<<<<<<...<<<<<.<....<<.<<<<<.....<<<<..<<<...
+TRY.BRU.             .GcgCACGUucccguucGagAagcaCA.CCGAG..gaGCAuc.uCAGGAc
+#=GR TRY.BRU. SS     .<..<<<<<........<..<....<<.<<<<<....<<<....<<<<<.
+XEN.LAE.             CCcgUGCCGAucagUAGUGgGaucgCG.CCUGu..gaAUAGC..CGGUGc
+#=GR XEN.LAE. SS     <<..<<<<<<....<<<<<.<....<<.<<<<.....<<<<<..<<<<<.
+DRO.MEL.             CCcgUGGUAGGcagUAGUGgGauagCG.UaCCG..gaGUGGa..CUGccg
+#=GR DRO.MEL. SS     <<..<<<<<<<...<<<<<.<....<<.<.<<<....<<<<...<<<...
+RAT.RAT.             CCcgUGCUGAucagUAGUGgGaucgCG.CCUGu..gaAUAGC..CACUGc
+#=GR RAT.RAT. SS     <<..<<<<<<....<<<<<.<....<<.<<<<.....<<<<<..<<<<<.
+MUS.M.B1             .........................................gugagcucc
+#=GR MUS.M.B1 SS     ..................................................
+MUS.MUS.             ..................................................
+#=GR MUS.MUS. SS     ..................................................
+CAN.SPE.             CCcgUGCUGAucagUAGUGgGaucgCG.CCUGu..gaAUAGC..CACUGc
+#=GR CAN.SPE. SS     <<..<<<<<<....<<<<<.<....<<.<<<<.....<<<<<..<<<<<.
+HOM.S._A             CCcgUGCUGAucagUAGUGgGaucgCG.CCUGu..gaAUAGC..CACUGc
+#=GR HOM.S._A SS     <<..<<<<<<....<<<<<.<....<<.<<<<.....<<<<<..<<<<<.
+HOM.S._B             CCcgUGCUGAucagUAGUGgGaucgCG.CCUgu..gaAUAGC..CACUGc
+#=GR HOM.S._B SS     <<..<<<<<<....<<<<<.<....<<.<<<......<<<<<..<<<<<.
+#=GC SS_cons         <<..<<.<<<<...<<<<<.<....<<.<<<<<.....<....<<<<<<.
+
+ZEA.M._A             aacucaggcu.CAGAA..ccUCacu.AAGCAaacCACCAUCUuu
+#=GR ZEA.M._A SS     ...........<<<<<....<<....<<<<<...<<<<<<<<..
+ZEA.M._B             aacacagacc.CAGAu..ccUCucu.uAGCAaacCaCCAUCUuu
+#=GR ZEA.M._B SS     ...........<<<<.....<<.....<<<<...<.<<<<<<..
+ZEA.M._C             gcuuaaggcc.UAGAC.uucauacuaAAGCAgacCACCAUUUuu
+#=GR ZEA.M._C SS     ............<<<<..........<<<<<...<<<<<<<<..
+ZEA.M._D             aacucaggcc.CAGAG..ccUCacu.AAGcAgacCACCAUCUu.
+#=GR ZEA.M._D SS     ...........<<<<<....<<....<<<.<...<<<<<<<<..
+ZEA.M._E             aacucaggcc.CAGAG..ccUCacu.AAGCAgacCACCAUCUuu
+#=GR ZEA.M._E SS     ...........<<<<<....<<....<<<.<...<<<<<<<<..
+ZEA.M._F             aacucggu.c.CAGAG..ccUCauu.AAACAgacCACCAUCUuu
+#=GR ZEA.M._F SS     ...........<<<<<....<<....<<<<<...<<<<<<<<..
+ZEA.M._G             aacucaggcc.CAGAG..ccUCacu.AAGcAgacCACCAUCUuu
+#=GR ZEA.M._G SS     ...........<<<<<....<<....<<<.<...<<<<<<<<..
+ZEA.M._H             aau.........................................
+#=GR ZEA.M._H SS     ............................................
+TRI.A._A             aau.ugggccuCGCAG..ccUA.cucCAGCagacCAcC......
+#=GR TRI.A._A SS     ...........<<<<<....<<....<<<<....<<.<......
+TRI.A._B             gcucugggccuccUAc..ccCG.ccauAGCAgacCACCaUCUuu
+#=GR TRI.A._B SS     .............<<.....<<.....<<<<...<<<<.<<<..
+TRI.A._C             gcu.ugggccucguag..ccua.cuccagc.gaccaccauc...
+#=GR TRI.A._C SS     ............................................
+ARA.THA.             acu.auggccuGcuGG.uccGAucucaUAUGaacCACCAUUUu.
+#=GR ARA.THA. SS     ...........<..<<....<<.....<<<<...<<<<<<<<..
+HUM.JAP.             ccauggucacugcaug...cACucuuaaucagacCAUCUCUUuu
+#=GR HUM.JAP. SS     ....................<<............<<<<<<<<..
+HUM.L._A             accaugcuucaCUAGg.cugACucuuaauaggacCAUUUCUUuu
+#=GR HUM.L._A SS     ...........<<<<.....<<............<<<<<<<<..
+HUM.L._B             accaug.uucaCUGGuccugACucuuaaucggacCAUUUCCUuu
+#=GR HUM.L._B SS     ...........<<<<.....<<............<<<<<<<<..
+HUM.L._C             acacuguucaaCUGGg.cugACucuuaauaggacCAUUUCUUuu
+#=GR HUM.L._C SS     ...........<<<<.....<<............<<<<<<<<..
+LYC.ESC.             aguaacgccuaaUGGg..uuGCuc..CAAUAaacAACCACcUuu
+#=GR LYC.ESC. SS     ............<<<.....<<....<<<<<...<<<<<<.<..
+CIN.HYB.             auauaaccagcCUGGc..uaGCcc..aAcAGgacACCCAUUU..
+#=GR CIN.HYB. SS     ...........<<<<.....<<.....<.<<...<<<<<<<<..
+PER.AME.             ............................................
+#=GR PER.AME. SS     ............................................
+COL.BLU.             ............................................
+#=GR COL.BLU. SS     ............................................
+CRY.MOR.             ............................................
+#=GR CRY.MOR. SS     ............................................
+GYN.AUR.             ............................................
+#=GR GYN.AUR. SS     ............................................
+BEN.HIS.             ............................................
+#=GR BEN.HIS. SS     ............................................
+YAR.L._A             ...uUAugGAAgaU...auuu......ACGAu.cACGAUU....
+#=GR YAR.L._A SS     ....<<..<<<..<.............<<<<...<<<<<<....
+YAR.L._B             ...uUAugGAAgGU...auuu......GCAAu.caCGAcUcuc.
+#=GR YAR.L._B SS     ....<<..<<<.<<.............<<<<....<<<.<....
+SCH.POM.             auGUGCA.UGGaAG..UAUAA......ACACaacGGUCGuu...
+#=GR SCH.POM. SS     ..<<<<<.<<<.<<..<<<<<......<<<<...<<<<<.....
+TET.THE.             acuaaUCgGUUcUA..CUAUCA...aAGCCagacAUU.......
+#=GR TET.THE. SS     .....<<.<<<.<<..<<<<<<....<<<<....<<<.......
+TET.ROS.             gcuaaUCgGUUcUG..CUAUUC...uGAUCagacAcU.......
+#=GR TET.ROS. SS     .....<<.<<<.<<..<<<<<<....<<<<....<.<.......
+TRY.BRU.             uuugCGC.cCCaAG..UGUC......gUCGCga.GGCGG.....
+#=GR TRY.BRU. SS     ....<<<..<<.<<..<<<<.......<<<<...<<<<<.....
+XEN.LAE.             agaaCAGCCUGaAC..aacac.....AGCGAgacACAGUUCu..
+#=GR XEN.LAE. SS     ....<<<<<<<.<<............<<<<<...<<<<<<<...
+DRO.MEL.             uuauCAGCCCAaCC..gauau.....GGUUGgacCACAAUCuuu
+#=GR DRO.MEL. SS     ....<<<<<<<.<<............<<<<<...<<<<<<<...
+RAT.RAT.             acucCAGCCUGgGC..aacau.....AGCGAgacCccgUCUCuu
+#=GR RAT.RAT. SS     ....<<<<<<<.<<............<<<<<...<...<<<<..
+MUS.M.B1             aggacagccaggGC..uacac.....AGAGAaacCCUGUCUC..
+#=GR MUS.M.B1 SS     ............<<............<<<<<...<<<<<<<<..
+MUS.MUS.             ............................................
+#=GR MUS.MUS. SS     ............................................
+CAN.SPE.             acucCAGCCUGuGC..aacau.....AGCGAgacCCcGUCUCu.
+#=GR CAN.SPE. SS     ....<<<<<<<.<<............<<<<<...<<.<<<<<..
+HOM.S._A             acucCAGCCUGuGC..aacau.....AGCGAgacCCcGUCUCuu
+#=GR HOM.S._A SS     ....<<<<<<<.<<............<<<<<...<<.<<<<<..
+HOM.S._B             acucCAGCCUGaGC..aacau.....AGCGAgacCCCGUCUCu.
+#=GR HOM.S._B SS     ....<<<<<<<.<<............<<<<<...<<<<<<<<..
+#=GC SS_cons         ..........................<<<<<...<<<<<<<<..
+//

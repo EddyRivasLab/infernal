@@ -1,0 +1,28 @@
+# STOCKHOLM 1.0
+#=GF ID    5S_rRNA
+#=GF DE    Taken from [Szymanski02], via Robin Dowell
+
+Esch_coli1             ......UGCCUGGCGGCCUUAGCGCGGUGGUCCCACCUGA..CCCCAUGC
+Baci_subt1             ........UUUGGUGGCGAUAGCGAAGAGGUCACACCCGU..UCCCAUAC
+Stcoc_aure             ........UCUGGUGACUAUAGCAAGGAGGUCACACCUGU..UCCCAUGC
+Haem_influ             ........CCUGGCGGCGAUAGUGCGGUGGACCCACCUGA..GACCAUAC
+Helic_pylo             UCCCUUUUCCUUGUGCCUUUAGAGAAGAGGAACUACCCAGUUAACCAUUC
+#=GC SS_cons           ......>>>>>>>>>>.....>>>>>>>>.....>>>>>>..........
+#=GC RF                ......xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx..xxxxxxxx
+
+Esch_coli1             CGAACUCAGAAGUGAAACGCCGUAGCGCCGAUGGUAGUGUGGGGUCU.CC
+Baci_subt1             CGAACACGGAAGUUAAGCUCUUCAGCGCCGAUGGUAGUCGGGGGUUU.CC
+Stcoc_aure             CGAACACAGAAGUUAAGCUCCUUAGCGUCGAUGGUA.GUCGAACUUACGU
+Haem_influ             CGAACUCAGAAGUGAAACGCUGUAAUGCCGAUGGUAGUGUGGGGUUU.CC
+Helic_pylo             CGAACCUGGAAGUCAAGCUCUUCAUCGCUGAUAAUACUGCUCUUUUC.AA
+#=GC SS_cons           .....<<<<..<<....<<<<<<.<<>>>.>>....>>>>>>>>....<<
+#=GC RF                xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.xx
+
+Esch_coli1             CCAUGCGAGAGUAGGGAACUGCCAGGCA.......U
+Baci_subt1             CCCUGUGAGAGUAGGACGCCGCCAAG.........C
+Stcoc_aure             UCCGC.UAGAGUAGAACGUUGCCAGG.........C
+Haem_influ             CCAUGUGAGAGUAGGGCACCGCCAGG.........U
+Helic_pylo             GAGUGGGAAUGUAGGUCGGUGCAGGGAUAGGGAAAU
+#=GC SS_cons           <<<<<<....<<.<<.<.<<<<<<<<<<........
+#=GC RF                xxxxxxxxxxxxxxxxxxxxxxxxxxxx.......x
+//
