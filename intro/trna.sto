@@ -7,7 +7,7 @@ DE6280             UCCGAUAUAGUGUAAC.GGCUAUCACAUCACGCUUUCACCGUGGAGA.CC
 DD6280             UCCGUGAUAGUUUAAU.GGUCAGAAUGGGCGCUUGUCGCGUGCCAGA.UC
 DC6280             GCUCGUAUGGCGCAGU.GGU.AGCGCAGCAGAUUGCAAAUCUGUUGGUCC
 DA6280             GGGCACAUGGCGCAGUUGGU.AGCGCGCUUCCCUUGCAAGGAAGAGGUCA
-#=GC SS_cons       >>>>>>>..>>>>.........<<<<.>>>>>.......<<<<<.....>
+#=GC SS_cons       <<<<<<<..<<<<.........>>>>.<<<<<.......>>>>>.....<
 #=GC RF            xxxxxxxxxxxxxxxxxxxx.xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 DF6280             UGUGUUCGAUCCACAGAAUUCGCA
@@ -15,6 +15,6 @@ DE6280             GGGGUUCGACUCCCCGUAUCGGAG
 DD6280             GGGGUUCAAUUCCCCGUCGCGGAG
 DC6280             UUAGUUCGAUCCUGAGUGCGAGCU
 DA6280             UCGGUUCGAUUCCGGUUGCGUCCA
-#=GC SS_cons       >>>>.......<<<<<<<<<<<<.
+#=GC SS_cons       <<<<.......>>>>>>>>>>>>.
 #=GC RF            xxxxxxxxxxxxxxxxxxxxxxxx
 //

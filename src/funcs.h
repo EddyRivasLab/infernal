@@ -15,7 +15,11 @@ extern char **DigitizeAlignment(char **aseq, int nseq, int alen);
 /* from bandcyk.c
  */
 extern double **BandDistribution(CM_t *cm, int W);
-extern void     BandBounds(double **gamma, int M, int W, double p);
+extern void     BandBounds(double **gamma, int M, int W, double p, 
+			   int **ret_min, int **ret_max);
+extern void     PrintBandGraph(FILE *fp, double **gamma, int *min, int *max, int v, int W);
+extern void     PrintDPCellsSaved(CM_t *cm, int *min, int *max, int W);
+
 
 /* from cm.c
  */

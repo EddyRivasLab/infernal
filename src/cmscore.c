@@ -145,9 +145,22 @@ main(int argc, char **argv)
   if (projectX) 
     {
       double **mx; 
+      int     *min, *max;
+      FILE   *ofp;
+
       mx = BandDistribution(cm, 1000);
-      BandBounds(mx, cm->M, 1000, 0.001);
+      BandBounds(mx, cm->M, 1000, 0.001, &min, &max);
+      /*      ofp = fopen("projectx.xgr", "w");
+	      PrintBandGraph(ofp, mx, min, max, 3, 1000);
+	      PrintBandGraph(ofp, mx, min, max, 56, 1000);
+	      PrintBandGraph(ofp, mx, min, max, 136, 1000);
+              fclose(ofp);
+      */
+      printf("go, project X!\n");
+      PrintDPCellsSaved(cm, min, max, 2000);
       DMX2Free(mx);
+      free(min);
+      free(max);
       exit(1);
     }
 

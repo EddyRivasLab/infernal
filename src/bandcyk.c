@@ -97,7 +97,7 @@ BandDistribution(CM_t *cm, int W)
 
 
 void
-BandBounds(double **gamma, int M, int W, double p)
+BandBounds(double **gamma, int M, int W, double p, int **ret_min, int **ret_max)
 {
   int     *min, *max;
   double   mincut, maxcut;
@@ -111,11 +111,51 @@ BandBounds(double **gamma, int M, int W, double p)
 
   for (v = 0; v < M; v++)
     {
-      min[v] = 0; while (gamma[v][min[v]]   <= mincut)   min[v]++;
+      min[v] = 0; while (gamma[v][min[v]]   <= mincut) min[v]++;
       max[v] = W; while (gamma[v][max[v]-1] >= maxcut) max[v]--;
     }
-
-  free(min);
-  free(max);
+  *ret_min = min;
+  *ret_max = max;
 }
       
+
+/* A couple of quick hacks. ...
+ * Print an XMGRACE xy file for a specified v, showing the
+ * cumulative distribution. Needed this for the R01 renewal.
+ * SRE, Wed Feb 19 08:35:32 2003
+ */
+void
+PrintBandGraph(FILE *fp, double **gamma, int *min, int *max, int v, int W)
+{
+  int n;
+
+  for (n = 0; n <= W; n++)
+    fprintf(fp, "%d %.6f\n", n, gamma[v][n]);
+  fprintf(fp, "&\n");
+  fprintf(fp, "%d  0\n",   min[v]);
+  fprintf(fp, "%d  1.0\n", min[v]);
+  fprintf(fp, "&\n");
+  fprintf(fp, "%d  0\n",   max[v]);
+  fprintf(fp, "%d  1.0\n", max[v]);
+  fprintf(fp, "&\n");
+}
+/* ... and, estimate the total savings in DP cells filled.
+ */
+void
+PrintDPCellsSaved(CM_t *cm, int *min, int *max, int W)
+{
+  int v;
+  int after, before;
+
+  before = after = 0;
+  for (v = 0; v <= cm->M; v++) 
+    {
+      if (cm->sttype[v] != E_st) {
+	after  += max[v] - min[v] + 1;
+	before += W;
+      }
+    }
+  printf("Before:  something like %d\n", before);
+  printf("After:   something like %d\n", after);
+  printf("Speedup: maybe %.2f fold\n", (float) before / (float) after);
+}
