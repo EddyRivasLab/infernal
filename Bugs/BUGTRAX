@@ -41,4 +41,24 @@ change to free all 0..M (0..M-1) decks, ignoring NULL decks,
 and setting deck[v] to NULL after each free to avoid problems
 w/ double free's of reused decks (e.g. END decks).
 //
+ID              i3
+TITLE           local begins on insert states.
+STATUS          closed
+XREF            STL7 p.43
+REPORTED_BY     Sam Griffiths-Jones
+CLOSED_DATE     SRE, Tue Mar  4 14:10:08 2003
+DESCRIPTION     
+
+CYKScan() was finding hits that root at insert states, which crashes
+outside(). Manifests in local alignment mode when the 0->insert->3
+path is cheaper than the local begin 0->3 path. Fixed w/ two changes:
+First, in scancyk.c, traceback must start at v=0 unless doing
+local_begin; previously, it could start at v=1 or 2 also. (This was
+not relevant to bug i3, though I initially thought it was - was a bug
+nonetheless.)  Second, in modelconfig.c:ConfigLocal(), zero the
+transition p's for state 0; only local begin transitions are
+active. Note that this means we've lost anything we trained for these
+transitions.
+//
+
 

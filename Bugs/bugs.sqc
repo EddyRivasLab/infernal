@@ -14,12 +14,14 @@
 #
 # bug tests are in reverse chronological order...
 
-# i1 - vault bad SS_cons bug. 2 Jan 02, xref STL7 p.12
+# i1 - vault bad SS_cons bug. 2 Jan 03, xref STL7 p.12
 #
 2 exercise i1/vault-sscons   ./i1 @cmbuild@ @cmalign@
 
-# i2 - cmalign memory leak. 5 Jan 02, xref STL7 p.15
+# i2 - cmalign memory leak. 5 Jan 03, xref STL7 p.15
 #
 2 prep       i2/cmalign-leak   @cmbuild@ %CM% i2.sto
 2 exercise   i2/cmalign-leak   @cmalign@ %CM% i2.sto
 
+# i3 - local begins rooted at inserts. 4 Mar 03, xref STL7 p.43
+2 exercise   i3/insert-roots   ./i3 @cmbuild@ @cmsearch@

@@ -245,18 +245,24 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
 	    }
 	} /* end loop over decks v>0 */
 
-      /* Finish up with the ROOT_S, state v=0, and local begins.
+      /* Finish up with the ROOT_S, state v=0; and deal w/ local begins.
+       * 
+       * If local begins are off, the hit must be rooted at v=0.
+       * With local begins on, the hit is rooted at the second state in
+       * the traceback (e.g. after 0), the internal entry point. Divide & conquer
+       * can only handle this if it's a non-insert state; this is guaranteed
+       * by the way local alignment is parameterized (other transitions are
+       * -INFTY), which is probably a little too fragile of a method. 
        */
       for (d = 1; d <= W && d <=j; d++) 
 	{
 	  y = cm->cfirst[0];
 	  alpha[0][cur][d] = alpha[y][cur][d] + cm->tsc[0][0];
-	  bestr[d]         = y;
-	  for (yoffset = 0; yoffset < cm->cnum[0]; yoffset++)
-	    if ((sc = alpha[y+yoffset][cur][d] + cm->tsc[0][yoffset]) > alpha[0][cur][d]) {
+	  bestr[d]         = 0;	/* root of the traceback = root state 0 */
+	  for (yoffset = 1; yoffset < cm->cnum[0]; yoffset++)
+	    if ((sc = alpha[y+yoffset][cur][d] + cm->tsc[0][yoffset]) > alpha[0][cur][d]) 
 	      alpha[0][cur][d] = sc;
-	      bestr[d]         = y+yoffset;
-	    }
+
 	  if (cm->flags & CM_LOCAL_BEGIN) {
 	    for (y = 1; y < cm->M; y++) {
 	      if (cm->stid[y] == BEGL_S) sc = alpha[y][j%(W+1)][d] + cm->beginsc[y];

@@ -180,6 +180,16 @@ CYKDivideAndConquer(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree
   float        sc;
   int          z;
 
+  /* Trust, but verify.
+   * Check out input parameters.
+   */
+  if (cm->stid[r] != ROOT_S) {
+    if (! (cm->flags & CM_LOCAL_BEGIN)) Die("internal error: we're not in local mode, but r is not root");
+    if (cm->stid[r] != MATP_MP && cm->stid[r] != MATL_ML &&
+	cm->stid[r] != MATR_MR && cm->stid[r] != BIF_B)
+      Die("internal error: trying to do a local begin at a non-mainline start");
+  }
+
   /* Create a parse tree structure.
    * The traceback machinery expects to build on a start state already
    * in the parsetree, so initialize by adding the root state.
@@ -238,6 +248,16 @@ CYKInside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_t
   Parsetree_t *tr;
   int          z;
   float        sc;
+
+  /* Trust, but verify.
+   * Check out input parameters.
+   */
+  if (cm->stid[r] != ROOT_S) {
+    if (! (cm->flags & CM_LOCAL_BEGIN)) Die("internal error: we're not in local mode, but r is not root");
+    if (cm->stid[r] != MATP_MP && cm->stid[r] != MATL_ML &&
+	cm->stid[r] != MATR_MR && cm->stid[r] != BIF_B)
+      Die("internal error: trying to do a local begin at a non-mainline start");
+  }
 
   /* Create the parse tree, and initialize.
    */

@@ -15,6 +15,7 @@ CVS $Id$
       env CC="ccmalloc gcc" CFLAGS=-g ./configure)
 
 2. Reproduce and log the bug. 
+   - Start a "page" in electronic notes, ~notebook/, w/ a 00README.
    - Develop a small test case, with an absolute minimum of files.
      The test case must be a program that returns non-zero if the
      bug is present; this might mean a perl script.
@@ -27,9 +28,9 @@ CVS $Id$
       like h for HMMER, sq for SQUID, i for INFERNAL)
    - Add test case to Bugs/bugs.sqc, at level 1 priority.
      Verify that sqc sees the bug:
-       % sqc 1 Bugs/bugs.sqc ../src
+       % ../ssdk/sqc 1 Bugs/bugs.sqc ../src
      or, for memory problems:
-       % sqc -m 1 Bugs/bugs.sqc ../src
+       % ../ssdk/sqc -m 1 Bugs/bugs.sqc ../src
 
 3. Fix the bug.
    - verify at command line
@@ -42,5 +43,17 @@ CVS $Id$
    - cvs commit         and give a brief cvs log; include bug #!
    
    
+the .emacs snippet for M-x bug-report, the format of BUGTRAX:
+(defun bug-report()
+  "Insert a bug report in a BUGTRAX file"
+  (interactive)
+  (insert "ID              \n")
+  (insert "TITLE           \n")
+  (insert "STATUS          \n")
+  (insert "XREF            \n")
+  (insert "REPORTED_BY     \n") 
+  (insert "CLOSED_DATE     \n")
+  (insert "DESCRIPTION     \n\n")
+  (insert "//\n"))
 
 
