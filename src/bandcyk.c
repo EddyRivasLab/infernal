@@ -25,15 +25,17 @@
 
 static int band_calculation(CM_t *cm, int W, double p_thresh, 
 			    int **ret_dmin, int **ret_dmax);
+static int  ok_truncation_error(double *density, int b, int W);
+static void print_band_distribution(double *density, int W);
 
 void
 BandExperiment(CM_t *cm)
 {
-  int W;
-  int status;
+  int  W;
+  int *dmin, *dmax;
 
   W = 1000;
-  while (! band_calculation(cm, W))
+  while (! band_calculation(cm, W, 0.00001, &dmin, &dmax))
     {
       W += 1000;
       SQD_DPRINTF1(("increasing W to %d, redoing band calculation...\n", W));
@@ -82,13 +84,13 @@ band_calculation(CM_t *cm, int W, double p_thresh, int **ret_dmin, int **ret_dma
   double **gamma;               /* P(length = n) for each state v                 */
   double  *tmp;
   int     *dmin;                /* lower bound for band. */
+  int     *dmax;                /* upper bound for band. */
   int      v;			/* counter over states, 0..M-1                    */
   int      y;			/* counter over connected states                  */
   int      n;			/* counter over lengths, 0..W */
-  int      i;			/* generic counter */
   int      dv;			/* Delta for state v */
   int      leftn;		/* length of left subsequence under a bifurc      */
-  double   pleqn;		/* P(<=n) for this state v */
+  double   pdf; 		/* P(<=n) or P(>=n) for this state v */
   int     *touch;               /* touch[y] = # of higher states that depend on y */
   Mstack_t *beamstack;          /* pool of beams we can reuse  */
   int      status;		/* return status. */
@@ -97,6 +99,13 @@ band_calculation(CM_t *cm, int W, double p_thresh, int **ret_dmin, int **ret_dma
    */
   gamma = MallocOrDie(sizeof(double *) * cm->M);        
   for (v = 0; v < cm->M; v++) gamma[v] = NULL;
+
+  /* dmin[v] and dmax[v] are the determined bounds that we return.
+   */
+  dmin = MallocOrDie(sizeof(int) * cm->M);
+  dmax = MallocOrDie(sizeof(int) * cm->M);  
+  *ret_dmin = NULL;
+  *ret_dmax = NULL;
 
   /* beamstack is a trick for reusing memory: a pushdown stack of 
    * "beams" (gamma[v] rows) we can reuse.
@@ -140,43 +149,67 @@ band_calculation(CM_t *cm, int W, double p_thresh, int **ret_dmin, int **ret_dma
 
 
       /* Recursively calculate the probability density P(length=n) for this state v.
+       * (The heart of the algorithm is right here.)
        */
       if (cm->sttype[v] == B_st) 
 	{
-	  pleqn = 0.;
+	  pdf = 0.;
 	  for (n = 0; n <= W; n++)
 	    {
 	      for (leftn = 0; leftn <= n; leftn++) 
 		gamma[v][n] += gamma[cm->cfirst[v]][leftn]*gamma[cm->cnum[v]][n-leftn];
-	      pleqn += gamma[v][n];
+	      pdf += gamma[v][n];
 	    }
 	}
       else 
 	{
-	  pleqn = 0.;
+	  pdf = 0.;
 	  dv = StateDelta(cm->sttype[v]);
 	  for (n = dv; n <= W; n++)
 	    {
 	      for (y = 0; y < cm->cnum[v]; y++)
 		gamma[v][n] += cm->t[v][y] * gamma[cm->cfirst[v] + y][n-dv];
-	      pleqn += gamma[v][n];
+	      pdf += gamma[v][n];
 	    }
 	}
 
       /* Make sure we've captured "enough" of the distribution (e.g.,
-       * cumulative probability is 1, within roundoff error). It would 
-       * be nice to have a good way of estimating our expected
-       * numerical error here, instead of making up an epsilon.
+       * we have captured the right tail; our truncation error is
+       * negligible).
+       *   Of our 3 criteria, we apply two to every state:
+       *     1. we're on the right side of the density (pdf is > 0.5
+       *        would be enough, but we use .999)
+       *     2. gamma_v(W) < p * DBL_EPSILON
+       *        This must be true if \sum_{i=W+1...\infty} g(i) < p*DBL_EPSILON,
+       *        which is really what we're trying to prove
        */
-      if (pleqn < 0.999999 || gamma[v][W] > DBL_EPSILON)
+      if (pdf < 0.999 || gamma[v][W-1000] > p_thresh * DBL_EPSILON)
 	{
-	  status = 0;  	/* fail; caller must increase W and rerun. */
+	  status = 0;  	/* fail; truncation error unacceptable; caller must increase W and rerun. */
 	  goto CLEANUP;
 	}
       
-      /* Renormalize this beam.
+      /* Renormalize this beam. (Should we really be doing this?)
        */
-      DNorm(gamma[v], W+1);
+      if (pdf > 1.0) DNorm(gamma[v], W+1);
+
+      /* Determine our left bound, dmin.
+       */
+      pdf = 0.;
+      for (n = 0; n <= W; n++)
+	{
+	  pdf += gamma[v][n];
+	  if (pdf > p_thresh) { dmin[v] = n; break; }
+	}
+
+      /* And our right bound, dmax.
+       */
+      pdf = 0.;
+      for (n = W; n >= 0; n--)
+	{
+	  pdf += gamma[v][n];
+	  if (pdf > p_thresh) { dmax[v] = n; break; }
+	}
 
       /* Reuse memory where possible, using the "touch" trick:
        *   look at all children y \in C_v.
@@ -204,15 +237,27 @@ band_calculation(CM_t *cm, int W, double p_thresh, int **ret_dmin, int **ret_dma
 	}
     }
 
-  pleqn = 0.;
-  for (n = 0; n <= W; n++) 
-    {
-      pleqn += gamma[0][n];
-      printf("%d \t %g \t %g\n", n, gamma[0][n], pleqn);
-    }
+
+  print_band_distribution(gamma[0],W);
+  printf ("%d  %d\n", dmin[0], -800);
+  printf ("%d  %d\n", dmin[0], 0);
+  printf ("&\n");
+  printf ("%d  %d\n", dmax[0], -800);
+  printf ("%d  %d\n", dmax[0], 0);
+  printf ("&\n");
+  printf ("%d  %d\n", W-1000, -800);
+  printf ("%d  %d\n", W-1000, 0);
+  printf ("&\n");
+
+  if (! ok_truncation_error(gamma[0], dmax[0], W-1000)) { status = 0; goto CLEANUP; }
+
+  *ret_dmin = dmin;
+  *ret_dmax = dmax;
   status = 1;
 
  CLEANUP:
+  free(touch);
+
   /* Free whatever's left in the gamma beams.
    */
   for (v = 0; v < cm->M; v++) 
@@ -223,14 +268,73 @@ band_calculation(CM_t *cm, int W, double p_thresh, int **ret_dmin, int **ret_dma
   
   /* Free the reused stack of beams.
    */
-  while (tmp = PopMstack(beamstack))
-    free(tmp);
+  while ((tmp = PopMstack(beamstack)) != NULL) free(tmp);
   FreeMstack(beamstack);
 
-  free(touch);
   return status;
 }
 
+
+static int
+ok_truncation_error(double *density, int b, int W)
+{
+  double logbeta;
+  double beta;			/* geometric decay parameter */
+  double C;			/* area under density from b+1..W inclusive */
+  double D;			/* area under unseen density from W+1..\infty */
+  int    i;
+  
+  C = 0.;
+  for (i = b+1; i <= W; i++) C += density[i];
+
+  /* if density is falling off as a geometric, log(beta) is 
+   * the slope of log(p). Estimate slope by a simple 2-point
+   * fit at our boundaries.
+   */
+  logbeta = (log(density[W]) - log(density[b+1])) / (W - b - 1);
+  beta = exp(logbeta);
+	     
+  D = (beta / (1.-beta)) * density[W];
+
+  printf("%d  %g\n", b+1, log(density[b+1]));
+  printf("%d  %g\n", W, log(density[b+1]) + (W-b-1) * logbeta);
+  printf("%d  %g\n", W+1000, log(density[b+1]) + (W-b-1+1000) * logbeta);
+  printf("&\n");
+
+  if (D < C * DBL_EPSILON) return 1;
+  else                     return 0;
+}  
+  
+
+
+static void
+print_band_distribution(double *density, int W)
+{
+  int    i;
+  double pdf;
+
+  /* Set 0. The density.
+   */
+  for (i = 0; i <= W; i++)
+    printf("%d\t%g\n", i, density[i]);
+  printf("&\n");
+
+  /* Set 1. The cumulative pdf.
+   */
+  pdf = 0.;
+  for (i = 0; i <= W; i++) {
+    pdf += density[i];
+    printf("%d\t%g\n", i, pdf);
+  }
+  printf("&\n");
+
+  /* Set 2. log(density). For fitting & determining geometric 
+   *        decay parameter.
+   */
+  for (i = 0; i <= W; i++) 
+    printf("%d\t%g\n", i, log(density[i]));
+  printf("&\n");
+}
 
 
 /* Function: BandDistribution()

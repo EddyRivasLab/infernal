@@ -1,0 +1,84 @@
+\documentclass[11pt]{article}
+\usepackage{times}
+\newif\ifpdf
+\ifx\pdfoutput\undefined
+  \pdffalse
+  \usepackage[dvips]{graphicx}    
+  \usepackage[dvips]{color}  
+\else
+  \pdftrue
+  \usepackage[pdftex]{graphicx}    
+  \usepackage[pdftex]{color}  
+\fi
+\usepackage{fullpage}
+\usepackage{url}
+\usepackage{cite}
+\usepackage{alg}
+\bibliographystyle{bmc_bioinformatics}
+
+% \draftfalse: submission version. Legends,tables at end. No figs included.
+% \drafttrue:   online preprint. Figures and table inline.
+\newif\ifdraft
+\draftfalse
+
+\def\argmax{\mathop{\mathrm{argmax}}\limits}
+\def\argmin{\mathop{\mathrm{argmin}}\limits}
+\setcounter{secnumdepth}{0}
+
+\begin{document}
+
+\title{Improved speed in profile SCFG searches using
+banded dynamic programming}
+\author{Sean R. Eddy\\
+Howard Hughes Medical Institute \& Department of Genetics, \\
+Washington University School of Medicine \\
+Saint Louis, Missouri 63110 USA \\
+eddy@genetics.wustl.edu}  
+\date{\today}
+\maketitle
+
+\abstract{\textbf{Background:} Covariance models (CMs) are probabilistic models
+of RNA secondary structure; a special case of profile stochastic
+context-free grammars (profile SCFGs), analogous to profile hidden
+Markov models of linear sequence. The dynamic programming algorithm
+for searching a database of $L$ residues with a query RNA structure of
+$N$ residues is $O(N^3 L)$ in time. Poor search speed is a major
+factor limiting practical applications of CM methods.
+
+\textbf{Results:} I describe a method for precalculating
+probabilistic bounds on which cells of the dynamic programming matrix
+need to be calculated. These bounds are calculated 
+\emph{a priori}, independent of the target database sequence.
+
+\textbf{Conclusions:}
+}
+
+\section{Algorithm}
+
+
+Let $\gamma_v(n)$ be the probability that a parse subtree rooted at
+state $v$ generates a subsequence of length $n$. 
+
+\begin{algorithm}
+\begin{algtab*}
+\algforto{$v = M$ \textbf{down}}{1}
+  \algif{$S_v =$ P:}
+     \algforto{$n = 2$}{$W$} 
+       $\gamma_v(n) = \sum_{y \in C_v} \gamma_v(n-2) t_v(y)$ \\
+  \algelseif{$S_v =$ L,R:}
+     \algforto{$n = 1$}{$W$} 
+       $\gamma_v(n) = \sum_{y \in C_v} \gamma_v(n-1) t_v(y)$ \\
+  \algelseif{$S_v =$ S,D:}
+     \algforto{$n = 0$}{$W$} 
+       $\gamma_v(n) = \sum_{y \in C_v} \gamma_v(n) t_v(y)$ \\
+  \algelseif{$S_v =$ B:}
+     \algforto{$n = 0$}{$W$} 
+       $\gamma_v(n) = \sum_{\nu=0}^{n} \gamma_y(\nu) \gamma_z(n-\nu)$ \\
+  \algelseif{$S_v =$ E:}
+     $\gamma_v(0) = 1$ \\
+  \algelse
+     $\gamma_v(n) = 0.$ \\ 
+\end{algtab*}
+\end{algorithm}
+
+\end{document}       

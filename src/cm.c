@@ -541,6 +541,8 @@ StateDelta(int sttype)
   case EL_st: return 0;
   default: Die("bogus state type %d\n", sttype);
   }
+  /*NOTREACHED*/
+  return 0;
 }
 int
 StateLeftDelta(int sttype)
@@ -558,6 +560,8 @@ StateLeftDelta(int sttype)
   case EL_st: return 0;
   default: Die("bogus state type %d\n", sttype);
   }
+  /*NOTREACHED*/
+  return 0;
 }
 int
 StateRightDelta(int sttype)
@@ -575,6 +579,8 @@ StateRightDelta(int sttype)
   case EL_st: return 0;
   default: Die("bogus state type %d\n", sttype);
   }
+  /*NOTREACHED*/
+  return 0;
 }
 
 
