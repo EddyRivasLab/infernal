@@ -141,6 +141,7 @@ dist:
 	# Remove CVS-controlled files/directories that don't belong in the distro
 	#
 	-rm -rf ${BASENAME}-${RELEASE}/Licenses
+	-rm -rf ${BASENAME}-${RELEASE}/00CHECKLIST
 	-rm -rf ${BASENAME}-${RELEASE}/configure.in
 	-rm -rf ${BASENAME}-${RELEASE}/squid/configure.in
 	-rm -rf ${BASENAME}-${RELEASE}/Manuscripts
