@@ -49,7 +49,6 @@ cfsqp.a: $(OBJS) ${HDRS}
 ##
 distclean:
 	make clean
-	-rm -f *.c *.h
 	-rm -f Makefile
 
 clean:
