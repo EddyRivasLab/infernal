@@ -104,34 +104,39 @@ main(int argc, char **argv)
     Die("%s empty?\n", cmfile);
 
   CMLogoddsify(cm);
-  CYKDemands(cm, 100); 
 
   while (ReadSeq(sqfp, sqfp->format, &seq, &sqinfo))
     {
+      CYKDemands(cm, sqinfo.len); 
+
       if (sqinfo.len == 0) continue; 	/* silently skip len 0 seqs */
       
       dsq = DigitizeSequence(seq, sqinfo.len);
 
+#if 0
       StopwatchZero(watch);
-
       StopwatchStart(watch);
       sc1 = CYKInside(cm, dsq, sqinfo.len, &tr1);  
-      sc2 = CYKDivideAndConquer(cm, dsq, sqinfo.len, &tr2);  
       ParsetreeDump(stdout, tr1, cm, dsq);
       printf("%-12s : %.2f  %.2f\n", sqinfo.name, sc1/0.693,
 	     ParsetreeScore(cm, tr1, dsq)/0.693);
+      StopwatchStop(watch);
+      StopwatchDisplay(stdout, "CPU time: ", watch);
+#endif
+
+      StopwatchZero(watch);
+      StopwatchStart(watch);
+      sc2 = CYKDivideAndConquer(cm, dsq, sqinfo.len, &tr2);  
       ParsetreeDump(stdout, tr2, cm, dsq);
       printf("%-12s : %.2f  %.2f\n", sqinfo.name, sc2/0.693,
 	     ParsetreeScore(cm, tr2, dsq)/0.693);
-      ParsetreeCompare(tr1, tr2);
+      /* ParsetreeCompare(tr1, tr2);  */
       StopwatchStop(watch);
-
-
-
       StopwatchDisplay(stdout, "CPU time: ", watch);
+
       FreeSequence(seq, &sqinfo);
-      FreeParsetree(tr1);
-      FreeParsetree(tr2);
+      /*      FreeParsetree(tr1);  */
+      FreeParsetree(tr2); 
       free(dsq);
     }
 

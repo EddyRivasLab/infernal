@@ -94,6 +94,8 @@ static float   size_vji_shadow_deck(int i0, int i1, int j1, int j0);
 static void    free_vji_shadow_deck(char **a, int j1, int j0);
 static void    free_vji_shadow_matrix(char ***a, int r, int z, int j1, int j0);
 
+#define BE_EFFICIENT  0		/* setting for do_full: small memory mode */
+#define BE_PARANOID   1		/* setting for do_full: keep whole matrix */
 
 /*################################################################
  * The API.
@@ -200,7 +202,7 @@ CYKDemands(CM_t *cm, int L)
   float dpcalcs;		/* # of inner loops executed for non-bif calculations */
   int   j;
 
-  Mb_per_deck = (float)(L+2)*(float)(L+1)*2. / 1000000.;
+  Mb_per_deck = size_vjd_deck(L, 1, L);
   bif_decks   = CMCountStatetype(cm, B_st);
   nends       = CMCountStatetype(cm, E_st);
   maxdecks    = cyk_deck_count(cm, 0, cm->M-1);
@@ -216,7 +218,7 @@ CYKDemands(CM_t *cm, int L)
   dpcalcs = (float) (L+2)*(float)(L+1)*0.5*(float) (cm->M - bif_decks - nends +1);
 
   printf("CYK cpu/memory demand estimates:\n");
-  printf("Mb per cyk deck:                %.2f\n", Mb_per_deck);
+  printf("Mb per cyk deck:                %.4f\n", Mb_per_deck);
   printf("# of decks (M):                 %d\n",   cm->M);
   printf("# of decks needed in small CYK: %d\n",   maxdecks);
   printf("RAM needed for full CYK, Mb:    %.2f\n", bigmemory);
@@ -284,20 +286,26 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    *    and append the trace to tr.
    */
   if (insideT_size(cm, L, r, vend, i0, j0) < RAMLIMIT) {
+    SQD_DPRINTF1(("Solving a generic w/ insideT - G%d[%s]..%d[%s], %d..%d\n",
+		  r, UniqueStatetype(cm->stid[r]),
+		  vend, UniqueStatetype(cm->stid[vend]),
+		  i0, j0));
     sc = insideT(cm, dsq, L, tr, r, vend, i0, j0);
     return sc;
   }
 
   /* 2. Traverse down from r, find first bifurc.
+   *    The lowest a bifurc could be: B-S-E/S-IL-E = vend-5
+   *                                   
    */
-  for (v = r; v <= vend; v++)
+  for (v = r; v <= vend-5; v++)
     if (cm->sttype[v] == B_st) break; /* found the first bifurcation, now v */
 
   /* 3. If there was no bifurcation, this is a wedge problem; solve it
    *    with wedge_splitter. 
    */
-  if (v == vend) {		/* no bifurc? it's a wedge problem  */
-    if (cm->sttype[v] != E_st) Die("inconceivable.");
+  if (v > vend-5) {		/* no bifurc? it's a wedge problem  */
+    if (cm->sttype[vend] != E_st) Die("inconceivable.");
     sc = wedge_splitter(cm, dsq, L, tr, r, vend, i0, j0);
     return sc;
   }
@@ -310,12 +318,12 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 
   /* Calculate alpha[y] deck and alpha[z] deck.
    */
-  inside(cm, dsq, L, y, z-1,  i0, j0, FALSE, NULL,  &alpha, NULL, &pool, NULL);
-  inside(cm, dsq, L, z, vend, i0, j0, FALSE, alpha, &alpha, pool, &pool, NULL);
+  inside(cm, dsq, L, y, z-1,  i0, j0, BE_EFFICIENT, NULL,  &alpha, NULL, &pool, NULL);
+  inside(cm, dsq, L, z, vend, i0, j0, BE_EFFICIENT, alpha, &alpha, pool, &pool, NULL);
 
   /* Calculate beta[v] deck (stick it in alpha). Let the pool get free'd.
    */
-  outside(cm, dsq, L, r, v, i0, j0, FALSE, alpha, &beta, pool, NULL);
+  outside(cm, dsq, L, r, v, i0, j0, BE_EFFICIENT, alpha, &beta, pool, NULL);
 
   /* Find the optimal split.
    */
@@ -351,12 +359,18 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    * constructing the trace in a postorder traversal.
    */
   SQD_DPRINTF1(("Generic splitter:\n"));
-  SQD_DPRINTF1(("   V:       G%d..%d, %d..%d//%d..%d\n", 
-		r, v, i0, best_j-best_d+1, best_j, j0));
-  SQD_DPRINTF1(("   generic: G%d..%d, %d..%d\n", 
-		y, z-1, best_j-best_d+1, best_j-best_k));
-  SQD_DPRINTF1(("   generic: G%d..%d, %d..%d\n", 
-		z, vend, best_j-best_k+1, best_j));
+  SQD_DPRINTF1(("   V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
+		r, UniqueStatetype(cm->stid[r]),
+		v, UniqueStatetype(cm->stid[v]),
+		i0, best_j-best_d+1, best_j, j0));
+  SQD_DPRINTF1(("   generic: G%d[%s]..%d[%s], %d..%d\n", 
+		y, UniqueStatetype(cm->stid[y]),
+		z-1, UniqueStatetype(cm->stid[z-1]),
+		best_j-best_d+1, best_j-best_k));
+  SQD_DPRINTF1(("   generic: G%d[%s]..%d[%s], %d..%d\n", 
+		z, UniqueStatetype(cm->stid[z]),
+		vend, UniqueStatetype(cm->stid[vend]),
+		best_j-best_k+1, best_j));
 
   v_splitter(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0);
   tv = tr->n-1;
@@ -410,7 +424,7 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
   int   v,w,y;
   int   W;
   int   d, jp, j;
-  int   best_d, best_j;
+  int   best_v, best_d, best_j;
   int   midnode;
   
   /* 1. If the wedge problem is either a boundary condition,
@@ -424,6 +438,10 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
   if (cm->ndidx[z] == cm->ndidx[r] + 1 ||
       insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT) 
     {
+      SQD_DPRINTF1(("Solving a wedge:   G%d[%s]..%d[%s], %d..%d\n", 
+		r, UniqueStatetype(cm->stid[r]),
+		z, UniqueStatetype(cm->stid[z]),
+		i0,j0));
       sc = insideT(cm, dsq, L, tr, r, z, i0, j0);
       return sc;
     }
@@ -443,10 +461,10 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
    *    in these routines; the w..y decks are guaranteed
    *    to be retained.
    */
-  inside(cm, dsq, L, w, z, i0, j0, FALSE, NULL, &alpha, NULL, &pool, NULL);
-  outside(cm, dsq, L, r, y, i0, j0, FALSE, NULL, &beta, pool, NULL);
+  inside(cm, dsq, L, w, z, i0, j0, BE_EFFICIENT, NULL, &alpha, NULL, &pool, NULL);
+  outside(cm, dsq, L, r, y, i0, j0, BE_EFFICIENT, NULL, &beta, pool, NULL);
 
-  /* 4. Find the optimal split: v, best_d, best_j
+  /* 4. Find the optimal split: best_v, best_d, best_j
    */
   W = j0-i0+1;
   best_sc = IMPOSSIBLE;
@@ -458,6 +476,7 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
 	  if ((sc = alpha[v][j][d] + beta[v][j][d]) > best_sc)
 	    {
 	      best_sc = sc;
+	      best_v  = v;
 	      best_d  = d;
 	      best_j  = j;
 	    }
@@ -476,8 +495,18 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
    *    These have to solved in the order given because we're
    *    constructing the trace in postorder traversal.
    */
-  v_splitter(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0);
-  wedge_splitter(cm, dsq, L, tr, v, z, best_j-best_d+1, best_j);
+  SQD_DPRINTF1(("Wedge splitter:\n"));
+  SQD_DPRINTF1(("   V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
+		r, UniqueStatetype(cm->stid[r]),
+		best_v, UniqueStatetype(cm->stid[best_v]),
+		i0, best_j-best_d+1, best_j, j0));
+  SQD_DPRINTF1(("   wedge:   G%d[%s]..%d[%s], %d..%d\n", 
+		best_v, UniqueStatetype(cm->stid[best_v]),
+		z, UniqueStatetype(cm->stid[z]),
+		best_j-best_d+1, best_j));
+
+  v_splitter(cm, dsq, L, tr, r, best_v, i0, best_j-best_d+1, best_j, j0);
+  wedge_splitter(cm, dsq, L, tr, best_v, z, best_j-best_d+1, best_j);
 
   return best_sc;
 }
@@ -515,7 +544,8 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
   struct deckpool_s *pool;      /* pool for holding alloced decks */
   float sc;			/* tmp variable holding a score */
   int   v,w,y;			/* state indexes */
-  int   i,j;			/* seq position indexes */
+  int   ip,jp;
+  int   best_v;
   int   best_i, best_j;		/* optimal i', j' split point */
   float best_sc;		/* score at optimal split point */
   int   midnode;
@@ -523,9 +553,13 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
   /* 1. If the V problem is either a boundary condition, or small
    *    enough, solve it with v_inside^T and append the trace to tr.
    */
-  if (cm->ndidx[z] == cm->ndidx[r] + 1 ||
-      vinsideT_size(cm, r, z, i0, i1, j1, j0))
+   if (cm->ndidx[z] == cm->ndidx[r] + 1 ||
+      vinsideT_size(cm, r, z, i0, i1, j1, j0) < RAMLIMIT)
     {
+      SQD_DPRINTF1(("Solving a V:   G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
+		r, UniqueStatetype(cm->stid[r]),
+		z, UniqueStatetype(cm->stid[z]),
+		i0,j1,j1,j0));
       vinsideT(cm, dsq, L, tr, r, z, i0, i1, j1, j0);
       return;
     }
@@ -542,20 +576,21 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    *    deallocation works, so the w..y decks are retained
    *    in alpha and beta even though we're in small memory mode.
    */
-  vinside (cm, dsq, L, w, z, i0, i1, j1, j0, FALSE, NULL, &alpha, NULL, &pool, NULL);
-  voutside(cm, dsq, L, r, y, i0, i1, j1, j0, FALSE, NULL, &beta,  pool, NULL);
+  vinside (cm, dsq, L, w, z, i0, i1, j1, j0, BE_EFFICIENT, NULL, &alpha, NULL, &pool, NULL);
+  voutside(cm, dsq, L, r, y, i0, i1, j1, j0, BE_EFFICIENT, NULL, &beta,  pool, NULL);
 
   /* 4. Find the optimal split: v, ip, jp. 
    */
   best_sc = IMPOSSIBLE;
   for (v = w; v <= y; v++)
-    for (i = i0; i <= i1; i++)
-      for (j = j1; j <= j0; j++)
-	if ((sc = alpha[v][j][i] + beta[v][j][i]) > best_sc)
+    for (ip = 0; ip <= i1-i0; ip++)
+      for (jp = 0; jp <= j0-j1; jp++)
+	if ((sc = alpha[v][jp][ip] + beta[v][jp][ip]) > best_sc)
 	  {
 	    best_sc = sc;
-	    best_i  = i;
-	    best_j  = j;
+	    best_v  = v;
+	    best_i  = ip + i0;
+	    best_j  = jp + j1;
 	  }
 
   /* Free now, before recursing!
@@ -569,9 +604,18 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    * Solve in this order, because we're constructing the
    * trace in postorder traversal.
    */
-  v_splitter(cm, dsq, L, tr, r, v, i0,     best_i, best_j, j0);
-  v_splitter(cm, dsq, L, tr, v, z, best_i, i1,     j1,     best_j);
+  SQD_DPRINTF1(("V splitter:\n"));
+  SQD_DPRINTF1(("   V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
+		r, UniqueStatetype(cm->stid[r]),
+		best_v, UniqueStatetype(cm->stid[best_v]),
+		i0, best_i, best_j, j0));
+  SQD_DPRINTF1(("   V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
+		best_v, UniqueStatetype(cm->stid[best_v]),
+		z, UniqueStatetype(cm->stid[z]),
+		best_i, i1, j1, best_j));
 
+  v_splitter(cm, dsq, L, tr, r,      best_v, i0,     best_i, best_j, j0);
+  v_splitter(cm, dsq, L, tr, best_v, z,      best_i, i1,     j1,     best_j);
   return;
 }
 
@@ -920,9 +964,9 @@ inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_f
  *
  * Purpose:  Run the outside version of a CYK alignment algorithm,
  *           on a subsequence i0..j0 of a digitized sequence dsq [1..L],
- *           using a linear segment of a model anchored at a start state vroot
- *           (possibly the absolute root, 0) and ending at an end
- *           state or bifurcation state vend. There must be no
+ *           using a linear segment of a model anchored at a start state
+ *           (possibly the absolute root, 0) or (MP,ML,MR,D) and ending at an end
+ *           state, bifurcation state, or (MP|ML|MR|D) vend. There must be no
  *           start, end, or bifurcation states in the path other than 
  *           these termini: this is not a full Outside implementation,
  *           it is only the bit that's necessary in the divide
@@ -937,8 +981,8 @@ inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_f
  * Args:     cm        - the model    [0..M-1]
  *           dsq       - the sequence [1..L]   
  *           L         - length of the dsq
- *           vroot     - first state of linear model segment (always a start)
- *           vend      - last state of linear model segment 
+ *           vroot     - first state of linear model segment (S; MP|ML|MR|D)
+ *           vend      - last state of linear model segment  (B; E; MP|ML|MR|D)
  *           i0        - first position in subseq to align (1, for whole seq)
  *           j0        - last position in subseq to align (L, for whole seq)
  *           do_full   - if TRUE, we save all the decks in beta, instead of
@@ -970,6 +1014,7 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
   int      W;			/* subsequence length */
   int      jp;			/* j': relative position in the subsequence, 0..W */
   int      voffset;		/* index of v in t_v(y) transition scores */
+  int      w1,w2;		/* bounds of split set */
 
   /* Allocations and initializations
    */
@@ -984,28 +1029,36 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
     for (v = 0; v < cm->M; v++) beta[v] = NULL;
   }
 
+  /* Initialize the root deck.
+   * If the root is in a split set, initialize the whole split set.
+   */
+  w1 = cm->nodemap[cm->ndidx[vroot]]; /* first state in split set */
+  w2 = cm->cfirst[w1]-1;	      /* last state in split set w1<=vroot<=w2 */
+
+  for (v = w1; v <= w2; v++) {
+    if (! deckpool_pop(dpool, &(beta[v])))
+      beta[v] = alloc_vjd_deck(L, i0, j0);
+    for (jp = 0; jp <= W; jp++) {
+      j = i0-1+jp;
+      for (d = 0; d <= jp; d++)
+	beta[v][j][d] = IMPOSSIBLE;
+    }
+  }
+  beta[vroot][j0][W] = 0;		
+
   touch = MallocOrDie(sizeof(int) * cm->M);
-  for (v = 0;      v < vroot; v++) touch[v] = 0;
+  for (v = 0;      v < w1; v++) touch[v] = 0; /* note: top of split set w1, not vroot */
   for (v = vend+1; v < cm->M; v++) touch[v] = 0;
-  for (v = vroot; v <= vend; v++) {
+  for (v = w1; v <= vend; v++) {
     if (cm->sttype[v] == B_st) touch[v] = 2; /* well, we'll never use this, but set it anyway. */
     else                       touch[v] = cm->cnum[v];
   }
 				
-  /* Initialize the root deck. This probably isn't the most efficient way to do it.
-   */
-  if (! deckpool_pop(dpool, &(beta[vroot])))
-    beta[vroot] = alloc_vjd_deck(L, i0, j0);
-  for (jp = 0; jp <= W; jp++) {
-    j = i0-1+jp;
-    for (d = 0; d <= jp; d++)
-      beta[vroot][j][d] = IMPOSSIBLE;
-  }
-  beta[vroot][j0][W] = 0;		
+
   
   /* Main loop down through the decks
    */
-  for (v = vroot+1; v <= vend; v++)
+  for (v = w2+1; v <= vend; v++)
     {
       /* First we need to fetch a deck of memory to fill in;
        * we try to reuse a deck but if one's not available we allocate
@@ -1023,6 +1076,7 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 	    beta[v][j][d] = IMPOSSIBLE;
 	    i = j-d+1;
 	    for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
+	      if (y < vroot) continue; /* deal with split sets */
 	      voffset = v - cm->cfirst[y]; /* gotta calculate the transition score index for t_y(v) */
 
 	      switch(cm->sttype[y]) {
@@ -1098,7 +1152,7 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
    * matrix in the current implementation...)
    */
   if (ret_beta == NULL) {
-    for (v = vroot; v <= vend; v++)
+    for (v = w1; v <= vend; v++) /* start at w1 - top of split set - not vroot */
       if (beta[v] != NULL) { deckpool_push(dpool, beta[v]); beta[v] = NULL; }
     free(beta);
   } else *ret_beta = beta;
@@ -1172,6 +1226,7 @@ vinside(CM_t *cm, char *dsq, int L,
 {
   char  ***shadow;              /* the shadow matrix -- traceback ptrs -- memory is kept */
   int     v,i,j;
+  int     w1,w2;		/* bounds of the split set */
   int     jp, ip;		/* j' and i' -- in the matrix coords */
   int    *touch;                /* keeps track of whether we can free a deck yet or not */
   int     y, yoffset;
@@ -1185,13 +1240,16 @@ vinside(CM_t *cm, char *dsq, int L,
     a = MallocOrDie(sizeof(float **) * cm->M);
     for (v = 0; v < cm->M; v++) a[v] = NULL;
   }
-
-  if (! deckpool_pop(dpool, &(a[z]))) /* alloc last deck z */
-    a[z] = alloc_vji_deck(i0, i1, j1, j0);
-				/* init the last deck, s; we don't need a shadow for it. */
-  for (jp = 0; jp <= j0-j1; jp++) 
-    for (ip = 0; ip <= i1-i0; ip++) 
-      a[z][jp][ip] = IMPOSSIBLE;
+				/* the whole split set w<=z<=y must be initialized */
+  w1 = cm->nodemap[cm->ndidx[z]];
+  w2 = cm->cfirst[w1]-1;
+  for (v = w1; v <= w2; v++) { 
+    if (! deckpool_pop(dpool, &(a[v]))) 
+      a[v] = alloc_vji_deck(i0, i1, j1, j0);
+    for (jp = 0; jp <= j0-j1; jp++) 
+      for (ip = 0; ip <= i1-i0; ip++) 
+	a[v][jp][ip] = IMPOSSIBLE;
+  }
   a[z][0][i1-i0] = 0.;
 
   if (ret_shadow != NULL) {
@@ -1201,12 +1259,12 @@ vinside(CM_t *cm, char *dsq, int L,
 
   touch = MallocOrDie(sizeof(int) * cm->M);
   for (v = 0;   v < r;  v++) touch[v] = 0;
-  for (v = r;   v <= z; v++) touch[v] = cm->pnum[v];
-  for (v = z+1; v < cm->M; v++) touch[v] = 0;
+  for (v = r;   v <= w2; v++) touch[v] = cm->pnum[v]; /* note w2 not z: to bottom of split set */
+  for (v = w2+1; v < cm->M; v++) touch[v] = 0;
 
   /* Main recursion
    */
-  for (v = z-1; v >= r; v--)
+  for (v = w1-1; v >= r; v--)
     {
       /* Get a deck and a shadow deck.
        */
@@ -1275,7 +1333,7 @@ vinside(CM_t *cm, char *dsq, int L,
 		  }
 	      
 	      if (dsq[i] < Alphabet_size)
-		a[v][jp][ip] += cm->esc[v][(int) dsq[ip]];
+		a[v][jp][ip] += cm->esc[v][(int) dsq[i]];
 	      else
 		a[v][jp][ip] += DegenerateSingletScore(cm->esc[v], dsq[i]);
 	      if (a[v][jp][ip] < IMPOSSIBLE) a[v][jp][ip] = IMPOSSIBLE;  
@@ -1328,7 +1386,7 @@ vinside(CM_t *cm, char *dsq, int L,
    * it away (saving decks in the pool). Else, pass it back.
    */
   if (ret_a == NULL) {
-    for (v = r; v <= z; v++) 
+    for (v = r; v <= w2; v++)	/* note: go all the way to the bottom of the split set */
       if (a[v] != NULL) {
 	deckpool_push(dpool, a[v]);
 	a[v] = NULL;
@@ -1426,7 +1484,7 @@ voutside(CM_t *cm, char *dsq, int L,
     for (ip = 0; ip <= i1-i0; ip++)
       beta[r][jp][ip] = IMPOSSIBLE;
   }
-  beta[r][j0][i0] = 0;		
+  beta[r][j0-j1][0] = 0;		
 
   touch = MallocOrDie(sizeof(int) * cm->M);
   for (v = 0;   v < r;     v++) touch[v] = 0;
@@ -1450,13 +1508,14 @@ voutside(CM_t *cm, char *dsq, int L,
       /* main recursion:
        */
       for (jp = j0-j1; jp >= 0; jp--) {
-	j = jp+j0;
+	j = jp+j1;
 	for (ip = 0; ip <= i1-i0; ip++) 
 	  {
 	    i = ip+i0;
 	    beta[v][jp][ip] = IMPOSSIBLE;
 
 	    for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
+	      if (y < r) continue; /* deal with split sets */
 	      voffset = v - cm->cfirst[y]; /* gotta calculate the transition score index for t_y(v) */
 
 	      switch(cm->sttype[y]) {
@@ -1579,7 +1638,7 @@ insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
   int       bifparent;
 
   sc = inside(cm, dsq, L, r, z, i0, j0, 
-	      FALSE,		/* memory-saving mode */
+	      BE_EFFICIENT,	/* memory-saving mode */
 	      NULL, NULL,	/* manage your own matrix, I don't want it */
 	      NULL, NULL,	/* manage your own deckpool, I don't want it */
 	      &shadow);		/* return a shadow matrix to me. */
@@ -1668,8 +1727,8 @@ vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
   int     jp,ip;
   int     yoffset;
 
-  sc = vinside(cm, dsq, L, r, z, i0, j0, j1, j0,
-	       FALSE,		/* memory-saving mode */
+  sc = vinside(cm, dsq, L, r, z, i0, i1, j1, j0,
+	       BE_EFFICIENT,	/* memory-saving mode */
 	       NULL, NULL,	/* manage your own matrix, I don't want it */
 	       NULL, NULL,	/* manage your own deckpool, I don't want it */
 	       &shadow);	/* return a shadow matrix to me. */
@@ -1906,7 +1965,8 @@ alloc_vjd_deck(int L, int i, int j)
 {
   float **a;
   int     jp;
-  
+
+  SQD_DPRINTF3(("alloc_vjd_deck : %.4f\n", size_vjd_deck(L,i,j)));
   a = MallocOrDie(sizeof(float *) * (L+1)); /* always alloc 0..L rows, some of which are NULL */
   for (jp = 0;   jp < i-1;    jp++) a[jp]     = NULL;
   for (jp = j+1; jp <= L;     jp++) a[jp]     = NULL;

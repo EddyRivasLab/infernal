@@ -31,10 +31,9 @@ RANLIB = @RANLIB@
 
 # Where the build arena is (module .h and .o files)
 #
-ARENA     = @top_srcdir@/@ARENA@
-MODLIBS   = -lsquid
-MODLIBDIR = -L${ARENA}
-MODINCDIR = -I${ARENA}
+MYLIBS   = -lsquid
+MYLIBDIR = -L../squid
+MYINCDIR = -I../squid
 
 PROGS = cmbuild cmscore
 
@@ -53,24 +52,20 @@ HDRS  = funcs.h\
 	structs.h
 
 .c.o: 
-	$(CC) $(CFLAGS) $(MDEFS) $(MODINCDIR) -c $<
+	$(CC) $(CFLAGS) $(MDEFS) $(MYINCDIR) -c $<
 
 #################################################################
 ## Targets defining how to make INFERNAL executables.
 ##
 all: 	$(PROGS) 
 
-$(PROGS): @STD_EXEC_DEPENDENCY@ $(OBJS) 
-	$(CC) $(CFLAGS) $(MDEFS) $(MODLIBDIR) -o $@ $@.o $(OBJS) $(MODLIBS) $(LIBS)
+$(PROGS): @EXEC_DEPENDENCY@ $(OBJS) 
+	$(CC) $(CFLAGS) $(MDEFS) $(MYLIBDIR) -o $@ $@.o $(OBJS) $(MYLIBS) $(LIBS)
 
 #################################################################
 ## Targets used in making INFERNAL module for testsuite compilation.
 ##
 module: libinfernal.a
-
-module-install: libinfernal.a
-	mv libinfernal.a ${ARENA}/
-	cp $(HDRS)       ${ARENA}/
 
 libinfernal.a: $(OBJS) 
 	$(AR) libinfernal.a $(OBJS) 

@@ -67,7 +67,6 @@ PROGS = cmbuild\
 #      and moves the supported executables into binaries/ subdirectory.
 #
 all: version.h
-	@if ! test -d lib; then mkdir lib; fi
 	@if test -d binaries; then\
 	   echo "You appear to already have a compiled INFERNAL distribution.";\
            echo "You don't need to make.";\
@@ -76,8 +75,8 @@ all: version.h
            echo "a 'binaries' directory; do 'make srcclean' to revert INFERNAL";\
            echo "to a pristine source distribution.";\
 	else\
-           (cd squid; make CC="$(CC)" CFLAGS="$(CFLAGS)" module-install);\
-           (cd src;   make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module-install);\
+           (cd squid; make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module);\
+           (cd src;   make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module);\
            mkdir binaries;\
               for prog in $(PROGS); do\
               mv src/$$prog binaries/;\
@@ -161,21 +160,14 @@ clean:
 	(cd squid;     make clean)
 	(cd testsuite; make clean)
 
-# "make distclean" leaves a pristine distribution.... and
-#                  doesn't touch the binaries directory
+# "make distclean" leaves a pristine source distribution.
 #
 distclean:
-	-rm -f *.o *~ Makefile.bak core TAGS gmon.out
+	-rm -rf binaries
 	-rm config.cache config.log config.status
 	-rm version.h
+	make clean
 	(cd src;       make distclean)
 	(cd squid;     make distclean)
 	-rm Makefile
 
-# "make srcclean" is the most aggressive. It is distclean,
-#    plus removing the binaries directory -- leaving a
-#    pristine source-only distribution.
-#
-srcclean:
-	-rm -rf binaries
-	make distclean
