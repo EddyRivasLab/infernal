@@ -41,9 +41,9 @@
 #include <stdlib.h>
 
 #include "squid.h"
+#include "sre_stack.h"
 
 #include "structs.h"
-#include "nstack.h"
 #include "funcs.h"
 
 struct deckpool_s {

@@ -35,10 +35,11 @@
 
 #include "squid.h"		
 #include "msa.h"		/* multiple sequence alignments */
+#include "sre_stack.h"
 
 #include "structs.h"
 #include "funcs.h"
-#include "nstack.h"
+
 
 
 

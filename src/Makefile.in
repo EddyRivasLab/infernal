@@ -47,14 +47,12 @@ OBJS  = alphabet.o\
 	globals.o\
 	modelconfig.o\
 	modelmaker.o\
-	nstack.o\
 	parsetree.o\
 	rna_ops.o\
 	scancyk.o\
 	smallcyk.o
 
 HDRS  = funcs.h\
-	nstack.h\
 	structs.h
 
 .c.o: 

@@ -18,10 +18,13 @@
 
 #include "squid.h"
 #include "vectorops.h"
+#include "sre_stack.h"
+
 #include "structs.h"
 #include "funcs.h"
 
-static int band_calculation(CM_t *cm, int W);
+static int band_calculation(CM_t *cm, int W, double p_thresh, 
+			    int **ret_dmin, int **ret_dmax);
 
 void
 BandExperiment(CM_t *cm)
@@ -37,10 +40,48 @@ BandExperiment(CM_t *cm)
     }
 }
 
+/* Function:  
+ * Incept:    SRE, Sat Oct 11 14:17:40 2003 [St. Louis]
+ *
+ * Purpose:   
+ * 
+ *            Let L_v(n) be the cumulative probability distribution,
+ *            P(length <= n), for state v:
+ *                L_v(n) = \sum_{i=0}^{n}  \gamma_v(i)
+ *                
+ *            For each state v, find a dmin such that the probability
+ *            of missing a hit is <= p on the low side:
+ *                L_v(dmin-1) <= p
+ *                
+ *            On the high side, let H_v(n) be 1-L_v(n): e.g.
+ *            P(length > n) for state v. But it is important not 
+ *            to calculate this as 1-L_v(n); because of numerical
+ *            roundoff issues, it must be done as:
+ *                H_v(n) = \sum_{i=n+1}{\infty} \gamma_v(i)
+ *                
+ *            Then for each state v, find a dmax such that the 
+ *            probability of missing a hit is >= p:
+ *               G_v(dmax) >= p
+ *               
+ *            But we can't calculate the sum to \infty; we have
+ *            to truncate somewhere. If we know that our width W
+ *            is wide enough that we can see a probability mass of
+ *            p in the right tail, it is sufficient to be sure
+ *            that \gamma[v][W] < DBL_EPSILON * p. (because
+ *            1+x = 1 for x < DBL_EPSILON, p + xp = p.)
+
+ *
+ * Args:      
+ *
+ * Returns:   
+ *
+ * Xref: */
 static int
-band_calculation(CM_t *cm, int W)
+band_calculation(CM_t *cm, int W, double p_thresh, int **ret_dmin, int **ret_dmax)
 {
-  double **gamma;
+  double **gamma;               /* P(length = n) for each state v                 */
+  double  *tmp;
+  int     *dmin;                /* lower bound for band. */
   int      v;			/* counter over states, 0..M-1                    */
   int      y;			/* counter over connected states                  */
   int      n;			/* counter over lengths, 0..W */
@@ -48,24 +89,19 @@ band_calculation(CM_t *cm, int W)
   int      dv;			/* Delta for state v */
   int      leftn;		/* length of left subsequence under a bifurc      */
   double   pleqn;		/* P(<=n) for this state v */
-
-  double **bpool;		/* pool of beams we can reuse      */
-  int      npool;		/* # of beams in the memory pool   */
-  int      nalloc;		/* # of slots alloc'ed in the pool */
+  int     *touch;               /* touch[y] = # of higher states that depend on y */
+  Mstack_t *beamstack;          /* pool of beams we can reuse  */
+  int      status;		/* return status. */
 
   /* gamma[v][n] is Prob(state v generates subseq of length n)
    */
   gamma = MallocOrDie(sizeof(double *) * cm->M);        
   for (v = 0; v < cm->M; v++) gamma[v] = NULL;
 
-  /* bpool is a trick for reusing memory: a pushdown stack of 
-   * "beams" (gamma[v] rows) we can reuse. We arbitrarily extend
-   * the stack in blocks of 20.
+  /* beamstack is a trick for reusing memory: a pushdown stack of 
+   * "beams" (gamma[v] rows) we can reuse.
    */
-  bpool  = MallocOrDie(sizeof(double *) * 20);
-  npool  = 0;
-  nalloc = 20;
-  for (i = 0; i < nalloc; i++) bpool[i] = NULL;
+  beamstack = CreateMstack();
 
   /* The second component of memory saving is the "touch" array.
    * touch[y] is the number of states above state [y] that will
@@ -85,7 +121,7 @@ band_calculation(CM_t *cm, int W)
 
   for (v = cm->M-1; v >= 0; v--)
     {
-      /* Get a beam from somewhere.
+      /* Get a beam of memory from somewhere.
        *   1. If we're an E_st, we're sharing the end beam, and
        *      it's already initialized for us; don't do anything
        *      else to it.
@@ -93,22 +129,15 @@ band_calculation(CM_t *cm, int W)
        *      and set it back to 0's.
        *   3. Else, allocate and initialize to 0's.
        */
-      if (cm->sttype[v] == E_st) 
-	{
-	  gamma[v] = gamma[cm->M-1];
-	  continue;
-	}
-      else if (npool > 0) 
-	{ /* pop off the stack: last filled position is npool-1. */
-	  gamma[v] = bpool[npool-1];
-	  DSet(gamma[v], W+1, 0.);
-	  bpool[npool-1] = NULL;
-	  npool--;
-	}
-      else {
-	gamma[v] = MallocOrDie(sizeof(double) * (W+1));	
-	DSet(gamma[v], W+1, 0.);
+      if (cm->sttype[v] == E_st) {
+	gamma[v] = gamma[cm->M-1];
+	continue;
       }
+
+      if ((gamma[v] = PopMstack(beamstack)) == NULL)
+	gamma[v] = MallocOrDie(sizeof(double) * (W+1));		    
+      DSet(gamma[v], W+1, 0.);
+
 
       /* Recursively calculate the probability density P(length=n) for this state v.
        */
@@ -118,7 +147,7 @@ band_calculation(CM_t *cm, int W)
 	  for (n = 0; n <= W; n++)
 	    {
 	      for (leftn = 0; leftn <= n; leftn++) 
-		gamma[v][n] += gamma[cm->cfirst[v]][leftn] * gamma[cm->cnum[v]][n-leftn];
+		gamma[v][n] += gamma[cm->cfirst[v]][leftn]*gamma[cm->cnum[v]][n-leftn];
 	      pleqn += gamma[v][n];
 	    }
 	}
@@ -141,12 +170,8 @@ band_calculation(CM_t *cm, int W)
        */
       if (pleqn < 0.999999 || gamma[v][W] > DBL_EPSILON)
 	{
-	  for (v = 0; v < cm->M; v++) 
-	    if (cm->sttype[v] != E_st && gamma[v] != NULL) 
-	      { free(gamma[v]); gamma[v] = NULL; }
-	  free(gamma[cm->M-1]);
-	  free(gamma);
-	  return 0;		/* fail; caller must increase W and rerun. */
+	  status = 0;  	/* fail; caller must increase W and rerun. */
+	  goto CLEANUP;
 	}
       
       /* Renormalize this beam.
@@ -158,14 +183,26 @@ band_calculation(CM_t *cm, int W)
        *   decrement touch[y]
        *   if touch[y] reaches 0, no higher state v depends on this
        *     state's numbers; release the memory.
+       *   we're reusing the end state for every E, so don't free it
+       *   'til we're done.
        */
       if (cm->sttype[v] == B_st)
 	{  /* the connected children of a B st are handled specially, remember */
-	  y = cm->cfirst[v]; 
-	  bpool[npool] = 
-	    /* YOU STOPPED HERE. */
-
-    }  
+	  y = cm->cfirst[v];  PushMstack(beamstack, gamma[y]); gamma[y] = NULL;
+	  y = cm->cnum[v];    PushMstack(beamstack, gamma[y]); gamma[y] = NULL;
+	}
+      else
+	{
+	  for (y = cm->cfirst[v]; y < cm->cfirst[v]+cm->cnum[v]; y++)
+	    {
+	      touch[y]--;
+	      if (touch[y] == 0 && cm->sttype[y] != E_st) {
+		PushMstack(beamstack, gamma[y]); 
+		gamma[y] = NULL;
+	      }
+	    }
+	}
+    }
 
   pleqn = 0.;
   for (n = 0; n <= W; n++) 
@@ -173,13 +210,25 @@ band_calculation(CM_t *cm, int W)
       pleqn += gamma[0][n];
       printf("%d \t %g \t %g\n", n, gamma[0][n], pleqn);
     }
+  status = 1;
 
+ CLEANUP:
+  /* Free whatever's left in the gamma beams.
+   */
   for (v = 0; v < cm->M; v++) 
     if (cm->sttype[v] != E_st && gamma[v] != NULL) 
       { free(gamma[v]); gamma[v] = NULL; }
-  free(gamma[cm->M-1]);
+  free(gamma[cm->M-1]);		/* free the end state */
   free(gamma);
-  return 1;
+  
+  /* Free the reused stack of beams.
+   */
+  while (tmp = PopMstack(beamstack))
+    free(tmp);
+  FreeMstack(beamstack);
+
+  free(touch);
+  return status;
 }
 
 

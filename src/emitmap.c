@@ -45,7 +45,8 @@
 #include <stdlib.h>
 
 #include "squid.h"
-#include "nstack.h"
+#include "sre_stack.h"
+
 #include "structs.h"
 #include "funcs.h"
 

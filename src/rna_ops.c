@@ -19,9 +19,10 @@
 #include <math.h>
 
 #include "squid.h"
+#include "sre_stack.h"
 
 #include "structs.h"
-#include "nstack.h"
+
 
 /* Function: KHS2ct()
  * Incept:   SRE 29 Feb 2000 [Seattle]; from COVE 1.0 code

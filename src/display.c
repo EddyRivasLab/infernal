@@ -18,9 +18,9 @@
 #include <ctype.h>
 
 #include "squid.h"
+#include "sre_stack.h"
 #include "vectorops.h"
 
-#include "nstack.h"
 #include "structs.h"
 #include "funcs.h"
 

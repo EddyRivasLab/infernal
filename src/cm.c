@@ -16,8 +16,8 @@
 
 #include "squid.h"
 #include "vectorops.h"
+#include "sre_stack.h"
 
-#include "nstack.h"
 #include "structs.h"
 #include "funcs.h"
 
