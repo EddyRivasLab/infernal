@@ -81,6 +81,11 @@ extern CMConsensus_t *CreateCMConsensus(CM_t *cm, float pthresh, float sthresh);
 extern void           FreeCMConsensus(CMConsensus_t *con);
 extern void           MainBanner(FILE *fp, char *banner); 
 
+/* in emit.c
+ */
+static void EmitParsetree(CM_t *cm, Parsetree_t **ret_tr, char *ret_seq, 
+			  char *ret_dsq, int *ret_N);
+
 /* in emitmap.c
  */
 extern CMEmitMap_t *CreateEmitMap(CM_t *cm); 

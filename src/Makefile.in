@@ -43,6 +43,7 @@ OBJS  = alphabet.o\
 	cm.o\
 	cmio.o\
 	display.o\
+	emit.o\
 	emitmap.o\
 	globals.o\
 	modelconfig.o\
