@@ -1,0 +1,32 @@
+IMPORTANT DISCLAIMER REGARDING PACKAGES INCLUDED WITHIN INFERNAL
+
+Some programs or functions within the Infernal package rely on
+other third-party packages and/or libraries.  Whenever possible,
+these packages are bundled with Infernal for ease of use and
+installation.  The included versions of these packages are the
+ones that have been tested and are known to be compatible with
+Infernal.  They may or may not be the most current versions of
+said packages.  If desired, the user have Infernal interface 
+with a different locally installed version of the package,
+however, we can make no guarantees about compatibility and 
+interoperability with versions other than those distributed with
+Infernal.
+
+This is particularly relevant to the 'rigfilters' sub-package.
+The rigorous filtering programs written by Zasha Weinberg rely
+on two external libraries.  CFSQP is a non-linear programming
+library; its license terms do not allow us to distribute the
+complete library in this package - the primary source file must
+be obtained by the end-user (freely available for academic
+purposes, though).  http://www.aemdesign.com
+
+The other package is lp_solve (a linear programming library).
+Version 4.0.1.0 of this software is currently distributed with
+Infernal.  Some later versions of the package, namely 4.0.1.11
+and 5.1 have been tested and are KNOWN INCOMPATIBLE.  The cm2hmm
+program will NOT be able to create appropriate filters if it
+is linked to these particularly versions of these libraries, and
+this will likely apply to future versions of this package as 
+well.  For this reason we strongly recommend relying on the 
+packaged version of lp_solve and not using a different locally
+installed version instead.
