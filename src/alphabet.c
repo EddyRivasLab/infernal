@@ -156,7 +156,7 @@ DigitizeSequence(char *seq, int L)
   for (i = 0; i < L; i++) {
     if (isgap(seq[i])) dsq[i+1] = DIGITAL_GAP; 
     else {
-      c = toupper(seq[i]);
+      c = toupper((int) seq[i]);
       if (c == 'T') c = 'U';	/* it's RNA, dammit. */
       dsq[i+1] = SymbolIndex(c);
     }

@@ -418,7 +418,7 @@ Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt, Parsetree
 	    cpos = emap->lpos[nd];
 	    apos = ilmap[cpos] + iluse[cpos];
 	    rpos = tr[i]->emitl[tpos];
-	    msa->aseq[i][apos] = tolower(Alphabet[(int) dsq[i][rpos]]);
+	    msa->aseq[i][apos] = tolower((int) Alphabet[(int) dsq[i][rpos]]);
 	    iluse[cpos]++;
 	    break;
 
@@ -432,7 +432,7 @@ Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt, Parsetree
 	    apos = elmap[cpos]; 
 	    for (rpos = tr[i]->emitl[tpos]; rpos <= tr[i]->emitr[tpos]; rpos++)
 	      {
-		msa->aseq[i][apos] = tolower(Alphabet[(int) dsq[i][rpos]]);
+		msa->aseq[i][apos] = tolower((int) Alphabet[(int) dsq[i][rpos]]);
 		apos++;
 	      }
 	    break;
@@ -441,7 +441,7 @@ Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt, Parsetree
 	    cpos = emap->rpos[nd]-1;  /* -1 converts to "following this one" */
 	    apos = irmap[cpos] - iruse[cpos];  /* writing backwards, 3'->5' */
 	    rpos = tr[i]->emitr[tpos];
-	    msa->aseq[i][apos] = tolower(Alphabet[(int) dsq[i][rpos]]);
+	    msa->aseq[i][apos] = tolower((int) Alphabet[(int) dsq[i][rpos]]);
 	    iruse[cpos]++;
 	    break;
 

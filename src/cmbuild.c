@@ -598,7 +598,7 @@ clean_cs(char *cs, int alen)
       else if (strchr("{[(<", cs[i]) != NULL) nleft++;  
       else if (strchr(">)]}", cs[i]) != NULL) nright++; 
       else if (strchr("._-,", cs[i]) != NULL) ;
-      else if (has_pseudoknots && isalpha(cs[i])) cs[i] = '.';
+      else if (has_pseudoknots && isalpha((int) cs[i])) cs[i] = '.';
       else {	/* count bad chars; remember first one; replace w/gap */
 	if (nbad == 0) { example = cs[i]; first = i; }
 	nbad++;

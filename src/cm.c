@@ -834,7 +834,11 @@ CMRebalance(CM_t *cm)
   newidx = MallocOrDie(sizeof(int) * cm->M);
   for (nv = 0; nv < cm->M; nv++)
     {    
-      newidx[v] = nv;		/* keep a map of where the old states are going in new CM */
+      /* Keep a map of where the old states are going in new CM 
+       * old state v becomes newidx[v] in the new model.
+       * This is guaranteed to be a one to one map.
+       */
+      newidx[v] = nv;		
 
       /* Copy old v to new nv. 
        * First, the easy stuff, that's unaffected by renumbering.
@@ -911,6 +915,15 @@ CMRebalance(CM_t *cm)
 	  new->cnum[nv]   = cm->cnum[v];            /* cnum unchanged. */
 	  v++;
 	}
+    }
+
+  /* Deal with the renumbered begin and end transition distributions,
+   * using the newidx[v] map.
+   */
+  for (v = 0; v < cm->M; v++)
+    {
+      new->begin[newidx[v]] = cm->begin[v];
+      new->end[newidx[v]]   = cm->end[v];
     }
 
   /* Guide tree numbering is unchanged - still in preorder.

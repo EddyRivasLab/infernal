@@ -71,7 +71,7 @@ KHS2ct(char *ss, int len, int allow_pseudoknots, int **ret_ct)
 
   for (pos = 1; pos <= len; pos++)
     {
-      if (!isprint(ss[pos-1])) status = 0; /* armor against garbage strings */
+      if (!isprint((int) ss[pos-1])) status = 0; /* armor against garbage strings */
 
       /* left side of a pair: push position onto stack 0 (pos = 1..L) */
       else if (ss[pos-1] == '<' ||

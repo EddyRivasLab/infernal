@@ -178,7 +178,7 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
 	if (cm->annote != NULL) lannote = ' ';
 	lstr    = ' ';
 	lcons   = '.';
-	lseq    = tolower(Alphabet[symi]);
+	lseq    = tolower((int) Alphabet[symi]);
 	cpos_l  = 0;
 	spos_l  = tr->emitl[ti];
       } else if (cm->sttype[v] == IR_st) {
@@ -186,7 +186,7 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
 	if (cm->annote != NULL) lannote = cm->annote[rc];
 	rstr    = ' ';
 	rcons   = '.';
-	rseq    = tolower(Alphabet[symj]);
+	rseq    = tolower((int) Alphabet[symj]);
 	cpos_r  = 0;
 	spos_r  = tr->emitr[ti];
       } else {
@@ -521,8 +521,8 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
 	    lchar = Alphabet[x / Alphabet_size];
 	    rchar = Alphabet[x % Alphabet_size];
 	    if (cm->esc[v][x] < pthresh) {
-	      lchar = tolower(lchar);
-	      rchar = tolower(rchar);
+	      lchar = tolower((int) lchar);
+	      rchar = tolower((int) rchar);
 	    }
 	    switch (multiorder[nd]) {
 	    case 0:  lstruc = '<'; rstruc = '>'; break;
@@ -533,7 +533,7 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
 	} else if (cm->stid[v] == MATL_ML) {
 	  x = FArgMax(cm->esc[v], Alphabet_size);
 	  lchar = Alphabet[x];
-	  if (cm->esc[v][x] < sthresh) lchar = tolower(lchar);
+	  if (cm->esc[v][x] < sthresh) lchar = tolower((int) lchar);
 	  if      (outface[nd] == 0)                    lstruc = '.'; /* external ss */
 	  else if (inface[nd] == 0 && outface[nd] == 1) lstruc = '_'; /* hairpin loop */
 	  else if (inface[nd] == 1 && outface[nd] == 1) lstruc = '-'; /* bulge/interior */
@@ -542,7 +542,7 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
 	} else if (cm->stid[v] == MATR_MR) {
 	  x = FArgMax(cm->esc[v], Alphabet_size);
 	  rchar = Alphabet[x];
-	  if (cm->esc[v][x] < sthresh) rchar = tolower(rchar);
+	  if (cm->esc[v][x] < sthresh) rchar = tolower((int) rchar);
 	  if      (outface[nd] == 0)                    rstruc = '.'; /* external ss */
 	  else if (inface[nd] == 0 && outface[nd] == 1) rstruc = '?'; /* doesn't happen */
 	  else if (inface[nd] == 1 && outface[nd] == 1) rstruc = '-'; /* bulge/interior */

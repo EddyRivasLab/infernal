@@ -39,20 +39,21 @@ CFLAGS = @CFLAGS@
 
 #######
 ## You should not need to modify below this line.
-## Much of it is concerned with maintenance of the development version
+## Some of it is concerned with maintenance of the development version
 ## and building the release (indeed, several commands will only work in 
 ## St. Louis)
 #######
 SHELL       = /bin/sh
 BASENAME    = "infernal"
 PACKAGE     = "Infernal"
-RELEASE     = "0.51"
-RELCODE     = "rel0_51"
+RELEASE     = "0.52"
+RELCODE     = "rel0_52"
 RELEASEDATE = "Oct 2002"
 COPYRIGHT   = "Copyright \(C\) 2002 HHMI/Washington University School of Medicine"
 LICENSE     = "Freely distributed under the GNU General Public License \(GPL\)"
 LICENSETAG  = gnu
 COMPRESS    = gzip
+FTPDIR      = /nfs/ftp/eddy/software/infernal
 
 # The program lists below for INFERNAL are not necessarily
 # a complete manifest. They are the list of stable programs that the
@@ -143,12 +144,19 @@ dist:
 	tar cvf ${BASENAME}-${RELEASE}.tar ${BASENAME}-${RELEASE}
 	$(COMPRESS) ${BASENAME}-$(RELEASE).tar
 
-# "make check" runs the sqc exercises in the test suite, at level 4.
+# "make ftpdist" installs a new tarball on the FTP site.
+# (StL specific)
+ftpdist:
+	cp -f ${BASENAME}-$(RELEASE).tar.gz ${FTPDIR}/
+	rm -f ${FTPDIR}/${BASENAME}.tar.gz 
+	ln -s ${FTPDIR}/${BASENAME}-${RELEASE}.tar.gz ${FTPDIR}/${BASENAME}.tar.gz 
+
+# "make check" runs a set of sqc exercises in the test suite, at level 4.
 # To run faster, reduce the level (level 1 runs a few tests, level 4
 # runs a lot).
 #
 check:
-	(cd testsuite; ./sqc 4 exercises.sqc ../src)
+	(cd testsuite; ./sqc -p ../squid 4 exercises.sqc ../src)
 
 # "make clean" removes almost everything except configuration files
 #              and binaries.

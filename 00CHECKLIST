@@ -1,4 +1,4 @@
-Checklist for an infernal squid release.
+Checklist for an Infernal release.
 SRE, Thu Jul  4 10:27:28 2002
 -------------------------------------
 
@@ -24,13 +24,12 @@ SRE, Thu Jul  4 10:27:28 2002
 
 5. Build for our system (on whelk01 or some such)
 	% cd infernal-xxx
-	% ./configure --enable-lfs prefix=/usr/seshare/ exec_prefix=/usr/seshare/`uname`
+	% env CFLAGS="-O3" ./configure --enable-lfs prefix=/usr/seshare/ exec_prefix=/usr/seshare/`uname`
 	% make
 	% make check
- ... eventually, when we worry about installs, we'd do: ...
 	% make install         <-- I don't need root to do this
 	% ssh w001
-	% cd /nfs/wol2/people/eddy/src/squid/squid-xxx
+	% cd /nfs/wol2/people/eddy/src/infernal/infernal-xxx
 	% ./configure          <-- sets paths to /usr/local
 	% sudo make install
 	% logout
@@ -38,9 +37,7 @@ SRE, Thu Jul  4 10:27:28 2002
 
 6. Put on the FTP site. (on wrasse)
 	% make ftpdist
-
-
-
+        % emacs /nfs/www/docs/eddy/infernal/index.html   <- edit the web site, if needed.
 
 0.3  - SRE, Thu Jul  4 10:27:16 2002
 0.5  - SRE, Sun Oct  6 14:22:47 2002
