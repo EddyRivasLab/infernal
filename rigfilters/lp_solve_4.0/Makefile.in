@@ -34,9 +34,6 @@ CFLAGS = @CFLAGS@
 YACC = @YACC@
 
 LEX = @LEX@
-ifeq ($(LEX),flex)
-   LEX := $(LEX) -l
-endif
 
 LEXLIB = @LEXLIB@
 
@@ -57,6 +54,9 @@ LPKSRC= $(LPKSRC.c) $(YACCFILE.c)
 LPKOBJ= $(LPKSRC:.c=.o)
 
 all:	$(LPKLIB)
+
+%.o: %.c
+	$(CC) -c $(CFLAGS) -o $@ $<
 
 $(LPKLIB): $(LPKOBJ)
 	ar rv $@ $(LPKOBJ)
