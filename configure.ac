@@ -68,8 +68,12 @@ AC_PROG_RANLIB
 AC_PATH_PROG([AR], [ar], [:], [$PATH:/usr/ccs/bin:/usr/xpg4/bin])
 
 # Test for LEX, and YACC (for lp_solve)
-AC_PROG_LEX
 AC_PROG_YACC
+AC_PROG_LEX
+if test "$LEX" = flex; then
+  LEX="flex -l"
+fi
+AC_SUBST(LEX,$LEX)
 
 # GNU make check; makefile dependency lines for executables.
 # original from John Darrington <j.darrington@elvis.murdoch.edu.au> 
@@ -208,7 +212,7 @@ AC_ARG_WITH(cfsqp,
     cp $cfsqp_path/qld.c rigfilters/cfsqp/.
   fi
 ])
-if test "$rigfilters" == 1; then
+if test "$rigfilters" = 1; then
   if test -f rigfilters/cfsqp/cfsqp.c; then
     :
   else
@@ -227,10 +231,12 @@ if test "$rigfilters" == 1; then
     AC_MSG_NOTICE([CFSQP: Unable to locate qld.c])
     rigfilters=0
   fi
-  if test "$rigfilters" == 0; then
+  if test "$rigfilters" = 0; then
     AC_MSG_NOTICE([CFSQP: Source not found; disabling rigorous filters])
+    rigfilters=""
   else
     AC_MSG_NOTICE([CFSQP located, including rigfilters package in build])
+    rigfilters="rigfilters"
   fi
 fi
 AC_SUBST(RIGFILTERS,$rigfilters)
@@ -254,13 +260,9 @@ AC_CONFIG_HEADERS(src/config.h)
 # Write out Makefiles in src, testsuite subdirectories.
 AC_CONFIG_FILES(src/Makefile)
 AC_CONFIG_FILES(testsuite/Makefile)
-if test "$rigfilters" == 1; then
 AC_CONFIG_FILES(rigfilters/Makefile)
 AC_CONFIG_FILES(rigfilters/cfsqp/Makefile)
 AC_CONFIG_FILES(rigfilters/lp_solve_4.0/Makefile)
-else
-AC_MSG_NOTICE([Skipping output of rigfilters Makefile])
-fi
 
 # remember that sneaky if statement that wraps the source
 # configuration? well, it ends here.
