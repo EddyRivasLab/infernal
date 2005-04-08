@@ -20,14 +20,13 @@
 #define MAXDEGEN         17     /* maximum for Alphabet_iupac        */
 #define DIGITAL_GAP      126	/* see alphabet.c:DigitizeSequence() */
 #define DIGITAL_SENTINEL 127    
-#define MAXTRANSABET      6     /* maximum # of transitions from a state */
 extern int   Alphabet_type;
 extern int   Alphabet_size;
 extern int   Alphabet_iupac;
 extern char *Alphabet;
 extern char  Degenerate[MAXDEGEN][MAXABET];
 extern int   DegenCount[MAXDEGEN];
-extern int   CMTransitionIndex[20][20];
+
 
 /* We're moderately paranoid about underflow and overflow errors, so
  * we do some checking on the magnitude of the scores.
@@ -315,49 +314,5 @@ typedef struct emitmap_s {
   int  clen;           /* consensus length */
 } CMEmitMap_t;
 
-/* Structure: prior_s
- * 
- * Dirichlet priors on emision parameters.  Hacked out of HMMER.
- * This structure contains all the priors - transitions, match bp emissions,
- * singlet emissions, and insert emissions.
- *
- */
-
-#define MAXDCHLET 200 /* Maximum number dirichlet components */
-#define MAXTRANSSETS 100 /* maximum number of transition sets */
-#define PRI_DCHLET 0  /*type of prior strategy*/
-#define PRI_PAM 1  /*type of prior strategy*/
-struct prior_s {
-
-  int strategy;               /* PRI_DCHLET, etc. */
-
-  /*transition priors*/
-  int tsetnum;                /* number of transition sets to read in */
-  int tsetmap[UNIQUESTATES][NODETYPES]; /*tsetmap[a][b] is for 
-					  transition set from state a to
-					  node b */
-  int tnum[MAXTRANSSETS];                   /* number of transition Dirichlet mixtures */
-  int tasize[MAXTRANSSETS];    /* alphabet size for each transition set */
-  double tq[MAXTRANSSETS][MAXDCHLET];         /* weights of Dirichlet mixture terms*/
-  double t[MAXTRANSSETS][MAXDCHLET][MAXTRANSABET]; /* transition terms per component */
-
-  /*match base pair priors*/
-  int   mbpnum;                   /* number of match Dirichlet mixture terms      */
-  int   mbpasize;                 /* Number of base pair events/alphabet size         */
-  double mbpq[MAXDCHLET];          /* weights of Dirichlet mixture terms     */
-  double mbp[MAXDCHLET][(MAXABET*MAXABET)]; /* match emission terms per mix component */
-  
-  /*match singlet priors*/
-  int   mntnum;                   /* number of match Dirichlet mixture terms      */
-  int   mntasize;                 /* Number of base pair events/alphabet size         */
-  double mntq[MAXDCHLET];          /* weights of Dirichlet mixture terms     */
-  double mnt[MAXDCHLET][MAXABET]; /* match emission terms per mix component */
-  
-  /*insert priors */
-  int   inum;                   /* number of Dirichlet mixture terms      */
-  int   iasize;                 /* Number of events/alphabet size         */
-  double iq[MAXDCHLET];          /* weights of Dirichlet mixture terms     */
-  double i[MAXDCHLET][MAXABET]; /* insert emission terms per mix component */
-};
 
 #endif /*STRUCTSH_INCLUDED*/

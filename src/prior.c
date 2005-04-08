@@ -1,334 +1,211 @@
-/* Support for Dirichlet-mixture priors. */
-
+/* prior.c
+ * Dirichlet priors for parameterizing a new model. 
+ *
+ * Original code from Eric Nawrocki. Adapted by SRE.
+ * SRE, Thu Apr  7 10:44:13 2005
+ * SVN $Id$
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include <assert.h>
 
-#include "squidconf.h"
-#include "config.h"
+#include <easel.h>
+#include <esl_vectorops.h>
+#include <esl_fileparser.h>
 
-#include "squid.h"
-#include "vectorops.h"
+#include "prior.h"
 
-#include "sre_stack.h"
-#include "structs.h"
-#include "funcs.h"
-#include "dirichlet.h"
 
-/* Function: LogNorm()
+/* Function: Prior_Read()
  * 
- * Purpose:  Normalize a vector of log likelihoods, changing it
- *           to a probability vector. Be careful of overflowing exp().
- *           Implementation adapted from Graeme Mitchison.
- *
- * Args:     vec - vector destined to become log probabilities
- *           n   - length of vec 
- *
- * NOTE : EPN - this function probably exists in squid under a different
- *              name, but I couldn't find it.  This is copied from the
- *              mathsupport.c file in HMMER 2.3.2
+ * Purpose:  Input a transition prior from an open stream
+ *           (probably an open file).
  */
-void
-LogNorm(double *vec, int n)
+Prior_t *
+Prior_Read(FILE *fp) 
 {
-  int   x;
-  double max   = -1.0e30;
-  double denom = 0.;
+  Prior_t         *pri;
+  ESL_FILEPARSER  *efp;
+  char            *tok;
+  int              toklen;
 
-  for (x = 0; x < n; x++)
-    if (vec[x] > max) max = vec[x];
-  for (x = 0; x < n; x++)
-    if (vec[x] > max - 50.)
-      denom += exp(vec[x] - max);
-  for (x = 0; x < n; x++)
-    if (vec[x] > max - 50.)
-      vec[x] = exp(vec[x] - max) / denom;
-    else
-      vec[x] = 0.0;
-}
+  int              i;       /*counter over transition sets*/
+  int              j;       /*counter over components in a mixture*/
+  int              k;       /*counter over alphas*/
+  int              curr_state_id; 
+  int              curr_next_node_id; 
+  int              a, b;
 
-/* Function: AllocPrior(), FreePrior()
- * 
- * Purpose:  Allocation and free'ing of a prior structure.
- *           Very simple, but might get more complex someday.
- */
-struct prior_s *
-AllocPrior(void)
-{ return (struct prior_s *) MallocOrDie (sizeof(struct prior_s)); }
-void
-FreePrior(struct prior_s *pri)
-{ free(pri); }
-
-
-/* Function: ReadPrior()
- * 
- * Purpose:  Input a transition prior from disk file.
- */
-struct prior_s *
-ReadPrior(char *prifile) 
-{
-  FILE             *fp;
-  struct prior_s *pri;
-  char             *buf;
-  char             *tok;
-  char             *s;
-  int               n;
-  int               toklen;
-  int               i;       /*counter over transition sets*/
-  int               j;       /*counter over components in a mixture*/
-  int               k;       /*counter over alphas*/
-  int               curr_state_id; 
-  int               curr_next_node_id; 
-  int               a, b;
-
-  if ((fp = fopen(prifile, "r")) == NULL)
-    Die("Failed to open INFERNAL prior file %s\n", prifile);
-  pri = AllocPrior();
-
-  /*set some defaults*/
-  pri->mbpasize = Alphabet_size * Alphabet_size;
-  pri->mntasize = Alphabet_size;
-  pri->iasize = Alphabet_size;
+  pri = MallocOrDie (sizeof(Prior_t));
   
   for(a = 0; a < UNIQUESTATES; a++)
-    {
-      for(b = 0; b < NODETYPES; b++)
-	{
-	  pri->tsetmap[a][b] = -1;
-	}
-    }
+    for(b = 0; b < NODETYPES; b++)
+      pri->tsetmap[a][b] = -1;
 
-  
-  /***********************************************************
-   * Format of Dirichlet file : 
-   * 
-   * line 1 : "DIRICHLET"
-   * line 2 : number of transition sets T
-   * 
-   * next section repeated T times (once for each transition set)
-   *   line 1 : <node state ID number> <next_node_ID number>
-   *   line 2 : <alphabet size for current transition set>
-   *   line 3 : <number of components> 
-   *            for each component : 
-   *            <mixture coefficients> (separated by a space)
-   *            <alphas> (sep by space)
-   *   
-   * emission parameters : 
-   * first, match base pair priors : 
-   *   line 1 : <number of components> 
-   *            for each component : 
-   *            <mixture coefficients> (separated by a space)
-   *            <alphas> (sep by space)
-   *
-   * second, match singlet priors :
-   *   line 1 : <number of components> 
-   *            for each component : 
-   *            <mixture coefficients> (separated by a space)
-   *            <alphas> (sep by space)
-   *
-   * finally, insertion priors :
-   *   line 1 : <number of components> 
-   *            for each component : 
-   *            <mixture coefficients> (separated by a space)
-   *            <alphas> (sep by space)
-   *
-   */     
+  if ((efp = esl_fileparser_Create(fp)) == NULL)
+    Die("Failed to associate open prior file stream with fileparser");
+  esl_fileparser_SetCommentChar('#');
 
-
-  /* First entry is the strategy: 
-   * Only standard Dirichlet prior (simple or mixture) is supported so far
-   */
-  /*  sptr = Getword(fp, sqdARG_STRING); */
-  n = 0;
-  buf = NULL;
-  
-  sre_fgets(&buf, &n, fp);
-  if      (strncmp(buf, "DIRICHLET", 9) == 0) pri->strategy = PRI_DCHLET;
-  else Die("No such prior strategy %s; failed to parse file %s", s, prifile);
+  /* First entry is the strategy: "Dirichlet" is the only possibility now. */
+  if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
+  if (strcasecmp(tok, "Dirichlet") != 0)
+    { fprintf(stderr, "No such prior strategy %s\n", tok); goto FAILURE; }
  
-  pri->tsetnum = atoi(sre_fgets(&buf, &n, fp));
-  if (pri->tsetnum < 0)
-    Die("%d is bad; need at least one transition set", pri->tsetnum);
-  if (pri->tsetnum > MAXTRANSSETS)
-    Die("%d is bad, too many transition sets (MAXTRANSSET = %d)\n", MAXTRANSSETS);
+  /* Second entry is NTRANSSETS, 74 */
+  if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
+  if ((pri->tsetnum = atoi(tok)) != NTRANSSETS)
+    { fprintf(stderr, "Expected %d transition sets, not %d\n", NTRANSSETS, pri->tsetnum); }
   
-  /*
-   * transition parameters : 
-   * next section repeated pri->tsetnum times (once for each transition set)
-   *   line 1 : <node state ID number> <next_node_ID number>
-   *   line 2 : <alphabet size for current transition set>
-   *   line 3 : <number of components> 
-   *            for each component : 
-   *            <mixture coefficients> (separated by a space)
-   *            <alphas> (sep by space)
+  /* Transition section
    */
-  
   for(i = 0; i < pri->tsetnum; i++)
     {
-      sre_fgets(&buf, &n, fp);
-      s = buf;
-      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) Die("ERROR : (A1) reading in transitions in prior file\n");
-      curr_state_id = atoi(tok);
-      /*      printf("current state id is %d\n", curr_state_id); */
-      if(curr_state_id > UNIQUESTATES) Die("ERROR : (A2) reading in transitions in prior file\n");
-      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) Die("Wrong format of prior file\n");
+      /* from unique state */
+      if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
+      if ((curr_state_id = UniqueStateCode(tok)) == -1) 
+	{ fprintf(stderr, "Expected a unique state (like MATP_MP), not %s\n", tok); goto FAILURE; }
+      /*printf("current state id is %d\n", curr_state_id); */
 
-      curr_next_node_id = atoi(tok);
-      if(curr_next_node_id > NODETYPES) Die("ERROR : (A3) reading in transitions in prior file\n");
+      /* to node */
+      if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
+      if ((curr_next_node_id = NodeCode(tok)) == -1)
+	{ fprintf(stderr, "Expected a node name (like MATP), not %s\n", tok); goto FAILURE; }
       /*printf("current next node id is %d\n", curr_next_node_id); */
       
-      /* add information to setmap */
+      /* (add that information to tsetmap) */
       pri->tsetmap[curr_state_id][curr_next_node_id] = i;
 
-      /*get alphabet size for current transition set */
-      sre_fgets(&buf, &n, fp);
-      s = buf;
-      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) Die("Wrong format of prior file\n");
-      /*printf("A4 tok is %s\n", tok); */
-      pri->tasize[i] = atoi(tok);
-      if(pri->tasize[i] > MAXTRANSABET) Die("ERROR : (A4) reading in transitions in prior file\nalph size is %d\n", pri->tasize[i]);
+      /*get vector size for current transition set */
+      if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
+      pri->tnalpha[i] = atoi(tok);
+      if (pri->tnalpha[i] > MAXCONNECT || pri->tnalpha[i] < 1)
+	{ fprintf(stderr, "Bad Dirichlet vector size %s\n", tok); goto FAILURE; }
 
-      /*get number of components for current transition set */
-      sre_fgets(&buf, &n, fp);
-      /*printf("A5 buf is %s\n", buf); */
-      pri->tnum[i] = atoi(buf);
-      if(pri->tnum[i] > MAXDCHLET) Die("ERROR : (A5) reading in transitions in prior file\n");
+      /* number of mixture components */
+      if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
+      pri->tnum[i] = atoi(tok);
+      if(pri->tnum[i] > MAXDCHLET || pri->tnum[i] < 1)
+	{ fprintf(stderr, "Bad transition mixture number %s\n", tok); goto FAILURE; }
 
+      /* for each mixture component in this set i: */
       for(j = 0; j < pri->tnum[i]; j++)
 	{
-	  /*get mixture coefficient for current transition set i */
-	  /*and current component j */
-	  sre_fgets(&buf, &n, fp);
-	  /*printf("A6 buf is %s\n", buf); */
-	  pri->tq[i][j] = (double) atof(buf);
-	  if(pri->tq[i][j] > 1.0) Die("ERROR : (A6) reading in transitions in prior file\npri->tq[%d][%d] is %d\n", i, j, pri->tq[i][j]);
+	  /* mixture coefficient for mix j*/
+	  if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
+	  pri->tq[i][j] = atof(tok);
+	  if (pri->tq[i][j] > 1.0 || pri->tq[i][j] < 0.0) 
+	    { fprintf(stderr, "Bad mixture coefficient %s\n", tok); goto FAILURE; }
 
-	  /*get alphas */
-	  sre_fgets(&buf, &n, fp);
-	  s = buf;
-	  for(k = 0; k < pri->tasize[i]; k++)
+	  /* alphas */
+	  for(k = 0; k < pri->tnalpha[i]; k++)
 	    {
-	      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) Die("ERROR : (A7) reading in transitions in prior file\nalph size is %d\n", pri->tasize[i]);
-	      pri->t[i][j][k] = (double) atof(tok);
-	      /*	      printf("reading in transition priors\n"); */
-	      /*printf("tok is %s\n", tok); */
-	      /*printf("pri->[%d][%d][%d] is %f\n", i, j, k, pri->t[i][j][k]); */
+	      if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
+	      pri->t[i][j][k] = atof(tok);
+	      if (pri->t[i][j][k] <= 0.0)
+		{ fprintf(stderr, "Dirichlet parameters must be positive; got %s\n", tok); goto FAILURE; }
 	    }
 	}
+      esl_vec_DNorm(pri->tq[i], pri->tnum[i]);
     }
 
-  /*
-   * emission parameters : 
-   * first, match base pair priors : 
-   *            <number of components> 
-   *            for each component : 
-   *            <mixture coefficients> (separated by a space)
-   *            <alphas> (sep by space)
+  /* Consensus base pair emission prior section.
    */
-  
-  /*get number of components for match base pair prior */
-  sre_fgets(&buf, &n, fp);
-  pri->mbpnum = atoi(buf);
-  if(pri->mbpnum > MAXDCHLET) Die("ERROR : (B1) reading in emission bps\n");
+  if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
+  pri->mbpnum = atoi(tok);
+  if(pri->mbpnum > MAXDCHLET || pri->mbpnum <= 0)
+    { fprintf(stderr, "bad base pair emission mixture number %s\n", tok); goto FAILURE; }
+  /* for each mixture component: */
   for(j = 0; j < pri->mbpnum; j++)
     {
-      /*get mixture coefficient for current transition set i */
-      /*and current component j */
-      sre_fgets(&buf, &n, fp);
-      pri->mbpq[j] = (double) atof(buf);
-      if(pri->mbpq[j] > 1.0) Die("ERROR : (B2) reading in emission bps\n");
-      
-      /*get alphas */
-      sre_fgets(&buf, &n, fp);
-      s = buf;
-      for(k = 0; k < pri->mbpasize; k++)
+      /* mixture coefficient: */
+      if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
+      pri->mbpq[j] = atof(buf);
+      if (pri->mbpq[j] > 1.0 || pri->mbpq[j] < 0.0)
+	{ fprintf(stderr, "Bad mixture coefficient %s\n", tok); goto FAILURE; }      
+
+      /* 16 alphas */
+      for (k = 0; k < MAXABET*MAXABET; k++)
 	{
-	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) Die("ERROR : (B3) reading in emission bps\n");
-	  pri->mbp[j][k] = (double) atof(tok);
+	  if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
+	  pri->mbp[j][k] = atof(tok);
+	  if (pri->mbp[j][k] <= 0.0)
+	    { fprintf(stderr, "Dirichlet parameters must be positive; got %s\n", tok); goto FAILURE; }
 	}
     }
+  esl_vec_DNorm(pri->mbpq, pri->mbpnum);
   
-  /*
-   * second, match singlet priors :
-   *            <number of components> 
-   *            for each component : 
-   *            <mixture coefficients> (separated by a space)
-   *            <alphas> (sep by space)
+  /* Consensus singlet emission prior section.
    */
-
-  /*get number of components for match singlet prior */
-  sre_fgets(&buf, &n, fp);
-  pri->mntnum = atoi(buf);
-  if(pri->mntnum > MAXDCHLET) Die("ERROR : (C1) reading in emission nts\n");
-  for(j = 0; j < pri->mntnum; j++)
+  if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
+  pri->mntnum = atoi(tok);
+  if(pri->mntnum > MAXDCHLET || pri->mntnum <= 0)
+    { fprintf(stderr, "bad singlet emission mixture number %s\n", tok); goto FAILURE; }
+  for (j = 0; j < pri->mntnum; j++)
     {
-      /*get mixture coefficient for current transition set i */
-      /*and current component j */
-      sre_fgets(&buf, &n, fp);
-      pri->mntq[j] = (double) atof(buf);
-      if(pri->mntq[j] > 1.0) Die("ERROR : (C2) reading in emission nts\n");
-      
-      /*get alphas */
-      sre_fgets(&buf, &n, fp);
-      s = buf;
-      for(k = 0; k < pri->mntasize; k++)
+      /* mixture coefficient: */
+      if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
+      pri->mntq[j] = atof(tok);
+      if (pri->mntq[j] > 1.0 || pri->mntq[j] < 0.0)
+	{ fprintf(stderr, "Bad mixture coefficient %s\n", tok); goto FAILURE; }      
+
+      /* 4 alphas */
+      for (k = 0; k < MAXABET; k++)
 	{
-	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) Die("ERROR : (C3) reading in emission nts\n");
-	  pri->mnt[j][k] = (double) atof(tok);
+	  if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
+	  pri->mnt[j][k] = atof(tok);
+	  if (pri->mnt[j][k] <= 0.0)
+	    { fprintf(stderr, "Dirichlet parameters must be positive; got %s\n", tok); goto FAILURE; }
 	}
     }
+  esl_vec_DNorm(pri->mntq, pri->mntnum);
   
-  /*
-   * finally, insertion priors :
-   *   line 1 : <number of components> 
-   *            for each component : 
-   *            <mixture coefficients> (separated by a space)
-   *            <alphas> (sep by space)
+  /* Nonconsensus singlet emission prior section.
    */
-
-  /*get number of components for match singlet prior */
-  sre_fgets(&buf, &n, fp);
-  pri->inum = atoi(buf);
-  if(pri->inum > MAXDCHLET) Die("ERROR : (E1) reading in emission inserts\n");
-  
-  for(j = 0; j < pri->inum; j++)
+  if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
+  pri->inum = atoi(tok);
+  if(pri->inum > MAXDCHLET || pri->inum <= 0)
+    { fprintf(stderr, "bad noncons singlet emission mixture number %s\n", tok); goto FAILURE; }
+  for (j = 0; j < pri->inum; j++)
     {
-      /*get mixture coefficient for current transition set i */
-      /*and current component j */
-      sre_fgets(&buf, &n, fp);
-      pri->iq[j] = (double) atof(buf);
-      if(pri->iq[j] > 1.0) Die("ERROR : (E2) reading in emission inserts\n");
-      
-      /*get alphas */
-      sre_fgets(&buf, &n, fp);
-      s = buf;
-      for(k = 0; k < pri->iasize; k++)
+      /* mixture coefficient: */
+      if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
+      pri->iq[j] = atof(tok);
+      if (pri->iq[j] > 1.0 || pri->iq[j] < 0.0)
+	{ fprintf(stderr, "Bad mixture coefficient %s\n", tok); goto FAILURE; }      
+
+      /* 4 alphas */
+      for(k = 0; k < MAXABET; k++)
 	{
-	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) Die("ERROR : (E3) reading in emission inserts\n");
-	  pri->i[j][k] = (double) atof(tok);
+	  if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
+	  pri->i[j][k] = atof(tok);
+	  if (pri->i[j][k] <= 0.0)
+	    { fprintf(stderr, "Dirichlet parameters must be positive; got %s\n", tok); goto FAILURE; }
 	}
     }
+  esl_vec_DNorm(pri->iq, pri->inum);
 
-  fclose(fp);
   return pri;
 
+ FAILURE:
+  free(pri);
+  return NULL;
 }
 
 /* Function: PriorifyCM()
  * 
- * Purpose:  Add pseudocounts to a CM using Dirichlet priors,
- *           and renormalize the CM.
+ * Purpose:  Given a CM containing counts; add pseudocounts to a CM 
+ *           using Dirichlet priors, and renormalize the CM.
  * 
  * Args:     CM -- the CM to add counts to (counts form)
  *           pri -- the Dirichlet prior to use
  *           
  * Return:   (void)
- *           CM returns in probability form.
+ *           CM is changed from counts to probability form.
  */          
 void
-PriorifyCM(struct cm_s *cm, struct prior_s *pri)
+PriorifyCM(CM_t *cm, Prior_t *pri)
 {
   int v;			/* counter for model position   */
   int setnum;                   /* number of set to use */
@@ -338,73 +215,20 @@ PriorifyCM(struct cm_s *cm, struct prior_s *pri)
 				   from state v to another state that
 				   is a member of the same node as v. */
                                  
-
-    /* EPN - No analog for below commented out code in CMs b/c 
-     * begin and end states have no transition priors 
-     * (I think this is right.)
-     */
-
-  /* Model-dependent transitions are handled simply; Laplace.
-   */
-    /*  FSet(hmm->begin+2, hmm->M-1, 0.);   */  /* wipe internal BM entries */
-    /*FSet(hmm->end+1, hmm->M-1, 0.);	*/  /* wipe internal ME exits   */
-    /*d = hmm->tbd1 + hmm->begin[1] + 2.; */
-    /*hmm->tbd1        = (hmm->tbd1 + 1.)/ d; */
-    /*hmm->begin[1]    = (hmm->begin[1] + 1.)/ d; */
-    /*hmm->end[hmm->M] = 1.0; */
-
-  /* Main model transitions and emissions
-   */
   for (v = 0; v < cm->M; v++)
     {
       /* Priorify transition vector if not a BIF or E state */
       if(cm->sttype[v] != B_st && cm->sttype[v] != E_st)
 	{
 	  /* Determine which transition set to use. 
-	   * We already know the current state id
-	   * but we need to know the type of the next node. First
-	   * we need to know how many transitions from the current state
-	   * v to other states in the same node there are, which
-	   * depends on the current node type.  Then we 
-	   * can figure out the type of the next node.
+	   * Current unique state id is easy (cm->stid[v]). 
+           * Type of next node is a little trickier. The trick is 
+           * to use the ndidx of the *last* state this state v
+           * connects to. This is guaranteed to be in the next node,
+           * cannot be an insert state of the current node.
 	   */
-
-	  if(cm->ndtype[cm->ndidx[v]] == MATP_nd || 
-	     cm->ndtype[cm->ndidx[v]] == ROOT_nd)
-	    {
-	      if(cm->sttype[v] != IR_st)
-		{
-		  nselfndtrans = 2;
-		}
-	      else
-		{
-		  nselfndtrans = 1;
-		}
-	    } 
-	  else if(cm->ndtype[cm->ndidx[v]] == MATL_nd || 
-		  cm->ndtype[cm->ndidx[v]] == MATR_nd || 
-		  cm->ndtype[cm->ndidx[v]] == BEGR_nd)
-	    {
-	      nselfndtrans = 1;
-	    }
-	  else if(cm->ndtype[cm->ndidx[v]] == BEGL_nd)
-	    {
-	      nselfndtrans = 0;
-	    }
-	  
-	  nxtndtype = cm->ndtype[cm->ndidx[cm->cfirst[v] + nselfndtrans]];
+	  nxtndtype = cm->ndtype[cm->ndidx[cm->cfirst[v] + cm->cnum[v] - 1]];
 	  setnum = pri->tsetmap[cm->stid[v]][nxtndtype];
-
-	  /* Some debugging print statements 
-	  printf("v is %d\nstid is %d\nnext node type is %d\n\n", v, cm->stid[v], nxtndtype);
-	  printf("nselfndtrans is %d\n", nselfndtrans);
-	  printf("cm->cfirst[%d] is %d\n", v, cm->cfirst[v]);
-	  printf("current node index is %d\n", cm->ndidx[v]);
-	  printf("current node type is %d\n", cm->ndtype[cm->ndidx[v]]);
-	  printf("cm->ndidx[%d] is %d\n", (cm->cfirst[v] + nselfndtrans), cm->ndidx[(cm->cfirst[v] + nselfndtrans)]);
-	  printf("setnum is %d\n", setnum);
-	  */
-
 	  PriorifyTransitionVector(cm->t[v], pri, pri->tq[setnum], setnum);
 	}
       
