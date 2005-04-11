@@ -53,12 +53,12 @@ Prior_Read(FILE *fp)
   if (strcasecmp(tok, "Dirichlet") != 0)
     { fprintf(stderr, "No such prior strategy %s\n", tok); goto FAILURE; }
  
-  /* Second entry is NTRANSSETS, 74 */
+  /* Second entry is NTRANSSETS, which ought to be 74 */
   if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
-  if ((pri->tsetnum = atoi(tok)) != NTRANSSETS)
-    { fprintf(stderr, "Expected %d transition sets, not %d\n", NTRANSSETS, pri->tsetnum); }
+  pri->tsetnum = atoi(tok);
+  pri->t = MallocOrDie(sizeof(ESL_MIXDCHLET *) * pri->tsetnum);
   
-  /* Transition section
+  /* Transition section: a whole bunch of mixture Dirichlets.
    */
   for(i = 0; i < pri->tsetnum; i++)
     {
@@ -77,120 +77,42 @@ Prior_Read(FILE *fp)
       /* (add that information to tsetmap) */
       pri->tsetmap[curr_state_id][curr_next_node_id] = i;
 
-      /*get vector size for current transition set */
-      if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
-      pri->tnalpha[i] = atoi(tok);
-      if (pri->tnalpha[i] > MAXCONNECT || pri->tnalpha[i] < 1)
-	{ fprintf(stderr, "Bad Dirichlet vector size %s\n", tok); goto FAILURE; }
-
-      /* number of mixture components */
-      if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
-      pri->tnum[i] = atoi(tok);
-      if(pri->tnum[i] > MAXDCHLET || pri->tnum[i] < 1)
-	{ fprintf(stderr, "Bad transition mixture number %s\n", tok); goto FAILURE; }
-
-      /* for each mixture component in this set i: */
-      for(j = 0; j < pri->tnum[i]; j++)
-	{
-	  /* mixture coefficient for mix j*/
-	  if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
-	  pri->tq[i][j] = atof(tok);
-	  if (pri->tq[i][j] > 1.0 || pri->tq[i][j] < 0.0) 
-	    { fprintf(stderr, "Bad mixture coefficient %s\n", tok); goto FAILURE; }
-
-	  /* alphas */
-	  for(k = 0; k < pri->tnalpha[i]; k++)
-	    {
-	      if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
-	      pri->t[i][j][k] = atof(tok);
-	      if (pri->t[i][j][k] <= 0.0)
-		{ fprintf(stderr, "Dirichlet parameters must be positive; got %s\n", tok); goto FAILURE; }
-	    }
-	}
-      esl_vec_DNorm(pri->tq[i], pri->tnum[i]);
+      /* input K, nq, and nq components (one mixture coeff, K Dirichlet params):
+       */
+      if (esl_mixdchlet_Read(efp, &(pri->t[i])) != eslOK) { 
+	fprintf(stderr, "%s\nparse failed in transition priors at line %d\n",
+		efp->errbuf, efp->linenumber);
+	return NULL;
+      }
     }
 
   /* Consensus base pair emission prior section.
    */
-  if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
-  pri->mbpnum = atoi(tok);
-  if(pri->mbpnum > MAXDCHLET || pri->mbpnum <= 0)
-    { fprintf(stderr, "bad base pair emission mixture number %s\n", tok); goto FAILURE; }
-  /* for each mixture component: */
-  for(j = 0; j < pri->mbpnum; j++)
-    {
-      /* mixture coefficient: */
-      if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
-      pri->mbpq[j] = atof(buf);
-      if (pri->mbpq[j] > 1.0 || pri->mbpq[j] < 0.0)
-	{ fprintf(stderr, "Bad mixture coefficient %s\n", tok); goto FAILURE; }      
+  if (esl_mixdchlet_Read(efp, &(pri->mbp)) != eslOK) { 
+    fprintf(stderr, "%s\nparse failed in base pair priors at line %d\n", 
+	    efp->errbuf, efp->linenumber);
+    return NULL;
+  }
 
-      /* 16 alphas */
-      for (k = 0; k < MAXABET*MAXABET; k++)
-	{
-	  if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
-	  pri->mbp[j][k] = atof(tok);
-	  if (pri->mbp[j][k] <= 0.0)
-	    { fprintf(stderr, "Dirichlet parameters must be positive; got %s\n", tok); goto FAILURE; }
-	}
-    }
-  esl_vec_DNorm(pri->mbpq, pri->mbpnum);
-  
   /* Consensus singlet emission prior section.
    */
-  if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
-  pri->mntnum = atoi(tok);
-  if(pri->mntnum > MAXDCHLET || pri->mntnum <= 0)
-    { fprintf(stderr, "bad singlet emission mixture number %s\n", tok); goto FAILURE; }
-  for (j = 0; j < pri->mntnum; j++)
-    {
-      /* mixture coefficient: */
-      if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
-      pri->mntq[j] = atof(tok);
-      if (pri->mntq[j] > 1.0 || pri->mntq[j] < 0.0)
-	{ fprintf(stderr, "Bad mixture coefficient %s\n", tok); goto FAILURE; }      
+  if (esl_mixdchlet_Read(efp, &(pri->mbp)) != eslOK) { 
+    fprintf(stderr, "%s\nparse failed in consensus singlet priors at line %d\n", 
+	    efp->errbuf, efp->linenumber);
+    return NULL;
+  }
 
-      /* 4 alphas */
-      for (k = 0; k < MAXABET; k++)
-	{
-	  if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
-	  pri->mnt[j][k] = atof(tok);
-	  if (pri->mnt[j][k] <= 0.0)
-	    { fprintf(stderr, "Dirichlet parameters must be positive; got %s\n", tok); goto FAILURE; }
-	}
-    }
-  esl_vec_DNorm(pri->mntq, pri->mntnum);
-  
   /* Nonconsensus singlet emission prior section.
    */
-  if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
-  pri->inum = atoi(tok);
-  if(pri->inum > MAXDCHLET || pri->inum <= 0)
-    { fprintf(stderr, "bad noncons singlet emission mixture number %s\n", tok); goto FAILURE; }
-  for (j = 0; j < pri->inum; j++)
-    {
-      /* mixture coefficient: */
-      if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
-      pri->iq[j] = atof(tok);
-      if (pri->iq[j] > 1.0 || pri->iq[j] < 0.0)
-	{ fprintf(stderr, "Bad mixture coefficient %s\n", tok); goto FAILURE; }      
-
-      /* 4 alphas */
-      for(k = 0; k < MAXABET; k++)
-	{
-	  if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
-	  pri->i[j][k] = atof(tok);
-	  if (pri->i[j][k] <= 0.0)
-	    { fprintf(stderr, "Dirichlet parameters must be positive; got %s\n", tok); goto FAILURE; }
-	}
-    }
-  esl_vec_DNorm(pri->iq, pri->inum);
-
+  if (esl_mixdchlet_Read(efp, &(pri->mbp)) != eslOK) { 
+    fprintf(stderr, "%s\nparse failed in consensus singlet priors at line %d\n", 
+	    efp->errbuf, efp->linenumber);
+    return NULL;
+  }
   return pri;
 
- FAILURE:
-  free(pri);
-  return NULL;
+  
+
 }
 
 /* Function: PriorifyCM()
