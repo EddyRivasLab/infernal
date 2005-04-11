@@ -12,6 +12,7 @@
  ***************************************************************** 
  */
 
+#include "squid.h"
 #include "ssi.h"               /* CMFILE supports SSI indexes */
 
 /* Alphabet information is declared here, and defined in globals.c.
@@ -145,7 +146,7 @@ typedef struct cm_s {
   int   M;		/*   number of states in the model                 */
   char *sttype;		/*   type of state this is; e.g. MP_st             */
   int  *ndidx;		/*   index of node this state belongs to           */
-  char *stid;		/*   unique state identifier; e.g. MATP-MP         */
+  char *stid;		/*   unique state identifier; e.g. MATP_MP         */
 
 			/* Information about its connectivity in CM:       */
   int  *cfirst;		/*   index of left child state                     */

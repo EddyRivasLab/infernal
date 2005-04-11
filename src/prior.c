@@ -30,6 +30,7 @@ Prior_Read(FILE *fp)
   ESL_FILEPARSER  *efp;
   char            *tok;
   int              toklen;
+  int              status;
 
   int              i;       /*counter over transition sets*/
   int              j;       /*counter over components in a mixture*/
@@ -39,86 +40,115 @@ Prior_Read(FILE *fp)
   int              a, b;
 
   pri = MallocOrDie (sizeof(Prior_t));
-  
+  pri->maxnq     = 0;
+  pri->maxnalpha = 0;
+
   for(a = 0; a < UNIQUESTATES; a++)
     for(b = 0; b < NODETYPES; b++)
       pri->tsetmap[a][b] = -1;
 
   if ((efp = esl_fileparser_Create(fp)) == NULL)
     Die("Failed to associate open prior file stream with fileparser");
-  esl_fileparser_SetCommentChar('#');
+  esl_fileparser_SetCommentChar(efp, '#');
 
   /* First entry is the strategy: "Dirichlet" is the only possibility now. */
-  if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
+  if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) 
+    Die("%s\nPrior file parse failed, on first (Dirichlet) field", efp->errbuf);
   if (strcasecmp(tok, "Dirichlet") != 0)
-    { fprintf(stderr, "No such prior strategy %s\n", tok); goto FAILURE; }
+    Die("No such prior strategy %s\n", tok);
  
   /* Second entry is NTRANSSETS, which ought to be 74 */
-  if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
+  if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK)
+    Die("%s\nPrior file parse failed reading NTRANSSETS", efp->errbuf);
   pri->tsetnum = atoi(tok);
   pri->t = MallocOrDie(sizeof(ESL_MIXDCHLET *) * pri->tsetnum);
   
   /* Transition section: a whole bunch of mixture Dirichlets.
    */
-  for(i = 0; i < pri->tsetnum; i++)
+  for (i = 0; i < pri->tsetnum; i++)
     {
-      /* from unique state */
-      if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
-      if ((curr_state_id = UniqueStateCode(tok)) == -1) 
-	{ fprintf(stderr, "Expected a unique state (like MATP_MP), not %s\n", tok); goto FAILURE; }
-      /*printf("current state id is %d\n", curr_state_id); */
+      if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK)
+	Die("%s\nPrior file parse failed at line %d reading unique statetype", 
+	    efp->errbuf, efp->linenumber);
+      if ((curr_state_id = UniqueStateCode(tok)) == -1)
+	Die("%s is not a uniq state;\nPrior file parse failed, line %d\n",
+	    tok, efp->linenumber);
 
-      /* to node */
-      if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) goto FAILURE;
+      if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK)
+	Die("%s\nPrior file parse failed reading node code", efp->errbuf);
       if ((curr_next_node_id = NodeCode(tok)) == -1)
-	{ fprintf(stderr, "Expected a node name (like MATP), not %s\n", tok); goto FAILURE; }
-      /*printf("current next node id is %d\n", curr_next_node_id); */
-      
-      /* (add that information to tsetmap) */
+	Die("%s is not a node code;\nPrior file parse failed, line %d\n",
+	    tok, efp->linenumber);
+
       pri->tsetmap[curr_state_id][curr_next_node_id] = i;
 
-      /* input K, nq, and nq components (one mixture coeff, K Dirichlet params):
-       */
-      if (esl_mixdchlet_Read(efp, &(pri->t[i])) != eslOK) { 
-	fprintf(stderr, "%s\nparse failed in transition priors at line %d\n",
-		efp->errbuf, efp->linenumber);
-	return NULL;
-      }
+      if (esl_mixdchlet_Read(efp, &(pri->t[i])) != eslOK)
+	Die("%s\nPrior file parse failed, reading transition prior %d at line %d.",
+	    efp->errbuf, i, efp->linenumber);
+      if (pri->t[i]->N > pri->maxnq)     pri->maxnq     = pri->t[i]->N;
+      if (pri->t[i]->K > pri->maxnalpha) pri->maxnalpha = pri->t[i]->K;
     }
-
+  
   /* Consensus base pair emission prior section.
    */
-  if (esl_mixdchlet_Read(efp, &(pri->mbp)) != eslOK) { 
-    fprintf(stderr, "%s\nparse failed in base pair priors at line %d\n", 
-	    efp->errbuf, efp->linenumber);
-    return NULL;
-  }
+  if (esl_mixdchlet_Read(efp, &(pri->mbp)) != eslOK) 
+    Die("%s\nPrior file parse failed in base pair priors at line %d\n", 
+	efp->errbuf, efp->linenumber);
+  if (pri->mbp->N > pri->maxnq)     pri->maxnq     = pri->mbp->N;
+  if (pri->mbp->K > pri->maxnalpha) pri->maxnalpha = pri->mbp->K;
 
   /* Consensus singlet emission prior section.
    */
-  if (esl_mixdchlet_Read(efp, &(pri->mbp)) != eslOK) { 
-    fprintf(stderr, "%s\nparse failed in consensus singlet priors at line %d\n", 
-	    efp->errbuf, efp->linenumber);
-    return NULL;
-  }
+  if (esl_mixdchlet_Read(efp, &(pri->mnt)) != eslOK) 
+    Die("%s\nPrior file parse failed in consensus singlet priors at line %d\n", 
+	efp->errbuf, efp->linenumber);
+  if (pri->mnt->N > pri->maxnq)     pri->maxnq     = pri->mnt->N;
+  if (pri->mnt->K > pri->maxnalpha) pri->maxnalpha = pri->mnt->K;
 
   /* Nonconsensus singlet emission prior section.
    */
-  if (esl_mixdchlet_Read(efp, &(pri->mbp)) != eslOK) { 
-    fprintf(stderr, "%s\nparse failed in consensus singlet priors at line %d\n", 
-	    efp->errbuf, efp->linenumber);
-    return NULL;
-  }
+  if (esl_mixdchlet_Read(efp, &(pri->i)) != eslOK)  
+    Die("%s\nPrior file parse failed in nonconsensus singlet priors at line %d\n", 
+	efp->errbuf, efp->linenumber);
+  if (pri->i->N > pri->maxnq)     pri->maxnq     = pri->i->N;
+  if (pri->i->K > pri->maxnalpha) pri->maxnalpha = pri->i->K;
+
+  esl_fileparser_Destroy(efp);
   return pri;
-
-  
-
 }
 
+
+
+/* Function:  Prior_Destroy()
+ * Incept:    SRE, Mon Apr 11 10:06:34 2005 [St. Louis]
+ *
+ * Purpose:   Free's a prior.
+ */
+void
+Prior_Destroy(Prior_t *pri)
+{
+  int i;
+  if (pri == NULL) return;
+  if (pri->t != NULL) 
+    {
+      for (i = 0; i < pri->tsetnum; i++)
+	esl_mixdchlet_Destroy(pri->t[i]);
+      free(pri->t);
+    }
+  esl_mixdchlet_Destroy(pri->mbp);
+  esl_mixdchlet_Destroy(pri->mnt);
+  esl_mixdchlet_Destroy(pri->i);
+  free(pri);
+}
+      
 /* Function: PriorifyCM()
  * 
  * Purpose:  Given a CM containing counts; add pseudocounts to a CM 
  *           using Dirichlet priors, and renormalize the CM.
+ *           
+ *           The Easel Dirichlet routines are in double-precision, 
+ *           whereas the CM is in floats, so we have some internal vector
+ *           conversion going on here.
  * 
  * Args:     CM -- the CM to add counts to (counts form)
  *           pri -- the Dirichlet prior to use
@@ -129,18 +159,24 @@ Prior_Read(FILE *fp)
 void
 PriorifyCM(CM_t *cm, Prior_t *pri)
 {
-  int v;			/* counter for model position   */
-  int setnum;                   /* number of set to use */
-  int nxtndtype;                /* type of next node */
-  int nselfndtrans;             /* number of 'self-node' transitions,
-				   defined by number of transitions
-				   from state v to another state that
-				   is a member of the same node as v. */
+  int v;		/* counter for model position   */
+  int setnum;           /* number of set to use */
+  int nxtndtype;        /* type of next node */
+  double *counts;	/* double copy of floating-pt counts in the CM */
+  double *probs;	/* double copy of new probability parameters */
+  double *mixq;		/* posterior probs of mixture components, P(q | c) */
+  int     i;
+
+  /* Create our temporary buffers; counts, probs, and mixq.
+   */
+  counts = MallocOrDie(sizeof(double) * pri->maxnalpha);
+  probs  = MallocOrDie(sizeof(double) * pri->maxnalpha);
+  mixq   = MallocOrDie(sizeof(double) * pri->maxnq);
                                  
   for (v = 0; v < cm->M; v++)
     {
       /* Priorify transition vector if not a BIF or E state */
-      if(cm->sttype[v] != B_st && cm->sttype[v] != E_st)
+      if (cm->sttype[v] != B_st && cm->sttype[v] != E_st)
 	{
 	  /* Determine which transition set to use. 
 	   * Current unique state id is easy (cm->stid[v]). 
@@ -151,320 +187,64 @@ PriorifyCM(CM_t *cm, Prior_t *pri)
 	   */
 	  nxtndtype = cm->ndtype[cm->ndidx[cm->cfirst[v] + cm->cnum[v] - 1]];
 	  setnum = pri->tsetmap[cm->stid[v]][nxtndtype];
-	  PriorifyTransitionVector(cm->t[v], pri, pri->tq[setnum], setnum);
+	  for (i = 0; i < cm->cnum[v]; i++)
+	    counts[i] = (double) cm->t[v][i];
+
+	  esl_mixdchlet_MPParameters(counts, cm->cnum[v], 
+				     pri->t[setnum],
+				     mixq, probs);
+
+	  for (i = 0; i < cm->cnum[v]; i++)
+	    cm->t[v][i] = (float) probs[i];
 	}
       
-      /* Now add in the emission priors */
-      if(cm->sttype[v] == MP_st)
-	{
-	  PriorifyBPEmissionVector(cm->e[v], pri, pri->mbpnum, pri->mbpasize, pri->mbpq, pri->mbp, NULL);
-	}
-      else if (cm->sttype[v] == ML_st || cm->sttype[v] == MR_st)
-	{
-	  PriorifyNTEmissionVector(cm->e[v], pri, pri->mntnum, pri->mntasize, pri->mntq, pri->mnt, NULL);
-	}
-      else if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
-	{
-	  PriorifyNTEmissionVector(cm->e[v], pri, pri->inum, pri->iasize, pri->iq, pri->i, NULL);
-	}
 
-    }
+      /* Emission priors
+       */
+      if (cm->sttype[v] == MP_st)
+	{       /* Consensus base pairs */
+	  for (i = 0; i < MAXABET*MAXABET; i++)
+	    counts[i] = (double) cm->e[v][i];
+
+	  esl_mixdchlet_MPParameters(counts, MAXABET*MAXABET,
+				     pri->mbp,
+				     mixq, probs);
+
+	  for (i = 0; i < MAXABET*MAXABET; i++)
+	    cm->e[v][i] = (float) probs[i];
+	}
+      else if (cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR)
+	{      /* Consensus singlets */
+	  for (i = 0; i < MAXABET; i++)
+	    counts[i] = (double) cm->e[v][i];
+
+	  esl_mixdchlet_MPParameters(counts, MAXABET,
+				     pri->mnt,
+				     mixq, probs);
+
+	  for (i = 0; i < MAXABET; i++)
+	    cm->e[v][i] = (float) probs[i];
+	}
+      else if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st ||
+	       cm->stid[v] == MATP_ML || cm->stid[v] == MATP_MR)
+	{	/* nonconsensus singlets */
+	  for (i = 0; i < MAXABET; i++)
+	    counts[i] = (double) cm->e[v][i];
+
+	  esl_mixdchlet_MPParameters(counts, MAXABET,
+				     pri->i,
+				     mixq, probs);
+
+	  for (i = 0; i < MAXABET; i++)
+	    cm->e[v][i] = (float) probs[i];
+	}
+    }/* end loop over states v */
+
+  free(mixq);
+  free(counts);
+  free(probs);
 }
 
-/* Function: PriorifyNTEmissionVector()
- * 
- * Purpose:  Add prior pseudocounts to an observed 
- *           emission count vector of length 4 (for nucletodies) 
- *           and renormalize. 
- *
- *           Can return the posterior mixture probabilities
- *           P(q | counts) if ret_mix[MAXDCHLET] is passed.
- *           Else, pass NULL.  
- * 
- * Args:     vec     - the 4-long vector of counts to modify
- *           pri     - prior data structure
- *           num     - pri->mntnum or pri->inum; # of components
- *           asize   - pri->mntasize or pri->iasize (always 4)
- *           eq      - pri->mntq or pri->iq; prior mixture probabilities
- *           e       - pri->i or pri->mnt; Dirichlet components          
- *           ret_mix - filled with posterior mixture probabilities, or NULL
- *                   
- * Return:   (void)
- *           The counts in vec are changed and normalized to probabilities.
- *
- * NOTE : Copied and morphed from HMMER 2.3.2
- */                  
-void
-PriorifyNTEmissionVector(float *vec, struct prior_s *pri, 
-		       int num, int asize, double eq[MAXDCHLET], double e[MAXDCHLET][MAXABET],
-		       double *ret_mix)
-{
-  int   x;                      /* counter over vec                     */
-  int   q;                      /* counter over mixtures                */
-  double mix[MAXDCHLET];         /* posterior distribution over mixtures */
-  double totc;                   /* total counts                         */
-  double tota;                   /* total alpha terms                    */
-  double xi;                     /* X_i term, Sjolander eq. 41           */
-  double dvec[MAXABET];          /* vec except in doubles (needed for 
-				  * Dchlet_logp_counts function which 
-				  * takes double vectors, not float
-				  * vectors) */
-
-  /* Calculate mix[], which is the posterior probability
-   * P(q | n) of mixture component q given the count vector n
-   *
-   * (side effect note: note that an insert vector in a PAM prior
-   * is passed with num = 1, bypassing pam prior code; this means
-   * that inserts cannot be mixture Dirichlets...)
-   * [SRE, 12/24/00: the above comment is cryptic! what the hell does that
-   *  mean, inserts can't be mixtures? doesn't seem to be true. it 
-   *  may mean that in a PAM prior, you can't have a mixture for inserts,
-   *  but I don't even understand that. The insert vectors aren't passed
-   *  with num=1!!]
-   */
-
-  /* the dirichlet.c functions take a double vector, so we need to
-     get a copy of vec that is double */
-  for(q = 0; q < asize; q++)
-    {
-      dvec[q] = (double) vec[q];
-    }
-
-  mix[0] = 1.0;
-  if (pri->strategy == PRI_DCHLET && num > 1) 
-    {
-      for (q = 0; q < num; q++) 
-	{
-	  mix[q] =  eq[q] > 0.0 ? log(eq[q]) : -999.;
-	  mix[q] += Dchlet_logp_counts(dvec, e[q], asize);
-	}
-      LogNorm(mix, num);      /* now mix[q] is P(component_q | n) */
-    }
-  else if (pri->strategy == PRI_PAM && num > 1) 
-    {		/* pam prior uses aa frequencies as `P(q|n)' */
-      for (q = 0; q < asize; q++) 
-	mix[q] = dvec[q];
-      DNorm(mix, asize);
-    }
-
-  /* Convert the counts to probabilities, following Sjolander (1996) 
-   */
-  totc = DSum(dvec, asize);
-  for (x = 0; x < asize; x++) {
-    xi = 0.0;
-    for (q = 0; q < num; q++) {
-      tota = DSum(e[q], asize);
-      xi += mix[q] * (dvec[x] + e[q][x]) / (totc + tota);
-    }
-    dvec[x] = xi;
-  }
-  DNorm(dvec, asize);
-
-  for(q = 0; q < asize; q++)
-    {
-      vec[q] = (float) dvec[q];
-    }
-
-  if (ret_mix != NULL)
-    for (q = 0; q < num; q++)
-      ret_mix[q] = mix[q];
-}
-
-
-/* Function: PriorifyBPEmissionVector()
- * 
- * Purpose:  Add prior pseudocounts to an observed 
- *           emission count vector of length 16 (for base pairs) 
- *           and renormalize. 
- *
- *           Can return the posterior mixture probabilities
- *           P(q | counts) if ret_mix[MAXDCHLET] is passed.
- *           Else, pass NULL.  
- * 
- * Args:     vec     - the 16-long vector of counts to modify
- *           pri     - prior data structure
- *           num     - pri->mbpnum # of components
- *           asize   - pri->mbpasize
- *           eq      - pri->mbpq 
- *           e       - pri->mbp - Dirichlet alphas          
- *           ret_mix - filled with posterior mixture probabilities, or NULL
- * Return:   (void)
- *           The counts in vec are changed and normalized to probabilities.
- *
- * NOTE : Copied and morphed from HMMER 2.3.2
- */                  
-void
-PriorifyBPEmissionVector(float *vec, struct prior_s *pri, 
-		       int num, int asize, double eq[MAXDCHLET], double e[MAXDCHLET][(MAXABET * MAXABET)],
-		       double *ret_mix)
-{
-  int   x;                      /* counter over vec                     */
-  int   q;                      /* counter over mixtures                */
-  double mix[MAXDCHLET];         /* posterior distribution over mixtures */
-  double totc;                   /* total counts                         */
-  double tota;                   /* total alpha terms                    */
-  double xi;                     /* X_i term, Sjolander eq. 41           */
-  double dvec[(MAXABET * MAXABET)];  /* vec except in doubles (needed for 
-				  * Dchlet_logp_counts function which 
-				  * takes double vectors, not float
-				  * vectors) */
-
-
-  /* Calculate mix[], which is the posterior probability
-   * P(q | n) of mixture component q given the count vector n
-   *
-   * (side effect note: note that an insert vector in a PAM prior
-   * is passed with num = 1, bypassing pam prior code; this means
-   * that inserts cannot be mixture Dirichlets...)
-   * [SRE, 12/24/00: the above comment is cryptic! what the hell does that
-   *  mean, inserts can't be mixtures? doesn't seem to be true. it 
-   *  may mean that in a PAM prior, you can't have a mixture for inserts,
-   *  but I don't even understand that. The insert vectors aren't passed
-   *  with num=1!!]
-   */
-
-  /* Some debugging print statements */
-  /*printf("in PriorifyEmissionVector num is %d\n", num); */
-  /*for(q = 0; q < num; q++) */
-  /*  { */
-  /*   printf("vec %d is %f\n", q, vec[q]); */
-  /*    printf("eq %d is %f\n", q, eq[q]); */
-  /*  } */
-  /*printf("Alphabet size is %d\n\n", asize); */
-
-  for(q = 0; q < asize; q++)
-    {
-      dvec[q] = (double) vec[q];
-    }
-
-  mix[0] = 1.0;
-  if (pri->strategy == PRI_DCHLET && num > 1) 
-    {
-      for (q = 0; q < num; q++) 
-	{
-	  mix[q] =  eq[q] > 0.0 ? log(eq[q]) : -999.;
-	  mix[q] += Dchlet_logp_counts(dvec, e[q], asize);
-	}
-      LogNorm(mix, num);      /* now mix[q] is P(component_q | n) */
-    }
-  else if (pri->strategy == PRI_PAM && num > 1) 
-    {		/* pam prior uses aa frequencies as `P(q|n)' */
-      for (q = 0; q < asize; q++) 
-	mix[q] = dvec[q];
-      DNorm(mix, asize);
-    }
-
-  /* Convert the counts to probabilities, following Sjolander (1996) 
-   */
-  totc = DSum(dvec, asize);
-  for (x = 0; x < asize; x++) {
-    xi = 0.0;
-    for (q = 0; q < num; q++) {
-      tota = DSum(e[q], asize);
-      xi += mix[q] * (dvec[x] + e[q][x]) / (totc + tota);
-    }
-    dvec[x] = xi;
-  }
-  DNorm(dvec, asize);
-
-  for(q = 0; q < asize; q++)
-    {
-      vec[q] = (float) dvec[q];
-    }
-
-  if (ret_mix != NULL)
-    for (q = 0; q < num; q++)
-      ret_mix[q] = mix[q];
-}
-
-
-
-/* Function: PriorifyTransitionVector()
- * 
- * Purpose:  Add prior pseudocounts to transition vector,
- *           
- * Args:     vec   - state transitions, counts to modify  
- *           pri   - Dirichlet prior information
- *           tq    - prior distribution over Dirichlet components.
- *                   (overrides pri->tq[]; used for alternative
- *                   methods of conditioning prior on structural data)  
- *           setnum - the transition set number
- *
- * Return:   (void)
- *           t is changed, and renormalized -- comes back as
- *           probability vectors.
- * NOTE : Copied and morphed from HMMER 2.3.2
- */          
-void
-PriorifyTransitionVector(float *vec, struct prior_s *pri, 
-			   double tq[MAXDCHLET], int setnum)
-{
-  int   q;
-  double mix[MAXDCHLET];
-  double totc;                   /* total counts */
-  double tota;                   /* alpha terms */
-  double xi;                     /* Sjolander's X_i term */
-  int   x;                       /* counter over t */
-  double dvec[MAXTRANSABET];     /* vec except in doubles (needed for 
-				  * Dchlet_logp_counts function which 
-				  * takes double vectors, not float
-				  * vectors) */
-  double total = 0;
-
-  mix[0] = 1.0;			/* default is simple one component */
-
-  for(q = 0; q < pri->tasize[setnum]; q++)
-    {
-      dvec[q] = (double) vec[q];
-    }
-
-  if ((pri->strategy == PRI_DCHLET || pri->strategy == PRI_PAM) && pri->tnum[setnum] > 1)
-    {
-      for (q = 0; q < pri->tnum[setnum]; q++)
-        {
-          mix[q] =  tq[q] > 0.0 ? log(tq[q]) : -999.;
-	  mix[q] += Dchlet_logp_counts(dvec, pri->t[setnum][q], pri->tasize[setnum]);
-        }
-      LogNorm(mix, pri->tnum[setnum]); /* mix[q] is now P(q | counts) */
-    }
-
-  /*Chunk below copied and modified from ProbifyEmissionVector() */
-  /* Convert the counts to probabilities, following Sjolander (1996) 
-   */
-
-  /* Debugging print statements */
-  /*printf("\nin priorify transition vec setnum is %d\n", setnum); */
-  /*printf("before incorporating priors\n"); */
-  /*  for(x = 0; x < pri->tasize[setnum]; x++)  */
-  /*  { */
-  /*    printf("counts t[%d] is %f\n", x, t[x]); */
-  /*  } */
-  /*printf("\nafter incorporating priors\n"); */
-  
-  totc = DSum(dvec, pri->tasize[setnum]);
-  for (x = 0; x < pri->tasize[setnum]; x++) {
-    xi = 0.0;
-    for (q = 0; q < pri->tnum[setnum]; q++) {
-      tota = DSum(pri->t[setnum][q], pri->tasize[setnum]);
-      xi += mix[q] * (dvec[x] + pri->t[setnum][q][x]) / (totc + tota);
-      assert(!isnan(xi));
-    }
-    dvec[x] = xi;
-    total += xi;
-  }
-  assert(abs(total-1) < 1e-6); /* Check that we actually have probabilities. */
-  DNorm(dvec, pri->tasize[setnum]);
-  for (x = 0; x < pri->tasize[setnum]; x++) {
-    /*printf("normalized t[%d] is %f\n", x, t[x]); */
-    /*printf("about to assert t[%d] = %f is > 0\n", x, t[x]); */
-    assert(dvec[x] > 0);
-  }  
-
-  for(q = 0; q < pri->tasize[setnum]; q++)
-    {
-      vec[q] = (float) dvec[q];
-    }
-}
 
 
 /* Below are Alex's default prior structures, but they are not consistent

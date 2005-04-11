@@ -22,6 +22,7 @@
 #include "vectorops.h"
 
 #include "structs.h"		/* data structures, macros, #define's   */
+#include "prior.h"		/* mixture Dirichlet prior */
 #include "funcs.h"		/* external functions                   */
 
 static char banner[] = "cmbuild - build RNA covariance model from alignment";
@@ -140,7 +141,7 @@ main(int argc, char **argv)
 
   //ADDED EPN 01.31.05
   char *prifile;                /* file with prior data */
-  struct prior_s *pri;          /* prior structure */
+  Prior_t *pri;                 /* mixture Dirichlet prior structure */
 
 
   /*********************************************** 
@@ -157,6 +158,7 @@ main(int argc, char **argv)
   treeforce         = 0;
   weight_strategy   = WGT_GSC;	/* default: GSC sequence weighting */
   setname           = NULL;	/* default: get CM name from alifile, or filename */
+  pri               = NULL;
 
   cfile             = NULL;
   emapfile          = NULL;
@@ -165,7 +167,6 @@ main(int argc, char **argv)
   gtblfile          = NULL;
   gtreefile         = NULL;
   regressionfile    = NULL;
-
   prifile           = NULL;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
@@ -235,6 +236,16 @@ main(int argc, char **argv)
     if ((regressfp = fopen(regressionfile, "w")) == NULL) 
       Die("Failed to open regression test file %s", regressionfile);
   }
+
+  if (prifile != NULL)
+    {
+      FILE *pfp;
+      if ((pfp = fopen(prifile, "r")) == NULL)
+	Die("Failed to open prior file %s\n", prifile);
+      if ((pri = Prior_Read(pfp)) == NULL)
+	Die("Failed to parse prior file %s\n", prifile);
+      fclose(pfp);
+    }
 
   watch = StopwatchCreate();
 
@@ -356,13 +367,12 @@ main(int argc, char **argv)
       printf("%-40s ... ", "Converting counts to probabilities"); fflush(stdout);
 
       //EPN CHANGED 01.31.05
-      if(prifile == NULL) 
+      if (pri == NULL) 
 	{
 	  CMSimpleProbify(cm);
 	}
       else 
 	{
-	  pri = ReadPrior(prifile);
 	  PriorifyCM(cm, pri);
 	}
 
@@ -531,6 +541,7 @@ main(int argc, char **argv)
   if (regressionfile != NULL) fclose(regressfp);
   StopwatchFree(watch);
   MSAFileClose(afp);
+  Prior_Destroy(pri);
   fclose(cmfp);
   SqdClean();
   return 0;
