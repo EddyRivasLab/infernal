@@ -29,7 +29,8 @@ typedef struct {
   int  maxnalpha;		/* maximum # of parameters in any prior */
 } Prior_t;
 
-
-extern Prior_t *Prior_Read(FILE *fp);
+extern Prior_t *Prior_Create(void);
 extern void     Prior_Destroy(Prior_t *pri);
+extern Prior_t *Prior_Read(FILE *fp);
 extern void     PriorifyCM(CM_t *cm, Prior_t *pri);
+extern Prior_t *Prior_Default(void);

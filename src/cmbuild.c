@@ -62,7 +62,7 @@ static char experts[] = "\
    --regress <f>  : save regression test information to file <f>\n\
    --treeforce    : score first seq in alignment and show parsetree\n\
 \n\
- * priors from a file:\n\
+ * customize the Dirichlet priors:\n\
    --priorfile <f> : read priors from file <f>\n\
 ";
 
@@ -87,7 +87,6 @@ static struct opt_s OPTIONS[] = {
   { "--wgiven",    FALSE, sqdARG_NONE },
   { "--wnone",     FALSE, sqdARG_NONE },
   { "--wgsc",      FALSE, sqdARG_NONE },
-  //ADDED EPN 01.31.05
   { "--priorfile", FALSE, sqdARG_STRING },
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
@@ -190,8 +189,6 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--cmtbl")     == 0) cmtblfile         = optarg;
     else if (strcmp(optname, "--tfile")     == 0) tracefile         = optarg;
     else if (strcmp(optname, "--regress")   == 0) regressionfile    = optarg;
-
-    //EPN ADDED 01.31.05
     else if (strcmp(optname, "--priorfile") == 0) prifile         = optarg;
 
     else if (strcmp(optname, "--informat") == 0) {
@@ -246,6 +243,8 @@ main(int argc, char **argv)
 	Die("Failed to parse prior file %s\n", prifile);
       fclose(pfp);
     }
+  else 
+    pri = Prior_Default();
 
   watch = StopwatchCreate();
 
@@ -366,16 +365,7 @@ main(int argc, char **argv)
        */
       printf("%-40s ... ", "Converting counts to probabilities"); fflush(stdout);
 
-      //EPN CHANGED 01.31.05
-      if (pri == NULL) 
-	{
-	  CMSimpleProbify(cm);
-	}
-      else 
-	{
-	  PriorifyCM(cm, pri);
-	}
-
+      PriorifyCM(cm, pri);
       CMSetDefaultNullModel(cm);
       CMLogoddsify(cm);
       printf("done.\n");

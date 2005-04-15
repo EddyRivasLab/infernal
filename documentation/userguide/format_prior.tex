@@ -61,7 +61,9 @@ The order of the fields in the prior file is as follows:
   \end{description}
 
 \item[\textbf{Base pair emission prior section.}] This next section is
-  the prior for MATP\_MP emissions. One field gives \emprog{<nq>}, the
+  the prior for MATP\_MP emissions. One field gives \emprog{<K>}, the
+  ``alphabet size'' -- the number of base pair emission probabilities
+  -- which is always 16 (4x4), for RNA. The next field gives \emprog{<nq>}, the
   number of mixture components. Then, for each of these \emprog{nq}
   Dirichlet components:
      \begin{description}
@@ -75,10 +77,11 @@ The order of the fields in the prior file is as follows:
      \end{description}
 
 \item[\textbf{Consensus singlet base emission prior section.}] This
-  next section is the prior for MATL\_ML and MATR\_MR emissions.
-  One field gives \emprog{<nq>}, the
-  number of mixture components. Then, for each of these \emprog{nq}
-  Dirichlet components:
+  next section is the prior for MATL\_ML and MATR\_MR emissions.  One
+  field gives \emprog{<K>}, the ``alphabet size'' -- the number of
+  singlet emission probabilities -- which is always 4, for RNA.  The
+  next field gives \emprog{<nq>}, the number of mixture components. Then,
+  for each of these \emprog{nq} Dirichlet components:
      \begin{description}
      \item{\emprog{p(q)}:} One field gives the mixture coefficient $p(q)$,
      the prior probability of this component $q$. For a single-component
@@ -93,7 +96,9 @@ The order of the fields in the prior file is as follows:
   next section is the prior for insertions (MATP\_IL, MATP\_IR,
   MATL\_IL, MATR\_IR, ROOT\_IL, ROOT\_IR, BEGR\_IL) as well as
   nonconsensus singlets (MATP\_ML, MATP\_MR). 
-  One field gives \emprog{<nq>}, the
+  One field gives \emprog{<K>}, the ``alphabet size'' -- the number of
+  singlet emission probabilities -- which is always 4, for RNA. 
+  The next field gives \emprog{<nq>}, the
   number of mixture components. Then, for each of these \emprog{nq}
   Dirichlet components:
      \begin{description}
