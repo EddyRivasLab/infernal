@@ -757,6 +757,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
   int       yoffset;		/* offset to a child state */
   int       i,j;		/* index of start/end positions in sequence, 0..L */
   int       d;			/* a subsequence length, 0..W */
+  int       jmax;               /* when imposing bands, maximum j value in alpha matrix */
   int       k;			/* used in bifurc calculations: length of right subseq */
   int       prv, cur;		/* previous, current j row (0 or 1) */
   float     sc;			/* tmp variable for holding a score */
@@ -845,8 +846,22 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
    */
   for (v = 0; v < cm->M; v++)
     {
-      for (d = 0;         d < dmin[v]; d++) alpha[v][0][d] = alpha[v][1][d] = IMPOSSIBLE;
-      for (d = dmax[v]+1; d <= W;      d++) alpha[v][0][d] = alpha[v][1][d] = IMPOSSIBLE;
+      if(cm->stid[v] == BEGL_S) 
+	jmax = W; 
+      else 
+	jmax = 1;
+
+      for (d = 0;         d < dmin[v]; d++) 
+	for(j = 0; j <= jmax; j++)
+	  {
+	    alpha[v][j][d] = IMPOSSIBLE;
+	  }
+      
+      for (d = dmax[v]+1; d <= W;      d++) 
+	for(j = 0; j <= jmax; j++)
+	  {
+	    alpha[v][j][d] = IMPOSSIBLE;
+	  }
     }
 
   /*****************************************************************
@@ -947,7 +962,12 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
 	      for (d = dmin[v]; d <= dmax[v] && d <= j; d++) 
 		{
 		  alpha[v][cur][d] = cm->endsc[v];
-		  for (k = 0; k <= d; k++) /* k is length of right fragment */
+		  /* original versino 0.56 line commented out below : 
+		   * for (k = 0; k <= d; k++) /* k is length of right fragment */
+		  /* new line EPN 04.27.05 */ 
+		  for (k = 0; k <= d && (((d-k) >= dmin[w]) && 
+					 ((d-k)<= dmax[w])); k++)
+		    /* k is length of right fragment */		  
 		    {
 		      jp = (j-k)%(W+1);	   /* jp is rolling index into BEGL_S deck j dimension */
 		      if ((sc = alpha[w][jp][d-k] + alpha[y][cur][k]) > alpha[v][cur][d])
