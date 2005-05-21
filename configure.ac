@@ -64,6 +64,7 @@ AC_MSG_NOTICE([This is a full source distribution - using full config])
 # AR might be hidden away on Solaris; provide some hints in the PATH.
 #
 AC_PROG_CC
+AC_PROG_CXX
 AC_PROG_RANLIB
 AC_PATH_PROG([AR], [ar], [:], [$PATH:/usr/ccs/bin:/usr/xpg4/bin])
 
@@ -237,6 +238,9 @@ AC_SUBST(RIGFILTERS,$rigfilters)
 # end of optionally configured features
 ################################################################
 
+#check for location of alloca() (used by cm2hmm)
+AC_FUNC_ALLOCA
+
 # Checks for system libraries
 AC_CHECK_LIB(m, sqrt, LIBS="${LIBS} -lm")
 #AC_CHECK_LIB(m, sqrt, LIBS="${LIBS} -ldl")
@@ -254,6 +258,7 @@ AC_CONFIG_FILES(src/Makefile)
 AC_CONFIG_FILES(testsuite/Makefile)
 AC_CONFIG_FILES(rigfilters/Makefile)
 AC_CONFIG_FILES(rigfilters/cfsqp/Makefile)
+AC_CONFIG_FILES(rigfilters/cm2hmm-1.0/Makefile)
 
 # remember that sneaky if statement that wraps the source
 # configuration? well, it ends here.
