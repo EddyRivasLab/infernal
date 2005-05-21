@@ -38,7 +38,7 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 #include "stdafx.h"
 
-#include <UseDebugNew.h>
+#include "UseDebugNew.h"
 
 #include "cmzasha.h"
 
@@ -993,7 +993,7 @@ void TemporarilyModifyInequality::MultiplyWeight (double mult)
 {
 	inequalitySoFar.weight *= mult;
 }
-void TemporarilyModifyInequality::AddVariable (int globalVariableNum,vector<int>& globalToLocalVariables,int& numLocalVariables)
+void TemporarilyModifyInequality::AddVariable (int globalVariableNum,std::vector<int>& globalToLocalVariables,int& numLocalVariables)
 {
 	InequalityTerm newTerm;
 	int localVariableNum=globalToLocalVariables[globalVariableNum];
@@ -1007,7 +1007,7 @@ void TemporarilyModifyInequality::AddVariable (int globalVariableNum,vector<int>
 	numVariablesAdded++;
 }
 
-void Cm2Hmm_MakeInequalitiesForPath_HmmTransition(TemporarilyModifyInequality& temporarilyModifyInequality,const CovarianceModel::State hmmState,CovarianceModel::State& hmmNextState,const HmmAndBuildInfo& newHMM,const ScoreVariablesInfo& scoreVariablesInfo,vector<int>& globalToLocalVariables,int& numLocalVariables,WeightedInequalitiesInfo *weightedInequalitiesInfo)
+void Cm2Hmm_MakeInequalitiesForPath_HmmTransition(TemporarilyModifyInequality& temporarilyModifyInequality,const CovarianceModel::State hmmState,CovarianceModel::State& hmmNextState,const HmmAndBuildInfo& newHMM,const ScoreVariablesInfo& scoreVariablesInfo,std::vector<int>& globalToLocalVariables,int& numLocalVariables,WeightedInequalitiesInfo *weightedInequalitiesInfo)
 {
 	if (hmmNextState==CovarianceModel::GetInvalidState()) {
 		// stays the same, and no transition cost
@@ -1072,7 +1072,7 @@ void DumblyWorkOutHmmStates(CovarianceModel::State& hmmFirstNormalState,Covarian
 }
 
 // recursively make the inequalities for each node along a path of consecutive nodes.
-void Cm2Hmm_MakeInequalitiesForPath(HmmAndBuildInfo& newHMM,const CovarianceModel& sourceCM,const ScoreVariablesInfo& scoreVariablesInfo,const CovarianceModel::Node cmStartPathNode,const CovarianceModel::Node cmEndPathNode,const CovarianceModel::State cmRootState,const CovarianceModel::State hmmLeftState,const CovarianceModel::State hmmRightState,const bool doneEmission,InequalityList& inequalityList,vector<int>& globalToLocalVariables,int& numLocalVariables,Inequality& inequalitySoFar,WeightedInequalitiesInfo *weightedInequalitiesInfo)
+void Cm2Hmm_MakeInequalitiesForPath(HmmAndBuildInfo& newHMM,const CovarianceModel& sourceCM,const ScoreVariablesInfo& scoreVariablesInfo,const CovarianceModel::Node cmStartPathNode,const CovarianceModel::Node cmEndPathNode,const CovarianceModel::State cmRootState,const CovarianceModel::State hmmLeftState,const CovarianceModel::State hmmRightState,const bool doneEmission,InequalityList& inequalityList,std::vector<int>& globalToLocalVariables,int& numLocalVariables,Inequality& inequalitySoFar,WeightedInequalitiesInfo *weightedInequalitiesInfo)
 {
 	//fprintf(stderr,"MakeInequalitiesForPath: root state=%d,done emit=%c\n",CovarianceModel::StateToInt(cmRootState),doneEmission?'T':'F');
 
@@ -1227,11 +1227,11 @@ void Cm2Hmm_MakeInequalitiesForPath(HmmAndBuildInfo& newHMM,const CovarianceMode
 	}
 }
 
-void DumpInequalities(FILE *file,const HmmAndBuildInfo& newHMM,const CovarianceModel::Node cmStartPathNode,const CovarianceModel::Node cmEndPathNode,const InequalityList& inequalityList,const vector<int>& globalToLocalVariables,int numLocalVariables,const ScoreVariablesInfo& scoreVariablesInfo,const vector<float>& localVariableToValue,HmmCommittee::CommitteeBuildInfo *committeeBuildInfo)
+void DumpInequalities(FILE *file,const HmmAndBuildInfo& newHMM,const CovarianceModel::Node cmStartPathNode,const CovarianceModel::Node cmEndPathNode,const InequalityList& inequalityList,const std::vector<int>& globalToLocalVariables,int numLocalVariables,const ScoreVariablesInfo& scoreVariablesInfo,const std::vector<float>& localVariableToValue,HmmCommittee::CommitteeBuildInfo *committeeBuildInfo)
 {
 	// build reverse-mapping info
 	// global variables to string description
-	vector<std::string> globalVarToString;
+	std::vector<std::string> globalVarToString;
 	globalVarToString.resize(scoreVariablesInfo.numVariables);
 	CovarianceModel::State hmmState;
 	for (hmmState=newHMM.hmm.GetFirstState(); hmmState!=newHMM.hmm.GetLastState(); hmmState++) {
@@ -1255,7 +1255,7 @@ void DumpInequalities(FILE *file,const HmmAndBuildInfo& newHMM,const CovarianceM
 		}
 	}
 	// local vars to globals
-	vector<int> localToGlobalVar;
+	std::vector<int> localToGlobalVar;
 	localToGlobalVar.resize(numLocalVariables);
 	for (unsigned int i=0; i<globalToLocalVariables.size(); i++) {
 		int localVar=globalToLocalVariables[i];
@@ -1331,7 +1331,7 @@ void DumpInequalities(FILE *file,const HmmAndBuildInfo& newHMM,const CovarianceM
 }
 
 /*
-void AddConstraints_set_mat(lpsolve::lprec *linearProgram,const InequalityList& inequalityList,vector<double>& weightedUsesOfVariable,const int numLocalVariables)
+void AddConstraints_set_mat(lpsolve::lprec *linearProgram,const InequalityList& inequalityList,std::vector<double>& weightedUsesOfVariable,const int numLocalVariables)
 {
 	int result;
 	int constraintNum=0+1;
@@ -1369,9 +1369,9 @@ void AddConstraints_set_mat(lpsolve::lprec *linearProgram,const InequalityList& 
 
 /*
 // I wonder if using the add_constraint function is faster
-void AddConstraints_add_constraint(lpsolve::lprec *linearProgram,const InequalityList& inequalityList,vector<double>& weightedUsesOfVariable,const int numLocalVariables)
+void AddConstraints_add_constraint(lpsolve::lprec *linearProgram,const InequalityList& inequalityList,std::vector<double>& weightedUsesOfVariable,const int numLocalVariables)
 {
-	vector<REAL> coeffs;
+	std::vector<REAL> coeffs;
 	coeffs.resize(numLocalVariables+1);
 
 	int result;
@@ -1412,7 +1412,7 @@ void SolveInequalities_SetVariableLowerBound(lpsolve::lprec *linearProgram,const
 */
 
 /*
-void SolveInequalities_SetObjectiveFunction(lpsolve::lprec *linearProgram,int numLocalVariables,const vector<double>& weightedUsesOfVariable)
+void SolveInequalities_SetObjectiveFunction(lpsolve::lprec *linearProgram,int numLocalVariables,const std::vector<double>& weightedUsesOfVariable)
 {
 	// now the objective function
 	lpsolve::set_minim(linearProgram); // we want to minimize the objective function
@@ -1428,7 +1428,7 @@ void SolveInequalities_SetObjectiveFunction(lpsolve::lprec *linearProgram,int nu
 */
 
 /*
-void SolveInequalities_CalcInflation(float& get_avgInflation,lpsolve::lprec *linearProgram,const int numLocalVariables,const vector<float>& localVariableToValue,const InequalityList& inequalityList)
+void SolveInequalities_CalcInflation(float& get_avgInflation,lpsolve::lprec *linearProgram,const int numLocalVariables,const std::vector<float>& localVariableToValue,const InequalityList& inequalityList)
 {
 	REAL *constraints;
 	int result=(int) lpsolve::get_ptr_constraints(linearProgram,&constraints);
@@ -1459,7 +1459,7 @@ void SolveInequalities_CalcInflation(float& get_avgInflation,lpsolve::lprec *lin
 */
 
 /*
-void SolveInequalities_FindVariablesValues(lpsolve::lprec *linearProgram,const int numLocalVariables,vector<float>& localVariableToValue)
+void SolveInequalities_FindVariablesValues(lpsolve::lprec *linearProgram,const int numLocalVariables,std::vector<float>& localVariableToValue)
 {
 	REAL *variables;
 	int result=(int) lpsolve::get_ptr_variables(linearProgram,&variables);
@@ -1474,7 +1474,7 @@ void SolveInequalities_FindVariablesValues(lpsolve::lprec *linearProgram,const i
 */
 
 /*
-void SolveInequalities_DumpSolution(lpsolve::lprec *linearProgram,const int numLocalVariables,vector<float>& localVariableToValue,HmmCommittee::CommitteeBuildInfo *committeeBuildInfo)
+void SolveInequalities_DumpSolution(lpsolve::lprec *linearProgram,const int numLocalVariables,std::vector<float>& localVariableToValue,HmmCommittee::CommitteeBuildInfo *committeeBuildInfo)
 {
 #if 0
 	lpsolve::print_lp(linearProgram);
@@ -1519,7 +1519,7 @@ void SolveInequalities_ConstructLP(lpsolve::lprec *(&linearProgram),const Inequa
 	SolveInequalities_SetVariableLowerBound(linearProgram,numLocalVariables);
 
 	//fprintf(stderr,"Setting up %d constraints on %d variables...\n",numRows,numLocalVariables);
-	vector<double> weightedUsesOfVariable;
+	std::vector<double> weightedUsesOfVariable;
 	weightedUsesOfVariable.assign(numLocalVariables,0);
 	if (use_add_constraint) {
 		AddConstraints_add_constraint(linearProgram,inequalityList,weightedUsesOfVariable,numLocalVariables);
@@ -1533,7 +1533,7 @@ void SolveInequalities_ConstructLP(lpsolve::lprec *(&linearProgram),const Inequa
 }
 */
 
-void SolveInequalities(vector<float>& localVariableToValue,const InequalityList& inequalityList,const int numLocalVariables,CovarianceModel::Node cmStartPathNode,CovarianceModel::Node cmEndPathNode,float& get_avgInflation,const int nodesToSpanWhileSolvingScores,HmmCommittee::CommitteeBuildInfo *committeeBuildInfo)
+void SolveInequalities(std::vector<float>& localVariableToValue,const InequalityList& inequalityList,const int numLocalVariables,CovarianceModel::Node cmStartPathNode,CovarianceModel::Node cmEndPathNode,float& get_avgInflation,const int nodesToSpanWhileSolvingScores,HmmCommittee::CommitteeBuildInfo *committeeBuildInfo)
 {
 	/* This first resize is very important, as it actually initializes the vector at this point.
 	 * localVariableToValue is a NULL list when received by SolveInequalities()
@@ -1545,7 +1545,7 @@ void SolveInequalities(vector<float>& localVariableToValue,const InequalityList&
 }
 
 /*
-void SolveInequalities_BeforeCommittees(vector<float>& localVariableToValue,const InequalityList& inequalityList,const int numLocalVariables,CovarianceModel::Node cmStartPathNode,CovarianceModel::Node cmEndPathNode,float& get_avgInflation,const int nodesToSpanWhileSolvingScores)
+void SolveInequalities_BeforeCommittees(std::vector<float>& localVariableToValue,const InequalityList& inequalityList,const int numLocalVariables,CovarianceModel::Node cmStartPathNode,CovarianceModel::Node cmEndPathNode,float& get_avgInflation,const int nodesToSpanWhileSolvingScores)
 {
 	lpsolve::lprec *linearProgram;
 	SolveInequalities_ConstructLP(linearProgram,inequalityList,numLocalVariables,cmStartPathNode,cmEndPathNode,nodesToSpanWhileSolvingScores,NULL);
@@ -1569,7 +1569,7 @@ void SolveInequalities_BeforeCommittees(vector<float>& localVariableToValue,cons
 */
 
 /*
-void SolveInequality_WithCommittee_RegurgitateSolution(vector<float>& localVariableToValue,const int numLocalVariables,const CovarianceModel::Node cmStartPathNode,const CovarianceModel::Node cmEndPathNode,float& get_avgInflation,HmmCommittee::CommitteeBuildInfo *committeeBuildInfo)
+void SolveInequality_WithCommittee_RegurgitateSolution(std::vector<float>& localVariableToValue,const int numLocalVariables,const CovarianceModel::Node cmStartPathNode,const CovarianceModel::Node cmEndPathNode,float& get_avgInflation,HmmCommittee::CommitteeBuildInfo *committeeBuildInfo)
 {
 	assert(committeeBuildInfo!=NULL);
 	HmmCommittee::LinearProgramStoredInfo& storedInfo=committeeBuildInfo->cmStartNodeToLinearProgramInfo[cmStartPathNode];
@@ -1626,7 +1626,7 @@ void FindWhichSlackVarsAreZero(_Bvector& slackVariablesFoundWithZero,lpsolve::lp
 }
 */
 
-void StoreSolution(HmmCommittee::LinearProgramStoredInfo& storedInfo,const vector<float>& localVariableToValue,const float get_avgInflation)
+void StoreSolution(HmmCommittee::LinearProgramStoredInfo& storedInfo,const std::vector<float>& localVariableToValue,const float get_avgInflation)
 {
 	size_t numSolutionsSoFar=storedInfo.localVariablesToValuePerSolution.size();
 	assert(numSolutionsSoFar==storedInfo.avgInflationPerSolution.size());
@@ -1647,7 +1647,7 @@ void SolveInequality_WithCommittee_FindSolutions(const InequalityList& inequalit
 	HmmCommittee::LinearProgramStoredInfo& storedInfo=committeeBuildInfo->cmStartNodeToLinearProgramInfo[cmStartPathNode];
 	assert(storedInfo.localVariablesToValuePerSolution.empty()); // we shouldn't have done anything yet
 
-	vector<float> localVariableToValue;
+	std::vector<float> localVariableToValue;
 	localVariableToValue.resize(numLocalVariables);
 
 	// make the LP
@@ -1759,7 +1759,7 @@ void SolveInequality_WithCommittee_FindSolutions(const InequalityList& inequalit
 */
 
 /*
-void SolveInequality_WithCommittee(vector<float>& localVariableToValue,const InequalityList& inequalityList,const int numLocalVariables,CovarianceModel::Node cmStartPathNode,CovarianceModel::Node cmEndPathNode,float& get_avgInflation,const int nodesToSpanWhileSolvingScores,HmmCommittee::CommitteeBuildInfo *committeeBuildInfo)
+void SolveInequality_WithCommittee(std::vector<float>& localVariableToValue,const InequalityList& inequalityList,const int numLocalVariables,CovarianceModel::Node cmStartPathNode,CovarianceModel::Node cmEndPathNode,float& get_avgInflation,const int nodesToSpanWhileSolvingScores,HmmCommittee::CommitteeBuildInfo *committeeBuildInfo)
 {
 	assert(committeeBuildInfo!=NULL);
 	HmmCommittee::LinearProgramStoredInfo& storedInfo=committeeBuildInfo->cmStartNodeToLinearProgramInfo[cmStartPathNode];
@@ -1783,7 +1783,7 @@ void SolveInequality_WithCommittee(vector<float>& localVariableToValue,const Ine
 */
 
 /* The new SolveInequalities() above replaces this one
-void SolveInequalities(vector<float>& localVariableToValue,const InequalityList& inequalityList,const int numLocalVariables,CovarianceModel::Node cmStartPathNode,CovarianceModel::Node cmEndPathNode,float& get_avgInflation,const int nodesToSpanWhileSolvingScores,HmmCommittee::CommitteeBuildInfo *committeeBuildInfo)
+void SolveInequalities(std::vector<float>& localVariableToValue,const InequalityList& inequalityList,const int numLocalVariables,CovarianceModel::Node cmStartPathNode,CovarianceModel::Node cmEndPathNode,float& get_avgInflation,const int nodesToSpanWhileSolvingScores,HmmCommittee::CommitteeBuildInfo *committeeBuildInfo)
 {
 	if (committeeBuildInfo==NULL) {
 		SolveInequalities_BeforeCommittees(localVariableToValue,inequalityList,numLocalVariables,cmStartPathNode,cmEndPathNode,get_avgInflation,nodesToSpanWhileSolvingScores);
@@ -1794,7 +1794,7 @@ void SolveInequalities(vector<float>& localVariableToValue,const InequalityList&
 }
 */
 
-void SetHmmScores(HmmAndBuildInfo& newHMM,const ScoreVariablesInfo& scoreVariablesInfo,const vector<int>& globalToLocalVariables,const vector<float>& localVariablesToValue)
+void SetHmmScores(HmmAndBuildInfo& newHMM,const ScoreVariablesInfo& scoreVariablesInfo,const std::vector<int>& globalToLocalVariables,const std::vector<float>& localVariablesToValue)
 {
 	CovarianceModel::State hmmState;
 	for (hmmState=newHMM.hmm.GetFirstState(); hmmState!=newHMM.hmm.GetLastState(); hmmState++) {
@@ -1890,9 +1890,9 @@ void NormalizeInequalityWeights(InequalityList& inequalityList,WeightedInequalit
 }
 */
 
-vector<int> ReverseGlobalToLocalVariables(const vector<int>& globalToLocalVariables,int numLocalVariables)
+std::vector<int> ReverseGlobalToLocalVariables(const std::vector<int>& globalToLocalVariables,int numLocalVariables)
 {
-	vector<int> localToGlobalVariables;
+	std::vector<int> localToGlobalVariables;
 	localToGlobalVariables.resize(numLocalVariables);
 
 	int globalVar;
@@ -1913,7 +1913,7 @@ void Cm2Hmm_SolveScoresForPath(HmmAndBuildInfo& newHMM,const CovarianceModel& so
 	CovarianceModel::State cmFirstStateOfStartPathNode=sourceCM.GetFirstStateOfNode(cmStartPathNode);
 
 	// first initialize mapping of overall variables, to variables we'll use in this Linear Program
-	vector<int> globalToLocalVariables;
+	std::vector<int> globalToLocalVariables;
 	globalToLocalVariables.assign(scoreVariablesInfo.numVariables,-1); // they all don't have a local mapping
 	int numLocalVariables=0;
 
@@ -1979,7 +1979,7 @@ void Cm2Hmm_SolveScoresForPath(HmmAndBuildInfo& newHMM,const CovarianceModel& so
 		extraCm2HmmInfo->inequalitiesAndLocalVariables[cmStartPathNode].localToGlobalVariables=ReverseGlobalToLocalVariables(globalToLocalVariables,numLocalVariables);
 	}
 
-	vector<float> localVariableToValue;
+	std::vector<float> localVariableToValue;
 	bool actuallySolveScores=true;
 	if (extraCm2HmmInfo!=NULL) {
 		actuallySolveScores=extraCm2HmmInfo->actuallySolveScores;
@@ -2610,7 +2610,7 @@ void Cm2Hmm (HmmCommittee& hmmCommittee,const CovarianceModel& sourceCM,const ch
 #endif
 }
 
-void GetOrSet_LocalVariablesValueForNode(vector<float>& localVariablesToValue,const CovarianceModel& cm,InfernalHmm& infernalHmm,const CovarianceModel::Node cmNode,const ExtraCm2HmmInfo& extraCm2HmmInfo,std::list<int>& globalVarNums,bool isSetting)
+void GetOrSet_LocalVariablesValueForNode(std::vector<float>& localVariablesToValue,const CovarianceModel& cm,InfernalHmm& infernalHmm,const CovarianceModel::Node cmNode,const ExtraCm2HmmInfo& extraCm2HmmInfo,std::list<int>& globalVarNums,bool isSetting)
 {
 	if (!isSetting) {
 		localVariablesToValue.assign(extraCm2HmmInfo.inequalitiesAndLocalVariables[cmNode].numLocalVariables,FLT_MAX); // MAX_FLT doesn't seem reasonable -- protect against getting something twice
@@ -2699,24 +2699,24 @@ void GetOrSet_LocalVariablesValueForNode(vector<float>& localVariablesToValue,co
 
 void GetGlobalVariableNumsForNode (std::list<int>& globalVarNums,const CovarianceModel& cm,InfernalHmm& infernalHmm,const CovarianceModel::Node cmNode,const ExtraCm2HmmInfo& extraCm2HmmInfo)
 {
-	vector<float> localVariablesToValue;
+	std::vector<float> localVariablesToValue;
 	GetOrSet_LocalVariablesValueForNode(localVariablesToValue,cm,infernalHmm,cmNode,extraCm2HmmInfo,globalVarNums,false);
 }
 
-void GetLocalVariablesValueForNode(vector<float>& localVariablesToValue,const CovarianceModel& cm,InfernalHmm& infernalHmm,const CovarianceModel::Node cmNode,const ExtraCm2HmmInfo& extraCm2HmmInfo)
+void GetLocalVariablesValueForNode(std::vector<float>& localVariablesToValue,const CovarianceModel& cm,InfernalHmm& infernalHmm,const CovarianceModel::Node cmNode,const ExtraCm2HmmInfo& extraCm2HmmInfo)
 {
 	std::list<int> dummy;
 	GetOrSet_LocalVariablesValueForNode(localVariablesToValue,cm,infernalHmm,cmNode,extraCm2HmmInfo,dummy,false);
 }
 
-void SetLocalVariablesValueForNode(vector<float>& localVariablesToValue,const CovarianceModel& cm,InfernalHmm& infernalHmm,const CovarianceModel::Node cmNode,const ExtraCm2HmmInfo& extraCm2HmmInfo)
+void SetLocalVariablesValueForNode(std::vector<float>& localVariablesToValue,const CovarianceModel& cm,InfernalHmm& infernalHmm,const CovarianceModel::Node cmNode,const ExtraCm2HmmInfo& extraCm2HmmInfo)
 {
 	std::list<int> dummy;
 	GetOrSet_LocalVariablesValueForNode(localVariablesToValue,cm,infernalHmm,cmNode,extraCm2HmmInfo,dummy,true);
 }
 
 
-void GetGlobalVarsFromInfernalHmm (vector<double>& globalVars,const InfernalHmm& infernalHmm,const TransitionOrEmissionInfoVector& transitionOrEmissionInfoVector)
+void GetGlobalVarsFromInfernalHmm (std::vector<double>& globalVars,const InfernalHmm& infernalHmm,const TransitionOrEmissionInfoVector& transitionOrEmissionInfoVector)
 {
 	size_t numGlobalVars=transitionOrEmissionInfoVector.size();
 	globalVars.resize(numGlobalVars);
@@ -2731,7 +2731,7 @@ void GetGlobalVarsFromInfernalHmm (vector<double>& globalVars,const InfernalHmm&
 		}
 	}
 }
-void SetGlobalVarsIntoInfernalHmm (InfernalHmm& infernalHmm,const vector<double>& globalVars,const TransitionOrEmissionInfoVector& transitionOrEmissionInfoVector)
+void SetGlobalVarsIntoInfernalHmm (InfernalHmm& infernalHmm,const std::vector<double>& globalVars,const TransitionOrEmissionInfoVector& transitionOrEmissionInfoVector)
 {
 	size_t numGlobalVars=transitionOrEmissionInfoVector.size();
 	assert(numGlobalVars==globalVars.size());
@@ -2798,7 +2798,7 @@ void AddCrossProductOfInequalityLists(InequalityList& inequalityList,InequalityL
 }
 void AddInequalitiesInTermsOfGlobalVars(InequalityList& inequalityList,const ExtraCm2HmmInfo& extraCm2HmmInfo,const CovarianceModel::Node cmNode)
 {
-	const vector<int>& localToGlobal=extraCm2HmmInfo.inequalitiesAndLocalVariables[cmNode].localToGlobalVariables;
+	const std::vector<int>& localToGlobal=extraCm2HmmInfo.inequalitiesAndLocalVariables[cmNode].localToGlobalVariables;
 	const InequalityList& nodeInequalityList=extraCm2HmmInfo.inequalitiesAndLocalVariables[cmNode].inequalityList;
 	for (InequalityList::const_iterator ineqIter=nodeInequalityList.begin(); ineqIter!=nodeInequalityList.end(); ineqIter++) {
 		Inequality newIneq=*ineqIter;
@@ -2812,7 +2812,7 @@ void AddInequalitiesInTermsOfGlobalVars(InequalityList& inequalityList,const Ext
 		inequalityList.push_back(newIneq);
 	}
 }
-void ConvertInequalityListVarNums (InequalityList& inequalityList,const vector<int>& varNumMapping)
+void ConvertInequalityListVarNums (InequalityList& inequalityList,const std::vector<int>& varNumMapping)
 {
 	for (InequalityList::iterator ineqIter=inequalityList.begin(); ineqIter!=inequalityList.end(); ineqIter++) {
 		for (std::list<InequalityTerm>::iterator termIter=ineqIter->lhs.begin(); termIter!=ineqIter->lhs.end(); termIter++) {
