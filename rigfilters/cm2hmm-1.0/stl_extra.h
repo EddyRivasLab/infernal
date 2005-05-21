@@ -62,7 +62,7 @@ public:
 		first=_first;
 		last=_last;
 	}
-	FixedPositionVector (vector<T>& t) {
+	FixedPositionVector (std::vector<T>& t) {
 		first=t.begin();
 		last=t.end();
 	}
@@ -120,7 +120,7 @@ public:
 		first=_first;
 		last=_last;
 	}
-	ConstFixedPositionVector (const vector<T>& t) {
+	ConstFixedPositionVector (const std::vector<T>& t) {
 		first=t.begin();
 		last=t.end();
 	}
@@ -267,7 +267,7 @@ public:
 };
 
 template <class T>
-class CircularArrayWithMaxSizeOverVector : public CircularArrayWithMaxSize<T,vector<T> > {
+class CircularArrayWithMaxSizeOverVector : public CircularArrayWithMaxSize<T,std::vector<T> > {
 };
 
 // variable-dimension array, i.e. an array whose dimension is not fixed at compile time
@@ -276,10 +276,10 @@ class VariableDimVector {
 public:
 	typedef int LowLevelOffset; // low-level offset into array for quick lookups
 protected:
-	vector<T> array;
+	std::vector<T> array;
 	int numDim;
-	vector<int> sizes;
-	static int ProductOfSizes (const vector<int>& sizes) {
+	std::vector<int> sizes;
+	static int ProductOfSizes (const std::vector<int>& sizes) {
 		int p=1;
 		for (int i=0; i<(int)(sizes.size()); i++) {
 			p *= sizes[i];
@@ -289,7 +289,7 @@ protected:
 
 public:
 
-	void resize (const vector<int>& _sizes) {
+	void resize (const std::vector<int>& _sizes) {
 		sizes=_sizes;
 		numDim=(int)(sizes.size());
 		array.resize(ProductOfSizes(sizes));
@@ -303,7 +303,7 @@ public:
 	VariableDimVector (void) {
 		numDim=0;
 	}
-	VariableDimVector (const vector<int>& _sizes) {
+	VariableDimVector (const std::vector<int>& _sizes) {
 		resize(_sizes);
 	}
 	VariableDimVector (int _numDim,int sizeOfEveryDim) {
