@@ -48,6 +48,15 @@
 #undef PACKAGE_COPYRIGHT
 #undef PACKAGE_LICENSE
 
+/* Information about location of alloca()
+ * Used by rigfilters/cm2hmm-1.0/MiscExceptions.cpp
+ * This function is known to have portability issues (including
+ * variable locations in system headers, and broken implementations
+ * on certain platforms) and may be problematic.  Hopefully autoconf
+ * will prevent major issues.
+ */
+#undef HAVE_ALLOCA_H
+
 /* --enable-debugging=x  debugging diagnostics (development versions only)
  */
 #ifndef DEBUGLEVEL
