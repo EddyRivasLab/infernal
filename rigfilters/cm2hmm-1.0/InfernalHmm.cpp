@@ -38,7 +38,7 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 #include "stdafx.h"
 
-#include <UseDebugNew.h>
+#include "UseDebugNew.h"
 
 #include "cmzasha.h"
 
@@ -223,7 +223,7 @@ void InfernalHmm::DumpInfernalHmm (FILE *file,const CovarianceModel& cm) const
 		fprintf(file,"\n");
 		if (HasChildren(state)) {
 			int numChildren=GetNumChildren(state);
-			fprintf(file,"\t\tChildren = ",StateToInt(GetNthChildState(state,0)),StateToInt(GetNthChildState(state,numChildren-1)));
+			fprintf(file,"\t\tChildren = %d\t%d",StateToInt(GetNthChildState(state,0)),StateToInt(GetNthChildState(state,numChildren-1)));
 			for (int childNum=0; childNum<numChildren; childNum++) {
 				fprintf(file,"state %d (score=%f)  ",StateToInt(GetNthChildState(state,childNum)),GetNthChildTsc(state,childNum));
 			}
@@ -329,7 +329,7 @@ bool InfernalHmm::LoadInBinary (FILE *file)
 		}
 
 		char hmmTypeText[256];
-		if (fscanf(file,"hmmType:\t%s\n",hmmTypeText)!=1) {
+		if (fscanf(file,"hmmType:\t%255s\n",hmmTypeText)!=1) {
 			throw SimpleStringException("Input profile HMM missing 'hmmType'");
 		}
 		hmmBuildType=GetHmmBuildTypeByText(hmmTypeText);
@@ -348,7 +348,7 @@ bool InfernalHmm::LoadInBinary (FILE *file)
 
 			char sttypeText[256];
 			int stid;
-			if (fscanf(file,"%d\t%s\t%d\t%d\t",&(stid),sttypeText,&(cm->cfirst[i_state]),&(cm->cnum[i_state]))!=4) {
+			if (fscanf(file,"%d\t%255s\t%d\t%d\t",&(stid),sttypeText,&(cm->cfirst[i_state]),&(cm->cnum[i_state]))!=4) {
 				throw SimpleStringException("Input profile HMM state #%d didn't have the expected first 4 fields (unique id,state type,first child,# children)",i_state);
 			}
 			cm->stid[i_state]=(char)stid;
@@ -366,14 +366,14 @@ bool InfernalHmm::LoadInBinary (FILE *file)
 			otherStateInfoVector[state].isLeftState=isLeftStateInt!=0;
 			otherStateInfoVector[state].isRightState=isRightStateInt!=0;
 
-			size_t numRelatedCmStates;
-			if (fscanf(file,"%u\t",&numRelatedCmStates)!=1) {
+			int numRelatedCmStates;
+			if (fscanf(file,"%d\t",&numRelatedCmStates)!=1) {
 				throw SimpleStringException("Input profile HMM state #%d didn't have the specified of the # of related CM states",i_state);
 			}
-			for (size_t i=0; i<numRelatedCmStates; i++) {
+			for (int i=0; i<numRelatedCmStates; i++) {
 				int cmState;
 				if (fscanf(file,"%d\t",&cmState)!=1) {
-					throw SimpleStringException("Input profile HMM state #%d supposedly had %u related CM states, but they weren't all there (I could only read %d)",i_state,cmState,i);
+					throw SimpleStringException("Input profile HMM state #%d supposedly had %d related CM states, but they weren't all there (I could only read %d)",i_state,numRelatedCmStates,i);
 				}
 				hmm2CmStateVector[state].push_back(CovarianceModel::IntToState(cmState));
 			}
@@ -397,12 +397,12 @@ bool InfernalHmm::LoadInBinary (FILE *file)
 			fscanf(file,"\n");
 		}
 
-		size_t numCmStates;
-		if (fscanf(file,"%u\t",&numCmStates)!=1) {
+		int numCmStates;
+		if (fscanf(file,"%d\t",&numCmStates)!=1) {
 			throw SimpleStringException("Input profile HMM didn't specify the # of CM states in the underlying CM");
 		}
 		cm2HmmStateVector.resize(numCmStates);
-		for (size_t i=0; i<numCmStates; i++) {
+		for (int i=0; i<numCmStates; i++) {
 			CovarianceModel::State cmState=CovarianceModel::IntToState((int)i);
 			fscanf(file,"%d\t%d\n",&(cm2HmmStateVector[cmState].hmmLeftState),&(cm2HmmStateVector[cmState].hmmRightState));
 		}
