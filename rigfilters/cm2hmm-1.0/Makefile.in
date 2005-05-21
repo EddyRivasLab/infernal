@@ -1,0 +1,54 @@
+variable_CFLAGS=-D DISABLE_ZRAND -D CM2HMM_ONLY
+variable_LFLAGS=
+
+COMPILE= @CXX@ -c
+LINK= @CXX@
+DEFS= @DEFS@
+ALLOCA = @ALLOCA@
+
+INFERNAL_PATH=../..
+CFSQP_PATH=$(INFERNAL_PATH)/rigfilters/cfsqp
+
+MYLIBS = -linfernal -lsquid -lcfsqp -lm
+MYLIBDIR = -L$(INFERNAL_PATH)/src -L$(INFERNAL_PATH)/squid -L$(CFSQP_PATH)
+
+common_CFLAGS=-ftemplate-depth-30 -I. -I$(INFERNAL_PATH)/src -I$(INFERNAL_PATH)/squid -I$(CFSQP_PATH)
+common_LFLAGS= -g
+
+# debug build
+#CFLAGS=$(variable_CFLAGS) $(common_CFLAGS) -g -D_DEBUG
+
+# release build
+CFLAGS=$(variable_CFLAGS) $(common_CFLAGS) -O3 -DNDEBUG
+LFLAGS=$(variable_LFLAGS) $(common_LFLAGS)
+
+# all .cpp files (or .C files)
+CPPFILES=CovarianceModel.cpp InfernalHmm.cpp cmzashaUtils.cpp ForwardHMM.cpp Cm2HMM.cpp Cm2HmmOptimize.cpp SymbolicMath.cpp Cm2HmmOptimize_cfsqp.cpp MarkovModelStats.cpp HmmType1.cpp CommaSepFileReader.cpp MiscExceptions.cpp NaryCounter.cpp SequenceSet.cpp ScanHMM_NonTemplated.cpp
+
+# include files that pretty much everything includes.
+# FOR LAZINESS, just put every include file, so we don't have to worry about the dependencies too much
+COMMON_INCLUDE_FILES=CovarianceModel.h stdafx.h Cm2HMM.h cmzasha.h SymbolicMath.h HmmType1.h MarkovModelStats.h Cm2HmmOptimize.h CommaSepFileReader.h MiscExceptions.h multiDimVector.h NoUnderflowDouble.h stl_extra.h vectorPlus.h NaryCounter.h InfernalHmm.h SequenceSet.h
+
+# automatically inferred stuff
+CPP_O_FILES=$(CPPFILES:.cpp=.o)
+OBJS=$(CPP_O_FILES)
+
+all : cm2hmm cm2hmmsearch
+
+$(CPP_O_FILES) : $(COMMON_INCLUDE_FILES)
+
+cm2hmm : Cm2HmmMain.o $(OBJS)
+	$(LINK) $(LFLAGS) $(DEFS) $(MYLIBDIR) -o $@ Cm2HmmMain.o $(OBJS) $(MYLIBS)
+cm2hmmsearch : Cm2HmmSearchMain.o $(OBJS)
+	$(LINK) $(LFLAGS) $(DEFS) $(MYLIBDIR) -o $@ Cm2HmmSearchMain.o $(OBJS) $(MYLIBS)
+
+.SUFFIXES: .cpp .o
+.cpp.o:
+	$(COMPILE) $(CFLAGS) $(DEFS) $<
+
+clean:
+	rm -f *.o cm2hmm cm2hmmsearch
+
+distclean:
+	make clean
+
