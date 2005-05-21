@@ -40,72 +40,12 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 Defines some handy additions to STL vectors
 */
 
-#ifdef _MSC_VER
-#define COMPILER_HAS_DEFAULT_PARAMS
-#else
-#ifdef __i386__
-#define COMPILER_HAS_DEFAULT_PARAMS
-#else
-// I presume this is Mac OS X, which had g++ 2.95.2, which didn't allow the default param
-#endif
-#endif
-
 // put some sanity checking into std::vector, but only in debug.
-#ifdef COMPILER_HAS_DEFAULT_PARAMS
-template <class T, class A_ = std::allocator<T> >
-class safevector : public std::vector<T,A_ > {
-public:
-        typedef typename std::vector<T,A_>::size_type size_type;
-        typedef typename std::vector<T,A_>::reference reference;
-        typedef typename std::vector<T,A_>::const_reference const_reference;
-#else
-template <class T>
-class safevector : public std::vector<T> {
-public:
-        typedef typename std::vector<T>::size_type size_type;
-        typedef typename std::vector<T>::reference reference;
-        typedef typename std::vector<T>::const_reference const_reference;
-#endif
-public:
-#ifdef _DEBUG
-	inline const_reference operator[](size_type pos) const {
-		assert(pos>=0 && pos<size());
-		return ((const std::vector<T> &)(*this))[pos]; // whatever works
-		//return std::vector<T>::operator [](pos);
-	}
-	inline reference operator[](size_type pos) {
-		assert(pos>=0 && pos<size());
-		return (*(std::vector<T> *)(this))[pos];
-	}
-#endif
-#ifndef _MSC_VER
-	inline void assign(size_type n, const T& x = T()) {
-		this->clear();
-		std::vector<T>::insert(this->begin(),n,x);
-	}
-#endif
-#ifdef COMPILER_HAS_DEFAULT_PARAMS
-	explicit safevector(const A_& Al_ = A_())
-		: std::vector<T,A_>(Al_) 
-	{}
-	explicit safevector(size_t s)
-		: std::vector<T,A_>(s)
-	{}
-	explicit safevector(int s)
-		: std::vector<T,A_>((size_t)s)
-	{}
-#else
-	explicit safevector()
-		: std::vector<T>() 
-	{}
-	explicit safevector(size_t s)
-		: std::vector<T>(s)
-	{}
-	explicit safevector(int s)
-		: std::vector<T>((size_t)s)
-	{}
-#endif
-};
+// The 'vector class defined here has been removed
+// Inheritance from STL classes other than exception is 
+// not supported, and problematic.  All references throughout
+// the package have been changed to std::vector
+
 #ifdef _MSC_VER
 typedef std::_Bvector BOOL_VECTOR;
 #else
@@ -141,10 +81,6 @@ public:
 	}
 #endif
 };
-
-#define vector safevector
-#define std_vector std::vec##tor
-
 
 template <class T,int MAX_SIZE>
 class FixedArrayWithSize {
