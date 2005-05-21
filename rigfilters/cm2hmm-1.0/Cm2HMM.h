@@ -52,7 +52,7 @@ struct HmmAndBuildInfo {
 	SolveScoresPathList solveScoresPathList; // remember this info so we can solve scores easily at the end
 };
 
-typedef VectorByCmState<vector<int> > TransitionToVariableNumVector; // first dim is HMM state, then transition #, and we get the variable number for the Linear Program.  If variable number is -1, then we don't use LP to find it (and just set it 0)
+typedef VectorByCmState<std::vector<int> > TransitionToVariableNumVector; // first dim is HMM state, then transition #, and we get the variable number for the Linear Program.  If variable number is -1, then we don't use LP to find it (and just set it 0)
 struct EmissionInfo {
 	InfernalHmm::State state;
 	int nuc;
@@ -64,10 +64,10 @@ struct TransitionOrEmissionInfo {
 	InfernalHmm::EdgeInfo edgeInfo;
 	EmissionInfo emissionInfo;
 };
-typedef vector<TransitionOrEmissionInfo> TransitionOrEmissionInfoVector;
+typedef std::vector<TransitionOrEmissionInfo> TransitionOrEmissionInfoVector;
 
-extern void GetGlobalVarsFromInfernalHmm (vector<double>& globalVars,const InfernalHmm& infernalHmm,const TransitionOrEmissionInfoVector& transitionOrEmissionInfoVector);
-extern void SetGlobalVarsIntoInfernalHmm (InfernalHmm& infernalHmm,const vector<double>& globalVars,const TransitionOrEmissionInfoVector& transitionOrEmissionInfoVector);
+extern void GetGlobalVarsFromInfernalHmm (std::vector<double>& globalVars,const InfernalHmm& infernalHmm,const TransitionOrEmissionInfoVector& transitionOrEmissionInfoVector);
+extern void SetGlobalVarsIntoInfernalHmm (InfernalHmm& infernalHmm,const std::vector<double>& globalVars,const TransitionOrEmissionInfoVector& transitionOrEmissionInfoVector);
 
 struct ScoreVariablesInfo {
 	TransitionToVariableNumVector transitionToVariableNumVector,emissionToVariableNumVector;
@@ -83,6 +83,9 @@ struct InequalityTerm {
 	}
 	bool operator == (const InequalityTerm& t) const {
 		return variableNum==t.variableNum;
+	}
+	bool operator != (const InequalityTerm& t) const {
+		return variableNum!=t.variableNum;
 	}
 };
 enum InequalityType {
@@ -131,8 +134,8 @@ typedef std::list<Inequality> InequalityList;
 typedef std::list<InequalityList> InequalityListList;
 
 struct InequalitiesAndLocalVariables {
-	vector<int> globalToLocalVariables;
-	vector<int> localToGlobalVariables;
+	std::vector<int> globalToLocalVariables;
+	std::vector<int> localToGlobalVariables;
 	int numLocalVariables;
 	InequalityList inequalityList;
 };
@@ -153,11 +156,11 @@ struct ExtraCm2HmmInfo {
 
 extern void AddInequalitiesInTermsOfGlobalVars(InequalityList& inequalityList,const ExtraCm2HmmInfo& extraCm2HmmInfo,const CovarianceModel::Node cmNode);
 extern void AddCrossProductOfInequalityLists(InequalityList& inequalityList,InequalityListList& inequalityListList);
-extern void ConvertInequalityListVarNums (InequalityList& inequalityList,const vector<int>& varNumMapping);
+extern void ConvertInequalityListVarNums (InequalityList& inequalityList,const std::vector<int>& varNumMapping);
 
 extern void GetGlobalVariableNumsForNode (std::list<int>& globalVarNums,const CovarianceModel& cm,InfernalHmm& infernalHmm,const CovarianceModel::Node cmNode,const ExtraCm2HmmInfo& extraCm2HmmInfo);
-extern void GetLocalVariablesValueForNode(vector<float>& localVariablesToValue,const CovarianceModel& cm,InfernalHmm& infernalHmm,const CovarianceModel::Node cmNode,const ExtraCm2HmmInfo& extraCm2HmmInfo);
-extern void SetLocalVariablesValueForNode(vector<float>& localVariablesToValue,const CovarianceModel& cm,InfernalHmm& infernalHmm,const CovarianceModel::Node cmNode,const ExtraCm2HmmInfo& extraCm2HmmInfo);
+extern void GetLocalVariablesValueForNode(std::vector<float>& localVariablesToValue,const CovarianceModel& cm,InfernalHmm& infernalHmm,const CovarianceModel::Node cmNode,const ExtraCm2HmmInfo& extraCm2HmmInfo);
+extern void SetLocalVariablesValueForNode(std::vector<float>& localVariablesToValue,const CovarianceModel& cm,InfernalHmm& infernalHmm,const CovarianceModel::Node cmNode,const ExtraCm2HmmInfo& extraCm2HmmInfo);
 
 
 class TemporarilyModifyInequality {
@@ -174,7 +177,7 @@ public:
 	~TemporarilyModifyInequality ();
 
 	void AddScore (float addToScore);
-	void AddVariable (int globalVariableNum,vector<int>& globalToLocalVariables,int& numlocalVariables);
+	void AddVariable (int globalVariableNum,std::vector<int>& globalToLocalVariables,int& numlocalVariables);
 	void MultiplyWeight (double mult);
 	void PushInsertState (InfernalHmm::State insertState);
 };
@@ -207,11 +210,11 @@ public:
 	struct LinearProgramStoredInfo {
 
 		unsigned int numTimesGeneratedSolution; // our pattern is to first go thru all solutions, and then to pick randomly
-		vector<vector<float> > localVariablesToValuePerSolution; // first dimension is solution #, 2nd is the local variables' values in that solution
-		vector<float> avgInflationPerSolution;
+		std::vector<std::vector<float> > localVariablesToValuePerSolution; // first dimension is solution #, 2nd is the local variables' values in that solution
+		std::vector<float> avgInflationPerSolution;
 
 		/*
-		vector<double> sumOfSlack; // each constraint has a slack variable.  This is the sum of the slack variables in the optimal solutions generated so far
+		   std::vector<double> sumOfSlack; // each constraint has a slack variable.  This is the sum of the slack variables in the optimal solutions generated so far
 		_Bvector slackHasBeenZero; // each constraint may have been solved perfectly in one of the solutions, if so slack has zero is set to true
 
 		double optimalValueOfObjectiveFunc; // when we come up with alternate solutions, we want them to all be just as optimal, i.e. have the same objective func value

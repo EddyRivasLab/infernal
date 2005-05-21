@@ -38,14 +38,14 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 #include "stdafx.h"
 
-#include <UseDebugNew.h>
+#include "UseDebugNew.h"
 
 #include "cmzasha.h"
 
-#include <NoUnderflowDouble.h>
+#include "NoUnderflowDouble.h"
 
 template <class Real1,class Real2>
-void Vector_ConvertReals (vector<Real1>& v1,const vector<Real2>& v2)
+void Vector_ConvertReals (std::vector<Real1>& v1,const std::vector<Real2>& v2)
 {
 	v1.resize(v2.size());
 	for (size_t i=0; i<v2.size(); i++) {
@@ -53,7 +53,7 @@ void Vector_ConvertReals (vector<Real1>& v1,const vector<Real2>& v2)
 	}
 }
 
-void VectorFloatToDouble (vector<double>& varsDouble,const vector<float>& varsFloat)
+void VectorFloatToDouble (std::vector<double>& varsDouble,const std::vector<float>& varsFloat)
 {
 	Vector_ConvertReals(varsDouble,varsFloat);
 	/*
@@ -63,7 +63,7 @@ void VectorFloatToDouble (vector<double>& varsDouble,const vector<float>& varsFl
 	}
 	*/
 }
-void VectorDoubleToFloat (vector<float>& varsFloat,const vector<double>& varsDouble)
+void VectorDoubleToFloat (std::vector<float>& varsFloat,const std::vector<double>& varsDouble)
 {
 	Vector_ConvertReals(varsFloat,varsDouble);
 	/*
@@ -74,7 +74,7 @@ void VectorDoubleToFloat (vector<float>& varsFloat,const vector<double>& varsDou
 	*/
 }
 template <class Real>
-void ExponentiateVariables_templ(vector<Real>& varsExp,const vector<Real>& vars)
+void ExponentiateVariables_templ(std::vector<Real>& varsExp,const std::vector<Real>& vars)
 {
 	varsExp.resize(vars.size());
 	Real log_of_2=log((Real)(2));
@@ -82,11 +82,11 @@ void ExponentiateVariables_templ(vector<Real>& varsExp,const vector<Real>& vars)
 		varsExp[i]=exp(vars[i]*log_of_2);
 	}
 }
-void ExponentiateVariables(vector<double>& varsExp,const vector<double>& vars)
+void ExponentiateVariables(std::vector<double>& varsExp,const std::vector<double>& vars)
 {
 	return ExponentiateVariables_templ<double>(varsExp,vars);
 }
-void ExponentiateVariables(vector<NoUnderflowDouble>& varsExp,const vector<NoUnderflowDouble>& vars)
+void ExponentiateVariables(std::vector<NoUnderflowDouble>& varsExp,const std::vector<NoUnderflowDouble>& vars)
 {
 	return ExponentiateVariables_templ<NoUnderflowDouble>(varsExp,vars);
 }
@@ -97,18 +97,18 @@ void ExponentiateVariables(vector<NoUnderflowDouble>& varsExp,const vector<NoUnd
 ObjectiveFunc::~ObjectiveFunc ()
 {
 }
-double ObjectiveFunc::EvalActualObjectiveFuncLog2 (const vector<double>& problemVars)
+double ObjectiveFunc::EvalActualObjectiveFuncLog2 (const std::vector<double>& problemVars)
 {
 	double fx;
-	vector<double> gradient;
+	std::vector<double> gradient;
 	vector2d<double> hessian;
 	Eval(fx,gradient,hessian,problemVars,false);
 	return fx/log(2.0);
 }
-double ObjectiveFunc::EvalValueOnly (const vector<double>& problemVars)
+double ObjectiveFunc::EvalValueOnly (const std::vector<double>& problemVars)
 {
 	double fx;
-	vector<double> gradient;
+	std::vector<double> gradient;
 	vector2d<double> hessian;
 	Eval(fx,gradient,hessian,problemVars,false,false);
 	return fx;
@@ -125,7 +125,7 @@ LnObjectiveFuncAdaptor::~LnObjectiveFuncAdaptor ()
 {
 	delete adaptee;
 }
-void LnObjectiveFuncAdaptor::Eval (double& f,vector<double>& gradient,vector2d<double>& hessian,const vector<double>& problemVars,bool calculateHessian,bool calculateGradient)
+void LnObjectiveFuncAdaptor::Eval (double& f,std::vector<double>& gradient,vector2d<double>& hessian,const std::vector<double>& problemVars,bool calculateHessian,bool calculateGradient)
 {
 	double fX;
 	adaptee->Eval(fX,gradient,hessian,problemVars,calculateHessian,calculateGradient);
@@ -157,11 +157,11 @@ int LnObjectiveFuncAdaptor::GetNumProblemVars (void)
 {
 	return adaptee->GetNumProblemVars();
 }
-void LnObjectiveFuncAdaptor::LocalToProblemVars (vector<double>& problemVars,const vector<float>& localVars)
+void LnObjectiveFuncAdaptor::LocalToProblemVars (std::vector<double>& problemVars,const std::vector<float>& localVars)
 {
 	return adaptee->LocalToProblemVars(problemVars,localVars);
 }
-void LnObjectiveFuncAdaptor::ProblemToLocalVars (vector<float>& localVars,const vector<double>& problemVars)
+void LnObjectiveFuncAdaptor::ProblemToLocalVars (std::vector<float>& localVars,const std::vector<double>& problemVars)
 {
 	return adaptee->ProblemToLocalVars (localVars,problemVars);
 }
@@ -194,7 +194,7 @@ SolverWrapper::~SolverWrapper ()
 SolverWrapper::MessageReceiver::~MessageReceiver ()
 {
 }
-void SolverWrapper::MessageReceiver::EvaluatedObjectiveFunc (double functionValue,const vector<double>& problemVars)
+void SolverWrapper::MessageReceiver::EvaluatedObjectiveFunc (double functionValue,const std::vector<double>& problemVars)
 {
 }
 
@@ -226,12 +226,12 @@ SolverWrapper *MakeSolverWrapper (int& a,const int argc,char **argv)
 //////////////////////////
 // SymbolicProbVariableMath
 
-SymbolicProbVariableMath::SymbolicProbVariableMath (const vector<int>& problemToGlobalVars_,const vector<int>& globalToProblemVars,Expression expression)
+SymbolicProbVariableMath::SymbolicProbVariableMath (const std::vector<int>& problemToGlobalVars_,const std::vector<int>& globalToProblemVars,Expression expression)
 {
 	problemToGlobalVars=problemToGlobalVars_;
 	SetRootExpression(expression);
 }
-SymbolicProbVariableMath::SymbolicProbVariableMath (const vector<int>& problemToGlobalVars_,const vector<int>& globalToProblemVars,const CovarianceModel& cm,const InfernalHmm& infernalHmm,const ScoreVariablesInfo& scoreVariablesInfo,bool applyLog2)
+SymbolicProbVariableMath::SymbolicProbVariableMath (const std::vector<int>& problemToGlobalVars_,const std::vector<int>& globalToProblemVars,const CovarianceModel& cm,const InfernalHmm& infernalHmm,const ScoreVariablesInfo& scoreVariablesInfo,bool applyLog2)
 {
 	problemToGlobalVars=problemToGlobalVars_;
 
@@ -249,7 +249,7 @@ SymbolicProbVariableMath::SymbolicProbVariableMath (const vector<int>& problemTo
 SymbolicProbVariableMath::~SymbolicProbVariableMath ()
 {
 }
-void SymbolicProbVariableMath::CreateGlobalVars(vector<double>& globalVars,const vector<double>& problemVars)
+void SymbolicProbVariableMath::CreateGlobalVars(std::vector<double>& globalVars,const std::vector<double>& problemVars)
 {
 	for (size_t i=0; i<problemVars.size(); i++) {
 		globalVars[problemToGlobalVars[i]]=problemVars[i];
@@ -272,7 +272,7 @@ SymbolicProbVariableMath::GenericObjectiveFunc::GenericObjectiveFunc (SymbolicPr
 SymbolicProbVariableMath::GenericObjectiveFunc::~GenericObjectiveFunc ()
 {
 }
-void SymbolicProbVariableMath::GenericObjectiveFunc::Eval (double& f,vector<double>& gradient,vector2d<double>& hessian,const vector<double>& problemVars,bool calculateHessian,bool calculateGradient)
+void SymbolicProbVariableMath::GenericObjectiveFunc::Eval (double& f,std::vector<double>& gradient,vector2d<double>& hessian,const std::vector<double>& problemVars,bool calculateHessian,bool calculateGradient)
 {
 	//printf("problemVars: "); for (size_t i=0; i<problemVars.size(); i++) {	printf("%d=%lg,  ",i,problemVars[i]);	} printf("\n");
 	master.Eval(GetNumProblemVars(),f,gradient,hessian,problemVars,calculateHessian,calculateGradient);
@@ -283,11 +283,11 @@ int SymbolicProbVariableMath::GenericObjectiveFunc::GetNumProblemVars (void)
 {
 	return master.GetNumProblemVars();
 }
-void SymbolicProbVariableMath::GenericObjectiveFunc::LocalToProblemVars (vector<double>& problemVars,const vector<float>& localVars)
+void SymbolicProbVariableMath::GenericObjectiveFunc::LocalToProblemVars (std::vector<double>& problemVars,const std::vector<float>& localVars)
 {
 	throw SimpleStringException("SymbolicProbVariableMath::GenericObjectiveFunc::LocalToProblemVars not implemented, %s:%d",__FILE__,__LINE__);
 }
-void SymbolicProbVariableMath::GenericObjectiveFunc::ProblemToLocalVars (vector<float>& localVars,const vector<double>& problemVars)
+void SymbolicProbVariableMath::GenericObjectiveFunc::ProblemToLocalVars (std::vector<float>& localVars,const std::vector<double>& problemVars)
 {
 	throw SimpleStringException("SymbolicProbVariableMath::GenericObjectiveFunc::ProblemToLocalVars not implemented, %s:%d",__FILE__,__LINE__);
 }
@@ -296,7 +296,7 @@ const InequalityList& SymbolicProbVariableMath::GenericObjectiveFunc::GetInequal
 	return inequalityList;
 }
 
-SymbolicProbVariableMath::Hmm::Hmm (const vector<int>& globalToProblemVars_,const HmmType1& scanningHmm_,const InfernalHmm& infernalHmm_,const ScoreVariablesInfo& scoreVariablesInfo_)
+SymbolicProbVariableMath::Hmm::Hmm (const std::vector<int>& globalToProblemVars_,const HmmType1& scanningHmm_,const InfernalHmm& infernalHmm_,const ScoreVariablesInfo& scoreVariablesInfo_)
 : globalToProblemVars(globalToProblemVars_)
 , scanningHmm(scanningHmm_)
 , infernalHmm(infernalHmm_)
@@ -385,7 +385,7 @@ GenericSymbolicObjectiveFunc::GenericSymbolicObjectiveFunc (SymbolicMath& master
 GenericSymbolicObjectiveFunc::~GenericSymbolicObjectiveFunc ()
 {
 }
-void GenericSymbolicObjectiveFunc::Eval (double& f,vector<double>& gradient,vector2d<double>& hessian,const vector<double>& problemVars,bool calculateHessian,bool calculateGradient)
+void GenericSymbolicObjectiveFunc::Eval (double& f,std::vector<double>& gradient,vector2d<double>& hessian,const std::vector<double>& problemVars,bool calculateHessian,bool calculateGradient)
 {
 	master.Eval(numProblemVars,f,gradient,hessian,problemVars,calculateHessian,calculateGradient);
 }
@@ -393,11 +393,11 @@ int GenericSymbolicObjectiveFunc::GetNumProblemVars (void)
 {
 	return numProblemVars;
 }
-void GenericSymbolicObjectiveFunc::LocalToProblemVars (vector<double>& problemVars,const vector<float>& localVars)
+void GenericSymbolicObjectiveFunc::LocalToProblemVars (std::vector<double>& problemVars,const std::vector<float>& localVars)
 {
 	throw SimpleStringException("Not implemented %s:%d",__FILE__,__LINE__);
 }
-void GenericSymbolicObjectiveFunc::ProblemToLocalVars (vector<float>& localVars,const vector<double>& problemVars)
+void GenericSymbolicObjectiveFunc::ProblemToLocalVars (std::vector<float>& localVars,const std::vector<double>& problemVars)
 {
 	throw SimpleStringException("Not implemented %s:%d",__FILE__,__LINE__);
 }
@@ -432,7 +432,7 @@ SymbolicObjective_OneNode_ForwardAlg::ObjectiveFunc::ObjectiveFunc (SymbolicObje
 {
 	numLocalVariables=numLocalVariables_;
 }
-void SymbolicObjective_OneNode_ForwardAlg::ObjectiveFunc::Eval (double& f,vector<double>& gradient,vector2d<double>& hessian,const vector<double>& problemVars,bool calculateHessian,bool calculateGradient)
+void SymbolicObjective_OneNode_ForwardAlg::ObjectiveFunc::Eval (double& f,std::vector<double>& gradient,vector2d<double>& hessian,const std::vector<double>& problemVars,bool calculateHessian,bool calculateGradient)
 {
 	symbolic.Eval(numLocalVariables,f,gradient,hessian,problemVars,calculateHessian);
 }
@@ -440,11 +440,11 @@ int SymbolicObjective_OneNode_ForwardAlg::ObjectiveFunc::GetNumProblemVars (void
 {
 	return numLocalVariables;
 }
-void SymbolicObjective_OneNode_ForwardAlg::ObjectiveFunc::LocalToProblemVars (vector<double>& problemVars,const vector<float>& localVars)
+void SymbolicObjective_OneNode_ForwardAlg::ObjectiveFunc::LocalToProblemVars (std::vector<double>& problemVars,const std::vector<float>& localVars)
 {
 	VectorFloatToDouble(problemVars,localVars);
 }
-void SymbolicObjective_OneNode_ForwardAlg::ObjectiveFunc::ProblemToLocalVars (vector<float>& localVars,const vector<double>& problemVars)
+void SymbolicObjective_OneNode_ForwardAlg::ObjectiveFunc::ProblemToLocalVars (std::vector<float>& localVars,const std::vector<double>& problemVars)
 {
 	VectorDoubleToFloat(localVars,problemVars);
 }
@@ -459,7 +459,7 @@ SymbolicObjective_OneNode_ForwardAlg::ProblemDefinitionInstantiator::ProblemDefi
 SymbolicObjective_OneNode_ForwardAlg::ProblemDefinitionInstantiator::~ProblemDefinitionInstantiator ()
 {
 }
-ProblemDefinition *SymbolicObjective_OneNode_ForwardAlg::ProblemDefinitionInstantiator::NewProblemDefinition (const InfernalHmm& sourceHmm,const CovarianceModel& cm,int windowLen,CovarianceModel::Node cmNode,const ExtraCm2HmmInfo& extraCm2HmmInfo,char *fastaFileToSearch,int numLocalVariables,const vector<float>& localVars)
+ProblemDefinition *SymbolicObjective_OneNode_ForwardAlg::ProblemDefinitionInstantiator::NewProblemDefinition (const InfernalHmm& sourceHmm,const CovarianceModel& cm,int windowLen,CovarianceModel::Node cmNode,const ExtraCm2HmmInfo& extraCm2HmmInfo,char *fastaFileToSearch,int numLocalVariables,const std::vector<float>& localVars)
 {
 	return new SymbolicObjective_OneNode_ForwardAlg(sourceHmm,cm,windowLen,cmNode,extraCm2HmmInfo,fastaFileToSearch,numLocalVariables);
 }
@@ -472,7 +472,7 @@ GlobalForwardInfSymbolicObjectiveFunc::GlobalForwardInfSymbolicObjectiveFunc (co
 {
 	numGlobalVars=extraCm2HmmInfo.scoreVariablesInfo.numVariables;
 
-	vector<int> identityMap;
+	std::vector<int> identityMap;
 	identityMap.resize(numGlobalVars);
 	for (int i=0; i<numGlobalVars; i++) {
 		identityMap[i]=i;
@@ -500,7 +500,7 @@ GlobalForwardInfSymbolicObjectiveFunc::~GlobalForwardInfSymbolicObjectiveFunc ()
 {
 	delete symbolic;
 }
-void GlobalForwardInfSymbolicObjectiveFunc::Eval (double& f,vector<double>& gradient,vector2d<double>& hessian,const vector<double>& problemVars,bool calculateHessian,bool calculateGradient)
+void GlobalForwardInfSymbolicObjectiveFunc::Eval (double& f,std::vector<double>& gradient,vector2d<double>& hessian,const std::vector<double>& problemVars,bool calculateHessian,bool calculateGradient)
 {
 	symbolic->Eval(numGlobalVars,f,gradient,hessian,problemVars,calculateHessian);
 }
@@ -508,11 +508,11 @@ int GlobalForwardInfSymbolicObjectiveFunc::GetNumProblemVars (void)
 {
 	return numGlobalVars;
 }
-void GlobalForwardInfSymbolicObjectiveFunc::LocalToProblemVars (vector<double>& problemVars,const vector<float>& localVars)
+void GlobalForwardInfSymbolicObjectiveFunc::LocalToProblemVars (std::vector<double>& problemVars,const std::vector<float>& localVars)
 {
 	Die("GlobalForwardInfSymbolicObjectiveFunc::LocalToProblemVars is meaningless");
 }
-void GlobalForwardInfSymbolicObjectiveFunc::ProblemToLocalVars (vector<float>& localVars,const vector<double>& problemVars)
+void GlobalForwardInfSymbolicObjectiveFunc::ProblemToLocalVars (std::vector<float>& localVars,const std::vector<double>& problemVars)
 {
 	Die("GlobalForwardInfSymbolicObjectiveFunc::LocalToProblemVars is meaningless");
 }
@@ -578,7 +578,7 @@ NodeCombinerForwardInfSymbolicObjectiveFunc::~NodeCombinerForwardInfSymbolicObje
 {
 	delete symbolic;
 }
-void NodeCombinerForwardInfSymbolicObjectiveFunc::Eval (double& f,vector<double>& gradient,vector2d<double>& hessian,const vector<double>& problemVars,bool calculateHessian,bool calculateGradient)
+void NodeCombinerForwardInfSymbolicObjectiveFunc::Eval (double& f,std::vector<double>& gradient,vector2d<double>& hessian,const std::vector<double>& problemVars,bool calculateHessian,bool calculateGradient)
 {
 	symbolic->Eval(numProblemVars,f,gradient,hessian,problemVars,calculateHessian);
 }
@@ -586,11 +586,11 @@ int NodeCombinerForwardInfSymbolicObjectiveFunc::GetNumProblemVars (void)
 {
 	return numProblemVars;
 }
-void NodeCombinerForwardInfSymbolicObjectiveFunc::LocalToProblemVars (vector<double>& problemVars,const vector<float>& localVars)
+void NodeCombinerForwardInfSymbolicObjectiveFunc::LocalToProblemVars (std::vector<double>& problemVars,const std::vector<float>& localVars)
 {
 	Die("NodeCombinerForwardInfSymbolicObjectiveFunc::LocalToProblemVars is meaningless");
 }
-void NodeCombinerForwardInfSymbolicObjectiveFunc::ProblemToLocalVars (vector<float>& localVars,const vector<double>& problemVars)
+void NodeCombinerForwardInfSymbolicObjectiveFunc::ProblemToLocalVars (std::vector<float>& localVars,const std::vector<double>& problemVars)
 {
 	Die("NodeCombinerForwardInfSymbolicObjectiveFunc::ProblemToLocalVars is meaningless");
 }
@@ -598,7 +598,7 @@ const InequalityList& NodeCombinerForwardInfSymbolicObjectiveFunc::GetInequality
 {
 	return inequalityList;
 }
-void NodeCombinerForwardInfSymbolicObjectiveFunc::GlobalToProblemVars (vector<double>& problemVars,const vector<double>& globalVars)
+void NodeCombinerForwardInfSymbolicObjectiveFunc::GlobalToProblemVars (std::vector<double>& problemVars,const std::vector<double>& globalVars)
 {
 	problemVars.resize(numProblemVars);
 	assert(numGlobalVars==(int)(globalVars.size()));
@@ -608,7 +608,7 @@ void NodeCombinerForwardInfSymbolicObjectiveFunc::GlobalToProblemVars (vector<do
 		}
 	}
 }
-void NodeCombinerForwardInfSymbolicObjectiveFunc::UpdateGlobalVarsFromProblemVars (vector<double>& globalVars,const vector<double>& problemVars)
+void NodeCombinerForwardInfSymbolicObjectiveFunc::UpdateGlobalVarsFromProblemVars (std::vector<double>& globalVars,const std::vector<double>& problemVars)
 {
 	assert(numProblemVars==(int)(problemVars.size()));
 	assert(numGlobalVars==(int)(globalVars.size()));
@@ -621,7 +621,7 @@ void NodeCombinerForwardInfSymbolicObjectiveFunc::UpdateGlobalVarsFromProblemVar
 }
 
 
-float ComputeLhs (const vector<float>& localVariablesToValue,const Inequality& ineq)
+float ComputeLhs (const std::vector<float>& localVariablesToValue,const Inequality& ineq)
 {
 	float lhs=0;
 	for (std::list<InequalityTerm>::const_iterator termIter=ineq.lhs.begin(); termIter!=ineq.lhs.end(); termIter++) {
@@ -652,7 +652,7 @@ void DumpHmmInflationsPerInequality (char *cmFileName,const std::string& program
 		if (extraCm2HmmInfo.inequalitiesAndLocalVariables[cmNode].numLocalVariables>0) {
 
 			// get scores' curr values
-			vector<float> localVariablesToValue;
+			std::vector<float> localVariablesToValue;
 			GetLocalVariablesValueForNode(localVariablesToValue,cm,infernalHmm,cmNode,extraCm2HmmInfo);
 
 			const InequalityList& inequalityList=extraCm2HmmInfo.inequalitiesAndLocalVariables[cmNode].inequalityList;
@@ -697,13 +697,13 @@ void GlobalHmmOptimizer (char *cmFileName,bool doLocalAlignment,const std::strin
 	int C=1;
 	SolverWrapper *solverWrapper=NewSolverWrapper_cfsqp (B,C);
 
-	vector<double> globalVars;
+	std::vector<double> globalVars;
 	GetGlobalVarsFromInfernalHmm (globalVars,infernalHmm,extraCm2HmmInfo.scoreVariablesInfo.globalVariableToTransitionOrEmissionVector);
 
 	printf("merging %d adjacent nodes\n",numAdjacentNodesToMerge);
 	GlobalForwardInfSymbolicObjectiveFunc *globalObjectiveFunc=new GlobalForwardInfSymbolicObjectiveFunc(infernalHmm,cm,extraCm2HmmInfo,numAdjacentNodesToMerge);
 	LnObjectiveFuncAdaptor lnObjectiveFunc(globalObjectiveFunc);
-	vector<double> gradient;
+	std::vector<double> gradient;
 	vector2d<double> hessian;
 	double currLogVal;
 	lnObjectiveFunc.Eval(currLogVal,gradient,hessian,globalVars,false,false);
@@ -731,7 +731,7 @@ void HmmOptimizer_NodeCombiner (char *cmFileName,bool doLocalAlignment,const std
 	double lastScoreAtFirstNode=+DBL_MAX;
 	for (int iter=0; iter<numIters; iter++) {
 
-		vector<double> globalVars;
+		std::vector<double> globalVars;
 		GetGlobalVarsFromInfernalHmm (globalVars,infernalHmm,extraCm2HmmInfo.scoreVariablesInfo.globalVariableToTransitionOrEmissionVector);
 
 		NodeCombinerForwardInfSymbolicObjectiveFunc *objectiveFunc=new NodeCombinerForwardInfSymbolicObjectiveFunc(infernalHmm,cm,extraCm2HmmInfo,numAdjacentNodesToMerge,maxNodesAtATime,cmStartNode,true);
@@ -743,10 +743,10 @@ void HmmOptimizer_NodeCombiner (char *cmFileName,bool doLocalAlignment,const std
 		}
 		else {
 
-			vector<double> problemVars;
+			std::vector<double> problemVars;
 			objectiveFunc->GlobalToProblemVars(problemVars,globalVars);
 
-			vector<double> gradient;
+			std::vector<double> gradient;
 			vector2d<double> hessian;
 			double currLogVal;
 			objectiveFunc->Eval(currLogVal,gradient,hessian,problemVars,false,false);

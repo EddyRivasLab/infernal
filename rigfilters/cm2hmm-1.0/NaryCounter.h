@@ -58,11 +58,11 @@ Assumes that N<256, since otherwise going thru all combinations would take too l
 
 class NaryCounter {
 protected:
-	vector<char> array;
+	std::vector<int> array;
 	int numDigits;
-	char base;
+	int base;
 public:
-	NaryCounter (int _numDigits,char _base);
+	NaryCounter (int _numDigits,int _base);
 	~NaryCounter ();
 
 	// re-initialize to all 0s
@@ -76,7 +76,7 @@ public:
 	}
 
 	// for convenience, make this look like a container
-	typedef vector<char>::const_iterator const_iterator;
+	typedef std::vector<int>::const_iterator const_iterator;
 	const_iterator begin (void) const;
 	const_iterator end (void) const;
 };

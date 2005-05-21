@@ -40,7 +40,7 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "NaryCounter.h"
 
-NaryCounter::NaryCounter (int _numDigits,char _base)
+NaryCounter::NaryCounter (int _numDigits,int _base)
 {
 	numDigits=_numDigits;
 	base=_base;

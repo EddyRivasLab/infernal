@@ -118,7 +118,7 @@ public:
 	typedef int State;
 protected:
 	int numStates;
-	vector<vector<ScoreType> > singletEmissionScores; // singleEmissionScores[nuc#][state]
+	std::vector<std::vector<ScoreType> > singletEmissionScores; // singleEmissionScores[nuc#][state]
 	enum {MAX_CHILDREN=5};
 	struct StateInfo {
 		int numChildren;
@@ -127,7 +127,7 @@ protected:
 		bool isEmitting;
 		bool isRightState;
 	};
-	vector<StateInfo> stateInfoVector;
+	std::vector<StateInfo> stateInfoVector;
 
 	// for doLocal
 	bool doLocal;
@@ -143,14 +143,14 @@ protected:
 
 		EndscLinksToLeft endscLinksToLeft;
 	};
-	vector<LocalStateInfo> localStateInfoVector;
+	std::vector<LocalStateInfo> localStateInfoVector;
 
 	// probabilities, which are used in the Forward Alg
 	struct ForwardAlgInfo {
 		float transitionProbs[MAX_CHILDREN];
 		float singletEmissionProbs[MAXABET];
 	};
-	vector<ForwardAlgInfo> forwardAlgInfoVector;
+	std::vector<ForwardAlgInfo> forwardAlgInfoVector;
 	
 	Hmm2CmStateVector hmm2CmStateVector;
 	Cm2HmmStateVector cm2HmmStateVector;
@@ -303,8 +303,8 @@ struct HmmType1_OldSchool {
 // Count # of times transitions were used in a series of Viterbi parses.  Was used for the deprecated EM-ish alg.
 class TransitionCounter {
 protected:
-	vector<vector<int> > transitionCounts;
-	vector<vector<int> > emitCounts;
+	std::vector<std::vector<int> > transitionCounts;
+	std::vector<std::vector<int> > emitCounts;
 	int numSamples;
 	const HmmType1& hmm;
 public:

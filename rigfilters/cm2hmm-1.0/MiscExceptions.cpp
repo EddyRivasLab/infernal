@@ -41,6 +41,37 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
   Released into the public domain.
  */
 
+/* alloca() is weird and not very portable
+ * The following, combined with AC_FUNC_ALLOCA
+ * in the configure script and written out to 
+ * the src/config.h header, determines where
+ * it is defined (varies depending on platform)
+ * Eliminating it altogether might be recommended
+ * at some future point
+ */
+#include "config.h"
+
+#ifdef __GNUC__
+# define alloca __builtin_alloca
+#else
+# ifdef _MSC_VER
+#  include <malloc.h>
+#  define alloca _alloca
+# else
+#  if HAVE_ALLOCA_H
+#   include <alloca.h>
+#  else
+#   ifdef _AIX
+ #pragma alloca
+#   else
+#    ifndef alloca /* predefined by HP cc +0libcalls */
+char *alloca ();
+#    endif
+#   endif
+#  endif
+# endif
+#endif
+
 #include "stdafx.h"
 
 #include "MiscExceptions.h"
@@ -66,7 +97,7 @@ SimpleStringException::SimpleStringException (const char *format,...)
     va_list(arglist);
     va_start(arglist, format);
 
-	vector<char> buf;
+	std::vector<char> buf;
 	buf.resize(128); // starting value.  Actually, I'm not too concerned about having too many
 		// reallocations, because this is an exception, so it shouldn't happen too often
 		// and as for memory allocation errors, I've completely punted on that.

@@ -38,7 +38,7 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 #include "stdafx.h"
 
-#include <UseDebugNew.h>
+#include "UseDebugNew.h"
 
 #include "cmzasha.h"
 
@@ -46,7 +46,7 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // SymbolicMath
 
 #ifdef _MSC_VER
-#define PTR2UL(X) (unsigned long)((unsigned __int64)X)
+#define PTR2UL(X) (unsigned long)((unsigned cm_int64)X)
 #else
 #define PTR2UL(X) (unsigned long)(X)
 #endif
@@ -81,22 +81,22 @@ void SymbolicMath::DeleteAllExpressionNode(void)
 		rootExpressionNode=NULL;
 	}
 }
-double SymbolicMath::Eval (const vector<double>& problemVars)
+double SymbolicMath::Eval (const std::vector<double>& problemVars)
 {
 	rootExpressionNode->ClearValue();
 	return rootExpressionNode->Eval(problemVars);
 }
-double SymbolicMath::Derivative (const vector<double>& problemVars,int problemVarToDifferentiateTo)
+double SymbolicMath::Derivative (const std::vector<double>& problemVars,int problemVarToDifferentiateTo)
 {
 	rootExpressionNode->ClearValue();
 	return rootExpressionNode->Derivative(problemVars,problemVarToDifferentiateTo);
 }
-double SymbolicMath::DoubleDerivative (const vector<double>& problemVars,int problemVarToDifferentiateTo_1,int problemVarToDifferentiateTo_2)
+double SymbolicMath::DoubleDerivative (const std::vector<double>& problemVars,int problemVarToDifferentiateTo_1,int problemVarToDifferentiateTo_2)
 {
 	rootExpressionNode->ClearValue();
 	return rootExpressionNode->DoubleDerivative(problemVars,problemVarToDifferentiateTo_1,problemVarToDifferentiateTo_2);
 }
-void SymbolicMath::Eval (int numVars,double& f,vector<double>& gradient,vector2d<double>& hessian,const vector<double>& problemVars,bool calculateHessian,bool calculateGradient)
+void SymbolicMath::Eval (int numVars,double& f,std::vector<double>& gradient,vector2d<double>& hessian,const std::vector<double>& problemVars,bool calculateHessian,bool calculateGradient)
 {
 	f=Eval(problemVars);
 
@@ -107,7 +107,7 @@ void SymbolicMath::Eval (int numVars,double& f,vector<double>& gradient,vector2d
 
 			/*
 			printf("Deriv wrt (x_%d) is %lg\n",i,gradient[i]);
-			vector<double> pv=problemVars;
+			std::vector<double> pv=problemVars;
 			for (double h=1e-3; h>=1e-6; h/=10.0) {
 				pv[i]=problemVars[i]+h;
 				double z1=Eval(pv);
@@ -134,7 +134,7 @@ void SymbolicMath::Eval (int numVars,double& f,vector<double>& gradient,vector2d
 				hessian[j][i]=x;
 
 				//printf("Double deriv wrt (x_%d,x_%d) is %lg\n",i,j,x);
-				vector<double> pv=problemVars;
+				std::vector<double> pv=problemVars;
 				double numericalDeriv;
 				for (double h=1e-3; h>=1e-6; h/=10.0) {
 					pv[j]=problemVars[j]+h;
@@ -163,7 +163,7 @@ SymbolicMath::ExpressionNode::~ExpressionNode ()
 #ifdef _MSC_VER // the optimizer in MSVC++ seems to do something weird with this
 #pragma optimize("",off)
 #endif
-double SymbolicMath::ExpressionNode::Eval (const vector<double>& globalVars)
+double SymbolicMath::ExpressionNode::Eval (const std::vector<double>& globalVars)
 {
 	if (!isEvalValueValid) {
 		evalValue=ActualEval(globalVars);
@@ -178,7 +178,7 @@ double SymbolicMath::ExpressionNode::Eval (const vector<double>& globalVars)
 #ifdef _MSC_VER
 #pragma optimize("",on)
 #endif
-double SymbolicMath::ExpressionNode::Derivative (const vector<double>& globalVars,int varToDifferentiateTo)
+double SymbolicMath::ExpressionNode::Derivative (const std::vector<double>& globalVars,int varToDifferentiateTo)
 {
 	for (int i=0; i<2; i++) {
 		if (!derivativeValue[i].isValid) {
@@ -193,7 +193,7 @@ double SymbolicMath::ExpressionNode::Derivative (const vector<double>& globalVar
 	}
 	throw SimpleStringException("Internal Error %s:%d",__FILE__,__LINE__); // even for double derivative, we should need to store only 2 partial deriviatives
 }
-double SymbolicMath::ExpressionNode::DoubleDerivative (const vector<double>& globalVars,int var1,int var2)
+double SymbolicMath::ExpressionNode::DoubleDerivative (const std::vector<double>& globalVars,int var1,int var2)
 {
 	if (!isDoubleDerivativeValueValid) {
 		doubleDerivativeValue=ActualDoubleDerivative(globalVars,var1,var2);
@@ -304,15 +304,15 @@ SymbolicMath::ExpressionNode_Null::ExpressionNode_Null (void)
 SymbolicMath::ExpressionNode_Null::~ExpressionNode_Null ()
 {
 }
-double SymbolicMath::ExpressionNode_Null::ActualEval (const vector<double>& globalVars)
+double SymbolicMath::ExpressionNode_Null::ActualEval (const std::vector<double>& globalVars)
 {
 	throw SimpleStringException("Called function on SymbolicMath::ExpressionNode_Null, which is suspicious.");
 }
-double SymbolicMath::ExpressionNode_Null::ActualDerivative (const vector<double>& globalVars,int varToDifferentiateTo)
+double SymbolicMath::ExpressionNode_Null::ActualDerivative (const std::vector<double>& globalVars,int varToDifferentiateTo)
 {
 	throw SimpleStringException("Called function on SymbolicMath::ExpressionNode_Null, which is suspicious.");
 }
-double SymbolicMath::ExpressionNode_Null::ActualDoubleDerivative (const vector<double>& globalVars,int var1,int var2)
+double SymbolicMath::ExpressionNode_Null::ActualDoubleDerivative (const std::vector<double>& globalVars,int var1,int var2)
 {
 	throw SimpleStringException("Called function on SymbolicMath::ExpressionNode_Null, which is suspicious.");
 }
@@ -328,15 +328,15 @@ SymbolicMath::ExpressionNode_Const::ExpressionNode_Const (double t)
 SymbolicMath::ExpressionNode_Const::~ExpressionNode_Const ()
 {
 }
-double SymbolicMath::ExpressionNode_Const::ActualEval (const vector<double>& globalVars)
+double SymbolicMath::ExpressionNode_Const::ActualEval (const std::vector<double>& globalVars)
 {
 	return x;
 }
-double SymbolicMath::ExpressionNode_Const::ActualDerivative (const vector<double>& globalVars,int varToDifferentiateTo)
+double SymbolicMath::ExpressionNode_Const::ActualDerivative (const std::vector<double>& globalVars,int varToDifferentiateTo)
 {
 	return 0; // derivative of const is always 0
 }
-double SymbolicMath::ExpressionNode_Const::ActualDoubleDerivative (const vector<double>& globalVars,int var1,int var2)
+double SymbolicMath::ExpressionNode_Const::ActualDoubleDerivative (const std::vector<double>& globalVars,int var1,int var2)
 {
 	return 0;
 }
@@ -368,11 +368,11 @@ SymbolicMath::ExpressionNode_VarPow2::ExpressionNode_VarPow2 (int varNum_)
 SymbolicMath::ExpressionNode_VarPow2::~ExpressionNode_VarPow2 ()
 {
 }
-double SymbolicMath::ExpressionNode_VarPow2::ActualEval (const vector<double>& globalVars)
+double SymbolicMath::ExpressionNode_VarPow2::ActualEval (const std::vector<double>& globalVars)
 {
 	return pow2(globalVars[varNum]);
 }
-double SymbolicMath::ExpressionNode_VarPow2::ActualDerivative (const vector<double>& globalVars,int varToDifferentiateTo)
+double SymbolicMath::ExpressionNode_VarPow2::ActualDerivative (const std::vector<double>& globalVars,int varToDifferentiateTo)
 {
 	if (varToDifferentiateTo==varNum) {
 		return log(2.0)*pow2(globalVars[varNum]);
@@ -381,7 +381,7 @@ double SymbolicMath::ExpressionNode_VarPow2::ActualDerivative (const vector<doub
 		return 0;
 	}
 }
-double SymbolicMath::ExpressionNode_VarPow2::ActualDoubleDerivative (const vector<double>& globalVars,int var1,int var2)
+double SymbolicMath::ExpressionNode_VarPow2::ActualDoubleDerivative (const std::vector<double>& globalVars,int var1,int var2)
 {
 	if (var1==varNum && var2==varNum) {
 		return log(2.0)*log(2.0)*pow2(globalVars[varNum]);
@@ -402,11 +402,11 @@ SymbolicMath::ExpressionNode_Var::ExpressionNode_Var (int varNum_)
 SymbolicMath::ExpressionNode_Var::~ExpressionNode_Var ()
 {
 }
-double SymbolicMath::ExpressionNode_Var::ActualEval (const vector<double>& globalVars)
+double SymbolicMath::ExpressionNode_Var::ActualEval (const std::vector<double>& globalVars)
 {
 	return globalVars[varNum];
 }
-double SymbolicMath::ExpressionNode_Var::ActualDerivative (const vector<double>& globalVars,int varToDifferentiateTo)
+double SymbolicMath::ExpressionNode_Var::ActualDerivative (const std::vector<double>& globalVars,int varToDifferentiateTo)
 {
 	if (varToDifferentiateTo==varNum) {
 		return 1;
@@ -415,7 +415,7 @@ double SymbolicMath::ExpressionNode_Var::ActualDerivative (const vector<double>&
 		return 0;
 	}
 }
-double SymbolicMath::ExpressionNode_Var::ActualDoubleDerivative (const vector<double>& globalVars,int var1,int var2)
+double SymbolicMath::ExpressionNode_Var::ActualDoubleDerivative (const std::vector<double>& globalVars,int var1,int var2)
 {
 	return 0;
 }
@@ -468,7 +468,7 @@ SymbolicMath::ExpressionNode_Summation::ExpressionNode_Summation (void)
 SymbolicMath::ExpressionNode_Summation::~ExpressionNode_Summation ()
 {
 }
-double SymbolicMath::ExpressionNode_Summation::ActualEval (const vector<double>& globalVars)
+double SymbolicMath::ExpressionNode_Summation::ActualEval (const std::vector<double>& globalVars)
 {
 	double sum=0;
 	for (ExpressionNodeList::iterator i=expressionNodeList.begin(); i!=expressionNodeList.end(); i++) {
@@ -476,7 +476,7 @@ double SymbolicMath::ExpressionNode_Summation::ActualEval (const vector<double>&
 	}
 	return sum;
 }
-double SymbolicMath::ExpressionNode_Summation::ActualDerivative (const vector<double>& globalVars,int varToDifferentiateTo)
+double SymbolicMath::ExpressionNode_Summation::ActualDerivative (const std::vector<double>& globalVars,int varToDifferentiateTo)
 {
 	double sum=0;
 	for (ExpressionNodeList::iterator i=expressionNodeList.begin(); i!=expressionNodeList.end(); i++) {
@@ -484,7 +484,7 @@ double SymbolicMath::ExpressionNode_Summation::ActualDerivative (const vector<do
 	}
 	return sum;
 }
-double SymbolicMath::ExpressionNode_Summation::ActualDoubleDerivative (const vector<double>& globalVars,int var1,int var2)
+double SymbolicMath::ExpressionNode_Summation::ActualDoubleDerivative (const std::vector<double>& globalVars,int var1,int var2)
 {
 	double sum=0;
 	for (ExpressionNodeList::iterator i=expressionNodeList.begin(); i!=expressionNodeList.end(); i++) {
@@ -557,19 +557,19 @@ SymbolicMath::ExpressionNode_Log2::ExpressionNode_Log2 (ExpressionNode *f_)
 SymbolicMath::ExpressionNode_Log2::~ExpressionNode_Log2 ()
 {
 }
-double SymbolicMath::ExpressionNode_Log2::ActualEval (const vector<double>& globalVars)
+double SymbolicMath::ExpressionNode_Log2::ActualEval (const std::vector<double>& globalVars)
 {
 	double fx=f->Eval(globalVars);
 	assert(fx>0);
 	return log2(fx);
 }
-double SymbolicMath::ExpressionNode_Log2::ActualDerivative (const vector<double>& globalVars,int varToDifferentiateTo)
+double SymbolicMath::ExpressionNode_Log2::ActualDerivative (const std::vector<double>& globalVars,int varToDifferentiateTo)
 {
 	// dlog_2(F)/dx = ((1/F) * dF/dx)/ln(2)
 
 	return (f->Derivative(globalVars,varToDifferentiateTo) / f->Eval(globalVars))/log(2.0);
 }
-double SymbolicMath::ExpressionNode_Log2::ActualDoubleDerivative (const vector<double>& globalVars,int var1,int var2)
+double SymbolicMath::ExpressionNode_Log2::ActualDoubleDerivative (const std::vector<double>& globalVars,int var1,int var2)
 {
 	// ddlog_2(F)/dx*dy = 1/ln(2) *  dd ln(F)/dx*dy
 	// dd ln(F)/dx*dy = (   (ddF/dx*dy) / F    -  (dF/dx)(dF/dy)/F^2  )  (by product rule on derivative of log_2(F)
@@ -599,19 +599,19 @@ SymbolicMath::ExpressionNode_Sqrt::ExpressionNode_Sqrt (ExpressionNode *f_)
 SymbolicMath::ExpressionNode_Sqrt::~ExpressionNode_Sqrt ()
 {
 }
-double SymbolicMath::ExpressionNode_Sqrt::ActualEval (const vector<double>& globalVars)
+double SymbolicMath::ExpressionNode_Sqrt::ActualEval (const std::vector<double>& globalVars)
 {
 	double fx=f->Eval(globalVars);
 	assert(fx>=0);
 	return sqrt(fx);
 }
-double SymbolicMath::ExpressionNode_Sqrt::ActualDerivative (const vector<double>& globalVars,int varToDifferentiateTo)
+double SymbolicMath::ExpressionNode_Sqrt::ActualDerivative (const std::vector<double>& globalVars,int varToDifferentiateTo)
 {
 	// d sqrt(F)/dx = (dF/dx) / (2*sqrt(F))
 
 	return (f->Derivative(globalVars,varToDifferentiateTo) / (2.0*sqrt(f->Eval(globalVars))));
 }
-double SymbolicMath::ExpressionNode_Sqrt::ActualDoubleDerivative (const vector<double>& globalVars,int var1,int var2)
+double SymbolicMath::ExpressionNode_Sqrt::ActualDoubleDerivative (const std::vector<double>& globalVars,int var1,int var2)
 {
 	throw SimpleStringException("Not implemented %s:%d",__FILE__,__LINE__); // I'm too lazy & haven't been using the Hessian
 }
@@ -670,16 +670,16 @@ SymbolicMath::ExpressionNode_Add::ExpressionNode_Add (ExpressionNode *f,Expressi
 SymbolicMath::ExpressionNode_Add::~ExpressionNode_Add ()
 {
 }
-double SymbolicMath::ExpressionNode_Add::ActualEval (const vector<double>& globalVars)
+double SymbolicMath::ExpressionNode_Add::ActualEval (const std::vector<double>& globalVars)
 {
 	return f->Eval(globalVars) + g->Eval(globalVars);
 }
-double SymbolicMath::ExpressionNode_Add::ActualDerivative (const vector<double>& globalVars,int varToDifferentiateTo)
+double SymbolicMath::ExpressionNode_Add::ActualDerivative (const std::vector<double>& globalVars,int varToDifferentiateTo)
 {
 	// derivative of sums is the sum of derivatives (basic calculus)
 	return f->Derivative(globalVars,varToDifferentiateTo) + g->Derivative(globalVars,varToDifferentiateTo);
 }
-double SymbolicMath::ExpressionNode_Add::ActualDoubleDerivative (const vector<double>& globalVars,int var1,int var2)
+double SymbolicMath::ExpressionNode_Add::ActualDoubleDerivative (const std::vector<double>& globalVars,int var1,int var2)
 {
 	return f->DoubleDerivative(globalVars,var1,var2) + g->DoubleDerivative(globalVars,var1,var2);
 }
@@ -806,7 +806,7 @@ void SymbolicMath::ExpressionNode_SumOfConstantTimesExpression::CombineLikeTerms
 		}
 	}
 
-	// remove clobbered terms (this code is specific to it being a vector
+	// remove clobbered terms (this code is specific to it being a std::vector
 	{
 		size_t i=0;
 		while (i<termList.size()) {
@@ -878,7 +878,7 @@ SymbolicMath::ExpressionNode *SymbolicMath::ExpressionNode_SumOfConstantTimesExp
 {
 	return termList[child].expressionNode;
 }
-double SymbolicMath::ExpressionNode_SumOfConstantTimesExpression::ActualEval (const vector<double>& globalVars)
+double SymbolicMath::ExpressionNode_SumOfConstantTimesExpression::ActualEval (const std::vector<double>& globalVars)
 {
 	double sum=0;
 	for (TermList::iterator i=termList.begin(); i!=termList.end(); i++) {
@@ -894,7 +894,7 @@ double SymbolicMath::ExpressionNode_SumOfConstantTimesExpression::ActualEval (co
 
 	return sum;
 }
-double SymbolicMath::ExpressionNode_SumOfConstantTimesExpression::ActualDerivative (const vector<double>& globalVars,int varToDifferentiateTo)
+double SymbolicMath::ExpressionNode_SumOfConstantTimesExpression::ActualDerivative (const std::vector<double>& globalVars,int varToDifferentiateTo)
 {
 	double sum=0;
 	for (TermList::iterator i=termList.begin(); i!=termList.end(); i++) {
@@ -902,7 +902,7 @@ double SymbolicMath::ExpressionNode_SumOfConstantTimesExpression::ActualDerivati
 	}
 	return sum;
 }
-double SymbolicMath::ExpressionNode_SumOfConstantTimesExpression::ActualDoubleDerivative (const vector<double>& globalVars,int var1,int var2)
+double SymbolicMath::ExpressionNode_SumOfConstantTimesExpression::ActualDoubleDerivative (const std::vector<double>& globalVars,int var1,int var2)
 {
 	double sum=0;
 	for (TermList::iterator i=termList.begin(); i!=termList.end(); i++) {
@@ -922,15 +922,15 @@ SymbolicMath::ExpressionNode_Minus::ExpressionNode_Minus (ExpressionNode *f_,Exp
 SymbolicMath::ExpressionNode_Minus::~ExpressionNode_Minus ()
 {
 }
-double SymbolicMath::ExpressionNode_Minus::ActualEval (const vector<double>& globalVars)
+double SymbolicMath::ExpressionNode_Minus::ActualEval (const std::vector<double>& globalVars)
 {
 	return f->Eval(globalVars) - g->Eval(globalVars);
 }
-double SymbolicMath::ExpressionNode_Minus::ActualDerivative (const vector<double>& globalVars,int varToDifferentiateTo)
+double SymbolicMath::ExpressionNode_Minus::ActualDerivative (const std::vector<double>& globalVars,int varToDifferentiateTo)
 {
 	return f->Derivative(globalVars,varToDifferentiateTo) - g->Derivative(globalVars,varToDifferentiateTo);
 }
-double SymbolicMath::ExpressionNode_Minus::ActualDoubleDerivative (const vector<double>& globalVars,int var1,int var2)
+double SymbolicMath::ExpressionNode_Minus::ActualDoubleDerivative (const std::vector<double>& globalVars,int var1,int var2)
 {
 	return f->DoubleDerivative(globalVars,var1,var2) - g->DoubleDerivative(globalVars,var1,var2);
 }
@@ -961,13 +961,13 @@ SymbolicMath::ExpressionNode_Div::ExpressionNode_Div (ExpressionNode *f_,Express
 SymbolicMath::ExpressionNode_Div::~ExpressionNode_Div ()
 {
 }
-double SymbolicMath::ExpressionNode_Div::ActualEval (const vector<double>& globalVars)
+double SymbolicMath::ExpressionNode_Div::ActualEval (const std::vector<double>& globalVars)
 {
 	double denomenator=g->Eval(globalVars);
 	assert(denomenator!=0.0);
 	return f->Eval(globalVars) / denomenator;
 }
-double SymbolicMath::ExpressionNode_Div::ActualDerivative (const vector<double>& globalVars,int varToDifferentiateTo)
+double SymbolicMath::ExpressionNode_Div::ActualDerivative (const std::vector<double>& globalVars,int varToDifferentiateTo)
 {
 	// by product rule & chain rule,
 	// d(f/g)/dx = (df/dx)/g - (dg/dx)f/g^2
@@ -979,7 +979,7 @@ double SymbolicMath::ExpressionNode_Div::ActualDerivative (const vector<double>&
 	assert(gVal!=0.0);
 	return fPrime/gVal - (gPrime*fVal/gVal)/gVal;
 }
-double SymbolicMath::ExpressionNode_Div::ActualDoubleDerivative (const vector<double>& globalVars,int var1,int var2)
+double SymbolicMath::ExpressionNode_Div::ActualDoubleDerivative (const std::vector<double>& globalVars,int var1,int var2)
 {
 	// dd(f/g)/dx*dy = d(d(f/g)/dx)/dy (from above)
 	// = (ddf/dx*dy)/g - (df/dx*dg/dy)/g^2 - ...
@@ -1014,16 +1014,16 @@ SymbolicMath::ExpressionNode_Mult::ExpressionNode_Mult (ExpressionNode *f,Expres
 SymbolicMath::ExpressionNode_Mult::~ExpressionNode_Mult ()
 {
 }
-double SymbolicMath::ExpressionNode_Mult::ActualEval (const vector<double>& globalVars)
+double SymbolicMath::ExpressionNode_Mult::ActualEval (const std::vector<double>& globalVars)
 {
 	return f->Eval(globalVars) * g->Eval(globalVars);
 }
-double SymbolicMath::ExpressionNode_Mult::ActualDerivative (const vector<double>& globalVars,int varToDifferentiateTo)
+double SymbolicMath::ExpressionNode_Mult::ActualDerivative (const std::vector<double>& globalVars,int varToDifferentiateTo)
 {
 	// apply the product rule from high school calculus: df*g/dx = f*dg/dx + g*df/dx
 	return f->Eval(globalVars)*g->Derivative(globalVars,varToDifferentiateTo) + f->Derivative(globalVars,varToDifferentiateTo)*g->Eval(globalVars);
 }
-double SymbolicMath::ExpressionNode_Mult::ActualDoubleDerivative (const vector<double>& globalVars,int var1,int var2)
+double SymbolicMath::ExpressionNode_Mult::ActualDoubleDerivative (const std::vector<double>& globalVars,int var1,int var2)
 {
 	// apply product rule twice: ddf*g/dxdy = d(f*dg/dx+g*df/dx)/dy = (df/dy)*(dg/dx) + f*(ddg/dxdy) + (dg/dy)*(df/dx) + g*(ddf/dxdy)
 	return f->Eval(globalVars) * g->DoubleDerivative(globalVars,var1,var2)
@@ -1062,11 +1062,11 @@ SymbolicMath::ExpressionNode_Pow::ExpressionNode_Pow (ExpressionNode *f_,Express
 SymbolicMath::ExpressionNode_Pow::~ExpressionNode_Pow ()
 {
 }
-double SymbolicMath::ExpressionNode_Pow::ActualEval (const vector<double>& globalVars)
+double SymbolicMath::ExpressionNode_Pow::ActualEval (const std::vector<double>& globalVars)
 {
 	return pow(f->Eval(globalVars),g->Eval(globalVars));
 }
-double SymbolicMath::ExpressionNode_Pow::ActualDerivative (const vector<double>& globalVars,int varToDifferentiateTo)
+double SymbolicMath::ExpressionNode_Pow::ActualDerivative (const std::vector<double>& globalVars,int varToDifferentiateTo)
 {
 	// f^g = e^{g \ln f}
 	// df^g/dx= d(g\ln f)/dx * f^g   (BTW, I could just make my own expression of (g\ln f) and take the derivative of that
@@ -1077,7 +1077,7 @@ double SymbolicMath::ExpressionNode_Pow::ActualDerivative (const vector<double>&
 		* ( f->Derivative(globalVars,varToDifferentiateTo)*(gVal/fVal)
 			+ g->Derivative(globalVars,varToDifferentiateTo)*log(fVal));
 }
-double SymbolicMath::ExpressionNode_Pow::ActualDoubleDerivative (const vector<double>& globalVars,int var1,int var2)
+double SymbolicMath::ExpressionNode_Pow::ActualDoubleDerivative (const std::vector<double>& globalVars,int var1,int var2)
 {
 	throw SimpleStringException("not implemented.  %s:%d",__FILE__,__LINE__);  // I'm not currently using double derivatives, & don't feel like working this out
 }
@@ -1385,7 +1385,7 @@ double SymbolicMath::Expression::ToConstDouble (void)
 	return expressionNode->ToConstDouble();
 
 }
-double SymbolicMath::Expression::Eval (const vector<double>& problemVars)
+double SymbolicMath::Expression::Eval (const std::vector<double>& problemVars)
 {
 	return expressionNode->Eval(problemVars);
 }

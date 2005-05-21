@@ -64,7 +64,7 @@ public:
 	// get Pr(nuc|context)
 	double GetProbOfNuc (int nucForPr,const std::list<int>& context); // context is a list of 'order' nucs, with context.back() being the most recent
 	double GetProbOfNuc (int nucForPr,const NaryCounter& context);
-	double GetProbOfNuc (int nucForPr,const vector<int>& context);
+	double GetProbOfNuc (int nucForPr,const std::vector<int>& context);
 	// convenience function for 0-order models
 	double GetProbOfNuc_0order (int nucForPr);
 
@@ -84,6 +84,6 @@ public:
 	// using context, generates random nuc, and also updates context
 	int GenerateNuc (std::list<int>& context,zrand::ZRandom *rander);
 	// generate a full sequence from the model
-	static void GenerateSeq (vector<char>& seq,MarkovModelStats& markovModelStats,zrand::ZRandom *rander,int seqLen);
+	static void GenerateSeq (std::vector<char>& seq,MarkovModelStats& markovModelStats,zrand::ZRandom *rander,int seqLen);
 #endif // DISABLE_ZRAND
 };

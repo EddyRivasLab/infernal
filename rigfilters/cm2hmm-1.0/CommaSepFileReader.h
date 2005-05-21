@@ -51,8 +51,8 @@ for slightly extra convenience.
 class CommaSepSeparator {
 protected:
 	const char delimiterChar;
-	vector<const char *> fieldsInCurrLine;
-	vector<char> currLine;
+	std::vector<const char *> fieldsInCurrLine;
+	std::vector<char> currLine;
 
 	virtual std::string GetAdditionalInformationForException (void) const;
 	void SeparateCurrLine(void);
@@ -64,7 +64,7 @@ public:
 
 	// copies line to an internal vector, and separates the fields in it
 	// this replaces any line that was previoualy separated (i.e. all previous fields are lost)
-	void SeparateLine (const vector<char>& line);
+	void SeparateLine (const std::vector<char>& line);
 	// same thing, but here line is a 0-terminated string
 	void SeparateLine (const char *line);
 	void SeparateLine (const std::string& line);
@@ -106,12 +106,12 @@ protected:
 	bool deleteFileOnDestructor; // does this class own the file
 	int lineNum;
 
-	vector<char> currLine;
+	std::vector<char> currLine;
 
 	// implement this to put in line #s
 	std::string GetAdditionalInformationForException (void) const;
 	// make these inherited members protected
-	inline void SeparateLine (const vector<char>& line) { CommaSepSeparator::SeparateLine(line); }
+	inline void SeparateLine (const std::vector<char>& line) { CommaSepSeparator::SeparateLine(line); }
 	void SeparateLine (const char *line);
 public:
 	CommaSepFileReader (const char *fileName,char _delimiterChar);

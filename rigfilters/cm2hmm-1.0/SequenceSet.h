@@ -127,7 +127,7 @@ class InMemorySequenceSet : public SequenceSet {
 protected:
 	struct Seq {
 		std::string name,desc,fileName,virtualFileName;
-		vector<char> rnaSequence;
+		std::vector<char> rnaSequence;
 		int rnaSequenceLen;
 		bool isReversed;
 	};

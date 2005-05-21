@@ -99,4 +99,5 @@ std::string GetWin32ErrorMessage (void);
 #endif
 
 
-#endif MISC_EXCEPTIONS_INCLUDED
+#endif
+

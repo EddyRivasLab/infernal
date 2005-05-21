@@ -63,17 +63,17 @@ public:
 		int refCount;
 	protected:
 		bool IsValueClear (void) const;
-		virtual double ActualEval (const vector<double>& globalVars) = 0;
-		virtual double ActualDerivative (const vector<double>& globalVars,int varToDifferentiateTo) = 0;
-		virtual double ActualDoubleDerivative (const vector<double>& globalVars,int var1,int var2) = 0; // evaluate derivative wrt to var1, then var2
+		virtual double ActualEval (const std::vector<double>& globalVars) = 0;
+		virtual double ActualDerivative (const std::vector<double>& globalVars,int varToDifferentiateTo) = 0;
+		virtual double ActualDoubleDerivative (const std::vector<double>& globalVars,int var1,int var2) = 0; // evaluate derivative wrt to var1, then var2
 		void Internal_DumpSubtreeEvalCCode (FILE *out);
 	public:
 		ExpressionNode (void);
 		virtual ~ExpressionNode ();
 		// NOTE: before calling Eval, Derivative or DoubleDerivative, you must call ClearValue on the root
-		double Eval (const vector<double>& globalVars);
-		double Derivative (const vector<double>& globalVars,int varToDifferentiateTo);
-		double DoubleDerivative (const vector<double>& globalVars,int var1,int var2);
+		double Eval (const std::vector<double>& globalVars);
+		double Derivative (const std::vector<double>& globalVars,int varToDifferentiateTo);
+		double DoubleDerivative (const std::vector<double>& globalVars,int var1,int var2);
 
 		virtual bool IsConst (void); // including children.  default: if no children, then false, else explore children and return the AND of the children
 		virtual int GetNumChildren (void); // default: no children
@@ -100,9 +100,9 @@ public:
 
 	class ExpressionNode_Null : public ExpressionNode { // dummy node, for default constructor
 	protected:
-		double ActualEval (const vector<double>& globalVars);
-		double ActualDerivative (const vector<double>& globalVars,int varToDifferentiateTo);
-		double ActualDoubleDerivative (const vector<double>& globalVars,int var1,int var2);
+		double ActualEval (const std::vector<double>& globalVars);
+		double ActualDerivative (const std::vector<double>& globalVars,int varToDifferentiateTo);
+		double ActualDoubleDerivative (const std::vector<double>& globalVars,int var1,int var2);
 	public:
 		ExpressionNode_Null (void);
 		~ExpressionNode_Null ();
@@ -110,9 +110,9 @@ public:
 	class ExpressionNode_Const : public ExpressionNode {
 	protected:
 		double x;
-		double ActualEval (const vector<double>& globalVars);
-		double ActualDerivative (const vector<double>& globalVars,int varToDifferentiateTo);
-		double ActualDoubleDerivative (const vector<double>& globalVars,int var1,int var2);
+		double ActualEval (const std::vector<double>& globalVars);
+		double ActualDerivative (const std::vector<double>& globalVars,int varToDifferentiateTo);
+		double ActualDoubleDerivative (const std::vector<double>& globalVars,int var1,int var2);
 	public:
 		ExpressionNode_Const (double t);
 		~ExpressionNode_Const ();
@@ -125,9 +125,9 @@ public:
 	class ExpressionNode_VarPow2 : public ExpressionNode {
 	protected:
 		int varNum;
-		double ActualEval (const vector<double>& globalVars);
-		double ActualDerivative (const vector<double>& globalVars,int varToDifferentiateTo);
-		double ActualDoubleDerivative (const vector<double>& globalVars,int var1,int var2);
+		double ActualEval (const std::vector<double>& globalVars);
+		double ActualDerivative (const std::vector<double>& globalVars,int varToDifferentiateTo);
+		double ActualDoubleDerivative (const std::vector<double>& globalVars,int var1,int var2);
 	public:
 		ExpressionNode_VarPow2 (int varNum_);
 		~ExpressionNode_VarPow2 ();
@@ -136,9 +136,9 @@ public:
 	class ExpressionNode_Var : public ExpressionNode {
 	protected:
 		int varNum;
-		double ActualEval (const vector<double>& globalVars);
-		double ActualDerivative (const vector<double>& globalVars,int varToDifferentiateTo);
-		double ActualDoubleDerivative (const vector<double>& globalVars,int var1,int var2);
+		double ActualEval (const std::vector<double>& globalVars);
+		double ActualDerivative (const std::vector<double>& globalVars,int varToDifferentiateTo);
+		double ActualDoubleDerivative (const std::vector<double>& globalVars,int var1,int var2);
 	public:
 		ExpressionNode_Var (int varNum_);
 		~ExpressionNode_Var ();
@@ -157,9 +157,9 @@ public:
 	};
 	class ExpressionNode_Add : public ExpressionNode_BinaryOp {
 	protected:
-		double ActualEval (const vector<double>& globalVars);
-		double ActualDerivative (const vector<double>& globalVars,int varToDifferentiateTo);
-		double ActualDoubleDerivative (const vector<double>& globalVars,int var1,int var2);
+		double ActualEval (const std::vector<double>& globalVars);
+		double ActualDerivative (const std::vector<double>& globalVars,int varToDifferentiateTo);
+		double ActualDoubleDerivative (const std::vector<double>& globalVars,int var1,int var2);
 	public:
 		ExpressionNode_Add (ExpressionNode *f_,ExpressionNode *g_);
 		~ExpressionNode_Add ();
@@ -169,9 +169,9 @@ public:
 	};
 	class ExpressionNode_Minus : public ExpressionNode_BinaryOp {
 	protected:
-		double ActualEval (const vector<double>& globalVars);
-		double ActualDerivative (const vector<double>& globalVars,int varToDifferentiateTo);
-		double ActualDoubleDerivative (const vector<double>& globalVars,int var1,int var2);
+		double ActualEval (const std::vector<double>& globalVars);
+		double ActualDerivative (const std::vector<double>& globalVars,int varToDifferentiateTo);
+		double ActualDoubleDerivative (const std::vector<double>& globalVars,int var1,int var2);
 	public:
 		ExpressionNode_Minus (ExpressionNode *f_,ExpressionNode *g_);
 		~ExpressionNode_Minus ();
@@ -181,9 +181,9 @@ public:
 	};
 	class ExpressionNode_Mult : public ExpressionNode_BinaryOp {
 	protected:
-		double ActualEval (const vector<double>& globalVars);
-		double ActualDerivative (const vector<double>& globalVars,int varToDifferentiateTo);
-		double ActualDoubleDerivative (const vector<double>& globalVars,int var1,int var2);
+		double ActualEval (const std::vector<double>& globalVars);
+		double ActualDerivative (const std::vector<double>& globalVars,int varToDifferentiateTo);
+		double ActualDoubleDerivative (const std::vector<double>& globalVars,int var1,int var2);
 	public:
 		ExpressionNode_Mult (ExpressionNode *f_,ExpressionNode *g_);
 		~ExpressionNode_Mult ();
@@ -194,9 +194,9 @@ public:
 	};
 	class ExpressionNode_Div : public ExpressionNode_BinaryOp {
 	protected:
-		double ActualEval (const vector<double>& globalVars);
-		double ActualDerivative (const vector<double>& globalVars,int varToDifferentiateTo);
-		double ActualDoubleDerivative (const vector<double>& globalVars,int var1,int var2);
+		double ActualEval (const std::vector<double>& globalVars);
+		double ActualDerivative (const std::vector<double>& globalVars,int varToDifferentiateTo);
+		double ActualDoubleDerivative (const std::vector<double>& globalVars,int var1,int var2);
 	public:
 		ExpressionNode_Div (ExpressionNode *f_,ExpressionNode *g_);
 		~ExpressionNode_Div ();
@@ -206,9 +206,9 @@ public:
 	};
 	class ExpressionNode_Pow : public ExpressionNode_BinaryOp {
 	protected:
-		double ActualEval (const vector<double>& globalVars);
-		double ActualDerivative (const vector<double>& globalVars,int varToDifferentiateTo);
-		double ActualDoubleDerivative (const vector<double>& globalVars,int var1,int var2);
+		double ActualEval (const std::vector<double>& globalVars);
+		double ActualDerivative (const std::vector<double>& globalVars,int varToDifferentiateTo);
+		double ActualDoubleDerivative (const std::vector<double>& globalVars,int var1,int var2);
 	public:
 		ExpressionNode_Pow (ExpressionNode *f_,ExpressionNode *g_);
 		~ExpressionNode_Pow ();
@@ -228,9 +228,9 @@ public:
 	};
 	class ExpressionNode_Log2 : public ExpressionNode_UnaryOp {
 	protected:
-		double ActualEval (const vector<double>& globalVars);
-		double ActualDerivative (const vector<double>& globalVars,int varToDifferentiateTo);
-		double ActualDoubleDerivative (const vector<double>& globalVars,int var1,int var2);
+		double ActualEval (const std::vector<double>& globalVars);
+		double ActualDerivative (const std::vector<double>& globalVars,int varToDifferentiateTo);
+		double ActualDoubleDerivative (const std::vector<double>& globalVars,int var1,int var2);
 	public:
 		ExpressionNode_Log2 (ExpressionNode *f_);
 		~ExpressionNode_Log2 ();
@@ -240,9 +240,9 @@ public:
 	};
 	class ExpressionNode_Sqrt : public ExpressionNode_UnaryOp {
 	protected:
-		double ActualEval (const vector<double>& globalVars);
-		double ActualDerivative (const vector<double>& globalVars,int varToDifferentiateTo);
-		double ActualDoubleDerivative (const vector<double>& globalVars,int var1,int var2);
+		double ActualEval (const std::vector<double>& globalVars);
+		double ActualDerivative (const std::vector<double>& globalVars,int varToDifferentiateTo);
+		double ActualDoubleDerivative (const std::vector<double>& globalVars,int var1,int var2);
 	public:
 		ExpressionNode_Sqrt (ExpressionNode *f_);
 		~ExpressionNode_Sqrt ();
@@ -252,7 +252,7 @@ public:
 	};
 	class ExpressionNode_MultiParamOp : public ExpressionNode {
 	protected:
-		typedef vector<ExpressionNode *> ExpressionNodeList; // for quicker GetChild calls
+		typedef std::vector<ExpressionNode *> ExpressionNodeList; // for quicker GetChild calls
 		ExpressionNodeList expressionNodeList;
 	public:
 		ExpressionNode_MultiParamOp (void);
@@ -265,9 +265,9 @@ public:
 	};
 	class ExpressionNode_Summation : public ExpressionNode_MultiParamOp { // could do this with ExpressionNode_Add, but with many terms to add, it can overflow the stack, and trying to balance the tree is a major hassle
 	protected:
-		double ActualEval (const vector<double>& globalVars);
-		double ActualDerivative (const vector<double>& globalVars,int varToDifferentiateTo);
-		double ActualDoubleDerivative (const vector<double>& globalVars,int var1,int var2);
+		double ActualEval (const std::vector<double>& globalVars);
+		double ActualDerivative (const std::vector<double>& globalVars,int varToDifferentiateTo);
+		double ActualDoubleDerivative (const std::vector<double>& globalVars,int var1,int var2);
 	public:
 		ExpressionNode_Summation (void);
 		~ExpressionNode_Summation ();
@@ -285,12 +285,12 @@ public:
 				return expressionNode < t.expressionNode; // sort by sub-expression identifiers (i.e. pointers)
 			}
 		};
-		typedef vector<Term> TermList;
+		typedef std::vector<Term> TermList;
 		TermList termList;
 
-		double ActualEval (const vector<double>& globalVars);
-		double ActualDerivative (const vector<double>& globalVars,int varToDifferentiateTo);
-		double ActualDoubleDerivative (const vector<double>& globalVars,int var1,int var2);
+		double ActualEval (const std::vector<double>& globalVars);
+		double ActualDerivative (const std::vector<double>& globalVars,int varToDifferentiateTo);
+		double ActualDoubleDerivative (const std::vector<double>& globalVars,int var1,int var2);
 		void ExtractTerms(ExpressionNode *f,double factorSoFar=1);
 		void CombineLikeTerms(void);
 	public:
@@ -311,15 +311,15 @@ private: // I'd like to protect derived classes from this -- they should call Se
 protected:
 	// deferred: void SetRootExpression (const Expression& rootExpression);
 	void SetRootExpression (ExpressionNode *rootExpressionNode_);
-	double Eval (const vector<double>& problemVars);
-	double Derivative (const vector<double>& problemVars,int problemVarToDifferentiateTo);
-	double DoubleDerivative (const vector<double>& problemVars,int problemVarToDifferentiateTo_1,int problemVarToDifferentiateTo_2);
+	double Eval (const std::vector<double>& problemVars);
+	double Derivative (const std::vector<double>& problemVars,int problemVarToDifferentiateTo);
+	double DoubleDerivative (const std::vector<double>& problemVars,int problemVarToDifferentiateTo_1,int problemVarToDifferentiateTo_2);
 
 public:
 	SymbolicMath (void);
 	~SymbolicMath ();
 
-	void Eval (int numVars,double& f,vector<double>& gradient,vector2d<double>& hessian,const vector<double>& problemVars,bool calculateHessian,bool calculateGradient=true);
+	void Eval (int numVars,double& f,std::vector<double>& gradient,vector2d<double>& hessian,const std::vector<double>& problemVars,bool calculateHessian,bool calculateGradient=true);
 
 	// the actual class that has operations performed on it
 	class Expression {
@@ -400,7 +400,7 @@ public:
 		ExpressionNode *GetExpressionNode (void);
 		~Expression ();
 
-		double Eval (const vector<double>& problemVars);
+		double Eval (const std::vector<double>& problemVars);
 		void DumpExpandedOneLine (FILE *out); // see warning under same-named func in ExpressionNode
 		void DumpEvalCCode (FILE *out);
 

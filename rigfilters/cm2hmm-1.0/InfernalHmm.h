@@ -42,7 +42,7 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 enum Cm2Hmm_HmmBuildType {
 	HmmBuildType_Original=0,  // also called "Compacted" or "type 0"
 	HmmBuildType_separateMPandMLMR=1, // also called "Expanded" or "type 1".  for MATP node, each HMM node (left and right) has 2 ML states, 1 D state, 1 IL state
-	HmmBuildType_separateMPMLMRD=2, // Didn't work well.  for MATP node, each HMM node (left and right) has 2 ML states, 2 D states, 1 IL state
+	HmmBuildType_separateMPMLMRD=2 // Didn't work well.  for MATP node, each HMM node (left and right) has 2 ML states, 2 D states, 1 IL state
 };
 extern void VerifyValidHmmBuildType (Cm2Hmm_HmmBuildType hmmType);
 extern int GetNumExtraStatesVersusOriginalHmmBuildType (Cm2Hmm_HmmBuildType hmmType);

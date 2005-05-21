@@ -39,7 +39,7 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // Cm2HmmMain.cpp: the 'main' function for the cm2hmm command, intended to become a part of Infernal
 
 #include "stdafx.h"
-#include <UseDebugNew.h>
+#include "UseDebugNew.h"
 #include "cmzasha.h"
 
 void Cm2Hmm_Create(char *cmFileName,const char *hmmFileName,Cm2Hmm_HmmBuildType hmmBuildType,HmmFileFormat hmmFileFormat,SolverWrapper *solverWrapper,const std::string& programParams)

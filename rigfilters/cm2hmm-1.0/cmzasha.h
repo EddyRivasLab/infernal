@@ -97,8 +97,8 @@ extern std::string LineBreaksToSpaces (std::string inStr);
 extern std::string LineBreaksToTabs (std::string inStr);
 extern std::string GetFileNameFromFullPath (std::string path);
 
-#include <NaryCounter.h>
-#include <stl_extra.h>
+#include "NaryCounter.h"
+#include "stl_extra.h"
 #include "MarkovModelStats.h"
 
 
@@ -122,11 +122,11 @@ struct TopLevelMatch { // matches corresponding to starting at state=0 (start st
 };
 struct CykscanStats {
 	MultiplyArray3d<float> scores;
-	vector<float> scoresPerWindowLast;
+	std::vector<float> scoresPerWindowLast;
 	std::string programParams;
 
-	vector<float> hmmScoresPerWindowLast; // for things with 2nd struct whose scores shouldn't ever be higher than a pure HMM
-	vector<vector<float> > fullHmmDynProgTable; // first dimension is windowLast, next is hmm state
+	std::vector<float> hmmScoresPerWindowLast; // for things with 2nd struct whose scores shouldn't ever be higher than a pure HMM
+	std::vector<std::vector<float> > fullHmmDynProgTable; // first dimension is windowLast, next is hmm state
 
 	bool isValid;
 	bool collectScores;
@@ -300,7 +300,7 @@ public:
 	int GetOverallLast (void) const;
 
 	int TotalSize (void) const;
-	__int64 SizeIn2D (int windowLen) const; // what part of the dynamic programming table must we look at; it's basically TotalSize() * windowLen, except that at the beginning of each interval in the hit list, we only have to worry about a triangular part of the dynamic programming table.
+	cm_int64 SizeIn2D (int windowLen) const; // what part of the dynamic programming table must we look at; it's basically TotalSize() * windowLen, except that at the beginning of each interval in the hit list, we only have to worry about a triangular part of the dynamic programming table.
 };
 
 extern void GetNucNumsFromHalfOpenInterval(int& startNuc,int& endNuc,int first,int last,int sequenceLen,bool isReversed);
@@ -308,16 +308,16 @@ extern void GetNucNumsFromHalfOpenInterval(int& startNuc,int& endNuc,int first,i
 
 class FracLetsThruCounter {
 protected:
-	__int64 nucsInAllSeqs,nucsLetsThru;
-	__int64 nucsSinceLastProgressReport,nucsLetThruSinceLastProgressReport;
-	__int64 size2dOfAllSeqs,size2dLetThru;
-	__int64 size2dSinceLastProgressReport,size2dLetThruSinceLastProgressReport;
+	cm_int64 nucsInAllSeqs,nucsLetsThru;
+	cm_int64 nucsSinceLastProgressReport,nucsLetThruSinceLastProgressReport;
+	cm_int64 size2dOfAllSeqs,size2dLetThru;
+	cm_int64 size2dSinceLastProgressReport,size2dLetThruSinceLastProgressReport;
 public:
 	FracLetsThruCounter ();
 	~FracLetsThruCounter ();
 
 	void DumpFracLetsThru (FILE *out,const char *messagePrefix,bool sinceLastProgressReport);
-	__int64 GetNucsInAllSeqs (void);
+	cm_int64 GetNucsInAllSeqs (void);
 
 	void ProcessPruning (const HitList& inputHitList,const HitList& outputHitList,int windowLen);
 
@@ -390,7 +390,7 @@ extern void SearchToLearnMarkov(SequenceSet& sequenceSet,const std::string& prog
 extern void DumpHmmAndCmScores (int windowLen,float minLodScoreForHit,char *cmFileName,bool doLocalAlignment,SequenceSet& sequenceSet,const std::string& programParams);
 extern void DumpHmmBlockHeuristic (int windowLen,float minLodScoreForHit,char *cmFileName,bool doLocalAlignment,SequenceSet& sequenceSet,const std::string& programParams,int blockSize,const char *dumpFileName);
 extern void CountNucs(char *seqfile);
-extern void PartitionSequenceFiles (SequenceSet& sequenceSet,const char *targetDirectory,__int64 maxNucsPerFile);
+extern void PartitionSequenceFiles (SequenceSet& sequenceSet,const char *targetDirectory,cm_int64 maxNucsPerFile);
 extern void HashTestSequences (SequenceSet& sequenceSet,const char *targetFileName);
 
 // in FakeCmbuild.cpp

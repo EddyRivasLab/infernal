@@ -38,15 +38,15 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 #include "stdafx.h"
 
-#include <UseDebugNew.h>
+#include "UseDebugNew.h"
 
 #include "cmzasha.h"
 
 // optimize HMM using cfsqp.c functions
 
-#ifdef _MSC_VER
-#define __STDC__
-#endif
+//#ifdef _MSC_VER
+#define CFSQP_STDC
+//#endif
 extern "C" {
 #include <cfsqpusr.h>
 }
@@ -56,17 +56,17 @@ protected:
 
 	struct CookieData {
 		ObjectiveFunc *objectiveFunc;
-		vector<const Inequality *> constraints;
+		std::vector<const Inequality *> constraints;
 
-		vector<double> objFuncCachedProblemVars;
+		std::vector<double> objFuncCachedProblemVars;
 		double objFuncCachedResult;
-		vector<double> objGradientCachedProblemVars;
-		vector<double> objGradientCachedResult;
+		std::vector<double> objGradientCachedProblemVars;
+		std::vector<double> objGradientCachedResult;
 		SolverWrapper::MessageReceiver *messageReceiver;
 	};
 
-	static void CopyVars_Cfsqp2Vector (vector<double>& vars,const double *x,int numVars);
-	static void CopyVars_Vector2Cfsqp (double *x,const vector<double>& vars,int numVars);
+	static void CopyVars_Cfsqp2Vector (std::vector<double>& vars,const double *x,int numVars);
+	static void CopyVars_Vector2Cfsqp (double *x,const std::vector<double>& vars,int numVars);
 
 	static void ObjectiveFunction(int nparam,int j,double *x,double *fj,void *voidCookieData);
 	static void ObjectiveFunction_Gradient(int nparam,int j,double *x,double *gradfj,void (*dummy)(int,int,double *,double *,void *),void *voidCookieData);
@@ -79,7 +79,7 @@ protected:
 public:
 	SolverClass_cfsqp (int B_,int C_);
 	~SolverClass_cfsqp ();
-	vector<double> Solve(ObjectiveFunc& objectiveFunc,const vector<double>& inputProblemVars,bool importantBoundsAreSet,double importantLowerBoundAllVars,double importantUppderBoundAllVars,SolverWrapper::MessageReceiver *messageReceiver) const;
+	std::vector<double> Solve(ObjectiveFunc& objectiveFunc,const std::vector<double>& inputProblemVars,bool importantBoundsAreSet,double importantLowerBoundAllVars,double importantUppderBoundAllVars,SolverWrapper::MessageReceiver *messageReceiver) const;
 };
 SolverClass_cfsqp::SolverClass_cfsqp (int B_,int C_)
 {
@@ -89,9 +89,9 @@ SolverClass_cfsqp::SolverClass_cfsqp (int B_,int C_)
 SolverClass_cfsqp::~SolverClass_cfsqp ()
 {
 }
-vector<double> SolverClass_cfsqp::Solve(ObjectiveFunc& objectiveFunc,const vector<double>& inputProblemVars,bool importantBoundsAreSet,double importantLowerBoundAllVars,double importantUpperBoundAllVars,SolverWrapper::MessageReceiver *messageReceiver) const
+std::vector<double> SolverClass_cfsqp::Solve(ObjectiveFunc& objectiveFunc,const std::vector<double>& inputProblemVars,bool importantBoundsAreSet,double importantLowerBoundAllVars,double importantUpperBoundAllVars,SolverWrapper::MessageReceiver *messageReceiver) const
 {
-	vector<double> problemVars=inputProblemVars;
+	std::vector<double> problemVars=inputProblemVars;
 
 	int ndim=objectiveFunc.GetNumProblemVars();
 
@@ -182,7 +182,7 @@ void SolverClass_cfsqp::ObjectiveFunction(int nparam,int j,double *x,double *fj,
 	assert(cookieData->objectiveFunc->GetNumProblemVars()==nparam);
 	assert(j==1); // only one objective function, and j is 1-based
 
-	vector<double> problemVars;
+	std::vector<double> problemVars;
 	CopyVars_Cfsqp2Vector(problemVars,x,cookieData->objectiveFunc->GetNumProblemVars());
 
 	if (problemVars==cookieData->objFuncCachedProblemVars) {
@@ -190,7 +190,7 @@ void SolverClass_cfsqp::ObjectiveFunction(int nparam,int j,double *x,double *fj,
 	}
 	else {
 		double fx;
-		vector<double> gradient;
+		std::vector<double> gradient;
 		vector2d<double> hessian;
 		cookieData->objectiveFunc->Eval (fx,gradient,hessian,problemVars,false,false);
 		*fj=fx;
@@ -213,11 +213,11 @@ void SolverClass_cfsqp::ObjectiveFunction_Gradient(int nparam,int j,double *x,do
 	assert(cookieData->objectiveFunc->GetNumProblemVars()==nparam);
 	assert(j==1); // only one objective function, and j is 1-based
 
-	vector<double> problemVars;
+	std::vector<double> problemVars;
 	CopyVars_Cfsqp2Vector(problemVars,x,cookieData->objectiveFunc->GetNumProblemVars());
 
 	double fx;
-	vector<double> gradient;
+	std::vector<double> gradient;
 	if (problemVars==cookieData->objGradientCachedProblemVars) {
 		gradient=cookieData->objGradientCachedResult;
 	}
@@ -248,7 +248,7 @@ void SolverClass_cfsqp::ConstraintFunction(int nparam,int j,double *x,double *gj
 	assert(cookieData->objectiveFunc->GetNumProblemVars()==nparam);
 	const Inequality& ineq=*(cookieData->constraints[j]);
 
-	vector<double> problemVars;
+	std::vector<double> problemVars;
 	CopyVars_Cfsqp2Vector(problemVars,x,cookieData->objectiveFunc->GetNumProblemVars());
 
 	// we have an inequality of the form
@@ -275,7 +275,7 @@ void SolverClass_cfsqp::ConstraintFunction_Gradient (int nparam,int j,double *x,
 	assert(cookieData->objectiveFunc->GetNumProblemVars()==nparam);
 	const Inequality& ineq=*(cookieData->constraints[j]);
 
-	vector<double> problemVars;
+	std::vector<double> problemVars;
 	CopyVars_Cfsqp2Vector(problemVars,x,cookieData->objectiveFunc->GetNumProblemVars());
 
 	// clear gradient
@@ -295,14 +295,14 @@ void SolverClass_cfsqp::ConstraintFunction_Gradient (int nparam,int j,double *x,
 		}
 	}
 }
-void SolverClass_cfsqp::CopyVars_Cfsqp2Vector (vector<double>& vars,const double *x,int numVars)
+void SolverClass_cfsqp::CopyVars_Cfsqp2Vector (std::vector<double>& vars,const double *x,int numVars)
 {
 	vars.resize(numVars);
 	for (int i=0; i<numVars; i++) {
 		vars[i]=x[i];
 	}
 }
-void SolverClass_cfsqp::CopyVars_Vector2Cfsqp (double *x,const vector<double>& vars,int numVars)
+void SolverClass_cfsqp::CopyVars_Vector2Cfsqp (double *x,const std::vector<double>& vars,int numVars)
 {
 	assert(vars.size()==(size_t)numVars);
 	for (int i=0; i<numVars; i++) {
@@ -317,7 +317,7 @@ public:
 	SolverWrapper_cfsqp (int B_,int C_);
 	~SolverWrapper_cfsqp ();
 
-	vector<double> /* optimal problem vars */ Solve (ObjectiveFunc *objectiveFunc,const vector<double>& inputProblemVars,double maxVariableMagnitudeForUpperLowerBounds,bool importantBoundsAreSet,double importantLowerBoundAllVars,double importantUppderBoundAllVars,MessageReceiver *messageReceiver);
+	std::vector<double> /* optimal problem vars */ Solve (ObjectiveFunc *objectiveFunc,const std::vector<double>& inputProblemVars,double maxVariableMagnitudeForUpperLowerBounds,bool importantBoundsAreSet,double importantLowerBoundAllVars,double importantUppderBoundAllVars,MessageReceiver *messageReceiver);
 };
 SolverWrapper_cfsqp::SolverWrapper_cfsqp (int B_,int C_)
 {
@@ -327,7 +327,7 @@ SolverWrapper_cfsqp::SolverWrapper_cfsqp (int B_,int C_)
 SolverWrapper_cfsqp::~SolverWrapper_cfsqp ()
 {
 }
-vector<double> SolverWrapper_cfsqp::Solve (ObjectiveFunc *objectiveFunc,const vector<double>& inputProblemVars,double maxVariableMagnitudeForUpperLowerBounds,bool importantBoundsAreSet,double importantLowerBoundAllVars,double importantUppderBoundAllVars,MessageReceiver *messageReceiver)
+std::vector<double> SolverWrapper_cfsqp::Solve (ObjectiveFunc *objectiveFunc,const std::vector<double>& inputProblemVars,double maxVariableMagnitudeForUpperLowerBounds,bool importantBoundsAreSet,double importantLowerBoundAllVars,double importantUppderBoundAllVars,MessageReceiver *messageReceiver)
 {
 	SolverClass_cfsqp solver(B,C);
 	return solver.Solve(*objectiveFunc,inputProblemVars,importantBoundsAreSet,importantLowerBoundAllVars,importantUppderBoundAllVars,messageReceiver);

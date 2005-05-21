@@ -37,7 +37,7 @@ ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
 IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 #include "stdafx.h"
-#include <UseDebugNew.h>
+#include "UseDebugNew.h"
 #include "cmzasha.h"
 
 
@@ -132,7 +132,7 @@ double MarkovModelStats::GetProbOfNuc (int nucForPr,const std::list<int>& contex
 	assert(context.size()==(size_t)order); // that's how much context an 'order'-order Markov model needs
 	return GetProbOfNuc_templ(nucForPr,context);
 }
-double MarkovModelStats::GetProbOfNuc (int nucForPr,const vector<int>& context)
+double MarkovModelStats::GetProbOfNuc (int nucForPr,const std::vector<int>& context)
 {
 	assert(context.size()==(size_t)order); // that's how much context an 'order'-order Markov model needs
 	return GetProbOfNuc_templ(nucForPr,context);
@@ -165,7 +165,7 @@ void MarkovModelStats::GetContextDistribution (VariableDimVector<double>& probab
 	// we'll also require p_a + p_c + p_g + p_u = 1, otherwise p_x=0 is okay.  To be able to introduce this equation, while keeping the matrix square, we add a dummy variable that's 0.  To make it 0, we place that dummy var in every equation with coefficient 0, and make the rhs of the equation 1.
 
 	// A*x=b, where 'x' is the entries of probabilityOfEachContext
-	vector<double> A_data,b_data;
+	std::vector<double> A_data,b_data;
 	// init A=0, since many entries will be 0
 	A_data.assign((size_t)((probabilityOfEachContext.GetLinearSize()+1)*(probabilityOfEachContext.GetLinearSize()+1)),0);
 	// b=0 is the final value, except for the last equation
@@ -186,7 +186,7 @@ void MarkovModelStats::GetContextDistribution (VariableDimVector<double>& probab
 	gsl_vector_view b = gsl_vector_view_array(&(*b_data.begin()), probabilityOfEachContext.GetLinearSize()+1);
 	gsl_vector *x = gsl_vector_alloc (probabilityOfEachContext.GetLinearSize()+1);
 
-	vector<int> currContextInput,currContextOutput;
+	std::vector<int> currContextInput,currContextOutput;
 	currContextInput.reserve(order);
 	currContextOutput.reserve(order);
 
@@ -403,7 +403,7 @@ MarkovModelStats *MarkovModelStats::NewMarkov0 (double *nucProbs)
 	MarkovModelStats *markov=new MarkovModelStats(0);
 	markov->alphabetSize=4;
 	assert(markov->data.GetDim()==1 && markov->data.GetSizeOfDim(0)==4);
-	vector<int> offset;
+	std::vector<int> offset;
 	offset.resize(1);
 	for (int i=0; i<4; i++) {
 		offset[0]=i;
@@ -427,7 +427,7 @@ MarkovModelStats *MarkovModelStats::NewDecrementedOrderMarkov (MarkovModelStats 
 }
 
 #ifndef DISABLE_ZRAND
-void MarkovModelStats::GenerateSeq (vector<char>& seq,MarkovModelStats& markovModelStats,zrand::ZRandom *rander,int seqLen)
+void MarkovModelStats::GenerateSeq (std::vector<char>& seq,MarkovModelStats& markovModelStats,zrand::ZRandom *rander,int seqLen)
 {
 	seq.clear();
 	seq.reserve(seqLen);

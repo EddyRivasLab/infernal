@@ -37,7 +37,7 @@ ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
 IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 #include "stdafx.h"
-#include <UseDebugNew.h>
+#include "UseDebugNew.h"
 #include "cmzasha.h"
 
 // global vars
@@ -176,9 +176,9 @@ int HitList::TotalSize (void) const
 	}
 	return total;
 }
-__int64 HitList::SizeIn2D (int windowLen) const
+cm_int64 HitList::SizeIn2D (int windowLen) const
 {
-	__int64 total=0;
+	cm_int64 total=0;
 	const_iterator i;
 	for (i=begin(); i!=end(); i++) {
 		int len=i->second - i->first;
@@ -275,7 +275,7 @@ void FracLetsThruCounter::ResetCounts (void)
 	size2dSinceLastProgressReport=0;
 	size2dLetThruSinceLastProgressReport=0;
 }
-__int64 FracLetsThruCounter::GetNucsInAllSeqs (void)
+cm_int64 FracLetsThruCounter::GetNucsInAllSeqs (void)
 {
 	return nucsInAllSeqs;
 }
@@ -307,8 +307,8 @@ void FracLetsThruCounter::ProcessPruning (const HitList& inputHitList,const HitL
 	nucsSinceLastProgressReport += inputNucs;
 	nucsLetThruSinceLastProgressReport += outputNucs;
 
-	__int64 input2d=inputHitList.SizeIn2D(windowLen);
-	__int64 output2d=outputHitList.SizeIn2D(windowLen);
+	cm_int64 input2d=inputHitList.SizeIn2D(windowLen);
+	cm_int64 output2d=outputHitList.SizeIn2D(windowLen);
 	size2dOfAllSeqs += input2d;
 	size2dLetThru += output2d;
 	size2dSinceLastProgressReport += input2d;

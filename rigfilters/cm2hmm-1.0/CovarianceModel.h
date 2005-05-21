@@ -164,7 +164,7 @@ public:
 	};
 	typedef std::list<State> StateList;
 	typedef std::list<Node> NodeList;
-	typedef vector<Node> NodeVector;
+	typedef std::vector<Node> NodeVector;
 
 	// __ONLY__ for calling code in infernal
 	inline CM_t * GetCM (void) {
@@ -541,13 +541,13 @@ class CovarianceModel : public CovarianceModelBase {
 
 
 template <class T>
-class VectorByCmState : public vector<T> {
+class VectorByCmState : public std::vector<T> {
 public:
 	const T& operator [] (CovarianceModel::State state) const {
-		return vector<T>::operator [] (CovarianceModel::StateToInt(state));
+		return std::vector<T>::operator [] (CovarianceModel::StateToInt(state));
 	}
 	T& operator [] (CovarianceModel::State state) {
-		return vector<T>::operator [] (CovarianceModel::StateToInt(state));
+		return std::vector<T>::operator [] (CovarianceModel::StateToInt(state));
 	}
 };
 class BoolVectorByCmState : public _Bvector {
@@ -560,13 +560,13 @@ public:
 	}
 };
 template <class T>
-class VectorByCmNode : public vector<T> {
+class VectorByCmNode : public std::vector<T> {
 public:
 	const T& operator [] (CovarianceModel::Node node) const {
-		return vector<T>::operator [] (CovarianceModel::NodeToInt(node));
+		return std::vector<T>::operator [] (CovarianceModel::NodeToInt(node));
 	}
 	T& operator [] (CovarianceModel::Node node) {
-		return vector<T>::operator [] (CovarianceModel::NodeToInt(node));
+		return std::vector<T>::operator [] (CovarianceModel::NodeToInt(node));
 	}
 };
 class BoolVectorByCmNode : public _Bvector {

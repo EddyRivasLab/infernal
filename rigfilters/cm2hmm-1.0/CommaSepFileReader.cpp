@@ -90,7 +90,7 @@ void CommaSepSeparator::SeparateLine (const char *line)
 	}
 	SeparateCurrLine();
 }
-void CommaSepSeparator::SeparateLine (const vector<char>& line)
+void CommaSepSeparator::SeparateLine (const std::vector<char>& line)
 {
 	currLine=line;
 	SeparateCurrLine();

@@ -39,7 +39,7 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // Cm2HmmMainSearch.cpp: the 'main' function for the cm2hmmsearch command, intended to (indirectly) become a part of Infernal
 
 #include "stdafx.h"
-#include <UseDebugNew.h>
+#include "UseDebugNew.h"
 #include "cmzasha.h"
 
 void AddHmmFilter(int& numHmmFilters,HmmType1 **hmmFilterArray,const char *hmmFileName)
