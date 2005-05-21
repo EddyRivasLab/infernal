@@ -20,7 +20,7 @@ DEFS  = @DEFS@
 LIBS  = @LIBS@ 
 
 ## archiving command, and ranlib command.
-# ranlib is used to create the cfsqp.a library, necessary for cm2hmm
+# these are used to create the libcfsqp.a library, necessary for cm2hmm
 #
 AR     = @AR@ rcv 
 RANLIB = @RANLIB@
@@ -36,12 +36,12 @@ HDRS  = cfsqpusr.h\
 #################################################################
 ## Targets used in making cfsqp library.
 ##
-all: cfsqp.a
+all: libcfsqp.a
 
-cfsqp.a: $(OBJS) ${HDRS}
-	$(AR) cfsqp.a $(OBJS) 
-	$(RANLIB) cfsqp.a
-	chmod 644 cfsqp.a
+libcfsqp.a: $(OBJS) ${HDRS}
+	$(AR) libcfsqp.a $(OBJS) 
+	$(RANLIB) libcfsqp.a
+	chmod 644 libcfsqp.a
 
 
 #################################################################
@@ -52,5 +52,5 @@ distclean:
 	-rm -f Makefile
 
 clean:
-	-rm -f *.o *~ cfsqp.a
+	-rm -f *.o *~ libcfsqp.a
 
