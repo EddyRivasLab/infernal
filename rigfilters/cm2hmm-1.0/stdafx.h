@@ -50,7 +50,11 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #endif
 
 #ifndef _MSC_VER
-typedef long long __int64;
+typedef long long cm_int64;		// WARNING!  formerly typedef long long __int64
+					// __int64 is an existing system type and not
+					// necessarily compatible with long long, esp.
+					// on 64-bit systems.  Note that cm_int64 is not
+					// actually guaranteed to be 64-bit.
 #endif
 
 extern "C" {
@@ -88,10 +92,10 @@ extern "C" {
 #include <set>
 #include <map>
 
-#include <vectorPlus.h>
-#include <multiDimVector.h>
-#include <MiscExceptions.h>
-#include <CommaSepFileReader.h>
+#include "vectorPlus.h"
+#include "multiDimVector.h"
+#include "MiscExceptions.h"
+#include "CommaSepFileReader.h"
 
 #ifndef DISABLE_ZRAND
 #include <zrandlib.h>
