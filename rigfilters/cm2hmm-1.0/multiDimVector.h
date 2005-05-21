@@ -48,7 +48,7 @@ as the STL vector class)
 template <class T>
 class vector2d {
 protected:
-	vector<vector<T> > vec;
+	std::vector<std::vector<T> > vec;
 	int sizes[2];
 public:
 	vector2d () {
@@ -131,7 +131,7 @@ template <class T>
 class MultiplyArray3d {
 protected:
 	int s1,s2,s3;
-	vector<T> array;
+	std::vector<T> array;
 	inline int GetOffset (int i1,int i2,int i3) const {
 		return i1*s2*s3 + i2*s3 + i3;
 	}
@@ -166,7 +166,7 @@ template <class T>
 class MultiplyArray4d {
 protected:
 	int s1,s2,s3,s4;
-	vector<T> array;
+	std::vector<T> array;
 	inline int GetOffset (int i1,int i2,int i3,int i4) const {
 		return i1*s2*s3*s4 + i2*s3*s4 + i3*s4 + i4;
 	}
