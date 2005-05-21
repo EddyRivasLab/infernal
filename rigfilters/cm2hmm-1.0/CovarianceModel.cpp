@@ -38,7 +38,7 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 #include "stdafx.h"
 
-#include <UseDebugNew.h>
+#include "UseDebugNew.h"
 
 #include "cmzasha.h"
 
@@ -315,12 +315,12 @@ void CovarianceModelBase::LoadCove2 (const char *cmFileName)
 
 	cm->null[0]=cm->null[1]=cm->null[2]=cm->null[3]=0.25; // default NULL model
 
-	vector<int> coveLeftChild(numNodes),coveRightChild(numNodes);
-	vector<tRNAscanSE::NodeType> coveNodeType(numNodes);
-	vector<tRNAscanSE::SingletEmit> coveEmitIL(numNodes),coveEmitIR(numNodes),coveEmitML(numNodes),coveEmitMR(numNodes);
-	vector<tRNAscanSE::TransitionMatrix> coveTransitionMatrix(numNodes);
-	vector<tRNAscanSE::PairEmit> coveEmitMP(numNodes);
-	vector<int> infernalNodeToCoveNode(upperBoundOnNumNodes); // upper bound on # of nodes, if every cove node were an END node
+	std::vector<int> coveLeftChild(numNodes),coveRightChild(numNodes);
+	std::vector<tRNAscanSE::NodeType> coveNodeType(numNodes);
+	std::vector<tRNAscanSE::SingletEmit> coveEmitIL(numNodes),coveEmitIR(numNodes),coveEmitML(numNodes),coveEmitMR(numNodes);
+	std::vector<tRNAscanSE::TransitionMatrix> coveTransitionMatrix(numNodes);
+	std::vector<tRNAscanSE::PairEmit> coveEmitMP(numNodes);
+	std::vector<int> infernalNodeToCoveNode(upperBoundOnNumNodes); // upper bound on # of nodes, if every cove node were an END node
 
 	// first, read in the file
 	for (int currNode=0; currNode<numNodes; currNode++) {
@@ -524,7 +524,7 @@ void CovarianceModelBase::LoadCove2 (const char *cmFileName)
 
 	// now set up right children of BIF nodes
 	// first reverse-map nodes
-	vector<int> coveNodeToInfernalNode(numNodes);
+	std::vector<int> coveNodeToInfernalNode(numNodes);
 	for (int infernalNode=0; infernalNode<cm->nodes; infernalNode++) {
 		coveNodeToInfernalNode[infernalNodeToCoveNode[infernalNode]]=infernalNode;
 	}
@@ -698,7 +698,10 @@ void CovarianceModelBase::CopyStatesVerbatimFrom(const CovarianceModelBase& t,St
 
 void CovarianceModelBase::Init (int numStates)
 {
-	cm=CreateCM(0,numStates);
+	//cm=CreateCM(0,numStates);	// Nodes not used in Zasha's structure
+	cm=CreateCM(1,numStates);	// But nnodes=0 causes a malloc(0)
+					// which is undefined and can cause a crash
+					// Using 1 instead is ad hoc to prevent this
 
 	char dummyName[]="unnamed";
 	cm->name = sre_strdup(dummyName, (int)(strlen(dummyName)));
