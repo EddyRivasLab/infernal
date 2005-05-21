@@ -138,7 +138,7 @@ main(int argc, char **argv)
   char *regressionfile;		/* file to dump regression test info to    */
   FILE *regressfp;		/* open file to dump regression test info  */
 
-  //ADDED EPN 01.31.05
+  /*ADDED EPN 01.31.05*/
   char *prifile;                /* file with prior data */
   Prior_t *pri;                 /* mixture Dirichlet prior structure */
 
