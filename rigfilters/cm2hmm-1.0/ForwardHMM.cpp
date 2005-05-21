@@ -37,7 +37,7 @@ ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
 IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 #include "stdafx.h"
-#include <UseDebugNew.h>
+#include "UseDebugNew.h"
 #include "cmzasha.h"
 
 
@@ -78,7 +78,7 @@ Real /* expected score */ InfiniteLengthForwardAlg_LastStateDoesntEmit (const Hm
 		throw SimpleStringException("%s:%d",__FILE__,__LINE__);
 	}
 
-	vector<Real> table;
+	std::vector<Real> table;
 	table.assign(hmm.GetNumStates(),0.0); // clear to 0, so we don't have to do any explicit initialization
 
 	typename Hmm::State state=startState;
