@@ -67,6 +67,8 @@ PROGS = cmalign\
 	cmbuild\
 	cmscore\
 	cmsearch
+# Optional programs for rigorous filters
+RFPROGS = cm2hmm cm2hmmsearch
 
 # all: if we don't have precompiled binaries, compiles all packages, 
 #      and moves the supported executables into binaries/ subdirectory.
@@ -143,6 +145,11 @@ dist:
 	for prog in $(PROGS); do\
 	   cat ${BASENAME}-${RELEASE}/documentation/manpages/boilerplate.trailer >> ${BASENAME}-${RELEASE}/documentation/manpages/$$prog.man;\
 	done
+	if test -d $(RIGFILTERS); then\
+	   for prog in $(RFPROGS); do\
+	      cat ${BASENAME}-${RELEASE}/documentation/manpages/boilerplate.trailer >> ${BASENAME}-${RELEASE}/documentation/manpages/$$prog.man;\
+	   done;
+	fi
 	-rm -f ${BASENAME}-${RELEASE}/documentation/manpages/boilerplate.trailer
 	#
 	# Remove CVS-controlled files/directories that don't belong in the
@@ -188,6 +195,11 @@ install:
 	for file in $(PROGS); do\
 	   cp src/$$file $(BINDIR)/;\
 	done
+	if test -d $(RIGFILTERS); then\
+	   for file in $(RFPROGS); do\
+	      cp rigfilters/cm2hmm-1.0/$$file $(BINDIR)/;\
+	   done;\
+	fi
 
 # "make clean" removes almost everything except configuration files
 #              and binaries.
