@@ -26,6 +26,12 @@
 MSA *Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt, 
 			  Parsetree_t **tr, int nseq);
 
+MSA *Parsetrees2Alignment_full(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt, 
+			       Parsetree_t **tr, int nseq);
+
+static void debug_print_bands(CM_t *cm, int *dmin, int *dmax);
+static void ExpandBands(CM_t *cm, int qlen, int *dmin, int *dmax);
+
 static char banner[] = "cmalign - align sequences to an RNA CM";
 
 static char usage[]  = "\
@@ -42,6 +48,11 @@ static char experts[] = "\
    --informat <s>: specify that input alignment is in format <s>\n\
    --nosmall     : use normal alignment algorithm, not d&c\n\
    --regress <f> : save regression test data to file <f>\n\
+   --banded      : use experimental banded CYK alignment algorithm\n\
+   --bandp       : tail loss prob for --banded (default:0.0001)\n\
+   --bandexpand  : naively expand bands if target sequence is outside root band\n\
+    -W <n>       : window size for calculating bands (default: 200)\n\
+   --full        : include all match columns in output alignment\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -52,6 +63,11 @@ static struct opt_s OPTIONS[] = {
   { "--informat",   FALSE, sqdARG_STRING },
   { "--nosmall",    FALSE, sqdARG_NONE },
   { "--regress",    FALSE, sqdARG_STRING },
+  { "--banded",     FALSE, sqdARG_NONE },
+  { "--bandp",      FALSE, sqdARG_FLOAT},
+  { "--bandexpand", FALSE, sqdARG_NONE},
+  { "-W", TRUE, sqdARG_INT },
+  { "--full", FALSE, sqdARG_NONE },
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -82,11 +98,24 @@ main(int argc, char **argv)
   int    be_quiet;		/* TRUE to suppress verbose output & banner */
   int    do_local;		/* TRUE to config the model in local mode   */
   int    do_small;		/* TRUE to do divide and conquer alignments */
-
+  int    do_banded;             /* TRUE to do banded CYKDivideAndConquer */
+  int    windowlen;             /* window length for calculating bands */
+  int    do_full;               /* TRUE to output all match columns in output alignment */
+  int    do_bandexpand;         /* TRUE to naively expand bands when necessary */
+  int    expand_flag;           /* TRUE if the dmin and dmax vectors have 
+                                   just been expanded (in which case we want
+				   to recalculate them before we align a new
+				   sequence), and FALSE if they're as calculated
+				   in BandBounds given gamma from BandDistribution */
+  double  **gamma;		/* cumulative distribution p(len <= n) for state v */
+  int     *dmin;		/* minimum d bound for state v, [0..v..M-1] */
+  int     *dmax; 		/* maximum d bound for state v, [0..v..M-1] */
+  double   bandp;		/* tail loss probability for banding */
+  
   char *optname;                /* name of option found by Getopt()        */
   char *optarg;                 /* argument found by Getopt()              */
   int   optind;                 /* index in argv[]                         */
-
+  
   /*********************************************** 
    * Parse command line
    ***********************************************/
@@ -97,7 +126,12 @@ main(int argc, char **argv)
   do_small    = TRUE;
   outfile     = NULL;
   regressfile = NULL;
-  
+  windowlen   = 200;
+  do_banded   = FALSE;
+  bandp       = 0.0001;
+  do_full     = FALSE;
+  do_bandexpand = FALSE;
+
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
     if      (strcmp(optname, "-l")          == 0) do_local    = TRUE;
@@ -105,6 +139,11 @@ main(int argc, char **argv)
     else if (strcmp(optname, "-q")          == 0) be_quiet    = TRUE;
     else if (strcmp(optname, "--nosmall")   == 0) do_small    = FALSE;
     else if (strcmp(optname, "--regress")   == 0) regressfile = optarg;
+    else if (strcmp(optname, "--banded")    == 0) do_banded   = TRUE;
+    else if (strcmp(optname, "--bandp")    == 0) bandp        = atof(optarg);
+    else if (strcmp(optname, "-W")          == 0) windowlen    = atoi(optarg);
+    else if (strcmp(optname, "--full")      == 0) do_full      = TRUE;
+    else if (strcmp(optname, "--bandexpand")== 0) do_bandexpand= TRUE;
     else if (strcmp(optname, "--informat")  == 0) {
       format = String2SeqfileFormat(optarg);
       if (format == SQFILE_UNKNOWN) 
@@ -177,21 +216,70 @@ main(int argc, char **argv)
   minsc = FLT_MAX;
   maxsc = -FLT_MAX;
   avgsc = 0;
+
+  if(do_banded)
+    {
+      gamma = BandDistribution(cm, windowlen);
+      BandBounds(gamma, cm->M, windowlen, bandp, &dmin, &dmax);
+      printf("bandp:%f\n", bandp);
+      /*debug_print_bands(cm, dmin, dmax);*/
+    }
+
+  expand_flag = FALSE;
   for (i = 0; i < nseq; i++) 
     {
+      if(do_bandexpand)
+	{
+	  if(expand_flag)
+	    {
+	      /*the bands were expanded from aligning the previous
+		sequence, we want to return them to the default */
+	      BandBounds(gamma, cm->M, windowlen, bandp, &dmin, &dmax);
+	      expand_flag = FALSE;
+	    }
+	  if((sqinfo[i].len < dmin[0]) || (sqinfo[i].len > dmax[0]))
+	    {
+	      /* the query sequence we're aligning is longer than
+		 the upper limit band on the root node, or is 
+		 shorter than the lower limit on the band on
+		 the root node, so we expand */
+	      ExpandBands(cm, sqinfo[i].len, dmin, dmax);
+	      expand_flag = TRUE;
+	    }
+	}
+      printf("Aligning %s\n", sqinfo[i].name);
+      /*debug_print_bands(cm, dmin, dmax);*/
+
       if (do_small) 
-	sc = CYKDivideAndConquer(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, &(tr[i]));
+	{
+	  if(do_banded)
+	      sc = CYKDivideAndConquer_b(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, 
+					      &(tr[i]), dmin, dmax);
+	  else
+	      sc = CYKDivideAndConquer(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, &(tr[i]));
+	}
+      else if(do_banded)
+	{
+	  sc = CYKInside_b(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, &(tr[i]), dmin, dmax);
+	}
       else
 	sc = CYKInside(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, &(tr[i]));
       
       avgsc += sc;
       if (sc > maxsc) maxsc = sc;
       if (sc < minsc) minsc = sc;
+
     }
   avgsc /= nseq;
 
-  msa = Parsetrees2Alignment(cm, dsq, sqinfo, NULL, tr, nseq);
-
+  if(do_full)
+    {
+      msa = Parsetrees2Alignment_full(cm, dsq, sqinfo, NULL, tr, nseq);
+    }
+  else
+    {
+      msa = Parsetrees2Alignment(cm, dsq, sqinfo, NULL, tr, nseq);
+    }
   /*****************************************************************
    * Output the alignment.
    *****************************************************************/
@@ -225,6 +313,14 @@ main(int argc, char **argv)
       free(dsq[i]);
       FreeSequence(rseq[i], &(sqinfo[i]));
     }
+
+  if (do_banded)
+    {
+      DMX2Free(gamma);
+      free(dmin);
+      free(dmax);
+    }
+
   MSAFree(msa);
   FreeCM(cm);
   free(rseq);
@@ -565,4 +661,461 @@ Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt,
   free(elmap);
   free(irmap);
   return msa;
+}
+
+/***********************************************************************************
+ * EPN 06.08.05
+ * Function : Parsetrees2Alignment_full()
+ * Purpose  : Create a MSA with ALL consensus match columns included, even if they
+ *            are all gaps.  Called if the --full option is used.  Function was
+ *            created to make it possible to 'merge' alignment files outputted from
+ *            different cmalign runs that used the same CM (useful if we're splitting
+ *            up big alignments onto multiple nodes of the cluster).  
+ * 
+ *            For notes see ~nawrocki/lab/rRNA/infernal_0426/src/output_full_RF_060805.
+ * 
+ *            This function is derived from Parsetrees2Alignment() (above) and
+ *            only has minimal changes to achieve the desired effect.  The capability
+ *            to output a 'full' alignment could easily be added to the original
+ *            Parsetrees2Alignment() function, but to be safe, I left that function
+ *            unscathed (cause it works, and I didn't write it), and just made this
+ *            new function so as not to screw up cmalign when the --full option is
+ *            not used.  This is a temporary fix to adding --full functionality.
+ ***********************************************************************************/
+
+MSA *
+Parsetrees2Alignment_full(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt, 
+			  Parsetree_t **tr, int nseq)
+{
+  MSA         *msa;          /* multiple sequence alignment */
+  CMEmitMap_t *emap;         /* consensus emit map for the CM */
+  int          i;            /* counter over traces */
+  int          v, nd;        /* state, node indices */
+  int          cpos;         /* counter over consensus positions (0)1..clen */
+  int         *matuse;       /* TRUE if we need a cpos in mult alignment */
+  int         *iluse;        /* # of IL insertions after a cpos for 1 trace */
+  int         *eluse;        /* # of EL insertions after a cpos for 1 trace */
+  int         *iruse;        /* # of IR insertions after a cpos for 1 trace */
+  int         *maxil;        /* max # of IL insertions after a cpos */
+  int         *maxel;        /* max # of EL insertions after a cpos */
+  int         *maxir;        /* max # of IR insertions after a cpos */
+  int	      *matmap;       /* apos corresponding to a cpos */
+  int         *ilmap;        /* first apos for an IL following a cpos */
+  int         *elmap;        /* first apos for an EL following a cpos */
+  int         *irmap;        /* first apos for an IR following a cpos */
+  int          alen;	     /* length of msa in columns */
+  int          apos;	     /* position in an aligned sequence in MSA */
+  int          rpos;	     /* position in an unaligned sequence in dsq */
+  int          tpos;         /* position in a parsetree */
+  int          el_len;	     /* length of an EL insertion in residues */
+  CMConsensus_t *con;        /* consensus information for the CM */
+  int          prvnd;	     /* keeps track of previous node for EL */
+
+  emap = CreateEmitMap(cm);
+
+  matuse = MallocOrDie(sizeof(int)*(emap->clen+1));   
+  iluse  = MallocOrDie(sizeof(int)*(emap->clen+1));   
+  eluse  = MallocOrDie(sizeof(int)*(emap->clen+1));   
+  iruse  = MallocOrDie(sizeof(int)*(emap->clen+1));   
+  maxil  = MallocOrDie(sizeof(int)*(emap->clen+1));   
+  maxel  = MallocOrDie(sizeof(int)*(emap->clen+1));   
+  maxir  = MallocOrDie(sizeof(int)*(emap->clen+1));   
+  matmap = MallocOrDie(sizeof(int)*(emap->clen+1));   
+  ilmap  = MallocOrDie(sizeof(int)*(emap->clen+1));   
+  elmap  = MallocOrDie(sizeof(int)*(emap->clen+1));   
+  irmap  = MallocOrDie(sizeof(int)*(emap->clen+1));   
+  
+  for (cpos = 0; cpos <= emap->clen; cpos++) 
+    {
+      /* EPN 06.08.05 main difference between this function 
+	 and Parsetrees2Alignment() is the following line */
+      /* original line : matuse[cpos] = 0;*/
+      if(cpos == 0)
+	/*consensus positions are 1..clen*/
+	matuse[cpos] = 0;
+      else
+	matuse[cpos] = 1;
+      maxil[cpos] = maxel[cpos] = maxir[cpos] = 0;
+      ilmap[cpos] = elmap[cpos] = irmap[cpos] = 0;
+    }
+
+  /* Look at all the traces; find maximum length of
+   * insert needed at each of the clen+1 possible gap
+   * points. (There are three types of insert, IL/EL/IR.)
+   * Also find whether we don't need some of the match
+   * (consensus) columns.
+   */
+  for (i = 0; i < nseq; i++) 
+    {
+      for (cpos = 0; cpos <= emap->clen; cpos++) 
+	iluse[cpos] = eluse[cpos] = iruse[cpos] = 0;
+
+      for (tpos = 0; tpos < tr[i]->n; tpos++)
+	{
+	  v  = tr[i]->state[tpos];
+	  if (cm->sttype[v] == EL_st) nd = prvnd;
+	  else                        nd = cm->ndidx[v];
+	  
+	  switch (cm->sttype[v]) {
+	  case MP_st: 
+	    matuse[emap->lpos[nd]] = 1;
+	    matuse[emap->rpos[nd]] = 1;
+	    break;
+	  case ML_st:
+	    matuse[emap->lpos[nd]] = 1;
+	    break;
+	  case MR_st:
+	    matuse[emap->rpos[nd]] = 1;
+	    break;
+	  case IL_st:
+	    iluse[emap->lpos[nd]]++;
+	    break;
+	  case IR_st:		
+            /* remember, convention on rpos is that IR precedes this
+             * cpos. Make it after the previous cpos, hence the -1. 
+	     */
+	    iruse[emap->rpos[nd]-1]++;
+	    break;
+	  case EL_st:
+	    el_len = tr[i]->emitr[tpos] - tr[i]->emitl[tpos] + 1;
+	    eluse[emap->epos[nd]] = el_len;
+            /* not possible to have >1 EL in same place; could assert this */
+	    break;
+	  }
+
+	  prvnd = nd;
+	} /* end looking at trace i */
+
+      for (cpos = 0; cpos <= emap->clen; cpos++) 
+	{
+	  if (iluse[cpos] > maxil[cpos]) maxil[cpos] = iluse[cpos];
+	  if (eluse[cpos] > maxel[cpos]) maxel[cpos] = eluse[cpos];
+	  if (iruse[cpos] > maxir[cpos]) maxir[cpos] = iruse[cpos];
+	}
+    } /* end calculating lengths used by all traces */
+  
+
+  /* Now we can calculate the total length of the multiple alignment, alen;
+   * and the maps ilmap, elmap, and irmap that turn a cpos into an apos
+   * in the multiple alignment: e.g. for an IL that follows consensus position
+   * cpos, put it at or after apos = ilmap[cpos] in aseq[][].
+   * IR's are filled in backwards (3'->5') and rightflushed.
+   */
+  alen = 0;
+  for (cpos = 0; cpos <= emap->clen; cpos++)
+    {
+      if (matuse[cpos]) {
+	matmap[cpos] = alen; 
+	alen++;
+      } else 
+	matmap[cpos] = -1;
+
+      ilmap[cpos] = alen; alen += maxil[cpos];
+      elmap[cpos] = alen; alen += maxel[cpos];
+      alen += maxir[cpos]; irmap[cpos] = alen-1; 
+    }
+
+  /* We're getting closer.
+   * Now we can allocate for the MSA.
+   */
+  msa = MSAAlloc(nseq, alen);
+  msa->nseq = nseq;
+  msa->alen = alen;
+
+  for (i = 0; i < nseq; i++)
+    {
+      /* Initialize the aseq with all pads '.' (in insert cols) 
+       * and deletes '-' (in match cols).
+       */
+      for (apos = 0; apos < alen; apos++)
+	msa->aseq[i][apos] = '.';
+      for (cpos = 0; cpos <= emap->clen; cpos++)
+	if (matmap[cpos] != -1) msa->aseq[i][matmap[cpos]] = '-';
+      msa->aseq[i][alen] = '\0';
+
+      /* Traverse this guy's trace, and place all his
+       * emitted residues.
+       */
+      for (cpos = 0; cpos <= emap->clen; cpos++)
+	iluse[cpos] = iruse[cpos] = 0;
+
+      for (tpos = 0; tpos < tr[i]->n; tpos++) 
+	{
+	  v  = tr[i]->state[tpos];
+	  if (cm->sttype[v] == EL_st) nd = prvnd;
+	  else                        nd = cm->ndidx[v];
+
+	  switch (cm->sttype[v]) {
+	  case MP_st:
+	    cpos = emap->lpos[nd];
+	    apos = matmap[cpos];
+	    rpos = tr[i]->emitl[tpos];
+	    msa->aseq[i][apos] = Alphabet[(int) dsq[i][rpos]];
+
+	    cpos = emap->rpos[nd];
+	    apos = matmap[cpos];
+	    rpos = tr[i]->emitr[tpos];
+	    msa->aseq[i][apos] = Alphabet[(int) dsq[i][rpos]];
+	    break;
+	    
+	  case ML_st:
+	    cpos = emap->lpos[nd];
+	    apos = matmap[cpos];
+	    rpos = tr[i]->emitl[tpos];
+	    msa->aseq[i][apos] = Alphabet[(int) dsq[i][rpos]];
+	    break;
+
+	  case MR_st:
+	    cpos = emap->rpos[nd];
+	    apos = matmap[cpos];
+	    rpos = tr[i]->emitr[tpos];
+	    msa->aseq[i][apos] = Alphabet[(int) dsq[i][rpos]];
+	    break;
+
+	  case IL_st:
+	    cpos = emap->lpos[nd];
+	    apos = ilmap[cpos] + iluse[cpos];
+	    rpos = tr[i]->emitl[tpos];
+	    msa->aseq[i][apos] = tolower((int) Alphabet[(int) dsq[i][rpos]]);
+	    iluse[cpos]++;
+	    break;
+
+	  case EL_st: 
+            /* we can assert eluse[cpos] always == 0 when we enter,
+	     * because we can only have one EL insertion event per 
+             * cpos. If we ever decide to regularize (split) insertions,
+             * though, we'll want to calculate eluse in the rpos loop.
+             */
+	    cpos = emap->epos[nd]; 
+	    apos = elmap[cpos]; 
+	    for (rpos = tr[i]->emitl[tpos]; rpos <= tr[i]->emitr[tpos]; rpos++)
+	      {
+		msa->aseq[i][apos] = tolower((int) Alphabet[(int) dsq[i][rpos]]);
+		apos++;
+	      }
+	    break;
+
+	  case IR_st: 
+	    cpos = emap->rpos[nd]-1;  /* -1 converts to "following this one" */
+	    apos = irmap[cpos] - iruse[cpos];  /* writing backwards, 3'->5' */
+	    rpos = tr[i]->emitr[tpos];
+	    msa->aseq[i][apos] = tolower((int) Alphabet[(int) dsq[i][rpos]]);
+	    iruse[cpos]++;
+	    break;
+
+	  case D_st:
+	    if (cm->stid[v] == MATP_D || cm->stid[v] == MATL_D) 
+	      {
+		cpos = emap->lpos[nd];
+		if (matuse[cpos]) msa->aseq[i][matmap[cpos]] = '-';
+	      }
+	    if (cm->stid[v] == MATP_D || cm->stid[v] == MATR_D) 
+	      {
+		cpos = emap->rpos[nd];
+		if (matuse[cpos]) msa->aseq[i][matmap[cpos]] = '-';
+	      }
+	    break;
+
+	  } /* end of the switch statement */
+
+
+	  prvnd = nd;
+	} /* end traversal over trace i. */
+
+      /* Here is where we could put some insert-regularization code
+       * a la HMMER: reach into each insert, find a random split point,
+       * and shove part of it flush-right. But, for now, don't bother.
+       */
+
+    } /* end loop over all parsetrees */
+
+
+  /* Gee, wasn't that easy?
+   * Add the rest of the ("optional") information to the MSA.
+   */
+  con = CreateCMConsensus(cm, 3.0, 1.0);
+
+  /* "author" info */
+  msa->au   = MallocOrDie(sizeof(char) * (strlen(PACKAGE_VERSION)+10));
+  sprintf(msa->au, "Infernal %s", PACKAGE_VERSION);
+
+  for (i = 0; i < nseq; i++)
+    {
+      msa->sqname[i] = sre_strdup(sqinfo[i].name, -1);
+      msa->sqlen[i]  = sqinfo[i].len;
+      if (sqinfo[i].flags & SQINFO_ACC)
+        MSASetSeqAccession(msa, i, sqinfo[i].acc);
+      if (sqinfo[i].flags & SQINFO_DESC)
+        MSASetSeqDescription(msa, i, sqinfo[i].desc);
+
+      /* TODO: individual SS annotations
+       */
+      
+      if (wgt == NULL) msa->wgt[i] = 1.0;
+      else             msa->wgt[i] = wgt[i];
+    }
+
+  /* Construct the secondary structure consensus line, msa->ss_cons:
+   *       IL, IR are annotated as .
+   *       EL is annotated as ~
+   *       and match columns use the structure code.
+   * Also the primary sequence consensus/reference coordinate system line,
+   * msa->rf.
+   */
+  msa->ss_cons = MallocOrDie(sizeof(char) * (alen+1));
+  msa->rf = MallocOrDie(sizeof(char) * (alen+1));
+  for (cpos = 0; cpos <= emap->clen; cpos++) 
+    {
+      if (matuse[cpos]) 
+	{ /* CMConsensus is off-by-one right now, 0..clen-1 relative to cpos's 1..clen */
+
+	  /* bug i1, xref STL7 p.12. Before annotating something as a base pair,
+	   * make sure the paired column is also present.
+	   */
+	  if (con->ct[cpos-1] != -1 && matuse[con->ct[cpos-1]+1] == 0) {
+	    msa->ss_cons[matmap[cpos]] = '.';
+	    msa->rf[matmap[cpos]]      = con->cseq[cpos-1];
+	  } else {
+	    msa->ss_cons[matmap[cpos]] = con->cstr[cpos-1];	
+	    msa->rf[matmap[cpos]]      = con->cseq[cpos-1];
+	  }
+	}
+      if (maxil[cpos] > 0) 
+	for (apos = ilmap[cpos]; apos < ilmap[cpos] + maxil[cpos]; apos++)
+	  {
+	    msa->ss_cons[apos] = '.';
+	    msa->rf[apos] = '.';
+	  }
+      if (maxel[cpos] > 0)
+	for (apos = elmap[cpos]; apos < elmap[cpos] + maxel[cpos]; apos++)
+	  {
+	    msa->ss_cons[apos] = '~';
+	    msa->rf[apos] = '~';
+	  }
+      if (maxir[cpos] > 0)	/* remember to write backwards */
+	for (apos = irmap[cpos]; apos > irmap[cpos] - maxir[cpos]; apos--)
+	  {
+	    msa->ss_cons[apos] = '.';
+	    msa->rf[apos] = '.';
+	  }
+    }
+  msa->ss_cons[alen] = '\0';
+  msa->rf[alen] = '\0';
+
+  FreeCMConsensus(con);
+  FreeEmitMap(emap);
+  free(matuse);
+  free(iluse);
+  free(eluse);
+  free(iruse);
+  free(maxil);
+  free(maxel);
+  free(maxir);
+  free(matmap);
+  free(ilmap);
+  free(elmap);
+  free(irmap);
+  return msa;
+}
+
+/* EPN 05.09.05
+  debug_print_bands()
+ * Function: debug_print_bands
+ *
+ * Purpose:  Print bands for each state.
+ */
+
+static void
+debug_print_bands(CM_t *cm, int *dmin, int *dmax)
+{
+  int v;
+
+  printf("\nPrinting bands :\n");
+  printf("****************\n");
+  for(v = 0; v < cm->M; v++)
+   {
+     printf("band state:%d type:%d min:%d max:%d\n", v, cm->sttype[v], dmin[v], dmax[v]);
+   }
+  printf("****************\n\n");
+}
+
+/* EPN 07.22.05
+ * ExpandBands()
+ * Function: ExpandBands
+ *
+ * Purpose:  Called when the sequence we are about to align 
+ *           using bands is either shorter in length than
+ *           the dmin on the root state, or longer in length
+ *           than the dmax on the root state.
+ *            
+ *           This function expands the bands on ALL states
+ *           v=1..cm->M-1 in the following manner :
+ *           
+ *           case 1 : target len < dmin[0]
+ *                    subtract (dmin[0]-target len) from
+ *                    dmin of all states, and ensure
+ *                    dmin[v]>=0 for all v.
+ *                    Further :
+ *                    if cm->sttype[v] == MP_st ensure dmin[v]>=2;
+ *                    if cm->sttype[v] == IL_st || ML_st ensure dmin[v]>=1;
+ *                    if cm->sttype[v] == IR_st || MR_st ensure dmin[v]>=1;
+ *                        
+ *           case 2 : target len > dmax[0]
+ *                    add (target len-dmax[0] to dmax
+ *                    of all states.
+ *
+ *           Prior to handling such situtations with this
+ *           hack, the program would choke and die.  This
+ *           hacky approach is used as a simple, inefficient
+ *           not well thought out, but effective way to 
+ *           solve this problem.
+ * 
+ * Args:    cm       - the CM
+ *          tlen     - length of target sequence about to be aligned
+ *          dmin     - minimum d bound for each state v; [0..v..M-1]
+ *                     may be modified in this function
+ *          dmax     - maximum d bound for each state v; [0..v..M-1]
+ *                     may be modified in this function
+ *
+ * Returns: (void) 
+ */
+
+static void
+ExpandBands(CM_t *cm, int tlen, int *dmin, int *dmax)
+{
+  int v;
+  int diff;
+  int root_min;
+  int root_max;
+  int M = cm->M;
+  root_min = dmin[0];
+  root_max = dmax[0];
+
+  if(tlen < root_min)
+    {
+      diff = root_min - tlen;
+      for(v=0; v<M; v++)
+	{
+	  dmin[v] -= diff;
+	  if((cm->sttype[v] == MP_st) && (dmin[v] < 2)) 
+	    dmin[v] = 2;
+	  else if(((cm->sttype[v] == IL_st) || (cm->sttype[v] == ML_st)) 
+		  && (dmin[v] < 1)) 
+	    dmin[v] = 1;
+	  else if(((cm->sttype[v] == IR_st) || (cm->sttype[v] == MR_st)) 
+		  && (dmin[v] < 1)) 
+	    dmin[v] = 1;
+	  else if(dmin[v] < 0) 
+	    dmin[v] = 0;
+	}
+    }
+  else if(tlen > root_max)
+    {
+      diff = tlen - root_min;
+      for(v=0; v<M; v++)
+	{
+	  dmax[v] += diff;
+	}
+    }
+  printf("Expanded bands : \n");
 }
