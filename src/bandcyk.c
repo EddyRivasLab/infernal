@@ -770,6 +770,16 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
   int       jmax;               /* when imposing bands, maximum j value in alpha matrix */
   int       kmax;               /* for B_st's, maximum k value consistent with bands*/
 
+  PrintDPCellsSaved(cm, dmin, dmax, L);
+  /* EPN 08.11.05 Next line prevents wasteful computations when imposing
+   * bands before the main recursion.  There is no need to worry about
+   * alpha cells corresponding to subsequence distances within the windowlen
+   * (W) but LONGER than the full sequence (L).  Saves a significant amount 
+   * of time if W is much larger than necessary, and the search sequences 
+   * are short (as in a possible benchmark).
+   */
+  if (W < L) W = L; 
+
   /*****************************************************************
    * alpha allocations.
    * The scanning matrix is indexed [v][j][d]. 
