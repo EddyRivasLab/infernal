@@ -778,7 +778,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
    * of time if W is much larger than necessary, and the search sequences 
    * are short (as in a possible benchmark).
    */
-  if (W < L) W = L; 
+  if (W > L) W = L; 
 
   /*****************************************************************
    * alpha allocations.
