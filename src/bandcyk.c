@@ -860,7 +860,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
       if(cm->stid[v] == BEGL_S) jmax = W; 
       else jmax = 1;
 
-      for (d = 0;         d < dmin[v]; d++) 
+      for (d = 0; d < dmin[v] && d <=W; d++) 
 	for(j = 0; j <= jmax; j++)
 	  alpha[v][j][d] = IMPOSSIBLE;
       

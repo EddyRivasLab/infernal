@@ -177,26 +177,27 @@ main(int argc, char **argv)
   while (reversed || ReadSeq(sqfp, sqfp->format, &seq, &sqinfo))
     {
       if (sqinfo.len == 0) continue; 	/* silently skip len 0 seqs */
+      /* EPN 08.12.05
+       * Without the next if(), a strange, unresolved segmentation 
+       * fault causing memory error occurs.  This fix should be okay 
+       * as long as we're not trying to do --local because no glocal
+       * hits can be smaller than the minimum bound of the root band.  
+       * Currently, the --banded --local scenario doesn't work (at 
+       * least) for this reason.
+       */
+      if (do_banded && (sqinfo.len < dmin[0] || sqinfo.len > dmax[0]))
+	{
+	  //printf("sequence: %s\n", sqinfo.name);
+	  //continue;
+	}
       if (sqinfo.len > maxlen) maxlen = sqinfo.len;
       dsq = DigitizeSequence(seq, sqinfo.len);
-
       if (do_banded)
-	/* EPN 08.12.05
-	   Without the next if(), a strange, unresolved segmentation 
-	   fault causing memory error occurs.  This fix should be okay 
-	   as long as we're not trying to do --local because no glocal
-	   hits can be smaller than the minimum bound of the root band.  
-	   Currently, the --banded --local scenario doesn't work (at 
-	   least) for this reason.
-	*/
-	if(sqinfo.len >= dmin[0])
-	    CYKBandedScan(cm, dsq, dmin, dmax, sqinfo.len, windowlen, 
-			  &nhits, &hitr, &hiti, &hitj, &hitsc);
-	else nhits = 0;
+	  CYKBandedScan(cm, dsq, dmin, dmax, sqinfo.len, windowlen, 
+			&nhits, &hitr, &hiti, &hitj, &hitsc);
       else
 	CYKScan(cm, dsq, sqinfo.len, windowlen, 
 		&nhits, &hitr, &hiti, &hitj, &hitsc);
-
       if (! reversed) printf("sequence: %s\n", sqinfo.name);
       for (i = 0; i < nhits; i++)
 	{
@@ -204,15 +205,13 @@ main(int argc, char **argv)
 		 reversed ? sqinfo.len - hiti[i] + 1 : hiti[i], 
 		 reversed ? sqinfo.len - hitj[i] + 1 : hitj[i],
 		 hitsc[i]);
-	  
 	  if (do_align) 
 	    {
 	      CYKDivideAndConquer(cm, dsq, sqinfo.len, 
 				  hitr[i], hiti[i], hitj[i], &tr);
-
 	      ali = CreateFancyAli(tr, cm, cons, dsq);
 	      PrintFancyAli(stdout, ali);
-
+	      
 	      if (do_dumptrees) {
 		ParsetreeDump(stdout, tr, cm, dsq);
 		printf("\tscore = %.2f\n", ParsetreeScore(cm,tr,dsq));
@@ -220,17 +219,17 @@ main(int argc, char **argv)
 	      if (do_projectx) {
 		BandedParsetreeDump(stdout, tr, cm, dsq, gamma, windowlen, dmin, dmax);
 	      }
-
+	      
 	      FreeFancyAli(ali);
 	      FreeParsetree(tr);
 	    }
 	}
-	  
+      
       free(hitr);
       free(hiti);
       free(hitj);
       free(hitsc);
-
+      
       free(dsq);
       if (! reversed && do_revcomp) {
 	revcomp(seq,seq);
