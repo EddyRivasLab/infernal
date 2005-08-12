@@ -7235,7 +7235,7 @@ inside_b_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int
 			}
 		    }
 		}
-		else alpha[v][j][d] = IMPOSSIBLE;
+		else alpha[v][j][dp_v] = IMPOSSIBLE;
 		/*else Die("cell in alpha matrix was not filled in due to bands.\n");*/
 		if (alpha[v][j][dp_v] < IMPOSSIBLE) alpha[v][j][dp_v] = IMPOSSIBLE;
 		/* CYK Full ME Bands used 5 end block */
