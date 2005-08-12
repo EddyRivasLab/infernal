@@ -181,8 +181,18 @@ main(int argc, char **argv)
       dsq = DigitizeSequence(seq, sqinfo.len);
 
       if (do_banded)
-	CYKBandedScan(cm, dsq, dmin, dmax, sqinfo.len, windowlen, 
-		      &nhits, &hitr, &hiti, &hitj, &hitsc);
+	/* EPN 08.12.05
+	   Without the next if(), a strange, unresolved segmentation 
+	   fault causing memory error occurs.  This fix should be okay 
+	   as long as we're not trying to do --local because no glocal
+	   hits can be smaller than the minimum bound of the root band.  
+	   Currently, the --banded --local scenario doesn't work (at 
+	   least) for this reason.
+	*/
+	if(sqinfo.len >= dmin[0])
+	    CYKBandedScan(cm, dsq, dmin, dmax, sqinfo.len, windowlen, 
+			  &nhits, &hitr, &hiti, &hitj, &hitsc);
+	else nhits = 0;
       else
 	CYKScan(cm, dsq, sqinfo.len, windowlen, 
 		&nhits, &hitr, &hiti, &hitj, &hitsc);
