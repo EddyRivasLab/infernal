@@ -28,6 +28,8 @@ extern char *Alphabet;
 extern char  Degenerate[MAXDEGEN][MAXABET];
 extern int   DegenCount[MAXDEGEN];
 
+/* EPN 08.18.05 */
+static int MSAMaxSequenceLength(MSA *msa);
 
 /* We're moderately paranoid about underflow and overflow errors, so
  * we do some checking on the magnitude of the scores.
@@ -173,6 +175,9 @@ typedef struct cm_s {
   float *endsc;   	/*   Score for state_v -> EL (local alignment)     */
 
   int    flags;		/* status flags                                    */
+
+  int    W;             /* max d: max size of a hit (EPN 08.18.05) */
+
 } CM_t;
 
 /* Status flags for a CM, cm->flags

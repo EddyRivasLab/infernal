@@ -90,6 +90,7 @@ CreateCMShell(void)
   cm->endsc  = NULL;
 
   cm->flags  = 0;
+  cm->W      = 0;
   return cm;
 }
 void
@@ -653,6 +654,7 @@ SummarizeCM(FILE *fp, CM_t *cm)
 	  count[MATP_MP]*2+count[MATL_ML]+count[MATR_MR]);
   fprintf(fp, "Base pairs:         %d    (MATP)\n", count[MATP_MP]);
   fprintf(fp, "Single stranded:    %d    (MATL+MATR)\n", count[MATL_ML]+count[MATR_MR]);
+  fprintf(fp, "W: max hit size:    %d\n", cm->W);
 
 }
 

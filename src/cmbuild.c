@@ -93,6 +93,8 @@ static struct opt_s OPTIONS[] = {
 
 static int  save_countvectors(char *cfile, CM_t *cm);
 static int  clean_cs(char *cs, int alen);
+/* EPN 08.18.05 */
+static int MSAMaxSequenceLength(MSA *msa);
 
 int
 main(int argc, char **argv)
@@ -142,6 +144,15 @@ main(int argc, char **argv)
   char *prifile;                /* file with prior data */
   Prior_t *pri;                 /* mixture Dirichlet prior structure */
 
+  /* Added EPN 08.18.05 So we can calculate an appropriate W when building the CM */
+  double  **gamma;		/* cumulative distribution p(len <= n) for state v */
+  int     *dmin;		/* minimum d bound for state v, [0..v..M-1] */
+  int     *dmax; 		/* maximum d bound for state v, [0..v..M-1] */
+  double   bandp;		/* tail loss probability for banding */
+  int      safe_windowlen;	/* initial windowlen (W) used for calculating bands,
+				 * once bands are calculated we'll set cm->W to 
+				 * dmax[0] */
+
 
   /*********************************************** 
    * Parse command line
@@ -167,7 +178,15 @@ main(int argc, char **argv)
   gtreefile         = NULL;
   regressionfile    = NULL;
   prifile           = NULL;
-
+  
+  /* EPN 08.18.05 bandp used in BandBounds() for calculating W(W=dmax[0]) 
+   *              Brief expt on effect of different bandp values in 
+   *              ~nawrocki/notebook/5_0818_inf_cmbuild_bands/00LOG
+   */
+  /* bandp             = 0.0001; */
+  bandp             = 0.0000001; 
+  safe_windowlen    = 0;
+  
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
     if      (strcmp(optname, "-A") == 0)          do_append         = TRUE; 
@@ -370,6 +389,22 @@ main(int argc, char **argv)
       CMLogoddsify(cm);
       printf("done.\n");
 
+      /* EPN 08.18.05
+       * Calculate W for the model based on the seed seqs' tracebacks.
+       *              Brief expt on effect of different bandp and 
+       *              safe_windowlen scaling factor values in 
+       *              ~nawrocki/notebook/5_0818_inf_cmbuild_bands/00LOG
+       */
+      printf("%-40s ... ", "Calculating windowlen for model"); fflush(stdout);
+      safe_windowlen = 2 * MSAMaxSequenceLength(msa);
+      /*printf("safe_windowlen : %d\n", safe_windowlen);*/
+      /*printf("bandp          : %12f\n", bandp);*/
+      gamma = BandDistribution(cm, safe_windowlen);
+      BandBounds(gamma, cm->M, safe_windowlen, bandp, &dmin, &dmax);
+      cm->W = dmax[0];
+      /*printf("cm->W : %d\n", cm->W);*/
+      printf("done.\n");
+
       /* Give the model a name (mandatory in the CM file).
        * Order of precedence:
        *      1. -n option  (only if a single alignment in file)
@@ -534,6 +569,12 @@ main(int argc, char **argv)
   Prior_Destroy(pri);
   fclose(cmfp);
   SqdClean();
+
+  /* EPN 08.18.05 */
+  DMX2Free(gamma);
+  free(dmin);
+  free(dmax);
+
   return 0;
 }
 
@@ -658,3 +699,37 @@ clean_cs(char *cs, int alen)
   printf("    [Failed to parse the consensus structure line.]\n");
   return 0;
 }
+
+/* EPN 08.18.05
+ * This function really belongs in msa.c in squid (or easel I guess) 
+ * but was placed here to minimize both number of modified files and
+ * confusion.
+ */
+
+/* Function: MSAMaxSequenceLength()
+ * based on Function: MSAAverageSequenceLength()
+ * (comments below from MSAAverageSequenceLength())
+ *
+ * Date:     SRE, Sat Apr  6 09:41:34 2002 [St. Louis]
+ *
+ * Purpose:  Return the maximum length of the (unaligned) sequences
+ *           in the MSA.
+ *
+ * Args:     msa  - the alignment
+ *
+ * Returns:  average length
+ */
+int 
+MSAMaxSequenceLength(MSA *msa)
+{
+  int   i;
+  int max;
+  
+  max = 0;
+  for (i = 0; i < msa->nseq; i++) 
+    max = MAX(DealignedLength(msa->aseq[i]), max);
+
+  return max;
+}
+
+

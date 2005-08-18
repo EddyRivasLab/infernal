@@ -31,6 +31,7 @@ MSA *Parsetrees2Alignment_full(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt,
 
 static void debug_print_bands(CM_t *cm, int *dmin, int *dmax);
 static void ExpandBands(CM_t *cm, int qlen, int *dmin, int *dmax);
+static void banded_trace_info_dump(Parsetree_t *tr, int *dmin, int *dmax, int bdump_level);
 
 static char banner[] = "cmalign - align sequences to an RNA CM";
 
@@ -51,7 +52,8 @@ static char experts[] = "\
    --banded      : use experimental banded CYK alignment algorithm\n\
    --bandp       : tail loss prob for --banded (default:0.0001)\n\
    --bandexpand  : naively expand bands if target sequence is outside root band\n\
-    -W <n>       : window size for calculating bands (default: 200)\n\
+   --banddump <n>: turn band info print statements to verbosity level <n> [1-3]\n\
+    -W <n>       : window size for calculating bands (default: precalc'd in cmbuild)\n\
    --full        : include all match columns in output alignment\n\
 ";
 
@@ -66,6 +68,7 @@ static struct opt_s OPTIONS[] = {
   { "--banded",     FALSE, sqdARG_NONE },
   { "--bandp",      FALSE, sqdARG_FLOAT},
   { "--bandexpand", FALSE, sqdARG_NONE},
+  { "--banddump"  , FALSE, sqdARG_INT},
   { "-W", TRUE, sqdARG_INT },
   { "--full", FALSE, sqdARG_NONE },
 };
@@ -102,11 +105,16 @@ main(int argc, char **argv)
   int    windowlen;             /* window length for calculating bands */
   int    do_full;               /* TRUE to output all match columns in output alignment */
   int    do_bandexpand;         /* TRUE to naively expand bands when necessary */
+  int    bdump_level;           /* verbosity level for --banddump option, 0 is OFF */
   int    expand_flag;           /* TRUE if the dmin and dmax vectors have 
                                    just been expanded (in which case we want
 				   to recalculate them before we align a new
 				   sequence), and FALSE if they're as calculated
 				   in BandBounds given gamma from BandDistribution */
+  /*EPN 08.18.05*/
+  int    set_window;            /* TRUE to set window length due to -W option*/
+
+
   double  **gamma;		/* cumulative distribution p(len <= n) for state v */
   int     *dmin;		/* minimum d bound for state v, [0..v..M-1] */
   int     *dmax; 		/* maximum d bound for state v, [0..v..M-1] */
@@ -127,10 +135,12 @@ main(int argc, char **argv)
   outfile     = NULL;
   regressfile = NULL;
   windowlen   = 200;
+  set_window  = FALSE;
   do_banded   = FALSE;
   bandp       = 0.0001;
   do_full     = FALSE;
   do_bandexpand = FALSE;
+  bdump_level = 0;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -141,9 +151,11 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--regress")   == 0) regressfile = optarg;
     else if (strcmp(optname, "--banded")    == 0) do_banded   = TRUE;
     else if (strcmp(optname, "--bandp")    == 0) bandp        = atof(optarg);
-    else if (strcmp(optname, "-W")          == 0) windowlen    = atoi(optarg);
+    else if (strcmp(optname, "-W")          == 0) 
+      { windowlen    = atoi(optarg); set_window = TRUE; }
     else if (strcmp(optname, "--full")      == 0) do_full      = TRUE;
     else if (strcmp(optname, "--bandexpand")== 0) do_bandexpand= TRUE;
+    else if (strcmp(optname, "--banddump")== 0)  bdump_level = atoi(optarg);
     else if (strcmp(optname, "--informat")  == 0) {
       format = String2SeqfileFormat(optarg);
       if (format == SQFILE_UNKNOWN) 
@@ -157,9 +169,11 @@ main(int argc, char **argv)
     }
   }
 
+  if (bdump_level > 3) Die("Highest available --banddump verbosity level is 3\n%s", usage);
   if (argc - optind != 2) Die("Incorrect number of arguments.\n%s\n", usage);
   cmfile = argv[optind++];
   seqfile = argv[optind++]; 
+
 
   /* Try to work around inability to autodetect from a pipe or .gz:
    * assume FASTA format
@@ -179,6 +193,10 @@ main(int argc, char **argv)
   if (cm == NULL) 
     Die("%s empty?\n", cmfile);
   CMFileClose(cmfp);
+
+  /* EPN 08.18.05 */
+  if (! (set_window)) windowlen = cm->W;
+  printf("\n\n\n***cm->W : %d***\n\n\n", cm->W);
 
   if (do_local) ConfigLocal(cm, 0.5, 0.5);
   CMLogoddsify(cm);
@@ -217,12 +235,12 @@ main(int argc, char **argv)
   maxsc = -FLT_MAX;
   avgsc = 0;
 
-  if(do_banded)
+  if(do_banded || bdump_level > 0)
     {
       gamma = BandDistribution(cm, windowlen);
       BandBounds(gamma, cm->M, windowlen, bandp, &dmin, &dmax);
       printf("bandp:%f\n", bandp);
-      /*debug_print_bands(cm, dmin, dmax);*/
+      if(bdump_level > 1) debug_print_bands(cm, dmin, dmax);
     }
 
   expand_flag = FALSE;
@@ -244,6 +262,12 @@ main(int argc, char **argv)
 		 shorter than the lower limit on the band on
 		 the root node, so we expand */
 	      ExpandBands(cm, sqinfo[i].len, dmin, dmax);
+	      printf("Expanded bands for seq : %s\n", sqinfo[i].name);
+	      if(bdump_level > 2) 
+		{
+		  printf("printing expanded bands :\n");
+		  debug_print_bands(cm, dmin, dmax);
+		}
 	      expand_flag = TRUE;
 	    }
 	}
@@ -253,18 +277,43 @@ main(int argc, char **argv)
       if (do_small) 
 	{
 	  if(do_banded)
+	    {
 	      sc = CYKDivideAndConquer_b(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, 
 					      &(tr[i]), dmin, dmax);
+	      if(bdump_level > 0)
+		banded_trace_info_dump(tr[i], dmin, dmax, bdump_level);
+	    }
 	  else
+	    {
 	      sc = CYKDivideAndConquer(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, &(tr[i]));
+	      if(bdump_level > 0)
+		{
+		  /* We want band info but --banded wasn't used.  Useful if you're curious
+		   * why a banded parse is crappy relative to non-banded parse, e.g. allows you 
+		   * to see where the non-banded parse went outside the bands.
+		   */
+		  banded_trace_info_dump(tr[i], dmin, dmax, bdump_level);
+		}
+	    }
 	}
       else if(do_banded)
 	{
 	  sc = CYKInside_b(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, &(tr[i]), dmin, dmax);
+	  if(bdump_level > 0)
+	    banded_trace_info_dump(tr[i], dmin, dmax, bdump_level);
 	}
       else
-	sc = CYKInside(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, &(tr[i]));
-      
+	{
+	  sc = CYKInside(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, &(tr[i]));
+	  if(bdump_level > 0)
+	    {
+	      /* We want band info but --banded wasn't used.  Useful if you're curious
+	       * why a banded parse is crappy relative to non-banded parse, e.g. allows you 
+	       * to see where the non-banded parse went outside the bands.
+	       */
+	      banded_trace_info_dump(tr[i], dmin, dmax, bdump_level);
+	    }
+	}
       avgsc += sc;
       if (sc > maxsc) maxsc = sc;
       if (sc < minsc) minsc = sc;
@@ -1118,4 +1167,44 @@ ExpandBands(CM_t *cm, int tlen, int *dmin, int *dmax)
 	}
     }
   printf("Expanded bands : \n");
+}
+
+/* EPN 08.15.05
+ * banded_trace_info_dump()
+ * Function: banded_trace_info_dump
+ *
+ * Purpose:  Called when the user has enabled the --banddump
+ *           options.  This function determines how close the
+ *           trace was to the bands at each state in the trace,
+ *           and prints out that information in differing levels
+ *           of verbosity depending on an input parameter 
+ *           (bdump_level).
+ * 
+ * Args:    tr       - the parsetree (trace)
+ *          dmin     - minimum d bound for each state v; [0..v..M-1]
+ *                     may be modified in this function
+ *          dmax     - maximum d bound for each state v; [0..v..M-1]
+ *                     may be modified in this function
+ *          bdump_level - level of verbosity
+ * Returns: (void) 
+ */
+
+static void
+banded_trace_info_dump(Parsetree_t *tr, int *dmin, int *dmax, int bdump_level)
+{
+  int v, i, j, d, tpos;
+  int mindiff;            /* d - dmin[v] */
+  int maxdiff;            /* dmax[v] - d */
+
+  for (tpos = 0; tpos < tr->n; tpos++)
+    {
+      v  = tr->state[tpos];
+      i = tr->emitl[tpos];
+      j = tr->emitr[tpos];
+      d = j-i+1;
+      mindiff = d-dmin[v];
+      maxdiff = dmax[v]-d;
+      if(bdump_level > 1 || ((mindiff < 0) || (maxdiff < 0)))
+	 printf("v : %4d | d : %4d | dmin : %4d | dmax : %4d | %3d | %3d |\n", v, d, dmin[v], dmax[v], mindiff, maxdiff);
+    }
 }

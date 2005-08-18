@@ -29,7 +29,7 @@ Usage: cmsearch [-options] <cmfile> <sequence file>\n\
 The sequence file is expected to be in FASTA format.\n\
   Most commonly used options are:\n\
    -h     : help; print brief help on version and usage\n\
-   -W <n> : set scanning window size to <n> (default: 200)\n\
+   -W <n> : set scanning window size to <n> (default: precalc'd in cmbuild)\n\
 ";
 
 static char experts[] = "\
@@ -96,6 +96,8 @@ main(int argc, char **argv)
   int    do_dumptrees;		/* TRUE to dump parse trees */
   int    do_banded;		/* TRUE to do banded CYK */
   int    do_projectx;           /* TRUE to activate special in-progress testing code */
+  /*EPN 08.18.05*/
+  int    set_window;            /* TRUE to set window length due to -W option*/
 
   char *optname;                /* name of option found by Getopt()        */
   char *optarg;                 /* argument found by Getopt()              */
@@ -107,6 +109,7 @@ main(int argc, char **argv)
 
   format            = SQFILE_UNKNOWN;
   windowlen         = 200;
+  set_window        = FALSE;
   do_revcomp        = TRUE;
   do_local          = FALSE;
   do_align          = TRUE;
@@ -117,7 +120,8 @@ main(int argc, char **argv)
   
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
-    if       (strcmp(optname, "-W")          == 0) windowlen    = atoi(optarg);
+    if       (strcmp(optname, "-W")          == 0) 
+      { windowlen    = atoi(optarg); set_window = TRUE; }
     else if  (strcmp(optname, "--dumptrees") == 0) do_dumptrees = TRUE;
     else if  (strcmp(optname, "--local")     == 0) do_local     = TRUE;
     else if  (strcmp(optname, "--noalign")   == 0) do_align     = FALSE;
@@ -157,6 +161,10 @@ main(int argc, char **argv)
     Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
   if (cm == NULL) 
     Die("%s empty?\n", cmfile);
+
+  /* EPN 08.18.05 */
+  if (! (set_window)) windowlen = cm->W;
+  printf("\n\n\n***cm->W : %d***\n\n\n", cm->W);
 
   if (do_local) ConfigLocal(cm, 0.5, 0.5);
   CMLogoddsify(cm);

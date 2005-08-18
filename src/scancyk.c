@@ -77,6 +77,8 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
    *    d ranges from 0..W over subsequence lengths.
    * Note that E memory is shared: all E decks point at M-1 deck.
    *****************************************************************/
+  if (W > L) W = L; 
+
   alpha = MallocOrDie (sizeof(float **) * cm->M);
   for (v = cm->M-1; v >= 0; v--) {	/* reverse, because we allocate E_M-1 first */
     if (cm->stid[v] == BEGL_S)
