@@ -43,6 +43,7 @@ static char experts[] = "\
    --rf           : use reference coordinate annotation to specify consensus\n\
    --gapthresh <x>: fraction of gaps to allow in a consensus column (0..1)\n\
    --informat <s> : specify input alignment is in format <s>, not Stockholm\n\
+   --bandp <f>    : tail loss prob for calc'ing W using bands (default:0.0000001)\n\
 \n\
  * sequence weighting options (default: GSC weighting):\n\
    --wgiven       : use weights as annotated in alignment file\n\
@@ -56,6 +57,7 @@ static char experts[] = "\
    --gtree <f>    : save tree description of master tree to file <f>\n\
    --gtbl  <f>    : save tabular description of master tree to file <f>\n\
    --tfile <f>    : dump individual sequence tracebacks to file <f>\n\
+   --bfile <f>    : save band data to file <f>\n\
 \n\
  * debugging, experimentation:\n\
    --nobalance    : don't rebalance the CM; number in strict preorder\n\
@@ -89,6 +91,8 @@ static struct opt_s OPTIONS[] = {
   { "--wnone",     FALSE, sqdARG_NONE },
   { "--wgsc",      FALSE, sqdARG_NONE },
   { "--priorfile", FALSE, sqdARG_STRING },
+  { "--bfile",     FALSE, sqdARG_STRING },
+  { "--bandp",      FALSE, sqdARG_FLOAT},
   { "--ignorant",  FALSE, sqdARG_NONE },
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
@@ -97,7 +101,11 @@ static int  save_countvectors(char *cfile, CM_t *cm);
 static int  clean_cs(char *cs, int alen);
 /* EPN 08.18.05 */
 static int MSAMaxSequenceLength(MSA *msa);
-
+static void model_trace_info_dump(FILE *ofp, CM_t *cm, Parsetree_t *tr, 
+				  char *aseq);
+static void band_info_dump(FILE *ofp, CM_t *cm, double **gamma);
+static void PrintBandDensity(FILE *fp, double **gamma, int v, int W,
+			     int min, int max);
 /* EPN 09.07.05 */
 static void StripWUSS(char *ss);
 
@@ -157,12 +165,15 @@ main(int argc, char **argv)
   int      safe_windowlen;	/* initial windowlen (W) used for calculating bands,
 				 * once bands are calculated we'll set cm->W to 
 				 * dmax[0] */
+  /* Added EPN 08.18.05 So we can print a band file */
+  char *bandfile;
+  int          v;
+
   /* Added EPN 09.07.05 So we can force ignorant (all single-stranded) models if we
      so choose*/
   int      be_ignorant;         /* TRUE to strip all bp information from the input
 				 * consensus structure.
 				 */
-
   /*********************************************** 
    * Parse command line
    ***********************************************/
@@ -187,6 +198,7 @@ main(int argc, char **argv)
   gtreefile         = NULL;
   regressionfile    = NULL;
   prifile           = NULL;
+  bandfile          = NULL;
   
   /* EPN 08.18.05 bandp used in BandBounds() for calculating W(W=dmax[0]) 
    *              Brief expt on effect of different bandp values in 
@@ -220,6 +232,8 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--tfile")     == 0) tracefile         = optarg;
     else if (strcmp(optname, "--regress")   == 0) regressionfile    = optarg;
     else if (strcmp(optname, "--priorfile") == 0) prifile         = optarg;
+    else if (strcmp(optname, "--bfile")     == 0) bandfile         = optarg;
+    else if (strcmp(optname, "--bandp")     == 0) bandp        = atof(optarg);
     else if (strcmp(optname, "--ignorant")  == 0) be_ignorant       = TRUE;
 
     else if (strcmp(optname, "--informat") == 0) {
@@ -564,6 +578,40 @@ main(int argc, char **argv)
 	    }
 	}
 
+      /* EPN 08.18.05 Detailed band info for the training set.
+       */
+      if (bandfile != NULL)       
+	{
+	  printf("%-40s ... ", "Saving band information"); fflush(stdout);
+	  if ((ofp = fopen(bandfile,"w")) == NULL)
+	    Die("failed to open band file %s", bandfile);
+
+	  /* We want band information for bands we'd use in a cmsearch
+	   * call, so we need to recalculate gamma with cm->W 
+	   */
+	  DMX2Free(gamma);
+	  gamma = BandDistribution(cm, cm->W);
+	  free(dmin);
+	  free(dmax);
+	  BandBounds(gamma, cm->M, cm->W, bandp, &dmin, &dmax);
+
+	  fprintf(ofp, "acc:%s\n", msa->acc);
+	  fprintf(ofp, "bandp:%.12f\n", bandp);
+	  for (v = 0; v < cm->M; v++)
+	    if(cm->sttype[v] == S_st)
+		PrintBandDensity(ofp, gamma, v, cm->W, dmin[v], dmax[v]);
+	  for (idx = treeforce; idx < msa->nseq; idx++)
+	    {
+	      fprintf(ofp, "> %s\n", msa->sqname[idx]);
+	      tr = Transmogrify(cm, mtr, dsq[idx], msa->aseq[idx], msa->alen);
+	      model_trace_info_dump(ofp, cm, tr, msa->aseq[idx]); 
+	      FreeParsetree(tr);
+	    }
+	  fprintf(ofp, "//\n");
+	  fclose(ofp);
+	  printf("done. [%s]\n", bandfile);
+	}
+
       puts("");
       SummarizeCM(stdout, cm);  
       puts("");
@@ -750,6 +798,90 @@ MSAMaxSequenceLength(MSA *msa)
   return max;
 }
 
+/* EPN 08.18.05
+ * model_trace_info_dump()
+ * Function: model_trace_info_dump
+ *
+ * Purpose:  Given a trace from a sequence used to create the model, 
+ *           print the subsequence length rooted at each start state.  
+ *           Tricky because the sequence positions in a Parsetree_t tr
+ *           returned from Transmogrify refer to aligned positions.
+ *           We want subsequence lengths that refer to unaligned lengths.
+ * 
+ * Args:    ofp      - filehandle to print to
+ *          cm       - the CM
+ *          tr       - the parsetree (trace)
+ *          aseq     - the aligned sequence the trace corresponds to
+ * Returns: (void) 
+ */
+
+static void
+model_trace_info_dump(FILE *ofp, CM_t *cm, Parsetree_t *tr, char *aseq)
+{
+  int a, v, i, j, tpos, d, l, r;
+  int *map;
+
+  map = MallocOrDie (sizeof(int) * strlen(aseq));
+  
+  a=0;
+  for (i = 0; i < strlen(aseq); i++)
+    if (! isgap(aseq[i])) map[i] = a++;
+    else map[i] = -1;
+
+  for (tpos = 0; tpos < tr->n; tpos++)
+    if(cm->sttype[tr->state[tpos]] == S_st)
+      {
+	l = tr->emitl[tpos]-1;
+	r = tr->emitr[tpos]-1;
+	i = map[l];
+	j = map[r];
+	/* tr->emitl[tpos]-1 might map to a gap (root node emits the gaps
+	 * also). So we look for first residue that exists in the unaligned
+	 * seq.  Then we do the same for j, looking backwards.
+	 */ 
+	while (i == -1)
+	  i = map[++l];
+	while (j == -1)
+	  j = map[--r];
+
+	d = j-i+1;
+	/* assume ofp is open (probably not good) */
+	fprintf(ofp, "state:%d d:%d\n", tr->state[tpos], d);
+	/*fprintf(ofp, "state:%d d:%d i:%d j:%d emitl:%d emitr:%d\n", tr->state[tpos], d, i, j, tr->emitl[tpos], tr->emitr[tpos]);*/
+      }
+  free(map);
+}
+
+/* EPN 08.18.05
+ * PrintBandDensity()
+ * Function: PrintBandDensity
+ *
+ * Purpose:  Given gamma, a state index v, and a W (maximum hit len)
+ *           print out the probability that a subsequence rooted at 
+ *           v will have lengths 0 to W.
+ *
+ * Args:    fp       - filehandle to print to
+ *          gamma    - cumulative probability distribution P(length <= n) for state v;
+ *                     [0..v..M-1][0..W] 
+ *          v        - state index         
+ *          W        - maximum subseq len in DP
+ *          min      - dmin[v]
+ *          max      - dmax[v]
+ *
+ * Returns: (void) 
+ */
+
+static void
+PrintBandDensity(FILE *fp, double **gamma, int v, int W, int min, int max)
+{
+  int n;
+
+  fprintf(fp, "band for state:%d min:%d max:%d\n", v, min, max);
+  /* firsty, prob subseq len == 0 */
+  fprintf(fp, "%d:%.12f\n", 0, gamma[v][0]);
+  for (n = 1; n <= W; n++)
+    fprintf(fp, "%d:%.12f\n", n, (gamma[v][n]-gamma[v][n-1]));
+}
 
 /* Function:  StripWUSS()
  * EPN 09.07.05
