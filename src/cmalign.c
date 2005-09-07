@@ -50,7 +50,7 @@ static char experts[] = "\
    --nosmall     : use normal alignment algorithm, not d&c\n\
    --regress <f> : save regression test data to file <f>\n\
    --banded      : use experimental banded CYK alignment algorithm\n\
-   --bandp       : tail loss prob for --banded (default:0.0001)\n\
+   --bandp <f>   : tail loss prob for --banded (default:0.0001)\n\
    --bandexpand  : naively expand bands if target sequence is outside root band\n\
    --banddump <n>: turn band info print statements to verbosity level <n> [1-3]\n\
     -W <n>       : window size for calculating bands (default: precalc'd in cmbuild)\n\

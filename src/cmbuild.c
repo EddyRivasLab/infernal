@@ -61,6 +61,7 @@ static char experts[] = "\
    --nobalance    : don't rebalance the CM; number in strict preorder\n\
    --regress <f>  : save regression test information to file <f>\n\
    --treeforce    : score first seq in alignment and show parsetree\n\
+   --ignorant     : strip the structural info from input alignment\n\
 \n\
  * customize the Dirichlet priors:\n\
    --priorfile <f> : read priors from file <f>\n\
@@ -88,6 +89,7 @@ static struct opt_s OPTIONS[] = {
   { "--wnone",     FALSE, sqdARG_NONE },
   { "--wgsc",      FALSE, sqdARG_NONE },
   { "--priorfile", FALSE, sqdARG_STRING },
+  { "--ignorant",  FALSE, sqdARG_NONE },
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -95,6 +97,9 @@ static int  save_countvectors(char *cfile, CM_t *cm);
 static int  clean_cs(char *cs, int alen);
 /* EPN 08.18.05 */
 static int MSAMaxSequenceLength(MSA *msa);
+
+/* EPN 09.07.05 */
+static void StripWUSS(char *ss);
 
 int
 main(int argc, char **argv)
@@ -152,7 +157,11 @@ main(int argc, char **argv)
   int      safe_windowlen;	/* initial windowlen (W) used for calculating bands,
 				 * once bands are calculated we'll set cm->W to 
 				 * dmax[0] */
-
+  /* Added EPN 09.07.05 So we can force ignorant (all single-stranded) models if we
+     so choose*/
+  int      be_ignorant;         /* TRUE to strip all bp information from the input
+				 * consensus structure.
+				 */
 
   /*********************************************** 
    * Parse command line
@@ -187,6 +196,8 @@ main(int argc, char **argv)
   bandp             = 0.0000001; 
   safe_windowlen    = 0;
   
+  be_ignorant       = FALSE;	/* default: leave in bp information */
+
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
     if      (strcmp(optname, "-A") == 0)          do_append         = TRUE; 
@@ -209,6 +220,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--tfile")     == 0) tracefile         = optarg;
     else if (strcmp(optname, "--regress")   == 0) regressionfile    = optarg;
     else if (strcmp(optname, "--priorfile") == 0) prifile         = optarg;
+    else if (strcmp(optname, "--ignorant")  == 0) be_ignorant       = TRUE;
 
     else if (strcmp(optname, "--informat") == 0) {
       format = String2SeqfileFormat(optarg);
@@ -316,6 +328,12 @@ main(int argc, char **argv)
       if (! clean_cs(msa->ss_cons, msa->alen))
 	Die("failed... Failed to parse consensus structure annotation.");
       printf("done.\n");
+
+      /* If user inputted the --ignorant option, strip the consensus
+       * structure of all base pair information.
+       */
+      if (be_ignorant)
+	StripWUSS(msa->ss_cons);
 
       /* Sequence weighting. Default: GSC weights. If WGT_GIVEN,
        * do nothing.
@@ -733,3 +751,29 @@ MSAMaxSequenceLength(MSA *msa)
 }
 
 
+/* Function:  StripWUSS()
+ * EPN 09.07.05
+ *
+ * Purpose:   Strips a secondary structure string in WUSS notation 
+ *            of all base pair information, resulting in a completely single 
+ *            stranded structure: the secondary structure string is modified.
+ *            
+ *            Characters <([{  are converted to :   (left base of base pairs)
+ *            Characters >)]}  are converted to :   (right base of base pairs)
+ *            Characters _-,   are converted to :   (unpaired bases)
+ *            Characters  .:~  are untouched        
+ *            Pseudoknot characters are converted to : as well.
+ *
+ * Args:      ss - the string to convert
+ *
+ * Returns:   (void)
+ */
+void
+StripWUSS(char *ss)
+{
+  char *s;
+
+  for (s = ss; *s != '\0'; s++)
+      if ((*s != '~') && (*s != '.')) *s = ':';
+  return;
+}
