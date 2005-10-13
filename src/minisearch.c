@@ -1,4 +1,4 @@
-/* minicyk.c
+/* wordminisearch.c
  * 
  ***************************************************************** 
  * @LICENSE@
@@ -25,7 +25,9 @@ Most commonly used options are:\n\
   -h	 : help\n\
   -W <n> : set scanning window size to <n> (default: 200)\n\
   -S <n> : set score threshold for reporting hits to <n> (default: 10)\n\
+  -T <n> : set word score threshold to <n> (default: -INF, no threshold)\n\
   -X <n> : set dropoff score for extension to <n> (default -10)\n\
+  --wordlen <n> : set word length (in number of states) to <n> (default 4)\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -33,6 +35,8 @@ static struct opt_s OPTIONS[] = {
   { "-W", TRUE, sqdARG_INT },
   { "-X", TRUE, sqdARG_FLOAT },
   { "-S", TRUE, sqdARG_FLOAT },
+  { "-T", TRUE, sqdARG_FLOAT },
+  { "--wordlen", FALSE, sqdARG_INT },
   { "--toponly", FALSE, sqdARG_NONE },
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
@@ -231,6 +235,139 @@ MiniCYKIn(CM_t *cm, char *dsq, int L, int v, int j, int d, float dropoff_sc,
   return max_sc;
 }
 
+/* Function: WordInitiate()
+ * Author:   DLK
+ *
+ * Purpose:  Given a v,j,d position, create an initial word hit
+ *           based at that location.  Derived from MiniCYKIn.
+ *
+ * Args:     cm		- the covariance model
+ *           dsq	- the digitized sequence
+ *           L		- length of the sequence
+ *           v		- starting state
+ *           j		- starting j position
+ *           d		- d = j-i+1 - relative starting i position
+ *           wordlen	- target length of word hit
+ *           ret_v	- RETURN: ending state
+ *           ret_j	- RETURN: ending j
+ *           ret_d	- RETURN: ending d
+ *
+ * Returns:  ret_v, ret_j, ret_d
+ *           return value: score of word hit
+ */
+float
+WordInitiate(CM_t *cm, char *dsq, int L, int v, int j, int d, int wordlen,
+             int *ret_v, int *ret_j, int *ret_d)
+{
+  int i;
+  int x;
+  int y, yoffset, z;
+  float tsc, esc, seed_sc;
+
+  int iscored, jscored;		/* Keep track of whether initial i,j */
+  				/* have been emitted yet */
+  iscored = FALSE; jscored = FALSE;
+
+  *ret_v = v;
+  *ret_j = j;
+  *ret_d = d;
+  seed_sc = 0;
+  
+  /* esc for starting state */
+  if (cm->stid[v] == MATP_MP)
+  {
+    i = j - d + 1;
+    if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
+      seed_sc += cm->esc[v][(int) (dsq[i]*Alphabet_size+dsq[j])];
+    else
+      seed_sc += DegeneratePairScore(cm->esc[v],dsq[i],dsq[j]);
+    iscored = TRUE;
+    jscored = TRUE;
+  }
+  else if (cm->stid[v] == MATL_ML)
+  {
+    i = j - d + 1;
+    if (dsq[i] < Alphabet_size)
+      seed_sc += cm->esc[v][(int) dsq[i]];
+    else
+      seed_sc += DegenerateSingletScore(cm->esc[v],dsq[i]);
+    iscored = TRUE;
+  }
+  else if (cm->stid[v] == MATR_MR)
+  {
+    i = j - d + 1;
+    if (dsq[j] < Alphabet_size)
+      seed_sc += cm->esc[v][(int) dsq[j]];
+    else
+      seed_sc += DegenerateSingletScore(cm->esc[v],dsq[j]);
+    jscored = TRUE;
+  }
+  else /* Should never reach here */
+  { fprintf(stderr,"WARNING: Illegal state on word initiation v=%d stid=%d\n",v,cm->stid[v]); }
+
+  /* Add tsc+esc for additional states */
+  for (x=1; x<wordlen; x++)	/* Here, x is counter for states currently in word */
+  {
+    y = cm->cfirst[v];
+    yoffset = 0;
+    z = cm->stid[y+yoffset];
+    while (yoffset+1 < cm->cnum[v] && z != MATP_MP && z != MATL_ML && z != MATR_MR)
+    {
+      yoffset++;
+      z = cm->stid[y+yoffset];
+    }
+    tsc = cm->tsc[v][yoffset];
+    v = y+yoffset;
+
+    if (cm->stid[v] == MATP_MP)
+    {
+      if (iscored && jscored) { j--; d-=2; }
+      else if (iscored) { d--; jscored = TRUE; }
+      else if (jscored) { j--; d--; iscored = TRUE; }
+      i = j - d + 1;
+      if (i >= j) { break; }
+      if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
+        esc = cm->esc[v][(int) (dsq[i]*Alphabet_size+dsq[j])];
+      else
+	esc = DegeneratePairScore(cm->esc[v],dsq[i],dsq[j]);
+    }
+    else if (cm->stid[v] == MATL_ML)
+    {
+      if (iscored) { d--; }
+      else         { iscored = TRUE; }
+      i = j - d + 1;
+      if (i >= j) { break; }
+      if (dsq[i] > Alphabet_size)
+	esc = cm->esc[v][(int) dsq[i]];
+      else
+	esc = DegenerateSingletScore(cm->esc[v],dsq[i]);
+    }
+    else if (cm->stid[v] == MATR_MR)
+    {
+      if (jscored) { j--; d--; }
+      else         { jscored = TRUE; }
+      i = j - d + 1;
+      if (i >= j) { break; }
+      if (dsq[j] > Alphabet_size)
+	esc = cm->esc[v][(int) dsq[j]];
+      else
+	esc = DegenerateSingletScore(cm->esc[v],dsq[j]);
+    }
+    else	/* Nonpermitted state - terminate */
+      break;
+
+    seed_sc += tsc + esc;
+    *ret_v = v;
+    *ret_j = j;
+    *ret_d = d;
+  }
+
+  /* Hack!  Force word to emit both i and j - given impossible score if not */
+  if ( (!iscored) || (!jscored) ) { seed_sc = IMPOSSIBLE; }
+    
+  return seed_sc;
+}
+
 /* Function: MiniScan()
  * Author:   DLK
  *
@@ -240,8 +377,8 @@ MiniCYKIn(CM_t *cm, char *dsq, int L, int v, int j, int d, float dropoff_sc,
  *
  */
 void
-MiniScan(CM_t *cm, char *dsq, int L, int W, float dropoff_sc, float report_sc
-        )
+MiniScan(CM_t *cm, char *dsq, int L, int W, int wordlen, float word_sc,
+         float dropoff_sc, float report_sc)
 {
   int v, inner_v, outer_v;	/* state indices, 0..M-1 */
   int i, inner_i, outer_i;	/* left sequence indices */
@@ -261,6 +398,8 @@ MiniScan(CM_t *cm, char *dsq, int L, int W, float dropoff_sc, float report_sc
   int    x;			/* counter variable */
   int    duplicate;		/* TRUE/FALSE: hit is already in list */
 
+  int temp_v, temp_i, temp_j, temp_d;
+
   hit_outer_v = MallocOrDie(sizeof(int)   * alloc_nhits);
   hit_inner_v = MallocOrDie(sizeof(int)   * alloc_nhits);
   hit_outer_i = MallocOrDie(sizeof(int)   * alloc_nhits);
@@ -273,58 +412,60 @@ MiniScan(CM_t *cm, char *dsq, int L, int W, float dropoff_sc, float report_sc
   {
     for (v=cm->M-1; v>0; v--)
     {
-      if (cm->sttype[v] == MP_st)
+      if (cm->stid[v] == MATP_MP || cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR)
       {
         for (d=1; d<=W && d<=j; d++)
         {
-	  i=j-d+1;
-	  if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
-	    seed_sc = cm->esc[v][(int) (dsq[i]*Alphabet_size+dsq[j])];
-	  else
-	    seed_sc = DegeneratePairScore(cm->esc[v],dsq[i],dsq[j]);
-	  in_sc  = MiniCYKIn( cm,dsq,L,v,j,d,dropoff_sc,&inner_v,&inner_i,&inner_j);
-          out_sc = MiniCYKOut(cm,dsq,L,v,j,d,dropoff_sc,&outer_v,&outer_i,&outer_j);
-	  total_sc = seed_sc + in_sc + out_sc;
+	  seed_sc = WordInitiate(cm,dsq,L,v,j,d,wordlen,&temp_v,&temp_j,&temp_d);
 
-	  if (total_sc > report_sc)	/* Add to hitlist */
-	  {
-	    duplicate = FALSE;
-	    x = 0;
-	    while (x<nhits && !duplicate)
-	    {
-	      if (outer_v == hit_outer_v[x])
-		if (inner_v == hit_inner_v[x])
-		  if (outer_i == hit_outer_i[x])
-		    if (inner_i == hit_inner_i[x])
-		      if (outer_j == hit_outer_j[x])
-			if (inner_j == hit_inner_j[x])
-			  duplicate = TRUE;
-	      x++;
-	    }
+	  if (seed_sc > word_sc) {
+	    /* If the seed score meets the threshold, extend both out and in */
+	    in_sc  = MiniCYKIn( cm,dsq,L,temp_v,temp_j,temp_d,dropoff_sc,&inner_v,&inner_i,&inner_j);
+            out_sc = MiniCYKOut(cm,dsq,L,     v,     j,     d,dropoff_sc,&outer_v,&outer_i,&outer_j);
+            total_sc = seed_sc + in_sc + out_sc;
 
-            if (! duplicate)
-	    {
-	      hit_outer_v[nhits] = outer_v;
-	      hit_inner_v[nhits] = inner_v;
-	      hit_outer_i[nhits] = outer_i;
-	      hit_inner_i[nhits] = inner_i;
-	      hit_outer_j[nhits] = outer_j;
-	      hit_inner_j[nhits] = inner_j;
-	      hit_sc[nhits]      = total_sc;
-	      nhits++;
+            if (total_sc > report_sc)	/* Add to hitlist */
+            {
+	      /* If extended score meets reporting threshold, check for duplicates */
+              duplicate = FALSE;
+              x = 0;
+              while (x<nhits && !duplicate)
+              {
+                if (outer_v == hit_outer_v[x])
+                  if (inner_v == hit_inner_v[x])
+                    if (outer_i == hit_outer_i[x])
+                      if (inner_i == hit_inner_i[x])
+                        if (outer_j == hit_outer_j[x])
+                          if (inner_j == hit_inner_j[x])
+                            duplicate = TRUE;
+                            x++;
+              }
 
-	      if (nhits == alloc_nhits)
-	      {
-                hit_outer_v = ReallocOrDie(hit_outer_v, sizeof(int)   * (alloc_nhits + 10));
-                hit_inner_v = ReallocOrDie(hit_inner_v, sizeof(int)   * (alloc_nhits + 10));
-                hit_outer_i = ReallocOrDie(hit_outer_i, sizeof(int)   * (alloc_nhits + 10));
-                hit_inner_i = ReallocOrDie(hit_inner_i, sizeof(int)   * (alloc_nhits + 10));
-                hit_outer_j = ReallocOrDie(hit_outer_j, sizeof(int)   * (alloc_nhits + 10));
-                hit_inner_j = ReallocOrDie(hit_inner_j, sizeof(int)   * (alloc_nhits + 10));
-                hit_sc      = ReallocOrDie(hit_sc,      sizeof(float) * (alloc_nhits + 10));
-		alloc_nhits += 10;
-	      }
-	    }
+              if (! duplicate)
+              {
+		/* If not a duplicate, record the hit */
+                hit_outer_v[nhits] = outer_v;
+                hit_inner_v[nhits] = inner_v;
+                hit_outer_i[nhits] = outer_i;
+                hit_inner_i[nhits] = inner_i;
+                hit_outer_j[nhits] = outer_j;
+                hit_inner_j[nhits] = inner_j;
+                hit_sc[nhits]      = total_sc;
+                nhits++;
+
+                if (nhits == alloc_nhits)
+                {
+                  hit_outer_v = ReallocOrDie(hit_outer_v, sizeof(int)   * (alloc_nhits + 10));
+                  hit_inner_v = ReallocOrDie(hit_inner_v, sizeof(int)   * (alloc_nhits + 10));
+                  hit_outer_i = ReallocOrDie(hit_outer_i, sizeof(int)   * (alloc_nhits + 10));
+                  hit_inner_i = ReallocOrDie(hit_inner_i, sizeof(int)   * (alloc_nhits + 10));
+                  hit_outer_j = ReallocOrDie(hit_outer_j, sizeof(int)   * (alloc_nhits + 10));
+                  hit_inner_j = ReallocOrDie(hit_inner_j, sizeof(int)   * (alloc_nhits + 10));
+                  hit_sc      = ReallocOrDie(hit_sc,      sizeof(float) * (alloc_nhits + 10));
+                  alloc_nhits += 10;
+                }
+              }
+            }
 	  }
 	}
       }
@@ -358,6 +499,8 @@ main(int argc, char **argv)
   int	windowlen;			/* scanning window size */
   float dropoff_sc;			/* Dropoff for termination of hit extension */
   float report_sc;			/* Threshold for reporting hits */
+  float word_sc;			/* Threshold for words to initiate extension */
+  int   wordlen;			/* Length of word in # of states.  # of nucs may vary */
   int	do_revcomp;			/* TRUE to do reverse complement too */
 
   char	*optname;			/* name of option found by Getopt() */
@@ -369,6 +512,8 @@ main(int argc, char **argv)
   windowlen = 200;
   dropoff_sc = -10;
   report_sc = 10;
+  word_sc = IMPOSSIBLE;
+  wordlen = 4;
   do_revcomp = TRUE;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
@@ -376,6 +521,8 @@ main(int argc, char **argv)
     if      (strcmp(optname, "-W")        == 0) windowlen       = atoi(optarg);
     else if (strcmp(optname, "-X")        == 0) dropoff_sc      = atof(optarg);
     else if (strcmp(optname, "-S")        == 0) report_sc       = atof(optarg);
+    else if (strcmp(optname, "-T")        == 0) word_sc         = atof(optarg);
+    else if (strcmp(optname, "--wordlen") == 0) wordlen         = atof(optarg);
     else if (strcmp(optname, "--toponly") == 0) do_revcomp      = FALSE;
     else if (strcmp(optname, "-h")        == 0) {
       MainBanner(stdout, banner);
@@ -413,7 +560,7 @@ main(int argc, char **argv)
 
     if (! reversed) printf("sequence: %s\n", sqinfo.name);
     else            printf("reversed sequence: %s\n", sqinfo.name);
-    MiniScan(cm, dsq, sqinfo.len, windowlen, dropoff_sc, report_sc);
+    MiniScan(cm, dsq, sqinfo.len, windowlen, wordlen, word_sc, dropoff_sc, report_sc);
 
     free(dsq);
     if (! reversed && do_revcomp)
