@@ -34,7 +34,7 @@ MYLIBS   = -lsquid -leasel
 MYLIBDIR = -L../squid -L../easel
 MYINCDIR = -I../squid -I../easel
 
-PROGS = cmalign cmbuild cmscore cmsearch
+PROGS = cmalign cmbuild cmscore cmsearch minisearch
 
 OBJS  = alphabet.o\
 	bandcyk.o\
