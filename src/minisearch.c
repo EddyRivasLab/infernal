@@ -148,6 +148,8 @@ MiniCYKOut(CM_t *cm, char *dsq, int L, int v, int j, int d, float dropoff_sc,
  *           d		- d = j-i+1 - relative starting i position
  *           dropoff_sc - equiv. to BLAST parameter X: continue extension
  *                        until score drops from max by X or more
+ *           iscored	- TRUE/FALSE: has residue i been emitted yet (input & output var.)
+ *           jscored	- TRUE/FALSE: has residue j been emitted yet (input & output var.)
  *           ret_in_v   - RETURN: ending state
  *           ret_in_i   - RETURN: ending i
  *           ret_in_j   - RETURN: ending j
@@ -157,7 +159,7 @@ MiniCYKOut(CM_t *cm, char *dsq, int L, int v, int j, int d, float dropoff_sc,
  */
 float
 MiniCYKIn(CM_t *cm, char *dsq, int L, int v, int j, int d, float dropoff_sc,
-          int *ret_in_v, int *ret_in_i, int *ret_in_j)
+          int *iscored, int *jscored, int *ret_in_v, int *ret_in_i, int *ret_in_j)
 {
   int i;
   int y, yoffset, z;
@@ -186,7 +188,9 @@ MiniCYKIn(CM_t *cm, char *dsq, int L, int v, int j, int d, float dropoff_sc,
     /* Get new j,d and Calculate esc */
     if (cm->stid[v] == MATP_MP) 
     {
-      j--; d-=2;
+      if (*iscored && *jscored) { j--; d-=2; }
+      else if (*iscored) { d--; *jscored = TRUE; }
+      else if (*jscored) { j--; d--; *iscored = TRUE; }
       i = j-d+1;
       if (i >= j) { break; }
       if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
@@ -196,7 +200,8 @@ MiniCYKIn(CM_t *cm, char *dsq, int L, int v, int j, int d, float dropoff_sc,
     }
     else if (cm->stid[v] == MATL_ML)
     {
-      d--;
+      if (*iscored) { d--; }
+      else {*iscored = TRUE; }
       i = j-d+1;
       if (i >= j) { break; }
       if (dsq[i] < Alphabet_size)
@@ -206,7 +211,8 @@ MiniCYKIn(CM_t *cm, char *dsq, int L, int v, int j, int d, float dropoff_sc,
     }
     else if (cm->stid[v] == MATR_MR)
     {
-      j--; d--;
+      if (*jscored) { j--; d--; }
+      else { *jscored = TRUE; }
       i = j-d+1;
       if (i >= j) { break; }
       if (dsq[j] < Alphabet_size)
@@ -248,25 +254,26 @@ MiniCYKIn(CM_t *cm, char *dsq, int L, int v, int j, int d, float dropoff_sc,
  *           j		- starting j position
  *           d		- d = j-i+1 - relative starting i position
  *           wordlen	- target length of word hit
+ *           iscored	- TRUE/FALSE: has residue i been emitted
+ *           jscored	- TRUE/FALSE: has residue j been emitted
  *           ret_v	- RETURN: ending state
  *           ret_j	- RETURN: ending j
  *           ret_d	- RETURN: ending d
  *
- * Returns:  ret_v, ret_j, ret_d
+ * Returns:  iscored, jscored, ret_v, ret_j, ret_d
  *           return value: score of word hit
  */
 float
 WordInitiate(CM_t *cm, char *dsq, int L, int v, int j, int d, int wordlen,
-             int *ret_v, int *ret_j, int *ret_d)
+             int *iscored, int *jscored, int *ret_v, int *ret_j, int *ret_d)
 {
   int i;
   int x;
   int y, yoffset, z;
   float tsc, esc, seed_sc;
 
-  int iscored, jscored;		/* Keep track of whether initial i,j */
-  				/* have been emitted yet */
-  iscored = FALSE; jscored = FALSE;
+  /* Keep track of whether initial i,j have been emitted yet */
+  *iscored = FALSE; *jscored = FALSE;
 
   *ret_v = v;
   *ret_j = j;
@@ -281,8 +288,8 @@ WordInitiate(CM_t *cm, char *dsq, int L, int v, int j, int d, int wordlen,
       seed_sc += cm->esc[v][(int) (dsq[i]*Alphabet_size+dsq[j])];
     else
       seed_sc += DegeneratePairScore(cm->esc[v],dsq[i],dsq[j]);
-    iscored = TRUE;
-    jscored = TRUE;
+    *iscored = TRUE;
+    *jscored = TRUE;
   }
   else if (cm->stid[v] == MATL_ML)
   {
@@ -291,7 +298,7 @@ WordInitiate(CM_t *cm, char *dsq, int L, int v, int j, int d, int wordlen,
       seed_sc += cm->esc[v][(int) dsq[i]];
     else
       seed_sc += DegenerateSingletScore(cm->esc[v],dsq[i]);
-    iscored = TRUE;
+    *iscored = TRUE;
   }
   else if (cm->stid[v] == MATR_MR)
   {
@@ -300,7 +307,7 @@ WordInitiate(CM_t *cm, char *dsq, int L, int v, int j, int d, int wordlen,
       seed_sc += cm->esc[v][(int) dsq[j]];
     else
       seed_sc += DegenerateSingletScore(cm->esc[v],dsq[j]);
-    jscored = TRUE;
+    *jscored = TRUE;
   }
   else /* Should never reach here */
   { fprintf(stderr,"WARNING: Illegal state on word initiation v=%d stid=%d\n",v,cm->stid[v]); }
@@ -321,9 +328,9 @@ WordInitiate(CM_t *cm, char *dsq, int L, int v, int j, int d, int wordlen,
 
     if (cm->stid[v] == MATP_MP)
     {
-      if (iscored && jscored) { j--; d-=2; }
-      else if (iscored) { d--; jscored = TRUE; }
-      else if (jscored) { j--; d--; iscored = TRUE; }
+      if (*iscored && *jscored) { j--; d-=2; }
+      else if (*iscored) { d--; *jscored = TRUE; }
+      else if (*jscored) { j--; d--; *iscored = TRUE; }
       i = j - d + 1;
       if (i >= j) { break; }
       if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
@@ -333,8 +340,8 @@ WordInitiate(CM_t *cm, char *dsq, int L, int v, int j, int d, int wordlen,
     }
     else if (cm->stid[v] == MATL_ML)
     {
-      if (iscored) { d--; }
-      else         { iscored = TRUE; }
+      if (*iscored) { d--; }
+      else         { *iscored = TRUE; }
       i = j - d + 1;
       if (i >= j) { break; }
       if (dsq[i] > Alphabet_size)
@@ -344,8 +351,8 @@ WordInitiate(CM_t *cm, char *dsq, int L, int v, int j, int d, int wordlen,
     }
     else if (cm->stid[v] == MATR_MR)
     {
-      if (jscored) { j--; d--; }
-      else         { jscored = TRUE; }
+      if (*jscored) { j--; d--; }
+      else         { *jscored = TRUE; }
       i = j - d + 1;
       if (i >= j) { break; }
       if (dsq[j] > Alphabet_size)
@@ -362,8 +369,8 @@ WordInitiate(CM_t *cm, char *dsq, int L, int v, int j, int d, int wordlen,
     *ret_d = d;
   }
 
-  /* Hack!  Force word to emit both i and j - given impossible score if not */
-  if ( (!iscored) || (!jscored) ) { seed_sc = IMPOSSIBLE; }
+  /* Force wordlength - given impossible score if not */
+  if ( x<wordlen ) { seed_sc = IMPOSSIBLE; }
     
   return seed_sc;
 }
@@ -398,6 +405,7 @@ MiniScan(CM_t *cm, char *dsq, int L, int W, int wordlen, float word_sc,
   int    x;			/* counter variable */
   int    duplicate;		/* TRUE/FALSE: hit is already in list */
 
+  int iscored, jscored;		/* TRUE/FALSE: has residue i/j been emitted yet */
   int temp_v, temp_i, temp_j, temp_d;
 
   hit_outer_v = MallocOrDie(sizeof(int)   * alloc_nhits);
@@ -416,13 +424,35 @@ MiniScan(CM_t *cm, char *dsq, int L, int W, int wordlen, float word_sc,
       {
         for (d=1; d<=W && d<=j; d++)
         {
-	  seed_sc = WordInitiate(cm,dsq,L,v,j,d,wordlen,&temp_v,&temp_j,&temp_d);
+	  seed_sc = WordInitiate(cm,dsq,L,v,j,d,wordlen,&iscored,&jscored,&temp_v,&temp_j,&temp_d);
 
-	  if (seed_sc > word_sc) {
+	  if (seed_sc > word_sc)
+	  {
 	    /* If the seed score meets the threshold, extend both out and in */
-	    in_sc  = MiniCYKIn( cm,dsq,L,temp_v,temp_j,temp_d,dropoff_sc,&inner_v,&inner_i,&inner_j);
-            out_sc = MiniCYKOut(cm,dsq,L,     v,     j,     d,dropoff_sc,&outer_v,&outer_i,&outer_j);
+	    /* NOTE: unscored i/j residues are always assigned to the inner subsequence */
+	    /* MiniCYKIn() deals with them if it can, while MiniCYKOut() ignores them   */
+	    in_sc  = MiniCYKIn( cm,dsq,L,temp_v,temp_j,temp_d,dropoff_sc,&iscored,&jscored,&inner_v,&inner_i,&inner_j);
+            out_sc = MiniCYKOut(cm,dsq,L,     v,     j,     d,dropoff_sc,                  &outer_v,&outer_i,&outer_j);
             total_sc = seed_sc + in_sc + out_sc;
+
+	    if (!iscored && outer_i==j-d+1)	/* Entire hit is single-stranded, never emits left residue */
+	    {
+	      inner_i = 0;
+	      outer_i = 0;
+	    }
+	    else if (!iscored)			/* outer_i to i-1 were emitted by MiniCYKOut, i not emitted */
+	    {
+	      inner_i--;
+	    }
+	    else if (!jscored && outer_j==j)	/* Entire hit is single-stranded, never emits right residue */
+	    {
+	      inner_j = 0;
+	      outer_j = 0;
+	    }
+	    else if (!jscored)			/* j+1 to outer_j were emitted by MiniCYKOut, j not emitted */
+	    {
+	      inner_j++;
+	    }
 
             if (total_sc > report_sc)	/* Add to hitlist */
             {
