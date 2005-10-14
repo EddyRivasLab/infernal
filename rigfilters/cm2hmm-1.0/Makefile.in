@@ -51,4 +51,5 @@ clean:
 
 distclean:
 	make clean
+	-rm Makefile
 
