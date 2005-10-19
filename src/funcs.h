@@ -15,7 +15,7 @@ extern char **DigitizeAlignment(char **aseq, int nseq, int alen);
 /* from bandcyk.c
  */
 extern void     BandExperiment(CM_t *cm);
-extern double **BandDistribution(CM_t *cm, int W);
+extern double **BandDistribution(CM_t *cm, int W, int do_local);
 extern int      BandCalculationEngine(CM_t *cm, int W, double p_thresh, 
 				      int save_densities,
 				      int **ret_dmin, int **ret_dmax, 

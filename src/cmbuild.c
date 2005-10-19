@@ -431,7 +431,7 @@ main(int argc, char **argv)
       safe_windowlen = 2 * MSAMaxSequenceLength(msa);
       /*printf("safe_windowlen : %d\n", safe_windowlen);*/
       /*printf("bandp          : %12f\n", bandp);*/
-      gamma = BandDistribution(cm, safe_windowlen);
+      gamma = BandDistribution(cm, safe_windowlen, 0);
       BandBounds(gamma, cm->M, safe_windowlen, bandp, &dmin, &dmax);
       cm->W = dmax[0];
       /*printf("cm->W : %d\n", cm->W);*/
@@ -590,7 +590,7 @@ main(int argc, char **argv)
 	   * call, so we need to recalculate gamma with cm->W 
 	   */
 	  DMX2Free(gamma);
-	  gamma = BandDistribution(cm, cm->W);
+	  gamma = BandDistribution(cm, cm->W, 0);
 	  free(dmin);
 	  free(dmax);
 	  BandBounds(gamma, cm->M, cm->W, bandp, &dmin, &dmax);

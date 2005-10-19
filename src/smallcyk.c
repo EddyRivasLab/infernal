@@ -6225,8 +6225,8 @@ insideT_b(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 
   /*printf("Starting traceback in insideT_b()\n");*/
   while (1) {
-    assert(d <= dmax[v]);
-    assert(d >= dmin[v]);
+    assert(d <= dmax[v] || USED_LOCAL_BEGIN || USED_EL);
+    assert(d >= dmin[v] || USED_LOCAL_BEGIN || USED_EL);
 
     if (cm->sttype[v] == B_st) {
       k = ((int **) shadow[v])[j][d];   /* k = len of right fragment */
@@ -6353,8 +6353,8 @@ vinsideT_b(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
   i = i0;
   /*printf("Starting traceback in vinsideT_b()\n");*/
   while (1) {
-    assert((j-i+1) <= dmax[v]);
-    assert((j-i+1) >= dmin[v]);
+    assert((j-i+1) <= dmax[v] || USED_LOCAL_BEGIN || USED_EL);
+    assert((j-i+1) >= dmin[v] || USED_LOCAL_BEGIN || USED_EL);
 
     jp = j-j1;
     ip = i-i0;
@@ -7609,8 +7609,8 @@ insideT_b_me(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
   while (1) {
     /* CYK Full ME Bands used 15 */
     /* 2 lines below added */
-    assert(d <= dmax[v]);
-    assert(d >= dmin[v]);
+    assert(d <= dmax[v] || USED_LOCAL_BEGIN || USED_EL);
+    assert(d >= dmin[v] || USED_LOCAL_BEGIN || USED_EL);
 
     dp = d - dmin[v];
     if (cm->sttype[v] == B_st) {
