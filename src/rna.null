@@ -5,9 +5,14 @@
 # to be a background frequency for an RNA nucleotide.
 # *Important* any commented lines must begin with "#" 
 # followed by a whitespace character.
+#
+# cmbuild assumes that the order of probabilities for the 
+# 4 nucleotides is always A, C, G, U. (The '# A' etc. below
+# is ignored.
 # 
 # The values in this file are the Infernal v0.56 default
 # settings.
+#
 # There can be no blank lines in this file before the 4 lines
 # with background frequencies.
 # 
