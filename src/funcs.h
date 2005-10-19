@@ -70,6 +70,10 @@ extern int   UniqueStateCode(char *s);
 extern int   DeriveUniqueStateCode(int ndtype, int sttype);
 extern CM_t *CMRebalance(CM_t *cm);
 
+/*EPN 10.19.05*/
+extern void  CMReadNullModel(char *rndfile, CM_t *cm);
+
+
 /* from cmio.c
  */
 extern CMFILE *CMFileOpen(char *cmfile, char *env);

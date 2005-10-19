@@ -235,6 +235,63 @@ CMSetDefaultNullModel(CM_t *cm)
 }
 
 
+/* Function: CMReadNullModel()
+ * EPN 10.19.05
+ * based on SRE's HMMER's cm.c's P7ReadNullModel() 
+ *
+ * Purpose:  Read the CM null model from a file.
+ */
+void
+CMReadNullModel(char *rndfile, CM_t *cm)
+{
+  FILE *fp;
+  char *buf;
+  char *s;
+  int   n;			/* length of buf */
+  int   x;
+  int   type = 0; 
+  char *tok;
+  int   toklen;
+  float sum;
+
+  buf = NULL;
+  n   = 0;
+  /* Expects a file with 4 lines that don't begin with "# ".
+   * The first token of each of these 4 lines is read as 
+   * the background probability of A, C, G, and U (in that order)
+   * Then does a check to make sure the 4 read in values
+   * sum to 1.0 exactly.
+   */
+
+  if ((fp = fopen(rndfile, "r")) == NULL)
+    Die("Failed to open null model file %s\n", rndfile);
+
+				/* parse the file */
+  x = 0;
+  while(x < Alphabet_size) {
+    if(sre_fgets(&buf, &n, fp) == NULL) goto FAILURE;
+    s   = buf;
+    if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+    if(strcmp(tok, "#") != 0)
+      {      
+	cm->null[x] = atof(tok);
+	sum += cm->null[x];
+	x++;
+      }
+  }
+  if(sum != 1.) {
+    Die("%s is not in CM null model file format.\nThere are not 4 background probabilities that sum to exactly 1.0", rndfile);
+  }    
+
+  fclose(fp);
+  return;
+
+FAILURE:
+  fclose(fp);
+  Die("%s is not in CM null model file format", rndfile);
+}
+
+
 /* Function: CMSimpleProbify()
  * Date:     SRE, Tue Aug  1 11:07:17 2000 [St. Louis]
  *
