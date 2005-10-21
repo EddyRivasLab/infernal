@@ -527,12 +527,14 @@ FreeBandDensities(CM_t *cm, double **gamma)
  *
  * Args:     cm   - CM to calculate length distribution for.
  *           W    - maximum DP window size.       
+ *           do_local - TRUE to factor in possibility of jumping from root
+ *                      to any consensus state (see EPN for changes)
  *
  * Returns:  gamma[v][n] (0..M-1, 0..W).
  *           Caller free's w/ DMX2Free(gamma).
  */
 double **
-BandDistribution(CM_t *cm, int W)
+BandDistribution(CM_t *cm, int W, int do_local)
 {
   double **gamma;            /* gamma[v][n] = log P(length n | state v); [0..W][0..M-1] */
   int      n,x;
@@ -551,6 +553,19 @@ BandDistribution(CM_t *cm, int W)
 	case D_st:
 	  for (y = 0; y < cm->cnum[v]; y++)
 	    gamma[v][n] += cm->t[v][y] * gamma[cm->cfirst[v] + y][n];
+	  /*EPN*/
+	  if(do_local && v == 0) {
+	    for (y = 0; y < cm->M; y++) {
+	      if(cm->sttype[y] == MP_st ||
+		 cm->sttype[y] == ML_st ||
+		 cm->sttype[y] == MR_st ||
+		 cm->sttype[y] == B_st) {
+		gamma[v][n] += cm->begin[y] * gamma[y][n];
+		/* cm->begin[y] is probability we transition to state y from root */
+	      }
+	    }
+	  }
+	  /*end EPN*/
 	  break;
 
 	case ML_st:
@@ -1004,7 +1019,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
        * by the way local alignment is parameterized (other transitions are
        * -INFTY), which is probably a little too fragile of a method. 
        */
-      for (d = dmin[0]; d <= dmax[0] && d <=j; d++) 
+      for (d = dmin[0]; d <= dmax[0] && d <=j; d++)
 	{
 	  y = cm->cfirst[0];
 	  alpha[0][cur][d] = alpha[y][cur][d] + cm->tsc[0][0];

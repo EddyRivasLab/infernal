@@ -65,7 +65,8 @@ static char experts[] = "\
    --treeforce    : score first seq in alignment and show parsetree\n\
    --ignorant     : strip the structural info from input alignment\n\
 \n\
- * customize the Dirichlet priors:\n\
+ * customization of null model and priors:\n\
+   --null      <f> : read null (random sequence) model from file <f>\n\
    --priorfile <f> : read priors from file <f>\n\
 ";
 
@@ -92,9 +93,10 @@ static struct opt_s OPTIONS[] = {
   { "--wgsc",      FALSE, sqdARG_NONE },
   { "--priorfile", FALSE, sqdARG_STRING },
   { "--bfile",     FALSE, sqdARG_STRING },
-  { "--bandp",      FALSE, sqdARG_FLOAT},
+  { "--bandp",     FALSE, sqdARG_FLOAT},
   { "--ignorant",  FALSE, sqdARG_NONE },
-};
+  { "--null",      FALSE, sqdARG_STRING }}
+;
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
 static int  save_countvectors(char *cfile, CM_t *cm);
@@ -174,6 +176,10 @@ main(int argc, char **argv)
   int      be_ignorant;         /* TRUE to strip all bp information from the input
 				 * consensus structure.
 				 */
+
+  /* EPN 10.19.05 Added --null option (analagous to HMMER2.4 --null) */
+  char *rndfile;		/* random sequence model file to read    */
+
   /*********************************************** 
    * Parse command line
    ***********************************************/
@@ -199,6 +205,7 @@ main(int argc, char **argv)
   regressionfile    = NULL;
   prifile           = NULL;
   bandfile          = NULL;
+  rndfile           = NULL;
   
   /* EPN 08.18.05 bandp used in BandBounds() for calculating W(W=dmax[0]) 
    *              Brief expt on effect of different bandp values in 
@@ -231,10 +238,11 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--cmtbl")     == 0) cmtblfile         = optarg;
     else if (strcmp(optname, "--tfile")     == 0) tracefile         = optarg;
     else if (strcmp(optname, "--regress")   == 0) regressionfile    = optarg;
-    else if (strcmp(optname, "--priorfile") == 0) prifile         = optarg;
-    else if (strcmp(optname, "--bfile")     == 0) bandfile         = optarg;
-    else if (strcmp(optname, "--bandp")     == 0) bandp        = atof(optarg);
+    else if (strcmp(optname, "--priorfile") == 0) prifile           = optarg;
+    else if (strcmp(optname, "--bfile")     == 0) bandfile          = optarg;
+    else if (strcmp(optname, "--bandp")     == 0) bandp             = atof(optarg);
     else if (strcmp(optname, "--ignorant")  == 0) be_ignorant       = TRUE;
+    else if (strcmp(optname, "--null")      == 0) rndfile           = optarg;
 
     else if (strcmp(optname, "--informat") == 0) {
       format = String2SeqfileFormat(optarg);
@@ -303,6 +311,11 @@ main(int argc, char **argv)
 	 SeqfileFormat2String(afp->format));
   printf("Model construction strategy:       %s\n",
 	 (use_rf)? "Manual, from RF annotation" : "Fast/ad-hoc");
+  printf("Null model used:                   %s\n",
+	 (rndfile == NULL) ? "(default)" : rndfile);
+  printf("Prior used:                        %s\n",
+	 (prifile == NULL) ? "(default)" : prifile);
+
   printf("Sequence weighting strategy:       ");
   switch (weight_strategy) {
   case WGT_GIVEN: puts("use annotation in alifile, if any"); break;
@@ -417,7 +430,11 @@ main(int argc, char **argv)
       printf("%-40s ... ", "Converting counts to probabilities"); fflush(stdout);
 
       PriorifyCM(cm, pri);
-      CMSetDefaultNullModel(cm);
+
+      /* Set up the null/random seq model */
+      if (rndfile == NULL)  CMSetDefaultNullModel(cm);
+      else                  CMReadNullModel(rndfile, cm);
+
       CMLogoddsify(cm);
       printf("done.\n");
 
@@ -431,7 +448,7 @@ main(int argc, char **argv)
       safe_windowlen = 2 * MSAMaxSequenceLength(msa);
       /*printf("safe_windowlen : %d\n", safe_windowlen);*/
       /*printf("bandp          : %12f\n", bandp);*/
-      gamma = BandDistribution(cm, safe_windowlen);
+      gamma = BandDistribution(cm, safe_windowlen, 0);
       BandBounds(gamma, cm->M, safe_windowlen, bandp, &dmin, &dmax);
       cm->W = dmax[0];
       /*printf("cm->W : %d\n", cm->W);*/
@@ -590,7 +607,7 @@ main(int argc, char **argv)
 	   * call, so we need to recalculate gamma with cm->W 
 	   */
 	  DMX2Free(gamma);
-	  gamma = BandDistribution(cm, cm->W);
+	  gamma = BandDistribution(cm, cm->W, 0);
 	  free(dmin);
 	  free(dmax);
 	  BandBounds(gamma, cm->M, cm->W, bandp, &dmin, &dmax);

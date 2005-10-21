@@ -170,6 +170,7 @@ main(int argc, char **argv)
   }
 
   if (bdump_level > 3) Die("Highest available --banddump verbosity level is 3\n%s", usage);
+  if (do_bandexpand && (!(do_banded))) Die("Doesn't make sense to use --bandexpand option with --banded option\n", usage);
   if (argc - optind != 2) Die("Incorrect number of arguments.\n%s\n", usage);
   cmfile = argv[optind++];
   seqfile = argv[optind++]; 
@@ -196,7 +197,7 @@ main(int argc, char **argv)
 
   /* EPN 08.18.05 */
   if (! (set_window)) windowlen = cm->W;
-  printf("\n\n\n***cm->W : %d***\n\n\n", cm->W);
+  printf("***cm->W : %d***\n", cm->W);
 
   if (do_local) ConfigLocal(cm, 0.5, 0.5);
   CMLogoddsify(cm);
@@ -237,7 +238,7 @@ main(int argc, char **argv)
 
   if(do_banded || bdump_level > 0)
     {
-      gamma = BandDistribution(cm, windowlen);
+      gamma = BandDistribution(cm, windowlen, do_local);
       BandBounds(gamma, cm->M, windowlen, bandp, &dmin, &dmax);
       printf("bandp:%f\n", bandp);
       if(bdump_level > 1) debug_print_bands(cm, dmin, dmax);
@@ -269,6 +270,18 @@ main(int argc, char **argv)
 		  debug_print_bands(cm, dmin, dmax);
 		}
 	      expand_flag = TRUE;
+	    }
+	}
+      else 
+	{
+	  if(do_banded && (sqinfo[i].len < dmin[0]) || (sqinfo[i].len > dmax[0]))
+	    {
+	      /* the query sequence we're aligning is longer than
+		 the upper limit band on the root node, or is 
+		 shorter than the lower limit on the band on
+		 the root node, so we quit and tell user
+	         they can try naive band expansion if they want.*/
+	      Die("Length of sequence to align (%d nt) lies outside the root band.\ndmin[0]: %d and dmax[0]: %d\nImpossible to align with banded CYK unless you try --bandexpand.\n%s", sqinfo[i].len, dmin[0], dmax[0], usage);
 	    }
 	}
       printf("Aligning %s\n", sqinfo[i].name);

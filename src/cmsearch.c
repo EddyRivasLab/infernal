@@ -22,6 +22,8 @@
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
 
+static void debug_print_bands(CM_t *cm, int *dmin, int *dmax);
+
 static char banner[] = "cmsearch - search a sequence database with an RNA covariance model";
 
 static char usage[]  = "\
@@ -41,6 +43,7 @@ static char experts[] = "\
    --dumptrees   : dump verbose parse tree information for each hit\n\
    --banded      : use experimental banded CYK scanning algorithm\n\
    --bandp       : tail loss prob for --banded (default:0.0001)\n\
+   --banddump    : print bands for each state\n\
    --X           : project X!\n\
 ";
 
@@ -54,6 +57,7 @@ static struct opt_s OPTIONS[] = {
   { "--toponly",    FALSE, sqdARG_NONE },
   { "--banded",     FALSE, sqdARG_NONE },
   { "--bandp",      FALSE, sqdARG_FLOAT},
+  { "--banddump"  , FALSE, sqdARG_NONE},
   { "--X",          FALSE, sqdARG_NONE },
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
@@ -96,6 +100,7 @@ main(int argc, char **argv)
   int    do_dumptrees;		/* TRUE to dump parse trees */
   int    do_banded;		/* TRUE to do banded CYK */
   int    do_projectx;           /* TRUE to activate special in-progress testing code */
+  int    do_bdump;              /* TRUE to print out bands */
   /*EPN 08.18.05*/
   int    set_window;            /* TRUE to set window length due to -W option*/
 
@@ -117,6 +122,7 @@ main(int argc, char **argv)
   do_banded         = FALSE;
   bandp             = 0.0001;
   do_projectx       = FALSE;
+  do_bdump          = FALSE;
   
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -129,6 +135,7 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--banded")    == 0) do_banded    = TRUE;
     else if  (strcmp(optname, "--bandp")     == 0) bandp        = atof(optarg);
     else if  (strcmp(optname, "--X")         == 0) do_projectx  = TRUE;
+    else if  (strcmp(optname, "--banddump")  == 0) do_bdump     = TRUE;
     else if  (strcmp(optname, "--informat")  == 0) {
       format = String2SeqfileFormat(optarg);
       if (format == SQFILE_UNKNOWN) 
@@ -164,17 +171,19 @@ main(int argc, char **argv)
 
   /* EPN 08.18.05 */
   if (! (set_window)) windowlen = cm->W;
-  printf("\n\n\n***cm->W : %d***\n\n\n", cm->W);
+  printf("***cm->W : %d***\n", cm->W);
 
   if (do_local) ConfigLocal(cm, 0.5, 0.5);
   CMLogoddsify(cm);
   CMHackInsertScores(cm);	/* make insert emissions score zero. "TEMPORARY" FIX. */
   cons = CreateCMConsensus(cm, 3.0, 1.0); 
 
-  if (do_banded || do_projectx)
+  if (do_banded || do_projectx || do_bdump)
     {
-      gamma = BandDistribution(cm, windowlen);
+      gamma = BandDistribution(cm, windowlen, do_local);
       BandBounds(gamma, cm->M, windowlen, bandp, &dmin, &dmax);
+      printf("bandp:%f\n", bandp);
+      if(do_bdump) debug_print_bands(cm, dmin, dmax);
     }
 
   StopwatchZero(watch);
@@ -195,8 +204,8 @@ main(int argc, char **argv)
        */
       if (do_banded && (sqinfo.len < dmin[0] || sqinfo.len > dmax[0]))
 	{
-	  //printf("sequence: %s\n", sqinfo.name);
-	  //continue;
+	  /*printf("sequence: %s\n", sqinfo.name);*/
+	  /*continue;*/
 	}
       if (sqinfo.len > maxlen) maxlen = sqinfo.len;
       dsq = DigitizeSequence(seq, sqinfo.len);
@@ -264,4 +273,25 @@ main(int argc, char **argv)
   StopwatchFree(watch);
   SqdClean();
   return EXIT_SUCCESS;
+}
+
+/* EPN 05.09.05
+  debug_print_bands()
+ * Function: debug_print_bands
+ *
+ * Purpose:  Print bands for each state.
+ */
+
+static void
+debug_print_bands(CM_t *cm, int *dmin, int *dmax)
+{
+  int v;
+
+  printf("\nPrinting bands :\n");
+  printf("****************\n");
+  for(v = 0; v < cm->M; v++)
+   {
+     printf("band state:%d type:%d min:%d max:%d\n", v, cm->sttype[v], dmin[v], dmax[v]);
+   }
+  printf("****************\n\n");
 }
