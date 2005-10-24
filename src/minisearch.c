@@ -537,6 +537,8 @@ main(int argc, char **argv)
   char	*optarg;			/* argument found by Getopt() */
   int	 optind;			/* index in argv[] */
 
+  /* float **msc; */
+
   /* Parse command line */
   format = SQFILE_UNKNOWN;
   windowlen = 200;
@@ -582,6 +584,8 @@ main(int argc, char **argv)
   CMLogoddsify(cm);
   CMHackInsertScores(cm);	/* make insert emissions score zero -- "TEMPORARY" FIX */
 
+  /* MaxSubsequenceScore(cm,windowlen,&msc); */
+
   reversed = FALSE;
   while (reversed || ReadSeq(sqfp, sqfp->format, &seq, &sqinfo))
   {
@@ -605,6 +609,7 @@ main(int argc, char **argv)
     }
   }
 
+  /* free(msc[0]); free(msc); */
   FreeCM(cm);
   CMFileClose(cmfp);
   SeqfileClose(sqfp);
