@@ -49,7 +49,8 @@ OBJS  = alphabet.o\
 	parsetree.o\
 	prior.o\
 	scancyk.o\
-	smallcyk.o
+	smallcyk.o\
+	r-what.o
 
 HDRS  = funcs.h\
 	prior.h\
