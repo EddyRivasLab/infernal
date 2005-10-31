@@ -43,7 +43,7 @@ manpages:
 #      to .pdf files to fool pdflatex into importing them correctly.
 ai2pdf:
 	for fig in ${AIFIGURES}; do\
-	   if test ! -e Figures/$$fig.pdf && test -e Figures/$$fig.ai; then ln -s Figures/$$fig.ai Figures/$$fig.pdf; fi\
+	   if test ! -e Figures/$$fig.pdf && test -e Figures/$$fig.ai; then (cd Figures; ln -s $$fig.ai $$fig.pdf); fi\
 	done
 
 clean:
