@@ -57,6 +57,7 @@ RELCODE     = @PACKAGE_RELCODE@
 LICENSETAG  = gnu
 COMPRESS    = gzip
 FTPDIR      = /nfs/ftp/eddy/software/infernal
+REPOSITORY  = https://skynet.wustl.edu:8080/sre/src/
 
 # The program lists below for INFERNAL are not necessarily
 # a complete manifest. They are the list of stable programs that the
@@ -90,89 +91,88 @@ $(RIGFILTERS): core
 dist:
 	# Delete old versions of the same release
 	#
-	@if test -d ${BASENAME}-$(RELEASE);        then rm -rf ${BASENAME}-$(RELEASE);        fi
-	@if test -e ${BASENAME}-$(RELEASE).tar;    then rm -f  ${BASENAME}-$(RELEASE).tar;    fi
-	@if test -e ${BASENAME}-$(RELEASE).tar.Z;  then rm -f  ${BASENAME}-$(RELEASE).tar.Z;  fi
-	@if test -e ${BASENAME}-$(RELEASE).tar.gz; then rm -f  ${BASENAME}-$(RELEASE).tar.gz; fi
+	@if test -d ../${BASENAME}-$(RELEASE);        then rm -rf ../${BASENAME}-$(RELEASE);        fi
+	@if test -e ../${BASENAME}-$(RELEASE).tar;    then rm -f  ../${BASENAME}-$(RELEASE).tar;    fi
+	@if test -e ../${BASENAME}-$(RELEASE).tar.Z;  then rm -f  ../${BASENAME}-$(RELEASE).tar.Z;  fi
+	@if test -e ../${BASENAME}-$(RELEASE).tar.gz; then rm -f  ../${BASENAME}-$(RELEASE).tar.gz; fi
 	# 
-	# CVS tag and extract. -c: make sure we committed;
-	#                      -F: allow more than one "make dist" per rel
-	# prep: must have done "cvs commit", and CVSROOT must be set
-	# We also need the squid library, so tag and export it too.
+	# Export the release from Subversion control.
+        # Because we use svn:externals, this automatically exports 
+	# the ssdk, squid, and Easel libraries as well.
 	#
-	cvs tag -F $(RELCODE)
-	cvs export -r $(RELCODE) -d ${BASENAME}-${RELEASE} ${BASENAME}
-	cvs rtag -F ${RELCODE} squid
-	(cd ${BASENAME}-${RELEASE}/; cvs export -r ${RELCODE} -d squid squid)
+	svn export ${REPOSITORY}/${BASENAME}/branches/release-${RELEASE} ../${BASENAME}-${RELEASE}
 	# 
 	# We won't include the ssdk, but we need it temporarily,
 	# for rmanprocess.pl (when making the user guide); we also 
 	# need to put a copy of sqc in testsuite. 
 	#
-	cp ssdk/sqc ${BASENAME}-${RELEASE}/testsuite/
-	mkdir ${BASENAME}-${RELEASE}/ssdk
-	cp ssdk/rmanprocess.pl ${BASENAME}-${RELEASE}/ssdk/
+	cp ../${BASENAME}-${RELEASE}/ssdk/sqc ../${BASENAME}-${RELEASE}/testsuite/
 	# 
-	# Make the configure scripts from configure.in's
+	# Make the configure scripts from configure.ac's
 	#
-	(cd ${BASENAME}-${RELEASE};       autoconf)
-	(cd ${BASENAME}-${RELEASE}/squid; autoconf)
+	(cd ../${BASENAME}-${RELEASE};       autoconf)
+	(cd ../${BASENAME}-${RELEASE}/squid; autoconf)
+	(cd ../${BASENAME}-${RELEASE}/easel; autoconf)
 	#
-	# We'll need a basic squid Makefile for some steps; later
-	# we'll delete it.
+	# We'll need a basic Makefiles for some steps; later
+	# we'll delete them
 	#
-	(cd ${BASENAME}-${RELEASE}/squid; ./configure)
+	(cd ../${BASENAME}-${RELEASE}/; ./configure)
 	#
 	# Attach license stamps on all files that need 'em
 	# (e.g. replace LICENSE keyword everywhere)
 	#
-	find ${BASENAME}-${RELEASE} -type f -exec ssdk/sedition-pp LICENSE Licenses/$(LICENSETAG) {} \;
+	find ../${BASENAME}-${RELEASE} -type f -exec ssdk/sedition-pp LICENSE Licenses/$(LICENSETAG) {} \;
 	# 
 	# All other keyword replacements are in the documentation.
 	#
-	find ${BASENAME}-${RELEASE}/documentation -type f -exec ssdk/sedition RELEASE ${RELEASE} RELEASEDATE ${RELEASEDATE} PACKAGE ${PACKAGE} COPYRIGHT ${COPYRIGHT} LICENSELINE ${LICENSELINE} {} \;
+	find ../${BASENAME}-${RELEASE}/documentation -type f -exec ssdk/sedition RELEASE ${RELEASE} RELEASEDATE ${RELEASEDATE} PACKAGE ${PACKAGE} COPYRIGHT ${COPYRIGHT} LICENSELINE ${LICENSELINE} {} \;
 	#
 	# Make the User's Guide, and copy to top level. (We'll
 	# destroy the userguide source soon.)
 	#
-	(cd ${BASENAME}-${RELEASE}/documentation/userguide; make pdf)
-	cp ${BASENAME}-${RELEASE}/documentation/userguide/main.pdf  ${BASENAME}-${RELEASE}/Userguide.pdf
+	(cd ../${BASENAME}-${RELEASE}/documentation/userguide; make pdf)
+	cp ../${BASENAME}-${RELEASE}/documentation/userguide/main.pdf  ../${BASENAME}-${RELEASE}/Userguide.pdf
 	# 
 	# Finish the man pages off, adding necessary boilerplate.
 	# Must be done *after* the user guide is created, since the user guide
 	# steals and uses the pre-boilerplate man pages.
 	#
 	for prog in $(PROGS); do\
-	   cat ${BASENAME}-${RELEASE}/documentation/manpages/boilerplate.trailer >> ${BASENAME}-${RELEASE}/documentation/manpages/$$prog.man;\
+	   cat ../${BASENAME}-${RELEASE}/documentation/manpages/boilerplate.trailer >> ../${BASENAME}-${RELEASE}/documentation/manpages/$$prog.man;\
 	done
 	if test -d $(RIGFILTERS); then\
 	   for prog in $(RFPROGS); do\
-	      cat ${BASENAME}-${RELEASE}/documentation/manpages/boilerplate.trailer >> ${BASENAME}-${RELEASE}/documentation/manpages/$$prog.man;\
+	      cat ../${BASENAME}-${RELEASE}/documentation/manpages/boilerplate.trailer >> ../${BASENAME}-${RELEASE}/documentation/manpages/$$prog.man;\
 	   done;
 	fi
-	-rm -f ${BASENAME}-${RELEASE}/documentation/manpages/boilerplate.trailer
+	-rm -f ../${BASENAME}-${RELEASE}/documentation/manpages/boilerplate.trailer
 	#
-	# Remove CVS-controlled files/directories that don't belong in the
+	# Remove SVN-controlled files/directories that don't belong in the
 	# distro
 	#
-	-rm -rf ${BASENAME}-${RELEASE}/Licenses
-	-rm -rf ${BASENAME}-${RELEASE}/00CHECKLIST
-	-rm -rf ${BASENAME}-${RELEASE}/configure.in
-	-rm -rf ${BASENAME}-${RELEASE}/Bugs
-	-rm -rf ${BASENAME}-${RELEASE}/Manuscripts
-	-rm -rf ${BASENAME}-${RELEASE}/ssdk
-	-rm -rf ${BASENAME}-${RELEASE}/documentation/userguide
-	(cd ${BASENAME}-${RELEASE}/squid; make implode; make distclean)
+	-rm -rf ../${BASENAME}-${RELEASE}/Licenses
+	-rm -rf ../${BASENAME}-${RELEASE}/00CHECKLIST
+	-rm -rf ../${BASENAME}-${RELEASE}/configure.in
+	-rm -rf ../${BASENAME}-${RELEASE}/Bugs
+	-rm -rf ../${BASENAME}-${RELEASE}/Manuscripts
+	-rm -rf ../${BASENAME}-${RELEASE}/ssdk
+	-rm -rf ../${BASENAME}-${RELEASE}/documentation/userguide
+	(cd ../${BASENAME}-${RELEASE}/squid; make implode)
+	(cd ../${BASENAME}-${RELEASE}/easel; make implode)
+	(cd ../${BASENAME}-${RELEASE}/;      make distclean)
 	#
 	# Set file permissions.
 	#
-	find ${BASENAME}-${RELEASE} -type f -exec chmod +r {} \;
-	chmod +x ${BASENAME}-${RELEASE}/testsuite/sqc
+	find ../${BASENAME}-${RELEASE} -type f -exec chmod +r {} \;
+	chmod +x ../${BASENAME}-${RELEASE}/testsuite/sqc
 	#
 	# Packaging commands
 	#
-	tar cvf ${BASENAME}-${RELEASE}.tar ${BASENAME}-${RELEASE}
-	$(COMPRESS) ${BASENAME}-$(RELEASE).tar
+        (cd ..;	tar cvf ${BASENAME}-${RELEASE}.tar ${BASENAME}-${RELEASE})
+	(cd ..; $(COMPRESS) ${BASENAME}-$(RELEASE).tar)
+
+
 
 # "make ftpdist" installs a new tarball on the FTP site.
 # (StL specific)
