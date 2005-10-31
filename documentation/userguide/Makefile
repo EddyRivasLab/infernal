@@ -1,16 +1,15 @@
 # Makefile for producing the Infernal documentation
 # CVS $Id$
-###########
-
-MANPAGES = cmalign cmbuild cmscore cmsearch 
-
-AIFIGURES  = stl9-63
-
+#
 # Preparation notes.
 #   - Install latex2html (version 98-1p1)
 #   - latex2html.config is customized for HMMER User Guide (beware)
 #   - Install PolyglotMan (version 3.0.5)
 #   - need a copy of wulogo.gif for putting in HTML directory.
+###########
+
+MANPAGES   = cmalign cmbuild cmscore cmsearch 
+AIFIGURES  = stl9-63
 
 # pdf:
 #   Make the PDF copy of the user's guide, including converted
@@ -44,7 +43,7 @@ manpages:
 #      to .pdf files to fool pdflatex into importing them correctly.
 ai2pdf:
 	for fig in ${AIFIGURES}; do\
-	   if test ! -e Figures/$$fig.pdf && test -e Figures/$$fig.ai; then ln -s Figures/$$fig.ai Figures/$$.pdf; fi\
+	   if test ! -e Figures/$$fig.pdf && test -e Figures/$$fig.ai; then ln -s Figures/$$fig.ai Figures/$$fig.pdf; fi\
 	done
 
 clean:
