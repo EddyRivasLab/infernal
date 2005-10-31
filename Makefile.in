@@ -169,7 +169,7 @@ dist:
 	#
 	# Packaging commands
 	#
-        (cd ..;	tar cvf ${BASENAME}-${RELEASE}.tar ${BASENAME}-${RELEASE})
+	(cd ..;	tar cvf ${BASENAME}-${RELEASE}.tar ${BASENAME}-${RELEASE})
 	(cd ..; $(COMPRESS) ${BASENAME}-$(RELEASE).tar)
 
 
