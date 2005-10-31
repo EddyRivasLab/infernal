@@ -137,15 +137,15 @@ dist:
 	# Finish the man pages off, adding necessary boilerplate.
 	# Must be done *after* the user guide is created, since the user guide
 	# steals and uses the pre-boilerplate man pages.
+	# Include the optional rigfilters documentation too; whether the user
+	# wants it or not is a configuration-time decision.
 	#
 	for prog in $(PROGS); do\
 	   cat ../${BASENAME}-${RELEASE}/documentation/manpages/boilerplate.trailer >> ../${BASENAME}-${RELEASE}/documentation/manpages/$$prog.man;\
 	done
-	if test -d $(RIGFILTERS); then\
-	   for prog in $(RFPROGS); do\
-	      cat ../${BASENAME}-${RELEASE}/documentation/manpages/boilerplate.trailer >> ../${BASENAME}-${RELEASE}/documentation/manpages/$$prog.man;\
-	   done;
-	fi
+	for prog in $(RFPROGS); do\
+	   cat ../${BASENAME}-${RELEASE}/documentation/manpages/boilerplate.trailer >> ../${BASENAME}-${RELEASE}/documentation/manpages/$$prog.man;\
+	done;
 	-rm -f ../${BASENAME}-${RELEASE}/documentation/manpages/boilerplate.trailer
 	#
 	# Remove SVN-controlled files/directories that don't belong in the
@@ -153,14 +153,14 @@ dist:
 	#
 	-rm -rf ../${BASENAME}-${RELEASE}/Licenses
 	-rm -rf ../${BASENAME}-${RELEASE}/00CHECKLIST
-	-rm -rf ../${BASENAME}-${RELEASE}/configure.in
+	-rm -rf ../${BASENAME}-${RELEASE}/configure.ac
 	-rm -rf ../${BASENAME}-${RELEASE}/Bugs
 	-rm -rf ../${BASENAME}-${RELEASE}/Manuscripts
 	-rm -rf ../${BASENAME}-${RELEASE}/ssdk
 	-rm -rf ../${BASENAME}-${RELEASE}/documentation/userguide
-	(cd ../${BASENAME}-${RELEASE}/squid; make implode)
-	(cd ../${BASENAME}-${RELEASE}/easel; make implode)
-	(cd ../${BASENAME}-${RELEASE}/;      make distclean)
+	-(cd ../${BASENAME}-${RELEASE}/squid; make implode)
+	-(cd ../${BASENAME}-${RELEASE}/easel; make implode)
+	-(cd ../${BASENAME}-${RELEASE}/;      make distclean)
 	#
 	# Set file permissions.
 	#
@@ -205,12 +205,12 @@ install:
 #              and binaries.
 clean:
 	-rm -f *.o *~ Makefile.bak core TAGS gmon.out
-	(cd testsuite;               make clean)
-	(cd documentation/userguide; make clean)
-	(cd src;                     make clean)
-	(cd squid;                   make clean)
-	(cd easel;                   make clean)
-	(cd rigfilters;              make clean)
+	-(cd testsuite;               make clean)
+	-(cd documentation/userguide; make clean)
+	-(cd src;                     make clean)
+	-(cd squid;                   make clean)
+	-(cd easel;                   make clean)
+	-(cd rigfilters;              make clean)
 
 # "make distclean" leaves a pristine source distribution.
 #
@@ -218,11 +218,11 @@ distclean:
 	-rm -f  config.cache config.log config.status
 	-rm -rf autom4te.cache
 	-rm -f *.o *~ Makefile.bak core TAGS gmon.out
-	(cd testsuite;               make distclean)
-	(cd documentation/userguide; make distclean)
-	(cd src;                     make distclean)
-	(cd squid;                   make distclean)
-	(cd easel;                   make distclean)
-	(cd rigfilters;              make distclean)
+	-(cd testsuite;               make distclean)
+	-(cd documentation/userguide; make distclean)
+	-(cd src;                     make distclean)
+	-(cd squid;                   make distclean)
+	-(cd easel;                   make distclean)
+	-(cd rigfilters;              make distclean)
 	-rm Makefile
 

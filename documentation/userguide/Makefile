@@ -4,6 +4,8 @@
 
 MANPAGES = cmalign cmbuild cmscore cmsearch 
 
+AIFIGURES  = stl9-63
+
 # Preparation notes.
 #   - Install latex2html (version 98-1p1)
 #   - latex2html.config is customized for HMMER User Guide (beware)
@@ -15,6 +17,7 @@ MANPAGES = cmalign cmbuild cmscore cmsearch
 #   man pages.
 #
 pdf:
+	make ai2pdf
 	make manpages
 	pdflatex main
 	bibtex main
@@ -35,6 +38,14 @@ manpages:
 #           rman -f LaTeX2e ../../squid/Man/$$file.man | ./rmanprocess.pl >> manpages.tex;\
 #       done
 
+
+# ai2pdf: 
+#      For any figures that we have only as .ai files, make symlinks
+#      to .pdf files to fool pdflatex into importing them correctly.
+ai2pdf:
+	for fig in ${AIFIGURES}; do\
+	   if test ! -e Figures/$$fig.pdf && test -e Figures/$$fig.ai; then ln -s Figures/$$fig.ai Figures/$$.pdf; fi\
+	done
 
 clean:
 	-rm -f *~ main.aux main.bbl main.blg main.dvi main.log main.out main.toc
