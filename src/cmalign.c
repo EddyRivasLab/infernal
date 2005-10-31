@@ -274,7 +274,7 @@ main(int argc, char **argv)
 	}
       else 
 	{
-	  if(do_banded && (sqinfo[i].len < dmin[0]) || (sqinfo[i].len > dmax[0]))
+	  if (do_banded && (sqinfo[i].len < dmin[0] || sqinfo[i].len > dmax[0]))
 	    {
 	      /* the query sequence we're aligning is longer than
 		 the upper limit band on the root node, or is 

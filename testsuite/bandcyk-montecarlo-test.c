@@ -24,6 +24,8 @@
 #include <time.h>
 
 #include "squid.h"
+#include "sqfuncs.h"
+#include "dirichlet.h"
 #include "sre_stack.h"
 
 #include "structs.h"
@@ -108,16 +110,20 @@ main(int argc, char **argv)
    * Do the band calculations
    ****************************************************************/
 
+  /* BandMonteCarlo() collects "density" as unnormalized counts
+   */
   if (! BandMonteCarlo(cm, mc_nsample, maxW, &mc_gamma))
     Die("Your maxW (%d) must be too small, sorry...\n", maxW);
+
+  /* BandCalculationEngine() calculates a real density for each state v
+   */
   if (! BandCalculationEngine(cm, maxW, 0.001, TRUE, NULL, NULL, &gamma))
     Die("Your maxW (%d) must be too small, sorry...\n", maxW);
 
   for (v = 0; v < cm->M; v++)
     {
-      DScale(gamma[v],    maxW+1, (double) mc_nsample); /* convert to #'s */
-      DScale(mc_gamma[v], maxW+1, (double) mc_nsample); /* convert to #'s */
-      p = DChiSquareFit(gamma[v], mc_gamma[v], maxW+1);
+      DScale(gamma[v],    maxW+1, DSum(mc_gamma[v], maxW+1)); /* convert to #'s */
+      p = DChiSquareFit(gamma[v], mc_gamma[v], maxW+1);	      /* compare #'s    */
 
       if (cm->sttype[v] != E_st && p < threshold)
 	Die("Rejected band distribution for state %d: chi-squared p = %f\n", v, p);

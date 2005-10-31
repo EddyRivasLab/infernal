@@ -1,44 +1,62 @@
 Checklist for an Infernal release.
-SRE, Thu Jul  4 10:27:28 2002
+SRE, Mon Oct 31 07:40:36 2005 
 -------------------------------------
 
-1. Make sure is up to date w/ CVS. (Worry about commits here, on
-   other machines and other dirs that may have squid modifications)
+Infernal has an "unstable trunk" policy. 
+A release goes on a stable branch.
+
+
+1. Announce the intent to release to all developers. 
+   All working copies of Infernal and its dependent libraries (ssdk,
+   squid, and Easel) should be committed. 
+   Example of checking for stray or uncommitted files:
 	% ./configure
         % make distclean
-	% cvs update
-	% cvs commit
-   Clean up any stray files.
+        % svn update
+	% svn status
+   Clean up any stray files identified by 'svn status'.
+   'svn add' and 'svn commit' as needed to commit new or modified files.
 
-2. Test dev code before making release: exercises and bugs
-   This works anywhere (e.g. wren; don't have to be on wrasse)
-   Includes the memory leak tests.
-   ccmalloc 0.3.9 is installed in /usr/local on wren and wrasse.
+
+2. Test the trunk before making release.
+   Includes memory leak tests;
+   ccmalloc 0.4.0 is installed in /usr/local on wrasse.
+   Don't rely solely on the automated exercises and bug tests.
+   Run some anecdotal examples by hand too.
+        % svn update
     	% autoconf
-     	% env CC="ccmalloc gcc" ./configure 
-        % make
+        % (cd squid; autoconf)
+        % (cd easel; autoconf)
+     	% (env CFLAGS="-g -Wall" ./configure; make)
+        % make check
+        % make clean
+        % (env ./configure --enable-ccmalloc; make)
         % cd Bugs
         % ../ssdk/sqc -m 2 bugs.sqc ../src
         % cd ../testsuite
-	% ../ssdk/sqc -m -p ../squid 4 exercises.sqc ../src
+	% ../ssdk/sqc -m -p ../squid 4 exercises.sqc . ../src
+	% make clean
+        % (./configure; make; make check)
+        % make clean
 
 3. Write release notes.
-	% ssdk/cvs2cl.pl    <- creates ChangeLog; useful summary of CVS logs
+   Replace "875" below with the last release's SVN rev.
+	% svn log -r 875:HEAD | more
         % emacs documentation/release-notes/RELEASE-${RELEASE}
-	% cvs add documentation/release-notes/RELEASE-${RELEASE}
+	% svn add documentation/release-notes/RELEASE-${RELEASE}
 
 4. Update the copyright, year stamps. 
-	- Makefile.in (release, relcode, date)
-	- 00README (year only)
+	- configure.in (release, relcode, date)
 	- COPYRIGHT (year only)
-        - Licenses/gnu (year only)
 
-5. Commit to CVS; include release number in the log message
-	% cvs commit
+5. Commit to SVN; include release number in the log message
+	% svn commit
+    Remember to separately commit in Easel, squid, ssdk if any
+    changes were made there.
 
 6. make a distribution package
 	% make distclean
-	% autoconf             <-- only wrasse. Must be autoconf >=2.52
+	% autoconf             <-- only wrasse. Must be autoconf >=2.57
 	% ./configure          <-- makes a Makefile (needed for "make dist")
 	% make dist
 
@@ -71,4 +89,5 @@ SRE, Thu Jul  4 10:27:28 2002
 0.52 - SRE, Mon Oct 14 2002
 0.53 - SRE, Thu Jan  2 14:24:07 2003
 0.54 - SRE, Sun Jan  5 18:17:55 2003
-0.55 - SRE, Wed Apr  2 18:12:23 2003
+0.55 - SRE, Wed Apr  2 18:12:23 2003   r875
+0.6  - SRE, Mon Oct 31 13:08:33 2005   

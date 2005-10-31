@@ -154,9 +154,8 @@ main(int argc, char **argv)
 #endif
       double **mx; 
       int     *min, *max;
-      FILE   *ofp;
 
-      mx = BandDistribution(cm, 2000);
+      mx = BandDistribution(cm, 2000, FALSE);
       BandBounds(mx, cm->M, 2000, 0.001, &min, &max);
       /*      ofp = fopen("projectx.xgr", "w");
 	      PrintBandGraph(ofp, mx, min, max, 3, 1000);

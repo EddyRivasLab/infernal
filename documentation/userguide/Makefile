@@ -40,6 +40,6 @@ clean:
 	-rm -f *~ main.aux main.bbl main.blg main.dvi main.log main.out main.toc
 
 distclean:
-	-rm main.pdf
-	-rm manpages.tex
-	make clean
+	-rm -f *~ main.aux main.bbl main.blg main.dvi main.log main.out main.toc
+	-rm -f main.pdf
+	-rm -f manpages.tex

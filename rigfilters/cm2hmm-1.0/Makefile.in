@@ -47,9 +47,9 @@ cm2hmmsearch : Cm2HmmSearchMain.o $(OBJS)
 	$(COMPILE) $(CFLAGS) $(DEFS) $<
 
 clean:
-	rm -f *.o cm2hmm cm2hmmsearch
+	-rm -f *.o cm2hmm cm2hmmsearch
 
 distclean:
-	make clean
+	-rm -f *.o cm2hmm cm2hmmsearch
 	-rm Makefile
 

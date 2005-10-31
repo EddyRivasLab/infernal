@@ -149,4 +149,7 @@ extern float CYKInside(CM_t *cm, char *dsq, int L,
 extern float CYKInsideScore(CM_t *cm, char *dsq, int L,
 			    int r, int i0, int j0);
 extern void  CYKDemands(CM_t *cm, int L);
-
+extern float CYKDivideAndConquer_b(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr,
+				   int *dmin, int *dmax);
+extern float CYKInside_b(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, 
+			 int *dmin, int *dmax);

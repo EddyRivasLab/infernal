@@ -24,12 +24,12 @@
 # The output variables are used in Makefiles.
 #
 AC_PREREQ(2.57)
-AC_INIT(Infernal, 0.56, eddy@genetics.wustl.edu, infernal)
+AC_INIT(Infernal, 0.6, eddy@genetics.wustl.edu, infernal)
 AC_MSG_NOTICE([Welcome. Configuring Infernal for your system.])
 
-PACKAGE_RELCODE="infernal0_56"
-PACKAGE_DATE="Oct 2003"
-PACKAGE_COPYRIGHT="Copyright (C) 2001-2003 HHMI/Washington University School of Medicine"
+PACKAGE_RELCODE="infernal0_6"
+PACKAGE_DATE="November 2005"
+PACKAGE_COPYRIGHT="Copyright (C) 2001-2005 HHMI/Washington University School of Medicine"
 PACKAGE_LICENSE="Freely distributed under the GNU General Public License (GPL)"
 PACKAGE_LICENSETAG=gnu
 
@@ -243,22 +243,24 @@ AC_FUNC_ALLOCA
 
 # Checks for system libraries
 AC_CHECK_LIB(m, sqrt, LIBS="${LIBS} -lm")
-#AC_CHECK_LIB(m, sqrt, LIBS="${LIBS} -ldl")
 
-# Configure the squid library
+
+# Configure external packages: the SQUID and Easel libraries.
 #
 AC_CONFIG_SUBDIRS(squid)
+AC_CONFIG_SUBDIRS(easel)
 
-# Write the config.h header
+# Write Infernal's config.h header
 #
 AC_CONFIG_HEADERS(src/config.h)
 
-# Write out Makefiles in src, testsuite subdirectories.
+# Write out Makefiles in Infernal subdirectories.
 AC_CONFIG_FILES(src/Makefile)
 AC_CONFIG_FILES(testsuite/Makefile)
 AC_CONFIG_FILES(rigfilters/Makefile)
 AC_CONFIG_FILES(rigfilters/cfsqp/Makefile)
 AC_CONFIG_FILES(rigfilters/cm2hmm-1.0/Makefile)
+
 
 # remember that sneaky if statement that wraps the source
 # configuration? well, it ends here.

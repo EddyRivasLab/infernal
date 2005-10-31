@@ -1,8 +1,9 @@
 Infernal - inference of RNA secondary structure alignments
 Sean Eddy, HHMI/Washington University in Saint Louis.
+----------------------------------------------------------------
 
-This is rudimentary code intended to document the paper "A memory
-efficient dynamic programming algorithm for optimal structural
+This is still-rudimentary code intended to document the paper "A
+memory efficient dynamic programming algorithm for optimal structural
 alignment of a sequence to an RNA secondary structure", SR Eddy, BMC
 Bioinformatics, 3:18 (2002).
 

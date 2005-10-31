@@ -249,7 +249,6 @@ CMReadNullModel(char *rndfile, CM_t *cm)
   char *s;
   int   n;			/* length of buf */
   int   x;
-  int   type = 0; 
   char *tok;
   int   toklen;
   float sum;

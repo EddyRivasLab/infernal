@@ -51,7 +51,7 @@ clean:
 	-rm -f *.o *~ Makefile.bak core ${TESTPROGS} TAGS gmon.out 
 
 distclean:
-	make clean
+	-rm -f *.o *~ Makefile.bak core ${TESTPROGS} TAGS gmon.out 
 	-rm -f Makefile 
 
 TAGS:

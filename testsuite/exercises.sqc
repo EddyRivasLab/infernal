@@ -58,7 +58,7 @@
 2  exercise  bandcyk/mc/rp        @bandcyk-montecarlo-test@ %RP.CM%
 3  exercise  bandcyk/mc/ssu       @bandcyk-montecarlo-test@ -W 2000 %SSU.CM%
 1  exercise  bandcyk/trunc/trna   @bandcyk-truncation-test@ %TRNA.CM% 160 1000
-2  exercise  bandcyk/trunc/rp     @bandcyk-truncation-test@ %RP.CM%   525 2000
+2  exercise  bandcyk/trunc/rp     @bandcyk-truncation-test@ %RP.CM%  1000 2000
 3  exercise  bandcyk/trunc/ssu    @bandcyk-truncation-test@ %SSU.CM% 1687 3000 
 
 

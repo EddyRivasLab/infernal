@@ -402,22 +402,25 @@ BandTruncationNegligible(double *density, int b, int W, double *ret_beta)
  * Incept:    SRE, Fri Oct 17 08:01:42 2003 [St. Louis]
  *
  * Purpose:   Calculate the gamma_v densities by Monte Carlo simulation,
- *            by sampling parsetrees from the CM. 
+ *            by sampling parsetrees from the CM. gamma[v][i] is the
+ *            observed number of subsequences of length i rooted at v
+ *            in the sample. These counts are left unnormalized; different
+ *            states are reached with different probabilities, and the 
+ *            caller may want to test the Monte Carlo observed counts
+ *            against predicted counts (see bandcyk-montecarlo-test in
+ *            the testsuite).
  *
  * Args:      cm         - the model to sample from
  *            nsample    - number of Monte Carlo sampled parsetrees    
  *            W          - maximum subsequence length in densities
- *            ret_gamma  - RETURN: gamma[v][n], [0..M-1][0..W] 
+ *            ret_gamma  - RETURN: gamma[v][n], [0..M-1][0..W] as
+ *                         unnormalized observed counts.
  *
  * Returns:   1 on success.
- *            0 if one or more samples had a length too great to be
- *              captured by W, so the densities have been truncated
- *              and renormalized, which may be a Bad Thing for the
- *              caller.
+ *            0 on failure: one or more samples had a length too great to be
+ *              captured by W.
  *
  *            Caller frees the returned gamma with FreeBandDensities().
- *
- * Xref:      
  */
 int
 BandMonteCarlo(CM_t *cm, int nsample, int W, double ***ret_gamma)
@@ -478,11 +481,8 @@ BandMonteCarlo(CM_t *cm, int nsample, int W, double ***ret_gamma)
       FreeParsetree(tr);
     }
 
-  /* Normalize all the densities.
+  /* Return gamma, the observed counts (unnormalized densities).
    */
-  for (v = 0; v < cm->M; v++)
-    DNorm(gamma[v], W+1);
-  
   *ret_gamma = gamma;
   return status;
 }
