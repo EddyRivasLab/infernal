@@ -44,7 +44,6 @@ extern void  CreateCMBody(CM_t *cm, int nnodes, int nstates);
 extern void  CMZero(CM_t *cm);
 extern void  CMRenormalize(CM_t *cm);
 extern void  FreeCM(CM_t *cm);
-extern void  CMSetDefaultNullModel(CM_t *cm);
 extern void  CMSimpleProbify(CM_t *cm);
 extern void  CMLogoddsify(CM_t *cm);
 extern void  CMHackInsertScores(CM_t *cm);
@@ -71,8 +70,9 @@ extern int   DeriveUniqueStateCode(int ndtype, int sttype);
 extern CM_t *CMRebalance(CM_t *cm);
 
 /*EPN 10.19.05*/
-extern void  CMReadNullModel(char *rndfile, CM_t *cm);
-
+extern void  CMDefaultNullModel(float *null);
+extern void  CMSetNullModel(CM_t *cm, float null[MAXABET]);
+extern void  CMReadNullModel(char *rndfile, float *null);
 
 /* from cmio.c
  */

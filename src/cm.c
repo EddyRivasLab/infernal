@@ -227,11 +227,24 @@ FreeCM(CM_t *cm)
  * Purpose:  Initialize the null model to equiprobable (e.g. 0.25)
  */
 void
-CMSetDefaultNullModel(CM_t *cm)
+CMDefaultNullModel(float *null)
 {
   int x;
   for (x = 0; x < Alphabet_size; x++)
-    cm->null[x] = 1./(float)Alphabet_size;
+    null[x] = 1./(float)Alphabet_size;
+}
+
+
+/* Function: CMSetNullModel()
+ *
+ * Purpose:  Set the null model section of a CM.
+ */
+void
+CMSetNullModel(CM_t *cm, float null[MAXABET])
+{
+  int x;
+  for (x = 0; x < Alphabet_size; x++)
+    cm->null[x] = null[x];
 }
 
 
@@ -242,7 +255,7 @@ CMSetDefaultNullModel(CM_t *cm)
  * Purpose:  Read the CM null model from a file.
  */
 void
-CMReadNullModel(char *rndfile, CM_t *cm)
+CMReadNullModel(char *rndfile, float *null)
 {
   FILE *fp;
   char *buf;
@@ -273,8 +286,8 @@ CMReadNullModel(char *rndfile, CM_t *cm)
     if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
     if(strcmp(tok, "#") != 0)
       {      
-	cm->null[x] = atof(tok);
-	sum += cm->null[x];
+	null[x] = atof(tok);
+	sum += null[x];
 	x++;
       }
   }

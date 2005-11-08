@@ -24,7 +24,9 @@
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "prior.h"		/* mixture Dirichlet prior */
 #include "funcs.h"		/* external functions                   */
-
+#include "cm_eweight.h"         /* LSJ's entropy weighted functions ported
+				 * from HMMER2.4devl [by EPN]
+				 */
 static char banner[] = "cmbuild - build RNA covariance model from alignment";
 
 static char usage[]  = "\
@@ -50,6 +52,11 @@ static char experts[] = "\
    --wnone        : no weighting; re-set all weights to 1.\n\
    --wgsc         : use Gerstein/Sonnhammer/Chothia tree weights (default)\n\
 \n\
+ * alternative effective sequence number strategies:\n\
+   --effnone      : effective sequence number is just # of seqs [default]\n\
+   --effent       : entropy loss target [requires --eloss]\n\
+   --eloss <x>    : for --effent: set target loss [default: NONE]\n\
+\n\   
  * verbose output files, useful for detailed information about the CM:\n\
    --cfile <f>    : save count vectors to file <f>\n\
    --cmtbl <f>    : save tabular description of CM topology to file <f>\n\
@@ -95,7 +102,11 @@ static struct opt_s OPTIONS[] = {
   { "--bfile",     FALSE, sqdARG_STRING },
   { "--bandp",     FALSE, sqdARG_FLOAT},
   { "--ignorant",  FALSE, sqdARG_NONE },
-  { "--null",      FALSE, sqdARG_STRING }}
+  { "--null",      FALSE, sqdARG_STRING },
+  { "--effnone", FALSE, sqdARG_NONE },
+  { "--effent",  FALSE, sqdARG_NONE },
+  { "--eloss",   FALSE, sqdARG_FLOAT },
+}
 ;
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -144,6 +155,12 @@ main(int argc, char **argv)
   enum  weight_flags {		/* sequence weighting strategy to use      */
     WGT_GIVEN, WGT_NONE, WGT_GSC } weight_strategy;
 
+  enum {			/* Effective sequence number strategy:        */
+    EFF_NOTSETYET, 		/* (can't set default 'til alphabet known)    */
+    EFF_NONE, 			/* --effnone: eff_nseq is nseq                */
+    EFF_ENTROPY                 /* --effent:  entropy loss target             */
+  } eff_strategy;
+
   FILE *ofp;                    /* filehandle to dump info to */
   char *cfile;                  /* file to dump count vectors to */
   char *emapfile;		/* file to dump emit map to */
@@ -179,6 +196,14 @@ main(int argc, char **argv)
   /* EPN 10.19.05 Added --null option (analagous to HMMER2.4 --null) */
   char *rndfile;		/* random sequence model file to read    */
 
+  /* EPN 11.07.05 Added --effent, --effnone, and --eloss */
+  float eloss;		        /* target entropy loss, entropy-weights  */
+  int   eloss_set;		/* TRUE if eloss was set on commandline  */
+  float etarget;		/* target entropy (background - eloss)   */
+  float eff_nseq;		/* effective sequence number             */
+  int   eff_nseq_set;		/* TRUE if eff_nseq has been calculated  */
+  float randomseq[MAXABET];     /* null sequence model                     */
+
   /*********************************************** 
    * Parse command line
    ***********************************************/
@@ -206,6 +231,10 @@ main(int argc, char **argv)
   bandfile          = NULL;
   rndfile           = NULL;
   
+  eff_strategy      = EFF_NONE;          
+  eloss_set         = FALSE;
+  eff_nseq_set      = FALSE;
+
   /* EPN 08.18.05 bandp used in BandBounds() for calculating W(W=dmax[0]) 
    *              Brief expt on effect of different bandp values in 
    *              ~nawrocki/notebook/5_0818_inf_cmbuild_bands/00LOG
@@ -242,6 +271,9 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--bandp")     == 0) bandp             = atof(optarg);
     else if (strcmp(optname, "--ignorant")  == 0) be_ignorant       = TRUE;
     else if (strcmp(optname, "--null")      == 0) rndfile           = optarg;
+    else if (strcmp(optname, "--effent")  == 0) eff_strategy  = EFF_ENTROPY;
+    else if (strcmp(optname, "--effnone") == 0) eff_strategy  = EFF_NONE;
+    else if (strcmp(optname, "--eloss")   == 0) { eloss       = atof(optarg); eloss_set  = TRUE; }
 
     else if (strcmp(optname, "--informat") == 0) {
       format = String2SeqfileFormat(optarg);
@@ -314,6 +346,16 @@ main(int argc, char **argv)
 	 (rndfile == NULL) ? "(default)" : rndfile);
   printf("Prior used:                        %s\n",
 	 (prifile == NULL) ? "(default)" : prifile);
+  printf("Effective sequence # calculation:  ");
+  if (eff_strategy == EFF_NONE)      puts("none; use actual seq #");
+  else if (eff_strategy == EFF_ENTROPY) {
+    puts("entropy targeting");
+    if (eloss_set)
+      printf("  mean target entropy loss:        %.2f bits\n", eloss);
+    else
+      printf("  mean target entropy loss:        (default)\n");
+  }
+
 
   printf("Sequence weighting strategy:       ");
   switch (weight_strategy) {
@@ -376,6 +418,42 @@ main(int argc, char **argv)
 	  printf("done.\n");
 	}
 
+      /* EPN 11.07.05 - EFF_ENTROPY effective sequence number strategy
+       *                ported from HMMER 2.4devl. 
+       */
+      
+      /* --- Post-alphabet initialization section ---
+       * NOT SURE IF THIS IS NECESSARY (only RNA?), STOLEN FROM HMMER 
+       * (This code must be delayed until after we've seen the
+       * first alignment, because we have to see the alphabet type first.)
+       */
+      if(nali == 0)
+	{
+	  /* Set up the null/random seq model */
+	  if (rndfile == NULL)  CMDefaultNullModel(randomseq);
+	  else                  CMReadNullModel(rndfile, randomseq);
+
+	  /* If we're using the entropy-target strategy for effective
+	   * sequence number calculation, and we haven't manually set the
+	   * default target entropy loss, do it now. 
+	   * Default entropy targets have not been tested.
+	   */
+	  if (eff_strategy == EFF_ENTROPY) {
+	    if (eloss_set == FALSE){
+	      Die("\
+--effent: entropy loss targeting:\n\
+Default entropy loss targets are not available. \n\
+To use --effent you must set --eloss <x> explicitly, \n\
+in addition to selecting --effent.\n");
+	    }
+	    else{
+	      /*etarget = FEntropy(randomseq, Alphabet_size) - eloss;*/
+	      etarget = FEntropy(randomseq, MAXABET) - eloss;
+	    }
+	  }
+	} /* -- this ends the post-alphabet initialization section -- */
+      /* End of effective seq number port code block. */
+
       /* Digitize the alignment: this takes care of
        * case sensivitity (A vs. a), speeds all future
        * array indexing, and deals with the poor fools
@@ -388,6 +466,12 @@ main(int argc, char **argv)
       printf("%-40s ... ", "Digitizing alignment"); fflush(stdout);
       dsq = DigitizeAlignment(msa->aseq, msa->nseq, msa->alen);
       printf("done.\n");
+
+      if (eff_strategy == EFF_NONE)
+	{
+	  eff_nseq = (float) msa->nseq;
+	  eff_nseq_set = TRUE;
+	}
 
       /* Construct a model, and collect observed counts.
        * Note on "treeforce": this is the number of sequences that we
@@ -423,16 +507,31 @@ main(int argc, char **argv)
 	else                                printf("done. [%s]\n", cfile);
       }
 
+      /* EPN 11.07.05 - EFF_ENTROPY effective sequence number strategy
+       *                ported from HMMER 2.4devl. 
+       */
+      
+      /* Effective sequence number calculation: post-architecture strategies.
+       * (if we don't have eff_nseq yet, calculate it now).
+       */
+      if (! eff_nseq_set) {
+	if (eff_strategy == EFF_ENTROPY) {
+	  printf("%-40s ... ", "Determining eff seq # by entropy target");
+	  fflush(stdout);
+	  eff_nseq = CM_Eweight(cm, pri, (float) msa->nseq, etarget);
+	} else Die("no effective seq #: shouldn't happen");
+
+	CMRescale(cm, eff_nseq / (float) msa->nseq);
+	eff_nseq_set = TRUE;
+	printf("done. [%.1f]\n", eff_nseq);
+      }/* End of effective seq number port code block. */
+      
       /* Convert to probabilities, and the global log-odds form
        * we save the model in.
        */
       printf("%-40s ... ", "Converting counts to probabilities"); fflush(stdout);
-
+      CMSetNullModel(cm, randomseq);
       PriorifyCM(cm, pri);
-
-      /* Set up the null/random seq model */
-      if (rndfile == NULL)  CMSetDefaultNullModel(cm);
-      else                  CMReadNullModel(rndfile, cm);
 
       CMLogoddsify(cm);
       printf("done.\n");
