@@ -138,8 +138,8 @@ CM_Eweight(CM_t *cm, Prior_t *pri, float numb_seqs,
     }
   /* Calculate the mean match state entropy. (easel/esl_vectorops.c::DSum) */
   current = esl_vec_DSum(ent, cm->nodes)/nmatch_cols;
-  printf("target ent: %f\n", targetent);
-  printf("0 current: %f\n", current);
+  /*printf("target ent: %f\n", targetent);*/
+  /*printf("0 current: %f\n", current);*/
 
   /****************************************
    * Initialize binary search bracket values
@@ -160,7 +160,7 @@ CM_Eweight(CM_t *cm, Prior_t *pri, float numb_seqs,
     /* Current model has a higher entropy than our target.
        Calculated effective seq numb <= Number of seqs. Design decision.
     */
-    printf("[e=%.2f >= %.2f] ...", current, targetent);
+    printf("[scale=%.2f] [e=%.2f >= %.2f] ...", scale, current, targetent);
     free(mixq);
     free(counts);
     free(probs);
@@ -237,7 +237,7 @@ CM_Eweight(CM_t *cm, Prior_t *pri, float numb_seqs,
       }
     /* Calculate the mean match state entropy. (easel/esl_vectorops.c::DSum) */
     current = esl_vec_DSum(ent, cm->nodes)/nmatch_cols;
-    printf("current : %f\n", current);
+    /*    printf("current : %f\n", current);*/
 
     /* Adjust the brackets according to the new mean entropy value */
     if(current < targetent){
@@ -256,7 +256,7 @@ CM_Eweight(CM_t *cm, Prior_t *pri, float numb_seqs,
    * End of binary search
    *********************************************************************************************/
   eff_no = numb_seqs * scale;
-  printf("returning eff_no : %f\n", eff_no);
+  printf("[scale=%.2f] returning eff_no : %f\n", scale, eff_no);
   return(eff_no);
 }
 

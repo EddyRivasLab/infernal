@@ -1027,9 +1027,21 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
 	  for (yoffset = 1; yoffset < cm->cnum[0]; yoffset++)
 	    if ((sc = alpha[y+yoffset][cur][d] + cm->tsc[0][yoffset]) > alpha[0][cur][d]) 
 	      alpha[0][cur][d] = sc;
+	}
+      
+      /* EPN 11.09.05 
+       * The following loop that deals with local begins was modified
+       * to enforce bands on all states y that are possible internal entry
+       * points. Old code block went from [0..d] in the d dimension
+       * for state y.
+       * ref: ~nawrocki/notebook/5_1109_inf_local_banded_spd/00LOG
+       */
 
-	  if (cm->flags & CM_LOCAL_BEGIN) {
-	    for (y = 1; y < cm->M; y++) {
+      if (cm->flags & CM_LOCAL_BEGIN) {
+	for (y = 1; y < cm->M; y++) {
+	  d = (dmin[y] > dmin[0]) ? dmin[y]:dmin[0];
+	  for (; d <= dmax[y] && d <=j; d++)
+	    {
 	      if (cm->stid[y] == BEGL_S) sc = alpha[y][j%(W+1)][d] + cm->beginsc[y];
 	      else                       sc = alpha[y][cur][d]     + cm->beginsc[y];
 	      if (sc > alpha[0][cur][d]) {
@@ -1037,10 +1049,10 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
 		bestr[d]         = y;
 	      }
 	    }
-	  }
-	  if (alpha[0][cur][d] < IMPROBABLE) alpha[0][cur][d] = IMPOSSIBLE;
 	}
-
+	if (alpha[0][cur][d] < IMPROBABLE) alpha[0][cur][d] = IMPOSSIBLE;
+      }
+      
       /* The little semi-Markov model that deals with multihit parsing:
        */
       gamma[j]  = gamma[j-1] + 0; /* extend without adding a new hit */

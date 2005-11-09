@@ -427,6 +427,8 @@ main(int argc, char **argv)
        * (This code must be delayed until after we've seen the
        * first alignment, because we have to see the alphabet type first.)
        */
+      eff_nseq_set = FALSE;
+
       if(nali == 0)
 	{
 	  /* Set up the null/random seq model */
