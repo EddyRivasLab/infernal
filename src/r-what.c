@@ -15,6 +15,9 @@
 #include "structs.h"
 #include "funcs.h"
 
+#include "dlk_priorityqueue.h"
+#include "r-what.h"
+
 /* Function: MaxSubsequenceScore()
  * Author:   DLK
  *
@@ -181,6 +184,125 @@ MaxSubsequenceScore(CM_t *cm, int W, float ***ret_max_sc)
 
 
   *ret_max_sc = max_sc;
+
+  return;
+}
+
+/* Function: AstarExtension()
+ * Author:   DLK
+ *
+ * Purpose:  An SCFG alignment algorithm equivalent to CYK,
+ *           but using A* (Astar) to operate in the outside-
+ *           to-inside direction, extending from a given 
+ *           initial state
+ *
+ * Args:     cm      - the covariance model
+ *           dsq     - the digitized sequence
+ *           init_v  - initial v state in the model
+ *           init_j  - initial j position in the sequence
+ *           lower_d - 
+ *           upper_d -
+ *                   - specify the range of d values to be
+ *                     considered.  lower_d == upper_d if
+ *                     extending from known pair of positions
+ *           init_sc - initial score
+ *           max_sc  - a matrix of maximum subsequence scores
+ *
+ * Returns:
+ *
+ *
+ */
+void
+AstarExtension(CM_t *cm, char *dsq, int init_v, int init_j, int lower_d, int upper_d,
+        float init_sc, float **max_sc)
+{
+  int d;
+  int i;
+  int yoffset;
+  float tsc, esc;
+  PA_t *pa;
+  PA_t *child_pa;
+
+  PriorityQueue_t *alignPQ;
+
+  alignPQ = CreatePQ();
+
+  for (d=lower_d; d<=upper_d; d++) {
+    pa = malloc(sizeof(PA_t));
+
+    pa->init_v = pa->cur_v = init_v;
+    pa->init_j = pa->cur_j = init_j;
+    pa->init_d = pa->cur_d = d;
+    pa->current_sc = init_sc;
+    pa->upper_bound_sc = max_sc[init_v][d-2];	/* i and j already accounted for */
+
+    EnqueuePQ(alignPQ, pa, pa->current_sc + pa->upper_bound_sc);
+  }
+
+  while ((pa = DequeuePQ(alignPQ)) != NULL) {
+    if (cm->sttype[pa->cur_v] == E_st || cm->sttype[pa->cur_v] == B_st) {
+      break;
+    }
+
+    /* For each child state */
+    for (yoffset = 0; yoffset < cm->cnum[pa->cur_v]; yoffset++) {
+      /* Create partial alignment copy */
+      child_pa = PA_Copy(pa);
+      /* Calculate tsc and new v */
+      tsc = cm->tsc[pa->cur_v][yoffset];
+      child_pa->cur_v = cm->cfirst[pa->cur_v] + yoffset;
+
+      /* Get new j,d and calculate esc */
+      if      (cm->sttype[child_pa->cur_v] == D_st) {
+        esc = 0.0;
+      }
+      else if (cm->sttype[child_pa->cur_v] == MP_st) {
+        child_pa->cur_j--;
+        child_pa->cur_d -= 2;
+        i = child_pa->cur_j-child_pa->cur_d+1;
+        if (dsq[i] < Alphabet_size && dsq[child_pa->cur_j] < Alphabet_size)
+          esc = cm->esc[child_pa->cur_v][(int) (dsq[i]*Alphabet_size+dsq[child_pa->cur_j])];
+        else
+          esc = DegeneratePairScore(cm->esc[child_pa->cur_v],dsq[i],dsq[child_pa->cur_j]);
+      }
+      else if (cm->sttype[child_pa->cur_v] == ML_st || cm->sttype[child_pa->cur_v] == IL_st) {
+        child_pa->cur_d--;
+        i = child_pa->cur_j-child_pa->cur_d+1;
+        if (dsq[i] < Alphabet_size) 
+          esc = cm->esc[child_pa->cur_v][(int) dsq[i]];
+        else
+          esc = DegenerateSingletScore(cm->esc[child_pa->cur_v],dsq[i]);
+      }
+      else if (cm->sttype[child_pa->cur_v] == MR_st || cm->sttype[child_pa->cur_v] == IR_st) {
+        child_pa->cur_j--;
+        child_pa->cur_d--;
+        if (dsq[child_pa->cur_j] < Alphabet_size)
+          esc = cm->esc[child_pa->cur_v][(int) dsq[child_pa->cur_j]];
+        else
+          esc = DegenerateSingletScore(cm->esc[child_pa->cur_v],dsq[child_pa->cur_j]);
+      }
+      else if (cm->sttype[child_pa->cur_v] == E_st || cm->sttype[child_pa->cur_v] == B_st) {
+	esc = 0.0;
+      }
+
+      child_pa->current_sc = child_pa->current_sc + tsc + esc;
+      child_pa->upper_bound_sc = max_sc[child_pa->cur_v][child_pa->cur_d-2];
+
+      EnqueuePQ(alignPQ, child_pa, child_pa->current_sc + child_pa->upper_bound_sc);
+    }
+
+    free(pa);
+  }
+  
+  if (pa != NULL) {
+    /* Top alignment info is in pa.  Do something with it */
+  }
+
+  /* Empty PQ and release memory */
+  while ((pa = DequeuePQ(alignPQ)) != NULL) {
+    free(pa);
+  }
+  FreePQ(alignPQ);
 
   return;
 }
