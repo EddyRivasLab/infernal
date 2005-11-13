@@ -31,7 +31,7 @@ BandExperiment(CM_t *cm)
   int *dmin, *dmax;
 
   W = 1000;
-  while (! BandCalculationEngine(cm, W, 0.00001, FALSE, &dmin, &dmax, NULL))
+  while (! BandCalculationEngine(cm, W, 0.00001, FALSE, &dmin, &dmax, NULL, FALSE))
     {
       W += 1000;
       SQD_DPRINTF1(("increasing W to %d, redoing band calculation...\n", W));
@@ -96,6 +96,8 @@ BandExperiment(CM_t *cm)
  *                        Pass NULL if you don't want dmax back.
  *            ret_gamma - RETURN: gamma[v][n], [0..M-1][0..W], is the prob
  *                        density Prob(length=n | parse subtree rooted at v).
+ *            do_local  - TRUE to factor in possibility of jumping from root
+ *                        to any consensus state (see EPN for changes)
  *
  * Returns:   1 on success.
  *            0 if W was too small; caller needs to increase W and
@@ -112,7 +114,8 @@ BandExperiment(CM_t *cm)
  */
 int
 BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
-		      int **ret_dmin, int **ret_dmax, double ***ret_gamma)
+		      int **ret_dmin, int **ret_dmax, double ***ret_gamma,
+		      int do_local)
 {
   double **gamma;               /* P(length = n) for each state v            */
   double  *tmp;
@@ -127,6 +130,7 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
   int     *touch;               /* touch[y] = # higher states depending on y */
   Mstack_t *beamstack;          /* pool of beams we can reuse  */
   int      status;		/* return status. */
+  int      nd;                  /* counter over nodes */
 
   /* gamma[v][n] is Prob(state v generates subseq of length n)
    */
@@ -195,6 +199,29 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
 	      pdf += gamma[v][n];
 	    }
 	}
+      /*EPN 11.11.05 adding following else if () to handle local begins*/
+      else if (do_local && v == 0) /*state 0 is the one and only ROOT_S state*/
+	{
+	  pdf = 0.;
+	  for (n = 0; n <= W; n++)
+	    {
+	      /* Step through by nodes, not states. Only one local begin transition 
+	       * is possible into each MATP, MATL, MATR, and BIF nodes, specifically
+	       * to the first state of that node.
+	       */
+	      for (nd = 1; nd < cm->nodes; nd++)
+		if (cm->ndtype[nd] == MATP_nd || 
+		    cm->ndtype[nd] == MATL_nd ||
+		    cm->ndtype[nd] == MATR_nd || 
+		    cm->ndtype[nd] == BIF_nd) 
+		  {
+		    gamma[v][n] += cm->begin[cm->nodemap[nd]] * gamma[cm->nodemap[nd]][n];
+		    /* cm->begin[y] is probability we transition to state y from root */
+		  }
+	      pdf += gamma[v][n];
+	    }	      
+	}
+      /*end EPN block*/
       else 
 	{
 	  pdf = 0.;
@@ -202,7 +229,30 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
 	  for (n = dv; n <= W; n++)
 	    {
 	      for (y = 0; y < cm->cnum[v]; y++)
-		gamma[v][n] += cm->t[v][y] * gamma[cm->cfirst[v] + y][n-dv];
+		{
+		  gamma[v][n] += cm->t[v][y] * gamma[cm->cfirst[v] + y][n-dv];
+		  /* EPN 11.11.05 
+		   * Factor in local exit transition probability where appropriate.
+		   */
+		  if((do_local) && (y == 0)
+		     && ((cm->ndtype[cm->ndidx[v]] == MATP_nd) ||
+			 (cm->ndtype[cm->ndidx[v]] == MATL_nd) ||
+			 (cm->ndtype[cm->ndidx[v]] == MATR_nd) ||
+			 (cm->ndtype[cm->ndidx[v]] == BEGL_nd) ||
+			 (cm->ndtype[cm->ndidx[v]] == BEGR_nd)))
+		    {
+		      /* That horrendous if() is survived if
+		       * (1) do_local is TRUE
+		       * (2) state y is the first state of it's node
+		       * (3) state y belongs to a node that allows local
+		       *     exits from its first state.
+		       * For such states, we want to factor in the local
+		       * exit transition probability.
+		       */
+		      gamma[v][n] += cm->end[v] * gamma[cm->cfirst[v]][n-dv];
+		    }
+		  /*end EPN block*/
+		}
 	      pdf += gamma[v][n];
 	    }
 	}
@@ -222,6 +272,10 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
 	  /* fail; truncation error is unacceptable; 
 	   * caller is supposed to increase W and rerun. 
 	   */
+	  /*
+	    printf("pdf : %f\n", pdf);
+	    printf("gamma[v][W] : %f\n", gamma[v][W]);
+	  */
 	  status = 0; 
 	  goto CLEANUP;
 	}
@@ -258,8 +312,13 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
        * But it if the save_densities flag is up, don't do this - the
        * caller is telling us to keep the whole gamma matrix around,
        * prob because it's going to be returned and examined.
+       * 
+       * EPN 11.11.05
+       * If we're doing banded local, we don't want to free any match states,
+       * to enforce this, we (hackishly) just don't reuse beams. Although
+       * we could just save the match state beams...
        */
-      if (! save_densities) {
+      if ((! save_densities) && (! do_local)) {
 	if (cm->sttype[v] == B_st)
 	  {  /* connected children of a B st are handled specially, remember */
 	    y = cm->cfirst[v]; PushMstack(beamstack, gamma[y]); gamma[y] = NULL;
@@ -279,6 +338,17 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
       }
 
     } /*end loop up through all states v*/
+
+  /* EPN 11.13.05
+   * Step through band for each step and ensure that dmax[v] <= dmax[0]
+   * for all v. Because all hits must be rooted at state 0, it doesn't
+   * make sense to allow the maximum subseq length for any state to 
+   * be greater than the maximum allowable length for state 0. Important
+   * because the maximum length of a hit in a banded scan or alignment
+   * can be reset to dmax[0] after this step.
+   */
+  for (v = 1; v <= cm->M-1; v++)
+    if (dmax[v] > dmax[0]) dmax[v] = dmax[0];
 
   if (! BandTruncationNegligible(gamma[0], dmax[0], W, NULL)) 
     { status = 0; goto CLEANUP; }
@@ -532,6 +602,12 @@ FreeBandDensities(CM_t *cm, double **gamma)
  *
  * Returns:  gamma[v][n] (0..M-1, 0..W).
  *           Caller free's w/ DMX2Free(gamma).
+ *
+ * Deprecated 11.11.05 EPN
+ * Use BandCalculationEngine() instead. 
+ * This function does not properly handle potential truncation error
+ * problems. No longer supported.
+ * 
  */
 double **
 BandDistribution(CM_t *cm, int W, int do_local)
@@ -543,6 +619,9 @@ BandDistribution(CM_t *cm, int W, int do_local)
   n     = MAX(MAXCONNECT, W+1);
   gamma = DMX2Alloc(cm->M, W+1);
   
+  printf("BandDistribution() is deprecated.\nUse BandCalculationEngine() instead (its better).\n");
+  exit(1);
+
   for (n = 0; n <= W; n++)
     for (v = cm->M-1; v >= 0; v--)
       {
@@ -550,26 +629,73 @@ BandDistribution(CM_t *cm, int W, int do_local)
 
 	switch (cm->sttype[v]) {
 	case S_st:
+	  /*EPN Handle local begins.*/
+	  if(do_local && v == 0) 
+	    {
+	      for (y = 0; y < cm->M; y++) {
+		if(cm->sttype[y] == MP_st ||
+		   cm->sttype[y] == ML_st ||
+		   cm->sttype[y] == MR_st ||
+		   cm->sttype[y] == B_st) {
+		  gamma[v][n] += cm->begin[y] * gamma[y][n];
+		  /* cm->begin[y] is probability we transition to state y from root */
+		}
+	      }
+	    }
+	  else
+	    {
+	      for (y = 0; y < cm->cnum[v]; y++)
+		{
+		  gamma[v][n] += cm->t[v][y] * gamma[cm->cfirst[v] + y][n];
+		  /* EPN 11.11.05 - factor in local exit transition probability*/
+		  if((do_local) && (y == 0))
+		    {
+		      /* That if() is survived if
+		       * (1) do_local is TRUE
+		       * (2) state y is the first state of it's node
+		       *     (this means its node is a MATL or MATR node)
+		       * (3) state v isn't the ROOT_S state (would have entered
+		       *     earlier if(do_local && v==0) if that were true)
+		       *     This means v is either a BEGL_S or BEGR_S
+		       * For such states, we want to factor in the local
+		       * exit transition probability.
+		       */
+		      gamma[v][n] += cm->end[v] * gamma[cm->cfirst[v] + y][n];
+		    }
+		}
+	      /*end EPN block*/	  
+	    }
+	  break;
+	  
 	case D_st:
 	  for (y = 0; y < cm->cnum[v]; y++)
 	    gamma[v][n] += cm->t[v][y] * gamma[cm->cfirst[v] + y][n];
-	  /*EPN*/
-	  if(do_local && v == 0) {
-	    for (y = 0; y < cm->M; y++) {
-	      if(cm->sttype[y] == MP_st ||
-		 cm->sttype[y] == ML_st ||
-		 cm->sttype[y] == MR_st ||
-		 cm->sttype[y] == B_st) {
-		gamma[v][n] += cm->begin[y] * gamma[y][n];
-		/* cm->begin[y] is probability we transition to state y from root */
-	      }
-	    }
-	  }
-	  /*end EPN*/
 	  break;
-
+	  
 	case ML_st:
 	case MR_st:
+	  if (n >= 1) 
+	    {
+	      for (y = 0; y < cm->cnum[v]; y++)
+		{
+		  gamma[v][n] += cm->t[v][y] * gamma[cm->cfirst[v] + y][n-1];
+		  /* EPN 11.11.05 - factor in local exit transition probability*/
+		  if((do_local) && (y == 0))
+		    {
+		      /* That if() is survived if
+		       * (1) do_local is TRUE
+		       * (2) state y is the first state of it's node
+		       *     (this means its node is a MATL or MATR node)
+		       * For such states, we want to factor in the local
+		       * exit transition probability.
+		       */
+		      gamma[v][n] += cm->end[v] * gamma[cm->cfirst[v] + y][n-1];
+		    }
+		}
+	    }
+	    /*end EPN block*/	  
+	  break;
+
 	case IL_st:
 	case IR_st:
 	  if (n >= 1) {
@@ -579,10 +705,21 @@ BandDistribution(CM_t *cm, int W, int do_local)
 	  break;
 
 	case MP_st:
-	  if (n >= 2) {
-	    for (y = 0; y < cm->cnum[v]; y++)
-	      gamma[v][n] += cm->t[v][y] * gamma[cm->cfirst[v] + y][n-2];
-	  } 
+	  if (n >= 2) 
+	    {
+	      for (y = 0; y < cm->cnum[v]; y++)
+		gamma[v][n] += cm->t[v][y] * gamma[cm->cfirst[v] + y][n-2];
+	      /* EPN 11.11.05 - factor in local exit transition probability*/
+	      if(do_local)
+		{
+		  /* If we get here, state v is a MATP_MP state,
+		   * so y = 0. 
+		   * For such states, we want to factor in the local
+		   * exit transition probability.
+		   */
+		  gamma[v][n] += cm->end[v] * gamma[cm->cfirst[v] + y][n-2];
+		}
+	    }
 	  break;
   
 	case B_st:
@@ -785,7 +922,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
   int       jmax;               /* when imposing bands, maximum j value in alpha matrix */
   int       kmax;               /* for B_st's, maximum k value consistent with bands*/
 
-  PrintDPCellsSaved(cm, dmin, dmax, L);
+  PrintDPCellsSaved(cm, dmin, dmax, cm->W);
   /* EPN 08.11.05 Next line prevents wasteful computations when imposing
    * bands before the main recursion.  There is no need to worry about
    * alpha cells corresponding to subsequence distances within the windowlen
@@ -1040,6 +1177,8 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
       if (cm->flags & CM_LOCAL_BEGIN) {
 	for (y = 1; y < cm->M; y++) {
 	  d = (dmin[y] > dmin[0]) ? dmin[y]:dmin[0];
+	  /*if (dmin[y] > dmin[0]) d = dmin[y];
+	    else d = dmin[0];*/
 	  for (; d <= dmax[y] && d <=j; d++)
 	    {
 	      if (cm->stid[y] == BEGL_S) sc = alpha[y][j%(W+1)][d] + cm->beginsc[y];

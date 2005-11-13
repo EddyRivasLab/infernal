@@ -108,6 +108,15 @@ main(int argc, char **argv)
   char *optarg;                 /* argument found by Getopt()              */
   int   optind;                 /* index in argv[]                         */
 
+
+  /*EPN 11.11.05 */
+  int      safe_windowlen;	/* initial windowlen (W) used for calculating bands
+				 * in BandCalculationEngine().
+				 * this needs to be significantly bigger than what
+				 * we expect dmax[0] to be, for truncation error
+				 * handling.
+				 */
+
   /*********************************************** 
    * Parse command line
    ***********************************************/
@@ -171,7 +180,7 @@ main(int argc, char **argv)
 
   /* EPN 08.18.05 */
   if (! (set_window)) windowlen = cm->W;
-  printf("***cm->W : %d***\n", cm->W);
+  /*printf("***cm->W : %d***\n", cm->W);*/
 
   if (do_local) ConfigLocal(cm, 0.5, 0.5);
   CMLogoddsify(cm);
@@ -180,12 +189,42 @@ main(int argc, char **argv)
 
   if (do_banded || do_projectx || do_bdump)
     {
-      gamma = BandDistribution(cm, windowlen, do_local);
-      BandBounds(gamma, cm->M, windowlen, bandp, &dmin, &dmax);
-      printf("bandp:%f\n", bandp);
-      if(do_bdump) debug_print_bands(cm, dmin, dmax);
-    }
+      safe_windowlen = windowlen * 2;
+      gamma = DMX2Alloc(cm->M, safe_windowlen+1);
+      while(!(BandCalculationEngine(cm, safe_windowlen, bandp, 0, &dmin, &dmax, &gamma, do_local)))
+	{
+	  DMX2Free(gamma);
+	  /*printf("Failure in BandCalculationEngine(). W:%d | bandp: %4e\n", safe_windowlen, bandp);*/
+	  safe_windowlen *= 2;
+	  gamma = DMX2Alloc(cm->M, safe_windowlen+1);
+	}
+      /*printf("Success in BandCalculationEngine(). W:%d | bandp: %4e\n", safe_windowlen, bandp);*/
+      /*debug_print_bands(cm, dmin, dmax);*/
 
+      /* EPN 11.11.05 
+       * An important design decision.
+       * We're changing the windowlen value here. By default,
+       * windowlen is read from the cm file (set to cm->W). 
+       * Here we're doing a banded scan though. Its pointless to allow
+       * a windowlen that's greater than the largest possible banded hit 
+       * (which is dmax[0]). So we reset windowlen to dmax[0].
+       * Its also possible that BandCalculationEngine() returns a dmax[0] that 
+       * is > cm->W. This should only happen if the bandp we're using now is < 1E-7 
+       * (1E-7 is the bandp value used to determine cm->W in cmbuild). If this 
+       * happens, the current implementation reassigns windowlen to this larger value.
+       * NOTE: if W was set at the command line, the command line value is 
+       *       always used.
+       */
+      if(!(set_window))
+	{
+	  windowlen = dmax[0];
+	}
+      if(do_bdump) 
+	{
+	  printf("bandp:%f\n", bandp);
+	  debug_print_bands(cm, dmin, dmax);
+	}
+    }
   StopwatchZero(watch);
   StopwatchStart(watch);
 
@@ -295,3 +334,4 @@ debug_print_bands(CM_t *cm, int *dmin, int *dmax)
    }
   printf("****************\n\n");
 }
+
