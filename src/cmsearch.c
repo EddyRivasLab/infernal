@@ -190,13 +190,11 @@ main(int argc, char **argv)
   if (do_banded || do_projectx || do_bdump)
     {
       safe_windowlen = windowlen * 2;
-      gamma = DMX2Alloc(cm->M, safe_windowlen+1);
       while(!(BandCalculationEngine(cm, safe_windowlen, bandp, 0, &dmin, &dmax, &gamma, do_local)))
 	{
-	  DMX2Free(gamma);
+	  FreeBandDensities(cm, gamma);
 	  /*printf("Failure in BandCalculationEngine(). W:%d | bandp: %4e\n", safe_windowlen, bandp);*/
 	  safe_windowlen *= 2;
-	  gamma = DMX2Alloc(cm->M, safe_windowlen+1);
 	}
       /*printf("Success in BandCalculationEngine(). W:%d | bandp: %4e\n", safe_windowlen, bandp);*/
       /*debug_print_bands(cm, dmin, dmax);*/
@@ -301,7 +299,7 @@ main(int argc, char **argv)
 
   if (do_banded)
     {
-      DMX2Free(gamma);
+      FreeBandDensities(cm, gamma);
       free(dmin);
       free(dmax);
     }

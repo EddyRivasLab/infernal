@@ -256,7 +256,7 @@ CM_Eweight(CM_t *cm, Prior_t *pri, float numb_seqs,
    * End of binary search
    *********************************************************************************************/
   eff_no = numb_seqs * scale;
-  printf("[scale=%.2f] returning eff_no : %f\n", scale, eff_no);
+  /*printf("[scale=%.2f] ", scale);*/
   return(eff_no);
 }
 

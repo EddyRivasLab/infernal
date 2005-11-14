@@ -204,6 +204,14 @@ main(int argc, char **argv)
   int   eff_nseq_set;		/* TRUE if eff_nseq has been calculated  */
   float randomseq[MAXABET];     /* null sequence model                     */
 
+  /* EPN 11.13.05 Switched from BandDistribution() to BandCalculationEngine() */
+  int    do_local;		/* always FALSE for now, used in BandCalculationEngine().
+				 * Does cmbuild have a --local option in its future? 
+				 */
+  int    save_gamma;		/* TRUE to save the gamma matrix in
+				 * BandCalculationEngine().
+				 */
+
   /*********************************************** 
    * Parse command line
    ***********************************************/
@@ -234,6 +242,8 @@ main(int argc, char **argv)
   eff_strategy      = EFF_NONE;          
   eloss_set         = FALSE;
   eff_nseq_set      = FALSE;
+  do_local          = FALSE;
+  save_gamma        = FALSE;
 
   /* EPN 08.18.05 bandp used in BandBounds() for calculating W(W=dmax[0]) 
    *              Brief expt on effect of different bandp values in 
@@ -267,7 +277,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--tfile")     == 0) tracefile         = optarg;
     else if (strcmp(optname, "--regress")   == 0) regressionfile    = optarg;
     else if (strcmp(optname, "--priorfile") == 0) prifile           = optarg;
-    else if (strcmp(optname, "--bfile")     == 0) bandfile          = optarg;
+    else if (strcmp(optname, "--bfile")     == 0) {bandfile          = optarg; save_gamma = TRUE;}
     else if (strcmp(optname, "--bandp")     == 0) bandp             = atof(optarg);
     else if (strcmp(optname, "--ignorant")  == 0) be_ignorant       = TRUE;
     else if (strcmp(optname, "--null")      == 0) rndfile           = optarg;
@@ -544,15 +554,26 @@ in addition to selecting --effent.\n");
        *              safe_windowlen scaling factor values in 
        *              ~nawrocki/notebook/5_0818_inf_cmbuild_bands/00LOG
        */
-      printf("%-40s ... ", "Calculating windowlen for model"); fflush(stdout);
+      printf("%-40s ... ", "Calculating max hit length for model"); fflush(stdout);
       safe_windowlen = 2 * MSAMaxSequenceLength(msa);
       /*printf("safe_windowlen : %d\n", safe_windowlen);*/
       /*printf("bandp          : %12f\n", bandp);*/
-      gamma = BandDistribution(cm, safe_windowlen, 0);
-      BandBounds(gamma, cm->M, safe_windowlen, bandp, &dmin, &dmax);
+
+      /* EPN 11.13.05 
+       * BandCalculationEngine() replaces BandDistribution() and BandBounds().
+       * See ~nawrocki/notebook/5_1111_inf_banded_dist_vs_bandcalc/00LOG for details.
+       */
+      while(!(BandCalculationEngine(cm, safe_windowlen, bandp, save_gamma, &dmin, &dmax, &gamma, do_local)))
+	{
+	  FreeBandDensities(cm, gamma);
+	  /*printf("Failure in BandCalculationEngine(). W:%d | bandp: %4e\n", safe_windowlen, bandp);*/
+	  safe_windowlen *= 2;
+	}
+      /*printf("Success in BandCalculationEngine(). W:%d | bandp: %4e\n", safe_windowlen, bandp);*/
+      /*debug_print_bands(cm, dmin, dmax);*/
+
       cm->W = dmax[0];
-      /*printf("cm->W : %d\n", cm->W);*/
-      printf("done.\n");
+      printf("done. [%d]\n", cm->W);
 
       /* Give the model a name (mandatory in the CM file).
        * Order of precedence:
@@ -704,16 +725,13 @@ in addition to selecting --effent.\n");
 	    Die("failed to open band file %s", bandfile);
 
 	  /* We want band information for bands we'd use in a cmsearch
-	   * call, so we need to recalculate gamma with cm->W 
+	   * with bandp as its set now (default is 1E-7, but it can
+	   * be set at the command line). We already have gamma from
+	   * the band calculation we used to get cm->W.
 	   */
-	  DMX2Free(gamma);
-	  gamma = BandDistribution(cm, cm->W, 0);
-	  free(dmin);
-	  free(dmax);
-	  BandBounds(gamma, cm->M, cm->W, bandp, &dmin, &dmax);
-
+	  
 	  fprintf(ofp, "acc:%s\n", msa->acc);
-	  fprintf(ofp, "bandp:%.12f\n", bandp);
+	  fprintf(ofp, "bandp:%g\n", bandp);
 	  for (v = 0; v < cm->M; v++)
 	    if(cm->sttype[v] == S_st)
 		PrintBandDensity(ofp, gamma, v, cm->W, dmin[v], dmax[v]);
@@ -727,6 +745,7 @@ in addition to selecting --effent.\n");
 	  fprintf(ofp, "//\n");
 	  fclose(ofp);
 	  printf("done. [%s]\n", bandfile);
+	  FreeBandDensities(cm, gamma);
 	}
 
       puts("");
@@ -741,6 +760,10 @@ in addition to selecting --effent.\n");
       fflush(cmfp);
       puts("//\n");
       nali++;
+
+      /* EPN 08.18.05 */
+      free(dmin);
+      free(dmax);
     }
 
 
@@ -752,11 +775,6 @@ in addition to selecting --effent.\n");
   Prior_Destroy(pri);
   fclose(cmfp);
   SqdClean();
-
-  /* EPN 08.18.05 */
-  DMX2Free(gamma);
-  free(dmin);
-  free(dmax);
 
   return 0;
 }
@@ -994,10 +1012,8 @@ PrintBandDensity(FILE *fp, double **gamma, int v, int W, int min, int max)
   int n;
 
   fprintf(fp, "band for state:%d min:%d max:%d\n", v, min, max);
-  /* firsty, prob subseq len == 0 */
-  fprintf(fp, "%d:%.12f\n", 0, gamma[v][0]);
-  for (n = 1; n <= W; n++)
-    fprintf(fp, "%d:%.12f\n", n, (gamma[v][n]-gamma[v][n-1]));
+  for (n = 0; n <= W; n++)
+    fprintf(fp, "%d:%.12f\n", n, gamma[v][n]);
 }
 
 /* Function:  StripWUSS()
