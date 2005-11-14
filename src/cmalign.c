@@ -19,6 +19,7 @@
 
 #include "squid.h"		/* general sequence analysis library    */
 #include "msa.h"                /* squid's multiple alignment i/o       */
+#include "stopwatch.h"          /* squid's process timing module        */
 
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
@@ -115,7 +116,7 @@ main(int argc, char **argv)
   int    set_window;            /* TRUE to set window length due to -W option*/
 
 
-  double  **gamma;		/* cumulative distribution p(len <= n) for state v */
+  double  **gamma;              /* P(subseq length = n) for each state v    */
   int     *dmin;		/* minimum d bound for state v, [0..v..M-1] */
   int     *dmax; 		/* maximum d bound for state v, [0..v..M-1] */
   double   bandp;		/* tail loss probability for banding */
@@ -123,6 +124,16 @@ main(int argc, char **argv)
   char *optname;                /* name of option found by Getopt()        */
   char *optarg;                 /* argument found by Getopt()              */
   int   optind;                 /* index in argv[]                         */
+
+  /*EPN 11.13.05 */
+  int      safe_windowlen;	/* initial windowlen (W) used for calculating bands
+				 * in BandCalculationEngine().
+				 * this needs to be significantly bigger than what
+				 * we expect dmax[0] to be, for truncation error
+				 * handling.
+				 */
+  Stopwatch_t     *watch;
+
   
   /*********************************************** 
    * Parse command line
@@ -187,6 +198,8 @@ main(int argc, char **argv)
    * Input and configure the CM
    *****************************************************************/
 
+  watch = StopwatchCreate();
+
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
     Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
   if (! CMFileRead(cmfp, &cm))
@@ -197,7 +210,7 @@ main(int argc, char **argv)
 
   /* EPN 08.18.05 */
   if (! (set_window)) windowlen = cm->W;
-  printf("***cm->W : %d***\n", cm->W);
+  /*printf("***cm->W : %d***\n", cm->W);*/
 
   if (do_local) ConfigLocal(cm, 0.5, 0.5);
   CMLogoddsify(cm);
@@ -238,22 +251,65 @@ main(int argc, char **argv)
 
   if(do_banded || bdump_level > 0)
     {
-      gamma = BandDistribution(cm, windowlen, do_local);
-      BandBounds(gamma, cm->M, windowlen, bandp, &dmin, &dmax);
-      printf("bandp:%f\n", bandp);
-      if(bdump_level > 1) debug_print_bands(cm, dmin, dmax);
-    }
+      safe_windowlen = windowlen * 2;
+      while(!(BandCalculationEngine(cm, safe_windowlen, bandp, 0, &dmin, &dmax, &gamma, do_local)))
+	{
+	  FreeBandDensities(cm, gamma);
+	  free(dmin);
+	  free(dmax);
+	  safe_windowlen *= 2;
+	}
 
+      /* EPN 11.13.05 
+       * An important design decision.
+       * We're changing the windowlen value here. By default,
+       * windowlen is read from the cm file (set to cm->W). 
+       * Here we're doing a banded alignment though. Its pointless to allow
+       * a windowlen that's greater than the largest possible banded hit 
+       * (which is dmax[0]). So we reset windowlen to dmax[0].
+       * Its also possible that BandCalculationEngine() returns a dmax[0] that 
+       * is > cm->W. This should only happen if the bandp we're using now is < 1E-7 
+       * (1E-7 is the bandp value used to determine cm->W in cmbuild). If this 
+       * happens, the current implementation reassigns windowlen to this larger value.
+       * NOTE: if W was set at the command line, the command line value is 
+       *       always used.
+       */
+      if(!(set_window))
+	{
+	  windowlen = dmax[0];
+	}
+      if(bdump_level > 1) 
+	{
+	  printf("bandp:%f\n", bandp);
+	  debug_print_bands(cm, dmin, dmax);
+	}
+    }
   expand_flag = FALSE;
+
+  StopwatchZero(watch);
+  StopwatchStart(watch);
+
   for (i = 0; i < nseq; i++) 
     {
       if(do_bandexpand)
 	{
 	  if(expand_flag)
 	    {
-	      /*the bands were expanded from aligning the previous
-		sequence, we want to return them to the default */
-	      BandBounds(gamma, cm->M, windowlen, bandp, &dmin, &dmax);
+	      /* The bands were expanded from aligning the previous
+	       * sequence, we want to return them to the default,
+	       * the current, inefficient approach is to recalculate
+	       * gamma and the bands.
+	       */
+	      FreeBandDensities(cm, gamma);
+	      free(dmin);
+	      free(dmax);
+	      while(!(BandCalculationEngine(cm, safe_windowlen, bandp, 0, &dmin, &dmax, &gamma, do_local)))
+		{
+		  FreeBandDensities(cm, gamma);
+		  free(dmin);
+		  free(dmax);
+		  safe_windowlen *= 2;
+		}
 	      expand_flag = FALSE;
 	    }
 	  if((sqinfo[i].len < dmin[0]) || (sqinfo[i].len > dmax[0]))
@@ -369,6 +425,9 @@ main(int argc, char **argv)
    * Clean up and exit.
    *****************************************************************/
 
+  StopwatchStop(watch);
+  StopwatchDisplay(stdout, "\nCPU time: ", watch);
+
   for (i = 0; i < nseq; i++) 
     {
       FreeParsetree(tr[i]);
@@ -378,7 +437,7 @@ main(int argc, char **argv)
 
   if (do_banded)
     {
-      DMX2Free(gamma);
+      FreeBandDensities(cm, gamma);
       free(dmin);
       free(dmax);
     }
@@ -390,6 +449,7 @@ main(int argc, char **argv)
   free(dsq);
   free(tr);
   
+  StopwatchFree(watch);
   SqdClean();
   return 0;
 }

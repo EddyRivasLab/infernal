@@ -82,7 +82,7 @@ main(int argc, char **argv)
   CMConsensus_t   *cons;	/* precalculated consensus info for display */
   Fancyali_t      *ali;         /* alignment, formatted for display */
 
-  double  **gamma;		/* cumulative distribution p(len <= n) for state v */
+  double  **gamma;              /* P(subseq length = n) for each state v    */
   int     *dmin;		/* minimum d bound for state v, [0..v..M-1] */
   int     *dmax; 		/* maximum d bound for state v, [0..v..M-1] */
   double   bandp;		/* tail loss probability for banding */
@@ -193,11 +193,10 @@ main(int argc, char **argv)
       while(!(BandCalculationEngine(cm, safe_windowlen, bandp, 0, &dmin, &dmax, &gamma, do_local)))
 	{
 	  FreeBandDensities(cm, gamma);
-	  /*printf("Failure in BandCalculationEngine(). W:%d | bandp: %4e\n", safe_windowlen, bandp);*/
+	  free(dmin);
+	  free(dmax);
 	  safe_windowlen *= 2;
 	}
-      /*printf("Success in BandCalculationEngine(). W:%d | bandp: %4e\n", safe_windowlen, bandp);*/
-      /*debug_print_bands(cm, dmin, dmax);*/
 
       /* EPN 11.11.05 
        * An important design decision.

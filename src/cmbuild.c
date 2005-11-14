@@ -176,7 +176,7 @@ main(int argc, char **argv)
   Prior_t *pri;                 /* mixture Dirichlet prior structure */
 
   /* Added EPN 08.18.05 So we can calculate an appropriate W when building the CM */
-  double  **gamma;		/* cumulative distribution p(len <= n) for state v */
+  double  **gamma;              /* P(subseq length = n) for each state v    */
   int     *dmin;		/* minimum d bound for state v, [0..v..M-1] */
   int     *dmax; 		/* maximum d bound for state v, [0..v..M-1] */
   double   bandp;		/* tail loss probability for banding */
