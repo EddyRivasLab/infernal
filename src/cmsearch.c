@@ -42,7 +42,7 @@ static char experts[] = "\
    --noalign     : find start/stop only; don't do alignments\n\
    --dumptrees   : dump verbose parse tree information for each hit\n\
    --banded      : use experimental banded CYK scanning algorithm\n\
-   --bandp       : tail loss prob for --banded (default:0.0001)\n\
+   --bandp <f>   : tail loss prob for --banded [df: 0.0001]\n\
    --banddump    : print bands for each state\n\
    --X           : project X!\n\
 ";
@@ -57,7 +57,7 @@ static struct opt_s OPTIONS[] = {
   { "--toponly",    FALSE, sqdARG_NONE },
   { "--banded",     FALSE, sqdARG_NONE },
   { "--bandp",      FALSE, sqdARG_FLOAT},
-  { "--banddump"  , FALSE, sqdARG_NONE},
+  { "--banddump",   FALSE, sqdARG_NONE},
   { "--X",          FALSE, sqdARG_NONE },
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))

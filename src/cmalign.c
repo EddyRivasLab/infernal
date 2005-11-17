@@ -32,7 +32,7 @@ MSA *Parsetrees2Alignment_full(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt,
 
 static void debug_print_bands(CM_t *cm, int *dmin, int *dmax);
 static void ExpandBands(CM_t *cm, int qlen, int *dmin, int *dmax);
-static void banded_trace_info_dump(Parsetree_t *tr, int *dmin, int *dmax, int bdump_level);
+static void banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *dmin, int *dmax, int bdump_level);
 
 static char banner[] = "cmalign - align sequences to an RNA CM";
 
@@ -211,6 +211,9 @@ main(int argc, char **argv)
   /* EPN 08.18.05 */
   if (! (set_window)) windowlen = cm->W;
   /*printf("***cm->W : %d***\n", cm->W);*/
+  printf("***cm->el_selfsc: %f\n", cm->el_selfsc);
+  if((cm->el_selfsc * (windowlen) < (3*IMPOSSIBLE)))
+    Die("W is too large to allow correct alignment with current cm->el_selfsc.\n");
 
   if (do_local) ConfigLocal(cm, 0.5, 0.5);
   CMLogoddsify(cm);
@@ -350,7 +353,7 @@ main(int argc, char **argv)
 	      sc = CYKDivideAndConquer_b(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, 
 					      &(tr[i]), dmin, dmax);
 	      if(bdump_level > 0)
-		banded_trace_info_dump(tr[i], dmin, dmax, bdump_level);
+		banded_trace_info_dump(cm, tr[i], dmin, dmax, bdump_level);
 	    }
 	  else
 	    {
@@ -361,7 +364,7 @@ main(int argc, char **argv)
 		   * why a banded parse is crappy relative to non-banded parse, e.g. allows you 
 		   * to see where the non-banded parse went outside the bands.
 		   */
-		  banded_trace_info_dump(tr[i], dmin, dmax, bdump_level);
+		  banded_trace_info_dump(cm, tr[i], dmin, dmax, bdump_level);
 		}
 	    }
 	}
@@ -369,7 +372,7 @@ main(int argc, char **argv)
 	{
 	  sc = CYKInside_b(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, &(tr[i]), dmin, dmax);
 	  if(bdump_level > 0)
-	    banded_trace_info_dump(tr[i], dmin, dmax, bdump_level);
+	    banded_trace_info_dump(cm, tr[i], dmin, dmax, bdump_level);
 	}
       else
 	{
@@ -380,7 +383,7 @@ main(int argc, char **argv)
 	       * why a banded parse is crappy relative to non-banded parse, e.g. allows you 
 	       * to see where the non-banded parse went outside the bands.
 	       */
-	      banded_trace_info_dump(tr[i], dmin, dmax, bdump_level);
+	      banded_trace_info_dump(cm, tr[i], dmin, dmax, bdump_level);
 	    }
 	}
       avgsc += sc;
@@ -1263,11 +1266,35 @@ ExpandBands(CM_t *cm, int tlen, int *dmin, int *dmax)
  */
 
 static void
-banded_trace_info_dump(Parsetree_t *tr, int *dmin, int *dmax, int bdump_level)
+banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *dmin, int *dmax, int bdump_level)
 {
+  char **sttypes;
+  char **nodetypes;
   int v, i, j, d, tpos;
   int mindiff;            /* d - dmin[v] */
   int maxdiff;            /* dmax[v] - d */
+
+  sttypes = malloc(sizeof(char *) * 10);
+  sttypes[0] = "D";
+  sttypes[1] = "MP";
+  sttypes[2] = "ML";
+  sttypes[3] = "MR";
+  sttypes[4] = "IL";
+  sttypes[5] = "IR";
+  sttypes[6] = "S";
+  sttypes[7] = "E";
+  sttypes[8] = "B";
+  sttypes[9] = "EL";
+
+  nodetypes = malloc(sizeof(char *) * 8);
+  nodetypes[0] = "BIF";
+  nodetypes[1] = "MATP";
+  nodetypes[2] = "MATL";
+  nodetypes[3] = "MATR";
+  nodetypes[4] = "BEGL";
+  nodetypes[5] = "BEGR";
+  nodetypes[6] = "ROOT";
+  nodetypes[7] = "END";
 
   for (tpos = 0; tpos < tr->n; tpos++)
     {
@@ -1275,9 +1302,20 @@ banded_trace_info_dump(Parsetree_t *tr, int *dmin, int *dmax, int bdump_level)
       i = tr->emitl[tpos];
       j = tr->emitr[tpos];
       d = j-i+1;
-      mindiff = d-dmin[v];
-      maxdiff = dmax[v]-d;
-      if(bdump_level > 1 || ((mindiff < 0) || (maxdiff < 0)))
-	 printf("v : %4d | d : %4d | dmin : %4d | dmax : %4d | %3d | %3d |\n", v, d, dmin[v], dmax[v], mindiff, maxdiff);
+
+      if(cm->sttype[v] != EL_st)
+	{
+	  mindiff = d-dmin[v];
+	  maxdiff = dmax[v]-d;
+	  if(bdump_level > 1 || ((mindiff < 0) || (maxdiff < 0)))
+	    printf("%-4s %-3s v: %4d | d: %4d | dmin: %4d | dmax: %4d | %3d | %3d |\n", nodetypes[cm->ndtype[cm->ndidx[v]]], sttypes[cm->sttype[v]], v, d, dmin[v], dmax[v], mindiff, maxdiff);
+	}
+      else
+	{
+	  if(bdump_level > 1)
+	    printf("%-8s v: %4d | d: %4d |\n", sttypes[cm->sttype[v]], v, d);
+	}
     }
+  free(sttypes);
+  free(nodetypes);
 }

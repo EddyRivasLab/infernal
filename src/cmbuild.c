@@ -45,16 +45,17 @@ static char experts[] = "\
    --rf           : use reference coordinate annotation to specify consensus\n\
    --gapthresh <x>: fraction of gaps to allow in a consensus column (0..1)\n\
    --informat <s> : specify input alignment is in format <s>, not Stockholm\n\
-   --bandp <f>    : tail loss prob for calc'ing W using bands (default:0.0000001)\n\
+   --bandp <f>    : tail loss prob for calc'ing W using bands [default: 1E-7]\n\
+   --elself <f>   : set EL self transition prob to <f> [df: 1.0]\n\
 \n\
- * sequence weighting options (default: GSC weighting):\n\
+ * sequence weighting options [default: GSC weighting]:\n\
    --wgiven       : use weights as annotated in alignment file\n\
    --wnone        : no weighting; re-set all weights to 1.\n\
-   --wgsc         : use Gerstein/Sonnhammer/Chothia tree weights (default)\n\
+   --wgsc         : use Gerstein/Sonnhammer/Chothia tree weights [default]\n\
 \n\
  * alternative effective sequence number strategies:\n\
    --effnone      : effective sequence number is just # of seqs [default]\n\
-   --effent       : entropy loss target [requires --eloss]\n\
+   --effent       : entropy loss target (requires --eloss)\n\
    --eloss <x>    : for --effent: set target loss [default: NONE]\n\
 \n\   
  * verbose output files, useful for detailed information about the CM:\n\
@@ -106,6 +107,7 @@ static struct opt_s OPTIONS[] = {
   { "--effnone", FALSE, sqdARG_NONE },
   { "--effent",  FALSE, sqdARG_NONE },
   { "--eloss",   FALSE, sqdARG_FLOAT },
+  { "--elself",    FALSE, sqdARG_FLOAT},
 }
 ;
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
@@ -211,6 +213,18 @@ main(int argc, char **argv)
   int    save_gamma;		/* TRUE to save the gamma matrix in
 				 * BandCalculationEngine().
 				 */
+  /* EPN 11.15.05 User has the option to set the EL self transition probability
+   * at the command line. This value is converted to a score (log2(prob)) and
+   * stored in the CM file. By default this probability is 1.0, which has score
+   * 0, so by default this self transition probability doesn't affect the performance
+   * of the model at all relative to a v0.6 or earlier model.
+   */
+  float el_selfprob;           /* EL state's self transition probability. This is hacky.
+				* EL states are different, they don't have a transition score vector,
+				* This probability is converted to a score and used to penalize very 
+				* large regions 'skipped' by EL states. 
+				* see ~nawrocki/notebook/5_1115_inf_el_trans_prob/00LOG for details.
+				*/
 
   /*********************************************** 
    * Parse command line
@@ -255,6 +269,8 @@ main(int argc, char **argv)
   
   be_ignorant       = FALSE;	/* default: leave in bp information */
 
+  el_selfprob     = 1.0;
+
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
     if      (strcmp(optname, "-A") == 0)          do_append         = TRUE; 
@@ -284,7 +300,11 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--effent")  == 0) eff_strategy  = EFF_ENTROPY;
     else if (strcmp(optname, "--effnone") == 0) eff_strategy  = EFF_NONE;
     else if (strcmp(optname, "--eloss")   == 0) { eloss       = atof(optarg); eloss_set  = TRUE; }
-
+    else if  (strcmp(optname, "--elself")   == 0) { 
+      el_selfprob= atof(optarg); 
+      if(el_selfprob < 0 || el_selfprob > 1)
+	Die("EL self transition probability must be between 0 and 1.\n");
+    }
     else if (strcmp(optname, "--informat") == 0) {
       format = String2SeqfileFormat(optarg);
       if (format == MSAFILE_UNKNOWN) 
@@ -494,6 +514,7 @@ in addition to selecting --effent.\n");
       printf("%-40s ... ", "Constructing model architecture");
       fflush(stdout);
       HandModelmaker(msa, dsq, use_rf, gapthresh, &cm, &mtr);
+
       if (do_balance) 
 	{
 	  CM_t *new;
@@ -575,6 +596,26 @@ in addition to selecting --effent.\n");
       cm->W = dmax[0];
       printf("done. [%d]\n", cm->W);
 
+      /*11.15.05 EPN Set the EL self transition score, by default its 0.*/
+      cm->el_selfsc = sreLOG2(el_selfprob);
+      /* Very hacky. We want to avoid underflow errors. structs.h explains
+       * how IMPOSSIBLE must be > -FLT_MAX/3 so we can add it together 3 
+       * times with an underflow. Here, we may potentially be adding el_selfsc
+       * together W times. (And W can change in cmsearch or cmalign). Here
+       * we'll ensure we can multiply el_selfsc by 2W and still avoid underflows,
+       * and we'll check in cmsearch to make sure that W * cm->el_selfsc < (IMPOSSIBLE*3)
+       * and we'll die if it isn't. We shouldn't face this situation
+       * unless the user wants to set W as something greater than twice what
+       * it is set as in the .cm file.
+       */
+      if(cm->el_selfsc < (IMPOSSIBLE/(2 * cm->W)))
+	{
+	  printf("resetting cm->el_selfsc\n");
+	  printf("old : %f\n", cm->el_selfsc);
+	  cm->el_selfsc = (IMPOSSIBLE/(2 * cm->W));
+	  printf("new : %f\n", cm->el_selfsc);
+	}
+      
       /* Give the model a name (mandatory in the CM file).
        * Order of precedence:
        *      1. -n option  (only if a single alignment in file)

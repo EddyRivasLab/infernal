@@ -115,7 +115,7 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
       else if (cm->sttype[v] == S_st || cm->sttype[v] == D_st) 
 	{
 	  y = cm->cfirst[v];
-	  alpha[v][0][0] = cm->endsc[v]; 
+	  alpha[v][0][0] = cm->endsc[v];  
 	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 	    if ((sc = alpha[y+yoffset][0][0] + cm->tsc[v][yoffset]) > alpha[v][0][0]) 
 	      alpha[v][0][0] = sc;
@@ -165,7 +165,7 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
 	      for (d = 1; d <= W && d <= j; d++) 
 		{
 		  y = cm->cfirst[v];
-		  alpha[v][jp][d] = cm->endsc[v]; 
+		  alpha[v][jp][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		    if ((sc = alpha[y+yoffset][cur][d] + cm->tsc[v][yoffset]) > alpha[v][jp][d]) 
 		      alpha[v][jp][d] = sc;
@@ -177,7 +177,7 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
 	      for (d = 2; d <= W && d <= j; d++)
 		{
 		  y = cm->cfirst[v];
-		  alpha[v][cur][d] = cm->endsc[v];
+		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		    if ((sc = alpha[y+yoffset][prv][d-2] + cm->tsc[v][yoffset]) > alpha[v][cur][d])
 		      alpha[v][cur][d] = sc;
@@ -196,7 +196,7 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
 	      for (d = 1; d <= W && d <= j; d++)
 		{
 		  y = cm->cfirst[v];
-		  alpha[v][cur][d] = cm->endsc[v];
+		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v]))); 
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		    if ((sc = alpha[y+yoffset][cur][d-1] + cm->tsc[v][yoffset]) > alpha[v][cur][d])
 		      alpha[v][cur][d] = sc;
@@ -215,7 +215,7 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
 	      for (d = 1; d <= W && d <= j; d++)
 		{
 		  y = cm->cfirst[v];
-		  alpha[v][cur][d] = cm->endsc[v];
+		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		    if ((sc = alpha[y+yoffset][prv][d-1] + cm->tsc[v][yoffset]) > alpha[v][cur][d])
 		      alpha[v][cur][d] = sc;
@@ -235,7 +235,7 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
 	      i = j-d+1;
 	      for (d = 1; d <= W && d <= j; d++) 
 		{
-		  alpha[v][cur][d] = cm->endsc[v];
+		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
 
 		  for (k = 0; k <= d; k++) /* k is length of right fragment */
 		    {

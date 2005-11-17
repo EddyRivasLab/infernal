@@ -91,6 +91,7 @@ CreateCMShell(void)
 
   cm->flags  = 0;
   cm->W      = 0;
+  cm->el_selfsc = 0.;
   return cm;
 }
 void
