@@ -19,7 +19,7 @@ extern double **BandDistribution(CM_t *cm, int W, int do_local);
 extern int      BandCalculationEngine(CM_t *cm, int W, double p_thresh, 
 				      int save_densities,
 				      int **ret_dmin, int **ret_dmax, 
-				      double ***ret_gamma);
+				      double ***ret_gamma, int do_local);
 extern int      BandTruncationNegligible(double *density, int b, int W, double *ret_beta);
 extern int      BandMonteCarlo(CM_t *cm, int nsample, int W, double ***ret_gamma);
 extern void     FreeBandDensities(CM_t *cm, double **gamma);
@@ -44,7 +44,6 @@ extern void  CreateCMBody(CM_t *cm, int nnodes, int nstates);
 extern void  CMZero(CM_t *cm);
 extern void  CMRenormalize(CM_t *cm);
 extern void  FreeCM(CM_t *cm);
-extern void  CMSetDefaultNullModel(CM_t *cm);
 extern void  CMSimpleProbify(CM_t *cm);
 extern void  CMLogoddsify(CM_t *cm);
 extern void  CMHackInsertScores(CM_t *cm);
@@ -71,8 +70,9 @@ extern int   DeriveUniqueStateCode(int ndtype, int sttype);
 extern CM_t *CMRebalance(CM_t *cm);
 
 /*EPN 10.19.05*/
-extern void  CMReadNullModel(char *rndfile, CM_t *cm);
-
+extern void  CMDefaultNullModel(float *null);
+extern void  CMSetNullModel(CM_t *cm, float null[MAXABET]);
+extern void  CMReadNullModel(char *rndfile, float *null);
 
 /* from cmio.c
  */

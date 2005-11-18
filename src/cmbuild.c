@@ -24,7 +24,9 @@
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "prior.h"		/* mixture Dirichlet prior */
 #include "funcs.h"		/* external functions                   */
-
+#include "cm_eweight.h"         /* LSJ's entropy weighted functions ported
+				 * from HMMER2.4devl [by EPN]
+				 */
 static char banner[] = "cmbuild - build RNA covariance model from alignment";
 
 static char usage[]  = "\
@@ -43,13 +45,19 @@ static char experts[] = "\
    --rf           : use reference coordinate annotation to specify consensus\n\
    --gapthresh <x>: fraction of gaps to allow in a consensus column (0..1)\n\
    --informat <s> : specify input alignment is in format <s>, not Stockholm\n\
-   --bandp <f>    : tail loss prob for calc'ing W using bands (default:0.0000001)\n\
+   --bandp <f>    : tail loss prob for calc'ing W using bands [default: 1E-7]\n\
+   --elself <f>   : set EL self transition prob to <f> [df: 1.0]\n\
 \n\
- * sequence weighting options (default: GSC weighting):\n\
+ * sequence weighting options [default: GSC weighting]:\n\
    --wgiven       : use weights as annotated in alignment file\n\
    --wnone        : no weighting; re-set all weights to 1.\n\
-   --wgsc         : use Gerstein/Sonnhammer/Chothia tree weights (default)\n\
+   --wgsc         : use Gerstein/Sonnhammer/Chothia tree weights [default]\n\
 \n\
+ * alternative effective sequence number strategies:\n\
+   --effnone      : effective sequence number is just # of seqs [default]\n\
+   --effent       : entropy loss target (requires --eloss)\n\
+   --eloss <x>    : for --effent: set target loss [default: NONE]\n\
+\n\   
  * verbose output files, useful for detailed information about the CM:\n\
    --cfile <f>    : save count vectors to file <f>\n\
    --cmtbl <f>    : save tabular description of CM topology to file <f>\n\
@@ -95,7 +103,12 @@ static struct opt_s OPTIONS[] = {
   { "--bfile",     FALSE, sqdARG_STRING },
   { "--bandp",     FALSE, sqdARG_FLOAT},
   { "--ignorant",  FALSE, sqdARG_NONE },
-  { "--null",      FALSE, sqdARG_STRING }}
+  { "--null",      FALSE, sqdARG_STRING },
+  { "--effnone", FALSE, sqdARG_NONE },
+  { "--effent",  FALSE, sqdARG_NONE },
+  { "--eloss",   FALSE, sqdARG_FLOAT },
+  { "--elself",    FALSE, sqdARG_FLOAT},
+}
 ;
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -144,6 +157,12 @@ main(int argc, char **argv)
   enum  weight_flags {		/* sequence weighting strategy to use      */
     WGT_GIVEN, WGT_NONE, WGT_GSC } weight_strategy;
 
+  enum {			/* Effective sequence number strategy:        */
+    EFF_NOTSETYET, 		/* (can't set default 'til alphabet known)    */
+    EFF_NONE, 			/* --effnone: eff_nseq is nseq                */
+    EFF_ENTROPY                 /* --effent:  entropy loss target             */
+  } eff_strategy;
+
   FILE *ofp;                    /* filehandle to dump info to */
   char *cfile;                  /* file to dump count vectors to */
   char *emapfile;		/* file to dump emit map to */
@@ -159,7 +178,7 @@ main(int argc, char **argv)
   Prior_t *pri;                 /* mixture Dirichlet prior structure */
 
   /* Added EPN 08.18.05 So we can calculate an appropriate W when building the CM */
-  double  **gamma;		/* cumulative distribution p(len <= n) for state v */
+  double  **gamma;              /* P(subseq length = n) for each state v    */
   int     *dmin;		/* minimum d bound for state v, [0..v..M-1] */
   int     *dmax; 		/* maximum d bound for state v, [0..v..M-1] */
   double   bandp;		/* tail loss probability for banding */
@@ -178,6 +197,34 @@ main(int argc, char **argv)
 
   /* EPN 10.19.05 Added --null option (analagous to HMMER2.4 --null) */
   char *rndfile;		/* random sequence model file to read    */
+
+  /* EPN 11.07.05 Added --effent, --effnone, and --eloss */
+  float eloss;		        /* target entropy loss, entropy-weights  */
+  int   eloss_set;		/* TRUE if eloss was set on commandline  */
+  float etarget;		/* target entropy (background - eloss)   */
+  float eff_nseq;		/* effective sequence number             */
+  int   eff_nseq_set;		/* TRUE if eff_nseq has been calculated  */
+  float randomseq[MAXABET];     /* null sequence model                     */
+
+  /* EPN 11.13.05 Switched from BandDistribution() to BandCalculationEngine() */
+  int    do_local;		/* always FALSE for now, used in BandCalculationEngine().
+				 * Does cmbuild have a --local option in its future? 
+				 */
+  int    save_gamma;		/* TRUE to save the gamma matrix in
+				 * BandCalculationEngine().
+				 */
+  /* EPN 11.15.05 User has the option to set the EL self transition probability
+   * at the command line. This value is converted to a score (log2(prob)) and
+   * stored in the CM file. By default this probability is 1.0, which has score
+   * 0, so by default this self transition probability doesn't affect the performance
+   * of the model at all relative to a v0.6 or earlier model.
+   */
+  float el_selfprob;           /* EL state's self transition probability. This is hacky.
+				* EL states are different, they don't have a transition score vector,
+				* This probability is converted to a score and used to penalize very 
+				* large regions 'skipped' by EL states. 
+				* see ~nawrocki/notebook/5_1115_inf_el_trans_prob/00LOG for details.
+				*/
 
   /*********************************************** 
    * Parse command line
@@ -206,6 +253,12 @@ main(int argc, char **argv)
   bandfile          = NULL;
   rndfile           = NULL;
   
+  eff_strategy      = EFF_NONE;          
+  eloss_set         = FALSE;
+  eff_nseq_set      = FALSE;
+  do_local          = FALSE;
+  save_gamma        = FALSE;
+
   /* EPN 08.18.05 bandp used in BandBounds() for calculating W(W=dmax[0]) 
    *              Brief expt on effect of different bandp values in 
    *              ~nawrocki/notebook/5_0818_inf_cmbuild_bands/00LOG
@@ -215,6 +268,8 @@ main(int argc, char **argv)
   safe_windowlen    = 0;
   
   be_ignorant       = FALSE;	/* default: leave in bp information */
+
+  el_selfprob     = 1.0;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -238,11 +293,18 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--tfile")     == 0) tracefile         = optarg;
     else if (strcmp(optname, "--regress")   == 0) regressionfile    = optarg;
     else if (strcmp(optname, "--priorfile") == 0) prifile           = optarg;
-    else if (strcmp(optname, "--bfile")     == 0) bandfile          = optarg;
+    else if (strcmp(optname, "--bfile")     == 0) {bandfile          = optarg; save_gamma = TRUE;}
     else if (strcmp(optname, "--bandp")     == 0) bandp             = atof(optarg);
     else if (strcmp(optname, "--ignorant")  == 0) be_ignorant       = TRUE;
     else if (strcmp(optname, "--null")      == 0) rndfile           = optarg;
-
+    else if (strcmp(optname, "--effent")  == 0) eff_strategy  = EFF_ENTROPY;
+    else if (strcmp(optname, "--effnone") == 0) eff_strategy  = EFF_NONE;
+    else if (strcmp(optname, "--eloss")   == 0) { eloss       = atof(optarg); eloss_set  = TRUE; }
+    else if  (strcmp(optname, "--elself")   == 0) { 
+      el_selfprob= atof(optarg); 
+      if(el_selfprob < 0 || el_selfprob > 1)
+	Die("EL self transition probability must be between 0 and 1.\n");
+    }
     else if (strcmp(optname, "--informat") == 0) {
       format = String2SeqfileFormat(optarg);
       if (format == MSAFILE_UNKNOWN) 
@@ -314,6 +376,16 @@ main(int argc, char **argv)
 	 (rndfile == NULL) ? "(default)" : rndfile);
   printf("Prior used:                        %s\n",
 	 (prifile == NULL) ? "(default)" : prifile);
+  printf("Effective sequence # calculation:  ");
+  if (eff_strategy == EFF_NONE)      puts("none; use actual seq #");
+  else if (eff_strategy == EFF_ENTROPY) {
+    puts("entropy targeting");
+    if (eloss_set)
+      printf("  mean target entropy loss:        %.2f bits\n", eloss);
+    else
+      printf("  mean target entropy loss:        (default)\n");
+  }
+
 
   printf("Sequence weighting strategy:       ");
   switch (weight_strategy) {
@@ -376,6 +448,44 @@ main(int argc, char **argv)
 	  printf("done.\n");
 	}
 
+      /* EPN 11.07.05 - EFF_ENTROPY effective sequence number strategy
+       *                ported from HMMER 2.4devl. 
+       */
+      
+      /* --- Post-alphabet initialization section ---
+       * NOT SURE IF THIS IS NECESSARY (only RNA?), STOLEN FROM HMMER 
+       * (This code must be delayed until after we've seen the
+       * first alignment, because we have to see the alphabet type first.)
+       */
+      eff_nseq_set = FALSE;
+
+      if(nali == 0)
+	{
+	  /* Set up the null/random seq model */
+	  if (rndfile == NULL)  CMDefaultNullModel(randomseq);
+	  else                  CMReadNullModel(rndfile, randomseq);
+
+	  /* If we're using the entropy-target strategy for effective
+	   * sequence number calculation, and we haven't manually set the
+	   * default target entropy loss, do it now. 
+	   * Default entropy targets have not been tested.
+	   */
+	  if (eff_strategy == EFF_ENTROPY) {
+	    if (eloss_set == FALSE){
+	      Die("\
+--effent: entropy loss targeting:\n\
+Default entropy loss targets are not available. \n\
+To use --effent you must set --eloss <x> explicitly, \n\
+in addition to selecting --effent.\n");
+	    }
+	    else{
+	      /*etarget = FEntropy(randomseq, Alphabet_size) - eloss;*/
+	      etarget = FEntropy(randomseq, MAXABET) - eloss;
+	    }
+	  }
+	} /* -- this ends the post-alphabet initialization section -- */
+      /* End of effective seq number port code block. */
+
       /* Digitize the alignment: this takes care of
        * case sensivitity (A vs. a), speeds all future
        * array indexing, and deals with the poor fools
@@ -389,6 +499,12 @@ main(int argc, char **argv)
       dsq = DigitizeAlignment(msa->aseq, msa->nseq, msa->alen);
       printf("done.\n");
 
+      if (eff_strategy == EFF_NONE)
+	{
+	  eff_nseq = (float) msa->nseq;
+	  eff_nseq_set = TRUE;
+	}
+
       /* Construct a model, and collect observed counts.
        * Note on "treeforce": this is the number of sequences that we
        *   will ignore for the purposes of count-collection and parameterization
@@ -398,6 +514,7 @@ main(int argc, char **argv)
       printf("%-40s ... ", "Constructing model architecture");
       fflush(stdout);
       HandModelmaker(msa, dsq, use_rf, gapthresh, &cm, &mtr);
+
       if (do_balance) 
 	{
 	  CM_t *new;
@@ -423,16 +540,31 @@ main(int argc, char **argv)
 	else                                printf("done. [%s]\n", cfile);
       }
 
+      /* EPN 11.07.05 - EFF_ENTROPY effective sequence number strategy
+       *                ported from HMMER 2.4devl. 
+       */
+      
+      /* Effective sequence number calculation: post-architecture strategies.
+       * (if we don't have eff_nseq yet, calculate it now).
+       */
+      if (! eff_nseq_set) {
+	if (eff_strategy == EFF_ENTROPY) {
+	  printf("%-40s ... ", "Determining eff seq # by entropy target");
+	  fflush(stdout);
+	  eff_nseq = CM_Eweight(cm, pri, (float) msa->nseq, etarget);
+	} else Die("no effective seq #: shouldn't happen");
+
+	CMRescale(cm, eff_nseq / (float) msa->nseq);
+	eff_nseq_set = TRUE;
+	printf("done. [%.1f]\n", eff_nseq);
+      }/* End of effective seq number port code block. */
+      
       /* Convert to probabilities, and the global log-odds form
        * we save the model in.
        */
       printf("%-40s ... ", "Converting counts to probabilities"); fflush(stdout);
-
+      CMSetNullModel(cm, randomseq);
       PriorifyCM(cm, pri);
-
-      /* Set up the null/random seq model */
-      if (rndfile == NULL)  CMSetDefaultNullModel(cm);
-      else                  CMReadNullModel(rndfile, cm);
 
       CMLogoddsify(cm);
       printf("done.\n");
@@ -443,16 +575,47 @@ main(int argc, char **argv)
        *              safe_windowlen scaling factor values in 
        *              ~nawrocki/notebook/5_0818_inf_cmbuild_bands/00LOG
        */
-      printf("%-40s ... ", "Calculating windowlen for model"); fflush(stdout);
+      printf("%-40s ... ", "Calculating max hit length for model"); fflush(stdout);
       safe_windowlen = 2 * MSAMaxSequenceLength(msa);
       /*printf("safe_windowlen : %d\n", safe_windowlen);*/
       /*printf("bandp          : %12f\n", bandp);*/
-      gamma = BandDistribution(cm, safe_windowlen, 0);
-      BandBounds(gamma, cm->M, safe_windowlen, bandp, &dmin, &dmax);
-      cm->W = dmax[0];
-      /*printf("cm->W : %d\n", cm->W);*/
-      printf("done.\n");
 
+      /* EPN 11.13.05 
+       * BandCalculationEngine() replaces BandDistribution() and BandBounds().
+       * See ~nawrocki/notebook/5_1111_inf_banded_dist_vs_bandcalc/00LOG for details.
+       */
+      while(!(BandCalculationEngine(cm, safe_windowlen, bandp, save_gamma, &dmin, &dmax, &gamma, do_local)))
+	{
+	  FreeBandDensities(cm, gamma);
+	  /*printf("Failure in BandCalculationEngine(). W:%d | bandp: %4e\n", safe_windowlen, bandp);*/
+	  safe_windowlen *= 2;
+	}
+      /*printf("Success in BandCalculationEngine(). W:%d | bandp: %4e\n", safe_windowlen, bandp);*/
+      /*debug_print_bands(cm, dmin, dmax);*/
+
+      cm->W = dmax[0];
+      printf("done. [%d]\n", cm->W);
+
+      /*11.15.05 EPN Set the EL self transition score, by default its 0.*/
+      cm->el_selfsc = sreLOG2(el_selfprob);
+      /* Very hacky. We want to avoid underflow errors. structs.h explains
+       * how IMPOSSIBLE must be > -FLT_MAX/3 so we can add it together 3 
+       * times with an underflow. Here, we may potentially be adding el_selfsc
+       * together W times. (And W can change in cmsearch or cmalign). Here
+       * we'll ensure we can multiply el_selfsc by 2W and still avoid underflows,
+       * and we'll check in cmsearch to make sure that W * cm->el_selfsc < (IMPOSSIBLE*3)
+       * and we'll die if it isn't. We shouldn't face this situation
+       * unless the user wants to set W as something greater than twice what
+       * it is set as in the .cm file.
+       */
+      if(cm->el_selfsc < (IMPOSSIBLE/(2 * cm->W)))
+	{
+	  printf("resetting cm->el_selfsc\n");
+	  printf("old : %f\n", cm->el_selfsc);
+	  cm->el_selfsc = (IMPOSSIBLE/(2 * cm->W));
+	  printf("new : %f\n", cm->el_selfsc);
+	}
+      
       /* Give the model a name (mandatory in the CM file).
        * Order of precedence:
        *      1. -n option  (only if a single alignment in file)
@@ -603,16 +766,13 @@ main(int argc, char **argv)
 	    Die("failed to open band file %s", bandfile);
 
 	  /* We want band information for bands we'd use in a cmsearch
-	   * call, so we need to recalculate gamma with cm->W 
+	   * with bandp as its set now (default is 1E-7, but it can
+	   * be set at the command line). We already have gamma from
+	   * the band calculation we used to get cm->W.
 	   */
-	  DMX2Free(gamma);
-	  gamma = BandDistribution(cm, cm->W, 0);
-	  free(dmin);
-	  free(dmax);
-	  BandBounds(gamma, cm->M, cm->W, bandp, &dmin, &dmax);
-
+	  
 	  fprintf(ofp, "acc:%s\n", msa->acc);
-	  fprintf(ofp, "bandp:%.12f\n", bandp);
+	  fprintf(ofp, "bandp:%g\n", bandp);
 	  for (v = 0; v < cm->M; v++)
 	    if(cm->sttype[v] == S_st)
 		PrintBandDensity(ofp, gamma, v, cm->W, dmin[v], dmax[v]);
@@ -626,6 +786,7 @@ main(int argc, char **argv)
 	  fprintf(ofp, "//\n");
 	  fclose(ofp);
 	  printf("done. [%s]\n", bandfile);
+	  FreeBandDensities(cm, gamma);
 	}
 
       puts("");
@@ -640,6 +801,10 @@ main(int argc, char **argv)
       fflush(cmfp);
       puts("//\n");
       nali++;
+
+      /* EPN 08.18.05 */
+      free(dmin);
+      free(dmax);
     }
 
 
@@ -651,11 +816,6 @@ main(int argc, char **argv)
   Prior_Destroy(pri);
   fclose(cmfp);
   SqdClean();
-
-  /* EPN 08.18.05 */
-  DMX2Free(gamma);
-  free(dmin);
-  free(dmax);
 
   return 0;
 }
@@ -893,10 +1053,8 @@ PrintBandDensity(FILE *fp, double **gamma, int v, int W, int min, int max)
   int n;
 
   fprintf(fp, "band for state:%d min:%d max:%d\n", v, min, max);
-  /* firsty, prob subseq len == 0 */
-  fprintf(fp, "%d:%.12f\n", 0, gamma[v][0]);
-  for (n = 1; n <= W; n++)
-    fprintf(fp, "%d:%.12f\n", n, (gamma[v][n]-gamma[v][n-1]));
+  for (n = 0; n <= W; n++)
+    fprintf(fp, "%d:%.12f\n", n, gamma[v][n]);
 }
 
 /* Function:  StripWUSS()

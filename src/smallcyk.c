@@ -3015,7 +3015,8 @@ static void
 free_vjd_kshadow_deck(int **a, int i, int j)
 {
   int jp;
-  for (jp = 0; jp <= j-i+1; jp++) if (a[jp+i-1] != NULL) free(a[jp]);
+  /*11.14.05 old line: for (jp = 0; jp <= j-i+1; jp++) if (a[jp+i-1] != NULL) free(a[jp]);*/
+  for (jp = 0; jp <= j-i+1; jp++) if (a[jp+i-1] != NULL) free(a[jp-i+1]);
   free(a);
 }
 static void
@@ -7440,7 +7441,8 @@ inside_b_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int
       /* ME Added the following two lines */
       Wp = W - dmin[v];
       /* We need to make sure that Wp is within the bands */
-      if(Wp >= 0 && Wp <= (dmax[v] - dmin[v] + 1))
+      /*11.14.05 old line: if(Wp >= 0 && Wp <= (dmax[v] - dmin[v] + 1))*/
+      if(Wp >= 0 && Wp <= (dmax[v] - dmin[v]))
 	{
 	  /* ME all subsequent changes in this block simply replace
 	     W with Wp (so wherever Wp is, there used to be a W) */

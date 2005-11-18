@@ -42,7 +42,7 @@ static char experts[] = "\
    --noalign     : find start/stop only; don't do alignments\n\
    --dumptrees   : dump verbose parse tree information for each hit\n\
    --banded      : use experimental banded CYK scanning algorithm\n\
-   --bandp       : tail loss prob for --banded (default:0.0001)\n\
+   --bandp <f>   : tail loss prob for --banded [df: 0.0001]\n\
    --banddump    : print bands for each state\n\
    --X           : project X!\n\
 ";
@@ -57,7 +57,7 @@ static struct opt_s OPTIONS[] = {
   { "--toponly",    FALSE, sqdARG_NONE },
   { "--banded",     FALSE, sqdARG_NONE },
   { "--bandp",      FALSE, sqdARG_FLOAT},
-  { "--banddump"  , FALSE, sqdARG_NONE},
+  { "--banddump",   FALSE, sqdARG_NONE},
   { "--X",          FALSE, sqdARG_NONE },
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
@@ -82,7 +82,7 @@ main(int argc, char **argv)
   CMConsensus_t   *cons;	/* precalculated consensus info for display */
   Fancyali_t      *ali;         /* alignment, formatted for display */
 
-  double  **gamma;		/* cumulative distribution p(len <= n) for state v */
+  double  **gamma;              /* P(subseq length = n) for each state v    */
   int     *dmin;		/* minimum d bound for state v, [0..v..M-1] */
   int     *dmax; 		/* maximum d bound for state v, [0..v..M-1] */
   double   bandp;		/* tail loss probability for banding */
@@ -107,6 +107,15 @@ main(int argc, char **argv)
   char *optname;                /* name of option found by Getopt()        */
   char *optarg;                 /* argument found by Getopt()              */
   int   optind;                 /* index in argv[]                         */
+
+
+  /*EPN 11.11.05 */
+  int      safe_windowlen;	/* initial windowlen (W) used for calculating bands
+				 * in BandCalculationEngine().
+				 * this needs to be significantly bigger than what
+				 * we expect dmax[0] to be, for truncation error
+				 * handling.
+				 */
 
   /*********************************************** 
    * Parse command line
@@ -171,7 +180,7 @@ main(int argc, char **argv)
 
   /* EPN 08.18.05 */
   if (! (set_window)) windowlen = cm->W;
-  printf("***cm->W : %d***\n", cm->W);
+  /*printf("***cm->W : %d***\n", cm->W);*/
 
   if (do_local) ConfigLocal(cm, 0.5, 0.5);
   CMLogoddsify(cm);
@@ -180,12 +189,39 @@ main(int argc, char **argv)
 
   if (do_banded || do_projectx || do_bdump)
     {
-      gamma = BandDistribution(cm, windowlen, do_local);
-      BandBounds(gamma, cm->M, windowlen, bandp, &dmin, &dmax);
-      printf("bandp:%f\n", bandp);
-      if(do_bdump) debug_print_bands(cm, dmin, dmax);
-    }
+      safe_windowlen = windowlen * 2;
+      while(!(BandCalculationEngine(cm, safe_windowlen, bandp, 0, &dmin, &dmax, &gamma, do_local)))
+	{
+	  FreeBandDensities(cm, gamma);
+	  free(dmin);
+	  free(dmax);
+	  safe_windowlen *= 2;
+	}
 
+      /* EPN 11.11.05 
+       * An important design decision.
+       * We're changing the windowlen value here. By default,
+       * windowlen is read from the cm file (set to cm->W). 
+       * Here we're doing a banded scan though. Its pointless to allow
+       * a windowlen that's greater than the largest possible banded hit 
+       * (which is dmax[0]). So we reset windowlen to dmax[0].
+       * Its also possible that BandCalculationEngine() returns a dmax[0] that 
+       * is > cm->W. This should only happen if the bandp we're using now is < 1E-7 
+       * (1E-7 is the bandp value used to determine cm->W in cmbuild). If this 
+       * happens, the current implementation reassigns windowlen to this larger value.
+       * NOTE: if W was set at the command line, the command line value is 
+       *       always used.
+       */
+      if(!(set_window))
+	{
+	  windowlen = dmax[0];
+	}
+      if(do_bdump) 
+	{
+	  printf("bandp:%f\n", bandp);
+	  debug_print_bands(cm, dmin, dmax);
+	}
+    }
   StopwatchZero(watch);
   StopwatchStart(watch);
 
@@ -262,7 +298,7 @@ main(int argc, char **argv)
 
   if (do_banded)
     {
-      DMX2Free(gamma);
+      FreeBandDensities(cm, gamma);
       free(dmin);
       free(dmax);
     }
@@ -295,3 +331,4 @@ debug_print_bands(CM_t *cm, int *dmin, int *dmax)
    }
   printf("****************\n\n");
 }
+
