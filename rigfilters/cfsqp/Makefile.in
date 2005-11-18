@@ -47,10 +47,11 @@ libcfsqp.a: $(OBJS) ${HDRS}
 #################################################################
 ## Miscellaneous targets.
 ##
-distclean:
-	make clean
-	-rm -f Makefile
-
 clean:
 	-rm -f *.o *~ libcfsqp.a
+
+distclean:
+	-rm -f *.o *~ libcfsqp.a
+	-rm -f Makefile
+
 

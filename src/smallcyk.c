@@ -4644,6 +4644,7 @@ inside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do
 		     alpha[v][j][d] = sc;
 		     if (ret_shadow != NULL) kshad[j][d] = k;
 		     }
+		*/
 
 		/* k is the length of the right fragment */
 
@@ -6617,7 +6618,6 @@ debug_print_shadow(void ***shadow, CM_t *cm, int L)
 {
   int v, j, d;
   int yoffset;
-  char yoffset_c;
   
   printf("\nPrinting alpha matrix :\n");
   printf("************************************\n");
@@ -6664,7 +6664,6 @@ debug_print_shadow_banded(void ***shadow, CM_t *cm, int L, int *dmin, int *dmax)
 {
   int v, j, d, vdp;
   int yoffset;
-  char yoffset_c;
 
   printf("\nPrinting banded shadow matrix :\n");
   printf("************************************\n");
@@ -6924,7 +6923,7 @@ inside_b_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int
   int      nends;       /* counter that tracks when we can release end deck to the pool */
   int     *touch;       /* keeps track of how many higher decks still need this deck */
   int      v,y,z;	/* indices for states  */
-  int      j,d,i,k;	/* indices in sequence dimensions */
+  int      j,d,i;	/* indices in sequence dimensions */
   float    sc;		/* a temporary variable holding a score */
   int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
   int      W;		/* subsequence length */

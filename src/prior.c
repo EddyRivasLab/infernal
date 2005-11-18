@@ -17,7 +17,7 @@
 #include <esl_fileparser.h>
 
 #include "prior.h"
-
+#include "funcs.h"
 
 Prior_t *
 Prior_Create(void)
@@ -80,11 +80,8 @@ Prior_Read(FILE *fp)
   int              status;
 
   int              i;       /*counter over transition sets*/
-  int              j;       /*counter over components in a mixture*/
-  int              k;       /*counter over alphas*/
   int              curr_state_id; 
   int              curr_next_node_id; 
-  int              a, b;
 
   pri = Prior_Create();
 
@@ -205,7 +202,7 @@ PriorifyCM(CM_t *cm, Prior_t *pri)
            * cannot be an insert state of the current node.
 	   */
 	  nxtndtype = cm->ndtype[cm->ndidx[cm->cfirst[v] + cm->cnum[v] - 1]];
-	  setnum = pri->tsetmap[cm->stid[v]][nxtndtype];
+	  setnum = pri->tsetmap[(int) cm->stid[v]][nxtndtype];
 	  for (i = 0; i < cm->cnum[v]; i++)
 	    counts[i] = (double) cm->t[v][i];
 
@@ -282,7 +279,6 @@ Prior_t *
 Prior_Default(void)
 {
   Prior_t *pri;
-  int      i;
 
   pri = Prior_Create();
 

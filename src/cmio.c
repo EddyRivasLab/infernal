@@ -303,7 +303,7 @@ write_ascii_cm(FILE *fp, CM_t *cm)
   fprintf(fp, "STATES %d\n", cm->M);
   fprintf(fp, "NODES  %d\n", cm->nodes);
   /* EPN 08.18.05 */
-  fprintf(fp, "W %d\n", cm->W);
+  fprintf(fp, "W      %d\n", cm->W);
 
   fputs("NULL  ", fp);
   for (x = 0; x < Alphabet_size; x++)

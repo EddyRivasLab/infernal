@@ -82,12 +82,12 @@ libinfernal.a: $(OBJS) ${HDRS}
 #################################################################
 ## Miscellaneous targets.
 ##
-distclean:
-	make clean
-	-rm -f Makefile config.h
-
 clean:
 	-rm -f *.o *~ Makefile.bak core $(PROGS) TAGS gmon.out libinfernal.a
+
+distclean:
+	-rm -f *.o *~ Makefile.bak core $(PROGS) TAGS gmon.out libinfernal.a
+	-rm -f Makefile config.h
 
 TAGS:
 	etags -t *.c *.h Makefile.in

@@ -28,9 +28,6 @@ extern char *Alphabet;
 extern char  Degenerate[MAXDEGEN][MAXABET];
 extern int   DegenCount[MAXDEGEN];
 
-/* EPN 08.18.05 */
-static int MSAMaxSequenceLength(MSA *msa);
-
 /* We're moderately paranoid about underflow and overflow errors, so
  * we do some checking on the magnitude of the scores.
  * 

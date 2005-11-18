@@ -105,7 +105,6 @@ static int  clean_cs(char *cs, int alen);
 static int MSAMaxSequenceLength(MSA *msa);
 static void model_trace_info_dump(FILE *ofp, CM_t *cm, Parsetree_t *tr, 
 				  char *aseq);
-static void band_info_dump(FILE *ofp, CM_t *cm, double **gamma);
 static void PrintBandDensity(FILE *fp, double **gamma, int v, int W,
 			     int min, int max);
 /* EPN 09.07.05 */
@@ -835,7 +834,7 @@ MSAMaxSequenceLength(MSA *msa)
 static void
 model_trace_info_dump(FILE *ofp, CM_t *cm, Parsetree_t *tr, char *aseq)
 {
-  int a, v, i, j, tpos, d, l, r;
+  int a, i, j, tpos, d, l, r;
   int *map;
 
   map = MallocOrDie (sizeof(int) * strlen(aseq));
