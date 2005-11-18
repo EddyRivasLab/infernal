@@ -224,6 +224,15 @@ main(int argc, char **argv)
     }
   StopwatchZero(watch);
   StopwatchStart(watch);
+  
+  /* EPN 11.18.05 Now that know what windowlen is, we need to ensure that
+   * cm->el_selfsc * W >= IMPOSSIBLE (cm->el_selfsc is the score for an EL self transition)
+   * This is done because we are potentially multiply cm->el_selfsc * W, and adding
+   * that to IMPOSSIBLE. To avoid underflow issues this value must be less than
+   * 3 * IMPOSSIBLE. Here we guarantee its less than 2 * IMPOSSIBLE (to be safe).
+   */
+  if((cm->el_selfsc * windowlen) < IMPOSSIBLE)
+    cm->el_selfsc = (IMPOSSIBLE / (windowlen+1));
 
   maxlen   = 0;
   reversed = FALSE;
@@ -245,6 +254,7 @@ main(int argc, char **argv)
 	}
       if (sqinfo.len > maxlen) maxlen = sqinfo.len;
       dsq = DigitizeSequence(seq, sqinfo.len);
+
       if (do_banded)
 	  CYKBandedScan(cm, dsq, dmin, dmax, sqinfo.len, windowlen, 
 			&nhits, &hitr, &hiti, &hitj, &hitsc);

@@ -115,7 +115,7 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
       else if (cm->sttype[v] == S_st || cm->sttype[v] == D_st) 
 	{
 	  y = cm->cfirst[v];
-	  alpha[v][0][0] = cm->endsc[v];  
+	  alpha[v][0][0] = cm->endsc[v];
 	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 	    if ((sc = alpha[y+yoffset][0][0] + cm->tsc[v][yoffset]) > alpha[v][0][0]) 
 	      alpha[v][0][0] = sc;
