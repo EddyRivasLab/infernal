@@ -922,7 +922,6 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
   int       jmax;               /* when imposing bands, maximum j value in alpha matrix */
   int       kmax;               /* for B_st's, maximum k value consistent with bands*/
 
-  PrintDPCellsSaved(cm, dmin, dmax, cm->W);
   /* EPN 08.11.05 Next line prevents wasteful computations when imposing
    * bands before the main recursion.  There is no need to worry about
    * alpha cells corresponding to subsequence distances within the windowlen
@@ -931,6 +930,8 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
    * are short (as in a possible benchmark).
    */
   if (W > L) W = L; 
+
+  PrintDPCellsSaved(cm, dmin, dmax, W);
 
   /*****************************************************************
    * alpha allocations.
@@ -983,7 +984,8 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
       else if (cm->sttype[v] == S_st || cm->sttype[v] == D_st) 
 	{
 	  y = cm->cfirst[v];
-	  alpha[v][0][0] = cm->endsc[v]; 
+	  alpha[v][0][0] = cm->endsc[v];
+	  /* treat EL as emitting only on self transition */
 	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 	    if ((sc = alpha[y+yoffset][0][0] + cm->tsc[v][yoffset]) > alpha[v][0][0]) 
 	      alpha[v][0][0] = sc;
@@ -1048,7 +1050,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
 	      for (d = dmin[v]; d <= dmax[v] && d <= j; d++) 
 		{
 		  y = cm->cfirst[v];
-		  alpha[v][jp][d] = cm->endsc[v]; 
+		  alpha[v][jp][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		    if ((sc = alpha[y+yoffset][cur][d] + cm->tsc[v][yoffset]) > alpha[v][jp][d]) 
 		      alpha[v][jp][d] = sc;
@@ -1060,7 +1062,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
 	      for (d = dmin[v]; d <= dmax[v] && d <= j; d++)
 		{
 		  y = cm->cfirst[v];
-		  alpha[v][cur][d] = cm->endsc[v];
+		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		    if ((sc = alpha[y+yoffset][prv][d-2] + cm->tsc[v][yoffset]) > alpha[v][cur][d])
 		      alpha[v][cur][d] = sc;
@@ -1079,7 +1081,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
 	      for (d = dmin[v]; d <= dmax[v] && d <= j; d++)
 		{
 		  y = cm->cfirst[v];
-		  alpha[v][cur][d] = cm->endsc[v];
+		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		    if ((sc = alpha[y+yoffset][cur][d-1] + cm->tsc[v][yoffset]) > alpha[v][cur][d])
 		      alpha[v][cur][d] = sc;
@@ -1098,7 +1100,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
 	      for (d = dmin[v]; d <= dmax[v] && d <= j; d++)
 		{
 		  y = cm->cfirst[v];
-		  alpha[v][cur][d] = cm->endsc[v];
+		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		    if ((sc = alpha[y+yoffset][prv][d-1] + cm->tsc[v][yoffset]) > alpha[v][cur][d])
 		      alpha[v][cur][d] = sc;
@@ -1118,7 +1120,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
 	      i = j-d+1;
 	      for (d = dmin[v]; d <= dmax[v] && d <= j; d++) 
 		{
-		  alpha[v][cur][d] = cm->endsc[v];
+		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
 
 		  /*EPN : Make sure k is consistent with bands in state w and state y.
 		    Not sure if this is necessary because the speed-up will be 
@@ -1351,7 +1353,7 @@ BandedParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq,
 	if (v == 0 && (cm->flags & CM_LOCAL_BEGIN))
 	  tsc = cm->beginsc[y];
 	else if (y == cm->M) /* CM_LOCAL_END is presumably set, else this wouldn't happen */
-	  tsc = cm->endsc[v];
+	  tsc = cm->endsc[v] + (cm->el_selfsc * (tr->emitr[x] - tr->emitl[x] + 1 - StateDelta(cm->sttype[v])));
 	else 		/* y - cm->first[v] gives us the offset in the transition vector */
 	  tsc = cm->tsc[v][y - cm->cfirst[v]];
       }

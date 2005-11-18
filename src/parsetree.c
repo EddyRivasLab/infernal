@@ -227,7 +227,7 @@ ParsetreeScore(CM_t *cm, Parsetree_t *tr, char *dsq)
 	if (v == 0 && (cm->flags & CM_LOCAL_BEGIN))
 	  sc += cm->beginsc[y];
 	else if (y == cm->M) /* CM_LOCAL_END is presumably set, else this wouldn't happen */
-	  sc += cm->endsc[v];
+	  sc += cm->endsc[v] + (cm->el_selfsc * (tr->emitr[tidx] - tr->emitl[tidx] + 1 - StateDelta(cm->sttype[v])));
 	else 		/* y - cm->first[v] gives us the offset in the transition vector */
 	  sc += cm->tsc[v][y - cm->cfirst[v]];
 	
@@ -358,7 +358,7 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq)
 	if (v == 0 && (cm->flags & CM_LOCAL_BEGIN))
 	  tsc = cm->beginsc[y];
 	else if (y == cm->M) /* CM_LOCAL_END is presumably set, else this wouldn't happen */
-	  tsc = cm->endsc[v];
+	  tsc = cm->endsc[v] + (cm->el_selfsc * (tr->emitr[x] - tr->emitl[x] + 1 - StateDelta(cm->sttype[v])));
 	else 		/* y - cm->first[v] gives us the offset in the transition vector */
 	  tsc = cm->tsc[v][y - cm->cfirst[v]];
       }

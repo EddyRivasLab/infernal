@@ -1092,7 +1092,6 @@ inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_f
   int      b;		/* best local begin state */
   float    bsc;		/* score for using the best local begin state */
 
-
   /* Allocations and initializations
    */
   b   = -1;
@@ -1174,7 +1173,8 @@ inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_f
 	    for (d = 0; d <= jp; d++)
 	      {
 		y = cm->cfirst[v];
-		alpha[v][j][d]  = cm->endsc[v];	/* init w/ local end */
+		alpha[v][j][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		/* treat EL as emitting only on self transition */
 		if (ret_shadow != NULL) yshad[j][d]  = USED_EL; 
 		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
 		  if ((sc = alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) >  alpha[v][j][d]) {
@@ -1214,7 +1214,8 @@ inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_f
 	    for (d = 2; d <= jp; d++) 
 	      {
 		y = cm->cfirst[v];
-		alpha[v][j][d] = cm->endsc[v]; /* init w/ local end */
+		alpha[v][j][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		/* treat EL as emitting only on self transition */
 		if (ret_shadow != NULL) yshad[j][d] = USED_EL;
 		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
 		  if ((sc = alpha[y+yoffset][j-1][d-2] + cm->tsc[v][yoffset]) >  alpha[v][j][d]) {
@@ -1240,7 +1241,8 @@ inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_f
 	    for (d = 1; d <= jp; d++)
 	      {
 		y = cm->cfirst[v];
-		alpha[v][j][d] = cm->endsc[v]; /* init w/ local end */
+		alpha[v][j][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		/* treat EL as emitting only on self transition */
 		if (ret_shadow != NULL) yshad[j][d] = USED_EL;
 		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
 		  if ((sc = alpha[y+yoffset][j][d-1] + cm->tsc[v][yoffset]) >  alpha[v][j][d]) {
@@ -1266,7 +1268,8 @@ inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_f
 	    for (d = 1; d <= jp; d++)
 	      {
 		y = cm->cfirst[v];
-		alpha[v][j][d] = cm->endsc[v]; /* init w/ local end */
+		alpha[v][j][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		/* treat EL as emitting only on self transition */
 		if (ret_shadow != NULL) yshad[j][d] = USED_EL;
 		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
 		  if ((sc = alpha[y+yoffset][j-1][d-1] + cm->tsc[v][yoffset]) > alpha[v][j][d]) {
@@ -1494,7 +1497,8 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 	  escore = cm->esc[vroot][(int) (dsq[i0]*Alphabet_size+dsq[j0])];
 	else
 	  escore = DegeneratePairScore(cm->esc[vroot], dsq[i0], dsq[j0]);
-	beta[cm->M][j0-1][W-2] = cm->endsc[vroot] + escore;
+	beta[cm->M][j0-1][W-2] = cm->endsc[vroot] + 
+	  (cm->el_selfsc * (W-StateDelta(cm->sttype[vroot]))-2) + escore;
 	if (beta[cm->M][j0-1][W-2] < IMPOSSIBLE) beta[cm->M][j0-1][W-2] = IMPOSSIBLE;
 	break;
       case ML_st:
@@ -1504,7 +1508,8 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 	  escore = cm->esc[vroot][(int) dsq[i0]];
 	else
 	  escore = DegenerateSingletScore(cm->esc[vroot], dsq[i0]);
-	beta[cm->M][j0][W-1] = cm->endsc[vroot] + escore;
+	beta[cm->M][j0][W-1] = cm->endsc[vroot] + 
+	  (cm->el_selfsc * (W-StateDelta(cm->sttype[vroot])-1)) + escore;
 	if (beta[cm->M][j0][W-1] < IMPOSSIBLE) beta[cm->M][j0][W-1] = IMPOSSIBLE;
 	break;
       case MR_st:
@@ -1514,12 +1519,15 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 	  escore = cm->esc[vroot][(int) dsq[j0]];
 	else
 	  escore = DegenerateSingletScore(cm->esc[vroot], dsq[j0]);
-	beta[cm->M][j0-1][W-1] = cm->endsc[vroot] + escore;
+	beta[cm->M][j0-1][W-1] = cm->endsc[vroot] + 
+	  (cm->el_selfsc * (W-StateDelta(cm->sttype[vroot])-1)) + escore;
 	if (beta[cm->M][j0-1][W-1] < IMPOSSIBLE) beta[cm->M][j0-1][W-1] = IMPOSSIBLE;
 	break;
       case S_st:
       case D_st:
-	beta[cm->M][j0][W] = cm->endsc[vroot];
+	beta[cm->M][j0][W] = cm->endsc[vroot] + 
+	  (cm->el_selfsc * (W-StateDelta(cm->sttype[vroot])));
+	if (beta[cm->M][j0][W] < IMPOSSIBLE) beta[cm->M][j0][W] = IMPOSSIBLE;
 	break;
       case B_st:		/* can't start w/ bifurcation at vroot. */
       default: Die("bogus parent state %d\n", cm->sttype[vroot]);
@@ -1647,7 +1655,8 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 		  escore = cm->esc[v][(int) (dsq[i-1]*Alphabet_size+dsq[j+1])];
 		else
 		  escore = DegeneratePairScore(cm->esc[v], dsq[i-1], dsq[j+1]);
-		if ((sc = beta[v][j+1][d+2] + cm->endsc[v] + escore) > beta[cm->M][j][d])
+		if ((sc = beta[v][j+1][d+2] + cm->endsc[v] + 
+		     (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
 		  beta[cm->M][j][d] = sc;
 		break;
 	      case ML_st:
@@ -1657,7 +1666,8 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 		  escore = cm->esc[v][(int) dsq[i-1]];
 		else
 		  escore = DegenerateSingletScore(cm->esc[v], dsq[i-1]);
-		if ((sc = beta[v][j][d+1] + cm->endsc[v] + escore) > beta[cm->M][j][d])
+		if ((sc = beta[v][j][d+1] + cm->endsc[v] + 
+		     (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
 		  beta[cm->M][j][d] = sc;
 		break;
 	      case MR_st:
@@ -1667,13 +1677,15 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 		  escore = cm->esc[v][(int) dsq[j+1]];
 		else
 		  escore = DegenerateSingletScore(cm->esc[v], dsq[j+1]);
-		if ((sc = beta[v][j+1][d+1] + cm->endsc[v] + escore) > beta[cm->M][j][d])
+		if ((sc = beta[v][j+1][d+1] + cm->endsc[v] + 
+		     (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
 		  beta[cm->M][j][d] = sc;
 		break;
 	      case S_st:
 	      case D_st:
 	      case E_st:
-		if ((sc = beta[v][j][d] + cm->endsc[v]) > beta[cm->M][j][d])
+		if ((sc = beta[v][j][d] + cm->endsc[v] +
+		     (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
 		  beta[cm->M][j][d] = sc;
 		break;
 	      case B_st:  
@@ -1816,14 +1828,13 @@ vinside(CM_t *cm, char *dsq, int L,
   int      b;			/* best local begin state */
   float    bsc;			/* score for using the best local begin state */
 
-  /*
-  printf("***in vinside()****\n");
-  printf("\tr  : %d\n", r);
-  printf("\tz  : %d\n", z);
-  printf("\ti0 : %d\n", i0);
-  printf("\ti1 : %d\n", i1);
-  printf("\tj1 : %d\n", j1);
-  printf("\tj0 : %d\n", j0);
+  /*printf("***in vinside()****\n");
+    printf("\tr  : %d\n", r);
+    printf("\tz  : %d\n", z);
+    printf("\ti0 : %d\n", i0);
+    printf("\ti1 : %d\n", i1);
+    printf("\tj1 : %d\n", j1);
+    printf("\tj0 : %d\n", j0);
   */
 
   /* Allocations, initializations.
@@ -1875,12 +1886,14 @@ vinside(CM_t *cm, char *dsq, int L,
       switch (cm->sttype[z]) {
       case D_st:
       case S_st:
-	a[z][jp][ip] = cm->endsc[z];
+	/*a[z][jp][ip] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[z])));*/
+	a[z][jp][ip] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1));
 	if (ret_shadow != NULL) shadow[z][jp][ip] = USED_EL;
 	break;
       case MP_st:
 	if (i0 == i1 || j1 == j0) break;
-	a[z][jp+1][ip-1] = cm->endsc[z];
+	/*a[z][jp+1][ip-1] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[z])));*/
+	a[z][jp+1][ip-1] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1));
 	if (dsq[i1-1] < Alphabet_size && dsq[j1+1] < Alphabet_size)
 	  a[z][jp+1][ip-1] += cm->esc[z][(int) (dsq[i1-1]*Alphabet_size+dsq[j1+1])];
 	else
@@ -1891,7 +1904,8 @@ vinside(CM_t *cm, char *dsq, int L,
       case ML_st:
       case IL_st:
 	if (i0==i1) break;
-	a[z][jp][ip-1] = cm->endsc[z];
+	/*a[z][jp][ip-1] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[z])));*/
+	a[z][jp][ip-1] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1));
 	if (dsq[i1-1] < Alphabet_size)
 	  a[z][jp][ip-1] += cm->esc[z][(int) dsq[i1-1]];
 	else
@@ -1902,7 +1916,8 @@ vinside(CM_t *cm, char *dsq, int L,
       case MR_st:
       case IR_st:
 	if (j1==j0) break;
-	a[z][jp+1][ip] = cm->endsc[z];
+	/*a[z][jp+1][ip] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[z])));*/
+	a[z][jp+1][ip] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1));
 	if (dsq[j1+1] < Alphabet_size)
 	  a[z][jp+1][ip] += cm->esc[z][(int) dsq[j1+1]];
 	else
@@ -1911,6 +1926,7 @@ vinside(CM_t *cm, char *dsq, int L,
 	if (a[z][jp+1][ip] < IMPOSSIBLE) a[z][jp+1][ip] = IMPOSSIBLE;
 	break;
       }
+
     } /* done initializing the appropriate cell for useEL=TRUE */
 
   touch = MallocOrDie(sizeof(int) * cm->M);
@@ -1949,20 +1965,23 @@ vinside(CM_t *cm, char *dsq, int L,
 	{
 	  for (jp = 0; jp <= j0-j1; jp++) 
 	    for (ip = i1-i0; ip >= 0; ip--) {
-	      //printf("D S jp : %d | ip : %d\n", jp, ip);
+	      /*printf("D S jp : %d | ip : %d\n", jp, ip);*/
 	      y = cm->cfirst[v];
 	      a[v][jp][ip]      = a[y][jp][ip] + cm->tsc[v][0];
-	      //printf("set a[%d][%d][%d] to %f\n", v, jp, ip, sc);
+	      /*printf("set a[%d][%d][%d] to %f\n", v, jp, ip, sc);*/
 	      if (ret_shadow != NULL) shadow[v][jp][ip] = (char) 0;
-	      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && cm->endsc[v] > a[v][jp][ip]) {
-		a[v][jp][ip]      = cm->endsc[v];
+	      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && 
+		  ((cm->endsc[v] + (cm->el_selfsc * (((jp+j1)-(ip+i0)+1) - StateDelta(cm->sttype[v]))))
+		  > a[v][jp][ip])) {
+		a[v][jp][ip]      = cm->endsc[v] + 
+		  (cm->el_selfsc * (((jp+j1)-(ip+i0)+1) - StateDelta(cm->sttype[v])));
 		if (ret_shadow != NULL) shadow[v][jp][ip] = USED_EL;
 	      }
 	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
 		if ((sc = a[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) >  a[v][jp][ip])
 		  { 
 		    a[v][jp][ip] = sc;
-		    //printf("set a[%d][%d][%d] to %f\n", v, jp, ip, sc);
+		    /*printf("set a[%d][%d][%d] to %f\n", v, jp, ip, sc);*/
 		    if (ret_shadow != NULL) shadow[v][jp][ip] = (char) yoffset; 
 		  }
 	      if (a[v][jp][ip] < IMPOSSIBLE) a[v][jp][ip] = IMPOSSIBLE;
@@ -1974,21 +1993,24 @@ vinside(CM_t *cm, char *dsq, int L,
 	    j = jp+j1;
 	    a[v][jp][i1-i0] = IMPOSSIBLE; /* boundary condition */
 	    for (ip = i1-i0-1; ip >= 0; ip--) {
-	      //printf("MP jp : %d | ip : %d\n", jp, ip);
+	      /*printf("MP jp : %d | ip : %d\n", jp, ip);*/
 	      i = ip+i0;
 	      y = cm->cfirst[v];
 	      a[v][jp][ip] = a[y][jp-1][ip+1] + cm->tsc[v][0];
-	      //printf("set a[%d][%d][%d] to %f\n", v, jp, ip, sc);
+	      /*printf("set a[%d][%d][%d] to %f\n", v, jp, ip, sc);*/
 	      if (ret_shadow != NULL) shadow[v][jp][ip] = (char) 0;
-	      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && cm->endsc[v] > a[v][jp][ip]) {
-		a[v][jp][ip]      = cm->endsc[v];
+	      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && 
+		  ((cm->endsc[v] + (cm->el_selfsc * (((jp+j1)-(ip+i0)+1) - StateDelta(cm->sttype[v]))))
+		  > a[v][jp][ip])) {
+		a[v][jp][ip]      = cm->endsc[v] + 
+		  (cm->el_selfsc * (((jp+j1)-(ip+i0)+1) - StateDelta(cm->sttype[v])));
 		if (ret_shadow != NULL) shadow[v][jp][ip] = USED_EL;
 	      }
 	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
 		if ((sc = a[y+yoffset][jp-1][ip+1] + cm->tsc[v][yoffset]) >  a[v][jp][ip])
 		   { 
 		     a[v][jp][ip] = sc; 
-		     //printf("set a[%d][%d][%d] to %f\n", v, jp, ip, sc);
+		     /*printf("set a[%d][%d][%d] to %f\n", v, jp, ip, sc);*/
 		     if (ret_shadow != NULL) shadow[v][jp][ip] = (char) yoffset; 
 		   }
 	      if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
@@ -2003,21 +2025,24 @@ vinside(CM_t *cm, char *dsq, int L,
 	  for (jp = 0; jp <= j0-j1; jp++) { 
 	    a[v][jp][i1-i0] = IMPOSSIBLE; /* boundary condition */
 	    for (ip = i1-i0-1; ip >= 0; ip--) {
-	      //printf("ML IL jp : %d | ip : %d\n", jp, ip);
+	      /*printf("ML IL jp : %d | ip : %d\n", jp, ip);*/
 	      i = ip+i0;
 	      y = cm->cfirst[v];
 	      a[v][jp][ip] = a[y][jp][ip+1] + cm->tsc[v][0];
 	      if (ret_shadow != NULL) shadow[v][jp][ip] = 0;
-	      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && cm->endsc[v] > a[v][jp][ip]) {
-		a[v][jp][ip]      = cm->endsc[v];
-		//printf("set a[%d][%d][%d] to %f\n", v, jp, ip, sc);
+	      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && 
+		  ((cm->endsc[v] + (cm->el_selfsc * (((jp+j1)-(ip+i0)+1) - StateDelta(cm->sttype[v]))))
+		  > a[v][jp][ip])) {
+		a[v][jp][ip]      = cm->endsc[v] + 
+		  (cm->el_selfsc * (((jp+j1)-(ip+i0)+1) - StateDelta(cm->sttype[v])));
+		/*printf("set a[%d][%d][%d] to %f\n", v, jp, ip, sc);*/
 		if (ret_shadow != NULL) shadow[v][jp][ip] = USED_EL;
 	      }
 	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
 		if ((sc = a[y+yoffset][jp][ip+1] + cm->tsc[v][yoffset]) >  a[v][jp][ip])
 		  { 
 		    a[v][jp][ip] = sc; 
-		    //printf("set a[%d][%d][%d] to %f\n", v, jp, ip, sc);
+		    /*printf("set a[%d][%d][%d] to %f\n", v, jp, ip, sc);*/
 		    if (ret_shadow != NULL) shadow[v][jp][ip] = (char) yoffset; 
 		  }
 	      
@@ -2034,20 +2059,23 @@ vinside(CM_t *cm, char *dsq, int L,
 	  for (jp = 1; jp <= j0-j1; jp++) { 
 	    j = jp+j1;
 	    for (ip = i1-i0; ip >= 0; ip--) {
-	      //printf("MR IR jp : %d | ip : %d\n", jp, ip);
+	      /*printf("MR IR jp : %d | ip : %d\n", jp, ip);*/
 	      y = cm->cfirst[v];
 	      a[v][jp][ip]      = a[y][jp-1][ip] + cm->tsc[v][0];
-	      //printf("set a[%d][%d][%d] to %f\n", v, jp, ip, sc);
+	      /*printf("set a[%d][%d][%d] to %f\n", v, jp, ip, sc);*/
 	      if (ret_shadow != NULL) shadow[v][jp][ip] = 0;
-	      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && cm->endsc[v] > a[v][jp][ip]) {
-		a[v][jp][ip]      = cm->endsc[v];
+	      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && 
+		  ((cm->endsc[v] + (cm->el_selfsc * (((jp+j1)-(ip+i0)+1) - StateDelta(cm->sttype[v]))))
+		  > a[v][jp][ip])) {
+		a[v][jp][ip] = cm->endsc[v] + 
+		  (cm->el_selfsc * (((jp+j1)-(ip+i0)+1) - StateDelta(cm->sttype[v])));
 		if (ret_shadow != NULL) shadow[v][jp][ip] = USED_EL;
 	      }
 	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
 		if ((sc = a[y+yoffset][jp-1][ip] + cm->tsc[v][yoffset]) >  a[v][jp][ip])
 		  { 
 		    a[v][jp][ip] = sc; 
-		    //printf("set a[%d][%d][%d] to %f\n", v, jp, ip, sc);
+		    /*printf("set a[%d][%d][%d] to %f\n", v, jp, ip, sc);*/
 		    if (ret_shadow != NULL) shadow[v][jp][ip] = (char) yoffset; 
 		  }
 	      
@@ -2184,6 +2212,7 @@ voutside(CM_t *cm, char *dsq, int L,
   float    escore;		/* an emission score, tmp variable */
   int      voffset;		/* index of v in t_v(y) transition scores */
 
+
   /* Allocations and initializations
    */
   			/* if caller didn't give us a deck pool, make one */
@@ -2226,7 +2255,8 @@ voutside(CM_t *cm, char *dsq, int L,
 	escore = cm->esc[r][(int) (dsq[i0]*Alphabet_size+dsq[j0])];
       else
 	escore = DegeneratePairScore(cm->esc[r], dsq[i0], dsq[j0]);
-      beta[cm->M][j0-j1-1][1] = cm->endsc[r] + escore;
+      beta[cm->M][j0-j1-1][1] = cm->endsc[r] + 
+	(cm->el_selfsc * ((j0-1)-(i0+1)+1 - StateDelta(cm->sttype[r]))) + escore;
       break;
     case ML_st:
     case IL_st:
@@ -2235,7 +2265,8 @@ voutside(CM_t *cm, char *dsq, int L,
 	escore = cm->esc[r][(int) dsq[i0]];
       else
 	escore = DegenerateSingletScore(cm->esc[r], dsq[i0]);      
-      beta[cm->M][j0-j1][1] = cm->endsc[r] + escore;
+      beta[cm->M][j0-j1][1] = cm->endsc[r] + 
+	(cm->el_selfsc * ((j0)-(i0+1)+1 - StateDelta(cm->sttype[r]))) + escore;
       break;
     case MR_st:
     case IR_st:
@@ -2244,11 +2275,13 @@ voutside(CM_t *cm, char *dsq, int L,
 	escore = cm->esc[r][(int) dsq[j0]];
       else
 	escore = DegenerateSingletScore(cm->esc[r], dsq[j0]);
-      beta[cm->M][j0-j1-1][0] = cm->endsc[r] + escore;
+      beta[cm->M][j0-j1-1][0] = cm->endsc[r] + 
+	(cm->el_selfsc * ((j0-1)-(i0)+1 - StateDelta(cm->sttype[r]))) + escore;
       break;
     case S_st:
     case D_st:
-      beta[cm->M][j0-j1][0] = cm->endsc[r];
+      beta[cm->M][j0-j1][0] = cm->endsc[r] + 
+	(cm->el_selfsc * ((j0)-(i0)+1 - StateDelta(cm->sttype[r])));
       break;
     default:  Die("bogus parent state %d\n", cm->sttype[r]);
     }
@@ -2376,7 +2409,9 @@ voutside(CM_t *cm, char *dsq, int L,
 		  escore = cm->esc[v][(int) (dsq[i-1]*Alphabet_size+dsq[j+1])];
 		else
 		  escore = DegeneratePairScore(cm->esc[v], dsq[i-1], dsq[j+1]);
-		if ((sc = beta[v][jp+1][ip-1] + cm->endsc[v] + escore) > beta[cm->M][jp][ip]) 
+		if ((sc = beta[v][jp+1][ip-1] + cm->endsc[v] + 
+		     ((cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[v]))))
+		     + escore) > beta[cm->M][jp][ip])
 		  beta[cm->M][jp][ip] = sc;
 		break;
 	      case ML_st:
@@ -2386,7 +2421,9 @@ voutside(CM_t *cm, char *dsq, int L,
 		  escore = cm->esc[v][(int) dsq[i-1]];
 		else
 		  escore = DegenerateSingletScore(cm->esc[v], dsq[i-1]);
-		if ((sc = beta[v][jp][ip-1] + cm->endsc[v] + escore) > beta[cm->M][jp][ip]) 
+		if ((sc = beta[v][jp][ip-1] + cm->endsc[v] + 
+		     ((cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[v]))))
+		     + escore) > beta[cm->M][jp][ip])
 		  beta[cm->M][jp][ip] = sc;
 		break;
 	      case MR_st:
@@ -2396,13 +2433,17 @@ voutside(CM_t *cm, char *dsq, int L,
 		  escore = cm->esc[v][(int) dsq[j+1]];
 		else
 		  escore = DegenerateSingletScore(cm->esc[v], dsq[j+1]);
-		if ((sc = beta[v][jp+1][ip] + cm->endsc[v] + escore) > beta[cm->M][jp][ip]) 
+		if ((sc = beta[v][jp+1][ip] + cm->endsc[v] + 
+		     ((cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[v]))))
+		     + escore) > beta[cm->M][jp][ip])
 		  beta[cm->M][jp][ip] = sc;
 		break;
 	      case S_st:
 	      case D_st:
 	      case E_st:
-		if ((sc = beta[v][jp][ip] + cm->endsc[v]) > beta[cm->M][jp][ip]) 
+		if ((sc = beta[v][jp][ip] + cm->endsc[v] + 
+		     ((cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[v])))))
+		     > beta[cm->M][jp][ip])
 		  beta[cm->M][jp][ip] = sc;
 		break;
 	      default:  Die("bogus parent state %d\n", cm->sttype[y]);
@@ -2548,8 +2589,8 @@ insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
     } else {
       yoffset = ((char **) shadow[v])[j][d];
 
-      //printf("v : %d | r : %d | z : %d | i0 : %d | \n", v, r, z, i0);
-      //printf("\tyoffset : %d\n", yoffset);
+      /*printf("v : %d | r : %d | z : %d | i0 : %d | \n", v, r, z, i0);*/
+      /*printf("\tyoffset : %d\n", yoffset);*/
       switch (cm->sttype[v]) {
       case D_st:            break;
       case MP_st: i++; j--; break;
@@ -2637,9 +2678,9 @@ vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 
     /* 1. figure out the next state (deck) in the shadow matrix.
      */ 
-    //printf("v : %d | jp : %d | ip : %d | i0 : %d | \n", v, jp, ip, i0);
+    /*printf("v : %d | jp : %d | ip : %d | i0 : %d | \n", v, jp, ip, i0);*/
     yoffset = shadow[v][jp][ip];
-    //printf("\tyoffset : %d\n", yoffset);
+    /*printf("\tyoffset : %d\n", yoffset);*/
 
     /* 2. figure out the i,j for state y, which is dependent 
      *    on what v emits (if anything)
@@ -3281,9 +3322,12 @@ CYKOutside(CM_t *cm, char *dsq, int L, float ***alpha)
 }
 #endif 
 
+/*******************************************************************************/
+/*******************************************************************************/
+/*******************************************************************************/
 
 /*******************************************************************************
- * EPN BANDED VERSION OF ALL FUNCTIONS!
+ * EPN BANDED VERSION OF MOST FUNCTIONS!
  * Banded functions are named *_b()
  * Functions that I don't think need a banded version are indicated with a U
  * before their names.
@@ -4614,7 +4658,8 @@ inside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do
 	    for (d = dmin[v]; d <= dmax[v] && d <= jp; d++)
 	      {
 		y = cm->cfirst[v];
-		alpha[v][j][d]  = cm->endsc[v];	/* init w/ local end */
+		alpha[v][j][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		/* treat EL as emitting only on self transition */
 		if (ret_shadow != NULL) yshad[j][d]  = USED_EL; 
 		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
 		  if ((sc = alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) >  alpha[v][j][d]) {
@@ -4691,7 +4736,8 @@ inside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do
 	    for (d = dmin[v]; d <= dmax[v] && d <= jp; d++)
 	      {
 		y = cm->cfirst[v];
-		alpha[v][j][d] = cm->endsc[v]; /* init w/ local end */
+		alpha[v][j][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		/* treat EL as emitting only on self transition */
 		if (ret_shadow != NULL) yshad[j][d] = USED_EL;
 		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
 		  if ((sc = alpha[y+yoffset][j-1][d-2] + cm->tsc[v][yoffset]) >  alpha[v][j][d]) {
@@ -4720,7 +4766,8 @@ inside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do
 	    for (d = dmin[v]; d <= dmax[v] && d <= jp; d++)
 	      {
 		y = cm->cfirst[v];
-		alpha[v][j][d] = cm->endsc[v]; /* init w/ local end */
+		alpha[v][j][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		/* treat EL as emitting only on self transition */
 		if (ret_shadow != NULL) yshad[j][d] = USED_EL;
 		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
 		  if ((sc = alpha[y+yoffset][j][d-1] + cm->tsc[v][yoffset]) >  alpha[v][j][d]) {
@@ -4749,7 +4796,8 @@ inside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do
 	    for (d = dmin[v]; d <= dmax[v] && d <= jp; d++)
 	      {
 		y = cm->cfirst[v];
-		alpha[v][j][d] = cm->endsc[v]; /* init w/ local end */
+		alpha[v][j][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		/* treat EL as emitting only on self transition */
 		if (ret_shadow != NULL) yshad[j][d] = USED_EL;
 		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
 		  if ((sc = alpha[y+yoffset][j-1][d-1] + cm->tsc[v][yoffset]) > alpha[v][j][d]) {
@@ -4982,7 +5030,8 @@ outside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 	  escore = cm->esc[vroot][(int) (dsq[i0]*Alphabet_size+dsq[j0])];
 	else
 	  escore = DegeneratePairScore(cm->esc[vroot], dsq[i0], dsq[j0]);
-	beta[cm->M][j0-1][W-2] = cm->endsc[vroot] + escore;
+	beta[cm->M][j0-1][W-2] = cm->endsc[vroot] + 
+	  (cm->el_selfsc * (W-StateDelta(cm->sttype[vroot]))-2) + escore;
 	if (beta[cm->M][j0-1][W-2] < IMPOSSIBLE) beta[cm->M][j0-1][W-2] = IMPOSSIBLE;
 	break;
       case ML_st:
@@ -4992,7 +5041,8 @@ outside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 	  escore = cm->esc[vroot][(int) dsq[i0]];
 	else
 	  escore = DegenerateSingletScore(cm->esc[vroot], dsq[i0]);
-	beta[cm->M][j0][W-1] = cm->endsc[vroot] + escore;
+	beta[cm->M][j0][W-1] = cm->endsc[vroot] + 
+	  (cm->el_selfsc * (W-StateDelta(cm->sttype[vroot])-1)) + escore;
 	if (beta[cm->M][j0][W-1] < IMPOSSIBLE) beta[cm->M][j0][W-1] = IMPOSSIBLE;
 	break;
       case MR_st:
@@ -5002,12 +5052,15 @@ outside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 	  escore = cm->esc[vroot][(int) dsq[j0]];
 	else
 	  escore = DegenerateSingletScore(cm->esc[vroot], dsq[j0]);
-	beta[cm->M][j0-1][W-1] = cm->endsc[vroot] + escore;
+	beta[cm->M][j0-1][W-1] = cm->endsc[vroot] + 
+	  (cm->el_selfsc * (W-StateDelta(cm->sttype[vroot])-1)) + escore;
 	if (beta[cm->M][j0-1][W-1] < IMPOSSIBLE) beta[cm->M][j0-1][W-1] = IMPOSSIBLE;
 	break;
       case S_st:
       case D_st:
-	beta[cm->M][j0][W] = cm->endsc[vroot];
+	beta[cm->M][j0][W] = cm->endsc[vroot] + 
+	  (cm->el_selfsc * (W-StateDelta(cm->sttype[vroot])));
+	if (beta[cm->M][j0][W] < IMPOSSIBLE) beta[cm->M][j0][W] = IMPOSSIBLE;
 	break;
       case B_st:		/* can't start w/ bifurcation at vroot. */
       default: Die("bogus parent state %d\n", cm->sttype[vroot]);
@@ -5155,7 +5208,8 @@ outside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 		  escore = cm->esc[v][(int) (dsq[i-1]*Alphabet_size+dsq[j+1])];
 		else
 		  escore = DegeneratePairScore(cm->esc[v], dsq[i-1], dsq[j+1]);
-		if ((sc = beta[v][j+1][d+2] + cm->endsc[v] + escore) > beta[cm->M][j][d])
+		if ((sc = beta[v][j+1][d+2] + cm->endsc[v] + 
+		     (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
 		  beta[cm->M][j][d] = sc;
 		break;
 	      case ML_st:
@@ -5165,7 +5219,8 @@ outside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 		  escore = cm->esc[v][(int) dsq[i-1]];
 		else
 		  escore = DegenerateSingletScore(cm->esc[v], dsq[i-1]);
-		if ((sc = beta[v][j][d+1] + cm->endsc[v] + escore) > beta[cm->M][j][d])
+		if ((sc = beta[v][j][d+1] + cm->endsc[v] + 
+		     (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
 		  beta[cm->M][j][d] = sc;
 		break;
 	      case MR_st:
@@ -5175,13 +5230,15 @@ outside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 		  escore = cm->esc[v][(int) dsq[j+1]];
 		else
 		  escore = DegenerateSingletScore(cm->esc[v], dsq[j+1]);
-		if ((sc = beta[v][j+1][d+1] + cm->endsc[v] + escore) > beta[cm->M][j][d])
+		if ((sc = beta[v][j+1][d+1] + cm->endsc[v] + 
+		     (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
 		  beta[cm->M][j][d] = sc;
 		break;
 	      case S_st:
 	      case D_st:
 	      case E_st:
-		if ((sc = beta[v][j][d] + cm->endsc[v]) > beta[cm->M][j][d])
+		if ((sc = beta[v][j][d] + cm->endsc[v] +
+		     (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
 		  beta[cm->M][j][d] = sc;
 		break;
 	      case B_st:  
@@ -5406,13 +5463,15 @@ vinside_b(CM_t *cm, char *dsq, int L,
       switch (cm->sttype[z]) {
       case D_st:
       case S_st:
-	a[z][jp][ip] = cm->endsc[z];
+	/*a[z][jp][ip] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[z])));*/
+	a[z][jp][ip] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1));
 	if (ret_shadow != NULL) shadow[z][jp][ip] = USED_EL;
 	break;
       case MP_st:
 	if (i0 == i1 || j1 == j0) break;
-	a[z][jp+1][ip-1] = cm->endsc[z];
-	
+	/*a[z][jp+1][ip-1] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[z])));*/
+	a[z][jp+1][ip-1] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1));
+
 	if (dsq[i1-1] < Alphabet_size && dsq[j1+1] < Alphabet_size)
 	  a[z][jp+1][ip-1] += cm->esc[z][(int) (dsq[i1-1]*Alphabet_size+dsq[j1+1])];
 	else
@@ -5423,7 +5482,8 @@ vinside_b(CM_t *cm, char *dsq, int L,
       case ML_st:
       case IL_st:
 	if (i0==i1) break;
-	a[z][jp][ip-1] = cm->endsc[z];
+	/*a[z][jp][ip-1] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[z])));*/
+	a[z][jp][ip-1] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1));
 
 	if (dsq[i1-1] < Alphabet_size)
 	  a[z][jp][ip-1] += cm->esc[z][(int) dsq[i1-1]];
@@ -5435,7 +5495,8 @@ vinside_b(CM_t *cm, char *dsq, int L,
       case MR_st:
       case IR_st:
 	if (j1==j0) break;
-	a[z][jp+1][ip] = cm->endsc[z];
+	/*a[z][jp+1][ip] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[z])));*/
+	a[z][jp+1][ip] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1));
 	
 	if (dsq[j1+1] < Alphabet_size)
 	  a[z][jp+1][ip] += cm->esc[z][(int) dsq[j1+1]];
@@ -5542,11 +5603,14 @@ vinside_b(CM_t *cm, char *dsq, int L,
 		y = cm->cfirst[v];
 		a[v][jp][ip]      = a[y][jp][ip] + cm->tsc[v][0];
 		if (ret_shadow != NULL) shadow[v][jp][ip] = (char) 0;
-		if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && cm->endsc[v] > a[v][jp][ip]) {
-		  a[v][jp][ip]      = cm->endsc[v];
-		  if (ret_shadow != NULL) shadow[v][jp][ip] = USED_EL;
-		}
-		for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
+	      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && 
+		  ((cm->endsc[v] + (cm->el_selfsc * (((jp+j1)-(ip+i0)+1) - StateDelta(cm->sttype[v]))))
+		   > a[v][jp][ip])) {
+		a[v][jp][ip]      = cm->endsc[v] + 
+		  (cm->el_selfsc * (((jp+j1)-(ip+i0)+1) - StateDelta(cm->sttype[v])));
+		if (ret_shadow != NULL) shadow[v][jp][ip] = USED_EL;
+	      }
+	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
 		  if ((sc = a[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) >  a[v][jp][ip])
 		    { 
 		      a[v][jp][ip] = sc;
@@ -5577,8 +5641,11 @@ vinside_b(CM_t *cm, char *dsq, int L,
 	      y = cm->cfirst[v];
 	      a[v][jp][ip] = a[y][jp-1][ip+1] + cm->tsc[v][0];
 	      if (ret_shadow != NULL) shadow[v][jp][ip] = (char) 0;
-	      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && cm->endsc[v] > a[v][jp][ip]) {
-		a[v][jp][ip]      = cm->endsc[v];
+	      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && 
+		  ((cm->endsc[v] + (cm->el_selfsc * (((jp+j1)-(ip+i0)+1) - StateDelta(cm->sttype[v]))))
+		  > a[v][jp][ip])) {
+		a[v][jp][ip]      = cm->endsc[v] + 
+		  (cm->el_selfsc * (((jp+j1)-(ip+i0)+1) - StateDelta(cm->sttype[v])));
 		if (ret_shadow != NULL) shadow[v][jp][ip] = USED_EL;
 	      }
 	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
@@ -5610,8 +5677,12 @@ vinside_b(CM_t *cm, char *dsq, int L,
 	      y = cm->cfirst[v];
 	      a[v][jp][ip] = a[y][jp][ip+1] + cm->tsc[v][0];
 	      if (ret_shadow != NULL) shadow[v][jp][ip] = 0;
-	      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && cm->endsc[v] > a[v][jp][ip]) {
-		a[v][jp][ip]      = cm->endsc[v];
+	      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && 
+		  ((cm->endsc[v] + (cm->el_selfsc * (((jp+j1)-(ip+i0)+1) - StateDelta(cm->sttype[v]))))
+		  > a[v][jp][ip])) {
+		a[v][jp][ip]      = cm->endsc[v] + 
+		  (cm->el_selfsc * (((jp+j1)-(ip+i0)+1) - StateDelta(cm->sttype[v])));
+		/*printf("set a[%d][%d][%d] to %f\n", v, jp, ip, sc);*/
 		if (ret_shadow != NULL) shadow[v][jp][ip] = USED_EL;
 	      }
 	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
@@ -5647,8 +5718,11 @@ vinside_b(CM_t *cm, char *dsq, int L,
 	      y = cm->cfirst[v];
 	      a[v][jp][ip]      = a[y][jp-1][ip] + cm->tsc[v][0];
 	      if (ret_shadow != NULL) shadow[v][jp][ip] = 0;
-	      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && cm->endsc[v] > a[v][jp][ip]) {
-		a[v][jp][ip]      = cm->endsc[v];
+	      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && 
+		  ((cm->endsc[v] + (cm->el_selfsc * (((jp+j1)-(ip+i0)+1) - StateDelta(cm->sttype[v]))))
+		  > a[v][jp][ip])) {
+		a[v][jp][ip] = cm->endsc[v] + 
+		  (cm->el_selfsc * (((jp+j1)-(ip+i0)+1) - StateDelta(cm->sttype[v])));
 		if (ret_shadow != NULL) shadow[v][jp][ip] = USED_EL;
 	      }
 	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
@@ -5883,7 +5957,8 @@ voutside_b(CM_t *cm, char *dsq, int L,
 	escore = cm->esc[r][(int) (dsq[i0]*Alphabet_size+dsq[j0])];
       else
 	escore = DegeneratePairScore(cm->esc[r], dsq[i0], dsq[j0]);
-      beta[cm->M][j0-j1-1][1] = cm->endsc[r] + escore;
+      beta[cm->M][j0-j1-1][1] = cm->endsc[r] + 
+	(cm->el_selfsc * ((j0-1)-(i0+1)+1 - StateDelta(cm->sttype[r]))) + escore;
       break;
     case ML_st:
     case IL_st:
@@ -5892,7 +5967,8 @@ voutside_b(CM_t *cm, char *dsq, int L,
 	escore = cm->esc[r][(int) dsq[i0]];
       else
 	escore = DegenerateSingletScore(cm->esc[r], dsq[i0]);      
-      beta[cm->M][j0-j1][1] = cm->endsc[r] + escore;
+      beta[cm->M][j0-j1][1] = cm->endsc[r] + 
+	(cm->el_selfsc * ((j0)-(i0+1)+1 - StateDelta(cm->sttype[r]))) + escore;
       break;
     case MR_st:
     case IR_st:
@@ -5901,11 +5977,13 @@ voutside_b(CM_t *cm, char *dsq, int L,
 	escore = cm->esc[r][(int) dsq[j0]];
       else
 	escore = DegenerateSingletScore(cm->esc[r], dsq[j0]);
-      beta[cm->M][j0-j1-1][0] = cm->endsc[r] + escore;
+      beta[cm->M][j0-j1-1][0] = cm->endsc[r] + 
+	(cm->el_selfsc * ((j0-1)-(i0)+1 - StateDelta(cm->sttype[r]))) + escore;
       break;
     case S_st:
     case D_st:
-      beta[cm->M][j0-j1][0] = cm->endsc[r];
+      beta[cm->M][j0-j1][0] = cm->endsc[r] + 
+	(cm->el_selfsc * ((j0)-(i0)+1 - StateDelta(cm->sttype[r])));
       break;
     default:  Die("bogus parent state %d\n", cm->sttype[r]);
     }
@@ -6078,7 +6156,9 @@ voutside_b(CM_t *cm, char *dsq, int L,
 		  escore = cm->esc[v][(int) (dsq[i-1]*Alphabet_size+dsq[j+1])];
 		else
 		  escore = DegeneratePairScore(cm->esc[v], dsq[i-1], dsq[j+1]);
-		if ((sc = beta[v][jp+1][ip-1] + cm->endsc[v] + escore) > beta[cm->M][jp][ip]) 
+		if ((sc = beta[v][jp+1][ip-1] + cm->endsc[v] + 
+		     ((cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[v]))))
+		     + escore) > beta[cm->M][jp][ip])
 		  beta[cm->M][jp][ip] = sc;
 		break;
 	      case ML_st:
@@ -6088,7 +6168,9 @@ voutside_b(CM_t *cm, char *dsq, int L,
 		  escore = cm->esc[v][(int) dsq[i-1]];
 		else
 		  escore = DegenerateSingletScore(cm->esc[v], dsq[i-1]);
-		if ((sc = beta[v][jp][ip-1] + cm->endsc[v] + escore) > beta[cm->M][jp][ip]) 
+		if ((sc = beta[v][jp][ip-1] + cm->endsc[v] + 
+		     ((cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[v]))))
+		     + escore) > beta[cm->M][jp][ip])
 		  beta[cm->M][jp][ip] = sc;
 		break;
 	      case MR_st:
@@ -6098,13 +6180,17 @@ voutside_b(CM_t *cm, char *dsq, int L,
 		  escore = cm->esc[v][(int) dsq[j+1]];
 		else
 		  escore = DegenerateSingletScore(cm->esc[v], dsq[j+1]);
-		if ((sc = beta[v][jp+1][ip] + cm->endsc[v] + escore) > beta[cm->M][jp][ip]) 
+		if ((sc = beta[v][jp+1][ip] + cm->endsc[v] + 
+		     ((cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[v]))))
+		     + escore) > beta[cm->M][jp][ip])
 		  beta[cm->M][jp][ip] = sc;
 		break;
 	      case S_st:
 	      case D_st:
 	      case E_st:
-		if ((sc = beta[v][jp][ip] + cm->endsc[v]) > beta[cm->M][jp][ip]) 
+		if ((sc = beta[v][jp][ip] + cm->endsc[v] + 
+		     ((cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[v])))))
+		     > beta[cm->M][jp][ip])
 		  beta[cm->M][jp][ip] = sc;
 		break;
 	      default:  Die("bogus parent state %d\n", cm->sttype[y]);
@@ -7066,7 +7152,8 @@ inside_b_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int
 		dp_v = d - dmin[v];  /* d index for state v in alpha w/mem eff bands */
 
 
-		alpha[v][j][dp_v]  = cm->endsc[v];	/* init w/ local end */
+		alpha[v][j][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		/* treat EL as emitting only on self transition */
 		if (ret_shadow != NULL) yshad[j][dp_v]  = USED_EL; 
 		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
 		  {
@@ -7277,7 +7364,8 @@ inside_b_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int
 		*/
 		/* new ME code block : */
 		dp_v = d - dmin[v]; /* d index for state v in alpha w/mem eff bands */
-		alpha[v][j][dp_v] = cm->endsc[v]; /* init w/ local end */
+		alpha[v][j][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		/* treat EL as emitting only on self transition */
 		if(ret_shadow != NULL) yshad[j][dp_v] = USED_EL;
 		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
 		  {
@@ -7342,7 +7430,8 @@ inside_b_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int
 		*/
 		/* new ME code block : */
 		dp_v = d - dmin[v]; /* d index for state v in alpha w/mem eff bands */
-		alpha[v][j][dp_v] = cm->endsc[v]; /* init w/ local end */
+		alpha[v][j][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		/* treat EL as emitting only on self transition */
 		if (ret_shadow != NULL) yshad[j][dp_v] = USED_EL;
 		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
 		  {
@@ -7404,7 +7493,8 @@ inside_b_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int
 		*/
 		/* new ME code block : */
 		dp_v = d - dmin[v]; /* d index for state v in alpha w/mem eff bands */
-		alpha[v][j][dp_v] = cm->endsc[v]; /* init w/ local end */
+		alpha[v][j][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		/* treat EL as emitting only on self transition */
 		if (ret_shadow != NULL) yshad[j][dp_v] = USED_EL;
 		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
 		  {
