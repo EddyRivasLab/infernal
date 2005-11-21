@@ -115,9 +115,9 @@ main(int argc, char **argv)
   /* Do two band calculations with the different W's.
    * Save the gamma_0 densities for root state 0.
    */
-  if (! BandCalculationEngine(cm, W1, p_thresh, FALSE, &dmin1, &dmax1, &gamma1))
+  if (! BandCalculationEngine(cm, W1, p_thresh, FALSE, &dmin1, &dmax1, &gamma1, FALSE))
     Die("Your W1 (%d) must be too small, sorry.\n", W1);
-  if (! BandCalculationEngine(cm, W2, p_thresh, FALSE, &dmin2, &dmax2, &gamma2))
+  if (! BandCalculationEngine(cm, W2, p_thresh, FALSE, &dmin2, &dmax2, &gamma2, FALSE))
     Die("Your W2 (%d) must be too small, sorry.\n", W2);
 
   /* Verify that the bands are all identical, regardless of choice of W.

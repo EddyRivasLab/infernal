@@ -50,8 +50,11 @@ OBJS  = alphabet.o\
 	prior.o\
 	scancyk.o\
 	smallcyk.o\
+	cm_eweight.o\
 	r-what.o\
 	dlk_priorityqueue.o
+	smallcyk.o\
+	cm_eweight.o
 
 HDRS  = funcs.h\
 	prior.h\
