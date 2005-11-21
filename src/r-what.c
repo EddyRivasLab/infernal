@@ -208,11 +208,11 @@ MaxSubsequenceScore(CM_t *cm, int W, float ***ret_max_sc)
  *           init_sc - initial score
  *           max_sc  - a matrix of maximum subsequence scores
  *
- * Returns:
+ * Returns:  PA_t    - partial alignment
  *
  *
  */
-void
+PA_t*
 AstarExtension(CM_t *cm, char *dsq, int init_v, int init_j, int lower_d, int upper_d,
         float init_sc, float **max_sc)
 {
@@ -295,7 +295,12 @@ AstarExtension(CM_t *cm, char *dsq, int init_v, int init_j, int lower_d, int upp
   }
   
   if (pa != NULL) {
-    /* Top alignment info is in pa.  Do something with it */
+    /* Top alignment info is in pa.  Store it */
+    child_pa = PA_Copy(pa);
+    free(pa);
+  }
+  else {
+    child_pa = NULL;
   }
 
   /* Empty PQ and release memory */
@@ -304,5 +309,5 @@ AstarExtension(CM_t *cm, char *dsq, int init_v, int init_j, int lower_d, int upp
   }
   FreePQ(alignPQ);
 
-  return;
+  return child_pa;
 }
