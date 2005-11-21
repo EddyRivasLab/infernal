@@ -4,6 +4,9 @@
  *
  */
 
+#ifndef R_WHAT_H_INCLUDED
+#define R_WHAT_H_INCLUDED
+
 /* Structure: PA_t (Partial Alignment)
  *
  * A minimal structure to track a partial SCFG alignment
@@ -24,22 +27,11 @@ typedef struct partialalignment_s {
 
 } PA_t;
 
-PA_t*
-PA_Copy(PA_t *orig)
-{
-  PA_t *dup;
-  dup = malloc(sizeof(PA_t));
+PA_t* PA_Copy(PA_t *orig);
 
-  dup->init_v = orig->init_v;
-  dup->init_j = orig->init_j;
-  dup->init_d = orig->init_d;
+void MaxSubsequenceScore(CM_t *cm, int W, float ***ret_max_sc);
 
-  dup->cur_v = orig->cur_v;
-  dup->cur_j = orig->cur_j;
-  dup->cur_d = orig->cur_d;
+PA_t* AstarExtension(CM_t *cm, char *dsq, int init_v, int init_j, int lower_d, int upper_d,
+    	float init_sc, float **max_sc);
 
-  dup->current_sc = orig->current_sc;
-  dup->upper_bound_sc = orig->upper_bound_sc;
-
-  return dup;
-}
+#endif /* R_WHAT_H_INCLUDED */

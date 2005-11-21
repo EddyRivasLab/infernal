@@ -18,6 +18,31 @@
 #include "dlk_priorityqueue.h"
 #include "r-what.h"
 
+/* Function: PA_Copy()
+ * Author:   DLK
+ *
+ * Purpose:  Copy a partial alignment struct
+ */
+PA_t*
+PA_Copy(PA_t *orig)
+{
+  PA_t *dup;
+  dup = malloc(sizeof(PA_t));
+
+  dup->init_v = orig->init_v;
+  dup->init_j = orig->init_j;
+  dup->init_d = orig->init_d;
+	 
+  dup->cur_v = orig->cur_v;
+  dup->cur_j = orig->cur_j;
+  dup->cur_d = orig->cur_d;
+       
+  dup->current_sc = orig->current_sc;
+  dup->upper_bound_sc = orig->upper_bound_sc;
+		   
+  return dup;
+}
+
 /* Function: MaxSubsequenceScore()
  * Author:   DLK
  *
@@ -76,7 +101,7 @@ MaxSubsequenceScore(CM_t *cm, int W, float ***ret_max_sc)
     else
     {
       y = cm->cfirst[v];
-      for (yoffset = 0; yoffset < cm->cnum[v]-1; yoffset++)
+      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
       {
 	if (cm->sttype[y+yoffset] == D_st ||
 	    cm->sttype[y+yoffset] == S_st ||
@@ -94,6 +119,7 @@ MaxSubsequenceScore(CM_t *cm, int W, float ***ret_max_sc)
   /* Initialize for d=1 */
   for (v=cm->M-1; v>=0; v--)
   {
+    max_sc[v][1] = IMPOSSIBLE;
     if      (cm->sttype[v] == E_st) { max_sc[v][1] = IMPOSSIBLE; }
     else if (cm->sttype[v] == B_st) 
     {
@@ -106,7 +132,7 @@ MaxSubsequenceScore(CM_t *cm, int W, float ***ret_max_sc)
     else
     {
       y = cm->cfirst[v];
-      for (yoffset = 0; yoffset < cm->cnum[v]-1; yoffset++)
+      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
       {
 	if      (cm->sttype[y+yoffset] == D_st ||
 	         cm->sttype[y+yoffset] == S_st ||
@@ -114,7 +140,9 @@ MaxSubsequenceScore(CM_t *cm, int W, float ***ret_max_sc)
 	         cm->sttype[y+yoffset] == B_st)
         { sc = cm->tsc[v][yoffset] + max_sc[y+yoffset][1]; }
 	else if (cm->sttype[y+yoffset] == ML_st ||
-	         cm->sttype[y+yoffset] == MR_st)
+	         cm->sttype[y+yoffset] == MR_st ||
+		 cm->sttype[y+yoffset] == IL_st ||
+		 cm->sttype[y+yoffset] == IR_st)
 	{
 	  sc = IMPOSSIBLE;
           for (i=0; i<L; i++)
@@ -134,6 +162,7 @@ MaxSubsequenceScore(CM_t *cm, int W, float ***ret_max_sc)
   {
     for (v=cm->M-1; v>=0; v--)
     {
+      max_sc[v][d] = IMPOSSIBLE;
       if      (cm->sttype[v] == E_st) { max_sc[v][d] = IMPOSSIBLE; }
       else if (cm->sttype[v] == B_st) 
       {
@@ -143,13 +172,13 @@ MaxSubsequenceScore(CM_t *cm, int W, float ***ret_max_sc)
 	for (i=0; i<=d; i++)
 	{
           sc = max_sc[w][i] + max_sc[y][d-i];
-          if (sc > max_sc[v][1]) { max_sc[v][1] = sc; }
+          if (sc > max_sc[v][d]) { max_sc[v][d] = sc; }
 	}
       }
       else
       {
         y = cm->cfirst[v];
-        for (yoffset = 0; yoffset < cm->cnum[v]-1; yoffset++)
+        for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
         {
           if      (cm->sttype[y+yoffset] == D_st ||
                    cm->sttype[y+yoffset] == S_st ||
@@ -157,7 +186,9 @@ MaxSubsequenceScore(CM_t *cm, int W, float ***ret_max_sc)
                    cm->sttype[y+yoffset] == B_st)
           { sc = cm->tsc[v][yoffset] + max_sc[y+yoffset][d]; }
           else if (cm->sttype[y+yoffset] == ML_st ||
-                   cm->sttype[y+yoffset] == MR_st)
+                   cm->sttype[y+yoffset] == MR_st ||
+		   cm->sttype[y+yoffset] == IL_st ||
+		   cm->sttype[y+yoffset] == IR_st)
           {
             sc = IMPOSSIBLE;
             for (i=0; i<L; i++)
@@ -181,7 +212,6 @@ MaxSubsequenceScore(CM_t *cm, int W, float ***ret_max_sc)
       if (max_sc[v][d] < IMPROBABLE) { max_sc[v][d] = IMPOSSIBLE; }
     }
   }
-
 
   *ret_max_sc = max_sc;
 
@@ -264,6 +294,8 @@ AstarExtension(CM_t *cm, char *dsq, int init_v, int init_j, int lower_d, int upp
           esc = cm->esc[child_pa->cur_v][(int) (dsq[i]*Alphabet_size+dsq[child_pa->cur_j])];
         else
           esc = DegeneratePairScore(cm->esc[child_pa->cur_v],dsq[i],dsq[child_pa->cur_j]);
+	if (child_pa->cur_d < 2)
+	  esc = IMPOSSIBLE;
       }
       else if (cm->sttype[child_pa->cur_v] == ML_st || cm->sttype[child_pa->cur_v] == IL_st) {
         child_pa->cur_d--;
@@ -272,6 +304,8 @@ AstarExtension(CM_t *cm, char *dsq, int init_v, int init_j, int lower_d, int upp
           esc = cm->esc[child_pa->cur_v][(int) dsq[i]];
         else
           esc = DegenerateSingletScore(cm->esc[child_pa->cur_v],dsq[i]);
+	if (child_pa->cur_d < 1)
+	  esc = IMPOSSIBLE;
       }
       else if (cm->sttype[child_pa->cur_v] == MR_st || cm->sttype[child_pa->cur_v] == IR_st) {
         child_pa->cur_j--;
@@ -280,6 +314,8 @@ AstarExtension(CM_t *cm, char *dsq, int init_v, int init_j, int lower_d, int upp
           esc = cm->esc[child_pa->cur_v][(int) dsq[child_pa->cur_j]];
         else
           esc = DegenerateSingletScore(cm->esc[child_pa->cur_v],dsq[child_pa->cur_j]);
+	if (child_pa->cur_d < 1)
+	  esc = IMPOSSIBLE;
       }
       else if (cm->sttype[child_pa->cur_v] == E_st || cm->sttype[child_pa->cur_v] == B_st) {
 	esc = 0.0;
