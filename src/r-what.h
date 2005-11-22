@@ -25,9 +25,24 @@ typedef struct partialalignment_s {
   float current_sc;
   float upper_bound_sc;
 
+  int terminated;
+
 } PA_t;
 
-PA_t* PA_Copy(PA_t *orig);
+typedef struct branchedpartialalignment_s {
+  PA_t  *chunk;
+  struct branchedpartialalignment_s *left_child;
+  struct branchedpartialalignment_s *right_child;
+
+  float current_sc;
+  float upper_bound_sc;
+  int terminated;
+} BPA_t;
+
+PA_t*  PA_Copy(PA_t *orig);
+BPA_t* BPA_Copy(BPA_t *orig);
+float  BPA_Current_Score(BPA_t *root);
+float  BPA_Upper_Bound(BPA_t *root);
 
 void MaxSubsequenceScore(CM_t *cm, int W, float ***ret_max_sc);
 

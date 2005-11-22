@@ -39,8 +39,139 @@ PA_Copy(PA_t *orig)
        
   dup->current_sc = orig->current_sc;
   dup->upper_bound_sc = orig->upper_bound_sc;
+
+  dup->terminated = orig->terminated;
 		   
   return dup;
+}
+
+/* Function: BPA_Copy()
+ * Author:   DLK
+ *
+ * Purpose:  Copy a branched partial alignment struct
+ */
+BPA_t*
+BPA_Copy(BPA_t *orig)
+{
+  BPA_t *dup;
+  dup = malloc(sizeof(BPA_t));
+
+  if (orig->chunk  != NULL)
+    dup->chunk = PA_Copy(orig->chunk);
+  else
+    dup->chunk = NULL;
+  if (orig->left_child != NULL)
+    dup->left_child  = BPA_Copy(orig->left_child);
+  else
+    dup->left_child  = NULL;
+  if (orig->right_child != NULL)
+    dup->right_child = BPA_Copy(orig->right_child);
+  else
+    dup->right_child = NULL;
+
+  dup->terminated = orig->terminated;
+
+  return dup;
+}
+
+/* Function: BPA_Free()
+ * Author:   DLK
+ *
+ * Purpose:  Free memory from BPA
+ */
+void
+BPA_Free(BPA_t *root)
+{
+  if (root != NULL) {
+    if (root->right_child != NULL) {
+      BPA_Free(root->right_child);
+    }
+    if (root->left_child != NULL) {
+      BPA_Free(root->left_child);
+    }
+    if (root->chunk != NULL) {
+      free(root->chunk);
+    }
+    free(root);
+  }
+  
+  return;
+}
+
+/* Function: BPA_Update()
+ * Author:   DLK
+ *
+ * Purpose:  Re-evaluate and update overall BPA properties
+ */
+void
+BPA_Update(BPA_t *root)
+{
+  if (root != NULL) {
+    BPA_Update(root->left_child);
+    BPA_Update(root->right_child);
+    root->current_sc = root->chunk->current_sc;
+    root->upper_bound_sc = 0.0;
+    if (root->left_child != NULL) {
+      root->current_sc += root->left_child->current_sc;
+      root->upper_bound_sc += root->left_child->upper_bound_sc;
+    }
+    if (root->right_child != NULL) {
+      root->current_sc += root->right_child->current_sc;
+      root->upper_bound_sc += root->right_child->upper_bound_sc;
+    }
+    if (root->left_child == NULL && root->right_child == NULL) {
+      root->upper_bound_sc = root->chunk->upper_bound_sc;
+      if (root->chunk->terminated) { root->terminated = 1; }
+    }
+    if (root->left_child->terminated && root->right_child->terminated) {
+      root->terminated = 1;
+    }
+  }
+
+  return;
+}
+
+/* Function: BPA_Current_Score()
+ * Author:   DLK
+ *
+ * Purpose:  Calculate current score for a branched partial alignment
+ */
+float
+BPA_Current_Score(BPA_t *root)
+{
+  float score = 0.0;
+
+  if (root != NULL) {
+    score = root->chunk->current_sc;
+    score += BPA_Current_Score(root->left_child);
+    score += BPA_Current_Score(root->right_child);
+  }
+
+  return score;
+}
+
+/* Function: BPA_Upper_Bound()
+ * Author:   DLK
+ *
+ * Purpose:  Calculate the upper bound for a branched partial alignment
+ *           Note that this is an incremental score:
+ *           current score + upper bound = bound on total alignment score
+ */
+float
+BPA_Upper_Bound(BPA_t *root)
+{
+  float score = 0.0;
+
+  if (root != NULL) {
+    if (root->left_child == NULL & root->right_child == NULL)
+      score += root->chunk->upper_bound_sc;
+    else {
+      score += BPA_Upper_Bound(root->left_child);
+      score += BPA_Upper_Bound(root->right_child);
+    }
+  }
+
+  return score;
 }
 
 /* Function: MaxSubsequenceScore()
@@ -237,6 +368,7 @@ MaxSubsequenceScore(CM_t *cm, int W, float ***ret_max_sc)
  *                     extending from known pair of positions
  *           init_sc - initial score
  *           max_sc  - a matrix of maximum subsequence scores
+ *           cutoff  - minimum score threshold - used for pruning
  *
  * Returns:  PA_t    - partial alignment
  *
@@ -348,4 +480,80 @@ AstarExtension(CM_t *cm, char *dsq, int init_v, int init_j, int lower_d, int upp
   FreePQ(alignPQ);
 
   return child_pa;
+}
+
+/* Function: AstarBAlign()
+ * Author:   DLK
+ *
+ * Purpose:  An SCFG alignment algorithm equivalent to CYK,
+ *           but using A* to operate in the outside-to-inside
+ *           direction, extending from a given initial state
+ *           and position
+ *
+ *           Includes bifurcation
+ *
+ *           Slow and not intended for primary scanning use -
+ *           tends to recalculate values because alpha[v][j][d]
+ *           is not stored
+ *
+ * Args:     cm      - the covariance model
+ *           dsq     - the digitized sequence
+ *           align   - initial partial alignment
+ *           max_sc  - a matrix of maximu subsequence scores
+ *           cutoff  - minimum score threshold - used for pruning
+ *
+ * Returns:  align   - finished partial alignment
+ *           return value - 0 if alignment found, 1 otherwise
+ */
+
+int
+AstarBAlign(CM_t *cm, char *dsq, BPA_t *init_align, float **max_sc, float cutoff)
+{
+  int retval;
+  float total_sc;
+  BPA_t *align;
+  BPA_t *working;
+  PriorityQueue_t *alignPQ;
+
+  alignPQ = CreatePQ();
+  align = BPA_Copy(init_align);
+
+  BPA_Update(align);
+  total_sc = align->current_sc + align->upper_bound_sc;
+  if (total_sc > cutoff) { EnqueuePQ(alignPQ, align, total_sc); }
+
+  while (((align = DequeuePQ(alignPQ)) != NULL) && !(align->terminated)) {
+    /* Move working pointer to next unterminated chunk */
+    working = align;
+    while (working->chunk->terminated) {
+      if      ((working->left_child != NULL) && !working->left_child->terminated)
+        { working = working->left_child; }
+      else if ((working->right_child != NULL) && !working->right_child->terminated)
+        { working = working->right_child; }
+      else {
+	BPA_Update(align);
+	total_sc = align->current_sc + align->upper_bound_sc;
+	if (total_sc > cutoff) { EnqueuePQ(alignPQ, align, total_sc); }
+      }
+    }
+
+    
+  }
+
+  if (align != NULL) {
+    /* Top alignment is in align - store for return */
+    BPA_Free(init_align);
+    init_align = align;
+    retval = 0;
+  }
+  else {
+    retval = 1;
+  }
+
+  while ((align = DequeuePQ(alignPQ)) != NULL) {
+    BPA_Free(align);
+  }
+  FreePQ(alignPQ);
+
+  return retval;
 }
