@@ -244,12 +244,12 @@ MaxSubsequenceScore(CM_t *cm, int W, float ***ret_max_sc)
  */
 PA_t*
 AstarExtension(CM_t *cm, char *dsq, int init_v, int init_j, int lower_d, int upper_d,
-        float init_sc, float **max_sc)
+        float init_sc, float **max_sc, float cutoff)
 {
   int d;
   int i;
   int yoffset;
-  float tsc, esc;
+  float tsc, esc, total_sc;
   PA_t *pa;
   PA_t *child_pa;
 
@@ -266,7 +266,8 @@ AstarExtension(CM_t *cm, char *dsq, int init_v, int init_j, int lower_d, int upp
     pa->current_sc = init_sc;
     pa->upper_bound_sc = max_sc[init_v][d-2];	/* i and j already accounted for */
 
-    EnqueuePQ(alignPQ, pa, pa->current_sc + pa->upper_bound_sc);
+    total_sc = pa->current_sc + pa->upper_bound_sc;
+    if (total_sc > cutoff) { EnqueuePQ(alignPQ, pa, total_sc); }
   }
 
   while ((pa = DequeuePQ(alignPQ)) != NULL) {
@@ -294,8 +295,8 @@ AstarExtension(CM_t *cm, char *dsq, int init_v, int init_j, int lower_d, int upp
           esc = cm->esc[child_pa->cur_v][(int) (dsq[i]*Alphabet_size+dsq[child_pa->cur_j])];
         else
           esc = DegeneratePairScore(cm->esc[child_pa->cur_v],dsq[i],dsq[child_pa->cur_j]);
-	if (child_pa->cur_d < 2)
-	  esc = IMPOSSIBLE;
+	//if (child_pa->cur_d < 2)
+	  //esc = IMPOSSIBLE;
       }
       else if (cm->sttype[child_pa->cur_v] == ML_st || cm->sttype[child_pa->cur_v] == IL_st) {
         child_pa->cur_d--;
@@ -304,8 +305,8 @@ AstarExtension(CM_t *cm, char *dsq, int init_v, int init_j, int lower_d, int upp
           esc = cm->esc[child_pa->cur_v][(int) dsq[i]];
         else
           esc = DegenerateSingletScore(cm->esc[child_pa->cur_v],dsq[i]);
-	if (child_pa->cur_d < 1)
-	  esc = IMPOSSIBLE;
+	//if (child_pa->cur_d < 1)
+	  //esc = IMPOSSIBLE;
       }
       else if (cm->sttype[child_pa->cur_v] == MR_st || cm->sttype[child_pa->cur_v] == IR_st) {
         child_pa->cur_j--;
@@ -314,8 +315,8 @@ AstarExtension(CM_t *cm, char *dsq, int init_v, int init_j, int lower_d, int upp
           esc = cm->esc[child_pa->cur_v][(int) dsq[child_pa->cur_j]];
         else
           esc = DegenerateSingletScore(cm->esc[child_pa->cur_v],dsq[child_pa->cur_j]);
-	if (child_pa->cur_d < 1)
-	  esc = IMPOSSIBLE;
+	//if (child_pa->cur_d < 1)
+	  //esc = IMPOSSIBLE;
       }
       else if (cm->sttype[child_pa->cur_v] == E_st || cm->sttype[child_pa->cur_v] == B_st) {
 	esc = 0.0;
@@ -324,7 +325,8 @@ AstarExtension(CM_t *cm, char *dsq, int init_v, int init_j, int lower_d, int upp
       child_pa->current_sc = child_pa->current_sc + tsc + esc;
       child_pa->upper_bound_sc = max_sc[child_pa->cur_v][child_pa->cur_d-2];
 
-      EnqueuePQ(alignPQ, child_pa, child_pa->current_sc + child_pa->upper_bound_sc);
+      total_sc = child_pa->current_sc + child_pa->upper_bound_sc;
+      if (total_sc > cutoff) { EnqueuePQ(alignPQ, child_pa, total_sc); }
     }
 
     free(pa);

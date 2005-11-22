@@ -32,6 +32,6 @@ PA_t* PA_Copy(PA_t *orig);
 void MaxSubsequenceScore(CM_t *cm, int W, float ***ret_max_sc);
 
 PA_t* AstarExtension(CM_t *cm, char *dsq, int init_v, int init_j, int lower_d, int upper_d,
-    	float init_sc, float **max_sc);
+    	float init_sc, float **max_sc, float cutoff);
 
 #endif /* R_WHAT_H_INCLUDED */

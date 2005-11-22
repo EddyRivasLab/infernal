@@ -60,6 +60,7 @@ DequeuePQ(PriorityQueue_t *pq)
   rtn_ptr = pq->data[0];
   pq->n--;
   pq->data[0] = pq->data[pq->n];
+  pq->priority[0] = pq->priority[pq->n];
   HeapDown(pq->data,pq->priority,0,pq->n-1);
   return rtn_ptr;
 }
@@ -92,7 +93,7 @@ HeapUp(void **data, float *priority, int top, int bottom)
 
   if (bottom > top)
   {
-    parent = (top-1)/2;
+    parent = (bottom-1)/2;
     if (priority[parent] < priority[bottom])
     {
       tmp_ptr = data[parent]; data[parent] = data[bottom]; data[bottom] = tmp_ptr;
