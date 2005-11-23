@@ -25,8 +25,8 @@
 #include "prior.h"		/* mixture Dirichlet prior */
 #include "funcs.h"		/* external functions                   */
 #include "cm_eweight.h"         /* LSJ's entropy weighted functions ported
-				 * from HMMER2.4devl [by EPN]
-				 */
+				 * from HMMER2.4devl [by EPN] */
+
 static char banner[] = "cmbuild - build RNA covariance model from alignment";
 
 static char usage[]  = "\
@@ -45,8 +45,8 @@ static char experts[] = "\
    --rf           : use reference coordinate annotation to specify consensus\n\
    --gapthresh <x>: fraction of gaps to allow in a consensus column (0..1)\n\
    --informat <s> : specify input alignment is in format <s>, not Stockholm\n\
-   --bandp <f>    : tail loss prob for calc'ing W using bands [default: 1E-7]\n\
-   --elself <f>   : set EL self transition prob to <f> [df: 1.0]\n\
+   --bandp <x>    : tail loss prob for calc'ing W using bands [default: 1E-7]\n\
+   --elself <x>   : set EL self transition prob to <x> [df: 1.0]\n\
 \n\
  * sequence weighting options [default: GSC weighting]:\n\
    --wgiven       : use weights as annotated in alignment file\n\
@@ -55,8 +55,8 @@ static char experts[] = "\
 \n\
  * alternative effective sequence number strategies:\n\
    --effnone      : effective sequence number is just # of seqs [default]\n\
-   --effent       : entropy loss target (requires --eloss)\n\
-   --eloss <x>    : for --effent: set target loss [default: NONE]\n\
+   --effent       : entropy loss target\n\
+   --eloss <x>    : for --effent: set target loss to <x> [default: 0.54]\n\
 \n\   
  * verbose output files, useful for detailed information about the CM:\n\
    --cfile <f>    : save count vectors to file <f>\n\
@@ -253,11 +253,13 @@ main(int argc, char **argv)
   bandfile          = NULL;
   rndfile           = NULL;
   
-  eff_strategy      = EFF_NONE;          
+  eff_strategy      = EFF_NONE;
   eloss_set         = FALSE;
   eff_nseq_set      = FALSE;
   do_local          = FALSE;
   save_gamma        = FALSE;
+  eloss             = 0.54;  /* EPN - Empirically determined optimal eloss using RMARK 
+			      * benchmark */
 
   /* EPN 08.18.05 bandp used in BandBounds() for calculating W(W=dmax[0]) 
    *              Brief expt on effect of different bandp values in 
@@ -383,7 +385,7 @@ main(int argc, char **argv)
     if (eloss_set)
       printf("  mean target entropy loss:        %.2f bits\n", eloss);
     else
-      printf("  mean target entropy loss:        (default)\n");
+      printf("  mean target entropy loss:        %.2f bits [default]\n", eloss);
   }
 
 
@@ -471,17 +473,17 @@ main(int argc, char **argv)
 	   * Default entropy targets have not been tested.
 	   */
 	  if (eff_strategy == EFF_ENTROPY) {
-	    if (eloss_set == FALSE){
-	      Die("\
---effent: entropy loss targeting:\n\
-Default entropy loss targets are not available. \n\
-To use --effent you must set --eloss <x> explicitly, \n\
-in addition to selecting --effent.\n");
-	    }
-	    else{
-	      /*etarget = FEntropy(randomseq, Alphabet_size) - eloss;*/
-	      etarget = FEntropy(randomseq, MAXABET) - eloss;
-	    }
+	    /* 11.23.05
+	     * EPN Following line enforces an equiprobable 
+	     * background distribution for entropy weighting
+	     * (causing etarget to be unaffected by a null 
+	     * distribution read in with the --null option). 
+	     */
+	    etarget = 2.0 - eloss;
+	    /* 11.23.05 - Below is the old strategy. Admittedly,
+	     * not sure which is 'right'. 
+	     */
+	    /*etarget = FEntropy(randomseq, MAXABET) - eloss;*/
 	  }
 	} /* -- this ends the post-alphabet initialization section -- */
       /* End of effective seq number port code block. */
@@ -556,7 +558,7 @@ in addition to selecting --effent.\n");
 
 	CMRescale(cm, eff_nseq / (float) msa->nseq);
 	eff_nseq_set = TRUE;
-	printf("done. [%.1f]\n", eff_nseq);
+	printf("done. [%.2f]\n", eff_nseq);
       }/* End of effective seq number port code block. */
       
       /* Convert to probabilities, and the global log-odds form

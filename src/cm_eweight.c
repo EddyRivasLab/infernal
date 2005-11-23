@@ -96,7 +96,8 @@ CM_Eweight(CM_t *cm, Prior_t *pri, float numb_seqs,
 
   /* Copy model match state probabilities into our temporary counts[]
    * (Current implementation only considers MATP_MP as a match state,
-   *  for MATP nodes, not MATP_ML or MATP_MR).
+   *  for MATP nodes, not MATP_ML or MATP_MR (MATL_ML and MATR_MR are
+   *  also considered match states)).
    * For nodes i with no match state (BEGL, BEGR, ROOT, BIF and END)
    * ent[i] is left as its initialized value; 0.0. This effectively
    * eliminates any contribution to 'current' from such nodes.
@@ -176,9 +177,10 @@ CM_Eweight(CM_t *cm, Prior_t *pri, float numb_seqs,
       count++;
       nmatch_cols = 0;
     
-    /* Emergency brake in case there is a bug in our binary search */
+    /* Emergency brake in case there is a bug in our binary search.
+     * Its more likely that the target entropy is unattainable. */
     if(count > 50){
-      printf("\nBUG: Problem with adjusting the model entropy. Please report.\n");
+      printf("\nThe requested target entropy of %f is unattainable. [scale=%.2f] \n");
       break;
     }
 
