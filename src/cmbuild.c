@@ -54,9 +54,9 @@ static char experts[] = "\
    --wgsc         : use Gerstein/Sonnhammer/Chothia tree weights [default]\n\
 \n\
  * alternative effective sequence number strategies:\n\
-   --effnone      : effective sequence number is just # of seqs [default]\n\
-   --effent       : entropy loss target\n\
+   --effent       : entropy loss target [default]\n\
    --eloss <x>    : for --effent: set target loss to <x> [default: 0.54]\n\
+   --effnone      : effective sequence number is just # of seqs\n\
 \n\   
  * verbose output files, useful for detailed information about the CM:\n\
    --cfile <f>    : save count vectors to file <f>\n\
@@ -159,7 +159,7 @@ main(int argc, char **argv)
     WGT_GIVEN, WGT_NONE, WGT_GSC } weight_strategy;
 
   enum {			/* Effective sequence number strategy:        */
-    EFF_NOTSETYET, 		/* (can't set default 'til alphabet known)    */
+    EFF_NOTSETYET,
     EFF_NONE, 			/* --effnone: eff_nseq is nseq                */
     EFF_ENTROPY                /* --effent:  entropy loss target             */
     /*EFF_RELENTROPY               --effrelent:  relative entropy loss target */
@@ -196,7 +196,6 @@ main(int argc, char **argv)
   int      be_ignorant;         /* TRUE to strip all bp information from the input
 				 * consensus structure.
 				 */
-
   /* EPN 10.19.05 Added --null option (analagous to HMMER2.4 --null) */
   char *rndfile;		/* random sequence model file to read    */
 
@@ -255,7 +254,7 @@ main(int argc, char **argv)
   bandfile          = NULL;
   rndfile           = NULL;
   
-  eff_strategy      = EFF_NONE;
+  eff_strategy      = EFF_ENTROPY; /* 11.28.05 EPN entropy weighting is default. */
   eloss_set         = FALSE;
   eff_nseq_set      = FALSE;
   do_local          = FALSE;
@@ -267,7 +266,6 @@ main(int argc, char **argv)
    *              Brief expt on effect of different bandp values in 
    *              ~nawrocki/notebook/5_0818_inf_cmbuild_bands/00LOG
    */
-  /* bandp             = 0.0001; */
   bandp             = 0.0000001; 
   safe_windowlen    = 0;
   
@@ -414,6 +412,33 @@ main(int argc, char **argv)
 	 cmfile, do_append? "[appending]" : "");
   printf("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n\n");
 
+      /* EPN 11.07.05 - EFF_ENTROPY effective sequence number strategy
+       *                ported from HMMER 2.4devl. 
+       */
+      
+  /* Set up the null/random seq model */
+  if (rndfile == NULL)  CMDefaultNullModel(randomseq);
+  else                  CMReadNullModel(rndfile, randomseq);
+  
+  /* If we're using the entropy-target strategy for effective
+   * sequence number calculation, set the default target entropy loss.
+   */
+  if (eff_strategy == EFF_ENTROPY) 
+    {
+      /* 11.23.05
+       * EPN Following line enforces an equiprobable 
+       * background distribution for entropy weighting
+       * (causing etarget to be unaffected by a null 
+       * distribution read in with the --null option). 
+       */
+      etarget = 2.0 - eloss;
+      /* 11.23.05 - Below is the old strategy. Admittedly,
+       * not sure which (if either) is 'right'. 
+       */
+      /*etarget = FEntropy(randomseq, MAXABET) - eloss;*/
+    }
+  /* End of effective seq number port code block. */
+
   /*********************************************** 
    * Get alignment(s), build CMs one at a time
    ***********************************************/
@@ -450,6 +475,8 @@ main(int argc, char **argv)
       if (be_ignorant)
 	StripWUSS(msa->ss_cons);
 
+      eff_nseq_set = FALSE;
+
       /* Sequence weighting. Default: GSC weights. If WGT_GIVEN,
        * do nothing.
        */
@@ -464,44 +491,6 @@ main(int argc, char **argv)
 	  GSCWeights(msa->aseq, msa->nseq, msa->alen, msa->wgt);
 	  printf("done.\n");
 	}
-
-      /* EPN 11.07.05 - EFF_ENTROPY effective sequence number strategy
-       *                ported from HMMER 2.4devl. 
-       */
-      
-      /* --- Post-alphabet initialization section ---
-       * NOT SURE IF THIS IS NECESSARY (only RNA?), STOLEN FROM HMMER 
-       * (This code must be delayed until after we've seen the
-       * first alignment, because we have to see the alphabet type first.)
-       */
-      eff_nseq_set = FALSE;
-
-      if(nali == 0)
-	{
-	  /* Set up the null/random seq model */
-	  if (rndfile == NULL)  CMDefaultNullModel(randomseq);
-	  else                  CMReadNullModel(rndfile, randomseq);
-
-	  /* If we're using the entropy-target strategy for effective
-	   * sequence number calculation, and we haven't manually set the
-	   * default target entropy loss, do it now. 
-	   * Default entropy targets have not been tested.
-	   */
-	  if (eff_strategy == EFF_ENTROPY) {
-	    /* 11.23.05
-	     * EPN Following line enforces an equiprobable 
-	     * background distribution for entropy weighting
-	     * (causing etarget to be unaffected by a null 
-	     * distribution read in with the --null option). 
-	     */
-	    etarget = 2.0 - eloss;
-	    /* 11.23.05 - Below is the old strategy. Admittedly,
-	     * not sure which is 'right'. 
-	     */
-	    /*etarget = FEntropy(randomseq, MAXABET) - eloss;*/
-	  }
-	} /* -- this ends the post-alphabet initialization section -- */
-      /* End of effective seq number port code block. */
 
       /* Digitize the alignment: this takes care of
        * case sensivitity (A vs. a), speeds all future
@@ -561,7 +550,7 @@ main(int argc, char **argv)
        *                ported from HMMER 2.4devl. 
        */
       
-      /* Effective sequence number calculation: post-architecture strategies.
+      /* Effective sequence number calculation.
        * (if we don't have eff_nseq yet, calculate it now).
        */
       if (! eff_nseq_set) {
