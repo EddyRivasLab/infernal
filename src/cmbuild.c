@@ -106,6 +106,7 @@ static struct opt_s OPTIONS[] = {
   { "--null",      FALSE, sqdARG_STRING },
   { "--effnone", FALSE, sqdARG_NONE },
   { "--effent",  FALSE, sqdARG_NONE },
+  /*{ "--effrelent",  FALSE, sqdARG_NONE },*/
   { "--eloss",   FALSE, sqdARG_FLOAT },
   { "--elself",    FALSE, sqdARG_FLOAT},
 }
@@ -160,7 +161,8 @@ main(int argc, char **argv)
   enum {			/* Effective sequence number strategy:        */
     EFF_NOTSETYET, 		/* (can't set default 'til alphabet known)    */
     EFF_NONE, 			/* --effnone: eff_nseq is nseq                */
-    EFF_ENTROPY                 /* --effent:  entropy loss target             */
+    EFF_ENTROPY                /* --effent:  entropy loss target             */
+    /*EFF_RELENTROPY               --effrelent:  relative entropy loss target */
   } eff_strategy;
 
   FILE *ofp;                    /* filehandle to dump info to */
@@ -300,6 +302,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--ignorant")  == 0) be_ignorant       = TRUE;
     else if (strcmp(optname, "--null")      == 0) rndfile           = optarg;
     else if (strcmp(optname, "--effent")  == 0) eff_strategy  = EFF_ENTROPY;
+    /*else if (strcmp(optname, "--effrelent")  == 0) eff_strategy  = EFF_RELENTROPY;*/
     else if (strcmp(optname, "--effnone") == 0) eff_strategy  = EFF_NONE;
     else if (strcmp(optname, "--eloss")   == 0) { eloss       = atof(optarg); eloss_set  = TRUE; }
     else if  (strcmp(optname, "--elself")   == 0) { 
@@ -388,6 +391,18 @@ main(int argc, char **argv)
       printf("  mean target entropy loss:        %.2f bits [default]\n", eloss);
   }
 
+  /*EPN 11.28.05
+   *Uncomment code below to use relative entropy weighting (identical 
+   *to entropy weighting for equiprobable null distribution.
+   *
+   * else if (eff_strategy == EFF_RELENTROPY) {
+   * puts("relative entropy targeting");
+   * if (eloss_set)
+   *  printf("  mean target relative entropy loss:  %.2f bits\n", eloss);
+   * else
+   * printf("  mean target relative entropy loss:  %.2f bits [default]\n", eloss);
+   * }
+   */
 
   printf("Sequence weighting strategy:       ");
   switch (weight_strategy) {
@@ -554,7 +569,16 @@ main(int argc, char **argv)
 	  printf("%-40s ... ", "Determining eff seq # by entropy target");
 	  fflush(stdout);
 	  eff_nseq = CM_Eweight(cm, pri, (float) msa->nseq, etarget);
-	} else Die("no effective seq #: shouldn't happen");
+	}
+	/*EPN 11.28.05
+	 * Uncomment this block for relative entropy weighting.
+	 * else if (eff_strategy == EFF_RELENTROPY) {
+	 * printf("%-40s ... ", "Determining eff seq # by relative entropy target");
+	 * fflush(stdout);
+	 * eff_nseq = CM_Eweight_RE(cm, pri, (float) msa->nseq, eloss, randomseq);
+	 * }
+	 */
+	else Die("no effective seq #: shouldn't happen");
 
 	CMRescale(cm, eff_nseq / (float) msa->nseq);
 	eff_nseq_set = TRUE;

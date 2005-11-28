@@ -30,3 +30,6 @@ extern double CM_Eweight(CM_t *cm,  Prior_t *pri,
 
 extern void ModelContent(float *ent1, float *ent2, int M);
 extern void CMRescale(CM_t *hmm, float scale);
+extern double CM_Eweight_RE(CM_t *cm, Prior_t *pri, float numb_seqs, 
+			    float target_relent, float *randomseq);
+extern double DRelEntropy(double *p, double *f, int n);
