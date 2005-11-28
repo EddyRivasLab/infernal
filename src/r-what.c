@@ -400,6 +400,7 @@ AstarExtension(CM_t *cm, char *dsq, int init_v, int init_j, int lower_d, int upp
 
     total_sc = pa->current_sc + pa->upper_bound_sc;
     if (total_sc > cutoff) { EnqueuePQ(alignPQ, pa, total_sc); }
+    else { free(pa); }
   }
 
   while ((pa = DequeuePQ(alignPQ)) != NULL) {
@@ -459,6 +460,7 @@ AstarExtension(CM_t *cm, char *dsq, int init_v, int init_j, int lower_d, int upp
 
       total_sc = child_pa->current_sc + child_pa->upper_bound_sc;
       if (total_sc > cutoff) { EnqueuePQ(alignPQ, child_pa, total_sc); }
+      else { free(child_pa); }
     }
 
     free(pa);
@@ -510,9 +512,13 @@ int
 AstarBAlign(CM_t *cm, char *dsq, BPA_t *init_align, float **max_sc, float cutoff)
 {
   int retval;
-  float total_sc;
+  int i,d;
+  int yoffset;
+  float tsc, esc, total_sc;
   BPA_t *align;
   BPA_t *working;
+  BPA_t *child_align;
+  BPA_t *child_working;
   PriorityQueue_t *alignPQ;
 
   alignPQ = CreatePQ();
@@ -521,6 +527,7 @@ AstarBAlign(CM_t *cm, char *dsq, BPA_t *init_align, float **max_sc, float cutoff
   BPA_Update(align);
   total_sc = align->current_sc + align->upper_bound_sc;
   if (total_sc > cutoff) { EnqueuePQ(alignPQ, align, total_sc); }
+  else { BPA_Free(align); }
 
   while (((align = DequeuePQ(alignPQ)) != NULL) && !(align->terminated)) {
     /* Move working pointer to next unterminated chunk */
@@ -534,10 +541,141 @@ AstarBAlign(CM_t *cm, char *dsq, BPA_t *init_align, float **max_sc, float cutoff
 	BPA_Update(align);
 	total_sc = align->current_sc + align->upper_bound_sc;
 	if (total_sc > cutoff) { EnqueuePQ(alignPQ, align, total_sc); }
+        else { BPA_Free(align); }
       }
     }
 
-    
+    /* Extend chunk */
+    if (cm->sttype[working->chunk->cur_v] == E_st) {
+      /* terminate chunk */
+      working->chunk->terminated = 1;
+      working->terminated = 0;
+      BPA_Update(align);
+      total_sc = align->current_sc + align->upper_bound_sc;
+      if (total_sc > cutoff) { EnqueuePQ(alignPQ, align, total_sc); }
+      else { BPA_Free(align); }
+    }
+    else if (cm->sttype[working->chunk->cur_v] == B_st) {
+      /* bifurcate */
+      for (d=0; d<=working->chunk->cur_v; d++) {
+        child_align = BPA_Copy(align);
+        child_working = child_align;
+        while (child_working->chunk->terminated) {
+          if      ((child_working->left_child != NULL) && !child_working->left_child->terminated)
+            { child_working = child_working->left_child; }
+          else if ((child_working->right_child != NULL) && !child_working->right_child->terminated)
+            { child_working = child_working->right_child; }
+          else {
+            fprintf(stderr,"WARNING: copy doesn't match original!\n");
+            exit(1);
+          }
+        }
+
+        child_working->terminated = 1;
+        /* Allocate new memory */
+        child_working->left_child = malloc(sizeof(BPA_t));
+        child_working->left_child->chunk = malloc(sizeof(PA_t));
+        child_working->left_child->left_child = NULL;
+        child_working->left_child->right_child = NULL;
+        child_working->right_child = malloc(sizeof(BPA_t));
+        child_working->right_child->chunk = malloc(sizeof(PA_t));
+        child_working->right_child->left_child = NULL;
+        child_working->right_child->right_child = NULL;
+
+        /* Initialize left and right children */
+        /* Note that the initial j,d coordinates are outside the sequence chunk   *
+         * actually covered by v and the states beneath it on the parse tree      *
+         * When reporting, use init_i+1 and init_j-1 (with care!)                 */
+        child_working->left_child->chunk->init_v = cm->cfirst[child_working->chunk->cur_v];
+        child_working->left_child->chunk->cur_v  = cm->cfirst[child_working->chunk->cur_v];
+        child_working->left_child->chunk->init_j = child_working->chunk->cur_j - d + 2;
+        child_working->left_child->chunk->cur_j  = child_working->chunk->cur_j - d + 2;
+        child_working->left_child->chunk->init_d = child_working->chunk->cur_d - d + 2;
+        child_working->left_child->chunk->cur_d  = child_working->chunk->cur_d - d + 2;
+
+        child_working->right_child->chunk->init_v = cm->cnum[child_working->chunk->cur_v];
+        child_working->right_child->chunk->cur_v  = cm->cnum[child_working->chunk->cur_v];
+        child_working->right_child->chunk->init_j = child_working->chunk->cur_j;
+        child_working->right_child->chunk->cur_j  = child_working->chunk->cur_j;
+        child_working->right_child->chunk->init_d = d;
+        child_working->right_child->chunk->cur_d  = d;
+
+        child_working->left_child->chunk->current_sc = 0.0;
+        child_working->right_child->chunk->current_sc = 0.0;
+        child_working->left_child->chunk->upper_bound_sc =
+          max_sc[child_working->left_child->chunk->cur_v][child_working->left_child->chunk->cur_d - 2];
+        child_working->right_child->chunk->upper_bound_sc =
+          max_sc[child_working->right_child->chunk->cur_v][child_working->right_child->chunk->cur_d - 2];
+
+        BPA_Update(child_align);
+        total_sc = child_align->chunk->current_sc + child_align->chunk->upper_bound_sc;
+        if (total_sc > cutoff) { EnqueuePQ(alignPQ, child_align, total_sc); }
+        else { BPA_Free(child_align); }
+      }
+      BPA_Free(align);
+    }
+    else {
+      /* simple extension */
+      for (yoffset = 0; yoffset < cm->cnum[working->chunk->cur_v]; yoffset++) {
+        child_align = BPA_Copy(align);
+        child_working = child_align;
+        while (child_working->chunk->terminated) {
+          if      ((child_working->left_child != NULL) && !child_working->left_child->terminated)
+            { child_working = child_working->left_child; }
+          else if ((child_working->right_child != NULL) && !child_working->right_child->terminated)
+            { child_working = child_working->right_child; }
+          else {
+            fprintf(stderr,"WARNING: copy doesn't match orignal!\n");
+            exit(1);
+          }
+        }
+      
+        /* Calculate tsc and new v */
+        tsc = cm->tsc[working->chunk->cur_v][yoffset];
+        child_working->chunk->cur_v = cm->cfirst[working->chunk->cur_v] + yoffset;
+
+        /* Get new j,d and calculate esc */
+        if      (cm->sttype[child_working->chunk->cur_v] == D_st ||
+                 cm->sttype[child_working->chunk->cur_v] == E_st ||
+                 cm->sttype[child_working->chunk->cur_v] == B_st) {
+          esc = 0.0;
+        } 
+        else if (cm->sttype[child_working->chunk->cur_v] == MP_st) {
+          child_working->chunk->cur_j--;
+          child_working->chunk->cur_d -= 2;
+          i = child_working->chunk->cur_j - child_working->chunk->cur_d + 1;
+          if (dsq[i] < Alphabet_size && dsq[child_working->chunk->cur_j] < Alphabet_size)
+            esc = cm->esc[child_working->chunk->cur_v][(int) (dsq[i]*Alphabet_size+dsq[child_working->chunk->cur_j])];
+          else
+            esc = DegeneratePairScore(cm->esc[child_working->chunk->cur_v],dsq[i],dsq[child_working->chunk->cur_j]);
+        }
+        else if (cm->sttype[child_working->chunk->cur_v] == ML_st || cm->sttype[child_working->chunk->cur_v] == IL_st) {
+          child_working->chunk->cur_d--;
+          i = child_working->chunk->cur_j - child_working->chunk->cur_d + 1;
+          if (dsq[i] < Alphabet_size)
+            esc = cm->esc[child_working->chunk->cur_v][(int) dsq[i]];
+          else
+            esc = DegenerateSingletScore(cm->esc[child_working->chunk->cur_v],dsq[i]);
+        }
+        else if (cm->sttype[child_working->chunk->cur_v] == MR_st || cm->sttype[child_working->chunk->cur_v] == IR_st) {
+          child_working->chunk->cur_j--;
+          child_working->chunk->cur_d--;
+          if (dsq[child_working->chunk->cur_j] < Alphabet_size)
+            esc = cm->esc[child_working->chunk->cur_v][(int) dsq[child_working->chunk->cur_j]];
+          else
+            esc = DegenerateSingletScore(cm->esc[child_working->chunk->cur_v],dsq[child_working->chunk->cur_j]);
+        }
+
+        child_working->chunk->current_sc = child_working->chunk->current_sc + tsc + esc;
+        child_working->chunk->upper_bound_sc = max_sc[child_working->chunk->cur_v][child_working->chunk->cur_d-2];
+
+        BPA_Update(align);
+        total_sc = child_align->chunk->current_sc + child_align->chunk->upper_bound_sc;
+        if (total_sc > cutoff) { EnqueuePQ(alignPQ, child_align, total_sc); }
+        else { BPA_Free(child_align); }
+      }
+      BPA_Free(align);
+    }
   }
 
   if (align != NULL) {
