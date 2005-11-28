@@ -46,7 +46,7 @@ static char experts[] = "\
    --gapthresh <x>: fraction of gaps to allow in a consensus column (0..1)\n\
    --informat <s> : specify input alignment is in format <s>, not Stockholm\n\
    --bandp <x>    : tail loss prob for calc'ing W using bands [default: 1E-7]\n\
-   --elself <x>   : set EL self transition prob to <x> [df: 1.0]\n\
+   --elself <x>   : set EL self transition prob to <x> [df: 0.94]\n\
 \n\
  * sequence weighting options [default: GSC weighting]:\n\
    --wgiven       : use weights as annotated in alignment file\n\
@@ -271,7 +271,9 @@ main(int argc, char **argv)
   
   be_ignorant       = FALSE;	/* default: leave in bp information */
 
-  el_selfprob     = 1.0;
+  el_selfprob     = 0.94;  /* EPN 11.28.05
+			    * Empirically determined optimal 
+			    * eloss using RMARK benchmark */
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
