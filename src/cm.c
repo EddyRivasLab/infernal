@@ -292,10 +292,10 @@ CMReadNullModel(char *rndfile, float *null)
 	x++;
       }
   }
-  if(sum != 1.) {
-    Die("%s is not in CM null model file format.\nThere are not 4 background probabilities that sum to exactly 1.0", rndfile);
-  }    
-
+  /*fragile*/
+  if(sum > 1.00001 || sum < 0.99999)
+    Die ("%s is not in CM null model file format.\nThere are not 4 background probabilities that sum to exactly 1.0", rndfile);
+  FNorm(null, Alphabet_size);
   fclose(fp);
   return;
 
