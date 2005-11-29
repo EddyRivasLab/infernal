@@ -414,13 +414,9 @@ main(int argc, char **argv)
 	 cmfile, do_append? "[appending]" : "");
   printf("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n\n");
 
-      /* EPN 11.07.05 - EFF_ENTROPY effective sequence number strategy
-       *                ported from HMMER 2.4devl. 
-       */
-      
-  /* Set up the null/random seq model */
-  if (rndfile == NULL)  CMDefaultNullModel(randomseq);
-  else                  CMReadNullModel(rndfile, randomseq);
+  /* EPN 11.07.05 - EFF_ENTROPY effective sequence number strategy
+   *                ported from HMMER 2.4devl. 
+   */
   
   /* If we're using the entropy-target strategy for effective
    * sequence number calculation, set the default target entropy loss.
@@ -449,7 +445,7 @@ main(int argc, char **argv)
   while ((msa = MSAFileRead(afp)) != NULL)
     {
       avlen = (int) MSAAverageSequenceLength(msa);
-
+      
       /* Print some stuff about what we're about to do.
        */
       if (msa->name != NULL) printf("Alignment:           %s\n",  msa->name);
@@ -478,6 +474,20 @@ main(int argc, char **argv)
 	StripWUSS(msa->ss_cons);
 
       eff_nseq_set = FALSE;
+
+      /* --- Post-alphabet initialization section ---
+       * If we do this before we've seen the first alignment, then
+       * Alphabet_size is uninitialized, and CMReadNullModel() won't
+       * work. Not a good reason I know, assuming our Alphabet_size
+       * is always 4... 
+       * A consequence of stealing code from HMMER.
+       */
+      if(nali == 0)
+	{
+	  /* Set up the null/random seq model */
+	  if (rndfile == NULL)  CMDefaultNullModel(randomseq);
+	  else                  CMReadNullModel(rndfile, randomseq);
+	}
 
       /* Sequence weighting. Default: GSC weights. If WGT_GIVEN,
        * do nothing.
@@ -613,24 +623,25 @@ main(int argc, char **argv)
       cm->W = dmax[0];
       printf("done. [%d]\n", cm->W);
 
-      /*11.15.05 EPN Set the EL self transition score, by default its 0.*/
+      /*11.15.05 EPN Set the EL self transition score, by default its log2(0.94).*/
       cm->el_selfsc = sreLOG2(el_selfprob);
-      /* Very hacky. We want to avoid underflow errors. structs.h explains
+      /* Next line is very hacky. 
+       * We want to avoid underflow errors. structs.h explains
        * how IMPOSSIBLE must be > -FLT_MAX/3 so we can add it together 3 
        * times with an underflow. Here, we may potentially be adding el_selfsc
        * together W times. (And W can change in cmsearch or cmalign). Here
        * we'll ensure we can multiply el_selfsc by 2W and still avoid underflows,
        * and we'll check in cmsearch to make sure that W * cm->el_selfsc < (IMPOSSIBLE*3)
-       * and we'll die if it isn't. We shouldn't face this situation
+       * and we'll die if it isn't. We shouldn't face this in cmsearch situation
        * unless the user wants to set W as something greater than twice what
        * it is set as in the .cm file.
        */
       if(cm->el_selfsc < (IMPOSSIBLE/(2 * cm->W)))
 	{
-	  printf("resetting cm->el_selfsc\n");
-	  printf("old : %f\n", cm->el_selfsc);
+	  /*printf("resetting cm->el_selfsc\n");*/
+	  /*printf("old : %f\n", cm->el_selfsc);*/
 	  cm->el_selfsc = (IMPOSSIBLE/(2 * cm->W));
-	  printf("new : %f\n", cm->el_selfsc);
+	  /*printf("new : %f\n", cm->el_selfsc);*/
 	}
       
       /* Give the model a name (mandatory in the CM file).
