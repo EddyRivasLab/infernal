@@ -269,6 +269,7 @@ CMReadNullModel(char *rndfile, float *null)
 
   buf = NULL;
   n   = 0;
+  sum = 0.;
   /* Expects a file with 4 lines that don't begin with "# ".
    * The first token of each of these 4 lines is read as 
    * the background probability of A, C, G, and U (in that order)
