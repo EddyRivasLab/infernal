@@ -400,10 +400,15 @@ MiniScan(CM_t *cm, char *dsq, int L, int W, int wordlen, float word_sc,
   int   *hit_inner_i;		/* Inner left seq. positions */
   int   *hit_outer_j;		/* Outer right seq. positions */
   int   *hit_inner_j;		/* Inner right seq. positions */
-  float *hit_sc;			/* Scores of hits */
-  int    alloc_nhits = 10;	/* Amount of space allocated */
+  float *hit_sc;		/* Scores of hits */
+  int   *hit_index;		/* index of sorted hits */
+  int    alloc_nhits = 1000;	/* Amount of space allocated */
   int    x;			/* counter variable */
   int    duplicate;		/* TRUE/FALSE: hit is already in list */
+
+  float  max_sc;
+  int    max_i;
+  int    tmp,y;
 
   int iscored, jscored;		/* TRUE/FALSE: has residue i/j been emitted yet */
   int temp_v, temp_i, temp_j, temp_d;
@@ -418,6 +423,7 @@ MiniScan(CM_t *cm, char *dsq, int L, int W, int wordlen, float word_sc,
 
   for (j=1; j<=L; j++)
   {
+fprintf(stderr,"%d ",j);
     for (v=cm->M-1; v>0; v--)
     {
       if (cm->stid[v] == MATP_MP || cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR)
@@ -461,14 +467,14 @@ MiniScan(CM_t *cm, char *dsq, int L, int W, int wordlen, float word_sc,
               x = 0;
               while (x<nhits && !duplicate)
               {
-                if (outer_v == hit_outer_v[x])
-                  if (inner_v == hit_inner_v[x])
-                    if (outer_i == hit_outer_i[x])
-                      if (inner_i == hit_inner_i[x])
-                        if (outer_j == hit_outer_j[x])
-                          if (inner_j == hit_inner_j[x])
+                if (outer_i == hit_outer_i[x])
+                  if (inner_i == hit_inner_i[x])
+                    if (outer_j == hit_outer_j[x])
+                      if (inner_j == hit_inner_j[x])
+                        if (outer_v == hit_outer_v[x])
+                          if (inner_v == hit_inner_v[x])
                             duplicate = TRUE;
-                            x++;
+                x++;
               }
 
               if (! duplicate)
@@ -485,14 +491,14 @@ MiniScan(CM_t *cm, char *dsq, int L, int W, int wordlen, float word_sc,
 
                 if (nhits == alloc_nhits)
                 {
-                  hit_outer_v = ReallocOrDie(hit_outer_v, sizeof(int)   * (alloc_nhits + 10));
-                  hit_inner_v = ReallocOrDie(hit_inner_v, sizeof(int)   * (alloc_nhits + 10));
-                  hit_outer_i = ReallocOrDie(hit_outer_i, sizeof(int)   * (alloc_nhits + 10));
-                  hit_inner_i = ReallocOrDie(hit_inner_i, sizeof(int)   * (alloc_nhits + 10));
-                  hit_outer_j = ReallocOrDie(hit_outer_j, sizeof(int)   * (alloc_nhits + 10));
-                  hit_inner_j = ReallocOrDie(hit_inner_j, sizeof(int)   * (alloc_nhits + 10));
-                  hit_sc      = ReallocOrDie(hit_sc,      sizeof(float) * (alloc_nhits + 10));
-                  alloc_nhits += 10;
+                  hit_outer_v = ReallocOrDie(hit_outer_v, sizeof(int)   * (alloc_nhits + 1000));
+                  hit_inner_v = ReallocOrDie(hit_inner_v, sizeof(int)   * (alloc_nhits + 1000));
+                  hit_outer_i = ReallocOrDie(hit_outer_i, sizeof(int)   * (alloc_nhits + 1000));
+                  hit_inner_i = ReallocOrDie(hit_inner_i, sizeof(int)   * (alloc_nhits + 1000));
+                  hit_outer_j = ReallocOrDie(hit_outer_j, sizeof(int)   * (alloc_nhits + 1000));
+                  hit_inner_j = ReallocOrDie(hit_inner_j, sizeof(int)   * (alloc_nhits + 1000));
+                  hit_sc      = ReallocOrDie(hit_sc,      sizeof(float) * (alloc_nhits + 1000));
+                  alloc_nhits += 1000;
                 }
               }
             }
@@ -501,13 +507,69 @@ MiniScan(CM_t *cm, char *dsq, int L, int W, int wordlen, float word_sc,
       }
     }
   }
-  printf("outer v\touter i\touter j\t");
-  printf("inner v\tinner i\tinner j\ttotal sc\n");
-  for (x = 0; x<nhits; x++)
+  printf("outer v\tinner v\touter i\tinner i\t");
+  printf("inner j\touter j\ttotal sc\n");
+
+  hit_index = malloc(sizeof(int) * nhits);
+  for (x=0; x<nhits; x++) { hit_index[x] = x; }
+  i=0;
+  while (i<nhits)
   {
-    printf("%d\t%d\t%d\t",hit_outer_v[x],hit_outer_i[x],hit_outer_j[x]);
-    printf("%d\t%d\t%d\t%.3f\n",hit_inner_v[x],hit_inner_i[x],hit_inner_j[x],hit_sc[x]);
+    /* Select top scoring hit and print it */
+    max_i  = i;
+    max_sc = hit_sc[hit_index[i]];
+    for (j=i+1; j<nhits; j++)
+    {
+      if (hit_sc[hit_index[j]] > max_sc)
+      {
+	max_sc = hit_sc[hit_index[j]];
+	max_i  = j;
+      }
+    }
+    tmp = hit_index[i];
+    hit_index[i] = hit_index[max_i];
+    hit_index[max_i] = tmp;
+
+    x = hit_index[i];
+    printf("%d\t%d\t",      hit_outer_v[x],hit_inner_v[x]);
+    printf("%d\t%d\t",      hit_outer_i[x],hit_inner_i[x]);
+    printf("%d\t%d\t%.3f\n",hit_inner_j[x],hit_outer_j[x],hit_sc[x]);
+
+    /* Eliminate lower-scoring hits that overlap */
+    for (j=i+1; j<nhits; j++)
+    {
+      y = hit_index[j];
+      /* Lazy overlap checking! 
+       * Should also test for a segment of the lower hit completely surrounding
+       * a segment of the higher hit
+       */
+      if ( (hit_outer_i[y] >= hit_outer_i[x] && hit_outer_i[y] <= hit_inner_i[x] ) ||
+           (hit_inner_i[y] >= hit_outer_i[x] && hit_inner_i[y] <= hit_inner_i[x] ) ||
+           (hit_inner_j[y] >= hit_outer_i[x] && hit_inner_j[y] <= hit_inner_i[x] ) ||
+           (hit_outer_j[y] >= hit_outer_i[x] && hit_outer_j[y] <= hit_inner_i[x] ) ||
+           (hit_outer_i[y] >= hit_inner_j[x] && hit_outer_i[y] <= hit_outer_j[x] ) ||
+           (hit_inner_i[y] >= hit_inner_j[x] && hit_inner_i[y] <= hit_outer_j[x] ) ||
+           (hit_inner_j[y] >= hit_inner_j[x] && hit_inner_j[y] <= hit_outer_j[x] ) ||
+           (hit_outer_j[y] >= hit_inner_j[x] && hit_outer_j[y] <= hit_outer_j[x] )  )
+      {
+	tmp = hit_index[j];
+	hit_index[j] = hit_index[nhits-1];
+	hit_index[nhits-1] = tmp;
+	nhits--;
+	j--;	/*Back up and check the one we just swapped in */
+      }
+    }
+    i++;
   }
+  
+  free(hit_outer_v);
+  free(hit_inner_v);
+  free(hit_outer_i);
+  free(hit_inner_i);
+  free(hit_outer_j);
+  free(hit_inner_j);
+  free(hit_sc);
+  free(hit_index);
 
   return;
 }
@@ -543,7 +605,7 @@ main(int argc, char **argv)
   format = SQFILE_UNKNOWN;
   windowlen = 200;
   dropoff_sc = -10;
-  report_sc = 10;
+  report_sc = 0;
   word_sc = IMPOSSIBLE;
   wordlen = 4;
   do_revcomp = TRUE;
@@ -593,7 +655,7 @@ main(int argc, char **argv)
     dsq = DigitizeSequence(seq, sqinfo.len);
 
     if (! reversed) printf("sequence: %s\n", sqinfo.name);
-    else            printf("reversed sequence: %s\n", sqinfo.name);
+    else            printf("reversed sequence: %s %d\n", sqinfo.name, sqinfo.len);
     MiniScan(cm, dsq, sqinfo.len, windowlen, wordlen, word_sc, dropoff_sc, report_sc);
 
     free(dsq);
