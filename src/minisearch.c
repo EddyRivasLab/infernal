@@ -413,6 +413,8 @@ MiniScan(CM_t *cm, char *dsq, int L, int W, int wordlen, float word_sc,
   int iscored, jscored;		/* TRUE/FALSE: has residue i/j been emitted yet */
   int temp_v, temp_i, temp_j, temp_d;
 
+  int    duplicate_low_index;	/* Start looking for duplicates here; below this is impossible */
+
   hit_outer_v = MallocOrDie(sizeof(int)   * alloc_nhits);
   hit_inner_v = MallocOrDie(sizeof(int)   * alloc_nhits);
   hit_outer_i = MallocOrDie(sizeof(int)   * alloc_nhits);
@@ -421,9 +423,9 @@ MiniScan(CM_t *cm, char *dsq, int L, int W, int wordlen, float word_sc,
   hit_inner_j = MallocOrDie(sizeof(int)   * alloc_nhits);
   hit_sc      = MallocOrDie(sizeof(float) * alloc_nhits);
 
+  duplicate_low_index = 0;
   for (j=1; j<=L; j++)
   {
-fprintf(stderr,"%d ",j);
     for (v=cm->M-1; v>0; v--)
     {
       if (cm->stid[v] == MATP_MP || cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR)
@@ -464,7 +466,7 @@ fprintf(stderr,"%d ",j);
             {
 	      /* If extended score meets reporting threshold, check for duplicates */
               duplicate = FALSE;
-              x = 0;
+              x = duplicate_low_index;
               while (x<nhits && !duplicate)
               {
                 if (outer_i == hit_outer_i[x])
@@ -474,6 +476,8 @@ fprintf(stderr,"%d ",j);
                         if (outer_v == hit_outer_v[x])
                           if (inner_v == hit_inner_v[x])
                             duplicate = TRUE;
+		if (j > hit_outer_j[x] + W)
+		  duplicate_low_index = x+1;
                 x++;
               }
 
@@ -510,7 +514,7 @@ fprintf(stderr,"%d ",j);
   printf("outer v\tinner v\touter i\tinner i\t");
   printf("inner j\touter j\ttotal sc\n");
 
-  hit_index = malloc(sizeof(int) * nhits);
+  hit_index = MallocOrDie(sizeof(int) * nhits);
   for (x=0; x<nhits; x++) { hit_index[x] = x; }
   i=0;
   while (i<nhits)
