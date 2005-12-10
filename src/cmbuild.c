@@ -57,7 +57,7 @@ static char experts[] = "\
    --effent       : entropy loss target [default]\n\
    --eloss <x>    : for --effent: set target loss to <x> [default: 0.54]\n\
    --effnone      : effective sequence number is just # of seqs\n\
-\n\   
+\n\
  * verbose output files, useful for detailed information about the CM:\n\
    --cfile <f>    : save count vectors to file <f>\n\
    --cmtbl <f>    : save tabular description of CM topology to file <f>\n\

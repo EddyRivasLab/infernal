@@ -1314,12 +1314,12 @@ banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *dmin, int *dmax, int bdum
 	  mindiff = d-dmin[v];
 	  maxdiff = dmax[v]-d;
 	  if(bdump_level > 1 || ((mindiff < 0) || (maxdiff < 0)))
-	    printf("%-4s %-3s v: %4d | d: %4d | dmin: %4d | dmax: %4d | %3d | %3d |\n", nodetypes[cm->ndtype[cm->ndidx[v]]], sttypes[cm->sttype[v]], v, d, dmin[v], dmax[v], mindiff, maxdiff);
+	    printf("%-4s %-3s v: %4d | d: %4d | dmin: %4d | dmax: %4d | %3d | %3d |\n", nodetypes[(int) cm->ndtype[cm->ndidx[v]]], sttypes[(int) cm->sttype[v]], v, d, dmin[v], dmax[v], mindiff, maxdiff);
 	}
       else
 	{
 	  if(bdump_level > 1)
-	    printf("%-8s v: %4d | d: %4d |\n", sttypes[cm->sttype[v]], v, d);
+	    printf("%-8s v: %4d | d: %4d |\n", sttypes[(int) cm->sttype[v]], v, d);
 	}
     }
   free(sttypes);
