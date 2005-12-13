@@ -1,0 +1,53 @@
+# STOCKHOLM 1.0
+#=GF ID    DicF
+#=GF AC    RF00039
+#=GF DE    DicF RNA
+#=GF AU    Bateman A
+#=GF GA    5.0
+#=GF NC    3.8
+#=GF TC    5.0
+#=GF SE    Bateman A
+#=GF SS    Predicted; PFOLD
+#=GF TP    Gene; antisense;
+#=GF BM    cmbuild --rf CM SEED
+#=GF BM    cmsearch -W 130 CM SEQDB
+#=GF RN    [1]
+#=GF RM    7508908
+#=GF RT    Division inhibition gene dicF of Escherichia coli reveals a
+#=GF RT    widespread group of prophage sequences in bacterial genomes.
+#=GF RA    Faubladier M, Bouche JP;
+#=GF RL    J Bacteriol 1994;176:1150-1156.
+#=GF RN    [2]
+#=GF RM    1372677
+#=GF RT    Regulation of the expression of the cell-cycle gene ftsZ by DicF
+#=GF RT    antisense RNA. Division does not require a fixed number of FtsZ
+#=GF RT    molecules.
+#=GF RA    Tetart F, Bouche JP;
+#=GF RL    Mol Microbiol 1992;6:615-620.
+#=GF RN    [3]
+#=GF RM    2477663
+#=GF RT    Genetic evidence that DicF, a second division inhibitor encoded by
+#=GF RT    the Escherichia coli dicB operon, is probably RNA.
+#=GF RA    Bouche F, Bouche JP;
+#=GF RL    Mol Microbiol 1989;3:991-994.
+#=GF CC    DicF RNA is an antisense inhibitor of cell division gene ftsZ [1].
+#=GF SQ    6
+
+AP002556.1/74692-74642               UUUCUGGUGACGUUUGGCGGCAUCUGUU-UGCCCAUGAACUGAUGU.CCG
+AE000253.1/7134-7186                 UUUCUGGUGACGUUUGGCGGUAUCAGUUUUACUCCGUGACUGCUCUGCCG
+AP002554.1/28618-28566               AUUCUGGUGACAUUUGGCGGUAUCAGUUUUACUCCGUAACUGCUCUGCCG
+AP002557.1/222915-222967             UUUCUGGUGACGUUUGGCGGUAUCAGUUUUACUCCGUGGCUGCUCUGCCG
+AL627272.1/120433-120484             UUUGUGUAGUC-UUUGGCGGCAUCAGUUCUACUCCGUGGCUGCCCUGCCG
+AE015162.1/10789-10739               UUGAUUGGUACCUUUGGCGGCAUCAGUUUCAUUGC-UGGCUGAUGU.CCG
+#=GC SS_cons                         ...............<<<<<<<.<<<<...........>>>>...>>>>>
+#=GC RF                              xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+AP002556.1/74692-74642               CCC
+AE000253.1/7134-7186                 CCC
+AP002554.1/28618-28566               CCC
+AP002557.1/222915-222967             CCC
+AL627272.1/120433-120484             CCC
+AE015162.1/10789-10739               CCC
+#=GC SS_cons                         >>.
+#=GC RF                              xxx
+//

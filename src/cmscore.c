@@ -1,6 +1,6 @@
 /* cmscore.c
  * SRE, Thu Aug  3 17:08:45 2000 [StL]
- * CVS $Id$
+ * SVN $Id$
  * 
  * Score a CM against unaligned sequence examples.
  * 

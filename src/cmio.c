@@ -1,6 +1,6 @@
 /* cmio.c
  * SRE, Thu Aug  3 11:53:34 2000 [St. Louis]
- * CVS $Id$
+ * SVN $Id$
  * 
  * Input/output of covariance models.
  * 

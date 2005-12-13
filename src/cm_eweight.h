@@ -10,7 +10,7 @@
  * (Entropy-based sequence weighting)
  *
  * Steve Johnson
- * CVS $Id: lsjfuncs.h 944 2004-05-24 15:49:07Z eddy $
+ * SVN $Id$
  */
 
 

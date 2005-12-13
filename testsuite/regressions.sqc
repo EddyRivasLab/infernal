@@ -1,6 +1,6 @@
 # Infernal's regression tests, an sqc command file
 # SRE, Mon Aug  5 17:23:25 2002
-# CVS $Id$
+# SVN $Id$
 #
 
 # Regression tests of cmalign.

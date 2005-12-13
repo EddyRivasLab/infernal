@@ -13,7 +13,7 @@
  * achieving a certain target entropy loss, relative to background
  * null distribution.
  *
- * CVS $Id: lsj_eweight.c 950 2004-06-16 14:46:04Z eddy $
+ * SVN $Id$
  */
 
 #include "config.h"

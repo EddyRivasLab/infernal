@@ -1,6 +1,6 @@
 /* scancyk.c
  * SRE, Thu May  2 11:50:48 2002 [AA 3050 SFO->STL]
- * CVS $Id$
+ * SVN $Id$
  * 
  * CYK alignment: multihit, local, database scanning mode.
  * [xref STL6 p47]

@@ -1,6 +1,6 @@
 /* display.c
  * SRE, Thu May 23 08:18:05 2002 [St. Louis]
- * CVS $Id$
+ * SVN $Id$
  * 
  * Routines for formatting and displaying parse trees
  * for output.

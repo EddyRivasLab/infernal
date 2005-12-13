@@ -1,6 +1,6 @@
 /* modelmaker.c
  * SRE, 28 Feb 2000
- * CVS $Id$
+ * SVN $Id$
  *
  * Construct a model from an alignment. 
  *
@@ -710,8 +710,8 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, char *dsq, char *aseq, int alen)
   localrun = MallocOrDie(sizeof(int) * (alen+1));
   localrun[0] = 0;
   for (i = 0; i <= alen; i++)
-    if (aseq[i-1] == '~') localrun[i] = localrun[i-1]+1;
-    else                  localrun[i] = 0;
+    if (i > 0 && aseq[i-1] == '~') localrun[i] = localrun[i-1]+1;
+    else                           localrun[i] = 0;
 
   /* Because the gtr is already indexed in a preorder traversal,
    * we can preorder traverse it easily w/ a for loop...

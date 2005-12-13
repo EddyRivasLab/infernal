@@ -17,16 +17,47 @@ A release goes on a stable branch.
    Clean up any stray files identified by 'svn status'.
    'svn add' and 'svn commit' as needed to commit new or modified files.
 
+2. Create stable release branches in Subversion for all packages.
+   All subsequent bugfixes go into this branch, while trunk keeps moving.
+   [Query replace the version # here]
+         svn copy https://skynet.wustl.edu:8080/sre/src/infernal/trunk\
+                 https://skynet.wustl.edu:8080/sre/src/infernal/branches/release-0.7\
+                 -m "created 0.7 release branch"          
+         svn copy https://skynet.wustl.edu:8080/sre/src/squid/trunk\
+                 https://skynet.wustl.edu:8080/sre/src/squid/branches/infernal/0.7\
+                 -m "created Infernal 0.7 release branch"          
+         svn copy https://skynet.wustl.edu:8080/sre/src/ssdk/trunk\
+                 https://skynet.wustl.edu:8080/sre/src/ssdk/branches/infernal/0.7\
+                 -m "created Infernal 0.7 release branch"          
+         svn copy https://skynet.wustl.edu:8080/sre/easel/trunk\
+                 https://skynet.wustl.edu:8080/sre/easel/branches/infernal/0.7\
+                 -m "created Infernal 0.7 release branch"          
 
-2. Test the trunk before making release.
+3. Check out a working copy of the release branch; update the "svn:externals".
+   [Query replace the version # here]
+         cd ~/releases
+         svn checkout https://skynet.wustl.edu:8080/sre/src/infernal/branches/release-0.7 infernal
+         svn proplist --verbose https://skynet.wustl.edu:8080/sre/src/infernal/branches/release-0.7
+         svn propedit svn:externals infernal
+           squid   https://skynet.wustl.edu:8080/sre/src/squid/branches/infernal/0.7
+           ssdk    https://skynet.wustl.edu:8080/sre/src/ssdk/branches/infernal/0.7
+           easel   https://skynet.wustl.edu:8080/sre/easel/branches/infernal/0.7
+         cd infernal
+         svn update
+         (cd testsuite/; ln -s ../ssdk/sqc .)
+
+   Now switch to working *only* in this release branch working copy.
+   Make no more changes in the trunk. 
+   We'll merge back into the trunk once we've stabilized the release.
+
+
+4. Test.
    Includes memory leak tests;
    ccmalloc 0.4.0 is installed in /usr/local on wrasse.
    Don't rely solely on the automated exercises and bug tests.
    Run some anecdotal examples by hand too.
         % svn update
-    	% autoconf
-        % (cd squid; autoconf)
-        % (cd easel; autoconf)
+    	% autoconf; (cd squid; autoconf); (cd easel; autoconf)
      	% (env CFLAGS="-g -Wall" ./configure; make)
         % make check
         % make clean
@@ -39,144 +70,143 @@ A release goes on a stable branch.
         % (./configure; make; make check)
         % make clean
 
+   Make a new DicF model in this version's format, for
+   backwards compatibility testing:
+        % cd testsuite
+        % ../src/cmbuild DicF-$RELEASE.cm DicF.seed
+        % svn add DicF-$RELEASE.cm
+   and add a line to exercises.sqc.
 
-3. Write release notes.
+   Example anecdotes:
+        ../src/cmbuild foo.cm ../intro/trna.sto
+        ../src/cmsearch foo.cm trna-regression.fa
+   Run those with valgrind, too.
+
+
+5. Write release notes.
    Replace "875" below with the last release's SVN rev.
 	% svn log -r 875:HEAD | more
         % emacs documentation/release-notes/RELEASE-${RELEASE}
 	% svn add documentation/release-notes/RELEASE-${RELEASE}
 
+                 sre/src                sre/easel
+   Release   from-rev   to-rev      from-rev    to-rev    
+   -------   --------   ------      --------    ------
+   0.6:       875        1477          ?          72
+   0.7:       1477                    72
 
-4. Update the copyright, year stamps. 
-	- configure.in (release, relcode, date)
+
+6. Update the copyright, year stamps. 
+	- configure.ac (release, relcode, date)
 	- COPYRIGHT (year only)
 
 
-5. Commit to SVN; include release number in the log message
+7. Commit to SVN; include release number in the log message
 	% svn commit
     Remember to separately commit in Easel, squid, ssdk if any
     changes were made there.
 
-
-6. Create stable branches in Subversion for all packages.
-         svn copy https://skynet.wustl.edu:8080/sre/src/infernal/trunk\
-                 https://skynet.wustl.edu:8080/sre/src/infernal/branches/release-0.6\
-                 -m "created 0.6 release branch"          
-         svn copy https://skynet.wustl.edu:8080/sre/src/squid/trunk\
-                 https://skynet.wustl.edu:8080/sre/src/squid/branches/infernal/0.6\
-                 -m "created Infernal 0.6 release branch"          
-         svn copy https://skynet.wustl.edu:8080/sre/src/ssdk/trunk\
-                 https://skynet.wustl.edu:8080/sre/src/ssdk/branches/infernal/0.6\
-                 -m "created Infernal 0.6 release branch"          
-         svn copy https://skynet.wustl.edu:8080/sre/easel/trunk\
-                 https://skynet.wustl.edu:8080/sre/easel/branches/infernal/0.6\
-                 -m "created Infernal 0.6 release branch"          
-     
-   First time only creation of Infernal release subdir for library branches:
-         svn mkdir https://skynet.wustl.edu:8080/sre/src/squid/branches/infernal\
-                 -m "created infernal subdir, for keeping release branches"
-         svn mkdir https://skynet.wustl.edu:8080/sre/src/ssdk/branches/infernal\
-                 -m "created infernal subdir, for keeping release branches"
-         svn mkdir https://skynet.wustl.edu:8080/sre/easel/branches/infernal\
-                 -m "created infernal subdir, for keeping release branches"
-
-
-
-7. Check out a working copy of the release branch; update the "svn:externals".
-        % cd ~/releases
-        % svn checkout https://skynet.wustl.edu:8080/sre/src/infernal/branches/release-0.6 infernal
-        % svn proplist --verbose https://skynet.wustl.edu:8080/sre/src/infernal/branches/release-0.6
-        % svn propedit svn:externals infernal
-          squid   https://skynet.wustl.edu:8080/sre/src/squid/branches/infernal/0.6
-          ssdk    https://skynet.wustl.edu:8080/sre/src/ssdk/branches/infernal/0.6
-          easel   https://skynet.wustl.edu:8080/sre/easel/branches/infernal/0.6
-        % cd infernal
-        % svn update
-        % svn commit
-
-   Switch to working *only* in this release branch working copy.
-   Make no more changes in the trunk. 
-   We'll merge back into the trunk once we've stabilized the release.
-
-
-
 8. Make a distribution tarball.
 	% make distclean
-        % autoconf
-        % (cd easel; autoconf)
-        % (cd squid; autoconf)
+        % autoconf; (cd easel; autoconf); (cd squid; autoconf)
 	% ./configure          <-- makes a Makefile (needed for "make dist")
 	% make dist
           [or: 'make -n dist' and execute commands yourself one at a
            time, under a Bourne shell like 'bash' so the if loops
            work.]
 
+   This exports into a infernal-$RELEASE directory, alongside the
+   infernal working directory in ~/releases/. The tarball is also
+   left in ~/releases/.
+   
 
-
-7. Build for our system (on whelk01 or some such)
-	% cd infernal-xxx
+9. Build for our system (on whelk01 or some such)
+	% cd ../infernal-xxx
 	% env CFLAGS="-O3" ./configure --enable-lfs --bindir=/usr/seshare/`uname`/infernal/
 	% make
 	% make check
         % (cd testsuite; ./sqc -p ../squid/ -r ../../infernal-0.52/src 4 regressions.sqc ../src/)
                                                   ^^^^ replace w/ latest old version
 
-8. Put on the FTP site. (on wrasse)
+10. Put on the FTP site. (on wrasse)
         % scp 00README               ftp.genetics.wustl.edu:/home/ftp/pub/eddy/software/infernal/
           scp Userguide.pdf          ftp.genetics.wustl.edu:/home/ftp/pub/eddy/software/infernal/
-          scp ../infernal-0.6.tar.gz ftp.genetics.wustl.edu:/home/ftp/pub/eddy/software/infernal/
+          scp ../infernal-0.7.tar.gz ftp.genetics.wustl.edu:/home/ftp/pub/eddy/software/infernal/
           ssh ftp.genetics.wustl.edu rm -f /home/ftp/pub/eddy/software/infernal/infernal.tar.gz
-          ssh ftp.genetics.wustl.edu "(cd /home/ftp/pub/eddy/software/infernal; ln -s infernal-0.6.tar.gz infernal.tar.gz)"
+          ssh ftp.genetics.wustl.edu "(cd /home/ftp/pub/eddy/software/infernal; ln -s infernal-0.7.tar.gz infernal.tar.gz)"
 
 
-9. Update the web site
+11. Update the web site
         % ssh www.genetics
         % cd /home/www/fisher/docs/eddy/infernal
         % emacs index.html 
 	
 
-10. Clean up.
+12. Clean up.
         mv infernal-0.6.tar.gz ~/Archive/
         rm -rf infernal-0.6 
         cd infernal
 	make distclean
 
 
-11. Merge the changes from the "stabilized" release branch back into the trunk.
+13. Merge the changes from the "stabilized" release branch back into the trunk.
     
     First identify the rev #'s for when we made the release branch.
     In the release working copy:
        svn log --verbose --stop-on-copy      <-- ssdk, squid are the same
        cd easel
        svn log --verbose --stop-on-copy 
-    (r1465; Easel is r72.)
+    0.6: (r1465; Easel is r72.)
+    0.7: (r1522; Easel is r81.)
 
     Go back to working copies of the trunks, and merge the release branches into it.
        cd ~/src/infernal
        svn update
-       svn merge -r 1465:HEAD https://skynet.wustl.edu:8080/sre/src/infernal/branches/release-0.6
+       svn merge -r 1522:HEAD https://skynet.wustl.edu:8080/sre/src/infernal/branches/release-0.7
 
        cd squid
        svn update
-       svn merge -r 1465:HEAD https://skynet.wustl.edu:8080/sre/src/squid/branches/infernal/0.6
+       svn merge -r 1522:HEAD https://skynet.wustl.edu:8080/sre/src/squid/branches/infernal/0.7
 
        cd ../ssdk
        svn update
-       svn merge -r 1465:HEAD https://skynet.wustl.edu:8080/sre/src/ssdk/branches/infernal/0.6
+       svn merge -r 1522:HEAD https://skynet.wustl.edu:8080/sre/src/ssdk/branches/infernal/0.7
 
        cd ../easel
        svn update
-       svn merge -r 72:HEAD https://skynet.wustl.edu:8080/sre/easel/branches/infernal/0.6
+       svn merge -r 81:HEAD https://skynet.wustl.edu:8080/sre/easel/branches/infernal/0.7
        
-    The merge screwed up the svn:externals for Infernal. Reset them.
+    Now, the merge will always screw up the svn:externals for Infernal. Reset them.
        cd ..
        svn propedit svn:externals .
           squid   https://skynet.wustl.edu:8080/sre/src/squid/trunk
           ssdk    https://skynet.wustl.edu:8080/sre/src/ssdk/trunk
           easel   https://skynet.wustl.edu:8080/sre/easel/trunk
 
-    Commit.
+    Commits.
        svn commit 
+       ( cd squid ; svn commit )
+       ( cd ssdk  ; svn commit )
+       ( cd easel ; svn commit )
+
+14. Convert the branches to tags.
+         svn move https://skynet.wustl.edu:8080/sre/src/infernal/branches/release-0.6\
+                  https://skynet.wustl.edu:8080/sre/src/infernal/tags/0.6\
+                 -m "tagged Infernal 0.6 release"          
+         svn move https://skynet.wustl.edu:8080/sre/src/squid/branches/infernal/0.6\
+                  https://skynet.wustl.edu:8080/sre/src/squid/tags/infernal/0.6\
+                 -m "tagged Infernal 0.6 release"          
+         svn move https://skynet.wustl.edu:8080/sre/src/ssdk/branches/infernal/0.6\
+                  https://skynet.wustl.edu:8080/sre/src/ssdk/tags/infernal/0.6\
+                 -m "tagged Infernal 0.6 release"          
+         svn move https://skynet.wustl.edu:8080/sre/easel/branches/infernal/0.6\
+	          https://skynet.wustl.edu:8080/sre/easel/tags/infernal/0.6\
+                 -m "tagged Infernal 0.6 release"          
+     
+   First time only creation of Infernal release subdir for library branches:
+         svn mkdir https://skynet.wustl.edu:8080/sre/easel/tags/infernal\
+                 -m "created infernal subdir, for keeping release tags"
+
 
 
 0.3  - SRE, Thu Jul  4 10:27:16 2002

@@ -1,6 +1,6 @@
 # Process this file with autoconf to produce a configure script.
 # SRE, Thu Jul 27 13:30:41 2000
-# CVS $Id$
+# SVN $Id$
 # Hint: See autoconf macro archive at 
 #     http://www.gnu.org/software/ac-archive/
 
@@ -24,11 +24,11 @@
 # The output variables are used in Makefiles.
 #
 AC_PREREQ(2.57)
-AC_INIT(Infernal, 0.6, eddy@genetics.wustl.edu, infernal)
+AC_INIT(Infernal, 0.7, eddy@genetics.wustl.edu, infernal)
 AC_MSG_NOTICE([Welcome. Configuring Infernal for your system.])
 
-PACKAGE_RELCODE="infernal0_6"
-PACKAGE_DATE="November 2005"
+PACKAGE_RELCODE="infernal0_7"
+PACKAGE_DATE="December 2005"
 PACKAGE_COPYRIGHT="Copyright (C) 2001-2005 HHMI/Washington University School of Medicine"
 PACKAGE_LICENSE="Freely distributed under the GNU General Public License (GPL)"
 PACKAGE_LICENSETAG=gnu

@@ -1,6 +1,6 @@
 /* globals.c
  * SRE 28 Feb 2000
- * RCS $Id$
+ * SVN $Id$
  * 
  * Settings of the global variables used in INFERNAL,
  * such as the sequence alphabet. 

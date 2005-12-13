@@ -1,6 +1,6 @@
 # Infernal's benchmarks exercises, in sqc command format.
 # SRE, Tue Aug  6 18:47:43 2002
-# CVS $Id$
+# SVN $Id$
 #
 
 1  prep       rand50               @shuffle@ -i -n 50 -t 90 --dna --seed 42 -o %RAND50%

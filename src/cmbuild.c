@@ -1,6 +1,6 @@
 /* cmbuild.c
  * SRE, Thu Jul 27 13:19:43 2000 [StL]
- * CVS $Id$
+ * SVN $Id$
  * 
  * Construct a CM from a given multiple sequence alignment.
  *  
@@ -613,7 +613,9 @@ main(int argc, char **argv)
        */
       while(!(BandCalculationEngine(cm, safe_windowlen, bandp, save_gamma, &dmin, &dmax, &gamma, do_local)))
 	{
-	  FreeBandDensities(cm, gamma);
+	  free(dmin);
+	  free(dmax);
+	  FreeBandDensities(cm, gamma);	  
 	  /*printf("Failure in BandCalculationEngine(). W:%d | bandp: %4e\n", safe_windowlen, bandp);*/
 	  safe_windowlen *= 2;
 	}
@@ -814,7 +816,6 @@ main(int argc, char **argv)
 	  fprintf(ofp, "//\n");
 	  fclose(ofp);
 	  printf("done. [%s]\n", bandfile);
-	  FreeBandDensities(cm, gamma);
 	}
 
       puts("");
@@ -823,16 +824,16 @@ main(int argc, char **argv)
       CYKDemands(cm, avlen);     
 
       FreeParsetree(mtr);
-      FreeCM(cm);
       Free2DArray((void**)dsq, msa->nseq);
       MSAFree(msa);
       fflush(cmfp);
       puts("//\n");
       nali++;
 
-      /* EPN 08.18.05 */
+      FreeBandDensities(cm, gamma);	  
       free(dmin);
       free(dmax);
+      FreeCM(cm);
     }
 
 
