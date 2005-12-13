@@ -159,7 +159,6 @@ dist:
 	-rm -rf ../${BASENAME}-${RELEASE}/ssdk
 	-rm -rf ../${BASENAME}-${RELEASE}/documentation/userguide
 	(cd ../${BASENAME}-${RELEASE}/squid; make implode)
-	(cd ../${BASENAME}-${RELEASE}/easel; make implode)
 	(cd ../${BASENAME}-${RELEASE}/;      make distclean)
 #
 # Set file permissions.
