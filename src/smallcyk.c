@@ -125,13 +125,6 @@ static float   size_vji_shadow_deck(int i0, int i1, int j1, int j0);
 static void    free_vji_shadow_deck(char **a, int j1, int j0);
 static void    free_vji_shadow_matrix(char ***a, int M, int j1, int j0);
 
-static void debug_print_alpha(float ***alpha, CM_t *cm, int L);
-static void debug_print_alpha_banded(float ***alpha, CM_t *cm, int L, int *dmin, int *dmax);
-static void debug_print_alpha_deck(int v, float **deck, CM_t *cm, int L);
-static void debug_print_shadow(void ***shadow, CM_t *cm, int L);
-static void debug_print_shadow_banded(void ***shadow, CM_t *cm, int L, int *dmin, int *dmax);
-static void debug_print_shadow_banded_deck(int v, void ***shadow, CM_t *cm, int L, int *dmin, int *dmax);
-
 /* BE_EFFICIENT and BE_PARANOID are alternative (exclusive) settings
  * for the do_full? argument to the alignment engines.
  */
@@ -6559,6 +6552,7 @@ static char  **alloc_banded_vjd_yshadow_deck(int L, int i, int j, int min, int m
 static int   **alloc_banded_vjd_kshadow_deck(int L, int i, int j, int min, int max);
 
 /* Debugging print functions */
+
 
 static void debug_print_bands(CM_t *cm, int *dmin, int *dmax);
 static void debug_print_alpha(float ***alpha, CM_t *cm, int L);
