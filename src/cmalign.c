@@ -1,6 +1,6 @@
 /* cmalign.c
  * SRE, Thu Jul 25 11:28:03 2002 [St. Louis]
- * CVS $Id$
+ * SVN $Id$
  * 
  * Align sequences to a CM.
  * 

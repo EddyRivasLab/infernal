@@ -3,7 +3,7 @@
  * moved to cove 2.0, Mon Sep  6 13:34:55 1993
  * cove4: SRE 29 Feb 2000 [Seattle]
  * infernal: SRE, Fri Jul 28 08:55:47 2000 [StL]
- * CVS $Id$
+ * SVN $Id$
  * 
  * Unlike a traceback of a normal HMM alignment, which is linear,
  * the traceback of a CM is a tree structure. Here

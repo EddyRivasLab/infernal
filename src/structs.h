@@ -3,7 +3,7 @@
 
 /* structs.h
  * SRE, 28 Feb 2000 [Seattle]
- * CVS $Id$
+ * SVN $Id$
  * 
  * Declarations of structures and global variables;
  * definitions of constants; and macros.

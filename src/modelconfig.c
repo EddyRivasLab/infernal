@@ -1,6 +1,6 @@
 /* modelconfig.c
  * SRE, Wed May  8 14:30:38 2002 [St. Louis]
- * CVS $Id$
+ * SVN $Id$
  * 
  * Configuring a model into different global or local search modes.
  * 

@@ -1,6 +1,6 @@
 /* smallcyk.c
  * SRE, Wed Aug  2 08:42:49 2000 [St. Louis]
- * CVS $Id$
+ * SVN $Id$
  * 
  * Alignment of a CM to a target (sub)sequence.
  *
@@ -3395,24 +3395,6 @@ CYKOutside(CM_t *cm, char *dsq, int L, float ***alpha)
  * 
  *******************************************************************************/
 
-/* smallcyk.c
- * SRE, Wed Aug  2 08:42:49 2000 [St. Louis]
- * CVS $Id$
- * 
- * Alignment of a CM to a target (sub)sequence.
- *
- * Implementation of the CM divide and conquer alignment algorithm 
- * described in [Eddy02]. Also implements standard CYK/Inside 
- * optimal alignment by dynamic programming [Durbin98]. 
- *
- * These algorithms align to the entire target (sub)sequence
- * (e.g. global alignment). For sequence-local alignment, see
- * scancyk.c.
- * 
- *****************************************************************
- * @LICENSE@
- *****************************************************************  
- */
 
 /*################################################################
  * smallcyk's external API:

@@ -1,7 +1,7 @@
 #################################################################
 # Infernal
 # top level Makefile: installation, documentation
-# CVS $Id$
+# SVN $Id$
 #################################################################
 # @LICENSE@
 #################################################################
@@ -89,57 +89,57 @@ $(RIGFILTERS): core
 # dist: build a new distribution directory in infernal-$RELEASE
 #
 dist:
-	# Delete old versions of the same release
-	#
+# Delete old versions of the same release
+#
 	@if test -d ../${BASENAME}-$(RELEASE);        then rm -rf ../${BASENAME}-$(RELEASE);        fi
 	@if test -e ../${BASENAME}-$(RELEASE).tar;    then rm -f  ../${BASENAME}-$(RELEASE).tar;    fi
 	@if test -e ../${BASENAME}-$(RELEASE).tar.Z;  then rm -f  ../${BASENAME}-$(RELEASE).tar.Z;  fi
 	@if test -e ../${BASENAME}-$(RELEASE).tar.gz; then rm -f  ../${BASENAME}-$(RELEASE).tar.gz; fi
-	# 
-	# Export the release from Subversion control.
-        # Because we use svn:externals, this automatically exports 
-	# the ssdk, squid, and Easel libraries as well.
-	#
+# 
+# Export the release from Subversion control.
+# Because we use svn:externals, this automatically exports 
+# the ssdk, squid, and Easel libraries as well.
+#
 	svn export ${REPOSITORY}/${BASENAME}/branches/release-${RELEASE} ../${BASENAME}-${RELEASE}
-	# 
-	# We won't include the ssdk, but we need it temporarily,
-	# for rmanprocess.pl (when making the user guide); we also 
-	# need to put a copy of sqc in testsuite. 
-	#
+# 
+# We won't include the ssdk, but we need it temporarily,
+# for rmanprocess.pl (when making the user guide); we also 
+# need to put a copy of sqc in testsuite. 
+#
 	cp ../${BASENAME}-${RELEASE}/ssdk/sqc ../${BASENAME}-${RELEASE}/testsuite/
-	# 
-	# Make the configure scripts from configure.ac's
-	#
+# 
+# Make the configure scripts from configure.ac's
+#
 	(cd ../${BASENAME}-${RELEASE};       autoconf)
 	(cd ../${BASENAME}-${RELEASE}/squid; autoconf)
 	(cd ../${BASENAME}-${RELEASE}/easel; autoconf)
-	#
-	# We'll need a basic Makefiles for some steps; later
-	# we'll delete them
-	#
+#
+# We'll need a basic Makefiles for some steps; later
+# we'll delete them
+#
 	(cd ../${BASENAME}-${RELEASE}/; ./configure)
-	#
-	# Attach license stamps on all files that need 'em
-	# (e.g. replace LICENSE keyword everywhere)
-	#
+#
+# Attach license stamps on all files that need 'em
+# (e.g. replace LICENSE keyword everywhere)
+#
 	find ../${BASENAME}-${RELEASE} -type f -exec ssdk/sedition-pp LICENSE Licenses/$(LICENSETAG) {} \;
-	# 
-	# All other keyword replacements are in the documentation.
-	#
+# 
+# All other keyword replacements are in the documentation.
+#
 	find ../${BASENAME}-${RELEASE}/documentation -type f -exec ssdk/sedition RELEASE ${RELEASE} RELEASEDATE ${RELEASEDATE} PACKAGE ${PACKAGE} COPYRIGHT ${COPYRIGHT} LICENSELINE ${LICENSELINE} {} \;
-	#
-	# Make the User's Guide, and copy to top level. (We'll
-	# destroy the userguide source soon.)
-	#
+#
+# Make the User's Guide, and copy to top level. (We'll
+# destroy the userguide source soon.)
+#
 	(cd ../${BASENAME}-${RELEASE}/documentation/userguide; make pdf)
 	cp ../${BASENAME}-${RELEASE}/documentation/userguide/main.pdf  ../${BASENAME}-${RELEASE}/Userguide.pdf
-	# 
-	# Finish the man pages off, adding necessary boilerplate.
-	# Must be done *after* the user guide is created, since the user guide
-	# steals and uses the pre-boilerplate man pages.
-	# Include the optional rigfilters documentation too; whether the user
-	# wants it or not is a configuration-time decision.
-	#
+# 
+# Finish the man pages off, adding necessary boilerplate.
+# Must be done *after* the user guide is created, since the user guide
+# steals and uses the pre-boilerplate man pages.
+# Include the optional rigfilters documentation too; whether the user
+# wants it or not is a configuration-time decision.
+#
 	for prog in $(PROGS); do\
 	   cat ../${BASENAME}-${RELEASE}/documentation/manpages/boilerplate.trailer >> ../${BASENAME}-${RELEASE}/documentation/manpages/$$prog.man;\
 	done
@@ -147,10 +147,10 @@ dist:
 	   cat ../${BASENAME}-${RELEASE}/documentation/manpages/boilerplate.trailer >> ../${BASENAME}-${RELEASE}/documentation/manpages/$$prog.man;\
 	done;
 	-rm -f ../${BASENAME}-${RELEASE}/documentation/manpages/boilerplate.trailer
-	#
-	# Remove SVN-controlled files/directories that don't belong in the
-	# distro
-	#
+#
+# Remove SVN-controlled files/directories that don't belong in the
+# distro
+#
 	-rm -rf ../${BASENAME}-${RELEASE}/Licenses
 	-rm -rf ../${BASENAME}-${RELEASE}/00CHECKLIST
 	-rm -rf ../${BASENAME}-${RELEASE}/configure.in
@@ -161,14 +161,14 @@ dist:
 	(cd ../${BASENAME}-${RELEASE}/squid; make implode)
 	(cd ../${BASENAME}-${RELEASE}/easel; make implode)
 	(cd ../${BASENAME}-${RELEASE}/;      make distclean)
-	#
-	# Set file permissions.
-	#
+#
+# Set file permissions.
+#
 	find ../${BASENAME}-${RELEASE} -type f -exec chmod +r {} \;
 	chmod +x ../${BASENAME}-${RELEASE}/testsuite/sqc
-	#
-	# Packaging commands
-	#
+#
+# Packaging commands
+#
 	(cd ..;	tar cvf ${BASENAME}-${RELEASE}.tar ${BASENAME}-${RELEASE})
 	(cd ..; $(COMPRESS) ${BASENAME}-$(RELEASE).tar)
 

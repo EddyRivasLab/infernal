@@ -1,6 +1,6 @@
 /* bandcyk.c
  * SRE, Wed Nov 20 07:46:56 2002 [flight home from Airlie mtg]
- * CVS $Id$
+ * SVN $Id$
  * 
  * Banded CYK implementation.
  * 

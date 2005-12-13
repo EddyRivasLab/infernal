@@ -1,6 +1,6 @@
 # Infernal's crash exercises, in sqc command format.
 # SRE, Mon Aug  5 14:01:34 2002
-# CVS $Id$
+# SVN $Id$
 #
 
 # Exercises of cmalign.
@@ -62,4 +62,9 @@
 3  exercise  bandcyk/trunc/ssu    @bandcyk-truncation-test@ %SSU.CM% 1687 3000 
 
 
+# Verify backwards compatibility of CM file formats
+#
+1  exercise  formats/0.55         @cmsearch@ DicF-0.55.cm 3trnas.fa
+1  exercise  formats/0.6          @cmsearch@ DicF-0.6.cm 3trnas.fa
+1  exercise  formats/0.7          @cmsearch@ DicF-0.7.cm 3trnas.fa
 

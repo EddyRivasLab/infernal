@@ -1,6 +1,6 @@
 /* cmsearch.c
  * SRE, Fri May  3 13:58:18 2002
- * CVS $Id$
+ * SVN $Id$
  * 
  * Search sequences with a CM.
  * 

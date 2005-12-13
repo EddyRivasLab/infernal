@@ -1,6 +1,6 @@
 /* alphabet.c
  * SRE, Tue Aug  1 10:31:11 2000 [St. Louis]
- * CVS $Id$
+ * SVN $Id$
  * 
  * Stuff having to do with manipulating symbols in the (RNA) alphabet.
  * 
