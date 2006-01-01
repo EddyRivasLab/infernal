@@ -16,6 +16,9 @@
 #include "structs.h"
 #include "funcs.h"
 
+float **msc;
+int     wmscf = FALSE;
+
 static char banner[] = "minisearch - prototype BLAST-like search algorithm";
 
 static char usage[]  = "\
@@ -28,6 +31,7 @@ Most commonly used options are:\n\
   -T <n> : set word score threshold to <n> (default: -INF, no threshold)\n\
   -X <n> : set dropoff score for extension to <n> (default -10)\n\
   --wordlen <n> : set word length (in number of states) to <n> (default 4)\n\
+  --wmscf : turn upper bound score filtering on\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -38,6 +42,7 @@ static struct opt_s OPTIONS[] = {
   { "-T", TRUE, sqdARG_FLOAT },
   { "--wordlen", FALSE, sqdARG_INT },
   { "--toponly", FALSE, sqdARG_NONE },
+  { "--wmscf", FALSE, sqdARG_NONE },
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -462,47 +467,50 @@ MiniScan(CM_t *cm, char *dsq, int L, int W, int wordlen, float word_sc,
 	      inner_j++;
 	    }
 
-            if (total_sc > report_sc)	/* Add to hitlist */
+            if (!wmscf || total_sc + msc[inner_v][(inner_j - inner_i + 1) - 2] > 0)
             {
-	      /* If extended score meets reporting threshold, check for duplicates */
-              duplicate = FALSE;
-              x = duplicate_low_index;
-              while (x<nhits && !duplicate)
+              if (total_sc > report_sc)	/* Add to hitlist */
               {
-                if (outer_i == hit_outer_i[x])
-                  if (inner_i == hit_inner_i[x])
-                    if (outer_j == hit_outer_j[x])
-                      if (inner_j == hit_inner_j[x])
-                        if (outer_v == hit_outer_v[x])
-                          if (inner_v == hit_inner_v[x])
-                            duplicate = TRUE;
-		if (j > hit_outer_j[x] + W)
-		  duplicate_low_index = x+1;
-                x++;
-              }
-
-              if (! duplicate)
-              {
-		/* If not a duplicate, record the hit */
-                hit_outer_v[nhits] = outer_v;
-                hit_inner_v[nhits] = inner_v;
-                hit_outer_i[nhits] = outer_i;
-                hit_inner_i[nhits] = inner_i;
-                hit_outer_j[nhits] = outer_j;
-                hit_inner_j[nhits] = inner_j;
-                hit_sc[nhits]      = total_sc;
-                nhits++;
-
-                if (nhits == alloc_nhits)
+  	      /* If extended score meets reporting threshold, check for duplicates */
+                duplicate = FALSE;
+                x = duplicate_low_index;
+                while (x<nhits && !duplicate)
                 {
-                  hit_outer_v = ReallocOrDie(hit_outer_v, sizeof(int)   * (alloc_nhits + 1000));
-                  hit_inner_v = ReallocOrDie(hit_inner_v, sizeof(int)   * (alloc_nhits + 1000));
-                  hit_outer_i = ReallocOrDie(hit_outer_i, sizeof(int)   * (alloc_nhits + 1000));
-                  hit_inner_i = ReallocOrDie(hit_inner_i, sizeof(int)   * (alloc_nhits + 1000));
-                  hit_outer_j = ReallocOrDie(hit_outer_j, sizeof(int)   * (alloc_nhits + 1000));
-                  hit_inner_j = ReallocOrDie(hit_inner_j, sizeof(int)   * (alloc_nhits + 1000));
-                  hit_sc      = ReallocOrDie(hit_sc,      sizeof(float) * (alloc_nhits + 1000));
-                  alloc_nhits += 1000;
+                  if (outer_i == hit_outer_i[x])
+                    if (inner_i == hit_inner_i[x])
+                      if (outer_j == hit_outer_j[x])
+                        if (inner_j == hit_inner_j[x])
+                          if (outer_v == hit_outer_v[x])
+                            if (inner_v == hit_inner_v[x])
+                              duplicate = TRUE;
+  	  	  if (j > hit_outer_j[x] + W)
+		    duplicate_low_index = x+1;
+                  x++;
+                }
+
+                if (! duplicate)
+                {
+	  	  /* If not a duplicate, record the hit */
+                  hit_outer_v[nhits] = outer_v;
+                  hit_inner_v[nhits] = inner_v;
+                  hit_outer_i[nhits] = outer_i;
+                  hit_inner_i[nhits] = inner_i;
+                  hit_outer_j[nhits] = outer_j;
+                  hit_inner_j[nhits] = inner_j;
+                  hit_sc[nhits]      = total_sc;
+                  nhits++;
+  
+                  if (nhits == alloc_nhits)
+                  {
+                    hit_outer_v = ReallocOrDie(hit_outer_v, sizeof(int)   * (alloc_nhits + 1000));
+                    hit_inner_v = ReallocOrDie(hit_inner_v, sizeof(int)   * (alloc_nhits + 1000));
+                    hit_outer_i = ReallocOrDie(hit_outer_i, sizeof(int)   * (alloc_nhits + 1000));
+                    hit_inner_i = ReallocOrDie(hit_inner_i, sizeof(int)   * (alloc_nhits + 1000));
+                    hit_outer_j = ReallocOrDie(hit_outer_j, sizeof(int)   * (alloc_nhits + 1000));
+                    hit_inner_j = ReallocOrDie(hit_inner_j, sizeof(int)   * (alloc_nhits + 1000));
+                    hit_sc      = ReallocOrDie(hit_sc,      sizeof(float) * (alloc_nhits + 1000));
+                    alloc_nhits += 1000;
+                  }
                 }
               }
             }
@@ -622,6 +630,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "-T")        == 0) word_sc         = atof(optarg);
     else if (strcmp(optname, "--wordlen") == 0) wordlen         = atof(optarg);
     else if (strcmp(optname, "--toponly") == 0) do_revcomp      = FALSE;
+    else if (strcmp(optname, "--wmscf")   == 0) wmscf           = TRUE;
     else if (strcmp(optname, "-h")        == 0) {
       MainBanner(stdout, banner);
       puts(usage);
@@ -650,7 +659,7 @@ main(int argc, char **argv)
   CMLogoddsify(cm);
   CMHackInsertScores(cm);	/* make insert emissions score zero -- "TEMPORARY" FIX */
 
-  /* MaxSubsequenceScore(cm,windowlen,&msc); */
+  MaxSubsequenceScore(cm,windowlen,&msc);
 
   reversed = FALSE;
   while (reversed || ReadSeq(sqfp, sqfp->format, &seq, &sqinfo))
@@ -675,7 +684,7 @@ main(int argc, char **argv)
     }
   }
 
-  /* free(msc[0]); free(msc); */
+  free(msc[0]); free(msc);
   FreeCM(cm);
   CMFileClose(cmfp);
   SeqfileClose(sqfp);
