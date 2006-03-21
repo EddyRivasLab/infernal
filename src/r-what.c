@@ -174,6 +174,62 @@ BPA_Upper_Bound(BPA_t *root)
   return score;
 }
 
+/* Function: ConsensusD()
+ * Author:   DLK
+ *
+ * Purpose:  Calculate the consensus subsequence length (d) at every
+ *           state v of a model
+ *           Current implementation is recursive (top-down).  This adds
+ *           overhead compared to a DP solution, but not too much, as 
+ *           each state is still only visited once.
+ *
+ * Args:     cm		 - covariance model
+ *           v		 - current state; when calling externally usually root (0)
+ *           consensus_d - array of consensus d values; must be allocated before call
+ */
+void
+ConsensusD(CM_t *cm, int v, int *consensus_d)
+{
+  int y, yoffset, z;
+  int n_emit;			/* number of bases to emit */
+
+  /* Deal with special cases */
+  if ( cm->sttype[v] == E_st )
+  {
+    consensus_d[v] = 0;		/* Is this actually correct?!  What is d at an end state? */
+  }
+  else if ( cm->sttype[v] == B_st )
+  {
+    y = cm->cfirst[v];
+    z = cm->cnum[v];
+
+    ConsensusD(cm, y, consensus_d);
+    ConsensusD(cm, z, consensus_d);
+
+    consensus_d[v] = consensus_d[y] + consensus_d[z];
+  }
+  else
+  {
+    /* Find child state in consensus path */
+    y = cm->cfirst[v];
+    yoffset = 0;
+    z = cm->stid[y+yoffset];
+    while (yoffset+1 < cm->cnum[v] && z != MATP_MP && z != MATL_ML && z != MATR_MR)
+    {
+      yoffset++;
+      z = cm->stid[y+yoffset];
+    }
+    y = y + yoffset;
+
+    /* Calculate consensus_d for child state */
+    ConsensusD(cm, y, consensus_d);
+
+    consensus_d[v] = consensus_d[y] + n_emit;
+  }
+
+  return;
+}
+
 /* Function: MaxSubsequenceScore()
  * Author:   DLK
  *

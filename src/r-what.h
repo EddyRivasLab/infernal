@@ -44,6 +44,8 @@ BPA_t* BPA_Copy(BPA_t *orig);
 float  BPA_Current_Score(BPA_t *root);
 float  BPA_Upper_Bound(BPA_t *root);
 
+void ConsensusD(CM_t *cm, int v, int *consensus_d);
+
 void MaxSubsequenceScore(CM_t *cm, int W, float ***ret_max_sc);
 
 PA_t* AstarExtension(CM_t *cm, char *dsq, int init_v, int init_j, int lower_d, int upper_d,
