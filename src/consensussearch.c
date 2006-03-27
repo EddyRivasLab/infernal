@@ -527,6 +527,8 @@ ConsensusScan(CM_t *cm, char *dsq, int L, int W, int wordlen, float word_sc,
 
   int    duplicate_low_index;	/* Start looking for duplicates here; below this is impossible */
 
+  BPA_t *align = NULL;
+
   hit_outer_v = MallocOrDie(sizeof(int)   * alloc_nhits);
   hit_inner_v = MallocOrDie(sizeof(int)   * alloc_nhits);
   hit_outer_i = MallocOrDie(sizeof(int)   * alloc_nhits);
@@ -545,35 +547,39 @@ ConsensusScan(CM_t *cm, char *dsq, int L, int W, int wordlen, float word_sc,
       if (cm->stid[v] == MATP_MP || cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR)
       {
         d = consensus_d[v];
-	seed_sc = WordInitiate(cm,dsq,L,v,j,d,wordlen,&iscored,&jscored,&temp_v,&temp_j,&temp_d);
+        seed_sc = WordInitiate(cm,dsq,L,v,j,d,wordlen,&iscored,&jscored,&temp_v,&temp_j,&temp_d);
+
+/* Need to check boundary conditions here, especially for a totally single-stranded word-hit */
+/* Probably also want to double-check against consensus_d */
+        /* Translate information on word hit to seed BPA */
+        if (align != NULL) { BPA_Free(align); }
+        align = malloc(sizeof(BPA_t));
+        align->chunk = malloc(sizeof(PA_t));
+        align->chunk->init_v = v;
+        align->chunk->init_j = j;
+        align->chunk->init_d = d;
+        align->chunk->cur_v  = temp_v;
+        align->chunk->cur_j  = temp_j;
+        align->chunk->cur_d  = temp_d;
+        align->left_child = NULL;
+        align->right_child = NULL;
 
 	if (seed_sc > word_sc)
 	{
 	  /* If the seed score meets the threshold, extend both out and in */
 	  /* NOTE: unscored i/j residues are always assigned to the inner subsequence */
 	  /* MiniCYKIn() deals with them if it can, while MiniCYKOut() ignores them   */
-	  in_sc  = MiniCYKIn( cm,dsq,L,temp_v,temp_j,temp_d,dropoff_sc,&iscored,&jscored,&inner_v,&inner_i,&inner_j);
-          out_sc = MiniCYKOut(cm,dsq,L,     v,     j,     d,dropoff_sc,                  &outer_v,&outer_i,&outer_j);
+	  //in_sc  = MiniCYKIn( cm,dsq,L,temp_v,temp_j,temp_d,dropoff_sc,&iscored,&jscored,&inner_v,&inner_i,&inner_j);
+          in_sc  = BCMiniCYKIn(cm,consensus_d,dsq,L,dropoff_sc,align);
+          //out_sc = MiniCYKOut(cm,dsq,L,     v,     j,     d,dropoff_sc,                  &outer_v,&outer_i,&outer_j);
+          out_sc = BCMiniCYKOut(cm,consensus_d,dsq,L,dropoff_sc,&align);
           total_sc = seed_sc + in_sc + out_sc;
 
-          if (!iscored && outer_i==j-d+1)	/* Entire hit is single-stranded, never emits left residue */
-          {
-            inner_i = 0;
-            outer_i = 0;
-          }
-          else if (!iscored)			/* outer_i to i-1 were emitted by MiniCYKOut, i not emitted */
-          {
-            inner_i--;
-          }
-          else if (!jscored && outer_j==j)	/* Entire hit is single-stranded, never emits right residue */
-          {
-            inner_j = 0;
-            outer_j = 0;
-          }
-          else if (!jscored)			/* j+1 to outer_j were emitted by MiniCYKOut, j not emitted */
-          {
-            inner_j++;
-          }
+/* To check for duplicates and overlap, probably need to go back to bounds indices */
+/* Outer bounds are simple; inner bounds with a branched structure are complicated */
+          outer_i = align->chunk->init_j - align->chunk->init_d + 1;
+          outer_j = align->chunk->init_j;
+          outer_v = align->chunk->init_v;
 
           if (total_sc > report_sc)	/* Add to hitlist */
           {
@@ -583,17 +589,20 @@ ConsensusScan(CM_t *cm, char *dsq, int L, int W, int wordlen, float word_sc,
             while (x<nhits && !duplicate)
             {
               if (outer_i == hit_outer_i[x])
-                if (inner_i == hit_inner_i[x])
-                  if (outer_j == hit_outer_j[x])
-                    if (inner_j == hit_inner_j[x])
-                      if (outer_v == hit_outer_v[x])
-                        if (inner_v == hit_inner_v[x])
-                          duplicate = TRUE;
+                if (outer_j == hit_outer_j[x])
+                  if (outer_v == hit_outer_v[x])
+                    duplicate = TRUE;
               if (j > hit_outer_j[x] + W)
                 duplicate_low_index = x+1;
               x++;
             }
 
+/* Then there's the problem of recording the hit: do we want or need to store    */
+/* the entire branched alignment?  That could be memory-intensive.               */
+/* So how much information do we actually need to store?  Theoretically, the hit */
+/* could be reconstructed just from the outer set of v,j,d; but that might not   */
+/* give us enough information about the coverage of the hit within that interval */
+/* 1 outer (v,j,d) and x inner (v,j,d)s?  How do we manage that dynamically      */
             if (! duplicate)
             {
               /* If not a duplicate, record the hit */
