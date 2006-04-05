@@ -211,10 +211,10 @@ main(int argc, char **argv)
   /* EPN 08.18.05 */
   if (! (set_window)) windowlen = cm->W;
   /*printf("***cm->W : %d***\n", cm->W);*/
-  printf("***cm->el_selfsc: %f\n", cm->el_selfsc);
-  /* EPN 11.18.05 Now that know what windowlen is, we need to ensure that
+  /*printf("***cm->el_selfsc: %f\n", cm->el_selfsc);*/
+  /* EPN 11.18.05 Now that we know what windowlen is, we need to ensure that
    * cm->el_selfsc * W >= IMPOSSIBLE (cm->el_selfsc is the score for an EL self transition)
-   * This is done because we are potentially multiply cm->el_selfsc * W, and adding
+   * This is done because we potentially multiply cm->el_selfsc * W, and add
    * that to IMPOSSIBLE. To avoid underflow issues this value must be less than
    * 3 * IMPOSSIBLE. Here we guarantee its less than 2 * IMPOSSIBLE (to be safe).
    */
