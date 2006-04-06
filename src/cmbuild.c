@@ -26,6 +26,9 @@
 #include "funcs.h"		/* external functions                   */
 #include "cm_eweight.h"         /* LSJ's entropy weighted functions ported
 				 * from HMMER2.4devl [by EPN] */
+#include "hmmer_funcs.h"
+#include "hmmer_structs.h"
+#include "hmmband.h"
 
 static char banner[] = "cmbuild - build RNA covariance model from alignment";
 
@@ -72,10 +75,17 @@ static char experts[] = "\
    --regress <f>  : save regression test information to file <f>\n\
    --treeforce    : score first seq in alignment and show parsetree\n\
    --ignorant     : strip the structural info from input alignment\n\
+   --dlev <x>     : set verbosity of debugging print statements to <x> [1..3]\n\
 \n\
  * customization of null model and priors:\n\
-   --null      <f> : read null (random sequence) model from file <f>\n\
-   --priorfile <f> : read priors from file <f>\n\
+   --null      <f>: read null (random sequence) model from file <f>\n\
+   --priorfile <f>: read priors from file <f>\n\
+\n\
+ * build an HMM\n\
+   model architecture types: \n\
+   --cp9 <f>      : build CM plan 9 HMM and save it to file <f>\n\
+   --p7g <f>      : build glocal (NW) plan 7 HMMER 2.4 HMM to file <f>\n\
+   --p7l <f>      : build  local (SW) plan 7 HMMER 2.4 HMM to file <f>\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -104,36 +114,40 @@ static struct opt_s OPTIONS[] = {
   { "--bandp",     FALSE, sqdARG_FLOAT},
   { "--ignorant",  FALSE, sqdARG_NONE },
   { "--null",      FALSE, sqdARG_STRING },
-  { "--effnone", FALSE, sqdARG_NONE },
-  { "--effent",  FALSE, sqdARG_NONE },
+  { "--effnone",   FALSE, sqdARG_NONE },
+  { "--effent",    FALSE, sqdARG_NONE },
   /*{ "--effrelent",  FALSE, sqdARG_NONE },*/
-  { "--eloss",   FALSE, sqdARG_FLOAT },
+  { "--eloss",     FALSE, sqdARG_FLOAT },
   { "--elself",    FALSE, sqdARG_FLOAT},
+  { "--dlev",      FALSE, sqdARG_INT },
+  { "--cp9",       FALSE, sqdARG_STRING},
+  { "--p7g",       FALSE, sqdARG_STRING},
+  { "--p7l",       FALSE, sqdARG_STRING}
 }
 ;
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
 static int  save_countvectors(char *cfile, CM_t *cm);
 static int  clean_cs(char *cs, int alen);
-/* EPN 08.18.05 */
-static int MSAMaxSequenceLength(MSA *msa);
+static int  MSAMaxSequenceLength(MSA *msa);
 static void model_trace_info_dump(FILE *ofp, CM_t *cm, Parsetree_t *tr, 
 				  char *aseq);
 static void PrintBandDensity(FILE *fp, double **gamma, int v, int W,
 			     int min, int max);
-/* EPN 09.07.05 */
 static void StripWUSS(char *ss);
 
 int
 main(int argc, char **argv)
 {
   char            *cmfile;	/* file to write CM to                     */
+  char            *hmmfile;     /* file to write HMM to                    */
   char            *alifile;     /* seqfile to read alignment from          */ 
   int              format;	/* format of seqfile                       */
   MSAFILE         *afp;         /* open alignment file                     */
   FILE            *cmfp;	/* output file for CMs                     */
   MSA             *msa;         /* a multiple sequence alignment           */
   char           **dsq;		/* digitized aligned sequences             */
+  unsigned char  **p7dsq;	/* digitized aligned sequences             */
   int              nali;	/* number of alignments processed          */
   Parsetree_t     *mtr;         /* master structure tree from the alignment*/
   Parsetree_t     *tr;		/* individual traces from alignment        */
@@ -161,7 +175,7 @@ main(int argc, char **argv)
   enum {			/* Effective sequence number strategy:        */
     EFF_NOTSETYET,
     EFF_NONE, 			/* --effnone: eff_nseq is nseq                */
-    EFF_ENTROPY                /* --effent:  entropy loss target             */
+    EFF_ENTROPY                 /* --effent:  entropy loss target             */
     /*EFF_RELENTROPY               --effrelent:  relative entropy loss target */
   } eff_strategy;
 
@@ -175,57 +189,94 @@ main(int argc, char **argv)
   char *regressionfile;		/* file to dump regression test info to    */
   FILE *regressfp;		/* open file to dump regression test info  */
 
-  /*ADDED EPN 01.31.05*/
-  char *prifile;                /* file with prior data */
-  Prior_t *pri;                 /* mixture Dirichlet prior structure */
+  /* EPN modifications (beginning 01.31.05) */
+  char       *prifile;          /* file with prior data */
+  Prior_t    *pri;              /* mixture Dirichlet prior structure */
 
-  /* Added EPN 08.18.05 So we can calculate an appropriate W when building the CM */
-  double  **gamma;              /* P(subseq length = n) for each state v    */
-  int     *dmin;		/* minimum d bound for state v, [0..v..M-1] */
-  int     *dmax; 		/* maximum d bound for state v, [0..v..M-1] */
-  double   bandp;		/* tail loss probability for banding */
-  int      safe_windowlen;	/* initial windowlen (W) used for calculating bands,
-				 * once bands are calculated we'll set cm->W to 
-				 * dmax[0] */
-  /* Added EPN 08.18.05 So we can print a band file */
-  char *bandfile;
-  int          v;
+  /* EPN 08.18.05 So we can calculate an appropriate W when building the CM */
+  double   **gamma;             /* P(subseq length = n) for each state v    */
+  int       *dmin;		/* minimum d bound for state v, [0..v..M-1] */
+  int       *dmax; 		/* maximum d bound for state v, [0..v..M-1] */
+  double     bandp;		/* tail loss probability for banding        */
+  int        safe_windowlen;	/* initial windowlen (W) used for calculating bands,
+				 * once bands are calculated we'll set cm->W to dmax[0] */
+  char      *bandfile;
+  int        v;                 /* counter over states                      */
+  int        be_ignorant;       /* TRUE to strip all bp info from the input structure */
+  char      *rndfile;		/* random sequence model file to read       */
 
-  /* Added EPN 09.07.05 So we can force ignorant (all single-stranded) models if we
-     so choose*/
-  int      be_ignorant;         /* TRUE to strip all bp information from the input
-				 * consensus structure.
-				 */
-  /* EPN 10.19.05 Added --null option (analagous to HMMER2.4 --null) */
-  char *rndfile;		/* random sequence model file to read    */
-
-  /* EPN 11.07.05 Added --effent, --effnone, and --eloss */
-  float eloss;		        /* target entropy loss, entropy-weights  */
-  int   eloss_set;		/* TRUE if eloss was set on commandline  */
-  float etarget;		/* target entropy (background - eloss)   */
-  float eff_nseq;		/* effective sequence number             */
-  int   eff_nseq_set;		/* TRUE if eff_nseq has been calculated  */
-  float randomseq[MAXABET];     /* null sequence model                     */
-
-  /* EPN 11.13.05 Switched from BandDistribution() to BandCalculationEngine() */
-  int    do_local;		/* always FALSE for now, used in BandCalculationEngine().
-				 * Does cmbuild have a --local option in its future? 
-				 */
-  int    save_gamma;		/* TRUE to save the gamma matrix in
-				 * BandCalculationEngine().
-				 */
+  /* EPN 11.07.05 entropy weighting */
+  float      eloss;		/* target entropy loss, entropy-weights    */
+  int        eloss_set;		/* TRUE if eloss was set on commandline    */
+  float      etarget;		/* target entropy (background - eloss)     */
+  float      eff_nseq;		/* effective sequence number               */
+  int        eff_nseq_set;	/* TRUE if eff_nseq has been calculated    */
+  float      randomseq[MAXABET];/* null sequence model                     */
+  int        do_local;		/* always FALSE for now, used in BandCalculationEngine().
+				 * Does cmbuild have a --local option in its future? */
+  int        save_gamma;	/* TRUE to save the gamma matrix in
+				 * BandCalculationEngine().*/
   /* EPN 11.15.05 User has the option to set the EL self transition probability
    * at the command line. This value is converted to a score (log2(prob)) and
    * stored in the CM file. By default this probability is 1.0, which has score
    * 0, so by default this self transition probability doesn't affect the performance
-   * of the model at all relative to a v0.6 or earlier model.
-   */
-  float el_selfprob;           /* EL state's self transition probability. This is hacky.
+   * of the model at all relative to a v0.6 or earlier model.*/
+  float      el_selfprob;      /* EL state's self transition probability. This is really hacky.
 				* EL states are different, they don't have a transition score vector,
 				* This probability is converted to a score and used to penalize very 
 				* large regions 'skipped' by EL states. 
 				* see ~nawrocki/notebook/5_1115_inf_el_trans_prob/00LOG for details.
 				*/
+  /* EPN 10.10.05 HMMERNAL (HMM banded alignment) additions */
+  struct plan7_s    *p7hmm;        /* constructed p7 HMM; written to hmmfile  */
+  struct p7prior_s  *p7pri;        /* Dirichlet priors to use                 */
+  struct p7trace_s **p7tr;         /* fake tracebacks for aseq's              */
+  int                checksum;     /* checksum of the alignment               */
+  float              p1;           /* null sequence model p1 transition       */
+  char              *name;         /* name of the HMM                         */
+  enum p7_config {                 /* algorithm configuration strategy        */
+    P7_BASE_CONFIG, P7_LS_CONFIG, P7_FS_CONFIG, P7_SW_CONFIG } cfg_strategy;
+  float              swentry;      /* S/W aggregate entry probability         */
+  float              swexit;       /* S/W aggregate exit probability          */
+  FILE              *hmmfp;        /* HMM output file handle                  */
+  int               *node_cc_left; /* consensus column each CM node's left emission maps to
+			            * [0..(cm->nodes-1)], -1 if maps to no consensus column*/
+  int               *node_cc_right;/* consensus column each CM node's right emission maps to
+			            * [0..(cm->nodes-1)], -1 if maps to no consensus column*/
+  int               *cc_node_map;  /* node that each consensus column maps to (is modelled by)
+			            * [1..hmm_nmc] */
+  int                debug_level;  /* level of debugging print statements    */
+  enum {			   /* Type of HMM to be built */
+    NONE, HMM_CP9, HMM_P7} hmm_type;
+  struct cplan9_s  *cp9hmm;        /* constructed CM p9 HMM; written to hmmfile  */
+  int cp9_M;                       /* number of nodes in CM p9 HMM (MATL+MATR+2*MATP) */
+  int **cs2hn_map;                 /* 2D CM state to HMM node map, 1st D - CM state index
+				    * 2nd D - 0 or 1 (up to 2 matching HMM states), value: HMM node
+				    * that contains state that maps to CM state, -1 if none.*/
+  int **cs2hs_map;                 /* 2D CM state to HMM node map, 1st D - CM state index
+				    * 2nd D - 2 elements for up to 2 matching HMM states, 
+				    * value: HMM STATE (0(M), 1(I), 2(D) that maps to CM state,
+				    * -1 if none.
+				    * For example: HMM node cs2hn_map[v][0], state cs2hs_map[v][0]
+				    * maps to CM state v.*/
+  int ***hns2cs_map;               /* 3D HMM node-state to CM state map, 1st D - HMM node index, 2nd D - 
+				    * HMM state (0(M), 1(I), 2(D)), 3rd D - 2 elements for up to 
+				    * 2 matching CM states, value: CM states that map, -1 if none.
+				    * For example: CM states hsn2cs_map[k][0][0] and hsn2cs_map[k][0][1]
+				    * map to HMM node k's match state.*/
+  int k;                           /* Counter over HMM nodes */
+  int ks;                          /* Counter over HMM state types (0 (match), 1(ins) or 2 (del))*/
+		      
+  /* Do hmmbuild.c stuff
+   * This is pointless unless hmm_type is eventually set to HMM_P7
+   */
+  p7pri = P7DefaultInfernalPrior();
+  /* Set up the null/random seq model */
+  P7DefaultNullModel(randomseq, &p1);
+  cfg_strategy      = P7_BASE_CONFIG;  /* Our default is global (NW) style */
+  swentry           = 0.5;
+  swexit            = 0.5;
+  Alphabet_type     = hmmNOTSETYET;	/* initially unknown */   
 
   /*********************************************** 
    * Parse command line
@@ -259,21 +310,16 @@ main(int argc, char **argv)
   eff_nseq_set      = FALSE;
   do_local          = FALSE;
   save_gamma        = FALSE;
-  eloss             = 0.54;  /* EPN - Empirically determined optimal eloss using RMARK 
-			      * benchmark */
+  eloss             = 0.54;  /* EPN: empirically determined optimal eloss using RMARK benchmark*/ 
 
-  /* EPN 08.18.05 bandp used in BandBounds() for calculating W(W=dmax[0]) 
-   *              Brief expt on effect of different bandp values in 
-   *              ~nawrocki/notebook/5_0818_inf_cmbuild_bands/00LOG
-   */
   bandp             = 0.0000001; 
   safe_windowlen    = 0;
-  
-  be_ignorant       = FALSE;	/* default: leave in bp information */
-
-  el_selfprob     = 0.94;  /* EPN 11.28.05
-			    * Empirically determined optimal 
-			    * eloss using RMARK benchmark */
+  be_ignorant       = FALSE; /* default: leave in bp information */
+  el_selfprob       = 0.94;  /* EPN: empirically determined optimal 
+			      * EL self transition prob using RMARK benchmark 
+			      * (11.28.05) */
+  debug_level       = 0; 
+  hmm_type          = NONE;  /* default: don't build an HMM */
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -309,6 +355,21 @@ main(int argc, char **argv)
       el_selfprob= atof(optarg); 
       if(el_selfprob < 0 || el_selfprob > 1)
 	Die("EL self transition probability must be between 0 and 1.\n");
+    }
+    else if (strcmp(optname, "--dlev")      == 0)  debug_level  = atoi(optarg);
+    else if (strcmp(optname, "--cp9")       == 0) { 
+      if(hmm_type != NONE) Die("Can't do --cp9 and --p7g or --p7l, pick one HMM type.\n");
+      hmm_type  = HMM_CP9; hmmfile = optarg; 
+    }
+    else if (strcmp(optname, "--p7g")        == 0) { 
+      if(hmm_type != NONE) Die("Can't do --cp9 and --p7g or --p7l, pick one HMM type.\n");
+      hmm_type  = HMM_P7; hmmfile = optarg; 
+      cfg_strategy = P7_BASE_CONFIG;  /* NW style */
+    }
+    else if (strcmp(optname, "--p7l")        == 0) { 
+      if(hmm_type != NONE) Die("Can't do --cp9 and --p7g or --p7l, pick one HMM type.\n");
+      hmm_type  = HMM_P7; hmmfile = optarg; 
+      cfg_strategy = P7_SW_CONFIG;  /* SW style */
     }
     else if (strcmp(optname, "--informat") == 0) {
       format = String2SeqfileFormat(optarg);
@@ -347,6 +408,13 @@ main(int argc, char **argv)
     Die("Failed to open CM file %s for %s\n", cmfile, 
 	do_append ? "appending" : "writing");
 
+  /* Open the HMM file */
+  if(hmm_type != NONE)
+    {
+      if ((hmmfp = fopen(hmmfile, fpopts)) == NULL)
+	Die("Failed to open HMM file %s for %s\n", hmmfile,
+	    do_append ? "appending" : "writing");
+    }
 				/* open regression test file */
   if (regressionfile != NULL) {
     if ((regressfp = fopen(regressionfile, "w")) == NULL) 
@@ -416,9 +484,7 @@ main(int argc, char **argv)
 
   /* EPN 11.07.05 - EFF_ENTROPY effective sequence number strategy
    *                ported from HMMER 2.4devl. 
-   */
-  
-  /* If we're using the entropy-target strategy for effective
+   * If we're using the entropy-target strategy for effective
    * sequence number calculation, set the default target entropy loss.
    */
   if (eff_strategy == EFF_ENTROPY) 
@@ -444,6 +510,17 @@ main(int argc, char **argv)
   nali = 0;
   while ((msa = MSAFileRead(afp)) != NULL)
     {
+
+      if (Alphabet_type == hmmNOTSETYET)
+	{
+	  printf("%-40s ... ", "Determining alphabet");
+	  fflush(stdout);
+	  DetermineAlphabet(msa->aseq, msa->nseq);
+	  if      (Alphabet_type == hmmNUCLEIC) puts("done. [DNA]");
+	  else if (Alphabet_type == hmmAMINO)   puts("done. [protein]");
+	  else                                  puts("done.");
+	}
+
       avlen = (int) MSAAverageSequenceLength(msa);
       
       /* Print some stuff about what we're about to do.
@@ -515,6 +592,8 @@ main(int argc, char **argv)
        */
       printf("%-40s ... ", "Digitizing alignment"); fflush(stdout);
       dsq = DigitizeAlignment(msa->aseq, msa->nseq, msa->alen);
+      if(hmm_type != NONE)
+	hmmer_DigitizeAlignment(msa, &p7dsq);
       printf("done.\n");
 
       if (eff_strategy == EFF_NONE)
@@ -560,9 +639,7 @@ main(int argc, char **argv)
 
       /* EPN 11.07.05 - EFF_ENTROPY effective sequence number strategy
        *                ported from HMMER 2.4devl. 
-       */
-      
-      /* Effective sequence number calculation.
+       * Effective sequence number calculation.
        * (if we don't have eff_nseq yet, calculate it now).
        */
       if (! eff_nseq_set) {
@@ -679,6 +756,237 @@ main(int argc, char **argv)
       CMFileWrite(cmfp, cm, do_binary);
       printf("done. [%s]\n", cmfile);
 
+      /* Build an HMM, either HMMER 2.4 plan 7 or CM plan 9 (default) */
+      if(hmm_type == HMM_P7)
+	{
+	  /*****************************************************************/
+	  /* 10.10.05 Build a plan 7 HMM from the seed alignment.  
+	   * Most code torn out of HMMER 2.4devl */
+	  printf("%-40s ... ", "Building HMM with hmmer's P7Fastmodelmaker()");
+	  checksum = GCGMultchecksum(msa->aseq, msa->nseq);
+	  P7Fastmodelmaker(msa, p7dsq, gapthresh, &p7hmm, &p7tr);
+	  p7hmm->checksum = checksum;
+	  printf("done.\n");
+	  
+	  /* HMM entropy weighting strategy is same as for the CM
+	   * by using the effective sequence number (eff_nseq)
+	   * from the CM.
+	   */
+	  
+	  if (eff_strategy == EFF_ENTROPY) {
+	    printf("%-40s ... ", "Using eff seq # from CM entropy target");
+	    fflush(stdout);
+	    Plan7Rescale(p7hmm, eff_nseq / (float) msa->nseq);
+	    printf("done. [%.2f]\n", eff_nseq);
+	  }
+	  
+	  /* Record the null model in the HMM;
+	   * add prior contributions in pseudocounts and renormalize.
+	   */
+	  printf("%-40s ... ", "Converting counts to probabilities");
+	  fflush(stdout);
+	  Plan7SetNullModel(p7hmm, randomseq, p1);
+	  P7PriorifyHMM(p7hmm, p7pri);
+	  printf("done.\n");
+
+	  /* Model configuration, temporary.
+	   * hmmbuild assumes that it's given an alignment of single domains,
+	   * and the alignment may contain fragments. So, for the purpose of
+	   * scoring the sequences (or, optionally, MD/ME weighting),
+	   * configure the model into hmmsw mode. Later we'll
+	   * configure the model according to how the user wants to
+	   * use it.
+	   */
+	  Plan7SWConfig(p7hmm, 0.5, 0.5);
+
+	  /* Give the model a name.
+	   * We deal with this differently depending on whether
+	   * we're in an alignment database or a single alignment.
+	   * 
+	   * If a single alignment, priority is:
+	   *      1. Use -n <name> if set.
+	   *      2. Use msa->name (avail in Stockholm or SELEX formats only)
+	   *      3. If all else fails, use alignment file name without
+	   *         filename extension (e.g. "globins.slx" gets named "globins"
+	   *         
+	   * If a multiple MSA database (e.g. Stockholm/Pfam), 
+	   * only msa->name is applied. -n is not allowed.
+	   * if msa->name is unavailable, or -n was used,
+	   * a fatal error is thrown.
+	   * 
+	   * Because we can't tell whether we've got more than one
+	   * alignment 'til we're on the second one, these fatal errors
+	   * only happen after the first HMM has already been built.
+	   * Oh well.
+	   */
+	  printf("%-40s ... ", "Setting model name, etc.");
+	  fflush(stdout);
+	  if (nali == 0)		/* first (only?) HMM in file:  */
+	    {
+	      if      (setname != NULL)   name = Strdup(setname);
+	      else if (msa->name != NULL) name = Strdup(msa->name);
+	      else                        name = FileTail(alifile, TRUE);
+	    }
+	  else
+	    {
+	      if (setname != NULL) 
+		Die("Oops. Wait. You can't use -n with an alignment database.");
+	      else if (msa->name != NULL) name = Strdup(msa->name);
+	      else
+		Die("Oops. Wait. I need name annotation on each alignment.\n");
+	    }
+	  Plan7SetName(p7hmm, name);
+	  free(name);
+	  /* Transfer other information from the alignment to
+	   * the HMM. This typically only works for Stockholm or SELEX format
+	   * alignments, so these things are conditional/optional.
+	   */
+	  if (msa->acc  != NULL) Plan7SetAccession(p7hmm,   msa->acc);
+	  if (msa->desc != NULL) Plan7SetDescription(p7hmm, msa->desc);
+	  
+	  if (msa->cutoff_is_set[MSA_CUTOFF_GA1] && msa->cutoff_is_set[MSA_CUTOFF_GA2])
+	    { p7hmm->flags |= PLAN7_GA; p7hmm->ga1 = msa->cutoff[MSA_CUTOFF_GA1]; p7hmm->ga2 = msa->cutoff[MSA_CUTOFF_GA2]; }
+	  if (msa->cutoff_is_set[MSA_CUTOFF_TC1] && msa->cutoff_is_set[MSA_CUTOFF_TC2])
+	    { p7hmm->flags |= PLAN7_TC; p7hmm->tc1 = msa->cutoff[MSA_CUTOFF_TC1]; p7hmm->tc2 = msa->cutoff[MSA_CUTOFF_TC2]; }
+	  if (msa->cutoff_is_set[MSA_CUTOFF_NC1] && msa->cutoff_is_set[MSA_CUTOFF_NC2])
+	    { p7hmm->flags |= PLAN7_NC; p7hmm->nc1 = msa->cutoff[MSA_CUTOFF_NC1]; p7hmm->nc2 = msa->cutoff[MSA_CUTOFF_NC2]; }
+	  /* Record some other miscellaneous information in the HMM,
+	   * like how/when we built it.
+	   */
+	  Plan7ComlogAppend(p7hmm, argc, argv);
+	  Plan7SetCtime(p7hmm);
+	  p7hmm->nseq = msa->nseq;
+	  printf("done. [%s]\n", p7hmm->name); 
+	  /* Print information for the user
+	   */
+	  printf("\nConstructed a profile HMM (length %d)\n", p7hmm->M);
+	  PrintPlan7Stats(stdout, p7hmm, p7dsq, msa->nseq, p7tr); 
+	  printf("\n");
+	  /* Configure the model for chosen algorithm
+	   */
+	  
+	  printf("%-40s ... ", "Finalizing model configuration");
+	  fflush(stdout);
+	  switch (cfg_strategy) {
+	  case P7_BASE_CONFIG:  Plan7GlobalConfig(p7hmm);              break;
+	  case P7_SW_CONFIG:    Plan7SWConfig(p7hmm, swentry, swexit); break;
+	  case P7_LS_CONFIG:    Die("whoa, we're not set up for LS HMM config.");
+	  case P7_FS_CONFIG:    Die("whoa, we're not set up for FS HMM config.");
+	  default:              Die("bogus configuration choice");
+	  }
+	  printf("done.\n");
+	  
+	  /* Save new HMM to disk: open a file for appending or writing.
+	   */
+	  printf("%-40s ... ", "Saving model to file");
+	  fflush(stdout);
+	  if (do_binary) WriteBinHMM(hmmfp, p7hmm);
+	  else           WriteAscHMM(hmmfp, p7hmm);
+	  printf("done.\n");
+
+	  /* Below: Abandoned code to construct a P7 HMM that's as similar
+	   * as possible to the CM. (abandoned to pursue building a CM
+	   * plan 9 HMM that's as similar as possible to the HMM.
+	   */
+	  /***********ABANDONED SECTION BEGIN**************************/
+	  /* Get information mapping the HMM to the CM and vice versa. */
+	  /*
+	  node_cc_left  = malloc(sizeof(int) * cm->nodes);
+	  node_cc_right = malloc(sizeof(int) * cm->nodes);
+	  cc_node_map   = malloc(sizeof(int) * (p7hmm->M + 1));
+	  map_consensus_columns(cm, p7hmm->M, node_cc_left, node_cc_right,
+				cc_node_map, debug_level);
+	  */
+	  /* 11.28.05 Reset the HMM parameters so they mirror the 
+	   * CM's as closely as possible. 
+	   * This approach was ABANDONED 03.19.06 */
+	  /*
+	  cm2wrhmm_p7(cm, p7hmm, node_cc_left, node_cc_right, cc_node_map, 3);
+	  */
+	  /***********ABANDONED SECTION END**************************/
+	} /* end of if(hmm_type == HMM_P7) */
+      else if (hmm_type == HMM_CP9)
+	{
+	  /* Build a CM plan 9 HMM directly from the CM (seed aln is irrelevant
+	   * given the CM) */
+	  /* Calculate the number of nodes we need for the HMM */
+	  cp9_M = 0;
+	  for(v = 0; v <= cm->M; v++)
+	    {
+	      if(cm->stid[v] ==  MATP_MP)
+		cp9_M += 2;
+	      else if(cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR)
+		cp9_M ++;
+	    }
+	  /* Build the HMM */
+	  cp9hmm = AllocCPlan9(cp9_M);
+	  ZeroCPlan9(cp9hmm);
+
+	  /* Get information mapping the HMM to the CM and vice versa. */
+	  node_cc_left  = malloc(sizeof(int) * cm->nodes);
+	  node_cc_right = malloc(sizeof(int) * cm->nodes);
+	  cc_node_map   = malloc(sizeof(int) * (cp9hmm->M + 1));
+	  map_consensus_columns(cm, cp9hmm->M, node_cc_left, node_cc_right,
+				cc_node_map, debug_level);
+
+	  cs2hn_map     = malloc(sizeof(int *) * (cm->M+1));
+	  for(v = 0; v <= cm->M; v++)
+	    cs2hn_map[v]     = malloc(sizeof(int) * 2);
+
+	  cs2hs_map     = malloc(sizeof(int *) * (cm->M+1));
+	  for(v = 0; v <= cm->M; v++)
+	    cs2hs_map[v]     = malloc(sizeof(int) * 2);
+
+	  hns2cs_map    = malloc(sizeof(int **) * (cp9hmm->M+1));
+	  for(k = 0; k <= cp9hmm->M; k++)
+	    {
+	      hns2cs_map[k]    = malloc(sizeof(int *) * 3);
+	      for(ks = 0; ks < 3; ks++)
+		hns2cs_map[k][ks]= malloc(sizeof(int) * 2);
+	    }
+
+	  CP9_map_cm2hmm_and_hmm2cm(cm, cp9hmm, node_cc_left, node_cc_right, 
+				    cc_node_map, cs2hn_map, cs2hs_map, 
+				    hns2cs_map, 0);
+	  
+	  checksum = GCGMultchecksum(msa->aseq, msa->nseq);
+
+	  /* Fill in parameters of HMM using the CM and some tricks/ideas/formulas
+	   * from Zasha Weinberg's thesis (~p.123) */
+	  CP9_cm2wrhmm(cm, cp9hmm, node_cc_left, node_cc_right, cc_node_map, cs2hn_map,
+		       cs2hs_map, hns2cs_map, debug_level);
+	  cp9hmm->checksum = checksum;
+
+	  /* Give the model a name (use the same name as the CM).
+	   */
+	  printf("%-40s ... ", "Naming and annotating CP9 HMM"); fflush(stdout);
+	  CPlan9SetName(cp9hmm, cm->name);
+	  if (msa->acc  != NULL) CPlan9SetAccession(cp9hmm,   msa->acc);
+	  if (msa->desc != NULL) CPlan9SetDescription(cp9hmm, msa->desc);
+
+	  /* Record some other miscellaneous information in the HMM,
+	   * like how/when we built it.
+	   */
+	  CPlan9ComlogAppend(cp9hmm, argc, argv);
+	  CPlan9SetCtime(cp9hmm);
+	  cp9hmm->nseq = msa->nseq;
+	  printf("done. [%s]\n", cp9hmm->name); 
+	  /* Print information for the user
+	   */
+	  printf("\nConstructed a CM plan 9 profile HMM (length %d)\n", cp9hmm->M);
+	  /* At this stage we would configure the HMM, but (for now) CM plan 9 
+	   * models are trained from the CM and don't get configured. 
+	   */
+	  
+	  /* Save new CP9 HMM to disk: open a file for appending or writing.
+	   */
+	  printf("%-40s ... ", "Saving CM plan 9 HMM to file");
+	  fflush(stdout);
+	  if (do_binary) CP9_WriteBinHMM(hmmfp, cp9hmm);
+	  else           CP9_WriteAscHMM(hmmfp, cp9hmm);
+	  printf("done.\n");
+	}/* end of if (hmm_type = HMM_CP9) */
+
       /* Dump optional information to files:
        */
       /* Tabular description of CM topology */
@@ -787,7 +1095,7 @@ main(int argc, char **argv)
 	    }
 	}
 
-      /* EPN 08.18.05 Detailed band info for the training set.
+      /* EPN 08.18.05 Detailed band info for the training set (seed seqs).
        */
       if (bandfile != NULL)       
 	{
@@ -800,7 +1108,6 @@ main(int argc, char **argv)
 	   * be set at the command line). We already have gamma from
 	   * the band calculation we used to get cm->W.
 	   */
-	  
 	  fprintf(ofp, "acc:%s\n", msa->acc);
 	  fprintf(ofp, "bandp:%g\n", bandp);
 	  for (v = 0; v < cm->M; v++)
@@ -823,6 +1130,41 @@ main(int argc, char **argv)
       puts("");
       CYKDemands(cm, avlen);     
 
+      /* Free aln specific HMM related data structures */
+      if(hmm_type != NONE)
+	{
+	  Free2DArray((void**)p7dsq, msa->nseq);
+	}
+      if(hmm_type == HMM_P7)
+	{
+	  for (idx = 0; idx < msa->nseq; idx++) 
+	    P7FreeTrace(p7tr[idx]);
+	  free(p7tr);
+	  FreePlan7(p7hmm);
+	}
+      if(hmm_type == HMM_CP9)
+	{
+	  free(node_cc_left);
+	  free(node_cc_right);
+	  free(cc_node_map);
+	  for(v = 0; v <= cm->M; v++)
+	    {
+	      free(cs2hn_map[v]);
+	      free(cs2hs_map[v]);
+	    }
+	  free(cs2hn_map);
+	  free(cs2hs_map);
+	  for(k = 0; k <= cp9hmm->M; k++)
+	    {
+	      for(ks = 0; ks < 3; ks++)
+		free(hns2cs_map[k][ks]);
+	      free(hns2cs_map[k]);
+	    }
+	  free(hns2cs_map);
+	  FreeCPlan9(cp9hmm);
+	}
+
+      /* Free aln specific CM related data structures */
       FreeParsetree(mtr);
       Free2DArray((void**)dsq, msa->nseq);
       MSAFree(msa);
@@ -846,11 +1188,9 @@ main(int argc, char **argv)
   fclose(cmfp);
   SqdClean();
 
+  P7FreePrior(p7pri);
   return 0;
 }
-
-
-
 
 /* Function: save_countvectors()
  * Date:     SRE, Tue May  7 16:21:10 2002 [St. Louis]

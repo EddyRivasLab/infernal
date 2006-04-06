@@ -1,6 +1,8 @@
 #include "squid.h"
 #include "msa.h"
 #include "structs.h"
+#include "hmmer_structs.h"
+#include "cplan9.h"
 
 /* from alphabet.c
  */
@@ -68,8 +70,6 @@ extern char *UniqueStatetype(int type);
 extern int   UniqueStateCode(char *s);
 extern int   DeriveUniqueStateCode(int ndtype, int sttype);
 extern CM_t *CMRebalance(CM_t *cm);
-
-/*EPN 10.19.05*/
 extern void  CMDefaultNullModel(float *null);
 extern void  CMSetNullModel(CM_t *cm, float null[MAXABET]);
 extern void  CMReadNullModel(char *rndfile, float *null);
@@ -153,3 +153,102 @@ extern float CYKDivideAndConquer_b(CM_t *cm, char *dsq, int L, int r, int i0, in
 				   int *dmin, int *dmax);
 extern float CYKInside_b(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, 
 			 int *dmin, int *dmax);
+
+/* The memory management routines.
+ */
+extern struct  deckpool_s *deckpool_create(void);
+extern void    deckpool_push(struct deckpool_s *dpool, float **deck);
+extern int     deckpool_pop(struct deckpool_s *d, float ***ret_deck);
+extern void    deckpool_free(struct deckpool_s *d);
+extern float **alloc_vjd_deck(int L, int i, int j);
+extern float   size_vjd_deck(int L, int i, int j);
+extern void    free_vjd_deck(float **a, int i, int j);
+extern void    free_vjd_matrix(float ***a, int M, int i, int j);
+extern char  **alloc_vjd_yshadow_deck(int L, int i, int j);
+extern float   size_vjd_yshadow_deck(int L, int i, int j);
+extern void    free_vjd_yshadow_deck(char **a, int i, int j);
+extern int   **alloc_vjd_kshadow_deck(int L, int i, int j);
+extern float   size_vjd_kshadow_deck(int L, int i, int j);
+extern void    free_vjd_kshadow_deck(int **a, int i, int j);
+extern void    free_vjd_shadow_matrix(void ***shadow, CM_t *cm, int i, int j);
+extern float **alloc_vji_deck(int i0, int i1, int j1, int j0);
+extern float   size_vji_deck(int i0, int i1, int j1, int j0);
+extern void    free_vji_deck(float **a, int j1, int j0);
+extern void    free_vji_matrix(float ***a, int M, int j1, int j0);
+extern char  **alloc_vji_shadow_deck(int i0, int i1, int j1, int j0);
+extern float   size_vji_shadow_deck(int i0, int i1, int j1, int j0);
+extern void    free_vji_shadow_deck(char **a, int j1, int j0);
+extern void    free_vji_shadow_matrix(char ***a, int M, int j1, int j0);
+
+extern float **alloc_banded_vjd_deck(int L, int i, int j, int min, int max);
+extern char  **alloc_banded_vjd_yshadow_deck(int L, int i, int j, int min, int max);
+extern int   **alloc_banded_vjd_kshadow_deck(int L, int i, int j, int min, int max);
+
+extern void debug_print_alpha(float ***alpha, CM_t *cm, int L);
+extern void debug_print_alpha_banded(float ***alpha, CM_t *cm, int L, int *dmin, int *dmax);
+extern void debug_print_alpha_deck(int v, float **deck, CM_t *cm, int L);
+extern void debug_print_shadow(void ***shadow, CM_t *cm, int L);
+extern void debug_print_shadow_banded(void ***shadow, CM_t *cm, int L, int *dmin, int *dmax);
+extern void debug_print_shadow_banded_deck(int v, void ***shadow, CM_t *cm, int L, int *dmin, int *dmax);
+extern void debug_print_bands(CM_t *cm, int *dmin, int *dmax);
+
+/* from cplan9.c 
+ * CM Plan9 HMM structure support
+ */
+extern struct cplan9_s *AllocCPlan9(int M);
+extern struct cplan9_s *AllocCPlan9Shell(void);
+extern void AllocCPlan9Body(struct cplan9_s *hmm, int M);
+extern void FreeCPlan9(struct cplan9_s *hmm);
+extern void ZeroCPlan9(struct cplan9_s *hmm);
+extern void CPlan9SetName(struct cplan9_s *hmm, char *name);
+extern void CPlan9SetAccession(struct cplan9_s *hmm, char *acc);
+extern void CPlan9SetDescription(struct cplan9_s *hmm, char *desc);
+extern void CPlan9ComlogAppend(struct cplan9_s *hmm, int argc, char **argv);
+extern void CPlan9SetCtime(struct cplan9_s *hmm);
+extern void CPlan9SetNullModel(struct cplan9_s *hmm, float null[HMMERMAXABET], float p1);
+extern void CP9Logoddsify(struct cplan9_s *hmm);
+extern void CPlan9Rescale(struct cplan9_s *hmm, float scale);
+extern void CPlan9Renormalize(struct cplan9_s *hmm);
+
+extern struct cp9_dpmatrix_s *AllocCPlan9Matrix(int rows, int M, int ***mmx, 
+						int ***imx, int ***dmx, int ***emx);
+extern void FreeCPlan9Matrix(struct cp9_dpmatrix_s *mx);
+extern struct cp9_dpmatrix_s *CreateCPlan9Matrix(int N, int M, int padN, int padM);
+extern void ResizeCPlan9Matrix(struct cp9_dpmatrix_s *mx, int N, int M, 
+			       int ***mmx, int ***imx, int ***dmx, int ***emx);
+
+/* from cp9_hmmio.c 
+ * CM Plan9 HMM Input/output (saving/reading)
+ */
+extern CP9HMMFILE *CP9_HMMFileOpen(char *hmmfile, char *env);
+extern int      CP9_HMMFileRead(CP9HMMFILE *hmmfp, struct cplan9_s **ret_hmm);
+extern void     CP9_HMMFileClose(CP9HMMFILE *hmmfp);
+extern int      CP9_HMMFileFormat(CP9HMMFILE *hmmfp);
+extern void     CP9_HMMFileRewind(CP9HMMFILE *hmmfp);
+extern int      CP9_HMMFilePositionByName(CP9HMMFILE *hmmfp, char *name);
+extern int      CP9_HMMFilePositionByIndex(CP9HMMFILE *hmmfp, int idx);
+extern void     CP9_WriteAscHMM(FILE *fp, struct cplan9_s *hmm);
+extern void     CP9_WriteBinHMM(FILE *fp, struct cplan9_s *hmm);
+
+/* from hbandcyk.c
+ */
+extern float CYKInside_b_jd(CM_t *cm, char *dsq, int L, int r, int i0, int j0, 
+			    Parsetree_t **ret_tr, int *jmin, int *jmax, 
+			    int **hdmin, int **hdmax, int *dmin, int *dmax);
+extern void PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax,
+		     int W);
+extern void ij2d_bands(CM_t *cm, int L, int *imin, int *imax, int *jmin, int *jmax,
+		       int **hdmin, int **hdmax, int debug_level);
+extern void hd2safe_hd_bands(int M, int *jmin, int *jmax, int **hdmin, int **hdmax,
+			     int *safe_hdmin, int *safe_hdmax);
+extern void debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax);
+
+/* from CP9_cm2wrhmm.c
+ */
+extern void CP9_cm2wrhmm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *node_cc_right, 
+			 int *cc_node_map, int **cs2hn_map, int **cs2hs_map, int ***hns2cs_map, 
+			 int debug_level);
+
+extern void debug_print_cp9_params(struct cplan9_s *hmm);
+extern void CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, int *cc_node_map,
+			    int debug_level);

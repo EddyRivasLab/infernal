@@ -99,31 +99,9 @@ static float vinsideT_size(CM_t *cm, int r, int z, int i0, int i1, int j1, int j
 static int   cyk_deck_count(CM_t *cm, int r, int z);
 static int   cyk_extra_decks(CM_t *cm);
 
-/* The memory management routines.
+/* The memory management routines are in funcs.h so hbandcyk.c 
+ * can access them (EPN)
  */
-static struct  deckpool_s *deckpool_create(void);
-static void    deckpool_push(struct deckpool_s *dpool, float **deck);
-static int     deckpool_pop(struct deckpool_s *d, float ***ret_deck);
-static void    deckpool_free(struct deckpool_s *d);
-static float **alloc_vjd_deck(int L, int i, int j);
-static float   size_vjd_deck(int L, int i, int j);
-static void    free_vjd_deck(float **a, int i, int j);
-static void    free_vjd_matrix(float ***a, int M, int i, int j);
-static char  **alloc_vjd_yshadow_deck(int L, int i, int j);
-static float   size_vjd_yshadow_deck(int L, int i, int j);
-static void    free_vjd_yshadow_deck(char **a, int i, int j);
-static int   **alloc_vjd_kshadow_deck(int L, int i, int j);
-static float   size_vjd_kshadow_deck(int L, int i, int j);
-static void    free_vjd_kshadow_deck(int **a, int i, int j);
-static void    free_vjd_shadow_matrix(void ***shadow, CM_t *cm, int i, int j);
-static float **alloc_vji_deck(int i0, int i1, int j1, int j0);
-static float   size_vji_deck(int i0, int i1, int j1, int j0);
-static void    free_vji_deck(float **a, int j1, int j0);
-static void    free_vji_matrix(float ***a, int M, int j1, int j0);
-static char  **alloc_vji_shadow_deck(int i0, int i1, int j1, int j0);
-static float   size_vji_shadow_deck(int i0, int i1, int j1, int j0);
-static void    free_vji_shadow_deck(char **a, int j1, int j0);
-static void    free_vji_shadow_matrix(char ***a, int M, int j1, int j0);
 
 /* BE_EFFICIENT and BE_PARANOID are alternative (exclusive) settings
  * for the do_full? argument to the alignment engines.
@@ -2886,7 +2864,7 @@ cyk_extra_decks(CM_t *cm)
  *            and subseq variants, because it's simply managing
  *            a deck as a float **.
  */
-static struct deckpool_s *
+struct deckpool_s *
 deckpool_create(void)
 {
   struct deckpool_s *dpool;
@@ -2898,7 +2876,7 @@ deckpool_create(void)
   dpool->n      = 0;
   return dpool;
 }
-static void 
+void 
 deckpool_push(struct deckpool_s *dpool, float **deck)
 {
   if (dpool->n == dpool->nalloc) {
@@ -2909,7 +2887,7 @@ deckpool_push(struct deckpool_s *dpool, float **deck)
   dpool->n++;
   SQD_DPRINTF3(("deckpool_push\n"));
 }
-static int
+int
 deckpool_pop(struct deckpool_s *d, float ***ret_deck)
 {
   if (d->n == 0) { *ret_deck = NULL; return 0;}
@@ -2918,7 +2896,7 @@ deckpool_pop(struct deckpool_s *d, float ***ret_deck)
   SQD_DPRINTF3(("deckpool_pop\n"));
   return 1;
 }
-static void
+void
 deckpool_free(struct deckpool_s *d)
 {
   free(d->pool);
@@ -2954,7 +2932,7 @@ deckpool_free(struct deckpool_s *d)
  *           0..127, in ANSI C; we don't know if a machine will make it
  *           signed or unsigned.)
  */
-static float **
+float **
 alloc_vjd_deck(int L, int i, int j)
 {
   float **a;
@@ -2967,7 +2945,7 @@ alloc_vjd_deck(int L, int i, int j)
   for (jp = 0;   jp <= j-i+1; jp++) a[jp+i-1] = MallocOrDie(sizeof(float) * (jp+1));
   return a;
 }
-static float
+float
 size_vjd_deck(int L, int i, int j)
 {
   float Mb;
@@ -2977,14 +2955,14 @@ size_vjd_deck(int L, int i, int j)
     Mb += (float) (sizeof(float) * (jp+1));
   return (Mb / 1000000.);
 }
-static void
+void
 free_vjd_deck(float **a, int i, int j)
 {
   int jp;
   for (jp = 0; jp <= j-i+1; jp++) if (a[jp+i-1] != NULL) free(a[jp+i-1]);
   free(a);
 }
-static void
+void
 free_vjd_matrix(float ***a, int M, int i, int j)
 {
   int v;
@@ -2993,7 +2971,7 @@ free_vjd_matrix(float ***a, int M, int i, int j)
       { free_vjd_deck(a[v], i, j); a[v] = NULL; }
   free(a);
 }
-static char **
+char **
 alloc_vjd_yshadow_deck(int L, int i, int j)
 {
   char **a;
@@ -3005,7 +2983,7 @@ alloc_vjd_yshadow_deck(int L, int i, int j)
   for (jp = 0;   jp <= j-i+1; jp++) a[jp+i-1] = MallocOrDie(sizeof(char) * (jp+1));
   return a;
 }
-static float
+float
 size_vjd_yshadow_deck(int L, int i, int j)
 {
   float  Mb;
@@ -3015,14 +2993,14 @@ size_vjd_yshadow_deck(int L, int i, int j)
     Mb += (float) (sizeof(char) * (jp+1));
   return Mb / 1000000.;
 }
-static void
+void
 free_vjd_yshadow_deck(char **a, int i, int j)
 {
   int jp;
   for (jp = 0; jp <= j-i+1; jp++) if (a[jp+i-1] != NULL) free(a[jp+i-1]);
   free(a);
 }
-static int **
+int **
 alloc_vjd_kshadow_deck(int L, int i, int j)
 {
   int **a;
@@ -3034,7 +3012,7 @@ alloc_vjd_kshadow_deck(int L, int i, int j)
   for (jp = j+1; jp <= L;     jp++) a[jp] = NULL;
   return a;
 }
-static float
+float
 size_vjd_kshadow_deck(int L, int i, int j)
 {
   float Mb;
@@ -3045,7 +3023,7 @@ size_vjd_kshadow_deck(int L, int i, int j)
     Mb += (float) (sizeof(int) * (jp+1));
   return Mb / 1000000.;
 }
-static void
+void
 free_vjd_kshadow_deck(int **a, int i, int j)
 {
   int jp;
@@ -3053,7 +3031,7 @@ free_vjd_kshadow_deck(int **a, int i, int j)
   for (jp = 0; jp <= j-i+1; jp++) if (a[jp+i-1] != NULL) free(a[jp-i+1]);
   free(a);
 }
-static void
+void
 free_vjd_shadow_matrix(void ***shadow, CM_t *cm, int i, int j)
 {
   int v;
@@ -3085,7 +3063,7 @@ free_vjd_shadow_matrix(void ***shadow, CM_t *cm, int i, int j)
  *           special casting tricks the way the more generally
  *           used vjd system does.
  */
-static float **                 /* allocation of a score deck. */
+float **                 /* allocation of a score deck. */
 alloc_vji_deck(int i0, int i1, int j1, int j0)
 {
   float **a;
@@ -3096,7 +3074,7 @@ alloc_vji_deck(int i0, int i1, int j1, int j0)
     a[jp] = MallocOrDie(sizeof(float)*(i1-i0+1));
   return a;
 }
-static float
+float
 size_vji_deck(int i0, int i1, int j1, int j0)
 {
   float Mb;
@@ -3106,7 +3084,7 @@ size_vji_deck(int i0, int i1, int j1, int j0)
     Mb += (float)(sizeof(float)*(i1-i0+1));
   return Mb / 1000000.;
 }
-static void			/* free'ing a score deck */
+void			/* free'ing a score deck */
 free_vji_deck(float **a, int j1, int j0)
 {
   int jp;
@@ -3115,7 +3093,7 @@ free_vji_deck(float **a, int j1, int j0)
     if (a[jp] != NULL) free(a[jp]);
   free(a);
 }
-static void
+void
 free_vji_matrix(float ***a, int M, int j1, int j0)
 {
   int v;
@@ -3127,7 +3105,7 @@ free_vji_matrix(float ***a, int M, int j1, int j0)
     if (a[v] != NULL) { free_vji_deck(a[v], j1, j0); a[v] = NULL; }
   free(a);
 }
-static char **		        /* allocation of a traceback ptr (shadow matrix) deck */
+char **		        /* allocation of a traceback ptr (shadow matrix) deck */
 alloc_vji_shadow_deck(int i0, int i1, int j1, int j0)
 {
   char **a;
@@ -3137,7 +3115,7 @@ alloc_vji_shadow_deck(int i0, int i1, int j1, int j0)
     a[jp] = MallocOrDie(sizeof(char)*(i1-i0+1));
   return a;
 }
-static float		        /* allocation of a traceback ptr (shadow matrix) deck */
+float		        /* allocation of a traceback ptr (shadow matrix) deck */
 size_vji_shadow_deck(int i0, int i1, int j1, int j0)
 {
   float   Mb;
@@ -3147,7 +3125,7 @@ size_vji_shadow_deck(int i0, int i1, int j1, int j0)
     Mb += (float)(sizeof(char)*(i1-i0+1));
   return Mb / 1000000;
 }
-static void	                /* free'ing a shadow deck */
+void	                /* free'ing a shadow deck */
 free_vji_shadow_deck(char **a, int j1, int j0)
 {
   int jp;
@@ -3155,7 +3133,7 @@ free_vji_shadow_deck(char **a, int j1, int j0)
     if (a[jp] != NULL) free(a[jp]);
   free(a);
 }
-static void
+void
 free_vji_shadow_matrix(char ***a, int M, int j1, int j0)
 {
   int v;
@@ -6527,14 +6505,10 @@ static char  **alloc_vji_shadow_deck(int i0, int i1, int j1, int j0);
 static float   size_vji_shadow_deck(int i0, int i1, int j1, int j0);
 static void    free_vji_shadow_deck(char **a, int j1, int j0);
 static void    free_vji_shadow_matrix(char ***a, int M, int j1, int j0);
-*/
 
 static float **alloc_banded_vjd_deck(int L, int i, int j, int min, int max);
 static char  **alloc_banded_vjd_yshadow_deck(int L, int i, int j, int min, int max);
 static int   **alloc_banded_vjd_kshadow_deck(int L, int i, int j, int min, int max);
-
-/* Debugging print functions */
-
 
 static void debug_print_bands(CM_t *cm, int *dmin, int *dmax);
 static void debug_print_alpha(float ***alpha, CM_t *cm, int L);
@@ -6543,6 +6517,7 @@ static void debug_print_alpha_deck(int v, float **deck, CM_t *cm, int L);
 static void debug_print_shadow(void ***shadow, CM_t *cm, int L);
 static void debug_print_shadow_banded(void ***shadow, CM_t *cm, int L, int *dmin, int *dmax);
 static void debug_print_shadow_banded_deck(int v, void ***shadow, CM_t *cm, int L, int *dmin, int *dmax);
+*/
 
 
 /*################################################################*/
@@ -6575,7 +6550,7 @@ static void debug_print_shadow_banded_deck(int v, void ***shadow, CM_t *cm, int 
  *           0..127, in ANSI C; we don't know if a machine will make it
  *           signed or unsigned.)
  */
-static float **
+float **
 alloc_banded_vjd_deck(int L, int i, int j, int min, int max)
 {
   float **a;
@@ -6610,7 +6585,7 @@ alloc_banded_vjd_deck(int L, int i, int j, int min, int max)
   return a;
 }
 
-static char **
+char **
 alloc_banded_vjd_yshadow_deck(int L, int i, int j, int min, int max)
 {
   char **a;
@@ -6635,7 +6610,7 @@ alloc_banded_vjd_yshadow_deck(int L, int i, int j, int min, int max)
     }
   return a;
 }
-static int **
+int **
 alloc_banded_vjd_kshadow_deck(int L, int i, int j, int min, int max)
 {
   int **a;
@@ -6676,7 +6651,7 @@ alloc_banded_vjd_kshadow_deck(int L, int i, int j, int min, int max)
  * Purpose:  Print shadow matrix 
  */
 
-static void
+void
 debug_print_shadow(void ***shadow, CM_t *cm, int L)
 {
   int v, j, d;
@@ -6722,7 +6697,7 @@ debug_print_shadow(void ***shadow, CM_t *cm, int L)
  * Purpose:  Print banded shadow matrix 
  */
 
-static void
+void
 debug_print_shadow_banded(void ***shadow, CM_t *cm, int L, int *dmin, int *dmax)
 {
   int v, j, d, vdp;
@@ -6770,7 +6745,7 @@ debug_print_shadow_banded(void ***shadow, CM_t *cm, int L, int *dmin, int *dmax)
  * Purpose:  Print banded shadow matrix deck
  */
 
-static void
+void
 debug_print_shadow_banded_deck(int v, void ***shadow, CM_t *cm, int L, int *dmin, int *dmax)
 {
   int j, d, vdp;
@@ -6807,7 +6782,7 @@ debug_print_shadow_banded_deck(int v, void ***shadow, CM_t *cm, int L, int *dmin
  *
  * Purpose:  Print alpha matrix 
  */
-static void
+void
 debug_print_alpha_banded(float ***alpha, CM_t *cm, int L, int *dmin, int *dmax)
 {
   int v, j, d, vdp;
@@ -6838,18 +6813,46 @@ debug_print_alpha_banded(float ***alpha, CM_t *cm, int L, int *dmin, int *dmax)
  * Purpose:  Print bands for each state.
  */
 
-static void
+void
 debug_print_bands(CM_t *cm, int *dmin, int *dmax)
 {
   int v;
+  char **sttypes;
+  char **nodetypes;
+
+  sttypes = malloc(sizeof(char *) * 10);
+  sttypes[0] = "D";
+  sttypes[1] = "MP";
+  sttypes[2] = "ML";
+  sttypes[3] = "MR";
+  sttypes[4] = "IL";
+  sttypes[5] = "IR";
+  sttypes[6] = "S";
+  sttypes[7] = "E";
+  sttypes[8] = "B";
+  sttypes[9] = "EL";
+
+  nodetypes = malloc(sizeof(char *) * 8);
+  nodetypes[0] = "BIF";
+  nodetypes[1] = "MATP";
+  nodetypes[2] = "MATL";
+  nodetypes[3] = "MATR";
+  nodetypes[4] = "BEGL";
+  nodetypes[5] = "BEGR";
+  nodetypes[6] = "ROOT";
+  nodetypes[7] = "END";
 
   printf("\nPrinting bands :\n");
   printf("****************\n");
   for(v = 0; v < cm->M; v++)
    {
-     printf("state %3d : type : %d | min %2d : max %2d\n", v, cm->sttype[v], dmin[v], dmax[v]);
+     printf("band v:%d n:%d %-4s %-2s min:%d max:%d\n", v, cm->ndidx[v], nodetypes[(int) cm->ndtype[(int) cm->ndidx[v]]], sttypes[(int) cm->sttype[v]], dmin[v], dmax[v]);
    }
   printf("****************\n\n");
+
+  free(sttypes);
+  free(nodetypes);
+
 }
 
 
@@ -6860,7 +6863,7 @@ debug_print_bands(CM_t *cm, int *dmin, int *dmax)
  * Purpose:  Print alpha matrix 
  */
 
-static void
+void
 debug_print_alpha(float ***alpha, CM_t *cm, int L)
 {
   int v, j, d;

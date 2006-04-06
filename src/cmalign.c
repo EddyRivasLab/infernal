@@ -23,14 +23,13 @@
 
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
+#include "hmmer_funcs.h"
+#include "hmmer_structs.h"
+#include "sre_stack.h"
+#include "hmmband.h"         
 
 MSA *Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt, 
-			  Parsetree_t **tr, int nseq);
-
-MSA *Parsetrees2Alignment_full(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt, 
-			       Parsetree_t **tr, int nseq);
-
-static void debug_print_bands(CM_t *cm, int *dmin, int *dmax);
+			  Parsetree_t **tr, int nseq, int do_full);
 static void ExpandBands(CM_t *cm, int qlen, int *dmin, int *dmax);
 static void banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *dmin, int *dmax, int bdump_level);
 
@@ -50,12 +49,22 @@ static char experts[] = "\
    --informat <s>: specify that input alignment is in format <s>\n\
    --nosmall     : use normal alignment algorithm, not d&c\n\
    --regress <f> : save regression test data to file <f>\n\
-   --banded      : use experimental banded CYK alignment algorithm\n\
-   --bandp <f>   : tail loss prob for --banded (default:0.0001)\n\
-   --bandexpand  : naively expand bands if target sequence is outside root band\n\
-   --banddump <n>: turn band info print statements to verbosity level <n> [1-3]\n\
-    -W <n>       : window size for calculating bands (default: precalc'd in cmbuild)\n\
    --full        : include all match columns in output alignment\n\
+   --banddump <n>: set verbosity of band info print statements to <n> [1..3]\n\
+   --dlev <n>    : set verbosity of debugging print statements to <n> [1..3]\n\
+\n\
+  * HMM banded alignment related options:\n\
+   --hbanded     : use exptl HMM banded CYK aln algorithm (req's --cp9 or --p7)\n\
+   --hbandp <f>  : tail loss prob for --hbanded (default:0.0001)\n\
+   --cp9 <f>     : use the CM plan 9 HMM in file <f> for band calculation\n\
+   --p7 <f>      : use the plan 7 HMMER 2.4 HMM in file <f> for band calculation\n\
+   --sums        : use posterior sums during HMM band calculation (widens bands)\n\
+\n\
+  * A priori banded alignment related options:\n\
+   --apbanded    : use experimental a priori (ap) banded CYK alignment algorithm\n\
+   --apbandp <f> : tail loss prob for --apbanded (default:0.0001)\n\
+   --apexpand    : naively expand ap bands if target seq is outside root band\n\
+    -W <n>       : window size for calc'ing ap bands (df: precalc'd in cmbuild)\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -66,12 +75,18 @@ static struct opt_s OPTIONS[] = {
   { "--informat",   FALSE, sqdARG_STRING },
   { "--nosmall",    FALSE, sqdARG_NONE },
   { "--regress",    FALSE, sqdARG_STRING },
-  { "--banded",     FALSE, sqdARG_NONE },
-  { "--bandp",      FALSE, sqdARG_FLOAT},
-  { "--bandexpand", FALSE, sqdARG_NONE},
+  { "--apbanded",     FALSE, sqdARG_NONE },
+  { "--apbandp",      FALSE, sqdARG_FLOAT},
+  { "--apexpand", FALSE, sqdARG_NONE},
   { "--banddump"  , FALSE, sqdARG_INT},
   { "-W", TRUE, sqdARG_INT },
   { "--full", FALSE, sqdARG_NONE },
+  { "--dlev",       FALSE, sqdARG_INT },
+  { "--hbanded",    FALSE, sqdARG_NONE },
+  { "--hbandp",     FALSE, sqdARG_FLOAT},
+  { "--sums",       FALSE, sqdARG_NONE},
+  { "--cp9",        FALSE, sqdARG_STRING},
+  { "--p7",         FALSE, sqdARG_STRING},
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -92,6 +107,8 @@ main(int argc, char **argv)
   char            *outfile;	/* optional output file name */
   FILE            *ofp;         /* an open output file */
   int              i;		/* counter over sequences/parsetrees */
+  int              v;           /* counter over states of the CM */
+  int              k;           /* counter over HMM nodes */
 
   float            sc;		/* score for one sequence alignment */
   float            maxsc;	/* max score in all seqs */
@@ -102,43 +119,118 @@ main(int argc, char **argv)
   int    be_quiet;		/* TRUE to suppress verbose output & banner */
   int    do_local;		/* TRUE to config the model in local mode   */
   int    do_small;		/* TRUE to do divide and conquer alignments */
-  int    do_banded;             /* TRUE to do banded CYKDivideAndConquer */
   int    windowlen;             /* window length for calculating bands */
   int    do_full;               /* TRUE to output all match columns in output alignment */
-  int    do_bandexpand;         /* TRUE to naively expand bands when necessary */
+  int    do_apbanded;           /* TRUE to do a priori banded CYK (either d&c or full)*/
   int    bdump_level;           /* verbosity level for --banddump option, 0 is OFF */
-  int    expand_flag;           /* TRUE if the dmin and dmax vectors have 
-                                   just been expanded (in which case we want
-				   to recalculate them before we align a new
-				   sequence), and FALSE if they're as calculated
-				   in BandBounds given gamma from BandDistribution */
-  /*EPN 08.18.05*/
-  int    set_window;            /* TRUE to set window length due to -W option*/
 
+  char  *optname;               /* name of option found by Getopt()        */
+  char  *optarg;                /* argument found by Getopt()              */
+  int    optind;                /* index in argv[]                         */
+  int    safe_windowlen;        /* initial windowlen (W) used for calculating bands
+				 * in BandCalculationEngine(). For truncation error 
+				 * handling this should be > than expected dmax[0]*/
+  int    debug_level;           /* verbosity level for debugging printf() statements,
+			         * passed to many functions. */
+  Stopwatch_t  *watch1;         /* For overall timings */
+  Stopwatch_t  *watch2;         /* For HMM band calc timings */
 
-  double  **gamma;              /* P(subseq length = n) for each state v    */
-  int     *dmin;		/* minimum d bound for state v, [0..v..M-1] */
-  int     *dmax; 		/* maximum d bound for state v, [0..v..M-1] */
-  double   bandp;		/* tail loss probability for banding */
+  /* a priori bands data structures */
+  double   apbandp;	        /* tail loss probability for a priori banding */
+  int    do_apexpand;           /* TRUE to naively expand a priori bands when necessary */
+  int    expand_flag;           /* TRUE if the dmin and dmax vectors have just been 
+				 * expanded (in which case we want to recalculate them 
+				 * before we align a new sequence), and FALSE if not*/
+  int      set_window;          /* TRUE to set window length due to -W option*/
+  double **gamma;               /* P(subseq length = n) for each state v    */
+  int     *dmin;                /* minimum d bound for state v, [0..v..M-1] */
+  int     *dmax;                /* maximum d bound for state v, [0..v..M-1] */
+
+  /* HMMERNAL!: hmm banded alignment data structures */
+  /* data structures for hmm bands (bands on the hmm states) */
+  int     *pn_min_m;          /* HMM band: minimum position node k match state will emit  */
+  int     *pn_max_m;          /* HMM band: maximum position node k match state will emit  */
+  int     *pn_min_i;          /* HMM band: minimum position node k insert state will emit */
+  int     *pn_max_i;          /* HMM band: maximum position node k insert state will emit */
+  int     *pn_min_d;          /* HMM band: minimum position node k delete state will emit */
+  int     *pn_max_d;          /* HMM band: maximum position node k delete state will emit */
+  double   hbandp;            /* tail loss probability for hmm bands */
+  int      use_sums;          /* TRUE to fill and use the posterior sums, false not to. */
+  int    **isum_pn_m;         /* [1..k..M] sum over i of log post probs from post->mmx[i][k]*/
+  int    **isum_pn_i;         /* [1..k..M] sum over i of log post probs from post->imx[i][k]*/
+  int    **isum_pn_d;         /* [1..k..M] sum over i of log post probs from post->dmx[i][k]*/
+
+  /* data structures for mapping HMM to CM */
+  int *node_cc_left;    /* consensus column each CM node's left emission maps to
+			 * [0..(cm->nodes-1)], -1 if maps to no consensus column*/
+  int *node_cc_right;   /* consensus column each CM node's right emission maps to
+			 * [0..(cm->nodes-1)], -1 if maps to no consensus column*/
+  int *cc_node_map;     /* node that each consensus column maps to (is modelled by)
+			 * [1..hmm_nmc] */
+  int **cs2hn_map;      /* 2D CM state to HMM node map, 1st D - CM state index
+		         * 2nd D - 0 or 1 (up to 2 matching HMM states), value: HMM node
+		         * that contains state that maps to CM state, -1 if none.*/
+  int **cs2hs_map;      /* 2D CM state to HMM node map, 1st D - CM state index
+		         * 2nd D - 2 elements for up to 2 matching HMM states, 
+		         * value: HMM STATE (0(M), 1(I), 2(D) that maps to CM state,
+		         * -1 if none.
+		         * For example: HMM node cs2hn_map[v][0], state cs2hs_map[v][0]
+                         * maps to CM state v.*/
+  int ***hns2cs_map;    /* 3D HMM node-state to CM state map, 1st D - HMM node index, 2nd D - 
+		         * HMM state (0(M), 1(I), 2(D)), 3rd D - 2 elements for up to 
+		         * 2 matching CM states, value: CM states that map, -1 if none.
+		         * For example: CM states hsn2cs_map[k][0][0] and hsn2cs_map[k][0][1]
+		         * map to HMM node k's match state.*/
+
+  /* arrays for CM state bands, derived from HMM bands */
+  int  do_hbanded;      /* TRUE to do HMM banded CYKInside_b_jd() using bands on d and j dim*/
+  int *imin;            /* [1..M] imin[v] = first position in band on i for state v*/
+  int *imax;            /* [1..M] imax[v] = last position in band on i for state v*/
+  int *jmin;            /* [1..M] jmin[v] = first position in band on j for state v*/
+  int *jmax;            /* [1..M] jmax[v] = last position in band on j for state v*/
+  int **hdmin;          /* [v=1..M][0..(jmax[v]-jmin[v])] 
+			 * hdmin[v][j0] = first position in band on d for state v, and position
+			 * j = jmin[v] + j0.*/
+  int **hdmax;          /* [v=1..M][0..(jmax[v]-jmin[v])] 
+			 * hdmin[v][j0] = last position in band on d for state v, and position
+			 * j = jmin[v] + j0.*/
+  int *safe_hdmin;      /* [1..M] safe_hdmin[v] = min_d (hdmin[v][j0]) (over all valid j0) */
+  int *safe_hdmax;      /* [1..M] safe_hdmax[v] = max_d (hdmax[v][j0]) (over all valid j0) */
+
+  /* data structures for HMMs */
+  enum {		/* Type of HMM to use for banding */
+    NONE,
+    HMM_CP9,
+    HMM_P7
+  } hmm_type;
+  char  *hmmfile;      /* file to read HMMs from                  */
+  int   ks;            /* Counter over HMM state types (0 (match), 1(ins) or 2 (del))*/
+  float forward_sc; 
+  float backward_sc; 
+  int   hmm_M;         /* Number of nodes in either the Plan 7 HMM or CM Plan 9 HMM */
   
-  char *optname;                /* name of option found by Getopt()        */
-  char *optarg;                 /* argument found by Getopt()              */
-  int   optind;                 /* index in argv[]                         */
+  /* CM Plan 9 */
+  CP9HMMFILE *cp9_hmmfp;                /* opened CP9 hmmfile for reading          */
+  struct cplan9_s *cp9hmm;              /* constructed CM p9 HMM; written to hmmfile  */
+  struct cp9_dpmatrix_s *cp9_mx;        /* growable DP matrix for viterbi         */
+  struct cp9_dpmatrix_s *cp9_fwd;       /* growable DP matrix for forward         */
+  struct cp9_dpmatrix_s *cp9_bck;       /* growable DP matrix for backward        */
+  struct cp9_dpmatrix_s *cp9_posterior; /* growable DP matrix for posterior decode */
 
-  /*EPN 11.13.05 */
-  int      safe_windowlen;	/* initial windowlen (W) used for calculating bands
-				 * in BandCalculationEngine().
-				 * this needs to be significantly bigger than what
-				 * we expect dmax[0] to be, for truncation error
-				 * handling.
-				 */
-  Stopwatch_t     *watch;
+  /* Plan 7 */
+  HMMFILE           *hmmfp;     /* opened hmmfile for reading              */
+  struct plan7_s    *hmm;       /* HMM to align to                         */ 
+  struct dpmatrix_s *mx;        /* growable DP matrix                      */
+  struct dpmatrix_s *fwd;       /* growable DP matrix for forwards         */
+  struct dpmatrix_s *bck;       /* growable DP matrix for backwards        */
+  struct dpmatrix_s *posterior; /* growable DP matrix for posterior decode */
+  struct p7trace_s **p7tr;      /* traces for aligned sequences            */
+  char             **postcode;  /* posterior decode array of strings       */
+  unsigned char    **p7dsq;     /* digitized RNA sequences (plan 7 version)*/
 
-  
   /*********************************************** 
    * Parse command line
    ***********************************************/
-
   format      = SQFILE_UNKNOWN;
   be_quiet    = FALSE;
   do_local    = FALSE;
@@ -147,11 +239,16 @@ main(int argc, char **argv)
   regressfile = NULL;
   windowlen   = 200;
   set_window  = FALSE;
-  do_banded   = FALSE;
-  bandp       = 0.0001;
+  do_apbanded   = FALSE;
+  apbandp       = 0.0001;
   do_full     = FALSE;
-  do_bandexpand = FALSE;
+  do_apexpand = FALSE;
   bdump_level = 0;
+  debug_level = 0;
+  do_hbanded  = FALSE;
+  hbandp      = 0.0001;
+  use_sums    = FALSE;
+  hmm_type    = NONE;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -160,13 +257,26 @@ main(int argc, char **argv)
     else if (strcmp(optname, "-q")          == 0) be_quiet    = TRUE;
     else if (strcmp(optname, "--nosmall")   == 0) do_small    = FALSE;
     else if (strcmp(optname, "--regress")   == 0) regressfile = optarg;
-    else if (strcmp(optname, "--banded")    == 0) do_banded   = TRUE;
-    else if (strcmp(optname, "--bandp")    == 0) bandp        = atof(optarg);
-    else if (strcmp(optname, "-W")          == 0) 
-      { windowlen    = atoi(optarg); set_window = TRUE; }
+    else if (strcmp(optname, "--apbanded")  == 0) do_apbanded = TRUE;
+    else if (strcmp(optname, "--apbandp")   == 0) apbandp     = atof(optarg);
+    else if (strcmp(optname, "-W")          == 0) {
+      windowlen    = atoi(optarg); 
+      set_window = TRUE; } 
     else if (strcmp(optname, "--full")      == 0) do_full      = TRUE;
-    else if (strcmp(optname, "--bandexpand")== 0) do_bandexpand= TRUE;
-    else if (strcmp(optname, "--banddump")== 0)  bdump_level = atoi(optarg);
+    else if (strcmp(optname, "--apexpand")  == 0) do_apexpand  = TRUE;
+    else if (strcmp(optname, "--banddump")  == 0)  bdump_level = atoi(optarg);
+    else if (strcmp(optname, "--dlev")      == 0) debug_level  = atoi(optarg);
+    else if (strcmp(optname, "--hbanded")   == 0) { do_hbanded = TRUE;    do_small = FALSE; }
+    else if (strcmp(optname, "--hbandp")    == 0) hbandp       = atof(optarg);
+    else if (strcmp(optname, "--sums")      == 0) use_sums     = TRUE;
+    else if (strcmp(optname, "--cp9")       == 0) { 
+      if(hmm_type != NONE) Die("Can't do --cp9 and --p7, pick one HMM type.\n");
+      hmm_type  = HMM_CP9; hmmfile = optarg; 
+    }
+    else if (strcmp(optname, "--p7")        == 0) {
+      if(hmm_type != NONE) Die("Can't do --cp9 and --p7, pick one HMM type.\n");
+      hmm_type  = HMM_P7;  hmmfile = optarg; 
+    }
     else if (strcmp(optname, "--informat")  == 0) {
       format = String2SeqfileFormat(optarg);
       if (format == SQFILE_UNKNOWN) 
@@ -180,8 +290,16 @@ main(int argc, char **argv)
     }
   }
 
+  /* default to HMM banded alignment if --p7 or --cp9 was enabled */
+  /*if(hmm_type != NONE)
+    {
+      do_hbanded = TRUE;
+      do_small = FALSE;
+    }
+  */
+
   if (bdump_level > 3) Die("Highest available --banddump verbosity level is 3\n%s", usage);
-  if (do_bandexpand && (!(do_banded))) Die("Doesn't make sense to use --bandexpand option with --banded option\n", usage);
+  if (do_apexpand && (!(do_apbanded))) Die("Doesn't make sense to use --bandexpand option with --banded option\n", usage);
   if (argc - optind != 2) Die("Incorrect number of arguments.\n%s\n", usage);
   cmfile = argv[optind++];
   seqfile = argv[optind++]; 
@@ -198,8 +316,6 @@ main(int argc, char **argv)
    * Input and configure the CM
    *****************************************************************/
 
-  watch = StopwatchCreate();
-
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
     Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
   if (! CMFileRead(cmfp, &cm))
@@ -208,11 +324,8 @@ main(int argc, char **argv)
     Die("%s empty?\n", cmfile);
   CMFileClose(cmfp);
 
-  /* EPN 08.18.05 */
   if (! (set_window)) windowlen = cm->W;
-  /*printf("***cm->W : %d***\n", cm->W);*/
-  /*printf("***cm->el_selfsc: %f\n", cm->el_selfsc);*/
-  /* EPN 11.18.05 Now that we know what windowlen is, we need to ensure that
+  /* Now that we know what windowlen is, we need to ensure that
    * cm->el_selfsc * W >= IMPOSSIBLE (cm->el_selfsc is the score for an EL self transition)
    * This is done because we potentially multiply cm->el_selfsc * W, and add
    * that to IMPOSSIBLE. To avoid underflow issues this value must be less than
@@ -221,9 +334,47 @@ main(int argc, char **argv)
   if((cm->el_selfsc * windowlen) < IMPOSSIBLE)
     cm->el_selfsc = (IMPOSSIBLE / (windowlen+1));
 
+  if (do_local && do_hbanded)
+    {
+      printf("Warning: banding with an HMM (--hbanded) and allowing\nlocal alignment (-l). No telling what will happen.\n");
+    } 
+
   if (do_local) ConfigLocal(cm, 0.5, 0.5);
   CMLogoddsify(cm);
-  CMHackInsertScores(cm);	/* "TEMPORARY" fix for bad priors */
+  /*CMHackInsertScores(cm);*/	/* "TEMPORARY" fix for bad priors */
+
+  /*****************************************************************
+   * Optionally, input and configure a Plan 7 or CM Plan 9 HMM
+   * for banded alignment.
+   *****************************************************************/
+  if(hmm_type != NONE)
+    {
+      Alphabet_type = hmmNOTSETYET;
+      if(hmm_type == HMM_P7)
+	{
+	  if ((hmmfp = HMMFileOpen(hmmfile, "HMMERDB")) == NULL)
+	    Die("Failed to open HMM file %s\n%s", hmmfile, usage);
+	  if (!HMMFileRead(hmmfp, &hmm)) 
+	    Die("Failed to read any HMMs from %s\n", hmmfile);
+	  HMMFileClose(hmmfp);
+	  hmm->xt[XTE][MOVE] = 1.;     /* only 1 domain/sequence ("global" alignment) */
+	  hmm->xt[XTE][LOOP] = 0.;
+	  P7Logoddsify(hmm, TRUE);
+	  if (hmm == NULL) 
+	    Die("HMM file %s corrupt or in incorrect format? Parse failed", hmmfile);
+	}
+      if(hmm_type == HMM_CP9)
+	{
+	  if ((cp9_hmmfp = CP9_HMMFileOpen(hmmfile, "HMMERDB")) == NULL)
+	    Die("Failed to open HMM file %s\n%s", hmmfile, usage);
+	  if (!CP9_HMMFileRead(cp9_hmmfp, &cp9hmm)) 
+	    Die("Failed to read any CP9 HMMs from %s\n", hmmfile);
+	  CP9_HMMFileClose(cp9_hmmfp);
+	  CP9Logoddsify(cp9hmm);
+	  if (cp9hmm == NULL) 
+	    Die("HMM file %s corrupt or in incorrect format? Parse failed", hmmfile);
+	}
+    }
 
   /*****************************************************************
    * Input and digitize the unaligned sequences
@@ -234,7 +385,12 @@ main(int argc, char **argv)
   dsq = MallocOrDie(sizeof(char *) * nseq);
   for (i = 0; i < nseq; i++) 
     dsq[i] = DigitizeSequence(rseq[i], sqinfo[i].len);
-
+  if(hmm_type != NONE)
+    {
+      p7dsq = MallocOrDie(sizeof(unsigned char *) * nseq);
+      for(i = 0; i < nseq; i++)
+	p7dsq[i] = hmmer_DigitizeSequence(rseq[i], sqinfo[i].len);
+    }      
   /*********************************************** 
    * Show the banner
    ***********************************************/
@@ -258,10 +414,10 @@ main(int argc, char **argv)
   maxsc = -FLT_MAX;
   avgsc = 0;
 
-  if(do_banded || bdump_level > 0)
+  if(do_apbanded || bdump_level > 0)
     {
       safe_windowlen = windowlen * 2;
-      while(!(BandCalculationEngine(cm, safe_windowlen, bandp, 0, &dmin, &dmax, &gamma, do_local)))
+      while(!(BandCalculationEngine(cm, safe_windowlen, apbandp, 0, &dmin, &dmax, &gamma, do_local)))
 	{
 	  FreeBandDensities(cm, gamma);
 	  free(dmin);
@@ -277,8 +433,8 @@ main(int argc, char **argv)
        * a windowlen that's greater than the largest possible banded hit 
        * (which is dmax[0]). So we reset windowlen to dmax[0].
        * Its also possible that BandCalculationEngine() returns a dmax[0] that 
-       * is > cm->W. This should only happen if the bandp we're using now is < 1E-7 
-       * (1E-7 is the bandp value used to determine cm->W in cmbuild). If this 
+       * is > cm->W. This should only happen if the apbandp we're using now is < 1E-7 
+       * (1E-7 is the apbandp value used to determine cm->W in cmbuild). If this 
        * happens, the current implementation reassigns windowlen to this larger value.
        * NOTE: if W was set at the command line, the command line value is 
        *       always used.
@@ -289,30 +445,350 @@ main(int argc, char **argv)
 	}
       if(bdump_level > 1) 
 	{
-	  printf("bandp:%f\n", bandp);
+	  printf("apbandp:%f\n", apbandp);
 	  debug_print_bands(cm, dmin, dmax);
 	}
+      expand_flag = FALSE;
     }
-  expand_flag = FALSE;
 
-  StopwatchZero(watch);
-  StopwatchStart(watch);
+  watch1 = StopwatchCreate(); /*watch1 is used to time each step individually*/
+  watch2 = StopwatchCreate(); /*watch2 times the full alignment (including band calc)
+				for each seq*/
 
-  for (i = 0; i < nseq; i++) 
+  if(hmm_type == HMM_P7)
     {
-      if(do_bandexpand)
+      p7tr  = MallocOrDie(sizeof(struct p7trace_s *) * nseq);
+      mx  = CreatePlan7Matrix(1, hmm->M, 25, 0);
+      postcode = malloc(sizeof(char *) * nseq);
+      node_cc_left  = malloc(sizeof(int) * cm->nodes);
+      node_cc_right = malloc(sizeof(int) * cm->nodes);
+      cc_node_map   = malloc(sizeof(int) * (hmm->M + 1));
+      map_consensus_columns(cm, hmm->M, node_cc_left, node_cc_right,
+			    cc_node_map, debug_level);
+      /*printf("HMM type is HMM_P7, number of nodes: %d\n", hmm->M);*/
+      /* Get information mapping the HMM to the CM and vice versa. */
+      cs2hn_map     = malloc(sizeof(int *) * (cm->M+1));
+      for(v = 0; v <= cm->M; v++)
+	cs2hn_map[v]     = malloc(sizeof(int) * 2);
+      
+      cs2hs_map     = malloc(sizeof(int *) * (cm->M+1));
+      for(v = 0; v <= cm->M; v++)
+	cs2hs_map[v]     = malloc(sizeof(int) * 2);
+      
+      hns2cs_map    = malloc(sizeof(int **) * (hmm->M+1));
+      for(k = 0; k <= hmm->M; k++)
 	{
+	  hns2cs_map[k]    = malloc(sizeof(int *) * 3);
+	  for(ks = 0; ks < 3; ks++)
+	    hns2cs_map[k][ks]= malloc(sizeof(int) * 2);
+	}
+      
+      P7_map_cm2hmm_and_hmm2cm(cm, hmm, node_cc_left, node_cc_right, 
+			       cc_node_map, cs2hn_map, cs2hs_map, 
+			       hns2cs_map, debug_level);
+      hmm_M = hmm->M;
+    }      
+
+  if(hmm_type == HMM_CP9)
+    {
+      /*printf("HMM type is HMM_CP9, number of nodes: %d\n", cp9hmm->M);*/
+      
+      /* Get information mapping the HMM to the CM and vice versa, used
+       * for mapping bands. */
+      node_cc_left  = malloc(sizeof(int) * cm->nodes);
+      node_cc_right = malloc(sizeof(int) * cm->nodes);
+      cc_node_map   = malloc(sizeof(int) * (cp9hmm->M + 1));
+      map_consensus_columns(cm, cp9hmm->M, node_cc_left, node_cc_right,
+			    cc_node_map, debug_level);
+      
+      cs2hn_map     = malloc(sizeof(int *) * (cm->M+1));
+      for(v = 0; v <= cm->M; v++)
+	cs2hn_map[v]     = malloc(sizeof(int) * 2);
+      
+      cs2hs_map     = malloc(sizeof(int *) * (cm->M+1));
+      for(v = 0; v <= cm->M; v++)
+	cs2hs_map[v]     = malloc(sizeof(int) * 2);
+      
+      hns2cs_map    = malloc(sizeof(int **) * (cp9hmm->M+1));
+      for(k = 0; k <= cp9hmm->M; k++)
+	{
+	  hns2cs_map[k]    = malloc(sizeof(int *) * 3);
+	  for(ks = 0; ks < 3; ks++)
+	    hns2cs_map[k][ks]= malloc(sizeof(int) * 2);
+	}
+      
+      CP9_map_cm2hmm_and_hmm2cm(cm, cp9hmm, node_cc_left, node_cc_right, 
+				cc_node_map, cs2hn_map, cs2hs_map, 
+				hns2cs_map, debug_level);
+      /* Check to make sure the hmm we read from the input file is
+       * "close enough" to the CM, based on psi and phi values (see CP9_cm2wrhmm.c),
+       * as a CM Plan 9 HMM should be.
+       */
+      CP9_check_wrhmm(cm, cp9hmm, hns2cs_map, cc_node_map, debug_level);
+      CP9Logoddsify(cp9hmm);
+      /*debug_print_cp9_params(cp9hmm);*/
+      cp9_mx  = CreateCPlan9Matrix(1, cp9hmm->M, 25, 0);
+      hmm_M = cp9hmm->M;
+    }
+
+  /* Allocate data structures for use with HMM banding strategy (either P7 or CP9) */
+  if(hmm_type != NONE)
+    {
+      pn_min_m    = malloc(sizeof(int) * (hmm_M+1));
+      pn_max_m    = malloc(sizeof(int) * (hmm_M+1));
+      pn_min_i    = malloc(sizeof(int) * (hmm_M+1));
+      pn_max_i    = malloc(sizeof(int) * (hmm_M+1));
+      pn_min_d    = malloc(sizeof(int) * (hmm_M+1));
+      pn_max_d    = malloc(sizeof(int) * (hmm_M+1));
+      imin        = malloc(sizeof(int) * cm->M);
+      imax        = malloc(sizeof(int) * cm->M);
+      jmin        = malloc(sizeof(int) * cm->M);
+      jmax        = malloc(sizeof(int) * cm->M);
+      hdmin       = malloc(sizeof(int *) * cm->M);
+      hdmax       = malloc(sizeof(int *) * cm->M);
+      safe_hdmin  = malloc(sizeof(int) * cm->M);
+      safe_hdmax  = malloc(sizeof(int) * cm->M);
+      isum_pn_m = malloc(sizeof(int *) * nseq);
+      isum_pn_i = malloc(sizeof(int *) * nseq);
+      isum_pn_d = malloc(sizeof(int *) * nseq);
+      
+      for (i = 0; i < nseq; i++)
+	{
+	  isum_pn_m[i] = malloc(sizeof(int) * (hmm_M+1));
+	  isum_pn_i[i] = malloc(sizeof(int) * (hmm_M+1));
+	  isum_pn_d[i] = malloc(sizeof(int) * (hmm_M+1));
+	}
+    }
+
+  for (i = 0; i < nseq; i++)
+    {
+      StopwatchZero(watch2);
+      StopwatchStart(watch2);
+
+      /* Potentially, do HMM calculations. */
+      if(hmm_type == HMM_CP9)
+	{
+	  StopwatchZero(watch1);
+	  StopwatchStart(watch1);
+	  /* Align the current seq to the cp9 HMM, we don't care
+	   * about the trace, just the posteriors.
+	   * Step 1: Get HMM posteriors.
+	   * Step 2: posteriors -> HMM bands.
+	   * Step 3: HMM bands  ->  CM bands.
+	   */
+	  
+	  /* Step 1: Get HMM posteriors.*/
+	  /*sc = CP9Viterbi(p7dsq[i], sqinfo[i].len, cp9hmm, cp9_mx);*/
+	  forward_sc = CP9Forward(p7dsq[i], sqinfo[i].len, cp9hmm, &cp9_fwd);
+	  printf("CP9 i: %d | forward_sc : %f\n", i, forward_sc);
+	  backward_sc = CP9Backward(p7dsq[i], sqinfo[i].len, cp9hmm, &cp9_bck);
+	  printf("CP9 i: %d | backward_sc: %f\n", i, backward_sc);
+	  /*debug_check_CP9_FB(cp9_fwd, cp9_bck, cp9hmm, forward_sc, sqinfo[i].len, p7dsq[i]);*/
+	  cp9_posterior = cp9_bck;
+	  CP9FullPosterior(p7dsq[i], sqinfo[i].len, cp9hmm, cp9_fwd, cp9_bck, cp9_posterior);
+	  
+	  printf("\nTime for CP9 Forwards/Backwards:\n");
+	  StopwatchStop(watch1);
+	  StopwatchDisplay(stdout, "CPU time: ", watch1);
+	  StopwatchZero(watch1);
+	  StopwatchStart(watch1);
+
+	  /* Step 2: posteriors -> HMM bands.*/
+	  if(!(use_sums))
+	    {
+	      /* match states */
+	      CP9_hmm_band_bounds(cp9_posterior->mmx, sqinfo[i].len, cp9hmm->M,
+				  NULL, pn_min_m, pn_max_m, (1.-hbandp), FALSE, debug_level);
+	      /* insert states */
+	      CP9_hmm_band_bounds(cp9_posterior->imx, sqinfo[i].len, cp9hmm->M,
+				  NULL, pn_min_i, pn_max_i, (1.-hbandp), FALSE, debug_level);
+	      /* delete states (note: delete_flag set to TRUE) */
+	      CP9_hmm_band_bounds(cp9_posterior->dmx, sqinfo[i].len, cp9hmm->M,
+				  NULL, pn_min_d, pn_max_d, (1.-hbandp), TRUE, debug_level);
+	    }
+	  else
+	    {
+	      CP9_ifill_post_sums(cp9_posterior, sqinfo[i].len, cp9hmm->M,
+				  isum_pn_m[i], isum_pn_i[i], 
+				  isum_pn_d[i]);
+	      /* match states */
+	      CP9_hmm_band_bounds(cp9_posterior->mmx, sqinfo[i].len, cp9hmm->M,
+				  isum_pn_m[i], pn_min_m, pn_max_m, (1.-hbandp), FALSE, debug_level);
+	      /* insert states */
+	      CP9_hmm_band_bounds(cp9_posterior->imx, sqinfo[i].len, cp9hmm->M,
+				  isum_pn_i[i], pn_min_i, pn_max_i, (1.-hbandp), FALSE, debug_level);
+	      /* delete states (note: delete_flag set to TRUE) */
+	      CP9_hmm_band_bounds(cp9_posterior->dmx, sqinfo[i].len, cp9hmm->M,
+				  isum_pn_d[i], pn_min_d, pn_max_d, (1.-hbandp), TRUE, debug_level);
+	    }
+	  printf("\nTime for calc'ing CP9 HMM bands :\n");
+	  StopwatchStop(watch1);
+	  StopwatchDisplay(stdout, "CPU time: ", watch1);
+	  if(debug_level != 0)
+	    {
+	      printf("printing hmm bands\n");
+	      print_hmm_bands(stdout, sqinfo[i].len, cp9hmm->M, pn_min_m, pn_max_m, pn_min_i,
+			      pn_max_i, pn_min_d, pn_max_d, hbandp, debug_level);
+	    }
+	  
+	  /* Step 3: HMM bands  ->  CM bands. */
+	  hmm2ij_bands(cm, cp9hmm->M, node_cc_left, node_cc_right, cc_node_map, 
+		       sqinfo[i].len, pn_min_m, pn_max_m, pn_min_i, pn_max_i, 
+		       pn_min_d, pn_max_d, imin, imax, jmin, jmax, cs2hn_map,
+		       debug_level);
+	  
+	  /* Use the CM bands on i and j to get bands on d, specific to j. */
+	  for(v = 0; v < cm->M; v++)
+	    {
+	      hdmin[v] = malloc(sizeof(int) * (jmax[v] - jmin[v] + 1));
+	      hdmax[v] = malloc(sizeof(int) * (jmax[v] - jmin[v] + 1));
+	    }
+	  ij2d_bands(cm, sqinfo[i].len, imin, imax, jmin, jmax,
+		     hdmin, hdmax, -1);
+
+	  if(debug_level > 0)
+	    PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, sqinfo[i].len);
+
+	  FreeCPlan9Matrix(cp9_fwd);
+	  FreeCPlan9Matrix(cp9_posterior);
+	  /* Done with the HMM. On to the CM. */
+	}
+
+      else if(hmm_type == HMM_P7)
+	{
+	  /* Align the current seq to the p7 HMM, we don't care
+	   * about the trace, just the posteriors.
+	   * Step 1: Get HMM posteriors.
+	   * Step 2: posteriors -> HMM bands.
+	   * Step 3: HMM bands  ->  CM bands.
+	   */
+	  StopwatchZero(watch1);
+	  StopwatchStart(watch1);
+	  
+	  /* Step 1: Get HMM posteriors.*/
+	  /*
+	  if (P7ViterbiSpaceOK(sqinfo[i].len, hmm->M, mx))
+	    (void) P7Viterbi(p7dsq[i], sqinfo[i].len, hmm, mx, &(p7tr[i]));
+	  else
+	    (void) P7SmallViterbi(p7dsq[i], sqinfo[i].len, hmm, mx, &(p7tr[i]));
+	  */
+	  forward_sc = P7Forward(p7dsq[i], sqinfo[i].len, hmm, &fwd);
+	  printf("P7 i: %d | forward_sc : %f\n", i, forward_sc);
+	  backward_sc = P7Backward(p7dsq[i], sqinfo[i].len, hmm, &bck);
+	  printf("P7 i: %d | backward_sc: %f\n", i, backward_sc);
+	  posterior = bck;
+	  P7FullPosterior(sqinfo[i].len, hmm, fwd, bck, posterior);
+	  if(debug_level > 2)
+	    P7_debug_print_post_decode(sqinfo[i].len, hmm->M, posterior);
+	  
+	  printf("\nTime for p7 HMMER forwards/backwards:\n");
+	  StopwatchStop(watch1);
+	  StopwatchDisplay(stdout, "\nCPU time: ", watch1);
+	  StopwatchZero(watch1);
+	  StopwatchStart(watch1);
+	  
+	  /* Uncomment this to assign a postal code (IHH's postprob.c) 
+	  postcode[i] = PostalCode(sqinfo[i].len, posterior, p7tr[i]);
+	  printf("postcode[i]\n%s\n", postcode[i]);
+	  */	  
+
+	  /* Step 2: posteriors -> HMM bands.*/
+	  if(!(use_sums))
+	    {
+	      /* match states */
+	      P7_hmm_band_bounds(posterior->mmx, sqinfo[i].len, hmm->M, NULL,
+				 pn_min_m, pn_max_m, (1.-hbandp), FALSE, debug_level);
+	      /* insert states */
+	      P7_hmm_band_bounds(posterior->imx, sqinfo[i].len, hmm->M, NULL,
+				 pn_min_i, pn_max_i, (1.-hbandp), FALSE, debug_level);
+	      /* delete states (note: delete_flag set to TRUE) */
+	      P7_hmm_band_bounds(posterior->dmx, sqinfo[i].len, hmm->M, NULL,
+				 pn_min_d, pn_max_d, (1.-hbandp), TRUE, debug_level);
+	    }
+	  else
+	    {
+	      P7_ifill_post_sums(posterior, sqinfo[i].len, hmm->M,
+				 isum_pn_m[i], isum_pn_i[i], 
+				 isum_pn_d[i]);
+	      /* match states */
+	      P7_hmm_band_bounds(posterior->mmx, sqinfo[i].len, hmm->M, isum_pn_m[i],
+				 pn_min_m, pn_max_m, (1.-hbandp), FALSE, debug_level);
+	      /* insert states */
+	      P7_hmm_band_bounds(posterior->imx, sqinfo[i].len, hmm->M, isum_pn_i[i],
+				 pn_min_i, pn_max_i, (1.-hbandp), FALSE, debug_level);
+	      /* delete states (note: delete_flag set to TRUE) */
+	      P7_hmm_band_bounds(posterior->dmx, sqinfo[i].len, hmm->M, isum_pn_d[i],
+				 pn_min_d, pn_max_d, (1.-hbandp), TRUE, debug_level);
+	    }
+
+	  /* The pn_min_i and pn_max_i arrays are not complete.
+	   * HMMER Plan 7 doesn't allow inserts after the final match state,
+	   * or deletes before the first match, or after the final match state,
+	   * Therefore pn_min_i and pn_max_i are only filled from 1..M-1.
+	   * But we need the band for HMM node M as well. We use a hack
+	   * and assign it the same as the pn_max_m[M] and pn_min_m[M].
+	   */
+	  P7_last_hmm_insert_state_hack(hmm->M, pn_min_m, pn_max_m, pn_min_i, pn_max_i);
+	  P7_last_and_first_hmm_delete_state_hack(hmm->M, pn_min_m, pn_max_m, pn_min_d, 
+						  pn_max_d, sqinfo[i].len);
+
+	  printf("\nTime for calc'ing HMM bands (strategy 4):\n");
+	  StopwatchStop(watch1);
+	  StopwatchDisplay(stdout, "\nCPU time: ", watch1);
+	  
+	  if(debug_level != 0)
+	    {
+	      printf("printing hmm bands\n");
+	      print_hmm_bands(stdout, sqinfo[i].len, hmm->M, pn_min_m, pn_max_m, pn_min_i,
+			      pn_max_i, pn_min_d, pn_max_d, hbandp, debug_level);
+	      /* Get the bands imin, imax, jmin, and jmax for the CM */
+	    }
+
+	  /* Step 3: HMM bands  ->  CM bands. */
+	  hmm2ij_bands(cm, hmm->M, node_cc_left, node_cc_right, cc_node_map, 
+		       sqinfo[i].len, pn_min_m, pn_max_m, pn_min_i, pn_max_i, 
+		       pn_min_d, pn_max_d, imin, imax, jmin, jmax, cs2hn_map,
+		       debug_level);
+	  /* Use the CM bands on i and j to get bands on d, specific to j. */
+	  for(v = 0; v < cm->M; v++)
+	    {
+	      hdmin[v] = malloc(sizeof(int) * (jmax[v] - jmin[v] + 1));
+	      hdmax[v] = malloc(sizeof(int) * (jmax[v] - jmin[v] + 1));
+	    }
+	  ij2d_bands(cm, sqinfo[i].len, imin, imax, jmin, jmax,
+		     hdmin, hdmax, -1);
+	  
+	  if(debug_level > 0)
+	    PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, sqinfo[i].len);
+	
+	  FreePlan7Matrix(fwd);
+	  FreePlan7Matrix(posterior);
+	  /* Done with the HMM. On to the CM. */
+	}	
+
+      /* Determine which CYK alignment algorithm to use, based
+       * on command-line options AND memory requirements.
+       */
+      if(do_hbanded)
+	{
+	  /* write a function to determine size of jd banded memory
+	   * req'd, and set do_small to true if its > thresh.
+	   if(do_small) * We're only going to band on d in memory, but 
+	   * we need to calculate safe_hd bands on the d dimension. 
+	   {
+	  */
+	}
+      
+      if(do_apexpand)
+	{
+	  /* First, check to see if we need to reset the apriori bands b/c 
+	   * they're currently expanded. */
 	  if(expand_flag)
 	    {
-	      /* The bands were expanded from aligning the previous
-	       * sequence, we want to return them to the default,
-	       * the current, inefficient approach is to recalculate
-	       * gamma and the bands.
-	       */
 	      FreeBandDensities(cm, gamma);
 	      free(dmin);
 	      free(dmax);
-	      while(!(BandCalculationEngine(cm, safe_windowlen, bandp, 0, &dmin, &dmax, &gamma, do_local)))
+	      while(!(BandCalculationEngine(cm, safe_windowlen, apbandp, 0, &dmin, &dmax, &gamma, do_local)))
 		{
 		  FreeBandDensities(cm, gamma);
 		  free(dmin);
@@ -323,10 +799,7 @@ main(int argc, char **argv)
 	    }
 	  if((sqinfo[i].len < dmin[0]) || (sqinfo[i].len > dmax[0]))
 	    {
-	      /* the query sequence we're aligning is longer than
-		 the upper limit band on the root node, or is 
-		 shorter than the lower limit on the band on
-		 the root node, so we expand */
+	      /* the seq we're aligning is outside the root band, so we expand.*/
 	      ExpandBands(cm, sqinfo[i].len, dmin, dmax);
 	      printf("Expanded bands for seq : %s\n", sqinfo[i].name);
 	      if(bdump_level > 2) 
@@ -339,25 +812,37 @@ main(int argc, char **argv)
 	}
       else 
 	{
-	  if (do_banded && (sqinfo[i].len < dmin[0] || sqinfo[i].len > dmax[0]))
+	  if (do_apbanded && (sqinfo[i].len < dmin[0] || sqinfo[i].len > dmax[0]))
 	    {
-	      /* the query sequence we're aligning is longer than
-		 the upper limit band on the root node, or is 
-		 shorter than the lower limit on the band on
-		 the root node, so we quit and tell user
-	         they can try naive band expansion if they want.*/
-	      Die("Length of sequence to align (%d nt) lies outside the root band.\ndmin[0]: %d and dmax[0]: %d\nImpossible to align with banded CYK unless you try --bandexpand.\n%s", sqinfo[i].len, dmin[0], dmax[0], usage);
+	      /* the seq we're aligning is outside the root band, but
+	       * --apexpand was not enabled, so we die.*/
+	      Die("Length of sequence to align (%d nt) lies outside the root band.\ndmin[0]: %d and dmax[0]: %d\nImpossible to align with a priori banded CYK unless you try --apexpand.\n%s", sqinfo[i].len, dmin[0], dmax[0], usage);
 	    }
 	}
       printf("Aligning %s\n", sqinfo[i].name);
-      /*debug_print_bands(cm, dmin, dmax);*/
-
       if (do_small) 
 	{
-	  if(do_banded)
+	  if(do_apbanded)
 	    {
 	      sc = CYKDivideAndConquer_b(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, 
 					      &(tr[i]), dmin, dmax);
+	      if(bdump_level > 0)
+		banded_trace_info_dump(cm, tr[i], dmin, dmax, bdump_level);
+	    }
+	  else if(do_hbanded) /*j and d bands not tight enough to allow HMM banded full CYK*/
+	    {
+	      /* Calc the safe d bands */
+	      hd2safe_hd_bands(cm->M, jmin, jmax, hdmin, hdmax, safe_hdmin, safe_hdmax);
+	      if(debug_level > 3)
+		{
+		  printf("\nprinting hd bands\n\n");
+		  debug_print_hd_bands(cm, hdmin, hdmax, jmin, jmax);
+		  printf("\ndone printing hd bands\n\n");
+		}
+	      /* Note the following CYK call will not enforce j bands, even
+	       * though user specified --hbanded. */
+	      sc = CYKDivideAndConquer_b(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, 
+					      &(tr[i]), safe_hdmin, safe_hdmax);
 	      if(bdump_level > 0)
 		banded_trace_info_dump(cm, tr[i], dmin, dmax, bdump_level);
 	    }
@@ -374,11 +859,18 @@ main(int argc, char **argv)
 		}
 	    }
 	}
-      else if(do_banded)
+      else if(do_apbanded)
 	{
 	  sc = CYKInside_b(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, &(tr[i]), dmin, dmax);
 	  if(bdump_level > 0)
 	    banded_trace_info_dump(cm, tr[i], dmin, dmax, bdump_level);
+	}
+      else if(do_hbanded)
+	{
+	  sc = CYKInside_b_jd(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, &(tr[i]), jmin, jmax,
+			      hdmin, hdmax, safe_hdmin, safe_hdmax);
+	  if(bdump_level > 0)
+	    banded_trace_info_dump(cm, tr[i], safe_hdmin, safe_hdmax, bdump_level);
 	}
       else
 	{
@@ -396,17 +888,40 @@ main(int argc, char **argv)
       if (sc > maxsc) maxsc = sc;
       if (sc < minsc) minsc = sc;
 
+      /* If debug level high enough, print out the parse tree */
+      if(debug_level > 2)
+	{
+	  fprintf(stdout, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr[i], dsq[i]));;
+	  ParsetreeDump(stdout, tr[i], cm, dsq[i]);
+	  fprintf(stdout, "//\n");
+	}
+      /* Dump the trace with info on i, j and d bands
+       * if bdump_level is high enough or HMM bands were calc'ed but not 
+       * used (useful in the latter case to determine if the optimal trace 
+       * is within our bands on i and j and d*/
+      if((hmm_type != NONE && !do_hbanded) || bdump_level > 0)
+	{
+	  /*printf("bands on i\n");
+	  debug_print_bands(cm, imin, imax);
+	  printf("bands on j\n");
+	  debug_print_bands(cm, jmin, jmax);
+	  */
+	  ijd_banded_trace_info_dump(cm, tr[i], imin, imax, jmin, jmax, hdmin, hdmax, 1);
+	}
+
+      /* Clean up the structures we use calculating HMM bands, that are allocated
+       * differently for each sequence. 
+       */
+      if(hmm_type != NONE)
+	for(v = 0; v < cm->M; v++)
+	  { free(hdmin[v]); free(hdmax[v]); }
+
+      StopwatchStop(watch2);
+      StopwatchDisplay(stdout, "band calc plus alignment CPU time: ", watch2);
     }
   avgsc /= nseq;
 
-  if(do_full)
-    {
-      msa = Parsetrees2Alignment_full(cm, dsq, sqinfo, NULL, tr, nseq);
-    }
-  else
-    {
-      msa = Parsetrees2Alignment(cm, dsq, sqinfo, NULL, tr, nseq);
-    }
+  msa = Parsetrees2Alignment(cm, dsq, sqinfo, NULL, tr, nseq, do_full);
   /*****************************************************************
    * Output the alignment.
    *****************************************************************/
@@ -434,9 +949,6 @@ main(int argc, char **argv)
    * Clean up and exit.
    *****************************************************************/
 
-  StopwatchStop(watch);
-  StopwatchDisplay(stdout, "\nCPU time: ", watch);
-
   for (i = 0; i < nseq; i++) 
     {
       FreeParsetree(tr[i]);
@@ -444,11 +956,74 @@ main(int argc, char **argv)
       FreeSequence(rseq[i], &(sqinfo[i]));
     }
 
-  if (do_banded)
+  if (do_apbanded)
     {
       FreeBandDensities(cm, gamma);
       free(dmin);
       free(dmax);
+    }
+
+  if(hmm_type != NONE)
+    {
+      /* HMMERNAL */
+      free(imin);
+      free(imax);
+      free(jmin);
+      free(jmax);
+      free(hdmin);
+      free(hdmax);
+      free(pn_min_m);
+      free(pn_max_m);
+      free(pn_min_i);
+      free(pn_max_i);
+      free(pn_min_d);
+      free(pn_max_d);
+      free(node_cc_left);
+      free(node_cc_right);
+      free(cc_node_map);
+      free(safe_hdmin);
+      free(safe_hdmax);
+      for (i = 0; i < nseq; i++) 
+	{ 
+	  free(p7dsq[i]);
+	  free(isum_pn_m[i]); 
+	  free(isum_pn_i[i]);
+	  free(isum_pn_d[i]);
+	  if(hmm_type == HMM_P7) 
+	    {
+	      P7FreeTrace(p7tr[i]);
+	      free(postcode[i]);
+	    }
+	}
+      free(isum_pn_m);
+      free(isum_pn_i);
+      free(isum_pn_d);
+      for(v = 0; v <= cm->M; v++)
+	{
+	  free(cs2hn_map[v]);
+	  free(cs2hs_map[v]);
+	}
+      free(cs2hn_map);
+      free(cs2hs_map);
+      for(k = 0; k <= hmm_M; k++)
+	{
+	  for(ks = 0; ks < 3; ks++)
+	    free(hns2cs_map[k][ks]);
+	  free(hns2cs_map[k]);
+	}
+      free(hns2cs_map);
+    }
+  if(hmm_type == HMM_P7)
+    {
+      free(p7tr);
+      free(p7dsq);
+      free(postcode);
+      FreePlan7(hmm);
+      FreePlan7Matrix(mx);
+    }      
+  if(hmm_type == HMM_CP9)
+    {
+      FreeCPlan9(cp9hmm);
     }
 
   MSAFree(msa);
@@ -458,365 +1033,24 @@ main(int argc, char **argv)
   free(dsq);
   free(tr);
   
-  StopwatchFree(watch);
   SqdClean();
+  StopwatchFree(watch1);
+  StopwatchFree(watch2);
   return 0;
 }
 
 
 
-
-MSA *
-Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt, 
-		     Parsetree_t **tr, int nseq)
-{
-  MSA         *msa;          /* multiple sequence alignment */
-  CMEmitMap_t *emap;         /* consensus emit map for the CM */
-  int          i;            /* counter over traces */
-  int          v, nd;        /* state, node indices */
-  int          cpos;         /* counter over consensus positions (0)1..clen */
-  int         *matuse;       /* TRUE if we need a cpos in mult alignment */
-  int         *iluse;        /* # of IL insertions after a cpos for 1 trace */
-  int         *eluse;        /* # of EL insertions after a cpos for 1 trace */
-  int         *iruse;        /* # of IR insertions after a cpos for 1 trace */
-  int         *maxil;        /* max # of IL insertions after a cpos */
-  int         *maxel;        /* max # of EL insertions after a cpos */
-  int         *maxir;        /* max # of IR insertions after a cpos */
-  int	      *matmap;       /* apos corresponding to a cpos */
-  int         *ilmap;        /* first apos for an IL following a cpos */
-  int         *elmap;        /* first apos for an EL following a cpos */
-  int         *irmap;        /* first apos for an IR following a cpos */
-  int          alen;	     /* length of msa in columns */
-  int          apos;	     /* position in an aligned sequence in MSA */
-  int          rpos;	     /* position in an unaligned sequence in dsq */
-  int          tpos;         /* position in a parsetree */
-  int          el_len;	     /* length of an EL insertion in residues */
-  CMConsensus_t *con;        /* consensus information for the CM */
-  int          prvnd;	     /* keeps track of previous node for EL */
-
-  emap = CreateEmitMap(cm);
-
-  matuse = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  iluse  = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  eluse  = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  iruse  = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  maxil  = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  maxel  = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  maxir  = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  matmap = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  ilmap  = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  elmap  = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  irmap  = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  
-  for (cpos = 0; cpos <= emap->clen; cpos++) 
-    {
-      matuse[cpos] = 0;
-      maxil[cpos] = maxel[cpos] = maxir[cpos] = 0;
-      ilmap[cpos] = elmap[cpos] = irmap[cpos] = 0;
-    }
-
-  /* Look at all the traces; find maximum length of
-   * insert needed at each of the clen+1 possible gap
-   * points. (There are three types of insert, IL/EL/IR.)
-   * Also find whether we don't need some of the match
-   * (consensus) columns.
-   */
-  for (i = 0; i < nseq; i++) 
-    {
-      for (cpos = 0; cpos <= emap->clen; cpos++) 
-	iluse[cpos] = eluse[cpos] = iruse[cpos] = 0;
-
-      for (tpos = 0; tpos < tr[i]->n; tpos++)
-	{
-	  v  = tr[i]->state[tpos];
-	  if (cm->sttype[v] == EL_st) nd = prvnd;
-	  else                        nd = cm->ndidx[v];
-	  
-	  switch (cm->sttype[v]) {
-	  case MP_st: 
-	    matuse[emap->lpos[nd]] = 1;
-	    matuse[emap->rpos[nd]] = 1;
-	    break;
-	  case ML_st:
-	    matuse[emap->lpos[nd]] = 1;
-	    break;
-	  case MR_st:
-	    matuse[emap->rpos[nd]] = 1;
-	    break;
-	  case IL_st:
-	    iluse[emap->lpos[nd]]++;
-	    break;
-	  case IR_st:		
-            /* remember, convention on rpos is that IR precedes this
-             * cpos. Make it after the previous cpos, hence the -1. 
-	     */
-	    iruse[emap->rpos[nd]-1]++;
-	    break;
-	  case EL_st:
-	    el_len = tr[i]->emitr[tpos] - tr[i]->emitl[tpos] + 1;
-	    eluse[emap->epos[nd]] = el_len;
-            /* not possible to have >1 EL in same place; could assert this */
-	    break;
-	  }
-
-	  prvnd = nd;
-	} /* end looking at trace i */
-
-      for (cpos = 0; cpos <= emap->clen; cpos++) 
-	{
-	  if (iluse[cpos] > maxil[cpos]) maxil[cpos] = iluse[cpos];
-	  if (eluse[cpos] > maxel[cpos]) maxel[cpos] = eluse[cpos];
-	  if (iruse[cpos] > maxir[cpos]) maxir[cpos] = iruse[cpos];
-	}
-    } /* end calculating lengths used by all traces */
-  
-
-  /* Now we can calculate the total length of the multiple alignment, alen;
-   * and the maps ilmap, elmap, and irmap that turn a cpos into an apos
-   * in the multiple alignment: e.g. for an IL that follows consensus position
-   * cpos, put it at or after apos = ilmap[cpos] in aseq[][].
-   * IR's are filled in backwards (3'->5') and rightflushed.
-   */
-  alen = 0;
-  for (cpos = 0; cpos <= emap->clen; cpos++)
-    {
-      if (matuse[cpos]) {
-	matmap[cpos] = alen; 
-	alen++;
-      } else 
-	matmap[cpos] = -1;
-
-      ilmap[cpos] = alen; alen += maxil[cpos];
-      elmap[cpos] = alen; alen += maxel[cpos];
-      alen += maxir[cpos]; irmap[cpos] = alen-1; 
-    }
-
-  /* We're getting closer.
-   * Now we can allocate for the MSA.
-   */
-  msa = MSAAlloc(nseq, alen);
-  msa->nseq = nseq;
-  msa->alen = alen;
-
-  for (i = 0; i < nseq; i++)
-    {
-      /* Initialize the aseq with all pads '.' (in insert cols) 
-       * and deletes '-' (in match cols).
-       */
-      for (apos = 0; apos < alen; apos++)
-	msa->aseq[i][apos] = '.';
-      for (cpos = 0; cpos <= emap->clen; cpos++)
-	if (matmap[cpos] != -1) msa->aseq[i][matmap[cpos]] = '-';
-      msa->aseq[i][alen] = '\0';
-
-      /* Traverse this guy's trace, and place all his
-       * emitted residues.
-       */
-      for (cpos = 0; cpos <= emap->clen; cpos++)
-	iluse[cpos] = iruse[cpos] = 0;
-
-      for (tpos = 0; tpos < tr[i]->n; tpos++) 
-	{
-	  v  = tr[i]->state[tpos];
-	  if (cm->sttype[v] == EL_st) nd = prvnd;
-	  else                        nd = cm->ndidx[v];
-
-	  switch (cm->sttype[v]) {
-	  case MP_st:
-	    cpos = emap->lpos[nd];
-	    apos = matmap[cpos];
-	    rpos = tr[i]->emitl[tpos];
-	    msa->aseq[i][apos] = Alphabet[(int) dsq[i][rpos]];
-
-	    cpos = emap->rpos[nd];
-	    apos = matmap[cpos];
-	    rpos = tr[i]->emitr[tpos];
-	    msa->aseq[i][apos] = Alphabet[(int) dsq[i][rpos]];
-	    break;
-	    
-	  case ML_st:
-	    cpos = emap->lpos[nd];
-	    apos = matmap[cpos];
-	    rpos = tr[i]->emitl[tpos];
-	    msa->aseq[i][apos] = Alphabet[(int) dsq[i][rpos]];
-	    break;
-
-	  case MR_st:
-	    cpos = emap->rpos[nd];
-	    apos = matmap[cpos];
-	    rpos = tr[i]->emitr[tpos];
-	    msa->aseq[i][apos] = Alphabet[(int) dsq[i][rpos]];
-	    break;
-
-	  case IL_st:
-	    cpos = emap->lpos[nd];
-	    apos = ilmap[cpos] + iluse[cpos];
-	    rpos = tr[i]->emitl[tpos];
-	    msa->aseq[i][apos] = tolower((int) Alphabet[(int) dsq[i][rpos]]);
-	    iluse[cpos]++;
-	    break;
-
-	  case EL_st: 
-            /* we can assert eluse[cpos] always == 0 when we enter,
-	     * because we can only have one EL insertion event per 
-             * cpos. If we ever decide to regularize (split) insertions,
-             * though, we'll want to calculate eluse in the rpos loop.
-             */
-	    cpos = emap->epos[nd]; 
-	    apos = elmap[cpos]; 
-	    for (rpos = tr[i]->emitl[tpos]; rpos <= tr[i]->emitr[tpos]; rpos++)
-	      {
-		msa->aseq[i][apos] = tolower((int) Alphabet[(int) dsq[i][rpos]]);
-		apos++;
-	      }
-	    break;
-
-	  case IR_st: 
-	    cpos = emap->rpos[nd]-1;  /* -1 converts to "following this one" */
-	    apos = irmap[cpos] - iruse[cpos];  /* writing backwards, 3'->5' */
-	    rpos = tr[i]->emitr[tpos];
-	    msa->aseq[i][apos] = tolower((int) Alphabet[(int) dsq[i][rpos]]);
-	    iruse[cpos]++;
-	    break;
-
-	  case D_st:
-	    if (cm->stid[v] == MATP_D || cm->stid[v] == MATL_D) 
-	      {
-		cpos = emap->lpos[nd];
-		if (matuse[cpos]) msa->aseq[i][matmap[cpos]] = '-';
-	      }
-	    if (cm->stid[v] == MATP_D || cm->stid[v] == MATR_D) 
-	      {
-		cpos = emap->rpos[nd];
-		if (matuse[cpos]) msa->aseq[i][matmap[cpos]] = '-';
-	      }
-	    break;
-
-	  } /* end of the switch statement */
-
-
-	  prvnd = nd;
-	} /* end traversal over trace i. */
-
-      /* Here is where we could put some insert-regularization code
-       * a la HMMER: reach into each insert, find a random split point,
-       * and shove part of it flush-right. But, for now, don't bother.
-       */
-
-    } /* end loop over all parsetrees */
-
-
-  /* Gee, wasn't that easy?
-   * Add the rest of the ("optional") information to the MSA.
-   */
-  con = CreateCMConsensus(cm, 3.0, 1.0);
-
-  /* "author" info */
-  msa->au   = MallocOrDie(sizeof(char) * (strlen(PACKAGE_VERSION)+10));
-  sprintf(msa->au, "Infernal %s", PACKAGE_VERSION);
-
-  for (i = 0; i < nseq; i++)
-    {
-      msa->sqname[i] = sre_strdup(sqinfo[i].name, -1);
-      msa->sqlen[i]  = sqinfo[i].len;
-      if (sqinfo[i].flags & SQINFO_ACC)
-        MSASetSeqAccession(msa, i, sqinfo[i].acc);
-      if (sqinfo[i].flags & SQINFO_DESC)
-        MSASetSeqDescription(msa, i, sqinfo[i].desc);
-
-      /* TODO: individual SS annotations
-       */
-      
-      if (wgt == NULL) msa->wgt[i] = 1.0;
-      else             msa->wgt[i] = wgt[i];
-    }
-
-  /* Construct the secondary structure consensus line, msa->ss_cons:
-   *       IL, IR are annotated as .
-   *       EL is annotated as ~
-   *       and match columns use the structure code.
-   * Also the primary sequence consensus/reference coordinate system line,
-   * msa->rf.
-   */
-  msa->ss_cons = MallocOrDie(sizeof(char) * (alen+1));
-  msa->rf = MallocOrDie(sizeof(char) * (alen+1));
-  for (cpos = 0; cpos <= emap->clen; cpos++) 
-    {
-      if (matuse[cpos]) 
-	{ /* CMConsensus is off-by-one right now, 0..clen-1 relative to cpos's 1..clen */
-
-	  /* bug i1, xref STL7 p.12. Before annotating something as a base pair,
-	   * make sure the paired column is also present.
-	   */
-	  if (con->ct[cpos-1] != -1 && matuse[con->ct[cpos-1]+1] == 0) {
-	    msa->ss_cons[matmap[cpos]] = '.';
-	    msa->rf[matmap[cpos]]      = con->cseq[cpos-1];
-	  } else {
-	    msa->ss_cons[matmap[cpos]] = con->cstr[cpos-1];	
-	    msa->rf[matmap[cpos]]      = con->cseq[cpos-1];
-	  }
-	}
-      if (maxil[cpos] > 0) 
-	for (apos = ilmap[cpos]; apos < ilmap[cpos] + maxil[cpos]; apos++)
-	  {
-	    msa->ss_cons[apos] = '.';
-	    msa->rf[apos] = '.';
-	  }
-      if (maxel[cpos] > 0)
-	for (apos = elmap[cpos]; apos < elmap[cpos] + maxel[cpos]; apos++)
-	  {
-	    msa->ss_cons[apos] = '~';
-	    msa->rf[apos] = '~';
-	  }
-      if (maxir[cpos] > 0)	/* remember to write backwards */
-	for (apos = irmap[cpos]; apos > irmap[cpos] - maxir[cpos]; apos--)
-	  {
-	    msa->ss_cons[apos] = '.';
-	    msa->rf[apos] = '.';
-	  }
-    }
-  msa->ss_cons[alen] = '\0';
-  msa->rf[alen] = '\0';
-
-  FreeCMConsensus(con);
-  FreeEmitMap(emap);
-  free(matuse);
-  free(iluse);
-  free(eluse);
-  free(iruse);
-  free(maxil);
-  free(maxel);
-  free(maxir);
-  free(matmap);
-  free(ilmap);
-  free(elmap);
-  free(irmap);
-  return msa;
-}
-
 /***********************************************************************************
- * EPN 06.08.05
- * Function : Parsetrees2Alignment_full()
- * Purpose  : Create a MSA with ALL consensus match columns included, even if they
- *            are all gaps.  Called if the --full option is used.  Function was
- *            created to make it possible to 'merge' alignment files outputted from
- *            different cmalign runs that used the same CM (useful if we're splitting
- *            up big alignments onto multiple nodes of the cluster).  
- * 
- *            For notes see ~nawrocki/lab/rRNA/infernal_0426/src/output_full_RF_060805.
- * 
- *            This function is derived from Parsetrees2Alignment() (above) and
- *            only has minimal changes to achieve the desired effect.  The capability
- *            to output a 'full' alignment could easily be added to the original
- *            Parsetrees2Alignment() function, but to be safe, I left that function
- *            unscathed (cause it works, and I didn't write it), and just made this
- *            new function so as not to screw up cmalign when the --full option is
- *            not used.  This is a temporary fix to adding --full functionality.
+ * Function : Parsetrees2Alignment()
+ *            
+ *            EPN Modified to optionally print out all consensus columns (even those
+ *            that have all gaps aligned to them) if the --full option was used.
  ***********************************************************************************/
 
 MSA *
-Parsetrees2Alignment_full(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt, 
-			  Parsetree_t **tr, int nseq)
+Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt, 
+		     Parsetree_t **tr, int nseq, int do_full)
 {
   MSA         *msa;          /* multiple sequence alignment */
   CMEmitMap_t *emap;         /* consensus emit map for the CM */
@@ -858,11 +1092,8 @@ Parsetrees2Alignment_full(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt,
   
   for (cpos = 0; cpos <= emap->clen; cpos++) 
     {
-      /* EPN 06.08.05 main difference between this function 
-	 and Parsetrees2Alignment() is the following line */
-      /* original line : matuse[cpos] = 0;*/
-      if(cpos == 0)
-	/*consensus positions are 1..clen*/
+      /* EPN modified only following 4 lines to allow --full option */
+      if(!do_full || cpos == 0)
 	matuse[cpos] = 0;
       else
 	matuse[cpos] = 1;
@@ -1149,48 +1380,6 @@ Parsetrees2Alignment_full(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt,
   return msa;
 }
 
-static void
-debug_print_bands(CM_t *cm, int *dmin, int *dmax)
-{
-  int v;
-  char **sttypes;
-  char **nodetypes;
-
-  sttypes = malloc(sizeof(char *) * 10);
-  sttypes[0] = "D";
-  sttypes[1] = "MP";
-  sttypes[2] = "ML";
-  sttypes[3] = "MR";
-  sttypes[4] = "IL";
-  sttypes[5] = "IR";
-  sttypes[6] = "S";
-  sttypes[7] = "E";
-  sttypes[8] = "B";
-  sttypes[9] = "EL";
-
-  nodetypes = malloc(sizeof(char *) * 8);
-  nodetypes[0] = "BIF";
-  nodetypes[1] = "MATP";
-  nodetypes[2] = "MATL";
-  nodetypes[3] = "MATR";
-  nodetypes[4] = "BEGL";
-  nodetypes[5] = "BEGR";
-  nodetypes[6] = "ROOT";
-  nodetypes[7] = "END";
-
-  printf("\nPrinting bands :\n");
-  printf("****************\n");
-  for(v = 0; v < cm->M; v++)
-   {
-     printf("band v:%d n:%d %-4s %-2s min:%d max:%d\n", v, cm->ndidx[v], nodetypes[cm->ndtype[cm->ndidx[v]]], sttypes[cm->sttype[v]], dmin[v], dmax[v]);
-   }
-  printf("****************\n\n");
-
-  free(sttypes);
-  free(nodetypes);
-
-}
-
 /* EPN 07.22.05
  * ExpandBands()
  * Function: ExpandBands
@@ -1335,12 +1524,12 @@ banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *dmin, int *dmax, int bdum
 	  mindiff = d-dmin[v];
 	  maxdiff = dmax[v]-d;
 	  if(bdump_level > 1 || ((mindiff < 0) || (maxdiff < 0)))
-	    printf("%-4s %-3s v: %4d | d: %4d | dmin: %4d | dmax: %4d | %3d | %3d |\n", nodetypes[cm->ndtype[cm->ndidx[v]]], sttypes[cm->sttype[v]], v, d, dmin[v], dmax[v], mindiff, maxdiff);
+	    printf("%-4s %-3s v: %4d | d: %4d | dmin: %4d | dmax: %4d | %3d | %3d |\n", nodetypes[(int) cm->ndtype[(int) cm->ndidx[v]]], sttypes[(int) cm->sttype[v]], v, d, dmin[v], dmax[v], mindiff, maxdiff);
 	}
       else
 	{
 	  if(bdump_level > 1)
-	    printf("%-8s v: %4d | d: %4d |\n", sttypes[cm->sttype[v]], v, d);
+	    printf("%-8s v: %4d | d: %4d |\n", sttypes[(int) cm->sttype[v]], v, d);
 	}
     }
   free(sttypes);

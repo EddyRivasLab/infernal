@@ -319,5 +319,5 @@ typedef struct emitmap_s {
   int  clen;           /* consensus length */
 } CMEmitMap_t;
 
-
 #endif /*STRUCTSH_INCLUDED*/
+
