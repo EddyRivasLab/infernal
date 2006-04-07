@@ -69,7 +69,7 @@ static float
 cm_sum_subpaths(CM_t *cm, int start, int end, char ***tmap, int **cs2hn_map, int **cs2hs_map, 
 		int ***hns2cs_map, int k, double *psi);
 
-static void
+static int
 check_psi_vs_phi_cp9(CM_t *cm, double *psi, double **phi, int ***hns2cs_map, int hmm_M,
 		     double threshold, int debug_level);
 
@@ -113,9 +113,11 @@ check_cm_adj_bp(CM_t *cm, int *cc_node_map, int hmm_M);
  *                                  map to HMM node k's match state.
  * int debug_level   - [0..3] tells the function what level of debugging print
  *                     statements to print.
- * Returns: (void) 
+ * Returns: TRUE if CP9 is constructed, FALSE if we get some error. 
+ *          Its also possible one of the functions called within this function
+ *          will print an error statement and exit.
  */
-void
+int
 CP9_cm2wrhmm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *node_cc_right, 
 	     int *cc_node_map, int **cs2hn_map, int **cs2hs_map, int ***hns2cs_map, 
 	     int debug_level)
@@ -131,6 +133,8 @@ CP9_cm2wrhmm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *node_cc_rig
   double psi_vs_phi_threshold; /* the threshold that mapping (potentially summed) psi and 
 				* phi values are allowed to be different by, without throwing
 				* an error.*/
+  int ret_val;                 /* return value */
+
   ap = malloc(sizeof(int) * 2);
 
   if(debug_level > 1)
@@ -234,7 +238,7 @@ CP9_cm2wrhmm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *node_cc_rig
      * checking psi and phi.
      */
     }    
-  check_psi_vs_phi_cp9(cm, psi, phi, hns2cs_map, hmm->M, psi_vs_phi_threshold, debug_level);
+  ret_val = check_psi_vs_phi_cp9(cm, psi, phi, hns2cs_map, hmm->M, psi_vs_phi_threshold, debug_level);
   CP9Logoddsify(hmm);
 
   free(ap);
@@ -251,7 +255,7 @@ CP9_cm2wrhmm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *node_cc_rig
       free(tmap[i]);
     }
   free(tmap);
-  /*exit(1);*/
+  return ret_val;
 }
 
 /**************************************************************************
@@ -1788,9 +1792,10 @@ cm_sum_subpaths(CM_t *cm, int start, int end, char ***tmap, int **cs2hn_map,
  * double threshold  - the threshold that mapping (potentially summed) psi and 
  *                     phi values are allowed to be different by, without throwing an error.
  * int print_flag    - TRUE to print out the values, FALSE not to 
- * Returns: (void) 
+ * Returns: TRUE: if CM and HMM are "close enough" (see code)
+ *          FALSE: otherwise
  */
-static void
+static int
 check_psi_vs_phi_cp9(CM_t *cm, double *psi, double **phi, int ***hns2cs_map, int hmm_M,
                      double threshold, int debug_level)
 {
@@ -1812,7 +1817,9 @@ check_psi_vs_phi_cp9(CM_t *cm, double *psi, double **phi, int ***hns2cs_map, int
   int violation;
   int v_ct; /* Number of violations not involving dual insert states. */
   double diff;
+  int ret_val; /* return value */
 
+  ret_val = TRUE;
   v_ct = 0;
   ap = malloc(sizeof(int) * 2);
 
@@ -1924,10 +1931,11 @@ check_psi_vs_phi_cp9(CM_t *cm, double *psi, double **phi, int ***hns2cs_map, int
   
   if(v_ct > 0)
     {
-      printf("ERROR, there are %d HMM states that violate the %f threshold b/t psi and phi. Exiting.\n", v_ct, threshold);
-      exit(1);
+      printf("ERROR, %d HMM states violate the %f threshold b/t psi and phi.\n", v_ct, threshold);
+      /*exit(1);*/
+      ret_val = FALSE;
     }
-  return;
+  return ret_val;
 }
 
 /**************************************************************************
@@ -2044,10 +2052,10 @@ check_cm_adj_bp(CM_t *cm, int *cc_node_map, int hmm_M)
  *                     [1..hmm_ncc]
  * int debug_level   - debugging level for verbosity of debugging printf statements
  *
- * Returns: Only if CM and HMM are not "close enough" (see code)
- *          will print an error message and exit in check_psi_vs_phi_cp() if not.
+ * Returns: TRUE: if CM and HMM are "close enough" (see code)
+ *          FALSE: otherwise
  */
-void
+int 
 CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, int *cc_node_map,
 		int debug_level)
 {
@@ -2059,7 +2067,7 @@ CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, int *cc_node_
   double psi_vs_phi_threshold; /* the threshold that mapping (potentially summed) psi and 
 				* phi values are allowed to be different by, without throwing
 				* an error.*/
-
+  int ret_val;         /* return value */
   psi = malloc(sizeof(double) * cm->M);
   make_tmap(&tmap);
   fill_psi(cm, psi, tmap);
@@ -2082,7 +2090,7 @@ CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, int *cc_node_
   fill_phi_cp9(hmm, phi);
 
   /*debug_print_cp9_params(hmm);*/
-  psi_vs_phi_threshold = 0.0005;
+  psi_vs_phi_threshold = 0.0001;
   if(check_cm_adj_bp(cm, cc_node_map, hmm->M))
     {
       psi_vs_phi_threshold = 0.01;
@@ -2094,7 +2102,7 @@ CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, int *cc_node_
      * checking psi and phi.
      */
     }    
-  check_psi_vs_phi_cp9(cm, psi, phi, hns2cs_map, hmm->M, psi_vs_phi_threshold, debug_level);
+  ret_val = check_psi_vs_phi_cp9(cm, psi, phi, hns2cs_map, hmm->M, psi_vs_phi_threshold, debug_level);
   for(k = 0; k <= hmm->M; k++)
     {
       free(phi[k]);
@@ -2108,5 +2116,5 @@ CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, int *cc_node_
       free(tmap[i]);
     }
   free(tmap);
-  return;
+  return ret_val;
 }

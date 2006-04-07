@@ -173,8 +173,9 @@ CYKInside_b_jd(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **
   StopwatchZero(watch);
   StopwatchStart(watch);
 
-  PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, L);
-  printf("alignment strategy:CYKInside_b_jd:b:nosmall\n"); 
+  /*PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, L);
+    printf("alignment strategy:CYKInside_b_jd:b:nosmall\n"); 
+  */
 
   /* Trust, but verify.
    * Check out input parameters.
@@ -215,7 +216,7 @@ CYKInside_b_jd(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **
   printf("returning from CYKInside_b_jd() sc : %f\n", sc); 
 
   StopwatchStop(watch);
-  StopwatchDisplay(stdout, "\nCPU time: ", watch);
+  StopwatchDisplay(stdout, "banded CYK (j and d) CPU time: ", watch);
   StopwatchFree(watch);
 
   return sc;
@@ -1889,7 +1890,7 @@ inside_b_jd_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, 
 
   free(touch);
   if (ret_shadow != NULL) *ret_shadow = shadow;
-  printf("inside jd me returning sc: %f\n", sc);
+  /*printf("inside jd me returning sc: %f\n", sc);*/
 
   return sc;
 }
@@ -1949,7 +1950,6 @@ insideT_b_jd_me(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
   jp_v = j - jmin[v];
   dp_v = d - hdmin[v][jp_v];
 
-  printf("Starting traceback in insideT_b_jd_me()\n");
   while (1) {
     if(cm->sttype[v] != EL_st && d > hdmax[v][jp_v])
       {

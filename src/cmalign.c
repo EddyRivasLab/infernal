@@ -52,6 +52,7 @@ static char experts[] = "\
    --full        : include all match columns in output alignment\n\
    --banddump <n>: set verbosity of band info print statements to <n> [1..3]\n\
    --dlev <n>    : set verbosity of debugging print statements to <n> [1..3]\n\
+   --time        : print timings for alignment, band calculation, etc.\n\
 \n\
   * HMM banded alignment related options:\n\
    --hbanded     : use exptl HMM banded CYK aln algorithm (req's --cp9 or --p7)\n\
@@ -87,6 +88,7 @@ static struct opt_s OPTIONS[] = {
   { "--sums",       FALSE, sqdARG_NONE},
   { "--cp9",        FALSE, sqdARG_STRING},
   { "--p7",         FALSE, sqdARG_STRING},
+  { "--time",       FALSE, sqdARG_NONE},
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -132,8 +134,9 @@ main(int argc, char **argv)
 				 * handling this should be > than expected dmax[0]*/
   int    debug_level;           /* verbosity level for debugging printf() statements,
 			         * passed to many functions. */
-  Stopwatch_t  *watch1;         /* For overall timings */
-  Stopwatch_t  *watch2;         /* For HMM band calc timings */
+  Stopwatch_t  *watch1;         /* for overall timings */
+  Stopwatch_t  *watch2;         /* for HMM band calc timings */
+  int    time_flag;             /* TRUE to print timings, FALSE not to */
 
   /* a priori bands data structures */
   double   apbandp;	        /* tail loss probability for a priori banding */
@@ -210,12 +213,14 @@ main(int argc, char **argv)
   int   hmm_M;         /* Number of nodes in either the Plan 7 HMM or CM Plan 9 HMM */
   
   /* CM Plan 9 */
-  CP9HMMFILE *cp9_hmmfp;                /* opened CP9 hmmfile for reading          */
-  struct cplan9_s *cp9hmm;              /* constructed CM p9 HMM; written to hmmfile  */
-  struct cp9_dpmatrix_s *cp9_mx;        /* growable DP matrix for viterbi         */
-  struct cp9_dpmatrix_s *cp9_fwd;       /* growable DP matrix for forward         */
-  struct cp9_dpmatrix_s *cp9_bck;       /* growable DP matrix for backward        */
-  struct cp9_dpmatrix_s *cp9_posterior; /* growable DP matrix for posterior decode */
+  CP9HMMFILE            *cp9_hmmfp;     /* opened CP9 hmmfile for reading                       */
+  struct cplan9_s       *cp9_hmm;       /* constructed CP9 HMM; written to hmmfile              */
+  int                    cp9_M;         /* number of nodes in CP9 HMM (MATL+MATR+2*MATP)        */
+  int                    read_cp9_flag; /* TRUE to read a CP9 HMM from file, FALSE to build one */
+  struct cp9_dpmatrix_s *cp9_mx;        /* growable DP matrix for viterbi                       */
+  struct cp9_dpmatrix_s *cp9_fwd;       /* growable DP matrix for forward                       */
+  struct cp9_dpmatrix_s *cp9_bck;       /* growable DP matrix for backward                      */
+  struct cp9_dpmatrix_s *cp9_posterior; /* growable DP matrix for posterior decode              */
 
   /* Plan 7 */
   HMMFILE           *hmmfp;     /* opened hmmfile for reading              */
@@ -239,8 +244,8 @@ main(int argc, char **argv)
   regressfile = NULL;
   windowlen   = 200;
   set_window  = FALSE;
-  do_apbanded   = FALSE;
-  apbandp       = 0.0001;
+  do_apbanded = FALSE;
+  apbandp     = 0.0001;
   do_full     = FALSE;
   do_apexpand = FALSE;
   bdump_level = 0;
@@ -249,6 +254,8 @@ main(int argc, char **argv)
   hbandp      = 0.0001;
   use_sums    = FALSE;
   hmm_type    = NONE;
+  read_cp9_flag = FALSE;
+  time_flag   = TRUE;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -264,18 +271,22 @@ main(int argc, char **argv)
       set_window = TRUE; } 
     else if (strcmp(optname, "--full")      == 0) do_full      = TRUE;
     else if (strcmp(optname, "--apexpand")  == 0) do_apexpand  = TRUE;
-    else if (strcmp(optname, "--banddump")  == 0)  bdump_level = atoi(optarg);
+    else if (strcmp(optname, "--banddump")  == 0) bdump_level  = atoi(optarg);
     else if (strcmp(optname, "--dlev")      == 0) debug_level  = atoi(optarg);
-    else if (strcmp(optname, "--hbanded")   == 0) { do_hbanded = TRUE;    do_small = FALSE; }
+    else if (strcmp(optname, "--time")      == 0) time_flag    = TRUE;
+    else if (strcmp(optname, "--hbanded")   == 0) {
+      do_hbanded = TRUE; do_small = FALSE; 
+      if(hmm_type == NONE) hmm_type = HMM_CP9; 
+      } /* default HMM: CP9, but let --p7 override */
     else if (strcmp(optname, "--hbandp")    == 0) hbandp       = atof(optarg);
     else if (strcmp(optname, "--sums")      == 0) use_sums     = TRUE;
     else if (strcmp(optname, "--cp9")       == 0) { 
-      if(hmm_type != NONE) Die("Can't do --cp9 and --p7, pick one HMM type.\n");
-      hmm_type  = HMM_CP9; hmmfile = optarg; 
+      if(hmm_type == HMM_P7) Die("Can't do --cp9 and --p7, pick one HMM type.\n");
+      hmm_type  = HMM_CP9; hmmfile = optarg; read_cp9_flag = TRUE; 
     }
     else if (strcmp(optname, "--p7")        == 0) {
-      if(hmm_type != NONE) Die("Can't do --cp9 and --p7, pick one HMM type.\n");
-      hmm_type  = HMM_P7;  hmmfile = optarg; 
+      if(read_cp9_flag == TRUE) Die("Can't do --cp9 and --p7, pick one HMM type.\n");
+      hmm_type  = HMM_P7;  hmmfile = optarg;  
     }
     else if (strcmp(optname, "--informat")  == 0) {
       format = String2SeqfileFormat(optarg);
@@ -336,7 +347,7 @@ main(int argc, char **argv)
 
   if (do_local && do_hbanded)
     {
-      printf("Warning: banding with an HMM (--hbanded) and allowing\nlocal alignment (-l). No telling what will happen.\n");
+      printf("Warning: banding with an HMM (--hbanded) and allowing\nlocal alignment (-l). There's no telling what will happen.\n");
     } 
 
   if (do_local) ConfigLocal(cm, 0.5, 0.5);
@@ -365,17 +376,21 @@ main(int argc, char **argv)
 	}
       if(hmm_type == HMM_CP9)
 	{
-	  if ((cp9_hmmfp = CP9_HMMFileOpen(hmmfile, "HMMERDB")) == NULL)
-	    Die("Failed to open HMM file %s\n%s", hmmfile, usage);
-	  if (!CP9_HMMFileRead(cp9_hmmfp, &cp9hmm)) 
-	    Die("Failed to read any CP9 HMMs from %s\n", hmmfile);
-	  CP9_HMMFileClose(cp9_hmmfp);
-	  CP9Logoddsify(cp9hmm);
-	  if (cp9hmm == NULL) 
-	    Die("HMM file %s corrupt or in incorrect format? Parse failed", hmmfile);
+	  if(read_cp9_flag)
+	    {
+	      if ((cp9_hmmfp = CP9_HMMFileOpen(hmmfile, "HMMERDB")) == NULL)
+		Die("Failed to open HMM file %s\n%s", hmmfile, usage);
+	      if (!CP9_HMMFileRead(cp9_hmmfp, &cp9_hmm)) 
+		Die("Failed to read any CP9 HMMs from %s\n", hmmfile);
+	      CP9_HMMFileClose(cp9_hmmfp);
+	      CP9Logoddsify(cp9_hmm);
+	      if (cp9_hmm == NULL) 
+		Die("HMM file %s corrupt or in incorrect format? Parse failed", hmmfile);
+	    }
+	  else /* build (don't read in) a CM Plan 9 from the CM (default --hbanded) */
+	    SetAlphabet(hmmNUCLEIC); /* Set up the hmmer_alphabet global variable */
 	}
     }
-
   /*****************************************************************
    * Input and digitize the unaligned sequences
    *****************************************************************/
@@ -491,14 +506,30 @@ main(int argc, char **argv)
 
   if(hmm_type == HMM_CP9)
     {
-      /*printf("HMM type is HMM_CP9, number of nodes: %d\n", cp9hmm->M);*/
-      
+      if(!(read_cp9_flag)) /* we're building a CP9 HMM, not reading one in */
+	{
+	  cp9_M = 0;
+	  for(v = 0; v <= cm->M; v++)
+	    {
+	      if(cm->stid[v] ==  MATP_MP)
+		cp9_M += 2;
+	      else if(cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR)
+		cp9_M ++;
+	    }
+	  /* build the HMM data structure */
+	  cp9_hmm = AllocCPlan9(cp9_M);
+	  ZeroCPlan9(cp9_hmm);
+	}
+
       /* Get information mapping the HMM to the CM and vice versa, used
-       * for mapping bands. */
+       * for mapping bands. 
+       * This is relevant if we're building (read_cp9_flag == FALSE)
+       * or reading from a file (read_cp9_flag == TRUE)
+       */
       node_cc_left  = malloc(sizeof(int) * cm->nodes);
       node_cc_right = malloc(sizeof(int) * cm->nodes);
-      cc_node_map   = malloc(sizeof(int) * (cp9hmm->M + 1));
-      map_consensus_columns(cm, cp9hmm->M, node_cc_left, node_cc_right,
+      cc_node_map   = malloc(sizeof(int) * (cp9_hmm->M + 1));
+      map_consensus_columns(cm, cp9_hmm->M, node_cc_left, node_cc_right,
 			    cc_node_map, debug_level);
       
       cs2hn_map     = malloc(sizeof(int *) * (cm->M+1));
@@ -509,26 +540,51 @@ main(int argc, char **argv)
       for(v = 0; v <= cm->M; v++)
 	cs2hs_map[v]     = malloc(sizeof(int) * 2);
       
-      hns2cs_map    = malloc(sizeof(int **) * (cp9hmm->M+1));
-      for(k = 0; k <= cp9hmm->M; k++)
+      hns2cs_map    = malloc(sizeof(int **) * (cp9_hmm->M+1));
+      for(k = 0; k <= cp9_hmm->M; k++)
 	{
 	  hns2cs_map[k]    = malloc(sizeof(int *) * 3);
 	  for(ks = 0; ks < 3; ks++)
 	    hns2cs_map[k][ks]= malloc(sizeof(int) * 2);
 	}
       
-      CP9_map_cm2hmm_and_hmm2cm(cm, cp9hmm, node_cc_left, node_cc_right, 
+      CP9_map_cm2hmm_and_hmm2cm(cm, cp9_hmm, node_cc_left, node_cc_right, 
 				cc_node_map, cs2hn_map, cs2hs_map, 
 				hns2cs_map, debug_level);
-      /* Check to make sure the hmm we read from the input file is
-       * "close enough" to the CM, based on psi and phi values (see CP9_cm2wrhmm.c),
-       * as a CM Plan 9 HMM should be.
-       */
-      CP9_check_wrhmm(cm, cp9hmm, hns2cs_map, cc_node_map, debug_level);
-      CP9Logoddsify(cp9hmm);
-      /*debug_print_cp9_params(cp9hmm);*/
-      cp9_mx  = CreateCPlan9Matrix(1, cp9hmm->M, 25, 0);
-      hmm_M = cp9hmm->M;
+      
+      if(!(read_cp9_flag)) /* actually build the CM Plan 9 HMM */
+      {
+	/* fill in parameters of HMM using the CM and some ideas/formulas/tricks
+	 * from Zasha Weinberg's thesis (~p.123) (see CP9_cm2wrhmm.c code) */
+	if(!(CP9_cm2wrhmm(cm, cp9_hmm, node_cc_left, node_cc_right, cc_node_map, cs2hn_map,
+		     cs2hs_map, hns2cs_map, debug_level)))
+	  Die("Couldn't build a CM Plan 9 HMM from the CM.\n");
+      }
+      else /* a CP9 HMM has already been read from a file. */
+      {
+	/* Check to make sure the HMM we read from the input file is
+	 * "close enough" to the CM, based on psi and phi values (see CP9_cm2wrhmm.c).
+	 * If not, we build a new one from the CM. This is a design decision, 
+	 * and I'm not sure if its the best or desired behavior (EPN)
+	 */
+	if(!(CP9_check_wrhmm(cm, cp9_hmm, hns2cs_map, cc_node_map, debug_level)))
+	  {
+	    printf("\nCM Plan 9 HMM read from %s not similar enough to the CM.\n", hmmfile);
+	    printf("Building a new CM plan 9 HMM directly from the CM.\n\n");
+	    /* build a new CM plan 9 HMM */
+	    if(!(CP9_cm2wrhmm(cm, cp9_hmm, node_cc_left, node_cc_right, cc_node_map, cs2hn_map,
+			      cs2hs_map, hns2cs_map, debug_level)))
+	      Die("Couldn't build a CM Plan 9 HMM from the CM\n");
+	  }
+      }
+      CP9Logoddsify(cp9_hmm);
+      /*debug_print_cp9_params(cp9_hmm);*/
+
+      cp9_mx  = CreateCPlan9Matrix(1, cp9_hmm->M, 25, 0);
+      hmm_M = cp9_hmm->M;
+
+      StopwatchZero(watch2);
+      StopwatchStart(watch2);
     }
 
   /* Allocate data structures for use with HMM banding strategy (either P7 or CP9) */
@@ -548,9 +604,9 @@ main(int argc, char **argv)
       hdmax       = malloc(sizeof(int *) * cm->M);
       safe_hdmin  = malloc(sizeof(int) * cm->M);
       safe_hdmax  = malloc(sizeof(int) * cm->M);
-      isum_pn_m = malloc(sizeof(int *) * nseq);
-      isum_pn_i = malloc(sizeof(int *) * nseq);
-      isum_pn_d = malloc(sizeof(int *) * nseq);
+      isum_pn_m   = malloc(sizeof(int *) * nseq);
+      isum_pn_i   = malloc(sizeof(int *) * nseq);
+      isum_pn_d   = malloc(sizeof(int *) * nseq);
       
       for (i = 0; i < nseq; i++)
 	{
@@ -578,18 +634,17 @@ main(int argc, char **argv)
 	   */
 	  
 	  /* Step 1: Get HMM posteriors.*/
-	  /*sc = CP9Viterbi(p7dsq[i], sqinfo[i].len, cp9hmm, cp9_mx);*/
-	  forward_sc = CP9Forward(p7dsq[i], sqinfo[i].len, cp9hmm, &cp9_fwd);
-	  printf("CP9 i: %d | forward_sc : %f\n", i, forward_sc);
-	  backward_sc = CP9Backward(p7dsq[i], sqinfo[i].len, cp9hmm, &cp9_bck);
-	  printf("CP9 i: %d | backward_sc: %f\n", i, backward_sc);
-	  /*debug_check_CP9_FB(cp9_fwd, cp9_bck, cp9hmm, forward_sc, sqinfo[i].len, p7dsq[i]);*/
+	  /*sc = CP9Viterbi(p7dsq[i], sqinfo[i].len, cp9_hmm, cp9_mx);*/
+	  forward_sc = CP9Forward(p7dsq[i], sqinfo[i].len, cp9_hmm, &cp9_fwd);
+	  /*printf("CP9 i: %d | forward_sc : %f\n", i, forward_sc);*/
+	  backward_sc = CP9Backward(p7dsq[i], sqinfo[i].len, cp9_hmm, &cp9_bck);
+	  /*printf("CP9 i: %d | backward_sc: %f\n", i, backward_sc);*/
+	  /*debug_check_CP9_FB(cp9_fwd, cp9_bck, cp9_hmm, forward_sc, sqinfo[i].len, p7dsq[i]);*/
 	  cp9_posterior = cp9_bck;
-	  CP9FullPosterior(p7dsq[i], sqinfo[i].len, cp9hmm, cp9_fwd, cp9_bck, cp9_posterior);
+	  CP9FullPosterior(p7dsq[i], sqinfo[i].len, cp9_hmm, cp9_fwd, cp9_bck, cp9_posterior);
 	  
-	  printf("\nTime for CP9 Forwards/Backwards:\n");
 	  StopwatchStop(watch1);
-	  StopwatchDisplay(stdout, "CPU time: ", watch1);
+	  if(time_flag) StopwatchDisplay(stdout, "CP9 Forward/Backward CPU time: ", watch1);
 	  StopwatchZero(watch1);
 	  StopwatchStart(watch1);
 
@@ -597,42 +652,41 @@ main(int argc, char **argv)
 	  if(!(use_sums))
 	    {
 	      /* match states */
-	      CP9_hmm_band_bounds(cp9_posterior->mmx, sqinfo[i].len, cp9hmm->M,
+	      CP9_hmm_band_bounds(cp9_posterior->mmx, sqinfo[i].len, cp9_hmm->M,
 				  NULL, pn_min_m, pn_max_m, (1.-hbandp), FALSE, debug_level);
 	      /* insert states */
-	      CP9_hmm_band_bounds(cp9_posterior->imx, sqinfo[i].len, cp9hmm->M,
+	      CP9_hmm_band_bounds(cp9_posterior->imx, sqinfo[i].len, cp9_hmm->M,
 				  NULL, pn_min_i, pn_max_i, (1.-hbandp), FALSE, debug_level);
 	      /* delete states (note: delete_flag set to TRUE) */
-	      CP9_hmm_band_bounds(cp9_posterior->dmx, sqinfo[i].len, cp9hmm->M,
+	      CP9_hmm_band_bounds(cp9_posterior->dmx, sqinfo[i].len, cp9_hmm->M,
 				  NULL, pn_min_d, pn_max_d, (1.-hbandp), TRUE, debug_level);
 	    }
 	  else
 	    {
-	      CP9_ifill_post_sums(cp9_posterior, sqinfo[i].len, cp9hmm->M,
+	      CP9_ifill_post_sums(cp9_posterior, sqinfo[i].len, cp9_hmm->M,
 				  isum_pn_m[i], isum_pn_i[i], 
 				  isum_pn_d[i]);
 	      /* match states */
-	      CP9_hmm_band_bounds(cp9_posterior->mmx, sqinfo[i].len, cp9hmm->M,
+	      CP9_hmm_band_bounds(cp9_posterior->mmx, sqinfo[i].len, cp9_hmm->M,
 				  isum_pn_m[i], pn_min_m, pn_max_m, (1.-hbandp), FALSE, debug_level);
 	      /* insert states */
-	      CP9_hmm_band_bounds(cp9_posterior->imx, sqinfo[i].len, cp9hmm->M,
+	      CP9_hmm_band_bounds(cp9_posterior->imx, sqinfo[i].len, cp9_hmm->M,
 				  isum_pn_i[i], pn_min_i, pn_max_i, (1.-hbandp), FALSE, debug_level);
 	      /* delete states (note: delete_flag set to TRUE) */
-	      CP9_hmm_band_bounds(cp9_posterior->dmx, sqinfo[i].len, cp9hmm->M,
+	      CP9_hmm_band_bounds(cp9_posterior->dmx, sqinfo[i].len, cp9_hmm->M,
 				  isum_pn_d[i], pn_min_d, pn_max_d, (1.-hbandp), TRUE, debug_level);
 	    }
-	  printf("\nTime for calc'ing CP9 HMM bands :\n");
 	  StopwatchStop(watch1);
-	  StopwatchDisplay(stdout, "CPU time: ", watch1);
+	  if(time_flag) StopwatchDisplay(stdout, "CP9 Band calculation CPU time: ", watch1);
 	  if(debug_level != 0)
 	    {
 	      printf("printing hmm bands\n");
-	      print_hmm_bands(stdout, sqinfo[i].len, cp9hmm->M, pn_min_m, pn_max_m, pn_min_i,
+	      print_hmm_bands(stdout, sqinfo[i].len, cp9_hmm->M, pn_min_m, pn_max_m, pn_min_i,
 			      pn_max_i, pn_min_d, pn_max_d, hbandp, debug_level);
 	    }
 	  
 	  /* Step 3: HMM bands  ->  CM bands. */
-	  hmm2ij_bands(cm, cp9hmm->M, node_cc_left, node_cc_right, cc_node_map, 
+	  hmm2ij_bands(cm, cp9_hmm->M, node_cc_left, node_cc_right, cc_node_map, 
 		       sqinfo[i].len, pn_min_m, pn_max_m, pn_min_i, pn_max_i, 
 		       pn_min_d, pn_max_d, imin, imax, jmin, jmax, cs2hn_map,
 		       debug_level);
@@ -646,7 +700,7 @@ main(int argc, char **argv)
 	  ij2d_bands(cm, sqinfo[i].len, imin, imax, jmin, jmax,
 		     hdmin, hdmax, -1);
 
-	  if(debug_level > 0)
+	  if(debug_level != 0)
 	    PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, sqinfo[i].len);
 
 	  FreeCPlan9Matrix(cp9_fwd);
@@ -673,17 +727,16 @@ main(int argc, char **argv)
 	    (void) P7SmallViterbi(p7dsq[i], sqinfo[i].len, hmm, mx, &(p7tr[i]));
 	  */
 	  forward_sc = P7Forward(p7dsq[i], sqinfo[i].len, hmm, &fwd);
-	  printf("P7 i: %d | forward_sc : %f\n", i, forward_sc);
+	  /*printf("P7 i: %d | forward_sc : %f\n", i, forward_sc);*/
 	  backward_sc = P7Backward(p7dsq[i], sqinfo[i].len, hmm, &bck);
-	  printf("P7 i: %d | backward_sc: %f\n", i, backward_sc);
+	  /*printf("P7 i: %d | backward_sc: %f\n", i, backward_sc);*/
 	  posterior = bck;
 	  P7FullPosterior(sqinfo[i].len, hmm, fwd, bck, posterior);
 	  if(debug_level > 2)
 	    P7_debug_print_post_decode(sqinfo[i].len, hmm->M, posterior);
 	  
-	  printf("\nTime for p7 HMMER forwards/backwards:\n");
 	  StopwatchStop(watch1);
-	  StopwatchDisplay(stdout, "\nCPU time: ", watch1);
+	  if(time_flag) StopwatchDisplay(stdout, "P7 Forward/Backward CPU time: ", watch1);
 	  StopwatchZero(watch1);
 	  StopwatchStart(watch1);
 	  
@@ -732,10 +785,9 @@ main(int argc, char **argv)
 	  P7_last_and_first_hmm_delete_state_hack(hmm->M, pn_min_m, pn_max_m, pn_min_d, 
 						  pn_max_d, sqinfo[i].len);
 
-	  printf("\nTime for calc'ing HMM bands (strategy 4):\n");
 	  StopwatchStop(watch1);
-	  StopwatchDisplay(stdout, "\nCPU time: ", watch1);
-	  
+	  if(time_flag) StopwatchDisplay(stdout, "P7 Band calculation CPU time: ", watch1);
+
 	  if(debug_level != 0)
 	    {
 	      printf("printing hmm bands\n");
@@ -758,7 +810,7 @@ main(int argc, char **argv)
 	  ij2d_bands(cm, sqinfo[i].len, imin, imax, jmin, jmax,
 		     hdmin, hdmax, -1);
 	  
-	  if(debug_level > 0)
+	  if(debug_level != 0)
 	    PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, sqinfo[i].len);
 	
 	  FreePlan7Matrix(fwd);
@@ -917,7 +969,7 @@ main(int argc, char **argv)
 	  { free(hdmin[v]); free(hdmax[v]); }
 
       StopwatchStop(watch2);
-      StopwatchDisplay(stdout, "band calc plus alignment CPU time: ", watch2);
+      if(time_flag) StopwatchDisplay(stdout, "band calc and jd CYK CPU time: ", watch2);
     }
   avgsc /= nseq;
 
@@ -989,11 +1041,13 @@ main(int argc, char **argv)
 	  free(isum_pn_m[i]); 
 	  free(isum_pn_i[i]);
 	  free(isum_pn_d[i]);
+	  /* Uncomment if calc'ing a postcode 
 	  if(hmm_type == HMM_P7) 
 	    {
 	      P7FreeTrace(p7tr[i]);
 	      free(postcode[i]);
 	    }
+	  */
 	}
       free(isum_pn_m);
       free(isum_pn_i);
@@ -1023,7 +1077,7 @@ main(int argc, char **argv)
     }      
   if(hmm_type == HMM_CP9)
     {
-      FreeCPlan9(cp9hmm);
+      FreeCPlan9(cp9_hmm);
     }
 
   MSAFree(msa);

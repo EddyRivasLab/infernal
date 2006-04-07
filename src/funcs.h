@@ -245,10 +245,10 @@ extern void debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, 
 
 /* from CP9_cm2wrhmm.c
  */
-extern void CP9_cm2wrhmm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *node_cc_right, 
-			 int *cc_node_map, int **cs2hn_map, int **cs2hs_map, int ***hns2cs_map, 
-			 int debug_level);
+extern int CP9_cm2wrhmm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *node_cc_right, 
+			int *cc_node_map, int **cs2hn_map, int **cs2hs_map, int ***hns2cs_map, 
+			int debug_level);
 
 extern void debug_print_cp9_params(struct cplan9_s *hmm);
-extern void CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, int *cc_node_map,
-			    int debug_level);
+extern int CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, int *cc_node_map,
+			   int debug_level);
