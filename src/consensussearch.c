@@ -17,6 +17,7 @@
 #include "funcs.h"
 
 #include "r-what.h"
+#include "dlk_priorityqueue.h"
 
 static char banner[] = "consensussearch - search algorithm; no indels relative to CM consensus";
 
@@ -497,54 +498,45 @@ void
 ConsensusScan(CM_t *cm, char *dsq, int L, int W, int wordlen, float word_sc,
          float dropoff_sc, float report_sc)
 {
-  int v, inner_v, outer_v;	/* state indices, 0..M-1 */
-  int i, inner_i, outer_i;	/* left sequence indices */
-  int j, inner_j, outer_j;	/* right sequence indices */
+  int v;			/* state indices, 0..M-1 */
+  int j;			/* right sequence indices */
   int d;			/* subsequence length, d = j-1+1 */
   float seed_sc,in_sc, out_sc, total_sc;
   				/* score components */
-  int    nhits = 0;		/* # of hits */
-  int   *hit_outer_v;		/* Outer state index of hits */
-  int   *hit_inner_v;		/* Inner state index of hits */
-  int   *hit_outer_i;		/* Outer left seq. positions */
-  int   *hit_inner_i;		/* Inner left seq. positions */
-  int   *hit_outer_j;		/* Outer right seq. positions */
-  int   *hit_inner_j;		/* Inner right seq. positions */
-  float *hit_sc;		/* Scores of hits */
-  int   *hit_index;		/* index of sorted hits */
-  int    alloc_nhits = 1000;	/* Amount of space allocated */
   int    x;			/* counter variable */
-  int    duplicate;		/* TRUE/FALSE: hit is already in list */
-
-  float  max_sc;
-  int    max_i;
-  int    tmp,y;
 
   int   *consensus_d;
+  int  **hit_coverage;
+  int   *seq_coverage;
+
+  PriorityQueue_t *HitPQ;
 
   int iscored, jscored;		/* TRUE/FALSE: has residue i/j been emitted yet */
-  int temp_v, temp_i, temp_j, temp_d;
+  int temp_v, temp_j, temp_d;
 
   int    duplicate_low_index;	/* Start looking for duplicates here; below this is impossible */
 
   BPA_t *align = NULL;
 
-  hit_outer_v = MallocOrDie(sizeof(int)   * alloc_nhits);
-  hit_inner_v = MallocOrDie(sizeof(int)   * alloc_nhits);
-  hit_outer_i = MallocOrDie(sizeof(int)   * alloc_nhits);
-  hit_inner_i = MallocOrDie(sizeof(int)   * alloc_nhits);
-  hit_outer_j = MallocOrDie(sizeof(int)   * alloc_nhits);
-  hit_inner_j = MallocOrDie(sizeof(int)   * alloc_nhits);
-  hit_sc      = MallocOrDie(sizeof(float) * alloc_nhits);
-
   consensus_d = MallocOrDie(sizeof(int)   * cm->M);
+  hit_coverage = MallocOrDie(sizeof(int*) * cm->M);
+  hit_coverage[0] = MallocOrDie(sizeof(int) * cm->M * L);
+  for (x=0; x< cm->M*L; x++) hit_coverage[0][x] = 0;
+  for (x=1; x< cm->M; x++) hit_coverage[x] = hit_coverage[0] + x*L;
+  seq_coverage = MallocOrDie(sizeof(int) * L);
+
+  HitPQ = CreatePQ();
 
   duplicate_low_index = 0;
   for (j=1; j<=L; j++)
   {
     for (v=cm->M-1; v>0; v--)
     {
-      if (cm->stid[v] == MATP_MP || cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR)
+      /* This is a little sloppy.  What if, within the word initiated at v,j we hit	*
+       * the extension dropoff score downwards, and still recover to the necessary	*
+       * seed_sc?  An unlikely scenario, but possible if the dropoff is small (which	*
+       * it really shouldn't be)							*/
+      if ((!hit_coverage[v][j]) && (cm->stid[v] == MATP_MP || cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR))
       {
         d = consensus_d[v];
         seed_sc = WordInitiate(cm,dsq,L,v,j,d,wordlen,&iscored,&jscored,&temp_v,&temp_j,&temp_d);
@@ -569,134 +561,37 @@ ConsensusScan(CM_t *cm, char *dsq, int L, int W, int wordlen, float word_sc,
 	  /* If the seed score meets the threshold, extend both out and in */
 	  /* NOTE: unscored i/j residues are always assigned to the inner subsequence */
 	  /* MiniCYKIn() deals with them if it can, while MiniCYKOut() ignores them   */
-	  //in_sc  = MiniCYKIn( cm,dsq,L,temp_v,temp_j,temp_d,dropoff_sc,&iscored,&jscored,&inner_v,&inner_i,&inner_j);
           in_sc  = BCMiniCYKIn(cm,consensus_d,dsq,L,dropoff_sc,align);
-          //out_sc = MiniCYKOut(cm,dsq,L,     v,     j,     d,dropoff_sc,                  &outer_v,&outer_i,&outer_j);
           out_sc = BCMiniCYKOut(cm,consensus_d,dsq,L,dropoff_sc,&align);
           total_sc = seed_sc + in_sc + out_sc;
 
-/* To check for duplicates and overlap, probably need to go back to bounds indices */
-/* Outer bounds are simple; inner bounds with a branched structure are complicated */
-          outer_i = align->chunk->init_j - align->chunk->init_d + 1;
-          outer_j = align->chunk->init_j;
-          outer_v = align->chunk->init_v;
-
           if (total_sc > report_sc)	/* Add to hitlist */
           {
-            /* If extended score meets reporting threshold, check for duplicates */
-            duplicate = FALSE;
-            x = duplicate_low_index;
-            while (x<nhits && !duplicate)
-            {
-              if (outer_i == hit_outer_i[x])
-                if (outer_j == hit_outer_j[x])
-                  if (outer_v == hit_outer_v[x])
-                    duplicate = TRUE;
-              if (j > hit_outer_j[x] + W)
-                duplicate_low_index = x+1;
-              x++;
-            }
-
-/* Then there's the problem of recording the hit: do we want or need to store    */
-/* the entire branched alignment?  That could be memory-intensive.               */
-/* So how much information do we actually need to store?  Theoretically, the hit */
-/* could be reconstructed just from the outer set of v,j,d; but that might not   */
-/* give us enough information about the coverage of the hit within that interval */
-/* 1 outer (v,j,d) and x inner (v,j,d)s?  How do we manage that dynamically      */
-            if (! duplicate)
-            {
-              /* If not a duplicate, record the hit */
-              hit_outer_v[nhits] = outer_v;
-              hit_inner_v[nhits] = inner_v;
-              hit_outer_i[nhits] = outer_i;
-              hit_inner_i[nhits] = inner_i;
-              hit_outer_j[nhits] = outer_j;
-              hit_inner_j[nhits] = inner_j;
-              hit_sc[nhits]      = total_sc;
-              nhits++;
-
-              if (nhits == alloc_nhits)
-              {
-                hit_outer_v = ReallocOrDie(hit_outer_v, sizeof(int)   * (alloc_nhits + 1000));
-                hit_inner_v = ReallocOrDie(hit_inner_v, sizeof(int)   * (alloc_nhits + 1000));
-                hit_outer_i = ReallocOrDie(hit_outer_i, sizeof(int)   * (alloc_nhits + 1000));
-                hit_inner_i = ReallocOrDie(hit_inner_i, sizeof(int)   * (alloc_nhits + 1000));
-                hit_outer_j = ReallocOrDie(hit_outer_j, sizeof(int)   * (alloc_nhits + 1000));
-                hit_inner_j = ReallocOrDie(hit_inner_j, sizeof(int)   * (alloc_nhits + 1000));
-                hit_sc      = ReallocOrDie(hit_sc,      sizeof(float) * (alloc_nhits + 1000));
-                alloc_nhits += 1000;
-              }
-            }
+            RecordHitCoverage(align,hit_coverage);
+            EnqueuePQ(HitPQ,align,total_sc);
           }
         }
       }
     }
   }
+
+/* IMPORTANT: Need new output scheme for branched hits! */
   printf("outer v\tinner v\touter i\tinner i\t");
   printf("inner j\touter j\ttotal sc\n");
 
-  hit_index = MallocOrDie(sizeof(int) * nhits);
-  for (x=0; x<nhits; x++) { hit_index[x] = x; }
-  i=0;
-  while (i<nhits)
+  while (! IsEmptyPQ(HitPQ))
   {
-    /* Select top scoring hit and print it */
-    max_i  = i;
-    max_sc = hit_sc[hit_index[i]];
-    for (j=i+1; j<nhits; j++)
-    {
-      if (hit_sc[hit_index[j]] > max_sc)
-      {
-	max_sc = hit_sc[hit_index[j]];
-	max_i  = j;
-      }
-    }
-    tmp = hit_index[i];
-    hit_index[i] = hit_index[max_i];
-    hit_index[max_i] = tmp;
-
-    x = hit_index[i];
-    printf("%d\t%d\t",      hit_outer_v[x],hit_inner_v[x]);
-    printf("%d\t%d\t",      hit_outer_i[x],hit_inner_i[x]);
-    printf("%d\t%d\t%.3f\n",hit_inner_j[x],hit_outer_j[x],hit_sc[x]);
-
-    /* Eliminate lower-scoring hits that overlap */
-    for (j=i+1; j<nhits; j++)
-    {
-      y = hit_index[j];
-      /* Lazy overlap checking! 
-       * Should also test for a segment of the lower hit completely surrounding
-       * a segment of the higher hit
-       */
-      if ( (hit_outer_i[y] >= hit_outer_i[x] && hit_outer_i[y] <= hit_inner_i[x] ) ||
-           (hit_inner_i[y] >= hit_outer_i[x] && hit_inner_i[y] <= hit_inner_i[x] ) ||
-           (hit_inner_j[y] >= hit_outer_i[x] && hit_inner_j[y] <= hit_inner_i[x] ) ||
-           (hit_outer_j[y] >= hit_outer_i[x] && hit_outer_j[y] <= hit_inner_i[x] ) ||
-           (hit_outer_i[y] >= hit_inner_j[x] && hit_outer_i[y] <= hit_outer_j[x] ) ||
-           (hit_inner_i[y] >= hit_inner_j[x] && hit_inner_i[y] <= hit_outer_j[x] ) ||
-           (hit_inner_j[y] >= hit_inner_j[x] && hit_inner_j[y] <= hit_outer_j[x] ) ||
-           (hit_outer_j[y] >= hit_inner_j[x] && hit_outer_j[y] <= hit_outer_j[x] )  )
-      {
-	tmp = hit_index[j];
-	hit_index[j] = hit_index[nhits-1];
-	hit_index[nhits-1] = tmp;
-	nhits--;
-	j--;	/*Back up and check the one we just swapped in */
-      }
-    }
-    i++;
+    align = DequeuePQ(HitPQ);
+    // check whether it overlaps sequence with previous hits
+    // if not, output
+    RecordSeqCoverage(align,seq_coverage);
   }
-  
-  free(hit_outer_v);
-  free(hit_inner_v);
-  free(hit_outer_i);
-  free(hit_inner_i);
-  free(hit_outer_j);
-  free(hit_inner_j);
-  free(hit_sc);
-  free(hit_index);
 
   free(consensus_d);
+  free(hit_coverage[0]);
+  free(hit_coverage);
+  free(seq_coverage);
+  FreePQ(HitPQ);
 
   return;
 }
