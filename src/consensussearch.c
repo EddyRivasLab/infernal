@@ -47,7 +47,8 @@ static struct opt_s OPTIONS[] = {
 /* function declarations for this file */
 float BCMiniCYKOut(CM_t *cm, int *consensus_d, char *dsq, int L, float dropoff_sc, BPA_t **master_align);
 float BCMiniCYKIn(CM_t *cm, int *consensus_d, char *dsq, int L, float dropoff_sc, BPA_t *master_align);
-
+void RecordHitCoverage(CM_t *cm, BPA_t *align, int **hit_coverage);
+void RecordSeqCoverage(BPA_t *align, int  *seq_coverage);
 
 /* Function: BCMiniCYKOut()
  * Author:   DLK
@@ -352,6 +353,85 @@ BCMiniCYKIn(CM_t *cm, int *consensus_d, char *dsq, int L, float dropoff_sc, BPA_
   return max_sc;
 }
 
+/* Function: RecordHitCoverage()
+ * Author:   DLK
+ *
+ * Purpose:  Record the v,j pairs that are covered by a branched
+ *           partial alignment.  Only applies when d is fixed,
+ *           not a variable (consensussearch)
+ *
+ * Args:     align	- branched partial alignment
+ *           hit_coverage - matrix of hit flags (0/1) dim MxL
+ *
+ * Returns:  hit_coverage is updated to include the pairs in align
+ */
+void
+RecordHitCoverage(CM_t *cm, BPA_t *align, int **hit_coverage)
+{
+  int v,j;
+  int y,yoffset,z;
+
+  v = align->chunk->init_v;
+  j = align->chunk->init_j;
+  hit_coverage[v][j] = 1;
+
+  while (v < align->chunk->cur_v)
+  {
+    /* Get new v */
+    y = cm->cfirst[v];
+    yoffset = 0;
+    z = cm->stid[y+yoffset];
+    while (yoffset+1 < cm->cnum[v] && z != MATP_MP && z != MATL_ML && z != MATR_MR)
+    {
+      yoffset++;
+      z = cm->stid[y+yoffset];
+    }
+    v = y+yoffset;
+
+    /* Get new j */
+    if (cm->stid[v] == MATP_MP) 
+    {
+      j--;
+    }
+    else if (cm->stid[v] == MATL_ML)
+    {
+    }
+    else if (cm->stid[v] == MATR_MR)
+    {
+      j--;
+    }
+    else        /* Nonpermitted indel state */
+    {
+      fprintf(stderr,"WARNING: shouldn't reach I/D states in HitCoverage!\n");
+    }
+
+    hit_coverage[v][j] = 1;
+  }
+
+  if (align->left_child  != NULL) RecordHitCoverage(cm,align->left_child, hit_coverage);
+  if (align->right_child != NULL) RecordHitCoverage(cm,align->right_child,hit_coverage);
+
+  return;
+}
+
+/* Function: RecordSeqCoverage()
+ * Author:   DLK
+ *
+ * Purpose:  Record the sequence positions that are covered by
+ *           a branched partial alignment.  Used for greedy 
+ *           output of non-overlapping hits
+ *
+ * Args:     align	- branched partial alignment
+ *           seq_coverage - array of hit flags (0/1), dim L
+ *
+ * Returns:  seq_coverage is updated to include the positions in align
+ */
+void
+RecordSeqCoverage(BPA_t *align, int *seq_coverage)
+{
+  return;
+}
+
 /* Function: WordInitiate()
  * Author:   DLK
  *
@@ -567,7 +647,7 @@ ConsensusScan(CM_t *cm, char *dsq, int L, int W, int wordlen, float word_sc,
 
           if (total_sc > report_sc)	/* Add to hitlist */
           {
-            RecordHitCoverage(align,hit_coverage);
+            RecordHitCoverage(cm,align,hit_coverage);
             EnqueuePQ(HitPQ,align,total_sc);
           }
         }
