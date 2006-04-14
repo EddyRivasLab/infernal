@@ -429,6 +429,25 @@ RecordHitCoverage(CM_t *cm, BPA_t *align, int **hit_coverage)
 void
 RecordSeqCoverage(BPA_t *align, int *seq_coverage)
 {
+  int x;
+
+  x = align->chunk->init_j - align->chunk->init_d + 1;
+  while (x <= align->chunk->cur_j - align->chunk->cur_d + 1)
+  {
+    seq_coverage[x] = 1;
+    x++;
+  }
+
+  x = align->chunk->cur_j;
+  while (x <= align->chunk->init_j)
+  {
+    seq_coverage[x] = 1;
+    x++;
+  }
+
+  if (align->left_child  != NULL) RecordSeqCoverage(align->left_child, seq_coverage);
+  if (align->right_child != NULL) RecordSeqCoverage(align->right_child,seq_coverage);
+
   return;
 }
 
