@@ -44,6 +44,7 @@ static char experts[] = "\
    --banded      : use experimental banded CYK scanning algorithm\n\
    --bandp <f>   : tail loss prob for --banded [df: 0.0001]\n\
    --banddump    : print bands for each state\n\
+   --thresh <f>  : threshold for bit score reporting [df: 0.0]\n\
    --X           : project X!\n\
 ";
 
@@ -58,6 +59,7 @@ static struct opt_s OPTIONS[] = {
   { "--banded",     FALSE, sqdARG_NONE },
   { "--bandp",      FALSE, sqdARG_FLOAT},
   { "--banddump",   FALSE, sqdARG_NONE},
+  { "--thresh",     FALSE, sqdARG_FLOAT},
   { "--X",          FALSE, sqdARG_NONE },
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
@@ -117,6 +119,8 @@ main(int argc, char **argv)
 				 * handling.
 				 */
 
+  float thresh;                 /* bit score threshold, report scores > thresh */
+
   /*********************************************** 
    * Parse command line
    ***********************************************/
@@ -132,6 +136,7 @@ main(int argc, char **argv)
   bandp             = 0.0001;
   do_projectx       = FALSE;
   do_bdump          = FALSE;
+  thresh            = 0.;
   
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -145,6 +150,7 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--bandp")     == 0) bandp        = atof(optarg);
     else if  (strcmp(optname, "--X")         == 0) do_projectx  = TRUE;
     else if  (strcmp(optname, "--banddump")  == 0) do_bdump     = TRUE;
+    else if  (strcmp(optname, "--thresh")    == 0) thresh       = atof(optarg);
     else if  (strcmp(optname, "--informat")  == 0) {
       format = String2SeqfileFormat(optarg);
       if (format == SQFILE_UNKNOWN) 
@@ -257,10 +263,10 @@ main(int argc, char **argv)
 
       if (do_banded)
 	  CYKBandedScan(cm, dsq, dmin, dmax, sqinfo.len, windowlen, 
-			&nhits, &hitr, &hiti, &hitj, &hitsc);
+			&nhits, &hitr, &hiti, &hitj, &hitsc, thresh);
       else
 	CYKScan(cm, dsq, sqinfo.len, windowlen, 
-		&nhits, &hitr, &hiti, &hitj, &hitsc);
+		&nhits, &hitr, &hiti, &hitj, &hitsc, thresh);
       if (! reversed) printf("sequence: %s\n", sqinfo.name);
       for (i = 0; i < nhits; i++)
 	{

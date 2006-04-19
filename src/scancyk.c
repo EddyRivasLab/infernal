@@ -35,13 +35,14 @@
  *           ret_hiti  - RETURN: start positions of hits, 0..nhits-1
  *           ret_hitj  - RETURN: end positions of hits, 0..nhits-1
  *           ret_hitsc - RETURN: scores of hits, 0..nhits-1            
+ *           min_thresh- minimum score to report (EPN via Alex Coventry 03.11.06)
  *
  * Returns:  
  *           hiti, hitj, hitsc are allocated here; caller free's w/ free().
  */
 void
 CYKScan(CM_t *cm, char *dsq, int L, int W, 
-	int *ret_nhits, int **ret_hitr, int **ret_hiti, int **ret_hitj, float **ret_hitsc)
+	int *ret_nhits, int **ret_hitr, int **ret_hiti, int **ret_hitj, float **ret_hitsc, float min_thresh)
 
 {
   float  ***alpha;              /* CYK DP score matrix, [v][j][d] */
@@ -144,7 +145,7 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
    * of multiple nonoverlapping hits.
    *****************************************************************/ 
   gamma    = MallocOrDie(sizeof(float) * (L+1));
-  gamma[0] = 0;
+  gamma[0] = min_thresh;
   gback    = MallocOrDie(sizeof(int)   * (L+1));
   gback[0] = -1;
   savesc   = MallocOrDie(sizeof(float) * (L+1));
@@ -290,7 +291,7 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
 	  i = j-d+1;
 	  if (i == 0) sc = alpha[0][cur][d];
 	  else        sc = gamma[i-1] + alpha[0][cur][d];
-	  if (sc > gamma[j]) 
+	  if (sc > (gamma[j] + min_thresh)) 
 	    {
 	      gamma[j]  = sc;
 	      gback[j]  = i;
