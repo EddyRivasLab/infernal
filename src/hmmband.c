@@ -1348,7 +1348,7 @@ CP9Forward(unsigned char *dsq, int L, struct cplan9_s *hmm, struct cp9_dpmatrix_
   int   i,k;
   int   sc;
 
-  /* Allocate a DP matrix with 0..L rows, 0..M-1 columns.
+  /* Allocate a DP matrix with 0..L rows, 0..M-1 
    */ 
   mx = AllocCPlan9Matrix(L+1, hmm->M, &mmx, &imx, &dmx, &emx);
 
@@ -1915,14 +1915,14 @@ P7_ifill_post_sums(struct dpmatrix_s *post, int L, int M,
  * int pn_max       pn_max[k] = last position in band for * state of node k
  *                  to be filled in this function.
  * double p_thresh  the probability mass we're requiring is within each band
- * int delete_flag  TRUE if we're dealing with delete states, and have to deal
+ * int state_type   HMMMATCH, HMMINSERT, or HMMDELETE, for deletes we have to deal
  *                  with the CM->HMM delete off-by-one issue (see code below).
  * int debug_level  [0..3] tells the function what level of debugging print
  *                  statements to print.
  *****************************************************************************/
 void
 CP9_hmm_band_bounds(int **post, int L, int M, int *isum_pn, int *pn_min, int *pn_max, 
-		    double p_thresh, int delete_flag, int debug_level)
+		    double p_thresh, int state_type, int debug_level)
 {
   int k;         /* counter over nodes of the model */
   int lmass_exc; /* the log of the probability mass currently excluded on the left*/
@@ -1955,7 +1955,7 @@ CP9_hmm_band_bounds(int **post, int L, int M, int *isum_pn, int *pn_min, int *pn
       pn_max[k] = L-1;
       lmass_exc = post[(pn_min[k]-1)][k];
       rmass_exc = post[(pn_max[k]+1)][k];
-      /*creep in on the left, until we exceed our allowable prob mass to exclude.*/
+      /*creep in on the left, until we exceed our allowable prob mass to exclude.*/ 
       while(pn_min[k] <= L && lmass_exc <= (curr_log_p_side))
 	{
 	  if(post[pn_min[k]][k] > max_post) /* save info on most likely posn 
@@ -1988,9 +1988,10 @@ CP9_hmm_band_bounds(int **post, int L, int M, int *isum_pn, int *pn_min, int *pn
 	  pn_min[k] = argmax_pn;
 	  pn_max[k] = argmax_pn;
 	}
-      if(delete_flag) 
+      if(state_type == HMMDELETE || (k == 0 && state_type == HMMMATCH))
 	{
-	  /* We have to deal with off by ones in the delete states 
+	  /* We have to deal with off by ones in the delete states (which includes
+	   * the HMM state M_0 which is silent - mapping to ROOT_S of the CM)
 	   * e.g. pn_min_d[k] = i, means posn i was last residue emitted
 	   * prior to entering node k's delete state. However, for a CM,
 	   * if a delete states sub-parsetree is bounded by i' and j', then
@@ -2027,14 +2028,14 @@ CP9_hmm_band_bounds(int **post, int L, int M, int *isum_pn, int *pn_min, int *pn
  * int pn_max       pn_max[k] = last position in band for * state of node k
  *                  to be filled in this function.
  * double p_thresh  the probability mass we're requiring is within each band
- * int delete_flag  TRUE if we're dealing with delete states, and have to deal
+ * int state_type   HMMMATCH, HMMINSERT, or HMMDELETE, for deletes we have to deal
  *                  with the CM->HMM delete off-by-one issue (see code below).
  * int debug_level  [0..3] tells the function what level of debugging print
  *                  statements to print.
  *****************************************************************************/
 void
 P7_hmm_band_bounds(int **post, int L, int M, int *isum_pn, int *pn_min, int *pn_max, 
-		   double p_thresh, int delete_flag, int debug_level)
+		   double p_thresh, int state_type, int debug_level)
 {
   int k;         /* counter over nodes of the model */
   int lmass_exc; /* the log of the probability mass currently excluded on the left*/
@@ -2100,7 +2101,7 @@ P7_hmm_band_bounds(int **post, int L, int M, int *isum_pn, int *pn_min, int *pn_
 	  pn_min[k] = argmax_pn;
 	  pn_max[k] = argmax_pn;
 	}
-      if(delete_flag) 
+      if(state_type == HMMDELETE)
 	{
 	  /* We have to deal with off by ones in the delete states 
 	   * e.g. pn_min_d[k] = i, means posn i was last residue emitted
@@ -3408,7 +3409,7 @@ print_hmm_bands(FILE *ofp, int L, int M, int *pn_min_m, int *pn_max_m,
       fprintf(ofp, "\n");
       fprintf(ofp, "match states\n");
     }
-  for(k = 1; k <= M; k++)
+  for(k = 0; k <= M; k++)
     {
       if(debug_level > 0 || debug_level == -1)
 	fprintf(ofp, "M node: %3d | min %3d | max %3d\n", k, pn_min_m[k], pn_max_m[k]);
@@ -3418,7 +3419,7 @@ print_hmm_bands(FILE *ofp, int L, int M, int *pn_min_m, int *pn_max_m,
     fprintf(ofp, "\n");
   if(debug_level > 0)
     fprintf(ofp, "insert states\n");
-  for(k = 1; k <= M; k++)
+  for(k = 0; k <= M; k++)
     {
       if(debug_level > 0 || debug_level == -1)
 	fprintf(ofp, "I node: %3d | min %3d | max %3d\n", k, pn_min_i[k], pn_max_i[k]);
@@ -3782,4 +3783,302 @@ debug_check_CP9_FB(struct cp9_dpmatrix_s *fmx, struct cp9_dpmatrix_s *bmx,
 	  /*exit(1);*/
 	}
     }
+}
+
+/*****************************************************************************
+ * ABANDONED 04.20.06 - in practice doesn't work as well as hmm2ij_bands()
+ *                      where precautions taken to ensure "safe" paths 
+ *                      make it more robust to finding the optimal alignment.
+ *                      This function, which doesn't take any precautions,
+ *                      often messes up alignment. Though messy, hmm2ij_bands()
+ *                      is not worth overhauling right now. 
+ * 
+ * Function: simple_hmm2ij_bands()
+ * 
+ * Purpose:  Determine the band for each cm state v on i (the band on the 
+ *           starting index in the subsequence emitted from the subtree rooted
+ *           at state v), and on j (the band on the ending index in the
+ *           subsequence emitted from the subtree rooted at state v). 
+ * 
+ *           Some i and d bands are calculated from HMM bands on match and insert 
+ *           and delete states from each node of the HMM that maps to a left emitting
+ *           node of the CM (including MATP nodes). The HMM bands were
+ *           calculated previously from the posterior matrices for mmx,
+ *           imx and dmx from HMMER.
+ * 
+ *           Some j bands are calculated from HMM bands on match and insert and
+ *           delete states from each node of the HMM that maps to a right emitting
+ *           node of the CM (including MATP nodes). 
+ * 
+ *           i and j bands that cannot be directly determined from the
+ *           HMM bands are inferred based on the constraints imposed
+ *           on them by the i and j bands that CAN be determined from
+ *           the HMM bands.
+ *             
+ * arguments:
+ *
+ * CM_t *cm         the CM 
+ * int  ncc         number of consensus columns in HMM and CM seed alignment
+ * int *node_cc_left consensus column each node's left emission maps to
+ *                   [0..(cm->nodes-1)], -1 if maps to no consensus column
+ * int *node_cc_right consensus column each node's right emission corresponds to
+ *                    [0..(cm->nodes-1)], -1 if maps to no consensus column
+ * int *cc_node_map  node that each consensus column maps to (is modelled by)
+ *                     [1..ncc]
+ * int  L           length of sequence we're aligning
+ * int *pn_min_m    pn_min_m[k] = first position in HMM band for match state of HMM node k
+ * int *pn_max_m    pn_max_m[k] = last position in HMM band for match state of HMM node k
+ * int *pn_min_i    pn_min_i[k] = first position in HMM band for insert state of HMM node k
+ * int *pn_max_i    pn_max_i[k] = last position in HMM band for insert state of HMM node k
+ * int *pn_min_d    pn_min_d[k] = first position in HMM band for delete state of HMM node k
+ * int *pn_max_d    pn_max_d[k] = last position in HMM band for delete state of HMM node k
+ * int *imin        imin[v] = first position in band on i for state v
+ *                  to be filled in this function. [1..M]
+ * int *imax        imax[v] = last position in band on i for state v
+ *                  to be filled in this function. [1..M]
+ * int *jmin        jmin[v] = first position in band on j for state v
+ *                  to be filled in this function. [1..M]
+ * int *jmax        jmax[v] = last position in band on j for state v
+ *                  to be filled in this function. [1..M]
+ * int **cs2hn_map  2D CM state to HMM node map, 1st D - CM state index
+ *                  2nd D - 0 or 1 (up to 2 matching HMM states), value: HMM node
+ *                  that contains state that maps to CM state, -1 if none.
+ * int debug_level  [0..3] tells the function what level of debugging print
+ *                  statements to print.
+ *****************************************************************************/
+void
+simple_hmm2ij_bands(CM_t *cm, int ncc, int *node_cc_left, int *node_cc_right, 
+		    int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, 
+		    int *pn_min_d, int *pn_max_d, int *imin, int *imax, 
+		    int *jmin, int *jmax, int **cs2hn_map, int **cs2hs_map, 
+		    int debug_level)
+{
+
+  int v;
+  int n;
+  int k, k0, k1;
+  int ks, ks0, ks1;
+  int prev_imin, prev_imax;
+  int prev_jmin, prev_jmax;
+  int is_left, is_right;
+
+  int k_left, k_right;
+  int ks_left, ks_right;
+  int careful;
+
+  int left_unknown;
+  int right_unknown; 
+  int last_E;
+  int y;
+  int at_new_node;
+  int prev_n;
+  int set_left_known;
+  int set_right_known;
+  careful = TRUE;
+  set_left_known = FALSE;
+  set_right_known = FALSE;
+
+  prev_n = cm->ndidx[cm->M-1];
+  for (v = (cm->M-1); v >= 0; v--)
+    {
+      is_left  = FALSE;
+      is_right = FALSE;
+      n        = cm->ndidx[v];    /* CM node that contains state v */
+
+      if(prev_n != n)
+	{
+	  at_new_node = TRUE;
+	  if(set_left_known == TRUE)
+	    {
+	      left_unknown = FALSE;
+	      for(y = v+1; y <= last_E; y++)
+		{
+		  imin[y] = prev_imin;
+		  imax[y] = prev_imax;
+		}
+	      set_left_known = FALSE;
+	    }
+	  if(set_right_known == TRUE)
+	    {
+	      right_unknown = FALSE;
+	      for(y = v+1; y <= last_E; y++)
+		{
+		  jmin[y] = prev_jmin;
+		  jmax[y] = prev_jmax;
+		}
+	      set_right_known = FALSE;
+	    }
+	}
+      else
+	{
+	  at_new_node = FALSE;
+	}
+      prev_n = n;
+
+      if(cm->sttype[v] == E_st)
+	{
+	  last_E = v;
+	  left_unknown  = TRUE;
+	  right_unknown = TRUE;
+	  prev_imin     = 0;
+	  prev_imax     = 0;
+	  prev_jmin     = 0;
+	  prev_jmax     = 0;
+	}
+      else if(cm->sttype[v] == B_st)
+	{
+	  /* special case, use i band from left child and j band from right child */
+	  imin[v] = imin[cm->cfirst[v]];
+	  imax[v] = imax[cm->cfirst[v]];
+	  jmin[v] = jmin[cm->cnum[v]];
+	  jmax[v] = jmax[cm->cnum[v]];
+	}
+      else
+	{
+	  if((cm->sttype[v] == IR_st) ||
+	     (cm->sttype[v] == MR_st && cm->ndtype[n] != MATP_nd) ||
+	     (cm->sttype[v] == D_st && cm->ndtype[n] == MATR_nd))
+	    {
+	      /* only for these cases will the CM state v map to only 1 HMM state that
+	       * is only giving information for bands on j, and not on i. 
+	       */
+	      k_right  = cs2hn_map[v][0]; /* HMM state 1 (0(match), 1(insert), or 2(delete) that maps to v */
+	      ks_right = cs2hs_map[v][0]; /* HMM state 2 (0(match), 1(insert), or 2(delete) that maps to v 
+					   * (-1 if none) */
+	      k_left = -1;
+	      ks_left = -1;
+	    }
+	  else
+	    {
+	      /* for these cases, the CM state v either maps to 1 or 2 HMM states, and
+	       * either gives us info on bands on i, j or both. 
+	       */
+	      k_left   = cs2hn_map[v][0]; /* HMM node 1 that maps to v */
+	      ks_left  = cs2hs_map[v][0]; /* HMM state 1 (0(match), 1(insert), or 2(delete) that maps to v */
+	      k_right  = cs2hn_map[v][1]; /* HMM node 2 that maps to v (-1 if none)*/
+	      ks_right = cs2hs_map[v][1]; /* HMM state 2 (0(match), 1(insert), or 2(delete) that maps to v 
+					   * (-1 if none) */
+	      /* the way cs2hs_map is constructed, by moving left to right in the HMM, guarantees
+	       * that FOR THESE CASES: cs2hn_map[v][0] < cs2hn_map[v][1]; 
+	       * so cs2hn_map[v][0] = the HMM node mapping to the left half of CM state v (or -1 if none)
+	       *  & cs2hn_map[v][1] = the HMM node mapping to the right half of CM state v (or -1 if none)
+	       */
+	      //printf("normal case v: %d | k_left: %d | k_right: %d\n", v, k_left, k_right);
+	    }
+
+	  if(k_left != -1)
+	    is_left = TRUE;
+	  if(k_right != -1)
+	    is_right = TRUE;
+
+	  if(is_left)
+	    {
+	      if(ks_left == HMMMATCH) /* match */
+		{
+		  imin[v] = pn_min_m[k_left];
+		  imax[v] = pn_max_m[k_left];
+		}		
+	      if(ks_left == HMMINSERT) /* insert */
+		{
+		  imin[v] = pn_min_i[k_left];
+		  imax[v] = pn_max_i[k_left];
+		}		
+	      if(ks_left == HMMDELETE) /* delete */
+		{
+		  imin[v] = pn_min_d[k_left];
+		  imax[v] = pn_max_d[k_left];
+		}		
+	      if(left_unknown) 
+		{
+		  /* we're going to  need to fill in imin and imax values 
+		   * up to the nearest E state, but not yet, wait til we
+		   * reach a new node, so we can be sure of safe imin and imax values.
+		   */
+		  set_left_known = TRUE;
+		  prev_imin = imin[v];
+		  prev_imax = imax[v];
+		}
+	      else if(at_new_node)
+		{
+		  prev_imin = imin[v];
+		  prev_imax = imax[v];
+		}
+	      else
+		{	      
+		  if(imin[v] < prev_imin)
+		    prev_imin = imin[v];
+		  if(imax[v] > prev_imax)
+		    prev_imax = imax[v];
+		}
+	    }	  
+	  else
+	    {
+	      //printf("setting imin[%d] to prev_imin%d\n", imin[v], prev_imin);
+	      //printf("setting imax[%d] to prev_imax%d\n", imax[v], prev_imax);
+	      imin[v] = prev_imin;
+	      imax[v] = prev_imax;
+	    }
+
+	  if(is_right)
+	    {
+	      if(ks_right == HMMMATCH) /* match */
+		{
+		  jmin[v] = pn_min_m[k_right];
+		  jmax[v] = pn_max_m[k_right];
+		}		
+	      if(ks_right == HMMINSERT) /* insert */
+		{
+		  jmin[v] = pn_min_i[k_right];
+		  jmax[v] = pn_max_i[k_right];
+		}		
+	      if(ks_right == HMMDELETE) /* delete */
+		{
+		  jmin[v] = pn_min_d[k_right];
+		  jmax[v] = pn_max_d[k_right];
+		  //printf("set v: %d | right delete | jmin[v]: %d | jmax[v]: %d\n", v, jmin[v], jmax[v]);
+		}		
+	      if(right_unknown) 
+		{
+		  /* we're going to  need to fill in jmin and jmax values 
+		   * up to the nearest E state, but not yet, wait til we
+		   * reach a new node, so we can be sure of safe imin and imax values.
+		   */
+		  set_right_known = TRUE;
+		  prev_jmin = jmin[v];
+		  prev_jmax = jmax[v];
+		}
+	      else if(at_new_node) 
+		{
+		  prev_jmin = jmin[v];
+		  prev_jmax = jmax[v];
+		}
+	      else
+		{
+		  if(jmin[v] < prev_jmin)
+		    prev_jmin = jmin[v];
+		  if(jmax[v] > prev_jmax)
+		    prev_jmax = jmax[v];
+		}
+	    }	  
+	  else
+	    {
+	      jmin[v] = prev_jmin;
+	      jmax[v] = prev_jmax;
+	    }
+
+	  if(!(is_left) && !(is_right)) /* v is a B, S or E state, which doesn't map to anything */
+	    {
+	      if(cm->sttype[v] != B_st && cm->sttype[v] != E_st && cm->sttype[v] != S_st)
+		{
+		  printf("ERROR: v: %d not B, S or E, but doesn't map to HMM. Exiting...\n", v);
+		  exit(1);
+		}
+	      imin[v] = prev_imin;
+	      imax[v] = prev_imax;
+	      jmin[v] = prev_jmin;
+	      jmax[v] = prev_jmax;
+	      //printf("no map for v: %d | imin: %d | imax: %d | jmin: %d | jmax: %d\n", v, imin[v], imax[v], jmin[v], jmax[v]);
+	    }
+	}
+    }      
 }

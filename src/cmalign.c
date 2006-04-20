@@ -27,6 +27,7 @@
 #include "hmmer_structs.h"
 #include "sre_stack.h"
 #include "hmmband.h"         
+#include "hmmband.h"         
 
 MSA *Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt, 
 			  Parsetree_t **tr, int nseq, int do_full);
@@ -60,6 +61,7 @@ static char experts[] = "\
    --cp9 <f>     : use the CM plan 9 HMM in file <f> for band calculation\n\
    --p7 <f>      : use the plan 7 HMMER 2.4 HMM in file <f> for band calculation\n\
    --sums        : use posterior sums during HMM band calculation (widens bands)\n\
+   --simple      : expt simple hmm2ij algorith\n\
 \n\
   * A priori banded alignment related options:\n\
    --apbanded    : use experimental a priori (ap) banded CYK alignment algorithm\n\
@@ -86,6 +88,7 @@ static struct opt_s OPTIONS[] = {
   { "--hbanded",    FALSE, sqdARG_NONE },
   { "--hbandp",     FALSE, sqdARG_FLOAT},
   { "--sums",       FALSE, sqdARG_NONE},
+  { "--simple",     FALSE, sqdARG_NONE},
   { "--cp9",        FALSE, sqdARG_STRING},
   { "--p7",         FALSE, sqdARG_STRING},
   { "--time",       FALSE, sqdARG_NONE},
@@ -232,6 +235,7 @@ main(int argc, char **argv)
   struct p7trace_s **p7tr;      /* traces for aligned sequences            */
   char             **postcode;  /* posterior decode array of strings       */
   unsigned char    **p7dsq;     /* digitized RNA sequences (plan 7 version)*/
+
 
   /*********************************************** 
    * Parse command line
@@ -503,7 +507,7 @@ main(int argc, char **argv)
 			       hns2cs_map, debug_level);
       hmm_M = hmm->M;
     }      
-
+  
   if(hmm_type == HMM_CP9)
     {
       if(!(read_cp9_flag)) /* we're building a CP9 HMM, not reading one in */
@@ -561,7 +565,7 @@ main(int argc, char **argv)
 	  Die("Couldn't build a CM Plan 9 HMM from the CM.\n");
       }
       else /* a CP9 HMM has already been read from a file. */
-      {
+	{
 	/* Check to make sure the HMM we read from the input file is
 	 * "close enough" to the CM, based on psi and phi values (see CP9_cm2wrhmm.c).
 	 * If not, we build a new one from the CM. This is a design decision, 
@@ -647,7 +651,7 @@ main(int argc, char **argv)
 	  if(time_flag) StopwatchDisplay(stdout, "CP9 Forward/Backward CPU time: ", watch1);
 	  StopwatchZero(watch1);
 	  StopwatchStart(watch1);
-
+	  
 	  /* Step 2: posteriors -> HMM bands.*/
 	  if(!(use_sums))
 	    {
@@ -668,16 +672,14 @@ main(int argc, char **argv)
 				  isum_pn_d[i]);
 	      /* match states */
 	      CP9_hmm_band_bounds(cp9_posterior->mmx, sqinfo[i].len, cp9_hmm->M,
-				  isum_pn_m[i], pn_min_m, pn_max_m, (1.-hbandp), FALSE, debug_level);
+				  isum_pn_m[i], pn_min_m, pn_max_m, (1.-hbandp), HMMMATCH, debug_level);
 	      /* insert states */
 	      CP9_hmm_band_bounds(cp9_posterior->imx, sqinfo[i].len, cp9_hmm->M,
-				  isum_pn_i[i], pn_min_i, pn_max_i, (1.-hbandp), FALSE, debug_level);
-	      /* delete states (note: delete_flag set to TRUE) */
+				  isum_pn_i[i], pn_min_i, pn_max_i, (1.-hbandp), HMMINSERT, debug_level);
+	      /* delete states */
 	      CP9_hmm_band_bounds(cp9_posterior->dmx, sqinfo[i].len, cp9_hmm->M,
-				  isum_pn_d[i], pn_min_d, pn_max_d, (1.-hbandp), TRUE, debug_level);
+				  isum_pn_d[i], pn_min_d, pn_max_d, (1.-hbandp), HMMDELETE, debug_level);
 	    }
-	  StopwatchStop(watch1);
-	  if(time_flag) StopwatchDisplay(stdout, "CP9 Band calculation CPU time: ", watch1);
 	  if(debug_level != 0)
 	    {
 	      printf("printing hmm bands\n");
@@ -691,6 +693,8 @@ main(int argc, char **argv)
 		       pn_min_d, pn_max_d, imin, imax, jmin, jmax, cs2hn_map,
 		       debug_level);
 	  
+	  StopwatchStop(watch1);
+	  if(time_flag) StopwatchDisplay(stdout, "CP9 Band calculation CPU time: ", watch1);
 	  /* Use the CM bands on i and j to get bands on d, specific to j. */
 	  for(v = 0; v < cm->M; v++)
 	    {
@@ -750,13 +754,13 @@ main(int argc, char **argv)
 	    {
 	      /* match states */
 	      P7_hmm_band_bounds(posterior->mmx, sqinfo[i].len, hmm->M, NULL,
-				 pn_min_m, pn_max_m, (1.-hbandp), FALSE, debug_level);
+				 pn_min_m, pn_max_m, (1.-hbandp), HMMMATCH, debug_level);
 	      /* insert states */
 	      P7_hmm_band_bounds(posterior->imx, sqinfo[i].len, hmm->M, NULL,
-				 pn_min_i, pn_max_i, (1.-hbandp), FALSE, debug_level);
-	      /* delete states (note: delete_flag set to TRUE) */
+				 pn_min_i, pn_max_i, (1.-hbandp), HMMINSERT, debug_level);
+	      /* delete states */
 	      P7_hmm_band_bounds(posterior->dmx, sqinfo[i].len, hmm->M, NULL,
-				 pn_min_d, pn_max_d, (1.-hbandp), TRUE, debug_level);
+				 pn_min_d, pn_max_d, (1.-hbandp), HMMDELETE, debug_level);
 	    }
 	  else
 	    {
@@ -785,9 +789,6 @@ main(int argc, char **argv)
 	  P7_last_and_first_hmm_delete_state_hack(hmm->M, pn_min_m, pn_max_m, pn_min_d, 
 						  pn_max_d, sqinfo[i].len);
 
-	  StopwatchStop(watch1);
-	  if(time_flag) StopwatchDisplay(stdout, "P7 Band calculation CPU time: ", watch1);
-
 	  if(debug_level != 0)
 	    {
 	      printf("printing hmm bands\n");
@@ -801,6 +802,10 @@ main(int argc, char **argv)
 		       sqinfo[i].len, pn_min_m, pn_max_m, pn_min_i, pn_max_i, 
 		       pn_min_d, pn_max_d, imin, imax, jmin, jmax, cs2hn_map,
 		       debug_level);
+	  
+	  StopwatchStop(watch1);
+	  if(time_flag) StopwatchDisplay(stdout, "P7 Band calculation CPU time: ", watch1);
+
 	  /* Use the CM bands on i and j to get bands on d, specific to j. */
 	  for(v = 0; v < cm->M; v++)
 	    {
@@ -960,7 +965,7 @@ main(int argc, char **argv)
 	  */
 	  ijd_banded_trace_info_dump(cm, tr[i], imin, imax, jmin, jmax, hdmin, hdmax, 1);
 	}
-
+      
       /* Clean up the structures we use calculating HMM bands, that are allocated
        * differently for each sequence. 
        */

@@ -37,10 +37,6 @@
 
 #include "cplan9.h"
 
-#define HMMMATCH 0;
-#define HMMINSERT 1;
-#define HMMDELETE 2;
-
 static void
 fill_psi(CM_t *cm, double *psi, char ***tmap);
 

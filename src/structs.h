@@ -319,5 +319,10 @@ typedef struct emitmap_s {
   int  clen;           /* consensus length */
 } CMEmitMap_t;
 
+/* used by CM Plan 9 HMM structures */
+#define HMMMATCH  0
+#define HMMINSERT 1
+#define HMMDELETE 2
+
 #endif /*STRUCTSH_INCLUDED*/
 
