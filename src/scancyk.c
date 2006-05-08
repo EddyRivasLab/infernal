@@ -67,6 +67,7 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
   float    *hitsc;              /* scores of hits in optimal parse */
   int       alloc_nhits;	/* used to grow the hit arrays */
 
+  /*int     updated_flag;*/         /* strategy 2 */
   /*****************************************************************
    * alpha allocations.
    * The scanning matrix is indexed [v][j][d]. 
@@ -145,7 +146,7 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
    * of multiple nonoverlapping hits.
    *****************************************************************/ 
   gamma    = MallocOrDie(sizeof(float) * (L+1));
-  gamma[0] = min_thresh;
+  gamma[0] = 0; 
   gback    = MallocOrDie(sizeof(int)   * (L+1));
   gback[0] = -1;
   savesc   = MallocOrDie(sizeof(float) * (L+1));
@@ -282,16 +283,16 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
 
       /* The little semi-Markov model that deals with multihit parsing:
        */
-      gamma[j]  = gamma[j-1] + 0; /* extend without adding a new hit */
+      gamma[j]  = gamma[j-1] + 0; 
       gback[j]  = -1;
       savesc[j] = IMPOSSIBLE;
       saver[j]  = -1;
       for (d = 1; d <= W && d <= j; d++) 
 	{
 	  i = j-d+1;
-	  if (i == 0) sc = alpha[0][cur][d];
-	  else        sc = gamma[i-1] + alpha[0][cur][d];
-	  if (sc > (gamma[j] + min_thresh)) 
+	  assert(i > 0);
+	  sc = gamma[i-1] + alpha[0][cur][d]  - min_thresh; 
+	  if (sc > gamma[j])
 	    {
 	      gamma[j]  = sc;
 	      gback[j]  = i;

@@ -3278,7 +3278,6 @@ hmm2ij_state_step5_non_emitter_d0_hack(int v, int imax_v, int *jmin)
  * print_hmm_bands()
  * ij_banded_trace_info_dump()
  * ijd_banded_trace_info_dump()
- * debug_print_hd_bands()
  * debug_check_CP9_FB()
  */
 /*************************************************************

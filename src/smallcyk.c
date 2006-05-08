@@ -3298,7 +3298,7 @@ CYKOutside(CM_t *cm, char *dsq, int L, float ***alpha)
 /*******************************************************************************/
 
 /*******************************************************************************
- * EPN BANDED VERSION OF MOST FUNCTIONS!
+ * EPN BANDED VERSION OF MOST FUNCTIONS
  * Banded functions are named *_b()
  * Functions that I don't think need a banded version are indicated with a U
  * before their names.

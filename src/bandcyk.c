@@ -1030,7 +1030,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
    * of multiple nonoverlapping hits.
    *****************************************************************/ 
   gamma    = MallocOrDie(sizeof(float) * (L+1));
-  gamma[0] = min_thresh;
+  gamma[0] = 0;
   gback    = MallocOrDie(sizeof(int)   * (L+1));
   gback[0] = -1;
   savesc   = MallocOrDie(sizeof(float) * (L+1));
@@ -1204,9 +1204,9 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
       for (d = dmin[0]; d <= dmax[0] && d <= j; d++) 
 	{
 	  i = j-d+1;
-	  if (i == 0) sc = alpha[0][cur][d];
-	  else        sc = gamma[i-1] + alpha[0][cur][d];
-	  if (sc > gamma[j] + min_thresh) 
+	  assert(i > 0);
+	  sc = gamma[i-1] + alpha[0][cur][d]  - min_thresh; 
+	  if (sc > gamma[j])
 	    {
 	      gamma[j]  = sc;
 	      gback[j]  = i;

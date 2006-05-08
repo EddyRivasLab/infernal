@@ -543,6 +543,29 @@ AllocCPlan9Matrix(int rows, int M, int ***mmx, int ***imx, int ***dmx, int ***em
   return mx;
 }
 
+/* Function: SizeCPlan9Matrix()
+ * Date:     EPN, 04.21.06
+ *
+ * Purpose:  Return the size of a cp9_dpmatrix_s data structure with
+ *           specified dimensions.
+ *
+ * Args:     rows  - generally L+1, or 2; # of DP rows in seq dimension to alloc
+ *           M     - size of model, in nodes
+ *
+ * Returns:  size of cp9_dpmatrix_s in megabytes
+ */
+float
+SizeCPlan9Matrix(int rows, int M)
+{
+  float ram;
+
+  ram  = (float) (sizeof(struct cp9_dpmatrix_s));
+  ram += (float) (sizeof(int *) * (rows+1) * 4);         /* mx->*mx */
+  ram += (float) (sizeof(int)   * (rows+1) * (M+2) * 3); /* mx->*mx_mem */
+  ram += (float) (sizeof(int)   * (rows+1));             /* mx->emx_mem */
+  return (ram / 1000000.);
+}
+
 
 /* Function: FreeCPlan9Matrix()
  * based on  FreePlan7Matrix() <-- this function's comments below  

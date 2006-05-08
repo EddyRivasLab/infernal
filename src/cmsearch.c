@@ -21,6 +21,9 @@
 
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
+#include "hmmer_funcs.h"
+#include "hmmer_structs.h"
+#include "hmmband.h"
 
 static void debug_print_bands(CM_t *cm, int *dmin, int *dmax);
 
@@ -44,8 +47,9 @@ static char experts[] = "\
    --banded      : use experimental banded CYK scanning algorithm\n\
    --bandp <f>   : tail loss prob for --banded [df: 0.0001]\n\
    --banddump    : print bands for each state\n\
-   --thresh <f>  : threshold for bit score reporting [df: 0.0]\n\
+   --thresh <f>  : reporting bit score threshold (try 0 before < 0) [df: 0]\n\
    --X           : project X!\n\
+   --hmmonly     : scan with a CM plan 9 HMM, not the CM\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -61,6 +65,7 @@ static struct opt_s OPTIONS[] = {
   { "--banddump",   FALSE, sqdARG_NONE},
   { "--thresh",     FALSE, sqdARG_FLOAT},
   { "--X",          FALSE, sqdARG_NONE },
+  { "--hmmonly",    FALSE, sqdARG_NONE },
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -120,7 +125,44 @@ main(int argc, char **argv)
 				 */
 
   float thresh;                 /* bit score threshold, report scores > thresh */
+  int   use_hmm;                /* TRUE to scan with a CM Plan 9 HMM */
 
+  /* CM Plan 9 HMM data structures */
+  struct cplan9_s       *cp9_hmm;       /* constructed CP9 HMM; written to hmmfile              */
+  int                    cp9_M;         /* number of nodes in CP9 HMM (MATL+MATR+2*MATP)        */
+  struct cp9_dpmatrix_s *cp9_mx;        /* growable DP matrix for viterbi                       */
+  struct cp9_dpmatrix_s *cp9_fwd;       /* growable DP matrix for forward                       */
+  struct cp9_dpmatrix_s *cp9_bck;       /* growable DP matrix for backward                      */
+  struct cp9_dpmatrix_s *cp9_posterior; /* growable DP matrix for posterior decode              */
+  /* data structures for mapping HMM to CM */
+  int *node_cc_left;    /* consensus column each CM node's left emission maps to
+			 * [0..(cm->nodes-1)], -1 if maps to no consensus column*/
+  int *node_cc_right;   /* consensus column each CM node's right emission maps to
+			 * [0..(cm->nodes-1)], -1 if maps to no consensus column*/
+  int *cc_node_map;     /* node that each consensus column maps to (is modelled by)
+			 * [1..hmm_nmc] */
+  int **cs2hn_map;      /* 2D CM state to HMM node map, 1st D - CM state index
+		         * 2nd D - 0 or 1 (up to 2 matching HMM states), value: HMM node
+		         * that contains state that maps to CM state, -1 if none.*/
+  int **cs2hs_map;      /* 2D CM state to HMM node map, 1st D - CM state index
+		         * 2nd D - 2 elements for up to 2 matching HMM states, 
+		         * value: HMM STATE (0(M), 1(I), 2(D) that maps to CM state,
+		         * -1 if none.
+		         * For example: HMM node cs2hn_map[v][0], state cs2hs_map[v][0]
+                         * maps to CM state v.*/
+  int ***hns2cs_map;    /* 3D HMM node-state to CM state map, 1st D - HMM node index, 2nd D - 
+		         * HMM state (0(M), 1(I), 2(D)), 3rd D - 2 elements for up to 
+		         * 2 matching CM states, value: CM states that map, -1 if none.
+		         * For example: CM states hsn2cs_map[k][0][0] and hsn2cs_map[k][0][1]
+		         * map to HMM node k's match state.*/
+  unsigned char    *p7dsq;     /* digitized RNA sequences (plan 7 version)*/
+  int   ks;            /* Counter over HMM state types (0 (match), 1(ins) or 2 (del))*/
+  int              v;           /* counter over states of the CM */
+  int              k;           /* counter over HMM nodes */
+  int    debug_level;           /* verbosity level for debugging printf() statements,
+			         * passed to many functions. */
+  float sc;
+  float hmm_thresh;     /* bit score threshold for reporting hits to HMM */
   /*********************************************** 
    * Parse command line
    ***********************************************/
@@ -137,6 +179,9 @@ main(int argc, char **argv)
   do_projectx       = FALSE;
   do_bdump          = FALSE;
   thresh            = 0.;
+  use_hmm           = FALSE;
+  hmm_thresh        = 0;
+  debug_level = 0;
   
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -151,6 +196,7 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--X")         == 0) do_projectx  = TRUE;
     else if  (strcmp(optname, "--banddump")  == 0) do_bdump     = TRUE;
     else if  (strcmp(optname, "--thresh")    == 0) thresh       = atof(optarg);
+    else if  (strcmp(optname, "--hmmonly")    == 0) use_hmm     = TRUE;
     else if  (strcmp(optname, "--informat")  == 0) {
       format = String2SeqfileFormat(optarg);
       if (format == SQFILE_UNKNOWN) 
@@ -190,7 +236,7 @@ main(int argc, char **argv)
 
   if (do_local) ConfigLocal(cm, 0.5, 0.5);
   CMLogoddsify(cm);
-  CMHackInsertScores(cm);	/* make insert emissions score zero. "TEMPORARY" FIX. */
+  /*CMHackInsertScores(cm);*/	/* make insert emissions score zero. "TEMPORARY" FIX. */
   cons = CreateCMConsensus(cm, 3.0, 1.0); 
 
   if (do_banded || do_projectx || do_bdump)
@@ -228,6 +274,62 @@ main(int argc, char **argv)
 	  debug_print_bands(cm, dmin, dmax);
 	}
     }
+  
+  if (use_hmm)
+    {
+      /* build a CM Plan 9 HMM, and use it to scan. */
+      Alphabet_type = hmmNOTSETYET;
+      SetAlphabet(hmmNUCLEIC); /* Set up the hmmer_alphabet global variable */
+      cp9_M = 0;
+      for(v = 0; v <= cm->M; v++)
+	{
+	  if(cm->stid[v] ==  MATP_MP)
+	    cp9_M += 2;
+	  else if(cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR)
+	    cp9_M ++;
+	}
+      /* build the HMM data structure */
+      cp9_hmm = AllocCPlan9(cp9_M);
+      ZeroCPlan9(cp9_hmm);
+      
+      /* Get information mapping the HMM to the CM and vice versa, used
+       * for mapping bands. 
+       * This is relevant if we're building (read_cp9_flag == FALSE)
+       * or reading from a file (read_cp9_flag == TRUE)
+       */
+      node_cc_left  = malloc(sizeof(int) * cm->nodes);
+      node_cc_right = malloc(sizeof(int) * cm->nodes);
+      cc_node_map   = malloc(sizeof(int) * (cp9_hmm->M + 1));
+      map_consensus_columns(cm, cp9_hmm->M, node_cc_left, node_cc_right,
+			    cc_node_map, debug_level);
+      
+      cs2hn_map     = malloc(sizeof(int *) * (cm->M+1));
+      for(v = 0; v <= cm->M; v++)
+	cs2hn_map[v]     = malloc(sizeof(int) * 2);
+      
+      cs2hs_map     = malloc(sizeof(int *) * (cm->M+1));
+      for(v = 0; v <= cm->M; v++)
+	cs2hs_map[v]     = malloc(sizeof(int) * 2);
+      
+      hns2cs_map    = malloc(sizeof(int **) * (cp9_hmm->M+1));
+      for(k = 0; k <= cp9_hmm->M; k++)
+	{
+	  hns2cs_map[k]    = malloc(sizeof(int *) * 3);
+	  for(ks = 0; ks < 3; ks++)
+	    hns2cs_map[k][ks]= malloc(sizeof(int) * 2);
+	}
+      
+      CP9_map_cm2hmm_and_hmm2cm(cm, cp9_hmm, node_cc_left, node_cc_right, 
+				cc_node_map, cs2hn_map, cs2hs_map, 
+				hns2cs_map, debug_level);
+      
+      /* fill in parameters of HMM using the CM and some ideas/formulas/tricks
+       * from Zasha Weinberg's thesis (~p.123) (see CP9_cm2wrhmm.c code) */
+      if(!(CP9_cm2wrhmm(cm, cp9_hmm, node_cc_left, node_cc_right, cc_node_map, cs2hn_map,
+			cs2hs_map, hns2cs_map, debug_level)))
+	Die("Couldn't build a CM Plan 9 HMM from the CM.\n");
+    }
+  
   StopwatchZero(watch);
   StopwatchStart(watch);
   
@@ -245,25 +347,22 @@ main(int argc, char **argv)
   while (reversed || ReadSeq(sqfp, sqfp->format, &seq, &sqinfo))
     {
       if (sqinfo.len == 0) continue; 	/* silently skip len 0 seqs */
-      /* EPN 08.12.05
-       * Without the next if(), a strange, unresolved segmentation 
-       * fault causing memory error occurs.  This fix should be okay 
-       * as long as we're not trying to do --local because no glocal
-       * hits can be smaller than the minimum bound of the root band.  
-       * Currently, the --banded --local scenario doesn't work (at 
-       * least) for this reason.
-       */
-      if (do_banded && (sqinfo.len < dmin[0] || sqinfo.len > dmax[0]))
-	{
-	  /*printf("sequence: %s\n", sqinfo.name);*/
-	  /*continue;*/
-	}
       if (sqinfo.len > maxlen) maxlen = sqinfo.len;
       dsq = DigitizeSequence(seq, sqinfo.len);
 
-      if (do_banded)
-	  CYKBandedScan(cm, dsq, dmin, dmax, sqinfo.len, windowlen, 
-			&nhits, &hitr, &hiti, &hitj, &hitsc, thresh);
+      hmm_thresh = thresh;
+      if (use_hmm)
+	{
+	  p7dsq = hmmer_DigitizeSequence(seq, sqinfo.len);
+	  sc = CP9ForwardScan(p7dsq, sqinfo.len, windowlen, cp9_hmm, &cp9_fwd, 
+			      &nhits, &hitr, &hiti, &hitj, &hitsc, hmm_thresh);
+	  /*printf("hmmer_Alphabet: %s\n", hmmer_Alphabet);
+	    sc = CP9Forward(p7dsq, sqinfo.len, cp9_hmm, &cp9_fwd);*/
+	  //printf("forward sc: %f\n", sc);
+	}
+      else if (do_banded)
+	CYKBandedScan(cm, dsq, dmin, dmax, sqinfo.len, windowlen, 
+		      &nhits, &hitr, &hiti, &hitj, &hitsc, thresh);
       else
 	CYKScan(cm, dsq, sqinfo.len, windowlen, 
 		&nhits, &hitr, &hiti, &hitj, &hitsc, thresh);
@@ -293,13 +392,13 @@ main(int argc, char **argv)
 	      FreeParsetree(tr);
 	    }
 	}
-      
       free(hitr);
       free(hiti);
       free(hitj);
       free(hitsc);
       
       free(dsq);
+      if(use_hmm) free(p7dsq);
       if (! reversed && do_revcomp) {
 	revcomp(seq,seq);
 	reversed = TRUE;
@@ -310,7 +409,8 @@ main(int argc, char **argv)
     }
   StopwatchStop(watch);
   StopwatchDisplay(stdout, "\nCPU time: ", watch);
-  printf("memory:   %.2f MB\n\n", CYKScanRequires(cm, maxlen, windowlen));
+  if(use_hmm) printf("CP9 Forward memory:   %8.2f MB\n", CP9ForwardScanRequires(cp9_hmm, maxlen, windowlen));
+  printf("CYK memory        :   %8.2f MB\n\n", CYKScanRequires(cm, maxlen, windowlen));
 
   if (do_banded)
     {

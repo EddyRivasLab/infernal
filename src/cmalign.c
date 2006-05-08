@@ -27,12 +27,12 @@
 #include "hmmer_structs.h"
 #include "sre_stack.h"
 #include "hmmband.h"         
-#include "hmmband.h"         
 
 MSA *Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt, 
 			  Parsetree_t **tr, int nseq, int do_full);
 static void ExpandBands(CM_t *cm, int qlen, int *dmin, int *dmax);
 static void banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *dmin, int *dmax, int bdump_level);
+static void debug_print_bands(CM_t *cm, int *dmin, int *dmax);
 
 static char banner[] = "cmalign - align sequences to an RNA CM";
 
@@ -56,12 +56,11 @@ static char experts[] = "\
    --time        : print timings for alignment, band calculation, etc.\n\
 \n\
   * HMM banded alignment related options:\n\
-   --hbanded     : use exptl HMM banded CYK aln algorithm (req's --cp9 or --p7)\n\
+   --hbanded     : use exptl HMM banded CYK aln algorithm (df: builds CP9 HMM) \n\
    --hbandp <f>  : tail loss prob for --hbanded (default:0.0001)\n\
    --cp9 <f>     : use the CM plan 9 HMM in file <f> for band calculation\n\
    --p7 <f>      : use the plan 7 HMMER 2.4 HMM in file <f> for band calculation\n\
    --sums        : use posterior sums during HMM band calculation (widens bands)\n\
-   --simple      : expt simple hmm2ij algorith\n\
 \n\
   * A priori banded alignment related options:\n\
    --apbanded    : use experimental a priori (ap) banded CYK alignment algorithm\n\
@@ -88,7 +87,6 @@ static struct opt_s OPTIONS[] = {
   { "--hbanded",    FALSE, sqdARG_NONE },
   { "--hbandp",     FALSE, sqdARG_FLOAT},
   { "--sums",       FALSE, sqdARG_NONE},
-  { "--simple",     FALSE, sqdARG_NONE},
   { "--cp9",        FALSE, sqdARG_STRING},
   { "--p7",         FALSE, sqdARG_STRING},
   { "--time",       FALSE, sqdARG_NONE},
@@ -640,9 +638,10 @@ main(int argc, char **argv)
 	  /* Step 1: Get HMM posteriors.*/
 	  /*sc = CP9Viterbi(p7dsq[i], sqinfo[i].len, cp9_hmm, cp9_mx);*/
 	  forward_sc = CP9Forward(p7dsq[i], sqinfo[i].len, cp9_hmm, &cp9_fwd);
-	  /*printf("CP9 i: %d | forward_sc : %f\n", i, forward_sc);*/
+	  printf("CP9 i: %d | forward_sc : %f\n", i, forward_sc);
 	  backward_sc = CP9Backward(p7dsq[i], sqinfo[i].len, cp9_hmm, &cp9_bck);
-	  /*printf("CP9 i: %d | backward_sc: %f\n", i, backward_sc);*/
+	  printf("CP9 i: %d | backward_sc: %f\n", i, backward_sc);
+
 	  /*debug_check_CP9_FB(cp9_fwd, cp9_bck, cp9_hmm, forward_sc, sqinfo[i].len, p7dsq[i]);*/
 	  cp9_posterior = cp9_bck;
 	  CP9FullPosterior(p7dsq[i], sqinfo[i].len, cp9_hmm, cp9_fwd, cp9_bck, cp9_posterior);
@@ -657,13 +656,13 @@ main(int argc, char **argv)
 	    {
 	      /* match states */
 	      CP9_hmm_band_bounds(cp9_posterior->mmx, sqinfo[i].len, cp9_hmm->M,
-				  NULL, pn_min_m, pn_max_m, (1.-hbandp), FALSE, debug_level);
+				  NULL, pn_min_m, pn_max_m, (1.-hbandp), HMMMATCH, debug_level);
 	      /* insert states */
 	      CP9_hmm_band_bounds(cp9_posterior->imx, sqinfo[i].len, cp9_hmm->M,
-				  NULL, pn_min_i, pn_max_i, (1.-hbandp), FALSE, debug_level);
+				  NULL, pn_min_i, pn_max_i, (1.-hbandp), HMMINSERT, debug_level);
 	      /* delete states (note: delete_flag set to TRUE) */
 	      CP9_hmm_band_bounds(cp9_posterior->dmx, sqinfo[i].len, cp9_hmm->M,
-				  NULL, pn_min_d, pn_max_d, (1.-hbandp), TRUE, debug_level);
+				  NULL, pn_min_d, pn_max_d, (1.-hbandp), HMMDELETE, debug_level);
 	    }
 	  else
 	    {
@@ -769,13 +768,13 @@ main(int argc, char **argv)
 				 isum_pn_d[i]);
 	      /* match states */
 	      P7_hmm_band_bounds(posterior->mmx, sqinfo[i].len, hmm->M, isum_pn_m[i],
-				 pn_min_m, pn_max_m, (1.-hbandp), FALSE, debug_level);
+				 pn_min_m, pn_max_m, (1.-hbandp), HMMMATCH, debug_level);
 	      /* insert states */
 	      P7_hmm_band_bounds(posterior->imx, sqinfo[i].len, hmm->M, isum_pn_i[i],
-				 pn_min_i, pn_max_i, (1.-hbandp), FALSE, debug_level);
+				 pn_min_i, pn_max_i, (1.-hbandp), HMMINSERT, debug_level);
 	      /* delete states (note: delete_flag set to TRUE) */
 	      P7_hmm_band_bounds(posterior->dmx, sqinfo[i].len, hmm->M, isum_pn_d[i],
-				 pn_min_d, pn_max_d, (1.-hbandp), TRUE, debug_level);
+				 pn_min_d, pn_max_d, (1.-hbandp), HMMDELETE, debug_level);
 	    }
 
 	  /* The pn_min_i and pn_max_i arrays are not complete.
@@ -1437,6 +1436,48 @@ Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt,
   free(elmap);
   free(irmap);
   return msa;
+}
+
+static void
+debug_print_bands(CM_t *cm, int *dmin, int *dmax)
+{
+  int v;
+  char **sttypes;
+  char **nodetypes;
+
+  sttypes = malloc(sizeof(char *) * 10);
+  sttypes[0] = "D";
+  sttypes[1] = "MP";
+  sttypes[2] = "ML";
+  sttypes[3] = "MR";
+  sttypes[4] = "IL";
+  sttypes[5] = "IR";
+  sttypes[6] = "S";
+  sttypes[7] = "E";
+  sttypes[8] = "B";
+  sttypes[9] = "EL";
+
+  nodetypes = malloc(sizeof(char *) * 8);
+  nodetypes[0] = "BIF";
+  nodetypes[1] = "MATP";
+  nodetypes[2] = "MATL";
+  nodetypes[3] = "MATR";
+  nodetypes[4] = "BEGL";
+  nodetypes[5] = "BEGR";
+  nodetypes[6] = "ROOT";
+  nodetypes[7] = "END";
+
+  printf("\nPrinting bands :\n");
+  printf("****************\n");
+  for(v = 0; v < cm->M; v++)
+   {
+     printf("band v:%d n:%d %-4s %-2s min:%d max:%d\n", v, cm->ndidx[v], nodetypes[cm->ndtype[cm->ndidx[v]]], sttypes[cm->sttype[v]], dmin[v], dmax[v]);
+   }
+  printf("****************\n\n");
+
+  free(sttypes);
+  free(nodetypes);
+
 }
 
 /* EPN 07.22.05

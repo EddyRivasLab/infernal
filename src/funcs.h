@@ -215,6 +215,7 @@ extern void CPlan9Renormalize(struct cplan9_s *hmm);
 
 extern struct cp9_dpmatrix_s *AllocCPlan9Matrix(int rows, int M, int ***mmx, 
 						int ***imx, int ***dmx, int ***emx);
+extern float SizeCPlan9Matrix(int rows, int M);
 extern void FreeCPlan9Matrix(struct cp9_dpmatrix_s *mx);
 extern struct cp9_dpmatrix_s *CreateCPlan9Matrix(int N, int M, int padN, int padM);
 extern void ResizeCPlan9Matrix(struct cp9_dpmatrix_s *mx, int N, int M, 
@@ -223,13 +224,13 @@ extern void ResizeCPlan9Matrix(struct cp9_dpmatrix_s *mx, int N, int M,
 /* from cp9_hmmio.c 
  * CM Plan9 HMM Input/output (saving/reading)
  */
-extern HMMFILE *CP9_HMMFileOpen(char *hmmfile, char *env);
-extern int      CP9_HMMFileRead(HMMFILE *hmmfp, struct cplan9_s **ret_hmm);
-extern void     CP9_HMMFileClose(HMMFILE *hmmfp);
-extern int      CP9_HMMFileFormat(HMMFILE *hmmfp);
-extern void     CP9_HMMFileRewind(HMMFILE *hmmfp);
-extern int      CP9_HMMFilePositionByName(HMMFILE *hmmfp, char *name);
-extern int      CP9_HMMFilePositionByIndex(HMMFILE *hmmfp, int idx);
+extern CP9HMMFILE *CP9_HMMFileOpen(char *hmmfile, char *env);
+extern int      CP9_HMMFileRead(CP9HMMFILE *hmmfp, struct cplan9_s **ret_hmm);
+extern void     CP9_HMMFileClose(CP9HMMFILE *hmmfp);
+extern int      CP9_HMMFileFormat(CP9HMMFILE *hmmfp);
+extern void     CP9_HMMFileRewind(CP9HMMFILE *hmmfp);
+extern int      CP9_HMMFilePositionByName(CP9HMMFILE *hmmfp, char *name);
+extern int      CP9_HMMFilePositionByIndex(CP9HMMFILE *hmmfp, int idx);
 extern void     CP9_WriteAscHMM(FILE *fp, struct cplan9_s *hmm);
 extern void     CP9_WriteBinHMM(FILE *fp, struct cplan9_s *hmm);
 
@@ -246,4 +247,17 @@ extern void hd2safe_hd_bands(int M, int *jmin, int *jmax, int **hdmin, int **hdm
 			     int *safe_hdmin, int *safe_hdmax);
 extern void debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax);
 
+/* from CP9_scan.c */
+extern float CP9ForwardScan(unsigned char *dsq, int L, int W, struct cplan9_s *hmm, 
+			    struct cp9_dpmatrix_s **ret_mx, int *ret_nhits, int **ret_hitr,
+			    int **ret_hiti, int **ret_hitj,  
+			    float **ret_hitsc, float min_thresh);
 
+extern float CP9ForwardScanRequires(struct cplan9_s *hmm, int L, int W);
+
+/* from CP9_cm2wrhmm.c */
+extern int CP9_cm2wrhmm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *node_cc_right, 
+			int *cc_node_map, int **cs2hn_map, int **cs2hs_map, int ***hns2cs_map, 
+			int debug_level);
+extern int CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, int *cc_node_map,
+			   int debug_level);
