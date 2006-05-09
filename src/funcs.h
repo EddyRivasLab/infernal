@@ -261,3 +261,12 @@ extern int CP9_cm2wrhmm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *
 			int debug_level);
 extern int CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, int *cc_node_map,
 			   int debug_level);
+/* from scaninside.c */
+extern void  InsideScan(CM_t *cm, char *dsq, int L, int W, 
+			int *ret_nhits, int **ret_hitr, 
+			int **ret_hiti, int **ret_hitj, float **ret_hitsc,
+			float min_thresh);
+extern void  InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W, 
+			      int *ret_nhits, int **ret_hitr, 
+			      int **ret_hiti, int **ret_hitj, float **ret_hitsc,
+			      float min_thresh);

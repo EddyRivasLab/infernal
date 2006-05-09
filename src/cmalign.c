@@ -28,6 +28,9 @@
 #include "sre_stack.h"
 #include "hmmband.h"         
 
+#define BE_EFFICIENT  0		/* setting for do_full: small memory mode */
+#define BE_PARANOID   1		/* setting for do_full: keep whole matrix, perhaps for debugging */
+
 MSA *Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt, 
 			  Parsetree_t **tr, int nseq, int do_full);
 static void ExpandBands(CM_t *cm, int qlen, int *dmin, int *dmax);
@@ -54,6 +57,7 @@ static char experts[] = "\
    --banddump <n>: set verbosity of band info print statements to <n> [1..3]\n\
    --dlev <n>    : set verbosity of debugging print statements to <n> [1..3]\n\
    --time        : print timings for alignment, band calculation, etc.\n\
+   --inside      : don't align; return scores from the Inside algorithm \n\
 \n\
   * HMM banded alignment related options:\n\
    --hbanded     : use exptl HMM banded CYK aln algorithm (df: builds CP9 HMM) \n\
@@ -90,6 +94,7 @@ static struct opt_s OPTIONS[] = {
   { "--cp9",        FALSE, sqdARG_STRING},
   { "--p7",         FALSE, sqdARG_STRING},
   { "--time",       FALSE, sqdARG_NONE},
+  { "--inside",     FALSE, sqdARG_NONE},
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -234,6 +239,8 @@ main(int argc, char **argv)
   char             **postcode;  /* posterior decode array of strings       */
   unsigned char    **p7dsq;     /* digitized RNA sequences (plan 7 version)*/
 
+  /* Alternatives to CYK */
+  int                do_inside; /* TRUE to use the Inside algorithm instead of CYK */
 
   /*********************************************** 
    * Parse command line
@@ -258,6 +265,7 @@ main(int argc, char **argv)
   hmm_type    = NONE;
   read_cp9_flag = FALSE;
   time_flag   = TRUE;
+  do_inside   = FALSE;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -276,6 +284,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--banddump")  == 0) bdump_level  = atoi(optarg);
     else if (strcmp(optname, "--dlev")      == 0) debug_level  = atoi(optarg);
     else if (strcmp(optname, "--time")      == 0) time_flag    = TRUE;
+    else if (strcmp(optname, "--inside")    == 0) do_inside    = TRUE;
     else if (strcmp(optname, "--hbanded")   == 0) {
       do_hbanded = TRUE; do_small = FALSE; 
       if(hmm_type == NONE) hmm_type = HMM_CP9; 
@@ -837,7 +846,7 @@ main(int argc, char **argv)
       
       if(do_apexpand)
 	{
-	  /* First, check to see if we need to reset the apriori bands b/c 
+	  /*First, check to see if we need to reset the apriori bands b/c 
 	   * they're currently expanded. */
 	  if(expand_flag)
 	    {
@@ -876,7 +885,15 @@ main(int argc, char **argv)
 	    }
 	}
       printf("Aligning %s\n", sqinfo[i].name);
-      if (do_small) 
+      if (do_inside)
+	{
+	    sc = FInside(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
+			 BE_EFFICIENT,	/* memory-saving mode */
+			 NULL, NULL,	/* manage your own matrix, I don't want it */
+			 NULL, NULL,	/* manage your own deckpool, I don't want it */
+			 do_local);      /* TRUE to allow local begins */
+	}
+      else if (do_small) 
 	{
 	  if(do_apbanded)
 	    {
@@ -977,41 +994,43 @@ main(int argc, char **argv)
     }
   avgsc /= nseq;
 
-  msa = Parsetrees2Alignment(cm, dsq, sqinfo, NULL, tr, nseq, do_full);
-  /*****************************************************************
-   * Output the alignment.
-   *****************************************************************/
-
-  if (outfile != NULL && (ofp = fopen(outfile, "w")) != NULL) 
+  if(!(do_inside))
     {
-      WriteStockholm(ofp, msa);
-      printf("Alignment saved in file %s\n", outfile);
-      fclose(ofp);
-    }
-  else
-    WriteStockholm(stdout, msa);
-  
-  if (regressfile != NULL && (ofp = fopen(regressfile, "w")) != NULL) 
-    {
-      /* Must delete author info from msa, because it contains version
-       * and won't diff clean in regression tests.
-       */
-      free(msa->au); msa->au = NULL;
-      WriteStockholm(ofp, msa);
-      fclose(ofp);
+      msa = Parsetrees2Alignment(cm, dsq, sqinfo, NULL, tr, nseq, do_full);
+      /*****************************************************************
+       * Output the alignment.
+       *****************************************************************/
+      
+      if (outfile != NULL && (ofp = fopen(outfile, "w")) != NULL) 
+	{
+	  WriteStockholm(ofp, msa);
+	  printf("Alignment saved in file %s\n", outfile);
+	  fclose(ofp);
+	}
+      else
+	WriteStockholm(stdout, msa);
+      
+      if (regressfile != NULL && (ofp = fopen(regressfile, "w")) != NULL) 
+	{
+	  /* Must delete author info from msa, because it contains version
+	   * and won't diff clean in regression tests.
+	   */
+	  free(msa->au); msa->au = NULL;
+	  WriteStockholm(ofp, msa);
+	  fclose(ofp);
+	}
     }
 
   /*****************************************************************
    * Clean up and exit.
    *****************************************************************/
-
+  
   for (i = 0; i < nseq; i++) 
     {
-      FreeParsetree(tr[i]);
+      if(!(do_inside)) FreeParsetree(tr[i]);
       free(dsq[i]);
       FreeSequence(rseq[i], &(sqinfo[i]));
     }
-
   if (do_apbanded)
     {
       FreeBandDensities(cm, gamma);
@@ -1084,7 +1103,7 @@ main(int argc, char **argv)
       FreeCPlan9(cp9_hmm);
     }
 
-  MSAFree(msa);
+  if(!(do_inside)) MSAFree(msa);
   FreeCM(cm);
   free(rseq);
   free(sqinfo);

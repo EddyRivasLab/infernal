@@ -45,6 +45,7 @@
 
 #include "structs.h"
 #include "funcs.h"
+#include "cm_postprob.h"
 
 struct deckpool_s {
   float ***pool;

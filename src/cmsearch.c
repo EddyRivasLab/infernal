@@ -50,6 +50,7 @@ static char experts[] = "\
    --thresh <f>  : reporting bit score threshold (try 0 before < 0) [df: 0]\n\
    --X           : project X!\n\
    --hmmonly     : scan with a CM plan 9 HMM, not the CM\n\
+   --inside      : scan with Inside, not CYK (caution ~5X slower(!))\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -66,6 +67,7 @@ static struct opt_s OPTIONS[] = {
   { "--thresh",     FALSE, sqdARG_FLOAT},
   { "--X",          FALSE, sqdARG_NONE },
   { "--hmmonly",    FALSE, sqdARG_NONE },
+  { "--inside",     FALSE, sqdARG_NONE },
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -163,6 +165,8 @@ main(int argc, char **argv)
 			         * passed to many functions. */
   float sc;
   float hmm_thresh;     /* bit score threshold for reporting hits to HMM */
+
+  float do_inside;      /* TRUE to use scanning Inside algorithm instead of CYK */
   /*********************************************** 
    * Parse command line
    ***********************************************/
@@ -180,6 +184,7 @@ main(int argc, char **argv)
   do_bdump          = FALSE;
   thresh            = 0.;
   use_hmm           = FALSE;
+  do_inside         = FALSE;
   hmm_thresh        = 0;
   debug_level = 0;
   
@@ -196,7 +201,8 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--X")         == 0) do_projectx  = TRUE;
     else if  (strcmp(optname, "--banddump")  == 0) do_bdump     = TRUE;
     else if  (strcmp(optname, "--thresh")    == 0) thresh       = atof(optarg);
-    else if  (strcmp(optname, "--hmmonly")    == 0) use_hmm     = TRUE;
+    else if  (strcmp(optname, "--hmmonly")   == 0) use_hmm      = TRUE;
+    else if  (strcmp(optname, "--inside")    == 0) do_inside    = TRUE;
     else if  (strcmp(optname, "--informat")  == 0) {
       format = String2SeqfileFormat(optarg);
       if (format == SQFILE_UNKNOWN) 
@@ -361,8 +367,15 @@ main(int argc, char **argv)
 	  //printf("forward sc: %f\n", sc);
 	}
       else if (do_banded)
-	CYKBandedScan(cm, dsq, dmin, dmax, sqinfo.len, windowlen, 
+	if (do_inside)
+	  InsideBandedScan(cm, dsq, dmin, dmax, sqinfo.len, windowlen, 
+			   &nhits, &hitr, &hiti, &hitj, &hitsc, thresh);
+	else
+	  CYKBandedScan(cm, dsq, dmin, dmax, sqinfo.len, windowlen, 
 		      &nhits, &hitr, &hiti, &hitj, &hitsc, thresh);
+      else if (do_inside)
+	InsideScan(cm, dsq, sqinfo.len, windowlen, 
+		   &nhits, &hitr, &hiti, &hitj, &hitsc, thresh);
       else
 	CYKScan(cm, dsq, sqinfo.len, windowlen, 
 		&nhits, &hitr, &hiti, &hitj, &hitsc, thresh);
