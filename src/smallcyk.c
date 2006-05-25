@@ -3150,7 +3150,7 @@ free_vji_shadow_matrix(char ***a, int M, int j1, int j0)
  *     including bifurcations. 
  *################################################################*/     
 #if 0
-/* Function: CYKOutside()
+/* Function: CYOutside()
  * Date:     SRE, Mon Aug  7 07:45:37 2000 [St. Louis]
  */
 void
@@ -3183,7 +3183,13 @@ CYKOutside(CM_t *cm, char *dsq, int L, float ***alpha)
   
   /* Main loop down through the decks
    */
-  for (v = 2; v < cm->M; v++)
+  /* EPN bug fix 05.25.06. Durbin et. al. p.287 CM Outside alg uses state
+   * indices 1..M, with state 1 = ROOT_S, so there's an off-by-one 
+   * w.r.t this implementation. Following loop followed Durbin convention,
+   * but should follow implemented convention:
+   * OLD LINE: for (v = 2; v < cm->M; v++)
+   */
+  for (v = 1; v < cm->M; v++)  
     {
       /* First we need to fetch a deck of memory to fill in;
        * we try to reuse a deck but if one's not available we allocate

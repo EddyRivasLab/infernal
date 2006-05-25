@@ -58,6 +58,7 @@ static char experts[] = "\
    --dlev <n>    : set verbosity of debugging print statements to <n> [1..3]\n\
    --time        : print timings for alignment, band calculation, etc.\n\
    --inside      : don't align; return scores from the Inside algorithm \n\
+   --outside     : don't align; return scores from the Outside algorithm \n\
 \n\
   * HMM banded alignment related options:\n\
    --hbanded     : use exptl HMM banded CYK aln algorithm (df: builds CP9 HMM) \n\
@@ -95,6 +96,7 @@ static struct opt_s OPTIONS[] = {
   { "--p7",         FALSE, sqdARG_STRING},
   { "--time",       FALSE, sqdARG_NONE},
   { "--inside",     FALSE, sqdARG_NONE},
+  { "--outside",    FALSE, sqdARG_NONE},
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -241,7 +243,9 @@ main(int argc, char **argv)
 
   /* Alternatives to CYK */
   int                do_inside; /* TRUE to use the Inside algorithm instead of CYK */
-
+  int                do_outside;/* TRUE to use the Outside algorithm instead of CYK */
+  int                do_check;  /* TRUE to check Inside and Outside probabilities */
+  float           ***alpha;     /* alpha DP matrix for Inside() */
   /*********************************************** 
    * Parse command line
    ***********************************************/
@@ -266,6 +270,8 @@ main(int argc, char **argv)
   read_cp9_flag = FALSE;
   time_flag   = TRUE;
   do_inside   = FALSE;
+  do_outside  = FALSE;
+  do_check    = FALSE;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -285,6 +291,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--dlev")      == 0) debug_level  = atoi(optarg);
     else if (strcmp(optname, "--time")      == 0) time_flag    = TRUE;
     else if (strcmp(optname, "--inside")    == 0) do_inside    = TRUE;
+    else if (strcmp(optname, "--outside")   == 0) { do_outside   = TRUE; do_check = TRUE; }
     else if (strcmp(optname, "--hbanded")   == 0) {
       do_hbanded = TRUE; do_small = FALSE; 
       if(hmm_type == NONE) hmm_type = HMM_CP9; 
@@ -887,11 +894,38 @@ main(int argc, char **argv)
       printf("Aligning %s\n", sqinfo[i].name);
       if (do_inside)
 	{
-	    sc = FInside(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
-			 BE_EFFICIENT,	/* memory-saving mode */
-			 NULL, NULL,	/* manage your own matrix, I don't want it */
-			 NULL, NULL,	/* manage your own deckpool, I don't want it */
-			 do_local);      /* TRUE to allow local begins */
+	  sc = FInside(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
+		       BE_EFFICIENT,	/* memory-saving mode */
+		       NULL, NULL,	/* manage your own matrix, I don't want it */
+		       NULL, NULL,	/* manage your own deckpool, I don't want it */
+		       do_local,        /* TRUE to allow local begins */
+		       alpha);          /* provide alpha matrix */
+	  
+	}
+      else if(do_outside)
+	{	
+	  alpha = MallocOrDie(sizeof(float **) * (cm->M+1));
+	  for (v = 0; v < cm->M+1; v++) alpha[v] = NULL;
+	  sc = FInside(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
+		       BE_PARANOID,	/* save full alpha so we can run outside */
+		       alpha, &alpha,	/* fill alpha, and return it, needed for FOutside() */
+		       NULL, NULL,	/* manage your own deckpool, I don't want it */
+		       do_local);       /* TRUE to allow local begins */
+	  //printf("\n\nprinting alpha matrix after inside\n\n");
+	  //debug_print_alpha(alpha, cm, sqinfo[i].len);
+	  //printf("\n\ndone printing alpha matrix after inside\n\n");
+	  sc = FOutside(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
+			BE_PARANOID,	/* save full beta */
+			NULL, NULL,	/* manage your own matrix, I don't want it */
+			NULL, NULL,	/* manage your own deckpool, I don't want it */
+			do_local,       /* TRUE to allow local begins */
+			alpha,          /* alpha matrix from FInside() */
+			do_check        /* TRUE to check Outside probs agree with Inside */
+			);         
+	  /* free alpha */
+	  for (v = 0; v <= (cm->M-1); v++)
+	    if (alpha[v] != NULL) alpha[v] = NULL;
+	  free(alpha);
 	}
       else if (do_small) 
 	{
@@ -994,7 +1028,7 @@ main(int argc, char **argv)
     }
   avgsc /= nseq;
 
-  if(!(do_inside))
+  if(!(do_inside || do_outside))
     {
       msa = Parsetrees2Alignment(cm, dsq, sqinfo, NULL, tr, nseq, do_full);
       /*****************************************************************
@@ -1027,7 +1061,7 @@ main(int argc, char **argv)
   
   for (i = 0; i < nseq; i++) 
     {
-      if(!(do_inside)) FreeParsetree(tr[i]);
+      if(!(do_inside || do_outside)) FreeParsetree(tr[i]);
       free(dsq[i]);
       FreeSequence(rseq[i], &(sqinfo[i]));
     }
@@ -1103,7 +1137,7 @@ main(int argc, char **argv)
       FreeCPlan9(cp9_hmm);
     }
 
-  if(!(do_inside)) MSAFree(msa);
+  if(!(do_inside || do_outside)) MSAFree(msa);
   FreeCM(cm);
   free(rseq);
   free(sqinfo);

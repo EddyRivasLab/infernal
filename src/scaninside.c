@@ -33,7 +33,7 @@
  *
  * Purpose:  Scan a sequence for matches to a covariance model.
  *           Multiple nonoverlapping hits and local alignment.
- *           Log sums are performed (slowly) on floats by the LogSum()
+ *           Log sums are performed (slowly) on floats by the LogSum2()
  *           function.
  *
  * Args:     cm        - the covariance model
@@ -128,7 +128,7 @@ InsideScan(CM_t *cm, char *dsq, int L, int W,
 	  y = cm->cfirst[v];
 	  alpha[v][0][0] = cm->endsc[v];
 	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-	    alpha[v][0][0] = LogSum(alpha[v][0][0], (alpha[y+yoffset][0][0] 
+	    alpha[v][0][0] = LogSum2(alpha[v][0][0], (alpha[y+yoffset][0][0] 
 						     + cm->tsc[v][yoffset]));
           /* ...we don't bother to look at local alignment starts here... */
 	  bestr[0] = -1;
@@ -178,7 +178,7 @@ InsideScan(CM_t *cm, char *dsq, int L, int W,
 		  y = cm->cfirst[v];
 		  alpha[v][jp][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		    alpha[v][jp][d] = LogSum(alpha[v][jp][d], (alpha[y+yoffset][cur][d] 
+		    alpha[v][jp][d] = LogSum2(alpha[v][jp][d], (alpha[y+yoffset][cur][d] 
 							       + cm->tsc[v][yoffset]));
 		  if (alpha[v][jp][d] < IMPOSSIBLE) alpha[v][jp][d] = IMPOSSIBLE;
 		}
@@ -190,7 +190,7 @@ InsideScan(CM_t *cm, char *dsq, int L, int W,
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		    alpha[v][cur][d] = LogSum(alpha[v][cur][d], (alpha[y+yoffset][prv][d-2] 
+		    alpha[v][cur][d] = LogSum2(alpha[v][cur][d], (alpha[y+yoffset][prv][d-2] 
 								 + cm->tsc[v][yoffset]));
 		  i = j-d+1;
 		  if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
@@ -208,7 +208,7 @@ InsideScan(CM_t *cm, char *dsq, int L, int W,
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v]))); 
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		    alpha[v][cur][d] = LogSum(alpha[v][cur][d], (alpha[y+yoffset][cur][d-1] 
+		    alpha[v][cur][d] = LogSum2(alpha[v][cur][d], (alpha[y+yoffset][cur][d-1] 
 								 + cm->tsc[v][yoffset]));
 		  i = j-d+1;
 		  if (dsq[i] < Alphabet_size)
@@ -226,7 +226,7 @@ InsideScan(CM_t *cm, char *dsq, int L, int W,
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		    alpha[v][cur][d] = LogSum(alpha[v][cur][d], (alpha[y+yoffset][prv][d-1] 
+		    alpha[v][cur][d] = LogSum2(alpha[v][cur][d], (alpha[y+yoffset][prv][d-1] 
 								 + cm->tsc[v][yoffset]));
 		  if (dsq[j] < Alphabet_size)
 		    alpha[v][cur][d] += cm->esc[v][(int) dsq[j]];
@@ -248,7 +248,7 @@ InsideScan(CM_t *cm, char *dsq, int L, int W,
 		  for (k = 0; k <= d; k++) /* k is length of right fragment */
 		    {
 		      jp = (j-k)%(W+1);	   /* jp is rolling index into BEGL_S deck j dimension */
-		      alpha[v][cur][d] = LogSum(alpha[v][cur][d], (alpha[w][jp][d-k] 
+		      alpha[v][cur][d] = LogSum2(alpha[v][cur][d], (alpha[w][jp][d-k] 
 								   + alpha[y][cur][k]));
 		    }
 		  if (alpha[v][cur][d] < IMPOSSIBLE) alpha[v][cur][d] = IMPOSSIBLE;
@@ -271,7 +271,7 @@ InsideScan(CM_t *cm, char *dsq, int L, int W,
 	  alpha[0][cur][d] = alpha[y][cur][d] + cm->tsc[0][0];
 	  bestr[d]         = 0;	/* root of the traceback = root state 0 */
 	  for (yoffset = 1; yoffset < cm->cnum[0]; yoffset++)
-	    alpha[0][cur][d] = LogSum(alpha[0][cur][d], (alpha[y+yoffset][cur][d] 
+	    alpha[0][cur][d] = LogSum2(alpha[0][cur][d], (alpha[y+yoffset][cur][d] 
 							 + cm->tsc[0][yoffset]));
 	  if (cm->flags & CM_LOCAL_BEGIN) {
 	    /* EPN 05.08.06 Left local the same as it was in CYKScan(), I think this 
@@ -386,7 +386,7 @@ InsideScan(CM_t *cm, char *dsq, int L, int W,
  *           banded algorithm.
  *           Allows multiple nonoverlapping hits and local alignment.
  *           Derived from scancyk.c.
- *           Log sums are performed (slowly) on floats by the LogSum()
+ *           Log sums are performed (slowly) on floats by the LogSum2()
  *           function.
  *
  *           dmin,dmax set the bounds. Both are arrays, 0..v..cm->M. 
@@ -505,7 +505,7 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
 	  alpha[v][0][0] = cm->endsc[v];
 	  /* treat EL as emitting only on self transition */
 	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-	    alpha[v][0][0] = LogSum(alpha[v][0][0], (alpha[y+yoffset][0][0] 
+	    alpha[v][0][0] = LogSum2(alpha[v][0][0], (alpha[y+yoffset][0][0] 
 						     + cm->tsc[v][yoffset]));
           /* ...we don't bother to look at local alignment starts here... */
 	  bestr[0] = -1;
@@ -570,7 +570,7 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
 		  y = cm->cfirst[v];
 		  alpha[v][jp][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		    alpha[v][jp][d] = LogSum(alpha[v][jp][d], (alpha[y+yoffset][cur][d] 
+		    alpha[v][jp][d] = LogSum2(alpha[v][jp][d], (alpha[y+yoffset][cur][d] 
 							       + cm->tsc[v][yoffset]));
 		  if (alpha[v][jp][d] < IMPROBABLE) alpha[v][jp][d] = IMPOSSIBLE;
 		}
@@ -582,7 +582,7 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		    alpha[v][cur][d] = LogSum(alpha[v][cur][d], (alpha[y+yoffset][prv][d-2] 
+		    alpha[v][cur][d] = LogSum2(alpha[v][cur][d], (alpha[y+yoffset][prv][d-2] 
 								 + cm->tsc[v][yoffset]));
 		  
 		  i = j-d+1;
@@ -601,7 +601,7 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		    alpha[v][cur][d] = LogSum(alpha[v][cur][d], (alpha[y+yoffset][cur][d-1] 
+		    alpha[v][cur][d] = LogSum2(alpha[v][cur][d], (alpha[y+yoffset][cur][d-1] 
 								 + cm->tsc[v][yoffset]));
 		  
 		  i = j-d+1;
@@ -620,7 +620,7 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		    alpha[v][cur][d] = LogSum(alpha[v][cur][d], (alpha[y+yoffset][prv][d-1] 
+		    alpha[v][cur][d] = LogSum2(alpha[v][cur][d], (alpha[y+yoffset][prv][d-1] 
 								 + cm->tsc[v][yoffset]));
 		  
 		  if (dsq[j] < Alphabet_size)
@@ -659,7 +659,7 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
 		  for (; k <= kmax; k++)
 		    {
 		      jp = (j-k)%(W+1);	   /* jp is rolling index into BEGL_S deck j dimension */
-		      alpha[v][cur][d] = LogSum(alpha[v][cur][d], (alpha[w][jp][d-k] 
+		      alpha[v][cur][d] = LogSum2(alpha[v][cur][d], (alpha[w][jp][d-k] 
 								   + alpha[y][cur][k]));
 		    }
 		  if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
@@ -682,7 +682,7 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
 	  alpha[0][cur][d] = alpha[y][cur][d] + cm->tsc[0][0];
 	  bestr[d]         = 0;	/* root of the traceback = root state 0 */
 	  for (yoffset = 1; yoffset < cm->cnum[0]; yoffset++)
-	    alpha[0][cur][d] = LogSum(alpha[0][cur][d], (alpha[y+yoffset][cur][d] 
+	    alpha[0][cur][d] = LogSum2(alpha[0][cur][d], (alpha[y+yoffset][cur][d] 
 							 + cm->tsc[0][yoffset]));
 	}
       

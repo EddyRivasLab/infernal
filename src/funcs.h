@@ -270,3 +270,4 @@ extern void  InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, 
 			      int *ret_nhits, int **ret_hitr, 
 			      int **ret_hiti, int **ret_hitj, float **ret_hitsc,
 			      float min_thresh);
+extern float LogSum2(float p1, float p2);
