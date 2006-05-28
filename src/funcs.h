@@ -246,6 +246,10 @@ extern void ij2d_bands(CM_t *cm, int L, int *imin, int *imax, int *jmin, int *jm
 extern void hd2safe_hd_bands(int M, int *jmin, int *jmax, int **hdmin, int **hdmax,
 			     int *safe_hdmin, int *safe_hdmax);
 extern void debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax);
+extern void debug_print_alpha_banded_jd(float ***alpha, CM_t *cm, int L, int *jmin, int *jmax, 
+					int **hdmin, int **hdmax);
+extern float ** alloc_jdbanded_vjd_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
+
 
 /* from CP9_scan.c */
 extern float CP9ForwardScan(unsigned char *dsq, int L, int W, struct cplan9_s *hmm, 

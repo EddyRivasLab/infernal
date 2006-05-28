@@ -105,7 +105,6 @@ static float insideT_b_jd_me(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 			     int *safe_hdmin, int *safe_hdmax);
 
 /* Allocation functions. Derived from analogous functions in smallcyk.c */
-static float ** alloc_jdbanded_vjd_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
 static int   ** alloc_jdbanded_vjd_kshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
 static char  ** alloc_jdbanded_vjd_yshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
 
@@ -114,8 +113,6 @@ static void debug_print_shadow_banded_jd(void ***shadow, CM_t *cm, int L, int *j
 					 int **hdmin, int **hdmax);
 static void debug_print_shadow_banded_deck_jd(int v, void ***shadow, CM_t *cm, int L, int *jmin, int *jmax,
 					      int **hdmin, int **hdmax);
-static void debug_print_alpha_banded_jd(float ***alpha, CM_t *cm, int L, int *jmin, int *jmax, 
-					int **hdmin, int **hdmax);
 
 
 #define BE_EFFICIENT  0		/* setting for do_full: small memory mode */
@@ -173,10 +170,10 @@ CYKInside_b_jd(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **
   StopwatchZero(watch);
   StopwatchStart(watch);
 
-  /*PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, L);
-    printf("alignment strategy:CYKInside_b_jd:b:nosmall\n"); 
-  */
-
+  PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, L);
+  printf("alignment strategy:CYKInside_b_jd:b:nosmall\n"); 
+  printf("L: %d\n", L);
+  
   /* Trust, but verify.
    * Check out input parameters.
    */
@@ -459,7 +456,6 @@ inside_b_jd(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int
 	  shadow[v] = (void **) yshad;
 	}
       }
-
 
       /* 11.05.05
        * One strategy is to set all cells OUTSIDE bands to IMPOSSIBLE.
@@ -1418,6 +1414,7 @@ inside_b_jd_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, 
       printf("inside_b_jd requires that vend be cm->M-1. This function is not set up for subsequence alignment.\n");
       exit(1);
     }
+  
   /* Allocations and initializations
    */
   b   = -1;
@@ -1483,7 +1480,7 @@ inside_b_jd_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, 
       } 
       if (! deckpool_pop(dpool, &(alpha[v]))) 
 	alpha[v] = alloc_jdbanded_vjd_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
-      
+
       if (ret_shadow != NULL) {
 	if (cm->sttype[v] == B_st) {
 	  /* CYK Full ME Bands used 2 */
@@ -1511,7 +1508,8 @@ inside_b_jd_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, 
 	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++)
 		{
 		  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
-		  alpha[v][jp_v][dp_v]  = cm->endsc[v];	/* init w/ local end */
+		  alpha[v][jp_v][dp_v]  = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		  /* treat EL as emitting only on self transition */
 		  if (ret_shadow != NULL) yshad[jp_v][dp_v]  = USED_EL; 
 		  for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) 
 		    {
@@ -1647,7 +1645,8 @@ inside_b_jd_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, 
 	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++)
 	      {
 		dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
-		alpha[v][jp_v][dp_v]  = cm->endsc[v];	/* init w/ local end */
+		alpha[v][jp_v][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		/* treat EL as emitting only on self transition */
 		if(ret_shadow != NULL) yshad[jp_v][dp_v] = USED_EL;
 		for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) 
 		  {
@@ -1688,7 +1687,8 @@ inside_b_jd_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, 
 	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++)
 	      {
 		dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
-		alpha[v][jp_v][dp_v]  = cm->endsc[v];	/* init w/ local end */
+		alpha[v][jp_v][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		/* treat EL as emitting only on self transition */
 		if(ret_shadow != NULL) yshad[jp_v][dp_v] = USED_EL;
 		for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) 
 		  {
@@ -1728,7 +1728,8 @@ inside_b_jd_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, 
 	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++)
 	      {
 		dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
-		alpha[v][jp_v][dp_v]  = cm->endsc[v];	/* init w/ local end */
+		alpha[v][jp_v][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		/* treat EL as emitting only on self transition */
 		if(ret_shadow != NULL) yshad[jp_v][dp_v] = USED_EL;
 		for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) 
 		  {
@@ -2075,7 +2076,7 @@ insideT_b_jd_me(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
  *           0..127, in ANSI C; we don't know if a machine will make it
  *           signed or unsigned.)
  */
-static float **
+float **
 alloc_jdbanded_vjd_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax)
 {
   float **a;
@@ -2107,7 +2108,7 @@ alloc_jdbanded_vjd_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int
       if(hdmax[jp-jmin] > (jp+1))
 	{
 	  /* Based on my current understanding this shouldn't happen, it means there's a valid d
-	   * in the hd band that is invalid because its > j. I think I check, or ensure, that this
+	   * in the hd band that is invalid because its > j. I check, or ensure, that this
 	   * doesn't happen when I'm constructing the d bands.
 	   */
 	  printf("jd banded error 0.\n");
@@ -2307,7 +2308,7 @@ debug_print_shadow_banded_deck_jd(int v, void ***shadow, CM_t *cm, int L, int *j
  *
  * Purpose:  Print alpha matrix banded in j and d dimensions
  */
-static void
+void
 debug_print_alpha_banded_jd(float ***alpha, CM_t *cm, int L, int *jmin, int *jmax, 
 			    int **hdmin, int **hdmax)
 {

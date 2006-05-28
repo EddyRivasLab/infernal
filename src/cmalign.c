@@ -27,6 +27,7 @@
 #include "hmmer_structs.h"
 #include "sre_stack.h"
 #include "hmmband.h"         
+#include "cm_postprob.h"
 
 #define BE_EFFICIENT  0		/* setting for do_full: small memory mode */
 #define BE_PARANOID   1		/* setting for do_full: keep whole matrix, perhaps for debugging */
@@ -58,7 +59,8 @@ static char experts[] = "\
    --dlev <n>    : set verbosity of debugging print statements to <n> [1..3]\n\
    --time        : print timings for alignment, band calculation, etc.\n\
    --inside      : don't align; return scores from the Inside algorithm \n\
-   --outside     : don't align; return scores from the Outside algorithm \n\
+   --outside     : don't align; return scores from the Outside algorithm\n\
+   --post        : align with CYK and append posterior probabilities\n\
 \n\
   * HMM banded alignment related options:\n\
    --hbanded     : use exptl HMM banded CYK aln algorithm (df: builds CP9 HMM) \n\
@@ -97,6 +99,7 @@ static struct opt_s OPTIONS[] = {
   { "--time",       FALSE, sqdARG_NONE},
   { "--inside",     FALSE, sqdARG_NONE},
   { "--outside",    FALSE, sqdARG_NONE},
+  { "--post",       FALSE, sqdARG_NONE},
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -238,14 +241,20 @@ main(int argc, char **argv)
   struct dpmatrix_s *bck;       /* growable DP matrix for backwards        */
   struct dpmatrix_s *posterior; /* growable DP matrix for posterior decode */
   struct p7trace_s **p7tr;      /* traces for aligned sequences            */
-  char             **postcode;  /* posterior decode array of strings       */
+  char             **p7postcode;/* posterior decode array of strings       */
   unsigned char    **p7dsq;     /* digitized RNA sequences (plan 7 version)*/
 
   /* Alternatives to CYK */
   int                do_inside; /* TRUE to use the Inside algorithm instead of CYK */
   int                do_outside;/* TRUE to use the Outside algorithm instead of CYK */
   int                do_check;  /* TRUE to check Inside and Outside probabilities */
+  int                do_post;   /* TRUE to use the Outside algorithm instead of CYK */
+  char            ** postcode;  /* posterior decode array of strings        */
+  char              *apostcode; /* aligned posterior decode array           */
   float           ***alpha;     /* alpha DP matrix for Inside() */
+  float           ***beta;      /* alpha DP matrix for Inside() */
+  float           ***post;      /* alpha DP matrix for Inside() */
+  int j;
   /*********************************************** 
    * Parse command line
    ***********************************************/
@@ -272,6 +281,7 @@ main(int argc, char **argv)
   do_inside   = FALSE;
   do_outside  = FALSE;
   do_check    = FALSE;
+  do_post     = FALSE;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -291,7 +301,8 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--dlev")      == 0) debug_level  = atoi(optarg);
     else if (strcmp(optname, "--time")      == 0) time_flag    = TRUE;
     else if (strcmp(optname, "--inside")    == 0) do_inside    = TRUE;
-    else if (strcmp(optname, "--outside")   == 0) { do_outside   = TRUE; do_check = TRUE; }
+    else if (strcmp(optname, "--outside")   == 0) { do_outside = TRUE; do_check = TRUE; }
+    else if (strcmp(optname, "--post")      == 0) do_post    = TRUE;
     else if (strcmp(optname, "--hbanded")   == 0) {
       do_hbanded = TRUE; do_small = FALSE; 
       if(hmm_type == NONE) hmm_type = HMM_CP9; 
@@ -319,6 +330,18 @@ main(int argc, char **argv)
     }
   }
 
+  if(do_inside && do_outside)
+    {
+      Die("Please pick either --inside or --outside (--outside will run Inside()\nalso and check to make sure Inside() and Outside() scores agree).\n");
+    }
+
+
+  /* currently not set up for local alignment and posterior decode or outside run */
+  if(do_local && (do_outside || do_post))
+    {
+      Die("Can't do -l and either --post or --outside.\n");
+    }
+
   /* default to HMM banded alignment if --p7 or --cp9 was enabled */
   /*if(hmm_type != NONE)
     {
@@ -328,7 +351,7 @@ main(int argc, char **argv)
   */
 
   if (bdump_level > 3) Die("Highest available --banddump verbosity level is 3\n%s", usage);
-  if (do_apexpand && (!(do_apbanded))) Die("Doesn't make sense to use --bandexpand option with --banded option\n", usage);
+  if (do_apexpand && (!(do_apbanded))) Die("Doesn't make sense to use --apexpand option without --apbanded option\n", usage);
   if (argc - optind != 2) Die("Incorrect number of arguments.\n%s\n", usage);
   cmfile = argv[optind++];
   seqfile = argv[optind++]; 
@@ -447,6 +470,11 @@ main(int argc, char **argv)
   maxsc = -FLT_MAX;
   avgsc = 0;
 
+  if(do_post)
+    {
+      postcode = malloc(sizeof(char *) * nseq);
+    }      
+
   if(do_apbanded || bdump_level > 0)
     {
       safe_windowlen = windowlen * 2;
@@ -492,7 +520,7 @@ main(int argc, char **argv)
     {
       p7tr  = MallocOrDie(sizeof(struct p7trace_s *) * nseq);
       mx  = CreatePlan7Matrix(1, hmm->M, 25, 0);
-      postcode = malloc(sizeof(char *) * nseq);
+      p7postcode = malloc(sizeof(char *) * nseq);
       node_cc_left  = malloc(sizeof(int) * cm->nodes);
       node_cc_right = malloc(sizeof(int) * cm->nodes);
       cc_node_map   = malloc(sizeof(int) * (hmm->M + 1));
@@ -760,8 +788,8 @@ main(int argc, char **argv)
 	  StopwatchStart(watch1);
 	  
 	  /* Uncomment this to assign a postal code (IHH's postprob.c) 
-	  postcode[i] = PostalCode(sqinfo[i].len, posterior, p7tr[i]);
-	  printf("postcode[i]\n%s\n", postcode[i]);
+	     p7postcode[i] = PostalCode(sqinfo[i].len, posterior, p7tr[i]);
+	     printf("p7postcode[i]\n%s\n", p7postcode[i]);
 	  */	  
 
 	  /* Step 2: posteriors -> HMM bands.*/
@@ -894,38 +922,71 @@ main(int argc, char **argv)
       printf("Aligning %s\n", sqinfo[i].name);
       if (do_inside)
 	{
-	  sc = FInside(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
-		       BE_EFFICIENT,	/* memory-saving mode */
-		       NULL, NULL,	/* manage your own matrix, I don't want it */
-		       NULL, NULL,	/* manage your own deckpool, I don't want it */
-		       do_local,        /* TRUE to allow local begins */
-		       alpha);          /* provide alpha matrix */
-	  
+	  if(do_hbanded)
+	    sc = FInside_b_jd_me(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
+				 BE_PARANOID,	/* non memory-saving mode */
+				 NULL, NULL,	/* manage your own matrix, I don't want it */
+				 NULL, NULL,	/* manage your own deckpool, I don't want it */
+				 do_local,        /* TRUE to allow local begins */
+				 jmin, jmax, hdmin, hdmax); /* j and d bands */
+	  else
+	    sc = FInside(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
+			 BE_EFFICIENT,	/* memory-saving mode */
+			 NULL, NULL,	/* manage your own matrix, I don't want it */
+			 NULL, NULL,	/* manage your own deckpool, I don't want it */
+			 do_local);       /* TRUE to allow local begins */
 	}
       else if(do_outside)
 	{	
-	  alpha = MallocOrDie(sizeof(float **) * (cm->M+1));
-	  for (v = 0; v < cm->M+1; v++) alpha[v] = NULL;
-	  sc = FInside(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
-		       BE_PARANOID,	/* save full alpha so we can run outside */
-		       alpha, &alpha,	/* fill alpha, and return it, needed for FOutside() */
-		       NULL, NULL,	/* manage your own deckpool, I don't want it */
-		       do_local);       /* TRUE to allow local begins */
-	  //printf("\n\nprinting alpha matrix after inside\n\n");
-	  //debug_print_alpha(alpha, cm, sqinfo[i].len);
-	  //printf("\n\ndone printing alpha matrix after inside\n\n");
-	  sc = FOutside(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
-			BE_PARANOID,	/* save full beta */
-			NULL, NULL,	/* manage your own matrix, I don't want it */
-			NULL, NULL,	/* manage your own deckpool, I don't want it */
-			do_local,       /* TRUE to allow local begins */
-			alpha,          /* alpha matrix from FInside() */
-			do_check        /* TRUE to check Outside probs agree with Inside */
-			);         
-	  /* free alpha */
-	  for (v = 0; v <= (cm->M-1); v++)
-	    if (alpha[v] != NULL) alpha[v] = NULL;
-	  free(alpha);
+	  if(do_hbanded)
+	    {
+	      /*TEMP FOR DEBUGGING */
+	      /*	      for(v = 0; v< cm->M; v++)
+		{
+		  jmin[v] = 0;
+		  jmax[v] = sqinfo[i].len;
+		  hdmin[v] = realloc(hdmin[v], sizeof(int) * (jmax[v] - jmin[v] + 1));
+		  hdmax[v] = realloc(hdmax[v], sizeof(int) * (jmax[v] - jmin[v] + 1));
+		  for(j = 0; j <= sqinfo[i].len; j++)
+		    {
+		      hdmin[v][j] = 0;
+		      hdmax[v][j] = j;
+		    }
+		}
+	      */	  
+	      sc = FInside_b_jd_me(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
+				   BE_PARANOID,	/* save full alpha so we can run outside */
+				   NULL, &alpha,	/* fill alpha, and return it, needed for FOutside() */
+				   NULL, NULL,	/* manage your own deckpool, I don't want it */
+				   do_local,        /* TRUE to allow local begins */
+				   jmin, jmax, hdmin, hdmax); /* j and d bands */
+	      /*do_check = TRUE;*/
+	      sc = FOutside_b_jd_me(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
+				    BE_PARANOID,	/* save full beta */
+				    NULL, NULL,	/* manage your own matrix, I don't want it */
+				    NULL, NULL,	/* manage your own deckpool, I don't want it */
+				    do_local,       /* TRUE to allow local begins */
+				    alpha,          /* alpha matrix from FInside_b_jd_me() */
+				    NULL,           /* don't save alpha */
+				    do_check,       /* TRUE to check Outside probs agree with Inside */
+				    jmin, jmax, hdmin, hdmax); /* j and d bands */
+	    }
+	  else
+	    {
+	      sc = FInside(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
+			   BE_PARANOID,	/* save full alpha so we can run outside */
+			   NULL, &alpha,	/* fill alpha, and return it, needed for FOutside() */
+			   NULL, NULL,	/* manage your own deckpool, I don't want it */
+			   do_local);       /* TRUE to allow local begins */
+	      sc = FOutside(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
+			    BE_PARANOID,	/* save full beta */
+			    NULL, NULL,	/* manage your own matrix, I don't want it */
+			    NULL, NULL,	/* manage your own deckpool, I don't want it */
+			    do_local,       /* TRUE to allow local begins */
+			    alpha,          /* alpha matrix from FInside() */
+			    NULL,           /* don't save alpha */
+			    do_check);      /* TRUE to check Outside probs agree with Inside */
+	    }
 	}
       else if (do_small) 
 	{
@@ -975,7 +1036,7 @@ main(int argc, char **argv)
       else if(do_hbanded)
 	{
 	  sc = CYKInside_b_jd(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, &(tr[i]), jmin, jmax,
-			      hdmin, hdmax, safe_hdmin, safe_hdmax);
+	    hdmin, hdmax, safe_hdmin, safe_hdmax);
 	  if(bdump_level > 0)
 	    banded_trace_info_dump(cm, tr[i], safe_hdmin, safe_hdmax, bdump_level);
 	}
@@ -991,6 +1052,78 @@ main(int argc, char **argv)
 	      banded_trace_info_dump(cm, tr[i], dmin, dmax, bdump_level);
 	    }
 	}
+      if(do_post) /* Do Inside() and Outside() runs and use alpha and beta to get posteriors */
+	{	
+	  /*alpha = MallocOrDie(sizeof(float **) * (cm->M));
+	  beta  = MallocOrDie(sizeof(float **) * (cm->M+1));
+	  */
+	  post  = MallocOrDie(sizeof(float **) * (cm->M+1));
+	  /*
+	  for (v = 0; v < cm->M; v++) alpha[v] = NULL;
+	  for (v = 0; v < cm->M+1; v++) beta[v] = NULL;
+	  */
+	  if(do_hbanded)
+	    {
+	      for (v = 0; v < cm->M; v++)
+		{
+		  post[v] = NULL;
+		  post[v] = alloc_jdbanded_vjd_deck(sqinfo[i].len, 1, sqinfo[i].len, jmin[v], jmax[v], hdmin[v], hdmax[v]);
+		}
+	      post[cm->M] = NULL;
+	      post[cm->M] = alloc_vjd_deck(sqinfo[i].len, 1, sqinfo[i].len);
+	      sc = FInside_b_jd_me(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
+				   BE_PARANOID,	/* save full alpha so we can run outside */
+				   NULL, &alpha,	/* fill alpha, and return it, needed for FOutside() */
+				   NULL, NULL,	/* manage your own deckpool, I don't want it */
+				   do_local,       /* TRUE to allow local begins */
+				   jmin, jmax, hdmin, hdmax); /* j and d bands */
+	      sc = FOutside_b_jd_me(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
+				    BE_PARANOID,	/* save full beta */
+				    NULL, &beta,	/* fill beta, and return it, needed for CMPosterior() */
+				    NULL, NULL,	/* manage your own deckpool, I don't want it */
+				    do_local,       /* TRUE to allow local begins */
+				    alpha, &alpha,  /* alpha matrix from FInside(), and save it for CMPosterior*/
+				    do_check,      /* TRUE to check Outside probs agree with Inside */
+				    jmin, jmax, hdmin, hdmax); /* j and d bands */
+	      CMPosterior_b_jd_me(sqinfo[i].len, cm, alpha, NULL, beta, NULL, post, &post,
+				    jmin, jmax, hdmin, hdmax);
+	      postcode[i] = CMPostalCode_b_jd_me(cm, sqinfo[i].len, post, tr[i],
+						 jmin, jmax, hdmin, hdmax);
+	    }
+	  else
+	    {
+	      for (v = 0; v < cm->M+1; v++)
+		{
+		  post[v] = NULL;
+		  post[v] = alloc_vjd_deck(sqinfo[i].len, 1, sqinfo[i].len);
+		}
+	      sc = FInside(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
+			   BE_PARANOID,	/* save full alpha so we can run outside */
+			   NULL, &alpha,	/* fill alpha, and return it, needed for FOutside() */
+			   NULL, NULL,	/* manage your own deckpool, I don't want it */
+			   do_local);       /* TRUE to allow local begins */
+	      sc = FOutside(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
+			    BE_PARANOID,	/* save full beta */
+			    NULL, &beta,	/* fill beta, and return it, needed for CMPosterior() */
+			    NULL, NULL,	/* manage your own deckpool, I don't want it */
+			    do_local,       /* TRUE to allow local begins */
+			    alpha, &alpha,  /* alpha matrix from FInside(), and save it for CMPosterior*/
+			    do_check);      /* TRUE to check Outside probs agree with Inside */
+	      CMPosterior(sqinfo[i].len, cm, alpha, NULL, beta, NULL, post, &post);
+	      if(do_check)
+		CMCheckPosterior(sqinfo[i].len, cm, post);
+	      postcode[i] = CMPostalCode(cm, sqinfo[i].len, post, tr[i]);
+	    }
+
+	  /* free post */
+	  if(post != NULL)
+	    {
+	      for (v = 0; v <= (cm->M); v++)
+		if (post[v] != NULL) { free_vjd_deck(post[v], 1, sqinfo[i].len); post[v] = NULL;}
+	      free(post);
+	    }
+	}
+
       avgsc += sc;
       if (sc > maxsc) maxsc = sc;
       if (sc < minsc) minsc = sc;
@@ -1031,6 +1164,19 @@ main(int argc, char **argv)
   if(!(do_inside || do_outside))
     {
       msa = Parsetrees2Alignment(cm, dsq, sqinfo, NULL, tr, nseq, do_full);
+      
+      if(do_post)
+	{
+	  for (i = 0; i < nseq; i++)
+	    {
+	      MakeAlignedString(msa->aseq[i], msa->alen, postcode[i], &apostcode); 
+	      MSAAppendGR(msa, "POST", i, apostcode);
+	      free(apostcode);
+	      free(postcode[i]);
+	    }
+	  free(postcode);
+	}
+
       /*****************************************************************
        * Output the alignment.
        *****************************************************************/
@@ -1106,6 +1252,7 @@ main(int argc, char **argv)
 	    }
 	  */
 	}
+      free(p7dsq);
       free(isum_pn_m);
       free(isum_pn_i);
       free(isum_pn_d);
@@ -1127,13 +1274,13 @@ main(int argc, char **argv)
   if(hmm_type == HMM_P7)
     {
       free(p7tr);
-      free(p7dsq);
       free(postcode);
       FreePlan7(hmm);
       FreePlan7Matrix(mx);
     }      
   if(hmm_type == HMM_CP9)
     {
+      FreeCPlan9Matrix(cp9_mx);
       FreeCPlan9(cp9_hmm);
     }
 
