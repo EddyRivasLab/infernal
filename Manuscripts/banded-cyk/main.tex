@@ -43,108 +43,92 @@
 
 \begin{document}
 
-\title{Improved Speed and Sensitivity in RNA Covariance Model Searches}
-% using banded dynamic programming}
+\title{Query-Dependent Banding (QDB) for Faster RNA Similarity Searches}
 \author{Eric P. Nawrocki and Sean R. Eddy\\
 Howard Hughes Medical Institute \& Department of Genetics, \\
 Washington University School of Medicine \\
-Saint Louis, Missouri 63110 USA \\
+Saint Louis, Missouri 63108 USA \\
 eddy@genetics.wustl.edu}  
 \date{\today}
 \maketitle
 
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%Sean's original abstract
-\begin{comment}
-\abstract{\textbf{Background:} Covariance models (CMs) are probabilistic models
-of RNA secondary structure; a special case of profile stochastic
-context-free grammars (profile SCFGs), analogous to profile hidden
-Markov models of linear sequence. The dynamic programming algorithm
-for searching a database of $L$ residues with a query RNA structure of
-$N$ residues is $O(N^3 L)$ in time. Poor search speed is a major
-factor limiting practical applications of CM methods.
 
-\textbf{Results:} I describe a method for precalculating
-probabilistic bounds on which cells of the CYK dynamic programming matrix
-need to be calculated. These bounds are calculated 
-\emph{a priori}, independent of the target database sequence.
-
-\textbf{Conclusions:}
-}
-\end{comment}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-\abstract{\textbf{Background:} Covariance models (CMs) are probabilistic models
-of RNA secondary structure; a special case of profile stochastic
-context-free grammars (profile SCFGs), analogous to profile hidden
-Markov models of linear sequence. 
-The dynamic programming algorithm for searching a database of $L$
-residues with a query RNA structure of $N$ residues is $O(N^3
-L)$. Poor search speed is a major factor limiting practical
-applications of CM methods.
-%Also, several effective strategies for
-%increasing the sensitivity of profile HMMs have yet to be applied to
-%CMs. 
+\begin{abstract}
 
-\textbf{Methodology/Principal Findings:} 
-To accelerate CM database search, we describe a method for precalculating
-probabilistic bounds on which cells of the CYK dynamic programming
-matrix need to be calculated. These bounds are calculated  \emph{a
-  priori}, independent of the target database sequence. We also describe
-the estimation of emission and transition prior probabilities and an
-entropy weighting strategy that make CMs more sensitive for homology
-detection. A new release of the \textsc{Infernal} software package,
-version 0.70, which implements the techniques and algorithms discussed
-here, is now freely available from our lab's website.
+When searching sequence databases for similarity to an RNA, one wants
+to score a combination of primary sequence and RNA secondary structure
+conservation.  Covariance models (CMs) are probabilistic models
+well-suited for such RNA similarity search applications, but the
+computational complexity of CMs has limited their practical
+application. The standard CM dynamic programming algorithm for
+aligning an RNA of $N$ residues to a database of length $L$ residues
+scales as $O(N^3 L)$, requiring many hours of CPU time for a typical
+search. Here we describe an acceleration method we call
+\emph{query-dependent banding} (QDB), which uses the probabilistic
+model of the query to precalculate regions of the dynamic programming
+lattice that have negligible probability and thus can be ignored,
+independent of the target database sequences. We have implemented QDB
+in the freely available \textsc{Infernal} software package. Combined
+with other recent improvements to \textsc{Infernal}, including
+informative mixture Dirichlet priors on model parameters, benchmarks
+show significant increases in sensitivity and specificity from
+improved parameterization, and 3-5x average speedup from the use of
+QDB.
+
+\end{abstract}
 
 
-\textbf{Conclusions/Significance:} Preliminary results on an Rfam
-based benchmark show that CMs are now significantly more sensitive and
-a speed-up of 3-5X on average is achievable with the banded CYK
-algorithm, without an appreciable cost in performance. 
-}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 \section{Introduction}
 
-Non-coding RNA (ncRNA) genes encode functional RNA molecules that are not
-translated to proteins. Our understanding of the importance and
-breadth of the roles of ncRNAs in the
-cell continues to grow through both discovery of novel families and
-further study of known families, including comparative sequence analysis of
-homologs across species. But ncRNA genes are difficult to
-find relative to protein coding genes. Their small size and
-immunity to frameshift mutations make them hard to
-detect by mutational genetic screens, and they do not lie within open
-reading frames hiding them from traditional computational
-gene-finders. However, many RNA families exhibit conservation at the
-structural and sequence level, and computational analyses that
-consider both of these types of information have been
-informative. These efforts have mainly focused
-on three fundamental problems: finding novel RNAs, folding RNAs of unknown
-structure, and finding homologous RNAs.
+Many functional RNAs -- ranging from cis-acting RNA structures
+involved in posttranscriptional regulation like riboswitches to
+independent noncoding RNA genes like micro RNAs -- conserve a
+base-paired secondary structure. RNA secondary structure conservation
+induces strong long-distance pairwise correlations in RNA sequence,
+because preservation of complementary base-pairing requires correlated
+base substitutions in the sequence. When performing database
+similarity searches to identify homologous RNAs, it would be desirable
+for search programs to include scoring terms for pairwise secondary
+structure correlations rather than aligning and scoring by linear
+sequence comparison alone. This is the \emph{RNA structural similarity
+search} problem: given an RNA query (either a single sequence, or a
+multiple alignment) of known secondary structure, identify homologues
+in a database by sequence and secondary structural similarity.
 
-\begin{comment}
-Many RNA families exhibit conservation at the structural and
-sequence level. Consequently, computational analyses of RNA families
-benefit from consideration of both types of
-conservation. These computational efforts have mainly focused on a few
+Many approaches for RNA structural similarity search have been
+described, including alignment methods, rule-based expert systems, and
+pattern-matching approaches \cite{Macke01,Gautheret01}. Many use
+\emph{ad hoc} scoring systems to combine sequence and structure, and
+therefore lack the generality and the formal statistical foundation
+that is \emph{de rigueur} in primary sequence search tools like BLAST, 
+FASTA, or HMMER, which use (or at least implicitly approximate) a
+class of probabilistic models called \emph{hidden Markov models}
+(HMMs) \cite{Durbin98}. HMMs are effectively linear sequence models
+and cannot usefully model RNA structure, but a related and somewhat
+more complex class of probabilistic model, the so-called
+\emph{stochastic context-free grammars} (SCFGs), readily captures both
+primary sequence and canonical RNA secondary structure conservation
+\cite{Sakakibara94c,Durbin98}. Just as HMMs are useful for many
+different linear sequence modeling applications, including
+genefinding, multiple alignment, motif finding, and similarity search,
+SCFGs are a general toolkit for probabilistic RNA sequence/structure
+analysis, with applications including secondary structure prediction
+and genefinding.
 
-RNA genes pose
-a unique problem to computational biologists 
+A particular SCFG architecture called \emph{covariance models} (CMs)
+has been developed specifically for the RNA similarity search problem;
+CMs are profile SCFGs, analogous to the use of profile HMMs in profile
+sequence analysis \cite{Eddy94,Eddy02b}.
 
-%The known cellular roles of ncRNAs 
-%continues to expand with the discovery of new families.
-Discoveries of novel RNA gene families
-continue to expand our understanding of their important regulatory and
-catalytic roles in the cell, 
 
-The number of known RNA families and motifs continues to grow. Many of
-these families exhibit conservation at the structural and sequence
-level. Consequently, computational analyses of RNA families benefit
-from consideration of both secondary structure and primary sequence 
-conservation \cite{Dandekar95, Eddy02}.
-\end{comment}
+
 
 Of current interest is the third problem: RNA homology detection in
 genomic sequence. Given a consensus structure and known members of a family,
@@ -159,7 +143,7 @@ specialized programs exist to search for tRNAs \cite{LoweEddy97}, snoRNAs
 generalizable, and were built using expert knowledge of the family
 being modeled.  In contrast, the second class of tools are general,
 designed to work for any family. These include pattern description
-methods \cite{Macke01,  Gautheret01}, as well as probabilistic models
+methods \cite{Macke01,Gautheret01}, as well as probabilistic models
 called profile stochastic context-free grammars (SCFGs) \cite{Eddy94,
  Sakakibara94c}. 
 

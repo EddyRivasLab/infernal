@@ -190,7 +190,7 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
        * (The heart of the algorithm is right here.)
        */
       if (cm->sttype[v] == B_st) 
-	{
+	{			/* a bifurcation state: */
 	  pdf = 0.;
 	  for (n = 0; n <= W; n++)
 	    {

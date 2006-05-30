@@ -190,18 +190,18 @@ A release goes on a stable branch.
        ( cd easel ; svn commit )
 
 14. Convert the branches to tags.
-         svn move https://skynet.wustl.edu:8080/sre/src/infernal/branches/release-0.6\
-                  https://skynet.wustl.edu:8080/sre/src/infernal/tags/0.6\
-                 -m "tagged Infernal 0.6 release"          
-         svn move https://skynet.wustl.edu:8080/sre/src/squid/branches/infernal/0.6\
-                  https://skynet.wustl.edu:8080/sre/src/squid/tags/infernal/0.6\
-                 -m "tagged Infernal 0.6 release"          
-         svn move https://skynet.wustl.edu:8080/sre/src/ssdk/branches/infernal/0.6\
-                  https://skynet.wustl.edu:8080/sre/src/ssdk/tags/infernal/0.6\
-                 -m "tagged Infernal 0.6 release"          
-         svn move https://skynet.wustl.edu:8080/sre/easel/branches/infernal/0.6\
-	          https://skynet.wustl.edu:8080/sre/easel/tags/infernal/0.6\
-                 -m "tagged Infernal 0.6 release"          
+         svn move https://skynet.wustl.edu:8080/sre/src/infernal/branches/release-0.7\
+                  https://skynet.wustl.edu:8080/sre/src/infernal/tags/0.7\
+                 -m "tagged Infernal 0.7 release"          
+         svn move https://skynet.wustl.edu:8080/sre/src/squid/branches/infernal/0.7\
+                  https://skynet.wustl.edu:8080/sre/src/squid/tags/infernal/0.7\
+                 -m "tagged Infernal 0.7 release"          
+         svn move https://skynet.wustl.edu:8080/sre/src/ssdk/branches/infernal/0.7\
+                  https://skynet.wustl.edu:8080/sre/src/ssdk/tags/infernal/0.7\
+                 -m "tagged Infernal 0.7 release"          
+         svn move https://skynet.wustl.edu:8080/sre/easel/branches/infernal/0.7\
+	          https://skynet.wustl.edu:8080/sre/easel/tags/infernal/0.7\
+                 -m "tagged Infernal 0.7 release"          
      
    First time only creation of Infernal release subdir for library branches:
          svn mkdir https://skynet.wustl.edu:8080/sre/easel/tags/infernal\
@@ -217,3 +217,4 @@ A release goes on a stable branch.
 0.54 - SRE, Sun Jan  5 18:17:55 2003
 0.55 - SRE, Wed Apr  2 18:12:23 2003   r875
 0.6  - SRE, Tue Nov  1 17:13:00 2005   r1477  Easel:r72
+0.7  - SRE, Tue Dec 13 14:54:30 2005   r1534  Easel:r84
