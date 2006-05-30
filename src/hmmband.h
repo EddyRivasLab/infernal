@@ -51,7 +51,8 @@ extern void P7_last_and_first_hmm_delete_state_hack(int M,  int *pn_min_m, int *
 
 /* Functions for getting posterior probabilities from the HMMs 
  * based on Ian Holmes' hmmer/src/postprob.c functions 
- * P7Forward() and P7Backward() are in HMMER's postprob.c*/
+ * P7Forward() is in HMMER's core_algorithms.c 
+ * and P7Backward() is in HMMER's postprob.c*/
 extern void  P7FullPosterior(int L, struct plan7_s *hmm,
 			     struct dpmatrix_s *forward,
 			     struct dpmatrix_s *backward,

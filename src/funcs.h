@@ -157,6 +157,8 @@ extern float CYKDivideAndConquer_b(CM_t *cm, char *dsq, int L, int r, int i0, in
 				   int *dmin, int *dmax);
 extern float CYKInside_b(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, 
 			 int *dmin, int *dmax);
+extern void debug_print_bands(CM_t *cm, int *dmin, int *dmax);
+
 
 /* The memory management routines.
  */
@@ -212,14 +214,15 @@ extern void CPlan9SetNullModel(struct cplan9_s *hmm, float null[HMMERMAXABET], f
 extern void CP9Logoddsify(struct cplan9_s *hmm);
 extern void CPlan9Rescale(struct cplan9_s *hmm, float scale);
 extern void CPlan9Renormalize(struct cplan9_s *hmm);
-
 extern struct cp9_dpmatrix_s *AllocCPlan9Matrix(int rows, int M, int ***mmx, 
 						int ***imx, int ***dmx, int ***emx);
 extern float SizeCPlan9Matrix(int rows, int M);
-extern void FreeCPlan9Matrix(struct cp9_dpmatrix_s *mx);
+extern void  FreeCPlan9Matrix(struct cp9_dpmatrix_s *mx);
 extern struct cp9_dpmatrix_s *CreateCPlan9Matrix(int N, int M, int padN, int padM);
-extern void ResizeCPlan9Matrix(struct cp9_dpmatrix_s *mx, int N, int M, 
+extern void  ResizeCPlan9Matrix(struct cp9_dpmatrix_s *mx, int N, int M, 
 			       int ***mmx, int ***imx, int ***dmx, int ***emx);
+extern void CPlan9SWConfig(struct cplan9_s *hmm, float pentry, float pexit);
+extern void CPlan9RenormalizeExits(struct cplan9_s *hmm);
 
 /* from cp9_hmmio.c 
  * CM Plan9 HMM Input/output (saving/reading)

@@ -61,6 +61,7 @@ static char experts[] = "\
    --inside      : don't align; return scores from the Inside algorithm \n\
    --outside     : don't align; return scores from the Outside algorithm\n\
    --post        : align with CYK and append posterior probabilities\n\
+   --checkpost   : check that posteriors are correctly calc'ed\n\
 \n\
   * HMM banded alignment related options:\n\
    --hbanded     : use exptl HMM banded CYK aln algorithm (df: builds CP9 HMM) \n\
@@ -100,6 +101,7 @@ static struct opt_s OPTIONS[] = {
   { "--inside",     FALSE, sqdARG_NONE},
   { "--outside",    FALSE, sqdARG_NONE},
   { "--post",       FALSE, sqdARG_NONE},
+  { "--checkpost",  FALSE, sqdARG_NONE},
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -232,6 +234,9 @@ main(int argc, char **argv)
   struct cp9_dpmatrix_s *cp9_fwd;       /* growable DP matrix for forward                       */
   struct cp9_dpmatrix_s *cp9_bck;       /* growable DP matrix for backward                      */
   struct cp9_dpmatrix_s *cp9_posterior; /* growable DP matrix for posterior decode              */
+  float                  swentry;	/* S/W aggregate entry probability       */
+  float                  swexit;        /* S/W aggregate exit probability        */
+
 
   /* Plan 7 */
   HMMFILE           *hmmfp;     /* opened hmmfile for reading              */
@@ -241,7 +246,7 @@ main(int argc, char **argv)
   struct dpmatrix_s *bck;       /* growable DP matrix for backwards        */
   struct dpmatrix_s *posterior; /* growable DP matrix for posterior decode */
   struct p7trace_s **p7tr;      /* traces for aligned sequences            */
-  char             **p7postcode;/* posterior decode array of strings       */
+  /*char             **p7postcode;*//* posterior decode array of strings       */
   unsigned char    **p7dsq;     /* digitized RNA sequences (plan 7 version)*/
 
   /* Alternatives to CYK */
@@ -303,6 +308,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--inside")    == 0) do_inside    = TRUE;
     else if (strcmp(optname, "--outside")   == 0) { do_outside = TRUE; do_check = TRUE; }
     else if (strcmp(optname, "--post")      == 0) do_post    = TRUE;
+    else if (strcmp(optname, "--checkpost") == 0) do_check    = TRUE;
     else if (strcmp(optname, "--hbanded")   == 0) {
       do_hbanded = TRUE; do_small = FALSE; 
       if(hmm_type == NONE) hmm_type = HMM_CP9; 
@@ -337,11 +343,11 @@ main(int argc, char **argv)
 
 
   /* currently not set up for local alignment and posterior decode or outside run */
-  if(do_local && (do_outside || do_post))
+  /*  if(do_local && (do_outside || do_post))
     {
       Die("Can't do -l and either --post or --outside.\n");
     }
-
+  */
   /* default to HMM banded alignment if --p7 or --cp9 was enabled */
   /*if(hmm_type != NONE)
     {
@@ -391,7 +397,6 @@ main(int argc, char **argv)
       printf("Warning: banding with an HMM (--hbanded) and allowing\nlocal alignment (-l). There's no telling what will happen.\n");
     } 
 
-  if (do_local) ConfigLocal(cm, 0.5, 0.5);
   CMLogoddsify(cm);
   /*CMHackInsertScores(cm);*/	/* "TEMPORARY" fix for bad priors */
 
@@ -432,6 +437,7 @@ main(int argc, char **argv)
 	    SetAlphabet(hmmNUCLEIC); /* Set up the hmmer_alphabet global variable */
 	}
     }
+
   /*****************************************************************
    * Input and digitize the unaligned sequences
    *****************************************************************/
@@ -518,9 +524,9 @@ main(int argc, char **argv)
 
   if(hmm_type == HMM_P7)
     {
-      p7tr  = MallocOrDie(sizeof(struct p7trace_s *) * nseq);
+      /*p7tr  = MallocOrDie(sizeof(struct p7trace_s *) * nseq);*/
       mx  = CreatePlan7Matrix(1, hmm->M, 25, 0);
-      p7postcode = malloc(sizeof(char *) * nseq);
+      /*p7postcode = malloc(sizeof(char *) * nseq);*/
       node_cc_left  = malloc(sizeof(int) * cm->nodes);
       node_cc_right = malloc(sizeof(int) * cm->nodes);
       cc_node_map   = malloc(sizeof(int) * (hmm->M + 1));
@@ -631,6 +637,26 @@ main(int argc, char **argv)
 
       StopwatchZero(watch2);
       StopwatchStart(watch2);
+    }
+
+  /* Relocated ConfigLocal() call to here, below the CM Plan 9 construction.
+   * Otherwise its impossible to make a CM Plan 9 HMM from the local CM
+   * that passes the current tests to ensure the HMM is "close enough" to
+   * the CM. 
+   */
+  if (do_local)
+    { 
+      ConfigLocal(cm, 0.5, 0.5);
+      CMLogoddsify(cm);
+      /*CMHackInsertScores(cm);*/	/* "TEMPORARY" fix for bad priors */
+      if(hmm_type == HMM_CP9)
+	{
+	  printf("configuring the CM plan 9 HMM for local alignment.\n");
+	  swentry           = 0.5;
+	  swexit            = 0.5;
+	  CPlan9SWConfig(cp9_hmm, swentry, swexit);
+	  CP9Logoddsify(cp9_hmm);
+	}
     }
 
   /* Allocate data structures for use with HMM banding strategy (either P7 or CP9) */
@@ -787,10 +813,10 @@ main(int argc, char **argv)
 	  StopwatchZero(watch1);
 	  StopwatchStart(watch1);
 	  
-	  /* Uncomment this to assign a postal code (IHH's postprob.c) 
-	     p7postcode[i] = PostalCode(sqinfo[i].len, posterior, p7tr[i]);
-	     printf("p7postcode[i]\n%s\n", p7postcode[i]);
-	  */	  
+	  /* Uncomment this to assign a postal code (IHH's postprob.c) */
+	  /*p7postcode[i] = PostalCode(sqinfo[i].len, posterior, p7tr[i]);
+	  printf("p7postcode[i]\n%s\n", p7postcode[i]);
+	  */
 
 	  /* Step 2: posteriors -> HMM bands.*/
 	  if(!(use_sums))
@@ -804,6 +830,7 @@ main(int argc, char **argv)
 	      /* delete states */
 	      P7_hmm_band_bounds(posterior->dmx, sqinfo[i].len, hmm->M, NULL,
 				 pn_min_d, pn_max_d, (1.-hbandp), HMMDELETE, debug_level);
+
 	    }
 	  else
 	    {
@@ -1111,7 +1138,10 @@ main(int argc, char **argv)
 			    do_check);      /* TRUE to check Outside probs agree with Inside */
 	      CMPosterior(sqinfo[i].len, cm, alpha, NULL, beta, NULL, post, &post);
 	      if(do_check)
-		CMCheckPosterior(sqinfo[i].len, cm, post);
+		{
+		  CMCheckPosterior(sqinfo[i].len, cm, post);
+		  printf("\nPosteriors checked.\n\n");
+		}
 	      postcode[i] = CMPostalCode(cm, sqinfo[i].len, post, tr[i]);
 	    }
 
@@ -1244,13 +1274,12 @@ main(int argc, char **argv)
 	  free(isum_pn_m[i]); 
 	  free(isum_pn_i[i]);
 	  free(isum_pn_d[i]);
-	  /* Uncomment if calc'ing a postcode 
+	  /* Uncomment if calc'ing a postcode */
 	  if(hmm_type == HMM_P7) 
 	    {
-	      P7FreeTrace(p7tr[i]);
-	      free(postcode[i]);
+	      /*P7FreeTrace(p7tr[i]);*/
+	      /*free(p7postcode[i]);*/
 	    }
-	  */
 	}
       free(p7dsq);
       free(isum_pn_m);
@@ -1273,8 +1302,8 @@ main(int argc, char **argv)
     }
   if(hmm_type == HMM_P7)
     {
-      free(p7tr);
-      free(postcode);
+      /*free(p7tr);*/
+      /*free(p7postcode);*/
       FreePlan7(hmm);
       FreePlan7Matrix(mx);
     }      

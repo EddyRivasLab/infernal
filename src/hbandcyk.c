@@ -172,7 +172,7 @@ CYKInside_b_jd(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **
 
   PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, L);
   printf("alignment strategy:CYKInside_b_jd:b:nosmall\n"); 
-  printf("L: %d\n", L);
+  /*  printf("L: %d\n", L);*/
   
   /* Trust, but verify.
    * Check out input parameters.
@@ -2312,11 +2312,16 @@ void
 debug_print_alpha_banded_jd(float ***alpha, CM_t *cm, int L, int *jmin, int *jmax, 
 			    int **hdmin, int **hdmax)
 {
-  int v, j, d, dp, jp;
+  int v, j, d, dp, jp, max_v;
 
   printf("\nPrinting banded alpha matrix :\n");
   printf("************************************\n");
-  for(v = 0; v < cm->M; v++)
+  max_v = cm->M-1;
+  if(cm->flags & CM_LOCAL_BEGIN)
+    {
+      max_v = cm->M;
+    }
+  for(v = 0; v < max_v; v++)
     {
       printf("====================================\n");
       for(j = jmin[v]; j <= jmax[v]; j++)

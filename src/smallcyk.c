@@ -1657,7 +1657,7 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 	      case D_st:
 	      case E_st:
 		if ((sc = beta[v][j][d] + cm->endsc[v] +
-		     (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
+		     (cm->el_selfsc * d)) > beta[cm->M][j][d])
 		  beta[cm->M][j][d] = sc;
 		break;
 	      case B_st:  
@@ -3150,7 +3150,7 @@ free_vji_shadow_matrix(char ***a, int M, int j1, int j0)
  *     including bifurcations. 
  *################################################################*/     
 #if 0
-/* Function: CYOutside()
+/* Function: CYKOutside()
  * Date:     SRE, Mon Aug  7 07:45:37 2000 [St. Louis]
  */
 void
@@ -5198,7 +5198,7 @@ outside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 	      case D_st:
 	      case E_st:
 		if ((sc = beta[v][j][d] + cm->endsc[v] +
-		     (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
+		     (cm->el_selfsc * d)) > beta[cm->M][j][d])
 		  beta[cm->M][j][d] = sc;
 		break;
 	      case B_st:  
@@ -6792,11 +6792,16 @@ debug_print_shadow_banded_deck(int v, void ***shadow, CM_t *cm, int L, int *dmin
 void
 debug_print_alpha_banded(float ***alpha, CM_t *cm, int L, int *dmin, int *dmax)
 {
-  int v, j, d, vdp;
+  int v, j, d, vdp, max_v;
 
   printf("\nPrinting banded alpha matrix :\n");
   printf("************************************\n");
-  for(v = 0; v < cm->M; v++)
+  max_v = cm->M-1;
+  if(cm->flags & CM_LOCAL_BEGIN)
+    {
+      max_v = cm->M;
+    }
+  for(v = 0; v <= max_v; v++)
     {
       printf("====================================\n");
       for(j = 0; j <= L; j++)
@@ -6873,11 +6878,16 @@ debug_print_bands(CM_t *cm, int *dmin, int *dmax)
 void
 debug_print_alpha(float ***alpha, CM_t *cm, int L)
 {
-  int v, j, d;
+  int v, j, d, max_v;
 
   printf("\nPrinting alpha matrix :\n");
   printf("************************************\n");
-  for(v = 0; v < cm->M; v++)
+  max_v = cm->M-1;
+  if(cm->flags & CM_LOCAL_BEGIN)
+    {
+      max_v = cm->M;
+    }
+  for(v = 0; v <= max_v; v++)
     {
       printf("====================================\n");
       for(j = 0; j <= L; j++)

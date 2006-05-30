@@ -40,12 +40,12 @@
  *    hmm->t[0][CTDI]: null
  *    hmm->t[0][CTDD]: null
  *    
- *    t[0..M] are the state transition probs. (t[M] are special,
+ *    t[0..M] are the state transition probs. t[M] are special,
  *    because this node transits to the end (E state). The E state is (sort-of) treated
  *    as match state M+1, as t[M][CTIM] is the transition from I_M to E,
  *    t[M][CTDM] is the transition from D_M to E. However, t[M][CTMM] is always 0.0,
  *    the transition from M_M to E is end[hmm->M];
- *    t[M][CTMD], t[M][CTDD], t[M][CTDI] are set as 0.0).
+ *    t[M][CTMD], t[M][CTDD], t[M][CTDI] are set as 0.0.
  *    
  *    mat[1..M] are match emission probs.
  *    ins[0..M] are insert emission probs.  (ins[0] is state N emission probs)

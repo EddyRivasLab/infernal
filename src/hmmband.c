@@ -1404,10 +1404,10 @@ CP9Forward(unsigned char *dsq, int L, struct cplan9_s *hmm, struct cp9_dpmatrix_
       emx[0][i] = ILogsum(emx[0][i], dmx[i][hmm->M] + hmm->tsc[CTDM][hmm->M]); 
       emx[0][i] = ILogsum(emx[0][i], imx[i][hmm->M] + hmm->tsc[CTIM][hmm->M]); 
 		       /* transition from D_M -> end */
-      /*printf("F emx[%d]: %d\n", i, emx[i]);*/
+      /*printf("F emx[%d]: %d\n", i, emx[0][i]);*/
     }		
   sc = emx[0][L];
-  /*printf("F emx[%d]: %d\n", i, emx[i]);*/
+  /*printf("F emx[%d]: %d\n", i, emx[0][L]);*/
   if (ret_mx != NULL) *ret_mx = mx;
   else                FreeCPlan9Matrix(mx);
 
@@ -1949,8 +1949,8 @@ CP9_hmm_band_bounds(int **post, int L, int M, int *isum_pn, int *pn_min, int *pn
       if(isum_pn != NULL) 
 	curr_log_p_side += isum_pn[k]; /* if we use sums strategy, normalize
 					* so total prob of entering k = 1. */
-      argmax_pn = 0;
-      max_post = post[0][k];
+      argmax_pn = 1;
+      max_post = post[1][k];
       pn_min[k] = 1;
       pn_max[k] = L-1;
       lmass_exc = post[(pn_min[k]-1)][k];
@@ -2062,7 +2062,7 @@ P7_hmm_band_bounds(int **post, int L, int M, int *isum_pn, int *pn_min, int *pn_
       if(isum_pn != NULL) 
 	curr_log_p_side += isum_pn[k]; /* if we use sums strategy, normalize
 					* so total prob of entering k = 1. */
-      argmax_pn = 0;
+      argmax_pn = 1;
       max_post = post[1][k];
       pn_min[k] = 2;
       pn_max[k] = L-1;
@@ -3855,8 +3855,6 @@ simple_hmm2ij_bands(CM_t *cm, int ncc, int *node_cc_left, int *node_cc_right,
 
   int v;
   int n;
-  int k, k0, k1;
-  int ks, ks0, ks1;
   int prev_imin, prev_imax;
   int prev_jmin, prev_jmax;
   int is_left, is_right;

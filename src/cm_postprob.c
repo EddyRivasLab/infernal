@@ -140,6 +140,24 @@ FInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
   touch = MallocOrDie(sizeof(int) * cm->M);
   for (v = 0; v <= (cm->M-1); v++) touch[v] = cm->pnum[v];
 
+  /* EPN: now that the EL self loop has a transition score, its
+   *      necessary to keep track of the alpha EL deck (alpha[cm->M])
+   */
+  if(cm->flags & CM_LOCAL_BEGIN)
+    {
+      if (! deckpool_pop(dpool, &(alpha[cm->M]))) 
+	alpha[cm->M] = alloc_vjd_deck(L, i0, j0);
+      for (jp = 0; jp <= W; jp++) {
+	j = i0-1+jp;
+	alpha[cm->M][j][0] = 0.;
+	/*alpha[cm->M][j][0] = IMPOSSIBLE;*/
+	for (d = 1; d <= jp; d++)
+	  {
+	    alpha[cm->M][j][d] = (cm->el_selfsc * (d));
+	  }
+      }
+    }
+
   /* Main recursion
    */
   for (v = (cm->M - 1); v >= 0; v--) 
@@ -593,7 +611,7 @@ FOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 		else
 		  escore = DegeneratePairScore(cm->esc[v], dsq[i-1], dsq[j+1]);
 		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][j+1][d+2] + cm->endsc[v] 
-							       + (cm->el_selfsc * d) + escore));
+								+ escore));
 		break;
 	      case ML_st:
 	      case IL_st:
@@ -603,7 +621,7 @@ FOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 		else
 		  escore = DegenerateSingletScore(cm->esc[v], dsq[i-1]);
 		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][j][d+1] + cm->endsc[v] 
-							       + (cm->el_selfsc * d) + escore));
+								+ escore));
 		break;
 	      case MR_st:
 	      case IR_st:
@@ -612,15 +630,15 @@ FOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 		  escore = cm->esc[v][(int) dsq[j+1]];
 		else
 		  escore = DegenerateSingletScore(cm->esc[v], dsq[j+1]);
-		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][j+1][d+1] + cm->endsc[v] 
-							       + (cm->el_selfsc * d) + escore));
+		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][j+1][d+1] + cm->endsc[v]
+								+ escore));
 		break;
 	      case S_st:
 	      case D_st:
 	      case E_st:
-		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][j][d] + cm->endsc[v] 
-							       + (cm->el_selfsc * d) + escore));
+		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][j][d] + cm->endsc[v]));
 		break;
+
 	      case B_st:  
 	      default: Die("bogus parent state %d\n", cm->sttype[v]);
 		/* note that although B is a valid vend for a segment we'd do
@@ -648,7 +666,8 @@ FOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
       }
     } /* end loop over decks v. */
 
-  /* EPN left the below SRE block out */
+  /* EPN this code block is not superfluous for Inside() */
+  /*     below are SRE's notes from a CYK inside() function */
   /*#if 0*/
   /* SRE: this code is superfluous, yes??? */
   /* Deal with last step needed for local alignment 
@@ -659,9 +678,8 @@ FOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
     for (jp = W; jp > 0; jp--) { /* careful w/ boundary here */
       j = i0-1+jp;
       for (d = jp-1; d >= 0; d--) /* careful w/ boundary here */
-	/*if ((sc = beta[cm->M][j][d+1] - cm->el_selfsc) > beta[cm->M][j][d])*/
-	if ((sc = beta[cm->M][j][d+1]) > beta[cm->M][j][d])
-	  beta[cm->M][j][d] = sc;
+	beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[cm->M][j][d+1]
+							+ cm->el_selfsc));
     }
   }
   /*#endif*/
@@ -712,10 +730,12 @@ FOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 
     }
 
-  /* Calculate P(S|M) / P(S|R) given only the beta matrix as follows:
+  /* IF not in local mode, we can calculate P(S|M) / P(S|R) given only the 
+   * beta matrix as follows:
    * 
-   * IF local ends are off, we know each parse MUST visit each END_E state,
-   * we pick final END_E state state cm->M-1 (though any END_E could be used here):
+   * IF local ends are off, we know each parse MUST visit each END_E state with 
+   * d = 0.
+   * We pick final END_E state state cm->M-1 (though any END_E could be used here):
    *
    * Sum_j=0 to L (alpha[M-1][j][0] * beta[M-1][j][0]) = P(S|M) / P(S|R)
    *
@@ -724,40 +744,26 @@ FOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
    * therefore: 
    * Sum_j=0 to L (beta[M-1][j][0]) = P(S|M) / P(S|R)
    * 
-   * IF local ends are on, each parse MUST visit either each END_E state or
-   * some combination of END_E states and the EL state. Same idea as above,
-   * be we consider states cm->M and cm->M-1. 
-   * 
-   * Sum_j=0 to L (beta[M-1][j][0]) + Sum_j=0 to L (beta[M][j][0] = P(S|M) /  P(S|R)
+   * IF local ends are on, each parse MUST visit either each END_E state with d=0
+   * or the EL state but d can vary, so we can't use this test (believe me I tried
+   * to get a similar test working, but I'm convinced you need alpha to get P(S|M)
+   * in local mode).
    */
-  return_sc = IMPOSSIBLE;
-  for (jp = 0; jp <= W; jp++) 
-    { 
-      j = i0-1+jp;
-      /* printf("\talpha[%3d][%3d][%3d]: %5.2f | beta[%3d][%3d][%3d]: %5.2f\n", (cm->M-1), (j), 0, alpha[(cm->M-1)][j][0], (cm->M-1), (j), 0, beta[(cm->M-1)][j][0]);*/
-      return_sc = LogSum2(return_sc, (beta[cm->M-1][j][0]));
-      if (cm->flags & CM_LOCAL_END)
-	{
-	  printf("\tbeta[%3d][%3d][%3d]: %5.2f\n", (cm->M), (j), 0, beta[(cm->M)][j][0]);
-	  return_sc = LogSum2(return_sc, (beta[cm->M][j][0]));
+
+  if(!(cm->flags & CM_LOCAL_END))
+    {
+      return_sc = IMPOSSIBLE;
+      for (jp = 0; jp <= W; jp++) 
+	{ 
+	  j = i0-1+jp;
+	  /* printf("\talpha[%3d][%3d][%3d]: %5.2f | beta[%3d][%3d][%3d]: %5.2f\n", (cm->M-1), (j), 0, alpha[(cm->M-1)][j][0], (cm->M-1), (j), 0, beta[(cm->M-1)][j][0]);*/
+	  return_sc = LogSum2(return_sc, (beta[cm->M-1][j][0]));
 	}
     }
-  /*  for (jp = 0; jp <= W; jp++) 
-    { 
-      j = i0-1+jp;
-      printf("------------------------------------\n");
-      for(d = 0; d <= j; d++)
-	{
-	  printf("beta[%2d][%2d][%2d] : %6.2f\n", cm->M, j, d, beta[cm->M][j][d]);
-	}
+  else /* return_sc = P(S|M) / P(S|R) from Inside() */
+    {
+      return_sc = alpha[0][j0][W];
     }
-  printf("------------------------------------\n");
-  */
-
-  /* printf("        inside score: %10.2f\n", alpha[0][j0][W]);
-     printf("       outside score: %10.2f\n", return_sc);
-  */
-
   /* If the caller doesn't want the beta matrix, free it.
    * (though it would be *stupid* for the caller not to want the
    * matrix in the current implementation...)
@@ -799,7 +805,10 @@ FOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
   }
   free(touch);
 
-  printf("***returning from FOutside() sc : %f\n", return_sc);
+  if(!(cm->flags & CM_LOCAL_END))
+    printf("***returning from FOutside() sc : %f\n", return_sc);
+  else
+    printf("***returning from FOutside() sc : %f (LOCAL mode; sc is from Inside)\n", return_sc);
   return return_sc;
 }
 
@@ -851,35 +860,31 @@ CMPosterior(int L, CM_t *cm, float ***alpha, float ****ret_alpha, float ***beta,
   int   v, j, d;
   float sc;
   float  **end;         /* used for freeing alpha b/c we re-use the end deck. */
-
+  int vmax;
   sc = alpha[0][L][L];
   
-  /* If local ends are on, start with the EL state (cm->M) for which 
-   * only beta has a valid deck, alpha[cm->M] deck was never initialized. 
+  /* If local ends are on, start with the EL state (cm->M), otherwise
+   * its not a valid deck.
    */
-  if (cm->flags & CM_LOCAL_END) 
-    {
-      for (j = 0; j <= L; j++) 
-	for (d = 0; d <= j; d++)
-	  {
-	    /*printf("v: %3d | j: %3d | d: %3d | beta : %5.2f\n", v, j, d, beta[v][j][d]);*/
-	    post[cm->M][j][d] = beta[cm->M][j][d] - sc;
-	  }  
-    }
+  vmax = cm->M-1;
+  if (cm->flags & CM_LOCAL_END) vmax = cm->M;
 
-  for (v = (cm->M-1); v >= 0; v--) 
+  for (v = vmax; v >= 0; v--) 
     for (j = 0; j <= L; j++) 
       for (d = 0; d <= j; d++)
 	{
-	  /*printf("v: %3d | j: %3d | d: %3d | alpha: %5.2f | beta: %5.2f\n", v, j, d, alpha[v][j][d], beta[v][j][d]);*/
 	  post[v][j][d] = alpha[v][j][d] + beta[v][j][d] - sc;
-	}  
-
+	  if(v == vmax)
+	    {
+	      /*printf("v: %3d | j: %3d | d: %3d | alpha: %5.2f | beta: %5.2f\n", v, j, d, alpha[v][j][d], beta[v][j][d]);*/
+	      /*printf("post[%d][%d][%d]: %f\n", cm->M, j, d, post[cm->M][j][d]);*/
+	    }
+	}
   /* If the caller doesn't want the matrix, free it and free the decks in the pool
    * Else, pass it back to him.
    */
   if (ret_alpha == NULL) {
-    for (v = 0; v <= (cm->M-1); v++) /* be careful of our reuse of the end deck -- free it only once */
+    for (v = 0; v <= cm->M; v++) /* be careful of our reuse of the end deck -- free it only once */
       if (alpha[v] != NULL) { 
 	if (cm->sttype[v] != E_st) { free_vjd_deck(alpha[v], 1, L); alpha[v] = NULL; }
 	else end = alpha[v]; 
@@ -892,12 +897,8 @@ CMPosterior(int L, CM_t *cm, float ***alpha, float ****ret_alpha, float ***beta,
   /* If the caller doesn't want the beta matrix, free it along with the decks.
    */
   if (ret_beta == NULL) {
-    for (v = 0; v <= (cm->M-1); v++) 
+    for (v = 0; v <= cm->M; v++) 
       if (beta[v] != NULL) { free_vjd_deck(beta[v], 1, L); beta[v] = NULL; }
-    if (cm->flags & CM_LOCAL_END) {
-      free_vjd_deck(beta[cm->M], 1, L);
-      beta[cm->M] = NULL; 
-    }
     free(beta);
   } else *ret_beta = beta;
 
@@ -905,7 +906,7 @@ CMPosterior(int L, CM_t *cm, float ***alpha, float ****ret_alpha, float ***beta,
    * it would be *stupid* for the caller not to want it in current implementation.
    */
   if (ret_post == NULL) {
-    for (v = 0; v <= (cm->M); v++) 
+    for (v = 0; v <= cm->M; v++) 
       if (post[v] != NULL) { free_vjd_deck(post[v], 1, L); post[v] = NULL; }
     free(post);
   } else *ret_post = post;
@@ -967,7 +968,7 @@ Fscore2postcode(float sc)
 char *
 CMPostalCode(CM_t *cm, int L, float ***post, Parsetree_t *tr)
 {
-  int x, v, i, j, d;
+  int x, v, i, j, d, r;
   char *postcode;
 
   postcode = MallocOrDie((L+1) * sizeof(char)); 
@@ -978,6 +979,7 @@ CMPostalCode(CM_t *cm, int L, float ***post, Parsetree_t *tr)
       i = tr->emitl[x];
       j = tr->emitr[x];
       d = j-i+1;
+      /*printf("x: %2d | v: %2d | i: %2d | j: %2d | d: %2d | post[%d][%d][%d]: %f\n", x, v, i, j, d, v, j, d, post[v][j][d]);*/
       /*
        * Only P, L, R states have emissions.
        */
@@ -988,6 +990,13 @@ CMPostalCode(CM_t *cm, int L, float ***post, Parsetree_t *tr)
 	postcode[i-1] = Fscore2postcode(post[v][j][d]);
       } else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) {
 	postcode[j-1] = Fscore2postcode(post[v][j][d]);
+      } else if (cm->sttype[v] == EL_st) /*special case*/ {
+	for(r = (i-1); r <= (j-1); r++)
+	  {
+	    d = j - (r+1) + 1;
+	    postcode[r] = Fscore2postcode(post[v][j][d]);
+	    /*printf("r: %d | post[%d][%d][%d]: %f | sc: %c\n", r, v, j, d, post[v][j][d], postcode[r]);*/
+	  }
       }
     }
   postcode[L] = '\0';
@@ -1052,17 +1061,16 @@ CMCheckPosterior(int L, CM_t *cm, float ***post)
 	for (j = k; j <= L; j++)
 	  {
 	    d = j-k+1;
-	    printf("EL adding L v: %d | i: %d | j: %d | d: %d post[v][j][d]: %5.2f\n", cm->M, (j-d+1), j, d, post[cm->M][j][d]);
+	    /*printf("EL adding L v: %d | i: %d | j: %d | d: %d post[v][j][d]: %5.2f\n", cm->M, (j-d+1), j, d, post[cm->M][j][d]);*/
 	    sc = LogSum2(sc, (post[cm->M][j][d]));
 	  }
       }
       
-      /*if(((sc - 0.) > 0.001) || ((sc - 0.) < -0.001))*/
-      if(((sc - 0.) > 0.01) || ((sc - 0.) < -0.01))
+      if(((sc - 0.) > 0.0001) || ((sc - 0.) < -0.0001))
 	{
-	  Die("residue position %d has summed prob of %5.3f (2^%5.3f) in posterior cube.\n", k, (sreEXP2(sc)), sc);
+	  Die("residue position %d has summed prob of %5.4f (2^%5.4f) in posterior cube.\n", k, (sreEXP2(sc)), sc);
 	}
-      printf("k: %d | total: %10.2f\n", k, (sreEXP2(sc)));
+      /*printf("k: %d | total: %10.2f\n", k, (sreEXP2(sc)));*/
     }  
 }
 
@@ -1213,6 +1221,25 @@ FInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 
   touch = MallocOrDie(sizeof(int) * cm->M);
   for (v = 0; v <= (cm->M-1); v++) touch[v] = cm->pnum[v];
+
+  /* EPN: now that the EL self loop has a transition score, its
+   *      necessary to keep track of the alpha EL deck (alpha[cm->M]).
+   *      There's no bands on the EL state. 
+   */
+  if(cm->flags & CM_LOCAL_BEGIN)
+    {
+      if (! deckpool_pop(dpool, &(alpha[cm->M]))) 
+	alpha[cm->M] = alloc_vjd_deck(L, i0, j0);
+      for (jp = 0; jp <= W; jp++) {
+	j = i0-1+jp;
+	/*alpha[cm->M][j][0] = IMPOSSIBLE;*/
+	alpha[cm->M][j][0] = 0.;
+	for (d = 1; d <= jp; d++)
+	  {
+	    alpha[cm->M][j][d] = (cm->el_selfsc * (d));
+	  }
+      }
+    }
 
   /* Main recursion
    */
@@ -1794,11 +1821,16 @@ FOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
        */ 
       if (i0 == 1 && j0 == L && (cm->flags & CM_LOCAL_BEGIN))
 	{
-	  jp_v = j - jmin[v];
-	  Wp = W - hdmin[v][jp_v];
-	  beta[v][jp_v][Wp] = cm->beginsc[v];
+	  if((j0 >= jmin[v]) && (j0 <= jmax[v]))
+	    {
+	      jp_v = j0 - jmin[v];
+	      if((W >= hdmin[v][jp_v]) && W <= hdmax[v][jp_v])
+		{
+		  Wp = W - hdmin[v][jp_v];
+		  beta[v][jp_v][Wp] = cm->beginsc[v];
+		}
+	    }
 	}
-
       /* main recursion: reorganized relative to FOutside() for simplification of
        * band-related issues.
        */
@@ -1904,7 +1936,7 @@ FOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 		   */
 		  kmin = ((hdmin[y][jp_y]-d) > (hdmin[z][jp_z-d])) ? (hdmin[y][jp_y]-d) : (hdmin[z][jp_z-d]);
 		  /* kmin satisfies inequalities (1) and (3) */
-		  kmax = ((hdmax[y][jp_y]-d) > (hdmax[z][jp_z-d])) ? (hdmax[y][jp_y]-d) : (hdmax[z][jp_z-d]);
+		  kmax = ((hdmax[y][jp_y]-d) < (hdmax[z][jp_z-d])) ? (hdmax[y][jp_y]-d) : (hdmax[z][jp_z-d]);
 		  /* kmax satisfies inequalities (2) and (4) */
 
 		  for(k = kmin; k <= kmax; k++)
@@ -2008,49 +2040,52 @@ FOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
       /* Deal with local alignment end transitions v->EL
        * (EL = deck at M.)
        */
-      /* HEREHEREHERE: didn't worry about next loop because local won't work anyway */
       if (NOT_IMPOSSIBLE(cm->endsc[v])) {
-	printf("WHOA ENTERED LOCAL LOOP (write code)\n");
-	for (jp = 0; jp <= W; jp++) { 
-	  j = i0-1+jp;
-	  for (d = 0; d <= jp; d++) 
-	    {
-	      i = j-d+1;
-	      switch (cm->sttype[v]) {
-	      case MP_st: 
-		if (j == j0 || d == jp) continue; /* boundary condition */
-		if (dsq[i-1] < Alphabet_size && dsq[j+1] > Alphabet_size)
-		  escore = cm->esc[v][(int) (dsq[i-1]*Alphabet_size+dsq[j+1])];
-		else
-		  escore = DegeneratePairScore(cm->esc[v], dsq[i-1], dsq[j+1]);
-		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][j+1][d+2] + cm->endsc[v] 
-							       + (cm->el_selfsc * d) + escore));
+	for (j = jmin[v]; j <= jmax[v]; j++)
+	  {
+	    jp_v = j - jmin[v];
+	    for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++)
+	      {
+		i = j-d+1;
+		dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
+		switch (cm->sttype[v]) {
+		case MP_st: 
+		  if (j == j0 || d == j) continue; /* boundary condition */
+		  if (((j+1) > jmax[v]) || ((d+2) > hdmax[v][jp_v])) continue; /*boundary condition*/
+		  if (dsq[i-1] < Alphabet_size && dsq[j+1] > Alphabet_size)
+		    escore = cm->esc[v][(int) (dsq[i-1]*Alphabet_size+dsq[j+1])];
+		  else
+		    escore = DegeneratePairScore(cm->esc[v], dsq[i-1], dsq[j+1]);
+		  beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][jp_v+1][dp_v+2] + cm->endsc[v] 
+								  + escore));
 		break;
 	      case ML_st:
 	      case IL_st:
-		if (d == jp) continue;	
+		if (d == j) continue;	
+		if ((d+1) > hdmax[v][jp_v]) continue; /*boundary condition*/
 		if (dsq[i-1] < Alphabet_size) 
 		  escore = cm->esc[v][(int) dsq[i-1]];
 		else
 		  escore = DegenerateSingletScore(cm->esc[v], dsq[i-1]);
-		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][j][d+1] + cm->endsc[v] 
-							       + (cm->el_selfsc * d) + escore));
+		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][jp_v][dp_v+1] + cm->endsc[v] 
+								+ escore));
 		break;
 	      case MR_st:
 	      case IR_st:
 		if (j == j0) continue;
+		if (((j+1) > jmax[v]) || ((d+1) > hdmax[v][jp_v])) continue; /*boundary condition*/
 		if (dsq[j+1] < Alphabet_size) 
 		  escore = cm->esc[v][(int) dsq[j+1]];
 		else
 		  escore = DegenerateSingletScore(cm->esc[v], dsq[j+1]);
-		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][j+1][d+1] + cm->endsc[v] 
-							       + (cm->el_selfsc * d) + escore));
+		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][jp_v+1][dp_v+1] + cm->endsc[v] 
+								+ escore));
 		break;
 	      case S_st:
 	      case D_st:
 	      case E_st:
-		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][j][d] + cm->endsc[v] 
-							       + (cm->el_selfsc * d) + escore));
+		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][jp_v][dp_v] + cm->endsc[v] 
+								+ escore));
 		break;
 	      case B_st:  
 	      default: Die("bogus parent state %d\n", cm->sttype[v]);
@@ -2090,9 +2125,8 @@ FOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
     for (jp = W; jp > 0; jp--) { /* careful w/ boundary here */
       j = i0-1+jp;
       for (d = jp-1; d >= 0; d--) /* careful w/ boundary here */
-	/*if ((sc = beta[cm->M][j][d+1] - cm->el_selfsc) > beta[cm->M][j][d])*/
-	if ((sc = beta[cm->M][j][d+1]) > beta[cm->M][j][d])
-	  beta[cm->M][j][d] = sc;
+	beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[cm->M][j][d+1]
+							+ cm->el_selfsc));
     }
   }
   /*#endif*/
@@ -2148,7 +2182,8 @@ FOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 
     }
 
-  /* Calculate P(S|M) / P(S|R) given only the beta matrix as follows:
+  /* IF not in local mode, we can calculate P(S|M) / P(S|R) given only the 
+   * beta matrix as follows:
    * 
    * IF local ends are off, we know each parse MUST visit each END_E state,
    * we pick final END_E state state cm->M-1 (though any END_E could be used here):
@@ -2160,31 +2195,27 @@ FOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
    * therefore: 
    * Sum_j=0 to L (beta[M-1][j][0]) = P(S|M) / P(S|R)
    * 
-   * IF local ends are on, each parse MUST visit either each END_E state or
-   * some combination of END_E states and the EL state. Same idea as above,
-   * be we consider states cm->M and cm->M-1. 
-   * 
-   * Sum_j=0 to L (beta[M-1][j][0]) + Sum_j=0 to L (beta[M][j][0] = P(S|M) /  P(S|R)
+   * IF local ends are on, each parse MUST visit either each END_E state with d=0
+   * or the EL state but d can vary, so we can't use this test (believe me I tried
+   * to get a similar test working, but I'm convinced you need alpha to get P(S|M)
+   * in local mode).
    */
-  return_sc = IMPOSSIBLE;
-  v = cm->M-1;
-  for (j = jmin[v]; j <= jmax[v]; j++)
+  if(!(cm->flags & CM_LOCAL_END))
     {
-      jp_v = j - jmin[v];
-      assert(hdmin[v][jp_v] == 0);
-      /* printf("\talpha[%3d][%3d][%3d]: %5.2f | beta[%3d][%3d][%3d]: %5.2f\n", (cm->M-1), (j), 0, alpha[(cm->M-1)][j][0], (cm->M-1), (j), 0, beta[(cm->M-1)][j][0]);*/
-      return_sc = LogSum2(return_sc, (beta[v][jp_v][0]));
-      /*if (cm->flags & CM_LOCAL_END)
+      return_sc = IMPOSSIBLE;
+      v = cm->M-1;
+      for (j = jmin[v]; j <= jmax[v]; j++)
 	{
-	  printf("\tbeta[%3d][%3d][%3d]: %5.2f\n", (cm->M), (j), 0, beta[(cm->M)][j][0]);
-	  return_sc = LogSum2(return_sc, (beta[cm->M][j][0]));
+	  jp_v = j - jmin[v];
+	  assert(hdmin[v][jp_v] == 0);
+	  /* printf("\talpha[%3d][%3d][%3d]: %5.2f | beta[%3d][%3d][%3d]: %5.2f\n", (cm->M-1), (j), 0, alpha[(cm->M-1)][j][0], (cm->M-1), (j), 0, beta[(cm->M-1)][j][0]);*/
+	  return_sc = LogSum2(return_sc, (beta[v][jp_v][0]));
 	}
-      */
     }
-
-  /* printf("        inside score: %10.2f\n", alpha[0][j0][W]);
-     printf("       outside score: %10.2f\n", return_sc);
-  */
+  else /* return_sc = P(S|M) / P(S|R) from Inside() */
+    {
+      return_sc = alpha[0][(j0-jmin[0])][Wp];
+    }
 
   /* If the caller doesn't want the beta matrix, free it.
    * (though it would be *stupid* for the caller not to want the
@@ -2227,8 +2258,10 @@ FOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
   }
   free(touch);
 
-  printf("***returning from FOutside_b_jd_me() sc : %f\n", return_sc);
-
+  if(!(cm->flags & CM_LOCAL_END))
+    printf("***returning from FOutside_b_jd_me() sc : %f\n", return_sc);
+  else
+    printf("***returning from FOutside_b_jd_me() sc : %f (LOCAL mode; sc is from Inside)\n", return_sc);
   return return_sc;
 }
 
@@ -2275,22 +2308,22 @@ CMPosterior_b_jd_me(int L, CM_t *cm, float ***alpha, float ****ret_alpha,
   int      dp_v; /* d index for state v in alpha/beta w/mem eff bands */
   int      Lp;
   float  **end;         /* used for freeing alpha b/c we re-use the end deck. */
+  int vmax;
   
   Lp = L - hdmin[0][L-jmin[0]];
   sc = alpha[0][L-jmin[0]][Lp];
   
-  /* If local ends are on, start with the EL state (cm->M) for which 
-   * only beta has a valid deck, alpha[cm->M] deck was never initialized. 
+  /* If local ends are on, start with the EL state (cm->M), otherwise
+   * its not a valid deck.
    */
-  if (cm->flags & CM_LOCAL_END) 
+  if (cm->flags & CM_LOCAL_END)
     {
-      printf("LOCAL ON IN CMPOSTERIOR_b_jd_me: write the code\n");
-      exit(1);
-      for (j = 0; j <= L; j++) 
+      for(j = 0; j <= L; j++) 
 	for (d = 0; d <= j; d++)
 	  {
-	    /*printf("v: %3d | j: %3d | d: %3d | beta : %5.2f\n", v, j, d, beta[v][j][d]);*/
-	    post[cm->M][j][d] = beta[cm->M][j][d] - sc;
+	    post[cm->M][j][d] = alpha[cm->M][j][d] + beta[cm->M][j][d] - sc;
+	    /*printf("v: %3d | j: %3d | d: %3d | alpha : %5.2f | beta : %5.2f\n", cm->M, j, d, alpha[cm->M][j][d], beta[cm->M][j][d]);*/
+	    /*printf("post[%d][%d][%d]: %f\n", cm->M, j, d, post[cm->M][j][d]);*/
 	  }  
     }
 
@@ -2310,7 +2343,7 @@ CMPosterior_b_jd_me(int L, CM_t *cm, float ***alpha, float ****ret_alpha,
    * Else, pass it back to him.
    */
   if (ret_alpha == NULL) {
-    for (v = 0; v <= (cm->M-1); v++) /* be careful of our reuse of the end deck -- free it only once */
+    for (v = 0; v <= (cm->M); v++) /* be careful of our reuse of the end deck -- free it only once */
       if (alpha[v] != NULL) { 
 	if (cm->sttype[v] != E_st) { free_vjd_deck(alpha[v], 1, L); alpha[v] = NULL; }
 	else end = alpha[v]; 
@@ -2323,12 +2356,8 @@ CMPosterior_b_jd_me(int L, CM_t *cm, float ***alpha, float ****ret_alpha,
   /* If the caller doesn't want the beta matrix, free it along with the decks.
    */
   if (ret_beta == NULL) {
-    for (v = 0; v <= (cm->M-1); v++) 
+    for (v = 0; v <= (cm->M); v++) 
       if (beta[v] != NULL) { free_vjd_deck(beta[v], 1, L); beta[v] = NULL; }
-    if (cm->flags & CM_LOCAL_END) {
-      free_vjd_deck(beta[cm->M], 1, L);
-      beta[cm->M] = NULL; 
-    }
     free(beta);
   } else *ret_beta = beta;
 
@@ -2346,7 +2375,7 @@ char *
 CMPostalCode_b_jd_me(CM_t *cm, int L, float ***post, Parsetree_t *tr,
 		    int *jmin, int *jmax, int **hdmin, int **hdmax)
 {
-  int x, v, i, j, d;
+  int x, v, i, j, d, r;
   char *postcode;
   int jp_v, dp_v;
   postcode = MallocOrDie((L+1) * sizeof(char)); 
@@ -2360,9 +2389,16 @@ CMPostalCode_b_jd_me(CM_t *cm, int L, float ***post, Parsetree_t *tr,
       /*
        * Only P, L, R states have emissions.
        */
-      jp_v = j - jmin[v];
-      dp_v = d - hdmin[v][jp_v];
-
+      if(cm->sttype[v] != EL_st)
+	{
+	  jp_v = j - jmin[v];
+	  dp_v = d - hdmin[v][jp_v];
+	}
+      else
+	{
+	  jp_v = j;
+	  dp_v = d;
+	}
       if (cm->sttype[v] == MP_st) {
 	postcode[i-1] = Fscore2postcode(post[v][jp_v][dp_v]);
 	postcode[j-1] = Fscore2postcode(post[v][jp_v][dp_v]);
@@ -2370,6 +2406,13 @@ CMPostalCode_b_jd_me(CM_t *cm, int L, float ***post, Parsetree_t *tr,
 	postcode[i-1] = Fscore2postcode(post[v][jp_v][dp_v]);
       } else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) {
 	postcode[j-1] = Fscore2postcode(post[v][jp_v][dp_v]);
+      } else if (cm->sttype[v] == EL_st) /*special case*/ {
+	for(r = (i-1); r <= (j-1); r++)
+	  {
+	    d = j - (r+1) + 1;
+	    postcode[r] = Fscore2postcode(post[v][j][d]);
+	    /*printf("r: %d | post[%d][%d][%d]: %f | sc: %c\n", r, v, j, d, post[v][j][d], postcode[r]);*/
+	  }
       }
     }
   postcode[L] = '\0';

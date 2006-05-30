@@ -737,3 +737,95 @@ ResizeCPlan9Matrix(struct cp9_dpmatrix_s *mx, int N, int M,
 
 
 
+/* Function: CPlan9SWConfig()
+ * EPN 05.30.06
+ * based on SRE's Plan7SWConfig() from HMMER's modelconfig.c
+ * 
+ * Purpose:  Set the alignment independent parameters of
+ *           a CM Plan 9 model to hmmsw (Smith/Waterman) configuration.
+ *           
+ * Notes:    The desideratum for begin/end probs is that all fragments ij
+ *           (starting at match i, ending at match j) are
+ *           equiprobable -- there is no information in the choice of
+ *           entry/exit. There are M(M+1)/2 possible choices of ij, so
+ *           each must get a probability of 2/M(M+1). This prob is the
+ *           product of a begin, an end, and all the not-end probs in
+ *           the path between i,j. 
+ *            
+ *           Thus: entry/exit is asymmetric because of the left/right
+ *           nature of the HMM/profile. Entry probability is distributed
+ *           simply by assigning p_x = pentry / (M-1) to M-1 
+ *           internal match states. However, the same approach doesn't
+ *           lead to a flat distribution over exit points. Exit p's
+ *           must be corrected for the probability of a previous exit
+ *           from the model. Requiring a flat distribution over exit
+ *           points leads to an easily solved piece of algebra, giving:
+ *                      p_1 = pexit / (M-1)
+ *                      p_x = p_1 / (1 - (x-1) p_1)
+ *           
+ * Args:     hmm    - the CM Plan 9 model w/ data-dep prob's valid
+ *           pentry - probability of an internal entry somewhere;
+ *                    will be evenly distributed over M-1 match states
+ *           pexit  - probability of an internal exit somewhere; 
+ *                    will be distributed over M-1 match states.
+ *                    
+ * Return:   (void)
+ *           HMM probabilities are modified.
+ */
+void
+CPlan9SWConfig(struct cplan9_s *hmm, float pentry, float pexit)
+{
+  float basep;			/* p1 for exits: the base p */
+  int   k;			/* counter over states      */
+
+  /* No special (*x* states in Plan 7) states in CM Plan 9 */
+
+  /* Configure entry.
+   */
+  for (k = 1; k <= hmm->M; k++)
+    hmm->begin[k] = 2. * (float) (hmm->M-k+1) / (float) hmm->M / (float) (hmm->M+1);
+
+  hmm->begin[1] = (1. - pentry) * (1. - (hmm->t[0][CTMI] + hmm->t[0][CTMD]));
+  FSet(hmm->begin+2, hmm->M-1, (pentry * (1.- (hmm->t[0][CTMI] + hmm->t[0][CTMD]))) / (float)(hmm->M-1));
+  
+  /* Configure exit.
+   */
+  /*hmm->end[hmm->M] = 1.0; */ /* hmm->t[hmm->M][CTIM] is M_I->E transition
+				* hmm->t[hmm->M][CTDM] is M_D->E transition
+				* and we don't want to ignore these.
+				*/
+  basep = pexit / (float) (hmm->M-1);
+  for (k = 1; k < hmm->M; k++)
+    hmm->end[k] = basep / (1. - basep * (float) (k-1));
+  CPlan9RenormalizeExits(hmm);
+  hmm->flags       &= ~CPLAN9_HASBITS; /* reconfig invalidates log-odds scores */
+}
+
+/* Function: CPlan9RenormalizeExits()
+ * EPN 05.30.06 based on SRE's Plan7RenormalizeExits() from
+ *                       HMMER's plan7.c.
+ *
+ * Date:     SRE, Fri Aug 14 11:22:19 1998 [St. Louis]
+ *
+ * Purpose:  Renormalize just the match state transitions;
+ *           for instance, after a Config() function has
+ *           modified the exit distribution.
+ *
+ * Args:     hmm - hmm to renormalize
+ *
+ * Returns:  void
+ */
+void
+CPlan9RenormalizeExits(struct cplan9_s *hmm)
+{
+  int   k;
+  float d;
+
+  /* We can't exit from node 0 so we start renormalizing at node 1 */
+  for (k = 1; k < hmm->M; k++)
+    {
+      d = FSum(hmm->t[k], 3);
+      /* FScale(hmm->t[k], 3, 1./(d + d*hmm->end[k])); */
+      FScale(hmm->t[k], 3, (1.-hmm->end[k])/d);
+    }
+}
