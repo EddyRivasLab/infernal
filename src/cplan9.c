@@ -690,8 +690,7 @@ ResizeCPlan9Matrix(struct cp9_dpmatrix_s *mx, int N, int M,
 		   int ***mmx, int ***imx, int ***dmx, int ***emx)
 {
   int i;
-  printf("N: %d | maxN: %d | M: %d | maxM: %d\n", N, mx->maxN, M, mx->maxM);
-
+  /*printf("N: %d | maxN: %d | M: %d | maxM: %d\n", N, mx->maxN, M, mx->maxM);*/
 
   if (N <= mx->maxN && M <= mx->maxM) goto DONE;
   

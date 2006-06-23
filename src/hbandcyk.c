@@ -170,7 +170,7 @@ CYKInside_b_jd(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **
   StopwatchZero(watch);
   StopwatchStart(watch);
 
-  PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, L);
+  /*PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, (j0-i0+1));*/
   printf("alignment strategy:CYKInside_b_jd:b:nosmall\n"); 
   /*  printf("L: %d\n", L);*/
   
@@ -1274,6 +1274,15 @@ PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax,
  *           using bands in the j and d dimension from obtained
  *           from an HMM forwards-backwards run. This function
  *           is memory efficient in the j AND d dimension.
+ * 
+ *           To be able to consistently handle end states, the
+ *           original SRE behavior of reusing the end deck was
+ *           abandoned. Now each end state has its own deck, which
+ *           makes this implementation easier because each state
+ *           has its own bands on j, and thus has a state specific
+ *           offset with alpha[end][jp][dp] in the banded mem eff 
+ *           matrix corresponding to alpha[end][jp+jmin[end]][dp+hdmin[v][jp_v]]
+ *           in the platonic matrix.
  *           
  *           Notes from inside():
  *           A note on the loop conventions. We're going to keep the
@@ -1369,7 +1378,6 @@ inside_b_jd_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, 
 	       int *jmin, int *jmax, int **hdmin, int **hdmax,
 	       int *safe_hdmin, int *safe_hdmax)
 {
-  float  **end;         /* we re-use the end deck. */
   int      nends;       /* counter that tracks when we can release end deck to the pool */
   int     *touch;       /* keeps track of how many higher decks still need this deck */
   int      v,y,z;	/* indices for states  */
@@ -1392,9 +1400,10 @@ inside_b_jd_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, 
   int      jp_v, jp_y, jp_z;
   int      kmin, kmax;
   int      tmp_jmin, tmp_jmax;
+  float  **tmp_deck;       /* temp variable, used only to free deckpool at end */
 
   /* 11.04.05 jd addition: */
-  if(i0 != 1)
+  /*  if(i0 != 1)
     {
       printf("inside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
       exit(1);
@@ -1414,6 +1423,7 @@ inside_b_jd_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, 
       printf("inside_b_jd requires that vend be cm->M-1. This function is not set up for subsequence alignment.\n");
       exit(1);
     }
+  */
   
   /* Allocations and initializations
    */
@@ -1422,15 +1432,7 @@ inside_b_jd_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, 
   W   = j0-i0+1;		/* the length of the sequence -- used in many loops */
 				/* if caller didn't give us a deck pool, make one */
   if (dpool == NULL) dpool = deckpool_create();
-  if (! deckpool_pop(dpool, &end))
-    end = alloc_vjd_deck(L, i0, j0);
   nends = CMSubtreeCountStatetype(cm, vroot, E_st);
-  for (jp = 0; jp <= W; jp++) 
-    {
-      j = i0+jp-1;		/* e.g. j runs from 0..L on whole seq */
-      end[j][0] = 0.;
-      for (d = 1; d <= jp; d++) end[j][d] = IMPOSSIBLE;
-  }
 
   /* if caller didn't give us a matrix, make one.
    * It's important to allocate for M+1 decks (deck M is for EL, local
@@ -1471,27 +1473,26 @@ inside_b_jd_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, 
     {
       /*printf("v: %d\n", v);*/
       /* First we need a deck to fill in.
-       * 1. if we're an E, reuse the end deck (and it's already calculated)
-       * 2. else, see if we can take something from the pool
-       * 3. else, allocate a new deck.
+       * 1. see if we can take something from the pool
+       *    if we're an end state, fill it
+       * 2. else, allocate a new deck.
        */
-      if (cm->sttype[v] == E_st) { 
-	alpha[v] = end; continue; 
-      } 
       if (! deckpool_pop(dpool, &(alpha[v]))) 
 	alpha[v] = alloc_jdbanded_vjd_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
 
-      if (ret_shadow != NULL) {
-	if (cm->sttype[v] == B_st) {
-	  /* CYK Full ME Bands used 2 */
-	  /* original line : kshad     = alloc_vjd_kshadow_deck(L, i0, j0); */
-	  kshad     = alloc_jdbanded_vjd_kshadow_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
-	  shadow[v] = (void **) kshad;
-	} else {
-	  /* CYK Full ME Bands used 3 */
-	  /* original line : yshad     = alloc_vjd_yshadow_deck(L, i0, j0); */
-	  yshad     = alloc_jdbanded_vjd_yshadow_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
-	  shadow[v] = (void **) yshad;
+      if (cm->sttype[v] != E_st) {
+	if (ret_shadow != NULL) {
+	  if (cm->sttype[v] == B_st) {
+	    /* CYK Full ME Bands used 2 */
+	    /* original line : kshad     = alloc_vjd_kshadow_deck(L, i0, j0); */
+	    kshad     = alloc_jdbanded_vjd_kshadow_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
+	    shadow[v] = (void **) kshad;
+	  } else {
+	    /* CYK Full ME Bands used 3 */
+	    /* original line : yshad     = alloc_vjd_yshadow_deck(L, i0, j0); */
+	    yshad     = alloc_jdbanded_vjd_yshadow_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
+	    shadow[v] = (void **) yshad;
+	  }
 	}
       }
 
@@ -1500,7 +1501,23 @@ inside_b_jd_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, 
        * with all sorts of offset issues, but we don't have to 
        * waste time setting cells outside the bands to IMPOSSIBLE.
        */
-      if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
+      if (cm->sttype[v] == E_st)
+	{
+	  for (j = jmin[v]; j <= jmax[v]; j++)
+	    {
+	      jp_v = j - jmin[v];
+	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++)
+		{
+		  if(d != 0)
+		    Die("band on E state %d has a non-zero d value within its j band for j:%d\n", v, j);
+		  dp_v = d - hdmin[v][jp_v];  /* d index for state v
+						 in alpha w/mem eff bands */
+		  alpha[v][jp_v][dp_v] = 0.; /* for End states, d must be 0 */
+		}		    
+	    }
+	  continue;
+	}  
+      else if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
 	{
 	  for (j = jmin[v]; j <= jmax[v]; j++)
 	    {
@@ -1842,7 +1859,6 @@ inside_b_jd_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, 
 		      /* original code (deck reuse) deckpool_push(dpool, alpha[y]);*/
 		      /* new ME code : */
 		      {
-			//printf("calling free vjd deck for alpha[y=%d]\n", y);
 			free_vjd_deck(alpha[y], i0, j0);
 		      }
 		      alpha[y] = NULL;
@@ -1854,9 +1870,8 @@ inside_b_jd_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, 
   /*debug_print_alpha_banded_jd(alpha, cm, L, jmin, jmax, hdmin, hdmax);*/
 
   /* Now we free our memory. 
-   * if we've got do_full set, all decks vroot..vend are now valid (end is shared).
-   * else, only vroot deck is valid now and all others vroot+1..vend are NULL, 
-   * and end is NULL.
+   * if we've got do_full set, all decks vroot..vend are now valid 
+   * else, only vroot deck is valid now and all others vroot+1..vend are NULL.
    * We could check this status to be sure (and we used to) but now we trust. 
    */
   
@@ -1870,12 +1885,10 @@ inside_b_jd_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, 
    * Else, pass it back to him.
    */
   if (ret_alpha == NULL) {
-    for (v = vroot; v <= vend; v++) /* be careful of our reuse of the end deck -- free it only once */
+    for (v = vroot; v <= vend; v++) 
       if (alpha[v] != NULL) { 
-	if (cm->sttype[v] != E_st) { deckpool_push(dpool, alpha[v]); alpha[v] = NULL; }
-	else end = alpha[v]; 
+	deckpool_push(dpool, alpha[v]); alpha[v] = NULL;
       }
-    if (end != NULL) { deckpool_push(dpool, end); end = NULL; }
     free(alpha);
   } else *ret_alpha = alpha;
 
@@ -1883,7 +1896,7 @@ inside_b_jd_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, 
    * Else, pass it back to him.
    */
   if (ret_dpool == NULL) {
-    while (deckpool_pop(dpool, &end)) free_vjd_deck(end, i0, j0);
+    while (deckpool_pop(dpool, &tmp_deck)) free_vjd_deck(tmp_deck, i0, j0);
     deckpool_free(dpool);
   } else {
     *ret_dpool = dpool;
@@ -2094,16 +2107,16 @@ alloc_jdbanded_vjd_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int
 
   SQD_DPRINTF3(("alloc_vjd_deck : %.4f\n", size_vjd_deck(L,i,j)));
   a = MallocOrDie(sizeof(float *) * (L+1));  /* always alloc 0..L rows, some of which are NULL */
+  for (jp = 0; jp <= L;     jp++) a[jp]     = NULL;
+
   jfirst = ((i-1) > jmin) ? (i-1) : jmin;
   jlast = (j < jmax) ? j : jmax;
-  for (jp = (jlast-jfirst+1); jp <= L;     jp++) a[jp]     = NULL;
-
   /* jfirst is the first valid j, jlast is the last */
   for (jp = jfirst; jp <= jlast; jp++)
     {
       /*printf("jfirst: %d | jlast: %d\n", jfirst, jlast);
-	printf("jp: %d | max : %d\n", jp, (jlast)); 
-	printf("hdmax[%d]: %d\n", (jp-jmin), hdmax[jp-jmin]);
+      printf("jp: %d | max : %d\n", jp, (jlast)); 
+      printf("hdmax[%d]: %d\n", (jp-jmin), hdmax[jp-jmin]);
       */
       if(hdmax[jp-jmin] > (jp+1))
 	{
@@ -2116,8 +2129,9 @@ alloc_jdbanded_vjd_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int
 	}
       bw = hdmax[jp-jmin] - hdmin[jp-jmin] +1;
 
-      /*printf("\tallocated a[%d]\n", (jp-jfirst));*/
+      /*a is offset only the first (jlast-jfirst+1) elements will be non-NULL*/
       a[jp-jfirst] = MallocOrDie(sizeof(float) * bw);
+      /*printf("\tallocated a[%d] | bw: %d\n", (jp-jfirst), bw);*/
     }
   return a;
 }
@@ -2351,7 +2365,7 @@ debug_print_alpha_banded_jd(float ***alpha, CM_t *cm, int L, int *jmin, int *jma
  * arguments:
  *
  * CM_t *cm         the CM 
- * int  L          length of sequence we're aligning
+ * int  W           length of sequence we're aligning
  * int *imin        imin[v] = first position in band on i for state v
  * int *imax        imax[v] = last position in band on i for state v
  * int *jmin        jmin[v] = first position in band on j for state v
@@ -2366,7 +2380,7 @@ debug_print_alpha_banded_jd(float ***alpha, CM_t *cm, int L, int *jmin, int *jma
  *                  statements to print.
  *****************************************************************************/
 void
-ij2d_bands(CM_t *cm, int L, int *imin, int *imax, int *jmin, int *jmax,
+ij2d_bands(CM_t *cm, int W, int *imin, int *imax, int *jmin, int *jmax,
 	   int **hdmin, int **hdmax, int debug_level)
 {
   int v;            /* counter over states of the CM */
@@ -2408,10 +2422,10 @@ ij2d_bands(CM_t *cm, int L, int *imin, int *imax, int *jmin, int *jmax,
 		  hdmax[v][j0] = state_min_d;
 		  /*printf("ERROR ij2dbands: v: %d | hdmin[act j: %d] : %d\n", v, (j0+jmin[v]), hdmin[v][j0]);*/
 		}
-	      if(hdmax[v][j0] > L)
+	      if(hdmax[v][j0] > W)
 		{
-		  hdmax[v][j0] = L;
-		  /*printf("ERROR ij2dbands: v: %d | hdmax[act j: %d] : %d | L : %d\n", v, (j0+jmin[v]), hdmax[v][j0], L);*/
+		  hdmax[v][j0] = W;
+		  /*printf("ERROR ij2dbands: v: %d | hdmax[act j: %d] : %d | W : %d\n", v, (j0+jmin[v]), hdmax[v][j0], W);*/
 		}
 	      if(debug_level == 2)
 		{

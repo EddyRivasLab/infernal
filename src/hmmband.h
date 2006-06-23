@@ -57,29 +57,29 @@ extern void  P7FullPosterior(int L, struct plan7_s *hmm,
 			     struct dpmatrix_s *forward,
 			     struct dpmatrix_s *backward,
 			     struct dpmatrix_s *mx);
-extern float CP9Forward(unsigned char *dsq, int L, struct cplan9_s *hmm, 
+extern float CP9Forward(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm, 
 			struct cp9_dpmatrix_s **ret_mx);
-extern float CP9Viterbi(unsigned char *dsq, int L, struct cplan9_s *hmm, struct cp9_dpmatrix_s *mx);
-extern float CP9Backward(unsigned char *dsq, int L, struct cplan9_s *hmm, struct cp9_dpmatrix_s **ret_mx);
-extern void  CP9FullPosterior(unsigned char *dsq, int L,
+extern float CP9Viterbi(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s *mx);
+extern float CP9Backward(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s **ret_mx);
+extern void  CP9FullPosterior(unsigned char *dsq, int i0, int j0,
 			      struct cplan9_s *hmm,
 			      struct cp9_dpmatrix_s *fmx,
 			      struct cp9_dpmatrix_s *bmx,
 			      struct cp9_dpmatrix_s *mx);
 extern void P7_ifill_post_sums(struct dpmatrix_s *post, int L, int M,
 			       int *isum_pn_m, int *isum_pn_i, int *isum_pn_d);
-extern void CP9_ifill_post_sums(struct cp9_dpmatrix_s *post, int L, int M,
+extern void CP9_ifill_post_sums(struct cp9_dpmatrix_s *post, int i0, int j0, int M,
 				int *isum_pn_m, int *isum_pn_i, int *isum_pn_d);
 
 /* Functions to determine HMM bands */
-extern void CP9_hmm_band_bounds(int **post, int L, int M, int *isum_pn, int *pn_min, int *pn_max, double p_thresh, 
+extern void CP9_hmm_band_bounds(int **post, int i0, int j0, int M, int *isum_pn, int *pn_min, int *pn_max, double p_thresh, 
 				int state_type, int debug_level);
 extern void P7_hmm_band_bounds(int **post, int L, int M, int *isum_pn, int *pn_min, int *pn_max, double p_thresh, 
 			       int state_type, int debug_level);
 
 /* Functions to go from HMM bands to i and j bands on a CM */
 extern void hmm2ij_bands(CM_t *cm, int ncc, int *node_cc_left, int *node_cc_right, 
-			 int *cc_node_map, int L, int *pn_min_m, int *pn_max_m,
+			 int *cc_node_map, int i0, int j0, int *pn_min_m, int *pn_max_m,
 			 int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d,
 			 int *imin, int *imax, int *jmin, int *jmax, int **cs2hn_map,
 			 int debug_level);
@@ -90,7 +90,7 @@ extern void simple_hmm2ij_bands(CM_t *cm, int ncc, int *node_cc_left, int *node_
 				int **cs2hs_map, int debug_level);
 
 /* Helper functions for *_hmm2ij_bands() */
-extern void hmm2ij_prestate_step0_initialize(int n, int *nss_max_imin, int *nss_min_jmax, int L);
+extern void hmm2ij_prestate_step0_initialize(int n, int *nss_max_imin, int *nss_min_jmax, int i0, int j0);
 extern void hmm2ij_prestate_step1_set_node_inserts(int n, int *nis_imin, int *nis_imax, 
 						   int *nis_jmin, int *nis_jmax,
 						   int *nss_imin, int *nss_imax, 
@@ -141,5 +141,5 @@ extern void ijd_banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *imin, int
 				      int debug_level);
 extern void debug_check_CP9_FB(struct cp9_dpmatrix_s *fmx, 
 			       struct cp9_dpmatrix_s *bmx, 
-			       struct cplan9_s *hmm, float sc, int L,
+			       struct cplan9_s *hmm, float sc, int i0, int j0,
 			       unsigned char *dsq);

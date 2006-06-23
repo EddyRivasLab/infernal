@@ -259,8 +259,23 @@ extern float CP9ForwardScan(unsigned char *dsq, int L, int W, struct cplan9_s *h
 			    struct cp9_dpmatrix_s **ret_mx, int *ret_nhits, int **ret_hitr,
 			    int **ret_hiti, int **ret_hitj,  
 			    float **ret_hitsc, float min_thresh);
-
 extern float CP9ForwardScanRequires(struct cplan9_s *hmm, int L, int W);
+extern float CP9ForwardBackwardScan(unsigned char *dsq, int L, int W, struct cplan9_s *hmm, 
+				    struct cp9_dpmatrix_s **ret_fmx, struct cp9_dpmatrix_s **ret_bmx,
+				    int *ret_nhits, int **ret_hitr, 
+				    int **ret_hiti, int **ret_hitj,  
+				    float **ret_hitsc, float min_thresh);
+extern void CP9ScanFullPosterior(unsigned char *dsq, int L,
+				 struct cplan9_s *hmm,
+				 struct cp9_dpmatrix_s *fmx,
+				 struct cp9_dpmatrix_s *bmx,
+				 struct cp9_dpmatrix_s *mx);
+extern void CP9_combine_FBscan_hits(int L, int W, int fwd_nhits, int *fwd_hitr, int *fwd_hiti, 
+				    int *fwd_hitj, float *fwd_hitsc, int bck_nhits, 
+				    int *bck_hitr, int *bck_hiti, int *bck_hitj, float *bck_hitsc, 
+				    int *ret_nhits, int **ret_hitr, int **ret_hiti, int **ret_hitj, 
+				    float **ret_hitsc, int pad);
+
 
 /* from CP9_cm2wrhmm.c */
 extern int CP9_cm2wrhmm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *node_cc_right, 

@@ -1,5 +1,5 @@
 /* hmmband.c
- * EPN 12.16.05 (many functions much older than this)
+ * EPN 12.16.05 (many functions older than this)
  * 
  * Functions to support either CM Plan 9 (CP9) or HMMER 2.x plan 7
  * (P7) HMMs for band calculation. Includes functions for 
@@ -1322,23 +1322,28 @@ P7FullPosterior(int L,
     }
   */
 }
+
+
 /***********************************************************************
- * Function: CP9Forward()
+ * Function: CP9Forward
  * based on  P7Forward() <-- this function's comments below  
  *           from HMMER 2.4devl core_algorithms.c
+ *
  * Purpose:  The Forward dynamic programming algorithm.
  *           The scaling issue is dealt with by working in log space
  *           and calling ILogsum(); this is a slow but robust approach.
  *           
  * Args:     dsq    - sequence in digitized form
- *           L      - length of dsq
+ *           i0     - start of target subsequence (often 1, beginning of dsq)
+ *           j0     - end of target subsequence (often L, end of dsq)
  *           hmm    - the model
  *           ret_mx - RETURN: dp matrix; pass NULL if it's not wanted
  *           
  * Return:   log P(S|M)/P(S|R), as a bit score.
  */
 float
-CP9Forward(unsigned char *dsq, int L, struct cplan9_s *hmm, struct cp9_dpmatrix_s **ret_mx)
+CP9Forward(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm, 
+	   struct cp9_dpmatrix_s **ret_mx)
 {
   struct cp9_dpmatrix_s *mx;
   int **mmx;
@@ -1347,10 +1352,14 @@ CP9Forward(unsigned char *dsq, int L, struct cplan9_s *hmm, struct cp9_dpmatrix_
   int **emx;
   int   i,k;
   int   sc;
+  int   W;		/* subsequence length */
+  int   ip;		/* i': relative position in the subsequence  */
 
-  /* Allocate a DP matrix with 0..L rows, 0..M-1 
+  W  = j0-i0+1;		/* the length of the subsequence */
+
+  /* Allocate a DP matrix with 0..W rows, 0..M-1 
    */ 
-  mx = AllocCPlan9Matrix(L+1, hmm->M, &mmx, &imx, &dmx, &emx);
+  mx = AllocCPlan9Matrix(W+1, hmm->M, &mmx, &imx, &dmx, &emx);
 
   /* Initialization of the zero row.
    */
@@ -1371,43 +1380,44 @@ CP9Forward(unsigned char *dsq, int L, struct cplan9_s *hmm, struct cp9_dpmatrix_
   
   /* Recursion. Done as a pull.
    */
-  for (i = 1; i <= L; i++)
+  for (ip = 1; ip <= W; ip++) /* ip is the relative position in the seq */
     {
-      mmx[i][0] = dmx[i][0] = -INFTY;  /*M_0 (B) and D_0 (non-existent)
+      i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from i0 to j0 */
+      mmx[ip][0] = dmx[ip][0] = -INFTY;  /*M_0 (B) and D_0 (non-existent)
 					 don't emit.
 				       */
-      imx[i][0]  = ILogsum(ILogsum(mmx[i-1][0] + hmm->tsc[CTMI][0],
-				   imx[i-1][0] + hmm->tsc[CTII][0]),
-			   dmx[i-1][0] + hmm->tsc[CTDI][0]);
-      imx[i][0] += hmm->isc[dsq[i]][0];
+      imx[ip][0]  = ILogsum(ILogsum(mmx[ip-1][0] + hmm->tsc[CTMI][0],
+				   imx[ip-1][0] + hmm->tsc[CTII][0]),
+			   dmx[ip-1][0] + hmm->tsc[CTDI][0]);
+      imx[ip][0] += hmm->isc[dsq[i]][0];
       for (k = 1; k <= hmm->M; k++)
 	{
-	  mmx[i][k]  = ILogsum(ILogsum(mmx[i-1][k-1] + hmm->tsc[CTMM][k-1],
-				       imx[i-1][k-1] + hmm->tsc[CTIM][k-1]),
-			       ILogsum(mmx[i-1][0] + hmm->bsc[k],
-				       dmx[i-1][k-1] + hmm->tsc[CTDM][k-1]));
-	  mmx[i][k] += hmm->msc[dsq[i]][k];
+	  mmx[ip][k]  = ILogsum(ILogsum(mmx[ip-1][k-1] + hmm->tsc[CTMM][k-1],
+				       imx[ip-1][k-1] + hmm->tsc[CTIM][k-1]),
+			       ILogsum(mmx[ip-1][0] + hmm->bsc[k],
+				       dmx[ip-1][k-1] + hmm->tsc[CTDM][k-1]));
+	  mmx[ip][k] += hmm->msc[dsq[i]][k];
 
-	  dmx[i][k]  = ILogsum(ILogsum(mmx[i][k-1] + hmm->tsc[CTMD][k-1],
-				       imx[i][k-1] + hmm->tsc[CTID][k-1]),
-			       dmx[i][k-1] + hmm->tsc[CTDD][k-1]);
+	  dmx[ip][k]  = ILogsum(ILogsum(mmx[ip][k-1] + hmm->tsc[CTMD][k-1],
+				       imx[ip][k-1] + hmm->tsc[CTID][k-1]),
+			       dmx[ip][k-1] + hmm->tsc[CTDD][k-1]);
 
-	  imx[i][k]  = ILogsum(ILogsum(mmx[i-1][k] + hmm->tsc[CTMI][k],
-				       imx[i-1][k] + hmm->tsc[CTII][k]),
-			       dmx[i-1][k] + hmm->tsc[CTDI][k]);
-	  imx[i][k] += hmm->isc[dsq[i]][k];
+	  imx[ip][k]  = ILogsum(ILogsum(mmx[ip-1][k] + hmm->tsc[CTMI][k],
+				       imx[ip-1][k] + hmm->tsc[CTII][k]),
+			       dmx[ip-1][k] + hmm->tsc[CTDI][k]);
+	  imx[ip][k] += hmm->isc[dsq[i]][k];
 	}
 
-      emx[0][i] = -INFTY;
+      emx[0][ip] = -INFTY;
       for (k = 1; k <= hmm->M; k++)
-	emx[0][i] = ILogsum(emx[0][i], mmx[i][k] + hmm->esc[k]);
-      emx[0][i] = ILogsum(emx[0][i], dmx[i][hmm->M] + hmm->tsc[CTDM][hmm->M]); 
-      emx[0][i] = ILogsum(emx[0][i], imx[i][hmm->M] + hmm->tsc[CTIM][hmm->M]); 
+	emx[0][ip] = ILogsum(emx[0][ip], mmx[ip][k] + hmm->esc[k]);
+      emx[0][ip] = ILogsum(emx[0][ip], dmx[ip][hmm->M] + hmm->tsc[CTDM][hmm->M]); 
+      emx[0][ip] = ILogsum(emx[0][ip], imx[ip][hmm->M] + hmm->tsc[CTIM][hmm->M]); 
 		       /* transition from D_M -> end */
-      /*printf("F emx[%d]: %d\n", i, emx[0][i]);*/
+      /*printf("F emx[%d]: %d\n", i, emx[0][ip]);*/
     }		
-  sc = emx[0][L];
-  /*printf("F emx[%d]: %d\n", i, emx[0][L]);*/
+  sc = emx[0][W];
+  /*printf("F emx[%d]: %d\n", i, emx[0][W]);*/
   if (ret_mx != NULL) *ret_mx = mx;
   else                FreeCPlan9Matrix(mx);
 
@@ -1432,7 +1442,8 @@ CP9Forward(unsigned char *dsq, int L, struct cplan9_s *hmm, struct cp9_dpmatrix_
  *           activated by -DSLOW at compile time.
  *           
  * Args:     dsq    - sequence in digitized form
- *           L      - length of dsq
+ *           i0     - start of target subsequence (often 1, beginning of dsq)
+ *           j0     - end of target subsequence (often L, end of dsq)
  *           hmm    - the model
  *           mx     - reused DP matrix
  *           ret_tr - RETURN: traceback; pass NULL if it's not wanted
@@ -1440,7 +1451,7 @@ CP9Forward(unsigned char *dsq, int L, struct cplan9_s *hmm, struct cp9_dpmatrix_
  * Return:   log P(S|M)/P(S|R), as a bit score
  */
 float
-CP9Viterbi(unsigned char *dsq, int L, struct cplan9_s *hmm, struct cp9_dpmatrix_s *mx)
+CP9Viterbi(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s *mx)
      //struct cp9trace_s **ret_tr)
 {
   /*struct cp9trace_s  *tr;*/
@@ -1450,14 +1461,15 @@ CP9Viterbi(unsigned char *dsq, int L, struct cplan9_s *hmm, struct cp9_dpmatrix_
   int **emx;
   int   i,k;
   int   sc;
+  int   W;		/* subsequence length */
+  int   ip;		/* i': relative position in the subsequence  */
 
-  /* Allocate a DP matrix with 0..L rows, 0..M-1 columns.
+  W  = j0-i0+1;		/* the length of the subsequence */
+
+  /* Allocate a DP matrix with 0..W rows, 0..M-1 columns.
    */ 
-  ResizeCPlan9Matrix(mx, L, hmm->M, &mmx, &imx, &dmx, &emx);
+  ResizeCPlan9Matrix(mx, W, hmm->M, &mmx, &imx, &dmx, &emx);
   /* Initialization of the zero row.
-   * Note that xmx[i][stN] = 0 by definition for all i,
-   *    and xmx[i][stT] = xmx[i][stC], so neither stN nor stT need
-   *    to be calculated in DP matrices.
    */
   mmx[0][0] = 0;      /* M_0 is state B, and everything starts in B */
   imx[0][0] = -INFTY; /* I_0 is state N, can't get here without emitting*/
@@ -1481,71 +1493,72 @@ CP9Viterbi(unsigned char *dsq, int L, struct cplan9_s *hmm, struct cp9_dpmatrix_
   /* Recursion. Done as a pull.
    * Note some slightly wasteful boundary conditions:  
    */
-  for (i = 1; i <= L; i++)
+  for (ip = 1; ip <= W; ip++) /* ip is the relative position in the seq */
     {
-      mmx[i][0] = dmx[i][0] = -INFTY;  /*M_0 (B) and D_0 (non-existent)
+      i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from i0 to j0 */
+      mmx[ip][0] = dmx[ip][0] = -INFTY;  /*M_0 (B) and D_0 (non-existent)
 					 don't emit.
 				       */
-      imx[i][0] = -INFTY;
-      if((sc = mmx[i-1][0] + hmm->tsc[CTMI][0]) > imx[i][0])
-	imx[i][0] = sc;
-      if((sc = imx[i-1][0] + hmm->tsc[CTII][0]) > imx[i][0])
-	imx[i][0] = sc;
-      if((sc = dmx[i-1][0] + hmm->tsc[CTDI][0]) > imx[i][0])
-	imx[i][0] = sc;
-      if(imx[i][0] != -INFTY)
-	imx[i][0] += hmm->isc[dsq[i]][0];
+      imx[ip][0] = -INFTY;
+      if((sc = mmx[ip-1][0] + hmm->tsc[CTMI][0]) > imx[ip][0])
+	imx[ip][0] = sc;
+      if((sc = imx[ip-1][0] + hmm->tsc[CTII][0]) > imx[ip][0])
+	imx[ip][0] = sc;
+      if((sc = dmx[ip-1][0] + hmm->tsc[CTDI][0]) > imx[ip][0])
+	imx[ip][0] = sc;
+      if(imx[ip][0] != -INFTY)
+	imx[ip][0] += hmm->isc[dsq[i]][0];
       else 
-	imx[i][0] = -INFTY;
+	imx[ip][0] = -INFTY;
 
       for (k = 1; k <= hmm->M; k++)
 	{
 	  /*match state*/
-	  mmx[i][k] = -INFTY;
-	  if((sc = mmx[i-1][k-1] + hmm->tsc[CTMM][k-1]) > mmx[i][k])
-	    mmx[i][k] = sc;
-	  if((sc = imx[i-1][k-1] + hmm->tsc[CTIM][k-1]) > mmx[i][k])
-	    mmx[i][k] = sc;
-	  if((sc = mmx[i-1][0] + hmm->bsc[k]) > mmx[i][k])
-	    mmx[i][k] = sc;
-	  if((sc = dmx[i-1][k-1] + hmm->tsc[CTDM][k-1]) > mmx[i][k])
-	    mmx[i][k] = sc;
-	  if(mmx[i][k] != -INFTY)
-	    mmx[i][k] += hmm->msc[dsq[i]][k];
+	  mmx[ip][k] = -INFTY;
+	  if((sc = mmx[ip-1][k-1] + hmm->tsc[CTMM][k-1]) > mmx[ip][k])
+	    mmx[ip][k] = sc;
+	  if((sc = imx[ip-1][k-1] + hmm->tsc[CTIM][k-1]) > mmx[ip][k])
+	    mmx[ip][k] = sc;
+	  if((sc = mmx[ip-1][0] + hmm->bsc[k]) > mmx[ip][k])
+	    mmx[ip][k] = sc;
+	  if((sc = dmx[ip-1][k-1] + hmm->tsc[CTDM][k-1]) > mmx[ip][k])
+	    mmx[ip][k] = sc;
+	  if(mmx[ip][k] != -INFTY)
+	    mmx[ip][k] += hmm->msc[dsq[i]][k];
 	  else 
-	    mmx[i][k] = -INFTY;
+	    mmx[ip][k] = -INFTY;
 
 	  /*insert state*/
-	  imx[i][k] = -INFTY;
-	  if((sc = mmx[i-1][k] + hmm->tsc[CTMI][k]) > imx[i][k])
-	    imx[i][k] = sc;
-	  if((sc = imx[i-1][k] + hmm->tsc[CTII][k]) > imx[i][k])
-	    imx[i][k] = sc;
-	  if((sc = dmx[i-1][k] + hmm->tsc[CTDI][k]) > imx[i][k])
-	    imx[i][k] = sc;
-	  if(imx[i][k] != -INFTY)
-	    imx[i][k] += hmm->isc[dsq[i]][k];
+	  imx[ip][k] = -INFTY;
+	  if((sc = mmx[ip-1][k] + hmm->tsc[CTMI][k]) > imx[ip][k])
+	    imx[ip][k] = sc;
+	  if((sc = imx[ip-1][k] + hmm->tsc[CTII][k]) > imx[ip][k])
+	    imx[ip][k] = sc;
+	  if((sc = dmx[ip-1][k] + hmm->tsc[CTDI][k]) > imx[ip][k])
+	    imx[ip][k] = sc;
+	  if(imx[ip][k] != -INFTY)
+	    imx[ip][k] += hmm->isc[dsq[i]][k];
 	  else 
-	    imx[i][k] = -INFTY;
+	    imx[ip][k] = -INFTY;
 
 	  /*delete state*/
-	  dmx[i][k] = -INFTY;
-	  if((sc = mmx[i][k-1] + hmm->tsc[CTMD][k-1]) > dmx[i][k])
-	    dmx[i][k] = sc;
-	  if((sc = imx[i][k-1] + hmm->tsc[CTID][k-1]) > dmx[i][k])
-	    dmx[i][k] = sc;
-	  if((sc = dmx[i][k-1] + hmm->tsc[CTDD][k-1]) > dmx[i][k])
-	    dmx[i][k] = sc;
+	  dmx[ip][k] = -INFTY;
+	  if((sc = mmx[ip][k-1] + hmm->tsc[CTMD][k-1]) > dmx[ip][k])
+	    dmx[ip][k] = sc;
+	  if((sc = imx[ip][k-1] + hmm->tsc[CTID][k-1]) > dmx[ip][k])
+	    dmx[ip][k] = sc;
+	  if((sc = dmx[ip][k-1] + hmm->tsc[CTDD][k-1]) > dmx[ip][k])
+	    dmx[ip][k] = sc;
 	}
-      emx[0][i] = -INFTY;
+      emx[0][ip] = -INFTY;
       for (k = 1; k <= hmm->M; k++)
-	if ((sc = mmx[i][k] + hmm->esc[k]) > emx[0][i])
-	  emx[0][i] = sc;
-      if ((sc =  dmx[i][hmm->M] + hmm->tsc[CTDM][hmm->M]) > emx[0][i])
-	emx[0][i] = sc;
+	if ((sc = mmx[ip][k] + hmm->esc[k]) > emx[0][ip])
+	  emx[0][ip] = sc;
+      if ((sc =  dmx[ip][hmm->M] + hmm->tsc[CTDM][hmm->M]) > emx[0][ip])
+	emx[0][ip] = sc;
       /* transition from D_M -> end */
     } 
-  sc = emx[0][L];
+  sc = emx[0][W];
   /*printf("returing sc: %d from CPViterbi()\n", sc);*/
   
   //if (ret_tr != NULL) {
@@ -1555,7 +1568,7 @@ CP9Viterbi(unsigned char *dsq, int L, struct cplan9_s *hmm, struct cp9_dpmatrix_
 }
 
 /*********************************************************************
- * Function: CP9Backward()
+ * Function: CP9Backward
  * based on  P7Backward() <-- this function's comments below
  *           from HMMER 2.4devl core_algorithms.c
  * 
@@ -1564,14 +1577,15 @@ CP9Viterbi(unsigned char *dsq, int L, struct cplan9_s *hmm, struct cp9_dpmatrix_
  *           and calling ILogsum(); this is a slow but robust approach.
  *           
  * Args:     dsq    - sequence in digitized form
- *           L      - length of dsq
+ *           i0     - start of target subsequence (often 1, beginning of dsq)
+ *           j0     - end of target subsequence (often L, end of dsq)
  *           hmm    - the model
  *           ret_mx - RETURN: dp matrix; pass NULL if it's not wanted
  *           
  * Return:   log P(S|M)/P(S|R), as a bit score.
  */
 float
-CP9Backward(unsigned char *dsq, int L, struct cplan9_s *hmm, struct cp9_dpmatrix_s **ret_mx)
+CP9Backward(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s **ret_mx)
 {
   struct cp9_dpmatrix_s *mx;
   int **emx;
@@ -1581,81 +1595,90 @@ CP9Backward(unsigned char *dsq, int L, struct cplan9_s *hmm, struct cp9_dpmatrix
   int   i,k;
   int   sc;
 
-  /* Allocate a DP matrix with 0..L rows, 0..M-1 columns.
+  int   W;		/* subsequence length */
+  int   ip;		/* i': relative position in the subsequence  */
+
+  W  = j0-i0+1;		/* the length of the subsequence */
+
+  /* Allocate a DP matrix with 0..W rows, 0..M-1 columns.
    */ 
-  mx = AllocCPlan9Matrix(L+1, hmm->M, &mmx, &imx, &dmx, &emx);
+  mx = AllocCPlan9Matrix(W+1, hmm->M, &mmx, &imx, &dmx, &emx);
 
-  /* Initialization of the L row.
+  /* Initialization of the W row.
    */
-  emx[0][L] = 0; /*have to end in E*/
+  i = j0;
 
-  mmx[L][hmm->M] = emx[0][L] + hmm->esc[hmm->M]; /* M<-E ...                   */
-  mmx[L][hmm->M] += hmm->msc[dsq[L]][hmm->M]; /* ... + emitted match symbol */
-  imx[L][hmm->M] = emx[0][L] + hmm->tsc[CTIM][hmm->M];   /* I_M(C)<-E ... */
-  imx[L][hmm->M] += hmm->isc[dsq[L]][hmm->M];           /* ... + emitted match symbol */
-  dmx[L][hmm->M] = hmm->tsc[CTDM][hmm->M];    /* D_M<-E */
+  emx[0][W] = 0; /*have to end in E*/
+
+  mmx[W][hmm->M] = emx[0][W] + hmm->esc[hmm->M]; /* M<-E ...                   */
+  mmx[W][hmm->M] += hmm->msc[dsq[i]][hmm->M]; /* ... + emitted match symbol */
+  imx[W][hmm->M] = emx[0][W] + hmm->tsc[CTIM][hmm->M];   /* I_M(C)<-E ... */
+  imx[W][hmm->M] += hmm->isc[dsq[i]][hmm->M];           /* ... + emitted match symbol */
+  dmx[W][hmm->M] = emx[0][W] + hmm->tsc[CTDM][hmm->M];    /* D_M<-E */
   for (k = hmm->M-1; k >= 1; k--)
     {
-      mmx[L][k]  = hmm->esc[k] + emx[0][L];
-      mmx[L][k]  = ILogsum(mmx[L][k], dmx[L][k+1] + hmm->tsc[CTMD][k]);
-      mmx[L][k] += hmm->msc[dsq[L]][k];
+      mmx[W][k]  = hmm->esc[k] + emx[0][W];
+      mmx[W][k]  = ILogsum(mmx[W][k], dmx[W][k+1] + hmm->tsc[CTMD][k]);
+      mmx[W][k] += hmm->msc[dsq[i]][k];
 
-      imx[L][k] = dmx[L][k+1] + hmm->tsc[CTID][k];
-      imx[L][k] += hmm->isc[dsq[L]][k];
+      imx[W][k] = dmx[W][k+1] + hmm->tsc[CTID][k];
+      imx[W][k] += hmm->isc[dsq[i]][k];
 
-      dmx[L][k] = dmx[L][k+1] + hmm->tsc[CTDD][k];
+      dmx[W][k] = dmx[W][k+1] + hmm->tsc[CTDD][k];
     }
   
-  mmx[L][0] = -INFTY; /*M_0 doesn't emit*/
-  imx[L][0] = dmx[L][1] + hmm->tsc[CTID][0];
-  imx[L][0] += hmm->isc[dsq[L]][hmm->M];    
-  dmx[L][0] = -INFTY; /*D_0 doesn't exist*/
+  mmx[W][0] = -INFTY; /*M_0 doesn't emit*/
+  imx[W][0] = dmx[W][1] + hmm->tsc[CTID][0];
+  imx[W][0] += hmm->isc[dsq[i]][hmm->M];    
+  dmx[W][0] = -INFTY; /*D_0 doesn't exist*/
 
   /* Recursion. Done as a pull.
    */
 
-  for (i = L-1; i >= 1; i--)
+  for (ip = W-1; ip >= 1; ip--) /* ip is the relative position in the seq */
     {
-      emx[0][i] = -INFTY;
+      i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from j0 down to i0 */
+      emx[0][ip] = -INFTY;
       
       /* Now the main states. Note the boundary conditions at M.
        */
-      mmx[i][hmm->M] = imx[i+1][hmm->M] + hmm->tsc[CTMI][hmm->M];
-      mmx[i][hmm->M] += hmm->msc[dsq[i]][hmm->M];
-      imx[i][hmm->M] = imx[i+1][hmm->M] + hmm->tsc[CTII][hmm->M];
-      imx[i][hmm->M] += hmm->isc[dsq[i]][hmm->M];
-      dmx[i][hmm->M] = imx[i+1][hmm->M] + hmm->tsc[CTDI][hmm->M];  /* * */
+      mmx[ip][hmm->M] = imx[ip+1][hmm->M] + hmm->tsc[CTMI][hmm->M];
+      mmx[ip][hmm->M] += hmm->msc[dsq[i]][hmm->M];
+      imx[ip][hmm->M] = imx[ip+1][hmm->M] + hmm->tsc[CTII][hmm->M];
+      imx[ip][hmm->M] += hmm->isc[dsq[i]][hmm->M];
+      dmx[ip][hmm->M] = imx[ip+1][hmm->M] + hmm->tsc[CTDI][hmm->M];  /* * */
       for (k = hmm->M-1; k >= 1; k--)
 	{
-	  mmx[i][k]  = ILogsum(ILogsum(mmx[i+1][k+1] + hmm->tsc[CTMM][k],
-				       imx[i+1][k] + hmm->tsc[CTMI][k]),
-			       dmx[i][k+1] + hmm->tsc[CTMD][k]);
+	  mmx[ip][k]  = ILogsum(ILogsum(mmx[ip+1][k+1] + hmm->tsc[CTMM][k],
+				       imx[ip+1][k] + hmm->tsc[CTMI][k]),
+			       dmx[ip][k+1] + hmm->tsc[CTMD][k]);
 	  
-	  mmx[i][k] += hmm->msc[dsq[i]][k];
+	  mmx[ip][k] += hmm->msc[dsq[i]][k];
 	  
-	  imx[i][k]  = ILogsum(ILogsum(mmx[i+1][k+1] + hmm->tsc[CTIM][k],
-				       imx[i+1][k] + hmm->tsc[CTII][k]),
-			       dmx[i][k+1] + hmm->tsc[CTID][k]);
-	  imx[i][k] += hmm->isc[dsq[i]][k];
+	  imx[ip][k]  = ILogsum(ILogsum(mmx[ip+1][k+1] + hmm->tsc[CTIM][k],
+				       imx[ip+1][k] + hmm->tsc[CTII][k]),
+			       dmx[ip][k+1] + hmm->tsc[CTID][k]);
+	  imx[ip][k] += hmm->isc[dsq[i]][k];
 	  
-	  dmx[i][k]  = ILogsum(ILogsum(mmx[i+1][k+1] + hmm->tsc[CTDM][k],
-				       imx[i+1][k] + hmm->tsc[CTDI][k]),
-			       dmx[i][k+1] + hmm->tsc[CTDD][k]);
+	  dmx[ip][k]  = ILogsum(ILogsum(mmx[ip+1][k+1] + hmm->tsc[CTDM][k],
+				       imx[ip+1][k] + hmm->tsc[CTDI][k]),
+			       dmx[ip][k+1] + hmm->tsc[CTDD][k]);
 	}
 
-      imx[i][0]  = ILogsum(ILogsum(mmx[i+1][1] + hmm->tsc[CTIM][0],
-				   imx[i+1][0] + hmm->tsc[CTII][0]),
-			   dmx[i][1] + hmm->tsc[CTID][0]);
-      imx[i][0] += hmm->isc[dsq[i]][0];
-      mmx[i][0] = -INFTY;
-      for (k = hmm->M-1; k >= 1; k--) /*M_0 is the B state, it doesn't emit*/
-	mmx[i][0] = ILogsum(mmx[i][0], mmx[i+1][k] + hmm->bsc[k]);
-      mmx[i][0] = ILogsum(mmx[i][0], imx[i+1][k] + hmm->tsc[CTMI][k]);
-      mmx[i][0] = ILogsum(mmx[i][0], dmx[i][k+1] + hmm->tsc[CTMD][k]);
+      imx[ip][0]  = ILogsum(ILogsum(mmx[ip+1][1] + hmm->tsc[CTIM][0],
+				   imx[ip+1][0] + hmm->tsc[CTII][0]),
+			   dmx[ip][1] + hmm->tsc[CTID][0]);
+      imx[ip][0] += hmm->isc[dsq[i]][0];
+      mmx[ip][0] = -INFTY;
+      /*for (k = hmm->M-1; k >= 1; k--)*/ /*M_0 is the B state, it doesn't emit*/
+      for (k = hmm->M; k >= 1; k--) /*M_0 is the B state, it doesn't emit*/
+	mmx[ip][0] = ILogsum(mmx[ip][0], mmx[ip+1][k] + hmm->bsc[k]);
+      mmx[ip][0] = ILogsum(mmx[ip][0], imx[ip+1][k] + hmm->tsc[CTMI][k]);
+      mmx[ip][0] = ILogsum(mmx[ip][0], dmx[ip][k+1] + hmm->tsc[CTMD][k]);
 
-      dmx[i][0] = -INFTY; /* D_0 does not exist */
+      dmx[ip][0] = -INFTY; /* D_0 does not exist */
     }
-  /* case when i = 0 */
+  /* case when ip = 0 */
   emx[0][0] = -INFTY;
   mmx[0][hmm->M] = -INFTY; /* need seq to get here */
   imx[0][hmm->M] = -INFTY; /* need seq to get here */
@@ -1705,7 +1728,8 @@ CP9Backward(unsigned char *dsq, int L, struct cplan9_s *hmm, struct cp9_dpmatrix
  *           compromise the algorithm).
  *           
  * Args:     dsq      - sequence in digitized form
- *           L        - length of sequence
+ *           i0       - start of target subsequence (often 1, beginning of dsq)
+ *           j0       - end of target subsequence (often L, end of dsq)
  *           hmm      - the model
  *           forward  - pre-calculated forward matrix
  *           backward - pre-calculated backward matrix
@@ -1714,7 +1738,7 @@ CP9Backward(unsigned char *dsq, int L, struct cplan9_s *hmm, struct cp9_dpmatrix
  * Return:   void
  */
 void
-CP9FullPosterior(unsigned char *dsq, int L,
+CP9FullPosterior(unsigned char *dsq, int i0, int j0,
 		 struct cplan9_s *hmm,
 		 struct cp9_dpmatrix_s *fmx,
 		 struct cp9_dpmatrix_s *bmx,
@@ -1723,6 +1747,11 @@ CP9FullPosterior(unsigned char *dsq, int L,
   int i;
   int k;
   int sc;
+  int W;		/* subsequence length */
+  int ip;		/* i': relative position in the subsequence  */
+  /*float temp_sc;*/
+
+  W  = j0-i0+1;		/* the length of the subsequence */
 
   sc = bmx->mmx[0][0];
 
@@ -1737,35 +1766,37 @@ CP9FullPosterior(unsigned char *dsq, int L,
       mx->dmx[0][k] = fmx->dmx[0][k] + bmx->dmx[0][k] - sc;
     }
       
-  for (i = 1; i <= L; i++)
+  for (ip = 1; ip <= W; ip++) /* ip is the relative position in the seq */
     {
-      mx->mmx[i][0] = -INFTY; /*M_0 does not emit*/
-      mx->imx[i][0] = fmx->imx[i][0] + bmx->imx[i][0] - hmm->isc[dsq[i]][0] - sc;
+      i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from i0 to j0 */
+      mx->mmx[ip][0] = -INFTY; /*M_0 does not emit*/
+      mx->imx[ip][0] = fmx->imx[ip][0] + bmx->imx[ip][0] - hmm->isc[dsq[i]][0] - sc;
       /*hmm->isc[dsq[i]][0] will have been counted in both fmx->imx and bmx->imx*/
-      mx->dmx[i][0] = -INFTY; /*D_0 does not exist*/
+      mx->dmx[ip][0] = -INFTY; /*D_0 does not exist*/
       for (k = 1; k <= hmm->M; k++) 
 	{
-	  mx->mmx[i][k] = fmx->mmx[i][k] + bmx->mmx[i][k] - hmm->msc[dsq[i]][k] - sc;
+	  mx->mmx[ip][k] = fmx->mmx[ip][k] + bmx->mmx[ip][k] - hmm->msc[dsq[i]][k] - sc;
 	  /*hmm->msc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
-	  mx->imx[i][k] = fmx->imx[i][k] + bmx->imx[i][k] - hmm->isc[dsq[i]][k] - sc;
+	  mx->imx[ip][k] = fmx->imx[ip][k] + bmx->imx[ip][k] - hmm->isc[dsq[i]][k] - sc;
 	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
-	  mx->dmx[i][k] = fmx->dmx[i][k] + bmx->dmx[i][k] - sc;
+	  mx->dmx[ip][k] = fmx->dmx[ip][k] + bmx->dmx[ip][k] - sc;
 	}	  
     }
 
   /*
-  for(i = 0; i <= L; i++)
+  for(i = 0; i <= W; i++)
     {
       for(k = 0; k <= hmm->M; k++)
 	{
 	  temp_sc = Score2Prob(mx->mmx[i][k], 1.);
 	  if(temp_sc > .0001)
+	  printf("mx->mmx[%3d][%3d]: %9d | %8f\n", i, k, mx->mmx[i][k], temp_sc);
 	  temp_sc = Score2Prob(mx->imx[i][k], 1.);
 	  if(temp_sc > .0001)
-	    printf("mx->imx[%3d][%3d]: %9d | %8f\n", i, k, mx->imx[i][k], temp_sc);
+	  printf("mx->imx[%3d][%3d]: %9d | %8f\n", i, k, mx->imx[i][k], temp_sc);
 	  temp_sc = Score2Prob(mx->dmx[i][k], 1.);
 	  if(temp_sc > .0001)
-	    printf("mx->dmx[%3d][%3d]: %9d | %8f\n", i, k, mx->dmx[i][k], temp_sc);
+	  printf("mx->dmx[%3d][%3d]: %9d | %8f\n", i, k, mx->dmx[i][k], temp_sc);
 	}
     }
   */
@@ -1788,7 +1819,8 @@ CP9FullPosterior(unsigned char *dsq, int L,
  * arguments:
  * cp9_dpmatrix_s *post  dpmatrix_s posterior matrix, xmx, mmx, imx, dmx 
  *                       2D int arrays. [0.1..N][0.1..M]
- * int   L          length of sequence (num rows of matrix)
+ * int  i0          start of target subsequence (often 1, beginning of dsq)
+ * int  j0          end of target subsequence (often L, end of dsq)
  * int   M          number of nodes in HMM (num columns of matrix)
  * int  *isum_pn_m  [0..M] sum_pn_m[k] = sum over i of log probabilities
  *                  from post->mmx[i][k]
@@ -1801,12 +1833,15 @@ CP9FullPosterior(unsigned char *dsq, int L,
  *                  filled in this function, must be freed by caller.
  *****************************************************************************/
 void
-CP9_ifill_post_sums(struct cp9_dpmatrix_s *post, int L, int M,
+CP9_ifill_post_sums(struct cp9_dpmatrix_s *post, int i0, int j0, int M,
 		    int *isum_pn_m, int *isum_pn_i, int *isum_pn_d)
 {
   int i;            /* counter over positions of the sequence */
   int k;            /* counter over nodes of the model */
-  
+  int   W;		/* subsequence length */
+
+  W  = j0-i0+1;		/* the length of the subsequence */
+
   /* step through each node, fill the post sum structures */
 
   /* Do all matches, then all inserts, then all deletes 
@@ -1817,21 +1852,21 @@ CP9_ifill_post_sums(struct cp9_dpmatrix_s *post, int L, int M,
   for(k = 0; k <= M; k++)
     {
       isum_pn_m[k] = post->mmx[0][k];
-      for(i = 1; i <= L; i++)
+      for(i = 1; i <= W; i++)
 	  isum_pn_m[k] = ILogsum(isum_pn_m[k], post->mmx[i][k]);
     }
   /* inserts */
   for(k = 0; k <= M; k++)
     {
       isum_pn_i[k] = post->imx[0][k];
-      for(i = 1; i <= L; i++)
+      for(i = 1; i <= W; i++)
 	isum_pn_i[k] = ILogsum(isum_pn_i[k], post->imx[i][k]);
     }
   /* deletes */
   for(k = 1; k <= M; k++)
     {
       isum_pn_d[k] = post->dmx[0][k];
-      for(i = 1; i <= L; i++)
+      for(i = 1; i <= W; i++)
 	isum_pn_d[k] = ILogsum(isum_pn_d[k], post->dmx[i][k]);
     }
 }
@@ -1905,7 +1940,8 @@ P7_ifill_post_sums(struct dpmatrix_s *post, int L, int M,
  *
  * int post         posterior matrix for *mx (matches, inserts or deletes)
  *                  2D int array [0.1..N][0.1..M] M = num nodes in HMM
- * int   L          length of sequence (num rows of post matrix)
+ * int i0           start of target subsequence (often 1, beginning of dsq)
+ * int j0           end of target subsequence (often L, end of dsq)
  * int   M          number of nodes in HMM (num columns of post matrix)
  * int  *isum_pn    [1..M] sum_pn[k] = sum over i of log probabilities
  *                  from post->*mx[i][k]
@@ -1921,7 +1957,7 @@ P7_ifill_post_sums(struct dpmatrix_s *post, int L, int M,
  *                  statements to print.
  *****************************************************************************/
 void
-CP9_hmm_band_bounds(int **post, int L, int M, int *isum_pn, int *pn_min, int *pn_max, 
+CP9_hmm_band_bounds(int **post, int i0, int j0, int M, int *isum_pn, int *pn_min, int *pn_max, 
 		    double p_thresh, int state_type, int debug_level)
 {
   int k;         /* counter over nodes of the model */
@@ -1942,6 +1978,7 @@ CP9_hmm_band_bounds(int **post, int L, int M, int *isum_pn, int *pn_min, int *pn
 
   log_p_side = Prob2Score(((1. - p_thresh)/2.), 1.); /* allowable prob mass excluded on each side */
 
+
   /* step through each node */
   for(k = 0; k <= M; k++)
     {
@@ -1949,31 +1986,32 @@ CP9_hmm_band_bounds(int **post, int L, int M, int *isum_pn, int *pn_min, int *pn
       if(isum_pn != NULL) 
 	curr_log_p_side += isum_pn[k]; /* if we use sums strategy, normalize
 					* so total prob of entering k = 1. */
-      argmax_pn = 1;
-      max_post = post[1][k];
-      pn_min[k] = 1;
-      pn_max[k] = L-1;
-      lmass_exc = post[(pn_min[k]-1)][k];
-      rmass_exc = post[(pn_max[k]+1)][k];
+      argmax_pn = i0;
+      max_post = post[1][k]; /* post[1][k] corresponds to i0 for node k */
+      pn_min[k] = i0; 
+      pn_max[k] = j0-1;
+      /* i' = i - i0 + 1; i' is offset index for first dimension of post[][] */
+      lmass_exc = post[(pn_min[k]-1)-i0+1][k];
+      rmass_exc = post[(pn_max[k]+1)-i0+1][k];
       /*creep in on the left, until we exceed our allowable prob mass to exclude.*/ 
-      while(pn_min[k] <= L && lmass_exc <= (curr_log_p_side))
+      while(pn_min[k] <= j0 && lmass_exc <= (curr_log_p_side))
 	{
-	  if(post[pn_min[k]][k] > max_post) /* save info on most likely posn 
+	  if(post[(pn_min[k])-i0+1][k] > max_post) /* save info on most likely posn 
 					     * in case whole seq is outside band */
 	    {
-	      max_post = post[pn_min[k]][k];
+	      max_post = post[(pn_min[k])-i0+1][k];
 	      argmax_pn = pn_min[k];
 	    }
-	  lmass_exc = ILogsum(lmass_exc, post[pn_min[k]][k]);
+	  lmass_exc = ILogsum(lmass_exc, post[(pn_min[k])-i0+1][k]);
 	  pn_min[k]++;
 	}
       /* we went one posn too far, back up*/
       pn_min[k]--;
       
       /*creep in on the right, until we exceed our allowable prob mass to exclude.*/
-      while(pn_max[k] >= 0 && rmass_exc <= (curr_log_p_side))
+      while(pn_max[k] >= (i0-1) && rmass_exc <= (curr_log_p_side))
 	{
-	  rmass_exc = ILogsum(rmass_exc, post[pn_max[k]][k]);
+	  rmass_exc = ILogsum(rmass_exc, post[(pn_max[k]-i0+1)][k]);
 	  pn_max[k]--;
 	}
       /* we went one posn too far, back up*/
@@ -2187,7 +2225,8 @@ P7_hmm_band_bounds(int **post, int L, int M, int *isum_pn, int *pn_min, int *pn_
  *                    [0..(cm->nodes-1)], -1 if maps to no consensus column
  * int *cc_node_map  node that each consensus column maps to (is modelled by)
  *                     [1..ncc]
- * int  L           length of sequence we're aligning
+ * int i0           start of target subsequence (often 1, beginning of dsq)
+ * int j0           end of target subsequence (often L, end of dsq)
  * int *pn_min_m    pn_min_m[k] = first position in HMM band for match state of HMM node k
  * int *pn_max_m    pn_max_m[k] = last position in HMM band for match state of HMM node k
  * int *pn_min_i    pn_min_i[k] = first position in HMM band for insert state of HMM node k
@@ -2210,7 +2249,7 @@ P7_hmm_band_bounds(int **post, int L, int M, int *isum_pn, int *pn_min, int *pn_
  *****************************************************************************/
 void
 hmm2ij_bands(CM_t *cm, int ncc, int *node_cc_left, int *node_cc_right, 
-	     int *cc_node_map, int L, int *pn_min_m, int *pn_max_m,
+	     int *cc_node_map, int i0, int j0, int *pn_min_m, int *pn_max_m,
 	     int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d,
 	     int *imin, int *imax, int *jmin, int *jmax, int **cs2hn_map,
 	     int debug_level)
@@ -2442,7 +2481,7 @@ hmm2ij_bands(CM_t *cm, int ncc, int *node_cc_left, int *node_cc_right,
 	  break;
 
 	case MATP_nd:
-	  hmm2ij_prestate_step0_initialize(n, nss_max_imin, nss_min_jmax, L);
+	  hmm2ij_prestate_step0_initialize(n, nss_max_imin, nss_min_jmax, i0, j0);
 	  hmm2ij_prestate_step1_set_node_inserts(n, nis_imin, nis_imax, nis_jmin, nis_jmax,
 						 nss_imin, nss_imax, nss_jmin, nss_jmax,
 						 pn_min_i, pn_max_i, node_cc_left, 
@@ -2574,7 +2613,7 @@ hmm2ij_bands(CM_t *cm, int ncc, int *node_cc_left, int *node_cc_right,
 	  break;
 
 	case MATL_nd:
-	  hmm2ij_prestate_step0_initialize(n, nss_max_imin, nss_min_jmax, L);
+	  hmm2ij_prestate_step0_initialize(n, nss_max_imin, nss_min_jmax, i0, j0);
 	  hmm2ij_prestate_step1_set_node_inserts(n, nis_imin, nis_imax, nis_jmin, nis_jmax,
 						 nss_imin, nss_imax, nss_jmin, nss_jmax,
 						 pn_min_i, pn_max_i, node_cc_left, 
@@ -2640,7 +2679,7 @@ hmm2ij_bands(CM_t *cm, int ncc, int *node_cc_left, int *node_cc_right,
 	  break;
 
 	case MATR_nd:
-	  hmm2ij_prestate_step0_initialize(n, nss_max_imin, nss_min_jmax, L);
+	  hmm2ij_prestate_step0_initialize(n, nss_max_imin, nss_min_jmax, i0, j0);
 	  hmm2ij_prestate_step1_set_node_inserts(n, nis_imin, nis_imax, nis_jmin, nis_jmax,
 						 nss_imin, nss_imax, nss_jmin, nss_jmax,
 						 pn_min_i, pn_max_i, node_cc_left, 
@@ -2710,7 +2749,7 @@ hmm2ij_bands(CM_t *cm, int ncc, int *node_cc_left, int *node_cc_right,
 	  break;
 
 	case ROOT_nd:
-	  hmm2ij_prestate_step0_initialize(n, nss_max_imin, nss_min_jmax, L);
+	  hmm2ij_prestate_step0_initialize(n, nss_max_imin, nss_min_jmax, i0, j0);
 	  hmm2ij_prestate_step1_set_node_inserts(n, nis_imin, nis_imax, nis_jmin, nis_jmax,
 						 nss_imin, nss_imax, nss_jmin, nss_jmax,
 						 pn_min_i, pn_max_i, node_cc_left, 
@@ -2725,10 +2764,10 @@ hmm2ij_bands(CM_t *cm, int ncc, int *node_cc_left, int *node_cc_right,
 						   node_cc_left, node_cc_right);
 	  /* 3 states, ROOT_S, ROOT_IL, and ROOT_IR*/
 	  v = cm->nodemap[n]; /* ROOT_S SPECIAL CASE */
-	  tmp_imin = 1;
-	  tmp_imax = 1;
-	  tmp_jmin = L;
-	  tmp_jmax = L;
+	  tmp_imin = i0;
+	  tmp_imax = i0;
+	  tmp_jmin = j0;
+	  tmp_jmax = j0;
 	  hmm2ij_split_state_step1_set_state_bands(v, n, tmp_imin, tmp_imax, tmp_jmin,
 						   tmp_jmax, imin, imax, jmin, jmax,
 						   nss_imin, nss_imax, nss_jmin, nss_jmax);
@@ -2738,10 +2777,10 @@ hmm2ij_bands(CM_t *cm, int ncc, int *node_cc_left, int *node_cc_right,
 	  hmm2ij_state_step4_update_safe_holders(v, n, imin[v], jmax[v], nss_max_imin, nss_min_jmax);
 	  
 	  v++; /*ROOT_IL SPECIAL CASE*/
-	  tmp_imin =  1; /* Have to be able to transit here from ROOT_S */
+	  tmp_imin =  i0; /* Have to be able to transit here from ROOT_S */
 	  tmp_imax = nss_imax[n+1];
-	  tmp_jmin = L; /* we never emit to the right in this state */
-	  tmp_jmax = L; /* we never emit to the right in this state */
+	  tmp_jmin = j0; /* we never emit to the right in this state */
+	  tmp_jmax = j0; /* we never emit to the right in this state */
 	  hmm2ij_insert_state_step1_set_state_bands(v, tmp_imin, tmp_imax, tmp_jmin,
 						    tmp_jmax, imin, imax, jmin, jmax);
 	  /* Enforce safe transitions, this makes sure that at least one state
@@ -2755,10 +2794,10 @@ hmm2ij_bands(CM_t *cm, int ncc, int *node_cc_left, int *node_cc_right,
 	  hmm2ij_state_step3_enforce_state_delta(cm, v, jmin, jmax);
 
 	  v++; /*ROOT_IR SPECIAL CASE analagous to ROOT_IL*/
-	  tmp_imin = 1; /* we never emit to the left in this state */
+	  tmp_imin = i0; /* we never emit to the left in this state */
 	  tmp_imax = nss_imax[n+1]; 
 	  tmp_jmin = nss_jmin[n+1];
-	  tmp_jmax = L; /* Have to be able to transit here from ROOT_S */
+	  tmp_jmax = j0; /* Have to be able to transit here from ROOT_S */
 	  hmm2ij_insert_state_step1_set_state_bands(v, tmp_imin, tmp_imax, tmp_jmin,
 						    tmp_jmax, imin, imax, jmin, jmax);
 	  /* Enforce safe transitions, this makes sure that at least one state
@@ -2773,7 +2812,7 @@ hmm2ij_bands(CM_t *cm, int ncc, int *node_cc_left, int *node_cc_right,
 	  break;
 	  
 	case BEGL_nd:
-	  hmm2ij_prestate_step0_initialize(n, nss_max_imin, nss_min_jmax, L);
+	  hmm2ij_prestate_step0_initialize(n, nss_max_imin, nss_min_jmax, i0, j0);
 	  hmm2ij_prestate_step1_set_node_inserts(n, nis_imin, nis_imax, nis_jmin, nis_jmax,
 						 nss_imin, nss_imax, nss_jmin, nss_jmax,
 						 pn_min_i, pn_max_i, node_cc_left, 
@@ -2812,7 +2851,7 @@ hmm2ij_bands(CM_t *cm, int ncc, int *node_cc_left, int *node_cc_right,
 	  break;
 
 	case BEGR_nd:
-	  hmm2ij_prestate_step0_initialize(n, nss_max_imin, nss_min_jmax, L);
+	  hmm2ij_prestate_step0_initialize(n, nss_max_imin, nss_min_jmax, i0, j0);
 	  hmm2ij_prestate_step1_set_node_inserts(n, nis_imin, nis_imax, nis_jmin, nis_jmax,
 						 nss_imin, nss_imax, nss_jmin, nss_jmax,
 						 pn_min_i, pn_max_i, node_cc_left, 
@@ -2870,7 +2909,7 @@ hmm2ij_bands(CM_t *cm, int ncc, int *node_cc_left, int *node_cc_right,
 	  break;
 
 	case BIF_nd:
-	  hmm2ij_prestate_step0_initialize(n, nss_max_imin, nss_min_jmax, L);
+	  hmm2ij_prestate_step0_initialize(n, nss_max_imin, nss_min_jmax, i0, j0);
 
 	  /* 1 state BIF_B */
 	  v = cm->nodemap[n]; /*BIF_B*/
@@ -2921,17 +2960,17 @@ hmm2ij_bands(CM_t *cm, int ncc, int *node_cc_left, int *node_cc_right,
   die_flag = 0;
   for(v = 0; v < cm->M; v++)
     {
-      if(imin[v] > (L+1))
-	imin[v] = (L+1);
-      if(imax[v] > (L+1))
-	imax[v] = (L+1);
+      if(imin[v] > (j0+1))
+	imin[v] = (j0+1);
+      if(imax[v] > (j0+1))
+	imax[v] = (j0+1);
       /* i can be L+1 to allow delete states to be entered with 
        * d = 0, after the entire seq has been emitted.
        */
-      if(jmin[v] > L)
-	jmin[v] = L;
-      if(jmax[v] > L)
-	jmax[v] = L;
+      if(jmin[v] > j0)
+	jmin[v] = j0;
+      if(jmax[v] > j0)
+	jmax[v] = j0;
 
       if(imin[v] == -1 && cm->sttype[v] != E_st)
 	{
@@ -3017,10 +3056,10 @@ hmm2ij_bands(CM_t *cm, int ncc, int *node_cc_left, int *node_cc_right,
  * 
  *****************************************************************************/
 void 
-hmm2ij_prestate_step0_initialize(int n, int *nss_max_imin, int *nss_min_jmax, int L)
+hmm2ij_prestate_step0_initialize(int n, int *nss_max_imin, int *nss_min_jmax, int i0, int j0)
 {
-  nss_max_imin[n] = 0;
-  nss_min_jmax[n] = L;
+  nss_max_imin[n] = i0-1;
+  nss_min_jmax[n] = j0;
 }
 
 /*****************************************************************************
@@ -3741,13 +3780,17 @@ ijd_banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax,
  *           hmm    - the model
  *           sc     - P(x|hmm) the probability of the entire
  *                    seq given the model
- *           L      - length of the sequence
+ *           i0     - start of target subsequence (often 1, beginning of dsq)
+ *           j0     - end of target subsequence (often L, end of dsq)
  *           
+ * Note about sequence position indexing: although this function
+ * works on a subsequence from i0 to j0, fmx and bmx have offset indices,
+ * from 1 to W, with W = j0-i0+1.
  * Return:   (void) Exits if any errors are found.
  */
 void
 debug_check_CP9_FB(struct cp9_dpmatrix_s *fmx, struct cp9_dpmatrix_s *bmx, 
-		   struct cplan9_s *hmm, float sc, int L, unsigned char *dsq)
+		   struct cplan9_s *hmm, float sc, int i0, int j0, unsigned char *dsq)
 {
   int k, i;
   float max_diff;  /* maximum allowed difference between sc and 
@@ -3756,22 +3799,27 @@ debug_check_CP9_FB(struct cp9_dpmatrix_s *fmx, struct cp9_dpmatrix_s *bmx,
   float diff;
   int fb_sum;
   float fb_sc;
+  int   W;		/* subsequence length */
+  int   ip;		/* i': relative position in the subsequence  */
+
+  W  = j0-i0+1;		/* the length of the subsequence */
 
   max_diff = 0.01;
   /*printf("sc: %f\n", sc);*/
 
   /* In all possible paths through the model, each residue of the sequence must have 
    * been emitted by exactly 1 insert or match state. */
-  for (i = 1; i <= L; i++)
+  for (ip = 1; ip <= W; ip++)
     {
+      i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from i0 to j0 */
       fb_sum = -INFTY;
       for (k = 0; k <= hmm->M; k++) 
 	{
-	  fb_sum = ILogsum(fb_sum, (fmx->mmx[i][k] + bmx->mmx[i][k] - hmm->msc[dsq[i]][k]));
+	  fb_sum = ILogsum(fb_sum, (fmx->mmx[ip][k] + bmx->mmx[ip][k] - hmm->msc[dsq[i]][k]));
 	  /*hmm->msc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
-	  fb_sum = ILogsum(fb_sum, (fmx->imx[i][k] + bmx->imx[i][k] - hmm->isc[dsq[i]][k]));
+	  fb_sum = ILogsum(fb_sum, (fmx->imx[ip][k] + bmx->imx[ip][k] - hmm->isc[dsq[i]][k]));
 	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
-	  /*fb_sum = ILogsum(fb_sum, fmx->dmx[i][k] + bmx->dmx[i][k]);*/
+	  /*fb_sum = ILogsum(fb_sum, fmx->dmx[ip][k] + bmx->dmx[ip][k]);*/
 	}
       fb_sc  = Scorify(fb_sum);
       diff = sc - fb_sc;
@@ -3779,7 +3827,7 @@ debug_check_CP9_FB(struct cp9_dpmatrix_s *fmx, struct cp9_dpmatrix_s *bmx,
       if(diff > max_diff)
 	{
 	  printf("ERROR, fb_sc[%d]: %f too different from P(x|hmm): %f\n", i, fb_sc, sc);
-	  /*exit(1);*/
+	  exit(1);
 	}
     }
 }

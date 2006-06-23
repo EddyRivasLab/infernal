@@ -706,15 +706,15 @@ main(int argc, char **argv)
 	   */
 	  
 	  /* Step 1: Get HMM posteriors.*/
-	  /*sc = CP9Viterbi(p7dsq[i], sqinfo[i].len, cp9_hmm, cp9_mx);*/
-	  forward_sc = CP9Forward(p7dsq[i], sqinfo[i].len, cp9_hmm, &cp9_fwd);
+	  /*sc = CP9Viterbi(p7dsq[i], 1, sqinfo[i].len, cp9_hmm, cp9_mx);*/
+	  forward_sc = CP9Forward(p7dsq[i], 1, sqinfo[i].len, cp9_hmm, &cp9_fwd);
 	  printf("CP9 i: %d | forward_sc : %f\n", i, forward_sc);
-	  backward_sc = CP9Backward(p7dsq[i], sqinfo[i].len, cp9_hmm, &cp9_bck);
+	  backward_sc = CP9Backward(p7dsq[i], 1, sqinfo[i].len, cp9_hmm, &cp9_bck);
 	  printf("CP9 i: %d | backward_sc: %f\n", i, backward_sc);
 
-	  /*debug_check_CP9_FB(cp9_fwd, cp9_bck, cp9_hmm, forward_sc, sqinfo[i].len, p7dsq[i]);*/
+	  /*debug_check_CP9_FB(cp9_fwd, cp9_bck, cp9_hmm, forward_sc, 1, sqinfo[i].len, p7dsq[i]);*/
 	  cp9_posterior = cp9_bck;
-	  CP9FullPosterior(p7dsq[i], sqinfo[i].len, cp9_hmm, cp9_fwd, cp9_bck, cp9_posterior);
+	  CP9FullPosterior(p7dsq[i], 1, sqinfo[i].len, cp9_hmm, cp9_fwd, cp9_bck, cp9_posterior);
 	  
 	  StopwatchStop(watch1);
 	  if(time_flag) StopwatchDisplay(stdout, "CP9 Forward/Backward CPU time: ", watch1);
@@ -725,28 +725,28 @@ main(int argc, char **argv)
 	  if(!(use_sums))
 	    {
 	      /* match states */
-	      CP9_hmm_band_bounds(cp9_posterior->mmx, sqinfo[i].len, cp9_hmm->M,
+	      CP9_hmm_band_bounds(cp9_posterior->mmx, 1, sqinfo[i].len, cp9_hmm->M,
 				  NULL, pn_min_m, pn_max_m, (1.-hbandp), HMMMATCH, debug_level);
 	      /* insert states */
-	      CP9_hmm_band_bounds(cp9_posterior->imx, sqinfo[i].len, cp9_hmm->M,
+	      CP9_hmm_band_bounds(cp9_posterior->imx, 1, sqinfo[i].len, cp9_hmm->M,
 				  NULL, pn_min_i, pn_max_i, (1.-hbandp), HMMINSERT, debug_level);
 	      /* delete states (note: delete_flag set to TRUE) */
-	      CP9_hmm_band_bounds(cp9_posterior->dmx, sqinfo[i].len, cp9_hmm->M,
+	      CP9_hmm_band_bounds(cp9_posterior->dmx, 1, sqinfo[i].len, cp9_hmm->M,
 				  NULL, pn_min_d, pn_max_d, (1.-hbandp), HMMDELETE, debug_level);
 	    }
 	  else
 	    {
-	      CP9_ifill_post_sums(cp9_posterior, sqinfo[i].len, cp9_hmm->M,
+	      CP9_ifill_post_sums(cp9_posterior, 1, sqinfo[i].len, cp9_hmm->M,
 				  isum_pn_m[i], isum_pn_i[i], 
 				  isum_pn_d[i]);
 	      /* match states */
-	      CP9_hmm_band_bounds(cp9_posterior->mmx, sqinfo[i].len, cp9_hmm->M,
+	      CP9_hmm_band_bounds(cp9_posterior->mmx, 1, sqinfo[i].len, cp9_hmm->M,
 				  isum_pn_m[i], pn_min_m, pn_max_m, (1.-hbandp), HMMMATCH, debug_level);
 	      /* insert states */
-	      CP9_hmm_band_bounds(cp9_posterior->imx, sqinfo[i].len, cp9_hmm->M,
+	      CP9_hmm_band_bounds(cp9_posterior->imx, 1, sqinfo[i].len, cp9_hmm->M,
 				  isum_pn_i[i], pn_min_i, pn_max_i, (1.-hbandp), HMMINSERT, debug_level);
 	      /* delete states */
-	      CP9_hmm_band_bounds(cp9_posterior->dmx, sqinfo[i].len, cp9_hmm->M,
+	      CP9_hmm_band_bounds(cp9_posterior->dmx, 1, sqinfo[i].len, cp9_hmm->M,
 				  isum_pn_d[i], pn_min_d, pn_max_d, (1.-hbandp), HMMDELETE, debug_level);
 	    }
 	  if(debug_level != 0)
@@ -758,7 +758,7 @@ main(int argc, char **argv)
 	  
 	  /* Step 3: HMM bands  ->  CM bands. */
 	  hmm2ij_bands(cm, cp9_hmm->M, node_cc_left, node_cc_right, cc_node_map, 
-		       sqinfo[i].len, pn_min_m, pn_max_m, pn_min_i, pn_max_i, 
+		       1, sqinfo[i].len, pn_min_m, pn_max_m, pn_min_i, pn_max_i, 
 		       pn_min_d, pn_max_d, imin, imax, jmin, jmax, cs2hn_map,
 		       debug_level);
 	  
@@ -869,7 +869,7 @@ main(int argc, char **argv)
 
 	  /* Step 3: HMM bands  ->  CM bands. */
 	  hmm2ij_bands(cm, hmm->M, node_cc_left, node_cc_right, cc_node_map, 
-		       sqinfo[i].len, pn_min_m, pn_max_m, pn_min_i, pn_max_i, 
+		       1, sqinfo[i].len, pn_min_m, pn_max_m, pn_min_i, pn_max_i, 
 		       pn_min_d, pn_max_d, imin, imax, jmin, jmax, cs2hn_map,
 		       debug_level);
 	  
@@ -1864,3 +1864,4 @@ banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *dmin, int *dmax, int bdum
   free(sttypes);
   free(nodetypes);
 }
+
