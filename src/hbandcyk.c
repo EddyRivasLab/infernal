@@ -2550,3 +2550,529 @@ debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax)
 
 }
 
+/* Function: CYKBandedScan_jd() EXPERIMENTAL
+ * Date:     EPN, 06.22.06
+ * based on: CYKBandedScan() by SRE in bandcyk.c
+ *
+ * Purpose:  Scan a (sub)sequence for matches to a covariance model, using HMM
+ *           derived bands on the j and d dimensions. Intended for use on 
+ *           subsequences with endpoints i and j, where i and j were determined
+ *           using a HMM scan of the full sequence. This function then refines
+ *           the positions of i and j, as well as deriving a CYK score that is
+ *           more informative than an HMM based score. 
+ *           Allows multiple nonoverlapping hits and local alignment.
+ *           Derived from scancyk.c.
+ *
+ *           jmin, jmax set the state specific bounds on the j dimension. 0..v..cm->M-1.
+ *           hdmin, hdmax set the state and j specific bounds on the d dimension, indexed
+ *           [0..v..cm-M-1][0..(jmax[v]-jmin[v]+1)].
+ *           
+ *           The j band for v is jmin[v]..jmax[v], inclusive; that is,
+ *           jmin[v] is the minimum allowed j for state v (inclusive);
+ *           jmax[v] is the maximum; 
+ * 
+ *           The d bands are v and j specific (in contrast to the a priori d bands
+ *           which are only v specific), the d band for v and j is 
+ *           hdmin[v][j-jmin[v]]..hdmax[v][j-jmin[v]] inclusive;
+ *           hdmin[v][j-jmin[v]] is the minimum allowed d for state v and end point j
+ *           hdmax[v][j-jmin[v]] is the maximum; 
+ *
+ * Args:     cm        - the covariance model
+ *           dsq       - digitized sequence to search; i0..j0
+ *           jmin      - minimum bound on j for state v; 0..M
+ *           jmax      - maximum bound on j for state v; 0..M
+ *           hdmin     - minimum bound on j for state v and end posn j;
+ *                       [0..M-1][0..(jmax[v]-jmin[v]+1)          
+ *           hdmax     - maximum bound on j for state v and end posn j;
+ *                       [0..M-1][0..(jmax[v]-jmin[v]+1)          
+ *           i0        - start of target subsequence (1 for beginning of dsq)
+ *           j0        - end of target subsequence (L for end of dsq)
+ *           W         - max d: max size of a hit
+ *           prev_nhits- number of hits found in dsq before calling this func
+ *           ret_nhits - number of total hits, equal to prev_nhits if no hits found
+ *           hitr      - start states of hits, new hits are prev_nhits..ret_nhits-1
+ *           hiti      - start positions of hits, new hits are prev_nhits..ret_nhits-1 
+ *           hitj      - end positions of hits, new hits are prev_nhits..ret_nhits-1
+ *           hitsc     - scores of hits, new hits are prev_nhits..ret_nhits-1            
+ *           min_thresh- minimum score to report (EPN via Alex Coventry 03.11.06)
+ *
+ * Returns:  
+ *           hiti, hitj, hitsc are reallocated here if nec; caller free's w/ free().
+ */
+void
+CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax, int i0, 
+		 int j0, int W, int prev_nhits, int *ret_nhits, int *hitr, int *hiti, int *hitj, 
+		 float *hitsc, float min_thresh)
+{
+  float  ***alpha;              /* CYK DP score matrix, [v][j][d] */
+  int      *bestr;              /* auxil info: best root state at alpha[0][cur][d] */
+  float    *gamma;              /* SHMM DP matrix for optimum nonoverlap resolution */
+  int      *gback;              /* traceback pointers for SHMM */ 
+  float    *savesc;             /* saves score of hit added to best parse at j */
+  int      *saver;		/* saves initial non-ROOT state of best parse ended at j */
+  int      gamma_j;             /* j index in the gamma matrix, which is indexed 0..j0-i0+1, 
+				 * while j runs from i0..j0 */
+  int      gamma_i;             /* i index in the gamma matrix */
+  int       v;			/* a state index, 0..M-1 */
+  int       w, y;		/* child state indices */
+  int       yoffset;		/* offset to a child state */
+  int       i,j;		/* index of start/end positions in sequence, 0..L */
+  int       d;			/* a subsequence length, 0..W */
+  int       k;			/* used in bifurc calculations: length of right subseq */
+  int       prv, cur;		/* previous, current j row (0 or 1) */
+  float     sc;			/* tmp variable for holding a score */
+  int       jp_roll;   	        /* rolling index into BEGL_S decks: jp=j%(W+1) */
+  int       alloc_nhits;	/* used to grow the hit arrays */
+  int       tmp_jmin, tmp_jmax; /* temp variables for ensuring we stay within j bands within loops */
+  int       tmp_dmin, tmp_dmax; /* temp variables for ensuring we stay within d bands within loops */
+  int       tmp_kmin, tmp_kmax; /* temp vars for B_st's, min/max k values consistent with bands*/
+
+  int      jp_v, jp_y, jp_w;    /* mem eff banded j index in states v, y, and z 
+				 * jp_x = j-jmin[x] */
+  int      L;                   /* length of subsequence (j0-i0+1) */
+  int      nhits;               /* number of previous hits plus hits found within this func */
+  int      x;
+  int      tmp_y;
+  float    tmp_alpha_w, tmp_alpha_y;
+  /* EPN 08.11.05 Next line prevents wasteful computations when imposing
+   * bands before the main recursion.  There is no need to worry about
+   * alpha cells corresponding to subsequence distances within the windowlen
+   * (W) but LONGER than the full sequence (L).  Saves a significant amount 
+   * of time only if W is much larger than necessary, and the search sequences 
+   * are short.
+   */
+  L = j0-i0+1;
+  if (W > L) W = L; 
+
+  /*PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, (j0-i0+1));*/
+
+  /*****************************************************************
+   * alpha allocations.
+   * The scanning matrix is indexed [v][j][d]. 
+   *    v ranges from 0..M-1 over states in the model.
+   *    j takes values 0 or 1: only the previous (prv) or current (cur) row
+   *      with the exception of BEGL_S, where we have to have a whole W+1xW+1
+   *      deck in memory, and j ranges from 0..W, and yes it must be square
+   *      because we'll use a rolling pointer trick thru it
+   *    d ranges from 0..W over subsequence lengths.
+   * Note that unlike the other CYK scan functions, E memory is not shared: 
+   * this is because the E deck will be different for different j values
+   * due to the j bands. 
+   * 
+   *****************************************************************/
+  alpha = MallocOrDie (sizeof(float **) * cm->M);
+  for (v = cm->M-1; v >= 0; v--) {	/* reverse, because we allocate E_M-1 first */
+    if (cm->stid[v] == BEGL_S)
+      {
+	alpha[v] = MallocOrDie(sizeof(float *) * (W+1));
+	for (j = 0; j <= W; j++)
+	  alpha[v][j] = MallocOrDie(sizeof(float) * (W+1));
+      }
+    else 
+      {
+	alpha[v] = MallocOrDie(sizeof(float *) * 2);
+	for (j = 0; j < 2; j++) 
+	  alpha[v][j] = MallocOrDie(sizeof(float) * (W+1));
+      }
+  }
+  bestr = MallocOrDie(sizeof(int) * (W+1));
+
+  /*****************************************************************
+   * gamma allocation and initialization.
+   * This is a little SHMM that finds an optimal scoring parse
+   * of multiple nonoverlapping hits.
+   *****************************************************************/ 
+  gamma    = MallocOrDie(sizeof(float) * (L+1));
+  gamma[0] = 0;
+  gback    = MallocOrDie(sizeof(int)   * (L+1));
+  gback[0] = -1;
+  savesc   = MallocOrDie(sizeof(float) * (L+1));
+  saver    = MallocOrDie(sizeof(int)   * (L+1));
+
+  /*****************************************************************
+   * The main loop: scan the sequence from position 1 to L.
+   *****************************************************************/
+  for (j = i0; j <= j0; j++) 
+    {
+      gamma_j = j-i0+1;
+      cur = j%2;
+      prv = (j-1)%2;
+
+      /*****************************************************************
+       * alpha initializations.
+       * For the jd banded strategy, we initialize inside the j loop,
+       * because no cells are j-independent: for j's outside
+       * the bands for a state v, should have ALL cells = IMPOSSIBLE.
+       *****************************************************************/ 
+      for (v = cm->M-1; v > 0; v--) /* ...almost to ROOT; we handle ROOT specially... */
+	{
+	  /* Check to see if we're within bounds on j */
+	  if(j < jmin[v] || j > jmax[v])
+	    {
+	      if (cm->stid[v] == BEGL_S) jp_roll = j % (W+1); else jp_roll = cur;
+	      for (d = 0; d <= W; d++) 
+		alpha[v][jp_roll][d] = IMPOSSIBLE;
+	      continue;
+	    }
+	  
+	  /* else we initialize on d = 0 */
+	  alpha[v][cur][0] = IMPOSSIBLE;
+
+	  if      (cm->sttype[v] == E_st)  alpha[v][0][0] = 0;
+	  else if (cm->sttype[v] == MP_st) alpha[v][0][1] = alpha[v][0][1] = IMPOSSIBLE;
+	  else if (cm->sttype[v] == S_st || cm->sttype[v] == D_st) 
+	    {
+	      y = cm->cfirst[v];
+	      alpha[v][0][0] = cm->endsc[v];
+	      /* treat EL as emitting only on self transition */
+	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
+		if ((sc = alpha[y+yoffset][0][0] + cm->tsc[v][yoffset]) > alpha[v][0][0]) 
+		  alpha[v][0][0] = sc;
+	      /* ...we don't bother to look at local alignment starts here... */
+	      bestr[0] = -1;
+	      if (alpha[v][0][0] < IMPOSSIBLE) alpha[v][0][0] = IMPOSSIBLE;	
+	    }
+	  else if (cm->sttype[v] == B_st) 
+	    {
+	      w = cm->cfirst[v]; /* w is BEGL_S */
+	      y = cm->cnum[v];   /* y is BEGR_S */
+	      /* original line: 
+	       * alpha[v][0][0] = alpha[w][0][0] + alpha[y][0][0]; 
+	       * we can't use that because alpha[w][0][0] and alpha[y][0][0] 
+	       * may have been set to IMPOSSIBLE, so we recalculate what they
+	       * should be (this is wasteful):
+	       */
+	      tmp_y = cm->cfirst[w];
+	      tmp_alpha_w = cm->endsc[w];
+	      /* treat EL as emitting only on self transition */
+	      for (yoffset = 0; yoffset < cm->cnum[w]; yoffset++)
+		{
+		  if ((sc = alpha[tmp_y+yoffset][0][0] + cm->tsc[w][yoffset]) > tmp_alpha_w)
+		    tmp_alpha_w = sc;
+		}
+	      tmp_y = cm->cfirst[y];
+	      tmp_alpha_y = cm->endsc[y];
+	      /* treat EL as emitting only on self transition */
+	      for (yoffset = 0; yoffset < cm->cnum[y]; yoffset++)
+		if ((sc = alpha[tmp_y+yoffset][0][0] + cm->tsc[y][yoffset]) > tmp_alpha_y)
+		  tmp_alpha_y = sc;
+	      alpha[v][0][0] = tmp_alpha_w + tmp_alpha_y;
+	      if (alpha[v][0][0] < IMPOSSIBLE) alpha[v][0][0] = IMPOSSIBLE;	
+	    }
+	  
+	  alpha[v][1][0] = alpha[v][0][0];
+	  if (cm->stid[v] == BEGL_S) 
+	    for (x = 2; x < W; x++) 
+	      alpha[v][x][0] = alpha[v][0][0];
+	  /* done initialization */
+	  
+	  jp_v = j - jmin[v];
+	  /* Impose the bands.
+	   *   We have to do this inside the main loop because d bands are
+	   *   dependent on v AND j. 
+	   */
+	  if (cm->stid[v] == BEGL_S) jp_roll = j % (W+1); else jp_roll = cur;
+	  for (d =0; d < hdmin[v][jp_v] && d <=W; d++) 
+	    alpha[v][jp_roll][d] = IMPOSSIBLE;
+	  for (d = hdmax[v][jp_v]+1; d <= W;      d++) 
+	    alpha[v][jp_roll][d] = IMPOSSIBLE;
+
+	  if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
+	    {
+	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= j; d++) 
+		{
+		  y = cm->cfirst[v];
+		  alpha[v][jp_roll][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
+		    if ((sc = alpha[y+yoffset][cur][d] + cm->tsc[v][yoffset]) > alpha[v][jp_roll][d]) 
+		      alpha[v][jp_roll][d] = sc;
+			    
+		  if (alpha[v][jp_roll][d] < IMPROBABLE) alpha[v][jp_roll][d] = IMPOSSIBLE;
+		}
+	    }
+	  else if (cm->sttype[v] == MP_st) 
+	    {
+	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= j; d++)
+		{
+		  y = cm->cfirst[v];
+		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
+		    if ((sc = alpha[y+yoffset][prv][d-2] + cm->tsc[v][yoffset]) > alpha[v][cur][d])
+		      alpha[v][cur][d] = sc;
+		  
+		  i = j-d+1;
+		  if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
+		    alpha[v][cur][d] += cm->esc[v][(int) (dsq[i]*Alphabet_size+dsq[j])];
+		  else
+		    alpha[v][cur][d] += DegeneratePairScore(cm->esc[v], dsq[i], dsq[j]);
+		  
+		  if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
+		}
+	    }
+	  else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) 
+	    {
+	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= j; d++)
+		{
+		  y = cm->cfirst[v];
+		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
+		    if ((sc = alpha[y+yoffset][cur][d-1] + cm->tsc[v][yoffset]) > alpha[v][cur][d])
+		      alpha[v][cur][d] = sc;
+		  
+		  i = j-d+1;
+		  if (dsq[i] < Alphabet_size)
+		    alpha[v][cur][d] += cm->esc[v][(int) dsq[i]];
+		  else
+		    alpha[v][cur][d] += DegenerateSingletScore(cm->esc[v], dsq[i]);
+		  
+		  if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
+		}
+	    }
+	  else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) 
+	    {
+	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= j; d++)
+		{
+		  y = cm->cfirst[v];
+		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
+		    if ((sc = alpha[y+yoffset][prv][d-1] + cm->tsc[v][yoffset]) > alpha[v][cur][d])
+		      alpha[v][cur][d] = sc;
+		  
+		  if (dsq[j] < Alphabet_size)
+		    alpha[v][cur][d] += cm->esc[v][(int) dsq[j]];
+		  else
+		    alpha[v][cur][d] += DegenerateSingletScore(cm->esc[v], dsq[j]);
+		  
+		  if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
+		}
+	    }
+	  else if (cm->sttype[v] == B_st) 
+	    {
+	      w = cm->cfirst[v];
+	      y = cm->cnum[v];
+	      /* Five inequalities must be satisfied to ensure that j and k 
+	       * and k combinations correspond with alpha cells within the bands 
+	       * on states y and w. 
+	       * Below: jp_y = j - jmin[y] & jp_w = j - jmin[w]
+	       *
+	       * (1) j   >= jmin[y]          && j   <= jmax[y]
+	       * (2) j-k >= jmin[w]          && j-k <= jmax[w]
+	       * (3) k   >= hdmin[y][jp_y]   && k   <= hdmax[y][jp_y]
+	       * (4) d-k >= hdmin[w][jp_w-k] && d-k <= hdmax[w][jp_w-k]
+	       * (5) d   >= hdmin[v][jp_v]   && d   <= hdmax[v][jp_v]
+	       */
+
+	      /* Following code is careful, and not 'efficient' */
+	      if(j >= jmin[y] && j <= jmax[y]) /* ensures (1): that j is valid for state y */
+		{
+		  jp_y = j - jmin[y];
+		  jp_w = j - jmin[w]; 
+		  i = j-d+1;
+		  /*
+		    printf("valid j: %d | jp_y: %d | jp_w: %d\n", j, jp_y, jp_w);
+		    printf("hdmin[v][jp_v]: %d | hdmin[y][jp_y]: %d\n", hdmin[v][jp_v], hdmin[y][jp_y]);
+		    printf("hdmax[v][jp_v]: %d | hdmax[y][jp_y]: %d\n", hdmax[v][jp_v], hdmax[y][jp_y]);
+		  */
+		  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= j; d++) /* ensures (5) above */
+		    {
+		      /*printf("valid d: %d\n", d);*/
+		      alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
+		      /* k is the length of the right fragment */
+		      tmp_kmin = ((j-jmax[w]) > hdmin[y][jp_y]) ? (j-jmax[w]) : hdmin[y][jp_y];
+		      if(tmp_kmin < 0) tmp_kmin = 0;
+		      if(tmp_kmin < d-hdmax[w][jp_w-tmp_kmin]) tmp_kmin = d-hdmax[w][jp_w-tmp_kmin];
+		      /* tmp_kmin is now smallest k that satisfies (2), (3), and (4) */
+
+		      tmp_kmax = ((j-jmin[w]) < hdmax[y][jp_y]) ? (j-jmin[w]) : hdmax[y][jp_y];
+		      if(tmp_kmax > d-hdmin[w][jp_w-tmp_kmax]) tmp_kmax = d-hdmin[w][jp_w-tmp_kmax];
+		      /* tmp_kmax is now largest k that satisfies (2), (3), and (4) */
+		      /*printf("tmp_kmin: %d | tmp_kmax: %d\n", tmp_kmin, tmp_kmax);*/
+		      for (k = tmp_kmin; k <= tmp_kmax; k++)
+			{
+			  jp_roll = (j-k)%(W+1); /* jp_roll is rolling index into BEGL_S (state w) 
+						  * deck j dimension */
+			  if ((sc = alpha[w][jp_roll][d-k] + alpha[y][cur][k]) > alpha[v][cur][d])
+			    alpha[v][cur][d] = sc;
+			}
+		      if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
+		      /*printf("B alpha[%d][%d][%d]: %f\n", v, cur, d, alpha[v][cur][d]);*/
+		    }
+		}
+	    }
+	} /* end loop over decks v>0 */
+	  
+      /* Finish up with the ROOT_S, state v=0; and deal w/ local begins.
+       * 
+       * If local begins are off, the hit must be rooted at v=0.
+       * With local begins on, the hit is rooted at the second state in
+       * the traceback (e.g. after 0), the internal entry point. Divide & conquer
+       * can only handle this if it's a non-insert state; this is guaranteed
+       * by the way local alignment is parameterized (other transitions are
+       * -INFTY), which is probably a little too fragile of a method. 
+       */
+      /* Check to see if we're within bounds on j */
+      if(j < jmin[0] || j > jmax[0])
+	{
+	  for (d = 0; d <= W; d++) 
+	    alpha[0][jp_roll][d] = IMPOSSIBLE;
+	  /* Inform the little semi-Markov model that deals with multihit parsing
+	   * that a hit is impossible, j is outside root band on j:
+	   */
+	  gamma[gamma_j]  = gamma[gamma_j-1] + 0; /* extend without adding a new hit */
+	  gback[gamma_j]  = -1;
+	  savesc[gamma_j] = IMPOSSIBLE;
+	  saver[gamma_j]  = -1;
+	  continue;
+	}
+      /* if we get here, j is within ROOT_S state 0's band */
+
+      /* first initialize on d = 0 */
+      alpha[0][0][0] = IMPOSSIBLE;
+      y = cm->cfirst[v];
+      alpha[0][0][0] = cm->endsc[v];
+      /* treat EL as emitting only on self transition */
+      for (yoffset = 0; yoffset < cm->cnum[0]; yoffset++)
+	if ((sc = alpha[y+yoffset][0][0] + cm->tsc[0][yoffset]) > alpha[0][0][0]) 
+	  alpha[0][0][0] = sc;
+      /* ...we don't bother to look at local alignment starts here... */
+      bestr[0] = -1;
+      if (alpha[0][0][0] < IMPOSSIBLE) alpha[0][0][0] = IMPOSSIBLE;	
+      alpha[0][1][0] = alpha[0][0][0];
+      /* done initialization on d = 0 */
+
+      jp_v = j - jmin[0];
+      /* Impose the bands.
+       *   We have to do this here because d bands are
+       *   dependent on v AND j. 
+       */
+      jp_roll = cur;
+      for (d =0; d < hdmin[0][jp_v] && d <=W; d++) 
+	alpha[0][jp_roll][d] = IMPOSSIBLE;
+      for (d = hdmax[0][jp_v]+1; d <= W;      d++) 
+	alpha[0][jp_roll][d] = IMPOSSIBLE;
+      
+      for (d = hdmin[0][jp_v]; d <= hdmax[0][jp_v] && d <= j; d++)
+	{
+	  y = cm->cfirst[0];
+	  alpha[0][cur][d] = alpha[y][cur][d] + cm->tsc[0][0];
+	  bestr[d]         = 0;	/* root of the traceback = root state 0 */
+	  for (yoffset = 1; yoffset < cm->cnum[0]; yoffset++)
+	    {
+	      if ((sc = alpha[y+yoffset][cur][d] + cm->tsc[0][yoffset]) > alpha[0][cur][d]) 
+		{
+		  alpha[0][cur][d] = sc;
+		}
+	    }
+	  /*printf("j: %d | alpha[0][cur][%d]: %f\n", j, d, alpha[0][cur][d]);*/
+	}
+
+      if (cm->flags & CM_LOCAL_BEGIN) {
+	for (y = 1; y < cm->M; y++) {
+	  if(j >= jmin[y] && j <= jmax[y]) 
+	    {
+	      jp_y = j - jmin[y];
+	      tmp_dmin = (hdmin[y][jp_y] > hdmin[0][jp_v]) ? hdmin[y][jp_y] : hdmin[0][jp_v];
+	      tmp_dmax = (hdmax[y][jp_y] < hdmax[0][jp_v]) ? hdmax[y][jp_y] : hdmax[0][jp_v];
+	      if(tmp_dmax > j) tmp_dmax = j;
+	      for (d = tmp_dmin; d <= tmp_dmax; d++)
+		{
+		  if (cm->stid[y] == BEGL_S) sc = alpha[y][j%(W+1)][d] + cm->beginsc[y];
+		  else                       sc = alpha[y][cur][d]     + cm->beginsc[y];
+		  if (sc > alpha[0][cur][d]) {
+		    alpha[0][cur][d] = sc;
+		    bestr[d]         = y;
+		  }
+		}
+	    }
+	}
+	if (alpha[0][cur][d] < IMPROBABLE) alpha[0][cur][d] = IMPOSSIBLE;
+      }
+      
+      /* The little semi-Markov model that deals with multihit parsing:
+       */
+      gamma[gamma_j]  = gamma[gamma_j-1] + 0; /* extend without adding a new hit */
+      gback[gamma_j]  = -1;
+      savesc[gamma_j] = IMPOSSIBLE;
+      saver[gamma_j]  = -1;
+      for (d = hdmin[0][jp_v]; d <= hdmax[0][jp_v] && d <= j; d++) 
+	{
+	  i       = j-d+1;
+	  gamma_i = j-d+1-i0+1;
+	  assert(i > 0);
+	  sc = gamma[gamma_i-1] + alpha[0][cur][d]  - min_thresh; 
+	  if (sc > gamma[gamma_j])
+	    {
+	      gamma[gamma_j]  = sc;
+	      gback[gamma_j]  = i;
+	      savesc[gamma_j] = alpha[0][cur][d]; 
+	      saver[gamma_j]  = bestr[d];
+	    }
+	}
+    } /* end loop over end positions j */
+
+  /*****************************************************************
+   * we're done with alpha, free it; everything we need is in gamma.
+   *****************************************************************/ 
+  for (v = 0; v < cm->M; v++) 
+    {
+      if (cm->stid[v] == BEGL_S) {                     /* big BEGL_S decks */
+	for (j = 0; j <= W; j++) free(alpha[v][j]);
+	free(alpha[v]);
+      } else {
+	free(alpha[v][0]);
+	free(alpha[v][1]);
+	free(alpha[v]);
+      }
+    }
+  free(alpha);
+  free(bestr);
+
+  /*****************************************************************
+   * Traceback stage.
+   * Recover all hits: an (i,j,sc) triple for each one.
+   * Difference here with CYKScan(), add new hits to existing ones
+   * that may have already been found prior to calling this function.
+   *****************************************************************/ 
+  alloc_nhits = prev_nhits;
+  while(alloc_nhits % 10 != 0) alloc_nhits++;
+
+  nhits = prev_nhits;
+  if (nhits == alloc_nhits) {
+    hitr  = ReallocOrDie(hitr,  sizeof(int)   * (alloc_nhits + 10));
+    hitj  = ReallocOrDie(hitj,  sizeof(int)   * (alloc_nhits + 10));
+    hiti  = ReallocOrDie(hiti,  sizeof(int)   * (alloc_nhits + 10));
+    hitsc = ReallocOrDie(hitsc, sizeof(float) * (alloc_nhits + 10));
+    alloc_nhits += 10;
+  }
+  j     = j0;
+  while (j >= i0) {
+    gamma_j = j-i0+1;
+    if (gback[gamma_j] == -1) /* no hit */
+      j--; 
+    else                /* a hit, a palpable hit */
+      {
+	hitr[nhits]   = saver[gamma_j];
+	hitj[nhits]   = j;
+	hiti[nhits]   = gback[gamma_j];
+	hitsc[nhits]  = savesc[gamma_j];
+	nhits++;
+	j = gback[gamma_j]-1;
+	
+	if (nhits == alloc_nhits) {
+	  hitr  = ReallocOrDie(hitr,  sizeof(int)   * (alloc_nhits + 10));
+	  hitj  = ReallocOrDie(hitj,  sizeof(int)   * (alloc_nhits + 10));
+	  hiti  = ReallocOrDie(hiti,  sizeof(int)   * (alloc_nhits + 10));
+	  hitsc = ReallocOrDie(hitsc, sizeof(float) * (alloc_nhits + 10));
+	  alloc_nhits += 10;
+	}
+      }
+  }
+  free(gback);
+  free(gamma);
+  free(savesc);
+  free(saver);
+
+  *ret_nhits = nhits;
+  return;
+}
+

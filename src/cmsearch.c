@@ -104,11 +104,19 @@ main(int argc, char **argv)
   int     *dmax; 		/* maximum d bound for state v, [0..v..M-1] */
   double   bandp;		/* tail loss probability for banding */
 
+  /* information on hits found with the CM */
   int    nhits;			/* number of hits in a seq */
   int   *hitr;			/* initial states for hits */
   int   *hiti;                  /* start positions of hits */
   int   *hitj;                  /* end positions of hits */
   float *hitsc;			/* scores of hits */
+
+  /* information on hits found with the CP9 HMM derived from the CM */
+  int    hmm_nhits;		/* number of hits in a seq */
+  int   *hmm_hitr;		/* initial states for hits */
+  int   *hmm_hiti;              /* start positions of hits */
+  int   *hmm_hitj;              /* end positions of hits */
+  float *hmm_hitsc;		/* scores of hits */
 
   int    windowlen;		/* maximum len of hit; scanning window size */
   int    do_revcomp;		/* true to do reverse complement too */
@@ -145,6 +153,8 @@ main(int argc, char **argv)
   struct cp9_dpmatrix_s *cp9_fwd;       /* growable DP matrix for forward                       */
   struct cp9_dpmatrix_s *cp9_bck;       /* growable DP matrix for backward                      */
   struct cp9_dpmatrix_s *cp9_posterior; /* growable DP matrix for posterior decode              */
+  float                  swentry;	/* S/W aggregate entry probability       */
+  float                  swexit;        /* S/W aggregate exit probability        */
   float                  fwd_sc;        /* score for Forward() run */
   float                  fb_sc;         /* score from Forward or Backward */
   float                  sc;            /* score from CYK */
@@ -208,6 +218,8 @@ main(int argc, char **argv)
 
   int do_inside;        /* TRUE to use scanning Inside algorithm instead of CYK */
   int do_hbanded;       /* TRUE to first scan with a CP9 HMM to derive bands for a CYK scan */
+  int alloc_nhits;	/* used to grow the hit arrays */
+
   /*********************************************** 
    * Parse command line
    ***********************************************/
@@ -246,7 +258,7 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--X")         == 0) do_projectx  = TRUE;
     else if  (strcmp(optname, "--banddump")  == 0) do_bdump     = TRUE;
     else if  (strcmp(optname, "--thresh")    == 0) thresh       = atof(optarg);
-    else if  (strcmp(optname, "--hmmonly")   == 0) { use_hmm      = TRUE; do_hmmonly = TRUE; } 
+    else if  (strcmp(optname, "--hmmonly")   == 0) { use_hmm      = TRUE; do_hmmonly = TRUE; do_align = FALSE; } 
     else if  (strcmp(optname, "--inside")    == 0) do_inside    = TRUE;
     else if  (strcmp(optname, "--hbanded")   == 0) {use_hmm = TRUE; do_hbanded  = TRUE;}
     else if  (strcmp(optname, "--hbandp")    == 0) hbandp       = atof(optarg);
@@ -288,9 +300,8 @@ main(int argc, char **argv)
   if (! (set_window)) windowlen = cm->W;
   /*printf("***cm->W : %d***\n", cm->W);*/
 
-  if (do_local) ConfigLocal(cm, 0.5, 0.5);
   CMLogoddsify(cm);
-  /*CMHackInsertScores(cm);*/	/* make insert emissions score zero. "TEMPORARY" FIX. */
+  /*CMHackInsertScores(cm);*/	/* "TEMPORARY" fix for bad priors */
   cons = CreateCMConsensus(cm, 3.0, 1.0); 
 
   if (do_banded || do_projectx || do_bdump)
@@ -386,10 +397,6 @@ main(int argc, char **argv)
       /*debug_print_cp9_params(cp9_hmm);
 	exit(1);*/
 
-    }
-  /* Allocate data structures for use with HMM banding strategy (CP9) */
-  if(use_hmm)
-    {
       pn_min_m    = malloc(sizeof(int) * (cp9_hmm->M+1));
       pn_max_m    = malloc(sizeof(int) * (cp9_hmm->M+1));
       pn_min_i    = malloc(sizeof(int) * (cp9_hmm->M+1));
@@ -409,6 +416,26 @@ main(int argc, char **argv)
       isum_pn_d   = malloc(sizeof(int) * cp9_hmm->M+1);
     }      
   
+  /* Relocated ConfigLocal() call to here, AFTER the CM Plan 9 construction.
+   * Otherwise its impossible to make a CM Plan 9 HMM from the local CM
+   * that passes the current tests to ensure the HMM is "close enough" to
+   * the CM. 
+   */
+  if (do_local)
+    { 
+      ConfigLocal(cm, 0.5, 0.5);
+      CMLogoddsify(cm);
+      /*CMHackInsertScores(cm);*/	/* "TEMPORARY" fix for bad priors */
+      if(use_hmm)
+	{
+	  printf("configuring the CM plan 9 HMM for local alignment.\n");
+	  swentry           = 0.5;
+	  swexit            = 0.5;
+	  CPlan9SWConfig(cp9_hmm, swentry, swexit);
+	  CP9Logoddsify(cp9_hmm);
+	}
+    }
+
   StopwatchZero(watch);
   StopwatchStart(watch);
   
@@ -430,30 +457,48 @@ main(int argc, char **argv)
       dsq = DigitizeSequence(seq, sqinfo.len);
 
       hmm_thresh = thresh;
-      if (use_hmm) /* either scan only with CP9 HMM, or use it to infer bands for CYK */
+      if (use_hmm) /* either scan only with CP9 HMM, or use it to infer bands for CYK.
+		    * Information on hits found with the HMM are in hmm_hit* arrays. */
 	{
 	  p7dsq = hmmer_DigitizeSequence(seq, sqinfo.len);
+	  hmm_nhits = 0;
 
 	  if(do_hmmonly) /* scan only with CP9 HMM */
 	    {
 	      fwd_sc = CP9ForwardScan(p7dsq, sqinfo.len, windowlen, cp9_hmm, &cp9_fwd, 
-				      &nhits, &hitr, &hiti, &hitj, &hitsc, hmm_thresh);
+				      &hmm_nhits, &hmm_hitr, &hmm_hiti, &hmm_hitj, &hmm_hitsc, 
+				      hmm_thresh);
 	      /*printf("forward  sc: %f\n", fwd_sc);*/
 	      /*printf("hmmer_Alphabet: %s\n", hmmer_Alphabet);
 		sc = CP9Forward(p7dsq, sqinfo.len, cp9_hmm, &cp9_fwd);*/
+	      /* We're only using the HMM */
+	      nhits = hmm_nhits;
+	      hitr  = hmm_hitr;
+	      hiti  = hmm_hiti;
+	      hitj  = hmm_hitj;
+	      hitsc = hmm_hitsc;
 	    }
 	  else /* use CP9 HMM to infer bands for CYK */
 	    {
 	      /* Scan the sequence with "scanning" Forward and Backward algorithms,
 	       * Forward gives likely endpoints (j's), Backward gives likely start points
 	       * (i's). Then combine them to get likely i and j pairs (see 
-	       * code in CP9_scan.c. 
+	       * code in CP9_scan.c.)
 	       */
 	      fb_sc = CP9ForwardBackwardScan(p7dsq, sqinfo.len, windowlen, cp9_hmm, &cp9_fwd, &cp9_bck,
-					     &nhits, &hitr, &hiti, &hitj, &hitsc, hmm_thresh);
+					     &hmm_nhits, &hmm_hitr, &hmm_hiti, &hmm_hitj, &hmm_hitsc, hmm_thresh);
 	      /*printf("forward/backward sc: %f\n", fb_sc);*/
 	      FreeCPlan9Matrix(cp9_fwd);
 	      FreeCPlan9Matrix(cp9_bck);
+
+	      /* Print HMM hits */
+	      for (i = 0; i < hmm_nhits; i++)
+		{
+	      	  printf("HMM hit %-4d: %6d %6d %8.2f bits\n", i, 
+			 reversed ? sqinfo.len - hmm_hiti[i] + 1 : hmm_hiti[i], 
+			 reversed ? sqinfo.len - hmm_hitj[i] + 1 : hmm_hitj[i],
+			 hmm_hitsc[i]);
+		}
 
 	      /* For each hit defined by an i-j pair, use non-scanning, traditional
 	       * Forward and Backward algorithms to get hmm bands, we'll use to 
@@ -462,17 +507,24 @@ main(int argc, char **argv)
 	       * Step 2: posteriors -> HMM bands.
 	       * Step 3: HMM bands  ->  CM bands.
 	       */
-	      for (i = 0; i < nhits; i++)
+	      nhits = 0; /* number of CM hits is set to 0, but we'll check each HMM hit with the CM,
+			  * and this number may grow */
+	      alloc_nhits = 10;
+	      hitr  = MallocOrDie(sizeof(int)   * alloc_nhits);
+	      hitj  = MallocOrDie(sizeof(int)   * alloc_nhits);
+	      hiti  = MallocOrDie(sizeof(int)   * alloc_nhits);
+	      hitsc = MallocOrDie(sizeof(float) * alloc_nhits);
+	      for (i = 0; i < hmm_nhits; i++)
 		{
 		  /* Step 1: Get HMM posteriors.*/
-		  fb_sc = CP9Forward(p7dsq, hiti[i], hitj[i], cp9_hmm, &cp9_fwd);
+		  fb_sc = CP9Forward(p7dsq, hmm_hiti[i], hmm_hitj[i], cp9_hmm, &cp9_fwd);
 		  /*printf("hit: %d i: %d j: %d forward_sc : %f\n", i, hiti[i], hitj[i], fb_sc);*/
-		  fb_sc = CP9Backward(p7dsq, hiti[i], hitj[i], cp9_hmm, &cp9_bck);
+		  fb_sc = CP9Backward(p7dsq, hmm_hiti[i], hmm_hitj[i], cp9_hmm, &cp9_bck);
 		  /*printf("CP9 i: %d | backward_sc: %f\n", i, fb_sc);*/
 
 		  /*debug_check_CP9_FB(cp9_fwd, cp9_bck, cp9_hmm, fb_sc, hiti[i], hitj[i], p7dsq);*/
 		  cp9_posterior = cp9_bck;
-		  CP9FullPosterior(p7dsq, hiti[i], hitj[i], cp9_hmm, cp9_fwd, cp9_bck, cp9_posterior);
+		  CP9FullPosterior(p7dsq, hmm_hiti[i], hmm_hitj[i], cp9_hmm, cp9_fwd, cp9_bck, cp9_posterior);
 
 		  /* Step 2: posteriors -> HMM bands.
 		   * NOTE: HMM bands have offset sequence indices, from 1 to W, 
@@ -481,28 +533,28 @@ main(int argc, char **argv)
 		  if(!(use_sums))
 		    {
 		      /* match states */
-		      CP9_hmm_band_bounds(cp9_posterior->mmx, hiti[i], hitj[i], cp9_hmm->M,
+		      CP9_hmm_band_bounds(cp9_posterior->mmx, hmm_hiti[i], hmm_hitj[i], cp9_hmm->M,
 					  NULL, pn_min_m, pn_max_m, (1.-hbandp), HMMMATCH, debug_level);
 		      /* insert states */
-		      CP9_hmm_band_bounds(cp9_posterior->imx, hiti[i], hitj[i], cp9_hmm->M,
+		      CP9_hmm_band_bounds(cp9_posterior->imx, hmm_hiti[i], hmm_hitj[i], cp9_hmm->M,
 					  NULL, pn_min_i, pn_max_i, (1.-hbandp), HMMINSERT, debug_level);
 		      /* delete states (note: delete_flag set to TRUE) */
-		      CP9_hmm_band_bounds(cp9_posterior->dmx, hiti[i], hitj[i], cp9_hmm->M,
+		      CP9_hmm_band_bounds(cp9_posterior->dmx, hmm_hiti[i], hmm_hitj[i], cp9_hmm->M,
 					  NULL, pn_min_d, pn_max_d, (1.-hbandp), HMMDELETE, debug_level);
 		    }
 		  else
 		    {
-		      CP9_ifill_post_sums(cp9_posterior, hiti[i], hitj[i], cp9_hmm->M,
+		      CP9_ifill_post_sums(cp9_posterior, hmm_hiti[i], hmm_hitj[i], cp9_hmm->M,
 					  isum_pn_m, isum_pn_i, 
 					  isum_pn_d);
 		      /* match states */
-		      CP9_hmm_band_bounds(cp9_posterior->mmx, hiti[i], hitj[i], cp9_hmm->M,
+		      CP9_hmm_band_bounds(cp9_posterior->mmx, hmm_hiti[i], hmm_hitj[i], cp9_hmm->M,
 					  isum_pn_m, pn_min_m, pn_max_m, (1.-hbandp), HMMMATCH, debug_level);
 		      /* insert states */
-		      CP9_hmm_band_bounds(cp9_posterior->imx, hiti[i], hitj[i], cp9_hmm->M,
+		      CP9_hmm_band_bounds(cp9_posterior->imx, hmm_hiti[i], hmm_hitj[i], cp9_hmm->M,
 					  isum_pn_i, pn_min_i, pn_max_i, (1.-hbandp), HMMINSERT, debug_level);
 		      /* delete states */
-		      CP9_hmm_band_bounds(cp9_posterior->dmx, hiti[i], hitj[i], cp9_hmm->M,
+		      CP9_hmm_band_bounds(cp9_posterior->dmx, hmm_hiti[i], hmm_hitj[i], cp9_hmm->M,
 					  isum_pn_d, pn_min_d, pn_max_d, (1.-hbandp), HMMDELETE, debug_level);
 		    }
 		  if(debug_level != 0)
@@ -514,7 +566,7 @@ main(int argc, char **argv)
 		  
 		  /* Step 3: HMM bands  ->  CM bands. */
 		  hmm2ij_bands(cm, cp9_hmm->M, node_cc_left, node_cc_right, cc_node_map, 
-			       hiti[i], hitj[i], pn_min_m, pn_max_m, pn_min_i, pn_max_i, 
+			       hmm_hiti[i], hmm_hitj[i], pn_min_m, pn_max_m, pn_min_i, pn_max_i, 
 			       pn_min_d, pn_max_d, imin, imax, jmin, jmax, cs2hn_map,
 			       debug_level);
 	  
@@ -524,32 +576,28 @@ main(int argc, char **argv)
 		      hdmin[v] = malloc(sizeof(int) * (jmax[v] - jmin[v] + 1));
 		      hdmax[v] = malloc(sizeof(int) * (jmax[v] - jmin[v] + 1));
 		    }
-		  ij2d_bands(cm, (hitj[i] - hiti[i] + 1), imin, imax, jmin, jmax,
+		  ij2d_bands(cm, (hmm_hitj[i] - hmm_hiti[i] + 1), imin, imax, jmin, jmax,
 			     hdmin, hdmax, -1);
 
 		  /*if(debug_level != 0)*/
-		  /*PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, (hitj[i] - hiti[i] + 1));*/
+		  /*PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, (hmm_hitj[i] - hmm_hiti[i] + 1));*/
 
 		  /*debug_print_hd_bands(cm, hdmin, hdmax, jmin, jmax);*/
 
 		  FreeCPlan9Matrix(cp9_fwd);
 		  FreeCPlan9Matrix(cp9_bck);
 
-		  if (do_align) 
-		    {
-		      printf("Aligning subseq from i: %d to j: %d using HMM bands\n", hiti[i], hitj[i]);
-		      sc = CYKInside_b_jd(cm, dsq, sqinfo.len, 0, hiti[i], hitj[i], &tr, 
-					  jmin, jmax, hdmin, hdmax, safe_hdmin, safe_hdmax);
-		      /*if(bdump_level > 0)
-			banded_trace_info_dump(cm, tr[i], safe_hdmin, safe_hdmax, bdump_level);
-		      */
-		      if(sc >= thresh) /* only print alignments with CYK scores > reporting thresh */
+		  /* Scan the sequence with a scanning CYK constrained by the HMM bands (experimental) */
+		  CYKBandedScan_jd(cm, dsq, jmin, jmax, hdmin, hdmax, hmm_hiti[i], hmm_hitj[i], windowlen, 
+				   nhits, &nhits, hitr, hiti, hitj, hitsc, thresh);
+		  /* If we're done with them, free hdmin and hdmax, these are allocated
+		   * differently for each sequence. */
+		  if(!(do_align))
+		    {		 
+		      for(v = 0; v < cm->M; v++)
 			{
-			  printf("\tCYK i: %5d j: %5d sc: %10.2f bits\n", hiti[i], hitj[i], sc);
-			  ali = CreateFancyAli(tr, cm, cons, dsq);
-			  PrintFancyAli(stdout, ali);
-			  FreeFancyAli(ali);
-			  FreeParsetree(tr);
+			  free(hdmin[v]);
+			  free(hdmax[v]);
 			}
 		    }
 		}
@@ -570,15 +618,15 @@ main(int argc, char **argv)
 		&nhits, &hitr, &hiti, &hitj, &hitsc, thresh);
       if (! reversed) printf("sequence: %s\n", sqinfo.name);
 
-      if(!(use_hmm && !do_hmmonly))
+      for (i = 0; i < nhits; i++)
 	{
-	  for (i = 0; i < nhits; i++)
+	  printf("hit %-4d: %6d %6d %8.2f bits\n", i, 
+		 reversed ? sqinfo.len - hiti[i] + 1 : hiti[i], 
+		 reversed ? sqinfo.len - hitj[i] + 1 : hitj[i],
+		 hitsc[i]);
+	  if (do_align)
 	    {
-	      printf("hit %-4d: %6d %6d %8.2f bits\n", i, 
-		     reversed ? sqinfo.len - hiti[i] + 1 : hiti[i], 
-		     reversed ? sqinfo.len - hitj[i] + 1 : hitj[i],
-		     hitsc[i]);
-	      if (do_align) 
+	      if(!(use_hmm))
 		{
 		  CYKDivideAndConquer(cm, dsq, sqinfo.len, 
 				      hitr[i], hiti[i], hitj[i], &tr);
@@ -591,10 +639,35 @@ main(int argc, char **argv)
 		  }
 		  if (do_projectx) {
 		    BandedParsetreeDump(stdout, tr, cm, dsq, gamma, windowlen, dmin, dmax);
-		  }
+		}
 		  
 		  FreeFancyAli(ali);
 		  FreeParsetree(tr);
+		}
+	      else
+		{
+		  printf("Aligning subseq from i: %d to j: %d using HMM bands\n", hiti[i], hitj[i]);
+		  sc = CYKInside_b_jd(cm, dsq, sqinfo.len, 0, hiti[i], hitj[i], &tr, 
+				      jmin, jmax, hdmin, hdmax, safe_hdmin, safe_hdmax);
+		  /* Free hdmin and hdmax, these are allocated
+		   * differently for each sequence. 
+		   */
+		  for(v = 0; v < cm->M; v++)
+		    {
+		      free(hdmin[v]);
+		      free(hdmax[v]);
+		    }
+		  /*if(bdump_level > 0)
+		    banded_trace_info_dump(cm, tr[i], safe_hdmin, safe_hdmax, bdump_level);
+		  */
+		  if(sc >= thresh) /* only print alignments with CYK scores > reporting thresh */
+		    {
+		      printf("\tCYK i: %5d j: %5d sc: %10.2f bits\n", hiti[i], hitj[i], sc);
+		      ali = CreateFancyAli(tr, cm, cons, dsq);
+		      PrintFancyAli(stdout, ali);
+		      FreeFancyAli(ali);
+		      FreeParsetree(tr);
+		    }
 		}
 	    }
 	}
@@ -602,7 +675,13 @@ main(int argc, char **argv)
       free(hiti);
       free(hitj);
       free(hitsc);
-      
+      if(use_hmm && !do_hmmonly)
+	{
+	  free(hmm_hitr);
+	  free(hmm_hiti);
+	  free(hmm_hitj);
+	  free(hmm_hitsc);
+	}
       free(dsq);
       if(use_hmm) free(p7dsq);
       if (! reversed && do_revcomp) {
@@ -613,6 +692,7 @@ main(int argc, char **argv)
 	FreeSequence(seq, &sqinfo);
       }
     }
+
   StopwatchStop(watch);
   StopwatchDisplay(stdout, "\nCPU time: ", watch);
   if(use_hmm) printf("CP9 Forward memory:   %8.2f MB\n", CP9ForwardScanRequires(cp9_hmm, maxlen, windowlen));
@@ -624,6 +704,46 @@ main(int argc, char **argv)
       free(dmin);
       free(dmax);
     }
+  if(use_hmm)
+    {
+      /* HMMERNAL */
+      free(imin);
+      free(imax);
+      free(jmin);
+      free(jmax);
+      free(hdmin);
+      free(hdmax);
+      free(pn_min_m);
+      free(pn_max_m);
+      free(pn_min_i);
+      free(pn_max_i);
+      free(pn_min_d);
+      free(pn_max_d);
+      free(node_cc_left);
+      free(node_cc_right);
+      free(cc_node_map);
+      free(safe_hdmin);
+      free(safe_hdmax);
+      free(isum_pn_m);
+      free(isum_pn_i);
+      free(isum_pn_d);
+      for(v = 0; v <= cm->M; v++)
+	{
+	  free(cs2hn_map[v]);
+	  free(cs2hs_map[v]);
+	}
+      free(cs2hn_map);
+      free(cs2hs_map);
+      for(k = 0; k <= cp9_hmm->M; k++)
+	{
+	  for(ks = 0; ks < 3; ks++)
+	    free(hns2cs_map[k][ks]);
+	  free(hns2cs_map[k]);
+	}
+      free(hns2cs_map);
+      FreeCPlan9(cp9_hmm);
+    }
+  
   FreeCMConsensus(cons);
   FreeCM(cm);
   CMFileClose(cmfp);

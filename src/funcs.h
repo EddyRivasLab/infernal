@@ -252,6 +252,9 @@ extern void debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, 
 extern void debug_print_alpha_banded_jd(float ***alpha, CM_t *cm, int L, int *jmin, int *jmax, 
 					int **hdmin, int **hdmax);
 extern float ** alloc_jdbanded_vjd_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
+extern void CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax, int i0, 
+			     int j0, int W, int prev_nhits, int *ret_nhits, int *hitr, int *hiti, int *hitj, 
+			     float *hitsc, float min_thresh);
 
 
 /* from CP9_scan.c */
