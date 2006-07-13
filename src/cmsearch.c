@@ -516,6 +516,8 @@ main(int argc, char **argv)
 	      hitsc = MallocOrDie(sizeof(float) * alloc_nhits);
 	      for (i = 0; i < hmm_nhits; i++)
 		{
+		  /*********************************************************/
+		  /* TO DO: write function that encapsulates this block... */
 		  /* Step 1: Get HMM posteriors.*/
 		  fb_sc = CP9Forward(p7dsq, hmm_hiti[i], hmm_hitj[i], cp9_hmm, &cp9_fwd);
 		  /*printf("hit: %d i: %d j: %d forward_sc : %f\n", i, hiti[i], hitj[i], fb_sc);*/
@@ -587,7 +589,11 @@ main(int argc, char **argv)
 		  FreeCPlan9Matrix(cp9_fwd);
 		  FreeCPlan9Matrix(cp9_bck);
 
+		  /* End of block to be encapsulated in function.          */
+		  /*********************************************************/
+
 		  /* Scan the sequence with a scanning CYK constrained by the HMM bands (experimental) */
+		  printf("CYK banded jd scanning hit: %d | i: %d | j: %d\n", i, hmm_hiti[i], hmm_hitj[i]);
 		  CYKBandedScan_jd(cm, dsq, jmin, jmax, hdmin, hdmax, hmm_hiti[i], hmm_hitj[i], windowlen, 
 				   nhits, &nhits, hitr, hiti, hitj, hitsc, thresh);
 		  /* If we're done with them, free hdmin and hdmax, these are allocated
@@ -646,6 +652,83 @@ main(int argc, char **argv)
 		}
 	      else
 		{
+		  /* Derive HMM bands, following block is too long... */
+		  /*********************************************************/
+		  /* TO DO: write function that encapsulates this block... */
+		  /* Step 1: Get HMM posteriors.*/
+		  fb_sc = CP9Forward(p7dsq, hiti[i], hitj[i], cp9_hmm, &cp9_fwd);
+		  /*printf("hit: %d i: %d j: %d forward_sc : %f\n", i, hiti[i], hitj[i], fb_sc);*/
+		  fb_sc = CP9Backward(p7dsq, hiti[i], hitj[i], cp9_hmm, &cp9_bck);
+		  /*printf("CP9 i: %d | backward_sc: %f\n", i, fb_sc);*/
+
+		  /*debug_check_CP9_FB(cp9_fwd, cp9_bck, cp9_hmm, fb_sc, hiti[i], hitj[i], p7dsq);*/
+		  cp9_posterior = cp9_bck;
+		  CP9FullPosterior(p7dsq, hiti[i], hitj[i], cp9_hmm, cp9_fwd, cp9_bck, cp9_posterior);
+
+		  /* Step 2: posteriors -> HMM bands.
+		   * NOTE: HMM bands have offset sequence indices, from 1 to W, 
+		   * with W = hitj[i] - hiti[i] + 1.
+		   */
+		  if(!(use_sums))
+		    {
+		      /* match states */
+		      CP9_hmm_band_bounds(cp9_posterior->mmx, hiti[i], hitj[i], cp9_hmm->M,
+					  NULL, pn_min_m, pn_max_m, (1.-hbandp), HMMMATCH, debug_level);
+		      /* insert states */
+		      CP9_hmm_band_bounds(cp9_posterior->imx, hiti[i], hitj[i], cp9_hmm->M,
+					  NULL, pn_min_i, pn_max_i, (1.-hbandp), HMMINSERT, debug_level);
+		      /* delete states (note: delete_flag set to TRUE) */
+		      CP9_hmm_band_bounds(cp9_posterior->dmx, hiti[i], hitj[i], cp9_hmm->M,
+					  NULL, pn_min_d, pn_max_d, (1.-hbandp), HMMDELETE, debug_level);
+		    }
+		  else
+		    {
+		      CP9_ifill_post_sums(cp9_posterior, hiti[i], hitj[i], cp9_hmm->M,
+					  isum_pn_m, isum_pn_i, 
+					  isum_pn_d);
+		      /* match states */
+		      CP9_hmm_band_bounds(cp9_posterior->mmx, hiti[i], hitj[i], cp9_hmm->M,
+					  isum_pn_m, pn_min_m, pn_max_m, (1.-hbandp), HMMMATCH, debug_level);
+		      /* insert states */
+		      CP9_hmm_band_bounds(cp9_posterior->imx, hiti[i], hitj[i], cp9_hmm->M,
+					  isum_pn_i, pn_min_i, pn_max_i, (1.-hbandp), HMMINSERT, debug_level);
+		      /* delete states */
+		      CP9_hmm_band_bounds(cp9_posterior->dmx, hiti[i], hitj[i], cp9_hmm->M,
+					  isum_pn_d, pn_min_d, pn_max_d, (1.-hbandp), HMMDELETE, debug_level);
+		    }
+		  if(debug_level != 0)
+		    {
+		      printf("printing hmm bands\n");
+		      print_hmm_bands(stdout, sqinfo.len, cp9_hmm->M, pn_min_m, pn_max_m, pn_min_i,
+				      pn_max_i, pn_min_d, pn_max_d, hbandp, debug_level);
+		    }
+		  
+		  /* Step 3: HMM bands  ->  CM bands. */
+		  hmm2ij_bands(cm, cp9_hmm->M, node_cc_left, node_cc_right, cc_node_map, 
+			       hiti[i], hitj[i], pn_min_m, pn_max_m, pn_min_i, pn_max_i, 
+			       pn_min_d, pn_max_d, imin, imax, jmin, jmax, cs2hn_map,
+			       debug_level);
+	  
+		  /* Use the CM bands on i and j to get bands on d, specific to j. */
+		  for(v = 0; v < cm->M; v++)
+		    {
+		      hdmin[v] = malloc(sizeof(int) * (jmax[v] - jmin[v] + 1));
+		      hdmax[v] = malloc(sizeof(int) * (jmax[v] - jmin[v] + 1));
+		    }
+		  ij2d_bands(cm, (hitj[i] - hiti[i] + 1), imin, imax, jmin, jmax,
+			     hdmin, hdmax, -1);
+
+		  /*if(debug_level != 0)*/
+		  /*PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, (hitj[i] - hiti[i] + 1));*/
+
+		  /*debug_print_hd_bands(cm, hdmin, hdmax, jmin, jmax);*/
+
+		  FreeCPlan9Matrix(cp9_fwd);
+		  FreeCPlan9Matrix(cp9_bck);
+
+		  /* End of block to be encapsulated in function.          */
+		  /*********************************************************/
+
 		  printf("Aligning subseq from i: %d to j: %d using HMM bands\n", hiti[i], hitj[i]);
 		  sc = CYKInside_b_jd(cm, dsq, sqinfo.len, 0, hiti[i], hitj[i], &tr, 
 				      jmin, jmax, hdmin, hdmax, safe_hdmin, safe_hdmax);
