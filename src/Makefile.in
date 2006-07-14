@@ -30,9 +30,9 @@ RANLIB = @RANLIB@
 
 # Where the build arena is (module .h and .o files)
 #
-MYLIBS   = -lsquid -leasel
-MYLIBDIR = -L../squid -L../easel
-MYINCDIR = -I../squid -I../easel
+MYLIBS   = -lsquid -leasel -lhmmer
+MYLIBDIR = -L../squid -L../easel -L../hmmer/
+MYINCDIR = -I../squid -I../easel -I../hmmer/
 
 PROGS = cmalign cmbuild cmscore cmsearch
 
@@ -50,7 +50,15 @@ OBJS  = alphabet.o\
 	prior.o\
 	scancyk.o\
 	smallcyk.o\
-	cm_eweight.o
+	cm_eweight.o\
+	hmmband.o\
+	hbandcyk.o\
+	cplan9.o\
+	CP9_cm2wrhmm.o\
+	CP9_hmmio.o\
+	CP9_scan.o\
+	cm_postprob.o\
+	scaninside.o
 
 HDRS  = funcs.h\
 	prior.h\
