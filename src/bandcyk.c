@@ -883,7 +883,8 @@ PrintDPCellsSaved(CM_t *cm, int *min, int *max, int W)
  *           dsq       - digitized sequence to search; 1..L
  *           dmin      - minimum bound on d for state v; 0..M
  *           dmax      - maximum bound on d for state v; 0..M          
- *           L         - length of sequence
+ *           i0        - start of target subsequence (1 for full seq)
+ *           j0        - end of target subsequence (L for full seq)
  *           W         - max d: max size of a hit
  *           ret_nhits - RETURN: number of hits
  *           ret_hitr  - RETURN: start states of hits, 0..nhits-1
@@ -896,7 +897,7 @@ PrintDPCellsSaved(CM_t *cm, int *min, int *max, int W)
  *           hiti, hitj, hitsc are allocated here; caller free's w/ free().
  */
 void
-CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W, 
+CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
 	      int *ret_nhits, int **ret_hitr, int **ret_hiti, int **ret_hitj, float **ret_hitsc, float min_thresh)
 {
   float  ***alpha;              /* CYK DP score matrix, [v][j][d] */
@@ -922,6 +923,10 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
   int       alloc_nhits;	/* used to grow the hit arrays */
   int       jmax;               /* when imposing bands, maximum j value in alpha matrix */
   int       kmax;               /* for B_st's, maximum k value consistent with bands*/
+  int       L;                  /* length of the subsequence (j0-i0+1) */
+  int       gamma_j;            /* j index in the gamma matrix, which is indexed 0..j0-i0+1, 
+				 * while j runs from i0..j0 */
+  int       gamma_i;            /* i index in the gamma* data structures */
 
   /* EPN 08.11.05 Next line prevents wasteful computations when imposing
    * bands before the main recursion.  There is no need to worry about
@@ -930,9 +935,10 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
    * of time if W is much larger than necessary, and the search sequences 
    * are short (as in a possible benchmark).
    */
+  L = j0-i0+1;
   if (W > L) W = L; 
 
-  PrintDPCellsSaved(cm, dmin, dmax, W);
+  /*PrintDPCellsSaved(cm, dmin, dmax, W);*/
 
   /*****************************************************************
    * alpha allocations.
@@ -1039,8 +1045,9 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
   /*****************************************************************
    * The main loop: scan the sequence from position 1 to L.
    *****************************************************************/
-  for (j = 1; j <= L; j++) 
+  for (j = i0; j <= j0; j++) 
     {
+      gamma_j = j-i0+1; /* j is actual index in j, gamma_j is offeset j index in gamma* data structures */
       cur = j%2;
       prv = (j-1)%2;
       for (v = cm->M-1; v > 0; v--) /* ...almost to ROOT; we handle ROOT specially... */
@@ -1048,7 +1055,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
 	  if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
 	    {
 	      if (cm->stid[v] == BEGL_S) jp = j % (W+1); else jp = cur;
-	      for (d = dmin[v]; d <= dmax[v] && d <= j; d++) 
+	      for (d = dmin[v]; d <= dmax[v] && d <= gamma_j; d++) 
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][jp][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
@@ -1060,7 +1067,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
 	    }
 	  else if (cm->sttype[v] == MP_st) 
 	    {
-	      for (d = dmin[v]; d <= dmax[v] && d <= j; d++)
+	      for (d = dmin[v]; d <= dmax[v] && d <= gamma_j; d++)
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
@@ -1079,7 +1086,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
 	    }
 	  else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) 
 	    {
-	      for (d = dmin[v]; d <= dmax[v] && d <= j; d++)
+	      for (d = dmin[v]; d <= dmax[v] && d <= gamma_j; d++)
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
@@ -1098,7 +1105,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
 	    }
 	  else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) 
 	    {
-	      for (d = dmin[v]; d <= dmax[v] && d <= j; d++)
+	      for (d = dmin[v]; d <= dmax[v] && d <= gamma_j; d++)
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
@@ -1119,7 +1126,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
 	      w = cm->cfirst[v];
 	      y = cm->cnum[v];
 	      i = j-d+1;
-	      for (d = dmin[v]; d <= dmax[v] && d <= j; d++) 
+	      for (d = dmin[v]; d <= dmax[v] && d <= gamma_j; d++) 
 		{
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
 
@@ -1159,7 +1166,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
        * by the way local alignment is parameterized (other transitions are
        * -INFTY), which is probably a little too fragile of a method. 
        */
-      for (d = dmin[0]; d <= dmax[0] && d <=j; d++)
+      for (d = dmin[0]; d <= dmax[0] && d <= gamma_j; d++)
 	{
 	  y = cm->cfirst[0];
 	  alpha[0][cur][d] = alpha[y][cur][d] + cm->tsc[0][0];
@@ -1182,7 +1189,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
 	  d = (dmin[y] > dmin[0]) ? dmin[y]:dmin[0];
 	  /*if (dmin[y] > dmin[0]) d = dmin[y];
 	    else d = dmin[0];*/
-	  for (; d <= dmax[y] && d <=j; d++)
+	  for (; d <= dmax[y] && d <= gamma_j; d++)
 	    {
 	      if (cm->stid[y] == BEGL_S) sc = alpha[y][j%(W+1)][d] + cm->beginsc[y];
 	      else                       sc = alpha[y][cur][d]     + cm->beginsc[y];
@@ -1197,21 +1204,21 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
       
       /* The little semi-Markov model that deals with multihit parsing:
        */
-      gamma[j]  = gamma[j-1] + 0; /* extend without adding a new hit */
-      gback[j]  = -1;
-      savesc[j] = IMPOSSIBLE;
-      saver[j]  = -1;
-      for (d = dmin[0]; d <= dmax[0] && d <= j; d++) 
+      gamma[gamma_j]  = gamma[gamma_j-1] + 0; /* extend without adding a new hit */
+      gback[gamma_j]  = -1;
+      savesc[gamma_j] = IMPOSSIBLE;
+      saver[gamma_j]  = -1;
+      for (d = dmin[0]; d <= dmax[0] && d <= gamma_j; d++) 
 	{
 	  i = j-d+1;
-	  assert(i > 0);
-	  sc = gamma[i-1] + alpha[0][cur][d]  - min_thresh; 
-	  if (sc > gamma[j])
+	  gamma_i = j-d+1-i0+1;
+	  sc = gamma[gamma_i-1] + alpha[0][cur][d]  - min_thresh; 
+	  if (sc > gamma[gamma_j])
 	    {
-	      gamma[j]  = sc;
-	      gback[j]  = i;
-	      savesc[j] = alpha[0][cur][d]; 
-	      saver[j]  = bestr[d];
+	      gamma[gamma_j]  = sc;
+	      gback[gamma_j]  = i;
+	      savesc[gamma_j] = alpha[0][cur][d]; 
+	      saver[gamma_j]  = bestr[d];
 	    }
 	}
     } /* end loop over end positions j */
@@ -1245,19 +1252,20 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W,
   hiti  = MallocOrDie(sizeof(int)   * alloc_nhits);
   hitsc = MallocOrDie(sizeof(float) * alloc_nhits);
   
-  j     = L;
+  j     = j0;
   nhits = 0;
-  while (j > 0) {
-    if (gback[j] == -1) /* no hit */
+  while (j >= i0) {
+    gamma_j = j-i0+1;
+    if (gback[gamma_j] == -1) /* no hit */
       j--; 
     else                /* a hit, a palpable hit */
       {
-	hitr[nhits]   = saver[j];
+	hitr[nhits]   = saver[gamma_j];
 	hitj[nhits]   = j;
-	hiti[nhits]   = gback[j];
-	hitsc[nhits]  = savesc[j];
+	hiti[nhits]   = gback[gamma_j];
+	hitsc[nhits]  = savesc[gamma_j];
 	nhits++;
-	j = gback[j]-1;
+	j = gback[gamma_j]-1;
 	
 	if (nhits == alloc_nhits) {
 	  hitr  = ReallocOrDie(hitr,  sizeof(int)   * (alloc_nhits + 10));

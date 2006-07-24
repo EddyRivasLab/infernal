@@ -2588,21 +2588,20 @@ debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax)
  *           i0        - start of target subsequence (1 for beginning of dsq)
  *           j0        - end of target subsequence (L for end of dsq)
  *           W         - max d: max size of a hit
- *           prev_nhits- number of hits found in dsq before calling this func
- *           ret_nhits - number of total hits, equal to prev_nhits if no hits found
- *           hitr      - start states of hits, new hits are prev_nhits..ret_nhits-1
- *           hiti      - start positions of hits, new hits are prev_nhits..ret_nhits-1 
- *           hitj      - end positions of hits, new hits are prev_nhits..ret_nhits-1
- *           hitsc     - scores of hits, new hits are prev_nhits..ret_nhits-1            
+ *           ret_nhits - RETURN: number of hits (found only within current function call from i0 to j0)
+ *           ret_hitr  - RETURN: start states of hits, 0..nhits-1
+ *           ret_hiti  - RETURN: start positions of hits, 0..nhits-1
+ *           ret_hitj  - RETURN: end positions of hits, 0..nhits-1
+ *           ret_hitsc - RETURN: scores of hits, 0..nhits-1            
  *           min_thresh- minimum score to report (EPN via Alex Coventry 03.11.06)
  *
  * Returns:  
- *           hiti, hitj, hitsc are reallocated here if nec; caller free's w/ free().
+ *           hiti, hitj, hitsc are allocated here if nec; caller free's w/ free().
  */
 void
 CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax, int i0, 
-		 int j0, int W, int prev_nhits, int *ret_nhits, int *hitr, int *hiti, int *hitj, 
-		 float *hitsc, float min_thresh)
+		 int j0, int W, int *ret_nhits, int **ret_hitr, int **ret_hiti, 
+		 int **ret_hitj, float **ret_hitsc, float min_thresh)
 {
   float  ***alpha;              /* CYK DP score matrix, [v][j][d] */
   int      *bestr;              /* auxil info: best root state at alpha[0][cur][d] */
@@ -2622,7 +2621,6 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
   int       prv, cur;		/* previous, current j row (0 or 1) */
   float     sc;			/* tmp variable for holding a score */
   int       jp_roll;   	        /* rolling index into BEGL_S decks: jp=j%(W+1) */
-  int       alloc_nhits;	/* used to grow the hit arrays */
   int       tmp_jmin, tmp_jmax; /* temp variables for ensuring we stay within j bands within loops */
   int       tmp_dmin, tmp_dmax; /* temp variables for ensuring we stay within d bands within loops */
   int       tmp_kmin, tmp_kmax; /* temp vars for B_st's, min/max k values consistent with bands*/
@@ -2630,20 +2628,16 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
   int      jp_v, jp_y, jp_w;    /* mem eff banded j index in states v, y, and z 
 				 * jp_x = j-jmin[x] */
   int      L;                   /* length of subsequence (j0-i0+1) */
-  int      nhits;               /* number of previous hits plus hits found within this func */
   int      x;
   int      tmp_y;
   float    tmp_alpha_w, tmp_alpha_y;
+  int       nhits;		/* # of hits in optimal parse */
+  int      *hitr;		/* initial state indices of hits in optimal parse */
+  int      *hiti;               /* start positions of hits in optimal parse */
+  int      *hitj;               /* end positions of hits in optimal parse */
+  float    *hitsc;              /* scores of hits in optimal parse */
+  int       alloc_nhits;	/* used to grow the hit arrays */
 
-
-  for (i = 0; i < prev_nhits; i++)
-    {
-      /*printf("j0: %d beg hit %-4d: %6d %6d %8.2f bits\n", j0, i, 
-	     hiti[i], 
-	     hitj[i],
-	     hitsc[i]);
-      */
-    }
 
   /* EPN 08.11.05 Next line prevents wasteful computations when imposing
    * bands before the main recursion.  There is no need to worry about
@@ -2653,6 +2647,7 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
    * are short.
    */
   L = j0-i0+1;
+  /*printf("i0: %5d | j0: %5d | L: %5d | W: %5d\n", i0, j0, L, W);*/
   if (W > L) W = L; 
 
   /*PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, (j0-i0+1));*/
@@ -2699,13 +2694,6 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
   gback[0] = -1;
   savesc   = MallocOrDie(sizeof(float) * (L+1));
   saver    = MallocOrDie(sizeof(int)   * (L+1));
-
-
-  /*****************************************************************
-   * alpha initializations prior to .
-
-  for (v = cm->M-1; v >= 0; v--)
-    {
 
   /*****************************************************************
    * The main loop: scan the sequence from position 1 to L.
@@ -2806,30 +2794,19 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
 	    alpha[v][jp_roll][d] = IMPOSSIBLE;
 	  if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
 	    {
-	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= j; d++) 
+	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= gamma_j; d++) 
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][jp_roll][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		    {
-		      /*if(i0 == 21107)
-			{
-			  printf("jproll: %d | j: %d\n", jp_roll, j);
-			  printf("jmin[v=%d]: %d\n", v, jmin[v]);
-			  printf("y+yoffset: %d | cur: %d | d: %d\n", (y+yoffset), cur, d);
-			  printf("\talpha[y+yoff=%d][cur=%d][d=%d]: %f\n", y+yoffset, cur, d, (alpha[(y+yoffset)][cur][d]));
-			  printf("\talpha[v=%d][jproll=%d][d=%d]: %f\n\n", v, jp_roll, d, alpha[v][jp_roll][d]);
-			  printf("j: %d | dmin: %d | dmax: %d\n", j, hdmin[v][jp_v], hdmax[v][jp_v]);
-			  }*/
 		    if ((sc = alpha[y+yoffset][cur][d] + cm->tsc[v][yoffset]) > alpha[v][jp_roll][d]) 
 		      alpha[v][jp_roll][d] = sc;
-		    }   
 		  if (alpha[v][jp_roll][d] < IMPROBABLE) alpha[v][jp_roll][d] = IMPOSSIBLE;
 		}
 	    }
 	  else if (cm->sttype[v] == MP_st) 
 	    {
-	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= j; d++)
+	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= gamma_j; d++)
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
@@ -2848,7 +2825,7 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
 	    }
 	  else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) 
 	    {
-	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= j; d++)
+	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= gamma_j; d++)
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
@@ -2867,7 +2844,7 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
 	    }
 	  else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) 
 	    {
-	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= j; d++)
+	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= gamma_j; d++)
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
@@ -2899,7 +2876,7 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
 	       */
 
 	      /* initialize with endsc for all valid d for B state v */
-	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= j; d++) /* ensures (5) above */
+	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= gamma_j; d++) /* ensures (5) above */
 		{
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
 		}
@@ -2914,7 +2891,7 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
 		    printf("hdmin[v][jp_v]: %d | hdmin[y][jp_y]: %d\n", hdmin[v][jp_v], hdmin[y][jp_y]);
 		    printf("hdmax[v][jp_v]: %d | hdmax[y][jp_y]: %d\n", hdmax[v][jp_v], hdmax[y][jp_y]);
 		  */
-		  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= j; d++) /* ensures (5) above */
+		  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= gamma_j; d++) /* ensures (5) above */
 		    {
 		      /* k is the length of the right fragment */
 		      tmp_kmin = ((j-jmax[w]) > hdmin[y][jp_y]) ? (j-jmax[w]) : hdmin[y][jp_y];
@@ -2990,7 +2967,7 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
       for (d = hdmax[0][jp_v]+1; d <= W;      d++) 
 	alpha[0][jp_roll][d] = IMPOSSIBLE;
       
-      for (d = hdmin[0][jp_v]; d <= hdmax[0][jp_v] && d <= j; d++)
+      for (d = hdmin[0][jp_v]; d <= hdmax[0][jp_v] && d <= gamma_j; d++)
 	{
 	  y = cm->cfirst[0];
 	  alpha[0][cur][d] = alpha[y][cur][d] + cm->tsc[0][0];
@@ -3033,7 +3010,7 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
       gback[gamma_j]  = -1;
       savesc[gamma_j] = IMPOSSIBLE;
       saver[gamma_j]  = -1;
-      for (d = hdmin[0][jp_v]; d <= hdmax[0][jp_v] && d <= j; d++) 
+      for (d = hdmin[0][jp_v]; d <= hdmax[0][jp_v] && d <= gamma_j; d++) 
 	{
 	  i       = j-d+1;
 	  gamma_i = j-d+1-i0+1;
@@ -3069,14 +3046,15 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
   /*****************************************************************
    * Traceback stage.
    * Recover all hits: an (i,j,sc) triple for each one.
-   * Difference here with CYKScan(), add new hits to existing ones
-   * that may have already been found in previous calls to this function.
    *****************************************************************/ 
-  alloc_nhits = prev_nhits + 1;
-  while(alloc_nhits % 10 != 0) alloc_nhits++;
+  alloc_nhits = 10;
+  hitr  = MallocOrDie(sizeof(int)   * alloc_nhits);
+  hitj  = MallocOrDie(sizeof(int)   * alloc_nhits);
+  hiti  = MallocOrDie(sizeof(int)   * alloc_nhits);
+  hitsc = MallocOrDie(sizeof(float) * alloc_nhits);
 
-  nhits = prev_nhits;
   j     = j0;
+  nhits = 0;
   while (j >= i0) {
     gamma_j = j-i0+1;
     if (gback[gamma_j] == -1) /* no hit */
@@ -3092,26 +3070,11 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
 	j = gback[gamma_j]-1;
 	
 	if (nhits == alloc_nhits) {
-	  printf("nhits: %d | reallocating to %d\n", nhits, (alloc_nhits+10));
-	  for (i = 0; i < nhits; i++)
-	    {
-	      printf("pre hit %-4d: %6d %6d %8.2f bits\n", i, 
-		     hiti[i], 
-		     hitj[i],
-		     hitsc[i]);
-	    }
 	  hitr  = ReallocOrDie(hitr,  sizeof(int)   * (alloc_nhits + 10));
 	  hitj  = ReallocOrDie(hitj,  sizeof(int)   * (alloc_nhits + 10));
 	  hiti  = ReallocOrDie(hiti,  sizeof(int)   * (alloc_nhits + 10));
 	  hitsc = ReallocOrDie(hitsc, sizeof(float) * (alloc_nhits + 10));
 	  alloc_nhits += 10;
-	  for (i = 0; i < nhits; i++)
-	    {
-	      printf("pos hit %-4d: %6d %6d %8.2f bits\n", i, 
-		     hiti[i], 
-		     hitj[i],
-		     hitsc[i]);
-	    }
 	}
       }
   }
@@ -3122,6 +3085,10 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
 
   //printf("end nhis: %d\n", nhits);
   *ret_nhits = nhits;
+  *ret_hitr  = hitr;
+  *ret_hiti  = hiti;
+  *ret_hitj  = hitj;
+  *ret_hitsc = hitsc;
 
   for (i = 0; i < nhits; i++)
     {

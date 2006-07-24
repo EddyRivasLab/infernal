@@ -32,7 +32,7 @@ extern void     BandBounds(double **gamma, int M, int W, double p,
 extern void     PrintBandGraph(FILE *fp, double **gamma, int *min, int *max, int v, int W);
 
 extern void     PrintDPCellsSaved(CM_t *cm, int *min, int *max, int W);
-extern void     CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W, 
+extern void     CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
 			      int *ret_nhits, int **ret_hitr, 
 			      int **ret_hiti, int **ret_hitj, float **ret_hitsc,
 			      float min_thresh);
@@ -138,7 +138,7 @@ extern void         MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm);
 
 /* from scancyk.c
  */
-extern void  CYKScan(CM_t *cm, char *dsq, int L, int W, 
+extern void  CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
 		     int *ret_nhits, int **ret_hitr, 
 		     int **ret_hiti, int **ret_hitj, float **ret_hitsc,
 		     float min_thresh);
@@ -253,32 +253,35 @@ extern void debug_print_alpha_banded_jd(float ***alpha, CM_t *cm, int L, int *jm
 					int **hdmin, int **hdmax);
 extern float ** alloc_jdbanded_vjd_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
 extern void CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax, int i0, 
-			     int j0, int W, int prev_nhits, int *ret_nhits, int *hitr, int *hiti, int *hitj, 
-			     float *hitsc, float min_thresh);
+			     int j0, int W, int *ret_nhits, int **ret_hitr, int **ret_hiti, 
+			     int **ret_hitj, float **ret_hitsc, float min_thresh);
 
 
 /* from CP9_scan.c */
-extern float CP9ForwardScan(unsigned char *dsq, int L, int W, struct cplan9_s *hmm, 
+extern float CP9ForwardScan(unsigned char *dsq, int i0, int j0, int W, struct cplan9_s *hmm, 
 			    struct cp9_dpmatrix_s **ret_mx, int *ret_nhits, int **ret_hitr,
 			    int **ret_hiti, int **ret_hitj,  
 			    float **ret_hitsc, float min_thresh);
+extern float CP9BackwardScan(unsigned char *dsq, int i0, int j0, int W, struct cplan9_s *hmm, 
+			     struct cp9_dpmatrix_s **ret_mx, int *ret_nhits, int **ret_hitr,
+			     int **ret_hiti, int **ret_hitj,  
+			     float **ret_hitsc, float min_thresh);
 extern float CP9ForwardScanRequires(struct cplan9_s *hmm, int L, int W);
-extern float CP9ForwardBackwardScan(unsigned char *dsq, int L, int W, struct cplan9_s *hmm, 
-				    struct cp9_dpmatrix_s **ret_fmx, struct cp9_dpmatrix_s **ret_bmx,
-				    int *ret_nhits, int **ret_hitr, 
-				    int **ret_hiti, int **ret_hitj,  
-				    float **ret_hitsc, float min_thresh);
+extern float CP9ForwardBackwardScan(unsigned char *dsq, int i0, int j0, int W, 
+				    struct cplan9_s *hmm, struct cp9_dpmatrix_s **ret_fmx,
+				    struct cp9_dpmatrix_s **ret_bmx, int *ret_nhits, 
+				    int **ret_hitr, int **ret_hiti, 
+				    int **ret_hitj, float **ret_hitsc, float min_thresh, int pad);
 extern void CP9ScanFullPosterior(unsigned char *dsq, int L,
 				 struct cplan9_s *hmm,
 				 struct cp9_dpmatrix_s *fmx,
 				 struct cp9_dpmatrix_s *bmx,
 				 struct cp9_dpmatrix_s *mx);
-extern void CP9_combine_FBscan_hits(int L, int W, int fwd_nhits, int *fwd_hitr, int *fwd_hiti, 
+extern void CP9_combine_FBscan_hits(int i0, int j0, int W, int fwd_nhits, int *fwd_hitr, int *fwd_hiti, 
 				    int *fwd_hitj, float *fwd_hitsc, int bck_nhits, 
 				    int *bck_hitr, int *bck_hiti, int *bck_hitj, float *bck_hitsc, 
 				    int *ret_nhits, int **ret_hitr, int **ret_hiti, int **ret_hitj, 
 				    float **ret_hitsc, int pad);
-
 
 /* from CP9_cm2wrhmm.c */
 extern int CP9_cm2wrhmm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *node_cc_right, 
@@ -287,12 +290,17 @@ extern int CP9_cm2wrhmm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *
 extern int CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, int *cc_node_map,
 			   int debug_level);
 /* from scaninside.c */
-extern void  InsideScan(CM_t *cm, char *dsq, int L, int W, 
+extern void  InsideScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
 			int *ret_nhits, int **ret_hitr, 
 			int **ret_hiti, int **ret_hitj, float **ret_hitsc,
 			float min_thresh);
-extern void  InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int L, int W, 
+extern void  InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
 			      int *ret_nhits, int **ret_hitr, 
 			      int **ret_hiti, int **ret_hitj, float **ret_hitsc,
 			      float min_thresh);
+extern void  InsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax,
+				 int i0, int j0, int W, 
+				 int *ret_nhits, int **ret_hitr, 
+				 int **ret_hiti, int **ret_hitj, float **ret_hitsc,
+				 float min_thresh);
 extern float LogSum2(float p1, float p2);

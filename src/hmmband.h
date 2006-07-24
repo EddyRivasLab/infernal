@@ -143,3 +143,6 @@ extern void debug_check_CP9_FB(struct cp9_dpmatrix_s *fmx,
 			       struct cp9_dpmatrix_s *bmx, 
 			       struct cplan9_s *hmm, float sc, int i0, int j0,
 			       unsigned char *dsq);
+
+/* Other misc. functions */
+extern void relax_root_bands(int *imin, int *imax, int *jmin, int *jmax);

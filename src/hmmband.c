@@ -1352,14 +1352,14 @@ CP9Forward(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm,
   int **emx;
   int   i,k;
   int   sc;
-  int   W;		/* subsequence length */
+  int   L;		/* subsequence length */
   int   ip;		/* i': relative position in the subsequence  */
 
-  W  = j0-i0+1;		/* the length of the subsequence */
+  L  = j0-i0+1;		/* the length of the subsequence */
 
-  /* Allocate a DP matrix with 0..W rows, 0..M-1 
+  /* Allocate a DP matrix with 0..L rows, 0..M-1 
    */ 
-  mx = AllocCPlan9Matrix(W+1, hmm->M, &mmx, &imx, &dmx, &emx);
+  mx = AllocCPlan9Matrix(L+1, hmm->M, &mmx, &imx, &dmx, &emx);
 
   /* Initialization of the zero row.
    */
@@ -1380,15 +1380,15 @@ CP9Forward(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm,
   
   /* Recursion. Done as a pull.
    */
-  for (ip = 1; ip <= W; ip++) /* ip is the relative position in the seq */
+  for (ip = 1; ip <= L; ip++) /* ip is the relative position in the seq */
     {
       i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from i0 to j0 */
       mmx[ip][0] = dmx[ip][0] = -INFTY;  /*M_0 (B) and D_0 (non-existent)
 					 don't emit.
 				       */
       imx[ip][0]  = ILogsum(ILogsum(mmx[ip-1][0] + hmm->tsc[CTMI][0],
-				   imx[ip-1][0] + hmm->tsc[CTII][0]),
-			   dmx[ip-1][0] + hmm->tsc[CTDI][0]);
+				    imx[ip-1][0] + hmm->tsc[CTII][0]),
+			    dmx[ip-1][0] + hmm->tsc[CTDI][0]);
       imx[ip][0] += hmm->isc[dsq[i]][0];
       for (k = 1; k <= hmm->M; k++)
 	{
@@ -1416,8 +1416,8 @@ CP9Forward(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm,
 		       /* transition from D_M -> end */
       /*printf("F emx[%d]: %d\n", i, emx[0][ip]);*/
     }		
-  sc = emx[0][W];
-  /*printf("F emx[%d]: %d\n", i, emx[0][W]);*/
+  sc = emx[0][L];
+  /*printf("F emx[%d]: %d\n", i, emx[0][L]);*/
   if (ret_mx != NULL) *ret_mx = mx;
   else                FreeCPlan9Matrix(mx);
 
@@ -4126,4 +4126,30 @@ simple_hmm2ij_bands(CM_t *cm, int ncc, int *node_cc_left, int *node_cc_right,
 	    }
 	}
     }      
+}
+
+/*********************************************************************
+ * Function: relax_root_bands()
+ * 
+ * Purpose:  In hmm2ij_bands(), ROOT_S (state 0) sets imin[0]=imax[0]=i0,
+ *           and jmin[0]=jmax[0]=j0, which is important for alignment,
+ *           but during search enforces that the optimal alignment start
+ *           at i0 and end at j0, but when searching we want to relax this
+ *           requirement in case a higher scoring parse has different endpoints.
+ *           This function simply sets imax[0] = imax[1] (ROOT_IL) and
+ *           jmin[0] = jmin[2] (ROOT_IR).
+ *           
+ * Args:
+ * int *imin        imin[v] = first position in band on i for state v
+ * int *imax        imax[v] = last position in band on i for state v
+ * int *jmin        jmin[v] = first position in band on j for state v
+ * int *jmax        jmax[v] = last position in band on j for state v
+ *           
+ */
+void
+relax_root_bands(int *imin, int *imax, int *jmin, int *jmax)
+{
+  /* Function 'knows' CM architecture */
+  imax[0] = imax[1]; /* state 1 = ROOT_IL */
+  jmin[0] = jmin[2]; /* state 2 = ROOT_IR */
 }

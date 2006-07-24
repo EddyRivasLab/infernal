@@ -45,7 +45,8 @@ static void debug_check_CP9_FBscan(struct cp9_dpmatrix_s *fmx, struct cp9_dpmatr
  *           (2^-987654321).
  * 
  * Args:     dsq    - sequence in digitized form
- *           L      - length of dsq
+ *           i0        - start of target subsequence (1 for beginning of dsq)
+ *           j0        - end of target subsequence (L for end of dsq)
  *           hmm    - the model
  *           ret_fmx - the Forward scanning matrix
  *           ret_nhits - RETURN: number of hits
@@ -59,9 +60,9 @@ static void debug_check_CP9_FBscan(struct cp9_dpmatrix_s *fmx, struct cp9_dpmatr
  *           hiti, hitj, hitsc are allocated here; caller free's w/ free().
  */
 float
-CP9ForwardScan(unsigned char *dsq, int L, int W, struct cplan9_s *hmm, struct cp9_dpmatrix_s **ret_mx,
-	       int *ret_nhits, int **ret_hitr, int **ret_hiti, int **ret_hitj, float **ret_hitsc, 
-	       float min_thresh)
+CP9ForwardScan(unsigned char *dsq, int i0, int j0, int W, struct cplan9_s *hmm, 
+	       struct cp9_dpmatrix_s **ret_mx, int *ret_nhits, int **ret_hitr, 
+	       int **ret_hiti, int **ret_hitj, float **ret_hitsc, float min_thresh)
 {
   struct cp9_dpmatrix_s *mx;
   int **mmx;
@@ -81,6 +82,12 @@ CP9ForwardScan(unsigned char *dsq, int L, int W, struct cplan9_s *hmm, struct cp
   int      *hitj;               /* end positions of hits in optimal parse */
   float    *hitsc;              /* scores of hits in optimal parse */
   int       alloc_nhits;	/* used to grow the hit arrays */
+  int      L;                   /* j0-i0+1: subsequence length */
+  int      jp;		        /* j': relative position in the subsequence  */
+  int      ip;		        /* i': relative position in the subsequence  */
+
+  L = j0-i0+1;
+  if (W > L) W = L; 
 
   /*****************************************************************
    * gamma allocation and initialization.
@@ -118,7 +125,7 @@ CP9ForwardScan(unsigned char *dsq, int L, int W, struct cplan9_s *hmm, struct cp
 
   
   /*****************************************************************
-   * The main loop: scan the sequence from position 1 to L.
+   * The main loop: scan the sequence from position i0 to j0.
    *****************************************************************/
   /* Initialization of the zero row.
    */
@@ -139,51 +146,50 @@ CP9ForwardScan(unsigned char *dsq, int L, int W, struct cplan9_s *hmm, struct cp
   
   /* Recursion. Done as a pull.
    */
-  for (j = 1; j <= L; j++)
+  for (j = i0; j <= j0; j++)
     {
-      //cur = j%2;
-      //prv = (j-1)%2;
-      mmx[j][0] = 0;  /* This is the 1 difference between a Forward scanner and the 
-		       * regular Forward (CP9Forward), 
-		       * in CP9Forward, this cell is set to -INFTY.
-		       * Here, we can start at any position in the seq,
-		       * this isn't true in global alignment. 
-		       */
-      dmx[j][0] = -INFTY;  /*D_0 is non-existent*/
-      imx[j][0]  = ILogsum(ILogsum(mmx[j-1][0] + hmm->tsc[CTMI][0],
-				   imx[j-1][0] + hmm->tsc[CTII][0]),
-			   dmx[j-1][0] + hmm->tsc[CTDI][0]);
-      imx[j][0] += hmm->isc[dsq[j]][0];
+      jp = j-i0+1;     /* jp is relative position in the sequence */
+      mmx[jp][0] = 0;  /* This is the 1 difference between a Forward scanner and the 
+			* regular Forward (CP9Forward), 
+			* in CP9Forward, this cell is set to -INFTY.
+			* Here, we can start at any position in the seq,
+			* this isn't true in global alignment. 
+			*/
+      dmx[jp][0] = -INFTY;  /*D_0 is non-existent*/
+      imx[jp][0]  = ILogsum(ILogsum(mmx[jp-1][0] + hmm->tsc[CTMI][0],
+				    imx[jp-1][0] + hmm->tsc[CTII][0]),
+			    dmx[jp-1][0] + hmm->tsc[CTDI][0]);
+      imx[jp][0] += hmm->isc[dsq[j]][0];
       
       for (k = 1; k <= hmm->M; k++)
 	{
-	  mmx[j][k]  = ILogsum(ILogsum(mmx[j-1][k-1] + hmm->tsc[CTMM][k-1],
-				       imx[j-1][k-1] + hmm->tsc[CTIM][k-1]),
-			       ILogsum(mmx[j-1][0] + hmm->bsc[k],
-				       dmx[j-1][k-1] + hmm->tsc[CTDM][k-1]));
-	  mmx[j][k] += hmm->msc[dsq[j]][k];
+	  mmx[jp][k]  = ILogsum(ILogsum(mmx[jp-1][k-1] + hmm->tsc[CTMM][k-1],
+				       imx[jp-1][k-1] + hmm->tsc[CTIM][k-1]),
+			       ILogsum(mmx[jp-1][0] + hmm->bsc[k],
+				       dmx[jp-1][k-1] + hmm->tsc[CTDM][k-1]));
+	  mmx[jp][k] += hmm->msc[dsq[j]][k];
 	  
-	  dmx[j][k]  = ILogsum(ILogsum(mmx[j][k-1] + hmm->tsc[CTMD][k-1],
-				       imx[j][k-1] + hmm->tsc[CTID][k-1]),
-			       dmx[j][k-1] + hmm->tsc[CTDD][k-1]);
+	  dmx[jp][k]  = ILogsum(ILogsum(mmx[jp][k-1] + hmm->tsc[CTMD][k-1],
+					imx[jp][k-1] + hmm->tsc[CTID][k-1]),
+				dmx[jp][k-1] + hmm->tsc[CTDD][k-1]);
 	  
-	  imx[j][k]  = ILogsum(ILogsum(mmx[j-1][k] + hmm->tsc[CTMI][k],
-				       imx[j-1][k] + hmm->tsc[CTII][k]),
-			       dmx[j-1][k] + hmm->tsc[CTDI][k]);
-	  imx[j][k] += hmm->isc[dsq[j]][k];
-	  //printf("mmx[%d][%d]: %d\n", i, k, mmx[j][k]);
-	  //printf("imx[%d][%d]: %d\n", i, k, imx[j][k]);
-	  //printf("dmx[%d][%d]: %d\n", i, k, dmx[j][k]);
+	  imx[jp][k]  = ILogsum(ILogsum(mmx[jp-1][k] + hmm->tsc[CTMI][k],
+				       imx[jp-1][k] + hmm->tsc[CTII][k]),
+			       dmx[jp-1][k] + hmm->tsc[CTDI][k]);
+	  imx[jp][k] += hmm->isc[dsq[j]][k];
+	  //printf("mmx[%d][%d]: %d\n", i, k, mmx[jp][k]);
+	  //printf("imx[%d][%d]: %d\n", i, k, imx[jp][k]);
+	  //printf("dmx[%d][%d]: %d\n", i, k, dmx[jp][k]);
 
 	}
       
-      emx[0][j] = -INFTY;
+      emx[0][jp] = -INFTY;
       for (k = 1; k <= hmm->M; k++)
-	emx[0][j] = ILogsum(emx[0][j], mmx[j][k] + hmm->esc[k]);
-      emx[0][j] = ILogsum(emx[0][j], dmx[j][hmm->M] + hmm->tsc[CTDM][hmm->M]); 
-      emx[0][j] = ILogsum(emx[0][j], imx[j][hmm->M] + hmm->tsc[CTIM][hmm->M]); 
+	emx[0][jp] = ILogsum(emx[0][jp], mmx[jp][k] + hmm->esc[k]);
+      emx[0][jp] = ILogsum(emx[0][jp], dmx[jp][hmm->M] + hmm->tsc[CTDM][hmm->M]); 
+      emx[0][jp] = ILogsum(emx[0][jp], imx[jp][hmm->M] + hmm->tsc[CTIM][hmm->M]); 
       /* transition from D_M -> end */
-      sc = Scorify(emx[0][j]);
+      sc = Scorify(emx[0][jp]);
       if(sc > 0)
 	{
 	  //printf("%d %10.2f\n", j, sc);
@@ -191,20 +197,21 @@ CP9ForwardScan(unsigned char *dsq, int L, int W, struct cplan9_s *hmm, struct cp
 
       /* The little semi-Markov model that deals with multihit parsing:
        */
-      gamma[j]  = gamma[j-1] + 0; /* extend without adding a new hit */
-      gback[j]  = -1;
-      savesc[j] = IMPOSSIBLE;
-      saver[j]  = -1;
-      i = ((j-W+1)> 0) ? (j-W+1) : 1;
-      sc = gamma[i-1] + Scorify(emx[0][j]) - min_thresh;
-      /*printf("j: %d | gamma[j]: %f | sc: %f\n", j, gamma[j], sc);*/
-      if (sc > gamma[j])
+      gamma[jp]  = gamma[jp-1] + 0; /* extend without adding a new hit */
+      gback[jp]  = -1;
+      savesc[jp] = IMPOSSIBLE;
+      saver[jp]  = -1;
+      i = ((j-W+1)> i0) ? (j-W+1) : i0;
+      ip = i-i0+1;
+      sc = gamma[ip-1] + Scorify(emx[0][jp]) - min_thresh;
+      /*printf("j: %d | gamma[jp]: %f | sc: %f\n", j, gamma[jp], sc);*/
+      if (sc > gamma[jp])
 	{
-	  gamma[j]  = sc;
-	  gback[j]  = i;
-	  savesc[j] = Scorify(emx[0][j]);
-	  saver[j]  = 0;
-	  //saver[j]  = bestr[d];
+	  gamma[jp]  = sc;
+	  gback[jp]  = i;
+	  savesc[jp] = Scorify(emx[0][jp]);
+	  saver[jp]  = 0;
+	  //saver[jp]  = bestr[d];
 	}
     } /* end loop over end positions j */
   sc = Scorify(emx[0][L]);
@@ -222,17 +229,18 @@ CP9ForwardScan(unsigned char *dsq, int L, int W, struct cplan9_s *hmm, struct cp
 
   j     = L;
   nhits = 0;
-  while (j > 0) {
-    if (gback[j] == -1) /* no hit */
+  while (j > i0) {
+    jp = j-i0+1;
+    if (gback[jp] == -1) /* no hit */
       j--; 
     else                /* a hit, a palpable hit */
       {
-	hitr[nhits]   = saver[j];
+	hitr[nhits]   = saver[jp];
 	hitj[nhits]   = j;
-	hiti[nhits]   = gback[j];
-	hitsc[nhits]  = savesc[j];
+	hiti[nhits]   = gback[jp];
+	hitsc[nhits]  = savesc[jp];
 	nhits++;
-	j = gback[j]-1;
+	j = gback[jp]-1;
 	
 	if (nhits == alloc_nhits) {
 	  hitr  = ReallocOrDie(hitr,  sizeof(int)   * (alloc_nhits + 10));
@@ -280,7 +288,7 @@ CP9ForwardScanRequires(struct cplan9_s *hmm, int L, int W)
  * Function: CP9ForwardBackwardScan()
  * 
  * Purpose:  Runs the Forward dynamic programming algorithm that scans an 
- *           input sequence. And then the Backward DP algorithm on the
+ *           input subsequence (i0-j0). And then the Backward DP algorithm on the
  *           same sequence. Forward finds likely endpoints of hits, 
  *           and Backward finds likely startpoints of hits.
  *           The scaling issue is dealt with by working in log space
@@ -293,7 +301,9 @@ CP9ForwardScanRequires(struct cplan9_s *hmm, int L, int W)
  *           (2^-987654321).
  * 
  * Args:     dsq    - sequence in digitized form
- *           L      - length of dsq
+ *           i0        - start of target subsequence (1 for beginning of dsq)
+ *           j0        - end of target subsequence (L for end of dsq)
+ *           W         - max d: max size of a hit
  *           hmm    - the model
  *           ret_fmx - the Forward scanning matrix
  *           ret_bmx - the Backward scanning matrix
@@ -303,14 +313,15 @@ CP9ForwardScanRequires(struct cplan9_s *hmm, int L, int W)
  *           ret_hitj  - RETURN: end positions of hits, 0..nhits-1
  *           ret_hitsc - RETURN: scores of hits, 0..nhits-1            
  *           min_thresh- minimum score to report (EPN via Alex Coventry 03.11.06)
+ *           pad       - number of nucleotides to add on to start and end points
  *
  * Returns:  
  *           hiti, hitj, hitsc are allocated in a helper function; caller free's w/ free().
  */
 float
-CP9ForwardBackwardScan(unsigned char *dsq, int L, int W, struct cplan9_s *hmm, struct cp9_dpmatrix_s **ret_fmx,
+CP9ForwardBackwardScan(unsigned char *dsq, int i0, int j0, int W, struct cplan9_s *hmm, struct cp9_dpmatrix_s **ret_fmx,
 		       struct cp9_dpmatrix_s **ret_bmx, int *ret_nhits, int **ret_hitr, int **ret_hiti, 
-		       int **ret_hitj, float **ret_hitsc, float min_thresh)
+		       int **ret_hitj, float **ret_hitsc, float min_thresh, int pad)
 {
   struct cp9_dpmatrix_s *fmx;
   struct cp9_dpmatrix_s *bmx;
@@ -349,10 +360,16 @@ CP9ForwardBackwardScan(unsigned char *dsq, int L, int W, struct cplan9_s *hmm, s
   int *bck_hiti;                /* start positions of hits from Backward, 0..nhits-1 */
   int *bck_hitj;                /* end positions of hits from Backward, 0..nhits-1 (calc'ed as start points + W) */
   float *bck_hitsc;             /* scores of hits, 0..nhits-1 */
+  int      L;                   /* j0-i0+1: subsequence length */
+  int      jp;		        /* j': relative position in the subsequence  */
+  int      ip;		        /* i': relative position in the subsequence  */
+
 
   fwd_sum = -INFTY;
   bck_sum = -INFTY;
 
+  L = j0-i0+1;
+  if (W > L) W = L; 
 
   /*****************************************************************
    * gamma allocation and initialization.
@@ -396,77 +413,76 @@ CP9ForwardBackwardScan(unsigned char *dsq, int L, int W, struct cplan9_s *hmm, s
   fwd_sum = ILogsum(fwd_sum, femx[0][0]);
   /* Recursion. Done as a pull.
    */
-  for (j = 1; j <= L; j++)
+  for (j = i0; j <= j0; j++) 
     {
-      //cur = j%2;
-      //prv = (j-1)%2;
-      fmmx[j][0] = 0; /* This is the 1 difference between a Forward scanner and the 
+      jp = j-i0+1;     /* e.g. jp is relative position in j */
+      fmmx[jp][0] = 0; /* This is the 1 difference between a Forward scanner and the 
 		       * regular Forward (CP9Forward), 
 		       * in CP9Forward, this cell is set to -INFTY.
 		       * Here, we can start at any position in the seq,
 		       * this isn't true in global alignment. 
 		       */
-      fdmx[j][0] = -INFTY;  /*D_0 is non-existent*/
-      fimx[j][0]  = ILogsum(fmmx[j-1][0] + hmm->tsc[CTMI][0],
-			    fimx[j-1][0] + hmm->tsc[CTII][0]);
-      fimx[j][0] += hmm->isc[dsq[j]][0];
+      fdmx[jp][0] = -INFTY;  /*D_0 is non-existent*/
+      fimx[jp][0]  = ILogsum(fmmx[jp-1][0] + hmm->tsc[CTMI][0],
+			    fimx[jp-1][0] + hmm->tsc[CTII][0]);
+      fimx[jp][0] += hmm->isc[dsq[j]][0];
       
       for (k = 1; k <= hmm->M; k++)
 	{
-	  fmmx[j][k]  = ILogsum(ILogsum(fmmx[j-1][k-1] + hmm->tsc[CTMM][k-1],
-				       fimx[j-1][k-1] + hmm->tsc[CTIM][k-1]),
-			       ILogsum(fmmx[j-1][0] + hmm->bsc[k],
-				       fdmx[j-1][k-1] + hmm->tsc[CTDM][k-1]));
-	  /*if(k == 3 && j == L) printf("\tk: %d | fmmx[j-1][k-1]: %d | hmm->tsc[CTMM][k-1]: %d\n\t\tfimx[j-1][k-1]: %d | hmm->tsc[CTIM][k-1]: %d\n\t\tfmmx[j-1][0]: %d | bsc: %d\n\t\tfdmx[j-1][k-1]: %d | hmm->tsc[CTDM][k-1]: %d\n", k, fmmx[(j-1)][(k-1)], hmm->tsc[CTMM][(k-1)], fimx[(j-1)][(k-1)], hmm->tsc[CTIM][(k-1)], fmmx[(j-1)][0], hmm->bsc[k], fdmx[(j-1)][(k-1)], hmm->tsc[CTDM][(k-1)]);*/
-	  fmmx[j][k] += hmm->msc[dsq[j]][k];
+	  fmmx[jp][k]  = ILogsum(ILogsum(fmmx[jp-1][k-1] + hmm->tsc[CTMM][k-1],
+				       fimx[jp-1][k-1] + hmm->tsc[CTIM][k-1]),
+			       ILogsum(fmmx[jp-1][0] + hmm->bsc[k],
+				       fdmx[jp-1][k-1] + hmm->tsc[CTDM][k-1]));
+	  /*if(k == 3 && j == L) printf("\tk: %d | fmmx[jp-1][k-1]: %d | hmm->tsc[CTMM][k-1]: %d\n\t\tfimx[jp-1][k-1]: %d | hmm->tsc[CTIM][k-1]: %d\n\t\tfmmx[jp-1][0]: %d | bsc: %d\n\t\tfdmx[jp-1][k-1]: %d | hmm->tsc[CTDM][k-1]: %d\n", k, fmmx[(j-1)][(k-1)], hmm->tsc[CTMM][(k-1)], fimx[(j-1)][(k-1)], hmm->tsc[CTIM][(k-1)], fmmx[(j-1)][0], hmm->bsc[k], fdmx[(j-1)][(k-1)], hmm->tsc[CTDM][(k-1)]);*/
+	  fmmx[jp][k] += hmm->msc[dsq[j]][k];
 	  
-	  fdmx[j][k]  = ILogsum(ILogsum(fmmx[j][k-1] + hmm->tsc[CTMD][k-1],
-				       fimx[j][k-1] + hmm->tsc[CTID][k-1]),
-			       fdmx[j][k-1] + hmm->tsc[CTDD][k-1]);
+	  fdmx[jp][k]  = ILogsum(ILogsum(fmmx[jp][k-1] + hmm->tsc[CTMD][k-1],
+				       fimx[jp][k-1] + hmm->tsc[CTID][k-1]),
+			       fdmx[jp][k-1] + hmm->tsc[CTDD][k-1]);
 	  
-	  fimx[j][k]  = ILogsum(ILogsum(fmmx[j-1][k] + hmm->tsc[CTMI][k],
-				       fimx[j-1][k] + hmm->tsc[CTII][k]),
-			       fdmx[j-1][k] + hmm->tsc[CTDI][k]);
-	  fimx[j][k] += hmm->isc[dsq[j]][k];
-	  //printf("fmmx[%d][%d]: %d\n", i, k, fmmx[j][k]);
-	  //printf("fimx[%d][%d]: %d\n", i, k, fimx[j][k]);
-	  //printf("fdmx[%d][%d]: %d\n", i, k, fdmx[j][k]);
+	  fimx[jp][k]  = ILogsum(ILogsum(fmmx[jp-1][k] + hmm->tsc[CTMI][k],
+				       fimx[jp-1][k] + hmm->tsc[CTII][k]),
+			       fdmx[jp-1][k] + hmm->tsc[CTDI][k]);
+	  fimx[jp][k] += hmm->isc[dsq[j]][k];
+	  //printf("fmmx[%d][%d]: %d\n", i, k, fmmx[jp][k]);
+	  //printf("fimx[%d][%d]: %d\n", i, k, fimx[jp][k]);
+	  //printf("fdmx[%d][%d]: %d\n", i, k, fdmx[jp][k]);
 	}
       
-      femx[0][j] = -INFTY;
+      femx[0][jp] = -INFTY;
       for (k = 1; k <= hmm->M; k++)
 	{
-	  femx[0][j] = ILogsum(femx[0][j], fmmx[j][k] + hmm->esc[k]);
-	  /*if(j == L) printf("k: %d | femx[0][L]: %d | fmmx[L][k]: %d | hmm->esc[k]: %d\n", k, femx[0][L], fmmx[j][k], hmm->esc[k]);*/
+	  femx[0][jp] = ILogsum(femx[0][jp], fmmx[jp][k] + hmm->esc[k]);
+	  /*if(j == L) printf("k: %d | femx[0][L]: %d | fmmx[L][k]: %d | hmm->esc[k]: %d\n", k, femx[0][L], fmmx[jp][k], hmm->esc[k]);*/
 	}
-      femx[0][j] = ILogsum(femx[0][j], fdmx[j][hmm->M] + hmm->tsc[CTDM][hmm->M]); 
+      femx[0][jp] = ILogsum(femx[0][jp], fdmx[jp][hmm->M] + hmm->tsc[CTDM][hmm->M]); 
       /*if(j == L) printf("added D trans | femx[0][L]: %d\n", femx[0][L]);*/
       /* transition from D_M -> end */
-      femx[0][j] = ILogsum(femx[0][j], fimx[j][hmm->M] + hmm->tsc[CTIM][hmm->M]); 
+      femx[0][jp] = ILogsum(femx[0][jp], fimx[jp][hmm->M] + hmm->tsc[CTIM][hmm->M]); 
       /*if(j == L) printf("added I trans | femx[0][L]: %d\n", femx[0][L]);*/
       /* transition from I_M -> end */
 
-      fwd_sc = Scorify(femx[0][j]);
+      fwd_sc = Scorify(femx[0][jp]);
       /*printf("femx[0][%3d]: %10.5f\n", j, fwd_sc);*/
 
-      fwd_sum = ILogsum(fwd_sum, femx[0][j]);
+      fwd_sum = ILogsum(fwd_sum, femx[0][jp]);
 
       /* The little semi-Markov model that deals with multihit parsing:
        */
-      gamma[j]  = gamma[j-1] + 0; /* extend without adding a new hit */
-      gback[j]  = -1;
-      savesc[j] = IMPOSSIBLE;
-      saver[j]  = -1;
-      i = ((j-W+1)> 0) ? (j-W+1) : 1;
-      sc = gamma[i-1] + Scorify(femx[0][j]) - min_thresh;
-      /*printf("j: %d | gamma[j]: %f | sc: %f\n", j, gamma[j], sc);*/
-      if (sc > gamma[j])
+      gamma[jp]  = gamma[jp-1] + 0; /* extend without adding a new hit */
+      gback[jp]  = -1;
+      savesc[jp] = IMPOSSIBLE;
+      saver[jp]  = -1;
+      i = ((j-W+1)> i0) ? (j-W+1) : i0;
+      sc = gamma[i-1] + Scorify(femx[0][jp]) - min_thresh;
+      /*printf("j: %d | gamma[jp]: %f | sc: %f\n", j, gamma[jp], sc);*/
+      if (sc > gamma[jp])
 	{
-	  gamma[j]  = sc;
-	  gback[j]  = i;
-	  savesc[j] = Scorify(femx[0][j]);
-	  saver[j]  = 0;
-	  //saver[j]  = bestr[d];
+	  gamma[jp]  = sc;
+	  gback[jp]  = i;
+	  savesc[jp] = Scorify(femx[0][jp]);
+	  saver[jp]  = 0;
+	  //saver[jp]  = bestr[d];
 	}
     } /* end loop over end positions j */
 
@@ -484,20 +500,21 @@ CP9ForwardBackwardScan(unsigned char *dsq, int L, int W, struct cplan9_s *hmm, s
   fwd_hiti  = MallocOrDie(sizeof(int)   * alloc_nhits);
   fwd_hitsc = MallocOrDie(sizeof(float) * alloc_nhits);
 
-  j     = L;
+  j     = j0;
   fwd_nhits = 0;
-  while (j > 0) {
-    if (gback[j] == -1) /* no hit */
+  while (j >= i0) {
+    jp = j-i0+1;
+    if (gback[jp] == -1) /* no hit */
       j--; 
     else                /* a hit, a palpable hit */
       {
-	fwd_hitr[fwd_nhits]   = saver[j];
+	fwd_hitr[fwd_nhits]   = saver[jp];
 	fwd_hitj[fwd_nhits]   = j;
-	fwd_hiti[fwd_nhits]   = gback[j];
-	fwd_hitsc[fwd_nhits]  = savesc[j];
+	fwd_hiti[fwd_nhits]   = gback[jp];
+	fwd_hitsc[fwd_nhits]  = savesc[jp];
 	fwd_nhits++;
 	/*printf("fwd_nhits: %d\n", fwd_nhits);*/
-	j = gback[j]-1;
+	j = gback[jp]-1;
 	
 	if (fwd_nhits == alloc_nhits) {
 	  fwd_hitr  = ReallocOrDie(fwd_hitr,  sizeof(int)   * (alloc_nhits + 10));
@@ -518,25 +535,25 @@ CP9ForwardBackwardScan(unsigned char *dsq, int L, int W, struct cplan9_s *hmm, s
   bemx[0][L] = 0; /*have to end in E*/
 
   bmmx[L][hmm->M] = bemx[0][L] + hmm->esc[hmm->M]; /* M<-E ...                   */
-  bmmx[L][hmm->M] += hmm->msc[dsq[L]][hmm->M]; /* ... + emitted match symbol */
+  bmmx[L][hmm->M] += hmm->msc[dsq[j0]][hmm->M]; /* ... + emitted match symbol */
   bimx[L][hmm->M] = bemx[0][L] + hmm->tsc[CTIM][hmm->M];   /* I_M(C)<-E ... */
-  bimx[L][hmm->M] += hmm->isc[dsq[L]][hmm->M];           /* ... + emitted match symbol */
+  bimx[L][hmm->M] += hmm->isc[dsq[j0]][hmm->M];           /* ... + emitted match symbol */
   bdmx[L][hmm->M] = bemx[0][L] + hmm->tsc[CTDM][hmm->M];    /* D_M<-E */
   for (k = hmm->M-1; k >= 1; k--)
     {
       bmmx[L][k]  = bemx[0][L] + hmm->esc[k];
       bmmx[L][k]  = ILogsum(bmmx[L][k], bdmx[L][k+1] + hmm->tsc[CTMD][k]);
-      bmmx[L][k] += hmm->msc[dsq[L]][k];
+      bmmx[L][k] += hmm->msc[dsq[j0]][k];
 
       bimx[L][k] = bdmx[L][k+1] + hmm->tsc[CTID][k];
-      bimx[L][k] += hmm->isc[dsq[L]][k];
+      bimx[L][k] += hmm->isc[dsq[j0]][k];
 
       bdmx[L][k] = bdmx[L][k+1] + hmm->tsc[CTDD][k];
     }
   
   bmmx[L][0] = -INFTY; /* no esc[0] b/c its impossible */
   bimx[L][0] = bdmx[L][1] + hmm->tsc[CTID][0];
-  bimx[L][0] += hmm->isc[dsq[L]][hmm->M];    
+  bimx[L][0] += hmm->isc[dsq[j0]][hmm->M];    
   bdmx[L][0] = -INFTY; /*D_0 doesn't exist*/
 
   bck_sum = ILogsum(bck_sum, bmmx[L][0]);
@@ -547,11 +564,12 @@ CP9ForwardBackwardScan(unsigned char *dsq, int L, int W, struct cplan9_s *hmm, s
 
   /* Recursion. Done as a pull.
    */
-  for (i = L-1; i >= 0; i--)
+  for (i = j0-1; i >= i0; i--)
     {
+      ip = i-i0 + 1;		/* ip is relative index in dsq (1 to L) */
       if(i > 0)
 	{
-	  bemx[0][i] = 0; /* This is 1 of 3 differences between a Backward scanner and the 
+	  bemx[0][ip] = 0; /* This is 1 of 3 differences between a Backward scanner and the 
 			   * regular Backward (CP9Backward), 
 			   * in CP9Backward, this cell is set to -INFTY.
 			   * Here, we can end at the END state at any position,
@@ -563,50 +581,50 @@ CP9ForwardBackwardScan(unsigned char *dsq, int L, int W, struct cplan9_s *hmm, s
 	  
 	  /* Now the main states. Note the boundary conditions at M.
 	   */
-	  bmmx[i][hmm->M] = ILogsum(bemx[0][i+1] + hmm->esc[hmm->M], /* M<-E ... 2nd diff w/non-scanner*/
-				    bimx[i+1][hmm->M] + hmm->tsc[CTMI][hmm->M]);
-	  bmmx[i][hmm->M] += hmm->msc[dsq[i]][hmm->M];
-	  bimx[i][hmm->M] = ILogsum(bemx[0][i] + hmm->tsc[CTIM][hmm->M],    /* I_M(C)<-E ... */
-				    bimx[i+1][hmm->M] + hmm->tsc[CTII][hmm->M]);
-	  bimx[i][hmm->M] += hmm->isc[dsq[i]][hmm->M];
-	  bdmx[i][hmm->M] = ILogsum(bemx[0][i] + hmm->tsc[CTDM][hmm->M], /* D_M<-E */
-				    bimx[i+1][hmm->M] + hmm->tsc[CTDI][hmm->M]);  
+	  bmmx[ip][hmm->M] = ILogsum(bemx[0][i+1] + hmm->esc[hmm->M], /* M<-E ... 2nd diff w/non-scanner*/
+				    bimx[ip+1][hmm->M] + hmm->tsc[CTMI][hmm->M]);
+	  bmmx[ip][hmm->M] += hmm->msc[dsq[i]][hmm->M];
+	  bimx[ip][hmm->M] = ILogsum(bemx[0][ip] + hmm->tsc[CTIM][hmm->M],    /* I_M(C)<-E ... */
+				    bimx[ip+1][hmm->M] + hmm->tsc[CTII][hmm->M]);
+	  bimx[ip][hmm->M] += hmm->isc[dsq[i]][hmm->M];
+	  bdmx[ip][hmm->M] = ILogsum(bemx[0][ip] + hmm->tsc[CTDM][hmm->M], /* D_M<-E */
+				    bimx[ip+1][hmm->M] + hmm->tsc[CTDI][hmm->M]);  
 	  for (k = hmm->M-1; k >= 1; k--)
 	    {
-	      bmmx[i][k]  = ILogsum(ILogsum(bemx[0][i+1] + hmm->esc[k], /* M<-E ... 2nd diff w/non-scanner*/
-					    bmmx[i+1][k+1] + hmm->tsc[CTMM][k]),
-				    ILogsum(bimx[i+1][k] + hmm->tsc[CTMI][k],
-					    bdmx[i][k+1] + hmm->tsc[CTMD][k]));	  
-	      /*if(k == 1 && i == 1) printf("\tk: %d | bemx[0][i+1]: %d | hmm->esc[k]: %d\n\t\tbmmx[i+1][k+1]: %d | hmm->tsc[CTMM][k]: %d\n\t\tbimx[i+1][k]: %d | hmm->tsc[CTMI][k]: %d\n\t\tbdmx[i][k+1]: %d | hmm->tsc[CTMD][k]: %d\n", k, bemx[0][(i+1)], hmm->esc[k], bmmx[(i+1)][(k+1)], hmm->tsc[CTMM][k], bimx[(i+1)][k], hmm->tsc[CTMI][k], bdmx[i][(k+1)], hmm->tsc[CTMD][k]);*/
+	      bmmx[ip][k]  = ILogsum(ILogsum(bemx[0][i+1] + hmm->esc[k], /* M<-E ... 2nd diff w/non-scanner*/
+					    bmmx[ip+1][k+1] + hmm->tsc[CTMM][k]),
+				    ILogsum(bimx[ip+1][k] + hmm->tsc[CTMI][k],
+					    bdmx[ip][k+1] + hmm->tsc[CTMD][k]));	  
+	      /*if(k == 1 && i == 1) printf("\tk: %d | bemx[0][i+1]: %d | hmm->esc[k]: %d\n\t\tbmmx[ip+1][k+1]: %d | hmm->tsc[CTMM][k]: %d\n\t\tbimx[ip+1][k]: %d | hmm->tsc[CTMI][k]: %d\n\t\tbdmx[ip][k+1]: %d | hmm->tsc[CTMD][k]: %d\n", k, bemx[0][(i+1)], hmm->esc[k], bmmx[(i+1)][(k+1)], hmm->tsc[CTMM][k], bimx[(i+1)][k], hmm->tsc[CTMI][k], bdmx[ip][(k+1)], hmm->tsc[CTMD][k]);*/
 	      
-	      bmmx[i][k] += hmm->msc[dsq[i]][k];
+	      bmmx[ip][k] += hmm->msc[dsq[i]][k];
 	      
-	      bimx[i][k]  = ILogsum(ILogsum(bmmx[i+1][k+1] + hmm->tsc[CTIM][k],
-					    bimx[i+1][k] + hmm->tsc[CTII][k]),
-				    bdmx[i][k+1] + hmm->tsc[CTID][k]);
-	      bimx[i][k] += hmm->isc[dsq[i]][k];
+	      bimx[ip][k]  = ILogsum(ILogsum(bmmx[ip+1][k+1] + hmm->tsc[CTIM][k],
+					    bimx[ip+1][k] + hmm->tsc[CTII][k]),
+				    bdmx[ip][k+1] + hmm->tsc[CTID][k]);
+	      bimx[ip][k] += hmm->isc[dsq[i]][k];
 	      
-	      bdmx[i][k]  = ILogsum(ILogsum(bmmx[i+1][k+1] + hmm->tsc[CTDM][k],
-					    bimx[i+1][k] + hmm->tsc[CTDI][k]),
-				    bdmx[i][k+1] + hmm->tsc[CTDD][k]);
+	      bdmx[ip][k]  = ILogsum(ILogsum(bmmx[ip+1][k+1] + hmm->tsc[CTDM][k],
+					    bimx[ip+1][k] + hmm->tsc[CTDI][k]),
+				    bdmx[ip][k+1] + hmm->tsc[CTDD][k]);
 	    }
 	  
-	  bimx[i][0]  = ILogsum(ILogsum(bmmx[i+1][1] + hmm->tsc[CTIM][0],
-					bimx[i+1][0] + hmm->tsc[CTII][0]),
-				bdmx[i][1] + hmm->tsc[CTID][0]);
-	  bimx[i][0] += hmm->isc[dsq[i]][0];
-	  bmmx[i][0] = -INFTY;
+	  bimx[ip][0]  = ILogsum(ILogsum(bmmx[ip+1][1] + hmm->tsc[CTIM][0],
+					bimx[ip+1][0] + hmm->tsc[CTII][0]),
+				bdmx[ip][1] + hmm->tsc[CTID][0]);
+	  bimx[ip][0] += hmm->isc[dsq[i]][0];
+	  bmmx[ip][0] = -INFTY;
 	  /*for (k = hmm->M-1; k >= 1; k--)*/ /*M_0 is the B state, it doesn't emit*/
 	  for (k = hmm->M; k >= 1; k--) /*M_0 is the B state, it doesn't emit*/
 	    {
-	      bmmx[i][0] = ILogsum(bmmx[i][0], bmmx[i+1][k] + hmm->bsc[k]);
-	      /*printf("hmm->bsc[%d]: %d | bmmx[i+1][k]: %d\n", k, hmm->bsc[k], bmmx[(i+1)][k]);
-		printf("bmmx[%3d][%3d]: %d | k: %3d\n", i, 0, bmmx[i][0], k);*/
+	      bmmx[ip][0] = ILogsum(bmmx[ip][0], bmmx[ip+1][k] + hmm->bsc[k]);
+	      /*printf("hmm->bsc[%d]: %d | bmmx[ip+1][k]: %d\n", k, hmm->bsc[k], bmmx[(i+1)][k]);
+		printf("bmmx[%3d][%3d]: %d | k: %3d\n", i, 0, bmmx[ip][0], k);*/
 	    }
-	  bmmx[i][0] = ILogsum(bmmx[i][0], bimx[i+1][k] + hmm->tsc[CTMI][k]);
-	  bmmx[i][0] = ILogsum(bmmx[i][0], bdmx[i][k+1] + hmm->tsc[CTMD][k]);
+	  bmmx[ip][0] = ILogsum(bmmx[ip][0], bimx[ip+1][k] + hmm->tsc[CTMI][k]);
+	  bmmx[ip][0] = ILogsum(bmmx[ip][0], bdmx[ip][k+1] + hmm->tsc[CTMD][k]);
 	  
-	  bdmx[i][0] = -INFTY; /* D_0 does not exist */
+	  bdmx[ip][0] = -INFTY; /* D_0 does not exist */
 	  
 	}
       else if(i == 0)
@@ -654,27 +672,28 @@ CP9ForwardBackwardScan(unsigned char *dsq, int L, int W, struct cplan9_s *hmm, s
        * But a CM always has parses that start at position 1. So we have to translate
        * from HMM to CM in this way, and that's why there's a i+1 in the following loop.
        */
-      gamma[i+1]  = gamma[i+2] + 0; /* extend without adding a new hit */
+      gamma[ip+1]  = gamma[ip+2] + 0; /* extend without adding a new hit */
       /*printf("i: %d | gamma[i]: %f | gamma[i+1]: %f\n", i, gamma[i], gamma[i+1]);*/
-      gback[i+1]  = -1;
-      savesc[i+1] = IMPOSSIBLE;
-      saver[i+1]  = -1;
-      j = ((i+1+W-1) < L) ? (i+1+W-1) : L;
-      sc = gamma[j+1] + Scorify(bmmx[i][0]) - min_thresh;
+      gback[ip+1]  = -1;
+      savesc[ip+1] = IMPOSSIBLE;
+      saver[ip+1]  = -1;
+      j = ((i+1+W-1) < j0) ? (i+1+W-1) : j0;
+      jp = j-i0+1;
+      sc = gamma[jp+1] + Scorify(bmmx[ip][0]) - min_thresh;
 
-      /*printf("bmmx[%3d][0]: %10.5f\n", i, Scorify(bmmx[i][0]));*/
-      bck_sum = ILogsum(bck_sum, bmmx[i][0]);
+      /*printf("bmmx[%3d][0]: %10.5f\n", i, Scorify(bmmx[ip][0]));*/
+      bck_sum = ILogsum(bck_sum, bmmx[ip][0]);
 
-      bck_sc = Scorify(bmmx[i][0]);
+      bck_sc = Scorify(bmmx[ip][0]);
       /*printf("bmmx[%3d][0]: %10.5f\n", i, bck_sc);*/
-      /*printf("i: %d | bmmx[i][0]: %f | j: %d | gamma[i]: %f | sc: %f\n", i, Scorify(bmmx[i][0]), j, gamma[i], sc);*/
-      if (sc > gamma[i+1])
+      /*printf("i: %d | bmmx[ip][0]: %f | j: %d | gamma[i]: %f | sc: %f\n", i, Scorify(bmmx[ip][0]), j, gamma[i], sc);*/
+      if (sc > gamma[ip+1])
 	{
-	  gamma[i+1]  = sc;
-	  gback[i+1]  = j;
-	  savesc[i+1] = Scorify(bmmx[i][0]);
-	  saver[i+1]  = 0;
-	  //saver[i+1]  = bestr[d];
+	  gamma[ip+1]  = sc;
+	  gback[ip+1]  = j;
+	  savesc[ip+1] = Scorify(bmmx[ip][0]);
+	  saver[ip+1]  = 0;
+	  //saver[ip+1]  = bestr[d];
 	}
     }
 
@@ -692,20 +711,21 @@ CP9ForwardBackwardScan(unsigned char *dsq, int L, int W, struct cplan9_s *hmm, s
   bck_hiti  = MallocOrDie(sizeof(int)   * alloc_nhits);
   bck_hitsc = MallocOrDie(sizeof(float) * alloc_nhits);
 
-  i     = 1;
+  i     = i0;
   bck_nhits = 0;
+  ip = i-i0+1;
   while (i <= L) {
-    if (gback[i] == -1) /* no hit */
-      i++; 
+    if (gback[ip] == -1) /* no hit */
+      { i++; ip++; }
     else                /* a hit, a palpable hit */
       {
-	bck_hitr[bck_nhits]   = saver[i];
-	bck_hitj[bck_nhits]   = gback[i];
+	bck_hitr[bck_nhits]   = saver[ip];
+	bck_hitj[bck_nhits]   = gback[ip];
 	bck_hiti[bck_nhits]   = i;
-	bck_hitsc[bck_nhits]  = savesc[i];
+	bck_hitsc[bck_nhits]  = savesc[ip];
 	bck_nhits++;
-	i = gback[i]+1;
-	
+	i = gback[ip]+1;
+	ip = i-i0+1;
 	if (bck_nhits == alloc_nhits) {
 	  bck_hitr  = ReallocOrDie(bck_hitr,  sizeof(int)   * (alloc_nhits + 10));
 	  bck_hitj  = ReallocOrDie(bck_hitj,  sizeof(int)   * (alloc_nhits + 10));
@@ -722,9 +742,9 @@ CP9ForwardBackwardScan(unsigned char *dsq, int L, int W, struct cplan9_s *hmm, s
 
   /*debug_check_CP9_FBscan(fmx, bmx, hmm, Scorify(femx[0][L]), L, dsq);*/
 
-  CP9_combine_FBscan_hits(L, W, fwd_nhits, fwd_hitr, fwd_hiti, fwd_hitj, fwd_hitsc, 
+  CP9_combine_FBscan_hits(i0, j0, W, fwd_nhits, fwd_hitr, fwd_hiti, fwd_hitj, fwd_hitsc, 
 			        bck_nhits, bck_hitr, bck_hiti, bck_hitj, bck_hitsc,
-			        ret_nhits, ret_hitr, ret_hiti, ret_hitj, ret_hitsc, 0);
+			        ret_nhits, ret_hitr, ret_hiti, ret_hitj, ret_hitsc, pad);
 
   free(fwd_hitr);
   free(fwd_hitj);
@@ -942,8 +962,9 @@ CP9ScanFullPosterior(unsigned char *dsq, int L,
  *           scans into (i, j, sc) triples we can then search with a CM.
  * 
  * 
- * Args:     L      - length of dsq
- *           W      - window length (maximum size of a hit considered)
+ * Args:     i0        - start of target subsequence (1 for beginning of dsq)
+ *           j0        - end of target subsequence (L for end of dsq)
+ *           W         - window length (maximum size of a hit considered)
  *           fwd_nhits - Forward: number of hits
  *           fwd_hitr  - Forward: start states of hits, 0..nhits-1
  *           fwd_hiti  - Forward: start positions of hits, 0..nhits-1
@@ -964,7 +985,7 @@ CP9ScanFullPosterior(unsigned char *dsq, int L,
  *           hiti, hitj, hitsc are allocated here; caller free's w/ free().
  */
 void
-CP9_combine_FBscan_hits(int L, int W, int fwd_nhits, int *fwd_hitr, int *fwd_hiti, 
+CP9_combine_FBscan_hits(int i0, int j0, int W, int fwd_nhits, int *fwd_hitr, int *fwd_hiti, 
 			int *fwd_hitj, float *fwd_hitsc, int bck_nhits, 
 			int *bck_hitr, int *bck_hiti, int *bck_hitj, float *bck_hitsc, 
 			int *ret_nhits, int **ret_hitr, int **ret_hiti, int **ret_hitj, 
@@ -979,7 +1000,7 @@ CP9_combine_FBscan_hits(int L, int W, int fwd_nhits, int *fwd_hitr, int *fwd_hit
   int       alloc_nhits;	/* used to grow the hit arrays */
   int       fwd_ctr;
   int       bck_ctr;
-
+  
   alloc_nhits = 10;
   hitr  = MallocOrDie(sizeof(int)   * alloc_nhits);
   hitj  = MallocOrDie(sizeof(int)   * alloc_nhits);
@@ -992,7 +1013,8 @@ CP9_combine_FBscan_hits(int L, int W, int fwd_nhits, int *fwd_hitr, int *fwd_hit
     }
   */
 
-  /*  for(i = 0; i < fwd_nhits; i++)
+  /*
+  for(i = 0; i < fwd_nhits; i++)
     {
       printf("FWD hit %3d | i: %3d | j: %3d | sc: %f\n", i, fwd_hiti[i], fwd_hitj[i], fwd_hitsc[i]);
     }
@@ -1027,8 +1049,10 @@ CP9_combine_FBscan_hits(int L, int W, int fwd_nhits, int *fwd_hitr, int *fwd_hit
 	}
       if(fwd_ctr == -1) 
 	{
-	  i = bck_hiti[bck_ctr];
-	  j = bck_hitj[bck_ctr];
+	  i = (bck_hiti[bck_ctr] - pad >= i0) ? (bck_hiti[bck_ctr] - pad) : i0;
+	  j = (bck_hitj[bck_ctr] + pad <= j0) ? (bck_hitj[bck_ctr] + pad) : j0;
+	  while ((j-i+1) > W)
+	    { i++; if((j-i+1) > W) j--; }
 	  hiti[nhits]   = i;
 	  hitj[nhits]   = j;
 	  hitsc[nhits]  = bck_hitsc[bck_ctr];
@@ -1037,8 +1061,10 @@ CP9_combine_FBscan_hits(int L, int W, int fwd_nhits, int *fwd_hitr, int *fwd_hit
 	}
       else if(bck_ctr == bck_nhits) 
 	{
-	  i = fwd_hiti[fwd_ctr];
-	  j = fwd_hitj[fwd_ctr];
+	  i = (fwd_hiti[fwd_ctr] - pad >= i0) ? (fwd_hiti[fwd_ctr] - pad) : i0;
+	  j = (fwd_hitj[fwd_ctr] + pad <= j0) ? (fwd_hitj[fwd_ctr] + pad) : j0;
+	  while ((j-i+1) > W)
+	    { i++; if((j-i+1) > W) j--; }
 	  hiti[nhits]   = i;
 	  hitj[nhits]   = j;
 	  hitsc[nhits]  = fwd_hitsc[fwd_ctr];
@@ -1047,10 +1073,14 @@ CP9_combine_FBscan_hits(int L, int W, int fwd_nhits, int *fwd_hitr, int *fwd_hit
 	}
       else
 	{
-	  i = bck_hiti[bck_ctr];
-	  j = fwd_hitj[fwd_ctr];
-	  if((j-i+1 > 0) && (j-i+1 <= W))
+	  i = (bck_hiti[bck_ctr] - pad >= i0) ? (bck_hiti[bck_ctr] - pad) : i0;
+	  j = (fwd_hitj[fwd_ctr] + pad <= j0) ? (fwd_hitj[fwd_ctr] + pad) : j0;
+	  
+	  if((j-i+1 > 0) && (j-i+1 <= (W + 2 * pad)))
 	    {
+	      /* creep in on i and j until we're at the window size */
+	      while ((j-i+1) > W)
+		{ i++; if((j-i+1) > W) j--; }
 	      hiti[nhits]   = i;
 	      hitj[nhits]   = j;
 	      hitsc[nhits]  = 0.5 * (fwd_hitsc[fwd_ctr] + bck_hitsc[bck_ctr]);
@@ -1062,7 +1092,8 @@ CP9_combine_FBscan_hits(int L, int W, int fwd_nhits, int *fwd_hitr, int *fwd_hit
 	  else if(j > i) /* hit from Backward() unmatched by a Forward hit */
 	    {
 	      hiti[nhits]   = i;
-	      hitj[nhits]   = bck_hitj[bck_ctr]; /* this will be i+W */
+	      hitj[nhits]   = ((i+W-1) < j0) ? (i+W-1) : j0;
+	      /*hitj[nhits]   = bck_hitj[bck_ctr]; *//* this will be (i+W) */
 	      hitsc[nhits]  = bck_hitsc[bck_ctr];
 	      hitr[nhits]   = bck_hitr[bck_ctr];
 	      bck_ctr++;
@@ -1070,7 +1101,8 @@ CP9_combine_FBscan_hits(int L, int W, int fwd_nhits, int *fwd_hitr, int *fwd_hit
 	  else if(i > j) /* hit from Backward() unmatched by a Forward hit */
 	    {
 	      hitj[nhits]   = j;
-	      hiti[nhits]   = fwd_hiti[fwd_ctr]; /* this will be i+W */
+	      hiti[nhits]   = ((j-W+1) > i0) ? (j-W+1) : i0;
+	      /*hiti[nhits]   = fwd_hiti[fwd_ctr]; *//* this will be (j-W) */
 	      hitsc[nhits]  = fwd_hitsc[fwd_ctr];
 	      hitr[nhits]   = fwd_hitr[fwd_ctr];
 	      fwd_ctr--;
@@ -1108,3 +1140,309 @@ CP9_combine_FBscan_hits(int L, int W, int fwd_nhits, int *fwd_hitr, int *fwd_hit
 }
 
 
+
+/***********************************************************************
+ * Function: CP9BackwardScan()
+ * 
+ * Purpose:  Runs the Backward dynamic programming algorithm that scans an 
+ *           input subsequence (i0-j0). Complements CP9ForwardScan().
+ *           Very similar to CP9Backward with the only difference being
+ *           that parses can end at any position j, not only j0 (the endpoint).
+ *           
+ *           This function is messy in that it does not check that
+ *           the log-odds scores are -INFTY (-987654321) before
+ *           adding them. This means that -INFTY is interpreted
+ *           as a possible transition, with a very low probability
+ *           (2^-987654321).
+ * 
+ * Args:     dsq    - sequence in digitized form
+ *           i0        - start of target subsequence (1 for beginning of dsq)
+ *           j0        - end of target subsequence (L for end of dsq)
+ *           W         - max d: max size of a hit
+ *           hmm    - the model
+ *           ret_bmx - the Backward scanning matrix
+ *           ret_nhits - RETURN: number of hits
+ *           ret_hitr  - RETURN: start states of hits, 0..nhits-1
+ *           ret_hiti  - RETURN: start positions of hits, 0..nhits-1
+ *           ret_hitj  - RETURN: end positions of hits, 0..nhits-1
+ *           ret_hitsc - RETURN: scores of hits, 0..nhits-1            
+ *           min_thresh- minimum score to report (EPN via Alex Coventry 03.11.06)
+ *
+ * Returns:  
+ *           hiti, hitj, hitsc are allocated in a helper function; caller free's w/ free().
+ */
+float
+CP9BackwardScan(unsigned char *dsq, int i0, int j0, int W, struct cplan9_s *hmm,
+		       struct cp9_dpmatrix_s **ret_mx, int *ret_nhits, int **ret_hitr, int **ret_hiti, 
+		       int **ret_hitj, float **ret_hitsc, float min_thresh)
+{
+  struct cp9_dpmatrix_s *mx;
+  int **mmx;
+  int **imx;
+  int **dmx;
+  int **emx;
+  int   i,j,k;
+  float     sc;     
+  float    *gamma;              /* SHMM DP matrix for optimum nonoverlap resolution */
+  int      *gback;              /* traceback pointers for SHMM */ 
+  float    *savesc;             /* saves score of hit added to best parse at j */
+  int      *saver;		/* saves initial non-ROOT state of best parse ended at j */
+
+  int       nhits;		/* # of hits in optimal parse */
+  int      *hitr;		/* initial state indices of hits in optimal parse */
+  int      *hiti;		/* initial state indices of hits in optimal parse */
+  int      *hitj;               /* end positions of hits in optimal parse */
+  float    *hitsc;              /* scores of hits in optimal parse */
+  int       alloc_nhits;	/* used to grow the hit arrays */
+
+  int      L;                   /* j0-i0+1: subsequence length */
+  int      jp;		        /* j': relative position in the subsequence  */
+  int      ip;		        /* i': relative position in the subsequence  */
+  /*int bck_sum;*/                  /* calc'ed from the Backward matrix, the sum over all
+				 * positions i0..j0 of all parses that start and end 
+				 * anywhere from i0..j0 */
+
+  /*bck_sum = -INFTY;*/
+
+  L = j0-i0+1;
+  if (W > L) W = L; 
+
+  /*****************************************************************
+   * gamma allocation and initialization.
+   * This is a little SHMM that finds an optimal scoring parse
+   * of multiple nonoverlapping hits. We use it first for
+   * the Forward scan, and reuse it for the Backward scan.
+   *****************************************************************/ 
+  gamma    = MallocOrDie(sizeof(float) * (L+2));
+  gamma[0] = 0.;
+  gamma[L+1] = 0.;
+  gback    = MallocOrDie(sizeof(int)   * (L+2));
+  gback[0] = -1;
+  gback[L+1] = -1;
+  savesc   = MallocOrDie(sizeof(float) * (L+2));
+  saver    = MallocOrDie(sizeof(int)   * (L+2));
+
+  /* Allocate a DP matrix with 0..L rows, 0..M-1 
+   */ 
+  mx = AllocCPlan9Matrix(L+1, hmm->M, &mmx, &imx, &dmx, &emx);
+
+  /*****************************************************************
+   * The main loop: scan the sequence from position j0 to i0.
+   *****************************************************************/
+
+  /* Initialization of the L row.
+   */
+  emx[0][L] = 0; /*have to end in E*/
+
+  mmx[L][hmm->M] = emx[0][L] + hmm->esc[hmm->M]; /* M<-E ...                   */
+  mmx[L][hmm->M] += hmm->msc[dsq[j0]][hmm->M]; /* ... + emitted match symbol */
+  imx[L][hmm->M] = emx[0][L] + hmm->tsc[CTIM][hmm->M];   /* I_M(C)<-E ... */
+  imx[L][hmm->M] += hmm->isc[dsq[j0]][hmm->M];           /* ... + emitted match symbol */
+  dmx[L][hmm->M] = emx[0][L] + hmm->tsc[CTDM][hmm->M];    /* D_M<-E */
+  for (k = hmm->M-1; k >= 1; k--)
+    {
+      mmx[L][k]  = emx[0][L] + hmm->esc[k];
+      mmx[L][k]  = ILogsum(mmx[L][k], dmx[L][k+1] + hmm->tsc[CTMD][k]);
+      mmx[L][k] += hmm->msc[dsq[j0]][k];
+
+      imx[L][k] = dmx[L][k+1] + hmm->tsc[CTID][k];
+      imx[L][k] += hmm->isc[dsq[j0]][k];
+
+      dmx[L][k] = dmx[L][k+1] + hmm->tsc[CTDD][k];
+    }
+  
+  mmx[L][0] = -INFTY; /* no esc[0] b/c its impossible */
+  imx[L][0] = dmx[L][1] + hmm->tsc[CTID][0];
+  imx[L][0] += hmm->isc[dsq[j0]][hmm->M];    
+  dmx[L][0] = -INFTY; /*D_0 doesn't exist*/
+
+  /*bck_sum = ILogsum(bck_sum, mmx[L][0]);*/
+
+  /*printf("mmx[L][  0]: %10.5f\n", sc);*/
+  /*printf("tmp_bck_sum L: %d\n", tmp_bck_sum);*/
+
+  /* Recursion. Done as a pull.
+   */
+  for (i = j0-1; i >= i0-1; i--)
+    {
+      ip = i-i0 + 1;		/* ip is relative index in dsq (1 to L) */
+      if(ip > 0)
+	{
+	  emx[0][ip] = 0; /* This is 1 of 3 differences between a Backward scanner and the 
+			   * regular Backward (CP9Backward), 
+			   * in CP9Backward, this cell is set to -INFTY.
+			   * Here, we can end at the END state at any position,
+			   * this isn't true in global alignment. 
+			   * Second and third differences are related, 
+			   * see the four comments 
+			   * labelled "2nd diff" or "3rd diff" below
+			   */
+	  
+	  /* Now the main states. Note the boundary conditions at M.
+	   */
+	  mmx[ip][hmm->M] = ILogsum(emx[0][ip+1] + hmm->esc[hmm->M], /* M<-E ... 2nd diff w/non-scanner*/
+				    imx[ip+1][hmm->M] + hmm->tsc[CTMI][hmm->M]);
+	  mmx[ip][hmm->M] += hmm->msc[dsq[i]][hmm->M];
+	  imx[ip][hmm->M] = ILogsum(emx[0][ip] + hmm->tsc[CTIM][hmm->M],    /* I_M(C)<-E ... */
+				    imx[ip+1][hmm->M] + hmm->tsc[CTII][hmm->M]);
+	  imx[ip][hmm->M] += hmm->isc[dsq[i]][hmm->M];
+	  dmx[ip][hmm->M] = ILogsum(emx[0][ip] + hmm->tsc[CTDM][hmm->M], /* D_M<-E */
+				    imx[ip+1][hmm->M] + hmm->tsc[CTDI][hmm->M]);  
+	  for (k = hmm->M-1; k >= 1; k--)
+	    {
+	      mmx[ip][k]  = ILogsum(ILogsum(emx[0][ip+1] + hmm->esc[k], /* M<-E ... 2nd diff w/non-scanner*/
+					    mmx[ip+1][k+1] + hmm->tsc[CTMM][k]),
+				    ILogsum(imx[ip+1][k] + hmm->tsc[CTMI][k],
+					    dmx[ip][k+1] + hmm->tsc[CTMD][k]));	  
+	      /*if(k == 1 && ip == 1) printf("\tk: %d | emx[0][ip+1]: %d | hmm->esc[k]: %d\n\t\tmmx[ip+1][k+1]: %d | hmm->tsc[CTMM][k]: %d\n\t\timx[ip+1][k]: %d | hmm->tsc[CTMI][k]: %d\n\t\tdmx[ip][k+1]: %d | hmm->tsc[CTMD][k]: %d\n", k, emx[0][(ip+1)], hmm->esc[k], mmx[(ip+1)][(k+1)], hmm->tsc[CTMM][k], imx[(ip+1)][k], hmm->tsc[CTMI][k], dmx[ip][(k+1)], hmm->tsc[CTMD][k]);*/
+	      
+	      mmx[ip][k] += hmm->msc[dsq[i]][k];
+	      
+	      imx[ip][k]  = ILogsum(ILogsum(mmx[ip+1][k+1] + hmm->tsc[CTIM][k],
+					    imx[ip+1][k] + hmm->tsc[CTII][k]),
+				    dmx[ip][k+1] + hmm->tsc[CTID][k]);
+	      imx[ip][k] += hmm->isc[dsq[i]][k];
+	      
+	      dmx[ip][k]  = ILogsum(ILogsum(mmx[ip+1][k+1] + hmm->tsc[CTDM][k],
+					    imx[ip+1][k] + hmm->tsc[CTDI][k]),
+				    dmx[ip][k+1] + hmm->tsc[CTDD][k]);
+	    }
+	  imx[ip][0]  = ILogsum(ILogsum(mmx[ip+1][1] + hmm->tsc[CTIM][0],
+					imx[ip+1][0] + hmm->tsc[CTII][0]),
+				dmx[ip][1] + hmm->tsc[CTID][0]);
+	  imx[ip][0] += hmm->isc[dsq[i]][0];
+	  mmx[ip][0] = -INFTY;
+	  /*for (k = hmm->M-1; k >= 1; k--)*/ /*M_0 is the B state, it doesn't emit*/
+	  for (k = hmm->M; k >= 1; k--) /*M_0 is the B state, it doesn't emit*/
+	    {
+	      mmx[ip][0] = ILogsum(mmx[ip][0], mmx[ip+1][k] + hmm->bsc[k]);
+	      /*printf("hmm->bsc[%d]: %d | mmx[ip+1][k]: %d\n", k, hmm->bsc[k], mmx[(i+1)][k]);
+		printf("mmx[%3d][%3d]: %d | k: %3d\n", i, 0, mmx[ip][0], k);*/
+	    }
+	  mmx[ip][0] = ILogsum(mmx[ip][0], imx[ip+1][k] + hmm->tsc[CTMI][k]);
+	  mmx[ip][0] = ILogsum(mmx[ip][0], dmx[ip][k+1] + hmm->tsc[CTMD][k]);
+	  
+	  dmx[ip][0] = -INFTY; /* D_0 does not exist */
+	  
+	}
+      if(ip == 0)
+	{
+	  /* case when ip = 0 */
+	  emx[0][0] = 0.; /* 3rd diff with non-scanner */
+	  mmx[0][hmm->M] = -INFTY; /* need seq to get here */
+	  imx[0][hmm->M] = -INFTY; /* need seq to get here */
+	  dmx[0][hmm->M] = ILogsum(emx[0][0] + hmm->tsc[CTDM][hmm->M],  /*D_M<-E*/ /* 3rd diff with non-scanner */
+				   imx[1][hmm->M] + hmm->tsc[CTDI][hmm->M]);  
+	  for (k = hmm->M-1; k >= 1; k--)
+	    {
+	      mmx[0][k] = -INFTY; /* need seq to get here */
+	      imx[0][k] = -INFTY; /* need seq to get here */
+	      dmx[0][k]  = ILogsum(ILogsum(mmx[1][k+1] + hmm->tsc[CTDM][k],
+					   imx[1][k] + hmm->tsc[CTDI][k]),
+				   dmx[0][k+1] + hmm->tsc[CTDD][k]);
+	    }
+	  imx[0][0] = -INFTY; /*need seq to get here*/
+	  dmx[0][0] = -INFTY; /*D_0 doesn't exist*/
+	  
+	  mmx[0][0] = -INFTY;
+	  for (k = hmm->M; k >= 1; k--) /*M_0 is the B state, it doesn't emit*/
+	    {
+	      mmx[0][0] = ILogsum(mmx[0][0], mmx[1][k] + hmm->bsc[k]);
+	      /*printf("k: %d | mmx[0][0]: %d | mmx[1][k]: %d | hmm->bsc[k]: %d\n", k, mmx[0][0], mmx[1][k], hmm->bsc[k]);*/
+	    }
+	  mmx[0][0] = ILogsum(mmx[0][0], dmx[0][1] + hmm->tsc[CTMD][0]);
+	  /*printf("added D trans | mmx[0][0]: %d \n", mmx[0][0]);*/
+	  mmx[0][0] = ILogsum(mmx[0][0], imx[1][0] + hmm->tsc[CTMI][0]);
+	  /*printf("added I trans | mmx[0][0]: %d \n", mmx[0][0]);*/
+	  
+	  sc = Scorify(mmx[0][0]);   /* the total Backward score. */
+	  /*printf("mmx[0][  0]: %10.5f\n", sc);*/
+	  
+	  /*bck_sum = ILogsum(bck_sum, mmx[0][0]);*/
+	  /*printf("Total Backward score (summed over all posns): %f\n", Scorify(bck_sum));		*/
+	  /*sc  = Scorify(bck_sum);*/
+	}
+      /* The little semi-Markov model that deals with multihit parsing:
+       */
+      /* Here's a vicious off-by-one with HMMs and CMs:
+       * an HMM parse can begin at position 0, i.e. backward[0][0] is the probability
+       * of the entire sequence being emitted starting at the Begin state at position 0.
+       * But a CM always has parses that start at position 1. So we have to translate
+       * from HMM to CM in this way, and that's why there's a i+1 in the following loop.
+       */
+      gamma[ip+1]  = gamma[ip+2] + 0; /* extend without adding a new hit */
+      /*printf("i: %d | gamma[i]: %f | gamma[i+1]: %f\n", i, gamma[i], gamma[i+1]);*/
+      gback[ip+1]  = -1;
+      savesc[ip+1] = IMPOSSIBLE;
+      saver[ip+1]  = -1;
+      j = ((i+1+W-1) < j0) ? (i+1+W-1) : j0;
+      jp = j-i0+1;
+      sc = gamma[jp+1] + Scorify(mmx[ip][0]) - min_thresh;
+      
+      /*printf("mmx[%3d][0]: %10.5f\n", i, Scorify(mmx[ip][0]));*/
+      /*bck_sum = ILogsum(bck_sum, mmx[ip][0]);*/
+      
+      sc = Scorify(mmx[ip][0]);
+      /*printf("mmx[%3d][0]: %10.5f\n", i, sc);*/
+      /*printf("i: %d | mmx[ip][0]: %f | j: %d | gamma[i]: %f | sc: %f\n", i, Scorify(mmx[ip][0]), j, gamma[i], sc);*/
+      if (sc > gamma[ip+1])
+	{
+	  gamma[ip+1]  = sc;
+	  gback[ip+1]  = j;
+	  savesc[ip+1] = Scorify(mmx[ip][0]);
+	  saver[ip+1]  = 0;
+	  //saver[ip+1]  = bestr[d];
+	}
+    }
+  /* End of Backward() code */
+
+  /*****************************************************************
+   * Traceback stage for Backward.
+   * Recover all hits: an (i,j,sc) triple for each one.
+   *****************************************************************/ 
+
+  alloc_nhits = 10;
+  hitr  = MallocOrDie(sizeof(int)   * alloc_nhits);
+  hitj  = MallocOrDie(sizeof(int)   * alloc_nhits);
+  hiti  = MallocOrDie(sizeof(int)   * alloc_nhits);
+  hitsc = MallocOrDie(sizeof(float) * alloc_nhits);
+
+  i     = i0;
+  nhits = 0;
+  ip = i-i0+1;
+  while (i <= L) {
+    if (gback[ip] == -1) /* no hit */
+      { i++; ip++; }
+    else                /* a hit, a palpable hit */
+      {
+	hitr[nhits]   = saver[ip];
+	hitj[nhits]   = gback[ip];
+	hiti[nhits]   = i;
+	hitsc[nhits]  = savesc[ip];
+	nhits++;
+	i = gback[ip]+1;
+	ip = i-i0+1;
+	if (nhits == alloc_nhits) {
+	  hitr  = ReallocOrDie(hitr,  sizeof(int)   * (alloc_nhits + 10));
+	  hitj  = ReallocOrDie(hitj,  sizeof(int)   * (alloc_nhits + 10));
+	  hiti  = ReallocOrDie(hiti,  sizeof(int)   * (alloc_nhits + 10));
+	  hitsc = ReallocOrDie(hitsc, sizeof(float) * (alloc_nhits + 10));
+	  alloc_nhits += 10;
+	}
+      }
+  }
+  free(gback);
+  free(gamma);
+  free(savesc);
+  free(saver);
+
+  *ret_nhits = nhits;
+  *ret_hitr  = hitr;
+  *ret_hiti  = hiti;
+  *ret_hitj  = hitj;
+  *ret_hitsc = hitsc;
+
+  if (ret_mx != NULL) *ret_mx = mx;
+  else                FreeCPlan9Matrix(mx);
+  return sc;		/* the total Backward score. */
+}

@@ -27,8 +27,9 @@
  *           Multiple nonoverlapping hits and local alignment.
  *
  * Args:     cm        - the covariance model
- *           dsq       - digitized sequence to search; 1..L
- *           L         - length of sequence
+ *           dsq       - digitized sequence to search; i0..j0
+ *           i0        - start of target subsequence (1 for full seq)
+ *           j0        - end of target subsequence (L for full seq)
  *           W         - max d: max size of a hit
  *           ret_nhits - RETURN: number of hits
  *           ret_hitr  - RETURN: start states of hits, 0..nhits-1
@@ -41,7 +42,7 @@
  *           hiti, hitj, hitsc are allocated here; caller free's w/ free().
  */
 void
-CYKScan(CM_t *cm, char *dsq, int L, int W, 
+CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
 	int *ret_nhits, int **ret_hitr, int **ret_hiti, int **ret_hitj, float **ret_hitsc, float min_thresh)
 
 {
@@ -66,7 +67,10 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
   int      *hitj;               /* end positions of hits in optimal parse */
   float    *hitsc;              /* scores of hits in optimal parse */
   int       alloc_nhits;	/* used to grow the hit arrays */
-
+  int       L;                  /* length of the subsequence (j0-i0+1) */
+  int       gamma_j;            /* j index in the gamma matrix, which is indexed 0..j0-i0+1, 
+				 * while j runs from i0..j0 */
+  int       gamma_i;            /* i index in the gamma* data structures */
   /*int     updated_flag;*/         /* strategy 2 */
   /*****************************************************************
    * alpha allocations.
@@ -79,6 +83,8 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
    *    d ranges from 0..W over subsequence lengths.
    * Note that E memory is shared: all E decks point at M-1 deck.
    *****************************************************************/
+
+  L = j0-i0+1;
   if (W > L) W = L; 
 
   alpha = MallocOrDie (sizeof(float **) * cm->M);
@@ -155,8 +161,9 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
   /*****************************************************************
    * The main loop: scan the sequence from position 1 to L.
    *****************************************************************/
-  for (j = 1; j <= L; j++) 
+  for (j = i0; j <= j0; j++) 
     {
+      gamma_j = j-i0+1; /* j is actual index in j, gamma_j is offeset j index in gamma* data structures */
       cur = j%2;
       prv = (j-1)%2;
       for (v = cm->M-1; v > 0; v--) /* ...almost to ROOT; we handle ROOT specially... */
@@ -164,7 +171,7 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
 	  if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
 	    {
 	      if (cm->stid[v] == BEGL_S) jp = j % (W+1); else jp = cur;
-	      for (d = 1; d <= W && d <= j; d++) 
+	      for (d = 1; d <= W && d <= gamma_j; d++) 
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][jp][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
@@ -176,7 +183,7 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
 	    }
 	  else if (cm->sttype[v] == MP_st) 
 	    {
-	      for (d = 2; d <= W && d <= j; d++)
+	      for (d = 2; d <= W && d <= gamma_j; d++)
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
@@ -195,7 +202,7 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
 	    }
 	  else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) 
 	    {
-	      for (d = 1; d <= W && d <= j; d++)
+	      for (d = 1; d <= W && d <= gamma_j; d++)
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v]))); 
@@ -214,7 +221,7 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
 	    }
 	  else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) 
 	    {
-	      for (d = 1; d <= W && d <= j; d++)
+	      for (d = 1; d <= W && d <= gamma_j; d++)
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
@@ -235,7 +242,7 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
 	      w = cm->cfirst[v];
 	      y = cm->cnum[v];
 	      i = j-d+1;
-	      for (d = 1; d <= W && d <= j; d++) 
+	      for (d = 1; d <= W && d <= gamma_j; d++) 
 		{
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
 
@@ -259,7 +266,7 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
        * by the way local alignment is parameterized (other transitions are
        * -INFTY), which is probably a little too fragile of a method. 
        */
-      for (d = 1; d <= W && d <=j; d++) 
+      for (d = 1; d <= W && d <= gamma_j; d++) 
 	{
 	  y = cm->cfirst[0];
 	  alpha[0][cur][d] = alpha[y][cur][d] + cm->tsc[0][0];
@@ -283,21 +290,21 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
 
       /* The little semi-Markov model that deals with multihit parsing:
        */
-      gamma[j]  = gamma[j-1] + 0; 
-      gback[j]  = -1;
-      savesc[j] = IMPOSSIBLE;
-      saver[j]  = -1;
-      for (d = 1; d <= W && d <= j; d++) 
+      gamma[gamma_j]  = gamma[gamma_j-1] + 0; 
+      gback[gamma_j]  = -1;
+      savesc[gamma_j] = IMPOSSIBLE;
+      saver[gamma_j]  = -1;
+      for (d = 1; d <= W && d <= gamma_j; d++) 
 	{
 	  i = j-d+1;
-	  assert(i > 0);
-	  sc = gamma[i-1] + alpha[0][cur][d]  - min_thresh; 
-	  if (sc > gamma[j])
+	  gamma_i = j-d+1-i0+1;
+	  sc = gamma[gamma_i-1] + alpha[0][cur][d]  - min_thresh; 
+	  if (sc > gamma[gamma_j])
 	    {
-	      gamma[j]  = sc;
-	      gback[j]  = i;
-	      savesc[j] = alpha[0][cur][d]; 
-	      saver[j]  = bestr[d];
+	      gamma[gamma_j]  = sc;
+	      gback[gamma_j]  = i;
+	      savesc[gamma_j] = alpha[0][cur][d]; 
+	      saver[gamma_j]  = bestr[d];
 	    }
 	}
     } /* end loop over end positions j */
@@ -331,19 +338,20 @@ CYKScan(CM_t *cm, char *dsq, int L, int W,
   hiti  = MallocOrDie(sizeof(int)   * alloc_nhits);
   hitsc = MallocOrDie(sizeof(float) * alloc_nhits);
   
-  j     = L;
+  j     = j0;
   nhits = 0;
-  while (j > 0) {
-    if (gback[j] == -1) /* no hit */
+  while (j >= i0) {
+    gamma_j = j-i0+1;
+    if (gback[gamma_j] == -1) /* no hit */
       j--; 
     else                /* a hit, a palpable hit */
       {
-	hitr[nhits]   = saver[j];
+	hitr[nhits]   = saver[gamma_j];
 	hitj[nhits]   = j;
-	hiti[nhits]   = gback[j];
-	hitsc[nhits]  = savesc[j];
+	hiti[nhits]   = gback[gamma_j];
+	hitsc[nhits]  = savesc[gamma_j];
 	nhits++;
-	j = gback[j]-1;
+	j = gback[gamma_j]-1;
 	
 	if (nhits == alloc_nhits) {
 	  hitr  = ReallocOrDie(hitr,  sizeof(int)   * (alloc_nhits + 10));
