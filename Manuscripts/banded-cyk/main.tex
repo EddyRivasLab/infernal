@@ -45,10 +45,10 @@
 
 \title{Query-Dependent Banding (QDB) for Faster RNA Similarity Searches}
 \author{Eric P. Nawrocki and Sean R. Eddy\\
-Howard Hughes Medical Institute \& Department of Genetics, \\
-Washington University School of Medicine \\
-Saint Louis, Missouri 63108 USA \\
-eddy@genetics.wustl.edu}  
+HHMI Janelia Farm Research Campus\\
+19700 Helix Drive\\
+Ashburn VA 20176\\
+eddys@janelia.hhmi.org}  
 \date{\today}
 \maketitle
 
@@ -58,25 +58,24 @@ eddy@genetics.wustl.edu}
 
 \begin{abstract}
 
-When searching sequence databases for similarity to an RNA, one wants
-to score a combination of primary sequence and RNA secondary structure
-conservation.  Covariance models (CMs) are probabilistic models
-well-suited for such RNA similarity search applications, but the
+When searching sequence databases for similarities to an RNA query,
+one wants to score a combination of primary sequence and RNA secondary
+structure conservation.  Covariance models (CMs) are probabilistic
+models well suited for RNA similarity search applications, but the
 computational complexity of CMs has limited their practical
 application. The standard CM dynamic programming algorithm for
 aligning an RNA of $N$ residues to a database of length $L$ residues
 scales as $O(N^3 L)$, requiring many hours of CPU time for a typical
 search. Here we describe an acceleration method we call
 \emph{query-dependent banding} (QDB), which uses the probabilistic
-model of the query to precalculate regions of the dynamic programming
-lattice that have negligible probability and thus can be ignored,
-independent of the target database sequences. We have implemented QDB
-in the freely available \textsc{Infernal} software package. Combined
-with other recent improvements to \textsc{Infernal}, including
-informative mixture Dirichlet priors on model parameters, benchmarks
-show significant increases in sensitivity and specificity from
-improved parameterization, and 3-5x average speedup from the use of
-QDB.
+query model to precalculate regions of the dynamic programming lattice
+that have negligible probability, independent of target database
+sequences. We have implemented QDB in the freely available
+\textsc{Infernal} software package. Combined with other improvements
+to \textsc{Infernal}, including informative mixture Dirichlet priors
+on model parameters, benchmarks show significant increases in
+sensitivity and specificity from improved parameterization, and 3-5x
+average speedup from QDB.
 
 \end{abstract}
 
@@ -87,174 +86,124 @@ QDB.
 
 \section{Introduction}
 
-Many functional RNAs -- ranging from cis-acting RNA structures
-involved in posttranscriptional regulation like riboswitches to
-independent noncoding RNA genes like micro RNAs -- conserve a
-base-paired secondary structure. RNA secondary structure conservation
-induces strong long-distance pairwise correlations in RNA sequence,
-because preservation of complementary base-pairing requires correlated
-base substitutions in the sequence. When performing database
-similarity searches to identify homologous RNAs, it would be desirable
-for search programs to include scoring terms for pairwise secondary
-structure correlations rather than aligning and scoring by linear
-sequence comparison alone. This is the \emph{RNA structural similarity
-search} problem: given an RNA query (either a single sequence, or a
-multiple alignment) of known secondary structure, identify homologues
-in a database by sequence and secondary structural similarity.
+Many functional RNAs conserve a base-paired secondary structure. RNA
+secondary structure conservation induces strong long-distance pairwise
+base-pairing correlations in homologous RNA sequences.  When
+performing database searches to identify homologous RNAs, we would
+like to have RNA similarity search programs that take pairwise
+secondary structure correlations into account, as opposed to standard
+database search algorithms like BLAST and FASTA that solely use linear
+sequence comparison.
 
-Many approaches for RNA structural similarity search have been
-described, including alignment methods, rule-based expert systems, and
-pattern-matching approaches \cite{Macke01,Gautheret01}. Many use
-\emph{ad hoc} scoring systems to combine sequence and structure, and
-therefore lack the generality and the formal statistical foundation
-that is \emph{de rigueur} in primary sequence search tools like BLAST, 
-FASTA, or HMMER, which use (or at least implicitly approximate) a
-class of probabilistic models called \emph{hidden Markov models}
-(HMMs) \cite{Durbin98}. HMMs are effectively linear sequence models
-and cannot usefully model RNA structure, but a related and somewhat
-more complex class of probabilistic model, the so-called
-\emph{stochastic context-free grammars} (SCFGs), readily captures both
-primary sequence and canonical RNA secondary structure conservation
-\cite{Sakakibara94c,Durbin98}. Just as HMMs are useful for many
-different linear sequence modeling applications, including
-genefinding, multiple alignment, motif finding, and similarity search,
-SCFGs are a general toolkit for probabilistic RNA sequence/structure
-analysis, with applications including secondary structure prediction
-and genefinding.
+Several approaches for RNA similarity search have been described. Some
+approaches are specialized programs for identifying one particular RNA
+family or motif, such as programs that identify tRNAs
+\cite{LoweEddy97}, snoRNAs \cite{LoweEddy99}, microRNAs \cite{Lai03,
+Lim03}, SRP RNAs \cite{Regalia02}, and rho-independent transcription
+terminators \cite{Ermolaeva00}. Some approaches are based on
+pattern-matching algorithms \cite{Macke01,Gautheret01}, relying on
+expertly designed query patterns. The most generally useful approaches
+are those that take any RNA (or any multiple RNA alignment) as a
+query, and use a statistical structure/sequence scoring system to
+search a sequence database and rank high-scoring similarities, as
+programs like BLAST and FASTA do for linear sequence comparison.
 
-A particular SCFG architecture called \emph{covariance models} (CMs)
-has been developed specifically for the RNA similarity search problem;
-CMs are profile SCFGs, analogous to the use of profile HMMs in profile
-sequence analysis \cite{Eddy94,Eddy02b}.
+One wants to be able to score a combination of RNA sequence and
+structural conservation in a principled rather than \emph{ad hoc}
+manner. A satisfactory solution to this problem is already known,
+using probabilistic models called \emph{stochastic context-free
+grammars} (SCFGs). SCFGs readily capture both primary sequence and
+canonical (non-pseudoknotted) RNA secondary structure conservation
+\cite{Sakakibara94c,Durbin98}. Just as hidden Markov models (HMMs) are
+useful for many different linear sequence modeling applications,
+including genefinding, multiple alignment, motif finding, and
+similarity search, SCFGs are a general toolkit for probabilistic RNA
+sequence/structure analysis, with applications including secondary
+structure prediction and genefinding. A particular SCFG architecture
+called \emph{covariance models} (CMs) was developed specifically for
+the RNA similarity search problem. CMs are profile SCFGs, analogous to
+the use of profile HMMs in profile sequence analysis
+\cite{Eddy94,Eddy02b}.  The Rfam database of RNA families
+\cite{Griffiths-Jones05} uses CM-based software (our \textsc{infernal}
+package) in much the same way that the Pfam database of protein
+families uses profile HMM software (our \textsc{hmmer} package).
 
+The most serious problem in using CMs is their computational
+complexity. Applying standard SCFG dynamic programming alignment
+algorithms to CMs results in a requirement of $O(N^3)$ memory and $O(L
+N^2 \log N)$ time for a query of length $N$ residues (or consensus
+alignment columns) and a target database sequence of length $L$.  In
+practice, this can mean tens of gigabytes of memory and CPU-years of
+time for typical RNA queries. The memory complexity problem was
+essentially solved by extending divide-and-conquer dynamic programming
+methods (the Hirshberg or Myers/Miller algorithm) to the case of CMs
+\cite{Eddy02b}. The time complexity problem still stands.  For
+example, in order to search all 503 RNA families in Rfam 7.0 against a
+non-redundant nucleotide database, the Rfam curation team is forced to
+use a \textsc{blast} prefilter to reduce search times from
+CPU-centuries to a more manageable CPU-months, but as a result, they
+give up much of the advantage of using CM-based methods because of the
+use of a purely sequence-based filter.
 
+Weinberg and Ruzzo have described two better filtering methods for
+accelerating CM searches. Given a CM, their first strategy builds a
+so-called \emph{rigorous filter} profile HMM, that is guaranteed to
+allow every hit that would score above a given threshold to the CM to
+survive the filtering step \cite{Weinberg04, Weinberg04b}. Their
+second strategy builds a \emph{maximum likelihood (ML) heuristic} HMM
+from a CM that is not rigorous but more practical to use as a filter
+for many RNA families \cite{Weinberg05}. For current Rfam models, the
+Weinberg/Ruzzo filters offer roughly a 100 fold speed up relative to a
+full CM based search at either no cost (with rigorous filters), or a
+small cost (with ML HMMs) in sensitivity. However, although the
+Weinberg/Ruzzo filters are a great improvement on BLAST-based filters,
+they still depend on primary sequence conservation alone, and thus can
+be relatively ineffective for RNA families that exhibit poor sequence
+conservation. They are effective for most current Rfam families, but
+we are concerned that this is an artifact of ascertainment bias: the
+fact that we have been using BLAST prefilters in producing Rfam
+introduces a bias towards high primary sequence similarity within Rfam
+families. As Rfam improves and incorporates more diverse structural
+homologs, we expect the effectiveness of sequence-based filters to
+decrease. 
 
-
-Of current interest is the third problem: RNA homology detection in
-genomic sequence. Given a consensus structure and known members of a family,
-%the goal is to find more.
-we want to be able to find more. 
-There are two main classes of existing homology detection tools. 
-The first class is specific to a certain family or motif. For example,
-specialized programs exist to search for tRNAs \cite{LoweEddy97}, snoRNAs
-\cite{LoweEddy99}, microRNAs \cite{Lai03, Lim03}, SRP RNAs
-\cite{Regalia02}, and rho-independent transcription terminators
-\cite{Ermolaeva00}, among others. By definition, these approaches are not
-generalizable, and were built using expert knowledge of the family
-being modeled.  In contrast, the second class of tools are general,
-designed to work for any family. These include pattern description
-methods \cite{Macke01,Gautheret01}, as well as probabilistic models
-called profile stochastic context-free grammars (SCFGs) \cite{Eddy94,
- Sakakibara94c}. 
-
-Profile SCFGs are generalizations of profile HMMs, with added
-complexity necessary for modelling base-pairing interactions. These
-models are formally grounded in probability theory, and dynamic
-programming (DP) algorithms exist to search for and align
-homologous RNA sequences \cite{Durbin98}. 
-%Their probabilistic nature provides a well-founded,
-%mathematically rigorous formulation with dynamic programming (DP)
-%algorithms for searching for and aligning homologous RNA
-%sequences. 
-But these methods are computationally expensive, and the main
-impediment to their potential routine use is the
- $O(N^3 log N)$ time complexity of the DP algorithms and its
-implications; most seriously the impracticality of genomic searches.
-
-Here we focus on a particular formulation of profile SCFGs called
-``covariance models'' (CMs) \cite{Eddy94, Durbin98, Eddy02b}. 
-Relative to profile HMM methods, CM methods are still in their
-infancy, and several general techniques that have increased the
-sensitivity of profile HMMs, such as informative prior distributions
-for parameter estimation \cite{Sjolander96}, have not yet been applied
-to CMs. Despite this, CMs are used by the Rfam database
-\cite{Griffiths-Jones05} to annotate ncRNAs in complete
-genomes. Rfam version 7.0 includes 503 RNA families, each represented
-by a CM built from a manually constructed, consensus
-structure annotated input alignment that.  The CM is used to
-classify and align new family members in a genomic database. Because
-CM searches are so slow (searching the 3 GB
-human genome for RNase P on a single processor would take roughly 15
-years), during annotation the Rfam curators first use \textsc{BLAST}
-to filter the database, and use the CM to search only the surviving
-fraction that has scored above a threshold. 
-
-While fast, the \textsc{BLAST} step may miss some homologs a full CM
-based search would have found. This issue has been addressed nicely
-by Zasha Weinberg and Larry Ruzzo through development of two profile HMM
-based filtering methods to replace \textsc{BLAST}. Given a CM, their
-first strategy builds a \emph{rigorous filter} HMM, that is guaranteed
-to allow every hit that would score above a given threshold to the CM
-to survive the filtering step \cite{Weinberg04, Weinberg04b}. The second
-strategy builds a \emph{maximum likelihood (ML) heuristic} HMM from a
-CM that is not rigorous but more practical to use as a filter for many
-RNA families \cite{Weinberg05}. For current Rfam models, these new
-filters offer roughly a 100 fold speed up relative to a full CM based search 
-at either no cost (with rigorous filters), or a small cost (with ML HMMs) to
-sensitivity.
-
-A limitation of all three of these filtering methods is their
-dependence on primary sequence conservation, which makes them less
-effective for RNA families that exhibit stronger structural than
-sequence conservation. In general, the less sequence
-conservation in a family, the smaller the database fraction that can
-be removed by a primary sequence based filter. 
-Although many current Rfam families exhibit relatively high sequence
-conservation, this is likely due, at least in part, to ascertainment
-bias because many Rfam homologs were detected using \blast or other primary
-sequence based methods. 
-As detection tools become more sensitive and more distant homologs
-are discovered,
-%(either resulting from or
-%resulting in more sensitive detection tools), 
-we expect the observed
-sequence identity within many of these families to decrease, making
-filters less useful.
-\begin{comment}
-As detection tools become more sensitive and distant homologs are
-discovered as a result of increased
-
-sensitivity of homology detection methods, or vice versa, 
-become more sensitive, or both, 
-ese families become more represent
-We expect that as homology detection programs, including
-CM methods, become more sensitive, families 
-\end{comment}
-In practice, for many current Rfam families with low sequence identity
-the CM based search of the filtered fraction (determined using any
-filtering technique) takes longer than the filtering step
-\cite{Weinberg05}. This suggests that an accelerated CM search
-algorithm would be useful to complement filtering. Here, we present a
-method for accelerating CM searches that is based on the concept of
-banded alignment. 
-
-A banded alignment approach aims to save time by ignoring 
-potential alignments that are unlikely to be high scoring or
-optimal. 
-In the context of dynamic programming (DP), bands (sometimes
-called constraints) designate boundaries on which
-cells of the DP matrix should be considered during alignment;
-cells outside the bands are ignored. Importantly, imposing bands
-sacrifices the guarantee that the optimal DP solution will be found,
-but in practice the approach is useful if appropriate bands are
-defined. 
-
-There are many examples of banded alignment in sequence
-analysis programs. For instance, \textsc{LAGAN} and
-\textsc{Multi-LAGAN} use banded dynamic programming (referred to as
-limited-area dynamic programming) to stitch together alignments
-between anchored sequences when aligning long, genomic sequences.
-\textsc{BLAST} uses a related technique
-to decide when to stop extending high-scoring segment pairs (HSPs)
-\cite{Altschul90}. 
-The simultaneous RNA alignment and structure prediction programs
-\textsc{Consan} \cite{Dowell06}, \textsc{Dynalign} \cite{Mathews05},
-and \textsc{Stemloc} \cite{Holmes05} each use a different banding strategy
-to limit the time complexity of variants of the Sankoff algorithm
+Here, we describe a method for accelerating CM searches using banded
+dynamic programming (DP) alignment.  In a banded alignment approach,
+one uses some fast method to identify a band through the DP alignment
+matrix where the optimal alignment is likely to lie, and then
+calculates DP recursions only within that band. Many different banded
+approaches are possible, because one might imagine many methods for
+rapidly identifying bands. Banding is a common approach for
+accelerating dynamic programming algorithms in sequence analysis
+programs. Gapped \textsc{BLAST} uses banded DP to convert ungapped
+high-scoring pairs (HSPs) to full gapped alignments
+\cite{Altschul90,XXX}.  \textsc{LAGAN} and \textsc{Multi-LAGAN} use
+banded dynamic programming (referred to as limited-area dynamic
+programming) to stitch together alignments between anchored sequences
+when aligning long, genomic sequences. The simultaneous RNA alignment
+and structure prediction programs \textsc{Consan} \cite{Dowell06},
+\textsc{Dynalign} \cite{Mathews05}, and \textsc{Stemloc}
+\cite{Holmes05} each use a different banding strategy to limit the
+time complexity of variants of the Sankoff RNA alignment algorithm
 \cite{Sankoff85}. Banding has also been applied to profile SCFGs by
 Michael Brown in his \textsc{RNACAD} program by using information from
 a profile HMM alignment to define bands for the expensive SCFG
-alignment \cite{Brown00}. 
+alignment \cite{Brown00}.  In most cases, including the approach we
+will describe here, banded dynamic programming is a heuristic that
+sacrifices guaranteed alignment optimality.
+
+The method we describe here 
+
+ does not involve performing a rapid
+approximate alignment between the query and the target, in contrast to
+almost all other banded DP algorithms. 
+
+In almost all cases, banded DP involves performing a rapid approximate
+alignment between the query and the target. In contrast, the method we
+describe here, called \emph{query-dependent banding} (QDB), takes
+advantage of specific properties of CMs in order to predefine fixed
+bands, independent of any target sequence.
+
 
 Here, we present a novel method to accelerate CM 
 database search using probabilistically determined bands calculated
