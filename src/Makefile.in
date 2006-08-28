@@ -58,7 +58,9 @@ OBJS  = alphabet.o\
 	CP9_hmmio.o\
 	CP9_scan.o\
 	cm_postprob.o\
-	scaninside.o
+	scaninside.o\
+	cm_masks.o\
+	destruct.o
 
 HDRS  = funcs.h\
 	prior.h\

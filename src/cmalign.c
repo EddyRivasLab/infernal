@@ -62,6 +62,7 @@ static char experts[] = "\
    --outside     : don't align; return scores from the Outside algorithm\n\
    --post        : align with CYK and append posterior probabilities\n\
    --checkpost   : check that posteriors are correctly calc'ed\n\
+   --destruct <f>: for non-full length seqs, remove unnecessary structure\n\
 \n\
   * HMM banded alignment related options:\n\
    --hbanded     : use exptl HMM banded CYK aln algorithm (df: builds CP9 HMM) \n\
@@ -102,6 +103,7 @@ static struct opt_s OPTIONS[] = {
   { "--outside",    FALSE, sqdARG_NONE},
   { "--post",       FALSE, sqdARG_NONE},
   { "--checkpost",  FALSE, sqdARG_NONE},
+  { "--destruct",   FALSE, sqdARG_STRING},
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -254,12 +256,28 @@ main(int argc, char **argv)
   int                do_outside;/* TRUE to use the Outside algorithm instead of CYK */
   int                do_check;  /* TRUE to check Inside and Outside probabilities */
   int                do_post;   /* TRUE to use the Outside algorithm instead of CYK */
-  char            ** postcode;  /* posterior decode array of strings        */
+  char             **postcode;  /* posterior decode array of strings        */
   char              *apostcode; /* aligned posterior decode array           */
   float           ***alpha;     /* alpha DP matrix for Inside() */
-  float           ***beta;      /* alpha DP matrix for Inside() */
-  float           ***post;      /* alpha DP matrix for Inside() */
+  float           ***beta;      /* beta DP matrix for Inside() */
+  float           ***post;      /* post DP matrix for Inside() */
   int j;
+
+  /* the --destruct option */
+  int                do_destruct; /* TRUE to use HMM to infer start and end point of hit 
+				   * and remove structure before start and after end */
+  int                hmm_start_node; /* HMM node most likely to have emitted posn 1 of target seq */
+  int                hmm_start_state;/* HMM state type for hmm_start_node 0=match, 1=insert */
+  int                hmm_end_node;   /* HMM node most likely to have emitted posn L of target seq */
+  int                hmm_end_state;  /* HMM state type for hmm_end_node 0=match, 1=insert */
+
+  char              *alifile;        /* seqfile to read alignment from, we trust its the same one used
+				      * to build the CM, this is temporary to check our code and make 
+				      * sure it destructs the model correctly */ 
+  MSAFILE         *afp;         /* open alignment file                     */
+  MSA             *input_msa;         /* a multiple sequence alignment           */
+  char           **input_dsq;		/* digitized aligned sequences             */
+  
   /*********************************************** 
    * Parse command line
    ***********************************************/
@@ -287,6 +305,7 @@ main(int argc, char **argv)
   do_outside  = FALSE;
   do_check    = FALSE;
   do_post     = FALSE;
+  do_destruct = FALSE;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -307,8 +326,19 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--time")      == 0) time_flag    = TRUE;
     else if (strcmp(optname, "--inside")    == 0) do_inside    = TRUE;
     else if (strcmp(optname, "--outside")   == 0) { do_outside = TRUE; do_check = TRUE; }
-    else if (strcmp(optname, "--post")      == 0) do_post    = TRUE;
-    else if (strcmp(optname, "--checkpost") == 0) do_check    = TRUE;
+    else if (strcmp(optname, "--post")      == 0) do_post      = TRUE;
+    else if (strcmp(optname, "--checkpost") == 0) do_check     = TRUE;
+    else if (strcmp(optname, "--destruct")  == 0) 
+      { 
+	do_destruct  = TRUE;
+	hmm_type = HMM_CP9; 
+	do_local = TRUE; 
+	alifile = optarg;
+	/* Open the alignment */
+	if ((afp = MSAFileOpen(alifile, format, NULL)) == NULL)
+	  Die("Alignment file %s could not be opened for reading", alifile);
+      }
+
     else if (strcmp(optname, "--hbanded")   == 0) {
       do_hbanded = TRUE; do_small = FALSE; 
       if(hmm_type == NONE) hmm_type = HMM_CP9; 
@@ -688,6 +718,13 @@ main(int argc, char **argv)
 	}
     }
 
+  if(do_destruct)
+    {
+      /* read the MSA */
+      input_msa = MSAFileRead(afp);
+      input_dsq = DigitizeAlignment(input_msa->aseq, input_msa->nseq, input_msa->alen);
+    }
+
   for (i = 0; i < nseq; i++)
     {
       StopwatchZero(watch2);
@@ -715,7 +752,44 @@ main(int argc, char **argv)
 	  /*debug_check_CP9_FB(cp9_fwd, cp9_bck, cp9_hmm, forward_sc, 1, sqinfo[i].len, p7dsq[i]);*/
 	  cp9_posterior = cp9_bck;
 	  CP9FullPosterior(p7dsq[i], 1, sqinfo[i].len, cp9_hmm, cp9_fwd, cp9_bck, cp9_posterior);
-	  
+
+	  /* If we're in destruct mode:
+	   * (1) infer the start and end HMM states by looking at the posterior matrix.
+	   * (2) modify the CM model by removing unnecessary structure and marginalizing
+	   * (3) (NECESSARY?) build a new CP9 HMM from the modified CM
+	   * (4) (NECESSARY?) do Forward/Backward again, and get a new posterior matrix.
+	   */
+	  if(do_destruct)
+	    {
+	      /* we're necessarily in local mode, the --destruct option turns local mode on */
+	      CP9NodeForPosn(cp9_hmm, 1, sqinfo[i].len, 1,             cp9_posterior, &hmm_start_node, &hmm_start_state);
+	      CP9NodeForPosn(cp9_hmm, 1, sqinfo[i].len, sqinfo[i].len, cp9_posterior, &hmm_end_node,   &hmm_end_state);
+	      /*hmm_start_node = 5; *//* hard-coded for the example */
+	      /*hmm_end_node   = 20;*//* hard-coded for the example */
+	      
+	      /* a temporary function to destruct outside the columns of the MSA that are before the 
+	       * MSA column that maps to hmm_start_node, and after the MSA column that maps to 
+	       * hmm_end_node. This will be unnecessary once we stop reading in the MSA, b/c all we'll
+	       * deal with is the model itself, for now our strategy is to build a new model from the MSA
+	       * after stripping the appropriate bps.
+	       */
+	      /* gapthresh assumed to be 0.5. */
+
+	      printf("INITIAL %s\n", input_msa->ss_cons);
+	      StripWUSSGivenCC(input_msa, input_dsq, 0.5, hmm_start_node, hmm_end_node);
+	      /* have to do something like in HandModelMaker to eliminate mates of removed bps. */
+
+
+	      printf("NEW     %s\n", input_msa->ss_cons);
+	      
+	      /* PROBLEM HERE, we don't have an MSA do destruct so we can't call HandModelMaker, one 
+	       * option is to make the user input the MSA with  --destruct <stk>, this might be useful temporarily
+	       * until I can devise a method for determining how to destruct the CM using only the CM parameters
+	       * independently of the MSA.
+	       *
+	       * DestructMSA()
+	       * HandModelMaker() */
+	    }
 	  StopwatchStop(watch1);
 	  if(time_flag) StopwatchDisplay(stdout, "CP9 Forward/Backward CPU time: ", watch1);
 	  StopwatchZero(watch1);
@@ -967,20 +1041,6 @@ main(int argc, char **argv)
 	{	
 	  if(do_hbanded)
 	    {
-	      /*TEMP FOR DEBUGGING */
-	      /*	      for(v = 0; v< cm->M; v++)
-		{
-		  jmin[v] = 0;
-		  jmax[v] = sqinfo[i].len;
-		  hdmin[v] = realloc(hdmin[v], sizeof(int) * (jmax[v] - jmin[v] + 1));
-		  hdmax[v] = realloc(hdmax[v], sizeof(int) * (jmax[v] - jmin[v] + 1));
-		  for(j = 0; j <= sqinfo[i].len; j++)
-		    {
-		      hdmin[v][j] = 0;
-		      hdmax[v][j] = j;
-		    }
-		}
-	      */	  
 	      sc = FInside_b_jd_me(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
 				   BE_PARANOID,	/* save full alpha so we can run outside */
 				   NULL, &alpha,	/* fill alpha, and return it, needed for FOutside() */
@@ -1161,7 +1221,7 @@ main(int argc, char **argv)
       /* If debug level high enough, print out the parse tree */
       if(debug_level > 2)
 	{
-	  fprintf(stdout, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr[i], dsq[i]));;
+	  fprintf(stdout, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr[i], dsq[i], FALSE));;
 	  ParsetreeDump(stdout, tr[i], cm, dsq[i]);
 	  fprintf(stdout, "//\n");
 	}

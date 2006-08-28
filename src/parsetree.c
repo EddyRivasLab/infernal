@@ -208,7 +208,7 @@ ParsetreeCount(CM_t *cm, Parsetree_t *tr, char *dsq, float wgt)
  *           given a CM that's prepared in log-odds form.
  */
 float
-ParsetreeScore(CM_t *cm, Parsetree_t *tr, char *dsq)
+ParsetreeScore(CM_t *cm, Parsetree_t *tr, char *dsq, int do_null2)
 {
   int tidx;			/* counter through positions in the parsetree        */
   int v,y;			/* parent, child state index in CM                   */
@@ -254,6 +254,10 @@ ParsetreeScore(CM_t *cm, Parsetree_t *tr, char *dsq)
 	  }
       }
   }
+
+  if(do_null2)
+    sc -= CM_TraceScoreCorrection(cm, tr, dsq);
+
   return sc;
 }
 

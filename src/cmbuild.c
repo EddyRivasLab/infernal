@@ -461,7 +461,7 @@ main(int argc, char **argv)
 
   /*EPN 11.28.05
    *Uncomment code below to use relative entropy weighting (identical 
-   *to entropy weighting for equiprobable null distribution.
+   *to entropy weighting for equiprobable null distribution.)
    *
    * else if (eff_strategy == EFF_RELENTROPY) {
    * puts("relative entropy targeting");
@@ -1049,7 +1049,7 @@ main(int argc, char **argv)
 	    {
 	      tr = Transmogrify(cm, mtr, dsq[idx], msa->aseq[idx], msa->alen);
 	      fprintf(ofp, "> %s\n", msa->sqname[idx]);
-	      fprintf(ofp, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr, dsq[idx]));;
+	      fprintf(ofp, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr, dsq[idx], FALSE));;
 	      ParsetreeDump(ofp, tr, cm, dsq[idx]);
 	      fprintf(ofp, "//\n");
 	      FreeParsetree(tr);
@@ -1070,7 +1070,7 @@ main(int argc, char **argv)
 	  {
 	    tr = Transmogrify(cm, mtr, dsq[idx], msa->aseq[idx], msa->alen);
 	    fprintf(regressfp, "> %s\n", msa->sqname[idx]);
-	    fprintf(regressfp, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr, dsq[idx]));
+	    fprintf(regressfp, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr, dsq[idx], FALSE));
 	    ParsetreeDump(regressfp, tr, cm, dsq[idx]);
 	    fprintf(regressfp, "//\n"); 
 	  }
@@ -1088,7 +1088,7 @@ main(int argc, char **argv)
 	    {
 	      tr = Transmogrify(cm, mtr, dsq[idx], msa->aseq[idx], msa->alen);
 	      printf("> %s\n", msa->sqname[idx]);
-	      printf("  SCORE : %.2f bits\n", ParsetreeScore(cm, tr, dsq[idx]));
+	      printf("  SCORE : %.2f bits\n", ParsetreeScore(cm, tr, dsq[idx], FALSE));
 	      ParsetreeDump(stdout, tr, cm, dsq[idx]);
 	      printf("//\n");
 	      FreeParsetree(tr);

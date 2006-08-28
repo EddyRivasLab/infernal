@@ -47,6 +47,7 @@ static char experts[] = "\
    --thresh <f>  : CM reporting bit score threshold (try 0 before < 0) [df: 0]\n\
    --X           : project X!\n\
    --inside      : scan with Inside, not CYK (caution ~5X slower(!))\n\
+   --null2       : turn OFF the post hoc second null model\n\
 \n\   
   * Filtering options using a CM plan 9 HMM:\n\
    --hmmfb        : use Forward to get end points & Backward to get start points\n\
@@ -76,6 +77,7 @@ static struct opt_s OPTIONS[] = {
   { "--thresh",     FALSE, sqdARG_FLOAT},
   { "--X",          FALSE, sqdARG_NONE },
   { "--inside",     FALSE, sqdARG_NONE },
+  { "--null2",      FALSE, sqdARG_NONE },
   { "--hmmfb",      FALSE, sqdARG_NONE },
   { "--hmmweinberg",FALSE, sqdARG_FLOAT},
   { "--hmmpad",     FALSE, sqdARG_INT },
@@ -88,6 +90,7 @@ static struct opt_s OPTIONS[] = {
   { "--banddump",   FALSE, sqdARG_NONE},
   { "--sums",       FALSE, sqdARG_NONE},
   { "--scan2hbands", FALSE, sqdARG_NONE},
+
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -104,7 +107,7 @@ main(int argc, char **argv)
   SQINFO           sqinfo;      /* optional info attached to seq */
   char            *dsq;         /* digitized RNA sequence */
   Stopwatch_t     *watch;
-  int              i;
+  int              i, ip;
   int              reversed;    /* TRUE when we're doing the reverse complement strand */
   int              maxlen;
   Parsetree_t     *tr;		/* parse of an individual hit */
@@ -255,6 +258,9 @@ main(int argc, char **argv)
 				 * Basically the fraction of the database filtered out.
 				 * Does not check for overlap, could overcount some bases.
 				 */
+  int   do_null2;		/* TRUE to adjust scores with null model #2 */
+
+
   /*********************************************** 
    * Parse command line
    ***********************************************/
@@ -282,6 +288,7 @@ main(int argc, char **argv)
   use_sums          = FALSE;
   do_scan2hbands    = FALSE;
   hmm_pad           = 0;
+  do_null2          = TRUE;
   debug_level = 0;
   
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
@@ -295,6 +302,7 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--thresh")    == 0) thresh       = atof(optarg);
     else if  (strcmp(optname, "--X")         == 0) do_projectx  = TRUE;
     else if  (strcmp(optname, "--inside")    == 0) do_inside    = TRUE;
+    else if  (strcmp(optname, "--null2")     == 0) do_null2     = FALSE;
 
     else if  (strcmp(optname, "--hmmfb")   == 0)   { do_filter = TRUE; filter_fb  = TRUE; }
     else if  (strcmp(optname, "--hmmweinberg")   == 0)   
@@ -418,8 +426,6 @@ main(int argc, char **argv)
       
       /* Get information mapping the HMM to the CM and vice versa, used
        * for mapping bands. 
-       * This is relevant if we're building (read_cp9_flag == FALSE)
-       * or reading from a file (read_cp9_flag == TRUE)
        */
       node_cc_left  = malloc(sizeof(int) * cm->nodes);
       node_cc_right = malloc(sizeof(int) * cm->nodes);
@@ -791,30 +797,55 @@ main(int argc, char **argv)
 		&nhits, &hitr, &hiti, &hitj, &hitsc, thresh);
       if (! reversed) printf("sequence: %s\n", sqinfo.name);
 
+      ip = 0;
       for (i = 0; i < nhits; i++)
 	{
-	  printf("hit %-4d: %6d %6d %8.2f bits\n", i, 
-		 reversed ? sqinfo.len - hiti[i] + 1 : hiti[i], 
-		 reversed ? sqinfo.len - hitj[i] + 1 : hitj[i],
-		 hitsc[i]);
-	  if (do_align)
+	  if(!do_null2)
 	    {
+	      printf("hit %-4d: %6d %6d %8.2f bits\n", ip, 
+		     reversed ? sqinfo.len - hiti[i] + 1 : hiti[i], 
+		     reversed ? sqinfo.len - hitj[i] + 1 : hitj[i],
+		     hitsc[i]);
+	      ip++;
+	    }
+	  else if (do_align || do_null2)
+	    {
+	      /* For the null2 score correction we need a trace, so we have to do 
+	       * the alignment.
+	       */
 	      if(!(do_hbanded))
 		{
 		  CYKDivideAndConquer(cm, dsq, sqinfo.len, 
 				      hitr[i], hiti[i], hitj[i], &tr);
-		  ali = CreateFancyAli(tr, cm, cons, dsq);
-		  PrintFancyAli(stdout, ali);
-		  
+		  if(do_null2)
+		    {
+		      printf("BEFORE NULL2: %6.2f\n", hitsc[i]);
+		      sc = hitsc[i] - CM_TraceScoreCorrection(cm, tr, dsq);
+		      if(sc >= thresh) /* only print alignments with
+					  corrected CYK scores > reporting thresh */
+			{
+			  printf("hit %-4d: %6d %6d %8.2f bits\n", ip, 
+				 reversed ? sqinfo.len - hiti[i] + 1 : hiti[i], 
+				 reversed ? sqinfo.len - hitj[i] + 1 : hitj[i],
+				 sc);
+			  ip++;
+			}
+		    }
+		  if(sc >= thresh && do_align)
+		    {
+		      ali = CreateFancyAli(tr, cm, cons, dsq);
+		      PrintFancyAli(stdout, ali);
+		      FreeFancyAli(ali);
+		    }
+
 		  if (do_dumptrees) {
 		    ParsetreeDump(stdout, tr, cm, dsq);
-		    printf("\tscore = %.2f\n", ParsetreeScore(cm,tr,dsq));
+		    printf("\tscore = %.2f\n\n", ParsetreeScore(cm,tr,dsq, do_null2));
 		  }
 		  if (do_projectx) {
 		    BandedParsetreeDump(stdout, tr, cm, dsq, gamma, windowlen, dmin, dmax);
-		}
+		  }
 		  
-		  FreeFancyAli(ali);
 		  FreeParsetree(tr);
 		}
 	      else /* do_hbanded==TRUE */
@@ -844,7 +875,7 @@ main(int argc, char **argv)
 		      /* insert states */
 		      CP9_hmm_band_bounds(cp9_posterior->imx, hiti[i], hitj[i], cp9_hmm->M,
 					  NULL, pn_min_i, pn_max_i, (1.-hbandp), HMMINSERT, debug_level);
-		      /* delete states (note: delete_flag set to TRUE) */
+		      /* delete states */
 		      CP9_hmm_band_bounds(cp9_posterior->dmx, hiti[i], hitj[i], cp9_hmm->M,
 					  NULL, pn_min_d, pn_max_d, (1.-hbandp), HMMDELETE, debug_level);
 		    }
@@ -897,8 +928,32 @@ main(int argc, char **argv)
 		  /*********************************************************/
 
 		  printf("Aligning subseq from i: %d to j: %d using HMM bands\n", hiti[i], hitj[i]);
+		  /* we don't overwrite hitsc[i], the optimal score,
+		   * which may be missed by the HMM banded alignment 
+		   */
 		  sc = CYKInside_b_jd(cm, dsq, sqinfo.len, 0, hiti[i], hitj[i], &tr, 
 				      jmin, jmax, hdmin, hdmax, safe_hdmin, safe_hdmax);
+		  if(do_null2)
+		    {
+		      sc -= CM_TraceScoreCorrection(cm, tr, dsq);
+		      if(sc >= thresh) /* only print alignments with
+					  correct CYK scores > reporting thresh */
+			{
+			  printf("hit %-4d: %6d %6d %8.2f bits\n", ip, 
+				 reversed ? sqinfo.len - hiti[i] + 1 : hiti[i], 
+				 reversed ? sqinfo.len - hitj[i] + 1 : hitj[i],
+				 hitsc[i]);			  printf("\tCYK i: %5d j: %5d sc: %10.2f bits\n", hiti[i], hitj[i], sc);
+			  ip++;
+			}
+		    }
+		  if(sc >= thresh)
+		    {
+		      ali = CreateFancyAli(tr, cm, cons, dsq);
+		      PrintFancyAli(stdout, ali);
+		      FreeFancyAli(ali);
+		    }
+		  FreeParsetree(tr);
+
 		  /* Free hdmin and hdmax, these are allocated
 		   * differently for each sequence. 
 		   */
@@ -910,14 +965,6 @@ main(int argc, char **argv)
 		  /*if(bdump_level > 0)
 		    banded_trace_info_dump(cm, tr[i], safe_hdmin, safe_hdmax, bdump_level);
 		  */
-		  if(sc >= thresh) /* only print alignments with CYK scores > reporting thresh */
-		    {
-		      printf("\tCYK i: %5d j: %5d sc: %10.2f bits\n", hiti[i], hitj[i], sc);
-		      ali = CreateFancyAli(tr, cm, cons, dsq);
-		      PrintFancyAli(stdout, ali);
-		      FreeFancyAli(ali);
-		      FreeParsetree(tr);
-		    }
 		}
 	    }
 	}

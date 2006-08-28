@@ -128,7 +128,7 @@ extern void         FreeParsetree(Parsetree_t *tr);
 extern int          InsertTraceNode(Parsetree_t *tr, int y, int whichway, 
 				    int emitl, int emitr, int state);
 extern void         ParsetreeCount(CM_t *cm, Parsetree_t *tr, char *seq, float wgt);
-extern float        ParsetreeScore(CM_t *cm, Parsetree_t *tr, char *dsq);
+extern float        ParsetreeScore(CM_t *cm, Parsetree_t *tr, char *dsq, int do_null2);
 extern void         PrintParsetree(FILE *fp, Parsetree_t *tr);
 extern void         ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq);
 extern int          ParsetreeCompare(Parsetree_t *t1, Parsetree_t *t2);
@@ -289,6 +289,7 @@ extern int CP9_cm2wrhmm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *
 			int debug_level);
 extern int CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, int *cc_node_map,
 			   int debug_level);
+
 /* from scaninside.c */
 extern void  InsideScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
 			int *ret_nhits, int **ret_hitr, 
@@ -304,3 +305,11 @@ extern void  InsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int 
 				 int **ret_hiti, int **ret_hitj, float **ret_hitsc,
 				 float min_thresh);
 extern float LogSum2(float p1, float p2);
+
+/* from cm_masks.c */
+extern float CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, char *dsq);
+
+/* from destruct.c */
+extern void CP9NodeForPosn(struct cplan9_s *hmm, int i0, int j0, int x, 
+			   struct cp9_dpmatrix_s *post, int *ret_node, int *ret_type);
+extern void StripWUSSGivenCC(MSA *msa, char **dsq, float gapthresh, int first_match, int last_match);
