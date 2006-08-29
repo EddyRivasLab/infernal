@@ -155,7 +155,7 @@ from a CM that is not rigorous but more practical to use as a filter
 for many RNA families \cite{Weinberg05}. For current Rfam models, the
 Weinberg/Ruzzo filters offer roughly a 100 fold speed up relative to a
 full CM based search at either no cost (with rigorous filters), or a
-small cost (with ML HMMs) in sensitivity. However, although the
+small cost (with ML HMMs) to sensitivity. However, although the
 Weinberg/Ruzzo filters are a great improvement on BLAST-based filters,
 they still depend on primary sequence conservation alone, and thus can
 be relatively ineffective for RNA families that exhibit poor sequence
@@ -192,11 +192,11 @@ alignment \cite{Brown00}.  In most cases, including the approach we
 will describe here, banded dynamic programming is a heuristic that
 sacrifices guaranteed alignment optimality.
 
-The method we describe here 
+%The method we describe here 
 
- does not involve performing a rapid
-approximate alignment between the query and the target, in contrast to
-almost all other banded DP algorithms. 
+% does not involve performing a rapid
+%approximate alignment between the query and the target, in contrast to
+%almost all other banded DP algorithms. 
 
 In almost all cases, banded DP involves performing a rapid approximate
 alignment between the query and the target. In contrast, the method we
@@ -204,6 +204,8 @@ describe here, called \emph{query-dependent banding} (QDB), takes
 advantage of specific properties of CMs in order to predefine fixed
 bands, independent of any target sequence.
 
+\begin{comment}
+%original r388 d3 text:
 
 Here, we present a novel method to accelerate CM 
 database search using probabilistically determined bands calculated
@@ -215,8 +217,12 @@ appropriate band calculation, along with informative emission priors
 and model entropy weighting to increase CM sensitivity . Finally, to
 measure the effect of these techniques, and the utility of our
 banded approach, we present the results of an Rfam based benchmark.
+\end{comment}
 
 \section{Results}
+
+\begin{comment}
+%original d3 text:
 
 A CM database search for RNA homologs finds subsequences 
 of the database that align with a high score to the model. 
@@ -227,23 +233,79 @@ We present a method for calculating and enforcing these bands that is
 independent of the database, and show that our method accelerates CM
 methods with a small cost to accuracy.
 
+Notes from Benasque:
+     A. show CMs with standard algorithm (CYK?) background
+     B. intuition for bands
+     We will show you:
+     C. band calc
+     D. banded CYK
+     E. how it works
+\end{comment}
+
+We will first briefly introduce CMs and a variant of the CYK algorithm for
+database similarity search.
+This algorithm finds subsequences of the database that align with a
+high score to the model.  We then describe our query-dependent banding
+(QDB) technique for acceleration. The central idea of QDB is to ignore
+potential alignments that are very unlikely to have high scores by
+enforcing bands on the dynamic programming lattice during the CYK
+recursion. We describe how the location of these bands are calculated
+using only the parameters of the query CM, and how the CYK algorithm
+can be easily extended to enforce these bands and save time.
+%Search space is retricted using bands 
+%that limit the possible subsequence lengths that can be aligned to
+%each part of the model. We present a method for calculating these
+%bands independently of the database being searched. We then show a simple
+%extension of the CM database search algorithm to incorporate these
+%bands and save time.
+Finally, we present the results of a simple benchmark that
+suggest the performance of a banded search is very similar
+to that of a non-banded search, while offering an average speed-up of
+3-5x for an RNA family.
+
 \subsection{Covariance models}
 
-Covariance models (CMs) are probabilistic
-models of the consensus secondary structure and sequence of a family
-of non-coding RNAs. 
-CMs are organized in a tree-like, directed
-graph of states. The first state is the root of the tree
-and is customarily drawn at the top. 
+Covariance models (CMs) are probabilistic models of the consensus
+secondary structure and sequence of a family of non-coding RNAs. 
+CMs are organized in a tree-like, directed graph of states. 
 The states are conceptually organized into different types of nodes,
-with characteristic sets of states within each node type. The
-organization of the nodes is defined by the consensus
-structure of the RNA family being modeled, which must be definedp
-prior to CM construction \cite{Eddy02b, infguide03}.
+each containing a characteristic set of states.
+The identity and organization of the nodes, and therefore states, is
+determined from a consensus structure annotated multiple
+sequence alignment of the family being modeled. 
+
+There are eight types of nodes, each of which corresponds to a
+different structural feature. A $ROOT$ node marks the start of the
+model. $BIF$ nodes model bifurcations in the secondary structure of
+the family. $BEGL$ and $BEGR$ nodes mark the beginnings of a branch on
+the left and right side of a bifurcation. $END$ nodes necessarily end each
+branch. Finally, $MATP$ nodes model consensus base pairs, while $MATL$
+and $MATR$ nodes model single-stranded residues. 
+
+A CM is built by first constructing a \emph{guide tree} of nodes based
+on the input alignment. The nodes of the guide tree are then expanded
+unambiguously into the set of states that makes up the model.  An
+example of an input alignment, the corresponding guide tree and a
+subset of the model's states is given in Figure~\ref{fig:cmintro}. For
+more details on the construction procedure please see \cite{Eddy02b, infguide03}.
+
+\ifdraft
+\begin{figure}
+\begin{center}
+\includegraphics[width=6.4in]{figs/d4fig_0}
+\caption{\textbf{An example RNA family and corresponding CM.}
+  \textbf{(A):} A toy multiple alignment of 3 sequences. \textbf{(B):}
+  The structure of one sequence from (A), and the guide tree of nodes
+  corresponding to the consensus structure of the
+  family. \textbf{(C):} The state topology of 3 selected nodes of the
+  CM. Transitions are indicated by lines with arrows.}
+\label{fig:cmintro}
+\end{center}
+\end{figure}
+\fi
 
 CMs can be thought of as generative models that
-\emph{emit} RNA sequences.
-A new sequence is emitted by starting at
+\emph{emit} RNA sequences. A new sequence is emitted by starting at
 the leaves of the tree and moving upwards from state to state
 following specific \emph{production rules} and 
 emitting residues on both the left and right sides of the growing
@@ -255,10 +317,17 @@ state to state are allowed, namely a state $v$ can only transit to
 its children states $y$ in the set $C_v$. 
 For each production rule, probabilities are associated with each
 possible residue emission
-($e_v(a)$) and transition ($t_v(Y)$) \cite{Eddy94}. 
+($e_v(a)$) and transition ($t_v(Y)$) \cite{Eddy94}.
+These probabilities are defined using mean posterior estimation based
+on the observations in the input alignment and a Dirichlet prior as
+described elsewhere \cite{Durbin98, Eddy02b, infguide03}. 
 We refer to the number of residues emitted by
 each state $v$ on the left and right as $\Delta_v^{L}$ and
-$\Delta_v^{R}$, respectively. A CM consists of states of seven
+$\Delta_v^{R}$, respectively. 
+%Full notation for CMs can be found
+%elsewhere \cite{Eddy02b, infguide03}, but this is sufficient for the
+%present discussion. 
+A CM consists of states of seven
 different types, each with a corresponding production rule:
 
 \vspace{0.5em}
@@ -274,8 +343,8 @@ E & (end)             & $E \rightarrow \epsilon$ & 0 & 0 & 1     &     1     \\
 \end{tabular}
 \vspace{0.5em}
 
-A simplified CM with examples
-of emitted sequences is shown in Figure~\ref{fig:aprioriAB}.
+A simplified CM with examples of emitted sequences is shown in
+Figure~\ref{fig:aprioriAB}.
 
 \ifdraft
 \begin{figure}
@@ -294,20 +363,60 @@ of emitted sequences is shown in Figure~\ref{fig:aprioriAB}.
 Although it is convenient to think of CMs as generative models, their
 utility lies in the ability to align existing sequences and score
 the alignments to predict homology. Given a parameterized model
-and a sequence, the CYK dynamic programming algorithm optimally aligns
-the sequence to the model by determining the most probable path
-through the model that could have generated the
-sequence \cite{Durbin98}. The algorithm
-is easily extended to allow local alignment to the model by permitting
-transitions that bypass subtree(s) of the model \cite{KleinEddy03}.
+and a sequence, a variant of the CYK dynamic programming algorithm
+specifically adapted for CMs optimally aligns the sequence to the
+model by determining the most probable path through the model that
+could have generated the sequence \cite{Durbin98}. 
 
-\subsection{Accelerating CM methods using a banded strategy}
-The banded method we introduce accelerates CYK alignment by reducing
-the number of potential paths through the model that are considered. This
-technique relies on two specific features of the SCFG
-architecture of CMs\@. Notably, this approach is applicable to any
-probabilistic model with the following two characteristics, however we
-believe it is mainly useful for SCFG methods:
+The CM CYK database search algorithm is different from the traditional
+CYK algorithm \cite{Kasami65, Younger67, HopcroftUllman79} in several
+important respects. First, while the traditional algorithm is used with
+Chomsky normal form (CNF) grammars, the CM version is specially adapted
+for the CM grammar, which is not CNF\@. Secondly, CM CYK does not find
+the optimal parse tree of the entire input sequence, but
+rather scans the sequence and finds the set of
+non-overlapping subsequences (hits) that each align globally with
+respect to the model for which the summed score is maximized. Finally, 
+transformed coordinates are used to allow a simple, memory efficient
+implementation of the scanning algorithm. Specifically, instead of the
+traditional $i$ and $j$ CYK coordinates for subsequence begin and end
+positions respectively, the CM CYK uses $j$ and $d$ coordinates with
+$d = j-i+1$ \cite{Durbin98}.
+
+The CM CYK search algorithm calculates $\alpha_v(j,d)$ - the log odds score
+of the most likely CM parse subtree rooted at state $v$ that generates
+(aligns to) the length $d$ subsequence $x_{j-d+1}..x_j$ of target sequence
+$x$ \cite{Durbin98}. This calculation initializes at the smallest
+subgraphs ($E$ states) and shortest subsequences ($d=0$) and iterates
+upwards and outwards to progressively larger subtrees and longer
+subsequences up to a preset maximum length $W$. 
+The algorithm is easily extended to allow local alignment to the model
+by permitting transitions that bypass subtree(s) of the model
+\cite{KleinEddy03}. For the formal algorithm and information on other
+CM algorithms, such as the SCFG Inside and Outside algorithms, please
+see \cite{Durbin98}. 
+
+\subsection{Accelerating CM methods using QDB}
+
+Intuitively, it may seem wasteful to require the CYK algorithm to calculate
+$\alpha_v(j,d)$ for all possible values of $d$. For example, for a 
+$P$ state that models the enclosing pair of a tetraloop, CYK will
+calculate $\alpha_v(j,d)$ for values of $d$ from $0$ to 
+$Z$ (which is about $90$ for a tRNA size RNA family), even though it
+may be very unlikely that a homologous hairpin loop will be longer
+than $10$ nucleotides. The central idea of QDB is to enforce bands,
+i.e. minimum and maximum values, on $d$ for each state $v$ during the
+DP recursion. 
+%Importantly, the
+%bands are calculated solely from the query CM, and remain fixed
+%throughout a database search. 
+
+
+Our technique for calculating the bands 
+relies on two specific features of the SCFG architecture of
+CMs\@. Notably, this approach is applicable to any probabilistic model
+with the following two characteristics, however we believe it is
+mainly useful for SCFG methods:
 
 \begin{description}
 \item[1.] Cycles in the graph (tree) of states are restricted to emitting
@@ -316,22 +425,6 @@ believe it is mainly useful for SCFG methods:
   $v$ can transit to a state $y$ if $v > y$.
 \end{description}
 
-The alignment of a sequence to a CM is represented as a \emph{parse
-tree} which specifies the boundaries of the subsequences that are
-aligned to each subtree of the model. The CYK algorithm determines the
-most likely parse tree of a sequence
-given a CM by considering the alignment of all possible length
-subsequences (from $0$ up to $L$, the length of the RNA)
-to each subtree. Our banded strategy determines and
-enforces state specific bounds on the lengths of subsequences that
-are permitted to be aligned to each subtree of the model (each state
-is the root of a different subtree). The bounds are implemented as
-bands on the CYK dynamic programming matrix; cells outside the bands
-are ignored. 
-Next, considering the CM as a generative model, we present an
-algorithm that determines these bands from the transition
-probabilities of the model.
-
 \subsubsection{Band calculation algorithm}
 The band calculation algorithm iteratively calculates
 $\gamma_v(d)$, the probability that the subtree of the model rooted at state $v$
@@ -339,9 +432,11 @@ will generate a subsequence of length $d$. This is the summed probability
 of all possible paths through the subtree rooted at $v$ (i.e. paths
 that start at $v$ and end at the nearest $E$ state $y > v$) that emit
 exactly $d$ residues. 
-The calculation initializes at the smallest subtrees ($E$ states) and
+Similar to the CYK algorithm, the calculation initializes at the
+smallest subtrees ($E$ states) and
 shortest subsequences ($d=0$) and iterates upwards and outwards to
-progressively larger subtrees and longer subsequences. The band calculation algorithm is as follows:
+progressively larger subtrees and longer subsequences. The band
+calculation algorithm is as follows:
 
 \vspace{0.5em}
 \begin{tabular}{l|l|l}
@@ -421,19 +516,28 @@ Importantly, $\gamma_v(d)$ values are only calculated for $d$ up to a
 maximum sequence length of $Z$. Because CMs have emitting self-loops
 (i.e. insert states), there is no limit to the length of a sequence
 that can be generated from (i.e. aligned to) any subtree of the model
-that includes an insert state. However, calculation of the
-$\gamma$ values neglect the probability that a subsequence
+that includes an insert state. However, the calculation of the
+$\gamma$ values neglects the probability that a subsequence
 of length $d > Z$ will be generated by any subtree.
 Therefore, $Z$ must be sufficiently large such that the cumulative
-probability of all such subsequences is ``negligible''. Our
-implementation handles this by enforcing that this cumulative
-probability is very small (?).
+probability of all such subsequences is ``negligible''. Specifically,
+we don't want the choice of $Z$ to affect any $dmin$ or
+$dmax$ values. Our implementation handles this by assuming that
+the $\gamma_v$ probability density tails decrease geometrically, and
+testing that the estimated cumulative probability for $d > Z$ will
+not affect any $dmax$ values based on the numerical precision of the
+computer. If this test fails, $Z$ is increased and the bands are
+recalculated. Assuming the $\gamma$ tail decreases geometrically is not
+particularly well justified, but it seems to work fine in
+practice (?). For more details we refer the reader to the code in
+bandcyk.c::BandCalculationEngine() and
+bandcyk.c::BandTruncationNegligible().
 
 \subsubsection{Using the band calculation to determine the maximum
   size of a hit to a CM}
-The $W$ parameter is used during database search with CMs to
-define the maximum size of a hit to a model. Previous implementations
-required that the $W$ parameter be manually set by the user. 
+During database search, the $W$ parameter is defines
+the maximum size of a potential hit to a model. Previous implementations
+required that $W$ be manually set by the user. 
 The band calculation algorithm delivers a probabilistically derived
 $W$ for database search in $dmax_0$, which is the upper bound on the
 length of the entire sequence (the sequence generated by the top-most
@@ -444,7 +548,8 @@ state, the root of the entire tree).
 %long sequences (i.e. chromosomes) that align with high scores to the
 %CM, and are therefore likely homologs of the family being
 %modelled. 
-Th CM CYK database search algorithm is different from the traditional
+\begin{comment}
+The CM CYK database search algorithm is different from the traditional
 CYK algorithm \cite{Kasami65, Younger67, HopcroftUllman79} in several
 important respects. First, while the traditional CYK is used with
 Chomsky normal form (CNF) grammars, the CM CYK is specially adapted
@@ -467,8 +572,9 @@ Similar to the band calculation algorithm, this calculation initializes
 at the smallest subtrees ($E$ states) and shortest subsequences
 ($d=0$) and iterates upward and outward to progressively larger
 subtrees and longer subsequences. 
+\end{comment}
 
-We accelerate CYK database search using bands ($dmin$ and $dmax$
+We accelerate the CYK database search using the bands ($dmin$ and $dmax$
 values) derived from the band calculation algorithm. The bands
 correspond to state specific bounds on the $d$ dimension of the
 $\alpha$ matrix that limit possible values of $d$ (subsequence
@@ -523,10 +629,13 @@ $\alpha_y(j-1,d-2)$. The value assigned to $\alpha_v(j, d)$
 is the maximum over all possible choices of child states $y$ that $v$
 can transit to. 
 
-\subsection{Tuning speed versus accuracy with the $bandp$ parameter}
+%\subsection{Tuning speed versus accuracy with the $bandp$ parameter}
+
 The banded CM CYK algorithm offers acceleration by ignoring all
 alignments that violate the band of at least one state, and finds
-the optimal alignment consistent with all the bands. Therefore, when
+the optimal alignment (and its score) consistent with all the
+bands. 
+Therefore, when
 the globally optimal solution is not consistent with the bands, the
 acceleration comes at a cost to sensitivity. This is most likely to
 occur when aligning remote homologs, which may have significantly
@@ -538,7 +647,8 @@ that result in faster, less sensitive searches than lower $bandp$ values.
 Empirically, practical values of $bandp$ are between $10^{-6}$ and
 $10^{-10}$ (see benchmark results). 
 
-\subsection{Informative transition priors for appropriate band calculation}
+%\subsection{Informative transition priors for appropriate band calculation}
+\subsection{Informative Dirichlet priors}
 
 The band calculation algorithm uses only the transition probabilities
 of the model to determine the bands. These probabilities are
@@ -553,7 +663,7 @@ sequences, and result in inappropriate bands that would often ignore
 the optimal alignment.  This problem is exacerbated when there are few
 training sequences, because the prior has more of an impact during
 mean posterior estimation. 
-Figure~\ref{fig:3bands} depicts the effect of plus-1 priors on band
+Figure \ref{fig:bands} depicts the effect of plus-1 priors on band
 calculation anecdotally for three RNA families by showing that the
 the bounds on the full length of potential new homologs ($dmin_0$ and $dmax_0$)
 do not appropriately reflect the lengths of the sequences
@@ -561,7 +671,6 @@ in the input alignment.
 
 \ifdraft
 \begin{figure}
-  \label{fig:3bands}
   \begin{center}
     \includegraphics[width=6in,angle=0]{figs/3fam_bands}
     \caption{\textbf{Effect of transition priors on band calculation.}
@@ -578,6 +687,7 @@ in the input alignment.
       ($dmin_0$ (left) and
       $dmax_0$ (right)) derived from the $\gamma_0(d)$ distribution using $bandp =
       10^{-7}$ (the probability mass within each band is 99.99999\%).}
+    \label{fig:bands}
   \end{center}
 \end{figure}
 \fi
@@ -614,7 +724,7 @@ parameters are in Table~\ref{tbl:transitions}.
 %* in Table~\ref{tbl:transitions}).  
 Incorporating the informative transition priors during mean posterior
 estimation of the transition probabilities has a dramatic impact
-on calculation of the bands as shown in Figure~\ref{fig:3bands}.
+on calculation of the bands as shown in Figure~\ref{fig:bands}.
 
 % The transition priors 041006_trans_priors.tex (with modifications)
 \ifdraft
@@ -730,14 +840,13 @@ on calculation of the bands as shown in Figure~\ref{fig:3bands}.
   for each alphabet in the group. ``node state''= initial node state
   type for each alphabet. ``next node''= type of immediately downstream
   node for each alphabet.}
-
 \label{tbl:transitions}
 \end{table}
 \renewcommand{\baselinestretch}{1.5}
 \fi
 
-\subsection{Increasing sensitivity by refining CM parameterization}
-\subsubsection{Informative emission priors}
+%\subsection{Increasing sensitivity by refining CM parameterization}
+%\subsubsection{Informative emission priors}
 To complement the informative transition priors, Dirichlet density
 \emph{mixtures} were estimated to use as informative emission
 priors. Although the emission probabilities do not affect band calculation,
@@ -882,7 +991,7 @@ U & \textbf{0.2372} & \textbf{0.8917} & 0.0000 & 0.0090 & \textbf{0.3073} & \tex
 \fi
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-\subsubsection{Model entropy weighting}
+%\subsubsection{Model entropy weighting}
 We also extend the profile HMM ``entropy weighting'' technique to CMs
 to increase sensitivity.
 %This method works by scaling the observed counts
@@ -913,7 +1022,8 @@ The default target model entropy used in \infernal is 1.46 bits
 (because using this value gave the best results for our benchmark), but
 this value can be set by the user. 
 
-\subsection{An Rfam based benchmark}
+%\subsection{An Rfam based benchmark}
+\subsection{Benchmarking}
 
 To assess the performance impact of the bands, informative priors, and
 entropy weighting on homology search, we designed a 
@@ -940,7 +1050,7 @@ alignment.
 training sets have at least 5 sequences.
 \end{itemize}
 
-51 families satisfy these criteria (listed in
+Fifty-one families satisfy these criteria (listed in
 Table~\ref{tbl:rmarkmer_fam}). The total number of test sequences
 across the 51 families is 450, with a combined length of 101,855 nt. 
 
@@ -985,10 +1095,10 @@ three categories:
   hits using family X as a query that \emph{significantly
     overlap} with a true test sequence
   from family Y (where Y != X) on either strand of the
-  chromosome.%is not counted as a postive
+  chromosome.%is not counted as a positive
   %or a negative and is referred to as an ignore. 
 \item[negatives:]
-  hits that are not postives or ignores. %a positive or an ignore is defined as a negative.
+  hits that are not positives or ignores. %a positive or an ignore is defined as a negative.
   For any two negatives that \emph{significantly overlap},
   the one with the better score is counted.
 \end{description}
@@ -1027,7 +1137,7 @@ number of banded alignments per state considered is $O(kL)$
 with $k$ equal to the average band width across all
 $M$ states ($(\sum_v dmax_v - dmin_v + 1) / M$), which varies slightly
 across families but independently of their lengths.
-The average family speed-up factor for benchmark set is 3.17 and 4.75
+The average family speed-up factor for the benchmark set is 3.17 and 4.75
 for $bandp$ values of $10^{-10}$ and $10^{-6}$ respectively. 
 The total speed-up factor for searching for all families is 4.40 and 6.74
 for $bandp$ values of $10^{-10}$ and $10^{-6}$ respectively. 
@@ -1202,64 +1312,42 @@ sensitivity of CM based homology search.
 %(Figure~\ref{fig:roc}). 
 The informative prior distributions are central to both of these
 improvements. Informative transitions priors are critical to
-the band calculation (Figure~\ref{fig:3bands}), and informative
+the band calculation (Figure~\ref{fig:bands}), and informative
 emission priors allow effective model entropy weighting. Our training
 datasets for prior estimation are not ideal: very few counts were used
 to estimate many of the transition priors
 (Table~\ref{tbl:transitions}), and only ribosomal RNA alignments were
 used for to derive counts for the  emission priors. We were driven to
 both datasets by a lack of better options. Despite this, the resulting
-priors seem to perform well. We hope that the CM methods we have
-improved on here will help to provide better training data for future
-tools. While we recognize that this approach of building tools using
-sparse data to amass better data for use in tool building is circular,
-we feel that such an approach is necessary in this case (?).
+priors seem to perform well. 
+
+%We hope that the CM methods we have
+%improved on here will help to provide better training data for future
+%tools. While we recognize that this approach of building tools using
+%sparse data to amass more data to build better tools is circular,
+%we feel that it is necessary  is necessary in this case (?).
 
 The model entropy weighting strategy has important implications for
 profile HMM filtering methods that rely on primary sequence
-conservation.  When building a CM from an input training alignment
-with many highly identical sequences, entropy weighting will create a
-model with lower information content than a model built using previous
-methods (i.e. without entropy weighting). This is because the weight of
-the observations from the input alignment will be scaled down
-relative to the prior during parameterization.  Profile HMM filters built
-from such CMs will also tend to have low information content. In
-general, these models will give higher scores (relative to models with
-higher information content) to sequences with lowers
-sequence identity to the training sequences, making them less
-efficient filters. In contrast, entropy weighting will not affect an
-initial filtering step by \textsc{BLAST}, as this step is completely
-independent of the CM. However, the overall sensitivity of a
-\textsc{BLAST} filtering approach may be increased, but only if the
-more sensitive entropy weighted CM finds hits in the filtered fraction
-that would be missed by CMs built without entropy weighting.
+conservation. If the same input training alignment containing many
+highly identical sequences is used to build two CMs, one using entropy
+weighting and one without using it, the latter CM will model less
+primary sequence conservation than the former. 
+This is because the entropy weighting will scale down the observations from
+the input alignment relative to the prior during parameterization,
+making the model less specific.  Because HMM filters rely on primary
+sequence conservation, a filter built from the less specific CM
+will be a less efficient filter.
 
-\begin{comment}In contrast, the database fraction that is filtered
-by \blast will be unaffected by entropy weighting because it is completely
-independent of the CM\@. However, the filtering strategy limits
-the CM search to the filtered fraction, so using \textsc{BLAST} as a
-filter for entropy weighted CMs will only find 
-hits that were found by \textsc{BLAST} and missed by . 
+In contrast, entropy weighting will not affect an
+initial filtering step by \textsc{BLAST} as this step is completely
+independent of the CM. However, an entropy weighted CM
+based search of the \textsc{BLAST} filtered fraction may find high
+scoring hits that a non-entropy weighted CM search would have
+missed. 
 
-this technique will 
-become more sensitive with entropy weighted CMs only by the margin
-that \textsc{BLAST} was more sensitive than CMs prior to entropy
-weighting (which Figure~\ref{fig:roc} suggests was small).
-%so unless \textsc{BLAST} was more sensitive than CMs prior to entropy
-%weighting (which Figure~\ref{fig:roc} suggests is unlikely)
-%homology., using entropy weighted models will not increase the
-%sensitivity of a \textsc{BLAST} filtered CM search. 
 
-However, the \blast strategy still limits
-the CM search to only the filtered fraction, which is undesirable
-because the sensitivity cost is unknown, and Figure~\ref{fig:roc}
-suggests that this cost is likely significant, at least for remote
-homology.
-\end{comment}
-
-We believe the most important contribution of this work is the
-\emph{a priori} banded strategy for accelerating CM homology
-search. A filtering approach and the banded strategy are
+In general, a filtering approach and our QDB strategy are
 complementary; the former reduces the search space for the expensive
 CM search, and the latter makes CM search less expensive.
 \begin{comment}
@@ -1270,21 +1358,21 @@ speeds up the CM search of the remaining fraction by 10 fold will
 employ the CM for only 1\% of the time a non-banded, non-filtered CM
 search would have.
 \end{comment}
-The band calculation method presented here is only one potential
-method for determining bands. There are certainly many others. 
+The QDB method presented here is only one potential
+method for determining bands, and there are certainly many others. 
 The banded CM CYK database algorithm can use bands on subsequence
 lengths derived from any method.
-However, the band calculation method we present is ideal for homology search in
-one important respect. Because the bands are sequence independent and are
+There is one feature of QDB that makes it especially convenient for
+homology search. Because the bands are sequence independent and are
 determined solely from the transition probabilities of the model, they
-can be calculated once, in a few seconds prior to searching, 
+can be calculated once, in a few seconds prior to database search, 
 adding a relatively negligible amount of time to the overall search.
-Other potential banded strategies that consider the sequence (like
-Brown's profile HMM based method in \textsc{RNACAD} \cite{Brown00})
-need to continuously recalculate the bands as the database is
-scanned. Even so, we feel that sequence dependent banding strategies
-are promising for accelerating CM methods, and are currently exploring
-such techniques.
+Other potential banded strategies might consider the sequence
+(such as Brown's profile HMM based method in \textsc{RNACAD}
+\cite{Brown00}) and would need to continuously recalculate the bands as
+the database is scanned. Even so, we feel that sequence dependent
+banding strategies may also be useful for accelerating CM methods, and
+are currently exploring such techniques. 
 As complementary filtering and banding methods continue to mature, we
 hope CM homology search will become more practical and widespread,
 contributing meaningfully to the understanding of non-coding RNAs.
@@ -1499,8 +1587,10 @@ RF00037 & IRE & 28 & 41 & 0 & 0.28 & 1.09 & 0.21 & 1.42 & 0.30 \\ \hline
 \fi
 
 \section{Acknowledgements}
-EPN gratefully acknowledges financial support from NIH training grant
-X. 
+EPN gratefully acknowledges financial support from NIH/NHGRI
+Institutional Training Grant in Genomic Science T32 HG000045.
+
+
 
 \newpage
 %\bibliography{distilled}
@@ -1510,6 +1600,19 @@ X.
  \relax
 \else
 \newpage
+\begin{figure}
+\begin{center}
+\includegraphics[width=6.4in]{figs/d4fig_0}
+\caption{\textbf{An example RNA family and corresponding CM.}
+  \textbf{(A):} A toy multiple alignment of 3 sequences. \textbf{(B):}
+  The structure of one sequence from (A), and the guide tree of nodes
+  corresponding to the consensus structure of the
+  family. \textbf{(C):} The state topology of 3 selected nodes of the
+  CM. Transitions are indicated by lines with arrows.}
+\label{fig:cmintro}
+\end{center}
+\end{figure}
+
 \begin{figure}
 \begin{center}
 \caption{\textbf{A simplified CM.} \textbf{(A):} Biologically
@@ -1522,20 +1625,19 @@ X.
 \end{figure}
 
 \begin{figure}
-\begin{center}
-\caption{\textbf{A trace of the band calculation
-  algorithm for the simplified CM in Figure~\ref{fig:aprioriAB}.} 
-    The maximum length $d$ considered (the $Z$ parameter) is set as
-    10. Resulting $\gamma$ probability distributions shown at right. For
-    state $0$ (step 7), the $\gamma$ plot is color-coded to correspond
-    with probabilities in Figure~\ref{fig:aprioriAB}.}
-\label{fig:aprioriC}
-\end{center}
+  \begin{center}
+    \caption{\textbf{A trace of the band calculation
+	algorithm for the simplified CM in Figure~\ref{fig:aprioriAB}.} 
+      The maximum length $d$ considered (the $Z$ parameter) is set as
+      10. Resulting $\gamma$ probability distributions shown at right. For
+      state $0$ (step 7), the $\gamma$ plot is color-coded to correspond
+      with probabilities in Figure~\ref{fig:aprioriAB}.}
+    \label{fig:aprioriC}
+  \end{center}
 \end{figure}
 
 \begin{figure}
   \begin{center}
-    \label{fig:3bands}
     \caption{\textbf{Effect of transition priors on band calculation.}
   Solid vertical lines represent the lengths of the 5
   seed sequences used to build each model, corresponding with the
@@ -1547,6 +1649,7 @@ X.
   of each model. Dashed vertical lines are the band ($dmin_0$ (left) and
   $dmax_0$ (right)) derived from the $\gamma_0(d)$ distribution using $bandp =
   10^{-7}$ (probability mass within each band is 99.99999\%).}
+    \label{fig:bands}
   \end{center}
 \end{figure}
 
