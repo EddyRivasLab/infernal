@@ -1,7 +1,8 @@
-/* destruct.c
+/* subCM.c
  * EPN 07.25.06
  * 
- * Removing structure from the CM when aligning non-full length seqs.
+ * Building submodels (subCMs) from a template CM, with potentially less
+ * structure. 
  ***************************************************************** 
  * @LICENSE@
  ***************************************************************** 
@@ -200,24 +201,24 @@ StripWUSSGivenCC(MSA *msa, char **dsq, float gapthresh, int first_match, int las
  *                         remove some structure from
  *            ret_cm     - the new CM built from orig_cm with some structure removed.
  *            start_pos  - the first position (consensus column) we want to keep structure
- *                         for.
+x *                         for.
  *            end_pos    - the last position we want to keep structure for
  *            
  * Returns:   (void)
  */
 void
-DestructCM(CM_t *orig_cm, CM_t **ret_cm, int start_pos, int end_pos)
+BuildSubCM(CM_t *orig_cm, CM_t **ret_cm, int start_pos, int end_pos)
 {
-  CM_t            *ds_cm;       /* new covariance model, the destructed template */
+  CM_t            *sub_cm;       /* new covariance model, a submodel of the template */
   CMConsensus_t   *con;         /* growing consensus info for orig_cm*/
   Parsetree_t     *mtr;         /* master structure tree from the alignment*/
-  char     *ds_cstr;            /* destructed consensus structure display string  */
-  int      *ds_ct;		/* 0..con->clen-1 base pair partners array         */
+  char     *sub_cstr;            /* consensus substructure display string  */
+  int      *sub_ct;		/* 0..con->clen-1 base pair partners array         */
   char **nodetypes;
   int n;
   int cpos;
   CMEmitMap_t *orig_emap;         /* consensus emit map for the original, template CM */
-  CMEmitMap_t *ds_emap;         /* consensus emit map for the destructed CM */
+  CMEmitMap_t *sub_emap;         /* consensus emit map for the subCM */
   
   nodetypes = malloc(sizeof(char *) * 8);
   nodetypes[0] = "BIF";
@@ -236,28 +237,28 @@ DestructCM(CM_t *orig_cm, CM_t **ret_cm, int start_pos, int end_pos)
   printf("start_pos: %d\n", start_pos);
   printf("end_pos  : %d\n", end_pos);
 
-  /* Fill a new ct array for the destructed CM. First copy the template (original) CMs
+  /* Fill a new ct array for the subCM. First copy the template (original) CMs
    * ct array. Next, eliminate any structure that lies outside the region from
    * start_pos and end_pos, the positions the HMM told us are likely to be the end points
    * of the alignment.
    */
 
-  ds_ct = MallocOrDie(sizeof(int) * (con->clen));
+  sub_ct = MallocOrDie(sizeof(int) * (con->clen));
   for (cpos = 0; cpos < con->clen; cpos++)
-    ds_ct[cpos] = con->ct[cpos];
+    sub_ct[cpos] = con->ct[cpos];
   for (cpos = 0; cpos < con->clen; cpos++)
     {
-      printf("B ds_ct[cpos=%3d]: %3d\n", cpos, ds_ct[cpos]);
+      printf("B sub_ct[cpos=%3d]: %3d\n", cpos, sub_ct[cpos]);
       if ((cpos+1) < start_pos || (cpos+1) > end_pos) /* cpos goes 1..clen, but ct is indexed
 						       * 0..clen-1.*/
 	{ 
-	  if (ds_ct[cpos] != -1)  ds_ct[ds_ct[cpos]] = -1; /* CreateCMConsensus() uses
+	  if (sub_ct[cpos] != -1)  sub_ct[sub_ct[cpos]] = -1; /* CreateCMConsensus() uses
 							    * -1 in ct[] to indicate single
 							    * stranded (different convention
 							    * than WUSS2ct(). */
-	  ds_ct[cpos] = -1;
+	  sub_ct[cpos] = -1;
 	}
-      printf("A ds_ct[cpos=%3d]: %3d\n\n", cpos, ds_ct[cpos]);
+      printf("A sub_ct[cpos=%3d]: %3d\n\n", cpos, sub_ct[cpos]);
     }
 
   /* Construct the new structure ss_cons based on the template CM 
@@ -266,42 +267,42 @@ DestructCM(CM_t *orig_cm, CM_t **ret_cm, int start_pos, int end_pos)
    * does it to get the fully formatted WUSS ([{<>}]) string but 
    * lazily we just do <> bps here.
    */
-  ds_cstr = MallocOrDie(sizeof(char) * (con->clen + 1));
+  sub_cstr = MallocOrDie(sizeof(char) * (con->clen + 1));
   for (cpos = 0; cpos < con->clen; cpos++)
     {
-      /*printf("ds_ct[cpos=%3d]: %3d\n", cpos, ds_ct[cpos]);*/
-      if(ds_ct[cpos] == -1)         ds_cstr[cpos] = '.'; 
-      else if (ds_ct[cpos]  > cpos) ds_cstr[cpos] = '<';
-      else if (ds_ct[cpos]  < cpos) ds_cstr[cpos] = '>';
-      else Die("ERROR: weird error in DestructCM()\n");
+      /*printf("sub_ct[cpos=%3d]: %3d\n", cpos, sub_ct[cpos]);*/
+      if(sub_ct[cpos] == -1)         sub_cstr[cpos] = '.'; 
+      else if (sub_ct[cpos]  > cpos) sub_cstr[cpos] = '<';
+      else if (sub_ct[cpos]  < cpos) sub_cstr[cpos] = '>';
+      else Die("ERROR: weird error in BuildSubCM()\n");
     }
 
-  /* Build the new destructed CM given the new consensus structure. But don't
+  /* Build the new subCM given the new consensus structure. But don't
    * parameterize it yet.
    */
-  ConsensusModelmaker(ds_cstr, con->clen, &ds_cm, &mtr);
+  ConsensusModelmaker(sub_cstr, con->clen, &sub_cm, &mtr);
 
   printf("\n\norig struct: %s\n", con->cstr);
-  printf("\n\nnew struct : %s\n", ds_cstr);
+  printf("\n\nnew struct : %s\n", sub_cstr);
 
-  /* Parameterize the new CM based on the template CM. 
+  /* Parameterize the new subCM based on the template CM. 
    * First we need the emit maps for the template CM and
-   * the new, destructed CM.
+   * the new, subCM.
    */
   orig_emap = CreateEmitMap(orig_cm);
-  ds_emap = CreateEmitMap(ds_cm);
+  sub_emap = CreateEmitMap(sub_cm);
   printf("\n\n\nDumping original CM emitmap\n");
   DumpEmitMap(stdout, orig_emap, orig_cm);
-  printf("\n\n\nDumping destructed CM emitmap\n");
-  DumpEmitMap(stdout, ds_emap, ds_cm);
+  printf("\n\n\nDumping subCM emitmap\n");
+  DumpEmitMap(stdout, sub_emap, sub_cm);
 
   
 
-  free(ds_cstr);
-  free(ds_ct);
+  free(sub_cstr);
+  free(sub_ct);
   free(nodetypes);
   FreeEmitMap(orig_emap);
-  FreeEmitMap(ds_emap);
+  FreeEmitMap(sub_emap);
   return;
 
 }
