@@ -119,6 +119,7 @@ extern void HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh,
 			   CM_t **ret_cm, Parsetree_t **ret_mtr);
 extern Parsetree_t *Transmogrify(CM_t *cm, Parsetree_t *gtr, 
 				 char *dsq, char *aseq, int alen);
+extern void         cm_from_guide(CM_t *cm, Parsetree_t *gtr);
 
 /* from parsetree.c
  */
@@ -313,3 +314,5 @@ extern float CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, char *dsq);
 extern void CP9NodeForPosn(struct cplan9_s *hmm, int i0, int j0, int x, 
 			   struct cp9_dpmatrix_s *post, int *ret_node, int *ret_type);
 extern void StripWUSSGivenCC(MSA *msa, char **dsq, float gapthresh, int first_match, int last_match);
+extern void DestructCM(CM_t *orig_cm, CM_t **ret_cm, int start_pos, int end_pos);
+extern void ConsensusModelmaker(char *ss_cons, int clen, CM_t **ret_cm, Parsetree_t **ret_gtr);

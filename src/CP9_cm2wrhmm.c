@@ -12,7 +12,7 @@
  * model two CM insert states, but the code below approximates it 
  * pretty well (it gets as close as possible (I think)).
  *
- * cm2wrhmm_cp9() is the main function, it sets the probabilities
+ * CP9_cm2wrhmm() is the main function, it sets the probabilities
  * of the HMM and checks that the expected number of times each
  * HMM state is entered is within a given threshold (0.0001 by default)
  * of the expected number of times each corresponding CM state is
@@ -1223,7 +1223,7 @@ cm2hmm_special_trans_cp9(CM_t *cm, struct cplan9_s *hmm, double *psi, char ***tm
  * int k             - the HMM node we're filling transitions for
  * double *psi       - psi[v] is the expected number of times state v is entered
  *                     in a CM parse
- * char ***tmap;      - the hard-coded transition map
+ * char ***tmap;     - the hard-coded transition map
  * int *cc_node_map  - node that each consensus column maps to (is modelled by)
  *                     [1..hmm_ncc]
  * int **cs2hn_map   - 2D CM state to HMM node map, 1st D - CM state index
@@ -1242,7 +1242,7 @@ cm2hmm_special_trans_cp9(CM_t *cm, struct cplan9_s *hmm, double *psi, char ***tm
  *              
  *                     For example: CM states hns2cs_map[k][0][0] and hns2cs_map[k][0][1]
  *                                  map to HMM node k's match state.
- * Returns: (void) 
+ * Returns: (void)    
  */
 static void
 cm2hmm_trans_probs_cp9(CM_t *cm, struct cplan9_s *hmm, int k, double *psi, char ***tmap, 

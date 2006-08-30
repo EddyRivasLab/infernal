@@ -277,6 +277,10 @@ main(int argc, char **argv)
   MSAFILE         *afp;         /* open alignment file                     */
   MSA             *input_msa;         /* a multiple sequence alignment           */
   char           **input_dsq;		/* digitized aligned sequences             */
+  char            *check_outfile;	/* output file name for destructed stk file*/
+  FILE            *check_ofp;         /* an open output file */
+  CM_t            *ds_cm;       /* destructed covariance model                      */
+
   
   /*********************************************** 
    * Parse command line
@@ -306,6 +310,7 @@ main(int argc, char **argv)
   do_check    = FALSE;
   do_post     = FALSE;
   do_destruct = FALSE;
+  check_outfile = "check.stk";
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -767,6 +772,12 @@ main(int argc, char **argv)
 	      /*hmm_start_node = 5; *//* hard-coded for the example */
 	      /*hmm_end_node   = 20;*//* hard-coded for the example */
 	      
+	      /* Given the original CM, and the start and end HMM nodes, build a new CM by removing
+	       * structure outside the start and end HMM nodes, and marginalizing.
+	       */
+	      DestructCM(cm, &ds_cm, hmm_start_node, hmm_end_node);
+	      exit(1);
+
 	      /* a temporary function to destruct outside the columns of the MSA that are before the 
 	       * MSA column that maps to hmm_start_node, and after the MSA column that maps to 
 	       * hmm_end_node. This will be unnecessary once we stop reading in the MSA, b/c all we'll
@@ -775,20 +786,26 @@ main(int argc, char **argv)
 	       */
 	      /* gapthresh assumed to be 0.5. */
 
-	      printf("INITIAL %s\n", input_msa->ss_cons);
-	      StripWUSSGivenCC(input_msa, input_dsq, 0.5, hmm_start_node, hmm_end_node);
+	      /*printf("INITIAL %s\n", input_msa->ss_cons);
+		StripWUSSGivenCC(input_msa, input_dsq, 0.5, hmm_start_node, hmm_end_node);*/
 	      /* have to do something like in HandModelMaker to eliminate mates of removed bps. */
-
-
+	      
+	      
 	      printf("NEW     %s\n", input_msa->ss_cons);
 	      
-	      /* PROBLEM HERE, we don't have an MSA do destruct so we can't call HandModelMaker, one 
-	       * option is to make the user input the MSA with  --destruct <stk>, this might be useful temporarily
-	       * until I can devise a method for determining how to destruct the CM using only the CM parameters
-	       * independently of the MSA.
-	       *
-	       * DestructMSA()
-	       * HandModelMaker() */
+	      /* Write a new stockholm alignment file we can use to build a new CM and check
+	       * if it has the same parameters as the one we get by marginalizing.
+	       */
+	      if (check_outfile != NULL && (check_ofp = fopen(check_outfile, "w")) != NULL) 
+		{
+		  WriteStockholm(check_ofp, input_msa);
+		  printf("Check alignment saved in file %s\n", check_outfile);
+		  fclose(check_ofp);
+		}
+	      else
+		Die("Eek.\n");
+	      
+	      exit(1);
 	    }
 	  StopwatchStop(watch1);
 	  if(time_flag) StopwatchDisplay(stdout, "CP9 Forward/Backward CPU time: ", watch1);

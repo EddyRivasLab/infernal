@@ -41,10 +41,6 @@
 #include "funcs.h"
 
 
-
-
-static void         cm_from_guide(CM_t *cm, Parsetree_t *gtr);
-
 /* Function: HandModelmaker()
  * Incept:   SRE 29 Feb 2000 [Seattle]; from COVE 2.0 code
  * 
@@ -343,7 +339,7 @@ HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh,
  *
  * Returns:  (void)
  */
-static void
+void
 cm_from_guide(CM_t *cm, Parsetree_t *gtr)
 {
   Nstack_t   *pda;              /* pushdown stack used for traversing gtr */
