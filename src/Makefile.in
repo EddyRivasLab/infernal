@@ -60,7 +60,7 @@ OBJS  = alphabet.o\
 	cm_postprob.o\
 	scaninside.o\
 	cm_masks.o\
-	destruct.o
+	subCM.o
 
 HDRS  = funcs.h\
 	prior.h\

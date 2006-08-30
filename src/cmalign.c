@@ -61,7 +61,7 @@ static char experts[] = "\
    --outside     : don't align; return scores from the Outside algorithm\n\
    --post        : align with CYK and append posterior probabilities\n\
    --checkpost   : check that posteriors are correctly calc'ed\n\
-   --destruct <f>: for non-full length seqs, remove unnecessary structure\n\
+   --sub     <f> : use HMM predicted start and end points to build a submodel\n\
 \n\
   * HMM banded alignment related options:\n\
    --hbanded     : use exptl HMM banded CYK aln algorithm (df: builds CP9 HMM) \n\
@@ -102,7 +102,7 @@ static struct opt_s OPTIONS[] = {
   { "--outside",    FALSE, sqdARG_NONE},
   { "--post",       FALSE, sqdARG_NONE},
   { "--checkpost",  FALSE, sqdARG_NONE},
-  { "--destruct",   FALSE, sqdARG_STRING},
+  { "--sub",   FALSE, sqdARG_STRING},
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -262,8 +262,8 @@ main(int argc, char **argv)
   float           ***post;      /* post DP matrix for Inside() */
   int j;
 
-  /* the --destruct option */
-  int                do_destruct; /* TRUE to use HMM to infer start and end point of hit 
+  /* the --sub option */
+  int                do_sub;      /* TRUE to use HMM to infer start and end point of hit 
 				   * and remove structure before start and after end */
   int                hmm_start_node; /* HMM node most likely to have emitted posn 1 of target seq */
   int                hmm_start_state;/* HMM state type for hmm_start_node 0=match, 1=insert */
@@ -272,13 +272,13 @@ main(int argc, char **argv)
 
   char              *alifile;        /* seqfile to read alignment from, we trust its the same one used
 				      * to build the CM, this is temporary to check our code and make 
-				      * sure it destructs the model correctly */ 
+				      * sure it builds a submodel correctly */ 
   MSAFILE         *afp;         /* open alignment file                     */
   MSA             *input_msa;         /* a multiple sequence alignment           */
   char           **input_dsq;		/* digitized aligned sequences             */
-  char            *check_outfile;	/* output file name for destructed stk file*/
+  char            *check_outfile;	/* output file name for subCM stk file*/
   FILE            *check_ofp;         /* an open output file */
-  CM_t            *ds_cm;       /* destructed covariance model                      */
+  CM_t            *ds_cm;       /* sub covariance model                      */
 
   
   /*********************************************** 
@@ -308,7 +308,7 @@ main(int argc, char **argv)
   do_outside  = FALSE;
   do_check    = FALSE;
   do_post     = FALSE;
-  do_destruct = FALSE;
+  do_sub      = FALSE;
   check_outfile = "check.stk";
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
@@ -332,9 +332,9 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--outside")   == 0) { do_outside = TRUE; do_check = TRUE; }
     else if (strcmp(optname, "--post")      == 0) do_post      = TRUE;
     else if (strcmp(optname, "--checkpost") == 0) do_check     = TRUE;
-    else if (strcmp(optname, "--destruct")  == 0) 
+    else if (strcmp(optname, "--sub")  == 0) 
       { 
-	do_destruct  = TRUE;
+	do_sub  = TRUE;
 	hmm_type = HMM_CP9; 
 	do_local = TRUE; 
 	alifile = optarg;
@@ -722,7 +722,7 @@ main(int argc, char **argv)
 	}
     }
 
-  if(do_destruct)
+  if(do_sub)
     {
       /* read the MSA */
       input_msa = MSAFileRead(afp);
@@ -757,15 +757,15 @@ main(int argc, char **argv)
 	  cp9_posterior = cp9_bck;
 	  CP9FullPosterior(p7dsq[i], 1, sqinfo[i].len, cp9_hmm, cp9_fwd, cp9_bck, cp9_posterior);
 
-	  /* If we're in destruct mode:
+	  /* If we're in sub mode:
 	   * (1) infer the start and end HMM states by looking at the posterior matrix.
 	   * (2) modify the CM model by removing unnecessary structure and marginalizing
 	   * (3) (NECESSARY?) build a new CP9 HMM from the modified CM
 	   * (4) (NECESSARY?) do Forward/Backward again, and get a new posterior matrix.
 	   */
-	  if(do_destruct)
+	  if(do_sub)
 	    {
-	      /* we're necessarily in local mode, the --destruct option turns local mode on */
+	      /* we're necessarily in local mode, the --sub option turns local mode on */
 	      CP9NodeForPosn(cp9_hmm, 1, sqinfo[i].len, 1,             cp9_posterior, &hmm_start_node, &hmm_start_state);
 	      CP9NodeForPosn(cp9_hmm, 1, sqinfo[i].len, sqinfo[i].len, cp9_posterior, &hmm_end_node,   &hmm_end_state);
 	      /*hmm_start_node = 5; *//* hard-coded for the example */
@@ -774,10 +774,10 @@ main(int argc, char **argv)
 	      /* Given the original CM, and the start and end HMM nodes, build a new CM by removing
 	       * structure outside the start and end HMM nodes, and marginalizing.
 	       */
-	      DestructCM(cm, &ds_cm, hmm_start_node, hmm_end_node);
+	      BuildSubCM(cm, &ds_cm, hmm_start_node, hmm_end_node);
 	      exit(1);
 
-	      /* a temporary function to destruct outside the columns of the MSA that are before the 
+	      /* a temporary function to remove structure outside the columns of the MSA that are before the 
 	       * MSA column that maps to hmm_start_node, and after the MSA column that maps to 
 	       * hmm_end_node. This will be unnecessary once we stop reading in the MSA, b/c all we'll
 	       * deal with is the model itself, for now our strategy is to build a new model from the MSA

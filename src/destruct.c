@@ -193,7 +193,7 @@ StripWUSSGivenCC(MSA *msa, char **dsq, float gapthresh, int first_match, int las
   return;
 }
 
-/* Function:  DestructCM()
+/* Function:  BuildSubCM()
  * EPN 08.28.06 
  *
  * Args:      orig_cm    - the original model, which we're going to (potentially)
