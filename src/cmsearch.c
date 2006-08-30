@@ -25,8 +25,6 @@
 #include "hmmer_structs.h"
 #include "hmmband.h"
 
-static void debug_print_bands(CM_t *cm, int *dmin, int *dmax);
-
 static char banner[] = "cmsearch - search a sequence database with an RNA covariance model";
 
 static char usage[]  = "\
@@ -1048,26 +1046,5 @@ main(int argc, char **argv)
   StopwatchFree(watch);
   SqdClean();
   return EXIT_SUCCESS;
-}
-
-/* EPN 05.09.05
-  debug_print_bands()
- * Function: debug_print_bands
- *
- * Purpose:  Print bands for each state.
- */
-
-static void
-debug_print_bands(CM_t *cm, int *dmin, int *dmax)
-{
-  int v;
-
-  printf("\nPrinting bands :\n");
-  printf("****************\n");
-  for(v = 0; v < cm->M; v++)
-   {
-     printf("band state:%d type:%d min:%d max:%d\n", v, cm->sttype[v], dmin[v], dmax[v]);
-   }
-  printf("****************\n\n");
 }
 

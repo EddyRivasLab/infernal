@@ -6858,7 +6858,7 @@ debug_print_bands(CM_t *cm, int *dmin, int *dmax)
   printf("****************\n");
   for(v = 0; v < cm->M; v++)
    {
-     printf("band v:%d n:%d %-4s %-2s min:%d max:%d\n", v, cm->ndidx[v], nodetypes[(int) cm->ndtype[(int) cm->ndidx[v]]], sttypes[(int) cm->sttype[v]], dmin[v], dmax[v]);
+     printf("band v:%d n:%d %-4s %-2s min:%d max:%d\n", v, cm->ndidx[v], nodetypes[cm->ndtype[cm->ndidx[v]]], sttypes[cm->sttype[v]], dmin[v], dmax[v]);
    }
   printf("****************\n\n");
 
@@ -6866,7 +6866,6 @@ debug_print_bands(CM_t *cm, int *dmin, int *dmax)
   free(nodetypes);
 
 }
-
 
 /* EPN 05.09.05
    debug_print_alpha()
@@ -7792,3 +7791,4 @@ insideT_b_me(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
   free_vjd_shadow_matrix(shadow, cm, i0, j0);
   return sc;
 }
+

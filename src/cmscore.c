@@ -203,7 +203,7 @@ main(int argc, char **argv)
 	  sc1 = CYKInside(cm, dsq, sqinfo.len, 0, 1, sqinfo.len, &tr1);  
 	  ParsetreeDump(stdout, tr1, cm, dsq);
 	  printf("%-12s : %.2f  %.2f\n", sqinfo.name, sc1,
-		 ParsetreeScore(cm, tr1, dsq));
+		 ParsetreeScore(cm, tr1, dsq, FALSE));
 	}
 	StopwatchStop(watch);
 	StopwatchDisplay(stdout, "CPU time: ", watch);
@@ -217,7 +217,7 @@ main(int argc, char **argv)
       sc2 = CYKDivideAndConquer(cm, dsq, sqinfo.len, 0, 1, sqinfo.len, &tr2);  
       ParsetreeDump(stdout, tr2, cm, dsq);
       printf("%-12s : %.2f  %.2f\n", sqinfo.name, sc2,
-	     ParsetreeScore(cm, tr2, dsq));
+	     ParsetreeScore(cm, tr2, dsq, FALSE));
       StopwatchStop(watch);
       StopwatchDisplay(stdout, "CPU time: ", watch);
       puts("");
@@ -227,9 +227,9 @@ main(int argc, char **argv)
        * If not, fail w/ non-zero exit status, so qc protocols
        * can catch the problem.
        */
-      if (tr1 != NULL && fabs(sc1 - ParsetreeScore(cm, tr1, dsq)) >= 0.01)
+      if (tr1 != NULL && fabs(sc1 - ParsetreeScore(cm, tr1, dsq, FALSE)) >= 0.01)
 	Die("CYKInside score differs from its parse tree's score");
-      if (tr2 != NULL && fabs(sc2 - ParsetreeScore(cm, tr2, dsq)) >= 0.01)
+      if (tr2 != NULL && fabs(sc2 - ParsetreeScore(cm, tr2, dsq, FALSE)) >= 0.01)
 	Die("CYKDivideAndConquer score differs from its parse tree's score");
       if (!do_smallonly && fabs(sc1 - sc2) >= 0.01) 
 	Die("CYKInside score differs from CYKDivideAndConquer");
