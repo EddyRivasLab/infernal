@@ -61,7 +61,7 @@ static char experts[] = "\
    --outside     : don't align; return scores from the Outside algorithm\n\
    --post        : align with CYK and append posterior probabilities\n\
    --checkpost   : check that posteriors are correctly calc'ed\n\
-   --sub     <f> : use HMM predicted start and end points to build a submodel\n\
+   --sub <f>     : use HMM predicted start and end points to build a submodel\n\
 \n\
   * HMM banded alignment related options:\n\
    --hbanded     : use exptl HMM banded CYK aln algorithm (df: builds CP9 HMM) \n\
@@ -269,7 +269,12 @@ main(int argc, char **argv)
   int                hmm_start_state;/* HMM state type for hmm_start_node 0=match, 1=insert */
   int                hmm_end_node;   /* HMM node most likely to have emitted posn L of target seq */
   int                hmm_end_state;  /* HMM state type for hmm_end_node 0=match, 1=insert */
-
+  int                **orig2sub_smap;/* 2D state map from orig_cm (template) to sub_cm.
+				      * 1st dimension - state index in orig_cm 
+				      * 2nd D - 2 elements for up to 2 matching sub_cm states */
+  int                **sub2orig_smap;/* 2D state map from orig_cm (template) to sub_cm.
+				      * 1st dimension - state index in sub_cm (0..sub_cm->M-1)
+				      * 2nd D - 2 elements for up to 2 matching orig_cm states */
   char              *alifile;        /* seqfile to read alignment from, we trust its the same one used
 				      * to build the CM, this is temporary to check our code and make 
 				      * sure it builds a submodel correctly */ 
@@ -336,7 +341,6 @@ main(int argc, char **argv)
       { 
 	do_sub  = TRUE;
 	hmm_type = HMM_CP9; 
-	do_local = TRUE; 
 	alifile = optarg;
 	/* Open the alignment */
 	if ((afp = MSAFileOpen(alifile, format, NULL)) == NULL)
@@ -373,6 +377,11 @@ main(int argc, char **argv)
   if(do_inside && do_outside)
     {
       Die("Please pick either --inside or --outside (--outside will run Inside()\nalso and check to make sure Inside() and Outside() scores agree).\n");
+    }
+
+  if(do_sub && do_local)
+    {
+      Die("--sub and --local combination not yet supported.\n");
     }
 
 
@@ -676,7 +685,7 @@ main(int argc, char **argv)
   /* Relocated ConfigLocal() call to here, below the CM Plan 9 construction.
    * Otherwise its impossible to make a CM Plan 9 HMM from the local CM
    * that passes the current tests to ensure the HMM is "close enough" to
-   * the CM. 
+   * the CM. This is something to look into later.
    */
   if (do_local)
     { 
@@ -692,7 +701,14 @@ main(int argc, char **argv)
 	  CP9Logoddsify(cp9_hmm);
 	}
     }
-
+  if (do_sub && hmm_type == HMM_CP9)
+    {
+      printf("configuring the CM plan 9 HMM for local alignment.\n");
+      swentry           = 0.5;
+      swexit            = 0.5;
+      CPlan9SWConfig(cp9_hmm, swentry, swexit);
+      CP9Logoddsify(cp9_hmm);
+    }
   /* Allocate data structures for use with HMM banding strategy (either P7 or CP9) */
   if(hmm_type != NONE)
     {
@@ -768,13 +784,11 @@ main(int argc, char **argv)
 	      /* we're necessarily in local mode, the --sub option turns local mode on */
 	      CP9NodeForPosn(cp9_hmm, 1, sqinfo[i].len, 1,             cp9_posterior, &hmm_start_node, &hmm_start_state);
 	      CP9NodeForPosn(cp9_hmm, 1, sqinfo[i].len, sqinfo[i].len, cp9_posterior, &hmm_end_node,   &hmm_end_state);
-	      /*hmm_start_node = 5; *//* hard-coded for the example */
-	      /*hmm_end_node   = 20;*//* hard-coded for the example */
 	      
 	      /* Given the original CM, and the start and end HMM nodes, build a new CM by removing
 	       * structure outside the start and end HMM nodes, and marginalizing.
 	       */
-	      BuildSubCM(cm, &ds_cm, hmm_start_node, hmm_end_node);
+	      BuildSubCM(cm, &ds_cm, hmm_start_node, hmm_end_node, 1, cp9_hmm->M, orig2sub_smap, sub2orig_smap);
 	      exit(1);
 
 	      /* a temporary function to remove structure outside the columns of the MSA that are before the 

@@ -37,12 +37,6 @@
 
 #include "cplan9.h"
 
-static void
-fill_psi(CM_t *cm, double *psi, char ***tmap);
-
-static void
-make_tmap(char ****ret_tmap);
-
 static float
 cm2hmm_emit_prob(CM_t *cm, int x, int i, int k, int *node_cc_left, int *node_cc_right, int *cc_node_map);
 
@@ -268,7 +262,7 @@ CP9_cm2wrhmm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *node_cc_rig
  * 
  * Returns: (void) 
  */
-static void
+void
 fill_psi(CM_t *cm, double *psi, char ***tmap)
 {
   int v; /*first state in cm node n*/
@@ -320,28 +314,30 @@ fill_psi(CM_t *cm, double *psi, char ***tmap)
 	  /*printf("SL after: psi[%d]: %f\n", v, psi[v]);*/
 	}
       else
-	for (y = cm->pnum[v]-1; y >= 0; y--)
-	  /*ERROR If t[y][v] is invalid, should be some number dependent on type of state y is 
-	   *and type of state v is. I need a transition map.*/
-	  {
-	    x = cm->plast[v] - y;
-	    /* x is a parent of v, we're adding contribution 
-	     * of transition from x to v. */
-	    tmap_val = tmap[(int) cm->stid[x]][(int) cm->ndtype[cm->ndidx[v]]][(int) cm->stid[v]];
+	{
+	  for (y = cm->pnum[v]-1; y >= 0; y--)
+	    /*ERROR If t[y][v] is invalid, should be some number dependent on type of state y is 
+	     *and type of state v is. I need a transition map.*/
+	    {
+	      x = cm->plast[v] - y;
+	      /* x is a parent of v, we're adding contribution 
+	       * of transition from x to v. */
+	      tmap_val = tmap[(int) cm->stid[x]][(int) cm->ndtype[cm->ndidx[v]]][(int) cm->stid[v]];
 	      
-	    if(tmap_val == -1)
+	      if(tmap_val == -1)
 	      {
 		printf("tmap ERROR 2\n");
 		printf("v: %d | pnum[v]: %d | plast[v]: %d | y: %d | x: %d | d1: %d | d2: %d | d3: %d\n", v, cm->pnum[v], cm->plast[v], y, x, cm->stid[x], cm->ndtype[cm->ndidx[x]+1], cm->stid[v]);
 		exit(1);
 	      }
-	    /*printf("before: psi[%d]: %f\n", v, psi[v]);
-	    printf("x: %d | y: %d | tmap_val: %d | cm->t[x][tmap_val] : %f\n", x, y, tmap_val, cm->t[x][tmap_val]);
-	    */
-	    psi[v] += psi[x] * cm->t[x][(int) tmap_val];
-	    /*printf("after: psi[%d]: %f\n", v, psi[v]);*/
-	  }
-      /*printf("psi[%d]: %15f\n", v, psi[v]);*/
+	      /*printf("before: psi[%d]: %f\n", v, psi[v]);
+		printf("x: %d | y: %d | tmap_val: %d | cm->t[x][tmap_val] : %f\n", x, y, tmap_val, cm->t[x][tmap_val]);
+	      */
+	      psi[v] += psi[x] * cm->t[x][(int) tmap_val];
+	      /*printf("after: psi[%d]: %f\n", v, psi[v]);*/
+	    }
+	}
+      printf("psi[%d]: %15f\n", v, psi[v]);
     }  
   /* Sanity check. For any node the sum of psi values over
    * all split set states should be 1.0. 
@@ -392,7 +388,7 @@ fill_psi(CM_t *cm, double *psi, char ***tmap)
  *               value: the index of v->y in cm->t[v]
  * Returns: (void) 
  */
-static void
+void
 make_tmap(char ****ret_tmap)
 {
   int i,j,k;
@@ -1601,8 +1597,6 @@ hmm_add_single_trans_cp9(CM_t *cm, struct cplan9_s *hmm, int a, int b, int k, in
  *           Sum the probability of all subpaths that start 
  *           at "start" and end at "end" (ignoring "end"->"end" and
  *           "start" -> "start" transitions if they exist)
- *           also ignore the probability of subpaths that include
- *           an insert state that maps to the same node as a???)
  * 
  *           This function is used to help determine CM plan 9 HMM
  *           transition probabilities. If we're trying to set a particular
@@ -1620,6 +1614,19 @@ hmm_add_single_trans_cp9(CM_t *cm, struct cplan9_s *hmm, int a, int b, int k, in
  * int **cs2hn_map   - 2D CM state to HMM node map, 1st D - CM state index
  *                     2nd D - 0 or 1 (up to 2 matching HMM states), value: HMM node
  *                     that contains state that maps to CM state, -1 if none.
+ * int **cs2hs_map   - 2D CM state to HMM node map, 1st D - CM state index
+ *                     2nd D - 2 elements for up to 2 matching HMM states, 
+ *                     value: HMM STATE (0(M), 1(I), 2(D) that maps to CM state, -1 if none.
+ * 
+ *                     For example: HMM node cs2hn_map[v][0], state cs2hs_map[v][0]
+ *                                  maps to CM state v.
+ * 
+ * int ***hns2cs_map  - 3D HMM node-state to CM state map, 1st D - HMM node index, 2nd D - 
+ *                      HMM state (0(M), 1(I), 2(D)), 3rd D - 2 elements for up to 
+ *                      2 matching CM states, value: CM states that map, -1 if none.
+ *              
+ *                     For example: CM states hns2cs_map[k][0][0] and hns2cs_map[k][0][1]
+ *                                  map to HMM node k's match state.
  * int k             - HMM node we're calc'ing transition (out of node k) for
  * double *psi       - psi[v] is the expected number of times state v is entered
  *                     in a CM parse
@@ -1814,6 +1821,8 @@ check_psi_vs_phi_cp9(CM_t *cm, double *psi, double **phi, int ***hns2cs_map, int
   int v_ct; /* Number of violations not involving dual insert states. */
   double diff;
   int ret_val; /* return value */
+
+  if (cm->flags & CM_LOCAL_BEGIN) Die("internal error: we're in CM local mode while trying to build a CP9 HMM");
 
   ret_val = TRUE;
   v_ct = 0;

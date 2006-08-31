@@ -93,7 +93,7 @@ map_consensus_columns(CM_t *cm, int hmm_ncc, int *node_cc_left, int *node_cc_rig
 				* only when we're in an END state (see rights_exp_stack
 				* comments).
 				*/
-  Nstack_t *rights_exp_stack;       /* pushdown stack used for remembering how right
+  Nstack_t *rights_exp_stack;       /* pushdown stack used for remembering how many ight
 				* bp mates we want to pop from bp_stack.
 				* We pop from this stack (to get popped_rights_exp) 
 				* when we see an END node. And then we pop
@@ -445,6 +445,7 @@ CP9_map_cm2hmm_and_hmm2cm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int
   ks = 1;
   v = 1;
   map_helper(cs2hn_map, cs2hs_map, hns2cs_map, k, ks, v);
+
   /*handle ROOT_IR at end of function*/
   
   /* Step through HMM nodes, filling in maps as we go */
@@ -1152,7 +1153,6 @@ map_helper(int **cs2hn_map, int **cs2hs_map, int ***hns2cs_map, int k, int ks, i
     }
   return;
 }
-
 
 /*****************************************************************************
  * EPN 11.03.05

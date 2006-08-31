@@ -120,7 +120,7 @@ extern void HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh,
 extern Parsetree_t *Transmogrify(CM_t *cm, Parsetree_t *gtr, 
 				 char *dsq, char *aseq, int alen);
 extern void         cm_from_guide(CM_t *cm, Parsetree_t *gtr);
-
+				 
 /* from parsetree.c
  */
 extern Parsetree_t *CreateParsetree(void);
@@ -136,7 +136,7 @@ extern int          ParsetreeCompare(Parsetree_t *t1, Parsetree_t *t2);
 extern void         SummarizeMasterTrace(FILE *fp, Parsetree_t *tr);
 extern void         MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm);
 
-
+				 
 /* from scancyk.c
  */
 extern void  CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
@@ -290,6 +290,9 @@ extern int CP9_cm2wrhmm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *
 			int debug_level);
 extern int CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, int *cc_node_map,
 			   int debug_level);
+extern void fill_psi(CM_t *cm, double *psi, char ***tmap);
+extern void make_tmap(char ****ret_tmap);
+
 
 /* from scaninside.c */
 extern void  InsideScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
@@ -314,5 +317,8 @@ extern float CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, char *dsq);
 extern void CP9NodeForPosn(struct cplan9_s *hmm, int i0, int j0, int x, 
 			   struct cp9_dpmatrix_s *post, int *ret_node, int *ret_type);
 extern void StripWUSSGivenCC(MSA *msa, char **dsq, float gapthresh, int first_match, int last_match);
-extern void DestructCM(CM_t *orig_cm, CM_t **ret_cm, int start_pos, int end_pos);
+extern void BuildSubCM(CM_t *orig_cm, CM_t **ret_cm, int struct_start, int struct_end, int model_start,
+		       int model_end, int **orig2sub_smap, int **sub2orig_smap);
 extern void ConsensusModelmaker(char *ss_cons, int clen, CM_t **ret_cm, Parsetree_t **ret_gtr);
+
+
