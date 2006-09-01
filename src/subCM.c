@@ -19,10 +19,17 @@
 #include "funcs.h"
 #include "hmmer_funcs.h"
 
-static void map_orig2sub_cm(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **sub2orig_smap,
+static void map_orig2sub_cm(CM_t *orig_cm, CM_t *sub_cm, int ***ret_orig2sub_smap, int ***ret_sub2orig_smap,
 			    int sub_start, int sub_end);
 static void map_orig2sub_cm_helper(int **orig2sub_smap, int **sub2orig_smap, int v_o, int v_s);
-
+static void cm2sub_cm_emit_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, int v_s, int v_o1, int v_o2);
+static void cm2sub_cm_trans_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***tmap, int v_s, 
+				  int **orig2sub_smap, int **sub2orig_smap);
+static void cm_add_single_trans(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int v_o, int y_o,
+				int v_s, int yoffset, double *orig_psi, char ***tmap);
+static float cm_sum_subpaths(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int start, int start_s, int end,
+			     char ***tmap, double *psi);
+static void debug_print_cm_params(CM_t *cm);
 /**************************************************************
  * Function: CP9NodeForPosn()
  * EPN 07.25.06 Benasque, Spain
@@ -237,7 +244,9 @@ BuildSubCM(CM_t *orig_cm, CM_t **ret_cm, int struct_start, int struct_end, int m
   char     ***tmap;
   double    *orig_psi;              /* expected num times each state visited in template CM */
   int sub_cpos;
-  
+  int v_s;
+  int v_o1;
+  int v_o2;
 
   /* Get the consensus sequence and consensus structure information from the original CM */
   con = CreateCMConsensus(orig_cm, 3.0, 1.0);
@@ -256,27 +265,34 @@ BuildSubCM(CM_t *orig_cm, CM_t **ret_cm, int struct_start, int struct_end, int m
    */
 
   sub_ct = MallocOrDie(sizeof(int) * (model_end - model_start + 1));
-  /* first just copy ct array for model boundaries from con->ct */
+  /* First just copy ct array for model boundaries from con->ct */
   for (cpos = (model_start-1); cpos < model_end; cpos++)
     {
       sub_cpos = cpos - (model_start-1);
-      sub_ct[sub_cpos] = con->ct[cpos];
+      if(con->ct[cpos] != -1 && 
+	 (con->ct[cpos] <  (model_start-1) ||
+	  con->ct[cpos] >=  model_end))
+	sub_ct[sub_cpos] = -1;
+      else
+	sub_ct[sub_cpos] = con->ct[cpos];
+	
     }
-  /* second remove structure outside structural boundaries */
+  /* Second remove structure outside structural boundaries */
   for (cpos = (model_start-1); cpos < model_end; cpos++)
     {
       sub_cpos = cpos - (model_start-1);
       printf("B sub_ct[cpos=%3d]: %3d\n", sub_cpos, sub_ct[sub_cpos]);
       if ((cpos+1) < struct_start || (cpos+1) > struct_end) /* cpos goes 1..clen, but ct is indexed
-								 * 0..clen-1.*/
-	    { 
-	      if (sub_ct[sub_cpos] != -1)  sub_ct[sub_ct[sub_cpos]] = -1; /* CreateCMConsensus() uses
-									   * -1 in ct[] to indicate single
-									   * stranded (different convention
-									   * than WUSS2ct(). */
-	      sub_ct[cpos] = -1;
-	    }
-      printf("A sub_ct[cpos=%3d]: %3d\n\n", cpos, sub_ct[cpos]);
+							     * 0..clen-1.*/
+	{ 
+
+	  if (sub_ct[sub_cpos] != -1)  sub_ct[sub_ct[sub_cpos]] = -1; /* CreateCMConsensus() uses
+								       * -1 in ct[] to indicate single
+								       * stranded (different convention
+								       * than WUSS2ct(). */
+	  sub_ct[sub_cpos] = -1;
+	}
+      printf("A sub_ct[cpos=%3d]: %3d\n\n", sub_cpos, sub_ct[sub_cpos]);
     }
 
   /* Construct the new structure ss_cons based on the template CM 
@@ -285,7 +301,7 @@ BuildSubCM(CM_t *orig_cm, CM_t **ret_cm, int struct_start, int struct_end, int m
    * does it to get the fully formatted WUSS ([{<>}]) string but 
    * lazily we just do <> bps here.
    */
-  sub_cstr = MallocOrDie(sizeof(char) * (model_end - model_start + 1));
+  sub_cstr = MallocOrDie(sizeof(char) * (model_end - model_start + 2));
   for (cpos = (model_start-1); cpos < model_end; cpos++)
     {
       sub_cpos = cpos - (model_start-1);
@@ -295,11 +311,12 @@ BuildSubCM(CM_t *orig_cm, CM_t **ret_cm, int struct_start, int struct_end, int m
       else if (sub_ct[sub_cpos]  < cpos) sub_cstr[sub_cpos] = '>';
       else Die("ERROR: weird error in BuildSubCM()\n");
     }
+  sub_cstr[(model_end-model_start+1)] = '\0';
 
   /* Build the new subCM given the new consensus structure. But don't
    * parameterize it yet.
    */
-  ConsensusModelmaker(sub_cstr, con->clen, &sub_cm, &mtr);
+  ConsensusModelmaker(sub_cstr, (model_end-model_start+1), &sub_cm, &mtr);
 
   printf("\n\norig struct: %s\n", con->cstr);
   printf("\n\nnew struct : %s\n", sub_cstr);
@@ -316,9 +333,10 @@ BuildSubCM(CM_t *orig_cm, CM_t **ret_cm, int struct_start, int struct_end, int m
   DumpEmitMap(stdout, sub_emap, sub_cm);
 
   /* Map states from orig_cm to sub_cm and vice versa. */
-  map_orig2sub_cm(orig_cm, sub_cm, orig2sub_smap, sub2orig_smap, model_start,
+  map_orig2sub_cm(orig_cm, sub_cm, &orig2sub_smap, &sub2orig_smap, model_start,
 		  model_end);
 
+  /*
   printf("con->clen    : %d\n", con->clen);
   printf("con->cseq    : %s\n", con->cseq);
   printf("con->cstr    : %s\n", con->cstr);
@@ -328,13 +346,40 @@ BuildSubCM(CM_t *orig_cm, CM_t **ret_cm, int struct_start, int struct_end, int m
   printf("model_end    : %d\n", model_end);
   printf("\n\norig struct: %s\n", con->cstr);
   printf("\n\nnew struct : %s\n", sub_cstr);
-
-  exit(1);
+  */
 
   orig_psi = malloc(sizeof(double) * orig_cm->M);
   make_tmap(&tmap);
+  fill_psi(orig_cm, orig_psi, tmap);
   CMZero(sub_cm);
   CMSetNullModel(sub_cm, orig_cm->null);
+
+  /* Fill in emission probabilities */
+  for(v_s = 0; v_s < sub_cm->M; v_s++)
+    {
+      if(sub_cm->sttype[v_s] != S_st &&
+	 sub_cm->sttype[v_s] != D_st &&
+	 sub_cm->sttype[v_s] != B_st &&
+	 sub_cm->sttype[v_s] != E_st &&
+	 sub_cm->sttype[v_s] != EL_st)
+	cm2sub_cm_emit_probs(orig_cm, sub_cm, orig_psi, v_s, sub2orig_smap[v_s][0], sub2orig_smap[v_s][1]);
+    }
+  /* Fill in transition probabilities */
+  for(v_s = 0; v_s < sub_cm->M; v_s++)
+    {
+      if(sub_cm->sttype[v_s] != S_st &&
+	 sub_cm->sttype[v_s] != B_st &&
+	 sub_cm->sttype[v_s] != E_st)
+	cm2sub_cm_trans_probs(orig_cm, sub_cm, orig_psi, tmap, v_s, orig2sub_smap, sub2orig_smap);
+    }
+
+  /* Finally renormalize the CM */
+  CMRenormalize(sub_cm);
+
+  printf("\nDEBUG PRINT OF ORIG_CM PARAMETERS:\n");
+  debug_print_cm_params(orig_cm);
+  printf("\nDEBUG PRINT OF SUB_CM PARAMETERS:\n");
+  debug_print_cm_params(sub_cm);
 
   free(sub_cstr);
   free(sub_ct);
@@ -395,7 +440,7 @@ ConsensusModelmaker(char *ss_cons, int clen, CM_t **ret_cm, Parsetree_t **ret_gt
    *    Even though ss_cons is in the 0..clen-1 coord system of msa, ct[]
    *    comes back in the 1..alen coord system of the sequence.
    */
-  printf("in ConsensusModelmaker: %s\n", ss_cons);
+  printf("in ConsensusModelmaker: clen: %d,  %s\n", clen, ss_cons);
 
   if (! WUSS2ct(ss_cons, clen, FALSE, &ct))  
     Die("Consensus structure string is inconsistent"); 
@@ -589,18 +634,18 @@ ConsensusModelmaker(char *ss_cons, int clen, CM_t **ret_cm, Parsetree_t **ret_gt
 
 /**************************************************************************
  * EPN 08.30.06
- * map_orig2sub_cm()
+ * Function: map_orig2sub_cm()
  * derived loosely from hmmband.c::CP9_map_cm2hmm_and_hmm2cm()
  * Purpose:  Determine maps between a template CM and a sub CM, which probably
  *           has less structure (less MATP n_odes) than the template.
  * Args:    
  * CM_t *orig_cm       - the original template CM
  * CM_t *sub_cm        - the sub CM
- * int **orig2sub_smap - 2D state map from orig_cm (template) to sub_cm.
+ * int ***ret_orig2sub_smap - 2D state map from orig_cm (template) to sub_cm.
  *                       1st dimension - state index in orig_cm 
  *                       2nd D - 2 elements for up to 2 matching sub_cm states, .
  *                       Allocated here, responsibility of caller to free.
- * int **sub2orig_smap - 2D state map from orig_cm (template) to sub_cm.
+ * int ***ret_sub2orig_smap - 2D state map from orig_cm (template) to sub_cm.
  *                       1st dimension - state index in sub_cm (0..sub_cm->M-1)
  *                       2nd D - 2 elements for up to 2 matching orig_cm states, 
  *                       Allocated here, responsibility of caller to free.
@@ -609,7 +654,7 @@ ConsensusModelmaker(char *ss_cons, int clen, CM_t **ret_cm, Parsetree_t **ret_gt
  * Returns: (void) 
  */
 void
-map_orig2sub_cm(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **sub2orig_smap,
+map_orig2sub_cm(CM_t *orig_cm, CM_t *sub_cm, int ***ret_orig2sub_smap, int ***ret_sub2orig_smap,
 		int sub_start, int sub_end)
 {
 
@@ -644,7 +689,12 @@ map_orig2sub_cm(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **sub2orig
   int found_bif;
   char **nodetypes;
   char **sttypes;
-
+  int orig2sub_mapped_lpos;
+  int orig2sub_mapped_rpos;
+  int *orig_cc2lins_map;
+  int *orig_cc2rins_map;
+  int **orig2sub_smap;
+  int **sub2orig_smap;
 
   nodetypes = malloc(sizeof(char *) * 8);
   nodetypes[0] = "BIF";
@@ -702,16 +752,68 @@ map_orig2sub_cm(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **sub2orig
     {
       orig2sub_smap[v_o][0] = -1;
       orig2sub_smap[v_o][1] = -1;
-      if(v_o < sub_cm->M)
-	{
-	  sub2orig_smap[v_o][0] = -1;
-	  sub2orig_smap[v_o][1] = -1;
-	}
+    }
+  for(v_s = 0; v_s < sub_cm->M; v_s++)
+    {
+      sub2orig_smap[v_s][0] = -1;
+      sub2orig_smap[v_s][1] = -1;
+    }
+
+  /* To make things easy, and avoid going traversing the emap multiple times
+   * wastefully, we make maps of which nodes have an insert state that
+   * inserts AFTER (in case of *lmap) and BEFORE (in case of *rmap)
+   * each consensus node. 
+   * orig_cc2lins_map[cc] = v, where orig_cm state v is an IL_st that
+   *                           emits AFTER consensus column cc.
+   * orig_cc2rins_map[cc] = v, where orig_cm state v is an IR_st that
+   *                           emits BEFORE consensus column cc.
+   * if no such state exists the value will be -1.
+   */
+
+  /* Allocate and initialize */
+  orig_cc2lins_map = MallocOrDie(sizeof(int) * orig_emap->clen +2);
+  orig_cc2rins_map = MallocOrDie(sizeof(int) * orig_emap->clen +2);
+  for(cc = 0; cc <= orig_emap->clen+1; cc++)
+    {
+      orig_cc2lins_map[cc] = -1;
+      orig_cc2rins_map[cc] = -1;
+    }
+
+  /* ROOT is special */
+  orig_cc2lins_map[0] = 1; /* ROOT_IL */
+  orig_cc2rins_map[orig_emap->clen+1] = 2; /* ROOT_IR */
+  
+  for(n_o = 0; n_o < orig_cm->nodes; n_o++)
+    {
+      switch (orig_cm->ndtype[n_o]) {
+      case MATP_nd:
+	orig_cc2lins_map[orig_emap->lpos[n_o]] = orig_cm->nodemap[n_o] + 4; /* MATP_IL */
+	orig_cc2rins_map[orig_emap->rpos[n_o]] = orig_cm->nodemap[n_o] + 5; /* MATP_IR */
+	break;
+	
+      case MATL_nd:
+	orig_cc2lins_map[orig_emap->lpos[n_o]] = orig_cm->nodemap[n_o] + 2; /* MATL_IL */
+	break;
+	
+      case MATR_nd:
+	orig_cc2rins_map[orig_emap->rpos[n_o]] = orig_cm->nodemap[n_o] + 2; /* MATR_IR */
+	break;
+	
+      case BEGR_nd:
+	orig_cc2lins_map[orig_emap->lpos[n_o]] = orig_cm->nodemap[n_o] + 1; /* BEGR_IL */
+	break;
+	
+      default: {} /*do nothing*/
+      }
     }
 
   /* Using the *cc_node_maps, traverse the consensus columns left 
    * to right and determine state mappings for MATP, MATL and MATR nodes
-   * first.
+   * first. For orig_cm MATL_nd's that map to sub_cm MATR_nd's and 
+   * orig_cm MATL_nd's that map to sub_cm MATL_nd's we have to be
+   * careful when mapping inserts (because IR's emit on right and
+   * IL's emit on left), to make this easier we use the
+   * orig_cc2lins_map and orig_cc2rins_map's.
    */
   for(cc = sub_start; cc <= sub_end; cc++)
     {
@@ -742,20 +844,27 @@ map_orig2sub_cm(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **sub2orig
 	      v_s++;
 	    }
 	}
-      else /* n_o and n_s are of different node types. */
-	/* case 1: n_o is a MATP, n_s is a MATL 
-	 * case 2: n_o is a MATP, n_s is a MATR 
-	 * any other cases are impossible */
+      /* n_o and n_s are of different node types. 
+       * case 1: n_o is a MATP, n_s is a MATL 
+       * case 2: n_o is a MATP, n_s is a MATR 
+       * case 3: n_o is a MATL, n_s is a MATR
+       * case 4: n_o is a MATR, n_s is a MATL
+       * any other cases are impossible */
+      else if(orig_cm->ndtype[n_o] == MATP_nd) /*case 1 or 2*/
 	{
 	  v_o = orig_cm->nodemap[n_o];
 	  v_s =  sub_cm->nodemap[n_s];
-	  if(orig_cm->ndtype[n_o] != MATP_nd)
-	    Die("ERROR 3 in map_orig2sub_cm()\n");
-	  if(sub_cm->ndtype[n_s] == MATL_nd)
+	  if(sub_cm->ndtype[n_s] != MATL_nd && sub_cm->ndtype[n_s] != MATR_nd)
 	    {
-	      /* Case by case (uchh..)
-	      /* v_o is MATP_MP */
-	      /* v_s is MATL_ML */
+	      printf("orig_cm %4d %4d %4s %2s | sub_cm %4d %4d %4s %2s\n", n_o, v_o, nodetypes[orig_cm->ndtype[n_o]], sttypes[orig_cm->sttype[v_o]], n_s, v_s, nodetypes[sub_cm->ndtype[n_s]], sttypes[sub_cm->sttype[v_s]]);
+	      Die("ERROR 3 in map_orig2sub_cm()\n");
+	    }
+	  
+	  if(sub_cm->ndtype[n_s] == MATL_nd) /* case 1 */
+	    {
+	      /* Case by case (uchh..) 
+	       * v_o is MATP_MP 
+	       * v_s is MATL_ML */
 	      map_orig2sub_cm_helper(orig2sub_smap, sub2orig_smap, v_o, v_s);
 	      v_o++; /* v_o is MATP_ML */
 	      map_orig2sub_cm_helper(orig2sub_smap, sub2orig_smap, v_o, v_s);
@@ -770,7 +879,7 @@ map_orig2sub_cm(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **sub2orig
 	      v_o++; /* v_o is MATP_IL */
 	      map_orig2sub_cm_helper(orig2sub_smap, sub2orig_smap, v_o, v_s);
 	    }
-	  else if(sub_cm->ndtype[n_s] == MATR_nd)
+	  else if(sub_cm->ndtype[n_s] == MATR_nd) /* case 2 */
 	    {
 	      /* Case by case (uchh..)
 	      /* v_o is MATP_MP */
@@ -811,84 +920,131 @@ map_orig2sub_cm(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **sub2orig
 	    {
 	      Die("ERROR for consensus column %d in map_orig2sub_cm() orig node is MATP, but sub node is not MATP, MATL or MATR\n", cc);
 	    }
-	} /* end of else (n_o and n_s are different node types */
+	}
+      else if(orig_cm->ndtype[n_o] == MATL_nd) /*case 3: n_o is MATL n_s is MATR */
+	{
+	  v_o = orig_cm->nodemap[n_o]; /* v_o is MATL_ML */
+	  v_s =  sub_cm->nodemap[n_s]; /* v_s is MATR_MR */
+	  /* sanity check */
+	  if(sub_cm->ndtype[n_s] != MATR_nd)
+	    Die("ERROR 4 in map_orig2sub_cm()\n");
+	  map_orig2sub_cm_helper(orig2sub_smap, sub2orig_smap, v_o, v_s);
+
+	  v_o++; /* v_o is MATL_D */
+	  v_s++; /* v_s is MATR_D */
+	  map_orig2sub_cm_helper(orig2sub_smap, sub2orig_smap, v_o, v_s);
+
+	  v_o = orig_cc2lins_map[cc-1]; /* orig_cm left insert state (if any) that inserts BEFORE cc */
+	  v_s++; /* v_s is MATR_IR, potentially two orig_cm states map to v_s */
+	  if(v_o != -1)
+	    map_orig2sub_cm_helper(orig2sub_smap, sub2orig_smap, v_o, v_s);
+	  v_o = orig_cc2rins_map[cc]; /* orig_cm right insert state (if any) that inserts BEFORE cc */
+	  if(v_o != -1)
+	    map_orig2sub_cm_helper(orig2sub_smap, sub2orig_smap, v_o, v_s);
+
+	  /* sanity check */
+	  if(orig_cc2lins_map[cc-1] == -1 && orig_cc2rins_map[cc] == -1)
+	    Die("ERROR 5 in map_orig2sub_cm() no insert state in orig_cm emits before cc:%d\n", cc);	    
+	}
+      else if(orig_cm->ndtype[n_o] == MATR_nd) /*case 4: n_o is MATR n_s is MATL */
+	{
+	  v_o = orig_cm->nodemap[n_o]; /* v_o is MATR_MR */
+	  v_s =  sub_cm->nodemap[n_s]; /* v_s is MATL_ML */
+	  /* sanity check */
+	  if(sub_cm->ndtype[n_s] != MATL_nd)
+	    Die("ERROR 6 in map_orig2sub_cm()\n");
+	  map_orig2sub_cm_helper(orig2sub_smap, sub2orig_smap, v_o, v_s);
+
+	  v_o++; /* v_o is MATR_D */
+	  v_s++; /* v_s is MATL_D */
+	  map_orig2sub_cm_helper(orig2sub_smap, sub2orig_smap, v_o, v_s);
+
+	  v_o = orig_cc2lins_map[cc]; /* orig_cm left insert state (if any) that inserts AFTER cc */
+	  v_s++; /* v_s is MATL_IL, potentially two orig_cm states map to v_s */
+	  if(v_o != -1)
+	    map_orig2sub_cm_helper(orig2sub_smap, sub2orig_smap, v_o, v_s);
+	  v_o = orig_cc2rins_map[cc+1]; /* orig_cm right insert state (if any) that inserts AFTER cc */
+	  if(v_o != -1)
+	    map_orig2sub_cm_helper(orig2sub_smap, sub2orig_smap, v_o, v_s);
+
+	  /* sanity check */
+	  if(orig_cc2lins_map[cc] == -1 && orig_cc2rins_map[cc+1] == -1)
+	    Die("ERROR 6 in map_orig2sub_cm() no insert state in orig_cm emits after cc:%d\n", cc);	    
+	}
+      else
+	Die("ERROR 7 in map_orig2sub_cm() n_o: %d and n_s: %d, cases 1-4 don't apply.\n");
     }     
   
-  /* TO FIX: for now just map the corresponding ROOT states to each other,
-   * this isn't correct because a ROOT_IL in orig_cm will emit before the 
-   * consensus column 1 while a ROOT_IL in sub_cm will emit before the
-   * consensus column sub_start (which may be > 1)
-   */
+  /* SPECIAL CASE: Map the ROOT_S's to each other */
   v_o = 0; /* ROOT_S */
   v_s = 0; /* ROOT_S */
   map_orig2sub_cm_helper(orig2sub_smap, sub2orig_smap, v_o, v_s);
-  v_o++; /* v_o is ROOT_IL */
-  v_s++; /* v_o is ROOT_IL */
-  map_orig2sub_cm_helper(orig2sub_smap, sub2orig_smap, v_o, v_s);
-  v_o++; /* v_o is ROOT_IR */
-  v_s++; /* v_o is ROOT_IR */
-  map_orig2sub_cm_helper(orig2sub_smap, sub2orig_smap, v_o, v_s);
 
-  /* NOTE we ignore END_E states because they won't ever affect emission
-   * OR transition probabilities.
+  /* Map ROOT_IL, ROOT_IR, and BEGR_IL's in an ugly manner, by looking for the
+   * insert states in the emap that map to them. 
    */
 
-  /* map remaining node types: BIF, BEGL, BEGR */
-  n_s = sub_cm->nodes - 1;
-  n_o = orig_cm->nodes - 1;
+  /* Now map ROOT_IL, ROOT_IR and all BEGR_IL's, we could have either IL or IR
+   * states in orig_cm that map to these guys, so we need to use
+   * both the lmap and rmap. In some cases there may be two orig_cm insert states that
+   * map to a single insert state in sub_cm (due to an ambiguity in the Infernal
+   * grammar).
 
-  for(n_s = sub_cm->nodes - 1; n_s > 0; n_s--)
+  /* ROOT_IL */
+  v_s = 1;
+  v_o = orig_cc2lins_map[sub_start-1]; /* we could have a left emitter that inserts before 
+					* consensus column sub_start */
+  if(v_o != -1)
+    map_orig2sub_cm_helper(orig2sub_smap, sub2orig_smap, v_o, v_s);
+
+  v_o = orig_cc2rins_map[sub_start]; /* we could have a right emitter that inserts before 
+					    * consensus column sub_start */
+  if(v_o != -1)
+    map_orig2sub_cm_helper(orig2sub_smap, sub2orig_smap, v_o, v_s);
+
+  /* ROOT_IR */
+  v_s = 2;
+  v_o = orig_cc2lins_map[sub_end]; /* we could have a left emitter that inserts after
+					* consensus column sub_end */
+  if(v_o != -1)
+    map_orig2sub_cm_helper(orig2sub_smap, sub2orig_smap, v_o, v_s);
+
+  v_o = orig_cc2rins_map[sub_end+1]; /* we could have a right emitter that inserts after
+					  * consensus column sub_end */
+  if(v_o != -1)
+    map_orig2sub_cm_helper(orig2sub_smap, sub2orig_smap, v_o, v_s);
+
+  /* BEGR_ILs */
+  for(n_s = 0; n_s < sub_cm->nodes; n_s++)
     {
-      if(sub_cm->ndtype[n_s] == BIF_nd)
+      if(sub_cm->ndtype[n_s] == BEGR_nd)
 	{
-	  found_bif = FALSE;
-	  while(!found_bif)
-	    {
-	      /* Find the BIF node in orig_cm that maps to n_s. 
-	       * The corresponding orig_cm node is the highest
-	       * numbered node n_o that satisfies:
-	       *    sub_emap[lpos] >= orig_emap[lpos] 
-	       * && sub_emap[rpos] <= orig_emap[rpos] 
-	       */
-	      if(orig_cm->ndtype[n_o] != BIF_nd ||
-		 (orig_cm->ndtype[n_o] == BIF_nd &&
-		  (sub_emap->lpos[n_s] < orig_emap->lpos[n_o] ||
-		   sub_emap->rpos[n_s] < orig_emap->rpos[n_o])))
-		{ n_o--; } 
-	      else
-		{
-		  printf("BIF match sub n: %d orig n: %d\n", n_o, n_s);
-		  found_bif = TRUE;
-		  /* We have a match */
-		  v_o = orig_cm->nodemap[n_o]; /* v_o is BIF_B */
-		  v_s =  sub_cm->nodemap[n_s]; /* v_s is BIF_B */
-		  map_orig2sub_cm_helper(orig2sub_smap, sub2orig_smap, v_o, v_s);
-		  /* we also know the BEGL and BEGR's map */
-		  /* BEGL first */
-		  v_o = orig_cm->cfirst[orig_cm->nodemap[n_o]]; /* v_o is BEGL_S */
-		  v_s =  sub_cm->cfirst[sub_cm->nodemap[n_s]];       /* v_s is BEGL_S */
-		  map_orig2sub_cm_helper(orig2sub_smap, sub2orig_smap, v_o, v_s);
-		  /* now BEGR */
-		  v_o = orig_cm->cnum[orig_cm->nodemap[n_o]]; /* v_o is BEGR_S */
-		  v_s =  sub_cm->cnum[sub_cm->nodemap[n_s]];       /* v_s is BEGR_S */
-		  map_orig2sub_cm_helper(orig2sub_smap, sub2orig_smap, v_o, v_s);
-		  /* and finally BEGR_IL */
-		  /* TO FIX! this orig_cm BEGR_IL doesn't necessarily map 
-		   * to the sub_cm BEGR_IL because these states may emit 
-		   * in front of different consensus columns. */
-		  v_o++; /* v_o is BEGR_IL */
-		  v_s++; /* v_o is BEGR_IL */
-		  map_orig2sub_cm_helper(orig2sub_smap, sub2orig_smap, v_o, v_s);
+	  printf("trying to fill in BEGR_IL for node: %d\n", n_s);
+	  v_s = sub_cm->nodemap[n_s] + 1;
+	  printf("checking lpos (%d + %d -1): %d\n", sub_emap->lpos[n_s], sub_start, (sub_emap->lpos[n_s] + sub_start-1));
+	  v_o = orig_cc2lins_map[(sub_emap->lpos[n_s] + sub_start - 1)];
+	  if(v_o != -1)
+	    map_orig2sub_cm_helper(orig2sub_smap, sub2orig_smap, v_o, v_s);
 
-		  n_o--;
-		}
-	      if(n_o == 0)
-		Die("ERROR no orig_cm node maps to BIF node %d of sub_cm\n", n_s);
-	    }
+	  printf("checking rpos (%d + %d): %d\n", sub_emap->lpos[n_s], sub_start, (sub_emap->lpos[n_s] + sub_start));
+	  v_o = orig_cc2rins_map[(sub_emap->lpos[n_s] + sub_start)];
+	  printf("\t\tv_o: %d | v_s: %d\n", v_o, v_s);
+	  if(v_o != -1)
+	    map_orig2sub_cm_helper(orig2sub_smap, sub2orig_smap, v_o, v_s);
 	}
-    }	  
+    }
+  
+  /* NOTE: We ignore mapping B states, E states and S states (except ROOT_S). We'll handle these guys 
+   * specially when we fill in transition probabilities. The reason we don't map them is that
+   * I think its impossible to do it robustly. I saw cases with SSU where there were BIF nodes in the
+   * sub_cm for which I couldn't figure out which BIF nodes (and correspondingly BEGL and BEGR nodes)
+   * in the orig_cm they should map to. Regardless, even if there is a pretty, nice way I'm abandoning
+   * an attempt to find it for a crude way - we will handle the transitions involving these guys
+   * specially, without a need for a mapping between CMs.
+   */
 
   /* print sub2orig_smap, checking consistency with orig2sub_smap along the way. */
+  printf("\n\n\n");
   for(v_s = 0; v_s < sub_cm->M; v_s++)
     {
       n_s = sub_cm->ndidx[v_s];
@@ -899,12 +1055,22 @@ map_orig2sub_cm(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **sub2orig
 	  printf("sub v:%4d   END\n", v_s);
 	  continue;
 	}
+      if(sub_cm->sttype[v_s] == S_st) 	
+	{
+	  printf("sub v:%4d   START\n", v_s);
+	  continue;
+	}
+      if(sub_cm->sttype[v_s] == B_st) 	
+	{
+	  printf("sub v:%4d   BIF_B\n", v_s);
+	  continue;
+	}
       if(v_o == -1 && sub_cm->sttype[v_s] != E_st)
 	Die("ERROR sub_cm state: %d type: %s node type: %s doesn't map to any state in orig_cm\n", v_s, sttypes[sub_cm->sttype[v_s]], nodetypes[sub_cm->ndtype[n_s]]);
 
       n_o = orig_cm->ndidx[v_o];
       
-      printf("sub v:%4d %6s%6s | orig v:%4d %6s%6s\n", v_s, nodetypes[sub_cm->ndtype[n_s]], sttypes[sub_cm->sttype[v_s]], v_o, nodetypes[orig_cm->ndtype[n_o]], sttypes[orig_cm->sttype[v_o]]);
+      printf("sub v:%4d(%4d) %6s%6s | orig v:%4d(%4d) %6s%6s\n", v_s, n_s, nodetypes[sub_cm->ndtype[n_s]], sttypes[sub_cm->sttype[v_s]], v_o, n_o, nodetypes[orig_cm->ndtype[n_o]], sttypes[orig_cm->sttype[v_o]]);
 
       /* check to make sure orig2sub_smap is consistent */
       if(orig2sub_smap[v_o][0] != v_s && orig2sub_smap[v_o][1] != v_s)
@@ -916,7 +1082,7 @@ map_orig2sub_cm(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **sub2orig
       if(v_o != -1)
 	{
 	  n_o = orig_cm->ndidx[v_o];
-	  printf("                        | orig v:%4d %6s%6s\n", v_o, nodetypes[orig_cm->ndtype[n_o]], sttypes[orig_cm->sttype[v_o]]);
+	  printf("                        | orig v:%4d(%4d) %6s%6s\n", v_o, n_o, nodetypes[orig_cm->ndtype[n_o]], sttypes[orig_cm->sttype[v_o]]);
 	  /* check to make sure orig2sub_smap is consistent */
 	  if(orig2sub_smap[v_o][0] != v_s && orig2sub_smap[v_o][1] != v_s)
 	    {
@@ -924,6 +1090,10 @@ map_orig2sub_cm(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **sub2orig
 	    }
 	}
     }
+
+  *ret_orig2sub_smap = orig2sub_smap;
+  *ret_sub2orig_smap = sub2orig_smap;
+
   return;
 }
 
@@ -975,3 +1145,484 @@ map_orig2sub_cm_helper(int **orig2sub_smap, int **sub2orig_smap, int v_o, int v_
   return;
 }
 
+/**************************************************************************
+ * EPN 08.31.06
+ * cm2sub_cm_emit_probs()
+ *
+ * Purpose:  For a specific sub CM state v_s, determine the 
+ *           emission probabilities using the emission probs 
+ *           of state(s) (up to 2) in the original CM that
+ *           map to it. We weight the contribution of each
+ *           state to the emission probability by it's psi
+ *           value in orig_cm (psi[v] is expected number of 
+ *           times state v is entered in a parse).
+ *
+ * Args:    
+ * CM_t *orig_cm     - the original, template CM
+ * CM_t *sub_cm      - the sub CM 
+ * double *orig_psi  - orig_psi[v] is the expected number of times state v is entered
+ *                     in a CM parse
+ * int v_s           - the sub_cm state we're filling emissions for
+ * int v_o1          - orig_cm state v_s maps to
+ * int v_o2          - orig_cm state v_s maps to (-1 if v_s maps to only 1 state)
+ * Returns: void
+ */
+static void
+cm2sub_cm_emit_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, int v_s, int v_o1, int v_o2)
+{
+  int is_left;
+  int i, j;
+
+  if(v_o1 == -1)
+    Die("ERROR in cm2sub_cm_emit_probs, sub_cm state %d maps to 0 states in orig_cm\n", v_s);
+
+  /* We handle MP's special */
+  if(sub_cm->sttype[v_s] == MP_st)
+    {
+      /* sanity check */
+      if(v_o2 != -1 || orig_cm->sttype[v_o1] != MP_st)
+	Die("ERROR filling emission parameters for sub_cm state: %d\n", v_s);
+      for(i = 0; i < (MAXABET*MAXABET); i++)
+	sub_cm->e[v_s][i] = orig_cm->e[v_o1][i];
+      /* The FNorm shouldn't be necessary, and since we build a new CM for each sequence in --sub mode, 
+	 we skip it */
+      /* FNorm(sub_cm->e[v_s], MAXABET*MAXABET)*/
+      return;
+    }
+
+  /* if we get here, v_s is a singlet emitter */
+  if(sub_cm->sttype[v_s] == ML_st ||
+     sub_cm->sttype[v_s] == IL_st)
+    is_left = TRUE;
+  else 
+    is_left = FALSE;
+  
+  /* Only way two states can map to v_s is if one of them is MP_st,
+   * These are the only states we need to weight emission probs by orig_psi values,
+   * and subsequently only states we need to call FNorm() for */
+  if(orig_cm->sttype[v_o1] == MP_st)
+    {
+      if(v_o2 == -1)
+	Die("ERROR sub_cm state: %d maps to a single state orig MATP_MP state: %d\n", v_s, v_o1);
+
+      for(i = 0; i < MAXABET; i++)
+	if(is_left)
+	  for(j = (i*MAXABET); j < ((i+1)*MAXABET); j++)
+	    sub_cm->e[v_s][i] += orig_psi[v_o1] * orig_cm->e[v_o1][j];
+	else
+	  for(j = i; j < (MAXABET*MAXABET); j+=MAXABET)
+	    sub_cm->e[v_s][i] += orig_psi[v_o1] * orig_cm->e[v_o1][j];
+
+      if(orig_cm->sttype[v_o2] == MP_st)
+	Die("ERROR sub_cm state: %d maps to two MATP_MP states\n", v_s);
+      
+      /*v_o2 must be ML, MR, IL, or IR, which can all be handled identically */
+      for(i = 0; i < MAXABET; i++)
+	sub_cm->e[v_s][i] += orig_psi[v_o2] * orig_cm->e[v_o2][i];
+      FNorm(sub_cm->e[v_s], MAXABET);
+      return;
+    }
+      
+  /* If we get here, v_s maps to a single singlet emitter in orig_cm, v_o1 */
+  if(v_o2 != -1)
+    Die("ERROR sub_cm state: %d maps to two states, neither is MATP_MP\n", v_o1, v_o2);
+
+  for(i = 0; i < MAXABET; i++)
+    sub_cm->e[v_s][i] = orig_cm->e[v_o1][i];
+
+  return;
+}
+
+/**************************************************************************
+ * EPN 08.31.06
+ * cm2sub_cm_trans_probs()
+ *
+ * Purpose:  For a specific sub CM state v_s, determine the 
+ *           transition probabilities going out of v_s, 
+ *           using the psi values for the original template
+ *           CM (orig_cm) (psi[v] is expected number of 
+ *           times state v is entered in a parse).
+ *           First, fill the sub_cm->t[v_s] with 'virtual
+ *           counts', then normalize to probabilities.
+ * 
+ *           This is based on CP9_cm2wrhmm.c::cm2hmm_trans_probs_cp9()
+ *           which was based on formulas/ideas in Zasha Weinberg's
+ *           thesis (p.123).
+ *
+ * Args:    
+ * CM_t *orig_cm     - the original, template CM
+ * CM_t *sub_cm      - the sub CM 
+ * double *orig_psi  - orig_psi[v] is the expected number of times state v is entered
+ *                     in a CM parse
+ * char ***tmap      - the hard-coded transition map
+ * int v_s           - the sub_cm state we're filling emissions for
+ * orig2sub_smap     - 2D state map from orig_cm (template) to sub_cm.
+ *                     1st dimension - state index in orig_cm 
+ *                     2nd D - 2 elements for up to 2 matching sub_cm states, .
+ * sub2orig_smap     - 2D state map from sub_cm to orig_cm.
+ *                     1st dimension - state index in sub_cm (0..sub_cm->M-1)
+ *                     2nd D - 2 elements for up to 2 matching orig_cm states, 
+ * Returns: void
+ */
+static void
+cm2sub_cm_trans_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***tmap, int v_s, int **orig2sub_smap,
+		      int **sub2orig_smap)
+{
+  int v_o;
+  int yoffset;
+  int y_s;
+  int y_o;
+
+  printf("in cm2sub_cm_trans_probs: v_s: %d\n", v_s);
+
+  /* start with the first orig_cm state that maps to v_s */
+  v_o = sub2orig_smap[v_s][0];
+  if(v_o == -1)
+    {
+      if(sub_cm->sttype[v_s] != S_st ||
+	 sub_cm->sttype[v_s] != E_st ||
+	 sub_cm->sttype[v_s] != B_st)
+	/* special cases, S_st, E_st, B_st */
+	Die("ERROR, sub_cm state v_s: %d maps to no state in sub_cm, but it's not a B, E or S state\n", v_s);
+    }
+  else
+    {
+      if(sub_cm->sttype[v_s] == S_st ||
+	 sub_cm->sttype[v_s] == E_st ||
+	 sub_cm->sttype[v_s] == B_st)
+	Die("ERROR, sub_cm state v_s: %d is S, E or B but maps to a orig_cm state: v_o:%d\n", v_o);
+
+      for(yoffset = 0; yoffset < sub_cm->cnum[v_s]; yoffset++)
+	{
+	  y_s = sub_cm->cfirst[v_s] + yoffset;
+	  y_o = sub2orig_smap[y_s][0];
+	  if(y_o == -1)
+	    {
+	      if(sub_cm->sttype[y_s] != B_st &&
+		 sub_cm->sttype[y_s] != E_st)
+		Die("ERROR, sub_cm state y_s: %d (v_s: %d) maps to no state in sub_cm, but it's not a B or E state\n", y_s, v_s);
+	      /* We're transitioning to a BIF_B or END_E; not sure how to handle. */
+	    }
+	  else
+	    cm_add_single_trans(orig_cm, sub_cm, orig2sub_smap, v_o, y_o, v_s, yoffset, orig_psi, tmap);
+
+	  y_o = sub2orig_smap[y_s][1];
+	  cm_add_single_trans(orig_cm, sub_cm, orig2sub_smap, v_o, y_o, v_s, yoffset, orig_psi, tmap);
+	}
+    }
+
+  /* move on to the second orig_cm state that maps to v_s */
+  v_o = sub2orig_smap[v_s][1];
+  if(v_o != -1)
+    {
+      for(yoffset = 0; yoffset < sub_cm->cnum[v_s]; yoffset++)
+	{
+	  y_s = sub_cm->cfirst[v_s] + yoffset;
+	  y_o = sub2orig_smap[y_s][0];
+	  if(y_o == -1)
+	    {
+	      if(sub_cm->sttype[y_s] != B_st &&
+		 sub_cm->sttype[y_s] != E_st)
+		Die("ERROR, sub_cm state y_s: %d (v_s: %d) maps to no state in sub_cm, but it's not a B or E state\n", y_s, v_s);
+	      /* We're transitioning to a BIF_B or END_E; not sure how to handle. */
+	    }
+	  else
+	    cm_add_single_trans(orig_cm, sub_cm, orig2sub_smap, v_o, y_o, v_s, yoffset, orig_psi, tmap);
+
+	  y_o = sub2orig_smap[y_s][1];
+	  cm_add_single_trans(orig_cm, sub_cm, orig2sub_smap, v_o, y_o, v_s, yoffset, orig_psi, tmap);
+	}
+    }
+
+  return;
+}
+/**************************************************************************
+ * EPN 08.31.06
+ * Function: cm_add_single_trans()
+ *
+ * Purpose:  Add a virtual counts contribution to a single CM transition.
+ * 
+ * See related functions for explanation of parameters. 
+ * Returns: (void) 
+ */
+static void
+cm_add_single_trans(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int v_o, int y_o, int v_s, int yoffset, double *orig_psi, char ***tmap)
+{
+  /* check if we've got real CM state ids */
+  if(v_o == -1 || y_o == -1)
+    return;
+
+  if(v_o <= y_o) /* going DOWN the CM */
+    sub_cm->t[v_s][yoffset] += orig_psi[v_o] * cm_sum_subpaths(orig_cm, sub_cm, orig2sub_smap, v_o, y_o, v_s, tmap, orig_psi);
+  else if (v_o > y_o) /* going UP the CM */
+    sub_cm->t[v_s][yoffset] += orig_psi[y_o] * cm_sum_subpaths(orig_cm, sub_cm, orig2sub_smap, y_o, v_o, v_s, tmap, orig_psi);
+}
+
+/**************************************************************************
+ * EPN 08.31.06
+ * Function: cm_sum_subpaths()
+ *
+ * Purpose:  Calculated probability of getting from one state (start) to 
+ *           another (end) in a CM, taking special considerations. 
+ * 
+ *           This function is similar to CP9_cm2wrhmm::cm_sum_subpaths_cp9()
+ *           but was written for mapping transitions in a template CM (orig_cm)
+ *           to those in a sub CM built from that template.
+ * 
+ *           Sum the probability of all subpaths that start 
+ *           at "start" and end at "end" (ignoring "end"->"end" and
+ *           "start" -> "start" transitions if they exist)
+ * 
+ *           NOT SURE HOW TO PORT THIS:!
+ *           When getting a transition probability for the sub_cm state v, we ignore the 
+ *           contribution of subparses that correspond to other transitions out of 
+ *           the same node that state v is in.
+ *           For example, we don't want to include the probability of an 
+ *           insert(node a) ->match (node a+1) sub parse when calculating
+ *           the transition probability for match(node a) -> match (node a+1), 
+ *           (CTMM) because CTIM maps to that transition. 
+ *          
+ * Args:    
+ * CM_t *orig_cm     - the original, template CM
+ * CM_t *sub_cm      - the sub CM
+ * int start         - state index we're starting at
+ * int end           - state index we're ending in
+ * int start_s       - state index in sub_cm that start maps to
+ * double *psi       - for orig_cm: psi[v] is the expected number of times state v is entered
+ *                     in a CM parse
+ * Returns: Float, the summed probability of all subpaths through the CM
+ *          starting at "start" and ending at "end".
+ */
+static float
+cm_sum_subpaths(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int start, int end, int start_s, char ***tmap, double *psi)
+{
+  int v; /* state index in CM */
+  
+  double *sub_psi; /*sub_psi[v] is the expected number of times state v is
+		    * entered given we started at state "start", this is
+		    * the summed probability of all paths starting at "start"
+		    * and ending at v.
+		    */
+  float to_return;
+  int y;
+  int x;
+  char tmap_val;
+  int n_v; /* CM node containing state v*/
+  int is_insert; /* 1 if v is insert, 0 if not */
+  float insert_to_start; /* is start is not an insert and the insert state of 
+			  * HMM node k < start, this is the
+			  * contribution of insert -> start (which should be ignored
+			  * because the TMI and TDI transitions solely map to
+			  * this transition probability.
+			  */
+  int s_n;
+  int e_n;
+
+  /*printf("\nin cm_sum_subpaths2, start: %d | end: %d\n", start, end);*/
+  if(start > end)
+    {
+      printf("ERROR in cm_sum_subpaths2: start: %d > end: %d\n", start, end);
+      exit(1);
+    }
+  if(start == end)
+    {
+      if(orig_cm->sttype[start] != IL_st && orig_cm->sttype[start] != IR_st)
+	{
+	  /* This is possible, though unlikely. It only happens (I think and hope) if
+	   * we've got two adjacent (k and k+1) columns modelled by the same MATP node n, 
+	   * so when setting a transition from node k ->  node k+1, we enter this function
+	   * three times with start == end. Once with each MATP_MP, MATP_ML, MATP_MR, and MATP_D
+	   * because these states map to the beginning and ending states of the M_k->M_k+1, 
+	   * M_k->D_k+1, D_k->M_k+1, and D_k->D_k+1 transitions respectively. 
+	   * The solution is to return 1.0, 
+	   * so the contribution is simply psi[MATP_M*] (in the function 
+	   * hmm_add_single_trans_cp9 that called this function).
+	   */
+	  if((orig_cm->stid[start] != MATP_MP && orig_cm->stid[start] != MATP_D) && 
+	     (orig_cm->stid[start] != MATP_ML && orig_cm->stid[start] != MATP_MR))
+	    {
+	      printf("ERROR asking for self transition of non-insert, non-MATP state: %d\n", start);
+	      exit(1);
+	    }
+	  return 1.0;
+	}
+      return orig_cm->t[start][0];
+    }
+  to_return = 0.;
+  
+  sub_psi = malloc(sizeof(double) * (end - start + 1));
+  /* Initialize sub_psi[0]. Need to check if we need to ignore the probability
+   * mass from the ORIG_CM insert state(s) that maps to the HMM insert state of this node 
+   * (these insert states are hns2cs_map[k][1][0] and (potentially) hns2cs_map[k][1][1]) 
+   * that goes through "start" (which must map to either the M or 
+   * D state of this HMM node).
+   */
+  sub_psi[0] = 1.; /* have to start in "start" */
+  
+  if((orig_cm->sttype[start] != IL_st && orig_cm->sttype[start] != IR_st) &&
+     (orig_cm->sttype[end] != IL_st && orig_cm->sttype[end] != IR_st))
+    {
+      /* 08.31.06 TO DO: NOT SURE HOW TO DO THE EQUIVALENT WITH CM TO CM 
+       * I THINK I MIGHT NEED TO KNOW THE INDEX OF THE INSERTS IN THE sub_cm
+       * NODE THAT CONTAINS v_s
+
+      insert_to_start = 0.;
+      if(hns2cs_map[k][1][0] < start) 
+	insert_to_start = psi[hns2cs_map[k][1][0]] * cm_sum_subpaths(cm, hns2cs_map[k][1][0], start, tmap, cs2hn_map, cs2hs_map, hns2cs_map, k, psi);
+      if((hns2cs_map[k][1][1] != -1) && (hns2cs_map[k][1][1] < start))
+	insert_to_start += psi[hns2cs_map[k][1][1]] * cm_sum_subpaths(cm, hns2cs_map[k][1][1], start, tmap, cs2hn_map, cs2hs_map, hns2cs_map, k, psi);
+      sub_psi[0] -= insert_to_start / psi[start];
+      */
+    }
+  /* note: when cm_sum_subpaths is called recursively above
+   * it will never result in another recursive call, 
+   * because its "start" is an insert state.  
+   */
+  
+  for (v = (start+1); v <= end; v++) 
+    {
+      sub_psi[v-start] = 0.;
+      n_v = orig_cm->ndidx[v];
+      if(orig_cm->sttype[v] == IL_st || orig_cm->sttype[v] == IR_st)
+	is_insert = 1;
+      else
+	is_insert = 0;
+      
+      if(orig_cm->sttype[v] == S_st)
+	{
+	  /* previous state is necessarily either a BIF_B or a END_E, either
+	   * way, there's no transitions FROM previous state to this state, so
+	   * we handle this in a special way.*/
+	  sub_psi[v-start] = sub_psi[(v-1)-start] * 1.;
+	}
+      /*if((v != end && is_insert) && ((cs2hn_map[v][0] == k) || cs2hn_map[v][1] == k))*/
+      /* HEREHEREHERE */
+      /* DO I HAVE TO CHECK 4 POSSIBILITIES? HERE */
+
+      if((v != end && is_insert) && ((sub_cm->nodemap[orig2sub_smap[v][0]] == sub_cm->nodemap[orig2sub_smap[start][0]] ||
+				      sub_cm->nodemap[orig2sub_smap[v][1]] == sub_cm->nodemap[orig2sub_smap[start][0]]) ||
+				     (sub_cm->nodemap[orig2sub_smap[v][0]] == sub_cm->nodemap[orig2sub_smap[start][1]] ||
+				      sub_cm->nodemap[orig2sub_smap[v][1]] == sub_cm->nodemap[orig2sub_smap[start][1]])))
+	{
+	  /*skip the contribution*/
+	  /*printf("v: %d | skipping the contribution\n", v);
+	    printf("\tcs2hn_map[%d][0] : %d\n", v, cs2hn_map[v][0]);
+	    printf("\tcs2hn_map[%d][1] : %d\n", v, cs2hn_map[v][1]);
+	    printf("\tcs2hn_map[start][0] : %d\n", v, cs2hn_map[start][0]);
+	    printf("\tcs2hn_map[start][1] : %d\n", v, cs2hn_map[start][1]);
+	  */
+	}
+      else 
+	{
+	  for (y = orig_cm->pnum[v]-1; y >= is_insert; y--) 
+	    {
+	      x = orig_cm->plast[v] - y;
+	      /* x is a parent of v, we're adding contribution 
+	       * of transition from x to v. */
+	      tmap_val = tmap[(int) orig_cm->stid[x]][(int) orig_cm->ndtype[orig_cm->ndidx[v]+is_insert]][(int) orig_cm->stid[v]];
+	      if(tmap_val == -1)
+		{
+		  printf("tmap ERROR 1\n");
+		  printf("v: %d | pnum[v]: %d | plast[v]: %d | y: %d | x: %d | d1: %d | d2: %d | d3: %d\n", v, orig_cm->pnum[v], orig_cm->plast[v], y, x, ((int) orig_cm->stid[x]), ((int) (orig_cm->ndtype[orig_cm->ndidx[v]+is_insert])), ((int) orig_cm->stid[v]));
+		  exit(1);
+		}
+	      if((x - start) < 0)
+		sub_psi[v-start] += 0.;
+	      else
+		sub_psi[v-start] += sub_psi[x-start] * orig_cm->t[x][(int) tmap_val];
+	    }
+	  if(v != end && is_insert) /* we don't want to include the probability of an 
+				       insert self-loop to end itself */
+	    {	  
+	      sub_psi[v-start] += sub_psi[v-start] * (orig_cm->t[v][0] / (1-orig_cm->t[v][0])); 
+	      /*the contribution of the self insertion loops*/
+	    }
+	}
+    }
+  to_return = (float) sub_psi[end-start];
+  free(sub_psi);
+  return to_return;
+}
+/**************************************************************************
+ * EPN 09.01.06
+ * debug_print_cm_params()
+ *
+ * Purpose:  Print out emission and transition probabilities and scores
+ *           for a CM.
+ *
+ * Args:    
+ * CM_t *cm     
+ * Returns: (void) 
+ */
+void
+debug_print_cm_params(CM_t *cm)
+{
+  int v, i;
+  int yoffset;
+
+  char **nodetypes;
+  char **sttypes;
+
+  nodetypes = malloc(sizeof(char *) * 8);
+  nodetypes[0] = "BIF";
+  nodetypes[1] = "MATP";
+  nodetypes[2] = "MATL";
+  nodetypes[3] = "MATR";
+  nodetypes[4] = "BEGL";
+  nodetypes[5] = "BEGR";
+  nodetypes[6] = "ROOT";
+  nodetypes[7] = "END";
+
+  sttypes = malloc(sizeof(char *) * 10);
+  sttypes[0] = "D";
+  sttypes[1] = "MP";
+  sttypes[2] = "ML";
+  sttypes[3] = "MR";
+  sttypes[4] = "IL";
+  sttypes[5] = "IR";
+  sttypes[6] = "S";
+  sttypes[7] = "E";
+  sttypes[8] = "B";
+  sttypes[9] = "EL";
+
+  printf("cm->nodes: %d\n", cm->nodes);
+  printf("cm->M:     %d\n", cm->M);
+  for(v = 0; v < cm->M; v++)
+    {
+      printf("v:%4d:%4d %4s %2s\n", v, cm->ndidx[v], nodetypes[cm->ndtype[cm->ndidx[v]]], sttypes[cm->sttype[v]]);
+      if(cm->sttype[v] == MP_st)
+	{
+	  printf("\tE: ");
+	  for(i = 0; i < MAXABET*MAXABET; i++)
+	    printf("%0.3f ", cm->e[v][i]);
+	  printf("\n");
+	}
+      else if(cm->sttype[v] == ML_st ||
+	      cm->sttype[v] == MR_st ||
+	      cm->sttype[v] == IL_st ||
+	      cm->sttype[v] == IR_st)
+	{
+	  printf("\tE: ");
+	  for(i = 0; i < MAXABET; i++)
+	    printf("%0.3f ", cm->e[v][i]);
+	  printf("\n");
+	}
+      if(cm->sttype[v] != B_st && cm->sttype[v] != E_st)
+	{
+	  printf("\tT: ");
+	  for(yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
+	    printf("%0.3f ", cm->t[v][yoffset]);
+	  printf("\n");
+	}	    
+      else if(cm->sttype[v] == B_st)
+	{
+	  printf("\tL: %d | R: %d\n", cm->cfirst[v], cm->cnum[v]);
+	}
+      else if(cm->sttype[v] == E_st)
+	printf("\n\n");
+    }
+  free(nodetypes);
+  free(sttypes);
+  printf("\n\n");
+  return;
+}

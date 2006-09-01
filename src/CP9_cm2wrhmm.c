@@ -56,8 +56,8 @@ hmm_add_single_trans_cp9(CM_t *cm, struct cplan9_s *hmm, int a, int b, int k, in
 			 double *psi, char ***tmap, int **cs2hn_map, int **cs2hs_map, int ***hns2cs_map);
 
 static float
-cm_sum_subpaths(CM_t *cm, int start, int end, char ***tmap, int **cs2hn_map, int **cs2hs_map, 
-		int ***hns2cs_map, int k, double *psi);
+cm_sum_subpaths_cp9(CM_t *cm, int start, int end, char ***tmap, int **cs2hn_map, int **cs2hs_map, 
+		    int ***hns2cs_map, int k, double *psi);
 
 static int
 check_psi_vs_phi_cp9(CM_t *cm, double *psi, double **phi, int ***hns2cs_map, int hmm_M,
@@ -337,7 +337,7 @@ fill_psi(CM_t *cm, double *psi, char ***tmap)
 	      /*printf("after: psi[%d]: %f\n", v, psi[v]);*/
 	    }
 	}
-      printf("psi[%d]: %15f\n", v, psi[v]);
+      /*printf("psi[%d]: %15f\n", v, psi[v]);*/
     }  
   /* Sanity check. For any node the sum of psi values over
    * all split set states should be 1.0. 
@@ -1541,7 +1541,7 @@ fill_phi_cp9(struct cplan9_s *hmm, double **phi)
 
 /**************************************************************************
  * EPN 03.15.06
- * hmm_add_single_trans_cp9()
+ * Function: hmm_add_single_trans_cp9()
  *
  * Purpose:  Add a virtual counts contribution to a single CM plan 9 HMM transition. 
  *  
@@ -1582,14 +1582,14 @@ hmm_add_single_trans_cp9(CM_t *cm, struct cplan9_s *hmm, int a, int b, int k, in
     return;
 
   if(a <= b) /* going DOWN the CM */
-    hmm->t[k][hmm_trans_idx] += psi[a] * cm_sum_subpaths(cm, a, b, tmap, cs2hn_map, cs2hs_map, hns2cs_map, k, psi);
+    hmm->t[k][hmm_trans_idx] += psi[a] * cm_sum_subpaths_cp9(cm, a, b, tmap, cs2hn_map, cs2hs_map, hns2cs_map, k, psi);
   else if (a > b) /* going UP the CM */
-    hmm->t[k][hmm_trans_idx] += psi[b] * cm_sum_subpaths(cm, b, a, tmap, cs2hn_map, cs2hs_map, hns2cs_map, k, psi);
+    hmm->t[k][hmm_trans_idx] += psi[b] * cm_sum_subpaths_cp9(cm, b, a, tmap, cs2hn_map, cs2hs_map, hns2cs_map, k, psi);
 }
 
 /**************************************************************************
  * EPN 02.24.06
- * cm_sum_subpaths()
+ * cm_sum_subpaths_cp9()
  *
  * Purpose:  Calculated probability of getting from one state (start) to 
  *           another (end) in a CM, taking special considerations. 
@@ -1634,7 +1634,7 @@ hmm_add_single_trans_cp9(CM_t *cm, struct cplan9_s *hmm, int a, int b, int k, in
  *          starting at "start" and ending at "end".
  */
 static float
-cm_sum_subpaths(CM_t *cm, int start, int end, char ***tmap, int **cs2hn_map, 
+cm_sum_subpaths_cp9(CM_t *cm, int start, int end, char ***tmap, int **cs2hn_map, 
 		 int **cs2hs_map, int ***hns2cs_map, int k, double *psi)
 {
   int s_n; /* CM node that maps to HMM node with start state */
@@ -1659,10 +1659,10 @@ cm_sum_subpaths(CM_t *cm, int start, int end, char ***tmap, int **cs2hn_map,
 			  * this transition probability.
 			  */
 
-  /*printf("\nin cm_sum_subpaths2, start: %d | end: %d\n", start, end);*/
+  /*printf("\nin cm_sum_subpaths_cp9, start: %d | end: %d\n", start, end);*/
   if(start > end)
     {
-      printf("ERROR in cm_sum_subpaths2: start: %d > end: %d\n", start, end);
+      printf("ERROR in cm_sum_subpaths_cp9: start: %d > end: %d\n", start, end);
       exit(1);
     }
   if(start == end)
@@ -1707,12 +1707,12 @@ cm_sum_subpaths(CM_t *cm, int start, int end, char ***tmap, int **cs2hn_map,
     {
       insert_to_start = 0.;
       if(hns2cs_map[k][1][0] < start) 
-	insert_to_start = psi[hns2cs_map[k][1][0]] * cm_sum_subpaths(cm, hns2cs_map[k][1][0], start, tmap, cs2hn_map, cs2hs_map, hns2cs_map, k, psi);
+	insert_to_start = psi[hns2cs_map[k][1][0]] * cm_sum_subpaths_cp9(cm, hns2cs_map[k][1][0], start, tmap, cs2hn_map, cs2hs_map, hns2cs_map, k, psi);
       if((hns2cs_map[k][1][1] != -1) && (hns2cs_map[k][1][1] < start))
-	insert_to_start += psi[hns2cs_map[k][1][1]] * cm_sum_subpaths(cm, hns2cs_map[k][1][1], start, tmap, cs2hn_map, cs2hs_map, hns2cs_map, k, psi);
+	insert_to_start += psi[hns2cs_map[k][1][1]] * cm_sum_subpaths_cp9(cm, hns2cs_map[k][1][1], start, tmap, cs2hn_map, cs2hs_map, hns2cs_map, k, psi);
       sub_psi[0] -= insert_to_start / psi[start];
     }
-  /* note: when cm_sum_subpaths is called recursively above
+  /* note: when cm_sum_subpaths_cp9 is called recursively above
    * it will never result in another recursive call, 
    * because its "start" is an insert state.  
    */

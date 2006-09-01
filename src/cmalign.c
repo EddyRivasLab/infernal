@@ -788,7 +788,13 @@ main(int argc, char **argv)
 	      /* Given the original CM, and the start and end HMM nodes, build a new CM by removing
 	       * structure outside the start and end HMM nodes, and marginalizing.
 	       */
-	      BuildSubCM(cm, &ds_cm, hmm_start_node, hmm_end_node, 1, cp9_hmm->M, orig2sub_smap, sub2orig_smap);
+	      /* Uncomment below to build a subCM with same number of consensus columns, just structure
+	       * removed. */
+	      /*BuildSubCM(cm, &ds_cm, hmm_start_node, hmm_end_node, 1, cp9_hmm->M, orig2sub_smap, sub2orig_smap);*/
+
+	      /* Uncomment below to build a subCM that only models consensus columns between HMM start and end
+	       * node. */
+	      BuildSubCM(cm, &ds_cm, hmm_start_node, hmm_end_node, hmm_start_node, hmm_end_node, orig2sub_smap, sub2orig_smap);
 	      exit(1);
 
 	      /* a temporary function to remove structure outside the columns of the MSA that are before the 
