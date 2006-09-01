@@ -135,6 +135,8 @@ extern void         ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq
 extern int          ParsetreeCompare(Parsetree_t *t1, Parsetree_t *t2);
 extern void         SummarizeMasterTrace(FILE *fp, Parsetree_t *tr);
 extern void         MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm);
+extern MSA *Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt, 
+				 Parsetree_t **tr, int nseq, int do_full);
 
 				 
 /* from scancyk.c
