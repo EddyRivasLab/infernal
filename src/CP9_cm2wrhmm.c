@@ -26,6 +26,7 @@
 
 #include "squid.h"
 #include "sre_stack.h"
+#include "dirichlet.h"
 
 #include "funcs.h"
 #include "hmmer_structs.h"
@@ -63,20 +64,22 @@ static int
 check_psi_vs_phi_cp9(CM_t *cm, double *psi, double **phi, int ***hns2cs_map, int hmm_M,
 		     double threshold, int debug_level);
 
-static int
+static int 
 check_cm_adj_bp(CM_t *cm, int *cc_node_map, int hmm_M);
 
 
-static void
+static void 
 CP9_fake_tracebacks(char **aseq, int nseq, int alen, int *matassign, struct cp9trace_s ***ret_tr);
 
-static void
+static void 
 CP9TraceCount(struct cplan9_s *hmm, char *dsq, float wt, struct cp9trace_s *tr);
 
-static void
-CP9_annotate_model(struct cplan9_s *hmm, int *matassign, MSA *msa);
+static char *
+CP9Statetype(char st);
 
-static char *CP9Statetype(char st);
+static int 
+CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float thresh, 
+		     int dual_mapping_insert);
 
 /**************************************************************************
  * EPN 03.12.06
@@ -2157,15 +2160,19 @@ CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, int *cc_node_
  * Args:    
  * CM_t *cm          - the CM
  * cplan9_s *hmm     - the HMM
- * float thresh      - probability threshold parameters of two HMMs must be
- *                     within for the models to 'pass'
+ * int ***hns2cs_map - 3D HMM node-state to CM state map, 1st D - HMM node index, 2nd D - 
+ *                     HMM state (0(M), 1(I), 2(D)), 3rd D - 2 elements for up to 
+ *                     2 matching CM states, value: CM states that map, -1 if none.
+ *                     For example: CM states hns2cs_map[k][0][0] and hns2cs_map[k][0][1]
+ *                                  map to HMM node k's match state.
+ * float thresh      - probability threshold for chi squared test
  * int nseq          - number of sequences to sample to build the new HMM.
  *
  * Returns: TRUE: if CM and HMM are "close enough" (see code)
  *          FALSE: otherwise
  */
 int 
-CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, float thresh,
+CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, float thresh,
 			    int nseq)
 {
   int ret_val;         /* return value */
@@ -2174,75 +2181,127 @@ CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, float thresh,
   SQINFO            *sqinfo;    /* info about sequences (name/desc)        */
   MSA               *msa;       /* alignment */
   float             *wgt;
-  int i, idx;
+  int i, idx, nd;
   int L;
   int apos;
   int *matassign;
-  struct cp9trace_s **cp9_tr;        /* fake tracebacks for each seq        */
-  struct cplan9_s  *shmm;        /* the new, CM plan9 HMM; built by sampling */
+  struct cp9trace_s **cp9_tr;   /* fake tracebacks for each seq            */
+  struct cplan9_s  *shmm;       /* the new, CM plan9 HMM; built by sampling*/
+  int msa_nseq;                 /* this is the number of sequences per MSA,
+				 * current strategy is to sample (nseq/nseq_per_msa)
+				 * alignments from the CM, and add counts from
+				 * each to the shmm in counts form (to limit memory)
+				 */
+  int nsampled;                 /* number of sequences sampled thus far */
+  int *dual_mapping_insert; /* dual_mapping_insert[nd] is TRUE if the HMM insert state 
+			     * of node nd maps to 2 CM insert states, 
+			     * these situations are impossible for the HMM to mirror exactly
+			     * (with a single insert state) due to the self insert transitions. 
+			     * For example there's only one way for the HMM to emit 3 residues
+			     * from this insert state, but 4 ways for the CM to emit 3 residues
+			     * from the combo of the 2 CM inserts (3 from A, 3 from B, 1 from A and
+			     * 2 from B, or 2 from A and 1 from B.) This is impossible to model
+			     * with the same probabilities by the single HMM insert self transition. 
+			     */
+
+  ret_val = TRUE;
+  /* Determine which nodes of the HMM have dual mapping inserts */
+  dual_mapping_insert = MallocOrDie(sizeof(int) * hmm->M);
+  for(nd = 0; nd <= hmm->M; nd++)
+    if(hns2cs_map[nd][HMMINSERT][1] != -1)
+      dual_mapping_insert[nd] = 1;
+    else
+      dual_mapping_insert[nd] = 0;
+      
+  msa_nseq = 1000;
+  /* Allocate and normalize the new HMM we're going to build by sampling from
+   * the CM.
+   */
+  shmm = AllocCPlan9(hmm->M);
+  ZeroCPlan9(shmm);
 
   CPlan9Renormalize(hmm);
   CMRenormalize(cm);
 
-  /* sample an MSA from the CM */
-  dsq    = MallocOrDie(sizeof(char *)    * nseq);
-  tr     = MallocOrDie(sizeof(Parsetree_t) * nseq);
-  sqinfo = MallocOrDie(sizeof(SQINFO)             * nseq);
-  wgt    = MallocOrDie(sizeof(float)              * nseq);
-  FSet(wgt, nseq, 1.0);
+  /* sample MSA(s) from the CM */
+  nsampled = 0;
+  dsq    = MallocOrDie(sizeof(char *)             * msa_nseq);
+  tr     = MallocOrDie(sizeof(Parsetree_t)        * msa_nseq);
+  sqinfo = MallocOrDie(sizeof(SQINFO)             * msa_nseq);
+  wgt    = MallocOrDie(sizeof(float)              * msa_nseq);
+  FSet(wgt, msa_nseq, 1.0);
 
-  for (i = 0; i < nseq; i++)
+  while(nsampled < nseq)
     {
-      EmitParsetree(cm, &(tr[i]), NULL, &(dsq[i]), &L);
-      sprintf(sqinfo[i].name, "seq%d", i+1);
-      sqinfo[i].len   = L;
-      sqinfo[i].flags = SQINFO_NAME | SQINFO_LEN;
-    }
-  msa = Parsetrees2Alignment(cm, dsq, sqinfo, NULL, tr, nseq, TRUE);
+      /*printf("nsampled: %d\n", nsampled);*/
+      if(nsampled != 0)
+	{
+	  MSAFree(msa);
+	  free(matassign);
+	  for (i = 0; i < msa_nseq; i++)
+	    {
+	      CP9FreeTrace(cp9_tr[i]);
+	      FreeParsetree(tr[i]);
+	      free(dsq[i]);
+	    }
+	  free(cp9_tr);
+	}
+      /* Emit msa_nseq parsetrees from the CM */
+      if(nsampled + msa_nseq > nseq)
+	msa_nseq = nseq - nsampled;
+      for (i = 0; i < msa_nseq; i++)
+	{
+	  EmitParsetree(cm, &(tr[i]), NULL, &(dsq[i]), &L);
+	  sprintf(sqinfo[i].name, "seq%d", i+1);
+	  sqinfo[i].len   = L;
+	  sqinfo[i].flags = SQINFO_NAME | SQINFO_LEN;
+	}
+      /* Build a new MSA from these parsetrees */
+      msa = Parsetrees2Alignment(cm, dsq, sqinfo, NULL, tr, msa_nseq, TRUE);
 
-  /* Now we have an msa, treat it as input for a new CP9 HMM,
-   * use HMMER's 'hand' model making strategy, use RF notation
-   * from the msa (which correspond to emissions from match states
-   * of the CM). 
+      /* Determine match assignment from RF annotation
+       */
+      matassign = (int *) MallocOrDie (sizeof(int) * (msa->alen+1));
+      matassign[0] = 0;
+      for (apos = 0; apos < msa->alen; apos++)
+	{
+	  matassign[apos+1] = 0;
+	  if (!isgap(msa->rf[apos])) 
+	    matassign[apos+1] = 1;
+	}
+      /* make fake tracebacks for each seq */
+      CP9_fake_tracebacks(msa->aseq, msa->nseq, msa->alen, matassign, &cp9_tr);
+      
+      /* build model from tracebacks (code from HMMER's modelmakers.c::matassign2hmm() */
+      for (idx = 0; idx < msa->nseq; idx++) {
+	CP9TraceCount(shmm, dsq[idx], msa->wgt[idx], cp9_tr[idx]);
+      }
+      nsampled += msa_nseq;
+    }
+
+  /* The new shmm is in counts form, filled with observations from MSAs sampled
+   * from the CM. 
+   * We want to do a series of chi-squared tests to determine the probability that
+   * the observed samples from the CM were not taken from the corresponding CM Plan 9
+   * HMM probability distributions (the CM Plan 9 is supposed to exactly mirror the 
+   * CM in this way).
    */
-  matassign = (int *) MallocOrDie (sizeof(int) * (msa->alen+1));
-  /* Determine match assignment from RF annotation
-   */
-  matassign[0] = 0;
-  for (apos = 0; apos < msa->alen; apos++)
+
+  /* Node 0 is special */
+  for(nd = 0; nd <= shmm->M; nd++)
     {
-      matassign[apos+1] = 0;
-      if (!isgap(msa->rf[apos])) 
-	matassign[apos+1] = 1;
+      if(!(CP9_node_chi_squared(hmm, shmm, nd, thresh, dual_mapping_insert[nd])))
+	{
+	  /*Die("ERROR: chi_squared test failed for node: %d\n", nd);*/
+	  printf("ERROR: chi_squared test failed for node: %d\n", nd);
+	  ret_val = FALSE;
+	}
     }
-  /* make fake tracebacks for each seq */
-  CP9_fake_tracebacks(msa->aseq, msa->nseq, msa->alen, matassign, &cp9_tr);
-
-  /* build model from tracebacks (code from HMMER's modelmakers.c::matassign2hmm() */
-  shmm = AllocCPlan9(hmm->M);
-  ZeroCPlan9(shmm);
-  for (idx = 0; idx < msa->nseq; idx++) {
-    CP9TraceCount(shmm, dsq[idx], msa->wgt[idx], cp9_tr[idx]);
-  }
-
-				/* annotate new model */
-  CP9_annotate_model(shmm, matassign, msa);
-
-  /* Set #=RF line of alignment to reflect our assignment
-   * of match, delete. matassign is valid from 1..alen and is off
-   * by one from msa->rf.
-   */
-  if (msa->rf != NULL) free(msa->rf);
-  msa->rf = (char *) MallocOrDie (sizeof(char) * (msa->alen + 1));
-  for (apos = 0; apos < msa->alen; apos++)
-    msa->rf[apos] = matassign[apos+1] ? 'x' : '.';
-  msa->rf[msa->alen] = '\0';
-
-  /* The new shmm is in counts form, filled with observations from the MSA sampled
-   * from the CM. Next, renormalize shmm and logoddisfy it */
+  /*Next, renormalize shmm and logoddisfy it */
   CPlan9Renormalize(shmm);
   CP9Logoddsify(shmm);
 
+  /*
   printf("PRINTING BUILT HMM PARAMS:\n");
   debug_print_cp9_params(hmm);
   printf("DONE PRINTING BUILT HMM PARAMS:\n");
@@ -2251,11 +2310,13 @@ CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, float thresh,
   printf("PRINTING SAMPLED HMM PARAMS:\n");
   debug_print_cp9_params(shmm);
   printf("DONE PRINTING SAMPLED HMM PARAMS:\n");
+  */
 
   /* Output the alignment */
   /*WriteStockholm(stdout, msa);*/
 
-  exit(1);
+  free(dual_mapping_insert);
+  FreeCPlan9(shmm);
   /* compare new CP9 to existing CP9 */
 
   return ret_val;
@@ -2478,71 +2539,6 @@ CP9TraceCount(struct cplan9_s *hmm, char *dsq, float wt, struct cp9trace_s *tr)
     }
 }
 
-/* Function: CP9_annotate_model()
- *           Based on HMMER's modelmakers.c::annotate_model()
- * 
- * Purpose:  Add rf, cs optional annotation to a new CM plan 9 model.
- * 
- * Args:     hmm       - new model
- *           matassign - which alignment columns are MAT; [1..alen]
- *           msa       - alignment, including annotation to transfer
- *           
- * Return:   (void)
- */
-static void
-CP9_annotate_model(struct cplan9_s *hmm, int *matassign, MSA *msa)
-{                      
-  int   apos;			/* position in matassign, 1.alen  */
-  int   k;			/* position in model, 1.M         */
-
-  /* Transfer reference coord annotation from alignment,
-   * if available
-   */
-  if (msa->rf != NULL) {
-    hmm->rf[0] = ' ';
-    for (apos = k = 1; apos <= msa->alen; apos++)
-      if (matassign[apos]) /* ainfo is off by one from HMM */
-	hmm->rf[k++] = (msa->rf[apos-1] == ' ') ? '.' : msa->rf[apos-1];
-    hmm->rf[k] = '\0';
-    hmm->flags |= CPLAN9_RF;
-  }
-
-  /* Transfer consensus structure annotation from alignment, 
-   * if available
-   */
-  if (msa->ss_cons != NULL) {
-    hmm->cs[0] = ' ';
-    for (apos = k = 1; apos <= msa->alen; apos++)
-      if (matassign[apos])
-	hmm->cs[k++] = (msa->ss_cons[apos-1] == ' ') ? '.' : msa->ss_cons[apos-1];
-    hmm->cs[k] = '\0';
-    hmm->flags |= CPLAN9_CS;
-  }
-
-  /* Transfer surface accessibility annotation from alignment,
-   * if available
-   */
-  if (msa->sa_cons != NULL) {
-    hmm->ca[0] = ' ';
-    for (apos = k = 1; apos <= msa->alen; apos++)
-      if (matassign[apos])
-	hmm->ca[k++] = (msa->sa_cons[apos-1] == ' ') ? '.' : msa->sa_cons[apos-1];
-    hmm->ca[k] = '\0';
-    hmm->flags |= PLAN7_CA;
-  }
-
-  /* Store the alignment map
-   */
-  for (apos = k = 1; apos <= msa->alen; apos++)
-    if (matassign[apos])
-      hmm->map[k++] = apos;
-  hmm->flags |= CPLAN9_MAP;
-
-  /* Deleted code to interpret annotations for specific priors to 
-   * use for each position. We won't (currently) have such annotations
-   * for CM Plan 9 models.
-   */
-}
 
 /* Function: CP9Statetype()
  * 
@@ -2561,3 +2557,191 @@ CP9Statetype(char st)
   default: return "BOGUS";
   }
 }
+
+/* Function: CP9_node_chi_squared()
+ * 
+ * Purpose : Given two CM Plan 9 HMMs, one in normalized form (ahmm), and one in
+ *           raw counts form (shmm), determine for a specific node nd,
+ *           the probability the samples implicit in the shmm were taken 
+ *           from the corresponding probability distribution in ahmm using 
+ *           the chi-squared test. Return FALSE IFF the probability that some 
+ *           set of counts was not taken from the corresponding ahmm distribution
+ *           (probability null hypothesis is rejected) is above the probability 
+ *           threshold thresh.
+ *             
+ * Args:    
+ * cplan9_s *ahmm    - an HMM with the probability distributions that define
+ *                     the null hypothesis for the chi-squared tests (we
+ *                     think the counts in shmm were taken from these distributions).
+ * cplan9_s *shmm    - an HMM in counts form
+ * int         nd    - node of the HMM to check. 
+ * float   thresh    - probability of rejecting null hypotheses must be below
+ *                     this value for all cases.
+ * int dual_mapping_insert - TRUE if HMM node nd maps to 2 insert states in the CM,
+ *                           for such states, we don't require that we pass the
+ *                           chi squared test.
+ */
+int
+CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float thresh,
+		     int dual_mapping_insert)
+{
+  double p;
+  int x;
+  float chi_sq;
+  float m_nseq, i_nseq, d_nseq;
+  float check_m_nseq, check_i_nseq;
+
+  if(nd > shmm->M || nd >  ahmm->M)
+    Die("ERROR CP9_node_chi_squared() is being grossly misused.\n");
+
+  CPlan9Renormalize(ahmm);
+  CP9Logoddsify(ahmm);
+
+  /* First determine the sum of the counts for each state. This
+   * is the number of samples that visited match, insert and 
+   * delete state of this node.
+   */
+  
+  if(nd == 0)
+    m_nseq  = shmm->begin[1]; /* this is begin -> M_1 transition */
+  else if(nd == shmm->M)
+    m_nseq  = shmm->end[nd];   /* this is M_M -> end transition */
+  else
+    m_nseq  = shmm->t[nd][CTMM];
+  m_nseq += shmm->t[nd][CTMI];
+  m_nseq += shmm->t[nd][CTMD];
+  
+  i_nseq  = shmm->t[nd][CTIM];
+  i_nseq += shmm->t[nd][CTII];
+  i_nseq += shmm->t[nd][CTID];
+
+  if(nd != 0) /* node 0 has no delete state */
+    {
+      d_nseq  = shmm->t[nd][CTDM];
+      d_nseq += shmm->t[nd][CTDI];
+      d_nseq += shmm->t[nd][CTDD];
+    }
+
+  if(nd != 0)
+    {
+      check_m_nseq = 0.;
+      for (x = 0; x < MAXABET; x++) check_m_nseq += shmm->mat[nd][x];
+      if((check_m_nseq >= m_nseq && ((check_m_nseq - m_nseq) > 0.0001)) ||
+	 (check_m_nseq  < m_nseq && ((m_nseq - check_m_nseq) > 0.0001)))     
+	{
+	  Die("ERROR: node: %d has different number of sampled match emissions and transitions.\n");
+	}
+    }
+  check_i_nseq = 0.;
+  for (x = 0; x < MAXABET; x++) check_i_nseq += shmm->ins[nd][x];
+  if((check_i_nseq >= i_nseq && ((check_i_nseq - i_nseq) > 0.0001)) ||
+     (check_i_nseq  < i_nseq && ((i_nseq - check_i_nseq) > 0.0001)))     
+    {
+      Die("ERROR: node: %d has different number of sampled insert emissions and transitions.\n");
+    }
+
+  /* Check emissions */
+  /* MATCH */
+  if(nd != 0)
+    {
+      chi_sq = 0.;
+      for (x = 0; x < MAXABET; x++) 
+	chi_sq += (pow((ahmm->mat[nd][x] - (shmm->mat[nd][x] / m_nseq)), 2) / 
+		   ((shmm->mat[nd][x] / m_nseq)));
+
+      p = IncompleteGamma((MAXABET-1)/2., chi_sq/2.);
+      /*printf("%4d E M P: %f m_nseq %f\n", nd, p, m_nseq);*/
+      if((1. - p) > thresh)
+	{
+	  printf("%4d E M P: %f m_nseq %f\n", nd, p, m_nseq);
+	  return FALSE;
+	}
+    }
+
+  /* INSERT */
+  chi_sq = 0.;
+  for (x = 0; x < MAXABET; x++) 
+    chi_sq += (pow((ahmm->ins[nd][x] - (shmm->ins[nd][x] / i_nseq)), 2) / 
+	       ((shmm->ins[nd][x] / i_nseq)));
+
+  p = IncompleteGamma((MAXABET-1)/2., chi_sq/2.);
+  /*printf("%4d E I P: %f\n", nd, p);*/
+  if((1. - p) > thresh)
+    {
+      printf("%4d E I P: %f i_nseq: %f\n", nd, p, i_nseq);
+      return FALSE;
+    }
+  /* check transitions */
+  /* out of match */
+  if(nd == 0)
+    chi_sq =  (pow((ahmm->begin[1] - (shmm->begin[1] / m_nseq)), 2) / 
+	       ((shmm->begin[1] / m_nseq)));
+  else if(nd == shmm->M)
+    chi_sq =  (pow((ahmm->end[nd] - (shmm->end[nd] / m_nseq)), 2) / 
+	       ((shmm->end[nd] / m_nseq)));
+  else
+    chi_sq   =  (pow((ahmm->t[nd][CTMM] - (shmm->t[nd][CTMM] / m_nseq)), 2) / 
+	        ((shmm->t[nd][CTMM] / m_nseq)));
+  chi_sq += (pow((ahmm->t[nd][CTMI] - (shmm->t[nd][CTMI] / m_nseq)), 2) / 
+	        ((shmm->t[nd][CTMI] / m_nseq)));
+  if(nd != shmm->M)
+    chi_sq += (pow((ahmm->t[nd][CTMD] - (shmm->t[nd][CTMD] / m_nseq)), 2) / 
+	          ((shmm->t[nd][CTMD] / m_nseq)));
+  /* In CP9TraceCount(), we don't allow possibility of M->E transitions (local ends)
+   * except if M = shmm->M, so we ignore them here also 
+   */
+  /*chi_sq += (pow((ahmm->end[nd]     - (shmm->end[nd]     / m_nseq)), 2) / 
+	        ((shmm->end[nd]     / m_nseq)));
+		
+  */
+  p = IncompleteGamma(1., chi_sq/2.);
+  /*printf("%4d T M P: %f m_nseq: %f\n", nd, p, m_nseq);*/
+  if((1. - p) > thresh)
+    {
+      printf("%4d T M P: %f m_nseq %f\n", nd, p, m_nseq);
+      return FALSE;
+    }
+
+  if(!dual_mapping_insert)
+    {  /* out of insert */
+      chi_sq =  (pow((ahmm->t[nd][CTIM] - (shmm->t[nd][CTIM] / i_nseq)), 2) / 
+		    ((shmm->t[nd][CTIM] / i_nseq)));
+      chi_sq += (pow((ahmm->t[nd][CTII] - (shmm->t[nd][CTII] / i_nseq)), 2) / 
+		    ((shmm->t[nd][CTII] / i_nseq)));
+      if(nd != shmm->M)
+	chi_sq += (pow((ahmm->t[nd][CTID] - (shmm->t[nd][CTID] / i_nseq)), 2) / 
+	            ((shmm->t[nd][CTID] / i_nseq)));
+      p = IncompleteGamma(1., chi_sq/2.);
+      /*printf("%4d T I P: %f i_nseq: %f\n", nd, p, i_nseq);*/
+      if((1. - p) > thresh)
+	{
+	  printf("%4d T I P: %f i_nseq: %f\n", nd, p, i_nseq);
+	  return FALSE;
+	}
+    }
+  else
+    {
+      /*printf("nd: %d is a dual mapping insert\n", nd);*/
+    }      
+
+  if(nd != 0)
+    {
+      /* out of delete */
+      chi_sq =  (pow((ahmm->t[nd][CTDM] - (shmm->t[nd][CTDM] / d_nseq)), 2) / 
+	            ((shmm->t[nd][CTDM] / d_nseq)));
+      chi_sq += (pow((ahmm->t[nd][CTDI] - (shmm->t[nd][CTDI] / d_nseq)), 2) / 
+	            ((shmm->t[nd][CTDI] / d_nseq)));
+      if(nd != shmm->M)
+	chi_sq += (pow((ahmm->t[nd][CTDD] - (shmm->t[nd][CTDD] / d_nseq)), 2) / 
+		      ((shmm->t[nd][CTDD] / d_nseq)));
+      p = IncompleteGamma(1., chi_sq/2.);
+      /*printf("%4d T D P: %f d_nseq: %f\n", nd, p, d_nseq);*/
+      if((1. - p) > thresh)
+	{
+	  printf("%4d T D P: %f d_nseq: %f\n", nd, p, d_nseq);
+	  return FALSE;
+	}
+    }
+  return TRUE;
+}
+  

@@ -31,7 +31,7 @@
  *    probs hmm->ins[0]), and it has NO DELETE STATE. 
  * 
  *    hmm->t[0][CTMM]: 0. (B->M_1 transition is hmm->begin[1])
- *    hmm->t[0][CTMI]: transition from B to N; 
+ *    hmm->t[0][CTMI]: transition from B to N (I_0); 
  *    hmm->t[0][CTMD]: transition from B to D_1;
  *    hmm->t[0][CTIM]: transition from N to M_1;
  *    hmm->t[0][CTII]: N self transition; 

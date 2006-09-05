@@ -627,7 +627,7 @@ main(int argc, char **argv)
 	if(do_checkcp9)
 	  {
 	    sre_srandom(seed);
-	    if(!(CP9_check_wrhmm_by_sampling(cm, cp9_hmm, 0.001, 1000000)))
+	    if(!(CP9_check_wrhmm_by_sampling(cm, cp9_hmm, hns2cs_map, 0.05, 100000)))
 	      Die("CM Plan 9 fails sampling check!\n");
 	    else
 	      printf("CM Plan 9 passed sampling check.\n");

@@ -297,7 +297,7 @@ extern int CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, in
 			   int debug_level);
 extern void fill_psi(CM_t *cm, double *psi, char ***tmap);
 extern void make_tmap(char ****ret_tmap);
-extern int  CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, float thresh,
+extern int  CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, float thresh, 
 					int nseq);
 
 
