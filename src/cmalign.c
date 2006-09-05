@@ -67,6 +67,7 @@ static char experts[] = "\
    --cp9 <f>     : use the CM plan 9 HMM in file <f> for band calculation\n\
    --p7 <f>      : use the plan 7 HMMER 2.4 HMM in file <f> for band calculation\n\
    --sums        : use posterior sums during HMM band calculation (widens bands)\n\
+   --checkcp9    : check the CP9 empirically by generating sequences\n\
 \n\
   * A priori banded alignment related options:\n\
    --apbanded    : use experimental a priori (ap) banded CYK alignment algorithm\n\
@@ -100,7 +101,8 @@ static struct opt_s OPTIONS[] = {
   { "--outside",    FALSE, sqdARG_NONE},
   { "--post",       FALSE, sqdARG_NONE},
   { "--checkpost",  FALSE, sqdARG_NONE},
-  { "--sub",   FALSE, sqdARG_STRING},
+  { "--sub",        FALSE, sqdARG_STRING},
+  { "--checkcp9",   FALSE, sqdARG_NONE},
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -235,7 +237,8 @@ main(int argc, char **argv)
   struct cp9_dpmatrix_s *cp9_posterior; /* growable DP matrix for posterior decode              */
   float                  swentry;	/* S/W aggregate entry probability       */
   float                  swexit;        /* S/W aggregate exit probability        */
-
+  int                    do_checkcp9;   /* TRUE to check the CP9 HMM by generating sequences */
+  int                    seed;	        /* random number generator seed (only used if(do_checkcp9) */
 
   /* Plan 7 */
   HMMFILE           *hmmfp;     /* opened hmmfile for reading              */
@@ -312,7 +315,9 @@ main(int argc, char **argv)
   do_check    = FALSE;
   do_post     = FALSE;
   do_sub      = FALSE;
+  do_checkcp9 = FALSE;
   check_outfile = "check.stk";
+  seed         = time ((time_t *) NULL);
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -351,6 +356,7 @@ main(int argc, char **argv)
       } /* default HMM: CP9, but let --p7 override */
     else if (strcmp(optname, "--hbandp")    == 0) hbandp       = atof(optarg);
     else if (strcmp(optname, "--sums")      == 0) use_sums     = TRUE;
+    else if (strcmp(optname, "--checkcp9")  == 0) do_checkcp9  = TRUE;
     else if (strcmp(optname, "--cp9")       == 0) { 
       if(hmm_type == HMM_P7) Die("Can't do --cp9 and --p7, pick one HMM type.\n");
       hmm_type  = HMM_CP9; hmmfile = optarg; read_cp9_flag = TRUE; 
@@ -381,7 +387,10 @@ main(int argc, char **argv)
     {
       Die("--sub and --local combination not yet supported.\n");
     }
-
+  if(do_checkcp9 && (hmm_type != HMM_CP9 || do_hbanded == FALSE))
+    {
+      Die("--checkcp9 only makes sense with --hbanded (and not --p7).\n");
+    }
 
   /* currently not set up for local alignment and posterior decode or outside run */
   /*  if(do_local && (do_outside || do_post))
@@ -568,32 +577,14 @@ main(int argc, char **argv)
       /*p7tr  = MallocOrDie(sizeof(struct p7trace_s *) * nseq);*/
       mx  = CreatePlan7Matrix(1, hmm->M, 25, 0);
       /*p7postcode = malloc(sizeof(char *) * nseq);*/
-      node_cc_left  = malloc(sizeof(int) * cm->nodes);
-      node_cc_right = malloc(sizeof(int) * cm->nodes);
-      cc_node_map   = malloc(sizeof(int) * (hmm->M + 1));
-      map_consensus_columns(cm, hmm->M, node_cc_left, node_cc_right,
-			    cc_node_map, debug_level);
+      map_consensus_columns(cm, hmm->M, &node_cc_left, &node_cc_right,
+			    &cc_node_map, debug_level);
       /*printf("HMM type is HMM_P7, number of nodes: %d\n", hmm->M);*/
       /* Get information mapping the HMM to the CM and vice versa. */
-      cs2hn_map     = malloc(sizeof(int *) * (cm->M+1));
-      for(v = 0; v <= cm->M; v++)
-	cs2hn_map[v]     = malloc(sizeof(int) * 2);
-      
-      cs2hs_map     = malloc(sizeof(int *) * (cm->M+1));
-      for(v = 0; v <= cm->M; v++)
-	cs2hs_map[v]     = malloc(sizeof(int) * 2);
-      
-      hns2cs_map    = malloc(sizeof(int **) * (hmm->M+1));
-      for(k = 0; k <= hmm->M; k++)
-	{
-	  hns2cs_map[k]    = malloc(sizeof(int *) * 3);
-	  for(ks = 0; ks < 3; ks++)
-	    hns2cs_map[k][ks]= malloc(sizeof(int) * 2);
-	}
       
       P7_map_cm2hmm_and_hmm2cm(cm, hmm, node_cc_left, node_cc_right, 
-			       cc_node_map, cs2hn_map, cs2hs_map, 
-			       hns2cs_map, debug_level);
+			       cc_node_map, &cs2hn_map, &cs2hs_map, 
+			       &hns2cs_map, debug_level);
       hmm_M = hmm->M;
     }      
   
@@ -619,31 +610,12 @@ main(int argc, char **argv)
        * This is relevant if we're building (read_cp9_flag == FALSE)
        * or reading from a file (read_cp9_flag == TRUE)
        */
-      node_cc_left  = malloc(sizeof(int) * cm->nodes);
-      node_cc_right = malloc(sizeof(int) * cm->nodes);
-      cc_node_map   = malloc(sizeof(int) * (cp9_hmm->M + 1));
-      map_consensus_columns(cm, cp9_hmm->M, node_cc_left, node_cc_right,
-			    cc_node_map, debug_level);
-      
-      cs2hn_map     = malloc(sizeof(int *) * (cm->M+1));
-      for(v = 0; v <= cm->M; v++)
-	cs2hn_map[v]     = malloc(sizeof(int) * 2);
-      
-      cs2hs_map     = malloc(sizeof(int *) * (cm->M+1));
-      for(v = 0; v <= cm->M; v++)
-	cs2hs_map[v]     = malloc(sizeof(int) * 2);
-      
-      hns2cs_map    = malloc(sizeof(int **) * (cp9_hmm->M+1));
-      for(k = 0; k <= cp9_hmm->M; k++)
-	{
-	  hns2cs_map[k]    = malloc(sizeof(int *) * 3);
-	  for(ks = 0; ks < 3; ks++)
-	    hns2cs_map[k][ks]= malloc(sizeof(int) * 2);
-	}
+      map_consensus_columns(cm, cp9_hmm->M, &node_cc_left, &node_cc_right,
+			    &cc_node_map, debug_level);
       
       CP9_map_cm2hmm_and_hmm2cm(cm, cp9_hmm, node_cc_left, node_cc_right, 
-				cc_node_map, cs2hn_map, cs2hs_map, 
-				hns2cs_map, debug_level);
+				cc_node_map, &cs2hn_map, &cs2hs_map, 
+				&hns2cs_map, debug_level);
       
       if(!(read_cp9_flag)) /* actually build the CM Plan 9 HMM */
       {
@@ -652,6 +624,14 @@ main(int argc, char **argv)
 	if(!(CP9_cm2wrhmm(cm, cp9_hmm, node_cc_left, node_cc_right, cc_node_map, cs2hn_map,
 		     cs2hs_map, hns2cs_map, debug_level)))
 	  Die("Couldn't build a CM Plan 9 HMM from the CM.\n");
+	if(do_checkcp9)
+	  {
+	    sre_srandom(seed);
+	    if(!(CP9_check_wrhmm_by_sampling(cm, cp9_hmm, 0.001, 1000000)))
+	      Die("CM Plan 9 fails sampling check!\n");
+	    else
+	      printf("CM Plan 9 passed sampling check.\n");
+	  }
       }
       else /* a CP9 HMM has already been read from a file. */
 	{
@@ -806,7 +786,6 @@ main(int argc, char **argv)
 	      /*printf("INITIAL %s\n", input_msa->ss_cons);
 		StripWUSSGivenCC(input_msa, input_dsq, 0.5, hmm_start_node, hmm_end_node);*/
 	      /* have to do something like in HandModelMaker to eliminate mates of removed bps. */
-	      
 	      
 	      printf("NEW     %s\n", input_msa->ss_cons);
 	      

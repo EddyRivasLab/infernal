@@ -362,6 +362,30 @@ struct CP9_hmmfile_s {
 };
 typedef struct CP9_hmmfile_s CP9HMMFILE; 
 
+/* CM Plan 9 model state types
+ * used in traceback structure
+ */
+#define CSTBOGUS 0
+#define CSTM     1
+#define CSTD     2
+#define CSTI     3
+#define CSTB     4  /* M_0 the B state */
+#define CSTE     5  /* the end state, M_(k+1) */
+/* Structure: cp9trace_s
+ * 
+ * Traceback structure for alignments of model to sequence.
+ * Each array in a trace_s is 0..tlen-1.
+ * Element 0 is always to M_0 (match state of node 0)
+ * Element tlen-1 is always to the E_st
+ */
+struct cp9trace_s {
+  int   tlen;                   /* length of traceback                           */
+  char *statetype;              /* state type used for alignment                 */
+  int  *nodeidx;                /* idx of aligned node, 0..M if M or I 1..M if D */
+  int  *pos;                    /* position in dsq, 1..L, or 0 if none           */ 
+};
+
+
 #endif /* CPLAN9_INCLUDED */
 
 /************************************************************

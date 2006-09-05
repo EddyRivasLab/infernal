@@ -67,6 +67,17 @@ static int
 check_cm_adj_bp(CM_t *cm, int *cc_node_map, int hmm_M);
 
 
+static void
+CP9_fake_tracebacks(char **aseq, int nseq, int alen, int *matassign, struct cp9trace_s ***ret_tr);
+
+static void
+CP9TraceCount(struct cplan9_s *hmm, char *dsq, float wt, struct cp9trace_s *tr);
+
+static void
+CP9_annotate_model(struct cplan9_s *hmm, int *matassign, MSA *msa);
+
+static char *CP9Statetype(char st);
+
 /**************************************************************************
  * EPN 03.12.06
  * CP9_cm2wrhmm()
@@ -361,6 +372,8 @@ fill_psi(CM_t *cm, double *psi, char ***tmap)
 	nstates = 3;
       else if(cm->ndtype[n] == END_nd)
 	nstates = 1;
+      else 
+	Die("ERROR: bogus node type: %d\n", n);
       for(v = cm->nodemap[n]; v < cm->nodemap[n] + nstates; v++)
 	if(cm->sttype[v] != IL_st && cm->sttype[v] != IR_st)
 	  summed_psi += psi[v];
@@ -2122,4 +2135,429 @@ CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, int *cc_node_
     }
   free(tmap);
   return ret_val;
+}
+
+/**************************************************************************
+ * EPN 09.01.06
+ * Function: CP9_check_wrhmm_by_sampling()
+ *
+ * Purpose:  Given a CM and a CM plan 9 hmm that is supposed to mirror 
+ *           the CM as closely as possible (Weinberg-Ruzzo style, with
+ *           differences due to differences in the CM Plan 9 architecture
+ *           and the architecture that they use), check if the CM and CP9
+ *           actually do correspond as closely as possible by generating
+ *           an alignment from the CM using it to build a new CP9 HMM
+ *           without using pseudocounts (the infinite MSA idea introduced
+ *           by Zasha Weinberg in the ML-HMM Bioinformatics paper), and
+ *           comparing the parameters of that CP9 HMM to the one we've
+ *           built.
+ *           
+ *           NOTE: code to sample an alignment from the CM taken from
+ *                 cmemit.c (which was ported from HMMER's hmmemit.c).
+ * Args:    
+ * CM_t *cm          - the CM
+ * cplan9_s *hmm     - the HMM
+ * float thresh      - probability threshold parameters of two HMMs must be
+ *                     within for the models to 'pass'
+ * int nseq          - number of sequences to sample to build the new HMM.
+ *
+ * Returns: TRUE: if CM and HMM are "close enough" (see code)
+ *          FALSE: otherwise
+ */
+int 
+CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, float thresh,
+			    int nseq)
+{
+  int ret_val;         /* return value */
+  Parsetree_t **tr;             /* Parsetrees of emitted aligned sequences */
+  char    **dsq;                /* digitized sequences                     */
+  SQINFO            *sqinfo;    /* info about sequences (name/desc)        */
+  MSA               *msa;       /* alignment */
+  float             *wgt;
+  int i, idx;
+  int L;
+  int apos;
+  int *matassign;
+  struct cp9trace_s **cp9_tr;        /* fake tracebacks for each seq        */
+  struct cplan9_s  *shmm;        /* the new, CM plan9 HMM; built by sampling */
+
+  CPlan9Renormalize(hmm);
+  CMRenormalize(cm);
+
+  /* sample an MSA from the CM */
+  dsq    = MallocOrDie(sizeof(char *)    * nseq);
+  tr     = MallocOrDie(sizeof(Parsetree_t) * nseq);
+  sqinfo = MallocOrDie(sizeof(SQINFO)             * nseq);
+  wgt    = MallocOrDie(sizeof(float)              * nseq);
+  FSet(wgt, nseq, 1.0);
+
+  for (i = 0; i < nseq; i++)
+    {
+      EmitParsetree(cm, &(tr[i]), NULL, &(dsq[i]), &L);
+      sprintf(sqinfo[i].name, "seq%d", i+1);
+      sqinfo[i].len   = L;
+      sqinfo[i].flags = SQINFO_NAME | SQINFO_LEN;
+    }
+  msa = Parsetrees2Alignment(cm, dsq, sqinfo, NULL, tr, nseq, TRUE);
+
+  /* Now we have an msa, treat it as input for a new CP9 HMM,
+   * use HMMER's 'hand' model making strategy, use RF notation
+   * from the msa (which correspond to emissions from match states
+   * of the CM). 
+   */
+  matassign = (int *) MallocOrDie (sizeof(int) * (msa->alen+1));
+  /* Determine match assignment from RF annotation
+   */
+  matassign[0] = 0;
+  for (apos = 0; apos < msa->alen; apos++)
+    {
+      matassign[apos+1] = 0;
+      if (!isgap(msa->rf[apos])) 
+	matassign[apos+1] = 1;
+    }
+  /* make fake tracebacks for each seq */
+  CP9_fake_tracebacks(msa->aseq, msa->nseq, msa->alen, matassign, &cp9_tr);
+
+  /* build model from tracebacks (code from HMMER's modelmakers.c::matassign2hmm() */
+  shmm = AllocCPlan9(hmm->M);
+  ZeroCPlan9(shmm);
+  for (idx = 0; idx < msa->nseq; idx++) {
+    CP9TraceCount(shmm, dsq[idx], msa->wgt[idx], cp9_tr[idx]);
+  }
+
+				/* annotate new model */
+  CP9_annotate_model(shmm, matassign, msa);
+
+  /* Set #=RF line of alignment to reflect our assignment
+   * of match, delete. matassign is valid from 1..alen and is off
+   * by one from msa->rf.
+   */
+  if (msa->rf != NULL) free(msa->rf);
+  msa->rf = (char *) MallocOrDie (sizeof(char) * (msa->alen + 1));
+  for (apos = 0; apos < msa->alen; apos++)
+    msa->rf[apos] = matassign[apos+1] ? 'x' : '.';
+  msa->rf[msa->alen] = '\0';
+
+  /* The new shmm is in counts form, filled with observations from the MSA sampled
+   * from the CM. Next, renormalize shmm and logoddisfy it */
+  CPlan9Renormalize(shmm);
+  CP9Logoddsify(shmm);
+
+  printf("PRINTING BUILT HMM PARAMS:\n");
+  debug_print_cp9_params(hmm);
+  printf("DONE PRINTING BUILT HMM PARAMS:\n");
+
+
+  printf("PRINTING SAMPLED HMM PARAMS:\n");
+  debug_print_cp9_params(shmm);
+  printf("DONE PRINTING SAMPLED HMM PARAMS:\n");
+
+  /* Output the alignment */
+  /*WriteStockholm(stdout, msa);*/
+
+  exit(1);
+  /* compare new CP9 to existing CP9 */
+
+  return ret_val;
+}
+
+/* Function: CP9_fake_tracebacks()
+ * 
+ * Purpose:  From a consensus assignment of columns to MAT/INS, construct fake
+ *           tracebacks for each individual sequence.
+ *           
+ * Args:     aseqs     - alignment [0..nseq-1][0..alen-1]
+ *           nseq      - number of seqs in alignment
+ *           alen      - length of alignment in columns
+ *           matassign - assignment of column 1 if MAT, 0 if INS; 
+ *                       [1..alen] (off one from aseqs)
+ *           ret_tr    - RETURN: array of tracebacks
+ *           
+ * Return:   (void)
+ *           ret_tr is alloc'ed here. Caller must free.
+ */          
+static void
+CP9_fake_tracebacks(char **aseq, int nseq, int alen, int *matassign,
+		struct cp9trace_s ***ret_tr)
+{
+  struct cp9trace_s **tr;
+  int  idx;                     /* counter over sequences          */
+  int  i;                       /* position in raw sequence (1..L) */
+  int  k;                       /* position in HMM                 */
+  int  apos;                    /* position in alignment columns   */
+  int  tpos;			/* position in traceback           */
+  int  first_match;             /* first match column */
+  int  last_match;              /* last match column */
+
+  tr = (struct cp9trace_s **) MallocOrDie (sizeof(struct cp9trace_s *) * nseq);
+  
+  first_match = -1;
+  last_match  = -1;
+  for (apos = 0; apos < alen; apos++)
+    {
+      if(matassign[apos+1] && first_match == -1) first_match = apos;
+      if(matassign[apos+1]) last_match = apos;
+    }
+
+  for (idx = 0; idx < nseq; idx++)
+    {
+      CP9AllocTrace(alen+2, &tr[idx]);  /* allow room for B & E */
+      
+				/* all traces start with M_0 state (the B state)... */
+      tr[idx]->statetype[0] = CSTB;
+      tr[idx]->nodeidx[0]   = 0;
+      tr[idx]->pos[0]       = 0;
+
+      i = 1;
+      k = 0;
+      tpos = 1;
+
+      for (apos = 0; apos < alen; apos++)
+        {
+	  tr[idx]->statetype[tpos] = CSTBOGUS; /* bogus, deliberately, to debug */
+
+	  if (matassign[apos+1] && ! isgap(aseq[idx][apos]))
+	    {			/* MATCH */
+	      k++;		/* move to next model pos */
+	      tr[idx]->statetype[tpos] = CSTM;
+	      tr[idx]->nodeidx[tpos]   = k;
+	      tr[idx]->pos[tpos]       = i;
+	      i++;
+	      tpos++;
+	    }	      
+          else if (matassign[apos+1])
+            {                   /* DELETE */
+	      /* We should be careful about S/W transitions; but we have 
+	       * an ambiguity, based on the MSA, we can't tell if we
+	       * did a local begin (some M->E transition) or if we
+	       * went through a bunch of D state's before the first match 
+	       * B->D_1 -> D_2 .... -> M_x. For now, we assume we're not in
+	       * S/W mode, and treat it as the latter case, see
+	       * HMMER's modelmaker.c:fake_tracebacks() for code
+	       * on one *would* implement the S/W consideration IF
+	       * there wasn't a B->D_1 transition allowed.
+	       */
+	      k++;		/* *always* move on model when match column seen */
+	      tr[idx]->statetype[tpos] = CSTD;
+	      tr[idx]->nodeidx[tpos]   = k;
+	      tr[idx]->pos[tpos]       = 0;
+	      tpos++;
+            }
+	  else if (! isgap(aseq[idx][apos]))
+	    {			/* INSERT */
+	      tr[idx]->statetype[tpos] = CSTI;
+              tr[idx]->nodeidx[tpos]   = k;
+              tr[idx]->pos[tpos]       = i;
+	      i++;
+	      tpos++;
+	    }
+	}
+       /* all traces end with E state */
+	      /* We should be careful about S/W transitions; but we have 
+	       * an ambiguity, based on the MSA, we can't tell if we
+	       * did a local end (some M->E transition) or if we
+	       * went through a bunch of D state's before the final 
+	       * D_M -> E transition. For now, we assume we're not in
+	       * S/W mode, and treat it as the latter case, see
+	       * HMMER's modelmaker.c:fake_tracebacks() for code
+	       * on one *would* implement the S/W consideration IF
+	       * there wasn't a D_M -> E transition allowed.
+	       */
+      tr[idx]->statetype[tpos] = CSTE;
+      tr[idx]->nodeidx[tpos]   = 0;
+      tr[idx]->pos[tpos]       = 0;
+      tpos++;
+      tr[idx]->tlen = tpos;
+    }    /* end for sequence # idx */
+
+  *ret_tr = tr;
+  return;
+}
+
+/* Function: CP9TraceCount() 
+ * EPN 09.04.06 based on Eddy's P7TraceCount() from HMMER's trace.c
+ * 
+ * Purpose:  Count a traceback into a count-based HMM structure.
+ *           (Usually as part of a model parameter re-estimation.)
+ *           
+ * Args:     hmm   - counts-based CM Plan 9 HMM
+ *           dsq   - digitized sequence that traceback aligns to the HMM (1..L)
+ *           wt    - weight on the sequence
+ *           tr    - alignment of seq to HMM
+ *           
+ * Return:   (void)
+ */
+void
+CP9TraceCount(struct cplan9_s *hmm, char *dsq, float wt, struct cp9trace_s *tr)
+{
+  int tpos;                     /* position in tr */
+  int i;			/* symbol position in seq */
+  
+  for (tpos = 0; tpos < tr->tlen; tpos++)
+    {
+      i = tr->pos[tpos];
+
+      /* Emission counts. 
+       */
+      if (tr->statetype[tpos] == CSTM) 
+	SingletCount(hmm->mat[tr->nodeidx[tpos]], dsq[i], wt);
+      else if (tr->statetype[tpos] == CSTI) 
+	SingletCount(hmm->ins[tr->nodeidx[tpos]], dsq[i], wt);
+
+      /* State transition counts
+       */
+      switch (tr->statetype[tpos]) {
+      case CSTB:
+	switch (tr->statetype[tpos+1]) {
+	case CSTM: hmm->begin[tr->nodeidx[tpos+1]] += wt; break;
+	case CSTI: hmm->t[0][CTMI]                 += wt; break;
+	case CSTD: hmm->t[0][CTMD]                 += wt; break;
+	default:      
+	  Die("illegal state transition %s->%s in traceback", 
+	      CP9Statetype(tr->statetype[tpos]), 
+	      CP9Statetype(tr->statetype[tpos+1]));
+	}
+	break;
+      case CSTM:
+	switch (tr->statetype[tpos+1]) {
+	case CSTM: hmm->t[tr->nodeidx[tpos]][CTMM] += wt; break;
+	case CSTI: hmm->t[tr->nodeidx[tpos]][CTMI] += wt; break;
+	case CSTD: hmm->t[tr->nodeidx[tpos]][CTMD] += wt; break;
+	case CSTE: hmm->end[tr->nodeidx[tpos]]     += wt; break;
+	default:    
+	  Die("illegal state transition %s->%s in traceback", 
+	      CP9Statetype(tr->statetype[tpos]), 
+	      CP9Statetype(tr->statetype[tpos+1]));
+	}
+	break;
+      case CSTI:
+	switch (tr->statetype[tpos+1]) {
+	case CSTM: hmm->t[tr->nodeidx[tpos]][CTIM] += wt; break;
+	case CSTI: hmm->t[tr->nodeidx[tpos]][CTII] += wt; break;
+	case CSTD: hmm->t[tr->nodeidx[tpos]][CTID] += wt; break;
+	case CSTE: 
+	  /* This should only happen from the final insert (I_M) state */
+	  if((tpos+1) != (tr->tlen-1))
+	    Die("illegal state transition %s->%s (I is not final insert) in traceback", 
+		CP9Statetype(tr->statetype[tpos]), 
+		CP9Statetype(tr->statetype[tpos+1]));
+	  hmm->t[tr->nodeidx[tpos]][CTIM] += wt; break;
+	  break;
+	default:    
+	  Die("illegal state transition %s->%s in traceback", 
+	      CP9Statetype(tr->statetype[tpos]), 
+	      CP9Statetype(tr->statetype[tpos+1]));
+	}
+	break;
+      case CSTD:
+	switch (tr->statetype[tpos+1]) {
+	case CSTM: hmm->t[tr->nodeidx[tpos]][CTDM] += wt; break;
+	case CSTI: hmm->t[tr->nodeidx[tpos]][CTDI] += wt; break;
+	case CSTD: hmm->t[tr->nodeidx[tpos]][CTDD] += wt; break;
+	case CSTE: 
+	  /* This should only happen from the final delete (D_M) state */
+	  if((tpos+1) != (tr->tlen-1))
+	    Die("illegal state transition %s->%s (D is not final delete) in traceback", 
+		CP9Statetype(tr->statetype[tpos]), 
+		CP9Statetype(tr->statetype[tpos+1]));
+	  hmm->t[tr->nodeidx[tpos]][CTDM] += wt; break;
+	  break;
+	default:    
+	  Die("illegal state transition %s->%s in traceback", 
+	      CP9Statetype(tr->statetype[tpos]), 
+	      CP9Statetype(tr->statetype[tpos+1]));
+	}
+	break;
+      case CSTE:
+	break; /* E is the last. It makes no transitions. */
+
+      default:
+	Die("illegal state %s in traceback", 
+	    CP9Statetype(tr->statetype[tpos]));
+      }
+    }
+}
+
+/* Function: CP9_annotate_model()
+ *           Based on HMMER's modelmakers.c::annotate_model()
+ * 
+ * Purpose:  Add rf, cs optional annotation to a new CM plan 9 model.
+ * 
+ * Args:     hmm       - new model
+ *           matassign - which alignment columns are MAT; [1..alen]
+ *           msa       - alignment, including annotation to transfer
+ *           
+ * Return:   (void)
+ */
+static void
+CP9_annotate_model(struct cplan9_s *hmm, int *matassign, MSA *msa)
+{                      
+  int   apos;			/* position in matassign, 1.alen  */
+  int   k;			/* position in model, 1.M         */
+
+  /* Transfer reference coord annotation from alignment,
+   * if available
+   */
+  if (msa->rf != NULL) {
+    hmm->rf[0] = ' ';
+    for (apos = k = 1; apos <= msa->alen; apos++)
+      if (matassign[apos]) /* ainfo is off by one from HMM */
+	hmm->rf[k++] = (msa->rf[apos-1] == ' ') ? '.' : msa->rf[apos-1];
+    hmm->rf[k] = '\0';
+    hmm->flags |= CPLAN9_RF;
+  }
+
+  /* Transfer consensus structure annotation from alignment, 
+   * if available
+   */
+  if (msa->ss_cons != NULL) {
+    hmm->cs[0] = ' ';
+    for (apos = k = 1; apos <= msa->alen; apos++)
+      if (matassign[apos])
+	hmm->cs[k++] = (msa->ss_cons[apos-1] == ' ') ? '.' : msa->ss_cons[apos-1];
+    hmm->cs[k] = '\0';
+    hmm->flags |= CPLAN9_CS;
+  }
+
+  /* Transfer surface accessibility annotation from alignment,
+   * if available
+   */
+  if (msa->sa_cons != NULL) {
+    hmm->ca[0] = ' ';
+    for (apos = k = 1; apos <= msa->alen; apos++)
+      if (matassign[apos])
+	hmm->ca[k++] = (msa->sa_cons[apos-1] == ' ') ? '.' : msa->sa_cons[apos-1];
+    hmm->ca[k] = '\0';
+    hmm->flags |= PLAN7_CA;
+  }
+
+  /* Store the alignment map
+   */
+  for (apos = k = 1; apos <= msa->alen; apos++)
+    if (matassign[apos])
+      hmm->map[k++] = apos;
+  hmm->flags |= CPLAN9_MAP;
+
+  /* Deleted code to interpret annotations for specific priors to 
+   * use for each position. We won't (currently) have such annotations
+   * for CM Plan 9 models.
+   */
+}
+
+/* Function: CP9Statetype()
+ * 
+ * Purpose:  Returns the state type in text.
+ * Example:  CP9Statetype(M) = "M"
+ */
+char *
+CP9Statetype(char st)
+{
+  switch (st) {
+  case CSTM: return "M";
+  case CSTD: return "D";
+  case CSTI: return "I";
+  case CSTB: return "B";
+  case CSTE: return "E";
+  default: return "BOGUS";
+  }
 }

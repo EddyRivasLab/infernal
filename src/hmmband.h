@@ -35,14 +35,14 @@
 extern double dbl_Score2Prob(int sc, float null);
 
 /* Functions to map an HMM to a CM */
-extern void map_consensus_columns(CM_t *cm, int hmm_ncc, int *node_cc_left, int *node_cc_right,
-				  int *cc_node_map, int debug_level);
+extern void map_consensus_columns(CM_t *cm, int hmm_ncc, int **ret_node_cc_left, int **ret_node_cc_right,
+				  int **ret_cc_node_map, int debug_level);
 extern void CP9_map_cm2hmm_and_hmm2cm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, 
-				      int *node_cc_right, int *cc_node_map, int **cs2hn_map, 
-				      int **cs2hs_map, int ***hns2cs_map, int debug_level);
+				      int *node_cc_right, int *cc_node_map, int ***ret_cs2hn_map, 
+				      int ***ret_cs2hs_map, int ****ret_hns2cs_map, int debug_level);
 extern void P7_map_cm2hmm_and_hmm2cm(CM_t *cm, struct plan7_s *hmm, int *node_cc_left, 
-				     int *node_cc_right, int *cc_node_map, int **cs2hn_map, 
-				     int **cs2hs_map, int ***hns2cs_map, int debug_level);
+				     int *node_cc_right, int *cc_node_map, int ***ret_cs2hn_map, 
+				     int ***ret_cs2hs_map, int ****ret_hns2cs_map, int debug_level);
 extern void map_helper(int **cs2hn_map, int **cs2hs_map, int ***hns2cs_map, int k, int ks, int v);
 extern void P7_last_hmm_insert_state_hack(int M,  int *pn_min_m, int *pn_max_m, int *pn_min_i, 
 					 int *pn_max_i);

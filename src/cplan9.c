@@ -828,3 +828,34 @@ CPlan9RenormalizeExits(struct cplan9_s *hmm)
       FScale(hmm->t[k], 3, (1.-hmm->end[k])/d);
     }
 }
+/* Function: CP9AllocTrace(), CP9ReallocTrace(), CP9FreeTrace()
+ * 
+ * Purpose:  allocation and freeing of traceback structures
+ */
+void
+CP9AllocTrace(int tlen, struct cp9trace_s **ret_tr)
+{
+  struct cp9trace_s *tr;
+  
+  tr =            MallocOrDie (sizeof(struct cp9trace_s));
+  tr->statetype = MallocOrDie (sizeof(char) * tlen);
+  tr->nodeidx   = MallocOrDie (sizeof(int)  * tlen);
+  tr->pos       = MallocOrDie (sizeof(int)  * tlen);
+  *ret_tr = tr;
+}
+void
+CP9ReallocTrace(struct cp9trace_s *tr, int tlen)
+{
+  tr->statetype = ReallocOrDie (tr->statetype, tlen * sizeof(char));
+  tr->nodeidx   = ReallocOrDie (tr->nodeidx,   tlen * sizeof(int));
+  tr->pos       = ReallocOrDie (tr->pos,       tlen * sizeof(int));
+}
+void 
+CP9FreeTrace(struct cp9trace_s *tr)
+{
+  if (tr == NULL) return;
+  free(tr->pos);
+  free(tr->nodeidx);
+  free(tr->statetype);
+  free(tr);
+}

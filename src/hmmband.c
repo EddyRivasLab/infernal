@@ -70,11 +70,11 @@ dbl_Score2Prob(int sc, float null)
  * Args:    
  * CM_t *cm          - CM to map the nodes of 
  * int hmm_ncc       - number of consensus columns in HMM seed alignment
- * int *node_cc_left - consensus column each node's left emission maps to
+ * int **ret_node_cc_left - consensus column each node's left emission maps to
  *                     [0..(cm->nodes-1)], -1 if maps to no consensus column
- * int *node_cc_right- consensus column each node's right emission corresponds to
+ * int **ret_node_cc_right- consensus column each node's right emission corresponds to
  *                     [0..(cm->nodes-1)], -1 if maps to no consensus column
- * int *cc_node_map  - node that each consensus column maps to (is modelled by)
+ * int **ret_cc_node_map  - node that each consensus column maps to (is modelled by)
  *                     [1..hmm_ncc]
  * int debug_level   - [0..3] tells the function what level of debugging print
  *                     statements to print.
@@ -82,8 +82,8 @@ dbl_Score2Prob(int sc, float null)
  */
 
 void
-map_consensus_columns(CM_t *cm, int hmm_ncc, int *node_cc_left, int *node_cc_right,
-		  int *cc_node_map, int debug_level)
+map_consensus_columns(CM_t *cm, int hmm_ncc, int **ret_node_cc_left, int **ret_node_cc_right,
+		  int **ret_cc_node_map, int debug_level)
 {
   int       k;                 /* counter of consensus columns */
   int       n;                 /* counter of nodes */
@@ -114,7 +114,17 @@ map_consensus_columns(CM_t *cm, int hmm_ncc, int *node_cc_left, int *node_cc_rig
   int popped_LR;               /* 1 or 0, popped from LR_stack */
   int popped_rights_exp;       /* number of rights expected (times to pop bp_stack)
 				* we pop from the rights_exp_stack */
-			    
+  int *node_cc_left;    /* consensus column each CM node's left emission maps to
+			 * [0..(cm->nodes-1)], -1 if maps to no consensus column*/
+  int *node_cc_right;   /* consensus column each CM node's right emission maps to
+			 * [0..(cm->nodes-1)], -1 if maps to no consensus column*/
+  int *cc_node_map;     /* node that each consensus column maps to (is modelled by)
+			 * [1..hmm_nmc] */
+
+  node_cc_left  = malloc(sizeof(int) * cm->nodes);
+  node_cc_right = malloc(sizeof(int) * cm->nodes);
+  cc_node_map   = malloc(sizeof(int) * (hmm_ncc + 1));
+
   bp_stack         = CreateNstack();
   rights_exp_stack = CreateNstack();
   LR_stack         = CreateNstack();
@@ -368,11 +378,16 @@ map_consensus_columns(CM_t *cm, int hmm_ncc, int *node_cc_left, int *node_cc_rig
 	}
       printf("-------------------------------------------------\n");
     }	
+
+  *ret_node_cc_left  = node_cc_left;
+  *ret_node_cc_right = node_cc_right;
+  *ret_cc_node_map   = cc_node_map;
+  return;
 }
 
 /**************************************************************************
  * EPN 03.15.06
- * CP9_map_cm2hmm_and_hmm2cm()
+ * Function: CP9_map_cm2hmm_and_hmm2cm()
  *
  * Purpose:  Determine maps between a CM and an HMM by filling 3 multi-dimensional
  *           arrays. All arrays must be pre-allocated and freed by caller.
@@ -385,17 +400,17 @@ map_consensus_columns(CM_t *cm, int hmm_ncc, int *node_cc_left, int *node_cc_rig
  *                     [0..(cm->nodes-1)], -1 if maps to no consensus column
  * int *cc_node_map  - node that each consensus column maps to (is modelled by)
  *                     [1..hmm_ncc]
- * int **cs2hn_map   - 2D CM state to HMM node map, 1st D - CM state index
+ * int ***ret_cs2hn_map - 2D CM state to HMM node map, 1st D - CM state index
  *                     2nd D - 0 or 1 (up to 2 matching HMM states), value: HMM node
  *                     that contains state that maps to CM state, -1 if none.
- * int **cs2hs_map   - 2D CM state to HMM node map, 1st D - CM state index
+ * int ***ret_cs2hs_map - 2D CM state to HMM node map, 1st D - CM state index
  *                     2nd D - 2 elements for up to 2 matching HMM states, 
  *                     value: HMM STATE (0(M), 1(I), 2(D) that maps to CM state, -1 if none.
  * 
  *                     For example: HMM node cs2hn_map[v][0], state cs2hs_map[v][0]
  *                                  maps to CM state v.
  * 
- * int ***hns2cs_map  - 3D HMM node-state to CM state map, 1st D - HMM node index, 2nd D - 
+ * int ****ret_hns2cs_map- 3D HMM node-state to CM state map, 1st D - HMM node index, 2nd D - 
  *                      HMM state (0(M), 1(I), 2(D)), 3rd D - 2 elements for up to 
  *                      2 matching CM states, value: CM states that map, -1 if none.
  *              
@@ -404,9 +419,12 @@ map_consensus_columns(CM_t *cm, int hmm_ncc, int *node_cc_left, int *node_cc_rig
  * Returns: (void) 
  */
 void
-CP9_map_cm2hmm_and_hmm2cm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *node_cc_right, int *cc_node_map, int **cs2hn_map, int **cs2hs_map, int ***hns2cs_map, int debug_level)
+CP9_map_cm2hmm_and_hmm2cm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *node_cc_right, int *cc_node_map, int ***ret_cs2hn_map, int ***ret_cs2hs_map, int ****ret_hns2cs_map, int debug_level)
 {
 
+  int **cs2hn_map;     
+  int **cs2hs_map;     
+  int ***hns2cs_map;   
   int k; /* HMM node counter */
   int ks; /* HMM state counter (0(Match) 1(insert) or 2(delete)*/
   int n; /* CM node that maps to HMM node k */
@@ -416,6 +434,23 @@ CP9_map_cm2hmm_and_hmm2cm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int
   int is_right; /* TRUE if HMM node k maps to right half of CM node n */
   int v; /* state index in CM */
   int v1, v2;
+
+  /* Allocate the maps */
+  cs2hn_map     = malloc(sizeof(int *) * (cm->M+1));
+  for(v = 0; v <= cm->M; v++)
+    cs2hn_map[v]     = malloc(sizeof(int) * 2);
+  
+  cs2hs_map     = malloc(sizeof(int *) * (cm->M+1));
+  for(v = 0; v <= cm->M; v++)
+    cs2hs_map[v]     = malloc(sizeof(int) * 2);
+  
+  hns2cs_map    = malloc(sizeof(int **) * (hmm->M+1));
+  for(k = 0; k <= hmm->M; k++)
+    {
+      hns2cs_map[k]    = malloc(sizeof(int *) * 3);
+      for(ks = 0; ks < 3; ks++)
+	hns2cs_map[k][ks]= malloc(sizeof(int) * 2);
+    }
 
   /* Initialize the maps */
   for(v = 0; v <= cm->M; v++)
@@ -721,6 +756,9 @@ CP9_map_cm2hmm_and_hmm2cm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int
 	    }
 	}
     }
+  *ret_cs2hn_map = cs2hn_map;
+  *ret_cs2hs_map = cs2hs_map;
+  *ret_hns2cs_map = hns2cs_map;
   return;
 }
 
@@ -758,7 +796,7 @@ CP9_map_cm2hmm_and_hmm2cm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int
  * Returns: (void) 
  */
 void
-P7_map_cm2hmm_and_hmm2cm(CM_t *cm, struct plan7_s *hmm, int *node_cc_left, int *node_cc_right, int *cc_node_map, int **cs2hn_map, int **cs2hs_map, int ***hns2cs_map, int debug_level)
+P7_map_cm2hmm_and_hmm2cm(CM_t *cm, struct plan7_s *hmm, int *node_cc_left, int *node_cc_right, int *cc_node_map, int ***ret_cs2hn_map, int ***ret_cs2hs_map, int ****ret_hns2cs_map, int debug_level)
 {
 
   int k; /* HMM node counter */
@@ -770,6 +808,26 @@ P7_map_cm2hmm_and_hmm2cm(CM_t *cm, struct plan7_s *hmm, int *node_cc_left, int *
   int is_right; /* TRUE if HMM node k maps to right half of CM node n */
   int v; /* state index in CM */
   int v1, v2;
+  int **cs2hn_map;
+  int **cs2hs_map;
+  int ***hns2cs_map;
+
+  /* Allocate the maps */
+  cs2hn_map     = malloc(sizeof(int *) * (cm->M+1));
+  for(v = 0; v <= cm->M; v++)
+    cs2hn_map[v]     = malloc(sizeof(int) * 2);
+  
+  cs2hs_map     = malloc(sizeof(int *) * (cm->M+1));
+  for(v = 0; v <= cm->M; v++)
+    cs2hs_map[v]     = malloc(sizeof(int) * 2);
+  
+  hns2cs_map    = malloc(sizeof(int **) * (hmm->M+1));
+  for(k = 0; k <= hmm->M; k++)
+    {
+      hns2cs_map[k]    = malloc(sizeof(int *) * 3);
+      for(ks = 0; ks < 3; ks++)
+	hns2cs_map[k][ks]= malloc(sizeof(int) * 2);
+    }
 
   /* Initialize the maps */
   for(v = 0; v <= cm->M; v++)
@@ -1077,6 +1135,9 @@ P7_map_cm2hmm_and_hmm2cm(CM_t *cm, struct plan7_s *hmm, int *node_cc_left, int *
 	    }
 	}
     }
+  *ret_cs2hn_map = cs2hn_map;
+  *ret_cs2hs_map = cs2hs_map;
+  *ret_hns2cs_map = hns2cs_map;
   return;
 }
 

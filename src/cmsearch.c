@@ -425,31 +425,12 @@ main(int argc, char **argv)
       /* Get information mapping the HMM to the CM and vice versa, used
        * for mapping bands. 
        */
-      node_cc_left  = malloc(sizeof(int) * cm->nodes);
-      node_cc_right = malloc(sizeof(int) * cm->nodes);
-      cc_node_map   = malloc(sizeof(int) * (cp9_hmm->M + 1));
-      map_consensus_columns(cm, cp9_hmm->M, node_cc_left, node_cc_right,
-			    cc_node_map, debug_level);
-      
-      cs2hn_map     = malloc(sizeof(int *) * (cm->M+1));
-      for(v = 0; v <= cm->M; v++)
-	cs2hn_map[v]     = malloc(sizeof(int) * 2);
-      
-      cs2hs_map     = malloc(sizeof(int *) * (cm->M+1));
-      for(v = 0; v <= cm->M; v++)
-	cs2hs_map[v]     = malloc(sizeof(int) * 2);
-      
-      hns2cs_map    = malloc(sizeof(int **) * (cp9_hmm->M+1));
-      for(k = 0; k <= cp9_hmm->M; k++)
-	{
-	  hns2cs_map[k]    = malloc(sizeof(int *) * 3);
-	  for(ks = 0; ks < 3; ks++)
-	    hns2cs_map[k][ks]= malloc(sizeof(int) * 2);
-	}
+      map_consensus_columns(cm, cp9_hmm->M, &node_cc_left, &node_cc_right,
+			    &cc_node_map, debug_level);
       
       CP9_map_cm2hmm_and_hmm2cm(cm, cp9_hmm, node_cc_left, node_cc_right, 
-				cc_node_map, cs2hn_map, cs2hs_map, 
-				hns2cs_map, debug_level);
+				cc_node_map, &cs2hn_map, &cs2hs_map, 
+				&hns2cs_map, debug_level);
       
       /* fill in parameters of HMM using the CM and some ideas/formulas/tricks
        * from Zasha Weinberg's thesis (~p.123) (see CP9_cm2wrhmm.c code) */

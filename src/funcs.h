@@ -226,6 +226,9 @@ extern void  ResizeCPlan9Matrix(struct cp9_dpmatrix_s *mx, int N, int M,
 			       int ***mmx, int ***imx, int ***dmx, int ***emx);
 extern void CPlan9SWConfig(struct cplan9_s *hmm, float pentry, float pexit);
 extern void CPlan9RenormalizeExits(struct cplan9_s *hmm);
+extern void CP9AllocTrace(int tlen, struct cp9trace_s **ret_tr);
+extern void CP9ReallocTrace(struct cp9trace_s *tr, int tlen);
+extern void CP9FreeTrace(struct cp9trace_s *tr);
 
 /* from cp9_hmmio.c 
  * CM Plan9 HMM Input/output (saving/reading)
@@ -294,6 +297,8 @@ extern int CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, in
 			   int debug_level);
 extern void fill_psi(CM_t *cm, double *psi, char ***tmap);
 extern void make_tmap(char ****ret_tmap);
+extern int  CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, float thresh,
+					int nseq);
 
 
 /* from scaninside.c */

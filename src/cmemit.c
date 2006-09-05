@@ -210,7 +210,7 @@ main(int argc, char **argv)
 	    sprintf(sqinfo[i].name, "seq%d", i+1);
 	    sqinfo[i].len   = L;
 	    sqinfo[i].flags = SQINFO_NAME | SQINFO_LEN;
-	  }
+	}
 	
 	msa = Parsetrees2Alignment(cm, dsq, sqinfo, NULL, tr, nseq, do_full);
 	msa->name = sre_strdup(cm->name, -1);

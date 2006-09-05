@@ -458,7 +458,7 @@ main(int argc, char **argv)
     else
       printf("  mean target entropy loss:        %.2f bits [default]\n", eloss);
   }
-
+  
   /*EPN 11.28.05
    *Uncomment code below to use relative entropy weighting (identical 
    *to entropy weighting for equiprobable null distribution.)
@@ -884,26 +884,6 @@ main(int argc, char **argv)
 	  else           WriteAscHMM(hmmfp, p7hmm);
 	  printf("done.\n");
 
-	  /* Below: Abandoned code to construct a P7 HMM that's as similar
-	   * as possible to the CM. (abandoned to pursue building a CM
-	   * plan 9 HMM that's as similar as possible to the HMM.
-	   */
-	  /***********ABANDONED SECTION BEGIN**************************/
-	  /* Get information mapping the HMM to the CM and vice versa. */
-	  /*
-	  node_cc_left  = malloc(sizeof(int) * cm->nodes);
-	  node_cc_right = malloc(sizeof(int) * cm->nodes);
-	  cc_node_map   = malloc(sizeof(int) * (p7hmm->M + 1));
-	  map_consensus_columns(cm, p7hmm->M, node_cc_left, node_cc_right,
-				cc_node_map, debug_level);
-	  */
-	  /* 11.28.05 Reset the HMM parameters so they mirror the 
-	   * CM's as closely as possible. 
-	   * This approach was ABANDONED 03.19.06 */
-	  /*
-	  cm2wrhmm_p7(cm, p7hmm, node_cc_left, node_cc_right, cc_node_map, 3);
-	  */
-	  /***********ABANDONED SECTION END**************************/
 	} /* end of if(hmm_type == HMM_P7) */
       else if (hmm_type == HMM_CP9)
 	{
@@ -923,31 +903,12 @@ main(int argc, char **argv)
 	  ZeroCPlan9(cp9hmm);
 
 	  /* Get information mapping the HMM to the CM and vice versa. */
-	  node_cc_left  = malloc(sizeof(int) * cm->nodes);
-	  node_cc_right = malloc(sizeof(int) * cm->nodes);
-	  cc_node_map   = malloc(sizeof(int) * (cp9hmm->M + 1));
-	  map_consensus_columns(cm, cp9hmm->M, node_cc_left, node_cc_right,
-				cc_node_map, debug_level);
-
-	  cs2hn_map     = malloc(sizeof(int *) * (cm->M+1));
-	  for(v = 0; v <= cm->M; v++)
-	    cs2hn_map[v]     = malloc(sizeof(int) * 2);
-
-	  cs2hs_map     = malloc(sizeof(int *) * (cm->M+1));
-	  for(v = 0; v <= cm->M; v++)
-	    cs2hs_map[v]     = malloc(sizeof(int) * 2);
-
-	  hns2cs_map    = malloc(sizeof(int **) * (cp9hmm->M+1));
-	  for(k = 0; k <= cp9hmm->M; k++)
-	    {
-	      hns2cs_map[k]    = malloc(sizeof(int *) * 3);
-	      for(ks = 0; ks < 3; ks++)
-		hns2cs_map[k][ks]= malloc(sizeof(int) * 2);
-	    }
+	  map_consensus_columns(cm, cp9hmm->M, &node_cc_left, &node_cc_right,
+				&cc_node_map, debug_level);
 
 	  CP9_map_cm2hmm_and_hmm2cm(cm, cp9hmm, node_cc_left, node_cc_right, 
-				    cc_node_map, cs2hn_map, cs2hs_map, 
-				    hns2cs_map, 0);
+				    cc_node_map, &cs2hn_map, &cs2hs_map, 
+				    &hns2cs_map, 0);
 	  
 	  checksum = GCGMultchecksum(msa->aseq, msa->nseq);
 
