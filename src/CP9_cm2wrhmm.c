@@ -68,12 +68,6 @@ static int
 check_cm_adj_bp(CM_t *cm, int *cc_node_map, int hmm_M);
 
 
-static void 
-CP9_fake_tracebacks(char **aseq, int nseq, int alen, int *matassign, struct cp9trace_s ***ret_tr);
-
-static void 
-CP9TraceCount(struct cplan9_s *hmm, char *dsq, float wt, struct cp9trace_s *tr);
-
 static char *
 CP9Statetype(char st);
 
@@ -229,8 +223,10 @@ CP9_cm2wrhmm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *node_cc_rig
     }
   fill_phi_cp9(hmm, phi);
 
-  /*debug_print_cp9_params(hmm);*/
-  psi_vs_phi_threshold = 0.0001;
+  if(debug_level > 1) 
+    debug_print_cp9_params(hmm);
+  /*psi_vs_phi_threshold = 0.0001;*/
+  psi_vs_phi_threshold = 0.01;
   if(check_cm_adj_bp(cm, cc_node_map, hmm->M))
     {
       psi_vs_phi_threshold = 0.01;
@@ -1271,6 +1267,8 @@ cm2hmm_trans_probs_cp9(CM_t *cm, struct cplan9_s *hmm, int k, double *psi, char 
   int hmm_trans_idx; /*0-8;  CTMM, CTMI, CTMD, CTIM, CTII, CTID, CTDM, CTDI, or CTDD*/
   float d;
 
+  /*printf("in cm2hmm_trans_probs_cp9: k: %d\n", k);*/
+
   ap = malloc(sizeof (int) * 2);
   bp = malloc(sizeof (int) * 2);
   n = cc_node_map[k];
@@ -1594,6 +1592,10 @@ hmm_add_single_trans_cp9(CM_t *cm, struct cplan9_s *hmm, int a, int b, int k, in
 			double *psi, char ***tmap, int **cs2hn_map, int **cs2hs_map, int ***hns2cs_map)
 {
   /* check if we've got real CM state ids */
+  /*
+    printf("\t\tin hmm_add_single_trans_cp9, a: %d | b: %d | k: %d | hmm_trans_idx: %d\n", a, b, k, hmm_trans_idx);
+    printf("\t\tbeg hmm_cm->t[%d][%d] : %.9f\n", k, hmm_trans_idx, hmm->t[k][hmm_trans_idx]);
+  */
   if(a == -1 || b == -1)
     return;
 
@@ -1601,6 +1603,7 @@ hmm_add_single_trans_cp9(CM_t *cm, struct cplan9_s *hmm, int a, int b, int k, in
     hmm->t[k][hmm_trans_idx] += psi[a] * cm_sum_subpaths_cp9(cm, a, b, tmap, cs2hn_map, cs2hs_map, hns2cs_map, k, psi);
   else if (a > b) /* going UP the CM */
     hmm->t[k][hmm_trans_idx] += psi[b] * cm_sum_subpaths_cp9(cm, b, a, tmap, cs2hn_map, cs2hs_map, hns2cs_map, k, psi);
+  /*printf("\t\tend hmm_cm->t[%d][%d] : %.9f\n", k, hmm_trans_idx, hmm->t[k][hmm_trans_idx]);*/
 }
 
 /**************************************************************************
@@ -1675,7 +1678,7 @@ cm_sum_subpaths_cp9(CM_t *cm, int start, int end, char ***tmap, int **cs2hn_map,
 			  * this transition probability.
 			  */
 
-  /*printf("\nin cm_sum_subpaths_cp9, start: %d | end: %d\n", start, end);*/
+  /*printf("\t\t\tin cm_sum_subpaths_cp9, start: %d | end: %d\n", start, end);*/
   if(start > end)
     {
       printf("ERROR in cm_sum_subpaths_cp9: start: %d > end: %d\n", start, end);
@@ -1703,6 +1706,8 @@ cm_sum_subpaths_cp9(CM_t *cm, int start, int end, char ***tmap, int **cs2hn_map,
 	    }
 	  return 1.0;
 	}
+      /* else we just return the self-insert probability */
+      /*printf("\t\t\tReturning self insert prob: %f\n", cm->t[start][0]);*/
       return cm->t[start][0];
     }
   to_return = 0.;
@@ -1727,6 +1732,7 @@ cm_sum_subpaths_cp9(CM_t *cm, int start, int end, char ***tmap, int **cs2hn_map,
       if((hns2cs_map[k][1][1] != -1) && (hns2cs_map[k][1][1] < start))
 	insert_to_start += psi[hns2cs_map[k][1][1]] * cm_sum_subpaths_cp9(cm, hns2cs_map[k][1][1], start, tmap, cs2hn_map, cs2hs_map, hns2cs_map, k, psi);
       sub_psi[0] -= insert_to_start / psi[start];
+      /*printf("\t\tinsert_to_start: %f sub_psi[0]: %f\n", insert_to_start, sub_psi[0]);*/
     }
   /* note: when cm_sum_subpaths_cp9 is called recursively above
    * it will never result in another recursive call, 
@@ -1735,6 +1741,7 @@ cm_sum_subpaths_cp9(CM_t *cm, int start, int end, char ***tmap, int **cs2hn_map,
   
   for (v = (start+1); v <= end; v++) 
     {
+      /*printf("\t\t\tv: %d\n", v);*/
       sub_psi[v-start] = 0.;
       n_v = cm->ndidx[v];
       if(cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
@@ -1749,10 +1756,15 @@ cm_sum_subpaths_cp9(CM_t *cm, int start, int end, char ***tmap, int **cs2hn_map,
 	   * we handle this in a special way.*/
 	  sub_psi[v-start] = sub_psi[(v-1)-start] * 1.;
 	}
+      /* check if v is an insert state that maps to node k, if so we don't want
+       * to double count its contribution (it will be counted in a subsequent cm_sum_subpaths_CP9()
+       * call), so we skip it here.
+       */
       if((v != end && is_insert) && ((cs2hn_map[v][0] == k) || cs2hn_map[v][1] == k))
 	{
 	  /*skip the contribution*/
-	  /*printf("v: %d | skipping the contribution\n", v);
+	  /*
+	    printf("v: %d | skipping the contribution\n", v);
 	    printf("\tcs2hn_map[%d][0] : %d\n", v, cs2hn_map[v][0]);
 	    printf("\tcs2hn_map[%d][1] : %d\n", v, cs2hn_map[v][1]);
 	    printf("\tcs2hn_map[start][0] : %d\n", v, cs2hn_map[start][0]);
@@ -2148,23 +2160,46 @@ CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, int *cc_node_
  *           the CM as closely as possible (Weinberg-Ruzzo style, with
  *           differences due to differences in the CM Plan 9 architecture
  *           and the architecture that they use), check if the CM and CP9
- *           actually do correspond as closely as possible by generating
- *           an alignment from the CM using it to build a new CP9 HMM
+ *           actually do correspond as closely as possible. Do this by 
+ *           generating alignments from the CM, determining CP9 HMM 
+ *           tracebacks implicit in the alignments and amassing counts
+ *           from the tracebacks to use to build a new CP9 HMM
  *           without using pseudocounts (the infinite MSA idea introduced
- *           by Zasha Weinberg in the ML-HMM Bioinformatics paper), and
- *           comparing the parameters of that CP9 HMM to the one we've
+ *           by Zasha Weinberg in the ML-HMM Bioinformatics paper). Finally
+ *           compare the parameters of that CP9 HMM to the one we've
  *           built.
+ * 
+ *           The option is given to truncate the alignments generated 
+ *           from the CM before and after specified consensus columns 
+ *           prior to building the ML HMM. This option was added to
+ *           allow testing of the subCM construction procedure.
+ *           To NOT truncate, simply pass 1 and hmm->M as the first
+ *           and last consensus columns to use.
  *           
  *           NOTE: code to sample an alignment from the CM taken from
  *                 cmemit.c (which was ported from HMMER's hmmemit.c).
  * Args:    
  * CM_t *cm          - the CM
- * cplan9_s *hmm     - the HMM
+ * cplan9_s *hmm     - the HMM (models consensus columns spos to epos of the CM)
  * int ***hns2cs_map - 3D HMM node-state to CM state map, 1st D - HMM node index, 2nd D - 
  *                     HMM state (0(M), 1(I), 2(D)), 3rd D - 2 elements for up to 
  *                     2 matching CM states, value: CM states that map, -1 if none.
  *                     For example: CM states hns2cs_map[k][0][0] and hns2cs_map[k][0][1]
  *                                  map to HMM node k's match state.
+ *                     IMPORTANT: the hns2cs_map is only used to determine which
+ *                                HMM insert states map to 2 insert states in 
+ *                                the CM it was built from so that the chi-squared
+ *                                test is skipped for such states. Therefore the
+ *                                actual CM state indices that each HMM state maps to
+ *                                are irrelevant, and when this function is used for
+ *                                subCM construction checking, hns2cs_map WILL NOT
+ *                                correspond to a map between hmm and cm passed into
+ *                                this function, but rather between the hmm and the 
+ *                                sub_cm it was built from.
+
+ * int spos          - first consensus column in cm that hmm models (often 1)
+ * int epos          -  last consensus column in cm that hmm models 
+ *                      (often L = (MATL+MATR+2*MATP))
  * float thresh      - probability threshold for chi squared test
  * int nseq          - number of sequences to sample to build the new HMM.
  *
@@ -2172,7 +2207,7 @@ CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, int *cc_node_
  *          FALSE: otherwise
  */
 int 
-CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, float thresh,
+CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int spos, int epos, int ***hns2cs_map, float thresh,
 			    int nseq)
 {
   int ret_val;         /* return value */
@@ -2185,6 +2220,7 @@ CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, f
   int L;
   int apos;
   int *matassign;
+  int *useme;
   struct cp9trace_s **cp9_tr;   /* fake tracebacks for each seq            */
   struct cplan9_s  *shmm;       /* the new, CM plan9 HMM; built by sampling*/
   int msa_nseq;                 /* this is the number of sequences per MSA,
@@ -2203,18 +2239,20 @@ CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, f
 			     * 2 from B, or 2 from A and 1 from B.) This is impossible to model
 			     * with the same probabilities by the single HMM insert self transition. 
 			     */
+  int cc;
 
   ret_val = TRUE;
   /* Determine which nodes of the HMM have dual mapping inserts */
-  dual_mapping_insert = MallocOrDie(sizeof(int) * hmm->M);
+  dual_mapping_insert = MallocOrDie(sizeof(int) * (hmm->M + 1));
   for(nd = 0; nd <= hmm->M; nd++)
     if(hns2cs_map[nd][HMMINSERT][1] != -1)
       dual_mapping_insert[nd] = 1;
     else
       dual_mapping_insert[nd] = 0;
       
-  msa_nseq = 1000;
-  /* Allocate and normalize the new HMM we're going to build by sampling from
+  //msa_nseq = 1000;
+  msa_nseq = 50;
+  /* Allocate and zero the new HMM we're going to build by sampling from
    * the CM.
    */
   shmm = AllocCPlan9(hmm->M);
@@ -2236,8 +2274,10 @@ CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, f
       /*printf("nsampled: %d\n", nsampled);*/
       if(nsampled != 0)
 	{
+	  /* clean up from previous MSA */
 	  MSAFree(msa);
 	  free(matassign);
+	  free(useme);
 	  for (i = 0; i < msa_nseq; i++)
 	    {
 	      CP9FreeTrace(cp9_tr[i]);
@@ -2258,6 +2298,30 @@ CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, f
 	}
       /* Build a new MSA from these parsetrees */
       msa = Parsetrees2Alignment(cm, dsq, sqinfo, NULL, tr, msa_nseq, TRUE);
+      
+      /* Truncate the alignment prior to consensus column spos and after 
+	 consensus column epos */
+      useme = (int *) MallocOrDie (sizeof(int) * (msa->alen+1));
+      for (apos = 0, cc = 0; apos < msa->alen; apos++)
+	{
+	  /* Careful here, placement of cc++ increment is impt, 
+	   * we want all inserts between cc=spos-1 and cc=spos,
+	   * and between cc=epos and cc=epos+1.
+	   */
+	  if(cc < (spos-1) || cc > epos)
+	    useme[apos] = 0;
+	  else
+	    useme[apos] = 1;
+	  if (!isgap(msa->rf[apos])) 
+	    { 
+	      cc++; 
+	      if(cc == (epos+1))
+		 useme[apos] = 0; 
+		 /* we misassigned this guy, overwrite */ 
+	    }
+	}
+
+      MSAShorterAlignment(msa, useme);
 
       /* Determine match assignment from RF annotation
        */
@@ -2287,7 +2351,6 @@ CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, f
    * CM in this way).
    */
 
-  /* Node 0 is special */
   for(nd = 0; nd <= shmm->M; nd++)
     {
       if(!(CP9_node_chi_squared(hmm, shmm, nd, thresh, dual_mapping_insert[nd])))
@@ -2297,11 +2360,11 @@ CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, f
 	  ret_val = FALSE;
 	}
     }
+
   /*Next, renormalize shmm and logoddisfy it */
   CPlan9Renormalize(shmm);
   CP9Logoddsify(shmm);
 
-  /*
   printf("PRINTING BUILT HMM PARAMS:\n");
   debug_print_cp9_params(hmm);
   printf("DONE PRINTING BUILT HMM PARAMS:\n");
@@ -2310,7 +2373,6 @@ CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, f
   printf("PRINTING SAMPLED HMM PARAMS:\n");
   debug_print_cp9_params(shmm);
   printf("DONE PRINTING SAMPLED HMM PARAMS:\n");
-  */
 
   /* Output the alignment */
   /*WriteStockholm(stdout, msa);*/
@@ -2337,7 +2399,7 @@ CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, f
  * Return:   (void)
  *           ret_tr is alloc'ed here. Caller must free.
  */          
-static void
+void
 CP9_fake_tracebacks(char **aseq, int nseq, int alen, int *matassign,
 		struct cp9trace_s ***ret_tr)
 {
@@ -2671,6 +2733,8 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
       printf("%4d E I P: %f i_nseq: %f\n", nd, p, i_nseq);
       return FALSE;
     }
+  return TRUE;
+  
   /* check transitions */
   /* out of match */
   if(nd == 0)

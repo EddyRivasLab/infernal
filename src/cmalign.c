@@ -627,7 +627,7 @@ main(int argc, char **argv)
 	if(do_checkcp9)
 	  {
 	    sre_srandom(seed);
-	    if(!(CP9_check_wrhmm_by_sampling(cm, cp9_hmm, hns2cs_map, 0.05, 100000)))
+	    if(!(CP9_check_wrhmm_by_sampling(cm, cp9_hmm, 1, cp9_hmm->M, hns2cs_map, 0.05, 100000)))
 	      Die("CM Plan 9 fails sampling check!\n");
 	    else
 	      printf("CM Plan 9 passed sampling check.\n");
@@ -773,7 +773,8 @@ main(int argc, char **argv)
 	      /* Uncomment below to build a subCM that only models consensus columns between HMM start and end
 	       * node. */
 	      BuildSubCM(cm, &ds_cm, hmm_start_node, hmm_end_node, hmm_start_node, hmm_end_node, orig2sub_smap, sub2orig_smap);
-	      exit(1);
+	      /*check_subCM_by_sampling(cm, ds_cm, hmm_start_node, hmm_end_node);*/
+	      check_subCM_by_sampling2(cm, ds_cm, hmm_start_node, hmm_end_node, 10000);
 
 	      /* a temporary function to remove structure outside the columns of the MSA that are before the 
 	       * MSA column that maps to hmm_start_node, and after the MSA column that maps to 

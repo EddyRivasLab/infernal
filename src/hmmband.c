@@ -444,6 +444,7 @@ CP9_map_cm2hmm_and_hmm2cm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int
   for(v = 0; v <= cm->M; v++)
     cs2hs_map[v]     = malloc(sizeof(int) * 2);
   
+  printf("hmm->M: %d\n", hmm->M);
   hns2cs_map    = malloc(sizeof(int **) * (hmm->M+1));
   for(k = 0; k <= hmm->M; k++)
     {
@@ -634,6 +635,13 @@ CP9_map_cm2hmm_and_hmm2cm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int
 	  v = cm->nodemap[n] + 1; /*MATL_D*/
 	  map_helper(cs2hn_map, cs2hs_map, hns2cs_map, k, ks, v);
 
+	  if(k == hmm->M) /* can't forget about ROOT_IR */
+	    {
+	      ks = 1; /*insert*/
+	      v  = 2; /*ROOT_IR*/
+	      map_helper(cs2hn_map, cs2hs_map, hns2cs_map, k, ks, v);
+	    }
+
 	  break;
 
 	case MATR_nd:
@@ -700,10 +708,11 @@ CP9_map_cm2hmm_and_hmm2cm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int
 	}
     }
 
-  /* Check to make sure that insert states map to only 1 HMM node state. */
+  /* Check to make sure that insert states map to exactly 1 HMM node state. */
   for(v = 0; v <= cm->M; v++)
     {
-      if((cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) && cs2hn_map[v][1] != -1)
+      if((cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) && 
+	 ((cs2hn_map[v][0] == -1) || cs2hn_map[v][1] != -1))
 	{
 	  printf("ERROR during cs2hn_map construction\ncs2hn_map[%d][0]: %d | cs2hn_map[%d][1]: %d AND v is an INSERT state\n", v, cs2hn_map[v][0], v, cs2hn_map[v][1]);
 	  exit(1);

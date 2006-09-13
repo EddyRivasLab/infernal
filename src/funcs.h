@@ -297,8 +297,14 @@ extern int CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, in
 			   int debug_level);
 extern void fill_psi(CM_t *cm, double *psi, char ***tmap);
 extern void make_tmap(char ****ret_tmap);
-extern int  CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, float thresh, 
-					int nseq);
+extern int  CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int spos, int epos, int ***hns2cs_map, 
+					float thresh, int nseq);
+extern void CP9_fake_tracebacks(char **aseq, int nseq, int alen, int *matassign, struct cp9trace_s ***ret_tr);
+
+extern void CP9TraceCount(struct cplan9_s *hmm, char *dsq, float wt, struct cp9trace_s *tr);
+extern void debug_print_cp9_params(struct cplan9_s *hmm);
+
+
 
 
 /* from scaninside.c */
@@ -320,12 +326,14 @@ extern float LogSum2(float p1, float p2);
 /* from cm_masks.c */
 extern float CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, char *dsq);
 
-/* from destruct.c */
+/* from subCM.c */
 extern void CP9NodeForPosn(struct cplan9_s *hmm, int i0, int j0, int x, 
 			   struct cp9_dpmatrix_s *post, int *ret_node, int *ret_type);
 extern void StripWUSSGivenCC(MSA *msa, char **dsq, float gapthresh, int first_match, int last_match);
 extern void BuildSubCM(CM_t *orig_cm, CM_t **ret_cm, int struct_start, int struct_end, int model_start,
 		       int model_end, int **orig2sub_smap, int **sub2orig_smap);
 extern void ConsensusModelmaker(char *ss_cons, int clen, CM_t **ret_cm, Parsetree_t **ret_gtr);
+extern int  check_subCM_by_sampling(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos);
+extern int  check_subCM_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int nseq);
 
 
