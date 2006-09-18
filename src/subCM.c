@@ -29,6 +29,8 @@ static void map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_s
 static void cm2sub_cm_emit_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, int v_s, int v_o1, int v_o2);
 static void cm2sub_cm_trans_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***tmap, int v_s, 
 				  int **orig2sub_smap, int **sub2orig_smap);
+static void cm2sub_cm_trans_probs_S(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***tmap, int v_start, 
+				    int **orig2sub_smap, int **sub2orig_smap);
 static void cm2sub_cm_trans_probs_B_E(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***tmap, int v_end, 
 				    int **orig2sub_smap, int **sub2orig_smap);
 static void cm2sub_cm_trans_probs_B_E_dual_helper(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***tmap, int v_s, 
@@ -46,6 +48,8 @@ static int check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, double *orig_p
 static int orig2sub_state_check(int **orig2sub_smap, int orig_a, int orig_b);
 static int sub_trans_check(CM_t *sub_cm, int **orig2sub_smap, int orig_a, int orig_b, int min_sub_v);
 static int trans_check_helper(CM_t *cm, int a, int b);
+static int cm2sub_cm_subtract_root_subpaths(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***tmap, int sub_nd, 
+					    int **orig2sub_smap, int **sub2orig_smap);
 
 /**************************************************************
  * Function: CP9NodeForPosn()
@@ -285,6 +289,7 @@ BuildSubCM(CM_t *orig_cm, CM_t **ret_cm, int struct_start, int struct_end, int m
   double temp_psi;
   double temp_sum;
   int adjust_flag;
+  FILE            *ofp;         /* an open output file */
 
   /* Get the consensus sequence and consensus structure information from the original CM */
   con = CreateCMConsensus(orig_cm, 3.0, 1.0);
@@ -408,96 +413,50 @@ BuildSubCM(CM_t *orig_cm, CM_t **ret_cm, int struct_start, int struct_end, int m
   printf("\n\n\nAddressing 090806\n");
   /* Address problem 090806 (in the 00LOG of ~/notebook/6_0725_inf_destruct), by
    * retraversing the structure and subtracting out subpaths that have been counted twice
-   * for a special situation involving the two inserts of ROOT and MATP states */
-  for(n_s = 0; n_s < sub_cm->nodes; n_s++)
+   * for a special situation involving the two inserts of ROOT and MATP states 
+   */
+    for(n_s = 0; n_s < sub_cm->nodes; n_s++)
     {
-      adjust_flag = FALSE;
-      if(sub_cm->ndtype[n_s] == ROOT_nd)
+      if(sub_cm->ndtype[n_s] == MATP_nd)
 	{
-	  v_s = sub_cm->nodemap[n_s]; /* v_s == ROOT_s */
-	  orig_il1 = sub2orig_smap[(v_s+1)][0];
-	  orig_il2 = sub2orig_smap[(v_s+1)][1];
 	  
-	  orig_ir1 = sub2orig_smap[(v_s+2)][0];
-	  orig_ir2 = sub2orig_smap[(v_s+2)][1];
-	  
-	  printf("\n\norig_il1: %d | orig_il2: %d | orig_ir1: %d | orig_ir2: %d\n", orig_il1, orig_il2, orig_ir1, orig_ir2);
-	  printf("before t[0][1] = %f\n", sub_cm->t[v_s][1]);
+	  if((sub2orig_smap[sub_cm->nodemap[n_s] + 4][1] != -1) ||
+	     (sub2orig_smap[sub_cm->nodemap[n_s] + 5][1] != -1))
+	    Die("ERROR, MATP_IL or MATP_IR node: %d map to 2 cm states\n", n_s);
+	  if(sub2orig_smap[sub_cm->nodemap[n_s] + 4][0] != (sub2orig_smap[sub_cm->nodemap[n_s] + 5][0] - 1))
+	    Die("ERROR, MATP_IL or MATP_IR node: %d don't map to adjacent orig_cm states\n");
+	}
+      if(sub_cm->ndtype[n_s] == ROOT_nd)
+	cm2sub_cm_subtract_root_subpaths(orig_cm, sub_cm, orig_psi, tmap, n_s, orig2sub_smap, sub2orig_smap);
+    }
 
-	  if((orig_il1 != -1 && orig_ir1 != -1) && 
-	     (orig_il1 > orig_ir1))
-	    {
-	      sub_cm->t[v_s][1] -= orig_psi[orig_ir1] * cm_sum_subpaths(orig_cm, sub_cm, orig2sub_smap, orig_ir1, orig_il1, 2, tmap, orig_psi, -1, -2, -3, -4);
-	      adjust_flag = TRUE;
-	    }
-	  if((orig_il1 != -1 && orig_ir2 != -1) && 
-	     (orig_il1 > orig_ir2))
-	    {
-	      sub_cm->t[v_s][1] -= orig_psi[orig_ir2] * cm_sum_subpaths(orig_cm, sub_cm, orig2sub_smap, orig_ir2, orig_il1, 2, tmap, orig_psi, -1, -2, -3, -4);
-	      adjust_flag = TRUE;
-	    }
-	  if((orig_il2 != -1 && orig_ir1 != -1) && 
-	     (orig_il2 > orig_ir1))
-	    {
-	      sub_cm->t[0][1] -= orig_psi[orig_ir1] * cm_sum_subpaths(orig_cm, sub_cm, orig2sub_smap, orig_ir1, orig_il2, 2, tmap, orig_psi, -1, -2, -3, -4);
-	      adjust_flag = TRUE;
-	    }
-	  if((orig_il2 != -1 && orig_ir1 != -1) && 
-	     (orig_il2 > orig_ir2))
-	    {
-	      sub_cm->t[0][1] -= orig_psi[orig_ir2] * cm_sum_subpaths(orig_cm, sub_cm, orig2sub_smap, orig_ir2, orig_il2, 2, tmap, orig_psi, -1, -2, -3, -4);
-	      adjust_flag = TRUE;
-	    }
-	  printf("after t[0][1] = %f\n", sub_cm->t[v_s][1]);
-	  
-	  /* now adjust the virtual counts for transitions out of ROOT_IL */
-	  if(adjust_flag)
-	    {	  if(orig_ir1 != -1)
-	      {
-		/* determine what orig_psi[orig_il1] would be without the subpath of 
-		 * orig_z -> orig_v (orig_z = orig_cm state that maps to sub_z=ROOT_IR)
-		 *                  (orig_v = orig_y = orig_cm state that maps to ROOT_IL)
-		 */
-		/* first remove contribution of self-insert */
-		temp_psi = orig_psi[orig_il1] / (1 + (orig_cm->t[orig_il1][0]/(1-(orig_cm->t[orig_il1][0]))));
-		printf("0 temp_psi: %f\n", temp_psi);
-		/* now subtract contribution of orig_z to orig_v */
-		temp_psi -= orig_psi[orig_ir1] * cm_sum_subpaths(orig_cm, sub_cm, orig2sub_smap, orig_ir1, orig_il1, 2, tmap, orig_psi, -1, -2, -3, -4); /* HEREHEREHERE */
-		printf("1 temp_psi: %f\n", temp_psi);
-		/* now add contribution of self-insert back */
-		temp_psi += temp_psi * (orig_cm->t[orig_il1][0] / (1 - orig_cm->t[orig_il1][0]));
-		printf("2 temp_psi: %f\n", temp_psi);
-		/* finally scale the transitions out of ROOT_IL to non ROOT_IR states by temp_psi / orig_psi[orig_il1] */
-		/* IF NEXT NODE IS MATL or MATR: */
-		sub_cm->t[1][2] *= (temp_psi/orig_psi[orig_il1]);
-		sub_cm->t[1][3] *= (temp_psi/orig_psi[orig_il1]);
-		/* THIS CODE IS SET UP TO HANDLE FOUR.CM ONLY!!!*/
-		printf("sub_cm->t[1][0]: %f\n", sub_cm->t[1][0]);
-		printf("sub_cm->t[1][1]: %f\n", sub_cm->t[1][1]);
-		printf("sub_cm->t[1][2]: %f\n", sub_cm->t[1][2]);
-		printf("sub_cm->t[1][3]: %f\n", sub_cm->t[1][3]);
-		temp_sum = sub_cm->t[1][0] + sub_cm->t[1][1] + sub_cm->t[1][2] + sub_cm->t[1][3];
-		printf("SUM: %f\n", temp_sum);
-	      }
-	    }
-	  /* else if MATP_nd TO DO IF ROOT_ND CASE ACTUALLY WORKS */
+  /* Go back through and fill in the transitions into E and B states and out of S states */
+  for(v_s = 0; v_s < sub_cm->M; v_s++)
+    {
+      if(sub_cm->sttype[v_s] == S_st)
+	cm2sub_cm_trans_probs_S(orig_cm, sub_cm, orig_psi, tmap, v_s, orig2sub_smap, sub2orig_smap);
+
+      if(sub_cm->sttype[v_s] == E_st)
+	cm2sub_cm_trans_probs_B_E(orig_cm, sub_cm, orig_psi, tmap, v_s, orig2sub_smap, sub2orig_smap);
+
+      if(sub_cm->sttype[v_s] == B_st)
+	{
+	  cm2sub_cm_trans_probs_B_E(orig_cm, sub_cm, orig_psi, tmap, v_s, orig2sub_smap, sub2orig_smap);
+	  /* set obligate transitions */
+	  sub_cm->t[v_s][0] = 1.0; /* BIF_B -> BEGL_S */
+	  sub_cm->t[v_s][1] = 1.0; /* BIF_B -> BEGR_S */
 	}
     }
-  /* Go back through and fill in the transitions into E and B states and out of S states */
-  for(v_s = 1; v_s < sub_cm->M; v_s++) /* note we don't reparameterize ROOT_S (v_s = 0), because
-					* its easy to map (it maps to the orig_cm ROOT_S */
-    {
-      if(sub_cm->sttype[v_s] == E_st ||
-	 sub_cm->sttype[v_s] == B_st)
-	cm2sub_cm_trans_probs_B_E(orig_cm, sub_cm, orig_psi, tmap, v_s, orig2sub_smap, sub2orig_smap);
-      //      if(sub_cm->sttype[v_s] == S_st)
-	//cm2sub_cm_trans_probs_S(orig_cm, sub_cm, orig_psi, tmap, v_s, orig2sub_smap, sub2orig_smap);
-    }
-
-
 
   /* Finally renormalize the CM */
   CMRenormalize(sub_cm);
+  printf("done renormalizing\n");
+
+  ofp = fopen("sub.cm", "w");
+  printf("%-40s ... ", "Saving model to file"); fflush(stdout);
+  CMFileWrite(ofp, sub_cm, FALSE);
+  printf("done.\n");
+
 
   sub_psi = malloc(sizeof(double) * sub_cm->M);
   fill_psi(sub_cm, sub_psi, tmap);
@@ -954,7 +913,6 @@ map_orig2sub_cm(CM_t *orig_cm, CM_t *sub_cm, int ***ret_orig2sub_smap, int ***re
    */
   for(cc = sub_start; cc <= sub_end; cc++)
     {
-
       printf("\n\nCC: %d\n\n", cc);
       n_o = o_cc_node_map[cc];
       printf("n_o: %d\n", n_o);
@@ -1232,7 +1190,6 @@ map_orig2sub_cm(CM_t *orig_cm, CM_t *sub_cm, int ***ret_orig2sub_smap, int ***re
    */
 
   /* print sub2orig_smap, checking consistency with orig2sub_smap along the way. */
-  printf("\n\n\n");
   for(v_s = 0; v_s < sub_cm->M; v_s++)
     {
       n_s = sub_cm->ndidx[v_s];
@@ -1345,7 +1302,6 @@ map_orig2sub_cm2(CM_t *orig_cm, CM_t *sub_cm, int ***ret_orig2sub_smap, int ***r
   int nn; /* CM node index */
   int n_begr; /* CM node index */
   int is_left; /* TRUE if HMM node k maps to left half of CM node n */
-  int is_right; /* TRUE if HMM node k maps to right half of CM node n */
   int v; /* state index in CM */
   int v1, v2;
   CMEmitMap_t *orig_emap;         /* consensus emit map for the original, template CM */
@@ -1367,6 +1323,7 @@ map_orig2sub_cm2(CM_t *orig_cm, CM_t *sub_cm, int ***ret_orig2sub_smap, int ***r
   int orig_k;
   int sub_nd;
   int orig_nd;
+  int is_right;
 
   sttypes = malloc(sizeof(char *) * 10);
   sttypes[0] = "D";
@@ -1419,6 +1376,9 @@ map_orig2sub_cm2(CM_t *orig_cm, CM_t *sub_cm, int ***ret_orig2sub_smap, int ***r
       orig_cc2rins_map[cc] = -1;
     }
   /* fill in the map */
+  /* ROOT is special */
+  orig_cc2lins_map[0] = 1; /* ROOT_IL */
+  orig_cc2rins_map[orig_emap->clen+1] = 2; /* ROOT_IR */
   for(n_o = 0; n_o < orig_cm->nodes; n_o++)
     {
       switch (orig_cm->ndtype[n_o]) {
@@ -1580,6 +1540,32 @@ map_orig2sub_cm2(CM_t *orig_cm, CM_t *sub_cm, int ***ret_orig2sub_smap, int ***r
 		Die("ERROR 2 in map_orig2sub_cm()\n");
 	      map_orig2sub_cm_helper(orig_cm, sub_cm,
 				     orig2sub_smap, sub2orig_smap, v_o, v_s);
+
+	      /* if we're mapping insert states in NON-MATP nodes, 
+	       * we may have another orig_cm insert that should map to this state */
+	      if((sub_cm->ndtype[sub_cm->ndidx[v_s]] != MATP_nd) &&
+		 (sub_cm->sttype[v_s] == IL_st || sub_cm->sttype[v_s] == IR_st))
+		{
+		  if(sub_cm->ndtype[sub_cm->ndidx[v_s]] == MATL_nd)
+		    {
+		      is_right = 0;
+		    }
+		  else if(sub_cm->ndtype[sub_cm->ndidx[v_s]] == MATR_nd)
+		    {
+		      is_right = 1;
+		    }
+		  else
+		    Die("You don't understand CMs 0\n");
+
+		  k_s = 1; /* insert */		 
+		  printf("!*! sub_k: %d | orig_k: %d\n", sub_k, orig_k);
+		  if(hns2cs_map_o[orig_k][k_s][0] != -1 && hns2cs_map_o[(orig_k-is_right)][k_s][1] != v_o)
+		    map_orig2sub_cm_helper(orig_cm, sub_cm, orig2sub_smap, sub2orig_smap, 
+					   hns2cs_map_o[orig_k-is_right][k_s][0], v_s);
+		  if(hns2cs_map_o[orig_k][k_s][1] != -1 && hns2cs_map_o[(orig_k-is_right)][k_s][1] != v_o)
+		    map_orig2sub_cm_helper(orig_cm, sub_cm, orig2sub_smap, sub2orig_smap, 
+					   hns2cs_map_o[orig_k-is_right][k_s][1], v_s);
+		}
 	      v_o++; 
 	      v_s++;
 	    }
@@ -1605,7 +1591,7 @@ map_orig2sub_cm2(CM_t *orig_cm, CM_t *sub_cm, int ***ret_orig2sub_smap, int ***r
 	  
 	  k_s = 1; /* insert */
 	  map_orig2sub_cm_helper(orig_cm, sub_cm, orig2sub_smap, sub2orig_smap, 
-			     hns2cs_map_o[orig_k][k_s][0],
+				 hns2cs_map_o[orig_k][k_s][0],
 				 hns2cs_map_s[sub_k][k_s][0]);     
 	  map_orig2sub_cm_helper(orig_cm, sub_cm, orig2sub_smap, sub2orig_smap, 
 				 hns2cs_map_o[orig_k][k_s][0],
@@ -1643,6 +1629,7 @@ map_orig2sub_cm2(CM_t *orig_cm, CM_t *sub_cm, int ***ret_orig2sub_smap, int ***r
    */
   
   /* print sub2orig_smap, checking consistency with orig2sub_smap along the way. */
+  printf("\n\n\n KACHOW! MAP\n\n\n");
   printf("\n\n\n");
   for(v_s = 0; v_s < sub_cm->M; v_s++)
     {
@@ -1771,6 +1758,13 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **s
   if(orig_v == -1 || sub_v == -1)
     return;
 
+  /* check to see if we already have this mapping */
+  if(orig2sub_smap[orig_v][0] == sub_v || orig2sub_smap[orig_v][1] == sub_v)
+    {
+      printf("already have mapping, returning\n");
+      return;
+    }
+
   orig_nd = orig_cm->ndidx[orig_v];
   sub_nd  =  sub_cm->ndidx[sub_v];
 
@@ -1781,9 +1775,13 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **s
 	Die("INSERT error in map_orig2sub_cm_helper()\n");
       is_insert = TRUE;
     }
+
+  /* 09.14.06  I think that some of the code that checks for cases where we wnat to avoid mapping is unnecessary!,
+   * but I'm not sure what...*/
       
   /* check for cases we want to avoid mapping, we exploit the fact that we know a MATP_nd in a sub_cm MUST be mapped 
    * to a corresponding MATP_nd in the original template CM: */
+
   if(sub_cm->ndtype[sub_nd] == MATP_nd)
     {
       if(orig_cm->ndtype[orig_nd] == MATP_nd && sub_cm->sttype[sub_v] != orig_cm->sttype[orig_v])
@@ -1804,7 +1802,7 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **s
 	       * but first we want to check to make sure we don't already have a mapping for these two guys,
 	       * and if we do, obliterate it.
 	       */
-	      printf("in else\n");
+  	      printf("in else\n");
 	      if(orig2sub_smap[orig_v][0] != -1 && sub2orig_smap[sub_v][0] != -1)
 		{
 		  if((orig2sub_smap[orig_v][1] != -1 || (sub2orig_smap[sub_v][1] != -1)))
@@ -1812,7 +1810,7 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **s
 		  if(orig2sub_smap[orig_v][0] == sub_v)
 		    {
 		      printf("obliterate 1\n");
-		      /* obliterate */
+  	      /* obliterate */ 
 		      orig2sub_smap[orig_v][0] = -1;
 		      sub2orig_smap[sub_v][0]  = -1;
 		    }
@@ -1822,9 +1820,11 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **s
 	    }
 	}
     }
+
   /* check for case that we're mapping a orig MATP_I* to a sub MATP_I*, but we already have a mapping for the
    * sub MATP_I*, in which case we obliterate it. 
    */
+
   if(is_insert && (orig_cm->ndtype[orig_nd] == MATP_nd && sub_cm->ndtype[sub_nd] == MATP_nd))
     {
       printf("kachow\n");
@@ -1857,12 +1857,19 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **s
   /* check for case that we've already mapped this orig_cm MATP_I* state to a sub_cm MATP_I* state,
    * in which case we want to skip the current mapping.
    */
+
   if(is_insert && (orig_cm->ndtype[orig_nd] == MATP_nd && sub_cm->ndtype[sub_nd] != MATP_nd))
     {
       if(orig2sub_smap[orig_v][0] != -1)
 	{
 	  if((orig2sub_smap[orig_v][1] != -1 || (sub2orig_smap[sub_v][1] != -1)) || (sub2orig_smap[sub_v][0] == -1))
-	    Die("ERROR with sub non-MATP to orig MATP insert 2\n");
+	    {
+	      printf("orig2sub_smap[orig_v:%d][0]       (%d)\n", orig_v, orig2sub_smap[orig_v][0]);
+	      printf("orig2sub_smap[orig_v:%d][1] != -1 (%d)\n", orig_v, orig2sub_smap[orig_v][1]);
+	      printf("sub2orig_smap[sub_v:%d][1]  != -1 (%d)\n", sub_v,  sub2orig_smap[sub_v][1]);
+	      printf("sub2orig_smap[sub_v:%d][0]  == -1 (%d)\n", sub_v,  sub2orig_smap[sub_v][0]);
+	      Die("ERROR with sub non-MATP to orig MATP insert 2\n");
+	    }
 	  if(sub_cm->ndtype[sub_cm->ndidx[orig2sub_smap[orig_v][0]]] == MATP_nd)
 	    {
 	      printf("return case 4\n");
@@ -2017,7 +2024,7 @@ cm2sub_cm_emit_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, int v_s, int
       printf("dual insert case\n");
       if(!((orig_cm->sttype[v_o1] == IL_st && orig_cm->sttype[v_o2] == IR_st) ||
 	   (orig_cm->sttype[v_o1] == IR_st && orig_cm->sttype[v_o2] == IL_st)))
-	Die("ERROR sub_cm state: %d maps to two states, but not case 1: one is MATP_MP OR case 2: one is IL and one is IR\n", v_o1, v_o2);
+	Die("ERROR sub_cm state: %d maps to two states (%d and %d), but not case 1: one is MATP_MP OR case 2: one is IL and one is IR\n", v_s, v_o1, v_o2);
       for(i = 0; i < MAXABET; i++)
 	sub_cm->e[v_s][i] = orig_psi[v_o1] * orig_cm->e[v_o1][i];
       for(i = 0; i < MAXABET; i++)
@@ -2153,10 +2160,249 @@ cm2sub_cm_trans_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***tma
 }
 
 /**************************************************************************
+ * EPN 09.15.06
+ * cm2sub_cm_trans_probs_S()
+ *
+ * Purpose:  For a specific sub CM S state v_start, fill in virtual counts
+ *           for transitions out of v_s. We do this in its own seperate function
+ *           because we can't robustly map S states in a subCM to S states
+ *           in an orig CM (if its possible - I can't figure out how to do it).
+ * 
+ * Args:    
+ * CM_t *orig_cm     - the original, template CM
+ * CM_t *sub_cm      - the sub CM 
+ * double *orig_psi  - orig_psi[v] is the expected number of times state v is entered
+ *                     in a CM parse
+ * char ***tmap      - the hard-coded transition map
+ * int v_start       - the sub_cm start state we're filling virtual counts of transitions into
+ * orig2sub_smap     - 2D state map from orig_cm (template) to sub_cm.
+ *                     1st dimension - state index in orig_cm 
+ *                     2nd D - 2 elements for up to 2 matching sub_cm states, .
+ * sub2orig_smap     - 2D state map from sub_cm to orig_cm.
+ *                     1st dimension - state index in sub_cm (0..sub_cm->M-1)
+ *                     2nd D - 2 elements for up to 2 matching orig_cm states, 
+ * Returns: void
+ */
+static void
+cm2sub_cm_trans_probs_S(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***tmap, int v_start, int **orig2sub_smap,
+			int **sub2orig_smap)
+{
+  int v_o;
+  int yoffset;
+  int y_s;
+  int y_o;
+  int v_s;
+
+  int sub_nd;
+
+  int v_s_insert;
+  int v_o_insert;
+
+  float sum;
+  float il_psi;
+  float temp_psi;
+  float temp_psi_sum;
+  float diff;
+
+  printf("in cm2sub_cm_trans_probs_S: v_start: %d\n", v_start);
+
+  sub_nd     = sub_cm->ndidx[v_start];
+
+  if(sub_cm->ndtype[sub_nd] == BEGL_nd)
+    {
+      /* This is the easy case, we have transitions into each of the states in the split-set
+       * of the next node. The only way to reach each of these states is from the BEGL
+       * so we just weight each by the psi values for the matching orig_cm states.
+       */
+      if(sub_cm->ndtype[sub_nd + 1] == BIF_nd)
+	sub_cm->t[v_start][0] = 1.0; /* BEGL_S -> BIF_B */
+      else
+	for(yoffset = 0; yoffset < sub_cm->cnum[v_start]; yoffset++)
+	  {
+	    y_s = sub_cm->cfirst[v_start] + yoffset;
+	    printf("updating sub_cm->t[%d][%d]\n", v_start, yoffset);
+	    sub_cm->t[v_start][yoffset] = orig_psi[sub2orig_smap[y_s][0]];
+	    if(sub2orig_smap[y_s][1] != -1)
+	      sub_cm->t[v_start][yoffset] += orig_psi[sub2orig_smap[y_s][1]];
+	  }
+    }
+  
+  else if(sub_cm->ndtype[sub_nd] == BEGR_nd)
+    {
+      printf("!!!SETTING TRANSITIONS OUT OF BEGR_S, NOT SURE IF THIS IS IMPLEMENTED CORRECTLY!!!!\n\n");
+      /* More complicated than the BEGL case b/c we need to handle the
+       * BEGR_S -> BEGR_IL transition as well as BEGR_S -> next node 
+       * split set transitions.
+       * We know the BEGR_IL -> BEGR_IL self transition though because
+       * we were able to map BEGR_IL to 1 or 2 orig_cm states.
+       */
+
+      v_s_insert = v_start + 1;
+      if(sub_cm->ndtype[sub_nd + 1] == BIF_nd)
+	{
+	  printf("!!!SPECIAL CASE BEGR -> BIF!\n");
+
+	  v_o_insert = sub2orig_smap[v_s_insert][0];
+	  if(sub2orig_smap[v_s_insert][1] == -1)
+	    {
+	      diff = sub_cm->t[v_s_insert][0] - (orig_psi[v_o_insert] * orig_cm->t[v_o_insert][0]);
+	      if(diff >= 0. && diff > 0.0001)
+		Die("ERROR, code for calc'ing BEGR_IL -> BIF_B is wrong, sub_cm->t[v_s_insert:%d][0] should be %f (based on your understanding) but its really %f\n", v_s_insert, (orig_psi[v_o_insert] * orig_cm->t[v_o_insert][0]), (sub_cm->t[v_s_insert][0]));
+	      if(diff <= 0. && diff < -0.0001)
+		Die("ERROR, code for calc'ing BEGR_IL -> BIF_B is wrong, sub_cm->t[v_s_insert:%d][0] should be %f (based on your understanding) but its really %f\n", v_s_insert, (orig_psi[v_o_insert] * orig_cm->t[v_o_insert][0]), (sub_cm->t[v_s_insert][0]));
+	    }
+	  
+	  /* BEGR_IL -> BEGR_IL will be the sum over possibly two orig_cm states v_o_insert that 
+	   * map to sub_cm state BEGR_IL of: 
+	   *    orig_psi[v_o_insert] * orig_cm->t[v_o_insert][0],
+	   * so BEGR_IL -> BIF_B is calc'ed as follows */
+	  sub_cm->t[v_s_insert][1] = orig_psi[v_o_insert] * (1. - orig_cm->t[v_o_insert][0]);
+	  if(sub2orig_smap[v_s_insert][1] != -1)
+	    {
+	      /* we have to factor in the other state as well. */
+	      Die("ERROR, BEGR_IL: %d maps to 2 orig_cm states, was hoping this was impossible - need to implement.\n", v_s_insert);
+	      v_o_insert = sub2orig_smap[v_s_insert][1];
+	      sub_cm->t[v_s_insert][1] += orig_psi[v_o_insert] * (1. - orig_cm->t[v_o_insert][0]);
+	    }
+	  /* Now we normalize the transitions out of BEGR_IL, so we can calculate BEGR_S -> BEGR_IL */
+	  FNorm(sub_cm->t[v_s_insert], sub_cm->cnum[v_s_insert]);
+	  il_psi   = orig_psi[sub2orig_smap[v_s_insert][0]];
+	  if(sub2orig_smap[v_s_insert][1] != -1)
+	    {
+	      Die("ERROR, BEGR_IL: %d maps to 2 orig_cm states, was hoping this was impossible - need to implement.\n", v_s_insert);
+	      il_psi+= orig_psi[sub2orig_smap[v_s_insert][1]];
+	    }
+	  sub_cm->t[v_start][0] = (1. - sub_cm->t[v_s_insert][0]) * il_psi; /* set BEGR_S -> BEGR_IL */
+	  sub_cm->t[v_start][1] = 1. - sub_cm->t[v_start][0]; /* set BEGR_S -> BIF_B */
+	}
+
+      else
+	{ /* next node is not a BIF node */
+	  /* First, normalize the probabilities out of the BEGR_IL, so
+	   * we can calculate what BEGR_S -> BEGR_IL should be (we need
+	   * to know BEGR_IL -> BEGR_IL probability and orig_psi of
+	   * the states that map to BEGR_IL to do this).
+	   */
+	  sum = 0.;
+	  FNorm(sub_cm->t[v_s_insert], sub_cm->cnum[v_s_insert]);
+	  il_psi   = orig_psi[sub2orig_smap[v_s_insert][0]];
+	  if(sub2orig_smap[v_s_insert][1] != -1)
+	    {
+	      Die("ERROR, BEGR_IL: %d maps to 2 orig_cm states, was hoping this was impossible - need to implement.\n", v_s_insert);
+	      il_psi += orig_psi[sub2orig_smap[v_s_insert][1]];
+	    }
+	  sub_cm->t[v_start][0] = (1. - sub_cm->t[v_s_insert][0]) * il_psi; /* set BEGR_S -> BEGR_IL */
+	  sum = sub_cm->t[v_start][0];
+	  
+	  for(yoffset = 1; yoffset < sub_cm->cnum[v_start]; yoffset++) /* note we start at yoffset = 1 
+									* BEGR_S -> first state of next
+									* node's split set. */
+	    {
+	      y_s = sub_cm->cfirst[v_start] + yoffset;
+	      temp_psi   = orig_psi[sub2orig_smap[y_s][0]];
+	      if(sub2orig_smap[y_s][1] != -1)
+		temp_psi += orig_psi[sub2orig_smap[y_s][1]];
+	      
+	      sub_cm->t[v_start][yoffset] = temp_psi - il_psi * sub_cm->t[v_s_insert][yoffset];
+	      sum += sub_cm->t[v_start][yoffset];
+	    }
+	  printf("BEGR->NON BIF  SUM: %f\n", sum);
+	  if(sum < 1.0 && ((1.0 - sum) > 0.001))
+	    Die("ERROR calculating transitions out of BEGR_S incorrectly\n");
+	  if(sum > 1.0 && ((sum - 1.0) > 0.001))
+	    Die("ERROR calculating transitions out of BEGR_S incorrectly\n");
+	}      
+    }
+  else if(sub_cm->ndtype[sub_nd] == ROOT_nd)
+    {
+      printf("KACHOW! in cm2sub_cm_trans_probs_S(), ROOT_nd\n");
+      /* the only case we have to worry about is if the next node is BIF node,
+       * otherwise the transitions out of ROOT_S have already been set.
+       */
+      if(sub_cm->ndtype[sub_nd + 1] == BIF_nd)
+	{
+	  printf("!!!SPECIAL CASE ROOT -> BIF!\n");
+	  /* First set transition from ROOT_S -> BIF_B, we know that
+	   * ROOT_S -> ROOT_IL and ROOT_S -> ROOT_IR were set using 
+	   * orig_cm subpaths originating at ROOT_S, so we know that
+	   * the virtual counts out of ROOT_S should NOT be scaled, in
+	   * other words, they can be treated as probabilities and should
+	   * sum to 1.0.
+	   */
+	  sub_cm->t[0][2] = 1.0 - (sub_cm->t[0][0] + sub_cm->t[0][1]); /* set ROOT_S->BIF_B */
+
+	  v_s_insert = v_start + 1; /* ROOT_IL */
+	  v_o_insert = sub2orig_smap[v_s_insert][0];
+	  if(sub2orig_smap[v_s_insert][1] == -1)
+	    {
+	      diff = sub_cm->t[v_s_insert][0] - (orig_psi[v_o_insert] * orig_cm->t[v_o_insert][0]);
+	      if(diff >= 0. && diff >= 0.0001)
+		Die("ERROR, code for calc'ing ROOT_IL -> BIF_B is wrong, sub_cm->t[v_s_insert:%d][0] should be %f (based on your understanding) but its really %f\n", v_s_insert, (orig_psi[v_o_insert] * orig_cm->t[v_o_insert][0]), (sub_cm->t[v_s_insert][0]));
+	      if(diff <= 0. && diff <= -0.0001)
+		Die("ERROR, code for calc'ing ROOT_IL -> BIF_B is wrong, sub_cm->t[v_s_insert:%d][0] should be %f (based on your understanding) but its really %f\n", v_s_insert, (orig_psi[v_o_insert] * orig_cm->t[v_o_insert][0]), (sub_cm->t[v_s_insert][0]));
+	    }
+	  /* We want to figure out what the virtual counts for the traansition ROOT_IL -> BIF_B should
+	   * be, but this depends on how we filled the virtual counts for the other two 
+	   * transitions (-> ROOT_IL and -> ROOT_IR) out of ROOT_IL, so we SHOULD revisit
+	   * their calculation. Here, I'm attempting a trick that SHOULD work: figuring out
+	   * what the self_insert probability IL->IL should be based on the self insert probabilities
+	   * of the up to 2 orig_cm states that sub_cm ROOT_IL maps to, then using that scaling
+	   * factor (the actual probability / the virtual counts currently in sub_cm->t[ROOT_IL][0])
+	   * to scale both ROOT_IL->ROOT_IL and ROOT_IL->ROOT_IR, then we can just set ROOT_IL->BIF
+	   * as 1.0 - (ROOT_IL->ROOT_IL + ROOT_IL->ROOT_IR).
+	   */
+
+	  temp_psi_sum = orig_psi[v_o_insert];
+	  
+	  if(sub2orig_smap[v_s_insert][1] != -1)
+	    {
+	      v_o_insert    = sub2orig_smap[v_s_insert][1];
+	      temp_psi_sum += orig_psi[v_o_insert];
+	    }	      
+	  sub_cm->t[v_s_insert][0] /= temp_psi_sum; /* ROOT_IL -> ROOT_IL */
+	  sub_cm->t[v_s_insert][1] /= temp_psi_sum; /* ROOT_IL -> ROOT_IR */
+	  sub_cm->t[v_s_insert][2]  = 1. - (sub_cm->t[v_s_insert][0] + sub_cm->t[v_s_insert][1]);
+ 	                                            /* ROOT_IL -> BIF_B */
+
+	  /* move on to calc'ing ROOT_IR -> BIF */
+	  v_s_insert = v_start + 2; /* ROOT_IR */
+	  v_o_insert = sub2orig_smap[v_s_insert][0];
+	  if(sub2orig_smap[v_s_insert][1] == -1)
+	    {
+	      diff = sub_cm->t[v_s_insert][0] - (orig_psi[v_o_insert] * orig_cm->t[v_o_insert][0]);
+	      if(diff >= 0. && diff > 0.0001)
+		Die("ERROR, code for calc'ing ROOT_IR -> BIF_B is wrong, sub_cm->t[v_s_insert:%d][0] should be %f (based on your understanding) but its really %f\n", v_s_insert, (orig_psi[v_o_insert] * orig_cm->t[v_o_insert][0]), (sub_cm->t[v_s_insert][0]));
+	      if(diff <= 0. && diff < -0.0001)
+		Die("ERROR, code for calc'ing ROOT_IR -> BIF_B is wrong, sub_cm->t[v_s_insert:%d][0] should be %f (based on your understanding) but its really %f\n", v_s_insert, (orig_psi[v_o_insert] * orig_cm->t[v_o_insert][0]), (sub_cm->t[v_s_insert][0]));
+	    }
+	  /* We can calculate what the ROOT_IR -> ROOT_IR probability should be, and then
+	   * just take 1.0 minus that probability to set ROOT_IR -> BIF.
+	   */
+	  temp_psi_sum = orig_psi[v_o_insert];
+	  
+	  if(sub2orig_smap[v_s_insert][1] != -1)
+	    {
+	      v_o_insert    = sub2orig_smap[v_s_insert][1];
+	      temp_psi_sum += orig_psi[v_o_insert];
+	    }	      
+	  sub_cm->t[v_s_insert][0] /= temp_psi_sum; /* ROOT_IR -> ROOT_IR */
+	  sub_cm->t[v_s_insert][1]  = 1. - (sub_cm->t[v_s_insert][0]);
+ 	                                            /* ROOT_IR -> BIF_B */
+	}
+      else
+	{
+	  /* ROOT -> non-BIF node, we have already handled this, so we return. */
+	}
+    }
+  printf("leaving cm2sub_cm_trans_probs_S\n\n");
+  return;
+}
+
+/**************************************************************************
  * EPN 09.13.06
  * cm2sub_cm_trans_probs_B_E()
  *
- * Purpose:  For a specific sub CM state B or E state v_be fill in virtual counts
+ * Purpose:  For a specific sub CM B or E state v_be fill in virtual counts
  *           for transitions into v_be. We do this in its own seperate function,
  *           because we can't robustly map E states in a subCM to E states
  *           in an orig CM (if its possible - I can't figure out how to do it).
@@ -2271,78 +2517,65 @@ cm2sub_cm_trans_probs_B_E(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char **
 
   case MATL_nd:
   case MATR_nd:
-      /* psub_nd is a MATL or MATR and we know each state in psub_nd transits to 
-       * exactly 2 states, the insert state of psub_nd and the BIF or END state v_be, which
-       * we are trying to fill in transitions to.
-       */
-      bif_end_yoffset = 1; /* cm->t[][1] goes to BIF_B or END_E */
-      v_s = sub_cm->nodemap[psub_nd]; /* v_s is MATL_ML or MATR_MR */
-      v_s_insert = sub_cm->nodemap[psub_nd] + 2; /* v_s_insert is MATL_IL or MATR_IR */
-      v_o = sub2orig_smap[v_s][0];
-      if(sub2orig_smap[v_s][1] == -1)
-	{
-	  /* virtual counts for the MAT*_* -> BIF or END is just the remainder of the orig_psi[MAT*_*] 
-	   * that doesn't go into MAT*_I* */
-	  sub_cm->t[v_s][1] = orig_psi[v_o] * (1. - (sub_cm->t[v_s][0] / orig_psi[v_o]));
-	}
-      else /* v_s maps to 2 states in orig_cm, this makes things more complicated. */
-	{
-	  /* all the info we have is orig_psi[v_o] and the transition virtual counts into MATL_IL, but
-	   * if two orig_cm states map to v_s, then we need more info: specifically the contribution
-	   * of each of these two orig_cm states to the transition virtual counts, so we need to wastefully
-	   * recall cm_sum_subpaths().
-	   */
-	  cm2sub_cm_trans_probs_B_E_dual_helper(orig_cm, sub_cm, orig_psi, tmap, v_s, v_s_insert, bif_end_yoffset,
-					      orig2sub_smap, sub2orig_smap);
-	}
-      /* move on to transitions out of next state MAT*_D, we do this guy analogously */
-      v_s++; /* v_s is MATL_D or MATR_D */
-      v_o = sub2orig_smap[v_s][0];
-      if(sub2orig_smap[v_s][1] == -1)
-	  sub_cm->t[v_s][1] = orig_psi[v_o] * (1. - (sub_cm->t[v_s][0] / orig_psi[v_o]));
-      else
-	cm2sub_cm_trans_probs_B_E_dual_helper(orig_cm, sub_cm, orig_psi, tmap, v_s, v_s_insert, bif_end_yoffset,
-					    orig2sub_smap, sub2orig_smap);
-
-      /* move on to transitions out of next state MAT*_I*, we do this guy analogously */
-      v_s++; /* v_s is MATL_IL or MATR_IR */
-      v_o = sub2orig_smap[v_s][0];
-      if(sub2orig_smap[v_s][1] == -1)
-	  sub_cm->t[v_s][1] = orig_psi[v_o] * (1. - (sub_cm->t[v_s][0] / orig_psi[v_o]));
-      else
-	cm2sub_cm_trans_probs_B_E_dual_helper(orig_cm, sub_cm, orig_psi, tmap, v_s, v_s_insert, bif_end_yoffset,
-					    orig2sub_smap, sub2orig_smap);
-      break;
-
-  case ROOT_nd:
-    { 
-      Die("ERROR, need to implement ROOT_nd -> BIF_B transitions\n");
-      break;
-    }
-
-  case BEGL_nd:
-    /* aaah, the BEGL_nd... */
-    sub_cm->t[v_s][0] = 1.0;
-    break;
-
-  case BEGR_nd:
-    /* Each state in a BEGR_nd followed by a BIF_nd transits to 
-     * exactly 2 states, the insert state of BEGR_IL and BIF state v_be, which
+    printf("prev node type MATL or MATR\n");
+    /* psub_nd is a MATL or MATR and we know each state in psub_nd transits to 
+     * exactly 2 states, the insert state of psub_nd and the BIF or END state v_be, which
      * we are trying to fill in transitions to.
      */
-    /*HEREHEREHERE, we have to figure out how to set BEGR_S -> BEGR_IL... 
-     * we can either set this here, or in a separate function for setting probabilities
-     * out of BEGR_S, if we already know it, this step is easier here.
-     */
-    Die("ERROR need to implement BEGR_nd -> BIF_nd transition mapping\n");
+    bif_end_yoffset = 1; /* cm->t[][1] goes to BIF_B or END_E */
+    v_s = sub_cm->nodemap[psub_nd]; /* v_s is MATL_ML or MATR_MR */
+    v_s_insert = sub_cm->nodemap[psub_nd] + 2; /* v_s_insert is MATL_IL or MATR_IR */
+    v_o = sub2orig_smap[v_s][0];
+    if(sub2orig_smap[v_s][1] == -1)
+      {
+	/* virtual counts for the MAT*_* -> BIF or END is just the remainder of the orig_psi[MAT*_*] 
+	 * that doesn't go into MAT*_I* */
+	sub_cm->t[v_s][1] = orig_psi[v_o] * (1. - (sub_cm->t[v_s][0] / orig_psi[v_o]));
+      }
+    else /* v_s maps to 2 states in orig_cm, this makes things more complicated. */
+      {
+	/* all the info we have is orig_psi[v_o] and the transition virtual counts into MATL_IL, but
+	 * if two orig_cm states map to v_s, then we need more info: specifically the contribution
+	 * of each of these two orig_cm states to the transition virtual counts, so we need to wastefully
+	 * recall cm_sum_subpaths().
+	 */
+	cm2sub_cm_trans_probs_B_E_dual_helper(orig_cm, sub_cm, orig_psi, tmap, v_s, v_s_insert, bif_end_yoffset,
+					      orig2sub_smap, sub2orig_smap);
+      }
+    /* move on to transitions out of next state MAT*_D, we do this guy analogously */
+    v_s++; /* v_s is MATL_D or MATR_D */
+    v_o = sub2orig_smap[v_s][0];
+    if(sub2orig_smap[v_s][1] == -1)
+      sub_cm->t[v_s][1] = orig_psi[v_o] * (1. - (sub_cm->t[v_s][0] / orig_psi[v_o]));
+    else
+      cm2sub_cm_trans_probs_B_E_dual_helper(orig_cm, sub_cm, orig_psi, tmap, v_s, v_s_insert, bif_end_yoffset,
+					    orig2sub_smap, sub2orig_smap);
+    
+    /* move on to transitions out of next state MAT*_I*, we do this guy analogously */
+    v_s++; /* v_s is MATL_IL or MATR_IR */
+    v_o = sub2orig_smap[v_s][0];
+    if(sub2orig_smap[v_s][1] == -1)
+      sub_cm->t[v_s][1] = orig_psi[v_o] * (1. - (sub_cm->t[v_s][0] / orig_psi[v_o]));
+    else
+      cm2sub_cm_trans_probs_B_E_dual_helper(orig_cm, sub_cm, orig_psi, tmap, v_s, v_s_insert, bif_end_yoffset,
+					    orig2sub_smap, sub2orig_smap);
+    break;
+    
+  case ROOT_nd:
+  case BEGL_nd:
+  case BEGR_nd:
+    { /* we handle these cases in cm2sub_cm_trans_probs_S() */ }
     break;
 
   default: 
     Die("ERROR bogus node type transiting to END or BIF\n");
     break;
   }
-    return;
+
+  printf("Returning from cm2sub_cm_trans_probs_B_E\n");
+  return;
 }
+
 
 /**************************************************************************
  * EPN 09.13.06
@@ -2364,6 +2597,11 @@ cm2sub_cm_trans_probs_B_E_dual_helper(CM_t *orig_cm, CM_t *sub_cm, double *orig_
   int start;
   int end;
   int going_down;
+  int is_insert; 
+  
+  is_insert = FALSE;
+  if(sub_cm->sttype[v_s] == IL_st || sub_cm->sttype[v_s] == IR_st)
+    is_insert = TRUE;
 
   /* deal with the first orig_cm state that maps to v_s */
   v_o = sub2orig_smap[v_s][0];
@@ -2390,11 +2628,13 @@ cm2sub_cm_trans_probs_B_E_dual_helper(CM_t *orig_cm, CM_t *sub_cm, double *orig_
   v_o_insert = sub2orig_smap[v_s_insert][1]; 
   if(v_o_insert != -1)
     {
-      if((!(going_down) && (v_o <= v_o_insert)) ||
-	 (going_down && (v_o > v_o_insert))) /* shouldn't happen, a non-insert maps to 
-					       * to 2 orig_cm states, one of which is before 
-					       * v_o_insert and one of which is after it */
-	 Die("ERROR, cm2sub_cm_trans_probs_B_E_dual_helper() you don't understand CM architecture 0\n");
+      if(!is_insert && ((!(going_down) && (v_o <= v_o_insert)) ||
+			(going_down && (v_o > v_o_insert))))
+	 /* shouldn't happen, a non-insert maps to 
+	  * to 2 orig_cm states, one of which is before 
+	  * v_o_insert and one of which is after it */
+
+	Die("ERROR, cm2sub_cm_trans_probs_B_E_dual_helper() you don't understand CM architecture 0, v_s: %d, v_s_insert: %d, v_o: %d, v_o_insert: %d\n", v_s, v_s_insert, v_o, v_o_insert);
       if(going_down)
 	{
 	  start = v_o;
@@ -2715,68 +2955,18 @@ cm_sum_subpaths(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int start, int
       skip = FALSE;
       if(v != end)
 	{
-	  if((is_insert) && ((sub_trans_check(sub_cm, orig2sub_smap, v, end, sub_start)) ||
+	  if((is_insert) && ((sub_trans_check(sub_cm, orig2sub_smap, v, end,   sub_start)) ||
 			     (sub_trans_check(sub_cm, orig2sub_smap, v, start, sub_start))))
 	    {
 	      /* if v is an insert state and there exists a transition from 
 	       * sub_v -> sub_end or sub_end -> sub_v (where sub_v is a sub_cm state
 	       * that maps to orig_cm state v, and sub_end is a sub_cm state that 
 	       * maps to orig_cm state end), we skip the contribution because
-	       * it will counted when compiling counts for sub_v -> sub_end or 
+	       * it will be counted when compiling counts for sub_v -> sub_end or 
 	       * sub_end -> sub_v.
 	       */
 	      skip = TRUE;
 	      printf("\t\t\tskip true case 911\n");
-	    }
-
-	  if((is_insert) && (orig2sub_state_check(orig2sub_smap, v, end)))
-	    {
-	      /* if v is an insert state that maps to the same orig_cm state that end 
-	       * maps to, then we don't want to double count its contribution (it will be 
-	       * counted in a subsequent cm_sum_subpaths() call), so we skip it here.
-	       */
-	      /*skip = TRUE;*/
-	      printf("\t\t\tskip true case CP9\n");
-	    }
-
-	  if(sub_v1 > sub_start) /* otherwise we don't want to skip */
-	    {
-	      /* check for possible sub_cm transitions */
-	      if(sub_v1 != -1 && sub_cm->sttype[sub_v1] != B_st)
-		{
-		  if(sub_end1 != -1 && (sub_end1 > sub_cm->cfirst[sub_v1] && 
-					((sub_end1 - sub_cm->cfirst[sub_v1]) < sub_cm->cnum[sub_v1])))
-		    {
-		      /*skip = TRUE;*/ /* a transition from sub_v1 -> sub_end1 exists in sub_cm */
-		      printf("\t\t\t\tskip true case 1\n");
-		    }
-		  if(sub_end1 != -1 && (sub_end2 > sub_cm->cfirst[sub_v1] && 
-					((sub_end2 - sub_cm->cfirst[sub_v1]) < sub_cm->cnum[sub_v1])))
-		    {
-		      /*skip = TRUE;*/ /* a transition from sub_v1 -> sub_end2 exists in sub_cm */
-		      printf("\t\t\t\tskip true case 2\n");
-		    }
-		}
-	    }
-	  
-	  if(sub_v2 > sub_start) /* otherwise we don't want to skip */
-	    {
-	      if(sub_v2 != -1 && sub_cm->sttype[sub_v2] != B_st)
-		{
-		  if(sub_end1 != -1 && (sub_end1 > sub_cm->cfirst[sub_v2] && 
-					((sub_end1 - sub_cm->cfirst[sub_v1]) < sub_cm->cnum[sub_v2])))
-		    {
-		      /*skip = TRUE;*/ /* a transition from sub_v2 -> sub_end1 exists in sub_cm */
-		      printf("\t\t\t\tskip true case 2\n");
-		    }
-		  
-		  if(sub_end2 != -1 && (sub_end2 > sub_cm->cfirst[sub_v2] 
-					&& ((sub_end2 - sub_cm->cfirst[sub_v2]) < sub_cm->cnum[sub_v2])))
-		    {
-		      /*skip = TRUE;*/ /* a transition from sub_v1 -> sub_end2 exists in sub_cm */
-			  printf("\t\t\t\tskip true case 2\n");
-		    }
-		}
 	    }
 	}
       if(!skip)
@@ -2811,6 +3001,8 @@ cm_sum_subpaths(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int start, int
 	  printf("v: %d | skipping the contribution\n", v);
 	}
     }
+  printf("***returning from cm_sum_subpaths: %f\n", sub_psi[(end-start)]);
+
   to_return = (float) sub_psi[end-start];
   free(sub_psi);
   return to_return;
@@ -3314,8 +3506,17 @@ check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, double 
 	  else
 	    if(print_flag) printf("\n");
 	  
-	  printf("sub: %.4f | orig: %.4f | diff: %.4f\n\n", sub_psi[v_s], temp_psi, (sub_psi[v_s]-temp_psi));
-	  
+	  violation = FALSE;
+	  diff = sub_psi[v_s] - temp_psi;
+	  if((diff > threshold) || ((-1. * diff) > threshold))
+	    {
+	      violation = TRUE;
+	      v_ct++;
+	    }
+	  if(violation)
+	    printf("sub: %.4f | orig: %.4f | diff: %.4f VIOLATION\n\n", sub_psi[v_s], temp_psi, (sub_psi[v_s]-temp_psi));
+	  else if(print_flag)
+	    printf("sub: %.4f | orig: %.4f | diff: %.4f\n\n", sub_psi[v_s], temp_psi, (sub_psi[v_s]-temp_psi));
 	}
       else
 	{
@@ -3327,7 +3528,15 @@ check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, double 
 	  printf("E B S or EL\n");
 	}
     }
-  
+
+  if(v_ct > 0)
+    {
+      printf("ERROR, %d sub_cm states violate the %f threshold b/t psi.\n", v_ct, threshold);
+      /*exit(1);*/
+      ret_val = FALSE;
+    }
+  else
+    printf("KACHOW! v_ct is 0 with thresh: %f!\n", threshold);
 
   return ret_val;
 }
@@ -3436,6 +3645,387 @@ trans_check_helper(CM_t *cm, int a, int b)
     { printf("returning a: %d\n", a); return a; }
 
   return -1;
+
+}
+
+
+/**************************************************************************
+ * EPN 09.14.06
+ * Function: cm2sub_cm_subtract_root_subpaths
+ *
+ * Purpose:  When building a sub CM (sub_cm) from an original, template
+ *           CM (orig_cm), there's special considerations that must be
+ *           taken involving sub_cm nodes with 2 insert states where there
+ *           isn't an exactly identical node in the original CM. The only
+ *           node that potentially meets this criteria is the ROOT_nd because
+ *           all MATP nodes in sub_cm must necessarily also exist in the
+ *           orig_cm. 
+ *           
+ *           The situation we have to fix is when the sub_cm ROOT_IL and
+ *           sub_cm ROOT_IR map to orig_cm states in two different nodes.
+ *           In this case, the probabilities out of the sub_cm ROOT_IL and       
+ *           ROOT_IR will be incorrectly calculated using the standard
+ *           method (cm_sum_subpaths() based). We have to go back
+ *           and subtract out some subpaths that will have been counted 
+ *           twice using that method.
+
+ * Args:    
+ * CM_t *orig_cm     - the original, template CM
+ * CM_t *sub_cm      - the sub CM
+ * int start         - state index we're starting at
+ * int end           - state index we're ending in
+ * int sub_start     - sub_cm state index of start we're starting at
+ * double *orig_psi       - for orig_cm: orig_psi[v] is the expected number of times state v is entered
+ *                     in a CM parse
+ * int orig_insert1  - index of an orig_cm insert state that maps to the same sub_cm node as
+ *                     1 of the potentially 2 sub_cm states that orig_cm state 'start' maps to. 
+ *                     -1 if none. There are up to 4 of these, up to 2 for up to 2 different
+ *                     sub_cm nodes.
+ * int orig_insert2
+ * int orig_insert3
+ * int orig_insert4
+ * Returns: Float, the summed probability of all subpaths through the CM
+ *          starting at "start" and ending at "end".
+ */
+static int
+cm2sub_cm_subtract_root_subpaths(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***tmap, int sub_nd, int **orig2sub_smap, int **sub2orig_smap)
+
+{
+  int orig_il1, orig_il2, orig_ir1, orig_ir2;
+  int orig_ss;
+  double temp_psi1;
+  double temp_psi2;
+  double temp_sum;
+  int case1_flag;
+  int case2_flag;
+  int is_matp;
+  int sub_il;
+  int sub_ir;
+  int yoffset;
+  int sub_y;
+  int curr_case;
+  int orig_root_s;
+  int orig_y1;
+  int orig_y2;
+  float diff;
+  float contribution1;
+  float contribution2;
+  
+  /* Most of the work here is done in a helper function, which checks to see which of the 
+   * 2 possible cases we have. There are 4 calls to this helper function because
+  /* be 1 to 4 instances of each case, 1 if sub_il and sub_ir both map to exactly 1 orig_cm state,
+   * up to 4, if they both map to 2 orig_cm states. All 4 calls to the helper function should
+   * find the same case (either case 1 or 2), if not then this is incorrectly implemented and
+   * I misunderstand some aspect of CM architecture. The two cases are explained in comments
+   * in the helper function.
+   */
+
+  sub_il = 1; /* sub ROOT_IL index */
+  sub_ir = 2; /* sub ROOT_IR index */
+
+  orig_il1 = sub2orig_smap[sub_il][0];
+  orig_il2 = sub2orig_smap[sub_il][1];
+  
+  orig_ir1 = sub2orig_smap[sub_ir][0];
+  orig_ir2 = sub2orig_smap[sub_ir][1];
+
+  curr_case = cm2sub_cm_subtract_root_subpaths_helper(orig_cm, sub_cm, orig_psi, tmap, 
+						      orig2sub_smap, sub2orig_smap, orig_il1, orig_ir1);
+  if(curr_case == 0)
+    Die("ERROR in cm2sub_cm_subtract_root_subpaths, neither case 1 or case 2\n");
+
+  if(curr_case == 1)
+    {
+      case1_flag = TRUE;
+      case2_flag = FALSE;
+    }
+  if(curr_case == 2)
+    {
+      case1_flag = FALSE;
+      case2_flag = TRUE;
+    }
+
+  curr_case = cm2sub_cm_subtract_root_subpaths_helper(orig_cm, sub_cm, orig_psi, tmap,  
+						      orig2sub_smap, sub2orig_smap, orig_il1, orig_ir2);
+
+  if(curr_case != 0 && ((curr_case == 1 && !case1_flag) || (curr_case == 2 && !case2_flag)))
+    Die("ERROR in cm2sub_cm_subtract_root_subpaths, both case 1 and case 2\n");
+
+
+  curr_case = cm2sub_cm_subtract_root_subpaths_helper(orig_cm, sub_cm, orig_psi, tmap,  
+						      orig2sub_smap, sub2orig_smap, orig_il2, orig_ir1);
+
+  if(curr_case != 0 && ((curr_case == 1 && !case1_flag) || (curr_case == 2 && !case2_flag)))
+    Die("ERROR in cm2sub_cm_subtract_root_subpaths, both case 1 and case 2\n");
+
+
+  curr_case = cm2sub_cm_subtract_root_subpaths_helper(orig_cm, sub_cm, orig_psi, tmap,  
+						      orig2sub_smap, sub2orig_smap, orig_il2, orig_ir2);
+
+  if(curr_case != 0 && ((curr_case == 1 && !case1_flag) || (curr_case == 2 && !case2_flag)))
+    Die("ERROR in cm2sub_cm_subtract_root_subpaths, both case 1 and case 2\n");
+
+  if(case1_flag)
+    {
+      /* we have to adjust counts out of ROOT_S, because we're double counting those paths
+       * that start at ROOT_S and go through sub_cm ROOT_IR to split states in node 1, we 
+       * have counted them once in the virtual counts out of ROOT_S and again in the virtual
+       * counts out of sub_cm ROOT_IR.
+       */
+      orig_root_s = 0; /* index of orig_cm ROOT_S and sub_cm ROOT_S */
+      cm2sub_cm_subtract_root_subpaths_helper(orig_cm, sub_cm, orig_psi, tmap,  
+					      orig2sub_smap, sub2orig_smap, orig_root_s, orig_ir1);
+
+      if(orig_ir2 != -1)
+	cm2sub_cm_subtract_root_subpaths_helper(orig_cm, sub_cm, orig_psi, tmap,  
+						orig2sub_smap, sub2orig_smap, orig_root_s, orig_ir2);
+    }
+
+  if(case2_flag)
+    {
+      /* adjust the virtual counts for transitions out of ROOT_IL */
+      printf("KACHOW! case2 FLAG\n");
+      
+      printf("after t[0][1] = %f\n", sub_cm->t[0][1]);
+
+      /* First determine temp_psi1 and temp_psi2, where: 
+       * temp_psi1 = what orig_psi[orig_il1] would be w/o the subpath of orig_ir1 -> orig_il1 and orig_ir2 -> orig_il1
+       * temp_psi2 = what orig_psi[orig_il2] would be w/o the subpath of orig_ir1 -> orig_il2 and orig_ir2 -> orig_il2
+       */
+      
+      /* This takes several steps: */
+      /* first remove contribution of self-insert */
+      temp_psi1   = orig_psi[orig_il1] / (1 + (orig_cm->t[orig_il1][0]/(1-(orig_cm->t[orig_il1][0]))));
+      if(orig_il2 != -1)
+	temp_psi2 = orig_psi[orig_il2] / (1 + (orig_cm->t[orig_il2][0]/(1-(orig_cm->t[orig_il2][0]))));
+      
+      printf("0 temp_psi1: %f\n", temp_psi1);
+      if(orig_il2 != -1) printf("0 temp_psi2: %f\n", temp_psi2);
+      
+      /* subtract contribution of orig_ir1 and orig_ir2 to orig_il1 and orig_i12 */
+      temp_psi1   -= orig_psi[orig_ir1] * cm_sum_subpaths(orig_cm, sub_cm, orig2sub_smap, orig_ir1, orig_il1, sub_ir, tmap, orig_psi, -1, -2, -3, -4); 
+      if(orig_ir2 != -1) 
+	temp_psi1 -= orig_psi[orig_ir2] * cm_sum_subpaths(orig_cm, sub_cm, orig2sub_smap, orig_ir2, orig_il1, sub_ir, tmap, orig_psi, -1, -2, -3, -4); 
+      printf("1 temp_psi1: %f\n", temp_psi1);
+      
+      if(orig_il2 != -1)
+	{
+	  temp_psi2   -= orig_psi[orig_ir1] * cm_sum_subpaths(orig_cm, sub_cm, orig2sub_smap, orig_ir1, orig_il2, sub_ir, tmap, orig_psi, -1, -2, -3, -4); 
+	  if(orig_ir2 != -1) 
+	    temp_psi2 -= orig_psi[orig_ir2] * cm_sum_subpaths(orig_cm, sub_cm, orig2sub_smap, orig_ir2, orig_il2, sub_ir, tmap, orig_psi, -1, -2, -3, -4); 
+	  printf("1 temp_psi2: %f\n", temp_psi2);
+	}
+      
+      /* add contribution of self-insert back */
+      temp_psi1 += temp_psi1 * (orig_cm->t[orig_il1][0] / (1 - orig_cm->t[orig_il1][0]));
+      if(orig_il2 != -1)
+	temp_psi2 += temp_psi2 * (orig_cm->t[orig_il2][0] / (1 - orig_cm->t[orig_il2][0]));
+      
+      printf("2 temp_psi1: %f\n", temp_psi1);
+      if(orig_il2 != -1)
+	printf("2 temp_psi2: %f\n", temp_psi2);
+      
+      /* Finally scale the transitions out of ROOT_IL to the split states of node 1 by the appropriate scaling factor.
+       * if orig_il2 == -1 this is easy, the scaling factor is simply: (temp_psi / orig_psi[orig_il1])
+       * if orig_il2 != -1 its more complicated because we have to recalculate the relative contribution of orig_il1 and
+       *                   orig_il2 towards the virtual counts out of sub_il. 
+       */
+      if(orig_il2 == -1) /* easier case */
+	{
+	  for(yoffset = 0; yoffset < sub_cm->cnum[sub_il]; yoffset++)
+	    {
+	      sub_y = sub_cm->cfirst[sub_il] + yoffset; 
+	      if(sub_cm->ndidx[sub_y] != sub_cm->ndidx[sub_il])
+		sub_cm->t[sub_il][yoffset] *= (temp_psi1/orig_psi[orig_il1]);
+	      /* we only want to adjust the virtual counts into split states of the next node */
+	    }
+	}
+      else /* harder case */
+	{
+	  printf("KACHOW!!!! HARDER ROOT_S CASE 2 CASE!\n");
+	  for(yoffset = 0; yoffset < sub_cm->cnum[sub_il]; yoffset++)
+	    {
+	      sub_y = sub_cm->cfirst[sub_il] + yoffset; 
+
+	      if(sub_cm->ndidx[sub_y] != sub_cm->ndidx[sub_il])
+		{
+		  /* first we need to find the one or two orig_cm states that map to sub_y */
+		  orig_y1 = sub2orig_smap[sub_y][0];	      
+		  orig_y2 = sub2orig_smap[sub_y][1];
+		  
+		  /* now recalculate subpath prob from orig_il1 -> orig_y1 and orig_il1 -> orig_y2
+		   * (I think orig_il1 must be < orig_y1 and orig_il1 < orig_y2 or else I don't understand CMs) */
+		  if(orig_il1 > orig_y1) /* I thought this was impossible */
+		    Die("ERROR in cm2sub_cm_subtract_root_subpaths() orig_il1:%d > orig_y1:%d\n", orig_il1, orig_y1);
+		  contribution1 = orig_psi[orig_il1] * cm_sum_subpaths(orig_cm, sub_cm, orig2sub_smap, orig_il1, orig_y1, sub_il, tmap, orig_psi, -1, -2, -3, -4); 
+		  if(orig_y2 != -1)
+		    {
+		      if(orig_il1 > orig_y2) /* I thought this was impossible */
+			Die("ERROR in cm2sub_cm_subtract_root_subpaths() orig_il1:%d > orig_y2:%d\n", orig_il1, orig_y2);
+		      contribution1 += orig_psi[orig_il1] * cm_sum_subpaths(orig_cm, sub_cm, orig2sub_smap, orig_il1, orig_y2, sub_il, tmap, orig_psi, -1, -2, -3, -4); 
+		    }
+		  
+		  /* recalculate subpath prob from orig_il2 -> orig_y1 and orig_il2 -> orig_y2 */
+		  if(orig_il2 > orig_y1) /* I thought this was impossible */
+		    Die("ERROR in cm2sub_cm_subtract_root_subpaths() orig_il2:%d > orig_y1:%d\n", orig_il2, orig_y1);
+		  contribution2 = orig_psi[orig_il2] * cm_sum_subpaths(orig_cm, sub_cm, orig2sub_smap, orig_il2, orig_y1, sub_il, tmap, orig_psi, -1, -2, -3, -4); 
+		  if(orig_y2 != -1)
+		    {
+		      if(orig_il2 > orig_y2) /* I thought this was impossible */
+			Die("ERROR in cm2sub_cm_subtract_root_subpaths() orig_il2:%d > orig_y2:%d\n", orig_il2, orig_y2);
+		      contribution2 += orig_psi[orig_il2] * cm_sum_subpaths(orig_cm, sub_cm, orig2sub_smap, orig_il2, orig_y2, sub_il, tmap, orig_psi, -1, -2, -3, -4); 
+		}
+		  
+		  diff = (contribution1 + contribution2) - sub_cm->t[sub_il][yoffset];
+		  if((diff >= 0 && diff >  0.0001) ||
+		     (diff <= 0 && diff < -0.0001))
+		    Die("ERROR in cm2sub_cm_subtract_root_subpaths() contribution1:%f and contribution2%f don't add up to sub_cm->t[1][yoffset:%d]\n", contribution1, contribution2, yoffset, sub_cm->t[sub_il][yoffset]);
+		  
+		  /* finally adjust the counts */
+		  sub_cm->t[sub_il][yoffset] = ((contribution1 * (temp_psi1/orig_psi[orig_il1])) + 
+						(contribution2 * (temp_psi2/orig_psi[orig_il2])));
+
+		  /* we only want to adjust the virtual counts into split states of the next node */
+		}
+	    }
+	}
+    }
+  return;
+}
+
+/**************************************************************************
+ * EPN 09.15.06
+ * Function: cm2sub_cm_subtract_root_subpaths_helper()
+ *
+ * Purpose:  Helper function that actually does the subpath subtraction
+ *           for the ROOT_nd of sub CMs. It first checks which of 2 cases
+ *           we have. 
+ * 
+ *           Case 1 means we need to subtract out subpaths from the 
+ *           sub_cm ROOT_S and ROOT_IL to split states of node 1. This occurs if 
+ *           ROOT_IR maps to orig_cm states that come AFTER the orig_cm
+ *           states that map to sub_cm ROOT_IL. 
+ * 
+ *           Case 2 means we need to subtract out subpaths from the 
+ *           sub_cm ROOT_S to sub_cm ROOT_IL, and then adjust counts out
+ *           of ROOT_IL. This occurs if ROOT_IR maps to orig_cm states 
+ *           that come BEFORE the orig_cm states that map to sub_cm 
+ *           ROOT_IL. 
+ *
+ *           This function is called 4 times, once for each possible
+ *           pair of orig_cm states that map to sub_cm ROOT_IL and 
+ *           ROOT_IR.
+ *
+ *
+ * Args:    
+ * CM_t *orig_cm     - the original, template CM
+ * CM_t *sub_cm      - the sub CM
+ * double *orig_psi  - for orig_cm: orig_psi[v] is the expected number of times state v is entered
+ *                     in a CM parse
+ * char ***tmap      - the hard-coded transition map
+ * orig2sub_smap     - 2D state map from orig_cm (template) to sub_cm.
+ *                     1st dimension - state index in orig_cm 
+ *                     2nd D - 2 elements for up to 2 matching sub_cm states, .
+ * sub2orig_smap     - 2D state map from sub_cm to orig_cm.
+ *                     1st dimension - state index in sub_cm (0..sub_cm->M-1)
+ *                     2nd D - 2 elements for up to 2 matching orig_cm states, 
+ * int orig_il_or_s  - an orig_cm state that maps to sub_cm ROOT_IL OR 0 for sub_cm state ROOT_S
+ * int orig_ir       - an orig_cm state that maps to sub_cm ROOT_IR
+ * 
+ * Returns: 0, if either orig_il_or_s or orig_ir is -1 
+ *          1, if orig_il_or_s < orig_ir (case 1)
+ *          2, if orig_il_or_s > orig_ir (case 2)
+ */
+static int
+cm2sub_cm_subtract_root_subpaths_helper(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***tmap, 
+					int **orig2sub_smap, int **sub2orig_smap, int orig_il_or_s, int orig_ir)
+
+{
+  double temp_psi;
+  double temp_sum;
+  int case1_flag;
+  int case2_flag;
+  int sub_il_or_s;
+  int sub_ir;
+  int yoffset;
+  int sub_y;
+  int orig_ss;
+
+  if(orig_il_or_s == 0)
+    {
+      sub_il_or_s = 0; /* ROOT_S sub_cm index */
+    }
+  else
+    sub_il_or_s = 1;   /* ROOT_IL sub_cm index */
+  sub_ir = 2;          /* ROOT_IR sub_cm index */
+
+  case1_flag = FALSE;
+  case2_flag = FALSE;
+
+  printf("\n\nin cm2sum_cm_subtract_root_subpaths_helper: orig_il_or_s: %d orig_ir: %d\n", orig_il_or_s, orig_ir);
+  if(orig_il_or_s == -1 || orig_ir == -1)
+    {
+      return 0;
+    }
+
+  /* check for case 1 or case 2 (should be 1 or the other): */
+
+  /* first check for case 1 */
+  /* There could be 1 to 4 instances of each case, 1 if sub_il_or_s and sub_ir both map to exactly 1 orig_cm state,
+   * up to 4, if they both map to 2 orig_cm states. We check for each explicitly:                       
+   */
+  if(orig_il_or_s < orig_ir) /* case 1 if orig_il_or_s == 0 (ROOT_S) this will always be true */
+    {
+      /* for each split set state of the next node we can reach, we want to subtract the probability
+       * that we will go through ROOT_IR to get there, because we've already counted these in the
+       * virtual counts out of ROOT_IR.
+       */
+      for(yoffset = 0; yoffset < sub_cm->cnum[sub_il_or_s]; yoffset++)
+	{
+	  sub_y = sub_cm->cfirst[sub_il_or_s] + yoffset; 
+	  if(sub_cm->ndidx[sub_y] != sub_cm->ndidx[sub_il_or_s]) /* if sub_y is in the split set state of the next node */
+	    {
+	      printf("beg subtract helper loop: sub_cm->t[sub_il_or_s:%d][yoffset:%d]: %f\n", sub_il_or_s, yoffset, sub_cm->t[sub_il_or_s][yoffset]);
+
+	      orig_ss = sub2orig_smap[sub_y][0];
+	      if(orig_ss > orig_ir)
+		Die("ERROR in cm2sub_cm_subtract_root_subpaths_helper(), case 1 but orig_ss: %d > orig_ir: %d I thought this was impossible...\n", orig_ss, orig_ir);
+	      if(orig_ss < orig_il_or_s)
+		Die("ERROR in cm2sub_cm_subtract_root_subpaths_helper(), case 1 but orig_ss: %d < orig_il_or_s: %d I thought this was impossible...\n", orig_ss, orig_il_or_s);
+									       
+	      sub_cm->t[sub_il_or_s][yoffset] -= orig_psi[orig_il_or_s] * 
+		cm_sum_subpaths(orig_cm, sub_cm, orig2sub_smap, orig_il_or_s, orig_ss, sub_il_or_s, 
+				tmap, orig_psi, -1, -2, -3, -4) * 
+		cm_sum_subpaths(orig_cm, sub_cm, orig2sub_smap, orig_ss, orig_ir, sub_y, 
+				tmap, orig_psi, -1, -2, -3, -4);
+
+	      if(sub2orig_smap[sub_y][1] != -1)
+		{
+		  orig_ss = sub2orig_smap[sub_y][1];
+		  if(orig_ss > orig_ir)
+		    Die("ERROR in cm2sub_cm_subtract_root_subpaths_helper(), case 1 but orig_ss: %d > orig_ir: %d I thought this was impossible...\n", orig_ss, orig_ir);
+		  if(orig_ss < orig_il_or_s)
+		    Die("ERROR in cm2sub_cm_subtract_root_subpaths_helper(), case 1 but orig_ss: %d < orig_il_or_s: %d I thought this was impossible...\n", orig_ss, orig_il_or_s);
+
+		  sub_cm->t[sub_il_or_s][yoffset] -= orig_psi[orig_il_or_s] * 
+		    cm_sum_subpaths(orig_cm, sub_cm, orig2sub_smap, orig_il_or_s, orig_ss, sub_il_or_s, 
+				    tmap, orig_psi, -1, -2, -3, -4) * 
+		    cm_sum_subpaths(orig_cm, sub_cm, orig2sub_smap, orig_ss, orig_ir, sub_y, 
+				    tmap, orig_psi, -1, -2, -3, -4);
+		  printf("end subtract helper loop: sub_cm->t[sub_il_or_s:%d][yoffset:%d]: %f\n", sub_il_or_s, yoffset, sub_cm->t[sub_il_or_s][yoffset]);
+
+		}
+	    }
+	}	    
+      return 1;
+    }
+
+  /* check for case 2 */
+  if(orig_il_or_s > orig_ir)
+  {
+    sub_cm->t[0][1] -= orig_psi[orig_ir] * cm_sum_subpaths(orig_cm, sub_cm, orig2sub_smap, orig_ir, orig_il_or_s, sub_ir, tmap, orig_psi, -1, -2, -3, -4);
+    return 2;
+  }
 
 }
 

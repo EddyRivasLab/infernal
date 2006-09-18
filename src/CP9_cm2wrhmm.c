@@ -337,7 +337,7 @@ fill_psi(CM_t *cm, double *psi, char ***tmap)
 	      if(tmap_val == -1)
 	      {
 		printf("tmap ERROR 2\n");
-		printf("v: %d | pnum[v]: %d | plast[v]: %d | y: %d | x: %d | d1: %d | d2: %d | d3: %d\n", v, cm->pnum[v], cm->plast[v], y, x, cm->stid[x], cm->ndtype[cm->ndidx[x]+1], cm->stid[v]);
+		printf("v: %d | pnum[v]: %d | plast[v]: %d | y: %d | x: %d | d1: %d | d2: %d | d3: %d\n", v, cm->pnum[v], cm->plast[v], y, x, cm->stid[x], cm->ndtype[cm->ndidx[v]], cm->stid[v]);
 		exit(1);
 	      }
 	      /*printf("before: psi[%d]: %f\n", v, psi[v]);
@@ -1968,6 +1968,8 @@ check_psi_vs_phi_cp9(CM_t *cm, double *psi, double **phi, int ***hns2cs_map, int
       /*exit(1);*/
       ret_val = FALSE;
     }
+  else
+    printf("KACHOW! v_ct is 0!\n");
   return ret_val;
 }
 
