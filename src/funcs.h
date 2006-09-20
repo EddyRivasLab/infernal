@@ -330,10 +330,10 @@ extern float CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, char *dsq);
 extern void CP9NodeForPosn(struct cplan9_s *hmm, int i0, int j0, int x, 
 			   struct cp9_dpmatrix_s *post, int *ret_node, int *ret_type);
 extern void StripWUSSGivenCC(MSA *msa, char **dsq, float gapthresh, int first_match, int last_match);
-extern void BuildSubCM(CM_t *orig_cm, CM_t **ret_cm, int struct_start, int struct_end, int model_start,
-		       int model_end, int **orig2sub_smap, int **sub2orig_smap);
+extern void build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int struct_start, int struct_end, int model_start,
+			 int model_end, int **orig2sub_smap, int **sub2orig_smap);
 extern void ConsensusModelmaker(char *ss_cons, int clen, CM_t **ret_cm, Parsetree_t **ret_gtr);
-extern int  check_subCM_by_sampling(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos);
-extern int  check_subCM_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int nseq);
+extern int  check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos);
+extern int  check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int nseq);
 
 

@@ -59,7 +59,7 @@ static char experts[] = "\
    --outside     : don't align; return scores from the Outside algorithm\n\
    --post        : align with CYK and append posterior probabilities\n\
    --checkpost   : check that posteriors are correctly calc'ed\n\
-   --sub <f>     : use HMM predicted start and end points to build a submodel\n\
+   --sub         : use HMM predicted start and end points to build a sub CM\n\
 \n\
   * HMM banded alignment related options:\n\
    --hbanded     : use exptl HMM banded CYK aln algorithm (df: builds CP9 HMM) \n\
@@ -101,7 +101,7 @@ static struct opt_s OPTIONS[] = {
   { "--outside",    FALSE, sqdARG_NONE},
   { "--post",       FALSE, sqdARG_NONE},
   { "--checkpost",  FALSE, sqdARG_NONE},
-  { "--sub",        FALSE, sqdARG_STRING},
+  { "--sub",        FALSE, sqdARG_NONE},
   { "--checkcp9",   FALSE, sqdARG_NONE},
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
@@ -276,15 +276,9 @@ main(int argc, char **argv)
   int                **sub2orig_smap;/* 2D state map from orig_cm (template) to sub_cm.
 				      * 1st dimension - state index in sub_cm (0..sub_cm->M-1)
 				      * 2nd D - 2 elements for up to 2 matching orig_cm states */
-  char              *alifile;        /* seqfile to read alignment from, we trust its the same one used
-				      * to build the CM, this is temporary to check our code and make 
-				      * sure it builds a submodel correctly */ 
-  MSAFILE         *afp;         /* open alignment file                     */
-  MSA             *input_msa;         /* a multiple sequence alignment           */
-  char           **input_dsq;		/* digitized aligned sequences             */
   char            *check_outfile;	/* output file name for subCM stk file*/
   FILE            *check_ofp;         /* an open output file */
-  CM_t            *ds_cm;       /* sub covariance model                      */
+  CM_t            *sub_cm;       /* sub covariance model                      */
 
   
   /*********************************************** 
@@ -344,10 +338,6 @@ main(int argc, char **argv)
       { 
 	do_sub  = TRUE;
 	hmm_type = HMM_CP9; 
-	alifile = optarg;
-	/* Open the alignment */
-	if ((afp = MSAFileOpen(alifile, format, NULL)) == NULL)
-	  Die("Alignment file %s could not be opened for reading", alifile);
       }
 
     else if (strcmp(optname, "--hbanded")   == 0) {
@@ -716,13 +706,6 @@ main(int argc, char **argv)
 	}
     }
 
-  if(do_sub)
-    {
-      /* read the MSA */
-      input_msa = MSAFileRead(afp);
-      input_dsq = DigitizeAlignment(input_msa->aseq, input_msa->nseq, input_msa->alen);
-    }
-
   for (i = 0; i < nseq; i++)
     {
       StopwatchZero(watch2);
@@ -766,42 +749,17 @@ main(int argc, char **argv)
 	      /* Given the original CM, and the start and end HMM nodes, build a new CM by removing
 	       * structure outside the start and end HMM nodes, and marginalizing.
 	       */
-	      /* Uncomment below to build a subCM with same number of consensus columns, just structure
+	      /* Uncomment below to build a sub_cm with same number of consensus columns, just structure
 	       * removed. */
-	      /*BuildSubCM(cm, &ds_cm, hmm_start_node, hmm_end_node, 1, cp9_hmm->M, orig2sub_smap, sub2orig_smap);*/
+	      /*build_sub_cm(cm, &sub_cm, hmm_start_node, hmm_end_node, 1, cp9_hmm->M, orig2sub_smap, sub2orig_smap);*/
 
-	      /* Uncomment below to build a subCM that only models consensus columns between HMM start and end
+	      /* Uncomment below to build a sub_cm that only models consensus columns between HMM start and end
 	       * node. */
-	      BuildSubCM(cm, &ds_cm, hmm_start_node, hmm_end_node, hmm_start_node, hmm_end_node, orig2sub_smap, sub2orig_smap);
-	      /*check_subCM_by_sampling(cm, ds_cm, hmm_start_node, hmm_end_node);*/
-	      check_subCM_by_sampling2(cm, ds_cm, hmm_start_node, hmm_end_node, 10000);
-
-	      /* a temporary function to remove structure outside the columns of the MSA that are before the 
-	       * MSA column that maps to hmm_start_node, and after the MSA column that maps to 
-	       * hmm_end_node. This will be unnecessary once we stop reading in the MSA, b/c all we'll
-	       * deal with is the model itself, for now our strategy is to build a new model from the MSA
-	       * after stripping the appropriate bps.
-	       */
-	      /* gapthresh assumed to be 0.5. */
-
-	      /*printf("INITIAL %s\n", input_msa->ss_cons);
-		StripWUSSGivenCC(input_msa, input_dsq, 0.5, hmm_start_node, hmm_end_node);*/
-	      /* have to do something like in HandModelMaker to eliminate mates of removed bps. */
+	      build_sub_cm(cm, &sub_cm, hmm_start_node, hmm_end_node, hmm_start_node, hmm_end_node, orig2sub_smap, sub2orig_smap);
+	      //check_sub_cm_by_sampling2(cm, sub_cm, hmm_start_node, hmm_end_node, 10000);
 	      
-	      printf("NEW     %s\n", input_msa->ss_cons);
-	      
-	      /* Write a new stockholm alignment file we can use to build a new CM and check
-	       * if it has the same parameters as the one we get by marginalizing.
-	       */
-	      if (check_outfile != NULL && (check_ofp = fopen(check_outfile, "w")) != NULL) 
-		{
-		  WriteStockholm(check_ofp, input_msa);
-		  printf("Check alignment saved in file %s\n", check_outfile);
-		  fclose(check_ofp);
-		}
-	      else
-		Die("Eek.\n");
-	      
+	      /* we need to write a sub2orig_cm_parsetree() function before we can actually align with 
+	       * the new sub_cm */
 	      exit(1);
 	    }
 	  StopwatchStop(watch1);
