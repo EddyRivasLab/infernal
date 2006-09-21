@@ -17,10 +17,15 @@ typedef struct partialalignment_s {
   int init_v;		/* Initial model state */
   int init_j;		/* Initial right sequence position */
   int init_d;		/* Initial sequence length */
+  int init_i;		/* Initial left sequence position */
+			/* While i is typically calculated from j and d,
+                         * a separate variable is needed for marginal
+                         * extension, where j and d are unknown         */
 
   int cur_v;
   int cur_j;
   int cur_d;
+  int cur_i;
 
   float current_sc;
   float upper_bound_sc;
@@ -50,5 +55,8 @@ void MaxSubsequenceScore(CM_t *cm, int W, float ***ret_max_sc);
 
 PA_t* AstarExtension(CM_t *cm, char *dsq, int init_v, int init_j, int lower_d, int upper_d,
     	float init_sc, float **max_sc, float cutoff);
+
+float LeftMarginalScore(float *esc, char syml);
+float RightMarginalScore(float *esc, char symr);
 
 #endif /* R_WHAT_H_INCLUDED */

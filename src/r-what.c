@@ -751,3 +751,198 @@ AstarBAlign(CM_t *cm, char *dsq, BPA_t *init_align, float **max_sc, float cutoff
 
   return retval;
 }
+
+float
+ConsensusChild(CM_t *cm, int *v)
+{
+   int y, yoffset, z;
+   float tsc;
+
+   y = cm->cfirst[*v];
+   yoffset = 0;
+   z = cm->stid[y+yoffset];
+   while (yoffset+1 < cm->cnum[*v] && z != MATP_MP && z != MATL_ML && z != MATR_MR)
+   {
+      yoffset++;
+      z = cm->stid[y+yoffset];
+   }
+   tsc = cm->tsc[*v][yoffset];
+   *v = y+yoffset;
+
+   return tsc;
+}
+
+float
+ConsensusParent(CM_t *cm, int *v)
+{
+   int y;
+   float tsc;
+
+   y = cm->plast[*v] - cm->pnum[*v] + 1;
+   tsc = cm->tsc[y][*v-cm->cfirst[y]];
+   *v = y;
+
+   return tsc;
+}
+
+/* Function: LeftMarginalScore(), RightMarginalScore()
+ * Author:   DLK
+ * 
+ * Purpose:  Calculate marginal probability for half
+ *           of an emission pair.  There may be better
+ *           ways to do this; also implicity assumes
+ *           a uniform background distribution
+ */
+float
+LeftMarginalScore(float *esc, char syml)
+{
+   char symr = SymbolIndex('N');
+   return DegeneratePairScore(esc,syml,symr);
+}
+
+float
+RightMarginalScore(float *esc, char symr)
+{
+   char syml = SymbolIndex('N');
+   return DegeneratePairScore(esc,syml,symr);
+}
+
+/* Function: MarginalLeftInsideExtend()
+ * Author:   DLK
+ *
+ * Purpose:  Extend a partial alignment primary-sequence-wise, 
+ *           through bifurcations.  Extends deeper into the model
+ *           tracing along sequence left-to-right (clockwise
+ *           around the parse tree).
+ *
+ * Args:     cm   - covariance model
+ *           dsq  - digitized sequence
+ *           root - a branched partial alignment.  The chunk of 
+ *                  alignmnet held in the root may be partially
+ *                  extended, although empty is expected to be the
+ *                  more likely case.
+ */
+void
+MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root)
+{
+   int i;
+   int v;
+   int x;
+   float tsc, esc;
+   int *depth;
+
+   x = v;
+   i = 0;
+   while ((cm->sttype[x] != E_st) && (cm->sttype[x] != B_st))
+   {
+      ConsensusChild(cm, &x);
+      i++;
+   }
+   depth = malloc(i*sizeof(int));
+
+   v = root->chunk->cur_v;
+   i = root->chunk->cur_i;
+   x = 0;
+
+   while ( cm->sttype[v] != E_st )
+   {
+      tsc = ConsensusChild(cm, &v);
+      if ( cm->stid[v] == MATL_ML )
+      {
+         if ( dsq[i] < Alphabet_size )
+            esc = cm->esc[v][(int) dsq[i]];
+         else
+            esc = DegenerateSingletScore(cm->esc[v],dsq[i]);
+         depth[x++] = i++;
+      }
+      if ( cm->stid[v] == MATR_MR )
+      {
+         depth[x++] = -1;
+      }
+      if ( cm->stid[v] == MATP_MP )
+      {
+         esc = LeftMarginalScore(cm->esc[v],dsq[i]);
+         depth[x++] = i++;
+      }
+      if ( cm->stid[v] == BIF_B )
+      {
+         if ( root->left_child == NULL )
+         {
+            root->left_child = malloc(sizeof(BPA_t));
+            root->left_child->chunk = malloc(sizeof(PA_t));
+            root->left_child->left_child = NULL;
+            root->left_child->right_child = NULL;
+         }
+         root->left_child->chunk->init_v = cm->cfirst[v];
+         root->left_child->chunk->cur_v  = cm->cfirst[v];
+         root->left_child->chunk->init_i = i;
+         root->left_child->chunk->cur_i  = i;
+         /* Init to error values for j and d which are unknown */
+         root->left_child->chunk->init_j = -1;
+         root->left_child->chunk->cur_j  = -1;
+         root->left_child->chunk->init_d = -1;
+         root->left_child->chunk->cur_d  = -1;
+
+         MarginalLeftInsideExtend(cm, dsq, root->left_child);
+
+         if ( root->right_child == NULL )
+         {
+            root->right_child = malloc(sizeof(BPA_t));
+            root->right_child->chunk = malloc(sizeof(PA_t));
+            root->right_child->left_child = NULL;
+            root->right_child->right_child = NULL;
+         }
+         root->right_child->chunk->init_v = cm->cnum[v];
+         root->right_child->chunk->cur_v  = cm->cnum[v];
+         root->right_child->chunk->init_i = ; /*something that needs to be relayed from root->left_child */
+         root->right_child->chunk->cur_i  = ;
+         /* Init to error values for j and d which are unknown */
+         root->right_child->chunk->init_j = -1;
+         root->right_child->chunk->cur_j  = -1;
+         root->right_child->chunk->init_d = -1;
+         root->right_child->chunk->cur_d  = -1;
+
+         MarginalLeftInsideExtend(cm, dsq, root->right_child);
+
+         /* Need to think here about how best to relay scores,
+          * continue extension around the right child, etc. */
+/* IMPORTANT!  If we don't successfully make it all the way around both children, we need to abort and not continue up the stem below! */
+      }
+   }
+
+   while ( cm->sttype[v] != S_st )
+   {
+      ConsensusParent(cm, &v);
+      if ( cm->stid[v] == MATL_ML )
+      {
+         x--;
+      }
+      if ( cm->stid[v] == MATR_MR )
+      {
+         if ( dsq[i] < Alphabet_size )
+            esc = cm->esc[v][(int) dsq[i]];
+         else
+            esc = DegenerateSingletScore(cm->esc[v],dsq[i]);
+         i++;
+         x--;
+      }
+      if ( cm->stid[v] == MATP_MP )
+      {
+         if ( dsq[depth[x]] < Alphabet_size && dsq[i] < Alphabet_size )
+            esc = cm->esc[v][(int) (dsq[depth[x]]*Alphabet_size + dsq[i])];
+         else
+            esc = DegeneratePairScore(cm->esc[v],dsq[depth[x]],dsq[i]);
+         esc -= LeftMarginalScore(cm->esc[v],dsq[depth[x]]);
+         i++;
+         x--;
+      }
+   }
+
+   /* Unfinished items:
+    * when does a score become 'accepted'?
+    * when does the marginal extension become a recorded part of the partial alignment
+    *   and how much information about it do we need?
+    */
+
+   free(depth);
+}
