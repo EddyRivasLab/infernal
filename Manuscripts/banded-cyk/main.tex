@@ -48,7 +48,7 @@
 HHMI Janelia Farm Research Campus\\
 19700 Helix Drive\\
 Ashburn VA 20176\\
-eddys@janelia.hhmi.org}  
+\{eddys,nawrockie\}@janelia.hhmi.org}  
 \date{\today}
 \maketitle
 
@@ -58,24 +58,21 @@ eddys@janelia.hhmi.org}
 
 \begin{abstract}
 
-When searching sequence databases for similarities to an RNA query,
+When searching sequence databases for RNAs,
 one wants to score a combination of primary sequence and RNA secondary
-structure conservation.  Covariance models (CMs) are probabilistic
-models well suited for RNA similarity search applications, but the
-computational complexity of CMs has limited their practical
-application. The standard CM dynamic programming algorithm for
-aligning an RNA of $N$ residues to a database of length $L$ residues
-scales as $O(N^3 L)$, requiring many hours of CPU time for a typical
-search. Here we describe an acceleration method we call
+structure similarity.  Covariance models (CMs) are probabilistic
+models well suited for RNA similarity search applications, but their
+computational complexity has limited their practical
+application. Here we describe an acceleration method called
 \emph{query-dependent banding} (QDB), which uses the probabilistic
 query model to precalculate regions of the dynamic programming lattice
-that have negligible probability, independent of target database
+that have negligible probability, independent of target 
 sequences. We have implemented QDB in the freely available
 \textsc{Infernal} software package. Combined with other improvements
 to \textsc{Infernal}, including informative mixture Dirichlet priors
-on model parameters, benchmarks show significant increases in
-sensitivity and specificity from improved parameterization, and 3-5x
-average speedup from QDB.
+on model parameters, benchmarks show increased
+sensitivity and specificity from the improved parameterization, and
+three- to five-fold average speedup from QDB.
 
 \end{abstract}
 
@@ -86,208 +83,172 @@ average speedup from QDB.
 
 \section{Introduction}
 
-Many functional RNAs conserve a base-paired secondary structure. RNA
-secondary structure conservation induces strong long-distance pairwise
-base-pairing correlations in homologous RNA sequences.  When
-performing database searches to identify homologous RNAs, we would
-like to have RNA similarity search programs that take pairwise
-secondary structure correlations into account, as opposed to standard
-database search algorithms like BLAST and FASTA that solely use linear
-sequence comparison.
+Many functional RNAs conserve a base-paired secondary structure, which
+induces long-distance pairwise
+correlations in homologous RNA sequences.  When
+performing database searches to identify homologous structural RNAs, it is
+advantageous for RNA similarity search programs to take pairwise
+secondary structure correlations into account, in addition to primary
+sequence conservation.
 
-Several approaches for RNA similarity search have been described. Some
-approaches are specialized programs for identifying one particular RNA
+A variety of approaches for RNA similarity searching have been described. There
+are specialized programs for identifying one particular RNA
 family or motif, such as programs that identify tRNAs
-\cite{LoweEddy97}, snoRNAs \cite{LoweEddy99}, microRNAs \cite{Lai03,
+% update refs here: add Aragorn, for example, for tRNAs.
+\cite{LoweEddy97,XXX}, snoRNAs \cite{LoweEddy99}, microRNAs \cite{Lai03,
 Lim03}, SRP RNAs \cite{Regalia02}, and rho-independent transcription
-terminators \cite{Ermolaeva00}. Some approaches are based on
-pattern-matching algorithms \cite{Macke01,Gautheret01}, relying on
-expertly designed query patterns. The most generally useful approaches
+terminators \cite{Ermolaeva00}. There are also
+pattern-matching algorithms \cite{Macke01,Gautheret01} that rely on
+expertly designed query patterns. However, the most generally useful approaches
 are those that take any RNA (or any multiple RNA alignment) as a
 query, and use a statistical structure/sequence scoring system to
-search a sequence database and rank high-scoring similarities, as
+search a sequence database and rank high-scoring similarities, just as
 programs like BLAST and FASTA do for linear sequence comparison.
 
-One wants to be able to score a combination of RNA sequence and
+In a general search program of this sort, 
+one wants to be able to score a combination of RNA sequence and
 structural conservation in a principled rather than \emph{ad hoc}
-manner. A satisfactory solution to this problem is already known,
+manner. A satisfactory solution to this problem is known,
 using probabilistic models called \emph{stochastic context-free
 grammars} (SCFGs). SCFGs readily capture both primary sequence and
-canonical (non-pseudoknotted) RNA secondary structure conservation
+(non-pseudoknotted) RNA secondary structure conservation
 \cite{Sakakibara94c,Durbin98}. Just as hidden Markov models (HMMs) are
 useful for many different linear sequence modeling applications,
 including genefinding, multiple alignment, motif finding, and
-similarity search, SCFGs are a general toolkit for probabilistic RNA
+% references needed here
+similarity search, SCFGs are a generally useful paradigm for probabilistic RNA
 sequence/structure analysis, with applications including secondary
 structure prediction and genefinding. A particular SCFG architecture
 called \emph{covariance models} (CMs) was developed specifically for
-the RNA similarity search problem. CMs are profile SCFGs, analogous to
-the use of profile HMMs in profile sequence analysis
+the RNA similarity search problem \cite{Eddy94}. 
+CMs are profile SCFGs, analogous to
+the use of profile HMMs in sequence analysis
 \cite{Eddy94,Eddy02b}.  The Rfam database of RNA families
-\cite{Griffiths-Jones05} uses CM-based software (our \textsc{infernal}
-package) in much the same way that the Pfam database of protein
-families uses profile HMM software (our \textsc{hmmer} package).
+\cite{Griffiths-Jones05} uses CM-based software (\textsc{infernal})
+in much the same way that the Pfam database of protein
+families uses profile HMM software (\textsc{hmmer}).
 
 The most serious problem in using CMs is their computational
 complexity. Applying standard SCFG dynamic programming alignment
-algorithms to CMs results in a requirement of $O(N^3)$ memory and $O(L
-N^2 \log N)$ time for a query of length $N$ residues (or consensus
+algorithms to the particular case of CMs results in algorithms that require
+$O(N^3)$ memory and
+$O(L N^3)$ time for a query of length $N$ residues (or consensus
 alignment columns) and a target database sequence of length $L$.  In
 practice, this can mean tens of gigabytes of memory and CPU-years of
 time for typical RNA queries. The memory complexity problem was
-essentially solved by extending divide-and-conquer dynamic programming
+essentially solved in 2002 by extending divide-and-conquer dynamic programming
 methods (the Hirshberg or Myers/Miller algorithm) to the case of CMs
-\cite{Eddy02b}. The time complexity problem still stands.  For
-example, in order to search all 503 RNA families in Rfam 7.0 against a
-non-redundant nucleotide database, the Rfam curation team is forced to
-use a \textsc{blast} prefilter to reduce search times from
-CPU-centuries to a more manageable CPU-months, but as a result, they
-give up much of the advantage of using CM-based methods because of the
-use of a purely sequence-based filter.
+\cite{Eddy02b}. The time complexity problem still stands. 
 
-Weinberg and Ruzzo have described two better filtering methods for
-accelerating CM searches. Given a CM, their first strategy builds a
-so-called \emph{rigorous filter} profile HMM, that is guaranteed to
-allow every hit that would score above a given threshold to the CM to
-survive the filtering step \cite{Weinberg04, Weinberg04b}. Their
-second strategy builds a \emph{maximum likelihood (ML) heuristic} HMM
-from a CM that is not rigorous but more practical to use as a filter
-for many RNA families \cite{Weinberg05}. For current Rfam models, the
-Weinberg/Ruzzo filters offer roughly a 100 fold speed up relative to a
-full CM based search at either no cost (with rigorous filters), or a
-small cost (with ML HMMs) to sensitivity. However, although the
-Weinberg/Ruzzo filters are a great improvement on BLAST-based filters,
-they still depend on primary sequence conservation alone, and thus can
-be relatively ineffective for RNA families that exhibit poor sequence
-conservation. They are effective for most current Rfam families, but
-we are concerned that this is an artifact of ascertainment bias: the
-fact that we have been using BLAST prefilters in producing Rfam
-introduces a bias towards high primary sequence similarity within Rfam
-families. As Rfam improves and incorporates more diverse structural
-homologs, we expect the effectiveness of sequence-based filters to
-decrease. 
+Weinberg and Ruzzo have described two filtering methods for
+accelerating CM searches
+\emph{Weinberg04,Weinberg04b,Weinberg05}. Both methods work by scoring
+a target sequence first by a linear sequence comparison method using a
+profile HMM specially constructed from the CM query, and passing only
+the subset of hits above a threshold for rescoring with the more
+expensive CM alignment algorithm.  For most current Rfam models, the
+Weinberg/Ruzzo filters give about a hundred-fold speed up relative to
+a full CM based search at little or no cost to sensitivity and
+specificity. However, because the Weinberg/Ruzzo filters depend on
+primary sequence conservation alone, they can be relatively
+ineffective for RNA families that exhibit poor sequence
+conservation. In this respect, their overall performance on the
+current Rfam database may be somewhat misleading. Rfam currently uses
+a crude BLAST-based filtering method to accelerate the CM searches
+used in curating the database, and this step introduces a bias towards
+high primary sequence similarity in current Rfam alignments. As Rfam
+improves and incorporates more diverse structural homologs, the
+effectiveness of sequence-based filters is likely to decrease for some
+families.
 
 Here, we describe a method for accelerating CM searches using banded
-dynamic programming (DP) alignment.  In a banded alignment approach,
-one uses some fast method to identify a band through the DP alignment
-matrix where the optimal alignment is likely to lie, and then
-calculates DP recursions only within that band. Many different banded
-approaches are possible, because one might imagine many methods for
-rapidly identifying bands. Banding is a common approach for
-accelerating dynamic programming algorithms in sequence analysis
-programs. Gapped \textsc{BLAST} uses banded DP to convert ungapped
-high-scoring pairs (HSPs) to full gapped alignments
-\cite{Altschul90,XXX}.  \textsc{LAGAN} and \textsc{Multi-LAGAN} use
-banded dynamic programming (referred to as limited-area dynamic
-programming) to stitch together alignments between anchored sequences
-when aligning long, genomic sequences. The simultaneous RNA alignment
-and structure prediction programs \textsc{Consan} \cite{Dowell06},
-\textsc{Dynalign} \cite{Mathews05}, and \textsc{Stemloc}
-\cite{Holmes05} each use a different banding strategy to limit the
-time complexity of variants of the Sankoff RNA alignment algorithm
-\cite{Sankoff85}. Banding has also been applied to profile SCFGs by
-Michael Brown in his \textsc{RNACAD} program by using information from
-a profile HMM alignment to define bands for the expensive SCFG
-alignment \cite{Brown00}.  In most cases, including the approach we
-will describe here, banded dynamic programming is a heuristic that
-sacrifices guaranteed alignment optimality.
+dynamic programming (DP). In banded DP, one uses some fast method to
+identify a band through the DP matrix where the optimal alignment is
+likely to lie, and then calculates computationally expensive DP
+recursions only within that band. In most cases, including the
+approach we will describe here, banded DP is a heuristic that
+sacrifices guaranteed alignment optimality. Banding is a standard
+approach in many areas of sequence analysis. Gapped \textsc{BLAST}
+uses banded DP to convert ungapped high-scoring pairs (HSPs) to full
+gapped alignments \cite{Altschul90,XXX}.  \textsc{LAGAN} and
+\textsc{Multi-LAGAN} use banded dynamic programming (referred to as
+limited-area dynamic programming) to stitch together alignments
+between anchored sequences when aligning long genomic sequences. The
+simultaneous RNA alignment and structure prediction programs. Banding
+has also been applied to profile SCFGs by Michael Brown in his
+\textsc{RNACAD} program by using information from a profile HMM
+alignment to define bands for the expensive SCFG alignment
+\cite{Brown00}. The key to developing a banded DP strategy is in
+deciding how the bands are identified.  Usually, including all the
+examples above, banded DP involves performing some sort of rapid
+approximate sequence alignment between the query and the target.
 
-%The method we describe here 
+In contrast, the method we describe here, called \emph{query-dependent
+banding} (QDB), takes advantage of specific properties of CMs in order
+to predefine bands that are independent of any target sequence.  QDB
+depends on the consensus secondary structure of the query, so it is
+complementary to acceleration methods like the Weinberg/Ruzzo filters
+that rely on sequence but not structure.
 
-% does not involve performing a rapid
-%approximate alignment between the query and the target, in contrast to
-%almost all other banded DP algorithms. 
 
-In almost all cases, banded DP involves performing a rapid approximate
-alignment between the query and the target. In contrast, the method we
-describe here, called \emph{query-dependent banding} (QDB), takes
-advantage of specific properties of CMs in order to predefine fixed
-bands, independent of any target sequence.
-
-\begin{comment}
-%original r388 d3 text:
-
-Here, we present a novel method to accelerate CM 
-database search using probabilistically determined bands calculated
-independently of the target database. 
-We also describe the extension to CMs of
-several techniques borrowed from the profile HMM community:
-informative transition priors, which enable
-appropriate band calculation, along with informative emission priors
-and model entropy weighting to increase CM sensitivity . Finally, to
-measure the effect of these techniques, and the utility of our
-banded approach, we present the results of an Rfam based benchmark.
-\end{comment}
 
 \section{Results}
 
-\begin{comment}
-%original d3 text:
+Briefly, the key idea is the following. Each base pair and each
+single-stranded residue in the query RNA is represented in a CM by a
+\emph{state} in a tree-like structure of states that mirrors the
+secondary structure of the RNA, together with additional states that
+model insertions and deletions. The standard CM dynamic programming
+alignment algorithm works by recursively calculating the probability
+that a substructure of the query rooted at state $v$ aligns to a
+subsequence $i..j$ in the the target sequence. To guarantee
+optimality, all possible $i..j$ subsequences in the target sequence
+must be scored for every state.  However, most of these subsequences
+are obviously too long or short, when one considers the known size of
+the query substructure under state $v$. For example, when state $v$ is
+the closing base pair of a four-base loop, only $i..j$ subsequences of
+length 6 are likely to occur in any optimal alignment to state $v$
+($i=j-5,j$ being the base pair, and $j-4..j-1$ being the four bases of
+the hairpin loop), and likewise, the optimal subsequence for the next
+consensus base pair in that stem is almost certainly of length 8.  The
+possibility of insertions and deletions in the target sequence means
+that no subsequence length is known with certainty, but because the CM
+is a probabilistic model, a probability distribution for subsequence
+lengths under each state (including the probability of insertions and
+deletions) can be analytically derived from the state transitions in
+the query CM.  These distributions can be used to determine a band of
+subsequence lengths that captures all but a specified tiny fraction of
+the probability mass. A CM dynamic programming algorithm can then look
+not at all subsequences $i,j$ for each state $v$, but only those $i$
+within a band of minimum and maximum distance relative to each $j$.
 
-A CM database search for RNA homologs finds subsequences 
-of the database that align with a high score to the model. 
-The key idea of our technique for acceleration is to save time by
-ignoring highly unlikely alignments using bands that restrict the
-possible subsequence lengths that can be aligned to each part of the model.
-We present a method for calculating and enforcing these bands that is
-independent of the database, and show that our method accelerates CM
-methods with a small cost to accuracy.
-
-Notes from Benasque:
-     A. show CMs with standard algorithm (CYK?) background
-     B. intuition for bands
-     We will show you:
-     C. band calc
-     D. banded CYK
-     E. how it works
-\end{comment}
-
-We will first briefly introduce CMs and a variant of the CYK algorithm for
-database similarity search.
-This algorithm finds subsequences of the database that align with a
-high score to the model.  We then describe our query-dependent banding
-(QDB) technique for acceleration. The central idea of QDB is to ignore
-potential alignments that are very unlikely to have high scores by
-enforcing bands on the dynamic programming lattice during the CYK
-recursion. We describe how the location of these bands are calculated
-using only the parameters of the query CM, and how the CYK algorithm
-can be easily extended to enforce these bands and save time.
-%Search space is retricted using bands 
-%that limit the possible subsequence lengths that can be aligned to
-%each part of the model. We present a method for calculating these
-%bands independently of the database being searched. We then show a simple
-%extension of the CM database search algorithm to incorporate these
-%bands and save time.
-Finally, we present the results of a simple benchmark that
-suggest the performance of a banded search is very similar
-to that of a non-banded search, while offering an average speed-up of
-3-5x for an RNA family.
+To formalize this idea, we start with a description of CMs, followed
+by the QDB algorithms for calculating the subsequence length
+distributions, using these length distributions to determine bands,
+and using the bands in a banded CM dynamic programming alignment
+algorithm.  We find that QDB requires more accurate state transition
+parameter estimation than the \textsc{infernal} software was
+providing, so we describe our implementation of mixture Dirichlet
+priors for CM parameter estimation. Finally, we present results from a
+benchmark that suggest the sensitivity and specificity of a banded
+search is negliglibly different from a non-banded search, while giving
+an average speed-up of three- to five-fold.
 
 \subsection{Covariance models}
 
-Covariance models (CMs) are probabilistic models of the consensus
-secondary structure and sequence of a family of non-coding RNAs. 
-CMs are organized in a tree-like, directed graph of states. 
-The states are conceptually organized into different types of nodes,
-each containing a characteristic set of states.
-The identity and organization of the nodes, and therefore states, is
-determined from a consensus structure annotated multiple
-sequence alignment of the family being modeled. 
-
-There are eight types of nodes, each of which corresponds to a
-different structural feature. A $ROOT$ node marks the start of the
-model. $BIF$ nodes model bifurcations in the secondary structure of
-the family. $BEGL$ and $BEGR$ nodes mark the beginnings of a branch on
-the left and right side of a bifurcation. $END$ nodes necessarily end each
-branch. Finally, $MATP$ nodes model consensus base pairs, while $MATL$
-and $MATR$ nodes model single-stranded residues. 
-
-A CM is built by first constructing a \emph{guide tree} of nodes based
-on the input alignment. The nodes of the guide tree are then expanded
-unambiguously into the set of states that makes up the model.  An
-example of an input alignment, the corresponding guide tree and a
-subset of the model's states is given in Figure~\ref{fig:cmintro}. For
-more details on the construction procedure please see \cite{Eddy02b, infguide03}.
+CMs are a convention for mapping an RNA secondary structure into a
+tree-like, directed graph of SCFG states and state transitions
+(equivalently, SCFG nonterminals and production rules). The CM is
+organized by a binary tree of \emph{nodes} representing base pairs and
+single-stranded residues in the query's structure. Each node contains
+a number of states, where one state represents the expected alignment
+to the query, and the others represent insertions and deletions
+relative to the query.  Figure~\ref{fig:cmintro} shows an example of
+converting a consensus structure to the guide tree of nodes, and part
+of the expansion of those guide tree nodes into the CM's state graph.
+Here we will only concentrate on the aspects of CMs necessary to
+understand QDB, and a subset of our usual notation. For full details
+on CM construction, see \cite{Eddy02b, infguide03}.
 
 \ifdraft
 \begin{figure}
@@ -304,31 +265,18 @@ more details on the construction procedure please see \cite{Eddy02b, infguide03}
 \end{figure}
 \fi
 
-CMs can be thought of as generative models that
-\emph{emit} RNA sequences. A new sequence is emitted by starting at
-the leaves of the tree and moving upwards from state to state
-following specific \emph{production rules} and 
-emitting residues on both the left and right sides of the growing
-sequence.
-When a bifurcation state is reached, a split of the sequence
-is created, and the sequence continues to grow in both directions on
-each side of the split. Only specific transitions from
-state to state are allowed, namely a state $v$ can only transit to
-its children states $y$ in the set $C_v$. 
-For each production rule, probabilities are associated with each
-possible residue emission
-($e_v(a)$) and transition ($t_v(Y)$) \cite{Eddy94}.
-These probabilities are defined using mean posterior estimation based
-on the observations in the input alignment and a Dirichlet prior as
-described elsewhere \cite{Durbin98, Eddy02b, infguide03}. 
-We refer to the number of residues emitted by
-each state $v$ on the left and right as $\Delta_v^{L}$ and
-$\Delta_v^{R}$, respectively. 
-%Full notation for CMs can be found
-%elsewhere \cite{Eddy02b, infguide03}, but this is sufficient for the
-%present discussion. 
-A CM consists of states of seven
-different types, each with a corresponding production rule:
+In the guide tree, there are eight types of nodes. MATP nodes
+represent consensus base pairs. MATL and MATR nodes represent
+single-stranded residues (emitted to the left or right with respect to
+a stem). BIF nodes represent bifurcations in the secondary structure
+of the family, to deal with multiple stem-loops. Finally, a ROOT node
+represents the start of the model, BEGL and BEGR nodes represent the
+beginnings of a branch on the left and right side of a bifurcation,
+and END nodes end each branch.
+
+The CM is composed of seven different types of states, each with a
+corresponding form of production rule, with notation defined as
+follows:
 
 \vspace{0.5em}
 \begin{tabular}{lllllll}
@@ -343,30 +291,157 @@ E & (end)             & $E \rightarrow \epsilon$ & 0 & 0 & 1     &     1     \\
 \end{tabular}
 \vspace{0.5em}
 
-A simplified CM with examples of emitted sequences is shown in
-Figure~\ref{fig:aprioriAB}.
+That is, for instance, if state $v$ is a pair state, it produces
+(aligns to and scores) two correlated residues $a$ and $b$ and moves
+to some new state $Y$.  The probability that it produces a residue
+pair $a,b$ is given by an \emph{emission probability} $e_v(a,b)$.  The
+probability that it moves to a particular state $Y$ is given by a
+\emph{transition probability} $t_v(Y)$.  The set of possible states
+$Y$ that $v$ may transit to is limited to the states in the next
+(lower) node in the guide tree (and insert states in the current
+node); the set of possible children states $Y$ is called $C_v$, for
+``children of $v$''. The indicators $\Delta_v^{L}$ and $\Delta_v^{R}$
+are used to simplify notation in CM dynamic programming algorithms;
+they are the residues emitted to the left and right of this state,
+respectively. Bifurcation rules are special, in that they always
+transition for two particular start (S) states, at the root of
+subtrees in the guide tree, with probability 1.0.
 
-\ifdraft
-\begin{figure}
-\begin{center}
-\includegraphics[width=6.4in]{figs/d3_apriori_AB}
-\caption{\textbf{A simplified CM.} \textbf{(A):} Biologically
-  unrealistic, toy CM with simplified architecture. \textbf{(B):} Examples of
-  sequences generated from CM in (A), each with its own probability
-  given the transition probabilities of the model, as shown in plots at
-   bottom.}
-\label{fig:aprioriAB}
-\end{center}
-\end{figure}
-\fi
+These state types essentially defines a general ``normal form'' for
+SCFG models of RNA, akin to SCFGs in Chomsky normal form where all
+productions are in one of two forms, $Y \rightarrow a$ or $Y
+\rightarrow YY$. We describe CM algorithms (including QDB) in terms of
+this normal form. Our current conventions for CMs specify exactly how
+consensus nodes in the tree are expanded into states, and how those
+states are connected within each node and to states in the next node
+in the guide tree; see \cite{Eddy02b, infguide03} for details, but
+these details are unnecessary to describe QDB.
+
+Thus a CM is a generative probabilistic model of a family of
+homologous RNAs, consisting of a total of $M$ states. A sequence is
+emitted starting at the root, moving downwards from state to state
+according to state transition probabilities, emitting residues and
+residue pairs according to emission probabilities, and bifurcating
+into substructures at bifurcation states. An important property of a
+CM is the states can be numbered from $1..M$ (from root to leaves)
+such that that for any state $v$, the states $y$ that it can transit
+to have indices $y \geq v$ -- there are no cycles in a CM, other than
+self-transitions on insert states.  This property enables the
+recursive calculations that both CM alignment algorithms and QDB rely
+on.
+
+Without altering the above description, CMs apply to either global or
+local alignment, and to either pairwise alignment to single RNA
+queries or profile alignment to a consensus structure of a multiple
+RNA sequence alignment. CMs for single RNA queries are derived
+identically to profiles of a consensus structure, differing only in
+the parameterization method \citep{KleinXXX}. Local structural
+alignment to substructures and truncated structures (as opposed to
+requiring a global alignment to the whole RNA structural model) is
+achieved by adding state transitions from the ROOT that permit
+entering the model at any internal consensus state with some
+probability, and state transitions from any internal state to an END
+with some probability \citep{KleinXXX}.
+
+\subsection{QDB algorithm}
+
+Observe that for any state $v$, we could enumerate all possible paths
+down the model from $v$ to END(s), each of which has a certain
+probability (defined by the product of the transition probabilities
+used by the path), and each of which will emit a certain number of
+residues (2 per P state, 1 per L or R state in the path). The sum of
+these path probabilities for each $n$ defines a probability
+distribution $\gamma_v(n)$, the probability that the subgraph rooted
+at $v$ will generate a subsequence of length $n$.  Given a finite
+limit $Z$ on maximum subsequence length (defined later in the paper),
+we can calculate $\gamma_v(n)$ by an efficient recursive algorithm,
+initializing $\gamma_{v}(0)$ to 1.0 for all the END states, then
+working from leaves of the CM towards the root, and from smallest
+subsequences to largest:
+
+\vspace{0.5em}
+\begin{tabular}{l|l|l}
+\multicolumn{3}{l}{for $v = M$ down to $1$:} \\
+$v = $ end state $(E)$: & $\gamma_v(0) = 1$ & \\
+                        & $\gamma_v(d) = 0$ & for $d=1$ to $Z$ \\
+& & \\
+$v = $ bifurcation $(B)$: & $\gamma_v(d) = \sum_{n=0}^{d} \gamma_y(n)
+* \gamma_z(d-n)$ & for $d = 0$ to $Z$ \\
+& & \\
+else ($v = S, P, L, R$): & $\gamma_v(d) = 0$ & for $d=0$ to $(\Delta_v^{L} + \Delta_v^{R} -
+1)$ \\
+& $\gamma_v(d) = \sum_{y \in C_v} \gamma_y(d-(\Delta_v^{L} + \Delta_v^{R})) * t_v(y) $ 
+& for $d = (\Delta_v^{L} + \Delta_v^{R})$ to $Z$ \\
+\end{tabular}
+\vspace{0.5em}
+
+For example, if we're calculating $\gamma_v(d)$ where $v$ is is a pair
+state, we know that $v$ must emit a pair of residues then transit to a
+new state $y$ (one of its possible transitions $C_v$), and a subgraph
+rooted at $y$ will have to account for the rest of the subsequence of
+length $d-2$. Therefore, $\gamma_v(d)$ must be the sum, over all
+possible states $y$ in $C_v$, of the transition probability $t_v(y)$
+times the probability that the subtree rooted at $y$ generates a
+subsequence of length $d-2$ -- which is $\gamma_y(d-2)$, guaranteed to
+have already been calculated by the recursion.  
+For the $B$ state (bifurcation) calculation, indices $y$ and $z$
+indicate the left and right S (start) state that bifurcation state $v$
+must connect to.
+
+A band $\mbox{dmin}_v .. \mbox{dmax}_v$ of subsequence lengths that
+will be allowed for each state $v$ is then defined as follows. A
+parameter $\beta$ defines the threshold for the negligible probability
+mass that we are willing to allow outside the band. (Typical values of
+$\beta$ will be $10^{-6}$ and $10^{-10}$.) We define $\mbox{dmin}_v$
+and $\mbox{dmax}_v$ such that the cumulative left and right tails of
+$\gamma_v(n)$ contain less than a probability $\frac{\beta}{2}$:
+
+\[
+   \sum_{d = 0}^{\mbox{dmin}_v - 1} \gamma_v(d) < \frac{\beta}{2}
+   \sum_{d = \mbox{dmax}_v + 1}^{Z} \gamma_v(d) < \frac{\beta}{2}
+\]
+
+Larger values of $\beta$ ($10^{-6}$ instead of $10^{-10}$) will
+produce tighter bands and therefore faster alignments, at a cost of a
+higher risk of missing the optimal alignment. $\beta$ is the only free
+parameter that must be specified to QDB.
+
+Because CMs have emitting self-loops (i.e. insert states), there is no
+limit on subsequence lengths, but we must impose a finite limit $Z$ to
+obtain a finite calculation.  The choice of $Z$ should be sufficiently
+large that it does not affect $\mbox{dmax}_v$ for any state $v$.  On a
+digital computer with floating point precision $\epsilon$ (the largest
+value at which $1+\epsilon = 1$), it suffices to guarantee that:
+
+\[
+  \frac{ \sum_{d = Z+1}^{\infty}  \gamma_v(d)}
+       { \sum_{d' = \mbox{dmax}_v + 1}^{Z} \gamma_v(d')}  \leq \epsilon
+\]
+
+Empirically, we observe that the tails of the $\gamma_v(d)$ densities
+decrease approximately geometrically. Thus we can analytically
+estimate the mass in the unseen tail by fitting a geometric tail to
+the observed density $\gamma_v(d)$. Our implementation starts with a
+reasonable guess at $Z$ and verifies that the above condition is true
+for each $v$, assuming these geometrically decreasing tails; if it is
+not, $Z$ is increased and bands are recalculated until it is.
+
+A QDB calculation only needs to be performed once per query to set the
+bands. Overall, a QDB calculation requires $\Theta(MZ)$ in time and
+space; or equivalently, because both $M$ and $Z$ scale roughly
+linearly with the length $L$ in residues of the query RNA (or RNA
+alignment), $\Theta(L^2)$. The time and space requirement is
+negligible compared to the requirements of a CM database search.
+
+\subsection{Banded CYK database search algorithm for CMs}
 
 Although it is convenient to think of CMs as generative models, their
-utility lies in the ability to align existing sequences and score
-the alignments to predict homology. Given a parameterized model
-and a sequence, a variant of the CYK dynamic programming algorithm
+utility lies in the ability to align existing sequences and score the
+alignments to predict homology. Given a parameterized model and a
+sequence, a variant of the CYK dynamic programming algorithm
 specifically adapted for CMs optimally aligns the sequence to the
 model by determining the most probable path through the model that
-could have generated the sequence \cite{Durbin98}. 
+could have generated the sequence \cite{Durbin98}.
 
 The CM CYK database search algorithm is different from the traditional
 CYK algorithm \cite{Kasami65, Younger67, HopcroftUllman79} in several
@@ -394,156 +469,9 @@ The algorithm is easily extended to allow local alignment to the model
 by permitting transitions that bypass subtree(s) of the model
 \cite{KleinEddy03}. For the formal algorithm and information on other
 CM algorithms, such as the SCFG Inside and Outside algorithms, please
-see \cite{Durbin98}. 
+see \cite{Durbin98}.
+ 
 
-\subsection{Accelerating CM methods using QDB}
-
-Intuitively, it may seem wasteful to require the CYK algorithm to calculate
-$\alpha_v(j,d)$ for all possible values of $d$. For example, for a 
-$P$ state that models the enclosing pair of a tetraloop, CYK will
-calculate $\alpha_v(j,d)$ for values of $d$ from $0$ to 
-$Z$ (which is about $90$ for a tRNA size RNA family), even though it
-may be very unlikely that a homologous hairpin loop will be longer
-than $10$ nucleotides. The central idea of QDB is to enforce bands,
-i.e. minimum and maximum values, on $d$ for each state $v$ during the
-DP recursion. 
-%Importantly, the
-%bands are calculated solely from the query CM, and remain fixed
-%throughout a database search. 
-
-
-Our technique for calculating the bands 
-relies on two specific features of the SCFG architecture of
-CMs\@. Notably, this approach is applicable to any probabilistic model
-with the following two characteristics, however we believe it is
-mainly useful for SCFG methods:
-
-\begin{description}
-\item[1.] Cycles in the graph (tree) of states are restricted to emitting
-  rules. 
-\item[2.] With states numbered in preorder traversal, no state
-  $v$ can transit to a state $y$ if $v > y$.
-\end{description}
-
-\subsubsection{Band calculation algorithm}
-The band calculation algorithm iteratively calculates
-$\gamma_v(d)$, the probability that the subtree of the model rooted at state $v$
-will generate a subsequence of length $d$. This is the summed probability
-of all possible paths through the subtree rooted at $v$ (i.e. paths
-that start at $v$ and end at the nearest $E$ state $y > v$) that emit
-exactly $d$ residues. 
-Similar to the CYK algorithm, the calculation initializes at the
-smallest subtrees ($E$ states) and
-shortest subsequences ($d=0$) and iterates upwards and outwards to
-progressively larger subtrees and longer subsequences. The band
-calculation algorithm is as follows:
-
-\vspace{0.5em}
-\begin{tabular}{l|l|l}
-\multicolumn{3}{l}{for $v = M$ down to $1$:} \\
-$v = $ end state $(E)$: & $\gamma_v(0) = 1$ & \\
-                        & $\gamma_v(d) = 0$ & for $d=1$ to $Z$ \\
-& & \\
-$v = $ bifurcation $(B)$: & $\gamma_v(d) = \sum_{n=0}^{d} \gamma_y(n)
-* \gamma_z(d-n)$ & for $d = 0$ to $Z$ \\
-& & \\
-else ($v = S, P, L, R$): & $\gamma_v(d) = 0$ & for $d=0$ to $(\Delta_v^{L} + \Delta_v^{R} -
-1)$ \\
-& $\gamma_v(d) = \sum_{y \in C_v} \gamma_y(d-(\Delta_v^{L} + \Delta_v^{R})) * t_v(y) $ 
-& for $d = (\Delta_v^{L} + \Delta_v^{R})$ to $Z$ \\
-\end{tabular}
-\vspace{0.5em}
-
-For example, if we're calculating $\gamma_v(d)$ and $v$ is
-is a pair state we know that state $v$
-will emit a pair of residues and transit to a new state $y$ (one
-of its possible transitions $C_v$) which then will have to account for
-the smaller subsequence of length $d-2$. Therefore, $\gamma_v(d)$ is
-the sum, over all possible states $y$ in $C_v$, of the 
-probability of transiting to $y$ ($t_v(y)$) and generating a subsequence
-of length $(d-2)$ from the subtree rooted at $y$ (i.e. the
-previously calculated solution $\gamma_y(d-2)$). 
-For $B$ states, the algorithm uses $\gamma$ values for predefined children states $y$
-and $z$.
-Figure~\ref{fig:aprioriC} traces the band calculation algorithm for the simplified
-CM in Figure~\ref{fig:aprioriAB}.
-
-
-\ifdraft
-\begin{figure}
-\begin{center}
-\includegraphics[width=4.5in]{figs/d3_apriori_C}
-\caption{\textbf{A trace of the band calculation
-  algorithm for the simplified CM in Figure~\ref{fig:aprioriAB}.} 
-    The maximum length $d$ considered (the $Z$ parameter) is set as
-    10. Resulting $\gamma$ probability distributions shown at right. For
-    state $0$ (step 7), the $\gamma$ plot is color-coded to correspond
-    with probabilities in Figure~\ref{fig:aprioriAB}.}
-\label{fig:aprioriC}
-\end{center}
-\end{figure}
-\fi
-
-The calculation of $\gamma_v(d)$ is dependent on other $\gamma$
-values. The two features of CMs previously mentioned (i.e. (1) no
-non-emitting loops and (2) $v <= y$ for $y$ in $C_v$) enforce
-that, when calculating $\gamma_v(d)$ all $\gamma_y$ values that
-$\gamma_v(d)$ is dependent on have been previously calculated. 
-Intuitively, this constraint is satisfied because the algorithm
-calculates $\gamma$ values as it moves up the model to progressively
-larger subtrees and longer subsequences, at each step requiring only
-$\gamma$ values for shorter subsequences from states at or below the
-current one. 
-
-Bands are derived from the $\gamma$ values as follows.
-The parameters $dmin_v$ and $dmax_v$ represent the minimum and maximum
-allowed subsequence lengths that can be aligned to the subtree
-at state $v$. These bounds are set such that: 
-
-\[
-\sum_{d = dmin_v}^{dmax_v} \gamma_v(d) \geq (1-bandp)
-\]
-
-This asserts that the probability that a subtree
-rooted at state $v$ generates a subsequence of length at least
-$dmin_v$ and at most $dmax_v$ is above a specified probability
-threshold $(1-bandp)$. Therefore, $bandp$ is the maximum allowable
-probability mass \emph{outside} the band for any state in the
-model. Values of $bandp$ used are typically between $10^{-6}$ and
-$10^{-10}$. 
-
-Importantly, $\gamma_v(d)$ values are only calculated for $d$ up to a
-maximum sequence length of $Z$. Because CMs have emitting self-loops
-(i.e. insert states), there is no limit to the length of a sequence
-that can be generated from (i.e. aligned to) any subtree of the model
-that includes an insert state. However, the calculation of the
-$\gamma$ values neglects the probability that a subsequence
-of length $d > Z$ will be generated by any subtree.
-Therefore, $Z$ must be sufficiently large such that the cumulative
-probability of all such subsequences is ``negligible''. Specifically,
-we don't want the choice of $Z$ to affect any $dmin$ or
-$dmax$ values. Our implementation handles this by assuming that
-the $\gamma_v$ probability density tails decrease geometrically, and
-testing that the estimated cumulative probability for $d > Z$ will
-not affect any $dmax$ values based on the numerical precision of the
-computer. If this test fails, $Z$ is increased and the bands are
-recalculated. Assuming the $\gamma$ tail decreases geometrically is not
-particularly well justified, but it seems to work fine in
-practice (?). For more details we refer the reader to the code in
-bandcyk.c::BandCalculationEngine() and
-bandcyk.c::BandTruncationNegligible().
-
-\subsubsection{Using the band calculation to determine the maximum
-  size of a hit to a CM}
-During database search, the $W$ parameter is defines
-the maximum size of a potential hit to a model. Previous implementations
-required that $W$ be manually set by the user. 
-The band calculation algorithm delivers a probabilistically derived
-$W$ for database search in $dmax_0$, which is the upper bound on the
-length of the entire sequence (the sequence generated by the top-most
-state, the root of the entire tree). 
-
-\subsubsection{The banded CYK database search algorithm}
 %The CM CYK database search algorithm is used to find subsequences of
 %long sequences (i.e. chromosomes) that align with high scores to the
 %CM, and are therefore likely homologs of the family being
@@ -646,6 +574,17 @@ parameter. In general, higher $bandp$ values will give tighter bands
 that result in faster, less sensitive searches than lower $bandp$ values.
 Empirically, practical values of $bandp$ are between $10^{-6}$ and
 $10^{-10}$ (see benchmark results). 
+
+  size of a hit to a CM}
+During database search, the $W$ parameter is defines
+the maximum size of a potential hit to a model. Previous implementations
+required that $W$ be manually set by the user. 
+The band calculation algorithm delivers a probabilistically derived
+$W$ for database search in $dmax_0$, which is the upper bound on the
+length of the entire sequence (the sequence generated by the top-most
+state, the root of the entire tree). 
+
+
 
 %\subsection{Informative transition priors for appropriate band calculation}
 \subsection{Informative Dirichlet priors}
