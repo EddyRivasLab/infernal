@@ -64,7 +64,6 @@ static int cm2sub_cm_subtract_root_subpaths(CM_t *orig_cm, CM_t *sub_cm, double 
 					    int **orig2sub_smap, int **sub2orig_smap);
 static void cm2sub_cm_subtract_root_subpaths2(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***tmap, 
 					     int **orig2sub_smap, int **sub2orig_smap);
-static int sub_cm_kill_state(CM_t *sub_cm, int insert1, int insert2);
 static int cm2sub_cm_subtract_root_subpaths_helper(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***tmap, 
 						   int **orig2sub_smap, int **sub2orig_smap, int orig_il_or_s, int orig_ir);
 static void cm2sub_cm_subtract_root_subpaths_helper2(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***tmap, 
@@ -505,7 +504,7 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int struct_start, int struct_end, int
 		       (v_o1 == sub2orig_smap[v_s2][1] && v_o2 == sub2orig_smap[v_s2][0])))
 		    Die("ERROR: found sub_cm dead state but sub_cm state %d maps to 2 orig_cm states (%d and %d), and sub_cm state %d does not map to these same 2 states (but rather: %d and %d). I thought this was impossible (case 1).\n", v_s1, v_s2, v_o1, v_o2, sub2orig_smap[v_s2][0], sub2orig_smap[v_s2][1]);;
 		}
-	      if(!(sub_cm_kill_state(sub_cm, v_s1, v_s2)))
+	      if(!(cm_detach_state(sub_cm, v_s1, v_s2)))
 		Die("ERROR: problem with finding a state to kill: neither v_s1: %d and v_s2: %d map to END_E-1!\n", v_s1, v_s2);
 	    }
 	}
@@ -555,246 +554,6 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int struct_start, int struct_end, int
 
   *ret_cm = sub_cm;
   return;
-}
-
-/* Function: ConsensusModelmaker()
- * EPN 08.29.06 based closely on HandModelMaker:
- *              SRE 29 Feb 2000 [Seattle]; from COVE 2.0 code
- * 
- * Purpose:  Construct a model given a stated structure. The structure
- *           is provided via a "ss_cons" (consensus structure) line, as would
- *           occur in an annotated SELEX or Stockholm file. Only > and < characters
- *           in this line are interpreted (as base pairs). Pseudoknots, 
- *           if annotated, are ignored.
- *           
- *           All positions/columns of the given structure are considered 
- *           consensus, and this is the difference b/t this function and
- *           HandModelmaker. Also, this function does not take in a MSA 
- *           data structure. It was originally written for building a 
- *           new CM with less structure (MATPs) than a template CM.
- *           
- * Args:     ss_cons   - input consensus structure string 
- *           len       - length of ss_cons, number of consensus columns
- *           ret_cm    - RETURN: new model                      (maybe NULL)
- *           ret_gtr   - RETURN: guide tree for alignment (maybe NULL)
- *           
- * Return:   void
- *           cm is allocated here. FreeCM(*ret_cm).
- *           gtr is allocated here. FreeTrace().
- */
-void
-ConsensusModelmaker(char *ss_cons, int clen, CM_t **ret_cm, Parsetree_t **ret_gtr)
-{
-  CM_t           *cm;		/* new covariance model                       */
-  Parsetree_t    *gtr;		/* guide tree for alignment                   */
-  Nstack_t       *pda;		/* pushdown stack used in building gtr        */
-  int            *ct;		/* 0..alen-1 base pair partners array         */
-  int             v;		/* index of current node                      */
-  int             i,j,k;	/* subsequence indices                        */
-  int  type;			/* type of node we're working on              */
-  int  diff, bestdiff, bestk;   /* used while finding optimal split points    */   
-  int  nnodes;			/* number of nodes in CM                      */
-  int  nstates;			/* number of states in CM                     */
-
-  if (ss_cons == NULL)
-    Die("No consensus structure annotation available in ConsensusModelmaker().");
-
-  /* 1. Determine a "ct" array, base-pairing partners for each position.
-   *    Disallow/ignore pseudoknots. (That's what the FALSE flag does.)
-   *    ct[] values give the index of a base pairing partner, or 0 for unpaired positions.
-   *    Even though ss_cons is in the 0..clen-1 coord system of msa, ct[]
-   *    comes back in the 1..alen coord system of the sequence.
-   */
-  printf("in ConsensusModelmaker: clen: %d,  %s\n", clen, ss_cons);
-
-  if (! WUSS2ct(ss_cons, clen, FALSE, &ct))  
-    Die("Consensus structure string is inconsistent"); 
-
-  /* 2. Construct a guide tree. 
-   *    This codes is borrowed from HandModelmaker(), where it
-   *    was originally borrowed from yarn's KHS2Trace().
-   *    
-   *    We also keep track of how many states we'll need in the final CM,
-   *    so we'll know how much to allocate -- and the number of nodes,
-   *    for informational purposes.
-   */
-  nstates = nnodes = 0;
-  gtr = CreateParsetree();	/* the parse tree we'll grow        */
-  pda = CreateNstack();		/* a pushdown stack for our indices */
-
-  /* Construction strategy has to make sure we number the nodes in
-   * preorder traversal: for bifurcations, we can't attach the right 
-   * child until we've fully traversed the left side. Therefore, we have
-   * to push what we intend to attach, and pop it later. And since we
-   * don't know an index for the node until we attach it, we have no
-   * place to put the node's data except the stack -- so we have to
-   * push several numbers onto the stack: what type of node, what
-   * subseq it's responsible for (emitl...emitr), and what node
-   * index it attaches to.
-   * 
-   * Note that we have to deal with the fact that ct is off-by-one
-   * in both indices and values: e.g. the base pairing partner 
-   * j of residue i is ct[i-1]-1. 
-   */
-  PushNstack(pda, -1);		/* what node it's attached to */
-  PushNstack(pda, 1);		/* emitl */
-  PushNstack(pda, clen);	/* emitr */
-  PushNstack(pda, ROOT_nd);	/* "state" (e.g. node type) */
-
-  while (PopNstack(pda, &type))	/* pop a node type to attach */
-    {
-      PopNstack(pda, &j);
-      PopNstack(pda, &i);	/* i..j == subseq we're responsible for */
-      PopNstack(pda, &v);	/* v = index of parent node in gtr */
-
-      /* This node accounts for i..j, but we usually don't know how yet.
-       * Six possibilities:
-       *    i > j; this is an END state; do nothing.
-       *    this is already assigned as a BEGIN; push i,j
-       *    i is unpaired; this is a MATL state; push i+1, j
-       *    j is unpaired; this is a MATR state; push i,j-1
-       *    i,j pair to each other; this is a MATP state; push i+1,j-1
-       *    i,j pair but not to each other; this is a BIFURC state;
-       *        pick mid ip <= mid < jp; push BEGIN i,mid and working i,mid,
-       *        and push BEGIN mid+1,j and working mid+1,j
-       */
-      if (i > j) {
-	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, END_nd);
-	nstates += 1;		/* END_nd -> E_st */
-	nnodes++;
-      }
-
-      else if (type == ROOT_nd) { /* try to push i,j; but deal with INSL and INSR */
-	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, ROOT_nd);
-	PushNstack(pda, v);	/* here v==0 always. */
-	PushNstack(pda, i);
-	PushNstack(pda, j);
-	PushNstack(pda, DUMMY_nd); /* we don't know yet what the next node will be */
-	nstates += 3;		/* ROOT_nd -> S_st, IL_st, IR_st */
-	nnodes++;
-      }
-
-      else if (type == BEGL_nd) {    /* no inserts */
-	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, BEGL_nd);
-	PushNstack(pda, v);	
-	PushNstack(pda, i);
-	PushNstack(pda, j);
-	PushNstack(pda, DUMMY_nd); /* we don't know yet what the next node will be */
-	nstates += 1;		/* BEGL_nd -> S_st */
-	nnodes++;
-      }
-
-      else if (type == BEGR_nd)  { /* look for INSL */
-	v = InsertTraceNode(gtr, v, TRACE_RIGHT_CHILD, i, j, BEGR_nd);
-	PushNstack(pda, v);	
-	PushNstack(pda, i);
-	PushNstack(pda, j);
-	PushNstack(pda, DUMMY_nd); /* we don't know yet what the next node will be */
-	nstates += 2;		/* BEGR_nd -> S_st IL_st */
-	nnodes++;
-      }
-
-      else if (ct[i] == 0) {
-	 	/* i unpaired. This is a MATL node; allow INSL */
-	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, MATL_nd);
-	i++;
-	PushNstack(pda, v);
-	PushNstack(pda, i);
-	PushNstack(pda, j);
-	PushNstack(pda, DUMMY_nd); /* we don't know yet what the next node will be */
-	nstates += 3;		/* MATL_nd -> ML_st, D_st, IL_st */
-	nnodes++;
-      }
-
-      else if (ct[j] == 0) { 	/* j unpaired. MATR node. Deal with INSR */
-	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, MATR_nd);
-	j--;
-	PushNstack(pda, v);
-	PushNstack(pda, i);
-	PushNstack(pda, j);
-	PushNstack(pda, DUMMY_nd); /* we don't know yet what the next node will be */
-	nstates += 3;		/* MATR_nd -> MR_st, D_st, IL_st */
-	nnodes++;
-      }
-
-      else if (ct[i] == j) { /* i,j paired to each other. MATP. deal with INSL, INSR */
-	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, MATP_nd);
-	i++;
-	j--;
-	PushNstack(pda, v);
-	PushNstack(pda, i);
-	PushNstack(pda, j);
-	PushNstack(pda, DUMMY_nd); /* we don't know yet what the next node will be */
-	nstates += 6;		/* MATP_nd -> MP_st, ML_st, MR_st, D_st, IL_st, IR_st */
-	nnodes++;
-      }
-
-      else /* i,j paired but not to each other. BIFURC. no INS. */
-	{
-	  /* Here's the first of two places where we can optimize the topology 
-           * of a CM. (The other comes from choosing a state traversal order when 
-           * building the CM.) Imagine a multifurcation of four domains:
-           *   [1]..[2]..[3]..[4]
-           * The "default leftwise" rule means that BEGL/INSL generates the 
-           * intervening sequences, so we must model the four stems as:
-           *   [1],    ..[2],    ..[3],   ..[4]
-           * but we have a choice of how we bifurcate:
-           *   (1,2)(3,4)    1,(2,(3,4))   ((1,2),3),4 
-           * Our choice affects the time and memory requirements of a divide
-           * conquer alignment algorithm. (1,(2,(3,4)) is most efficient for
-           * memory; (1,2)(3,4) is most efficient for time.
-           * 
-           * So we may want to choose carefully from several possible split 
-           * points k (3, in the above example). A priori we only know one 
-           * possible midpoint precisely: ct[i]+1, the next base after closing 
-           * domain 1. We can find the others by scanning for them, and we can 
-           * be reasonably efficient about scanning by using ct[] to instantly 
-           * skip subdomains.
-	   */
-	  /* One possible rule: optimize by finding most balanced split.
-           * Each stop of the following loop gives a possible midpoint k, which is
-           * then evaluated, keeping track of the best split so far.
-           */
-	  v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, BIF_nd);
-
-	  bestk    = ct[i]+1;
-	  bestdiff = clen;
-	  for (k = ct[i] + 1; k < ct[j]; k = ct[k] + 1) 
-	    {
-	      diff = abs(i+j-2*k); /* = len2-len1-1, where len2 = j-k+1, len1= k-i */
-	      if (diff < bestdiff) {
-		bestdiff = diff; 
-		bestk    = k;
-	      }
-	      while (ct[k] == 0) k++;
-	    }
-				/* push the right BEGIN node first */
-	  PushNstack(pda, v);	
-	  PushNstack(pda, bestk);
-	  PushNstack(pda, j);
-	  PushNstack(pda, BEGR_nd);
-				/* then push the left BEGIN node */
-	  PushNstack(pda, v);	
-	  PushNstack(pda, i);
-	  PushNstack(pda, bestk-1);
-	  PushNstack(pda, BEGL_nd);
-	  nstates += 1;		/* BIF_nd -> B_st */
-	  nnodes++;
-	}
-    }	/* while something's on the stack */
-  FreeNstack(pda);
-  free(ct);
-
-  /* OK, we've converted ct into gtr -- gtr is a tree structure telling us the
-   * arrangement of consensus nodes. Now do the drill for constructing a full model 
-   * using this guide tree.
-   */
-  cm = CreateCM(nnodes, nstates);
-  cm_from_guide(cm, gtr);
-  CMZero(cm);
-
-  if (ret_cm  != NULL) *ret_cm  = cm;  else FreeCM(cm);
-  if (ret_gtr != NULL) *ret_gtr = gtr; else FreeParsetree(gtr);
 }
 
 /**************************************************************************
@@ -4846,67 +4605,6 @@ cm2sub_cm_subtract_root_subpaths_helper(CM_t *orig_cm, CM_t *sub_cm, double *ori
 
 
 /**************************************************************************
- * EPN 09.18.06
- * sub_cm_kill_state()
- *
- * Given two insert states that map to the same state in the original,
- * template CM, make one of them 'dead' by setting all transitions into 
- * it to 0.0. We choose the state to kill as the state that is immediately
- * prior to an END_E in the sub_cm. This will always be the case because
- * the sole source of alignment ambiguity in the CM architecture always
- * involves 1 insert state immediately before an END_E.
- * 
- * Args:    
- * CM_t  cm,
- * int   a; 
- * int   b; 
- * Returns: TRUE on success if insert1 or insert2 is a state immediately 
- *          before an END_E, and we've killed it.
- *          FALSE otherwise
- */
-int
-sub_cm_kill_state(CM_t *sub_cm, int insert1, int insert2)
-{
-  printf("\t**in sub_cm_kill_state: insert1: %d | insert2: %d\n", insert1, insert2);
-
-  int ret_val;
-  int x, y;
-  int dead_state;
-
-  ret_val = FALSE;
-
-  if(insert1 == insert2)
-    Die("ERROR in sub_cm_kill_state: insert1==insert2:%d\n", insert1);
-
-  if(sub_cm->sttype[insert1+1] == E_st)
-    {
-      ret_val = TRUE;
-      dead_state = insert1;
-    }
-  if(sub_cm->sttype[insert2+1] == E_st)
-    {
-      if(ret_val)
-	Die("ERROR: in sub_cm_kill_state insert1: %d and insert2: %d both map to END_E-1 states.\n", insert1, insert2);
-      ret_val = TRUE;
-      dead_state = insert2;
-    }
-  if(ret_val)
-    {
-      for (y = sub_cm->pnum[dead_state]-1; y >= 1; y--)  
-	/* y >= 1 means we never get to 
-	 * dead_state->dead_state prob, which is irrelevant. */
-	{
-	  x = sub_cm->plast[dead_state] - y;
-	  sub_cm->t[x][0] = 0.0; /* x is a split set state in same node
-				  * as insert1, we're setting transition
-				  * from x -> dead_state as impossible.
-				  */
-	}
-    }
-  return ret_val;
-}
-
-/**************************************************************************
  * EPN 09.21.06
  * Function: cm2sub_cm_subtract_root_subpaths2
  *
@@ -5723,7 +5421,7 @@ map_orig2sub_cm3(CM_t *orig_cm, CM_t *sub_cm, int ***ret_orig2sub_smap, int ***r
 	  printf("sub2orig_id[%d] TRUE\n", v);
 	  if(sub2orig_smap[v][1] != -1)
 	    {
-	      Die("ERROR, sub2orig_id[v:%d] but sub2orig_smap[v:%d][1]: %d\n", v, v, sub2orig_smap[v][1]);
+	      Die("ERROR, sub2orig_id[v:%d] but sub2orig_smap[v:%d][0]: %d and sub2orig_smap[v:%d][1]: %d\n", v, v, sub2orig_smap[v][0], v, sub2orig_smap[v][1]);
 	    }
 	}
       else

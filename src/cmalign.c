@@ -279,8 +279,18 @@ main(int argc, char **argv)
   char            *check_outfile;	/* output file name for subCM stk file*/
   FILE            *check_ofp;         /* an open output file */
   CM_t            *sub_cm;       /* sub covariance model                      */
+  int *sub_node_cc_left; 
+  int *sub_node_cc_right;
+  int *sub_cc_node_map;
+  int **sub_cs2hn_map;  
+  int **sub_cs2hs_map;  
+  int ***sub_hns2cs_map;
+  struct cplan9_s       *sub_cp9_hmm;       /* constructed CP9 HMM; written to hmmfile              */
+  int                    sub_cp9_M;         /* number of nodes in CP9 HMM (MATL+MATR+2*MATP)        */
+  double **orig_phi;
+  double **sub_phi_trad;    
+  double **sub_phi_trunc;    
 
-  
   /*********************************************** 
    * Parse command line
    ***********************************************/
@@ -334,7 +344,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--outside")   == 0) { do_outside = TRUE; do_check = TRUE; }
     else if (strcmp(optname, "--post")      == 0) do_post      = TRUE;
     else if (strcmp(optname, "--checkpost") == 0) do_check     = TRUE;
-    else if (strcmp(optname, "--sub")  == 0) 
+    else if (strcmp(optname, "--sub")       == 0) 
       { 
 	do_sub  = TRUE;
 	hmm_type = HMM_CP9; 
@@ -521,43 +531,6 @@ main(int argc, char **argv)
       postcode = malloc(sizeof(char *) * nseq);
     }      
 
-  if(do_apbanded || bdump_level > 0)
-    {
-      safe_windowlen = windowlen * 2;
-      while(!(BandCalculationEngine(cm, safe_windowlen, apbandp, 0, &dmin, &dmax, &gamma, do_local)))
-	{
-	  FreeBandDensities(cm, gamma);
-	  free(dmin);
-	  free(dmax);
-	  safe_windowlen *= 2;
-	}
-
-      /* EPN 11.13.05 
-       * An important design decision.
-       * We're changing the windowlen value here. By default,
-       * windowlen is read from the cm file (set to cm->W). 
-       * Here we're doing a banded alignment though. Its pointless to allow
-       * a windowlen that's greater than the largest possible banded hit 
-       * (which is dmax[0]). So we reset windowlen to dmax[0].
-       * Its also possible that BandCalculationEngine() returns a dmax[0] that 
-       * is > cm->W. This should only happen if the apbandp we're using now is < 1E-7 
-       * (1E-7 is the apbandp value used to determine cm->W in cmbuild). If this 
-       * happens, the current implementation reassigns windowlen to this larger value.
-       * NOTE: if W was set at the command line, the command line value is 
-       *       always used.
-       */
-      if(!(set_window))
-	{
-	  windowlen = dmax[0];
-	}
-      if(bdump_level > 1) 
-	{
-	  printf("apbandp:%f\n", apbandp);
-	  debug_print_bands(cm, dmin, dmax);
-	}
-      expand_flag = FALSE;
-    }
-
   watch1 = StopwatchCreate(); /*watch1 is used to time each step individually*/
   watch2 = StopwatchCreate(); /*watch2 times the full alignment (including band calc)
 				for each seq*/
@@ -641,6 +614,7 @@ main(int argc, char **argv)
 	  }
       }
       CP9Logoddsify(cp9_hmm);
+      fill_phi_cp9(cp9_hmm, &orig_phi, 1);
       /*debug_print_cp9_params(cp9_hmm);*/
 
       cp9_mx  = CreateCPlan9Matrix(1, cp9_hmm->M, 25, 0);
@@ -669,11 +643,55 @@ main(int argc, char **argv)
 	  CP9Logoddsify(cp9_hmm);
 	}
     }
+
+  /* set up the a priori bands, this has to be done after the ConfigLocal() call */
+  if(do_apbanded || bdump_level > 0)
+    {
+      safe_windowlen = windowlen * 2;
+      while(!(BandCalculationEngine(cm, safe_windowlen, apbandp, 0, &dmin, &dmax, &gamma, do_local)))
+	{
+	  printf("ERROR BandCalculationEngine returned false\n");
+	  FreeBandDensities(cm, gamma);
+	  free(dmin);
+	  free(dmax);
+	  safe_windowlen *= 2;
+	}
+
+      /* EPN 11.13.05 
+       * An important design decision.
+       * We're changing the windowlen value here. By default,
+       * windowlen is read from the cm file (set to cm->W). 
+       * Here we're doing a banded alignment though. Its pointless to allow
+       * a windowlen that's greater than the largest possible banded hit 
+       * (which is dmax[0]). So we reset windowlen to dmax[0].
+       * Its also possible that BandCalculationEngine() returns a dmax[0] that 
+       * is > cm->W. This should only happen if the apbandp we're using now is < 1E-7 
+       * (1E-7 is the apbandp value used to determine cm->W in cmbuild). If this 
+       * happens, the current implementation reassigns windowlen to this larger value.
+       * NOTE: if W was set at the command line, the command line value is 
+       *       always used.
+       */
+      if(!(set_window))
+	{
+	  windowlen = dmax[0];
+	}
+      if(bdump_level > 1) 
+	{
+	  printf("apbandp:%f\n", apbandp);
+	  debug_print_bands(cm, dmin, dmax);
+	}
+      expand_flag = FALSE;
+      PrintDPCellsSaved(cm, dmin, dmax, windowlen);
+    }
+
   if (do_sub && hmm_type == HMM_CP9)
     {
       printf("configuring the CM plan 9 HMM for local alignment.\n");
       swentry           = 0.5;
       swexit            = 0.5;
+      printf("PRINTING ORIG SUB CP9 HMM PARAMETERS GLOCAL 0\n");
+      debug_print_cp9_params(cp9_hmm);
+      printf("DONE PRINTING ORIG SUB CP9 HMM PARAMETERS GLOCAL 0\n\n");
       CPlan9SWConfig(cp9_hmm, swentry, swexit);
       CP9Logoddsify(cp9_hmm);
     }
@@ -756,11 +774,110 @@ main(int argc, char **argv)
 	      /* Uncomment below to build a sub_cm that only models consensus columns between HMM start and end
 	       * node. */
 	      build_sub_cm(cm, &sub_cm, hmm_start_node, hmm_end_node, hmm_start_node, hmm_end_node, orig2sub_smap, sub2orig_smap);
-	      //check_sub_cm_by_sampling2(cm, sub_cm, hmm_start_node, hmm_end_node, 10000);
+
+	      /* Following function call samples for cm and sub_cm and builds CP9 HMMs from each set of samples,
+	       * then prints out the parameters of those CMs.
+	       */
+
+	      /*check_sub_cm_by_sampling2(cm, sub_cm, hmm_start_node, hmm_end_node, 10000);*/
+
+	      /* For checking if our CP9->subCP9 truncation modification method is working we build a
+	       * CP9 HMM from the sub_cm using the full blown method, and check its parameters
+	       * against the subCP9 built from the truncation-built one.
+	       *****************BEGIN EVENTUALLY ERASABLE BLOCK*************************/
+	      sub_cp9_M = 0;
+	      for(v = 0; v <= sub_cm->M; v++)
+		{
+		  if(sub_cm->stid[v] ==  MATP_MP)
+		    sub_cp9_M += 2;
+		  else if(sub_cm->stid[v] == MATL_ML || sub_cm->stid[v] == MATR_MR)
+		    sub_cp9_M ++;
+		}
+	      /* build the HMM data structure */
+	      sub_cp9_hmm = AllocCPlan9(sub_cp9_M);
+	      printf("sub_cp9_M: %d\n", sub_cp9_M);
+	      ZeroCPlan9(sub_cp9_hmm);
+
+	      /* Get information mapping the HMM to the CM and vice versa, used
+	       * for mapping bands. 
+	       * This is relevant if we're building (read_cp9_flag == FALSE)
+	       * or reading from a file (read_cp9_flag == TRUE)
+	       */
+	      map_consensus_columns(sub_cm, sub_cp9_hmm->M, &sub_node_cc_left, &sub_node_cc_right,
+				    &sub_cc_node_map, debug_level);
 	      
-	      /* we need to write a sub2orig_cm_parsetree() function before we can actually align with 
-	       * the new sub_cm */
+	      printf("check\n");
+	      CP9_map_cm2hmm_and_hmm2cm(sub_cm, sub_cp9_hmm, sub_node_cc_left, sub_node_cc_right, 
+					sub_cc_node_map, &sub_cs2hn_map, &sub_cs2hs_map, 
+					&sub_hns2cs_map, debug_level);
+	      if(!(CP9_cm2wrhmm(sub_cm, sub_cp9_hmm, sub_node_cc_left, sub_node_cc_right, sub_cc_node_map, 
+				sub_cs2hn_map, sub_cs2hs_map, sub_hns2cs_map, debug_level)))
+		Die("Couldn't build a CM Plan 9 HMM from the sub CM.\n");
+
+	      printf("sub_cp9_hmm->M: %d\n", sub_cp9_hmm->M);
+	      printf("PRINTING ORIG SUB CP9 HMM PARAMETERS LOCAL\n");
+	      debug_print_cp9_params(cp9_hmm);
+	      printf("DONE PRINTING ORIG SUB CP9 HMM PARAMETERS LOCAL\n\n");
+
+	      /* Reconfig the cp9_hmm as glocal */
+	      CPlan9GlobalConfig(cp9_hmm);
+
+	      printf("PRINTING ORIG SUB CP9 HMM PARAMETERS GLOCAL 1\n");
+	      debug_print_cp9_params(cp9_hmm);
+	      printf("DONE PRINTING ORIG SUB CP9 HMM PARAMETERS GLOCAL 1\n\n");
+
+	      /* Modify the local entry and exit probabilities of the CM Plan 9 HMM so they
+	       * reflect the sub_cm. 
+	       */
+	      sub_CPlan9GlobalConfig(cp9_hmm, hmm_start_node, hmm_end_node, orig_phi);
+
+	      /* fill phi arrays for each CP9 HMM */
+	      fill_phi_cp9(sub_cp9_hmm, &sub_phi_trad, 1);
+	      fill_phi_cp9(cp9_hmm, &sub_phi_trunc, hmm_start_node);
+	      
+	      printf("sub_cp9_hmm->M: %d\n", sub_cp9_hmm->M);
+
+	      printf("MODEL START: %d\n", hmm_start_node);
+	      printf("MODEL END  : %d\n", hmm_end_node);
+
+	      printf("PRINTING TRAD SUB CP9 HMM PARAMETERS\n");
+	      debug_print_cp9_params(sub_cp9_hmm);
+	      printf("DONE PRINTING TRAD SUB CP9 HMM PARAMETERS\n\n");
+
+	      printf("PRINTING TRUNC SUB CP9 HMM PARAMETERS\n");
+	      debug_print_cp9_params(cp9_hmm);
+	      printf("DONE PRINTING TRUNC SUB CP9 HMM PARAMETERS\n\n");
+	      
+	      printf("PRINTING ORIG CP9 HMM PHI PARAMETERS\n");
+	      debug_print_phi_cp9(cp9_hmm, orig_phi);
+	      printf("DONE PRINTING ORIG CP9 HMM PHI PARAMETERS\n");
+
+	      printf("PRINTING TRAD SUB CP9 HMM PHI PARAMETERS\n");
+	      debug_print_phi_cp9(sub_cp9_hmm, sub_phi_trad);
+	      printf("DONE PRINTING TRAD SUB CP9 HMM PHI PARAMETERS\n\n");
+
+	      printf("PRINTING TRUNC SUB CP9 HMM PHI PARAMETERS\n");
+	      debug_print_phi_cp9(cp9_hmm, sub_phi_trunc);
+	      printf("DONE PRINTING TRUNC SUB CP9 HMM PHI PARAMETERS\n\n");
+
 	      exit(1);
+	      
+	      /* Derive bands for the sub_cm using the newly configured CP9 HMM */
+	      /* Step 1: Get HMM posteriors.*/
+	      /*sc = CP9Viterbi(p7dsq[i], 1, sqinfo[i].len, cp9_hmm, cp9_mx);*/
+	      forward_sc = CP9Forward(p7dsq[i], 1, sqinfo[i].len, cp9_hmm, &cp9_fwd);
+	      printf("CP9 i: %d | forward_sc : %f\n", i, forward_sc);
+	      backward_sc = CP9Backward(p7dsq[i], 1, sqinfo[i].len, cp9_hmm, &cp9_bck);
+	      printf("CP9 i: %d | backward_sc: %f\n", i, backward_sc);
+	      
+	      /*debug_check_CP9_FB(cp9_fwd, cp9_bck, cp9_hmm, forward_sc, 1, sqinfo[i].len, p7dsq[i]);*/
+	      cp9_posterior = cp9_bck;
+	      CP9FullPosterior(p7dsq[i], 1, sqinfo[i].len, cp9_hmm, cp9_fwd, cp9_bck, cp9_posterior);
+	      
+	      exit(1);
+	      /*cm = sub_cm;*/
+	      /* Build a new CM Plan 9 HMM */
+
 	    }
 	  StopwatchStop(watch1);
 	  if(time_flag) StopwatchDisplay(stdout, "CP9 Forward/Backward CPU time: ", watch1);

@@ -491,7 +491,7 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
 	  for (x = 0; x < cm->cnum[v]; x++)
 	    {
 	      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
-	      if (! IsReal(tok))                                    goto FAILURE;
+	      if (! IsReal(tok) && *tok != '*')                      goto FAILURE;
 	      cm->t[v][x] = ascii2prob(tok, 1.);
 	    }
 	}
@@ -502,7 +502,7 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
 	  for (x = 0; x < Alphabet_size; x++)
 	    {
 	      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
-	      if (! IsReal(tok))                                    goto FAILURE;
+	      if (! IsReal(tok) && *tok != '*')                     goto FAILURE;
 	      cm->e[v][x] = ascii2prob(tok, cm->null[x]);
 	    }
 	}
@@ -512,7 +512,7 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
 	    for (y = 0; y < Alphabet_size; y++)
 	      {
 		if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
-		if (! IsReal(tok))                                    goto FAILURE;
+		if (! IsReal(tok) && *tok != '*')                     goto FAILURE;
 		cm->e[v][x*Alphabet_size+y] = ascii2prob(tok, cm->null[x]*cm->null[y]);
 	      }
 	} 

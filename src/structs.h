@@ -175,7 +175,7 @@ typedef struct cm_s {
 
   int    W;             /* max d: max size of a hit (EPN 08.18.05) */
   float  el_selfsc;     /* score of a self transition in the EL state
-			 * (EPN 11.15.05)*/
+			 * the EL state emits only on self transition (EPN 11.15.05)*/
 
 } CM_t;
 

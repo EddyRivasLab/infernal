@@ -738,7 +738,7 @@ ResizeCPlan9Matrix(struct cp9_dpmatrix_s *mx, int N, int M,
 
 /* Function: CPlan9SWConfig()
  * EPN 05.30.06
- * based on SRE's Plan7SWConfig() from HMMER's modelconfig.c
+ * based on SRE's Plan7SWConfig() from HMMER's plan7.c
  * 
  * Purpose:  Set the alignment independent parameters of
  *           a CM Plan 9 model to hmmsw (Smith/Waterman) configuration.
@@ -788,17 +788,55 @@ CPlan9SWConfig(struct cplan9_s *hmm, float pentry, float pexit)
   FSet(hmm->begin+2, hmm->M-1, (pentry * (1.- (hmm->t[0][CTMI] + hmm->t[0][CTMD]))) / (float)(hmm->M-1));
   
   /* Configure exit.
+   * hmm->end[hmm->M] = 1. - hmm->t[hmm->M][XTMI] 
+   *
+   * hmm->t[hmm->M][CTIM] is M_I->E transition
+   * hmm->t[hmm->M][CTDM] is M_D->E transition
+   * and we don't want to ignore these.
    */
-  /*hmm->end[hmm->M] = 1.0; */ /* hmm->t[hmm->M][CTIM] is M_I->E transition
-				* hmm->t[hmm->M][CTDM] is M_D->E transition
-				* and we don't want to ignore these.
-				*/
+
   basep = pexit / (float) (hmm->M-1);
   for (k = 1; k < hmm->M; k++)
     hmm->end[k] = basep / (1. - basep * (float) (k-1));
-  CPlan9RenormalizeExits(hmm);
+  CPlan9RenormalizeExits(hmm, 1);
   hmm->flags       &= ~CPLAN9_HASBITS; /* reconfig invalidates log-odds scores */
 }
+
+/* Function: CPlan9GlobalConfig()
+ * EPN 09.24.06
+ * based on SRE's Plan7GlobalConfig() from HMMER's plan7.c
+ * 
+ * Purpose:  Set the alignment independent parameters of
+ *           a CM Plan 9 model to (Needleman/Wunsch) configuration.
+ *           
+ * Args:     hmm    - the CM Plan 9 model w/ data-dep prob's valid
+ *           pentry - probability of an internal entry somewhere;
+ *                    will be evenly distributed over M-1 match states
+ *           pexit  - probability of an internal exit somewhere; 
+ *                    will be distributed over M-1 match states.
+ *                    
+ * Return:   (void)
+ *           HMM probabilities are modified.
+ */
+void
+CPlan9GlobalConfig(struct cplan9_s *hmm)
+{
+  /* No special (*x* states in Plan 7) states in CM Plan 9 */
+
+  /* Configure entry.
+   * Exactly 3 ways to start, B->M_1 (hmm->begin[1]), B->I_0 (hmm->t[0][CTMI]),
+   *                      and B->D_1 (hmm->t[0][CTMD])
+   */
+  hmm->begin[1] = 1. - (hmm->t[0][CTMI] + hmm->t[0][CTMD]);
+  FSet(hmm->begin+2, hmm->M-1, 0.);
+  
+  hmm->end[hmm->M] = 1. - hmm->t[hmm->M][CTMI];
+  FSet(hmm->end+1, hmm->M-1, 0.);
+
+  CPlan9RenormalizeExits(hmm, 1);
+  hmm->flags       &= ~CPLAN9_HASBITS; /* reconfig invalidates log-odds scores */
+}
+
 
 /* Function: CPlan9RenormalizeExits()
  * EPN 05.30.06 based on SRE's Plan7RenormalizeExits() from
@@ -811,11 +849,12 @@ CPlan9SWConfig(struct cplan9_s *hmm, float pentry, float pexit)
  *           modified the exit distribution.
  *
  * Args:     hmm - hmm to renormalize
- *
+ *           spos   - first consensus column modelled by original
+ *                    CP9 HMM the sub CP9 HMM models. Often 1.
  * Returns:  void
  */
 void
-CPlan9RenormalizeExits(struct cplan9_s *hmm)
+CPlan9RenormalizeExits(struct cplan9_s *hmm, int spos)
 {
   int   k;
   float d;
@@ -823,11 +862,16 @@ CPlan9RenormalizeExits(struct cplan9_s *hmm)
   /* We can't exit from node 0 so we start renormalizing at node 1 */
   for (k = 1; k < hmm->M; k++)
     {
-      d = FSum(hmm->t[k], 3);
-      /* FScale(hmm->t[k], 3, 1./(d + d*hmm->end[k])); */
-      FScale(hmm->t[k], 3, (1.-hmm->end[k])/d);
+      if(k != (spos-1)) /* we can't exit from the M_spos-1 */
+	{
+	  d = FSum(hmm->t[k], 3);
+	  /* FScale(hmm->t[k], 3, 1./(d + d*hmm->end[k])); */
+	  FScale(hmm->t[k], 3, (1.-hmm->end[k])/d);
+	}
     }
+  return;
 }
+
 /* Function: CP9AllocTrace(), CP9ReallocTrace(), CP9FreeTrace()
  * 
  * Purpose:  allocation and freeing of traceback structures
@@ -859,3 +903,140 @@ CP9FreeTrace(struct cp9trace_s *tr)
   free(tr->statetype);
   free(tr);
 }
+
+/* Function: sub_CPlan9SWConfig()
+ * EPN 09.24.06
+ * based on SRE's Plan7SWConfig() from HMMER's plan7.c
+ * 
+ * Purpose:  Set the alignment independent parameters of
+ *           a CM Plan 9 model to hmmsw (Smith/Waterman) configuration.
+ *           
+ * Notes:    The desideratum for begin/end probs is that all fragments ij
+ *           (starting at match i, ending at match j) are
+ *           equiprobable -- there is no information in the choice of
+ *           entry/exit. There are M(M+1)/2 possible choices of ij, so
+ *           each must get a probability of 2/M(M+1). This prob is the
+ *           product of a begin, an end, and all the not-end probs in
+ *           the path between i,j. 
+ *            
+ *           Thus: entry/exit is asymmetric because of the left/right
+ *           nature of the HMM/profile. Entry probability is distributed
+ *           simply by assigning p_x = pentry / (M-1) to M-1 
+ *           internal match states. However, the same approach doesn't
+ *           lead to a flat distribution over exit points. Exit p's
+ *           must be corrected for the probability of a previous exit
+ *           from the model. Requiring a flat distribution over exit
+ *           points leads to an easily solved piece of algebra, giving:
+ *                      p_1 = pexit / (M-1)
+ *                      p_x = p_1 / (1 - (x-1) p_1)
+ *           
+ * Args:     hmm    - the CM Plan 9 model w/ data-dep prob's valid
+ *           pentry - probability of an internal entry somewhere;
+ *                    will be evenly distributed over M-1 match states
+ *           pexit  - probability of an internal exit somewhere; 
+ *                    will be distributed over M-1 match states.
+ *                    
+ * Return:   (void)
+ *           HMM probabilities are modified.
+ */
+void
+sub_CPlan9SWConfig(struct cplan9_s *hmm, float pentry, float pexit, int spos, int epos)
+{
+  float basep;			/* p1 for exits: the base p */
+  int   k;			/* counter over states      */
+
+  /* No special (*x* states in Plan 7) states in CM Plan 9 */
+
+  Die("sub_CPlan9SWConfig not yet implemented\n");
+
+  /* Configure entry.
+   */
+  for (k = 1; k <= hmm->M; k++)
+    hmm->begin[k] = 2. * (float) (hmm->M-k+1) / (float) hmm->M / (float) (hmm->M+1);
+
+  hmm->begin[1] = (1. - pentry) * (1. - (hmm->t[0][CTMI] + hmm->t[0][CTMD]));
+  FSet(hmm->begin+2, hmm->M-1, (pentry * (1.- (hmm->t[0][CTMI] + hmm->t[0][CTMD]))) / (float)(hmm->M-1));
+  
+  /* Configure exit.
+   * hmm->end[hmm->M] = 1. - hmm->t[hmm->M][CTMI] 
+   *
+   * hmm->t[hmm->M][CTIM] is M_I->E transition
+   * hmm->t[hmm->M][CTDM] is M_D->E transition
+   * and we don't want to ignore these.
+   */
+
+  basep = pexit / (float) (hmm->M-1);
+  for (k = 1; k < hmm->M; k++)
+    hmm->end[k] = basep / (1. - basep * (float) (k-1));
+  CPlan9RenormalizeExits(hmm, 1);
+  hmm->flags       &= ~CPLAN9_HASBITS; /* reconfig invalidates log-odds scores */
+}
+
+/* Function: sub_CPlan9GlobalConfig()
+ * EPN 09.24.06
+ * based on SRE's Plan7GlobalConfig() from HMMER's plan7.c
+ * 
+ * Purpose:  Set the alignment independent parameters of
+ *           a CM Plan 9 model to (Needleman/Wunsch) configuration
+ *           for a 'sub' model. Used for sub_cm alignment, in which
+ *           the model only aligns to a contiguous subset of 
+ *           consensus columns from spos..epos inclusively. The 
+ *           local entry is set to 1.0 for spos and exit
+ *           is set to 1.0 for epos. Also transitions into 
+ *           inserts and deletes that correspond to spos, and
+ *           out of inserts and deletes that correspond to 
+ *           epos are made impossible (see code).
+ *           
+ * Args:     hmm    - the CM Plan 9 model w/ data-dep prob's valid
+ *           spos   - first consensus column modelled by original
+ *                    CP9 HMM the sub CP9 HMM models.
+ *           epos   - final consensus column modelled by original
+ *                    CP9 HMM the sub CP9 HMM models.
+ *           phi    - the 2D phi array for the original CP9 HMM.         
+ * Return:   (void)
+ *           HMM probabilities are modified.
+ */
+void
+sub_CPlan9GlobalConfig(struct cplan9_s *hmm, int spos, int epos, double **phi)
+{
+  int i;
+  /* No special (*x* states in Plan 7) states in CM Plan 9 */
+
+  /* Configure entry.
+   * Exactly 3 ways to start, B->M_1 (hmm->begin[1]), B->I_0 (hmm->t[0][CTMI]),
+   *                      and B->D_1 (hmm->t[0][CTMD])
+   */
+  if(spos > 1)
+    {
+      /* prob of starting in M_spos is (1. - prob of starting in I_spos-1) as there is no D_spos-1 -> M_spos trans */
+      hmm->begin[spos] = 1. - ((phi[spos-1][HMMINSERT] * (1. - hmm->t[spos-1][CTII])) + 
+			       (phi[spos  ][HMMDELETE] - (phi[spos-1][HMMINSERT] * hmm->t[spos-1][CTID])));
+      hmm->t[spos-1][CTMI] =  (phi[spos-1][HMMINSERT] * (1. - hmm->t[spos-1][CTII]));
+      hmm->t[spos-1][CTMD] =   phi[spos][HMMDELETE];
+      hmm->t[spos-1][CTMM] = 0.; /* probability of going from B to M_1 is begin[1] */
+
+      /* eliminate the possibility of going from B -> I_0, the only other way to 
+       * start a parse besides B -> M_1 */
+      hmm->t[0][CTMI] = 0.;
+    }
+
+
+  for(i = 1; i < spos; i++)
+    hmm->begin[i] = 0.;
+  for(i = spos+1; i <= hmm->M; i++)
+    hmm->begin[i] = 0.;
+
+  if(epos < hmm->M)
+    hmm->end[epos] = 1. - hmm->t[epos-1][CTMI];
+  for(i = 1; i < epos; i++)
+    hmm->end[i] = 0.;
+  for(i = epos+1; i <= hmm->M; i++)
+    hmm->end[i] = 0.;
+
+  CPlan9RenormalizeExits(hmm, spos);
+  hmm->flags       &= ~CPLAN9_HASBITS; /* reconfig invalidates log-odds scores */
+}
+
+
+
+

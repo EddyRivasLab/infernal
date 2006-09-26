@@ -50,6 +50,7 @@ static char experts[] = "\
    --informat <s> : specify input alignment is in format <s>, not Stockholm\n\
    --bandp <x>    : tail loss prob for calc'ing W using bands [default: 1E-7]\n\
    --elself <x>   : set EL self transition prob to <x> [df: 0.94]\n\
+   --nodetach     : do not 'detach' one of two inserts that model same column\n\ 
 \n\
  * sequence weighting options [default: GSC weighting]:\n\
    --wgiven       : use weights as annotated in alignment file\n\
@@ -122,7 +123,8 @@ static struct opt_s OPTIONS[] = {
   { "--dlev",      FALSE, sqdARG_INT },
   { "--cp9",       FALSE, sqdARG_STRING},
   { "--p7g",       FALSE, sqdARG_STRING},
-  { "--p7l",       FALSE, sqdARG_STRING}
+  { "--p7l",       FALSE, sqdARG_STRING},
+  { "--nodetach",  FALSE, sqdARG_NONE}
 }
 ;
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
@@ -267,6 +269,15 @@ main(int argc, char **argv)
   int k;                           /* Counter over HMM nodes */
   int ks;                          /* Counter over HMM state types (0 (match), 1(ins) or 2 (del))*/
 		      
+  /* variables for 'detach' mode: we find columns that are modelled by two insert states (an ambiguity
+   * in the CM architecture), and *handle* them (right hand in fist pounding open left palm) by 
+   * picking the one that is never parameterized by any counts in the seed alignment (only the prior) 
+   * and detaching it from the rest of the model by setting all transitions into it as 0.0: 
+   * a remarkably ad hoc approach
+   */
+  int                do_detach;   /* TRUE to 'detach' off one of two insert states that 
+				   * insert at the same position. */
+
   /* Do hmmbuild.c stuff
    * This is pointless unless hmm_type is eventually set to HMM_P7
    */
@@ -320,7 +331,7 @@ main(int argc, char **argv)
 			      * (11.28.05) */
   debug_level       = 0; 
   hmm_type          = NONE;  /* default: don't build an HMM */
-
+  do_detach         = TRUE;  /* default: detach 1 of 2 ambiguous inserts */
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
     if      (strcmp(optname, "-A") == 0)          do_append         = TRUE; 
@@ -343,15 +354,17 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--tfile")     == 0) tracefile         = optarg;
     else if (strcmp(optname, "--regress")   == 0) regressionfile    = optarg;
     else if (strcmp(optname, "--priorfile") == 0) prifile           = optarg;
-    else if (strcmp(optname, "--bfile")     == 0) {bandfile          = optarg; save_gamma = TRUE;}
+    else if (strcmp(optname, "--bfile")     == 0) {bandfile         = optarg; save_gamma = TRUE;}
     else if (strcmp(optname, "--bandp")     == 0) bandp             = atof(optarg);
     else if (strcmp(optname, "--ignorant")  == 0) be_ignorant       = TRUE;
     else if (strcmp(optname, "--null")      == 0) rndfile           = optarg;
-    else if (strcmp(optname, "--effent")  == 0) eff_strategy  = EFF_ENTROPY;
-    /*else if (strcmp(optname, "--effrelent")  == 0) eff_strategy  = EFF_RELENTROPY;*/
-    else if (strcmp(optname, "--effnone") == 0) eff_strategy  = EFF_NONE;
-    else if (strcmp(optname, "--eloss")   == 0) { eloss       = atof(optarg); eloss_set  = TRUE; }
-    else if  (strcmp(optname, "--elself")   == 0) { 
+    else if (strcmp(optname, "--nodetach")  == 0) do_detach         = FALSE;   
+    else if (strcmp(optname, "--effent")    == 0) eff_strategy      = EFF_ENTROPY;
+    /*else if (strcmp(optname, "--effrelent")  == 0) eff_strategy   = EFF_RELENTROPY;*/
+    else if (strcmp(optname, "--effnone")   == 0) eff_strategy      = EFF_NONE;
+    else if (strcmp(optname, "--eloss")     == 0) { eloss  = atof(optarg); eloss_set  = TRUE; }
+
+    else if (strcmp(optname, "--elself")    == 0) { 
       el_selfprob= atof(optarg); 
       if(el_selfprob < 0 || el_selfprob > 1)
 	Die("EL self transition probability must be between 0 and 1.\n");
@@ -625,6 +638,18 @@ main(int argc, char **argv)
 	  ParsetreeCount(cm, tr, dsq[idx], msa->wgt[idx]);
 	  FreeParsetree(tr);
 	}
+      if(do_detach)
+	{
+	  printf("\n\nFinding and checking dual inserts\n");
+	  cm_find_and_detach_dual_inserts(cm, TRUE, FALSE); 
+	  /* TRUE tells the function to check to make sure the inserts 
+	   * to detach are filled with 0.0 counts from the seed sequences, 
+	   * and they're always 1 state before an END_E.  FALSE tells
+	   * it not to detach them yet, we want to wait til after
+	   * the CM is priorified. 
+	   */
+	}
+
       printf("done.\n");
 
       /* Before converting to probabilities,
@@ -670,6 +695,12 @@ main(int argc, char **argv)
       CMSetNullModel(cm, randomseq);
       PriorifyCM(cm, pri);
 
+      if(do_detach) /* Detach dual inserts where appropriate, if
+		     * we get here we've already checked these states */
+	{
+	  cm_find_and_detach_dual_inserts(cm, FALSE, TRUE); 
+	  CMRenormalize(cm);
+	}
       CMLogoddsify(cm);
       printf("done.\n");
 
@@ -696,9 +727,9 @@ main(int argc, char **argv)
 	  /*printf("Failure in BandCalculationEngine(). W:%d | bandp: %4e\n", safe_windowlen, bandp);*/
 	  safe_windowlen *= 2;
 	}
+
       /*printf("Success in BandCalculationEngine(). W:%d | bandp: %4e\n", safe_windowlen, bandp);*/
       /*debug_print_bands(cm, dmin, dmax);*/
-
       cm->W = dmax[0];
       printf("done. [%d]\n", cm->W);
 

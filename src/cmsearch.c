@@ -369,42 +369,6 @@ main(int argc, char **argv)
   /*CMHackInsertScores(cm);*/	/* "TEMPORARY" fix for bad priors */
   cons = CreateCMConsensus(cm, 3.0, 1.0); 
 
-  if (do_apbanded || do_projectx || do_bdump)
-    {
-      safe_windowlen = windowlen * 2;
-      while(!(BandCalculationEngine(cm, safe_windowlen, apbandp, 0, &dmin, &dmax, &gamma, do_local)))
-	{
-	  FreeBandDensities(cm, gamma);
-	  free(dmin);
-	  free(dmax);
-	  safe_windowlen *= 2;
-	}
-
-      /* EPN 11.11.05 
-       * An important design decision.
-       * We're changing the windowlen value here. By default,
-       * windowlen is read from the cm file (set to cm->W). 
-       * Here we're doing a banded scan though. Its pointless to allow
-       * a windowlen that's greater than the largest possible banded hit 
-       * (which is dmax[0]). So we reset windowlen to dmax[0].
-       * Its also possible that BandCalculationEngine() returns a dmax[0] that 
-       * is > cm->W. This should only happen if the apbandp we're using now is < 1E-7 
-       * (1E-7 is the apbandp value used to determine cm->W in cmbuild). If this 
-       * happens, the current implementation reassigns windowlen to this larger value.
-       * NOTE: if W was set at the command line, the command line value is 
-       *       always used.
-       */
-      if(!(set_window))
-	{
-	  windowlen = dmax[0];
-	}
-      if(do_bdump) 
-	{
-	  printf("apbandp:%f\n", apbandp);
-	  debug_print_bands(cm, dmin, dmax);
-	}
-    }
-  
   if (do_filter || do_hmmonly)
     {
       /* build a CM Plan 9 HMM, and use it to scan. */
@@ -480,6 +444,42 @@ main(int argc, char **argv)
 	}
     }
 
+  if (do_apbanded || do_projectx || do_bdump)
+    {
+      safe_windowlen = windowlen * 2;
+      while(!(BandCalculationEngine(cm, safe_windowlen, apbandp, 0, &dmin, &dmax, &gamma, do_local)))
+	{
+	  FreeBandDensities(cm, gamma);
+	  free(dmin);
+	  free(dmax);
+	  safe_windowlen *= 2;
+	}
+
+      /* EPN 11.11.05 
+       * An important design decision.
+       * We're changing the windowlen value here. By default,
+       * windowlen is read from the cm file (set to cm->W). 
+       * Here we're doing a banded scan though. Its pointless to allow
+       * a windowlen that's greater than the largest possible banded hit 
+       * (which is dmax[0]). So we reset windowlen to dmax[0].
+       * Its also possible that BandCalculationEngine() returns a dmax[0] that 
+       * is > cm->W. This should only happen if the apbandp we're using now is < 1E-7 
+       * (1E-7 is the apbandp value used to determine cm->W in cmbuild). If this 
+       * happens, the current implementation reassigns windowlen to this larger value.
+       * NOTE: if W was set at the command line, the command line value is 
+       *       always used.
+       */
+      if(!(set_window))
+	{
+	  windowlen = dmax[0];
+	}
+      if(do_bdump) 
+	{
+	  printf("apbandp:%f\n", apbandp);
+	  debug_print_bands(cm, dmin, dmax);
+	}
+    }
+  
   StopwatchZero(watch);
   StopwatchStart(watch);
   

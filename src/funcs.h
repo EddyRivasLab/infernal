@@ -117,9 +117,14 @@ extern void ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
  */
 extern void HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh, 
 			   CM_t **ret_cm, Parsetree_t **ret_mtr);
+extern void ConsensusModelmaker(char *ss_cons, int clen, CM_t **ret_cm, 
+				Parsetree_t **ret_gtr);
 extern Parsetree_t *Transmogrify(CM_t *cm, Parsetree_t *gtr, 
 				 char *dsq, char *aseq, int alen);
 extern void         cm_from_guide(CM_t *cm, Parsetree_t *gtr);
+extern int cm_find_and_detach_dual_inserts(CM_t *cm, int do_check, int do_detach);
+extern int cm_check_before_detaching(CM_t *cm, int insert1, int insert2);
+extern int        cm_detach_state(CM_t *cm, int insert1, int insert2);
 				 
 /* from parsetree.c
  */
@@ -225,7 +230,11 @@ extern struct cp9_dpmatrix_s *CreateCPlan9Matrix(int N, int M, int padN, int pad
 extern void  ResizeCPlan9Matrix(struct cp9_dpmatrix_s *mx, int N, int M, 
 			       int ***mmx, int ***imx, int ***dmx, int ***emx);
 extern void CPlan9SWConfig(struct cplan9_s *hmm, float pentry, float pexit);
-extern void CPlan9RenormalizeExits(struct cplan9_s *hmm);
+extern void CPlan9GlobalConfig(struct cplan9_s *hmm);
+extern void sub_CPlan9SWConfig(struct cplan9_s *hmm, float pentry, float pexit, int spos, int epos);
+extern void sub_CPlan9GlobalConfig(struct cplan9_s *hmm, int spos, int epos, double **phi);
+
+extern void CPlan9RenormalizeExits(struct cplan9_s *hmm, int spos);
 extern void CP9AllocTrace(int tlen, struct cp9trace_s **ret_tr);
 extern void CP9ReallocTrace(struct cp9trace_s *tr, int tlen);
 extern void CP9FreeTrace(struct cp9trace_s *tr);
@@ -296,6 +305,7 @@ extern int CP9_cm2wrhmm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *
 extern int CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, int *cc_node_map,
 			   int debug_level);
 extern void fill_psi(CM_t *cm, double *psi, char ***tmap);
+extern void fill_phi_cp9(struct cplan9_s *hmm, double ***ret_phi, int spos);
 extern void make_tmap(char ****ret_tmap);
 extern int  CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int spos, int epos, int ***hns2cs_map, 
 					float thresh, int nseq);
@@ -303,7 +313,7 @@ extern void CP9_fake_tracebacks(char **aseq, int nseq, int alen, int *matassign,
 
 extern void CP9TraceCount(struct cplan9_s *hmm, char *dsq, float wt, struct cp9trace_s *tr);
 extern void debug_print_cp9_params(struct cplan9_s *hmm);
-
+extern void debug_print_phi_cp9(struct cplan9_s *hmm, double **phi);
 
 
 
@@ -326,13 +336,12 @@ extern float LogSum2(float p1, float p2);
 /* from cm_masks.c */
 extern float CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, char *dsq);
 
-/* from subCM.c */
+/* from sub_cm.c */
 extern void CP9NodeForPosn(struct cplan9_s *hmm, int i0, int j0, int x, 
 			   struct cp9_dpmatrix_s *post, int *ret_node, int *ret_type);
 extern void StripWUSSGivenCC(MSA *msa, char **dsq, float gapthresh, int first_match, int last_match);
 extern void build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int struct_start, int struct_end, int model_start,
 			 int model_end, int **orig2sub_smap, int **sub2orig_smap);
-extern void ConsensusModelmaker(char *ss_cons, int clen, CM_t **ret_cm, Parsetree_t **ret_gtr);
 extern int  check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos);
 extern int  check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int nseq);
 

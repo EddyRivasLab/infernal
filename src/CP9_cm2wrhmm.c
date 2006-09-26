@@ -50,9 +50,6 @@ cm2hmm_trans_probs_cp9(CM_t *cm, struct cplan9_s *hmm, int k, double *psi, char 
 		       int *cc_node_map, int **cs2hn_map, int **cs2hs_map, int ***hns2cs_map);
 
 static void
-fill_phi_cp9(struct cplan9_s *hmm, double **phi);
-
-static void
 hmm_add_single_trans_cp9(CM_t *cm, struct cplan9_s *hmm, int a, int b, int k, int hmm_trans_idx, 
 			 double *psi, char ***tmap, int **cs2hn_map, int **cs2hs_map, int ***hns2cs_map);
 
@@ -207,7 +204,7 @@ CP9_cm2wrhmm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *node_cc_rig
     }
 
   CPlan9Renormalize(hmm);
-  /* Create and fill phi to check to make sure our HMM is "close enough" to our CM.
+  /* Fill phi to check to make sure our HMM is "close enough" to our CM.
    * phi[k][0..2] is the expected number of times HMM node k state 0 (match), 1(insert),
    * or 2(delete) is entered. These should be *very close* (within 0.0001) to the psi 
    * values for the CM states that they map to (psi[v] is the expected number of times
@@ -216,12 +213,7 @@ CP9_cm2wrhmm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *node_cc_rig
    * to perfectly mirror two CM insert states with 1 HMM insert states (due to self-loop
    * issues).
    */
-  phi = malloc(sizeof(double *) * (hmm->M+1));
-  for(k = 0; k <= hmm->M; k++)
-    {
-      phi[k] = malloc(sizeof(double) * 3);
-    }
-  fill_phi_cp9(hmm, phi);
+  fill_phi_cp9(hmm, &phi, 1);
 
   if(debug_level > 1) 
     debug_print_cp9_params(hmm);
@@ -1502,54 +1494,69 @@ cm2hmm_trans_probs_cp9(CM_t *cm, struct cplan9_s *hmm, int k, double *psi, char 
  * Args:    
  * cplan9_s *hmm      - the HMM
  * double **phi       - phi array, phi[k][v] is expected number of times
- *                     state v (0 = match, 1 insert, 2 = delete) in 
- *                     node k is visited. Node 0 is special, 
- *                     state 0 = B state, state 1 = N_state, state 2 = NULL
- * 
- * Returns: (void) 
+ *                      state v (0 = match, 1 insert, 2 = delete) in 
+ *                      node k is visited. Node 0 is special, 
+ *                      state 0 = B state, state 1 = N_state, state 2 = NULL
+ * int spos           - the first original consensus column this CP9 HMM
+ *                      models (only != 1 if we're building a CP9 for a sub CM).
+ * Notes:
+ *                    - phi is allocated here, must be freed by caller.
+ * Returns: ret_phi 
  */
-static void
-fill_phi_cp9(struct cplan9_s *hmm, double **phi)
+void
+fill_phi_cp9(struct cplan9_s *hmm, double ***ret_phi, int spos)
 {
   int k;
+  double **phi;
 
-  /* Take care of special states, case by case. */
-  phi[0][0] =  1.0; /*B state, necessary start*/
-  phi[0][1] =  phi[0][0] * hmm->t[0][CTMI];
-  phi[0][1] += phi[0][1] * (hmm->t[0][CTII] / (1.-hmm->t[0][CTII])); /* self insert contribution */
-  phi[0][2] = 0.;
-  /*
-  printf("phi[0][0]: %f\n", phi[0][0]);
-  printf("phi[0][1]: %f\n", phi[0][1]);
-  printf("phi[0][2]: %f\n", phi[0][2]);
-  */
+  phi = malloc(sizeof(double *) * (hmm->M+1));
+  for(k = 0; k <= hmm->M; k++)
+    {
+      phi[k] = malloc(sizeof(double) * 3);
+    }
+
+  /* Initialize phi values as all 0.0 */
+  for (k = 0; k <= hmm->M; k++)
+    phi[k][0] = phi[k][1] = phi[k][2] = 0.;
+
+  /* the M_spos-1 is the B state, where all parses start */
+  phi[spos-1][HMMMATCH]   = 1.0;
+  phi[spos-1][HMMINSERT]  = phi[spos-1][HMMMATCH] * hmm->t[spos-1][CTMI];
+  phi[spos-1][HMMINSERT] += phi[spos-1][HMMINSERT] * (hmm->t[spos-1][CTII] / 
+						      (1. - hmm->t[spos-1][CTII]));
+  phi[spos-1][HMMDELETE]  = 0.;
 
   /* Handle all other nodes (including M) */
   for (k = 1; k <= hmm->M; k++)
     {
+      if(k == (spos-1))
+	continue;
+      
       /* match could've come from k-1 match, k-1 insert or k-1 delete */
-      phi[k][0] =  phi[k-1][0] * hmm->t[k-1][CTMM];
-      phi[k][0] += phi[k-1][2] * hmm->t[k-1][CTDM];
-      phi[k][0] += phi[k-1][1] * hmm->t[k-1][CTIM];
-      phi[k][0] += hmm->begin[k];
+      phi[k][HMMMATCH] += phi[k-1][HMMMATCH] * hmm->t[k-1][CTMM];
+      phi[k][HMMMATCH] += phi[k-1][HMMDELETE] * hmm->t[k-1][CTDM];
+      phi[k][HMMMATCH] += phi[k-1][HMMINSERT] * hmm->t[k-1][CTIM];
+      phi[k][HMMMATCH] += hmm->begin[k];
 
       /* again, we have to do deletes prior to inserts */
       /* deletes could've come from k-1 match, k-1 delete, k-1 insert */
-      phi[k][2] =  phi[k-1][0] * hmm->t[k-1][CTMD];
-      phi[k][2] += phi[k-1][1] * hmm->t[k-1][CTID];
-      phi[k][2] += phi[k-1][2] * hmm->t[k-1][CTDD];
+      phi[k][HMMDELETE] += phi[k-1][HMMMATCH] * hmm->t[k-1][CTMD];
+      phi[k][HMMDELETE] += phi[k-1][HMMINSERT] * hmm->t[k-1][CTID];
+      phi[k][HMMDELETE] += phi[k-1][HMMDELETE] * hmm->t[k-1][CTDD];
  
       /* inserts could've come from k match, k delete, or k insert */
-      phi[k][1] =  phi[k][0] * hmm->t[k][CTMI];
-      phi[k][1] += phi[k][2] * hmm->t[k][CTDI];
+      phi[k][HMMINSERT] += phi[k][HMMMATCH] * hmm->t[k][CTMI];
+      phi[k][HMMINSERT] += phi[k][HMMDELETE] * hmm->t[k][CTDI];
       /* self loops are special */
-      phi[k][1] += (phi[k][1] * (hmm->t[k][CTII] / (1-hmm->t[k][CTII])));
+      phi[k][HMMINSERT] += (phi[k][HMMINSERT] * (hmm->t[k][CTII] / (1-hmm->t[k][CTII])));
 
-      /*printf("phi[%d][0]: %f\n", k, phi[k][0]);
-	printf("phi[%d][1]: %f\n", k, phi[k][1]);
-	printf("phi[%d][2]: %f\n", k, phi[k][2]);
+      /*printf("phi[%d][HMMMATCH]: %f\n", k, phi[k][HMMMATCH]);
+	printf("phi[%d][HMMINSERT]: %f\n", k, phi[k][HMMINSERT]);
+	printf("phi[%d][HMMDELETE]: %f\n", k, phi[k][HMMDELETE]);
       */
     }
+  *ret_phi = phi;
+  return;
 }
 
 
@@ -2122,7 +2129,7 @@ CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, int *cc_node_
     {
       phi[k] = malloc(sizeof(double) * 3);
     }
-  fill_phi_cp9(hmm, phi);
+  fill_phi_cp9(hmm, &phi, 1);
 
   /*debug_print_cp9_params(hmm);*/
   psi_vs_phi_threshold = 0.0001;
@@ -2811,3 +2818,35 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
   return TRUE;
 }
   
+/**************************************************************************
+ * EPN 09.24.06 [AA 599 DC->STL]
+ * debug_print_phi_cp9()
+ *
+ * Purpose:  Print out phi values for a given CP9 HMM.
+ *
+ * Args:    
+ * cplan9_s *hmm     - the HMM
+ * double **phi      - phi array, phi[k][v] is expected number of times
+
+ *                     HMM state v (0 = match, 1 insert, 2 = delete) in 
+ *                     node k is visited.
+ * Returns: (void)
+ */
+void
+debug_print_phi_cp9(struct cplan9_s *hmm, double **phi)
+{
+  int v; /* CM state index*/ 
+  int k;
+  int y;
+
+  for(k = 0; k <= hmm->M; k++)
+    {
+      printf("phi[%4d][M]: %f\n", k, phi[k][0]);
+      printf("phi[%4d][I]: %f\n", k, phi[k][1]);
+      if(k != 0)
+	printf("phi[%4d][D]: %f\n\n", k, phi[k][2]);
+      else
+	printf("\n");
+    }
+  return;
+}
