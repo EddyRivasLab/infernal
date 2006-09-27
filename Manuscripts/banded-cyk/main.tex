@@ -58,21 +58,21 @@ Ashburn VA 20176\\
 
 \begin{abstract}
 
-When searching sequence databases for RNAs,
-one wants to score a combination of primary sequence and RNA secondary
-structure similarity.  Covariance models (CMs) are probabilistic
-models well suited for RNA similarity search applications, but their
-computational complexity has limited their practical
-application. Here we describe an acceleration method called
-\emph{query-dependent banding} (QDB), which uses the probabilistic
-query model to precalculate regions of the dynamic programming lattice
-that have negligible probability, independent of target 
-sequences. We have implemented QDB in the freely available
+When searching sequence databases for RNAs, it is advantageous to
+score a combination of primary sequence and RNA secondary structure
+similarity.  Covariance models (CMs) are probabilistic models well
+suited for RNA similarity search applications, but the computational
+complexity of CM dynamic programming alignment algorithms has limited
+their practical application. Here we describe an acceleration method
+called \emph{query-dependent banding} (QDB), which uses the
+probabilistic query model to precalculate regions of the dynamic
+programming lattice that have negligible probability, independent of
+target sequences. We have implemented QDB in the freely available
 \textsc{Infernal} software package. Combined with other improvements
 to \textsc{Infernal}, including informative mixture Dirichlet priors
-on model parameters, benchmarks show increased
-sensitivity and specificity from the improved parameterization, and
-three- to five-fold average speedup from QDB.
+on model parameters, benchmarks show increased sensitivity and
+specificity from the improved parameterization, and three- to
+five-fold average speedup from QDB.
 
 \end{abstract}
 
@@ -341,7 +341,7 @@ requiring a global alignment to the whole RNA structural model) is
 achieved by adding state transitions from the ROOT that permit
 entering the model at any internal consensus state with some
 probability, and state transitions from any internal state to an END
-with some probability \citep{KleinXXX}.
+with some probability \citep{KleinEddy03}.
 
 \subsection{QDB algorithm}
 
@@ -435,86 +435,36 @@ negligible compared to the requirements of a CM database search.
 
 \subsection{Banded CYK database search algorithm for CMs}
 
-Although it is convenient to think of CMs as generative models, their
-utility lies in the ability to align existing sequences and score the
-alignments to predict homology. Given a parameterized model and a
-sequence, a variant of the CYK dynamic programming algorithm
-specifically adapted for CMs optimally aligns the sequence to the
-model by determining the most probable path through the model that
-could have generated the sequence \cite{Durbin98}.
+A standard algorithm for obtaining the maximum likelihood alignment
+(parse tree) of an SCFG to a target sequence is the
+Cocke-Younger-Kasami (CYK) dynamic programming algorithm
+\cite{Kasami65, Younger67, HopcroftUllman79}. Formally, CYK applies to
+SCFGs reduced to the two types of production rules in Chomsky normal
+form (CNF), and it performs a global alignment to the target sequence.
+The CM database search algorithm is a variant of CYK, specialized for
+the ``normal form'' of our seven types of RNA production rules, and
+adapted to scan long genomic sequences and identify high-scoring
+subsequences (hits) \cite{Durbin98}. 
 
-The CM CYK database search algorithm is different from the traditional
-CYK algorithm \cite{Kasami65, Younger67, HopcroftUllman79} in several
-important respects. First, while the traditional algorithm is used with
-Chomsky normal form (CNF) grammars, the CM version is specially adapted
-for the CM grammar, which is not CNF\@. Secondly, CM CYK does not find
-the optimal parse tree of the entire input sequence, but
-rather scans the sequence and finds the set of
-non-overlapping subsequences (hits) that each align globally with
-respect to the model for which the summed score is maximized. Finally, 
-transformed coordinates are used to allow a simple, memory efficient
-implementation of the scanning algorithm. Specifically, instead of the
-traditional $i$ and $j$ CYK coordinates for subsequence begin and end
-positions respectively, the CM CYK uses $j$ and $d$ coordinates with
-$d = j-i+1$ \cite{Durbin98}.
-
-The CM CYK search algorithm calculates $\alpha_v(j,d)$ - the log odds score
-of the most likely CM parse subtree rooted at state $v$ that generates
-(aligns to) the length $d$ subsequence $x_{j-d+1}..x_j$ of target sequence
-$x$ \cite{Durbin98}. This calculation initializes at the smallest
+The CM search algorithm recursively calculates $\alpha_v(j,d)$, the
+log odds score of the most likely CM parse subtree rooted at state $v$
+that generates (aligns to) the length $d$ subsequence $x_{j-d+1}..x_j$
+that ends at position $j$ of target sequence $x$
+\cite{Eddy94,Durbin98}. This calculation initializes at the smallest
 subgraphs ($E$ states) and shortest subsequences ($d=0$) and iterates
 upwards and outwards to progressively larger subtrees and longer
-subsequences up to a preset maximum length $W$. 
-The algorithm is easily extended to allow local alignment to the model
-by permitting transitions that bypass subtree(s) of the model
-\cite{KleinEddy03}. For the formal algorithm and information on other
-CM algorithms, such as the SCFG Inside and Outside algorithms, please
-see \cite{Durbin98}.
+subsequences up to a preset maximum hit length $W$. The outermost loop
+iterates over the end position $j$ on the target sequence, enabling an
+efficient scan across a long target like a chromosome sequence.
+Banding is achieved simply by limiting all loops over possible
+subsequence lengths $d$ to the bounds
+$d_{\mbox{min}}(v)..d_{\mbox{max}}(v)$ derived in the band calculation
+algorithm, rather than all possible lengths $0..W$. The banded version
+of the algorithm is as follows:
  
-
-%The CM CYK database search algorithm is used to find subsequences of
-%long sequences (i.e. chromosomes) that align with high scores to the
-%CM, and are therefore likely homologs of the family being
-%modelled. 
-\begin{comment}
-The CM CYK database search algorithm is different from the traditional
-CYK algorithm \cite{Kasami65, Younger67, HopcroftUllman79} in several
-important respects. First, while the traditional CYK is used with
-Chomsky normal form (CNF) grammars, the CM CYK is specially adapted
-for the CM grammar, which is not CNF\@. Secondly, CM CYK does not find
-the optimal parse tree of the entire input sequence, but
-rather scans the sequence and finds the set of
-non-overlapping subsequences (hits) that each align globally with
-respect to the model for which the summed score is maximized. Finally, 
-transformed coordinates are used to allow a simple, memory efficient
-implementation of the scanning algorithm. Specifically, instead of the
-traditional $i$ and $j$ CYK coordinates for subsequence begin and end
-positions respectively, the CM CYK uses $j$ and $d$ coordinates with
-$d = j-i+1$ \cite{Durbin98}.
-
-The CM CYK search algorithm calculates $\alpha_v(j,d)$ - the log odds score
-of the most likely CM parse subtree rooted at state $v$ that generates
-(aligns to) the length $d$ subsequence $x_{j-d+1}..x_j$ of sequence
-$x$ \cite{Durbin98}. 
-Similar to the band calculation algorithm, this calculation initializes
-at the smallest subtrees ($E$ states) and shortest subsequences
-($d=0$) and iterates upward and outward to progressively larger
-subtrees and longer subsequences. 
-\end{comment}
-
-We accelerate the CYK database search using the bands ($dmin$ and $dmax$
-values) derived from the band calculation algorithm. The bands
-correspond to state specific bounds on the $d$ dimension of the
-$\alpha$ matrix that limit possible values of $d$ (subsequence
-lengths) that can be aligned to each subtree of the model. The bands
-are applied by initializing all cells of the matrix outside the bands
-to a score of $-\infty$, and never
-reevaluating them during the recursion. The banded CYK database search
-algorithm is: 
-
 %CYK for CM database search - banded version (ref p.290 Durbin)
 \vspace{0.5em}
-\begin{tabular}{l|l}
+\begin{tabular}{ll}
 \multicolumn{2}{l}{Initialization (impose bands): for $j = 0$ to $L$,
   $v = M$ down to $1$:} \\
 for $d = 0$ to $\min((dmin_v-1), j)$ & $\alpha_v(j,d) = -\infty;$ \\
@@ -545,125 +495,98 @@ else $(v = P, L, R):$ & $\alpha_v(j,d) = \max_{y \in C_v}
 \end{tabular}
 \vspace{0.5em}
 
-For example, if we're calculating $\alpha_v(j,d)$ and 
-$v$ is a pair state ($P$), $v$ will generate the basepair $x_{j-d+1},x_j$ and
+For example, if we're calculating $\alpha_v(j,d)$ and $v$ is a pair
+state ($P$), $v$ will generate the basepair $x_{j-d+1},x_j$ and
 transit to a new state $y$ (one of its possible transitions $C_v$)
 which then will have to account for the smaller subsequence
 $x_{j-d+2}..x_{j-1}$. The log odds score for a particular choice of
 next state $y$ is the sum of three terms: an emission term $\log
 e_v(x_{j-d+1},x_j)$, a transition term $\log t_v(y)$, and an already
 calculated solution for the smaller optimal parse tree rooted at $y$,
-$\alpha_y(j-1,d-2)$. The value assigned to $\alpha_v(j, d)$
-is the maximum over all possible choices of child states $y$ that $v$
-can transit to. 
+$\alpha_y(j-1,d-2)$. The value assigned to $\alpha_v(j, d)$ is the
+maximum over all possible choices of child states $y$ that $v$ can
+transit to.
 
-%\subsection{Tuning speed versus accuracy with the $bandp$ parameter}
+The $W$ parameter defines the maximum size of a potential hit to a
+model. Previous \textsc{Infernal} implementations required an \emph{ad
+hoc} guess at a reasonable $W$. The band calculation algorithm
+delivers a probabilistically derived $W$ for database search in
+$d_\mbox{max}(0)$, the upper bound on the length of the entire
+sequence (the sequence generated from the root state of the CM).
 
-The banded CM CYK algorithm offers acceleration by ignoring all
-alignments that violate the band of at least one state, and finds
-the optimal alignment (and its score) consistent with all the
-bands. 
-Therefore, when
-the globally optimal solution is not consistent with the bands, the
-acceleration comes at a cost to sensitivity. This is most likely to
-occur when aligning remote homologs, which may have significantly
-different subsequence lengths in some homologous regions. This 
-speed versus
-accuracy tradeoff can be controlled to an extent by the $bandp$
-parameter. In general, higher $bandp$ values will give tighter bands
-that result in faster, less sensitive searches than lower $bandp$ values.
-Empirically, practical values of $bandp$ are between $10^{-6}$ and
-$10^{-10}$ (see benchmark results). 
-
-  size of a hit to a CM}
-During database search, the $W$ parameter is defines
-the maximum size of a potential hit to a model. Previous implementations
-required that $W$ be manually set by the user. 
-The band calculation algorithm delivers a probabilistically derived
-$W$ for database search in $dmax_0$, which is the upper bound on the
-length of the entire sequence (the sequence generated by the top-most
-state, the root of the entire tree). 
+QDB has no guarantee on how much time and memory it saves, so it does
+not reduce asymptotic computational complexity of the alignment
+algorithm.  Both the banded and the original algorithm are $O(MW +
+BW^2)$ memory and $O(MWL + BW^2L)$ time, for a model of $M$ states
+containing $B$ bifurcation states, window size $W$ of residues, and
+target sequence length $L$.  $M$ typically scales with $W$, and the
+number of bifurcation states $B$ typically scales as $\log M$.
 
 
-
-%\subsection{Informative transition priors for appropriate band calculation}
 \subsection{Informative Dirichlet priors}
 
-The band calculation algorithm uses only the transition probabilities
-of the model to determine the bands. These probabilities are
-themselves calculated as mean posterior estimates using
-observed counts from the input alignment and a Dirichlet prior
-\cite{infguide03}. Previous to this work, uninformative Dirichlet
-densities corresponding to Laplace ``plus-1'' pseudo-counts were used
-as transition priors. However, uninformative priors are
-problematic during band calculation because they do not accurately
-reflect the distributions that would be observed from actual RNA
-sequences, and result in inappropriate bands that would often ignore
-the optimal alignment.  This problem is exacerbated when there are few
-training sequences, because the prior has more of an impact during
-mean posterior estimation. 
-Figure \ref{fig:bands} depicts the effect of plus-1 priors on band
-calculation anecdotally for three RNA families by showing that the
-the bounds on the full length of potential new homologs ($dmin_0$ and $dmax_0$)
-do not appropriately reflect the lengths of the sequences
-in the input alignment. 
+The subsequence length distributions calculated by QDB depend on the
+transition probabilities in the query CM. Transition probability
+parameter estimation is therefore crucial for obtaining predicted
+subsequence length bands that encompass real subsequence lengths in
+homologous RNA targets. Transition parameters in \textsc{Infernal} are
+mean posterior estimates, combining \emph{ad hoc} weighted observed
+counts from an input RNA alignment with a Dirichlet prior
+\cite{infguide03}.  Previous to this work, \textsc{Infernal} used an
+uninformative uniform Dirichlet prior, equivalent to the use of
+Laplace ``plus-1'' pseudo-counts. However, transition parameters
+derived under a uniform prior inaccurately predict target subsequence
+lengths, even for the input training sequences themselves, as shown in
+an example in Figure \ref{fig:bands}.  The problem is exacerbated when
+there are few sequences in the query alignment, when the choice of
+prior has more impact on mean posterior estimation.  To alleviate this
+problem, we estimated informative single component Dirichlet prior
+densities for CM transition parameters, as follows.
 
 \ifdraft
 \begin{figure}
   \begin{center}
     \includegraphics[width=6in,angle=0]{figs/3fam_bands}
     \caption{\textbf{Effect of transition priors on band calculation.}
-      Solid vertical lines represent the lengths of the 5
-      training sequences in the alignment used to build each model,
-      corresponding with the
-      right vertical axis labels. Band calculation is compared using
-      ``plus-1'' transition priors and the newly estimated ``informative''
-      Dirichlet priors as follows: Dashed
-      probability distributions show $\gamma_0(d)$, the probability a
-      sequence of length $d$ is generated by (i.e. will be aligned to)
-      state $0$ (the top-most, root state)
-      of each model. Dashed vertical lines indicate the band values
-      ($dmin_0$ (left) and
-      $dmax_0$ (right)) derived from the $\gamma_0(d)$ distribution using $bandp =
-      10^{-7}$ (the probability mass within each band is 99.99999\%).}
+      Predicted and actual target lengths are shown for three CMs
+      built from alignments of five tRNA, 5S rRNA, and RNaseP
+      sequences, which are about 75, 120, and 380 residues long,
+      respectively.  Solid vertical lines represent the actual lengths
+      of the five training sequences in each alignment, corresponding
+      with the right vertical axis labels. Dashed and dotted curves
+      show QDB calculations for $\gamma_0(d)$ for the root state of
+      each model, for uninformative versus informative Dirichlet
+      priors, respectively.  Dotted and dashed vertical lines show the
+      band bounds ($d_{\mbox{min}}(0)$ (left) and $d_{\mbox{max}(0)$
+      (right)) derived from the $\gamma_0(d)$ distributions using
+      $\beta = 10^{-7}$. The uninformative plus-one prior results in
+      consistent underprediction of target sequence lengths, with a
+      broad distribution. The new informative priors produce tighter
+      distributions that are centered on the actual subsequence
+      lengths. The same result is observed for all other states, not
+      just root states (data not shown).
     \label{fig:bands}
   \end{center}
 \end{figure}
 \fi
 
-To alleviate this problem, we estimated many (36) single component Dirichlet
-densities to be used as informative transition priors that accurately
-reflect characteristics of RNA sequences. The specific density used as
-a prior for mean posterior estimation of transition probabilities out
-of a given state $v$ to potential states $C_v$ is dependent on the node and
-state types of the states in $C_v$. The CM architecture allows exactly
-73 possible ``transition alphabets'' of node and state types in
-$C_v$. Instead of estimating 73 Dirichlet densities, we defined 36
-groups of transition alphabets by combining similar alphabets into the
-same group, and estimated a Dirichlet density for each group to be
-applied for all alphabets in the group. We derived training data for
-estimatiion of the Dirichlet densities from version 6.1 of the Rfam
-database \cite{Griffiths-Jones05}.
-Specifically, we built CMs from each of the 381 Rfam version 6.1 seed
-alignments and collected counts of the
-observed transitions used in the parse trees of each seed sequence.
-Table~\ref{tbl:transitions} contains statistics on the counts collected
-for each of the transition alphabets and groups of alphabets.
-%Using this training data, a Dirichlet density was estimated for each
-%to be applied to all transition alphabets in that group. 
-Dirichlet densities were estimated from these counts using the maximum
-likelihood based method described in \cite{Sjolander96} with one
-exception, our procedure used a conjugate gradient descent algorithm
-\cite{Press93} for optimization while \cite{Sjolander96} describes an
-expectation-maximization (EM) based approach.  The resulting Dirichlet
-parameters are in Table~\ref{tbl:transitions}.  
-%For exactly six alphabets
-%comprising three groups, the number of count vectors was so low ($\le
-%2$) we decided to continue use of plus-1 priors (these are marked by
-%* in Table~\ref{tbl:transitions}).  
-Incorporating the informative transition priors during mean posterior
-estimation of the transition probabilities has a dramatic impact
-on calculation of the bands as shown in Figure~\ref{fig:bands}.
+The training data consisted of the 381 seed alignments in the Rfam
+database, version 6.1 \cite{Griffiths-Jones05}. For each alignment, we
+built CMs by \textsc{Infernal}'s default procedure, and collected
+weighted counts of observed transitions in the implied parse trees of
+the training sequences. Considering all possible combinations of pairs
+of adjacent node types, there are 73 possible distinct types of
+transition probability distributions in CMs. To reduce this parameter
+space somewhat, we tied these 73 distributions into 36 groups, by
+assuming that certain distributions were effectively equivalent.  36
+Dirichlet densities were estimated from these counts by maximum
+likelihood as described in \cite{Sjolander96}, with the exception that
+we optimize by conjugate gradient descent \cite{Press93} rather than
+by expectation-maximization (EM).  The results, including the
+Dirichlet parameters, are given in Table~\ref{tbl:transitions}.  Using
+these priors for transition probability parameter estimation results
+in a dramatic improvement in the utility of QDB calculations, as shown
+by anecdotal example in Figure~\ref{fig:bands}.
 
 % The transition priors 041006_trans_priors.tex (with modifications)
 \ifdraft
@@ -784,8 +707,8 @@ on calculation of the bands as shown in Figure~\ref{fig:bands}.
 \renewcommand{\baselinestretch}{1.5}
 \fi
 
-%\subsection{Increasing sensitivity by refining CM parameterization}
-%\subsubsection{Informative emission priors}
+
+
 To complement the informative transition priors, Dirichlet density
 \emph{mixtures} were estimated to use as informative emission
 priors. Although the emission probabilities do not affect band calculation,
