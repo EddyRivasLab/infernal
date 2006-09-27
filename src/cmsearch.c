@@ -449,6 +449,7 @@ main(int argc, char **argv)
       safe_windowlen = windowlen * 2;
       while(!(BandCalculationEngine(cm, safe_windowlen, apbandp, 0, &dmin, &dmax, &gamma, do_local)))
 	{
+	  /*Die("BandCalculationEngine() failed.\n");*/
 	  FreeBandDensities(cm, gamma);
 	  free(dmin);
 	  free(dmax);

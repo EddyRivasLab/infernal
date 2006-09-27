@@ -1899,7 +1899,7 @@ check_psi_vs_phi_cp9(CM_t *cm, double *psi, double **phi, int ***hns2cs_map, int
 	  v_ct++;
 	}
       if(violation)
-	printf("M k: %4d | phi: %f | psi: %f VIOLATION (%f)\n", k, phi[k][0], summed_psi, diff);
+	printf("M k: %4d | phi: %f | psi: %f VIOLATION (%f) (cm v1: %d cm v2: %d)\n", k, phi[k][0], summed_psi, diff, ap[0], ap[1]);
       else if(debug_level > 1)
 	printf("M k: %4d | phi: %f | psi: %f\n", k, phi[k][0], summed_psi);
 
@@ -1936,7 +1936,7 @@ check_psi_vs_phi_cp9(CM_t *cm, double *psi, double **phi, int ***hns2cs_map, int
 	    }
 	}
       if(violation)
-	printf("I k: %4d | phi: %f | psi: %f VIOLATION (%f)\n", k, phi[k][1], summed_psi, diff);
+	printf("I k: %4d | phi: %f | psi: %f VIOLATION (%f) (cm v1: %d cm v2: %d)\n", k, phi[k][1], summed_psi, diff, ap[0], ap[1]);
       else if(dual_mapping_insert && debug_level > 1)
 	printf("I k: %4d | phi: %f | psi: %f (DUAL INSERT so psi != phi)\n", k, phi[k][1], summed_psi);
       else if(debug_level > 1)
@@ -1961,7 +1961,7 @@ check_psi_vs_phi_cp9(CM_t *cm, double *psi, double **phi, int ***hns2cs_map, int
 	  v_ct++;
 	}
       if(violation)
-	printf("D k: %4d | phi: %f | psi: %f VIOLATION (%f)\n\n", k, phi[k][2], summed_psi, diff);
+	printf("D k: %4d | phi: %f | psi: %f VIOLATION (%f) (cm v1: %d cm v2: %d)\n", k, phi[k][2], summed_psi, diff, ap[0], ap[1]);
       else if(debug_level > 1)
 	{
 	  printf("D k: %4d | phi: %f | psi: %f\n\n", k, phi[k][2], summed_psi);

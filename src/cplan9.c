@@ -1011,8 +1011,8 @@ sub_CPlan9GlobalConfig(struct cplan9_s *hmm, int spos, int epos, double **phi)
       /* prob of starting in M_spos is (1. - prob of starting in I_spos-1) as there is no D_spos-1 -> M_spos trans */
       hmm->begin[spos] = 1. - ((phi[spos-1][HMMINSERT] * (1. - hmm->t[spos-1][CTII])) + 
 			       (phi[spos  ][HMMDELETE] - (phi[spos-1][HMMINSERT] * hmm->t[spos-1][CTID])));
-      hmm->t[spos-1][CTMI] =  (phi[spos-1][HMMINSERT] * (1. - hmm->t[spos-1][CTII]));
-      hmm->t[spos-1][CTMD] =   phi[spos][HMMDELETE];
+      hmm->t[spos-1][CTMI] =   (phi[spos-1][HMMINSERT] * (1. - hmm->t[spos-1][CTII]));
+      hmm->t[spos-1][CTMD] =    phi[spos  ][HMMDELETE] - (phi[spos-1][HMMINSERT] * hmm->t[spos-1][CTID]);
       hmm->t[spos-1][CTMM] = 0.; /* probability of going from B to M_1 is begin[1] */
 
       /* eliminate the possibility of going from B -> I_0, the only other way to 

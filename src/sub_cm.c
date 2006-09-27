@@ -5421,7 +5421,7 @@ map_orig2sub_cm3(CM_t *orig_cm, CM_t *sub_cm, int ***ret_orig2sub_smap, int ***r
 	  printf("sub2orig_id[%d] TRUE\n", v);
 	  if(sub2orig_smap[v][1] != -1)
 	    {
-	      Die("ERROR, sub2orig_id[v:%d] but sub2orig_smap[v:%d][0]: %d and sub2orig_smap[v:%d][1]: %d\n", v, v, sub2orig_smap[v][0], v, sub2orig_smap[v][1]);
+	      /*Die("ERROR, sub2orig_id[v:%d] but sub2orig_smap[v:%d][0]: %d and sub2orig_smap[v:%d][1]: %d\n", v, v, sub2orig_smap[v][0], v, sub2orig_smap[v][1]);*/
 	    }
 	}
       else
