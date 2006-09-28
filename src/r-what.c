@@ -821,8 +821,11 @@ RightMarginalScore(float *esc, char symr)
  *                  alignmnet held in the root may be partially
  *                  extended, although empty is expected to be the
  *                  more likely case.
+ * 
+ * Return:   completion (0 = no, 1 = yes), meaning that we have
+ *           completely aligned all of the model below BPA_t *root
  */
-void
+int
 MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root)
 {
    int i;
@@ -830,6 +833,7 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root)
    int x;
    float tsc, esc;
    int *depth;
+   int completion = 0;
 
    x = v;
    i = 0;
@@ -883,59 +887,75 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root)
          root->left_child->chunk->init_d = -1;
          root->left_child->chunk->cur_d  = -1;
 
-         MarginalLeftInsideExtend(cm, dsq, root->left_child);
-
-         if ( root->right_child == NULL )
+         if ( MarginalLeftInsideExtend(cm, dsq, root->left_child) )
          {
-            root->right_child = malloc(sizeof(BPA_t));
-            root->right_child->chunk = malloc(sizeof(PA_t));
-            root->right_child->left_child = NULL;
-            root->right_child->right_child = NULL;
+            if ( root->right_child == NULL )
+            {
+               root->right_child = malloc(sizeof(BPA_t));
+               root->right_child->chunk = malloc(sizeof(PA_t));
+               root->right_child->left_child = NULL;
+               root->right_child->right_child = NULL;
+            }
+            root->right_child->chunk->init_v = cm->cnum[v];
+            root->right_child->chunk->cur_v  = cm->cnum[v];
+            root->right_child->chunk->init_i = root->left_child->chunk->cur_i; /* Compare to where we set cur_i in this func to check for off-by-1 */
+            root->right_child->chunk->cur_i  = root->left_child->chunk->cur_i;
+            /* Init to error values for j and d which are unknown */
+            root->right_child->chunk->init_j = -1;
+            root->right_child->chunk->cur_j  = -1;
+            root->right_child->chunk->init_d = -1;
+            root->right_child->chunk->cur_d  = -1;
+
+            if (MarginalLeftInsideExtend(cm, dsq, root->right_child) )
+            {
+               completion = 1;
+            }
          }
-         root->right_child->chunk->init_v = cm->cnum[v];
-         root->right_child->chunk->cur_v  = cm->cnum[v];
-         root->right_child->chunk->init_i = ; /*something that needs to be relayed from root->left_child */
-         root->right_child->chunk->cur_i  = ;
-         /* Init to error values for j and d which are unknown */
-         root->right_child->chunk->init_j = -1;
-         root->right_child->chunk->cur_j  = -1;
-         root->right_child->chunk->init_d = -1;
-         root->right_child->chunk->cur_d  = -1;
-
-         MarginalLeftInsideExtend(cm, dsq, root->right_child);
-
+         break; /* seems cluge-y - maybe break BIF_B out of the while entirely */
          /* Need to think here about how best to relay scores,
           * continue extension around the right child, etc. */
 /* IMPORTANT!  If we don't successfully make it all the way around both children, we need to abort and not continue up the stem below! */
       }
    }
 
-   while ( cm->sttype[v] != S_st )
+   if ( completion == 1)
    {
-      ConsensusParent(cm, &v);
-      if ( cm->stid[v] == MATL_ML )
+      completion = 0;
+      while ( cm->sttype[v] != S_st )
       {
-         x--;
+         ConsensusParent(cm, &v);
+         if ( cm->stid[v] == MATL_ML )
+         {
+            x--;
+         }
+         if ( cm->stid[v] == MATR_MR )
+         {
+            if ( dsq[i] < Alphabet_size )
+               esc = cm->esc[v][(int) dsq[i]];
+            else
+               esc = DegenerateSingletScore(cm->esc[v],dsq[i]);
+            i++;
+            x--;
+         }
+         if ( cm->stid[v] == MATP_MP )
+         {
+            if ( dsq[depth[x]] < Alphabet_size && dsq[i] < Alphabet_size )
+               esc = cm->esc[v][(int) (dsq[depth[x]]*Alphabet_size + dsq[i])];
+            else
+               esc = DegeneratePairScore(cm->esc[v],dsq[depth[x]],dsq[i]);
+            esc -= LeftMarginalScore(cm->esc[v],dsq[depth[x]]);
+            i++;
+            x--;
+         }
       }
-      if ( cm->stid[v] == MATR_MR )
+      if ( cm->sttype[v] == S_st) 
       {
-         if ( dsq[i] < Alphabet_size )
-            esc = cm->esc[v][(int) dsq[i]];
-         else
-            esc = DegenerateSingletScore(cm->esc[v],dsq[i]);
-         i++;
-         x--;
+         completion = 1;
       }
-      if ( cm->stid[v] == MATP_MP )
-      {
-         if ( dsq[depth[x]] < Alphabet_size && dsq[i] < Alphabet_size )
-            esc = cm->esc[v][(int) (dsq[depth[x]]*Alphabet_size + dsq[i])];
-         else
-            esc = DegeneratePairScore(cm->esc[v],dsq[depth[x]],dsq[i]);
-         esc -= LeftMarginalScore(cm->esc[v],dsq[depth[x]]);
-         i++;
-         x--;
-      }
+   }
+   else
+   {
+      completion = 0;
    }
 
    /* Unfinished items:
@@ -945,4 +965,6 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root)
     */
 
    free(depth);
+
+   return completion;
 }
