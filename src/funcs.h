@@ -239,6 +239,8 @@ extern void CP9AllocTrace(int tlen, struct cp9trace_s **ret_tr);
 extern void CP9ReallocTrace(struct cp9trace_s *tr, int tlen);
 extern void CP9FreeTrace(struct cp9trace_s *tr);
 
+extern void cp9_2sub_cp9(struct cplan9_s *orig_hmm, struct cplan9_s **ret_sub_hmm, int spos, int epos, double **orig_phi);
+
 /* from cp9_hmmio.c 
  * CM Plan9 HMM Input/output (saving/reading)
  */
@@ -342,7 +344,7 @@ extern void CP9NodeForPosn(struct cplan9_s *hmm, int i0, int j0, int x,
 extern void StripWUSSGivenCC(MSA *msa, char **dsq, float gapthresh, int first_match, int last_match);
 extern void build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int struct_start, int struct_end, int model_start,
 			 int model_end, int **orig2sub_smap, int **sub2orig_smap);
-extern int  check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos);
+extern int  check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, float thresh, int nseq);
 extern int  check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int nseq);
 
 

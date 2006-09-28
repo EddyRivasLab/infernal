@@ -1759,8 +1759,8 @@ cm_sum_subpaths_cp9(CM_t *cm, int start, int end, char ***tmap, int **cs2hn_map,
       if(cm->sttype[v] == S_st)
 	{
 	  /* previous state is necessarily either a BIF_B or a END_E, either
-	   * way, there's no transitions FROM previous state to this state, so
-	   * we handle this in a special way.*/
+	   * way we handle as if the transition FROM previous state to this
+	   * state is 1.0 */
 	  sub_psi[v-start] = sub_psi[(v-1)-start] * 1.;
 	}
       /* check if v is an insert state that maps to node k, if so we don't want
@@ -2259,8 +2259,7 @@ CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int spos, int epos, 
     else
       dual_mapping_insert[nd] = 0;
       
-  //msa_nseq = 1000;
-  msa_nseq = 50;
+  msa_nseq = 1000;
   /* Allocate and zero the new HMM we're going to build by sampling from
    * the CM.
    */
@@ -2721,7 +2720,7 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
 		   ((shmm->mat[nd][x] / m_nseq)));
 
       p = IncompleteGamma((MAXABET-1)/2., chi_sq/2.);
-      /*printf("%4d E M P: %f m_nseq %f\n", nd, p, m_nseq);*/
+      printf("%4d E M P: %f m_nseq %f\n", nd, p, m_nseq);
       if((1. - p) > thresh)
 	{
 	  printf("%4d E M P: %f m_nseq %f\n", nd, p, m_nseq);
@@ -2736,13 +2735,12 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
 	       ((shmm->ins[nd][x] / i_nseq)));
 
   p = IncompleteGamma((MAXABET-1)/2., chi_sq/2.);
-  /*printf("%4d E I P: %f\n", nd, p);*/
+  printf("%4d E I P: %f\n", nd, p);
   if((1. - p) > thresh)
     {
       printf("%4d E I P: %f i_nseq: %f\n", nd, p, i_nseq);
       return FALSE;
     }
-  return TRUE;
   
   /* check transitions */
   /* out of match */
@@ -2768,7 +2766,7 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
 		
   */
   p = IncompleteGamma(1., chi_sq/2.);
-  /*printf("%4d T M P: %f m_nseq: %f\n", nd, p, m_nseq);*/
+  printf("%4d T M P: %f m_nseq: %f\n", nd, p, m_nseq);
   if((1. - p) > thresh)
     {
       printf("%4d T M P: %f m_nseq %f\n", nd, p, m_nseq);
@@ -2785,7 +2783,7 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
 	chi_sq += (pow((ahmm->t[nd][CTID] - (shmm->t[nd][CTID] / i_nseq)), 2) / 
 	            ((shmm->t[nd][CTID] / i_nseq)));
       p = IncompleteGamma(1., chi_sq/2.);
-      /*printf("%4d T I P: %f i_nseq: %f\n", nd, p, i_nseq);*/
+      printf("%4d T I P: %f i_nseq: %f\n", nd, p, i_nseq);
       if((1. - p) > thresh)
 	{
 	  printf("%4d T I P: %f i_nseq: %f\n", nd, p, i_nseq);
@@ -2794,7 +2792,7 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
     }
   else
     {
-      /*printf("nd: %d is a dual mapping insert\n", nd);*/
+      printf("nd: %d is a dual mapping insert\n", nd);
     }      
 
   if(nd != 0)
@@ -2808,7 +2806,7 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
 	chi_sq += (pow((ahmm->t[nd][CTDD] - (shmm->t[nd][CTDD] / d_nseq)), 2) / 
 		      ((shmm->t[nd][CTDD] / d_nseq)));
       p = IncompleteGamma(1., chi_sq/2.);
-      /*printf("%4d T D P: %f d_nseq: %f\n", nd, p, d_nseq);*/
+      printf("%4d T D P: %f d_nseq: %f\n", nd, p, d_nseq);
       if((1. - p) > thresh)
 	{
 	  printf("%4d T D P: %f d_nseq: %f\n", nd, p, d_nseq);

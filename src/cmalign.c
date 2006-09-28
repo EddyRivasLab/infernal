@@ -286,6 +286,7 @@ main(int argc, char **argv)
   int **sub_cs2hs_map;  
   int ***sub_hns2cs_map;
   struct cplan9_s       *sub_cp9_hmm;       /* constructed CP9 HMM; written to hmmfile              */
+  struct cplan9_s       *sub_cp9_hmm2; 
   int                    sub_cp9_M;         /* number of nodes in CP9 HMM (MATL+MATR+2*MATP)        */
   double **orig_phi;
   double **sub_phi_trad;    
@@ -431,7 +432,7 @@ main(int argc, char **argv)
   if (cm == NULL) 
     Die("%s empty?\n", cmfile);
   CMFileClose(cmfp);
-
+  
   if (! (set_window)) windowlen = cm->W;
   /* Now that we know what windowlen is, we need to ensure that
    * cm->el_selfsc * W >= IMPOSSIBLE (cm->el_selfsc is the score for an EL self transition)
@@ -590,7 +591,8 @@ main(int argc, char **argv)
 	if(do_checkcp9)
 	  {
 	    sre_srandom(seed);
-	    if(!(CP9_check_wrhmm_by_sampling(cm, cp9_hmm, 1, cp9_hmm->M, hns2cs_map, 0.05, 100000)))
+	    //if(!(CP9_check_wrhmm_by_sampling(cm, cp9_hmm, 1, cp9_hmm->M, hns2cs_map, 0.05, 100000)))
+	    if(!(CP9_check_wrhmm_by_sampling(cm, cp9_hmm, 1, cp9_hmm->M, hns2cs_map, 0.01, 1000000)))
 	      Die("CM Plan 9 fails sampling check!\n");
 	    else
 	      printf("CM Plan 9 passed sampling check.\n");
@@ -693,6 +695,9 @@ main(int argc, char **argv)
       debug_print_cp9_params(cp9_hmm);
       printf("DONE PRINTING ORIG SUB CP9 HMM PARAMETERS GLOCAL 0\n\n");
       CPlan9SWConfig(cp9_hmm, swentry, swexit);
+      printf("PRINTING ORIG SUB CP9 HMM PARAMETERS LOCAL 0\n");
+      debug_print_cp9_params(cp9_hmm);
+      printf("DONE PRINTING ORIG SUB CP9 HMM PARAMETERS LOCAL 0\n\n");
       CP9Logoddsify(cp9_hmm);
     }
   /* Allocate data structures for use with HMM banding strategy (either P7 or CP9) */
@@ -775,12 +780,20 @@ main(int argc, char **argv)
 	       * node. */
 	      build_sub_cm(cm, &sub_cm, hmm_start_node, hmm_end_node, hmm_start_node, hmm_end_node, orig2sub_smap, sub2orig_smap);
 
-	      /* Following function call samples for cm and sub_cm and builds CP9 HMMs from each set of samples,
-	       * then prints out the parameters of those CMs.
+	      /* check_sub_cm_by_sampling() call builds a CP9 HMM from the sub_cm and checks to make 
+	       * sure this CP9 HMM is correct. This check is done by sampling a deep MSA from the CM, 
+	       * truncating it before hmm_start_node and after hmm_end_node and then doing chi-squared
+	       * tests to see if the samples came from the CP9 HMM distribution.
 	       */
+	      check_sub_cm_by_sampling(cm, sub_cm, hmm_start_node, hmm_end_node, 0.01, 1000000);
+	      exit(1);
 
-	      /*check_sub_cm_by_sampling2(cm, sub_cm, hmm_start_node, hmm_end_node, 10000);*/
+	      /* Following function call samples for cm and sub_cm and builds CP9 HMMs from each set of samples,
+	       * then prints out the parameters of those HMMs.
+	      check_sub_cm_by_sampling2(cm, sub_cm, hmm_start_node, hmm_end_node, 10000);
+	      exit(1);*/
 
+	      /**************************************************************************/
 	      /* For checking if our CP9->subCP9 truncation modification method is working we build a
 	       * CP9 HMM from the sub_cm using the full blown method, and check its parameters
 	       * against the subCP9 built from the truncation-built one.
@@ -793,27 +806,30 @@ main(int argc, char **argv)
 		  else if(sub_cm->stid[v] == MATL_ML || sub_cm->stid[v] == MATR_MR)
 		    sub_cp9_M ++;
 		}
+
+	      StopwatchZero(watch1);
+	      StopwatchStart(watch1);
 	      /* build the HMM data structure */
 	      sub_cp9_hmm = AllocCPlan9(sub_cp9_M);
 	      printf("sub_cp9_M: %d\n", sub_cp9_M);
 	      ZeroCPlan9(sub_cp9_hmm);
 
 	      /* Get information mapping the HMM to the CM and vice versa, used
-	       * for mapping bands. 
-	       * This is relevant if we're building (read_cp9_flag == FALSE)
-	       * or reading from a file (read_cp9_flag == TRUE)
-	       */
+	       * for mapping bands. */
 	      map_consensus_columns(sub_cm, sub_cp9_hmm->M, &sub_node_cc_left, &sub_node_cc_right,
 				    &sub_cc_node_map, debug_level);
 	      
-	      printf("check\n");
+	      printf("check 1\n");
 	      CP9_map_cm2hmm_and_hmm2cm(sub_cm, sub_cp9_hmm, sub_node_cc_left, sub_node_cc_right, 
 					sub_cc_node_map, &sub_cs2hn_map, &sub_cs2hs_map, 
 					&sub_hns2cs_map, debug_level);
 	      if(!(CP9_cm2wrhmm(sub_cm, sub_cp9_hmm, sub_node_cc_left, sub_node_cc_right, sub_cc_node_map, 
 				sub_cs2hn_map, sub_cs2hs_map, sub_hns2cs_map, debug_level)))
 		Die("Couldn't build a CM Plan 9 HMM from the sub CM.\n");
+	      StopwatchStop(watch1);
+	      StopwatchDisplay(stdout, "CP9 BUILDING TRADITIONAL TIME: ", watch1);
 
+	      printf("check 2\n");
 	      printf("sub_cp9_hmm->M: %d\n", sub_cp9_hmm->M);
 	      printf("PRINTING ORIG SUB CP9 HMM PARAMETERS LOCAL\n");
 	      debug_print_cp9_params(cp9_hmm);
@@ -826,14 +842,18 @@ main(int argc, char **argv)
 	      debug_print_cp9_params(cp9_hmm);
 	      printf("DONE PRINTING ORIG SUB CP9 HMM PARAMETERS GLOCAL 1\n\n");
 
-	      /* Modify the local entry and exit probabilities of the CM Plan 9 HMM so they
-	       * reflect the sub_cm. 
-	       */
-	      sub_CPlan9GlobalConfig(cp9_hmm, hmm_start_node, hmm_end_node, orig_phi);
+	      /*sub_CPlan9GlobalConfig(cp9_hmm, hmm_start_node, hmm_end_node, orig_phi);*/
+
+	      StopwatchZero(watch1);
+	      StopwatchStart(watch1);
+	      /* Build the sub CP9 HMM by copying as much of the original cp9_hmm as possible */
+	      cp9_2sub_cp9(cp9_hmm, &sub_cp9_hmm2, hmm_start_node, hmm_end_node, orig_phi);
+	      StopwatchStop(watch1);
+	      StopwatchDisplay(stdout, "CP9 BUILDING TRUNCATION TIME: ", watch1);
 
 	      /* fill phi arrays for each CP9 HMM */
 	      fill_phi_cp9(sub_cp9_hmm, &sub_phi_trad, 1);
-	      fill_phi_cp9(cp9_hmm, &sub_phi_trunc, hmm_start_node);
+	      fill_phi_cp9(sub_cp9_hmm2, &sub_phi_trunc, 1);
 	      
 	      printf("sub_cp9_hmm->M: %d\n", sub_cp9_hmm->M);
 
@@ -845,7 +865,7 @@ main(int argc, char **argv)
 	      printf("DONE PRINTING TRAD SUB CP9 HMM PARAMETERS\n\n");
 
 	      printf("PRINTING TRUNC SUB CP9 HMM PARAMETERS\n");
-	      debug_print_cp9_params(cp9_hmm);
+	      debug_print_cp9_params(sub_cp9_hmm2);
 	      printf("DONE PRINTING TRUNC SUB CP9 HMM PARAMETERS\n\n");
 	      
 	      printf("PRINTING ORIG CP9 HMM PHI PARAMETERS\n");
@@ -857,7 +877,7 @@ main(int argc, char **argv)
 	      printf("DONE PRINTING TRAD SUB CP9 HMM PHI PARAMETERS\n\n");
 
 	      printf("PRINTING TRUNC SUB CP9 HMM PHI PARAMETERS\n");
-	      debug_print_phi_cp9(cp9_hmm, sub_phi_trunc);
+	      debug_print_phi_cp9(sub_cp9_hmm2, sub_phi_trunc);
 	      printf("DONE PRINTING TRUNC SUB CP9 HMM PHI PARAMETERS\n\n");
 
 	      exit(1);

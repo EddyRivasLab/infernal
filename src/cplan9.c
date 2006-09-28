@@ -972,7 +972,151 @@ sub_CPlan9SWConfig(struct cplan9_s *hmm, float pentry, float pexit, int spos, in
   hmm->flags       &= ~CPLAN9_HASBITS; /* reconfig invalidates log-odds scores */
 }
 
-/* Function: sub_CPlan9GlobalConfig()
+/* Function: cp9_2sub_cp9()
+ * EPN 09.24.06
+ * 
+ * Purpose:  Given a template CM Plan 9 HMM, build a sub-model that
+ *           models only a subset of the consensus columns of the
+ *           original alignment. This requires a bit of care for
+ *           the initial and final node of the sub CP9, and 
+ *           straightforward copying of parameters for the rest.
+ *          
+ *           The new CP9 is constructed in Global Needleman/Wunsch
+ *           mode. The orig_hmm MUST be in global mode. THIS IS
+ *           CHECKED FOR IN A VERY FRAGILE MANNER!
+ *       
+ *           The approach here is to allocate and fill the new 
+ *           sub CP9. There might be a better way - transforming
+ *           the original CP9 into the new sub CP9 using a method
+ *           involving pointer rearrangement, but I'm not sure
+ *           how to do this.
+ *             
+ * Args:     orig_hmm    - the CP9 model w/ data-dep prob's valid
+ *           ret_sub_hmm - the new sub CP9 hmm, allocated here, must
+ *                         be freed by caller.
+ *           spos        - first consensus column modelled by original
+ *                         CP9 HMM the sub CP9 HMM models.
+ *           epos        - final consensus column modelled by original
+ *                         CP9 HMM the sub CP9 HMM models.
+ *           orig_phi    - the 2D phi array for the original CP9 HMM.         
+ * Return:   (void)
+ *           HMM probabilities are modified.
+ */
+void
+cp9_2sub_cp9(struct cplan9_s *orig_hmm, struct cplan9_s **ret_sub_hmm, int spos, int epos, double **orig_phi)
+{
+  struct cplan9_s       *sub_hmm;       
+  int i, x;
+  int orig_pos;
+
+  sub_hmm = AllocCPlan9((epos-spos+1));
+
+  for(x = 0; x < MAXABET; x++)
+    {
+      sub_hmm->null[x] = orig_hmm->null[x];
+    }
+  /* No special (*x* states in Plan 7) states in CM Plan 9 */
+
+  /* First we just copy the parameters for spos..epos from the template HMM.
+   * This is *slightly* wasteful, as we'll overwrite a few of these later.
+   */
+  for(i = 0; i <= (epos-spos+1); i++)
+    {
+      orig_pos = i + spos - 1;
+
+      if(i > 0)
+	{
+	  for(x = 0; x < MAXABET; x++)
+	    {
+	      sub_hmm->mat[i][x] = orig_hmm->mat[orig_pos][x];
+	      sub_hmm->msc[x][i] = orig_hmm->msc[x][orig_pos];
+	    }
+
+	  sub_hmm->begin[i]   = orig_hmm->begin[orig_pos];
+	  sub_hmm->end[i]     = orig_hmm->end[orig_pos];
+	  sub_hmm->bsc[i]     = orig_hmm->bsc[orig_pos];
+	  sub_hmm->esc[i]     = orig_hmm->esc[orig_pos];
+	  if((i > 1) && ((0. - sub_hmm->begin[i] > 0.00000001) ||
+			 (sub_hmm->begin[i] - 0. > 0.00000001)))
+	    {
+	      Die("ERROR in cp9_2sub_cp9() is original CP9 HMM not in global (NW) mode? i: %d\n", i);
+	    }
+	}
+      for(x = 0; x < MAXABET; x++)
+	{
+	  sub_hmm->ins[i][x] = orig_hmm->ins[orig_pos][x];
+	  sub_hmm->isc[x][i] = orig_hmm->isc[x][orig_pos];
+	}
+
+      for(x = 0; x < 9; x++)
+	{
+	  sub_hmm->t[i][x]   = orig_hmm->t[orig_pos][x];
+	  sub_hmm->tsc[x][i] = orig_hmm->tsc[x][orig_pos];
+	}
+      
+    }
+      
+  /* Make the necessary modifications. Since in cmalign --sub mode this
+   * function will be called potentially once for each sequence, we 
+   * don't want to call CP9Logoddsify(), but rather only logoddsify
+   * the parameters that are different.
+   */
+
+  /* Configure entry.
+   * Exactly 3 ways to start, B->M_1 (hmm->begin[1]), B->I_0 (hmm->t[0][CTMI]),
+   *                      and B->D_1 (hmm->t[0][CTMD])
+   */
+  /* prob of starting in M_spos is (1. - prob of starting in I_spos-1) as there is no D_spos-1 -> M_spos trans */
+      
+  if(spos > 1)
+    {
+      sub_hmm->begin[1] = 1.-((orig_phi[spos-1][HMMINSERT] * (1. - orig_hmm->t[spos-1][CTII])) + 
+			      (orig_phi[spos  ][HMMDELETE] - (orig_phi[spos-1][HMMINSERT] * orig_hmm->t[spos-1][CTID])));
+      sub_hmm->t[0][CTMI] =   (orig_phi[spos-1][HMMINSERT] * (1. - orig_hmm->t[spos-1][CTII]));
+      sub_hmm->t[0][CTMD] =    orig_phi[spos  ][HMMDELETE] - (orig_phi[spos-1][HMMINSERT] * orig_hmm->t[spos-1][CTID]);
+      sub_hmm->t[0][CTMM] = 0.; /* probability of going from B(M_0) to M_1 is begin[1] */
+      sub_hmm->t[0][CTDM] = 0.; /* D_0 doesn't exist */
+      sub_hmm->t[0][CTDI] = 0.; /* D_0 doesn't exist */
+      sub_hmm->t[0][CTDD] = 0.; /* D_0 doesn't exist */
+      
+      sub_hmm->bsc[1]       = Prob2Score(sub_hmm->begin[1], 1.0);
+
+      sub_hmm->tsc[CTMM][0] = -INFTY; /* probability of going from B(M_0) to M_1 is begin[1] */
+      sub_hmm->tsc[CTDM][0] = -INFTY; /* D_0 doesn't exist */
+      sub_hmm->tsc[CTDI][0] = -INFTY; /* D_0 doesn't exist */
+      sub_hmm->tsc[CTDD][0] = -INFTY; /* D_0 doesn't exist */
+      
+      sub_hmm->tsc[CTMI][0] = Prob2Score(sub_hmm->t[0][CTMI], 1.0);
+      sub_hmm->tsc[CTMD][0] = Prob2Score(sub_hmm->t[0][CTMD], 1.0);
+    }
+
+  if(epos < orig_hmm->M)
+    {
+      sub_hmm->end[sub_hmm->M]      = orig_hmm->t[epos][CTMM] + orig_hmm->t[epos][CTMD];
+      sub_hmm->t[sub_hmm->M][CTDM] += orig_hmm->t[epos][CTDD];
+      sub_hmm->t[sub_hmm->M][CTIM] += orig_hmm->t[epos][CTID];
+      sub_hmm->t[sub_hmm->M][CTMM]  = 0.; /* M->E is actually end[M] */
+      sub_hmm->t[sub_hmm->M][CTMD]  = 0.; /* D_M+1 doesn't exist */
+      sub_hmm->t[sub_hmm->M][CTDD]  = 0.; /* D_M+1 doesn't exist */
+      sub_hmm->t[sub_hmm->M][CTID]  = 0.; /* D_M+1 doesn't exist */
+      
+      sub_hmm->esc[sub_hmm->M]       = Prob2Score(sub_hmm->end[sub_hmm->M], 1.0);
+      sub_hmm->tsc[CTDM][sub_hmm->M] = Prob2Score(sub_hmm->t[sub_hmm->M][CTDM], 1.0);
+      sub_hmm->tsc[CTIM][sub_hmm->M] = Prob2Score(sub_hmm->t[sub_hmm->M][CTIM], 1.0);
+      sub_hmm->tsc[CTMM][sub_hmm->M] = -INFTY; /* M->E is actually end[M] */
+      sub_hmm->tsc[CTMD][sub_hmm->M] = -INFTY; /* D_M+1 doesn't exist */
+      sub_hmm->tsc[CTDD][sub_hmm->M] = -INFTY; /* D_M+1 doesn't exist */
+      sub_hmm->tsc[CTID][sub_hmm->M] = -INFTY; /* D_M+1 doesn't exist */
+    }
+  sub_hmm->flags |= CPLAN9_HASBITS;	/* raise the log-odds ready flag */
+  *ret_sub_hmm = sub_hmm;
+  return;
+}
+
+/***********************************************************
+ * NOTE: INCOMPLETE! DO NOT USE WITHOUT FINISHING!
+ *
+ * Function: sub_CPlan9GlobalConfig()
  * EPN 09.24.06
  * based on SRE's Plan7GlobalConfig() from HMMER's plan7.c
  * 
@@ -1000,6 +1144,7 @@ void
 sub_CPlan9GlobalConfig(struct cplan9_s *hmm, int spos, int epos, double **phi)
 {
   int i;
+  Die("ERROR, sub_CPlan9GlobalConfig() was abandoned on 09.27.06 by EPN. It is incomplete.\n");
   /* No special (*x* states in Plan 7) states in CM Plan 9 */
 
   /* Configure entry.
@@ -1020,14 +1165,22 @@ sub_CPlan9GlobalConfig(struct cplan9_s *hmm, int spos, int epos, double **phi)
       hmm->t[0][CTMI] = 0.;
     }
 
-
   for(i = 1; i < spos; i++)
     hmm->begin[i] = 0.;
   for(i = spos+1; i <= hmm->M; i++)
     hmm->begin[i] = 0.;
 
   if(epos < hmm->M)
-    hmm->end[epos] = 1. - hmm->t[epos-1][CTMI];
+    {
+      //      hmm->end[epos]      = hmm->t[epos][CTMM] + (phi[epos] * hmm->t[epos][CTMD]) + (;
+      hmm->end[hmm->M] = hmm->t[epos][CTMM] + hmm->t[epos][CTMD];
+      hmm->t[epos][CTDM] += hmm->t[epos][CTDD];
+      hmm->t[epos][CTIM] += hmm->t[epos][CTID];
+      hmm->t[epos][CTDD]  = 0.; /* no D state in final node M */
+      hmm->t[epos][CTID]  = 0.; /* no D state in final node M */
+    }
+  /* EPN 09.27.06 NEED SOME WAY OF ENSURING THAT NODE epos+1 IS NEVER REACHED. */
+
   for(i = 1; i < epos; i++)
     hmm->end[i] = 0.;
   for(i = epos+1; i <= hmm->M; i++)
@@ -1036,7 +1189,3 @@ sub_CPlan9GlobalConfig(struct cplan9_s *hmm, int spos, int epos, double **phi)
   CPlan9RenormalizeExits(hmm, spos);
   hmm->flags       &= ~CPLAN9_HASBITS; /* reconfig invalidates log-odds scores */
 }
-
-
-
-

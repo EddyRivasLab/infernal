@@ -382,6 +382,11 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int struct_start, int struct_end, int
    * parameterize it yet.
    */
   ConsensusModelmaker(sub_cstr, (model_end-model_start+1), &sub_cm, &mtr);
+  /* Rebalance the CM for optimization of D&C */
+  CM_t *new;
+  new = CMRebalance(sub_cm);
+  FreeCM(sub_cm);
+  sub_cm = new;
 
   printf("\n\norig struct: %s\n", con->cstr);
   printf("\n\nnew struct : %s\n", sub_cstr);
@@ -471,9 +476,7 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int struct_start, int struct_end, int
 	{
 	  //cm2sub_cm_trans_probs_B_E(orig_cm, sub_cm, orig_psi, tmap, v_s, orig2sub_smap, sub2orig_smap);
 	  cm2sub_cm_trans_probs_B_E2(orig_cm, sub_cm, orig_psi, tmap, v_s, orig2sub_smap, sub2orig_smap);
-	  /* set obligate transitions */
-	  sub_cm->t[v_s][0] = 1.0; /* BIF_B -> BEGL_S */
-	  sub_cm->t[v_s][1] = 1.0; /* BIF_B -> BEGR_S */
+	  /* convention is to leave transitions out of BIF_B as 0.0, all the code 'knows' they're obligate */
 	}
     }
 
@@ -3316,12 +3319,14 @@ debug_print_cm_params(CM_t *cm)
  * CM_t  *sub_cm     - the sub CM built from the orig_cm
  * int spos          - first consensus column in cm that hmm models (often 1)
  * int epos          -  last consensus column in cm that hmm models 
+ * float thresh      - P value threshold for chi-squared tests (often 0.01)
+ * int nseq          - number of samples to draw from orig_cm
  *
  * Returns: TRUE: if CM and sub CM are "close enough" (see code)
  *          FALSE: otherwise
  */
 int 
-check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos)
+check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, float thresh, int nseq)
 {
   struct cplan9_s       *sub_hmm; /* constructed CP9 HMM from the sub_cm */
   int ret_val;         /* return value */
@@ -3348,6 +3353,7 @@ check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos)
 		         * For example: CM states hsn2cs_map[k][0][0] and hsn2cs_map[k][0][1]
 		         * map to HMM node k's match state.*/
   int debug_level;
+  int v, k, ks;
 
   debug_level = 0;
   ret_val = TRUE;
@@ -3369,11 +3375,29 @@ check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos)
 		    cs2hs_map, hns2cs_map, debug_level)))
     Die("Couldn't build a CM Plan 9 HMM from the CM.\n");
   
-  if(!(CP9_check_wrhmm_by_sampling(orig_cm, sub_hmm, spos, epos, hns2cs_map, 0.05, 100000)))
-    Die("CM Plan 9 fails sampling check!\n");
+  if(!(CP9_check_wrhmm_by_sampling(orig_cm, sub_hmm, spos, epos, hns2cs_map, thresh, nseq)))
+    Die("CM Plan 9 built from sub_cm fails sampling check using orig_cm; sub_cm was built incorrectly.!\n");
   else
-    printf("CM Plan 9 passed sampling check.\n");
+    printf("CM Plan 9 built from sub_cm passed sampling check; sub_cm was built correctly.\n");
 
+  free(node_cc_left);
+  free(node_cc_right);
+  free(cc_node_map);
+  for(v = 0; v <= sub_cm->M; v++)
+    {
+      free(cs2hn_map[v]);
+      free(cs2hs_map[v]);
+    }
+  free(cs2hn_map);
+  free(cs2hs_map);
+  for(k = 0; k <= sub_hmm->M; k++)
+    {
+      for(ks = 0; ks < 3; ks++)
+	free(hns2cs_map[k][ks]);
+      free(hns2cs_map[k]);
+    }
+  free(hns2cs_map);
+  FreeCPlan9(sub_hmm);
 }
 
 /**************************************************************************
@@ -3388,7 +3412,7 @@ check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos)
  *           The approach is to sample from the CM and the sub_cm 
  *           and use those samples to build two CP9 HMMs, then 
  *           compare those two CP9 HMMs.
-
+ *
  * Args:    
  * CM_t *orig_cm     - the original, template CM
  * CM_t  *sub_cm     - the sub CM built from the orig_cm
@@ -3681,7 +3705,7 @@ check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, double 
 
   if(print_flag)
     {
-      printf("Printing orig_psi:\n");
+      printf("Printing psi in check_orig_psi_vs_sub_psi():\n");
       
       for(v_o = 0; v_o < orig_cm->M; v_o++)
 	printf("orig_psi[%4d]: %.4f\n", v_o, orig_psi[v_o]);

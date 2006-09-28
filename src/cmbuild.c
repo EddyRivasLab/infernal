@@ -625,7 +625,7 @@ main(int argc, char **argv)
       fflush(stdout);
       HandModelmaker(msa, dsq, use_rf, gapthresh, &cm, &mtr);
 
-      if (do_balance) 
+      if(do_balance)
 	{
 	  CM_t *new;
 	  new = CMRebalance(cm);
