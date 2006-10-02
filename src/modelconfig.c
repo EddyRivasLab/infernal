@@ -66,6 +66,62 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
   /*****************************************************************
    * Internal exit.
    *****************************************************************/
+  ConfigLocalEnds(cm, p_internal_exit);
+  return;
+}
+
+/**************************************************************************
+ * EPN 10.02.06
+ * Function: ConfigNoLocalEnds()
+ *
+ * Purpose:  Set the probability of local ends to 0.0 for all states.
+ *           This function was introduced for use in BandCalculationEngine()
+ *           because allowing local ends when calculating bands dramatically
+ *           widens all bands and decreases search acceleration. So this
+ *           is the ad-hoc fix.                    
+ * 
+ * Args:    
+ * CM_t *cm               - the CM
+ * Returns: (void) 
+ */
+void
+ConfigNoLocalEnds(CM_t *cm)
+{
+  int v;			/* counter over states */
+  int nd;                       /* counter over nodes  */
+  for (v = 0; v < cm->M; v++) cm->end[v] = 0.;
+  /* Now, renormalize transitions */
+  for (nd = 1; nd < cm->nodes; nd++) {
+    if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+	 cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BEGL_nd ||
+	 cm->ndtype[nd] == BEGR_nd) && 
+	cm->ndtype[nd+1] != END_nd)
+      {
+	v = cm->nodemap[nd];
+	FNorm(cm->t[v], cm->cnum[v]);
+      }
+  }
+  cm->flags &= ~CM_LOCAL_END; /* turn off local ends flag */
+  return;
+}
+
+/**************************************************************************
+ * EPN 10.02.06
+ * Function: ConfigLocalEnds()
+ *
+ * Purpose:  Given a probability of local ends, spread the probability of
+ *           local ends evenly across all states from which local ends are
+ *           permitted (see code).
+ */
+
+void
+ConfigLocalEnds(CM_t *cm, float p_internal_exit)
+{
+  int v;			/* counter over states */
+  int nd;			/* counter over nodes */
+  int nexits;			/* number of possible internal ends */
+  float denom;
+
   /* Count internal nodes MATP, MATL, MATR, BEGL, BEGR that aren't
    * adjacent to END nodes.
    */
@@ -99,6 +155,5 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
       }
   }
   cm->flags |= CM_LOCAL_END;
-
   return;
 }

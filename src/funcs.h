@@ -112,6 +112,8 @@ extern void         FreeEmitMap(CMEmitMap_t *map);
 /* from modelconfig.c
  */
 extern void ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit);
+extern void ConfigNoLocalEnds(CM_t *cm);
+extern void ConfigLocalEnds(CM_t *cm, float p_internal_exit);
 
 /* from modelmaker.c
  */

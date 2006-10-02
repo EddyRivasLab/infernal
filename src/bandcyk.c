@@ -133,13 +133,19 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
   int      nd;                  /* counter over nodes */
   int      yoffset;             /* counter over children */
   float    el_self_prob;        /* EL state self insert probability */
-  float    el_sum;
-  int      i;            
+
+  /* If we're in local to avoid extremely wide bands due to 
+   * the permissive nature of local ends, we make local ends
+   * impossible for the band calculation than make them
+   * possible again before exiting this function.
+   */
+  if(do_local)
+    ConfigNoLocalEnds(cm);
   
   /* gamma[v][n] is Prob(state v generates subseq of length n)
    */
-  gamma = MallocOrDie(sizeof(double *) * (cm->M+1));        
-  for (v = 0; v <= cm->M; v++) gamma[v] = NULL;
+  gamma = MallocOrDie(sizeof(double *) * cm->M);        
+  for (v = 0; v < cm->M; v++) gamma[v] = NULL;
 
   /* dmin[v] and dmax[v] are the determined bounds that we return.
    */
@@ -169,16 +175,6 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
   DSet(gamma[cm->M-1], W+1, 0.);
   gamma[cm->M-1][0] = 1.0;
 
-  /* Allocate and initialize the EL if nec.
-   */
-  if(do_local)
-    {
-      gamma[cm->M] = MallocOrDie(sizeof(double) * (W+1));
-      el_self_prob = sreEXP2(cm->el_selfsc);
-      gamma[cm->M][0] = 1. - el_self_prob;
-      for(n = 1; n <= W; n++)
-	gamma[cm->M][n] = gamma[cm->M][n-1] * el_self_prob;
-    }
   for (v = cm->M-1; v >= 0; v--)
     {
       /* Get a beam of memory from somewhere.
@@ -239,37 +235,12 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
 	{
 	  pdf = 0.;
 	  dv = StateDelta(cm->sttype[v]);
-	  el_sum = 0.;
 	  for (n = dv; n <= W; n++)
 	    {
-	      if(do_local)
-		el_sum += gamma[cm->M][n-dv];
-
 	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		{
 		  y = cm->cfirst[v] + yoffset;
 		  gamma[v][n] += cm->t[v][yoffset] * gamma[y][n-dv];
-		}
-	      nd = cm->ndidx[v];
-	      if((do_local && cm->nodemap[nd] == v)
-		 && ((cm->ndtype[nd] == MATP_nd) ||
-		     (cm->ndtype[nd] == MATL_nd) ||
-		     (cm->ndtype[nd] == MATR_nd) ||
-		     (cm->ndtype[nd] == BEGL_nd) ||
-		     (cm->ndtype[nd] == BEGR_nd)) 
-		 && (cm->ndtype[nd+1] != END_nd))
-		/* we survive that 'if' 
-		 * (1) we're in local mode
-		 * (2) v is the first state of its node
-		 * (3) the node v is in is of one of
-		 *     the types that we allow local exits
-		 *     from the first state of the node.
-		 * (4) next node after v is not an END
-		 *     (from which local ends are not allowed)
-		 */
-	      /*if(cm->end[v] > 0.)*/
-		{
-		  gamma[v][n] += cm->end[v] * gamma[cm->M][n-dv];
 		}
 	      pdf += gamma[v][n];
 	    }
@@ -365,6 +336,12 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
    */
   for (v = 1; v <= cm->M-1; v++)
     if (dmax[v] > dmax[0]) dmax[v] = dmax[0];
+
+  /* If we're in local mode, we set all local ends to impossible at
+   * the beginning of this function, we set them back here.
+   */
+  if(do_local)
+    ConfigLocalEnds(cm, 0.5);
 
   if (! BandTruncationNegligible(gamma[0], dmax[0], W, NULL)) 
     { status = 0; goto CLEANUP; }
