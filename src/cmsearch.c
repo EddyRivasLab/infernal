@@ -55,8 +55,8 @@ static char experts[] = "\
    --hthresh <f>  : HMM reporting bit score threshold [df: 0]\n\
 \n\
   * Options for accelerating CM search/alignment:\n\
-   --apbanded    : use a priori (ap) bands to accelerate CYK\n\
-   --apbandp <f> : tail loss prob for --apbanded (default:0.000001)\n\
+   --qdb         : use query dependent bands (qdb) to accelerate CYK\n\
+   --beta <f>    : tail loss prob for --qbd (default:0.000001)\n\
    --hbanded     : use HMM bands from a CM plan 9 HMM scan for CYK\n\
    --hbandp <f>  : tail loss prob for --hbanded (default:0.0001)\n\
    --banddump    : print bands for each state\n\
@@ -82,7 +82,7 @@ static struct opt_s OPTIONS[] = {
   { "--hmmonly",    FALSE, sqdARG_NONE },
   { "--hthresh",    FALSE, sqdARG_FLOAT},
   { "--apbanded",   FALSE, sqdARG_NONE },
-  { "--apbandp",    FALSE, sqdARG_FLOAT},
+  { "--beta",    FALSE, sqdARG_FLOAT},
   { "--hbanded",    FALSE, sqdARG_NONE },
   { "--hbandp",     FALSE, sqdARG_FLOAT},
   { "--banddump",   FALSE, sqdARG_NONE},
@@ -115,7 +115,7 @@ main(int argc, char **argv)
   double  **gamma;              /* P(subseq length = n) for each state v    */
   int     *dmin;		/* minimum d bound for state v, [0..v..M-1] */
   int     *dmax; 		/* maximum d bound for state v, [0..v..M-1] */
-  double   apbandp;		/* tail loss probability for a priori banding */
+  double   beta;		/* tail loss probability for a priori banding */
 
   /* information on hits found with the CM */
   int    nhits;			/* number of hits in a seq */
@@ -146,7 +146,7 @@ main(int argc, char **argv)
   int    do_local;		/* TRUE to do local alignment */
   int    do_align;              /* TRUE to calculate and show alignments */
   int    do_dumptrees;		/* TRUE to dump parse trees */
-  int    do_apbanded;		/* TRUE to do a priori banded CYK */
+  int    do_qdb;		/* TRUE to do a priori banded CYK */
   int    do_projectx;           /* TRUE to activate special in-progress testing code */
   int    do_bdump;              /* TRUE to print out bands */
   /*EPN 08.18.05*/
@@ -270,8 +270,8 @@ main(int argc, char **argv)
   do_local          = FALSE;
   do_align          = TRUE;
   do_dumptrees      = FALSE;
-  do_apbanded       = FALSE;
-  apbandp           = 0.000001;
+  do_qdb       = FALSE;
+  beta           = 0.000001;
   do_projectx       = FALSE;
   do_bdump          = FALSE;
   thresh            = 0.;
@@ -311,8 +311,8 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--hmmpad")    == 0) { hmm_pad = atoi(optarg); }
     else if  (strcmp(optname, "--hmmonly")   == 0) { do_hmmonly = TRUE; do_align = FALSE; } 
     else if  (strcmp(optname, "--hthresh")   == 0) hmm_thresh   = atof(optarg);
-    else if  (strcmp(optname, "--apbanded")  == 0) do_apbanded  = TRUE;
-    else if  (strcmp(optname, "--apbandp")   == 0) apbandp      = atof(optarg);
+    else if  (strcmp(optname, "--qdb")  == 0) do_qdb  = TRUE;
+    else if  (strcmp(optname, "--beta")   == 0) beta      = atof(optarg);
     else if  (strcmp(optname, "--hbanded")   == 0) do_hbanded   = TRUE; 
     else if  (strcmp(optname, "--hbandp")    == 0) hbandp       = atof(optarg);
     else if  (strcmp(optname, "--banddump")  == 0) do_bdump     = TRUE;
@@ -351,8 +351,8 @@ main(int argc, char **argv)
   if (cm == NULL) 
     Die("%s empty?\n", cmfile);
 
-  if(do_apbanded && do_hbanded) 
-    Die("Can't do --apbanded and --hbanded. Pick one.\n");
+  if(do_qdb && do_hbanded) 
+    Die("Can't do --qdb and --hbanded. Pick one.\n");
   if (do_scan2hbands && !(do_hbanded))
     Die("Can't pick --scan2hbands without --hbanded option.\n");
   if (do_hbanded && !(do_filter))
@@ -444,10 +444,10 @@ main(int argc, char **argv)
 	}
     }
 
-  if (do_apbanded || do_projectx || do_bdump)
+  if (do_qdb || do_projectx || do_bdump)
     {
       safe_windowlen = windowlen * 2;
-      while(!(BandCalculationEngine(cm, safe_windowlen, apbandp, 0, &dmin, &dmax, &gamma, do_local)))
+      while(!(BandCalculationEngine(cm, safe_windowlen, beta, 0, &dmin, &dmax, &gamma, do_local)))
 	{
 	  /*Die("BandCalculationEngine() failed.\n");*/
 	  FreeBandDensities(cm, gamma);
@@ -465,8 +465,8 @@ main(int argc, char **argv)
        * a windowlen that's greater than the largest possible banded hit 
        * (which is dmax[0]). So we reset windowlen to dmax[0].
        * Its also possible that BandCalculationEngine() returns a dmax[0] that 
-       * is > cm->W. This should only happen if the apbandp we're using now is < 1E-7 
-       * (1E-7 is the apbandp value used to determine cm->W in cmbuild). If this 
+       * is > cm->W. This should only happen if the beta we're using now is < 1E-7 
+       * (1E-7 is the beta value used to determine cm->W in cmbuild). If this 
        * happens, the current implementation reassigns windowlen to this larger value.
        * NOTE: if W was set at the command line, the command line value is 
        *       always used.
@@ -477,12 +477,12 @@ main(int argc, char **argv)
 	}
       if(do_bdump) 
 	{
-	  printf("apbandp:%f\n", apbandp);
+	  printf("beta:%f\n", beta);
 	  debug_print_bands(cm, dmin, dmax);
 	}
     }
 
-  if(do_apbanded)
+  if(do_qdb)
     PrintDPCellsSaved(cm, dmin, dmax, windowlen);
   
   StopwatchZero(watch);
@@ -571,7 +571,7 @@ main(int argc, char **argv)
 		{
 		  if(!do_hbanded) 
 		    {
-		      if (do_apbanded)
+		      if (do_qdb)
 			if (do_inside)
 			  InsideBandedScan(cm, dsq, dmin, dmax, hmm_hiti[i], hmm_hitj[i], windowlen, 
 					   &tmp_nhits, &tmp_hitr, &tmp_hiti, &tmp_hitj, &tmp_hitsc, thresh);
@@ -766,7 +766,7 @@ main(int argc, char **argv)
 		}
 	    }
 	}
-      else if (do_apbanded)
+      else if (do_qdb)
 	if (do_inside)
 	  InsideBandedScan(cm, dsq, dmin, dmax, 1, sqinfo.len, windowlen, 
 			   &nhits, &hitr, &hiti, &hitj, &hitsc, thresh);
@@ -978,7 +978,7 @@ main(int argc, char **argv)
   if(do_filter || do_hmmonly) printf("CP9 Forward memory:   %8.2f MB\n", CP9ForwardScanRequires(cp9_hmm, maxlen, windowlen));
   printf("CYK memory        :   %8.2f MB\n\n", CYKScanRequires(cm, maxlen, windowlen));
 
-  if (do_apbanded)
+  if (do_qdb)
     {
       FreeBandDensities(cm, gamma);
       free(dmin);
