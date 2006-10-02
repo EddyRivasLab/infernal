@@ -79,8 +79,6 @@ CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, char *dsq)
   }
 
   FNorm(p, MAXABET);
-  for(a = 0; a < MAXABET; a++)
-    printf("p[%d]: %6.2f\n", a, p[a]);
 
   for (a = 0; a < MAXABET; a++)
     sc[a] = sreLOG2(p[a] / cm->null[a]);
@@ -112,6 +110,6 @@ CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, char *dsq)
 
    /* Return the correction to the bit score.
     */
-   printf("returning from CM_TraceScoreCorrection: %f\n", LogSum2(0,score));
+   /*printf("returning from CM_TraceScoreCorrection: %f\n", LogSum2(0,score));*/
    return LogSum2(0,score);
 }

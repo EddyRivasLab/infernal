@@ -454,6 +454,7 @@ main(int argc, char **argv)
 	  free(dmin);
 	  free(dmax);
 	  safe_windowlen *= 2;
+	  printf("ERROR BandCalculationEngine returned false, windowlen adjusted to %d\n", safe_windowlen);
 	}
 
       /* EPN 11.11.05 
@@ -480,6 +481,9 @@ main(int argc, char **argv)
 	  debug_print_bands(cm, dmin, dmax);
 	}
     }
+
+  if(do_apbanded)
+    PrintDPCellsSaved(cm, dmin, dmax, windowlen);
   
   StopwatchZero(watch);
   StopwatchStart(watch);
@@ -799,7 +803,6 @@ main(int argc, char **argv)
 				      hitr[i], hiti[i], hitj[i], &tr);
 		  if(do_null2)
 		    {
-		      printf("BEFORE NULL2: %6.2f\n", hitsc[i]);
 		      sc = hitsc[i] - CM_TraceScoreCorrection(cm, tr, dsq);
 		      if(sc >= thresh) /* only print alignments with
 					  corrected CYK scores > reporting thresh */

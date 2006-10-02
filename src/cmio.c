@@ -13,7 +13,6 @@
 
 #include <stdio.h>
 #include <string.h>
-
 #include "squid.h"
 #include "ssi.h"
 

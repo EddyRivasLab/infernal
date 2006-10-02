@@ -69,8 +69,10 @@ static char *
 CP9Statetype(char st);
 
 static int 
-CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float thresh, 
+CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float threshold, 
 		     int dual_mapping_insert);
+static float
+FChiSquareFit(float *f1, float *f2, int N);
 
 /**************************************************************************
  * EPN 03.12.06
@@ -2222,6 +2224,7 @@ CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int spos, int epos, 
   int ret_val;         /* return value */
   Parsetree_t **tr;             /* Parsetrees of emitted aligned sequences */
   char    **dsq;                /* digitized sequences                     */
+  char    **seq;                /* actual sequences (real letters)         */
   SQINFO            *sqinfo;    /* info about sequences (name/desc)        */
   MSA               *msa;       /* alignment */
   float             *wgt;
@@ -2272,6 +2275,7 @@ CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int spos, int epos, 
   /* sample MSA(s) from the CM */
   nsampled = 0;
   dsq    = MallocOrDie(sizeof(char *)             * msa_nseq);
+  seq    = MallocOrDie(sizeof(char *)             * msa_nseq);
   tr     = MallocOrDie(sizeof(Parsetree_t)        * msa_nseq);
   sqinfo = MallocOrDie(sizeof(SQINFO)             * msa_nseq);
   wgt    = MallocOrDie(sizeof(float)              * msa_nseq);
@@ -2291,6 +2295,7 @@ CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int spos, int epos, 
 	      CP9FreeTrace(cp9_tr[i]);
 	      FreeParsetree(tr[i]);
 	      free(dsq[i]);
+	      free(seq[i]);
 	    }
 	  free(cp9_tr);
 	}
@@ -2328,8 +2333,15 @@ CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int spos, int epos, 
 		 /* we misassigned this guy, overwrite */ 
 	    }
 	}
-
       MSAShorterAlignment(msa, useme);
+
+      /* Shorten the dsq's */
+      for (i = 0; i < msa_nseq; i++)
+	{
+	  MakeDealignedString(msa->aseq[i], msa->alen, msa->aseq[i], &(seq[i])); 
+	  free(dsq[i]);
+	  dsq[i] = DigitizeSequence(seq[i], strlen(seq[i]));
+	}
 
       /* Determine match assignment from RF annotation
        */
@@ -2351,6 +2363,19 @@ CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int spos, int epos, 
       nsampled += msa_nseq;
     }
 
+  /* clean up from previous MSA */
+  MSAFree(msa);
+  free(matassign);
+  free(useme);
+  for (i = 0; i < msa_nseq; i++)
+    {
+      CP9FreeTrace(cp9_tr[i]);
+      FreeParsetree(tr[i]);
+      free(dsq[i]);
+      free(seq[i]);
+    }
+  free(cp9_tr);
+
   /* The new shmm is in counts form, filled with observations from MSAs sampled
    * from the CM. 
    * We want to do a series of chi-squared tests to determine the probability that
@@ -2358,6 +2383,13 @@ CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int spos, int epos, 
    * HMM probability distributions (the CM Plan 9 is supposed to exactly mirror the 
    * CM in this way).
    */
+  printf("PRINTING BUILT HMM PARAMS:\n");
+  debug_print_cp9_params(hmm);
+  printf("DONE PRINTING BUILT HMM PARAMS:\n");
+
+  printf("PRINTING SAMPLED HMM PARAMS:\n");
+  debug_print_cp9_params(shmm);
+  printf("DONE PRINTING SAMPLED HMM PARAMS:\n");
 
   for(nd = 0; nd <= shmm->M; nd++)
     {
@@ -2645,14 +2677,13 @@ CP9Statetype(char st)
  *                     think the counts in shmm were taken from these distributions).
  * cplan9_s *shmm    - an HMM in counts form
  * int         nd    - node of the HMM to check. 
- * float   thresh    - probability of rejecting null hypotheses must be below
- *                     this value for all cases.
+ * float   threshold - probability threshold for rejecting
  * int dual_mapping_insert - TRUE if HMM node nd maps to 2 insert states in the CM,
  *                           for such states, we don't require that we pass the
  *                           chi squared test.
  */
 int
-CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float thresh,
+CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float threshold,
 		     int dual_mapping_insert)
 {
   double p;
@@ -2660,11 +2691,14 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
   float chi_sq;
   float m_nseq, i_nseq, d_nseq;
   float check_m_nseq, check_i_nseq;
+  float *temp_ahmm_trans;
+  float *temp_shmm_trans;
 
   if(nd > shmm->M || nd >  ahmm->M)
     Die("ERROR CP9_node_chi_squared() is being grossly misused.\n");
 
   CPlan9Renormalize(ahmm);
+  CPlan9GlobalConfig(ahmm);
   CP9Logoddsify(ahmm);
 
   /* First determine the sum of the counts for each state. This
@@ -2710,109 +2744,91 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
       Die("ERROR: node: %d has different number of sampled insert emissions and transitions.\n");
     }
 
-  /* Check emissions */
-  /* MATCH */
+  /* Perform chi-squared tests using code borrowed from SRE in 
+   * infernal/testsuite/bandcyk-montecarlo-test.c */
+  /* Check match emissions */
   if(nd != 0)
     {
-      chi_sq = 0.;
-      for (x = 0; x < MAXABET; x++) 
-	chi_sq += (pow((ahmm->mat[nd][x] - (shmm->mat[nd][x] / m_nseq)), 2) / 
-		   ((shmm->mat[nd][x] / m_nseq)));
-
-      p = IncompleteGamma((MAXABET-1)/2., chi_sq/2.);
-      printf("%4d E M P: %f m_nseq %f\n", nd, p, m_nseq);
-      if((1. - p) > thresh)
-	{
-	  printf("%4d E M P: %f m_nseq %f\n", nd, p, m_nseq);
-	  return FALSE;
-	}
+      FScale(ahmm->mat[nd], MAXABET, FSum(shmm->mat[nd], MAXABET)); /* convert to #'s */
+      p = FChiSquareFit(ahmm->mat[nd], shmm->mat[nd], MAXABET);	    /* compare #'s    */
+      if (p < threshold)
+	Die("Rejected match emission distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+      printf("match emissions %d p: %f\n", nd, p);
     }
-
-  /* INSERT */
-  chi_sq = 0.;
-  for (x = 0; x < MAXABET; x++) 
-    chi_sq += (pow((ahmm->ins[nd][x] - (shmm->ins[nd][x] / i_nseq)), 2) / 
-	       ((shmm->ins[nd][x] / i_nseq)));
-
-  p = IncompleteGamma((MAXABET-1)/2., chi_sq/2.);
-  printf("%4d E I P: %f\n", nd, p);
-  if((1. - p) > thresh)
-    {
-      printf("%4d E I P: %f i_nseq: %f\n", nd, p, i_nseq);
-      return FALSE;
-    }
+  /* check insert emissions */
+  FScale(ahmm->ins[nd], MAXABET, FSum(shmm->ins[nd], MAXABET)); /* convert to #'s */
+  p = FChiSquareFit(ahmm->ins[nd], shmm->ins[nd], MAXABET);	/* compare #'s    */
+  if (p < threshold)
+    Die("Rejected insert emission distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+  printf("insert emissions %d p: %f\n", nd, p);
   
   /* check transitions */
-  /* out of match */
-  if(nd == 0)
-    chi_sq =  (pow((ahmm->begin[1] - (shmm->begin[1] / m_nseq)), 2) / 
-	       ((shmm->begin[1] / m_nseq)));
-  else if(nd == shmm->M)
-    chi_sq =  (pow((ahmm->end[nd] - (shmm->end[nd] / m_nseq)), 2) / 
-	       ((shmm->end[nd] / m_nseq)));
-  else
-    chi_sq   =  (pow((ahmm->t[nd][CTMM] - (shmm->t[nd][CTMM] / m_nseq)), 2) / 
-	        ((shmm->t[nd][CTMM] / m_nseq)));
-  chi_sq += (pow((ahmm->t[nd][CTMI] - (shmm->t[nd][CTMI] / m_nseq)), 2) / 
-	        ((shmm->t[nd][CTMI] / m_nseq)));
-  if(nd != shmm->M)
-    chi_sq += (pow((ahmm->t[nd][CTMD] - (shmm->t[nd][CTMD] / m_nseq)), 2) / 
-	          ((shmm->t[nd][CTMD] / m_nseq)));
-  /* In CP9TraceCount(), we don't allow possibility of M->E transitions (local ends)
-   * except if M = shmm->M, so we ignore them here also 
-   */
-  /*chi_sq += (pow((ahmm->end[nd]     - (shmm->end[nd]     / m_nseq)), 2) / 
-	        ((shmm->end[nd]     / m_nseq)));
-		
-  */
-  p = IncompleteGamma(1., chi_sq/2.);
-  printf("%4d T M P: %f m_nseq: %f\n", nd, p, m_nseq);
-  if((1. - p) > thresh)
+  /* out of match, we're in global NW mode, so only non-zero begin is begin[1], 
+   * and only non-zero end is end[hmm->M] */
+  temp_ahmm_trans = MallocOrDie(sizeof(float) * 9);
+  temp_shmm_trans = MallocOrDie(sizeof(float) * 9);
+  if(nd == 0 || nd == shmm->M) 
     {
-      printf("%4d T M P: %f m_nseq %f\n", nd, p, m_nseq);
-      return FALSE;
-    }
-
-  if(!dual_mapping_insert)
-    {  /* out of insert */
-      chi_sq =  (pow((ahmm->t[nd][CTIM] - (shmm->t[nd][CTIM] / i_nseq)), 2) / 
-		    ((shmm->t[nd][CTIM] / i_nseq)));
-      chi_sq += (pow((ahmm->t[nd][CTII] - (shmm->t[nd][CTII] / i_nseq)), 2) / 
-		    ((shmm->t[nd][CTII] / i_nseq)));
-      if(nd != shmm->M)
-	chi_sq += (pow((ahmm->t[nd][CTID] - (shmm->t[nd][CTID] / i_nseq)), 2) / 
-	            ((shmm->t[nd][CTID] / i_nseq)));
-      p = IncompleteGamma(1., chi_sq/2.);
-      printf("%4d T I P: %f i_nseq: %f\n", nd, p, i_nseq);
-      if((1. - p) > thresh)
+      if(nd == 0) /* careful, begin[1] is really hmm->t[0][CTMM] */
 	{
-	  printf("%4d T I P: %f i_nseq: %f\n", nd, p, i_nseq);
-	  return FALSE;
+	  temp_ahmm_trans[0] = ahmm->begin[1];
+	  temp_shmm_trans[0] = shmm->begin[1];
+	  for(x = 1; x < 3; x++)
+	    {
+	      temp_ahmm_trans[x] = ahmm->t[0][x];
+	      temp_shmm_trans[x] = shmm->t[0][x];
+	    }
 	}
+      if(nd == shmm->M) /* careful, end[hmm->M] is really hmm->t[hmm->M][CTMM] */
+	{
+	  temp_ahmm_trans[0] = ahmm->end[ahmm->M];
+	  temp_shmm_trans[0] = shmm->end[shmm->M];
+	  for(x = 1; x < 3; x++)
+	    {
+	      temp_ahmm_trans[x] = ahmm->t[ahmm->M][x];
+	      temp_shmm_trans[x] = shmm->t[shmm->M][x];
+	    }
+	}
+      FScale(temp_ahmm_trans, 3, FSum(temp_shmm_trans, 3));     /* convert to #'s */         
+      p = FChiSquareFit(temp_ahmm_trans, temp_shmm_trans, 3);   /* compare #'s    */
+      if (p < threshold)
+	//Die("Rejected match transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+	printf("Rejected match transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+      printf("out of match %d p: %f\n", nd, p);
     }
   else
     {
-      printf("nd: %d is a dual mapping insert\n", nd);
-    }      
-
+      FScale(ahmm->t[nd], 3, FSum(shmm->t[nd], 3));     /* convert to #'s */         
+      p = FChiSquareFit(ahmm->t[nd], shmm->t[nd], 3);   /* compare #'s    */
+      if (p < threshold)
+	//Die("Rejected match transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+	printf("Rejected match transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+      printf("out of match %d p: %f\n", nd, p);
+    }
+  /* out of insert */
+  if(!dual_mapping_insert)
+    {
+      FScale(ahmm->t[nd]+3, 3, FSum(shmm->t[nd]+3, 3));     /* convert to #'s */         
+      p = FChiSquareFit(ahmm->t[nd]+3, shmm->t[nd]+3, 3);   /* compare #'s    */
+      if (p < threshold)
+	//Die("Rejected insert transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+	printf("Rejected insert transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+      printf("out of insert %d p: %f\n", nd, p);
+    }
+  else
+    printf("insert: %d DUAL MAPPING INSERT\n", nd);
+  /* out of delete */
   if(nd != 0)
     {
-      /* out of delete */
-      chi_sq =  (pow((ahmm->t[nd][CTDM] - (shmm->t[nd][CTDM] / d_nseq)), 2) / 
-	            ((shmm->t[nd][CTDM] / d_nseq)));
-      chi_sq += (pow((ahmm->t[nd][CTDI] - (shmm->t[nd][CTDI] / d_nseq)), 2) / 
-	            ((shmm->t[nd][CTDI] / d_nseq)));
-      if(nd != shmm->M)
-	chi_sq += (pow((ahmm->t[nd][CTDD] - (shmm->t[nd][CTDD] / d_nseq)), 2) / 
-		      ((shmm->t[nd][CTDD] / d_nseq)));
-      p = IncompleteGamma(1., chi_sq/2.);
-      printf("%4d T D P: %f d_nseq: %f\n", nd, p, d_nseq);
-      if((1. - p) > thresh)
-	{
-	  printf("%4d T D P: %f d_nseq: %f\n", nd, p, d_nseq);
-	  return FALSE;
-	}
+      FScale(ahmm->t[nd]+6, 3, FSum(shmm->t[nd]+6, 3));     /* convert to #'s */         
+      p = FChiSquareFit(ahmm->t[nd]+6, shmm->t[nd]+6, 3);   /* compare #'s    */
+      if (p < threshold)
+	//Die("Rejected delete transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+	printf("Rejected delete transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+      printf("out of delete %d p: %f\n\n", nd, p);
     }
+  else
+    printf("\n");
   return TRUE;
 }
   
@@ -2847,4 +2863,33 @@ debug_print_phi_cp9(struct cplan9_s *hmm, double **phi)
 	printf("\n");
     }
   return;
+}
+
+/**************************************************************************
+ * FChiSquareFit()
+ * Stolen line for line from SRE's infernal/testsuite/bandcyk-montecarlo-test.c
+ * and changed from double's to float's.
+ */
+
+static float
+FChiSquareFit(float *f1, float *f2, int N)
+{
+  int    i;
+  float diff;
+  float chisq = 0.0;
+  int    n;
+  
+  n = 0;
+  for (i = 0; i < N; i++)
+    {
+      if (f1[i] == 0. && f2[i] == 0.) continue;
+      diff = f1[i] - f2[i];
+      chisq += diff * diff / (f1[i]+f2[i]);
+      n++;
+    }
+
+  if (n > 1) 
+    return (IncompleteGamma(((float) n-1.)/2., chisq/2.));
+  else 
+    return -1.;
 }

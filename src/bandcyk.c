@@ -131,11 +131,15 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
   Mstack_t *beamstack;          /* pool of beams we can reuse  */
   int      status;		/* return status. */
   int      nd;                  /* counter over nodes */
-
+  int      yoffset;             /* counter over children */
+  float    el_self_prob;        /* EL state self insert probability */
+  float    el_sum;
+  int      i;            
+  
   /* gamma[v][n] is Prob(state v generates subseq of length n)
    */
-  gamma = MallocOrDie(sizeof(double *) * cm->M);        
-  for (v = 0; v < cm->M; v++) gamma[v] = NULL;
+  gamma = MallocOrDie(sizeof(double *) * (cm->M+1));        
+  for (v = 0; v <= cm->M; v++) gamma[v] = NULL;
 
   /* dmin[v] and dmax[v] are the determined bounds that we return.
    */
@@ -165,6 +169,16 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
   DSet(gamma[cm->M-1], W+1, 0.);
   gamma[cm->M-1][0] = 1.0;
 
+  /* Allocate and initialize the EL if nec.
+   */
+  if(do_local)
+    {
+      gamma[cm->M] = MallocOrDie(sizeof(double) * (W+1));
+      el_self_prob = sreEXP2(cm->el_selfsc);
+      gamma[cm->M][0] = 1. - el_self_prob;
+      for(n = 1; n <= W; n++)
+	gamma[cm->M][n] = gamma[cm->M][n-1] * el_self_prob;
+    }
   for (v = cm->M-1; v >= 0; v--)
     {
       /* Get a beam of memory from somewhere.
@@ -184,7 +198,6 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
       if ((gamma[v] = PopMstack(beamstack)) == NULL)
 	gamma[v] = MallocOrDie(sizeof(double) * (W+1));		    
       DSet(gamma[v], W+1, 0.);
-
 
       /* Recursively calculate prob density P(length=n) for this state v.
        * (The heart of the algorithm is right here.)
@@ -226,32 +239,37 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
 	{
 	  pdf = 0.;
 	  dv = StateDelta(cm->sttype[v]);
+	  el_sum = 0.;
 	  for (n = dv; n <= W; n++)
 	    {
-	      for (y = 0; y < cm->cnum[v]; y++)
+	      if(do_local)
+		el_sum += gamma[cm->M][n-dv];
+
+	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		{
-		  gamma[v][n] += cm->t[v][y] * gamma[cm->cfirst[v] + y][n-dv];
-		  /* EPN 11.11.05 
-		   * Factor in local exit transition probability where appropriate.
-		   */
-		  if((do_local) && (y == 0)
-		     && ((cm->ndtype[cm->ndidx[v]] == MATP_nd) ||
-			 (cm->ndtype[cm->ndidx[v]] == MATL_nd) ||
-			 (cm->ndtype[cm->ndidx[v]] == MATR_nd) ||
-			 (cm->ndtype[cm->ndidx[v]] == BEGL_nd) ||
-			 (cm->ndtype[cm->ndidx[v]] == BEGR_nd)))
-		    {
-		      /* That horrendous if() is survived if
-		       * (1) do_local is TRUE
-		       * (2) state y is the first state of it's node
-		       * (3) state y belongs to a node that allows local
-		       *     exits from its first state.
-		       * For such states, we want to factor in the local
-		       * exit transition probability.
-		       */
-		      gamma[v][n] += cm->end[v] * gamma[cm->cfirst[v]][n-dv];
-		    }
-		  /*end EPN block*/
+		  y = cm->cfirst[v] + yoffset;
+		  gamma[v][n] += cm->t[v][yoffset] * gamma[y][n-dv];
+		}
+	      nd = cm->ndidx[v];
+	      if((do_local && cm->nodemap[nd] == v)
+		 && ((cm->ndtype[nd] == MATP_nd) ||
+		     (cm->ndtype[nd] == MATL_nd) ||
+		     (cm->ndtype[nd] == MATR_nd) ||
+		     (cm->ndtype[nd] == BEGL_nd) ||
+		     (cm->ndtype[nd] == BEGR_nd)) 
+		 && (cm->ndtype[nd+1] != END_nd))
+		/* we survive that 'if' 
+		 * (1) we're in local mode
+		 * (2) v is the first state of its node
+		 * (3) the node v is in is of one of
+		 *     the types that we allow local exits
+		 *     from the first state of the node.
+		 * (4) next node after v is not an END
+		 *     (from which local ends are not allowed)
+		 */
+	      /*if(cm->end[v] > 0.)*/
+		{
+		  gamma[v][n] += cm->end[v] * gamma[cm->M][n-dv];
 		}
 	      pdf += gamma[v][n];
 	    }
@@ -272,10 +290,8 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
 	  /* fail; truncation error is unacceptable; 
 	   * caller is supposed to increase W and rerun. 
 	   */
-	  /*
-	    printf("pdf : %f\n", pdf);
+	  printf("pdf : %f\n", pdf);
 	    printf("gamma[v][W] : %f\n", gamma[v][W]);
-	  */
 	  status = 0; 
 	  goto CLEANUP;
 	}
@@ -366,7 +382,6 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
    */
   while ((tmp = PopMstack(beamstack)) != NULL) free(tmp);
   FreeMstack(beamstack);
-
   return status;
 }
 
@@ -580,10 +595,12 @@ void
 FreeBandDensities(CM_t *cm, double **gamma)
 {
   int v;
-  for (v = 0; v < cm->M; v++) 
+  for (v = 0; v <= cm->M; v++) 
     if (cm->sttype[v] != E_st && gamma[v] != NULL) 
       { free(gamma[v]); gamma[v] = NULL; }
   free(gamma[cm->M-1]);		/* free the end state */
+  if(gamma[cm->M] != NULL)
+    free(gamma[cm->M]);
   free(gamma);
 }  
 
@@ -619,7 +636,7 @@ BandDistribution(CM_t *cm, int W, int do_local)
   n     = MAX(MAXCONNECT, W+1);
   gamma = DMX2Alloc(cm->M, W+1);
   
-  printf("BandDistribution() is deprecated.\nUse BandCalculationEngine() instead (its better).\n");
+  printf("BandDistribution() is deprecated.\nUse BandCalculationEngine() instead (it's better).\n");
   exit(1);
 
   for (n = 0; n <= W; n++)

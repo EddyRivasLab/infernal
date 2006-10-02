@@ -3373,7 +3373,7 @@ check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, float 
   
   if(!(CP9_cm2wrhmm(sub_cm, sub_hmm, node_cc_left, node_cc_right, cc_node_map, cs2hn_map,
 		    cs2hs_map, hns2cs_map, debug_level)))
-    Die("Couldn't build a CM Plan 9 HMM from the CM.\n");
+    Die("Couldn't build a CM Plan 9 HMM from the sub CM.\n");
   
   if(!(CP9_check_wrhmm_by_sampling(orig_cm, sub_hmm, spos, epos, hns2cs_map, thresh, nseq)))
     Die("CM Plan 9 built from sub_cm fails sampling check using orig_cm; sub_cm was built incorrectly.!\n");
@@ -4630,7 +4630,7 @@ cm2sub_cm_subtract_root_subpaths_helper(CM_t *orig_cm, CM_t *sub_cm, double *ori
 
 /**************************************************************************
  * EPN 09.21.06
- * Function: cm2sub_cm_subtract_root_subpaths2
+ * Function: cm2sub_cm_subtract_root_subpaths2()
  *
  * Purpose:  When building a sub CM (sub_cm) from an original, template
  *           CM (orig_cm), there's special considerations that must be
@@ -4994,6 +4994,7 @@ cm2sub_cm_subtract_root_subpaths_helper2(CM_t *orig_cm, CM_t *sub_cm, double *or
 	    {
 	      printf("6 (1b) sub from IL, IL -> SS -> IR\n");
 
+	      printf("1B before sub 1: sub_cm->t[sub_il:%d][yoffset:%d]: %f\n", sub_il, yoffset, sub_cm->t[sub_il][yoffset]);
 	      /* subtract paths from orig_il -> orig_ss1 -> orig_ir */
 	      sub_cm->t[sub_il][yoffset] -= orig_psi[orig_il] * 
 		cm_sum_subpaths(orig_cm, sub_cm, orig2sub_smap, orig_il, orig_ss1, 
@@ -5001,6 +5002,7 @@ cm2sub_cm_subtract_root_subpaths_helper2(CM_t *orig_cm, CM_t *sub_cm, double *or
 		cm_sum_subpaths(orig_cm, sub_cm, orig2sub_smap, orig_ss1, orig_ir, 
 				sub_il, tmap, orig_psi, -1, -2, -3, -4);
 
+	      printf("1B before sub 2: sub_cm->t[sub_il:%d][yoffset:%d]: %f\n", sub_il, yoffset, sub_cm->t[sub_il][yoffset]);
 	      if(orig_ss2 != -1)
 		/* subtract paths from orig_il -> orig_ss2 -> orig_ir */
 		sub_cm->t[sub_il][yoffset] -= orig_psi[orig_il] * 
@@ -5008,6 +5010,7 @@ cm2sub_cm_subtract_root_subpaths_helper2(CM_t *orig_cm, CM_t *sub_cm, double *or
 				  sub_il, tmap, orig_psi, -1, -2, -3, -4) *
 		  cm_sum_subpaths(orig_cm, sub_cm, orig2sub_smap, orig_ss2, orig_ir, 
 				  sub_il, tmap, orig_psi, -1, -2, -3, -4);
+	      printf("1B after sub 2: sub_cm->t[sub_il:%d][yoffset:%d]: %f\n", sub_il, yoffset, sub_cm->t[sub_il][yoffset]);
 
 	    }
 	}

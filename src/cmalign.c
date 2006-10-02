@@ -592,7 +592,7 @@ main(int argc, char **argv)
 	  {
 	    sre_srandom(seed);
 	    //if(!(CP9_check_wrhmm_by_sampling(cm, cp9_hmm, 1, cp9_hmm->M, hns2cs_map, 0.05, 100000)))
-	    if(!(CP9_check_wrhmm_by_sampling(cm, cp9_hmm, 1, cp9_hmm->M, hns2cs_map, 0.01, 1000000)))
+	    if(!(CP9_check_wrhmm_by_sampling(cm, cp9_hmm, 1, cp9_hmm->M, hns2cs_map, 0.01, 100000)))
 	      Die("CM Plan 9 fails sampling check!\n");
 	    else
 	      printf("CM Plan 9 passed sampling check.\n");
@@ -652,11 +652,11 @@ main(int argc, char **argv)
       safe_windowlen = windowlen * 2;
       while(!(BandCalculationEngine(cm, safe_windowlen, apbandp, 0, &dmin, &dmax, &gamma, do_local)))
 	{
-	  printf("ERROR BandCalculationEngine returned false\n");
 	  FreeBandDensities(cm, gamma);
 	  free(dmin);
 	  free(dmax);
 	  safe_windowlen *= 2;
+	  printf("ERROR BandCalculationEngine returned false, windowlen adjusted to %d\n", safe_windowlen);
 	}
 
       /* EPN 11.13.05 
@@ -785,8 +785,8 @@ main(int argc, char **argv)
 	       * truncating it before hmm_start_node and after hmm_end_node and then doing chi-squared
 	       * tests to see if the samples came from the CP9 HMM distribution.
 	       */
-	      check_sub_cm_by_sampling(cm, sub_cm, hmm_start_node, hmm_end_node, 0.01, 1000000);
-	      exit(1);
+	      check_sub_cm_by_sampling(cm, sub_cm, hmm_start_node, hmm_end_node, 0.01, 100000);
+		exit(1);
 
 	      /* Following function call samples for cm and sub_cm and builds CP9 HMMs from each set of samples,
 	       * then prints out the parameters of those HMMs.

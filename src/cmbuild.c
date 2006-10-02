@@ -124,7 +124,8 @@ static struct opt_s OPTIONS[] = {
   { "--cp9",       FALSE, sqdARG_STRING},
   { "--p7g",       FALSE, sqdARG_STRING},
   { "--p7l",       FALSE, sqdARG_STRING},
-  { "--nodetach",  FALSE, sqdARG_NONE}
+  { "--nodetach",  FALSE, sqdARG_NONE},
+  { "--noprior",   FALSE, sqdARG_NONE}
 }
 ;
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
@@ -277,6 +278,7 @@ main(int argc, char **argv)
    */
   int                do_detach;   /* TRUE to 'detach' off one of two insert states that 
 				   * insert at the same position. */
+  int                no_prior;    /* TRUE to not use a prior */
 
   /* Do hmmbuild.c stuff
    * This is pointless unless hmm_type is eventually set to HMM_P7
@@ -332,6 +334,8 @@ main(int argc, char **argv)
   debug_level       = 0; 
   hmm_type          = NONE;  /* default: don't build an HMM */
   do_detach         = TRUE;  /* default: detach 1 of 2 ambiguous inserts */
+  no_prior          = FALSE; /* default: use a prior */
+
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
     if      (strcmp(optname, "-A") == 0)          do_append         = TRUE; 
@@ -359,6 +363,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--ignorant")  == 0) be_ignorant       = TRUE;
     else if (strcmp(optname, "--null")      == 0) rndfile           = optarg;
     else if (strcmp(optname, "--nodetach")  == 0) do_detach         = FALSE;   
+    else if (strcmp(optname, "--noprior")   == 0) no_prior          = TRUE;   
     else if (strcmp(optname, "--effent")    == 0) eff_strategy      = EFF_ENTROPY;
     /*else if (strcmp(optname, "--effrelent")  == 0) eff_strategy   = EFF_RELENTROPY;*/
     else if (strcmp(optname, "--effnone")   == 0) eff_strategy      = EFF_NONE;
@@ -693,7 +698,8 @@ main(int argc, char **argv)
        */
       printf("%-40s ... ", "Converting counts to probabilities"); fflush(stdout);
       CMSetNullModel(cm, randomseq);
-      PriorifyCM(cm, pri);
+      if(!no_prior)
+	PriorifyCM(cm, pri);
 
       if(do_detach) /* Detach dual inserts where appropriate, if
 		     * we get here we've already checked these states */
