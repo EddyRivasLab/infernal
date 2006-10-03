@@ -32,7 +32,7 @@ static char usage[] = "\
 Usage: sub_cm-psi-test [-options] <cmfile>\n\
   where options are:\n\
   -n <n> : number of sub CMs to build and test [default 100]\n\
-  -s <n> : set random number seed for Monte Carlo\n\
+  -s <n> : set random number seed\n\
   -t <p> : threshold for reporting violations in psi [default: 0.001]\n\
   -b <n> : set sub CM begin consensus (match) column as <n>\n\
   -e <n> : set sub CM end consensus (match) column as <n>\n\
@@ -132,6 +132,13 @@ main(int argc, char **argv)
       if(spos < 1) spos = 1;
       if(epos > ncols) epos = ncols;
       build_sub_cm(cm, &sub_cm, spos, epos, spos, epos, orig2sub_smap, sub2orig_smap);
+
+      /* check_sub_cm_by_sampling() call builds a CP9 HMM from the sub_cm and checks to make 
+       * sure this CP9 HMM is correct. This check is done by sampling a deep MSA from the CM, 
+       * truncating it before hmm_start_node and after hmm_end_node and then doing chi-squared
+       * tests to see if the samples came from the CP9 HMM distribution.
+       */
+      check_sub_cm_by_sampling(cm, sub_cm, spos, epos, 0.01, 100000);    
     }
   else
     {
@@ -150,6 +157,13 @@ main(int argc, char **argv)
 	  printf("$$$$$$$$$$$$$$$ S: %d E: %d **#$$$$$$$$$$$$$$$\n", spos, epos);
 	  /* Build a sub CM between spos and epos, inclusive */
 	  build_sub_cm(cm, &sub_cm, spos, epos, spos, epos, orig2sub_smap, sub2orig_smap);
+
+	  /* check_sub_cm_by_sampling() call builds a CP9 HMM from the sub_cm and checks to make 
+	   * sure this CP9 HMM is correct. This check is done by sampling a deep MSA from the CM, 
+	   * truncating it before hmm_start_node and after hmm_end_node and then doing chi-squared
+	   * tests to see if the samples came from the CP9 HMM distribution.
+	   */
+	  check_sub_cm_by_sampling(cm, sub_cm, spos, epos, 0.01, 100000);
 	}
     }
   FreeCM(cm);

@@ -786,7 +786,7 @@ main(int argc, char **argv)
 	       * tests to see if the samples came from the CP9 HMM distribution.
 	       */
 	      check_sub_cm_by_sampling(cm, sub_cm, hmm_start_node, hmm_end_node, 0.01, 100000);
-		exit(1);
+	      exit(1);
 
 	      /* Following function call samples for cm and sub_cm and builds CP9 HMMs from each set of samples,
 	       * then prints out the parameters of those HMMs.

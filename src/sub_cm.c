@@ -397,6 +397,7 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int struct_start, int struct_end, int
    */
   orig_emap = CreateEmitMap(orig_cm);
   sub_emap = CreateEmitMap(sub_cm);
+
   printf("\n\n\nDumping original CM emitmap\n");
   DumpEmitMap(stdout, orig_emap, orig_cm);
   printf("\n\n\nDumping sub_cm emitmap\n");
@@ -440,7 +441,7 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int struct_start, int struct_end, int
 	cm2sub_cm_trans_probs(orig_cm, sub_cm, orig_psi, tmap, v_s, orig2sub_smap, sub2orig_smap, sub2orig_id);
     }
 
-  printf("\n\n\nAddressing 090806\n");
+  //printf("\n\n\nAddressing 090806\n");
   /* Address problem 090806 (in the 00LOG of ~/notebook/6_0725_inf_destruct), by
    * retraversing the structure and subtracting out subpaths that have been counted twice
    * for a special situation involving the two inserts of ROOT and MATP states 
@@ -719,13 +720,13 @@ map_orig2sub_cm(CM_t *orig_cm, CM_t *sub_cm, int ***ret_orig2sub_smap, int ***re
     }
   for(cc = 0; cc <= orig_emap->clen+1; cc++)
     {
-      printf("!cc: %d lins: %d rins: %d\n", cc, orig_cc2lins_map[cc], orig_cc2rins_map[cc]);
+      //printf("!cc: %d lins: %d rins: %d\n", cc, orig_cc2lins_map[cc], orig_cc2rins_map[cc]);
     }
   
   for(cc = sub_start; cc <= sub_end; cc++)
     {
       n_o = o_cc_node_map[cc];
-      printf("n_o: %d\n", n_o);
+      //printf("n_o: %d\n", n_o);
     }
   /* Using the *cc_node_maps, traverse the consensus columns left 
    * to right and determine state mappings for MATP, MATL and MATR nodes
@@ -1593,7 +1594,7 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **s
   int is_insert;
   int temp;
 
-  printf("\nin helper: orig_v: %d sub_v: %d\n", orig_v, sub_v);
+  //printf("\nin helper: orig_v: %d sub_v: %d\n", orig_v, sub_v);
 
   if(orig_v == -1 || sub_v == -1)
     return 0;
@@ -1601,7 +1602,7 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **s
   /* check to see if we already have this mapping */
   if(orig2sub_smap[orig_v][0] == sub_v || orig2sub_smap[orig_v][1] == sub_v)
     {
-      printf("already have mapping, returning\n");
+      //printf("already have mapping, returning\n");
       return 0;
     }
 
@@ -1626,14 +1627,14 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **s
     {
       if(orig_cm->ndtype[orig_nd] == MATP_nd && sub_cm->sttype[sub_v] != orig_cm->sttype[orig_v])
 	{
-	  printf("return case 1\n");
+	  //printf("return case 1\n");
 	  return 0;
 	}
       if(orig_cm->ndtype[orig_nd] != MATP_nd)
 	{
 	  if(!(is_insert))
 	    {
-	      printf("return case 2\n");
+	      //printf("return case 2\n");
 	      return 0;
 	    }
 	  else
@@ -1642,7 +1643,7 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **s
 	       * but first we want to check to make sure we don't already have a mapping for these two guys,
 	       * and if we do, obliterate it.
 	       */
-  	      printf("in else\n");
+  	      //printf("in else\n");
 	      if(orig2sub_smap[orig_v][0] != -1 && sub2orig_smap[sub_v][0] != -1)
 		{
 		  if((orig2sub_smap[orig_v][1] != -1 || (sub2orig_smap[sub_v][1] != -1)))
@@ -1655,7 +1656,7 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **s
 		      sub2orig_smap[sub_v][0]  = -1;
 		    }
 		}
-	      printf("return case 3\n");
+	      //printf("return case 3\n");
 	      return 0;
 	    }
 	}
@@ -1672,7 +1673,7 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **s
       if(orig2sub_smap[orig_v][1] != -1)
 	Die("Obliteration error 0\n");
       
-      printf("orig2sub_smap[orig_v:%d][0]: %d\n", orig_v, orig2sub_smap[orig_v][0]);
+      //printf("orig2sub_smap[orig_v:%d][0]: %d\n", orig_v, orig2sub_smap[orig_v][0]);
       if((orig2sub_smap[orig_v][0] != sub_v) && (orig2sub_smap[orig_v][0] != -1))
 	{
 	  if(sub2orig_smap[orig2sub_smap[orig_v][0]][0] == sub_v)
@@ -1687,9 +1688,9 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **s
 	    }
 	  else
 	    {
-	      printf("\n\nobliteration error\n");
+	      //printf("\n\nobliteration error\n");
 	      temp = orig2sub_smap[orig_v][0];
-	      printf("\twe thought either sub2orig_smap[%d][0]:%d == sub_v:%d\n\tor sub2orig_smap[%d][1]:%d == sub_v: %d\n", temp, sub2orig_smap[temp][0], sub_v, temp, sub2orig_smap[temp][1], sub_v);
+	      //printf("\twe thought either sub2orig_smap[%d][0]:%d == sub_v:%d\n\tor sub2orig_smap[%d][1]:%d == sub_v: %d\n", temp, sub2orig_smap[temp][0], sub_v, temp, sub2orig_smap[temp][1], sub_v);
 	    }
 	}
     }
@@ -1716,7 +1717,7 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **s
 	    }
 	  if(sub_cm->ndtype[sub_cm->ndidx[orig2sub_smap[orig_v][0]]] == MATP_nd)
 	    {
-	      printf("return case 4\n");
+	      //printf("return case 4\n");
 	      return 0;
 	    }
 	}
@@ -1731,7 +1732,7 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **s
       else
 	{
 	  orig2sub_smap[orig_v][0] = sub_v;
-	  printf("orig2sub filling 0: orig2sub_smap[%d][0]: %d\n", orig_v, orig2sub_smap[orig_v][0]);
+	  //printf("orig2sub filling 0: orig2sub_smap[%d][0]: %d\n", orig_v, orig2sub_smap[orig_v][0]);
 	}
     }
   else if (orig2sub_smap[orig_v][1] != -1)
@@ -1748,11 +1749,11 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **s
 	/* abort!, we already have this mapping */
 	return 0; 
       orig2sub_smap[orig_v][1] = sub_v;
-      printf("orig2sub filling 1: orig2sub_smap[%d][1]: %d\n", orig_v, orig2sub_smap[orig_v][1]);
+      //printf("orig2sub filling 1: orig2sub_smap[%d][1]: %d\n", orig_v, orig2sub_smap[orig_v][1]);
     }
 
   /* now fill in sub2orig_smap */
-  printf("sub2orig_smap[%d][0]: %d | sub2orig_smap[%d][1]: %d\n", sub_v,  sub2orig_smap[sub_v][0],  sub_v,  sub2orig_smap[sub_v][1]);
+  //printf("sub2orig_smap[%d][0]: %d | sub2orig_smap[%d][1]: %d\n", sub_v,  sub2orig_smap[sub_v][0],  sub_v,  sub2orig_smap[sub_v][1]);
   if(sub2orig_smap[sub_v][0] == -1)
     {
       if (sub2orig_smap[sub_v][1] != -1)
@@ -1760,7 +1761,7 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **s
       else
 	{
 	  sub2orig_smap[sub_v][0] = orig_v;
-	  printf("sub2orig filling 0: sub2orig_smap[%d][0]: %d\n", sub_v, sub2orig_smap[sub_v][0]);
+	  //printf("sub2orig filling 0: sub2orig_smap[%d][0]: %d\n", sub_v, sub2orig_smap[sub_v][0]);
 	}
     }
   else if (sub2orig_smap[sub_v][1] != -1)
@@ -1768,7 +1769,7 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **s
   else /* sub2orig_smap[sub_v][0] != -1 && sub2orig_smap[sub_v][1] == -1 */
     {
       sub2orig_smap[sub_v][1] = orig_v;
-      printf("sub2orig filling 1: sub2orig_smap[%d][1]: %d\n", sub_v, sub2orig_smap[sub_v][1]);
+      //printf("sub2orig filling 1: sub2orig_smap[%d][1]: %d\n", sub_v, sub2orig_smap[sub_v][1]);
     }
   return 1;
 }
@@ -1802,7 +1803,7 @@ cm2sub_cm_emit_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, int v_s, int
   int is_left;
   int i, j;
 
-  printf("\nin cm2sub_cm_emit_probs v_s: %d, v_o1: %d, v_o2: %d\n", v_s, v_o1, v_o2);
+  //printf("\nin cm2sub_cm_emit_probs v_s: %d, v_o1: %d, v_o2: %d\n", v_s, v_o1, v_o2);
 
   if(v_o1 == -1)
     Die("ERROR in cm2sub_cm_emit_probs, sub_cm state %d maps to 0 states in orig_cm\n", v_s);
@@ -1837,12 +1838,12 @@ cm2sub_cm_emit_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, int v_s, int
       if(orig_cm->sttype[v_o2] == ML_st)
 	{
 	  is_left = TRUE;
-	  printf("v_o1 MATP, v_s LEFT case\n");
+	  //printf("v_o1 MATP, v_s LEFT case\n");
 	}
       else if(orig_cm->sttype[v_o2] == MR_st)
 	{
 	  is_left = FALSE;
-	  printf("v_o1 MATP, v_s RIGHT case\n");
+	  //printf("v_o1 MATP, v_s RIGHT case\n");
 	}
       else
 	Die("ERROR v_s: %d maps to a MP_st and another non-ML and non-MR state\n");
@@ -1861,7 +1862,7 @@ cm2sub_cm_emit_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, int v_s, int
 	Die("ERROR sub_cm state: %d maps to two MATP_MP states\n", v_s);
       
       /*v_o2 must be ML, MR, IL, or IR, which can all be handled identically */
-      printf("v_o2 ML, MR, IL or IR\n");
+      //      printf("v_o2 ML, MR, IL or IR\n");
       for(i = 0; i < MAXABET; i++)
 	sub_cm->e[v_s][i] += orig_psi[v_o2] * orig_cm->e[v_o2][i];
       FNorm(sub_cm->e[v_s], MAXABET);
@@ -1869,7 +1870,7 @@ cm2sub_cm_emit_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, int v_s, int
     }
   else if(v_o2 != -1)
     {
-      printf("dual insert case\n");
+      //printf("dual insert case\n");
       if(!((orig_cm->sttype[v_o1] == IL_st && orig_cm->sttype[v_o2] == IR_st) ||
 	   (orig_cm->sttype[v_o1] == IR_st && orig_cm->sttype[v_o2] == IL_st)))
 	Die("ERROR sub_cm state: %d maps to two states (%d and %d), but not case 1: one is MATP_MP OR case 2: one is IL and one is IR\n", v_s, v_o1, v_o2);
@@ -1885,7 +1886,7 @@ cm2sub_cm_emit_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, int v_s, int
     Die("ERROR: dumbass, v_o2 isn't -1\n");
 
   /* If we get here, v_s maps to a single singlet emitter in orig_cm, v_o1 */
-  printf("singlet emitter case\n");
+  //printf("singlet emitter case\n");
   for(i = 0; i < MAXABET; i++)
     sub_cm->e[v_s][i] = orig_cm->e[v_o1][i];
 
@@ -1933,7 +1934,7 @@ cm2sub_cm_trans_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***tma
   int y_s;
   int y_o;
 
-  printf("in cm2sub_cm_trans_probs: v_s: %d\n", v_s);
+  //printf("in cm2sub_cm_trans_probs: v_s: %d\n", v_s);
 
   if(sub2orig_id[v_s] == TRUE) /* v_s is identical to sub2orig_smap[v_s][0] */
     {
@@ -1949,7 +1950,7 @@ cm2sub_cm_trans_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***tma
 
   /* start with the first orig_cm state that maps to v_s */
   v_o = sub2orig_smap[v_s][0];
-  printf("\tv_o: %d\n", v_o);
+  //printf("\tv_o: %d\n", v_o);
   if(v_o == -1)
     {
       if(sub_cm->sttype[v_s] != S_st ||
@@ -1970,7 +1971,7 @@ cm2sub_cm_trans_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***tma
 	{
 	  y_s = sub_cm->cfirst[v_s] + yoffset;
 	  y_o = sub2orig_smap[y_s][0];
-	  printf("\ty_s: %d | y_o: %d\n", y_s, y_o);
+	  //printf("\ty_s: %d | y_o: %d\n", y_s, y_o);
 	  
 	  if(y_o == -1)
 	    {
@@ -2062,7 +2063,7 @@ cm2sub_cm_trans_probs_S(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***t
 
   int orig_il1, orig_il2, orig_ir1, orig_ir2;
 
-  printf("in cm2sub_cm_trans_probs_S: v_start: %d\n", v_start);
+  //printf("in cm2sub_cm_trans_probs_S: v_start: %d\n", v_start);
 
   sub_nd     = sub_cm->ndidx[v_start];
 
@@ -2078,7 +2079,7 @@ cm2sub_cm_trans_probs_S(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***t
 	for(yoffset = 0; yoffset < sub_cm->cnum[v_start]; yoffset++)
 	  {
 	    y_s = sub_cm->cfirst[v_start] + yoffset;
-	    printf("updating sub_cm->t[%d][%d]\n", v_start, yoffset);
+	    //printf("updating sub_cm->t[%d][%d]\n", v_start, yoffset);
 	    sub_cm->t[v_start][yoffset] = orig_psi[sub2orig_smap[y_s][0]];
 	    if(sub2orig_smap[y_s][1] != -1)
 	      sub_cm->t[v_start][yoffset] += orig_psi[sub2orig_smap[y_s][1]];
@@ -2087,7 +2088,7 @@ cm2sub_cm_trans_probs_S(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***t
   
   else if(sub_cm->ndtype[sub_nd] == BEGR_nd)
     {
-      printf("!!!SETTING TRANSITIONS OUT OF BEGR_S, NOT SURE IF THIS IS IMPLEMENTED CORRECTLY!!!!\n\n");
+      //printf("!!!SETTING TRANSITIONS OUT OF BEGR_S, NOT SURE IF THIS IS IMPLEMENTED CORRECTLY!!!!\n\n");
       /* More complicated than the BEGL case b/c we need to handle the
        * BEGR_S -> BEGR_IL transition as well as BEGR_S -> next node 
        * split set transitions.
@@ -2098,7 +2099,7 @@ cm2sub_cm_trans_probs_S(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***t
       v_s_insert = v_start + 1;
       if(sub_cm->ndtype[sub_nd + 1] == BIF_nd)
 	{
-	  printf("!!!SPECIAL CASE BEGR -> BIF! v_ct\n");
+	  //printf("!!!SPECIAL CASE BEGR -> BIF! v_ct\n");
 
 	  v_o_insert = sub2orig_smap[v_s_insert][0];
 	  if(sub2orig_smap[v_s_insert][1] == -1)
@@ -2164,7 +2165,7 @@ cm2sub_cm_trans_probs_S(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***t
 	      sub_cm->t[v_start][yoffset] = temp_psi - il_psi * sub_cm->t[v_s_insert][yoffset];
 	      sum += sub_cm->t[v_start][yoffset];
 	    }
-	  printf("BEGR->NON BIF  SUM: %f\n", sum);
+	  //printf("BEGR->NON BIF  SUM: %f\n", sum);
 	  if(sum < 1.0 && ((1.0 - sum) > 0.001))
 	    Die("ERROR calculating transitions out of BEGR_S incorrectly\n");
 	  if(sum > 1.0 && ((sum - 1.0) > 0.001))
@@ -2173,13 +2174,13 @@ cm2sub_cm_trans_probs_S(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***t
     }
   else if(sub_cm->ndtype[sub_nd] == ROOT_nd)
     {
-      printf("KACHOW! in cm2sub_cm_trans_probs_S(), ROOT_nd\n");
+      //printf("KACHOW! in cm2sub_cm_trans_probs_S(), ROOT_nd\n");
       /* the only case we have to worry about is if the next node is BIF node,
        * otherwise the transitions out of ROOT_S have already been set.
        */
       if(sub_cm->ndtype[sub_nd + 1] == BIF_nd)
 	{
-	  printf("!!!SPECIAL CASE ROOT -> BIF!\n");
+	  //printf("!!!SPECIAL CASE ROOT -> BIF!\n");
 	  /* Before we do anything we have to check to see if we need to subtract
 	   * any subpaths from ROOT_S -> ROOT_IR that have been double counted:
 	   */
@@ -2287,7 +2288,7 @@ cm2sub_cm_trans_probs_S(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***t
 	  /* ROOT -> non-BIF node, we have already handled this, so we return. */
 	}
     }
-  printf("leaving cm2sub_cm_trans_probs_S\n\n");
+  //printf("leaving cm2sub_cm_trans_probs_S\n\n");
   return;
 }
 
@@ -2327,14 +2328,14 @@ cm2sub_cm_trans_probs_B_E(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char **
   int v_s_insert;
   int bif_end_yoffset;
 
-  printf("in cm2sub_cm_trans_probs_B_E: v_s: %d\n", v_be);
+  //printf("in cm2sub_cm_trans_probs_B_E: v_s: %d\n", v_be);
 
   sub_nd =  sub_cm->ndidx[v_be];
   psub_nd = sub_nd - 1;
 
   switch (sub_cm->ndtype[psub_nd]) {
   case MATP_nd:
-    printf("prev node type MATP\n");
+    //printf("prev node type MATP\n");
     /* psub_nd is a MATP: each state in psub_nd transits to 
      * exactly 3 states, the MATP_IL, MATP_IR and the BIF or END state v_be, for which
      * we are trying to fill virtual transition counts into.
@@ -2407,7 +2408,7 @@ cm2sub_cm_trans_probs_B_E(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char **
 
   case MATL_nd:
   case MATR_nd:
-    printf("prev node type MATL or MATR\n");
+    //printf("prev node type MATL or MATR\n");
     /* psub_nd is a MATL or MATR and we know each state in psub_nd transits to 
      * exactly 2 states, the insert state of psub_nd and the BIF or END state v_be, which
      * we are trying to fill in transitions to.
@@ -2462,7 +2463,7 @@ cm2sub_cm_trans_probs_B_E(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char **
     break;
   }
 
-  printf("Returning from cm2sub_cm_trans_probs_B_E\n");
+  //printf("Returning from cm2sub_cm_trans_probs_B_E\n");
   return;
 }
 
@@ -2795,8 +2796,8 @@ cm_add_single_trans(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **sub2
   int y_s;
 
   y_s = sub_cm->cfirst[sub_v] + yoffset;
-  printf("\t\tin cm_add_single_trans, orig_v: %d | orig_y: %d | sub_v: %d | y_s: %d\n", orig_v, orig_y, sub_v, y_s);
-  printf("\t\tbeg sub_cm->t[sub_v:%d][yoffset:%d] : %.9f\n", sub_v, yoffset, sub_cm->t[sub_v][yoffset]);
+  //printf("\t\tin cm_add_single_trans, orig_v: %d | orig_y: %d | sub_v: %d | y_s: %d\n", orig_v, orig_y, sub_v, y_s);
+  //printf("\t\tbeg sub_cm->t[sub_v:%d][yoffset:%d] : %.9f\n", sub_v, yoffset, sub_cm->t[sub_v][yoffset]);
 
   /* check if we've got real CM state ids */
   if(orig_v == -1 || orig_y == -1)
@@ -2849,11 +2850,11 @@ cm_add_single_trans(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **sub2
 	}
     }
 
-  printf("\t\t\toi1: %d oi2: %d oi3: %d oi4: %d\n", orig_insert1, orig_insert2, orig_insert3, orig_insert4);
+  //  printf("\t\t\toi1: %d oi2: %d oi3: %d oi4: %d\n", orig_insert1, orig_insert2, orig_insert3, orig_insert4);
   
   sub_cm->t[sub_v][yoffset] += orig_psi[start] * cm_sum_subpaths(orig_cm, sub_cm, orig2sub_smap, start, end, sub_v, tmap, orig_psi, orig_insert1, orig_insert2, orig_insert3, orig_insert4);
 
-  printf("\t\tmid sub_cm->t[sub_v:%d][yoffset:%d] : %.9f\n", sub_v, yoffset, sub_cm->t[sub_v][yoffset]);
+  //printf("\t\tmid sub_cm->t[sub_v:%d][yoffset:%d] : %.9f\n", sub_v, yoffset, sub_cm->t[sub_v][yoffset]);
 
   /* 09.21.06 situation check: see if we have a situation where we've counted
    * some subpaths that we didn't want to - i.e. that will be counted again
@@ -2881,7 +2882,7 @@ cm_add_single_trans(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **sub2
       sub_i = sub_cm->nodemap[sub_cm->ndidx[sub_v]] + 2;
       if(sub_i != y_s) /* don't subtract paths when we're going to sub_i */
 	{
-	  printf("sub_v: %d sub_i: %d\n", sub_v, sub_i);
+	  //printf("sub_v: %d sub_i: %d\n", sub_v, sub_i);
 	  orig_i1 = sub2orig_smap[sub_i][0];
 	  orig_i2 = sub2orig_smap[sub_i][1];
 	  
@@ -2933,12 +2934,12 @@ cm_subtract_subpaths(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **sub
   /* Determine which case we have for i1 */
   if(orig_v < orig_i && orig_i < orig_y)
     {
-      printf("sub_cm->t[v:%d] [yoff:%d] case non-root 1A\n", sub_v, yoffset);
+      //      printf("sub_cm->t[v:%d] [yoff:%d] case non-root 1A\n", sub_v, yoffset);
       /* this is handled correctly by cm_sum_subpaths() */
     }
   if(orig_i < orig_v && orig_v < orig_y)
     {
-      printf("sub_cm->t[v:%d] [yoff:%d] case non-root 1B\n", sub_v, yoffset);
+      //printf("sub_cm->t[v:%d] [yoff:%d] case non-root 1B\n", sub_v, yoffset);
       /* We've counted paths from
        * i -> v -> y correctly for sub_i -> sub_y 
        *           incorrectly for sub_v -> sub_y
@@ -2957,12 +2958,12 @@ cm_subtract_subpaths(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **sub
 
   if(orig_y < orig_i && orig_i < orig_v)
     {
-      printf("sub_cm->t[v:%d] [yoff:%d] case non-root 2A\n", sub_v, yoffset);      
+      //printf("sub_cm->t[v:%d] [yoff:%d] case non-root 2A\n", sub_v, yoffset);      
       /* this is handled correctly by cm_sum_subpaths() */
     }
   if(orig_i < orig_y && orig_y < orig_v)
     {
-      printf("sub_cm->t[v:%d] [yoff:%d] case non-root 2B\n", sub_v, yoffset);
+      //printf("sub_cm->t[v:%d] [yoff:%d] case non-root 2B\n", sub_v, yoffset);
       /* We've counted paths from
        * i -> y -> v correctly for sub_i -> sub_y 
        *           incorrectly for sub_v -> sub_y
@@ -2973,7 +2974,7 @@ cm_subtract_subpaths(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **sub
     }
   if(orig_y < orig_v && orig_v < orig_i)
     {
-      printf("sub_cm->t[v:%d] [yoff:%d] case non-root 2C\n", sub_v, yoffset);
+      //printf("sub_cm->t[v:%d] [yoff:%d] case non-root 2C\n", sub_v, yoffset);
       /* We've counted paths from
        * y -> v -> i correctly for sub_i -> sub_y 
        *           incorrectly for sub_v -> sub_y
@@ -3058,7 +3059,7 @@ cm_sum_subpaths(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int start, int
 
   int temp;
 
-  printf("\t\t\tin cm_sum_subpaths, start: %d | end: %d\n", start, end);
+  //printf("\t\t\tin cm_sum_subpaths, start: %d | end: %d\n", start, end);
   
   if(start > end)
     {
@@ -3090,7 +3091,7 @@ cm_sum_subpaths(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int start, int
 	  return 1.0;
 	}
       /* else we just return the self-insert probability */
-      printf("\t\t\tReturning self insert prob: %f\n", orig_cm->t[start][0]);
+      //printf("\t\t\tReturning self insert prob: %f\n", orig_cm->t[start][0]);
       return orig_cm->t[start][0];
     }
   to_return = 0.;
@@ -3119,7 +3120,7 @@ cm_sum_subpaths(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int start, int
 	insert_to_start += orig_psi[orig_insert4] * cm_sum_subpaths(orig_cm, sub_cm, orig2sub_smap, orig_insert4, start, tmap, orig_psi, -1, -1, -1, -1);
       sub_psi[0] -= insert_to_start / orig_psi[start];
       */
-      printf("\t\tinsert_to_start: %f sub_psi[0]: %f\n", insert_to_start, sub_psi[0]);
+      //printf("\t\tinsert_to_start: %f sub_psi[0]: %f\n", insert_to_start, sub_psi[0]);
     }
   /* note: when cm_sum_subpaths is called recursively above
    * it will never result in another recursive call, 
@@ -3175,7 +3176,7 @@ cm_sum_subpaths(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int start, int
 	       * sub_end -> sub_v.
 	       */
 	      skip = TRUE;
-	      printf("\t\t\tskip true case 911\n");
+	      //printf("\t\t\tskip true case 911\n");
 	    }
 	}
       if(!skip)
@@ -3207,10 +3208,10 @@ cm_sum_subpaths(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int start, int
       else
 	{	
 	  /*skip the contribution*/
-	  printf("v: %d | skipping the contribution\n", v);
+	  //printf("v: %d | skipping the contribution\n", v);
 	}
     }
-  printf("***returning from cm_sum_subpaths: %f\n", sub_psi[(end-start)]);
+  //printf("***returning from cm_sum_subpaths: %f\n", sub_psi[(end-start)]);
 
   to_return = (float) sub_psi[end-start];
   free(sub_psi);
@@ -5278,16 +5279,16 @@ map_orig2sub_cm3(CM_t *orig_cm, CM_t *sub_cm, int ***ret_orig2sub_smap, int ***r
     {
       if(sub_cm->ndtype[n_s] == BEGR_nd)
 	{
-	  printf("trying to fill in BEGR_IL for node: %d\n", n_s);
+	  //printf("trying to fill in BEGR_IL for node: %d\n", n_s);
 	  v_s = sub_cm->nodemap[n_s] + 1;
-	  printf("checking lpos (%d + %d -1): %d\n", sub_emap->lpos[n_s], sub_start, (sub_emap->lpos[n_s] + sub_start-1));
+	  //printf("checking lpos (%d + %d -1): %d\n", sub_emap->lpos[n_s], sub_start, (sub_emap->lpos[n_s] + sub_start-1));
 	  v_o = orig_cc2lins_map[(sub_emap->lpos[n_s] + sub_start - 1)];
 	  if(v_o != -1)
 	    map_orig2sub_cm_helper(orig_cm, sub_cm, orig2sub_smap, sub2orig_smap, v_o, v_s);
 
-	  printf("checking rpos (%d + %d): %d\n", sub_emap->lpos[n_s], sub_start, (sub_emap->lpos[n_s] + sub_start));
+	  //printf("checking rpos (%d + %d): %d\n", sub_emap->lpos[n_s], sub_start, (sub_emap->lpos[n_s] + sub_start));
 	  v_o = orig_cc2rins_map[(sub_emap->lpos[n_s] + sub_start)];
-	  printf("\t\tv_o: %d | v_s: %d\n", v_o, v_s);
+	  //printf("\t\tv_o: %d | v_s: %d\n", v_o, v_s);
 	  if(v_o != -1)
 	    map_orig2sub_cm_helper(orig_cm, sub_cm, orig2sub_smap, sub2orig_smap, v_o, v_s);
 	}
@@ -5297,11 +5298,11 @@ map_orig2sub_cm3(CM_t *orig_cm, CM_t *sub_cm, int ***ret_orig2sub_smap, int ***r
     {
       orig_k = sub_k + sub_start - 1;
       
-      printf("sub_k: %d | orig_k: %d\n", sub_k, orig_k);
+      //printf("sub_k: %d | orig_k: %d\n", sub_k, orig_k);
       sub_nd  = cc_node_map_s[sub_k];
       orig_nd = cc_node_map_o[orig_k];
-      printf("sub_nd: %d (%s) orig_nd: %d (%s)\n", sub_nd, nodetypes[sub_cm->ndtype[sub_nd]],
-	     orig_nd, nodetypes[orig_cm->ndtype[orig_nd]]);
+      //printf("sub_nd: %d (%s) orig_nd: %d (%s)\n", sub_nd, nodetypes[sub_cm->ndtype[sub_nd]],
+      //orig_nd, nodetypes[orig_cm->ndtype[orig_nd]]);
 
       /* First check for the easy case: when same node type
        * maps to the same consensus column. If this is 
@@ -5320,7 +5321,7 @@ map_orig2sub_cm3(CM_t *orig_cm, CM_t *sub_cm, int ***ret_orig2sub_smap, int ***r
 	  else
 	    Die("You don't understand CMs 0\n");
 
-	  printf("EASY CASE\n");
+	  //printf("EASY CASE\n");
 	  /* map all corresponding states */
 	  v_o = orig_cm->nodemap[orig_nd];
 	  v_s =  sub_cm->nodemap[sub_nd];
@@ -5336,7 +5337,7 @@ map_orig2sub_cm3(CM_t *orig_cm, CM_t *sub_cm, int ***ret_orig2sub_smap, int ***r
 		 (sub_cm->sttype[v_s] == IL_st || sub_cm->sttype[v_s] == IR_st))
 		{
 		  k_s = 1; /* insert */		 
-		  printf("!*! sub_k: %d | orig_k: %d\n", sub_k, orig_k);
+		  //printf("!*! sub_k: %d | orig_k: %d\n", sub_k, orig_k);
 		  if(hns2cs_map_o[orig_k][k_s][0] != -1 && hns2cs_map_o[(orig_k-is_right)][k_s][1] != v_o)
 		    {
 		      if(map_orig2sub_cm_helper(orig_cm, sub_cm, orig2sub_smap, sub2orig_smap, 
@@ -5368,7 +5369,7 @@ map_orig2sub_cm3(CM_t *orig_cm, CM_t *sub_cm, int ***ret_orig2sub_smap, int ***r
 	       * in this case we may have missed a mapping from the MATR_IR of this
 	       * state to the orig_cm state that inserts AFTER the prev_cc.
 	       */
-	      printf("SPECIAL EASY CASE STRETCH NOW FALSE, MATR CASE\n");
+	      //printf("SPECIAL EASY CASE STRETCH NOW FALSE, MATR CASE\n");
 	      k_s = 1; /*insert*/
 	      map_orig2sub_cm_helper(orig_cm, sub_cm, orig2sub_smap, sub2orig_smap, 
 				     hns2cs_map_o[orig_k-1][k_s][0],
@@ -5386,7 +5387,7 @@ map_orig2sub_cm3(CM_t *orig_cm, CM_t *sub_cm, int ***ret_orig2sub_smap, int ***r
 
 	  id_stretch = FALSE;
 
-	  printf("sub_k: %d | orig_k: %d\n", sub_k, orig_k);
+	  //printf("sub_k: %d | orig_k: %d\n", sub_k, orig_k);
 	  k_s = 0; /* match */
 	  map_orig2sub_cm_helper(orig_cm, sub_cm, orig2sub_smap, sub2orig_smap, 
 				 hns2cs_map_o[orig_k][k_s][0],
@@ -5608,14 +5609,24 @@ cm2sub_cm_check_id_next_node(CM_t *orig_cm, CM_t *sub_cm, int orig_nd, int sub_n
       printf("cm2sub_cm_check_id_next_node: %d return 1\n", sub_nd);
       return;
     }
-  if(node_cc_left_o[orig_nd+1] != (node_cc_left_s[sub_nd+1] + sub_start - 1))
+  if(node_cc_left_o[orig_nd+1] == -1 & node_cc_left_s[sub_nd+1] != -1)
     {
       printf("cm2sub_cm_check_id_next_node: %d return 2\n", sub_nd);
       return;
     }
-  if(node_cc_right_o[orig_nd+1] != (node_cc_right_s[sub_nd+1] + sub_start - 1))
+  if(node_cc_right_o[orig_nd+1] == -1 & node_cc_right_s[sub_nd+1] != -1)
     {
       printf("cm2sub_cm_check_id_next_node: %d return 3\n", sub_nd);
+      return;
+    }
+  if(node_cc_left_o[orig_nd+1] != (node_cc_left_s[sub_nd+1] + sub_start - 1))
+    {
+      printf("cm2sub_cm_check_id_next_node: %d return 4\n", sub_nd);
+      return;
+    }
+  if(node_cc_right_o[orig_nd+1] != (node_cc_right_s[sub_nd+1] + sub_start - 1))
+    {
+      printf("cm2sub_cm_check_id_next_node: %d return 5\n", sub_nd);
       return;
     }
   /* if we get here, the next node is identical */

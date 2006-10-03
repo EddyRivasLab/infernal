@@ -2263,6 +2263,7 @@ CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int spos, int epos, 
       dual_mapping_insert[nd] = 0;
       
   msa_nseq = 1000;
+
   /* Allocate and zero the new HMM we're going to build by sampling from
    * the CM.
    */
@@ -2829,6 +2830,10 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
     }
   else
     printf("\n");
+
+  /* we've scaled some probabilities into counts, we want to get back into prob form */
+  CPlan9Renormalize(ahmm);
+
   return TRUE;
 }
   

@@ -1241,7 +1241,6 @@ ConsensusModelmaker(char *ss_cons, int clen, CM_t **ret_cm, Parsetree_t **ret_gt
 int
 cm_find_and_detach_dual_inserts(CM_t *cm, int do_check, int do_detach)
 {
-  printf("in cm_find_and_detach_dual_inserts\n");
 
   CMEmitMap_t *emap;         /* consensus emit map for the cm */
   int *cc2lins_map;
@@ -1262,7 +1261,7 @@ cm_find_and_detach_dual_inserts(CM_t *cm, int do_check, int do_detach)
       end_e_ct++;
 
   emap = CreateEmitMap(cm);
-  DumpEmitMap(stdout, emap, cm);
+  /*DumpEmitMap(stdout, emap, cm);*/
 
   /* Based on the emitmap, make map of which nodes have an insert state that
    * inserts AFTER (in case of *lmap) and BEFORE (in case of *rmap)
@@ -1312,7 +1311,7 @@ cm_find_and_detach_dual_inserts(CM_t *cm, int do_check, int do_detach)
 
   for(cc = 0; cc <= emap->clen; cc++)
     {
-      printf("!cc: %d lins: %d rins: %d\n", cc, cc2lins_map[cc], cc2rins_map[cc]);
+      /*printf("!cc: %d lins: %d rins: %d\n", cc, cc2lins_map[cc], cc2rins_map[cc]);*/
       if(cc2lins_map[cc] != -1 && cc2rins_map[cc] != -1)
 	{
 	  detach_ct++;
@@ -1327,6 +1326,11 @@ cm_find_and_detach_dual_inserts(CM_t *cm, int do_check, int do_detach)
 	      Die("ERROR cm_detach_state() returned false\n");		 
 	}
     }
+
+  FreeEmitMap(emap);
+  free(cc2lins_map);
+  free(cc2rins_map);
+
   if(detach_ct != end_e_ct)
     return FALSE;
   else
@@ -1356,7 +1360,7 @@ cm_find_and_detach_dual_inserts(CM_t *cm, int do_check, int do_detach)
 int
 cm_detach_state(CM_t *cm, int insert1, int insert2)
 {
-  printf("\t**in cm_detach_state: insert1: %d | insert2: %d\n", insert1, insert2);
+  /*printf("\t**in cm_detach_state: insert1: %d | insert2: %d\n", insert1, insert2);*/
 
   int ret_val;
   int x, y;
@@ -1390,7 +1394,7 @@ cm_detach_state(CM_t *cm, int insert1, int insert2)
 			      * as insert1, we're setting transition
 			      * from x -> to_detach as impossible.
 			      */
-	  printf("****setting transition probabilitity of x: %d to to_detach: %d cm->t[x][0] as 0.0\n", x, to_detach);
+	  /*printf("****setting transition probabilitity of x: %d to to_detach: %d cm->t[x][0] as 0.0\n", x, to_detach);*/
 	}
     }
   return ret_val;
@@ -1450,7 +1454,6 @@ cm_check_before_detaching(CM_t *cm, int insert1, int insert2)
     {
       for(i = 0; i < MAXABET; i++)
 	{
-	  printf("to_detach emit[%d] cts: %f\n", i, cm->e[to_detach][i]);
 	  if(cm->e[to_detach][i] >= 0.)
 	    diff = cm->e[to_detach][i] - 0.;
 	  else
@@ -1460,7 +1463,7 @@ cm_check_before_detaching(CM_t *cm, int insert1, int insert2)
 	}
       for(yoffset = 0; yoffset < cm->cnum[to_detach]; yoffset++)
 	{
-	  printf("to_detach t[%d] cts: %f\n", yoffset, cm->t[to_detach][yoffset]);
+	  /*printf("to_detach t[%d] cts: %f\n", yoffset, cm->t[to_detach][yoffset]);*/
 	  if(cm->t[to_detach][yoffset] >= 0.)
 	    diff = cm->t[to_detach][yoffset] - 0.;
 	  else
@@ -1468,11 +1471,6 @@ cm_check_before_detaching(CM_t *cm, int insert1, int insert2)
 	  if(diff > 0.000001)
 	    Die("ERROR, to_detach state: %d t->[%d] is non-zero but rather %f\n", to_detach, yoffset, cm->t[to_detach][yoffset]);
 	}
-
-      for(i = 0; i < MAXABET; i++)
-	printf("to_keep emit[%d] cts: %f\n", i, cm->e[to_keep][i]);
-      for(yoffset = 0; yoffset < cm->cnum[to_keep]; yoffset++)
-	printf("to_keep t[%d] cts: %f\n", yoffset, cm->t[to_keep][yoffset]);
     }
   return ret_val;
 }

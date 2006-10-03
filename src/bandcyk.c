@@ -261,8 +261,8 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
 	  /* fail; truncation error is unacceptable; 
 	   * caller is supposed to increase W and rerun. 
 	   */
-	  printf("pdf : %f\n", pdf);
-	    printf("gamma[v][W] : %f\n", gamma[v][W]);
+	  /*printf("pdf : %f\n", pdf);
+	    printf("gamma[v][W] : %f\n", gamma[v][W]);*/
 	  status = 0; 
 	  goto CLEANUP;
 	}
@@ -572,12 +572,10 @@ void
 FreeBandDensities(CM_t *cm, double **gamma)
 {
   int v;
-  for (v = 0; v <= cm->M; v++) 
+  for (v = 0; v < cm->M; v++) 
     if (cm->sttype[v] != E_st && gamma[v] != NULL) 
       { free(gamma[v]); gamma[v] = NULL; }
   free(gamma[cm->M-1]);		/* free the end state */
-  if(gamma[cm->M] != NULL)
-    free(gamma[cm->M]);
   free(gamma);
 }  
 

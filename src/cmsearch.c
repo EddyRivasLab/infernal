@@ -55,7 +55,7 @@ static char experts[] = "\
    --hthresh <f>  : HMM reporting bit score threshold [df: 0]\n\
 \n\
   * Options for accelerating CM search/alignment:\n\
-   --qdb         : use query dependent bands (qdb) to accelerate CYK\n\
+   --qdb         : use query dependent bands to accelerate CYK\n\
    --beta <f>    : tail loss prob for --qbd (default:0.000001)\n\
    --hbanded     : use HMM bands from a CM plan 9 HMM scan for CYK\n\
    --hbandp <f>  : tail loss prob for --hbanded (default:0.0001)\n\
@@ -81,8 +81,8 @@ static struct opt_s OPTIONS[] = {
   { "--hmmpad",     FALSE, sqdARG_INT },
   { "--hmmonly",    FALSE, sqdARG_NONE },
   { "--hthresh",    FALSE, sqdARG_FLOAT},
-  { "--apbanded",   FALSE, sqdARG_NONE },
-  { "--beta",    FALSE, sqdARG_FLOAT},
+  { "--qdb",        FALSE, sqdARG_NONE },
+  { "--beta",       FALSE, sqdARG_FLOAT},
   { "--hbanded",    FALSE, sqdARG_NONE },
   { "--hbandp",     FALSE, sqdARG_FLOAT},
   { "--banddump",   FALSE, sqdARG_NONE},

@@ -630,6 +630,8 @@ main(int argc, char **argv)
       fflush(stdout);
       HandModelmaker(msa, dsq, use_rf, gapthresh, &cm, &mtr);
 
+      printf("done.\n");
+
       if(do_balance)
 	{
 	  CM_t *new;
@@ -645,7 +647,7 @@ main(int argc, char **argv)
 	}
       if(do_detach)
 	{
-	  printf("\n\nFinding and checking dual inserts\n");
+	  printf("%-40s ... ", "Finding and checking dual inserts");
 	  cm_find_and_detach_dual_inserts(cm, TRUE, FALSE); 
 	  /* TRUE tells the function to check to make sure the inserts 
 	   * to detach are filled with 0.0 counts from the seed sequences, 
