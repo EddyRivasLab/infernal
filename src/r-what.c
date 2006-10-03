@@ -825,17 +825,19 @@ RightMarginalScore(float *esc, char symr)
  * Return:   completion (0 = no, 1 = yes), meaning that we have
  *           completely aligned all of the model below BPA_t *root
  */
-int
-MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root)
+void
+MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, float dropoff_sc, float *total_sc, float *delta_sc, int *commit, int *complete)
 {
-   int i;
-   int v;
+   int v,i;
    int x;
    float tsc, esc;
    int *depth;
-   int completion = 0;
 
-   x = v;
+   root->chunk->need_commit = 0;
+   *commit = 0;
+   *complete = 0;
+
+   x = root->chunk->cur_v;
    i = 0;
    while ((cm->sttype[x] != E_st) && (cm->sttype[x] != B_st))
    {
@@ -848,7 +850,7 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root)
    i = root->chunk->cur_i;
    x = 0;
 
-   while ( cm->sttype[v] != E_st )
+   while ( (cm->sttype[v] != E_st) && (cm->sttype[v] != B_st) && (*delta_sc > dropoff_sc) )
    {
       tsc = ConsensusChild(cm, &v);
       if ( cm->stid[v] == MATL_ML )
@@ -868,59 +870,98 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root)
          esc = LeftMarginalScore(cm->esc[v],dsq[i]);
          depth[x++] = i++;
       }
-      if ( cm->stid[v] == BIF_B )
+
+      *delta_sc = *delta_sc + tsc + esc;
+      if (*delta_sc > 0)
       {
-         if ( root->left_child == NULL )
-         {
-            root->left_child = malloc(sizeof(BPA_t));
-            root->left_child->chunk = malloc(sizeof(PA_t));
-            root->left_child->left_child = NULL;
-            root->left_child->right_child = NULL;
-         }
-         root->left_child->chunk->init_v = cm->cfirst[v];
-         root->left_child->chunk->cur_v  = cm->cfirst[v];
-         root->left_child->chunk->init_i = i;
-         root->left_child->chunk->cur_i  = i;
-         /* Init to error values for j and d which are unknown */
-         root->left_child->chunk->init_j = -1;
-         root->left_child->chunk->cur_j  = -1;
-         root->left_child->chunk->init_d = -1;
-         root->left_child->chunk->cur_d  = -1;
-
-         if ( MarginalLeftInsideExtend(cm, dsq, root->left_child) )
-         {
-            if ( root->right_child == NULL )
-            {
-               root->right_child = malloc(sizeof(BPA_t));
-               root->right_child->chunk = malloc(sizeof(PA_t));
-               root->right_child->left_child = NULL;
-               root->right_child->right_child = NULL;
-            }
-            root->right_child->chunk->init_v = cm->cnum[v];
-            root->right_child->chunk->cur_v  = cm->cnum[v];
-            root->right_child->chunk->init_i = root->left_child->chunk->cur_i; /* Compare to where we set cur_i in this func to check for off-by-1 */
-            root->right_child->chunk->cur_i  = root->left_child->chunk->cur_i;
-            /* Init to error values for j and d which are unknown */
-            root->right_child->chunk->init_j = -1;
-            root->right_child->chunk->cur_j  = -1;
-            root->right_child->chunk->init_d = -1;
-            root->right_child->chunk->cur_d  = -1;
-
-            if (MarginalLeftInsideExtend(cm, dsq, root->right_child) )
-            {
-               completion = 1;
-            }
-         }
-         break; /* seems cluge-y - maybe break BIF_B out of the while entirely */
-         /* Need to think here about how best to relay scores,
-          * continue extension around the right child, etc. */
-/* IMPORTANT!  If we don't successfully make it all the way around both children, we need to abort and not continue up the stem below! */
+         root->chunk->need_commit = 0;
+         *total_sc += *delta_sc;
+         *delta_sc = 0.0;
+         root->chunk->cur_i = i;
+         root->chunk->cur_v = v;
+         *commit = 1;
+      }
+      else
+      {
+         root->chunk->need_commit = 1;
+         root->chunk->temp_i = i;
+         root->chunk->temp_v = v;
       }
    }
 
-   if ( completion == 1)
+   /* If we have some accumulated score (negative) in delta_sc, do
+    * we force it to be accepted/rejected before we branch into children,
+    * or can we procede on a temporary basis and see if subsequent
+    * extension 'rescues' it?
+    */
+   if ( cm->sttype[v] == B_st )
    {
-      completion = 0;
+      if ( root->left_child == NULL )
+      {
+         root->left_child = malloc(sizeof(BPA_t));
+         root->left_child->chunk = malloc(sizeof(PA_t));
+         root->left_child->left_child = NULL;
+         root->left_child->right_child = NULL;
+      }
+      root->left_child->chunk->init_v = cm->cfirst[v];
+      root->left_child->chunk->cur_v  = cm->cfirst[v];
+      root->left_child->chunk->init_i = i;
+      root->left_child->chunk->cur_i  = i;
+      /* Init to error values for j and d which are unknown */
+      root->left_child->chunk->init_j = -1;
+      root->left_child->chunk->cur_j  = -1;
+      root->left_child->chunk->init_d = -1;
+      root->left_child->chunk->cur_d  = -1;
+
+      MarginalLeftInsideExtend(cm, dsq, root->left_child, dropoff_sc, total_sc, delta_sc, commit, complete);
+      if ( root->chunk->need_commit && *commit )
+      {
+         root->chunk->need_commit  = 0;
+         root->chunk->cur_i = root->chunk->temp_i;
+         root->chunk->cur_v = root->chunk->temp_v;
+      }
+      if ( *complete )
+      {
+         if ( root->right_child == NULL )
+         {
+            root->right_child = malloc(sizeof(BPA_t));
+            root->right_child->chunk = malloc(sizeof(PA_t));
+            root->right_child->left_child = NULL;
+            root->right_child->right_child = NULL;
+         }
+         root->right_child->chunk->init_v = cm->cnum[v];
+         root->right_child->chunk->cur_v  = cm->cnum[v];
+         root->right_child->chunk->init_i = root->left_child->chunk->cur_i; /* Compare to where we set cur_i in this func to check for off-by-1 */
+         root->right_child->chunk->cur_i  = root->left_child->chunk->cur_i;
+         /* Init to error values for j and d which are unknown */
+         root->right_child->chunk->init_j = -1;
+         root->right_child->chunk->cur_j  = -1;
+         root->right_child->chunk->init_d = -1;
+         root->right_child->chunk->cur_d  = -1;
+
+         MarginalLeftInsideExtend(cm, dsq, root->right_child, dropoff_sc, total_sc, delta_sc, commit, complete);
+         if ( root->chunk->need_commit && *commit )
+         {
+            root->chunk->need_commit = 0;
+            root->chunk->cur_i = root->chunk->temp_i;
+            root->chunk->cur_v = root->chunk->temp_v;
+         }
+         if ( root->left_child->chunk->need_commit && *commit )
+         {
+            root->left_child->chunk->need_commit = 0;
+            root->left_child->chunk->cur_i = root->left_child->chunk->temp_i;
+            root->left_child->chunk->cur_v = root->left_child->chunk->temp_v;
+         }
+      }
+   }
+   else if ( cm->sttype[v] == E_st )
+   {
+      *complete = 1;
+   }
+
+   if ( *complete == 1)
+   {
+      *complete = 0;
       while ( cm->sttype[v] != S_st )
       {
          ConsensusParent(cm, &v);
@@ -947,24 +988,56 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root)
             i++;
             x--;
          }
+
+         *delta_sc = *delta_sc + esc;
+         if (*delta_sc > 0)
+         {
+            root->chunk->need_commit = 0;
+            *total_sc += *delta_sc;
+            *delta_sc = 0.0;
+            root->chunk->cur_i = i;
+            root->chunk->cur_v = v;
+            *commit = 1;
+         }
+         else
+         {
+            root->chunk->need_commit = 1;
+            root->chunk->temp_i = i;
+            root->chunk->temp_v = v;
+         }
       }
       if ( cm->sttype[v] == S_st) 
       {
-         completion = 1;
+         *complete= 1;
       }
    }
-   else
+
+   if ( (root->left_child != NULL) && (root->left_child->chunk->need_commit) && (root->chunk->cur_i > root->left_child->chunk->cur_i) )
    {
-      completion = 0;
+      root->left_child->chunk->need_commit = 0;
+      root->left_child->chunk->cur_i = root->left_child->chunk->temp_i;
+      root->left_child->chunk->cur_v = root->left_child->chunk->temp_v;
+   }
+   if ( (root->right_child != NULL) && (root->right_child->chunk->need_commit) && (root->chunk->cur_i > root->right_child->chunk->cur_i) )
+   {
+      root->right_child->chunk->need_commit = 0;
+      root->right_child->chunk->cur_i = root->right_child->chunk->temp_i;
+      root->right_child->chunk->cur_v = root->right_child->chunk->temp_v;
    }
 
    /* Unfinished items:
     * when does a score become 'accepted'?
     * when does the marginal extension become a recorded part of the partial alignment
     *   and how much information about it do we need?
+    * How are we passing scores to and from child functions?
+    */
+
+   /* We should have at least some bound on how high i can get - we may not know the
+    * actual limit on this chunk, but there is an overall limit if there's a pair
+    * anywhere in the model above us
     */
 
    free(depth);
 
-   return completion;
+   return;
 }

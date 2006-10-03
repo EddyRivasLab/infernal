@@ -27,6 +27,14 @@ typedef struct partialalignment_s {
   int cur_d;
   int cur_i;
 
+  int temp_v;		/* holder vars for provisional extension          */
+  int temp_j;		/* Use with extreme caution - which ones have     */
+  int temp_d;		/* defined values and whether they should replace */
+  int temp_i;		/* init or cur equivalents depends on the         */
+                        /* direction of extension.                        */
+  int need_commit;	/* 0/1 - are there values in temp which need to   */
+			/* be permanently recorded in init/cur            */
+
   float current_sc;
   float upper_bound_sc;
 
