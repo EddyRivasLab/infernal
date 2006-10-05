@@ -826,7 +826,7 @@ RightMarginalScore(float *esc, char symr)
  *           completely aligned all of the model below BPA_t *root
  */
 void
-MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, float dropoff_sc, float *total_sc, float *delta_sc, int *commit, int *complete)
+MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dropoff_sc, float *total_sc, float *delta_sc, int *commit, int *complete)
 {
    int v,i;
    int x;
@@ -850,7 +850,7 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, float dropoff_sc, flo
    i = root->chunk->cur_i;
    x = 0;
 
-   while ( (cm->sttype[v] != E_st) && (cm->sttype[v] != B_st) && (*delta_sc > dropoff_sc) )
+   while ( (cm->sttype[v] != E_st) && (cm->sttype[v] != B_st) && (*delta_sc > dropoff_sc) && (i < rbound) )
    {
       tsc = ConsensusChild(cm, &v);
       if ( cm->stid[v] == MATL_ML )
@@ -913,7 +913,7 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, float dropoff_sc, flo
       root->left_child->chunk->init_d = -1;
       root->left_child->chunk->cur_d  = -1;
 
-      MarginalLeftInsideExtend(cm, dsq, root->left_child, dropoff_sc, total_sc, delta_sc, commit, complete);
+      MarginalLeftInsideExtend(cm, dsq, root->left_child, rbound, dropoff_sc, total_sc, delta_sc, commit, complete);
       if ( root->chunk->need_commit && *commit )
       {
          root->chunk->need_commit  = 0;
@@ -939,7 +939,7 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, float dropoff_sc, flo
          root->right_child->chunk->init_d = -1;
          root->right_child->chunk->cur_d  = -1;
 
-         MarginalLeftInsideExtend(cm, dsq, root->right_child, dropoff_sc, total_sc, delta_sc, commit, complete);
+         MarginalLeftInsideExtend(cm, dsq, root->right_child, rbound, dropoff_sc, total_sc, delta_sc, commit, complete);
          if ( root->chunk->need_commit && *commit )
          {
             root->chunk->need_commit = 0;
@@ -962,7 +962,7 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, float dropoff_sc, flo
    if ( *complete == 1)
    {
       *complete = 0;
-      while ( cm->sttype[v] != S_st )
+      while ( ( cm->sttype[v] != S_st ) && (*delta_sc > dropoff_sc) && (i < rbound) )
       {
          ConsensusParent(cm, &v);
          if ( cm->stid[v] == MATL_ML )
