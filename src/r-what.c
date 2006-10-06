@@ -821,6 +821,13 @@ RightMarginalScore(float *esc, char symr)
  *                  alignmnet held in the root may be partially
  *                  extended, although empty is expected to be the
  *                  more likely case.
+ *           dropoff_sc - amount of score decrease allowed before
+ *                  termination
+ *           total_sc - running total of score (from commited segments)
+ *           delta_sc - running total score of uncommited segments
+ *           commit - 0/1 - have we commited in this chunk (parent
+ *                  also commit if so)
+ *           complete - 0/1 - full alignment of subtree
  * 
  * Return:   completion (0 = no, 1 = yes), meaning that we have
  *           completely aligned all of the model below BPA_t *root
@@ -1024,13 +1031,6 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
       root->right_child->chunk->cur_i = root->right_child->chunk->temp_i;
       root->right_child->chunk->cur_v = root->right_child->chunk->temp_v;
    }
-
-   /* Unfinished items:
-    * when does a score become 'accepted'?
-    * when does the marginal extension become a recorded part of the partial alignment
-    *   and how much information about it do we need?
-    * How are we passing scores to and from child functions?
-    */
 
    /* We should have at least some bound on how high i can get - we may not know the
     * actual limit on this chunk, but there is an overall limit if there's a pair
