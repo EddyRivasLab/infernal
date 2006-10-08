@@ -291,6 +291,8 @@ main(int argc, char **argv)
   double **orig_phi;
   double **sub_phi_trad;    
   double **sub_phi_trunc;    
+  int *imp_cc;                  /* imp_cc[k] = 1 if CP9 node k is an impossible case to get 
+				 * the right transition distros for the sub_cm. */
 
   /*********************************************** 
    * Parse command line
@@ -592,7 +594,7 @@ main(int argc, char **argv)
 	  {
 	    sre_srandom(seed);
 	    //if(!(CP9_check_wrhmm_by_sampling(cm, cp9_hmm, 1, cp9_hmm->M, hns2cs_map, 0.05, 100000)))
-	    if(!(CP9_check_wrhmm_by_sampling(cm, cp9_hmm, 1, cp9_hmm->M, hns2cs_map, 0.01, 100000)))
+	    if(!(CP9_check_wrhmm_by_sampling(cm, cp9_hmm, 1, cp9_hmm->M, hns2cs_map, 0.01, 100000, NULL)))
 	      Die("CM Plan 9 fails sampling check!\n");
 	    else
 	      printf("CM Plan 9 passed sampling check.\n");
@@ -605,16 +607,16 @@ main(int argc, char **argv)
 	 * If not, we build a new one from the CM. This is a design decision, 
 	 * and I'm not sure if its the best or desired behavior (EPN)
 	 */
-	if(!(CP9_check_wrhmm(cm, cp9_hmm, hns2cs_map, cc_node_map, debug_level)))
-	  {
-	    printf("\nCM Plan 9 HMM read from %s not similar enough to the CM.\n", hmmfile);
-	    printf("Building a new CM plan 9 HMM directly from the CM.\n\n");
-	    /* build a new CM plan 9 HMM */
-	    if(!(CP9_cm2wrhmm(cm, cp9_hmm, node_cc_left, node_cc_right, cc_node_map, cs2hn_map,
-			      cs2hs_map, hns2cs_map, debug_level)))
-	      Die("Couldn't build a CM Plan 9 HMM from the CM\n");
-	  }
-      }
+	  if(!(CP9_check_wrhmm(cm, cp9_hmm, hns2cs_map, cc_node_map, debug_level)))
+	    {
+	      printf("\nCM Plan 9 HMM read from %s not similar enough to the CM.\n", hmmfile);
+	      printf("Building a new CM plan 9 HMM directly from the CM.\n\n");
+	      /* build a new CM plan 9 HMM */
+	      if(!(CP9_cm2wrhmm(cm, cp9_hmm, node_cc_left, node_cc_right, cc_node_map, cs2hn_map,
+				cs2hs_map, hns2cs_map, debug_level)))
+		Die("Couldn't build a CM Plan 9 HMM from the CM\n");
+	    }
+	}
       CP9Logoddsify(cp9_hmm);
       fill_phi_cp9(cp9_hmm, &orig_phi, 1);
       /*debug_print_cp9_params(cp9_hmm);*/
@@ -778,14 +780,15 @@ main(int argc, char **argv)
 
 	      /* Uncomment below to build a sub_cm that only models consensus columns between HMM start and end
 	       * node. */
-	      build_sub_cm(cm, &sub_cm, hmm_start_node, hmm_end_node, hmm_start_node, hmm_end_node, orig2sub_smap, sub2orig_smap);
+	      build_sub_cm(cm, &sub_cm, hmm_start_node, hmm_end_node, hmm_start_node, hmm_end_node, 
+			   orig2sub_smap, sub2orig_smap, &imp_cc);
 
 	      /* check_sub_cm_by_sampling() call builds a CP9 HMM from the sub_cm and checks to make 
 	       * sure this CP9 HMM is correct. This check is done by sampling a deep MSA from the CM, 
 	       * truncating it before hmm_start_node and after hmm_end_node and then doing chi-squared
 	       * tests to see if the samples came from the CP9 HMM distribution.
 	       */
-	      check_sub_cm_by_sampling(cm, sub_cm, hmm_start_node, hmm_end_node, 0.01, 100000);
+	      check_sub_cm_by_sampling(cm, sub_cm, hmm_start_node, hmm_end_node, 0.01, 100000, imp_cc);
 	      exit(1);
 
 	      /* Following function call samples for cm and sub_cm and builds CP9 HMMs from each set of samples,

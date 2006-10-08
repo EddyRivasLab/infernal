@@ -45,7 +45,8 @@ static char experts[] = "\
    --thresh <f>  : CM reporting bit score threshold (try 0 before < 0) [df: 0]\n\
    --X           : project X!\n\
    --inside      : scan with Inside, not CYK (caution ~5X slower(!))\n\
-   --null2       : turn OFF the post hoc second null model\n\
+   --null2       : turn on the post hoc second null model [df:OFF]\n\
+   --learninserts: do not set insert emission scores to 0\n\
 \n\   
   * Filtering options using a CM plan 9 HMM:\n\
    --hmmfb        : use Forward to get end points & Backward to get start points\n\
@@ -76,8 +77,9 @@ static struct opt_s OPTIONS[] = {
   { "--X",          FALSE, sqdARG_NONE },
   { "--inside",     FALSE, sqdARG_NONE },
   { "--null2",      FALSE, sqdARG_NONE },
+  { "--zeroinserts",FALSE, sqdARG_NONE},
   { "--hmmfb",      FALSE, sqdARG_NONE },
-  { "--hmmweinberg",FALSE, sqdARG_FLOAT},
+  { "--hmmweinberg",FALSE, sqdARG_NONE},
   { "--hmmpad",     FALSE, sqdARG_INT },
   { "--hmmonly",    FALSE, sqdARG_NONE },
   { "--hthresh",    FALSE, sqdARG_FLOAT},
@@ -88,7 +90,6 @@ static struct opt_s OPTIONS[] = {
   { "--banddump",   FALSE, sqdARG_NONE},
   { "--sums",       FALSE, sqdARG_NONE},
   { "--scan2hbands", FALSE, sqdARG_NONE},
-
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -257,7 +258,7 @@ main(int argc, char **argv)
 				 * Does not check for overlap, could overcount some bases.
 				 */
   int   do_null2;		/* TRUE to adjust scores with null model #2 */
-
+  int   do_zero_inserts;        /* TRUE to zero insert emission scores */
 
   /*********************************************** 
    * Parse command line
@@ -286,7 +287,8 @@ main(int argc, char **argv)
   use_sums          = FALSE;
   do_scan2hbands    = FALSE;
   hmm_pad           = 0;
-  do_null2          = TRUE;
+  do_null2          = FALSE;
+  do_zero_inserts   = TRUE;
   debug_level = 0;
   
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
@@ -300,7 +302,8 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--thresh")    == 0) thresh       = atof(optarg);
     else if  (strcmp(optname, "--X")         == 0) do_projectx  = TRUE;
     else if  (strcmp(optname, "--inside")    == 0) do_inside    = TRUE;
-    else if  (strcmp(optname, "--null2")     == 0) do_null2     = FALSE;
+    else if  (strcmp(optname, "--null2")     == 0) do_null2     = TRUE;
+    else if  (strcmp(optname, "--learninserts")== 0) do_zero_inserts = FALSE;
 
     else if  (strcmp(optname, "--hmmfb")   == 0)   { do_filter = TRUE; filter_fb  = TRUE; }
     else if  (strcmp(optname, "--hmmweinberg")   == 0)   
@@ -366,7 +369,9 @@ main(int argc, char **argv)
     Die("Value for --hmmpad is too high (must be less than W/2=%d).\n", (int) (windowlen/2));
 
   CMLogoddsify(cm);
-  /*CMHackInsertScores(cm);*/	/* "TEMPORARY" fix for bad priors */
+  if(do_zero_inserts)
+    CMHackInsertScores(cm);	/* "TEMPORARY" fix for bad priors */
+      
   cons = CreateCMConsensus(cm, 3.0, 1.0); 
 
   if (do_filter || do_hmmonly)
@@ -433,7 +438,8 @@ main(int argc, char **argv)
     { 
       ConfigLocal(cm, 0.5, 0.5);
       CMLogoddsify(cm);
-      /*CMHackInsertScores(cm);*/	/* "TEMPORARY" fix for bad priors */
+      if(do_zero_inserts)
+	CMHackInsertScores(cm);	/* "TEMPORARY" fix for bad priors */
       if(do_filter || do_hmmonly)
 	{
 	  printf("configuring the CM plan 9 HMM for local alignment.\n");

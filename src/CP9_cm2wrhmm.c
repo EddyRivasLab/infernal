@@ -2213,13 +2213,19 @@ CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, int *cc_node_
  *                      (often L = (MATL+MATR+2*MATP))
  * float thresh      - probability threshold for chi squared test
  * int nseq          - number of sequences to sample to build the new HMM.
+ * int *imp_cc;      - imp_cc[k] = 1 if CP9 node k is an impossible case to get 
+ *                     the right transition distros for the sub_cm. NULL is 
+ *                     passed if this function is called outside of context
+ *                     of building a sub_cm (in which case ZERO nodes should
+ *                     should be impossible to correctly calculate distributions
+ *                     for.
  *
  * Returns: TRUE: if CM and HMM are "close enough" (see code)
  *          FALSE: otherwise
  */
 int 
 CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int spos, int epos, int ***hns2cs_map, float thresh,
-			    int nseq)
+			    int nseq, int *imp_cc)
 {
   int ret_val;         /* return value */
   Parsetree_t **tr;             /* Parsetrees of emitted aligned sequences */
@@ -2394,11 +2400,36 @@ CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int spos, int epos, 
 
   for(nd = 0; nd <= shmm->M; nd++)
     {
-      if(!(CP9_node_chi_squared(hmm, shmm, nd, thresh, dual_mapping_insert[nd])))
+      if(nd == 0 || nd == shmm->M)
 	{
-	  /*Die("ERROR: chi_squared test failed for node: %d\n", nd);*/
-	  printf("ERROR: chi_squared test failed for node: %d\n", nd);
-	  ret_val = FALSE;
+	  printf("nd:%d\n", nd);
+	  if(!(CP9_node_chi_squared(hmm, shmm, nd, thresh, dual_mapping_insert[nd])))
+	    {
+	      if(imp_cc != NULL && imp_cc[nd] == TRUE)
+		{
+		  printf("10.06.06 Failed-good case 2 : chi_squared test failed for node: %d\n", nd);
+		}	      
+	      else
+		{
+		  printf("10.06.06 Failed-bad  case 2 : chi_squared test failed for node: %d\n", nd);
+		  //Die("ERROR for non-predicted nd: chi_squared test failed for node: %d\n", nd);
+		  //ret_val = FALSE;
+		}
+	    }
+	  else
+	    {
+	      if(imp_cc != NULL && imp_cc[nd] == TRUE)
+		{
+		  /* we predicted these distros would be off, but they're not. */
+		  //Die("ERROR for predicted nd: chi_squared test PASSED for node: %d\n", nd);
+		  //printf("kachowset ERROR for predicted nd: chi_squared test PASSED for node: %d\n", nd);
+		  printf("10.06.06 Passed-bad  case 2 : chi_squared test passed for node: %d\n", nd);
+		}	      
+	      else
+		{
+		  printf("10.06.06 Passed-good case 2 : chi_squared test passed for node: %d\n", nd);
+		}
+	    }  
 	}
     }
 
@@ -2694,6 +2725,9 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
   float check_m_nseq, check_i_nseq;
   float *temp_ahmm_trans;
   float *temp_shmm_trans;
+  int ret_val;
+
+  ret_val = TRUE;
 
   if(nd > shmm->M || nd >  ahmm->M)
     Die("ERROR CP9_node_chi_squared() is being grossly misused.\n");
@@ -2793,8 +2827,11 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
       FScale(temp_ahmm_trans, 3, FSum(temp_shmm_trans, 3));     /* convert to #'s */         
       p = FChiSquareFit(temp_ahmm_trans, temp_shmm_trans, 3);   /* compare #'s    */
       if (p < threshold)
-	//Die("Rejected match transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
-	printf("Rejected match transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+	{
+	  //Die("Rejected match transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+	  printf("Rejected match transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+	  ret_val = FALSE;
+	}
       printf("out of match %d p: %f\n", nd, p);
     }
   else
@@ -2802,8 +2839,11 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
       FScale(ahmm->t[nd], 3, FSum(shmm->t[nd], 3));     /* convert to #'s */         
       p = FChiSquareFit(ahmm->t[nd], shmm->t[nd], 3);   /* compare #'s    */
       if (p < threshold)
-	//Die("Rejected match transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
-	printf("Rejected match transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+	{
+	  //Die("Rejected match transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+	  printf("Rejected match transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+	  ret_val = FALSE;
+	}
       printf("out of match %d p: %f\n", nd, p);
     }
   /* out of insert */
@@ -2812,8 +2852,11 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
       FScale(ahmm->t[nd]+3, 3, FSum(shmm->t[nd]+3, 3));     /* convert to #'s */         
       p = FChiSquareFit(ahmm->t[nd]+3, shmm->t[nd]+3, 3);   /* compare #'s    */
       if (p < threshold)
-	//Die("Rejected insert transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
-	printf("Rejected insert transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+	{
+	  //Die("Rejected insert transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+	  printf("Rejected insert transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+	  ret_val = FALSE;
+	}
       printf("out of insert %d p: %f\n", nd, p);
     }
   else
@@ -2824,8 +2867,11 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
       FScale(ahmm->t[nd]+6, 3, FSum(shmm->t[nd]+6, 3));     /* convert to #'s */         
       p = FChiSquareFit(ahmm->t[nd]+6, shmm->t[nd]+6, 3);   /* compare #'s    */
       if (p < threshold)
-	//Die("Rejected delete transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
-	printf("Rejected delete transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+	{
+	  //Die("Rejected delete transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+	  printf("Rejected delete transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+	  ret_val = FALSE;
+	}
       printf("out of delete %d p: %f\n\n", nd, p);
     }
   else
@@ -2834,7 +2880,7 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
   /* we've scaled some probabilities into counts, we want to get back into prob form */
   CPlan9Renormalize(ahmm);
 
-  return TRUE;
+  return ret_val;
 }
   
 /**************************************************************************
@@ -2892,7 +2938,7 @@ FChiSquareFit(float *f1, float *f2, int N)
       chisq += diff * diff / (f1[i]+f2[i]);
       n++;
     }
-
+  
   if (n > 1) 
     return (IncompleteGamma(((float) n-1.)/2., chisq/2.));
   else 

@@ -76,6 +76,8 @@ main(int argc, char **argv)
   int   optind;                 /* index in argv[]                         */
   int   begin_set;              /* TRUE if -b entered at command line */
   int   end_set;                /* TRUE if -e entered at command line */
+  int  *imp_cc;                 /* imp_cc[k] = 1 if CP9 node k is an impossible case to get 
+				 * the right transition distros for the sub_cm. */
 
   /*********************************************** 
    * Parse command line
@@ -131,14 +133,14 @@ main(int argc, char **argv)
       /* build one model, as specified on command-line */
       if(spos < 1) spos = 1;
       if(epos > ncols) epos = ncols;
-      build_sub_cm(cm, &sub_cm, spos, epos, spos, epos, orig2sub_smap, sub2orig_smap);
+      build_sub_cm(cm, &sub_cm, spos, epos, spos, epos, orig2sub_smap, sub2orig_smap, &imp_cc);
 
       /* check_sub_cm_by_sampling() call builds a CP9 HMM from the sub_cm and checks to make 
        * sure this CP9 HMM is correct. This check is done by sampling a deep MSA from the CM, 
        * truncating it before hmm_start_node and after hmm_end_node and then doing chi-squared
        * tests to see if the samples came from the CP9 HMM distribution.
        */
-      check_sub_cm_by_sampling(cm, sub_cm, spos, epos, 0.01, 100000);    
+      check_sub_cm_by_sampling(cm, sub_cm, spos, epos, 0.01, 100000, imp_cc);    
     }
   else
     {
@@ -156,16 +158,17 @@ main(int argc, char **argv)
 	  printf("$$$$$$$$$$$$$$$ MODELO %d $$$$$$$$$$$$$$$$$$$$\n", i);
 	  printf("$$$$$$$$$$$$$$$ S: %d E: %d **#$$$$$$$$$$$$$$$\n", spos, epos);
 	  /* Build a sub CM between spos and epos, inclusive */
-	  build_sub_cm(cm, &sub_cm, spos, epos, spos, epos, orig2sub_smap, sub2orig_smap);
+	  build_sub_cm(cm, &sub_cm, spos, epos, spos, epos, orig2sub_smap, sub2orig_smap, &imp_cc);
 
 	  /* check_sub_cm_by_sampling() call builds a CP9 HMM from the sub_cm and checks to make 
 	   * sure this CP9 HMM is correct. This check is done by sampling a deep MSA from the CM, 
 	   * truncating it before hmm_start_node and after hmm_end_node and then doing chi-squared
 	   * tests to see if the samples came from the CP9 HMM distribution.
 	   */
-	  check_sub_cm_by_sampling(cm, sub_cm, spos, epos, 0.01, 100000);
+	  check_sub_cm_by_sampling(cm, sub_cm, spos, epos, 0.01, 100000, imp_cc);
 	}
     }
+  free(imp_cc);
   FreeCM(cm);
   exit(0);
 }

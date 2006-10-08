@@ -312,7 +312,7 @@ extern void fill_psi(CM_t *cm, double *psi, char ***tmap);
 extern void fill_phi_cp9(struct cplan9_s *hmm, double ***ret_phi, int spos);
 extern void make_tmap(char ****ret_tmap);
 extern int  CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int spos, int epos, int ***hns2cs_map, 
-					float thresh, int nseq);
+					float thresh, int nseq, int *imp_cc);
 extern void CP9_fake_tracebacks(char **aseq, int nseq, int alen, int *matassign, struct cp9trace_s ***ret_tr);
 
 extern void CP9TraceCount(struct cplan9_s *hmm, char *dsq, float wt, struct cp9trace_s *tr);
@@ -345,8 +345,8 @@ extern void CP9NodeForPosn(struct cplan9_s *hmm, int i0, int j0, int x,
 			   struct cp9_dpmatrix_s *post, int *ret_node, int *ret_type);
 extern void StripWUSSGivenCC(MSA *msa, char **dsq, float gapthresh, int first_match, int last_match);
 extern void build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int struct_start, int struct_end, int model_start,
-			 int model_end, int **orig2sub_smap, int **sub2orig_smap);
-extern int  check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, float thresh, int nseq);
+			 int model_end, int **orig2sub_smap, int **sub2orig_smap, int **ret_imp_cc);
+extern int  check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, float thresh, int nseq, int *imp_cc);
 extern int  check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int nseq);
 
 
