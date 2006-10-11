@@ -66,5 +66,6 @@ PA_t* AstarExtension(CM_t *cm, char *dsq, int init_v, int init_j, int lower_d, i
 
 float LeftMarginalScore(float *esc, char syml);
 float RightMarginalScore(float *esc, char symr);
+void MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dropoff_sc, float *total_sc, float *delta_sc, int *commit, int *complete);
 
 #endif /* R_WHAT_H_INCLUDED */

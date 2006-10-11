@@ -821,6 +821,7 @@ RightMarginalScore(float *esc, char symr)
  *                  alignmnet held in the root may be partially
  *                  extended, although empty is expected to be the
  *                  more likely case.
+ *           rbound - a limit on the range of i
  *           dropoff_sc - amount of score decrease allowed before
  *                  termination
  *           total_sc - running total of score (from commited segments)
@@ -859,6 +860,7 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
 
    while ( (cm->sttype[v] != E_st) && (cm->sttype[v] != B_st) && (*delta_sc > dropoff_sc) && (i < rbound) )
    {
+      esc = 0.0;
       tsc = ConsensusChild(cm, &v);
       if ( cm->stid[v] == MATL_ML )
       {
@@ -896,11 +898,6 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
       }
    }
 
-   /* If we have some accumulated score (negative) in delta_sc, do
-    * we force it to be accepted/rejected before we branch into children,
-    * or can we procede on a temporary basis and see if subsequent
-    * extension 'rescues' it?
-    */
    if ( cm->sttype[v] == B_st )
    {
       if ( root->left_child == NULL )
@@ -938,8 +935,8 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
          }
          root->right_child->chunk->init_v = cm->cnum[v];
          root->right_child->chunk->cur_v  = cm->cnum[v];
-         root->right_child->chunk->init_i = root->left_child->chunk->cur_i; /* Compare to where we set cur_i in this func to check for off-by-1 */
-         root->right_child->chunk->cur_i  = root->left_child->chunk->cur_i;
+         root->right_child->chunk->init_i = root->left_child->chunk->temp_i;
+         root->right_child->chunk->cur_i  = root->left_child->chunk->temp_i;
          /* Init to error values for j and d which are unknown */
          root->right_child->chunk->init_j = -1;
          root->right_child->chunk->cur_j  = -1;
@@ -966,9 +963,11 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
       *complete = 1;
    }
 
+   x--;
    if ( *complete == 1)
    {
       *complete = 0;
+      esc = 0.0;
       while ( ( cm->sttype[v] != S_st ) && (*delta_sc > dropoff_sc) && (i < rbound) )
       {
          ConsensusParent(cm, &v);
