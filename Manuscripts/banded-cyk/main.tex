@@ -65,14 +65,14 @@ suited for RNA similarity search applications, but the computational
 complexity of CM dynamic programming alignment algorithms has limited
 their practical application. Here we describe an acceleration method
 called \emph{query-dependent banding} (QDB), which uses the
-probabilistic query model to precalculate regions of the dynamic
-programming lattice that have negligible probability, independent of
-target sequences. We have implemented QDB in the freely available
-\textsc{Infernal} software package. Combined with other improvements
-to \textsc{Infernal}, including informative mixture Dirichlet priors
-on model parameters, benchmarks show increased sensitivity and
-specificity from the improved parameterization, and three- to
-five-fold average speedup from QDB.
+probabilistic model of the query to precalculate regions of the
+dynamic programming lattice that have negligible probability,
+independent of target sequences. We have implemented QDB in the freely
+available \textsc{Infernal} software package. Combined with other
+improvements to \textsc{Infernal}, including informative mixture
+Dirichlet priors on model parameters, benchmarks show increased
+sensitivity and specificity from the improved parameterization, and
+three- to five-fold average speedup from QDB.
 
 \end{abstract}
 
@@ -311,10 +311,17 @@ These state types essentially defines a general ``normal form'' for
 SCFG models of RNA, akin to SCFGs in Chomsky normal form where all
 productions are in one of two forms, $Y \rightarrow a$ or $Y
 \rightarrow YY$. We describe CM algorithms (including QDB) in terms of
-this normal form. Our current conventions for CMs specify exactly how
-consensus nodes in the tree are expanded into states, and how those
-states are connected within each node and to states in the next node
-in the guide tree; see \cite{Eddy02b, infguide03} for details, but
+this normal form. CMs define a specific way that nodes in the guide
+tree are expanded into states, and how those states are connected
+within each node and to states in the next node in the guide tree. For
+example, a MATP node that deals with a consensus base pair contains
+six states called MATP\_MP (a P state for matching the base pair),
+MATP\_ML and MATP\_MR (a L and R state for matching only the leftmost
+or rightmost base and deleting the right or left one, respectively),
+MATP\_D (a D state for deleting the base pair), and MATP\_IL and
+MATP\_IR (L and R states with self-transitions, for inserting one or
+more residues to the left and/or right before going to the next
+node). See \cite{Eddy02b, infguide03} for a fuller description, though
 these details are unnecessary to describe QDB.
 
 Thus a CM is a generative probabilistic model of a family of
@@ -335,13 +342,13 @@ local alignment, and to either pairwise alignment to single RNA
 queries or profile alignment to a consensus structure of a multiple
 RNA sequence alignment. CMs for single RNA queries are derived
 identically to profiles of a consensus structure, differing only in
-the parameterization method \citep{KleinXXX}. Local structural
+the parameterization method \cite{KleinXXX}. Local structural
 alignment to substructures and truncated structures (as opposed to
 requiring a global alignment to the whole RNA structural model) is
 achieved by adding state transitions from the ROOT that permit
 entering the model at any internal consensus state with some
 probability, and state transitions from any internal state to an END
-with some probability \citep{KleinEddy03}.
+with some probability \cite{KleinEddy03}.
 
 \subsection{QDB algorithm}
 
@@ -511,7 +518,7 @@ The $W$ parameter defines the maximum size of a potential hit to a
 model. Previous \textsc{Infernal} implementations required an \emph{ad
 hoc} guess at a reasonable $W$. The band calculation algorithm
 delivers a probabilistically derived $W$ for database search in
-$d_\mbox{max}(0)$, the upper bound on the length of the entire
+$d_{\mbox{max}}(0)$, the upper bound on the length of the entire
 sequence (the sequence generated from the root state of the CM).
 
 QDB has no guarantee on how much time and memory it saves, so it does
@@ -537,7 +544,7 @@ uninformative uniform Dirichlet prior, equivalent to the use of
 Laplace ``plus-1'' pseudo-counts. However, transition parameters
 derived under a uniform prior inaccurately predict target subsequence
 lengths, even for the input training sequences themselves, as shown in
-an example in Figure \ref{fig:bands}.  The problem is exacerbated when
+an example in Figure~\ref{fig:bands}.  The problem is exacerbated when
 there are few sequences in the query alignment, when the choice of
 prior has more impact on mean posterior estimation.  To alleviate this
 problem, we estimated informative single component Dirichlet prior
@@ -557,36 +564,37 @@ densities for CM transition parameters, as follows.
       show QDB calculations for $\gamma_0(d)$ for the root state of
       each model, for uninformative versus informative Dirichlet
       priors, respectively.  Dotted and dashed vertical lines show the
-      band bounds ($d_{\mbox{min}}(0)$ (left) and $d_{\mbox{max}(0)$
+      band bounds ($d_{\mbox{min}}(0)$ (left) and $d_{\mbox{max}}(0)$
       (right)) derived from the $\gamma_0(d)$ distributions using
       $\beta = 10^{-7}$. The uninformative plus-one prior results in
       consistent underprediction of target sequence lengths, with a
       broad distribution. The new informative priors produce tighter
       distributions that are centered on the actual subsequence
       lengths. The same result is observed for all other states, not
-      just root states (data not shown).
+      just root states (data not shown).}
     \label{fig:bands}
   \end{center}
 \end{figure}
 \fi
 
-The training data consisted of the 381 seed alignments in the Rfam
-database, version 6.1 \cite{Griffiths-Jones05}. For each alignment, we
-built CMs by \textsc{Infernal}'s default procedure, and collected
-weighted counts of observed transitions in the implied parse trees of
-the training sequences. Considering all possible combinations of pairs
-of adjacent node types, there are 73 possible distinct types of
-transition probability distributions in CMs. To reduce this parameter
-space somewhat, we tied these 73 distributions into 36 groups, by
-assuming that certain distributions were effectively equivalent.  36
-Dirichlet densities were estimated from these counts by maximum
-likelihood as described in \cite{Sjolander96}, with the exception that
-we optimize by conjugate gradient descent \cite{Press93} rather than
-by expectation-maximization (EM).  The results, including the
-Dirichlet parameters, are given in Table~\ref{tbl:transitions}.  Using
-these priors for transition probability parameter estimation results
-in a dramatic improvement in the utility of QDB calculations, as shown
-by anecdotal example in Figure~\ref{fig:bands}.
+The training data for transition priors consisted of the 381 seed
+alignments in the Rfam database, version 6.1
+\cite{Griffiths-Jones05}. For each alignment, we built CMs by
+\textsc{Infernal}'s default procedure, and collected weighted counts
+of observed transitions in the implied parse trees of the training
+sequences. Considering all possible combinations of pairs of adjacent
+node types, there are 73 possible distinct types of transition
+probability distributions in CMs. To reduce this parameter space, we
+tied these 73 distributions into 36 groups, by assuming that certain
+distributions were effectively equivalent.  36 Dirichlet densities
+were estimated from these counts by maximum likelihood as described in
+\cite{Sjolander96}, with the exception that we optimize by conjugate
+gradient descent \cite{Press93} rather than by
+expectation-maximization (EM).  The results, including the Dirichlet
+parameters, are given in Table~\ref{tbl:transitions}.  Using these
+priors for transition probability parameter estimation results in a
+dramatic improvement in the utility of QDB calculations, as shown by
+anecdotal example in Figure~\ref{fig:bands}.
 
 % The transition priors 041006_trans_priors.tex (with modifications)
 \ifdraft
@@ -598,15 +606,15 @@ by anecdotal example in Figure~\ref{fig:bands}.
 %\begin{tabular}{|r|r|l|l|l||l|r||l|r||l|r||l|r||l|r||l|r||} \hline
 \begin{tabular}{|rr|rr|cc|c|c|cc|cc|cc|cc|cc|cc|} \cline{1-6} \cline{8-20}
 %\multicolumn{5}{c}{} & \multicolumn{2}{|c|}{1} & \multicolumn{2}{|c|}{2} & \multicolumn{2}{|c|}{3} & \multicolumn{2}{|c|}{4} & \multicolumn{2}{|c|}{5} & \multicolumn{2}{|c|}{6} \\ \cline{1-17}
-\multicolumn{1}{|c}{alph} & \multicolumn{1}{c|}{grp} &
-  \multicolumn{1}{c}{alph} & \multicolumn{1}{c|}{grp} & node & next &
-  & \multicolumn{13}{|c|}{transition alphabets and Dirichlet $\alpha$ parameters} \\ %\cline{8-20}
+\multicolumn{1}{|c}{dist} & \multicolumn{1}{c|}{tied} &
+  \multicolumn{1}{c}{dist} & \multicolumn{1}{c|}{grp} & node & next &
+  & \multicolumn{13}{|c|}{Dirichlet $\alpha$ parameters} \\ %\cline{8-20}
 %\multicolumn{1}{|c}{\#} & \multicolumn{1}{c|}{\#} & \multicolumn{1}{c}{counts} & \multicolumn{1}{c|}{counts} & state & node & & $|\alpha|$ & $a_1$ &
 %  $\frac{\alpha_{a_1}}{|\alpha|}$ & $a_2$ & $\frac{\alpha_{a_2}}{|\alpha|}$ & $a_3$ &
 %  $\frac{\alpha_{a_3}}{|\alpha|}$ & $a_4$ & $\frac{\alpha_{a_4}}{|\alpha|}$ & $a_5$ &
 %  $\frac{\alpha_{a_5}}{|\alpha|}$ & $a_6$ & $\frac{\alpha_{a_6}}{|\alpha|}$ \\
 %  \cline{1-6} \cline {8-20} 
-\multicolumn{1}{|c}{\#} & \multicolumn{1}{c|}{\#} & \multicolumn{1}{c}{counts} & \multicolumn{1}{c|}{counts} & state & node & & $|\alpha|$ & $a$ &
+\multicolumn{1}{|c}{\#} & \multicolumn{1}{c|}{to} & \multicolumn{1}{c}{counts} & \multicolumn{1}{c|}{counts} & state & node & & $|\alpha|$ & $a$ &
   $\frac{\alpha_{a}}{|\alpha|}$ & $a$ & $\frac{\alpha_{a}}{|\alpha|}$ & $a$ &
   $\frac{\alpha_{a}}{|\alpha|}$ & $a$ & $\frac{\alpha_{a}}{|\alpha|}$ & $a$ &
   $\frac{\alpha_{a}}{|\alpha|}$ & $a$ & $\frac{\alpha_{a}}{|\alpha|}$ \\
@@ -690,42 +698,85 @@ by anecdotal example in Figure~\ref{fig:bands}.
 \end{center}
 
 \normalfont\rmfamily
-\caption{\textbf{Transition alphabets and groups with corresponding
-    training counts and estimated Dirichlet transition prior parameters.}
-  ``alph \#''= transition alphabet number; ``*'' indicates a plus-1
-  prior is used. ``grp \#''= transition
-  group number, each group is numbered as the lowest numbered alphabet in
-  the group, this column is blank if alphabet number = group
-  number. ``alph counts''= observed Rfam 6.1 counts for
-  alphabet. ``grp counts''= total Rfam 6.1 counts for group, used
-  to estimate a single component Dirichlet density for use as a prior
-  for each alphabet in the group. ``node state''= initial node state
-  type for each alphabet. ``next node''= type of immediately downstream
-  node for each alphabet.}
+\caption{\textbf{Dirichlet priors for transitions.}  ``dist \#''=
+  index for the 73 different types of transition distributions in CMs;
+  asterisks mark six distributions which had very few observed counts
+  even after tying into groups, and for which we assigned a uniform
+  plus-one Laplace prior. ``tied to''= if an index is shown in this
+  column, this distribution was estimated in a group (pooling observed
+  counts) with the indicated distribution.  ``dist counts''= total
+  counts observed for this distribution in the training data, before
+  pooling into groups. ``grp counts''= total counts for a group of one
+  or more pooled distributions; this is the size of the training data
+  sets for 36 different single-component Dirichlet priors.  ``node
+  state''= unique CM state type the transition is from. 
+  ``next node''= the node type that the transitions are going to.
+  The codes for node types and state types in a CM are more fully
+  explained in \cite{Eddy02b}.
+}
 \label{tbl:transitions}
 \end{table}
 \renewcommand{\baselinestretch}{1.5}
 \fi
 
 
+We also estimated informative mixture Dirichlet density priors for
+emission probabilities.  Emission probabilities do not affect QDB, but
+informative emission priors would be expected to improve sensitivity
+and specificity of CM searches, as they do for profile hidden Markov
+models \cite{Brown93b,Sjolander96}. We collected filtered counts of
+aligned single-stranded residues and base-pairs from annotated
+ribosomal RNA alignments from four alignments in the 2002 version of
+the European Ribosomal RNA Database \cite{VandePeer00, Wuyts01}: large
+subunit rRNA (LSU), bacterial/archaeal/plastid small subunit rRNA
+(SSU-bap), eukaryotic SSU rRNA (SSU-euk), and mitochondrial SSU rRNA
+(SSU-mito). These alignments were filtered, removing sequences in
+which either less than 40\% of the base paired positions are present
+or more than 5\% of the nucleotides are ambiguous, and removing
+selected sequences based on single-linkage-clustering such that no two
+sequences in a filtered alignment were greater than 80\% identical (in
+order to remove closely related sequences). Summary statistics for the
+filtered alignments and collected counts in the training dataset are
+given in Table~\ref{tbl:emissioncounts}. These data were used to
+estimate a nine-component Dirichlet mixture prior for base pairs, and
+an eight-component Dirichlet mixture prior for single stranded
+residues. (The decision to use nine and eight components was
+empirical, after benchmarking different choices.) The base pair prior
+is given in Table~\ref{tbl:basepairs}, and the singlet residue prior
+is given in Table~\ref{tbl:singlets}.
 
-To complement the informative transition priors, Dirichlet density
-\emph{mixtures} were estimated to use as informative emission
-priors. Although the emission probabilities do not affect band calculation,
-using Dirichlet density mixtures has been shown to improve the ability
-of profile HMMs to detect remote protein homology \cite{Brown93b,
-Sjolander96}, and we hoped to show a similar effect for CMs. 
+The reason to use two different datasets to estimate transition versus
+emission priors is the following. Rfam provides many different
+structural RNA alignments, but of uneven quality and varying depth
+(number of sequences). The European rRNA database provides a small
+number of large structural RNA alignments, but of high quality and
+great depth.  The ideal transition prior training set would be
+maximally diverse (where every RNA structure were different) so as not
+to bias any transition types toward any particular RNA structure, so
+we used the 381 different Rfam alignments for transitions.  Emission
+prior estimation does not require structural diversity per se, just a
+large number of different aligned singlet columns and aligned base
+pairs, thus favoring depth and quality over structural diversity, and
+we used rRNA data for emissions.
 
-For emission prior estimation, observed counts of single-stranded and
-base-paired residues were collected from the individually structurally
-annotated ribosomal RNA alignments from the European Ribosomal RNA Database
-\cite{VandePeer00, Wuyts01}. Starting with four alignments
-from the 2002 version of the database, sequences were removed in which either less than 40\%
-of the base paired positions are present or more than 5\% of the
-nucleotides are ambiguous. Each resulting alignment was filtered so
-that no two sequences in a filtered alignment were greater than 80\%
-identical. Characteristics of the filtered alignments and collected
-counts are in Table~\ref{tbl:emissioncounts}.
+Inspection of the Dirichlet $\alpha$ parameters shows sensible
+trends. In the transition priors, transitions between main (consensus)
+states are now favored (higher $\alpha$ values) relative to insertions
+and deletions, as opposed to the uniform plus-one prior we were using
+previously. In the base pair emission mixture prior, all components
+favor Watson-Crick and G-U pairs, with different components preferring
+different proportions of pairs in a particular covarying aligned
+column (for instance, component 1 likes all four Watson-Crick pairs,
+component 2 describes covarying conservation of CG,UA,UG pairs, and
+component 3 specifically likes conserved CG pairs), and the marginal
+(mean) $\alpha$ parameters prefer GC/CG pairs over AU/UA pairs. In the
+singlet emission mixture prior, some components are capturing strongly
+conserved residues (component 1 favors conserved U's, for example)
+while other components favor more variation (components 4 and 5, for
+example), and the marginal $\alpha$ parameters show a strong A bias,
+reflecting the known bias for adenine in single-stranded positions of
+structural RNAs (especially ribosomal RNAs).
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % The emission prior alignment counts
@@ -745,22 +796,14 @@ SSU mito & 1039 & 3791 & 107 & 216 & 524 & 19803 & 56510 \\
 %\multicolumn{8}{l}{bap: contains bacterial, archaeal and plastid
 %  sequences} \\
 \end{tabular}
-\caption{\textbf{Statistics on the alignments used for emission prior
-    estimation.} LSU: large subunit ribosomal RNA; SSU: small subunit
-    ribosomal RNA; ``SSU bap'' alignment contains bacterial, archaeal
-    and plastid sequences.}
-\label{tbl:emissioncounts}
+\caption{\textbf{Summary statistics for the dataset used for emission prior
+    estimation.}} 
 \end{center}
 \end{table}
 \fi
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-The counts were used to estimate two sets of Dirichlet mixtures, one
-for base pairs and one for single stranded residues, as
-described in \cite{Sjolander96}.
-We experimented with different numbers of components and finally
-decided on the 9 and 8 component mixtures for base pairs and singlets
-shown in Tables~\ref{tbl:basepairs} and \ref{tbl:singlets} respectively.
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % 04.10.06 The priors tables.
@@ -816,10 +859,12 @@ UU & 0.0114 & 0.0459 & 0.0389 & 0.0022 & 0.0151 & 0.0048 & 0.0098 & 0.0095 & 0.0
 \caption{\textbf{Parameters of the 9 component Dirichlet mixture
     emission prior for base pairs.} $q_i =$ mixture coefficient for
     component $i$. Normalized $\alpha$ values $> 0.10$ are in bold
-    faced type.}
+    face.}
 \label{tbl:basepairs}
 \end{table}
 \fi
+
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Singlet emission priors. 041006_sing_priors.tex (with modifications)
 \ifdraft
@@ -853,204 +898,158 @@ U & \textbf{0.2372} & \textbf{0.8917} & 0.0000 & 0.0090 & \textbf{0.3073} & \tex
 \fi
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%\subsubsection{Model entropy weighting}
-We also extend the profile HMM ``entropy weighting'' technique to CMs
-to increase sensitivity.
-%This method works by scaling the observed counts
-%relative to the prior during mean posterior estimation to reach a
-%target entropy for the model (ref).  
-This technique is independent of the banded strategy, but takes
-advantage of the ability of informative emission priors to
-accurately reflect characteristics of real RNA sequences. 
-\begin{comment}
-To increase the sensitivity of profile probabilistic models, model
-parameterization can be modified by scaling the observed counts
-relative to the prior to reach a target entropy for the model. 
-This ``entropy weighting'' technique is independent of the banded
-strategy, but has proven useful for profile HMMs (ref).  Here it takes
-advantage of the ability of the informative emission priors to
-accurately reflect characteristics of real RNA sequences. 
-\end{comment}
-The key idea of entropy weighting is to scale the contribution of the
-observed counts from the input alignment relative to the prior during
-mean posterior estimation. The specific scaling factor is
-determined such that a target model entropy is reached.
-We heuristically define a model's entropy 
-as the mean match state entropy, with match state entropy defined as 
-$\sum_a e_v(a) \log \frac{1}{e_v(a)}$ ($P$ states are treated as two
-match states). Notably, this definition ignores any contribution from
-insert emissions or transitions of the model. 
-The default target model entropy used in \infernal is 1.46 bits
-(because using this value gave the best results for our benchmark), but
-this value can be set by the user. 
 
-%\subsection{An Rfam based benchmark}
+In another step to increase sensitivity and specificity of the
+program, we adopted the ``entropy weighting'' technique described for
+profile HMMs \cite{KarplusXXX} for estimating the total effective
+sequence number for an input alignment. This is an \emph{ad hoc}
+method for reducing the information content per position of a model,
+which helps a model that has been trained on closely related sequences
+to recognize distantly related homologues \cite{Altschul91}. In
+entropy weighting, one reduces the total effective sequence number
+(which would normally be the actual number of sequences in the input
+alignment), thereby increasing the influence of the Dirichlet priors,
+flattening the transition and emission distributions, and reducing the
+overall information content, until a desired target entropy is
+achieved. We roughly approximate a model's entropy as the mean match
+state entropy, $\sum_a e_v(a) \log \frac{1}{e_v(a)}$. The target
+entropy for \infernal is a free parameter, which we optimized on the
+benchmark described below to identify our default value of 1.46 bits.
+
 \subsection{Benchmarking}
 
-To assess the performance impact of the bands, informative priors, and
-entropy weighting on homology search, we designed a 
-benchmark based on the Rfam database \cite{Griffiths-Jones05}. Rfam
-version 7.0 families were selected for the benchmark that
-exhibit a broad range of primary sequence divergence. For each of
-these families, a cluster of highly similar sequences was 
-used as a training input alignment (preserving the Rfam alignment)
-and another cluster of sequences sufficiently dissimilar from the
-training set was defined as the test set. 
-These designations were made following single-linkage clustering of each
-family based on percent identity given the alignment. To qualify for
-the benchmark, a family was required to contain possible training and
-testing sets with the following properties:
+To assess the effect of QDB, informative priors, and entropy weighting
+on the speed, sensitivity, and specificity of RNA similarity searches,
+we designed a benchmark based on the Rfam database
+\cite{Griffiths-Jones05}. The benchmark was designed so that we would
+test many RNA query/target pairs, with each query consisting of a
+given RNA sequence alignment, and each target consisting of a
+distantly related RNA homolog buried in a context of a random
+``genomic'' background sequence.
 
-\begin{itemize}
-\item
-no training and test sequences are greater than 60\% identical given
-the Rfam alignment.
-\item
-no two test sequences are greater than 70\% identical given the Rfam
-alignment.
-\item
-training sets have at least 5 sequences.
-\end{itemize}
+We started with [SEED?] aligmments from Rfam version 7.0. We clustered
+the sequences in each family by single-linkage-clustering by \%
+identity (as calculated from the given Rfam alignment), then split the
+clusters such that the training set and test sequences satisfied three
+conditions: 1) no training/test sequence pair is more than 60\%
+identical; 2) no test sequence pair is greater than 70\% identical; 3)
+at least 5 sequences are in the training set.  Fifty-one families
+satisfy these criteria (listed in Table~\ref{tbl:rmarkmer_fam}),
+giving us 51 different query alignments (containing 5 to 1080
+sequences each) and 450 total test sequences (from 1 to 66 per query).
+We embedded the test sequences in a one megabase ``pseudo-genome''
+consisting of twenty 50 kilobase ``chromosomes'', generated as
+independent, identically distributed (iid) random sequences with
+uniform base frequencies.  The 450 test sequences were embedded into
+this sequence by replacement, by randomly choosing a chromosome,
+orientation, and start position, and disallowing overlaps between test
+sequences. The total length of the 450 test sequences is 101,855 nt,
+leaving 898,145 nt of random background sequence.
 
-Fifty-one families satisfy these criteria (listed in
-Table~\ref{tbl:rmarkmer_fam}). The total number of test sequences
-across the 51 families is 450, with a combined length of 101,855 nt. 
+The benchmark proceeds by first building a CM for each query
+alignment, then searching the pseudogenome with each CM in local
+alignment mode. All hits above a threshold of 8.0 in raw bit score for
+each of the 51 queries were sorted by score into 51 ranked family
+specific lists, as well as one ranked master list of all 51 sets of
+scores.  Each hit is classified into one of three categories,
+``positive'', ``ignore'', or ``negative''. A ``positive'' is a hit
+that significantly overlaps with a true test sequence from the same
+family as the query.  An ``ignore'' is a hit that significantly
+overlaps with a test sequence from a different family, where
+``significantly overlap'' means that the length of overlap between two
+sequences (either two hits, or one hit and one test sequence embedded
+in the pseudogenome) is more than 50\% the length of the shorter
+sequence.  (Although it would be desirable to measure the false
+positive rate on nonhomologous structural RNAs, we cannot be sure that
+any given pair of Rfam families is truly nonhomologous; like most
+sequence family databases, Rfam is clustered computationally, and more
+sensitive methods will reveal previously unsuspected relationships
+that should not be benchmarked as ``false positives'').  A
+``negative'' is a hit that is not a positive or an ignore; for any two
+negatives that significantly overlap, only the one with the better
+score is counted.
 
-The CM CYK database search algorithm is designed for homology search in
-genomic sequence, motivating the fabrication of a
-``pseudo-genome'' for our benchmark. To limit the time
-necessary for carrying out the benchmark, the length of the
-pseudo-genome is only 1 million bases (MB); organized into twenty 50
-kilobase (KB) chromosomes.
-The pseudo-genome was constructed by first
-generating the 20 chromosomes using a 0th order single state Markov
-model with equiprobable emission probabilities of $0.25$ for the four
-letter DNA emission alphabet of $\{A,C,G,T\}$.
-The 450 test sequences were embedded into the genome by
-randomly chosing a chromosome, orientation, and starting
-position. No two test sequences were permitted to overlap on either strand.
+The minimum error rate (MER) score \cite{PearsonXXX} was used as a
+measure of benchmark performance. The MER score is defined as the
+minimum sum of the false positives (negative hits above the threshold)
+and false negatives (true test sequences which have no positive hit
+above the threshold), at all possible choices of score threshold. The
+MER score combines sensitivity and specificity. A lower MER score is
+better. We calculate two kinds of MER scores. For a
+\emph{family-specific} MER score, we choose a different optimal
+threshold in each of the 51 ranked lists, and for a \emph{summary} MER
+score, we choose a single optimal threshold in the master list of all
+hits. The summary MER score is the more stringent measure of
+performance, because it demands a single query-independent threshold
+for significance.
 
-The benchmark is performed for \infernal by
-first building a CM for each family using its training seed alignment.
-The pseudo-genome is then searched with each CM in \emph{local}
-mode\@. \textsc{BLAST} was also tested; for each family, each training
-sequence is used as a query sequence to search the pseudo-genome.
-For each benchmark run, the hits returned for each of the 51
-families were sorted based on score into a ranked family specific
-list. Using these 51 lists, a master list was created, with all hits
-across families sorted by score. 
+For comparison, \textsc{blastn} was also benchmarked on these data
+using a family-pairwise-search procedure \cite{NobleXXX}. For each
+query alignment, each training sequence is used as a query sequence to
+search the pseudo-genome, all hits with an E-value of less than 1.0
+were sorted by increasing E-value, and only the lowest E-value
+positive hit to a given test sequence is counted.
 
-For \textsc{BLAST}, hits with an E-value
-less than 1.0 were sorted from low to high. For
-\textsc{Infernal}, all hits greater than 8 bits were sorted from high to low
-bit score.  Each hit in a ranked list was classified into one of
-three categories:
+Using this benchmark, we addressed several questions about QDB's
+performance.
 
-\begin{description}
-\item[positives:]
-  hits returned when searching for family X test sequences
-  that \emph{significantly overlap}
-  with one of the true family X test sequences. For \textsc{BLAST}, only the
-  lowest E-value positive hit to each true test sequence is
-  counted. 
-\item[ignores:] 
-  hits using family X as a query that \emph{significantly
-    overlap} with a true test sequence
-  from family Y (where Y != X) on either strand of the
-  chromosome.%is not counted as a positive
-  %or a negative and is referred to as an ignore. 
-\item[negatives:]
-  hits that are not positives or ignores. %a positive or an ignore is defined as a negative.
-  For any two negatives that \emph{significantly overlap},
-  the one with the better score is counted.
-\end{description}
-  
-We define \emph{significant overlap} as the case when 
-the length of overlap between two sequences (either two hits, or one
-hit and one test sequence embedded in the pseudo-genome)
-is more than 50\% the length of the shorter of the two sequences.
-
-\subsubsection{Benchmark MER statistics} 
-
-The minimum error rate (MER) statistic \cite{Pearson95} (is this
-citation correct?) was used to
-measure benchmark performance. 
-The MER threshold is defined as a score, a point in the ranked
-list of hits, at which the sum of the false positives (FPs, hits
-classified as \emph{negatives} with scores better than the threshold) and
-false negatives (FNs, the number of true test sequences for which
-there are no corresponding \emph{positives} with scores better than
-the threshold) is minimized. The MER of a method is defined as the sum of false
-positives and false negatives at the MER threshold. Lower MERs are better.
-
-\subsection{Observed acceleration from bands}
-Figure~\ref{fig:scatter} shows the levels of acceleration for each of
-the 51 families in the benchmark set for two different
-values of the $bandp$ parameter. 
-The banded strategy offers between a 1.1 (for the IRE family) and 14.5
-(for the CsrB family) fold speed-up relative to a non-banded search. 
-The level of acceleration roughly
-scales with the average sequence length of the family being modelled,
-although other factors, including variation in substructure lengths
-and number of bifurcations also impact acceleration. The length
-dependent effect occurs because the number of non-banded alignments
-considered per state of the model is $O(L^2)$, while the
-number of banded alignments per state considered is $O(kL)$ 
-with $k$ equal to the average band width across all
-$M$ states ($(\sum_v dmax_v - dmin_v + 1) / M$), which varies slightly
-across families but independently of their lengths.
-The average family speed-up factor for the benchmark set is 3.17 and 4.75
-for $bandp$ values of $10^{-10}$ and $10^{-6}$ respectively. 
-The total speed-up factor for searching for all families is 4.40 and 6.74
-for $bandp$ values of $10^{-10}$ and $10^{-6}$ respectively. 
-
-These timings do not consider the time required for band
-calculation. The bands can be calculated \emph{a
-priori}, independent of the database, in a matter of seconds (about
-10 seconds for SSU rRNA, the largest RNA family tested) which is
-negligible considering the running time of a search is typically on
-the order of hours or days. 
+How much does QDB accelerate a CM search?  Figure~\ref{fig:scatter}
+summarizes the relative acceleration of QDB versus normal (unbanded)
+alignment, and shows that it ranges from 1.1 fold (for IRE) to 14.5
+fold (for CsrB) fold, for the 51 families in the benchmark and for two
+different values of the $\beta$ parameter. The level of acceleration
+roughly scales with the average sequence length of the query, although
+other factors also impact acceleration, such as variation in
+substructure lengths and number of bifurcations. The average speed-up
+per family is three- to four-fold, and in overall search time in the
+benchmark (sum of all 51 searches), the QDB acceleration is four- to
+seven-fold, for $\beta$ values of $10^{-10}$ and $10^{-6}$
+respectively.  Table~\ref{tbl:rmarkbtimes_l} tabulates detailed timing
+results for all 51 queries.
 
 \ifdraft
 \begin{figure}[hb]
 \begin{center}
 \includegraphics[width=6.4in,angle=0]{figs/scatter}
-\caption{\textbf{Acceleration for banded searches of the
-    51 benchmark families.} Bands calculated with $bandp =
-  10^{-10}$ (probability mass within each band is 99.99999999\%) for
-  left plot and $bandp = 10^{-6}$ (probability mass within each band
-  is 99.9999\%) for right plot. There are 51 points in each plot, one
-  for each family in the benchmark set, representing the speed-up
-  for a banded search relative to a non-banded search for the
-  corresponding family.}
+\caption{\textbf{Acceleration for banded searches of the 51 benchmark
+    families.} Bands calculated with $\beta = 10^{-10}$ (left) and
+    $\beta = 10^{-6}$ (right).  There are 51 points in each plot, one
+    for each family in the benchmark set, representing the relative
+    speed-up for a banded search relative to a non-banded search for
+    the corresponding family.}
 \label{fig:scatter}
 \end{center}
 \end{figure}
 \fi
 
-\subsection{Benchmark performance}
-Acceleration from the banded approach is not useful it comes
-at a significant cost to sensitivity. 
-To measure the extent of this cost, \emph{summary} MER statistics were
-calculated from the master lists of hits to 
-describe the performance of a method if a single threshold must
-be chosen for all families (and that threshold could be chosen
-\emph{after} the results are collected). This score threshold may be
-used in future searches, hopefully resulting in similar sensitivity and specificity
-measures. Additionally, \emph{family specific} MER statistics were
-calculated from the family specific lists of hits, which explain
-the performance that could be achieved if different optimal thresholds
-were used for each family. Table~\ref{tbl:rmarkmerlist} lists the
-summary MER statistic, and family-specific MER statistics (the sum
-over all 51 families) for each method tested.
-Table~\ref{tbl:rmarkmer_fam} contains the
-individual family-specific MER statistics of selected methods.
-Figure~\ref{fig:roc} displays the benchmark performance
-of the various methods differently, as a ROC plot with sensitivity and
-specificity measures for every possible cut point threshold in the
-master ranked list of hits (each method from 
-Table~\ref{tbl:rmarkmerlist} except for row 3 is included in the
-Figure~\ref{fig:roc} ROC plot).
+How much does QDB impact sensitivity and specificity? Optimal
+alignments are not guaranteed to lie within QDB's high-probability
+bands, and this is expected to compromise discrimination. The hope is
+that QDB's bands are sufficiently wide and accurate that this loss is
+negligible.  Figure~\ref{fig:roc} shows ROC plots (sensitivity versus
+false positive rate) for non-banded search, banded at $\beta = 1e-10$,
+and banded $\beta = 1e-6$ for the new version of \infernal (version
+0.70), as well as for the (nonbanded) previous version of \infernal
+(version 0.55) and for \textsc{blastn}.  The curves for non-banded and
+banded searches with the new 0.70 code are nearly superposed, so we
+conclude that the difference between banded and nonbanded searches are
+negligible.  
+
+How much do our changes in parameterization (the addition of
+informative Dirichlet priors and entropy weighting) improve
+sensitivity and specificity? Comparison of the curves for non-banded
+version 0.70 (new) and non-banded version 0.55 (old) in
+Figure~\ref{fig:roc} shows that \infernal 0.70 is a large improvement
+over \infernal 0.55, independent of QDB. Table~\ref{tbl:rmarkmerlist}
+breaks this result down in more detail, showing summary and
+family-specific MER scores for a variety of combinations of prior,
+entropy weighting, and QDB. These results show that both informative
+priors and entropy weighting individually contribute large
+improvements in sensitivity and specificity.  Finally,
+Table~\ref{tbl:rmarkmer_fam} tabulates detailed MER score results for
+the \textsc{blastn} and non-banded \textsc{infernal} benchmarks, to
+give insight into family-by-family variability of the query alignment
+sizes, test set sizes, performance, and optimal MER thresholds.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1083,12 +1082,12 @@ Figure~\ref{fig:roc} ROC plot).
 %6 & \infernal glocal & Y & 0.54 & - & - & 155 & 104 & 80 & 53 & 69 & 28 \\
 %7 & \infernal glocal & Y & 0.54 & - & 1E-6 & 161 & 112 & - & - & - & - \\
 %8 & \infernal glocal & Y & 0.54 & - & 1E-10 & 155 & 105 & - & - & - & - \\ \hline
-2 & \infernal & plus-1 & - & - & 230 & 184 \\
-3 & \infernal & informative & - & - & 188 & 163 \\
+2 & \infernal 0.55 & plus-1 & - & - & 230 & 184 \\
+3 & \infernal 0.70 & informative & - & - & 188 & 163 \\
 %4 & \infernal & Y & 1.46 & - & 122 & 94 \\
-4 & \infernal & informative & 1.46 & - & 104 & 90 \\
-5 & \infernal & informative & 1.46 & $10^{-6}$ & 116 & 98 \\
-6 & \infernal & informative & 1.46 & $10^{-10}$ & 110 & 94 \\ 
+4 & \infernal 0.70 & informative & 1.46 & - & 104 & 90 \\
+5 & \infernal 0.70 & informative & 1.46 & $10^{-6}$ & 116 & 98 \\
+6 & \infernal 0.70 & informative & 1.46 & $10^{-10}$ & 110 & 94 \\ 
 \end{tabular}
 \end{center}
 \caption{\textbf{Rfam benchmark MER summary statistics.} 
@@ -1128,161 +1127,150 @@ version and options used: \texttt{WU-BLASTN-2.0MP --kap -W=7}.
 
 \section{Discussion}
 
-The benchmark results summarized in Tables~\ref{tbl:rmarkmerlist} and
-\ref{tbl:rmarkmer_fam} and Figures~\ref{fig:scatter} and \ref{fig:roc}
-demonstrate the following:
+CM searches take a long time. Lack of speed is the most limiting
+factor is using the \textsc{infernal} software to identify RNA
+similarities. In our benchmarks, \textsc{infernal} requires 870
+CPU-hours to search 51 models against just 1 megabase of sequence
+(Table~\ref{tbl:rmarkbtimes_l}). Our eventual goal is complete and
+routine genome annotation of structural RNAs: to be able to search all
+Rfam models against complete genome sequences. A search of all 503
+Rfam 7.0 models against the 3 GB human genome would take on the order
+of 3000 CPU-\emph{years}. To be practical, we need to be able to do it
+in a few days. We need to increase CM search speed by five to six
+orders of magnitude. Parallelization is feasible, but even large
+clusters will give us ``only'' two to three orders of magnitude.
+Moreover, significant parallelization is prohibitively expensive in
+hardware for all but a few labs and centers. Software improvement
+(code optimization) may be expected to contribute about two-fold.
+Hardware improvements will gradually help, contributing about two-fold
+per year or so, so long as Moore's law continues. None of this is
+sufficient. Algorithmic acceleration is demanded.
 
-\begin{itemize}
-\item
-\textbf{The informative priors alone boost performance.}
-Incorporating the new priors drops the summary MER from 230 to 188,
-and the family specific MER from 184 to 163
-(Table~\ref{tbl:rmarkmerlist}, row 2 versus 3). Figure \ref{fig:roc}
-demonstrates that the sensitivity increase does not sacrifice specificity.
+The QDB algorithm is a partial but not a complete solution to the
+problem. At $\beta$ banding cutoffs that do not appreciably compromise
+sensitivity and specificity, QDB offers at most about a seven-fold
+speedup in CM searches. However, QDB combines synergistically with
+parallelization, code optimization, and hardware improvements, as well
+as with the filtering methods recently described by Weinberg and Ruzzo
+\cite{Weinberg04,Weinberg04b,Weinberg05}, so we view QDB as part of a
+growing suite of approaches that we can combine to accelerate
+\textsc{infernal}.
 
-\item
-\textbf{Entropy weighting significantly elevates performance.}
-Enforcing a target model entropy brings the summary MER from 188 down to
-104, and the family specific MER from 163 down to 90. 
-(Table~\ref{tbl:rmarkmerlist}, row 4 versus row 2). Figure~\ref{fig:roc}
-demonstrates that the sensitivity increase does not sacrifice
-specificity.
- (THIS IS
-MISLEADING, THE EL SELF TRANSITION ALSO CHANGES BETWEEN THESE ROWS).
+But is it really worth burning all this CPU time? Do CM searches
+identify structural RNA homologies that other methods miss? Obviously
+we think so (else we would not be working so hard on this approach)
+but one would like to see convincing results. For large, diverse RNA
+families like tRNA, where a CM can be trained on over a thousand
+well-aligned sequences with a well-conserved consensus secondary
+structure, CM approaches have been quite powerful. The state of the
+art in large scale tRNA gene identification remains the CM-based
+program \textsc{trnascan-se} \cite{LoweEddy97}, and CMs were also
+used, for example, to discover the divergent tRNA for pyrrolysine, the
+``22nd amino acid'' \cite{XXX}. But Figure~\ref{fig:roc} shows that on
+average, over 51 more or less ``typical'' RNA families of various
+sizes and alignment quality, \textsc{infernal} 0.55 was actually no
+better than doing a family-pairwise-search with \textsc{blastn}.
+Until recently, we have spent relatively little effort on how
+\textsc{infernal} parameterizes its models, and relatively more on
+reducing its computational requirements \cite{Eddy02b}, so
+\textsc{infernal} performs best where naive parameterization works
+best: on very large, high-quality alignments of hundreds of sequences,
+which are atypical of most interesting homology search problems.  
 
-\item
-\textbf{The banded strategy offers acceleration with a small cost to
-performance.} Using a $bandp$ of $10^{-6}$ results in an average
-speed-up per family of 4.75 fold and a total speed-up of 6.74 fold for the
-entire benchmark set (Table~\ref{tbl:rmarkmer_fam}).  This speed up
-increases summary MER from 104 to 116 and
-the family specific MER from 90 to 98 (Table~\ref{tbl:rmarkmerlist},
-rows 6 versus row 5). A $bandp$ of $10^{-10}$ gives a smaller
-3.17 fold average and 4.40 fold total acceleration
-(Table~\ref{tbl:rmarkmer_fam} at a smaller cost to performance;
-the summary MER is 110 and the family MER is 94 (row 7 versus row
-5). Figure~\ref{fig:roc} is perhaps more informative, showing sensitivity
-as a function of specificity.
-\end{itemize}
+In this work, partly motivated by the fact that QDB demanded more
+accurate transition parameterization anyway, we have brought
+\textsc{infernal} parameterization close to the state of the art in
+profile HMMs, by introducing mixture Dirichlet priors
+\cite{Sjolander96} and entropy weighting \cite{Karplus98}. This
+resulted in a large improvement in the sensitivity and specificity of
+searches, as judged by our benchmark (Figure~\ref{fig:roc}). The
+difference between \textsc{infernal} and family-pairwise
+\textsc{blastn} now appears pronounced, for average-case behavior (not
+just best-case behavior). 
 
-We have presented separate techniques to improve the speed and 
-sensitivity of CM based homology search. 
-%Our benchmark
-%results suggest that the improved sensitivity does not
-%sacrifice specificity (Figure~\ref{fig:roc}). However, the speed-up
-%from the banded strategy does come at a small cost to sensitivity
-%(Figure~\ref{fig:roc}). 
-The informative prior distributions are central to both of these
-improvements. Informative transitions priors are critical to
-the band calculation (Figure~\ref{fig:bands}), and informative
-emission priors allow effective model entropy weighting. Our training
-datasets for prior estimation are not ideal: very few counts were used
-to estimate many of the transition priors
-(Table~\ref{tbl:transitions}), and only ribosomal RNA alignments were
-used for to derive counts for the  emission priors. We were driven to
-both datasets by a lack of better options. Despite this, the resulting
-priors seem to perform well. 
+However, one should be wary of benchmarks done by software
+developers. We trust our ``internal'' benchmarks (that is, internal to
+our lab) like the one in this paper to reveal differences between
+different versions of \textsc{infernal}, and to guide us in developing
+improvements. However, we must hesitate to draw conclusions from
+internal benchmarks about how our software compares to other software
+tools available in the community. It is almost unavoidable that we
+have optimized certain parameters on our benchmark data, so there is a
+danger of circularity and training on the test set. Our transition
+Dirichlets were trained on essentially the same Rfam alignments that
+the benchmark is based on, and the target of 1.46 bits for entropy
+weighting was optimized on the benchmark. It is fallacious to imagine
+removing all such biases. The natural process of benchmarking during
+code development and accepting code changes that improve performance
+constitutes an insidious form of training on the test set.  One might
+establish an independent benchmark set to be applied only once at the
+end of the work, after which no further code changes will be made, but
+such discipline is a near-impossible standard to set for a
+continuously evolving codebase.
 
-%We hope that the CM methods we have
-%improved on here will help to provide better training data for future
-%tools. While we recognize that this approach of building tools using
-%sparse data to amass more data to build better tools is circular,
-%we feel that it is necessary  is necessary in this case (?).
+Therefore we look to independent benchmarks to gauge more reliably how
+\textsc{infernal} compares to other available software tools.  We are
+aware of only one such benchmark to date, BRaliBase III
+\cite{GardnerXXX}. BRaliBase III consists of many different query
+alignments of 5 or 20 RNA sequences, drawn from three different RNA
+families (U5, 5S rRNA, and tRNA). These as-yet unpublished results
+broadly confirm our observations on our internal benchmark: that while
+\textsc{infernal} 0.55 showed mediocre performance compared to
+\textsc{blastn} and several other tools, especially on the smaller
+query alignments, \textsc{infernal} 0.7 now stands out as a superior
+method for RNA similarity search.
 
-The model entropy weighting strategy has important implications for
-profile HMM filtering methods that rely on primary sequence
-conservation. If the same input training alignment containing many
-highly identical sequences is used to build two CMs, one using entropy
-weighting and one without using it, the latter CM will model less
-primary sequence conservation than the former. 
-This is because the entropy weighting will scale down the observations from
-the input alignment relative to the prior during parameterization,
-making the model less specific.  Because HMM filters rely on primary
-sequence conservation, a filter built from the less specific CM
-will be a less efficient filter.
+Nonetheless, though \textsc{infernal} 0.7 shows large improvements in
+speed, sensitivity, and specificity over previous versions, there are
+numerous areas where we need to improve further. 
 
-In contrast, entropy weighting will not affect an
-initial filtering step by \textsc{BLAST} as this step is completely
-independent of the CM. However, an entropy weighted CM
-based search of the \textsc{BLAST} filtered fraction may find high
-scoring hits that a non-entropy weighted CM search would have
-missed. 
+Parameterization of both CMs and profile HMMs remains problematic,
+because these methods continue to assume that training sequences are
+statistically independent, when in fact they are related (often
+strongly so) by phylogeny. Methods like sequence weighting and entropy
+weighting do help, but they are \emph{ad hoc} hacks: unsatisfying and
+unlikely to be optimal. Even mixture Dirichlet priors, though they
+appear to be mathematically sophisticated, fundamentally assume that
+observed counts are drawn as independent multinomial samples, and
+therefore the use of Dirichlet priors is fundamentally flawed.
+Probabilistic phylogenetic inference methodology needs to be
+integrated with profile search methods, but this area continues to be
+stymied by a lack of understanding of how to model insertions and
+deletions efficiently in a phylogenetic probability model.
 
+A significant gap in our current implementation is that
+\textsc{infernal} reports only raw bit scores, and does not yet report
+expectation values (E-values). CM local alignment scores empirically
+follow a Gumbel (extreme value) distribution \cite{XXX}, just as local
+sequence or profile alignment scores do \cite{XXX}, so there are no
+technical hurdles in implementing E-values. This will be an immediate
+focus for the next version of \textsc{infernal}.  E-value calculations
+not only have the effect of reporting statistical significance (more
+meaningful to a user than a raw bit score), but they also 'normalize'
+each family's score distribution into a more consistent overall rank
+order, because different query models exhibit different null
+distributions (particularly in the location parameter of the Gumbel
+distribution). We therefore expect E-values to contribute a large
+increase in performance whenever a single family-independent threshold
+is set. Table~\ref{tbl:rmarkmerlist} roughly illustrates the expected
+gain, by showing the large difference between summary MER scores and
+family-specific MER scores.
 
-In general, a filtering approach and our QDB strategy are
-complementary; the former reduces the search space for the expensive
-CM search, and the latter makes CM search less expensive.
-\begin{comment}
-; i.e.
-when performing a search, combining a filtering strategy that
-eliminates all but 10\% of the database, and a banded strategy that
-speeds up the CM search of the remaining fraction by 10 fold will
-employ the CM for only 1\% of the time a non-banded, non-filtered CM
-search would have.
-\end{comment}
-The QDB method presented here is only one potential
-method for determining bands, and there are certainly many others. 
-The banded CM CYK database algorithm can use bands on subsequence
-lengths derived from any method.
-There is one feature of QDB that makes it especially convenient for
-homology search. Because the bands are sequence independent and are
-determined solely from the transition probabilities of the model, they
-can be calculated once, in a few seconds prior to database search, 
-adding a relatively negligible amount of time to the overall search.
-Other potential banded strategies might consider the sequence
-(such as Brown's profile HMM based method in \textsc{RNACAD}
-\cite{Brown00}) and would need to continuously recalculate the bands as
-the database is scanned. Even so, we feel that sequence dependent
-banding strategies may also be useful for accelerating CM methods, and
-are currently exploring such techniques. 
-As complementary filtering and banding methods continue to mature, we
-hope CM homology search will become more practical and widespread,
-contributing meaningfully to the understanding of non-coding RNAs.
-
-\begin{comment}
-currently exploring some ourselves, including methods that do consider
-the sequence being searched. As filtering methods and complementary
-banded strategies continue to mature, we hope CM homology search
-will become more practical and widespread, contributing meaningfully
-to the understanding of non-coding RNAs.
-
-Because the bands can be calculated independently of the
-database, they only need to be calculated once 
-This acceleration technique is
-orthogonal to filtering technique accelerates CM
-based homology search,  CM
-sea
-
-The band calculation algorithm 
-offer complements filtering. We speculate
-that for many families the speed decrease of a profile HMM based
-filtering approach owing to entropy weighting will be completely
-offset or surpassed by acceleration from the bands.
-
-for acceleration is 
-independent of primary sequence conservation. The speed-up factor is
-controlled by the width of the bands, which is itself determined by
-the $bandp$ parameter and the transition probabilities of the model,
-which are determined by the priors and the 
+Finally, QDB is not the only algorithmic acceleration method we can
+envision.  Michael Brown described a complementary banding method to
+accelerate his SCFG-based \textsc{RNACAD} ribosomal RNA alignment
+software \cite{Brown00}, in which he uses profile HMM based sequence
+alignment to the target to determine bands where the more rigorous
+SCFG-based alignment should fall (because some regions of the
+alignment are well-determined based solely on sequence alignment). The
+gapped BLAST algorithm (seed word hits, ungapped hit extension, and
+banded dynamic programming) can conceivably be extended from
+two-dimensional sequence alignment to three-dimensional CM dynamic
+programming lattices. Developing such algorithms -- and incoporating
+them into one widely useful, freely available codebase -- are
+priorities for us.
 
 
-, and the length
-variation in homologous substructures in training sequences of the
-family being modelled. Substructure regions that exhibit a lot of
-length variation will have permissive transition
-probabilities that result in wide bands, and vice versa. Importantly,
-the banded strategy complements filtering, 
-
-The sequence independent, \emph{a priori} band calculation strategy
-introduced here is only one possible band calculation method. There
-are certainly other, potentially more effective, banded strategies. We are
-currently exploring some ourselves, including methods that do consider
-the sequence being searched. As filtering methods and complementary
-banded strategies continue to mature, we hope CM homology search
-will become more practical and widespread, contributing meaningfully
-to the understanding of non-coding RNAs.
-
-\end{comment}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % The rmark by family MER table
 \ifdraft
