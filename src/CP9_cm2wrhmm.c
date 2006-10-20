@@ -70,7 +70,7 @@ CP9Statetype(char st);
 
 static int 
 CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float threshold, 
-		     int dual_mapping_insert);
+		     int dual_mapping_insert, int print_flag);
 static float
 FChiSquareFit(float *f1, float *f2, int N);
 
@@ -1865,8 +1865,6 @@ check_psi_vs_phi_cp9(CM_t *cm, double *psi, double **phi, int ***hns2cs_map, int
   v_ct = 0;
   ap = malloc(sizeof(int) * 2);
 
-  if(debug_level >= 0)
-    printf("\n");
   for(v = 0; v < cm->M; v++)
     {
       if(cm->stid[v] != BIF_B)
@@ -1977,8 +1975,6 @@ check_psi_vs_phi_cp9(CM_t *cm, double *psi, double **phi, int ***hns2cs_map, int
       /*exit(1);*/
       ret_val = FALSE;
     }
-  else
-    printf("KACHOW! v_ct is 0!\n");
   return ret_val;
 }
 
@@ -2218,16 +2214,23 @@ CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, int *cc_node_
  *                     passed if this function is called outside of context
  *                     of building a sub_cm (in which case ZERO nodes should
  *                     should be impossible to correctly calculate distributions
- *                     for.
- *
+ *                     for)
+ * int *predict_ct   - array storing the number of HMM nodes we predicted 
+ *                     would be wrong, for each of the 5 cases.
+ *                     NULL is passed if this function is called outside of context
+ *                     of building a sub_cm (in which case ZERO nodes should
+ *                     should be impossible to correctly calculate distributions
+ *                     for)
+ * int *wrong_predict_ct - array storing the number of HMM nodes we predicted 
+ *                     would be wrong, but we got right, for each of the 5 cases.
+ * int print_flag    - TRUE to print useful debugging info
  * Returns: TRUE: if CM and HMM are "close enough" (see code)
  *          FALSE: otherwise
  */
 int 
 CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int spos, int epos, int ***hns2cs_map, float thresh,
-			    int nseq, int *imp_cc)
+			    int nseq, int *imp_cc, int *predict_ct, int *wrong_predict_ct, int print_flag)
 {
-  int ret_val;         /* return value */
   Parsetree_t **tr;             /* Parsetrees of emitted aligned sequences */
   char    **dsq;                /* digitized sequences                     */
   char    **seq;                /* actual sequences (real letters)         */
@@ -2258,8 +2261,10 @@ CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int spos, int epos, 
 			     * with the same probabilities by the single HMM insert self transition. 
 			     */
   int cc;
-
-  ret_val = TRUE;
+  int v_ct;                 /* number of nodes that violate our threshold */
+  int predict_total_ct;       /* total number of nodes we thought would be violations */
+  int wrong_predict_total_ct; /* total number of nodes we thought would be violations but were not */
+  v_ct = 0;
   /* Determine which nodes of the HMM have dual mapping inserts */
   dual_mapping_insert = MallocOrDie(sizeof(int) * (hmm->M + 1));
   for(nd = 0; nd <= hmm->M; nd++)
@@ -2290,7 +2295,6 @@ CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int spos, int epos, 
 
   while(nsampled < nseq)
     {
-      /*printf("nsampled: %d\n", nsampled);*/
       if(nsampled != 0)
 	{
 	  /* clean up from previous MSA */
@@ -2390,45 +2394,48 @@ CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int spos, int epos, 
    * HMM probability distributions (the CM Plan 9 is supposed to exactly mirror the 
    * CM in this way).
    */
-  printf("PRINTING BUILT HMM PARAMS:\n");
-  debug_print_cp9_params(hmm);
-  printf("DONE PRINTING BUILT HMM PARAMS:\n");
-
-  printf("PRINTING SAMPLED HMM PARAMS:\n");
-  debug_print_cp9_params(shmm);
-  printf("DONE PRINTING SAMPLED HMM PARAMS:\n");
-
+  if(print_flag)
+    {
+      printf("PRINTING BUILT HMM PARAMS:\n");
+      debug_print_cp9_params(hmm);
+      printf("DONE PRINTING BUILT HMM PARAMS:\n");
+      
+      printf("PRINTING SAMPLED HMM PARAMS:\n");
+      debug_print_cp9_params(shmm);
+      printf("DONE PRINTING SAMPLED HMM PARAMS:\n");
+    }
   for(nd = 0; nd <= shmm->M; nd++)
     {
       if(nd == 0 || nd == shmm->M)
 	{
-	  printf("nd:%d\n", nd);
-	  if(!(CP9_node_chi_squared(hmm, shmm, nd, thresh, dual_mapping_insert[nd])))
+	  if(print_flag) printf("nd:%d\n", nd);
+	  if(!(CP9_node_chi_squared(hmm, shmm, nd, thresh, dual_mapping_insert[nd], print_flag)))
 	    {
-	      if(imp_cc != NULL && imp_cc[nd] == TRUE)
+	      if(imp_cc == NULL)
 		{
-		  printf("10.06.06 Failed-good case 2 : chi_squared test failed for node: %d\n", nd);
-		}	      
-	      else
+		  v_ct++;
+		  printf("SAMPLING VIOLATION[%3d]: TRUE | spos: %3d | epos: %3d\n", nd, spos, epos);
+		}
+	      else if(imp_cc != NULL && imp_cc[nd] == 0)
 		{
-		  printf("10.06.06 Failed-bad  case 2 : chi_squared test failed for node: %d\n", nd);
-		  //Die("ERROR for non-predicted nd: chi_squared test failed for node: %d\n", nd);
-		  //ret_val = FALSE;
+		  v_ct++;
+		  printf("SAMPLING VIOLATION[%3d]: TRUE | spos: %3d | epos: %3d | imp_cc: %d\n", nd, spos, epos, imp_cc[nd]);
+		}
+	      else if(imp_cc != NULL && imp_cc[nd] != 0)
+		{
+		  predict_total_ct++;
+		  predict_ct[imp_cc[nd]]++;
+		  if(print_flag) printf("PREDICTED SAMPLING VIOLATION[%3d]: TRUE | spos: %3d | epos: %3d | imp_cc: %d\n", nd, spos, epos, imp_cc[nd]);
 		}
 	    }
-	  else
+	  else if(imp_cc != NULL && imp_cc[nd] != 0)
 	    {
-	      if(imp_cc != NULL && imp_cc[nd] == TRUE)
-		{
-		  /* we predicted these distros would be off, but they're not. */
-		  //Die("ERROR for predicted nd: chi_squared test PASSED for node: %d\n", nd);
-		  //printf("kachowset ERROR for predicted nd: chi_squared test PASSED for node: %d\n", nd);
-		  printf("10.06.06 Passed-bad  case 2 : chi_squared test passed for node: %d\n", nd);
-		}	      
-	      else
-		{
-		  printf("10.06.06 Passed-good case 2 : chi_squared test passed for node: %d\n", nd);
-		}
+	      /* We predicted this node would fail, but it didn't */
+	      predict_total_ct++;
+	      predict_ct[imp_cc[nd]]++;
+	      wrong_predict_total_ct++;
+	      wrong_predict_ct[imp_cc[nd]]++;
+	      if(print_flag) printf("NON-VIOLATION[%3d] %3d : spos: %3d | epos: %3d | non-imp_cc: %d\n", nd, wrong_predict_total_ct, spos, epos, imp_cc[nd]);
 	    }  
 	}
     }
@@ -2437,23 +2444,28 @@ CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int spos, int epos, 
   CPlan9Renormalize(shmm);
   CP9Logoddsify(shmm);
 
-  printf("PRINTING BUILT HMM PARAMS:\n");
-  debug_print_cp9_params(hmm);
-  printf("DONE PRINTING BUILT HMM PARAMS:\n");
-
-
-  printf("PRINTING SAMPLED HMM PARAMS:\n");
-  debug_print_cp9_params(shmm);
-  printf("DONE PRINTING SAMPLED HMM PARAMS:\n");
-
-  /* Output the alignment */
-  /*WriteStockholm(stdout, msa);*/
-
+  if(print_flag)
+    {
+      printf("PRINTING BUILT HMM PARAMS:\n");
+      debug_print_cp9_params(hmm);
+      printf("DONE PRINTING BUILT HMM PARAMS:\n");
+      
+      
+      printf("PRINTING SAMPLED HMM PARAMS:\n");
+      debug_print_cp9_params(shmm);
+      printf("DONE PRINTING SAMPLED HMM PARAMS:\n");
+      
+      /* Output the alignment */
+      /*WriteStockholm(stdout, msa);*/
+    }      
   free(dual_mapping_insert);
   FreeCPlan9(shmm);
   /* compare new CP9 to existing CP9 */
 
-  return ret_val;
+  if(v_ct > 0)
+    return FALSE;
+  else
+    return TRUE;
 }
 
 /* Function: CP9_fake_tracebacks()
@@ -2713,10 +2725,11 @@ CP9Statetype(char st)
  * int dual_mapping_insert - TRUE if HMM node nd maps to 2 insert states in the CM,
  *                           for such states, we don't require that we pass the
  *                           chi squared test.
+ * int print_flag    - TRUE to print useful debugging info
  */
 int
 CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float threshold,
-		     int dual_mapping_insert)
+		     int dual_mapping_insert, int print_flag)
 {
   double p;
   int x;
@@ -2788,14 +2801,14 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
       p = FChiSquareFit(ahmm->mat[nd], shmm->mat[nd], MAXABET);	    /* compare #'s    */
       if (p < threshold)
 	Die("Rejected match emission distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
-      printf("match emissions %d p: %f\n", nd, p);
+      if(print_flag) printf("match emissions %d p: %f\n", nd, p);
     }
   /* check insert emissions */
   FScale(ahmm->ins[nd], MAXABET, FSum(shmm->ins[nd], MAXABET)); /* convert to #'s */
   p = FChiSquareFit(ahmm->ins[nd], shmm->ins[nd], MAXABET);	/* compare #'s    */
   if (p < threshold)
     Die("Rejected insert emission distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
-  printf("insert emissions %d p: %f\n", nd, p);
+  if(print_flag) printf("insert emissions %d p: %f\n", nd, p);
   
   /* check transitions */
   /* out of match, we're in global NW mode, so only non-zero begin is begin[1], 
@@ -2829,10 +2842,10 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
       if (p < threshold)
 	{
 	  //Die("Rejected match transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
-	  printf("Rejected match transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+	  if(print_flag) printf("Rejected match transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
 	  ret_val = FALSE;
 	}
-      printf("out of match %d p: %f\n", nd, p);
+      if(print_flag) printf("out of match %d p: %f\n", nd, p);
     }
   else
     {
@@ -2841,10 +2854,10 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
       if (p < threshold)
 	{
 	  //Die("Rejected match transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
-	  printf("Rejected match transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+	  if(print_flag) printf("Rejected match transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
 	  ret_val = FALSE;
 	}
-      printf("out of match %d p: %f\n", nd, p);
+      if(print_flag) printf("out of match %d p: %f\n", nd, p);
     }
   /* out of insert */
   if(!dual_mapping_insert)
@@ -2854,13 +2867,13 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
       if (p < threshold)
 	{
 	  //Die("Rejected insert transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
-	  printf("Rejected insert transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+	  if(print_flag) printf("Rejected insert transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
 	  ret_val = FALSE;
 	}
-      printf("out of insert %d p: %f\n", nd, p);
+      if(print_flag) printf("out of insert %d p: %f\n", nd, p);
     }
   else
-    printf("insert: %d DUAL MAPPING INSERT\n", nd);
+    if(print_flag) printf("insert: %d DUAL MAPPING INSERT\n", nd);
   /* out of delete */
   if(nd != 0)
     {
@@ -2869,13 +2882,13 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
       if (p < threshold)
 	{
 	  //Die("Rejected delete transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
-	  printf("Rejected delete transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+	  if(print_flag) printf("Rejected delete transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
 	  ret_val = FALSE;
 	}
-      printf("out of delete %d p: %f\n\n", nd, p);
+      if(print_flag) printf("out of delete %d p: %f\n\n", nd, p);
     }
   else
-    printf("\n");
+    if(print_flag) printf("\n");
 
   /* we've scaled some probabilities into counts, we want to get back into prob form */
   CPlan9Renormalize(ahmm);

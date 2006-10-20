@@ -972,7 +972,7 @@ sub_CPlan9SWConfig(struct cplan9_s *hmm, float pentry, float pexit, int spos, in
   hmm->flags       &= ~CPLAN9_HASBITS; /* reconfig invalidates log-odds scores */
 }
 
-/* Function: cp9_2sub_cp9()
+/* Function: CP9_2sub_cp9()
  * EPN 09.24.06
  * 
  * Purpose:  Given a template CM Plan 9 HMM, build a sub-model that
@@ -1003,7 +1003,7 @@ sub_CPlan9SWConfig(struct cplan9_s *hmm, float pentry, float pexit, int spos, in
  *           HMM probabilities are modified.
  */
 void
-cp9_2sub_cp9(struct cplan9_s *orig_hmm, struct cplan9_s **ret_sub_hmm, int spos, int epos, double **orig_phi)
+CP9_2sub_cp9(struct cplan9_s *orig_hmm, struct cplan9_s **ret_sub_hmm, int spos, int epos, double **orig_phi)
 {
   struct cplan9_s       *sub_hmm;       
   int i, x;
@@ -1055,7 +1055,54 @@ cp9_2sub_cp9(struct cplan9_s *orig_hmm, struct cplan9_s **ret_sub_hmm, int spos,
 	}
       
     }
-      
+
+  /* Make the necessary modifications. */
+  CP9_reconfig2sub(sub_hmm, spos, epos, 1, sub_hmm->M, orig_phi);
+
+  sub_hmm->flags |= CPLAN9_HASBITS;	/* raise the log-odds ready flag */
+  *ret_sub_hmm = sub_hmm;
+  return;
+}
+
+/* Function: CP9_reconfig2sub()
+ * EPN 10.16.06
+ * 
+ * Purpose:  Given a CM Plan 9 HMM and a start position
+ *           (spos) and end position (epos) that a sub CM models, 
+ *           reconfigure the HMM so that it can only start in the 
+ *           node that models spos (spos_nd) end in the node that 
+ *           models epos (epos_nd).
+ *
+ *           If we're reconfiguring a CP9 HMM that ONLY models the
+ *           consensus columns spos to epos, then spos_nd == 1 
+ *           and epos_nd == hmm->M, but this is not necessarily true.
+ *           We may be reconfiguring a CP9 HMM that models the
+ *           full alignment including positions before and/or after
+ *           spos and epos. In this case spos_nd == spos and
+ *           epos_nd == epos;
+ *           
+ * Args:     hmm         - the CP9 model w/ data-dep prob's valid
+ *           spos        - first consensus column modelled by some original
+ *                         full length, template CP9 HMM that 'hmm' models.
+ *           epos        - final consensus column modelled by some original
+ *                         CP9 HMM that 'hmm' models.
+ *           spos_nd     - the node of 'hmm' that models spos.
+ *                         (1 if 'hmm' only has (epos-spos+1) nodes 
+ *                         (spos if 'hmm' has a node for each column of original aln)
+ *           epos_nd     - the node of the 'hmm' in that models epos.
+ *                         (hmm->M if 'hmm' only has (epos-spos+1) nodes 
+ *                         (epos if 'hmm' has a node for each column of original aln)
+ *           orig_phi    - the 2D phi array for the original CP9 HMM.         
+ * Return:   (void)
+ *           HMM probabilities are modified.
+ */
+void
+CP9_reconfig2sub(struct cplan9_s *hmm, int spos, int epos, int spos_nd,
+		 int epos_nd, double **orig_phi)
+{
+  int i, x;
+  int orig_pos;
+
   /* Make the necessary modifications. Since in cmalign --sub mode this
    * function will be called potentially once for each sequence, we 
    * don't want to call CP9Logoddsify(), but rather only logoddsify
@@ -1070,46 +1117,46 @@ cp9_2sub_cp9(struct cplan9_s *orig_hmm, struct cplan9_s **ret_sub_hmm, int spos,
       
   if(spos > 1)
     {
-      sub_hmm->begin[1] = 1.-((orig_phi[spos-1][HMMINSERT] * (1. - orig_hmm->t[spos-1][CTII])) + 
-			      (orig_phi[spos  ][HMMDELETE] - (orig_phi[spos-1][HMMINSERT] * orig_hmm->t[spos-1][CTID])));
-      sub_hmm->t[0][CTMI] =   (orig_phi[spos-1][HMMINSERT] * (1. - orig_hmm->t[spos-1][CTII]));
-      sub_hmm->t[0][CTMD] =    orig_phi[spos  ][HMMDELETE] - (orig_phi[spos-1][HMMINSERT] * orig_hmm->t[spos-1][CTID]);
-      sub_hmm->t[0][CTMM] = 0.; /* probability of going from B(M_0) to M_1 is begin[1] */
-      sub_hmm->t[0][CTDM] = 0.; /* D_0 doesn't exist */
-      sub_hmm->t[0][CTDI] = 0.; /* D_0 doesn't exist */
-      sub_hmm->t[0][CTDD] = 0.; /* D_0 doesn't exist */
+      hmm->begin[spos_nd] = 1.-((orig_phi[spos-1][HMMINSERT] * (1. - hmm->t[spos-1][CTII])) + 
+			        (orig_phi[spos  ][HMMDELETE] - (orig_phi[spos-1][HMMINSERT] * hmm->t[spos-1][CTID])));
+      hmm->t[spos_nd-1][CTMI] =   (orig_phi[spos-1][HMMINSERT] * (1. - hmm->t[spos-1][CTII]));
+      hmm->t[spos_nd-1][CTMD] =    orig_phi[spos  ][HMMDELETE] - (orig_phi[spos-1][HMMINSERT] * hmm->t[spos-1][CTID]);
+      hmm->t[spos_nd-1][CTMM] = 0.; /* probability of going from B(M_0) to M_1 is begin[1] */
+      hmm->t[spos_nd-1][CTDM] = 0.; /* D_0 doesn't exist */
+      hmm->t[spos_nd-1][CTDI] = 0.; /* D_0 doesn't exist */
+      hmm->t[spos_nd-1][CTDD] = 0.; /* D_0 doesn't exist */
       
-      sub_hmm->bsc[1]       = Prob2Score(sub_hmm->begin[1], 1.0);
+      hmm->bsc[spos_nd]       = Prob2Score(hmm->begin[1], 1.0);
 
-      sub_hmm->tsc[CTMM][0] = -INFTY; /* probability of going from B(M_0) to M_1 is begin[1] */
-      sub_hmm->tsc[CTDM][0] = -INFTY; /* D_0 doesn't exist */
-      sub_hmm->tsc[CTDI][0] = -INFTY; /* D_0 doesn't exist */
-      sub_hmm->tsc[CTDD][0] = -INFTY; /* D_0 doesn't exist */
+      hmm->tsc[CTMM][spos_nd-1] = -INFTY; /* probability of going from B(M_0) to M_1 is begin[1] */
+      hmm->tsc[CTDM][spos_nd-1] = -INFTY; /* D_0 doesn't exist */
+      hmm->tsc[CTDI][spos_nd-1] = -INFTY; /* D_0 doesn't exist */
+      hmm->tsc[CTDD][spos_nd-1] = -INFTY; /* D_0 doesn't exist */
       
-      sub_hmm->tsc[CTMI][0] = Prob2Score(sub_hmm->t[0][CTMI], 1.0);
-      sub_hmm->tsc[CTMD][0] = Prob2Score(sub_hmm->t[0][CTMD], 1.0);
+      hmm->tsc[CTMI][spos_nd-1] = Prob2Score(hmm->t[spos_nd-1][CTMI], 1.0);
+      hmm->tsc[CTMD][spos_nd-1] = Prob2Score(hmm->t[spos_nd-1][CTMD], 1.0);
     }
 
-  if(epos < orig_hmm->M)
+  if(epos < hmm->M)
     {
-      sub_hmm->end[sub_hmm->M]      = orig_hmm->t[epos][CTMM] + orig_hmm->t[epos][CTMD];
-      sub_hmm->t[sub_hmm->M][CTDM] += orig_hmm->t[epos][CTDD];
-      sub_hmm->t[sub_hmm->M][CTIM] += orig_hmm->t[epos][CTID];
-      sub_hmm->t[sub_hmm->M][CTMM]  = 0.; /* M->E is actually end[M] */
-      sub_hmm->t[sub_hmm->M][CTMD]  = 0.; /* D_M+1 doesn't exist */
-      sub_hmm->t[sub_hmm->M][CTDD]  = 0.; /* D_M+1 doesn't exist */
-      sub_hmm->t[sub_hmm->M][CTID]  = 0.; /* D_M+1 doesn't exist */
+      hmm->end[epos_nd]      = hmm->t[epos][CTMM] + hmm->t[epos][CTMD];
+      hmm->t[epos_nd][CTDM] += hmm->t[epos][CTDD];
+      hmm->t[epos_nd][CTIM] += hmm->t[epos][CTID];
+      hmm->t[epos_nd][CTMM]  = 0.; /* M->E is actually end[M] */
+      hmm->t[epos_nd][CTMD]  = 0.; /* D_M+1 doesn't exist */
+      hmm->t[epos_nd][CTDD]  = 0.; /* D_M+1 doesn't exist */
+      hmm->t[epos_nd][CTID]  = 0.; /* D_M+1 doesn't exist */
       
-      sub_hmm->esc[sub_hmm->M]       = Prob2Score(sub_hmm->end[sub_hmm->M], 1.0);
-      sub_hmm->tsc[CTDM][sub_hmm->M] = Prob2Score(sub_hmm->t[sub_hmm->M][CTDM], 1.0);
-      sub_hmm->tsc[CTIM][sub_hmm->M] = Prob2Score(sub_hmm->t[sub_hmm->M][CTIM], 1.0);
-      sub_hmm->tsc[CTMM][sub_hmm->M] = -INFTY; /* M->E is actually end[M] */
-      sub_hmm->tsc[CTMD][sub_hmm->M] = -INFTY; /* D_M+1 doesn't exist */
-      sub_hmm->tsc[CTDD][sub_hmm->M] = -INFTY; /* D_M+1 doesn't exist */
-      sub_hmm->tsc[CTID][sub_hmm->M] = -INFTY; /* D_M+1 doesn't exist */
+      hmm->esc[epos_nd]       = Prob2Score(hmm->end[epos_nd], 1.0);
+      hmm->tsc[CTDM][epos_nd] = Prob2Score(hmm->t[epos_nd][CTDM], 1.0);
+      hmm->tsc[CTIM][epos_nd] = Prob2Score(hmm->t[epos_nd][CTIM], 1.0);
+      hmm->tsc[CTMM][epos_nd] = -INFTY; /* M->E is actually end[M] */
+      hmm->tsc[CTMD][epos_nd] = -INFTY; /* D_M+1 doesn't exist */
+      hmm->tsc[CTDD][epos_nd] = -INFTY; /* D_M+1 doesn't exist */
+      hmm->tsc[CTID][epos_nd] = -INFTY; /* D_M+1 doesn't exist */
     }
-  sub_hmm->flags |= CPLAN9_HASBITS;	/* raise the log-odds ready flag */
-  *ret_sub_hmm = sub_hmm;
+  hmm->flags |= CPLAN9_HASBITS;	/* raise the log-odds ready flag */
+
   return;
 }
 

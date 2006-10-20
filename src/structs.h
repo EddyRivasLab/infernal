@@ -324,5 +324,12 @@ typedef struct emitmap_s {
 #define HMMINSERT 1
 #define HMMDELETE 2
 
+/* used in sub CM construction checking */
+#define IMPNONE   0
+#define IMPROOT   1
+#define IMPSTART  2
+#define IMPBOTH   3
+
+
 #endif /*STRUCTSH_INCLUDED*/
 

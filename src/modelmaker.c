@@ -1017,7 +1017,6 @@ ConsensusModelmaker(char *ss_cons, int clen, CM_t **ret_cm, Parsetree_t **ret_gt
    *    Even though ss_cons is in the 0..clen-1 coord system of msa, ct[]
    *    comes back in the 1..alen coord system of the sequence.
    */
-  printf("in ConsensusModelmaker: clen: %d,  %s\n", clen, ss_cons);
 
   if (! WUSS2ct(ss_cons, clen, FALSE, &ct))  
     Die("Consensus structure string is inconsistent"); 
@@ -1311,7 +1310,6 @@ cm_find_and_detach_dual_inserts(CM_t *cm, int do_check, int do_detach)
 
   for(cc = 0; cc <= emap->clen; cc++)
     {
-      /*printf("!cc: %d lins: %d rins: %d\n", cc, cc2lins_map[cc], cc2rins_map[cc]);*/
       if(cc2lins_map[cc] != -1 && cc2rins_map[cc] != -1)
 	{
 	  detach_ct++;

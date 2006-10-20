@@ -105,7 +105,7 @@ main(int argc, char **argv)
   char            *seq;         /* RNA sequence */
   SQINFO           sqinfo;      /* optional info attached to seq */
   char            *dsq;         /* digitized RNA sequence */
-  Stopwatch_t     *watch;
+  Stopwatch_t     *watch;       /* times band calc, then search time */
   int              i, ip;
   int              reversed;    /* TRUE when we're doing the reverse complement strand */
   int              maxlen;
@@ -272,7 +272,7 @@ main(int argc, char **argv)
   do_align          = TRUE;
   do_dumptrees      = FALSE;
   do_qdb       = FALSE;
-  beta           = 0.000001;
+  beta              = 0.0000001;
   do_projectx       = FALSE;
   do_bdump          = FALSE;
   thresh            = 0.;
@@ -452,6 +452,9 @@ main(int argc, char **argv)
 
   if (do_qdb || do_projectx || do_bdump)
     {
+      /* start stopwatch for timing the band calculation */
+      StopwatchZero(watch);
+      StopwatchStart(watch);
       safe_windowlen = windowlen * 2;
       while(!(BandCalculationEngine(cm, safe_windowlen, beta, 0, &dmin, &dmax, &gamma, do_local)))
 	{
@@ -485,15 +488,15 @@ main(int argc, char **argv)
 	{
 	  printf("beta:%f\n", beta);
 	  debug_print_bands(cm, dmin, dmax);
+	  PrintDPCellsSaved(cm, dmin, dmax, windowlen);
 	}
+      StopwatchStop(watch);
+      StopwatchDisplay(stdout, "\nCPU time (band calc): ", watch);
     }
 
-  if(do_qdb)
-    PrintDPCellsSaved(cm, dmin, dmax, windowlen);
-  
+  /* start stopwatch for timing the search */
   StopwatchZero(watch);
   StopwatchStart(watch);
-  
   /* EPN 11.18.05 Now that know what windowlen is, we need to ensure that
    * cm->el_selfsc * W >= IMPOSSIBLE (cm->el_selfsc is the score for an EL self transition)
    * This is done because we are potentially multiply cm->el_selfsc * W, and adding
@@ -980,9 +983,9 @@ main(int argc, char **argv)
     }
 
   StopwatchStop(watch);
-  StopwatchDisplay(stdout, "\nCPU time: ", watch);
-  if(do_filter || do_hmmonly) printf("CP9 Forward memory:   %8.2f MB\n", CP9ForwardScanRequires(cp9_hmm, maxlen, windowlen));
-  printf("CYK memory        :   %8.2f MB\n\n", CYKScanRequires(cm, maxlen, windowlen));
+  StopwatchDisplay(stdout, "\nCPU time (search)   : ", watch);
+  if(do_filter || do_hmmonly) printf("CP9 Forward memory  :   %8.2f MB\n", CP9ForwardScanRequires(cp9_hmm, maxlen, windowlen));
+  printf("CYK memory          :   %8.2f MB\n\n", CYKScanRequires(cm, maxlen, windowlen));
 
   if (do_qdb)
     {

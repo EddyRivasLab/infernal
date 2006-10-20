@@ -444,7 +444,6 @@ CP9_map_cm2hmm_and_hmm2cm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int
   for(v = 0; v <= cm->M; v++)
     cs2hs_map[v]     = malloc(sizeof(int) * 2);
   
-  printf("hmm->M: %d\n", hmm->M);
   hns2cs_map    = malloc(sizeof(int **) * (hmm->M+1));
   for(k = 0; k <= hmm->M; k++)
     {

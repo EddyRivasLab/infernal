@@ -594,7 +594,8 @@ main(int argc, char **argv)
 	  {
 	    sre_srandom(seed);
 	    //if(!(CP9_check_wrhmm_by_sampling(cm, cp9_hmm, 1, cp9_hmm->M, hns2cs_map, 0.05, 100000)))
-	    if(!(CP9_check_wrhmm_by_sampling(cm, cp9_hmm, 1, cp9_hmm->M, hns2cs_map, 0.01, 100000, NULL)))
+	    if(!(CP9_check_wrhmm_by_sampling(cm, cp9_hmm, 1, cp9_hmm->M, hns2cs_map, 0.01, 100000, NULL,
+					     NULL, NULL, debug_level)))
 	      Die("CM Plan 9 fails sampling check!\n");
 	    else
 	      printf("CM Plan 9 passed sampling check.\n");
@@ -780,15 +781,10 @@ main(int argc, char **argv)
 
 	      /* Uncomment below to build a sub_cm that only models consensus columns between HMM start and end
 	       * node. */
-	      build_sub_cm(cm, &sub_cm, hmm_start_node, hmm_end_node, hmm_start_node, hmm_end_node, 
-			   orig2sub_smap, sub2orig_smap, &imp_cc);
+	      build_sub_cm(cm, &sub_cm, hmm_start_node, hmm_end_node, orig2sub_smap, sub2orig_smap, 
+			   &imp_cc, NULL, NULL, NULL, NULL, 0.00001, FALSE, FALSE, FALSE, 0.01, 
+			   10000, debug_level);
 
-	      /* check_sub_cm_by_sampling() call builds a CP9 HMM from the sub_cm and checks to make 
-	       * sure this CP9 HMM is correct. This check is done by sampling a deep MSA from the CM, 
-	       * truncating it before hmm_start_node and after hmm_end_node and then doing chi-squared
-	       * tests to see if the samples came from the CP9 HMM distribution.
-	       */
-	      check_sub_cm_by_sampling(cm, sub_cm, hmm_start_node, hmm_end_node, 0.01, 100000, imp_cc);
 	      exit(1);
 
 	      /* Following function call samples for cm and sub_cm and builds CP9 HMMs from each set of samples,
@@ -850,7 +846,7 @@ main(int argc, char **argv)
 	      StopwatchZero(watch1);
 	      StopwatchStart(watch1);
 	      /* Build the sub CP9 HMM by copying as much of the original cp9_hmm as possible */
-	      cp9_2sub_cp9(cp9_hmm, &sub_cp9_hmm2, hmm_start_node, hmm_end_node, orig_phi);
+	      CP9_2sub_cp9(cp9_hmm, &sub_cp9_hmm2, hmm_start_node, hmm_end_node, orig_phi);
 	      StopwatchStop(watch1);
 	      StopwatchDisplay(stdout, "CP9 BUILDING TRUNCATION TIME: ", watch1);
 
