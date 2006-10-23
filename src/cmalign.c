@@ -52,6 +52,7 @@ static char experts[] = "\
    --nosmall     : use normal alignment algorithm, not d&c\n\
    --regress <f> : save regression test data to file <f>\n\
    --full        : include all match columns in output alignment\n\
+   --tfile <f>   : dump individual sequence tracebacks to file <f>\n\
    --banddump <n>: set verbosity of band info print statements to <n> [1..3]\n\
    --dlev <n>    : set verbosity of debugging print statements to <n> [1..3]\n\
    --time        : print timings for alignment, band calculation, etc.\n\
@@ -62,18 +63,18 @@ static char experts[] = "\
    --sub         : use HMM predicted start and end points to build a sub CM\n\
 \n\
   * HMM banded alignment related options:\n\
-   --hbanded     : use exptl HMM banded CYK aln algorithm (df: builds CP9 HMM) \n\
-   --hbandp <f>  : tail loss prob for --hbanded (default:0.0001)\n\
+   --hbanded     : use exptl HMM banded CYK aln algorithm [df: builds CP9 HMM]\n\
+   --hbandp <f>  : tail loss prob for --hbanded [default: 0.0001]\n\
    --cp9 <f>     : use the CM plan 9 HMM in file <f> for band calculation\n\
    --p7 <f>      : use the plan 7 HMMER 2.4 HMM in file <f> for band calculation\n\
    --sums        : use posterior sums during HMM band calculation (widens bands)\n\
    --checkcp9    : check the CP9 empirically by generating sequences\n\
 \n\
-  * A priori banded alignment related options:\n\
-   --apbanded    : use experimental a priori (ap) banded CYK alignment algorithm\n\
-   --apbandp <f> : tail loss prob for --apbanded (default:0.0001)\n\
-   --apexpand    : naively expand ap bands if target seq is outside root band\n\
-    -W <n>       : window size for calc'ing ap bands (df: precalc'd in cmbuild)\n\
+  * Query dependent banded (qdb) alignment related options:\n\
+   --qdb         : use query dependent banded CYK alignment algorithm\n\
+   --beta <f>    : tail loss prob for --qdb [default:1E-7]\n\
+   --expand      : naively expand qd bands if target seq is outside root band\n\
+    -W <n>       : window size for calc'ing qd bands (df: precalc'd in cmbuild)\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -84,9 +85,10 @@ static struct opt_s OPTIONS[] = {
   { "--informat",   FALSE, sqdARG_STRING },
   { "--nosmall",    FALSE, sqdARG_NONE },
   { "--regress",    FALSE, sqdARG_STRING },
-  { "--apbanded",     FALSE, sqdARG_NONE },
-  { "--apbandp",      FALSE, sqdARG_FLOAT},
-  { "--apexpand", FALSE, sqdARG_NONE},
+  { "--qdb",     FALSE, sqdARG_NONE },
+  { "--beta",      FALSE, sqdARG_FLOAT},
+  { "--expand", FALSE, sqdARG_NONE},
+  { "--tfile",     FALSE, sqdARG_STRING },
   { "--banddump"  , FALSE, sqdARG_INT},
   { "-W", TRUE, sqdARG_INT },
   { "--full", FALSE, sqdARG_NONE },
@@ -132,12 +134,13 @@ main(int argc, char **argv)
   float            avgsc;	/* avg score over all seqs */
   
   char  *regressfile;           /* regression test data file */
+  char  *tracefile;		/* file to dump debugging traces to        */
   int    be_quiet;		/* TRUE to suppress verbose output & banner */
   int    do_local;		/* TRUE to config the model in local mode   */
   int    do_small;		/* TRUE to do divide and conquer alignments */
   int    windowlen;             /* window length for calculating bands */
   int    do_full;               /* TRUE to output all match columns in output alignment */
-  int    do_apbanded;           /* TRUE to do a priori banded CYK (either d&c or full)*/
+  int    do_qdb;                /* TRUE to do qdb CYK (either d&c or full)  */
   int    bdump_level;           /* verbosity level for --banddump option, 0 is OFF */
 
   char  *optname;               /* name of option found by Getopt()        */
@@ -152,9 +155,9 @@ main(int argc, char **argv)
   Stopwatch_t  *watch2;         /* for HMM band calc timings */
   int    time_flag;             /* TRUE to print timings, FALSE not to */
 
-  /* a priori bands data structures */
-  double   apbandp;	        /* tail loss probability for a priori banding */
-  int    do_apexpand;           /* TRUE to naively expand a priori bands when necessary */
+  /* query dependent bands data structures */
+  double   qdb_beta;	        /* tail loss probability for query dependent banding */
+  int    do_expand;             /* TRUE to naively expand query dependent bands when necessary */
   int    expand_flag;           /* TRUE if the dmin and dmax vectors have just been 
 				 * expanded (in which case we want to recalculate them 
 				 * before we align a new sequence), and FALSE if not*/
@@ -303,12 +306,13 @@ main(int argc, char **argv)
   do_small    = TRUE;
   outfile     = NULL;
   regressfile = NULL;
+  tracefile   = NULL;
   windowlen   = 200;
   set_window  = FALSE;
-  do_apbanded = FALSE;
-  apbandp     = 0.0001;
+  do_qdb = FALSE;
+  qdb_beta     = 0.0000001;
   do_full     = FALSE;
-  do_apexpand = FALSE;
+  do_expand = FALSE;
   bdump_level = 0;
   debug_level = 0;
   do_hbanded  = FALSE;
@@ -333,14 +337,15 @@ main(int argc, char **argv)
     else if (strcmp(optname, "-q")          == 0) be_quiet    = TRUE;
     else if (strcmp(optname, "--nosmall")   == 0) do_small    = FALSE;
     else if (strcmp(optname, "--regress")   == 0) regressfile = optarg;
-    else if (strcmp(optname, "--apbanded")  == 0) do_apbanded = TRUE;
-    else if (strcmp(optname, "--apbandp")   == 0) apbandp     = atof(optarg);
+    else if (strcmp(optname, "--qdb")  == 0) do_qdb = TRUE;
+    else if (strcmp(optname, "--beta")   == 0) qdb_beta     = atof(optarg);
     else if (strcmp(optname, "-W")          == 0) {
       windowlen    = atoi(optarg); 
       set_window = TRUE; } 
     else if (strcmp(optname, "--full")      == 0) do_full      = TRUE;
-    else if (strcmp(optname, "--apexpand")  == 0) do_apexpand  = TRUE;
+    else if (strcmp(optname, "--expand")  == 0) do_expand  = TRUE;
     else if (strcmp(optname, "--banddump")  == 0) bdump_level  = atoi(optarg);
+    else if (strcmp(optname, "--tfile")     == 0) tracefile    = optarg;
     else if (strcmp(optname, "--dlev")      == 0) debug_level  = atoi(optarg);
     else if (strcmp(optname, "--time")      == 0) time_flag    = TRUE;
     else if (strcmp(optname, "--inside")    == 0) do_inside    = TRUE;
@@ -410,7 +415,7 @@ main(int argc, char **argv)
   */
 
   if (bdump_level > 3) Die("Highest available --banddump verbosity level is 3\n%s", usage);
-  if (do_apexpand && (!(do_apbanded))) Die("Doesn't make sense to use --apexpand option without --apbanded option\n", usage);
+  if (do_expand && (!(do_qdb))) Die("Doesn't make sense to use --expand option without --qdb option\n", usage);
   if (argc - optind != 2) Die("Incorrect number of arguments.\n%s\n", usage);
   cmfile = argv[optind++];
   seqfile = argv[optind++]; 
@@ -649,11 +654,11 @@ main(int argc, char **argv)
 	}
     }
 
-  /* set up the a priori bands, this has to be done after the ConfigLocal() call */
-  if(do_apbanded || bdump_level > 0)
+  /* set up the query dependent bands, this has to be done after the ConfigLocal() call */
+  if(do_qdb || bdump_level > 0)
     {
       safe_windowlen = windowlen * 2;
-      while(!(BandCalculationEngine(cm, safe_windowlen, apbandp, 0, &dmin, &dmax, &gamma, do_local)))
+      while(!(BandCalculationEngine(cm, safe_windowlen, qdb_beta, 0, &dmin, &dmax, &gamma, do_local)))
 	{
 	  FreeBandDensities(cm, gamma);
 	  free(dmin);
@@ -670,8 +675,8 @@ main(int argc, char **argv)
        * a windowlen that's greater than the largest possible banded hit 
        * (which is dmax[0]). So we reset windowlen to dmax[0].
        * Its also possible that BandCalculationEngine() returns a dmax[0] that 
-       * is > cm->W. This should only happen if the apbandp we're using now is < 1E-7 
-       * (1E-7 is the apbandp value used to determine cm->W in cmbuild). If this 
+       * is > cm->W. This should only happen if the qdb_beta we're using now is < 1E-7 
+       * (1E-7 is the qdb_beta value used to determine cm->W in cmbuild). If this 
        * happens, the current implementation reassigns windowlen to this larger value.
        * NOTE: if W was set at the command line, the command line value is 
        *       always used.
@@ -682,11 +687,11 @@ main(int argc, char **argv)
 	}
       if(bdump_level > 1) 
 	{
-	  printf("apbandp:%f\n", apbandp);
+	  printf("qdb_beta:%f\n", qdb_beta);
 	  debug_print_bands(cm, dmin, dmax);
+	  PrintDPCellsSaved(cm, dmin, dmax, windowlen);
 	}
       expand_flag = FALSE;
-      PrintDPCellsSaved(cm, dmin, dmax, windowlen);
     }
 
   if (do_sub && hmm_type == HMM_CP9)
@@ -1088,7 +1093,7 @@ main(int argc, char **argv)
 	  */
 	}
       
-      if(do_apexpand)
+      if(do_expand)
 	{
 	  /*First, check to see if we need to reset the apriori bands b/c 
 	   * they're currently expanded. */
@@ -1097,7 +1102,7 @@ main(int argc, char **argv)
 	      FreeBandDensities(cm, gamma);
 	      free(dmin);
 	      free(dmax);
-	      while(!(BandCalculationEngine(cm, safe_windowlen, apbandp, 0, &dmin, &dmax, &gamma, do_local)))
+	      while(!(BandCalculationEngine(cm, safe_windowlen, qdb_beta, 0, &dmin, &dmax, &gamma, do_local)))
 		{
 		  FreeBandDensities(cm, gamma);
 		  free(dmin);
@@ -1121,11 +1126,11 @@ main(int argc, char **argv)
 	}
       else 
 	{
-	  if (do_apbanded && (sqinfo[i].len < dmin[0] || sqinfo[i].len > dmax[0]))
+	  if (do_qdb && (sqinfo[i].len < dmin[0] || sqinfo[i].len > dmax[0]))
 	    {
 	      /* the seq we're aligning is outside the root band, but
-	       * --apexpand was not enabled, so we die.*/
-	      Die("Length of sequence to align (%d nt) lies outside the root band.\ndmin[0]: %d and dmax[0]: %d\nImpossible to align with a priori banded CYK unless you try --apexpand.\n%s", sqinfo[i].len, dmin[0], dmax[0], usage);
+	       * --expand was not enabled, so we die.*/
+	      Die("Length of sequence to align (%d nt) lies outside the root band.\ndmin[0]: %d and dmax[0]: %d\nImpossible to align with query dependent banded CYK unless you try --expand.\n%s", sqinfo[i].len, dmin[0], dmax[0], usage);
 	    }
 	}
       printf("Aligning %s\n", sqinfo[i].name);
@@ -1185,7 +1190,7 @@ main(int argc, char **argv)
 	}
       else if (do_small) 
 	{
-	  if(do_apbanded)
+	  if(do_qdb)
 	    {
 	      sc = CYKDivideAndConquer_b(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, 
 					      &(tr[i]), dmin, dmax);
@@ -1222,9 +1227,9 @@ main(int argc, char **argv)
 		}
 	    }
 	}
-      else if(do_apbanded)
+      else if(do_qdb)
 	{
-	  sc = CYKInside_b(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, &(tr[i]), dmin, dmax);
+	  sc = CYKInside(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, &(tr[i]), dmin, dmax);
 	  if(bdump_level > 0)
 	    banded_trace_info_dump(cm, tr[i], dmin, dmax, bdump_level);
 	}
@@ -1237,7 +1242,7 @@ main(int argc, char **argv)
 	}
       else
 	{
-	  sc = CYKInside(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, &(tr[i]));
+	  sc = CYKInside(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, &(tr[i]), NULL, NULL);
 	  if(bdump_level > 0)
 	    {
 	      /* We want band info but --banded wasn't used.  Useful if you're curious
@@ -1326,6 +1331,8 @@ main(int argc, char **argv)
       if (sc > maxsc) maxsc = sc;
       if (sc < minsc) minsc = sc;
 
+      printf("Alignment score for %30s: %8.2f bits\n", sqinfo[i].name, sc);
+
       /* If debug level high enough, print out the parse tree */
       if(debug_level > 2)
 	{
@@ -1352,10 +1359,12 @@ main(int argc, char **argv)
        */
       if(hmm_type != NONE)
 	for(v = 0; v < cm->M; v++)
-	  { free(hdmin[v]); free(hdmax[v]); }
-
-      StopwatchStop(watch2);
-      if(time_flag) StopwatchDisplay(stdout, "band calc and jd CYK CPU time: ", watch2);
+	  { 
+	    free(hdmin[v]); 
+	    free(hdmax[v]);
+	    StopwatchStop(watch2);
+	    if(time_flag) StopwatchDisplay(stdout, "band calc and jd CYK CPU time: ", watch2);
+	  }
     }
   avgsc /= nseq;
 
@@ -1388,6 +1397,25 @@ main(int argc, char **argv)
       else
 	WriteStockholm(stdout, msa);
       
+      /* Detailed traces for debugging training set.
+       */
+      if (tracefile != NULL)       
+	{
+	  printf("%-40s ... ", "Saving parsetrees"); fflush(stdout);
+	  if ((ofp = fopen(tracefile,"w")) == NULL)
+	    Die("failed to open trace file %s", tracefile);
+	  for (i = 0; i < msa->nseq; i++) 
+	    {
+	      fprintf(ofp, "> %s\n", msa->sqname[i]);
+	      fprintf(ofp, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr[i], dsq[i], FALSE));;
+	      ParsetreeDump(ofp, tr[i], cm, dsq[i]);
+	      fprintf(ofp, "//\n");
+	    }
+	  fclose(ofp);
+	  printf("done. [%s]\n", tracefile);
+	}
+
+
       if (regressfile != NULL && (ofp = fopen(regressfile, "w")) != NULL) 
 	{
 	  /* Must delete author info from msa, because it contains version
@@ -1409,7 +1437,7 @@ main(int argc, char **argv)
       free(dsq[i]);
       FreeSequence(rseq[i], &(sqinfo[i]));
     }
-  if (do_apbanded)
+  if (do_qdb)
     {
       FreeBandDensities(cm, gamma);
       free(dmin);

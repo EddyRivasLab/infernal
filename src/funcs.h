@@ -159,14 +159,12 @@ extern float CYKScanRequires(CM_t *cm, int L, int W);
 extern float CYKDivideAndConquer(CM_t *cm, char *dsq, int L,
 				 int r, int i0, int j0, Parsetree_t **ret_tr);
 extern float CYKInside(CM_t *cm, char *dsq, int L,
-		       int r, int i0, int j0, Parsetree_t **ret_tr);
+		       int r, int i0, int j0, Parsetree_t **ret_tr, int *dmin, int *dmax);
 extern float CYKInsideScore(CM_t *cm, char *dsq, int L,
 			    int r, int i0, int j0);
 extern void  CYKDemands(CM_t *cm, int L);
-extern float CYKDivideAndConquer_b(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr,
-				   int *dmin, int *dmax);
-extern float CYKInside_b(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, 
-			 int *dmin, int *dmax);
+extern float CYKDivideAndConquer_b(CM_t *cm, char *dsq, int L, int r, int i0, int j0, 
+				   Parsetree_t **ret_tr, int *dmin, int *dmax);
 extern void debug_print_bands(CM_t *cm, int *dmin, int *dmax);
 
 

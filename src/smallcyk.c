@@ -89,9 +89,11 @@ static void  voutside(CM_t *cm, char *dsq, int L,
 /* The traceback routines.
  */
 static float insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
-		     int r, int z, int i0, int j0, int allow_begin);
+		     int r, int z, int i0, int j0, int allow_begin,
+		     int *dmin, int *dmax);
 static float vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
-		      int r, int z, int i0, int i1, int j1, int j0, int useEL, int allow_begin);
+		      int r, int z, int i0, int i1, int j1, int j0, int useEL, 
+		      int allow_begin, int *dmin, int *dmax);
 
 /* The size calculators.
  */
@@ -101,7 +103,6 @@ static int   cyk_deck_count(CM_t *cm, int r, int z);
 static int   cyk_extra_decks(CM_t *cm);
 
 /* The memory management routines are in funcs.h so hbandcyk.c 
- * can access them (EPN)
  */
 
 /* BE_EFFICIENT and BE_PARANOID are alternative (exclusive) settings
@@ -119,9 +120,122 @@ static int   cyk_extra_decks(CM_t *cm);
 #define USED_LOCAL_BEGIN 101
 #define USED_EL          102
 
-/* EPN if OUT_OF_BANDS is ever encountered in a traceback - the program dies */
-#define OUT_OF_BANDS     103
+/*******************************************************************************
+ * EPN: Banded functions are named *_b() 
+ * Functions that I don't think need a banded version are indicated with a U
+ * before their names.
+ * 
+ * To change *most* of the following code from banded to normal versions, two
+ * 'replace-string's would be done : 
+ * (1) replace '_b(' with '(' : to replace all banded function calls with calls
+ *     to their non-banded versions.
+ * (2) replace ', dmin, dmax)' with ')' : all banded functions have exactly
+ *     two extra variables passed in, dmin a pointer to an int array with minimum
+ *     bands, and dmax, a pointer to an int array with maximum bands.  Further,
+ *     these are always the last two variables passed into a function.
+ *
+ * There are two classes of changes that were made to the original functions
+ * to make (what I think are) functioning banded versions (*_b()).  
+ *
+ * Class 1 : vjd deck changes - using dmin and dmax as bands
+ * Class 2 : vji deck changes - using imin and imax (derived from dmin and dmax)
+ *
+ * Class 2 changes occur only within v problems, only functions : v_splitter_b(),
+ * vinside_b(), and voutside_b().
+ * 
+ * The class 1 changes are more straightforward relative to the class 2 changes.
+ * This is completely due to the fact that the vjd coordinate system directly
+ * uses d (distance of subsequence in parse tree rooted at state v) which 
+ * corresponds conveniently with dmin and dmax.
+ * 
+ * Class 1 changes are marked by a preceding commented line explaining 
+ * 'Bands used'. These changes are invariably involved with a for loop that involves
+ * the d index in either the alpha or the beta matrix.  The original for loops
+ * are simply replaced with a new for loop that enforces the bands.
+ *
+ * Class 2 changes that involve the vji decks involve several offset variables
+ * because the implicit d value for a given vji cell has to be calculated.  The 
+ * formula for that conversion is simple :   d = j-i+1
+ * in the code however, jp and ip are used where jp = j-j1 and ip = i-i0.
+ * so we have :  d = (jp+j1) - (ip+i0) + 1
+ *
+ * The way this is handled is only one possible way (and not necessarily the best way) 
+ * but saves some calculations from being repeated and is somewhat consistent with
+ * analagous code elsewhere.  Also the way its handled here is somewhat general
+ * and could be easily changed. 
+ *
+ * That approach is to use an imin[] and imax[] vector, somewhat analagous to
+ * dmin[] and dmax[], indexed by states where states in the imin
+ * and imax vectors are offset (usually by r or w1) because v problems don't involve
+ * the entire set of 0..M-1 states.  Because determining a d for a given vji
+ * cell depends on both jp and ip, we can't calculate the bands for a given
+ * state (vji deck) independent of jp.  Therefore, imin[] and imax[] are calculated
+ * independent of jp, and jp must be added within a for(jp...) loop to determine
+ * the actual band in the i dimension.  
+ *
+ * So imin[v-r] = j1-i0-dmax[v]+1;
+ *    imax[v-r] = j1-i0-dmin[v]+1;
+ *
+ * Here's an example of using imin and imax within a for(jp ... ) loop : 
+ *	  for (jp = 0; jp <= j0-j1; jp++) 
+ *	    {
+ * 	      if((imax[v-r]+jp) > (i1-i0)) ip = (i1-i0);
+ *	      else ip = imax[v-r] + jp;
+ * 	      for(; ip >= imin[v-r]+jp && ip >= 0; ip--) {
+ * 
+ * Code where bands are used in the vji deck are marked with "Bands used ip X" where X
+ * is a number (1-19).  Some of these sections have been commented out as I slowly
+ * realized they were mistakes or unnecessary.  There are, admittedly scattered, notes
+ * on how I arrived at each of these in :
+ * ~nawrocki/lab/rRNA/inf/infernal_0426/banded_testing_0207/00LOG
+ * 
+ * Other changes of both class 1 and 2 involves imposing the bands during 
+ * the initialization step of either the alpha or beta matrix.  These changes
+ * add additional code that sets all cells outside the bands to IMPOSSIBLE.
+ * 
+ *******************************************************************************/
 
+/* The banded dividers and conquerors.
+ */
+static float generic_splitter_b(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
+				int r, int vend, int i0, int j0, int *dmin, int *dmax);
+static float wedge_splitter_b(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
+			      int r, int z, int i0, int j0, int *dmin, int *dmax);
+static void  v_splitter_b(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
+			  int r, int z, int i0, int i1, int j1, int j0, int useEL,
+			  int *dmin, int *dmax);
+
+/* The banded alignment engines. 
+ */
+static float inside_b(CM_t *cm, char *dsq, int L, 
+		      int r, int z, int i0, int j0, 
+		      int do_full,
+		      float ***alpha, float ****ret_alpha, 
+		      struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
+		      void ****ret_shadow, 
+		      int allow_begin, int *ret_b, float *ret_bsc,
+		      int *dmin, int *dmax);
+static void  outside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
+		       int do_full, float ***beta, float ****ret_beta,
+		       struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
+		       int *dmin, int *dmax);
+static float vinside_b(CM_t *cm, char *dsq, int L, 
+		       int r, int z, int i0, int i1, int j1, int j0, int useEL,
+		       int do_full, float ***a, float ****ret_a,
+		       struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
+		       char ****ret_shadow,
+		       int allow_begin, int *ret_b, float *ret_bsc,
+		       int *dmin, int *dmax);
+static void  voutside_b(CM_t *cm, char *dsq, int L, 
+			int r, int z, int i0, int i1, int j1, int j0, int useEL,
+			int do_full, float ***beta, float ****ret_beta,
+			struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
+			int *dmin, int *dmax);
+
+/* No banded versions of the traceback routines because the non-banded
+ * functions can be used.
+
+ /* No banded size calculators right now. */
 
 /* Function: CYKDivideAndConquer()
  * Date:     SRE, Sun Jun  3 19:32:14 2001 [St. Louis]
@@ -162,7 +276,7 @@ CYKDivideAndConquer(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree
   float        sc;
   int          z;
 
-  printf("alignment strategy:CYKDivideAndConquer:nb:small\n");
+  /*printf("alignment strategy:CYKDivideAndConquer:nb:small\n");*/
   /* Trust, but verify.
    * Check out input parameters.
    */
@@ -201,7 +315,7 @@ CYKDivideAndConquer(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree
   /* Free memory and return
    */
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
-  printf("***returning from CYKDivideAndConquer() sc : %f\n", sc);
+  /*printf("***returning from CYKDivideAndConquer() sc : %f\n", sc);*/
   return sc;
 }
 
@@ -223,17 +337,18 @@ CYKDivideAndConquer(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree
  *           i0     - start of target subsequence (often 1, beginning of dsq)
  *           j0     - end of target subsequence (often L, end of dsq)
  *           ret_tr - RETURN: traceback (pass NULL if trace isn't wanted)
+ *           dmin   - minimum d bound for each state v; [0..v..M-1] (NULL if non-banded)
+ *           dmax   - maximum d bound for each state v; [0..v..M-1] (NULL if non-banded)
  *
  * Returns:  score of the alignment in bits.
  */
 float
-CYKInside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr)
+CYKInside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr,
+	  int *dmin, int *dmax)
 {
   Parsetree_t *tr;
   int          z;
   float        sc;
-
-  /*printf("alignment strategy:CYKInside:nb:nosmall\n");*/
 
   /* Trust, but verify.
    * Check out input parameters.
@@ -263,10 +378,10 @@ CYKInside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_t
 
   /* Solve the whole thing with one call to insideT.
    */
-  sc += insideT(cm, dsq, L, tr, r, z, i0, j0, (r==0));
+  sc += insideT(cm, dsq, L, tr, r, z, i0, j0, (r==0), 
+		dmin, dmax); 
 
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
-  printf("***returning from CYKInside() sc : %f\n", sc);
   return sc;
 }
 
@@ -436,7 +551,9 @@ generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 		  r, UniqueStatetype(cm->stid[r]),
 		  z, UniqueStatetype(cm->stid[z]),
 		  i0, j0));
-    sc = insideT(cm, dsq, L, tr, r, z, i0, j0, (r==0));
+    sc = insideT(cm, dsq, L, tr, r, z, i0, j0, (r==0), 
+		NULL, NULL); /* two NULLs mean 'don't use bands' */
+
     return sc;
   }
 
@@ -658,7 +775,9 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
 		r, UniqueStatetype(cm->stid[r]),
 		z, UniqueStatetype(cm->stid[z]),
 		i0,j0));
-      sc = insideT(cm, dsq, L, tr, r, z, i0, j0, (r==0));
+      sc = insideT(cm, dsq, L, tr, r, z, i0, j0, (r==0),
+		   NULL, NULL); /* two NULLs mean 'don't use bands' */
+
       return sc;
     }
 
@@ -836,7 +955,8 @@ v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 		r, UniqueStatetype(cm->stid[r]),
 		z, UniqueStatetype(cm->stid[z]),
 		i0,j1,j1,j0));
-      vinsideT(cm, dsq, L, tr, r, z, i0, i1, j1, j0, useEL, (r==0));
+      vinsideT(cm, dsq, L, tr, r, z, i0, i1, j1, j0, useEL, (r==0),
+		NULL, NULL); /* two NULLs mean 'don't use bands' */
       return;
     }
 
@@ -1257,7 +1377,6 @@ inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_f
 	      }
 	  }
 	}				/* finished calculating deck v. */
-      
       
       /* Check for local begin getting us to the root.
        * This is "off-shadow": if/when we trace back, we'll handle this
@@ -2126,7 +2245,6 @@ vinside(CM_t *cm, char *dsq, int L,
   return sc;
 }
 
-
 /* Function: voutside()
  * Date:     SRE, Sun Jun  3 15:44:41 2001 [St. Louis]
  *
@@ -2492,11 +2610,14 @@ voutside(CM_t *cm, char *dsq, int L,
  * Purpose:  Call inside, get vjd shadow matrix;
  *           then trace back. Append the trace to a given
  *           traceback, which already has state r at tr->n-1.
+ *
+ *           If we're not in banded mode, dmin and dmax should
+ *           be passed in as NULL.
  */
 static float
 insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
 	int r, int z, int i0, int j0, 
-	int allow_begin)
+	int allow_begin, int *dmin, int *dmax)
 {
   void   ***shadow;             /* the traceback shadow matrix */
   float     sc;			/* the score of the CYK alignment */
@@ -2508,13 +2629,27 @@ insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
   int       b;
   float     bsc;
 
-  sc = inside(cm, dsq, L, r, z, i0, j0, 
-	      BE_EFFICIENT,	/* memory-saving mode */
-	      NULL, NULL,	/* manage your own matrix, I don't want it */
-	      NULL, NULL,	/* manage your own deckpool, I don't want it */
-	      &shadow,		/* return a shadow matrix to me. */
-	      allow_begin,      /* TRUE to allow local begins */
-	      &b, &bsc);	/* if allow_begin is TRUE, gives info on optimal b */
+  if(dmin == NULL && dmax == NULL)
+    {
+      sc = inside(cm, dsq, L, r, z, i0, j0, 
+		  BE_EFFICIENT,	/* memory-saving mode */
+		  NULL, NULL,	/* manage your own matrix, I don't want it */
+		  NULL, NULL,	/* manage your own deckpool, I don't want it */
+		  &shadow,		/* return a shadow matrix to me. */
+		  allow_begin,      /* TRUE to allow local begins */
+		  &b, &bsc);	/* if allow_begin is TRUE, gives info on optimal b */
+    }
+  else
+    {
+      sc = inside_b(cm, dsq, L, r, z, i0, j0, 
+		    BE_EFFICIENT,/* memory-saving mode */
+		    NULL, NULL,	 /* manage your own matrix, I don't want it */
+		    NULL, NULL,	 /* manage your own deckpool, I don't want it */
+		    &shadow,	 /* return a shadow matrix to me. */
+		    allow_begin, /* TRUE to allow local begins */
+		    &b, &bsc,	 /* if allow_begin is TRUE, gives info on optimal b */
+		    dmin, dmax); /* the bands */
+    }      
 
   pda = CreateNstack();
   v = r;
@@ -2605,10 +2740,14 @@ insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
  *           then trace back. Append the trace to a
  *           given traceback, which has state r already at
  *           t->n-1.
+ *
+ *           If we're not in banded mode, dmin and dmax should
+ *           be passed in as NULL.
  */
 static float
 vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
-	 int r, int z, int i0, int i1, int j1, int j0, int useEL, int allow_begin)
+	 int r, int z, int i0, int i1, int j1, int j0, int useEL, 
+	 int allow_begin, int *dmin, int *dmax)
 {
   char ***shadow;
   float   sc;
@@ -2627,14 +2766,27 @@ vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
     return 0.;
   }
 
-  sc = vinside(cm, dsq, L, r, z, i0, i1, j1, j0, useEL,
-	       BE_EFFICIENT,	/* memory-saving mode */
-	       NULL, NULL,	/* manage your own matrix, I don't want it */
-	       NULL, NULL,	/* manage your own deckpool, I don't want it */
-	       &shadow,      	/* return a shadow matrix to me. */
-	       allow_begin,     /* TRUE to allow local begin transitions */
-	       &b, &bsc);       /* info on optimal local begin */
-
+  if(dmin == NULL && dmax == NULL)
+    {
+      sc = vinside(cm, dsq, L, r, z, i0, i1, j1, j0, useEL,
+		   BE_EFFICIENT,	/* memory-saving mode */
+		   NULL, NULL,	/* manage your own matrix, I don't want it */
+		   NULL, NULL,	/* manage your own deckpool, I don't want it */
+		   &shadow,      	/* return a shadow matrix to me. */
+		   allow_begin,     /* TRUE to allow local begin transitions */
+		   &b, &bsc);       /* info on optimal local begin */
+    }
+  else
+    {
+      sc = vinside_b(cm, dsq, L, r, z, i0, i1, j1, j0, useEL,
+		     BE_EFFICIENT,	/* memory-saving mode */
+		     NULL, NULL,	/* manage your own matrix, I don't want it */
+		     NULL, NULL,	/* manage your own deckpool, I don't want it */
+		     &shadow,      	/* return a shadow matrix to me. */
+		     allow_begin,       /* TRUE to allow local begin transitions */
+		     &b, &bsc,          /* info on optimal local begin */
+		     dmin, dmax);
+    }
   /* We've got a complete shadow matrix. Trace it back. We know
    * that the trace will begin with the start state r, at i0,j0
    * (e.g. jp=j0-j1, ip=0)
@@ -2701,6 +2853,7 @@ vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
   free_vji_shadow_matrix(shadow, cm->M, j1, j0);
   return sc;
 }
+
 
 /*****************************************************************
  * The size calculators:
@@ -3300,234 +3453,7 @@ CYKOutside(CM_t *cm, char *dsq, int L, float ***alpha)
 }
 #endif 
 
-/*******************************************************************************/
-/*******************************************************************************/
-/*******************************************************************************/
 
-/*******************************************************************************
- * EPN BANDED VERSION OF MOST FUNCTIONS
- * Banded functions are named *_b()
- * Functions that I don't think need a banded version are indicated with a U
- * before their names.
- * 
- * To change *most* of the following code from banded to normal versions, two
- * 'replace-string's would be done : 
- * (1) replace '_b(' with '(' : to replace all banded function calls with calls
- *     to their non-banded versions.
- * (2) replace ', dmin, dmax)' with ')' : all banded functions have exactly
- *     two extra variables passed in, dmin a pointer to an int array with minimum
- *     bands, and dmax, a pointer to an int array with maximum bands.  Further,
- *     these are always the last two variables passed into a function.
- *
- * There are two classes of changes that were made to the original functions
- * to make (what I think are) functioning banded versions (*_b()).  
- *
- * Class 1 : vjd deck changes - using dmin and dmax as bands
- * Class 2 : vji deck changes - using imin and imax (derived from dmin and dmax)
- *
- * Class 2 changes occur only within v problems, only functions : v_splitter_b(),
- * vinside_b(), and voutside_b().
- * 
- * The class 1 changes are more straightforward relative to the class 2 changes.
- * This is completely due to the fact that the vjd coordinate system directly
- * uses d (distance of subsequence in parse tree rooted at state v) which 
- * corresponds conveniently with dmin and dmax.
- * 
- * Class 1 changes are marked by a preceding commented line explaining 
- * 'Bands used'. These changes are invariably involved with a for loop that involves
- * the d index in either the alpha or the beta matrix.  The original for loops
- * are simply replaced with a new for loop that enforces the bands.
- *
- * Class 2 changes that involve the vji decks involve several offset variables
- * because the implicit d value for a given vji cell has to be calculated.  The 
- * formula for that conversion is simple :   d = j-i+1
- * in the code however, jp and ip are used where jp = j-j1 and ip = i-i0.
- * so we have :  d = (jp+j1) - (ip+i0) + 1
- *
- * The way this is handled is only one possible way (and not necessarily the best way) 
- * but saves some calculations from being repeated and is somewhat consistent with
- * analagous code elsewhere.  Also the way its handled here is somewhat general
- * and could be easily changed. 
- *
- * That approach is to use an imin[] and imax[] vector, somewhat analagous to
- * dmin[] and dmax[], indexed by states where states in the imin
- * and imax vectors are offset (usually by r or w1) because v problems don't involve
- * the entire set of 0..M-1 states.  Because determining a d for a given vji
- * cell depends on both jp and ip, we can't calculate the bands for a given
- * state (vji deck) independent of jp.  Therefore, imin[] and imax[] are calculated
- * independent of jp, and jp must be added within a for(jp...) loop to determine
- * the actual band in the i dimension.  
- *
- * So imin[v-r] = j1-i0-dmax[v]+1;
- *    imax[v-r] = j1-i0-dmin[v]+1;
- *
- * Here's an example of using imin and imax within a for(jp ... ) loop : 
- *	  for (jp = 0; jp <= j0-j1; jp++) 
- *	    {
- * 	      if((imax[v-r]+jp) > (i1-i0)) ip = (i1-i0);
- *	      else ip = imax[v-r] + jp;
- * 	      for(; ip >= imin[v-r]+jp && ip >= 0; ip--) {
- * 
- * Code where bands are used in the vji deck are marked with "Bands used ip X" where X
- * is a number (1-19).  Some of these sections have been commented out as I slowly
- * realized they were mistakes or unnecessary.  There are, admittedly scattered, notes
- * on how I arrived at each of these in :
- * ~nawrocki/lab/rRNA/inf/infernal_0426/banded_testing_0207/00LOG
- * 
- * Other changes of both class 1 and 2 involves imposing the bands during 
- * the initialization step of either the alpha or beta matrix.  These changes
- * add additional code that sets all cells outside the bands to IMPOSSIBLE.
- * 
- *******************************************************************************/
-
-
-/*################################################################
- * smallcyk's external API:
- * 
- * CYKDivideAndConquer_b()  - The divide and conquer algorithm. Align
- *                            a model to a (sub)sequence using bands.
- * CYKInside_b()            - Align model to (sub)sequence, using normal 
- *                            banded CYK/Inside algorithm.
- * U CYKInsideScore()       - Calculate the CYK/Inside score of optimal 
- *                            alignment, without recovering the alignment; 
- *                            allows timing CYK/Inside without blowing
- *                            out memory, for large target RNAs.
- *                          
- * U CYKDemands()           - Print a bunch of info comparing predicted d&c
- *                            time/memory requirements to standard CYK/inside
- *                            time/memory requirements.
- *################################################################
- */  
-
-/* (U)nnecessary to have twice
-#include "config.h"
-
-#include <stdio.h>
-#include <stdlib.h>
-
-#include "squid.h"
-#include "sre_stack.h"
-
-#include "structs.h"
-#include "funcs.h"
-
-struct deckpool_s {
-  float ***pool;
-  int      n;
-  int      nalloc;
-  int      block;
-};
-*/
-
-/* The dividers and conquerors.
- */
-static float generic_splitter_b(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
-				int r, int vend, int i0, int j0, int *dmin, int *dmax);
-static float wedge_splitter_b(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
-			      int r, int z, int i0, int j0, int *dmin, int *dmax);
-static void  v_splitter_b(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
-			  int r, int z, int i0, int i1, int j1, int j0, int useEL,
-			  int *dmin, int *dmax);
-
-/* The alignment engines. 
- */
-static float inside_b(CM_t *cm, char *dsq, int L, 
-		      int r, int z, int i0, int j0, 
-		      int do_full,
-		      float ***alpha, float ****ret_alpha, 
-		      struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
-		      void ****ret_shadow, 
-		      int allow_begin, int *ret_b, float *ret_bsc,
-		      int *dmin, int *dmax);
-static void  outside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
-		       int do_full, float ***beta, float ****ret_beta,
-		       struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
-		       int *dmin, int *dmax);
-static float vinside_b(CM_t *cm, char *dsq, int L, 
-		       int r, int z, int i0, int i1, int j1, int j0, int useEL,
-		       int do_full, float ***a, float ****ret_a,
-		       struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
-		       char ****ret_shadow,
-		       int allow_begin, int *ret_b, float *ret_bsc,
-		       int *dmin, int *dmax);
-static void  voutside_b(CM_t *cm, char *dsq, int L, 
-			int r, int z, int i0, int i1, int j1, int j0, int useEL,
-			int do_full, float ***beta, float ****ret_beta,
-			struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
-			int *dmin, int *dmax);
-
-/* The traceback routines.
-   These guys need bands because they call inside_b() or outside_b()
- */
-static float insideT_b(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
-		       int r, int z, int i0, int j0, int allow_begin,
-		       int *dmin, int *dmax);
-static float vinsideT_b(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
-		      int r, int z, int i0, int i1, int j1, int j0, int useEL, int allow_begin,
-		      int *dmin, int *dmax);
-
-/* The size calculators.
-   (U)necessary?
- */
-/*
-static float insideT_size(CM_t *cm, int L, int r, int z, int i0, int j0);
-static float vinsideT_size(CM_t *cm, int r, int z, int i0, int i1, int j1, int j0);
-static int   cyk_deck_count(CM_t *cm, int r, int z);
-static int   cyk_extra_decks(CM_t *cm);
-*/
-/* The memory management routines.
-   For non memory efficient banded implementation, we still allocate the
-   same memory as we would without bands, we just set all cells of alpha
-   or beta that are outside of the bands to IMPOSSIBLE.  Because of this
-   we should be able to use the same memory management routines as the non-banded
-   implementation.
-   (U)nnecessary for banding.
- */
-
-/*
-static struct  deckpool_s *deckpool_create(void);
-static void    deckpool_push(struct deckpool_s *dpool, float **deck);
-static int     deckpool_pop(struct deckpool_s *d, float ***ret_deck);
-static void    deckpool_free(struct deckpool_s *d);
-static float **alloc_vjd_deck(int L, int i, int j);
-static float   size_vjd_deck(int L, int i, int j);
-static void    free_vjd_deck(float **a, int i, int j);
-static void    free_vjd_matrix(float ***a, int M, int i, int j);
-static char  **alloc_vjd_yshadow_deck(int L, int i, int j);
-static float   size_vjd_yshadow_deck(int L, int i, int j);
-static void    free_vjd_yshadow_deck(char **a, int i, int j);
-static int   **alloc_vjd_kshadow_deck(int L, int i, int j);
-static float   size_vjd_kshadow_deck(int L, int i, int j);
-static void    free_vjd_kshadow_deck(int **a, int i, int j);
-static void    free_vjd_shadow_matrix(void ***shadow, CM_t *cm, int i, int j);
-static float **alloc_vji_deck(int i0, int i1, int j1, int j0);
-static float   size_vji_deck(int i0, int i1, int j1, int j0);
-static void    free_vji_deck(float **a, int j1, int j0);
-static void    free_vji_matrix(float ***a, int M, int j1, int j0);
-static char  **alloc_vji_shadow_deck(int i0, int i1, int j1, int j0);
-static float   size_vji_shadow_deck(int i0, int i1, int j1, int j0);
-static void    free_vji_shadow_deck(char **a, int j1, int j0);
-static void    free_vji_shadow_matrix(char ***a, int M, int j1, int j0);
-*/
-
-/* (U)necessary - we don't need this stuff twice.  I just keep it here for sake of
-   completeness */
-/* BE_EFFICIENT and BE_PARANOID are alternative (exclusive) settings
- * for the do_full? argument to the alignment engines.
- */
-
-//#define BE_EFFICIENT  0		/* setting for do_full: small memory mode */
-//#define BE_PARANOID   1		/* setting for do_full: keep whole matrix, perhaps for debugging */
-/* Special flags for use in shadow (traceback) matrices, instead of
- * offsets to connected states. When yshad[0][][] is USED_LOCAL_BEGIN,
- * the b value returned by inside() is the best connected state (a 0->b
- * local entry). When yshad[v][][] is USED_EL, there is a v->EL transition
- * and the remaining subsequence is aligned to the EL state. 
- */
-/*
-#define USED_LOCAL_BEGIN 101
-#define USED_EL          102
-*/
 
 /*******************************************************************************
  * 05.24.05
@@ -3567,7 +3493,6 @@ static float inside_b_me(CM_t *cm, char *dsq, int L,
 			 int r, int z, int i0, int j0, 
 			 int do_full,
 			 float ***alpha, float ****ret_alpha, 
-			 struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
 			 void ****ret_shadow, 
 			 int allow_begin, int *ret_b, float *ret_bsc,
 			 int *dmin, int *dmax);
@@ -3628,9 +3553,7 @@ CYKDivideAndConquer_b(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetr
   float        sc;
   int          z;
 
-
-  PrintDPCellsSaved(cm, dmin, dmax, L);
-  printf("alignment strategy:CYKDivideAndConquer_b:b:small\n");
+  /*printf("alignment strategy:CYKDivideAndConquer_b:b:small\n");*/
 
   /* Trust, but verify.
    * Check out input parameters.
@@ -3670,82 +3593,7 @@ CYKDivideAndConquer_b(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetr
   /* Free memory and return
    */
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
-  printf("***returning from CYKDivideAndConquer_b() sc : %f\n", sc);
-  return sc;
-}
-
-/* Function: CYKInside_b()
- *           EPN 05.19.05
- * *based on CYKInside(), only difference is bands are used : 
- * Date:     SRE, Sun Jun  3 19:48:33 2001 [St. Louis]
- *
- * Purpose:  Wrapper for the insideT_b() routine - solve
- *           a full alignment problem, return the traceback
- *           and the score, without dividing & conquering, using bands.
- *           
- *           Analogous to CYKDivideAndConquer() in many respects;
- *           see the more extensive comments in that function for
- *           more details on shared aspects.
- *           
- * Args:     cm     - the covariance model
- *           dsq    - the sequence, 1..L
- *           L      - length of sequence
- *           r      - root of subgraph to align to target subseq (usually 0, the model's root)
- *           i0     - start of target subsequence (often 1, beginning of dsq)
- *           j0     - end of target subsequence (often L, end of dsq)
- *           ret_tr - RETURN: traceback (pass NULL if trace isn't wanted)
- *           dmin   - minimum d bound for each state v; [0..v..M-1]
- *           dmax   - maximum d bound for each state v; [0..v..M-1]
- *
- * Returns:  score of the alignment in bits.
- */
-float
-CYKInside_b(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, 
-	    int *dmin, int *dmax)
-{
-  Parsetree_t *tr;
-  int          z;
-  float        sc;
-  
-  PrintDPCellsSaved(cm, dmin, dmax, L);
-  printf("alignment strategy:CYKInside_b:b:nosmall\n"); 
-
-  /* Trust, but verify.
-   * Check out input parameters.
-   */
-  if (cm->stid[r] != ROOT_S) {
-    if (! (cm->flags & CM_LOCAL_BEGIN)) Die("internal error: we're not in local mode, but r is not root");
-    if (cm->stid[r] != MATP_MP && cm->stid[r] != MATL_ML &&
-	cm->stid[r] != MATR_MR && cm->stid[r] != BIF_B)
-      Die("internal error: trying to do a local begin at a non-mainline start");
-  }
-
-  /* Create the parse tree, and initialize.
-   */
-  tr = CreateParsetree();
-  InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0); /* init: attach the root S */
-  z  = cm->M-1;
-  sc = 0.;
-
-  /* Deal with case where we already know a local entry transition 0->r
-   */
-  if (r != 0)
-    {
-      InsertTraceNode(tr, 0,  TRACE_LEFT_CHILD, i0, j0, r);
-      z  =  CMSubtreeFindEnd(cm, r);
-      sc =  cm->beginsc[r];
-    }
-
-  /* Solve the whole thing with one call to insideT_b_me.
-     This calls memory efficient insideT function, which
-     only allocates cells in alpha within the bands.
-     To use the non-memory efficient implementation call insideT_b()
-     with the same arguments
-   */
-  sc += insideT_b_me(cm, dsq, L, tr, r, z, i0, j0, (r==0), dmin, dmax);
-
-  if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
-  printf("***returning from CYKInside_b() sc : %f\n", sc); 
+  /*printf("***returning from CYKDivideAndConquer_b() sc : %f\n", sc);*/
   return sc;
 }
 
@@ -3822,7 +3670,7 @@ generic_splitter_b(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 		  r, UniqueStatetype(cm->stid[r]),
 		  z, UniqueStatetype(cm->stid[z]),
 		  i0, j0));
-    sc = insideT_b(cm, dsq, L, tr, r, z, i0, j0, (r==0), dmin, dmax);
+    sc = insideT(cm, dsq, L, tr, r, z, i0, j0, (r==0), dmin, dmax);
     return sc;
   }
 
@@ -4055,7 +3903,7 @@ wedge_splitter_b(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int 
 		r, UniqueStatetype(cm->stid[r]),
 		z, UniqueStatetype(cm->stid[z]),
 		i0,j0));
-      sc = insideT_b(cm, dsq, L, tr, r, z, i0, j0, (r==0), dmin, dmax);
+      sc = insideT(cm, dsq, L, tr, r, z, i0, j0, (r==0), dmin, dmax);
       return sc;
     }
 
@@ -4091,9 +3939,7 @@ wedge_splitter_b(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int 
     for (jp = 0; jp <= W; jp++) 
       {
 	j = i0-1+jp;
-	/* Bands used */
-	/* old line :	for (d = 0; d <= jp; d++) */
-	for (d = dmin[v]; d <= dmax[v] && d <= jp; d++)
+	for (d = dmin[v]; d <= dmax[v] && d <= jp; d++) 
 	  if ((sc = alpha[v][j][d] + beta[v][j][d]) > best_sc)
 	    {
 	      best_sc = sc;
@@ -4110,9 +3956,8 @@ wedge_splitter_b(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int 
     for (jp = 0; jp <= W; jp++) 
       {
 	j = i0-1+jp;
-	/* Bands used */
-	/* old line :	for (d = 0; d <= jp; d++) */
-	for (d = dmin[v]; d <= dmax[v] && d <= jp; d++)
+	/* There is no band on the EL state */
+	for (d = 0; d <= jp; d++) 
 	  if ((sc = beta[cm->M][j][d]) > best_sc) {
 	    best_sc = sc;
 	    best_v  = -1;	/* flag for local alignment. */
@@ -4251,7 +4096,7 @@ v_splitter_b(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 		r, UniqueStatetype(cm->stid[r]),
 		z, UniqueStatetype(cm->stid[z]),
 		i0,j1,j1,j0));
-      vinsideT_b(cm, dsq, L, tr, r, z, i0, i1, j1, j0, useEL, (r==0), dmin, dmax);
+      vinsideT(cm, dsq, L, tr, r, z, i0, i1, j1, j0, useEL, (r==0), dmin, dmax);
       return;
     }
 
@@ -4888,6 +4733,16 @@ inside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do
  *           
  *           At the end of the routine, the bottom deck (vend) is valid.
  *
+ *           Note on banded: because beta[v][j][d] excludes the
+ *           contribution from state v, we have to be careful when
+ *           enforcing the bands during the main recursion. Instead of
+ *           for CYK or inside style algorithms where we have: 
+ *             for(d = dmin[v]; d <= dmax[v] && d <= j; d++)
+ *           we have to do something like: 
+ *             for(d = (dmin[v]-dv); d <= (dmax[v]-dv) && d <= j; d++)
+ *           where dv is the StateDelta value of state v (i.e. if v is
+ *           a MP dv = 2; if v is a non-MP emitter dv = 1; else dv = 0).
+ *
  * Args:     cm        - the model    [0..M-1]
  *           dsq       - the sequence [1..L]   
  *           L         - length of the dsq
@@ -4927,6 +4782,7 @@ outside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
   int      jp;			/* j': relative position in the subsequence, 0..W */
   int      voffset;		/* index of v in t_v(y) transition scores */
   int      w1,w2;		/* bounds of split set */
+  int      dv;                  /* StateDelta() for state v */
 
   /* Allocations and initializations
    */
@@ -5037,7 +4893,6 @@ outside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
   }
 				
 
-  
   /* Main loop down through the decks
    */
   for (v = w2+1; v <= vend; v++)
@@ -5060,34 +4915,18 @@ outside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
       /* If we can do a local begin into v, also init with that. 
        * By definition, beta[0][j0][W] == 0.
        */ 
-      if (vroot == 0 && i0 == 1 && j0 == L && (cm->flags & CM_LOCAL_BEGIN))
-	beta[v][j0][W] = cm->beginsc[v];
-
-      /* Bands used
-       * Impose bands by setting all cells outside the bands to 0 
-       * This is independent of state type so we do it outside
-       * the following set of if then statements. 
-       * Alternatively, it could be done within each of the following
-       * if(cm->sttype[v] == *) statements - matter of style I suppose.
-       */
-      
-      for (jp = 0; jp <= W; jp++) {
-	j = i0-1+jp;
-	for (d = 0; d < dmin[v] && d <= jp; d++)
-	  beta[v][j][d] = IMPOSSIBLE;
-	for (d = dmax[v]+1; d <= jp;     d++) 
-	  beta[v][j][d] = IMPOSSIBLE;
-      }
+      if ((vroot == 0 && i0 == 1 && j0 == L && (cm->flags & CM_LOCAL_BEGIN))
+	  && (dmin[v] <= W && dmax[v] >= W))
+	  beta[v][j0][W] = cm->beginsc[v];
 
       /* main recursion:
        */
+      dv = StateDelta(cm->sttype[v]);
       for (jp = W; jp >= 0; jp--) {
 	j = i0-1+jp;
-	/* Bands used */
-	/* old line : 	for (d = jp; d >= 0; d--) */
-	if(dmax[v] > jp) d = jp;
-	else d = dmax[v];
-	for (; d >= dmin[v]; d--)
+	if((dmax[v]-dv) > jp) d = jp;
+	else d = (dmax[v]-dv);
+	for (; d >= (dmin[v]-dv); d--)
 	  {
 	    i = j-d+1;
 	    for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
@@ -5144,21 +4983,19 @@ outside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 	      }/* end switch over states*/
 	    } /* ends for loop over parent states. we now know beta[v][j][d] for this d */
 	    if (beta[v][j][d] < IMPOSSIBLE) beta[v][j][d] = IMPOSSIBLE;
-
-
+	    
+	    
 	  } /* ends loop over d. We know all beta[v][j][d] in this row j*/
       }/* end loop over jp. We know the beta's for the whole deck.*/
-
-
+      
+      
       /* Deal with local alignment end transitions v->EL
        * (EL = deck at M.)
        */
       if (NOT_IMPOSSIBLE(cm->endsc[v])) {
 	for (jp = 0; jp <= W; jp++) { 
 	  j = i0-1+jp;
-	  /* Bands used */
-	  /* old line :	for (d = 0; d <= jp; d++) */
-	  for (d = dmin[v]; d <= dmax[v] && d <= jp; d++)
+	  for (d = (dmin[v]-dv); d <= (dmax[v]-dv) && d <= jp; d++)
 	    {
 	      i = j-d+1;
 	      switch (cm->sttype[v]) {
@@ -5216,11 +5053,11 @@ outside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 	    } /* end inner loop over d */
 	} /* end outer loop over jp */
       } /* end conditional section for dealing w/ v->EL local end transitions */
-      
-      /* Look at v's parents; if we're reusing memory (! do_full)
-       * push the parents that we don't need any more into the pool.
-       */
-      if (! do_full) {
+	
+	/* Look at v's parents; if we're reusing memory (! do_full)
+	 * push the parents that we don't need any more into the pool.
+	 */
+	if (! do_full) {
 	for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
 	  touch[y]--;
 	  if (touch[y] == 0) { deckpool_push(dpool, beta[y]); beta[y] = NULL; }
@@ -6223,309 +6060,19 @@ voutside_b(CM_t *cm, char *dsq, int L,
   free(imin);
 }
 
-/*****************************************************************
- * The traceback routines, using bands (bands are really only
- *     passed to other functions, never explicitly used in these funcs).
- *
- *   insideT_b  - run inside(), append trace in postorder traversal, using bands
- *   vinsideT_b - run vinside(), append trace in postorder traversal, using bands
- *****************************************************************/
-
-/* Function: insideT_b()
- *           EPN 05.19.05
- * *based on insideT(), only difference is bands are used : 
- *
- * Date:     SRE, Fri Aug 11 12:08:18 2000 [Pittsburgh]
- *
- * Purpose:  Call inside, get vjd shadow matrix;
- *           then trace back. Append the trace to a given
- *           traceback, which already has state r at tr->n-1.
- */
-static float
-insideT_b(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
-	  int r, int z, int i0, int j0, 
-	  int allow_begin, int *dmin, int *dmax)
-{
-  void   ***shadow;             /* the traceback shadow matrix */
-  float     sc;			/* the score of the CYK alignment */
-  Nstack_t *pda;                /* stack that tracks bifurc parent of a right start */
-  int       v,j,d,i;		/* indices for state, j, subseq len */
-  int       k;			
-  int       y, yoffset;
-  int       bifparent;
-  int       b;
-  float     bsc;
-
-  sc = inside_b(cm, dsq, L, r, z, i0, j0, 
-		BE_EFFICIENT,	/* memory-saving mode */
-		NULL, NULL,	/* manage your own matrix, I don't want it */
-		NULL, NULL,	/* manage your own deckpool, I don't want it */
-		&shadow,		/* return a shadow matrix to me. */
-		allow_begin,      /* TRUE to allow local begins */
-		&b, &bsc,	/* if allow_begin is TRUE, gives info on optimal b */
-		dmin, dmax);
-
-  pda = CreateNstack();
-  v = r;
-  j = j0;
-  i = i0;
-  d = j0-i0+1;
-
-  /*printf("Starting traceback in insideT_b()\n");*/
-  while (1) {
-    assert(d <= dmax[v] || USED_LOCAL_BEGIN || USED_EL);
-    assert(d >= dmin[v] || USED_LOCAL_BEGIN || USED_EL);
-
-    if (cm->sttype[v] == B_st) {
-      k = ((int **) shadow[v])[j][d];   /* k = len of right fragment */
-
-      /* Store info about the right fragment that we'll retrieve later:
-       */
-      PushNstack(pda, j);	/* remember the end j    */
-      PushNstack(pda, k);	/* remember the subseq length k */
-      PushNstack(pda, tr->n-1);	/* remember the trace index of the parent B state */
-
-      /* Deal with attaching left start state.
-       */
-      j = j-k;
-      d = d-k;
-      i = j-d+1;
-      y = cm->cfirst[v];
-      InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
-      v = y;
-    } else if (cm->sttype[v] == E_st || cm->sttype[v] == EL_st) {
-      /* We don't trace back from an E or EL. Instead, we're done with the
-       * left branch of the tree, and we try to swing over to the right
-       * branch by popping a right start off the stack and attaching
-       * it. If the stack is empty, then we're done with the
-       * traceback altogether. This is the only way to break the
-       * while (1) loop.
-       */
-      if (! PopNstack(pda, &bifparent)) break;
-      PopNstack(pda, &d);
-      PopNstack(pda, &j);
-      v = tr->state[bifparent];	/* recover state index of B */
-      y = cm->cnum[v];		/* find state index of right S */
-      i = j-d+1;
-				/* attach the S to the right */
-      InsertTraceNode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, y);
-      v = y;
-    } else {
-      yoffset = ((char **) shadow[v])[j][d];
-
-      switch (cm->sttype[v]) {
-      case D_st:            break;
-      case MP_st: i++; j--; break;
-      case ML_st: i++;      break;
-      case MR_st:      j--; break;
-      case IL_st: i++;      break;
-      case IR_st:      j--; break;
-      case S_st:            break;
-      default:    Die("'Inconceivable!'\n'You keep using that word...'");
-      }
-      d = j-i+1;
-
-      if (yoffset == USED_EL) 
-	{	/* a local alignment end */
-	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M);
-	  v = cm->M;		/* now we're in EL. */
-	}
-      else if (yoffset == USED_LOCAL_BEGIN) 
-	{ /* local begin; can only happen once, from root */
-	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, b);
-	  v = b;
-	}
-      else 
-	{
-	  y = cm->cfirst[v] + yoffset;
-	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
-	  v = y;
-	}
-    }
-  }
-  FreeNstack(pda);  /* it should be empty; we could check; naaah. */
-  free_vjd_shadow_matrix(shadow, cm, i0, j0);
-  return sc;
-}
-
-/* Function: vinsideT_b()
- *           EPN 05.19.05
- * *based on vinsideT(), only difference is bands are used : 
- *
- * Date:     SRE, Sat Jun  2 14:40:13 2001 [St. Louis]
- *
- * Purpose:  Call vinside(), get vji shadow matrix for a V problem;
- *           then trace back. Append the trace to a
- *           given traceback, which has state r already at
- *           t->n-1.
- */
-static float
-vinsideT_b(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
-	   int r, int z, int i0, int i1, int j1, int j0, int useEL, int allow_begin,
-	   int *dmin, int *dmax)
-{
-  char ***shadow;
-  float   sc;
-  int     v,y;
-  int     j,i;
-  int     jp,ip;
-  int     yoffset;
-  int     b;
-  float   bsc;
-
-  //printf("***in vinsideT_b() r : %d | z : %d | i0 : %d | i1 : %d | j1 : %d | j0 : %d\n", r, z, i0, i1, j1, j0);
-  /* If we can deduce the traceback unambiguously without
-   * doing any DP... do it.
-   */
-  if (r == z) {
-    /*printf("Starting traceback in vinsideT_b()\n");*/
-    InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, r);
-    return 0.;
-  }
-
-  sc = vinside_b(cm, dsq, L, r, z, i0, i1, j1, j0, useEL,
-		 BE_EFFICIENT,	/* memory-saving mode */
-		 NULL, NULL,	/* manage your own matrix, I don't want it */
-		 NULL, NULL,	/* manage your own deckpool, I don't want it */
-		 &shadow,      	/* return a shadow matrix to me. */
-		 allow_begin,     /* TRUE to allow local begin transitions */
-		 &b, &bsc,       /* info on optimal local begin */
-		 dmin, dmax);
-
-  /* We've got a complete shadow matrix. Trace it back. We know
-   * that the trace will begin with the start state r, at i0,j0
-   * (e.g. jp=j0-j1, ip=0)
-   */
-  v = r;
-  j = j0;
-  i = i0;
-  /*printf("Starting traceback in vinsideT_b()\n");*/
-  while (1) {
-    assert((j-i+1) <= dmax[v] || USED_LOCAL_BEGIN || USED_EL);
-    assert((j-i+1) >= dmin[v] || USED_LOCAL_BEGIN || USED_EL);
-
-    jp = j-j1;
-    ip = i-i0;
-
-    /* 1. figure out the next state (deck) in the shadow matrix.
-     */ 
-    yoffset = shadow[v][jp][ip];
-
-    /* 2. figure out the i,j for state y, which is dependent 
-     *    on what v emits (if anything)
-     */
-    switch (cm->sttype[v]) {
-    case D_st:            break;
-    case MP_st: i++; j--; break;
-    case ML_st: i++;      break;
-    case MR_st:      j--; break;
-    case IL_st: i++;      break;
-    case IR_st:      j--; break;
-    case S_st:            break;
-    default:    Die("'Inconceivable!'\n'You keep using that word...'");
-    }
-
-    /* If the traceback pointer (yoffset) is -1, that's a special
-     * flag for a local alignment end, e.g. transition to EL (state "M").
-     */
-    if (yoffset == USED_EL) 
-      {
-	InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M);
-	break;			/* one way out of the while loop */
-      }
-    else if (yoffset == USED_LOCAL_BEGIN) 
-      {
-	InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, b);
-	v = b;
-	if (! useEL && v == z) break; /* the other way out of the while loop */
-      }
-    else
-      {
-	/*    Attach y,i,j to the trace. This new node always attaches
-	 *    to the end of the growing trace -- e.g. trace node
-	 *    tr->n-1.
-	 */
-	y = cm->cfirst[v] + yoffset;
-	InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
-	v = y;
-	if (! useEL && v == z) break; /* the other way out of the while loop */
-      }
-  }
-  
-  /* We're done. Our traceback has just ended. We have just attached
-   * state z for i1,j1; it is in the traceback at node tr->n-1.
-   */
-  free_vji_shadow_matrix(shadow, cm->M, j1, j0);
-  return sc;
-}
-
-/* The following functions have been deleted because they are 
-   unnecessary to make banded versions, memory requirements
-   (currently) for banded implementation identical to non-banded.
-*/
-
-/* The size calculators.
-
-static float insideT_size(CM_t *cm, int L, int r, int z, int i0, int j0);
-static float vinsideT_size(CM_t *cm, int r, int z, int i0, int i1, int j1, int j0);
-static int   cyk_deck_count(CM_t *cm, int r, int z);
-static int   cyk_extra_decks(CM_t *cm);
-*/
-
-/* The memory management routines. */
 
 /* For the Full CYK memory efficient banded implementation we need 
-   banded versions of some of the memory management routines */
-
-/* The D&C banded implementation is not memory efficient, in that
-   it requires the same amount of memory as the non-banded D&C implementation.
-   This means that we still allocate the same memory as we would without bands, 
-   we just set all cells of alpha or beta that are outside of the bands to 
-   IMPOSSIBLE.  Because of this we should be able to use the same memory management 
-   routines as the non-banded implementation.
-
-   Therefore those functions defined below are those necessary only
-   for the full (non D&C) CYK memory efficient banded implementation 
+ *  banded versions of some of the memory management routines 
+ *
+ * The D&C banded implementation is not memory efficient, in that
+ * it requires the same amount of memory as the non-banded D&C implementation.
+ * This means that we still allocate the same memory as we would without bands, 
+ * we just set all cells of alpha or beta that are outside of the bands to 
+ * IMPOSSIBLE.  Because of this we should be able to use the same memory management 
+ * routines as the non-banded implementation.
+ *
+ * Therefore we can use the D&C memory routines for banded D&C.
  */
-
-/*
-static struct  deckpool_s *deckpool_create(void);
-static void    deckpool_push(struct deckpool_s *dpool, float **deck);
-static int     deckpool_pop(struct deckpool_s *d, float ***ret_deck);
-static void    deckpool_free(struct deckpool_s *d);
-static float **alloc_vjd_deck(int L, int i, int j);
-static float   size_vjd_deck(int L, int i, int j);
-static void    free_vjd_deck(float **a, int i, int j);
-static void    free_vjd_matrix(float ***a, int M, int i, int j);
-static char  **alloc_vjd_yshadow_deck(int L, int i, int j);
-static float   size_vjd_yshadow_deck(int L, int i, int j);
-static void    free_vjd_yshadow_deck(char **a, int i, int j);
-static int   **alloc_vjd_kshadow_deck(int L, int i, int j);
-static float   size_vjd_kshadow_deck(int L, int i, int j);
-static void    free_vjd_kshadow_deck(int **a, int i, int j);
-static void    free_vjd_shadow_matrix(void ***shadow, CM_t *cm, int i, int j);
-static float **alloc_vji_deck(int i0, int i1, int j1, int j0);
-static float   size_vji_deck(int i0, int i1, int j1, int j0);
-static void    free_vji_deck(float **a, int j1, int j0);
-static void    free_vji_matrix(float ***a, int M, int j1, int j0);
-static char  **alloc_vji_shadow_deck(int i0, int i1, int j1, int j0);
-static float   size_vji_shadow_deck(int i0, int i1, int j1, int j0);
-static void    free_vji_shadow_deck(char **a, int j1, int j0);
-static void    free_vji_shadow_matrix(char ***a, int M, int j1, int j0);
-
-static float **alloc_banded_vjd_deck(int L, int i, int j, int min, int max);
-static char  **alloc_banded_vjd_yshadow_deck(int L, int i, int j, int min, int max);
-static int   **alloc_banded_vjd_kshadow_deck(int L, int i, int j, int min, int max);
-
-static void debug_print_bands(CM_t *cm, int *dmin, int *dmax);
-static void debug_print_alpha(float ***alpha, CM_t *cm, int L);
-static void debug_print_alpha_banded(float ***alpha, CM_t *cm, int L, int *dmin, int *dmax);
-static void debug_print_alpha_deck(int v, float **deck, CM_t *cm, int L);
-static void debug_print_shadow(void ***shadow, CM_t *cm, int L);
-static void debug_print_shadow_banded(void ***shadow, CM_t *cm, int L, int *dmin, int *dmax);
-static void debug_print_shadow_banded_deck(int v, void ***shadow, CM_t *cm, int L, int *dmin, int *dmax);
-*/
-
 
 /*################################################################*/
 /* EPN *_banded_vjd_* 
@@ -6904,9 +6451,14 @@ debug_print_alpha(float ***alpha, CM_t *cm, int L)
 
 /* EPN Memory efficient banded functions */
 /* Function: inside_b_me()
- *           EPN 05.24.05
- * *based on inside(), only difference is bands are used : 
- * *further the bands are used in a memory-efficient way
+ *
+ * Based on inside(), only difference is bands are used : 
+ * further the bands are used in a memory-efficient way
+ * Another big difference is that we can't employ the deck
+ * reuse strategy because the size of each deck depends
+ * on the band for that state, so each deck can be different.
+ *
+ * Comments below are from inside(): 
  * 
  * Date:     SRE, Mon Aug  7 13:15:37 2000 [St. Louis]
  *
@@ -6996,7 +6548,6 @@ debug_print_alpha(float ***alpha, CM_t *cm, int L)
 static float 
 inside_b_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
 	    float ***alpha, float ****ret_alpha, 
-	    struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
 	    void ****ret_shadow, 
 	    int allow_begin, int *ret_b, float *ret_bsc,
 	    int *dmin, int *dmax)
@@ -7030,9 +6581,7 @@ inside_b_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int
   bsc = IMPOSSIBLE;
   W   = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
 				/* if caller didn't give us a deck pool, make one */
-  if (dpool == NULL) dpool = deckpool_create();
-  if (! deckpool_pop(dpool, &end))
-    end = alloc_vjd_deck(L, i0, j0);
+  end = alloc_vjd_deck(L, i0, j0);
   nends = CMSubtreeCountStatetype(cm, vroot, E_st);
   for (jp = 0; jp <= W; jp++) {
     j = i0+jp-1;		/* e.g. j runs from 0..L on whole seq */
@@ -7085,67 +6634,26 @@ inside_b_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int
       if (cm->sttype[v] == E_st) { 
 	alpha[v] = end; continue; 
       } 
-      if (! deckpool_pop(dpool, &(alpha[v]))) 
-	/* CYK Full ME Bands used 1 */
-	/* original line : alpha[v] = alloc_vjd_deck(L, i0, j0);*/
-	alpha[v] = alloc_banded_vjd_deck(L, i0, j0, dmin[v], dmax[v]);
+      alpha[v] = alloc_banded_vjd_deck(L, i0, j0, dmin[v], dmax[v]);
       
       if (ret_shadow != NULL) {
 	if (cm->sttype[v] == B_st) {
-	  /* CYK Full ME Bands used 2 */
-	  /* original line : kshad     = alloc_vjd_kshadow_deck(L, i0, j0); */
 	  kshad     = alloc_banded_vjd_kshadow_deck(L, i0, j0, dmin[v], dmax[v]);
 	  shadow[v] = (void **) kshad;
 	} else {
-	  /* CYK Full ME Bands used 3 */
-	  /* original line : yshad     = alloc_vjd_yshadow_deck(L, i0, j0); */
 	  yshad     = alloc_banded_vjd_yshadow_deck(L, i0, j0, dmin[v], dmax[v]);
 	  shadow[v] = (void **) yshad;
 	}
       }
 
-      /* Before we went memory efficient the followign block set
-	 all cells outside bands to IMPOSSIBLE */
-
-      /* Bands used */
-      /* Impose bands by setting all cells outside the bands to 0 
-       * This is independent of state type so we do it outside
-       * the following set of if then statements. 
-       * Alternatively, it could be done within each of the following
-       * if(cm->sttype[v] == *) statements - matter of style I suppose.
-       */
-      /*
-      for (jp = 0; jp <= W; jp++) {
-	j = i0-1+jp;
-	for (d = 0; d < dmin[v] && d <= jp; d++)
-	  alpha[v][j][d] = IMPOSSIBLE;
-	for (d = dmax[v]+1; d <= jp;     d++) 
-	  alpha[v][j][d] = IMPOSSIBLE;
-	  }*/
-      
       if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
 	{
 	  for (jp = 0; jp <= W; jp++) {
 	    j = i0-1+jp;
-	    /* Bands used */
-	    /* old line :	for (d = 0; d <= jp; d++) */
 	    for (d = dmin[v]; d <= dmax[v] && d <= jp; d++)
 	      {
 		y = cm->cfirst[v];
-		/* CYK Full ME Bands used 4 begin block */
-		/* original block */
-		/* alpha[v][j][d]  = cm->endsc[v];*/	/* init w/ local end */ 
-		/*if (ret_shadow != NULL) yshad[j][d]  = USED_EL; 
-		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
-		  if ((sc = alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) >  alpha[v][j][d]) {
-		    alpha[v][j][d] = sc; 
-		    if (ret_shadow != NULL) yshad[j][d] = yoffset;
-		  }
-		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
-		*/
-		/* new ME block */
 		dp_v = d - dmin[v];  /* d index for state v in alpha w/mem eff bands */
-
 
 		alpha[v][j][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
 		/* treat EL as emitting only on self transition */
@@ -7166,7 +6674,6 @@ inside_b_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int
 		      }
 		  }
 		if (alpha[v][j][dp_v] < IMPOSSIBLE) alpha[v][j][dp_v] = IMPOSSIBLE;
-		/* CYK Full ME Bands used 4 end block */
 	      }
 	  }
 	}
@@ -7174,27 +6681,11 @@ inside_b_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int
 	{
 	  for (jp = 0; jp <= W; jp++) {
 	    j = i0-1+jp;
-	    /* Bands used */
-	    /* old line :	for (d = 0; d <= jp; d++) */
 	    for (d = dmin[v]; d <= dmax[v] && d <= jp; d++)
 	      {
 		y = cm->cfirst[v];
 		z = cm->cnum[v];
 
-		/* CYK Full ME Bands used 5 begin block */
-		/* original block */
-		/*
-		alpha[v][j][d] = alpha[y][j][d] + alpha[z][j][0];
-		if (ret_shadow != NULL) kshad[j][d] = 0;
-		for (k = 1; k <= d; k++)
-		  if ((sc = alpha[y][j-k][d-k] + alpha[z][j][k]) > alpha[v][j][d]) {
-		    alpha[v][j][d] = sc;
-		    if (ret_shadow != NULL) kshad[j][d] = k;
-		  }
-		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
-		*/
-		/* new ME block : */
-		/* 05.30.05 Fixed a small bug here */
 		/* The changes made to this section of code in the memory efficient
 		 * banded implementation are the most complex changes necessary to 
 		 * get memory efficiency.  The reason is because there are indices in 
@@ -7299,12 +6790,6 @@ inside_b_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int
 		      for (kp = kp+1; kp <= (d-dmin[y]-dmin[z]) && kp <= (dmax[z]-dmin[z]);
 			   kp++)
 			{
-			  /*printf("v is %d | checking y : %d z : %d\n", v, y, z);
-			  printf("y comp          : alpha[%d][%d][%d] is %f\n", y, (j-dmin[z]-kp),(d-dmin[y]-dmin[z]-kp), 
-				 alpha[y][j-dmin[z]-kp][d-dmin[y]-dmin[z]-kp]);
-			  printf("z comp          : alpha[%d][%d][%d] is %f\n", z, j, kp, alpha[z][j][kp]);
-			  printf("existing v comp : alpha[%d][%d][%d] is %f\n", v, j, dp_v, alpha[v][j][dp_v]);
-			  printf("\n");*/
 			  /* the following if statement ensures that the alpha cell for 
 			     state y and the cell for state z that we are about to query 
 			     is in fact within the bands for state y and state z respectively*/
@@ -7320,7 +6805,6 @@ inside_b_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int
 		else alpha[v][j][dp_v] = IMPOSSIBLE;
 		/*else Die("cell in alpha matrix was not filled in due to bands.\n");*/
 		if (alpha[v][j][dp_v] < IMPOSSIBLE) alpha[v][j][dp_v] = IMPOSSIBLE;
-		/* CYK Full ME Bands used 5 end block */
 	      }
 	  }
 	}
@@ -7328,36 +6812,10 @@ inside_b_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int
 	{
 	  for (jp = 0; jp <= W; jp++) {
 	    j = i0-1+jp;
-
-	    /* CYK Full ME Bands used 6 */
-	    /* Deleted because I realized this was no longer needed */
-
-	    /* Bands used */
-	    /* old line :	for (d = 2; d <= jp; d++) */
-	    /* we assume dmin[v] >= 2 */
+	    /* We assume dmin[v] >= 2 (it has to be) */
 	    for (d = dmin[v]; d <= dmax[v] && d <= jp; d++)
 	      {
 		y = cm->cfirst[v];
-		/* CYK Full ME Bands used 7 block */
-		/* original code block below : */
-		/*
-		alpha[v][j][d] = cm->endsc[v];  init w/ local end 
-		if (ret_shadow != NULL) yshad[j][d] = USED_EL;
-		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
-		  if ((sc = alpha[y+yoffset][j-1][d-2] + cm->tsc[v][yoffset]) >  alpha[v][j][d]) {
-		    alpha[v][j][d] = sc;
-		    if (ret_shadow != NULL) yshad[j][d] = yoffset;
-		  }
-		
-		i = j-d+1;
-		if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
-		  alpha[v][j][d] += cm->esc[v][(int) (dsq[i]*Alphabet_size+dsq[j])];
-		else
-		  alpha[v][j][d] += DegeneratePairScore(cm->esc[v], dsq[i], dsq[j]);
-
-		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
-		*/
-		/* new ME code block : */
 		dp_v = d - dmin[v]; /* d index for state v in alpha w/mem eff bands */
 		alpha[v][j][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
 		/* treat EL as emitting only on self transition */
@@ -7395,35 +6853,10 @@ inside_b_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int
 	  for (jp = 0; jp <= W; jp++) {
 	    j = i0-1+jp;
 
-	    /* CYK Full ME Bands used 8 */
-	    /* Deleted because I realized this was no longer needed */
-
-	    /* Bands used */
-	    /* old line :	for (d = 1; d <= jp; d++) */
-	    /* we assume dmin[v] >= 1 */
+	    /* we assume dmin[v] >= 1, it has to be */
 	    for (d = dmin[v]; d <= dmax[v] && d <= jp; d++)
 	      {
 		y = cm->cfirst[v];
-		/* CYK Full ME Bands used 9 block */
-		/* original code block below : */
-		/*
-		alpha[v][j][d] = cm->endsc[v];
-		if (ret_shadow != NULL) yshad[j][d] = USED_EL;
-		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
-		  if ((sc = alpha[y+yoffset][j][d-1] + cm->tsc[v][yoffset]) >  alpha[v][j][d]) {
-		    alpha[v][j][d] = sc;
-		    if (ret_shadow != NULL) yshad[j][d] = yoffset;
-		  } 
-		
-		i = j-d+1;
-		if (dsq[i] < Alphabet_size)
-		  alpha[v][j][d] += cm->esc[v][(int) dsq[i]];
-		else
-		  alpha[v][j][d] += DegenerateSingletScore(cm->esc[v], dsq[i]);
-		
-		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
-		*/
-		/* new ME code block : */
 		dp_v = d - dmin[v]; /* d index for state v in alpha w/mem eff bands */
 		alpha[v][j][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
 		/* treat EL as emitting only on self transition */
@@ -7459,34 +6892,9 @@ inside_b_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int
 	{
 	  for (jp = 0; jp <= W; jp++) {
 	    j = i0-1+jp;
-
-	    /* CYK Full ME Bands used 10 */
-	    /* Deleted because I realized this was no longer needed */
-
-	    /* Bands used */
-	    /* old line :	for (d = 1; d <= jp; d++) */
-	    /* we assume dmin[v] >= 1 */
 	    for (d = dmin[v]; d <= dmax[v] && d <= jp; d++)
 	      {
 		y = cm->cfirst[v];
-		/* CYK Full ME Bands used 11 block */
-		/* original code block below : */
-		/*
-		alpha[v][j][d] = cm->endsc[v];
-		if (ret_shadow != NULL) yshad[j][d] = USED_EL;
-		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
-		  if ((sc = alpha[y+yoffset][j-1][d-1] + cm->tsc[v][yoffset]) > alpha[v][j][d]) {
-		    alpha[v][j][d] = sc;
-		    if (ret_shadow != NULL) yshad[j][d] = yoffset;
-		  }
-		if (dsq[j] < Alphabet_size)
-		  alpha[v][j][d] += cm->esc[v][(int) dsq[j]];
-		else
-		  alpha[v][j][d] += DegenerateSingletScore(cm->esc[v], dsq[j]);
-		
-		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
-		*/
-		/* new ME code block : */
 		dp_v = d - dmin[v]; /* d index for state v in alpha w/mem eff bands */
 		alpha[v][j][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
 		/* treat EL as emitting only on self transition */
@@ -7519,19 +6927,13 @@ inside_b_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int
 	  }
 	}				/* finished calculating deck v. */
       
-      /* CYK Full ME Bands used 12 block */
       /* The following loops originally access alpha[v][j0][W] but the index W will be
 	 in different positions due to the bands */
 
-      /* ME Added the following two lines */
       Wp = W - dmin[v];
       /* We need to make sure that Wp is within the bands */
-      /*11.14.05 old line: if(Wp >= 0 && Wp <= (dmax[v] - dmin[v] + 1))*/
       if(Wp >= 0 && Wp <= (dmax[v] - dmin[v]))
 	{
-	  /* ME all subsequent changes in this block simply replace
-	     W with Wp (so wherever Wp is, there used to be a W) */
-
 	  /* Check for local begin getting us to the root.
 	   * This is "off-shadow": if/when we trace back, we'll handle this
 	   * case separately (and we'll know to do it because we'll immediately
@@ -7553,28 +6955,15 @@ inside_b_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int
 	    if (ret_shadow != NULL) yshad[j0][Wp] = USED_LOCAL_BEGIN;
 	  }
 	}
-      /* CYK Full ME Bands used 12 end block */
-
-      /* CYK Full ME Bands used 13 block */
-      /* The following block implements the deck reuse strategy, however, here
+      /* In the non-banded code, we used the deck reuse strategy, however, here
 	 we can't do that, because for each state, the bands are different, so 
 	 we can't use old decks, but rather must allocate a new one, and free
-	 the old one. Lines specific to ME are indicated, and original lines
-	 are commented out */
+	 the old one. */
 
-      /* Now, if we're trying to reuse memory in our normal mode (e.g. ! do_full):
-       * Look at our children; if they're fully released, take their deck
-       * into the pool for reuse.
-       */
       if (! do_full) {
 	if (cm->sttype[v] == B_st) 
 	  { 
-	    /* Original code block : */
-	    /* we can definitely release the S children of a bifurc. 
-	       y = cm->cfirst[v]; deckpool_push(dpool, alpha[y]); alpha[y] = NULL;
-	       z = cm->cnum[v];   deckpool_push(dpool, alpha[z]); alpha[z] = NULL;
-	     End of original code block */
-	    /* New ME code : */
+	    /* we can definitely release the S children of a bifurc. */
 	    y = cm->cfirst[v];
 	    z = cm->cnum[v];  
 	    free_vjd_deck(alpha[y], i0, j0);
@@ -7595,14 +6984,11 @@ inside_b_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int
 		      /* ME code deletes the previous line, we don't mess with end, because
 			 it is used later */
 		    } else 
-		      /* original code (deck reuse) deckpool_push(dpool, alpha[y]);*/
-		      /* new ME code : */
 		      free_vjd_deck(alpha[y], i0, j0);
 		    alpha[y] = NULL;
 		  }
 	      }
 	  }
-	/* CYK Full ME Bands used 13 end block */
       }
   } /* end loop over all v */
 
@@ -7627,22 +7013,12 @@ inside_b_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int
   if (ret_alpha == NULL) {
     for (v = vroot; v <= vend; v++) /* be careful of our reuse of the end deck -- free it only once */
       if (alpha[v] != NULL) { 
-	if (cm->sttype[v] != E_st) { deckpool_push(dpool, alpha[v]); alpha[v] = NULL; }
+	if (cm->sttype[v] != E_st) { free_vjd_deck(alpha[v], i0, j0); alpha[v] = NULL; }
 	else end = alpha[v]; 
       }
-    if (end != NULL) { deckpool_push(dpool, end); end = NULL; }
+    if (end != NULL) { free_vjd_deck(end, i0, j0); end = NULL; }
     free(alpha);
   } else *ret_alpha = alpha;
-
-  /* If the caller doesn't want the deck pool, free it. 
-   * Else, pass it back to him.
-   */
-  if (ret_dpool == NULL) {
-    while (deckpool_pop(dpool, &end)) free_vjd_deck(end, i0, j0);
-    deckpool_free(dpool);
-  } else {
-    *ret_dpool = dpool;
-  }
 
   free(touch);
   if (ret_shadow != NULL) *ret_shadow = shadow;
@@ -7673,16 +7049,15 @@ insideT_b_me(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
   int       bifparent;
   int       b;
   float     bsc;
-  int       dp;                 /* add explanation */
-  int       kp;                 /* add explanation */
+  int       dp;                 /* dp: d' d offset in current state v's band; dp = d - dmin[v] */
+  int       kp;                 /* dp: k' k offset in current state v's band; kp = k - dmin[v] */
 
   sc = inside_b_me(cm, dsq, L, r, z, i0, j0, 
 		   BE_EFFICIENT,	/* memory-saving mode */
-		   NULL, NULL,	/* manage your own matrix, I don't want it */
-		   NULL, NULL,	/* manage your own deckpool, I don't want it */
+		   NULL, NULL,	        /* manage your own matrix, I don't want it */
 		   &shadow,		/* return a shadow matrix to me. */
-		   allow_begin,      /* TRUE to allow local begins */
-		   &b, &bsc,	/* if allow_begin is TRUE, gives info on optimal b */
+		   allow_begin,         /* TRUE to allow local begins */
+		   &b, &bsc,	        /* if allow_begin is TRUE, gives info on optimal b */
 		   dmin, dmax);
 
   pda = CreateNstack();
@@ -7691,22 +7066,21 @@ insideT_b_me(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
   i = i0;
   d = j0-i0+1;
 
-  /*printf("Starting traceback in insideT_b_me()\n");*/
   while (1) {
-    /* CYK Full ME Bands used 15 */
-    /* 2 lines below added */
-    assert(d <= dmax[v] || USED_LOCAL_BEGIN || USED_EL);
-    assert(d >= dmin[v] || USED_LOCAL_BEGIN || USED_EL);
-
-    dp = d - dmin[v];
+    if(v == cm->M)
+      dp = d;
+    else
+      dp = d - dmin[v];
+    if(v != cm->M)
+      {
+	assert(d <= dmax[v]);
+	assert(d >= dmin[v]);
+      }
     if (cm->sttype[v] == B_st) {
-      /* CYK Full ME Bands used 16 */
-      /* original line : k = ((int **) shadow[v])[j][d];  */
-      /* new 3 lines below replace it */
       assert(v >= 0);
       kp = ((int **) shadow[v])[j][dp];   /* kp = offset len of right fragment */
       z = cm->cnum[v];
-      k = kp + dmin[z];  /* k = offset len of right fragment */
+      k = kp + dmin[z];  /* k = len of right fragment */
       
       /* Store info about the right fragment that we'll retrieve later:
        */
@@ -7730,12 +7104,13 @@ insideT_b_me(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
        * while (1) loop.
        */
       if (! PopNstack(pda, &bifparent)) break;
-      /* CYK Full ME Bands used 17 */
-      /* original line : PopNstack(pda, &d); */
-      PopNstack(pda, &dp);
-      /* CYK Full ME Bands used 18 */
-      /* line below added */
-      d = dp + dmin[y];
+      /* Note: we don't pop dp below, but d, because we're either in an E state
+       * in which case d must be 0, or the EL state, which has no
+       * dmin and dmax band, so if we pop dp and add dmin[v] to get d,
+       * we'll f*** everything up, as Sam Griffiths-Jones found
+       * when preparing Rfam 8.0 on 08.04.06.
+       */
+      PopNstack(pda, &d);
       PopNstack(pda, &j);
       v = tr->state[bifparent];	/* recover state index of B */
       y = cm->cnum[v];		/* find state index of right S */
@@ -7744,19 +7119,14 @@ insideT_b_me(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
       InsertTraceNode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, y);
       v = y;
     } else {
-      /* CYK Full ME Bands used 19 */
-      /* original line yoffset = ((char **) shadow[v])[j][d]; */
       yoffset = ((char **) shadow[v])[j][dp];
-
       if((((int) yoffset) != USED_LOCAL_BEGIN) && (((int) yoffset) != USED_EL))
 	{
 	  if(!((yoffset >= 0) && yoffset <= cm->M))
 	    y = cm->cfirst[v] + yoffset;
 	}
       if((yoffset != USED_LOCAL_BEGIN) && (yoffset != USED_EL))
-	{
-	  assert(yoffset >= 0 &&  yoffset <= cm->M);
-	}
+	assert(yoffset >= 0 &&  yoffset <= cm->M);
       switch (cm->sttype[v]) {
       case D_st:            break;
       case MP_st: i++; j--; break;
