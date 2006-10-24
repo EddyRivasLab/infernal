@@ -841,6 +841,12 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
    float tsc, esc;
    int *depth;
 
+   float ceiling = 0.0; /*TRACE*/
+   float nomarginal = 0.0; /*TRACE*/
+   float min = 0.0; /*TRACE*/
+   printf("depth\tdelta_sc\tceiling\tnomarginal\n"); /*TRACE*/
+   printf("%d\t%f\t%f\t%f\n",0,*delta_sc,ceiling,nomarginal); /*TRACE*/
+
    root->chunk->need_commit = 0;
    *commit = 0;
    *complete = 0;
@@ -869,6 +875,8 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
          else
             esc = DegenerateSingletScore(cm->esc[v],dsq[i]);
          depth[x++] = i++;
+         nomarginal += esc; /*TRACE*/
+         ceiling += esc; /*TRACE*/
       }
       if ( cm->stid[v] == MATR_MR )
       {
@@ -877,11 +885,16 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
       if ( cm->stid[v] == MATP_MP )
       {
          esc = LeftMarginalScore(cm->esc[v],dsq[i]);
+         ceiling += FMax(&(cm->esc[v][dsq[i]*Alphabet_size]),Alphabet_size); /*TRACE*/
          depth[x++] = i++;
       }
 
+      nomarginal += tsc; /*TRACE*/
+      ceiling += tsc; /*TRACE*/
+      if (*delta_sc < min) min = *delta_sc; /*TRACE*/
       *delta_sc = *delta_sc + tsc + esc;
-      if (*delta_sc > 0)
+      printf("%d\t%f\t%f\t%f\n",x,*delta_sc,ceiling,nomarginal); /*TRACE*/
+      if (*delta_sc > 0 || (*delta_sc - min > 20))
       {
          root->chunk->need_commit = 0;
          *total_sc += *delta_sc;
@@ -889,6 +902,7 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
          root->chunk->cur_i = i;
          root->chunk->cur_v = v;
          *commit = 1;
+         min = 0.0; /*TRACE*/
       }
       else
       {
@@ -967,9 +981,9 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
    if ( *complete == 1)
    {
       *complete = 0;
-      esc = 0.0;
       while ( ( cm->sttype[v] != S_st ) && (*delta_sc > dropoff_sc) && (i < rbound) )
       {
+         esc = 0.0;
          ConsensusParent(cm, &v);
          if ( cm->stid[v] == MATL_ML )
          {
@@ -983,6 +997,8 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
                esc = DegenerateSingletScore(cm->esc[v],dsq[i]);
             i++;
             x--;
+            ceiling += esc; /*TRACE*/
+            nomarginal += esc; /*TRACE*/
          }
          if ( cm->stid[v] == MATP_MP )
          {
@@ -990,26 +1006,60 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
                esc = cm->esc[v][(int) (dsq[depth[x]]*Alphabet_size + dsq[i])];
             else
                esc = DegeneratePairScore(cm->esc[v],dsq[depth[x]],dsq[i]);
+            ceiling += esc; /*TRACE*/
+            nomarginal += esc; /*TRACE*/
             esc -= LeftMarginalScore(cm->esc[v],dsq[depth[x]]);
+            ceiling -= FMax(&(cm->esc[v][dsq[depth[x]]*Alphabet_size]),Alphabet_size); /*TRACE*/
             i++;
             x--;
          }
 
          *delta_sc = *delta_sc + esc;
-         if (*delta_sc > 0)
-         {
+         if (*delta_sc < min) min = *delta_sc; /*TRACE*/
+         printf("%d\t%f\t%f\t%f\n",x,*delta_sc,ceiling,nomarginal); /*TRACE*/
+         if (*delta_sc > 0 || (*delta_sc - min > 20))
+          {
             root->chunk->need_commit = 0;
             *total_sc += *delta_sc;
             *delta_sc = 0.0;
             root->chunk->cur_i = i;
             root->chunk->cur_v = v;
             *commit = 1;
+            min = 0.0; /*TRACE*/
          }
          else
          {
             root->chunk->need_commit = 1;
             root->chunk->temp_i = i;
             root->chunk->temp_v = v;
+         }
+      }
+      if ( i == rbound)
+      {
+         ConsensusParent(cm, &v);
+         while ( cm->stid[v] == MATL_ML )
+         {
+            x--;
+            if ( root->chunk->need_commit == 1 )
+            {
+               root->chunk->temp_v = v;
+            }
+            else
+            {
+               root->chunk->cur_v = v;
+            }
+            ConsensusParent(cm, &v);
+         }
+         if (cm->sttype[v] == S_st)
+         {
+            if ( root->chunk->need_commit == 1 )
+            {
+               root->chunk->temp_v = v;
+            }
+            else
+            {
+               root->chunk->cur_v = v;
+            }
          }
       }
       if ( cm->sttype[v] == S_st) 
