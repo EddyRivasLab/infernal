@@ -60,13 +60,12 @@ static char experts[] = "\
    --outside     : don't align; return scores from the Outside algorithm\n\
    --post        : align with CYK and append posterior probabilities\n\
    --checkpost   : check that posteriors are correctly calc'ed\n\
-   --sub         : use HMM predicted start and end points to build a sub CM\n\
+   --sub         : build sub CM for columns b/t HMM predicted start/end points\n\
+   --fsub        : build sub CM for structure b/t HMM predicted start/end points\n\
 \n\
   * HMM banded alignment related options:\n\
-   --hbanded     : use exptl HMM banded CYK aln algorithm [df: builds CP9 HMM]\n\
+   --hbanded     : use exptl CM plan 9 HMM banded CYK aln algorithm\n\
    --hbandp <f>  : tail loss prob for --hbanded [default: 0.0001]\n\
-   --cp9 <f>     : use the CM plan 9 HMM in file <f> for band calculation\n\
-   --p7 <f>      : use the plan 7 HMMER 2.4 HMM in file <f> for band calculation\n\
    --sums        : use posterior sums during HMM band calculation (widens bands)\n\
    --checkcp9    : check the CP9 empirically by generating sequences\n\
 \n\
@@ -96,14 +95,13 @@ static struct opt_s OPTIONS[] = {
   { "--hbanded",    FALSE, sqdARG_NONE },
   { "--hbandp",     FALSE, sqdARG_FLOAT},
   { "--sums",       FALSE, sqdARG_NONE},
-  { "--cp9",        FALSE, sqdARG_STRING},
-  { "--p7",         FALSE, sqdARG_STRING},
   { "--time",       FALSE, sqdARG_NONE},
   { "--inside",     FALSE, sqdARG_NONE},
   { "--outside",    FALSE, sqdARG_NONE},
   { "--post",       FALSE, sqdARG_NONE},
   { "--checkpost",  FALSE, sqdARG_NONE},
   { "--sub",        FALSE, sqdARG_NONE},
+  { "--fsub",       FALSE, sqdARG_NONE},
   { "--checkcp9",   FALSE, sqdARG_NONE},
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
@@ -203,7 +201,7 @@ main(int argc, char **argv)
 		         * map to HMM node k's match state.*/
 
   /* arrays for CM state bands, derived from HMM bands */
-  int  do_hbanded;      /* TRUE to do HMM banded CYKInside_b_jd() using bands on d and j dim*/
+  int  do_hbanded;      /* TRUE to do CM Plan 9 HMM banded CYKInside_b_jd() using bands on d and j dim*/
   int *imin;            /* [1..M] imin[v] = first position in band on i for state v*/
   int *imax;            /* [1..M] imax[v] = last position in band on i for state v*/
   int *jmin;            /* [1..M] jmin[v] = first position in band on j for state v*/
@@ -218,11 +216,6 @@ main(int argc, char **argv)
   int *safe_hdmax;      /* [1..M] safe_hdmax[v] = max_d (hdmax[v][j0]) (over all valid j0) */
 
   /* data structures for HMMs */
-  enum {		/* Type of HMM to use for banding */
-    NONE,
-    HMM_CP9,
-    HMM_P7
-  } hmm_type;
   char  *hmmfile;      /* file to read HMMs from                  */
   int   ks;            /* Counter over HMM state types (0 (match), 1(ins) or 2 (del))*/
   float forward_sc; 
@@ -230,10 +223,9 @@ main(int argc, char **argv)
   int   hmm_M;         /* Number of nodes in either the Plan 7 HMM or CM Plan 9 HMM */
   
   /* CM Plan 9 */
-  CP9HMMFILE            *cp9_hmmfp;     /* opened CP9 hmmfile for reading                       */
-  struct cplan9_s       *cp9_hmm;       /* constructed CP9 HMM; written to hmmfile              */
+  CP9HMMFILE            *hmmfp;     /* opened CP9 hmmfile for reading                       */
+  struct cplan9_s       *hmm;       /* constructed CP9 HMM; written to hmmfile              */
   int                    cp9_M;         /* number of nodes in CP9 HMM (MATL+MATR+2*MATP)        */
-  int                    read_cp9_flag; /* TRUE to read a CP9 HMM from file, FALSE to build one */
   struct cp9_dpmatrix_s *cp9_mx;        /* growable DP matrix for viterbi                       */
   struct cp9_dpmatrix_s *cp9_fwd;       /* growable DP matrix for forward                       */
   struct cp9_dpmatrix_s *cp9_bck;       /* growable DP matrix for backward                      */
@@ -243,16 +235,7 @@ main(int argc, char **argv)
   int                    do_checkcp9;   /* TRUE to check the CP9 HMM by generating sequences */
   int                    seed;	        /* random number generator seed (only used if(do_checkcp9) */
 
-  /* Plan 7 */
-  HMMFILE           *hmmfp;     /* opened hmmfile for reading              */
-  struct plan7_s    *hmm;       /* HMM to align to                         */ 
-  struct dpmatrix_s *mx;        /* growable DP matrix                      */
-  struct dpmatrix_s *fwd;       /* growable DP matrix for forwards         */
-  struct dpmatrix_s *bck;       /* growable DP matrix for backwards        */
-  struct dpmatrix_s *posterior; /* growable DP matrix for posterior decode */
-  struct p7trace_s **p7tr;      /* traces for aligned sequences            */
-  /*char             **p7postcode;*//* posterior decode array of strings       */
-  unsigned char    **p7dsq;     /* digitized RNA sequences (plan 7 version)*/
+  unsigned char    **p7dsq;     /* digitized RNA sequences for the HMM */
 
   /* Alternatives to CYK */
   int                do_inside; /* TRUE to use the Inside algorithm instead of CYK */
@@ -267,30 +250,41 @@ main(int argc, char **argv)
   int j;
 
   /* the --sub option */
-  int                do_sub;      /* TRUE to use HMM to infer start and end point of hit 
-				   * and remove structure before start and after end */
-  int                hmm_start_node; /* HMM node most likely to have emitted posn 1 of target seq */
-  int                hmm_start_state;/* HMM state type for hmm_start_node 0=match, 1=insert */
-  int                hmm_end_node;   /* HMM node most likely to have emitted posn L of target seq */
-  int                hmm_end_state;  /* HMM state type for hmm_end_node 0=match, 1=insert */
-  int                **orig2sub_smap;/* 2D state map from orig_cm (template) to sub_cm.
-				      * 1st dimension - state index in orig_cm 
-				      * 2nd D - 2 elements for up to 2 matching sub_cm states */
-  int                **sub2orig_smap;/* 2D state map from orig_cm (template) to sub_cm.
-				      * 1st dimension - state index in sub_cm (0..sub_cm->M-1)
-				      * 2nd D - 2 elements for up to 2 matching orig_cm states */
-  char            *check_outfile;	/* output file name for subCM stk file*/
-  FILE            *check_ofp;         /* an open output file */
-  CM_t            *sub_cm;       /* sub covariance model                      */
+  int                do_sub;       /* TRUE to use HMM to infer start and end point of each seq
+				    * and build a separate sub CM for alignment of that seq */
+  int                do_fullsub;   /* TRUE to only remove structure outside HMM predicted start
+				    * (spos) and end points (epos) */
+  CM_t              *sub_cm;       /* sub covariance model                      */
+  CM_t              *orig_cm;      /* the original, template covariance model the sub CM was built from */
+  int                spos;         /* HMM node most likely to have emitted posn 1 of target seq */
+  int                spos_state;   /* HMM state type for curr spos 0=match or 1=insert */
+  int                epos;         /* HMM node most likely to have emitted posn L of target seq */
+  int                epos_state;   /* HMM state type for curr epos 0=match or  1=insert */
+
+  int              **orig2sub_smap;/* 2D state map from orig_cm (template) to sub_cm.
+				    * 1st dimension - state index in orig_cm 
+				    * 2nd D - 2 elements for up to 2 matching sub_cm states */
+  int              **sub2orig_smap;/* 2D state map from orig_cm (template) to sub_cm.
+				    * 1st dimension - state index in sub_cm (0..sub_cm->M-1)
+				    * 2nd D - 2 elements for up to 2 matching orig_cm states */
+  char            *check_outfile;  /* output file name for subCM stk file*/
+  FILE            *check_ofp;      /* an open output file */
+  Parsetree_t     *orig_tr;        /* parsetree for the orig_cm; created from the sub_cm parsetree */
+  
   int *sub_node_cc_left; 
   int *sub_node_cc_right;
   int *sub_cc_node_map;
+  int *orig_node_cc_left; 
+  int *orig_node_cc_right;
+  int *orig_cc_node_map;
   int **sub_cs2hn_map;  
   int **sub_cs2hs_map;  
   int ***sub_hns2cs_map;
-  struct cplan9_s       *sub_cp9_hmm;       /* constructed CP9 HMM; written to hmmfile              */
-  struct cplan9_s       *sub_cp9_hmm2; 
+  int **orig_cs2hn_map;  
+  struct cplan9_s       *sub_hmm;       /* constructed CP9 HMM; written to hmmfile              */
+  struct cplan9_s       *orig_hmm;      /* original CP9 HMM built from orig_cm */
   int                    sub_cp9_M;         /* number of nodes in CP9 HMM (MATL+MATR+2*MATP)        */
+  int                    orig_hmm_M;        /* number of nodes in the original, template HMM */
   double **orig_phi;
   double **sub_phi_trad;    
   double **sub_phi_trunc;    
@@ -318,14 +312,13 @@ main(int argc, char **argv)
   do_hbanded  = FALSE;
   hbandp      = 0.0001;
   use_sums    = FALSE;
-  hmm_type    = NONE;
-  read_cp9_flag = FALSE;
   time_flag   = TRUE;
   do_inside   = FALSE;
   do_outside  = FALSE;
   do_check    = FALSE;
   do_post     = FALSE;
   do_sub      = FALSE;
+  do_fullsub  = FALSE;
   do_checkcp9 = FALSE;
   check_outfile = "check.stk";
   seed         = time ((time_t *) NULL);
@@ -337,8 +330,8 @@ main(int argc, char **argv)
     else if (strcmp(optname, "-q")          == 0) be_quiet    = TRUE;
     else if (strcmp(optname, "--nosmall")   == 0) do_small    = FALSE;
     else if (strcmp(optname, "--regress")   == 0) regressfile = optarg;
-    else if (strcmp(optname, "--qdb")  == 0) do_qdb = TRUE;
-    else if (strcmp(optname, "--beta")   == 0) qdb_beta     = atof(optarg);
+    else if (strcmp(optname, "--qdb")       == 0) do_qdb       = TRUE;
+    else if (strcmp(optname, "--beta")      == 0) qdb_beta     = atof(optarg);
     else if (strcmp(optname, "-W")          == 0) {
       windowlen    = atoi(optarg); 
       set_window = TRUE; } 
@@ -352,27 +345,12 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--outside")   == 0) { do_outside = TRUE; do_check = TRUE; }
     else if (strcmp(optname, "--post")      == 0) do_post      = TRUE;
     else if (strcmp(optname, "--checkpost") == 0) do_check     = TRUE;
-    else if (strcmp(optname, "--sub")       == 0) 
-      { 
-	do_sub  = TRUE;
-	hmm_type = HMM_CP9; 
-      }
-
-    else if (strcmp(optname, "--hbanded")   == 0) {
-      do_hbanded = TRUE; do_small = FALSE; 
-      if(hmm_type == NONE) hmm_type = HMM_CP9; 
-      } /* default HMM: CP9, but let --p7 override */
+    else if (strcmp(optname, "--sub")       == 0) do_sub       = TRUE; 
+    else if (strcmp(optname, "--fsub")      == 0) { do_sub = TRUE; do_fullsub = TRUE; }
+    else if (strcmp(optname, "--hbanded")   == 0) { do_hbanded = TRUE; do_small = FALSE; }
     else if (strcmp(optname, "--hbandp")    == 0) hbandp       = atof(optarg);
     else if (strcmp(optname, "--sums")      == 0) use_sums     = TRUE;
     else if (strcmp(optname, "--checkcp9")  == 0) do_checkcp9  = TRUE;
-    else if (strcmp(optname, "--cp9")       == 0) { 
-      if(hmm_type == HMM_P7) Die("Can't do --cp9 and --p7, pick one HMM type.\n");
-      hmm_type  = HMM_CP9; hmmfile = optarg; read_cp9_flag = TRUE; 
-    }
-    else if (strcmp(optname, "--p7")        == 0) {
-      if(read_cp9_flag == TRUE) Die("Can't do --cp9 and --p7, pick one HMM type.\n");
-      hmm_type  = HMM_P7;  hmmfile = optarg;  
-    }
     else if (strcmp(optname, "--informat")  == 0) {
       format = String2SeqfileFormat(optarg);
       if (format == SQFILE_UNKNOWN) 
@@ -387,30 +365,18 @@ main(int argc, char **argv)
   }
 
   if(do_inside && do_outside)
-    {
-      Die("Please pick either --inside or --outside (--outside will run Inside()\nalso and check to make sure Inside() and Outside() scores agree).\n");
-    }
-
+    Die("Please pick either --inside or --outside (--outside will run Inside()\nalso and check to make sure Inside() and Outside() scores agree).\n");
+  if(do_checkcp9 && do_hbanded == FALSE)
+    Die("--checkcp9 only makes sense with --hbanded\n");
   if(do_sub && do_local)
-    {
-      Die("--sub and --local combination not yet supported.\n");
-    }
-  if(do_checkcp9 && (hmm_type != HMM_CP9 || do_hbanded == FALSE))
-    {
-      Die("--checkcp9 only makes sense with --hbanded (and not --p7).\n");
-    }
+    Die("--sub and --local combination not yet supported.\n");
+  if(do_sub && do_qdb)
+    Die("Please pick either --sub or --qdb.\n");
 
   /* currently not set up for local alignment and posterior decode or outside run */
   /*  if(do_local && (do_outside || do_post))
     {
       Die("Can't do -l and either --post or --outside.\n");
-    }
-  */
-  /* default to HMM banded alignment if --p7 or --cp9 was enabled */
-  /*if(hmm_type != NONE)
-    {
-      do_hbanded = TRUE;
-      do_small = FALSE;
     }
   */
 
@@ -439,6 +405,7 @@ main(int argc, char **argv)
   if (cm == NULL) 
     Die("%s empty?\n", cmfile);
   CMFileClose(cmfp);
+  orig_cm = cm;
   
   if (! (set_window)) windowlen = cm->W;
   /* Now that we know what windowlen is, we need to ensure that
@@ -462,38 +429,10 @@ main(int argc, char **argv)
    * Optionally, input and configure a Plan 7 or CM Plan 9 HMM
    * for banded alignment.
    *****************************************************************/
-  if(hmm_type != NONE)
+  if(do_hbanded || do_sub)
     {
       Alphabet_type = hmmNOTSETYET;
-      if(hmm_type == HMM_P7)
-	{
-	  if ((hmmfp = HMMFileOpen(hmmfile, "HMMERDB")) == NULL)
-	    Die("Failed to open HMM file %s\n%s", hmmfile, usage);
-	  if (!HMMFileRead(hmmfp, &hmm)) 
-	    Die("Failed to read any HMMs from %s\n", hmmfile);
-	  HMMFileClose(hmmfp);
-	  hmm->xt[XTE][MOVE] = 1.;     /* only 1 domain/sequence ("global" alignment) */
-	  hmm->xt[XTE][LOOP] = 0.;
-	  P7Logoddsify(hmm, TRUE);
-	  if (hmm == NULL) 
-	    Die("HMM file %s corrupt or in incorrect format? Parse failed", hmmfile);
-	}
-      if(hmm_type == HMM_CP9)
-	{
-	  if(read_cp9_flag)
-	    {
-	      if ((cp9_hmmfp = CP9_HMMFileOpen(hmmfile, "HMMERDB")) == NULL)
-		Die("Failed to open HMM file %s\n%s", hmmfile, usage);
-	      if (!CP9_HMMFileRead(cp9_hmmfp, &cp9_hmm)) 
-		Die("Failed to read any CP9 HMMs from %s\n", hmmfile);
-	      CP9_HMMFileClose(cp9_hmmfp);
-	      CP9Logoddsify(cp9_hmm);
-	      if (cp9_hmm == NULL) 
-		Die("HMM file %s corrupt or in incorrect format? Parse failed", hmmfile);
-	    }
-	  else /* build (don't read in) a CM Plan 9 from the CM (default --hbanded) */
-	    SetAlphabet(hmmNUCLEIC); /* Set up the hmmer_alphabet global variable */
-	}
+      SetAlphabet(hmmNUCLEIC); /* Set up the hmmer_alphabet global variable */
     }
 
   /*****************************************************************
@@ -505,7 +444,7 @@ main(int argc, char **argv)
   dsq = MallocOrDie(sizeof(char *) * nseq);
   for (i = 0; i < nseq; i++) 
     dsq[i] = DigitizeSequence(rseq[i], sqinfo[i].len);
-  if(hmm_type != NONE)
+  if(do_hbanded || do_sub)
     {
       p7dsq = MallocOrDie(sizeof(unsigned char *) * nseq);
       for(i = 0; i < nseq; i++)
@@ -543,92 +482,56 @@ main(int argc, char **argv)
   watch2 = StopwatchCreate(); /*watch2 times the full alignment (including band calc)
 				for each seq*/
 
-  if(hmm_type == HMM_P7)
+  if(do_hbanded || do_sub) /* We need a CP9 HMM to build sub_cms */
     {
-      /*p7tr  = MallocOrDie(sizeof(struct p7trace_s *) * nseq);*/
-      mx  = CreatePlan7Matrix(1, hmm->M, 25, 0);
-      /*p7postcode = malloc(sizeof(char *) * nseq);*/
-      map_consensus_columns(cm, hmm->M, &node_cc_left, &node_cc_right,
-			    &cc_node_map, debug_level);
-      /*printf("HMM type is HMM_P7, number of nodes: %d\n", hmm->M);*/
-      /* Get information mapping the HMM to the CM and vice versa. */
-      
-      P7_map_cm2hmm_and_hmm2cm(cm, hmm, node_cc_left, node_cc_right, 
-			       cc_node_map, &cs2hn_map, &cs2hs_map, 
-			       &hns2cs_map, debug_level);
-      hmm_M = hmm->M;
-    }      
-  
-  if(hmm_type == HMM_CP9)
-    {
-      if(!(read_cp9_flag)) /* we're building a CP9 HMM, not reading one in */
+      cp9_M = 0;
+      for(v = 0; v <= cm->M; v++)
 	{
-	  cp9_M = 0;
-	  for(v = 0; v <= cm->M; v++)
-	    {
-	      if(cm->stid[v] ==  MATP_MP)
-		cp9_M += 2;
-	      else if(cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR)
-		cp9_M ++;
-	    }
-	  /* build the HMM data structure */
-	  cp9_hmm = AllocCPlan9(cp9_M);
-	  ZeroCPlan9(cp9_hmm);
+	  if(cm->stid[v] ==  MATP_MP)
+	    cp9_M += 2;
+	  else if(cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR)
+	    cp9_M ++;
 	}
+      /* build the HMM data structure */
+      hmm = AllocCPlan9(cp9_M);
+      ZeroCPlan9(hmm);
 
       /* Get information mapping the HMM to the CM and vice versa, used
-       * for mapping bands. 
-       * This is relevant if we're building (read_cp9_flag == FALSE)
-       * or reading from a file (read_cp9_flag == TRUE)
-       */
-      map_consensus_columns(cm, cp9_hmm->M, &node_cc_left, &node_cc_right,
+       * for mapping bands. */
+      map_consensus_columns(cm, hmm->M, &node_cc_left, &node_cc_right,
 			    &cc_node_map, debug_level);
       
-      CP9_map_cm2hmm_and_hmm2cm(cm, cp9_hmm, node_cc_left, node_cc_right, 
+      CP9_map_cm2hmm_and_hmm2cm(cm, hmm, node_cc_left, node_cc_right, 
 				cc_node_map, &cs2hn_map, &cs2hs_map, 
 				&hns2cs_map, debug_level);
       
-      if(!(read_cp9_flag)) /* actually build the CM Plan 9 HMM */
-      {
-	/* fill in parameters of HMM using the CM and some ideas/formulas/tricks
-	 * from Zasha Weinberg's thesis (~p.123) (see CP9_cm2wrhmm.c code) */
-	if(!(CP9_cm2wrhmm(cm, cp9_hmm, node_cc_left, node_cc_right, cc_node_map, cs2hn_map,
-		     cs2hs_map, hns2cs_map, debug_level)))
-	  Die("Couldn't build a CM Plan 9 HMM from the CM.\n");
-	if(do_checkcp9)
-	  {
-	    sre_srandom(seed);
-	    //if(!(CP9_check_wrhmm_by_sampling(cm, cp9_hmm, 1, cp9_hmm->M, hns2cs_map, 0.05, 100000)))
-	    if(!(CP9_check_wrhmm_by_sampling(cm, cp9_hmm, 1, cp9_hmm->M, hns2cs_map, 0.01, 100000, NULL,
-					     NULL, NULL, debug_level)))
-	      Die("CM Plan 9 fails sampling check!\n");
-	    else
-	      printf("CM Plan 9 passed sampling check.\n");
-	  }
-      }
-      else /* a CP9 HMM has already been read from a file. */
+      /* fill in parameters of HMM using the CM and some ideas/formulas/tricks
+       * from Zasha Weinberg's thesis (~p.123) (see CP9_cm2wrhmm.c code) */
+      if(!(CP9_cm2wrhmm(cm, hmm, node_cc_left, node_cc_right, cc_node_map, cs2hn_map,
+			cs2hs_map, hns2cs_map, debug_level)))
+	Die("Couldn't build a CM Plan 9 HMM from the CM.\n");
+      if(do_checkcp9)
 	{
-	/* Check to make sure the HMM we read from the input file is
-	 * "close enough" to the CM, based on psi and phi values (see CP9_cm2wrhmm.c).
-	 * If not, we build a new one from the CM. This is a design decision, 
-	 * and I'm not sure if its the best or desired behavior (EPN)
-	 */
-	  if(!(CP9_check_wrhmm(cm, cp9_hmm, hns2cs_map, cc_node_map, debug_level)))
-	    {
-	      printf("\nCM Plan 9 HMM read from %s not similar enough to the CM.\n", hmmfile);
-	      printf("Building a new CM plan 9 HMM directly from the CM.\n\n");
-	      /* build a new CM plan 9 HMM */
-	      if(!(CP9_cm2wrhmm(cm, cp9_hmm, node_cc_left, node_cc_right, cc_node_map, cs2hn_map,
-				cs2hs_map, hns2cs_map, debug_level)))
-		Die("Couldn't build a CM Plan 9 HMM from the CM\n");
-	    }
+	  sre_srandom(seed);
+	  //if(!(CP9_check_wrhmm_by_sampling(cm, hmm, 1, hmm->M, hns2cs_map, 0.05, 100000)))
+	  if(!(CP9_check_wrhmm_by_sampling(cm, hmm, 1, hmm->M, hns2cs_map, 0.01, 100000, NULL,
+					   NULL, NULL, debug_level)))
+	    Die("CM Plan 9 fails sampling check!\n");
+	  else
+	    printf("CM Plan 9 passed sampling check.\n");
 	}
-      CP9Logoddsify(cp9_hmm);
-      fill_phi_cp9(cp9_hmm, &orig_phi, 1);
-      /*debug_print_cp9_params(cp9_hmm);*/
 
-      cp9_mx  = CreateCPlan9Matrix(1, cp9_hmm->M, 25, 0);
-      hmm_M = cp9_hmm->M;
+      cp9_mx  = CreateCPlan9Matrix(1, hmm->M, 25, 0);
+      hmm_M = hmm->M;
+
+      /* Keep this data for the original CM safe; we'll be doing
+       * pointer swapping to ease the sub_cm alignment implementation. */
+      orig_hmm = hmm;
+      orig_hmm_M = hmm_M;
+      orig_node_cc_left =  node_cc_left;
+      orig_node_cc_right = node_cc_right;
+      orig_cc_node_map   = cc_node_map;
+      orig_cs2hn_map     = cs2hn_map;
 
       StopwatchZero(watch2);
       StopwatchStart(watch2);
@@ -644,15 +547,20 @@ main(int argc, char **argv)
       ConfigLocal(cm, 0.5, 0.5);
       CMLogoddsify(cm);
       /*CMHackInsertScores(cm);*/	/* "TEMPORARY" fix for bad priors */
-      if(hmm_type == HMM_CP9)
-	{
-	  printf("configuring the CM plan 9 HMM for local alignment.\n");
-	  swentry           = 0.5;
-	  swexit            = 0.5;
-	  CPlan9SWConfig(cp9_hmm, swentry, swexit);
-	  CP9Logoddsify(cp9_hmm);
-	}
     }
+
+  if((do_local && do_hbanded) || do_sub) /* to get spos and epos for the sub_cm, 
+					  * we config the HMM to local mode.*/
+      {
+	printf("configuring the CM plan 9 HMM for local alignment.\n");
+	swentry           = 0.5;
+	swexit            = 0.5;
+	CPlan9SWConfig(hmm, swentry, swexit);
+	CP9Logoddsify(hmm);
+
+	if(do_sub)
+	  orig_tr    = MallocOrDie(sizeof(Parsetree_t));
+      }
 
   /* set up the query dependent bands, this has to be done after the ConfigLocal() call */
   if(do_qdb || bdump_level > 0)
@@ -682,9 +590,7 @@ main(int argc, char **argv)
        *       always used.
        */
       if(!(set_window))
-	{
-	  windowlen = dmax[0];
-	}
+	windowlen = dmax[0];
       if(bdump_level > 1) 
 	{
 	  printf("qdb_beta:%f\n", qdb_beta);
@@ -694,22 +600,8 @@ main(int argc, char **argv)
       expand_flag = FALSE;
     }
 
-  if (do_sub && hmm_type == HMM_CP9)
-    {
-      printf("configuring the CM plan 9 HMM for local alignment.\n");
-      swentry           = 0.5;
-      swexit            = 0.5;
-      printf("PRINTING ORIG SUB CP9 HMM PARAMETERS GLOCAL 0\n");
-      debug_print_cp9_params(cp9_hmm);
-      printf("DONE PRINTING ORIG SUB CP9 HMM PARAMETERS GLOCAL 0\n\n");
-      CPlan9SWConfig(cp9_hmm, swentry, swexit);
-      printf("PRINTING ORIG SUB CP9 HMM PARAMETERS LOCAL 0\n");
-      debug_print_cp9_params(cp9_hmm);
-      printf("DONE PRINTING ORIG SUB CP9 HMM PARAMETERS LOCAL 0\n\n");
-      CP9Logoddsify(cp9_hmm);
-    }
-  /* Allocate data structures for use with HMM banding strategy (either P7 or CP9) */
-  if(hmm_type != NONE)
+/* Allocate data structures for use with HMM banding strategy */
+  if(do_hbanded)
     {
       pn_min_m    = malloc(sizeof(int) * (hmm_M+1));
       pn_max_m    = malloc(sizeof(int) * (hmm_M+1));
@@ -743,208 +635,179 @@ main(int argc, char **argv)
       StopwatchStart(watch2);
 
       /* Potentially, do HMM calculations. */
-      if(hmm_type == HMM_CP9)
+      if(do_hbanded || do_sub)
 	{
+	  /* We want HMM posteriors for this sequence to the full length (non-sub) HMM */
 	  StopwatchZero(watch1);
 	  StopwatchStart(watch1);
-	  /* Align the current seq to the cp9 HMM, we don't care
-	   * about the trace, just the posteriors.
-	   * Step 1: Get HMM posteriors.
-	   * Step 2: posteriors -> HMM bands.
-	   * Step 3: HMM bands  ->  CM bands.
-	   */
-	  
+
 	  /* Step 1: Get HMM posteriors.*/
-	  /*sc = CP9Viterbi(p7dsq[i], 1, sqinfo[i].len, cp9_hmm, cp9_mx);*/
-	  forward_sc = CP9Forward(p7dsq[i], 1, sqinfo[i].len, cp9_hmm, &cp9_fwd);
+	  /*sc = CP9Viterbi(p7dsq[i], 1, sqinfo[i].len, hmm, cp9_mx);*/
+	  forward_sc = CP9Forward(p7dsq[i], 1, sqinfo[i].len, orig_hmm, &cp9_fwd);
 	  printf("CP9 i: %d | forward_sc : %f\n", i, forward_sc);
-	  backward_sc = CP9Backward(p7dsq[i], 1, sqinfo[i].len, cp9_hmm, &cp9_bck);
+	  backward_sc = CP9Backward(p7dsq[i], 1, sqinfo[i].len, orig_hmm, &cp9_bck);
 	  printf("CP9 i: %d | backward_sc: %f\n", i, backward_sc);
 
-	  /*debug_check_CP9_FB(cp9_fwd, cp9_bck, cp9_hmm, forward_sc, 1, sqinfo[i].len, p7dsq[i]);*/
+	  /*debug_check_CP9_FB(cp9_fwd, cp9_bck, hmm, forward_sc, 1, sqinfo[i].len, p7dsq[i]);*/
 	  cp9_posterior = cp9_bck;
-	  CP9FullPosterior(p7dsq[i], 1, sqinfo[i].len, cp9_hmm, cp9_fwd, cp9_bck, cp9_posterior);
-
-	  /* If we're in sub mode:
-	   * (1) infer the start and end HMM states by looking at the posterior matrix.
-	   * (2) modify the CM model by removing unnecessary structure and marginalizing
-	   * (3) (NECESSARY?) build a new CP9 HMM from the modified CM
-	   * (4) (NECESSARY?) do Forward/Backward again, and get a new posterior matrix.
+	  CP9FullPosterior(p7dsq[i], 1, sqinfo[i].len, orig_hmm, cp9_fwd, cp9_bck, cp9_posterior);
+	}
+      /* If we're in sub mode:
+       * (1) Get HMM posteriors. (we already did this above)
+       * (2) Infer the start (spos) and end (epos) HMM states by 
+       *     looking at the posterior matrix.
+       * (3) Build the sub_cm from the original CM.
+       *
+       * If we're also doing HMM banded alignment:
+       * (4) Build a new CP9 HMM from the sub CM.
+       * (4) Build a new CP9 HMM from the sub CM.
+       * (4) Build a new CP9 HMM from the sub CM.
+       * (5) Do Forward/Backward again, and get a new posterior matrix.
+       */
+      if(do_sub)
+	{
+	  /* (2) infer the start and end HMM states by looking at the posterior matrix.
+	   * Remember: we're necessarily in local mode, the --sub option turns local mode on. 
 	   */
-	  if(do_sub)
+	  CP9NodeForPosn(orig_hmm, 1, sqinfo[i].len, 1,             cp9_posterior, &spos, &spos_state);
+	  CP9NodeForPosn(orig_hmm, 1, sqinfo[i].len, sqinfo[i].len, cp9_posterior, &epos, &epos_state);
+	  
+	  if(spos == 0 && spos_state == 1) 
 	    {
-	      /* we're necessarily in local mode, the --sub option turns local mode on */
-	      CP9NodeForPosn(cp9_hmm, 1, sqinfo[i].len, 1,             cp9_posterior, &hmm_start_node, &hmm_start_state);
-	      CP9NodeForPosn(cp9_hmm, 1, sqinfo[i].len, sqinfo[i].len, cp9_posterior, &hmm_end_node,   &hmm_end_state);
-	      
-	      /* Given the original CM, and the start and end HMM nodes, build a new CM by removing
-	       * structure outside the start and end HMM nodes, and marginalizing.
+	      /* The most likely state to have emitted first residue
+	       * is the insert state in node 0, in this case the first consensus 
+	       * column we want to model is 1, not 0.
 	       */
-	      /* Uncomment below to build a sub_cm with same number of consensus columns, just structure
-	       * removed. */
-	      /*build_sub_cm(cm, &sub_cm, hmm_start_node, hmm_end_node, 1, cp9_hmm->M, orig2sub_smap, sub2orig_smap);*/
+	      spos = 1;
+	    }
+	  if(epos == 0 && epos_state == 1) 
+	    {
+	      /* The most likely state to have emitted first residue
+	       * is the insert state in node 0, in this case the first consensus 
+	       * column we want to model is 1, not 0.
+	       */
+	      epos = 1;
+	    }
+	  if(epos < spos) /* This can happen, if it does our alignment will be crap, still we 
+			     shouldn't crash. */
+	    epos = spos;
+	  
 
-	      /* Uncomment below to build a sub_cm that only models consensus columns between HMM start and end
-	       * node. */
-	      build_sub_cm(cm, &sub_cm, hmm_start_node, hmm_end_node, orig2sub_smap, sub2orig_smap, 
-			   &imp_cc, NULL, NULL, NULL, NULL, 0.00001, FALSE, FALSE, FALSE, 0.01, 
-			   10000, debug_level);
+	  /* (3) Build the sub_cm from the original CM. */
+	  build_sub_cm(orig_cm, &sub_cm, spos, epos, &orig2sub_smap, &sub2orig_smap, 
+		       NULL,                   /* Don't return imp_cc, I'm not checking the sub_cm */
+		       NULL, NULL, NULL, NULL, /* Don't return *predict* info, I'm not checking the sub_cm */
+		       0.00001,                /* threshold for tests irrelevant b/c next is FALSE */
+		       do_fullsub,             /* Says to build or not build a sub CM that models all columns */
+		       FALSE, FALSE,           /* don't do analytical or sampling check */
+		       0.01, 10000,            /* chi-square threshold and num samples irrelevant b/c prev is FALSE */
+		       debug_level);           /* TRUE to print debugging info */
+	  
+	  cm    = sub_cm; /* orig_cm still points to the original CM */
 
-	      exit(1);
-
-	      /* Following function call samples for cm and sub_cm and builds CP9 HMMs from each set of samples,
-	       * then prints out the parameters of those HMMs.
-	      check_sub_cm_by_sampling2(cm, sub_cm, hmm_start_node, hmm_end_node, 10000);
-	      exit(1);*/
-
-	      /**************************************************************************/
-	      /* For checking if our CP9->subCP9 truncation modification method is working we build a
-	       * CP9 HMM from the sub_cm using the full blown method, and check its parameters
-	       * against the subCP9 built from the truncation-built one.
-	       *****************BEGIN EVENTUALLY ERASABLE BLOCK*************************/
-	      sub_cp9_M = 0;
-	      for(v = 0; v <= sub_cm->M; v++)
-		{
-		  if(sub_cm->stid[v] ==  MATP_MP)
-		    sub_cp9_M += 2;
-		  else if(sub_cm->stid[v] == MATL_ML || sub_cm->stid[v] == MATR_MR)
-		    sub_cp9_M ++;
-		}
-
-	      StopwatchZero(watch1);
-	      StopwatchStart(watch1);
-	      /* build the HMM data structure */
-	      sub_cp9_hmm = AllocCPlan9(sub_cp9_M);
-	      printf("sub_cp9_M: %d\n", sub_cp9_M);
-	      ZeroCPlan9(sub_cp9_hmm);
-
+	  if(do_hbanded) /* we're doing HMM banded alignment to the sub_cm */
+	    {
+	      /* (4) Build a new CP9 HMM from the sub CM. */
+	      /* Eventually, I think we can do this by just adjusting the parameters of the original HMM 
+		 CP9_2sub_cp9(hmm, &sub_hmm2, spos, epos, orig_phi);
+	      */
+	      sub_hmm = AllocCPlan9(epos-spos+1);
+	      ZeroCPlan9(sub_hmm);
 	      /* Get information mapping the HMM to the CM and vice versa, used
-	       * for mapping bands. */
-	      map_consensus_columns(sub_cm, sub_cp9_hmm->M, &sub_node_cc_left, &sub_node_cc_right,
+	       * for mapping bands. 
+	       */
+
+	      map_consensus_columns(sub_cm, sub_hmm->M, &sub_node_cc_left, &sub_node_cc_right,
 				    &sub_cc_node_map, debug_level);
 	      
-	      printf("check 1\n");
-	      CP9_map_cm2hmm_and_hmm2cm(sub_cm, sub_cp9_hmm, sub_node_cc_left, sub_node_cc_right, 
+	      CP9_map_cm2hmm_and_hmm2cm(sub_cm, sub_hmm, sub_node_cc_left, sub_node_cc_right,
 					sub_cc_node_map, &sub_cs2hn_map, &sub_cs2hs_map, 
 					&sub_hns2cs_map, debug_level);
-	      if(!(CP9_cm2wrhmm(sub_cm, sub_cp9_hmm, sub_node_cc_left, sub_node_cc_right, sub_cc_node_map, 
-				sub_cs2hn_map, sub_cs2hs_map, sub_hns2cs_map, debug_level)))
+	      if(!(CP9_cm2wrhmm(sub_cm, sub_hmm, sub_node_cc_left, sub_node_cc_right, 
+				sub_cc_node_map, sub_cs2hn_map,
+				sub_cs2hs_map, sub_hns2cs_map, debug_level)))
 		Die("Couldn't build a CM Plan 9 HMM from the sub CM.\n");
-	      StopwatchStop(watch1);
-	      StopwatchDisplay(stdout, "CP9 BUILDING TRADITIONAL TIME: ", watch1);
-
-	      printf("check 2\n");
-	      printf("sub_cp9_hmm->M: %d\n", sub_cp9_hmm->M);
-	      printf("PRINTING ORIG SUB CP9 HMM PARAMETERS LOCAL\n");
-	      debug_print_cp9_params(cp9_hmm);
-	      printf("DONE PRINTING ORIG SUB CP9 HMM PARAMETERS LOCAL\n\n");
-
-	      /* Reconfig the cp9_hmm as glocal */
-	      CPlan9GlobalConfig(cp9_hmm);
-
-	      printf("PRINTING ORIG SUB CP9 HMM PARAMETERS GLOCAL 1\n");
-	      debug_print_cp9_params(cp9_hmm);
-	      printf("DONE PRINTING ORIG SUB CP9 HMM PARAMETERS GLOCAL 1\n\n");
-
-	      /*sub_CPlan9GlobalConfig(cp9_hmm, hmm_start_node, hmm_end_node, orig_phi);*/
-
-	      StopwatchZero(watch1);
-	      StopwatchStart(watch1);
-	      /* Build the sub CP9 HMM by copying as much of the original cp9_hmm as possible */
-	      CP9_2sub_cp9(cp9_hmm, &sub_cp9_hmm2, hmm_start_node, hmm_end_node, orig_phi);
-	      StopwatchStop(watch1);
-	      StopwatchDisplay(stdout, "CP9 BUILDING TRUNCATION TIME: ", watch1);
-
-	      /* fill phi arrays for each CP9 HMM */
-	      fill_phi_cp9(sub_cp9_hmm, &sub_phi_trad, 1);
-	      fill_phi_cp9(sub_cp9_hmm2, &sub_phi_trunc, 1);
 	      
-	      printf("sub_cp9_hmm->M: %d\n", sub_cp9_hmm->M);
+	      /* (5) Do Forward/Backward again, and get a new posterior matrix. 
+	       * We have to free cp9_fwd and cp9_posterior because we used them 
+	       * to find spos and epos. */
 
-	      printf("MODEL START: %d\n", hmm_start_node);
-	      printf("MODEL END  : %d\n", hmm_end_node);
-
-	      printf("PRINTING TRAD SUB CP9 HMM PARAMETERS\n");
-	      debug_print_cp9_params(sub_cp9_hmm);
-	      printf("DONE PRINTING TRAD SUB CP9 HMM PARAMETERS\n\n");
-
-	      printf("PRINTING TRUNC SUB CP9 HMM PARAMETERS\n");
-	      debug_print_cp9_params(sub_cp9_hmm2);
-	      printf("DONE PRINTING TRUNC SUB CP9 HMM PARAMETERS\n\n");
-	      
-	      printf("PRINTING ORIG CP9 HMM PHI PARAMETERS\n");
-	      debug_print_phi_cp9(cp9_hmm, orig_phi);
-	      printf("DONE PRINTING ORIG CP9 HMM PHI PARAMETERS\n");
-
-	      printf("PRINTING TRAD SUB CP9 HMM PHI PARAMETERS\n");
-	      debug_print_phi_cp9(sub_cp9_hmm, sub_phi_trad);
-	      printf("DONE PRINTING TRAD SUB CP9 HMM PHI PARAMETERS\n\n");
-
-	      printf("PRINTING TRUNC SUB CP9 HMM PHI PARAMETERS\n");
-	      debug_print_phi_cp9(sub_cp9_hmm2, sub_phi_trunc);
-	      printf("DONE PRINTING TRUNC SUB CP9 HMM PHI PARAMETERS\n\n");
-
-	      exit(1);
-	      
-	      /* Derive bands for the sub_cm using the newly configured CP9 HMM */
-	      /* Step 1: Get HMM posteriors.*/
-	      /*sc = CP9Viterbi(p7dsq[i], 1, sqinfo[i].len, cp9_hmm, cp9_mx);*/
-	      forward_sc = CP9Forward(p7dsq[i], 1, sqinfo[i].len, cp9_hmm, &cp9_fwd);
+	      FreeCPlan9Matrix(cp9_fwd);
+	      FreeCPlan9Matrix(cp9_posterior);
+	      forward_sc = CP9Forward(p7dsq[i], 1, sqinfo[i].len, sub_hmm, &cp9_fwd);
 	      printf("CP9 i: %d | forward_sc : %f\n", i, forward_sc);
-	      backward_sc = CP9Backward(p7dsq[i], 1, sqinfo[i].len, cp9_hmm, &cp9_bck);
+	      backward_sc = CP9Backward(p7dsq[i], 1, sqinfo[i].len, sub_hmm, &cp9_bck);
 	      printf("CP9 i: %d | backward_sc: %f\n", i, backward_sc);
-	      
-	      /*debug_check_CP9_FB(cp9_fwd, cp9_bck, cp9_hmm, forward_sc, 1, sqinfo[i].len, p7dsq[i]);*/
+	      /*debug_check_CP9_FB(cp9_fwd, cp9_bck, hmm, forward_sc, 1, sqinfo[i].len, p7dsq[i]);*/
 	      cp9_posterior = cp9_bck;
-	      CP9FullPosterior(p7dsq[i], 1, sqinfo[i].len, cp9_hmm, cp9_fwd, cp9_bck, cp9_posterior);
+	      CP9FullPosterior(p7dsq[i], 1, sqinfo[i].len, sub_hmm, cp9_fwd, cp9_bck, cp9_posterior);
+	      /* cp9_posterior has the posteriors for the sub_hmm */
 	      
-	      exit(1);
-	      /*cm = sub_cm;*/
-	      /* Build a new CM Plan 9 HMM */
-
+	      /* Change some pointers so that the functions that create bands use the
+	       * sub_* data structures. The orig_* data structures will still point
+	       * to the original CM versions. */
+	      hmm_M         = sub_hmm->M;
+	      hmm           = sub_hmm;    
+	      node_cc_left  = sub_node_cc_left;
+	      node_cc_right = sub_node_cc_right;
+	      cc_node_map   = sub_cc_node_map;  
+	      cs2hn_map     = sub_cs2hn_map;
 	    }
+	}
+      if(do_hbanded)
+	{
 	  StopwatchStop(watch1);
 	  if(time_flag) StopwatchDisplay(stdout, "CP9 Forward/Backward CPU time: ", watch1);
 	  StopwatchZero(watch1);
 	  StopwatchStart(watch1);
+      
+	  /* Align the current seq to the cp9 HMM, we don't care
+	   * about the trace, just the posteriors.
+	   * Step 1: Get HMM posteriors. (we already did this above, if do_sub,
+	   *                              the posteriors are for the sub_hmm)
+	   * Step 2: posteriors -> HMM bands.
+	   * Step 3: HMM bands  ->  CM bands.
+	   */
 	  
 	  /* Step 2: posteriors -> HMM bands.*/
 	  if(!(use_sums))
 	    {
 	      /* match states */
-	      CP9_hmm_band_bounds(cp9_posterior->mmx, 1, sqinfo[i].len, cp9_hmm->M,
+	      CP9_hmm_band_bounds(cp9_posterior->mmx, 1, sqinfo[i].len, hmm_M,
 				  NULL, pn_min_m, pn_max_m, (1.-hbandp), HMMMATCH, debug_level);
 	      /* insert states */
-	      CP9_hmm_band_bounds(cp9_posterior->imx, 1, sqinfo[i].len, cp9_hmm->M,
+	      CP9_hmm_band_bounds(cp9_posterior->imx, 1, sqinfo[i].len, hmm_M,
 				  NULL, pn_min_i, pn_max_i, (1.-hbandp), HMMINSERT, debug_level);
 	      /* delete states (note: delete_flag set to TRUE) */
-	      CP9_hmm_band_bounds(cp9_posterior->dmx, 1, sqinfo[i].len, cp9_hmm->M,
+	      CP9_hmm_band_bounds(cp9_posterior->dmx, 1, sqinfo[i].len, hmm_M,
 				  NULL, pn_min_d, pn_max_d, (1.-hbandp), HMMDELETE, debug_level);
 	    }
 	  else
 	    {
-	      CP9_ifill_post_sums(cp9_posterior, 1, sqinfo[i].len, cp9_hmm->M,
+	      CP9_ifill_post_sums(cp9_posterior, 1, sqinfo[i].len, hmm_M,
 				  isum_pn_m[i], isum_pn_i[i], 
 				  isum_pn_d[i]);
 	      /* match states */
-	      CP9_hmm_band_bounds(cp9_posterior->mmx, 1, sqinfo[i].len, cp9_hmm->M,
+	      CP9_hmm_band_bounds(cp9_posterior->mmx, 1, sqinfo[i].len, hmm_M,
 				  isum_pn_m[i], pn_min_m, pn_max_m, (1.-hbandp), HMMMATCH, debug_level);
 	      /* insert states */
-	      CP9_hmm_band_bounds(cp9_posterior->imx, 1, sqinfo[i].len, cp9_hmm->M,
+	      CP9_hmm_band_bounds(cp9_posterior->imx, 1, sqinfo[i].len, hmm_M,
 				  isum_pn_i[i], pn_min_i, pn_max_i, (1.-hbandp), HMMINSERT, debug_level);
 	      /* delete states */
-	      CP9_hmm_band_bounds(cp9_posterior->dmx, 1, sqinfo[i].len, cp9_hmm->M,
+	      CP9_hmm_band_bounds(cp9_posterior->dmx, 1, sqinfo[i].len, hmm_M,
 				  isum_pn_d[i], pn_min_d, pn_max_d, (1.-hbandp), HMMDELETE, debug_level);
 	    }
 	  if(debug_level != 0)
 	    {
 	      printf("printing hmm bands\n");
-	      print_hmm_bands(stdout, sqinfo[i].len, cp9_hmm->M, pn_min_m, pn_max_m, pn_min_i,
+	      print_hmm_bands(stdout, sqinfo[i].len, hmm_M, pn_min_m, pn_max_m, pn_min_i,
 			      pn_max_i, pn_min_d, pn_max_d, hbandp, debug_level);
 	    }
 	  
 	  /* Step 3: HMM bands  ->  CM bands. */
-	  hmm2ij_bands(cm, cp9_hmm->M, node_cc_left, node_cc_right, cc_node_map, 
+	  printf("10.24.06 cm->nodes: %d\n", cm->nodes);
+	  printf("10.24.06 hmm_M    : %d\n", hmm_M);
+	  hmm2ij_bands(cm, hmm_M, node_cc_left, node_cc_right, cc_node_map, 
 		       1, sqinfo[i].len, pn_min_m, pn_max_m, pn_min_i, pn_max_i, 
 		       pn_min_d, pn_max_d, imin, imax, jmin, jmax, cs2hn_map,
 		       debug_level);
@@ -959,127 +822,15 @@ main(int argc, char **argv)
 	    }
 	  ij2d_bands(cm, sqinfo[i].len, imin, imax, jmin, jmax,
 		     hdmin, hdmax, -1);
-
+	  
 	  if(debug_level != 0)
 	    PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, sqinfo[i].len);
-
+	  
 	  FreeCPlan9Matrix(cp9_fwd);
 	  FreeCPlan9Matrix(cp9_posterior);
 	  /* Done with the HMM. On to the CM. */
 	}
-
-      else if(hmm_type == HMM_P7)
-	{
-	  /* Align the current seq to the p7 HMM, we don't care
-	   * about the trace, just the posteriors.
-	   * Step 1: Get HMM posteriors.
-	   * Step 2: posteriors -> HMM bands.
-	   * Step 3: HMM bands  ->  CM bands.
-	   */
-	  StopwatchZero(watch1);
-	  StopwatchStart(watch1);
-	  
-	  /* Step 1: Get HMM posteriors.*/
-	  /*
-	  if (P7ViterbiSpaceOK(sqinfo[i].len, hmm->M, mx))
-	    (void) P7Viterbi(p7dsq[i], sqinfo[i].len, hmm, mx, &(p7tr[i]));
-	  else
-	    (void) P7SmallViterbi(p7dsq[i], sqinfo[i].len, hmm, mx, &(p7tr[i]));
-	  */
-	  forward_sc = P7Forward(p7dsq[i], sqinfo[i].len, hmm, &fwd);
-	  /*printf("P7 i: %d | forward_sc : %f\n", i, forward_sc);*/
-	  backward_sc = P7Backward(p7dsq[i], sqinfo[i].len, hmm, &bck);
-	  /*printf("P7 i: %d | backward_sc: %f\n", i, backward_sc);*/
-	  posterior = bck;
-	  P7FullPosterior(sqinfo[i].len, hmm, fwd, bck, posterior);
-	  if(debug_level > 2)
-	    P7_debug_print_post_decode(sqinfo[i].len, hmm->M, posterior);
-	  
-	  StopwatchStop(watch1);
-	  if(time_flag) StopwatchDisplay(stdout, "P7 Forward/Backward CPU time: ", watch1);
-	  StopwatchZero(watch1);
-	  StopwatchStart(watch1);
-	  
-	  /* Uncomment this to assign a postal code (IHH's postprob.c) */
-	  /*p7postcode[i] = PostalCode(sqinfo[i].len, posterior, p7tr[i]);
-	  printf("p7postcode[i]\n%s\n", p7postcode[i]);
-	  */
-
-	  /* Step 2: posteriors -> HMM bands.*/
-	  if(!(use_sums))
-	    {
-	      /* match states */
-	      P7_hmm_band_bounds(posterior->mmx, sqinfo[i].len, hmm->M, NULL,
-				 pn_min_m, pn_max_m, (1.-hbandp), HMMMATCH, debug_level);
-	      /* insert states */
-	      P7_hmm_band_bounds(posterior->imx, sqinfo[i].len, hmm->M, NULL,
-				 pn_min_i, pn_max_i, (1.-hbandp), HMMINSERT, debug_level);
-	      /* delete states */
-	      P7_hmm_band_bounds(posterior->dmx, sqinfo[i].len, hmm->M, NULL,
-				 pn_min_d, pn_max_d, (1.-hbandp), HMMDELETE, debug_level);
-
-	    }
-	  else
-	    {
-	      P7_ifill_post_sums(posterior, sqinfo[i].len, hmm->M,
-				 isum_pn_m[i], isum_pn_i[i], 
-				 isum_pn_d[i]);
-	      /* match states */
-	      P7_hmm_band_bounds(posterior->mmx, sqinfo[i].len, hmm->M, isum_pn_m[i],
-				 pn_min_m, pn_max_m, (1.-hbandp), HMMMATCH, debug_level);
-	      /* insert states */
-	      P7_hmm_band_bounds(posterior->imx, sqinfo[i].len, hmm->M, isum_pn_i[i],
-				 pn_min_i, pn_max_i, (1.-hbandp), HMMINSERT, debug_level);
-	      /* delete states (note: delete_flag set to TRUE) */
-	      P7_hmm_band_bounds(posterior->dmx, sqinfo[i].len, hmm->M, isum_pn_d[i],
-				 pn_min_d, pn_max_d, (1.-hbandp), HMMDELETE, debug_level);
-	    }
-
-	  /* The pn_min_i and pn_max_i arrays are not complete.
-	   * HMMER Plan 7 doesn't allow inserts after the final match state,
-	   * or deletes before the first match, or after the final match state,
-	   * Therefore pn_min_i and pn_max_i are only filled from 1..M-1.
-	   * But we need the band for HMM node M as well. We use a hack
-	   * and assign it the same as the pn_max_m[M] and pn_min_m[M].
-	   */
-	  P7_last_hmm_insert_state_hack(hmm->M, pn_min_m, pn_max_m, pn_min_i, pn_max_i);
-	  P7_last_and_first_hmm_delete_state_hack(hmm->M, pn_min_m, pn_max_m, pn_min_d, 
-						  pn_max_d, sqinfo[i].len);
-
-	  if(debug_level != 0)
-	    {
-	      printf("printing hmm bands\n");
-	      print_hmm_bands(stdout, sqinfo[i].len, hmm->M, pn_min_m, pn_max_m, pn_min_i,
-			      pn_max_i, pn_min_d, pn_max_d, hbandp, debug_level);
-	      /* Get the bands imin, imax, jmin, and jmax for the CM */
-	    }
-
-	  /* Step 3: HMM bands  ->  CM bands. */
-	  hmm2ij_bands(cm, hmm->M, node_cc_left, node_cc_right, cc_node_map, 
-		       1, sqinfo[i].len, pn_min_m, pn_max_m, pn_min_i, pn_max_i, 
-		       pn_min_d, pn_max_d, imin, imax, jmin, jmax, cs2hn_map,
-		       debug_level);
-	  
-	  StopwatchStop(watch1);
-	  if(time_flag) StopwatchDisplay(stdout, "P7 Band calculation CPU time: ", watch1);
-
-	  /* Use the CM bands on i and j to get bands on d, specific to j. */
-	  for(v = 0; v < cm->M; v++)
-	    {
-	      hdmin[v] = malloc(sizeof(int) * (jmax[v] - jmin[v] + 1));
-	      hdmax[v] = malloc(sizeof(int) * (jmax[v] - jmin[v] + 1));
-	    }
-	  ij2d_bands(cm, sqinfo[i].len, imin, imax, jmin, jmax,
-		     hdmin, hdmax, -1);
-	  
-	  if(debug_level != 0)
-	    PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, sqinfo[i].len);
-	
-	  FreePlan7Matrix(fwd);
-	  FreePlan7Matrix(posterior);
-	  /* Done with the HMM. On to the CM. */
-	}	
-
+      
       /* Determine which CYK alignment algorithm to use, based
        * on command-line options AND memory requirements.
        */
@@ -1341,36 +1092,53 @@ main(int argc, char **argv)
 	  fprintf(stdout, "//\n");
 	}
       /* Dump the trace with info on i, j and d bands
-       * if bdump_level is high enough or HMM bands were calc'ed but not 
-       * used (useful in the latter case to determine if the optimal trace 
-       * is within our bands on i and j and d*/
-      if((hmm_type != NONE && !do_hbanded) || bdump_level > 0)
-	{
-	  /*printf("bands on i\n");
-	  debug_print_bands(cm, imin, imax);
-	  printf("bands on j\n");
-	  debug_print_bands(cm, jmin, jmax);
-	  */
-	  ijd_banded_trace_info_dump(cm, tr[i], imin, imax, jmin, jmax, hdmin, hdmax, 1);
-	}
+       * if bdump_level is high enough */
+      if(bdump_level > 0)
+	ijd_banded_trace_info_dump(cm, tr[i], imin, imax, jmin, jmax, hdmin, hdmax, 1);
       
       /* Clean up the structures we use calculating HMM bands, that are allocated
        * differently for each sequence. 
        */
-      if(hmm_type != NONE)
-	for(v = 0; v < cm->M; v++)
-	  { 
-	    free(hdmin[v]); 
-	    free(hdmax[v]);
-	    StopwatchStop(watch2);
-	    if(time_flag) StopwatchDisplay(stdout, "band calc and jd CYK CPU time: ", watch2);
-	  }
+      if(do_hbanded)
+	{
+	  for(v = 0; v < cm->M; v++)
+	    { 
+	      free(hdmin[v]); 
+	      free(hdmax[v]);
+	    }
+	  StopwatchStop(watch2);
+	  if(time_flag) StopwatchDisplay(stdout, "band calc and jd CYK CPU time: ", watch2);
+	}
+      if(do_sub)
+	{
+	  /* Convert the sub_cm parsetree to a full CM parsetree */
+	  if(debug_level > 0)
+	    ParsetreeDump(stdout, tr[i], cm, dsq[i]);
+	  if(!(sub_cm2cm_parsetree(orig_cm, sub_cm, &orig_tr, tr[i], spos, epos, orig2sub_smap, sub2orig_smap, FALSE, debug_level)))
+	    {
+	      printf("\n\nIncorrectly converted original trace:\n");
+	      ParsetreeDump(stdout, orig_tr, orig_cm, dsq[i]);
+	      exit(1);
+	    }
+	  if(debug_level > 0)
+	    {
+	      printf("\n\nConverted original trace:\n");
+	      ParsetreeDump(stdout, orig_tr, orig_cm, dsq[i]);
+	    }
+	  /* Replace the sub_cm trace with the converted orig_cm trace. */
+	  FreeParsetree(tr[i]);
+	  tr[i] = orig_tr;
+
+	  FreeCM(sub_cm); /* cm and sub_cm now point to NULL */
+	  if(do_hbanded)
+	    FreeCPlan9(sub_hmm);
+	}
     }
   avgsc /= nseq;
 
   if(!(do_inside || do_outside))
     {
-      msa = Parsetrees2Alignment(cm, dsq, sqinfo, NULL, tr, nseq, do_full);
+      msa = Parsetrees2Alignment(orig_cm, dsq, sqinfo, NULL, tr, nseq, do_full);
       
       if(do_post)
 	{
@@ -1407,8 +1175,8 @@ main(int argc, char **argv)
 	  for (i = 0; i < msa->nseq; i++) 
 	    {
 	      fprintf(ofp, "> %s\n", msa->sqname[i]);
-	      fprintf(ofp, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr[i], dsq[i], FALSE));;
-	      ParsetreeDump(ofp, tr[i], cm, dsq[i]);
+	      fprintf(ofp, "  SCORE : %.2f bits\n", ParsetreeScore(orig_cm, tr[i], dsq[i], FALSE));;
+	      ParsetreeDump(ofp, tr[i], orig_cm, dsq[i]);
 	      fprintf(ofp, "//\n");
 	    }
 	  fclose(ofp);
@@ -1444,7 +1212,30 @@ main(int argc, char **argv)
       free(dmax);
     }
 
-  if(hmm_type != NONE)
+  if(do_hbanded || do_sub)
+    {
+      for(v = 0; v <= orig_cm->M; v++)
+	{
+	  free(orig_cs2hn_map[v]);
+	  free(cs2hs_map[v]);
+	}
+      free(cs2hn_map);
+      free(cs2hs_map);
+      for(k = 0; k <= hmm_M; k++)
+	{
+	  for(ks = 0; ks < 3; ks++)
+	    free(hns2cs_map[k][ks]);
+	  free(hns2cs_map[k]);
+	}
+      free(hns2cs_map);
+      free(node_cc_left);
+      free(node_cc_right);
+      free(cc_node_map);
+      for (i = 0; i < nseq; i++) 
+	free(p7dsq[i]);
+      free(p7dsq);
+    }
+  if(do_hbanded)
     {
       /* HMMERNAL */
       free(imin);
@@ -1459,58 +1250,28 @@ main(int argc, char **argv)
       free(pn_max_i);
       free(pn_min_d);
       free(pn_max_d);
-      free(node_cc_left);
-      free(node_cc_right);
-      free(cc_node_map);
       free(safe_hdmin);
       free(safe_hdmax);
       for (i = 0; i < nseq; i++) 
 	{ 
-	  free(p7dsq[i]);
 	  free(isum_pn_m[i]); 
 	  free(isum_pn_i[i]);
 	  free(isum_pn_d[i]);
 	  /* Uncomment if calc'ing a postcode */
-	  if(hmm_type == HMM_P7) 
-	    {
-	      /*P7FreeTrace(p7tr[i]);*/
-	      /*free(p7postcode[i]);*/
-	    }
 	}
-      free(p7dsq);
       free(isum_pn_m);
       free(isum_pn_i);
       free(isum_pn_d);
-      for(v = 0; v <= cm->M; v++)
-	{
-	  free(cs2hn_map[v]);
-	  free(cs2hs_map[v]);
-	}
-      free(cs2hn_map);
-      free(cs2hs_map);
-      for(k = 0; k <= hmm_M; k++)
-	{
-	  for(ks = 0; ks < 3; ks++)
-	    free(hns2cs_map[k][ks]);
-	  free(hns2cs_map[k]);
-	}
-      free(hns2cs_map);
     }
-  if(hmm_type == HMM_P7)
-    {
-      /*free(p7tr);*/
-      /*free(p7postcode);*/
-      FreePlan7(hmm);
-      FreePlan7Matrix(mx);
-    }      
-  if(hmm_type == HMM_CP9)
+
+  if(do_hbanded || do_sub)
     {
       FreeCPlan9Matrix(cp9_mx);
-      FreeCPlan9(cp9_hmm);
+      FreeCPlan9(orig_hmm);
     }
 
   if(!(do_inside || do_outside)) MSAFree(msa);
-  FreeCM(cm);
+  FreeCM(orig_cm);
   free(rseq);
   free(sqinfo);
   free(dsq);

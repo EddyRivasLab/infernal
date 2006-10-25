@@ -153,11 +153,11 @@ static void debug_print_misc_sub_cm_info(CM_t *orig_cm, CM_t *sub_cm, int **orig
  *            epos         - the last position we want to keep structure for
  *                           and if do_subfull == FALSE the last column we want 
  *                           the sub_cm to model at all 
- *            orig2sub_smap- 2D state map from orig_cm (template) to sub_cm.
+ *     ***ret_orig2sub_smap- 2D state map from orig_cm (template) to sub_cm.
  *                           1st dimension - state index in orig_cm 
  *                           2nd D - 2 elements for up to 2 matching sub_cm states, 
  *                           SHOULD NOT BE PRE-ALLOCATED
- *            sub2orig_smap- 2D state map from orig_cm (template) to sub_cm.
+ *     ***ret_sub2orig_smap- 2D state map from orig_cm (template) to sub_cm.
  *                           1st dimension - state index in sub_cm (0..sub_cm->M-1)
  *                           2nd D - 2 elements for up to 2 matching orig_cm states, 
  *                           SHOULD NOT BE PRE-ALLOCATED
@@ -194,8 +194,8 @@ static void debug_print_misc_sub_cm_info(CM_t *orig_cm, CM_t *sub_cm, int **orig
  *                           FALSE otherwise
  */
 int 
-build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int spos, int epos, int **orig2sub_smap, 
-	     int **sub2orig_smap, int **ret_imp_cc, int **ret_apredict_ct, 
+build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int spos, int epos, int ***ret_orig2sub_smap, 
+	     int ***ret_sub2orig_smap, int **ret_imp_cc, int **ret_apredict_ct, 
 	     int **ret_awrong_predict_ct, int **ret_spredict_ct, int **ret_swrong_predict_ct, 
 	     float threshold, int do_fullsub, int do_acheck, int do_scheck, float chi_thresh, 
 	     int nsamples, int print_flag)
@@ -212,6 +212,7 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int spos, int epos, int **orig2sub_sm
   char          ***tmap;        /* hard-coded transition map, for convenience       */
   double          *orig_psi;    /* expected num times each state visited in orig_cm */
   double          *sub_psi;     /* expected num times each state visited in sub_cm  */
+  int              v_o;         /* state counter for orig_cm                        */             
   int              v_o1;        /* state counter for orig_cm                        */             
   int              v_o2;        /* state counter for orig_cm                        */             
   int              v_s;         /* state counter for sub_cm                         */             
@@ -246,6 +247,18 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int spos, int epos, int **orig2sub_sm
   int        *swrong_predict_ct;/* Array of length 6 that holds the number of 
 				 * times we predict an HMM node will fail but
 				 * it doesn't for the sampling test.          */
+  int              **orig2sub_smap;/* 2D state map from orig_cm (template) to sub_cm.
+				    * 1st dimension - state index in orig_cm 
+				    * 2nd D - 2 elements for up to 2 matching sub_cm states */
+  int              **sub2orig_smap;/* 2D state map from orig_cm (template) to sub_cm.
+				    * 1st dimension - state index in sub_cm (0..sub_cm->M-1)
+				    * 2nd D - 2 elements for up to 2 matching orig_cm states */
+  int              **orig2sub_smap_copy;/* 2D state map from orig_cm (template) to sub_cm.
+				    * 1st dimension - state index in orig_cm 
+				    * 2nd D - 2 elements for up to 2 matching sub_cm states */
+  int              **sub2orig_smap_copy;/* 2D state map from orig_cm (template) to sub_cm.
+				    * 1st dimension - state index in sub_cm (0..sub_cm->M-1)
+				    * 2nd D - 2 elements for up to 2 matching orig_cm states */
 
   apredict_ct = MallocOrDie(sizeof(int) * 7);
   spredict_ct = MallocOrDie(sizeof(int) * 7);
@@ -378,6 +391,7 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int spos, int epos, int **orig2sub_sm
 
   CMZero(sub_cm);
   CMSetNullModel(sub_cm, orig_cm->null);
+  sub_cm->el_selfsc = orig_cm->el_selfsc;
 
   /* Fill in emission probabilities */
   for(v_s = 0; v_s < sub_cm->M; v_s++)
@@ -483,6 +497,7 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int spos, int epos, int **orig2sub_sm
 
   /* Finally renormalize the CM */
   CMRenormalize(sub_cm);
+  CMLogoddsify(sub_cm);
   if(print_flag)  printf("done renormalizing\n");
 
   if(print_flag)
@@ -520,13 +535,6 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int spos, int epos, int **orig2sub_sm
 					  nsamples, imp_cc, spredict_ct, swrong_predict_ct, print_flag));
 
   /* Cleanup and exit. */
-  for(v_s = 0; v_s < sub_cm->M; v_s++)
-    free(sub2orig_smap[v_s]);
-  free(sub2orig_smap);
-  for(v_s = 0; v_s < orig_cm->M; v_s++)
-    free(orig2sub_smap[v_s]);
-  free(orig2sub_smap);
-
   for(i = 0; i < UNIQUESTATES; i++)
     {
       for(j = 0; j < NODETYPES; j++)
@@ -551,11 +559,47 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int spos, int epos, int **orig2sub_sm
     free(sub_psi);
 
   *ret_cm = sub_cm;
-  *ret_imp_cc = imp_cc;
-  *ret_apredict_ct = apredict_ct;
-  *ret_spredict_ct = spredict_ct;
-  *ret_awrong_predict_ct = awrong_predict_ct;
-  *ret_swrong_predict_ct = swrong_predict_ct;
+  if(ret_imp_cc != NULL)
+    *ret_imp_cc = imp_cc;
+  if(ret_apredict_ct != NULL)
+    *ret_apredict_ct = apredict_ct;
+  if(ret_spredict_ct != NULL)
+    *ret_spredict_ct = spredict_ct;
+  if(ret_awrong_predict_ct != NULL)
+    *ret_awrong_predict_ct = awrong_predict_ct;
+  if(ret_swrong_predict_ct != NULL)
+    *ret_swrong_predict_ct = swrong_predict_ct;
+
+  /* temporary solution to weird memory errors, copy the smaps */
+  if(ret_orig2sub_smap != NULL)
+    {
+      orig2sub_smap_copy = MallocOrDie(sizeof(int *) * (orig_cm->M));
+      for(v_o = 0; v_o < orig_cm->M; v_o++)
+	{
+	  orig2sub_smap_copy[v_o] = MallocOrDie(sizeof(int) * 2);
+	  orig2sub_smap_copy[v_o][0] = orig2sub_smap[v_o][0];
+	  orig2sub_smap_copy[v_o][1] = orig2sub_smap[v_o][1];
+	}
+      *ret_orig2sub_smap = orig2sub_smap_copy;
+    }
+  if(ret_sub2orig_smap != NULL)
+    {
+      sub2orig_smap_copy = MallocOrDie(sizeof(int *) * (sub_cm->M));
+      for(v_s = 0; v_s < sub_cm->M; v_s++)
+	{
+	  sub2orig_smap_copy[v_s] = MallocOrDie(sizeof(int) * 2);
+	  sub2orig_smap_copy[v_s][0] = sub2orig_smap[v_s][0];
+	  sub2orig_smap_copy[v_s][1] = sub2orig_smap[v_s][1];
+	}
+      *ret_sub2orig_smap = sub2orig_smap_copy;
+    }
+
+  for(v_s = 0; v_s < orig_cm->M; v_s++)
+    free(orig2sub_smap[v_s]);
+  free(orig2sub_smap);
+  for(v_s = 0; v_s < sub_cm->M; v_s++)
+    free(sub2orig_smap[v_s]);
+  free(sub2orig_smap);
 
   if(ret_val == 0)
     return TRUE; /* Passed all checks (or no checks were performed) */
@@ -1794,8 +1838,15 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, int **orig2sub_smap, int **s
       if(!(orig_cm->sttype[orig_v] == IL_st || orig_cm->sttype[orig_v] == IR_st))
 	Die("INSERT error in map_orig2sub_cm_helper()\n");
       is_insert = TRUE;
-    }
-
+      
+      /* Make sure that neither orig_v or sub_v are detached insert states,
+       * if they are we return b/c they're irrelevant and we don't want that 
+       * information in the maps. */
+      if(orig_cm->sttype[(orig_v+1)] == E_st)
+	return 0;
+      //if(sub_cm->sttype[(sub_v+1)] == E_st)
+      //return 0;
+    }      
   /* 09.14.06  I think that some of the code that checks for cases where we wnat to avoid mapping is unnecessary!,
    * but I'm not sure what...*/
       
@@ -5685,7 +5736,7 @@ map_orig2sub_cm3(CM_t *orig_cm, CM_t *sub_cm, int ***ret_orig2sub_smap, int ***r
 	  if(print_flag) printf("sub2orig_id[%d] FALSE\n", v);
 	}
     }
-
+  
   /* print sub2orig_smap, checking consistency with orig2sub_smap along the way. */
   if(print_flag) printf("\n\n\n KACHOW! MAP\n\n\n");
   for(v_s = 0; v_s < sub_cm->M; v_s++)
@@ -5715,8 +5766,11 @@ map_orig2sub_cm3(CM_t *orig_cm, CM_t *sub_cm, int ***ret_orig2sub_smap, int ***r
 	  sub_cm->sttype[v_s] != S_st) && 
 	 sub_cm->sttype[v_s] != E_st)
 	{
+	  if(v_o == -1 && sub_cm->sttype[(v_s+1)] == E_st) /* v_s is a dead insert */
+	    continue;
 	  if(v_o == -1 && sub_cm->sttype[v_s] != E_st)
 	    Die("ERROR sub_cm state: %d type: %s node type: %s doesn't map to any state in orig_cm\n", v_s, sttypes[sub_cm->sttype[v_s]], nodetypes[sub_cm->ndtype[n_s]]);
+
 	  n_o = orig_cm->ndidx[v_o];
 	  if(print_flag) printf("sub v:%4d(%4d) %6s%6s | orig v:%4d(%4d) %6s%6s\n", v_s, n_s, nodetypes[sub_cm->ndtype[n_s]], sttypes[sub_cm->sttype[v_s]], v_o, n_o, nodetypes[orig_cm->ndtype[n_o]], sttypes[orig_cm->sttype[v_o]]);
 	  /* check to make sure orig2sub_smap is consistent */
@@ -7010,4 +7064,372 @@ check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, float pthresh, int
     return FALSE;
   else
     return TRUE;
+}
+
+/**************************************************************************
+ * EPN 10.23.06
+ * Function: sub_cm2cm_parsetree()
+ *
+ *
+ * Returns: void
+ *
+
+ */
+
+int
+sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Parsetree_t *sub_tr, int spos, 
+		    int epos, int **orig2sub_smap, int **sub2orig_smap, int do_fullsub, int print_flag)
+{
+  int *ss_used; 
+  int *ss_emitl; 
+  int *ss_emitr; 
+  int *il_ct; 
+  int *ir_ct; 
+  int *il_used; 
+  int *ir_used; 
+  int *tr_nd_for_bifs;
+  /*int *il_emitl;
+    int *ir_emitr;*/
+
+  int x;
+  int nd;
+  int sub_v;
+  int orig_v1; 
+  int orig_v2;
+  int orig_nd1;
+  int orig_nd2;
+  int nodes_used;
+  Parsetree_t *orig_tr;
+  int cm_nd;
+  int emitl;
+  int emitr;
+  int i;
+  int parent_tr_nd;
+  int is_delete;
+  int is_left;
+  int is_right;
+
+  Nstack_t    *pda;
+  int          pos;
+  int          ss;
+  int          on_right;
+
+  int emitl_flag;
+  int emitr_flag;
+
+  char **nodetypes;
+  nodetypes = malloc(sizeof(char *) * 8);
+  nodetypes[0] = "BIF";
+  nodetypes[1] = "MATP";
+  nodetypes[2] = "MATL";
+  nodetypes[3] = "MATR";
+  nodetypes[4] = "BEGL";
+  nodetypes[5] = "BEGR";
+  nodetypes[6] = "ROOT";
+  nodetypes[7] = "END";
+
+  char **sttypes;
+  sttypes = malloc(sizeof(char *) * 10);
+  sttypes[0] = "D";
+  sttypes[1] = "MP";
+  sttypes[2] = "ML";
+  sttypes[3] = "MR";
+  sttypes[4] = "IL";
+  sttypes[5] = "IR";
+  sttypes[6] = "S";
+  sttypes[7] = "E";
+  sttypes[8] = "B";
+  sttypes[9] = "EL";
+
+  if(print_flag) printf("orig_cm nodes: %d\n", orig_cm->nodes);
+
+  ss_used        = MallocOrDie(sizeof(int) * orig_cm->nodes + 1);
+  ss_emitl       = MallocOrDie(sizeof(int) * orig_cm->nodes + 1);
+  ss_emitr       = MallocOrDie(sizeof(int) * orig_cm->nodes + 1);
+  il_used        = MallocOrDie(sizeof(int) * orig_cm->nodes + 1);
+  ir_used        = MallocOrDie(sizeof(int) * orig_cm->nodes + 1);
+  il_ct          = MallocOrDie(sizeof(int) * orig_cm->nodes + 1);
+  ir_ct          = MallocOrDie(sizeof(int) * orig_cm->nodes + 1);
+  /*il_emitl       = MallocOrDie(sizeof(int) * orig_cm->nodes + 1); 
+    ir_emitr       = MallocOrDie(sizeof(int) * orig_cm->nodes + 1);*/
+  tr_nd_for_bifs = MallocOrDie(sizeof(int) * orig_cm->nodes + 1);
+  /* i*_emitl[nd] is the last residue emitted by the i* state 
+   * of node nd, the first is (il_emitl[nd] - il_ct[nd] + 1)
+   * or (ir_emitr[nd] + ir_ct[nd] - 1)
+   */
+
+  for(nd = 0; nd < orig_cm->nodes; nd++)
+    {
+      ss_used[nd]   = -1;
+      ss_emitl[nd]  = -1;
+      ss_emitr[nd]  = -1;
+      il_ct[nd]     =  0; /* the number of times the IL state was used in the sub_cm parse */
+      ir_ct[nd]     =  0; /* the number of times the IR state was used in the sub_cm parse */
+      il_used[nd]   = -1;
+      ir_used[nd]   = -1;
+      /*il_emitl[nd]   = -1;
+	ir_emitr[nd]   = -1;*/
+      tr_nd_for_bifs[nd] = -1; /* this will remain -1 except for bif nodes */
+    }
+
+  for(x = 0; x < sub_tr->n; x++)
+    {
+      sub_v    = sub_tr->state[x];
+      if(print_flag) printf("x: %d sub_v: %d\n", x, sub_v);
+      orig_v1  = sub2orig_smap[sub_v][0];
+      orig_v2  = sub2orig_smap[sub_v][1];
+      if(print_flag) printf("orig_v1: %d | orig_v2: %d\n", orig_v1, orig_v2);
+      if(orig_v1 == -1)
+	{
+	  if(sub_cm->sttype[sub_v] != S_st &&
+	     sub_cm->sttype[sub_v] != E_st &&
+	     sub_cm->sttype[sub_v] != B_st &&
+	     sub_cm->sttype[sub_v] != EL_st)
+	    Die("ERROR 0 in sub_cm2cm_parstree()\n");
+	  continue;
+	}
+      orig_nd1 = orig_cm->ndidx[orig_v1];
+      if(orig_v2 != -1)
+	orig_nd2 = orig_cm->ndidx[orig_v2];
+      else
+	orig_nd2 = -1;
+      
+      /* We assume that no sub_cm insert states can map to 2 orig_cm inserts */
+      if(orig_cm->sttype[orig_v1] == IL_st)
+	{
+	  il_used[orig_nd1] = orig_v1;
+	  /*il_emitl[orig_nd1] = sub_tr->emitl[x];*/
+	  il_ct[orig_nd1]++;
+	  if(orig_v2 != -1)
+	    Die("ERROR 1 in sub_cm2cm_parstree()\n");
+	}
+      else if(orig_cm->sttype[orig_v1] == IR_st)
+	{
+	  ir_used[orig_nd1] = orig_v1;
+	  /*ir_emitr[orig_nd1] = sub_tr->emitr[x];*/
+	  ir_ct[orig_nd1]++;
+	  if(orig_v2 != -1)
+	    Die("ERROR 2 in sub_cm2cm_parstree()\n");
+	}
+      else if(sub_cm->ndtype[sub_cm->ndidx[sub_v]] == MATP_nd)
+	{
+	  ss_used[orig_nd1] = orig_v1;
+	  if(orig_v2 != -1)
+	    Die("ERROR 3 in sub_cm2cm_parsetree()\n");
+	}
+      else if(orig_cm->ndtype[orig_nd1] == MATP_nd)
+	{
+	  if(orig_v2 == -1)
+	    Die("ERROR 4 in sub_cm2cm_parsetree()\n");
+	  /* We have to figure out which MATP split state sub_v corresponds to. */
+	  if(sub_cm->ndtype[sub_cm->ndidx[sub_v]] != MATL_nd && 
+	     sub_cm->ndtype[sub_cm->ndidx[sub_v]] != MATR_nd)
+	    Die("ERROR 5 in sub_cm2cm_parsetree()\n");
+	  if(orig_cm->ndtype[orig_nd2] != MATP_nd)
+	    Die("ERROR 6 in sub_cm2cm_parsetree()\n");
+	  
+	  if(sub_cm->sttype[sub_v] == D_st)
+	    {
+	      if(ss_used[orig_nd1] == -1 || 
+		 orig_cm->sttype[ss_used[orig_nd1]] == D_st)
+		ss_used[orig_nd1] = orig_cm->nodemap[orig_nd1] + 3; /* MATP_D */
+	      
+	      /*else we do nothing, orig_cm->sttype[ss_used[orig_nd1]] is already
+	       * either a ML_st or an MR_st */
+	    }
+	  else /* sub_cm->sttype[sub_v] != D_st */
+	    {
+	      if(ss_used[orig_nd1] == -1 || 
+		 orig_cm->sttype[ss_used[orig_nd1]] == D_st)
+		{
+		  /* Figure out if sub_v maps to the left or right half of the MATP node */
+		  if(orig_cm->sttype[orig_v1] == ML_st || 
+		     orig_cm->sttype[orig_v2] == ML_st)
+		    ss_used[orig_nd1] = orig_cm->nodemap[orig_nd1] + 1; /* MATP_ML */
+		  else if(orig_cm->sttype[orig_v1] == MR_st || 
+			  orig_cm->sttype[orig_v2] == MR_st)
+		      ss_used[orig_nd1] = orig_cm->nodemap[orig_nd1] + 2; /* MATP_MR */
+		  else
+		    Die("ERROR 7 in sub_cm2cm_parsetree()\n");
+		}
+	      /* below is the only line we really need: 
+		 else
+		 ss_used[orig_nd1] = orig_cm->nodemap[orig_nd1]; */
+	      
+	      else if(orig_cm->sttype[ss_used[orig_nd1]] == ML_st) /* just for safety; should erase eventually */
+		{
+		  if(orig_cm->sttype[orig_v1] == MR_st || 
+		     orig_cm->sttype[orig_v2] == MR_st) /* just for safety; should erase eventually */
+		    {
+		      ss_used[orig_nd1] = orig_cm->nodemap[orig_nd1]; /* MATP_MP */
+		    }
+		  else 
+		    Die("ERROR 8 in sub_cm2cm_parsetree()\n");
+		}
+	      else if(orig_cm->sttype[ss_used[orig_nd1]] == MR_st) /* just for safety; should erase eventually */
+		{
+		  if(orig_cm->sttype[orig_v1] == ML_st || 
+		     orig_cm->sttype[orig_v2] == ML_st) /* just for safety; should erase eventually */
+		  {
+		    ss_used[orig_nd1] = orig_cm->nodemap[orig_nd1]; /* MATP_MP */
+		  }
+		  else 
+		    Die("ERROR 9 in sub_cm2cm_parsetree()\n");
+		}
+	    }
+	}
+      else
+	{
+	  if(orig_v2 != -1)
+	    Die("ERROR 5 in sub_cm2cm_parsetree()\n");
+	  ss_used[orig_nd1] = orig_v1;
+	}
+    }
+
+  /* Some MATL, MATR, and MATP nodes in the orig_cm might have 0 states that map to any state 
+   * used in the sub_cm parse. If we're not allowing local begins and ends, our strategy is 
+   * to claim that in the orig_cm parse the D state of these nodes was used.
+   */
+  for(nd = 0; nd < orig_cm->nodes; nd++)
+    {
+      if(ss_used[nd] == -1)
+	{
+	  if(orig_cm->ndtype[nd] == MATP_nd)
+	    ss_used[nd] = orig_cm->nodemap[nd] + 3; /* MATP_D */
+	  if(orig_cm->ndtype[nd] == MATL_nd ||
+	     orig_cm->ndtype[nd] == MATR_nd)
+	    ss_used[nd] = orig_cm->nodemap[nd] + 1; /* MAT{L,R}_D */
+	  if(orig_cm->ndtype[nd] == BIF_nd  ||
+	     orig_cm->ndtype[nd] == BEGL_nd || 
+	     orig_cm->ndtype[nd] == BEGR_nd ||
+	     orig_cm->ndtype[nd] == END_nd)
+	    ss_used[nd] = orig_cm->nodemap[nd];     /* BIF_B, END_E or BEG{L,R}_S */
+	}
+    }      
+
+  /* Determine emitl and emitr for each state in the orig_cm parse */
+  /* This code is noticeably cleaner than the rest - it's Sean's, from 
+   * CreateEmitMap() adapted for our purposes here.
+   */
+
+  pos   = 1;
+  ss    = 0;
+  pda   = CreateNstack();
+  PushNstack(pda, 0);		/* 0 = left side. 1 would = right side. */
+  PushNstack(pda, ss);
+  while (PopNstack(pda, &ss))
+    {
+      PopNstack(pda, &on_right);
+
+      if (on_right) 
+	{
+	  pos += ir_ct[orig_cm->ndidx[ss]]; /* account for right inserts */
+	  if (orig_cm->sttype[ss] == MP_st || orig_cm->sttype[ss] == MR_st) 
+	    pos++;
+	  ss_emitr[orig_cm->ndidx[ss]] = pos - 1;
+	}
+      else
+	{
+	  ss_emitl[orig_cm->ndidx[ss]] = pos;
+	  if (orig_cm->sttype[ss] == MP_st || orig_cm->sttype[ss] == ML_st) 
+	    pos++;
+
+	  if (orig_cm->sttype[ss] == B_st)
+	    {
+				/* push the BIF back on for its right side  */
+	      PushNstack(pda, 1);
+	      PushNstack(pda, ss);
+                            /* push node index for right child */
+	      PushNstack(pda, 0);
+	      PushNstack(pda, orig_cm->cnum[ss]);
+                            /* push node index for left child */
+	      PushNstack(pda, 0);
+	      PushNstack(pda, orig_cm->cfirst[ss]);
+	    }
+	  else
+	    {
+				/* push the node back on for right side */
+	      PushNstack(pda, 1);
+	      PushNstack(pda, ss);
+				/* push split state of child node on */
+	      if (orig_cm->sttype[ss] != E_st) {
+		PushNstack(pda, 0);
+		PushNstack(pda, ss_used[orig_cm->ndidx[ss]+1]);
+	      }
+	    }
+	  pos += il_ct[orig_cm->ndidx[ss]]; /* account for left inserts */
+	}
+    }      
+  
+  if(print_flag)
+    {
+      for(nd = 0; nd < orig_cm->nodes; nd++)
+	{
+	  printf("ss_used[%4d] (%4s) first state(%4d) | ", nd, nodetypes[orig_cm->ndtype[nd]], orig_cm->nodemap[nd]);
+	  if(ss_used[nd] != -1)
+	    printf("%4d (%2s) | L: %3d R: %3d\n", ss_used[nd], sttypes[orig_cm->sttype[ss_used[nd]]], ss_emitl[nd], ss_emitr[nd]);
+	  else
+	    printf("%4d\n", -1);
+	}
+      for(nd = 0; nd < orig_cm->nodes; nd++)
+	printf("il_ct[%4d] (st used: %4d) ct: %4d | ir_ct[%4d] ct: %4d (st used: %4d)\n", nd, il_used[nd], il_ct[nd], nd, ir_used[nd], ir_ct[nd]);
+
+    }
+
+  orig_tr = CreateParsetree();
+  nodes_used = 0;
+  for(cm_nd = 0; cm_nd < orig_cm->nodes; cm_nd++)
+    {
+      emitl_flag = 0;
+      emitr_flag = 0;
+      if(orig_cm->sttype[ss_used[cm_nd]] == MP_st || 
+	 orig_cm->sttype[ss_used[cm_nd]] == ML_st)
+	emitl_flag = 1;
+      if(orig_cm->sttype[ss_used[cm_nd]] == MP_st || 
+	 orig_cm->sttype[ss_used[cm_nd]] == MR_st)
+	emitr_flag = 1;
+
+      /* At least 1 state in each node must be visited (if we're not in local mode) */
+      if(orig_cm->ndtype[cm_nd] == BEGR_nd)
+	{
+	  parent_tr_nd =  tr_nd_for_bifs[orig_cm->ndidx[orig_cm->plast[orig_cm->nodemap[cm_nd]]]];
+	  if(print_flag) printf("tr_nd_for_bifs[%d]\n", (orig_cm->ndidx[orig_cm->plast[orig_cm->nodemap[cm_nd]]]));
+	  if(print_flag) printf("parent_tr_nd for cm_nd %d: %d\n", cm_nd, parent_tr_nd);
+	  InsertTraceNode(orig_tr, parent_tr_nd, TRACE_RIGHT_CHILD, ss_emitl[cm_nd], ss_emitr[cm_nd], ss_used[cm_nd]);
+	  orig_tr->nxtr[parent_tr_nd]  = orig_tr->n; /* Go back and fix nxtr for the BIF parent of this BEGR */
+	}
+      else
+	{
+	  InsertTraceNode(orig_tr, orig_tr->n-1, TRACE_LEFT_CHILD, ss_emitl[cm_nd], ss_emitr[cm_nd], ss_used[cm_nd]);
+	  if(print_flag) printf("inserted trace node for orig_cm st %4s | emitl: %d | emitr: %d\n", sttypes[orig_cm->sttype[ss_used[cm_nd]]], ss_emitl[cm_nd], ss_emitr[cm_nd]);
+	}
+
+      /* Note: if we've just added a trace node for a BIF state, it's incomplete, in that it 
+       * doesn't have the nextr correctly set. We'll go back and set this when we get to the 
+       * right child (BEGR) of this BIF */
+      if(orig_cm->ndtype[cm_nd] == BIF_nd)
+	{
+	  tr_nd_for_bifs[cm_nd] = orig_tr->n;
+	  if(print_flag) printf("set tr_nd_for_bifs[%d]: %d\n", cm_nd, orig_tr->n);
+	}
+
+      /* Add left inserts, if any */
+      for(i = 0; i < il_ct[cm_nd]; i++)
+	{
+	  InsertTraceNode(orig_tr, orig_tr->n-1, TRACE_LEFT_CHILD, (ss_emitl[cm_nd] + emitl_flag + i), ss_emitr[cm_nd], il_used[cm_nd]);
+	  if(print_flag) printf("inserted trace node for orig_cm st %4s | emitl: %d | emitr: %d\n", sttypes[orig_cm->sttype[il_used[cm_nd]]], orig_tr->emitl[orig_tr->n-1], orig_tr->emitr[orig_tr->n-1]);
+	}
+      /* Add right inserts, if any */
+      for(i = 0; i < ir_ct[cm_nd]; i++)
+	{
+	  InsertTraceNode(orig_tr, orig_tr->n-1, TRACE_LEFT_CHILD, ss_emitl[cm_nd], (ss_emitr[cm_nd] - emitr_flag - i), ir_used[cm_nd]);
+	  if(print_flag) printf("inserted trace node for orig_cm st %4s | emitl: %d | emitr: %d\n", sttypes[orig_cm->sttype[ir_used[cm_nd]]], orig_tr->emitl[orig_tr->n-1], orig_tr->emitr[orig_tr->n-1]);
+	}
+      if(print_flag) printf("END nd: %4d | emitl: %4d | emitr: %4d\n", cm_nd, emitl, emitr);
+    }      
+  *ret_orig_tr = orig_tr;
+
+  free(nodetypes);
+  free(sttypes);
+  return 1;
 }

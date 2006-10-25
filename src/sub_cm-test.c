@@ -289,7 +289,7 @@ main(int argc, char **argv)
 	  printf("\tBuilding models with start pos: %5d (%5d / %5d completed)\n", spos, ndone, nmodels);
 	  for(epos = spos; epos <= ncols; epos++)
 	    {
-	      if(!(build_sub_cm(cm, &sub_cm, spos, epos, orig2sub_smap, sub2orig_smap, &imp_cc, &apredict_ct, 
+	      if(!(build_sub_cm(cm, &sub_cm, spos, epos, NULL, NULL, &imp_cc, &apredict_ct, 
 				&awrong_predict_ct, &spredict_ct, &swrong_predict_ct, threshold, do_fullsub, 
 				do_atest, do_stest, chi_threshold, nsamples, print_flag)))
 	      {
@@ -350,7 +350,7 @@ main(int argc, char **argv)
 		  epos = temp;
 		}	      
 	    }
-	  if(!(build_sub_cm(cm, &sub_cm, spos, epos, orig2sub_smap, sub2orig_smap, &imp_cc, &apredict_ct, 
+	  if(!(build_sub_cm(cm, &sub_cm, spos, epos, NULL, NULL, &imp_cc, &apredict_ct, 
 			    &awrong_predict_ct, &spredict_ct, &swrong_predict_ct, threshold, do_fullsub, 
 			    do_atest, do_stest, chi_threshold, nsamples, print_flag)))
 	    {

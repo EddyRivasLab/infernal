@@ -319,6 +319,35 @@ typedef struct emitmap_s {
   int  clen;           /* consensus length */
 } CMEmitMap_t;
 
+/* Structure: CMHMMMap_t
+ * Incept:    EPN, 10.23.06
+ *
+ * Maps CM to a CM plan 9 HMM and vice versa. 
+ *    Consensus positions are indexed 1..clen.
+ *    CHANGE BELOW!
+ *    Each array (lpos, rpos, epos) is 0..nodes-1.
+ *    Residues from an MP go into lpos and rpos in the consensus.
+ *    Residues from an IL follow lpos.
+ *    Residues from an IR precede rpos.
+ *    Residues from an EL follow epos[nd] for the nd that went to EL.
+ *    For nonemitters, rpos and lpos are a non-inclusive bound: for
+ *      example, rpos[0], lpos[0] are 0,clen+1.
+ *    There are no dummy values; all rpos, lpos, epos are valid coords
+ *      0..clen+1 in the consensus.
+ *
+ * The node_cc_left and node_cc_right arrays are redundant with CMEmitMap_t.
+ * See emitmap.c for implementation and more documentation.
+ */
+typedef struct hmmmap_s {
+  int *node_cc_left;   /* left bound of consensus for subtree under nd   */
+  int *node_cc_right;  /* right bound of consensus for subtree under nd  */
+  int *cc_node_map;    /* [1..clen], the CM node that maps to this consensus column */
+  int **cs2hn_map;     
+  int **cs2hs_map;     
+  int ***hns2cs_map;     
+  int  clen;           /* consensus length */
+} CMHMMMap_t;
+
 /* used by CM Plan 9 HMM structures */
 #define HMMMATCH  0
 #define HMMINSERT 1

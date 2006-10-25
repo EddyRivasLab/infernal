@@ -344,8 +344,8 @@ extern float CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, char *dsq);
 extern void CP9NodeForPosn(struct cplan9_s *hmm, int i0, int j0, int x, 
 			   struct cp9_dpmatrix_s *post, int *ret_node, int *ret_type);
 extern void StripWUSSGivenCC(MSA *msa, char **dsq, float gapthresh, int first_match, int last_match);
-extern int  build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int spos, int epos, int **orig2sub_smap, 
-			 int **sub2orig_smap, int **ret_imp_cc, int **ret_apredict_ct, int **ret_awrong_predict_ct, 
+extern int  build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int spos, int epos, int ***ret_orig2sub_smap, 
+			 int ***ret_sub2orig_smap, int **ret_imp_cc, int **ret_apredict_ct, int **ret_awrong_predict_ct, 
 			 int **ret_spredict_ct, int **ret_swrong_predict_ct, float threshold, int do_fullsub, 
 			 int do_acheck, int do_scheck, float chi_thresh, int nsamples, int print_flag);
 extern int  check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, float pthresh, int *imp_cc, 
@@ -353,5 +353,7 @@ extern int  check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, float 
 extern int  check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, float thresh, 
 				     int nseq, int *imp_cc, int *predict_ct, int *wrong_predict_ct, int print_flag);
 extern int  check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int nseq);
+extern int  sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Parsetree_t *sub_tr, int spos, 
+				int epos, int **orig2sub_smap, int **sub2orig_smap, int do_fullsub, int print_flag);
 
 
