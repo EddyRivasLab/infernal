@@ -790,21 +790,30 @@ ConsensusParent(CM_t *cm, int *v)
  * 
  * Purpose:  Calculate marginal probability for half
  *           of an emission pair.  There may be better
- *           ways to do this; also implicity assumes
+ *           ways to do this; explicity assumes
  *           a uniform background distribution
  */
 float
-LeftMarginalScore(float *esc, char syml)
+LeftMarginalScore(float *esc, int dres)
 {
-   char symr = SymbolIndex('N');
-   return DegeneratePairScore(esc,syml,symr);
+   float sc;
+   sc = esl_vec_FLogSum(&(esc[dres*Alphabet_size]),Alphabet_size);
+   sc -= log(Alphabet_size);
+   return sc;
 }
 
+/* Not correct!  needs to be corrected to mirror LeftMarginal */
 float
-RightMarginalScore(float *esc, char symr)
+RightMarginalScore(float *esc, int dres)
 {
-   char syml = SymbolIndex('N');
-   return DegeneratePairScore(esc,syml,symr);
+   int i;
+   float sc;
+   float row[Alphabet_size];
+   for (i=0; i<Alphabet_size; i++)
+      row[i] = esc[i*Alphabet_size+dres];
+   sc = esl_vec_FLogSum(row,Alphabet_size);
+   sc -= log(Alphabet_size);
+   return sc;
 }
 
 /* Function: MarginalLeftInsideExtend()
@@ -830,8 +839,6 @@ RightMarginalScore(float *esc, char symr)
  *                  also commit if so)
  *           complete - 0/1 - full alignment of subtree
  * 
- * Return:   completion (0 = no, 1 = yes), meaning that we have
- *           completely aligned all of the model below BPA_t *root
  */
 void
 MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dropoff_sc, float *total_sc, float *delta_sc, int *commit, int *complete)
@@ -894,7 +901,7 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
       if (*delta_sc < min) min = *delta_sc; /*TRACE*/
       *delta_sc = *delta_sc + tsc + esc;
       printf("%d\t%f\t%f\t%f\n",x,*delta_sc,ceiling,nomarginal); /*TRACE*/
-      if (*delta_sc > 0 || (*delta_sc - min > 20))
+      if (*delta_sc >= 0 || (*delta_sc - min > 20))
       {
          root->chunk->need_commit = 0;
          *total_sc += *delta_sc;
@@ -949,8 +956,8 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
          }
          root->right_child->chunk->init_v = cm->cnum[v];
          root->right_child->chunk->cur_v  = cm->cnum[v];
-         root->right_child->chunk->init_i = root->left_child->chunk->temp_i;
-         root->right_child->chunk->cur_i  = root->left_child->chunk->temp_i;
+         root->right_child->chunk->init_i = root->left_child->chunk->need_commit ? root->left_child->chunk->temp_i : root->left_child->chunk->cur_i;
+         root->right_child->chunk->cur_i  = root->left_child->chunk->need_commit ? root->left_child->chunk->temp_i : root->left_child->chunk->cur_i;
          /* Init to error values for j and d which are unknown */
          root->right_child->chunk->init_j = -1;
          root->right_child->chunk->cur_j  = -1;
@@ -969,6 +976,10 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
             root->left_child->chunk->need_commit = 0;
             root->left_child->chunk->cur_i = root->left_child->chunk->temp_i;
             root->left_child->chunk->cur_v = root->left_child->chunk->temp_v;
+         }
+         if ( *complete ) {
+            i = root->right_child->chunk->cur_i;
+            if (root->right_child->chunk->temp_i > i) i = root->right_child->chunk->temp_i;
          }
       }
    }
@@ -1017,7 +1028,7 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
          *delta_sc = *delta_sc + esc;
          if (*delta_sc < min) min = *delta_sc; /*TRACE*/
          printf("%d\t%f\t%f\t%f\n",x,*delta_sc,ceiling,nomarginal); /*TRACE*/
-         if (*delta_sc > 0 || (*delta_sc - min > 20))
+         if (*delta_sc >= 0 || (*delta_sc - min > 20))
           {
             root->chunk->need_commit = 0;
             *total_sc += *delta_sc;
