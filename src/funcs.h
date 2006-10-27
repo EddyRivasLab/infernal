@@ -302,22 +302,23 @@ extern void CP9_combine_FBscan_hits(int i0, int j0, int W, int fwd_nhits, int *f
 				    float **ret_hitsc, int pad);
 
 /* from CP9_cm2wrhmm.c */
-extern int CP9_cm2wrhmm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *node_cc_right, 
-			int *cc_node_map, int **cs2hn_map, int **cs2hs_map, int ***hns2cs_map, 
-			int debug_level);
-extern int CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, int *cc_node_map,
-			   int debug_level);
+extern int  build_cp9_hmm(CM_t *cm, struct cplan9_s **ret_hmm, CP9Map_t **ret_cp9map, int debug_level);
+extern void CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level);
+extern void map_helper(CP9Map_t *cp9map, int k, int ks, int v);
+extern int  CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, int debug_level);
 extern void fill_psi(CM_t *cm, double *psi, char ***tmap);
 extern void fill_phi_cp9(struct cplan9_s *hmm, double ***ret_phi, int spos);
 extern void make_tmap(char ****ret_tmap);
-extern int  CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int spos, int epos, int ***hns2cs_map, 
-					float thresh, int nseq, int *imp_cc, int *predict_ct, 
-					int *wrong_predict_ct, int print_flag);
+
+extern int  CP9_check_cp9_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo, int spos, int epos, 
+				      float chi_thresh, int nsamples, int print_flag);
 extern void CP9_fake_tracebacks(char **aseq, int nseq, int alen, int *matassign, struct cp9trace_s ***ret_tr);
 
 extern void CP9TraceCount(struct cplan9_s *hmm, char *dsq, float wt, struct cp9trace_s *tr);
 extern void debug_print_cp9_params(struct cplan9_s *hmm);
 extern void debug_print_phi_cp9(struct cplan9_s *hmm, double **phi);
+extern CP9Map_t *AllocCP9Map(CM_t *cm);
+extern void FreeCP9Map(CP9Map_t *cp9map);
 
 
 
@@ -341,19 +342,23 @@ extern float LogSum2(float p1, float p2);
 extern float CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, char *dsq);
 
 /* from sub_cm.c */
+extern int  build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t **ret_submap, 
+			 int do_fullsub, int print_flag);
 extern void CP9NodeForPosn(struct cplan9_s *hmm, int i0, int j0, int x, 
 			   struct cp9_dpmatrix_s *post, int *ret_node, int *ret_type);
 extern void StripWUSSGivenCC(MSA *msa, char **dsq, float gapthresh, int first_match, int last_match);
-extern int  build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int spos, int epos, int ***ret_orig2sub_smap, 
-			 int ***ret_sub2orig_smap, int **ret_imp_cc, int **ret_apredict_ct, int **ret_awrong_predict_ct, 
-			 int **ret_spredict_ct, int **ret_swrong_predict_ct, float threshold, int do_fullsub, 
-			 int do_acheck, int do_scheck, float chi_thresh, int nsamples, int print_flag);
-extern int  check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, float pthresh, int *imp_cc, 
-			 int *predict_ct, int *wrong_predict_ct, int print_flag);
-extern int  check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, float thresh, 
-				     int nseq, int *imp_cc, int *predict_ct, int *wrong_predict_ct, int print_flag);
+extern int  check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, double threshold, 
+				       int print_flag);
+extern int  check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subinfo, float pthresh,
+			 int print_flag);
+extern int check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subinfo,
+				    float chi_thresh, int nsamples, int print_flag);
 extern int  check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int nseq);
-extern int  sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Parsetree_t *sub_tr, int spos, 
-				int epos, int **orig2sub_smap, int **sub2orig_smap, int do_fullsub, int print_flag);
+extern int  sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Parsetree_t *sub_tr, 
+				CMSubMap_t *submap, int do_fullsub, int print_flag);
+extern CMSubMap_t  *AllocSubMap(CM_t *sub_cm, CM_t *orig_cm, int sstruct, int estruct, int do_fullsub);
+extern void         FreeSubMap(CMSubMap_t *submap);
+extern CMSubInfo_t *AllocSubInfo(int clen);
+extern void         FreeSubInfo(CMSubInfo_t *subinfo);
 
 

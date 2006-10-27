@@ -84,7 +84,6 @@ static char experts[] = "\
 \n\
  * build an HMM\n\
    model architecture types: \n\
-   --cp9 <f>      : build CM plan 9 HMM and save it to file <f>\n\
    --p7g <f>      : build glocal (NW) plan 7 HMMER 2.4 HMM to file <f>\n\
    --p7l <f>      : build  local (SW) plan 7 HMMER 2.4 HMM to file <f>\n\
 ";
@@ -121,7 +120,6 @@ static struct opt_s OPTIONS[] = {
   { "--eloss",     FALSE, sqdARG_FLOAT },
   { "--elself",    FALSE, sqdARG_FLOAT},
   { "--dlev",      FALSE, sqdARG_INT },
-  { "--cp9",       FALSE, sqdARG_STRING},
   { "--p7g",       FALSE, sqdARG_STRING},
   { "--p7l",       FALSE, sqdARG_STRING},
   { "--nodetach",  FALSE, sqdARG_NONE},
@@ -242,33 +240,8 @@ main(int argc, char **argv)
   float              swentry;      /* S/W aggregate entry probability         */
   float              swexit;       /* S/W aggregate exit probability          */
   FILE              *hmmfp;        /* HMM output file handle                  */
-  int               *node_cc_left; /* consensus column each CM node's left emission maps to
-			            * [0..(cm->nodes-1)], -1 if maps to no consensus column*/
-  int               *node_cc_right;/* consensus column each CM node's right emission maps to
-			            * [0..(cm->nodes-1)], -1 if maps to no consensus column*/
-  int               *cc_node_map;  /* node that each consensus column maps to (is modelled by)
-			            * [1..hmm_nmc] */
-  int                debug_level;  /* level of debugging print statements    */
-  enum {			   /* Type of HMM to be built */
-    NONE, HMM_CP9, HMM_P7} hmm_type;
-  struct cplan9_s  *cp9hmm;        /* constructed CM p9 HMM; written to hmmfile  */
-  int cp9_M;                       /* number of nodes in CM p9 HMM (MATL+MATR+2*MATP) */
-  int **cs2hn_map;                 /* 2D CM state to HMM node map, 1st D - CM state index
-				    * 2nd D - 0 or 1 (up to 2 matching HMM states), value: HMM node
-				    * that contains state that maps to CM state, -1 if none.*/
-  int **cs2hs_map;                 /* 2D CM state to HMM node map, 1st D - CM state index
-				    * 2nd D - 2 elements for up to 2 matching HMM states, 
-				    * value: HMM STATE (0(M), 1(I), 2(D) that maps to CM state,
-				    * -1 if none.
-				    * For example: HMM node cs2hn_map[v][0], state cs2hs_map[v][0]
-				    * maps to CM state v.*/
-  int ***hns2cs_map;               /* 3D HMM node-state to CM state map, 1st D - HMM node index, 2nd D - 
-				    * HMM state (0(M), 1(I), 2(D)), 3rd D - 2 elements for up to 
-				    * 2 matching CM states, value: CM states that map, -1 if none.
-				    * For example: CM states hsn2cs_map[k][0][0] and hsn2cs_map[k][0][1]
-				    * map to HMM node k's match state.*/
-  int k;                           /* Counter over HMM nodes */
-  int ks;                          /* Counter over HMM state types (0 (match), 1(ins) or 2 (del))*/
+  int                debug_level;  /* level of debugging print statements     */
+  int                build_p7hmm;  /* TRUE to build a plan 7 HMM              */
 		      
   /* variables for 'detach' mode: we find columns that are modelled by two insert states (an ambiguity
    * in the CM architecture), and *handle* them (right hand in fist pounding open left palm) by 
@@ -280,9 +253,7 @@ main(int argc, char **argv)
 				   * insert at the same position. */
   int                no_prior;    /* TRUE to not use a prior */
 
-  /* Do hmmbuild.c stuff
-   * This is pointless unless hmm_type is eventually set to HMM_P7
-   */
+  /* Do hmmbuild.c stuff */
   p7pri = P7DefaultInfernalPrior();
   /* Set up the null/random seq model */
   P7DefaultNullModel(randomseq, &p1);
@@ -332,10 +303,9 @@ main(int argc, char **argv)
 			      * EL self transition prob using RMARK benchmark 
 			      * (11.28.05) */
   debug_level       = 0; 
-  hmm_type          = NONE;  /* default: don't build an HMM */
   do_detach         = TRUE;  /* default: detach 1 of 2 ambiguous inserts */
   no_prior          = FALSE; /* default: use a prior */
-
+  build_p7hmm       = TRUE;  /* default: don't build a p7 HMM */
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
     if      (strcmp(optname, "-A") == 0)          do_append         = TRUE; 
@@ -375,18 +345,14 @@ main(int argc, char **argv)
 	Die("EL self transition probability must be between 0 and 1.\n");
     }
     else if (strcmp(optname, "--dlev")      == 0)  debug_level  = atoi(optarg);
-    else if (strcmp(optname, "--cp9")       == 0) { 
-      if(hmm_type != NONE) Die("Can't do --cp9 and --p7g or --p7l, pick one HMM type.\n");
-      hmm_type  = HMM_CP9; hmmfile = optarg; 
-    }
     else if (strcmp(optname, "--p7g")        == 0) { 
-      if(hmm_type != NONE) Die("Can't do --cp9 and --p7g or --p7l, pick one HMM type.\n");
-      hmm_type  = HMM_P7; hmmfile = optarg; 
+      if(build_p7hmm) Die("Can't do --p7g or --p7l, pick one HMM type.\n");
+      build_p7hmm = TRUE; hmmfile = optarg; 
       cfg_strategy = P7_BASE_CONFIG;  /* NW style */
     }
     else if (strcmp(optname, "--p7l")        == 0) { 
-      if(hmm_type != NONE) Die("Can't do --cp9 and --p7g or --p7l, pick one HMM type.\n");
-      hmm_type  = HMM_P7; hmmfile = optarg; 
+      if(build_p7hmm) Die("Can't do --p7g or --p7l, pick one HMM type.\n");
+      build_p7hmm = TRUE; hmmfile = optarg; 
       cfg_strategy = P7_SW_CONFIG;  /* SW style */
     }
     else if (strcmp(optname, "--informat") == 0) {
@@ -427,7 +393,7 @@ main(int argc, char **argv)
 	do_append ? "appending" : "writing");
 
   /* Open the HMM file */
-  if(hmm_type != NONE)
+  if(build_p7hmm)
     {
       if ((hmmfp = fopen(hmmfile, fpopts)) == NULL)
 	Die("Failed to open HMM file %s for %s\n", hmmfile,
@@ -610,7 +576,7 @@ main(int argc, char **argv)
        */
       printf("%-40s ... ", "Digitizing alignment"); fflush(stdout);
       dsq = DigitizeAlignment(msa->aseq, msa->nseq, msa->alen);
-      if(hmm_type != NONE)
+      if(build_p7hmm)
 	hmmer_DigitizeAlignment(msa, &p7dsq);
       printf("done.\n");
 
@@ -795,8 +761,8 @@ main(int argc, char **argv)
       CMFileWrite(cmfp, cm, do_binary);
       printf("done. [%s]\n", cmfile);
 
-      /* Build an HMM, either HMMER 2.4 plan 7 or CM plan 9 (default) */
-      if(hmm_type == HMM_P7)
+      /* Optionally, build a plan 7 HMMER 2.4 HMM */
+      if(build_p7hmm)
 	{
 	  /*****************************************************************/
 	  /* 10.10.05 Build a plan 7 HMM from the seed alignment.  
@@ -923,69 +889,7 @@ main(int argc, char **argv)
 	  else           WriteAscHMM(hmmfp, p7hmm);
 	  printf("done.\n");
 
-	} /* end of if(hmm_type == HMM_P7) */
-      else if (hmm_type == HMM_CP9)
-	{
-	  /* Build a CM plan 9 HMM directly from the CM (seed aln is irrelevant
-	   * given the CM) */
-	  /* Calculate the number of nodes we need for the HMM */
-	  cp9_M = 0;
-	  for(v = 0; v <= cm->M; v++)
-	    {
-	      if(cm->stid[v] ==  MATP_MP)
-		cp9_M += 2;
-	      else if(cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR)
-		cp9_M ++;
-	    }
-	  /* Build the HMM */
-	  cp9hmm = AllocCPlan9(cp9_M);
-	  ZeroCPlan9(cp9hmm);
-
-	  /* Get information mapping the HMM to the CM and vice versa. */
-	  map_consensus_columns(cm, cp9hmm->M, &node_cc_left, &node_cc_right,
-				&cc_node_map, debug_level);
-
-	  CP9_map_cm2hmm_and_hmm2cm(cm, cp9hmm, node_cc_left, node_cc_right, 
-				    cc_node_map, &cs2hn_map, &cs2hs_map, 
-				    &hns2cs_map, 0);
-	  
-	  checksum = GCGMultchecksum(msa->aseq, msa->nseq);
-
-	  /* Fill in parameters of HMM using the CM and some tricks/ideas/formulas
-	   * from Zasha Weinberg's thesis (~p.123) */
-	  CP9_cm2wrhmm(cm, cp9hmm, node_cc_left, node_cc_right, cc_node_map, cs2hn_map,
-		       cs2hs_map, hns2cs_map, debug_level);
-	  cp9hmm->checksum = checksum;
-
-	  /* Give the model a name (use the same name as the CM).
-	   */
-	  printf("%-40s ... ", "Naming and annotating CP9 HMM"); fflush(stdout);
-	  CPlan9SetName(cp9hmm, cm->name);
-	  if (msa->acc  != NULL) CPlan9SetAccession(cp9hmm,   msa->acc);
-	  if (msa->desc != NULL) CPlan9SetDescription(cp9hmm, msa->desc);
-
-	  /* Record some other miscellaneous information in the HMM,
-	   * like how/when we built it.
-	   */
-	  CPlan9ComlogAppend(cp9hmm, argc, argv);
-	  CPlan9SetCtime(cp9hmm);
-	  cp9hmm->nseq = msa->nseq;
-	  printf("done. [%s]\n", cp9hmm->name); 
-	  /* Print information for the user
-	   */
-	  printf("\nConstructed a CM plan 9 profile HMM (length %d)\n", cp9hmm->M);
-	  /* At this stage we would configure the HMM, but (for now) CM plan 9 
-	   * models are trained from the CM and don't get configured. 
-	   */
-	  
-	  /* Save new CP9 HMM to disk: open a file for appending or writing.
-	   */
-	  printf("%-40s ... ", "Saving CM plan 9 HMM to file");
-	  fflush(stdout);
-	  if (do_binary) CP9_WriteBinHMM(hmmfp, cp9hmm);
-	  else           CP9_WriteAscHMM(hmmfp, cp9hmm);
-	  printf("done.\n");
-	}/* end of if (hmm_type = HMM_CP9) */
+	} /* end of if(build_hmm) */
 
       /* Dump optional information to files:
        */
@@ -1131,37 +1035,13 @@ main(int argc, char **argv)
       CYKDemands(cm, avlen);     
 
       /* Free aln specific HMM related data structures */
-      if(hmm_type != NONE)
+      if(build_p7hmm)
 	{
 	  Free2DArray((void**)p7dsq, msa->nseq);
-	}
-      if(hmm_type == HMM_P7)
-	{
 	  for (idx = 0; idx < msa->nseq; idx++) 
 	    P7FreeTrace(p7tr[idx]);
 	  free(p7tr);
 	  FreePlan7(p7hmm);
-	}
-      if(hmm_type == HMM_CP9)
-	{
-	  free(node_cc_left);
-	  free(node_cc_right);
-	  free(cc_node_map);
-	  for(v = 0; v <= cm->M; v++)
-	    {
-	      free(cs2hn_map[v]);
-	      free(cs2hs_map[v]);
-	    }
-	  free(cs2hn_map);
-	  free(cs2hs_map);
-	  for(k = 0; k <= cp9hmm->M; k++)
-	    {
-	      for(ks = 0; ks < 3; ks++)
-		free(hns2cs_map[k][ks]);
-	      free(hns2cs_map[k]);
-	    }
-	  free(hns2cs_map);
-	  FreeCPlan9(cp9hmm);
 	}
 
       /* Free aln specific CM related data structures */

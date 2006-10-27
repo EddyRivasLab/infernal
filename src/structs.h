@@ -319,46 +319,103 @@ typedef struct emitmap_s {
   int  clen;           /* consensus length */
 } CMEmitMap_t;
 
-/* Structure: CMHMMMap_t
+/* Structure: CMSubMap_t
  * Incept:    EPN, 10.23.06
  *
- * Maps CM to a CM plan 9 HMM and vice versa. 
+ * Maps a template CM to a sub CM and vice versa. 
  *    Consensus positions are indexed 1..clen.
- *    CHANGE BELOW!
- *    Each array (lpos, rpos, epos) is 0..nodes-1.
- *    Residues from an MP go into lpos and rpos in the consensus.
- *    Residues from an IL follow lpos.
- *    Residues from an IR precede rpos.
- *    Residues from an EL follow epos[nd] for the nd that went to EL.
- *    For nonemitters, rpos and lpos are a non-inclusive bound: for
- *      example, rpos[0], lpos[0] are 0,clen+1.
- *    There are no dummy values; all rpos, lpos, epos are valid coords
- *      0..clen+1 in the consensus.
  *
- * The node_cc_left and node_cc_right arrays are redundant with CMEmitMap_t.
+ * The *node_cc_left and *node_cc_right arrays are redundant with CMEmitMap_t.
  * See emitmap.c for implementation and more documentation.
  */
-typedef struct hmmmap_s {
-  int *node_cc_left;   /* left bound of consensus for subtree under nd   */
-  int *node_cc_right;  /* right bound of consensus for subtree under nd  */
-  int *cc_node_map;    /* [1..clen], the CM node that maps to this consensus column */
-  int **cs2hn_map;     
-  int **cs2hs_map;     
-  int ***hns2cs_map;     
-  int  clen;           /* consensus length */
-} CMHMMMap_t;
+typedef struct submap_s {
+  int spos;            /* first consensus column this sub_cm models */
+  int epos;            /* final consensus column this sub_cm models */
+  int sstruct;         /* first consensus column this sub_cm models structure of */
+  int estruct;         /* final consensus column this sub_cm models structure of */
+
+  int  *s2o_id;    
+  int **s2o_smap;
+  int **o2s_smap;
+
+  int  sub_clen;            /* consensus length orig_cm */
+  int  orig_clen;           /* consensus length sub_cm  */
+
+  int sub_M;           /* number of states in the sub CM */
+  int orig_M;          /* number of states in the original CM */
+} CMSubMap_t;
+
+
+/* Structure: CMSubInfo_t
+ * Incept:    EPN, 10.23.06
+ *
+ * Information on a sub CM, used for checking the sub CM 
+ * construction procedure works.
+ *    Consensus positions are indexed 1..clen.
+ *
+ */
+typedef struct subinfo_s {
+  int  *imp_cc;         /* [0..(epos-spos+1)] ret_imp_cc[k] != 0 if it is 
+			* impossible for CP9 node (consensus column) k to be
+			* calculated in the sub_cm to have distros to match the
+			* corresponding CP9 node in the original CM - due to
+			* topological differences in the architecture of the
+			* sub_cm and orig_cm.
+			*/
+  int  *apredict_ct;   /* For an analytical test, the number of times we 
+			* predict we'll fail the test for an HMM node for each 
+			* of 6 cases - 6 different reasons we predict we'll fail.
+			*/
+  int  *spredict_ct;   /* For as sampling test, the number of times we 
+			* predict we'll fail the test for an HMM node for each 
+			* of 6 cases - 6 different reasons we predict we'll fail.
+			*/
+  int  *awrong_ct;     /* Subset of cases in apredict_ct that were incorrectly 
+			* predicted. */
+  int  *swrong_ct;     /* Subset of cases in spredict_ct that were incorrectly 
+			* predicted. */
+} CMSubInfo_t;
+
+/* Structure: CP9Map_t
+ * Incept:    EPN, 10.23.06
+ *
+ * Maps a CM to a CM plan 9 HMM and vice versa. 
+ *    Consensus positions are indexed 1..hmm_M.
+ *
+ * The lpos and rpos arrays are somewhat redundant with 
+ * CMEmitMap_t, but they're not identical. I didn't realize emitmap existed
+ * prior to implementing CP9 HMMs - if I had I would have used emitmap's, but
+ * it's difficult to go back and use emitmap's now.
+ * 
+ * See emitmap.c for implementation and more documentation.
+ */
+typedef struct cp9map_s {
+  int   *nd2lpos;   /* [0..cm_nodes] left bound of consensus for subtree under this nd,
+		     *               -1 for non-{MATL|MATR|MATP} nodes */
+  int   *nd2rpos;   /* [0..cm_nodes] right bound of consensus for subtree under this nd  
+		     *               -1 for non-{MATL|MATR|MATP} nodes */
+  int   *pos2nd;    /* [1..clen], the MATL, MATR or MATP CM node that maps to this 
+		     *            consensus column */
+  int  **cs2hn;     /* [0..cm_M][0..1], 1 or 2 HMM nodes that maps to this CM state 
+		     *                  [x][1] is -1 if state x maps to only 1 HMM node */
+  int  **cs2hs;     /* [0..cm_M][0..1], 1 or 2 HMM states (0=MATCH, 1=INSERT, 2=DELETE)
+		     *            that maps to this CM state 
+		     *            [x][0] corresponds to the HMM node in cs2hn[x][0],
+		     *            [x][1] corresponds to the HMM node in cs2hn[x][1] (or -1) */
+  int  ***hns2cs;    /* [0..clen][0..2], the CM state that maps to this HMM
+		     *                  node (1st dimension) - state (2nd dim)*/
+  int    hmm_M;     /* consensus length, the number of HMM nodes */
+  int    cm_M;      /* number of states in the CM this HMM maps to */
+  int    cm_nodes;  /* number of nodes in the CM this HMM maps to */
+} CP9Map_t;
+
+
 
 /* used by CM Plan 9 HMM structures */
 #define HMMMATCH  0
 #define HMMINSERT 1
 #define HMMDELETE 2
 
-/* used in sub CM construction checking */
-#define IMPNONE   0
-#define IMPROOT   1
-#define IMPSTART  2
-#define IMPBOTH   3
-
-
 #endif /*STRUCTSH_INCLUDED*/
+
 

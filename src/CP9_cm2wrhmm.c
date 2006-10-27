@@ -12,7 +12,8 @@
  * model two CM insert states, but the code below approximates it 
  * pretty well (it gets as close as possible (I think)).
  *
- * CP9_cm2wrhmm() is the main function, it sets the probabilities
+ * OUT OF DATE:
+ * build_cp9_hmm() is the main function, it sets the probabilities
  * of the HMM and checks that the expected number of times each
  * HMM state is entered is within a given threshold (0.0001 by default)
  * of the expected number of times each corresponding CM state is
@@ -39,85 +40,51 @@
 #include "cplan9.h"
 
 static float
-cm2hmm_emit_prob(CM_t *cm, int x, int i, int k, int *node_cc_left, int *node_cc_right, int *cc_node_map);
-
+cm2hmm_emit_prob(CM_t *cm, CP9Map_t *cp9map, int x, int i, int k);
 static void
-cm2hmm_special_trans_cp9(CM_t *cm, struct cplan9_s *hmm, double *psi, char ***tmap, int **cs2hn_map,
-			 int **cs2hs_map, int ***hns2cs_map);
-
+cm2hmm_special_trans_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, double *psi, char ***tmap);
 static void
-cm2hmm_trans_probs_cp9(CM_t *cm, struct cplan9_s *hmm, int k, double *psi, char ***tmap, 
-		       int *cc_node_map, int **cs2hn_map, int **cs2hs_map, int ***hns2cs_map);
-
+cm2hmm_trans_probs_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, int k, double *psi, char ***tmap);
 static void
-hmm_add_single_trans_cp9(CM_t *cm, struct cplan9_s *hmm, int a, int b, int k, int hmm_trans_idx, 
-			 double *psi, char ***tmap, int **cs2hn_map, int **cs2hs_map, int ***hns2cs_map);
-
+hmm_add_single_trans_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, int a, int b, int k, int hmm_trans_idx, 
+			 double *psi, char ***tmap);
 static float
-cm_sum_subpaths_cp9(CM_t *cm, int start, int end, char ***tmap, int **cs2hn_map, int **cs2hs_map, 
-		    int ***hns2cs_map, int k, double *psi);
-
+cm_sum_subpaths_cp9(CM_t *cm, CP9Map_t *cp9map, int start, int end, char ***tmap, int k, double *psi);
 static int
-check_psi_vs_phi_cp9(CM_t *cm, double *psi, double **phi, int ***hns2cs_map, int hmm_M,
-		     double threshold, int debug_level);
-
+check_psi_vs_phi_cp9(CM_t *cm, CP9Map_t *cp9map, double *psi, double **phi, double threshold, 
+		     int debug_level);
 static int 
-check_cm_adj_bp(CM_t *cm, int *cc_node_map, int hmm_M);
-
-
+check_cm_adj_bp(CM_t *cm, CP9Map_t *cp9map);
 static char *
 CP9Statetype(char st);
-
 static int 
 CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float threshold, 
-		     int dual_mapping_insert, int print_flag);
+		     int print_flag);
 static float
 FChiSquareFit(float *f1, float *f2, int N);
 
 /**************************************************************************
  * EPN 03.12.06
- * CP9_cm2wrhmm()
+ * Function: build_cp9_hmm()
  *
- * Purpose:  Given a CM, an HMM and maps from nodes of HMM to CM and vice versa
- *           rewrite the HMM as a Weinberg/Ruzzo HMM with probabilities that
- *           are as close as possible to the CM's.
+ * Purpose:  Given a CM, build a CM Plan 9 HMM that mirrors the CM as closely
+ *           as possible. This HMM is a Weinberg/Ruzzo style ML HMM; i.e. if
+ *           we sampled an 'infinite MSA' from the CM and built a ML HMM from it
+ *           (using no pseudo-counts), it would be the same as the HMM we construct
+ *           here. 
  * 
  * Args:    
- * CM_t *cm          - the CM
- * cplan9_s *hmm     - counts form CM plan 9 HMM
- * int ncc           - number of consensus columns
- * int *node_cc_left - consensus column each node's left emission maps to
- *                     [0..(cm->nodes-1)], -1 if maps to no consensus column
- * int *node_cc_right- consensus column each node's right emission corresponds to
- *                     [0..(cm->nodes-1)], -1 if maps to no consensus column
- * int *cc_node_map  - node that each consensus column maps to (is modelled by)
- *                     [1..hmm_ncc]
- * int **cs2hn_map   - 2D CM state to HMM node map, 1st D - CM state index
- *                     2nd D - 0 or 1 (up to 2 matching HMM states), value: HMM node
- *                     that contains state that maps to CM state, -1 if none.
- * int **cs2hs_map   - 2D CM state to HMM node map, 1st D - CM state index
- *                     2nd D - 2 elements for up to 2 matching HMM states, 
- *                     value: HMM STATE (0(M), 1(I), 2(D) that maps to CM state, -1 if none.
- * 
- *                     For example: HMM node cs2hn_map[v][0], state cs2hs_map[v][0]
- *                                  maps to CM state v.
- * 
- * int ***hns2cs_map  - 3D HMM node-state to CM state map, 1st D - HMM node index, 2nd D - 
- *                      HMM state (0(M), 1(I), 2(D)), 3rd D - 2 elements for up to 
- *                      2 matching CM states, value: CM states that map, -1 if none.
- *              
- *                     For example: CM states hns2cs_map[k][0][0] and hns2cs_map[k][0][1]
- *                                  map to HMM node k's match state.
- * int debug_level   - [0..3] tells the function what level of debugging print
- *                     statements to print.
+ * CM_t        *cm         - the CM
+ * cplan9_s   **ret_hmm    - CM Plan 9 HMM to be allocated, filled in and returned
+ * CP9Map_t **ret_cp9map - map from the CP9 HMM to the CM and vice versa
+ *                           Allocated and returned from here, caller must free.
+ *
  * Returns: TRUE if CP9 is constructed, FALSE if we get some error. 
  *          Its also possible one of the functions called within this function
  *          will print an error statement and exit.
  */
 int
-CP9_cm2wrhmm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *node_cc_right, 
-	     int *cc_node_map, int **cs2hn_map, int **cs2hs_map, int ***hns2cs_map, 
-	     int debug_level)
+build_cp9_hmm(CM_t *cm, struct cplan9_s **ret_hmm, CP9Map_t **ret_cp9map, int debug_level)
 {
   int       k;                 /* counter of consensus columns (HMM nodes)*/
   int       i,j;
@@ -131,16 +98,29 @@ CP9_cm2wrhmm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *node_cc_rig
 				* phi values are allowed to be different by, without throwing
 				* an error.*/
   int ret_val;                 /* return value */
+  CP9Map_t *cp9map;         
+  struct cplan9_s  *hmm;       /* CM plan 9 HMM we're going to construct from the sub_cm */
 
-  ap = malloc(sizeof(int) * 2);
+  int ncols; 
+  int nd;
 
+  /* Allocate and initialize the cp9map */
+  cp9map = AllocCP9Map(cm);
+  /* Map the CM states to CP9 states and nodes and vice versa */
+  CP9_map_cm2hmm(cm, cp9map, debug_level);
+
+  hmm    = AllocCPlan9(cp9map->hmm_M);
+  ZeroCPlan9(hmm);
+  CPlan9SetNullModel(hmm, cm->null, 1.0); /* set p1 = 1.0 which corresponds to the CM */
+
+  ap = MallocOrDie(sizeof(int) * 2);
   if(debug_level > 1)
     {
       printf("-------------------------------------------------\n");
-      printf("In cm2wrhmm_cp9()\n");
+      printf("In build_CP9_hmm()\n");
     }
 
-  psi = malloc(sizeof(double) * cm->M);
+  psi = MallocOrDie(sizeof(double) * cm->M);
   make_tmap(&tmap);
   fill_psi(cm, psi, tmap);
   
@@ -160,8 +140,8 @@ CP9_cm2wrhmm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *node_cc_rig
 	}
       /* First, take care of the match state. */
       k_state = HMMMATCH;
-      ap[0] = hns2cs_map[k][k_state][0];
-      ap[1] = hns2cs_map[k][k_state][1];
+      ap[0] = cp9map->hns2cs[k][k_state][0];
+      ap[1] = cp9map->hns2cs[k][k_state][1];
       /* ap[0] is a CM state that maps to HMM node k's match state */
       /* ap[1] is potentially another CM state that maps to HMM node k's match state
          (ex. if node k maps to the left half of a MATP node), and potentially = -1
@@ -170,26 +150,26 @@ CP9_cm2wrhmm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *node_cc_rig
       for(i = 0; i < MAXABET; i++)
 	{
 	  hmm->mat[k][i] += psi[ap[0]] * 
-	    cm2hmm_emit_prob(cm, ap[0], i, k, node_cc_left, node_cc_right, cc_node_map);
+	    cm2hmm_emit_prob(cm, cp9map, ap[0], i, k);
 	  if(ap[1] != -1)
 	    hmm->mat[k][i] += psi[ap[1]] *
-	      cm2hmm_emit_prob(cm, ap[1], i, k, node_cc_left, node_cc_right, cc_node_map);
+	      cm2hmm_emit_prob(cm, cp9map, ap[1], i, k);
 	}
       
       /* Now, do the insert state. */
       k_state = HMMINSERT;
-      ap[0] = hns2cs_map[k][k_state][0];
-      ap[1] = hns2cs_map[k][k_state][1];
+      ap[0] = cp9map->hns2cs[k][k_state][0];
+      ap[1] = cp9map->hns2cs[k][k_state][1];
       /* ap[0] is the only CM state that maps to HMM node k's insert state */
       /* ap[1] should be -1 unless k = hmm->M. */
       /* psi[ap[0]] is the expected number of times cm state ap[0] is entered. */
       for(i = 0; i < MAXABET; i++)
 	{
 	  hmm->ins[k][i] += psi[ap[0]] *
-	    cm2hmm_emit_prob(cm, ap[0], i, k, node_cc_left, node_cc_right, cc_node_map);
+	    cm2hmm_emit_prob(cm, cp9map, ap[0], i, k);
 	  if(ap[1] != -1)
 	    hmm->ins[k][i] += psi[ap[1]] *
-	      cm2hmm_emit_prob(cm, ap[1], i, k, node_cc_left, node_cc_right, cc_node_map);
+	      cm2hmm_emit_prob(cm, cp9map, ap[1], i, k);
 	}
     }
   
@@ -198,11 +178,11 @@ CP9_cm2wrhmm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *node_cc_rig
   /* Step 1. Fill 'special' transitions, those INTO node 1, the N->N and N->M_1 transitions,
    * as well as transitions OUT of node M.
    */
-  cm2hmm_special_trans_cp9(cm, hmm, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
+  cm2hmm_special_trans_cp9(cm, hmm, cp9map, psi, tmap);
 
   for(k = 1; k < hmm->M; k++)
     {
-      cm2hmm_trans_probs_cp9(cm, hmm, k, psi, tmap, cc_node_map, cs2hn_map, cs2hs_map, hns2cs_map);
+      cm2hmm_trans_probs_cp9(cm, hmm, cp9map, k, psi, tmap);
     }
 
   CPlan9Renormalize(hmm);
@@ -221,7 +201,7 @@ CP9_cm2wrhmm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *node_cc_rig
     debug_print_cp9_params(hmm);
   /*psi_vs_phi_threshold = 0.0001;*/
   psi_vs_phi_threshold = 0.01;
-  if(check_cm_adj_bp(cm, cc_node_map, hmm->M))
+  if(check_cm_adj_bp(cm, cp9map))
     {
       psi_vs_phi_threshold = 0.01;
     /* if check_cm_adj_bp() returns TRUE, then the following rare (but possible) situation
@@ -232,7 +212,7 @@ CP9_cm2wrhmm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *node_cc_rig
      * checking psi and phi.
      */
     }    
-  ret_val = check_psi_vs_phi_cp9(cm, psi, phi, hns2cs_map, hmm->M, psi_vs_phi_threshold, debug_level);
+  ret_val = check_psi_vs_phi_cp9(cm, cp9map, psi, phi, psi_vs_phi_threshold, debug_level);
   CP9Logoddsify(hmm);
 
   free(ap);
@@ -249,7 +229,428 @@ CP9_cm2wrhmm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, int *node_cc_rig
       free(tmap[i]);
     }
   free(tmap);
+
+  *ret_hmm    = hmm;
+  *ret_cp9map = cp9map;
   return ret_val;
+}
+
+/* Function to map an HMM to a CM:
+ * CP9_map_cm2hmm()
+ */
+
+/**************************************************************************
+ * EPN 03.15.06
+ * Function: CP9_map_cm2hmm()
+ *
+ * Purpose:  Determine maps between a CM and an HMM by filling 3 multi-dimensional
+ *           arrays. All arrays must be pre-allocated and freed by caller.
+ * Args:    
+ * CM_t *cm          - the CM
+ * CP9Map *cp9map    - map from the CM to the HMM and vice versa
+ * int debug_level   - verbosity for debugging printf statements
+ * Returns: (void) 
+ */
+void
+CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level)
+{
+  int k; /* HMM node counter */
+  int ks; /* HMM state counter (0(Match) 1(insert) or 2(delete)*/
+  int n; /* CM node that maps to HMM node k */
+  int nn; /* CM node index */
+  int n_begr; /* CM node index */
+  int is_left; /* TRUE if HMM node k maps to left half of CM node n */
+  int is_right; /* TRUE if HMM node k maps to right half of CM node n */
+  int v; /* state index in CM */
+  int v1, v2;
+  CMEmitMap_t *emap;           /* consensus emit map for the CM */
+
+  /* Map the nodes of each CM to consensus column indices and vice versa
+   * Prior to 10.26.06 I had a function called map_consensus_columns which did
+   * this, but it was replaced here by a CreateEmitMap() call, and a selective copying
+   * of the emitmap data to get the cp9map->nd2lpos and cp9map->nd2rpos data. 
+   * When I implemented map_consensus_columns I was unaware CreateEmitMap() already
+   * did what I needed. (EPN) */
+  emap = CreateEmitMap(cm);
+
+  /* We copy the emitmap lpos and rpos values, but only for MATP, MATL, MATR,
+   * for any other node types cp9map->nd2lpos == cp9map->nd2rpos == -1 (this
+   * arrays are initialized to all -1 in AllocCP9Map()). 
+   */
+  for(n = 0; n < cm->nodes; n++)
+    {
+      if(cm->ndtype[n] == MATP_nd || 
+	 cm->ndtype[n] == MATL_nd)
+	{
+	  cp9map->nd2lpos[n] = emap->lpos[n];
+	  cp9map->pos2nd[cp9map->nd2lpos[n]] = n;
+	}
+      if(cm->ndtype[n] == MATP_nd || 
+	 cm->ndtype[n] == MATR_nd)
+	{      
+	  cp9map->nd2rpos[n] = emap->rpos[n];
+	  cp9map->pos2nd[cp9map->nd2rpos[n]] = n;
+	}	
+    }
+  FreeEmitMap(emap);
+
+  /* Handle special case, HMM node k = 0 first */
+  /*ROOT_S*/
+  k = 0;
+  ks = 0;
+  v = 0;
+  map_helper(cp9map, k, ks, v);
+
+  /*ROOT_IL*/
+  ks = 1;
+  v = 1;
+  map_helper(cp9map, k, ks, v);
+
+  /*handle ROOT_IR at end of function*/
+  
+  /* Step through HMM nodes, filling in maps as we go */
+  for(k = 1; k <= cp9map->hmm_M; k++)
+    {
+      n = cp9map->pos2nd[k];
+      if(cp9map->nd2lpos[n] == k)
+	{
+	  is_left = TRUE;
+	  is_right = FALSE;
+	}
+      else if(cp9map->nd2rpos[n] == k)
+	{
+	  is_left = FALSE;
+	  is_right = TRUE;
+	}
+      switch(cm->ndtype[n])
+	{
+	case ROOT_nd:
+	case BIF_nd:
+	case BEGL_nd:
+	case BEGR_nd:
+	case END_nd:
+	  printf("ERROR: HMM node k doesn't map to MATP, MATR or MATL\n");
+	  exit(1);
+	  break;
+	  
+	case MATP_nd:
+	  if(is_left)
+	    {
+	      ks = 0; /*match*/
+	      v = cm->nodemap[n]; /*MATP_MP*/
+	      map_helper(cp9map, k, ks, v);
+	      v = cm->nodemap[n] + 1; /*MATP_ML*/
+	      map_helper(cp9map, k, ks, v);
+
+	      ks = 1; /*insert*/
+	      v = cm->nodemap[n] + 4; /*MATP_IL*/
+	      map_helper(cp9map, k, ks, v);
+
+	      ks = 2; /*delete*/
+	      v = cm->nodemap[n] + 2; /*MATP_MR*/
+	      map_helper(cp9map, k, ks, v);
+	      v = cm->nodemap[n] + 3; /*MATP_D*/
+	      map_helper(cp9map, k, ks, v);
+	    }
+	  else if(is_right)
+	    {
+	      ks = 0; /*match*/
+	      v = cm->nodemap[n]; /*MATP_MP*/
+	      map_helper(cp9map, k, ks, v);
+	      v = cm->nodemap[n] + 2; /*MATP_MR*/
+	      map_helper(cp9map, k, ks, v);
+
+	      ks = 1; /*insert*/
+	      /* whoa... careful, we want the CM state that will insert to the RIGHT
+	       * of column k (the right consensus column modelled by MATP node n),
+	       * but MATP_IR inserts to the LEFT of column k.
+	       * What we need to determine is the CM node nn that models column k+1,
+	       * and further which half (left or right) of nn models k+1, then
+	       * we can map the HMM state to the correct CM state (see code).
+	       */
+	      if(k != cp9map->hmm_M) /* Special case if HMM node k is the last node (consensus column)
+				 dealt below*/
+		{
+		  nn = cp9map->pos2nd[k+1];
+		  if(cp9map->nd2lpos[nn] == (k+1))
+		    {
+		      /* find the closest BEGR node above node nn */
+		      n_begr = nn;
+		      while(n_begr >= 0 && (cm->ndtype[n_begr] != BEGR_nd))
+			n_begr--;
+		      if(n_begr == -1)
+			{
+			  printf("ERROR: can't find BEGR node above node %d\n", nn);
+			  printf("k is %d\n", k);
+			  exit(1);
+			}
+		      v = cm->nodemap[n_begr] + 1; /*BEGR_IL*/
+		      map_helper(cp9map, k, ks, v);
+		    }
+		  else if(cp9map->nd2rpos[nn] == (k+1))
+		    {
+		      /*simple*/
+		      if(cm->ndtype[nn] == MATP_nd)
+			{
+			  v = cm->nodemap[nn] + 5; /*MATP_IR*/
+			  map_helper(cp9map, k, ks, v);
+			}
+		      else if(cm->ndtype[nn] == MATR_nd)
+			{
+			  v = cm->nodemap[nn] + 2; /*MATR_IR*/
+			  map_helper(cp9map, k, ks, v);
+			}
+		    }
+		} /* end of if (k != cp9map->hmm_M) */
+	      else /* k == cp9map->hmm_M */
+		{
+		  v = 2; /*ROOT_IR*/
+		  map_helper(cp9map, k, ks, v);
+		}
+	      /* NOT DONE YET, the MATP_IR has to map to an HMM state,
+	       * if the previous column (k-1) is modelled by a CM MATR or 
+	       * MATP node, then the above block will take care of this situation
+	       * (in the previous iteration of this loop when k = k-1), 
+	       * HOWEVER, if (k-1) is modelled by a MATL, then this 
+	       * MATP_IR's contribution to the HMM will be ignored, 
+	       * unless we do something about it. 
+	       */ 
+	      if(cp9map->nd2lpos[cp9map->pos2nd[k-1]] == (k-1)) /*k-1 modelled by MATL or MATP*/
+		{
+		  if(cm->ndtype[cp9map->pos2nd[k-1]] != MATL_nd)
+		    {
+		      if(cm->ndtype[cp9map->pos2nd[k-1]] == MATP_nd)
+			{
+			  /* A rare, but possible case. Previous column
+			   * k-1 column is modelled by left half of the MATP
+			   * node whose right half models column k.
+			   * Proceed below. 
+			   */
+			}
+		      else
+			{
+			  printf("ERROR, full understanding of the CM architecture remains elusive (0)...\n");
+			  exit(1);
+			}
+		    }
+		  v = cm->nodemap[n] + 5; /*MATP_IR*/
+		  map_helper(cp9map, (k-1), ks, v);
+		}
+	      
+	      ks = 2; /*delete*/
+	      v = cm->nodemap[n] + 1; /*MATP_ML*/
+	      map_helper(cp9map, k, ks, v);
+	      
+	      v = cm->nodemap[n] + 3; /*MATP_D*/
+	      map_helper(cp9map, k, ks, v);
+	    }
+	  break;
+
+	case MATL_nd:
+	  ks = 0; /*match*/
+	  v = cm->nodemap[n]; /*MATL_ML*/
+	  map_helper(cp9map, k, ks, v);
+
+	  ks = 1; /*insert*/
+	  v = cm->nodemap[n] + 2; /*MATL_IL*/
+	  map_helper(cp9map, k, ks, v);
+
+	  ks = 2; /*delete*/
+	  v = cm->nodemap[n] + 1; /*MATL_D*/
+	  map_helper(cp9map, k, ks, v);
+
+	  if(k == cp9map->hmm_M) /* can't forget about ROOT_IR */
+	    {
+	      ks = 1; /*insert*/
+	      v  = 2; /*ROOT_IR*/
+	      map_helper(cp9map, k, ks, v);
+	    }
+
+	  break;
+
+	case MATR_nd:
+	  ks = 0; /*match*/
+	  v = cm->nodemap[n]; /*MATR_MR*/
+	  map_helper(cp9map, k, ks, v);
+
+	  ks = 1; /*insert*/
+	  /* whoa... careful, we want the CM state that will insert to the RIGHT
+	   * of column k (the consensus column modelled by MATR node n),
+	   * but MATR_IR inserts to the LEFT of column k.
+	   * What we need to determine is the CM node nn that models column k+1,
+	   * and further which half (left or right) of nn models k+1, then
+	   * we can map the HMM state to the correct CM state (see code).
+	   */
+	  /* Special case if HMM node k is the last node (consensus column) */
+	  if(k != cp9map->hmm_M) /* we deal with situation if k == hmm_M below */
+	    {
+	      nn = cp9map->pos2nd[k+1];
+	      if(cp9map->nd2lpos[nn] == (k+1))
+		{
+		  /* find the closest BEGR node above node nn */
+		  n_begr = nn;
+		  while((cm->ndtype[n_begr] != BEGR_nd) && n_begr >= 0)
+		    n_begr--;
+		  if(n_begr == -1)
+		    {
+		      printf("ERROR: can't find BEGR node above node %d\n", nn);
+		  exit(1);
+		    }
+		  v = cm->nodemap[n_begr] + 1; /*BEGR_IL*/
+		  map_helper(cp9map, k, ks, v);
+		}
+	      else if(cp9map->nd2rpos[nn] == (k+1))
+		{
+		  /*simple*/
+		  if(cm->ndtype[nn] == MATP_nd)
+		    {
+		      v = cm->nodemap[nn] + 5;
+		      map_helper(cp9map, k, ks, v);
+		    }
+		  else if(cm->ndtype[nn] == MATR_nd)
+		    {
+		      v = cm->nodemap[nn] + 2; /*MATP_IR*/
+		      map_helper(cp9map, k, ks, v);
+		    }
+		}
+	    } /* end of if (k != cp9map->hmm_M) */
+	  else /* k == cp9map->hmm_M */
+	    {
+	      v = 2; /*ROOT_IR*/
+	      map_helper(cp9map, k, ks, v);
+	    }
+	  if(cp9map->nd2lpos[cp9map->pos2nd[k-1]] == (k-1)) /*k-1 modelled by MATL*/
+	    {
+	      printf("ERROR, full understanding of the CM architecture remains elusive (1)...\n");
+	      exit(1);
+	    }
+	  
+	  ks = 2; /*delete*/
+	  v = cm->nodemap[n] + 1; /*MATR_D*/
+	  map_helper(cp9map, k, ks, v);
+	  break;
+	}
+    }
+
+  /* Check to make sure that insert states map to exactly 1 HMM node state. */
+  for(v = 0; v <= cm->M; v++)
+    {
+      if((cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) && 
+	 ((cp9map->cs2hn[v][0] == -1) || cp9map->cs2hn[v][1] != -1))
+	{
+	  printf("ERROR during cp9map->cs2hn construction\ncp9map->cs2hn[%d][0]: %d | cp9map->cs2hn[%d][1]: %d AND v is an INSERT state\n", v, cp9map->cs2hn[v][0], v, cp9map->cs2hn[v][1]);
+	  exit(1);
+	}
+      /* each CM state should map to only 1 HMM state. */
+    }
+
+  /* print cp9map->hns2cs, checking consistency with cp9map->cs2hn and cp9map->cs2hs along
+     the way.  */
+  for(k = 0; k <= cp9map->hmm_M; k++)
+    {
+      for(ks = 0; ks < 3; ks++)
+	{
+	  v1 = cp9map->hns2cs[k][ks][0];
+	  v2 = cp9map->hns2cs[k][ks][1];
+	  if(debug_level > 1)
+	    printf("hns2cs[%3d][%3d][0]: %3d | hns2cs[%3d][%3d[1]: %3d\n", k, ks, v1, k, ks, v2);
+	  if(v1 != -1 && (cp9map->cs2hn[v1][0] == k && cp9map->cs2hs[v1][0] == ks))
+	    {
+	      /* okay */
+	    }
+	  else if(v1 != -1 && (cp9map->cs2hn[v1][1] == k && cp9map->cs2hs[v1][1] == ks))
+	    {
+	      /* okay */
+	    }
+	  else if(v2 != -1 && (cp9map->cs2hn[v2][0] == k && cp9map->cs2hs[v2][0] == ks))
+	    {
+	      /* okay */
+	    }
+	  else if(v2 != -1 && (cp9map->cs2hn[v2][1] == k && cp9map->cs2hs[v2][1] == ks))
+	    {
+	      /* okay */
+	    }
+	  else if(v1 == -1 && v2 == -1 && (k == 0 && ks == 2)) 
+	    {
+	      /*okay - D_0 maps to nothing */
+	    }
+	  else if(v1 == -1 && v2 == -1 && (k != 0 || ks != 2)) 
+	    /* only cp9map->hns2cs[0][2] (D_0) should map to nothing*/
+	    {
+	      /* not okay */
+	      printf("maps inconsistent case 1, HMM node state (non D_0) maps to no CM state, v1: %d | v2: %d k: %d | ks: %d\n", v1, v2, k, ks);
+	      exit(1);
+	    }	      
+	  else
+	    {
+	      /* not okay */
+	      printf("maps inconsistent case 2 v1: %d | v2: %d k: %d | ks: %d\n", v1, v2, k, ks);
+	      exit(1);
+	    }
+	}
+    }
+  return;
+}
+
+
+
+/**************************************************************************
+ * EPN 03.15.06
+ * map_helper()
+ *
+ * Helper function for map_cm2hmm_and_hmm2cm_cp9(), 
+ *
+ * Purpose:  Fill in specific parts of the maps, given k, ks, and v.
+ * Args:    
+ * CP9Map_t *cp9map - the CM to CP9 map
+ * int k              - the hmm node coordinate we're filling maps in for
+ * int ks             - the hmm state (0,1,or 2) coordinate we're filling maps in for
+ * int v              - the CM state coordinate we're filling maps in for
+ * Returns: (void) 
+ */
+void
+map_helper(CP9Map_t *cp9map, int k, int ks, int v)
+{
+  if(cp9map->cs2hn[v][0] == -1)
+    {
+      cp9map->cs2hn[v][0] = k;
+      if(cp9map->cs2hs[v][0] != -1)
+	{
+	  printf("ERROR in map_helper, cp9map->cs2hn[%d][0] is -1 but cp9map->cs2hs[%d][0] is not, this shouldn't happen.\n", v, v);
+	  exit(1);
+	}
+      cp9map->cs2hs[v][0] = ks;
+    }
+  else if (cp9map->cs2hn[v][1] == -1)
+    {
+      cp9map->cs2hn[v][1] = k;
+      if(cp9map->cs2hs[v][1] != -1)
+	{
+	  printf("ERROR in map_helper, cp9map->cs2hn[%d][0] is -1 but cp9map->cs2hs[%d][0] is not, this shouldn't happen.\n", v, v);
+	  exit(1);
+	}
+      cp9map->cs2hs[v][1] = ks;
+    }
+  else
+    {
+      printf("ERROR in map_helper, cp9map->cs2hn[%d][1] is not -1, and we're trying to add to it, this shouldn't happen.\n", v);
+      exit(1);
+    }
+
+  if(cp9map->hns2cs[k][ks][0] == -1)
+    {
+      cp9map->hns2cs[k][ks][0] = v;
+    }
+  else if(cp9map->hns2cs[k][ks][1] == -1)
+    {
+      cp9map->hns2cs[k][ks][1] = v;
+    }
+  else
+    {
+      printf("ERROR in map_helper, cp9map->hns2cs[%d][%d][1] is not -1, and we're trying to add to it, this shouldn't happen.\n", k, ks);
+      exit(1);
+    }
+  return;
 }
 
 /**************************************************************************
@@ -400,13 +801,13 @@ make_tmap(char ****ret_tmap)
   int i,j,k;
   char ***tmap;
 
-  tmap = malloc(sizeof(char **) * UNIQUESTATES);
+  tmap = MallocOrDie(sizeof(char **) * UNIQUESTATES);
   for(i = 0; i < UNIQUESTATES; i++)
     {
-      tmap[i] = malloc(sizeof(char *) * NODETYPES);
+      tmap[i] = MallocOrDie(sizeof(char *) * NODETYPES);
       for(j = 0; j < NODETYPES; j++)
 	{
-	  tmap[i][j] = malloc(sizeof(char) * UNIQUESTATES);
+	  tmap[i][j] = MallocOrDie(sizeof(char) * UNIQUESTATES);
 	  for(k = 0; k < UNIQUESTATES; k++)
 	    {
 	      tmap[i][j][k] = -1;
@@ -772,26 +1173,21 @@ make_tmap(char ****ret_tmap)
  *
  * Args:    
  * CM_t *cm          - the CM
+ * CP9Map_t *cp9map  - the map from the CM to HMM and vice versa
  * int x             - the CM state 
  * int i             - the residue index in A=0, C=1, G=2, U=3
  * int k             - HMM node CM state x maps to
- * int *node_cc_left - consensus column each node's left emission maps to
- *                     [0..(cm->nodes-1)], -1 if maps to no consensus column
- * int *node_cc_right- consensus column each node's right emission corresponds to
- *                     [0..(cm->nodes-1)], -1 if maps to no consensus column
- * int *cc_node_map  - node that each consensus column maps to (is modelled by)
- *                     [1..hmm_ncc]
+ *
  * Returns: (float) probability of emitting letter i from correct half of CM state x.
  */
 static float
-cm2hmm_emit_prob(CM_t *cm, int x, int i, int k, int *node_cc_left, int *node_cc_right, 
-		 int *cc_node_map)
+cm2hmm_emit_prob(CM_t *cm, CP9Map_t *cp9map, int x, int i, int k)
 {
   float ret_eprob;
-  int is_left;
-  int j;
+  int   is_left;
+  int   j;
 
-  if(node_cc_left[cc_node_map[k]] == k)
+  if(cp9map->nd2lpos[cp9map->pos2nd[k]] == k)
     is_left = TRUE;
   else 
     is_left = FALSE;
@@ -827,36 +1223,16 @@ cm2hmm_emit_prob(CM_t *cm, int x, int i, int k, int *node_cc_left, int *node_cc_
  * Args:    
  * CM_t *cm          - the CM
  * cplan9_s *hmm      - the HMM
- * int *node_cc_left - consensus column each node's left emission maps to
- *                     [0..(cm->nodes-1)], -1 if maps to no consensus column
- * int *node_cc_right- consensus column each node's right emission corresponds to
- *                     [0..(cm->nodes-1)], -1 if maps to no consensus column
- * int *cc_node_map  - node that each consensus column maps to (is modelled by)
- *                     [1..hmm_ncc]
+ * CP9Map_t *cp9map  - the map from the CM to HMM and vice versa
  * double *psi       - psi[v] is the expected number of times state v is entered
  *                     in a CM parse
  * char ***tmap;      - the hard-coded transition map
- * int **cs2hn_map   - 2D CM state to HMM node map, 1st D - CM state index
- *                     2nd D - 0 or 1 (up to 2 matching HMM states), value: HMM node
- *                     that contains state that maps to CM state, -1 if none.
- * int **cs2hs_map   - 2D CM state to HMM node map, 1st D - CM state index
- *                     2nd D - 2 elements for up to 2 matching HMM states, 
- *                     value: HMM STATE (0(M), 1(I), 2(D) that maps to CM state, -1 if none.
- * 
- *                     For example: HMM node cs2hn_map[v][0], state cs2hs_map[v][0]
- *                                  maps to CM state v.
- * 
- * int ***hns2cs_map  - 3D HMM node-state to CM state map, 1st D - HMM node index, 2nd D - 
- *                      HMM state (0(M), 1(I), 2(D)), 3rd D - 2 elements for up to 
- *                      2 matching CM states, value: CM states that map, -1 if none.
- *              
- *                     For example: CM states hns2cs_map[k][0][0] and hns2cs_map[k][0][1]
- *                                  map to HMM node k's match state.
+ *
  * Returns: (void) 
  */
 static void
-cm2hmm_special_trans_cp9(CM_t *cm, struct cplan9_s *hmm, double *psi, char ***tmap, int **cs2hn_map,
-			 int **cs2hs_map, int ***hns2cs_map)
+cm2hmm_special_trans_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, double *psi, 
+			 char ***tmap)
 {
   int *ap; /* CM states a' that map to HMM state a, 
 	      * ap[1] is -1 if only 1 CM state maps to a*/
@@ -867,8 +1243,8 @@ cm2hmm_special_trans_cp9(CM_t *cm, struct cplan9_s *hmm, double *psi, char ***tm
   int hmm_trans_idx; /*0-8;  CTMM, CTMI, CTMD, CTIM, CTII, CTID, CTDM, CTDI, or CTDD*/
   float d;
 
-  ap = malloc(sizeof (int) * 2);
-  bp = malloc(sizeof (int) * 2);
+  ap = MallocOrDie(sizeof (int) * 2);
+  bp = MallocOrDie(sizeof (int) * 2);
   
   /* Fill all special transitions with virtual counts, later normalize these into 
    * probabilities. CM p9 Special transitions are: transitions into HMM node 1, and 
@@ -929,19 +1305,19 @@ cm2hmm_special_trans_cp9(CM_t *cm, struct cplan9_s *hmm, double *psi, char ***tm
    */
   k = 0;
   k_state = HMMMATCH;
-  ap[0] = hns2cs_map[k][k_state][0];
-  ap[1] = hns2cs_map[k][k_state][1];
+  ap[0] = cp9map->hns2cs[k][k_state][0];
+  ap[1] = cp9map->hns2cs[k][k_state][1];
 
   k_state = HMMMATCH;
-  bp[0] = hns2cs_map[k+1][k_state][0];
-  bp[1] = hns2cs_map[k+1][k_state][1];
+  bp[0] = cp9map->hns2cs[k+1][k_state][0];
+  bp[1] = cp9map->hns2cs[k+1][k_state][1];
   /*printf("0 CTMM: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, n, ap[0], ap[1], bp[0], bp[1]);*/
   hmm_trans_idx = CTMM;
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  /*hmm_set_single_trans_cp9(cm, hmm, ap, bp, k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);*/
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[1], k, hmm_trans_idx, psi, tmap);
+  /*hmm_set_single_trans_cp9(cm, hmm, cp9map, ap, bp, k, hmm_trans_idx, psi, tmap);*/
   /* switch 'em */
   hmm->begin[1] = hmm->t[0][CTMM];
   hmm->t[0][CTMM] = 0.;
@@ -950,77 +1326,77 @@ cm2hmm_special_trans_cp9(CM_t *cm, struct cplan9_s *hmm, double *psi, char ***tm
    */
   k = 0;
   k_state = HMMMATCH;
-  ap[0] = hns2cs_map[k][k_state][0];
-  ap[1] = hns2cs_map[k][k_state][1];
+  ap[0] = cp9map->hns2cs[k][k_state][0];
+  ap[1] = cp9map->hns2cs[k][k_state][1];
 
   k_state = HMMINSERT;
-  bp[0] = hns2cs_map[k][k_state][0];
-  bp[1] = hns2cs_map[k][k_state][1];
+  bp[0] = cp9map->hns2cs[k][k_state][0];
+  bp[1] = cp9map->hns2cs[k][k_state][1];
   hmm_trans_idx = CTMI;
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[1], k, hmm_trans_idx, psi, tmap);
 
   /* Transition 3: CTMD; B -> D_1 */
   k = 0;
   k_state = HMMMATCH;
-  ap[0] = hns2cs_map[k][k_state][0];
-  ap[1] = hns2cs_map[k][k_state][1];
+  ap[0] = cp9map->hns2cs[k][k_state][0];
+  ap[1] = cp9map->hns2cs[k][k_state][1];
 
   k_state = HMMDELETE;
-  bp[0] = hns2cs_map[k+1][k_state][0];
-  bp[1] = hns2cs_map[k+1][k_state][1];
+  bp[0] = cp9map->hns2cs[k+1][k_state][0];
+  bp[1] = cp9map->hns2cs[k+1][k_state][1];
   hmm_trans_idx = CTMD;
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[1], k, hmm_trans_idx, psi, tmap);
 
   /* Transition 4: CTIM; N -> M_1*/
   k = 0;
   k_state = HMMINSERT;
-  ap[0] = hns2cs_map[k][k_state][0];
-  ap[1] = hns2cs_map[k][k_state][1];
+  ap[0] = cp9map->hns2cs[k][k_state][0];
+  ap[1] = cp9map->hns2cs[k][k_state][1];
 
   k_state = HMMMATCH;
-  bp[0] = hns2cs_map[k+1][k_state][0];
-  bp[1] = hns2cs_map[k+1][k_state][1];
+  bp[0] = cp9map->hns2cs[k+1][k_state][0];
+  bp[1] = cp9map->hns2cs[k+1][k_state][1];
   hmm_trans_idx = CTIM;
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[1], k, hmm_trans_idx, psi, tmap);
 
   /* Transition 5: CTII; N -> N */
   k = 0;
   k_state = HMMINSERT;
-  ap[0] = hns2cs_map[k][k_state][0];
-  ap[1] = hns2cs_map[k][k_state][1];
+  ap[0] = cp9map->hns2cs[k][k_state][0];
+  ap[1] = cp9map->hns2cs[k][k_state][1];
 
   k_state = HMMINSERT;
-  bp[0] = hns2cs_map[k][k_state][0];
-  bp[1] = hns2cs_map[k][k_state][1];
+  bp[0] = cp9map->hns2cs[k][k_state][0];
+  bp[1] = cp9map->hns2cs[k][k_state][1];
   hmm_trans_idx = CTII;
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[1], k, hmm_trans_idx, psi, tmap);
 
   /* Transition 6: CTID; N -> D_1 */
   k = 0;
   k_state = HMMINSERT;
-  ap[0] = hns2cs_map[k][k_state][0];
-  ap[1] = hns2cs_map[k][k_state][1];
+  ap[0] = cp9map->hns2cs[k][k_state][0];
+  ap[1] = cp9map->hns2cs[k][k_state][1];
 
   k_state = HMMDELETE;
-  bp[0] = hns2cs_map[k+1][k_state][0];
-  bp[1] = hns2cs_map[k+1][k_state][1];
+  bp[0] = cp9map->hns2cs[k+1][k_state][0];
+  bp[1] = cp9map->hns2cs[k+1][k_state][1];
   hmm_trans_idx = CTID;
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[1], k, hmm_trans_idx, psi, tmap);
 
   /* Transitions 7-9, CTDM, CTDI, CTDD, all 0.0, there's no D_0 state */
   hmm->t[0][CTDM] = 0.;
@@ -1060,17 +1436,17 @@ cm2hmm_special_trans_cp9(CM_t *cm, struct cplan9_s *hmm, double *psi, char ***tm
    */
   k = hmm->M;
   k_state = HMMMATCH;
-  ap[0] = hns2cs_map[k][k_state][0];
-  ap[1] = hns2cs_map[k][k_state][1];
+  ap[0] = cp9map->hns2cs[k][k_state][0];
+  ap[1] = cp9map->hns2cs[k][k_state][1];
 
   bp[0] = (cm->M) - 1;
   bp[1] = -1;
   hmm_trans_idx = CTMM;
   /* special case, this transition is hmm->end[hmm->M] NOT hmm->t[M][CTMM]. */
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[1], k, hmm_trans_idx, psi, tmap);
   /* switch 'em */
   hmm->end[hmm->M] = hmm->t[hmm->M][CTMM];
   hmm->t[hmm->M][CTMM] = 0.;
@@ -1081,18 +1457,18 @@ cm2hmm_special_trans_cp9(CM_t *cm, struct cplan9_s *hmm, double *psi, char ***tm
    */
   k = hmm->M;
   k_state = HMMMATCH;
-  ap[0] = hns2cs_map[k][k_state][0];
-  ap[1] = hns2cs_map[k][k_state][1];
+  ap[0] = cp9map->hns2cs[k][k_state][0];
+  ap[1] = cp9map->hns2cs[k][k_state][1];
 
   k_state = HMMINSERT;
-  bp[0] = hns2cs_map[k][k_state][0];
-  bp[1] = hns2cs_map[k][k_state][1];
-  /*printf("CTMI: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cc_node_map[k], ap[0], ap[1], bp[0], bp[1]);*/
+  bp[0] = cp9map->hns2cs[k][k_state][0];
+  bp[1] = cp9map->hns2cs[k][k_state][1];
+  /*printf("CTMI: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);*/
   hmm_trans_idx = CTMI;
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[1], k, hmm_trans_idx, psi, tmap);
 
   /* Transition 3: CTMD, no corresponding transitiona
    * This is an illegal HMM transition.
@@ -1105,16 +1481,16 @@ cm2hmm_special_trans_cp9(CM_t *cm, struct cplan9_s *hmm, double *psi, char ***tm
    */
   k = hmm->M;
   k_state = HMMINSERT;
-  ap[0] = hns2cs_map[k][k_state][0];
-  ap[1] = hns2cs_map[k][k_state][1];
+  ap[0] = cp9map->hns2cs[k][k_state][0];
+  ap[1] = cp9map->hns2cs[k][k_state][1];
 
   bp[0] = (cm->M) - 1;
   bp[1] = -1;
   hmm_trans_idx = CTIM;
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[1], k, hmm_trans_idx, psi, tmap);
 
   /* Transition 5: CTII; this is I_M -> I_M
    * a = node M, insert state.
@@ -1122,18 +1498,18 @@ cm2hmm_special_trans_cp9(CM_t *cm, struct cplan9_s *hmm, double *psi, char ***tm
    */
   k = hmm->M;
   k_state = HMMINSERT;
-  ap[0] = hns2cs_map[k][k_state][0];
-  ap[1] = hns2cs_map[k][k_state][1];
+  ap[0] = cp9map->hns2cs[k][k_state][0];
+  ap[1] = cp9map->hns2cs[k][k_state][1];
 
   k_state = HMMINSERT;
-  bp[0] = hns2cs_map[k][k_state][0];
-  bp[1] = hns2cs_map[k][k_state][1];
-  /*printf("CTII: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cc_node_map[k], ap[0], ap[1], bp[0], bp[1]);*/
+  bp[0] = cp9map->hns2cs[k][k_state][0];
+  bp[1] = cp9map->hns2cs[k][k_state][1];
+  /*printf("CTII: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);*/
   hmm_trans_idx = CTII;
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[1], k, hmm_trans_idx, psi, tmap);
 
   /* Transition 6: CTID, no corresponding transition.
    * This is an illegal HMM transition.
@@ -1146,16 +1522,16 @@ cm2hmm_special_trans_cp9(CM_t *cm, struct cplan9_s *hmm, double *psi, char ***tm
    */
   k = hmm->M;
   k_state = HMMDELETE;
-  ap[0] = hns2cs_map[k][k_state][0];
-  ap[1] = hns2cs_map[k][k_state][1];
+  ap[0] = cp9map->hns2cs[k][k_state][0];
+  ap[1] = cp9map->hns2cs[k][k_state][1];
 
   bp[0] = (cm->M) - 1;
   bp[1] = -1;
   hmm_trans_idx = CTDM;
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[1], k, hmm_trans_idx, psi, tmap);
 
   /* Transition 8: CTDI - this is D_M -> I_M
    * a = node M, delete state.
@@ -1163,18 +1539,18 @@ cm2hmm_special_trans_cp9(CM_t *cm, struct cplan9_s *hmm, double *psi, char ***tm
    */
   k = hmm->M;
   k_state = HMMDELETE;
-  ap[0] = hns2cs_map[k][k_state][0];
-  ap[1] = hns2cs_map[k][k_state][1];
+  ap[0] = cp9map->hns2cs[k][k_state][0];
+  ap[1] = cp9map->hns2cs[k][k_state][1];
 
   k_state = HMMINSERT;
-  bp[0] = hns2cs_map[k][k_state][0];
-  bp[1] = hns2cs_map[k][k_state][1];
-  /*printf("CTDI: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cc_node_map[k], ap[0], ap[1], bp[0], bp[1]);*/
+  bp[0] = cp9map->hns2cs[k][k_state][0];
+  bp[1] = cp9map->hns2cs[k][k_state][1];
+  /*printf("CTDI: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);*/
   hmm_trans_idx = CTDI;
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[1], k, hmm_trans_idx, psi, tmap);
 
   /* Transition 9: CTDD, no corresponding transition.
    * This is an illegal HMM transition.
@@ -1222,33 +1598,16 @@ cm2hmm_special_trans_cp9(CM_t *cm, struct cplan9_s *hmm, double *psi, char ***tm
  * Args:    
  * CM_t *cm          - the CM
  * cplan9_s *hmm     - the CM plan 9 HMM
+ * CP9Map_t *cp9map  - the map from the CM to HMM and vice versa
  * int k             - the HMM node we're filling transitions for
  * double *psi       - psi[v] is the expected number of times state v is entered
  *                     in a CM parse
  * char ***tmap;     - the hard-coded transition map
- * int *cc_node_map  - node that each consensus column maps to (is modelled by)
- *                     [1..hmm_ncc]
- * int **cs2hn_map   - 2D CM state to HMM node map, 1st D - CM state index
- *                     2nd D - 0 or 1 (up to 2 matching HMM states), value: HMM node
- *                     that contains state that maps to CM state, -1 if none.
- * int **cs2hs_map   - 2D CM state to HMM node map, 1st D - CM state index
- *                     2nd D - 2 elements for up to 2 matching HMM states, 
- *                     value: HMM STATE (0(M), 1(I), 2(D) that maps to CM state, -1 if none.
- * 
- *                     For example: HMM node cs2hn_map[v][0], state cs2hs_map[v][0]
- *                                  maps to CM state v.
- * 
- * int ***hns2cs_map  - 3D HMM node-state to CM state map, 1st D - HMM node index, 2nd D - 
- *                      HMM state (0(M), 1(I), 2(D)), 3rd D - 2 elements for up to 
- *                      2 matching CM states, value: CM states that map, -1 if none.
- *              
- *                     For example: CM states hns2cs_map[k][0][0] and hns2cs_map[k][0][1]
- *                                  map to HMM node k's match state.
+ *
  * Returns: (void)    
  */
 static void
-cm2hmm_trans_probs_cp9(CM_t *cm, struct cplan9_s *hmm, int k, double *psi, char ***tmap, 
-		       int *cc_node_map, int **cs2hn_map, int **cs2hs_map, int ***hns2cs_map)
+cm2hmm_trans_probs_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, int k, double *psi, char ***tmap)
 {
   int *ap; /* CM states a' that map to HMM state a, 
 	      * ap[1] is -1 if only 1 CM state maps to a*/
@@ -1263,9 +1622,9 @@ cm2hmm_trans_probs_cp9(CM_t *cm, struct cplan9_s *hmm, int k, double *psi, char 
 
   /*printf("in cm2hmm_trans_probs_cp9: k: %d\n", k);*/
 
-  ap = malloc(sizeof (int) * 2);
-  bp = malloc(sizeof (int) * 2);
-  n = cc_node_map[k];
+  ap = MallocOrDie(sizeof (int) * 2);
+  bp = MallocOrDie(sizeof (int) * 2);
+  n = cp9map->pos2nd[k];
   /* Fill all 9 transitions with virtual counts, later normalize these into 
    * probabilities.
    *
@@ -1299,164 +1658,164 @@ cm2hmm_trans_probs_cp9(CM_t *cm, struct cplan9_s *hmm, int k, double *psi, char 
    * b = node k+1, match state.
    */
   k_state = HMMMATCH;
-  ap[0] = hns2cs_map[k][k_state][0];
-  ap[1] = hns2cs_map[k][k_state][1];
+  ap[0] = cp9map->hns2cs[k][k_state][0];
+  ap[1] = cp9map->hns2cs[k][k_state][1];
 
   k_state = HMMMATCH;
-  bp[0] = hns2cs_map[k+1][k_state][0];
-  bp[1] = hns2cs_map[k+1][k_state][1];
+  bp[0] = cp9map->hns2cs[k+1][k_state][0];
+  bp[1] = cp9map->hns2cs[k+1][k_state][1];
   hmm_trans_idx = CTMM;
-  ////printf("CTMM: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cc_node_map[k], ap[0], ap[1], bp[0], bp[1]);
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  /*hmm_set_single_trans_cp9(cm, hmm, ap, bp, k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);*/
+  ////printf("CTMM: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[1], k, hmm_trans_idx, psi, tmap);
+  /*hmm_set_single_trans_cp9(cm, hmm, cp9map, ap, bp, k, hmm_trans_idx, psi, tmap);*/
 
   /* Transition 2: CTMI
    * a = node k, match state.
    * b = node k, insert state.
    */
   k_state = HMMMATCH;
-  ap[0] = hns2cs_map[k][k_state][0];
-  ap[1] = hns2cs_map[k][k_state][1];
+  ap[0] = cp9map->hns2cs[k][k_state][0];
+  ap[1] = cp9map->hns2cs[k][k_state][1];
 
   k_state = HMMINSERT;
-  bp[0] = hns2cs_map[k][k_state][0];
-  bp[1] = hns2cs_map[k][k_state][1];
-  ////printf("CTMI: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cc_node_map[k], ap[0], ap[1], bp[0], bp[1]);
+  bp[0] = cp9map->hns2cs[k][k_state][0];
+  bp[1] = cp9map->hns2cs[k][k_state][1];
+  ////printf("CTMI: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);
   hmm_trans_idx = CTMI;
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[1], k, hmm_trans_idx, psi, tmap);
 
   /* Transition 3: CTMD
    * a = node k, match state.
    * b = node k+1, delete state.
    */
   k_state = HMMMATCH;
-  ap[0] = hns2cs_map[k][k_state][0];
-  ap[1] = hns2cs_map[k][k_state][1];
+  ap[0] = cp9map->hns2cs[k][k_state][0];
+  ap[1] = cp9map->hns2cs[k][k_state][1];
 
   k_state = HMMDELETE;
-  bp[0] = hns2cs_map[k+1][k_state][0];
-  bp[1] = hns2cs_map[k+1][k_state][1];
-  ////printf("CTMD: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cc_node_map[k], ap[0], ap[1], bp[0], bp[1]);
+  bp[0] = cp9map->hns2cs[k+1][k_state][0];
+  bp[1] = cp9map->hns2cs[k+1][k_state][1];
+  ////printf("CTMD: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);
   hmm_trans_idx = TMD;
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[1], k, hmm_trans_idx, psi, tmap);
 
   /* Transition 4: CTIM
    * a = node k, insert state.
    * b = node k+1, match state.
    */
   k_state = HMMINSERT;
-  ap[0] = hns2cs_map[k][k_state][0];
-  ap[1] = hns2cs_map[k][k_state][1];
+  ap[0] = cp9map->hns2cs[k][k_state][0];
+  ap[1] = cp9map->hns2cs[k][k_state][1];
 
   k_state = HMMMATCH;
-  bp[0] = hns2cs_map[k+1][k_state][0];
-  bp[1] = hns2cs_map[k+1][k_state][1];
-  ////printf("CTIM: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cc_node_map[k], ap[0], ap[1], bp[0], bp[1]);
+  bp[0] = cp9map->hns2cs[k+1][k_state][0];
+  bp[1] = cp9map->hns2cs[k+1][k_state][1];
+  ////printf("CTIM: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);
   hmm_trans_idx = CTIM;
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[1], k, hmm_trans_idx, psi, tmap);
 
   /* Transition 5: CTII
    * a = node k, insert state.
    * b = node k, insert state.
    */
   k_state = HMMINSERT;
-  ap[0] = hns2cs_map[k][k_state][0];
-  ap[1] = hns2cs_map[k][k_state][1];
+  ap[0] = cp9map->hns2cs[k][k_state][0];
+  ap[1] = cp9map->hns2cs[k][k_state][1];
 
   k_state = HMMINSERT;
-  bp[0] = hns2cs_map[k][k_state][0];
-  bp[1] = hns2cs_map[k][k_state][1];
-  ////printf("CTII: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cc_node_map[k], ap[0], ap[1], bp[0], bp[1]);
+  bp[0] = cp9map->hns2cs[k][k_state][0];
+  bp[1] = cp9map->hns2cs[k][k_state][1];
+  ////printf("CTII: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);
 
   hmm_trans_idx = CTII;
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[1], k, hmm_trans_idx, psi, tmap);
 
   /* Transition 6: CTID - a CM plan 9 transition not in plan 7
    * a = node k, insert state.
    * b = node k+1, delete state.
    */
   k_state = HMMINSERT;
-  ap[0] = hns2cs_map[k][k_state][0];
-  ap[1] = hns2cs_map[k][k_state][1];
+  ap[0] = cp9map->hns2cs[k][k_state][0];
+  ap[1] = cp9map->hns2cs[k][k_state][1];
 
   k_state = HMMDELETE;
-  bp[0] = hns2cs_map[k+1][k_state][0];
-  bp[1] = hns2cs_map[k+1][k_state][1];
-  ////printf("CTID: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cc_node_map[k], ap[0], ap[1], bp[0], bp[1]);
+  bp[0] = cp9map->hns2cs[k+1][k_state][0];
+  bp[1] = cp9map->hns2cs[k+1][k_state][1];
+  ////printf("CTID: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);
   hmm_trans_idx = CTID;
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[1], k, hmm_trans_idx, psi, tmap);
 
   /* Transition 7: CTDM
    * a = node k, delete state.
    * b = node k+1, match state.
    */
   k_state = HMMDELETE;
-  ap[0] = hns2cs_map[k][k_state][0];
-  ap[1] = hns2cs_map[k][k_state][1];
+  ap[0] = cp9map->hns2cs[k][k_state][0];
+  ap[1] = cp9map->hns2cs[k][k_state][1];
 
   k_state = HMMMATCH;
-  bp[0] = hns2cs_map[k+1][k_state][0];
-  bp[1] = hns2cs_map[k+1][k_state][1];
-  ////printf("CTDM: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cc_node_map[k], ap[0], ap[1], bp[0], bp[1]);
+  bp[0] = cp9map->hns2cs[k+1][k_state][0];
+  bp[1] = cp9map->hns2cs[k+1][k_state][1];
+  ////printf("CTDM: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);
   hmm_trans_idx = CTDM;
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[1], k, hmm_trans_idx, psi, tmap);
 
   /* Transition 8: CTDI - a CM plan 9 transition not in plan 9 
    * a = node k, delete state.
    * b = node k, insert state.
    */
   k_state = HMMDELETE;
-  ap[0] = hns2cs_map[k][k_state][0];
-  ap[1] = hns2cs_map[k][k_state][1];
+  ap[0] = cp9map->hns2cs[k][k_state][0];
+  ap[1] = cp9map->hns2cs[k][k_state][1];
 
   k_state = HMMINSERT;
-  bp[0] = hns2cs_map[k][k_state][0];
-  bp[1] = hns2cs_map[k][k_state][1];
-  ////printf("CTDI: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cc_node_map[k], ap[0], ap[1], bp[0], bp[1]);
+  bp[0] = cp9map->hns2cs[k][k_state][0];
+  bp[1] = cp9map->hns2cs[k][k_state][1];
+  ////printf("CTDI: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);
   hmm_trans_idx = CTDI;
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[1], k, hmm_trans_idx, psi, tmap);
 
   /* Transition 9: CTDD
    * a = node k, delete state.
    * b = node k+1, delete state.
    */
   k_state = HMMDELETE;
-  ap[0] = hns2cs_map[k][k_state][0];
-  ap[1] = hns2cs_map[k][k_state][1];
+  ap[0] = cp9map->hns2cs[k][k_state][0];
+  ap[1] = cp9map->hns2cs[k][k_state][1];
 
   k_state = HMMDELETE;
-  bp[0] = hns2cs_map[k+1][k_state][0];
-  bp[1] = hns2cs_map[k+1][k_state][1];
-  ////printf("CTDD: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cc_node_map[k], ap[0], ap[1], bp[0], bp[1]);
+  bp[0] = cp9map->hns2cs[k+1][k_state][0];
+  bp[1] = cp9map->hns2cs[k+1][k_state][1];
+  ////printf("CTDD: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);
   hmm_trans_idx = CTDD;
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[0], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[0], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
-  hmm_add_single_trans_cp9(cm, hmm, ap[1], bp[1], k, hmm_trans_idx, psi, tmap, cs2hn_map, cs2hs_map, hns2cs_map);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[0], k, hmm_trans_idx, psi, tmap);
+  hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[1], k, hmm_trans_idx, psi, tmap);
 
   /* Finally, normalize the transition probabilities
    * Not strictly necessary, a CPlan9Renormalize() call will do this*/
@@ -1511,10 +1870,10 @@ fill_phi_cp9(struct cplan9_s *hmm, double ***ret_phi, int spos)
   int k;
   double **phi;
 
-  phi = malloc(sizeof(double *) * (hmm->M+1));
+  phi = MallocOrDie(sizeof(double *) * (hmm->M+1));
   for(k = 0; k <= hmm->M; k++)
     {
-      phi[k] = malloc(sizeof(double) * 3);
+      phi[k] = MallocOrDie(sizeof(double) * 3);
     }
 
   /* Initialize phi values as all 0.0 */
@@ -1571,6 +1930,7 @@ fill_phi_cp9(struct cplan9_s *hmm, double ***ret_phi, int spos)
  * Args:    
  * CM_t *cm          - the CM
  * cplan9_s *hmm     - the HMM
+ * CP9Map_t *cp9map  - the map from the CM to HMM and vice versa
  * int a             - a CM state that maps to HMM state we're transitioning out of
  * int b             - a CM state that maps to HMM state we're transitioning into
  * int k             - the HMM node we're setting a single transition for
@@ -1578,27 +1938,11 @@ fill_phi_cp9(struct cplan9_s *hmm, double ***ret_phi, int spos)
  * double *psi       - psi[v] is the expected number of times state v is entered
  *                     in a CM parse
  * char ***tmap;      - the hard-coded transition map
- * int **cs2hn_map   - 2D CM state to HMM node map, 1st D - CM state index
- *                     2nd D - 0 or 1 (up to 2 matching HMM states), value: HMM node
- *                     that contains state that maps to CM state, -1 if none.
- * int **cs2hs_map   - 2D CM state to HMM node map, 1st D - CM state index
- *                     2nd D - 2 elements for up to 2 matching HMM states, 
- *                     value: HMM STATE (0(M), 1(I), 2(D) that maps to CM state, -1 if none.
- * 
- *                     For example: HMM node cs2hn_map[v][0], state cs2hs_map[v][0]
- *                                  maps to CM state v.
- * 
- * int ***hns2cs_map  - 3D HMM node-state to CM state map, 1st D - HMM node index, 2nd D - 
- *                      HMM state (0(M), 1(I), 2(D)), 3rd D - 2 elements for up to 
- *                      2 matching CM states, value: CM states that map, -1 if none.
- *              
- *                     For example: CM states hns2cs_map[k][0][0] and hns2cs_map[k][0][1]
- *                                  map to HMM node k's match state.
  * Returns: (void) 
  */
 static void
-hmm_add_single_trans_cp9(CM_t *cm, struct cplan9_s *hmm, int a, int b, int k, int hmm_trans_idx, 
-			double *psi, char ***tmap, int **cs2hn_map, int **cs2hs_map, int ***hns2cs_map)
+hmm_add_single_trans_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, int a, int b, int k, int hmm_trans_idx, 
+			double *psi, char ***tmap)
 {
   /* check if we've got real CM state ids */
   /*
@@ -1609,9 +1953,9 @@ hmm_add_single_trans_cp9(CM_t *cm, struct cplan9_s *hmm, int a, int b, int k, in
     return;
 
   if(a <= b) /* going DOWN the CM */
-    hmm->t[k][hmm_trans_idx] += psi[a] * cm_sum_subpaths_cp9(cm, a, b, tmap, cs2hn_map, cs2hs_map, hns2cs_map, k, psi);
+    hmm->t[k][hmm_trans_idx] += psi[a] * cm_sum_subpaths_cp9(cm, cp9map, a, b, tmap, k, psi);
   else if (a > b) /* going UP the CM */
-    hmm->t[k][hmm_trans_idx] += psi[b] * cm_sum_subpaths_cp9(cm, b, a, tmap, cs2hn_map, cs2hs_map, hns2cs_map, k, psi);
+    hmm->t[k][hmm_trans_idx] += psi[b] * cm_sum_subpaths_cp9(cm, cp9map, b, a, tmap, k, psi);
   /*printf("\t\tend hmm_cm->t[%d][%d] : %.9f\n", k, hmm_trans_idx, hmm->t[k][hmm_trans_idx]);*/
 }
 
@@ -1637,24 +1981,9 @@ hmm_add_single_trans_cp9(CM_t *cm, struct cplan9_s *hmm, int a, int b, int k, in
  *          
  * Args:    
  * CM_t *cm          - the CM
+ * CP9Map_t *cp9map  - the map from the CM to HMM and vice versa
  * int start         - state index we're starting at
  * int end           - state index we're ending in
- * int **cs2hn_map   - 2D CM state to HMM node map, 1st D - CM state index
- *                     2nd D - 0 or 1 (up to 2 matching HMM states), value: HMM node
- *                     that contains state that maps to CM state, -1 if none.
- * int **cs2hs_map   - 2D CM state to HMM node map, 1st D - CM state index
- *                     2nd D - 2 elements for up to 2 matching HMM states, 
- *                     value: HMM STATE (0(M), 1(I), 2(D) that maps to CM state, -1 if none.
- * 
- *                     For example: HMM node cs2hn_map[v][0], state cs2hs_map[v][0]
- *                                  maps to CM state v.
- * 
- * int ***hns2cs_map  - 3D HMM node-state to CM state map, 1st D - HMM node index, 2nd D - 
- *                      HMM state (0(M), 1(I), 2(D)), 3rd D - 2 elements for up to 
- *                      2 matching CM states, value: CM states that map, -1 if none.
- *              
- *                     For example: CM states hns2cs_map[k][0][0] and hns2cs_map[k][0][1]
- *                                  map to HMM node k's match state.
  * int k             - HMM node we're calc'ing transition (out of node k) for
  * double *psi       - psi[v] is the expected number of times state v is entered
  *                     in a CM parse
@@ -1662,8 +1991,8 @@ hmm_add_single_trans_cp9(CM_t *cm, struct cplan9_s *hmm, int a, int b, int k, in
  *          starting at "start" and ending at "end".
  */
 static float
-cm_sum_subpaths_cp9(CM_t *cm, int start, int end, char ***tmap, int **cs2hn_map, 
-		 int **cs2hs_map, int ***hns2cs_map, int k, double *psi)
+cm_sum_subpaths_cp9(CM_t *cm, CP9Map_t *cp9map, int start, int end, char ***tmap, 
+		    int k, double *psi)
 {
   int s_n; /* CM node that maps to HMM node with start state */
   int e_n; /* CM node that maps to HMM node with end state */
@@ -1723,10 +2052,10 @@ cm_sum_subpaths_cp9(CM_t *cm, int start, int end, char ***tmap, int **cs2hn_map,
   s_n = cm->ndidx[start];
   e_n = cm->ndidx[end];
   
-  sub_psi = malloc(sizeof(double) * (end - start + 1));
+  sub_psi = MallocOrDie(sizeof(double) * (end - start + 1));
   /* Initialize sub_psi[0]. Need to check if we need to ignore the probability
    * mass from the CM insert state(s) that maps to the HMM insert state of this node 
-   * (these insert states are hns2cs_map[k][1][0] and (potentially) hns2cs_map[k][1][1]) 
+   * (these insert states are cp9map->hns2cs[k][1][0] and (potentially) cp9map->hns2cs[k][1][1]) 
    * that goes through "start" (which must map to either the M or 
    * D state of this HMM node).
    */
@@ -1736,10 +2065,10 @@ cm_sum_subpaths_cp9(CM_t *cm, int start, int end, char ***tmap, int **cs2hn_map,
      (cm->sttype[end] != IL_st && cm->sttype[end] != IR_st))
     {
       insert_to_start = 0.;
-      if(hns2cs_map[k][1][0] < start) 
-	insert_to_start = psi[hns2cs_map[k][1][0]] * cm_sum_subpaths_cp9(cm, hns2cs_map[k][1][0], start, tmap, cs2hn_map, cs2hs_map, hns2cs_map, k, psi);
-      if((hns2cs_map[k][1][1] != -1) && (hns2cs_map[k][1][1] < start))
-	insert_to_start += psi[hns2cs_map[k][1][1]] * cm_sum_subpaths_cp9(cm, hns2cs_map[k][1][1], start, tmap, cs2hn_map, cs2hs_map, hns2cs_map, k, psi);
+      if(cp9map->hns2cs[k][1][0] < start) 
+	insert_to_start = psi[cp9map->hns2cs[k][1][0]] * cm_sum_subpaths_cp9(cm, cp9map, cp9map->hns2cs[k][1][0], start, tmap, k, psi);
+      if((cp9map->hns2cs[k][1][1] != -1) && (cp9map->hns2cs[k][1][1] < start))
+	insert_to_start += psi[cp9map->hns2cs[k][1][1]] * cm_sum_subpaths_cp9(cm, cp9map, cp9map->hns2cs[k][1][1], start, tmap, k, psi);
       sub_psi[0] -= insert_to_start / psi[start];
       /*printf("\t\tinsert_to_start: %f sub_psi[0]: %f\n", insert_to_start, sub_psi[0]);*/
     }
@@ -1769,7 +2098,7 @@ cm_sum_subpaths_cp9(CM_t *cm, int start, int end, char ***tmap, int **cs2hn_map,
        * to double count its contribution (it will be counted in a subsequent cm_sum_subpaths_CP9()
        * call), so we skip it here.
        */
-      if((v != end && is_insert) && ((cs2hn_map[v][0] == k) || cs2hn_map[v][1] == k))
+      if((v != end && is_insert) && ((cp9map->cs2hn[v][0] == k) || cp9map->cs2hn[v][1] == k))
 	{
 	  /*skip the contribution*/
 	  /*
@@ -1821,14 +2150,11 @@ cm_sum_subpaths_cp9(CM_t *cm, int start, int end, char ***tmap, int **cs2hn_map,
  *
  * Args:    
  * CM_t *cm          - the CM
+ * CP9Map_t *cp9map  - the map from the CM to HMM and vice versa
  * double *psi       - psi[v] is expected number of times CM state v is entered
  * double **phi      - phi array, phi[k][v] is expected number of times
  *                     HMM state v (0 = match, 1 insert, 2 = delete) in 
  *                     node k is visited.
- * int ***hns2cs_map - 3D HMM node-state to CM state map, 1st D - HMM node index, 2nd D - 
- *                     HMM state (0(M), 1(I), 2(D)), 3rd D - 2 elements for up to 
- *                     2 matching CM states, value: CM states that map, -1 if none.
- * int hmm_M         - number of nodes in HMM
  * double threshold  - the threshold that mapping (potentially summed) psi and 
  *                     phi values are allowed to be different by, without throwing an error.
  * int print_flag    - TRUE to print out the values, FALSE not to 
@@ -1836,8 +2162,8 @@ cm_sum_subpaths_cp9(CM_t *cm, int start, int end, char ***tmap, int **cs2hn_map,
  *          FALSE: otherwise
  */
 static int
-check_psi_vs_phi_cp9(CM_t *cm, double *psi, double **phi, int ***hns2cs_map, int hmm_M,
-                     double threshold, int debug_level)
+check_psi_vs_phi_cp9(CM_t *cm, CP9Map_t *cp9map, double *psi, double **phi, double threshold, 
+		     int debug_level)
 {
   int v; /* CM state index*/ 
   int k;
@@ -1863,7 +2189,7 @@ check_psi_vs_phi_cp9(CM_t *cm, double *psi, double **phi, int ***hns2cs_map, int
 
   ret_val = TRUE;
   v_ct = 0;
-  ap = malloc(sizeof(int) * 2);
+  ap = MallocOrDie(sizeof(int) * 2);
 
   for(v = 0; v < cm->M; v++)
     {
@@ -1883,11 +2209,11 @@ check_psi_vs_phi_cp9(CM_t *cm, double *psi, double **phi, int ***hns2cs_map, int
 	}
     }		       
   
-  for (k = 0; k <= hmm_M; k++)
+  for (k = 0; k <= cp9map->hmm_M; k++)
     {
       k_state = HMMMATCH;
-      ap[0] = hns2cs_map[k][k_state][0];
-      ap[1] = hns2cs_map[k][k_state][1];
+      ap[0] = cp9map->hns2cs[k][k_state][0];
+      ap[1] = cp9map->hns2cs[k][k_state][1];
       summed_psi = psi[ap[0]];
       if(ap[1] != -1)
 	summed_psi += psi[ap[1]];
@@ -1904,8 +2230,8 @@ check_psi_vs_phi_cp9(CM_t *cm, double *psi, double **phi, int ***hns2cs_map, int
 	printf("M k: %4d | phi: %f | psi: %f\n", k, phi[k][0], summed_psi);
 
       k_state = HMMINSERT;
-      ap[0] = hns2cs_map[k][k_state][0];
-      ap[1] = hns2cs_map[k][k_state][1];
+      ap[0] = cp9map->hns2cs[k][k_state][0];
+      ap[1] = cp9map->hns2cs[k][k_state][1];
       summed_psi = psi[ap[0]];
       dual_mapping_insert = FALSE;
       if(ap[1] != -1)
@@ -1943,8 +2269,8 @@ check_psi_vs_phi_cp9(CM_t *cm, double *psi, double **phi, int ***hns2cs_map, int
 	printf("I k: %4d | phi: %f | psi: %f\n", k, phi[k][1], summed_psi);
       
       k_state = HMMDELETE;
-      ap[0] = hns2cs_map[k][k_state][0];
-      ap[1] = hns2cs_map[k][k_state][1];
+      ap[0] = cp9map->hns2cs[k][k_state][0];
+      ap[1] = cp9map->hns2cs[k][k_state][1];
      if(k == 0)
 	summed_psi = 0.;      /*no such state in HMM or CM*/
       else
@@ -1972,7 +2298,6 @@ check_psi_vs_phi_cp9(CM_t *cm, double *psi, double **phi, int ***hns2cs_map, int
   if(v_ct > 0)
     {
       printf("ERROR, %d HMM states violate the %f threshold b/t psi and phi.\n", v_ct, threshold);
-      /*exit(1);*/
       ret_val = FALSE;
     }
   return ret_val;
@@ -2047,29 +2372,27 @@ debug_print_cp9_params(struct cplan9_s *hmm)
  * 
  * Args:    
  * CM_t *cm          - the CM
- * int *cc_node_map  - node that each consensus column maps to (is modelled by)
- *                     [1..hmm_ncc]
- * int hmm_M         - number of consensus columns (= num of HMM nodes)
+ * CP9Map_t *cp9map  - the map from the CM to HMM and vice versa
  * Returns: TRUE if two adjacent consensus columns are modelled by the same MATP_nd
  *          FALSE if not
  */
 static int
-check_cm_adj_bp(CM_t *cm, int *cc_node_map, int hmm_M)
+check_cm_adj_bp(CM_t *cm, CP9Map_t *cp9map)
 {
   int k, prev_k;
-  prev_k = cc_node_map[1];
-  for(k = 2; k <= hmm_M; k++)
+  prev_k = cp9map->pos2nd[1];
+  for(k = 2; k <= cp9map->hmm_M; k++)
     {
-      if(cc_node_map[k] == prev_k)
+      if(cp9map->pos2nd[k] == prev_k)
 	return TRUE;
-      prev_k = cc_node_map[k];
+      prev_k = cp9map->pos2nd[k];
     }
   return FALSE;
 }
 
 /**************************************************************************
  * EPN 03.13.06
- * CP9_check_wrhmm()
+ * CP9_check_cp9()
  *
  * Purpose:  Given a CM and a CM plan 9 hmm that is supposed to mirror 
  *           the CM as closely as possible (Weinberg-Ruzzo style, with
@@ -2083,21 +2406,14 @@ check_cm_adj_bp(CM_t *cm, int *cc_node_map, int hmm_M)
  * Args:    
  * CM_t *cm          - the CM
  * cplan9_s *hmm     - the HMM
- * int ***hns2cs_map - 3D HMM node-state to CM state map, 1st D - HMM node index, 2nd D - 
- *                     HMM state (0(M), 1(I), 2(D)), 3rd D - 2 elements for up to 
- *                     2 matching CM states, value: CM states that map, -1 if none.
- *                     For example: CM states hns2cs_map[k][0][0] and hns2cs_map[k][0][1]
- *                                  map to HMM node k's match state.
- * int *cc_node_map  - node that each consensus column maps to (is modelled by)
- *                     [1..hmm_ncc]
+ * CP9Map_t *cp9map  - the map from the CM to HMM and vice versa
  * int debug_level   - debugging level for verbosity of debugging printf statements
  *
  * Returns: TRUE: if CM and HMM are "close enough" (see code)
  *          FALSE: otherwise
  */
 int 
-CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, int *cc_node_map,
-		int debug_level)
+CP9_check_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, int debug_level)
 {
   char     ***tmap;    /* hard-coded transition map */
   double    *psi;      /* psi[v] is the expected num times state v visited in CM */
@@ -2108,7 +2424,7 @@ CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, int *cc_node_
 				* phi values are allowed to be different by, without throwing
 				* an error.*/
   int ret_val;         /* return value */
-  psi = malloc(sizeof(double) * cm->M);
+  psi = MallocOrDie(sizeof(double) * cm->M);
   make_tmap(&tmap);
   fill_psi(cm, psi, tmap);
 
@@ -2122,16 +2438,16 @@ CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, int *cc_node_
    * to perfectly mirror two CM insert states with 1 HMM insert states (due to self-loop
    * issues).
    */
-  phi = malloc(sizeof(double *) * (hmm->M+1));
+  phi = MallocOrDie(sizeof(double *) * (hmm->M+1));
   for(k = 0; k <= hmm->M; k++)
     {
-      phi[k] = malloc(sizeof(double) * 3);
+      phi[k] = MallocOrDie(sizeof(double) * 3);
     }
   fill_phi_cp9(hmm, &phi, 1);
 
   /*debug_print_cp9_params(hmm);*/
   psi_vs_phi_threshold = 0.0001;
-  if(check_cm_adj_bp(cm, cc_node_map, hmm->M))
+  if(check_cm_adj_bp(cm, cp9map))
     {
       psi_vs_phi_threshold = 0.01;
     /* if check_cm_adj_bp() returns TRUE, then the following rare (but possible) situation
@@ -2142,7 +2458,7 @@ CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, int *cc_node_
      * checking psi and phi.
      */
     }    
-  ret_val = check_psi_vs_phi_cp9(cm, psi, phi, hns2cs_map, hmm->M, psi_vs_phi_threshold, debug_level);
+  ret_val = check_psi_vs_phi_cp9(cm, cp9map, psi, phi, psi_vs_phi_threshold, debug_level);
   for(k = 0; k <= hmm->M; k++)
     {
       free(phi[k]);
@@ -2161,7 +2477,7 @@ CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, int *cc_node_
 
 /**************************************************************************
  * EPN 09.01.06
- * Function: CP9_check_wrhmm_by_sampling()
+ * Function: CP9_check_cp9_by_sampling()
  *
  * Purpose:  Given a CM and a CM plan 9 hmm that is supposed to mirror 
  *           the CM as closely as possible (Weinberg-Ruzzo style, with
@@ -2188,48 +2504,14 @@ CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, int ***hns2cs_map, int *cc_node_
  * Args:    
  * CM_t *cm          - the CM
  * cplan9_s *hmm     - the HMM (models consensus columns spos to epos of the CM)
- * int ***hns2cs_map - 3D HMM node-state to CM state map, 1st D - HMM node index, 2nd D - 
- *                     HMM state (0(M), 1(I), 2(D)), 3rd D - 2 elements for up to 
- *                     2 matching CM states, value: CM states that map, -1 if none.
- *                     For example: CM states hns2cs_map[k][0][0] and hns2cs_map[k][0][1]
- *                                  map to HMM node k's match state.
- *                     IMPORTANT: the hns2cs_map is only used to determine which
- *                                HMM insert states map to 2 insert states in 
- *                                the CM it was built from so that the chi-squared
- *                                test is skipped for such states. Therefore the
- *                                actual CM state indices that each HMM state maps to
- *                                are irrelevant, and when this function is used for
- *                                subCM construction checking, hns2cs_map WILL NOT
- *                                correspond to a map between hmm and cm passed into
- *                                this function, but rather between the hmm and the 
- *                                sub_cm it was built from.
-
- * int spos          - first consensus column in cm that hmm models (often 1)
- * int epos          -  last consensus column in cm that hmm models 
- *                      (often L = (MATL+MATR+2*MATP))
- * float thresh      - probability threshold for chi squared test
- * int nseq          - number of sequences to sample to build the new HMM.
- * int *imp_cc;      - imp_cc[k] = 1 if CP9 node k is an impossible case to get 
- *                     the right transition distros for the sub_cm. NULL is 
- *                     passed if this function is called outside of context
- *                     of building a sub_cm (in which case ZERO nodes should
- *                     should be impossible to correctly calculate distributions
- *                     for)
- * int *predict_ct   - array storing the number of HMM nodes we predicted 
- *                     would be wrong, for each of the 5 cases.
- *                     NULL is passed if this function is called outside of context
- *                     of building a sub_cm (in which case ZERO nodes should
- *                     should be impossible to correctly calculate distributions
- *                     for)
- * int *wrong_predict_ct - array storing the number of HMM nodes we predicted 
- *                     would be wrong, but we got right, for each of the 5 cases.
  * int print_flag    - TRUE to print useful debugging info
+ *
  * Returns: TRUE: if CM and HMM are "close enough" (see code)
  *          FALSE: otherwise
  */
 int 
-CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int spos, int epos, int ***hns2cs_map, float thresh,
-			    int nseq, int *imp_cc, int *predict_ct, int *wrong_predict_ct, int print_flag)
+CP9_check_cp9_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo, 
+			  int spos, int epos, float chi_thresh, int nsamples, int print_flag)
 {
   Parsetree_t **tr;             /* Parsetrees of emitted aligned sequences */
   char    **dsq;                /* digitized sequences                     */
@@ -2250,28 +2532,14 @@ CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int spos, int epos, 
 				 * each to the shmm in counts form (to limit memory)
 				 */
   int nsampled;                 /* number of sequences sampled thus far */
-  int *dual_mapping_insert; /* dual_mapping_insert[nd] is TRUE if the HMM insert state 
-			     * of node nd maps to 2 CM insert states, 
-			     * these situations are impossible for the HMM to mirror exactly
-			     * (with a single insert state) due to the self insert transitions. 
-			     * For example there's only one way for the HMM to emit 3 residues
-			     * from this insert state, but 4 ways for the CM to emit 3 residues
-			     * from the combo of the 2 CM inserts (3 from A, 3 from B, 1 from A and
-			     * 2 from B, or 2 from A and 1 from B.) This is impossible to model
-			     * with the same probabilities by the single HMM insert self transition. 
-			     */
   int cc;
   int v_ct;                 /* number of nodes that violate our threshold */
-  int predict_total_ct;       /* total number of nodes we thought would be violations */
-  int wrong_predict_total_ct; /* total number of nodes we thought would be violations but were not */
+  int spredict_total_ct;       /* total number of nodes we thought would be violations */
+  int swrong_total_ct; /* total number of nodes we thought would be violations but were not */
+
+  spredict_total_ct = 0;
+  swrong_total_ct = 0;
   v_ct = 0;
-  /* Determine which nodes of the HMM have dual mapping inserts */
-  dual_mapping_insert = MallocOrDie(sizeof(int) * (hmm->M + 1));
-  for(nd = 0; nd <= hmm->M; nd++)
-    if(hns2cs_map[nd][HMMINSERT][1] != -1)
-      dual_mapping_insert[nd] = 1;
-    else
-      dual_mapping_insert[nd] = 0;
       
   msa_nseq = 1000;
 
@@ -2293,7 +2561,7 @@ CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int spos, int epos, 
   wgt    = MallocOrDie(sizeof(float)              * msa_nseq);
   FSet(wgt, msa_nseq, 1.0);
 
-  while(nsampled < nseq)
+  while(nsampled < nsamples)
     {
       if(nsampled != 0)
 	{
@@ -2311,8 +2579,8 @@ CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int spos, int epos, 
 	  free(cp9_tr);
 	}
       /* Emit msa_nseq parsetrees from the CM */
-      if(nsampled + msa_nseq > nseq)
-	msa_nseq = nseq - nsampled;
+      if(nsampled + msa_nseq > nsamples)
+	msa_nseq = nsamples - nsampled;
       for (i = 0; i < msa_nseq; i++)
 	{
 	  EmitParsetree(cm, &(tr[i]), NULL, &(dsq[i]), &L);
@@ -2409,33 +2677,33 @@ CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int spos, int epos, 
       if(nd == 0 || nd == shmm->M)
 	{
 	  if(print_flag) printf("nd:%d\n", nd);
-	  if(!(CP9_node_chi_squared(hmm, shmm, nd, thresh, dual_mapping_insert[nd], print_flag)))
+	  if(!(CP9_node_chi_squared(hmm, shmm, nd, chi_thresh, print_flag)))
 	    {
-	      if(imp_cc == NULL)
+	      if(subinfo == NULL)
 		{
 		  v_ct++;
 		  printf("SAMPLING VIOLATION[%3d]: TRUE | spos: %3d | epos: %3d\n", nd, spos, epos);
 		}
-	      else if(imp_cc != NULL && imp_cc[nd] == 0)
+	      else if(subinfo != NULL && subinfo->imp_cc[nd] == 0)
 		{
 		  v_ct++;
-		  printf("SAMPLING VIOLATION[%3d]: TRUE | spos: %3d | epos: %3d | imp_cc: %d\n", nd, spos, epos, imp_cc[nd]);
+		  printf("SAMPLING VIOLATION[%3d]: TRUE | spos: %3d | epos: %3d | subinfo->imp_cc: %d\n", nd, spos, epos, subinfo->imp_cc[nd]);
 		}
-	      else if(imp_cc != NULL && imp_cc[nd] != 0)
+	      else if(subinfo != NULL && subinfo->imp_cc[nd] != 0)
 		{
-		  predict_total_ct++;
-		  predict_ct[imp_cc[nd]]++;
-		  if(print_flag) printf("PREDICTED SAMPLING VIOLATION[%3d]: TRUE | spos: %3d | epos: %3d | imp_cc: %d\n", nd, spos, epos, imp_cc[nd]);
+		  spredict_total_ct++;
+		  subinfo->spredict_ct[subinfo->imp_cc[nd]]++;
+		  if(print_flag) printf("PREDICTED SAMPLING VIOLATION[%3d]: TRUE | spos: %3d | epos: %3d | subinfo->imp_cc: %d\n", nd, spos, epos, subinfo->imp_cc[nd]);
 		}
 	    }
-	  else if(imp_cc != NULL && imp_cc[nd] != 0)
+	  else if(subinfo != NULL && subinfo->imp_cc[nd] != 0)
 	    {
 	      /* We predicted this node would fail, but it didn't */
-	      predict_total_ct++;
-	      predict_ct[imp_cc[nd]]++;
-	      wrong_predict_total_ct++;
-	      wrong_predict_ct[imp_cc[nd]]++;
-	      if(print_flag) printf("NON-VIOLATION[%3d] %3d : spos: %3d | epos: %3d | non-imp_cc: %d\n", nd, wrong_predict_total_ct, spos, epos, imp_cc[nd]);
+	      spredict_total_ct++;
+	      subinfo->spredict_ct[subinfo->imp_cc[nd]]++;
+	      swrong_total_ct++;
+	      subinfo->swrong_ct[subinfo->imp_cc[nd]]++;
+	      if(print_flag) printf("NON-VIOLATION[%3d] %3d : spos: %3d | epos: %3d | non-subinfo->imp_cc: %d\n", nd, swrong_total_ct, spos, epos, subinfo->imp_cc[nd]);
 	    }  
 	}
     }
@@ -2458,7 +2726,6 @@ CP9_check_wrhmm_by_sampling(CM_t *cm, struct cplan9_s *hmm, int spos, int epos, 
       /* Output the alignment */
       /*WriteStockholm(stdout, msa);*/
     }      
-  free(dual_mapping_insert);
   FreeCPlan9(shmm);
   /* compare new CP9 to existing CP9 */
 
@@ -2722,14 +2989,11 @@ CP9Statetype(char st)
  * cplan9_s *shmm    - an HMM in counts form
  * int         nd    - node of the HMM to check. 
  * float   threshold - probability threshold for rejecting
- * int dual_mapping_insert - TRUE if HMM node nd maps to 2 insert states in the CM,
- *                           for such states, we don't require that we pass the
- *                           chi squared test.
  * int print_flag    - TRUE to print useful debugging info
  */
 int
 CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float threshold,
-		     int dual_mapping_insert, int print_flag)
+		     int print_flag)
 {
   double p;
   int x;
@@ -2860,20 +3124,16 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
       if(print_flag) printf("out of match %d p: %f\n", nd, p);
     }
   /* out of insert */
-  if(!dual_mapping_insert)
+  FScale(ahmm->t[nd]+3, 3, FSum(shmm->t[nd]+3, 3));     /* convert to #'s */         
+  p = FChiSquareFit(ahmm->t[nd]+3, shmm->t[nd]+3, 3);   /* compare #'s    */
+  if (p < threshold)
     {
-      FScale(ahmm->t[nd]+3, 3, FSum(shmm->t[nd]+3, 3));     /* convert to #'s */         
-      p = FChiSquareFit(ahmm->t[nd]+3, shmm->t[nd]+3, 3);   /* compare #'s    */
-      if (p < threshold)
-	{
-	  //Die("Rejected insert transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
-	  if(print_flag) printf("Rejected insert transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
-	  ret_val = FALSE;
-	}
-      if(print_flag) printf("out of insert %d p: %f\n", nd, p);
+      //Die("Rejected insert transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+      if(print_flag) printf("Rejected insert transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+      ret_val = FALSE;
     }
-  else
-    if(print_flag) printf("insert: %d DUAL MAPPING INSERT\n", nd);
+  if(print_flag) printf("out of insert %d p: %f\n", nd, p);
+
   /* out of delete */
   if(nd != 0)
     {
@@ -2956,4 +3216,98 @@ FChiSquareFit(float *f1, float *f2, int N)
     return (IncompleteGamma(((float) n-1.)/2., chisq/2.));
   else 
     return -1.;
+}
+
+/**************************************************************************
+ * EPN 10.26.06
+ * Function: AllocCP9Map()
+ * 
+ * Purpose:  Allocate a CP9Map_t object that stores information mapping
+ *           a CP9 HMM to a CM and vice versa.
+ *
+ * Args:    
+ * int hmm_M;   - number of CP9 HMM nodes, the consensus length 
+ * int cm_M;    - number of states in the CM             
+ * int cm_nodes - number of nodes in the CM             
+ * Returns: CMSubInfo_t
+ */
+
+CP9Map_t *
+AllocCP9Map(CM_t *cm)
+{
+  CP9Map_t *cp9map;
+  int v,k,ks,i;
+
+  cp9map = (struct cp9map_s *) MallocOrDie (sizeof(struct cp9map_s));
+
+  /* Determine the consensus length (to be set as hmm_M) of the CM */
+  cp9map->hmm_M = 0;
+  for(v = 0; v <= cm->M; v++)
+    {
+      if(cm->stid[v] ==  MATP_MP)
+	cp9map->hmm_M += 2;
+      else if(cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR)
+	cp9map->hmm_M++;
+    }
+  cp9map->cm_M     = cm->M;
+  cp9map->cm_nodes = cm->nodes;
+
+  /* Allocate and initialize arrays */
+  cp9map->nd2lpos  = MallocOrDie(sizeof(int)   * cp9map->cm_nodes);
+  cp9map->nd2rpos = MallocOrDie(sizeof(int)    * cp9map->cm_nodes);
+  for(i = 0; i < cp9map->cm_nodes; i++)
+    cp9map->nd2lpos[i] = cp9map->nd2rpos[i] = -1;
+
+  cp9map->pos2nd  = MallocOrDie(sizeof(int)    * (cp9map->hmm_M+1));
+  cp9map->hns2cs  = MallocOrDie(sizeof(int **)  * (cp9map->hmm_M+1)); 
+  for(i = 0; i <= cp9map->hmm_M; i++)
+  //cp9map->pos2nd[i]    = cp9map->hns2cs[i][0] = 
+  //cp9map->hns2cs[i][1] = cp9map->hns2cs[i][2] = -1;
+    {
+      cp9map->pos2nd[i] = -1;
+      cp9map->hns2cs[i] = MallocOrDie(sizeof(int *) * 3);
+      for(ks = 0; ks < 3; ks++)
+	{
+	  cp9map->hns2cs[i][ks]= malloc(sizeof(int) * 2);      
+	  cp9map->hns2cs[i][ks][0] = cp9map->hns2cs[i][ks][1] = -1;
+	}
+    }
+
+  cp9map->cs2hn   = MallocOrDie(sizeof(int *)  * (cp9map->cm_M+1)); 
+  cp9map->cs2hs   = MallocOrDie(sizeof(int *)  * (cp9map->cm_M+1)); 
+  for(v = 0; v <= cp9map->cm_M; v++)
+    {
+      cp9map->cs2hn[v] = MallocOrDie(sizeof(int) * 2);
+      cp9map->cs2hs[v] = MallocOrDie(sizeof(int) * 2);
+      for(i = 0; i <= 1; i++)
+	cp9map->cs2hn[v][i] = cp9map->cs2hs[v][i] = -1;
+    }
+
+  return cp9map;
+}
+
+/* Function: FreeCP9Map()
+ * Returns:  void
+ */
+
+void
+FreeCP9Map(CP9Map_t *cp9map)
+{
+  int v,k;
+  for(v = 0; v <= cp9map->cm_M; v++)
+    {
+      free(cp9map->cs2hn[v]);
+      free(cp9map->cs2hs[v]);
+    }
+  free(cp9map->cs2hn);
+  free(cp9map->cs2hs);
+
+  for(k = 0; k <= cp9map->hmm_M; k++)
+    free(cp9map->hns2cs[k]);
+  free(cp9map->hns2cs);
+
+  free(cp9map->nd2lpos);
+  free(cp9map->nd2rpos);
+  free(cp9map->pos2nd);
+  free(cp9map);
 }

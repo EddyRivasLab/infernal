@@ -34,29 +34,10 @@
 
 extern double dbl_Score2Prob(int sc, float null);
 
-/* Functions to map an HMM to a CM */
-extern void map_consensus_columns(CM_t *cm, int hmm_ncc, int **ret_node_cc_left, int **ret_node_cc_right,
-				  int **ret_cc_node_map, int debug_level);
-extern void CP9_map_cm2hmm_and_hmm2cm(CM_t *cm, struct cplan9_s *hmm, int *node_cc_left, 
-				      int *node_cc_right, int *cc_node_map, int ***ret_cs2hn_map, 
-				      int ***ret_cs2hs_map, int ****ret_hns2cs_map, int debug_level);
-extern void P7_map_cm2hmm_and_hmm2cm(CM_t *cm, struct plan7_s *hmm, int *node_cc_left, 
-				     int *node_cc_right, int *cc_node_map, int ***ret_cs2hn_map, 
-				     int ***ret_cs2hs_map, int ****ret_hns2cs_map, int debug_level);
-extern void map_helper(int **cs2hn_map, int **cs2hs_map, int ***hns2cs_map, int k, int ks, int v);
-extern void P7_last_hmm_insert_state_hack(int M,  int *pn_min_m, int *pn_max_m, int *pn_min_i, 
-					 int *pn_max_i);
-extern void P7_last_and_first_hmm_delete_state_hack(int M,  int *pn_min_m, int *pn_max_m, 
-						   int *pn_min_d, int *pn_max_d, int L);
-
-/* Functions for getting posterior probabilities from the HMMs 
+/* Functions for getting posterior probabilities from CP9 HMMs 
  * based on Ian Holmes' hmmer/src/postprob.c functions 
  * P7Forward() is in HMMER's core_algorithms.c 
  * and P7Backward() is in HMMER's postprob.c*/
-extern void  P7FullPosterior(int L, struct plan7_s *hmm,
-			     struct dpmatrix_s *forward,
-			     struct dpmatrix_s *backward,
-			     struct dpmatrix_s *mx);
 extern float CP9Forward(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm, 
 			struct cp9_dpmatrix_s **ret_mx);
 extern float CP9Viterbi(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s *mx);
@@ -66,28 +47,18 @@ extern void  CP9FullPosterior(unsigned char *dsq, int i0, int j0,
 			      struct cp9_dpmatrix_s *fmx,
 			      struct cp9_dpmatrix_s *bmx,
 			      struct cp9_dpmatrix_s *mx);
-extern void P7_ifill_post_sums(struct dpmatrix_s *post, int L, int M,
-			       int *isum_pn_m, int *isum_pn_i, int *isum_pn_d);
 extern void CP9_ifill_post_sums(struct cp9_dpmatrix_s *post, int i0, int j0, int M,
 				int *isum_pn_m, int *isum_pn_i, int *isum_pn_d);
 
 /* Functions to determine HMM bands */
 extern void CP9_hmm_band_bounds(int **post, int i0, int j0, int M, int *isum_pn, int *pn_min, int *pn_max, double p_thresh, 
 				int state_type, int debug_level);
-extern void P7_hmm_band_bounds(int **post, int L, int M, int *isum_pn, int *pn_min, int *pn_max, double p_thresh, 
-			       int state_type, int debug_level);
 
 /* Functions to go from HMM bands to i and j bands on a CM */
-extern void hmm2ij_bands(CM_t *cm, int ncc, int *node_cc_left, int *node_cc_right, 
-			 int *cc_node_map, int i0, int j0, int *pn_min_m, int *pn_max_m,
-			 int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d,
-			 int *imin, int *imax, int *jmin, int *jmax, int **cs2hn_map,
+extern void hmm2ij_bands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m, 
+			 int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, 
+			 int *pn_max_d, int *imin, int *imax, int *jmin, int *jmax, 
 			 int debug_level);
-extern void simple_hmm2ij_bands(CM_t *cm, int ncc, int *node_cc_left, int *node_cc_right, 
-				int *pn_min_m, int *pn_max_m,
-				int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d,
-				int *imin, int *imax, int *jmin, int *jmax, int **cs2hn_map,
-				int **cs2hs_map, int debug_level);
 
 /* Helper functions for *_hmm2ij_bands() */
 extern void hmm2ij_prestate_step0_initialize(int n, int *nss_max_imin, int *nss_min_jmax, int i0, int j0);
@@ -96,7 +67,7 @@ extern void hmm2ij_prestate_step1_set_node_inserts(int n, int *nis_imin, int *ni
 						   int *nss_imin, int *nss_imax, 
 						   int *nss_jmin, int *nss_jmax,
 						   int *pn_min_i, int *pn_max_i, 
-						   int *node_cc_left, int *node_cc_right);
+						   CP9Map_t *cp9map);
 extern void hmm2ij_prestate_step2_determine_safe(int n, 	
 						 int nss_max_imin_np1, int nss_min_jmax_np1,
 						 int nis_imin_n, 
@@ -108,8 +79,7 @@ extern void hmm2ij_prestate_step3_preset_node_splits(int n, int *nis_imin, int *
 						     int *nss_jmin, int *nss_jmax,
 						     int *pn_min_m, int *pn_max_m, 
 						     int *pn_min_d, int *pn_max_d, 
-						     int *node_cc_left, int *node_cc_right);
-
+						     CP9Map_t *cp9map);
 extern void hmm2ij_split_state_step1_set_state_bands(int v, int n, 
 						     int tmp_imin, int tmp_imax, 
 						     int tmp_jmin, int tmp_jmax,
@@ -129,8 +99,6 @@ extern void hmm2ij_state_step4_update_safe_holders(int v, int n, int imin_v, int
 extern void hmm2ij_state_step5_non_emitter_d0_hack(int v, int imax_v, int *jmin);
 
 /* Debugging print functions */
-extern void P7_debug_print_post_decode(int L, int M, struct dpmatrix_s *posterior);
-extern void P7_debug_print_dp_matrix(int L, int M, struct dpmatrix_s *mx);
 extern void print_hmm_bands(FILE *ofp, int L, int M, int *pn_min_m, int *pn_max_m,
 			    int *pn_min_i, int *pn_max_i, int *pn_min_d,
 			    int *pn_max_d, double hmm_bandp, int debug_level);

@@ -170,7 +170,7 @@ main(int argc, char **argv)
 
   /* CM Plan 9 HMM data structures */
   struct cplan9_s       *cp9_hmm;       /* constructed CP9 HMM; written to hmmfile              */
-  int                    cp9_M;         /* number of nodes in CP9 HMM (MATL+MATR+2*MATP)        */
+  CP9Map_t              *cp9map;        /* maps the hmm to the cm and vice versa                */
   struct cp9_dpmatrix_s *cp9_mx;        /* growable DP matrix for viterbi                       */
   struct cp9_dpmatrix_s *cp9_fwd;       /* growable DP matrix for forward                       */
   struct cp9_dpmatrix_s *cp9_bck;       /* growable DP matrix for backward                      */
@@ -194,28 +194,6 @@ main(int argc, char **argv)
   int     *isum_pn_i;         /* [1..k..M] sum over i of log post probs from post->imx[i][k]*/
   int     *isum_pn_d;         /* [1..k..M] sum over i of log post probs from post->dmx[i][k]*/
 
-  /* data structures for mapping HMM to CM */
-  int *node_cc_left;    /* consensus column each CM node's left emission maps to
-			 * [0..(cm->nodes-1)], -1 if maps to no consensus column*/
-  int *node_cc_right;   /* consensus column each CM node's right emission maps to
-			 * [0..(cm->nodes-1)], -1 if maps to no consensus column*/
-  int *cc_node_map;     /* node that each consensus column maps to (is modelled by)
-			 * [1..hmm_nmc] */
-  int **cs2hn_map;      /* 2D CM state to HMM node map, 1st D - CM state index
-		         * 2nd D - 0 or 1 (up to 2 matching HMM states), value: HMM node
-		         * that contains state that maps to CM state, -1 if none.*/
-  int **cs2hs_map;      /* 2D CM state to HMM node map, 1st D - CM state index
-		         * 2nd D - 2 elements for up to 2 matching HMM states, 
-		         * value: HMM STATE (0(M), 1(I), 2(D) that maps to CM state,
-		         * -1 if none.
-		         * For example: HMM node cs2hn_map[v][0], state cs2hs_map[v][0]
-                         * maps to CM state v.*/
-  int ***hns2cs_map;    /* 3D HMM node-state to CM state map, 1st D - HMM node index, 2nd D - 
-		         * HMM state (0(M), 1(I), 2(D)), 3rd D - 2 elements for up to 
-		         * 2 matching CM states, value: CM states that map, -1 if none.
-		         * For example: CM states hsn2cs_map[k][0][0] and hsn2cs_map[k][0][1]
-		         * map to HMM node k's match state.*/
-
   /* arrays for CM state bands, derived from HMM bands */
   int *imin;            /* [1..M] imin[v] = first position in band on i for state v*/
   int *imax;            /* [1..M] imax[v] = last position in band on i for state v*/
@@ -234,6 +212,7 @@ main(int argc, char **argv)
   int    ks;            /* Counter over HMM state types (0 (match), 1(ins) or 2 (del))*/
   int    v;             /* counter over states of the CM */
   int    k;             /* counter over HMM nodes */
+  int    x;
   int    debug_level;   /* verbosity level for debugging printf() statements,
 			 * passed to many functions. */
   float hmm_thresh;     /* bit score threshold for reporting hits to HMM */
@@ -241,7 +220,6 @@ main(int argc, char **argv)
   int do_inside;        /* TRUE to use scanning Inside algorithm instead of CYK */
   int do_hbanded;       /* TRUE to first scan with a CP9 HMM to derive bands for a CYK scan */
   int alloc_nhits;	/* used to grow the hit arrays */
-  int      x;
   int do_scan2hbands;   /* TRUE to use scanning Forward and Backward algs instead of traditional
 			 * FB algs to get bands on seqs surviving the filter */
   int   do_filter;              /* TRUE to scan with a CM Plan 9 HMM */
@@ -254,8 +232,8 @@ main(int argc, char **argv)
 				 * start points of HMM hits prior to CM reevauation, 
 				 * respectively. */
   float filter_fraction;        /* fraction of sequence not included in any HMM hit. 
-				 * Basically the fraction of the database filtered out.
-				 * Does not check for overlap, could overcount some bases.
+				 * Roughly the fraction of the database filtered out,
+				 * but doens't check for overlap: could overcount some bases.
 				 */
   int   do_null2;		/* TRUE to adjust scores with null model #2 */
   int   do_zero_inserts;        /* TRUE to zero insert emission scores */
@@ -271,7 +249,7 @@ main(int argc, char **argv)
   do_local          = FALSE;
   do_align          = TRUE;
   do_dumptrees      = FALSE;
-  do_qdb       = FALSE;
+  do_qdb            = FALSE;
   beta              = 0.0000001;
   do_projectx       = FALSE;
   do_bdump          = FALSE;
@@ -379,36 +357,9 @@ main(int argc, char **argv)
       /* build a CM Plan 9 HMM, and use it to scan. */
       Alphabet_type = hmmNOTSETYET;
       SetAlphabet(hmmNUCLEIC); /* Set up the hmmer_alphabet global variable */
-      cp9_M = 0;
-      for(v = 0; v <= cm->M; v++)
-	{
-	  if(cm->stid[v] ==  MATP_MP)
-	    cp9_M += 2;
-	  else if(cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR)
-	    cp9_M ++;
-	}
-      /* build the HMM data structure */
-      cp9_hmm = AllocCPlan9(cp9_M);
-      ZeroCPlan9(cp9_hmm);
-      
-      /* Get information mapping the HMM to the CM and vice versa, used
-       * for mapping bands. 
-       */
-      map_consensus_columns(cm, cp9_hmm->M, &node_cc_left, &node_cc_right,
-			    &cc_node_map, debug_level);
-      
-      CP9_map_cm2hmm_and_hmm2cm(cm, cp9_hmm, node_cc_left, node_cc_right, 
-				cc_node_map, &cs2hn_map, &cs2hs_map, 
-				&hns2cs_map, debug_level);
-      
-      /* fill in parameters of HMM using the CM and some ideas/formulas/tricks
-       * from Zasha Weinberg's thesis (~p.123) (see CP9_cm2wrhmm.c code) */
-      if(!(CP9_cm2wrhmm(cm, cp9_hmm, node_cc_left, node_cc_right, cc_node_map, cs2hn_map,
-			cs2hs_map, hns2cs_map, debug_level)))
-	Die("Couldn't build a CM Plan 9 HMM from the CM.\n");
-
-      /*debug_print_cp9_params(cp9_hmm);
-	exit(1);*/
+      if(!build_cp9_hmm(cm, &cp9_hmm, &cp9map, debug_level))
+	Die("Couldn't build a CP9 HMM from the CM\n");
+      /*debug_print_cp9_params(cp9_hmm); */
 
       pn_min_m    = malloc(sizeof(int) * (cp9_hmm->M+1));
       pn_max_m    = malloc(sizeof(int) * (cp9_hmm->M+1));
@@ -691,10 +642,9 @@ main(int argc, char **argv)
 			}
 		      
 		      /* Step 3: HMM bands  ->  CM bands. */
-		      hmm2ij_bands(cm, cp9_hmm->M, node_cc_left, node_cc_right, cc_node_map, 
-				   hmm_hiti[i], hmm_hitj[i], pn_min_m, pn_max_m, pn_min_i, pn_max_i, 
-				   pn_min_d, pn_max_d, imin, imax, jmin, jmax, cs2hn_map,
-				   debug_level);
+		      hmm2ij_bands(cm, cp9map, hmm_hiti[i], hmm_hitj[i], pn_min_m, pn_max_m, 
+				   pn_min_i, pn_max_i, pn_min_d, pn_max_d, imin, imax, jmin, 
+				   jmax, debug_level);
 		      /* we're going to use bands to search, so we relax ROOT_S bands,
 		       * otherwise search is forced to return optimal hit from hmm_hiti[i]
 		       * to hmm_hitj[i] b/c imin[0]=imax[0]=hmm_hiti[i] and 
@@ -894,10 +844,8 @@ main(int argc, char **argv)
 		    }
 		  
 		  /* Step 3: HMM bands  ->  CM bands. */
-		  hmm2ij_bands(cm, cp9_hmm->M, node_cc_left, node_cc_right, cc_node_map, 
-			       hiti[i], hitj[i], pn_min_m, pn_max_m, pn_min_i, pn_max_i, 
-			       pn_min_d, pn_max_d, imin, imax, jmin, jmax, cs2hn_map,
-			       debug_level);
+		  hmm2ij_bands(cm, cp9map, hiti[i], hitj[i], pn_min_m, pn_max_m, pn_min_i, 
+			       pn_max_i, pn_min_d, pn_max_d, imin, imax, jmin, jmax, debug_level);
 	  
 		  /* Use the CM bands on i and j to get bands on d, specific to j. */
 		  for(v = 0; v < cm->M; v++)
@@ -1008,29 +956,13 @@ main(int argc, char **argv)
       free(pn_max_i);
       free(pn_min_d);
       free(pn_max_d);
-      free(node_cc_left);
-      free(node_cc_right);
-      free(cc_node_map);
       free(safe_hdmin);
       free(safe_hdmax);
       free(isum_pn_m);
       free(isum_pn_i);
       free(isum_pn_d);
-      for(v = 0; v <= cm->M; v++)
-	{
-	  free(cs2hn_map[v]);
-	  free(cs2hs_map[v]);
-	}
-      free(cs2hn_map);
-      free(cs2hs_map);
-      for(k = 0; k <= cp9_hmm->M; k++)
-	{
-	  for(ks = 0; ks < 3; ks++)
-	    free(hns2cs_map[k][ks]);
-	  free(hns2cs_map[k]);
-	}
-      free(hns2cs_map);
       FreeCPlan9(cp9_hmm);
+      FreeCP9Map(cp9map);
     }
   
   FreeCMConsensus(cons);

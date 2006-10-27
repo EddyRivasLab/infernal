@@ -82,15 +82,10 @@ main(int argc, char **argv)
   int      epos;                /* end position for sub CM */
   int      ncols;               /* number of consensus (match) columns in CM */
   int      i;                   /* counter over sub CMs */
-  int    **orig2sub_smap;       /* 2D state map from orig_cm (template) to sub_cm.
-	                         * 1st dimension - state index in orig_cm 
-				 * 2nd D - 2 elements for up to 2 matching sub_cm states */
-  int    **sub2orig_smap;       /* 2D state map from orig_cm (template) to sub_cm.
-				 * 1st dimension - state index in sub_cm (0..sub_cm->M-1)
-				 * 2nd D - 2 elements for up to 2 matching orig_cm states */
+  int      j;                   /* counter */
   int      temp;
 
-  double   threshold;		/* psi threshold for calling violations */
+  double   pthresh;		/* psi threshold for calling violations */
   int      seed;		/* random number seed for MC */
 
   char *optname;                /* name of option found by Getopt()        */
@@ -98,8 +93,6 @@ main(int argc, char **argv)
   int   optind;                 /* index in argv[]                         */
   int   begin_set;              /* TRUE if -b entered at command line */
   int   end_set;                /* TRUE if -e entered at command line */
-  int  *imp_cc;                 /* imp_cc[k] = 1 if CP9 node k is an impossible case to get 
-				 * the right transition distros for the sub_cm. */
   int do_atest;                 /* TRUE to build 2 ML HMMs, one from the CM and one from
 				 * the sub_cm, analytically, and check to make sure
 				 * the corresponding parameters of these two HMMS
@@ -115,39 +108,23 @@ main(int argc, char **argv)
 				 * removed.                          */
   int ndone;                    /* number of models built so far */
   int print_flag;               /* TRUE to print debug statements */
-  int *awrong_predict_ct;       /* For 1 'atest's: the  number of times we predict we'll 
+  int *awrong_total_ct;         /* For ALL 'atest's: the  number of times we predict we'll 
 				 * fail the test for an HMM node and we get it right, for 
-				 * each of 5 cases - 5 different reasons we predict we'll fail.
+				 * each of 6 cases - 6 different reasons we predict we'll fail.
 				 */
-  int *swrong_predict_ct;       /* For 1 sampling test: the  number of times we predict we'll 
+  int *swrong_total_ct;         /* For ALL sampling tests: the  number of times we predict we'll 
 				 * fail the test for an HMM node and we get it right, for 
-				 * each of 5 cases - 5 different reasons we predict we'll fail.
-				 */
-  int *awrong_predict_total_ct; /* For ALL 'atest's: the  number of times we predict we'll 
-				 * fail the test for an HMM node and we get it right, for 
-				 * each of 5 cases - 5 different reasons we predict we'll fail.
-				 */
-  int *swrong_predict_total_ct; /* For ALL sampling tests: the  number of times we predict we'll 
-				 * fail the test for an HMM node and we get it right, for 
-				 * each of 5 cases - 5 different reasons we predict we'll fail.
-				 */
-  int *apredict_ct;             /* For 1 'atest's: the  number of times we predict we'll 
-				 * fail the test for an HMM node for
-				 * each of 5 cases - 5 different reasons we predict we'll fail.
-				 */
-  int *spredict_ct;             /* For 1 sampling test: the  number of times we predict we'll 
-				 * fail the test for an HMM node for
-				 * each of 5 cases - 5 different reasons we predict we'll fail.
+				 * each of 6 cases - 6 different reasons we predict we'll fail.
 				 */
   int *apredict_total_ct;       /* For ALL 'atest's: the  number of times we predict we'll 
 				 * fail the test for an HMM node for
-				 * each of 5 cases - 5 different reasons we predict we'll fail.
+				 * each of 6 cases - 6 different reasons we predict we'll fail.
 				 */
   int *spredict_total_ct;       /* For ALL sampling tests: the  number of times we predict we'll 
 				 * fail the test for an HMM node for
-				 * each of 5 cases - 5 different reasons we predict we'll fail.
+				 * each of 6 cases - 6 different reasons we predict we'll fail.
 				 */
-  float chi_threshold;          /* if any chi-square test (which we haven't deemed 'impossible' 
+  float chi_thresh;             /* if any chi-square test (which we haven't deemed 'impossible' 
 				 * during the sampling check is below this threshold, fail. 
 				 */
   int nsamples;                 /* Number of samples to build the ML HMM with during a sampling
@@ -156,14 +133,15 @@ main(int argc, char **argv)
   int npredict_cases;           /* Number of different cases for predicting a node's transitions
 				 * will be impossible to match b/t the two HMMs. 
 				 */
-  
+  CMSubMap_t *submap;
+  CMSubInfo_t *subinfo;
   /*********************************************** 
    * Parse command line
    ***********************************************/
 
   nmodels        = 100;
   seed           = (int) time ((time_t *) NULL);
-  threshold      = 0.00001;
+  pthresh        = 0.00001;
   begin_set      = FALSE;
   end_set        = FALSE;
   do_atest       = TRUE;
@@ -171,7 +149,7 @@ main(int argc, char **argv)
   do_exhaust     = FALSE;
   do_fullsub     = FALSE;
   nsamples       = 50000;
-  chi_threshold  = 0.01;
+  chi_thresh     = 0.01;
   npredict_cases = 6;
   print_flag     = FALSE;
 
@@ -179,13 +157,13 @@ main(int argc, char **argv)
 		&optind, &optname, &optarg))  {
     if      (strcmp(optname, "-n") == 0) nmodels        = atoi(optarg);
     else if (strcmp(optname, "-s") == 0) seed           = atoi(optarg);
-    else if (strcmp(optname, "-t") == 0) threshold      = atof(optarg);
+    else if (strcmp(optname, "-t") == 0) pthresh        = atof(optarg);
     else if (strcmp(optname, "-b") == 0) { begin_set = TRUE; spos = atoi(optarg); nmodels = 1; }
     else if (strcmp(optname, "-e") == 0) { end_set   = TRUE; epos = atoi(optarg); }
     else if (strcmp(optname, "--psionly")   == 0) do_atest   = FALSE;
     else if (strcmp(optname, "--sample")    == 0) do_stest   = TRUE;
     else if (strcmp(optname, "--nseq")      == 0) nsamples = atoi(optarg);
-    else if (strcmp(optname, "--chi")       == 0) chi_threshold = atof(optarg);
+    else if (strcmp(optname, "--chi")       == 0) chi_thresh = atof(optarg);
     else if (strcmp(optname, "--sample")    == 0) do_stest   = TRUE;
     else if (strcmp(optname, "--exhaust")   == 0) do_exhaust = TRUE;
     else if (strcmp(optname, "--full")      == 0) do_fullsub = TRUE;
@@ -217,7 +195,7 @@ main(int argc, char **argv)
     Die("Minimum number of samples allowed is 10,000.\n");
 
   
-  /*********************************************** 
+  /********************************************`*** 
    * Preliminaries: get our CM
    ***********************************************/
 
@@ -231,17 +209,17 @@ main(int argc, char **argv)
     Die("%s empty?\n", cmfile);
   CMFileClose(cmfp);
 
-  /* Allocate and initialize our *wrong_predict_total_ct arrays */
+  /* Allocate and initialize our *wrong_total_ct arrays */
   apredict_total_ct       = MallocOrDie(sizeof(int) * (npredict_cases+1));
   spredict_total_ct       = MallocOrDie(sizeof(int) * (npredict_cases+1));
-  awrong_predict_total_ct = MallocOrDie(sizeof(int) * (npredict_cases+1));
-  swrong_predict_total_ct = MallocOrDie(sizeof(int) * (npredict_cases+1));
+  awrong_total_ct = MallocOrDie(sizeof(int) * (npredict_cases+1));
+  swrong_total_ct = MallocOrDie(sizeof(int) * (npredict_cases+1));
   for(i = 0; i <= npredict_cases; i++)
     {
       apredict_total_ct[i] = 0;
       spredict_total_ct[i] = 0;
-      awrong_predict_total_ct[i] = 0;
-      swrong_predict_total_ct[i] = 0;
+      awrong_total_ct[i] = 0;
+      swrong_total_ct[i] = 0;
     }
 
   /***********************************************************
@@ -289,32 +267,41 @@ main(int argc, char **argv)
 	  printf("\tBuilding models with start pos: %5d (%5d / %5d completed)\n", spos, ndone, nmodels);
 	  for(epos = spos; epos <= ncols; epos++)
 	    {
-	      if(!(build_sub_cm(cm, &sub_cm, spos, epos, NULL, NULL, &imp_cc, &apredict_ct, 
-				&awrong_predict_ct, &spredict_ct, &swrong_predict_ct, threshold, do_fullsub, 
-				do_atest, do_stest, chi_threshold, nsamples, print_flag)))
-	      {
-		printf("\nSub CM construction for spos: %4d epos: %4d failed one of the following tests:\n", spos, epos);
-		printf("\tpsi test;            but this should never happen.\n");
-		if(do_atest)
-		  printf("\tanalytical HMM test; but this should never happen.\n");
-		if(do_stest)
-		  printf("\tsampling   HMM test; but this should never happen.\n");
-		Die("\tLooks like there's a bug...\n");
-	      }
-	      /* keep track of number of each case of wrong prediction */
-	      for(i = 1; i <= npredict_cases; i++)
+	      if(!(build_sub_cm(cm, &sub_cm, spos, epos, &submap, do_fullsub, print_flag)))
+		Die("Couldn't build a sub_cm from CM with spos: %d epos: %d\n", spos, epos);
+	      /* Do the psi test */
+	      if(!check_orig_psi_vs_sub_psi(cm, sub_cm, submap, pthresh, print_flag))
 		{
-		  apredict_total_ct[i] += apredict_ct[i];
-		  spredict_total_ct[i] += spredict_ct[i];
-		  awrong_predict_total_ct[i] += awrong_predict_ct[i];
-		  swrong_predict_total_ct[i] += swrong_predict_ct[i];
-		}		  
+		  printf("\nSub CM construction for spos: %4d epos: %4d failed psi test.\n", spos, epos);
+		  Die("\tLooks like there's a bug...\n");
+		}
+	      /* Do analytical and/or sampling HMM tests */
+	      if(do_atest || do_stest)
+		{
+		  subinfo = AllocSubInfo(epos-spos+1);
+		  if(do_atest && !check_sub_cm(cm, sub_cm, submap, subinfo, pthresh, print_flag))
+		    {
+		      printf("\nSub CM construction for spos: %4d epos: %4d failed analytical HMM test.\n", spos, epos);
+		      Die("\tLooks like there's a bug...\n");
+		    }
+		  if(do_stest && !check_sub_cm_by_sampling(cm, sub_cm, submap, subinfo, chi_thresh, 
+							   nsamples, print_flag))
+		    {
+		      printf("\nSub CM construction for spos: %4d epos: %4d failed sampling HMM test.\n", spos, epos);
+		      Die("\tLooks like there's a bug...\n");
+		    }
+		  /* keep track of number of each case of wrong prediction */
+		  for(j = 1; j <= npredict_cases; j++)
+		    {
+		      apredict_total_ct[j] += subinfo->apredict_ct[j];
+		      spredict_total_ct[j] += subinfo->spredict_ct[j];
+		      awrong_total_ct[j] += subinfo->awrong_ct[j];
+		      swrong_total_ct[j] += subinfo->swrong_ct[j];
+		    }		  
+		  FreeSubInfo(subinfo);
+		}
 	      FreeCM(sub_cm);
-	      free(imp_cc);
-	      free(apredict_ct);
-	      free(spredict_ct);
-	      free(awrong_predict_ct);
-	      free(swrong_predict_ct);
+	      FreeSubMap(submap);
 	      ndone++;
 	    }	      
 	}
@@ -326,7 +313,7 @@ main(int argc, char **argv)
 	printf("\tsampling   HMM test\n");
     }	 
   else /* Build models with either preset begin point (spos) and end points (epos) 
-	* or randomly chosen ones*/
+	* or randomly chosen ones */
     {
       if(begin_set && end_set)
 	{
@@ -350,33 +337,41 @@ main(int argc, char **argv)
 		  epos = temp;
 		}	      
 	    }
-	  if(!(build_sub_cm(cm, &sub_cm, spos, epos, NULL, NULL, &imp_cc, &apredict_ct, 
-			    &awrong_predict_ct, &spredict_ct, &swrong_predict_ct, threshold, do_fullsub, 
-			    do_atest, do_stest, chi_threshold, nsamples, print_flag)))
+	  if(!(build_sub_cm(cm, &sub_cm, spos, epos, &submap, do_fullsub, print_flag)))
+	    Die("Couldn't build a sub_cm from CM with spos: %d epos: %d\n", spos, epos);
+	  /* Do the psi test */
+	  if(!check_orig_psi_vs_sub_psi(cm, sub_cm, submap, pthresh, print_flag))
 	    {
-	      printf("\nDone. Sub CM construction for spos: %4d epos: %4d failed one of the following tests:\n", spos, epos);
-	      printf("\tpsi test; but this should never happen.\n");
-	      if(do_atest)
-		printf("\tanalytical HMM test; but this should never happen.\n");
-	      if(do_stest)
-		printf("\tsampling   HMM test; but this should never happen.\n");
+	      printf("\nSub CM construction for spos: %4d epos: %4d failed psi test.\n", spos, epos);
 	      Die("\tLooks like there's a bug...\n");
 	    }
-	  /* keep track of number of each case of wrong prediction */
-	  for(i = 1; i <= npredict_cases; i++)
+	  /* Do analytical and/or sampling HMM tests */
+	  if(do_atest || do_stest)
 	    {
-	      apredict_total_ct[i] += apredict_ct[i];
-	      spredict_total_ct[i] += spredict_ct[i];
-	      awrong_predict_total_ct[i] += awrong_predict_ct[i];
-	      swrong_predict_total_ct[i] += swrong_predict_ct[i];
-	    }		  
-
+	      subinfo = AllocSubInfo(epos-spos+1);
+	      if(do_atest && !check_sub_cm(cm, sub_cm, submap, subinfo, pthresh, print_flag))
+		{
+		  printf("\nSub CM construction for spos: %4d epos: %4d failed analytical HMM test.\n", spos, epos);
+		  Die("\tLooks like there's a bug...\n");
+		}
+	      if(do_stest && !check_sub_cm_by_sampling(cm, sub_cm, submap, subinfo, chi_thresh, 
+						       nsamples, print_flag))
+		{
+		  printf("\nSub CM construction for spos: %4d epos: %4d failed sampling HMM test.\n", spos, epos);
+		  Die("\tLooks like there's a bug...\n");
+		}
+	      /* keep track of number of each case of wrong prediction */
+	      for(j = 1; j <= npredict_cases; j++)
+		{
+		  apredict_total_ct[j] += subinfo->apredict_ct[j];
+		  spredict_total_ct[j] += subinfo->spredict_ct[j];
+		  awrong_total_ct[j] += subinfo->awrong_ct[j];
+		  swrong_total_ct[j] += subinfo->swrong_ct[j];
+		}		  
+	      FreeSubInfo(subinfo);
+	    }
 	  FreeCM(sub_cm);
-	  free(imp_cc);
-	  free(apredict_ct);
-	  free(spredict_ct);
-	  free(awrong_predict_ct);
-	  free(swrong_predict_ct);
+	  FreeSubMap(submap);
 	  ndone++;
 	}
       printf("done.\n%5d sub CMs were constructed and passed the following tests:\n", ndone);
@@ -389,20 +384,20 @@ main(int argc, char **argv)
   if(do_atest)
     {
       printf("\nPrinting summary of HMM nodes predicted to fail the analytical test:\n");
-      for(i = 1; i <= npredict_cases; i++)
-	printf("\tcase %d: %6d (%6d passed)\n", i, apredict_total_ct[i], awrong_predict_total_ct[i]);
+      for(j = 1; j <= npredict_cases; j++)
+	printf("\tcase %d: %6d (%6d passed)\n", j, apredict_total_ct[j], awrong_total_ct[j]);
     }
   if(do_stest)
     {
       printf("\nPrinting summary of HMM nodes predicted to fail the sampling test:\n");
-      for(i = 0; i <= 6; i++)
-	printf("\tcase %d: %6d (%6d passed)\n", i, spredict_total_ct[i], swrong_predict_total_ct[i]);
+      for(j = 1; j <= npredict_cases; j++)
+	printf("\tcase %d: %6d (%6d passed)\n", j, spredict_total_ct[j], swrong_total_ct[j]);
     }
   printf("\n");
   free(apredict_total_ct);
   free(spredict_total_ct);
-  free(awrong_predict_total_ct);
-  free(swrong_predict_total_ct);
+  free(awrong_total_ct);
+  free(swrong_total_ct);
 
   FreeCM(cm);
   return 0;
