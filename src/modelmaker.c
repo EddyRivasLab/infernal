@@ -1224,11 +1224,14 @@ ConsensusModelmaker(char *ss_cons, int clen, CM_t **ret_cm, Parsetree_t **ret_gt
  * 
  * Usually if this option is enabled with do_check=TRUE, the 
  * CM is in counts form so its possible to check to make sure
- * the second guarantee holds. Also, in this case the other option,
+ * the END_E-1 has 0 counts. Also, in this case the other option,
  * do_detach is set to FALSE to tell the function not to detach
  * the insert quite yet, we want to wait until the model has
  * been priorified - and once it has we revisit this function
  * with the do_check option as FALSE and do_detach as TRUE.
+ * With do_detach == TRUE, we 'detach' the END_E-1 state by
+ * setting all transitions into it as 0.0, making it impossible
+ * to reach.
  *
  * There should be exactly 1 dual insert for every END_E state.
  *
@@ -1392,6 +1395,8 @@ cm_detach_state(CM_t *cm, int insert1, int insert2)
 			      * as insert1, we're setting transition
 			      * from x -> to_detach as impossible.
 			      */
+	  /* Renormalize transitions out of x */
+	  FNorm(cm->t[x], cm->cnum[x]);
 	  /*printf("****setting transition probabilitity of x: %d to to_detach: %d cm->t[x][0] as 0.0\n", x, to_detach);*/
 	}
     }

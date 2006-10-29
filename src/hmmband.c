@@ -34,6 +34,77 @@
 #include "sre_stack.h"
 #include "hmmband.h"
 
+/**************************************************************************
+ * EPN 10.28.06
+ * Function: AllocCP9Bands()
+ * 
+ * Purpose:  Allocate the arrays needed for creating i and j
+ *           bands on a CM based on a CP9 parse.
+ *
+ * Args:    
+ * CM_t *cm            - the CM
+ * cplan9_s *hmm       - the CP9 HMM for the CM
+ * Returns: (void) 
+ *
+ */
+
+CP9Bands_t *
+AllocCP9Bands(CM_t *cm, struct cplan9_s *hmm)
+{
+  CP9Bands_t  *cp9bands;
+  int v, i;
+
+  cp9bands = (struct cp9bands_s *) MallocOrDie (sizeof(struct cp9bands_s));
+
+  cp9bands->cm_M  = cm->M;
+  cp9bands->hmm_M = hmm->M;
+  
+  cp9bands->pn_min_m    = MallocOrDie(sizeof(int) * (cp9bands->hmm_M+1));
+  cp9bands->pn_max_m    = MallocOrDie(sizeof(int) * (cp9bands->hmm_M+1));
+  cp9bands->pn_min_i    = MallocOrDie(sizeof(int) * (cp9bands->hmm_M+1));
+  cp9bands->pn_max_i    = MallocOrDie(sizeof(int) * (cp9bands->hmm_M+1));
+  cp9bands->pn_min_d    = MallocOrDie(sizeof(int) * (cp9bands->hmm_M+1));
+  cp9bands->pn_max_d    = MallocOrDie(sizeof(int) * (cp9bands->hmm_M+1));
+  cp9bands->isum_pn_m   = MallocOrDie(sizeof(int) * (cp9bands->hmm_M+1));
+  cp9bands->isum_pn_i   = MallocOrDie(sizeof(int) * (cp9bands->hmm_M+1));
+  cp9bands->isum_pn_d   = MallocOrDie(sizeof(int) * (cp9bands->hmm_M+1));
+
+  cp9bands->imin        = MallocOrDie(sizeof(int)   * cp9bands->cm_M);
+  cp9bands->imax        = MallocOrDie(sizeof(int)   * cp9bands->cm_M);
+  cp9bands->jmin        = MallocOrDie(sizeof(int)   * cp9bands->cm_M);
+  cp9bands->jmax        = MallocOrDie(sizeof(int)   * cp9bands->cm_M);
+  cp9bands->safe_hdmin  = MallocOrDie(sizeof(int)   * cp9bands->cm_M);
+  cp9bands->safe_hdmax  = MallocOrDie(sizeof(int)   * cp9bands->cm_M);
+  cp9bands->hdmin       = MallocOrDie(sizeof(int *) * cp9bands->cm_M);
+  cp9bands->hdmax       = MallocOrDie(sizeof(int *) * cp9bands->cm_M);
+  return cp9bands;
+}
+
+/* Function: FreeCP9Bands() 
+ * Returns: (void) 
+ */
+void 
+FreeCP9Bands(CP9Bands_t *cp9bands)
+{
+  free(cp9bands->imin);
+  free(cp9bands->imax);
+  free(cp9bands->jmin);
+  free(cp9bands->jmax);
+  free(cp9bands->hdmin);
+  free(cp9bands->hdmax);
+  free(cp9bands->pn_min_m);
+  free(cp9bands->pn_max_m);
+  free(cp9bands->pn_min_i);
+  free(cp9bands->pn_max_i);
+  free(cp9bands->pn_min_d);
+  free(cp9bands->pn_max_d);
+  free(cp9bands->safe_hdmin);
+  free(cp9bands->safe_hdmax);
+  free(cp9bands->isum_pn_m);
+  free(cp9bands->isum_pn_i);
+  free(cp9bands->isum_pn_d);
+}
+
 /* Function: dbl_Score2Prob()
  * 
  * Purpose:  Convert an integer log_2 odds score back to a probability;
@@ -54,7 +125,6 @@ dbl_Score2Prob(int sc, float null)
  * CP9FullPosterior()
  * CP9_ifill_post_sums()
  */
-
 
 /***********************************************************************
  * Function: CP9Forward
@@ -634,12 +704,13 @@ CP9_ifill_post_sums(struct cp9_dpmatrix_s *post, int i0, int j0, int M,
  * double p_thresh  the probability mass we're requiring is within each band
  * int state_type   HMMMATCH, HMMINSERT, or HMMDELETE, for deletes we have to deal
  *                  with the CM->HMM delete off-by-one issue (see code below).
+ * int use_sums     
  * int debug_level  [0..3] tells the function what level of debugging print
  *                  statements to print.
  *****************************************************************************/
 void
 CP9_hmm_band_bounds(int **post, int i0, int j0, int M, int *isum_pn, int *pn_min, int *pn_max, 
-		    double p_thresh, int state_type, int debug_level)
+		    double p_thresh, int state_type, int use_sums, int debug_level)
 {
   int k;         /* counter over nodes of the model */
   int lmass_exc; /* the log of the probability mass currently excluded on the left*/
@@ -664,7 +735,7 @@ CP9_hmm_band_bounds(int **post, int i0, int j0, int M, int *isum_pn, int *pn_min
   for(k = 0; k <= M; k++)
     {
       curr_log_p_side = log_p_side; 
-      if(isum_pn != NULL) 
+      if(use_sums)
 	curr_log_p_side += isum_pn[k]; /* if we use sums strategy, normalize
 					* so total prob of entering k = 1. */
       argmax_pn = i0;

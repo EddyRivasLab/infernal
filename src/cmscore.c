@@ -200,7 +200,8 @@ main(int argc, char **argv)
 	  sc1 = CYKInsideScore(cm, dsq, sqinfo.len, 0, 1, sqinfo.len);
 	  printf("%-12s : %.2f\n", sqinfo.name, sc1);
 	} else {
-	  sc1 = CYKInside(cm, dsq, sqinfo.len, 0, 1, sqinfo.len, &tr1);  
+	  sc1 = CYKInside(cm, dsq, sqinfo.len, 0, 1, sqinfo.len, &tr1, 
+			  NULL, NULL);  
 	  ParsetreeDump(stdout, tr1, cm, dsq);
 	  printf("%-12s : %.2f  %.2f\n", sqinfo.name, sc1,
 		 ParsetreeScore(cm, tr1, dsq, FALSE));
@@ -214,7 +215,7 @@ main(int argc, char **argv)
       printf("-------------------------------\n");
       StopwatchZero(watch);
       StopwatchStart(watch);
-      sc2 = CYKDivideAndConquer(cm, dsq, sqinfo.len, 0, 1, sqinfo.len, &tr2);  
+      sc2 = CYKDivideAndConquer(cm, dsq, sqinfo.len, 0, 1, sqinfo.len, &tr2);
       ParsetreeDump(stdout, tr2, cm, dsq);
       printf("%-12s : %.2f  %.2f\n", sqinfo.name, sc2,
 	     ParsetreeScore(cm, tr2, dsq, FALSE));

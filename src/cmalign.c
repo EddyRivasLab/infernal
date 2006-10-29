@@ -165,33 +165,11 @@ main(int argc, char **argv)
   int     *dmax;                /* maximum d bound for state v, [0..v..M-1] */
 
   /* HMMERNAL!: hmm banded alignment data structures */
-  /* data structures for hmm bands (bands on the hmm states) */
-  int     *pn_min_m;          /* HMM band: minimum position node k match state will emit  */
-  int     *pn_max_m;          /* HMM band: maximum position node k match state will emit  */
-  int     *pn_min_i;          /* HMM band: minimum position node k insert state will emit */
-  int     *pn_max_i;          /* HMM band: maximum position node k insert state will emit */
-  int     *pn_min_d;          /* HMM band: minimum position node k delete state will emit */
-  int     *pn_max_d;          /* HMM band: maximum position node k delete state will emit */
-  double   hbandp;            /* tail loss probability for hmm bands */
-  int      use_sums;          /* TRUE to fill and use the posterior sums, false not to. */
-  int    **isum_pn_m;         /* [1..k..M] sum over i of log post probs from post->mmx[i][k]*/
-  int    **isum_pn_i;         /* [1..k..M] sum over i of log post probs from post->imx[i][k]*/
-  int    **isum_pn_d;         /* [1..k..M] sum over i of log post probs from post->dmx[i][k]*/
-
-  /* arrays for CM state bands, derived from HMM bands */
-  int  do_hbanded;      /* TRUE to do CM Plan 9 HMM banded CYKInside_b_jd() using bands on d and j dim*/
-  int *imin;            /* [1..M] imin[v] = first position in band on i for state v*/
-  int *imax;            /* [1..M] imax[v] = last position in band on i for state v*/
-  int *jmin;            /* [1..M] jmin[v] = first position in band on j for state v*/
-  int *jmax;            /* [1..M] jmax[v] = last position in band on j for state v*/
-  int **hdmin;          /* [v=1..M][0..(jmax[v]-jmin[v])] 
-			 * hdmin[v][j0] = first position in band on d for state v, and position
-			 * j = jmin[v] + j0.*/
-  int **hdmax;          /* [v=1..M][0..(jmax[v]-jmin[v])] 
-			 * hdmin[v][j0] = last position in band on d for state v, and position
-			 * j = jmin[v] + j0.*/
-  int *safe_hdmin;      /* [1..M] safe_hdmin[v] = min_d (hdmin[v][j0]) (over all valid j0) */
-  int *safe_hdmax;      /* [1..M] safe_hdmax[v] = max_d (hdmax[v][j0]) (over all valid j0) */
+  CP9Bands_t *cp9b;             /* data structure for hmm bands (bands on the hmm states) 
+				 * and arrays for CM state bands, derived from HMM bands */
+  int         do_hbanded;       /* TRUE to do CM Plan 9 HMM banded CYKInside_b_jd() using bands on d and j dim*/
+  double      hbandp;           /* tail loss probability for hmm bands */
+  int         use_sums;         /* TRUE to fill and use the posterior sums, false not to. */
 
   /* data structures for HMMs */
   char  *hmmfile;      /* file to read HMMs from                  */
@@ -543,34 +521,9 @@ main(int argc, char **argv)
       expand_flag = FALSE;
     }
 
-/* Allocate data structures for use with HMM banding strategy */
+  /* Allocate data structures for use with HMM banding strategy */
   if(do_hbanded)
-    {
-      pn_min_m    = malloc(sizeof(int) * (cp9map->hmm_M+1));
-      pn_max_m    = malloc(sizeof(int) * (cp9map->hmm_M+1));
-      pn_min_i    = malloc(sizeof(int) * (cp9map->hmm_M+1));
-      pn_max_i    = malloc(sizeof(int) * (cp9map->hmm_M+1));
-      pn_min_d    = malloc(sizeof(int) * (cp9map->hmm_M+1));
-      pn_max_d    = malloc(sizeof(int) * (cp9map->hmm_M+1));
-      imin        = malloc(sizeof(int) * cm->M);
-      imax        = malloc(sizeof(int) * cm->M);
-      jmin        = malloc(sizeof(int) * cm->M);
-      jmax        = malloc(sizeof(int) * cm->M);
-      hdmin       = malloc(sizeof(int *) * cm->M);
-      hdmax       = malloc(sizeof(int *) * cm->M);
-      safe_hdmin  = malloc(sizeof(int) * cm->M);
-      safe_hdmax  = malloc(sizeof(int) * cm->M);
-      isum_pn_m   = malloc(sizeof(int *) * nseq);
-      isum_pn_i   = malloc(sizeof(int *) * nseq);
-      isum_pn_d   = malloc(sizeof(int *) * nseq);
-      
-      for (i = 0; i < nseq; i++)
-	{
-	  isum_pn_m[i] = malloc(sizeof(int) * (cp9map->hmm_M+1));
-	  isum_pn_i[i] = malloc(sizeof(int) * (cp9map->hmm_M+1));
-	  isum_pn_d[i] = malloc(sizeof(int) * (cp9map->hmm_M+1));
-	}
-    }
+    cp9b = AllocCP9Bands(cm, hmm);
 
   for (i = 0; i < nseq; i++)
     {
@@ -630,13 +583,7 @@ main(int argc, char **argv)
 	  if(!(build_sub_cm(cm, &sub_cm, 
 			    spos, epos,         /* first and last col of structure kept in the sub_cm  */
 			    &submap,            /* maps from the sub_cm to cm and vice versa           */
-			    subinfo,            /* info on the sub_cm checks performed (if any)        */
 			    do_fullsub,         /* build or not build a sub CM that models all columns */
-			    do_atest,           /* check or not check the sub CM analytically          */
-			    atest_pthresh,      /* threshold for atest                                 */
-			    FALSE,              /* don't do a sampling check                           */
-			    0.01,               /* chi_thresh for sampling check (irrelevant)          */
-			    100000,             /* number of samples for sampling check (irrelevant)   */
 			    debug_level)))      /* print or don't print debugging info                 */
 	    Die("Couldn't build a sub CM from the CM\n");
 	  cm    = sub_cm; /* orig_cm still points to the original CM */
@@ -689,59 +636,51 @@ main(int argc, char **argv)
 	   */
 	  
 	  /* Step 2: posteriors -> HMM bands.*/
-	  if(!(use_sums))
-	    {
-	      /* match states */
-	      CP9_hmm_band_bounds(cp9_posterior->mmx, 1, sqinfo[i].len, cp9map->hmm_M,
-				  NULL, pn_min_m, pn_max_m, (1.-hbandp), HMMMATCH, debug_level);
-	      /* insert states */
-	      CP9_hmm_band_bounds(cp9_posterior->imx, 1, sqinfo[i].len, cp9map->hmm_M,
-				  NULL, pn_min_i, pn_max_i, (1.-hbandp), HMMINSERT, debug_level);
-	      /* delete states (note: delete_flag set to TRUE) */
-	      CP9_hmm_band_bounds(cp9_posterior->dmx, 1, sqinfo[i].len, cp9map->hmm_M,
-				  NULL, pn_min_d, pn_max_d, (1.-hbandp), HMMDELETE, debug_level);
-	    }
-	  else
-	    {
-	      CP9_ifill_post_sums(cp9_posterior, 1, sqinfo[i].len, cp9map->hmm_M,
-				  isum_pn_m[i], isum_pn_i[i], 
-				  isum_pn_d[i]);
-	      /* match states */
-	      CP9_hmm_band_bounds(cp9_posterior->mmx, 1, sqinfo[i].len, cp9map->hmm_M,
-				  isum_pn_m[i], pn_min_m, pn_max_m, (1.-hbandp), HMMMATCH, debug_level);
-	      /* insert states */
-	      CP9_hmm_band_bounds(cp9_posterior->imx, 1, sqinfo[i].len, cp9map->hmm_M,
-				  isum_pn_i[i], pn_min_i, pn_max_i, (1.-hbandp), HMMINSERT, debug_level);
-	      /* delete states */
-	      CP9_hmm_band_bounds(cp9_posterior->dmx, 1, sqinfo[i].len, cp9map->hmm_M,
-				  isum_pn_d[i], pn_min_d, pn_max_d, (1.-hbandp), HMMDELETE, debug_level);
-	    }
+	  if(use_sums)
+	    CP9_ifill_post_sums(cp9_posterior, 1, sqinfo[i].len, cp9b->hmm_M,
+				cp9b->isum_pn_m, cp9b->isum_pn_i, cp9b->isum_pn_d);
+	  /* match states */
+	  CP9_hmm_band_bounds(cp9_posterior->mmx, 1, sqinfo[i].len, cp9b->hmm_M, 
+			      cp9b->isum_pn_m, cp9b->pn_min_m, cp9b->pn_max_m,
+			      (1.-hbandp), HMMMATCH, use_sums, debug_level);
+	  /* insert states */
+	  CP9_hmm_band_bounds(cp9_posterior->imx, 1, sqinfo[i].len, cp9b->hmm_M,
+			      cp9b->isum_pn_i, cp9b->pn_min_i, cp9b->pn_max_i,
+			      (1.-hbandp), HMMINSERT, use_sums, debug_level);
+	  /* delete states (note: delete_flag set to TRUE) */
+	  CP9_hmm_band_bounds(cp9_posterior->dmx, 1, sqinfo[i].len, cp9b->hmm_M,
+			      cp9b->isum_pn_d, cp9b->pn_min_d, cp9b->pn_max_d,
+			      (1.-hbandp), HMMDELETE, use_sums, debug_level);
+
 	  if(debug_level != 0)
 	    {
 	      printf("printing hmm bands\n");
-	      print_hmm_bands(stdout, sqinfo[i].len, cp9map->hmm_M, pn_min_m, pn_max_m, pn_min_i,
-			      pn_max_i, pn_min_d, pn_max_d, hbandp, debug_level);
+	      print_hmm_bands(stdout, sqinfo[i].len, cp9b->hmm_M, cp9b->pn_min_m, 
+			      cp9b->pn_max_m, cp9b->pn_min_i, cp9b->pn_max_i, 
+			      cp9b->pn_min_d, cp9b->pn_max_d, hbandp, debug_level);
 	    }
 	  
 	  /* Step 3: HMM bands  ->  CM bands. */
 	  printf("10.24.06 cm->nodes: %d\n", cm->nodes);
 	  printf("10.24.06 cp9map->hmm_M    : %d\n", cp9map->hmm_M);
-	  hmm2ij_bands(cm, cp9map, 1, sqinfo[i].len, pn_min_m, pn_max_m, pn_min_i, pn_max_i, 
-		       pn_min_d, pn_max_d, imin, imax, jmin, jmax, debug_level);
+	  hmm2ij_bands(cm, cp9map, 1, sqinfo[i].len, cp9b->pn_min_m, cp9b->pn_max_m, 
+		       cp9b->pn_min_i, cp9b->pn_max_i, cp9b->pn_min_d, cp9b->pn_max_d, 
+		       cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, debug_level);
 	  
 	  StopwatchStop(watch1);
 	  if(time_flag) StopwatchDisplay(stdout, "CP9 Band calculation CPU time: ", watch1);
 	  /* Use the CM bands on i and j to get bands on d, specific to j. */
 	  for(v = 0; v < cm->M; v++)
 	    {
-	      hdmin[v] = malloc(sizeof(int) * (jmax[v] - jmin[v] + 1));
-	      hdmax[v] = malloc(sizeof(int) * (jmax[v] - jmin[v] + 1));
+	      cp9b->hdmin[v] = malloc(sizeof(int) * (cp9b->jmax[v] - cp9b->jmin[v] + 1));
+	      cp9b->hdmax[v] = malloc(sizeof(int) * (cp9b->jmax[v] - cp9b->jmin[v] + 1));
 	    }
-	  ij2d_bands(cm, sqinfo[i].len, imin, imax, jmin, jmax,
-		     hdmin, hdmax, -1);
+	  ij2d_bands(cm, sqinfo[i].len, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax,
+		     cp9b->hdmin, cp9b->hdmax, -1);
 	  
 	  if(debug_level != 0)
-	    PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, sqinfo[i].len);
+	    PrintDPCellsSaved_jd(cm, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
+				 sqinfo[i].len);
 	  
 	  FreeCPlan9Matrix(cp9_fwd);
 	  FreeCPlan9Matrix(cp9_posterior);
@@ -810,7 +749,7 @@ main(int argc, char **argv)
 				 NULL, NULL,	/* manage your own matrix, I don't want it */
 				 NULL, NULL,	/* manage your own deckpool, I don't want it */
 				 do_local,        /* TRUE to allow local begins */
-				 jmin, jmax, hdmin, hdmax); /* j and d bands */
+				 cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
 	  else
 	    sc = FInside(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
 			 BE_EFFICIENT,	/* memory-saving mode */
@@ -827,7 +766,7 @@ main(int argc, char **argv)
 				   NULL, &alpha,	/* fill alpha, and return it, needed for FOutside() */
 				   NULL, NULL,	/* manage your own deckpool, I don't want it */
 				   do_local,        /* TRUE to allow local begins */
-				   jmin, jmax, hdmin, hdmax); /* j and d bands */
+				   cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
 	      /*do_check = TRUE;*/
 	      sc = FOutside_b_jd_me(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
 				    BE_PARANOID,	/* save full beta */
@@ -837,7 +776,7 @@ main(int argc, char **argv)
 				    alpha,          /* alpha matrix from FInside_b_jd_me() */
 				    NULL,           /* don't save alpha */
 				    do_check,       /* TRUE to check Outside probs agree with Inside */
-				    jmin, jmax, hdmin, hdmax); /* j and d bands */
+				    cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
 	    }
 	  else
 	    {
@@ -863,22 +802,23 @@ main(int argc, char **argv)
 	      sc = CYKDivideAndConquer_b(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, 
 					      &(tr[i]), dmin, dmax);
 	      if(bdump_level > 0)
-		banded_trace_info_dump(cm, tr[i], dmin, dmax, bdump_level);
+ 		banded_trace_info_dump(cm, tr[i], dmin, dmax, bdump_level);
 	    }
 	  else if(do_hbanded) /*j and d bands not tight enough to allow HMM banded full CYK*/
 	    {
 	      /* Calc the safe d bands */
-	      hd2safe_hd_bands(cm->M, jmin, jmax, hdmin, hdmax, safe_hdmin, safe_hdmax);
+	      hd2safe_hd_bands(cm->M, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
+			       cp9b->safe_hdmin, cp9b->safe_hdmax);
 	      if(debug_level > 3)
 		{
 		  printf("\nprinting hd bands\n\n");
-		  debug_print_hd_bands(cm, hdmin, hdmax, jmin, jmax);
+		  debug_print_hd_bands(cm, cp9b->hdmin, cp9b->hdmax, cp9b->jmin, cp9b->jmax);
 		  printf("\ndone printing hd bands\n\n");
 		}
 	      /* Note the following CYK call will not enforce j bands, even
 	       * though user specified --hbanded. */
 	      sc = CYKDivideAndConquer_b(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, 
-					      &(tr[i]), safe_hdmin, safe_hdmax);
+					      &(tr[i]), cp9b->safe_hdmin, cp9b->safe_hdmax);
 	      if(bdump_level > 0)
 		banded_trace_info_dump(cm, tr[i], dmin, dmax, bdump_level);
 	    }
@@ -903,10 +843,10 @@ main(int argc, char **argv)
 	}
       else if(do_hbanded)
 	{
-	  sc = CYKInside_b_jd(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, &(tr[i]), jmin, jmax,
-	    hdmin, hdmax, safe_hdmin, safe_hdmax);
+	  sc = CYKInside_b_jd(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, &(tr[i]), cp9b->jmin, 
+			      cp9b->jmax, cp9b->hdmin, cp9b->hdmax, cp9b->safe_hdmin, cp9b->safe_hdmax);
 	  if(bdump_level > 0)
-	    banded_trace_info_dump(cm, tr[i], safe_hdmin, safe_hdmax, bdump_level);
+	    banded_trace_info_dump(cm, tr[i], cp9b->safe_hdmin, cp9b->safe_hdmax, bdump_level);
 	}
       else
 	{
@@ -935,7 +875,8 @@ main(int argc, char **argv)
 	      for (v = 0; v < cm->M; v++)
 		{
 		  post[v] = NULL;
-		  post[v] = alloc_jdbanded_vjd_deck(sqinfo[i].len, 1, sqinfo[i].len, jmin[v], jmax[v], hdmin[v], hdmax[v]);
+		  post[v] = alloc_jdbanded_vjd_deck(sqinfo[i].len, 1, sqinfo[i].len, cp9b->jmin[v], 
+						    cp9b->jmax[v], cp9b->hdmin[v], cp9b->hdmax[v]);
 		}
 	      post[cm->M] = NULL;
 	      post[cm->M] = alloc_vjd_deck(sqinfo[i].len, 1, sqinfo[i].len);
@@ -944,7 +885,7 @@ main(int argc, char **argv)
 				   NULL, &alpha,	/* fill alpha, and return it, needed for FOutside() */
 				   NULL, NULL,	/* manage your own deckpool, I don't want it */
 				   do_local,       /* TRUE to allow local begins */
-				   jmin, jmax, hdmin, hdmax); /* j and d bands */
+				   cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
 	      sc = FOutside_b_jd_me(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
 				    BE_PARANOID,	/* save full beta */
 				    NULL, &beta,	/* fill beta, and return it, needed for CMPosterior() */
@@ -952,11 +893,11 @@ main(int argc, char **argv)
 				    do_local,       /* TRUE to allow local begins */
 				    alpha, &alpha,  /* alpha matrix from FInside(), and save it for CMPosterior*/
 				    do_check,      /* TRUE to check Outside probs agree with Inside */
-				    jmin, jmax, hdmin, hdmax); /* j and d bands */
+				    cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
 	      CMPosterior_b_jd_me(sqinfo[i].len, cm, alpha, NULL, beta, NULL, post, &post,
-				    jmin, jmax, hdmin, hdmax);
+				  cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax);
 	      postcode[i] = CMPostalCode_b_jd_me(cm, sqinfo[i].len, post, tr[i],
-						 jmin, jmax, hdmin, hdmax);
+						 cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax);
 	    }
 	  else
 	    {
@@ -1011,7 +952,8 @@ main(int argc, char **argv)
       /* Dump the trace with info on i, j and d bands
        * if bdump_level is high enough */
       if(bdump_level > 0)
-	ijd_banded_trace_info_dump(cm, tr[i], imin, imax, jmin, jmax, hdmin, hdmax, 1);
+	ijd_banded_trace_info_dump(cm, tr[i], cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, 
+				   cp9b->hdmin, cp9b->hdmax, 1);
       
       /* Clean up the structures we use calculating HMM bands, that are allocated
        * differently for each sequence. 
@@ -1020,8 +962,8 @@ main(int argc, char **argv)
 	{
 	  for(v = 0; v < cm->M; v++)
 	    { 
-	      free(hdmin[v]); 
-	      free(hdmax[v]);
+	      free(cp9b->hdmin[v]); 
+	      free(cp9b->hdmax[v]);
 	    }
 	  StopwatchStop(watch2);
 	  if(time_flag) StopwatchDisplay(stdout, "band calc and jd CYK CPU time: ", watch2);
@@ -1137,32 +1079,7 @@ main(int argc, char **argv)
       free(p7dsq);
     }
   if(do_hbanded)
-    {
-      /* HMMERNAL */
-      free(imin);
-      free(imax);
-      free(jmin);
-      free(jmax);
-      free(hdmin);
-      free(hdmax);
-      free(pn_min_m);
-      free(pn_max_m);
-      free(pn_min_i);
-      free(pn_max_i);
-      free(pn_min_d);
-      free(pn_max_d);
-      free(safe_hdmin);
-      free(safe_hdmax);
-      for (i = 0; i < nseq; i++) 
-	{ 
-	  free(isum_pn_m[i]); 
-	  free(isum_pn_i[i]);
-	  free(isum_pn_d[i]);
-	}
-      free(isum_pn_m);
-      free(isum_pn_i);
-      free(isum_pn_d);
-    }
+    FreeCP9Bands(cp9b);
 
   if(do_hbanded || do_sub)
     {

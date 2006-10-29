@@ -402,12 +402,50 @@ typedef struct cp9map_s {
 		     *            that maps to this CM state 
 		     *            [x][0] corresponds to the HMM node in cs2hn[x][0],
 		     *            [x][1] corresponds to the HMM node in cs2hn[x][1] (or -1) */
-  int  ***hns2cs;    /* [0..clen][0..2], the CM state that maps to this HMM
+  int  ***hns2cs;   /* [0..clen][0..2], the CM state that maps to this HMM
 		     *                  node (1st dimension) - state (2nd dim)*/
   int    hmm_M;     /* consensus length, the number of HMM nodes */
   int    cm_M;      /* number of states in the CM this HMM maps to */
   int    cm_nodes;  /* number of nodes in the CM this HMM maps to */
 } CP9Map_t;
+
+
+/* Structure: CP9Bands_t
+ * Incept:    EPN, 10.27.06
+ *
+ * CP9 HMM bands and the resulting CM bands for HMM banded
+ * CYK (or Inside or Outside) algorithms.
+ *
+ */
+typedef struct cp9bands_s {
+  int      hmm_M;             /* Number of nodes in CP9 HMM */
+  int      cm_M;              /* Number of nodes in CM, the CP9 HMM was built from */
+
+  /* data structures for hmm bands (bands on the hmm states) */
+  int     *pn_min_m;          /* HMM band: minimum position node k match state will emit  */
+  int     *pn_max_m;          /* HMM band: maximum position node k match state will emit  */
+  int     *pn_min_i;          /* HMM band: minimum position node k insert state will emit */
+  int     *pn_max_i;          /* HMM band: maximum position node k insert state will emit */
+  int     *pn_min_d;          /* HMM band: minimum position node k delete state will emit */
+  int     *pn_max_d;          /* HMM band: maximum position node k delete state will emit */
+  int     *isum_pn_m;         /* [1..k..M] sum over i of log post probs from post->mmx[i][k]*/
+  int     *isum_pn_i;         /* [1..k..M] sum over i of log post probs from post->imx[i][k]*/
+  int     *isum_pn_d;         /* [1..k..M] sum over i of log post probs from post->dmx[i][k]*/
+
+  /* arrays for CM state bands, derived from HMM bands */
+  int *imin;                  /* [1..M] imin[v] = first position in band on i for state v*/
+  int *imax;                  /* [1..M] imax[v] = last position in band on i for state v*/
+  int *jmin;                  /* [1..M] jmin[v] = first position in band on j for state v*/
+  int *jmax;                  /* [1..M] jmax[v] = last position in band on j for state v*/
+  int **hdmin;                /* [v=1..M][0..(jmax[v]-jmin[v])] 
+			       * hdmin[v][j0] = first position in band on d for state v, and position
+			       * j = jmin[v] + j0.*/
+  int **hdmax;                /* [v=1..M][0..(jmax[v]-jmin[v])] 
+			       * hdmin[v][j0] = last position in band on d for state v, and position
+			       * j = jmin[v] + j0.*/
+  int *safe_hdmin;            /* [1..M] safe_hdmin[v] = min_d (hdmin[v][j0]) (over all valid j0) */
+  int *safe_hdmax;            /* [1..M] safe_hdmax[v] = max_d (hdmax[v][j0]) (over all valid j0) */
+} CP9Bands_t;
 
 
 

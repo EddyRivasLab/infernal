@@ -46,7 +46,6 @@ static void  cm_add_single_trans(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap
 static float cm_sum_subpaths(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, int start, int end, int sub_start,
 			     char ***tmap, double *orig_psi, int orig_insert1, int orig_insert2, int orig_insert3,
 			     int orig_insert4);
-static void  debug_print_cm_params(CM_t *cm);
 static int   orig2sub_state_check(CMSubMap_t *submap, int orig_a, int orig_b);
 static int   sub_trans_check(CM_t *sub_cm, CMSubMap_t *submap, int orig_a, int orig_b, int min_sub_v);
 static int   trans_check_helper(CM_t *cm, int a, int b);

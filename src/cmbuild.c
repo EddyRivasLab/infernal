@@ -614,13 +614,9 @@ main(int argc, char **argv)
       if(do_detach)
 	{
 	  printf("%-40s ... ", "Finding and checking dual inserts");
-	  cm_find_and_detach_dual_inserts(cm, TRUE, FALSE); 
-	  /* TRUE tells the function to check to make sure the inserts 
-	   * to detach are filled with 0.0 counts from the seed sequences, 
-	   * and they're always 1 state before an END_E.  FALSE tells
-	   * it not to detach them yet, we want to wait til after
-	   * the CM is priorified. 
-	   */
+	  cm_find_and_detach_dual_inserts(cm, 
+					  TRUE,   /* Do check (END_E-1) insert states have 0 counts */
+					  FALSE); /* Don't detach the states yet, wait til CM is priorified */
 	}
 
       printf("done.\n");
@@ -672,8 +668,9 @@ main(int argc, char **argv)
       if(do_detach) /* Detach dual inserts where appropriate, if
 		     * we get here we've already checked these states */
 	{
-	  cm_find_and_detach_dual_inserts(cm, FALSE, TRUE); 
-	  CMRenormalize(cm);
+	  cm_find_and_detach_dual_inserts(cm, 
+					  FALSE, /* Don't check states have 0 counts (they won't due to priors) */
+					  TRUE); /* Detach the states by setting trans probs into them as 0.0   */
 	}
       CMLogoddsify(cm);
       printf("done.\n");
@@ -686,8 +683,6 @@ main(int argc, char **argv)
        */
       printf("%-40s ... ", "Calculating max hit length for model"); fflush(stdout);
       safe_windowlen = 2 * MSAMaxSequenceLength(msa);
-      /*printf("safe_windowlen : %d\n", safe_windowlen);*/
-      /*printf("bandp          : %12f\n", bandp);*/
 
       /* EPN 11.13.05 
        * BandCalculationEngine() replaces BandDistribution() and BandBounds().
@@ -721,12 +716,7 @@ main(int argc, char **argv)
        * it is set as in the .cm file.
        */
       if(cm->el_selfsc < (IMPOSSIBLE/(2 * cm->W)))
-	{
-	  /*printf("resetting cm->el_selfsc\n");*/
-	  /*printf("old : %f\n", cm->el_selfsc);*/
-	  cm->el_selfsc = (IMPOSSIBLE/(2 * cm->W));
-	  /*printf("new : %f\n", cm->el_selfsc);*/
-	}
+	cm->el_selfsc = (IMPOSSIBLE/(2 * cm->W));
       
       /* Give the model a name (mandatory in the CM file).
        * Order of precedence:

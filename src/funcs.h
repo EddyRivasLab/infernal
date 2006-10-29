@@ -360,5 +360,6 @@ extern CMSubMap_t  *AllocSubMap(CM_t *sub_cm, CM_t *orig_cm, int sstruct, int es
 extern void         FreeSubMap(CMSubMap_t *submap);
 extern CMSubInfo_t *AllocSubInfo(int clen);
 extern void         FreeSubInfo(CMSubInfo_t *subinfo);
+extern void  debug_print_cm_params(CM_t *cm);
 
 

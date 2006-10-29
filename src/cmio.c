@@ -526,6 +526,14 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
     if (strncmp(buf, "//", 2) == 0) 
       break;
 
+  /* EPN 10.29.06 Remove the sole source of CM ambiguities. Find and detach insert states
+   *              that are 1 state before an END_E.  */
+  cm_find_and_detach_dual_inserts(cm, 
+				  FALSE, /* Don't check END_E-1 states have 0 counts, they may not if 
+					  * an old version (0.7 or earlier) of cmbuild was used, or  
+					  * cmbuild --nodetach  was used to build the CM  */
+				  TRUE); /* Detach the states by setting trans probs into them as 0.0   */
+
   /* Success.
    * Renormalize the CM, and return.
    */
@@ -638,14 +646,27 @@ read_binary_cm(CMFILE *cmf, CM_t **ret_cm)
   if (! tagged_fread(CMIO_NODEMAP,      (void *) cm->nodemap,    sizeof(int),   cm->nodes, fp))     goto FAILURE;
   if (! tagged_fread(CMIO_NDTYPE,       (void *) cm->ndtype,     sizeof(char),  cm->nodes, fp))     goto FAILURE;
   /* EPN 08.18.05 */
-  if (! tagged_fread(CMIO_W,     (void *) &(cm->W),     sizeof(int), 1, fp)) goto FAILURE;
+  if (! tagged_fread(CMIO_W,            (void *) &(cm->W),       sizeof(int),   1,         fp))     goto FAILURE;
 
+  if (! tagged_fread(CMIO_ELSELFSC,     (void *) &(cm->el_selfsc), sizeof(float),1,        fp))     goto FAILURE;
+  
   for (v = 0; v < cm->M; v++) {
     if (! tagged_fread(CMIO_T, (void *) cm->t[v], sizeof(float), MAXCONNECT, fp)) goto FAILURE;
     if (! tagged_fread(CMIO_E, (void *) cm->e[v], sizeof(float), Alphabet_size*Alphabet_size, fp)) goto FAILURE;
   }
   if (! tagged_fread(CMIO_END_DATA, (void *) NULL, 0, 0, fp)) goto FAILURE;
 
+  /* EPN 10.29.06 Remove the sole source of CM ambiguities. Find and detach insert states
+   *              that are 1 state before an END_E.  */
+  cm_find_and_detach_dual_inserts(cm, 
+				  FALSE, /* Don't check END_E-1 states have 0 counts, they may not if 
+					  * an old version (0.7 or earlier) of cmbuild was used, or  
+					  * cmbuild --nodetach  was used to build the CM  */
+				  TRUE); /* Detach the states by setting trans probs into them as 0.0   */
+
+  /* EPN 10.29.06 Noticed there's no CMRenormalize() call here (for speed?), didn't add one 
+     CMRenormalize(cm);
+   */
   *ret_cm = cm;
   return 1;
 

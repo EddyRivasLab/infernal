@@ -32,6 +32,9 @@
 #include "sre_stack.h"
 #include "cplan9.h"
 
+extern CP9Bands_t * AllocCP9Bands(CM_t *cm, struct cplan9_s *hmm);
+extern void FreeCP9Bands(CP9Bands_t *cp9bands);
+
 extern double dbl_Score2Prob(int sc, float null);
 
 /* Functions for getting posterior probabilities from CP9 HMMs 
@@ -52,7 +55,7 @@ extern void CP9_ifill_post_sums(struct cp9_dpmatrix_s *post, int i0, int j0, int
 
 /* Functions to determine HMM bands */
 extern void CP9_hmm_band_bounds(int **post, int i0, int j0, int M, int *isum_pn, int *pn_min, int *pn_max, double p_thresh, 
-				int state_type, int debug_level);
+				int state_type, int use_sums, int debug_level);
 
 /* Functions to go from HMM bands to i and j bands on a CM */
 extern void hmm2ij_bands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m, 
