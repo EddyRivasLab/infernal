@@ -902,7 +902,7 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
       if (*delta_sc < min) min = *delta_sc; /*TRACE*/
       *delta_sc = *delta_sc + tsc + esc;
       printf("%d\t%f\t%f\t%f\t%f\n",x,*total_sc,*delta_sc,ceiling,nomarginal); /*TRACE*/
-      if (*delta_sc >= 0 || (*delta_sc - min > 20))
+      if (*delta_sc >= 0)
       {
          root->chunk->need_commit = 0;
          *total_sc += *delta_sc;
