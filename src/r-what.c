@@ -10,6 +10,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "easel.h"
+#include "esl_vectorops.h"
 #include "squid.h"
 
 #include "structs.h"
@@ -802,7 +804,6 @@ LeftMarginalScore(float *esc, int dres)
    return sc;
 }
 
-/* Not correct!  needs to be corrected to mirror LeftMarginal */
 float
 RightMarginalScore(float *esc, int dres)
 {
@@ -851,8 +852,8 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
    float ceiling = 0.0; /*TRACE*/
    float nomarginal = 0.0; /*TRACE*/
    float min = 0.0; /*TRACE*/
-   printf("depth\tdelta_sc\tceiling\tnomarginal\n"); /*TRACE*/
-   printf("%d\t%f\t%f\t%f\n",0,*delta_sc,ceiling,nomarginal); /*TRACE*/
+   printf("depth\ttotal_sc\tdelta_sc\tceiling\tnomarginal\n"); /*TRACE*/
+   printf("%d\t%f\t%f\t%f\t%f\n",0,*total_sc,*delta_sc,ceiling,nomarginal); /*TRACE*/
 
    root->chunk->need_commit = 0;
    *commit = 0;
@@ -900,7 +901,7 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
       ceiling += tsc; /*TRACE*/
       if (*delta_sc < min) min = *delta_sc; /*TRACE*/
       *delta_sc = *delta_sc + tsc + esc;
-      printf("%d\t%f\t%f\t%f\n",x,*delta_sc,ceiling,nomarginal); /*TRACE*/
+      printf("%d\t%f\t%f\t%f\t%f\n",x,*total_sc,*delta_sc,ceiling,nomarginal); /*TRACE*/
       if (*delta_sc >= 0 || (*delta_sc - min > 20))
       {
          root->chunk->need_commit = 0;
@@ -1027,8 +1028,8 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
 
          *delta_sc = *delta_sc + esc;
          if (*delta_sc < min) min = *delta_sc; /*TRACE*/
-         printf("%d\t%f\t%f\t%f\n",x,*delta_sc,ceiling,nomarginal); /*TRACE*/
-         if (*delta_sc >= 0 || (*delta_sc - min > 20))
+         printf("%d\t%f\t%f\t%f\t%f\n",x,*total_sc,*delta_sc,ceiling,nomarginal); /*TRACE*/
+         if (*delta_sc >= 0)
           {
             root->chunk->need_commit = 0;
             *total_sc += *delta_sc;

@@ -64,8 +64,8 @@ void MaxSubsequenceScore(CM_t *cm, int W, float ***ret_max_sc);
 PA_t* AstarExtension(CM_t *cm, char *dsq, int init_v, int init_j, int lower_d, int upper_d,
     	float init_sc, float **max_sc, float cutoff);
 
-float LeftMarginalScore(float *esc, char syml);
-float RightMarginalScore(float *esc, char symr);
+float LeftMarginalScore(float *esc, int dres);
+float RightMarginalScore(float *esc, int dres);
 void MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dropoff_sc, float *total_sc, float *delta_sc, int *commit, int *complete);
 
 #endif /* R_WHAT_H_INCLUDED */
