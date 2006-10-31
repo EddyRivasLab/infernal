@@ -48,7 +48,8 @@
 HHMI Janelia Farm Research Campus\\
 19700 Helix Drive\\
 Ashburn VA 20176\\
-\{eddys,nawrockie\}@janelia.hhmi.org}  
+\url{http://selab.janelia.org/}\\
+}
 \date{\today}
 \maketitle
 
@@ -58,91 +59,86 @@ Ashburn VA 20176\\
 
 \begin{abstract}
 
-When searching sequence databases for RNAs, it is advantageous to
-score a combination of primary sequence and RNA secondary structure
-similarity.  Covariance models (CMs) are probabilistic models well
-suited for RNA similarity search applications, but the computational
-complexity of CM dynamic programming alignment algorithms has limited
-their practical application. Here we describe an acceleration method
-called \emph{query-dependent banding} (QDB), which uses the
-probabilistic model of the query to precalculate regions of the
-dynamic programming lattice that have negligible probability,
-independent of target sequences. We have implemented QDB in the freely
-available \textsc{Infernal} software package. Combined with other
-improvements to \textsc{Infernal}, including informative mixture
-Dirichlet priors on model parameters, benchmarks show increased
-sensitivity and specificity from the improved parameterization, and
-three- to five-fold average speedup from QDB.
+When searching sequence databases for RNAs, it is desirable to score
+both primary sequence and RNA secondary structure similarity.
+Covariance models (CMs) are probabilistic models well suited for RNA
+similarity search applications. However, the computational complexity
+of CM dynamic programming alignment algorithms has limited their
+practical application. Here we describe an acceleration method called
+\emph{query-dependent banding} (QDB), which uses the probabilistic
+query model to precalculate regions of the dynamic programming lattice
+that have negligible probability, independent of target sequences. We
+have implemented QDB in the freely available \textsc{Infernal}
+software package. Combined with other improvements to
+\textsc{Infernal}, including informative mixture Dirichlet priors on
+model parameters, benchmarks show increased sensitivity and
+specificity from the improved parameterization, and three- to
+five-fold average speedup from QDB.
 
 \end{abstract}
-
-
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 \section{Introduction}
 
-Many functional RNAs conserve a base-paired secondary structure, which
-induces long-distance pairwise
-correlations in homologous RNA sequences.  When
-performing database searches to identify homologous structural RNAs, it is
-advantageous for RNA similarity search programs to take pairwise
-secondary structure correlations into account, in addition to primary
-sequence conservation.
+Many functional RNAs conserve a base-paired secondary structure.
+Conserved RNA secondary structure induces long-distance pairwise
+correlations in homologous RNA sequences.  When performing database
+searches to identify homologous structural RNAs, it is desirable for
+RNA similarity search programs to score a combination of secondary
+structure and primary sequence conservation.
 
-A variety of approaches for RNA similarity searching have been described. There
-are specialized programs for identifying one particular RNA
-family or motif, such as programs that identify tRNAs
-% update refs here: add Aragorn, for example, for tRNAs.
-\cite{LoweEddy97,XXX}, snoRNAs \cite{LoweEddy99}, microRNAs \cite{Lai03,
-Lim03}, SRP RNAs \cite{Regalia02}, and rho-independent transcription
-terminators \cite{Ermolaeva00}. There are also
-pattern-matching algorithms \cite{Macke01,Gautheret01} that rely on
-expertly designed query patterns. However, the most generally useful approaches
-are those that take any RNA (or any multiple RNA alignment) as a
-query, and use a statistical structure/sequence scoring system to
-search a sequence database and rank high-scoring similarities, just as
-programs like BLAST and FASTA do for linear sequence comparison.
+A variety of approaches for RNA similarity searching have been
+described. There are specialized programs for identifying one
+particular RNA family or motif, such as programs that identify tRNAs
+\cite{LoweEddy97,Laslett04}, snoRNAs \cite{LoweEddy99,Schattner06},
+microRNAs \cite{Lai03, Lim03}, SRP RNAs \cite{Regalia02}, and
+rho-independent transcription terminators \cite{Ermolaeva00}. There
+are also pattern-matching algorithms \cite{Macke01,Gautheret01} that
+rely on expertly designed query patterns. However, the most generally
+useful approaches are those that take any RNA (or any multiple RNA
+alignment) as a query, and use a statistical structure/sequence
+scoring system to search a sequence database and rank high-scoring
+similarities, just as programs like BLAST do for linear sequence
+comparison \cite{Altschul97}.
 
-In a general search program of this sort, 
-one wants to be able to score a combination of RNA sequence and
-structural conservation in a principled rather than \emph{ad hoc}
-manner. A satisfactory solution to this problem is known,
-using probabilistic models called \emph{stochastic context-free
-grammars} (SCFGs). SCFGs readily capture both primary sequence and
-(non-pseudoknotted) RNA secondary structure conservation
-\cite{Sakakibara94c,Durbin98}. Just as hidden Markov models (HMMs) are
-useful for many different linear sequence modeling applications,
-including genefinding, multiple alignment, motif finding, and
-% references needed here
-similarity search, SCFGs are a generally useful paradigm for probabilistic RNA
-sequence/structure analysis, with applications including secondary
-structure prediction and genefinding. A particular SCFG architecture
-called \emph{covariance models} (CMs) was developed specifically for
-the RNA similarity search problem \cite{Eddy94}. 
-CMs are profile SCFGs, analogous to
-the use of profile HMMs in sequence analysis
-\cite{Eddy94,Eddy02b}.  The Rfam database of RNA families
-\cite{Griffiths-Jones05} uses CM-based software (\textsc{infernal})
-in much the same way that the Pfam database of protein
-families uses profile HMM software (\textsc{hmmer}).
+In a general search program, one wants to be able to score a
+combination of RNA sequence and structural conservation in a
+principled rather than \emph{ad hoc} manner. A satisfactory solution
+to this problem is known, using probabilistic models called
+\emph{stochastic context-free grammars} (SCFGs). SCFGs readily capture
+both primary sequence and (non-pseudoknotted) RNA secondary structure
+conservation \cite{Sakakibara94c,Durbin98}. Just as hidden Markov
+models (HMMs) are useful for many different linear sequence modeling
+applications, including genefinding, multiple alignment, motif
+finding, and similarity search \cite{Durbin98}, SCFGs are a generally
+useful paradigm for probabilistic RNA sequence/structure analysis,
+with applications including secondary structure prediction and
+genefinding. A particular SCFG architecture called \emph{covariance
+models} (CMs) was developed specifically for the RNA similarity search
+problem \cite{Eddy94}.  CMs are profile SCFGs, analogous to the use of
+profile HMMs in sequence analysis \cite{Eddy94,Eddy02b}.  The Rfam
+database of RNA families \cite{Griffiths-Jones05} is based on CM
+software (\textsc{infernal}) in much the same way that the Pfam
+database of protein families is based on profile HMM software
+(\textsc{hmmer}) \cite{Sonnhammer98,Finn06}.
 
 The most serious problem in using CMs is their computational
 complexity. Applying standard SCFG dynamic programming alignment
-algorithms to the particular case of CMs results in algorithms that require
-$O(N^3)$ memory and
-$O(L N^3)$ time for a query of length $N$ residues (or consensus
-alignment columns) and a target database sequence of length $L$.  In
-practice, this can mean tens of gigabytes of memory and CPU-years of
-time for typical RNA queries. The memory complexity problem was
-essentially solved in 2002 by extending divide-and-conquer dynamic programming
-methods (the Hirshberg or Myers/Miller algorithm) to the case of CMs
-\cite{Eddy02b}. The time complexity problem still stands. 
+algorithms to the particular case of CMs results in algorithms that
+require $O(N^3)$ memory and $O(L N^3)$ time for a query of length $N$
+residues (or consensus alignment columns) and a target database
+sequence of length $L$.  In practice, this can mean tens of gigabytes
+of memory and CPU-years of time for typical RNA queries. The memory
+complexity problem has essentially been solved, by extending
+divide-and-conquer dynamic programming methods (the Hirshberg or
+Myers/Miller algorithm) to the case of CMs \cite{Eddy02b}. The time
+complexity problem still stands.
 
 Weinberg and Ruzzo have described two filtering methods for
 accelerating CM searches
-\emph{Weinberg04,Weinberg04b,Weinberg05}. Both methods work by scoring
+\cite{Weinberg04,Weinberg04b,Weinberg05}. Both methods work by scoring
 a target sequence first by a linear sequence comparison method using a
 profile HMM specially constructed from the CM query, and passing only
 the subset of hits above a threshold for rescoring with the more
@@ -152,36 +148,36 @@ a full CM based search at little or no cost to sensitivity and
 specificity. However, because the Weinberg/Ruzzo filters depend on
 primary sequence conservation alone, they can be relatively
 ineffective for RNA families that exhibit poor sequence
-conservation. In this respect, their overall performance on the
-current Rfam database may be somewhat misleading. Rfam currently uses
-a crude BLAST-based filtering method to accelerate the CM searches
-used in curating the database, and this step introduces a bias towards
-high primary sequence similarity in current Rfam alignments. As Rfam
-improves and incorporates more diverse structural homologs, the
-effectiveness of sequence-based filters is likely to decrease for some
-families.
+conservation. In this respect, we are concerned that their overall
+performance on the current Rfam database may be somewhat
+misleading. Rfam currently uses a crude BLAST-based filtering method
+to accelerate the CM searches used in curating the database. This step
+introduces a bias towards high primary sequence similarity in current
+Rfam alignments. As Rfam improves and incorporates more diverse
+structural homologs, the effectiveness of sequence-based filters is
+likely to decrease.
 
-Here, we describe a method for accelerating CM searches using banded
-dynamic programming (DP). In banded DP, one uses some fast method to
-identify a band through the DP matrix where the optimal alignment is
-likely to lie, and then calculates computationally expensive DP
-recursions only within that band. In most cases, including the
-approach we will describe here, banded DP is a heuristic that
-sacrifices guaranteed alignment optimality. Banding is a standard
-approach in many areas of sequence analysis. Gapped \textsc{BLAST}
-uses banded DP to convert ungapped high-scoring pairs (HSPs) to full
-gapped alignments \cite{Altschul90,XXX}.  \textsc{LAGAN} and
-\textsc{Multi-LAGAN} use banded dynamic programming (referred to as
-limited-area dynamic programming) to stitch together alignments
-between anchored sequences when aligning long genomic sequences. The
-simultaneous RNA alignment and structure prediction programs. Banding
-has also been applied to profile SCFGs by Michael Brown in his
-\textsc{RNACAD} program by using information from a profile HMM
-alignment to define bands for the expensive SCFG alignment
-\cite{Brown00}. The key to developing a banded DP strategy is in
-deciding how the bands are identified.  Usually, including all the
-examples above, banded DP involves performing some sort of rapid
-approximate sequence alignment between the query and the target.
+Here, we describe a method for accelerating CM searches using a banded
+dynamic programming (DP) strategy. In banded DP, one uses some fast
+method to identify a band through the DP matrix where the optimal
+alignment is likely to lie, and then calculates computationally
+expensive DP recursions only within that band. In most cases,
+including our approach, banded DP is a heuristic that sacrifices
+guaranteed alignment optimality. Banding is a standard approach in
+many areas of sequence analysis. Gapped \textsc{BLAST} uses banded DP
+to convert ungapped high-scoring pairs (HSPs) to full gapped
+alignments \cite{Altschul97}.  \textsc{LAGAN} and \textsc{Multi-LAGAN}
+use banded dynamic programming (referred to as limited-area dynamic
+programming) to stitch together alignments between anchored sequences
+when aligning long genomic sequences \cite{Brudno03}. The simultaneous
+RNA alignment and structure prediction programs. Banding has also been
+applied to profile SCFGs by Michael Brown in his \textsc{RNACAD}
+program by using information from a profile HMM alignment to define
+bands for the expensive SCFG alignment \cite{Brown00}. The key to
+developing a banded DP strategy is in deciding how the bands are
+identified.  Usually, including all the examples just mentioned,
+banded DP involves performing some sort of rapid approximate sequence
+alignment between the query and the target.
 
 In contrast, the method we describe here, called \emph{query-dependent
 banding} (QDB), takes advantage of specific properties of CMs in order
@@ -196,37 +192,44 @@ that rely on sequence but not structure.
 
 Briefly, the key idea is the following. Each base pair and each
 single-stranded residue in the query RNA is represented in a CM by a
-\emph{state} in a tree-like structure of states that mirrors the
-secondary structure of the RNA, together with additional states that
-model insertions and deletions. The standard CM dynamic programming
-alignment algorithm works by recursively calculating the probability
+\emph{state}. States are arranged in a tree-like structure that
+mirrors the secondary structure of the RNA, along with additional
+states to model insertions and deletions. The standard CM dynamic
+programming alignment algorithm works by calculating the probability
 that a substructure of the query rooted at state $v$ aligns to a
-subsequence $i..j$ in the the target sequence. To guarantee
-optimality, all possible $i..j$ subsequences in the target sequence
-must be scored for every state.  However, most of these subsequences
-are obviously too long or short, when one considers the known size of
-the query substructure under state $v$. For example, when state $v$ is
-the closing base pair of a four-base loop, only $i..j$ subsequences of
-length 6 are likely to occur in any optimal alignment to state $v$
-($i=j-5,j$ being the base pair, and $j-4..j-1$ being the four bases of
-the hairpin loop), and likewise, the optimal subsequence for the next
-consensus base pair in that stem is almost certainly of length 8.  The
-possibility of insertions and deletions in the target sequence means
-that no subsequence length is known with certainty, but because the CM
-is a probabilistic model, a probability distribution for subsequence
+subsequence $i..j$ in the the target sequence. The calculation is
+recursive, starting at the leaves of the CM (ends of hairpin loops)
+and subsequences of length 0, and working upwards in larger
+substructures of the CM, and outwards in longer and longer
+subsequences.
+
+To guarantee optimality, at each $v$, the DP algorithm must score all
+possible $i..j$ subsequences in the target sequence.  However, most of
+these subsequences are obviously too long or short, when one considers
+the size of the query substructure under state $v$.  For example, when
+state $v$ models the closing base pair of a consensus four-base loop,
+only $i..j$ subsequences of length six are likely to occur in any
+optimal alignment to state $v$ ($i=j-5,j$ being the base pair, and
+$j-4..j-1$ being the four bases of the hairpin loop). Likewise, the
+optimal subsequence for the next consensus base pair in that stem is
+almost certainly of length eight.
+
+Because insertions and deletions may occur in the target sequence, no
+subsequence length is known with certainty, but because the CM is a
+probabilistic model, a probability distribution for subsequence
 lengths under each state (including the probability of insertions and
-deletions) can be analytically derived from the state transitions in
-the query CM.  These distributions can be used to determine a band of
-subsequence lengths that captures all but a specified tiny fraction of
-the probability mass. A CM dynamic programming algorithm can then look
-not at all subsequences $i,j$ for each state $v$, but only those $i$
-within a band of minimum and maximum distance relative to each $j$.
+deletions) can be analytically derived from the query CM.  These
+distributions can be used to determine a band of subsequence lengths
+that captures all but a negligible amount of the probability mass. A
+CM dynamic programming algorithm can then look not at all subsequences
+$i,j$ for each state $v$, but only those $i$ within a band of minimum
+and maximum distance relative to each $j$.
 
 To formalize this idea, we start with a description of CMs, followed
 by the QDB algorithms for calculating the subsequence length
 distributions, using these length distributions to determine bands,
 and using the bands in a banded CM dynamic programming alignment
-algorithm.  We find that QDB requires more accurate state transition
+algorithm.  We found that QDB requires more accurate state transition
 parameter estimation than the \textsc{infernal} software was
 providing, so we describe our implementation of mixture Dirichlet
 priors for CM parameter estimation. Finally, we present results from a
@@ -237,42 +240,31 @@ an average speed-up of three- to five-fold.
 \subsection{Covariance models}
 
 CMs are a convention for mapping an RNA secondary structure into a
-tree-like, directed graph of SCFG states and state transitions
-(equivalently, SCFG nonterminals and production rules). The CM is
+tree-like, directed graph of SCFG states and state transitions (or
+equivalently, SCFG nonterminals and production rules). The CM is
 organized by a binary tree of \emph{nodes} representing base pairs and
 single-stranded residues in the query's structure. Each node contains
-a number of states, where one state represents the expected alignment
+a number of states, where one state represents the consensus alignment
 to the query, and the others represent insertions and deletions
 relative to the query.  Figure~\ref{fig:cmintro} shows an example of
 converting a consensus structure to the guide tree of nodes, and part
 of the expansion of those guide tree nodes into the CM's state graph.
 Here we will only concentrate on the aspects of CMs necessary to
 understand QDB, and a subset of our usual notation. For full details
-on CM construction, see \cite{Eddy02b, infguide03}.
+on CM construction, see \cite{Eddy02b,infguide03}.
 
 \ifdraft
-\begin{figure}
-\begin{center}
-\includegraphics[width=6.4in]{figs/d4fig_0}
-\caption{\textbf{An example RNA family and corresponding CM.}
-  \textbf{(A):} A toy multiple alignment of 3 sequences. \textbf{(B):}
-  The structure of one sequence from (A), and the guide tree of nodes
-  corresponding to the consensus structure of the
-  family. \textbf{(C):} The state topology of 3 selected nodes of the
-  CM. Transitions are indicated by lines with arrows.}
-\label{fig:cmintro}
-\end{center}
-\end{figure}
+\input{fig-cmintro}
+% This is \ref{fig:cmintro}
 \fi
 
-In the guide tree, there are eight types of nodes. MATP nodes
-represent consensus base pairs. MATL and MATR nodes represent
-single-stranded residues (emitted to the left or right with respect to
-a stem). BIF nodes represent bifurcations in the secondary structure
-of the family, to deal with multiple stem-loops. Finally, a ROOT node
-represents the start of the model, BEGL and BEGR nodes represent the
-beginnings of a branch on the left and right side of a bifurcation,
-and END nodes end each branch.
+A guide tree consists of eight types of nodes. MATP nodes represent
+consensus base pairs. MATL and MATR nodes represent single-stranded
+residues (emitted to the left or right with respect to a stem). BIF
+nodes represent bifurcations in the secondary structure of the family,
+to deal with multiple stem-loops. A ROOT node represents the start of
+the model. BEGL and BEGR nodes represent the beginnings of a branch on
+the left and right side of a bifurcation.  END nodes end each branch.
 
 The CM is composed of seven different types of states, each with a
 corresponding form of production rule, with notation defined as
@@ -301,14 +293,14 @@ $Y$ that $v$ may transit to is limited to the states in the next
 (lower) node in the guide tree (and insert states in the current
 node); the set of possible children states $Y$ is called $C_v$, for
 ``children of $v$''. The indicators $\Delta_v^{L}$ and $\Delta_v^{R}$
-are used to simplify notation in CM dynamic programming algorithms;
-they are the residues emitted to the left and right of this state,
+are used to simplify notation in CM dynamic programming algorithms.
+They are the residues emitted to the left and right of this state,
 respectively. Bifurcation rules are special, in that they always
 transition for two particular start (S) states, at the root of
 subtrees in the guide tree, with probability 1.0.
 
-These state types essentially defines a general ``normal form'' for
-SCFG models of RNA, akin to SCFGs in Chomsky normal form where all
+These state types essentially defines a ``normal form'' for SCFG
+models of RNA, akin to SCFGs in Chomsky normal form where all
 productions are in one of two forms, $Y \rightarrow a$ or $Y
 \rightarrow YY$. We describe CM algorithms (including QDB) in terms of
 this normal form. CMs define a specific way that nodes in the guide
@@ -321,50 +313,49 @@ or rightmost base and deleting the right or left one, respectively),
 MATP\_D (a D state for deleting the base pair), and MATP\_IL and
 MATP\_IR (L and R states with self-transitions, for inserting one or
 more residues to the left and/or right before going to the next
-node). See \cite{Eddy02b, infguide03} for a fuller description, though
+node). See \cite{Eddy02b, infguide03} for a full description, though
 these details are unnecessary to describe QDB.
 
-Thus a CM is a generative probabilistic model of a family of
-homologous RNAs, consisting of a total of $M$ states. A sequence is
-emitted starting at the root, moving downwards from state to state
-according to state transition probabilities, emitting residues and
-residue pairs according to emission probabilities, and bifurcating
-into substructures at bifurcation states. An important property of a
-CM is the states can be numbered from $1..M$ (from root to leaves)
-such that that for any state $v$, the states $y$ that it can transit
-to have indices $y \geq v$ -- there are no cycles in a CM, other than
-self-transitions on insert states.  This property enables the
-recursive calculations that both CM alignment algorithms and QDB rely
-on.
+Thus a CM is a generative probabilistic model of homologous RNAs.  A
+sequence is emitted starting at the root, moving downwards from state
+to state according to state transition probabilities, emitting
+residues and residue pairs according to emission probabilities, and
+bifurcating into substructures at bifurcation states. An important
+property of a CM is the states can be numbered from $1..M$ (from root
+to leaves) such that for any state $v$, the states $y$ that it can
+transit to must have indices $y \geq v$ -- there are no cycles in a
+CM, other than self-transitions on insert states.  This is the
+property that enables the recursive calculations that both CM DP
+alignment algorithms and QDB rely on.
 
-Without altering the above description, CMs apply to either global or
-local alignment, and to either pairwise alignment to single RNA
-queries or profile alignment to a consensus structure of a multiple
-RNA sequence alignment. CMs for single RNA queries are derived
-identically to profiles of a consensus structure, differing only in
-the parameterization method \cite{KleinXXX}. Local structural
-alignment to substructures and truncated structures (as opposed to
-requiring a global alignment to the whole RNA structural model) is
-achieved by adding state transitions from the ROOT that permit
-entering the model at any internal consensus state with some
+Without any change in the above description, CMs apply to either
+global or local alignment, and to either pairwise alignment to single
+RNA queries or profile alignment to a consensus structure of a
+multiple RNA sequence alignment. CMs for single RNA queries are
+derived identically to profiles of a consensus structure, differing
+only in the parameterization method \cite{KleinEddy03}. Local
+structural alignment to substructures and truncated structures (as
+opposed to requiring a global alignment to the whole RNA structural
+model) is achieved by adding state transitions from the ROOT that
+permit entering the model at any internal consensus state with some
 probability, and state transitions from any internal state to an END
 with some probability \cite{KleinEddy03}.
 
 \subsection{QDB algorithm}
 
 Observe that for any state $v$, we could enumerate all possible paths
-down the model from $v$ to END(s), each of which has a certain
-probability (defined by the product of the transition probabilities
-used by the path), and each of which will emit a certain number of
-residues (2 per P state, 1 per L or R state in the path). The sum of
-these path probabilities for each $n$ defines a probability
-distribution $\gamma_v(n)$, the probability that the subgraph rooted
-at $v$ will generate a subsequence of length $n$.  Given a finite
-limit $Z$ on maximum subsequence length (defined later in the paper),
-we can calculate $\gamma_v(n)$ by an efficient recursive algorithm,
-initializing $\gamma_{v}(0)$ to 1.0 for all the END states, then
-working from leaves of the CM towards the root, and from smallest
-subsequences to largest:
+down the model from $v$ to the END(s). Each path has a certain
+probability (the product of the transition probabilities used by the
+path), and it will emit a certain number $n$ of residues (2 per P
+state, 1 per L or R state in the path). The sum of these path
+probabilities for each $n$ defines a probability distribution
+$\gamma_v(n)$, the probability that the CM subgraph rooted at $v$ will
+generate a subsequence of length $n$. Given a finite limit $Z$ on
+maximum subsequence length (defined later), we can calculate
+$\gamma_v(n)$ by an efficient recursive algorithm. initializing
+$\gamma_{v}(0)$ to 1.0 for all the END states, then working from
+leaves of the CM towards the root, and from smallest subsequences to
+largest:
 
 \vspace{0.5em}
 \begin{tabular}{l|l|l}
@@ -382,43 +373,45 @@ else ($v = S, P, L, R$): & $\gamma_v(d) = 0$ & for $d=0$ to $(\Delta_v^{L} + \De
 \end{tabular}
 \vspace{0.5em}
 
-For example, if we're calculating $\gamma_v(d)$ where $v$ is is a pair
-state, we know that $v$ must emit a pair of residues then transit to a
-new state $y$ (one of its possible transitions $C_v$), and a subgraph
-rooted at $y$ will have to account for the rest of the subsequence of
-length $d-2$. Therefore, $\gamma_v(d)$ must be the sum, over all
-possible states $y$ in $C_v$, of the transition probability $t_v(y)$
-times the probability that the subtree rooted at $y$ generates a
-subsequence of length $d-2$ -- which is $\gamma_y(d-2)$, guaranteed to
-have already been calculated by the recursion.  
-For the $B$ state (bifurcation) calculation, indices $y$ and $z$
-indicate the left and right S (start) state that bifurcation state $v$
-must connect to.
+For example, if we are calculating $\gamma_v(d)$ where $v$ is is a
+pair state, we know that $v$ must emit a pair of residues then transit
+to a new state $y$ (one of its possible transitions $C_v$), and then a
+subgraph rooted at $y$ will have to account for the rest of the
+subsequence of length $d-2$. Therefore, $\gamma_v(d)$ must be the sum,
+over all possible states $y$ in $C_v$, of the transition probability
+$t_v(y)$ times the probability that the subtree rooted at $y$
+generates a subsequence of length $d-2$ -- which is $\gamma_y(d-2)$,
+guaranteed to have already been calculated by the recursion.  For the
+$B$ state (bifurcation) calculation, indices $y$ and $z$ indicate the
+left and right S (start) state that bifurcation state $v$ must connect
+to.
 
 A band $\mbox{dmin}_v .. \mbox{dmax}_v$ of subsequence lengths that
 will be allowed for each state $v$ is then defined as follows. A
 parameter $\beta$ defines the threshold for the negligible probability
-mass that we are willing to allow outside the band. (Typical values of
-$\beta$ will be $10^{-6}$ and $10^{-10}$.) We define $\mbox{dmin}_v$
-and $\mbox{dmax}_v$ such that the cumulative left and right tails of
-$\gamma_v(n)$ contain less than a probability $\frac{\beta}{2}$:
+mass that we are willing to allow outside the band. (The default value
+of $\beta$ is set to $10^{-7}$, as described later.) We define
+$\mbox{dmin}_v$ and $\mbox{dmax}_v$ such that the cumulative left and
+right tails of $\gamma_v(n)$ contain less than a probability
+$\frac{\beta}{2}$:
 
 \[
    \sum_{d = 0}^{\mbox{dmin}_v - 1} \gamma_v(d) < \frac{\beta}{2}
    \sum_{d = \mbox{dmax}_v + 1}^{Z} \gamma_v(d) < \frac{\beta}{2}
 \]
 
-Larger values of $\beta$ ($10^{-6}$ instead of $10^{-10}$) will
-produce tighter bands and therefore faster alignments, at a cost of a
-higher risk of missing the optimal alignment. $\beta$ is the only free
-parameter that must be specified to QDB.
+Larger values of $\beta$ produce tighter bands and faster alignments,
+but at a cost of increased risk of missing the optimal
+alignment. $\beta$ is the only free parameter that must be specified
+to QDB.
 
 Because CMs have emitting self-loops (i.e. insert states), there is no
-limit on subsequence lengths, but we must impose a finite limit $Z$ to
-obtain a finite calculation.  The choice of $Z$ should be sufficiently
-large that it does not affect $\mbox{dmax}_v$ for any state $v$.  On a
-digital computer with floating point precision $\epsilon$ (the largest
-value at which $1+\epsilon = 1$), it suffices to guarantee that:
+finite limit on subsequence lengths. However, we must impose a finite
+limit $Z$ to obtain a finite calculation.  $Z$ can be chosen to be
+sufficiently large that it does not affect $\mbox{dmax}_v$ for any
+state $v$.  On a digital computer with floating point precision
+$\epsilon$ (the largest value for which $1+\epsilon = 1$), it suffices
+to guarantee that:
 
 \[
   \frac{ \sum_{d = Z+1}^{\infty}  \gamma_v(d)}
@@ -426,9 +419,9 @@ value at which $1+\epsilon = 1$), it suffices to guarantee that:
 \]
 
 Empirically, we observe that the tails of the $\gamma_v(d)$ densities
-decrease approximately geometrically. Thus we can analytically
-estimate the mass in the unseen tail by fitting a geometric tail to
-the observed density $\gamma_v(d)$. Our implementation starts with a
+decrease approximately geometrically. We can estimate the mass
+remaining in the unseen tail by fitting a geometric tail to the
+observed density $\gamma_v(d)$. Our implementation starts with a
 reasonable guess at $Z$ and verifies that the above condition is true
 for each $v$, assuming these geometrically decreasing tails; if it is
 not, $Z$ is increased and bands are recalculated until it is.
@@ -436,8 +429,8 @@ not, $Z$ is increased and bands are recalculated until it is.
 A QDB calculation only needs to be performed once per query to set the
 bands. Overall, a QDB calculation requires $\Theta(MZ)$ in time and
 space; or equivalently, because both $M$ and $Z$ scale roughly
-linearly with the length $L$ in residues of the query RNA (or RNA
-alignment), $\Theta(L^2)$. The time and space requirement is
+linearly with the length $L$ in residues of the query RNA
+$\Theta(L^2)$. The time and space requirement is almost always
 negligible compared to the requirements of a CM database search.
 
 \subsection{Banded CYK database search algorithm for CMs}
@@ -445,13 +438,12 @@ negligible compared to the requirements of a CM database search.
 A standard algorithm for obtaining the maximum likelihood alignment
 (parse tree) of an SCFG to a target sequence is the
 Cocke-Younger-Kasami (CYK) dynamic programming algorithm
-\cite{Kasami65, Younger67, HopcroftUllman79}. Formally, CYK applies to
-SCFGs reduced to the two types of production rules in Chomsky normal
-form (CNF), and it performs a global alignment to the target sequence.
-The CM database search algorithm is a variant of CYK, specialized for
-the ``normal form'' of our seven types of RNA production rules, and
-adapted to scan long genomic sequences and identify high-scoring
-subsequences (hits) \cite{Durbin98}. 
+\cite{Kasami65,Younger67,HopcroftUllman79}. Formally, CYK applies to
+SCFGs reduced to Chomsky normal form, and it aligns to the complete
+sequence. The CM database search algorithm is a CYK variant,
+specialized for the ``normal form'' of our seven types of RNA
+production rules, and for scanning long genomic sequences for
+high-scoring subsequences (hits) \cite{Durbin98}.
 
 The CM search algorithm recursively calculates $\alpha_v(j,d)$, the
 log odds score of the most likely CM parse subtree rooted at state $v$
@@ -502,7 +494,7 @@ else $(v = P, L, R):$ & $\alpha_v(j,d) = \max_{y \in C_v}
 \end{tabular}
 \vspace{0.5em}
 
-For example, if we're calculating $\alpha_v(j,d)$ and $v$ is a pair
+For example, if we are calculating $\alpha_v(j,d)$ and $v$ is a pair
 state ($P$), $v$ will generate the basepair $x_{j-d+1},x_j$ and
 transit to a new state $y$ (one of its possible transitions $C_v$)
 which then will have to account for the smaller subsequence
@@ -521,27 +513,27 @@ delivers a probabilistically derived $W$ for database search in
 $d_{\mbox{max}}(0)$, the upper bound on the length of the entire
 sequence (the sequence generated from the root state of the CM).
 
-QDB has no guarantee on how much time and memory it saves, so it does
-not reduce asymptotic computational complexity of the alignment
-algorithm.  Both the banded and the original algorithm are $O(MW +
-BW^2)$ memory and $O(MWL + BW^2L)$ time, for a model of $M$ states
-containing $B$ bifurcation states, window size $W$ of residues, and
-target sequence length $L$.  $M$ typically scales with $W$, and the
-number of bifurcation states $B$ typically scales as $\log M$.
+QDB does not reduce the asymptotic computational complexity of the CM
+search algorithm.  Both the banded algorithm and the original
+algorithm are $O(MW + BW^2)$ memory and $O(MWL + BW^2L)$ time, for a
+model of $M$ states containing $B$ bifurcation states, window size $W$
+of residues, and target database length $L$.  $M$, $B$, and $W$ all
+scale with the query RNA length $N$, so roughly speaking the
+worst-case asymptotic time complexity is $O(L N^3)$.
 
 
 \subsection{Informative Dirichlet priors}
 
 The subsequence length distributions calculated by QDB depend on the
-transition probabilities in the query CM. Transition probability
-parameter estimation is therefore crucial for obtaining predicted
-subsequence length bands that encompass real subsequence lengths in
-homologous RNA targets. Transition parameters in \textsc{Infernal} are
-mean posterior estimates, combining \emph{ad hoc} weighted observed
-counts from an input RNA alignment with a Dirichlet prior
-\cite{infguide03}.  Previous to this work, \textsc{Infernal} used an
-uninformative uniform Dirichlet prior, equivalent to the use of
-Laplace ``plus-1'' pseudo-counts. However, transition parameters
+CM's transition probabilities. Transition probability parameter
+estimation is therefore crucial for obtaining predicted subsequence
+length bands that reflect real subsequence lengths in homologous RNA
+targets. Transition parameters in \textsc{Infernal} are mean posterior
+estimates, combining (\emph{ad hoc} weighted) observed counts from an
+input RNA alignment with a Dirichlet prior \cite{infguide03}.
+Previous to this work, \textsc{Infernal} used an uninformative uniform
+Dirichlet transition prior, equivalent to the use of Laplace
+``plus-1'' pseudo-counts. However, we found that transition parameters
 derived under a uniform prior inaccurately predict target subsequence
 lengths, even for the input training sequences themselves, as shown in
 an example in Figure~\ref{fig:bands}.  The problem is exacerbated when
@@ -551,179 +543,38 @@ problem, we estimated informative single component Dirichlet prior
 densities for CM transition parameters, as follows.
 
 \ifdraft
-\begin{figure}
-  \begin{center}
-    \includegraphics[width=6in,angle=0]{figs/3fam_bands}
-    \caption{\textbf{Effect of transition priors on band calculation.}
-      Predicted and actual target lengths are shown for three CMs
-      built from alignments of five tRNA, 5S rRNA, and RNaseP
-      sequences, which are about 75, 120, and 380 residues long,
-      respectively.  Solid vertical lines represent the actual lengths
-      of the five training sequences in each alignment, corresponding
-      with the right vertical axis labels. Dashed and dotted curves
-      show QDB calculations for $\gamma_0(d)$ for the root state of
-      each model, for uninformative versus informative Dirichlet
-      priors, respectively.  Dotted and dashed vertical lines show the
-      band bounds ($d_{\mbox{min}}(0)$ (left) and $d_{\mbox{max}}(0)$
-      (right)) derived from the $\gamma_0(d)$ distributions using
-      $\beta = 10^{-7}$. The uninformative plus-one prior results in
-      consistent underprediction of target sequence lengths, with a
-      broad distribution. The new informative priors produce tighter
-      distributions that are centered on the actual subsequence
-      lengths. The same result is observed for all other states, not
-      just root states (data not shown).}
-    \label{fig:bands}
-  \end{center}
-\end{figure}
+\input{fig-bands}
+% This is \ref{fig:bands}
 \fi
 
 The training data for transition priors consisted of the 381 seed
 alignments in the Rfam database, version 6.1
-\cite{Griffiths-Jones05}. For each alignment, we built CMs by
-\textsc{Infernal}'s default procedure, and collected weighted counts
-of observed transitions in the implied parse trees of the training
-sequences. Considering all possible combinations of pairs of adjacent
-node types, there are 73 possible distinct types of transition
-probability distributions in CMs. To reduce this parameter space, we
-tied these 73 distributions into 36 groups, by assuming that certain
-distributions were effectively equivalent.  36 Dirichlet densities
-were estimated from these counts by maximum likelihood as described in
-\cite{Sjolander96}, with the exception that we optimize by conjugate
-gradient descent \cite{Press93} rather than by
-expectation-maximization (EM).  The results, including the Dirichlet
-parameters, are given in Table~\ref{tbl:transitions}.  Using these
-priors for transition probability parameter estimation results in a
-dramatic improvement in the utility of QDB calculations, as shown by
-anecdotal example in Figure~\ref{fig:bands}.
+\cite{Griffiths-Jones05}. For each alignment, we built CM structures
+by \textsc{Infernal}'s default procedure, and collected weighted
+counts of observed transitions in the implied parse trees of the
+training sequences. Considering all possible combinations of pairs of
+adjacent node types, there are 73 possible distinct types of
+transition probability distributions in CMs. To reduce this parameter
+space, we tied these 73 distributions into 36 groups by assuming that
+certain distributions were effectively equivalent.  36 Dirichlet
+densities were then estimated from these pooled counts by maximum
+likelihood as described in \cite{Sjolander96}, with the exception that
+we optimize by conjugate gradient descent \cite{Press93} rather than
+by expectation-maximization (EM).  The results, including the
+Dirichlet parameters, are given in Table~\ref{tbl:transitions}.  Using
+these priors for transition probability parameter estimation results
+in a dramatic improvement in the utility of QDB calculations, as
+illustrated by anecdotal example in Figure~\ref{fig:bands}.
 
-% The transition priors 041006_trans_priors.tex (with modifications)
 \ifdraft
-\renewcommand{\baselinestretch}{1.0}
-\begin{table}
-\renewcommand{\tabcolsep}{0.7em}
-\tiny
-\begin{center}
-%\begin{tabular}{|r|r|l|l|l||l|r||l|r||l|r||l|r||l|r||l|r||} \hline
-\begin{tabular}{|rr|rr|cc|c|c|cc|cc|cc|cc|cc|cc|} \cline{1-6} \cline{8-20}
-%\multicolumn{5}{c}{} & \multicolumn{2}{|c|}{1} & \multicolumn{2}{|c|}{2} & \multicolumn{2}{|c|}{3} & \multicolumn{2}{|c|}{4} & \multicolumn{2}{|c|}{5} & \multicolumn{2}{|c|}{6} \\ \cline{1-17}
-\multicolumn{1}{|c}{dist} & \multicolumn{1}{c|}{tied} &
-  \multicolumn{1}{c}{dist} & \multicolumn{1}{c|}{grp} & node & next &
-  & \multicolumn{13}{|c|}{Dirichlet $\alpha$ parameters} \\ %\cline{8-20}
-%\multicolumn{1}{|c}{\#} & \multicolumn{1}{c|}{\#} & \multicolumn{1}{c}{counts} & \multicolumn{1}{c|}{counts} & state & node & & $|\alpha|$ & $a_1$ &
-%  $\frac{\alpha_{a_1}}{|\alpha|}$ & $a_2$ & $\frac{\alpha_{a_2}}{|\alpha|}$ & $a_3$ &
-%  $\frac{\alpha_{a_3}}{|\alpha|}$ & $a_4$ & $\frac{\alpha_{a_4}}{|\alpha|}$ & $a_5$ &
-%  $\frac{\alpha_{a_5}}{|\alpha|}$ & $a_6$ & $\frac{\alpha_{a_6}}{|\alpha|}$ \\
-%  \cline{1-6} \cline {8-20} 
-\multicolumn{1}{|c}{\#} & \multicolumn{1}{c|}{to} & \multicolumn{1}{c}{counts} & \multicolumn{1}{c|}{counts} & state & node & & $|\alpha|$ & $a$ &
-  $\frac{\alpha_{a}}{|\alpha|}$ & $a$ & $\frac{\alpha_{a}}{|\alpha|}$ & $a$ &
-  $\frac{\alpha_{a}}{|\alpha|}$ & $a$ & $\frac{\alpha_{a}}{|\alpha|}$ & $a$ &
-  $\frac{\alpha_{a}}{|\alpha|}$ & $a$ & $\frac{\alpha_{a}}{|\alpha|}$ \\
-  \cline{1-6} \cline {8-20} 
-
-1   &    & 6     & 11    & MATP\_MP & BIF  & & 0.5509  & IL & 0.1229 & IR & 0.0001 & B  & 0.8770 &    &        &    &  &  &  \\  
-2   &    & 7023  & 7119  & MATP\_MP & MATP & & 7.2986  & IL & 0.0023 & IR & 0.0024 & MP & 0.9816 & ML & 0.0056 & MR & 0.0046 & D & 0.0035 \\  
-3   &    & 1600  & 1830  & MATP\_MP & MATL & & 1.5914  & IL & 0.0179 & IR & 0.0155 & ML & 0.9200 & D  & 0.0466 &    &  &  &  \\  
-4   &    & 145   & 195   & MATP\_MP & MATR & & 1.9038  & IL & 0.0173 & IR & 0.0073 & MR & 0.8903 & D  & 0.0852 &    &  &  &  \\  
-5   & 1  & 2     & 11    & MATP\_MP & END  & & 0.5509  & IL & 0.1229 & IR & 0.0001 & E  & 0.8770 &    &        &    &  &  &  \\  
-6*  &    & 1     & 2     & MATP\_ML & BIF  & & 3.0000  & IL & 0.3333 & IR & 0.3333 & B  & 0.3333 &    &        &    &  &  &  \\  
-7   &    & 577   & 577   & MATP\_ML & MATP & & 0.6941  & IL & 0.0131 & IR & 0.0103 & MP & 0.4032 & ML & 0.4983 & MR & 0.0115 & D & 0.0636 \\  
-8   &    & 133   & 133   & MATP\_ML & MATL & & 0.9316  & IL & 0.0739 & IR & 0.0651 & ML & 0.7038 & D  & 0.1571 &    &  &  &  \\  
-9   &    & 15    & 15    & MATP\_ML & MATR & & 0.3272  & IL & 0.1884 & IR & 0.0432 & MR & 0.4082 & D  & 0.3602 &    &  &  &  \\  
-10* & 6  & 1     & 2     & MATP\_ML & END  & & 3.0000  & IL & 0.3333 & IR & 0.3333 & E  & 0.3333 &    &        &    &  &  &  \\  
-11* &    & 1     & 2     & MATP\_MR & BIF  & & 3.0000  & IL & 0.3333 & IR & 0.3333 & B  & 0.3333 &    &        &    &  &  &  \\  
-12  &    & 531   & 531   & MATP\_MR & MATP & & 0.7987  & IL & 0.0079 & IR & 0.0190 & MP & 0.3241 & ML & 0.0193 & MR & 0.5631 & D & 0.0666 \\  
-13  &    & 151   & 151   & MATP\_MR & MATL & & 0.6933  & IL & 0.0357 & IR & 0.0699 & ML & 0.3066 & D  & 0.5879 &    &  &  &  \\  
-14  &    & 15    & 15    & MATP\_MR & MATR & & 0.3574  & IL & 0.0582 & IR & 0.0002 & MR & 0.7629 & D  & 0.1787 &    &  &  &  \\  
-15* & 11 & 1     & 2     & MATP\_MR & END  & & 3.0000  & IL & 0.3333 & IR & 0.3333 & E  & 0.3333 &    &        &    &  &  &  \\  
-16* &    & 0     & 2     & MATP\_D  & BIF  & & 3.0000  & IL & 0.3333 & IR & 0.3333 & B  & 0.3333 &    &        &    &  &  &  \\  
-17  &    & 575   & 575   & MATP\_D  & MATP & & 0.5450  & IL & 0.0019 & IR & 0.0047 & MP & 0.0857 & ML & 0.0534 & MR & 0.0528 & D & 0.8015 \\  
-18  &    & 149   & 149   & MATP\_D  & MATL & & 0.5831  & IL & 0.0421 & IR & 0.0526 & ML & 0.2080 & D  & 0.6973 &    &  &  &  \\  
-19  &    & 14    & 14    & MATP\_D  & MATR & & 0.1164  & IL & 0.0001 & IR & 0.0001 & MR & 0.2439 & D  & 0.7559 &    &  &  &  \\  
-20* & 16 & 2     & 2     & MATP\_D  & END  & & 3.0000  & IL & 0.3333 & IR & 0.3333 & E  & 0.3333 &    &        &    &  &  &  \\  
-21  &    & 2     & 4     & MATP\_IL & BIF  & & 1.4397  & IL & 0.6553 & IR & 0.0445 & B  & 0.3002 &    &        &    &  &  &  \\  
-22  &    & 121   & 126   & MATP\_IL & MATP & & 0.9402  & IL & 0.1673 & IR & 0.1394 & MP & 0.5904 & ML & 0.0443 & MR & 0.0259 & D & 0.0327 \\  
-23  &    & 114   & 119   & MATP\_IL & MATL & & 0.8046  & IL & 0.3108 & IR & 0.1936 & ML & 0.4610 & D  & 0.0346 &    &  &  &  \\  
-24  &    & 14    & 15    & MATP\_IL & MATR & & 1.0926  & IL & 0.1419 & IR & 0.0501 & MR & 0.6538 & D  & 0.1541 &    &  &  &  \\  
-25  & 21 & 2     & 4     & MATP\_IL & END  & & 1.4397  & IL & 0.6553 & IR & 0.0445 & E  & 0.3002 &    &        &    &  &  &  \\  
-26  &    & 1     & 31    & MATP\_IR & BIF  & & 0.9361  & IR & 0.2827 & B  & 0.7173 &    &        &    &        &    &  &  &  \\  
-27  &    & 145   & 227   & MATP\_IR & MATP & & 1.5494  & IR & 0.1884 & MP & 0.7090 & ML & 0.0165 & MR & 0.0588 & D  & 0.0273 &  &  \\  
-28  &    & 129   & 701   & MATP\_IR & MATL & & 1.6332  & IR & 0.3681 & ML & 0.5752 & D  & 0.0566 &    &        &    &  &  &  \\  
-29  &    & 8     & 160   & MATP\_IR & MATR & & 1.2428  & IR & 0.2633 & MR & 0.6809 & D  & 0.0558 &    &        &    &  &  &  \\  
-30  & 26 & 0     & 31    & MATP\_IR & END  & & 0.9361  & IR & 0.2827 & E  & 0.7173 &    &        &    &        &    &  &  &  \\  
-31  &    & 108   & 1130  & MATL\_ML & BIF  & & 1.2298  & IL & 0.0078 & B  & 0.9922 &    &        &    &        &    &  &  &  \\  
-32  &    & 420   & 1319  & MATL\_ML & MATP & & 2.4162  & IL & 0.0132 & MP & 0.9520 & ML & 0.0150 & MR & 0.0129 & D  & 0.0070 &  &  \\  
-33  &    & 19013 & 19371 & MATL\_ML & MATL & & 1.8632  & IL & 0.0082 & ML & 0.9711 & D  & 0.0207 &    &        &    &  &  &  \\  
-34  &    & 859   & 6692  & MATL\_ML & MATR & & 72.1283 & IL & 0.0058 & MR & 0.9755 & D  & 0.0187 &    &        &    &  &  &  \\  
-35  & 31 & 801   & 1130  & MATL\_ML & END  & & 1.2298  & IL & 0.0078 & E  & 0.9922 &    &        &    &        &    &  &  &  \\  
-36  &    & 28    & 172   & MATL\_D  & BIF  & & 6.8008  & IL & 0.0029 & B  & 0.9971 &    &        &    &        &    &  &  &  \\  
-37  &    & 103   & 103   & MATL\_D  & MATP & & 0.7288  & IL & 0.0321 & MP & 0.5730 & ML & 0.0536 & MR & 0.1654 & D  & 0.1758 &  &  \\  
-38  &    & 3152  & 3152  & MATL\_D  & MATL & & 0.4101  & IL & 0.0138 & ML & 0.3105 & D  & 0.6756 &    &        &    &  &  &  \\  
-39  &    & 154   & 154   & MATL\_D  & MATR & & 0.6736  & IL & 0.0203 & MR & 0.6014 & D  & 0.3782 &    &        &    &  &  &  \\  
-40  & 36 & 144   & 172   & MATL\_D  & END  & & 6.8008  & IL & 0.0029 & E  & 0.9971 &    &        &    &        &    &  &  &  \\  
-41  & 26 & 13    & 31    & MATL\_IL & BIF  & & 0.9361  & IL & 0.2827 & B  & 0.7173 &    &        &    &        &    &  &  &  \\  
-42  & 27 & 35    & 227   & MATL\_IL & MATP & & 1.5494  & IL & 0.1884 & MP & 0.7090 & ML & 0.0588 & MR & 0.0165 & D  & 0.0273 &  &  \\  
-43  & 28 & 549   & 701   & MATL\_IL & MATL & & 1.6332  & IL & 0.3681 & ML & 0.5752 & D  & 0.0566 &    &        &    &  &  &  \\  
-44  & 29 & 45    & 160   & MATL\_IL & MATR & & 1.2428  & IL & 0.2633 & MR & 0.6809 & D  & 0.0558 &    &        &    &  &  &  \\  
-45  & 26 & 0     & 31    & MATL\_IL & END  & & 0.9361  & IL & 0.2827 & E  & 0.7173 &    &        &    &        &    &  &  &  \\  
-46  & 31 & 206   & 1130  & MATR\_MR & BIF  & & 1.2298  & IR & 0.0078 & B  & 0.9922 &    &        &    &        &    &  &  &  \\  
-47  & 32 & 848   & 1319  & MATR\_MR & MATP & & 2.4162  & IR & 0.0132 & MP & 0.9520 & ML & 0.0150 & MR & 0.0129 & D  & 0.0070 &  &  \\  
-48  & 34 & 5833  & 6692  & MATR\_MR & MATR & & 2.1283  & IR & 0.0058 & MR & 0.9755 & D  & 0.0187 &    &        &    &  &  &  \\  
-49  &    & 39    & 39    & MATR\_D  & BIF  & & 0.4664  & IR & 0.0463 & B  & 0.9537 &    &        &    &        &    &  &  &  \\  
-50  &    & 176   & 176   & MATR\_D  & MATP & & 0.8689  & IR & 0.0245 & MP & 0.6126 & ML & 0.1269 & MR & 0.0471 & D  & 0.1890 &  &  \\  
-51  &    & 771   & 771   & MATR\_D  & MATR & & 0.4869  & IR & 0.0119 & MR & 0.3373 & D  & 0.6507 &    &        &    &  &  &  \\  
-52  & 26 & 15    & 31    & MATR\_IR & BIF  & & 0.9361  & IR & 0.2827 & B  & 0.7173 &    &        &    &        &    &   &  &  \\  
-53  & 27 & 39    & 227   & MATR\_IR & MATP & & 1.5494  & IR & 0.1884 & MP & 0.7090 & ML & 0.0165 & MR & 0.0588 & D  & 0.0273 &  &  \\  
-54  & 29 & 107   & 160   & MATR\_IR & MATR & & 1.2428  & IR & 0.2633 & MR & 0.6809 & D  & 0.0558 &    &        &    &  &  &  \\  
-%55 &    &       &       & BEGL\_S  & BIF  & & 1.0000  & B  & 1.0000 &    &        &    &        &    &        &    &  &  &  \\  
-55  &    & 338   & 338   & BEGL\_S  & MATP & & 5.0422  & MP & 0.9579 & ML & 0.0121 & MR & 0.0183 & D  & 0.0117 &    &   &  &  \\  
-56  & 31 & 15    & 1130  & BEGR\_S  & BIF  & & 1.2298  & IL & 0.0078 & B  & 0.9922 &    &        &    &        &    &  &  &  \\  
-57  & 32 & 51    & 1319  & BEGR\_S  & MATP & & 2.4162  & IL & 0.0132 & MP & 0.9520 & ML & 0.0150 & MR & 0.0129 & D  & 0.0070 &  &  \\  
-58  & 33 & 358   & 19371 & BEGR\_S  & MATL & & 1.8632  & IL & 0.0082 & ML & 0.9711 & D  & 0.0207 &    &        &    &  &  &  \\  
-59  & 26 & 2     & 31    & BEGR\_IL & BIF  & & 0.9361  & IL & 0.2827 & B  & 0.7173 &    &        &    &        &    &   &  &  \\  
-60  & 27 & 3     & 227   & BEGR\_IL & MATP & & 1.5494  & IL & 0.1884 & MP & 0.7090 & ML & 0.0588 & MR & 0.0165 & D  & 0.0273 &  &  \\  
-61  & 28 & 19    & 701   & BEGR\_IL & MATL & & 1.6332  & IL & 0.3681 & ML & 0.5752 & D  & 0.0566 &    &        &    &  &  &  \\  
-62  & 1  & 3     & 11    & ROOT\_S  & BIF  & & 0.5509  & IL & 0.1229 & IR & 0.0001 & B  & 0.8770 &    &        &    &  &  &  \\  
-63  & 2  & 96    & 7119  & ROOT\_S  & MATP & & 7.2986  & IL & 0.0023 & IR & 0.0024 & MP & 0.9816 & ML & 0.0056 & MR & 0.0046 & D & 0.0035 \\  
-64  & 3  & 230   & 1830  & ROOT\_S  & MATL & & 1.5914  & IL & 0.0179 & IR & 0.0155 & ML & 0.9200 & D  & 0.0466 &    &  &  &  \\  
-65  & 4  & 50    & 195   & ROOT\_S  & MATR & & 1.9038  & IL & 0.0173 & IR & 0.0073 & MR & 0.8903 & D  & 0.0852 &    &  &  &  \\  
-66  & 21 & 0     & 4     & ROOT\_IL & BIF  & & 1.4397  & IL & 0.6553 & IR & 0.0445 & B  & 0.3002 &    &        &    &  &  &  \\  
-67  & 22 & 5     & 126   & ROOT\_IL & MATP & & 0.9402  & IL & 0.1673 & IR & 0.1394 & MP & 0.5904 & ML & 0.0443 & MR & 0.0259 & D & 0.0327 \\  
-68  & 23 & 5     & 119   & ROOT\_IL & MATL & & 0.8046  & IL & 0.3108 & IR & 0.1936 & ML & 0.4610 & D  & 0.0346 &    &  &  &  \\  
-69  & 24 & 1     & 15    & ROOT\_IL & MATR & & 1.0926  & IL & 0.1419 & IR & 0.0501 & MR & 0.6538 & D  & 0.1541 &    &  &  &  \\  
-70  & 26 & 0     & 31    & ROOT\_IR & BIF  & & 0.9361  & IR & 0.2827 & B  & 0.7173 &    &        &    &        &    &  &  &  \\  
-71  & 27 & 5     & 227   & ROOT\_IR & MATP & & 1.5494  & IR & 0.1884 & MP & 0.7090 & ML & 0.0165 & MR & 0.0588 & D  & 0.0273 &  &  \\  
-72  & 28 & 4     & 701   & ROOT\_IR & MATL & & 1.6332  & IR & 0.3681 & ML & 0.5752 & D  & 0.0566 &    &        &    &  &  &  \\  
-73  & 29 & 0     & 160   & ROOT\_IR & MATR & & 1.2428  & IR & 0.2633 & MR & 0.6809 & D  & 0.0558 &    &        &    &  &  &  \\   \cline{1-6} \cline {8-20} 
-\end{tabular}
-\end{center}
-
-\normalfont\rmfamily
-\caption{\textbf{Dirichlet priors for transitions.}  ``dist \#''=
-  index for the 73 different types of transition distributions in CMs;
-  asterisks mark six distributions which had very few observed counts
-  even after tying into groups, and for which we assigned a uniform
-  plus-one Laplace prior. ``tied to''= if an index is shown in this
-  column, this distribution was estimated in a group (pooling observed
-  counts) with the indicated distribution.  ``dist counts''= total
-  counts observed for this distribution in the training data, before
-  pooling into groups. ``grp counts''= total counts for a group of one
-  or more pooled distributions; this is the size of the training data
-  sets for 36 different single-component Dirichlet priors.  ``node
-  state''= unique CM state type the transition is from. 
-  ``next node''= the node type that the transitions are going to.
-  The codes for node types and state types in a CM are more fully
-  explained in \cite{Eddy02b}.
-}
-\label{tbl:transitions}
-\end{table}
-\renewcommand{\baselinestretch}{1.5}
+\input{tbl-transitions}
+% This is {tbl:transitions}
 \fi
 
-
 We also estimated informative mixture Dirichlet density priors for
-emission probabilities.  Emission probabilities do not affect QDB, but
-informative emission priors would be expected to improve sensitivity
-and specificity of CM searches, as they do for profile hidden Markov
+emission probabilities.  Emission probabilities have no effect on QDB,
+but informative emission priors should improve sensitivity and
+specificity of CM searches, as they do for profile hidden Markov
 models \cite{Brown93b,Sjolander96}. We collected filtered counts of
 aligned single-stranded residues and base-pairs from annotated
 ribosomal RNA alignments from four alignments in the 2002 version of
@@ -750,13 +601,13 @@ emission priors is the following. Rfam provides many different
 structural RNA alignments, but of uneven quality and varying depth
 (number of sequences). The European rRNA database provides a small
 number of large structural RNA alignments, but of high quality and
-great depth.  The ideal transition prior training set would be
-maximally diverse (where every RNA structure were different) so as not
-to bias any transition types toward any particular RNA structure, so
-we used the 381 different Rfam alignments for transitions.  Emission
-prior estimation does not require structural diversity per se, just a
+great depth.  A transition prior training set should be maximally
+diverse (where every RNA structure were different) so as not to bias
+any transition types toward any particular RNA structure, so we used
+the 381 different Rfam alignments for transitions.  Emission prior
+estimation does not require broad structural diversity per se, just a
 large number of different aligned singlet columns and aligned base
-pairs, thus favoring depth and quality over structural diversity, and
+pairs, thus favoring depth and quality over structural diversity, so
 we used rRNA data for emissions.
 
 Inspection of the Dirichlet $\alpha$ parameters shows sensible
@@ -778,130 +629,24 @@ reflecting the known bias for adenine in single-stranded positions of
 structural RNAs (especially ribosomal RNAs).
 
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% The emission prior alignment counts
-% this table is in my rotation lab presentation ./emit_priors_revisited/nawrocki_dirichlet.pdf
-%\renewcommand{\baselinestretch}{1.0}
 \ifdraft
-\begin{table}
-%\normalfont\ttfamily
-\begin{center}
-\begin{tabular}{lrrrrrrr} 
-& & \# aln & \# filtered & \# consensus & \# consensus & bp & SS \\
-alignment & \# seq & columns & seq & bp & SS columns & counts & counts \\ \hline
-LSU & 1551 & 7270 & 139 & 601 & 1532 & 65229 & 180558  \\
-SSU bap & 12773 & 2653 & 254 & 421 & 680 & 97834 & 153565 \\
-SSU euk & 7151 & 4558 & 207 & 407 & 959 & 72521 & 174260 \\
-SSU mito & 1039 & 3791 & 107 & 216 & 524 & 19803 & 56510 \\ 
-%\multicolumn{8}{l}{bap: contains bacterial, archaeal and plastid
-%  sequences} \\
-\end{tabular}
-\caption{\textbf{Summary statistics for the dataset used for emission prior
-    estimation.}} 
-\end{center}
-\end{table}
-\fi
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% 04.10.06 The priors tables.
-% these were sequestered to the supplementary material in draft 2,
-% but they're back to the main document for draft 3.
-%
-% These tables were generated by dchlet2latex_d3.pl revision 369, in 
-% in ~nawrocki/notebook/6_0404_inf_banded_mscript_d3/latex/dchlet_tbls_dir/:
-%
-% $ perl dchlet2latex_d3.pl dchlet56.prior 041006
-% generates 041006_bp_priors.tex, 041006_sing_priors.tex and
-%           041006_trans_priors.tex, which include the following
-%           three tables (in slightly different format, I tweaked
-%           them to get these).
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Base pair emission priors. 041006_bp_priors.tex (with modifications)
-\ifdraft
-\begin{table}
-%\normalfont\ttfamily
-\footnotesize
-\begin{center}
-\begin{tabular}{|c|c|c|c|c|c|c|c|c|c|c|} \hline
-\multicolumn{2}{|c|}{component $i$} & 1 & 2 & 3 & 4 & 5 & 6 & 7 & 8 & 9 \\
-\multicolumn{2}{|c|}{$q_i$} & 0.0305 & 0.0703 & 0.1185 & 0.1810 & 0.1888 & 0.1576 & 0.0417 & 0.0959 & 0.1156 \\
-\multicolumn{2}{|c|}{$|\alpha|$} & 14.3744 & 2.9920 & 26.2757 & 0.5342 &
-4.2716 & 13.3232 & 33.8619 & 22.2258 & 33.1991 \\ \hline 
-\multicolumn{11}{c}{} \\ \hline
-
-$ab$ & mean $\alpha$ & $\frac{\alpha_{ab}}{|\alpha|}$ & $\frac{\alpha_{ab}}{|\alpha|}$ & $\frac{\alpha_{ab}}{|\alpha|}$ & $\frac{\alpha_{ab}}{|\alpha|}$ & $\frac{\alpha_{ab}}{|\alpha|}$ & $\frac{\alpha_{ab}}{|\alpha|}$ & $\frac{\alpha_{ab}}{|\alpha|}$ & $\frac{\alpha_{ab}}{|\alpha|}$ & $\frac{\alpha_{ab}}{|\alpha|}$ \\ \hline 
-AA & 0.0063 & 0.0398 & 0.0390 & 0.0011 & 0.0017 & 0.0005 & 0.0062 & 0.0064 & 0.0058 & 0.0002 \\  
-AC & 0.0092 & 0.0421 & 0.0176 & 0.0009 & 0.0152 & 0.0018 & 0.0125 & 0.0115 & 0.0051 & 0.0046 \\  
-AG & 0.0052 & 0.0381 & 0.0226 & 0.0046 & 0.0034 & 0.0008 & 0.0032 & 0.0040 & 0.0053 & 0.0001 \\  
-AU & \textbf{0.1663} & \textbf{0.1092} & 0.0864 & 0.0194 & \textbf{0.2138} & \textbf{0.1464} & \textbf{0.2563} & \textbf{0.7360} & \textbf{0.1295} & 0.0404 \\  
-& & & & & & & & & & \\
-CA & 0.0086 & 0.0412 & 0.0510 & 0.0054 & 0.0027 & 0.0044 & 0.0018 & 0.0030 & 0.0138 & 0.0002 \\  
-CC & 0.0038 & 0.0327 & 0.0115 & 0.0030 & 0.0001 & 0.0003 & 0.0036 & 0.0039 & 0.0035 & 0.0041 \\  
-CG & \textbf{0.2412} & \textbf{0.1007} & \textbf{0.1392} & \textbf{0.8310} & \textbf{0.1359} & \textbf{0.3211} & 0.0889 & 0.0340 & \textbf{0.2870} & 0.0147 \\  
-CU & 0.0066 & 0.0418 & 0.0172 & 0.0027 & 0.0104 & 0.0019 & 0.0045 & 0.0076 & 0.0052 & 0.0003 \\  
-& & & & & & & & & & \\
-GA & 0.0061 & 0.0362 & 0.0266 & 0.0002 & 0.0074 & 0.0002 & 0.0058 & 0.0045 & 0.0042 & 0.0021 \\  
-GC & \textbf{0.2547} & \textbf{0.1299} & 0.0544 & 0.0206 & \textbf{0.1786} & \textbf{0.1613} & \textbf{0.4079} & 0.0945 & \textbf{0.1155} & \textbf{0.8858} \\  
-GG & 0.0063 & 0.0327 & 0.0142 & 0.0045 & 0.0091 & 0.0005 & 0.0072 & 0.0023 & 0.0044 & 0.0030 \\  
-GU & 0.0567 & 0.0811 & 0.0412 & 0.0049 & \textbf{0.1355} & 0.0451 & 0.0668 & 0.0303 & 0.0356 & 0.0218 \\  
-& & & & & & & & & & \\
-UA & \textbf{0.1571} & \textbf{0.1063} & \textbf{0.3085} & 0.0672 & \textbf{0.1856} & \textbf{0.2293} & 0.0902 & 0.0363 & \textbf{0.3108} & 0.0151 \\  
-UC & 0.0063 & 0.0477 & 0.0263 & 0.0006 & 0.0048 & 0.0002 & 0.0056 & 0.0042 & 0.0060 & 0.0038 \\  
-UG & 0.0543 & 0.0746 & \textbf{0.1054} & 0.0317 & 0.0807 & 0.0814 & 0.0299 & 0.0120 & 0.0551 & 0.0032 \\  
-UU & 0.0114 & 0.0459 & 0.0389 & 0.0022 & 0.0151 & 0.0048 & 0.0098 & 0.0095 & 0.0133 & 0.0008 \\ \hline 
-\end{tabular}
-\end{center}
-
-\normalfont\rmfamily
-\caption{\textbf{Parameters of the 9 component Dirichlet mixture
-    emission prior for base pairs.} $q_i =$ mixture coefficient for
-    component $i$. Normalized $\alpha$ values $> 0.10$ are in bold
-    face.}
-\label{tbl:basepairs}
-\end{table}
+\input{tbl-emissioncounts}
+% This is tbl:emissioncounts
 \fi
 
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Singlet emission priors. 041006_sing_priors.tex (with modifications)
 \ifdraft
-\begin{table}
-%\normalfont\ttfamily
-\footnotesize
-\begin{center}
-\begin{tabular}{|c|c|c|c|c|c|c|c|c|c|c|} \hline
-\multicolumn{2}{|c|}{component $i$} & 1 & 2 & 3 & 4 & 5 & 6 & 7 & 8 \\
-\multicolumn{2}{|c|}{$q$} & 0.0851 & 0.0159 & 0.1020 & 0.4160 & 0.0745 & 0.0554 & 0.1184 & 0.1327 \\  
-\multicolumn{2}{|c|}{$|\alpha|$} & 15.4467 & 154.4640 & 180.2862 & 5.4562 & 0.2199 & 16.4089 & 13.4592 & 19.9059 \\ \hline 
-\multicolumn{10}{c}{} \\ \hline
-
-$a$ & mean $\alpha$ & $\frac{\alpha_a}{|\alpha|}$ & $\frac{\alpha_a}{|\alpha|}$ & $\frac{\alpha_a}{|\alpha|}$ & $\frac{\alpha_a}{|\alpha|}$ & $\frac{\alpha_a}{|\alpha|}$ & $\frac{\alpha_a}{|\alpha|}$ & $\frac{\alpha_a}{|\alpha|}$ & $\frac{\alpha_a}{|\alpha|}$ \\ \hline 
-A & \textbf{0.3951} & 0.0373 & \textbf{0.9961} & \textbf{0.9787} & \textbf{0.3109} & \textbf{0.3383} & 0.0375 & 0.0864 & \textbf{0.8247} \\  
-C & \textbf{0.1635} & 0.0490 & 0.0015 & 0.0052 & \textbf{0.2067} & \textbf{0.1782} & \textbf{0.8916} & 0.0303 & 0.0493 \\  
-G & \textbf{0.2041} & 0.0220 & 0.0023 & 0.0072 & \textbf{0.1751} & \textbf{0.2905} & 0.0182 & \textbf{0.8313} & 0.0569 \\  
-U & \textbf{0.2372} & \textbf{0.8917} & 0.0000 & 0.0090 & \textbf{0.3073} & \textbf{0.1930} & 0.0527 & 0.0519 & 0.0691 \\ \hline 
-
-
-\end{tabular}
-\end{center}
-
-\normalfont\rmfamily
-\caption{\textbf{Parameters of the 8 component Dirichlet mixture
-    emission prior for singlets.} $q_i =$ mixture coefficient for
-    component $i$. Normalized $\alpha$ values $> 0.10$ are in bold
-    faced type.}
-\label{tbl:singlets}
-\end{table}
+\input{tbl-basepairs}
+% This is tbl:basepairs
 \fi
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+\ifdraft
+\input{tbl-singlets}
+% This is tbl:singlets
+\fi
 
 In another step to increase sensitivity and specificity of the
 program, we adopted the ``entropy weighting'' technique described for
-profile HMMs \cite{KarplusXXX} for estimating the total effective
+profile HMMs \cite{Karplus98} for estimating the total effective
 sequence number for an input alignment. This is an \emph{ad hoc}
 method for reducing the information content per position of a model,
 which helps a model that has been trained on closely related sequences
@@ -911,9 +656,9 @@ entropy weighting, one reduces the total effective sequence number
 alignment), thereby increasing the influence of the Dirichlet priors,
 flattening the transition and emission distributions, and reducing the
 overall information content, until a desired target entropy is
-achieved. We roughly approximate a model's entropy as the mean match
-state entropy, $\sum_a e_v(a) \log \frac{1}{e_v(a)}$. The target
-entropy for \infernal is a free parameter, which we optimized on the
+achieved. We approximate a model's entropy as the mean match state
+entropy, $\sum_a e_v(a) \log \frac{1}{e_v(a)}$. The target entropy for
+\textsc{Infernal} is a free parameter, which we optimized on the
 benchmark described below to identify our default value of 1.46 bits.
 
 \subsection{Benchmarking}
@@ -925,26 +670,30 @@ we designed a benchmark based on the Rfam database
 test many RNA query/target pairs, with each query consisting of a
 given RNA sequence alignment, and each target consisting of a
 distantly related RNA homolog buried in a context of a random
-``genomic'' background sequence.
+genome-like background sequence.
 
-We started with [SEED?] aligmments from Rfam version 7.0. We clustered
+We started with seed aligmnents from Rfam version 7.0. We clustered
 the sequences in each family by single-linkage-clustering by \%
 identity (as calculated from the given Rfam alignment), then split the
 clusters such that the training set and test sequences satisfied three
 conditions: 1) no training/test sequence pair is more than 60\%
 identical; 2) no test sequence pair is greater than 70\% identical; 3)
 at least 5 sequences are in the training set.  Fifty-one families
-satisfy these criteria (listed in Table~\ref{tbl:rmarkmer_fam}),
-giving us 51 different query alignments (containing 5 to 1080
-sequences each) and 450 total test sequences (from 1 to 66 per query).
-We embedded the test sequences in a one megabase ``pseudo-genome''
-consisting of twenty 50 kilobase ``chromosomes'', generated as
-independent, identically distributed (iid) random sequences with
-uniform base frequencies.  The 450 test sequences were embedded into
-this sequence by replacement, by randomly choosing a chromosome,
-orientation, and start position, and disallowing overlaps between test
-sequences. The total length of the 450 test sequences is 101,855 nt,
-leaving 898,145 nt of random background sequence.
+satisfy these criteria (listed in Table~\ref{tbl:rmark}), giving us 51
+different query alignments (containing 5 to 1080 sequences each) and
+450 total test sequences (from 1 to 66 per query).  We embedded the
+test sequences in a one megabase ``pseudo-genome'' consisting of
+twenty 50 kilobase ``chromosomes'', generated as independent,
+identically distributed (iid) random sequences with uniform base
+frequencies.  The 450 test sequences were embedded into this sequence
+by replacement, by randomly choosing a chromosome, orientation, and
+start position, and disallowing overlaps between test sequences. The
+total length of the 450 test sequences is 101,855 nt, leaving 898,145
+nt of random background sequence.
+
+\ifdraft
+\input{tbl-rmark}
+\fi
 
 The benchmark proceeds by first building a CM for each query
 alignment, then searching the pseudogenome with each CM in local
@@ -961,190 +710,126 @@ sequences (either two hits, or one hit and one test sequence embedded
 in the pseudogenome) is more than 50\% the length of the shorter
 sequence.  (Although it would be desirable to measure the false
 positive rate on nonhomologous structural RNAs, we cannot be sure that
-any given pair of Rfam families is truly nonhomologous; like most
+any given pair of Rfam families is truly nonhomologous. Like most
 sequence family databases, Rfam is clustered computationally, and more
 sensitive methods will reveal previously unsuspected relationships
-that should not be benchmarked as ``false positives'').  A
-``negative'' is a hit that is not a positive or an ignore; for any two
+that should not be benchmarked as ``false positives''.)  A
+``negative'' is a hit that is not a positive or an ignore. For any two
 negatives that significantly overlap, only the one with the better
 score is counted.
 
-The minimum error rate (MER) score \cite{PearsonXXX} was used as a
-measure of benchmark performance. The MER score is defined as the
-minimum sum of the false positives (negative hits above the threshold)
-and false negatives (true test sequences which have no positive hit
-above the threshold), at all possible choices of score threshold. The
-MER score combines sensitivity and specificity. A lower MER score is
-better. We calculate two kinds of MER scores. For a
-\emph{family-specific} MER score, we choose a different optimal
-threshold in each of the 51 ranked lists, and for a \emph{summary} MER
-score, we choose a single optimal threshold in the master list of all
-hits. The summary MER score is the more stringent measure of
-performance, because it demands a single query-independent threshold
-for significance.
+The minimum error rate (MER) (``equivalence score'') \cite{Pearson95}
+was used as a measure of benchmark performance. The MER score is
+defined as the minimum sum of the false positives (negative hits above
+the threshold) and false negatives (true test sequences which have no
+positive hit above the threshold), at all possible choices of score
+threshold. The MER score is a combined measure of sensitivity and
+specificity, where a lower MER score is better. We calculate two kinds
+of MER scores. For a \emph{family-specific} MER score, we choose a
+different optimal threshold in each of the 51 ranked lists, and for a
+\emph{summary} MER score, we choose a single optimal threshold in the
+master list of all hits. The summary MER score is the more relevant
+measure of our current performance, because it demands a single
+query-independent bit score threshold for significance. A
+family-specific MER score reflects the performance that could be
+achieved if \textsc{Infernal} provided P-values (currently it reports
+only raw bit scores).
 
 For comparison, \textsc{blastn} was also benchmarked on these data
-using a family-pairwise-search procedure \cite{NobleXXX}. For each
+using a family-pairwise-search procedure \cite{Grundy98b}. For each
 query alignment, each training sequence is used as a query sequence to
 search the pseudo-genome, all hits with an E-value of less than 1.0
-were sorted by increasing E-value, and only the lowest E-value
-positive hit to a given test sequence is counted.
+were sorted by increasing E-value, and the lowest E-value positive hit
+to a given test sequence is counted.
 
 Using this benchmark, we addressed several questions about QDB's
 performance.
 
-How much does QDB accelerate a CM search?  Figure~\ref{fig:scatter}
-summarizes the relative acceleration of QDB versus normal (unbanded)
-alignment, and shows that it ranges from 1.1 fold (for IRE) to 14.5
-fold (for CsrB) fold, for the 51 families in the benchmark and for two
-different values of the $\beta$ parameter. The level of acceleration
-roughly scales with the average sequence length of the query, although
-other factors also impact acceleration, such as variation in
-substructure lengths and number of bifurcations. The average speed-up
-per family is three- to four-fold, and in overall search time in the
-benchmark (sum of all 51 searches), the QDB acceleration is four- to
-seven-fold, for $\beta$ values of $10^{-10}$ and $10^{-6}$
-respectively.  Table~\ref{tbl:rmarkbtimes_l} tabulates detailed timing
-results for all 51 queries.
+What is the best setting of the single QDB free parameter, $\beta$,
+which specifies how much probability mass to sacrifice?
+Figure~\ref{fig:betavaried} shows the average speedup per family and
+the overall benchmark MER score as a function of varying
+$\beta$. There is no clear choice. The choice of $\beta$ is a tradeoff
+of accuracy for speed. We chose a default of $\beta = 1e-7$ as a
+reasonable value that obtains a modest speedup with minimal loss of
+accuracy.
 
 \ifdraft
-\begin{figure}[hb]
-\begin{center}
-\includegraphics[width=6.4in,angle=0]{figs/scatter}
-\caption{\textbf{Acceleration for banded searches of the 51 benchmark
-    families.} Bands calculated with $\beta = 10^{-10}$ (left) and
-    $\beta = 10^{-6}$ (right).  There are 51 points in each plot, one
-    for each family in the benchmark set, representing the relative
-    speed-up for a banded search relative to a non-banded search for
-    the corresponding family.}
-\label{fig:scatter}
-\end{center}
-\end{figure}
+\input{fig-betavaried}
+% This is \ref{fig:betavaried}
+\fi
+
+How well does QDB accelerate CM searches?  Figure~\ref{fig:speedup}
+shows the time required for searching the 1 Mb benchmark target
+sequence with each of the 51 models, as a function of the average
+query RNA length. These results show that QDB reduces the empirical
+running time complexity of the CM search algorithm from $O(N^{XXX})$
+to $O(N^{XXX})$. Observed accelerations relative to the standard
+algorithm range from XXX fold (for XXX) to XXX fold (for XXX), for an
+average speed-up per family of XXX-fold. In total search time for the
+benchmark (sum of all 51 searches), the acceleration is XXX-fold,
+because the large queries have disproportionate effect on the total
+time.
+
+\ifdraft
+\input{fig-speedup}
+% This is \ref{fig:speedup}
 \fi
 
 How much does QDB impact sensitivity and specificity? Optimal
 alignments are not guaranteed to lie within QDB's high-probability
-bands, and this is expected to compromise discrimination. The hope is
-that QDB's bands are sufficiently wide and accurate that this loss is
+bands, and this is expected to compromise sensitivity. The hope is
+that QDB's bands are sufficiently wide and accurate that the loss is
 negligible.  Figure~\ref{fig:roc} shows ROC plots (sensitivity versus
-false positive rate) for non-banded search, banded at $\beta = 1e-10$,
-and banded $\beta = 1e-6$ for the new version of \infernal (version
-0.70), as well as for the (nonbanded) previous version of \infernal
-(version 0.55) and for \textsc{blastn}.  The curves for non-banded and
-banded searches with the new 0.70 code are nearly superposed, so we
-conclude that the difference between banded and nonbanded searches are
-negligible.  
+false positive rate) on the benchmark for the new version of
+\textsc{Infernal} (version 0.71) in standard versus QDB mode.  These
+plots are nearly superposed, showing that the loss in accuracy is
+small at the default QDB setting of $\beta=1e-7$.
+
+\ifdraft
+\input{fig-roc}
+% This is \ref{fig:roc}
+\fi
 
 How much do our changes in parameterization (the addition of
 informative Dirichlet priors and entropy weighting) improve
-sensitivity and specificity? Comparison of the curves for non-banded
-version 0.70 (new) and non-banded version 0.55 (old) in
-Figure~\ref{fig:roc} shows that \infernal 0.70 is a large improvement
-over \infernal 0.55, independent of QDB. Table~\ref{tbl:rmarkmerlist}
+sensitivity and specificity? Figure~\ref{fig:roc} shows that the new
+\textsc{Infernal} 0.71 is a large improvement over the previous
+\textsc{Infernal} version 0.55, independent of QDB. (On average, in
+this benchmark, \textsc{Infernal} 0.55 is no better than a
+family-pairwise-search with BLASTN.) Table~\ref{tbl:rmarkmerlist}
 breaks this result down in more detail, showing summary and
 family-specific MER scores for a variety of combinations of prior,
 entropy weighting, and QDB. These results show that both informative
-priors and entropy weighting individually contribute large
-improvements in sensitivity and specificity.  Finally,
-Table~\ref{tbl:rmarkmer_fam} tabulates detailed MER score results for
-the \textsc{blastn} and non-banded \textsc{infernal} benchmarks, to
-give insight into family-by-family variability of the query alignment
-sizes, test set sizes, performance, and optimal MER thresholds.
-
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% The rmark MER table - summary MERs
-%\normalfont\ttfamily
-\ifdraft
-\begin{table}[htb]
-\begin{center}
-%\begin{tabular}{|c|c|ccc|cc|} 
-\begin{tabular}{ccccccc} 
-
-%\multicolumn{1}{c}{} & \multicolumn{1}{c}{} & \multicolumn{1}{c}{} &
-%\multicolumn{1}{c}{} & \multicolumn{1}{c}{} & \multicolumn{1}{c}{} &
-%\multicolumn{1}{c}{summed} \\
-
-\multicolumn{1}{c}{} & \multicolumn{1}{c}{} & \multicolumn{1}{c}{} &
-\multicolumn{1}{c}{} & \multicolumn{1}{c}{} &
-\multicolumn{1}{c}{summary} & \multicolumn{1}{c}{family-specific} \\
-
-\multicolumn{1}{c}{} & \multicolumn{1}{c}{program} &
-\multicolumn{1}{c}{prior} & \multicolumn{1}{c}{entropy (bits)} &
-\multicolumn{1}{c}{$bandp$} & \multicolumn{1}{c}{MER} &
-\multicolumn{1}{c}{MER} \\ \hline
-
-%1 & \blast-W3 & - & - & - & - & 220 & 189 & 330 & 227 & 376 & 237 \\
-1 & \blast & - & - & - & 216 & 188 \\
-%3 & \blast-W11 & - & - & - & - & 244 & 218 & 294 & 242 & 341 & 262 \\ \hline
-%4 & \infernal glocal & N & - & - & - & 275 & 229 & - & - & - & - \\
-%5 & \infernal glocal & Y & - & - & - & 253 & 215 & - & - & - & - \\
-%6 & \infernal glocal & Y & 0.54 & - & - & 155 & 104 & 80 & 53 & 69 & 28 \\
-%7 & \infernal glocal & Y & 0.54 & - & 1E-6 & 161 & 112 & - & - & - & - \\
-%8 & \infernal glocal & Y & 0.54 & - & 1E-10 & 155 & 105 & - & - & - & - \\ \hline
-2 & \infernal 0.55 & plus-1 & - & - & 230 & 184 \\
-3 & \infernal 0.70 & informative & - & - & 188 & 163 \\
-%4 & \infernal & Y & 1.46 & - & 122 & 94 \\
-4 & \infernal 0.70 & informative & 1.46 & - & 104 & 90 \\
-5 & \infernal 0.70 & informative & 1.46 & $10^{-6}$ & 116 & 98 \\
-6 & \infernal 0.70 & informative & 1.46 & $10^{-10}$ & 110 & 94 \\ 
-\end{tabular}
-\end{center}
-\caption{\textbf{Rfam benchmark MER summary statistics.} 
-    prior: ``plus-1'' if uninformative Laplace plus-1 priors were
-    used; ``informative'' if new Dirichlet priors were used.
-    entropy: target model entropy in bits for entropy weighting; ``-''
-    if entropy weighting was not used.
-    %(effective sequence number is number of sequences in training alignment).
-    %    EL: EL self transition probability used.
-    ``$bandp$'': tail probability loss for banded calculation used; ``-'' if search
-    was non-banded. summary MER: MER across 51 benchmark
-    families; family-specific MER: MER for each family, summed
-    over all 51 families. Program versions: Row 1: WU-BLASTN-2.0MP
-    --kap -W=7. Row 2: \infernal version 0.55. Rows 3-6: \infernal
-    version 0.70.}
-\label{tbl:rmarkmerlist}
-\end{table}
-\fi
+priors and entropy weighting individually contributed large
+improvements in sensitivity and specificity.
 
 \ifdraft
-\begin{figure}
-\begin{center}
-\includegraphics[width=6.4in,angle=0]{figs/d2roc_ai}
-\end{center}
-\caption{\textbf{ROC curve for the Rfam based benchmark.}  
-\blast: corresponds with row 1 of Table~\ref{tbl:rmarkmerlist};
-version and options used: \texttt{WU-BLASTN-2.0MP --kap -W=7}. 
-\infernal v0.55 (non-banded): corresponds with row 2 of Table~\ref{tbl:rmarkmerlist}.
-\infernal v0.70 (non-banded): corresponds with row 4 of Table~\ref{tbl:rmarkmerlist}.
-\infernal v0.70 ($bandp=10^{-6}$): corresponds with row 5 of Table~\ref{tbl:rmarkmerlist}.
-\infernal v0.70 ($bandp=10^{-10}$): corresponds with row 6 of Table~\ref{tbl:rmarkmerlist}.
- Speed-up statistics for banded runs are averages over the 51 Rfam
- benchmark families.}
-\label{fig:roc}
-\end{figure}
+\input{tbl-rmarkmerlist}
+% This is tbl:rmarkmerlist
 \fi
+
 
 \section{Discussion}
 
-CM searches take a long time. Lack of speed is the most limiting
-factor is using the \textsc{infernal} software to identify RNA
-similarities. In our benchmarks, \textsc{infernal} requires 870
-CPU-hours to search 51 models against just 1 megabase of sequence
-(Table~\ref{tbl:rmarkbtimes_l}). Our eventual goal is complete and
-routine genome annotation of structural RNAs: to be able to search all
-Rfam models against complete genome sequences. A search of all 503
-Rfam 7.0 models against the 3 GB human genome would take on the order
-of 3000 CPU-\emph{years}. To be practical, we need to be able to do it
-in a few days. We need to increase CM search speed by five to six
-orders of magnitude. Parallelization is feasible, but even large
-clusters will give us ``only'' two to three orders of magnitude.
-Moreover, significant parallelization is prohibitively expensive in
-hardware for all but a few labs and centers. Software improvement
-(code optimization) may be expected to contribute about two-fold.
-Hardware improvements will gradually help, contributing about two-fold
-per year or so, so long as Moore's law continues. None of this is
-sufficient. Algorithmic acceleration is demanded.
+CM searches take a long time, and this is the most limiting factor is
+using the \textsc{infernal} software to identify RNA similarities. In
+our benchmarks, \textsc{infernal} requires 870 CPU-hours to search 51
+models against just 1 megabase of sequence
+(Table~\ref{tbl:rmark}). Our eventual goal is to enable routine genome
+annotation of structural RNAs: to be able to search thousands of RNA
+models against complete genome sequences. A search of all 503 Rfam 7.0
+models against the 3 GB human genome would take on the order of 3000
+CPU-years, but we need to be able to do it in at most a few days, so
+we need to increase CM search speed by five to six orders of
+magnitude. Parallelization is feasible, but even large clusters will
+give us only about three orders of magnitude.  Moreover,
+parallelization on this scale is prohibitively expensive for all but a
+few labs and centers. Software improvement (code optimization) will
+contribute, but probably only about two-fold.  Hardware improvements
+will contribute about two-fold per year or so so long as Moore's law
+continues. None of this is sufficient for our immediate purposes, so
+algorithmic acceleration is demanded.
 
 The QDB algorithm is a partial but not a complete solution to the
 problem. At $\beta$ banding cutoffs that do not appreciably compromise
@@ -1156,26 +841,27 @@ as with the filtering methods recently described by Weinberg and Ruzzo
 growing suite of approaches that we can combine to accelerate
 \textsc{infernal}.
 
-But is it really worth burning all this CPU time? Do CM searches
-identify structural RNA homologies that other methods miss? Obviously
-we think so (else we would not be working so hard on this approach)
-but one would like to see convincing results. For large, diverse RNA
-families like tRNA, where a CM can be trained on over a thousand
-well-aligned sequences with a well-conserved consensus secondary
-structure, CM approaches have been quite powerful. The state of the
-art in large scale tRNA gene identification remains the CM-based
-program \textsc{trnascan-se} \cite{LoweEddy97}, and CMs were also
-used, for example, to discover the divergent tRNA for pyrrolysine, the
-``22nd amino acid'' \cite{XXX}. But Figure~\ref{fig:roc} shows that on
-average, over 51 more or less ``typical'' RNA families of various
-sizes and alignment quality, \textsc{infernal} 0.55 was actually no
-better than doing a family-pairwise-search with \textsc{blastn}.
-Until recently, we have spent relatively little effort on how
-\textsc{infernal} parameterizes its models, and relatively more on
-reducing its computational requirements \cite{Eddy02b}, so
-\textsc{infernal} performs best where naive parameterization works
-best: on very large, high-quality alignments of hundreds of sequences,
-which are atypical of most interesting homology search problems.  
+Is it really worth burning all this CPU time in the first place?  Do
+CM searches identify structural RNA homologies that other methods
+miss? Obviously we think so (else we would not be working so hard on
+this approach) but one would like to see convincing results. For
+large, diverse RNA families like tRNA, where a CM can be trained on
+over a thousand well-aligned sequences with a well-conserved consensus
+secondary structure, CM approaches have been quite powerful. The state
+of the art in large scale tRNA gene identification remains the
+CM-based program \textsc{trnascan-se} \cite{LoweEddy97}, and CMs were
+also used, for example, to discover the divergent tRNA for
+pyrrolysine, the ``22nd amino acid'' \cite{Srinivasan02}. But
+Figure~\ref{fig:roc} shows that on average, over 51 more or less
+``typical'' RNA families of various sizes and alignment quality,
+\textsc{infernal} 0.55 was actually no better than doing a
+family-pairwise-search with \textsc{blastn}.  Until recently, we have
+spent relatively little effort on how \textsc{infernal} parameterizes
+its models, and relatively more on reducing its computational
+requirements \cite{Eddy02b}, so \textsc{infernal} performs best where
+naive parameterization works best: on very large, high-quality
+alignments of hundreds of sequences, which are atypical of many
+interesting homology search problems.
 
 In this work, partly motivated by the fact that QDB demanded more
 accurate transition parameterization anyway, we have brought
@@ -1188,11 +874,11 @@ difference between \textsc{infernal} and family-pairwise
 \textsc{blastn} now appears pronounced, for average-case behavior (not
 just best-case behavior). 
 
-However, one should be wary of benchmarks done by software
+However, one is right to be wary of benchmarks done by software
 developers. We trust our ``internal'' benchmarks (that is, internal to
 our lab) like the one in this paper to reveal differences between
 different versions of \textsc{infernal}, and to guide us in developing
-improvements. However, we must hesitate to draw conclusions from
+improvements. However, we hesitate to draw conclusions from our
 internal benchmarks about how our software compares to other software
 tools available in the community. It is almost unavoidable that we
 have optimized certain parameters on our benchmark data, so there is a
@@ -1200,25 +886,26 @@ danger of circularity and training on the test set. Our transition
 Dirichlets were trained on essentially the same Rfam alignments that
 the benchmark is based on, and the target of 1.46 bits for entropy
 weighting was optimized on the benchmark. It is fallacious to imagine
-removing all such biases. The natural process of benchmarking during
-code development and accepting code changes that improve performance
-constitutes an insidious form of training on the test set.  One might
-establish an independent benchmark set to be applied only once at the
-end of the work, after which no further code changes will be made, but
-such discipline is a near-impossible standard to set for a
-continuously evolving codebase.
+we can remove all such biases. The natural process of benchmarking
+during code development and accepting code changes that improve
+performance constitutes an insidious form of training on the test set.
+One might establish an independent benchmark set to be applied only
+once at the end of the work, after which no further code changes will
+be made, but such discipline is a near-impossible standard to set for
+a continuously evolving codebase.
 
 Therefore we look to independent benchmarks to gauge more reliably how
 \textsc{infernal} compares to other available software tools.  We are
-aware of only one such benchmark to date, BRaliBase III
-\cite{GardnerXXX}. BRaliBase III consists of many different query
-alignments of 5 or 20 RNA sequences, drawn from three different RNA
-families (U5, 5S rRNA, and tRNA). These as-yet unpublished results
-broadly confirm our observations on our internal benchmark: that while
-\textsc{infernal} 0.55 showed mediocre performance compared to
-\textsc{blastn} and several other tools, especially on the smaller
-query alignments, \textsc{infernal} 0.7 now stands out as a superior
-method for RNA similarity search.
+aware of only one such benchmark to date, BRaliBase III (Freyhult,
+Bollback, and Gardner, unpublished; available at
+\url{http://www.binf.ku.dk/~pgardner/bralibase/bralibase3/}). BRaliBase
+III consists of many different query alignments of 5 or 20 RNA
+sequences, drawn from three different RNA families (U5, 5S rRNA, and
+tRNA). These results broadly confirm our observations on our internal
+benchmark: that while \textsc{infernal} 0.55 showed mediocre
+performance compared to \textsc{blastn} and several other tools,
+especially on the smaller query alignments, \textsc{infernal} 0.7 now
+stands out as a superior method for RNA similarity search.
 
 Nonetheless, though \textsc{infernal} 0.7 shows large improvements in
 speed, sensitivity, and specificity over previous versions, there are
@@ -1241,24 +928,24 @@ deletions efficiently in a phylogenetic probability model.
 A significant gap in our current implementation is that
 \textsc{infernal} reports only raw bit scores, and does not yet report
 expectation values (E-values). CM local alignment scores empirically
-follow a Gumbel (extreme value) distribution \cite{XXX}, just as local
-sequence or profile alignment scores do \cite{XXX}, so there are no
-technical hurdles in implementing E-values. This will be an immediate
-focus for the next version of \textsc{infernal}.  E-value calculations
-not only have the effect of reporting statistical significance (more
-meaningful to a user than a raw bit score), but they also 'normalize'
-each family's score distribution into a more consistent overall rank
-order, because different query models exhibit different null
-distributions (particularly in the location parameter of the Gumbel
-distribution). We therefore expect E-values to contribute a large
-increase in performance whenever a single family-independent threshold
-is set. Table~\ref{tbl:rmarkmerlist} roughly illustrates the expected
-gain, by showing the large difference between summary MER scores and
-family-specific MER scores.
+follow a Gumbel (extreme value) distribution \cite{KleinEddy03}, just
+as local sequence alignment scores do \cite{KarlinAltschul93}, so
+there are no technical hurdles in implementing E-values. This will be
+an immediate focus for the next version of \textsc{infernal}.  E-value
+calculations not only have the effect of reporting statistical
+significance (more meaningful to a user than a raw bit score), but
+they also 'normalize' each family's score distribution into a more
+consistent overall rank order, because different query models exhibit
+different null distributions (particularly in the location parameter
+of the Gumbel distribution). We therefore expect E-values to
+contribute a large increase in performance whenever a single
+family-independent threshold is set. Table~\ref{tbl:rmarkmerlist}
+roughly illustrates the expected gain, by showing the large difference
+between summary MER scores and family-specific MER scores.
 
 Finally, QDB is not the only algorithmic acceleration method we can
 envision.  Michael Brown described a complementary banding method to
-accelerate his SCFG-based \textsc{RNACAD} ribosomal RNA alignment
+accelerate his SCFG-based \textsc{rnacad} ribosomal RNA alignment
 software \cite{Brown00}, in which he uses profile HMM based sequence
 alignment to the target to determine bands where the more rigorous
 SCFG-based alignment should fall (because some regions of the
@@ -1267,680 +954,58 @@ gapped BLAST algorithm (seed word hits, ungapped hit extension, and
 banded dynamic programming) can conceivably be extended from
 two-dimensional sequence alignment to three-dimensional CM dynamic
 programming lattices. Developing such algorithms -- and incoporating
-them into one widely useful, freely available codebase -- are
-priorities for us.
-
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% The rmark by family MER table
-\ifdraft
-\renewcommand{\baselinestretch}{1.0}
-\begin{table}
-%\tiny
-\scriptsize
-\begin{center}
-\begin{tabular}{|ll|rrr|rrrrl|rrrrr|} \hline
-\multicolumn{1}{|c}{Rfam 7.0} & \multicolumn{1}{c|}{family} & \multicolumn{1}{c}{\#} & \multicolumn{1}{c}{\#} & \multicolumn{1}{c}{mean len} & \multicolumn{5}{|c|}{\textsc{BLAST}} & \multicolumn{5}{|c|}{\textsc{Infernal}} \\ 
-\multicolumn{1}{|c}{ID} & \multicolumn{1}{c|}{name} & \multicolumn{1}{c}{train} & \multicolumn{1}{c}{test} & \multicolumn{1}{c|}{(train)} & \multicolumn{1}{c}{MER} & \multicolumn{1}{c}{TP} & \multicolumn{1}{c}{FP} & \multicolumn{1}{c}{FN} & \multicolumn{1}{c|}{thr} & \multicolumn{1}{c}{MER} & \multicolumn{1}{c}{TP} & \multicolumn{1}{c}{FP} & \multicolumn{1}{c}{FN} & \multicolumn{1}{c|}{thr} \\ \hline 
-RF00002 & 5\_8S\_rRNA & 62 & 1 & 151 & 0 & 1 & 0 & 0 & 0.0045 & 0 & 1 & 0 & 0 &  11.27 \\  
-RF00003 & U1 & 46 & 6 & 159 & 2 & 4 & 0 & 2 &  0.049 & 0 & 6 & 0 & 0 &  12.26 \\  
-RF00004 & U2 & 76 & 1 & 184 & 0 & 1 & 0 & 0 &  0.017 & 0 & 1 & 0 & 0 &     10.00 \\  
-RF00005 & tRNA & 1080 & 19 & 73 & 18 & 1 & 0 & 18 &  0.021 & 6 & 13 & 0 & 6 &  14.09 \\  
-RF00008 & Hammerhead\_3 & 82 & 1 & 55 & 1 & 0 & 0 & 1 &    0.3 & 0 & 1 & 0 & 0 &   14.70 \\  
-RF00009 & RNaseP\_nuc & 26 & 21 & 320 & 19 & 2 & 0 & 19 &   0.02 & 17 & 4 & 0 & 17 &  11.67 \\  
-RF00010 & RNaseP\_bact\_a & 233 & 1 & 332 & 0 & 1 & 0 & 0 & 0.00086 & 0 & 1 & 0 & 0 &  12.61 \\  
-RF00011 & RNaseP\_bact\_b & 30 & 1 & 366 & 0 & 1 & 0 & 0 &   0.63 & 0 & 1 & 0 & 0 &  12.32 \\  
-RF00012 & U3 & 6 & 5 & 212 & 3 & 2 & 0 & 3 &  0.044 & 2 & 3 & 0 & 2 &  16.86 \\  
-RF00015 & U4 & 25 & 1 & 141 & 1 & 0 & 0 & 1 &   0.04 & 1 & 0 & 0 & 1 &  13.44 \\  
-RF00017 & SRP\_euk\_arch & 28 & 21 & 303 & 19 & 2 & 0 & 19 &   0.52 & 7 & 14 & 0 & 7 &  12.84 \\  
-RF00018 & CsrB & 8 & 1 & 351 & 0 & 1 & 0 & 0 &      0.0 & 0 & 1 & 0 & 0 &  12.97 \\  
-RF00019 & Y & 15 & 1 & 94 & 1 & 0 & 0 & 1 &  0.073 & 1 & 0 & 0 & 1 &   15.10 \\  
-RF00020 & U5 & 29 & 3 & 115 & 1 & 2 & 0 & 1 &  0.054 & 0 & 3 & 0 & 0 &  13.64 \\  
-RF00023 & tmRNA & 19 & 40 & 334 & 6 & 34 & 0 & 6 &  0.081 & 9 & 31 & 0 & 9 &  13.14 \\  
-RF00024 & Telomerase-vert & 20 & 11 & 436 & 0 & 11 & 0 & 0 &   0.92 & 0 & 11 & 0 & 0 &   11.30 \\  
-RF00025 & Telomerase-cil & 10 & 2 & 157 & 2 & 0 & 0 & 2 &  0.005 & 2 & 0 & 0 & 2 &  13.97 \\  
-RF00028 & Intron\_gpI & 5 & 24 & 300 & 20 & 4 & 0 & 20 &   0.92 & 13 & 11 & 0 & 13 &  12.25 \\  
-RF00029 & Intron\_gpII & 7 & 11 & 141 & 6 & 5 & 0 & 6 &  0.098 & 1 & 10 & 0 & 1 &  11.08 \\  
-RF00030 & RNase\_MRP & 18 & 3 & 284 & 3 & 0 & 0 & 3 &  0.003 & 3 & 0 & 0 & 3 &  12.46 \\  
-RF00031 & SECIS & 11 & 24 & 64 & 23 & 1 & 0 & 23 &  0.71 & 13 & 13 & 2 & 11 &  14.58 \\  
-RF00033 & MicF & 8 & 1 & 93 & 0 & 1 & 0 & 0 &   0.49 & 0 & 1 & 0 & 0 &  13.17 \\  
-RF00037 & IRE & 36 & 1 & 28 & 1 & 0 & 0 & 1 &  0.995 & 1 & 0 & 0 & 1 &  14.98 \\  
-RF00040 & me5 & 6 & 1 & 338 & 0 & 1 & 0 & 0 &   0.89 & 0 & 1 & 0 & 0 &  11.78 \\  
-RF00054 & U25 & 5 & 1 & 87 & 1 & 0 & 0 & 1 &   0.68 & 1 & 0 & 0 & 1 &  16.66 \\  
-RF00055 & snoZ37 & 5 & 1 & 94 & 1 & 0 & 0 & 1 &   0.75 & 1 & 0 & 0 & 1 &  13.96 \\  
-RF00059 & THI & 228 & 8 & 109 & 2 & 6 & 0 & 2 & 0.0018 & 0 & 8 & 0 & 0 &  13.66 \\  
-RF00066 & U7 & 28 & 2 & 62 & 0 & 2 & 0 & 0 &   0.49 & 0 & 2 & 0 & 0 &  14.23 \\  
-RF00067 & U15 & 9 & 3 & 146 & 1 & 2 & 0 & 1 &   0.13 & 1 & 2 & 0 & 1 &  22.46 \\  
-RF00080 & yypP-ykoY & 20 & 33 & 129 & 29 & 5 & 1 & 28 &   0.11 & 1 & 32 & 0 & 1 &  17.84 \\  
-RF00096 & U8 & 5 & 1 & 135 & 0 & 1 & 0 & 0 &  0.024 & 0 & 1 & 0 & 0 &  13.25 \\  
-RF00101 & SraC\_RyeA & 6 & 1 & 250 & 0 & 1 & 0 & 0 &    0.2 & 0 & 1 & 0 & 0 &  11.87 \\  
-RF00104 & mir-10 & 9 & 2 & 73 & 2 & 0 & 0 & 2 &   0.17 & 2 & 0 & 0 & 2 &  16.13 \\  
-RF00114 & S15 & 10 & 1 & 117 & 1 & 0 & 0 & 1 &  0.029 & 1 & 0 & 0 & 1 &  16.94 \\  
-RF00163 & Hammerhead\_1 & 65 & 1 & 68 & 1 & 0 & 0 & 1 &   0.36 & 0 & 1 & 0 & 0 &  16.52 \\  
-RF00165 & Corona\_pk3 & 10 & 1 & 63 & 1 & 0 & 0 & 1 &   0.82 & 1 & 0 & 0 & 1 &  14.72 \\  
-RF00167 & Purine & 33 & 4 & 99 & 0 & 4 & 0 & 0 &   0.13 & 0 & 4 & 0 & 0 &  13.02 \\  
-RF00168 & Lysine & 33 & 17 & 180 & 4 & 13 & 0 & 4 &  0.036 & 0 & 17 & 0 & 0 &  15.98 \\  
-RF00169 & SRP\_bact & 46 & 15 & 96 & 3 & 12 & 0 & 3 &   0.08 & 0 & 15 & 0 & 0 &  14.22 \\  
-RF00170 & msr & 5 & 3 & 70 & 3 & 0 & 0 & 3 &   0.49 & 3 & 0 & 0 & 3 &  13.49 \\  
-RF00174 & Cobalamin & 87 & 66 & 203 & 0 & 66 & 0 & 0 &  0.021 & 0 & 66 & 0 & 0 &   15.90 \\  
-RF00177 & SSU\_rRNA\_5 & 145 & 21 & 593 & 3 & 19 & 1 & 2 &   0.58 & 0 & 21 & 0 & 0 &   9.89 \\  
-RF00206 & U54 & 12 & 1 & 81 & 1 & 0 & 0 & 1 &  0.054 & 1 & 0 & 0 & 1 &   15.80 \\  
-RF00213 & snoR38 & 7 & 3 & 88 & 1 & 2 & 0 & 1 &   0.49 & 0 & 3 & 0 & 0 &  16.07 \\  
-RF00230 & T-box & 10 & 35 & 244 & 4 & 31 & 0 & 4 & 0.9992 & 1 & 34 & 0 & 1 &  12.34 \\  
-RF00234 & glmS & 8 & 3 & 181 & 0 & 3 & 0 & 0 &   0.16 & 0 & 3 & 0 & 0 &  11.88 \\  
-RF00373 & RNaseP\_arch & 20 & 13 & 290 & 1 & 12 & 0 & 1 &  0.003 & 0 & 13 & 0 & 0 &  19.39 \\  
-RF00379 & ydaO-yuaA & 31 & 4 & 147 & 0 & 4 & 0 & 0 &  0.026 & 0 & 4 & 0 & 0 &  13.11 \\  
-RF00380 & ykoK & 35 & 3 & 168 & 0 & 3 & 0 & 0 &  0.073 & 0 & 3 & 0 & 0 &  13.13 \\  
-RF00448 & IRES\_EBNA & 7 & 1 & 213 & 0 & 1 & 0 & 0 &   0.79 & 1 & 0 & 0 & 1 &  11.99 \\  
-RF00504 & gcvT & 109 & 5 & 102 & 3 & 2 & 0 & 3 &   0.04 & 0 & 5 & 0 & 0 &   13.40 \\ \hline 
-%\multicolumn{2}{c}{summed family} & 56 & 8 & ? & 188 & 264 & 2 & 186 &  0.017 & 90 & 362 & 2 & 88 &  16.38 \\  
-%\multicolumn{15}{c}{} \\ \hline
-\multicolumn{5}{|c|}{MER statistics summed across all families} & 188
-& 264 & 2 & 186 & N/A & 90 & 362 & 2 & 88 & N/A \\  
-\multicolumn{5}{|c|}{Summary MER statistics (using one threshold for
-all families)} & 216 & 240 & 6 & 210 &  0.017 & 104 & 354 & 8 & 96 &  16.38 \\ \hline 
-%total(fam) & & 56 & 8 & ? & 188 & 264 & 2 & 186 &  0.017 & 90 & 362 & 2 & 88 &  16.38 \\  
-%total & & 2874 & 450 & ? & 216 & 240 & 6 & 210 &  0.017 & 104 & 354 & 8 & 96 &  16.38 \\  
-\end{tabular}
-\end{center}
-
-\caption{\textbf{Rfam benchmark families with MER statistics.}
-  The minimum error rate (MER) threshold is the score for a given
-  method searching for a given Rfam family at which the sum of false
-  positives (FP) and false negatives (FN) is
-  minimized. ``MER''= FP+FN at threshold. ``TP''= TP at
-  threshold. ``thr''= threshold; E-value (\textsc{BLAST}) or bit score
-  (\textsc{Infernal}). For the row labelled
-  ``Summary MER statistics'': MER statistics are derived from ranked list
-  of all hits across all families. ``mean len (train)'' = mean length
-  of training sequences in benchmark set. 
-  Program versions and options used: \textsc{BLAST}=
-  WU-BLASTN-2.0MP --kap -W=7. \textsc{Infernal}= cmsearch
-  --local (version 0.70)}
-
-\label{tbl:rmarkmer_fam}
-\end{table}
-\fi
-
-% The rmark local speed up table
-\ifdraft
-\begin{table}
-\scriptsize
-\begin{center}
-\begin{tabular}{|ll|rrr|rr|rr|r|} \cline{6-10}
-\multicolumn{5}{c}{} & \multicolumn{2}{|c|}{$bandp = 10^{-10}$} &
-  \multicolumn{2}{c|}{$bandp = 10^{-6}$} & \multicolumn{1}{c|}{non-banded} \\ \cline{1-5}
-Rfam ID & family & avg len & W & bifs & time & spd up & time & spd up & time \\ \hline 
-RF00177 & SSU\_rRNA\_5 & 593 & 791 & 12 & 17.36 & 8.76 & 11.07 & 13.74 & 152.08 \\  
-RF00024 & Telomerase-vert & 436 & 757 & 2 & 10.33 & 6.21 & 6.75 & 9.50 & 64.09 \\  
-RF00011 & RNaseP\_bact\_b & 366 & 638 & 9 & 8.76 & 7.16 & 5.75 & 10.91 & 62.69 \\  
-RF00018 & CsrB & 351 & 439 & 10 & 5.32 & 9.47 & 3.47 & 14.51 & 50.37 \\  
-RF00040 & rne5 & 338 & 369 & 4 & 5.88 & 6.27 & 4.13 & 8.93 & 36.88 \\  
-RF00023 & tmRNA & 334 & 648 & 4 & 5.70 & 7.63 & 3.99 & 10.89 & 43.46 \\  
-RF00010 & RNaseP\_bact\_a & 332 & 881 & 7 & 7.94 & 7.49 & 5.06 & 11.77 & 59.52 \\  
-RF00009 & RNaseP\_nuc & 320 & 709 & 4 & 18.13 & 2.89 & 10.78 & 4.86 & 52.40 \\  
-RF00017 & SRP\_euk\_arch & 303 & 339 & 3 & 6.26 & 4.37 & 4.36 & 6.27 & 27.34 \\  
-RF00028 & Intron\_gpI & 300 & 460 & 4 & 8.98 & 3.51 & 5.40 & 5.85 & 31.55 \\  
-RF00373 & RNaseP\_arch & 290 & 439 & 4 & 7.39 & 3.73 & 4.96 & 5.57 & 27.58 \\  
-RF00030 & RNase\_MRP & 284 & 460 & 5 & 7.65 & 4.62 & 4.86 & 7.27 & 35.36 \\  
-RF00101 & SraC\_RyeA & 250 & 276 & 4 & 3.73 & 4.62 & 2.54 & 6.76 & 17.20 \\  
-RF00230 & T-box & 244 & 338 & 1 & 4.37 & 3.51 & 2.86 & 5.36 & 15.32 \\  
-RF00448 & IRES\_EBNA & 213 & 246 & 4 & 2.90 & 4.34 & 1.98 & 6.36 & 12.57 \\  
-RF00012 & U3 & 212 & 236 & 2 & 3.56 & 3.70 & 2.53 & 5.20 & 13.16 \\  
-RF00174 & Cobalamin & 203 & 458 & 3 & 7.33 & 2.29 & 4.34 & 3.87 & 16.81 \\  
-RF00004 & U2 & 184 & 219 & 4 & 2.45 & 4.37 & 1.75 & 6.11 & 10.72 \\  
-RF00234 & glmS & 181 & 434 & 3 & 4.48 & 3.21 & 2.85 & 5.04 & 14.36 \\  
-RF00168 & Lysine & 180 & 277 & 3 & 3.32 & 3.16 & 2.22 & 4.74 & 10.51 \\  
-RF00380 & ykoK & 168 & 208 & 2 & 2.83 & 2.77 & 1.94 & 4.05 & 7.85 \\  
-RF00003 & U1 & 159 & 184 & 3 & 1.93 & 4.04 & 1.38 & 5.64 & 7.78 \\  
-RF00025 & Telomerase-cil & 157 & 202 & 2 & 2.21 & 3.37 & 1.58 & 4.72 & 7.44 \\  
-RF00002 & 5\_8S\_rRNA & 151 & 224 & 2 & 2.22 & 2.95 & 1.53 & 4.28 & 6.54 \\  
-RF00379 & ydaO-yuaA & 147 & 317 & 3 & 4.09 & 1.97 & 2.48 & 3.26 & 8.07 \\  
-RF00067 & U15 & 146 & 187 & 0 & 2.31 & 2.13 & 1.54 & 3.20 & 4.92 \\  
-RF00015 & U4 & 141 & 289 & 3 & 2.39 & 2.81 & 1.56 & 4.32 & 6.72 \\  
-RF00029 & Intron\_gpII & 141 & 286 & 1 & 3.23 & 2.67 & 2.05 & 4.21 & 8.62 \\  
-RF00096 & U8 & 135 & 198 & 2 & 2.14 & 2.52 & 1.43 & 3.77 & 5.38 \\  
-RF00080 & yybP-ykoY & 129 & 287 & 2 & 2.62 & 2.11 & 1.75 & 3.16 & 5.53 \\  
-RF00114 & S15 & 117 & 138 & 1 & 1.41 & 2.31 & 1.00 & 3.26 & 3.26 \\  
-RF00020 & U5 & 115 & 141 & 1 & 1.57 & 2.32 & 1.18 & 3.08 & 3.63 \\  
-RF00059 & THI & 109 & 305 & 2 & 3.68 & 1.67 & 2.23 & 2.75 & 6.14 \\  
-RF00504 & gcvT & 102 & 298 & 1 & 3.48 & 1.23 & 2.14 & 2.01 & 4.30 \\  
-RF00167 & Purine & 99 & 114 & 1 & 1.30 & 1.99 & 0.92 & 2.82 & 2.60 \\  
-RF00169 & SRP\_bact & 96 & 117 & 0 & 1.49 & 1.72 & 1.04 & 2.46 & 2.57 \\  
-RF00019 & Y & 94 & 142 & 0 & 1.66 & 1.50 & 1.16 & 2.16 & 2.49 \\  
-RF00055 & snoZ37 & 94 & 117 & 0 & 1.21 & 1.65 & 0.86 & 2.33 & 1.99 \\  
-RF00033 & MicF & 93 & 126 & 1 & 1.13 & 1.98 & 0.82 & 2.71 & 2.23 \\  
-RF00213 & snoR38 & 88 & 169 & 0 & 1.68 & 1.46 & 1.09 & 2.24 & 2.45 \\  
-RF00054 & U25 & 87 & 107 & 0 & 1.05 & 1.58 & 0.74 & 2.25 & 1.66 \\  
-RF00206 & U54 & 81 & 135 & 0 & 1.24 & 1.31 & 0.83 & 1.96 & 1.62 \\  
-RF00005 & tRNA & 73 & 186 & 2 & 1.12 & 2.04 & 0.72 & 3.17 & 2.29 \\  
-RF00104 & mir-10 & 73 & 100 & 0 & 1.16 & 1.31 & 0.86 & 1.75 & 1.51 \\  
-RF00170 & msr & 70 & 135 & 0 & 1.03 & 1.48 & 0.71 & 2.15 & 1.52 \\  
-RF00163 & Hammerhead\_1 & 68 & 238 & 1 & 2.33 & 1.21 & 1.34 & 2.10 & 2.82 \\  
-RF00031 & SECIS & 64 & 97 & 0 & 0.90 & 1.37 & 0.70 & 1.76 & 1.24 \\  
-RF00165 & Corona\_pk3 & 63 & 78 & 0 & 0.68 & 1.43 & 0.52 & 1.85 & 0.97 \\  
-RF00066 & U7 & 62 & 96 & 0 & 0.74 & 1.39 & 0.55 & 1.87 & 1.03 \\  
-RF00008 & Hammerhead\_3 & 55 & 164 & 1 & 1.07 & 1.16 & 0.67 & 1.85 & 1.24 \\  
-RF00037 & IRE & 28 & 41 & 0 & 0.28 & 1.09 & 0.21 & 1.42 & 0.30 \\ \hline 
-\multicolumn{5}{|c|}{average} & 3.88 & 3.17 & 2.53 & 4.75 & 17.07 \\ 
-\multicolumn{5}{|c|}{total}   & 198.02 & 4.40 & 129.18 & 6.74 & 870.68 \\ \hline 
-\end{tabular}
-\end{center}
-
-\caption{\textbf{Statistics and running times for
-      \textsc{Infernal} version 0.70 CMs on the Rfam benchmark.} ``bifs''=
-      number of bifurcations in consensus secondary
-      structure. ``time'': hours per MB. ``spd up'': speed-up factor
-      relative to non-banded. All searches performed in local mode.}
-\label{tbl:rmarkbtimes_l}
-\end{table}
-\fi
+them into a widely useful, freely available codebase -- are priorities
+for us.
 
 \section{Acknowledgements}
-EPN gratefully acknowledges financial support from NIH/NHGRI
-Institutional Training Grant in Genomic Science T32 HG000045.
 
+EPN gratefully acknowledges financial support from an NIH NHGRI
+Institutional Training Grant in Genomic Science, T32-HG000045. Work in
+SRE's lab in Washington University in St. Louis, where this work was
+initiated, was supported by NIH NHGRI RO1-HG01363, HHMI, and Alvin
+Goldfarb.
 
 
 \newpage
 %\bibliography{distilled}
-\bibliography{master,books,lab,bandcyk}
+\bibliography{master,books,lab}
 
 \ifdraft
  \relax
 \else
-\newpage
-\begin{figure}
-\begin{center}
-\includegraphics[width=6.4in]{figs/d4fig_0}
-\caption{\textbf{An example RNA family and corresponding CM.}
-  \textbf{(A):} A toy multiple alignment of 3 sequences. \textbf{(B):}
-  The structure of one sequence from (A), and the guide tree of nodes
-  corresponding to the consensus structure of the
-  family. \textbf{(C):} The state topology of 3 selected nodes of the
-  CM. Transitions are indicated by lines with arrows.}
-\label{fig:cmintro}
-\end{center}
-\end{figure}
-
-\begin{figure}
-\begin{center}
-\caption{\textbf{A simplified CM.} \textbf{(A):} Biologically
-  unrealistic, toy CM with simplified architecture. \textbf{(B):} Examples of
-  sequences generated from CM in (A), each with its own probability
-  given the transition probabilities of the model, as shown in plots at
-   bottom.}
-\label{fig:aprioriAB}
-\end{center}
-\end{figure}
-
-\begin{figure}
-  \begin{center}
-    \caption{\textbf{A trace of the band calculation
-	algorithm for the simplified CM in Figure~\ref{fig:aprioriAB}.} 
-      The maximum length $d$ considered (the $Z$ parameter) is set as
-      10. Resulting $\gamma$ probability distributions shown at right. For
-      state $0$ (step 7), the $\gamma$ plot is color-coded to correspond
-      with probabilities in Figure~\ref{fig:aprioriAB}.}
-    \label{fig:aprioriC}
-  \end{center}
-\end{figure}
-
-\begin{figure}
-  \begin{center}
-    \caption{\textbf{Effect of transition priors on band calculation.}
-  Solid vertical lines represent the lengths of the 5
-  seed sequences used to build each model, corresponding with the
-  right vertical axis labels. Band calculation is compared using
-  ``plus-1'' transition priors and the newly estimated ``informative''
-  Dirichlet priors as follows: Dashed
-  probability distributions show $\gamma_0(d)$, the probability a
-  sequence of length $d$ is generated by state $0$ (the top-most, root state)
-  of each model. Dashed vertical lines are the band ($dmin_0$ (left) and
-  $dmax_0$ (right)) derived from the $\gamma_0(d)$ distribution using $bandp =
-  10^{-7}$ (probability mass within each band is 99.99999\%).}
-    \label{fig:bands}
-  \end{center}
-\end{figure}
-
-\renewcommand{\baselinestretch}{1.0}
-\begin{table}
-\renewcommand{\tabcolsep}{0.7em}
-\tiny
-\begin{center}
-%\begin{tabular}{|r|r|l|l|l||l|r||l|r||l|r||l|r||l|r||l|r||} \hline
-\begin{tabular}{|rr|rr|cc|c|c|cc|cc|cc|cc|cc|cc|} \cline{1-6} \cline{8-20}
-%\multicolumn{5}{c}{} & \multicolumn{2}{|c|}{1} & \multicolumn{2}{|c|}{2} & \multicolumn{2}{|c|}{3} & \multicolumn{2}{|c|}{4} & \multicolumn{2}{|c|}{5} & \multicolumn{2}{|c|}{6} \\ \cline{1-17}
-\multicolumn{1}{|c}{alph} & \multicolumn{1}{c|}{grp} &
-  \multicolumn{1}{c}{alph} & \multicolumn{1}{c|}{grp} & node & next &
-  & \multicolumn{13}{|c|}{transition alphabets and Dirichlet $\alpha$ parameters} \\ %\cline{8-20}
-%\multicolumn{1}{|c}{\#} & \multicolumn{1}{c|}{\#} & \multicolumn{1}{c}{counts} & \multicolumn{1}{c|}{counts} & state & node & & $|\alpha|$ & $a_1$ &
-%  $\frac{\alpha_{a_1}}{|\alpha|}$ & $a_2$ & $\frac{\alpha_{a_2}}{|\alpha|}$ & $a_3$ &
-%  $\frac{\alpha_{a_3}}{|\alpha|}$ & $a_4$ & $\frac{\alpha_{a_4}}{|\alpha|}$ & $a_5$ &
-%  $\frac{\alpha_{a_5}}{|\alpha|}$ & $a_6$ & $\frac{\alpha_{a_6}}{|\alpha|}$ \\
-%  \cline{1-6} \cline {8-20} 
-\multicolumn{1}{|c}{\#} & \multicolumn{1}{c|}{\#} & \multicolumn{1}{c}{counts} & \multicolumn{1}{c|}{counts} & state & node & & $|\alpha|$ & $a$ &
-  $\frac{\alpha_{a}}{|\alpha|}$ & $a$ & $\frac{\alpha_{a}}{|\alpha|}$ & $a$ &
-  $\frac{\alpha_{a}}{|\alpha|}$ & $a$ & $\frac{\alpha_{a}}{|\alpha|}$ & $a$ &
-  $\frac{\alpha_{a}}{|\alpha|}$ & $a$ & $\frac{\alpha_{a}}{|\alpha|}$ \\
-  \cline{1-6} \cline {8-20} 
-
-1   &    & 6     & 11    & MATP\_MP & BIF  & & 0.5509  & IL & 0.1229 & IR & 0.0001 & B  & 0.8770 &    &        &    &  &  &  \\  
-2   &    & 7023  & 7119  & MATP\_MP & MATP & & 7.2986  & IL & 0.0023 & IR & 0.0024 & MP & 0.9816 & ML & 0.0056 & MR & 0.0046 & D & 0.0035 \\  
-3   &    & 1600  & 1830  & MATP\_MP & MATL & & 1.5914  & IL & 0.0179 & IR & 0.0155 & ML & 0.9200 & D  & 0.0466 &    &  &  &  \\  
-4   &    & 145   & 195   & MATP\_MP & MATR & & 1.9038  & IL & 0.0173 & IR & 0.0073 & MR & 0.8903 & D  & 0.0852 &    &  &  &  \\  
-5   & 1  & 2     & 11    & MATP\_MP & END  & & 0.5509  & IL & 0.1229 & IR & 0.0001 & E  & 0.8770 &    &        &    &  &  &  \\  
-6*  &    & 1     & 2     & MATP\_ML & BIF  & & 3.0000  & IL & 0.3333 & IR & 0.3333 & B  & 0.3333 &    &        &    &  &  &  \\  
-7   &    & 577   & 577   & MATP\_ML & MATP & & 0.6941  & IL & 0.0131 & IR & 0.0103 & MP & 0.4032 & ML & 0.4983 & MR & 0.0115 & D & 0.0636 \\  
-8   &    & 133   & 133   & MATP\_ML & MATL & & 0.9316  & IL & 0.0739 & IR & 0.0651 & ML & 0.7038 & D  & 0.1571 &    &  &  &  \\  
-9   &    & 15    & 15    & MATP\_ML & MATR & & 0.3272  & IL & 0.1884 & IR & 0.0432 & MR & 0.4082 & D  & 0.3602 &    &  &  &  \\  
-10* & 6  & 1     & 2     & MATP\_ML & END  & & 3.0000  & IL & 0.3333 & IR & 0.3333 & E  & 0.3333 &    &        &    &  &  &  \\  
-11* &    & 1     & 2     & MATP\_MR & BIF  & & 3.0000  & IL & 0.3333 & IR & 0.3333 & B  & 0.3333 &    &        &    &  &  &  \\  
-12  &    & 531   & 531   & MATP\_MR & MATP & & 0.7987  & IL & 0.0079 & IR & 0.0190 & MP & 0.3241 & ML & 0.0193 & MR & 0.5631 & D & 0.0666 \\  
-13  &    & 151   & 151   & MATP\_MR & MATL & & 0.6933  & IL & 0.0357 & IR & 0.0699 & ML & 0.3066 & D  & 0.5879 &    &  &  &  \\  
-14  &    & 15    & 15    & MATP\_MR & MATR & & 0.3574  & IL & 0.0582 & IR & 0.0002 & MR & 0.7629 & D  & 0.1787 &    &  &  &  \\  
-15* & 11 & 1     & 2     & MATP\_MR & END  & & 3.0000  & IL & 0.3333 & IR & 0.3333 & E  & 0.3333 &    &        &    &  &  &  \\  
-16* &    & 0     & 2     & MATP\_D  & BIF  & & 3.0000  & IL & 0.3333 & IR & 0.3333 & B  & 0.3333 &    &        &    &  &  &  \\  
-17  &    & 575   & 575   & MATP\_D  & MATP & & 0.5450  & IL & 0.0019 & IR & 0.0047 & MP & 0.0857 & ML & 0.0534 & MR & 0.0528 & D & 0.8015 \\  
-18  &    & 149   & 149   & MATP\_D  & MATL & & 0.5831  & IL & 0.0421 & IR & 0.0526 & ML & 0.2080 & D  & 0.6973 &    &  &  &  \\  
-19  &    & 14    & 14    & MATP\_D  & MATR & & 0.1164  & IL & 0.0001 & IR & 0.0001 & MR & 0.2439 & D  & 0.7559 &    &  &  &  \\  
-20* & 16 & 2     & 2     & MATP\_D  & END  & & 3.0000  & IL & 0.3333 & IR & 0.3333 & E  & 0.3333 &    &        &    &  &  &  \\  
-21  &    & 2     & 4     & MATP\_IL & BIF  & & 1.4397  & IL & 0.6553 & IR & 0.0445 & B  & 0.3002 &    &        &    &  &  &  \\  
-22  &    & 121   & 126   & MATP\_IL & MATP & & 0.9402  & IL & 0.1673 & IR & 0.1394 & MP & 0.5904 & ML & 0.0443 & MR & 0.0259 & D & 0.0327 \\  
-23  &    & 114   & 119   & MATP\_IL & MATL & & 0.8046  & IL & 0.3108 & IR & 0.1936 & ML & 0.4610 & D  & 0.0346 &    &  &  &  \\  
-24  &    & 14    & 15    & MATP\_IL & MATR & & 1.0926  & IL & 0.1419 & IR & 0.0501 & MR & 0.6538 & D  & 0.1541 &    &  &  &  \\  
-25  & 21 & 2     & 4     & MATP\_IL & END  & & 1.4397  & IL & 0.6553 & IR & 0.0445 & E  & 0.3002 &    &        &    &  &  &  \\  
-26  &    & 1     & 31    & MATP\_IR & BIF  & & 0.9361  & IR & 0.2827 & B  & 0.7173 &    &        &    &        &    &  &  &  \\  
-27  &    & 145   & 227   & MATP\_IR & MATP & & 1.5494  & IR & 0.1884 & MP & 0.7090 & ML & 0.0165 & MR & 0.0588 & D  & 0.0273 &  &  \\  
-28  &    & 129   & 701   & MATP\_IR & MATL & & 1.6332  & IR & 0.3681 & ML & 0.5752 & D  & 0.0566 &    &        &    &  &  &  \\  
-29  &    & 8     & 160   & MATP\_IR & MATR & & 1.2428  & IR & 0.2633 & MR & 0.6809 & D  & 0.0558 &    &        &    &  &  &  \\  
-30  & 26 & 0     & 31    & MATP\_IR & END  & & 0.9361  & IR & 0.2827 & E  & 0.7173 &    &        &    &        &    &  &  &  \\  
-31  &    & 108   & 1130  & MATL\_ML & BIF  & & 1.2298  & IL & 0.0078 & B  & 0.9922 &    &        &    &        &    &  &  &  \\  
-32  &    & 420   & 1319  & MATL\_ML & MATP & & 2.4162  & IL & 0.0132 & MP & 0.9520 & ML & 0.0150 & MR & 0.0129 & D  & 0.0070 &  &  \\  
-33  &    & 19013 & 19371 & MATL\_ML & MATL & & 1.8632  & IL & 0.0082 & ML & 0.9711 & D  & 0.0207 &    &        &    &  &  &  \\  
-34  &    & 859   & 6692  & MATL\_ML & MATR & & 72.1283 & IL & 0.0058 & MR & 0.9755 & D  & 0.0187 &    &        &    &  &  &  \\  
-35  & 31 & 801   & 1130  & MATL\_ML & END  & & 1.2298  & IL & 0.0078 & E  & 0.9922 &    &        &    &        &    &  &  &  \\  
-36  &    & 28    & 172   & MATL\_D  & BIF  & & 6.8008  & IL & 0.0029 & B  & 0.9971 &    &        &    &        &    &  &  &  \\  
-37  &    & 103   & 103   & MATL\_D  & MATP & & 0.7288  & IL & 0.0321 & MP & 0.5730 & ML & 0.0536 & MR & 0.1654 & D  & 0.1758 &  &  \\  
-38  &    & 3152  & 3152  & MATL\_D  & MATL & & 0.4101  & IL & 0.0138 & ML & 0.3105 & D  & 0.6756 &    &        &    &  &  &  \\  
-39  &    & 154   & 154   & MATL\_D  & MATR & & 0.6736  & IL & 0.0203 & MR & 0.6014 & D  & 0.3782 &    &        &    &  &  &  \\  
-40  & 36 & 144   & 172   & MATL\_D  & END  & & 6.8008  & IL & 0.0029 & E  & 0.9971 &    &        &    &        &    &  &  &  \\  
-41  & 26 & 13    & 31    & MATL\_IL & BIF  & & 0.9361  & IL & 0.2827 & B  & 0.7173 &    &        &    &        &    &  &  &  \\  
-42  & 27 & 35    & 227   & MATL\_IL & MATP & & 1.5494  & IL & 0.1884 & MP & 0.7090 & ML & 0.0588 & MR & 0.0165 & D  & 0.0273 &  &  \\  
-43  & 28 & 549   & 701   & MATL\_IL & MATL & & 1.6332  & IL & 0.3681 & ML & 0.5752 & D  & 0.0566 &    &        &    &  &  &  \\  
-44  & 29 & 45    & 160   & MATL\_IL & MATR & & 1.2428  & IL & 0.2633 & MR & 0.6809 & D  & 0.0558 &    &        &    &  &  &  \\  
-45  & 26 & 0     & 31    & MATL\_IL & END  & & 0.9361  & IL & 0.2827 & E  & 0.7173 &    &        &    &        &    &  &  &  \\  
-46  & 31 & 206   & 1130  & MATR\_MR & BIF  & & 1.2298  & IR & 0.0078 & B  & 0.9922 &    &        &    &        &    &  &  &  \\  
-47  & 32 & 848   & 1319  & MATR\_MR & MATP & & 2.4162  & IR & 0.0132 & MP & 0.9520 & ML & 0.0150 & MR & 0.0129 & D  & 0.0070 &  &  \\  
-48  & 34 & 5833  & 6692  & MATR\_MR & MATR & & 2.1283  & IR & 0.0058 & MR & 0.9755 & D  & 0.0187 &    &        &    &  &  &  \\  
-49  &    & 39    & 39    & MATR\_D  & BIF  & & 0.4664  & IR & 0.0463 & B  & 0.9537 &    &        &    &        &    &  &  &  \\  
-50  &    & 176   & 176   & MATR\_D  & MATP & & 0.8689  & IR & 0.0245 & MP & 0.6126 & ML & 0.1269 & MR & 0.0471 & D  & 0.1890 &  &  \\  
-51  &    & 771   & 771   & MATR\_D  & MATR & & 0.4869  & IR & 0.0119 & MR & 0.3373 & D  & 0.6507 &    &        &    &  &  &  \\  
-52  & 26 & 15    & 31    & MATR\_IR & BIF  & & 0.9361  & IR & 0.2827 & B  & 0.7173 &    &        &    &        &    &   &  &  \\  
-53  & 27 & 39    & 227   & MATR\_IR & MATP & & 1.5494  & IR & 0.1884 & MP & 0.7090 & ML & 0.0165 & MR & 0.0588 & D  & 0.0273 &  &  \\  
-54  & 29 & 107   & 160   & MATR\_IR & MATR & & 1.2428  & IR & 0.2633 & MR & 0.6809 & D  & 0.0558 &    &        &    &  &  &  \\  
-%55 &    &       &       & BEGL\_S  & BIF  & & 1.0000  & B  & 1.0000 &    &        &    &        &    &        &    &  &  &  \\  
-55  &    & 338   & 338   & BEGL\_S  & MATP & & 5.0422  & MP & 0.9579 & ML & 0.0121 & MR & 0.0183 & D  & 0.0117 &    &   &  &  \\  
-56  & 31 & 15    & 1130  & BEGR\_S  & BIF  & & 1.2298  & IL & 0.0078 & B  & 0.9922 &    &        &    &        &    &  &  &  \\  
-57  & 32 & 51    & 1319  & BEGR\_S  & MATP & & 2.4162  & IL & 0.0132 & MP & 0.9520 & ML & 0.0150 & MR & 0.0129 & D  & 0.0070 &  &  \\  
-58  & 33 & 358   & 19371 & BEGR\_S  & MATL & & 1.8632  & IL & 0.0082 & ML & 0.9711 & D  & 0.0207 &    &        &    &  &  &  \\  
-59  & 26 & 2     & 31    & BEGR\_IL & BIF  & & 0.9361  & IL & 0.2827 & B  & 0.7173 &    &        &    &        &    &   &  &  \\  
-60  & 27 & 3     & 227   & BEGR\_IL & MATP & & 1.5494  & IL & 0.1884 & MP & 0.7090 & ML & 0.0588 & MR & 0.0165 & D  & 0.0273 &  &  \\  
-61  & 28 & 19    & 701   & BEGR\_IL & MATL & & 1.6332  & IL & 0.3681 & ML & 0.5752 & D  & 0.0566 &    &        &    &  &  &  \\  
-62  & 1  & 3     & 11    & ROOT\_S  & BIF  & & 0.5509  & IL & 0.1229 & IR & 0.0001 & B  & 0.8770 &    &        &    &  &  &  \\  
-63  & 2  & 96    & 7119  & ROOT\_S  & MATP & & 7.2986  & IL & 0.0023 & IR & 0.0024 & MP & 0.9816 & ML & 0.0056 & MR & 0.0046 & D & 0.0035 \\  
-64  & 3  & 230   & 1830  & ROOT\_S  & MATL & & 1.5914  & IL & 0.0179 & IR & 0.0155 & ML & 0.9200 & D  & 0.0466 &    &  &  &  \\  
-65  & 4  & 50    & 195   & ROOT\_S  & MATR & & 1.9038  & IL & 0.0173 & IR & 0.0073 & MR & 0.8903 & D  & 0.0852 &    &  &  &  \\  
-66  & 21 & 0     & 4     & ROOT\_IL & BIF  & & 1.4397  & IL & 0.6553 & IR & 0.0445 & B  & 0.3002 &    &        &    &  &  &  \\  
-67  & 22 & 5     & 126   & ROOT\_IL & MATP & & 0.9402  & IL & 0.1673 & IR & 0.1394 & MP & 0.5904 & ML & 0.0443 & MR & 0.0259 & D & 0.0327 \\  
-68  & 23 & 5     & 119   & ROOT\_IL & MATL & & 0.8046  & IL & 0.3108 & IR & 0.1936 & ML & 0.4610 & D  & 0.0346 &    &  &  &  \\  
-69  & 24 & 1     & 15    & ROOT\_IL & MATR & & 1.0926  & IL & 0.1419 & IR & 0.0501 & MR & 0.6538 & D  & 0.1541 &    &  &  &  \\  
-70  & 26 & 0     & 31    & ROOT\_IR & BIF  & & 0.9361  & IR & 0.2827 & B  & 0.7173 &    &        &    &        &    &  &  &  \\  
-71  & 27 & 5     & 227   & ROOT\_IR & MATP & & 1.5494  & IR & 0.1884 & MP & 0.7090 & ML & 0.0165 & MR & 0.0588 & D  & 0.0273 &  &  \\  
-72  & 28 & 4     & 701   & ROOT\_IR & MATL & & 1.6332  & IR & 0.3681 & ML & 0.5752 & D  & 0.0566 &    &        &    &  &  &  \\  
-73  & 29 & 0     & 160   & ROOT\_IR & MATR & & 1.2428  & IR & 0.2633 & MR & 0.6809 & D  & 0.0558 &    &        &    &  &  &  \\   \cline{1-6} \cline {8-20} 
-\end{tabular}
-\end{center}
-\normalfont\rmfamily
-\caption{\textbf{Transition alphabets and groups with corresponding
-    training counts and estimated Dirichlet transition prior parameters.}
-  ``alph \#''= transition alphabet number; ``*'' indicates a plus-1
-  prior is used. ``grp \#''= transition
-  group number, each group is numbered as the lowest numbered alphabet in
-  group, this column is blank if alphabet number = group
-  number. ``alph counts''= observed Rfam 6.1 counts for
-  alphabet. ``grp counts''= total Rfam 6.1 counts for group, used
-  to estimate Dirichlet prior. ``node state''= initial node state type for each
-  alphabet. ``next node''= type of immediately downstream
-  node for each alphabet.}
-\label{tbl:transitions}
-\end{table}
-\renewcommand{\baselinestretch}{1.5}
-
-\begin{table}
-%\normalfont\ttfamily
-\begin{center}
-\begin{tabular}{lrrrrrrr} 
-& & \# aln & \# filtered & \# consensus & \# consensus & bp & SS \\
-alignment & \# seq & columns & seq & bp & SS columns & counts & counts \\ \hline
-LSU & 1551 & 7270 & 139 & 601 & 1532 & 65229 & 180558  \\
-SSU bap & 12773 & 2653 & 254 & 421 & 680 & 97834 & 153565 \\
-SSU euk & 7151 & 4558 & 207 & 407 & 959 & 72521 & 174260 \\
-SSU mito & 1039 & 3791 & 107 & 216 & 524 & 19803 & 56510 \\ 
-%\multicolumn{8}{l}{bap: contains bacterial, archaeal and plastid
-%  sequences} \\
-\end{tabular}
-\caption{\textbf{Statistics on the alignments used for emission prior
-    estimation.} LSU: large subunit ribosomal RNA; SSU: small subunit
-    ribosomal RNA; ``SSU bap'' alignment contains bacterial, archaeal
-    and plastid sequences.}
-\label{tbl:emissioncounts}
-\end{center}
-\end{table}
-
-\begin{table}
-%\normalfont\ttfamily
-\footnotesize
-\begin{center}
-\begin{tabular}{|c|c|c|c|c|c|c|c|c|c|c|} \hline
-\multicolumn{2}{|c|}{component $i$} & 1 & 2 & 3 & 4 & 5 & 6 & 7 & 8 & 9 \\
-\multicolumn{2}{|c|}{$q_i$} & 0.0305 & 0.0703 & 0.1185 & 0.1810 & 0.1888 & 0.1576 & 0.0417 & 0.0959 & 0.1156 \\
-\multicolumn{2}{|c|}{$|\alpha|$} & 14.3744 & 2.9920 & 26.2757 & 0.5342 &
-4.2716 & 13.3232 & 33.8619 & 22.2258 & 33.1991 \\ \hline 
-\multicolumn{11}{c}{} \\ \hline
-
-$ab$ & mean $\alpha$ & $\frac{\alpha_{ab}}{|\alpha|}$ & $\frac{\alpha_{ab}}{|\alpha|}$ & $\frac{\alpha_{ab}}{|\alpha|}$ & $\frac{\alpha_{ab}}{|\alpha|}$ & $\frac{\alpha_{ab}}{|\alpha|}$ & $\frac{\alpha_{ab}}{|\alpha|}$ & $\frac{\alpha_{ab}}{|\alpha|}$ & $\frac{\alpha_{ab}}{|\alpha|}$ & $\frac{\alpha_{ab}}{|\alpha|}$ \\ \hline 
-AA & 0.0063 & 0.0398 & 0.0390 & 0.0011 & 0.0017 & 0.0005 & 0.0062 & 0.0064 & 0.0058 & 0.0002 \\  
-AC & 0.0092 & 0.0421 & 0.0176 & 0.0009 & 0.0152 & 0.0018 & 0.0125 & 0.0115 & 0.0051 & 0.0046 \\  
-AG & 0.0052 & 0.0381 & 0.0226 & 0.0046 & 0.0034 & 0.0008 & 0.0032 & 0.0040 & 0.0053 & 0.0001 \\  
-AU & \textbf{0.1663} & \textbf{0.1092} & 0.0864 & 0.0194 & \textbf{0.2138} & \textbf{0.1464} & \textbf{0.2563} & \textbf{0.7360} & \textbf{0.1295} & 0.0404 \\  
-& & & & & & & & & & \\
-CA & 0.0086 & 0.0412 & 0.0510 & 0.0054 & 0.0027 & 0.0044 & 0.0018 & 0.0030 & 0.0138 & 0.0002 \\  
-CC & 0.0038 & 0.0327 & 0.0115 & 0.0030 & 0.0001 & 0.0003 & 0.0036 & 0.0039 & 0.0035 & 0.0041 \\  
-CG & \textbf{0.2412} & \textbf{0.1007} & \textbf{0.1392} & \textbf{0.8310} & \textbf{0.1359} & \textbf{0.3211} & 0.0889 & 0.0340 & \textbf{0.2870} & 0.0147 \\  
-CU & 0.0066 & 0.0418 & 0.0172 & 0.0027 & 0.0104 & 0.0019 & 0.0045 & 0.0076 & 0.0052 & 0.0003 \\  
-& & & & & & & & & & \\
-GA & 0.0061 & 0.0362 & 0.0266 & 0.0002 & 0.0074 & 0.0002 & 0.0058 & 0.0045 & 0.0042 & 0.0021 \\  
-GC & \textbf{0.2547} & \textbf{0.1299} & 0.0544 & 0.0206 & \textbf{0.1786} & \textbf{0.1613} & \textbf{0.4079} & 0.0945 & \textbf{0.1155} & \textbf{0.8858} \\  
-GG & 0.0063 & 0.0327 & 0.0142 & 0.0045 & 0.0091 & 0.0005 & 0.0072 & 0.0023 & 0.0044 & 0.0030 \\  
-GU & 0.0567 & 0.0811 & 0.0412 & 0.0049 & \textbf{0.1355} & 0.0451 & 0.0668 & 0.0303 & 0.0356 & 0.0218 \\  
-& & & & & & & & & & \\
-UA & \textbf{0.1571} & \textbf{0.1063} & \textbf{0.3085} & 0.0672 & \textbf{0.1856} & \textbf{0.2293} & 0.0902 & 0.0363 & \textbf{0.3108} & 0.0151 \\  
-UC & 0.0063 & 0.0477 & 0.0263 & 0.0006 & 0.0048 & 0.0002 & 0.0056 & 0.0042 & 0.0060 & 0.0038 \\  
-UG & 0.0543 & 0.0746 & \textbf{0.1054} & 0.0317 & 0.0807 & 0.0814 & 0.0299 & 0.0120 & 0.0551 & 0.0032 \\  
-UU & 0.0114 & 0.0459 & 0.0389 & 0.0022 & 0.0151 & 0.0048 & 0.0098 & 0.0095 & 0.0133 & 0.0008 \\ \hline 
-\end{tabular}
-\end{center}
-
-\normalfont\rmfamily
-\caption{\textbf{Parameters of the 9 component Dirichlet mixture
-    emission prior for base pairs.} $q_i =$ mixture coefficient for
-    component $i$. Normalized $\alpha$ values $> 0.10$ are in bold
-    faced type.}
-\label{tbl:basepairs}
-\end{table}
-
-\begin{table}
-%\normalfont\ttfamily
-\footnotesize
-\begin{center}
-\begin{tabular}{|c|c|c|c|c|c|c|c|c|c|c|} \hline
-\multicolumn{2}{|c|}{component $i$} & 1 & 2 & 3 & 4 & 5 & 6 & 7 & 8 \\
-\multicolumn{2}{|c|}{$q$} & 0.0851 & 0.0159 & 0.1020 & 0.4160 & 0.0745 & 0.0554 & 0.1184 & 0.1327 \\  
-\multicolumn{2}{|c|}{$|\alpha|$} & 15.4467 & 154.4640 & 180.2862 & 5.4562 & 0.2199 & 16.4089 & 13.4592 & 19.9059 \\ \hline 
-\multicolumn{10}{c}{} \\ \hline
-
-$a$ & mean $\alpha$ & $\frac{\alpha_a}{|\alpha|}$ & $\frac{\alpha_a}{|\alpha|}$ & $\frac{\alpha_a}{|\alpha|}$ & $\frac{\alpha_a}{|\alpha|}$ & $\frac{\alpha_a}{|\alpha|}$ & $\frac{\alpha_a}{|\alpha|}$ & $\frac{\alpha_a}{|\alpha|}$ & $\frac{\alpha_a}{|\alpha|}$ \\ \hline 
-A & \textbf{0.3951} & 0.0373 & \textbf{0.9961} & \textbf{0.9787} & \textbf{0.3109} & \textbf{0.3383} & 0.0375 & 0.0864 & \textbf{0.8247} \\  
-C & \textbf{0.1635} & 0.0490 & 0.0015 & 0.0052 & \textbf{0.2067} & \textbf{0.1782} & \textbf{0.8916} & 0.0303 & 0.0493 \\  
-G & \textbf{0.2041} & 0.0220 & 0.0023 & 0.0072 & \textbf{0.1751} & \textbf{0.2905} & 0.0182 & \textbf{0.8313} & 0.0569 \\  
-U & \textbf{0.2372} & \textbf{0.8917} & 0.0000 & 0.0090 & \textbf{0.3073} & \textbf{0.1930} & 0.0527 & 0.0519 & 0.0691 \\ \hline 
-
-
-\end{tabular}
-\end{center}
-
-\normalfont\rmfamily
-\caption{\textbf{Parameters of the 8 component Dirichlet mixture
-    emission prior for singlets.} $q_i =$ mixture coefficient for
-    component $i$. Normalized $\alpha$ values $> 0.10$ are in bold
-    faced type.}
-\label{tbl:singlets}
-\end{table}
-
-\begin{figure}[hb]
-\begin{center}
-\caption{\textbf{Acceleration for banded searches of the
-      51 benchmark families.} Bands calculated with $bandp =
-  10^{-10}$ (probability mass within each band is 99.99999999\%) for
-  left plot and $bandp = 10^{-6}$ (probability mass within each band
-  is 99.9999\%) for right plot. There are 51 points in each plot, one
-    for each family in the benchmark set, representing the speed-up
-    for a banded search relative to a non-banded search for the
-    corresponding family.}
-\label{fig:scatter}
-\end{center}
-\end{figure}
-
-\begin{table}[htb]
-\begin{center}
-\begin{tabular}{ccccccc} 
-\multicolumn{1}{c}{} & \multicolumn{1}{c}{} & \multicolumn{1}{c}{} &
-\multicolumn{1}{c}{} & \multicolumn{1}{c}{} &
-\multicolumn{1}{c}{summary} & \multicolumn{1}{c}{family-specific} \\
-\multicolumn{1}{c}{} & \multicolumn{1}{c}{program} &
-\multicolumn{1}{c}{prior} & \multicolumn{1}{c}{entropy (bits)} &
-\multicolumn{1}{c}{$bandp$} & \multicolumn{1}{c}{MER} &
-\multicolumn{1}{c}{MER} \\ \hline
-%1 & \blast-W3 & - & - & - & - & 220 & 189 & 330 & 227 & 376 & 237 \\
-1 & \blast & - & - & - & 216 & 188 \\
-%3 & \blast-W11 & - & - & - & - & 244 & 218 & 294 & 242 & 341 & 262 \\ \hline
-%4 & \infernal glocal & N & - & - & - & 275 & 229 & - & - & - & - \\
-%5 & \infernal glocal & Y & - & - & - & 253 & 215 & - & - & - & - \\
-%6 & \infernal glocal & Y & 0.54 & - & - & 155 & 104 & 80 & 53 & 69 & 28 \\
-%7 & \infernal glocal & Y & 0.54 & - & 1E-6 & 161 & 112 & - & - & - & - \\
-%8 & \infernal glocal & Y & 0.54 & - & 1E-10 & 155 & 105 & - & - & - & - \\ \hline
-2 & \infernal & plus-1 & - & - & 230 & 184 \\
-3 & \infernal & informative & - & - & 188 & 163 \\
-%4 & \infernal & Y & 1.46 & - & 122 & 94 \\
-4 & \infernal & informative & 1.46 & - & 104 & 90 \\
-5 & \infernal & informative & 1.46 & $10^{-6}$ & 116 & 98 \\
-6 & \infernal & informative & 1.46 & $10^{-10}$ & 110 & 94 \\ 
-\end{tabular}
-\end{center}
-\caption{\textbf{Rfam benchmark MER summary statistics.}
-  Lower MERs are better. prior: ``plus-1'' if uninformative Laplace plus-1 priors were
-  used; ``informative'' if new Dirichlet priors were used.
-  entropy: target model entropy in bits for entropy weighting; ``-''
-  if entropy weighting was not used.
-  %(effective sequence number is number of sequences in training alignment).
-  %    EL: EL self transition probability used.
-  ``$bandp$'': tail probability loss for banded calculation used; ``-'' if search
-  was non-banded. summary MER: MER across 51 benchmark
-  families; family-specific MER: MER for each family, summed
-  over all 51 families. Program versions: Row 1: WU-BLASTN-2.0MP
-  --kap -W=7. Row 2: \infernal version 0.55. Rows 3-6: \infernal
-  version 0.70.}
-\label{tbl:rmarkmerlist}
-\end{table}
-
-\begin{figure}
-\begin{center}
-\end{center}
-\caption{\textbf{ROC curve for the Rfam based benchmark.}
-\blast: corresponds with row 1 of Table~\ref{tbl:rmarkmerlist};
-version and options used: \texttt{WU-BLASTN-2.0MP --kap -W=7}. 
-\infernal v0.55 (non-banded): corresponds with row 2 of Table~\ref{tbl:rmarkmerlist}.
-\infernal v0.70 (non-banded): corresponds with row 4 of Table~\ref{tbl:rmarkmerlist}.
-\infernal v0.70 ($bandp=10^{-6}$): corresponds with row 5 of Table~\ref{tbl:rmarkmerlist}.
-\infernal v0.70 ($bandp=10^{-10}$): corresponds with row 6 of Table~\ref{tbl:rmarkmerlist}.
- Speed-up statistics for banded runs are averages over the 51 Rfam
-benchmark families.}
-\label{fig:roc}
-\end{figure}
-
-\renewcommand{\baselinestretch}{1.0}
-\begin{table}
-%\tiny
-\scriptsize
-\begin{center}
-\begin{tabular}{|ll|rrr|rrrrl|rrrrr|} \hline
-\multicolumn{1}{|c}{Rfam 7.0} & \multicolumn{1}{c|}{family} &
-\multicolumn{1}{c}{\#} & \multicolumn{1}{c}{\#} &
-\multicolumn{1}{c}{mean len} & \multicolumn{5}{|c|}{\textsc{BLAST}} &
-\multicolumn{5}{|c|}{\textsc{Infernal} (non-banded)} \\ 
-\multicolumn{1}{|c}{ID} & \multicolumn{1}{c|}{name} & \multicolumn{1}{c}{train} & \multicolumn{1}{c}{test} & \multicolumn{1}{c|}{(train)} & \multicolumn{1}{c}{MER} & \multicolumn{1}{c}{TP} & \multicolumn{1}{c}{FP} & \multicolumn{1}{c}{FN} & \multicolumn{1}{c|}{thr} & \multicolumn{1}{c}{MER} & \multicolumn{1}{c}{TP} & \multicolumn{1}{c}{FP} & \multicolumn{1}{c}{FN} & \multicolumn{1}{c|}{thr} \\ \hline 
-RF00002 & 5\_8S\_rRNA & 62 & 1 & 151 & 0 & 1 & 0 & 0 & 0.0045 & 0 & 1 & 0 & 0 &  11.27 \\  
-RF00003 & U1 & 46 & 6 & 159 & 2 & 4 & 0 & 2 &  0.049 & 0 & 6 & 0 & 0 &  12.26 \\  
-RF00004 & U2 & 76 & 1 & 184 & 0 & 1 & 0 & 0 &  0.017 & 0 & 1 & 0 & 0 &     10.00 \\  
-RF00005 & tRNA & 1080 & 19 & 73 & 18 & 1 & 0 & 18 &  0.021 & 6 & 13 & 0 & 6 &  14.09 \\  
-RF00008 & Hammerhead\_3 & 82 & 1 & 55 & 1 & 0 & 0 & 1 &    0.3 & 0 & 1 & 0 & 0 &   14.70 \\  
-RF00009 & RNaseP\_nuc & 26 & 21 & 320 & 19 & 2 & 0 & 19 &   0.02 & 17 & 4 & 0 & 17 &  11.67 \\  
-RF00010 & RNaseP\_bact\_a & 233 & 1 & 332 & 0 & 1 & 0 & 0 & 0.00086 & 0 & 1 & 0 & 0 &  12.61 \\  
-RF00011 & RNaseP\_bact\_b & 30 & 1 & 366 & 0 & 1 & 0 & 0 &   0.63 & 0 & 1 & 0 & 0 &  12.32 \\  
-RF00012 & U3 & 6 & 5 & 212 & 3 & 2 & 0 & 3 &  0.044 & 2 & 3 & 0 & 2 &  16.86 \\  
-RF00015 & U4 & 25 & 1 & 141 & 1 & 0 & 0 & 1 &   0.04 & 1 & 0 & 0 & 1 &  13.44 \\  
-RF00017 & SRP\_euk\_arch & 28 & 21 & 303 & 19 & 2 & 0 & 19 &   0.52 & 7 & 14 & 0 & 7 &  12.84 \\  
-RF00018 & CsrB & 8 & 1 & 351 & 0 & 1 & 0 & 0 &      0.0 & 0 & 1 & 0 & 0 &  12.97 \\  
-RF00019 & Y & 15 & 1 & 94 & 1 & 0 & 0 & 1 &  0.073 & 1 & 0 & 0 & 1 &   15.10 \\  
-RF00020 & U5 & 29 & 3 & 115 & 1 & 2 & 0 & 1 &  0.054 & 0 & 3 & 0 & 0 &  13.64 \\  
-RF00023 & tmRNA & 19 & 40 & 334 & 6 & 34 & 0 & 6 &  0.081 & 9 & 31 & 0 & 9 &  13.14 \\  
-RF00024 & Telomerase-vert & 20 & 11 & 436 & 0 & 11 & 0 & 0 &   0.92 & 0 & 11 & 0 & 0 &   11.30 \\  
-RF00025 & Telomerase-cil & 10 & 2 & 157 & 2 & 0 & 0 & 2 &  0.005 & 2 & 0 & 0 & 2 &  13.97 \\  
-RF00028 & Intron\_gpI & 5 & 24 & 300 & 20 & 4 & 0 & 20 &   0.92 & 13 & 11 & 0 & 13 &  12.25 \\  
-RF00029 & Intron\_gpII & 7 & 11 & 141 & 6 & 5 & 0 & 6 &  0.098 & 1 & 10 & 0 & 1 &  11.08 \\  
-RF00030 & RNase\_MRP & 18 & 3 & 284 & 3 & 0 & 0 & 3 &  0.003 & 3 & 0 & 0 & 3 &  12.46 \\  
-RF00031 & SECIS & 11 & 24 & 64 & 23 & 1 & 0 & 23 &  0.71 & 13 & 13 & 2 & 11 &  14.58 \\  
-RF00033 & MicF & 8 & 1 & 93 & 0 & 1 & 0 & 0 &   0.49 & 0 & 1 & 0 & 0 &  13.17 \\  
-RF00037 & IRE & 36 & 1 & 28 & 1 & 0 & 0 & 1 &  0.995 & 1 & 0 & 0 & 1 &  14.98 \\  
-RF00040 & me5 & 6 & 1 & 338 & 0 & 1 & 0 & 0 &   0.89 & 0 & 1 & 0 & 0 &  11.78 \\  
-RF00054 & U25 & 5 & 1 & 87 & 1 & 0 & 0 & 1 &   0.68 & 1 & 0 & 0 & 1 &  16.66 \\  
-RF00055 & snoZ37 & 5 & 1 & 94 & 1 & 0 & 0 & 1 &   0.75 & 1 & 0 & 0 & 1 &  13.96 \\  
-RF00059 & THI & 228 & 8 & 109 & 2 & 6 & 0 & 2 & 0.0018 & 0 & 8 & 0 & 0 &  13.66 \\  
-RF00066 & U7 & 28 & 2 & 62 & 0 & 2 & 0 & 0 &   0.49 & 0 & 2 & 0 & 0 &  14.23 \\  
-RF00067 & U15 & 9 & 3 & 146 & 1 & 2 & 0 & 1 &   0.13 & 1 & 2 & 0 & 1 &  22.46 \\  
-RF00080 & yypP-ykoY & 20 & 33 & 129 & 29 & 5 & 1 & 28 &   0.11 & 1 & 32 & 0 & 1 &  17.84 \\  
-RF00096 & U8 & 5 & 1 & 135 & 0 & 1 & 0 & 0 &  0.024 & 0 & 1 & 0 & 0 &  13.25 \\  
-RF00101 & SraC\_RyeA & 6 & 1 & 250 & 0 & 1 & 0 & 0 &    0.2 & 0 & 1 & 0 & 0 &  11.87 \\  
-RF00104 & mir-10 & 9 & 2 & 73 & 2 & 0 & 0 & 2 &   0.17 & 2 & 0 & 0 & 2 &  16.13 \\  
-RF00114 & S15 & 10 & 1 & 117 & 1 & 0 & 0 & 1 &  0.029 & 1 & 0 & 0 & 1 &  16.94 \\  
-RF00163 & Hammerhead\_1 & 65 & 1 & 68 & 1 & 0 & 0 & 1 &   0.36 & 0 & 1 & 0 & 0 &  16.52 \\  
-RF00165 & Corona\_pk3 & 10 & 1 & 63 & 1 & 0 & 0 & 1 &   0.82 & 1 & 0 & 0 & 1 &  14.72 \\  
-RF00167 & Purine & 33 & 4 & 99 & 0 & 4 & 0 & 0 &   0.13 & 0 & 4 & 0 & 0 &  13.02 \\  
-RF00168 & Lysine & 33 & 17 & 180 & 4 & 13 & 0 & 4 &  0.036 & 0 & 17 & 0 & 0 &  15.98 \\  
-RF00169 & SRP\_bact & 46 & 15 & 96 & 3 & 12 & 0 & 3 &   0.08 & 0 & 15 & 0 & 0 &  14.22 \\  
-RF00170 & msr & 5 & 3 & 70 & 3 & 0 & 0 & 3 &   0.49 & 3 & 0 & 0 & 3 &  13.49 \\  
-RF00174 & Cobalamin & 87 & 66 & 203 & 0 & 66 & 0 & 0 &  0.021 & 0 & 66 & 0 & 0 &   15.90 \\  
-RF00177 & SSU\_rRNA\_5 & 145 & 21 & 593 & 3 & 19 & 1 & 2 &   0.58 & 0 & 21 & 0 & 0 &   9.89 \\  
-RF00206 & U54 & 12 & 1 & 81 & 1 & 0 & 0 & 1 &  0.054 & 1 & 0 & 0 & 1 &   15.80 \\  
-RF00213 & snoR38 & 7 & 3 & 88 & 1 & 2 & 0 & 1 &   0.49 & 0 & 3 & 0 & 0 &  16.07 \\  
-RF00230 & T-box & 10 & 35 & 244 & 4 & 31 & 0 & 4 & 0.9992 & 1 & 34 & 0 & 1 &  12.34 \\  
-RF00234 & glmS & 8 & 3 & 181 & 0 & 3 & 0 & 0 &   0.16 & 0 & 3 & 0 & 0 &  11.88 \\  
-RF00373 & RNaseP\_arch & 20 & 13 & 290 & 1 & 12 & 0 & 1 &  0.003 & 0 & 13 & 0 & 0 &  19.39 \\  
-RF00379 & ydaO-yuaA & 31 & 4 & 147 & 0 & 4 & 0 & 0 &  0.026 & 0 & 4 & 0 & 0 &  13.11 \\  
-RF00380 & ykoK & 35 & 3 & 168 & 0 & 3 & 0 & 0 &  0.073 & 0 & 3 & 0 & 0 &  13.13 \\  
-RF00448 & IRES\_EBNA & 7 & 1 & 213 & 0 & 1 & 0 & 0 &   0.79 & 1 & 0 & 0 & 1 &  11.99 \\  
-RF00504 & gcvT & 109 & 5 & 102 & 3 & 2 & 0 & 3 &   0.04 & 0 & 5 & 0 & 0 &   13.40 \\ \hline 
-%\multicolumn{2}{c}{summed family} & 56 & 8 & ? & 188 & 264 & 2 & 186 &  0.017 & 90 & 362 & 2 & 88 &  16.38 \\  
-%\multicolumn{15}{c}{} \\ \hline
-\multicolumn{5}{|c|}{MER statistics summed across all families} & 188
-& 264 & 2 & 186 & N/A & 90 & 362 & 2 & 88 & N/A \\  
-\multicolumn{5}{|c|}{Summary MER statistics (using one threshold for
-all families)} & 216 & 240 & 6 & 210 &  0.017 & 104 & 354 & 8 & 96 &  16.38 \\ \hline 
-%total(fam) & & 56 & 8 & ? & 188 & 264 & 2 & 186 &  0.017 & 90 & 362 & 2 & 88 &  16.38 \\  
-%total & & 2874 & 450 & ? & 216 & 240 & 6 & 210 &  0.017 & 104 & 354 & 8 & 96 &  16.38 \\  
-\end{tabular}
-\end{center}
-\caption{\textbf{Rfam benchmark families with MER statistics.}
-  The minimum error rate (MER) threshold is the score for a given
-  method searching for a given Rfam family at which the sum of false
-  positives (FP) and false negatives (FN) is
-  minimized. ``MER''= FP+FN at threshold. ``TP''= TP at
-  threshold. ``thr''= threshold; E-value (\textsc{BLAST}) bit score
-  (\textsc{Infernal}). For the row labelled
-  ``Summary MER statistics'': MER statistics are derived from ranked list
-  of all hits across all families. ``mean len (train)'' = mean length
-  of training sequences in benchmark set. 
-  Program versions and options used: \textsc{BLAST}=
-  WU-BLASTN-2.0MP --kap -W=7. \textsc{Infernal}= cmsearch
-  --local (version 0.70)}
-\label{tbl:rmarkmer_fam}
-\end{table}
-
-\begin{table}
-\scriptsize
-\begin{center}
-\begin{tabular}{|ll|rrr|rr|rr|r|} \cline{6-10}
-\multicolumn{5}{c}{} & \multicolumn{2}{|c|}{$bandp = 10^{-10}$} &
-  \multicolumn{2}{c|}{$bandp = 10^{-6}$} & \multicolumn{1}{c|}{non-banded} \\ \cline{1-5}
-Rfam ID & family & avg len & W & bifs & time & spd up & time & spd up & time \\ \hline 
-RF00177 & SSU\_rRNA\_5 & 593 & 791 & 12 & 17.36 & 8.76 & 11.07 & 13.74 & 152.08 \\  
-RF00024 & Telomerase-vert & 436 & 757 & 2 & 10.33 & 6.21 & 6.75 & 9.50 & 64.09 \\  
-RF00011 & RNaseP\_bact\_b & 366 & 638 & 9 & 8.76 & 7.16 & 5.75 & 10.91 & 62.69 \\  
-RF00018 & CsrB & 351 & 439 & 10 & 5.32 & 9.47 & 3.47 & 14.51 & 50.37 \\  
-RF00040 & rne5 & 338 & 369 & 4 & 5.88 & 6.27 & 4.13 & 8.93 & 36.88 \\  
-RF00023 & tmRNA & 334 & 648 & 4 & 5.70 & 7.63 & 3.99 & 10.89 & 43.46 \\  
-RF00010 & RNaseP\_bact\_a & 332 & 881 & 7 & 7.94 & 7.49 & 5.06 & 11.77 & 59.52 \\  
-RF00009 & RNaseP\_nuc & 320 & 709 & 4 & 18.13 & 2.89 & 10.78 & 4.86 & 52.40 \\  
-RF00017 & SRP\_euk\_arch & 303 & 339 & 3 & 6.26 & 4.37 & 4.36 & 6.27 & 27.34 \\  
-RF00028 & Intron\_gpI & 300 & 460 & 4 & 8.98 & 3.51 & 5.40 & 5.85 & 31.55 \\  
-RF00373 & RNaseP\_arch & 290 & 439 & 4 & 7.39 & 3.73 & 4.96 & 5.57 & 27.58 \\  
-RF00030 & RNase\_MRP & 284 & 460 & 5 & 7.65 & 4.62 & 4.86 & 7.27 & 35.36 \\  
-RF00101 & SraC\_RyeA & 250 & 276 & 4 & 3.73 & 4.62 & 2.54 & 6.76 & 17.20 \\  
-RF00230 & T-box & 244 & 338 & 1 & 4.37 & 3.51 & 2.86 & 5.36 & 15.32 \\  
-RF00448 & IRES\_EBNA & 213 & 246 & 4 & 2.90 & 4.34 & 1.98 & 6.36 & 12.57 \\  
-RF00012 & U3 & 212 & 236 & 2 & 3.56 & 3.70 & 2.53 & 5.20 & 13.16 \\  
-RF00174 & Cobalamin & 203 & 458 & 3 & 7.33 & 2.29 & 4.34 & 3.87 & 16.81 \\  
-RF00004 & U2 & 184 & 219 & 4 & 2.45 & 4.37 & 1.75 & 6.11 & 10.72 \\  
-RF00234 & glmS & 181 & 434 & 3 & 4.48 & 3.21 & 2.85 & 5.04 & 14.36 \\  
-RF00168 & Lysine & 180 & 277 & 3 & 3.32 & 3.16 & 2.22 & 4.74 & 10.51 \\  
-RF00380 & ykoK & 168 & 208 & 2 & 2.83 & 2.77 & 1.94 & 4.05 & 7.85 \\  
-RF00003 & U1 & 159 & 184 & 3 & 1.93 & 4.04 & 1.38 & 5.64 & 7.78 \\  
-RF00025 & Telomerase-cil & 157 & 202 & 2 & 2.21 & 3.37 & 1.58 & 4.72 & 7.44 \\  
-RF00002 & 5\_8S\_rRNA & 151 & 224 & 2 & 2.22 & 2.95 & 1.53 & 4.28 & 6.54 \\  
-RF00379 & ydaO-yuaA & 147 & 317 & 3 & 4.09 & 1.97 & 2.48 & 3.26 & 8.07 \\  
-RF00067 & U15 & 146 & 187 & 0 & 2.31 & 2.13 & 1.54 & 3.20 & 4.92 \\  
-RF00015 & U4 & 141 & 289 & 3 & 2.39 & 2.81 & 1.56 & 4.32 & 6.72 \\  
-RF00029 & Intron\_gpII & 141 & 286 & 1 & 3.23 & 2.67 & 2.05 & 4.21 & 8.62 \\  
-RF00096 & U8 & 135 & 198 & 2 & 2.14 & 2.52 & 1.43 & 3.77 & 5.38 \\  
-RF00080 & yybP-ykoY & 129 & 287 & 2 & 2.62 & 2.11 & 1.75 & 3.16 & 5.53 \\  
-RF00114 & S15 & 117 & 138 & 1 & 1.41 & 2.31 & 1.00 & 3.26 & 3.26 \\  
-RF00020 & U5 & 115 & 141 & 1 & 1.57 & 2.32 & 1.18 & 3.08 & 3.63 \\  
-RF00059 & THI & 109 & 305 & 2 & 3.68 & 1.67 & 2.23 & 2.75 & 6.14 \\  
-RF00504 & gcvT & 102 & 298 & 1 & 3.48 & 1.23 & 2.14 & 2.01 & 4.30 \\  
-RF00167 & Purine & 99 & 114 & 1 & 1.30 & 1.99 & 0.92 & 2.82 & 2.60 \\  
-RF00169 & SRP\_bact & 96 & 117 & 0 & 1.49 & 1.72 & 1.04 & 2.46 & 2.57 \\  
-RF00019 & Y & 94 & 142 & 0 & 1.66 & 1.50 & 1.16 & 2.16 & 2.49 \\  
-RF00055 & snoZ37 & 94 & 117 & 0 & 1.21 & 1.65 & 0.86 & 2.33 & 1.99 \\  
-RF00033 & MicF & 93 & 126 & 1 & 1.13 & 1.98 & 0.82 & 2.71 & 2.23 \\  
-RF00213 & snoR38 & 88 & 169 & 0 & 1.68 & 1.46 & 1.09 & 2.24 & 2.45 \\  
-RF00054 & U25 & 87 & 107 & 0 & 1.05 & 1.58 & 0.74 & 2.25 & 1.66 \\  
-RF00206 & U54 & 81 & 135 & 0 & 1.24 & 1.31 & 0.83 & 1.96 & 1.62 \\  
-RF00005 & tRNA & 73 & 186 & 2 & 1.12 & 2.04 & 0.72 & 3.17 & 2.29 \\  
-RF00104 & mir-10 & 73 & 100 & 0 & 1.16 & 1.31 & 0.86 & 1.75 & 1.51 \\  
-RF00170 & msr & 70 & 135 & 0 & 1.03 & 1.48 & 0.71 & 2.15 & 1.52 \\  
-RF00163 & Hammerhead\_1 & 68 & 238 & 1 & 2.33 & 1.21 & 1.34 & 2.10 & 2.82 \\  
-RF00031 & SECIS & 64 & 97 & 0 & 0.90 & 1.37 & 0.70 & 1.76 & 1.24 \\  
-RF00165 & Corona\_pk3 & 63 & 78 & 0 & 0.68 & 1.43 & 0.52 & 1.85 & 0.97 \\  
-RF00066 & U7 & 62 & 96 & 0 & 0.74 & 1.39 & 0.55 & 1.87 & 1.03 \\  
-RF00008 & Hammerhead\_3 & 55 & 164 & 1 & 1.07 & 1.16 & 0.67 & 1.85 & 1.24 \\  
-RF00037 & IRE & 28 & 41 & 0 & 0.28 & 1.09 & 0.21 & 1.42 & 0.30 \\ \hline 
-\multicolumn{5}{|c|}{average} & 3.88 & 3.17 & 2.53 & 4.75 & 17.07 \\ 
-\multicolumn{5}{|c|}{total}   & 198.02 & 4.40 & 129.18 & 6.74 & 870.68 \\ \hline 
-\end{tabular}
-\end{center}
-
-\caption{\textbf{Statistics and running times for
-      \textsc{Infernal} version 0.70 CMs on the Rfam benchmark.} ``bifs''=
-      number of bifurcations in consensus secondary
-      structure. ``time'': hours per MB. ``spd up'': speed-up factor
-      relative to non-banded. All searches performed in local mode.}
-\label{tbl:rmarkbtimes_l}
-\end{table}
-\renewcommand{\baselinestretch}{1.5}
 
 \newpage
+\input{tbl:transitions}
 
+\newpage
+\input{tbl:emissioncounts}
+
+\newpage
+\input{tbl:basepairs}
+
+\newpage
+\input{tbl:singlets}
+
+\newpage
+\input{tbl:rmark}
+
+\newpage
+\input{tbl:rmarkmerlist}
+
+\newpage
+\input{fig:cmintro}
+
+\newpage
+\input{fig:bands}
+
+\newpage
+\input{fig:betavaried}
+
+\newpage
+\input{fig:speedup}
+
+\newpage
+\input{fig:roc}
 \fi
 
 \end{document}

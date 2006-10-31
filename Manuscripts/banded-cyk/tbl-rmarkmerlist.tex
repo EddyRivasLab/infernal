@@ -1,0 +1,53 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% The rmark MER table - summary MERs
+%\normalfont\ttfamily
+\begin{table}[htb]
+\begin{center}
+%\begin{tabular}{|c|c|ccc|cc|} 
+\begin{tabular}{ccccccc} 
+
+%\multicolumn{1}{c}{} & \multicolumn{1}{c}{} & \multicolumn{1}{c}{} &
+%\multicolumn{1}{c}{} & \multicolumn{1}{c}{} & \multicolumn{1}{c}{} &
+%\multicolumn{1}{c}{summed} \\
+
+\multicolumn{1}{c}{} & \multicolumn{1}{c}{} & \multicolumn{1}{c}{} &
+\multicolumn{1}{c}{} & \multicolumn{1}{c}{} &
+\multicolumn{1}{c}{summary} & \multicolumn{1}{c}{family-specific} \\
+
+\multicolumn{1}{c}{} & \multicolumn{1}{c}{program} &
+\multicolumn{1}{c}{prior} & \multicolumn{1}{c}{entropy (bits)} &
+\multicolumn{1}{c}{$bandp$} & \multicolumn{1}{c}{MER} &
+\multicolumn{1}{c}{MER} \\ \hline
+
+%1 & \blast-W3 & - & - & - & - & 220 & 189 & 330 & 227 & 376 & 237 \\
+1 & \blast & - & - & - & 216 & 188 \\
+%3 & \blast-W11 & - & - & - & - & 244 & 218 & 294 & 242 & 341 & 262 \\ \hline
+%4 & \infernal glocal & N & - & - & - & 275 & 229 & - & - & - & - \\
+%5 & \infernal glocal & Y & - & - & - & 253 & 215 & - & - & - & - \\
+%6 & \infernal glocal & Y & 0.54 & - & - & 155 & 104 & 80 & 53 & 69 & 28 \\
+%7 & \infernal glocal & Y & 0.54 & - & 1E-6 & 161 & 112 & - & - & - & - \\
+%8 & \infernal glocal & Y & 0.54 & - & 1E-10 & 155 & 105 & - & - & - & - \\ \hline
+2 & \infernal 0.55 & plus-1 & - & - & 230 & 184 \\
+3 & \infernal 0.70 & informative & - & - & 188 & 163 \\
+%4 & \infernal & Y & 1.46 & - & 122 & 94 \\
+4 & \infernal 0.70 & informative & 1.46 & - & 104 & 90 \\
+5 & \infernal 0.70 & informative & 1.46 & $10^{-6}$ & 116 & 98 \\
+6 & \infernal 0.70 & informative & 1.46 & $10^{-10}$ & 110 & 94 \\ 
+\end{tabular}
+\end{center}
+\caption{\textbf{Rfam benchmark MER summary statistics.} 
+    prior: ``plus-1'' if uninformative Laplace plus-1 priors were
+    used; ``informative'' if new Dirichlet priors were used.
+    entropy: target model entropy in bits for entropy weighting; ``-''
+    if entropy weighting was not used.
+    %(effective sequence number is number of sequences in training alignment).
+    %    EL: EL self transition probability used.
+    ``$bandp$'': tail probability loss for banded calculation used; ``-'' if search
+    was non-banded. summary MER: MER across 51 benchmark
+    families; family-specific MER: MER for each family, summed
+    over all 51 families. Program versions: Row 1: WU-BLASTN-2.0MP
+    --kap -W=7. Row 2: \infernal version 0.55. Rows 3-6: \infernal
+    version 0.70.}
+\label{tbl:rmarkmerlist}
+\end{table}
+
