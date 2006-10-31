@@ -52,8 +52,11 @@ typedef struct branchedpartialalignment_s {
   int terminated;
 } BPA_t;
 
+void   PA_Init(PA_t *chunk, int v, int i, int j, int d);
 PA_t*  PA_Copy(PA_t *orig);
+void   BPA_Init(BPA_t *root, int v, int i, int j, int d);
 BPA_t* BPA_Copy(BPA_t *orig);
+void   BPA_Free(BPA_t *root);
 float  BPA_Current_Score(BPA_t *root);
 float  BPA_Upper_Bound(BPA_t *root);
 

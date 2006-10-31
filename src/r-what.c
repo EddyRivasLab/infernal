@@ -11,6 +11,7 @@
 #include <stdlib.h>
 
 #include "easel.h"
+#include "esl_stack.h"
 #include "esl_vectorops.h"
 #include "squid.h"
 
@@ -19,6 +20,22 @@
 
 #include "dlk_priorityqueue.h"
 #include "r-what.h"
+
+/* Function: PA_Init()
+ * Author:   DLK
+ *
+ * Purpose:  Fill a PA with initial v,i.j.d. values
+ */
+void
+PA_Init(PA_t *chunk, int v, int i, int j, int d)
+{
+   chunk->init_v = chunk->cur_v = v;
+   chunk->init_i = chunk->cur_i = i;
+   chunk->init_j = chunk->cur_j = j;
+   chunk->init_d = chunk->cur_d = d;
+
+   return;
+}
 
 /* Function: PA_Copy()
  * Author:   DLK
@@ -45,6 +62,29 @@ PA_Copy(PA_t *orig)
   dup->terminated = orig->terminated;
 		   
   return dup;
+}
+
+/* Function: BPA_Init()
+ * Authro:   DLK
+ *
+ * Purpose:  Create a BPA (if necessary) and 
+ *           fill with initial v,i,j,d values
+ */
+void
+BPA_Init(BPA_t *root, int v, int i, int j, int d)
+{
+   if ( root == NULL )
+      root = malloc (sizeof(BPA_t));
+   if ( root->chunk == NULL )
+      root->chunk = malloc(sizeof(PA_t));
+   if ( root->left_child != NULL )
+      BPA_Free(root->left_child);
+   if ( root->right_child != NULL )
+      BPA_Free(root->right_child);
+
+   PA_Init(root->chunk, v, i, j, d);
+
+   return;
 }
 
 /* Function: BPA_Copy()
@@ -96,6 +136,7 @@ BPA_Free(BPA_t *root)
     }
     free(root);
   }
+  root = NULL;
   
   return;
 }
@@ -165,7 +206,7 @@ BPA_Upper_Bound(BPA_t *root)
   float score = 0.0;
 
   if (root != NULL) {
-    if (root->left_child == NULL & root->right_child == NULL)
+    if ((root->left_child == NULL) && (root->right_child == NULL))
       score += root->chunk->upper_bound_sc;
     else {
       score += BPA_Upper_Bound(root->left_child);
@@ -847,30 +888,16 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
    int v,i;
    int x;
    float tsc, esc;
-   int *depth;
-
-   float ceiling = 0.0; /*TRACE*/
-   float nomarginal = 0.0; /*TRACE*/
-   float min = 0.0; /*TRACE*/
-   printf("depth\ttotal_sc\tdelta_sc\tceiling\tnomarginal\n"); /*TRACE*/
-   printf("%d\t%f\t%f\t%f\t%f\n",0,*total_sc,*delta_sc,ceiling,nomarginal); /*TRACE*/
+   ESL_STACK *store_pair;
 
    root->chunk->need_commit = 0;
    *commit = 0;
    *complete = 0;
 
-   x = root->chunk->cur_v;
-   i = 0;
-   while ((cm->sttype[x] != E_st) && (cm->sttype[x] != B_st))
-   {
-      ConsensusChild(cm, &x);
-      i++;
-   }
-   depth = malloc(i*sizeof(int));
+   store_pair = esl_stack_ICreate();
 
    v = root->chunk->cur_v;
    i = root->chunk->cur_i;
-   x = 0;
 
    while ( (cm->sttype[v] != E_st) && (cm->sttype[v] != B_st) && (*delta_sc > dropoff_sc) && (i < rbound) )
    {
@@ -882,26 +909,18 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
             esc = cm->esc[v][(int) dsq[i]];
          else
             esc = DegenerateSingletScore(cm->esc[v],dsq[i]);
-         depth[x++] = i++;
-         nomarginal += esc; /*TRACE*/
-         ceiling += esc; /*TRACE*/
+         i++;
       }
       if ( cm->stid[v] == MATR_MR )
       {
-         depth[x++] = -1;
       }
       if ( cm->stid[v] == MATP_MP )
       {
          esc = LeftMarginalScore(cm->esc[v],dsq[i]);
-         ceiling += FMax(&(cm->esc[v][dsq[i]*Alphabet_size]),Alphabet_size); /*TRACE*/
-         depth[x++] = i++;
+         esl_stack_IPush(store_pair, i++);
       }
 
-      nomarginal += tsc; /*TRACE*/
-      ceiling += tsc; /*TRACE*/
-      if (*delta_sc < min) min = *delta_sc; /*TRACE*/
       *delta_sc = *delta_sc + tsc + esc;
-      printf("%d\t%f\t%f\t%f\t%f\n",x,*total_sc,*delta_sc,ceiling,nomarginal); /*TRACE*/
       if (*delta_sc >= 0)
       {
          root->chunk->need_commit = 0;
@@ -910,7 +929,6 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
          root->chunk->cur_i = i;
          root->chunk->cur_v = v;
          *commit = 1;
-         min = 0.0; /*TRACE*/
       }
       else
       {
@@ -922,22 +940,8 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
 
    if ( cm->sttype[v] == B_st )
    {
-      if ( root->left_child == NULL )
-      {
-         root->left_child = malloc(sizeof(BPA_t));
-         root->left_child->chunk = malloc(sizeof(PA_t));
-         root->left_child->left_child = NULL;
-         root->left_child->right_child = NULL;
-      }
-      root->left_child->chunk->init_v = cm->cfirst[v];
-      root->left_child->chunk->cur_v  = cm->cfirst[v];
-      root->left_child->chunk->init_i = i;
-      root->left_child->chunk->cur_i  = i;
       /* Init to error values for j and d which are unknown */
-      root->left_child->chunk->init_j = -1;
-      root->left_child->chunk->cur_j  = -1;
-      root->left_child->chunk->init_d = -1;
-      root->left_child->chunk->cur_d  = -1;
+      BPA_Init(root->left_child, cm->cfirst[v], i, -1, -1);
 
       MarginalLeftInsideExtend(cm, dsq, root->left_child, rbound, dropoff_sc, total_sc, delta_sc, commit, complete);
       if ( root->chunk->need_commit && *commit )
@@ -948,22 +952,9 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
       }
       if ( *complete )
       {
-         if ( root->right_child == NULL )
-         {
-            root->right_child = malloc(sizeof(BPA_t));
-            root->right_child->chunk = malloc(sizeof(PA_t));
-            root->right_child->left_child = NULL;
-            root->right_child->right_child = NULL;
-         }
-         root->right_child->chunk->init_v = cm->cnum[v];
-         root->right_child->chunk->cur_v  = cm->cnum[v];
-         root->right_child->chunk->init_i = root->left_child->chunk->need_commit ? root->left_child->chunk->temp_i : root->left_child->chunk->cur_i;
-         root->right_child->chunk->cur_i  = root->left_child->chunk->need_commit ? root->left_child->chunk->temp_i : root->left_child->chunk->cur_i;
+         x = root->left_child->chunk->need_commit ? root->left_child->chunk->temp_i : root->left_child->chunk->cur_i;
          /* Init to error values for j and d which are unknown */
-         root->right_child->chunk->init_j = -1;
-         root->right_child->chunk->cur_j  = -1;
-         root->right_child->chunk->init_d = -1;
-         root->right_child->chunk->cur_d  = -1;
+         BPA_Init(root->right_child, cm->cnum[v], x, -1, -1);
 
          MarginalLeftInsideExtend(cm, dsq, root->right_child, rbound, dropoff_sc, total_sc, delta_sc, commit, complete);
          if ( root->chunk->need_commit && *commit )
@@ -989,7 +980,6 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
       *complete = 1;
    }
 
-   x--;
    if ( *complete == 1)
    {
       *complete = 0;
@@ -999,7 +989,6 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
          ConsensusParent(cm, &v);
          if ( cm->stid[v] == MATL_ML )
          {
-            x--;
          }
          if ( cm->stid[v] == MATR_MR )
          {
@@ -1008,27 +997,19 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
             else
                esc = DegenerateSingletScore(cm->esc[v],dsq[i]);
             i++;
-            x--;
-            ceiling += esc; /*TRACE*/
-            nomarginal += esc; /*TRACE*/
          }
          if ( cm->stid[v] == MATP_MP )
          {
-            if ( dsq[depth[x]] < Alphabet_size && dsq[i] < Alphabet_size )
-               esc = cm->esc[v][(int) (dsq[depth[x]]*Alphabet_size + dsq[i])];
+            esl_stack_IPop(store_pair, &x);
+            if ( dsq[x] < Alphabet_size && dsq[i] < Alphabet_size )
+               esc = cm->esc[v][(int) (dsq[x]*Alphabet_size + dsq[i])];
             else
-               esc = DegeneratePairScore(cm->esc[v],dsq[depth[x]],dsq[i]);
-            ceiling += esc; /*TRACE*/
-            nomarginal += esc; /*TRACE*/
-            esc -= LeftMarginalScore(cm->esc[v],dsq[depth[x]]);
-            ceiling -= FMax(&(cm->esc[v][dsq[depth[x]]*Alphabet_size]),Alphabet_size); /*TRACE*/
+               esc = DegeneratePairScore(cm->esc[v],dsq[x],dsq[i]);
+            esc -= LeftMarginalScore(cm->esc[v],dsq[x]);
             i++;
-            x--;
          }
 
          *delta_sc = *delta_sc + esc;
-         if (*delta_sc < min) min = *delta_sc; /*TRACE*/
-         printf("%d\t%f\t%f\t%f\t%f\n",x,*total_sc,*delta_sc,ceiling,nomarginal); /*TRACE*/
          if (*delta_sc >= 0)
           {
             root->chunk->need_commit = 0;
@@ -1037,7 +1018,6 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
             root->chunk->cur_i = i;
             root->chunk->cur_v = v;
             *commit = 1;
-            min = 0.0; /*TRACE*/
          }
          else
          {
@@ -1046,32 +1026,20 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
             root->chunk->temp_v = v;
          }
       }
+      /* If we've hit our bound in sequence space, we can (and should)
+         include any states above us in the model that don't require 
+         additional emission of residues */
       if ( i == rbound)
       {
          ConsensusParent(cm, &v);
          while ( cm->stid[v] == MATL_ML )
          {
-            x--;
-            if ( root->chunk->need_commit == 1 )
-            {
-               root->chunk->temp_v = v;
-            }
-            else
-            {
-               root->chunk->cur_v = v;
-            }
+            v = root->chunk->need_commit ? root->chunk->temp_v : root->chunk->cur_v;
             ConsensusParent(cm, &v);
          }
          if (cm->sttype[v] == S_st)
          {
-            if ( root->chunk->need_commit == 1 )
-            {
-               root->chunk->temp_v = v;
-            }
-            else
-            {
-               root->chunk->cur_v = v;
-            }
+            v = root->chunk->need_commit ? root->chunk->temp_v : root->chunk->cur_v;
          }
       }
       if ( cm->sttype[v] == S_st) 
@@ -1093,12 +1061,7 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
       root->right_child->chunk->cur_v = root->right_child->chunk->temp_v;
    }
 
-   /* We should have at least some bound on how high i can get - we may not know the
-    * actual limit on this chunk, but there is an overall limit if there's a pair
-    * anywhere in the model above us
-    */
-
-   free(depth);
+   esl_stack_Destroy(store_pair);
 
    return;
 }
