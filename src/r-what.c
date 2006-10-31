@@ -1034,12 +1034,18 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
          ConsensusParent(cm, &v);
          while ( cm->stid[v] == MATL_ML )
          {
-            v = root->chunk->need_commit ? root->chunk->temp_v : root->chunk->cur_v;
+            if ( root->chunk->need_commit == 1 )
+               root->chunk->temp_v = v;
+            else
+               root->chunk->cur_v = v;
             ConsensusParent(cm, &v);
          }
          if (cm->sttype[v] == S_st)
          {
-            v = root->chunk->need_commit ? root->chunk->temp_v : root->chunk->cur_v;
+            if ( root->chunk->need_commit == 1 )
+               root->chunk->temp_v = v;
+            else
+               root->chunk->cur_v = v;
          }
       }
       if ( cm->sttype[v] == S_st) 
@@ -1055,6 +1061,221 @@ MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dro
       root->left_child->chunk->cur_v = root->left_child->chunk->temp_v;
    }
    if ( (root->right_child != NULL) && (root->right_child->chunk->need_commit) && (root->chunk->cur_i > root->right_child->chunk->cur_i) )
+   {
+      root->right_child->chunk->need_commit = 0;
+      root->right_child->chunk->cur_i = root->right_child->chunk->temp_i;
+      root->right_child->chunk->cur_v = root->right_child->chunk->temp_v;
+   }
+
+   esl_stack_Destroy(store_pair);
+
+   return;
+}
+
+
+/* Function: MarginalRightInsideExtend()
+ * Author:   DLK
+ *
+ * Purpose:  Extend a partial alignment primary-sequence-wise, 
+ *           through bifurcations.  Extends deeper into the model
+ *           tracing along sequence right-to-left (counter-clockwise
+ *           around the parse tree).
+ *
+ * Args:     cm   - covariance model
+ *           dsq  - digitized sequence
+ *           root - a branched partial alignment.  The chunk of 
+ *                  alignmnet held in the root may be partially
+ *                  extended, although empty is expected to be the
+ *                  more likely case.
+ *           rbound - a limit on the range of i
+ *           dropoff_sc - amount of score decrease allowed before
+ *                  termination
+ *           total_sc - running total of score (from commited segments)
+ *           delta_sc - running total score of uncommited segments
+ *           commit - 0/1 - have we commited in this chunk (parent
+ *                  also commit if so)
+ *           complete - 0/1 - full alignment of subtree
+ * 
+ */
+void
+MarginalRightInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int lbound, float dropoff_sc, float *total_sc, float *delta_sc, int *commit, int *complete)
+{
+   int v,i;
+   int x;
+   float tsc, esc;
+   ESL_STACK *store_pair;
+
+   root->chunk->need_commit = 0;
+   *commit = 0;
+   *complete = 0;
+
+   store_pair = esl_stack_ICreate();
+
+   v = root->chunk->cur_v;
+   i = root->chunk->cur_i;
+
+   while ( (cm->sttype[v] != E_st) && (cm->sttype[v] != B_st) && (*delta_sc > dropoff_sc) && (i > lbound) )
+   {
+      esc = 0.0;
+      tsc = ConsensusChild(cm, &v);
+      if ( cm->stid[v] == MATL_ML )
+      {
+      }
+      if ( cm->stid[v] == MATR_MR )
+      {
+         if ( dsq[i] < Alphabet_size )
+            esc = cm->esc[v][(int) dsq[i]];
+         else
+            esc = DegenerateSingletScore(cm->esc[v],dsq[i]);
+         i--;
+      }
+      if ( cm->stid[v] == MATP_MP )
+      {
+         esc = RightMarginalScore(cm->esc[v],dsq[i]);
+         esl_stack_IPush(store_pair, i--);
+      }
+
+      *delta_sc = *delta_sc + tsc + esc;
+      if (*delta_sc >= 0)
+      {
+         root->chunk->need_commit = 0;
+         *total_sc += *delta_sc;
+         *delta_sc = 0.0;
+         root->chunk->cur_i = i;
+         root->chunk->cur_v = v;
+         *commit = 1;
+      }
+      else
+      {
+         root->chunk->need_commit = 1;
+         root->chunk->temp_i = i;
+         root->chunk->temp_v = v;
+      }
+   }
+
+   if ( cm->sttype[v] == B_st )
+   {
+      /* Init to error values for j and d which are unknown */
+      BPA_Init(root->right_child, cm->cfirst[v], i, -1, -1);
+
+      MarginalRightInsideExtend(cm, dsq, root->right_child, lbound, dropoff_sc, total_sc, delta_sc, commit, complete);
+      if ( root->chunk->need_commit && *commit )
+      {
+         root->chunk->need_commit  = 0;
+         root->chunk->cur_i = root->chunk->temp_i;
+         root->chunk->cur_v = root->chunk->temp_v;
+      }
+      if ( *complete )
+      {
+         x = root->right_child->chunk->need_commit ? root->right_child->chunk->temp_i : root->right_child->chunk->cur_i;
+         /* Init to error values for j and d which are unknown */
+         BPA_Init(root->left_child, cm->cnum[v], x, -1, -1);
+
+         MarginalRightInsideExtend(cm, dsq, root->left_child, lbound, dropoff_sc, total_sc, delta_sc, commit, complete);
+         if ( root->chunk->need_commit && *commit )
+         {
+            root->chunk->need_commit = 0;
+            root->chunk->cur_i = root->chunk->temp_i;
+            root->chunk->cur_v = root->chunk->temp_v;
+         }
+         if ( root->right_child->chunk->need_commit && *commit )
+         {
+            root->right_child->chunk->need_commit = 0;
+            root->right_child->chunk->cur_i = root->right_child->chunk->temp_i;
+            root->right_child->chunk->cur_v = root->right_child->chunk->temp_v;
+         }
+         if ( *complete ) {
+            i = root->left_child->chunk->cur_i;
+            if (root->left_child->chunk->temp_i < i) i = root->left_child->chunk->temp_i;
+         }
+      }
+   }
+   else if ( cm->sttype[v] == E_st )
+   {
+      *complete = 1;
+   }
+
+   if ( *complete == 1)
+   {
+      *complete = 0;
+      while ( ( cm->sttype[v] != S_st ) && (*delta_sc > dropoff_sc) && (i > lbound) )
+      {
+         esc = 0.0;
+         ConsensusParent(cm, &v);
+         if ( cm->stid[v] == MATL_ML )
+         {
+            if ( dsq[i] < Alphabet_size )
+               esc = cm->esc[v][(int) dsq[i]];
+            else
+               esc = DegenerateSingletScore(cm->esc[v],dsq[i]);
+            i--;
+         }
+         if ( cm->stid[v] == MATR_MR )
+         {
+         }
+         if ( cm->stid[v] == MATP_MP )
+         {
+            esl_stack_IPop(store_pair, &x);
+            if ( dsq[x] < Alphabet_size && dsq[i] < Alphabet_size )
+               esc = cm->esc[v][(int) (dsq[i]*Alphabet_size + dsq[x])];
+            else
+               esc = DegeneratePairScore(cm->esc[v],dsq[i],dsq[x]);
+            esc -= RightMarginalScore(cm->esc[v],dsq[x]);
+            i--;
+         }
+
+         *delta_sc = *delta_sc + esc;
+         if (*delta_sc >= 0)
+          {
+            root->chunk->need_commit = 0;
+            *total_sc += *delta_sc;
+            *delta_sc = 0.0;
+            root->chunk->cur_i = i;
+            root->chunk->cur_v = v;
+            *commit = 1;
+         }
+         else
+         {
+            root->chunk->need_commit = 1;
+            root->chunk->temp_i = i;
+            root->chunk->temp_v = v;
+         }
+      }
+      /* If we've hit our bound in sequence space, we can (and should)
+         include any states above us in the model that don't require 
+         additional emission of residues */
+      if ( i == lbound)
+      {
+         ConsensusParent(cm, &v);
+         while ( cm->stid[v] == MATR_MR )
+         {
+            if ( root->chunk->need_commit == 1 )
+               root->chunk->temp_v = v;
+            else
+               root->chunk->cur_v = v;
+            ConsensusParent(cm, &v);
+         }
+         if (cm->sttype[v] == S_st)
+         {
+            if ( root->chunk->need_commit == 1 )
+               root->chunk->temp_v = v;
+            else
+               root->chunk->cur_v = v;
+         }
+      }
+      if ( cm->sttype[v] == S_st) 
+      {
+         *complete= 1;
+      }
+   }
+
+   if ( (root->left_child != NULL) && (root->left_child->chunk->need_commit) && (root->chunk->cur_i < root->left_child->chunk->cur_i) )
+   {
+      root->left_child->chunk->need_commit = 0;
+      root->left_child->chunk->cur_i = root->left_child->chunk->temp_i;
+      root->left_child->chunk->cur_v = root->left_child->chunk->temp_v;
+   }
+   if ( (root->right_child != NULL) && (root->right_child->chunk->need_commit) && (root->chunk->cur_i < root->right_child->chunk->cur_i) )
    {
       root->right_child->chunk->need_commit = 0;
       root->right_child->chunk->cur_i = root->right_child->chunk->temp_i;
