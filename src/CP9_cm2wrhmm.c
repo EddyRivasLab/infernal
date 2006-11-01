@@ -3261,8 +3261,6 @@ AllocCP9Map(CM_t *cm)
   cp9map->pos2nd  = MallocOrDie(sizeof(int)    * (cp9map->hmm_M+1));
   cp9map->hns2cs  = MallocOrDie(sizeof(int **)  * (cp9map->hmm_M+1)); 
   for(i = 0; i <= cp9map->hmm_M; i++)
-  //cp9map->pos2nd[i]    = cp9map->hns2cs[i][0] = 
-  //cp9map->hns2cs[i][1] = cp9map->hns2cs[i][2] = -1;
     {
       cp9map->pos2nd[i] = -1;
       cp9map->hns2cs[i] = MallocOrDie(sizeof(int *) * 3);
@@ -3293,7 +3291,7 @@ AllocCP9Map(CM_t *cm)
 void
 FreeCP9Map(CP9Map_t *cp9map)
 {
-  int v,k;
+  int v,k,ks;
   for(v = 0; v <= cp9map->cm_M; v++)
     {
       free(cp9map->cs2hn[v]);
@@ -3303,7 +3301,11 @@ FreeCP9Map(CP9Map_t *cp9map)
   free(cp9map->cs2hs);
 
   for(k = 0; k <= cp9map->hmm_M; k++)
+  {
+    for(ks = 0; ks < 3; ks++)
+      free(cp9map->hns2cs[k][ks]);
     free(cp9map->hns2cs[k]);
+  }
   free(cp9map->hns2cs);
 
   free(cp9map->nd2lpos);

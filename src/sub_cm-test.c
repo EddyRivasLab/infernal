@@ -78,8 +78,8 @@ main(int argc, char **argv)
   CM_t    *sub_cm;              /* sub covariance model     */
   int      v;			/* counter over states */
   int      nmodels;             /* number of sub CMs to build */
-  int      spos;                /* start position for sub CM */
-  int      epos;                /* end position for sub CM */
+  int      sstruct;                /* start position for sub CM */
+  int      estruct;                /* end position for sub CM */
   int      ncols;               /* number of consensus (match) columns in CM */
   int      i;                   /* counter over sub CMs */
   int      j;                   /* counter */
@@ -104,7 +104,7 @@ main(int argc, char **argv)
 				 */
   int do_exhaust;               /* TRUE to build every possible sub_cm */
   int do_fullsub;               /* TRUE to build sub CM(s) that model same number of columns
-				 * as the template CM, with structure outside spos..epos
+				 * as the template CM, with structure outside sstruct..estruct
 				 * removed.                          */
   int ndone;                    /* number of models built so far */
   int print_flag;               /* TRUE to print debug statements */
@@ -158,8 +158,8 @@ main(int argc, char **argv)
     if      (strcmp(optname, "-n") == 0) nmodels        = atoi(optarg);
     else if (strcmp(optname, "-s") == 0) seed           = atoi(optarg);
     else if (strcmp(optname, "-t") == 0) pthresh        = atof(optarg);
-    else if (strcmp(optname, "-b") == 0) { begin_set = TRUE; spos = atoi(optarg); nmodels = 1; }
-    else if (strcmp(optname, "-e") == 0) { end_set   = TRUE; epos = atoi(optarg); }
+    else if (strcmp(optname, "-b") == 0) { begin_set = TRUE; sstruct = atoi(optarg); nmodels = 1; }
+    else if (strcmp(optname, "-e") == 0) { end_set   = TRUE; estruct = atoi(optarg); }
     else if (strcmp(optname, "--psionly")   == 0) do_atest   = FALSE;
     else if (strcmp(optname, "--sample")    == 0) do_stest   = TRUE;
     else if (strcmp(optname, "--nseq")      == 0) nsamples = atoi(optarg);
@@ -187,9 +187,9 @@ main(int argc, char **argv)
     Warn("--exhaust and --sample might take a long time...\n");
   if(begin_set && nmodels != 1)
     Die("-n does not make sense with -b and -e.\n");
-  if(begin_set && spos > epos)
+  if(begin_set && sstruct > estruct)
     Die("For -b <x> and -e <y> y must be >= x.\n");
-  if(begin_set && spos > epos)
+  if(begin_set && sstruct > estruct)
     Die("For -b <x> and -e <y> y must be >= x.\n");
   if(nsamples < 10000)
     Die("Minimum number of samples allowed is 10,000.\n");
@@ -227,14 +227,14 @@ main(int argc, char **argv)
    * If do_atest (default), we do:
    *  1. Build a CP9 HMM (cp9_1) from the sub_cm (this is done).
    *  2. Build a CP9 HMM (cp9_2) from the full cm.
-   *  3. Reconfig cp9_2 so start node is spos and end node is epos.
+   *  3. Reconfig cp9_2 so start node is sstruct and end node is estruct.
    *  4. Check corresponding parameters of cp9_1 and cp9_2 to make
    *     sure they're within the threshold.
    *
    * If do_stest, we also do:
    *  1. Build a CP9 HMM (cp9_1) from the sub_cm (this is done.)
    *  2. Sample a deep MSA from the CM. 
-   *  3. Truncate the MSA between spos and epos.
+   *  3. Truncate the MSA between sstruct and estruct.
    *  4. Perform chi-squared tests to see if sample from 
    *     (3) could have come from cp9_1. We do this by first 
    *     building a ML CP9 HMM (cp9_2) from the counts in 
@@ -262,32 +262,32 @@ main(int argc, char **argv)
       nmodels = (ncols * ncols + ncols) / 2;
       printf("Building and checking all possible sub CM (%5d different start/end positions):\n", ncols);
 
-      for(spos = 1; spos <= ncols; spos++)
+      for(sstruct = 1; sstruct <= ncols; sstruct++)
 	{
-	  printf("\tBuilding models with start pos: %5d (%5d / %5d completed)\n", spos, ndone, nmodels);
-	  for(epos = spos; epos <= ncols; epos++)
+	  printf("\tBuilding models with start pos: %5d (%5d / %5d completed)\n", sstruct, ndone, nmodels);
+	  for(estruct = sstruct; estruct <= ncols; estruct++)
 	    {
-	      if(!(build_sub_cm(cm, &sub_cm, spos, epos, &submap, do_fullsub, print_flag)))
-		Die("Couldn't build a sub_cm from CM with spos: %d epos: %d\n", spos, epos);
+	      if(!(build_sub_cm(cm, &sub_cm, sstruct, estruct, &submap, do_fullsub, print_flag)))
+		Die("Couldn't build a sub_cm from CM with sstruct: %d estruct: %d\n", sstruct, estruct);
 	      /* Do the psi test */
 	      if(!check_orig_psi_vs_sub_psi(cm, sub_cm, submap, pthresh, print_flag))
 		{
-		  printf("\nSub CM construction for spos: %4d epos: %4d failed psi test.\n", spos, epos);
+		  printf("\nSub CM construction for sstruct: %4d estruct: %4d failed psi test.\n", sstruct, estruct);
 		  Die("\tLooks like there's a bug...\n");
 		}
 	      /* Do analytical and/or sampling HMM tests */
 	      if(do_atest || do_stest)
 		{
-		  subinfo = AllocSubInfo(epos-spos+1);
+		  subinfo = AllocSubInfo(submap->epos-submap->spos+1);
 		  if(do_atest && !check_sub_cm(cm, sub_cm, submap, subinfo, pthresh, print_flag))
 		    {
-		      printf("\nSub CM construction for spos: %4d epos: %4d failed analytical HMM test.\n", spos, epos);
+		      printf("\nSub CM construction for sstruct: %4d estruct: %4d failed analytical HMM test.\n", sstruct, estruct);
 		      Die("\tLooks like there's a bug...\n");
 		    }
 		  if(do_stest && !check_sub_cm_by_sampling(cm, sub_cm, submap, subinfo, chi_thresh, 
 							   nsamples, print_flag))
 		    {
-		      printf("\nSub CM construction for spos: %4d epos: %4d failed sampling HMM test.\n", spos, epos);
+		      printf("\nSub CM construction for sstruct: %4d estruct: %4d failed sampling HMM test.\n", sstruct, estruct);
 		      Die("\tLooks like there's a bug...\n");
 		    }
 		  /* keep track of number of each case of wrong prediction */
@@ -312,14 +312,14 @@ main(int argc, char **argv)
       if(do_stest)
 	printf("\tsampling   HMM test\n");
     }	 
-  else /* Build models with either preset begin point (spos) and end points (epos) 
+  else /* Build models with either preset begin point (sstruct) and end points (estruct) 
 	* or randomly chosen ones */
     {
       if(begin_set && end_set)
 	{
-	  if(spos < 1) spos = 1;
-	  if(epos > ncols) epos = ncols;
-	  printf("Building a single sub CM with spos: %4d and epos: %4d ... ", spos, epos);
+	  if(sstruct < 1) sstruct = 1;
+	  if(estruct > ncols) estruct = ncols;
+	  printf("Building a single sub CM with sstruct: %4d and estruct: %4d ... ", sstruct, estruct);
 	}
       else
 	printf("\tBuilding models with random start and end positions:\n");
@@ -328,36 +328,36 @@ main(int argc, char **argv)
 	  if(!(begin_set && end_set))
 	    {
 	      /* Randomly pick a start and end between 1 and ncols, inclusive */
-	      spos = ((int) (sre_random() * ncols)) + 1;
-	      epos = ((int) (sre_random() * ncols)) + 1;
-	      if(spos > epos)
+	      sstruct = ((int) (sre_random() * ncols)) + 1;
+	      estruct = ((int) (sre_random() * ncols)) + 1;
+	      if(sstruct > estruct)
 		{
-		  temp = spos;
-		  spos = epos;
-		  epos = temp;
+		  temp = sstruct;
+		  sstruct = estruct;
+		  estruct = temp;
 		}	      
 	    }
-	  if(!(build_sub_cm(cm, &sub_cm, spos, epos, &submap, do_fullsub, print_flag)))
-	    Die("Couldn't build a sub_cm from CM with spos: %d epos: %d\n", spos, epos);
+	  if(!(build_sub_cm(cm, &sub_cm, sstruct, estruct, &submap, do_fullsub, print_flag)))
+	    Die("Couldn't build a sub_cm from CM with sstruct: %d estruct: %d\n", sstruct, estruct);
 	  /* Do the psi test */
 	  if(!check_orig_psi_vs_sub_psi(cm, sub_cm, submap, pthresh, print_flag))
 	    {
-	      printf("\nSub CM construction for spos: %4d epos: %4d failed psi test.\n", spos, epos);
+	      printf("\nSub CM construction for sstruct: %4d estruct: %4d failed psi test.\n", sstruct, estruct);
 	      Die("\tLooks like there's a bug...\n");
 	    }
 	  /* Do analytical and/or sampling HMM tests */
 	  if(do_atest || do_stest)
 	    {
-	      subinfo = AllocSubInfo(epos-spos+1);
+	      subinfo = AllocSubInfo(submap->epos-submap->spos+1);
 	      if(do_atest && !check_sub_cm(cm, sub_cm, submap, subinfo, pthresh, print_flag))
 		{
-		  printf("\nSub CM construction for spos: %4d epos: %4d failed analytical HMM test.\n", spos, epos);
+		  printf("\nSub CM construction for sstruct: %4d estruct: %4d failed analytical HMM test.\n", sstruct, estruct);
 		  Die("\tLooks like there's a bug...\n");
 		}
 	      if(do_stest && !check_sub_cm_by_sampling(cm, sub_cm, submap, subinfo, chi_thresh, 
 						       nsamples, print_flag))
 		{
-		  printf("\nSub CM construction for spos: %4d epos: %4d failed sampling HMM test.\n", spos, epos);
+		  printf("\nSub CM construction for sstruct: %4d estruct: %4d failed sampling HMM test.\n", sstruct, estruct);
 		  Die("\tLooks like there's a bug...\n");
 		}
 	      /* keep track of number of each case of wrong prediction */

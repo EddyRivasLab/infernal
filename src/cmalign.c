@@ -580,13 +580,20 @@ main(int argc, char **argv)
 	  
 	  /* (3) Build the sub_cm from the original CM. */
 	  subinfo = AllocSubInfo(epos-spos+1);
-	  if(!(build_sub_cm(cm, &sub_cm, 
+	  if(!(build_sub_cm(orig_cm, &sub_cm, 
 			    spos, epos,         /* first and last col of structure kept in the sub_cm  */
 			    &submap,            /* maps from the sub_cm to cm and vice versa           */
 			    do_fullsub,         /* build or not build a sub CM that models all columns */
 			    debug_level)))      /* print or don't print debugging info                 */
 	    Die("Couldn't build a sub CM from the CM\n");
 	  cm    = sub_cm; /* orig_cm still points to the original CM */
+
+	  /* If the sub_cm models the full consensus length of the orig_cm, with only
+	   * structure removed, we configure it for local alignment to allow it to 
+	   * skip the single stranded regions at the beginning and end. But only 
+	   * if we don't need to build a CP9 HMM from the sub_cm to do banded alignment.*/
+	  if(do_fullsub && !do_hbanded)
+	    ConfigLocal(cm, 0.5, 0.5);
 	  
 	  if(do_hbanded) /* we're doing HMM banded alignment to the sub_cm */
 	    {
@@ -597,6 +604,11 @@ main(int argc, char **argv)
 	      if(!build_cp9_hmm(sub_cm, &sub_hmm, &sub_cp9map, debug_level))
 		Die("Couldn't build a sub CP9 HMM from the sub CM\n");
 
+	      if(do_fullsub)
+		{
+		  CPlan9SWConfig(sub_hmm, 0.5, 0.5);
+		  ConfigLocal(cm, 0.5, 0.5);
+		}
 	      /* (5) Do Forward/Backward again, and get a new posterior matrix. 
 	       * We have to free cp9_fwd and cp9_posterior because we used them 
 	       * to find spos and epos. */
@@ -615,7 +627,7 @@ main(int argc, char **argv)
 	      /* Change some pointers so that the functions that create bands use the
 	       * sub_* data structures. The orig_* data structures will still point
 	       * to the original CM versions. */
-	      cp9map->hmm_M         = sub_hmm->M;
+	      cp9map->hmm_M = sub_hmm->M;
 	      hmm           = sub_hmm;    
 	      cp9map        = sub_cp9map;
 	    }

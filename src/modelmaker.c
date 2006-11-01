@@ -1247,13 +1247,14 @@ cm_find_and_detach_dual_inserts(CM_t *cm, int do_check, int do_detach)
   CMEmitMap_t *emap;         /* consensus emit map for the cm */
   int *cc2lins_map;
   int *cc2rins_map;
-  int ret_val;
   int cc;
   int nd;
-  int to_detach;
   int end_e_ct;
   int detach_ct;
   int v;
+
+  end_e_ct = 0;
+  detach_ct = 0;
 
   /* Determine the number of END_E states in the model, this 
    * will be the number of inserts we want to detach.
@@ -1377,8 +1378,10 @@ cm_detach_state(CM_t *cm, int insert1, int insert2)
       ret_val = TRUE;
       to_detach = insert1;
     }
-  if(cm->sttype[insert2+1] == E_st)
+  else
     {
+      if(cm->sttype[insert2+1] != E_st)
+	Die("ERROR: in cm_detach_state insert1: %d and insert2: %d neither map to END_E-1 states.\n", insert1, insert2);
       if(ret_val)
 	Die("ERROR: in cm_detach_state insert1: %d and insert2: %d both map to END_E-1 states.\n", insert1, insert2);
       ret_val = TRUE;
