@@ -1041,7 +1041,7 @@ CMRebalance(CM_t *cm)
 	  w = cm->cfirst[v];	/* left child of v*/
 	  y = cm->cnum[v];	/* right child of v*/
 
-	  if (wgt[w] < wgt[y])	/* left (w) lighter? visit w first, defer y */
+	  if (wgt[w] <= wgt[y])	/* left (w) lighter or same weight? visit w first, defer y */
 	    { 
 	      PushNstack(pda, y); 
 	      PushNstack(pda, z);
