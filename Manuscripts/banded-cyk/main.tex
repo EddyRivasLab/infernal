@@ -321,7 +321,7 @@ sequence is emitted starting at the root, moving downwards from state
 to state according to state transition probabilities, emitting
 residues and residue pairs according to emission probabilities, and
 bifurcating into substructures at bifurcation states. An important
-property of a CM is the states can be numbered from $1..M$ (from root
+property of a CM is the states can be numbered from $0..M-1$ (from root
 to leaves) such that for any state $v$, the states $y$ that it can
 transit to must have indices $y \geq v$ -- there are no cycles in a
 CM, other than self-transitions on insert states.  This is the
@@ -338,8 +338,8 @@ structural alignment to substructures and truncated structures (as
 opposed to requiring a global alignment to the whole RNA structural
 model) is achieved by adding state transitions from the ROOT that
 permit entering the model at any internal consensus state with some
-probability, and state transitions from any internal state to an END
-with some probability \cite{KleinEddy03}.
+probability, and state transitions from any internal consensus state 
+to an END with some probability \cite{KleinEddy03}.
 
 \subsection{QDB algorithm}
 
@@ -359,7 +359,7 @@ largest:
 
 \vspace{0.5em}
 \begin{tabular}{l|l|l}
-\multicolumn{3}{l}{for $v = M$ down to $1$:} \\
+\multicolumn{3}{l}{for $v = M-1$ down to $0$:} \\
 $v = $ end state $(E)$: & $\gamma_v(0) = 1$ & \\
                         & $\gamma_v(d) = 0$ & for $d=1$ to $Z$ \\
 & & \\
@@ -696,7 +696,7 @@ nt of random background sequence.
 \fi
 
 The benchmark proceeds by first building a CM for each query
-alignment, then searching the pseudogenome with each CM in local
+alignment, then searching the pseudo-genome with each CM in local
 alignment mode. All hits above a threshold of 8.0 in raw bit score for
 each of the 51 queries were sorted by score into 51 ranked family
 specific lists, as well as one ranked master list of all 51 sets of
@@ -707,7 +707,7 @@ family as the query.  An ``ignore'' is a hit that significantly
 overlaps with a test sequence from a different family, where
 ``significantly overlap'' means that the length of overlap between two
 sequences (either two hits, or one hit and one test sequence embedded
-in the pseudogenome) is more than 50\% the length of the shorter
+in the pseudo-genome) is more than 50\% the length of the shorter
 sequence.  (Although it would be desirable to measure the false
 positive rate on nonhomologous structural RNAs, we cannot be sure that
 any given pair of Rfam families is truly nonhomologous. Like most
@@ -763,13 +763,13 @@ How well does QDB accelerate CM searches?  Figure~\ref{fig:speedup}
 shows the time required for searching the 1 Mb benchmark target
 sequence with each of the 51 models, as a function of the average
 query RNA length. These results show that QDB reduces the empirical
-running time complexity of the CM search algorithm from $O(N^{XXX})$
-to $O(N^{XXX})$. Observed accelerations relative to the standard
-algorithm range from XXX fold (for XXX) to XXX fold (for XXX), for an
-average speed-up per family of XXX-fold. In total search time for the
-benchmark (sum of all 51 searches), the acceleration is XXX-fold,
-because the large queries have disproportionate effect on the total
-time.
+running time complexity of the CM search algorithm from $O(N^{2.36})$
+to $O(N^{1.36})$. Observed accelerations relative to the standard
+algorithm range from 1.38-fold (for the Iron Response Element) to 
+12.61-fold (for CsrB RNA), for an average speed-up per family of 
+4.14-fold. In total search time for the benchmark (sum of all 51 
+searches), the acceleration is 6.01-fold, because the large queries
+have disproportionate effect on the total time.
 
 \ifdraft
 \input{fig-speedup}
@@ -814,12 +814,12 @@ improvements in sensitivity and specificity.
 
 CM searches take a long time, and this is the most limiting factor is
 using the \textsc{infernal} software to identify RNA similarities. In
-our benchmarks, \textsc{infernal} requires 870 CPU-hours to search 51
+our benchmarks, \textsc{infernal} requires 508 CPU-hours to search 51
 models against just 1 megabase of sequence
 (Table~\ref{tbl:rmark}). Our eventual goal is to enable routine genome
 annotation of structural RNAs: to be able to search thousands of RNA
 models against complete genome sequences. A search of all 503 Rfam 7.0
-models against the 3 GB human genome would take on the order of 3000
+models against the 3 GB human genome would take on the order of 2000
 CPU-years, but we need to be able to do it in at most a few days, so
 we need to increase CM search speed by five to six orders of
 magnitude. Parallelization is feasible, but even large clusters will
@@ -904,10 +904,10 @@ sequences, drawn from three different RNA families (U5, 5S rRNA, and
 tRNA). These results broadly confirm our observations on our internal
 benchmark: that while \textsc{infernal} 0.55 showed mediocre
 performance compared to \textsc{blastn} and several other tools,
-especially on the smaller query alignments, \textsc{infernal} 0.7 now
+especially on the smaller query alignments, \textsc{infernal} 0.71 now
 stands out as a superior method for RNA similarity search.
 
-Nonetheless, though \textsc{infernal} 0.7 shows large improvements in
+Nonetheless, though \textsc{infernal} 0.71 shows large improvements in
 speed, sensitivity, and specificity over previous versions, there are
 numerous areas where we need to improve further. 
 
