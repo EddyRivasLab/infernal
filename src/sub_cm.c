@@ -63,30 +63,6 @@ static void  debug_sub_cm_check_all_trans(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_
  *           a bit indirectly, first get maps from each CM to a CP9 HMM,
  *           then use these maps to map the CMs to each other.
  * Args:    
- * CM_t *orig_cm       - the original template CM
- * CM_t *sub_cm        - the sub CM
- * int ***ret_o2s_smap - 2D state map from orig_cm (template) to sub_cm.
- *                       1st dimension - state index in orig_cm 
- *                       2nd D - 2 elements for up to 2 matching sub_cm states, .
- *                       Allocated here, responsibility of caller to free.
- * int ***ret_s2o_smap - 2D state map from orig_cm (template) to sub_cm.
- *                       1st dimension - state index in sub_cm (0..sub_cm->M-1)
- *                       2nd D - 2 elements for up to 2 matching orig_cm states, 
- *                       Allocated here, responsibility of caller to free.
- * int sub_start       - first consensus column in orig_cm that sub_cm models
- * int sub_end         -  last consensus column in orig_cm that sub_cm models
- * int **ret_s2o_id - [0..sub_cm->M], 1 if s2o_id_orig[sub_v] == 1
- *                       IFF there is a state in the template, original CM
- *                       that is identical to sub_v, i.e. will have the
- *                       exact same emission and transition distribution.
- * int  *imp_cc        - [0..(sub_end-sub_start+1)] ret_imp_cc[k] = 1 if it is 
- *                       impossible for CP9 node (consensus column) k to be
- *                       calculated in the sub_cm to have distros to match the
- *                       corresponding CP9 node in the original CM - due to
- *                       topological differences in the architecture of the
- *                       sub_cm and orig_cm.
- * int print_flag      - TRUE to print out useful debugging info
- * Returns: (void) 
  */
 
 CMSubMap_t *
@@ -1941,6 +1917,8 @@ debug_print_cm_params(CM_t *cm)
    for(v = 0; v < cm->M; v++)
      {
        printf("v:%4d:%4d %4s %2s\n", v, cm->ndidx[v], nodetypes[cm->ndtype[cm->ndidx[v]]], sttypes[cm->sttype[v]]);
+       if(cm->nodemap[cm->ndidx[v]] == v)
+	 printf("beg: %0.3f | end %0.3f\n", cm->begin[v], cm->end[v]);
        if(cm->sttype[v] == MP_st)
 	 {
 	   printf("\tE: ");

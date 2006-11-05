@@ -48,16 +48,16 @@ static char experts[] = "\
    --null2       : turn on the post hoc second null model [df:OFF]\n\
    --learninserts: do not set insert emission scores to 0\n\
 \n\   
-  * Filtering options using a CM plan 9 HMM:\n\
+  * Filtering options using a CM plan 9 HMM (*in development*):\n\
    --hmmfb        : use Forward to get end points & Backward to get start points\n\
    --hmmweinberg  : use Forward to get end points, subtract W for start points\n\
    --hmmpad <n>   : subtract/add <n> residues from start/end [df:0]\n\
-   --hmmonly      : don't use CM at all, just scan with the HMM (Forward + Backward)\n\
+   --hmmonly      : don't use CM at all, just scan with HMM (Forward + Backward)\n\
    --hthresh <f>  : HMM reporting bit score threshold [df: 0]\n\
 \n\
-  * Options for accelerating CM search/alignment:\n\
-   --qdb         : use query dependent bands to accelerate CYK\n\
-   --beta <f>    : tail loss prob for --qbd (default:0.000001)\n\
+  * Options for accelerating CM search/alignment (*in development*):\n\
+   --beta <f>    : tail loss prob for QBD (default:0.0000001)\n\
+   --noqdb       : DON'T use query dependent bands (QDB) to accelerate CYK\n\
    --hbanded     : use HMM bands from a CM plan 9 HMM scan for CYK\n\
    --hbandp <f>  : tail loss prob for --hbanded (default:0.0001)\n\
    --banddump    : print bands for each state\n\
@@ -83,7 +83,7 @@ static struct opt_s OPTIONS[] = {
   { "--hmmpad",     FALSE, sqdARG_INT },
   { "--hmmonly",    FALSE, sqdARG_NONE },
   { "--hthresh",    FALSE, sqdARG_FLOAT},
-  { "--qdb",        FALSE, sqdARG_NONE },
+  { "--noqdb",      FALSE, sqdARG_NONE },
   { "--beta",       FALSE, sqdARG_FLOAT},
   { "--hbanded",    FALSE, sqdARG_NONE },
   { "--hbandp",     FALSE, sqdARG_FLOAT},
@@ -189,9 +189,7 @@ main(int argc, char **argv)
   int         use_sums;         /* TRUE to fill and use the posterior sums, false not to. */
 
   unsigned char   *p7dsq;     /* digitized RNA sequences (plan 7 version)*/
-  int    ks;            /* Counter over HMM state types (0 (match), 1(ins) or 2 (del))*/
   int    v;             /* counter over states of the CM */
-  int    k;             /* counter over HMM nodes */
   int    x;
   int    debug_level;   /* verbosity level for debugging printf() statements,
 			 * passed to many functions. */
@@ -228,7 +226,7 @@ main(int argc, char **argv)
   do_local          = FALSE;
   do_align          = TRUE;
   do_dumptrees      = FALSE;
-  do_qdb            = FALSE;
+  do_qdb            = TRUE;      /* QDB is default */
   beta              = 0.0000001;
   do_projectx       = FALSE;
   do_bdump          = FALSE;
@@ -271,8 +269,8 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--hmmpad")    == 0) { hmm_pad = atoi(optarg); }
     else if  (strcmp(optname, "--hmmonly")   == 0) { do_hmmonly = TRUE; do_align = FALSE; } 
     else if  (strcmp(optname, "--hthresh")   == 0) hmm_thresh   = atof(optarg);
-    else if  (strcmp(optname, "--qdb")  == 0) do_qdb  = TRUE;
     else if  (strcmp(optname, "--beta")   == 0) beta      = atof(optarg);
+    else if  (strcmp(optname, "--noqdb")  == 0) do_qdb    = FALSE;
     else if  (strcmp(optname, "--hbanded")   == 0) do_hbanded   = TRUE; 
     else if  (strcmp(optname, "--hbandp")    == 0) hbandp       = atof(optarg);
     else if  (strcmp(optname, "--banddump")  == 0) do_bdump     = TRUE;

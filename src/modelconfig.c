@@ -157,3 +157,64 @@ ConfigLocalEnds(CM_t *cm, float p_internal_exit)
   cm->flags |= CM_LOCAL_END;
   return;
 }
+
+void
+ConfigLocal_fullsub(CM_t *cm, float p_internal_start, 
+		    float p_internal_exit, int sstruct_nd,
+		    int estruct_nd)
+{
+  int v;			/* counter over states */
+  int nd;			/* counter over nodes */
+  int nstarts;			/* number of possible internal starts */
+  int nexits;			/* number of possible internal ends */
+  float denom;
+
+  printf("in ConfigLocal_fullsub(), sstruct_nd: %d | estruct_nd: %d\n", sstruct_nd, estruct_nd);
+
+  /*****************************************************************
+   * Internal entry.
+   *****************************************************************/
+  /* Count "internal" nodes: MATP, MATL, MATR, and BIF nodes.
+   * Ignore all start nodes, and also node 1 (which is always the
+   * "first" node and gets an entry prob of 1-p_internal_start).
+   */
+  nstarts = 0;
+  for (nd = 2; nd < cm->nodes; nd++) {
+    if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+    	cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd) 
+      nstarts++;
+  }
+
+  /* Zero everything.
+   */
+  for (v = 0; v < cm->M; v++)  cm->begin[v] = 0.;
+
+  /* Erase the previous transition p's from node 0. The only
+   * way out of node 0 is going to be local begin transitions
+   * from the root v=0 directly to MATP_MP, MATR_MR, MATL_ML,
+   * and BIF_B states.
+   */
+  for (v = 0; v < cm->cnum[0]; v++)  cm->t[0][v] = 0.;
+
+  /* Node submap->sstruct gets prob 1-p_internal_start.
+   */
+  cm->begin[cm->nodemap[sstruct_nd]] = 1.-p_internal_start;
+  printf("set cm->begin[%d]: %f\n", cm->nodemap[sstruct_nd], cm->begin[cm->nodemap[sstruct_nd]]);
+
+
+  /* Remaining nodes share p_internal_start.
+   */
+  for (nd = 1; nd < cm->nodes; nd++) {
+    if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+    	cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd)  
+      if(nd != sstruct_nd)
+	cm->begin[cm->nodemap[nd]] = p_internal_start/(float)nstarts;
+  }
+  cm->flags |= CM_LOCAL_BEGIN;
+  
+  /*****************************************************************
+   * Internal exit.
+   *****************************************************************/
+  ConfigLocalEnds(cm, p_internal_exit);
+  return;
+}

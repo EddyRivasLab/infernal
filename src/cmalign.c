@@ -319,7 +319,7 @@ main(int argc, char **argv)
     Die("Please pick either --inside or --outside (--outside will run Inside()\nalso and check to make sure Inside() and Outside() scores agree).\n");
   if(do_checkcp9 && do_hbanded == FALSE)
     Die("--checkcp9 only makes sense with --hbanded\n");
-  if(do_sub && do_local)
+  if(do_sub && do_local && !do_fullsub)
     Die("--sub and --local combination not yet supported.\n");
   if(do_sub && do_qdb)
     Die("Please pick either --sub or --qdb.\n");
@@ -556,8 +556,6 @@ main(int argc, char **argv)
        *
        * If we're also doing HMM banded alignment:
        * (4) Build a new CP9 HMM from the sub CM.
-       * (4) Build a new CP9 HMM from the sub CM.
-       * (4) Build a new CP9 HMM from the sub CM.
        * (5) Do Forward/Backward again, and get a new posterior matrix.
        */
       if(do_sub)
@@ -593,8 +591,15 @@ main(int argc, char **argv)
 	   * skip the single stranded regions at the beginning and end. But only 
 	   * if we don't need to build a CP9 HMM from the sub_cm to do banded alignment.*/
 	  if(do_fullsub && !do_hbanded)
-	    ConfigLocal(cm, 0.5, 0.5);
-	  
+	    {
+	      ConfigLocal_fullsub(cm, 0.5, 0.5, orig_cp9map->pos2nd[submap->sstruct],
+				  orig_cp9map->pos2nd[submap->estruct]);
+	      /*ConfigLocal(sub_cm, 0.5, 0.5);*/
+	      CMLogoddsify(cm);
+	      do_local = TRUE; /* we wait til we get here to set do_local, if we 
+				* configure for local alignment earlier it would've 
+				* screwed up CP9 construction. */
+	    }	  
 	  if(do_hbanded) /* we're doing HMM banded alignment to the sub_cm */
 	    {
 	      /* (4) Build a new CP9 HMM from the sub CM. */
@@ -607,7 +612,16 @@ main(int argc, char **argv)
 	      if(do_fullsub)
 		{
 		  CPlan9SWConfig(sub_hmm, 0.5, 0.5);
-		  ConfigLocal(cm, 0.5, 0.5);
+		  CP9Logoddsify(sub_hmm);
+		  /*ConfigLocal_fullsub(sub_cm, 0.5, 0.5, sub_cp9map->pos2nd[submap->sstruct],
+		    sub_cp9map->pos2nd[submap->estruct]);*/
+		  ConfigLocal(sub_cm, 0.5, 0.5);
+		  /*printf("debug printing sub cm params after config local full sub:\n");
+		  debug_print_cm_params(sub_cm);
+		  printf("done debug printing sub cm params after config local full sub:\n");*/
+		  
+		  CMLogoddsify(cm);
+		  do_local = TRUE;
 		}
 	      /* (5) Do Forward/Backward again, and get a new posterior matrix. 
 	       * We have to free cp9_fwd and cp9_posterior because we used them 
@@ -623,7 +637,7 @@ main(int argc, char **argv)
 	      cp9_posterior = cp9_bck;
 	      CP9FullPosterior(p7dsq[i], 1, sqinfo[i].len, sub_hmm, cp9_fwd, cp9_bck, cp9_posterior);
 	      /* cp9_posterior has the posteriors for the sub_hmm */
-	      
+
 	      /* Change some pointers so that the functions that create bands use the
 	       * sub_* data structures. The orig_* data structures will still point
 	       * to the original CM versions. */
@@ -641,7 +655,7 @@ main(int argc, char **argv)
       
 	  /* Align the current seq to the cp9 HMM, we don't care
 	   * about the trace, just the posteriors.
-	   * Step 1: Get HMM posteriors. (we already did this above, if do_sub,
+	   * Step 1: Get HMM posteriors. (if do_sub, we already did this above,
 	   *                              the posteriors are for the sub_hmm)
 	   * Step 2: posteriors -> HMM bands.
 	   * Step 3: HMM bands  ->  CM bands.
@@ -836,6 +850,9 @@ main(int argc, char **argv)
 	    }
 	  else
 	    {
+	      printf("DEBUG PRINTING CM PARAMS BEFORE D&C CALL\n");
+	      debug_print_cm_params(cm);
+	      printf("DONE DEBUG PRINTING CM PARAMS BEFORE D&C CALL\n");
 	      sc = CYKDivideAndConquer(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, &(tr[i]));
 	      if(bdump_level > 0)
 		{

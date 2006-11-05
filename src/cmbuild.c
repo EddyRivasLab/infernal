@@ -59,7 +59,7 @@ static char experts[] = "\
 \n\
  * alternative effective sequence number strategies:\n\
    --effent       : entropy loss target [default]\n\
-   --eloss <x>    : for --effent: set target loss to <x> [default: 0.54]\n\
+   --etarget <x>  : for --effent: set target entropy to <x> [default: 1.46]\n\
    --effnone      : effective sequence number is just # of seqs\n\
 \n\
  * verbose output files, useful for detailed information about the CM:\n\
@@ -117,7 +117,7 @@ static struct opt_s OPTIONS[] = {
   { "--effnone",   FALSE, sqdARG_NONE },
   { "--effent",    FALSE, sqdARG_NONE },
   /*{ "--effrelent",  FALSE, sqdARG_NONE },*/
-  { "--eloss",     FALSE, sqdARG_FLOAT },
+  { "--etarget",   FALSE, sqdARG_FLOAT },
   { "--elself",    FALSE, sqdARG_FLOAT},
   { "--dlev",      FALSE, sqdARG_INT },
   { "--p7g",       FALSE, sqdARG_STRING},
@@ -207,9 +207,8 @@ main(int argc, char **argv)
   char      *rndfile;		/* random sequence model file to read       */
 
   /* EPN 11.07.05 entropy weighting */
-  float      eloss;		/* target entropy loss, entropy-weights    */
-  int        eloss_set;		/* TRUE if eloss was set on commandline    */
-  float      etarget;		/* target entropy (background - eloss)     */
+  float      etarget;		/* target entropy                          */
+  int        etarget_set;       /* TRUE if etarget was set on commandline  */
   float      eff_nseq;		/* effective sequence number               */
   int        eff_nseq_set;	/* TRUE if eff_nseq has been calculated    */
   float      randomseq[MAXABET];/* null sequence model                     */
@@ -290,11 +289,12 @@ main(int argc, char **argv)
   rndfile           = NULL;
   
   eff_strategy      = EFF_ENTROPY; /* 11.28.05 EPN entropy weighting is default. */
-  eloss_set         = FALSE;
+  etarget_set       = FALSE;
   eff_nseq_set      = FALSE;
   do_local          = FALSE;
   save_gamma        = FALSE;
-  eloss             = 0.54;  /* EPN: empirically determined optimal eloss using RMARK benchmark*/ 
+  etarget           = 1.46;  /* EPN: empirically determined optimal etarget (2.0-0.54)
+			      * using RMARK benchmark*/ 
 
   bandp             = 0.0000001; 
   safe_windowlen    = 0;
@@ -305,7 +305,7 @@ main(int argc, char **argv)
   debug_level       = 0; 
   do_detach         = TRUE;  /* default: detach 1 of 2 ambiguous inserts */
   no_prior          = FALSE; /* default: use a prior */
-  build_p7hmm       = TRUE;  /* default: don't build a p7 HMM */
+  build_p7hmm       = FALSE;  /* default: don't build a p7 HMM */
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
     if      (strcmp(optname, "-A") == 0)          do_append         = TRUE; 
@@ -337,7 +337,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--effent")    == 0) eff_strategy      = EFF_ENTROPY;
     /*else if (strcmp(optname, "--effrelent")  == 0) eff_strategy   = EFF_RELENTROPY;*/
     else if (strcmp(optname, "--effnone")   == 0) eff_strategy      = EFF_NONE;
-    else if (strcmp(optname, "--eloss")     == 0) { eloss  = atof(optarg); eloss_set  = TRUE; }
+    else if (strcmp(optname, "--etarget")   == 0) { etarget = atof(optarg); etarget_set  = TRUE; }
 
     else if (strcmp(optname, "--elself")    == 0) { 
       el_selfprob= atof(optarg); 
@@ -437,25 +437,12 @@ main(int argc, char **argv)
   if (eff_strategy == EFF_NONE)      puts("none; use actual seq #");
   else if (eff_strategy == EFF_ENTROPY) {
     puts("entropy targeting");
-    if (eloss_set)
-      printf("  mean target entropy loss:        %.2f bits\n", eloss);
+    if (etarget_set)
+      printf("  mean target entropy:             %.2f bits\n", etarget);
     else
-      printf("  mean target entropy loss:        %.2f bits [default]\n", eloss);
+      printf("  mean target entropy:             %.2f bits [default]\n", etarget);
   }
   
-  /*EPN 11.28.05
-   *Uncomment code below to use relative entropy weighting (identical 
-   *to entropy weighting for equiprobable null distribution.)
-   *
-   * else if (eff_strategy == EFF_RELENTROPY) {
-   * puts("relative entropy targeting");
-   * if (eloss_set)
-   *  printf("  mean target relative entropy loss:  %.2f bits\n", eloss);
-   * else
-   * printf("  mean target relative entropy loss:  %.2f bits [default]\n", eloss);
-   * }
-   */
-
   printf("Sequence weighting strategy:       ");
   switch (weight_strategy) {
   case WGT_GIVEN: puts("use annotation in alifile, if any"); break;
@@ -465,27 +452,6 @@ main(int argc, char **argv)
   printf("New CM file:                       %s %s\n",
 	 cmfile, do_append? "[appending]" : "");
   printf("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n\n");
-
-  /* EPN 11.07.05 - EFF_ENTROPY effective sequence number strategy
-   *                ported from HMMER 2.4devl. 
-   * If we're using the entropy-target strategy for effective
-   * sequence number calculation, set the default target entropy loss.
-   */
-  if (eff_strategy == EFF_ENTROPY) 
-    {
-      /* 11.23.05
-       * EPN Following line enforces an equiprobable 
-       * background distribution for entropy weighting
-       * (causing etarget to be unaffected by a null 
-       * distribution read in with the --null option). 
-       */
-      etarget = 2.0 - eloss;
-      /* 11.23.05 - Below is the old strategy. Admittedly,
-       * not sure which (if either) is 'right'. 
-       */
-      /*etarget = FEntropy(randomseq, MAXABET) - eloss;*/
-    }
-  /* End of effective seq number port code block. */
 
   /*********************************************** 
    * Get alignment(s), build CMs one at a time
@@ -647,7 +613,7 @@ main(int argc, char **argv)
 	 * else if (eff_strategy == EFF_RELENTROPY) {
 	 * printf("%-40s ... ", "Determining eff seq # by relative entropy target");
 	 * fflush(stdout);
-	 * eff_nseq = CM_Eweight_RE(cm, pri, (float) msa->nseq, eloss, randomseq);
+	 * eff_nseq = CM_Eweight_RE(cm, pri, (float) msa->nseq, (2.0-etarget), randomseq);
 	 * }
 	 */
 	else Die("no effective seq #: shouldn't happen");
