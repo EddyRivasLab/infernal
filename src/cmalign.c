@@ -850,9 +850,10 @@ main(int argc, char **argv)
 	    }
 	  else
 	    {
-	      printf("DEBUG PRINTING CM PARAMS BEFORE D&C CALL\n");
-	      debug_print_cm_params(cm);
-	      printf("DONE DEBUG PRINTING CM PARAMS BEFORE D&C CALL\n");
+	      /*printf("DEBUG PRINTING CM PARAMS BEFORE D&C CALL\n");
+		debug_print_cm_params(cm);
+		printf("DONE DEBUG PRINTING CM PARAMS BEFORE D&C CALL\n");
+	      */
 	      sc = CYKDivideAndConquer(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, &(tr[i]));
 	      if(bdump_level > 0)
 		{

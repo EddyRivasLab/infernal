@@ -237,6 +237,58 @@ static void  voutside_b(CM_t *cm, char *dsq, int L,
 
  /* No banded size calculators right now. */
 
+/*******************************************************************************
+ * 05.24.05
+ * EPN MEMORY EFFICIENT BANDED VERSIONS OF SELECTED FUNCTIONS
+ * Memory efficient banded functions are named *_b_me()
+ * 
+ * These functions are modified from their originals to make the memory
+ * efficient banded FULL (not D&C) CYK implementation work.  These functions
+ * are dubbed 'memory efficient' because they only allocate cells of the
+ * alpha or shadow matrix which are within the bands.  The non-memory efficient
+ * functions (*_b()) still allocate the same memory as the non-banded functions,
+ * but only use the cells within the bands, here we actually don't even allocate
+ * unnecessary cells.  The only real difficulty implementing memory efficient
+ * bands is in being able to determine what cell alpha[v][j][d] from the 
+ * non-memory efficient code corresponds to in the memory-efficient code (we'll
+ * call the corresponding cell a[v'][j'][d'] or a[vp][jp][dp]).  The reason
+ * v != v'; j != j' and d != d' is because the primes are offset due to the
+ * fact that some of the original alpha matrix deck (a[v]) has not been allocated
+ * due to the bands.  Therefore all of the differences between the *_b_me() functions
+ * and their *_b() versions is to deal with the offset issue.
+ * 
+ * All changes from the original (non-memory efficient) banded code have been
+ * marked with comments beginning 'CYK Full ME Bands Used'.
+ *  
+ * There are only two functions that need seperate _b_me() versions, because
+ * the non D&C alignment algorithm only involves three functions, CYKInside(),
+ * inside(), and insideT(), and the CYKInside() is really only a wrapper, 
+ * for which the memory efficient implementation has no effect, so all we
+ * need is inside_b_me() and insideT_b_me().
+ * 
+ *******************************************************************************/
+
+/* The alignment engines. 
+ */
+static float inside_b_me(CM_t *cm, char *dsq, int L, 
+			 int r, int z, int i0, int j0, 
+			 int do_full,
+			 float ***alpha, float ****ret_alpha, 
+			 void ****ret_shadow, 
+			 int allow_begin, int *ret_b, float *ret_bsc,
+			 int *dmin, int *dmax);
+
+/* The traceback routines.
+   At first, it wasn't immediately obvious that a *_me version of  
+   this function was needed, but there's some crazy offset issues
+   here.
+ */
+
+static float insideT_b_me(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
+			  int r, int z, int i0, int j0, int allow_begin,
+			  int *dmin, int *dmax);
+
+
 /* Function: CYKDivideAndConquer()
  * Date:     SRE, Sun Jun  3 19:32:14 2001 [St. Louis]
  *
@@ -899,8 +951,6 @@ wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0
   wedge_splitter(cm, dsq, L, tr, best_v, z, best_j-best_d+1, best_j);
   return best_sc;
 }
-
-
 
 /* Function: v_splitter()
  * Date:     SRE, Thu May 31 19:47:57 2001 [Kaldi's]
@@ -3454,60 +3504,6 @@ CYKOutside(CM_t *cm, char *dsq, int L, float ***alpha)
 #endif 
 
 
-
-/*******************************************************************************
- * 05.24.05
- * EPN MEMORY EFFICIENT BANDED VERSIONS OF SELECTED FUNCTIONS
- * Memory efficient banded functions are named *_b_me()
- * 
- * These functions are modified from their originals to make the memory
- * efficient banded FULL (not D&C) CYK implementation work.  These functions
- * are dubbed 'memory efficient' because they only allocate cells of the
- * alpha or shadow matrix which are within the bands.  The non-memory efficient
- * functions (*_b()) still allocate the same memory as the non-banded functions,
- * but only use the cells within the bands, here we actually don't even allocate
- * unnecessary cells.  The only real difficulty implementing memory efficient
- * bands is in being able to determine what cell alpha[v][j][d] from the 
- * non-memory efficient code corresponds to in the memory-efficient code (we'll
- * call the corresponding cell a[v'][j'][d'] or a[vp][jp][dp]).  The reason
- * v != v'; j != j' and d != d' is because the primes are offset due to the
- * fact that some of the original alpha matrix deck (a[v]) has not been allocated
- * due to the bands.  Therefore all of the differences between the *_b_me() functions
- * and their *_b() versions is to deal with the offset issue.
- * 
- * All changes from the original (non-memory efficient) banded code have been
- * marked with comments beginning 'CYK Full ME Bands Used X' where X is 
- * a number.  
- *  
- * There are only two functions that need seperate _b_me() versions, because
- * the non D&C alignment algorith only involves three functions, CYKInside(),
- * inside(), and insideT(), and the CYKInside() is really only a wrapper, 
- * for which the memory efficient implementation has no effect, so all we
- * need is inside_b_me() and insideT_b_me().
- * 
- *******************************************************************************/
-
-/* The alignment engines. 
- */
-static float inside_b_me(CM_t *cm, char *dsq, int L, 
-			 int r, int z, int i0, int j0, 
-			 int do_full,
-			 float ***alpha, float ****ret_alpha, 
-			 void ****ret_shadow, 
-			 int allow_begin, int *ret_b, float *ret_bsc,
-			 int *dmin, int *dmax);
-
-/* The traceback routines.
-   At first, it wasn't immediately obvious that a *_me version of  
-   this function was needed, but there's some crazy offset issues
-   here.
- */
-
-static float insideT_b_me(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
-			  int r, int z, int i0, int j0, int allow_begin,
-			  int *dmin, int *dmax);
-
-
 /* Function: CYKDivideAndConquer_b()
  *           EPN 05.19.05
  * *based on CYKDivideAndConquer(), only difference is bands are used : 
@@ -3662,7 +3658,7 @@ generic_splitter_b(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
   int      b1,b2;		/* argmax_v for 0->v local begin transitions */
   float    b1_sc, b2_sc;	/* max_v scores for 0->v local begin transitions */
 
-  /* 1. If the generic problem is small enough, solve it with inside^T_b,
+  /* 1. If the generic problem is small enough, solve it with insideT,
    *    and append the trace to tr.
    */
   if (insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT) {
@@ -3738,11 +3734,8 @@ generic_splitter_b(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
     for (jp = 0; jp <= W; jp++) 
       {
 	j = i0-1+jp;
-      /* Bands used */
-      /* old line : 	for (d = jp; d >= 0; d--) */
-	if(dmax[v] > jp) d = jp;
-	else d = dmax[v];
-	for (; d >= dmin[v]; d--)
+	/* There is no band on the EL state */
+	for (d = 0; d <= jp; d++) 
 	  if ((sc = beta[cm->M][j][d]) > best_sc) {
 	    best_sc = sc;
 	    best_k  = -1;	/* special flag for local end, EL. */
@@ -3929,7 +3922,7 @@ wedge_splitter_b(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int 
 	   NULL, &alpha, NULL, &pool, NULL, 
 	   (r==0), &b, &bsc, dmin, dmax);
   outside_b(cm, dsq, L, r, y, i0, j0, BE_EFFICIENT, NULL, &beta, pool, NULL,
-	    dmin, dmax);
+  dmin, dmax);
 
   /* 4. Find the optimal split at the split set: best_v, best_d, best_j
    */
@@ -4161,12 +4154,7 @@ v_splitter_b(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    * the split set?
    */
   if (useEL && (cm->flags & CM_LOCAL_END)) {
-
-    /* Bands used ip 2 */
-    /* Actually the bands are not used here, because there are no bands for 
-       state cm->M.  I'll just leave the unbanded code alone here.  Not sure
-       how to think about bands in terms of local alignment??? */
-
+    /* There is no band on the EL state */
     for (ip = 0; ip <= i1-i0; ip++)
       for (jp = 0; jp <= j0-j1; jp++)
 	if ((sc = beta[cm->M][jp][ip]) > best_sc) {
@@ -4892,7 +4880,6 @@ outside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
     else                       touch[v] = cm->cnum[v];
   }
 				
-
   /* Main loop down through the decks
    */
   for (v = w2+1; v <= vend; v++)
@@ -4921,12 +4908,11 @@ outside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 
       /* main recursion:
        */
-      dv = StateDelta(cm->sttype[v]);
       for (jp = W; jp >= 0; jp--) {
 	j = i0-1+jp;
-	if((dmax[v]-dv) > jp) d = jp;
-	else d = (dmax[v]-dv);
-	for (; d >= (dmin[v]-dv); d--)
+	if((dmax[v]) > jp) d = jp;
+	else d = (dmax[v]);
+	for (; d >= (dmin[v]); d--)
 	  {
 	    i = j-d+1;
 	    for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
@@ -4988,13 +4974,18 @@ outside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 	  } /* ends loop over d. We know all beta[v][j][d] in this row j*/
       }/* end loop over jp. We know the beta's for the whole deck.*/
       
-      
       /* Deal with local alignment end transitions v->EL
        * (EL = deck at M.)
        */
       if (NOT_IMPOSSIBLE(cm->endsc[v])) {
 	for (jp = 0; jp <= W; jp++) { 
 	  j = i0-1+jp;
+	  /* Careful here, we're filling in beta[cm->M][j][d] which is unbanded
+	   * b/c there's no band on EL, but we're doing by adding beta[v][j+{0,1}][d+dv]
+	   * to endsc[v], and we know there's a band on v, so we can save time here
+	   * as follows:
+	   */
+	  dv = StateDelta(cm->sttype[v]);
 	  for (d = (dmin[v]-dv); d <= (dmax[v]-dv) && d <= jp; d++)
 	    {
 	      i = j-d+1;
@@ -5074,11 +5065,8 @@ outside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
   if (cm->flags & CM_LOCAL_END) {
     for (jp = W; jp > 0; jp--) { /* careful w/ boundary here */
       j = i0-1+jp;
-      /* Bands used */
-      /* old line : for (d = jp-1; d >= 0; d--)*/
-      if(dmax[v] > (jp-1)) d = jp - 1;
-      else d = dmax[v];
-      for (; d >= dmin[v]; d--)      /* careful w/ boundary here */
+      /* There is no band on the EL state */
+      for (d = jp-1; d >= 0; d--)
 	if ((sc = beta[cm->M][j][d+1]) > beta[cm->M][j][d])
 	  beta[cm->M][j][d] = sc;
     }
@@ -5841,12 +5829,8 @@ voutside_b(CM_t *cm, char *dsq, int L,
       for (jp = j0-j1; jp >= 0; jp--) 
 	for (ip = 0; ip <= i1-i0; ip++) 
 	  beta[v][jp][ip] = IMPOSSIBLE;
-	    
-      /* Bands used - actually not used but worth noting :
-	 The previous block eliminates (I think) the need for 
-	 imposing the bands on the beta matrix as is done in
-	 other *inside* and *outside* functions
-      */
+
+      /* We've set the whole matrix to impossible, everything outside bands must be impossible */
 	 
       /* If we can get into deck v by a local begin transition, do an init
        * with that.
@@ -5939,10 +5923,7 @@ voutside_b(CM_t *cm, char *dsq, int L,
       if (useEL && cm->endsc[v] != IMPOSSIBLE) {
 	for (jp = j0-j1; jp >= 0; jp--) {
 	  j = jp+j1;
-	  /* Bands used ip 18 */
-	  /* Actually the bands are not used here, because there are no bands for 
-	     state cm->M.  I'll just leave the unbanded code alone here.  Not sure
-	     how to think about bands in terms of local alignment??? */
+	  /* There is no band on the EL state */
 	  for (ip = 0; ip <= i1-i0; ip++) 
 	    {
 	      i = ip+i0;
