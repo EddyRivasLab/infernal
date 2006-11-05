@@ -19,7 +19,8 @@
 \def\blast{\textsc{BLAST}~}
 
 %\usepackage{alg}
-\bibliographystyle{bmc_bioinformatics}
+%\bibliographystyle{bmc_bioinformatics}
+\bibliographystyle{plos}
 
 % \draftfalse: submission version. Legends,tables at end. No figs included.
 % \drafttrue:   online preprint. Figures and table inline.
@@ -138,7 +139,7 @@ complexity problem still stands.
 
 Weinberg and Ruzzo have described two filtering methods for
 accelerating CM searches
-\cite{Weinberg04,Weinberg04b,Weinberg05}. Both methods work by scoring
+\cite{WeinbergRuzzo04,WeinbergRuzzo04b,WeinbergRuzzo06}. Both methods work by scoring
 a target sequence first by a linear sequence comparison method using a
 profile HMM specially constructed from the CM query, and passing only
 the subset of hits above a threshold for rescoring with the more
@@ -575,10 +576,10 @@ We also estimated informative mixture Dirichlet density priors for
 emission probabilities.  Emission probabilities have no effect on QDB,
 but informative emission priors should improve sensitivity and
 specificity of CM searches, as they do for profile hidden Markov
-models \cite{Brown93b,Sjolander96}. We collected filtered counts of
+models \cite{BrownM93,Sjolander96}. We collected filtered counts of
 aligned single-stranded residues and base-pairs from annotated
 ribosomal RNA alignments from four alignments in the 2002 version of
-the European Ribosomal RNA Database \cite{VandePeer00, Wuyts01}: large
+the European Ribosomal RNA Database \cite{Wuyts01, Wuyts02}: large
 subunit rRNA (LSU), bacterial/archaeal/plastid small subunit rRNA
 (SSU-bap), eukaryotic SSU rRNA (SSU-euk), and mitochondrial SSU rRNA
 (SSU-mito). These alignments were filtered, removing sequences in
@@ -837,7 +838,7 @@ sensitivity and specificity, QDB offers at most about a seven-fold
 speedup in CM searches. However, QDB combines synergistically with
 parallelization, code optimization, and hardware improvements, as well
 as with the filtering methods recently described by Weinberg and Ruzzo
-\cite{Weinberg04,Weinberg04b,Weinberg05}, so we view QDB as part of a
+\cite{WeinbergRuzzo04,WeinbergRuzzo04b,WeinbergRuzzo06}, so we view QDB as part of a
 growing suite of approaches that we can combine to accelerate
 \textsc{infernal}.
 
