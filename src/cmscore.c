@@ -39,7 +39,8 @@ static char experts[] = "\
    --scoreonly   : for full CYK/inside stage, do only score, save memory\n\
    --smallonly   : do only d&c, don't do full CYK/inside\n\
    --stringent   : require the two parse trees to be identical\n\
-   --X           : muy peligroso! project X!\n\
+   --qdb         : use query dependent banded CYK alignment algorithm\n\
+   --beta <f>    : tail loss prob for --qdb [default:0.0000001]\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -50,7 +51,8 @@ static struct opt_s OPTIONS[] = {
   { "--scoreonly",  FALSE, sqdARG_NONE },
   { "--smallonly",  FALSE, sqdARG_NONE },
   { "--stringent",  FALSE, sqdARG_NONE },
-  { "--X",          FALSE, sqdARG_NONE },
+  { "--qdb",        FALSE, sqdARG_NONE },
+  { "--beta",       FALSE, sqdARG_FLOAT},
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -82,6 +84,15 @@ main(int argc, char **argv)
   char *optarg;                 /* argument found by Getopt()              */
   int   optind;                 /* index in argv[]                         */
 
+  int      do_qdb;              /* TRUE to do qdb CYK (either d&c or full)  */
+  double   qdb_beta;	        /* tail loss probability for query dependent banding */
+  double **gamma;               /* P(subseq length = n) for each state v    */
+  int     *dmin;                /* minimum d bound for state v, [0..v..M-1] */
+  int     *dmax;                /* maximum d bound for state v, [0..v..M-1] */
+  int      safe_windowlen;      /* initial windowlen (W) used for calculating bands */
+  int      expand_flag;         /* TRUE if the dmin and dmax vectors have just been 
+				 * expanded (in which case we want to recalculate them 
+				 * before we align a new sequence), and FALSE if not*/
   /*********************************************** 
    * Parse command line
    ***********************************************/
@@ -91,7 +102,8 @@ main(int argc, char **argv)
   do_scoreonly        = FALSE;
   do_smallonly        = FALSE;
   regressfile         = NULL;
-  projectX            = FALSE;
+  do_qdb              = FALSE;
+  qdb_beta            = 0.0000001;
   compare_stringently = FALSE;
   
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
@@ -101,7 +113,9 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--smallonly") == 0) do_smallonly        = TRUE;
     else if (strcmp(optname, "--scoreonly") == 0) do_scoreonly        = TRUE;
     else if (strcmp(optname, "--stringent") == 0) compare_stringently = TRUE;
-    else if (strcmp(optname, "--X")         == 0) projectX            = TRUE;
+    else if (strcmp(optname, "--qdb")       == 0) do_qdb              = TRUE;
+    else if (strcmp(optname, "--qdb")       == 0) do_qdb              = TRUE;
+    else if (strcmp(optname, "--beta")      == 0) qdb_beta            = atof(optarg);
     else if (strcmp(optname, "--informat")  == 0) {
       format = String2SeqfileFormat(optarg);
       if (format == SQFILE_UNKNOWN) 
@@ -144,49 +158,65 @@ main(int argc, char **argv)
   
   if (do_local) ConfigLocal(cm, 0.5, 0.5);
   CMLogoddsify(cm);
-  CMHackInsertScores(cm);	/* TEMPORARY: FIXME */
+  /*CMHackInsertScores(cm);*/	/* TEMPORARY: FIXME */
 
-  if (projectX) 
-    {
-#if 0
-      BandExperiment(cm);
-      exit(1);
-#endif
-      double **mx; 
-      int     *min, *max;
-
-      mx = BandDistribution(cm, 2000, FALSE);
-      BandBounds(mx, cm->M, 2000, 0.001, &min, &max);
-      /*      ofp = fopen("projectx.xgr", "w");
-	      PrintBandGraph(ofp, mx, min, max, 3, 1000);
-	      PrintBandGraph(ofp, mx, min, max, 56, 1000);
-	      PrintBandGraph(ofp, mx, min, max, 136, 1000);
-              fclose(ofp);
-      */
-      printf("go, project X!\n");
-      PrintDPCellsSaved(cm, min, max, 2000);
-      DMX2Free(mx);
-      free(min);
-      free(max);
-      exit(1);
-
-    }
-
-  /* EPN 11.18.05 Now that know what windowlen is, we need to ensure that
+  /* Now that know what windowlen is, we need to ensure that 
    * cm->el_selfsc * W >= IMPOSSIBLE (cm->el_selfsc is the score for an EL self transition)
    * This is done because we are potentially multiply cm->el_selfsc * W, and adding
    * that to IMPOSSIBLE. To avoid underflow issues this value must be less than
-   * 3 * IMPOSSIBLE. Here we guarantee its less than 2 * IMPOSSIBLE (to be safe).
+   * 3 * IMPOSSIBLE. Here, to be safe, we guarantee its less than 2 * IMPOSSIBLE.
    */
   if((cm->el_selfsc * cm->W) < IMPOSSIBLE)
     cm->el_selfsc = (IMPOSSIBLE / (cm->W+1));
 
+  /* set up the query dependent bands, this has to be done after the ConfigLocal() call */
+  if(do_qdb)
+    {
+      safe_windowlen = cm->W * 2;
+      while(!(BandCalculationEngine(cm, safe_windowlen, qdb_beta, 0, &dmin, &dmax, &gamma, do_local)))
+	{
+	  FreeBandDensities(cm, gamma);
+	  free(dmin);
+	  free(dmax);
+	  safe_windowlen *= 2;
+	  printf("ERROR BandCalculationEngine returned false, windowlen adjusted to %d\n", safe_windowlen);
+	}
+      expand_flag = FALSE;
+    }
+  else
+    dmin = dmax = NULL;
+
   while (ReadSeq(sqfp, sqfp->format, &seq, &sqinfo))
     {
-      CYKDemands(cm, sqinfo.len); 
-
       if (sqinfo.len == 0) continue; 	/* silently skip len 0 seqs */
-      
+
+      CYKDemands(cm, sqinfo.len, dmin, dmax);  /* dmin and dmax will be NULL if not in QDB mode */
+
+      if(do_qdb)
+	{
+	  /*Check if we need to reset the query dependent bands b/c they're currently expanded. */
+	  if(expand_flag)
+	    {
+	      FreeBandDensities(cm, gamma);
+	      free(dmin);
+	      free(dmax);
+	      while(!(BandCalculationEngine(cm, safe_windowlen, qdb_beta, 0, &dmin, &dmax, &gamma, do_local)))
+		{
+		  FreeBandDensities(cm, gamma);
+		  free(dmin);
+		  free(dmax);
+		  safe_windowlen *= 2;
+		}
+	      expand_flag = FALSE;
+	    }
+	  if((sqinfo.len < dmin[0]) || (sqinfo.len > dmax[0]))
+	    {
+	      /* the seq we're aligning is outside the root band, so we expand.*/
+	      ExpandBands(cm, sqinfo.len, dmin, dmax);
+	      printf("Expanded bands for seq : %s\n", sqinfo.name);
+	      expand_flag = TRUE;
+	    }
+	}
       dsq = DigitizeSequence(seq, sqinfo.len);
 
       tr1 = tr2 = NULL;
@@ -197,11 +227,12 @@ main(int argc, char **argv)
 	StopwatchZero(watch);
 	StopwatchStart(watch);
 	if (do_scoreonly) {
-	  sc1 = CYKInsideScore(cm, dsq, sqinfo.len, 0, 1, sqinfo.len);
+	  sc1 = CYKInsideScore(cm, dsq, sqinfo.len, 0, 1, sqinfo.len, 
+			       dmin, dmax); /* dmin, dmax = NULL if we're not in QDB mode */
 	  printf("%-12s : %.2f\n", sqinfo.name, sc1);
 	} else {
 	  sc1 = CYKInside(cm, dsq, sqinfo.len, 0, 1, sqinfo.len, &tr1, 
-			  NULL, NULL);  
+			  dmin, dmax); /* dmin, dmax = NULL if we're not in QDB mode */
 	  ParsetreeDump(stdout, tr1, cm, dsq);
 	  printf("%-12s : %.2f  %.2f\n", sqinfo.name, sc1,
 		 ParsetreeScore(cm, tr1, dsq, FALSE));
@@ -215,7 +246,8 @@ main(int argc, char **argv)
       printf("-------------------------------\n");
       StopwatchZero(watch);
       StopwatchStart(watch);
-      sc2 = CYKDivideAndConquer(cm, dsq, sqinfo.len, 0, 1, sqinfo.len, &tr2);
+      sc2 = CYKDivideAndConquer(cm, dsq, sqinfo.len, 0, 1, sqinfo.len, &tr2,
+				dmin, dmax); /* dmin, dmax = NULL if we're not in QDB mode */
       ParsetreeDump(stdout, tr2, cm, dsq);
       printf("%-12s : %.2f  %.2f\n", sqinfo.name, sc2,
 	     ParsetreeScore(cm, tr2, dsq, FALSE));

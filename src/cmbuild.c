@@ -988,7 +988,11 @@ main(int argc, char **argv)
       puts("");
       SummarizeCM(stdout, cm);  
       puts("");
-      CYKDemands(cm, avlen);     
+      CYKDemands(cm, avlen, NULL, NULL);     
+      /*
+	puts("\n");
+	CYKDemands(cm, avlen, dmin, dmax);
+      */
 
       /* Free aln specific HMM related data structures */
       if(build_p7hmm)

@@ -38,6 +38,7 @@ extern void     CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0,
 			      float min_thresh);
 extern void     BandedParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq, 
 				    double **gamma, int W, int *dmin, int *dmax);
+extern void     ExpandBands(CM_t *cm, int qlen, int *dmin, int *dmax);
 
 /* from cm.c
  */
@@ -148,7 +149,6 @@ extern void         MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm);
 extern MSA *Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt, 
 				 Parsetree_t **tr, int nseq, int do_full);
 
-				 
 /* from scancyk.c
  */
 extern void  CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
@@ -159,17 +159,14 @@ extern float CYKScanRequires(CM_t *cm, int L, int W);
 
 /* from smallcyk.c
  */
-extern float CYKDivideAndConquer(CM_t *cm, char *dsq, int L,
-				 int r, int i0, int j0, Parsetree_t **ret_tr);
-extern float CYKInside(CM_t *cm, char *dsq, int L,
-		       int r, int i0, int j0, Parsetree_t **ret_tr, int *dmin, int *dmax);
-extern float CYKInsideScore(CM_t *cm, char *dsq, int L,
-			    int r, int i0, int j0);
-extern void  CYKDemands(CM_t *cm, int L);
-extern float CYKDivideAndConquer_b(CM_t *cm, char *dsq, int L, int r, int i0, int j0, 
-				   Parsetree_t **ret_tr, int *dmin, int *dmax);
-extern void debug_print_bands(CM_t *cm, int *dmin, int *dmax);
-
+extern float CYKDivideAndConquer(CM_t *cm, char *dsq, int L, int r, int i0, int j0, 
+				 Parsetree_t **ret_tr, int *dmin, int *dmax);
+extern float CYKInside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, 
+		       Parsetree_t **ret_tr, int *dmin, int *dmax);
+extern float CYKInsideScore(CM_t *cm, char *dsq, int L, int r, int i0, 
+			    int j0, int *dmin, int *dmax);
+extern void  CYKDemands(CM_t *cm, int L, int *dmin, int *dmax);
+extern void  debug_print_bands(CM_t *cm, int *dmin, int *dmax);
 
 /* The memory management routines.
  */

@@ -1243,20 +1243,14 @@ PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax,
   for (v = 0; v < cm->M; v++) 
     {
       for(j = 0; j <= W; j++)
-	{
-	  if (cm->sttype[v] != E_st) 
-	    {
-	      before += j + 1;
-	    }
-	}
+	if (cm->sttype[v] != E_st) 
+	  before += j + 1;
       for(j = jmin[v]; j <= jmax[v]; j++)
-	{
-	  if (cm->sttype[v] != E_st) 
-	    {
-	      max = (j < hdmax[v][j-jmin[v]]) ? j : hdmax[v][j-jmin[v]];
-	      after += max - hdmin[v][j-jmin[v]] + 1;
-	    }
-	}
+	if (cm->sttype[v] != E_st) 
+	  {
+	    max = (j < hdmax[v][j-jmin[v]]) ? j : hdmax[v][j-jmin[v]];
+	    after += max - hdmin[v][j-jmin[v]] + 1;
+	  }
     }
   printf("Before:  something like %.0f\n", before);
   printf("After:   something like %.0f\n", after);

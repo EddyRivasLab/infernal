@@ -32,9 +32,7 @@
 #define BE_EFFICIENT  0		/* setting for do_full: small memory mode */
 #define BE_PARANOID   1		/* setting for do_full: keep whole matrix, perhaps for debugging */
 
-static void ExpandBands(CM_t *cm, int qlen, int *dmin, int *dmax);
 static void banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *dmin, int *dmax, int bdump_level);
-
 static char banner[] = "cmalign - align sequences to an RNA CM";
 
 static char usage[]  = "\
@@ -71,8 +69,8 @@ static char experts[] = "\
 \n\
   * Query dependent banded (qdb) alignment related options:\n\
    --qdb         : use query dependent banded CYK alignment algorithm\n\
-   --beta <f>    : tail loss prob for --qdb [default:1E-7]\n\
-   --expand      : naively expand qd bands if target seq is outside root band\n\
+   --beta <f>    : tail loss prob for --qdb [default:0.0000001]\n\
+   --noexpand    : DO NOT naively expand qd bands if target is outside root band\n\
     -W <n>       : window size for calc'ing qd bands (df: precalc'd in cmbuild)\n\
 ";
 
@@ -84,13 +82,13 @@ static struct opt_s OPTIONS[] = {
   { "--informat",   FALSE, sqdARG_STRING },
   { "--nosmall",    FALSE, sqdARG_NONE },
   { "--regress",    FALSE, sqdARG_STRING },
-  { "--qdb",     FALSE, sqdARG_NONE },
-  { "--beta",      FALSE, sqdARG_FLOAT},
-  { "--expand", FALSE, sqdARG_NONE},
-  { "--tfile",     FALSE, sqdARG_STRING },
+  { "--qdb",        FALSE, sqdARG_NONE },
+  { "--beta",       FALSE, sqdARG_FLOAT},
+  { "--noexpand",   FALSE, sqdARG_NONE},
+  { "--tfile",      FALSE, sqdARG_STRING },
   { "--banddump"  , FALSE, sqdARG_INT},
-  { "-W", TRUE, sqdARG_INT },
-  { "--full", FALSE, sqdARG_NONE },
+  { "-W",           TRUE,  sqdARG_INT },
+  { "--full",       FALSE, sqdARG_NONE },
   { "--dlev",       FALSE, sqdARG_INT },
   { "--hbanded",    FALSE, sqdARG_NONE },
   { "--hbandp",     FALSE, sqdARG_FLOAT},
@@ -144,9 +142,7 @@ main(int argc, char **argv)
   char  *optname;               /* name of option found by Getopt()        */
   char  *optarg;                /* argument found by Getopt()              */
   int    optind;                /* index in argv[]                         */
-  int    safe_windowlen;        /* initial windowlen (W) used for calculating bands
-				 * in BandCalculationEngine(). For truncation error 
-				 * handling this should be > than expected dmax[0]*/
+  int    safe_windowlen;        /* initial windowlen (W) used for calculating bands */
   int    debug_level;           /* verbosity level for debugging printf() statements,
 			         * passed to many functions. */
   Stopwatch_t  *watch1;         /* for overall timings */
@@ -253,9 +249,9 @@ main(int argc, char **argv)
   windowlen   = 200;
   set_window  = FALSE;
   do_qdb = FALSE;
-  qdb_beta     = 0.0000001;
+  qdb_beta    = 0.0000001;
   do_full     = FALSE;
-  do_expand = FALSE;
+  do_expand   = TRUE;           /* expand bands by default if nec */
   bdump_level = 0;
   debug_level = 0;
   do_hbanded  = FALSE;
@@ -287,7 +283,7 @@ main(int argc, char **argv)
       windowlen    = atoi(optarg); 
       set_window = TRUE; } 
     else if (strcmp(optname, "--full")      == 0) do_full      = TRUE;
-    else if (strcmp(optname, "--expand")  == 0) do_expand  = TRUE;
+    else if (strcmp(optname, "--noexpand")  == 0) do_expand    = FALSE;
     else if (strcmp(optname, "--banddump")  == 0) bdump_level  = atoi(optarg);
     else if (strcmp(optname, "--tfile")     == 0) tracefile    = optarg;
     else if (strcmp(optname, "--dlev")      == 0) debug_level  = atoi(optarg);
@@ -324,19 +320,10 @@ main(int argc, char **argv)
   if(do_sub && do_qdb)
     Die("Please pick either --sub or --qdb.\n");
 
-  /* currently not set up for local alignment and posterior decode or outside run */
-  /*  if(do_local && (do_outside || do_post))
-    {
-      Die("Can't do -l and either --post or --outside.\n");
-    }
-  */
-
   if (bdump_level > 3) Die("Highest available --banddump verbosity level is 3\n%s", usage);
-  if (do_expand && (!(do_qdb))) Die("Doesn't make sense to use --expand option without --qdb option\n", usage);
   if (argc - optind != 2) Die("Incorrect number of arguments.\n%s\n", usage);
   cmfile = argv[optind++];
   seqfile = argv[optind++]; 
-
 
   /* Try to work around inability to autodetect from a pipe or .gz:
    * assume FASTA format
@@ -363,7 +350,7 @@ main(int argc, char **argv)
    * cm->el_selfsc * W >= IMPOSSIBLE (cm->el_selfsc is the score for an EL self transition)
    * This is done because we potentially multiply cm->el_selfsc * W, and add
    * that to IMPOSSIBLE. To avoid underflow issues this value must be less than
-   * 3 * IMPOSSIBLE. Here we guarantee its less than 2 * IMPOSSIBLE (to be safe).
+   * 3 * IMPOSSIBLE. Here, to be safe, we guarantee its less than 2 * IMPOSSIBLE.
    */
   if((cm->el_selfsc * windowlen) < IMPOSSIBLE)
     cm->el_selfsc = (IMPOSSIBLE / (windowlen+1));
@@ -516,7 +503,6 @@ main(int argc, char **argv)
 	{
 	  printf("qdb_beta:%f\n", qdb_beta);
 	  debug_print_bands(cm, dmin, dmax);
-	  PrintDPCellsSaved(cm, dmin, dmax, windowlen);
 	}
       expand_flag = FALSE;
     }
@@ -726,10 +712,9 @@ main(int argc, char **argv)
 	  */
 	}
       
-      if(do_expand)
+      if(do_qdb && do_expand)
 	{
-	  /*First, check to see if we need to reset the apriori bands b/c 
-	   * they're currently expanded. */
+	  /*Check if we need to reset the query dependent bands b/c they're currently expanded. */
 	  if(expand_flag)
 	    {
 	      FreeBandDensities(cm, gamma);
@@ -762,7 +747,7 @@ main(int argc, char **argv)
 	  if (do_qdb && (sqinfo[i].len < dmin[0] || sqinfo[i].len > dmax[0]))
 	    {
 	      /* the seq we're aligning is outside the root band, but
-	       * --expand was not enabled, so we die.*/
+	       * --noexpand was enabled, so we die.*/
 	      Die("Length of sequence to align (%d nt) lies outside the root band.\ndmin[0]: %d and dmax[0]: %d\nImpossible to align with query dependent banded CYK unless you try --expand.\n%s", sqinfo[i].len, dmin[0], dmax[0], usage);
 	    }
 	}
@@ -825,8 +810,8 @@ main(int argc, char **argv)
 	{
 	  if(do_qdb)
 	    {
-	      sc = CYKDivideAndConquer_b(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, 
-					      &(tr[i]), dmin, dmax);
+	      sc = CYKDivideAndConquer(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, 
+				       &(tr[i]), dmin, dmax);
 	      if(bdump_level > 0)
  		banded_trace_info_dump(cm, tr[i], dmin, dmax, bdump_level);
 	    }
@@ -843,8 +828,8 @@ main(int argc, char **argv)
 		}
 	      /* Note the following CYK call will not enforce j bands, even
 	       * though user specified --hbanded. */
-	      sc = CYKDivideAndConquer_b(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, 
-					      &(tr[i]), cp9b->safe_hdmin, cp9b->safe_hdmax);
+	      sc = CYKDivideAndConquer(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, 
+				       &(tr[i]), cp9b->safe_hdmin, cp9b->safe_hdmax);
 	      if(bdump_level > 0)
 		banded_trace_info_dump(cm, tr[i], dmin, dmax, bdump_level);
 	    }
@@ -854,7 +839,8 @@ main(int argc, char **argv)
 		debug_print_cm_params(cm);
 		printf("DONE DEBUG PRINTING CM PARAMS BEFORE D&C CALL\n");
 	      */
-	      sc = CYKDivideAndConquer(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, &(tr[i]));
+	      sc = CYKDivideAndConquer(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, &(tr[i]),
+				       NULL, NULL); /* we're not in QDB mode */
 	      if(bdump_level > 0)
 		{
 		  /* We want band info but --banded wasn't used.  Useful if you're curious
@@ -1130,89 +1116,6 @@ main(int argc, char **argv)
   return 0;
 }
 
-
-
-
-/* EPN 07.22.05
- * ExpandBands()
- * Function: ExpandBands
- *
- * Purpose:  Called when the sequence we are about to align 
- *           using bands is either shorter in length than
- *           the dmin on the root state, or longer in length
- *           than the dmax on the root state.
- *            
- *           This function expands the bands on ALL states
- *           v=1..cm->M-1 in the following manner :
- *           
- *           case 1 : target len < dmin[0]
- *                    subtract (dmin[0]-target len) from
- *                    dmin of all states, and ensure
- *                    dmin[v]>=0 for all v.
- *                    Further :
- *                    if cm->sttype[v] == MP_st ensure dmin[v]>=2;
- *                    if cm->sttype[v] == IL_st || ML_st ensure dmin[v]>=1;
- *                    if cm->sttype[v] == IR_st || MR_st ensure dmin[v]>=1;
- *                        
- *           case 2 : target len > dmax[0]
- *                    add (target len-dmax[0] to dmax
- *                    of all states.
- *
- *           Prior to handling such situtations with this
- *           hack, the program would choke and die.  This
- *           hacky approach is used as a simple, inefficient
- *           not well thought out, but effective way to 
- *           solve this problem.
- * 
- * Args:    cm       - the CM
- *          tlen     - length of target sequence about to be aligned
- *          dmin     - minimum d bound for each state v; [0..v..M-1]
- *                     may be modified in this function
- *          dmax     - maximum d bound for each state v; [0..v..M-1]
- *                     may be modified in this function
- *
- * Returns: (void) 
- */
-
-static void
-ExpandBands(CM_t *cm, int tlen, int *dmin, int *dmax)
-{
-  int v;
-  int diff;
-  int root_min;
-  int root_max;
-  int M = cm->M;
-  root_min = dmin[0];
-  root_max = dmax[0];
-
-  if(tlen < root_min)
-    {
-      diff = root_min - tlen;
-      for(v=0; v<M; v++)
-	{
-	  dmin[v] -= diff;
-	  if((cm->sttype[v] == MP_st) && (dmin[v] < 2)) 
-	    dmin[v] = 2;
-	  else if(((cm->sttype[v] == IL_st) || (cm->sttype[v] == ML_st)) 
-		  && (dmin[v] < 1)) 
-	    dmin[v] = 1;
-	  else if(((cm->sttype[v] == IR_st) || (cm->sttype[v] == MR_st)) 
-		  && (dmin[v] < 1)) 
-	    dmin[v] = 1;
-	  else if(dmin[v] < 0) 
-	    dmin[v] = 0;
-	}
-    }
-  else if(tlen > root_max)
-    {
-      diff = tlen - root_min;
-      for(v=0; v<M; v++)
-	{
-	  dmax[v] += diff;
-	}
-    }
-  printf("Expanded bands : \n");
-}
 
 /* EPN 08.15.05
  * banded_trace_info_dump()

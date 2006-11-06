@@ -715,7 +715,8 @@ main(int argc, char **argv)
 	      if(!(do_hbanded))
 		{
 		  CYKDivideAndConquer(cm, dsq, sqinfo.len, 
-				      hitr[i], hiti[i], hitj[i], &tr);
+				      hitr[i], hiti[i], hitj[i], &tr, 
+				      NULL, NULL); /* don't use qd bands */
 		  if(do_null2)
 		    {
 		      sc = hitsc[i] - CM_TraceScoreCorrection(cm, tr, dsq);

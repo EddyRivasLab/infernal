@@ -20,18 +20,21 @@
 /*################################################################
  * smallcyk's external API:
  * 
- * CYKDivideAndConquer()  - The divide and conquer algorithm. Align
- *                          a model to a (sub)sequence.
- * CYKInside()            - Align model to (sub)sequence, using normal 
- *                          CYK/Inside algorithm.
- * CYKInsideScore()       - Calculate the CYK/Inside score of optimal 
- *                          alignment, without recovering the alignment; 
- *                          allows timing CYK/Inside without blowing
- *                          out memory, for large target RNAs.
+ * CYKDivideAndConquer()    - The divide and conquer algorithm. Align
+ *                            a model to a (sub)sequence.
+ * CYKInside()              - Align model to (sub)sequence, using normal 
+ *                            CYK/Inside algorithm.
+ * CYKInsideScore()         - Calculate the CYK/Inside score of optimal 
+ *                            alignment, without recovering the alignment; 
+ *                            allows timing CYK/Inside without blowing
+ *                            out memory, for large target RNAs.
  *                          
- * CYKDemands()           - Print a bunch of info comparing predicted d&c
- *                          time/memory requirements to standard CYK/inside
- *                          time/memory requirements.
+ * CYKDemands()             - Print a bunch of info comparing predicted d&c
+ *                            time/memory requirements to standard CYK/inside
+ *                            time/memory requirements.
+ * 
+ * All of these functions can take query dependent bands (dmin
+ * and dmax) or have them passed as NULL.				
  *################################################################
  */  
 
@@ -66,12 +69,10 @@ static void  v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 /* The alignment engines. 
  */
 static float inside(CM_t *cm, char *dsq, int L, 
-		    int r, int z, int i0, int j0, 
-		    int do_full,
+		    int r, int z, int i0, int j0, int do_full,
 		    float ***alpha, float ****ret_alpha, 
 		    struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
-		    void ****ret_shadow, 
-		    int allow_begin, int *ret_b, float *ret_bsc);
+		    void ****ret_shadow, int allow_begin, int *ret_b, float *ret_bsc);
 static void  outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 		     int do_full, float ***beta, float ****ret_beta,
 		     struct deckpool_s *dpool, struct deckpool_s **ret_dpool);
@@ -148,8 +149,7 @@ static int   cyk_extra_decks(CM_t *cm);
  * uses d (distance of subsequence in parse tree rooted at state v) which 
  * corresponds conveniently with dmin and dmax.
  * 
- * Class 1 changes are marked by a preceding commented line explaining 
- * 'Bands used'. These changes are invariably involved with a for loop that involves
+ * Class 1 changes are usually involved with a for loop that involves
  * the d index in either the alpha or the beta matrix.  The original for loops
  * are simply replaced with a new for loop that enforces the bands.
  *
@@ -161,7 +161,7 @@ static int   cyk_extra_decks(CM_t *cm);
  *
  * The way this is handled is only one possible way (and not necessarily the best way) 
  * but saves some calculations from being repeated and is somewhat consistent with
- * analagous code elsewhere.  Also the way its handled here is somewhat general
+ * analagous code elsewhere.  Also the way it's handled here is somewhat general
  * and could be easily changed. 
  *
  * That approach is to use an imin[] and imax[] vector, somewhat analagous to
@@ -190,7 +190,7 @@ static int   cyk_extra_decks(CM_t *cm);
  * ~nawrocki/lab/rRNA/inf/infernal_0426/banded_testing_0207/00LOG
  * 
  * Other changes of both class 1 and 2 involves imposing the bands during 
- * the initialization step of either the alpha or beta matrix.  These changes
+ * the initialization step of the alpha matrix.  These changes
  * add additional code that sets all cells outside the bands to IMPOSSIBLE.
  * 
  *******************************************************************************/
@@ -280,8 +280,7 @@ static float inside_b_me(CM_t *cm, char *dsq, int L,
 
 /* The traceback routines.
    At first, it wasn't immediately obvious that a *_me version of  
-   this function was needed, but there's some crazy offset issues
-   here.
+   this function was needed, but there's some crazy offset issues.
  */
 
 static float insideT_b_me(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
@@ -297,8 +296,8 @@ static float insideT_b_me(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
  *           structure.
  *           
  *           The simplest call to this, for a model cm and a sequence
- *           dsq of length L:
- *               CYKDivideAndConquer(cm, dsq, L, 0, 1, L, &tr);
+ *           dsq of length L and no bands on d:
+ *               CYKDivideAndConquer(cm, dsq, L, 0, 1, L, &tr, NULL, NULL);
  *           which will align the model to the entire sequence. (The alignment
  *           will be global w.r.t the sequence.) 
  *           
@@ -318,11 +317,14 @@ static float insideT_b_me(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
  *           i0     - start of target subsequence (often 1, beginning of dsq)
  *           j0     - end of target subsequence (often L, end of dsq)
  *           ret_tr - RETURN: traceback (pass NULL if trace isn't wanted)
+ *           dmin   - minimum d bound for each state v; [0..v..M-1] (NULL if non-banded)
+ *           dmax   - maximum d bound for each state v; [0..v..M-1] (NULL if non-banded)
  *
  * Returns: score of the alignment in bits.  
  */
 float
-CYKDivideAndConquer(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr)
+CYKDivideAndConquer(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, 
+		    int *dmin, int *dmax)
 {
   Parsetree_t *tr;
   float        sc;
@@ -360,10 +362,13 @@ CYKDivideAndConquer(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree
     }
 
   /* Start the divide and conquer recursion: call the generic_splitter()
-   * on the whole DP cube.
+   * or generic_splitter_b() on the whole DP cube.
    */
-  sc += generic_splitter(cm, dsq, L, tr, r, z, i0, j0);
-
+  if(dmin == NULL && dmax == NULL)
+    sc += generic_splitter(cm, dsq, L, tr, r, z, i0, j0);
+  else
+    sc += generic_splitter_b(cm, dsq, L, tr, r, z, i0, j0, dmin, dmax);
+    
   /* Free memory and return
    */
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
@@ -458,11 +463,13 @@ CYKInside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_t
  *           r      - root of subgraph to align to target subseq (usually 0, the model's root)
  *           i0     - start of target subsequence (often 1, beginning of dsq)
  *           j0     - end of target subsequence (often L, end of dsq)
+ *           dmin   - minimum d bound for each state v; [0..v..M-1] (NULL if non-banded)
+ *           dmax   - maximum d bound for each state v; [0..v..M-1] (NULL if non-banded)
  *
  * Returns:  score of the alignment in bits.
  */
 float
-CYKInsideScore(CM_t *cm, char *dsq, int r, int i0, int j0, int L)
+CYKInsideScore(CM_t *cm, char *dsq, int r, int i0, int j0, int L, int *dmin, int *dmax)
 {
   int    z;
   float  sc;
@@ -476,9 +483,15 @@ CYKInsideScore(CM_t *cm, char *dsq, int r, int i0, int j0, int L)
       sc =  cm->beginsc[r];
     }
 
-  sc +=  inside(cm, dsq, L, r, z, i0, j0, FALSE, 
-		NULL, NULL, NULL, NULL, NULL,
-		(r==0), NULL, NULL);
+  if(dmin == NULL && dmax == NULL)
+    sc +=  inside(cm, dsq, L, r, z, i0, j0, FALSE, 
+		  NULL, NULL, NULL, NULL, NULL,
+		  (r==0), NULL, NULL);
+  else
+    sc +=  inside_b(cm, dsq, L, r, z, i0, j0, FALSE, 
+		    NULL, NULL, NULL, NULL, NULL,
+		    (r==0), NULL, NULL, dmin, dmax);
+
   return sc;
 }
 
@@ -490,11 +503,13 @@ CYKInsideScore(CM_t *cm, char *dsq, int r, int i0, int j0, int L)
  *           complexity of an alignment problem for divide
  *           and conquer versus the full CYK.
  *
- * Args:     cm - the model
- *           L  - length of sequence.
+ * Args:     cm     - the model
+ *           L      - length of sequence.
+ *           dmin   - minimum d bound for each state v; [0..v..M-1] (NULL if non-banded)
+ *           dmax   - maximum d bound for each state v; [0..v..M-1] (NULL if non-banded)
  */
 void
-CYKDemands(CM_t *cm, int L)
+CYKDemands(CM_t *cm, int L, int *dmin, int *dmax)
 {
   float Mb_per_deck;    /* megabytes per deck */
   int   bif_decks;	/* bifurcation decks  */
@@ -505,8 +520,12 @@ CYKDemands(CM_t *cm, int L)
   float bigmemory;	/* how much memory a full CYKInside() would take */
   float dpcells;	/* # of dp cells */
   float bifcalcs;	/* # of inner loops executed for bifurcation calculations */
+  float bifcalcs_b;	/* # of inner loops executed for bifurcation calculations in QDB */
   float dpcalcs;	/* # of inner loops executed for non-bif calculations */
+  float dpcalcs_b;	/* # of inner loops executed for bifurcation calculations in QDB */
   int   j;
+  float avg_Mb_per_banded_deck;    /* average megabytes per deck in mem efficient big mode */
+  int   v, y, z, d, kmin, kmax; /* for QDB calculations */
 
   Mb_per_deck = size_vjd_deck(L, 1, L);
   bif_decks   = CMCountStatetype(cm, B_st);
@@ -514,28 +533,97 @@ CYKDemands(CM_t *cm, int L)
   maxdecks    = cyk_deck_count(cm, 0, cm->M-1);
   extradecks  = cyk_extra_decks(cm);
   smallmemory = (float) maxdecks * Mb_per_deck;
-  bigmemory   = (float) (cm->M - nends +1) * Mb_per_deck;
-  dpcells     = (float) (L+2)*(float)(L+1)*0.5*(float) (cm->M - nends +1);
-
   bifcalcs = 0.;
   for (j = 0; j <= L; j++)
     bifcalcs += (float)(j+1)*(float)(j+2)/2.;
   bifcalcs *= (float) bif_decks;
-  
   dpcalcs = (float) (L+2)*(float)(L+1)*0.5*(float) (cm->M - bif_decks - nends +1);
+  if(dmin == NULL && dmax == NULL)
+    {
+      bigmemory   = (float) (cm->M - nends +1) * Mb_per_deck;
+      dpcells     = (float) (L+2)*(float)(L+1)*0.5*(float) (cm->M - nends +1);
+      avg_Mb_per_banded_deck = 0.; /* irrelevant */
+    }
+  else
+    {
+      dpcells = 0.;
+      dpcalcs_b = 0.;
+      for(v = 0; v < cm->M; v++)
+	{
+	  dpcells   += (float) (L+1) * (float) (dmax[v] - dmin[v] + 1.);
+	  if(cm->sttype[v] != B_st)
+	    dpcalcs_b   += (float) (L+1) * (float) (dmax[v] - dmin[v] + 1.);
+	  for(d = dmin[v]; d <= dmax[v]; d++)
+	    {
+	      dpcells -= (float) d; /* subtract out cells for which d <= j */
+	      if(cm->sttype[v] != B_st)
+		dpcalcs_b   -= (float) d; 
+	    }
+	}
+      bigmemory   = (sizeof(float) * dpcells) / 1000000.;
+      avg_Mb_per_banded_deck = bigmemory / ((float) cm->M -nends + 1);
+      /* bigmemory and avg_Mb_per_banded_deck should be treated as approximates,
+       * I'm not sure if they're exactly correct. EPN, Mon Nov  6 07:56:13 2006 */
 
-  printf("CYK cpu/memory demand estimates:\n");
-  printf("Mb per cyk deck:                  %.4f\n", Mb_per_deck);
-  printf("# of decks (M):                   %d\n",   cm->M);
-  printf("# of decks needed in small CYK:   %d\n",   maxdecks);
-  printf("# of extra decks needed:          %d\n",   extradecks);
-  printf("RAM needed for full CYK, Mb:      %.2f\n", bigmemory);
-  printf("RAM needed for small CYK, Mb:     %.2f\n", smallmemory);
-  printf("# of dp cells, total:             %.3g\n", dpcells);
-  printf("# of non-bifurc dp cells:         %.3g\n", dpcalcs);
-  printf("# of bifurcations:                %d\n",   bif_decks);
-  printf("# of bifurc dp inner loop calcs:  %.3g\n", bifcalcs);
-  printf("# of dp inner loops:              %.3g\n", dpcalcs+bifcalcs);
+      /* for QDB, to get bifcalcs, we need to count all the cells within the bands on
+       * left and right childs y and z of v, that are consistent with band on v 
+       * there's probably a more efficient way of doing this. */
+      bifcalcs_b = 0.;
+      for (v = 0; v < cm->M; v++)
+	{
+	  if(cm->sttype[v] == B_st)
+	    {
+	      y = cm->cfirst[v];
+	      z = cm->cnum[v];
+	      for (j = 0; j <= L; j++)
+		{
+		  for (d = dmin[v]; d <= dmax[v] && d <= j; d++)
+		    {
+		      if(dmin[z] > (d-dmax[y])) kmin = dmin[z];
+		      else kmin = d-dmax[y];
+		      if(kmin < 0) kmin = 0;
+		      if(dmax[z] < (d-dmin[y])) kmax = dmax[z];
+		      else kmax = d-dmin[y];
+		      if(kmin <= kmax)
+			bifcalcs_b += (float)(kmax - kmin + 1);
+		    }
+		}
+	    }
+	}
+    }
+
+  if(dmin == NULL && dmax == NULL)
+    {
+      printf("CYK cpu/memory demand estimates:\n");
+      printf("Mb per cyk deck:                  %.4f\n", Mb_per_deck);
+      printf("# of decks (M):                   %d\n",   cm->M);
+      printf("# of decks needed in small CYK:   %d\n",   maxdecks);
+      printf("# of extra decks needed:          %d\n",   extradecks);
+      printf("RAM needed for full CYK, Mb:      %.2f\n", bigmemory);
+      printf("RAM needed for small CYK, Mb:     %.2f\n", smallmemory);
+      printf("# of dp cells, total:             %.3g\n", dpcells);
+      printf("# of non-bifurc dp cells:         %.3g\n", dpcalcs);
+      printf("# of bifurcations:                %d\n",   bif_decks);
+      printf("# of bifurc dp inner loop calcs:  %.3g\n", bifcalcs);
+      printf("# of dp inner loops:              %.3g\n", dpcalcs+bifcalcs);
+    }
+  else /* QDB */
+    {
+      printf("QDB CYK cpu/memory demand estimates:\n");
+      printf("Mb per cyk deck:                     %.4f\n", Mb_per_deck);
+      printf("Avg Mb per QDB cyk deck:             %.4f\n", avg_Mb_per_banded_deck);
+      printf("# of decks (M):                      %d\n",   cm->M);
+      printf("# of decks needed in small QDB CYK:  %d\n",   maxdecks);
+      printf("# of extra decks needed:             %d\n",   extradecks);
+      printf("RAM needed for full QDB CYK, Mb:     %.2f\n", bigmemory);
+      printf("RAM needed for small QDB CYK, Mb:    %.2f\n", smallmemory);
+      printf("# of QDB dp cells, total:            %.3g\n", dpcells);
+      printf("# of QDB non-bifurc dp cells:        %.3g\n", dpcalcs_b);
+      printf("# of bifurcations:                   %d\n",   bif_decks);
+      printf("# of QDB bifurc dp inner loop calcs: %.3g\n", bifcalcs_b);
+      printf("# of QDB dp inner loops:             %.3g\n", dpcalcs_b+bifcalcs_b);
+      printf("Estimated small CYK QDB aln speedup: %.4f\n", ((dpcalcs+bifcalcs)/(dpcalcs_b+bifcalcs_b)));
+    }
 }
 
 
@@ -3503,101 +3591,6 @@ CYKOutside(CM_t *cm, char *dsq, int L, float ***alpha)
 }
 #endif 
 
-
-/* Function: CYKDivideAndConquer_b()
- *           EPN 05.19.05
- * *based on CYKDivideAndConquer(), only difference is bands are used : 
- *
- * Date:     SRE, Sun Jun  3 19:32:14 2001 [St. Louis]
- *
- * Purpose:  Align a CM to a (sub)sequence using the divide and conquer
- *           algorithm. Return the score (in bits) and a traceback
- *           structure.
- *           
- *           The simplest call to this, for a model cm and a sequence
- *           dsq of length L:
- *               CYKDivideAndConquer(cm, dsq, L, 0, 1, L, &tr);
- *           which will align the model to the entire sequence. (The alignment
- *           will be global w.r.t the sequence.) 
- *           
- *           Sometimes we already know the second state in the traceback:
- *           a CYKScan() will tell us r, for a 0->r local begin transition.
- *           (It also tells us i0, j0: the bounds of a high-scoring subsequence
- *           hit in the target sequence.)  We take all this information in
- *           as a shortcut. The 0->r transition is still counted
- *           towards the score. That is, CYKDivideAndConquer() always
- *           gives a parsetree rooted at state 0, the root, and the sc
- *           we return is the score for that complete parse tree.
- *
- * Args:     cm     - the covariance model
- *           dsq    - the sequence, 1..L
- *           L      - length of sequence
- *           r      - root of subgraph to align to target subseq (usually 0, the model's root)
- *           i0     - start of target subsequence (often 1, beginning of dsq)
- *           j0     - end of target subsequence (often L, end of dsq)
- *           ret_tr - RETURN: traceback (pass NULL if trace isn't wanted)
- *           dmin   - minimum d bound for each state v; [0..v..M-1]
- *           dmax   - maximum d bound for each state v; [0..v..M-1]
- *
- * Returns: score of the alignment in bits.  
- */
-float
-CYKDivideAndConquer_b(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr,
-		      int *dmin, int *dmax)
-{
-  Parsetree_t *tr;
-  float        sc;
-  int          z;
-
-  /*printf("alignment strategy:CYKDivideAndConquer_b:b:small\n");*/
-
-  /* Trust, but verify.
-   * Check out input parameters.
-   */
-  if (cm->stid[r] != ROOT_S) {
-    if (! (cm->flags & CM_LOCAL_BEGIN)) Die("internal error: we're not in local mode, but r is not root");
-    if (cm->stid[r] != MATP_MP && cm->stid[r] != MATL_ML &&
-	cm->stid[r] != MATR_MR && cm->stid[r] != BIF_B)
-      Die("internal error: trying to do a local begin at a non-mainline start");
-  }
-
-  /* Create a parse tree structure.
-   * The traceback machinery expects to build on a start state already
-   * in the parsetree, so initialize by adding the root state.
-   */
-  tr = CreateParsetree();
-  InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, i0, j0, 0); /* init: attach the root S */
-  z  = cm->M-1;
-  sc = 0.;
-
-  /* If r != 0, we already know we're starting with a local entry transition 0->r;
-   * add that node too, and count the begin transition towards the score. We have
-   * just done our one allowed local begin, so allow_begin becomes FALSE.
-   */
-  if (r != 0) 
-    {
-      InsertTraceNode(tr, 0,  TRACE_LEFT_CHILD, i0, j0, r);
-      z  =  CMSubtreeFindEnd(cm, r);
-      sc =  cm->beginsc[r];
-    }
-
-  /* Start the divide and conquer recursion: call the generic_splitter()
-   * on the whole DP cube.
-   */
-  sc += generic_splitter_b(cm, dsq, L, tr, r, z, i0, j0, dmin, dmax);
-
-  /* Free memory and return
-   */
-  if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
-  /*printf("***returning from CYKDivideAndConquer_b() sc : %f\n", sc);*/
-  return sc;
-}
-
-/* EPN 
-   CYKInsideScore() and CYKDemands() were deleted because (I think) 
-   they don't really require a banded version 
-*/
-
 /*################################################################
  * The banded dividers and conquerors. 
  *################################################################*/  
@@ -4242,59 +4235,9 @@ v_splitter_b(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 /* Function: inside_b()
  *           EPN 05.19.05
  * *based on inside(), only difference is bands are used : 
- * 
  * Date:     SRE, Mon Aug  7 13:15:37 2000 [St. Louis]
  *
- * Purpose:  Run the inside phase of a CYK alignment algorithm, on a 
- *           subsequence from i0..j0, using a subtree of a model
- *           anchored at a start state vroot, and ending at an end
- *           state vend. (It is a feature of the model layout in
- *           a CM structure that all subtrees are contiguous in the
- *           model.)
- *           
- *           A note on the loop conventions. We're going to keep the
- *           sequence (dsq) and the matrix (alpha) in the full coordinate
- *           system: [0..v..M-1][0..j..L][0..d..j]. However, we're
- *           only calculating a part of that matrix: only vroot..vend
- *           in the decks, i0-1..j in the rows, and up to j0-i0+1 in
- *           the columns (d dimension). Where this is handled the most
- *           is in two variables: W, which is the length of the subsequence
- *           (j0-i0+1), and is oft used in place of L in the usual CYK;
- *           and jp (read: j'), which is the *relative* j w.r.t. the
- *           subsequence, ranging from 0..W, and then d ranges from 
- *           0 to jp, and j is calculated from jp (i0-1+jp).
- *           
- *           The caller is allowed to provide us with a preexisting
- *           matrix and/or deckpool (thru "alpha" and "dpool"), or
- *           have them newly created by passing NULL. If we pass in an
- *           alpha, we expect that alpha[vroot..vend] are all NULL
- *           decks already; any other decks <vroot and >vend will
- *           be preserved. If we pass in a dpool, the decks *must* be
- *           sized for the same subsequence i0,j0.
- *           
- *           Note that the (alpha, ret_alpha) calling idiom allows the
- *           caller to provide an existing matrix or not, and to
- *           retrieve the calculated matrix or not, in any combination.
- *           
- *           We also deal with local begins, by keeping track of the optimal
- *           state that we could enter and account for the whole target 
- *           sequence: b = argmax_v  alpha_v(i0,j0) + log t_0(v),
- *           and bsc is the score for that. 
- *
- *           If vroot==0, i0==1, and j0==L (e.g. a complete alignment),
- *           the optimal alignment might use a local begin transition, 0->b,
- *           and we'd have to be able to trace that back. For any
- *           problem where the caller sets allow_begin, we return a valid b 
- *           (the optimal 0->b choice) and bsc (the score if 0->b is used).
- *           If a local begin is part of the optimal parse tree, the optimal
- *           alignment score returned by inside() will be bsc and yshad[0][L][L] 
- *           will be USE_LOCAL_BEGIN, telling insideT() to check b and
- *           start with a local 0->b entry transition. When inside()
- *           is called on smaller subproblems (v != 0 || i0 > 1 || j0
- *           < L), we're using inside() as an engine in divide &
- *           conquer, and we don't use the overall return score nor
- *           shadow matrices, but we do need allow_begin, b, and bsc for
- *           divide&conquer to sort out where a local begin might be used.
+ * Purpose:  (See inside())
  *
  * Args:     cm        - the model    [0..M-1]
  *           dsq       - the sequence [1..L]   
@@ -4426,12 +4369,9 @@ inside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do
 	}
       }
 
-      /* Bands used */
       /* Impose bands by setting all cells outside the bands to 0 
        * This is independent of state type so we do it outside
        * the following set of if then statements. 
-       * Alternatively, it could be done within each of the following
-       * if(cm->sttype[v] == *) statements - matter of style I suppose.
        */
 
       for (jp = 0; jp <= W; jp++) {
@@ -4446,8 +4386,6 @@ inside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do
 	{
 	  for (jp = 0; jp <= W; jp++) {
 	    j = i0-1+jp;
-	    /* Bands used */
-	    /* old line :	for (d = 0; d <= jp; d++) */
 	    for (d = dmin[v]; d <= dmax[v] && d <= jp; d++)
 	      {
 		y = cm->cfirst[v];
@@ -4467,31 +4405,13 @@ inside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do
 	{
 	  for (jp = 0; jp <= W; jp++) {
 	    j = i0-1+jp;
-	    /* Bands used */
-	    /* old line :	for (d = 0; d <= jp; d++) */
 	    for (d = dmin[v]; d <= dmax[v] && d <= jp; d++)
 	      {
 		y = cm->cfirst[v];
 		z = cm->cnum[v];
-		
-		/* Bands used */
-		/* old segment : 
-		   alpha[v][j][d] = alpha[y][j][d] + alpha[z][j][0];
-		   if (ret_shadow != NULL) kshad[j][d] = 0;
-		   for (k = 1; k <= d; k++)
-		     if ((sc = alpha[y][j-k][d-k] + alpha[z][j][k]) > alpha[v][j][d]) {
-		     alpha[v][j][d] = sc;
-		     if (ret_shadow != NULL) kshad[j][d] = k;
-		     }
-		*/
-
+		/* Careful, in qdb, we only want to look at alpha cells that are
+		 * within the bands for all states involved (v, y and z) */
 		/* k is the length of the right fragment */
-
-		/* following banded changes enforce that
-		   we only look at (query) alpha cells that are
-		   within the bands for all states involved (v, y and z)
-		*/
-
 		if(dmin[z] > (d-dmax[y])) k = dmin[z];
 		else k = d-dmax[y];
 		if(k < 0) k = 0;
@@ -4512,7 +4432,6 @@ inside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do
 		      }
 		  }
 		else alpha[v][j][d] = IMPOSSIBLE;
-		/*else Die("cell in alpha matrix was not filled in due to bands.\n");*/
 		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 	      }
 	  }
@@ -4523,9 +4442,7 @@ inside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do
 	    j = i0-1+jp;
 	    alpha[v][j][0] = IMPOSSIBLE;
 	    if (jp > 0) alpha[v][j][1] = IMPOSSIBLE;
-	    /* Bands used */
-	    /* old line :	for (d = 2; d <= jp; d++) */
-	    /* we assume dmin[v] >= 2 (which it must be)*/
+	    /* dmin[v] must be >= 2 */
 	    for (d = dmin[v]; d <= dmax[v] && d <= jp; d++)
 	      {
 		y = cm->cfirst[v];
@@ -4553,9 +4470,7 @@ inside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do
 	  for (jp = 0; jp <= W; jp++) {
 	    j = i0-1+jp;
 	    alpha[v][j][0] = IMPOSSIBLE;
-	    /* Bands used */
-	    /* old line :	for (d = 1; d <= jp; d++) */
-	    /* we assume dmin[v] >= 1 (which it must be)*/
+	    /* dmin[v] must be >= 1 */
 	    for (d = dmin[v]; d <= dmax[v] && d <= jp; d++)
 	      {
 		y = cm->cfirst[v];
@@ -4583,9 +4498,7 @@ inside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do
 	  for (jp = 0; jp <= W; jp++) {
 	    j = i0-1+jp;
 	    alpha[v][j][0] = IMPOSSIBLE;
-	    /* Bands used */
-	    /* old line :	for (d = 1; d <= jp; d++) */
-	    /* we assume dmin[v] >= 1 (which it must be)*/
+	    /* dmin[v] must be >= 1 */
 	    for (d = dmin[v]; d <= dmax[v] && d <= jp; d++)
 	      {
 		y = cm->cfirst[v];
@@ -4606,7 +4519,6 @@ inside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do
 	      }
 	  }
 	}				/* finished calculating deck v. */
-      
       
       /* Check for local begin getting us to the root.
        * This is "off-shadow": if/when we trace back, we'll handle this
@@ -4658,8 +4570,6 @@ inside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do
       }
   } /* end loop over all v */
 
-  //debug_print_alpha_banded(alpha, cm, L, dmin, dmax);
-
   /* Now we free our memory. 
    * if we've got do_full set, all decks vroot..vend are now valid (end is shared).
    * else, only vroot deck is valid now and all others vroot+1..vend are NULL, 
@@ -4704,32 +4614,7 @@ inside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do
  * *based on outside(), only difference is bands are used : 
  *
  * Date:     SRE, Tue Aug  8 10:42:52 2000 [St. Louis]
- *
- * Purpose:  Run the outside version of a CYK alignment algorithm,
- *           on a subsequence i0..j0 of a digitized sequence dsq [1..L],
- *           using a linear segment of a model anchored at a start state
- *           (possibly the absolute root, 0) or (MP,ML,MR,D) and ending at an end
- *           state, bifurcation state, or (MP|ML|MR|D) vend. There must be no
- *           start, end, or bifurcation states in the path other than 
- *           these termini: this is not a full Outside implementation,
- *           it is only the bit that's necessary in the divide
- *           and conquer alignment algorithm.
- *           
- *           Much of the behavior in calling conventions, etc., is
- *           analogous to the cyk_inside_engine(); see its preface
- *           for more info.
- *           
- *           At the end of the routine, the bottom deck (vend) is valid.
- *
- *           Note on banded: because beta[v][j][d] excludes the
- *           contribution from state v, we have to be careful when
- *           enforcing the bands during the main recursion. Instead of
- *           for CYK or inside style algorithms where we have: 
- *             for(d = dmin[v]; d <= dmax[v] && d <= j; d++)
- *           we have to do something like: 
- *             for(d = (dmin[v]-dv); d <= (dmax[v]-dv) && d <= j; d++)
- *           where dv is the StateDelta value of state v (i.e. if v is
- *           a MP dv = 2; if v is a non-MP emitter dv = 1; else dv = 0).
+ * Purpose:  (See outside())
  *
  * Args:     cm        - the model    [0..M-1]
  *           dsq       - the sequence [1..L]   
@@ -4753,8 +4638,8 @@ inside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do
  *           ret_dpool - if non-NULL, return the deck pool for reuse -- these will
  *                       *only* be valid on exactly the same i0..j0 subseq,
  *                       because of the size of the subseq decks.
- *           dmin   - minimum d bound for each state v; [0..v..M-1]
- *           dmax   - maximum d bound for each state v; [0..v..M-1]
+ *           dmin      - minimum d bound for each state v; [0..v..M-1]
+ *           dmax      - maximum d bound for each state v; [0..v..M-1]
  */
 static void
 outside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
@@ -4981,9 +4866,8 @@ outside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 	for (jp = 0; jp <= W; jp++) { 
 	  j = i0-1+jp;
 	  /* Careful here, we're filling in beta[cm->M][j][d] which is unbanded
-	   * b/c there's no band on EL, but we're doing by adding beta[v][j+{0,1}][d+dv]
-	   * to endsc[v], and we know there's a band on v, so we can save time here
-	   * as follows:
+	   * by adding beta[v][j+{0,1}][d+dv] to endsc[v], and we know there's a 
+	   * band on v, so we can save time here as follows:
 	   */
 	  dv = StateDelta(cm->sttype[v]);
 	  for (d = (dmin[v]-dv); d <= (dmax[v]-dv) && d <= jp; d++)

@@ -132,7 +132,6 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
   int      status;		/* return status. */
   int      nd;                  /* counter over nodes */
   int      yoffset;             /* counter over children */
-  float    el_self_prob;        /* EL state self insert probability */
 
   /* If we're in local to avoid extremely wide bands due to 
    * the permissive nature of local ends, we make local ends
@@ -1121,16 +1120,8 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 	      for (d = dmin[v]; d <= dmax[v] && d <= gamma_j; d++) 
 		{
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
-
-		  /*EPN : Make sure k is consistent with bands in state w and state y.
-		    Not sure if this is necessary because the speed-up will be 
-		    very small (if its even a speed-up due to extra computations), 
-		    but it does make the banded approach more consistent.   
-		    original line : 
-		    for (k = 0; k <= d; k++)
-		  */
-
 		  /* k is the length of the right fragment */
+		  /* Careful, make sure k is consistent with bands in state w and state y. */
 		  if(dmin[y] > (d-dmax[w])) k = dmin[y];
 		  else k = d-dmax[w];
 		  if(k < 0) k = 0;
@@ -1373,3 +1364,86 @@ BandedParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq,
 	  "-----", "-----", "-----");
   fflush(fp);
 } 
+
+
+
+/* EPN 07.22.05
+ * ExpandBands()
+ * Function: ExpandBands
+ *
+ * Purpose:  Called when the sequence we are about to align 
+ *           using bands is either shorter in length than
+ *           the dmin on the root state, or longer in length
+ *           than the dmax on the root state.
+ *            
+ *           This function expands the bands on ALL states
+ *           v=1..cm->M-1 in the following manner :
+ *           
+ *           case 1 : target len < dmin[0]
+ *                    subtract (dmin[0]-target len) from
+ *                    dmin of all states, and ensure
+ *                    dmin[v]>=0 for all v.
+ *                    Further :
+ *                    if cm->sttype[v] == MP_st ensure dmin[v]>=2;
+ *                    if cm->sttype[v] == IL_st || ML_st ensure dmin[v]>=1;
+ *                    if cm->sttype[v] == IR_st || MR_st ensure dmin[v]>=1;
+ *                        
+ *           case 2 : target len > dmax[0]
+ *                    add (target len-dmax[0] to dmax
+ *                    of all states.
+ *
+ *           Prior to handling such situtations with this
+ *           hack, the program would choke and die.  This
+ *           hacky approach is used as a simple, inefficient
+ *           not well thought out, but effective way to 
+ *           solve this problem.
+ * 
+ * Args:    cm       - the CM
+ *          tlen     - length of target sequence about to be aligned
+ *          dmin     - minimum d bound for each state v; [0..v..M-1]
+ *                     may be modified in this function
+ *          dmax     - maximum d bound for each state v; [0..v..M-1]
+ *                     may be modified in this function
+ *
+ * Returns: (void) 
+ */
+
+void
+ExpandBands(CM_t *cm, int tlen, int *dmin, int *dmax)
+{
+  int v;
+  int diff;
+  int root_min;
+  int root_max;
+  int M = cm->M;
+  root_min = dmin[0];
+  root_max = dmax[0];
+
+  if(tlen < root_min)
+    {
+      diff = root_min - tlen;
+      for(v=0; v<M; v++)
+	{
+	  dmin[v] -= diff;
+	  if((cm->sttype[v] == MP_st) && (dmin[v] < 2)) 
+	    dmin[v] = 2;
+	  else if(((cm->sttype[v] == IL_st) || (cm->sttype[v] == ML_st)) 
+		  && (dmin[v] < 1)) 
+	    dmin[v] = 1;
+	  else if(((cm->sttype[v] == IR_st) || (cm->sttype[v] == MR_st)) 
+		  && (dmin[v] < 1)) 
+	    dmin[v] = 1;
+	  else if(dmin[v] < 0) 
+	    dmin[v] = 0;
+	}
+    }
+  else if(tlen > root_max)
+    {
+      diff = tlen - root_min;
+      for(v=0; v<M; v++)
+	{
+	  dmax[v] += diff;
+	}
+    }
+}
+
