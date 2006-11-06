@@ -26,7 +26,7 @@
 \multicolumn{1}{c}{\#} & \multicolumn{1}{c|}{\#} &
 \multicolumn{1}{c}{avg len} & \multicolumn{1}{c|}{} &
 \multicolumn{1}{c}{non-banded} & \multicolumn{2}{|c|}{QDB
-    ($\beta=1e-7$)} &  \multicolumn{3}{|c}{} & \multicolumn{1}{c|}{thr} \\ 
+    ($\beta=10^{-7}$)} &  \multicolumn{3}{|c}{} & \multicolumn{1}{c|}{thr} \\ 
 \multicolumn{1}{|c}{ID} & \multicolumn{1}{c|}{name} &
 \multicolumn{1}{c}{query} & \multicolumn{1}{c|}{test} &
 \multicolumn{1}{c}{query} & \multicolumn{1}{c|}{W} &
@@ -99,13 +99,15 @@ RF00037 & IRE             &    36 &     1 &    28 &  45 &   0.17 &   0.12 &   1.
 \end{center}
 
 \caption{\textbf{Rfam benchmark families with timing and MER statistics.}
-  ``W'' = window length, maximum size of a hit per family, calculated as dmax$_0$.
-  Running times for standard (non-banded) and QDB ($\beta=1e-7$) searches are given for each family; 
-  units are hours per Mb. The minimum error rate (MER) threshold is the score at which the sum of false
-  positives (FP) and false negatives (FN) per family is
-  minimized. ``MER''= FP+FN at threshold. ``thr''= bit score threshold.
-  For the row labelled ``Summary MER statistics'': MER statistics are derived from ranked list
-  of all hits across all families. Statistics are for \textsc{infernal} version 0.71 run in 
+  ``W'' = window length, maximum size of a hit per family, calculated as $\mbox{dmax}(0)$.
+  Running times for standard (non-banded) and QDB ($\beta=10^{-7}$)
+  searches are given for each family, in CPU-hours per Mb. The ``MER'' score
+  is the minimum number of false positives (``FP'') plus false
+  negatives (``FN'') at any threshold; the ``thr'' column shows that
+  score threshold for each family, in bits.
+  In the row labeled ``Summary MER statistics'', these are
+  derived from a single score threshold in a ranked list
+  of all hits across all families. All statistics are for \textsc{infernal} version 0.71 in 
   local alignment mode.}
 
 \label{tbl:rmark}

@@ -9,7 +9,7 @@
 \scriptsize
 \begin{center}
 \begin{tabular}{|ll|rrr|rrrrl|rrrrr|} \hline
-\multicolumn{1}{|c}{Rfam 7.0} & \multicolumn{1}{c|}{family} & \multicolumn{1}{c}{\#} & \multicolumn{1}{c}{\#} & \multicolumn{1}{c}{mean len} & \multicolumn{5}{|c|}{\textsc{BLAST}} & \multicolumn{5}{|c|}{\textsc{Infernal}} \\ 
+\multicolumn{1}{|c}{Rfam 7.0} & \multicolumn{1}{c|}{family} & \multicolumn{1}{c}{\#} & \multicolumn{1}{c}{\#} & \multicolumn{1}{c}{mean len} & \multicolumn{5}{|c|}{\textsc{blast}} & \multicolumn{5}{|c|}{\textsc{infernal}} \\ 
 \multicolumn{1}{|c}{ID} & \multicolumn{1}{c|}{name} & \multicolumn{1}{c}{train} & \multicolumn{1}{c}{test} & \multicolumn{1}{c|}{(train)} & \multicolumn{1}{c}{MER} & \multicolumn{1}{c}{TP} & \multicolumn{1}{c}{FP} & \multicolumn{1}{c}{FN} & \multicolumn{1}{c|}{thr} & \multicolumn{1}{c}{MER} & \multicolumn{1}{c}{TP} & \multicolumn{1}{c}{FP} & \multicolumn{1}{c}{FN} & \multicolumn{1}{c|}{thr} \\ \hline 
 RF00002 & 5\_8S\_rRNA & 62 & 1 & 151 & 0 & 1 & 0 & 0 & 0.0045 & 0 & 1 & 0 & 0 &  11.27 \\  
 RF00003 & U1 & 46 & 6 & 159 & 2 & 4 & 0 & 2 &  0.049 & 0 & 6 & 0 & 0 &  12.26 \\  
@@ -78,13 +78,13 @@ all families)} & 216 & 240 & 6 & 210 &  0.017 & 104 & 354 & 8 & 96 &  16.38 \\ \
   method searching for a given Rfam family at which the sum of false
   positives (FP) and false negatives (FN) is
   minimized. ``MER''= FP+FN at threshold. ``TP''= TP at
-  threshold. ``thr''= threshold; E-value (\textsc{BLAST}) or bit score
-  (\textsc{Infernal}). For the row labelled
+  threshold. ``thr''= threshold; E-value (\textsc{blast}) or bit score
+  (\textsc{infernal}). For the row labelled
   ``Summary MER statistics'': MER statistics are derived from ranked list
   of all hits across all families. ``mean len (train)'' = mean length
   of training sequences in benchmark set. 
-  Program versions and options used: \textsc{BLAST}=
-  WU-BLASTN-2.0MP --kap -W=7. \textsc{Infernal}= cmsearch
+  Program versions and options used: \textsc{blast}=
+  WU-BLASTN-2.0MP --kap -W=7. \textsc{infernal}= cmsearch
   --local (version 0.70)}
 
 \label{tbl:rmarkmer_fam}
