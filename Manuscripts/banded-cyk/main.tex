@@ -49,7 +49,7 @@ that have negligible probability, independent of target sequences. We
 have implemented QDB in the freely available \textsc{infernal}
 software package.  QDB gives a three- to five-fold average speedup,
 and a reduction in the average-case time complexity of CM alignment
-from $LN^{2.3}$ to $LN^{1.2}$ for a query RNA of $N$ residues and a
+from $LN^{2.3}$ to $LN^{1.3}$ for a query RNA of $N$ residues and a
 target database of $L$ residues. Combined with other improvements to
 \textsc{infernal}, including informative mixture Dirichlet priors on
 model parameters, benchmarks also show increased sensitivity and
@@ -129,7 +129,7 @@ ineffective for RNA families that exhibit poor sequence
 conservation -- unfortunately, precisely the RNAs that benefit the
 most from SCFG-based search methods.
 Indeed, in this respect, we are concerned that the overall
-performance of these filrers on the current Rfam database may be somewhat
+performance of these filters on the current Rfam database may be somewhat
 misleading. Rfam currently uses a crude \textsc{blast}-based filtering method
 to accelerate the CM searches used in curating the database. This step
 introduces a bias towards high primary sequence similarity in current
@@ -149,8 +149,7 @@ to convert ungapped high-scoring pairs (HSPs) to full gapped
 alignments \cite{Altschul97}.  \textsc{lagan} and \textsc{multi-lagan}
 use banded dynamic programming (referred to as limited-area dynamic
 programming) to stitch together alignments between anchored sequences
-when aligning long genomic sequences \cite{Brudno03}. The simultaneous
-RNA alignment and structure prediction programs. Banding has also been
+when aligning long genomic sequences \cite{Brudno03}. Banding has also been
 applied to profile SCFGs by Michael Brown in his \textsc{rnacad}
 program by using information from a profile HMM alignment to define
 bands for the expensive SCFG alignment \cite{Brown00}. The key to
@@ -211,7 +210,7 @@ distributions, using these length distributions to determine bands,
 and using the bands in a banded CM dynamic programming alignment
 algorithm.  We found that QDB requires more accurate state transition
 parameter estimation than the \textsc{infernal} software was
-providing, so we describe our implementation of mixture Dirichlet
+providing, so we describe our implementation of informative Dirichlet
 priors for CM parameter estimation. Finally, we present results from a
 benchmark that suggest the sensitivity and specificity of a QDB-accelerated
 search is negligibly different from a non-banded search.
