@@ -1727,7 +1727,8 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 	else
 	  escore = DegeneratePairScore(cm->esc[vroot], dsq[i0], dsq[j0]);
 	beta[cm->M][j0-1][W-2] = cm->endsc[vroot] + 
-	  (cm->el_selfsc * (W-StateDelta(cm->sttype[vroot]))-2) + escore;
+	  (cm->el_selfsc * (W-2)) + escore;
+
 	if (beta[cm->M][j0-1][W-2] < IMPOSSIBLE) beta[cm->M][j0-1][W-2] = IMPOSSIBLE;
 	break;
       case ML_st:
@@ -1738,7 +1739,8 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 	else
 	  escore = DegenerateSingletScore(cm->esc[vroot], dsq[i0]);
 	beta[cm->M][j0][W-1] = cm->endsc[vroot] + 
-	  (cm->el_selfsc * (W-StateDelta(cm->sttype[vroot])-1)) + escore;
+	  (cm->el_selfsc * (W-1)) + escore;
+
 	if (beta[cm->M][j0][W-1] < IMPOSSIBLE) beta[cm->M][j0][W-1] = IMPOSSIBLE;
 	break;
       case MR_st:
@@ -1749,13 +1751,14 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 	else
 	  escore = DegenerateSingletScore(cm->esc[vroot], dsq[j0]);
 	beta[cm->M][j0-1][W-1] = cm->endsc[vroot] + 
-	  (cm->el_selfsc * (W-StateDelta(cm->sttype[vroot])-1)) + escore;
+	  (cm->el_selfsc * (W-1)) + escore;
+	
 	if (beta[cm->M][j0-1][W-1] < IMPOSSIBLE) beta[cm->M][j0-1][W-1] = IMPOSSIBLE;
 	break;
       case S_st:
       case D_st:
 	beta[cm->M][j0][W] = cm->endsc[vroot] + 
-	  (cm->el_selfsc * (W-StateDelta(cm->sttype[vroot])));
+	  (cm->el_selfsc * W);
 	if (beta[cm->M][j0][W] < IMPOSSIBLE) beta[cm->M][j0][W] = IMPOSSIBLE;
 	break;
       case B_st:		/* can't start w/ bifurcation at vroot. */
@@ -1897,6 +1900,7 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 		  escore = DegenerateSingletScore(cm->esc[v], dsq[i-1]);
 		if ((sc = beta[v][j][d+1] + cm->endsc[v] + 
 		     (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
+		  /*(cm->el_selfsc * (d+1)) + escore) > beta[cm->M][j][d])*/
 		  beta[cm->M][j][d] = sc;
 		break;
 	      case MR_st:
@@ -1908,6 +1912,7 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 		  escore = DegenerateSingletScore(cm->esc[v], dsq[j+1]);
 		if ((sc = beta[v][j+1][d+1] + cm->endsc[v] + 
 		     (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
+		     /*(cm->el_selfsc * (d+1)) + escore) > beta[cm->M][j][d])*/
 		  beta[cm->M][j][d] = sc;
 		break;
 	      case S_st:
@@ -2484,7 +2489,7 @@ voutside(CM_t *cm, char *dsq, int L,
       else
 	escore = DegeneratePairScore(cm->esc[r], dsq[i0], dsq[j0]);
       beta[cm->M][j0-j1-1][1] = cm->endsc[r] + 
-	(cm->el_selfsc * ((j0-1)-(i0+1)+1 - StateDelta(cm->sttype[r]))) + escore;
+	(cm->el_selfsc * ((j0-1)-(i0+1)+1)) + escore;
       break;
     case ML_st:
     case IL_st:
@@ -2494,7 +2499,7 @@ voutside(CM_t *cm, char *dsq, int L,
       else
 	escore = DegenerateSingletScore(cm->esc[r], dsq[i0]);      
       beta[cm->M][j0-j1][1] = cm->endsc[r] + 
-	(cm->el_selfsc * ((j0)-(i0+1)+1 - StateDelta(cm->sttype[r]))) + escore;
+	(cm->el_selfsc * ((j0)-(i0+1)+1)) + escore;
       break;
     case MR_st:
     case IR_st:
@@ -2504,12 +2509,12 @@ voutside(CM_t *cm, char *dsq, int L,
       else
 	escore = DegenerateSingletScore(cm->esc[r], dsq[j0]);
       beta[cm->M][j0-j1-1][0] = cm->endsc[r] + 
-	(cm->el_selfsc * ((j0-1)-(i0)+1 - StateDelta(cm->sttype[r]))) + escore;
+	(cm->el_selfsc * ((j0-1)-(i0)+1)) + escore;
       break;
     case S_st:
     case D_st:
       beta[cm->M][j0-j1][0] = cm->endsc[r] + 
-	(cm->el_selfsc * ((j0)-(i0)+1 - StateDelta(cm->sttype[r])));
+	(cm->el_selfsc * ((j0)-(i0)+1));
       break;
     default:  Die("bogus parent state %d\n", cm->sttype[r]);
     }
@@ -2638,8 +2643,7 @@ voutside(CM_t *cm, char *dsq, int L,
 		else
 		  escore = DegeneratePairScore(cm->esc[v], dsq[i-1], dsq[j+1]);
 		if ((sc = beta[v][jp+1][ip-1] + cm->endsc[v] + 
-		     ((cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[v]))))
-		     + escore) > beta[cm->M][jp][ip])
+		     (cm->el_selfsc * (j-i+1)) + escore) > beta[cm->M][jp][ip])
 		  beta[cm->M][jp][ip] = sc;
 		break;
 	      case ML_st:
@@ -2650,8 +2654,7 @@ voutside(CM_t *cm, char *dsq, int L,
 		else
 		  escore = DegenerateSingletScore(cm->esc[v], dsq[i-1]);
 		if ((sc = beta[v][jp][ip-1] + cm->endsc[v] + 
-		     ((cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[v]))))
-		     + escore) > beta[cm->M][jp][ip])
+		     (cm->el_selfsc * (j-i+1)) + escore) > beta[cm->M][jp][ip])
 		  beta[cm->M][jp][ip] = sc;
 		break;
 	      case MR_st:
@@ -2662,17 +2665,15 @@ voutside(CM_t *cm, char *dsq, int L,
 		else
 		  escore = DegenerateSingletScore(cm->esc[v], dsq[j+1]);
 		if ((sc = beta[v][jp+1][ip] + cm->endsc[v] + 
-		     ((cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[v]))))
-		     + escore) > beta[cm->M][jp][ip])
+		     (cm->el_selfsc * (j-i+1)) + escore) > beta[cm->M][jp][ip])
 		  beta[cm->M][jp][ip] = sc;
 		break;
 	      case S_st:
 	      case D_st:
 	      case E_st:
 		if ((sc = beta[v][jp][ip] + cm->endsc[v] + 
-		     ((cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[v])))))
-		     > beta[cm->M][jp][ip])
-		  beta[cm->M][jp][ip] = sc;
+		     (cm->el_selfsc * (j-i+1))) > beta[cm->M][jp][ip])
+		    beta[cm->M][jp][ip] = sc;
 		break;
 	      default:  Die("bogus parent state %d\n", cm->sttype[y]);
 	      } /* end switch over parent v state type */
@@ -4720,7 +4721,7 @@ outside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 	else
 	  escore = DegeneratePairScore(cm->esc[vroot], dsq[i0], dsq[j0]);
 	beta[cm->M][j0-1][W-2] = cm->endsc[vroot] + 
-	  (cm->el_selfsc * (W-StateDelta(cm->sttype[vroot]))-2) + escore;
+	  (cm->el_selfsc * (W-2)) + escore;
 	if (beta[cm->M][j0-1][W-2] < IMPOSSIBLE) beta[cm->M][j0-1][W-2] = IMPOSSIBLE;
 	break;
       case ML_st:
@@ -4731,7 +4732,7 @@ outside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 	else
 	  escore = DegenerateSingletScore(cm->esc[vroot], dsq[i0]);
 	beta[cm->M][j0][W-1] = cm->endsc[vroot] + 
-	  (cm->el_selfsc * (W-StateDelta(cm->sttype[vroot])-1)) + escore;
+	  (cm->el_selfsc * (W-1)) + escore;
 	if (beta[cm->M][j0][W-1] < IMPOSSIBLE) beta[cm->M][j0][W-1] = IMPOSSIBLE;
 	break;
       case MR_st:
@@ -4742,13 +4743,13 @@ outside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
 	else
 	  escore = DegenerateSingletScore(cm->esc[vroot], dsq[j0]);
 	beta[cm->M][j0-1][W-1] = cm->endsc[vroot] + 
-	  (cm->el_selfsc * (W-StateDelta(cm->sttype[vroot])-1)) + escore;
+	  (cm->el_selfsc * (W-1)) + escore;
 	if (beta[cm->M][j0-1][W-1] < IMPOSSIBLE) beta[cm->M][j0-1][W-1] = IMPOSSIBLE;
 	break;
       case S_st:
       case D_st:
 	beta[cm->M][j0][W] = cm->endsc[vroot] + 
-	  (cm->el_selfsc * (W-StateDelta(cm->sttype[vroot])));
+	  (cm->el_selfsc * W);
 	if (beta[cm->M][j0][W] < IMPOSSIBLE) beta[cm->M][j0][W] = IMPOSSIBLE;
 	break;
       case B_st:		/* can't start w/ bifurcation at vroot. */
@@ -5549,7 +5550,8 @@ voutside_b(CM_t *cm, char *dsq, int L,
   int     *imax;                /* maximum i bound for each state v; [0..r-z] 
                                  * calculated using *dmax; offset from v, the
 				 * band that corresponds to state v, is imax[v-r] */
-				   
+  int      dv;                  /* state delta */				   
+
   /* Allocations and initializations
    */
   			/* if caller didn't give us a deck pool, make one */
@@ -5627,7 +5629,7 @@ voutside_b(CM_t *cm, char *dsq, int L,
       else
 	escore = DegeneratePairScore(cm->esc[r], dsq[i0], dsq[j0]);
       beta[cm->M][j0-j1-1][1] = cm->endsc[r] + 
-	(cm->el_selfsc * ((j0-1)-(i0+1)+1 - StateDelta(cm->sttype[r]))) + escore;
+	(cm->el_selfsc * ((j0-1)-(i0+1)+1)) + escore;
       break;
     case ML_st:
     case IL_st:
@@ -5637,7 +5639,7 @@ voutside_b(CM_t *cm, char *dsq, int L,
       else
 	escore = DegenerateSingletScore(cm->esc[r], dsq[i0]);      
       beta[cm->M][j0-j1][1] = cm->endsc[r] + 
-	(cm->el_selfsc * ((j0)-(i0+1)+1 - StateDelta(cm->sttype[r]))) + escore;
+	(cm->el_selfsc * ((j0)-(i0+1)+1)) + escore;
       break;
     case MR_st:
     case IR_st:
@@ -5647,12 +5649,12 @@ voutside_b(CM_t *cm, char *dsq, int L,
       else
 	escore = DegenerateSingletScore(cm->esc[r], dsq[j0]);
       beta[cm->M][j0-j1-1][0] = cm->endsc[r] + 
-	(cm->el_selfsc * ((j0-1)-(i0)+1 - StateDelta(cm->sttype[r]))) + escore;
+	(cm->el_selfsc * ((j0-1)-(i0)+1)) + escore;
       break;
     case S_st:
     case D_st:
       beta[cm->M][j0-j1][0] = cm->endsc[r] + 
-	(cm->el_selfsc * ((j0)-(i0)+1 - StateDelta(cm->sttype[r])));
+	(cm->el_selfsc * ((j0)-(i0)+1));
       break;
     default:  Die("bogus parent state %d\n", cm->sttype[r]);
     }
@@ -5807,8 +5809,14 @@ voutside_b(CM_t *cm, char *dsq, int L,
       if (useEL && cm->endsc[v] != IMPOSSIBLE) {
 	for (jp = j0-j1; jp >= 0; jp--) {
 	  j = jp+j1;
-	  /* There is no band on the EL state */
-	  for (ip = 0; ip <= i1-i0; ip++) 
+	  /* Careful here, we're filling in beta[cm->M][jp][ip] which is unbanded
+	   * by adding beta[v][jp+{0,1}][ip-{0,1}] to endsc[v], and we know there's a 
+	   * i band on v (imin[v-r]..imax[v-r], so we can save time here as follows:
+	   */
+	  dv = StateDelta(cm->sttype[v]);
+	  if((imin[v-r]+jp+dv) < 0) ip = 0;
+	  else ip = imin[v-r]+jp+dv;
+	  for(; (ip<=imax[v-r]+jp+dv) && ip <= (i1-i0); ip++)
 	    {
 	      i = ip+i0;
 	      switch (cm->sttype[v]) {
@@ -5819,7 +5827,7 @@ voutside_b(CM_t *cm, char *dsq, int L,
 		else
 		  escore = DegeneratePairScore(cm->esc[v], dsq[i-1], dsq[j+1]);
 		if ((sc = beta[v][jp+1][ip-1] + cm->endsc[v] + 
-		     ((cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[v]))))
+		     (cm->el_selfsc * (j-i+1))
 		     + escore) > beta[cm->M][jp][ip])
 		  beta[cm->M][jp][ip] = sc;
 		break;
@@ -5831,7 +5839,7 @@ voutside_b(CM_t *cm, char *dsq, int L,
 		else
 		  escore = DegenerateSingletScore(cm->esc[v], dsq[i-1]);
 		if ((sc = beta[v][jp][ip-1] + cm->endsc[v] + 
-		     ((cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[v]))))
+		     (cm->el_selfsc * (j-i+1))
 		     + escore) > beta[cm->M][jp][ip])
 		  beta[cm->M][jp][ip] = sc;
 		break;
@@ -5843,7 +5851,7 @@ voutside_b(CM_t *cm, char *dsq, int L,
 		else
 		  escore = DegenerateSingletScore(cm->esc[v], dsq[j+1]);
 		if ((sc = beta[v][jp+1][ip] + cm->endsc[v] + 
-		     ((cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[v]))))
+		     (cm->el_selfsc * (j-i+1))
 		     + escore) > beta[cm->M][jp][ip])
 		  beta[cm->M][jp][ip] = sc;
 		break;
@@ -5851,7 +5859,7 @@ voutside_b(CM_t *cm, char *dsq, int L,
 	      case D_st:
 	      case E_st:
 		if ((sc = beta[v][jp][ip] + cm->endsc[v] + 
-		     ((cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[v])))))
+		     (cm->el_selfsc * (j-i+1)))
 		     > beta[cm->M][jp][ip])
 		  beta[cm->M][jp][ip] = sc;
 		break;
