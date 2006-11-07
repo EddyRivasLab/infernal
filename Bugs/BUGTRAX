@@ -99,5 +99,26 @@ be initialized from 0..W. < W becomes <= W at initialization;
 cykscan.c:133.
 
 //
+ID              i6
+TITLE		local ends in D&C alignment 
+STATUS          CLOSED
+XREF            ~nawrockie/notebook/6_1106_inf_bug_local_aln/
+REPORTED_BY     Eric Nawrocki, Mon Nov  6 13:17:22 2006
+CLOSED_DATE     EPN, Tue Nov  7 09:31:40 2006
+DESCRIPTION     
+
+Local D&C alignment has been broken starting with version 0.7. EL self
+transition scores were incorrectly being added in the outside() and
+voutside() functions of smallcyk.c. This at least sometimes resulted
+in the correct CYK score but incorrect parsetree, making it difficult
+to detect without using cmscore (which compares the parsetree score
+with the CYK score). The error was basically an off-by-one (or two in
+the case of MP states) error, and a common example of it would be a EL
+stretch of 2 residues rather than the correct 1 residue in the
+output alignment. The error was also fixed in the outside_b() and
+voutside_b() functions, so banded local D&C alignment should be clear
+of this bug also. SVN revision 1678 has bug, revision 1679 does not.
+
+//
 
 

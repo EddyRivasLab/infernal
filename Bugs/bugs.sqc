@@ -25,3 +25,7 @@
 
 # i3 - local begins rooted at inserts. 4 Mar 03, xref STL7 p.43
 2 exercise   i3/insert-roots   ./i3 @cmbuild@ @cmsearch@
+
+# i6 - local D&C score/parsetree score discrepancy. 6 Nov 06
+2 exercise   i6/cmalign-local  ./i6 @cmbuild@ @cmscore@
+
