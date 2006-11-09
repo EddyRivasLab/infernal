@@ -13,6 +13,6 @@ and cm2hmmsearch) requires that CFSQP must be obtained separately
 and specified at configuration time.
 
 These options to configure are required to enable rigorous filters:
-./configure --enable-rigfilters --with-cfsqp=/path/to/cfsqp
+./configure --with-rigfilters --with-cfsqp=/path/to/cfsqp
 If the configure script cannot locate cfsqp based on the given path
 rigorous filters will be disabled.

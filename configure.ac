@@ -162,16 +162,16 @@ esac])
 
 # Default option for rigfilters is OFF
 rigfilters=0;
-# --enable-rigfilters     install rigorous filters
-AC_ARG_ENABLE(rigfilters,
-[  --enable-rigfilters     enable rigorous filters, requires CFSQP package],
-[case $enable_rigfilters in
+# --with-rigfilters     install rigorous filters
+AC_ARG_WITH(rigfilters,
+[  --with-rigfilters       enable rigorous filters, requires CFSQP package],
+[case $with_rigfilters in
    yes) AC_MSG_NOTICE([Rigorous filters selected])
 	rigfilters=1
 	;;
    no)  rigfilters=0
         ;;
-    *)  echo "Ignoring unknown argument to --enable-rigfilters: $enable_rigfilters"
+    *)  echo "Ignoring unknown argument to --with-rigfilters: $with_rigfilters"
         ;;
 esac])
 
