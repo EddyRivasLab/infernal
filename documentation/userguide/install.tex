@@ -157,6 +157,17 @@ LFS is enabled with the \prog{--enable-lfs} option:
 
 \user{./configure --enable-lfs}
 
+\subsubsection{installing rigorous filters}
+
+\software{Infernal} includes programs by Zasha Weinber that implement
+rigorous filtering.  This software requires a C++ compiler, and also
+relies on an external library, \software{CFSQP}, that is not included
+in this distribution, but can be obtained by request from
+\link{http://www.aemdesign.com/}
+To build the executables, include these two options to configure:
+
+\user{./configure --with-rigfilters --with-cfsqp=/path/to/cfsqp}
+
 \subsection{Example configuration}
 
 The Intel GNU/Linux version installed in St. Louis is configured as
