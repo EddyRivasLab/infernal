@@ -201,7 +201,7 @@ print PP ("cp merged_*time ../\n");
 print PP ("cp merged_*roc ../\n");
 close(PP);
 print_out_file_notice($run_dir . "/" . $pp_file, "Shell script to merge and process the collective output\n               after all the cluster jobs are finished.");
-system("cp $pp_file $run_dir");
+system("mv $pp_file $run_dir");
 system("cp $genome_file $run_dir");
 system("cp $fam_idx $run_dir");
 system("cp $embed_file $run_dir");
