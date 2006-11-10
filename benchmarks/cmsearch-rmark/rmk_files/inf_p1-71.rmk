@@ -1,0 +1,11 @@
+# inf_p1-71.rmk: options for a infernal 0.71 rmark benchmark
+#                with plus-1 priors ('p1'), default entropy
+#                weighting, and no QDB.
+#
+# This infernal benchmark corresponds to Table 6 row 4 of the banded
+# cyk manuscript. To duplicate those results cmsearch and cmbuild 
+# must be infernal version 0.71 executables.
+#
+$cmb = "cmbuild --priorfile plus1.prior";
+$cms = "cmsearch --local --noqdb";
+1;
