@@ -120,5 +120,56 @@ voutside_b() functions, so banded local D&C alignment should be clear
 of this bug also. SVN revision 1678 has bug, revision 1679 does not.
 
 //
+ID              i7
+TITLE		local aln traceback in banded CYKInside()
+STATUS          CLOSED
+XREF            ~nawrockie/notebook/6_1020_inf_banded_d_and_c_bug/
+REPORTED_BY     Sam Griffiths-Jones, 4 Aug, 2006
+CLOSED_DATE     EPN, Sun Nov  5 15:58:30 2006
+DESCRIPTION     
 
+In smallcyk.c::insideT_b_me() I was treating EL as if it has
+a band. When I would pop from the stack during a traceback in an EL
+state, I would add dmin[v] to it, even though dmin[v] was bogus
+when v is an EL. For an example and more on this bug see
+~nawrockie/notebook/6_1020_inf_banded_d_and_c_bug/00README and
+00LOG. 
 
+Sam's experience with this bug gave him messages like this: 
+Assertion failed: yoffset >= 0 && yoffset <= cm->M, file
+  smallcyk.c, line 7741
+ Abort
+
+I couldn't get this bug to ever crash the program, which is a main
+reason there's no test case in bugs.sqc.
+
+But I was unable to reproduce this, and could only find it with
+valgrind.
+
+//
+ID              i8
+TITLE		local ends in D&C alignment
+STATUS          CLOSED
+XREF            ~nawrockie/notebook/6_1020_inf_banded_d_and_c_bug/
+REPORTED_BY     Sam Griffiths-Jones, 4 Aug, 2006
+CLOSED_DATE     EPN, Sun Nov  5 15:58:30 2006
+DESCRIPTION     
+
+I was incorrectly enforcing bands in the smallcyk.c::outside_b()
+function, as well as in the smallcyk.c::wedge_splitter_b() function. 
+
+In the outside_b() function, there's a special j loop where the 
+code considers v->EL transitions. The loop that enforces dmin and dmax
+is special b/c the code is not directly accessing beta[v][j][d] but
+rather beta[v][j+{0,1}][d+StateDelta(cm->sttype[v])], so we have
+to change the 'for(d=dmin[v]; d<=dmax[v]; d++)' to 
+'for(d=dmin[v]-dv; d<=dmax[v]-dv; d++)'. This is line 4979 or
+revision 1675 of smallcyk.c.
+
+I couldn't get this bug to ever crash the program, which is a main
+reason there's no test case in bugs.sqc.
+
+See ~nawrocki/notebook/6_1020_inf_banded_d_and_c_bug/00README and
+00LOG for more details.
+
+//
