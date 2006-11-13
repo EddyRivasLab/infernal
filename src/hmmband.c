@@ -522,7 +522,7 @@ CP9Backward(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9
  *           For non-emitters the entries in row i of this matrix are the 
  *           logs of the posterior probabilities of each state being 'visited' 
  *           when the last emitted residue in the parse was symbol i of the
- *           sequence (I think this is valid, but not sure (EPN)). 
+ *           sequence.
  *           The last point distinguishes this function from P7EmitterPosterior() 
  *           which set all posterior values for for non-emitting states to -INFTY.
  *           The caller must allocate space for the matrix, although the

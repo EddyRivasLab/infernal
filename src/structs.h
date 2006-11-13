@@ -403,8 +403,8 @@ typedef struct cp9map_s {
 		     *            [x][0] corresponds to the HMM node in cs2hn[x][0],
 		     *            [x][1] corresponds to the HMM node in cs2hn[x][1] (or -1) */
   int ***hns2cs;    /* [0..clen][0..2][0..1]
-		     * hns2cs[x][y][0] 1st CM maps to HMM node x state type y (0,1,2)
-		     * hns2cs[x][y][1] 2nd CM maps to HMM node x state type y (0,1,2)
+		     * hns2cs[x][y][0] 1st CM state that maps to HMM node x state type y (0,1,2)
+		     * hns2cs[x][y][1] 2nd CM state that maps to HMM node x state type y (0,1,2)
 		     *                 -1 if only 1 CM state maps to HMM node x state y */
   int    hmm_M;     /* consensus length, the number of HMM nodes */
   int    cm_M;      /* number of states in the CM this HMM maps to */

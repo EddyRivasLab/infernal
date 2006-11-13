@@ -578,8 +578,10 @@ main(int argc, char **argv)
 	   * if we don't need to build a CP9 HMM from the sub_cm to do banded alignment.*/
 	  if(do_fullsub && !do_hbanded)
 	    {
-	      ConfigLocal_fullsub(cm, 0.5, 0.5, orig_cp9map->pos2nd[submap->sstruct],
-				  orig_cp9map->pos2nd[submap->estruct]);
+	      ConfigLocal_fullsub_post(cm, orig_cp9map, cp9_posterior, sqinfo[i].len);
+
+	      /*ConfigLocal_fullsub(cm, 0.5, 0.5, orig_cp9map->pos2nd[submap->sstruct],
+		orig_cp9map->pos2nd[submap->estruct]);*/
 	      /*ConfigLocal(sub_cm, 0.5, 0.5);*/
 	      CMLogoddsify(cm);
 	      do_local = TRUE; /* we wait til we get here to set do_local, if we 

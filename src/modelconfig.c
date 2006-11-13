@@ -14,6 +14,7 @@
 
 #include "structs.h"
 #include "funcs.h"
+#include "hmmer_funcs.h"
 
 
 void
@@ -218,3 +219,106 @@ ConfigLocal_fullsub(CM_t *cm, float p_internal_start,
   ConfigLocalEnds(cm, p_internal_exit);
   return;
 }
+
+
+ /**************************************************************
+  * Function: ConfigLocal_fullsub_post()
+  * EPN, Mon Nov 13 13:32:27 2006
+  * 
+  * Purpose:  Configure a CM for local alignment in fullsub mode 
+  *           using posterior probabilites from a CP9 HMM posterior
+  *           decode of a sequence. Originally written for 'fullsub' 
+  *           sub CM construction. 
+  *
+  * Args:     cm        - the covariance model
+  *           cp9map    - map from CM to CP9 HMM and vice versa
+  *           post      - posterior matrix, already filled
+  *           L         - length of sequence to align
+  * Returns:  
+  * VOID
+  */
+
+ void 
+ ConfigLocal_fullsub_post(CM_t *cm, CP9Map_t *cp9map, struct cp9_dpmatrix_s *post, int L)
+ {
+   int k;                       /* counter over HMM nodes */
+   int v;			/* counter over states */
+   int nd;			/* counter over nodes */
+   int nstarts;			/* number of possible internal starts */
+   int nexits;			/* number of possible internal ends */
+   float denom;
+   float sum_beg, sum_end;
+   int lpos, rpos, lins, rins;
+   sum_beg= sum_end = 0.;
+
+   /* Zero all begin probs */
+   for (v = 0; v < cm->M; v++)  cm->begin[v] = 0.;
+
+   /* Go through each CM node, filling in begin and end probs using the CP9 posteriors */
+   for(nd = 0; nd < cm->nodes; nd++)
+     {
+       lpos = rpos = lins = rins = -1;
+       if(cm->ndtype[nd] == MATP_nd)
+	 {
+	   lpos = cp9map->nd2lpos[k]; /* HMM node whose match state emits same left  pos as MATP_MP */
+	   rpos = cp9map->nd2rpos[k]; /* HMM node whose match state emits same right pos as MATP_MP */
+	   lins = cp9map->cs2hn[(cm->nodemap[nd] + 4)][0]; 
+	   /* HMM node whose insert state emits same left pos as MATP_IL */
+	   rins = cp9map->cs2hn[(cm->nodemap[nd] + 5)][0]; 
+	   /* HMM node whose insert state emits same right pos as MATP_IR */
+	   printf("cp9map->cs2hn[%3d][0]: %d\n", (cm->nodemap[nd]+4), cp9map->cs2hn[(cm->nodemap[nd]+4)][0]);
+	   printf("cp9map->cs2hn[%3d][1]: %d\n", (cm->nodemap[nd]+4), cp9map->cs2hn[(cm->nodemap[nd]+4)][1]);
+	   assert(cp9map->cs2hn[(cm->nodemap[nd] + 4)][1] == -1);
+	   assert(cp9map->cs2hn[(cm->nodemap[nd] + 5)][1] == -1);
+	 }
+       else if(cm->ndtype[nd] == MATL_nd)
+	 {
+	   lpos = cp9map->nd2lpos[k]; /* HMM node whose match state emits same pos as MATL_ML */
+	   lins = cp9map->cs2hn[(cm->nodemap[nd] + 2)][0]; 
+	   /* HMM node whose insert state emits same pos as MATL_IL */
+	 }
+       else if(cm->ndtype[nd] == MATR_nd)
+	 {
+	   rpos = cp9map->nd2lpos[k]; /* HMM node whose match state emits same pos as MATR_MR */
+	   rins = cp9map->cs2hn[(cm->nodemap[nd] + 2)][0]; 
+	   /* HMM node whose insert state emits same pos as MATR_IR */
+	 }
+       else
+	 continue;
+       /* Set begin and end probs as sums of posterior probabilities of
+	* HMM match and insert states emitting position 1 and L respectively.
+	* NOTE: The way I handle the contribution of HMM insert posteriors 
+	*       to end probs is WRONG because local ends are only allowed
+	*       from consensus match states (to guarantee D&C will work).
+	*       so you can never get to an insert of the same node before 
+	*       doing a local end from that node. This is kind-of okay b/c
+	*       the EL state is like an insert state. But I think a more robust 
+	*       solution exists, although it may be more complex.
+	*/
+       v = cm->nodemap[nd];
+       if(lpos != -1 && lins != -1)
+	 {
+	   cm->begin[v] += Score2Prob(post->mmx[1][lpos], 1.);
+	   cm->begin[v] += Score2Prob(post->imx[1][lins], 1.);
+	   cm->end[v]   += Score2Prob(post->mmx[L][lpos], 1.);
+	   cm->end[v]   += Score2Prob(post->imx[L][lins], 1.);
+	 }
+       if(rpos != -1 && rins != -1)
+	 {
+	   cm->begin[v] += Score2Prob(post->mmx[1][rpos], 1.);
+	   cm->begin[v] += Score2Prob(post->imx[1][rins], 1.);
+	   cm->end[v]   += Score2Prob(post->mmx[L][rpos], 1.);
+	   cm->end[v]   += Score2Prob(post->imx[L][rins], 1.);
+	 }
+     }
+   for (v = 0; v < cm->M; v++)
+     {
+       sum_beg += cm->begin[v];
+       sum_end += cm->end[v];
+     }
+   printf("sum beg: %f\n", sum_beg);
+   printf("sum end: %f\n", sum_end);
+   
+   exit(1);
+   return;
+ }

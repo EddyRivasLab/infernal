@@ -44,7 +44,7 @@ Usage: sub_cm-test [-options] <cmfile>\n\
 static char experts[] = "\
   --psionly   : only check that psi values match (don't build HMMs)\n\
   --sample    : build and check two CP9 HMMs (one an ML HMM via sampling)\n\
-  --nseq <n>  : use <n> samples to build ML HMM for --samplecp9  [50000]\n\
+  --nseq <n>  : use <n> samples to build ML HMM for --sample [50000]\n\
   --chi <f>   : fail sampling check if any chi-square test < <f> [0.01]\n\
   --exhaust   : build and check every possible sub CM (all (N^2+N)/2)\n\
   --full      : build sub CM(s) with ONLY structure removed\n\

@@ -118,6 +118,7 @@ extern void ConfigLocalEnds(CM_t *cm, float p_internal_exit);
 extern void ConfigLocal_fullsub(CM_t *cm, float p_internal_start, 
 				float p_internal_exit, int sstruct_nd,
 				int estruct_nd);
+extern void ConfigLocal_fullsub_post(CM_t *cm, CP9Map_t *cp9map, struct cp9_dpmatrix_s *post, int L);
 
 /* from modelmaker.c
  */
