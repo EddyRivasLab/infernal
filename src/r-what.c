@@ -1345,6 +1345,7 @@ MarginalLeftOutsideExtend(CM_t *cm, char *dsq, BPA_t *root, int lbound, float dr
       if ( cm->stid[v] == MATP_MP )
       {
          esc = LeftMarginalScore(cm->esc[v],dsq[i]);
+         i--;
       }
 
       *delta_sc = *delta_sc + tsc + esc;
@@ -1365,6 +1366,21 @@ MarginalLeftOutsideExtend(CM_t *cm, char *dsq, BPA_t *root, int lbound, float dr
       }
    }
 
+   /* commit any children, as necessary, BEFORE repositioning root higher up the tree */
+   if ( (root->left_child != NULL) && (root->left_child->chunk->need_commit == 1) && *commit )
+   {
+      root->left_child->chunk->need_commit = 0;
+      root->left_child->chunk->init_i = root->left_child->chunk->temp_i;
+      root->left_child->chunk->init_v = root->left_child->chunk->temp_v;
+   }
+
+   if ( (root->right_child != NULL) && (root->right_child->chunk->need_commit == 1) && *commit )
+   {
+      root->right_child->chunk->need_commit = 0;
+      root->right_child->chunk->init_i = root->right_child->chunk->temp_i;
+      root->right_child->chunk->init_v = root->right_child->chunk->temp_v;
+   }
+
    if ( cm->sttype[v] == S_st )
    {
       oldv = v;
@@ -1380,12 +1396,6 @@ MarginalLeftOutsideExtend(CM_t *cm, char *dsq, BPA_t *root, int lbound, float dr
             root = temp;
             root->chunk->init_i = root->chunk->cur_i = i;
             MarginalLeftOutsideExtend(cm, dsq, root, lbound, dropoff_sc, total_sc, delta_sc, commit, complete);
-            if ( root->left_child->chunk->need_commit && *commit )
-            {
-               root->left_child->chunk->need_commit = 0;
-               root->left_child->chunk->init_i = root->left_child->chunk->temp_i;
-               root->left_child->chunk->init_v = root->left_child->chunk->temp_v;
-            }
          }
          else if ( cm->cnum[v] == oldv ) /* previous root is right child */
          {
