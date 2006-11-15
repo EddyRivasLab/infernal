@@ -1413,8 +1413,146 @@ MarginalLeftOutsideExtend(CM_t *cm, char *dsq, BPA_t *root, int lbound, float dr
             {
                i = root->left_child->chunk->init_i;
                if ( root->left_child->chunk->temp_i < i ) i = root->left_child->chunk->temp_i;
+               if ( root->left_child->chunk->cur_i < i ) i = root->left_child->chunk->cur_i;
                root->chunk->cur_i = root->chunk->init_i = i;
                MarginalLeftOutsideExtend(cm, dsq, root, lbound, dropoff_sc, total_sc, delta_sc, commit, complete);
+            }
+         }
+      }
+   }
+
+   return;
+}
+
+
+/* Function: MarginalRightOutsideExtend()
+ * Author:   DLK
+ *
+ * Purpose:  Extend a partial alignment primary-sequence-wise, 
+ *           through bifurcations.  Extends higher up the model
+ *           tracing along sequence left-to-right (clockwise
+ *           around the parse tree).
+ *
+ * Args:     cm   - covariance model
+ *           dsq  - digitized sequence
+ *           root - a branched partial alignment.  The chunk of 
+ *                  alignmnet held in the root may be partially
+ *                  extended, although empty is expected to be the
+ *                  more likely case.
+ *           rbound - a limit on the range of i
+ *           dropoff_sc - amount of score decrease allowed before
+ *                  termination
+ *           total_sc - running total of score (from commited segments)
+ *           delta_sc - running total score of uncommited segments
+ *           commit - 0/1 - have we commited in this chunk (parent
+ *                  also commit if so)
+ *           complete - 0/1 - full alignment of subtree
+ * 
+ */
+void
+MarginalRightOutsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dropoff_sc, float *total_sc, float *delta_sc, int *commit, int *complete)
+{
+   int v,i,oldv;
+   int x;
+   float tsc, esc;
+   BPA_t *temp;
+
+   root->chunk->need_commit = 0;
+   *commit = 0;
+   *complete = 0;
+
+   v = root->chunk->init_v;
+   i = root->chunk->init_i;
+
+   while ( (cm->sttype[v] != S_st) && (*delta_sc > dropoff_sc) && (i < rbound) )
+   {
+      esc = 0.0;
+      tsc = ConsensusParent(cm, &v);
+      if ( cm->stid[v] == MATL_ML )
+      {
+      }
+      if ( cm->stid[v] == MATR_MR )
+      {
+         if ( dsq[i] < Alphabet_size )
+            esc = cm->esc[v][(int) dsq[i]];
+         else
+            esc = DegenerateSingletScore(cm->esc[v],dsq[i]);
+         i++;
+      }
+      if ( cm->stid[v] == MATP_MP )
+      {
+         esc = LeftMarginalScore(cm->esc[v],dsq[i]);
+         i++;
+      }
+
+      *delta_sc = *delta_sc + tsc + esc;
+      if (*delta_sc >= 0)
+      {
+         root->chunk->need_commit = 0;
+         *total_sc += *delta_sc;
+         *delta_sc = 0.0;
+         root->chunk->init_i = i;
+         root->chunk->init_v = v;
+         *commit = 1;
+      }
+      else
+      {
+         root->chunk->need_commit = 1;
+         root->chunk->temp_i = i;
+         root->chunk->temp_v = v;
+      }
+   }
+
+   /* commit any children, as necessary, BEFORE repositioning root higher up the tree */
+   if ( (root->left_child != NULL) && (root->left_child->chunk->need_commit == 1) && *commit )
+   {
+      root->left_child->chunk->need_commit = 0;
+      root->left_child->chunk->init_i = root->left_child->chunk->temp_i;
+      root->left_child->chunk->init_v = root->left_child->chunk->temp_v;
+   }
+
+   if ( (root->right_child != NULL) && (root->right_child->chunk->need_commit == 1) && *commit )
+   {
+      root->right_child->chunk->need_commit = 0;
+      root->right_child->chunk->init_i = root->right_child->chunk->temp_i;
+      root->right_child->chunk->init_v = root->right_child->chunk->temp_v;
+   }
+
+   if ( cm->sttype[v] == S_st )
+   {
+      oldv = v;
+      ConsensusParent(cm, &v); /*tsc always 0.0 if v is S_st */ 
+      if ( cm->sttype[v] == B_st )
+      {
+         /* Init to error values */
+         BPA_Init(temp, v, -1, -1, -1);
+
+         if ( cm->cnum[v] == oldv ) /* previous root is right child */
+         {
+            temp->right_child = root;
+            root = temp;
+            root->chunk->init_i = root->chunk->cur_i = i;
+            MarginalRightOutsideExtend(cm, dsq, root, rbound, dropoff_sc, total_sc, delta_sc, commit, complete);
+         }
+         else if ( cm->cfirst[v] == oldv ) /* previous root is left child */
+         {
+            temp->left_child = root;
+            root = temp;
+            BPA_Init(root->right_child, cm->cfirst[v], i, -1, -1);
+            MarginalLeftInsideExtend(cm, dsq, root->right_child, lbound, dropoff_sc, total_sc, delta_sc, commit, complete);
+            if ( root->left_child->chunk->need_commit && *commit )
+            {
+               root->left_child->chunk->need_commit  = 0;
+               root->left_child->chunk->init_i = root->left_child->chunk->temp_i;
+               root->left_child->chunk->init_v = root->left_child->chunk->temp_v;
+            }
+            if ( *complete == 1 ) /* right child completed, continue up */
+            {
+               i = root->right_child->chunk->cur_i;
+               if ( root->right_child->chunk->temp_i > i ) i = root->right_child->chunk->temp_i;
+               if ( root->right_child->chunk->init_i > i ) i = root->right_child->chunk->init_i;
+               root->chunk->cur_i = root->chunk->init_i = i;
+               MarginalRightOutsideExtend(cm, dsq, root, rbound, dropoff_sc, total_sc, delta_sc, commit, complete);
             }
          }
       }
