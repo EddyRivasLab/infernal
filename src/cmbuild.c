@@ -69,7 +69,9 @@ static char experts[] = "\
    --gtree <f>    : save tree description of master tree to file <f>\n\
    --gtbl  <f>    : save tabular description of master tree to file <f>\n\
    --tfile <f>    : dump individual sequence tracebacks to file <f>\n\
-   --bfile <f>    : save band data to file <f>\n\
+   --bfile <f>    : save bands to file <f>, which can be read by cmsearch\n\
+   --local        : only works w/ --bfile, calc bands in local mode then output\n\
+   --bdfile <f>   : save band density data to file <f>\n\
 \n\
  * debugging, experimentation:\n\
    --nobalance    : don't rebalance the CM; number in strict preorder\n\
@@ -111,6 +113,8 @@ static struct opt_s OPTIONS[] = {
   { "--wgsc",      FALSE, sqdARG_NONE },
   { "--priorfile", FALSE, sqdARG_STRING },
   { "--bfile",     FALSE, sqdARG_STRING },
+  { "--local",     FALSE, sqdARG_NONE },
+  { "--bdfile",    FALSE, sqdARG_STRING },
   { "--bandp",     FALSE, sqdARG_FLOAT},
   { "--ignorant",  FALSE, sqdARG_NONE },
   { "--null",      FALSE, sqdARG_STRING },
@@ -135,6 +139,7 @@ static void model_trace_info_dump(FILE *ofp, CM_t *cm, Parsetree_t *tr,
 				  char *aseq);
 static void PrintBandDensity(FILE *fp, double **gamma, int v, int W,
 			     int min, int max);
+static void PrintBands2BandFile(FILE *fp, CM_t *cm, int *dmin, int *dmax);
 static void StripWUSS(char *ss);
 
 int
@@ -201,7 +206,11 @@ main(int argc, char **argv)
   double     bandp;		/* tail loss probability for banding        */
   int        safe_windowlen;	/* initial windowlen (W) used for calculating bands,
 				 * once bands are calculated we'll set cm->W to dmax[0] */
-  char      *bandfile;
+  char      *bandfile;          /* file to print bands to, can be read by cmsearch */
+  int        do_local;          /* Always FALSE, unless --bandfile <f> --local 
+				 * is enabled at command line. If TRUE calc 
+				 * bands in local mode before outputting.   */
+  char      *banddensityfile;
   int        v;                 /* counter over states                      */
   int        be_ignorant;       /* TRUE to strip all bp info from the input structure */
   char      *rndfile;		/* random sequence model file to read       */
@@ -212,8 +221,6 @@ main(int argc, char **argv)
   float      eff_nseq;		/* effective sequence number               */
   int        eff_nseq_set;	/* TRUE if eff_nseq has been calculated    */
   float      randomseq[MAXABET];/* null sequence model                     */
-  int        do_local;		/* always FALSE for now, used in BandCalculationEngine().
-				 * Does cmbuild have a --local option in its future? */
   int        save_gamma;	/* TRUE to save the gamma matrix in
 				 * BandCalculationEngine().*/
   /* EPN 11.15.05 User has the option to set the EL self transition probability
@@ -286,6 +293,7 @@ main(int argc, char **argv)
   regressionfile    = NULL;
   prifile           = NULL;
   bandfile          = NULL;
+  banddensityfile   = NULL;
   rndfile           = NULL;
   
   eff_strategy      = EFF_ENTROPY; /* 11.28.05 EPN entropy weighting is default. */
@@ -328,7 +336,9 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--tfile")     == 0) tracefile         = optarg;
     else if (strcmp(optname, "--regress")   == 0) regressionfile    = optarg;
     else if (strcmp(optname, "--priorfile") == 0) prifile           = optarg;
-    else if (strcmp(optname, "--bfile")     == 0) {bandfile         = optarg; save_gamma = TRUE;}
+    else if (strcmp(optname, "--bfile")     == 0) bandfile         = optarg;
+    else if (strcmp(optname, "--local")     == 0) do_local          = TRUE;
+    else if (strcmp(optname, "--bdfile")    == 0) {banddensityfile  = optarg; save_gamma = TRUE;}
     else if (strcmp(optname, "--bandp")     == 0) bandp             = atof(optarg);
     else if (strcmp(optname, "--ignorant")  == 0) be_ignorant       = TRUE;
     else if (strcmp(optname, "--null")      == 0) rndfile           = optarg;
@@ -376,6 +386,8 @@ main(int argc, char **argv)
 
   if (!allow_overwrite && !do_append && FileExists(cmfile))
     Die("CM file %s already exists. Rename or delete it.", cmfile); 
+  if (do_local && bandfile == NULL)
+    Die("--local option only allowed with --bandfile <f> option.\nThis is strictly for printing bands derived in local mode.\n");
 
   /*********************************************** 
    * Preliminaries: open our files for i/o
@@ -654,7 +666,7 @@ main(int argc, char **argv)
        * BandCalculationEngine() replaces BandDistribution() and BandBounds().
        * See ~nawrocki/notebook/5_1111_inf_banded_dist_vs_bandcalc/00LOG for details.
        */
-      while(!(BandCalculationEngine(cm, safe_windowlen, bandp, save_gamma, &dmin, &dmax, &gamma, do_local)))
+      while(!(BandCalculationEngine(cm, safe_windowlen, bandp, save_gamma, &dmin, &dmax, &gamma, FALSE)))
 	{
 	  free(dmin);
 	  free(dmax);
@@ -957,11 +969,11 @@ main(int argc, char **argv)
 
       /* EPN 08.18.05 Detailed band info for the training set (seed seqs).
        */
-      if (bandfile != NULL)       
+      if (banddensityfile != NULL)       
 	{
-	  printf("%-40s ... ", "Saving band information"); fflush(stdout);
-	  if ((ofp = fopen(bandfile,"w")) == NULL)
-	    Die("failed to open band file %s", bandfile);
+	  printf("%-40s ... ", "Saving band density information"); fflush(stdout);
+	  if ((ofp = fopen(banddensityfile,"w")) == NULL)
+	    Die("failed to open band density file %s", banddensityfile);
 
 	  /* We want band information for bands we'd use in a cmsearch
 	   * with bandp as its set now (default is 1E-7, but it can
@@ -980,6 +992,38 @@ main(int argc, char **argv)
 	      model_trace_info_dump(ofp, cm, tr, msa->aseq[idx]); 
 	      FreeParsetree(tr);
 	    }
+	  fprintf(ofp, "//\n");
+	  fclose(ofp);
+	  printf("done. [%s]\n", banddensityfile);
+	}
+
+      /* EPN 11.15.06 Print the bands out, in a format we can read in cmsearch */
+      if (bandfile != NULL)       
+	{
+	  if(do_local) /* Recalculate bands in local mode */
+	    {
+	      /* Config the CM for local mode, we've already printed it to a file,
+	       * and all we use it for after this is SummarizeCM() and CYKDemands() 
+	       * which shouldn't be affected if we modify the begin and end probs */
+	      ConfigLocal(cm, 0.5, 0.5);
+	      CMLogoddsify(cm);
+	      safe_windowlen = 2 * MSAMaxSequenceLength(msa);
+	      while(!(BandCalculationEngine(cm, safe_windowlen, bandp, FALSE, &dmin, &dmax, &gamma, do_local)))
+		{
+		  free(dmin);
+		  free(dmax);
+		  FreeBandDensities(cm, gamma);	  
+		  /*printf("Failure in BandCalculationEngine(). W:%d | bandp: %4e\n", safe_windowlen, bandp);*/
+		  safe_windowlen *= 2;
+		}
+	      printf("%-40s ... ", "Saving band information from local CM"); fflush(stdout);
+	    }
+	  else
+	    printf("%-40s ... ", "Saving band information from CM"); fflush(stdout);
+	    
+	  if ((ofp = fopen(bandfile,"w")) == NULL)
+	    Die("failed to open band file %s", bandfile);
+	  PrintBands2BandFile(ofp, cm, dmin, dmax);
 	  fprintf(ofp, "//\n");
 	  fclose(ofp);
 	  printf("done. [%s]\n", bandfile);
@@ -1264,6 +1308,35 @@ PrintBandDensity(FILE *fp, double **gamma, int v, int W, int min, int max)
   fprintf(fp, "band for state:%d min:%d max:%d\n", v, min, max);
   for (n = 0; n <= W; n++)
     fprintf(fp, "%d:%.12f\n", n, gamma[v][n]);
+}
+
+/* EPN 08.18.05
+ * PrintBands2BandFile()
+ * Function: PrintBands2BandFile
+ *
+ * Purpose:  Given gamma, a state index v, and a W (maximum hit len)
+ *           print out the probability that a subsequence rooted at 
+ *           v will have lengths 0 to W.
+ *
+ * Args:    fp       - filehandle to print to
+ *          cm       
+ *          dmin     
+ *          dmax
+ *
+ * Returns: (void) 
+ */
+
+static void
+PrintBands2BandFile(FILE *fp, CM_t *cm, int *dmin, int *dmax)
+{
+  int v;
+  /* format: 
+   * line  1        :<cm->M>
+   * lines 2 -> M+1 :<v> <dmin> <dmax> */
+
+  fprintf(fp, "%d\n", cm->M);
+  for (v = 0; v < cm->M; v++)
+    fprintf(fp, "%d %d %d\n", v, dmin[v], dmax[v]);
 }
 
 /* Function:  StripWUSS()

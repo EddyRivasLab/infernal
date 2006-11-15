@@ -25,6 +25,8 @@
 #include "hmmer_structs.h"
 #include "hmmband.h"
 
+static int QDBFileRead(FILE *fp, CM_t *cm, int **ret_dmin, int **ret_dmax);
+
 static char banner[] = "cmsearch - search a sequence database with an RNA covariance model";
 
 static char usage[]  = "\
@@ -58,6 +60,7 @@ static char experts[] = "\
   * Options for accelerating CM search/alignment (*in development*):\n\
    --beta <f>    : tail loss prob for QBD (default:0.0000001)\n\
    --noqdb       : DON'T use query dependent bands (QDB) to accelerate CYK\n\
+   --qdbfile <f> : read QDBs from file <f> (outputted from cmbuild)\n\
    --hbanded     : use HMM bands from a CM plan 9 HMM scan for CYK\n\
    --hbandp <f>  : tail loss prob for --hbanded (default:0.0001)\n\
    --banddump    : print bands for each state\n\
@@ -84,6 +87,7 @@ static struct opt_s OPTIONS[] = {
   { "--hmmonly",    FALSE, sqdARG_NONE },
   { "--hthresh",    FALSE, sqdARG_FLOAT},
   { "--noqdb",      FALSE, sqdARG_NONE },
+  { "--qdbfile",    FALSE, sqdARG_STRING},
   { "--beta",       FALSE, sqdARG_FLOAT},
   { "--hbanded",    FALSE, sqdARG_NONE },
   { "--hbandp",     FALSE, sqdARG_FLOAT},
@@ -148,6 +152,9 @@ main(int argc, char **argv)
   int    do_align;              /* TRUE to calculate and show alignments */
   int    do_dumptrees;		/* TRUE to dump parse trees */
   int    do_qdb;		/* TRUE to do a priori banded CYK */
+  int    read_qdb;		/* TRUE to read QDBs from a cmbuild outputted file */
+  char  *qdb_file;              /* file to read QDBs from (output from cmbuild) */
+  FILE  *qdb_fp;
   int    do_projectx;           /* TRUE to activate special in-progress testing code */
   int    do_bdump;              /* TRUE to print out bands */
   /*EPN 08.18.05*/
@@ -227,6 +234,9 @@ main(int argc, char **argv)
   do_align          = TRUE;
   do_dumptrees      = FALSE;
   do_qdb            = TRUE;      /* QDB is default */
+  read_qdb          = FALSE;
+  qdb_file          = NULL;
+  qdb_fp            = NULL;
   beta              = 0.0000001;
   do_projectx       = FALSE;
   do_bdump          = FALSE;
@@ -271,6 +281,7 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--hthresh")   == 0) hmm_thresh   = atof(optarg);
     else if  (strcmp(optname, "--beta")   == 0) beta      = atof(optarg);
     else if  (strcmp(optname, "--noqdb")  == 0) do_qdb    = FALSE;
+    else if  (strcmp(optname, "--qdbfile")== 0) { read_qdb  = TRUE; qdb_file = optarg; }
     else if  (strcmp(optname, "--hbanded")   == 0) do_hbanded   = TRUE; 
     else if  (strcmp(optname, "--hbandp")    == 0) hbandp       = atof(optarg);
     else if  (strcmp(optname, "--banddump")  == 0) do_bdump     = TRUE;
@@ -315,6 +326,8 @@ main(int argc, char **argv)
     Die("Can't pick --scan2hbands without --hbanded option.\n");
   if (do_hbanded && !(do_filter))
     Die("Can't pick --hbanded without --hmmfb or --hmmweinberg filtering option.\n");
+  if (read_qdb && !(do_qdb))
+    Die("--qdbfile and --noqdb don't make sense together.\n");
 
   /* EPN 08.18.05 */
   if (! (set_window)) windowlen = cm->W;
@@ -334,7 +347,7 @@ main(int argc, char **argv)
       /* build a CM Plan 9 HMM, and use it to scan. */
       Alphabet_type = hmmNOTSETYET;
       SetAlphabet(hmmNUCLEIC); /* Set up the hmmer_alphabet global variable */
-      if(!build_cp9_hmm(cm, &cp9_hmm, &cp9map, debug_level))
+      if(!build_cp9_hmm(cm, &cp9_hmm, &cp9map, 0.0001, debug_level))
 	Die("Couldn't build a CP9 HMM from the CM\n");
       /*debug_print_cp9_params(cp9_hmm); */
     }
@@ -364,20 +377,33 @@ main(int argc, char **argv)
 
   if (do_qdb || do_projectx || do_bdump)
     {
-      /* start stopwatch for timing the band calculation */
       StopwatchZero(watch);
       StopwatchStart(watch);
-      safe_windowlen = windowlen * 2;
-      while(!(BandCalculationEngine(cm, safe_windowlen, beta, 0, &dmin, &dmax, &gamma, do_local)))
+      if(read_qdb)
 	{
-	  /*Die("BandCalculationEngine() failed.\n");*/
-	  FreeBandDensities(cm, gamma);
-	  free(dmin);
-	  free(dmax);
-	  safe_windowlen *= 2;
-	  printf("ERROR BandCalculationEngine returned false, windowlen adjusted to %d\n", safe_windowlen);
+	  /* read the bands from a file */
+	  if ((qdb_fp = fopen(qdb_file, "r")) == NULL)
+	    Die("failed to open QDB file %s", qdb_file);
+	  if(!(QDBFileRead(qdb_fp, cm, &dmin, &dmax)))
+	    {
+	      Die("ERROR reading QDB file: %s.\nDoes it correspond (same number of states) to this model?\n", qdb_file);
+	    }
+	  fclose(qdb_fp);
 	}
-
+      else /* calculate the bands */
+	{
+	  /* start stopwatch for timing the band calculation */
+	  safe_windowlen = windowlen * 2;
+	  while(!(BandCalculationEngine(cm, safe_windowlen, beta, 0, &dmin, &dmax, &gamma, do_local)))
+	    {
+	      /*Die("BandCalculationEngine() failed.\n");*/
+	      FreeBandDensities(cm, gamma);
+	      free(dmin);
+	      free(dmax);
+	      safe_windowlen *= 2;
+	      printf("ERROR BandCalculationEngine returned false, windowlen adjusted to %d\n", safe_windowlen);
+	    }
+	}	  
       /* EPN 11.11.05 
        * An important design decision.
        * We're changing the windowlen value here. By default,
@@ -401,7 +427,7 @@ main(int argc, char **argv)
 	  printf("beta:%f\n", beta);
 	  debug_print_bands(cm, dmin, dmax);
 	  PrintDPCellsSaved(cm, dmin, dmax, windowlen);
-	}
+	    }
       StopwatchStop(watch);
       StopwatchDisplay(stdout, "\nCPU time (band calc): ", watch);
     }
@@ -888,7 +914,8 @@ main(int argc, char **argv)
 
   if (do_qdb)
     {
-      FreeBandDensities(cm, gamma);
+      if(!read_qdb)
+	FreeBandDensities(cm, gamma);
       free(dmin);
       free(dmax);
     }
@@ -904,3 +931,70 @@ main(int argc, char **argv)
   return EXIT_SUCCESS;
 }
 
+static int  
+QDBFileRead(FILE *fp, CM_t *cm, int **ret_dmin, int **ret_dmax)
+{
+  char   *buf;
+  int     n;			/* length of buf */
+  char   *s;
+  int     M;			/* number of states in model */
+  int     v,x,y,nd;		/* counters for states, events, nodes */
+  char   *tok;
+  int     toklen;
+  int    *dmin;
+  int    *dmax;
+  int     read_v;
+
+  /* format of QDB file: 
+   * line  1        :<cm->M>
+   * lines 2 -> M+1 :<v> <dmin> <dmax> */
+
+  buf = NULL;
+  n   = 0;
+  if (feof(fp) || sre_fgets(&buf, &n, fp) == NULL) return 0;
+
+  s   = buf;
+  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+  if (! IsInt(tok))                                     goto FAILURE;
+  M = atoi(tok);
+  if(M != cm->M) goto FAILURE;
+
+  dmin = MallocOrDie(sizeof(int) * cm->M);
+  dmax = MallocOrDie(sizeof(int) * cm->M);  
+  *ret_dmin = NULL;
+  *ret_dmax = NULL;
+
+  v = 0;
+  while (sre_fgets(&buf, &n, fp) != NULL) 
+    {
+      if (strncmp(buf, "//", 2) == 0) 
+	break;
+      s   = buf;
+      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
+      if (! IsInt(tok))                                     goto FAILURE;
+      read_v = atoi(tok);
+      if(v != read_v) goto FAILURE;
+
+      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
+      if (! IsInt(tok))                                     goto FAILURE;
+      dmin[v] = atoi(tok);
+
+      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
+      if (! IsInt(tok))                                     goto FAILURE;
+      dmax[v] = atoi(tok);
+
+      v++;
+    }
+  if(v != M) goto FAILURE;
+
+  *ret_dmin = dmin;
+  *ret_dmax = dmax;
+  
+  if (buf != NULL) free(buf);
+  return 1;
+
+ FAILURE:
+  if (cm != NULL)  FreeCM(cm);
+  if (buf != NULL) free(buf);
+  return 0;
+}

@@ -12,12 +12,10 @@
  * model two CM insert states, but the code below approximates it 
  * pretty well (it gets as close as possible (I think)).
  *
- * OUT OF DATE:
  * build_cp9_hmm() is the main function, it sets the probabilities
  * of the HMM and checks that the expected number of times each
- * HMM state is entered is within a given threshold (0.0001 by default)
- * of the expected number of times each corresponding CM state is
- * entered.
+ * HMM state is entered is within a given threshold of the expected
+ * number of times each corresponding CM state is entered.
  */
 
 #include "config.h"
@@ -76,15 +74,18 @@ FChiSquareFit(float *f1, float *f2, int N);
  * Args:    
  * CM_t        *cm         - the CM
  * cplan9_s   **ret_hmm    - CM Plan 9 HMM to be allocated, filled in and returned
- * CP9Map_t **ret_cp9map - map from the CP9 HMM to the CM and vice versa
+ * CP9Map_t   **ret_cp9map - map from the CP9 HMM to the CM and vice versa
  *                           Allocated and returned from here, caller must free.
- *
- * Returns: TRUE if CP9 is constructed, FALSE if we get some error. 
+ * float psi_vs_phi_threshold - allowable difference in expected number of times mapping
+ *                              cm and hmm states are entered.
+ * Returns: TRUE if CP9 is constructed and passes the psi vs phi test
+ *          FALSE if we get some error. 
  *          Its also possible one of the functions called within this function
  *          will print an error statement and exit.
  */
 int
-build_cp9_hmm(CM_t *cm, struct cplan9_s **ret_hmm, CP9Map_t **ret_cp9map, int debug_level)
+build_cp9_hmm(CM_t *cm, struct cplan9_s **ret_hmm, CP9Map_t **ret_cp9map, float psi_vs_phi_threshold,
+	      int debug_level)
 {
   int       k;                 /* counter of consensus columns (HMM nodes)*/
   int       i,j;
@@ -94,9 +95,6 @@ build_cp9_hmm(CM_t *cm, struct cplan9_s **ret_hmm, CP9Map_t **ret_cp9map, int de
   int *ap;                     /* CM state(s) (1 or 2) that maps to HMM state in node k*/
   int k_state;                 /* 0, 1 or 2, state in hmm node k*/
 
-  double psi_vs_phi_threshold; /* the threshold that mapping (potentially summed) psi and 
-				* phi values are allowed to be different by, without throwing
-				* an error.*/
   int ret_val;                 /* return value */
   CP9Map_t *cp9map;         
   struct cplan9_s  *hmm;       /* CM plan 9 HMM we're going to construct from the sub_cm */
@@ -186,34 +184,18 @@ build_cp9_hmm(CM_t *cm, struct cplan9_s **ret_hmm, CP9Map_t **ret_cp9map, int de
     }
 
   CPlan9Renormalize(hmm);
+  CP9Logoddsify(hmm);
   /* Fill phi to check to make sure our HMM is "close enough" to our CM.
    * phi[k][0..2] is the expected number of times HMM node k state 0 (match), 1(insert),
-   * or 2(delete) is entered. These should be *very close* (within 0.0001) to the psi 
+   * or 2(delete) is entered. These should be *very close* (within 0.00001) to the psi 
    * values for the CM states that they map to (psi[v] is the expected number of times
-   * state v is entered in the CM). The reason we can't demand closer precision than
-   * 0.0001 is that some HMM insert states map to 2 CM insert states, and its impossible
-   * to perfectly mirror two CM insert states with 1 HMM insert states (due to self-loop
-   * issues).
+   * state v is entered in the CM). 
    */
   fill_phi_cp9(hmm, &phi, 1);
 
   if(debug_level > 1) 
     debug_print_cp9_params(hmm);
-  /*psi_vs_phi_threshold = 0.0001;*/
-  psi_vs_phi_threshold = 0.01;
-  if(check_cm_adj_bp(cm, cp9map))
-    {
-      psi_vs_phi_threshold = 0.01;
-    /* if check_cm_adj_bp() returns TRUE, then the following rare (but possible) situation
-     * is true. Two adjacent consensus columns are modelled by the same MATP node. In this
-     * case it is difficult for the CM plan 9 architecture to mirror the insert state
-     * that maps to both the MATP_IL and MATP_IR of this node. It is more difficult than
-     * for any other possible CM topology situation, so we relax the threshold when
-     * checking psi and phi.
-     */
-    }    
-  ret_val = check_psi_vs_phi_cp9(cm, cp9map, psi, phi, psi_vs_phi_threshold, debug_level);
-  CP9Logoddsify(hmm);
+  ret_val = check_psi_vs_phi_cp9(cm, cp9map, psi, phi, (double) psi_vs_phi_threshold, debug_level);
 
   free(ap);
   for(k = 0; k <= hmm->M; k++)
@@ -299,12 +281,12 @@ CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level)
   k = 0;
   ks = 0;
   v = 0;
-  map_helper(cp9map, k, ks, v);
+  map_helper(cm, cp9map, k, ks, v);
 
   /*ROOT_IL*/
   ks = 1;
   v = 1;
-  map_helper(cp9map, k, ks, v);
+  map_helper(cm, cp9map, k, ks, v);
 
   /*handle ROOT_IR at end of function*/
   
@@ -338,27 +320,27 @@ CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level)
 	    {
 	      ks = 0; /*match*/
 	      v = cm->nodemap[n]; /*MATP_MP*/
-	      map_helper(cp9map, k, ks, v);
+	      map_helper(cm, cp9map, k, ks, v);
 	      v = cm->nodemap[n] + 1; /*MATP_ML*/
-	      map_helper(cp9map, k, ks, v);
+	      map_helper(cm, cp9map, k, ks, v);
 
 	      ks = 1; /*insert*/
 	      v = cm->nodemap[n] + 4; /*MATP_IL*/
-	      map_helper(cp9map, k, ks, v);
+	      map_helper(cm, cp9map, k, ks, v);
 
 	      ks = 2; /*delete*/
 	      v = cm->nodemap[n] + 2; /*MATP_MR*/
-	      map_helper(cp9map, k, ks, v);
+	      map_helper(cm, cp9map, k, ks, v);
 	      v = cm->nodemap[n] + 3; /*MATP_D*/
-	      map_helper(cp9map, k, ks, v);
+	      map_helper(cm, cp9map, k, ks, v);
 	    }
 	  else if(is_right)
 	    {
 	      ks = 0; /*match*/
 	      v = cm->nodemap[n]; /*MATP_MP*/
-	      map_helper(cp9map, k, ks, v);
+	      map_helper(cm, cp9map, k, ks, v);
 	      v = cm->nodemap[n] + 2; /*MATP_MR*/
-	      map_helper(cp9map, k, ks, v);
+	      map_helper(cm, cp9map, k, ks, v);
 
 	      ks = 1; /*insert*/
 	      /* whoa... careful, we want the CM state that will insert to the RIGHT
@@ -385,7 +367,7 @@ CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level)
 			  exit(1);
 			}
 		      v = cm->nodemap[n_begr] + 1; /*BEGR_IL*/
-		      map_helper(cp9map, k, ks, v);
+		      map_helper(cm, cp9map, k, ks, v);
 		    }
 		  else if(cp9map->nd2rpos[nn] == (k+1))
 		    {
@@ -393,19 +375,19 @@ CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level)
 		      if(cm->ndtype[nn] == MATP_nd)
 			{
 			  v = cm->nodemap[nn] + 5; /*MATP_IR*/
-			  map_helper(cp9map, k, ks, v);
+			  map_helper(cm, cp9map, k, ks, v);
 			}
 		      else if(cm->ndtype[nn] == MATR_nd)
 			{
 			  v = cm->nodemap[nn] + 2; /*MATR_IR*/
-			  map_helper(cp9map, k, ks, v);
+			  map_helper(cm, cp9map, k, ks, v);
 			}
 		    }
 		} /* end of if (k != cp9map->hmm_M) */
 	      else /* k == cp9map->hmm_M */
 		{
 		  v = 2; /*ROOT_IR*/
-		  map_helper(cp9map, k, ks, v);
+		  map_helper(cm, cp9map, k, ks, v);
 		}
 	      /* NOT DONE YET, the MATP_IR has to map to an HMM state,
 	       * if the previous column (k-1) is modelled by a CM MATR or 
@@ -434,36 +416,36 @@ CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level)
 			}
 		    }
 		  v = cm->nodemap[n] + 5; /*MATP_IR*/
-		  map_helper(cp9map, (k-1), ks, v);
+		  map_helper(cm, cp9map, (k-1), ks, v);
 		}
 	      
 	      ks = 2; /*delete*/
 	      v = cm->nodemap[n] + 1; /*MATP_ML*/
-	      map_helper(cp9map, k, ks, v);
+	      map_helper(cm, cp9map, k, ks, v);
 	      
 	      v = cm->nodemap[n] + 3; /*MATP_D*/
-	      map_helper(cp9map, k, ks, v);
+	      map_helper(cm, cp9map, k, ks, v);
 	    }
 	  break;
 
 	case MATL_nd:
 	  ks = 0; /*match*/
 	  v = cm->nodemap[n]; /*MATL_ML*/
-	  map_helper(cp9map, k, ks, v);
+	  map_helper(cm, cp9map, k, ks, v);
 
 	  ks = 1; /*insert*/
 	  v = cm->nodemap[n] + 2; /*MATL_IL*/
-	  map_helper(cp9map, k, ks, v);
+	  map_helper(cm, cp9map, k, ks, v);
 
 	  ks = 2; /*delete*/
 	  v = cm->nodemap[n] + 1; /*MATL_D*/
-	  map_helper(cp9map, k, ks, v);
+	  map_helper(cm, cp9map, k, ks, v);
 
 	  if(k == cp9map->hmm_M) /* can't forget about ROOT_IR */
 	    {
 	      ks = 1; /*insert*/
 	      v  = 2; /*ROOT_IR*/
-	      map_helper(cp9map, k, ks, v);
+	      map_helper(cm, cp9map, k, ks, v);
 	    }
 
 	  break;
@@ -471,7 +453,7 @@ CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level)
 	case MATR_nd:
 	  ks = 0; /*match*/
 	  v = cm->nodemap[n]; /*MATR_MR*/
-	  map_helper(cp9map, k, ks, v);
+	  map_helper(cm, cp9map, k, ks, v);
 
 	  ks = 1; /*insert*/
 	  /* whoa... careful, we want the CM state that will insert to the RIGHT
@@ -497,7 +479,7 @@ CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level)
 		  exit(1);
 		    }
 		  v = cm->nodemap[n_begr] + 1; /*BEGR_IL*/
-		  map_helper(cp9map, k, ks, v);
+		  map_helper(cm, cp9map, k, ks, v);
 		}
 	      else if(cp9map->nd2rpos[nn] == (k+1))
 		{
@@ -505,19 +487,19 @@ CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level)
 		  if(cm->ndtype[nn] == MATP_nd)
 		    {
 		      v = cm->nodemap[nn] + 5;
-		      map_helper(cp9map, k, ks, v);
+		      map_helper(cm, cp9map, k, ks, v);
 		    }
 		  else if(cm->ndtype[nn] == MATR_nd)
 		    {
 		      v = cm->nodemap[nn] + 2; /*MATP_IR*/
-		      map_helper(cp9map, k, ks, v);
+		      map_helper(cm, cp9map, k, ks, v);
 		    }
 		}
 	    } /* end of if (k != cp9map->hmm_M) */
 	  else /* k == cp9map->hmm_M */
 	    {
 	      v = 2; /*ROOT_IR*/
-	      map_helper(cp9map, k, ks, v);
+	      map_helper(cm, cp9map, k, ks, v);
 	    }
 	  if(cp9map->nd2lpos[cp9map->pos2nd[k-1]] == (k-1)) /*k-1 modelled by MATL*/
 	    {
@@ -527,19 +509,23 @@ CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level)
 	  
 	  ks = 2; /*delete*/
 	  v = cm->nodemap[n] + 1; /*MATR_D*/
-	  map_helper(cp9map, k, ks, v);
+	  map_helper(cm, cp9map, k, ks, v);
 	  break;
 	}
     }
 
-  /* Check to make sure that insert states map to exactly 1 HMM node state. */
+  /* Check to make sure that insert states map to exactly 1 HMM node state or 0 HMM states,
+   * if it's an ambiguity issue. */
   for(v = 0; v <= cm->M; v++)
     {
       if((cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) && 
 	 ((cp9map->cs2hn[v][0] == -1) || cp9map->cs2hn[v][1] != -1))
 	{
-	  printf("ERROR during cp9map->cs2hn construction\ncp9map->cs2hn[%d][0]: %d | cp9map->cs2hn[%d][1]: %d AND v is an INSERT state\n", v, cp9map->cs2hn[v][0], v, cp9map->cs2hn[v][1]);
-	  exit(1);
+	  if(cm->sttype[(v+1)] != E_st) /* v has been detached to remove ambiguities */
+	    {
+	      printf("ERROR during cp9map->cs2hn construction\ncp9map->cs2hn[%d][0]: %d | cp9map->cs2hn[%d][1]: %d AND v is an INSERT state\n", v, cp9map->cs2hn[v][0], v, cp9map->cs2hn[v][1]);
+	      exit(1);
+	    }
 	}
       /* each CM state should map to only 1 HMM state. */
     }
@@ -552,6 +538,12 @@ CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level)
 	{
 	  v1 = cp9map->hns2cs[k][ks][0];
 	  v2 = cp9map->hns2cs[k][ks][1];
+	  if(ks == 1 && v2 != -1)
+	    {
+	      printf("ERROR in CP9_map_cm2hmm: HMM insert state of node: %d\n\tmaps to 2 CM states (%d and %d)\n", k, v1, v2);
+	      exit(1);
+	    }	      
+
 	  if(debug_level > 1)
 	    printf("hns2cs[%3d][%3d][0]: %3d | hns2cs[%3d][%3d[1]: %3d\n", k, ks, v1, k, ks, v2);
 	  if(v1 != -1 && (cp9map->cs2hn[v1][0] == k && cp9map->cs2hs[v1][0] == ks))
@@ -596,21 +588,29 @@ CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level)
 
 /**************************************************************************
  * EPN 03.15.06
- * map_helper()
+ * map_helper
  *
- * Helper function for map_cm2hmm_and_hmm2cm_cp9(), 
+ * Helper function for map_cm2hmm_and_hmm2cm_cp9(). 
+ * UPDATED 11.13.06: Checks for, and refrains from mapping a CM insert state
+ *                   that has been detached (END_E-1 state) to remove ambiguities
+ *                   from the model to an HMM state.
  *
  * Purpose:  Fill in specific parts of the maps, given k, ks, and v.
  * Args:    
- * CP9Map_t *cp9map - the CM to CP9 map
+ * CM_t *cm           - the CM
+ * CP9Map_t *cp9map   - the CM to CP9 map
  * int k              - the hmm node coordinate we're filling maps in for
  * int ks             - the hmm state (0,1,or 2) coordinate we're filling maps in for
  * int v              - the CM state coordinate we're filling maps in for
  * Returns: (void) 
  */
 void
-map_helper(CP9Map_t *cp9map, int k, int ks, int v)
+map_helper(CM_t *cm, CP9Map_t *cp9map, int k, int ks, int v)
 {
+  if(ks == 1 && cm->sttype[(v+1)] == E_st) /* insert */
+    {
+      return;
+    }
   if(cp9map->cs2hn[v][0] == -1)
     {
       cp9map->cs2hn[v][0] = k;
@@ -1825,7 +1825,7 @@ cm2hmm_trans_probs_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, int k, 
 
   FNorm(hmm->t[k]+3, 3);
   FNorm(hmm->t[k]+6, 3);
-  /* Printing transition probs for HMM HERE!!*/
+  /* print transition probs for HMM */
   /*
     printf("hmm->t[%d][CTMM]: %f\n", k, hmm->t[k][CTMM]);
     printf("hmm->t[%d][CTMI]: %f\n", k, hmm->t[k][CTMI]);
@@ -2146,8 +2146,9 @@ cm_sum_subpaths_cp9(CM_t *cm, CP9Map_t *cp9map, int start, int end, char ***tmap
  * check_psi_vs_phi_cp9()
  *
  * Purpose:  Check that psi and phi values for CM states that map to HMM states
- *           are within a certain leeway threshold. 
- *
+ *           are within a certain threshold. Assumes all HMM insert state maps 
+ *           to exactly 1 CM insert state - i.e. ambiguities have been removed.
+ *           (As of version 0.71 ambiguities are always removed).
  * Args:    
  * CM_t *cm          - the CM
  * CP9Map_t *cp9map  - the map from the CM to HMM and vice versa
@@ -2171,15 +2172,6 @@ check_psi_vs_phi_cp9(CM_t *cm, CP9Map_t *cp9map, double *psi, double **phi, doub
   double summed_psi;
   int *ap; /*CM state that maps to HMM state in node k*/
   int k_state; /*0, 1 or 2, state in hmm node k*/
-  int dual_mapping_insert; /* TRUE if the HMM insert state maps to 2 CM insert states, 
-			    * these situations are impossible for the HMM to mirror exactly
-			    * (with a single insert state) due to the self insert transitions. 
-			    * For example there's only one way for the HMM to emit 3 residues
-			    * from this insert state, but 4 ways for the CM to emit 3 residues
-			    * from the combo of the 2 CM inserts (3 from A, 3 from B, 1 from A and
-			    * 2 from B, or 2 from A and 1 from B.) This is impossible to model
-			    * with the same probabilities by the single HMM insert self transition. 
-			    */
   int violation;
   int v_ct; /* Number of violations not involving dual insert states. */
   double diff;
@@ -2192,23 +2184,13 @@ check_psi_vs_phi_cp9(CM_t *cm, CP9Map_t *cp9map, double *psi, double **phi, doub
   ap = MallocOrDie(sizeof(int) * 2);
 
   for(v = 0; v < cm->M; v++)
-    {
-      if(cm->stid[v] != BIF_B)
-	{      
-	  for(y = 0; y < cm->cnum[v]; y++)
-	  {
-	    if(debug_level > 1)
-	      {
-		printf("cm->t[%d][%d]: %f\n", v, y, cm->t[v][y]);
-	      }
-	  }
-	}
-      if(debug_level > 1)
-	{
-	  printf("\n");
-	}
-    }		       
-  
+    if(cm->stid[v] != BIF_B)
+      {
+	for(y = 0; y < cm->cnum[v]; y++)
+	  if(debug_level > 1) printf("cm->t[%d][%d]: %f\n", v, y, cm->t[v][y]);
+	if(debug_level > 1) printf("\n");
+      }		       
+
   for (k = 0; k <= cp9map->hmm_M; k++)
     {
       k_state = HMMMATCH;
@@ -2232,39 +2214,18 @@ check_psi_vs_phi_cp9(CM_t *cm, CP9Map_t *cp9map, double *psi, double **phi, doub
       k_state = HMMINSERT;
       ap[0] = cp9map->hns2cs[k][k_state][0];
       ap[1] = cp9map->hns2cs[k][k_state][1];
-      summed_psi = psi[ap[0]];
-      dual_mapping_insert = FALSE;
       if(ap[1] != -1)
-	{
-	  dual_mapping_insert = TRUE;
-	  summed_psi += psi[ap[1]]; 
-	  /* This is technically incorrect. Summing the psi of ap[0] and
-	   * ap[1] here does not give the expected number of times either is
-	   * visited. This is because they are not independent, some
-	   * paths can go through both ap[0] and ap[1]. For a single HMM match
-	   * and delete state, if two CM states map, they are from
-	   * the same node's split set (ex: MATP_MP and MATP_ML) so
-	   * they are independent (no path can go through both) and
-	   * adding psi[ap[0]] and psi[ap[1]] is appropriate.  Here
-	   * we don't bother to figure out what the correct psi value
-	   * is (b/c its complex, and this is just a function for help 
-	   * with debugging anyway).
-	   */
-	}
+	Die("ERROR, HMM insert state of node %d maps to 2 CM insert states: %d and %d\n", k, ap[0], ap[1]);
+      summed_psi = psi[ap[0]];
       violation = FALSE;
       diff = phi[k][1] - summed_psi;
       if((diff > threshold) || ((-1. * diff) > threshold))
 	{
-	  if(!(dual_mapping_insert)) 
-	    {
-	      violation = TRUE;
-	      v_ct++;
-	    }
+	  violation = TRUE;
+	  v_ct++;
 	}
       if(violation)
 	printf("I k: %4d | phi: %f | psi: %f VIOLATION (%f) (cm v1: %d cm v2: %d)\n", k, phi[k][1], summed_psi, diff, ap[0], ap[1]);
-      else if(dual_mapping_insert && debug_level > 1)
-	printf("I k: %4d | phi: %f | psi: %f (DUAL INSERT so psi != phi)\n", k, phi[k][1], summed_psi);
       else if(debug_level > 1)
 	printf("I k: %4d | phi: %f | psi: %f\n", k, phi[k][1], summed_psi);
       

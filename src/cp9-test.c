@@ -75,7 +75,7 @@ main(int argc, char **argv)
   /*********************************************** 
    * Parse command line
    ***********************************************/
-  pthresh        = 0.00001;
+  pthresh        = 0.0001;
   do_psionly     = FALSE;
   nsamples       = 50000;
   chi_thresh     = 0.01;
@@ -118,24 +118,26 @@ main(int argc, char **argv)
   watch = StopwatchCreate(); 
   StopwatchZero(watch);
   StopwatchStart(watch);
-  if(!build_cp9_hmm(cm, &hmm, &cp9map, debug_level))
+  if(!build_cp9_hmm(cm, &hmm, &cp9map, pthresh, debug_level))
     Die("CM Plan 9 HMM fails the psi/phi comparison test.\n");
   StopwatchStop(watch);
   StopwatchDisplay(stdout, "CP9 construction CPU time: ", watch);
 
-  StopwatchZero(watch);
-  StopwatchStart(watch);
-  sre_srandom(seed);
-  if(!(CP9_check_cp9_by_sampling(cm, hmm, 
-				 NULL,     /* Don't keep track of failures (sub_cm feature) */
-				 1, hmm->M, chi_thresh, nsamples, debug_level)))
-    Die("CM Plan 9 fails sampling check!\n");
-  else
-    printf("CM Plan 9 passed sampling check.\n");
-
-  StopwatchStop(watch);
-  StopwatchDisplay(stdout, "CP9 sampling check CPU time: ", watch);
-
+  if(!do_psionly)
+    {
+      StopwatchZero(watch);
+      StopwatchStart(watch);
+      sre_srandom(seed);
+      if(!(CP9_check_cp9_by_sampling(cm, hmm, 
+				     NULL,     /* Don't keep track of failures (sub_cm feature) */
+				     1, hmm->M, chi_thresh, nsamples, debug_level)))
+	Die("CP9 HMM fails sampling check!\n");
+      else
+	printf("CP9 HMM passed sampling check.\n");
+      
+      StopwatchStop(watch);
+      StopwatchDisplay(stdout, "CP9 sampling check CPU time: ", watch);
+    }
   /* clean up and exit */
   StopwatchFree(watch);
   FreeCP9Map(cp9map);

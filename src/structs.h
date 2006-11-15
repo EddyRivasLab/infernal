@@ -334,12 +334,13 @@ typedef struct submap_s {
   int sstruct;         /* first consensus column this sub_cm models structure of */
   int estruct;         /* final consensus column this sub_cm models structure of */
 
-  int  *s2o_id;    
-  int **s2o_smap;
-  int **o2s_smap;
+  int **s2o_smap;      /* v = [0..sub_M-1] [0..1], orig_cm state(s) that maps to v */
+  int **o2s_smap;      /* v = [0..orig_M-1][0..1], sub_cm  state(s) that maps to v */
+  int  *s2o_id;        /* v = [0..sub_M-1] TRUE if sub_cm state v maps identically *
+                        * to a orig_cm state (this will be s2o_smap[v][0])         */
 
-  int  sub_clen;            /* consensus length orig_cm */
-  int  orig_clen;           /* consensus length sub_cm  */
+  int  sub_clen;       /* consensus length orig_cm */
+  int  orig_clen;      /* consensus length sub_cm  */
 
   int sub_M;           /* number of states in the sub CM */
   int orig_M;          /* number of states in the original CM */

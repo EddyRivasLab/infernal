@@ -422,7 +422,7 @@ main(int argc, char **argv)
 
   if(do_hbanded || do_sub) /* We need a CP9 HMM to build sub_cms */
     {
-      if(!build_cp9_hmm(cm, &hmm, &cp9map, debug_level))
+      if(!build_cp9_hmm(cm, &hmm, &cp9map, 0.0001, debug_level))
 	Die("Couldn't build a CP9 HMM from the CM\n");
       if(do_checkcp9)
 	{
@@ -578,10 +578,10 @@ main(int argc, char **argv)
 	   * if we don't need to build a CP9 HMM from the sub_cm to do banded alignment.*/
 	  if(do_fullsub && !do_hbanded)
 	    {
-	      ConfigLocal_fullsub_post(cm, orig_cp9map, cp9_posterior, sqinfo[i].len);
+	      /*ConfigLocal_fullsub_post(cm, cp9map, submap, cp9_posterior, sqinfo[i].len);*/
 
-	      /*ConfigLocal_fullsub(cm, 0.5, 0.5, orig_cp9map->pos2nd[submap->sstruct],
-		orig_cp9map->pos2nd[submap->estruct]);*/
+	      ConfigLocal_fullsub(cm, 0.5, 0.5, orig_cp9map->pos2nd[submap->sstruct],
+				  orig_cp9map->pos2nd[submap->estruct]);
 	      /*ConfigLocal(sub_cm, 0.5, 0.5);*/
 	      CMLogoddsify(cm);
 	      do_local = TRUE; /* we wait til we get here to set do_local, if we 
@@ -594,16 +594,16 @@ main(int argc, char **argv)
 	      /* Eventually, I think we can do this by just adjusting the parameters of the original HMM 
 		 CP9_2sub_cp9(hmm, &sub_hmm2, spos, epos, orig_phi);
 	      */
-	      if(!build_cp9_hmm(sub_cm, &sub_hmm, &sub_cp9map, debug_level))
+	      if(!build_cp9_hmm(sub_cm, &sub_hmm, &sub_cp9map, 0.0001, debug_level))
 		Die("Couldn't build a sub CP9 HMM from the sub CM\n");
 
 	      if(do_fullsub)
 		{
 		  CPlan9SWConfig(sub_hmm, 0.5, 0.5);
 		  CP9Logoddsify(sub_hmm);
-		  /*ConfigLocal_fullsub(sub_cm, 0.5, 0.5, sub_cp9map->pos2nd[submap->sstruct],
-		    sub_cp9map->pos2nd[submap->estruct]);*/
-		  ConfigLocal(sub_cm, 0.5, 0.5);
+		  ConfigLocal_fullsub(sub_cm, 0.5, 0.5, sub_cp9map->pos2nd[submap->sstruct],
+				      sub_cp9map->pos2nd[submap->estruct]);
+		  /*ConfigLocal(sub_cm, 0.5, 0.5);*/
 		  /*printf("debug printing sub cm params after config local full sub:\n");
 		  debug_print_cm_params(sub_cm);
 		  printf("done debug printing sub cm params after config local full sub:\n");*/

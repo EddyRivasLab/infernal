@@ -230,16 +230,19 @@ ConfigLocal_fullsub(CM_t *cm, float p_internal_start,
   *           decode of a sequence. Originally written for 'fullsub' 
   *           sub CM construction. 
   *
-  * Args:     cm        - the covariance model
-  *           cp9map    - map from CM to CP9 HMM and vice versa
-  *           post      - posterior matrix, already filled
-  *           L         - length of sequence to align
+  * Args:     sub_cm      - the sub cm built from orig_cm
+  *           orig_cm     - the original cm
+  *           orig_cp9map - map from orig CM to orig CP9 HMM and vice versa
+  *           submap      - the map from orig CM to sub CM and vice versa
+  *           post        - posterior matrix, already filled
+  *           L           - length of sequence to align
   * Returns:  
   * VOID
   */
 
  void 
- ConfigLocal_fullsub_post(CM_t *cm, CP9Map_t *cp9map, struct cp9_dpmatrix_s *post, int L)
+ ConfigLocal_fullsub_post(CM_t *sub_cm, CM_t *orig_cm, CP9Map_t *orig_cp9map, CMSubMap_t *submap,
+			  struct cp9_dpmatrix_s *post, int L)
  {
    int k;                       /* counter over HMM nodes */
    int v;			/* counter over states */
@@ -249,38 +252,63 @@ ConfigLocal_fullsub(CM_t *cm, float p_internal_start,
    float denom;
    float sum_beg, sum_end;
    int lpos, rpos, lins, rins;
+   int orig_v1, orig_v2;
+   int orig_nd1, orig_nd2;
+   int orig_il, orig_ir;
+
+   /* shouldn't be nec */
+   int orig_nd;
+
    sum_beg= sum_end = 0.;
 
    /* Zero all begin probs */
-   for (v = 0; v < cm->M; v++)  cm->begin[v] = 0.;
+   for (v = 0; v < sub_cm->M; v++)  sub_cm->begin[v] = 0.;
 
    /* Go through each CM node, filling in begin and end probs using the CP9 posteriors */
-   for(nd = 0; nd < cm->nodes; nd++)
+   for(nd = 0; nd < sub_cm->nodes; nd++)
      {
        lpos = rpos = lins = rins = -1;
-       if(cm->ndtype[nd] == MATP_nd)
+       orig_v1  = submap->o2s_smap[orig_cm->nodemap[nd]][0];
+       orig_v2  = submap->o2s_smap[orig_cm->nodemap[nd]][1];
+       orig_nd1 = orig_cm->ndidx[orig_v1];
+       if(orig_v2 != -1) orig_nd2 = orig_cm->ndidx[orig_v2];
+       else orig_nd2 = -1;
+
+       if(sub_cm->ndtype[nd] == MATP_nd)
 	 {
-	   lpos = cp9map->nd2lpos[k]; /* HMM node whose match state emits same left  pos as MATP_MP */
-	   rpos = cp9map->nd2rpos[k]; /* HMM node whose match state emits same right pos as MATP_MP */
-	   lins = cp9map->cs2hn[(cm->nodemap[nd] + 4)][0]; 
-	   /* HMM node whose insert state emits same left pos as MATP_IL */
-	   rins = cp9map->cs2hn[(cm->nodemap[nd] + 5)][0]; 
-	   /* HMM node whose insert state emits same right pos as MATP_IR */
-	   printf("cp9map->cs2hn[%3d][0]: %d\n", (cm->nodemap[nd]+4), cp9map->cs2hn[(cm->nodemap[nd]+4)][0]);
-	   printf("cp9map->cs2hn[%3d][1]: %d\n", (cm->nodemap[nd]+4), cp9map->cs2hn[(cm->nodemap[nd]+4)][1]);
-	   assert(cp9map->cs2hn[(cm->nodemap[nd] + 4)][1] == -1);
-	   assert(cp9map->cs2hn[(cm->nodemap[nd] + 5)][1] == -1);
+	   /* sub_cm MATPs have to map to orig_cm MATPs */
+	   assert(orig_cm->sttype[orig_v1] == MATP_MP);
+	   assert(orig_v2 == -1);
+	   lpos = orig_cp9map->nd2lpos[orig_nd1]; 
+	   /* lpos is the HMM node whose match state emits same left  pos as sub_cm MATP_MP */
+	   rpos = orig_cp9map->nd2rpos[orig_nd1]; 
+	   /* rpos is the HMM node whose match state emits same right pos as sub_cm MATP_MP */
+	   orig_il = orig_v1 + 4;
+	   lins = sub_cm->ndidx[submap->o2s_smap[orig_il][0]];
+	   /* lins is HMM node whose insert state emits same left  pos as sub_cm MATP_IL */
+	   orig_ir = orig_v1 + 5;
+	   rins = sub_cm->ndidx[submap->o2s_smap[orig_ir][0]];
+	   /* rins is HMM node whose insert state emits same right pos as sub_cm MATP_IR */
+	   assert(submap->o2s_smap[orig_il][1] == -1);
+	   assert(submap->o2s_smap[orig_ir][1] == -1);
 	 }
-       else if(cm->ndtype[nd] == MATL_nd)
+       else if(sub_cm->ndtype[nd] == MATL_nd)
 	 {
-	   lpos = cp9map->nd2lpos[k]; /* HMM node whose match state emits same pos as MATL_ML */
-	   lins = cp9map->cs2hn[(cm->nodemap[nd] + 2)][0]; 
+	   /*HEREHEREHEREHEREHEREHEREHERE*/
+	   lpos = orig_cp9map->nd2lpos[orig_nd]; 
+	   /* lpos is the HMM node whose match state emits same left  pos as sub_cm MATP_MP */
+	   /* HEREHERE if(orig_cm->ndtype[orig_v1]*/
+	   orig_il = orig_v1 + 4;
+	   lins = sub_cm->ndidx[submap->o2s_smap[orig_il][0]];
+	   /* lins is HMM node whose insert state emits same left  pos as sub_cm MATP_IL */
+
+	   lins = orig_cp9map->cs2hn[(sub_cm->nodemap[nd] + 2)][0]; 
 	   /* HMM node whose insert state emits same pos as MATL_IL */
 	 }
-       else if(cm->ndtype[nd] == MATR_nd)
+       else if(sub_cm->ndtype[nd] == MATR_nd)
 	 {
-	   rpos = cp9map->nd2lpos[k]; /* HMM node whose match state emits same pos as MATR_MR */
-	   rins = cp9map->cs2hn[(cm->nodemap[nd] + 2)][0]; 
+	   rpos = orig_cp9map->nd2lpos[k]; /* HMM node whose match state emits same pos as MATR_MR */
+	   rins = orig_cp9map->cs2hn[(sub_cm->nodemap[nd] + 2)][0]; 
 	   /* HMM node whose insert state emits same pos as MATR_IR */
 	 }
        else
@@ -295,26 +323,26 @@ ConfigLocal_fullsub(CM_t *cm, float p_internal_start,
 	*       the EL state is like an insert state. But I think a more robust 
 	*       solution exists, although it may be more complex.
 	*/
-       v = cm->nodemap[nd];
+       v = sub_cm->nodemap[nd];
        if(lpos != -1 && lins != -1)
 	 {
-	   cm->begin[v] += Score2Prob(post->mmx[1][lpos], 1.);
-	   cm->begin[v] += Score2Prob(post->imx[1][lins], 1.);
-	   cm->end[v]   += Score2Prob(post->mmx[L][lpos], 1.);
-	   cm->end[v]   += Score2Prob(post->imx[L][lins], 1.);
+	   sub_cm->begin[v] += Score2Prob(post->mmx[1][lpos], 1.);
+	   sub_cm->begin[v] += Score2Prob(post->imx[1][lins], 1.);
+	   sub_cm->end[v]   += Score2Prob(post->mmx[L][lpos], 1.);
+	   sub_cm->end[v]   += Score2Prob(post->imx[L][lins], 1.);
 	 }
        if(rpos != -1 && rins != -1)
 	 {
-	   cm->begin[v] += Score2Prob(post->mmx[1][rpos], 1.);
-	   cm->begin[v] += Score2Prob(post->imx[1][rins], 1.);
-	   cm->end[v]   += Score2Prob(post->mmx[L][rpos], 1.);
-	   cm->end[v]   += Score2Prob(post->imx[L][rins], 1.);
+	   sub_cm->begin[v] += Score2Prob(post->mmx[1][rpos], 1.);
+	   sub_cm->begin[v] += Score2Prob(post->imx[1][rins], 1.);
+	   sub_cm->end[v]   += Score2Prob(post->mmx[L][rpos], 1.);
+	   sub_cm->end[v]   += Score2Prob(post->imx[L][rins], 1.);
 	 }
      }
-   for (v = 0; v < cm->M; v++)
+   for (v = 0; v < sub_cm->M; v++)
      {
-       sum_beg += cm->begin[v];
-       sum_end += cm->end[v];
+       sum_beg += sub_cm->begin[v];
+       sum_end += sub_cm->end[v];
      }
    printf("sum beg: %f\n", sum_beg);
    printf("sum end: %f\n", sum_end);
