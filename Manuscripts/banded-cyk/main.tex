@@ -44,10 +44,10 @@ similarity search applications. However, the computational complexity
 of CM dynamic programming alignment algorithms has limited their
 practical application. Here we describe an acceleration method called
 \emph{query-dependent banding} (QDB), which uses the probabilistic
-query model to precalculate regions of the dynamic programming lattice
-that have negligible probability, independent of target sequences. We
+query CM to precalculate regions of the dynamic programming lattice
+that have negligible probability, independently of the target database. We
 have implemented QDB in the freely available \textsc{infernal}
-software package.  QDB gives a three- to five-fold average speedup,
+software package.  QDB gives a four-fold average speedup,
 and a reduction in the average-case time complexity of CM alignment
 from $LN^{2.3}$ to $LN^{1.3}$ for a query RNA of $N$ residues and a
 target database of $L$ residues. Combined with other improvements to
@@ -75,13 +75,13 @@ particular RNA family or motif, such as programs that identify tRNAs
 \cite{LoweEddy97,Laslett04}, snoRNAs \cite{LoweEddy99,Schattner06},
 microRNAs \cite{Lai03, Lim03}, SRP RNAs \cite{Regalia02}, and
 rho-independent transcription terminators \cite{Ermolaeva00}. There
-are also pattern-matching algorithms that
-rely on expertly designed query patterns \cite{Macke01,Gautheret01}. However, the most generally
+are also pattern-matching algorithms that rely on expertly designed
+query patterns \cite{Macke01,Gautheret01}. However, the most generally
 useful approaches are those that take any RNA (or any multiple RNA
-alignment) as a query, and use an appropriate
-scoring system to search a sequence database and rank high-scoring
-similarities, just as programs like \textsc{blast} do for linear sequence
-comparison \cite{Altschul97}.
+alignment) as a query, and use an appropriate scoring system to search
+a sequence database and rank high-scoring similarities, just as
+programs like \textsc{blast} do for linear sequence comparison
+\cite{Altschul97}.
 
 In a general search program, one wants to score a
 combination of RNA sequence and structural conservation in a
@@ -116,22 +116,22 @@ methods (the Hirshberg or Myers/Miller algorithm) to the case of CMs
 
 Weinberg and Ruzzo have described two filtering methods for
 accelerating CM searches
-\cite{WeinbergRuzzo04,WeinbergRuzzo04b,WeinbergRuzzo06}. Both methods work by scoring
-a target sequence first by a linear sequence comparison method using a
-profile HMM specially constructed from the CM query, and passing only
-the subset of hits above a threshold for rescoring with the more
-expensive CM alignment algorithm.  For most current Rfam models, the
-Weinberg/Ruzzo filters give about a hundred-fold speed up relative to
-a full CM based search at little or no cost to sensitivity and
-specificity. However, because the Weinberg/Ruzzo filters depend on
-primary sequence conservation alone, they can be relatively
-ineffective for RNA families that exhibit poor sequence
-conservation -- unfortunately, precisely the RNAs that benefit the
-most from SCFG-based search methods.
-Indeed, in this respect, we are concerned that the overall
-performance of these filters on the current Rfam database may be somewhat
-misleading. Rfam currently uses a crude \textsc{blast}-based filtering method
-to accelerate the CM searches used in curating the database. This step
+\cite{WeinbergRuzzo04,WeinbergRuzzo04b,WeinbergRuzzo06}. Both methods
+work by scoring a target sequence first by a linear sequence
+comparison method using a profile HMM specially constructed from the
+CM query, and passing only the subset of hits above a threshold for
+rescoring with the more expensive CM alignment algorithm.  For most
+current Rfam models, the Weinberg/Ruzzo filters give about a
+hundred-fold speed up relative to a full CM based search at little or
+no cost to sensitivity and specificity. However, because the
+Weinberg/Ruzzo filters depend on primary sequence conservation alone,
+they can be relatively ineffective for RNA families that exhibit poor
+sequence conservation -- unfortunately, precisely the RNAs that
+benefit the most from SCFG-based search methods.  Indeed, in this
+respect, we are concerned that the overall performance of these
+filters on the current Rfam database may be somewhat misleading. Rfam
+currently uses a crude \textsc{blast}-based filtering method to
+accelerate the CM searches used in curating the database. This step
 introduces a bias towards high primary sequence similarity in current
 Rfam alignments. As Rfam improves and incorporates more diverse
 structural homologs, the effectiveness of sequence-based filters will
@@ -208,12 +208,12 @@ To formalize this idea, we start with a description of CMs, followed
 by the QDB algorithms for calculating the subsequence length
 distributions, using these length distributions to determine bands,
 and using the bands in a banded CM dynamic programming alignment
-algorithm.  We found that QDB requires more accurate state transition
-parameter estimation than the \textsc{infernal} software was
-providing, so we describe our implementation of informative Dirichlet
-priors for CM parameter estimation. Finally, we present results from a
-benchmark that suggest the sensitivity and specificity of a QDB-accelerated
-search is negligibly different from a non-banded search.
+algorithm. Calculation of the bands is sensitive to transition
+parameter estimation, so we describe \textsc{infernal}'s new
+implementation of informative Dirichlet priors for CM parameter
+estimation. Finally, we present results from a benchmark that suggest
+the sensitivity and specificity of a QDB-accelerated search is
+negligibly different from a non-banded search.
 
 \subsection{Covariance models}
 
@@ -221,15 +221,15 @@ CMs are a convention for mapping an RNA secondary structure into a
 tree-like, directed graph of SCFG states and state transitions (or
 equivalently, SCFG nonterminals and production rules). The CM is
 organized by a binary tree of \emph{nodes} representing base pairs and
-single-stranded residues in the query's structure. Each node contains
-a number of \emph{states}, where one state represents the consensus alignment
-to the query, and the others represent insertions and deletions
-relative to the query.  Figure~\ref{fig:cmintro} shows an example of
-converting a consensus structure to the guide tree of nodes, and part
-of the expansion of those guide tree nodes into the CM's state graph.
-Here we will only concentrate on the aspects of CMs necessary to
-understand QDB, and a subset of our usual notation. For full details
-on CM construction, see \cite{Eddy02b,infguide03}.
+single-stranded residues in the query's structure.  Each node contains
+a number of \emph{states}, where one state represents the consensus
+alignment to the query, and the others represent insertions and
+deletions relative to the query.  Figure~\ref{fig:cmintro} shows an
+example of converting a consensus structure to the guide tree of
+nodes, and part of the expansion of those guide tree nodes into the
+CM's state graph. Here we will only concentrate on the aspects of CMs
+necessary to understand QDB, and a subset of our usual notation. For
+full details on CM construction, see \cite{Eddy02b,infguide03}.
 
 \ifdraft
 \input{fig-cmintro}
@@ -237,12 +237,13 @@ on CM construction, see \cite{Eddy02b,infguide03}.
 \fi
 
 A guide tree consists of eight types of nodes. MATP nodes represent
-consensus base pairs. MATL and MATR nodes represent single-stranded
-residues (emitted to the left or right with respect to a stem). BIF
-nodes represent bifurcations in the secondary structure of the family,
-to deal with multiple stem-loops. A ROOT node represents the start of
-the model. BEGL and BEGR nodes represent the beginnings of a branch on
-the left and right side of a bifurcation.  END nodes end each branch.
+consensus base pairs. MATL and MATR nodes represent consensus
+single-stranded residues (emitted to the left or right with respect to
+a stem). BIF nodes represent bifurcations in the secondary structure
+of the family, to deal with multiple stem-loops. A ROOT node
+represents the start of the model. BEGL and BEGR nodes represent the
+beginnings of a branch on the left and right side of a bifurcation.
+END nodes end each branch.
 
 The CM is composed of seven different types of states, each with a
 corresponding form of production rule, with notation defined as
@@ -272,12 +273,12 @@ $Y$ that $v$ may transit to is limited to the states in the next
 node); the set of possible children states $Y$ is called $C_v$, for
 ``children of $v$''. The indicators $\Delta_v^{L}$ and $\Delta_v^{R}$
 are used to simplify notation in CM dynamic programming algorithms.
-They are the residues emitted to the left and right of this state,
+They are the residues emitted to the left and right of state $v$,
 respectively. Bifurcation rules are special, in that they always
 transition for two particular start (S) states, at the root of
 subtrees in the guide tree, with probability 1.0.
 
-These state types essentially defines a ``normal form'' for SCFG
+These state types essentially define a ``normal form'' for SCFG
 models of RNA, akin to SCFGs in Chomsky normal form where all
 productions are in one of two forms, $Y \rightarrow a$ or $Y
 \rightarrow YY$. We describe CM algorithms (including QDB) in terms of
@@ -307,7 +308,7 @@ alignment algorithms and QDB rely on.
 
 Without any change in the above description, CMs apply to either
 global or local alignment, and to either pairwise alignment to single
-RNA queries or profile alignment to a consensus structure of a
+RNA queries or profile alignment to a consensus query structure of a
 multiple RNA sequence alignment. CMs for single RNA queries are
 derived identically to profiles of a consensus structure, differing
 only in the parameterization method \cite{KleinEddy03}. Local
@@ -316,7 +317,7 @@ opposed to requiring a global alignment to the whole RNA structural
 model) is achieved by adding state transitions from the ROOT that
 permit entering the model at any internal consensus state with some
 probability, and state transitions from any internal consensus state 
-to an END with some probability \cite{KleinEddy03}.
+to an END with some probability \cite{KleinEddy03, infguide03}.
 
 \subsection{QDB algorithm}
 
@@ -329,8 +330,7 @@ probabilities for each $n$ defines a probability distribution
 $\gamma_v(n)$, the probability that the CM subgraph rooted at $v$ will
 generate a subsequence of length $n$. Given a finite limit $Z$ on
 maximum subsequence length (defined later), we can calculate
-$\gamma_v(n)$ by an efficient recursive algorithm. initializing
-$\gamma_{v}(0)$ to 1.0 for all the END states, then working from
+$\gamma_v(n)$ by an efficient recursive algorithm, working from the
 leaves of the CM towards the root, and from smallest subsequences to
 largest:
 
@@ -373,11 +373,11 @@ right tails of $\gamma_v(n)$ contain less than a probability
 $\frac{\beta}{2}$:
 
 \[
-   \sum_{d = 0}^{\mbox{dmin}(v) - 1} \gamma_v(d) < \frac{\beta}{2}
+   \sum_{d = 0}^{\mbox{dmin}(v) - 1} \gamma_v(d) < \frac{\beta}{2},
 \]
 
 \[
-   \sum_{d = \mbox{dmax}(v) + 1}^{Z} \gamma_v(d) < \frac{\beta}{2}
+   \sum_{d = \mbox{dmax}(v) + 1}^{Z} \gamma_v(d) < \frac{\beta}{2}.
 \]
 
 Larger values of $\beta$ produce tighter bands and faster alignments,
@@ -391,7 +391,7 @@ limit $Z$ to obtain a finite calculation.  $Z$ can be chosen to be
 sufficiently large that it does not affect $\mbox{dmax}(v)$ for any
 state $v$.  On a digital computer with floating point precision
 $\epsilon$ (the largest value for which $1+\epsilon = 1$), it suffices
-to guarantee that:
+to guarantee that, for all $v$:
 
 \[
   \frac{ \sum_{d = Z+1}^{\infty}  \gamma_v(d)}
@@ -406,7 +406,7 @@ reasonable guess at $Z$ and verifies that the above condition is true
 for each $v$, assuming these geometrically decreasing tails; if it is
 not, $Z$ is increased and bands are recalculated until it is.
 
-A QDB calculation only needs to be performed once per query to set the
+A QDB calculation only needs to be performed once per query CM to set the
 bands. Overall, a QDB calculation requires $\Theta(MZ)$ in time and
 space; or equivalently, because both $M$ and $Z$ scale roughly
 linearly with the length $L$ in residues of the query RNA
@@ -445,12 +445,12 @@ of the algorithm is as follows:
 \vspace{0.5em}
 \begin{tabular}{ll}
 \multicolumn{2}{l}{Initialization (impose bands): for $j = 0$ to $L$,
-  $v = M$ down to $1$:} \\
+  $v = M-1$ down to $0$:} \\
 for $d = 0$ to $\min((\mbox{dmin}(v)-1), j)$ & $\alpha_v(j,d) = -\infty;$ \\
 for $d = (\mbox{dmax}(v)+1)$ down to $j$ & $\alpha_v(j,d) = -\infty;$ \\
 & \\
 \multicolumn{2}{l}{Initialization at $d = 0$: for $j = 0$ to $L$,
-$v = M$ down to $1$:} \\
+$v = M-1$ down to $0$:} \\
 $v = $ end state $(E)$: & $\alpha_v(j,0) = 0$ \\
 $v = $ bifurcation $(B)$: & $\alpha_v(j,0) = \alpha_y(j,0) +
 \alpha_z(j,0)$ \\
@@ -459,7 +459,7 @@ $v = $ delete or start $(D,S)$: & $\alpha_v(j,0) = \max_{y \in C_v} [\alpha_y(j,
 else $(v=P,L,R)$ & $\alpha_v(j,0) = -\infty$ \\
 & \\
 \multicolumn{2}{l}{Recursion: for $j = 1$ to $L, d = \max(1,\mbox{dmin}(v))$ to
-  $\min(\mbox{dmax}(v),j), v=M$ down to $1$} \\
+  $\min(\mbox{dmax}(v),j), v=M-1$ down to $0$} \\
 $v = $ end state $(E)$: & $\alpha_v(j,d) = - \infty$ \\
 $v = $ bifurcation $(B)$: & $\mbox{kmin} = \max(\mbox{dmin}(z), (d-\mbox{dmax}(y)))$ \\
 & $\mbox{kmax} = min(\mbox{dmax}(z), (d-\mbox{dmin}(y)))$ \\
@@ -564,7 +564,7 @@ subunit rRNA (LSU), bacterial/archaeal/plastid small subunit rRNA
 (SSU-mito). These alignments were filtered, removing sequences in
 which either less than 40\% of the base paired positions are present
 or more than 5\% of the nucleotides are ambiguous, and removing
-selected sequences based on single-linkage-clustering such that no two
+selected sequences based on single-linkage clustering such that no two
 sequences in a filtered alignment were greater than 80\% identical (in
 order to remove closely related sequences). Summary statistics for the
 filtered alignments and collected counts in the training dataset are
@@ -591,20 +591,20 @@ diversity per se, so we used rRNA data for emissions.
 Inspection of the Dirichlet $\alpha$ parameters shows sensible
 trends. In the transition priors, transitions between main (consensus)
 states are now favored (higher $\alpha$ values) relative to insertions
-and deletions.
-In the base pair emission mixture prior, all components
-favor Watson-Crick and G-U pairs, with different components preferring
-different proportions of pairs in a particular covarying aligned
-column (for instance, component 1 likes all four Watson-Crick pairs,
-component 2 describes covarying conservation of CG,UA,UG pairs, and
-component 3 specifically likes conserved CG pairs), and the marginal
-(mean) $\alpha$ parameters prefer GC/CG pairs over AU/UA pairs. In the
-singlet emission mixture prior, some components are capturing strongly
-conserved residues (component 1 favors conserved U's, for example)
-while other components favor more variation (components 4 and 5, for
-example), and the marginal $\alpha$ parameters show a strong A bias,
-reflecting the known bias for adenine in single-stranded positions of
-structural RNAs (especially ribosomal RNAs).
+and deletions.  In the base pair emission mixture prior, all
+components favor Watson-Crick and G-U pairs, with different components
+preferring different proportions of pairs in a particular covarying
+aligned column (for instance, component 1 likes all four Watson-Crick
+pairs, component 2 describes covarying conservation of CG,UA,UG pairs,
+and component 3 specifically likes conserved CG pairs), and the
+marginal (mean) $\alpha$ parameters prefer GC/CG pairs over AU/UA
+pairs. In the singlet emission mixture prior, some components are
+capturing strongly conserved residues (component 1 favors conserved
+U's, for example) while other components favor more variation
+(components 4 and 5, for example), and the marginal $\alpha$
+parameters show a strong A bias, reflecting the known bias for adenine
+in single-stranded positions of structural RNAs (especially ribosomal
+RNAs).
 
 
 \ifdraft
@@ -635,9 +635,11 @@ alignment), thereby increasing the influence of the Dirichlet priors,
 flattening the transition and emission distributions, and reducing the
 overall information content, until a desired target entropy is
 achieved. We approximate a model's entropy as the mean match state
-entropy, $\sum_a e_v(a) \log \frac{1}{e_v(a)}$. The target entropy for
-\textsc{infernal} is a free parameter, which we optimized on the
-benchmark described below to identify our default value of 1.46 bits.
+entropy, the summed entropy of all consensus match states (MATP\_MP,
+MATL\_ML, and MATR\_MR) divided by the consensus query length.  The
+target entropy for \textsc{infernal} is a free parameter, which we
+optimized on the benchmark described below to identify our default
+value of 1.46 bits.
 
 \subsection{Benchmarking}
 
@@ -650,24 +652,25 @@ given RNA sequence alignment, and each target consisting of a
 distantly related RNA homolog buried in a context of a random
 genome-like background sequence.
 
-We started with seed aligmnents from Rfam version 7.0. We clustered
-the sequences in each family by single-linkage-clustering by \%
-identity (as calculated from the given Rfam alignment), then split the
-clusters such that the training set and test sequences satisfied three
-conditions: 1) no training/test sequence pair is more than 60\%
-identical; 2) no test sequence pair is greater than 70\% identical; 3)
-at least 5 sequences are in the training set.  Fifty-one families
-satisfy these criteria (listed in Table~\ref{tbl:rmark}), giving us 51
-different query alignments (containing 5 to 1080 sequences each) and
-450 total test sequences (from 1 to 66 per query).  We embedded the
-test sequences in a one megabase ``pseudo-genome'' consisting of
-twenty 50 kilobase ``chromosomes'', generated as independent,
-identically distributed (iid) random sequences with uniform base
-frequencies.  The 450 test sequences were embedded into this sequence
-by replacement, by randomly choosing a chromosome, orientation, and
-start position, and disallowing overlaps between test sequences. The
-total length of the 450 test sequences is 101,855 nt, leaving 898,145
-nt of random background sequence.
+We started with seed alignments from Rfam version 7.0. In each
+alignment, sequences shorter than 70\% the median length were removed.
+We clustered the sequences in each family by single-linkage-clustering
+by \%identity (as calculated from the given Rfam alignment), then
+split the clusters such that the training set and test sequences
+satisfied three conditions: 1) no training/test sequence pair is more
+than 60\% identical; 2) no test sequence pair is greater than 70\%
+identical; 3) at least 5 sequences are in the training set.  Fifty-one
+families satisfy these criteria (listed in Table~\ref{tbl:rmark}),
+giving us 51 different query alignments (containing 5 to 1080
+sequences each) and 450 total test sequences (from 1 to 66 per query).
+We embedded the test sequences in a one megabase ``pseudo-genome''
+consisting of twenty 50 kilobase ``chromosomes'', generated as
+independent, identically distributed (iid) random sequences with
+uniform base frequencies.  The 450 test sequences were embedded into
+this sequence by replacement, by randomly choosing a chromosome,
+orientation, and start position, and disallowing overlaps between test
+sequences. The total length of the 450 test sequences is 101,855 nt,
+leaving 898,145 nt of random background sequence.
 
 \ifdraft
 \input{tbl-rmark}
@@ -714,7 +717,7 @@ achieved if \textsc{infernal} provided P-values (currently it reports
 only raw bit scores).
 
 For comparison, \textsc{blastn} was also benchmarked on these data
-using a family-pairwise-search procedure \cite{Grundy98b}. For each
+using a family-pairwise-search (FPS) procedure \cite{Grundy98b}. For each
 query alignment, each training sequence is used as a query sequence to
 search the pseudo-genome, all hits with an E-value of less than 1.0
 were sorted by increasing E-value, and the lowest E-value positive hit
@@ -726,11 +729,10 @@ performance.
 What is the best setting of the single QDB free parameter, $\beta$,
 which specifies how much probability mass to sacrifice?
 Figure~\ref{fig:betavaried} shows the average speedup per family and
-the overall benchmark MER score as a function of varying
-$\beta$. There is no clear choice. The choice of $\beta$ is a tradeoff
-of accuracy for speed. We chose a default of $\beta = 10^{-7}$ as a
-reasonable value that obtains a modest speedup with minimal loss of
-accuracy.
+summary MER score as a function of varying $\beta$. There is no clear
+choice. The choice of $\beta$ is a tradeoff of accuracy for speed. We
+chose a default of $\beta = 10^{-7}$ as a reasonable value that
+obtains a modest speedup with minimal loss of accuracy.
 
 \ifdraft
 \input{fig-betavaried}
@@ -791,16 +793,18 @@ improvements in sensitivity and specificity.
 \section{Discussion}
 
 CM searches take a long time, and this is the most limiting factor is
-using the \textsc{infernal} software to identify RNA similarities. In
-our benchmarks, \textsc{infernal} requires 508 CPU-hours to search 51
-models against just 1 megabase of sequence
-(Table~\ref{tbl:rmark}). Our eventual goal is to enable routine genome
-annotation of structural RNAs: to be able to search thousands of RNA
-models against complete genome sequences. A search of all 503 Rfam 7.0
-models against the 3 GB human genome would take on the order of 2000
-CPU-years. We need to be able to do it in at most a few days, so 
-we need to increase CM search speed by five to six orders of
-magnitude. Parallelization is feasible, but even large clusters will
+using the \textsc{infernal} software to identify RNA similarities. 
+Prior to this work, \textsc{infernal} (version 0.55) required 508
+CPU-hours to search 51 models against just 1 megabase of sequence in
+our benchmarks (Table~\ref{tbl:rmark}). With QDB (version 0.71), this
+time is reduced to 84.51 hours, a six-fold speed-up. Our eventual goal
+is to enable routine genome annotation of structural RNAs: to be able
+to search thousands of RNA
+models against complete genome sequences. 
+A search of all 503 Rfam 7.0 models against the 3 GB human genome
+would take on the order of 2000 CPU-years. We need to be able to do it
+in at most a few days, so  we need to increase CM search speed by five
+to six orders of magnitude. Parallelization is feasible, but even large clusters will
 give us only about three orders of magnitude.  Moreover,
 parallelization on this scale is prohibitively expensive for all but a
 few centers. Software improvement (code optimization) will
@@ -842,27 +846,26 @@ naive parameterization works best: on very large, high-quality
 alignments of hundreds of sequences, which are atypical of many
 interesting homology search problems.
 
-In this work, partly motivated by the fact that QDB demanded more
-accurate transition parameterization anyway, we have brought
-\textsc{infernal} parameterization close to the state of the art in
-profile HMMs, by introducing mixture Dirichlet priors
-\cite{Sjolander96} and entropy weighting \cite{Karplus98}. This
-resulted in a large improvement in the sensitivity and specificity of
-searches, as judged by our benchmark (Figure~\ref{fig:roc}). The
-difference between \textsc{infernal} and family-pairwise
-\textsc{blastn} now appears pronounced, for average-case behavior, not
-just best-case behavior. However, while we trust our benchmarking to
-tell us when we have improved \textsc{infernal} relative to previous
-versions of itself, we prefer to see independent benchmarks to gauge
-our performance relative to other software. Benchmarks by
-tool developers are notoriously biased, and however honest we may try
-to be, it is difficult to
-entirely avoid such biases. For one thing, establishing an internal
-benchmark for ongoing code development creates an insidious form of
-training on the test set, because we accept code changes that improve
-benchmark performance.  Currently we are aware of only one independent
-benchmark to date, BRaliBase III (Freyhult, Bollback, and Gardner,
-unpublished; available at
+In this work, partly because QDB is sensitive to transition
+parameterization, we have brought \textsc{infernal} parameterization
+close to the state of the art in profile HMMs, by introducing mixture
+Dirichlet priors \cite{Sjolander96} and entropy weighting
+\cite{Karplus98}. This resulted in a large improvement in the
+sensitivity and specificity of searches, as judged by our benchmark
+(Figure~\ref{fig:roc}). The difference between \textsc{infernal} and
+family-pairwise \textsc{blastn} now appears pronounced, for
+average-case behavior, not just best-case behavior. However, while we
+trust our benchmarking to tell us when we have improved
+\textsc{infernal} relative to previous versions of itself, we prefer
+to see independent benchmarks to gauge our performance relative to
+other software. Benchmarks by tool developers are notoriously biased,
+and however honest we may try to be, it is difficult to entirely avoid
+such biases. For one thing, establishing an internal benchmark for
+ongoing code development creates an insidious form of training on the
+test set, because we accept code changes that improve benchmark
+performance.  Currently we are aware of only one independent benchmark
+to date, BRaliBase III (Freyhult, Bollback, and Gardner, unpublished;
+available at
 \url{http://www.binf.ku.dk/~pgardner/bralibase/bralibase3/}). BRaliBase
 III consists of many different query alignments of 5 or 20 RNA
 sequences, drawn from three different RNA families (U5, 5S rRNA, and
@@ -875,20 +878,6 @@ search.
 Nonetheless, though \textsc{infernal} 0.71 shows large improvements in
 speed, sensitivity, and specificity over previous versions, there are
 numerous areas where we need to improve further. 
-
-Parameterization of both CMs and profile HMMs remains problematic,
-because these methods continue to assume that training sequences are
-statistically independent, when in fact they are related (often
-strongly so) by phylogeny. Methods like sequence weighting and entropy
-weighting do help, but they are \emph{ad hoc} hacks: unsatisfying and
-unlikely to be optimal. Even mixture Dirichlet priors, though they
-appear to be mathematically sophisticated, fundamentally assume that
-observed counts are drawn as independent multinomial samples, and
-therefore the use of Dirichlet priors is fundamentally flawed.
-Probabilistic phylogenetic inference methodology needs to be
-integrated with profile search methods, but this area continues to be
-stymied by a lack of understanding of how to model insertions and
-deletions efficiently in a phylogenetic probability model.
 
 A significant gap in our current implementation is that
 \textsc{infernal} reports only raw bit scores, and does not yet report
@@ -907,6 +896,20 @@ contribute a large increase in performance whenever a single
 family-independent threshold is set. Table~\ref{tbl:rmarkmerlist}
 roughly illustrates the expected gain, by showing the large difference
 between summary MER scores and family-specific MER scores.
+
+Parameterization of both CMs and profile HMMs remains problematic,
+because these methods continue to assume that training sequences are
+statistically independent, when in fact they are related (often
+strongly so) by phylogeny. Methods like sequence weighting and entropy
+weighting do help, but they are \emph{ad hoc} hacks: unsatisfying and
+unlikely to be optimal. Even mixture Dirichlet priors, though they
+appear to be mathematically sophisticated, fundamentally assume that
+observed counts are drawn as independent multinomial samples, and
+therefore the use of Dirichlet priors is fundamentally flawed.
+Probabilistic phylogenetic inference methodology needs to be
+integrated with profile search methods, but this area continues to be
+stymied by a lack of understanding of how to model insertions and
+deletions efficiently in a phylogenetic probability model.
 
 Finally, QDB is not the only algorithmic acceleration method we can
 envision.  Michael Brown described a complementary banding method to
