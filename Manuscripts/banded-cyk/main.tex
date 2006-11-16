@@ -119,7 +119,7 @@ accelerating CM searches
 \cite{WeinbergRuzzo04,WeinbergRuzzo04b,WeinbergRuzzo06}. Both methods
 work by scoring a target sequence first by a linear sequence
 comparison method using a profile HMM specially constructed from the
-CM query, and passing only the subset of hits above a threshold for
+query CM, and passing only the subset of hits above a threshold for
 rescoring with the more expensive CM alignment algorithm.  For most
 current Rfam models, the Weinberg/Ruzzo filters give about a
 hundred-fold speed up relative to a full CM based search at little or
@@ -275,7 +275,7 @@ node); the set of possible children states $Y$ is called $C_v$, for
 are used to simplify notation in CM dynamic programming algorithms.
 They are the residues emitted to the left and right of state $v$,
 respectively. Bifurcation rules are special, in that they always
-transition for two particular start (S) states, at the root of
+transition to two particular start (S) states, at the root of
 subtrees in the guide tree, with probability 1.0.
 
 These state types essentially define a ``normal form'' for SCFG
@@ -432,14 +432,13 @@ that ends at position $j$ of target sequence $x$
 \cite{Eddy94,Durbin98}. This calculation initializes at the smallest
 subgraphs ($E$ states) and shortest subsequences ($d=0$) and iterates
 upwards and outwards to progressively larger subtrees and longer
-subsequences up to a preset maximum hit length $W$. The outermost loop
+subsequences up to a preset window size $W$. The outermost loop
 iterates over the end position $j$ on the target sequence, enabling an
 efficient scan across a long target like a chromosome sequence.
 Banding is achieved simply by limiting all loops over possible
-subsequence lengths $d$ to the bounds
-$\mbox{dmin}(v)..\mbox{dmax}(v)$ derived in the band calculation
-algorithm, rather than all possible lengths $0..W$. The banded version
-of the algorithm is as follows:
+subsequence lengths $d$ to the bounds $\mbox{dmin}(v)..\mbox{dmax}(v)$
+derived in the band calculation algorithm, rather than all possible
+lengths $0..W$. The banded version of the algorithm is as follows:
  
 %CYK for CM database search - banded version (ref p.290 Durbin)
 \vspace{0.5em}
@@ -515,12 +514,12 @@ Previous to this work, \textsc{infernal} used an uninformative uniform
 Dirichlet transition prior, equivalent to the use of Laplace
 ``plus-1'' pseudo-counts. However, we found that transition parameters
 derived under a uniform prior inaccurately predict target subsequence
-lengths, as shown in
-an example in Figure~\ref{fig:bands}.  The problem is exacerbated when
-there are few sequences in the query alignment, when the choice of
-prior has more impact on mean posterior estimation.  To alleviate this
-problem, we estimated informative single component Dirichlet prior
-densities for CM transition parameters, as follows.
+lengths, as shown in an example in Figure~\ref{fig:bands}.  The
+problem is exacerbated when there are few sequences in the query
+alignment, when the choice of prior has more impact on mean posterior
+estimation.  To alleviate this problem, we estimated informative
+single component Dirichlet prior densities for CM transition
+parameters, as follows.
 
 \ifdraft
 \input{fig-bands}
@@ -543,8 +542,9 @@ we optimize by conjugate gradient descent \cite{Press93} rather than
 by expectation-maximization (EM).  The results, including the
 Dirichlet parameters, are given in Table~\ref{tbl:transitions}.  Using
 these priors for transition probability parameter estimation results
-in a dramatic improvement in the utility of QDB calculations, as
-illustrated by anecdotal example in Figure~\ref{fig:bands}.
+in an improvement in the utility of QDB calculations, often yielding
+tighter, yet accurate subsequence length distributions, as illustrated
+by anecdotal example in Figure~\ref{fig:bands}.
 
 \ifdraft
 \input{tbl-transitions}
@@ -564,7 +564,7 @@ subunit rRNA (LSU), bacterial/archaeal/plastid small subunit rRNA
 (SSU-mito). These alignments were filtered, removing sequences in
 which either less than 40\% of the base paired positions are present
 or more than 5\% of the nucleotides are ambiguous, and removing
-selected sequences based on single-linkage clustering such that no two
+selected sequences based on single-linkage-clustering such that no two
 sequences in a filtered alignment were greater than 80\% identical (in
 order to remove closely related sequences). Summary statistics for the
 filtered alignments and collected counts in the training dataset are
@@ -625,7 +625,7 @@ RNAs).
 In another step to increase sensitivity and specificity of the
 program, we adopted the ``entropy weighting'' technique described for
 profile HMMs \cite{Karplus98} for estimating the total effective
-sequence number for an input alignment. This is an \emph{ad hoc}
+sequence number for an input query alignment. This is an \emph{ad hoc}
 method for reducing the information content per position of a model,
 which helps a model that has been trained on closely related sequences
 to recognize distantly related homologues \cite{Altschul91}. In
@@ -655,7 +655,7 @@ genome-like background sequence.
 We started with seed alignments from Rfam version 7.0. In each
 alignment, sequences shorter than 70\% the median length were removed.
 We clustered the sequences in each family by single-linkage-clustering
-by \%identity (as calculated from the given Rfam alignment), then
+by \% identity (as calculated from the given Rfam alignment), then
 split the clusters such that the training set and test sequences
 satisfied three conditions: 1) no training/test sequence pair is more
 than 60\% identical; 2) no test sequence pair is greater than 70\%
@@ -792,7 +792,9 @@ improvements in sensitivity and specificity.
 
 \section{Discussion}
 
-CM searches take a long time, and this is the most limiting factor is
+\begin{comment}
+%old
+CM searches take a long time, and this is the most limiting factor in
 using the \textsc{infernal} software to identify RNA similarities. 
 Prior to this work, \textsc{infernal} (version 0.55) required 508
 CPU-hours to search 51 models against just 1 megabase of sequence in
@@ -822,50 +824,79 @@ as with the filtering methods recently described by Weinberg and Ruzzo
 \cite{WeinbergRuzzo04,WeinbergRuzzo04b,WeinbergRuzzo06}, so we view QDB as part of a
 growing suite of approaches that we can combine to accelerate
 \textsc{infernal}.
+\end{comment}
+
+%new
+CM searches take a long time, and this is the most limiting factor in
+using the \textsc{infernal} software to identify RNA similarities.
+Prior to this work, \textsc{infernal} 0.55 required 508 CPU-hours to
+search 51 models against just 1 megabase of sequence in our benchmarks
+(Table~\ref{tbl:rmark}).  Using QDB with $\beta$ banding cutoffs that
+do not appreciably compromise sensitivity and specificity,
+\textsc{infernal} 0.71 offers a six-fold speedup, performing the
+benchmark in 85 hours.  Our eventual goal is to enable routine genome
+annotation of structural RNAs: to be able to search thousands of RNA
+models against complete genome sequences.  A search of all 503 Rfam
+7.0 models against the 3 GB human genome with \textsc{infernal} 0.71
+in QDB mode would take on the order of 300 CPU-years (down from 1800
+with \textsc{infernal} 0.55).  We need to be able to do it in at most
+a few days, so we still need to increase CM search speed by five
+orders of magnitude.  Thus, the QDB algorithm is a partial but
+certainly not complete solution to the problem. However, QDB combines
+synergistically with other acceleration techniques. Parallelization,
+on large clusters (though prohibitively expensive for all but a few
+centers) could give us further acceleration of three orders of
+magnitude.  Software improvement (code optimization) will also
+contribute, but probably only about two-fold.  Hardware improvements
+will contribute about two-fold per year or so so long as Moore's law
+continues. Finally, QDB is complementary to the filtering methods
+recently described by Weinberg and Ruzzo
+\cite{WeinbergRuzzo04,WeinbergRuzzo04b,WeinbergRuzzo06}. We view QDB
+as part of a growing suite of approaches that we can combine to
+accelerate \textsc{infernal}.
 
 Is it really worth burning all this CPU time in the first place?  Do
 CM searches identify structural RNA homologies that other methods
-miss? Obviously we think so,
-but one would like to see convincing results. For
-large, diverse RNA families like tRNA, where a CM can be trained on
-over a thousand well-aligned sequences with a well-conserved consensus
-secondary structure, CM approaches have been quite powerful. The state
-of the art in large scale tRNA gene identification remains the
-CM-based program \textsc{trnascan-se} \cite{LoweEddy97}, and CMs were
-also used, for example, to discover the divergent tRNA for
-pyrrolysine, the ``22nd amino acid'' \cite{Srinivasan02}. But
-Figure~\ref{fig:roc} shows that on average, over 51 more or less
-``typical'' RNA families of various sizes and alignment quality,
-\textsc{infernal} 0.55 was actually no better than doing a
-family-pairwise-search with \textsc{blastn}.  Until recently, we have
-spent relatively little effort on how \textsc{infernal} parameterizes
-its models, and relatively more on reducing its computational
-requirements \cite{Eddy02b}, so previous versions of \textsc{infernal}
-have performed best where
-naive parameterization works best: on very large, high-quality
-alignments of hundreds of sequences, which are atypical of many
-interesting homology search problems.
+miss? Obviously we think so, but one would like to see convincing
+results. For large, diverse RNA families like tRNA, where a CM can be
+trained on over a thousand well-aligned sequences with a
+well-conserved consensus secondary structure, CM approaches have been
+quite powerful. The state of the art in large scale tRNA gene
+identification remains the CM-based program \textsc{trnascan-se}
+\cite{LoweEddy97}, and CMs were also used, for example, to discover
+the divergent tRNA for pyrrolysine, the ``22nd amino acid''
+\cite{Srinivasan02}. But Figure~\ref{fig:roc} shows that on average,
+over 51 more or less ``typical'' RNA families of various sizes and
+alignment quality, \textsc{infernal} 0.55 was actually no better than
+doing a family-pairwise-search with \textsc{blastn}.  Until recently,
+we have spent relatively little effort on how \textsc{infernal}
+parameterizes its models, and relatively more on reducing its
+computational requirements \cite{Eddy02b}, so previous versions of
+\textsc{infernal} have performed best where naive parameterization
+works best: on very large, high-quality alignments of hundreds of
+sequences, which are atypical of many interesting homology search
+problems.
 
-In this work, partly because QDB is sensitive to transition
-parameterization, we have brought \textsc{infernal} parameterization
-close to the state of the art in profile HMMs, by introducing mixture
-Dirichlet priors \cite{Sjolander96} and entropy weighting
-\cite{Karplus98}. This resulted in a large improvement in the
-sensitivity and specificity of searches, as judged by our benchmark
-(Figure~\ref{fig:roc}). The difference between \textsc{infernal} and
-family-pairwise \textsc{blastn} now appears pronounced, for
-average-case behavior, not just best-case behavior. However, while we
-trust our benchmarking to tell us when we have improved
-\textsc{infernal} relative to previous versions of itself, we prefer
-to see independent benchmarks to gauge our performance relative to
-other software. Benchmarks by tool developers are notoriously biased,
-and however honest we may try to be, it is difficult to entirely avoid
-such biases. For one thing, establishing an internal benchmark for
-ongoing code development creates an insidious form of training on the
-test set, because we accept code changes that improve benchmark
-performance.  Currently we are aware of only one independent benchmark
-to date, BRaliBase III (Freyhult, Bollback, and Gardner, unpublished;
-available at
+In this work, partly because the level of acceleration achieved by QDB
+is sensitive to transition parameterization, we have brought
+\textsc{infernal} parameterization close to the state of the art in
+profile HMMs, by introducing mixture Dirichlet priors
+\cite{Sjolander96} and entropy weighting \cite{Karplus98}. This
+resulted in a large improvement in the sensitivity and specificity of
+searches, as judged by our benchmark (Figure~\ref{fig:roc}). The
+difference between \textsc{infernal} and family-pairwise
+\textsc{blastn} now appears pronounced for average-case behavior, not
+just best-case behavior. However, while we trust our benchmarking to
+tell us when we have improved \textsc{infernal} relative to previous
+versions of itself, we prefer to see independent benchmarks to gauge
+our performance relative to other software. Benchmarks by tool
+developers are notoriously biased, and however honest we may try to
+be, it is difficult to entirely avoid such biases. For one thing,
+establishing an internal benchmark for ongoing code development
+creates an insidious form of training on the test set, because we
+accept code changes that improve benchmark performance.  Currently we
+are aware of only one independent benchmark to date, BRaliBase III
+(Freyhult, Bollback, and Gardner, unpublished; available at
 \url{http://www.binf.ku.dk/~pgardner/bralibase/bralibase3/}). BRaliBase
 III consists of many different query alignments of 5 or 20 RNA
 sequences, drawn from three different RNA families (U5, 5S rRNA, and
@@ -940,7 +971,8 @@ EPN gratefully acknowledges financial support from an NIH NHGRI
 Institutional Training Grant in Genomic Science, T32-HG000045. Work in
 SRE's lab in Washington University in St. Louis, where this work was
 initiated, was supported by NIH NHGRI RO1-HG01363, HHMI, and Alvin
-Goldfarb.
+Goldfarb. We also wish to thank Elena Rivas for critical comments on
+the manuscript.
 
 
 \newpage
