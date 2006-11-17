@@ -446,29 +446,29 @@ lengths $0..W$. The banded version of the algorithm is as follows:
 \multicolumn{2}{l}{Initialization (impose bands): for $j = 0$ to $L$,
   $v = M-1$ down to $0$:} \\
 for $d = 0$ to $\min((\mbox{dmin}(v)-1), j)$ & $\alpha_v(j,d) = -\infty;$ \\
-for $d = (\mbox{dmax}(v)+1)$ down to $j$ & $\alpha_v(j,d) = -\infty;$ \\
+for $d = (\mbox{dmax}(v)+1)$ down to $j$ & $\alpha_v(j,d) = -\infty.$ \\
 & \\
 \multicolumn{2}{l}{Initialization at $d = 0$: for $j = 0$ to $L$,
 $v = M-1$ down to $0$:} \\
-$v = $ end state $(E)$: & $\alpha_v(j,0) = 0$ \\
+$v = $ end state $(E)$: & $\alpha_v(j,0) = 0;$ \\
 $v = $ bifurcation $(B)$: & $\alpha_v(j,0) = \alpha_y(j,0) +
-\alpha_z(j,0)$ \\
+\alpha_z(j,0);$ \\
 $v = $ delete or start $(D,S)$: & $\alpha_v(j,0) = \max_{y \in C_v} [\alpha_y(j,0) +
   \log t_v(y)];$ \\
-else $(v=P,L,R)$ & $\alpha_v(j,0) = -\infty$ \\
+else $(v=P,L,R)$: & $\alpha_v(j,0) = -\infty.$ \\
 & \\
 \multicolumn{2}{l}{Recursion: for $j = 1$ to $L, d = \max(1,\mbox{dmin}(v))$ to
   $\min(\mbox{dmax}(v),j), v=M-1$ down to $0$} \\
-$v = $ end state $(E)$: & $\alpha_v(j,d) = - \infty$ \\
-$v = $ bifurcation $(B)$: & $\mbox{kmin} = \max(\mbox{dmin}(z), (d-\mbox{dmax}(y)))$ \\
-& $\mbox{kmax} = min(\mbox{dmax}(z), (d-\mbox{dmin}(y)))$ \\
+$v = $ end state $(E)$: & $\alpha_v(j,d) = - \infty;$ \\
+$v = $ bifurcation $(B)$: & $\mbox{kmin} = \max(\mbox{dmin}(z), (d-\mbox{dmax}(y))),$ \\
+& $\mbox{kmax} = \min(\mbox{dmax}(z), (d-\mbox{dmin}(y))),$ \\
 & $\alpha_v(j,d) = \max_{\mbox{kmin} \le k \le \mbox{kmax}}[\alpha_y(j-k,d-k) +
     \alpha_z(j,k)];$ \\
 $v = $ delete or start $(D,S)$: & $\alpha_v(j,d) = \max_{y \in C_v} [\alpha_y(j,d) +
   \log t_v(y)];$ \\
 else $(v = P, L, R):$ & $\alpha_v(j,d) = \max_{y \in C_v}
   [\alpha_y(j-\Delta_v^{R}, d-(\Delta_v^{L}+\Delta_v^{R})) + \log
-  t_v(y)]$ \\
+  t_v(y)].$ \\
 & \hspace{4.5em} $+ \log e_v(x_i,x_j)$ \\ 
 \end{tabular}
 \vspace{0.5em}
