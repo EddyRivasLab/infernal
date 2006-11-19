@@ -60,6 +60,7 @@ static char experts[] = "\
    --checkpost   : check that posteriors are correctly calc'ed\n\
    --sub         : build sub CM for columns b/t HMM predicted start/end points\n\
    --fsub        : build sub CM for structure b/t HMM predicted start/end points\n\
+   --elsilent    : disallow local end (EL) emissions\n\
 \n\
   * HMM banded alignment related options:\n\
    --hbanded     : use exptl CM plan 9 HMM banded CYK aln algorithm\n\
@@ -100,6 +101,7 @@ static struct opt_s OPTIONS[] = {
   { "--checkpost",  FALSE, sqdARG_NONE},
   { "--sub",        FALSE, sqdARG_NONE},
   { "--fsub",       FALSE, sqdARG_NONE},
+  { "--elsilent",   FALSE, sqdARG_NONE},
   { "--checkcp9",   FALSE, sqdARG_NONE},
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
@@ -207,6 +209,8 @@ main(int argc, char **argv)
 				    * (spos) and end points (epos) */
   CM_t              *sub_cm;       /* sub covariance model                      */
   CMSubMap_t        *submap;
+  CP9Bands_t        *sub_cp9b;     /* data structure for hmm bands (bands on the hmm states) 
+				    * and arrays for CM state bands, derived from HMM bands */
   CMSubInfo_t       *subinfo;
   CM_t              *orig_cm;      /* the original, template covariance model the sub CM was built from */
   int                spos;         /* HMM node most likely to have emitted posn 1 of target seq */
@@ -214,12 +218,6 @@ main(int argc, char **argv)
   int                epos;         /* HMM node most likely to have emitted posn L of target seq */
   int                epos_state;   /* HMM state type for curr epos 0=match or  1=insert */
 
-  int              **orig2sub_smap;/* 2D state map from orig_cm (template) to sub_cm.
-				    * 1st dimension - state index in orig_cm 
-				    * 2nd D - 2 elements for up to 2 matching sub_cm states */
-  int              **sub2orig_smap;/* 2D state map from orig_cm (template) to sub_cm.
-				    * 1st dimension - state index in sub_cm (0..sub_cm->M-1)
-				    * 2nd D - 2 elements for up to 2 matching orig_cm states */
   char            *check_outfile;  /* output file name for subCM stk file*/
   FILE            *check_ofp;      /* an open output file */
   Parsetree_t     *orig_tr;        /* parsetree for the orig_cm; created from the sub_cm parsetree */
@@ -227,7 +225,8 @@ main(int argc, char **argv)
   struct cplan9_s *sub_hmm;        /* constructed CP9 HMM; written to hmmfile              */
   CP9Map_t        *sub_cp9map;     /* maps the sub_hmm to the sub_cm and vice versa */
   struct cplan9_s *orig_hmm;       /* original CP9 HMM built from orig_cm */
-  CP9Map_t        *orig_cp9map;     /* maps the sub_hmm to the sub_cm and vice versa */
+  CP9Map_t        *orig_cp9map;    
+  CP9Bands_t      *orig_cp9b;      
   double         **orig_phi;
   /* Options for checking sub_cm construction */
   int do_atest;                 /* TRUE to build 2 ML HMMs, one from the CM and one from
@@ -236,6 +235,8 @@ main(int argc, char **argv)
 				 * are within 'pthresh' of each other */
   float atest_pthresh;          /* Probability threshold for atest */
 
+  int               do_elsilent;  /* TRUE to disallow EL emissions, by setting EL self transition prob
+				   * to as close to IMPOSSIBLE as we can and avoid underflow errors */
   /*********************************************** 
    * Parse command line
    ***********************************************/
@@ -264,6 +265,7 @@ main(int argc, char **argv)
   do_post     = FALSE;
   do_sub      = FALSE;
   do_fullsub  = FALSE;
+  do_elsilent = FALSE;
   do_checkcp9 = FALSE;
   do_atest    = FALSE;
   atest_pthresh = 0.00001;
@@ -294,6 +296,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--checkpost") == 0) do_check     = TRUE;
     else if (strcmp(optname, "--sub")       == 0) do_sub       = TRUE; 
     else if (strcmp(optname, "--fsub")      == 0) { do_sub = TRUE; do_fullsub = TRUE; }
+    else if (strcmp(optname, "--elsilent")  == 0) do_elsilent= TRUE;
     else if (strcmp(optname, "--hbanded")   == 0) { do_hbanded = TRUE; do_small = FALSE; }
     else if (strcmp(optname, "--hbandp")    == 0) hbandp       = atof(optarg);
     else if (strcmp(optname, "--sums")      == 0) use_sums     = TRUE;
@@ -354,6 +357,9 @@ main(int argc, char **argv)
    */
   if((cm->el_selfsc * windowlen) < IMPOSSIBLE)
     cm->el_selfsc = (IMPOSSIBLE / (windowlen+1));
+
+  if(do_elsilent) 
+    ConfigLocal_DisallowELEmissions(cm);
 
   if (do_local && do_hbanded)
     {
@@ -510,6 +516,7 @@ main(int argc, char **argv)
   /* Allocate data structures for use with HMM banding strategy */
   if(do_hbanded)
     cp9b = AllocCP9Bands(cm, hmm);
+  orig_cp9b = cp9b;
 
   for (i = 0; i < nseq; i++)
     {
@@ -597,6 +604,9 @@ main(int argc, char **argv)
 	      if(!build_cp9_hmm(sub_cm, &sub_hmm, &sub_cp9map, 0.0001, debug_level))
 		Die("Couldn't build a sub CP9 HMM from the sub CM\n");
 
+	      /* Allocate HMM banding data structures for use with the sub CM and sub HMM */
+	      sub_cp9b = AllocCP9Bands(sub_cm, sub_hmm);
+	      
 	      if(do_fullsub)
 		{
 		  CPlan9SWConfig(sub_hmm, 0.5, 0.5);
@@ -632,6 +642,7 @@ main(int argc, char **argv)
 	      cp9map->hmm_M = sub_hmm->M;
 	      hmm           = sub_hmm;    
 	      cp9map        = sub_cp9map;
+	      cp9b          = sub_cp9b;
 	    }
 	}
       if(do_hbanded)
@@ -1008,7 +1019,10 @@ main(int argc, char **argv)
 
 	  FreeCM(sub_cm); /* cm and sub_cm now point to NULL */
 	  if(do_hbanded)
-	    FreeCPlan9(sub_hmm);
+	    {
+	      FreeCPlan9(sub_hmm);
+	      FreeCP9Bands(sub_cp9b);
+	    }
 	}
     }
   avgsc /= nseq;
@@ -1089,16 +1103,17 @@ main(int argc, char **argv)
       free(dmax);
     }
 
-  if(do_hbanded || do_sub)
+  if(do_hbanded && do_sub)
     {
-      FreeCP9Map(cp9map);
       for (i = 0; i < nseq; i++) 
 	free(p7dsq[i]);
       free(p7dsq);
     }
-  if(do_hbanded)
-    FreeCP9Bands(cp9b);
-
+  if(do_hbanded && !do_sub) /* if do_sub, we've already freed these */
+    {
+      FreeCP9Bands(cp9b);
+      FreeCP9Map(cp9map);
+    }
   if(do_hbanded || do_sub)
     {
       FreeCPlan9Matrix(cp9_mx);

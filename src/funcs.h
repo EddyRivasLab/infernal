@@ -120,6 +120,7 @@ extern void ConfigLocal_fullsub(CM_t *cm, float p_internal_start,
 				int estruct_nd);
 extern void ConfigLocal_fullsub_post(CM_t *sub_cm, CM_t *orig_cm, CP9Map_t *orig_cp9map, CMSubMap_t *submap, 
 				     struct cp9_dpmatrix_s *post, int L);
+extern void ConfigLocal_DisallowELEmissions(CM_t *cm);
 
 /* from modelmaker.c
  */

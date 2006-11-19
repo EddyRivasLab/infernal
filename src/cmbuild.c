@@ -689,7 +689,7 @@ main(int argc, char **argv)
        * together W times. (And W can change in cmsearch or cmalign). Here
        * we'll ensure we can multiply el_selfsc by 2W and still avoid underflows,
        * and we'll check in cmsearch to make sure that W * cm->el_selfsc < (IMPOSSIBLE*3)
-       * and we'll die if it isn't. We shouldn't face this in cmsearch situation
+       * and we'll change it if it isn't. We shouldn't face this in cmsearch situation
        * unless the user wants to set W as something greater than twice what
        * it is set as in the .cm file.
        */

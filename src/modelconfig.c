@@ -170,7 +170,18 @@ ConfigLocal_fullsub(CM_t *cm, float p_internal_start,
   int nexits;			/* number of possible internal ends */
   float denom;
 
+
   printf("in ConfigLocal_fullsub(), sstruct_nd: %d | estruct_nd: %d\n", sstruct_nd, estruct_nd);
+
+  /* Currently, EL emissions in fullsub mode are disallowed.
+   * To achieve, this set the EL self transition score to as close to IMPOSSIBLE 
+   * as we can while still guaranteeing we won't get underflow errors.
+   * we need cm->el_selfsc * W * 3 >= IMPOSSIBLE 
+   * because we will potentially multiply cm->el_selfsc * W, and add that to 
+   * 2 * IMPOSSIBLE, and IMPOSSIBLE must be > -FLT_MAX/3 so we can add it together 3 
+   * times (see structs.h). 
+   */
+  ConfigLocal_DisallowELEmissions(cm);
 
   /*****************************************************************
    * Internal entry.
@@ -259,6 +270,16 @@ ConfigLocal_fullsub(CM_t *cm, float p_internal_start,
    /* shouldn't be nec */
    int orig_nd;
 
+  /* Currently, EL emissions in fullsub mode are disallowed.
+   * To achieve, this set the EL self transition score to as close to IMPOSSIBLE 
+   * as we can while still guaranteeing we won't get underflow errors.
+   * we need cm->el_selfsc * W >= IMPOSSIBLE 
+   * because we will potentially multiply cm->el_selfsc * W, and add that to 
+   * 2 * IMPOSSIBLE, and IMPOSSIBLE must be > -FLT_MAX/3 so we can add it together 3 
+   * times (see structs.h). 
+   */
+   ConfigLocal_DisallowELEmissions(sub_cm);
+
    sum_beg= sum_end = 0.;
 
    /* Zero all begin probs */
@@ -294,7 +315,6 @@ ConfigLocal_fullsub(CM_t *cm, float p_internal_start,
 	 }
        else if(sub_cm->ndtype[nd] == MATL_nd)
 	 {
-	   /*HEREHEREHEREHEREHEREHEREHERE*/
 	   lpos = orig_cp9map->nd2lpos[orig_nd]; 
 	   /* lpos is the HMM node whose match state emits same left  pos as sub_cm MATP_MP */
 	   /* HEREHERE if(orig_cm->ndtype[orig_v1]*/
@@ -350,3 +370,17 @@ ConfigLocal_fullsub(CM_t *cm, float p_internal_start,
    exit(1);
    return;
  }
+
+void
+ConfigLocal_DisallowELEmissions(CM_t *cm)
+{
+  /* Set the EL self transition score to as close to IMPOSSIBLE 
+   * as we can while still guaranteeing we won't get underflow errors.
+   * we need cm->el_selfsc * W >= IMPOSSIBLE 
+   * because we will potentially multiply cm->el_selfsc * W, and add that to 
+   * 2 * IMPOSSIBLE, and IMPOSSIBLE must be > -FLT_MAX/3 so we can add it together 3 
+   * times (see structs.h). 
+   */
+  cm->el_selfsc = (IMPOSSIBLE / (cm->W+1));
+  return;
+}

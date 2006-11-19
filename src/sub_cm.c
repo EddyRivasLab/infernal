@@ -1996,9 +1996,9 @@ check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubI
   ret_val = TRUE;
 
   /* Build two CP9 HMMs, one for the orig_cm and one for the sub_cm */
-  if(!build_cp9_hmm(orig_cm, &orig_hmm, &orig_cp9map, print_flag))
+  if(!build_cp9_hmm(orig_cm, &orig_hmm, &orig_cp9map, 0.0001, print_flag))
     Die("Couldn't build a CP9 HMM from the CM\n");
-  if(!build_cp9_hmm(sub_cm,  &sub_hmm,  &sub_cp9map,  print_flag))
+  if(!build_cp9_hmm(sub_cm,  &sub_hmm,  &sub_cp9map,  0.0001, print_flag))
     Die("Couldn't build a CP9 HMM from the CM\n");
 
   /* Look for 'impossible' cases where we know the sub_cm 
@@ -3598,9 +3598,9 @@ check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subin
   awrong_total_ct = 0;
 
   /* Build two CP9 HMMs, one for the orig_cm and one for the sub_cm */
-  if(!build_cp9_hmm(orig_cm, &orig_hmm, &orig_cp9map, print_flag))
+  if(!build_cp9_hmm(orig_cm, &orig_hmm, &orig_cp9map, 0.0001, print_flag))
     Die("Couldn't build a CP9 HMM from the CM\n");
-  if(!build_cp9_hmm(sub_cm,  &sub_hmm,  &sub_cp9map,  print_flag))
+  if(!build_cp9_hmm(sub_cm,  &sub_hmm,  &sub_cp9map,  0.0001, print_flag))
     Die("Couldn't build a CP9 HMM from the CM\n");
 
   /* Look for 'impossible' cases where we know the sub_cm 

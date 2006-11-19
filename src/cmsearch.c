@@ -437,12 +437,12 @@ main(int argc, char **argv)
   StopwatchStart(watch);
   /* EPN 11.18.05 Now that know what windowlen is, we need to ensure that
    * cm->el_selfsc * W >= IMPOSSIBLE (cm->el_selfsc is the score for an EL self transition)
-   * This is done because we are potentially multiply cm->el_selfsc * W, and adding
-   * that to IMPOSSIBLE. To avoid underflow issues this value must be less than
-   * 3 * IMPOSSIBLE. Here we guarantee its less than 2 * IMPOSSIBLE (to be safe).
+   * because we will potentially multiply cm->el_selfsc * W, and add that to 
+   * 2 * IMPOSSIBLE, and IMPOSSIBLE must be > -FLT_MAX/3 so we can add it together 3 
+   * times (see structs.h). 
    */
   if((cm->el_selfsc * windowlen) < IMPOSSIBLE)
-    cm->el_selfsc = (IMPOSSIBLE / (windowlen+1));
+    cm->el_selfsc = (IMPOSSIBLE / (windowlen+1) * 3);
 
   maxlen   = 0;
   reversed = FALSE;

@@ -1217,6 +1217,9 @@ hmm2ij_bands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
 	  hmm2ij_state_step3_enforce_state_delta(cm, v, jmin, jmax);
 	  
 	  v++; /*MATP_IR*/
+	  /* skip detached inserts */
+	  if(cp9map->cs2hn[v][0] == -1)
+	    continue;
 	  /* Special case, one of only two situations (other is ROOT_IR)
 	   * we could have come where v is an insert, and a possible
 	   * state x that we came from is an insert, but x != y (x can be the MATP_IL).
@@ -1288,6 +1291,9 @@ hmm2ij_bands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
 	  hmm2ij_state_step5_non_emitter_d0_hack(v, imax[v], jmin);
 
 	  v++; /*MATL_IL*/
+	  /* skip detached inserts */
+	  if(cp9map->cs2hn[v][0] == -1)
+	    continue;
 	  /* This state maps to the insert state of HMM node cp9map->cs2hn[v][0]*/
 	  tmp_imin = pn_min_i[cp9map->cs2hn[v][0]];
 	  tmp_imax = pn_max_i[cp9map->cs2hn[v][0]];
@@ -1358,6 +1364,9 @@ hmm2ij_bands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
 	  hmm2ij_state_step5_non_emitter_d0_hack(v, imax[v], jmin);
 
 	  v++; /*MATR_IR*/
+	  /* skip detached inserts */
+	  if(cp9map->cs2hn[v][0] == -1)
+	    continue;
 	  tmp_imin = nss_imin[n];
 	  tmp_imax = nss_imax[n];
 	  /* This state maps to the insert state of HMM node cshn_map[v]*/
@@ -1573,18 +1582,24 @@ hmm2ij_bands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
 	}
     }
 
-   /* Do a quick check to make sure we've assigned the bands
-   * on i and j for all states to positive values (none were
-   * left as -1 EXCEPT for end states which should have i bands left as -1.
-   */
-  /* 11.14.05
-   * Also ensure that all *max[v] and *min[v] values are <= L, values greater
-   * than this don't make sense.
-   */
+   /* Set detached inserts states to imin=imax=jmin=jmax=1 to avoid 
+    * problems in downstream functions. These states WILL NEVER BE ENTERED */
+   /* Also, do a quick check to make sure we've assigned the bands
+    * on i and j for all states to positive values (none were
+    * left as -1 EXCEPT for end states which should have i bands left as -1.
+    */
+   /* 11.14.05
+    * Also ensure that all *max[v] and *min[v] values are <= L, values greater
+    * than this don't make sense.
+    */
 
   die_flag = 0;
   for(v = 0; v < cm->M; v++)
     {
+      /* set bands for detached inserts */
+      if(cm->sttype[v+1] == E_st)
+	imin[v] = imax[v] = jmin[v] = jmax[v] = 1;
+
       if(imin[v] > (j0+1))
 	imin[v] = (j0+1);
       if(imax[v] > (j0+1))
