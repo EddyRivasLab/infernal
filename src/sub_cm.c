@@ -49,7 +49,7 @@ static void  cm2sub_cm_subtract_root_subpaths(CM_t *orig_cm, CM_t *sub_cm, doubl
 static void  cm2sub_cm_find_impossible_misc_cases(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subinfo,
 						  CP9Map_t *orig_cp9map, CP9Map_t *sub_cp9map, int print_flag);
 static void  cm2sub_cm_find_impossible_matr_cases(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subinfo,
-						  CP9Map_t *orig_cp9map, CP9Map_t *sub_cp9map, int print_flag);
+						  CP9Map_t *orig_cp9map, CP9Map_t *sub_cp9map, int do_fullsub, int print_flag);
 static void  debug_print_misc_sub_cm_info(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CP9Map_t *orig_cp9map);
 static void  debug_sub_cm_check_all_trans(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap);
 
@@ -1977,13 +1977,14 @@ debug_print_cm_params(CM_t *cm)
   * CMSubInfo_t subinfo       
   * float chi_thresh  - rejection threshold for chi-squared tests
   * int nsamples      - number of samples to use to build the ML HMM
+  * int do_fullsub     - TRUE if this sub_cm is a 'full sub' CM
   * int print_flag    - TRUE to print useful info for debugging
   * Returns: TRUE: if CM and sub CM are "close enough" (see code)
   *          FALSE: otherwise
   */
 int 
 check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subinfo,
-			 float chi_thresh, int nsamples, int print_flag)
+			 float chi_thresh, int nsamples, int do_fullsub, int print_flag)
 {
   struct cplan9_s       *orig_hmm; /* constructed CP9 HMM from the original cm */
   struct cplan9_s       *sub_hmm; /* constructed CP9 HMM from the sub_cm */
@@ -2006,7 +2007,7 @@ check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubI
    * built from the sub_cm will be the same distros out of corresponding CP9 nodes built from 
    * the full CM. */
   cm2sub_cm_find_impossible_misc_cases(orig_cm, sub_cm, submap, subinfo, orig_cp9map, sub_cp9map, print_flag);
-  cm2sub_cm_find_impossible_matr_cases(orig_cm, sub_cm, submap, subinfo, orig_cp9map, sub_cp9map, print_flag);
+  cm2sub_cm_find_impossible_matr_cases(orig_cm, sub_cm, submap, subinfo, orig_cp9map, sub_cp9map, do_fullsub, print_flag);
 
   if(!(CP9_check_cp9_by_sampling(orig_cm, sub_hmm, subinfo, submap->spos, submap->epos, chi_thresh,
 				 nsamples, print_flag)))
@@ -3077,12 +3078,13 @@ check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubI
  * int *sub_cp9map->pos2nd
  * int *imp_cc
  * int spos;
+ * int do_fullsub     - TRUE if this sub_cm is a 'full sub' CM
  * int epos;
  */
 
 static void
 cm2sub_cm_find_impossible_matr_cases(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subinfo, 
-				     CP9Map_t *orig_cp9map, CP9Map_t *sub_cp9map, int print_flag)
+				     CP9Map_t *orig_cp9map, CP9Map_t *sub_cp9map, int do_fullsub, int print_flag)
 {
   int sub_k;
   int orig_k;
@@ -3159,7 +3161,7 @@ cm2sub_cm_find_impossible_matr_cases(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *su
 	    correct_node_types_flag = FALSE;
 	  if(print_flag) printf("CASE 2 k: %d correct_node_types_flag: %d\n", sub_k, correct_node_types_flag);
 	  
-	  if(correct_node_types_flag == TRUE)
+	  if(correct_node_types_flag == TRUE || do_fullsub)
 	    {
 	      /* Determine if the next_orig_nd is the next left emitting
 	       * node of the orig_cm after orig_nd */
@@ -3187,6 +3189,11 @@ cm2sub_cm_find_impossible_matr_cases(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *su
 		  if(print_flag) printf("CASE 2 k: %d sub_matr_stretch_flag: %d\n", sub_k, sub_matr_stretch_flag);
 		  if(sub_matr_stretch_flag == TRUE)
 		    {
+		      if(do_fullsub) 
+			{ 
+			  subinfo->imp_cc[sub_k] = 2;
+			  continue;
+			}
 		      /* This should be a MATR impossible case, 
 		       * Check all the criteria we *think* are always true in this situation,
 		       * Die if what we think is wrong. 
@@ -3541,6 +3548,7 @@ debug_print_misc_sub_cm_info(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CP
  * CMSubMap_t *submap
  * CMSubInfo_t *subinfo
  * float  pthresh    - the allowed difference in probability between HMMs
+ * int do_fullsub     - TRUE if this sub_cm is a 'full sub' CM
  * int print_flag    - TRUE to print useful debugging info
  * 
  * Returns: TRUE: if CM and sub CM are "close enough" (see code)
@@ -3548,7 +3556,7 @@ debug_print_misc_sub_cm_info(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CP
  */
 int 
 check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subinfo, float pthresh,
-	     int print_flag)
+	     int do_fullsub, int print_flag)
 {
   struct cplan9_s       *sub_hmm; /* constructed CP9 HMM from the sub_cm */
   struct cplan9_s       *orig_hmm; /* constructed CP9 HMM from the original cm 
@@ -3608,7 +3616,7 @@ check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subin
    * built from the sub_cm will be the same distros out of corresponding CP9 nodes built from 
    * the full CM. */
   cm2sub_cm_find_impossible_misc_cases(orig_cm, sub_cm, submap, subinfo, orig_cp9map, sub_cp9map, print_flag);
-  cm2sub_cm_find_impossible_matr_cases(orig_cm, sub_cm, submap, subinfo, orig_cp9map, sub_cp9map, print_flag);
+  cm2sub_cm_find_impossible_matr_cases(orig_cm, sub_cm, submap, subinfo, orig_cp9map, sub_cp9map, do_fullsub, print_flag);
 
   /* Reconfig the orig_hmm so that it can only start in the spos node, and end from the epos node */
   /* Build the sub CP9 HMM by copying as much of the original cp9_hmm as possible */

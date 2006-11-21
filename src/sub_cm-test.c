@@ -279,13 +279,13 @@ main(int argc, char **argv)
 	      if(do_atest || do_stest)
 		{
 		  subinfo = AllocSubInfo(submap->epos-submap->spos+1);
-		  if(do_atest && !check_sub_cm(cm, sub_cm, submap, subinfo, pthresh, print_flag))
+		  if(do_atest && !check_sub_cm(cm, sub_cm, submap, subinfo, pthresh, do_fullsub, print_flag))
 		    {
 		      printf("\nSub CM construction for sstruct: %4d estruct: %4d failed analytical HMM test.\n", sstruct, estruct);
 		      Die("\tLooks like there's a bug...\n");
 		    }
 		  if(do_stest && !check_sub_cm_by_sampling(cm, sub_cm, submap, subinfo, chi_thresh, 
-							   nsamples, print_flag))
+							   nsamples, do_fullsub, print_flag))
 		    {
 		      printf("\nSub CM construction for sstruct: %4d estruct: %4d failed sampling HMM test.\n", sstruct, estruct);
 		      Die("\tLooks like there's a bug...\n");
@@ -349,13 +349,13 @@ main(int argc, char **argv)
 	  if(do_atest || do_stest)
 	    {
 	      subinfo = AllocSubInfo(submap->epos-submap->spos+1);
-	      if(do_atest && !check_sub_cm(cm, sub_cm, submap, subinfo, pthresh, print_flag))
+	      if(do_atest && !check_sub_cm(cm, sub_cm, submap, subinfo, pthresh, do_fullsub, print_flag))
 		{
 		  printf("\nSub CM construction for sstruct: %4d estruct: %4d failed analytical HMM test.\n", sstruct, estruct);
 		  Die("\tLooks like there's a bug...\n");
 		}
 	      if(do_stest && !check_sub_cm_by_sampling(cm, sub_cm, submap, subinfo, chi_thresh, 
-						       nsamples, print_flag))
+						       nsamples, do_fullsub, print_flag))
 		{
 		  printf("\nSub CM construction for sstruct: %4d estruct: %4d failed sampling HMM test.\n", sstruct, estruct);
 		  Die("\tLooks like there's a bug...\n");

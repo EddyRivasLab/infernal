@@ -354,9 +354,9 @@ extern void StripWUSSGivenCC(MSA *msa, char **dsq, float gapthresh, int first_ma
 extern int  check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, double threshold, 
 				       int print_flag);
 extern int  check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subinfo, float pthresh,
-			 int print_flag);
+			 int do_fullsub, int print_flag);
 extern int check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subinfo,
-				    float chi_thresh, int nsamples, int print_flag);
+				    float chi_thresh, int nsamples, int do_fullsub, int print_flag);
 extern int  check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int nseq);
 extern int  sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Parsetree_t *sub_tr, 
 				CMSubMap_t *submap, int do_fullsub, int print_flag);

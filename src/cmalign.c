@@ -523,6 +523,8 @@ main(int argc, char **argv)
       StopwatchZero(watch2);
       StopwatchStart(watch2);
 
+      if (sqinfo[i].len == 0) Die("ERROR: sequence named %s has length 0.\n", sqinfo[i].name);
+
       /* Potentially, do HMM calculations. */
       if(do_hbanded || do_sub)
 	{
@@ -533,9 +535,9 @@ main(int argc, char **argv)
 	  /* Step 1: Get HMM posteriors.*/
 	  /*sc = CP9Viterbi(p7dsq[i], 1, sqinfo[i].len, hmm, cp9_mx);*/
 	  forward_sc = CP9Forward(p7dsq[i], 1, sqinfo[i].len, orig_hmm, &cp9_fwd);
-	  printf("CP9 i: %d | forward_sc : %f\n", i, forward_sc);
+	  printf("CP9 i: %d | forward_sc : %.2f\n", i, forward_sc);
 	  backward_sc = CP9Backward(p7dsq[i], 1, sqinfo[i].len, orig_hmm, &cp9_bck);
-	  printf("CP9 i: %d | backward_sc: %f\n", i, backward_sc);
+	  printf("CP9 i: %d | backward_sc: %.2f\n", i, backward_sc);
 
 	  /*debug_check_CP9_FB(cp9_fwd, cp9_bck, hmm, forward_sc, 1, sqinfo[i].len, p7dsq[i]);*/
 	  cp9_posterior = cp9_bck;
@@ -628,9 +630,9 @@ main(int argc, char **argv)
 	      FreeCPlan9Matrix(cp9_fwd);
 	      FreeCPlan9Matrix(cp9_posterior);
 	      forward_sc = CP9Forward(p7dsq[i], 1, sqinfo[i].len, sub_hmm, &cp9_fwd);
-	      printf("CP9 i: %d | forward_sc : %f\n", i, forward_sc);
+	      printf("CP9 i: %d | forward_sc : %.2f\n", i, forward_sc);
 	      backward_sc = CP9Backward(p7dsq[i], 1, sqinfo[i].len, sub_hmm, &cp9_bck);
-	      printf("CP9 i: %d | backward_sc: %f\n", i, backward_sc);
+	      printf("CP9 i: %d | backward_sc: %.2f\n", i, backward_sc);
 	      /*debug_check_CP9_FB(cp9_fwd, cp9_bck, hmm, forward_sc, 1, sqinfo[i].len, p7dsq[i]);*/
 	      cp9_posterior = cp9_bck;
 	      CP9FullPosterior(p7dsq[i], 1, sqinfo[i].len, sub_hmm, cp9_fwd, cp9_bck, cp9_posterior);
@@ -686,8 +688,6 @@ main(int argc, char **argv)
 	    }
 	  
 	  /* Step 3: HMM bands  ->  CM bands. */
-	  printf("10.24.06 cm->nodes: %d\n", cm->nodes);
-	  printf("10.24.06 cp9map->hmm_M    : %d\n", cp9map->hmm_M);
 	  hmm2ij_bands(cm, cp9map, 1, sqinfo[i].len, cp9b->pn_min_m, cp9b->pn_max_m, 
 		       cp9b->pn_min_i, cp9b->pn_max_i, cp9b->pn_min_d, cp9b->pn_max_d, 
 		       cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, debug_level);
