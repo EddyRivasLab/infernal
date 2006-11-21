@@ -711,14 +711,14 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
     */
      for(n_s = 0; n_s < sub_cm->nodes; n_s++)
      {
-       if(sub_cm->ndtype[n_s] == MATP_nd)
+       if(sub_cm->ndtype[n_s] == MATP_nd && (sub_cm->sttype[(sub_cm->nodemap[n_s] + 5)+1] != E_st))
 	 {
 
 	   if((submap->s2o_smap[sub_cm->nodemap[n_s] + 4][1] != -1) ||
 	      (submap->s2o_smap[sub_cm->nodemap[n_s] + 5][1] != -1))
 	     Die("ERROR, MATP_IL or MATP_IR node: %d map to 2 cm states\n", n_s);
 	   if(submap->s2o_smap[sub_cm->nodemap[n_s] + 4][0] != (submap->s2o_smap[sub_cm->nodemap[n_s] + 5][0] - 1))
-	     Die("ERROR, MATP_IL or MATP_IR node: %d don't map to adjacent orig_cm states\n");
+	     Die("ERROR, MATP_IL or MATP_IR node: %d don't map to adjacent orig_cm states\n", n_s);
 	 }
        if(sub_cm->ndtype[n_s] == ROOT_nd && sub_cm->ndtype[n_s+1] != BIF_nd) /* ROOT->BIFs are handled special
 									      * (see next loop) */
@@ -848,11 +848,11 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
 	   max_type = 1; /* insert */
 	 }
      }
-   if(max_type == 0)
+   /*if(max_type == 0)
      printf("MATCH | mx->mmx[%3d][%3d]: %9d | %8f\n", x, max_k, post->mmx[x][max_k], Score2Prob(post->mmx[x][max_k], 1.));
    else
      printf("INSERT | mx->imx[%3d][%3d]: %9d | %8f\n", x, max_k, post->imx[x][max_k], Score2Prob(post->imx[x][max_k], 1.));
-
+   */
    *ret_node = max_k;
    *ret_type = max_type;
    return;
@@ -1997,9 +1997,9 @@ check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubI
   ret_val = TRUE;
 
   /* Build two CP9 HMMs, one for the orig_cm and one for the sub_cm */
-  if(!build_cp9_hmm(orig_cm, &orig_hmm, &orig_cp9map, 0.0001, print_flag))
+  if(!build_cp9_hmm(orig_cm, &orig_hmm, &orig_cp9map, FALSE, 0.0001, print_flag))
     Die("Couldn't build a CP9 HMM from the CM\n");
-  if(!build_cp9_hmm(sub_cm,  &sub_hmm,  &sub_cp9map,  0.0001, print_flag))
+  if(!build_cp9_hmm(sub_cm,  &sub_hmm,  &sub_cp9map,  FALSE, 0.0001, print_flag))
     Die("Couldn't build a CP9 HMM from the CM\n");
 
   /* Look for 'impossible' cases where we know the sub_cm 
@@ -3606,9 +3606,9 @@ check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subin
   awrong_total_ct = 0;
 
   /* Build two CP9 HMMs, one for the orig_cm and one for the sub_cm */
-  if(!build_cp9_hmm(orig_cm, &orig_hmm, &orig_cp9map, 0.0001, print_flag))
+  if(!build_cp9_hmm(orig_cm, &orig_hmm, &orig_cp9map, FALSE, 0.0001, print_flag))
     Die("Couldn't build a CP9 HMM from the CM\n");
-  if(!build_cp9_hmm(sub_cm,  &sub_hmm,  &sub_cp9map,  0.0001, print_flag))
+  if(!build_cp9_hmm(sub_cm,  &sub_hmm,  &sub_cp9map,  FALSE, 0.0001, print_flag))
     Die("Couldn't build a CP9 HMM from the CM\n");
 
   /* Look for 'impossible' cases where we know the sub_cm 
@@ -4164,6 +4164,7 @@ sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Pars
 
   free(nodetypes);
   free(sttypes);
+  FreeNstack(pda);
   return 1;
 }
 

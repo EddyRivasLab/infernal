@@ -118,8 +118,6 @@ extern void ConfigLocalEnds(CM_t *cm, float p_internal_exit);
 extern void ConfigLocal_fullsub(CM_t *cm, float p_internal_start, 
 				float p_internal_exit, int sstruct_nd,
 				int estruct_nd);
-extern void ConfigLocal_fullsub_post(CM_t *sub_cm, CM_t *orig_cm, CP9Map_t *orig_cp9map, CMSubMap_t *submap, 
-				     struct cp9_dpmatrix_s *post, int L);
 extern void ConfigLocal_DisallowELEmissions(CM_t *cm);
 
 /* from modelmaker.c
@@ -306,7 +304,7 @@ extern void CP9_combine_FBscan_hits(int i0, int j0, int W, int fwd_nhits, int *f
 
 /* from CP9_cm2wrhmm.c */
 extern int  build_cp9_hmm(CM_t *cm, struct cplan9_s **ret_hmm, CP9Map_t **ret_cp9map, 
-			  float psi_vs_phi_threshold, int debug_level);
+			  int do_psi_test, float psi_vs_phi_threshold, int debug_level);
 extern void CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level);
 extern void map_helper(CM_t *cm, CP9Map_t *cp9map, int k, int ks, int v);
 extern int  CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, int debug_level);

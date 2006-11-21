@@ -120,12 +120,15 @@ main(int argc, char **argv)
   if (! BandCalculationEngine(cm, maxW, 0.001, TRUE, NULL, NULL, &gamma, FALSE))
     Die("Your maxW (%d) must be too small, sorry...\n", maxW);
 
+  int n;
   for (v = 0; v < cm->M; v++)
     {
       DScale(gamma[v],    maxW+1, DSum(mc_gamma[v], maxW+1)); /* convert to #'s */
       p = DChiSquareFit(gamma[v], mc_gamma[v], maxW+1);	      /* compare #'s    */
 
-      if (cm->sttype[v] != E_st && p < threshold)
+      if (cm->sttype[v] != E_st 
+	  && cm->ndtype[cm->ndidx[v]+1] != END_nd /* skip nodes with unreachable inserts */
+	  && p < threshold)
 	Die("Rejected band distribution for state %d: chi-squared p = %f\n", v, p);
     }
 

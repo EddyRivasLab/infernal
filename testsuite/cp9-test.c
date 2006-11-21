@@ -118,7 +118,7 @@ main(int argc, char **argv)
   watch = StopwatchCreate(); 
   StopwatchZero(watch);
   StopwatchStart(watch);
-  if(!build_cp9_hmm(cm, &hmm, &cp9map, pthresh, debug_level))
+  if(!build_cp9_hmm(cm, &hmm, &cp9map, TRUE, pthresh, debug_level))
     Die("CM Plan 9 HMM fails the psi/phi comparison test.\n");
   StopwatchStop(watch);
   StopwatchDisplay(stdout, "CP9 construction CPU time: ", watch);

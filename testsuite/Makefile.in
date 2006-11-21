@@ -19,16 +19,18 @@ CPPFLAGS = @CPPFLAGS@
 LDFLAGS  = @LDFLAGS@
 DEFS     = @DEFS@
 LIBS     = @LIBS@ 
-MYLIBS   = -linfernal -lsquid
+MYLIBS   = -linfernal -lsquid -lhmmer
 
 # Where the build arenas are
 #
-MYLIBDIR = -L../squid -L../src
-MYINCDIR = -I../squid -I../src
+MYLIBDIR = -L../squid -L../hmmer/ -L../src
+MYINCDIR = -I../squid -I../hmmer/ -I../src 
 
 TESTPROGS = \
 	bandcyk-montecarlo-test\
-	bandcyk-truncation-test
+	bandcyk-truncation-test\
+	cp9-test\
+	sub_cm-test
 
 #################################################################
 ## Building the test programs.

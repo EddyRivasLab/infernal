@@ -8,7 +8,6 @@
  * @LICENSE@
  *****************************************************************
  */
-
 #include "config.h"
 
 #include <stdio.h>
@@ -62,8 +61,8 @@ static char experts[] = "\
    --fsub        : build sub CM for structure b/t HMM predicted start/end points\n\
    --elsilent    : disallow local end (EL) emissions\n\
 \n\
-  * HMM banded alignment related options:\n\
-   --hbanded     : use exptl CM plan 9 HMM banded CYK aln algorithm\n\
+  * HMM banded alignment related options (IN DEVELOPMENT):\n\
+   --hbanded     : use experimental CM plan 9 HMM banded CYK aln algorithm\n\
    --hbandp <f>  : tail loss prob for --hbanded [default: 0.0001]\n\
    --sums        : use posterior sums during HMM band calculation (widens bands)\n\
    --checkcp9    : check the CP9 empirically by generating sequences\n\
@@ -258,7 +257,7 @@ main(int argc, char **argv)
   do_hbanded  = FALSE;
   hbandp      = 0.0001;
   use_sums    = FALSE;
-  time_flag   = TRUE;
+  time_flag   = FALSE;
   do_inside   = FALSE;
   do_outside  = FALSE;
   do_check    = FALSE;
@@ -319,7 +318,7 @@ main(int argc, char **argv)
   if(do_checkcp9 && do_hbanded == FALSE)
     Die("--checkcp9 only makes sense with --hbanded\n");
   if(do_sub && do_local && !do_fullsub)
-    Die("--sub and --local combination not yet supported.\n");
+    Die("--sub and -l combination not supported.\n");
   if(do_sub && do_qdb)
     Die("Please pick either --sub or --qdb.\n");
 
@@ -363,7 +362,7 @@ main(int argc, char **argv)
 
   if (do_local && do_hbanded)
     {
-      printf("Warning: banding with an HMM (--hbanded) and allowing\nlocal alignment (-l). There's no telling what will happen.\n");
+      printf("Warning: banding with an HMM (--hbanded) and allowing\nlocal alignment (-l). This may not work very well.\n");
     } 
 
   CMLogoddsify(cm);
@@ -422,13 +421,13 @@ main(int argc, char **argv)
       postcode = malloc(sizeof(char *) * nseq);
     }      
 
-  watch1 = StopwatchCreate(); /*watch1 is used to time each step individually*/
-  watch2 = StopwatchCreate(); /*watch2 times the full alignment (including band calc)
-				for each seq*/
+  watch1 = StopwatchCreate(); /* watch1 is used to time each step individually */
+  watch2 = StopwatchCreate(); /* watch2 times the full alignment (including band calc)
+				 for each seq */
 
   if(do_hbanded || do_sub) /* We need a CP9 HMM to build sub_cms */
     {
-      if(!build_cp9_hmm(cm, &hmm, &cp9map, 0.0001, debug_level))
+      if(!build_cp9_hmm(cm, &hmm, &cp9map, FALSE, 0.0001, debug_level))
 	Die("Couldn't build a CP9 HMM from the CM\n");
       if(do_checkcp9)
 	{
@@ -466,7 +465,7 @@ main(int argc, char **argv)
   if((do_local && do_hbanded) || do_sub) /* to get spos and epos for the sub_cm, 
 					  * we config the HMM to local mode.*/
       {
-	printf("configuring the CM plan 9 HMM for local alignment.\n");
+	/*printf("configuring the CM plan 9 HMM for local alignment.\n");*/
 	swentry           = 0.5;
 	swexit            = 0.5;
 	CPlan9SWConfig(hmm, swentry, swexit);
@@ -507,7 +506,7 @@ main(int argc, char **argv)
 	windowlen = dmax[0];
       if(bdump_level > 1) 
 	{
-	  printf("qdb_beta:%f\n", qdb_beta);
+	  /*printf("qdb_beta:%f\n", qdb_beta);*/
 	  debug_print_bands(cm, dmin, dmax);
 	}
       expand_flag = FALSE;
@@ -535,9 +534,9 @@ main(int argc, char **argv)
 	  /* Step 1: Get HMM posteriors.*/
 	  /*sc = CP9Viterbi(p7dsq[i], 1, sqinfo[i].len, hmm, cp9_mx);*/
 	  forward_sc = CP9Forward(p7dsq[i], 1, sqinfo[i].len, orig_hmm, &cp9_fwd);
-	  printf("CP9 i: %d | forward_sc : %.2f\n", i, forward_sc);
+	  if(debug_level) printf("CP9 i: %d | forward_sc : %.2f\n", i, forward_sc);
 	  backward_sc = CP9Backward(p7dsq[i], 1, sqinfo[i].len, orig_hmm, &cp9_bck);
-	  printf("CP9 i: %d | backward_sc: %.2f\n", i, backward_sc);
+	  if(debug_level) printf("CP9 i: %d | backward_sc: %.2f\n", i, backward_sc);
 
 	  /*debug_check_CP9_FB(cp9_fwd, cp9_bck, hmm, forward_sc, 1, sqinfo[i].len, p7dsq[i]);*/
 	  cp9_posterior = cp9_bck;
@@ -587,8 +586,6 @@ main(int argc, char **argv)
 	   * if we don't need to build a CP9 HMM from the sub_cm to do banded alignment.*/
 	  if(do_fullsub && !do_hbanded)
 	    {
-	      /*ConfigLocal_fullsub_post(cm, cp9map, submap, cp9_posterior, sqinfo[i].len);*/
-
 	      ConfigLocal_fullsub(cm, 0.5, 0.5, orig_cp9map->pos2nd[submap->sstruct],
 				  orig_cp9map->pos2nd[submap->estruct]);
 	      /*ConfigLocal(sub_cm, 0.5, 0.5);*/
@@ -603,7 +600,7 @@ main(int argc, char **argv)
 	      /* Eventually, I think we can do this by just adjusting the parameters of the original HMM 
 		 CP9_2sub_cp9(hmm, &sub_hmm2, spos, epos, orig_phi);
 	      */
-	      if(!build_cp9_hmm(sub_cm, &sub_hmm, &sub_cp9map, 0.0001, debug_level))
+	      if(!build_cp9_hmm(sub_cm, &sub_hmm, &sub_cp9map, FALSE, 0.0001, debug_level))
 		Die("Couldn't build a sub CP9 HMM from the sub CM\n");
 
 	      /* Allocate HMM banding data structures for use with the sub CM and sub HMM */
@@ -630,9 +627,9 @@ main(int argc, char **argv)
 	      FreeCPlan9Matrix(cp9_fwd);
 	      FreeCPlan9Matrix(cp9_posterior);
 	      forward_sc = CP9Forward(p7dsq[i], 1, sqinfo[i].len, sub_hmm, &cp9_fwd);
-	      printf("CP9 i: %d | forward_sc : %.2f\n", i, forward_sc);
+	      if(debug_level) printf("CP9 i: %d | forward_sc : %.2f\n", i, forward_sc);
 	      backward_sc = CP9Backward(p7dsq[i], 1, sqinfo[i].len, sub_hmm, &cp9_bck);
-	      printf("CP9 i: %d | backward_sc: %.2f\n", i, backward_sc);
+	      if(debug_level) printf("CP9 i: %d | backward_sc: %.2f\n", i, backward_sc);
 	      /*debug_check_CP9_FB(cp9_fwd, cp9_bck, hmm, forward_sc, 1, sqinfo[i].len, p7dsq[i]);*/
 	      cp9_posterior = cp9_bck;
 	      CP9FullPosterior(p7dsq[i], 1, sqinfo[i].len, sub_hmm, cp9_fwd, cp9_bck, cp9_posterior);
@@ -641,7 +638,6 @@ main(int argc, char **argv)
 	      /* Change some pointers so that the functions that create bands use the
 	       * sub_* data structures. The orig_* data structures will still point
 	       * to the original CM versions. */
-	      cp9map->hmm_M = sub_hmm->M;
 	      hmm           = sub_hmm;    
 	      cp9map        = sub_cp9map;
 	      cp9b          = sub_cp9b;
@@ -746,7 +742,7 @@ main(int argc, char **argv)
 	    {
 	      /* the seq we're aligning is outside the root band, so we expand.*/
 	      ExpandBands(cm, sqinfo[i].len, dmin, dmax);
-	      printf("Expanded bands for seq : %s\n", sqinfo[i].name);
+	      if(debug_level > 0) printf("Expanded bands for seq : %s\n", sqinfo[i].name);
 	      if(bdump_level > 2) 
 		{
 		  printf("printing expanded bands :\n");
@@ -764,7 +760,7 @@ main(int argc, char **argv)
 	      Die("Length of sequence to align (%d nt) lies outside the root band.\ndmin[0]: %d and dmax[0]: %d\nImpossible to align with query dependent banded CYK unless you try --expand.\n%s", sqinfo[i].len, dmin[0], dmax[0], usage);
 	    }
 	}
-      printf("Aligning %s\n", sqinfo[i].name);
+      printf("Aligning %-30s", sqinfo[i].name);
       if (do_inside)
 	{
 	  if(do_hbanded)
@@ -969,7 +965,7 @@ main(int argc, char **argv)
       if (sc > maxsc) maxsc = sc;
       if (sc < minsc) minsc = sc;
 
-      printf("Alignment score for %30s: %8.2f bits\n", sqinfo[i].name, sc);
+      printf("    score: %10.2f bits\n", sc);
 
       /* If debug level high enough, print out the parse tree */
       if(debug_level > 2)
@@ -995,7 +991,11 @@ main(int argc, char **argv)
 	      free(cp9b->hdmax[v]);
 	    }
 	  StopwatchStop(watch2);
-	  if(time_flag) StopwatchDisplay(stdout, "band calc and jd CYK CPU time: ", watch2);
+	  if(time_flag) 
+	    { 
+	      StopwatchDisplay(stdout, "band calc and jd CYK CPU time: ", watch2);
+	      printf("\n");
+	    }
 	}
       if(do_sub)
 	{
@@ -1017,9 +1017,11 @@ main(int argc, char **argv)
 	  FreeParsetree(tr[i]);
 	  tr[i] = orig_tr;
 
+	  FreeSubMap(submap);
 	  FreeCM(sub_cm); /* cm and sub_cm now point to NULL */
 	  if(do_hbanded)
 	    {
+	      FreeCP9Map(sub_cp9map);
 	      FreeCPlan9(sub_hmm);
 	      FreeCP9Bands(sub_cp9b);
 	    }
@@ -1047,6 +1049,7 @@ main(int argc, char **argv)
        * Output the alignment.
        *****************************************************************/
       
+      printf("\n");
       if (outfile != NULL && (ofp = fopen(outfile, "w")) != NULL) 
 	{
 	  WriteStockholm(ofp, msa);

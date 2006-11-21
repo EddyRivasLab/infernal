@@ -49,7 +49,7 @@ static char experts[] = "\
    --inside      : scan with Inside, not CYK (caution ~5X slower(!))\n\
    --null2       : turn on the post hoc second null model [df:OFF]\n\
    --learninserts: do not set insert emission scores to 0\n\
-\n\   
+\n\
   * Filtering options using a CM plan 9 HMM (*in development*):\n\
    --hmmfb        : use Forward to get end points & Backward to get start points\n\
    --hmmweinberg  : use Forward to get end points, subtract W for start points\n\
@@ -274,7 +274,7 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--hmmweinberg")   == 0)   
       {
 	do_filter = TRUE; filter_weinberg  = TRUE;
-	printf("--hmmweinberg not yet supported\n"); exit(1);
+	printf("--hmmweinberg not yet supported.\n"); exit(1);
       }
     else if  (strcmp(optname, "--hmmpad")    == 0) { hmm_pad = atoi(optarg); }
     else if  (strcmp(optname, "--hmmonly")   == 0) { do_hmmonly = TRUE; do_align = FALSE; } 
@@ -347,7 +347,7 @@ main(int argc, char **argv)
       /* build a CM Plan 9 HMM, and use it to scan. */
       Alphabet_type = hmmNOTSETYET;
       SetAlphabet(hmmNUCLEIC); /* Set up the hmmer_alphabet global variable */
-      if(!build_cp9_hmm(cm, &cp9_hmm, &cp9map, 0.0001, debug_level))
+      if(!build_cp9_hmm(cm, &cp9_hmm, &cp9map, FALSE, 0.0001, debug_level))
 	Die("Couldn't build a CP9 HMM from the CM\n");
       /*debug_print_cp9_params(cp9_hmm); */
     }

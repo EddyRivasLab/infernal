@@ -7,10 +7,14 @@
 #
 1  prep      model/trna           @cmbuild@ -F --rf --wnone %TRNA.CM% trna1415G.sto
 1  exercise  cmalign:trna/1       @cmalign@ %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna/1/qdb   @cmalign@ --qdb %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/2       @cmalign@ -l %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna/2/qdb   @cmalign@ --qdb -l %TRNA.CM% 3trnas.fa
 2  prep      model/vault          @cmbuild@ -F --rf %VAULT.CM% vault.sto
 2  exercise  cmalign:vault/1      @cmalign@ %VAULT.CM% vault.fa
+2  exercise  cmalign:vault/1/qdb  @cmalign@ --qdb %VAULT.CM% vault.fa
 2  exercise  cmalign:vault/2      @cmalign@ -l %VAULT.CM% vault.fa
+2  exercise  cmalign:vault/2/qdb  @cmalign@ --qdb -l %VAULT.CM% vault.fa
 
 # Exercises of cmbuild.
 #
@@ -33,27 +37,37 @@
 2  prep      rand50               @shuffle@ -i -n 50 -t 90 --dna --seed 42 -o %RAND50%
 2  exercise  trna1/rand50         @cmscore@ %TRNA1.CM% %RAND50%
 2  exercise  trna2/rand50         @cmscore@ %TRNA2.CM% %RAND50%
+2  exercise  trna1/rand50/qdb     @cmscore@ --qdb %TRNA1.CM% %RAND50%
+2  exercise  trna2/rand50/qdb     @cmscore@ --qdb %TRNA2.CM% %RAND50%
+
 2  exercise  trna1/rand50/local   @cmscore@ --local %TRNA1.CM% %RAND50%
 2  exercise  trna2/rand50/local   @cmscore@ --local %TRNA2.CM% %RAND50%
+2  exercise  trna1/rand50/local/q @cmscore@ --qdb --local %TRNA1.CM% %RAND50%
+2  exercise  trna2/rand50/local/q @cmscore@ --qdb --local %TRNA2.CM% %RAND50%
 
 2  prep      model/rnaseP         @cmbuild@ --rf -F %RNASEP.CM% rnaseP-eubact.sto
 2  prep      model/srp            @cmbuild@ -F %SRP.CM% srp-euk.sto
 2  exercise  rnaseP/bsu           @cmscore@ %RNASEP.CM% rnaseP-bsu.fa
+2  exercise  rnaseP/bsu/qdb       @cmscore@ --qdb %RNASEP.CM% rnaseP-bsu.fa
 2  exercise  rnaseP/bsu/local     @cmscore@ --local %RNASEP.CM% rnaseP-bsu.fa
+2  exercise  rnaseP/bsu/local/qdb @cmscore@ --qdb --local %RNASEP.CM% rnaseP-bsu.fa
 2  exercise  srp/ffs              @cmscore@ %SRP.CM% ffs-ecoli.fa
-2  exercise  srp/ffs/local        @cmscore@ --local %SRP.CM% ffs-ecoli.fa
+2  exercise  srp/ffs/qdb          @cmscore@ %SRP.CM% ffs-ecoli.fa
+2  exercise  srp/ffs/local        @cmscore@ --qdb --local %SRP.CM% ffs-ecoli.fa
+2  exercise  srp/ffs/local/qdb    @cmscore@ --qdb --local %SRP.CM% ffs-ecoli.fa
 
 3  prep      rand20               @shuffle@ -i -n 20 -t 100 --dna --seed 42 -o %RAND20%
 3  exercise  rnaseP/rand          @cmscore@ %RNASEP.CM% %RAND20%
+3  exercise  rnaseP/rand/qdb      @cmscore@ --qdb %RNASEP.CM% %RAND20%
 3  exercise  rnaseP/rand/local    @cmscore@ --local %RNASEP.CM% %RAND20%
-
+3  exercise  rnaseP/rand/local/q  @cmscore@ --qdb --local %RNASEP.CM% %RAND20%
 
 # Exercises developed for bandcyk.c
 # xref notebook/1015-infernal-bands; xref STL7 p.130.
 #
 1  prep      model/trna           @cmbuild@ --rf -F %TRNA.CM% ../intro/trna.sto
-1  prep      model/rp             @cmbuild@ --rf -F %RP.CM%   ../intro/RNaseP.sto
-1  prep      model/ssu            @cmbuild@ --rf -F %SSU.CM%  ../intro/ssu.sto
+2  prep      model/rp             @cmbuild@ --rf -F %RP.CM%   ../intro/RNaseP.sto
+3  prep      model/ssu            @cmbuild@ --rf -F %SSU.CM%  ../intro/ssu.sto
 1  exercise  bandcyk/mc/trna      @bandcyk-montecarlo-test@ %TRNA.CM%
 2  exercise  bandcyk/mc/rp        @bandcyk-montecarlo-test@ %RP.CM%
 3  exercise  bandcyk/mc/ssu       @bandcyk-montecarlo-test@ -W 2000 %SSU.CM%
@@ -61,6 +75,24 @@
 2  exercise  bandcyk/trunc/rp     @bandcyk-truncation-test@ %RP.CM%  1000 2000
 3  exercise  bandcyk/trunc/ssu    @bandcyk-truncation-test@ %SSU.CM% 1687 3000 
 
+# Exercises of CM Plan 9 construction
+#
+1  prep      model/trna           @cmbuild@ --rf -F %TRNA.CM% ../intro/trna.sto
+2  prep      model/rp             @cmbuild@ --rf -F %RP.CM%   ../intro/RNaseP.sto
+3  prep      model/ssu            @cmbuild@ --rf -F %SSU.CM%  ../intro/ssu.sto
+1  exercise  cp9/trna             @cp9-test@ %TRNA.CM%
+2  exercise  cp9/rp               @cp9-test@ %RP.CM%
+3  exercise  cp9/ssu              @cp9-test@ %SSU.CM%
+
+# Exercises of sub CM construction
+#
+1  prep      model/trna           @cmbuild@ --rf -F %TRNA.CM% ../intro/trna.sto
+1  prep      model/rp             @cmbuild@ --rf -F %RP.CM%   ../intro/RNaseP.sto
+2  prep      model/ssu            @cmbuild@ --rf -F %SSU.CM%  ../intro/ssu.sto
+1  exercise  sub/trna1            @sub_cm-test@ %TRNA.CM%
+1  exercise  sub/rp               @sub_cm-test@ %RP.CM%
+2  exercise  sub/ssu              @sub_cm-test@ %SSU.CM%
+3  exercise  sub/trna2            @sub_cm-test@ --exhaust %TRNA.CM%
 
 # Verify backwards compatibility of CM file formats
 #

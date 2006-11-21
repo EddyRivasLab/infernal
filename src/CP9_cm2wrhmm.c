@@ -76,6 +76,7 @@ FChiSquareFit(float *f1, float *f2, int N);
  * cplan9_s   **ret_hmm    - CM Plan 9 HMM to be allocated, filled in and returned
  * CP9Map_t   **ret_cp9map - map from the CP9 HMM to the CM and vice versa
  *                           Allocated and returned from here, caller must free.
+ * int          do_psi_test - TRUE to do a psi vs phi test, FALSE not to
  * float psi_vs_phi_threshold - allowable difference in expected number of times mapping
  *                              cm and hmm states are entered.
  * Returns: TRUE if CP9 is constructed and passes the psi vs phi test
@@ -84,8 +85,8 @@ FChiSquareFit(float *f1, float *f2, int N);
  *          will print an error statement and exit.
  */
 int
-build_cp9_hmm(CM_t *cm, struct cplan9_s **ret_hmm, CP9Map_t **ret_cp9map, float psi_vs_phi_threshold,
-	      int debug_level)
+build_cp9_hmm(CM_t *cm, struct cplan9_s **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
+	      float psi_vs_phi_threshold, int debug_level)
 {
   int       k;                 /* counter of consensus columns (HMM nodes)*/
   int       i,j;
@@ -195,7 +196,10 @@ build_cp9_hmm(CM_t *cm, struct cplan9_s **ret_hmm, CP9Map_t **ret_cp9map, float 
 
   if(debug_level > 1) 
     debug_print_cp9_params(hmm);
-  ret_val = check_psi_vs_phi_cp9(cm, cp9map, psi, phi, (double) psi_vs_phi_threshold, debug_level);
+  if(do_psi_test)
+    ret_val = check_psi_vs_phi_cp9(cm, cp9map, psi, phi, (double) psi_vs_phi_threshold, debug_level);
+  else
+    ret_val = TRUE;
 
   free(ap);
   for(k = 0; k <= hmm->M; k++)
@@ -3227,7 +3231,7 @@ AllocCP9Map(CM_t *cm)
       cp9map->hns2cs[i] = MallocOrDie(sizeof(int *) * 3);
       for(ks = 0; ks < 3; ks++)
 	{
-	  cp9map->hns2cs[i][ks]= malloc(sizeof(int) * 2);      
+	  cp9map->hns2cs[i][ks]= MallocOrDie(sizeof(int) * 2);      
 	  cp9map->hns2cs[i][ks][0] = cp9map->hns2cs[i][ks][1] = -1;
 	}
     }

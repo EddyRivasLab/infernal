@@ -171,7 +171,7 @@ CYKInside_b_jd(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **
   StopwatchStart(watch);
 
   /*PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, (j0-i0+1));*/
-  printf("alignment strategy:CYKInside_b_jd:b:nosmall\n"); 
+  /*printf("alignment strategy:CYKInside_b_jd:b:nosmall\n"); */
   /*  printf("L: %d\n", L);*/
   
   /* Trust, but verify.
@@ -210,10 +210,10 @@ CYKInside_b_jd(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **
 			dmin, dmax);
 
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
-  printf("returning from CYKInside_b_jd() sc : %f\n", sc); 
+  /*printf("returning from CYKInside_b_jd() sc : %f\n", sc); */
 
   StopwatchStop(watch);
-  StopwatchDisplay(stdout, "banded CYK (j and d) CPU time: ", watch);
+  /*StopwatchDisplay(stdout, "banded CYK (j and d) CPU time: ", watch);*/
   StopwatchFree(watch);
 
   return sc;
