@@ -401,7 +401,7 @@ main(int argc, char **argv)
 	      free(dmin);
 	      free(dmax);
 	      safe_windowlen *= 2;
-	      printf("ERROR BandCalculationEngine returned false, windowlen adjusted to %d\n", safe_windowlen);
+	      /*printf("ERROR BandCalculationEngine returned false, windowlen adjusted to %d\n", safe_windowlen);*/
 	    }
 	}	  
       /* EPN 11.11.05 
