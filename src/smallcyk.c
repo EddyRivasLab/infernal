@@ -372,7 +372,7 @@ CYKDivideAndConquer(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree
   /* Free memory and return
    */
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
-  printf("***returning from CYKDivideAndConquer() sc : %f\n", sc);
+  /*printf("***returning from CYKDivideAndConquer() sc : %f\n", sc);*/
   return sc;
 }
 

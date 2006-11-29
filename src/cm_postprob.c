@@ -366,7 +366,7 @@ FInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
   }
 
   free(touch);
-  printf("***returning from FInside() sc  : %f\n", sc);
+  /*printf("\n\tFInside() sc  : %f\n", sc);*/
   return sc;
 }
 
@@ -806,10 +806,11 @@ FOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
   }
   free(touch);
 
-  if(!(cm->flags & CM_LOCAL_END))
-    printf("***returning from FOutside() sc : %f\n", return_sc);
+  /*  if(!(cm->flags & CM_LOCAL_END))
+    printf("\tFOutside() sc : %f\n", return_sc);
   else
-    printf("***returning from FOutside() sc : %f (LOCAL mode; sc is from Inside)\n", return_sc);
+    printf("\tFOutside() sc : %f (LOCAL mode; sc is from Inside)\n", return_sc);
+  */
   return return_sc;
 }
 
@@ -1628,7 +1629,7 @@ FInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
   }
 
   free(touch);
-  printf("***returning from FInside_b_jd_me() sc  : %f\n", sc);
+  /*printf("\n\tFInside_b_jd_me() sc  : %f\n", sc);*/
   return sc;
 }
 
@@ -2255,10 +2256,12 @@ FOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
   }
   free(touch);
 
+  /*
   if(!(cm->flags & CM_LOCAL_END))
-    printf("***returning from FOutside_b_jd_me() sc : %f\n", return_sc);
+    printf("\tFOutside_b_jd_me() sc : %f\n", return_sc);
   else
-    printf("***returning from FOutside_b_jd_me() sc : %f (LOCAL mode; sc is from Inside)\n", return_sc);
+    printf("\tFOutside_b_jd_me() sc : %f (LOCAL mode; sc is from Inside)\n", return_sc);
+  */
   return return_sc;
 }
 

@@ -1000,7 +1000,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 
       alpha[v][1][0] = alpha[v][0][0];
       if (cm->stid[v] == BEGL_S) 
-	for (j = 2; j < W; j++) 
+	for (j = 2; j <= W; j++) 
 	  alpha[v][j][0] = alpha[v][0][0];
     }
   /* Impose the bands.

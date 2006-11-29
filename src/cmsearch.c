@@ -44,7 +44,7 @@ static char experts[] = "\
    --dumptrees   : dump verbose parse tree information for each hit\n\
    --thresh <f>  : CM reporting bit score threshold (try 0 before < 0) [df: 0]\n\
    --X           : project X!\n\
-   --inside      : scan with Inside, not CYK (caution ~5X slower(!))\n\
+   --inside      : scan with Inside, not CYK (caution much slower(!))\n\
    --null2       : turn on the post hoc second null model [df:OFF]\n\
    --learninserts: do not set insert emission scores to 0\n\
 \n\
@@ -57,7 +57,7 @@ static char experts[] = "\
 \n\
   * Options for accelerating CM search/alignment (*in development*):\n\
    --beta <f>    : tail loss prob for QBD (default:0.0000001)\n\
-   --noqdb       : DON'T use query dependent bands (QDB) to accelerate CYK\n\
+   --noqdb       : DO NOT use query dependent bands (QDB) to accelerate CYK\n\
    --qdbfile <f> : read QDBs from file <f> (outputted from cmbuild)\n\
    --hbanded     : use HMM bands from a CM plan 9 HMM scan for CYK\n\
    --hbandp <f>  : tail loss prob for --hbanded (default:0.0001)\n\
