@@ -24,10 +24,6 @@
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "prior.h"		/* mixture Dirichlet prior */
 #include "funcs.h"		/* external functions                   */
-#include "cm_eweight.h"         /* LSJ's entropy weighted functions ported
-				 * from HMMER2.4devl [by EPN] */
-#include "hmmer_funcs.h"
-#include "hmmer_structs.h"
 #include "hmmband.h"
 
 static char banner[] = "cmbuild - build RNA covariance model from alignment";
@@ -50,7 +46,7 @@ static char experts[] = "\
    --informat <s> : specify input alignment is in format <s>, not Stockholm\n\
    --bandp <x>    : tail loss prob for calc'ing W using bands [default: 1E-7]\n\
    --elself <x>   : set EL self transition prob to <x> [df: 0.94]\n\
-   --nodetach     : do not 'detach' one of two inserts that model same column\n\ 
+   --nodetach     : do not 'detach' one of two inserts that model same column\n\
 \n\
  * sequence weighting options [default: GSC weighting]:\n\
    --wgiven       : use weights as annotated in alignment file\n\
@@ -84,10 +80,6 @@ static char experts[] = "\
    --null      <f>: read null (random sequence) model from file <f>\n\
    --priorfile <f>: read priors from file <f>\n\
 \n\
- * build an HMM\n\
-   model architecture types: \n\
-   --p7g <f>      : build glocal (NW) plan 7 HMMER 2.4 HMM to file <f>\n\
-   --p7l <f>      : build  local (SW) plan 7 HMMER 2.4 HMM to file <f>\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -124,8 +116,6 @@ static struct opt_s OPTIONS[] = {
   { "--etarget",   FALSE, sqdARG_FLOAT },
   { "--elself",    FALSE, sqdARG_FLOAT},
   { "--dlev",      FALSE, sqdARG_INT },
-  { "--p7g",       FALSE, sqdARG_STRING},
-  { "--p7l",       FALSE, sqdARG_STRING},
   { "--nodetach",  FALSE, sqdARG_NONE},
   { "--noprior",   FALSE, sqdARG_NONE}
 }
@@ -146,14 +136,12 @@ int
 main(int argc, char **argv)
 {
   char            *cmfile;	/* file to write CM to                     */
-  char            *hmmfile;     /* file to write HMM to                    */
   char            *alifile;     /* seqfile to read alignment from          */ 
   int              format;	/* format of seqfile                       */
   MSAFILE         *afp;         /* open alignment file                     */
   FILE            *cmfp;	/* output file for CMs                     */
   MSA             *msa;         /* a multiple sequence alignment           */
   char           **dsq;		/* digitized aligned sequences             */
-  unsigned char  **p7dsq;	/* digitized aligned sequences             */
   int              nali;	/* number of alignments processed          */
   Parsetree_t     *mtr;         /* master structure tree from the alignment*/
   Parsetree_t     *tr;		/* individual traces from alignment        */
@@ -234,20 +222,7 @@ main(int argc, char **argv)
 				* large regions 'skipped' by EL states. 
 				* see ~nawrocki/notebook/5_1115_inf_el_trans_prob/00LOG for details.
 				*/
-  /* EPN 10.10.05 HMMERNAL (HMM banded alignment) additions */
-  struct plan7_s    *p7hmm;        /* constructed p7 HMM; written to hmmfile  */
-  struct p7prior_s  *p7pri;        /* Dirichlet priors to use                 */
-  struct p7trace_s **p7tr;         /* fake tracebacks for aseq's              */
-  int                checksum;     /* checksum of the alignment               */
-  float              p1;           /* null sequence model p1 transition       */
-  char              *name;         /* name of the HMM                         */
-  enum p7_config {                 /* algorithm configuration strategy        */
-    P7_BASE_CONFIG, P7_LS_CONFIG, P7_FS_CONFIG, P7_SW_CONFIG } cfg_strategy;
-  float              swentry;      /* S/W aggregate entry probability         */
-  float              swexit;       /* S/W aggregate exit probability          */
-  FILE              *hmmfp;        /* HMM output file handle                  */
   int                debug_level;  /* level of debugging print statements     */
-  int                build_p7hmm;  /* TRUE to build a plan 7 HMM              */
 		      
   /* variables for 'detach' mode: we find columns that are modelled by two insert states (an ambiguity
    * in the CM architecture), and *handle* them (right hand in fist pounding open left palm) by 
@@ -258,15 +233,6 @@ main(int argc, char **argv)
   int                do_detach;   /* TRUE to 'detach' off one of two insert states that 
 				   * insert at the same position. */
   int                no_prior;    /* TRUE to not use a prior */
-
-  /* Do hmmbuild.c stuff */
-  p7pri = P7DefaultInfernalPrior();
-  /* Set up the null/random seq model */
-  P7DefaultNullModel(randomseq, &p1);
-  cfg_strategy      = P7_BASE_CONFIG;  /* Our default is global (NW) style */
-  swentry           = 0.5;
-  swexit            = 0.5;
-  Alphabet_type     = hmmNOTSETYET;	/* initially unknown */   
 
   /*********************************************** 
    * Parse command line
@@ -313,7 +279,6 @@ main(int argc, char **argv)
   debug_level       = 0; 
   do_detach         = TRUE;  /* default: detach 1 of 2 ambiguous inserts */
   no_prior          = FALSE; /* default: use a prior */
-  build_p7hmm       = FALSE;  /* default: don't build a p7 HMM */
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
     if      (strcmp(optname, "-A") == 0)          do_append         = TRUE; 
@@ -355,16 +320,6 @@ main(int argc, char **argv)
 	Die("EL self transition probability must be between 0 and 1.\n");
     }
     else if (strcmp(optname, "--dlev")      == 0)  debug_level  = atoi(optarg);
-    else if (strcmp(optname, "--p7g")        == 0) { 
-      if(build_p7hmm) Die("Can't do --p7g or --p7l, pick one HMM type.\n");
-      build_p7hmm = TRUE; hmmfile = optarg; 
-      cfg_strategy = P7_BASE_CONFIG;  /* NW style */
-    }
-    else if (strcmp(optname, "--p7l")        == 0) { 
-      if(build_p7hmm) Die("Can't do --p7g or --p7l, pick one HMM type.\n");
-      build_p7hmm = TRUE; hmmfile = optarg; 
-      cfg_strategy = P7_SW_CONFIG;  /* SW style */
-    }
     else if (strcmp(optname, "--informat") == 0) {
       format = String2SeqfileFormat(optarg);
       if (format == MSAFILE_UNKNOWN) 
@@ -404,13 +359,6 @@ main(int argc, char **argv)
     Die("Failed to open CM file %s for %s\n", cmfile, 
 	do_append ? "appending" : "writing");
 
-  /* Open the HMM file */
-  if(build_p7hmm)
-    {
-      if ((hmmfp = fopen(hmmfile, fpopts)) == NULL)
-	Die("Failed to open HMM file %s for %s\n", hmmfile,
-	    do_append ? "appending" : "writing");
-    }
 				/* open regression test file */
   if (regressionfile != NULL) {
     if ((regressfp = fopen(regressionfile, "w")) == NULL) 
@@ -472,17 +420,6 @@ main(int argc, char **argv)
   nali = 0;
   while ((msa = MSAFileRead(afp)) != NULL)
     {
-
-      if (Alphabet_type == hmmNOTSETYET)
-	{
-	  printf("%-40s ... ", "Determining alphabet");
-	  fflush(stdout);
-	  DetermineAlphabet(msa->aseq, msa->nseq);
-	  if      (Alphabet_type == hmmNUCLEIC) puts("done. [DNA]");
-	  else if (Alphabet_type == hmmAMINO)   puts("done. [protein]");
-	  else                                  puts("done.");
-	}
-
       avlen = (int) MSAAverageSequenceLength(msa);
       
       /* Print some stuff about what we're about to do.
@@ -554,8 +491,6 @@ main(int argc, char **argv)
        */
       printf("%-40s ... ", "Digitizing alignment"); fflush(stdout);
       dsq = DigitizeAlignment(msa->aseq, msa->nseq, msa->alen);
-      if(build_p7hmm)
-	hmmer_DigitizeAlignment(msa, &p7dsq);
       printf("done.\n");
 
       if (eff_strategy == EFF_NONE)
@@ -728,136 +663,6 @@ main(int argc, char **argv)
       printf("%-40s ... ", "Saving model to file"); fflush(stdout);
       CMFileWrite(cmfp, cm, do_binary);
       printf("done. [%s]\n", cmfile);
-
-      /* Optionally, build a plan 7 HMMER 2.4 HMM */
-      if(build_p7hmm)
-	{
-	  /*****************************************************************/
-	  /* 10.10.05 Build a plan 7 HMM from the seed alignment.  
-	   * Most code torn out of HMMER 2.4devl */
-	  printf("%-40s ... ", "Building HMM with hmmer's P7Fastmodelmaker()");
-	  checksum = GCGMultchecksum(msa->aseq, msa->nseq);
-	  P7Fastmodelmaker(msa, p7dsq, gapthresh, &p7hmm, &p7tr);
-	  p7hmm->checksum = checksum;
-	  printf("done.\n");
-	  
-	  /* HMM entropy weighting strategy is same as for the CM
-	   * by using the effective sequence number (eff_nseq)
-	   * from the CM.
-	   */
-	  
-	  if (eff_strategy == EFF_ENTROPY) {
-	    printf("%-40s ... ", "Using eff seq # from CM entropy target");
-	    fflush(stdout);
-	    Plan7Rescale(p7hmm, eff_nseq / (float) msa->nseq);
-	    printf("done. [%.2f]\n", eff_nseq);
-	  }
-	  
-	  /* Record the null model in the HMM;
-	   * add prior contributions in pseudocounts and renormalize.
-	   */
-	  printf("%-40s ... ", "Converting counts to probabilities");
-	  fflush(stdout);
-	  Plan7SetNullModel(p7hmm, randomseq, p1);
-	  P7PriorifyHMM(p7hmm, p7pri);
-	  printf("done.\n");
-
-	  /* Model configuration, temporary.
-	   * hmmbuild assumes that it's given an alignment of single domains,
-	   * and the alignment may contain fragments. So, for the purpose of
-	   * scoring the sequences (or, optionally, MD/ME weighting),
-	   * configure the model into hmmsw mode. Later we'll
-	   * configure the model according to how the user wants to
-	   * use it.
-	   */
-	  Plan7SWConfig(p7hmm, 0.5, 0.5);
-
-	  /* Give the model a name.
-	   * We deal with this differently depending on whether
-	   * we're in an alignment database or a single alignment.
-	   * 
-	   * If a single alignment, priority is:
-	   *      1. Use -n <name> if set.
-	   *      2. Use msa->name (avail in Stockholm or SELEX formats only)
-	   *      3. If all else fails, use alignment file name without
-	   *         filename extension (e.g. "globins.slx" gets named "globins"
-	   *         
-	   * If a multiple MSA database (e.g. Stockholm/Pfam), 
-	   * only msa->name is applied. -n is not allowed.
-	   * if msa->name is unavailable, or -n was used,
-	   * a fatal error is thrown.
-	   * 
-	   * Because we can't tell whether we've got more than one
-	   * alignment 'til we're on the second one, these fatal errors
-	   * only happen after the first HMM has already been built.
-	   * Oh well.
-	   */
-	  printf("%-40s ... ", "Setting model name, etc.");
-	  fflush(stdout);
-	  if (nali == 0)		/* first (only?) HMM in file:  */
-	    {
-	      if      (setname != NULL)   name = Strdup(setname);
-	      else if (msa->name != NULL) name = Strdup(msa->name);
-	      else                        name = FileTail(alifile, TRUE);
-	    }
-	  else
-	    {
-	      if (setname != NULL) 
-		Die("Oops. Wait. You can't use -n with an alignment database.");
-	      else if (msa->name != NULL) name = Strdup(msa->name);
-	      else
-		Die("Oops. Wait. I need name annotation on each alignment.\n");
-	    }
-	  Plan7SetName(p7hmm, name);
-	  free(name);
-	  /* Transfer other information from the alignment to
-	   * the HMM. This typically only works for Stockholm or SELEX format
-	   * alignments, so these things are conditional/optional.
-	   */
-	  if (msa->acc  != NULL) Plan7SetAccession(p7hmm,   msa->acc);
-	  if (msa->desc != NULL) Plan7SetDescription(p7hmm, msa->desc);
-	  
-	  if (msa->cutoff_is_set[MSA_CUTOFF_GA1] && msa->cutoff_is_set[MSA_CUTOFF_GA2])
-	    { p7hmm->flags |= PLAN7_GA; p7hmm->ga1 = msa->cutoff[MSA_CUTOFF_GA1]; p7hmm->ga2 = msa->cutoff[MSA_CUTOFF_GA2]; }
-	  if (msa->cutoff_is_set[MSA_CUTOFF_TC1] && msa->cutoff_is_set[MSA_CUTOFF_TC2])
-	    { p7hmm->flags |= PLAN7_TC; p7hmm->tc1 = msa->cutoff[MSA_CUTOFF_TC1]; p7hmm->tc2 = msa->cutoff[MSA_CUTOFF_TC2]; }
-	  if (msa->cutoff_is_set[MSA_CUTOFF_NC1] && msa->cutoff_is_set[MSA_CUTOFF_NC2])
-	    { p7hmm->flags |= PLAN7_NC; p7hmm->nc1 = msa->cutoff[MSA_CUTOFF_NC1]; p7hmm->nc2 = msa->cutoff[MSA_CUTOFF_NC2]; }
-	  /* Record some other miscellaneous information in the HMM,
-	   * like how/when we built it.
-	   */
-	  Plan7ComlogAppend(p7hmm, argc, argv);
-	  Plan7SetCtime(p7hmm);
-	  p7hmm->nseq = msa->nseq;
-	  printf("done. [%s]\n", p7hmm->name); 
-	  /* Print information for the user
-	   */
-	  printf("\nConstructed a profile HMM (length %d)\n", p7hmm->M);
-	  PrintPlan7Stats(stdout, p7hmm, p7dsq, msa->nseq, p7tr); 
-	  printf("\n");
-	  /* Configure the model for chosen algorithm
-	   */
-	  
-	  printf("%-40s ... ", "Finalizing model configuration");
-	  fflush(stdout);
-	  switch (cfg_strategy) {
-	  case P7_BASE_CONFIG:  Plan7GlobalConfig(p7hmm);              break;
-	  case P7_SW_CONFIG:    Plan7SWConfig(p7hmm, swentry, swexit); break;
-	  case P7_LS_CONFIG:    Die("whoa, we're not set up for LS HMM config.");
-	  case P7_FS_CONFIG:    Die("whoa, we're not set up for FS HMM config.");
-	  default:              Die("bogus configuration choice");
-	  }
-	  printf("done.\n");
-	  
-	  /* Save new HMM to disk: open a file for appending or writing.
-	   */
-	  printf("%-40s ... ", "Saving model to file");
-	  fflush(stdout);
-	  if (do_binary) WriteBinHMM(hmmfp, p7hmm);
-	  else           WriteAscHMM(hmmfp, p7hmm);
-	  printf("done.\n");
-
-	} /* end of if(build_hmm) */
 
       /* Dump optional information to files:
        */
@@ -1038,16 +843,6 @@ main(int argc, char **argv)
 	CYKDemands(cm, avlen, dmin, dmax);
       */
 
-      /* Free aln specific HMM related data structures */
-      if(build_p7hmm)
-	{
-	  Free2DArray((void**)p7dsq, msa->nseq);
-	  for (idx = 0; idx < msa->nseq; idx++) 
-	    P7FreeTrace(p7tr[idx]);
-	  free(p7tr);
-	  FreePlan7(p7hmm);
-	}
-
       /* Free aln specific CM related data structures */
       FreeParsetree(mtr);
       Free2DArray((void**)dsq, msa->nseq);
@@ -1072,7 +867,6 @@ main(int argc, char **argv)
   fclose(cmfp);
   SqdClean();
 
-  P7FreePrior(p7pri);
   return 0;
 }
 

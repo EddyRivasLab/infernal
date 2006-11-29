@@ -78,7 +78,6 @@ main(int argc, char **argv)
   int   compare_stringently;	/* TRUE to demand identical parse trees     */
   char *regressfile;		/* name of regression data file to save     */
   FILE *regressfp;              /* open filehandle for writing regressions  */
-  int   projectX;               /* TRUE to run testbed stuff                */
 
   char *optname;                /* name of option found by Getopt()        */
   char *optarg;                 /* argument found by Getopt()              */
@@ -179,7 +178,7 @@ main(int argc, char **argv)
 	  free(dmin);
 	  free(dmax);
 	  safe_windowlen *= 2;
-	  printf("ERROR BandCalculationEngine returned false, windowlen adjusted to %d\n", safe_windowlen);
+	  /*printf("ERROR BandCalculationEngine returned false, windowlen adjusted to %d\n", safe_windowlen);*/
 	}
       expand_flag = FALSE;
     }

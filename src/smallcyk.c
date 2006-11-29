@@ -90,7 +90,7 @@ static void  voutside(CM_t *cm, char *dsq, int L,
 /* The traceback routines.
  */
 static float insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
-		     int r, int z, int i0, int j0, int allow_begin,
+		     int r, int z, int i0, int j0, int allow_begin, 
 		     int *dmin, int *dmax);
 static float vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, 
 		      int r, int z, int i0, int i1, int j1, int j0, int useEL, 
@@ -233,9 +233,9 @@ static void  voutside_b(CM_t *cm, char *dsq, int L,
 			int *dmin, int *dmax);
 
 /* No banded versions of the traceback routines because the non-banded
- * functions can be used.
+ * functions can be used.*/
 
- /* No banded size calculators right now. */
+/* No banded size calculators right now. */
 
 /*******************************************************************************
  * 05.24.05
@@ -372,7 +372,7 @@ CYKDivideAndConquer(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree
   /* Free memory and return
    */
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
-  /*printf("***returning from CYKDivideAndConquer() sc : %f\n", sc);*/
+  printf("***returning from CYKDivideAndConquer() sc : %f\n", sc);
   return sc;
 }
 
@@ -435,8 +435,19 @@ CYKInside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_t
 
   /* Solve the whole thing with one call to insideT.
    */
-  sc += insideT(cm, dsq, L, tr, r, z, i0, j0, (r==0), 
-		dmin, dmax); 
+  /* if we're non-banded use the original function */
+  if(dmin == NULL && dmax == NULL)
+    sc += insideT(cm, dsq, L, tr, r, z, i0, j0, (r==0), 
+		  dmin, dmax);
+  /* if we're using query dependent bands, call the 
+   * memory efficient QDB alignment version.
+   */
+  else
+    sc += insideT_b_me(cm, dsq, L, tr, r, z, i0, j0, (r==0),
+      dmin, dmax);
+  /* To call the non-memory efficient version, uncomment
+   * the following line: */
+  /*sc += insideT(cm, dsq, L, tr, r, z, i0, j0, (r==0),    dmin, dmax);*/
 
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
   return sc;
@@ -2789,7 +2800,7 @@ insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 		    &b, &bsc,	 /* if allow_begin is TRUE, gives info on optimal b */
 		    dmin, dmax); /* the bands */
     }      
-
+  
   pda = CreateNstack();
   v = r;
   j = j0;
@@ -6278,7 +6289,7 @@ debug_print_bands(CM_t *cm, int *dmin, int *dmax)
   printf("****************\n");
   for(v = 0; v < cm->M; v++)
    {
-     printf("band v:%d n:%d %-4s %-2s min:%d max:%d\n", v, cm->ndidx[v], nodetypes[cm->ndtype[cm->ndidx[v]]], sttypes[cm->sttype[v]], dmin[v], dmax[v]);
+     printf("band v:%d n:%d %-4s %-2s min:%d max:%d\n", v, cm->ndidx[v], nodetypes[(int) cm->ndtype[cm->ndidx[v]]], sttypes[(int) cm->sttype[v]], dmin[v], dmax[v]);
    }
   printf("****************\n\n");
 

@@ -23,16 +23,16 @@ LIBS  = @LIBS@
 ## archiving command, and ranlib command if you need one.
 #  In general, you shouldn't need to change these, and they're
 #  only used for building the testsuite anyway... e.g. we
-#  make a "libhmmer.a" library for building the testsuite.
+#  make a "libinfernal.a" library for building the testsuite.
 #
 AR     = @AR@ rcv 
 RANLIB = @RANLIB@
 
 # Where the build arena is (module .h and .o files)
 #
-MYLIBS   = -lsquid -leasel -lhmmer
-MYLIBDIR = -L../squid -L../easel -L../hmmer/
-MYINCDIR = -I../squid -I../easel -I../hmmer/
+MYLIBS   = -lsquid -leasel 
+MYLIBDIR = -L../squid -L../easel 
+MYINCDIR = -I../squid -I../easel 
 
 PROGS = cmalign cmbuild cmscore cmsearch cmemit
 
@@ -64,7 +64,10 @@ OBJS  = alphabet.o\
 
 HDRS  = funcs.h\
 	prior.h\
-	structs.h
+	structs.h\
+	hmmband.h\
+	cplan9.h\
+	cm_postprob.h
 
 .c.o: 
 	$(CC) $(CFLAGS) $(DEFS) $(MYINCDIR) -c $<

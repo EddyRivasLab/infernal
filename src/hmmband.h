@@ -2,24 +2,18 @@
  * @LICENSE@
  ************************************************************/
 
-/* hmmband.h
- * Eric Nawrocki 12.16.05 
- * (many functions older than 12.16.05)
- * Functions to support either CM Plan 9 (CP9) or HMMER 2.x plan 7
- * (P7) HMMs for band calculation. Includes functions for 
- * calc'ing posteriors. For Plan 7 posterior functions, see
- * HMMER's postprob.c.
- * 
- * Naming conventions:
- * CP9_* : CM Plan 9 functions
- * P7_*  : Plan 7 functions
- * 
- * Note: many functions have both CP9 and P7 versions and differ
- * only very slightly to deal with diffs b/t the two architecture
- * types (ex. P7 HMMs have no D_1 or D_M states, while CP9's do).
+/* hmmband.h 
+ * Eric Nawrocki 
+ * 12.16.05 
+ * (many functions older than 12.16.05) 
  *
- * Any function without "CP9" or "P7" at the beginning of the
- * function name can be used for either HMM type.
+ * Functions to support either CM Plan 9 (CP9) HMMs for band
+ * calculation. Includes functions for calc'ing posteriors.
+ * 
+ * Note: Initially, plan 7 (P7) versions of most of these functions
+ * were implemented, but abandoned once it was clear CP9s were 
+ * more appropriate for CMs. To see the original P7 funcs, see
+ * the end of the hmmband.c file.
  */
 
 #include "config.h"
@@ -27,8 +21,6 @@
 #include "msa.h"                /* squid's multiple alignment i/o       */
 #include "stopwatch.h"          /* squid's process timing module        */
 #include "structs.h"		/* data structures, macros, #define's   */
-#include "hmmer_funcs.h"
-#include "hmmer_structs.h"
 #include "sre_stack.h"
 #include "cplan9.h"
 
@@ -41,11 +33,11 @@ extern double dbl_Score2Prob(int sc, float null);
  * based on Ian Holmes' hmmer/src/postprob.c functions 
  * P7Forward() is in HMMER's core_algorithms.c 
  * and P7Backward() is in HMMER's postprob.c*/
-extern float CP9Forward(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm, 
+extern float CP9Forward(char *dsq, int i0, int j0, struct cplan9_s *hmm, 
 			struct cp9_dpmatrix_s **ret_mx);
-extern float CP9Viterbi(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s *mx);
-extern float CP9Backward(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s **ret_mx);
-extern void  CP9FullPosterior(unsigned char *dsq, int i0, int j0,
+extern float CP9Viterbi(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s *mx);
+extern float CP9Backward(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s **ret_mx);
+extern void  CP9FullPosterior(char *dsq, int i0, int j0,
 			      struct cplan9_s *hmm,
 			      struct cp9_dpmatrix_s *fmx,
 			      struct cp9_dpmatrix_s *bmx,
@@ -113,7 +105,7 @@ extern void ijd_banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *imin, int
 extern void debug_check_CP9_FB(struct cp9_dpmatrix_s *fmx, 
 			       struct cp9_dpmatrix_s *bmx, 
 			       struct cplan9_s *hmm, float sc, int i0, int j0,
-			       unsigned char *dsq);
+			       char *dsq);
 
 /* Other misc. functions */
 extern void relax_root_bands(int *imin, int *imax, int *jmin, int *jmax);

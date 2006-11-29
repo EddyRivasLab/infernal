@@ -19,7 +19,6 @@
 
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* function declarations                */
-#include "globals.h"		/* alphabet global variables            */
 #include "squid.h"		/* general sequence analysis library    */
 #include "msa.h"		/* squid's multiple sequence i/o        */
 
@@ -64,7 +63,6 @@ main(int argc, char **argv)
 {
   char            *cmfile;      /* file to read CM from */	
   CMFILE          *cmfp;	/* open CM file */
-  char            *seqfile;     /* file to read sequences from */
   CM_t            *cm;          /* CM to generate from */
 
   FILE            *fp;          /* output file handle                      */
@@ -349,7 +347,6 @@ main(int argc, char **argv)
       float             *wgt;
       int apos;
       int cc;
-      int *ct;		/* 0..alen-1 base pair partners array         */
 
       int *matassign;
       int *useme;

@@ -179,7 +179,7 @@ main(int argc, char **argv)
   if (argc - optind != 1) Die("Incorrect number of arguments.\n%s\n", usage);
   cmfile = argv[optind++];
  
-  if(begin_set && !end_set || !begin_set && end_set)
+  if((begin_set && !end_set) || (!begin_set && end_set))
     Die("Must use both -b and -e or neither.\n");
   if(do_exhaust && begin_set)
     Die("--exhaust doesn't make sense with -b and -e.\n");

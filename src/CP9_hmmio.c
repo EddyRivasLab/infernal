@@ -3,13 +3,24 @@
  ************************************************************/
 
 /* CP9_hmmio.c
+ * EPN
  * 
  * Input/output of CM plan 9 HMMs.
  *
  * All following notes and functions are from HMMER 2.4's hmmio.c
  * with necessary changes for the CM plan 9 architecture. Some
  * functions from hmmio.c are omitted.
+ *
+ * These functions are currently never used as the ability to
+ * output and input CM Plan 9 HMMs was abandoned. Currently, 
+ * they're built in cmsearch or cmbuild directly from the CM
+ * fast enough that I don't think it's worth inputting them
+ * (it takes on the order of hundredths of seconds to build
+ *  an SSU CP9 HMM). These functions did work at one point though,
+ * before abandonment. Kept here for reference.
+ *
  ************************************************************
+ * NOTES FROM hmmio.c: 
  * As of HMMER 2.0, HMMs are saved by default in a tabular ASCII format
  * as log-odds or log probabilities scaled to an integer. A binary save
  * file format is also available which is faster to access (a
@@ -52,10 +63,10 @@
  * The HMM output API:
  * 
  *       FILE           *ofp;
- *       struct plan7_s *hmm;
+ *       struct cplan9_s *hmm;
  *       
- *       WriteAscHMM(ofp, hmm);    to write/append an HMM to open file
- *   or  WriteBinHMM(ofp, hmm);    to write/append binary format HMM to open file
+ *       CP9_WriteAscHMM(ofp, hmm);    to write/append an HMM to open file
+ *   or  CP9_WriteBinHMM(ofp, hmm);    to write/append binary format HMM to open file
  * 
  ***************************************************************** 
  * 
@@ -68,7 +79,6 @@
  * V2.0: Plan7. Essentially complete rewrite.
  */
 
-#include "hmmer_config.h"
 #include "squidconf.h"
 
 #include <stdio.h>
@@ -82,8 +92,6 @@
 #include "funcs.h"
 #include "structs.h"
 #include "ssi.h"
-#include "hmmer_structs.h"
-#include "hmmer_funcs.h"
 #include "cplan9.h"
 
 /* Magic numbers identifying binary formats.
@@ -316,24 +324,23 @@ CP9_WriteAscHMM(FILE *fp, struct cplan9_s *hmm)
   /* write header information
    */
   fprintf(fp, "NAME  %s\n", hmm->name);
-  if (hmm->flags & PLAN7_ACC)
+  if (hmm->flags & CPLAN9_ACC)
     fprintf(fp, "ACC   %s\n", hmm->acc);
-  if (hmm->flags & PLAN7_DESC) 
+  if (hmm->flags & CPLAN9_DESC) 
     fprintf(fp, "DESC  %s\n", hmm->desc);
   fprintf(fp, "LENG  %d\n", hmm->M);
-  fprintf(fp, "ALPH  %s\n",   
-	  (Alphabet_type == hmmAMINO) ? "Amino":"Nucleic");
+  fprintf(fp, "ALPH  %s\n", "Nucleic");   
   fprintf(fp, "RF    %s\n", (hmm->flags & CPLAN9_RF)  ? "yes" : "no");
   fprintf(fp, "CS    %s\n", (hmm->flags & CPLAN9_CS)  ? "yes" : "no");
   multiline(fp, "COM   ", hmm->comlog);
   fprintf(fp, "NSEQ  %d\n", hmm->nseq);
   fprintf(fp, "DATE  %s\n", hmm->ctime); 
   fprintf(fp, "CKSUM %d\n", hmm->checksum);
-  if (hmm->flags & PLAN7_GA)
+  if (hmm->flags & CPLAN9_GA)
     fprintf(fp, "GA    %.1f %.1f\n", hmm->ga1, hmm->ga2);
-  if (hmm->flags & PLAN7_TC)
+  if (hmm->flags & CPLAN9_TC)
     fprintf(fp, "TC    %.1f %.1f\n", hmm->tc1, hmm->tc2);
-  if (hmm->flags & PLAN7_NC)
+  if (hmm->flags & CPLAN9_NC)
     fprintf(fp, "NC    %.1f %.1f\n", hmm->nc1, hmm->nc2);
 
   /* No Specials
@@ -357,7 +364,7 @@ CP9_WriteAscHMM(FILE *fp, struct cplan9_s *hmm)
      
   /* Print header */
   fprintf(fp, "HMM      ");
-  for (x = 0; x < Alphabet_size; x++) fprintf(fp, "  %c    ", hmmer_Alphabet[x]);
+  for (x = 0; x < Alphabet_size; x++) fprintf(fp, "  %c    ", Alphabet[x]);
   fprintf(fp, "\n");
   fprintf(fp, "       %6s %6s %6s %6s %6s %6s %6s %6s %6s %6s %6s\n",
           "m->m", "m->i", "m->d", "i->m", "i->i", "i->d", "d->m", "d->i", "d->d", "b->m", "m->e");
@@ -459,11 +466,11 @@ CP9_WriteBinHMM(FILE *fp, struct cplan9_s *hmm)
 
 /*****************************************************************
  *
- * Internal: HMM file parsers for various releases of HMMER.
+ * Internal: HMM file parsers for CM Plan 9 HMMs.
  * 
- * read_{asc,bin}xxhmm(HMMFILE *hmmfp, struct plan7_s **ret_hmm)
+ * CP9_read_{asc,bin}_hmm(HMMFILE *hmmfp, struct cplan9_s **ret_hmm)
  *
- * Upon return, *ret_hmm is an allocated Plan7 HMM.
+ * Upon return, *ret_hmm is an allocated CPlan9 HMM.
  * Return 0 if no more HMMs in the file (normal).
  * Return 1 and *ret_hmm = something if we got an HMM (normal) 
  * Return 1 if an error occurs (meaning "I tried to
@@ -481,7 +488,6 @@ CP9_read_asc_hmm(CP9HMMFILE *hmmfp, struct cplan9_s **ret_hmm)
   char *s;
   int   M;
   int   k, x;
-  int   atype;			/* alphabet type, hmmAMINO or hmmNUCLEIC */
 
   hmm = NULL;
   if (feof(hmmfp->f) || fgets(buffer, 512, hmmfp->f) == NULL) return 0;
@@ -502,13 +508,7 @@ CP9_read_asc_hmm(CP9HMMFILE *hmmfp, struct cplan9_s **ret_hmm)
     else if (strncmp(buffer, "ALPH ", 5) == 0) 
       {				/* Alphabet type */
 	s2upper(buffer+6);
-	if      (strncmp(buffer+6, "AMINO",   5) == 0) atype = hmmAMINO;
-	else if (strncmp(buffer+6, "NUCLEIC", 7) == 0) atype = hmmNUCLEIC;
-	else goto FAILURE;
-
-	if      (Alphabet_type == hmmNOTSETYET) SetAlphabet(atype);
-	else if (atype != Alphabet_type) 
-	  Die("Alphabet mismatch error.\nI thought we were working with %s, but tried to read a %s HMM.\n", AlphabetType2String(Alphabet_type), AlphabetType2String(atype));
+	if (!(strncmp(buffer+6, "NUCLEIC", 7) == 0)) goto FAILURE;
       }
     else if (strncmp(buffer, "RF   ", 5) == 0) 
       {				/* Reference annotation present? */
@@ -573,8 +573,6 @@ CP9_read_asc_hmm(CP9HMMFILE *hmmfp, struct cplan9_s **ret_hmm)
       }
     else if (strncmp(buffer, "NULE ", 5) == 0) 
       {				/* Null model emissions */
-	if (Alphabet_type == hmmNOTSETYET)
-	  Die("ALPH must precede NULE in HMM save files");
 	s = strtok(buffer+6, " \t\n");
 	for (x = 0; x < Alphabet_size; x++) {
 	  if (s == NULL) goto FAILURE;
@@ -598,7 +596,6 @@ CP9_read_asc_hmm(CP9HMMFILE *hmmfp, struct cplan9_s **ret_hmm)
   if (feof(hmmfp->f))                goto FAILURE;
   if (M < 1)                         goto FAILURE;
   if (hmm->name == NULL)             goto FAILURE;
-  if (Alphabet_type == hmmNOTSETYET) goto FAILURE;
 
   /* Main model section. Read as integer log odds, convert
    * to probabilities
@@ -706,9 +703,6 @@ CP9_read_bin_hmm(CP9HMMFILE *hmmfp, struct cplan9_s **ret_hmm)
 				/* alphabet type */
    if (! fread((char *) &type, sizeof(int), 1, hmmfp->f)) goto FAILURE;
    if (hmmfp->byteswap) byteswap((char *)&type, sizeof(int)); 
-   if (Alphabet_type == hmmNOTSETYET) SetAlphabet(type);
-   else if (type != Alphabet_type) 
-     Die("Alphabet mismatch error.\nI thought we were working with %s, but tried to read a %s HMM.\n", AlphabetType2String(Alphabet_type), AlphabetType2String(type));
 
 				/* now allocate for rest of model */
    AllocCPlan9Body(hmm, hmm->M);

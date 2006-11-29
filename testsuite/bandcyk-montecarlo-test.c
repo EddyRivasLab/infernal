@@ -120,7 +120,6 @@ main(int argc, char **argv)
   if (! BandCalculationEngine(cm, maxW, 0.001, TRUE, NULL, NULL, &gamma, FALSE))
     Die("Your maxW (%d) must be too small, sorry...\n", maxW);
 
-  int n;
   for (v = 0; v < cm->M; v++)
     {
       DScale(gamma[v],    maxW+1, DSum(mc_gamma[v], maxW+1)); /* convert to #'s */
@@ -131,7 +130,6 @@ main(int argc, char **argv)
 	  && p < threshold)
 	Die("Rejected band distribution for state %d: chi-squared p = %f\n", v, p);
     }
-
   FreeBandDensities(cm, mc_gamma);
   FreeBandDensities(cm, gamma);
   FreeCM(cm);

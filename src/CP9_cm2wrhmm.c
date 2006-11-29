@@ -1,40 +1,31 @@
-/* EPN 11.28.05
- * CP9_cm2wrhmm.c 
- * 
+/* CP9_cm2wrhmm.c 
+ * EPN 11.28.05
+ *
  * Functions to build a Weinberg/Ruzzo maximum likelihood HMM from a CM. 
  * Uses the "CM plan 9" HMM architecture from cplan9.h and cplan.c. 
  * These functions use ideas/equations from Zasha Weinberg's thesis 
  * (notably p.122-124), but a CM plan 9 HMM is not exactly a Weinberg-Ruzzo
- * maximum likelihood heuristic HMM (though its close). The most
- * important difference is that a CM plan 9 HMM sometimes has a single
- * insert state that maps to 2 CM insert states. Due to self loops on
- * all insert states, it's impossible for a single HMM insert state to 
- * model two CM insert states, but the code below approximates it 
- * pretty well (it gets as close as possible (I think)).
+ * maximum likelihood heuristic HMM (though its close). 
  *
- * build_cp9_hmm() is the main function, it sets the probabilities
- * of the HMM and checks that the expected number of times each
- * HMM state is entered is within a given threshold of the expected
- * number of times each corresponding CM state is entered.
+ * build_cp9_hmm() is the main function, it sets the probabilities of
+ * the HMM and (optionally) checks that the expected number of times
+ * each HMM state is entered is within a given threshold of the
+ * expected number of times each corresponding CM state is entered.
  */
 
 #include "config.h"
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "squid.h"
 #include "sre_stack.h"
 #include "dirichlet.h"
-
 #include "funcs.h"
-#include "hmmer_structs.h"
 #include "structs.h"
-
 #include "esl_vectorops.h"
-
 #include "stopwatch.h"          /* squid's process timing module        */
-
 #include "cplan9.h"
 
 static float
@@ -51,8 +42,6 @@ cm_sum_subpaths_cp9(CM_t *cm, CP9Map_t *cp9map, int start, int end, char ***tmap
 static int
 check_psi_vs_phi_cp9(CM_t *cm, CP9Map_t *cp9map, double *psi, double **phi, double threshold, 
 		     int debug_level);
-static int 
-check_cm_adj_bp(CM_t *cm, CP9Map_t *cp9map);
 static char *
 CP9Statetype(char st);
 static int 
@@ -60,6 +49,103 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
 		     int print_flag);
 static float
 FChiSquareFit(float *f1, float *f2, int N);
+
+/**************************************************************************
+ * EPN 10.26.06
+ * Function: AllocCP9Map()
+ * 
+ * Purpose:  Allocate a CP9Map_t object that stores information mapping
+ *           a CP9 HMM to a CM and vice versa. See structs.h for
+ *           description.
+ *
+ * Args:    
+ * int hmm_M;   - number of CP9 HMM nodes, the consensus length 
+ * int cm_M;    - number of states in the CM             
+ * int cm_nodes - number of nodes in the CM             
+ * Returns: CMSubInfo_t
+ */
+
+CP9Map_t *
+AllocCP9Map(CM_t *cm)
+{
+  CP9Map_t *cp9map;
+  int v,ks,i;
+
+  cp9map = (struct cp9map_s *) MallocOrDie (sizeof(struct cp9map_s));
+
+  /* Determine the consensus length (to be set as hmm_M) of the CM */
+  cp9map->hmm_M = 0;
+  for(v = 0; v <= cm->M; v++)
+    {
+      if(cm->stid[v] ==  MATP_MP)
+	cp9map->hmm_M += 2;
+      else if(cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR)
+	cp9map->hmm_M++;
+    }
+  cp9map->cm_M     = cm->M;
+  cp9map->cm_nodes = cm->nodes;
+
+  /* Allocate and initialize arrays */
+  cp9map->nd2lpos  = MallocOrDie(sizeof(int)   * cp9map->cm_nodes);
+  cp9map->nd2rpos = MallocOrDie(sizeof(int)    * cp9map->cm_nodes);
+  for(i = 0; i < cp9map->cm_nodes; i++)
+    cp9map->nd2lpos[i] = cp9map->nd2rpos[i] = -1;
+
+  cp9map->pos2nd  = MallocOrDie(sizeof(int)    * (cp9map->hmm_M+1));
+  cp9map->hns2cs  = MallocOrDie(sizeof(int **)  * (cp9map->hmm_M+1)); 
+  for(i = 0; i <= cp9map->hmm_M; i++)
+    {
+      cp9map->pos2nd[i] = -1;
+      cp9map->hns2cs[i] = MallocOrDie(sizeof(int *) * 3);
+      for(ks = 0; ks < 3; ks++)
+	{
+	  cp9map->hns2cs[i][ks]= MallocOrDie(sizeof(int) * 2);      
+	  cp9map->hns2cs[i][ks][0] = cp9map->hns2cs[i][ks][1] = -1;
+	}
+    }
+
+  cp9map->cs2hn   = MallocOrDie(sizeof(int *)  * (cp9map->cm_M+1)); 
+  cp9map->cs2hs   = MallocOrDie(sizeof(int *)  * (cp9map->cm_M+1)); 
+  for(v = 0; v <= cp9map->cm_M; v++)
+    {
+      cp9map->cs2hn[v] = MallocOrDie(sizeof(int) * 2);
+      cp9map->cs2hs[v] = MallocOrDie(sizeof(int) * 2);
+      for(i = 0; i <= 1; i++)
+	cp9map->cs2hn[v][i] = cp9map->cs2hs[v][i] = -1;
+    }
+
+  return cp9map;
+}
+
+/* Function: FreeCP9Map()
+ * Returns:  void
+ */
+
+void
+FreeCP9Map(CP9Map_t *cp9map)
+{
+  int v,k,ks;
+  for(v = 0; v <= cp9map->cm_M; v++)
+    {
+      free(cp9map->cs2hn[v]);
+      free(cp9map->cs2hs[v]);
+    }
+  free(cp9map->cs2hn);
+  free(cp9map->cs2hs);
+
+  for(k = 0; k <= cp9map->hmm_M; k++)
+  {
+    for(ks = 0; ks < 3; ks++)
+      free(cp9map->hns2cs[k][ks]);
+    free(cp9map->hns2cs[k]);
+  }
+  free(cp9map->hns2cs);
+
+  free(cp9map->nd2lpos);
+  free(cp9map->nd2rpos);
+  free(cp9map->pos2nd);
+  free(cp9map);
+}
 
 /**************************************************************************
  * EPN 03.12.06
@@ -99,9 +185,6 @@ build_cp9_hmm(CM_t *cm, struct cplan9_s **ret_hmm, CP9Map_t **ret_cp9map, int do
   int ret_val;                 /* return value */
   CP9Map_t *cp9map;         
   struct cplan9_s  *hmm;       /* CM plan 9 HMM we're going to construct from the sub_cm */
-
-  int ncols; 
-  int nd;
 
   /* Allocate and initialize the cp9map */
   cp9map = AllocCP9Map(cm);
@@ -619,41 +702,25 @@ map_helper(CM_t *cm, CP9Map_t *cp9map, int k, int ks, int v)
     {
       cp9map->cs2hn[v][0] = k;
       if(cp9map->cs2hs[v][0] != -1)
-	{
-	  printf("ERROR in map_helper, cp9map->cs2hn[%d][0] is -1 but cp9map->cs2hs[%d][0] is not, this shouldn't happen.\n", v, v);
-	  exit(1);
-	}
+	Die("ERROR in map_helper, cp9map->cs2hn[%d][0] is -1 but cp9map->cs2hs[%d][0] is not, this shouldn't happen.\n", v, v);
       cp9map->cs2hs[v][0] = ks;
     }
   else if (cp9map->cs2hn[v][1] == -1)
     {
       cp9map->cs2hn[v][1] = k;
       if(cp9map->cs2hs[v][1] != -1)
-	{
-	  printf("ERROR in map_helper, cp9map->cs2hn[%d][0] is -1 but cp9map->cs2hs[%d][0] is not, this shouldn't happen.\n", v, v);
-	  exit(1);
-	}
+	Die("ERROR in map_helper, cp9map->cs2hn[%d][0] is -1 but cp9map->cs2hs[%d][0] is not, this shouldn't happen.\n", v, v);
       cp9map->cs2hs[v][1] = ks;
     }
   else
-    {
-      printf("ERROR in map_helper, cp9map->cs2hn[%d][1] is not -1, and we're trying to add to it, this shouldn't happen.\n", v);
-      exit(1);
-    }
+    Die("ERROR in map_helper, cp9map->cs2hn[%d][1] is not -1, and we're trying to add to it, this shouldn't happen.\n", v);
 
   if(cp9map->hns2cs[k][ks][0] == -1)
-    {
-      cp9map->hns2cs[k][ks][0] = v;
-    }
+    cp9map->hns2cs[k][ks][0] = v;
   else if(cp9map->hns2cs[k][ks][1] == -1)
-    {
-      cp9map->hns2cs[k][ks][1] = v;
-    }
+    cp9map->hns2cs[k][ks][1] = v;
   else
-    {
-      printf("ERROR in map_helper, cp9map->hns2cs[%d][%d][1] is not -1, and we're trying to add to it, this shouldn't happen.\n", k, ks);
-      exit(1);
-    }
+    Die("ERROR in map_helper, cp9map->hns2cs[%d][%d][1] is not -1, and we're trying to add to it, this shouldn't happen.\n", k, ks);
   return;
 }
 
@@ -776,10 +843,7 @@ fill_psi(CM_t *cm, double *psi, char ***tmap)
 	if(cm->sttype[v] != IL_st && cm->sttype[v] != IR_st)
 	  summed_psi += psi[v];
       if((summed_psi < 0.999) || (summed_psi > 1.001))
-	{
-	  printf("ERROR: summed psi of split states in node %d not 1.0 but : %f\n", n, summed_psi);
-	  exit(1);
-	}
+	Die("ERROR: summed psi of split states in node %d not 1.0 but : %f\n", n, summed_psi);
       /* printf("split summed psi[%d]: %f\n", n, summed_psi);*/
     }
 }
@@ -1226,11 +1290,11 @@ cm2hmm_emit_prob(CM_t *cm, CP9Map_t *cp9map, int x, int i, int k)
  * 
  * Args:    
  * CM_t *cm          - the CM
- * cplan9_s *hmm      - the HMM
+ * cplan9_s *hmm     - the HMM
  * CP9Map_t *cp9map  - the map from the CM to HMM and vice versa
  * double *psi       - psi[v] is the expected number of times state v is entered
  *                     in a CM parse
- * char ***tmap;      - the hard-coded transition map
+ * char ***tmap;     - the hard-coded transition map
  *
  * Returns: (void) 
  */
@@ -1706,7 +1770,7 @@ cm2hmm_trans_probs_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, int k, 
   bp[0] = cp9map->hns2cs[k+1][k_state][0];
   bp[1] = cp9map->hns2cs[k+1][k_state][1];
   ////printf("CTMD: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);
-  hmm_trans_idx = TMD;
+  hmm_trans_idx = CTMD;
   hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
   hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
   hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[0], k, hmm_trans_idx, psi, tmap);
@@ -1988,6 +2052,7 @@ hmm_add_single_trans_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, int a
  * CP9Map_t *cp9map  - the map from the CM to HMM and vice versa
  * int start         - state index we're starting at
  * int end           - state index we're ending in
+ * int ***tmap       - the hard-coded transition map
  * int k             - HMM node we're calc'ing transition (out of node k) for
  * double *psi       - psi[v] is the expected number of times state v is entered
  *                     in a CM parse
@@ -2329,120 +2394,8 @@ debug_print_cp9_params(struct cplan9_s *hmm)
 }
 
 /**************************************************************************
- * EPN 03.13.06
- * check_cm_adj_bp()
- *
- * Purpose:  Check if two consensus columns (HMM nodes) are modelled by the
- *           same MATP node.
- * 
- * Args:    
- * CM_t *cm          - the CM
- * CP9Map_t *cp9map  - the map from the CM to HMM and vice versa
- * Returns: TRUE if two adjacent consensus columns are modelled by the same MATP_nd
- *          FALSE if not
- */
-static int
-check_cm_adj_bp(CM_t *cm, CP9Map_t *cp9map)
-{
-  int k, prev_k;
-  prev_k = cp9map->pos2nd[1];
-  for(k = 2; k <= cp9map->hmm_M; k++)
-    {
-      if(cp9map->pos2nd[k] == prev_k)
-	return TRUE;
-      prev_k = cp9map->pos2nd[k];
-    }
-  return FALSE;
-}
-
-/**************************************************************************
- * EPN 03.13.06
- * CP9_check_cp9()
- *
- * Purpose:  Given a CM and a CM plan 9 hmm that is supposed to mirror 
- *           the CM as closely as possible (Weinberg-Ruzzo style, with
- *           differences due to differences in the CM Plan 9 architecture
- *           and the architecture that they use.
- * 
- *           Current strategy for checking is to build psi and phi arrays
- *           (see descriptions below) and check that they are "consistent",
- *           i.e. corresponding values are within a small threshold (0.0001).
- * 
- * Args:    
- * CM_t *cm          - the CM
- * cplan9_s *hmm     - the HMM
- * CP9Map_t *cp9map  - the map from the CM to HMM and vice versa
- * int debug_level   - debugging level for verbosity of debugging printf statements
- *
- * Returns: TRUE: if CM and HMM are "close enough" (see code)
- *          FALSE: otherwise
- */
-int 
-CP9_check_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, int debug_level)
-{
-  char     ***tmap;    /* hard-coded transition map */
-  double    *psi;      /* psi[v] is the expected num times state v visited in CM */
-  double   **phi;      /* phi[k][v] is expected number of times
-			* state v (0 = match, 1 insert, 2 = delete) visited in CP9 HMM*/
-  int k, i, j;         /* counters */
-  double psi_vs_phi_threshold; /* the threshold that mapping (potentially summed) psi and 
-				* phi values are allowed to be different by, without throwing
-				* an error.*/
-  int ret_val;         /* return value */
-  psi = MallocOrDie(sizeof(double) * cm->M);
-  make_tmap(&tmap);
-  fill_psi(cm, psi, tmap);
-
-  CPlan9Renormalize(hmm);
-  /* Create and fill phi to check to make sure our HMM is "close enough" to our CM.
-   * phi[k][0..2] is the expected number of times HMM node k state 0 (match), 1(insert),
-   * or 2(delete) is entered. These should be *very close* (within 0.0001) to the psi 
-   * values for the CM states that they map to (psi[v] is the expected number of times
-   * state v is entered in the CM). The reason we can't demand closer precision than
-   * 0.0001 is that some HMM insert states map to 2 CM insert states, and its impossible
-   * to perfectly mirror two CM insert states with 1 HMM insert states (due to self-loop
-   * issues).
-   */
-  phi = MallocOrDie(sizeof(double *) * (hmm->M+1));
-  for(k = 0; k <= hmm->M; k++)
-    {
-      phi[k] = MallocOrDie(sizeof(double) * 3);
-    }
-  fill_phi_cp9(hmm, &phi, 1);
-
-  /*debug_print_cp9_params(hmm);*/
-  psi_vs_phi_threshold = 0.0001;
-  if(check_cm_adj_bp(cm, cp9map))
-    {
-      psi_vs_phi_threshold = 0.01;
-    /* if check_cm_adj_bp() returns TRUE, then the following rare (but possible) situation
-     * is true. Two adjacent consensus columns are modelled by the same MATP node. In this
-     * case it is difficult for the CM plan 9 architecture to mirror the insert state
-     * that maps to both the MATP_IL and MATP_IR of this node. It is more difficult than
-     * for any other possible CM topology situation, so we relax the threshold when
-     * checking psi and phi.
-     */
-    }    
-  ret_val = check_psi_vs_phi_cp9(cm, cp9map, psi, phi, psi_vs_phi_threshold, debug_level);
-  for(k = 0; k <= hmm->M; k++)
-    {
-      free(phi[k]);
-    }
-  free(phi);
-  free(psi);
-  for(i = 0; i < UNIQUESTATES; i++)
-    {
-      for(j = 0; j < NODETYPES; j++)
-	free(tmap[i][j]);
-      free(tmap[i]);
-    }
-  free(tmap);
-  return ret_val;
-}
-
-/**************************************************************************
  * EPN 09.01.06
- * Function: CP9_check_cp9_by_sampling()
+ * Function: CP9_check_by_sampling()
  *
  * Purpose:  Given a CM and a CM plan 9 hmm that is supposed to mirror 
  *           the CM as closely as possible (Weinberg-Ruzzo style, with
@@ -2475,7 +2428,7 @@ CP9_check_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, int debug_level)
  *          FALSE: otherwise
  */
 int 
-CP9_check_cp9_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo, 
+CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo, 
 			  int spos, int epos, float chi_thresh, int nsamples, int print_flag)
 {
   Parsetree_t **tr;             /* Parsetrees of emitted aligned sequences */
@@ -2962,7 +2915,6 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
 {
   double p;
   int x;
-  float chi_sq;
   float m_nseq, i_nseq, d_nseq;
   float check_m_nseq, check_i_nseq;
   float *temp_ahmm_trans;
@@ -3138,9 +3090,7 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
 void
 debug_print_phi_cp9(struct cplan9_s *hmm, double **phi)
 {
-  int v; /* CM state index*/ 
   int k;
-  int y;
 
   for(k = 0; k <= hmm->M; k++)
     {
@@ -3183,98 +3133,3 @@ FChiSquareFit(float *f1, float *f2, int N)
     return -1.;
 }
 
-/**************************************************************************
- * EPN 10.26.06
- * Function: AllocCP9Map()
- * 
- * Purpose:  Allocate a CP9Map_t object that stores information mapping
- *           a CP9 HMM to a CM and vice versa.
- *
- * Args:    
- * int hmm_M;   - number of CP9 HMM nodes, the consensus length 
- * int cm_M;    - number of states in the CM             
- * int cm_nodes - number of nodes in the CM             
- * Returns: CMSubInfo_t
- */
-
-CP9Map_t *
-AllocCP9Map(CM_t *cm)
-{
-  CP9Map_t *cp9map;
-  int v,k,ks,i;
-
-  cp9map = (struct cp9map_s *) MallocOrDie (sizeof(struct cp9map_s));
-
-  /* Determine the consensus length (to be set as hmm_M) of the CM */
-  cp9map->hmm_M = 0;
-  for(v = 0; v <= cm->M; v++)
-    {
-      if(cm->stid[v] ==  MATP_MP)
-	cp9map->hmm_M += 2;
-      else if(cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR)
-	cp9map->hmm_M++;
-    }
-  cp9map->cm_M     = cm->M;
-  cp9map->cm_nodes = cm->nodes;
-
-  /* Allocate and initialize arrays */
-  cp9map->nd2lpos  = MallocOrDie(sizeof(int)   * cp9map->cm_nodes);
-  cp9map->nd2rpos = MallocOrDie(sizeof(int)    * cp9map->cm_nodes);
-  for(i = 0; i < cp9map->cm_nodes; i++)
-    cp9map->nd2lpos[i] = cp9map->nd2rpos[i] = -1;
-
-  cp9map->pos2nd  = MallocOrDie(sizeof(int)    * (cp9map->hmm_M+1));
-  cp9map->hns2cs  = MallocOrDie(sizeof(int **)  * (cp9map->hmm_M+1)); 
-  for(i = 0; i <= cp9map->hmm_M; i++)
-    {
-      cp9map->pos2nd[i] = -1;
-      cp9map->hns2cs[i] = MallocOrDie(sizeof(int *) * 3);
-      for(ks = 0; ks < 3; ks++)
-	{
-	  cp9map->hns2cs[i][ks]= MallocOrDie(sizeof(int) * 2);      
-	  cp9map->hns2cs[i][ks][0] = cp9map->hns2cs[i][ks][1] = -1;
-	}
-    }
-
-  cp9map->cs2hn   = MallocOrDie(sizeof(int *)  * (cp9map->cm_M+1)); 
-  cp9map->cs2hs   = MallocOrDie(sizeof(int *)  * (cp9map->cm_M+1)); 
-  for(v = 0; v <= cp9map->cm_M; v++)
-    {
-      cp9map->cs2hn[v] = MallocOrDie(sizeof(int) * 2);
-      cp9map->cs2hs[v] = MallocOrDie(sizeof(int) * 2);
-      for(i = 0; i <= 1; i++)
-	cp9map->cs2hn[v][i] = cp9map->cs2hs[v][i] = -1;
-    }
-
-  return cp9map;
-}
-
-/* Function: FreeCP9Map()
- * Returns:  void
- */
-
-void
-FreeCP9Map(CP9Map_t *cp9map)
-{
-  int v,k,ks;
-  for(v = 0; v <= cp9map->cm_M; v++)
-    {
-      free(cp9map->cs2hn[v]);
-      free(cp9map->cs2hs[v]);
-    }
-  free(cp9map->cs2hn);
-  free(cp9map->cs2hs);
-
-  for(k = 0; k <= cp9map->hmm_M; k++)
-  {
-    for(ks = 0; ks < 3; ks++)
-      free(cp9map->hns2cs[k][ks]);
-    free(cp9map->hns2cs[k]);
-  }
-  free(cp9map->hns2cs);
-
-  free(cp9map->nd2lpos);
-  free(cp9map->nd2rpos);
-  free(cp9map->pos2nd);
-  free(cp9map);
-}

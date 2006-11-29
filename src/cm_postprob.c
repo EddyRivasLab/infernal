@@ -1,6 +1,14 @@
 /***********************************************************
  * @LICENSE@
  ************************************************************/
+/* cm_postprob.c
+ * EPN 05.08.06
+ * 
+ * Functions for working with posterior probabilities for CMs.
+ * Includes non-banded functions as well as banded ones (bands 
+ * in the j and d dimensions)
+
+ */
 
 #include "config.h"
 
@@ -14,14 +22,7 @@
 #include "stopwatch.h"          /* squid's process timing module        */
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
-#include "hmmer_funcs.h"
-#include "hmmer_structs.h"
 
-/* cm_postprob.c
- * 
- * Functions for working with posterior probabilities for CMs.
- * EPN 05.08.06
- */
 
 /*****************************************************************
  * CM FInside() & FOutside() functions.
@@ -1176,8 +1177,6 @@ FInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
   int      dp_v;           /* d index for state v in alpha w/mem eff bands */
   int      dp_y;           /* d index for state y in alpha w/mem eff bands */
   int      kp_z;           /* k (in the d dim) index for state z in alpha w/mem eff bands */
-  int      kp;             /* k prime - keeps track of what k should be now
-			     that we're using memory efficient bands */
   int      Wp;             /* W also changes depending on state */
   int      jp_v, jp_y, jp_z;
   int      kmin, kmax;
@@ -1712,8 +1711,6 @@ FOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
   int      dp_v;           /* d index for state v in alpha w/mem eff bands */
   int      dp_y;           /* d index for state y in alpha w/mem eff bands */
   int      kp_z;           /* k (in the d dim) index for state z in alpha w/mem eff bands */
-  int      kp;             /* k prime - keeps track of what k should be now
-			     that we're using memory efficient bands */
   int      Wp;             /* W also changes depending on state */
   int      jp_v, jp_y, jp_z;
   int      kmin, kmax;
@@ -2308,7 +2305,6 @@ CMPosterior_b_jd_me(int L, CM_t *cm, float ***alpha, float ****ret_alpha,
   int      dp_v; /* d index for state v in alpha/beta w/mem eff bands */
   int      Lp;
   float  **end;         /* used for freeing alpha b/c we re-use the end deck. */
-  int vmax;
   
   Lp = L - hdmin[0][L-jmin[0]];
   sc = alpha[0][L-jmin[0]][Lp];

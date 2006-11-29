@@ -31,7 +31,7 @@ Usage: cp9-test [-options] <cmfile>\n\
   where options are:\n\
   -h     : help; print brief help on version and usage\n\
   -s <n> : set random number seed\n\
-  -t <p> : probability threshold for reporting violations [default: 1E-5]\n\
+  -t <p> : probability threshold for reporting violations [default: 1E-4]\n\
 ";
 
 static char experts[] = "\
@@ -128,9 +128,9 @@ main(int argc, char **argv)
       StopwatchZero(watch);
       StopwatchStart(watch);
       sre_srandom(seed);
-      if(!(CP9_check_cp9_by_sampling(cm, hmm, 
-				     NULL,     /* Don't keep track of failures (sub_cm feature) */
-				     1, hmm->M, chi_thresh, nsamples, debug_level)))
+      if(!(CP9_check_by_sampling(cm, hmm, 
+				 NULL,     /* Don't keep track of failures (sub_cm feature) */
+				 1, hmm->M, chi_thresh, nsamples, debug_level)))
 	Die("CP9 HMM fails sampling check!\n");
       else
 	printf("CP9 HMM passed sampling check.\n");

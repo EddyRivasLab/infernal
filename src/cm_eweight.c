@@ -9,7 +9,7 @@
  * LSJ, Wed Feb  4 15:03:58 CST 2004
  * 
  * entropy targeting:
- * Code for setting effective sequence number (in hmmbuild) by
+ * Code for setting effective sequence number (in cmbuild) by
  * achieving a certain target entropy loss, relative to background
  * null distribution.
  *
@@ -23,13 +23,9 @@
 #include <string.h>
 
 #include "prior.h"
-
 #include "structs.h"
 #include "funcs.h"
-/*#include "squid.h"*/
-/*#include "vectorops.h"*/
 #include <esl_vectorops.h>
-#include "cm_eweight.h"
 
 /* Function: CM_Eweight [EPN]
  * based on:

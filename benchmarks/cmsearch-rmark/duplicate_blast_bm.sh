@@ -1,15 +1,16 @@
 # duplicate_blast_bm.sh: Duplicate the blast benchmark reported in the
-#                        banded-cyk manuscript.
-# See 00README for more information.
+# banded-cyk manuscript.  See 00README for more information.  #
 #
-# IMPORTANT: To run this benchmark, the command 'blastn' must
-#            execute wu-blastn version BLASTN 2.0MP-WashU, and
-#            the command 'xdformat' must execute XDFORMAT-WashU 1.0.
-#
-# The blast benchmark differs from the infernal benchmarks in that
-# we use E-values to rank scores from blast, while we use bit-scores
-# to rank scores from Infernal (E-values are not yet implemented in 
-# Infernal).
+# IMPORTANT: To run this benchmark, the command 'blastn' must execute
+# wu-blastn version BLASTN 2.0MP-WashU, and the command 'xdformat'
+# must execute XDFORMAT-WashU 1.0.  # The blast benchmark differs from
+# the infernal benchmarks in that we use E-values to rank scores from
+# blast, while we use bit-scores to rank scores from Infernal
+# (E-values are not yet implemented in Infernal). The way
+# rmark_process_glbf.pl infers this, and thus determines that a lower
+# score is now better (with E-values), is incredibly fragile:
+# it looks for the string 'blast' in the .rmm file name, so 
+# don't rename blast.rmm.
 # 
 # The current directory should have the following files:
 # sre.pl, rmark.pl, blast.rmm and a file called blast_w7.rmk
