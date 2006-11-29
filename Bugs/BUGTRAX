@@ -173,3 +173,16 @@ See ~nawrocki/notebook/6_1020_inf_banded_d_and_c_bug/00README and
 00LOG for more details.
 
 //
+ID              i9
+TITLE		QDB D&C versus non-D&C alignment score discrepancy
+STATUS          CLOSED
+XREF            ~nawrockie/notebook/6_1129_inf_qdb_aln_bug/
+REPORTED_BY     Eric Nawrocki, 28 Nov, 2006
+CLOSED_DATE     EPN, Wed Nov 29 10:36:21 2006
+DESCRIPTION     
+
+The smallcyk::inside_b() function was incorrectly initializing alpha
+cells for v = B states, using the wrong cell from the y deck (the left
+child of v). A one line fix. Do 'svn diff -r 1717:1718' for the code
+change.
+//

@@ -4433,7 +4433,7 @@ inside_b(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do
 		
 		if(k <= kmax)
 		  {
-		    alpha[v][j][d] = alpha[y][j][d-k] + alpha[z][j][k];
+		    alpha[v][j][d] = alpha[y][j-k][d-k] + alpha[z][j][k];
 		    if (ret_shadow != NULL) kshad[j][d] = k;
 		    for (k=k+1; k <= kmax; k++)
 		      {

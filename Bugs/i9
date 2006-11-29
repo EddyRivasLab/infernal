@@ -1,0 +1,50 @@
+#! /usr/bin/perl
+
+# bug i9 - QDB D&C and non D&C score discrepancy
+# EPN, Wed Nov 29 07:41:43 2006
+#
+# In QDB mode, CYKDivideAndConquer() rarely reports scores 
+# that are different from CYKInside() (run in memory efficient
+# mode, in which only cells within bands are allocated).
+#
+# i9.sto = the trna1415G.sto alignment from testsuite
+#          the only case I could get to produce the error.
+# i9.1   = a short sequence generated as seq 42 (!) from
+#          'shuffle -i -n 50 -t 90 --dna --seed 42'
+
+$usage = "i9 <cmbuild> <cmscore> <stockholm file (i9.sto)>\n";
+if ($#ARGV != 2) { die "Wrong argument number.\n$usage"; }
+
+$cmbuild  = shift;
+$cmscore  = shift;
+$sto      = shift;
+$ok       = 1;
+
+# Make our test sequence file, i9.1
+#
+open (OUT, ">i9.1") || die;
+print OUT <<END;
+>randseq42
+AGCATACCCATCTCAGTTCGTTGTCAGACCACGATATGTTTGGACGTGTACCCATATGGGTCACATGAAAGCCGGACGTCCGACCGCGGC
+END
+close OUT;
+
+# Build the cm using the trna1415G.sto alignment from testsuite, saved
+# here as i9.sto. This is the ONLY case I could reproduce the bug for.
+if ($ok) { 
+    system("$cmbuild -F --rf --wnone i9.cm $sto > /dev/null 2> /dev/null");
+    if ($? != 0) { $ok = 0; }
+}
+if ($ok) {
+    system("$cmscore --local --qdb i9.cm i9.1 > /dev/null 2> /dev/null");
+    if ($? != 0) { $ok = 0; }
+}
+
+foreach $tmpfile ("i9.1", "i9.cm") {
+    unlink $tmpfile if -e $tmpfile;
+}
+
+if ($ok) { print "ok\n";     exit 0; }
+else     { print "FAILED\n"; exit 1; }
+
+

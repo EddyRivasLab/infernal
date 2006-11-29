@@ -33,7 +33,7 @@ human              AAGACUUCGGAUCUGGCGACACCC
 END
 close OUT;
 
-# Make our test sequence file, il.6
+# Make our test sequence file, i6.2
 #
 open (OUT, ">i6.2") || die;
 print OUT <<END;
@@ -51,7 +51,7 @@ if ($ok) {
     if ($? != 0) { $ok = 0; }
 }
 
-foreach $tmpfile ("i6.1", "i6.cm") {
+foreach $tmpfile ("i6.1", "i6.2", "i6.cm") {
     unlink $tmpfile if -e $tmpfile;
 }
 

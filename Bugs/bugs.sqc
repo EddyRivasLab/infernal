@@ -29,3 +29,6 @@
 # i6 - local D&C score/parsetree score discrepancy. 6 Nov 06
 2 exercise   i6/cmalign-local  ./i6 @cmbuild@ @cmscore@
 
+# i9 - QDB D&C versus non-D&C alignment score discrepancy
+2 exercise   i9/cmalign-qdb  ./i9 @cmbuild@ @cmscore@ i9.sto
+
