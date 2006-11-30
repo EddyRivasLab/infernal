@@ -58,7 +58,7 @@ RELCODE     = @PACKAGE_RELCODE@
 LICENSETAG  = gnu
 COMPRESS    = gzip
 FTPDIR      = /nfs/ftp/eddy/software/infernal
-REPOSITORY  = https://skynet.wustl.edu:8080/sre/src/
+REPOSITORY  = https://svn.janelia.org/eddylab/eddys/src/
 
 # The program lists below for INFERNAL are not necessarily
 # a complete manifest. They are the list of stable programs that the
