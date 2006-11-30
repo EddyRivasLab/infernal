@@ -737,24 +737,24 @@ main(int argc, char **argv)
 		  CYKDivideAndConquer(cm, dsq, sqinfo.len, 
 				      hitr[i], hiti[i], hitj[i], &tr, 
 				      NULL, NULL); /* don't use qd bands */
-		  if(do_null2)
+
+		  if (do_null2) sc = hitsc[i] - CM_TraceScoreCorrection(cm, tr, dsq);
+		  else          sc = hitsc[i];
+
+		  if (sc >= thresh) /* only print alignments with corrected CYK scores > reporting thresh */
 		    {
-		      sc = hitsc[i] - CM_TraceScoreCorrection(cm, tr, dsq);
-		      if(sc >= thresh) /* only print alignments with
-					  corrected CYK scores > reporting thresh */
+		      printf("hit %-4d: %6d %6d %8.2f bits\n", ip, 
+			     reversed ? sqinfo.len - hiti[i] + 1 : hiti[i], 
+			     reversed ? sqinfo.len - hitj[i] + 1 : hitj[i],
+			     sc);
+		      ip++;
+
+		      if (do_align)
 			{
-			  printf("hit %-4d: %6d %6d %8.2f bits\n", ip, 
-				 reversed ? sqinfo.len - hiti[i] + 1 : hiti[i], 
-				 reversed ? sqinfo.len - hitj[i] + 1 : hitj[i],
-				 sc);
-			  ip++;
+			  ali = CreateFancyAli(tr, cm, cons, dsq);
+			  PrintFancyAli(stdout, ali);
+			  FreeFancyAli(ali);
 			}
-		    }
-		  if(sc >= thresh && do_align)
-		    {
-		      ali = CreateFancyAli(tr, cm, cons, dsq);
-		      PrintFancyAli(stdout, ali);
-		      FreeFancyAli(ali);
 		    }
 
 		  if (do_dumptrees) {
