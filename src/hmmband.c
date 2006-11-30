@@ -29,8 +29,6 @@
 #include "stopwatch.h"          /* squid's process timing module        */
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
-#include "hmmer_funcs.h"
-#include "hmmer_structs.h"
 #include "sre_stack.h"
 #include "hmmband.h"
 
@@ -39,7 +37,8 @@
  * Function: AllocCP9Bands()
  * 
  * Purpose:  Allocate the arrays needed for creating i and j
- *           bands on a CM based on a CP9 parse.
+ *           bands on a CM based on a CP9 parse. See structs.h
+ *           for description of this structure.
  *
  * Args:    
  * CM_t *cm            - the CM
@@ -52,7 +51,6 @@ CP9Bands_t *
 AllocCP9Bands(CM_t *cm, struct cplan9_s *hmm)
 {
   CP9Bands_t  *cp9bands;
-  int v, i;
 
   cp9bands = (struct cp9bands_s *) MallocOrDie (sizeof(struct cp9bands_s));
 
@@ -144,7 +142,7 @@ dbl_Score2Prob(int sc, float null)
  * Return:   log P(S|M)/P(S|R), as a bit score.
  */
 float
-CP9Forward(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm, 
+CP9Forward(char *dsq, int i0, int j0, struct cplan9_s *hmm, 
 	   struct cp9_dpmatrix_s **ret_mx)
 {
   struct cp9_dpmatrix_s *mx;
@@ -185,20 +183,21 @@ CP9Forward(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm,
   for (ip = 1; ip <= L; ip++) /* ip is the relative position in the seq */
     {
       i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from i0 to j0 */
+
       mmx[ip][0] = dmx[ip][0] = -INFTY;  /*M_0 (B) and D_0 (non-existent)
 					 don't emit.
 				       */
       imx[ip][0]  = ILogsum(ILogsum(mmx[ip-1][0] + hmm->tsc[CTMI][0],
 				    imx[ip-1][0] + hmm->tsc[CTII][0]),
 			    dmx[ip-1][0] + hmm->tsc[CTDI][0]);
-      imx[ip][0] += hmm->isc[dsq[i]][0];
+      imx[ip][0] += hmm->isc[(int) dsq[i]][0];
       for (k = 1; k <= hmm->M; k++)
 	{
 	  mmx[ip][k]  = ILogsum(ILogsum(mmx[ip-1][k-1] + hmm->tsc[CTMM][k-1],
 				       imx[ip-1][k-1] + hmm->tsc[CTIM][k-1]),
 			       ILogsum(mmx[ip-1][0] + hmm->bsc[k],
 				       dmx[ip-1][k-1] + hmm->tsc[CTDM][k-1]));
-	  mmx[ip][k] += hmm->msc[dsq[i]][k];
+	  mmx[ip][k] += hmm->msc[(int) dsq[i]][k];
 
 	  dmx[ip][k]  = ILogsum(ILogsum(mmx[ip][k-1] + hmm->tsc[CTMD][k-1],
 				       imx[ip][k-1] + hmm->tsc[CTID][k-1]),
@@ -207,7 +206,7 @@ CP9Forward(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm,
 	  imx[ip][k]  = ILogsum(ILogsum(mmx[ip-1][k] + hmm->tsc[CTMI][k],
 				       imx[ip-1][k] + hmm->tsc[CTII][k]),
 			       dmx[ip-1][k] + hmm->tsc[CTDI][k]);
-	  imx[ip][k] += hmm->isc[dsq[i]][k];
+	  imx[ip][k] += hmm->isc[(int) dsq[i]][k];
 	}
 
       emx[0][ip] = -INFTY;
@@ -253,7 +252,7 @@ CP9Forward(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm,
  * Return:   log P(S|M)/P(S|R), as a bit score
  */
 float
-CP9Viterbi(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s *mx)
+CP9Viterbi(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s *mx)
      //struct cp9trace_s **ret_tr)
 {
   /*struct cp9trace_s  *tr;*/
@@ -309,7 +308,7 @@ CP9Viterbi(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_
       if((sc = dmx[ip-1][0] + hmm->tsc[CTDI][0]) > imx[ip][0])
 	imx[ip][0] = sc;
       if(imx[ip][0] != -INFTY)
-	imx[ip][0] += hmm->isc[dsq[i]][0];
+	imx[ip][0] += hmm->isc[(int) dsq[i]][0];
       else 
 	imx[ip][0] = -INFTY;
 
@@ -326,7 +325,7 @@ CP9Viterbi(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_
 	  if((sc = dmx[ip-1][k-1] + hmm->tsc[CTDM][k-1]) > mmx[ip][k])
 	    mmx[ip][k] = sc;
 	  if(mmx[ip][k] != -INFTY)
-	    mmx[ip][k] += hmm->msc[dsq[i]][k];
+	    mmx[ip][k] += hmm->msc[(int) dsq[i]][k];
 	  else 
 	    mmx[ip][k] = -INFTY;
 
@@ -339,7 +338,7 @@ CP9Viterbi(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_
 	  if((sc = dmx[ip-1][k] + hmm->tsc[CTDI][k]) > imx[ip][k])
 	    imx[ip][k] = sc;
 	  if(imx[ip][k] != -INFTY)
-	    imx[ip][k] += hmm->isc[dsq[i]][k];
+	    imx[ip][k] += hmm->isc[(int) dsq[i]][k];
 	  else 
 	    imx[ip][k] = -INFTY;
 
@@ -363,9 +362,9 @@ CP9Viterbi(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_
   sc = emx[0][W];
   /*printf("returing sc: %d from CPViterbi()\n", sc);*/
   
-  //if (ret_tr != NULL) {
-  //P7ViterbiTrace(hmm, dsq, L, mx, &tr);
-  
+  /*if (ret_tr != NULL) {
+    P7ViterbiTrace(hmm, dsq, L, mx, &tr);*/
+
   return Scorify(sc);		/* the total Viterbi score. */
 }
 
@@ -387,7 +386,7 @@ CP9Viterbi(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_
  * Return:   log P(S|M)/P(S|R), as a bit score.
  */
 float
-CP9Backward(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s **ret_mx)
+CP9Backward(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s **ret_mx)
 {
   struct cp9_dpmatrix_s *mx;
   int **emx;
@@ -413,25 +412,25 @@ CP9Backward(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9
   emx[0][W] = 0; /*have to end in E*/
 
   mmx[W][hmm->M] = emx[0][W] + hmm->esc[hmm->M]; /* M<-E ...                   */
-  mmx[W][hmm->M] += hmm->msc[dsq[i]][hmm->M]; /* ... + emitted match symbol */
+  mmx[W][hmm->M] += hmm->msc[(int) dsq[i]][hmm->M]; /* ... + emitted match symbol */
   imx[W][hmm->M] = emx[0][W] + hmm->tsc[CTIM][hmm->M];   /* I_M(C)<-E ... */
-  imx[W][hmm->M] += hmm->isc[dsq[i]][hmm->M];           /* ... + emitted match symbol */
+  imx[W][hmm->M] += hmm->isc[(int) dsq[i]][hmm->M];           /* ... + emitted match symbol */
   dmx[W][hmm->M] = emx[0][W] + hmm->tsc[CTDM][hmm->M];    /* D_M<-E */
   for (k = hmm->M-1; k >= 1; k--)
     {
       mmx[W][k]  = hmm->esc[k] + emx[0][W];
       mmx[W][k]  = ILogsum(mmx[W][k], dmx[W][k+1] + hmm->tsc[CTMD][k]);
-      mmx[W][k] += hmm->msc[dsq[i]][k];
+      mmx[W][k] += hmm->msc[(int) dsq[i]][k];
 
       imx[W][k] = dmx[W][k+1] + hmm->tsc[CTID][k];
-      imx[W][k] += hmm->isc[dsq[i]][k];
+      imx[W][k] += hmm->isc[(int) dsq[i]][k];
 
       dmx[W][k] = dmx[W][k+1] + hmm->tsc[CTDD][k];
     }
   
   mmx[W][0] = -INFTY; /*M_0 doesn't emit*/
   imx[W][0] = dmx[W][1] + hmm->tsc[CTID][0];
-  imx[W][0] += hmm->isc[dsq[i]][hmm->M];    
+  imx[W][0] += hmm->isc[(int) dsq[i]][hmm->M];    
   dmx[W][0] = -INFTY; /*D_0 doesn't exist*/
 
   /* Recursion. Done as a pull.
@@ -445,9 +444,9 @@ CP9Backward(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9
       /* Now the main states. Note the boundary conditions at M.
        */
       mmx[ip][hmm->M] = imx[ip+1][hmm->M] + hmm->tsc[CTMI][hmm->M];
-      mmx[ip][hmm->M] += hmm->msc[dsq[i]][hmm->M];
+      mmx[ip][hmm->M] += hmm->msc[(int) dsq[i]][hmm->M];
       imx[ip][hmm->M] = imx[ip+1][hmm->M] + hmm->tsc[CTII][hmm->M];
-      imx[ip][hmm->M] += hmm->isc[dsq[i]][hmm->M];
+      imx[ip][hmm->M] += hmm->isc[(int) dsq[i]][hmm->M];
       dmx[ip][hmm->M] = imx[ip+1][hmm->M] + hmm->tsc[CTDI][hmm->M];  /* * */
       for (k = hmm->M-1; k >= 1; k--)
 	{
@@ -455,12 +454,12 @@ CP9Backward(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9
 				       imx[ip+1][k] + hmm->tsc[CTMI][k]),
 			       dmx[ip][k+1] + hmm->tsc[CTMD][k]);
 	  
-	  mmx[ip][k] += hmm->msc[dsq[i]][k];
+	  mmx[ip][k] += hmm->msc[(int) dsq[i]][k];
 	  
 	  imx[ip][k]  = ILogsum(ILogsum(mmx[ip+1][k+1] + hmm->tsc[CTIM][k],
 				       imx[ip+1][k] + hmm->tsc[CTII][k]),
 			       dmx[ip][k+1] + hmm->tsc[CTID][k]);
-	  imx[ip][k] += hmm->isc[dsq[i]][k];
+	  imx[ip][k] += hmm->isc[(int) dsq[i]][k];
 	  
 	  dmx[ip][k]  = ILogsum(ILogsum(mmx[ip+1][k+1] + hmm->tsc[CTDM][k],
 				       imx[ip+1][k] + hmm->tsc[CTDI][k]),
@@ -470,7 +469,7 @@ CP9Backward(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9
       imx[ip][0]  = ILogsum(ILogsum(mmx[ip+1][1] + hmm->tsc[CTIM][0],
 				   imx[ip+1][0] + hmm->tsc[CTII][0]),
 			   dmx[ip][1] + hmm->tsc[CTID][0]);
-      imx[ip][0] += hmm->isc[dsq[i]][0];
+      imx[ip][0] += hmm->isc[(int) dsq[i]][0];
       mmx[ip][0] = -INFTY;
       /*for (k = hmm->M-1; k >= 1; k--)*/ /*M_0 is the B state, it doesn't emit*/
       for (k = hmm->M; k >= 1; k--) /*M_0 is the B state, it doesn't emit*/
@@ -540,7 +539,7 @@ CP9Backward(unsigned char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9
  * Return:   void
  */
 void
-CP9FullPosterior(unsigned char *dsq, int i0, int j0,
+CP9FullPosterior(char *dsq, int i0, int j0,
 		 struct cplan9_s *hmm,
 		 struct cp9_dpmatrix_s *fmx,
 		 struct cp9_dpmatrix_s *bmx,
@@ -572,15 +571,15 @@ CP9FullPosterior(unsigned char *dsq, int i0, int j0,
     {
       i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from i0 to j0 */
       mx->mmx[ip][0] = -INFTY; /*M_0 does not emit*/
-      mx->imx[ip][0] = fmx->imx[ip][0] + bmx->imx[ip][0] - hmm->isc[dsq[i]][0] - sc;
-      /*hmm->isc[dsq[i]][0] will have been counted in both fmx->imx and bmx->imx*/
+      mx->imx[ip][0] = fmx->imx[ip][0] + bmx->imx[ip][0] - hmm->isc[(int) dsq[i]][0] - sc;
+      /*hmm->isc[(int) dsq[i]][0] will have been counted in both fmx->imx and bmx->imx*/
       mx->dmx[ip][0] = -INFTY; /*D_0 does not exist*/
       for (k = 1; k <= hmm->M; k++) 
 	{
-	  mx->mmx[ip][k] = fmx->mmx[ip][k] + bmx->mmx[ip][k] - hmm->msc[dsq[i]][k] - sc;
-	  /*hmm->msc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
-	  mx->imx[ip][k] = fmx->imx[ip][k] + bmx->imx[ip][k] - hmm->isc[dsq[i]][k] - sc;
-	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
+	  mx->mmx[ip][k] = fmx->mmx[ip][k] + bmx->mmx[ip][k] - hmm->msc[(int) dsq[i]][k] - sc;
+	  /*hmm->msc[(int) dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
+	  mx->imx[ip][k] = fmx->imx[ip][k] + bmx->imx[ip][k] - hmm->isc[(int) dsq[i]][k] - sc;
+	  /*hmm->isc[(int) dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
 	  mx->dmx[ip][k] = fmx->dmx[ip][k] + bmx->dmx[ip][k] - sc;
 	}	  
     }
@@ -672,6 +671,7 @@ CP9_ifill_post_sums(struct cp9_dpmatrix_s *post, int i0, int j0, int M,
 	isum_pn_d[k] = ILogsum(isum_pn_d[k], post->dmx[i][k]);
     }
 }
+
 /*****************************************************************************/
 /* Functions to determine HMM bands 
  * CP9_hmm_band_bounds()
@@ -704,7 +704,7 @@ CP9_ifill_post_sums(struct cp9_dpmatrix_s *post, int i0, int j0, int M,
  * double p_thresh  the probability mass we're requiring is within each band
  * int state_type   HMMMATCH, HMMINSERT, or HMMDELETE, for deletes we have to deal
  *                  with the CM->HMM delete off-by-one issue (see code below).
- * int use_sums     
+ * int use_sums     TRUE to use posterior sums instead of raw posteriors 
  * int debug_level  [0..3] tells the function what level of debugging print
  *                  statements to print.
  *****************************************************************************/
@@ -729,7 +729,6 @@ CP9_hmm_band_bounds(int **post, int i0, int j0, int M, int *isum_pn, int *pn_min
    */
 
   log_p_side = Prob2Score(((1. - p_thresh)/2.), 1.); /* allowable prob mass excluded on each side */
-
 
   /* step through each node */
   for(k = 0; k <= M; k++)
@@ -799,9 +798,7 @@ CP9_hmm_band_bounds(int **post, int i0, int j0, int M, int *isum_pn, int *pn_min
  */
 /*****************************************************************************
  * Function: hmm2ij_bands()
- * based on: hmm2ij_bands_strat3_del_CLEAN() EPN 12.21.05
- * based on: hmm2ij_bands_strat3_del() with repetive operations sequestered in
- *           new helper functions.
+ *           EPN 12.21.05
  * 
  * Purpose:  Determine the band for each cm state v on i (the band on the 
  *           starting index in the subsequence emitted from the subtree rooted
@@ -812,7 +809,7 @@ CP9_hmm_band_bounds(int **post, int i0, int j0, int M, int *isum_pn, int *pn_min
  *           and delete states from each node of the HMM that maps to a left emitting
  *           node of the CM (including MATP nodes). The HMM bands were
  *           calculated previously from the posterior matrices for mmx,
- *           imx and dmx from HMMER.
+ *           imx and dmx from a CP9 HMM.
  * 
  *           Some j bands are calculated from HMM bands on match and insert and
  *           delete states from each node of the HMM that maps to a right emitting
@@ -823,16 +820,18 @@ CP9_hmm_band_bounds(int **post, int i0, int j0, int M, int *isum_pn, int *pn_min
  *           on them by the i and j bands that CAN be determined from
  *           the HMM bands.
  *             
- *           Specifically, this function implements strategy 3 of the hmm bands
- *           to i and j bands problem. The main idea of strategy 3 is to 
- *           set i and j bands for each state v such that at least one state
- *           y (y \in C_v (y is reachable from v)) can be reached from v while
- *           staying within the i and j bands for v and y.  This constraint is
- *           enforced by determining the min and max i and j bands across all 
- *           states y (into safe* data structures) for a given v, and then 
- *           enforcing that at least one cell in the i and j bands of v can 
- *           transit to at least one cell in a band for a y state after accounting
- *           for the direction specific StateDelta() values for v.
+ *           Specifically, this function implements strategy 3 (EPN)
+ *           of the hmm bands to i and j bands problem. The main idea
+ *           of strategy 3 is to set i and j bands for each state v
+ *           such that at least one state y (y \in C_v (y is reachable
+ *           from v)) can be reached from v while staying within the i
+ *           and j bands for v and y.  This constraint is enforced by
+ *           determining the min and max i and j bands across all
+ *           states y (into safe* data structures) for a given v, and
+ *           then enforcing that at least one cell in the i and j
+ *           bands of v can transit to at least one cell in a band for
+ *           a y state after accounting for the direction specific
+ *           StateDelta() values for v.
  *           
  *           This function needs to be called only once, it determines
  *           bands for ALL states. Its unclear the best way to handle
@@ -843,23 +842,16 @@ CP9_hmm_band_bounds(int **post, int i0, int j0, int M, int *isum_pn, int *pn_min
  *           for such states to the same as those for states in a close
  *           proximity. (see code for exact definitions)
  * 
- *           This function is called *_del() because
- *           it uses HMM derived bands on delete states (which in 
- *           other (non *_del) cases were inferred from nearby states).
- *           I'm not sure
- *           if the method used to get these delete states is sound (as
- *           it required me writing a new function P7FullPosterior() 
- *           to derive them from the HMMER forwards and backwards parses).
+ *           This function uses HMM derived bands on delete states I'm
+ *           not sure if the method used to get these delete states is
+ *           100% sound (as it required me writing a new function
+ *           P7FullPosterior() to derive them from the HMMER forwards
+ *           and backwards parses).  
  *
  * arguments:
  *
  * CM_t *cm         the CM 
  * CP9Map_t *cp9map map from CM to CP9 HMM and vice versa
- *                   [0..(cm->nodes-1)], -1 if maps to no consensus column
- * int *cp9map->nd2rpos consensus column each node's right emission corresponds to
- *                    [0..(cm->nodes-1)], -1 if maps to no consensus column
- * int *cp9map->pos2nd  node that each consensus column maps to (is modelled by)
- *                     [1..ncc]
  * int i0           start of target subsequence (often 1, beginning of dsq)
  * int j0           end of target subsequence (often L, end of dsq)
  * int *pn_min_m    pn_min_m[k] = first position in HMM band for match state of HMM node k
@@ -900,8 +892,8 @@ hmm2ij_bands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
   int *nis_jmin;      /* nss_jmin[n] = jmin of each insert set state in node n*/
   int *nis_jmax;      /* nss_jmax[n] = jmax of each insert set state in node n*/
 
-  int *nss_max_imin;      /* nss_max_imin[n] = max imin over split set states in node n*/
-  int *nss_min_jmax;      /* nss_min_jmax[n] = min jmax over split set states in node n*/
+  int *nss_max_imin;  /* nss_max_imin[n] = max imin over split set states in node n*/
+  int *nss_min_jmax;  /* nss_min_jmax[n] = min jmax over split set states in node n*/
 
   int safe_imax; 
   int safe_jmin; 
@@ -2352,7 +2344,7 @@ ijd_banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax,
  */
 void
 debug_check_CP9_FB(struct cp9_dpmatrix_s *fmx, struct cp9_dpmatrix_s *bmx, 
-		   struct cplan9_s *hmm, float sc, int i0, int j0, unsigned char *dsq)
+		   struct cplan9_s *hmm, float sc, int i0, int j0, char *dsq)
 {
   int k, i;
   float max_diff;  /* maximum allowed difference between sc and 
@@ -2377,10 +2369,10 @@ debug_check_CP9_FB(struct cp9_dpmatrix_s *fmx, struct cp9_dpmatrix_s *bmx,
       fb_sum = -INFTY;
       for (k = 0; k <= hmm->M; k++) 
 	{
-	  fb_sum = ILogsum(fb_sum, (fmx->mmx[ip][k] + bmx->mmx[ip][k] - hmm->msc[dsq[i]][k]));
-	  /*hmm->msc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
-	  fb_sum = ILogsum(fb_sum, (fmx->imx[ip][k] + bmx->imx[ip][k] - hmm->isc[dsq[i]][k]));
-	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
+	  fb_sum = ILogsum(fb_sum, (fmx->mmx[ip][k] + bmx->mmx[ip][k] - hmm->msc[(int) dsq[i]][k]));
+	  /*hmm->msc[(int) dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
+	  fb_sum = ILogsum(fb_sum, (fmx->imx[ip][k] + bmx->imx[ip][k] - hmm->isc[(int) dsq[i]][k]));
+	  /*hmm->isc[(int) dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
 	  /*fb_sum = ILogsum(fb_sum, fmx->dmx[ip][k] + bmx->dmx[ip][k]);*/
 	}
       fb_sc  = Scorify(fb_sum);
@@ -2422,6 +2414,8 @@ relax_root_bands(int *imin, int *imax, int *jmin, int *jmax)
 }
 
 #if 0
+/* Here are the P7 versions of the functions, for reference */
+
 /*****************************************************************************
  * EPN 04.03.06
  * Function: P7_hmm_band_bounds()

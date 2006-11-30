@@ -31,6 +31,9 @@ infernal/Manuscripts/banded-cyk/
 To duplicate the 6 infernal benchmark runs described in the banded-cyk
 manuscript see (Section 3) and the file duplicate_full_bm.sh.
 
+To duplicate the BLASTN benchmark run described in the banded-cyk 
+manuscript see the file duplicate_blast_bm.sh.
+
 =======================================================================
 (Section 1) Overview of files
 =======================================================================

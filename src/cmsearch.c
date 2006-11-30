@@ -21,8 +21,6 @@
 
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
-#include "hmmer_funcs.h"
-#include "hmmer_structs.h"
 #include "hmmband.h"
 
 static int QDBFileRead(FILE *fp, CM_t *cm, int **ret_dmin, int **ret_dmax);
@@ -46,7 +44,7 @@ static char experts[] = "\
    --dumptrees   : dump verbose parse tree information for each hit\n\
    --thresh <f>  : CM reporting bit score threshold (try 0 before < 0) [df: 0]\n\
    --X           : project X!\n\
-   --inside      : scan with Inside, not CYK (caution ~5X slower(!))\n\
+   --inside      : scan with Inside, not CYK (caution much slower(!))\n\
    --null2       : turn on the post hoc second null model [df:OFF]\n\
    --learninserts: do not set insert emission scores to 0\n\
 \n\
@@ -59,7 +57,7 @@ static char experts[] = "\
 \n\
   * Options for accelerating CM search/alignment (*in development*):\n\
    --beta <f>    : tail loss prob for QBD (default:0.0000001)\n\
-   --noqdb       : DON'T use query dependent bands (QDB) to accelerate CYK\n\
+   --noqdb       : DO NOT use query dependent bands (QDB) to accelerate CYK\n\
    --qdbfile <f> : read QDBs from file <f> (outputted from cmbuild)\n\
    --hbanded     : use HMM bands from a CM plan 9 HMM scan for CYK\n\
    --hbandp <f>  : tail loss prob for --hbanded (default:0.0001)\n\
@@ -178,7 +176,7 @@ main(int argc, char **argv)
   /* CM Plan 9 HMM data structures */
   struct cplan9_s       *cp9_hmm;       /* constructed CP9 HMM; written to hmmfile              */
   CP9Map_t              *cp9map;        /* maps the hmm to the cm and vice versa                */
-  struct cp9_dpmatrix_s *cp9_mx;        /* growable DP matrix for viterbi                       */
+  /*struct cp9_dpmatrix_s *cp9_mx;*/        /* growable DP matrix for viterbi                       */
   struct cp9_dpmatrix_s *cp9_fwd;       /* growable DP matrix for forward                       */
   struct cp9_dpmatrix_s *cp9_bck;       /* growable DP matrix for backward                      */
   struct cp9_dpmatrix_s *cp9_posterior; /* growable DP matrix for posterior decode              */
@@ -195,7 +193,6 @@ main(int argc, char **argv)
   double      hbandp;           /* tail loss probability for hmm bands */
   int         use_sums;         /* TRUE to fill and use the posterior sums, false not to. */
 
-  unsigned char   *p7dsq;     /* digitized RNA sequences (plan 7 version)*/
   int    v;             /* counter over states of the CM */
   int    x;
   int    debug_level;   /* verbosity level for debugging printf() statements,
@@ -345,8 +342,6 @@ main(int argc, char **argv)
   if (do_filter || do_hmmonly || do_hbanded)
     {
       /* build a CM Plan 9 HMM, and use it to scan. */
-      Alphabet_type = hmmNOTSETYET;
-      SetAlphabet(hmmNUCLEIC); /* Set up the hmmer_alphabet global variable */
       if(!build_cp9_hmm(cm, &cp9_hmm, &cp9map, FALSE, 0.0001, debug_level))
 	Die("Couldn't build a CP9 HMM from the CM\n");
       /*debug_print_cp9_params(cp9_hmm); */
@@ -456,17 +451,16 @@ main(int argc, char **argv)
 	/* either scan only with CP9 HMM, or use it to infer bands for CYK.
 	 * Information on hits found with the HMM are in hmm_hit* arrays. */
 	{
-	  p7dsq = hmmer_DigitizeSequence(seq, sqinfo.len);
 	  hmm_nhits = 0;
 
 	  if(do_hmmonly) /* scan only with CP9 HMM */
 	    {
-	      fwd_sc = CP9ForwardScan(p7dsq, 1, sqinfo.len, windowlen, cp9_hmm, &cp9_fwd, 
+	      fwd_sc = CP9ForwardScan(dsq, 1, sqinfo.len, windowlen, cp9_hmm, &cp9_fwd, 
 				      &hmm_nhits, &hmm_hitr, &hmm_hiti, &hmm_hitj, &hmm_hitsc, 
 				      hmm_thresh);
 	      /*printf("forward  sc: %f\n", fwd_sc);*/
 	      /*printf("hmmer_Alphabet: %s\n", hmmer_Alphabet);
-		sc = CP9Forward(p7dsq, sqinfo.len, cp9_hmm, &cp9_fwd);*/
+		sc = CP9Forward(dsq, sqinfo.len, cp9_hmm, &cp9_fwd);*/
 	      /* We're only using the HMM */
 	      nhits = hmm_nhits;
 	      hitr  = hmm_hitr;
@@ -481,7 +475,7 @@ main(int argc, char **argv)
 	       * (i's). Then combine them to get likely i and j pairs (see 
 	       * code in CP9_scan.c.)
 	       */
-	      fb_sc = CP9ForwardBackwardScan(p7dsq, 1, sqinfo.len, windowlen, cp9_hmm, &cp9_fwd, &cp9_bck,
+	      fb_sc = CP9ForwardBackwardScan(dsq, 1, sqinfo.len, windowlen, cp9_hmm, &cp9_fwd, &cp9_bck,
 					     &hmm_nhits, &hmm_hitr, &hmm_hiti, &hmm_hitj, &hmm_hitsc, hmm_thresh,
 					     hmm_pad);
 	      /*printf("forward/backward sc: %f\n", fb_sc);*/
@@ -565,22 +559,22 @@ main(int argc, char **argv)
 		      if(!(do_scan2hbands))
 			{
 			  /* Step 1: Get HMM posteriors.*/
-			  fb_sc = CP9Forward(p7dsq, hmm_hiti[i], hmm_hitj[i], cp9_hmm, &cp9_fwd);
+			  fb_sc = CP9Forward(dsq, hmm_hiti[i], hmm_hitj[i], cp9_hmm, &cp9_fwd);
 			  /*printf("hit: %d i: %d j: %d forward_sc : %f\n", i, hiti[i], hitj[i], fb_sc);*/
-			  fb_sc = CP9Backward(p7dsq, hmm_hiti[i], hmm_hitj[i], cp9_hmm, &cp9_bck);
+			  fb_sc = CP9Backward(dsq, hmm_hiti[i], hmm_hitj[i], cp9_hmm, &cp9_bck);
 			  /*printf("CP9 i: %d | backward_sc: %f\n", i, fb_sc);*/
 			}
 		      else /* scan the subsequence to get the bands (VERY EXPERIMENTAL) */
 			{
 			  /* Step 1: Get HMM posteriors.*/
-			  fb_sc = CP9ForwardScan(p7dsq, hmm_hiti[i], hmm_hitj[i], windowlen, cp9_hmm, &cp9_fwd,
+			  fb_sc = CP9ForwardScan(dsq, hmm_hiti[i], hmm_hitj[i], windowlen, cp9_hmm, &cp9_fwd,
 						 &tmp_nhits, &tmp_hitr, &tmp_hiti, &tmp_hitj, &tmp_hitsc, hmm_thresh);
 			  /*printf("SCAN F hit: %d i: %d j: %d forward_sc : %f\n", i, hmm_hiti[i], hmm_hitj[i], fb_sc);*/
 			  free(tmp_hitr);
 			  free(tmp_hiti);
 			  free(tmp_hitj);
 			  free(tmp_hitsc);
-			  fb_sc = CP9BackwardScan(p7dsq, hmm_hiti[i], hmm_hitj[i], windowlen, cp9_hmm, &cp9_bck,
+			  fb_sc = CP9BackwardScan(dsq, hmm_hiti[i], hmm_hitj[i], windowlen, cp9_hmm, &cp9_bck,
 						  &tmp_nhits, &tmp_hitr, &tmp_hiti, &tmp_hitj, &tmp_hitsc, hmm_thresh);
 			  /*printf("SCAN B hit: %d i: %d j: %d bckward_sc : %f\n", i, hmm_hiti[i], hmm_hitj[i], fb_sc);*/
 			  free(tmp_hitr);
@@ -588,9 +582,9 @@ main(int argc, char **argv)
 			  free(tmp_hitj);
 			  free(tmp_hitsc);
 			}
-		      /*debug_check_CP9_FB(cp9_fwd, cp9_bck, cp9_hmm, fb_sc, hiti[i], hitj[i], p7dsq);*/
+		      /*debug_check_CP9_FB(cp9_fwd, cp9_bck, cp9_hmm, fb_sc, hiti[i], hitj[i], dsq);*/
 		      cp9_posterior = cp9_bck;
-		      CP9FullPosterior(p7dsq, hmm_hiti[i], hmm_hitj[i], cp9_hmm, cp9_fwd, cp9_bck, cp9_posterior);
+		      CP9FullPosterior(dsq, hmm_hiti[i], hmm_hitj[i], cp9_hmm, cp9_fwd, cp9_bck, cp9_posterior);
 		      /* Step 2: posteriors -> HMM bands.
 		       * NOTE: HMM bands have offset sequence indices, from 1 to W, 
 		       * with W = hitj[i] - hiti[i] + 1.
@@ -733,7 +727,7 @@ main(int argc, char **argv)
 		     hitsc[i]);
 	      ip++;
 	    }
-	  else if (do_align || do_null2)
+	  if (do_null2 || do_align)
 	    {
 	      /* For the null2 score correction we need a trace, so we have to do 
 	       * the alignment.
@@ -779,14 +773,14 @@ main(int argc, char **argv)
 		  /*********************************************************/
 		  /* TO DO: write function that encapsulates this block... */
 		  /* Step 1: Get HMM posteriors.*/
-		  fb_sc = CP9Forward(p7dsq, hiti[i], hitj[i], cp9_hmm, &cp9_fwd);
+		  fb_sc = CP9Forward(dsq, hiti[i], hitj[i], cp9_hmm, &cp9_fwd);
 		  /*printf("hit: %d i: %d j: %d forward_sc : %f\n", i, hiti[i], hitj[i], fb_sc);*/
-		  fb_sc = CP9Backward(p7dsq, hiti[i], hitj[i], cp9_hmm, &cp9_bck);
+		  fb_sc = CP9Backward(dsq, hiti[i], hitj[i], cp9_hmm, &cp9_bck);
 		  /*printf("CP9 i: %d | backward_sc: %f\n", i, fb_sc);*/
 
-		  /*debug_check_CP9_FB(cp9_fwd, cp9_bck, cp9_hmm, fb_sc, hiti[i], hitj[i], p7dsq);*/
+		  /*debug_check_CP9_FB(cp9_fwd, cp9_bck, cp9_hmm, fb_sc, hiti[i], hitj[i], dsq);*/
 		  cp9_posterior = cp9_bck;
-		  CP9FullPosterior(p7dsq, hiti[i], hitj[i], cp9_hmm, cp9_fwd, cp9_bck, cp9_posterior);
+		  CP9FullPosterior(dsq, hiti[i], hitj[i], cp9_hmm, cp9_fwd, cp9_bck, cp9_posterior);
 
 		  /* Step 2: posteriors -> HMM bands.
 		   * NOTE: HMM bands have offset sequence indices, from 1 to W, 
@@ -897,7 +891,6 @@ main(int argc, char **argv)
 	  free(hmm_hitsc);
 	}
       free(dsq);
-      if(do_filter || do_hmmonly) free(p7dsq);
       if (! reversed && do_revcomp) {
 	revcomp(seq,seq);
 	reversed = TRUE;
@@ -938,7 +931,7 @@ QDBFileRead(FILE *fp, CM_t *cm, int **ret_dmin, int **ret_dmax)
   int     n;			/* length of buf */
   char   *s;
   int     M;			/* number of states in model */
-  int     v,x,y,nd;		/* counters for states, events, nodes */
+  int     v;		        /* counter for states */
   char   *tok;
   int     toklen;
   int    *dmin;

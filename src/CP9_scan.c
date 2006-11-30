@@ -1,9 +1,12 @@
 /* CP9scan.c 
+ * EPN
  * 
- * Scanning algorithms for CM Plan 9 HMMs.
- * These algorithms align to the subsequences of the target
- * sequence to the model (e.g. glocal or local alignment)
- * Global alignment algorithms are in hmmband.c.
+ * Scanning algorithms for CM Plan 9 HMMs.  These algorithms align
+ * subsequences of the target sequence to the model (e.g. glocal or
+ * local alignment) Global alignment algorithms are in hmmband.c.
+ *
+ * These functions are still under development and are very
+ * experimental. No guarantees here.
  *
  *################################################################
  * CP9ForwardScan()      - Scan input sequence for high scoring
@@ -24,12 +27,7 @@
 #include "funcs.h"
 
 #include "stopwatch.h"          /* squid's process timing module        */
-#include "hmmer_funcs.h"
-#include "hmmer_structs.h"
 #include "hmmband.h"
-
-static void debug_check_CP9_FBscan(struct cp9_dpmatrix_s *fmx, struct cp9_dpmatrix_s *bmx, 
-				   struct cplan9_s *hmm, float sc, int L, unsigned char *dsq);
 
 /***********************************************************************
  * Function: CP9ForwardScan()
@@ -60,7 +58,7 @@ static void debug_check_CP9_FBscan(struct cp9_dpmatrix_s *fmx, struct cp9_dpmatr
  *           hiti, hitj, hitsc are allocated here; caller free's w/ free().
  */
 float
-CP9ForwardScan(unsigned char *dsq, int i0, int j0, int W, struct cplan9_s *hmm, 
+CP9ForwardScan(char *dsq, int i0, int j0, int W, struct cplan9_s *hmm, 
 	       struct cp9_dpmatrix_s **ret_mx, int *ret_nhits, int **ret_hitr, 
 	       int **ret_hiti, int **ret_hitj, float **ret_hitsc, float min_thresh)
 {
@@ -159,7 +157,7 @@ CP9ForwardScan(unsigned char *dsq, int i0, int j0, int W, struct cplan9_s *hmm,
       imx[jp][0]  = ILogsum(ILogsum(mmx[jp-1][0] + hmm->tsc[CTMI][0],
 				    imx[jp-1][0] + hmm->tsc[CTII][0]),
 			    dmx[jp-1][0] + hmm->tsc[CTDI][0]);
-      imx[jp][0] += hmm->isc[dsq[j]][0];
+      imx[jp][0] += hmm->isc[(int) dsq[j]][0];
       
       for (k = 1; k <= hmm->M; k++)
 	{
@@ -167,7 +165,7 @@ CP9ForwardScan(unsigned char *dsq, int i0, int j0, int W, struct cplan9_s *hmm,
 				       imx[jp-1][k-1] + hmm->tsc[CTIM][k-1]),
 			       ILogsum(mmx[jp-1][0] + hmm->bsc[k],
 				       dmx[jp-1][k-1] + hmm->tsc[CTDM][k-1]));
-	  mmx[jp][k] += hmm->msc[dsq[j]][k];
+	  mmx[jp][k] += hmm->msc[(int) dsq[j]][k];
 	  
 	  dmx[jp][k]  = ILogsum(ILogsum(mmx[jp][k-1] + hmm->tsc[CTMD][k-1],
 					imx[jp][k-1] + hmm->tsc[CTID][k-1]),
@@ -176,7 +174,7 @@ CP9ForwardScan(unsigned char *dsq, int i0, int j0, int W, struct cplan9_s *hmm,
 	  imx[jp][k]  = ILogsum(ILogsum(mmx[jp-1][k] + hmm->tsc[CTMI][k],
 				       imx[jp-1][k] + hmm->tsc[CTII][k]),
 			       dmx[jp-1][k] + hmm->tsc[CTDI][k]);
-	  imx[jp][k] += hmm->isc[dsq[j]][k];
+	  imx[jp][k] += hmm->isc[(int) dsq[j]][k];
 	  //printf("mmx[%d][%d]: %d\n", i, k, mmx[jp][k]);
 	  //printf("imx[%d][%d]: %d\n", i, k, imx[jp][k]);
 	  //printf("dmx[%d][%d]: %d\n", i, k, dmx[jp][k]);
@@ -319,7 +317,7 @@ CP9ForwardScanRequires(struct cplan9_s *hmm, int L, int W)
  *           hiti, hitj, hitsc are allocated in a helper function; caller free's w/ free().
  */
 float
-CP9ForwardBackwardScan(unsigned char *dsq, int i0, int j0, int W, struct cplan9_s *hmm, struct cp9_dpmatrix_s **ret_fmx,
+CP9ForwardBackwardScan(char *dsq, int i0, int j0, int W, struct cplan9_s *hmm, struct cp9_dpmatrix_s **ret_fmx,
 		       struct cp9_dpmatrix_s **ret_bmx, int *ret_nhits, int **ret_hitr, int **ret_hiti, 
 		       int **ret_hitj, float **ret_hitsc, float min_thresh, int pad)
 {
@@ -425,7 +423,7 @@ CP9ForwardBackwardScan(unsigned char *dsq, int i0, int j0, int W, struct cplan9_
       fdmx[jp][0] = -INFTY;  /*D_0 is non-existent*/
       fimx[jp][0]  = ILogsum(fmmx[jp-1][0] + hmm->tsc[CTMI][0],
 			    fimx[jp-1][0] + hmm->tsc[CTII][0]);
-      fimx[jp][0] += hmm->isc[dsq[j]][0];
+      fimx[jp][0] += hmm->isc[(int) dsq[j]][0];
       
       for (k = 1; k <= hmm->M; k++)
 	{
@@ -433,8 +431,7 @@ CP9ForwardBackwardScan(unsigned char *dsq, int i0, int j0, int W, struct cplan9_
 				       fimx[jp-1][k-1] + hmm->tsc[CTIM][k-1]),
 			       ILogsum(fmmx[jp-1][0] + hmm->bsc[k],
 				       fdmx[jp-1][k-1] + hmm->tsc[CTDM][k-1]));
-	  /*if(k == 3 && j == L) printf("\tk: %d | fmmx[jp-1][k-1]: %d | hmm->tsc[CTMM][k-1]: %d\n\t\tfimx[jp-1][k-1]: %d | hmm->tsc[CTIM][k-1]: %d\n\t\tfmmx[jp-1][0]: %d | bsc: %d\n\t\tfdmx[jp-1][k-1]: %d | hmm->tsc[CTDM][k-1]: %d\n", k, fmmx[(j-1)][(k-1)], hmm->tsc[CTMM][(k-1)], fimx[(j-1)][(k-1)], hmm->tsc[CTIM][(k-1)], fmmx[(j-1)][0], hmm->bsc[k], fdmx[(j-1)][(k-1)], hmm->tsc[CTDM][(k-1)]);*/
-	  fmmx[jp][k] += hmm->msc[dsq[j]][k];
+	  fmmx[jp][k] += hmm->msc[(int) dsq[j]][k];
 	  
 	  fdmx[jp][k]  = ILogsum(ILogsum(fmmx[jp][k-1] + hmm->tsc[CTMD][k-1],
 				       fimx[jp][k-1] + hmm->tsc[CTID][k-1]),
@@ -443,7 +440,7 @@ CP9ForwardBackwardScan(unsigned char *dsq, int i0, int j0, int W, struct cplan9_
 	  fimx[jp][k]  = ILogsum(ILogsum(fmmx[jp-1][k] + hmm->tsc[CTMI][k],
 				       fimx[jp-1][k] + hmm->tsc[CTII][k]),
 			       fdmx[jp-1][k] + hmm->tsc[CTDI][k]);
-	  fimx[jp][k] += hmm->isc[dsq[j]][k];
+	  fimx[jp][k] += hmm->isc[(int) dsq[j]][k];
 	  //printf("fmmx[%d][%d]: %d\n", i, k, fmmx[jp][k]);
 	  //printf("fimx[%d][%d]: %d\n", i, k, fimx[jp][k]);
 	  //printf("fdmx[%d][%d]: %d\n", i, k, fdmx[jp][k]);
@@ -535,25 +532,25 @@ CP9ForwardBackwardScan(unsigned char *dsq, int i0, int j0, int W, struct cplan9_
   bemx[0][L] = 0; /*have to end in E*/
 
   bmmx[L][hmm->M] = bemx[0][L] + hmm->esc[hmm->M]; /* M<-E ...                   */
-  bmmx[L][hmm->M] += hmm->msc[dsq[j0]][hmm->M]; /* ... + emitted match symbol */
+  bmmx[L][hmm->M] += hmm->msc[(int) dsq[j0]][hmm->M]; /* ... + emitted match symbol */
   bimx[L][hmm->M] = bemx[0][L] + hmm->tsc[CTIM][hmm->M];   /* I_M(C)<-E ... */
-  bimx[L][hmm->M] += hmm->isc[dsq[j0]][hmm->M];           /* ... + emitted match symbol */
+  bimx[L][hmm->M] += hmm->isc[(int) dsq[j0]][hmm->M];           /* ... + emitted match symbol */
   bdmx[L][hmm->M] = bemx[0][L] + hmm->tsc[CTDM][hmm->M];    /* D_M<-E */
   for (k = hmm->M-1; k >= 1; k--)
     {
       bmmx[L][k]  = bemx[0][L] + hmm->esc[k];
       bmmx[L][k]  = ILogsum(bmmx[L][k], bdmx[L][k+1] + hmm->tsc[CTMD][k]);
-      bmmx[L][k] += hmm->msc[dsq[j0]][k];
+      bmmx[L][k] += hmm->msc[(int) dsq[j0]][k];
 
       bimx[L][k] = bdmx[L][k+1] + hmm->tsc[CTID][k];
-      bimx[L][k] += hmm->isc[dsq[j0]][k];
+      bimx[L][k] += hmm->isc[(int) dsq[j0]][k];
 
       bdmx[L][k] = bdmx[L][k+1] + hmm->tsc[CTDD][k];
     }
   
   bmmx[L][0] = -INFTY; /* no esc[0] b/c its impossible */
   bimx[L][0] = bdmx[L][1] + hmm->tsc[CTID][0];
-  bimx[L][0] += hmm->isc[dsq[j0]][hmm->M];    
+  bimx[L][0] += hmm->isc[(int) dsq[j0]][hmm->M];    
   bdmx[L][0] = -INFTY; /*D_0 doesn't exist*/
 
   bck_sum = ILogsum(bck_sum, bmmx[L][0]);
@@ -583,10 +580,10 @@ CP9ForwardBackwardScan(unsigned char *dsq, int i0, int j0, int W, struct cplan9_
 	   */
 	  bmmx[ip][hmm->M] = ILogsum(bemx[0][i+1] + hmm->esc[hmm->M], /* M<-E ... 2nd diff w/non-scanner*/
 				    bimx[ip+1][hmm->M] + hmm->tsc[CTMI][hmm->M]);
-	  bmmx[ip][hmm->M] += hmm->msc[dsq[i]][hmm->M];
+	  bmmx[ip][hmm->M] += hmm->msc[(int) dsq[i]][hmm->M];
 	  bimx[ip][hmm->M] = ILogsum(bemx[0][ip] + hmm->tsc[CTIM][hmm->M],    /* I_M(C)<-E ... */
 				    bimx[ip+1][hmm->M] + hmm->tsc[CTII][hmm->M]);
-	  bimx[ip][hmm->M] += hmm->isc[dsq[i]][hmm->M];
+	  bimx[ip][hmm->M] += hmm->isc[(int) dsq[i]][hmm->M];
 	  bdmx[ip][hmm->M] = ILogsum(bemx[0][ip] + hmm->tsc[CTDM][hmm->M], /* D_M<-E */
 				    bimx[ip+1][hmm->M] + hmm->tsc[CTDI][hmm->M]);  
 	  for (k = hmm->M-1; k >= 1; k--)
@@ -597,12 +594,12 @@ CP9ForwardBackwardScan(unsigned char *dsq, int i0, int j0, int W, struct cplan9_
 					    bdmx[ip][k+1] + hmm->tsc[CTMD][k]));	  
 	      /*if(k == 1 && i == 1) printf("\tk: %d | bemx[0][i+1]: %d | hmm->esc[k]: %d\n\t\tbmmx[ip+1][k+1]: %d | hmm->tsc[CTMM][k]: %d\n\t\tbimx[ip+1][k]: %d | hmm->tsc[CTMI][k]: %d\n\t\tbdmx[ip][k+1]: %d | hmm->tsc[CTMD][k]: %d\n", k, bemx[0][(i+1)], hmm->esc[k], bmmx[(i+1)][(k+1)], hmm->tsc[CTMM][k], bimx[(i+1)][k], hmm->tsc[CTMI][k], bdmx[ip][(k+1)], hmm->tsc[CTMD][k]);*/
 	      
-	      bmmx[ip][k] += hmm->msc[dsq[i]][k];
+	      bmmx[ip][k] += hmm->msc[(int) dsq[i]][k];
 	      
 	      bimx[ip][k]  = ILogsum(ILogsum(bmmx[ip+1][k+1] + hmm->tsc[CTIM][k],
 					    bimx[ip+1][k] + hmm->tsc[CTII][k]),
 				    bdmx[ip][k+1] + hmm->tsc[CTID][k]);
-	      bimx[ip][k] += hmm->isc[dsq[i]][k];
+	      bimx[ip][k] += hmm->isc[(int) dsq[i]][k];
 	      
 	      bdmx[ip][k]  = ILogsum(ILogsum(bmmx[ip+1][k+1] + hmm->tsc[CTDM][k],
 					    bimx[ip+1][k] + hmm->tsc[CTDI][k]),
@@ -612,7 +609,7 @@ CP9ForwardBackwardScan(unsigned char *dsq, int i0, int j0, int W, struct cplan9_
 	  bimx[ip][0]  = ILogsum(ILogsum(bmmx[ip+1][1] + hmm->tsc[CTIM][0],
 					bimx[ip+1][0] + hmm->tsc[CTII][0]),
 				bdmx[ip][1] + hmm->tsc[CTID][0]);
-	  bimx[ip][0] += hmm->isc[dsq[i]][0];
+	  bimx[ip][0] += hmm->isc[(int) dsq[i]][0];
 	  bmmx[ip][0] = -INFTY;
 	  /*for (k = hmm->M-1; k >= 1; k--)*/ /*M_0 is the B state, it doesn't emit*/
 	  for (k = hmm->M; k >= 1; k--) /*M_0 is the B state, it doesn't emit*/
@@ -696,8 +693,6 @@ CP9ForwardBackwardScan(unsigned char *dsq, int i0, int j0, int W, struct cplan9_
 	  //saver[ip+1]  = bestr[d];
 	}
     }
-
-
   /* End of Backward() code */
 
   /*****************************************************************
@@ -765,74 +760,7 @@ CP9ForwardBackwardScan(unsigned char *dsq, int i0, int j0, int W, struct cplan9_
   return fwd_sc;		/* the total Forward score. */
 }
 
-/*********************************************************************
- * Function: debug_CP9_check_FBscan()
- * 
- * Purpose:  Debugging function for CP9ForwardBackwardScan(),
- *           print probability each position of the target
- *           sequence is emitted by some state of the model.
- *           Notably different from debug_CP9_check_FB() 
- *           because parses are allowed to start at any
- *           position and end at any position (during alignment
- *           its assumed the entire sequence is involved in 
- *           each parse).
- *           
- * Args:     fmx    - forward dp matrix, already filled
- *           bmx    - backward dp matrix, already filled
- *           hmm    - the model
- *           sc     - ~P(x|hmm) the summed probability of 
- *                    subsequences of the target sequence
- *                    given the model
- *           L      - length of the sequence
- *           
- * Return:   (void) Exits if any errors are found.
- */
-static void
-debug_check_CP9_FBscan(struct cp9_dpmatrix_s *fmx, struct cp9_dpmatrix_s *bmx, 
-		       struct cplan9_s *hmm, float sc, int L, unsigned char *dsq)
-{
-  int k, i;
-  float max_diff;  /* maximum allowed difference between sc and 
-		    * sum_k f[i][k] * b[i][k] for any i
-		    */
-  float diff;
-  int fb_sum;
-  float fb_sc;
 
-  max_diff = 0.01;
-  /*printf("sc: %f\n", sc);*/
-
-  /* In all possible paths through the model, each residue of the sequence must have 
-   * been emitted by exactly 1 insert or match state. */
-  for (i = 0; i <= L; i++)
-    {
-      fb_sum = -INFTY;
-      for (k = 0; k <= hmm->M; k++) 
-	{
-	  if(i == 0)
-	    {
-	      printf("fmx->mmx[%d][%d]: %d\n", i, k, fmx->mmx[i][k]);
-	      printf("bmx->mmx[%d][%d]: %d\n", i, k, bmx->mmx[i][k]);
-	      printf("hmm->msc[dsq[i]][%d]: %d\n", k, hmm->msc[dsq[i]][k]);
-	    }
-	  fb_sum = ILogsum(fb_sum, (fmx->mmx[i][k] + bmx->mmx[i][k] - hmm->msc[dsq[i]][k]));
-	  /*hmm->msc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
-	  fb_sum = ILogsum(fb_sum, (fmx->imx[i][k] + bmx->imx[i][k] - hmm->isc[dsq[i]][k]));
-	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
-	  /*fb_sum = ILogsum(fb_sum, fmx->dmx[i][k] + bmx->dmx[i][k]);*/
-	}
-      fb_sc  = Scorify(fb_sum);
-      printf("position %5d | sc: %f\n", i, fb_sc);
-      /*      diff = sc - fb_sc;
-      if(diff < 0.) diff *= -1.;
-      if(diff > max_diff)
-	{
-	  printf("ERROR, fb_sc[%d]: %f too different from P(x|hmm): %f\n", i, fb_sc, sc);
-	  exit(1);
-	}
-      */
-    }
-}
 /* Function: CP9ScanFullPosterior()
  * based on Ian Holmes' hmmer/src/postprob.c::P7EmitterPosterior()
  *
@@ -872,7 +800,7 @@ debug_check_CP9_FBscan(struct cp9_dpmatrix_s *fmx, struct cp9_dpmatrix_s *bmx,
  * Return:   void
  */
 void
-CP9ScanFullPosterior(unsigned char *dsq, int L,
+CP9ScanFullPosterior(char *dsq, int L,
 		     struct cplan9_s *hmm,
 		     struct cp9_dpmatrix_s *fmx,
 		     struct cp9_dpmatrix_s *bmx,
@@ -882,8 +810,6 @@ CP9ScanFullPosterior(unsigned char *dsq, int L,
   int k;
   int fb_sum; /* tmp value, the probability that the current residue (i) was
 	       * visited in any parse */
-  float temp_sc;
-
   fb_sum = -INFTY;
   for (i = 0; i <= L; i++) 
     {
@@ -920,14 +846,14 @@ CP9ScanFullPosterior(unsigned char *dsq, int L,
 	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
       /*}*/
       mx->mmx[i][0] = -INFTY; /*M_0 does not emit*/
-      mx->imx[i][0] = fmx->imx[i][0] + bmx->imx[i][0] - hmm->isc[dsq[i]][0] - fb_sum;
+      mx->imx[i][0] = fmx->imx[i][0] + bmx->imx[i][0] - hmm->isc[(int) dsq[i]][0] - fb_sum;
       /*hmm->isc[dsq[i]][0] will have been counted in both fmx->imx and bmx->imx*/
       mx->dmx[i][0] = -INFTY; /*D_0 does not exist*/
       for (k = 1; k <= hmm->M; k++) 
 	{
-	  mx->mmx[i][k] = fmx->mmx[i][k] + bmx->mmx[i][k] - hmm->msc[dsq[i]][k] - fb_sum;
+	  mx->mmx[i][k] = fmx->mmx[i][k] + bmx->mmx[i][k] - hmm->msc[(int) dsq[i]][k] - fb_sum;
 	  /*hmm->msc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
-	  mx->imx[i][k] = fmx->imx[i][k] + bmx->imx[i][k] - hmm->isc[dsq[i]][k] - fb_sum;
+	  mx->imx[i][k] = fmx->imx[i][k] + bmx->imx[i][k] - hmm->isc[(int) dsq[i]][k] - fb_sum;
 	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
 	  mx->dmx[i][k] = fmx->dmx[i][k] + bmx->dmx[i][k] - fb_sum;
 	}	  
@@ -1172,7 +1098,7 @@ CP9_combine_FBscan_hits(int i0, int j0, int W, int fwd_nhits, int *fwd_hitr, int
  *           hiti, hitj, hitsc are allocated in a helper function; caller free's w/ free().
  */
 float
-CP9BackwardScan(unsigned char *dsq, int i0, int j0, int W, struct cplan9_s *hmm,
+CP9BackwardScan(char *dsq, int i0, int j0, int W, struct cplan9_s *hmm,
 		       struct cp9_dpmatrix_s **ret_mx, int *ret_nhits, int **ret_hitr, int **ret_hiti, 
 		       int **ret_hitj, float **ret_hitsc, float min_thresh)
 {
@@ -1235,25 +1161,25 @@ CP9BackwardScan(unsigned char *dsq, int i0, int j0, int W, struct cplan9_s *hmm,
   emx[0][L] = 0; /*have to end in E*/
 
   mmx[L][hmm->M] = emx[0][L] + hmm->esc[hmm->M]; /* M<-E ...                   */
-  mmx[L][hmm->M] += hmm->msc[dsq[j0]][hmm->M]; /* ... + emitted match symbol */
+  mmx[L][hmm->M] += hmm->msc[(int) dsq[j0]][hmm->M]; /* ... + emitted match symbol */
   imx[L][hmm->M] = emx[0][L] + hmm->tsc[CTIM][hmm->M];   /* I_M(C)<-E ... */
-  imx[L][hmm->M] += hmm->isc[dsq[j0]][hmm->M];           /* ... + emitted match symbol */
+  imx[L][hmm->M] += hmm->isc[(int) dsq[j0]][hmm->M];           /* ... + emitted match symbol */
   dmx[L][hmm->M] = emx[0][L] + hmm->tsc[CTDM][hmm->M];    /* D_M<-E */
   for (k = hmm->M-1; k >= 1; k--)
     {
       mmx[L][k]  = emx[0][L] + hmm->esc[k];
       mmx[L][k]  = ILogsum(mmx[L][k], dmx[L][k+1] + hmm->tsc[CTMD][k]);
-      mmx[L][k] += hmm->msc[dsq[j0]][k];
+      mmx[L][k] += hmm->msc[(int) dsq[j0]][k];
 
       imx[L][k] = dmx[L][k+1] + hmm->tsc[CTID][k];
-      imx[L][k] += hmm->isc[dsq[j0]][k];
+      imx[L][k] += hmm->isc[(int) dsq[j0]][k];
 
       dmx[L][k] = dmx[L][k+1] + hmm->tsc[CTDD][k];
     }
   
   mmx[L][0] = -INFTY; /* no esc[0] b/c its impossible */
   imx[L][0] = dmx[L][1] + hmm->tsc[CTID][0];
-  imx[L][0] += hmm->isc[dsq[j0]][hmm->M];    
+  imx[L][0] += hmm->isc[(int) dsq[j0]][hmm->M];    
   dmx[L][0] = -INFTY; /*D_0 doesn't exist*/
 
   /*bck_sum = ILogsum(bck_sum, mmx[L][0]);*/
@@ -1282,10 +1208,10 @@ CP9BackwardScan(unsigned char *dsq, int i0, int j0, int W, struct cplan9_s *hmm,
 	   */
 	  mmx[ip][hmm->M] = ILogsum(emx[0][ip+1] + hmm->esc[hmm->M], /* M<-E ... 2nd diff w/non-scanner*/
 				    imx[ip+1][hmm->M] + hmm->tsc[CTMI][hmm->M]);
-	  mmx[ip][hmm->M] += hmm->msc[dsq[i]][hmm->M];
+	  mmx[ip][hmm->M] += hmm->msc[(int) dsq[i]][hmm->M];
 	  imx[ip][hmm->M] = ILogsum(emx[0][ip] + hmm->tsc[CTIM][hmm->M],    /* I_M(C)<-E ... */
 				    imx[ip+1][hmm->M] + hmm->tsc[CTII][hmm->M]);
-	  imx[ip][hmm->M] += hmm->isc[dsq[i]][hmm->M];
+	  imx[ip][hmm->M] += hmm->isc[(int) dsq[i]][hmm->M];
 	  dmx[ip][hmm->M] = ILogsum(emx[0][ip] + hmm->tsc[CTDM][hmm->M], /* D_M<-E */
 				    imx[ip+1][hmm->M] + hmm->tsc[CTDI][hmm->M]);  
 	  for (k = hmm->M-1; k >= 1; k--)
@@ -1294,14 +1220,13 @@ CP9BackwardScan(unsigned char *dsq, int i0, int j0, int W, struct cplan9_s *hmm,
 					    mmx[ip+1][k+1] + hmm->tsc[CTMM][k]),
 				    ILogsum(imx[ip+1][k] + hmm->tsc[CTMI][k],
 					    dmx[ip][k+1] + hmm->tsc[CTMD][k]));	  
-	      /*if(k == 1 && ip == 1) printf("\tk: %d | emx[0][ip+1]: %d | hmm->esc[k]: %d\n\t\tmmx[ip+1][k+1]: %d | hmm->tsc[CTMM][k]: %d\n\t\timx[ip+1][k]: %d | hmm->tsc[CTMI][k]: %d\n\t\tdmx[ip][k+1]: %d | hmm->tsc[CTMD][k]: %d\n", k, emx[0][(ip+1)], hmm->esc[k], mmx[(ip+1)][(k+1)], hmm->tsc[CTMM][k], imx[(ip+1)][k], hmm->tsc[CTMI][k], dmx[ip][(k+1)], hmm->tsc[CTMD][k]);*/
 	      
-	      mmx[ip][k] += hmm->msc[dsq[i]][k];
+	      mmx[ip][k] += hmm->msc[(int) dsq[i]][k];
 	      
 	      imx[ip][k]  = ILogsum(ILogsum(mmx[ip+1][k+1] + hmm->tsc[CTIM][k],
 					    imx[ip+1][k] + hmm->tsc[CTII][k]),
 				    dmx[ip][k+1] + hmm->tsc[CTID][k]);
-	      imx[ip][k] += hmm->isc[dsq[i]][k];
+	      imx[ip][k] += hmm->isc[(int) dsq[i]][k];
 	      
 	      dmx[ip][k]  = ILogsum(ILogsum(mmx[ip+1][k+1] + hmm->tsc[CTDM][k],
 					    imx[ip+1][k] + hmm->tsc[CTDI][k]),
@@ -1310,7 +1235,7 @@ CP9BackwardScan(unsigned char *dsq, int i0, int j0, int W, struct cplan9_s *hmm,
 	  imx[ip][0]  = ILogsum(ILogsum(mmx[ip+1][1] + hmm->tsc[CTIM][0],
 					imx[ip+1][0] + hmm->tsc[CTII][0]),
 				dmx[ip][1] + hmm->tsc[CTID][0]);
-	  imx[ip][0] += hmm->isc[dsq[i]][0];
+	  imx[ip][0] += hmm->isc[(int) dsq[i]][0];
 	  mmx[ip][0] = -INFTY;
 	  /*for (k = hmm->M-1; k >= 1; k--)*/ /*M_0 is the B state, it doesn't emit*/
 	  for (k = hmm->M; k >= 1; k--) /*M_0 is the B state, it doesn't emit*/
@@ -1446,3 +1371,78 @@ CP9BackwardScan(unsigned char *dsq, int i0, int j0, int W, struct cplan9_s *hmm,
   else                FreeCPlan9Matrix(mx);
   return sc;		/* the total Backward score. */
 }
+
+#if 0 
+/* This function is never called, but could be useful for debugging
+ * in the future */
+
+static void debug_check_CP9_FBscan(struct cp9_dpmatrix_s *fmx, struct cp9_dpmatrix_s *bmx, 
+				   struct cplan9_s *hmm, float sc, int L, char *dsq);
+
+/*********************************************************************
+ * Function: debug_CP9_check_FBscan()
+ * 
+ * Purpose:  Debugging function for CP9ForwardBackwardScan(),
+ *           print probability each position of the target
+ *           sequence is emitted by some state of the model.
+ *           Notably different from debug_CP9_check_FB() 
+ *           because parses are allowed to start at any
+ *           position and end at any position (during alignment
+ *           its assumed the entire sequence is involved in 
+ *           each parse).
+ *           
+ * Args:     fmx    - forward dp matrix, already filled
+ *           bmx    - backward dp matrix, already filled
+ *           hmm    - the model
+ *           sc     - ~P(x|hmm) the summed probability of 
+ *                    subsequences of the target sequence
+ *                    given the model
+ *           L      - length of the sequence
+ *           
+ * Return:   (void) Exits if any errors are found.
+ */
+static void
+debug_check_CP9_FBscan(struct cp9_dpmatrix_s *fmx, struct cp9_dpmatrix_s *bmx, 
+		       struct cplan9_s *hmm, float sc, int L, char *dsq)
+{
+  int k, i;
+  float max_diff;  /* maximum allowed difference between sc and 
+		    * sum_k f[i][k] * b[i][k] for any i */
+  int fb_sum;
+  float fb_sc;
+
+  max_diff = 0.01;
+  /*printf("sc: %f\n", sc);*/
+
+  /* In all possible paths through the model, each residue of the sequence must have 
+   * been emitted by exactly 1 insert or match state. */
+  for (i = 0; i <= L; i++)
+    {
+      fb_sum = -INFTY;
+      for (k = 0; k <= hmm->M; k++) 
+	{
+	  if(i == 0)
+	    {
+	      printf("fmx->mmx[%d][%d]: %d\n", i, k, fmx->mmx[i][k]);
+	      printf("bmx->mmx[%d][%d]: %d\n", i, k, bmx->mmx[i][k]);
+	      printf("hmm->msc[dsq[i]][%d]: %d\n", k, hmm->msc[(int) dsq[i]][k]);
+	    }
+	  fb_sum = ILogsum(fb_sum, (fmx->mmx[i][k] + bmx->mmx[i][k] - hmm->msc[(int) dsq[i]][k]));
+	  /*hmm->msc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
+	  fb_sum = ILogsum(fb_sum, (fmx->imx[i][k] + bmx->imx[i][k] - hmm->isc[(int) dsq[i]][k]));
+	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
+	  /*fb_sum = ILogsum(fb_sum, fmx->dmx[i][k] + bmx->dmx[i][k]);*/
+	}
+      fb_sc  = Scorify(fb_sum);
+      printf("position %5d | sc: %f\n", i, fb_sc);
+      /*      diff = sc - fb_sc;
+      if(diff < 0.) diff *= -1.;
+      if(diff > max_diff)
+	{
+	  printf("ERROR, fb_sc[%d]: %f too different from P(x|hmm): %f\n", i, fb_sc, sc);
+	  exit(1);
+	}
+      */
+    }
+}
+#endif

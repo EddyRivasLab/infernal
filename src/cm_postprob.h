@@ -5,7 +5,7 @@
 /* cm_postprob.h
  * 
  * Functions for working with posterior probabilities for CMs.
- *
+ * Eric Nawrocki
  */
 
 #ifndef CMPOSTPROB_INCLUDED

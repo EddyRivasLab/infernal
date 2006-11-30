@@ -1,8 +1,8 @@
 #include "squid.h"
 #include "msa.h"
 #include "structs.h"
-#include "hmmer_structs.h"
 #include "cplan9.h"
+#include "prior.h"
 
 /* from alphabet.c
  */
@@ -128,10 +128,10 @@ extern void ConsensusModelmaker(char *ss_cons, int clen, CM_t **ret_cm,
 				Parsetree_t **ret_gtr);
 extern Parsetree_t *Transmogrify(CM_t *cm, Parsetree_t *gtr, 
 				 char *dsq, char *aseq, int alen);
-extern void         cm_from_guide(CM_t *cm, Parsetree_t *gtr);
-extern int cm_find_and_detach_dual_inserts(CM_t *cm, int do_check, int do_detach);
-extern int cm_check_before_detaching(CM_t *cm, int insert1, int insert2);
-extern int        cm_detach_state(CM_t *cm, int insert1, int insert2);
+extern void cm_from_guide(CM_t *cm, Parsetree_t *gtr);
+extern int  cm_find_and_detach_dual_inserts(CM_t *cm, int do_check, int do_detach);
+extern int  cm_check_before_detaching(CM_t *cm, int insert1, int insert2);
+extern int  cm_detach_state(CM_t *cm, int insert1, int insert2);
 				 
 /* from parsetree.c
  */
@@ -206,6 +206,17 @@ extern void debug_print_shadow(void ***shadow, CM_t *cm, int L);
 extern void debug_print_shadow_banded(void ***shadow, CM_t *cm, int L, int *dmin, int *dmax);
 extern void debug_print_shadow_banded_deck(int v, void ***shadow, CM_t *cm, int L, int *dmin, int *dmax);
 
+/* from cm_eweight.c
+ * Entropy-based sequence weighting */
+extern double CM_Eweight(CM_t *cm,  Prior_t *pri, 
+			 float numb_seqs, float targetent);
+extern void ModelContent(float *ent1, float *ent2, int M);
+extern void CMRescale(CM_t *hmm, float scale);
+extern double CM_Eweight_RE(CM_t *cm, Prior_t *pri, float numb_seqs, 
+			    float target_relent, float *randomseq);
+extern double DRelEntropy(double *p, double *f, int n);
+
+
 /* from cplan9.c 
  * CM Plan9 HMM structure support
  */
@@ -219,7 +230,7 @@ extern void CPlan9SetAccession(struct cplan9_s *hmm, char *acc);
 extern void CPlan9SetDescription(struct cplan9_s *hmm, char *desc);
 extern void CPlan9ComlogAppend(struct cplan9_s *hmm, int argc, char **argv);
 extern void CPlan9SetCtime(struct cplan9_s *hmm);
-extern void CPlan9SetNullModel(struct cplan9_s *hmm, float null[HMMERMAXABET], float p1);
+extern void CPlan9SetNullModel(struct cplan9_s *hmm, float null[MAXABET], float p1);
 extern void CP9Logoddsify(struct cplan9_s *hmm);
 extern void CPlan9Rescale(struct cplan9_s *hmm, float scale);
 extern void CPlan9Renormalize(struct cplan9_s *hmm);
@@ -232,7 +243,6 @@ extern void  ResizeCPlan9Matrix(struct cp9_dpmatrix_s *mx, int N, int M,
 			       int ***mmx, int ***imx, int ***dmx, int ***emx);
 extern void CPlan9SWConfig(struct cplan9_s *hmm, float pentry, float pexit);
 extern void CPlan9GlobalConfig(struct cplan9_s *hmm);
-extern void sub_CPlan9SWConfig(struct cplan9_s *hmm, float pentry, float pexit, int spos, int epos);
 extern void sub_CPlan9GlobalConfig(struct cplan9_s *hmm, int spos, int epos, double **phi);
 
 extern void CPlan9RenormalizeExits(struct cplan9_s *hmm, int spos);
@@ -277,21 +287,21 @@ extern void CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hd
 
 
 /* from CP9_scan.c */
-extern float CP9ForwardScan(unsigned char *dsq, int i0, int j0, int W, struct cplan9_s *hmm, 
+extern float CP9ForwardScan(char *dsq, int i0, int j0, int W, struct cplan9_s *hmm, 
 			    struct cp9_dpmatrix_s **ret_mx, int *ret_nhits, int **ret_hitr,
 			    int **ret_hiti, int **ret_hitj,  
 			    float **ret_hitsc, float min_thresh);
-extern float CP9BackwardScan(unsigned char *dsq, int i0, int j0, int W, struct cplan9_s *hmm, 
+extern float CP9BackwardScan(char *dsq, int i0, int j0, int W, struct cplan9_s *hmm, 
 			     struct cp9_dpmatrix_s **ret_mx, int *ret_nhits, int **ret_hitr,
 			     int **ret_hiti, int **ret_hitj,  
 			     float **ret_hitsc, float min_thresh);
 extern float CP9ForwardScanRequires(struct cplan9_s *hmm, int L, int W);
-extern float CP9ForwardBackwardScan(unsigned char *dsq, int i0, int j0, int W, 
+extern float CP9ForwardBackwardScan(char *dsq, int i0, int j0, int W, 
 				    struct cplan9_s *hmm, struct cp9_dpmatrix_s **ret_fmx,
 				    struct cp9_dpmatrix_s **ret_bmx, int *ret_nhits, 
 				    int **ret_hitr, int **ret_hiti, 
 				    int **ret_hitj, float **ret_hitsc, float min_thresh, int pad);
-extern void CP9ScanFullPosterior(unsigned char *dsq, int L,
+extern void CP9ScanFullPosterior(char *dsq, int L,
 				 struct cplan9_s *hmm,
 				 struct cp9_dpmatrix_s *fmx,
 				 struct cp9_dpmatrix_s *bmx,
@@ -312,8 +322,8 @@ extern void fill_psi(CM_t *cm, double *psi, char ***tmap);
 extern void fill_phi_cp9(struct cplan9_s *hmm, double ***ret_phi, int spos);
 extern void make_tmap(char ****ret_tmap);
 
-extern int  CP9_check_cp9_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo, int spos, int epos, 
-				      float chi_thresh, int nsamples, int print_flag);
+extern int  CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo, int spos, int epos, 
+				  float chi_thresh, int nsamples, int print_flag);
 extern void CP9_fake_tracebacks(char **aseq, int nseq, int alen, int *matassign, struct cp9trace_s ***ret_tr);
 
 extern void CP9TraceCount(struct cplan9_s *hmm, char *dsq, float wt, struct cp9trace_s *tr);

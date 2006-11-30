@@ -2,10 +2,10 @@
 # See 00README for more information.
 #
 # The current directory should have the following files:
-# sre.pl, rmark.pl, infernal.rmm, infernal.pm, infernal2glbf.pl,
-# inf_qdb-71.rmk
+# sre.pl, rmark.pl, infernal.rmm, infernal.pm, and infernal2glbf.pl.
+# The file inf_qdb-71.rmk should be in a subdir called rmk_files/
 #
-# As well as a subdirectory called rmark-test/ containing the 
+# Also, the current dir should have a subdir called rmark-test/ containing the 
 # following files: 
 # rmark-test.idx, rmark-test.ebd, rmark-test.fa, RF00005.test, RF00005.ali,
 # RF00005.idx, RF00031.test, RF00031.ali, RF00031.idx.

@@ -66,6 +66,7 @@ REPOSITORY  = https://skynet.wustl.edu:8080/sre/src/
 #
 PROGS = cmalign\
 	cmbuild\
+	cmemit\
 	cmscore\
 	cmsearch
 # Optional programs for rigorous filters
@@ -79,7 +80,6 @@ all: core $(RIGFILTERS)
 core:
 	(cd squid;     make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module)
 	(cd easel;     make CC="$(CC)" CFLAGS="$(CFLAGS)"; make)
-	(cd hmmer;     make CC="$(CC)" CFLAGS="$(CFLAGS)"; make)
 	(cd src;       make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module)
 	(cd testsuite; make CC="$(CC)" CFLAGS="$(CFLAGS)")
 

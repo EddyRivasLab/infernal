@@ -1,9 +1,28 @@
 /* cplan9.h Support for a CM plan 9 HMM architecture.
  * Data structures were morphed from their plan 7 analogs.
+ *
+ * A few functions were hijacked from HMMER 2.4 and placed
+ * here without modification. These first 4 are all from 
+ * HMMER::mathsupport.c
+ * 
+ * ILogSum() (and auxiliary funcs associated with it)
+ * Score2Prob()
+ * Prob2Score()
+ * Scorify()
+ *
+ * And one from HMMER:plan7.c
+ * DegenerateSymbolScore()
  */  
 
 #include "structs.h"
 #include "config.h"
+
+/* Functions stolen from HMMER-2.4::mathsupport.c */
+extern int   ILogsum(int p1, int p2);
+extern int   Prob2Score(float p, float null);
+extern float Score2Prob(int sc, float null);
+extern float Scorify(int sc);
+extern int   DegenerateSymbolScore(float *p, float *null, int ambig);
 
 #ifndef CPLAN9_INCLUDED
 #define CPLAN9_INCLUDED
@@ -141,8 +160,8 @@ struct cplan9_s {
    */
   int     M;                    /* length of the model (# nodes)        +*/
   float **t;                    /* transition prob's. t[0..M][0..8]   +*/
-  float **mat;                  /* match emissions.  mat[1..M][0..19]   +*/ 
-  float **ins;                  /* insert emissions. ins[0..M][0..19] +*/
+  float **mat;                  /* match emissions.  mat[1..M][0..3]   +*/ 
+  float **ins;                  /* insert emissions. ins[0..M][0..3] +*/
 
   /* The unique states of CM Plan 9 in probability form.
    * These are the algorithm-dependent, data-independent probabilities.
@@ -176,8 +195,8 @@ struct cplan9_s {
    * CPLAN9_HASBITS flag is up when these scores are valid.
    */
   int  **tsc;                   /* transition scores     [0.9][0.M]       +*/
-  int  **msc;                   /* match emission scores [0.MAXCODE-1][1.M] +*/
-  int  **isc;                   /* ins emission scores [0.MAXCODE-1][0.M] +*/
+  int  **msc;                   /* match emission scores [0.MAXDEGEN-1][1.M] +*/
+  int  **isc;                   /* ins emission scores   [0.MAXDEGEN-1][0.M] +*/
   int   *bsc;                   /* begin transitions     [1.M]              +*/
   int   *esc;			/* end transitions       [1.M]              +*/
   int   *tsc_mem, *msc_mem, *isc_mem, *bsc_mem, *esc_mem;
@@ -308,12 +327,6 @@ struct cplan9_s {
 #define CTDM  6
 #define CTDI  7
 #define CTDD  8
-
-/* Indices for extra state transitions
- * Used for indexing hmm->xt[][].
- */
-#define MOVE 0          /* trNM_1 */
-#define LOOP 1          /* trNN */
 
 /* Declaration of CM Plan9 dynamic programming matrix structure.
  */

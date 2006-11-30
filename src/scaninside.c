@@ -23,7 +23,6 @@
 
 #include "structs.h"
 #include "funcs.h"
-#include "hmmer_funcs.h"
 
 /**************************************************************
  * Function: InsideScan()
@@ -655,13 +654,7 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
 		{
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
 
-		  /*EPN : Make sure k is consistent with bands in state w and state y.
-		    Not sure if this is necessary because the speed-up will be 
-		    very small (if its even a speed-up due to extra computations), 
-		    but it does make the banded approach more consistent.   
-		    original line : 
-		    for (k = 0; k <= d; k++)
-		  */
+		  /*EPN : Make sure k is consistent with bands in state w and state y. */
 
 		  /* k is the length of the right fragment */
 		  if(dmin[y] > (d-dmax[w])) k = dmin[y];
@@ -699,6 +692,8 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
 	  for (yoffset = 1; yoffset < cm->cnum[0]; yoffset++)
 	    alpha[0][cur][d] = LogSum2(alpha[0][cur][d], (alpha[y+yoffset][cur][d] 
 							 + cm->tsc[0][yoffset]));
+
+	  if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
 	}
       
       /* EPN 11.09.05 
@@ -895,7 +890,6 @@ InsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int 
   int       prv, cur;		/* previous, current j row (0 or 1) */
   float     sc;			/* tmp variable for holding a score */
   int       jp_roll;   	        /* rolling index into BEGL_S decks: jp=j%(W+1) */
-  int       tmp_jmin, tmp_jmax; /* temp variables for ensuring we stay within j bands within loops */
   int       tmp_dmin, tmp_dmax; /* temp variables for ensuring we stay within d bands within loops */
   int       tmp_kmin, tmp_kmax; /* temp vars for B_st's, min/max k values consistent with bands*/
 
@@ -1244,6 +1238,8 @@ InsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int 
 	  for (yoffset = 1; yoffset < cm->cnum[0]; yoffset++)
 	    alpha[0][cur][d] = LogSum2(alpha[0][cur][d], (alpha[y+yoffset][cur][d] 
 							  + cm->tsc[0][yoffset]));
+
+	  if (alpha[0][cur][d] < IMPROBABLE) alpha[0][cur][d] = IMPOSSIBLE;
 	}
 
       if (cm->flags & CM_LOCAL_BEGIN) {
@@ -1267,10 +1263,10 @@ InsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int 
 		    alpha[0][cur][d] = sc;
 		    bestr[d]         = y;
 		  }
+		  if (alpha[0][cur][d] < IMPROBABLE) alpha[0][cur][d] = IMPOSSIBLE;
 		}
 	    }
 	}
-	if (alpha[0][cur][d] < IMPROBABLE) alpha[0][cur][d] = IMPOSSIBLE;
       }
       
       /* The little semi-Markov model that deals with multihit parsing:

@@ -1,3 +1,6 @@
+#ifndef PRIOR_INCLUDED
+#define PRIOR_INCLUDED
+
 /* prior.h
  * Dirichlet priors for parameterizing a new model.
  * 
@@ -36,3 +39,4 @@ extern void     PriorifyCM(CM_t *cm, Prior_t *pri);
 extern Prior_t *Prior_Default(void);
 
 extern struct p7prior_s *P7DefaultInfernalPrior(void);
+#endif

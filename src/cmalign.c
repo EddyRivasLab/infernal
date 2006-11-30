@@ -22,8 +22,6 @@
 
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
-#include "hmmer_funcs.h"
-#include "hmmer_structs.h"
 #include "sre_stack.h"
 #include "hmmband.h"         
 #include "cm_postprob.h"
@@ -123,7 +121,6 @@ main(int argc, char **argv)
   FILE            *ofp;         /* an open output file */
   int              i;		/* counter over sequences/parsetrees */
   int              v;           /* counter over states of the CM */
-  int              k;           /* counter over HMM nodes */
 
   float            sc;		/* score for one sequence alignment */
   float            maxsc;	/* max score in all seqs */
@@ -169,13 +166,10 @@ main(int argc, char **argv)
   int         use_sums;         /* TRUE to fill and use the posterior sums, false not to. */
 
   /* data structures for HMMs */
-  char  *hmmfile;      /* file to read HMMs from                  */
-  int   ks;            /* Counter over HMM state types (0 (match), 1(ins) or 2 (del))*/
   float forward_sc; 
   float backward_sc; 
   
   /* CM Plan 9 */
-  CP9HMMFILE            *hmmfp;     /* opened CP9 hmmfile for reading                       */
   struct cplan9_s       *hmm;       /* constructed CP9 HMM; written to hmmfile              */
   CP9Map_t              *cp9map;    /* maps the hmm to the cm and vice versa */
   struct cp9_dpmatrix_s *cp9_mx;        /* growable DP matrix for viterbi                       */
@@ -187,8 +181,6 @@ main(int argc, char **argv)
   int                    do_checkcp9;   /* TRUE to check the CP9 HMM by generating sequences */
   int                    seed;	        /* random number generator seed (only used if(do_checkcp9) */
 
-  unsigned char    **p7dsq;     /* digitized RNA sequences for the HMM */
-
   /* Alternatives to CYK */
   int                do_inside; /* TRUE to use the Inside algorithm instead of CYK */
   int                do_outside;/* TRUE to use the Outside algorithm instead of CYK */
@@ -199,7 +191,6 @@ main(int argc, char **argv)
   float           ***alpha;     /* alpha DP matrix for Inside() */
   float           ***beta;      /* beta DP matrix for Inside() */
   float           ***post;      /* post DP matrix for Inside() */
-  int j;
 
   /* the --sub option */
   int                do_sub;       /* TRUE to use HMM to infer start and end point of each seq
@@ -218,7 +209,6 @@ main(int argc, char **argv)
   int                epos_state;   /* HMM state type for curr epos 0=match or  1=insert */
 
   char            *check_outfile;  /* output file name for subCM stk file*/
-  FILE            *check_ofp;      /* an open output file */
   Parsetree_t     *orig_tr;        /* parsetree for the orig_cm; created from the sub_cm parsetree */
   
   struct cplan9_s *sub_hmm;        /* constructed CP9 HMM; written to hmmfile              */
@@ -226,7 +216,6 @@ main(int argc, char **argv)
   struct cplan9_s *orig_hmm;       /* original CP9 HMM built from orig_cm */
   CP9Map_t        *orig_cp9map;    
   CP9Bands_t      *orig_cp9b;      
-  double         **orig_phi;
   /* Options for checking sub_cm construction */
   int do_atest;                 /* TRUE to build 2 ML HMMs, one from the CM and one from
 				 * the sub_cm, analytically, and check to make sure
@@ -369,16 +358,6 @@ main(int argc, char **argv)
   /*CMHackInsertScores(cm);*/	/* "TEMPORARY" fix for bad priors */
 
   /*****************************************************************
-   * Optionally, input and configure a Plan 7 or CM Plan 9 HMM
-   * for banded alignment.
-   *****************************************************************/
-  if(do_hbanded || do_sub)
-    {
-      Alphabet_type = hmmNOTSETYET;
-      SetAlphabet(hmmNUCLEIC); /* Set up the hmmer_alphabet global variable */
-    }
-
-  /*****************************************************************
    * Input and digitize the unaligned sequences
    *****************************************************************/
 
@@ -387,12 +366,6 @@ main(int argc, char **argv)
   dsq = MallocOrDie(sizeof(char *) * nseq);
   for (i = 0; i < nseq; i++) 
     dsq[i] = DigitizeSequence(rseq[i], sqinfo[i].len);
-  if(do_hbanded || do_sub)
-    {
-      p7dsq = MallocOrDie(sizeof(unsigned char *) * nseq);
-      for(i = 0; i < nseq; i++)
-	p7dsq[i] = hmmer_DigitizeSequence(rseq[i], sqinfo[i].len);
-    }      
   /*********************************************** 
    * Show the banner
    ***********************************************/
@@ -432,7 +405,7 @@ main(int argc, char **argv)
       if(do_checkcp9)
 	{
 	  sre_srandom(seed);
-	  if(!(CP9_check_cp9_by_sampling(cm, hmm, 
+	  if(!(CP9_check_by_sampling(cm, hmm, 
 					 NULL,     /* Don't keep track of failures (sub_cm feature) */
 					 1, hmm->M, 0.01, 100000, debug_level)))
 	    Die("CM Plan 9 fails sampling check!\n");
@@ -532,15 +505,15 @@ main(int argc, char **argv)
 	  StopwatchStart(watch1);
 
 	  /* Step 1: Get HMM posteriors.*/
-	  /*sc = CP9Viterbi(p7dsq[i], 1, sqinfo[i].len, hmm, cp9_mx);*/
-	  forward_sc = CP9Forward(p7dsq[i], 1, sqinfo[i].len, orig_hmm, &cp9_fwd);
-	  if(debug_level) printf("CP9 i: %d | forward_sc : %.2f\n", i, forward_sc);
-	  backward_sc = CP9Backward(p7dsq[i], 1, sqinfo[i].len, orig_hmm, &cp9_bck);
-	  if(debug_level) printf("CP9 i: %d | backward_sc: %.2f\n", i, backward_sc);
+	  /*sc = CP9Viterbi(dsq[i], 1, sqinfo[i].len, hmm, cp9_mx);*/
+	  forward_sc = CP9Forward(dsq[i], 1, sqinfo[i].len, orig_hmm, &cp9_fwd);
+	  if(debug_level > 0) printf("CP9 i: %d | forward_sc : %.2f\n", i, forward_sc);
+	  backward_sc = CP9Backward(dsq[i], 1, sqinfo[i].len, orig_hmm, &cp9_bck);
+	  if(debug_level > 0) printf("CP9 i: %d | backward_sc: %.2f\n", i, backward_sc);
 
-	  /*debug_check_CP9_FB(cp9_fwd, cp9_bck, hmm, forward_sc, 1, sqinfo[i].len, p7dsq[i]);*/
+	  /*debug_check_CP9_FB(cp9_fwd, cp9_bck, hmm, forward_sc, 1, sqinfo[i].len, dsq[i]);*/
 	  cp9_posterior = cp9_bck;
-	  CP9FullPosterior(p7dsq[i], 1, sqinfo[i].len, orig_hmm, cp9_fwd, cp9_bck, cp9_posterior);
+	  CP9FullPosterior(dsq[i], 1, sqinfo[i].len, orig_hmm, cp9_fwd, cp9_bck, cp9_posterior);
 	}
       /* If we're in sub mode:
        * (1) Get HMM posteriors. (we already did this above)
@@ -626,13 +599,13 @@ main(int argc, char **argv)
 
 	      FreeCPlan9Matrix(cp9_fwd);
 	      FreeCPlan9Matrix(cp9_posterior);
-	      forward_sc = CP9Forward(p7dsq[i], 1, sqinfo[i].len, sub_hmm, &cp9_fwd);
+	      forward_sc = CP9Forward(dsq[i], 1, sqinfo[i].len, sub_hmm, &cp9_fwd);
 	      if(debug_level) printf("CP9 i: %d | forward_sc : %.2f\n", i, forward_sc);
-	      backward_sc = CP9Backward(p7dsq[i], 1, sqinfo[i].len, sub_hmm, &cp9_bck);
+	      backward_sc = CP9Backward(dsq[i], 1, sqinfo[i].len, sub_hmm, &cp9_bck);
 	      if(debug_level) printf("CP9 i: %d | backward_sc: %.2f\n", i, backward_sc);
-	      /*debug_check_CP9_FB(cp9_fwd, cp9_bck, hmm, forward_sc, 1, sqinfo[i].len, p7dsq[i]);*/
+	      /*debug_check_CP9_FB(cp9_fwd, cp9_bck, hmm, forward_sc, 1, sqinfo[i].len, dsq[i]);*/
 	      cp9_posterior = cp9_bck;
-	      CP9FullPosterior(p7dsq[i], 1, sqinfo[i].len, sub_hmm, cp9_fwd, cp9_bck, cp9_posterior);
+	      CP9FullPosterior(dsq[i], 1, sqinfo[i].len, sub_hmm, cp9_fwd, cp9_bck, cp9_posterior);
 	      /* cp9_posterior has the posteriors for the sub_hmm */
 
 	      /* Change some pointers so that the functions that create bands use the
@@ -878,7 +851,7 @@ main(int argc, char **argv)
 	  sc = CYKInside(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, &(tr[i]), NULL, NULL);
 	  if(bdump_level > 0)
 	    {
-	      /* We want band info but --banded wasn't used.  Useful if you're curious
+	      /* We want band info but --hbanded wasn't used.  Useful if you're curious
 	       * why a banded parse is crappy relative to non-banded parse, e.g. allows you 
 	       * to see where the non-banded parse went outside the bands.
 	       */
@@ -976,7 +949,7 @@ main(int argc, char **argv)
 	}
       /* Dump the trace with info on i, j and d bands
        * if bdump_level is high enough */
-      if(bdump_level > 0)
+      if(bdump_level > 0 && do_hbanded)
 	ijd_banded_trace_info_dump(cm, tr[i], cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, 
 				   cp9b->hdmin, cp9b->hdmax, 1);
       
@@ -1106,12 +1079,6 @@ main(int argc, char **argv)
       free(dmax);
     }
 
-  if(do_hbanded && do_sub)
-    {
-      for (i = 0; i < nseq; i++) 
-	free(p7dsq[i]);
-      free(p7dsq);
-    }
   if(do_hbanded && !do_sub) /* if do_sub, we've already freed these */
     {
       FreeCP9Bands(cp9b);

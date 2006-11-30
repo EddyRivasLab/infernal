@@ -97,10 +97,10 @@ CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, char *dsq)
     j = tr->emitr[tidx];
     if (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || 
 	cm->sttype[v] == IL_st)
-      score += sc[dsq[i]];
+      score += sc[(int) dsq[i]];
     if (cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || 
 	cm->sttype[v] == IR_st)
-      score += sc[dsq[j]];
+      score += sc[(int) dsq[j]];
   }
    /* Apply an ad hoc 8 bit fudge factor penalty;
     * interpreted as a prior, saying that the second null model is 

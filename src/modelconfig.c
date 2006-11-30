@@ -14,8 +14,6 @@
 
 #include "structs.h"
 #include "funcs.h"
-#include "hmmer_funcs.h"
-
 
 void
 ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
@@ -23,8 +21,6 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
   int v;			/* counter over states */
   int nd;			/* counter over nodes */
   int nstarts;			/* number of possible internal starts */
-  int nexits;			/* number of possible internal ends */
-  float denom;
 
   /*****************************************************************
    * Internal entry.
@@ -167,9 +163,6 @@ ConfigLocal_fullsub(CM_t *cm, float p_internal_start,
   int v;			/* counter over states */
   int nd;			/* counter over nodes */
   int nstarts;			/* number of possible internal starts */
-  int nexits;			/* number of possible internal ends */
-  float denom;
-
 
   printf("in ConfigLocal_fullsub(), sstruct_nd: %d | estruct_nd: %d\n", sstruct_nd, estruct_nd);
 

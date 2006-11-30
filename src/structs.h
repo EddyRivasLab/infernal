@@ -21,6 +21,10 @@
 #define MAXDEGEN         17     /* maximum for Alphabet_iupac        */
 #define DIGITAL_GAP      126	/* see alphabet.c:DigitizeSequence() */
 #define DIGITAL_SENTINEL 127    
+#define INTSCALE    1000.0      /* scaling constant for floats to integer scores
+				 * for use with CP9 HMMs */
+#define LOGSUM_TBL  20000       /* controls precision of ILogsum()            */
+
 extern int   Alphabet_type;
 extern int   Alphabet_size;
 extern int   Alphabet_iupac;
@@ -52,6 +56,10 @@ extern int   DegenCount[MAXDEGEN];
 #define IMPROBABLE  -5e35
 #define NOT_IMPOSSIBLE(x)  ((x) > -9.999e35) 
 #define sreLOG2(x)  ((x) > 0 ? log(x) * 1.44269504 : IMPOSSIBLE)
+#define sreEXP2(x)  (exp((x) * 0.69314718 )) 
+
+/* For CM Plan 9 HMMs which has scores as integers */
+#define INFTY       987654321   /* infinity for purposes of integer DP cells       */
 
 /* State types. (cm->sttype[])
  */
@@ -429,8 +437,10 @@ typedef struct cp9bands_s {
   int     *pn_max_m;          /* HMM band: maximum position node k match state will emit  */
   int     *pn_min_i;          /* HMM band: minimum position node k insert state will emit */
   int     *pn_max_i;          /* HMM band: maximum position node k insert state will emit */
-  int     *pn_min_d;          /* HMM band: minimum position node k delete state will emit */
-  int     *pn_max_d;          /* HMM band: maximum position node k delete state will emit */
+  int     *pn_min_d;          /* HMM band: minimum position that was emitted prior to entering
+			       * node k delete state */
+  int     *pn_max_d;          /* HMM band: maximum position that was emitted prior to entering
+			       * node k delete state */
   int     *isum_pn_m;         /* [1..k..M] sum over i of log post probs from post->mmx[i][k]*/
   int     *isum_pn_i;         /* [1..k..M] sum over i of log post probs from post->imx[i][k]*/
   int     *isum_pn_d;         /* [1..k..M] sum over i of log post probs from post->dmx[i][k]*/

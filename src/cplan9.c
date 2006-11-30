@@ -7,9 +7,18 @@
  * Support for CM-Plan 9 HMM data structure, cplan9_s.
  * Including support for a dp matrix structure for cplan_s,
  * cp9_dpmatrix_s.
+ * 
+ * All of the CP9 code is based on analogous Plan 7 HMM code. There
+ * are aspects of the plan 7 HMM data structure that I've kept in the
+ * CM Plan 9 structre, but is not yet used.
+ * 
+ * Included in this file are functions for configuring HMMs that were
+ * built for 'sub CMs'.
+ * 
+ * At the end of this file are some functions that were stolen from
+ * HMMER 2.4 and placed here without modification.
  */
 
-#include "hmmer_config.h"
 #include "squidconf.h"
 #include "cplan9.h"
 
@@ -21,16 +30,13 @@
 #include "squid.h"
 #include "funcs.h"
 #include "structs.h"
-#include "hmmer_funcs.h"
-#include "hmmer_structs.h"
-
 
 /* Functions: AllocCPlan9(), AllocCPlan9Shell(), AllocCPlan9Body(), FreeCPlan9()
  * 
  * Purpose:   Allocate or free a CPlan9 HMM structure.
- *            Can either allocate all at one (AllocCPlan9()) or
- *            in two steps (AllocPlan7Shell(), AllocPlan7Body()).
- *            The two step method is used in hmmio.c where we start
+ *            Can either allocate all at once (AllocCPlan9()) or
+ *            in two steps (AllocCPlan9Shell(), AllocCPlan9Body()).
+ *            The two step method is used in CP9_hmmio.c where we start
  *            parsing the header of an HMM file but don't 
  *            see the size of the model 'til partway thru the header.
  */
@@ -96,7 +102,7 @@ AllocCPlan9Shell(void)
   hmm->flags = 0;
   return hmm;
 }  
-#ifndef ALTIVEC  /* in Altivec port, replaced in fast_algorithms.c */
+
 void
 AllocCPlan9Body(struct cplan9_s *hmm, int M) 
 {
@@ -113,15 +119,15 @@ AllocCPlan9Body(struct cplan9_s *hmm, int M)
   hmm->mat    = MallocOrDie ((M+1) *           sizeof(float *));
   hmm->ins    = MallocOrDie ((M+2) *           sizeof(float *));
   hmm->t[0]   = MallocOrDie ((9*(M+1))     *       sizeof(float));
-  hmm->mat[0] = MallocOrDie ((HMMERMAXABET*(M+1)) * sizeof(float));
-  hmm->ins[0] = MallocOrDie ((HMMERMAXABET*(M+1)) *     sizeof(float));
+  hmm->mat[0] = MallocOrDie ((MAXABET*(M+1)) * sizeof(float));
+  hmm->ins[0] = MallocOrDie ((MAXABET*(M+1)) *     sizeof(float));
 
   hmm->tsc     = MallocOrDie (9     *           sizeof(int *));
-  hmm->msc     = MallocOrDie (MAXCODE   *       sizeof(int *));
-  hmm->isc     = MallocOrDie (MAXCODE   *       sizeof(int *)); 
+  hmm->msc     = MallocOrDie (MAXDEGEN   *       sizeof(int *));
+  hmm->isc     = MallocOrDie (MAXDEGEN   *       sizeof(int *)); 
   hmm->tsc_mem = MallocOrDie ((9*(M+2))     *       sizeof(int));
-  hmm->msc_mem = MallocOrDie ((MAXCODE*(M+1)) * sizeof(int));
-  hmm->isc_mem = MallocOrDie ((MAXCODE*(M+2)) *     sizeof(int));
+  hmm->msc_mem = MallocOrDie ((MAXDEGEN*(M+1)) * sizeof(int));
+  hmm->isc_mem = MallocOrDie ((MAXDEGEN*(M+2)) *     sizeof(int));
 
   hmm->tsc[0] = hmm->tsc_mem;
   hmm->msc[0] = hmm->msc_mem;
@@ -131,11 +137,11 @@ AllocCPlan9Body(struct cplan9_s *hmm, int M)
    * to keep locality as much as possible, cache efficiency etc.
    */
   for (k = 1; k <= M; k++) {
-    hmm->mat[k] = hmm->mat[0] + k * HMMERMAXABET;
-    hmm->ins[k] = hmm->ins[0] + k * HMMERMAXABET;
+    hmm->mat[k] = hmm->mat[0] + k * MAXABET;
+    hmm->ins[k] = hmm->ins[0] + k * MAXABET;
     hmm->t[k]   = hmm->t[0]   + k * 9;
   }
-  for (x = 1; x < MAXCODE; x++) {
+  for (x = 1; x < MAXDEGEN; x++) {
     hmm->msc[x] = hmm->msc[0] + x * (M+1);
     hmm->isc[x] = hmm->isc[0] + x * (M+1);
   }
@@ -159,7 +165,7 @@ AllocCPlan9Body(struct cplan9_s *hmm, int M)
 
   return;
 }  
-#endif /* ALTIVEC */
+
 
 void
 FreeCPlan9(struct cplan9_s *hmm)
@@ -323,7 +329,7 @@ CPlan9SetCtime(struct cplan9_s *hmm)
  *           Convenience function.
  */
 void
-CPlan9SetNullModel(struct cplan9_s *hmm, float null[HMMERMAXABET], float p1)
+CPlan9SetNullModel(struct cplan9_s *hmm, float null[MAXABET], float p1)
 {
   int x;
   for (x = 0; x < Alphabet_size; x++)
@@ -413,9 +419,8 @@ CP9Logoddsify(struct cplan9_s *hmm)
 }
 
 
-/* Function:  CPlan9Rescale()
- * Incept:    Steve Johnson, 3 May 2004
- *            eweights code incorp: SRE, Thu May 20 10:34:03 2004 [St. Louis]
+/* Function:  CPlan9Rescale() 
+ *            EPN based on Steve Johnsons plan 7 version
  *
  * Purpose:   Scale a counts-based HMM by some factor, for
  *            adjusting counts to a new effective sequence number.
@@ -501,14 +506,6 @@ CPlan9Renormalize(struct cplan9_s *hmm)
   hmm->flags |= CPLAN9_HASPROB;	/* set the probabilities OK flag */
 }
 
-/* NO CPlan9RenormalizeExits(). 
-   I can't see a need for it yet.
-*/
-
-/* NO CPlan9 configuration functions.
- */
-
-
 /* Function: AllocCPlan9Matrix()
  * based on  AllocPlan7Matrix() <-- this function's comments below 
  * Date:     SRE, Tue Nov 19 07:14:47 2002 [St. Louis]
@@ -587,7 +584,6 @@ FreeCPlan9Matrix(struct cp9_dpmatrix_s *mx)
   free (mx);
 }
 
-#ifndef ALTIVEC
 /* Function: CreateCPlan9Matrix()
  * based on  CreatePlan7Matrix() <-- this function's comments below  
  * Purpose:  Create a dynamic programming matrix for standard Forward,
@@ -650,9 +646,7 @@ CreateCPlan9Matrix(int N, int M, int padN, int padM)
   
   return mx;
 }
-#endif /*ALTIVEC*/
 
-#ifndef ALTIVEC
 /* Function: ResizeCPlan9Matrix()
  * based on  ResizePlan7Matrix() <-- this function's comments below  
  * Purpose:  Reallocate a dynamic programming matrix, if necessary,
@@ -732,9 +726,6 @@ ResizeCPlan9Matrix(struct cp9_dpmatrix_s *mx, int N, int M,
   if (dmx != NULL) *dmx = mx->dmx;
   if (emx != NULL) *emx = mx->emx;
 }
-#endif /*ALTIVEC*/
-
-
 
 /* Function: CPlan9SWConfig()
  * EPN 05.30.06
@@ -904,73 +895,6 @@ CP9FreeTrace(struct cp9trace_s *tr)
   free(tr);
 }
 
-/* Function: sub_CPlan9SWConfig()
- * EPN 09.24.06
- * based on SRE's Plan7SWConfig() from HMMER's plan7.c
- * 
- * Purpose:  Set the alignment independent parameters of
- *           a CM Plan 9 model to hmmsw (Smith/Waterman) configuration.
- *           
- * Notes:    The desideratum for begin/end probs is that all fragments ij
- *           (starting at match i, ending at match j) are
- *           equiprobable -- there is no information in the choice of
- *           entry/exit. There are M(M+1)/2 possible choices of ij, so
- *           each must get a probability of 2/M(M+1). This prob is the
- *           product of a begin, an end, and all the not-end probs in
- *           the path between i,j. 
- *            
- *           Thus: entry/exit is asymmetric because of the left/right
- *           nature of the HMM/profile. Entry probability is distributed
- *           simply by assigning p_x = pentry / (M-1) to M-1 
- *           internal match states. However, the same approach doesn't
- *           lead to a flat distribution over exit points. Exit p's
- *           must be corrected for the probability of a previous exit
- *           from the model. Requiring a flat distribution over exit
- *           points leads to an easily solved piece of algebra, giving:
- *                      p_1 = pexit / (M-1)
- *                      p_x = p_1 / (1 - (x-1) p_1)
- *           
- * Args:     hmm    - the CM Plan 9 model w/ data-dep prob's valid
- *           pentry - probability of an internal entry somewhere;
- *                    will be evenly distributed over M-1 match states
- *           pexit  - probability of an internal exit somewhere; 
- *                    will be distributed over M-1 match states.
- *                    
- * Return:   (void)
- *           HMM probabilities are modified.
- */
-void
-sub_CPlan9SWConfig(struct cplan9_s *hmm, float pentry, float pexit, int spos, int epos)
-{
-  float basep;			/* p1 for exits: the base p */
-  int   k;			/* counter over states      */
-
-  /* No special (*x* states in Plan 7) states in CM Plan 9 */
-
-  Die("sub_CPlan9SWConfig not yet implemented\n");
-
-  /* Configure entry.
-   */
-  for (k = 1; k <= hmm->M; k++)
-    hmm->begin[k] = 2. * (float) (hmm->M-k+1) / (float) hmm->M / (float) (hmm->M+1);
-
-  hmm->begin[1] = (1. - pentry) * (1. - (hmm->t[0][CTMI] + hmm->t[0][CTMD]));
-  FSet(hmm->begin+2, hmm->M-1, (pentry * (1.- (hmm->t[0][CTMI] + hmm->t[0][CTMD]))) / (float)(hmm->M-1));
-  
-  /* Configure exit.
-   * hmm->end[hmm->M] = 1. - hmm->t[hmm->M][CTMI] 
-   *
-   * hmm->t[hmm->M][CTIM] is M_I->E transition
-   * hmm->t[hmm->M][CTDM] is M_D->E transition
-   * and we don't want to ignore these.
-   */
-
-  basep = pexit / (float) (hmm->M-1);
-  for (k = 1; k < hmm->M; k++)
-    hmm->end[k] = basep / (1. - basep * (float) (k-1));
-  CPlan9RenormalizeExits(hmm, 1);
-  hmm->flags       &= ~CPLAN9_HASBITS; /* reconfig invalidates log-odds scores */
-}
 
 /* Function: CP9_2sub_cp9()
  * EPN 09.24.06
@@ -1100,9 +1024,6 @@ void
 CP9_reconfig2sub(struct cplan9_s *hmm, int spos, int epos, int spos_nd,
 		 int epos_nd, double **orig_phi)
 {
-  int i, x;
-  int orig_pos;
-
   /* Make the necessary modifications. Since in cmalign --sub mode this
    * function will be called potentially once for each sequence, we 
    * don't want to call CP9Logoddsify(), but rather only logoddsify
@@ -1235,4 +1156,164 @@ sub_CPlan9GlobalConfig(struct cplan9_s *hmm, int spos, int epos, double **phi)
 
   CPlan9RenormalizeExits(hmm, spos);
   hmm->flags       &= ~CPLAN9_HASBITS; /* reconfig invalidates log-odds scores */
+}
+
+/************************************************************************
+ * Functions stolen from HMMER 2.4 for use with CM plan 9 HMMs.
+ * Eventually, these should go away, replaced with Easel funcs. 
+ * These first 4 were stolen from HMMER:mathsupport.c
+ * 
+ * ILogSum() (and auxiliary funcs associated with it)
+ * Score2Prob()
+ * Prob2Score()
+ * Scorify()
+ * 
+ * And 1 was stolen from HMMER:plan7.c:
+ * DegenerateSymbolScore()
+ *                           
+ ************************************************************************/
+/* Function: ILogsum()
+ * 
+ * Purpose:  Return the scaled integer log probability of
+ *           the sum of two probabilities p1 and p2, where
+ *           p1 and p2 are also given as scaled log probabilities.
+ *         
+ *           log(exp(p1)+exp(p2)) = p1 + log(1 + exp(p2-p1)) for p1 > p2
+ *           
+ *           For speed, builds a lookup table the first time it's called.
+ *           LOGSUM_TBL is set to 20000 by default, in config.h.
+ *
+ *           Because of the one-time initialization, we have to
+ *           be careful in a multithreaded implementation... hence
+ *           the use of pthread_once(), which forces us to put
+ *           the initialization routine and the lookup table outside
+ *           ILogsum(). (Thanks to Henry Gabb at Intel for pointing
+ *           out this problem.)
+ *           
+ * Args:     p1,p2 -- scaled integer log_2 probabilities to be summed
+ *                    in probability space.
+ *                    
+ * Return:   scaled integer log_2 probability of the sum.
+ */
+
+static int ilogsum_lookup[LOGSUM_TBL];
+static void 
+init_ilogsum(void)
+{
+  int i;
+  for (i = 0; i < LOGSUM_TBL; i++) 
+    ilogsum_lookup[i] = (int) (INTSCALE * 1.44269504 * 
+	   (log(1.+exp(0.69314718 * (float) -i/INTSCALE))));
+}
+int 
+ILogsum(int p1, int p2)
+{
+  int    diff;
+#ifdef HMMER_THREADS
+  static pthread_once_t firsttime = PTHREAD_ONCE_INIT;
+  pthread_once(&firsttime, init_ilogsum);
+#else
+  static int firsttime = 1;
+  if (firsttime) { init_ilogsum(); firsttime = 0; }
+#endif
+
+  diff = p1-p2;
+  if      (diff >=  LOGSUM_TBL) return p1;
+  else if (diff <= -LOGSUM_TBL) return p2;
+  else if (diff > 0)            return p1 + ilogsum_lookup[diff];
+  else                          return p2 + ilogsum_lookup[-diff];
+} 
+
+/* Function: Prob2Score()
+ * 
+ * Purpose:  Convert a probability to a scaled integer log_2 odds score. 
+ *           Round to nearest integer (i.e. note use of +0.5 and floor())
+ *           Return the score. 
+ */
+int
+Prob2Score(float p, float null)
+{
+  if   (p == 0.0) return -INFTY;
+  else            return (int) floor(0.5 + INTSCALE * sreLOG2(p/null));
+}
+
+/* Function: Score2Prob()
+ * 
+ * Purpose:  Convert an integer log_2 odds score back to a probability;
+ *           needs the null model probability, if any, to do the conversion.
+ */
+float 
+Score2Prob(int sc, float null)
+{
+  if (sc == -INFTY) return 0.;
+  else              return (null * sreEXP2((float) sc / INTSCALE));
+}
+
+
+/* Function: Scorify()
+ * 
+ * Purpose:  Convert a scaled integer log-odds score to a floating
+ *           point score for output. (could be a macro but who cares.)
+ */
+float 
+Scorify(int sc)
+{
+  return ((float) sc / INTSCALE);
+}
+
+/* Stolen from HMMER-2.4::cplan9.c()*/
+/* Function: DegenerateSymbolScore()
+ * 
+ * Purpose:  Given a sequence character x and an hmm emission probability
+ *           vector, calculate the log-odds (base 2) score of
+ *           the symbol.
+ *          
+ *           Easy if x is in the emission alphabet, but not so easy
+ *           is x is a degenerate symbol. The "correct" Bayesian
+ *           philosophy is to calculate score(X) by summing over
+ *           p(x) for all x in the degenerate symbol X to get P(X),
+ *           doing the same sum over the prior to get F(X), and
+ *           doing log_2 (P(X)/F(X)). This gives an X a zero score,
+ *           for instance.
+ *           
+ *           Though this is correct in a formal Bayesian sense --
+ *           we have no information on the sequence, so we can't
+ *           say if it's random or model, so it scores zero --
+ *           it sucks, big time, for scoring biological sequences.
+ *           Sequences with lots of X's score near zero, while
+ *           real sequences have average scores that are negative --
+ *           so the X-laden sequences appear to be lifted out
+ *           of the noise of a full histogram of a database search.
+ *           Correct or not, this is highly undesirable.
+ *           
+ *           So therefore we calculated the expected score of
+ *           the degenerate symbol by summing over all x in X:
+ *                 e_x log_2 (p(x)/f(x))
+ *           where the expectation of x, e_x, is calculated from
+ *           the random model.
+ *
+ *           Empirically, this works; it also has a wooly hand-waving
+ *           probabilistic justification that I'm happy enough about.
+ *           
+ * Args:     p      - probabilities of normal symbols
+ *           null   - null emission model
+ *           ambig  - index of the degenerate character in Alphabet[]
+ *                    
+ * Return:   the integer log odds score of x given the emission
+ *           vector and the null model, scaled up by INTSCALE.              
+ */
+int 
+DegenerateSymbolScore(float *p, float *null, int ambig)
+{
+  int x;
+  float numer = 0.;
+  float denom = 0.;
+
+  for (x = 0; x < Alphabet_size; x++) {
+    if (Degenerate[ambig][x]) {
+      numer += null[x] * sreLOG2(p[x] / null[x]);
+      denom += null[x];
+    }
+  }
+  return (int) (INTSCALE * numer / denom);
 }
