@@ -28,8 +28,12 @@ HHMI Janelia Farm Research Campus\\
 Ashburn VA 20176\\
 \url{http://selab.janelia.org/}\\
 }
-\date{\today}
+%\date{\today}
 \maketitle
+
+\begin{center}
+\textbf{Running head:} Faster RNA Similarity Searches
+\end{center}
 
 
 
@@ -45,15 +49,15 @@ of CM dynamic programming alignment algorithms has limited their
 practical application. Here we describe an acceleration method called
 \emph{query-dependent banding} (QDB), which uses the probabilistic
 query CM to precalculate regions of the dynamic programming lattice
-that have negligible probability, independently of the target database. We
-have implemented QDB in the freely available \textsc{infernal}
-software package.  QDB gives a four-fold average speedup,
-and a reduction in the average-case time complexity of CM alignment
-from $LN^{2.3}$ to $LN^{1.3}$ for a query RNA of $N$ residues and a
-target database of $L$ residues. Combined with other improvements to
-\textsc{infernal}, including informative mixture Dirichlet priors on
-model parameters, benchmarks also show increased sensitivity and
-specificity resulting from improved parameterization.
+that have negligible probability, independently of the target
+database. We have implemented QDB in the freely available
+\textsc{infernal} software package. QDB reduces the average-case time
+complexity of CM alignment from $LN^{2.4}$ to $LN^{1.3}$ for a query
+RNA of $N$ residues and a target database of $L$ residues, resulting
+in a four-fold speedup for typical RNA queries. Combined with other
+improvements to \textsc{infernal}, including informative mixture
+Dirichlet priors on model parameters, benchmarks also show increased
+sensitivity and specificity resulting from improved parameterization.
 
 \end{abstract}
 
@@ -409,7 +413,7 @@ not, $Z$ is increased and bands are recalculated until it is.
 A QDB calculation only needs to be performed once per query CM to set the
 bands. Overall, a QDB calculation requires $\Theta(MZ)$ in time and
 space; or equivalently, because both $M$ and $Z$ scale roughly
-linearly with the length $L$ in residues of the query RNA
+linearly with the length $L$ in residues of the query RNA,
 $\Theta(L^2)$. The time and space requirement is negligible compared
 to the requirements of a typical CM search.
 
