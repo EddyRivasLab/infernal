@@ -14,10 +14,10 @@ subdirectory of the distribution:
   \begin{sreitems}{tutorial.sto}
   \item[\prog{tutorial.sto}] A multiple alignment of five tRNA
        sequences. This file is a simple example of \emph{Stockholm
-       format} that \software{Infernal} uses for structurally-annotated alignments.
+       format} that \software{infernal} uses for structurally-annotated alignments.
   \item[\prog{tutorial.db}]  A tiny sequence ``database''; a 300 nt sequence
        that contains a tRNA. The file is
-       in FASTA format, which \software{Infernal} uses for unaligned sequence
+       in FASTA format, which \software{infernal} uses for unaligned sequence
        data.
   \item[\prog{tutorial.fa}] The same sequences as in \prog{tutorial.sto}, plus
        one more tRNA with an internal deletion (to demonstrate local alignment),
@@ -27,7 +27,7 @@ subdirectory of the distribution:
 \subsection{Format of a simple input RNA alignment file}
 
 Look at the alignment file \prog{tutorial.sto} in the \prog{intro/}
-subdirectory of the \software{Infernal} distribution. It is shown
+subdirectory of the \software{infernal} distribution. It is shown
 below, with a secondary structure of the first sequence shown to the
 right for reference (yeast Phe tRNA, labeled as ``tRNA1'' in the
 file):
@@ -61,13 +61,13 @@ tRNA5             UCGGUUCGAUUCCGGUUGCGUCCA
 This is a simple example of a multiple RNA sequence alignment with
 secondary structure annotation, in \emph{Stockholm format}. Stockholm
 format, the native alignment format used by \software{hmmer} and
-\software{Infernal} and the \database{Pfam} and \database{Rfam}
+\software{infernal} and the \database{Pfam} and \database{Rfam}
 databases, is documented in detail later in the guide.
 
 For now, what you need to know about the key features of the input file is:
 \begin{itemize}
 \item The alignment is in an interleaved format, like other
-common alignment file formats such as \software{ClustalW}.
+common alignment file formats such as \software{clustalw}.
 Lines consist of a name, followed by an aligned sequence;
 long alignments are split into blocks separated by blank lines.
 \item Each sequence must have a unique name. (This is important!)
@@ -97,7 +97,7 @@ Almost instantly, \prog{cmbuild} reads in the alignment, constructs a
 model, and saves that model to the new file \prog{my.cm}. It is a
 convention to use the \prog{.cm} suffix for model files; CM stands for
 ``covariance model'', another name for the profile SCFG architecture
-used by \software{Infernal} \cite{Eddy94}.
+used by \software{infernal} \cite{Eddy94}.
 
 The output \prog{cmbuild} contains information about the size of your
 input alignment (in aligned columns and \# of sequences), and about
@@ -138,7 +138,7 @@ hit 0   :    101    173    22.29 bits
 
 Hits are numbered starting from 0. This one shows hit 0, from position
 101 to 173 on the sequence named ``example'', with a score of 22.29
-bits. There are no E-value statistics yet in \software{Infernal}, so
+bits. There are no E-value statistics yet in \software{infernal}, so
 this score is all you have to go by to determine significance of a
 hit.  Larger scores are better. As a rough guide, scores greater than
 the log (base two) of the target database size are significant.  Here,
@@ -419,9 +419,12 @@ important feature of the scanning CYK algorithm is that it needs to
 know the \emph{maximum length} of an aligned target subsequence, e.g.
 the size of its scanning window on the target sequence.
 
-\emph{By default, the scanning window is set to only 200 nt. This will
-be too small for many query structures.} You can set the scanning
-window width to \verb+<n>+ with the \prog{-W <n>} option. 
+By default, the scanning window is calculated by \prog{cmbuild} and
+stored in the model. The calculation is fairly rigorous, based on the
+expected probability density over possible lengths
+\cite{NawrockiEddy07}. The result will almost certainly be fine for
+your purposes.  However, you can override it and set the scanning
+window width yourself to \verb+<n>+ with the \prog{-W <n>} option.
 
 Even if the target RNA is larger than the scanning window, there is
 some chance of finding part of it -- particularly in combination with
@@ -431,10 +434,6 @@ search with a large model by deliberately scanning a genome with
 \prog{--local} and a small window size, looking for possible hits,
 then realigning candidate regions with a more appropriate value of
 \prog{-W}. This strategy has not been systematically tested.
-
-It would be sensible for \prog{cmsearch} to set its window width to
-something appropriate to the query CM, rather than hardcoding the 200
-nt default. This will come in a future version of the software.
 
 
 \subsubsection{Getting more information}

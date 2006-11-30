@@ -1,6 +1,6 @@
 \section{Profile SCFG construction: the \texttt{cmbuild} program}
 
-\software{Infernal} builds a model of consensus RNA secondary
+\software{infernal} builds a model of consensus RNA secondary
 structure using a formalism called a \emph{covariance model} (CM),
 which is a type of \emph{profile stochastic context-free grammar}
 (profile SCFG) \cite{Eddy94,Durbin98,Eddy02b}.
@@ -9,7 +9,7 @@ What follows is a technical description of what CM is, how it
 corresponds to a known RNA secondary structure, and how it is built
 and parameterized.\footnote{Much of this text is taken from
 \cite{Eddy02b}.}  You certainly don't have to understand the technical
-details of CMs to understand \prog{cmbuild} or \software{Infernal},
+details of CMs to understand \prog{cmbuild} or \software{infernal},
 but it will probably help to at least skim this part. After that is a
 description of what the \prog{cmbuild} program does to build a CM from
 an input RNA multiple alignment, and how to control the behavior of
@@ -316,17 +316,11 @@ one and only one state in each ``split set''.}
 
 Using the guide tree and the final CM, each individual sequence in the
 input multiple alignment can be converted unambiguously to a CM parse
-tree, as shown in Figure~\ref{fig:parsetrees}. Counts for observed
-state transitions and singlet/pair emissions are then collected from
-these parse trees. The observed counts are converted to transition and
-emission probabilities by standard procedures. I calculate maximum a
-posteriori parameters, using Dirichlet priors. A current limitation of
-\prog{cmbuild} is that it uses simple, uninformative plus-one
-(Laplace) Dirichlet priors, rather than priors trained on real data.
-This means that \software{Infernal} currently only performs acceptably
-well for alignments of many sequences (100 or more), where the counts
-observed in the data are sufficient to determine all the parameters
-well, without much effect of the prior.
+tree, as shown in Figure~\ref{fig:parsetrees}. Weighted counts for
+observed state transitions and singlet/pair emissions are then
+collected from these parse trees. These counts are converted to
+transition and emission probabilities, as maximum \emph{a posteriori}
+estimates using mixture Dirichlet priors.
 
 \begin{figure}[t]
 \begin{center}
@@ -429,12 +423,12 @@ mark base pairs and \verb+.+ for single stranded columns.
 If a secondary structure annotation line is in WUSS notation and it
 contains valid pseudoknot annotation (e.g.\ additional non-nested
 stems marked with AAA,aaa or BBB,bbb, etc.), this annotation is
-removed and a warning is printed. \software{Infernal} cannot handle
+removed and a warning is printed. \software{infernal} cannot handle
 pseudoknots. Internally, these columns are treated as if they were
 marked with \verb+.+ symbols.
 
 \begin{srefaq}{How should I choose to annotate pseudoknots?} 
-\software{Infernal} can only deal with nested base pairs. If there is
+\software{infernal} can only deal with nested base pairs. If there is
 a pseudoknot, you have to make a choice of which stem to annotate as
 normal nested structure (thus including it in the model) and which
 stem to call additional ``pseudoknotted'' structure (thus ignoring it
@@ -443,7 +437,7 @@ you annotate it as \verb+AAAA.<<<<aaaa....>>>>+, or
 \verb+<<<<.AAAA>>>>....aaaa+?  From an RNA structure viewpoint, which
 stem I label as the pseudoknotted one is an arbitrary choice; but
 since one of the stems in the pseudoknot will have to be modeled as a
-single stranded region by \software{Infernal}, the choice makes a
+single stranded region by \software{infernal}, the choice makes a
 slight difference in the performance of your model. You want your
 model to capture as much information content as possible.  Thus, since
 the information content of the model is a sum of the sequence
@@ -468,13 +462,25 @@ exits with a ``failed to parse consensus structure annotation'' error.
 
 \subsubsection{Sequence weighting}
 
-By default, the sequences are weighted, instead of counting as 1
-observation each, such that similar sequences are downweighted. This
-partially compensates for phylogenetic and sampling bias in the data,
-where some sequences are oversampled relative to the rest.  Weights
-are calculated by the Gerstein, Sonnhammer, Chothia algorithm
-\cite{Gerstein94}. (The \prog{--wgsc} option forces GSC weights, but
-is redundant since that's the default.)
+By default, the input sequences are weighted in two ways to compensate
+for biased sampling (phylogenetic correlations).  Relative sequence
+weights are calculated by the Gerstein/Chothia/Sonnhammer method
+\cite{Gerstein94}.  (The \prog{--wgsc} option forces GSC weights, but
+is redundant since that's the default.)  To turn relative weighting
+off (e.g. set all weights to 1.0), use the \prog{--wnone} option.
+
+Some alignment file formats allow relative sequence weights to be
+given in the file. This includes Stockholm format, which has
+\verb+#=GS WT+ weight annotations. Normally \prog{cmbuild} ignores any
+such input weights.  The \prog{--wgiven} option tells \prog{cmbuild}
+to use them.  This lets you set the weights with any external
+procedure you like; for example, the \prog{weight} utility program in
+\software{squid} implements some common weighting algorithms,
+including the fast $O(N)$ Henikoff position-based weights
+\cite{Henikoff94b}.
+
+If for some reason you put more than one relative weighting option on
+the command line, the last one you give is used.
 
 \begin{srefaq}{Why is cmbuild taking so much time?} The GSC weighting algorithm
 scales as $O(N^2)$ with the number of sequences $N$. Weighting may
@@ -484,20 +490,17 @@ turn weighting off, or pre-calculate the weights by a faster
 algorithm.
 \end{srefaq}
 
-To turn weighting off (e.g. set all weights to 1.0), use the
-\prog{--wnone} option.
+Absolute weights (the ``effective sequence number'') is calculate by
+``entropy weighting'' \cite{Karplus98}. This sets the balance between
+the prior and the data, and affects the information content of the
+model. Entropy weighting reduces the effective sequence number (the
+total sum of the weights) and increases the entropy (degrading the
+information content) of the model until a threshold is reached. The
+default entropy is 1.46 bits per position (roughing 0.54 bits of
+information, relative to uniform base composition). This threshold can
+be changed with the \prog{--etarget <x>} option. Entropy weighting may
+be turned off entirely with the \prog{--effnone} option.
 
-Some alignment file formats allow sequence weights to be given in the
-file. This includes Stockholm format, which has \verb+#=GS WT+ weight
-annotations. Normally \prog{cmbuild} ignores any such input weights.
-The \prog{--wgiven} option tells \prog{cmbuild} to use them.  This
-lets you set the weights with any external procedure you like; for
-example, the \prog{weight} utility program in \software{squid}
-implements some common weighting algorithms, including the fast $O(N)$
-Henikoff position-based weights \cite{Henikoff94b}. 
-
-If for some reason you put more than one weighting option on the
-command line, the last one you give is used.
 
 \subsubsection{Architecture construction}
 
@@ -534,18 +537,10 @@ program exits with an error.
 
 Weighted observed emission and transition counts are then collected
 from the alignment data. These count vectors $c$ are then converted to
-estimated probabilities $p$ using a simple Dirichlet prior:
- 
-\[
-\hat{p}_x = \frac{c_x + \alpha_x}{\sum_y c_y + \alpha_y}
-\]
-
-where the Dirichlet parameters $\alpha$ are currently all hardcoded to
-1.0 (e.g. an uninformative plus-one, or Laplace, prior). (This is
-actually a pretty bad prior.)
-
-There are currently no available options at this stage, but this will
-change in the future when better priors are made.
+estimated probabilities $p$ using mixture Dirichlet priors. The
+default mixture priors are described in \cite{NawrockiEddy07}. You can
+provide your own prior as a file, using the \prog{--priorfile <f>}
+option.
 
 \subsubsection{Naming the model}
 

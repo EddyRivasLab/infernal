@@ -3,11 +3,11 @@
 \subsection{Quick installation instructions}
 
 Download the source tarball (\prog{infernal.tar.gz}) from 
-\htmladdnormallink{ftp.genetics.wustl.edu/pub/eddy/software/infernal/}
-                  {ftp://ftp.genetics.wustl.edu/pub/eddy/software/infernal/}
-or 
-\htmladdnormallink{infernal.wustl.edu/}
-                  {http://infernal.wustl.edu/}.
+\htmladdnormallink{ftp://selab.janelia.org/pub/software/infernal/}
+                  {ftp://selab.janelia.org/pub/software/infernal/}
+or \\
+\htmladdnormallink{http://infernal.janelia.org}
+                  {http://infernal.janelia.org}
 
 Unpack the software:
 
@@ -30,7 +30,8 @@ pass:
 \user{make check}
 
 The programs are now in the \prog{src/} subdirectory. The user's guide
-(this document) is in the \prog{documentation/userguide}
+(this document) is in the \\ 
+\prog{documentation/userguide}
 subdirectory. The man pages are in the \prog{documentation/manpages}
 subdirectory. You can manually move or copy all of these to
 appropriate locations if you want. You will want the programs to be in
@@ -159,21 +160,23 @@ LFS is enabled with the \prog{--enable-lfs} option:
 
 \subsubsection{installing rigorous filters}
 
-\software{Infernal} includes programs by Zasha Weinber that implement
+\software{Infernal} includes programs by Zasha Weinberg that implement
 rigorous filtering.  This software requires a C++ compiler, and also
 relies on an external library, \software{CFSQP}, that is not included
 in this distribution, but can be obtained by request from
-\link{http://www.aemdesign.com/}
+\htmladdnormallink{http://www.aemdesign.com/}{http://www.aemdesign.com/}.
 To build the executables, include these two options to configure:
 
 \user{./configure --with-rigfilters --with-cfsqp=/path/to/cfsqp}
 
 \subsection{Example configuration}
 
-The Intel GNU/Linux version installed in St. Louis is configured as
+The Intel GNU/Linux version installed at Janelia Farm is configured as
 follows:
 
-\user{env CFLAGS="-O3" ./configure --enable-lfs --prefix=/usr/seshare/ --exec-prefix=/usr/seshare/`uname`}
+\user{env CFLAGS="-O3" ./configure --enable-lfs --prefix=/usr/local/infernal-xx}
+
+
 
 
 
