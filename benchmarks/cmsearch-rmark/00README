@@ -248,20 +248,20 @@ $ perl rmark_process_glbf.pl B infernal.rmm rmk_files/inf_qdb-71.rmk
 
 - 3 new files will be created in the current working dir:
 $ ls -ltr | tail -3
--rw-r--r--   1 nawrockie eddy   3629 Nov 10 11:30 rmark-test_out.fam
--rw-r--r--   1 nawrockie eddy   3218 Nov 10 11:30 rmark-test_out.all
--rw-r--r--   1 nawrockie eddy    653 Nov 10 11:30 rmark-test_out.roc
+-rw-r--r--   1 nawrockie eddy    3632 Dec  1 12:06 rmark-test_out.fam
+-rw-r--r--   1 nawrockie eddy    3221 Dec  1 12:06 rmark-test_out.all
+-rw-r--r--   1 nawrockie eddy     653 Dec  1 12:06 rmark-test_out.roc
 
-- rmark-test.fam has a ranked list of hits sorted by family
+- rmark-test_out.fam has a ranked list of hits sorted by family
   and MER statistics for each family as well as across families 
   (the "summary MER" reported in Table 6 of the banded-cyk 
   manuscript). Positives are indicated with a '+' and negatives 
   with a '-'.
 
-- rmark-test.all has a single master list of both families mixed
+- rmark-test_out.all has a single master list of both families mixed
   together, with summary MER statistics.
 
-- rmark-test.roc has points for a ROC curve in the format:
+- rmark-test_out.roc has points for a ROC curve in the format:
   (<x>, <y>) derived from the master list in rmark-test.all.
 
 =======================================================================
@@ -358,8 +358,8 @@ Options:
   rm merged_inf_qdb-71*
   cat *.glbf > inf_qdb-71_all_glbf.concat
   cat *.time > inf_qdb-71_all_time.concat
-  perl ~/src/scripts/rmark/rmark_times.pl *.time > merged_inf_qdb-71.time
-  perl rmark_process_glbf.pl infernal.rmm rmk_files/inf_qdb-71.rmk
+  perl rmark_times.pl *.time > merged_inf_qdb-71.time
+  perl rmark_process_glbf.pl B infernal.rmm rmk_files/inf_qdb-71.rmk
   rmark-1 inf_qdb-71_all_glbf.concat merged_inf_qdb-71_hit
   cp merged_*fam ../
   cp merged_*all ../
