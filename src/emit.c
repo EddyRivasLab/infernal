@@ -190,7 +190,8 @@ EmitParsetree(CM_t *cm, Parsetree_t **ret_tr, char **ret_seq, char **ret_dsq, in
 	      }
 
 	      if (cm->sttype[y] == E_st) {
-		InsertTraceNode(tr, tpos, TRACE_LEFT_CHILD, -1, -1, y);
+		/*InsertTraceNode(tr, tpos, TRACE_LEFT_CHILD, -1, -1, y);*/
+		InsertTraceNode(tr, tpos, TRACE_LEFT_CHILD, N+1, N, y);
 	      } else {
 		PushNstack(pda, rchar);		/* does it emit right? */
 		PushNstack(pda, lchar);		/* does it emit left? */
