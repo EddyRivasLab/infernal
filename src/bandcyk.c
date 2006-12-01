@@ -884,10 +884,10 @@ PrintDPCellsSaved(CM_t *cm, int *min, int *max, int W)
  *           ret_hitsc - RETURN: scores of hits, 0..nhits-1            
  *           min_thresh- minimum score to report (EPN via Alex Coventry 03.11.06)
  *
- * Returns:  
+ * Returns:  score of best overall hit
  *           hiti, hitj, hitsc are allocated here; caller free's w/ free().
  */
-void
+float
 CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
 	      int *ret_nhits, int **ret_hitr, int **ret_hiti, int **ret_hitj, float **ret_hitsc, float min_thresh)
 {
@@ -918,6 +918,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
   int       gamma_j;            /* j index in the gamma matrix, which is indexed 0..j0-i0+1, 
 				 * while j runs from i0..j0 */
   int       gamma_i;            /* i index in the gamma* data structures */
+  float     best_score;         /* Best overall score to return */
 
   /* EPN 08.11.05 Next line prevents wasteful computations when imposing
    * bands before the main recursion.  There is no need to worry about
@@ -926,6 +927,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
    * of time if W is much larger than necessary, and the search sequences 
    * are short (as in a possible benchmark).
    */
+  best_score = IMPOSSIBLE;
   L = j0-i0+1;
   if (W > L) W = L; 
 
@@ -1159,6 +1161,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 	      alpha[0][cur][d] = sc;
 
 	  if (alpha[0][cur][d] < IMPROBABLE) alpha[0][cur][d] = IMPOSSIBLE;
+	  if (alpha[0][cur][d] > best_score) best_score = alpha[0][cur][d];
 	}
       
       /* EPN 11.09.05 
@@ -1182,9 +1185,10 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 		alpha[0][cur][d] = sc;
 		bestr[d]         = y;
 	      }
+	      if (alpha[0][cur][d] < IMPROBABLE) alpha[0][cur][d] = IMPOSSIBLE;
+	      if (alpha[0][cur][d] > best_score) best_score = alpha[0][cur][d];
 	    }
 	}
-	if (alpha[0][cur][d] < IMPROBABLE) alpha[0][cur][d] = IMPOSSIBLE;
       }
       
       /* The little semi-Markov model that deals with multihit parsing:
@@ -1271,7 +1275,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
   *ret_hiti  = hiti;
   *ret_hitj  = hitj;
   *ret_hitsc = hitsc;
-  return;
+  return best_score;
 }
 
 

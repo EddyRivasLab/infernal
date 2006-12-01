@@ -54,7 +54,7 @@
  *           ret_hitsc - RETURN: scores of hits, 0..nhits-1            
  *           min_thresh- minimum score to report (EPN via Alex Coventry 03.11.06)
  *
- * Returns:  
+ * Returns:  best_score, score of maximally scoring end position j 
  *           hiti, hitj, hitsc are allocated here; caller free's w/ free().
  */
 float
@@ -83,7 +83,9 @@ CP9ForwardScan(char *dsq, int i0, int j0, int W, struct cplan9_s *hmm,
   int      L;                   /* j0-i0+1: subsequence length */
   int      jp;		        /* j': relative position in the subsequence  */
   int      ip;		        /* i': relative position in the subsequence  */
+  float     best_score;         /* Best overall score to return */
 
+  best_score = IMPOSSIBLE;
   L = j0-i0+1;
   if (W > L) W = L; 
 
@@ -188,10 +190,8 @@ CP9ForwardScan(char *dsq, int i0, int j0, int W, struct cplan9_s *hmm,
       emx[0][jp] = ILogsum(emx[0][jp], imx[jp][hmm->M] + hmm->tsc[CTIM][hmm->M]); 
       /* transition from D_M -> end */
       sc = Scorify(emx[0][jp]);
-      if(sc > 0)
-	{
-	  //printf("%d %10.2f\n", j, sc);
-	}
+      if(sc > best_score)
+	best_score = sc;
 
       /* The little semi-Markov model that deals with multihit parsing:
        */
@@ -261,7 +261,7 @@ CP9ForwardScan(char *dsq, int i0, int j0, int W, struct cplan9_s *hmm,
   *ret_hitsc = hitsc;
   if (ret_mx != NULL) *ret_mx = mx;
   else                FreeCPlan9Matrix(mx);
-  return sc;		/* the total Forward score. */
+  return best_score;
 }
   
 /* Function: CP9ForwardScanRequires()  EPN 04.21.06

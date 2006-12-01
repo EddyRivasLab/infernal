@@ -14,16 +14,27 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
 #include "squid.h"		/* general sequence analysis library    */
+#include "easel.h"              /* better general sequence analysis library */
 #include "msa.h"                /* squid's multiple alignment i/o       */
 #include "stopwatch.h"          /* squid's process tcp9b->iming module        */
 
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
 #include "hmmband.h"
+#include "stats.h"
+#include "esl_gumbel.h"
+
+/* From rsearch-1.1 various defaults defined here */
+#define DEFAULT_NUM_SAMPLES 1000
+#define DEFAULT_CUTOFF 0.0
+#define DEFAULT_CUTOFF_TYPE SCORE_CUTOFF
 
 static int QDBFileRead(FILE *fp, CM_t *cm, int **ret_dmin, int **ret_dmax);
+static int get_gc_comp(char *seq, int start, int stop);
+static int set_partitions(int **ret_partitions, int *num_partitions, char *list);
 
 static char banner[] = "cmsearch - search a sequence database with an RNA covariance model";
 
@@ -47,6 +58,8 @@ static char experts[] = "\
    --inside      : scan with Inside, not CYK (caution much slower(!))\n\
    --null2       : turn on the post hoc second null model [df:OFF]\n\
    --learninserts: do not set insert emission scores to 0\n\
+   --E <n>       : use cutoff E-value of n (default ignored; not-calc'ed)\n\
+   --partition <n>[,<n>]... : Parition points for different GC content EVDs\n\
 \n\
   * Filtering options using a CM plan 9 HMM (*in development*):\n\
    --hmmfb        : use Forward to get end points & Backward to get start points\n\
@@ -91,7 +104,9 @@ static struct opt_s OPTIONS[] = {
   { "--hbandp",     FALSE, sqdARG_FLOAT},
   { "--banddump",   FALSE, sqdARG_NONE},
   { "--sums",       FALSE, sqdARG_NONE},
-  { "--scan2hbands", FALSE, sqdARG_NONE},
+  { "--scan2hbands",FALSE, sqdARG_NONE},
+  { "--E",          FALSE, sqdARG_FLOAT},
+  { "--partition",  FALSE, sqdARG_STRING}
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -170,7 +185,6 @@ main(int argc, char **argv)
 				 * we expect dmax[0] to be, for truncation error
 				 * handling.
 				 */
-
   float thresh;                 /* bit score threshold, report scores > thresh */
 
   /* CM Plan 9 HMM data structures */
@@ -219,6 +233,27 @@ main(int argc, char **argv)
   int   do_null2;		/* TRUE to adjust scores with null model #2 */
   int   do_zero_inserts;        /* TRUE to zero insert emission scores */
 
+  /* E-value statistics (ported from rsearch-1.1) */
+  int sample_length;            /* length of samples to use for calc'ing stats (2*W) */
+  int num_samples = DEFAULT_NUM_SAMPLES;
+  int do_complement = 0;        /* Shall I do reverse complement? */
+  float e_cutoff;
+  float e_value;                
+  int cutoff_type;
+  int do_stats;                 /* TRUE to calculate E-value statistics */
+  double lambda[GC_SEGMENTS];
+  double K[GC_SEGMENTS];
+  double mu[GC_SEGMENTS];        /* Set from lambda, K, N */
+  int seed;                     /* Random seed */
+
+  long N;                        /* Effective number of sequences for this search */
+  int defined_N = FALSE;
+
+  int *partitions;              /* What partition each percentage point goes to */
+  int num_partitions = 1;
+  int gc_count[GC_SEGMENTS];
+  int gc_comp; 
+
   /*********************************************** 
    * Parse command line
    ***********************************************/
@@ -251,6 +286,10 @@ main(int argc, char **argv)
   hmm_pad           = 0;
   do_null2          = FALSE;
   do_zero_inserts   = TRUE;
+  sample_length     = 0;
+  e_cutoff          = DEFAULT_CUTOFF;
+  cutoff_type       = DEFAULT_CUTOFF_TYPE;
+  do_stats          = FALSE;
   debug_level = 0;
   
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
@@ -284,6 +323,16 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--banddump")  == 0) do_bdump     = TRUE;
     else if  (strcmp(optname, "--sums")      == 0) use_sums     = TRUE;
     else if  (strcmp(optname, "--scan2hbands")== 0) do_scan2hbands= TRUE;
+    else if  (strcmp(optname,  "--E")        == 0) {
+      e_cutoff = atof(optarg);
+      cutoff_type = E_CUTOFF;
+      do_stats = TRUE;
+    }
+    else if (strcmp (optname, "--partition") == 0) {
+      if (set_partitions (&partitions, &num_partitions, optarg)) {
+	Die("Specify partitions separated by commas, no spaces, range 0-100, integers only\n");
+      }
+    }
     else if  (strcmp(optname, "--informat")  == 0) {
       format = String2SeqfileFormat(optarg);
       if (format == SQFILE_UNKNOWN) 
@@ -427,6 +476,118 @@ main(int argc, char **argv)
       StopwatchDisplay(stdout, "\nCPU time (band calc): ", watch);
     }
 
+  if(do_stats)
+    {
+      /*******************************************************************************
+       * Make the histogram (copied and minimally changed from rsearch-1.1/rsearch.c
+       *******************************************************************************/
+      StopwatchZero(watch);
+      StopwatchStart(watch);
+      
+      /* Seed the random number generator with the time */
+      /* This is the seed used in the HMMER code */
+      /*seed = (time ((time_t *) NULL));    */
+      seed = 33;
+      
+      /* Initialize partition array, only if we haven't already in set_partitions */
+      if(num_partitions == 1)
+	{
+	  partitions = MallocOrDie(sizeof(int) * GC_SEGMENTS+1);
+	  for (i = 0; i < GC_SEGMENTS; i++) 
+	    partitions[i] = 0;
+	}
+
+#ifdef USE_MPI
+      if (mpi_my_rank == mpi_master_rank) {
+#endif
+	get_dbinfo (sqfp, &N, gc_count);
+	if (do_complement) N*=2;
+
+	if ((sqfp = SeqfileOpen(seqfile, format, NULL)) == NULL)
+	  Die("Failed to open sequence database file %s\n%s\n", seqfile, usage);
+
+#ifdef USE_MPI
+      }
+#endif
+      
+      /* Set sample_length to 2*W if not yet set */
+      if (sample_length == 0) sample_length = 2 * windowlen;
+      
+      if (num_samples > 0) {
+#ifdef USE_MPI
+	/* UNTOUCHED FROM RSEARCH: need to add ability to do banded */
+	if (mpi_num_procs > 1)
+	  parallel_make_histogram(gc_count, partitions, num_partitions,
+				  cm, windowlen, 
+				  num_samples, sample_length, lambda, K, 
+				  mpi_my_rank, mpi_num_procs, mpi_master_rank);
+	else 
+#endif
+	  if(do_hmmonly)
+	    serial_make_histogram (gc_count, partitions, num_partitions,
+				   cm, windowlen, 
+				   num_samples, sample_length, lambda, K, 
+				   dmin, dmax, cp9_hmm);
+	  else if(do_qdb)
+	    serial_make_histogram (gc_count, partitions, num_partitions,
+				   cm, windowlen, 
+				   num_samples, sample_length, lambda, K, 
+				   dmin, dmax, NULL);
+	  else
+	    serial_make_histogram (gc_count, partitions, num_partitions,
+				   cm, windowlen, 
+				   num_samples, sample_length, lambda, K, 
+				   NULL, NULL, NULL); /* don't use QDB to search */
+      } 
+      
+#ifdef USE_MPI
+      /*if (mpi_my_rank == mpi_master_rank) {*/
+#endif
+	
+	/* Set mu from K, lambda, N */
+	if (num_samples > 0)
+	  for (i=0; i<GC_SEGMENTS; i++) {
+	    mu[i] = log(K[i]*N)/lambda[i];
+	  }
+	
+	if (cutoff_type == E_CUTOFF) {
+	  if (num_samples < 1) 
+	    Die ("Cannot use -E option without defined lambda and K\n");
+	}
+	
+	if (num_samples > 0) {
+	  printf ("Statistics calculated with simulation of %d samples of length %d\n", num_samples, sample_length);
+	  if (num_partitions == 1) {
+	    printf ("No partition points\n");
+	  } else {
+	    printf ("Partition points are: ");
+	    for (i=0; i<=GC_SEGMENTS; i++) {
+	      if (partitions[i] != partitions[i-1]) {
+		printf ("%d ", i);
+	      }
+	    }
+	  }
+	  for (i=0; i<GC_SEGMENTS; i++) {
+	    /*printf ("GC = %d\tlambda = %.4f\tmu = %.4f\n", i, lambda[i], mu[i]);*/
+	  }
+	  printf ("N = %ld\n", N);
+	  if (cutoff_type == SCORE_CUTOFF) {
+	    printf ("Using score cutoff of %.2f\n", e_cutoff);
+	  } else {
+	    printf ("Using E cutoff of %.2f\n", e_cutoff);
+	  }
+	} else {
+	  printf ("lambda and K undefined -- no statistics\n");
+	  printf ("Using score cutoff of %.2f\n", thresh);
+	}
+	fflush(stdout);
+	StopwatchStop(watch);
+	StopwatchDisplay(stdout, "\nCPU time (histogram): ", watch);
+    }
+  /*******************************************************************************
+   * End of making the histogram.
+   *******************************************************************************/
+
   /* start stopwatch for timing the search */
   StopwatchZero(watch);
   StopwatchStart(watch);
@@ -528,15 +689,15 @@ main(int argc, char **argv)
 				&tmp_nhits, &tmp_hitr, &tmp_hiti, &tmp_hitj, &tmp_hitsc, thresh);
 		      for (x = 0; x < tmp_nhits; x++)
 			{
+			  /* copy the new hit info the 'master' data structures */
+			  /* Inefficient and ugly but other strategies were confounded by mysterious
+			   * memory errors.
+			   */
 			  hitr[nhits] = tmp_hitr[x];
 			  hiti[nhits] = tmp_hiti[x];
 			  hitj[nhits] = tmp_hitj[x];
 			  hitsc[nhits] = tmp_hitsc[x];
 			  nhits++;
-			  /* copy the new hit info the 'master' data structures */
-			  /* Inefficient and ugly but other strategies were confounded by mysterious
-			   * memory errors.
-			   */
 			  if (nhits == alloc_nhits) {
 			    hitr  = ReallocOrDie(hitr,  sizeof(int)   * (alloc_nhits + 10));
 			    hitj  = ReallocOrDie(hitj,  sizeof(int)   * (alloc_nhits + 10));
@@ -721,11 +882,33 @@ main(int argc, char **argv)
 	{
 	  if(!do_null2)
 	    {
-	      printf("hit %-4d: %6d %6d %8.2f bits\n", ip, 
-		     reversed ? sqinfo.len - hiti[i] + 1 : hiti[i], 
-		     reversed ? sqinfo.len - hitj[i] + 1 : hitj[i],
-		     hitsc[i]);
-	      ip++;
+	      if (do_stats) {
+		gc_comp = get_gc_comp (seq, hiti[i], hitj[i]);
+		e_value = RJK_ExtremeValueE(hitsc[i], mu[gc_comp], 
+					    lambda[gc_comp]);
+		printf("\tgc: %d sc: %.2f E: %g P: %g\n", gc_comp, hitsc[i], e_value,
+		       esl_gumbel_surv((double) hitsc[i], mu[gc_comp], 
+				       lambda[gc_comp]));
+
+		if(e_value <= e_cutoff)
+		  {
+		    printf("hit %-4d: %6d %6d %8.2f bits   E = %8.3g, P = %8.3g\n", ip, 
+			   reversed ? sqinfo.len - hiti[i] + 1 : hiti[i], 
+			   reversed ? sqinfo.len - hitj[i] + 1 : hitj[i],
+			   hitsc[i], 
+			   e_value,
+			   esl_gumbel_surv((double) hitsc[i], mu[gc_comp], 
+					   lambda[gc_comp]));
+		    ip++;
+		  }
+	      }
+	      else {
+		printf("hit %-4d: %6d %6d %8.2f bits\n", ip, 
+		       reversed ? sqinfo.len - hiti[i] + 1 : hiti[i], 
+		       reversed ? sqinfo.len - hitj[i] + 1 : hitj[i],
+		       hitsc[i]);
+		ip++;
+	      }
 	    }
 	  if (do_null2 || do_align)
 	    {
@@ -990,4 +1173,77 @@ QDBFileRead(FILE *fp, CM_t *cm, int **ret_dmin, int **ret_dmax)
   if (cm != NULL)  FreeCM(cm);
   if (buf != NULL) free(buf);
   return 0;
+}
+
+/* Function: get_gc_comp
+ * Date:     RJK, Mon Oct 7, 2002 [St. Louis]
+ * Purpose:  Given a sequence and start and stop coordinates, returns 
+ *           integer GC composition of the region 
+ */
+int get_gc_comp(char *seq, int start, int stop) {
+  int i;
+  int gc_count;
+  char c;
+
+  if (start > stop) {
+    i = start;
+    start = stop;
+    stop = i;
+  }
+
+  gc_count = 0;
+  for (i=start; i<=stop; i++) {
+    c = resolve_degenerate(seq[i]);
+    if (c=='G' || c == 'C')
+      gc_count++;
+  }
+  return ((int)(100.*gc_count/(stop-start+1)));
+}
+
+/* Function: set_partitions
+ * Date:     RJK, Mon, Oct 7, 2002 [St. Louis]
+ * Purpose:  Given a partion array (int [100]) which contains what parttion
+ *           number each %GC is in, sets a new partition by dividing the one
+ *           each partition point is in.
+ */
+int set_partitions (int **ret_partitions, int *num_partitions, char *list) {
+  int cur_point = 0;
+  int old_partition;
+  int *partitions;   /* What partition each percentage point goes to */
+
+  partitions = MallocOrDie(sizeof(int) * GC_SEGMENTS+1);
+
+  while (*list != '\0') {
+    if (isdigit(*list)) {
+      cur_point = (cur_point * 10) + (*list - '0');
+    } else if (*list == ',') {
+      if (cur_point < 0 || cur_point >= GC_SEGMENTS) 
+	return(1);
+      if (partitions[cur_point] == partitions[cur_point-1]) {
+	old_partition = partitions[cur_point];
+	while (partitions[cur_point] == old_partition) {
+	  partitions[cur_point] = *num_partitions;
+	  cur_point++;
+	}
+      }
+      (*num_partitions)++;
+      cur_point = 0;
+    } else {
+      return(1);
+    }
+    list++;
+  }
+  if (cur_point < 0 || cur_point >= GC_SEGMENTS)
+    return(1);
+
+  if (partitions[cur_point] == partitions[cur_point-1]) {
+    old_partition = partitions[cur_point];
+    while (partitions[cur_point] == old_partition) {
+      partitions[cur_point] = *num_partitions;
+      cur_point++;
+    }
+  }
+  *ret_partitions = partitions;
+  (*num_partitions)++;
+  return(0);
 }

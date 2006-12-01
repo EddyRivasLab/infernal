@@ -12,10 +12,10 @@
 #
 # Step 1: run the benchmark, outputting rmark-test_out.glbf 
 #         and rmark-test_out.time
-perl rmark.pl infernal.rmm rmk_files/inf_qdb-71.rmk rmark-test/ rmark-test/rmark-test.idx rmark-test.fa rmark-test_out
+perl rmark.pl -B 8 infernal.rmm rmk_files/inf_qdb-71.rmk rmark-test/ rmark-test/rmark-test.idx rmark-test.fa rmark-test_out
 #
 # Step 2: create rmark-test_out.fam, rmark-test_out.all, and 
 #         rmark-test_out.roc from the rmark-test_out.glbf file.
 #         
-perl rmark_process_glbf.pl infernal.rmm rmk_files/inf_qdb-71.rmk rmark-test/ rmark-test/rmark-test.idx rmark-test rmark-test_out.glbf rmark-test_out
+perl rmark_process_glbf.pl B infernal.rmm rmk_files/inf_qdb-71.rmk rmark-test/ rmark-test/rmark-test.idx rmark-test rmark-test_out.glbf rmark-test_out
 

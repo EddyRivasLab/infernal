@@ -32,7 +32,7 @@ extern void     BandBounds(double **gamma, int M, int W, double p,
 extern void     PrintBandGraph(FILE *fp, double **gamma, int *min, int *max, int v, int W);
 
 extern void     PrintDPCellsSaved(CM_t *cm, int *min, int *max, int W);
-extern void     CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
+extern float    CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
 			      int *ret_nhits, int **ret_hitr, 
 			      int **ret_hiti, int **ret_hitj, float **ret_hitsc,
 			      float min_thresh);
@@ -152,7 +152,7 @@ extern MSA *Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wg
 
 /* from scancyk.c
  */
-extern void  CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
+extern float CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
 		     int *ret_nhits, int **ret_hitr, 
 		     int **ret_hiti, int **ret_hitj, float **ret_hitsc,
 		     float min_thresh);

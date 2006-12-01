@@ -32,6 +32,8 @@ package infernal;
 #    @hitsqfrom    - sequence from coords (start positions)
 #    @hitsqto      - sequence to coords (end positions)
 #    @hitbitscore  - hit bit scores
+#    @hitevalue    - hit E-values (only available if --E option used)
+#    @hitpvalue    - hit P-values (only available if --E option used)
 
 # Data not made available that a future cmsearch might output:
 #
@@ -46,7 +48,6 @@ package infernal;
 #    @hitcmto     - array of cm-to coords
 #    @hitcmfrom   - array of cm-from coords
 #    @hitcmbounds - e.g. "[]" or ".." for CM
-#    @hitevalue    - hit E-values 
 #
 #    $aligndata    - the raw alignment text (currently not parsed further)
 #
@@ -76,7 +77,8 @@ sub ParseINFERNAL {
     #@hithmmto    = ();
     #@hithmmbounds= ();
     @hitbitscore    = ();
-    #@hitevalue   = ();
+    @hitevalue   = ();
+    @hitpvalue   = ();
     #$aligndata   = "";
 
     @lines = split(/^/, $output);
@@ -84,26 +86,34 @@ sub ParseINFERNAL {
     $ntarget=0;
     foreach $line (@lines) 
     {
-	if ($line =~ s/^sequence:\s+//) {chomp $line; $targname[$ntarget]=$line; $ntarget++}
-	if ($line =~ s/^hit\s//) 
+	chomp $line;
+	if ($line =~ /^sequence:\s+(.+)/)
 	{
-	    chomp $line; 
-	    $line =~ s/\s+bits$//;
-	    ($hitnum[$nhit], 
-	     $colon_trash, 
-	     $hitsqfrom[$nhit], 
-	     $hitsqto[$nhit], 
-	     $hitbitscore[$nhit]) = split ' ', $line;
+	    $targname[$ntarget] = $1;
+	    $ntarget++;
+	}
+	# if statistics (E and P values) not reported:
+	elsif ($line =~ /^hit\s+(\d+)\s+\:\s+(\d+)\s+(\d+)\s+(\S+)\s+bits\S*$/)
+	{
+	    $hitnum[$nhit]      = $1;
+	    $hitsqfrom[$nhit]   = $2; 
+	    $hitsqto[$nhit]     = $3;
+	    $hitbitscore[$nhit] = $4;
 	    $targname_byhit[$nhit]=$targname[$ntarget-1];
 	    $nhit++;
 	}
-	#could choose to try and read the alignment data and parse it
-	#but not now
-	#if ($inali) { $aligndata .= $line; }
+        elsif ($line =~ /^hit\s+(\d+)\s+\:\s+(\d+)\s+(\d+)\s+(\S+)\s+bits\s+E\s+\=\s+(\S+)\,\s+P\s+\=\s+(\S+)\s*$/)
+	{
+	    $hitnum[$nhit]      = $1;
+	    $hitsqfrom[$nhit]   = $2; 
+	    $hitsqto[$nhit]     = $3;
+	    $hitbitscore[$nhit] = $4;
+	    $hitevalue[$nhit]   = $5;
+	    $hitpvalue[$nhit]   = $6;
+	    $targname_byhit[$nhit]=$targname[$ntarget-1];
+	    $nhit++;
+	}
+	1;
     }
-    1;
 }
-
-
-
 1;

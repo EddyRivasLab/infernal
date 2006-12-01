@@ -15,8 +15,8 @@
 #                <output root, for naming output files>
 #
 # Options:
-#        -T <x> : set minimum bit score to keep as <x> [default: 8]
-#
+#        -E <x> : use E-values [default], set max E-val to keep as <x> [default: 2]
+#        -B <x> : use bit scores, set min score to keep as <x>
 #
 # Example:  perl rmark.pl infernal.rmm inf-71.rmk rmark-test/ rmark-test.idx
 #                         rmark-test.fa rmark-test_out
@@ -35,14 +35,19 @@
 #      <seq directory>/fam.raw  : FASTA file of unaligned (raw) training seqs
 #
 use Getopt::Std;
-$bit_thresh    = 8;
+$e_cutoff = 2;
+$b_cutoff = 0.0;
+$use_evalues   = 1;
+$use_bitscores = 0;
 
-getopts('T:');
-if (defined $opt_T) { $bit_thresh = $opt_T; }
+getopts('E:B:');
+if (defined $opt_E) { $e_cutoff = $opt_E; }
+if (defined $opt_B) { $b_cutoff = $opt_B; $use_evalues = 0; $use_bitscores = 1; }
 
 $usage = "Usage: perl rmark.pl\n\t<.rmm rmark module>\n\t<.rmk rmark config file>\n\t<seq directory with *.ali, *.test, *.idx, *.raw files>\n\t<index file with family names; provide path>\n\t<genome file; must be in seq dir>\n\t<output root, for naming output files>\n";
 $options_usage  = "\nOptions:\n\t";
-$options_usage .= "-T <x> : set minimum bit score to keep as <x> [default: 8]\n\n";
+$options_usage .= "-E <x> : use E-values [default], set max E-val to keep as <x> [default: 2]\n\t";
+$options_usage .= "-B <x> : use bit scores, set min score to keep as <x>\n\n";
 
 if(@ARGV != 6)
 {
@@ -72,7 +77,14 @@ while (<INDEX>) {
 
 	# Run the search module
 	($bsec, $bmin, $bhour, $bdate, $bmonth, $byear, $bweekday, $byearday, $bisdst) = localtime;
-	$glbfoutput = `perl $rmm $rmk $dir/$fam.idx $dir/$fam.ali $genome_file $bit_thresh`;
+	if($use_evalues)
+	{
+	    $glbfoutput = `perl $rmm -E $e_cutoff $rmk $dir/$fam.idx $dir/$fam.ali $genome_file`;
+	}
+	elsif($use_bitscores)
+	{
+	    $glbfoutput = `perl $rmm -B $b_cutoff $rmk $dir/$fam.idx $dir/$fam.ali $genome_file`;
+	}    
 	($esec, $emin, $ehour, $edate, $emonth, $eyear, $eweekday, $eyearday, $eisdst) = localtime;
 	# We calculate run time as the elapsed time with
 	# resolution only at the seconds level. This isn't robust if the month changes during

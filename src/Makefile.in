@@ -60,14 +60,16 @@ OBJS  = alphabet.o\
 	cm_postprob.o\
 	scaninside.o\
 	cm_masks.o\
-	sub_cm.o
+	sub_cm.o\
+	stats.o
 
 HDRS  = funcs.h\
 	prior.h\
 	structs.h\
 	hmmband.h\
 	cplan9.h\
-	cm_postprob.h
+	cm_postprob.h\
+	stats.h
 
 .c.o: 
 	$(CC) $(CFLAGS) $(DEFS) $(MYINCDIR) -c $<

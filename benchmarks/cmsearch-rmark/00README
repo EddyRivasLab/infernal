@@ -139,7 +139,8 @@ perl rmark.pl
         <output root, for naming output files>
 
 Options:
-        -T <x> : set minimum bit score to keep as <x> [default: 8]
+        -E <x> : use E-values [default], set max E-val to keep as <x> [default: 2]
+        -B <x> : use bit scores, set min score to keep as <x>
 
 - A brief explanation of the command line arguments:
   <*.rmm rmark module>           
@@ -161,9 +162,11 @@ Options:
      - the script will output <output root>.glbf and 
        <output root>.time files, described below.
 
-- Execute the rmark.pl script (takes about 6 minutes). 
+- Execute the rmark.pl script with the -B option enabled with an '8',
+  setting the minimum bit score to keep as 8 bits (takes about 6
+  minutes). 
 
-$ perl rmark.pl infernal.rmm rmk_files/inf_qdb-71.rmk rmark-test/
+$ perl rmark.pl -B 8 infernal.rmm rmk_files/inf_qdb-71.rmk rmark-test/
        rmark-test/rmark-test.idx rmark-test.fa rmark-test_out
 
 - 2 new files will be created in the current working dir:
@@ -193,6 +196,7 @@ Step 2 - Determine the MER score (per family and overall) as well as
 
 $ perl rmark_process_glbf.pl
 perl rmark_process_glbf.pl
+	<'E' if E-values used (lower score is better), 'B' if higher is better>
         <.rmm file used>
         <.rmk file used>
         <seq directory with *.ali, *.test, *.idx, *.raw files>
@@ -206,7 +210,7 @@ Options: (see code for details)
         -R hit : [default] each hit is a single positive/negative
         -R fnt : treat every nucleotide as a separate positive or negative.
         -R nnt : treat every non-positive nucleotide as separate negative,
-                and every positive nt as a 1/length(hit) fraction of a hit
+                 and every positive nt as a 1/length(hit) fraction of a hit
 
         Ignore cross-hits (hits to fam Y while searching with fam X) options:
         -I both: [default] ignore cross hits on both strands
@@ -214,7 +218,13 @@ Options: (see code for details)
         -I opp : don't ignore cross hits on opposite strand
 
 - A brief explanation of the command line arguments:
-  The first 4 arguments are the same as for rmark.pl (see above)
+  <'E' if E-values used ...>
+     - the script needs to know how to sort the scores, if lower
+       scores are better, i.e. E-values were used, enter 'E'. If 
+       higher scores are better b/c bit scores were used enter 'B'.
+
+  Arguments 2-5 are the same as arguments 1-4 for rmark.pl (see above)
+
   <genome root <X> ...>
      - for this script, the genome file must be named <X>.fa
        and the embed file <X>.ebd. These two files must be in the seq
@@ -232,7 +242,7 @@ Options: (see code for details)
   we want to use the defaults.
 
 - Now actually run the script:
-$ perl rmark_process_glbf.pl infernal.rmm rmk_files/inf_qdb-71.rmk
+$ perl rmark_process_glbf.pl B infernal.rmm rmk_files/inf_qdb-71.rmk
        rmark-test/ rmark-test/rmark-test.idx rmark-test
        rmark-test_out.glbf rmark-test_out
 
@@ -291,7 +301,8 @@ Usage: perl rmark_clusterfy.pl
         <output file root>
 
 Options:
-        -T <x> : set minimum bit score to keep as <x> [default: 8]
+        -E <x> : use E-values [default], set max E-val to keep as <x> [default: 2]
+        -B <x> : use bit scores, set min score to keep as <x>
 
 - A brief explanation of the command line arguments:
   The first 4 arguments are the same as for rmark.pl (see above)
@@ -311,8 +322,9 @@ Options:
        for running rmark, and create <output root>.com and 
        <output root>_pp.script in the new directory, described below.
 
-- Now actually run the script:
-  $ perl rmark_clusterfy.pl infernal.rmm rmk_files/inf_qdb-71.rmk
+- Now actually run the script, we're using bit scores, and want to
+  keep only scores above 8 bits:
+  $ perl rmark_clusterfy.pl -B 8 infernal.rmm rmk_files/inf_qdb-71.rmk
   rmark-1/ rmark-1/rmark-1.idx rmark-1 inf_qdb-71
 
 - The following output prints to the screen:

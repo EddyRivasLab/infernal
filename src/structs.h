@@ -15,6 +15,12 @@
 #include "squid.h"
 #include "ssi.h"               /* CMFILE supports SSI indexes */
 
+#define GC_SEGMENTS 101                   /* Possible integer GC contents */
+
+/* Constants for type of cutoff */
+#define SCORE_CUTOFF 0
+#define E_CUTOFF 1
+
 /* Alphabet information is declared here, and defined in globals.c.
  */
 #define MAXABET           4	/* max for Alphabet_size             */

@@ -11,10 +11,10 @@
 # to the cluster, run the *.com script. Then wait for all the jobs to finish and
 # run the *pp.sh script.
 
-perl rmark_clusterfy.pl infernal_55_W.rmm rmk_files/inf-55.rmk          rmark-1/  rmark-1/rmark-1.idx rmark-1 inf-55
-perl rmark_clusterfy.pl infernal.rmm      rmk_files/inf_p1_noent-71.rmk rmark-1/  rmark-1/rmark-1.idx rmark-1 inf_p1_noent-71
-perl rmark_clusterfy.pl infernal.rmm      rmk_files/inf_p1-71.rmk       rmark-1/  rmark-1/rmark-1.idx rmark-1 inf_p1-71
-perl rmark_clusterfy.pl infernal.rmm      rmk_files/inf_noent-71.rmk    rmark-1/  rmark-1/rmark-1.idx rmark-1 inf_noent-71
-perl rmark_clusterfy.pl infernal.rmm      rmk_files/inf-71.rmk          rmark-1/  rmark-1/rmark-1.idx rmark-1 inf-71
-perl rmark_clusterfy.pl infernal.rmm      rmk_files/inf_qdb-71.rmk      rmark-1/  rmark-1/rmark-1.idx rmark-1 inf_qdb-71
+perl rmark_clusterfy.pl -B 8 infernal_55_W.rmm rmk_files/inf-55.rmk          rmark-1/  rmark-1/rmark-1.idx rmark-1 inf-55
+perl rmark_clusterfy.pl -B 8 infernal.rmm      rmk_files/inf_p1_noent-71.rmk rmark-1/  rmark-1/rmark-1.idx rmark-1 inf_p1_noent-71
+perl rmark_clusterfy.pl -B 8 infernal.rmm      rmk_files/inf_p1-71.rmk       rmark-1/  rmark-1/rmark-1.idx rmark-1 inf_p1-71
+perl rmark_clusterfy.pl -B 8 infernal.rmm      rmk_files/inf_noent-71.rmk    rmark-1/  rmark-1/rmark-1.idx rmark-1 inf_noent-71
+perl rmark_clusterfy.pl -B 8 infernal.rmm      rmk_files/inf-71.rmk          rmark-1/  rmark-1/rmark-1.idx rmark-1 inf-71
+perl rmark_clusterfy.pl -B 8 infernal.rmm      rmk_files/inf_qdb-71.rmk      rmark-1/  rmark-1/rmark-1.idx rmark-1 inf_qdb-71
 

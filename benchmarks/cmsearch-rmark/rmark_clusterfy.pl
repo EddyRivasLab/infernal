@@ -16,7 +16,8 @@
 #             <genome root X, X.fa, X.ebd, and X.chrlist must be in seq dir>
 #             <output file root>
 # Options:
-#        -T <x> : set minimum bit score for rmark.pl as <x> [default: 8]
+#        -E <x> : use E-values [default], set max E-val to keep as <x> [default: 2]
+#        -B <x> : use bit scores, set min score to keep as <x>
 #
 # Example:  perl rmark_clusterfy.pl infernal.rmm inf-71.rmk rmark-test/ rmark-test 
 #                                   inf-71
@@ -42,14 +43,19 @@
 require "sre.pl";
 use Getopt::Std;
 use Cwd;
-$bit_thresh    = 8;
+$e_cutoff = 2;
+$b_cutoff = 0.0;
+$use_evalues   = 1;
+$use_bitscores = 0;
 
-getopts('T:');
-if (defined $opt_T) { $bit_thresh = $opt_T; }
+getopts('E:B:');
+if (defined $opt_E) { $e_cutoff = $opt_E; }
+if (defined $opt_B) { $b_cutoff = $opt_B; $use_evalues = 0; $use_bitscores = 1; }
 
 $usage = "Usage: perl rmark_clusterfy.pl\n\t<.rmm file name>\n\t<.rmk file name>\n\t<dir with *.ali *.idx *.test and *.raw files>\n\t<index file with family names; provide path>\n\t<genome root X, X.chrlist, X.fa, X.ebd must be in seq dir>\n\t<output file root>\n";
 $options_usage  = "\nOptions:\n\t";
-$options_usage .= "-T <x> : set minimum bit score to keep as <x> [default: 8]\n\n";
+$options_usage .= "-E <x> : use E-values [default], set max E-val to keep as <x> [default: 2]\n\t";
+$options_usage .= "-B <x> : use bit scores, set min score to keep as <x>\n\n";
 
 if(@ARGV != 6)
 {
@@ -149,7 +155,14 @@ for($i = 0; $i < scalar(@fam_roots_arr); $i++)
 	$cluster_index_file =~ s/.+\///;
 	$job_name = "rm-$fam-$j";
 	# Create the rmark.pl executing line for this family, this chromosome.
-	$rmark_call = "rmark.pl -T " . $bit_thresh . " " . $rmm . " " . $rmk . " " . $seq_dir . " " . $cluster_index_file . " " . $chrom_files_arr[$j] . " " . $rmark_output;
+	if($use_evalues)
+	{
+	    $rmark_call = "rmark.pl -E " . $e_cutoff . " " . $rmm . " " . $rmk . " " . $seq_dir . " " . $cluster_index_file . " " . $chrom_files_arr[$j] . " " . $rmark_output;
+	}
+	elsif($use_bitscores)
+	{
+	    $rmark_call = "rmark.pl -B " . $b_cutoff . " " . $rmm . " " . $rmk . " " . $seq_dir . " " . $cluster_index_file . " " . $chrom_files_arr[$j] . " " . $rmark_output;
+	}
 	# Create a command the cluster will make to run rmark.pl
 	# IMPORTANT 1: this is a version 6 SGE qsub command - works at Janelia Farm; 
 	#              not sure about elsewhere...
@@ -178,22 +191,31 @@ print PP ("perl ~/src/scripts/rmark/rmark_times.pl *.time > merged_" . $out_file
 
 # Call rmark_process_glbf.pl with defaults: 'hit' resolution mode and 
 # ignore cross-hits on both strands.
-print PP ("perl rmark_process_glbf.pl $rmm $rmk $seq_dir $fam_idx_root $genome_root $all_glbf_out merged_" . $out_file_root . "_hit\n");
+if($use_evalues)
+{
+    $rmark_process_option = "E";
+}
+else
+{
+    $rmark_process_option = "B";
+}
+print PP ("perl rmark_process_glbf.pl $rmark_process_option $rmm $rmk $seq_dir $fam_idx_root $genome_root $all_glbf_out merged_" . $out_file_root . "_hit\n");
+
 
 # Here's some alternative rmark_process_glbf.pl calls :
 # the following 2 lines get results in 'fnt' and 'nnt' resolution modes 
-#print PP ("perl rmark_process_glbf.pl -R fnt $rmm $rmk  $seq_dir $fam_idx_root $genome_root $all_glbf_out merged_" . $out_file_root . "_fnt\n");
-#print PP ("perl rmark_process_glbf.pl -R nnt $rmm $rmk  $seq_dir $fam_idx_root $genome_root $all_glbf_out merged_" . $out_file_root . "_nnt\n");
+#print PP ("perl rmark_process_glbf.pl -R fnt $rmark_process_option $rmm $rmk  $seq_dir $fam_idx_root $genome_root $all_glbf_out merged_" . $out_file_root . "_fnt\n");
+#print PP ("perl rmark_process_glbf.pl -R nnt $rmark_process_option $rmm $rmk  $seq_dir $fam_idx_root $genome_root $all_glbf_out merged_" . $out_file_root . "_nnt\n");
 
 #the following rmark_process_glbf.pl calls DON'T IGNORE CROSS HITS!
-#print PP ("perl rmark_process_glbf.pl -I none $rmm $rmk  $seq_dir $fam_idx_root $genome_root $all_glbf_out merged_" . $out_file_root . "_hit_cross\n");
-#print PP ("perl rmark_process_glbf.pl -I none -R fnt $rmm $rmk  $seq_dir $fam_idx_root $genome_root $all_glbf_out merged_" . $out_file_root . "_fnt_cross\n");
-#print PP ("perl rmark_process_glbf.pl -I none -R fnt nnt $rmm $rmk  $seq_dir $fam_idx_root $genome_root $all_glbf_out merged_" . $out_file_root . "_nnt_cross\n");
+#print PP ("perl rmark_process_glbf.pl -I none $rmark_process_option $rmm $rmk  $seq_dir $fam_idx_root $genome_root $all_glbf_out merged_" . $out_file_root . "_hit_cross\n");
+#print PP ("perl rmark_process_glbf.pl -I none -R fnt $rmark_process_option $rmm $rmk  $seq_dir $fam_idx_root $genome_root $all_glbf_out merged_" . $out_file_root . "_fnt_cross\n");
+#print PP ("perl rmark_process_glbf.pl -I none -R fnt nnt $rmark_process_option $rmm $rmk  $seq_dir $fam_idx_root $genome_root $all_glbf_out merged_" . $out_file_root . "_nnt_cross\n");
 
 #the followign rmark_process_glbf.pl calls IGNORE CROSS HITS ONLY ON THE SAME STRAND!
-#print PP ("perl rmark_process_glbf.pl -I opp $rmm $rmk  $seq_dir $fam_idx_root $genome_root $all_glbf_out merged_" . $out_file_root . "_hit_samecross\n");
-#print PP ("perl rmark_process_glbf.pl -I opp -R fnt $rmm $rmk  $seq_dir $fam_idx_root $genome_root $all_glbf_out merged_" . $out_file_root . "_fnt_samecross\n");
-#print PP ("perl rmark_process_glbf.pl -I opp -R nnt $rmm $rmk  $seq_dir $fam_idx_root $genome_root $all_glbf_out merged_" . $out_file_root . "_nnt_samecross\n");
+#print PP ("perl rmark_process_glbf.pl -I opp $rmark_process_option $rmm $rmk  $seq_dir $fam_idx_root $genome_root $all_glbf_out merged_" . $out_file_root . "_hit_samecross\n");
+#print PP ("perl rmark_process_glbf.pl -I opp -R fnt $rmark_process_option $rmm $rmk  $seq_dir $fam_idx_root $genome_root $all_glbf_out merged_" . $out_file_root . "_fnt_samecross\n");
+#print PP ("perl rmark_process_glbf.pl -I opp -R nnt $rmark_process_option $rmm $rmk  $seq_dir $fam_idx_root $genome_root $all_glbf_out merged_" . $out_file_root . "_nnt_samecross\n");
 
 print PP ("cp merged_*fam ../\n");
 print PP ("cp merged_*all ../\n");

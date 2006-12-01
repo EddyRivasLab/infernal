@@ -1,11 +1,4 @@
-# blast_w7.rmk: options for a WU-BLASTN rmark benchmark with a word
-#               length of 7 (the --kap option is also enabled within
-#               blast.rmm). 
-#
-# This blast benchmark corresponds to Table 6 row 1, and the
-# "BLAST-FPS" ROC curve in Figure 5 of the banded cyk manuscript. To
-# duplicate those results the 'blastn' executable must be WU-BLASTN
-# version 2.0MP.
-#
+# blast_w7.rmk : use word length of 7 for wublast.
 $options = " -W 7 ";
+#
 1;

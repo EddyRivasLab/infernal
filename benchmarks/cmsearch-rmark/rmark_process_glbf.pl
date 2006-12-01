@@ -4,6 +4,7 @@
 # rmark_process_glbf.pl
 #
 # Usage:    perl rmark_process_glbf.pl 
+#                <'E' if E-values used (lower score is better), 'B' if higher is better>
 #                <.rmm file used to get *.glbf> 
 #                <.rmk used to get *.glbf>
 #                <seq directory>
@@ -123,25 +124,26 @@ getopts('R:I:');
 if (defined $opt_R) { $res_opt    = $opt_R; }
 if (defined $opt_I) { $ignore_opt = $opt_I; }
 
-$usage = "Usage: perl rmark_process_glbf.pl\n\t<.rmm file used>\n\t<.rmk file used>\n\t<seq directory with *.ali, *.test, *.idx, *.raw files>\n\t<index file with family names; provide path>\n\t<genome root <X>, <X>.fa and <X>.ebd must be in seq dir>\n\t<concatenated *.glbf output from >= 1 rmark.pl runs; in CWD>\n\t<output root>\n";
+$usage = "Usage: perl rmark_process_glbf.pl\n\t<'E' if E-values used (lower score is better), 'B' if higher is better>\n\t<.rmm file used>\n\t<.rmk file used>\n\t<seq directory with *.ali, *.test, *.idx, *.raw files>\n\t<index file with family names; provide path>\n\t<genome root <X>, <X>.fa and <X>.ebd must be in seq dir>\n\t<concatenated *.glbf output from >= 1 rmark.pl runs; in CWD>\n\t<output root>\n";
 $options_usage  = "\nOptions: (see code for details)\n\t";
 $options_usage .= "Hit resolution options:\n\t";
 $options_usage .= "-R hit : [default] each hit is a single positive/negative\n\t";
 $options_usage .= "-R fnt : treat every nucleotide as a separate positive or negative.\n\t";
 $options_usage .= "-R nnt : treat every non-positive nucleotide as separate negative,\n\t";
-$options_usage .= "        and every positive nt as a 1/length(hit) fraction of a hit\n\n\t";
+$options_usage .= "         and every positive nt as a 1/length(hit) fraction of a hit\n\n\t";
 $options_usage .= "Ignore cross-hits (hits to fam Y while searching with fam X) options:\n\t";
 $options_usage .= "-I both: [default] ignore cross hits on both strands\n\t";
 $options_usage .= "-I none: don't ignore cross hits on either strand\n\t";
 $options_usage .= "-I opp : don't ignore cross hits on opposite strand\n";
 
-if(@ARGV != 7)
+if(@ARGV != 8)
 {
     print $usage;
     print $options_usage;
     exit();
 }
 
+$score_method = shift;
 $rmm = shift;
 $rmk = shift;
 $dir = shift;
@@ -152,6 +154,17 @@ $out_root = shift;
 
 $genome_file = $dir . "/" . $genome_root . ".fa";
 $embed_file = $dir . "/" . $genome_root . ".ebd";
+
+if($score_method eq "E")
+{
+    $lower_better = 1;
+    $worst_score = 1000;
+}
+elsif($score_method eq "B")
+{
+    $lower_better = 0;
+    $worst_score = -1;
+}
 
 if($res_opt eq "hit")
 {
@@ -208,7 +221,7 @@ print FAM "    configfile = $rmk\n";
 print FAM "    index      = $idx\n";
 print FAM "    genome     = $genome_file\n";
 print FAM "    glbf       = $glbf_file\n";
-print FAM "    mode       = $res_mode\n\n";
+print FAM "    mode       = $res_opt\n\n";
 
 print ALL "RMARK benchmark (processed with rmark_process_glbf.pl)\n";
 print ALL "    module     = $rmm\n";
@@ -216,15 +229,7 @@ print ALL "    configfile = $rmk\n";
 print ALL "    index      = $idx\n";
 print ALL "    genome     = $genome_file\n";
 print ALL "    glbf       = $glbf_file\n";
-print ALL "    mode       = $res_mode\n\n";
-
-#BLAST scores are E values where lower is better, this messes up
-#our calculation of $highnoise, so we have a flag
-$lower_better = 0;
-if($rmm =~ m/blast/) { $lower_better = 1; }
-
-if($lower_better) { $worst_score = 10; }
-else {$worst_score = -1;}
+print ALL "    mode       = $res_opt\n\n";
 
 @fam_roc_pos_arr = ();
 @fam_roc_sc_arr = ();

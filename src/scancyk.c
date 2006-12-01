@@ -38,10 +38,10 @@
  *           ret_hitsc - RETURN: scores of hits, 0..nhits-1            
  *           min_thresh- minimum score to report (EPN via Alex Coventry 03.11.06)
  *
- * Returns:  
+ * Returns:  score of best overall hit
  *           hiti, hitj, hitsc are allocated here; caller free's w/ free().
  */
-void
+float 
 CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
 	int *ret_nhits, int **ret_hitr, int **ret_hiti, int **ret_hitj, float **ret_hitsc, float min_thresh)
 
@@ -71,6 +71,7 @@ CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W,
   int       gamma_j;            /* j index in the gamma matrix, which is indexed 0..j0-i0+1, 
 				 * while j runs from i0..j0 */
   int       gamma_i;            /* i index in the gamma* data structures */
+  float     best_score;         /* Best overall score to return */
   /*int     updated_flag;*/         /* strategy 2 */
   /*****************************************************************
    * alpha allocations.
@@ -84,6 +85,7 @@ CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W,
    * Note that E memory is shared: all E decks point at M-1 deck.
    *****************************************************************/
 
+  best_score = IMPOSSIBLE;
   L = j0-i0+1;
   if (W > L) W = L; 
 
@@ -286,6 +288,7 @@ CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 	    }
 	  }
 	  if (alpha[0][cur][d] < IMPOSSIBLE) alpha[0][cur][d] = IMPOSSIBLE;
+	  if (alpha[0][cur][d] > best_score) best_score = alpha[0][cur][d];
 	}
 
       /* The little semi-Markov model that deals with multihit parsing:
@@ -372,7 +375,7 @@ CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W,
   *ret_hiti  = hiti;
   *ret_hitj  = hitj;
   *ret_hitsc = hitsc;
-  return;
+  return best_score;
 }
 
 /* Function: CYKScanRequires()

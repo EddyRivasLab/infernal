@@ -1,16 +1,15 @@
 # duplicate_blast_bm.sh: Duplicate the blast benchmark reported in the
-# banded-cyk manuscript.  See 00README for more information.  #
+# banded-cyk manuscript.  See 00README for more information.  
 #
 # IMPORTANT: To run this benchmark, the command 'blastn' must execute
 # wu-blastn version BLASTN 2.0MP-WashU, and the command 'xdformat'
-# must execute XDFORMAT-WashU 1.0.  # The blast benchmark differs from
-# the infernal benchmarks in that we use E-values to rank scores from
-# blast, while we use bit-scores to rank scores from Infernal
-# (E-values are not yet implemented in Infernal). The way
-# rmark_process_glbf.pl infers this, and thus determines that a lower
-# score is now better (with E-values), is incredibly fragile:
-# it looks for the string 'blast' in the .rmm file name, so 
-# don't rename blast.rmm.
+# must execute XDFORMAT-WashU 1.0.  
+#
+# The blast benchmark differs from the infernal benchmarks in that we
+# use E-values to rank scores from blast, while we use bit-scores to
+# rank scores from Infernal (E-values were not yet implemented in
+# Infernal 0.71). This is the -E option to rmark.pl and the 'E' 
+# argument to rmark_process_glbf.pl shown below.
 # 
 # The current directory should have the following files:
 # sre.pl, rmark.pl, blast.rmm and a file called blast_w7.rmk
@@ -23,9 +22,9 @@
 #
 # Step 1: run the benchmark, outputting blast.glbf 
 #         and blast.time
-perl rmark.pl blast.rmm rmk_files/blast_w7.rmk rmark-1/ rmark-1/rmark-1.idx rmark-1.fa blast
+perl rmark.pl -E 1 blast.rmm rmk_files/blast_w7.rmk rmark-1/ rmark-1/rmark-1.idx rmark-1.fa blast
 #
 # Step 2: create blast.fam, blast.all, and blast.roc from the 
 #         blast.glbf file.
 #         
-perl rmark_process_glbf.pl blast.rmm rmk_files/blast_w7.rmk rmark-1/ rmark-1/rmark-1.idx rmark-1 blast.glbf blast 
+perl rmark_process_glbf.pl E blast.rmm rmk_files/blast_w7.rmk rmark-1/ rmark-1/rmark-1.idx rmark-1 blast.glbf blast 
