@@ -456,7 +456,13 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
 	    }
 	}
 
-      if(!silent_mode) printf("Aligning %-30s", sqinfo[i].name);
+      if(!silent_mode) 
+	{
+	  if(do_sub) 
+	    printf("Aligning (to a sub CM) %-20s", sqinfo[i].name);
+	  else
+	    printf("Aligning %-30s", sqinfo[i].name);
+	}
       if (do_inside)
 	{
 	  if(do_hbanded)
@@ -692,7 +698,7 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
 	      printf("\n");
 	    }
 	}
-      if(do_sub)
+      if(do_sub && !(do_inside || do_outside))
 	{
 	  /* Convert the sub_cm parsetree to a full CM parsetree */
 	  if(debug_level > 0)
@@ -722,6 +728,28 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
 	    }
 	}
     }
+  /* Clean up. */
+  if((do_sub && !do_hbanded) || (do_hbanded && !do_sub)) /* ha! */
+    FreeCP9Map(cp9map);
+  if(do_hbanded && !do_sub)
+    FreeCP9Bands(cp9b);
+
+  if(do_hbanded || do_sub)
+    {
+      FreeCPlan9Matrix(cp9_mx);
+      FreeCPlan9(orig_hmm);
+    }
+  if (do_qdb)
+    {
+      FreeBandDensities(cm, gamma);
+      free(dmin);
+      free(dmax);
+      free(orig_dmin);
+      free(orig_dmax);
+    }
+  StopwatchFree(watch1);
+  StopwatchFree(watch2);
+  
   *ret_tr = tr; 
   if (ret_postcode != NULL) *ret_postcode = postcode; 
 }
