@@ -813,11 +813,12 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
   *           post      - the posterior matrix for the hmm
   *           ret_node  - RETURN: index of node with highest probability of emitting x
   *           ret_type  - RETURN: type of state in ret_node with highest probability 
+  *           print_flag- TRUE to print out info on most likely node 
   *
   */
  void
  CP9NodeForPosn(struct cplan9_s *hmm, int i0, int j0, int x, struct cp9_dpmatrix_s *post, 
-		int *ret_node, int *ret_type)
+		int *ret_node, int *ret_type, int print_flag)
  {
    /* post->mmx[i][k]: posterior probability that posn i was emitted from node k's 
       match state */  
@@ -856,11 +857,13 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
 	   max_type = 1; /* insert */
 	 }
      }
-   /*if(max_type == 0)
-     printf("MATCH | mx->mmx[%3d][%3d]: %9d | %8f\n", x, max_k, post->mmx[x][max_k], Score2Prob(post->mmx[x][max_k], 1.));
-   else
-     printf("INSERT | mx->imx[%3d][%3d]: %9d | %8f\n", x, max_k, post->imx[x][max_k], Score2Prob(post->imx[x][max_k], 1.));
-   */
+   if(print_flag)
+     {
+       if(max_type == 0)
+	 printf("MATCH | mx->mmx[%3d][%3d]: %9d | %8f\n", x, max_k, post->mmx[x][max_k], Score2Prob(post->mmx[x][max_k], 1.));
+       else
+	 printf("INSERT | mx->imx[%3d][%3d]: %9d | %8f\n", x, max_k, post->imx[x][max_k], Score2Prob(post->imx[x][max_k], 1.));
+     }
    *ret_node = max_k;
    *ret_type = max_type;
    return;
@@ -3870,7 +3873,7 @@ sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Pars
 	  if(print_flag) printf("tr_nd_for_bifs[%d]\n", (orig_cm->ndidx[orig_cm->plast[orig_cm->nodemap[cm_nd]]]));
 	  if(print_flag) printf("parent_tr_nd for cm_nd %d: %d\n", cm_nd, parent_tr_nd);
 	  InsertTraceNode(orig_tr, parent_tr_nd, TRACE_RIGHT_CHILD, ss_emitl[cm_nd], ss_emitr[cm_nd], ss_used[cm_nd]);
-	  orig_tr->nxtr[parent_tr_nd]  = orig_tr->n; /* Go back and fix nxtr for the BIF parent of this BEGR */
+	  orig_tr->nxtr[parent_tr_nd]  = orig_tr->n - 1; /* Go back and fix nxtr for the BIF parent of this BEGR */
 	}
       else
 	{
@@ -3883,21 +3886,21 @@ sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Pars
        * right child (BEGR) of this BIF */
       if(orig_cm->ndtype[cm_nd] == BIF_nd)
 	{
-	  tr_nd_for_bifs[cm_nd] = orig_tr->n;
+	  tr_nd_for_bifs[cm_nd] = orig_tr->n - 1;
 	  if(print_flag) printf("set tr_nd_for_bifs[%d]: %d\n", cm_nd, orig_tr->n);
 	}
 
       /* Add left inserts, if any */
       for(i = 0; i < il_ct[cm_nd]; i++)
 	{
-	  InsertTraceNode(orig_tr, orig_tr->n-1, TRACE_LEFT_CHILD, (ss_emitl[cm_nd] + emitl_flag + i), ss_emitr[cm_nd], il_used[cm_nd]);
-	  if(print_flag) printf("inserted trace node for orig_cm st %4s | emitl: %d | emitr: %d\n", sttypes[(int) orig_cm->sttype[il_used[cm_nd]]], orig_tr->emitl[orig_tr->n-1], orig_tr->emitr[orig_tr->n-1]);
+	  InsertTraceNode(orig_tr, orig_tr->n-1, TRACE_LEFT_CHILD, (ss_emitl[cm_nd] + emitl_flag + i), (ss_emitr[cm_nd] - emitr_flag), il_used[cm_nd]);
+	  if(print_flag) printf("inserted trace node for orig_cm st %4s | emitl: %d | emitr: %d\n", sttypes[(int) orig_cm->sttype[il_used[cm_nd]]], orig_tr->emitl[orig_tr->n-1], orig_tr->emitr[orig_tr->n+1]);
 	}
       /* Add right inserts, if any */
       for(i = 0; i < ir_ct[cm_nd]; i++)
 	{
-	  InsertTraceNode(orig_tr, orig_tr->n-1, TRACE_LEFT_CHILD, ss_emitl[cm_nd], (ss_emitr[cm_nd] - emitr_flag - i), ir_used[cm_nd]);
-	  if(print_flag) printf("inserted trace node for orig_cm st %4s | emitl: %d | emitr: %d\n", sttypes[(int) orig_cm->sttype[ir_used[cm_nd]]], orig_tr->emitl[orig_tr->n-1], orig_tr->emitr[orig_tr->n-1]);
+	  InsertTraceNode(orig_tr, orig_tr->n-1, TRACE_LEFT_CHILD, (ss_emitl[cm_nd] + emitl_flag + il_ct[cm_nd]), (ss_emitr[cm_nd] - emitr_flag - i), ir_used[cm_nd]);
+	  if(print_flag) printf("inserted trace node for orig_cm st %4s | emitl: %d | emitr: %d\n", sttypes[(int) orig_cm->sttype[ir_used[cm_nd]]], orig_tr->emitl[orig_tr->n-1], orig_tr->emitr[orig_tr->n+1]);
 	}
       if(print_flag) printf("END nd: %4d | emitl: %4d | emitr: %4d\n", cm_nd, emitl, emitr);
     }      

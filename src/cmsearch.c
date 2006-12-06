@@ -26,6 +26,7 @@
 #include "hmmband.h"
 #include "stats.h"
 #include "esl_gumbel.h"
+#include "mpifuncs.h"
 
 /* From rsearch-1.1 various defaults defined here */
 #define DEFAULT_NUM_SAMPLES 1000
@@ -59,7 +60,7 @@ static char experts[] = "\
    --null2       : turn on the post hoc second null model [df:OFF]\n\
    --learninserts: do not set insert emission scores to 0\n\
    --E <n>       : use cutoff E-value of n (default ignored; not-calc'ed)\n\
-   --partition <n>[,<n>]... : Parition points for different GC content EVDs\n\
+   --partition <n>[,<n>]... : partition points for different GC content EVDs\n\
 \n\
   * Filtering options using a CM plan 9 HMM (*in development*):\n\
    --hmmfb        : use Forward to get end points & Backward to get start points\n\
@@ -236,7 +237,6 @@ main(int argc, char **argv)
   /* E-value statistics (ported from rsearch-1.1) */
   int sample_length;            /* length of samples to use for calc'ing stats (2*W) */
   int num_samples = DEFAULT_NUM_SAMPLES;
-  int do_complement = 0;        /* Shall I do reverse complement? */
   float e_cutoff;
   float e_value;                
   int cutoff_type;
@@ -253,6 +253,12 @@ main(int argc, char **argv)
   int num_partitions = 1;
   int gc_count[GC_SEGMENTS];
   int gc_comp; 
+
+#ifdef USE_MPI
+  int mpi_my_rank;              /* My rank in MPI */
+  int mpi_num_procs;            /* Total number of processes */
+  int mpi_master_rank;          /* Rank of master process */
+#endif
 
   /*********************************************** 
    * Parse command line
@@ -374,6 +380,10 @@ main(int argc, char **argv)
     Die("Can't pick --hbanded without --hmmfb or --hmmweinberg filtering option.\n");
   if (read_qdb && !(do_qdb))
     Die("--qdbfile and --noqdb don't make sense together.\n");
+
+  /* Open the sequence (db) file */
+  if ((sqfp = SeqfileOpen(seqfile, format, NULL)) == NULL)
+    Die("Failed to open sequence database file %s\n%s\n", seqfile, usage);
 
   /* EPN 08.18.05 */
   if (! (set_window)) windowlen = cm->W;
@@ -501,15 +511,11 @@ main(int argc, char **argv)
       if (mpi_my_rank == mpi_master_rank) {
 #endif
 	get_dbinfo (sqfp, &N, gc_count);
-	if (do_complement) N*=2;
-
-	if ((sqfp = SeqfileOpen(seqfile, format, NULL)) == NULL)
-	  Die("Failed to open sequence database file %s\n%s\n", seqfile, usage);
-
+	if (do_revcomp) N*=2;
 #ifdef USE_MPI
       }
 #endif
-      
+
       /* Set sample_length to 2*W if not yet set */
       if (sample_length == 0) sample_length = 2 * windowlen;
       
@@ -527,21 +533,21 @@ main(int argc, char **argv)
 	    serial_make_histogram (gc_count, partitions, num_partitions,
 				   cm, windowlen, 
 				   num_samples, sample_length, lambda, K, 
-				   dmin, dmax, cp9_hmm);
+				   dmin, dmax, cp9_hmm, TRUE);
 	  else if(do_qdb)
 	    serial_make_histogram (gc_count, partitions, num_partitions,
 				   cm, windowlen, 
 				   num_samples, sample_length, lambda, K, 
-				   dmin, dmax, NULL);
+				   dmin, dmax, NULL, TRUE);
 	  else
 	    serial_make_histogram (gc_count, partitions, num_partitions,
 				   cm, windowlen, 
 				   num_samples, sample_length, lambda, K, 
-				   NULL, NULL, NULL); /* don't use QDB to search */
+				   NULL, NULL, NULL, TRUE); /* don't use QDB to search */
       } 
       
 #ifdef USE_MPI
-      /*if (mpi_my_rank == mpi_master_rank) {*/
+      if (mpi_my_rank == mpi_master_rank) {
 #endif
 	
 	/* Set mu from K, lambda, N */
@@ -587,6 +593,15 @@ main(int argc, char **argv)
   /*******************************************************************************
    * End of making the histogram.
    *******************************************************************************/
+#ifdef USE_MPI
+  }                   /* Done with second master-only block */
+  
+  /* Now I need to broadcast the following parameters:
+     cutoff, cutoff_type, do_complement, do_align, defined_mu, defined_lambda, 
+     defined_K, mu, lambda, K, N */
+  /*second_broadcast(&cutoff, &cutoff_type, &do_complement, &do_align, mu, lambda, K, &N, mpi_my_rank, mpi_master_rank);*/
+#endif
+
 
   /* start stopwatch for timing the search */
   StopwatchZero(watch);
@@ -882,26 +897,27 @@ main(int argc, char **argv)
 	{
 	  if(!do_null2)
 	    {
-	      if (do_stats) {
-		gc_comp = get_gc_comp (seq, hiti[i], hitj[i]);
-		e_value = RJK_ExtremeValueE(hitsc[i], mu[gc_comp], 
-					    lambda[gc_comp]);
-		printf("\tgc: %d sc: %.2f E: %g P: %g\n", gc_comp, hitsc[i], e_value,
-		       esl_gumbel_surv((double) hitsc[i], mu[gc_comp], 
-				       lambda[gc_comp]));
-
-		if(e_value <= e_cutoff)
-		  {
-		    printf("hit %-4d: %6d %6d %8.2f bits   E = %8.3g, P = %8.3g\n", ip, 
-			   reversed ? sqinfo.len - hiti[i] + 1 : hiti[i], 
-			   reversed ? sqinfo.len - hitj[i] + 1 : hitj[i],
-			   hitsc[i], 
-			   e_value,
-			   esl_gumbel_surv((double) hitsc[i], mu[gc_comp], 
-					   lambda[gc_comp]));
-		    ip++;
-		  }
-	      }
+	      if (do_stats) 
+		{
+		  gc_comp = get_gc_comp (seq, hiti[i], hitj[i]);
+		  e_value = RJK_ExtremeValueE(hitsc[i], mu[gc_comp], 
+					      lambda[gc_comp]);
+		  printf("\tgc: %d sc: %.2f E: %g P: %g\n", gc_comp, hitsc[i], e_value,
+			 esl_gumbel_surv((double) hitsc[i], mu[gc_comp], 
+					 lambda[gc_comp]));
+		  
+		  if(e_value <= e_cutoff)
+		    {
+		      printf("hit %-4d: %6d %6d %8.2f bits   E = %8.3g, P = %8.3g\n", ip, 
+			     reversed ? sqinfo.len - hiti[i] + 1 : hiti[i], 
+			     reversed ? sqinfo.len - hitj[i] + 1 : hitj[i],
+			     hitsc[i], 
+			     e_value,
+			     esl_gumbel_surv((double) hitsc[i], mu[gc_comp], 
+					     lambda[gc_comp]));
+		      ip++;
+		    }
+		}
 	      else {
 		printf("hit %-4d: %6d %6d %8.2f bits\n", ip, 
 		       reversed ? sqinfo.len - hiti[i] + 1 : hiti[i], 
@@ -1095,6 +1111,7 @@ main(int argc, char **argv)
       free(dmin);
       free(dmax);
     }
+    
   if(do_hbanded)
     FreeCP9Bands(cp9b);
   
@@ -1105,8 +1122,8 @@ main(int argc, char **argv)
   StopwatchFree(watch);
   SqdClean();
   return EXIT_SUCCESS;
-}
-
+    }
+  
 static int  
 QDBFileRead(FILE *fp, CM_t *cm, int **ret_dmin, int **ret_dmax)
 {
@@ -1190,7 +1207,7 @@ int get_gc_comp(char *seq, int start, int stop) {
     start = stop;
     stop = i;
   }
-
+  
   gc_count = 0;
   for (i=start; i<=stop; i++) {
     c = resolve_degenerate(seq[i]);
@@ -1199,7 +1216,7 @@ int get_gc_comp(char *seq, int start, int stop) {
   }
   return ((int)(100.*gc_count/(stop-start+1)));
 }
-
+ 
 /* Function: set_partitions
  * Date:     RJK, Mon, Oct 7, 2002 [St. Louis]
  * Purpose:  Given a partion array (int [100]) which contains what parttion
@@ -1247,3 +1264,4 @@ int set_partitions (int **ret_partitions, int *num_partitions, char *list) {
   (*num_partitions)++;
   return(0);
 }
+ 

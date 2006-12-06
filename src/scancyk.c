@@ -19,6 +19,174 @@
 #include "structs.h"
 #include "funcs.h"
 
+/*
+ * Function: CreateResults ()
+ * Date:     RJK, Mon Apr 1 2002 [St. Louis]
+ * Purpose:  Creates a results type of specified size
+ */
+scan_results_t *CreateResults (int size) {
+  scan_results_t *results;
+  results = MallocOrDie (sizeof(scan_results_t));
+  results->num_results = 0;
+  results->num_allocated = size;
+  results->data = MallocOrDie(sizeof(scan_result_node_t)*size);
+  return (results);
+}
+
+/* Function: ExpandResults ()
+ * Date:     RJK, Mon Apr 1 2002 [St. Louis]
+ * Purpose:  Expans a results structure by specified amount
+ */
+void ExpandResults (scan_results_t *results, int additional) {
+  results->data = ReallocOrDie (results->data, 
+				sizeof(scan_result_node_t)*
+				(results->num_allocated+additional));
+  results->num_allocated+=additional;
+}
+
+/*
+ * Function: FreeResults()
+ * Date:     RJK, Mon Apr 1 2002 [St. Louis]
+ * Purpose:  Frees a results structure
+ */
+void FreeResults (scan_results_t *r) {
+  int i;
+  if (r != NULL) {
+    for (i=0; i<r->num_results; i++) {
+      if (r->data[i].tr != NULL) {
+	FreeParsetree(r->data[i].tr);
+      }
+    }
+    free (r->data);
+    free(r);
+  }
+}
+
+
+/*
+ * Function: compare_results()
+ * Date:     RJK, Wed Apr 10, 2002 [St. Louis]
+ * Purpose:  Compares two scan_result_node_ts based on score and returns -1
+ *           if first is higher score than second, 0 if equal, 1 if first
+ *           score is lower.  This results in sorting by score, highest
+ *           first.
+ */
+int compare_results (const void *a_void, const void *b_void) {
+  scan_result_node_t *a, *b;
+ 
+  a = (scan_result_node_t *)a_void;
+  b = (scan_result_node_t *)b_void;
+
+  if (a->score < b->score)
+    return (1);
+  else if (a->score > b->score)
+    return (-1);
+  else if (a->start < b->start)
+    return (1);
+  else if (a->start > b->start)
+    return (-1);
+  else
+    return (0);
+}
+
+/*
+ * Function: sort_results()
+ * Date:    RJK,  Sun Mar 31, 2002 [AA Flight 2869 LGA->STL]
+ * Purpose: Given a results array, sorts it with a call to qsort
+ *
+ */
+void sort_results (scan_results_t *results) {
+  qsort (results->data, results->num_results, sizeof(scan_result_node_t), compare_results);
+}
+
+/*
+ * Function: report_hit()
+ * Date:     RJK, Sun Mar 31, 2002 [LGA Gate D7]
+ *
+ * Given j,d, coordinates, a score, and a scan_results_t data type,
+ * adds result into the set of reportable results.  Naively adds hit.
+ *
+ * Non-overlap algorithm is now done in the scanning routine by Sean's
+ * Semi-HMM code.  I've just kept the hit report structure for convenience.
+ */
+void report_hit (int i, int j, int bestr, float score, scan_results_t *results) {
+  if (results->num_results == results->num_allocated) {
+    ExpandResults (results, INIT_RESULTS);
+  }
+  results->data[results->num_results].score = score;
+  results->data[results->num_results].start = i;
+  results->data[results->num_results].stop = j;
+  results->data[results->num_results].bestr = bestr;
+  results->data[results->num_results].tr = NULL;
+  results->num_results++;
+}
+
+/*
+ * Function: remove_overlapping_hits ()
+ * Date:     RJK, Sun Mar 31, 2002 [LGA Gate D7]
+ *
+ * Purpose:  Given a list of hits, removes overlapping hits to produce
+ * a list consisting of at most one hit covering each nucleotide in the
+ * sequence.  Works as follows:
+ * 1.  Bubble sort hits (I know this is ridiculously slow, but I want
+ *     to get something working.  I can replace this later with a faster
+ *     algorithm.)  (O(N^2))
+ * 2.  For each hit, sees if any nucleotide covered yet
+ *     If yes, remove hit
+ *     If no, mark each nt as covered
+ */
+void remove_overlapping_hits (scan_results_t *results, int L) {
+  char *covered_yet;
+  int x,y;
+  int covered;
+  scan_result_node_t swap;
+
+  if (results == NULL)
+    return;
+
+  if (results->num_results == 0)
+    return;
+
+  covered_yet = MallocOrDie (sizeof(char)*(L+1));
+  for (x=0; x<=L; x++)
+    covered_yet[x] = 0;
+
+  sort_results (results);
+
+  for (x=0; x<results->num_results; x++) {
+    covered = 0;
+    for (y=results->data[x].start; y<=results->data[x].stop && !covered; y++) {
+      if (covered_yet[y] != 0) {
+	covered = 1;
+      } 
+    }
+    if (covered == 1) {
+      results->data[x].start = -1;        /* Flag -- remove later to keep sorted */
+    } else {
+      for (y=results->data[x].start; y<=results->data[x].stop; y++) {
+	covered_yet[y] = 1;
+      }
+    }
+  }
+  free (covered_yet);
+
+  for (x=0; x<results->num_results; x++) {
+    while (results->num_results > 0 &&
+	   results->data[results->num_results-1].start == -1)
+      results->num_results--;
+    if (x<results->num_results && results->data[x].start == -1) {
+      swap = results->data[x];
+      results->data[x] = results->data[results->num_results-1];
+      results->data[results->num_results-1] = swap;
+      results->num_results--;
+    }
+  }
+  while (results->num_results > 0 &&
+	 results->data[results->num_results-1].start == -1)
+    results->num_results--;
+
+  sort_results(results);
+}
 
 /* Function: CYKScan()
  * Date:     SRE, Thu May  2 11:56:11 2002 [AA 3050 SFO->STL]

@@ -1,20 +1,24 @@
-/* cmalign.c
- * SRE, Thu Jul 25 11:28:03 2002 [St. Louis]
- * SVN $Id$
- * 
- * Align sequences to a CM.
- * 
- *****************************************************************
+/************************************************************
  * @LICENSE@
- *****************************************************************
+ ************************************************************/
+
+/* cm_wrappers.c
+ * EPN, Wed Dec  6 06:11:46 2006
+ * 
+ * Wrapper functions for aligning and searching seqs
+ * with a CM.
+ * 
  */
+
 #include "config.h"
+#include "squidconf.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 #include <float.h>
+#include <math.h>
 
 #include "squid.h"		/* general sequence analysis library    */
 #include "msa.h"                /* squid's multiple alignment i/o       */
@@ -26,362 +30,109 @@
 #include "hmmband.h"         
 #include "cm_postprob.h"
 
-static char banner[] = "cmalign - align sequences to an RNA CM";
-
-static char usage[]  = "\
-Usage: cmalign [-options] <cmfile> <sequence file>\n\
-  Most commonly used options are:\n\
-   -h     : help; print brief help on version and usage\n\
-   -l     : local; align locally w.r.t. the model\n\
-   -o <f> : output the alignment file to file <f>\n\
-   -q     : quiet; suppress verbose banner\n\
-";
-
-static char experts[] = "\
-  Expert, in development, or infrequently used options are:\n\
-   --informat <s>: specify that input alignment is in format <s>\n\
-   --nosmall     : use normal alignment algorithm, not d&c\n\
-   --regress <f> : save regression test data to file <f>\n\
-   --full        : include all match columns in output alignment\n\
-   --tfile <f>   : dump individual sequence tracebacks to file <f>\n\
-   --banddump <n>: set verbosity of band info print statements to <n> [1..3]\n\
-   --dlev <n>    : set verbosity of debugging print statements to <n> [1..3]\n\
-   --time        : print timings for alignment, band calculation, etc.\n\
-   --inside      : don't align; return scores from the Inside algorithm \n\
-   --outside     : don't align; return scores from the Outside algorithm\n\
-   --post        : align with CYK and append posterior probabilities\n\
-   --checkpost   : check that posteriors are correctly calc'ed\n\
-   --sub         : build sub CM for columns b/t HMM predicted start/end points\n\
-   --fsub        : build sub CM for structure b/t HMM predicted start/end points\n\
-   --elsilent    : disallow local end (EL) emissions\n\
-\n\
-  * HMM banded alignment related options (IN DEVELOPMENT):\n\
-   --hbanded     : use experimental CM plan 9 HMM banded CYK aln algorithm\n\
-   --hbandp <f>  : tail loss prob for --hbanded [default: 0.0001]\n\
-   --sums        : use posterior sums during HMM band calculation (widens bands)\n\
-   --checkcp9    : check the CP9 empirically by generating sequences\n\
-\n\
-  * Query dependent banded (qdb) alignment related options:\n\
-   --qdb         : use query dependent banded CYK alignment algorithm\n\
-   --beta <f>    : tail loss prob for --qdb [default:0.0000001]\n\
-   --noexpand    : DO NOT naively expand qd bands if target is outside root band\n\
-";
-
-static struct opt_s OPTIONS[] = {
-  { "-h", TRUE, sqdARG_NONE }, 
-  { "-l", TRUE, sqdARG_NONE },
-  { "-o", TRUE, sqdARG_STRING },
-  { "-q", TRUE, sqdARG_NONE },
-  { "--informat",   FALSE, sqdARG_STRING },
-  { "--nosmall",    FALSE, sqdARG_NONE },
-  { "--regress",    FALSE, sqdARG_STRING },
-  { "--qdb",        FALSE, sqdARG_NONE },
-  { "--beta",       FALSE, sqdARG_FLOAT},
-  { "--noexpand",   FALSE, sqdARG_NONE},
-  { "--tfile",      FALSE, sqdARG_STRING },
-  { "--banddump"  , FALSE, sqdARG_INT},
-  { "--full",       FALSE, sqdARG_NONE },
-  { "--dlev",       FALSE, sqdARG_INT },
-  { "--hbanded",    FALSE, sqdARG_NONE },
-  { "--hbandp",     FALSE, sqdARG_FLOAT},
-  { "--sums",       FALSE, sqdARG_NONE},
-  { "--time",       FALSE, sqdARG_NONE},
-  { "--inside",     FALSE, sqdARG_NONE},
-  { "--outside",    FALSE, sqdARG_NONE},
-  { "--post",       FALSE, sqdARG_NONE},
-  { "--checkpost",  FALSE, sqdARG_NONE},
-  { "--sub",        FALSE, sqdARG_NONE},
-  { "--fsub",       FALSE, sqdARG_NONE},
-  { "--elsilent",   FALSE, sqdARG_NONE},
-  { "--checkcp9",   FALSE, sqdARG_NONE},
-};
-#define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
-
-int
-main(int argc, char **argv)
+/* EPN, Tue Dec  5 14:25:02 2006
+ * 
+ * Function: AlignSeqsWrapper()
+ * 
+ * Purpose:  Given a CM, digitized sequences, and
+ *           a slew of options, do preliminaries, 
+ *           call the correct CYK function and
+ *           return parsetrees and optionally postal
+ *           codes (if do_post).
+ * 
+ * Args:     CM      - the covariance model
+ *           dsq     - digitized sequences to align
+ *           sqinfo  - info on the seq's we're aligning
+ *           nseq    - number of seqs we're aligning
+ *           ret_tr  - RETURN: parsetrees (pass NULL if trace isn't wanted)
+ *           do_local - TRUE to do local alignment, FALSE not to.
+ *           do_small - TRUE to use D&C CYK, FALSE not to
+ *           do_qdb  - TRUE to use query dependet bands
+ *           qdb_beta - tail loss prob for QDB calculation
+ *           do_hbanded - TRUE use CP9 hmm derived target dependent bands
+ *           use_sums- TRUE to fill and use the posterior sums for CP9 band calculation 
+ *           cp9bandp- tail loss probability for CP9 hmm bands 
+ *           do_sub  - TRUE to build and use a sub CM for alignment
+ *           do_fullsub - TRUE to build and use a full sub CM for alignment
+ *           do_hmmonly - TRUE to align to the CP9 HMM, with viterbi
+ *           do_inside - TRUE to do Inside, and not return a parsetree
+ *           do_outside - TRUE to do Outside, and not return a parsetree
+ *           do_check  - TRUE to check Inside and Outside probabilities
+ *           do_post - TRUE to do a posterior decode instead of CYK 
+ *           ret_postcode - RETURN: postal code string, (NULL if do_post = FALSE)
+ *           do_timings - TRUE to report timings for alignment 
+ *           bdump_level - verbosity level for band related print statements
+ *           debug_level - verbosity level for debugging print statements
+ *           silent_mode - TRUE to not print anything, FALSE to print scores 
+ */
+void
+AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***ret_tr, int do_local, 
+		 int do_small, int do_qdb, double qdb_beta,
+		 int do_hbanded, int use_sums, double hbandp, int do_sub, int do_fullsub, int do_hmmonly, 
+		 int do_inside, int do_outside, int do_check, int do_post, char ***ret_postcode, int do_timings, 
+		 int bdump_level, int debug_level, int silent_mode)
 {
-  char            *cmfile;      /* file to read CM from */	
-  CMFILE          *cmfp;	/* open CM file */
-  char            *seqfile;     /* file to read sequences from */
-  int              format;      /* format of sequence file */
-  CM_t            *cm;          /* a covariance model       */
-  char           **rseq;        /* RNA sequences to align */
-  int              nseq;	/* number of rseq */
-  SQINFO          *sqinfo;      /* optional info attached to sequences */
-  char           **dsq;         /* digitized RNA sequences */
-  Parsetree_t    **tr;          /* parse trees for the sequences */
-  MSA             *msa;         /* alignment that's created */
-  char            *outfile;	/* optional output file name */
-  FILE            *ofp;         /* an open output file */
-  int              i;		/* counter over sequences/parsetrees */
-  int              v;           /* counter over states of the CM */
-
+  Stopwatch_t  *watch1, *watch2;      /* for timings */
+  int i;                              /* counter over sequences */
+  int v;                              /* state counter */
+  char             **postcode;  /* posterior decode array of strings        */
+  Parsetree_t      **tr;        /* parse trees for the sequences */
   float            sc;		/* score for one sequence alignment */
   float            maxsc;	/* max score in all seqs */
   float            minsc;	/* min score in all seqs */
   float            avgsc;	/* avg score over all seqs */
-  
-  char  *regressfile;           /* regression test data file */
-  char  *tracefile;		/* file to dump debugging traces to        */
-  int    be_quiet;		/* TRUE to suppress verbose output & banner */
-  int    do_local;		/* TRUE to config the model in local mode   */
-  int    do_small;		/* TRUE to do divide and conquer alignments */
-  int    do_full;               /* TRUE to output all match columns in output alignment */
-  int    do_qdb;                /* TRUE to do qdb CYK (either d&c or full)  */
-  int    bdump_level;           /* verbosity level for --banddump option, 0 is OFF */
 
-  char  *optname;               /* name of option found by Getopt()        */
-  char  *optarg;                /* argument found by Getopt()              */
-  int    optind;                /* index in argv[]                         */
-  int    safe_windowlen;        /* windowlen (W) used for calculating bands */
-  int    debug_level;           /* verbosity level for debugging printf() statements,
-			         * passed to many functions. */
-  Stopwatch_t  *watch1;         /* for overall timings */
-  Stopwatch_t  *watch2;         /* for HMM band calc timings */
-  int    time_flag;             /* TRUE to print timings, FALSE not to */
-
-  /* query dependent bands data structures */
-  double   qdb_beta;	        /* tail loss probability for query dependent banding */
-  int    do_expand;             /* TRUE to naively expand query dependent bands when necessary */
-  int    expand_flag;           /* TRUE if the dmin and dmax vectors have just been 
-				 * expanded (in which case we want to recalculate them 
-				 * before we align a new sequence), and FALSE if not*/
-  double **gamma;               /* P(subseq length = n) for each state v    */
-  int     *dmin;                /* minimum d bound for state v, [0..v..M-1] */
-  int     *dmax;                /* maximum d bound for state v, [0..v..M-1] */
-
-  /* HMMERNAL!: hmm banded alignment data structures */
-  CP9Bands_t *cp9b;             /* data structure for hmm bands (bands on the hmm states) 
-				 * and arrays for CM state bands, derived from HMM bands */
-  int         do_hbanded;       /* TRUE to do CM Plan 9 HMM banded CYKInside_b_jd() using bands on d and j dim*/
-  double      hbandp;           /* tail loss probability for hmm bands */
-  int         use_sums;         /* TRUE to fill and use the posterior sums, false not to. */
-
-  /* data structures for HMMs */
-  float forward_sc; 
-  float backward_sc; 
-  
-  /* CM Plan 9 */
-  struct cplan9_s       *hmm;       /* constructed CP9 HMM; written to hmmfile              */
-  CP9Map_t              *cp9map;    /* maps the hmm to the cm and vice versa */
+  /* variables related to CM Plan 9 HMMs */
+  struct cplan9_s       *hmm;           /* constructed CP9 HMM; written to hmmfile              */
+  CP9Bands_t *cp9b;                     /* data structure for hmm bands (bands on the hmm states) 
+				         * and arrays for CM state bands, derived from HMM bands*/
+  CP9Map_t              *cp9map;        /* maps the hmm to the cm and vice versa */
   struct cp9_dpmatrix_s *cp9_mx;        /* growable DP matrix for viterbi                       */
   struct cp9_dpmatrix_s *cp9_fwd;       /* growable DP matrix for forward                       */
   struct cp9_dpmatrix_s *cp9_bck;       /* growable DP matrix for backward                      */
   struct cp9_dpmatrix_s *cp9_posterior; /* growable DP matrix for posterior decode              */
   float                  swentry;	/* S/W aggregate entry probability       */
   float                  swexit;        /* S/W aggregate exit probability        */
-  int                    do_checkcp9;   /* TRUE to check the CP9 HMM by generating sequences */
-  int                    seed;	        /* random number generator seed (only used if(do_checkcp9) */
+  float forward_sc; 
+  float backward_sc; 
 
-  /* Alternatives to CYK */
-  int                do_inside; /* TRUE to use the Inside algorithm instead of CYK */
-  int                do_outside;/* TRUE to use the Outside algorithm instead of CYK */
-  int                do_check;  /* TRUE to check Inside and Outside probabilities */
-  int                do_post;   /* TRUE to do a posterior decode instead of CYK */
-  char             **postcode;  /* posterior decode array of strings        */
-  char              *apostcode; /* aligned posterior decode array           */
-  float           ***alpha;     /* alpha DP matrix for Inside() */
-  float           ***beta;      /* beta DP matrix for Inside() */
-  float           ***post;      /* post DP matrix for Inside() */
-
-  /* the --sub option */
-  int                do_sub;       /* TRUE to use HMM to infer start and end point of each seq
-				    * and build a separate sub CM for alignment of that seq */
-  int                do_fullsub;   /* TRUE to only remove structure outside HMM predicted start
-				    * (spos) and end points (epos) */
+  /* variables related to the do_sub option */
   CM_t              *sub_cm;       /* sub covariance model                      */
   CMSubMap_t        *submap;
   CP9Bands_t        *sub_cp9b;     /* data structure for hmm bands (bands on the hmm states) 
 				    * and arrays for CM state bands, derived from HMM bands */
-  CMSubInfo_t       *subinfo;
   CM_t              *orig_cm;      /* the original, template covariance model the sub CM was built from */
   int                spos;         /* HMM node most likely to have emitted posn 1 of target seq */
   int                spos_state;   /* HMM state type for curr spos 0=match or 1=insert */
   int                epos;         /* HMM node most likely to have emitted posn L of target seq */
   int                epos_state;   /* HMM state type for curr epos 0=match or  1=insert */
-
-  char            *check_outfile;  /* output file name for subCM stk file*/
   Parsetree_t     *orig_tr;        /* parsetree for the orig_cm; created from the sub_cm parsetree */
-  
+
   struct cplan9_s *sub_hmm;        /* constructed CP9 HMM; written to hmmfile              */
   CP9Map_t        *sub_cp9map;     /* maps the sub_hmm to the sub_cm and vice versa */
   struct cplan9_s *orig_hmm;       /* original CP9 HMM built from orig_cm */
   CP9Map_t        *orig_cp9map;    
-  CP9Bands_t      *orig_cp9b;      
-  /* Options for checking sub_cm construction */
-  int do_atest;                 /* TRUE to build 2 ML HMMs, one from the CM and one from
-				 * the sub_cm, analytically, and check to make sure
-				 * the corresponding parameters of these two HMMS
-				 * are within 'pthresh' of each other */
-  float atest_pthresh;          /* Probability threshold for atest */
 
-  int               do_elsilent;  /* TRUE to disallow EL emissions, by setting EL self transition prob
-				   * to as close to IMPOSSIBLE as we can and avoid underflow errors */
-  /*********************************************** 
-   * Parse command line
-   ***********************************************/
-  format      = SQFILE_UNKNOWN;
-  be_quiet    = FALSE;
-  do_local    = FALSE;
-  do_small    = TRUE;
-  outfile     = NULL;
-  regressfile = NULL;
-  tracefile   = NULL;
-  do_qdb = FALSE;
-  qdb_beta    = 0.0000001;
-  do_full     = FALSE;
-  do_expand   = TRUE;           /* expand bands by default if nec */
-  bdump_level = 0;
-  debug_level = 0;
-  do_hbanded  = FALSE;
-  hbandp      = 0.0001;
-  use_sums    = FALSE;
-  time_flag   = FALSE;
-  do_inside   = FALSE;
-  do_outside  = FALSE;
-  do_check    = FALSE;
-  do_post     = FALSE;
-  do_sub      = FALSE;
-  do_fullsub  = FALSE;
-  do_elsilent = FALSE;
-  do_checkcp9 = FALSE;
-  do_atest    = FALSE;
-  atest_pthresh = 0.00001;
-  check_outfile = "check.stk";
-  seed         = time ((time_t *) NULL);
+  /* variables related to query dependent banding (qdb) */
+  int    expand_flag;           /* TRUE if the dmin and dmax vectors have just been 
+				 * expanded (in which case we want to recalculate them 
+				 * before we align a new sequence), and FALSE if not*/
+  double **gamma;               /* P(subseq length = n) for each state v    */
+  int     *dmin;                /* minimum d bound for state v, [0..v..M-1] */
+  int     *dmax;                /* maximum d bound for state v, [0..v..M-1] */
+  int *orig_dmin;               /* original dmin values passed in */
+  int *orig_dmax;               /* original dmax values passed in */
+  int safe_windowlen; 
 
-  while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
-                &optind, &optname, &optarg))  {
-    if      (strcmp(optname, "-l")          == 0) do_local    = TRUE;
-    else if (strcmp(optname, "-o")          == 0) outfile     = optarg;
-    else if (strcmp(optname, "-q")          == 0) be_quiet    = TRUE;
-    else if (strcmp(optname, "--nosmall")   == 0) do_small    = FALSE;
-    else if (strcmp(optname, "--regress")   == 0) regressfile = optarg;
-    else if (strcmp(optname, "--qdb")       == 0) do_qdb       = TRUE;
-    else if (strcmp(optname, "--beta")      == 0) qdb_beta     = atof(optarg);
-    else if (strcmp(optname, "--full")      == 0) do_full      = TRUE;
-    else if (strcmp(optname, "--noexpand")  == 0) do_expand    = FALSE;
-    else if (strcmp(optname, "--banddump")  == 0) bdump_level  = atoi(optarg);
-    else if (strcmp(optname, "--tfile")     == 0) tracefile    = optarg;
-    else if (strcmp(optname, "--dlev")      == 0) debug_level  = atoi(optarg);
-    else if (strcmp(optname, "--time")      == 0) time_flag    = TRUE;
-    else if (strcmp(optname, "--inside")    == 0) do_inside    = TRUE;
-    else if (strcmp(optname, "--outside")   == 0) { do_outside = TRUE; do_check = TRUE; }
-    else if (strcmp(optname, "--post")      == 0) do_post      = TRUE;
-    else if (strcmp(optname, "--checkpost") == 0) do_check     = TRUE;
-    else if (strcmp(optname, "--sub")       == 0) do_sub       = TRUE; 
-    else if (strcmp(optname, "--fsub")      == 0) { do_sub = TRUE; do_fullsub = TRUE; }
-    else if (strcmp(optname, "--elsilent")  == 0) do_elsilent= TRUE;
-    else if (strcmp(optname, "--hbanded")   == 0) { do_hbanded = TRUE; do_small = FALSE; }
-    else if (strcmp(optname, "--hbandp")    == 0) hbandp       = atof(optarg);
-    else if (strcmp(optname, "--sums")      == 0) use_sums     = TRUE;
-    else if (strcmp(optname, "--checkcp9")  == 0) do_checkcp9  = TRUE;
-    else if (strcmp(optname, "--informat")  == 0) {
-      format = String2SeqfileFormat(optarg);
-      if (format == SQFILE_UNKNOWN) 
-	Die("unrecognized sequence file format \"%s\"", optarg);
-    }
-    else if (strcmp(optname, "-h") == 0) {
-      MainBanner(stdout, banner);
-      puts(usage);
-      puts(experts);
-      exit(EXIT_SUCCESS);
-    }
-  }
+  /* variables related to inside/outside */
+  float           ***alpha;     /* alpha DP matrix for Inside() */
+  float           ***beta;      /* beta DP matrix for Inside() */
+  float           ***post;      /* post DP matrix for Inside() */
 
-  if(do_inside && do_outside)
-    Die("Please pick either --inside or --outside (--outside will run Inside()\nalso and check to make sure Inside() and Outside() scores agree).\n");
-  if(do_checkcp9 && do_hbanded == FALSE)
-    Die("--checkcp9 only makes sense with --hbanded\n");
-  if(do_sub && do_local && !do_fullsub)
-    Die("--sub and -l combination not supported.\n");
-  if(do_sub && do_qdb)
-    Die("Please pick either --sub or --qdb.\n");
-
-  if (bdump_level > 3) Die("Highest available --banddump verbosity level is 3\n%s", usage);
-  if (argc - optind != 2) Die("Incorrect number of arguments.\n%s\n", usage);
-  cmfile = argv[optind++];
-  seqfile = argv[optind++]; 
-
-  /* Try to work around inability to autodetect from a pipe or .gz:
-   * assume FASTA format
-   */
-  if (format == SQFILE_UNKNOWN &&
-      (Strparse("^.*\\.gz$", seqfile, 0) || strcmp(seqfile, "-") == 0))
-    format = SQFILE_FASTA;
-  
-  /*****************************************************************
-   * Input and configure the CM
-   *****************************************************************/
-
-  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
-    Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
-  if (! CMFileRead(cmfp, &cm))
-    Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
-  if (cm == NULL) 
-    Die("%s empty?\n", cmfile);
-  CMFileClose(cmfp);
-  orig_cm = cm;
-  
-  /* We need to ensure that cm->el_selfsc * W >= IMPOSSIBLE
-   * (cm->el_selfsc is the score for an EL self transition) This is
-   * done because we potentially multiply cm->el_selfsc * W, and add
-   * that to IMPOSSIBLE. To avoid underflow issues this value must be
-   * less than 3 * IMPOSSIBLE. Here, to be safe, we guarantee its less
-   * than 2 * IMPOSSIBLE.
-   */
-
-  if((cm->el_selfsc * cm->W) < IMPOSSIBLE)
-    cm->el_selfsc = (IMPOSSIBLE / (cm->W+1));
-
-  if(do_elsilent) 
-    ConfigLocal_DisallowELEmissions(cm);
-
-  if (do_local && do_hbanded)
-    {
-      printf("Warning: banding with an HMM (--hbanded) and allowing\nlocal alignment (-l). This may not work very well.\n");
-    } 
-
-  CMLogoddsify(cm);
-  /*CMHackInsertScores(cm);*/	/* "TEMPORARY" fix for bad priors */
-
-  /*****************************************************************
-   * Input and digitize the unaligned sequences
-   *****************************************************************/
-
-  if (! ReadMultipleRseqs(seqfile, format, &rseq, &sqinfo, &nseq))
-    Die("Failed to read any sequences from file %s", seqfile);
-  dsq = MallocOrDie(sizeof(char *) * nseq);
-  for (i = 0; i < nseq; i++) 
-    dsq[i] = DigitizeSequence(rseq[i], sqinfo[i].len);
-  /*********************************************** 
-   * Show the banner
-   ***********************************************/
-
-  if (! be_quiet) 
-    {
-      MainBanner(stdout, banner);
-      printf(   "CM file:              %s\n", cmfile);
-      printf(   "Sequence file:        %s\n", seqfile);
-      printf("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n\n");
-    }
-
-  /*****************************************************************
-   * Do the work: 
-   *        collect parse trees for each sequence
-   *        run them thru Parsetrees2Alignment().
-   *****************************************************************/
-  
   tr    = MallocOrDie(sizeof(Parsetree_t) * nseq);
   minsc = FLT_MAX;
   maxsc = -FLT_MAX;
   avgsc = 0;
-
-
-  if(do_post)
-    {
-      postcode = malloc(sizeof(char *) * nseq);
-    }      
 
   watch1 = StopwatchCreate(); /* watch1 is used to time each step individually */
   watch2 = StopwatchCreate(); /* watch2 times the full alignment (including band calc)
@@ -389,24 +140,19 @@ main(int argc, char **argv)
 
   if(do_hbanded || do_sub) /* We need a CP9 HMM to build sub_cms */
     {
+      /* Ensure local begins and ends in the CM are off */
+      /* TO DO: write a function that puts CM back in glocal mode */
+
       if(!build_cp9_hmm(cm, &hmm, &cp9map, FALSE, 0.0001, debug_level))
 	Die("Couldn't build a CP9 HMM from the CM\n");
-      if(do_checkcp9)
-	{
-	  sre_srandom(seed);
-	  if(!(CP9_check_by_sampling(cm, hmm, 
-					 NULL,     /* Don't keep track of failures (sub_cm feature) */
-					 1, hmm->M, 0.01, 100000, debug_level)))
-	    Die("CM Plan 9 fails sampling check!\n");
-	  else
-	    printf("CM Plan 9 passed sampling check.\n");
-	}
       cp9_mx  = CreateCPlan9Matrix(1, hmm->M, 25, 0);
 
       /* Keep this data for the original CM safe; we'll be doing
        * pointer swapping to ease the sub_cm alignment implementation. */
       orig_hmm = hmm;
       orig_cp9map = cp9map;
+      if(do_hbanded)
+	cp9b = AllocCP9Bands(cm, hmm);
 
       StopwatchZero(watch2);
       StopwatchStart(watch2);
@@ -423,6 +169,7 @@ main(int argc, char **argv)
       CMLogoddsify(cm);
       /*CMHackInsertScores(cm);*/	/* "TEMPORARY" fix for bad priors */
     }
+
   if((do_local && do_hbanded) && !do_sub)
       {
 	/*printf("configuring the CM plan 9 HMM for local alignment.\n");*/
@@ -431,7 +178,7 @@ main(int argc, char **argv)
 
       }
   if(do_sub) /* to get spos and epos for the sub_cm, 
-	      * we config the HMM to local mode with equiprobable start/end points.*/
+	      * we config the HMM to local mode with equiprobably start/end points.*/
       {
 	/*printf("configuring the CM plan 9 HMM for local alignment.\n");*/
 	swentry= ((hmm->M)-1.)/hmm->M; /* all start pts equiprobable, including 1 */
@@ -455,25 +202,34 @@ main(int argc, char **argv)
 	}
 
       if(bdump_level > 1) 
-	{
 	  /*printf("qdb_beta:%f\n", qdb_beta);*/
 	  debug_print_bands(cm, dmin, dmax);
-	}
       expand_flag = FALSE;
-    }
+      /* Copy dmin and dmax, so we can replace them after expansion */
+      orig_dmin = MallocOrDie(sizeof(int) * cm->M);
+      orig_dmax = MallocOrDie(sizeof(int) * cm->M);
+      for(v = 0; v < cm->M; v++)
+	{
+	  orig_dmin[v] = dmin[v];
+	  orig_dmax[v] = dmax[v];
+	}
+    }	  
+  if(do_post)
+    postcode = malloc(sizeof(char *) * nseq);
 
-  /* Allocate data structures for use with HMM banding strategy */
-  if(do_hbanded)
-    {
-      cp9b = AllocCP9Bands(cm, hmm);
-      orig_cp9b = cp9b;
-    }
+  orig_cm = cm;
+
+  /*****************************************************************
+   *  Collect parse trees for each sequence
+   *****************************************************************/
 
   for (i = 0; i < nseq; i++)
     {
+      StopwatchZero(watch1);
+      StopwatchStart(watch1);
       StopwatchZero(watch2);
       StopwatchStart(watch2);
-
+      
       if (sqinfo[i].len == 0) Die("ERROR: sequence named %s has length 0.\n", sqinfo[i].name);
 
       /* Potentially, do HMM calculations. */
@@ -489,11 +245,12 @@ main(int argc, char **argv)
 	  if(debug_level > 0) printf("CP9 i: %d | forward_sc : %.2f\n", i, forward_sc);
 	  backward_sc = CP9Backward(dsq[i], 1, sqinfo[i].len, orig_hmm, &cp9_bck);
 	  if(debug_level > 0) printf("CP9 i: %d | backward_sc: %.2f\n", i, backward_sc);
-
+	  
 	  /*debug_check_CP9_FB(cp9_fwd, cp9_bck, hmm, forward_sc, 1, sqinfo[i].len, dsq[i]);*/
 	  cp9_posterior = cp9_bck;
 	  CP9FullPosterior(dsq[i], 1, sqinfo[i].len, orig_hmm, cp9_fwd, cp9_bck, cp9_posterior);
 	}
+
       /* If we're in sub mode:
        * (1) Get HMM posteriors. (we already did this above)
        * (2) Infer the start (spos) and end (epos) HMM states by 
@@ -512,8 +269,6 @@ main(int argc, char **argv)
 	  CP9NodeForPosn(orig_hmm, 1, sqinfo[i].len, 1,             cp9_posterior, &spos, &spos_state, debug_level);
 	  CP9NodeForPosn(orig_hmm, 1, sqinfo[i].len, sqinfo[i].len, cp9_posterior, &epos, &epos_state, debug_level);
 	  
-	  printf("spos: %d epos: %d\n", spos, epos);
-
 	  /* If the most likely state to have emitted the first or last residue
 	   * is the insert state in node 0, it only makes sense to start modelling
 	   * at consensus column 1. */
@@ -525,7 +280,6 @@ main(int argc, char **argv)
 	    epos = spos;
 	  
 	  /* (3) Build the sub_cm from the original CM. */
-	  subinfo = AllocSubInfo(epos-spos+1);
 	  if(!(build_sub_cm(orig_cm, &sub_cm, 
 			    spos, epos,         /* first and last col of structure kept in the sub_cm  */
 			    &submap,            /* maps from the sub_cm to cm and vice versa           */
@@ -533,7 +287,6 @@ main(int argc, char **argv)
 			    debug_level)))      /* print or don't print debugging info                 */
 	    Die("Couldn't build a sub CM from the CM\n");
 	  cm    = sub_cm; /* orig_cm still points to the original CM */
-
 	  /* If the sub_cm models the full consensus length of the orig_cm, with only
 	   * structure removed, we configure it for local alignment to allow it to 
 	   * skip the single stranded regions at the beginning and end. But only 
@@ -602,7 +355,7 @@ main(int argc, char **argv)
       if(do_hbanded)
 	{
 	  StopwatchStop(watch1);
-	  if(time_flag) StopwatchDisplay(stdout, "CP9 Forward/Backward CPU time: ", watch1);
+	  if(do_timings) StopwatchDisplay(stdout, "CP9 Forward/Backward CPU time: ", watch1);
 	  StopwatchZero(watch1);
 	  StopwatchStart(watch1);
       
@@ -645,7 +398,7 @@ main(int argc, char **argv)
 		       cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, debug_level);
 	  
 	  StopwatchStop(watch1);
-	  if(time_flag) StopwatchDisplay(stdout, "CP9 Band calculation CPU time: ", watch1);
+	  if(do_timings) StopwatchDisplay(stdout, "CP9 Band calculation CPU time: ", watch1);
 	  /* Use the CM bands on i and j to get bands on d, specific to j. */
 	  for(v = 0; v < cm->M; v++)
 	    {
@@ -677,20 +430,15 @@ main(int argc, char **argv)
 	  */
 	}
       
-      if(do_qdb && do_expand)
+      if(do_qdb)
 	{
 	  /*Check if we need to reset the query dependent bands b/c they're currently expanded. */
 	  if(expand_flag)
 	    {
-	      FreeBandDensities(cm, gamma);
-	      free(dmin);
-	      free(dmax);
-	      while(!(BandCalculationEngine(cm, safe_windowlen, qdb_beta, 0, &dmin, &dmax, &gamma, do_local)))
+	      for(v = 0; v < cm->M; v++)
 		{
-		  FreeBandDensities(cm, gamma);
-		  free(dmin);
-		  free(dmax);
-		  safe_windowlen *= 2;
+		  dmin[v] = orig_dmin[v];
+		  dmax[v] = orig_dmax[v];
 		}
 	      expand_flag = FALSE;
 	    }
@@ -707,16 +455,8 @@ main(int argc, char **argv)
 	      expand_flag = TRUE;
 	    }
 	}
-      else 
-	{
-	  if (do_qdb && (sqinfo[i].len < dmin[0] || sqinfo[i].len > dmax[0]))
-	    {
-	      /* the seq we're aligning is outside the root band, but
-	       * --noexpand was enabled, so we die.*/
-	      Die("Length of sequence to align (%d nt) lies outside the root band.\ndmin[0]: %d and dmax[0]: %d\nImpossible to align with query dependent banded CYK unless you try --expand.\n%s", sqinfo[i].len, dmin[0], dmax[0], usage);
-	    }
-	}
-      printf("Aligning %-30s", sqinfo[i].name);
+
+      if(!silent_mode) printf("Aligning %-30s", sqinfo[i].name);
       if (do_inside)
 	{
 	  if(do_hbanded)
@@ -916,13 +656,12 @@ main(int argc, char **argv)
 	      free(post);
 	    }
 	}
-
       avgsc += sc;
       if (sc > maxsc) maxsc = sc;
       if (sc < minsc) minsc = sc;
-
-      printf("    score: %10.2f bits\n", sc);
-
+      
+      if(!silent_mode) printf("    score: %10.2f bits\n", sc);
+      
       /* If debug level high enough, print out the parse tree */
       if(debug_level > 2)
 	{
@@ -947,7 +686,7 @@ main(int argc, char **argv)
 	      free(cp9b->hdmax[v]);
 	    }
 	  StopwatchStop(watch2);
-	  if(time_flag) 
+	  if(do_timings) 
 	    { 
 	      StopwatchDisplay(stdout, "band calc and jd CYK CPU time: ", watch2);
 	      printf("\n");
@@ -972,7 +711,7 @@ main(int argc, char **argv)
 	  /* Replace the sub_cm trace with the converted orig_cm trace. */
 	  FreeParsetree(tr[i]);
 	  tr[i] = orig_tr;
-
+	  
 	  FreeSubMap(submap);
 	  FreeCM(sub_cm); /* cm and sub_cm now point to NULL */
 	  if(do_hbanded)
@@ -983,107 +722,6 @@ main(int argc, char **argv)
 	    }
 	}
     }
-  avgsc /= nseq;
-
-  if(!(do_inside || do_outside))
-    {
-      msa = Parsetrees2Alignment(orig_cm, dsq, sqinfo, NULL, tr, nseq, do_full);
-      
-      if(do_post)
-	{
-	  for (i = 0; i < nseq; i++)
-	    {
-	      MakeAlignedString(msa->aseq[i], msa->alen, postcode[i], &apostcode); 
-	      MSAAppendGR(msa, "POST", i, apostcode);
-	      free(apostcode);
-	      free(postcode[i]);
-	    }
-	  free(postcode);
-	}
-
-      /*****************************************************************
-       * Output the alignment.
-       *****************************************************************/
-      
-      printf("\n");
-      if (outfile != NULL && (ofp = fopen(outfile, "w")) != NULL) 
-	{
-	  WriteStockholm(ofp, msa);
-	  printf("Alignment saved in file %s\n", outfile);
-	  fclose(ofp);
-	}
-      else
-	WriteStockholm(stdout, msa);
-      
-      /* Detailed traces for debugging training set.
-       */
-      if (tracefile != NULL)       
-	{
-	  printf("%-40s ... ", "Saving parsetrees"); fflush(stdout);
-	  if ((ofp = fopen(tracefile,"w")) == NULL)
-	    Die("failed to open trace file %s", tracefile);
-	  for (i = 0; i < msa->nseq; i++) 
-	    {
-	      fprintf(ofp, "> %s\n", msa->sqname[i]);
-	      fprintf(ofp, "  SCORE : %.2f bits\n", ParsetreeScore(orig_cm, tr[i], dsq[i], FALSE));;
-	      ParsetreeDump(ofp, tr[i], orig_cm, dsq[i]);
-	      fprintf(ofp, "//\n");
-	    }
-	  fclose(ofp);
-	  printf("done. [%s]\n", tracefile);
-	}
-
-
-      if (regressfile != NULL && (ofp = fopen(regressfile, "w")) != NULL) 
-	{
-	  /* Must delete author info from msa, because it contains version
-	   * and won't diff clean in regression tests.
-	   */
-	  free(msa->au); msa->au = NULL;
-	  WriteStockholm(ofp, msa);
-	  fclose(ofp);
-	}
-    }
-
-  /*****************************************************************
-   * Clean up and exit.
-   *****************************************************************/
-  
-  for (i = 0; i < nseq; i++) 
-    {
-      if(!(do_inside || do_outside)) FreeParsetree(tr[i]);
-      free(dsq[i]);
-      FreeSequence(rseq[i], &(sqinfo[i]));
-    }
-  if (do_qdb)
-    {
-      FreeBandDensities(cm, gamma);
-      free(dmin);
-      free(dmax);
-    }
-
-  if(do_hbanded && !do_sub) /* if do_sub, we've already freed these */
-    {
-      FreeCP9Bands(cp9b);
-      FreeCP9Map(cp9map);
-    }
-  if(do_hbanded || do_sub)
-    {
-      FreeCPlan9Matrix(cp9_mx);
-      FreeCPlan9(orig_hmm);
-    }
-
-  if(!(do_inside || do_outside)) MSAFree(msa);
-  FreeCM(orig_cm);
-  free(rseq);
-  free(sqinfo);
-  free(dsq);
-  free(tr);
-  
-  SqdClean();
-  StopwatchFree(watch1);
-  StopwatchFree(watch2);
-  return 0;
+  *ret_tr = tr; 
+  if (ret_postcode != NULL) *ret_postcode = postcode; 
 }
-
-  

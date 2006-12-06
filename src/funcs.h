@@ -4,6 +4,11 @@
 #include "cplan9.h"
 #include "prior.h"
 
+#ifdef USE_MPI
+#include "mpi.h"
+#endif
+
+
 /* from alphabet.c
  */
 extern char   SymbolIndex(char sym);
@@ -39,6 +44,8 @@ extern float    CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0,
 extern void     BandedParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq, 
 				    double **gamma, int W, int *dmin, int *dmax);
 extern void     ExpandBands(CM_t *cm, int qlen, int *dmin, int *dmax);
+extern void     qdb_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *dmin, 
+				    int *dmax, int bdump_level);
 
 /* from cm.c
  */
@@ -152,6 +159,14 @@ extern MSA *Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wg
 
 /* from scancyk.c
  */
+extern scan_results_t *CreateResults (int size);
+extern void ExpandResults (scan_results_t *r, int additional);
+extern void FreeResults (scan_results_t *r);
+extern void sort_results (scan_results_t *results);
+extern void report_hit (int i, int j, int bestr, float score, scan_results_t *results);
+extern void remove_overlapping_hits (scan_results_t *results, int L);
+extern void  remove_extremely_overlapping_hits (scan_results_t *results);
+
 extern float CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
 		     int *ret_nhits, int **ret_hitr, 
 		     int **ret_hiti, int **ret_hitj, float **ret_hitsc,
@@ -357,7 +372,7 @@ extern float CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, char *dsq);
 extern int  build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t **ret_submap, 
 			 int do_fullsub, int print_flag);
 extern void CP9NodeForPosn(struct cplan9_s *hmm, int i0, int j0, int x, 
-			   struct cp9_dpmatrix_s *post, int *ret_node, int *ret_type);
+			   struct cp9_dpmatrix_s *post, int *ret_node, int *ret_type, int print_flag);
 extern void StripWUSSGivenCC(MSA *msa, char **dsq, float gapthresh, int first_match, int last_match);
 extern int  check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, double threshold, 
 				       int print_flag);
@@ -374,4 +389,10 @@ extern CMSubInfo_t *AllocSubInfo(int clen);
 extern void         FreeSubInfo(CMSubInfo_t *subinfo);
 extern void  debug_print_cm_params(CM_t *cm);
 
-
+/* from cm_wrappers.c
+ */
+extern void
+AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***ret_tr, int do_local, int do_small, 
+		 int do_qdb, double qdb_beta, int do_hbanded, int use_sums, double hbandp, int do_sub, int do_fullsub, 
+		 int do_hmmonly, int do_inside, int do_outside, int do_check, int do_post, char ***ret_postcode, 
+		 int do_timings, int bdump_level, int debug_level, int silent_mode);

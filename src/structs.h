@@ -17,6 +17,9 @@
 
 #define GC_SEGMENTS 101                   /* Possible integer GC contents */
 
+#define BE_EFFICIENT  0		/* setting for do_full: small memory mode */
+#define BE_PARANOID   1		/* setting for do_full: keep whole matrix, perhaps for debugging */
+
 /* Constants for type of cutoff */
 #define SCORE_CUTOFF 0
 #define E_CUTOFF 1
@@ -472,6 +475,33 @@ typedef struct cp9bands_s {
 #define HMMMATCH  0
 #define HMMINSERT 1
 #define HMMDELETE 2
+
+/* structures from RSEARCH */
+#define INIT_RESULTS 100
+typedef struct _scan_result_node_t {
+  int start;
+  int stop;
+  int bestr;   /* Best root state */
+  float score;
+  Parsetree_t *tr;
+} scan_result_node_t;
+
+typedef struct _scan_results_t {
+  scan_result_node_t *data;
+  int num_results;
+  int num_allocated;
+} scan_results_t;
+
+typedef struct _db_seq_t {
+  char *seq[2];
+  char *dsq[2];
+  SQINFO sqinfo;
+  scan_results_t *results[2];
+  int chunks_sent;
+  int alignments_sent;           /* -1 is flag for none queued yet */
+  float best_score;              /* Best score for scan of this sequence */
+  int partition;                 /* For histogram building */
+} db_seq_t;
 
 #endif /*STRUCTSH_INCLUDED*/
 
