@@ -6,7 +6,7 @@
  * EPN, Wed Dec  6 06:11:46 2006
  * 
  * Wrapper functions for aligning and searching seqs
- * with a CM.
+ * with a CM, with helper functions.
  * 
  */
 
@@ -20,6 +20,7 @@
 #include <float.h>
 #include <math.h>
 
+#include "easel.h"
 #include "squid.h"		/* general sequence analysis library    */
 #include "msa.h"                /* squid's multiple alignment i/o       */
 #include "stopwatch.h"          /* squid's process timing module        */
@@ -29,41 +30,55 @@
 #include "sre_stack.h"
 #include "hmmband.h"         
 #include "cm_postprob.h"
+#include "stats.h"
+#include "esl_gumbel.h"
+
+static db_seq_t *read_next_seq (ESL_SQFILE *dbfp, int do_revcomp);
+static void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
+			   int do_complement, int do_stats, double *mu, 
+			   double *lambda) ;
+static int get_gc_comp(char *seq, int start, int stop);
+
+/* coordinate -- macro that checks if it's reverse complement and if so 
+   returns coordinate in original strand
+   a = true if revcomp, false if not
+   b = the position in current seq
+   c = length of the seq
+*/
+#define coordinate(a,b,c) ( a ? -1*b+c+1 : b)
 
 /* EPN, Tue Dec  5 14:25:02 2006
  * 
  * Function: AlignSeqsWrapper()
  * 
- * Purpose:  Given a CM, digitized sequences, and
- *           a slew of options, do preliminaries, 
- *           call the correct CYK function and
- *           return parsetrees and optionally postal
- *           codes (if do_post).
+ * Purpose:  Given a CM, digitized sequences, and a slew of options, 
+ *           do preliminaries, call the correct CYK function and return
+ *           parsetrees and optionally postal codes (if do_post).
  * 
- * Args:     CM      - the covariance model
- *           dsq     - digitized sequences to align
- *           sqinfo  - info on the seq's we're aligning
- *           nseq    - number of seqs we're aligning
- *           ret_tr  - RETURN: parsetrees (pass NULL if trace isn't wanted)
- *           do_local - TRUE to do local alignment, FALSE not to.
- *           do_small - TRUE to use D&C CYK, FALSE not to
- *           do_qdb  - TRUE to use query dependet bands
- *           qdb_beta - tail loss prob for QDB calculation
- *           do_hbanded - TRUE use CP9 hmm derived target dependent bands
- *           use_sums- TRUE to fill and use the posterior sums for CP9 band calculation 
- *           cp9bandp- tail loss probability for CP9 hmm bands 
- *           do_sub  - TRUE to build and use a sub CM for alignment
- *           do_fullsub - TRUE to build and use a full sub CM for alignment
- *           do_hmmonly - TRUE to align to the CP9 HMM, with viterbi
- *           do_inside - TRUE to do Inside, and not return a parsetree
- *           do_outside - TRUE to do Outside, and not return a parsetree
- *           do_check  - TRUE to check Inside and Outside probabilities
- *           do_post - TRUE to do a posterior decode instead of CYK 
+ * Args:     CM           - the covariance model
+ *           dsq          - digitized sequences to align
+ *           sqinfo       - info on the seq's we're aligning
+ *           nseq         - number of seqs we're aligning
+ *           ret_tr       - RETURN: parsetrees (pass NULL if trace isn't wanted)
+ *           do_local     - TRUE to do local alignment, FALSE not to.
+ *           do_small     - TRUE to use D&C CYK, FALSE not to
+ *           do_qdb       - TRUE to use query dependet bands
+ *           qdb_beta     - tail loss prob for QDB calculation
+ *           do_hbanded   - TRUE use CP9 hmm derived target dependent bands
+ *           use_sums     - TRUE to fill and use the posterior sums for CP9 band calculation 
+ *           cp9bandp     - tail loss probability for CP9 hmm bands 
+ *           do_sub       - TRUE to build and use a sub CM for alignment
+ *           do_fullsub   - TRUE to build and use a full sub CM for alignment
+ *           do_hmmonly   - TRUE to align to the CP9 HMM, with viterbi
+ *           do_inside    - TRUE to do Inside, and not return a parsetree
+ *           do_outside   - TRUE to do Outside, and not return a parsetree
+ *           do_check     - TRUE to check Inside and Outside probabilities
+ *           do_post      - TRUE to do a posterior decode instead of CYK 
  *           ret_postcode - RETURN: postal code string, (NULL if do_post = FALSE)
- *           do_timings - TRUE to report timings for alignment 
- *           bdump_level - verbosity level for band related print statements
- *           debug_level - verbosity level for debugging print statements
- *           silent_mode - TRUE to not print anything, FALSE to print scores 
+ *           do_timings   - TRUE to report timings for alignment 
+ *           bdump_level  - verbosity level for band related print statements
+ *           debug_level  - verbosity level for debugging print statements
+ *           silent_mode  - TRUE to not print anything, FALSE to print scores 
  */
 void
 AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***ret_tr, int do_local, 
@@ -753,3 +768,414 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
   *ret_tr = tr; 
   if (ret_postcode != NULL) *ret_postcode = postcode; 
 }
+
+/*
+ * Function: serial_search_database
+ * Date:     EPN, Thu Dec  7 18:07:24 2006
+ *           original code by RJK, Tue May 28, 2002 [St. Louis]
+ * Purpose:  Given an open database file, a model, and various parameters, does
+ *           the search using CYKScan and then determines and prints out the 
+ *           alignments.
+ *
+ * Parameters:        dbfp         the database
+ *                    cm           the model
+ *                    cons         precalc'ed consensus info for display
+ *                    W            maximum size of hit
+ *                    cutoff_type  either E_CUTOFF or SCORE_CUTOFF
+ *                    cutoff       min. score to report
+ *                    do_revcomp   search complementary strand
+ *                    do_align     calculate and do alignment
+ *                    do_stats     calculate statistics
+ *                    mu           for stats
+ *                    lambda       for stats
+ *                    dmin         minimum bound on d for state v; 0..M (NULL if non-banded)
+ *                    dmax         maximum bound on d for state v; 0..M (NULL if non-banded)         
+ */
+void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
+			     int W, int cutoff_type, float cutoff, 
+			     int do_revcomp, int do_align, int do_stats,
+			     double *mu, double *lambda, int *dmin, int *dmax) 
+{
+
+  int reversed;                /* Am I currently doing reverse complement? */
+  int i,a;
+  db_seq_t *dbseq;
+  float min_cutoff;
+  
+  printf("in serial_search database do_align: %d do_revcomp: %d\n", do_align, do_revcomp);
+  
+  if (cutoff_type == SCORE_CUTOFF) 
+    min_cutoff = cutoff;
+  else 
+    min_cutoff = e_to_score (cutoff, mu, lambda);
+  
+  while ((dbseq = read_next_seq(dbfp, do_revcomp)))
+    {
+      for (reversed = 0; reversed <= do_revcomp; reversed++) 
+	{
+	  /* Scan */
+	  dbseq->results[reversed] = CreateResults(INIT_RESULTS);
+	  if(dmin == NULL && dmax == NULL)
+	    CYKScan (cm, dbseq->sq[reversed]->dsq, 1, dbseq->sq[reversed]->n, W,
+		     min_cutoff, 0, dbseq->results[reversed]);
+	  else
+	    CYKBandedScan (cm, dbseq->sq[reversed]->dsq, dmin, dmax, 1, 
+			   dbseq->sq[reversed]->n, W, min_cutoff, 0, 
+			   dbseq->results[reversed]);
+	  /* Align results */
+	  if (do_align) {
+	    for (i=0; i<dbseq->results[reversed]->num_results; i++) {
+	      CYKDivideAndConquer
+		(cm, dbseq->sq[reversed]->dsq, dbseq->sq[reversed]->n,
+		 dbseq->results[reversed]->data[i].bestr,
+		 dbseq->results[reversed]->data[i].start, 
+		 dbseq->results[reversed]->data[i].stop, 
+		 &(dbseq->results[reversed]->data[i].tr),
+		 dmin, dmax); /* dmin and dmax will be NULL if non-banded,
+			       * alternatively, could always pass NULL to 
+			       * always do non-banded alignment. */
+	      
+	      /* Now, subtract out the starting point of the result so 
+		 that it can be added in later.  This makes the print_alignment
+		 routine compatible with the parallel version, while not needing
+		 to send the entire database seq over for each alignment. */
+	      for (a=0; a<dbseq->results[reversed]->data[i].tr->n; a++) {
+		dbseq->results[reversed]->data[i].tr->emitl[a] -= 
+		  (dbseq->results[reversed]->data[i].start - 1);
+		dbseq->results[reversed]->data[i].tr->emitr[a] -= 
+		  (dbseq->results[reversed]->data[i].start - 1);
+	      }
+	    }
+	  }
+	}
+      /* Print results */
+      print_results (cm, cons, dbseq, do_revcomp, do_stats,
+		     mu, lambda);
+      fflush (stdout);
+      
+      FreeResults(dbseq->results[0]);
+      esl_sq_Destroy(dbseq->sq[0]);
+      if (do_revcomp) {
+	esl_sq_Destroy(dbseq->sq[1]);
+	FreeResults(dbseq->results[1]);
+      }
+    }
+}
+
+#ifdef USE_MPI
+/*
+ * Function: parallel_search_database * Date:     RJK, Tue May 28, 2002 [St. Louis]
+ * Purpose:  Given the same parameters as serial_search_database, does
+ *           the database search with alignments and printing results, but
+ *           in a parallel fashion.
+ *     
+ *           It the master node performs the following tasks:
+ *           while (!eof(dbfp) && slaves_working) {
+ *             For each empty process, send next job
+ *             Wait for a result
+ *             For each empty process, send next job
+ *             Process result
+ *           }
+ *            
+ *
+ *           The slave processes do the following:
+ *           while (1) {
+ *             recieve_job
+ *             if (terminate code) return;
+ *             do the job
+ *             send the results
+ *           }
+ */
+void parallel_search_database (SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons, 
+			       int D, float cutoff, int cutoff_type,
+			       int do_revcomp,
+			       int do_align, int do_stats,
+			       float *mu, float *lambda,
+			       int mpi_my_rank, int mpi_master_rank, 
+			       int mpi_num_procs) {
+  char job_type;
+  int seqlen;
+  char *seq;
+  scan_results_t *results;
+  dbseq_t **active_seqs;
+  job_t **process_status;
+  int eof = FALSE;
+  job_t *job_queue = NULL;
+  int proc_index, active_seq_index;
+  int bestr;       /* Best root state -- for alignments */
+  Parsetree_t *tr;
+  float min_cutoff;
+
+  if (cutoff_type == SCORE_CUTOFF) {
+    min_cutoff = cutoff;
+  } else {
+    min_cutoff = e_to_score (cutoff, mu, lambda);
+  }
+
+  if (mpi_my_rank == mpi_master_rank) {
+    /* Set up arrays to hold pointers to active seqs and jobs on
+       processes */
+    active_seqs = MallocOrDie(sizeof(dbseq_t *) * mpi_num_procs);
+    process_status = MallocOrDie(sizeof(job_t *)*mpi_num_procs);
+    for (active_seq_index=0; active_seq_index<mpi_num_procs; 
+	 active_seq_index++) 
+      active_seqs[active_seq_index] = NULL;
+    for (proc_index = 0; proc_index < mpi_num_procs; proc_index++)
+      process_status[proc_index] = NULL;
+    
+
+    do {
+      /* Check for idle processes.  Send jobs */
+      for (proc_index=0; proc_index<mpi_num_procs; proc_index++) {
+	if (proc_index == mpi_master_rank) continue;  /* Skip master process */
+	if (process_status[proc_index] == NULL) {         
+	  /* I'm idle -- need a job */
+	  if (job_queue == NULL) {           /* Queue is empty */
+	    /* Find next non-master open process */
+	    for (active_seq_index=0; active_seq_index<mpi_num_procs; 
+		 active_seq_index++) {
+	      if (active_seqs[active_seq_index] == NULL) break;
+	    }
+	    if (active_seq_index == mpi_num_procs) {
+	      Die ("Tried to read more than %d seqs at once\n", mpi_num_procs);
+	    }
+	    active_seqs[active_seq_index] = read_next_seq(dbfp, do_revcomp);
+	    if (active_seqs[active_seq_index] == NULL) {
+	      eof = TRUE;
+	      break;            /* Queue is empty and no more seqs */
+	    }
+	    else
+	      job_queue = enqueue (active_seqs[active_seq_index], 
+				   active_seq_index, D, do_revcomp, 
+				   STD_SCAN_WORK);
+	  }
+	  if (job_queue != NULL)
+	    send_next_job (&job_queue, process_status + proc_index, 
+			   proc_index);
+	} 
+      } 
+      /* Wait for next reply */
+      if (procs_working(process_status, mpi_num_procs, mpi_master_rank)) {
+	active_seq_index = check_results (active_seqs, process_status, D);
+	if (active_seqs[active_seq_index]->chunks_sent == 0) {
+	  remove_overlapping_hits
+	      (active_seqs[active_seq_index]->results[0], 
+	       active_seqs[active_seq_index]->sqinfo.len);
+	  if (cutoff_type == E_CUTOFF)
+	    remove_hits_over_e_cutoff 
+	      (active_seqs[active_seq_index]->results[0],
+	       active_seqs[active_seq_index]->seq[0],
+	       cutoff, lambda, mu);
+	  if (do_revcomp) {
+	    remove_overlapping_hits 
+		(active_seqs[active_seq_index]->results[1],
+		 active_seqs[active_seq_index]->sqinfo.len);
+	    if (cutoff_type == E_CUTOFF)
+	      remove_hits_over_e_cutoff 
+		(active_seqs[active_seq_index]->results[1],
+		 active_seqs[active_seq_index]->seq[1],
+		 cutoff, lambda, mu);
+	  }
+	  /* Check here if doing alignments and queue them or check if 
+	     all done */
+	  if (do_align && 
+	      active_seqs[active_seq_index]->alignments_sent == -1) {
+	    enqueue_alignments (&job_queue, active_seqs[active_seq_index],
+				active_seq_index, do_revcomp, ALIGN_WORK);
+	  }
+	  if (!do_align || 
+	      active_seqs[active_seq_index]->alignments_sent == 0) {
+	    print_results (cm, cons, active_seqs[active_seq_index], 
+			   do_revcomp, do_stats, mu, lambda);
+	    if (do_revcomp) {
+	      FreeResults(active_seqs[active_seq_index]->results[1]);
+	      free(active_seqs[active_seq_index]->dsq[1]);
+	      free(active_seqs[active_seq_index]->seq[1]);
+	    }
+	    FreeResults(active_seqs[active_seq_index]->results[0]);
+	    free(active_seqs[active_seq_index]->dsq[0]);
+	    FreeSequence(active_seqs[active_seq_index]->seq[0], 
+			 &(active_seqs[active_seq_index]->sqinfo));
+	    active_seqs[active_seq_index] = NULL;
+	  }
+	}
+      }
+    } while (!eof || job_queue != NULL || 
+	     (procs_working(process_status, mpi_num_procs, mpi_master_rank)));
+    for (proc_index=0; proc_index<mpi_num_procs; proc_index++) {
+      if (proc_index != mpi_master_rank) {
+	send_terminate (proc_index);
+      }
+    }
+    free(active_seqs);
+    free(process_status);
+  } else {
+    seq = NULL;
+    do {
+      job_type = recieve_job (&seqlen, &seq, &bestr, mpi_master_rank);
+      if (job_type == STD_SCAN_WORK) {
+	results = CreateResults(INIT_RESULTS);
+	CYKScan (cm, seq, seqlen, min_cutoff, D, results);
+	send_scan_results (results, mpi_master_rank);
+	FreeResults(results);
+      } else if (job_type == ALIGN_WORK && do_align) {
+	CYKDivideAndConquer(cm, seq, seqlen, bestr, 1, seqlen, &tr);
+	send_align_results (tr, mpi_master_rank);
+	FreeParsetree(tr);
+      }
+      if (seq != NULL)
+	free(seq);
+      seq = NULL;
+    } while (job_type != TERMINATE_WORK);
+  }
+  MPI_Barrier(MPI_COMM_WORLD);
+}
+#endif
+
+
+/*
+ * Function: read_next_seq
+ * Date:     RJK, Wed May 29, 2002 [St. Louis]
+ *           easeled: EPN, Fri Dec  8 11:40:20 2006
+ * Purpose:  Given a dbfp and whether or not to take the reverse complement,
+ *           reads in the sequence and prepares reverse complement.
+ */
+db_seq_t *read_next_seq (ESL_SQFILE *dbfp, int do_revcomp) 
+{
+  db_seq_t *ret_dbseq;
+  int status;
+  char *tmp_seq;
+
+  ret_dbseq = MallocOrDie(sizeof(db_seq_t));
+
+  ret_dbseq->sq[0] = esl_sq_Create();
+  status = (esl_sqio_Read(dbfp, ret_dbseq->sq[0]) == eslOK);
+
+  while(status && ret_dbseq->sq[0]->n == 0) /* skip zero length seqs */
+    {
+      esl_sq_Reuse(ret_dbseq->sq[0]);
+      status = (esl_sqio_Read(dbfp, ret_dbseq->sq[0]) == eslOK);
+    }
+  if(!status)
+    return NULL;
+
+  s2upper(ret_dbseq->sq[0]->seq);                      /* Makes uppercase */
+  /* Following line will be unnecessary once ESL_SQ objects have dsq's implemented
+   * (i.e. allocated and filled within a esl_sqio_Read() call */
+  ret_dbseq->sq[0]->dsq = DigitizeSequence (ret_dbseq->sq[0]->seq, ret_dbseq->sq[0]->n);
+
+  if (do_revcomp)
+    {
+      /* make a new SQ object, to store the reverse complement */
+      tmp_seq = MallocOrDie(sizeof(char) * (ret_dbseq->sq[0]->n+1));
+      revcomp(tmp_seq, ret_dbseq->sq[0]->seq);
+      ret_dbseq->sq[1] = esl_sq_CreateFrom(ret_dbseq->sq[0]->name, tmp_seq, 
+					ret_dbseq->sq[0]->desc, ret_dbseq->sq[0]->acc, 
+					ret_dbseq->sq[0]->ss);
+      /* Following line will be unnecessary once ESL_SQ objects have dsq's implemented
+       * (i.e. allocated and filled within a esl_sq_CreateFrom() call */
+      ret_dbseq->sq[1]->dsq = DigitizeSequence (ret_dbseq->sq[1]->seq, ret_dbseq->sq[1]->n);
+    }
+  ret_dbseq->results[0] = NULL;
+  ret_dbseq->results[1] = NULL;
+
+  return(ret_dbseq);
+}
+
+/*
+ * Function: print_results
+ * Date:     RJK, Wed May 29, 2002 [St. Louis]
+ *           easelfied: EPN, Fri Dec  8 08:29:05 2006 
+ * Purpose:  Given the needed information, prints the results.
+ *
+ *           cm                  the model
+ *           cons                consensus seq for model (query seq)
+ *           dbseq               the database seq
+ *           name                sequence name
+ *           len                 length of the sequence
+ *           in_revcomp       are we doing the minus strand
+ *           do_stats            should we calculate stats?
+ *           mu, lambda          for statistics
+ */
+void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
+		    int do_complement, int do_stats, double *mu, 
+		    double *lambda) 
+{
+  int i;
+  char *name;
+  int len;
+  scan_results_t *results;
+  Fancyali_t *ali;
+  int in_revcomp;
+  int header_printed = 0;
+  int gc_comp;
+
+  name = dbseq->sq[0]->name;
+  len = dbseq->sq[0]->n;
+
+  for (in_revcomp = 0; in_revcomp <= do_complement; in_revcomp++) {
+    results = dbseq->results[in_revcomp];
+    if (results == NULL || results->num_results == 0) continue;
+
+    if (!header_printed) {
+      header_printed = 1;
+      printf (">%s\n\n", name);
+    }
+    printf ("  %s strand results:\n\n", in_revcomp ? "Minus" : "Plus");
+
+    for (i=0; i<results->num_results; i++) {
+      printf (" Query = %d - %d, Target = %d - %d\n", 
+	      cons->lpos[cm->ndidx[results->data[i].bestr]]+1,
+	      cons->rpos[cm->ndidx[results->data[i].bestr]]+1,
+	      coordinate(in_revcomp, results->data[i].start, len), 
+	      coordinate(in_revcomp, results->data[i].stop, len));
+      if (do_stats) {
+	gc_comp = get_gc_comp (dbseq->sq[in_revcomp]->seq, 
+			       results->data[i].start, results->data[i].stop);
+	printf (" Score = %.2f, E = %.4g, P = %.4g\n", results->data[i].score,
+		RJK_ExtremeValueE(results->data[i].score, mu[gc_comp], 
+				  lambda[gc_comp]),
+		esl_gumbel_surv((double) results->data[i].score, mu[gc_comp], 
+				lambda[gc_comp]));
+	/*ExtremeValueP(results->data[i].score, mu[gc_comp], 
+	  lambda[gc_comp]));*/
+      } else {
+	printf (" Score = %.2f\n", results->data[i].score);
+      }
+      printf ("\n");
+      if (results->data[i].tr != NULL) {
+	ali = CreateFancyAli (results->data[i].tr, cm, cons, 
+			      dbseq->sq[in_revcomp]->dsq +
+			      (results->data[i].start-1));
+	PrintFancyAli(stdout, ali);
+	printf ("\n");
+      }
+    }
+  }
+  fflush(stdout);
+}
+
+/* Function: get_gc_comp
+ * Date:     RJK, Mon Oct 7, 2002 [St. Louis]
+ * Purpose:  Given a sequence and start and stop coordinates, returns 
+ *           integer GC composition of the region 
+ */
+int get_gc_comp(char *seq, int start, int stop) {
+  int i;
+  int gc_ct;
+  char c;
+
+  if (start > stop) {
+    i = start;
+    start = stop;
+    stop = i;
+  }
+  gc_ct = 0;
+  for (i=start; i<=stop; i++) {
+    c = resolve_degenerate(seq[i]);
+    if (c=='G' || c == 'C')
+      gc_ct++;
+  }
+  return ((int)(100.*gc_ct/(stop-start+1)));
+}
+ 

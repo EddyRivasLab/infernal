@@ -14,6 +14,8 @@
 
 #include "squid.h"
 #include "ssi.h"               /* CMFILE supports SSI indexes */
+#include "easel.h"
+#include "esl_sqio.h"
 
 #define GC_SEGMENTS 101                   /* Possible integer GC contents */
 
@@ -493,9 +495,7 @@ typedef struct _scan_results_t {
 } scan_results_t;
 
 typedef struct _db_seq_t {
-  char *seq[2];
-  char *dsq[2];
-  SQINFO sqinfo;
+  ESL_SQ  *sq[2];
   scan_results_t *results[2];
   int chunks_sent;
   int alignments_sent;           /* -1 is flag for none queued yet */

@@ -1,4 +1,5 @@
 #include "squid.h"
+#include "easel.h"
 #include "msa.h"
 #include "structs.h"
 #include "cplan9.h"
@@ -38,9 +39,7 @@ extern void     PrintBandGraph(FILE *fp, double **gamma, int *min, int *max, int
 
 extern void     PrintDPCellsSaved(CM_t *cm, int *min, int *max, int W);
 extern float    CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
-			      int *ret_nhits, int **ret_hitr, 
-			      int **ret_hiti, int **ret_hitj, float **ret_hitsc,
-			      float min_thresh);
+			      float cutoff, float score_boost, scan_results_t *results);
 extern void     BandedParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq, 
 				    double **gamma, int W, int *dmin, int *dmax);
 extern void     ExpandBands(CM_t *cm, int qlen, int *dmin, int *dmax);
@@ -167,10 +166,8 @@ extern void report_hit (int i, int j, int bestr, float score, scan_results_t *re
 extern void remove_overlapping_hits (scan_results_t *results, int L);
 extern void  remove_extremely_overlapping_hits (scan_results_t *results);
 
-extern float CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
-		     int *ret_nhits, int **ret_hitr, 
-		     int **ret_hiti, int **ret_hitj, float **ret_hitsc,
-		     float min_thresh);
+extern float  CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
+		      float cutoff, float score_boost, scan_results_t *results);
 extern float CYKScanRequires(CM_t *cm, int L, int W);
 
 /* from smallcyk.c
@@ -392,7 +389,15 @@ extern void  debug_print_cm_params(CM_t *cm);
 /* from cm_wrappers.c
  */
 extern void
-AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***ret_tr, int do_local, int do_small, 
-		 int do_qdb, double qdb_beta, int do_hbanded, int use_sums, double hbandp, int do_sub, int do_fullsub, 
-		 int do_hmmonly, int do_inside, int do_outside, int do_check, int do_post, char ***ret_postcode, 
+AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***ret_tr, 
+		 int do_local, int do_small, int do_qdb, double qdb_beta, int do_hbanded, 
+		 int use_sums, double hbandp, int do_sub, int do_fullsub, int do_hmmonly, 
+		 int do_inside, int do_outside, int do_check, int do_post, char ***ret_postcode, 
 		 int do_timings, int bdump_level, int debug_level, int silent_mode);
+extern void 
+serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons, int W, int cutoff_type, 
+			float cutoff, int do_revcomp, int do_align, int do_stats, double *mu, 
+			double *lambda, int *dmin, int *dmax);
+
+
+

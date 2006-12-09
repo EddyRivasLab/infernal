@@ -26,15 +26,30 @@
 #include "hmmband.h"
 #include "stats.h"
 #include "esl_gumbel.h"
+#include "esl_sqio.h"
 #include "mpifuncs.h"
 
 /* From rsearch-1.1 various defaults defined here */
-#define DEFAULT_NUM_SAMPLES 1000
+#define DEFAULT_NUM_SAMPLES 0
 #define DEFAULT_CUTOFF 0.0
 #define DEFAULT_CUTOFF_TYPE SCORE_CUTOFF
 
+static int in_mpi;
+
+#ifdef USE_MPI
+/*
+ * Function: exit_from_mpi
+ * Date:     RJK, Thu Jun 6, 2002 [St. Louis]
+ * Purpose:  Calls MPI_Abort on exit if in_mpi flag is 1, otherwise
+ *           returns
+ */
+void exit_from_mpi () {
+  if (in_mpi)
+    MPI_Abort (MPI_COMM_WORLD, -1);
+}
+#endif
+
 static int QDBFileRead(FILE *fp, CM_t *cm, int **ret_dmin, int **ret_dmax);
-static int get_gc_comp(char *seq, int start, int stop);
 static int set_partitions(int **ret_partitions, int *num_partitions, char *list);
 
 static char banner[] = "cmsearch - search a sequence database with an RNA covariance model";
@@ -42,8 +57,10 @@ static char banner[] = "cmsearch - search a sequence database with an RNA covari
 static char usage[]  = "\
 Usage: cmsearch [-options] <cmfile> <sequence file>\n\
 The sequence file is expected to be in FASTA format.\n\
-  Most commonly used options are:\n\
+  Available options are:\n\
    -h     : help; print brief help on version and usage\n\
+   -s <f> : use cutoff bit score of <f> [default: 0]\n\
+   -E <f> : use cutoff E-value of <f> (default ignored; not-calc'ed)\n\
    -W <n> : set scanning window size to <n> (default: precalc'd in cmbuild)\n\
 ";
 
@@ -54,13 +71,11 @@ static char experts[] = "\
    --local       : do local alignment\n\
    --noalign     : find start/stop only; don't do alignments\n\
    --dumptrees   : dump verbose parse tree information for each hit\n\
-   --thresh <f>  : CM reporting bit score threshold (try 0 before < 0) [df: 0]\n\
-   --X           : project X!\n\
+   --partition <n>[,<n>]... : partition points for different GC content EVDs\n\
    --inside      : scan with Inside, not CYK (caution much slower(!))\n\
    --null2       : turn on the post hoc second null model [df:OFF]\n\
    --learninserts: do not set insert emission scores to 0\n\
-   --E <n>       : use cutoff E-value of n (default ignored; not-calc'ed)\n\
-   --partition <n>[,<n>]... : partition points for different GC content EVDs\n\
+   --negscore <f>: set min bit score to report as <f> < 0 (experimental)\n\
 \n\
   * Filtering options using a CM plan 9 HMM (*in development*):\n\
    --hmmfb        : use Forward to get end points & Backward to get start points\n\
@@ -82,17 +97,18 @@ static char experts[] = "\
 
 static struct opt_s OPTIONS[] = {
   { "-h", TRUE, sqdARG_NONE }, 
+  { "-s", TRUE, sqdARG_FLOAT }, 
+  { "-E", TRUE, sqdARG_FLOAT }, 
   { "-W", TRUE, sqdARG_INT }, 
   { "--dumptrees",  FALSE, sqdARG_NONE },
   { "--informat",   FALSE, sqdARG_STRING },
   { "--local",      FALSE, sqdARG_NONE },
   { "--noalign",    FALSE, sqdARG_NONE },
   { "--toponly",    FALSE, sqdARG_NONE },
-  { "--thresh",     FALSE, sqdARG_FLOAT},
-  { "--X",          FALSE, sqdARG_NONE },
   { "--inside",     FALSE, sqdARG_NONE },
   { "--null2",      FALSE, sqdARG_NONE },
-  { "--zeroinserts",FALSE, sqdARG_NONE},
+  { "--learninserts",FALSE, sqdARG_NONE},
+  { "--negscore",   FALSE, sqdARG_FLOAT},
   { "--hmmfb",      FALSE, sqdARG_NONE },
   { "--hmmweinberg",FALSE, sqdARG_NONE},
   { "--hmmpad",     FALSE, sqdARG_INT },
@@ -106,7 +122,6 @@ static struct opt_s OPTIONS[] = {
   { "--banddump",   FALSE, sqdARG_NONE},
   { "--sums",       FALSE, sqdARG_NONE},
   { "--scan2hbands",FALSE, sqdARG_NONE},
-  { "--E",          FALSE, sqdARG_FLOAT},
   { "--partition",  FALSE, sqdARG_STRING}
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
@@ -116,12 +131,13 @@ main(int argc, char **argv)
 {
   char            *cmfile;      /* file to read CM from */	
   char            *seqfile;     /* file to read sequences from */
-  int              format;      /* format of sequence file */
+  int              format = eslSQFILE_UNKNOWN;   /* format of sequence file */
+  int              status;
   CMFILE          *cmfp;        /* open CM file for reading */
-  SQFILE	  *sqfp;        /* open seqfile for reading */
+  int             querylen;     /* consensus length of the CM query */
+  ESL_SQFILE	  *dbfp;        /* open seqfile for reading */
   CM_t            *cm;          /* a covariance model       */
-  char            *seq;         /* RNA sequence */
-  SQINFO           sqinfo;      /* optional info attached to seq */
+  ESL_SQ           *sq;
   char            *dsq;         /* digitized RNA sequence */
   Stopwatch_t     *watch;       /* times band calc, then search time */
   int              i, ip;
@@ -132,8 +148,8 @@ main(int argc, char **argv)
   Fancyali_t      *ali;         /* alignment, formatted for display */
 
   double  **gamma;              /* P(subseq length = n) for each state v    */
-  int     *dmin;		/* minimum d bound for state v, [0..v..M-1] */
-  int     *dmax; 		/* maximum d bound for state v, [0..v..M-1] */
+  int     *dmin = NULL;		/* minimum d bound for state v, [0..v..M-1] */
+  int     *dmax = NULL; 	/* maximum d bound for state v, [0..v..M-1] */
   double   beta;		/* tail loss probability for a priori banding */
 
   /* information on hits found with the CM */
@@ -160,7 +176,7 @@ main(int argc, char **argv)
   int   *tmp_hitj;               /* end positions of hits */
   float *tmp_hitsc;		 /* scores of hits */
 
-  int    windowlen;		/* maximum len of hit; scanning window size */
+  int    W;   		        /* maximum len of hit; scanning window size */
   int    do_revcomp;		/* true to do reverse complement too */
   int    do_local;		/* TRUE to do local alignment */
   int    do_align;              /* TRUE to calculate and show alignments */
@@ -186,7 +202,6 @@ main(int argc, char **argv)
 				 * we expect dmax[0] to be, for truncation error
 				 * handling.
 				 */
-  float thresh;                 /* bit score threshold, report scores > thresh */
 
   /* CM Plan 9 HMM data structures */
   struct cplan9_s       *cp9_hmm;       /* constructed CP9 HMM; written to hmmfile              */
@@ -237,27 +252,51 @@ main(int argc, char **argv)
   /* E-value statistics (ported from rsearch-1.1) */
   int sample_length;            /* length of samples to use for calc'ing stats (2*W) */
   int num_samples = DEFAULT_NUM_SAMPLES;
-  float e_cutoff;
+  int cutoff_type;              /* either E_CUTOFF for e-values or SCORE_CUTOFF for bit scores */
+  float sc_cutoff;              /* bit score cutoff, min bit score to report */
+  float e_cutoff;               /* E-value cutoff, min E value to report */
+  float cutoff;                 /* either E-value cutoff or bit score cutoff */
   float e_value;                
-  int cutoff_type;
   int do_stats;                 /* TRUE to calculate E-value statistics */
   double lambda[GC_SEGMENTS];
   double K[GC_SEGMENTS];
-  double mu[GC_SEGMENTS];        /* Set from lambda, K, N */
+  double mu[GC_SEGMENTS];       /* Set from lambda, K, N */
   int seed;                     /* Random seed */
-
+  float score_boost = 0.0;      /* add this value to CYK scores to try to return negative scoring
+				 * hits above -1 * score_boost (experimental) */
   long N;                        /* Effective number of sequences for this search */
+  float W_scale = 2.0;           /* scale we'll multiply W by to get sample_length */
   int defined_N = FALSE;
 
   int *partitions;              /* What partition each percentage point goes to */
   int num_partitions = 1;
-  int gc_count[GC_SEGMENTS];
+  int *gc_ct;                   /* gc_ct[x] observed 100-nt segs in DB with GC% of x [0..100] */
   int gc_comp; 
 
 #ifdef USE_MPI
   int mpi_my_rank;              /* My rank in MPI */
   int mpi_num_procs;            /* Total number of processes */
   int mpi_master_rank;          /* Rank of master process */
+
+  /* Initailize MPI, get values for rank and num procs */
+  MPI_Init (&argc, &argv);
+  
+  atexit (exit_from_mpi);
+  in_mpi = 1;                /* Flag for exit_from_mpi() */
+
+  MPI_Comm_rank (MPI_COMM_WORLD, &mpi_my_rank);
+  MPI_Comm_size (MPI_COMM_WORLD, &mpi_num_procs);
+
+  /*
+   * Determine master process.  This is the lowest ranking one that can do I/O
+   */
+  mpi_master_rank = get_master_rank (MPI_COMM_WORLD, mpi_my_rank);
+
+  printf("B CS rank: %4d master: %4d num: %4d\n", mpi_my_rank, mpi_master_rank, mpi_num_procs);
+
+  /* If I'm the master, do the following set up code -- parse arguments, read
+     in matrix and query, build model */
+  if (mpi_my_rank == mpi_master_rank) {
 #endif
 
   /*********************************************** 
@@ -265,7 +304,6 @@ main(int argc, char **argv)
    ***********************************************/
 
   format            = SQFILE_UNKNOWN;
-  windowlen         = 200;
   set_window        = FALSE;
   do_revcomp        = TRUE;
   do_local          = FALSE;
@@ -278,7 +316,6 @@ main(int argc, char **argv)
   beta              = 0.0000001;
   do_projectx       = FALSE;
   do_bdump          = FALSE;
-  thresh            = 0.;
   do_hmmonly        = FALSE;
   do_filter         = FALSE;
   filter_fb         = FALSE;
@@ -293,24 +330,37 @@ main(int argc, char **argv)
   do_null2          = FALSE;
   do_zero_inserts   = TRUE;
   sample_length     = 0;
-  e_cutoff          = DEFAULT_CUTOFF;
+  sc_cutoff         = 0;
+  e_cutoff          = 10;
   cutoff_type       = DEFAULT_CUTOFF_TYPE;
   do_stats          = FALSE;
-  debug_level = 0;
+  score_boost       = 0.;
+  debug_level       = 0;
   
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
     if       (strcmp(optname, "-W")          == 0) 
-      { windowlen    = atoi(optarg); set_window = TRUE; }
+      { W    = atoi(optarg); set_window = TRUE; }
+    else if       (strcmp(optname, "-s")          == 0) 
+      { 
+	sc_cutoff    = atof(optarg); 
+	cutoff_type  = SCORE_CUTOFF;
+      }
+    else if       (strcmp(optname, "-E")          == 0) 
+      { 
+	e_cutoff = atof(optarg); 
+	cutoff_type  = E_CUTOFF;
+	do_stats = TRUE;
+	num_samples = 1000;
+      }
     else if  (strcmp(optname, "--dumptrees") == 0) do_dumptrees = TRUE;
     else if  (strcmp(optname, "--local")     == 0) do_local     = TRUE;
     else if  (strcmp(optname, "--noalign")   == 0) do_align     = FALSE;
     else if  (strcmp(optname, "--toponly")   == 0) do_revcomp   = FALSE;
-    else if  (strcmp(optname, "--thresh")    == 0) thresh       = atof(optarg);
-    else if  (strcmp(optname, "--X")         == 0) do_projectx  = TRUE;
     else if  (strcmp(optname, "--inside")    == 0) do_inside    = TRUE;
     else if  (strcmp(optname, "--null2")     == 0) do_null2     = TRUE;
     else if  (strcmp(optname, "--learninserts")== 0) do_zero_inserts = FALSE;
+    else if  (strcmp(optname, "--negscore")   == 0) score_boost = -1. * atof(optarg);
 
     else if  (strcmp(optname, "--hmmfb")   == 0)   { do_filter = TRUE; filter_fb  = TRUE; }
     else if  (strcmp(optname, "--hmmweinberg")   == 0)   
@@ -329,11 +379,6 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--banddump")  == 0) do_bdump     = TRUE;
     else if  (strcmp(optname, "--sums")      == 0) use_sums     = TRUE;
     else if  (strcmp(optname, "--scan2hbands")== 0) do_scan2hbands= TRUE;
-    else if  (strcmp(optname,  "--E")        == 0) {
-      e_cutoff = atof(optarg);
-      cutoff_type = E_CUTOFF;
-      do_stats = TRUE;
-    }
     else if (strcmp (optname, "--partition") == 0) {
       if (set_partitions (&partitions, &num_partitions, optarg)) {
 	Die("Specify partitions separated by commas, no spaces, range 0-100, integers only\n");
@@ -356,14 +401,31 @@ main(int argc, char **argv)
   cmfile = argv[optind++];
   seqfile = argv[optind++]; 
 
+  /**********************************************
+   * Seed random number generator
+   **********************************************/
+  /* Seed the random number generator with the time */
+  /* This is the seed used in the HMMER code */
+  /*seed = (time ((time_t *) NULL));    */
+  seed = 33;
+  sre_srandom (seed);
+  printf ("Random seed: %d\n", seed);
+
+  printf ("W scale of %.1f\n", W_scale);
+
+  /* Initialize partition array, only if we haven't already in set_partitions */
+  if(num_partitions == 1)
+    {
+      partitions = MallocOrDie(sizeof(int) * GC_SEGMENTS+1);
+      for (i = 0; i < GC_SEGMENTS; i++) 
+	partitions[i] = 0;
+    }
   /*********************************************** 
    * Preliminaries: open our files for i/o; get a CM
    ***********************************************/
 
   watch = StopwatchCreate();
 
-  if ((sqfp = SeqfileOpen(seqfile, format, NULL)) == NULL)
-    Die("Failed to open sequence database file %s\n%s\n", seqfile, usage);
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
     Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
 
@@ -380,23 +442,31 @@ main(int argc, char **argv)
     Die("Can't pick --hbanded without --hmmfb or --hmmweinberg filtering option.\n");
   if (read_qdb && !(do_qdb))
     Die("--qdbfile and --noqdb don't make sense together.\n");
+  if (score_boost < 0)
+    Die("for --negscore <f>, <f> must be negative.\n");
+  if (score_boost != 0. && do_stats)
+    Die("--negscore and -E combination not yet implemented.\n");
 
   /* Open the sequence (db) file */
-  if ((sqfp = SeqfileOpen(seqfile, format, NULL)) == NULL)
-    Die("Failed to open sequence database file %s\n%s\n", seqfile, usage);
+  status = esl_sqfile_Open(seqfile, format, NULL, &dbfp);
+  if (status == eslENOTFOUND) esl_fatal("No such file."); 
+  else if (status == eslEFORMAT) esl_fatal("Format unrecognized."); 
+  else if (status == eslEINVAL) esl_fatal("Can’t autodetect stdin or .gz."); 
+  else if (status != eslOK) esl_fatal("Failed to open sequence database file, code %d.", status); 
 
   /* EPN 08.18.05 */
-  if (! (set_window)) windowlen = cm->W;
+  if (! (set_window)) W = cm->W;
   /*printf("***cm->W : %d***\n", cm->W);*/
 
-  if (hmm_pad >= (windowlen/2)) 
-    Die("Value for --hmmpad is too high (must be less than W/2=%d).\n", (int) (windowlen/2));
+  if (hmm_pad >= (W/2)) 
+    Die("Value for --hmmpad is too high (must be less than W/2=%d).\n", (int) (W/2));
 
   CMLogoddsify(cm);
   if(do_zero_inserts)
     CMHackInsertScores(cm);	/* "TEMPORARY" fix for bad priors */
       
   cons = CreateCMConsensus(cm, 3.0, 1.0); 
+  querylen = cons->clen;
 
   if (do_filter || do_hmmonly || do_hbanded)
     {
@@ -429,10 +499,10 @@ main(int argc, char **argv)
 	}
     }
 
-  if (do_qdb || do_projectx || do_bdump)
+  if (do_qdb || do_bdump)
     {
-      StopwatchZero(watch);
-      StopwatchStart(watch);
+      /*StopwatchZero(watch);
+	StopwatchStart(watch);*/
       if(read_qdb)
 	{
 	  /* read the bands from a file */
@@ -447,7 +517,7 @@ main(int argc, char **argv)
       else /* calculate the bands */
 	{
 	  /* start stopwatch for timing the band calculation */
-	  safe_windowlen = windowlen * 2;
+	  safe_windowlen = W * 2;
 	  while(!(BandCalculationEngine(cm, safe_windowlen, beta, 0, &dmin, &dmax, &gamma, do_local)))
 	    {
 	      /*Die("BandCalculationEngine() failed.\n");*/
@@ -460,168 +530,188 @@ main(int argc, char **argv)
 	}	  
       /* EPN 11.11.05 
        * An important design decision.
-       * We're changing the windowlen value here. By default,
-       * windowlen is read from the cm file (set to cm->W). 
+       * We're changing the W value here. By default,
+       * W is read from the cm file (set to cm->W). 
        * Here we're doing a banded scan though. Its pointless to allow
-       * a windowlen that's greater than the largest possible banded hit 
-       * (which is dmax[0]). So we reset windowlen to dmax[0].
+       * a W that's greater than the largest possible banded hit 
+       * (which is dmax[0]). So we reset W to dmax[0].
        * Its also possible that BandCalculationEngine() returns a dmax[0] that 
        * is > cm->W. This should only happen if the beta we're using now is < 1E-7 
        * (1E-7 is the beta value used to determine cm->W in cmbuild). If this 
-       * happens, the current implementation reassigns windowlen to this larger value.
+       * happens, the current implementation reassigns W to this larger value.
        * NOTE: if W was set at the command line, the command line value is 
        *       always used.
        */
       if(!(set_window))
 	{
-	  windowlen = dmax[0];
+	  W = dmax[0];
 	}
       if(do_bdump) 
 	{
 	  printf("beta:%f\n", beta);
 	  debug_print_bands(cm, dmin, dmax);
-	  PrintDPCellsSaved(cm, dmin, dmax, windowlen);
-	    }
-      StopwatchStop(watch);
-      StopwatchDisplay(stdout, "\nCPU time (band calc): ", watch);
+	  PrintDPCellsSaved(cm, dmin, dmax, W);
+	}
+      /*StopwatchStop(watch);
+	StopwatchDisplay(stdout, "\nCPU time (band calc): ", watch);*/
     }
 
-  if(do_stats)
+  /* EPN 11.18.05 Now that know what W is, we need to ensure that
+   * cm->el_selfsc * W >= IMPOSSIBLE (cm->el_selfsc is the score for an EL self transition)
+   * because we will potentially multiply cm->el_selfsc * W, and add that to 
+   * 2 * IMPOSSIBLE, and IMPOSSIBLE must be > -FLT_MAX/3 so we can add it together 3 
+   * times (see structs.h). 
+   */
+  if((cm->el_selfsc * W) < IMPOSSIBLE)
+    cm->el_selfsc = (IMPOSSIBLE / (W+1) * 3);
+
+#ifdef USE_MPI
+  }   /* End of first block that is only done by master process */
+  /* Barrier for debugging */
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  /* Here we need to broadcast the following parameters:
+     num_samples, W, W_scale, cm */
+  first_broadcast(&num_samples, &W, &W_scale, &cm, 
+		  mpi_my_rank, mpi_master_rank);
+#endif
+  /**************************************************
+   * Make the histogram
+   *************************************************/
+  
+#ifdef USE_MPI
+  if (mpi_my_rank == mpi_master_rank) 
     {
-      /*******************************************************************************
-       * Make the histogram (copied and minimally changed from rsearch-1.1/rsearch.c
-       *******************************************************************************/
-      StopwatchZero(watch);
-      StopwatchStart(watch);
+#endif
+      GetDBInfo(dbfp, &N, &gc_ct);
+      if (do_revcomp) N*=2;
+#ifdef USE_MPI
+    }
+#endif
+  /* Set sample_length to 2*W if not yet set */
+  if (sample_length == 0) sample_length = W_scale * W;
+  
+  if (num_samples > 0) /* num_samples will be 0 unless do_stats is TRUE */
+    {
+#ifdef USE_MPI
+    /*StopwatchZero(watch);
+      StopwatchStart(watch);*/
+    /* UNTOUCHED FROM RSEARCH: need to add ability to do banded */
+    if (mpi_num_procs > 1)
+	parallel_make_histogram(gc_ct, partitions, num_partitions,
+				cm, W, 
+				num_samples, sample_length, lambda, K, 
+				mpi_my_rank, mpi_num_procs, mpi_master_rank);
+    else 
+#endif
+      if(do_hmmonly)
+	serial_make_histogram (gc_ct, partitions, num_partitions,
+			       cm, W, 
+			       num_samples, sample_length, lambda, K, 
+			       dmin, dmax, cp9_hmm, TRUE);
+      else if(do_qdb)
+	serial_make_histogram (gc_ct, partitions, num_partitions,
+			       cm, W, 
+			       num_samples, sample_length, lambda, K, 
+			       dmin, dmax, NULL, TRUE);
+      else
+	serial_make_histogram (gc_ct, partitions, num_partitions,
+			       cm, W, 
+			       num_samples, sample_length, lambda, K, 
+			       NULL, NULL, NULL, TRUE); /* don't use QDB to search */
+
+    /*StopwatchStop(watch);
+      StopwatchDisplay(stdout, "\nCPU time (histogram): ", watch);*/
+    
+#ifdef USE_MPI
+    if (mpi_my_rank == mpi_master_rank) {
+#endif
       
-      /* Seed the random number generator with the time */
-      /* This is the seed used in the HMMER code */
-      /*seed = (time ((time_t *) NULL));    */
-      seed = 33;
-      
-      /* Initialize partition array, only if we haven't already in set_partitions */
-      if(num_partitions == 1)
-	{
-	  partitions = MallocOrDie(sizeof(int) * GC_SEGMENTS+1);
-	  for (i = 0; i < GC_SEGMENTS; i++) 
-	    partitions[i] = 0;
+      /* Set mu from K, lambda, N */
+      if (num_samples > 0)
+	for (i=0; i<GC_SEGMENTS; i++) {
+	  mu[i] = log(K[i]*N)/lambda[i];
 	}
-
-#ifdef USE_MPI
-      if (mpi_my_rank == mpi_master_rank) {
-#endif
-	get_dbinfo (sqfp, &N, gc_count);
-	if (do_revcomp) N*=2;
-#ifdef USE_MPI
+      
+      if (cutoff_type == E_CUTOFF) {
+	if (num_samples < 1) 
+	  Die ("Cannot use -E option without defined lambda and K\n");
       }
-#endif
-
-      /* Set sample_length to 2*W if not yet set */
-      if (sample_length == 0) sample_length = 2 * windowlen;
       
       if (num_samples > 0) {
-#ifdef USE_MPI
-	/* UNTOUCHED FROM RSEARCH: need to add ability to do banded */
-	if (mpi_num_procs > 1)
-	  parallel_make_histogram(gc_count, partitions, num_partitions,
-				  cm, windowlen, 
-				  num_samples, sample_length, lambda, K, 
-				  mpi_my_rank, mpi_num_procs, mpi_master_rank);
-	else 
-#endif
-	  if(do_hmmonly)
-	    serial_make_histogram (gc_count, partitions, num_partitions,
-				   cm, windowlen, 
-				   num_samples, sample_length, lambda, K, 
-				   dmin, dmax, cp9_hmm, TRUE);
-	  else if(do_qdb)
-	    serial_make_histogram (gc_count, partitions, num_partitions,
-				   cm, windowlen, 
-				   num_samples, sample_length, lambda, K, 
-				   dmin, dmax, NULL, TRUE);
-	  else
-	    serial_make_histogram (gc_count, partitions, num_partitions,
-				   cm, windowlen, 
-				   num_samples, sample_length, lambda, K, 
-				   NULL, NULL, NULL, TRUE); /* don't use QDB to search */
-      } 
-      
-#ifdef USE_MPI
-      if (mpi_my_rank == mpi_master_rank) {
-#endif
-	
-	/* Set mu from K, lambda, N */
-	if (num_samples > 0)
-	  for (i=0; i<GC_SEGMENTS; i++) {
-	    mu[i] = log(K[i]*N)/lambda[i];
-	  }
-	
-	if (cutoff_type == E_CUTOFF) {
-	  if (num_samples < 1) 
-	    Die ("Cannot use -E option without defined lambda and K\n");
-	}
-	
-	if (num_samples > 0) {
-	  printf ("Statistics calculated with simulation of %d samples of length %d\n", num_samples, sample_length);
-	  if (num_partitions == 1) {
-	    printf ("No partition points\n");
-	  } else {
+	printf ("Statistics calculated with simulation of %d samples of length %d\n", num_samples, sample_length);
+	if (num_partitions == 1) {
+	  printf ("No partition points\n");
+	} else {
 	    printf ("Partition points are: ");
 	    for (i=0; i<=GC_SEGMENTS; i++) {
 	      if (partitions[i] != partitions[i-1]) {
 		printf ("%d ", i);
 	      }
 	    }
-	  }
-	  for (i=0; i<GC_SEGMENTS; i++) {
-	    /*printf ("GC = %d\tlambda = %.4f\tmu = %.4f\n", i, lambda[i], mu[i]);*/
-	  }
-	  printf ("N = %ld\n", N);
-	  if (cutoff_type == SCORE_CUTOFF) {
-	    printf ("Using score cutoff of %.2f\n", e_cutoff);
-	  } else {
-	    printf ("Using E cutoff of %.2f\n", e_cutoff);
-	  }
-	} else {
-	  printf ("lambda and K undefined -- no statistics\n");
-	  printf ("Using score cutoff of %.2f\n", thresh);
 	}
-	fflush(stdout);
-	StopwatchStop(watch);
-	StopwatchDisplay(stdout, "\nCPU time (histogram): ", watch);
+	for (i=0; i<GC_SEGMENTS; i++) {
+	  /*printf ("GC = %d\tlambda = %.4f\tmu = %.4f\n", i, lambda[i], mu[i]);*/
+	}
+	printf ("N = %ld\n", N);
+	if (cutoff_type == SCORE_CUTOFF) {
+	  printf ("Using score cutoff of %.2f\n", sc_cutoff);
+	} else {
+	  printf ("Using E cutoff of %.2f\n", e_cutoff);
+	}
+      } else {
+	printf ("lambda and K undefined -- no statistics\n");
+	printf ("Using score cutoff of %.2f\n", sc_cutoff);
+      }
+      fflush(stdout);
     }
   /*******************************************************************************
    * End of making the histogram.
    *******************************************************************************/
+  /*************************************************
+   *    Do the search
+   *************************************************/
 #ifdef USE_MPI
   }                   /* Done with second master-only block */
   
   /* Now I need to broadcast the following parameters:
-     cutoff, cutoff_type, do_complement, do_align, defined_mu, defined_lambda, 
-     defined_K, mu, lambda, K, N */
-  /*second_broadcast(&cutoff, &cutoff_type, &do_complement, &do_align, mu, lambda, K, &N, mpi_my_rank, mpi_master_rank);*/
+     cutoff, cutoff_type, do_revcomp, do_align, mu, lambda, K, N */
+  second_broadcast(&sc_cutoff, &e_cutoff, &cutoff_type, &do_revcomp, &do_align, mu, lambda, 
+		   K, &N, mpi_my_rank, mpi_master_rank);
 #endif
 
+#ifdef USE_MPI
+  /*if (mpi_num_procs > 1)
+    parallel_search_database (dbfp, cm, W, cutoff_type, sc_cutoff, e_cutoff
+			      cutoff, cutoff_type, do_revcomp, do_align,
+			      num_samples > 0, mu, lambda,
+			      mpi_my_rank, mpi_master_rank, mpi_num_procs);
+			      else*/
+#endif
+  if(cutoff_type == E_CUTOFF) cutoff = e_cutoff;
+  else cutoff = sc_cutoff;
 
+  serial_search_database (dbfp, cm, cons, W, cutoff_type, cutoff, do_revcomp, do_align,
+			  do_stats, mu, lambda, dmin, dmax);
+  
+  return EXIT_SUCCESS;
+}
+#if 0
   /* start stopwatch for timing the search */
   StopwatchZero(watch);
   StopwatchStart(watch);
-  /* EPN 11.18.05 Now that know what windowlen is, we need to ensure that
-   * cm->el_selfsc * W >= IMPOSSIBLE (cm->el_selfsc is the score for an EL self transition)
-   * because we will potentially multiply cm->el_selfsc * W, and add that to 
-   * 2 * IMPOSSIBLE, and IMPOSSIBLE must be > -FLT_MAX/3 so we can add it together 3 
-   * times (see structs.h). 
-   */
-  if((cm->el_selfsc * windowlen) < IMPOSSIBLE)
-    cm->el_selfsc = (IMPOSSIBLE / (windowlen+1) * 3);
 
   maxlen   = 0;
   reversed = FALSE;
-  while (reversed || ReadSeq(sqfp, sqfp->format, &seq, &sqinfo))
+  sq = esl_sq_Create(); 
+  while (reversed || esl_sqio_Read(dbfp, sq) == eslOK)
     {
-      if (sqinfo.len == 0) continue; 	/* silently skip len 0 seqs */
-      if (sqinfo.len > maxlen) maxlen = sqinfo.len;
-      dsq = DigitizeSequence(seq, sqinfo.len);
+      if (sq->n == 0) continue; 	/* silently skip len 0 seqs */
+      if (sq->n > maxlen) maxlen = sq->n;
+      /* Following line will be unnecessary once ESL_SQ objects have dsq's implemented
+       * (i.e. allocated and filled within a esl_sqio_Read() call) once that 
+       * happens we can set dsq = sq->dsq or just just sq->dsq instead of dsq.*/      
+      dsq = DigitizeSequence(sq->seq, sq->n);
 
       if (do_filter || do_hmmonly || do_hbanded) 
 	/* either scan only with CP9 HMM, or use it to infer bands for CYK.
@@ -631,12 +721,12 @@ main(int argc, char **argv)
 
 	  if(do_hmmonly) /* scan only with CP9 HMM */
 	    {
-	      fwd_sc = CP9ForwardScan(dsq, 1, sqinfo.len, windowlen, cp9_hmm, &cp9_fwd, 
+	      fwd_sc = CP9ForwardScan(dsq, 1, sq->n, W, cp9_hmm, &cp9_fwd, 
 				      &hmm_nhits, &hmm_hitr, &hmm_hiti, &hmm_hitj, &hmm_hitsc, 
 				      hmm_thresh);
 	      /*printf("forward  sc: %f\n", fwd_sc);*/
 	      /*printf("hmmer_Alphabet: %s\n", hmmer_Alphabet);
-		sc = CP9Forward(dsq, sqinfo.len, cp9_hmm, &cp9_fwd);*/
+		sc = CP9Forward(dsq, sq->n, cp9_hmm, &cp9_fwd);*/
 	      /* We're only using the HMM */
 	      nhits = hmm_nhits;
 	      hitr  = hmm_hitr;
@@ -651,7 +741,7 @@ main(int argc, char **argv)
 	       * (i's). Then combine them to get likely i and j pairs (see 
 	       * code in CP9_scan.c.)
 	       */
-	      fb_sc = CP9ForwardBackwardScan(dsq, 1, sqinfo.len, windowlen, cp9_hmm, &cp9_fwd, &cp9_bck,
+	      fb_sc = CP9ForwardBackwardScan(dsq, 1, sq->n, W, cp9_hmm, &cp9_fwd, &cp9_bck,
 					     &hmm_nhits, &hmm_hitr, &hmm_hiti, &hmm_hitj, &hmm_hitsc, hmm_thresh,
 					     hmm_pad);
 	      /*printf("forward/backward sc: %f\n", fb_sc);*/
@@ -663,12 +753,12 @@ main(int argc, char **argv)
 	      for (i = 0; i < hmm_nhits; i++)
 		{
 	      	  printf("HMM hit %-4d: %6d %6d %8.2f bits\n", i, 
-			 reversed ? sqinfo.len - hmm_hiti[i] + 1 : hmm_hiti[i], 
-			 reversed ? sqinfo.len - hmm_hitj[i] + 1 : hmm_hitj[i],
+			 reversed ? sq->n - hmm_hiti[i] + 1 : hmm_hiti[i], 
+			 reversed ? sq->n - hmm_hitj[i] + 1 : hmm_hitj[i],
 			 hmm_hitsc[i]);
 		  filter_fraction += hmm_hitj[i] - hmm_hiti[i] + 1;
 		}
-	      filter_fraction /= sqinfo.len;
+	      filter_fraction /= sq->n;
 	      printf("Fraction removed by filter is about: %5.2f (%6.2f speed-up)\n", (1.-filter_fraction), (1.0 / (filter_fraction)));
 
 	      /* For each hit defined by an i-j pair, use non-scanning, traditional
@@ -691,17 +781,17 @@ main(int argc, char **argv)
 		    {
 		      if (do_qdb)
 			if (do_inside)
-			  InsideBandedScan(cm, dsq, dmin, dmax, hmm_hiti[i], hmm_hitj[i], windowlen, 
-					   &tmp_nhits, &tmp_hitr, &tmp_hiti, &tmp_hitj, &tmp_hitsc, thresh);
+			  InsideBandedScan(cm, dsq, dmin, dmax, hmm_hiti[i], hmm_hitj[i], W, 
+					   &tmp_nhits, &tmp_hitr, &tmp_hiti, &tmp_hitj, &tmp_hitsc, sc_cutoff);
 			else
-			  CYKBandedScan(cm, dsq, dmin, dmax, hmm_hiti[i], hmm_hitj[i], windowlen, 
-					&tmp_nhits, &tmp_hitr, &tmp_hiti, &tmp_hitj, &tmp_hitsc, thresh);
+			  CYKBandedScan(cm, dsq, dmin, dmax, hmm_hiti[i], hmm_hitj[i], W, 
+					&tmp_nhits, &tmp_hitr, &tmp_hiti, &tmp_hitj, &tmp_hitsc, sc_cutoff);
 		      else if (do_inside)
-			InsideScan(cm, dsq, hmm_hiti[i], hmm_hitj[i], windowlen, 
-				   &tmp_nhits, &tmp_hitr, &tmp_hiti, &tmp_hitj, &tmp_hitsc, thresh);
+			InsideScan(cm, dsq, hmm_hiti[i], hmm_hitj[i], W, 
+				   &tmp_nhits, &tmp_hitr, &tmp_hiti, &tmp_hitj, &tmp_hitsc, sc_cutoff);
 		      else
-			CYKScan(cm, dsq, hmm_hiti[i], hmm_hitj[i], windowlen, 
-				&tmp_nhits, &tmp_hitr, &tmp_hiti, &tmp_hitj, &tmp_hitsc, thresh);
+			CYKScan(cm, dsq, hmm_hiti[i], hmm_hitj[i], W, 
+				&tmp_nhits, &tmp_hitr, &tmp_hiti, &tmp_hitj, &tmp_hitsc, sc_cutoff);
 		      for (x = 0; x < tmp_nhits; x++)
 			{
 			  /* copy the new hit info the 'master' data structures */
@@ -743,14 +833,14 @@ main(int argc, char **argv)
 		      else /* scan the subsequence to get the bands (VERY EXPERIMENTAL) */
 			{
 			  /* Step 1: Get HMM posteriors.*/
-			  fb_sc = CP9ForwardScan(dsq, hmm_hiti[i], hmm_hitj[i], windowlen, cp9_hmm, &cp9_fwd,
+			  fb_sc = CP9ForwardScan(dsq, hmm_hiti[i], hmm_hitj[i], W, cp9_hmm, &cp9_fwd,
 						 &tmp_nhits, &tmp_hitr, &tmp_hiti, &tmp_hitj, &tmp_hitsc, hmm_thresh);
 			  /*printf("SCAN F hit: %d i: %d j: %d forward_sc : %f\n", i, hmm_hiti[i], hmm_hitj[i], fb_sc);*/
 			  free(tmp_hitr);
 			  free(tmp_hiti);
 			  free(tmp_hitj);
 			  free(tmp_hitsc);
-			  fb_sc = CP9BackwardScan(dsq, hmm_hiti[i], hmm_hitj[i], windowlen, cp9_hmm, &cp9_bck,
+			  fb_sc = CP9BackwardScan(dsq, hmm_hiti[i], hmm_hitj[i], W, cp9_hmm, &cp9_bck,
 						  &tmp_nhits, &tmp_hitr, &tmp_hiti, &tmp_hitj, &tmp_hitsc, hmm_thresh);
 			  /*printf("SCAN B hit: %d i: %d j: %d bckward_sc : %f\n", i, hmm_hiti[i], hmm_hitj[i], fb_sc);*/
 			  free(tmp_hitr);
@@ -785,7 +875,7 @@ main(int argc, char **argv)
 		      if(debug_level != 0)
 			{
 			  printf("printing hmm bands\n");
-			  print_hmm_bands(stdout, sqinfo.len, cp9b->hmm_M, cp9b->pn_min_m, 
+			  print_hmm_bands(stdout, sq->n, cp9b->hmm_M, cp9b->pn_min_m, 
 					  cp9b->pn_max_m, cp9b->pn_min_i, cp9b->pn_max_i, 
 					  cp9b->pn_min_d, cp9b->pn_max_d, hbandp, debug_level);
 			}
@@ -828,16 +918,16 @@ main(int argc, char **argv)
 			  /*printf("CYK banded jd scanning hit: %d | i: %d | j: %d\n", i, hmm_hiti[i], hmm_hitj[i]);*/
 			  /*debug_print_hd_bands(cm, hdmin, hdmax, jmin, jmax);*/
 			  CYKBandedScan_jd(cm, dsq, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
-					   hmm_hiti[i], hmm_hitj[i], windowlen, 
-					   &tmp_nhits, &tmp_hitr, &tmp_hiti, &tmp_hitj, &tmp_hitsc, thresh);
+					   hmm_hiti[i], hmm_hitj[i], W, 
+					   &tmp_nhits, &tmp_hitr, &tmp_hiti, &tmp_hitj, &tmp_hitsc, sc_cutoff);
 			}
 		      else /* do_inside */
 			{			  
 			  /* Scan the sequence with a scanning Inside constrained by the HMM bands (experimental) */
 			  /*printf("Inside banded jd scanning hit: %d | i: %d | j: %d\n", i, hmm_hiti[i], hmm_hitj[i]);*/
 			  InsideBandedScan_jd(cm, dsq, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
-					      hmm_hiti[i], hmm_hitj[i], windowlen, 
-					      &tmp_nhits, &tmp_hitr, &tmp_hiti, &tmp_hitj, &tmp_hitsc, thresh);
+					      hmm_hiti[i], hmm_hitj[i], W, 
+					      &tmp_nhits, &tmp_hitr, &tmp_hiti, &tmp_hitj, &tmp_hitsc, sc_cutoff);
 			}
 		      /* copy the new hit info the 'master' data structures */
 		      /* Inefficient and ugly but other strategies were confounded by mysterious
@@ -879,18 +969,18 @@ main(int argc, char **argv)
 	}
       else if (do_qdb)
 	if (do_inside)
-	  InsideBandedScan(cm, dsq, dmin, dmax, 1, sqinfo.len, windowlen, 
-			   &nhits, &hitr, &hiti, &hitj, &hitsc, thresh);
+	  InsideBandedScan(cm, dsq, dmin, dmax, 1, sq->n, W, 
+			   &nhits, &hitr, &hiti, &hitj, &hitsc, sc_cutoff);
 	else
-	  CYKBandedScan(cm, dsq, dmin, dmax, 1, sqinfo.len, windowlen, 
-		      &nhits, &hitr, &hiti, &hitj, &hitsc, thresh);
+	  CYKBandedScan(cm, dsq, dmin, dmax, 1, sq->n, W, 
+		      &nhits, &hitr, &hiti, &hitj, &hitsc, sc_cutoff);
       else if (do_inside)
-	InsideScan(cm, dsq, 1, sqinfo.len, windowlen, 
-		   &nhits, &hitr, &hiti, &hitj, &hitsc, thresh);
+	InsideScan(cm, dsq, 1, sq->n, W, 
+		   &nhits, &hitr, &hiti, &hitj, &hitsc, sc_cutoff);
       else
-	CYKScan(cm, dsq, 1, sqinfo.len, windowlen, 
-		&nhits, &hitr, &hiti, &hitj, &hitsc, thresh);
-      if (! reversed) printf("sequence: %s\n", sqinfo.name);
+	CYKScan(cm, dsq, 1, sq->n, W, 
+		&nhits, &hitr, &hiti, &hitj, &hitsc, sc_cutoff);
+      if (! reversed) printf("sequence: %s\n", sq->name);
 
       ip = 0;
       for (i = 0; i < nhits; i++)
@@ -899,7 +989,7 @@ main(int argc, char **argv)
 	    {
 	      if (do_stats) 
 		{
-		  gc_comp = get_gc_comp (seq, hiti[i], hitj[i]);
+		  gc_comp = get_gc_comp (sq->seq, hiti[i], hitj[i]);
 		  e_value = RJK_ExtremeValueE(hitsc[i], mu[gc_comp], 
 					      lambda[gc_comp]);
 		  printf("\tgc: %d sc: %.2f E: %g P: %g\n", gc_comp, hitsc[i], e_value,
@@ -909,8 +999,8 @@ main(int argc, char **argv)
 		  if(e_value <= e_cutoff)
 		    {
 		      printf("hit %-4d: %6d %6d %8.2f bits   E = %8.3g, P = %8.3g\n", ip, 
-			     reversed ? sqinfo.len - hiti[i] + 1 : hiti[i], 
-			     reversed ? sqinfo.len - hitj[i] + 1 : hitj[i],
+			     reversed ? sq->n - hiti[i] + 1 : hiti[i], 
+			     reversed ? sq->n - hitj[i] + 1 : hitj[i],
 			     hitsc[i], 
 			     e_value,
 			     esl_gumbel_surv((double) hitsc[i], mu[gc_comp], 
@@ -918,13 +1008,14 @@ main(int argc, char **argv)
 		      ip++;
 		    }
 		}
-	      else {
-		printf("hit %-4d: %6d %6d %8.2f bits\n", ip, 
-		       reversed ? sqinfo.len - hiti[i] + 1 : hiti[i], 
-		       reversed ? sqinfo.len - hitj[i] + 1 : hitj[i],
-		       hitsc[i]);
-		ip++;
-	      }
+	      else 
+		{
+		  printf("hit %-4d: %6d %6d %8.2f bits\n", ip, 
+			 reversed ? sq->n - hiti[i] + 1 : hiti[i], 
+			 reversed ? sq->n - hitj[i] + 1 : hitj[i],
+			 hitsc[i]);
+		  ip++;
+		}
 	    }
 	  if (do_null2 || do_align)
 	    {
@@ -933,18 +1024,25 @@ main(int argc, char **argv)
 	       */
 	      if(!(do_hbanded))
 		{
-		  CYKDivideAndConquer(cm, dsq, sqinfo.len, 
+		  CYKDivideAndConquer(cm, dsq, sq->n, 
 				      hitr[i], hiti[i], hitj[i], &tr, 
 				      NULL, NULL); /* don't use qd bands */
 
 		  if (do_null2) sc = hitsc[i] - CM_TraceScoreCorrection(cm, tr, dsq);
 		  else          sc = hitsc[i];
 
-		  if (sc >= thresh) /* only print alignments with corrected CYK scores > reporting thresh */
+		  if(do_stats) 
+		    {
+		      gc_comp = get_gc_comp (sq->seq, hiti[i], hitj[i]);
+		      e_value = RJK_ExtremeValueE(hitsc[i], mu[gc_comp], 
+						  lambda[gc_comp]);
+		    }
+		  if ((!do_stats && sc >= sc_cutoff) ||
+		      (do_stats  && e_value <= e_cutoff))
 		    {
 		      printf("hit %-4d: %6d %6d %8.2f bits\n", ip, 
-			     reversed ? sqinfo.len - hiti[i] + 1 : hiti[i], 
-			     reversed ? sqinfo.len - hitj[i] + 1 : hitj[i],
+			     reversed ? sq->n - hiti[i] + 1 : hiti[i], 
+			     reversed ? sq->n - hitj[i] + 1 : hitj[i],
 			     sc);
 		      ip++;
 
@@ -956,13 +1054,12 @@ main(int argc, char **argv)
 			}
 		    }
 
-		  if (do_dumptrees) {
-		    ParsetreeDump(stdout, tr, cm, dsq);
-		    printf("\tscore = %.2f\n\n", ParsetreeScore(cm,tr,dsq, do_null2));
-		  }
-		  if (do_projectx) {
-		    BandedParsetreeDump(stdout, tr, cm, dsq, gamma, windowlen, dmin, dmax);
-		  }
+		  if (do_dumptrees)
+		    if(!do_qdb) 
+		      ParsetreeDump(stdout, tr, cm, dsq);
+		    else
+		      BandedParsetreeDump(stdout, tr, cm, dsq, gamma, W, dmin, dmax);
+		  printf("\tscore = %.2f\n\n", ParsetreeScore(cm,tr,dsq, do_null2));
 		  
 		  FreeParsetree(tr);
 		}
@@ -1005,7 +1102,7 @@ main(int argc, char **argv)
 		  if(debug_level != 0)
 		    {
 		      printf("printing hmm bands\n");
-		      print_hmm_bands(stdout, sqinfo.len, cp9b->hmm_M, cp9b->pn_min_m, 
+		      print_hmm_bands(stdout, sq->n, cp9b->hmm_M, cp9b->pn_min_m, 
 				      cp9b->pn_max_m, cp9b->pn_min_i, cp9b->pn_max_i, 
 				      cp9b->pn_min_d, cp9b->pn_max_d, hbandp, debug_level);
 		    }
@@ -1039,24 +1136,24 @@ main(int argc, char **argv)
 		  /* we don't overwrite hitsc[i], the optimal score,
 		   * which may be missed by the HMM banded alignment 
 		   */
-		  sc = CYKInside_b_jd(cm, dsq, sqinfo.len, 0, hiti[i], hitj[i], &tr, 
+		  sc = CYKInside_b_jd(cm, dsq, sq->n, 0, hiti[i], hitj[i], &tr, 
 				      cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
 				      cp9b->safe_hdmin, cp9b->safe_hdmax);
 		  if(do_null2)
 		    {
 		      sc -= CM_TraceScoreCorrection(cm, tr, dsq);
-		      if(sc >= thresh) /* only print alignments with
-					  correct CYK scores > reporting thresh */
+		      if(sc >= sc_cutoff) /* only print alignments with
+					  correct CYK scores > reporting sc_cutoff */
 			{
 			  printf("hit %-4d: %6d %6d %8.2f bits\n", ip, 
-				 reversed ? sqinfo.len - hiti[i] + 1 : hiti[i], 
-				 reversed ? sqinfo.len - hitj[i] + 1 : hitj[i],
+				 reversed ? sq->n - hiti[i] + 1 : hiti[i], 
+				 reversed ? sq->n - hitj[i] + 1 : hitj[i],
 				 hitsc[i]);
 			  printf("\tCYK i: %5d j: %5d sc: %10.2f bits\n", hiti[i], hitj[i], sc);
 			  ip++;
 			}
 		    }
-		  if(sc >= thresh)
+		  if(sc >= sc_cutoff)
 		    {
 		      ali = CreateFancyAli(tr, cm, cons, dsq);
 		      PrintFancyAli(stdout, ali);
@@ -1091,18 +1188,18 @@ main(int argc, char **argv)
 	}
       free(dsq);
       if (! reversed && do_revcomp) {
-	revcomp(seq,seq);
+	revcomp(sq->seq,sq->seq);
 	reversed = TRUE;
       } else {
 	reversed = FALSE;
-	FreeSequence(seq, &sqinfo);
+	esl_sq_Reuse(sq);
       }
     }
 
   StopwatchStop(watch);
   StopwatchDisplay(stdout, "\nCPU time (search)   : ", watch);
-  if(do_filter || do_hmmonly) printf("CP9 Forward memory  :   %8.2f MB\n", CP9ForwardScanRequires(cp9_hmm, maxlen, windowlen));
-  printf("CYK memory          :   %8.2f MB\n\n", CYKScanRequires(cm, maxlen, windowlen));
+  if(do_filter || do_hmmonly) printf("CP9 Forward memory  :   %8.2f MB\n", CP9ForwardScanRequires(cp9_hmm, maxlen, W));
+  printf("CYK memory          :   %8.2f MB\n\n", CYKScanRequires(cm, maxlen, W));
 
   if (do_qdb)
     {
@@ -1117,12 +1214,13 @@ main(int argc, char **argv)
   
   FreeCMConsensus(cons);
   FreeCM(cm);
-  CMFileClose(cmfp);
-  SeqfileClose(sqfp);
+  esl_sqfile_Close(dbfp); 
+  esl_sq_Destroy(sq); 
   StopwatchFree(watch);
   SqdClean();
   return EXIT_SUCCESS;
-    }
+}
+#endif
   
 static int  
 QDBFileRead(FILE *fp, CM_t *cm, int **ret_dmin, int **ret_dmax)
@@ -1192,31 +1290,6 @@ QDBFileRead(FILE *fp, CM_t *cm, int **ret_dmin, int **ret_dmax)
   return 0;
 }
 
-/* Function: get_gc_comp
- * Date:     RJK, Mon Oct 7, 2002 [St. Louis]
- * Purpose:  Given a sequence and start and stop coordinates, returns 
- *           integer GC composition of the region 
- */
-int get_gc_comp(char *seq, int start, int stop) {
-  int i;
-  int gc_count;
-  char c;
-
-  if (start > stop) {
-    i = start;
-    start = stop;
-    stop = i;
-  }
-  
-  gc_count = 0;
-  for (i=start; i<=stop; i++) {
-    c = resolve_degenerate(seq[i]);
-    if (c=='G' || c == 'C')
-      gc_count++;
-  }
-  return ((int)(100.*gc_count/(stop-start+1)));
-}
- 
 /* Function: set_partitions
  * Date:     RJK, Mon, Oct 7, 2002 [St. Louis]
  * Purpose:  Given a partion array (int [100]) which contains what parttion
@@ -1264,4 +1337,4 @@ int set_partitions (int **ret_partitions, int *num_partitions, char *list) {
   (*num_partitions)++;
   return(0);
 }
- 
+

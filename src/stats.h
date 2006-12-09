@@ -6,6 +6,7 @@
 
 #ifndef _stats_h
 #define _stats_h
+#include "esl_sqio.h"
 
 extern void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 				   CM_t *cm, int D, int num_samples, 
@@ -20,10 +21,9 @@ extern void parallel_make_histogram (int *gc_count, int *partitions, int num_par
 				     int mpi_my_rank, int num_procs, 
 				     int mpi_master_rank);
 #endif
+extern void GetDBInfo(ESL_SQFILE *sqfp, long *ret_N, int **ret_gc_ct);
 
-extern void get_dbinfo (SQFILE *dbfp, long *N, int *gc_count);
-
-extern float e_to_score (float E, float *mu, float *lambda);
+extern float e_to_score (float E, double *mu, double *lambda);
 
 extern double RJK_ExtremeValueE (float x, double mu, double lambda);
 

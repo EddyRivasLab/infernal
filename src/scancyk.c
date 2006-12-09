@@ -194,25 +194,22 @@ void remove_overlapping_hits (scan_results_t *results, int L) {
  * Purpose:  Scan a sequence for matches to a covariance model.
  *           Multiple nonoverlapping hits and local alignment.
  *
- * Args:     cm        - the covariance model
- *           dsq       - digitized sequence to search; i0..j0
- *           i0        - start of target subsequence (1 for full seq)
- *           j0        - end of target subsequence (L for full seq)
- *           W         - max d: max size of a hit
- *           ret_nhits - RETURN: number of hits
- *           ret_hitr  - RETURN: start states of hits, 0..nhits-1
- *           ret_hiti  - RETURN: start positions of hits, 0..nhits-1
- *           ret_hitj  - RETURN: end positions of hits, 0..nhits-1
- *           ret_hitsc - RETURN: scores of hits, 0..nhits-1            
- *           min_thresh- minimum score to report (EPN via Alex Coventry 03.11.06)
+ * Args:     cm          - the covariance model
+ *           dsq         - digitized sequence to search; i0..j0
+ *           i0          - start of target subsequence (1 for full seq)
+ *           j0          - end of target subsequence (L for full seq)
+ *           W           - max d: max size of a hit
+ *           cutoff      - minimum score to report 
+ *           score_boost - boost in bits to temporarily add to all scores, 
+ *                         experimental technique for finding significant 
+ *                         hits < 0 bits. 0.0 if technique not used.
+ *           results     - scan_results_t to add to; if NULL, don't add to it
  *
  * Returns:  score of best overall hit
- *           hiti, hitj, hitsc are allocated here; caller free's w/ free().
  */
 float 
 CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
-	int *ret_nhits, int **ret_hitr, int **ret_hiti, int **ret_hitj, float **ret_hitsc, float min_thresh)
-
+	float cutoff, float score_boost, scan_results_t *results)
 {
   float  ***alpha;              /* CYK DP score matrix, [v][j][d] */
   int      *bestr;              /* auxil info: best root state at alpha[0][cur][d] */
@@ -228,13 +225,7 @@ CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W,
   int       k;			/* used in bifurc calculations: length of right subseq */
   int       prv, cur;		/* previous, current j row (0 or 1) */
   float     sc;			/* tmp variable for holding a score */
-  int       jp;			/* rolling index into BEGL_S decks: jp=j%(W+1) */
-  int       nhits;		/* # of hits in optimal parse */
-  int      *hitr;		/* initial state indices of hits in optimal parse */
-  int      *hiti;               /* start positions of hits in optimal parse */
-  int      *hitj;               /* end positions of hits in optimal parse */
-  float    *hitsc;              /* scores of hits in optimal parse */
-  int       alloc_nhits;	/* used to grow the hit arrays */
+  int       jp;			/* index into BEGL_S decks: jp=j%(W+1) */
   int       L;                  /* length of the subsequence (j0-i0+1) */
   int       gamma_j;            /* j index in the gamma matrix, which is indexed 0..j0-i0+1, 
 				 * while j runs from i0..j0 */
@@ -256,6 +247,9 @@ CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W,
   best_score = IMPOSSIBLE;
   L = j0-i0+1;
   if (W > L) W = L; 
+
+  if(dsq == NULL)
+    Die("in CYKScan, dsq is NULL\n");
 
   alpha = MallocOrDie (sizeof(float **) * cm->M);
   for (v = cm->M-1; v >= 0; v--) {	/* reverse, because we allocate E_M-1 first */
@@ -469,7 +463,7 @@ CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 	{
 	  i = j-d+1;
 	  gamma_i = j-d+1-i0+1;
-	  sc = gamma[gamma_i-1] + alpha[0][cur][d]  - min_thresh; 
+	  sc = gamma[gamma_i-1] + alpha[0][cur][d] + score_boost; 
 	  if (sc > gamma[gamma_j])
 	    {
 	      gamma[gamma_j]  = sc;
@@ -503,46 +497,27 @@ CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W,
    * Traceback stage.
    * Recover all hits: an (i,j,sc) triple for each one.
    *****************************************************************/ 
-  alloc_nhits = 10;
-  hitr  = MallocOrDie(sizeof(int)   * alloc_nhits);
-  hitj  = MallocOrDie(sizeof(int)   * alloc_nhits);
-  hiti  = MallocOrDie(sizeof(int)   * alloc_nhits);
-  hitsc = MallocOrDie(sizeof(float) * alloc_nhits);
-  
-  j     = j0;
-  nhits = 0;
-  while (j >= i0) {
-    gamma_j = j-i0+1;
-    if (gback[gamma_j] == -1) /* no hit */
-      j--; 
-    else                /* a hit, a palpable hit */
-      {
-	hitr[nhits]   = saver[gamma_j];
-	hitj[nhits]   = j;
-	hiti[nhits]   = gback[gamma_j];
-	hitsc[nhits]  = savesc[gamma_j];
-	nhits++;
-	j = gback[gamma_j]-1;
-	
-	if (nhits == alloc_nhits) {
-	  hitr  = ReallocOrDie(hitr,  sizeof(int)   * (alloc_nhits + 10));
-	  hitj  = ReallocOrDie(hitj,  sizeof(int)   * (alloc_nhits + 10));
-	  hiti  = ReallocOrDie(hiti,  sizeof(int)   * (alloc_nhits + 10));
-	  hitsc = ReallocOrDie(hitsc, sizeof(float) * (alloc_nhits + 10));
-	  alloc_nhits += 10;
+  if(results != NULL)
+    {
+      j     = j0;
+      while (j >= i0) 
+	{
+	  gamma_j = j-i0+1;
+	  if (gback[gamma_j] == -1) /* no hit */
+	    j--; 
+	  else                /* a hit, a palpable hit */
+	    {
+	      if(savesc[gamma_j] >= cutoff) /* report the hit */
+		report_hit(gback[gamma_j], j, saver[gamma_j], savesc[gamma_j], results);
+	      j = gback[gamma_j]-1;
+	    }
 	}
-      }
-  }
+    }
   free(gback);
   free(gamma);
   free(savesc);
   free(saver);
 
-  *ret_nhits = nhits;
-  *ret_hitr  = hitr;
-  *ret_hiti  = hiti;
-  *ret_hitj  = hitj;
-  *ret_hitsc = hitsc;
   return best_score;
 }
 

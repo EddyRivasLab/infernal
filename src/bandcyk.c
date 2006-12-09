@@ -877,19 +877,17 @@ PrintDPCellsSaved(CM_t *cm, int *min, int *max, int W)
  *           i0        - start of target subsequence (1 for full seq)
  *           j0        - end of target subsequence (L for full seq)
  *           W         - max d: max size of a hit
- *           ret_nhits - RETURN: number of hits
- *           ret_hitr  - RETURN: start states of hits, 0..nhits-1
- *           ret_hiti  - RETURN: start positions of hits, 0..nhits-1
- *           ret_hitj  - RETURN: end positions of hits, 0..nhits-1
- *           ret_hitsc - RETURN: scores of hits, 0..nhits-1            
- *           min_thresh- minimum score to report (EPN via Alex Coventry 03.11.06)
+ *           cutoff      - minimum score to report 
+ *           score_boost - boost in bits to temporarily add to all scores, 
+ *                         experimental technique for finding significant 
+ *                         hits < 0 bits. 0.0 if technique not used.
+ *           results     - scan_results_t to add to; if NULL, don't add to it
  *
  * Returns:  score of best overall hit
- *           hiti, hitj, hitsc are allocated here; caller free's w/ free().
  */
 float
 CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
-	      int *ret_nhits, int **ret_hitr, int **ret_hiti, int **ret_hitj, float **ret_hitsc, float min_thresh)
+	      float cutoff, float score_boost, scan_results_t *results)
 {
   float  ***alpha;              /* CYK DP score matrix, [v][j][d] */
   int      *bestr;              /* auxil info: best root state at alpha[0][cur][d] */
@@ -906,12 +904,6 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
   int       prv, cur;		/* previous, current j row (0 or 1) */
   float     sc;			/* tmp variable for holding a score */
   int       jp;			/* rolling index into BEGL_S decks: jp=j%(W+1) */
-  int       nhits;		/* # of hits in optimal parse */
-  int      *hitr;		/* initial state indices of hits in optimal parse */
-  int      *hiti;               /* start positions of hits in optimal parse */
-  int      *hitj;               /* end positions of hits in optimal parse */
-  float    *hitsc;              /* scores of hits in optimal parse */
-  int       alloc_nhits;	/* used to grow the hit arrays */
   int       jmax;               /* when imposing bands, maximum j value in alpha matrix */
   int       kmax;               /* for B_st's, maximum k value consistent with bands*/
   int       L;                  /* length of the subsequence (j0-i0+1) */
@@ -930,6 +922,9 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
   best_score = IMPOSSIBLE;
   L = j0-i0+1;
   if (W > L) W = L; 
+
+  if(dsq == NULL)
+    Die("in BandedCYKScan, dsq is NULL\n");
 
   /*PrintDPCellsSaved(cm, dmin, dmax, W);*/
 
@@ -1175,8 +1170,6 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
       if (cm->flags & CM_LOCAL_BEGIN) {
 	for (y = 1; y < cm->M; y++) {
 	  d = (dmin[y] > dmin[0]) ? dmin[y]:dmin[0];
-	  /*if (dmin[y] > dmin[0]) d = dmin[y];
-	    else d = dmin[0];*/
 	  for (; d <= dmax[y] && d <= gamma_j; d++)
 	    {
 	      if (cm->stid[y] == BEGL_S) sc = alpha[y][j%(W+1)][d] + cm->beginsc[y];
@@ -1201,7 +1194,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 	{
 	  i = j-d+1;
 	  gamma_i = j-d+1-i0+1;
-	  sc = gamma[gamma_i-1] + alpha[0][cur][d]  - min_thresh; 
+	  sc = gamma[gamma_i-1] + alpha[0][cur][d] + score_boost;
 	  if (sc > gamma[gamma_j])
 	    {
 	      gamma[gamma_j]  = sc;
@@ -1235,46 +1228,28 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
    * Traceback stage.
    * Recover all hits: an (i,j,sc) triple for each one.
    *****************************************************************/ 
-  alloc_nhits = 10;
-  hitr  = MallocOrDie(sizeof(int)   * alloc_nhits);
-  hitj  = MallocOrDie(sizeof(int)   * alloc_nhits);
-  hiti  = MallocOrDie(sizeof(int)   * alloc_nhits);
-  hitsc = MallocOrDie(sizeof(float) * alloc_nhits);
-  
-  j     = j0;
-  nhits = 0;
-  while (j >= i0) {
-    gamma_j = j-i0+1;
-    if (gback[gamma_j] == -1) /* no hit */
-      j--; 
-    else                /* a hit, a palpable hit */
-      {
-	hitr[nhits]   = saver[gamma_j];
-	hitj[nhits]   = j;
-	hiti[nhits]   = gback[gamma_j];
-	hitsc[nhits]  = savesc[gamma_j];
-	nhits++;
-	j = gback[gamma_j]-1;
-	
-	if (nhits == alloc_nhits) {
-	  hitr  = ReallocOrDie(hitr,  sizeof(int)   * (alloc_nhits + 10));
-	  hitj  = ReallocOrDie(hitj,  sizeof(int)   * (alloc_nhits + 10));
-	  hiti  = ReallocOrDie(hiti,  sizeof(int)   * (alloc_nhits + 10));
-	  hitsc = ReallocOrDie(hitsc, sizeof(float) * (alloc_nhits + 10));
-	  alloc_nhits += 10;
+  if(results != NULL)
+    {
+      j     = j0;
+      while (j >= i0) 
+	{
+	  gamma_j = j-i0+1;
+	  if (gback[gamma_j] == -1) /* no hit */
+	    j--; 
+	  else                /* a hit, a palpable hit */
+	    {
+	      if(savesc[gamma_j] >= cutoff) /* report the hit */
+		report_hit(gback[gamma_j], j, saver[gamma_j], savesc[gamma_j], results);
+	      j = gback[gamma_j]-1;
+	    }
 	}
-      }
-  }
+    }
+
   free(gback);
   free(gamma);
   free(savesc);
   free(saver);
 
-  *ret_nhits = nhits;
-  *ret_hitr  = hitr;
-  *ret_hiti  = hiti;
-  *ret_hitj  = hitj;
-  *ret_hitsc = hitsc;
   return best_score;
 }
 
