@@ -32,21 +32,18 @@ package infernal;
 #    @hitsqfrom    - sequence from coords (start positions)
 #    @hitsqto      - sequence to coords (end positions)
 #    @hitbitscore  - hit bit scores
-#    @hitevalue    - hit E-values (only available if --E option used)
-#    @hitpvalue    - hit P-values (only available if --E option used)
+#    @hitevalue    - hit E-values (only available if -E option used)
+#    @hitpvalue    - hit P-values (only available if -E option used)
+#    @hitcmfrom    - array of cm-from coords
+#    @hitcmto      - array of cm-to coords
 
 # Data not made available that a future cmsearch might output:
 #
 #    $query        - name of query CM or sequence
 #    $querydesc    - description of query,
 #
-#    %targdesc     - target descriptions (indexed by target name)
-#    %seqscore     - per-seq score or bit score (indexed by target name)
-#    %seqeval      - per-seq E-value (indexed by target name) NOT YET IMPLEMENTED IN INFERNAL
-#
 #    @hitsqbounds  - e.g. "[]" or ".." for seq
-#    @hitcmto     - array of cm-to coords
-#    @hitcmfrom   - array of cm-from coords
+
 #    @hitcmbounds - e.g. "[]" or ".." for CM
 #
 #    $aligndata    - the raw alignment text (currently not parsed further)
@@ -62,9 +59,6 @@ sub ParseINFERNAL {
     $ntarget     = 0;
     @targname    = ();
     @targname_byhit = ();
-    #targdesc    = ();
-    #%seqscore    = ();
-    #%seqeval     = ();
     %seqnhit     = ();
 
     $nhit        = 0;
@@ -72,10 +66,8 @@ sub ParseINFERNAL {
     @hitnum      = ();
     @hitsqfrom   = ();
     @hitsqto     = ();
-    #@hitsqbounds = ();
-    #@hithmmfrom  = ();
-    #@hithmmto    = ();
-    #@hithmmbounds= ();
+    @hitcmfrom  = ();
+    @hitcmto    = ();
     @hitbitscore    = ();
     @hitevalue   = ();
     @hitpvalue   = ();
@@ -97,6 +89,7 @@ sub ParseINFERNAL {
 	{
 	    $hitnum[$nhit]      = $1;
 	    $hitsqfrom[$nhit]   = $2; 
+
 	    $hitsqto[$nhit]     = $3;
 	    $hitbitscore[$nhit] = $4;
 	    $targname_byhit[$nhit]=$targname[$ntarget-1];
@@ -111,6 +104,38 @@ sub ParseINFERNAL {
 	    $hitevalue[$nhit]   = $5;
 	    $hitpvalue[$nhit]   = $6;
 	    $targname_byhit[$nhit]=$targname[$ntarget-1];
+	    $nhit++;
+	}
+	#########################################################################
+	# 12.08.06 New cmsearch output (from RSEARCH) picked up by next 4 elsif's
+	#########################################################################
+	elsif($line =~ /^>(.+)$/)
+	{
+	    $targname[$ntarget] = $1;
+	    $ntarget++;
+	}
+	elsif($line =~ /^\s+Query\s+\=\s+(\d+)\s+\-\s+(\d+)\,\s+Target\s+\=\s+(\d+)\s+\-\s+(\d+)\s*$/)
+	{
+	    $hitcmfrom[$nhit]   = $1;
+	    $hitcmto[$nhit]     = $2;
+	    $hitsqfrom[$nhit]   = $3; 
+	    $hitsqto[$nhit]     = $4;
+	    $targname_byhit[$nhit]=$targname[$ntarget-1];
+	}
+	# ^Query line always followed by ^Score line
+	# ^Score line either has E and P values or doesn't
+	elsif ($line =~ /^\s+Score\s+\=\s+(\S+)\s*$/)
+	{
+	    # no E or P values reported 
+	    $hitbitscore[$nhit] = $1;
+	    $nhit++;
+	}
+	elsif ($line =~ /^\s+Score\s+\=\s+(\S+),\s+E\s+\=\s+(\S+)\,\s+P\s+\=\s+(\S+)\s*$/)
+	{
+	    # E and P values reported 
+	    $hitbitscore[$nhit] = $1;
+	    $hitevalue[$nhit]   = $2;
+	    $hitpvalue[$nhit]   = $3;
 	    $nhit++;
 	}
 	1;
