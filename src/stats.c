@@ -79,7 +79,7 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
   int   *hitj;                  /* end positions of hits */
   float *hitsc;			/* scores of hits */
 
-  printf("in serial_make_histogram, nparts: %d D: %d sample_len: %d\n", num_partitions, D, sample_length);
+  /*printf("in serial_make_histogram, nparts: %d D: %d sample_len: %d\n", num_partitions, D, sample_length);*/
 
   if (num_samples == 0) {
     for (i=0; i<GC_SEGMENTS; i++) {
@@ -95,7 +95,7 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
   /* For each partition */
   for (cur_partition = 0; cur_partition < num_partitions; cur_partition++) 
     {
-      printf("cur_partition: %d\n", cur_partition);
+      /*printf("cur_partition: %d\n", cur_partition);*/
       
       /* Initialize histogram; these numbers are guesses */
       if(!use_easel) h_old = AllocHistogram (0, 100, 100);
@@ -170,7 +170,7 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 	    {
 	      lambda[i] = curr_lambda;
 	      K[i] = exp(curr_mu * curr_lambda)/sample_length;
-	      printf("ESL i: %d lambda: %f K: %f\n", i, lambda[i], K[i]);
+	      /*printf("ESL i: %d lambda: %f K: %f\n", i, lambda[i], K[i]);*/
 	      /*printf("OLD i: %d lambda: %f K: %f\n\n", i, ((double) h_old->param[EVD_LAMBDA]),
 		((double) exp(h_old->param[EVD_MU]*h_old->param[EVD_LAMBDA])/sample_length));*/
 	    }
@@ -193,6 +193,7 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions, 
 			      CM_t *cm, int D, int num_samples,
 			      int sample_length,double *lambda, double *K, 
+			      int *dmin, int *dmax,
 			      int mpi_my_rank, int mpi_num_procs, 
 			      int mpi_master_rank) {
   /*struct histogram_s **h;*/
@@ -219,6 +220,7 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
   int cur_partition;
   float **cur_gc_freqs;
   float gc_comp;
+  char *tmp_name;
 
   /* Infernal specific variables (not in RSEARCH's stats.c) */
   int    nhits;			/* number of hits in a seq */
@@ -227,9 +229,10 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
   int   *hitj;                  /* end positions of hits */
   float *hitsc;			/* scores of hits */
 
-  printf("in parallel_make_histogram, nparts: %d D: %d sample_len: %d\n", num_partitions, D, sample_length);
-  printf("B PMH rank: %4d mast: %4d\n", mpi_my_rank, mpi_master_rank);
+  /*printf("in parallel_make_histogram, nparts: %d D: %d sample_len: %d\n", num_partitions, D, sample_length);
+    printf("B PMH rank: %4d mast: %4d\n", mpi_my_rank, mpi_master_rank);*/
 
+  tmp_name = sre_strdup("random", -1);
   if (num_samples == 0) {
     for (i = 0; i<GC_SEGMENTS; i++) {
       K[i] = 0.;
@@ -240,7 +243,6 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 
   if (mpi_my_rank == mpi_master_rank) 
     {
-
       /* Allocate random distribution */
       nt_p = MallocOrDie(sizeof(float)*Alphabet_size); 
       
@@ -298,18 +300,25 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 		  
 		  cur_partition = num_seqs_made / num_samples;
 		  randseqs[randseq_index] = MallocOrDie(sizeof(db_seq_t));
-		  randseqs[randseq_index]->sqinfo.len = sample_length;
-
+		  
 		  /* Get random GC content */
 		  gc_comp = 0.01*FChoose(cur_gc_freqs[cur_partition], GC_SEGMENTS);
 		  nt_p[1] = nt_p[2] = 0.5*gc_comp;
 		  nt_p[0] = nt_p[3] = 0.5*(1. - gc_comp);
-		  randseqs[randseq_index]->seq[0] = 
-		    RandomSequence (Alphabet, nt_p, Alphabet_size, 
-				    randseqs[randseq_index]->sqinfo.len);
+
+		  randseqs[randseq_index]->sq[0] = 
+		    esl_sq_CreateFrom(tmp_name, 
+				      RandomSequence (Alphabet, nt_p, Alphabet_size, sample_length),
+				      NULL, NULL, NULL);
+		  randseqs[randseq_index]->sq[0]->dsq = 
+		    DigitizeSequence(randseqs[randseq_index]->sq[0]->seq, 
+				     randseqs[randseq_index]->sq[0]->n);
+		  /*esl_sqio_Write(stdout, randseqs[randseq_index]->sq[0], eslSQFILE_FASTA);*/
+		  
+		  /*randseqs[randseq_index]->seq[0] = 
 		  randseqs[randseq_index]->dsq[0] = 
 		    DigitizeSequence (randseqs[randseq_index]->seq[0], 
-				      randseqs[randseq_index]->sqinfo.len);
+		    randseqs[randseq_index]->sqinfo.len);*/
 
 		  /*randseqs[randseq_index]->best_score = 0;*/
 		  randseqs[randseq_index]->best_score = IMPOSSIBLE;
@@ -319,6 +328,7 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 		  job_queue = enqueue(randseqs[randseq_index], randseq_index, D,
 				      FALSE, HIST_SCAN_WORK);
 		  num_seqs_made++;
+
 		}
 		if (job_queue != NULL)
 		  {
@@ -336,10 +346,8 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 	    /* Get best score at D and add */
 	    /*AddToHistogram (h[randseqs[randseq_index]->partition], 
 	      randseqs[randseq_index]->best_score);*/
-	    printf("adding best score: %f\n", randseqs[randseq_index]->best_score);
 	    esl_histogram_Add(h[randseqs[randseq_index]->partition], randseqs[randseq_index]->best_score);
-	    free(randseqs[randseq_index]->dsq[0]);
-	    free(randseqs[randseq_index]->seq[0]);
+	    esl_sq_Destroy(randseqs[randseq_index]->sq[0]);
 	    free(randseqs[randseq_index]);
 	    randseqs[randseq_index] = NULL;
 	  }
@@ -365,7 +373,7 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 	  if (partitions[i] == cur_partition) {
 	    lambda[i] = curr_lambda;
 	    K[i] = exp(curr_mu * curr_lambda)/sample_length;
-	    printf("P ESL i: %d lambda: %f K: %f\n", i, lambda[i], K[i]);
+	    /*printf("P ESL i: %d lambda: %f K: %f\n", i, lambda[i], K[i]);*/
 	  }
 	}
       }
@@ -381,13 +389,16 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
     } 
   else 
     {
-      printf("sample_length: %d\n", sample_length);
       dsq = NULL;
       do 
 	{
 	  job_type = receive_job(&seqlen, &dsq, &dummy, mpi_master_rank);
 	  if (job_type == HIST_SCAN_WORK) {
-	    score = CYKScan(cm, dsq, 1, sample_length, D, 0, 0, NULL);
+	    if(dmin == NULL && dmax == NULL)
+	      score = CYKScan(cm, dsq, 1, sample_length, D, 0, 0, NULL);
+	    else /* use QDB */
+	      score = CYKBandedScan(cm, dsq, dmin, dmax, 1, sample_length, D,
+				    0, 0, NULL);
 	    send_hist_scan_results (score, mpi_master_rank);
 	  } 
 	  if (dsq != NULL)
@@ -549,9 +560,8 @@ float e_to_score (float E, double *mu, double *lambda) {
  */
 double RJK_ExtremeValueE (float x, double mu, double lambda) {
                         /* avoid underflow fp exceptions near P=0.0*/
-  if ((lambda * (x - mu)) >= 2.3 * (double) DBL_MAX_10_EXP) {
+  if ((lambda * (x - mu)) >= 2.3 * (double) DBL_MAX_10_EXP) 
     return 0.0;
-  } else {
+  else 
     return(exp(-1. * lambda * (x - mu)));
-  }
 }

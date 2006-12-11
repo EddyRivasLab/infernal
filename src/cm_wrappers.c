@@ -32,12 +32,15 @@
 #include "cm_postprob.h"
 #include "stats.h"
 #include "esl_gumbel.h"
+#include "mpifuncs.h"
 
 static db_seq_t *read_next_seq (ESL_SQFILE *dbfp, int do_revcomp);
 static void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 			   int do_complement, int do_stats, double *mu, 
 			   double *lambda) ;
 static int get_gc_comp(char *seq, int start, int stop);
+static void remove_hits_over_e_cutoff (scan_results_t *results, char *seq,
+				       float cutoff, double *lambda, double *mu);
 
 /* coordinate -- macro that checks if it's reverse complement and if so 
    returns coordinate in original strand
@@ -802,7 +805,7 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
   db_seq_t *dbseq;
   float min_cutoff;
   
-  printf("in serial_search database do_align: %d do_revcomp: %d\n", do_align, do_revcomp);
+  /*printf("in serial_search database do_align: %d do_revcomp: %d\n", do_align, do_revcomp);*/
   
   if (cutoff_type == SCORE_CUTOFF) 
     min_cutoff = cutoff;
@@ -864,7 +867,9 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 
 #ifdef USE_MPI
 /*
- * Function: parallel_search_database * Date:     RJK, Tue May 28, 2002 [St. Louis]
+ * Function: parallel_search_database 
+ * Date:     original (RSEARCH): RJK, Tue May 28, 2002 [St. Louis] 
+ *           infernalized: EPN, Sat Dec  9 12:57:42 2006
  * Purpose:  Given the same parameters as serial_search_database, does
  *           the database search with alignments and printing results, but
  *           in a parallel fashion.
@@ -880,24 +885,24 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
  *
  *           The slave processes do the following:
  *           while (1) {
- *             recieve_job
+ *             receive_job
  *             if (terminate code) return;
  *             do the job
  *             send the results
  *           }
  */
-void parallel_search_database (SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons, 
-			       int D, float cutoff, int cutoff_type,
-			       int do_revcomp,
-			       int do_align, int do_stats,
-			       float *mu, float *lambda,
+void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
+			       int W, int cutoff_type, float cutoff, 
+			       int do_revcomp, int do_align, int do_stats,
+			       double *mu, double *lambda, int *dmin, int *dmax,
 			       int mpi_my_rank, int mpi_master_rank, 
-			       int mpi_num_procs) {
+			       int mpi_num_procs) 
+{
   char job_type;
   int seqlen;
   char *seq;
   scan_results_t *results;
-  dbseq_t **active_seqs;
+  db_seq_t **active_seqs;
   job_t **process_status;
   int eof = FALSE;
   job_t *job_queue = NULL;
@@ -906,129 +911,140 @@ void parallel_search_database (SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
   Parsetree_t *tr;
   float min_cutoff;
 
-  if (cutoff_type == SCORE_CUTOFF) {
-    min_cutoff = cutoff;
-  } else {
-    min_cutoff = e_to_score (cutoff, mu, lambda);
-  }
+  /*do_align = FALSE;
+    dmin = NULL;
+    dmax = NULL;*/
+  /*printf("B PSD rank: %4d mast: %4d\n", mpi_my_rank, mpi_master_rank);*/
 
-  if (mpi_my_rank == mpi_master_rank) {
-    /* Set up arrays to hold pointers to active seqs and jobs on
-       processes */
-    active_seqs = MallocOrDie(sizeof(dbseq_t *) * mpi_num_procs);
-    process_status = MallocOrDie(sizeof(job_t *)*mpi_num_procs);
-    for (active_seq_index=0; active_seq_index<mpi_num_procs; 
-	 active_seq_index++) 
-      active_seqs[active_seq_index] = NULL;
-    for (proc_index = 0; proc_index < mpi_num_procs; proc_index++)
-      process_status[proc_index] = NULL;
-    
+  if (cutoff_type == SCORE_CUTOFF) min_cutoff = cutoff;
+  else min_cutoff = e_to_score (cutoff, mu, lambda);
 
-    do {
-      /* Check for idle processes.  Send jobs */
+  if (mpi_my_rank == mpi_master_rank) 
+    {
+      /* Set up arrays to hold pointers to active seqs and jobs on
+	 processes */
+      active_seqs = MallocOrDie(sizeof(db_seq_t *) * mpi_num_procs);
+      process_status = MallocOrDie(sizeof(job_t *) * mpi_num_procs);
+      for (active_seq_index=0; active_seq_index<mpi_num_procs; 
+	   active_seq_index++) 
+	active_seqs[active_seq_index] = NULL;
+      for (proc_index = 0; proc_index < mpi_num_procs; proc_index++)
+	process_status[proc_index] = NULL;
+      
+      do
+	{
+	  /* Check for idle processes.  Send jobs */
+	  for (proc_index=0; proc_index<mpi_num_procs; proc_index++) {
+	    if (proc_index == mpi_master_rank) continue;  /* Skip master process */
+	    if (process_status[proc_index] == NULL) {         
+	      /* I'm idle -- need a job */
+	      if (job_queue == NULL) {           /* Queue is empty */
+		/* Find next non-master open process */
+		for (active_seq_index=0; active_seq_index<mpi_num_procs; 
+		     active_seq_index++) {
+		  if (active_seqs[active_seq_index] == NULL) break;
+		}
+		if (active_seq_index == mpi_num_procs) {
+		  Die ("Tried to read more than %d seqs at once\n", mpi_num_procs);
+		}
+		active_seqs[active_seq_index] = read_next_seq(dbfp, do_revcomp);
+		if (active_seqs[active_seq_index] == NULL) {
+		  eof = TRUE;
+		  break;            /* Queue is empty and no more seqs */
+		}
+		else
+		  job_queue = enqueue (active_seqs[active_seq_index], 
+				       active_seq_index, W, do_revcomp, 
+				       STD_SCAN_WORK);
+	      }
+	      if (job_queue != NULL)
+		send_next_job (&job_queue, process_status + proc_index, 
+			       proc_index);
+	    } 
+	  } 
+	  /* Wait for next reply */
+	  if (procs_working(process_status, mpi_num_procs, mpi_master_rank)) 
+	    {
+	      active_seq_index = check_results (active_seqs, process_status, W);
+	      if (active_seqs[active_seq_index]->chunks_sent == 0) 
+		{
+		  if (cutoff_type == E_CUTOFF)
+		    remove_hits_over_e_cutoff 
+		      (active_seqs[active_seq_index]->results[0],
+		       active_seqs[active_seq_index]->sq[0]->seq,
+		       cutoff, lambda, mu);
+		  if (do_revcomp) 
+		    {
+		      if (cutoff_type == E_CUTOFF)
+			remove_hits_over_e_cutoff 
+			  (active_seqs[active_seq_index]->results[1],
+			   active_seqs[active_seq_index]->sq[1]->seq,
+			   cutoff, lambda, mu);
+		    }
+	      /* Check here if doing alignments and queue them or check if 
+		 all done */
+		  if (do_align && 
+		      active_seqs[active_seq_index]->alignments_sent == -1) {
+		    enqueue_alignments (&job_queue, active_seqs[active_seq_index],
+					active_seq_index, do_revcomp, ALIGN_WORK);
+		  }
+		  if (!do_align || 
+		      active_seqs[active_seq_index]->alignments_sent == 0) {
+		    print_results (cm, cons, active_seqs[active_seq_index], 
+				   do_revcomp, do_stats, mu, lambda);
+		    if (do_revcomp) {
+		      FreeResults(active_seqs[active_seq_index]->results[1]);
+		      esl_sq_Destroy(active_seqs[active_seq_index]->sq[1]);
+		    }
+		    FreeResults(active_seqs[active_seq_index]->results[0]);
+		    esl_sq_Destroy(active_seqs[active_seq_index]->sq[0]);
+		    active_seqs[active_seq_index] = NULL;
+		  }
+		}
+	    }
+	} while (!eof || job_queue != NULL || 
+		 (procs_working(process_status, mpi_num_procs, mpi_master_rank)));
       for (proc_index=0; proc_index<mpi_num_procs; proc_index++) {
-	if (proc_index == mpi_master_rank) continue;  /* Skip master process */
-	if (process_status[proc_index] == NULL) {         
-	  /* I'm idle -- need a job */
-	  if (job_queue == NULL) {           /* Queue is empty */
-	    /* Find next non-master open process */
-	    for (active_seq_index=0; active_seq_index<mpi_num_procs; 
-		 active_seq_index++) {
-	      if (active_seqs[active_seq_index] == NULL) break;
-	    }
-	    if (active_seq_index == mpi_num_procs) {
-	      Die ("Tried to read more than %d seqs at once\n", mpi_num_procs);
-	    }
-	    active_seqs[active_seq_index] = read_next_seq(dbfp, do_revcomp);
-	    if (active_seqs[active_seq_index] == NULL) {
-	      eof = TRUE;
-	      break;            /* Queue is empty and no more seqs */
-	    }
-	    else
-	      job_queue = enqueue (active_seqs[active_seq_index], 
-				   active_seq_index, D, do_revcomp, 
-				   STD_SCAN_WORK);
-	  }
-	  if (job_queue != NULL)
-	    send_next_job (&job_queue, process_status + proc_index, 
-			   proc_index);
-	} 
-      } 
-      /* Wait for next reply */
-      if (procs_working(process_status, mpi_num_procs, mpi_master_rank)) {
-	active_seq_index = check_results (active_seqs, process_status, D);
-	if (active_seqs[active_seq_index]->chunks_sent == 0) {
-	  remove_overlapping_hits
-	      (active_seqs[active_seq_index]->results[0], 
-	       active_seqs[active_seq_index]->sqinfo.len);
-	  if (cutoff_type == E_CUTOFF)
-	    remove_hits_over_e_cutoff 
-	      (active_seqs[active_seq_index]->results[0],
-	       active_seqs[active_seq_index]->seq[0],
-	       cutoff, lambda, mu);
-	  if (do_revcomp) {
-	    remove_overlapping_hits 
-		(active_seqs[active_seq_index]->results[1],
-		 active_seqs[active_seq_index]->sqinfo.len);
-	    if (cutoff_type == E_CUTOFF)
-	      remove_hits_over_e_cutoff 
-		(active_seqs[active_seq_index]->results[1],
-		 active_seqs[active_seq_index]->seq[1],
-		 cutoff, lambda, mu);
-	  }
-	  /* Check here if doing alignments and queue them or check if 
-	     all done */
-	  if (do_align && 
-	      active_seqs[active_seq_index]->alignments_sent == -1) {
-	    enqueue_alignments (&job_queue, active_seqs[active_seq_index],
-				active_seq_index, do_revcomp, ALIGN_WORK);
-	  }
-	  if (!do_align || 
-	      active_seqs[active_seq_index]->alignments_sent == 0) {
-	    print_results (cm, cons, active_seqs[active_seq_index], 
-			   do_revcomp, do_stats, mu, lambda);
-	    if (do_revcomp) {
-	      FreeResults(active_seqs[active_seq_index]->results[1]);
-	      free(active_seqs[active_seq_index]->dsq[1]);
-	      free(active_seqs[active_seq_index]->seq[1]);
-	    }
-	    FreeResults(active_seqs[active_seq_index]->results[0]);
-	    free(active_seqs[active_seq_index]->dsq[0]);
-	    FreeSequence(active_seqs[active_seq_index]->seq[0], 
-			 &(active_seqs[active_seq_index]->sqinfo));
-	    active_seqs[active_seq_index] = NULL;
-	  }
+	if (proc_index != mpi_master_rank) {
+	  send_terminate (proc_index);
 	}
       }
-    } while (!eof || job_queue != NULL || 
-	     (procs_working(process_status, mpi_num_procs, mpi_master_rank)));
-    for (proc_index=0; proc_index<mpi_num_procs; proc_index++) {
-      if (proc_index != mpi_master_rank) {
-	send_terminate (proc_index);
-      }
-    }
-    free(active_seqs);
-    free(process_status);
-  } else {
-    seq = NULL;
-    do {
-      job_type = recieve_job (&seqlen, &seq, &bestr, mpi_master_rank);
-      if (job_type == STD_SCAN_WORK) {
-	results = CreateResults(INIT_RESULTS);
-	CYKScan (cm, seq, seqlen, min_cutoff, D, results);
-	send_scan_results (results, mpi_master_rank);
-	FreeResults(results);
-      } else if (job_type == ALIGN_WORK && do_align) {
-	CYKDivideAndConquer(cm, seq, seqlen, bestr, 1, seqlen, &tr);
-	send_align_results (tr, mpi_master_rank);
-	FreeParsetree(tr);
-      }
-      if (seq != NULL)
-	free(seq);
+      free(active_seqs);
+      free(process_status);
+    } 
+  else  /* not the master node */
+    {
       seq = NULL;
-    } while (job_type != TERMINATE_WORK);
-  }
+      do 
+	{
+	  job_type = receive_job (&seqlen, &seq, &bestr, mpi_master_rank);
+	  if (job_type == STD_SCAN_WORK) 
+	    {
+	      /* Do the scan */
+	      results = CreateResults(INIT_RESULTS);
+	      if(dmin == NULL && dmax == NULL)
+		CYKScan (cm, seq, 1, seqlen, W,
+			 min_cutoff, 0, results);
+	      else
+		CYKBandedScan (cm, seq, dmin, dmax, 1, seqlen, W,
+			       min_cutoff, 0, results);
+	      send_scan_results (results, mpi_master_rank);
+	      FreeResults(results);
+	    } 
+	  else if (job_type == ALIGN_WORK && do_align) 
+	    {
+	      CYKDivideAndConquer(cm, seq, seqlen, bestr, 1, seqlen, &tr,
+				  dmin, dmax);
+	      send_align_results (tr, mpi_master_rank);
+	      FreeParsetree(tr);
+	    }
+	  if (seq != NULL)
+	    free(seq);
+	  seq = NULL;
+	} while (job_type != TERMINATE_WORK);
+    }
   MPI_Barrier(MPI_COMM_WORLD);
+  /*printf("E PSD rank: %4d mast: %4d\n", mpi_my_rank, mpi_master_rank);*/
 }
 #endif
 
@@ -1179,3 +1195,46 @@ int get_gc_comp(char *seq, int start, int stop) {
   return ((int)(100.*gc_ct/(stop-start+1)));
 }
  
+/*
+ * Function: remove_hits_over_e_cutoff
+ * Date:     RJK, Tue Oct 8, 2002 [St. Louis]
+ * Purpose:  Given an E-value cutoff, lambdas, mus, a sequence, and
+ *           a list of results, calculates GC content for each hit, 
+ *           calculates E-value, and decides wheter to keep hit or not.
+ */
+void remove_hits_over_e_cutoff (scan_results_t *results, char *seq,
+				float cutoff, double *lambda, double *mu) 
+{
+  int gc_comp;
+  int i, x;
+  scan_result_node_t swap;
+
+  if (results == NULL)
+    return;
+
+  for (i=0; i<results->num_results; i++) {
+    gc_comp = get_gc_comp (seq, results->data[i].start, results->data[i].stop);
+    if (RJK_ExtremeValueE(results->data[i].score, 
+			  mu[gc_comp], lambda[gc_comp])> cutoff) {
+      results->data[i].start = -1;
+    }
+  }
+
+  for (x=0; x<results->num_results; x++) {
+    while (results->num_results > 0 && 
+	   results->data[results->num_results-1].start == -1)
+      results->num_results--;
+    if (x<results->num_results && results->data[x].start == -1) {
+      swap = results->data[x];
+      results->data[x] = results->data[results->num_results-1];
+      results->data[results->num_results-1] = swap;
+      results->num_results--;
+    }
+  }
+  while (results->num_results > 0 &&
+	 results->data[results->num_results-1].start == -1)
+    results->num_results--;
+
+  sort_results(results);
+}  
+

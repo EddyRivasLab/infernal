@@ -292,7 +292,7 @@ main(int argc, char **argv)
    */
   mpi_master_rank = get_master_rank (MPI_COMM_WORLD, mpi_my_rank);
 
-  printf("B CS rank: %4d master: %4d num: %4d\n", mpi_my_rank, mpi_master_rank, mpi_num_procs);
+  /*printf("B CS rank: %4d master: %4d num: %4d\n", mpi_my_rank, mpi_master_rank, mpi_num_procs);*/
 
   /* If I'm the master, do the following set up code -- parse arguments, read
      in matrix and query, build model */
@@ -397,6 +397,9 @@ main(int argc, char **argv)
     }
   }
 
+  if(do_bdump && !do_qdb)
+    Die("The --banddump option is incompatible with the --noqdb option.\n");
+
   if (argc - optind != 2) Die("Incorrect number of arguments.\n%s\n", usage);
   cmfile = argv[optind++];
   seqfile = argv[optind++]; 
@@ -406,8 +409,8 @@ main(int argc, char **argv)
    **********************************************/
   /* Seed the random number generator with the time */
   /* This is the seed used in the HMMER code */
-  /*seed = (time ((time_t *) NULL));    */
-  seed = 33;
+  seed = (time ((time_t *) NULL));   
+  /*seed = 33;*/
   sre_srandom (seed);
   printf ("Random seed: %d\n", seed);
 
@@ -528,24 +531,15 @@ main(int argc, char **argv)
 	      /*printf("ERROR BandCalculationEngine returned false, windowlen adjusted to %d\n", safe_windowlen);*/
 	    }
 	}	  
-      /* EPN 11.11.05 
-       * An important design decision.
-       * We're changing the W value here. By default,
-       * W is read from the cm file (set to cm->W). 
-       * Here we're doing a banded scan though. Its pointless to allow
-       * a W that's greater than the largest possible banded hit 
-       * (which is dmax[0]). So we reset W to dmax[0].
-       * Its also possible that BandCalculationEngine() returns a dmax[0] that 
-       * is > cm->W. This should only happen if the beta we're using now is < 1E-7 
-       * (1E-7 is the beta value used to determine cm->W in cmbuild). If this 
-       * happens, the current implementation reassigns W to this larger value.
+      /*
+       * Change W (which is cm->W as read from the CM file) to dmax[0].
+       * dmax[0] could be > cm->W if the beta we're using now is < 1E-7 
+       * (1E-7 is the beta value used to determine cm->W in cmbuild). 
        * NOTE: if W was set at the command line, the command line value is 
        *       always used.
        */
       if(!(set_window))
-	{
-	  W = dmax[0];
-	}
+	W = dmax[0];
       if(do_bdump) 
 	{
 	  printf("beta:%f\n", beta);
@@ -556,7 +550,7 @@ main(int argc, char **argv)
 	StopwatchDisplay(stdout, "\nCPU time (band calc): ", watch);*/
     }
 
-  /* EPN 11.18.05 Now that know what W is, we need to ensure that
+  /* EPN 11.18.05 Now that we know what W is, we need to ensure that
    * cm->el_selfsc * W >= IMPOSSIBLE (cm->el_selfsc is the score for an EL self transition)
    * because we will potentially multiply cm->el_selfsc * W, and add that to 
    * 2 * IMPOSSIBLE, and IMPOSSIBLE must be > -FLT_MAX/3 so we can add it together 3 
@@ -571,9 +565,10 @@ main(int argc, char **argv)
   MPI_Barrier(MPI_COMM_WORLD);
 
   /* Here we need to broadcast the following parameters:
-     num_samples, W, W_scale, cm */
-  first_broadcast(&num_samples, &W, &W_scale, &cm, 
-		  mpi_my_rank, mpi_master_rank);
+     num_samples, W, W_scale, cm and dmin and dmax if do_qdb == TRUE*/
+    first_broadcast(&num_samples, &W, &W_scale, &cm,  
+		    do_qdb, &dmin, &dmax, mpi_my_rank, mpi_master_rank);
+    
 #endif
   /**************************************************
    * Make the histogram
@@ -599,9 +594,9 @@ main(int argc, char **argv)
     /* UNTOUCHED FROM RSEARCH: need to add ability to do banded */
     if (mpi_num_procs > 1)
 	parallel_make_histogram(gc_ct, partitions, num_partitions,
-				cm, W, 
-				num_samples, sample_length, lambda, K, 
-				mpi_my_rank, mpi_num_procs, mpi_master_rank);
+				cm, W, num_samples, sample_length, lambda, K, 
+				dmin, dmax, mpi_my_rank, mpi_num_procs, 
+				mpi_master_rank);
     else 
 #endif
       if(do_hmmonly)
@@ -609,16 +604,11 @@ main(int argc, char **argv)
 			       cm, W, 
 			       num_samples, sample_length, lambda, K, 
 			       dmin, dmax, cp9_hmm, TRUE);
-      else if(do_qdb)
-	serial_make_histogram (gc_ct, partitions, num_partitions,
-			       cm, W, 
-			       num_samples, sample_length, lambda, K, 
-			       dmin, dmax, NULL, TRUE);
       else
 	serial_make_histogram (gc_ct, partitions, num_partitions,
 			       cm, W, 
 			       num_samples, sample_length, lambda, K, 
-			       NULL, NULL, NULL, TRUE); /* don't use QDB to search */
+			       dmin, dmax, NULL, TRUE);
 
     /*StopwatchStop(watch);
       StopwatchDisplay(stdout, "\nCPU time (histogram): ", watch);*/
@@ -679,23 +669,34 @@ main(int argc, char **argv)
   second_broadcast(&sc_cutoff, &e_cutoff, &cutoff_type, &do_revcomp, &do_align, mu, lambda, 
 		   K, &N, mpi_my_rank, mpi_master_rank);
 #endif
-
-#ifdef USE_MPI
-  /*if (mpi_num_procs > 1)
-    parallel_search_database (dbfp, cm, W, cutoff_type, sc_cutoff, e_cutoff
-			      cutoff, cutoff_type, do_revcomp, do_align,
-			      num_samples > 0, mu, lambda,
-			      mpi_my_rank, mpi_master_rank, mpi_num_procs);
-			      else*/
-#endif
   if(cutoff_type == E_CUTOFF) cutoff = e_cutoff;
   else cutoff = sc_cutoff;
 
-  serial_search_database (dbfp, cm, cons, W, cutoff_type, cutoff, do_revcomp, do_align,
-			  do_stats, mu, lambda, dmin, dmax);
+#ifdef USE_MPI
+  if (mpi_num_procs > 1)
+    parallel_search_database (dbfp, cm, cons, W, cutoff_type, cutoff, do_revcomp, do_align,
+			      do_stats, mu, lambda, dmin, dmax,
+			      mpi_my_rank, mpi_master_rank, mpi_num_procs);
+  else
+#endif
+    serial_search_database (dbfp, cm, cons, W, cutoff_type, cutoff, do_revcomp, do_align,
+			    do_stats, mu, lambda, dmin, dmax);
   
+  FreeCM(cm);
+#ifdef USE_MPI
+  MPI_Barrier(MPI_COMM_WORLD);
+  MPI_Finalize();
+  in_mpi = 0;
+  if (mpi_my_rank == mpi_master_rank) {
+#endif
+    printf ("Fin\n");
+#ifdef USE_MPI
+  }
   return EXIT_SUCCESS;
 }
+
+
+#endif
 #if 0
   /* start stopwatch for timing the search */
   StopwatchZero(watch);

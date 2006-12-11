@@ -161,11 +161,10 @@ extern MSA *Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wg
 extern scan_results_t *CreateResults (int size);
 extern void ExpandResults (scan_results_t *r, int additional);
 extern void FreeResults (scan_results_t *r);
+extern int  compare_results (const void *a_void, const void *b_void);
 extern void sort_results (scan_results_t *results);
 extern void report_hit (int i, int j, int bestr, float score, scan_results_t *results);
 extern void remove_overlapping_hits (scan_results_t *results, int L);
-extern void  remove_extremely_overlapping_hits (scan_results_t *results);
-
 extern float  CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
 		      float cutoff, float score_boost, scan_results_t *results);
 extern float CYKScanRequires(CM_t *cm, int L, int W);
@@ -398,6 +397,12 @@ extern void
 serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons, int W, int cutoff_type, 
 			float cutoff, int do_revcomp, int do_align, int do_stats, double *mu, 
 			double *lambda, int *dmin, int *dmax);
+extern void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
+				      int W, int cutoff_type, float cutoff, 
+				      int do_revcomp, int do_align, int do_stats,
+				      double *mu, double *lambda, int *dmin, int *dmax,
+				      int mpi_my_rank, int mpi_master_rank, 
+				      int mpi_num_procs) ;
 
 
 
