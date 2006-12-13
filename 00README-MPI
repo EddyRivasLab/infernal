@@ -1,0 +1,80 @@
+EPN, Wed Dec 13 14:17:26 2006
+
+00README-MPI
+
+Notes on configuring developmental (post version 0.71) infernal for
+MPI. Currently cmsearch is the only MPI-able executable.
+
+Step 1: Create and run the configure scripts.
+
+  A subversion checkout of the infernal trunk into the local directory
+  named '$INFERNAL' does not come with functioning 'configure' scripts
+  - you have to make them. This is done simply by executing:
+
+  $ autoconf configure.ac > configure
+
+  Execute the above command in 3 directories: '$INFERNAL/',
+  '$INFERNAL/easel/', and '$INFERNAL/squid'.
+
+  NOTE: easel requires autoconf 2.60 or later. If you don't have
+  it, the easiest thing to do is probably log into my machine by
+  ssh <you>@10.102.30.181 and run '/usr/local/bin/autoconf'
+
+  Next, execute the configure scripts in '$INFERNAL/easel' and
+  '$INFERNAL/squid' as: 
+
+  $ sh ./configure
+
+  To enable MPI you must be on a CPU that has the mpicc compiler
+  installed, like the login node for the cluster.  You then execute
+  configure in the '$INFERNAL' directory as:
+
+  $ sh ./configure --with-mpi
+
+Step 2: Clean up 'Makefile' in the $INFERNAL/src/ subdirectory.
+
+  I was unable to get "configure --with-mpi" to work flawlessly (I'm
+  still working on it), so at this stage some manual intervention is
+  required:
+
+  Go to the '$INFERNAL/src' directory and open Makefile in emacs, and
+  make the following changes:
+
+  line 14: change "CFLAGS =" to "CFLAGS = -g -Wall"
+  line 20: add "-DUSE_MPI=1" to the end of this line
+
+Step 3: Make the executables, and rename 'cmsearch' as 'mpicmsearch':
+
+  - Go to $INFERNAL/ and type 'make'.
+  - Go to $INFERNAL/src and do:
+       $ mv cmsearch mpicmsearch
+
+NOTE: The executables (cmbuild, cmsearch, cmalign, cmscore, cmeit) in
+$INFERNAL/src will only work on a CPU that supports MPI (I've onl
+used them on the cluster). To make new executables that can be run
+on non-MPI machines, go to $INFERNAL/src/ and type 'sh
+./configure'. Then go back up to $INFERNAL and 'make'.
+
+----------------------------------------------------
+Notes on running cmsearch in MPI mode on the cluster
+----------------------------------------------------
+
+Make sure you've renamed 'cmsearch' as 'mpicmsearch' and it's in your
+path.
+
+To run the CM foo.cm against the database genome.fa on 100 CPUs
+execute the following on the cluster's login server
+(login-eddy.int.janelia.org):
+
+$ qsub -N foo -o foo.out -b y -cwd -V -j y -pe lam-mpi-tight 100 'mpirun C mpicmsearch -E 50 --local foo.cm genome.fa > cmsearch.out'
+ 
+This will submit a single job called 'foo' to the cluster's queuing
+system, which will run cmsearch in local mode and report all hits with
+E-values above 50. You might also be interested in the --partition and
+--null options. (Ask me for more info if you're interested).
+
+
+
+
+
+
