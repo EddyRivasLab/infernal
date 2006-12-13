@@ -177,7 +177,17 @@ for($i = 0; $i < scalar(@fam_roots_arr); $i++)
     $fam = $fam_roots_arr[$i];
     $cmsearch_name = "rm-$fam.cmsearch";
     $glbf_name = "rm-$fam.glbf";
-    print PP ("perl infernal2glbf.pl $cmsearch_name > $glbf_name\n");
+
+    if($use_evalues)
+    {
+	print PP ("echo '>$fam' > $glbf_name\n");
+	print PP ("perl infernal2glbf.pl -E $e_cutoff $cmsearch_name >> $glbf_name\n");
+    }
+    else
+    {
+	print PP ("echo '>$fam' > $glbf_name\n");
+	print PP ("perl infernal2glbf.pl -B $b_cutoff $cmsearch_name >> $glbf_name\n");
+    }
 }
 
 # Now we build the PP (post-processing) script the same as in
