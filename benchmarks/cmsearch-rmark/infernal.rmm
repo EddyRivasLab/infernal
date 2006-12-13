@@ -5,7 +5,7 @@
 # RMARK module for INFERNAL
 #
 # Options:
-#        -E <x> : use E-values [default], set max E-val to keep as <x> [default: 2]
+#        -E <x> : use E-values [default], set max E-val to keep as <x> [df: 2]
 #        -T <x> : use bit scores, set min score to keep as <x>
 
 require "sre.pl";
