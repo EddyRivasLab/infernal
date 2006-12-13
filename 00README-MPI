@@ -52,8 +52,8 @@ Step 3: Make the executables, and rename 'cmsearch' as 'mpicmsearch':
 NOTE: The executables (cmbuild, cmsearch, cmalign, cmscore, cmeit) in
 $INFERNAL/src will only work on a CPU that supports MPI (I've onl
 used them on the cluster). To make new executables that can be run
-on non-MPI machines, go to $INFERNAL/src/ and type 'sh
-./configure'. Then go back up to $INFERNAL and 'make'.
+on non-MPI machines, go to $INFERNAL/ and type 'sh ./configure'. Then
+execute '$ make check' followed by '$ make'.
 
 ----------------------------------------------------
 Notes on running cmsearch in MPI mode on the cluster
