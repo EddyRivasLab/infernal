@@ -1153,6 +1153,8 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 				  lambda[gc_comp]),
 		esl_gumbel_surv((double) results->data[i].score, mu[gc_comp], 
 				lambda[gc_comp]));
+	printf("  Mu[gc=%d]: %f, Lambda[gc=%d]: %f\n", gc_comp, mu[gc_comp], gc_comp,
+	       lambda[gc_comp]);
 	/*ExtremeValueP(results->data[i].score, mu[gc_comp], 
 	  lambda[gc_comp]));*/
       } else {

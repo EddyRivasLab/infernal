@@ -178,8 +178,8 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 	    {
 	      lambda[i] = (double) h_old->param[EVD_LAMBDA];
 	      K[i] = (double) exp(h_old->param[EVD_MU]*h_old->param[EVD_LAMBDA])/sample_length;
-	      printf("OLD i: %d lambda: %f K: %f\n", i, lambda[i], K[i]);
-	      printf("ESL i: %d lambda: %f K: %f\n\n", i, curr_lambda, exp(curr_mu * curr_lambda)/sample_length);
+	      /*printf("OLD i: %d lambda: %f K: %f\n", i, lambda[i], K[i]);
+		printf("ESL i: %d lambda: %f K: %f\n\n", i, curr_lambda, exp(curr_mu * curr_lambda)/sample_length);*/
 	    }
 	}
       }

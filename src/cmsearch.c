@@ -51,6 +51,7 @@ void exit_from_mpi () {
 
 static int QDBFileRead(FILE *fp, CM_t *cm, int **ret_dmin, int **ret_dmax);
 static int set_partitions(int **ret_partitions, int *num_partitions, char *list);
+static int debug_print_stats(int *partitions, int num_partitions, double *lambda, double *mu);
 
 static char banner[] = "cmsearch - search a sequence database with an RNA covariance model";
 
@@ -193,15 +194,7 @@ main(int argc, char **argv)
   char *optname;                /* name of option found by Getopt()        */
   char *optarg;                 /* argument found by Getopt()              */
   int   optind;                 /* index in argv[]                         */
-
-
-  /*EPN 11.11.05 */
-  int      safe_windowlen;	/* initial windowlen (W) used for calculating bands
-				 * in BandCalculationEngine().
-				 * this needs to be significantly bigger than what
-				 * we expect dmax[0] to be, for truncation error
-				 * handling.
-				 */
+  int      safe_windowlen;	/* initial windowlen (W) used for calc'ing bands */
 
   /* CM Plan 9 HMM data structures */
   struct cplan9_s       *cp9_hmm;       /* constructed CP9 HMM; written to hmmfile              */
@@ -268,11 +261,11 @@ main(int argc, char **argv)
   float W_scale = 2.0;           /* scale we'll multiply W by to get sample_length */
   int defined_N = FALSE;
 
+  int do_partitions;            /* TRUE if --partition enabled */
   int *partitions;              /* What partition each percentage point goes to */
   int num_partitions = 1;
   int *gc_ct;                   /* gc_ct[x] observed 100-nt segs in DB with GC% of x [0..100] */
   int gc_comp; 
-
 #ifdef USE_MPI
   int mpi_my_rank;              /* My rank in MPI */
   int mpi_num_procs;            /* Total number of processes */
@@ -336,7 +329,8 @@ main(int argc, char **argv)
   do_stats          = FALSE;
   score_boost       = 0.;
   debug_level       = 0;
-  
+  do_partitions     = FALSE;
+
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
     if       (strcmp(optname, "-W")          == 0) 
@@ -379,11 +373,12 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--banddump")  == 0) do_bdump     = TRUE;
     else if  (strcmp(optname, "--sums")      == 0) use_sums     = TRUE;
     else if  (strcmp(optname, "--scan2hbands")== 0) do_scan2hbands= TRUE;
-    else if (strcmp (optname, "--partition") == 0) {
-      if (set_partitions (&partitions, &num_partitions, optarg)) {
-	Die("Specify partitions separated by commas, no spaces, range 0-100, integers only\n");
+    else if (strcmp (optname, "--partition") == 0) 
+      {
+	do_partitions = TRUE;
+	if (!(set_partitions (&partitions, &num_partitions, optarg)))
+	  Die("Specify partitions separated by commas, no spaces, range 1-100, integers only\n");
       }
-    }
     else if  (strcmp(optname, "--informat")  == 0) {
       format = String2SeqfileFormat(optarg);
       if (format == SQFILE_UNKNOWN) 
@@ -416,8 +411,10 @@ main(int argc, char **argv)
 
   printf ("W scale of %.1f\n", W_scale);
 
-  /* Initialize partition array, only if we haven't already in set_partitions */
-  if(num_partitions == 1)
+  /* Initialize partition array, only if we haven't already in set_partitions,
+   * in this case we don't use partitions, a single Gumbel is used.
+   */
+  if(!(do_partitions))
     {
       partitions = MallocOrDie(sizeof(int) * GC_SEGMENTS+1);
       for (i = 0; i < GC_SEGMENTS; i++) 
@@ -623,6 +620,8 @@ main(int argc, char **argv)
 	  mu[i] = log(K[i]*N)/lambda[i];
 	}
       
+      debug_print_stats(partitions, num_partitions, lambda, mu);
+
       if (cutoff_type == E_CUTOFF) {
 	if (num_samples < 1) 
 	  Die ("Cannot use -E option without defined lambda and K\n");
@@ -1293,49 +1292,97 @@ QDBFileRead(FILE *fp, CM_t *cm, int **ret_dmin, int **ret_dmax)
 
 /* Function: set_partitions
  * Date:     RJK, Mon, Oct 7, 2002 [St. Louis]
- * Purpose:  Given a partion array (int [100]) which contains what parttion
- *           number each %GC is in, sets a new partition by dividing the one
- *           each partition point is in.
+ *           Infernalification by EPN 
+ * Purpose:  Set partitions array given a 'list' from the command line.
  */
-int set_partitions (int **ret_partitions, int *num_partitions, char *list) {
-  int cur_point = 0;
-  int old_partition;
+int set_partitions (int **ret_partitions, int *num_partitions, char *list) 
+{
   int *partitions;   /* What partition each percentage point goes to */
+  int *partition_pt; /* partition_pt[i] is TRUE if i is to be a partition point */
+  int i;
+  int cur_point;
+  int cur_partition;
 
-  partitions = MallocOrDie(sizeof(int) * GC_SEGMENTS+1);
+  printf("in set partitions\n");
+  partitions   = MallocOrDie(sizeof(int) * GC_SEGMENTS+1);
+  partition_pt = MallocOrDie(sizeof(int) * GC_SEGMENTS+1);
+  
+  /* initialize partition_pt array */
+  for (i = 0; i < GC_SEGMENTS; i++) 
+    partition_pt[i] = FALSE;
 
-  while (*list != '\0') {
-    if (isdigit(*list)) {
-      cur_point = (cur_point * 10) + (*list - '0');
-    } else if (*list == ',') {
-      if (cur_point < 0 || cur_point >= GC_SEGMENTS) 
-	return(1);
-      if (partitions[cur_point] == partitions[cur_point-1]) {
-	old_partition = partitions[cur_point];
-	while (partitions[cur_point] == old_partition) {
-	  partitions[cur_point] = *num_partitions;
-	  cur_point++;
+  /* Read the partition points */
+  cur_point = 0;
+  while (*list != '\0') 
+    {
+      if (isdigit(*list)) 
+	cur_point = (cur_point * 10) + (*list - '0');
+      else if (*list == ',') 
+	{
+	  if (cur_point <= 0 || cur_point >= GC_SEGMENTS)
+	    return(0); 
+	  else
+	    partition_pt[cur_point] = TRUE;
+	  cur_point = 0;
 	}
-      }
-      (*num_partitions)++;
-      cur_point = 0;
-    } else {
-      return(1);
+      else 
+	return(0);
+      list++;
     }
-    list++;
-  }
-  if (cur_point < 0 || cur_point >= GC_SEGMENTS)
-    return(1);
+  /* keep track of the last partition point, which wasn't followed by a comma */
+  if (cur_point <= 0 || cur_point >= GC_SEGMENTS)
+    return(0);
+  else
+    partition_pt[cur_point] = TRUE;
+  
+  /* Set the partitions */
+  cur_partition = 0;
+  partitions[0] = 0;
+  /* first possible point for 2nd partition is 1 */
+  for(i=1; i < GC_SEGMENTS; i++)
+    {
+      if(partition_pt[i]) 
+	cur_partition++;
+      partitions[i] = cur_partition;
+    }
 
-  if (partitions[cur_point] == partitions[cur_point-1]) {
-    old_partition = partitions[cur_point];
-    while (partitions[cur_point] == old_partition) {
-      partitions[cur_point] = *num_partitions;
-      cur_point++;
-    }
-  }
   *ret_partitions = partitions;
-  (*num_partitions)++;
-  return(0);
+  (*num_partitions) = cur_partition + 1;
+  free(partition_pt);
+
+  /*  for(i=0; i < GC_SEGMENTS; i++)
+  printf("Partition[%d]: %d\n", i, partitions[i]);*/
+  return(1);
 }
 
+/* Function: debug_print_stats
+ */
+int debug_print_stats(int *partitions, int num_partitions, double *lambda, double *mu)
+{
+  int i;
+  int cur_partition;
+  float sc;
+
+  printf("in debug_print_stats num_partitions: %d\n", num_partitions);
+  cur_partition = 0;
+  printf("cur_partition: %d\n", cur_partition);
+  for (i=0; i<GC_SEGMENTS; i++) 
+    {
+      printf("i: %d\n", i);
+      if (partitions[i] == cur_partition) 
+	{
+	  printf("partition i:%d starts at: %d\n", cur_partition, i);
+	  for(sc = 0.0; sc < 100.0; sc +=1.)
+	    {
+	      printf (" Score = %.2f, E = %.4g, P = %.4g\n", sc,
+		      RJK_ExtremeValueE(sc, mu[i], lambda[i]),
+		      esl_gumbel_surv((double) sc, mu[i], lambda[i]));
+	      printf("\tmu[%d]: %f lambda[%d]: %f\n", i, mu[i], i, lambda[i]);
+	    }
+	  printf("\n");
+	  cur_partition++;
+	} 
+    }
+  printf("end of debug_print_stats\n");
+  return 1;
+}
