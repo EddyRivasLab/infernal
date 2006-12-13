@@ -691,11 +691,11 @@ main(int argc, char **argv)
     printf ("Fin\n");
 #ifdef USE_MPI
   }
+#endif
   return EXIT_SUCCESS;
 }
 
-
-#endif
+/* OLD CMSEARCH CODE TEMPORARILY LEFT FOR REFERENCE */
 #if 0
   /* start stopwatch for timing the search */
   StopwatchZero(watch);
