@@ -392,7 +392,9 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
 		 int do_local, int do_small, int do_qdb, double qdb_beta, int do_hbanded, 
 		 int use_sums, double hbandp, int do_sub, int do_fullsub, int do_hmmonly, 
 		 int do_inside, int do_outside, int do_check, int do_post, char ***ret_postcode, 
-		 int do_timings, int bdump_level, int debug_level, int silent_mode);
+		 int do_timings, int bdump_level, int debug_level, int silent_mode,
+		 int *actual_spos, int *actual_epos, float **ret_post_spos, float **ret_post_epos,
+                 int **ret_dist_spos, int **ret_dist_epos);
 extern void 
 serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons, int W, int cutoff_type, 
 			float cutoff, int do_revcomp, int do_align, int do_stats, double *mu, 

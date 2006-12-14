@@ -45,6 +45,7 @@ static char experts[] = "\
   --fixlen <n> : fix length of partial seqs to <n>\n\
   --minlen <n> : set minimum length of partial seqs as <n>\n\
   --debug  <n> : set verbosity of debugging print statements to <n> [1..3]\n\
+  --histo  <n> : build histogram of HMM posterior probability of start/end\n\
 \n\
   * HMM banded alignment related options:\n\
    --hbanded     : use experimental CM plan 9 HMM banded CYK aln algorithm\n\
@@ -66,7 +67,8 @@ static struct opt_s OPTIONS[] = {
   { "--hbanded",   FALSE, sqdARG_NONE },
   { "--hbandp",    FALSE, sqdARG_FLOAT},
   { "--debug",     FALSE, sqdARG_INT},
-  { "--sums",      FALSE, sqdARG_NONE}
+  { "--sums",      FALSE, sqdARG_NONE},
+  { "--histo",     FALSE, sqdARG_NONE}
 
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
@@ -115,6 +117,13 @@ main(int argc, char **argv)
   int s_ct;                     /* num times pred_spos = spos */
   int e_ct;                     /* num times pred_epos = epos */
 
+  /* posterior histogram related variables */
+  int    do_histo;              /* TRUE to build histograms */
+  float *post_spos;             /* [0..nseq-1] posterior probability from HMM of spos being start */
+  float *post_epos;             /* [0..nseq-1] posterior probability from HMM of epos being end */
+  int   *dist_spos;             /* [0..nseq-1] distance (+/-) of max post start from actual spos */
+  int   *dist_epos;             /* [0..nseq-1] distance (+/-) of max post end   from actual epos */
+
   /* CYK modes */
   int do_small;                 /* TRUE to use D&C; FALSE to use full CYKInside() */
   int do_qdb;                   /* TRUE to use query dependent bands (QDB)        */
@@ -122,7 +131,7 @@ main(int argc, char **argv)
   int do_hbanded;               /* TRUE to use CP9 HMM bands for alignment        */
   double hbandp;                /* tail loss prob for HMM bands                   */
   int    use_sums;              /* TRUE to fill and use the posterior sums, false not to. */
-
+  double beta;                  /* tail loss prob for QDB                         */
   
   /*********************************************** 
    * Parse command line
@@ -145,7 +154,9 @@ main(int argc, char **argv)
   do_qdb         = FALSE;
   do_hbanded     = FALSE;
   hbandp         = 0.0001;
+  beta           = 0.0000001;
   use_sums       = FALSE;
+  do_histo       = FALSE;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
 		&optind, &optname, &optarg))  {
@@ -161,6 +172,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--hbandp")    == 0) hbandp       = atof(optarg);
     else if (strcmp(optname, "--sums")      == 0) use_sums     = TRUE;
     else if (strcmp(optname, "--debug")     == 0) debug_level = atoi(optarg);
+    else if (strcmp(optname, "--histo")     == 0) do_histo = TRUE;
     else if (strcmp(optname, "-h") == 0) {
       MainBanner(stdout, banner);
       puts(usage);
@@ -172,6 +184,14 @@ main(int argc, char **argv)
   if (argc - optind != 1) Die("Incorrect number of arguments.\n%s\n", usage);
   cmfile = argv[optind++];
   
+  if(do_histo)
+    {
+      post_spos = MallocOrDie(sizeof(float) * nseq);
+      post_epos = MallocOrDie(sizeof(float) * nseq);
+      dist_spos = MallocOrDie(sizeof(int  ) * nseq);
+      dist_epos = MallocOrDie(sizeof(int  ) * nseq);
+    }
+
   /*****************************************************************
    * Input and configure the CM
    *****************************************************************/
@@ -201,7 +221,6 @@ main(int argc, char **argv)
     Die("--minlen enabled, but non-sensical, must be >= 0 and <= %d (# match cols)\n", ncols);
   if(do_fixlen && (fixlen <= 0 || fixlen > ncols))
     Die("--fixlen enabled, but non-sensical, must be >= 0 and <= %d (# match cols)\n", ncols);
-
 
   /*********************************************** 
    * Open output file, if needed.
@@ -299,11 +318,12 @@ main(int argc, char **argv)
 
       /* Align the sequence, setting do_sub to FALSE */
       AlignSeqsWrapper(cm, temp_dsq, temp_sqinfo, 1, &temp_tr, do_local, 
-		       do_small, do_qdb, 0.0000001, do_hbanded, use_sums, 
+		       do_small, do_qdb, beta, do_hbanded, use_sums, 
 		       hbandp, 
 		       FALSE, FALSE,  /* these are do_sub and do_fullsub */
 		       FALSE, FALSE, FALSE, 
-		       FALSE, FALSE, NULL, FALSE, 0, 0, TRUE);
+		       FALSE, FALSE, NULL, FALSE, 0, 0, TRUE,
+		       NULL, NULL, NULL, NULL, NULL, NULL);
 
 
       strcpy(temp_sqinfo[0].name, cm->name);
@@ -381,11 +401,19 @@ main(int argc, char **argv)
     }
 
   /* Align all the partial sequences to the CM */
-  AlignSeqsWrapper(cm, pdsq, psqinfo, nseq, &ptr, do_local, do_small, do_qdb,
-		   0.0000001, do_hbanded, use_sums, hbandp,
-		   do_sub, do_fullsub, FALSE, FALSE, FALSE, 
-		   FALSE, FALSE, NULL, FALSE, 0, 0, TRUE);
-
+  if(do_histo)
+    AlignSeqsWrapper(cm, pdsq, psqinfo, nseq, &ptr, do_local, do_small, do_qdb,
+		     beta, do_hbanded, use_sums, hbandp,
+		     do_sub, do_fullsub, FALSE, FALSE, FALSE, 
+		     FALSE, FALSE, NULL, FALSE, 0, 0, TRUE,
+		     spos, epos, &post_spos, &post_epos, &dist_spos,
+		     &dist_epos);
+  else
+    AlignSeqsWrapper(cm, pdsq, psqinfo, nseq, &ptr, do_local, do_small, do_qdb,
+		     beta, do_hbanded, use_sums, hbandp,
+		     do_sub, do_fullsub, FALSE, FALSE, FALSE, 
+		     FALSE, FALSE, NULL, FALSE, 0, 0, TRUE,
+		     NULL, NULL, NULL, NULL, NULL, NULL);
   s_ct = 0;
   e_ct = 0;
   /* For each sequence, compare the partial alignment with
@@ -437,7 +465,7 @@ main(int argc, char **argv)
       if(pred_epos == -1)
 	Die("pred_epos is still -1!\n");
       if(pred_spos != spos[i] || pred_epos != epos[i])
-	printf("(i:%4d) S: %4d (A) %4d (P) E: %4d (A) %4d (P)\n", i, spos[i], pred_spos, epos[i], pred_epos);
+	printf("(%4d) S: %4d %4d %4d E: %4d %4d %4d \n", i, spos[i], pred_spos, spos[i]-pred_spos, epos[i], pred_epos, epos[i]-pred_epos);
       
       if(pred_spos == spos[i])
 	s_ct++;

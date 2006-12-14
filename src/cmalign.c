@@ -324,7 +324,9 @@ main(int argc, char **argv)
   AlignSeqsWrapper(cm, dsq, sqinfo, nseq, &tr, do_local, do_small, do_qdb,
 		   0.0000001, do_hbanded, use_sums, hbandp,
 		   do_sub, do_fullsub, do_hmmonly, do_inside, do_outside, do_check, 
-		   do_post, &postcode, do_timings, bdump_level, debug_level, FALSE);
+		   do_post, &postcode, do_timings, bdump_level, debug_level, FALSE,
+		   NULL, NULL, NULL, NULL, NULL, NULL); 
+  /* last 6 NULL args are specific to partial-test.c */
 
   if(!(do_inside || do_outside))
     {

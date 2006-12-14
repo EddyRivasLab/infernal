@@ -82,26 +82,35 @@ static void remove_hits_over_e_cutoff (scan_results_t *results, char *seq,
  *           bdump_level  - verbosity level for band related print statements
  *           debug_level  - verbosity level for debugging print statements
  *           silent_mode  - TRUE to not print anything, FALSE to print scores 
+ *   Last 6 args are specific to partial-test.c (temporary?) these are usually NULL
+ *           actual_spos  - [0..nseq-1] start consensus posn for truncated (partial) seq
+ *           actual_epos  - [0..nseq-1] end   consensus posn for truncated (partial) seq
+ *           ret_post_spos- [0..nseq-1] posterior probability from HMM of spos being start
+ *           ret_post_epos- [0..nseq-1] posterior probability from HMM of epos being end
+ *           ret_dist_spos- [0..nseq-1] distance (+/-) of max post start from spos
+ *           ret_dist_epos- [0..nseq-1] distance (+/-) of max post end   from epos
  */
 void
 AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***ret_tr, int do_local, 
 		 int do_small, int do_qdb, double qdb_beta,
 		 int do_hbanded, int use_sums, double hbandp, int do_sub, int do_fullsub, int do_hmmonly, 
 		 int do_inside, int do_outside, int do_check, int do_post, char ***ret_postcode, int do_timings, 
-		 int bdump_level, int debug_level, int silent_mode)
+		 int bdump_level, int debug_level, int silent_mode, 
+		 int *actual_spos, int *actual_epos, float **ret_post_spos, float **ret_post_epos,
+		 int **ret_dist_spos, int **ret_dist_epos)
 {
   Stopwatch_t  *watch1, *watch2;      /* for timings */
   int i;                              /* counter over sequences */
   int v;                              /* state counter */
-  char             **postcode;  /* posterior decode array of strings        */
-  Parsetree_t      **tr;        /* parse trees for the sequences */
+  char           **postcode;    /* posterior decode array of strings        */
+  Parsetree_t    **tr;          /* parse trees for the sequences */
   float            sc;		/* score for one sequence alignment */
   float            maxsc;	/* max score in all seqs */
   float            minsc;	/* min score in all seqs */
   float            avgsc;	/* avg score over all seqs */
 
   /* variables related to CM Plan 9 HMMs */
-  struct cplan9_s       *hmm;           /* constructed CP9 HMM; written to hmmfile              */
+  struct cplan9_s       *hmm;           /* constructed CP9 HMM */
   CP9Bands_t *cp9b;                     /* data structure for hmm bands (bands on the hmm states) 
 				         * and arrays for CM state bands, derived from HMM bands*/
   CP9Map_t              *cp9map;        /* maps the hmm to the cm and vice versa */
@@ -147,6 +156,29 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
   float           ***beta;      /* beta DP matrix for Inside() */
   float           ***post;      /* post DP matrix for Inside() */
 
+  /* partial-test variables */
+  int do_ptest;                 /* TRUE to fill partial-test variables */
+  float *post_spos;
+  float *post_epos;
+  int   *dist_spos;
+  int   *dist_epos;
+
+  do_ptest = FALSE;
+  if(ret_post_spos != NULL)
+    do_ptest = TRUE;
+  if(do_ptest && (ret_post_epos == NULL || ret_dist_spos == NULL || ret_dist_epos == NULL))
+    Die("ERROR partial-test arrays must either all be NULL or non-NULL\n");
+
+  /* Allocate partial-test arrays */
+  if(ret_post_spos != NULL)
+    post_spos = MallocOrDie(sizeof(float) * nseq);
+  if(ret_post_epos != NULL)
+    post_epos = MallocOrDie(sizeof(float) * nseq);
+  if(ret_dist_spos != NULL)
+    dist_spos = MallocOrDie(sizeof(int  ) * nseq);
+  if(ret_dist_epos != NULL)
+    dist_epos = MallocOrDie(sizeof(int  ) * nseq);
+
   tr    = MallocOrDie(sizeof(Parsetree_t) * nseq);
   minsc = FLT_MAX;
   maxsc = -FLT_MAX;
@@ -156,7 +188,7 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
   watch2 = StopwatchCreate(); /* watch2 times the full alignment (including band calc)
 				 for each seq */
 
-  if(do_hbanded || do_sub) /* We need a CP9 HMM to build sub_cms */
+  if(do_hbanded || do_sub || do_ptest) /* We need a CP9 HMM to build sub_cms */
     {
       /* Ensure local begins and ends in the CM are off */
       /* TO DO: write a function that puts CM back in glocal mode */
@@ -195,8 +227,8 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
 	CP9Logoddsify(hmm);
 
       }
-  if(do_sub) /* to get spos and epos for the sub_cm, 
-	      * we config the HMM to local mode with equiprobably start/end points.*/
+  if(do_sub || do_ptest) /* to get spos and epos for the sub_cm, 
+			  * we config the HMM to local mode with equiprobable start/end points.*/
       {
 	/*printf("configuring the CM plan 9 HMM for local alignment.\n");*/
 	swentry= ((hmm->M)-1.)/hmm->M; /* all start pts equiprobable, including 1 */
@@ -205,7 +237,6 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
 	CP9Logoddsify(hmm);
 	orig_tr    = MallocOrDie(sizeof(Parsetree_t));
       }
-
   /* set up the query dependent bands, this has to be done after the ConfigLocal() call */
   if(do_qdb || bdump_level > 0)
     {
@@ -251,7 +282,7 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
       if (sqinfo[i].len == 0) Die("ERROR: sequence named %s has length 0.\n", sqinfo[i].name);
 
       /* Potentially, do HMM calculations. */
-      if(do_hbanded || do_sub)
+      if(do_hbanded || do_sub || do_ptest)
 	{
 	  /* We want HMM posteriors for this sequence to the full length (non-sub) HMM */
 	  StopwatchZero(watch1);
@@ -269,6 +300,25 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
 	  CP9FullPosterior(dsq[i], 1, sqinfo[i].len, orig_hmm, cp9_fwd, cp9_bck, cp9_posterior);
 	}
 
+      if(do_ptest) /* determine the posterior probability from HMM of the correct start posn
+		    * and end posn, as well as distance from max posterior */
+	{
+	  /* Determine HMM post probability of actual start and end */
+	  /*	  CP9NodeForPosn(orig_hmm, 1, sqinfo[i].len, actual_spos[i], cp9_posterior, 
+			 &spos, &spos_state, &(post_spos[i]), debug_level);
+	  CP9NodeForPosn(orig_hmm, 1, sqinfo[i].len, actual_epos[i], cp9_posterior, 
+	  &epos, &spos_state, &(post_epos[i]), debug_level);*/
+	  printf("(%4d) s: %3d post: %8f\n", i, actual_spos[i], 
+		 Score2Prob(cp9_posterior->mmx[1][actual_spos[i]], 1.));
+	  printf("(%4d) e: %3d post: %8f\n", i, actual_epos[i], 
+		 Score2Prob(cp9_posterior->mmx[sqinfo[i].len][actual_epos[i]], 1.));
+	  /* Determine HMM post probability of most likely start and end */
+	  /*CP9NodeForPosn(orig_hmm, 1, sqinfo[i].len, 1, cp9_posterior, 
+			 &spos, &spos_state, NULL, debug_level);
+	  CP9NodeForPosn(orig_hmm, 1, sqinfo[i].len, sqinfo[i].len, cp9_posterior, 
+	  &epos, &epos_state, NULL, debug_level);*/
+	}
+      
       /* If we're in sub mode:
        * (1) Get HMM posteriors. (we already did this above)
        * (2) Infer the start (spos) and end (epos) HMM states by 
@@ -286,7 +336,6 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
 	   */
 	  CP9NodeForPosn(orig_hmm, 1, sqinfo[i].len, 1,             cp9_posterior, &spos, &spos_state, debug_level);
 	  CP9NodeForPosn(orig_hmm, 1, sqinfo[i].len, sqinfo[i].len, cp9_posterior, &epos, &epos_state, debug_level);
-	  
 	  /* If the most likely state to have emitted the first or last residue
 	   * is the insert state in node 0, it only makes sense to start modelling
 	   * at consensus column 1. */
@@ -752,7 +801,7 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
   if(do_hbanded && !do_sub)
     FreeCP9Bands(cp9b);
 
-  if(do_hbanded || do_sub)
+  if(do_hbanded || do_sub || do_ptest)
     {
       FreeCPlan9Matrix(cp9_mx);
       FreeCPlan9(orig_hmm);
@@ -770,6 +819,15 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
   
   *ret_tr = tr; 
   if (ret_postcode != NULL) *ret_postcode = postcode; 
+  
+  if(ret_post_spos != NULL)
+    *ret_post_spos = post_spos;
+  if(ret_post_epos != NULL)
+    *ret_post_epos = post_epos;
+  if(ret_dist_spos != NULL)
+    *ret_dist_spos = dist_spos;
+  if(ret_dist_epos != NULL)
+    *ret_dist_epos = dist_epos;
 }
 
 /*
