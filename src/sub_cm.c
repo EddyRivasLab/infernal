@@ -98,7 +98,8 @@ AllocSubMap(CM_t *sub_cm, CM_t *orig_cm, int sstruct, int estruct, int do_fullsu
     {
       submap->sub_clen = submap->orig_clen;
       submap->spos     = 1;
-      submap->epos     = submap->sub_clen;
+      /*submap->epos     = submap->sub_clen;*/
+      submap->epos     = submap->estruct;
     }
   else
     {
@@ -587,7 +588,7 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
     * in case it was not.
     */
    cm_find_and_detach_dual_inserts(orig_cm, 
-				   FALSE, /* DON'T check that these states have 0 counts (they won't due to priors) */
+				   FALSE, /* DON'T check that these states have 0 counts (they may not due to priors) */
 				   TRUE); /* DO detach END_E-1 insert states, making them unreachable */
 
    /* Get the consensus sequence and consensus structure information from the original CM */
@@ -603,7 +604,7 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
    epos = estruct;
    if(do_fullsub) /* we're modelling every consensus columns, just removing
 		   * structure outside sstruct and estruct */
-     { spos = 1; epos = con->clen; }
+     { spos = 1; /*epos = con->clen;*/ }
 
    /* Fill a new ct array for the sub_cm. The sub_cm will only model the consensus columns
     * between spos and epos, and only the structure between spos
@@ -805,6 +806,12 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
   *           have emitted (from either its Match or Insert state)
   *           a given posn in the target sequence.
   *
+  *           12.14.06 If do_fullsub is TRUE, pmass and is_start are relevant
+  *           (else they're irrelevant). In this case, we find the left most
+  *           (if(is_start)) or right most (if(!is_start)) HMM node for which
+  *           the posteriors of the nodes to the left or right sum up to 
+  *           at least 'pmass'.
+  * 
   * Args:     hmm       - the CM plan 9 HMM
   *           i0        - first posn of target subseq with info in posterior matrix
   *           j0        - last posn of target subseq with info in posterior matrix
@@ -813,12 +820,16 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
   *           post      - the posterior matrix for the hmm
   *           ret_node  - RETURN: index of node with highest probability of emitting x
   *           ret_type  - RETURN: type of state in ret_node with highest probability 
+  *           do_fullsub- TRUE to set start as right 
+  *           pmass     - probability mass to require on left of start or right of end
+  *           is_start  - TRUE if we're doing left of start, 
   *           print_flag- TRUE to print out info on most likely node 
   *
   */
  void
  CP9NodeForPosn(struct cplan9_s *hmm, int i0, int j0, int x, struct cp9_dpmatrix_s *post, 
-		int *ret_node, int *ret_type, int print_flag)
+		int *ret_node, int *ret_type, int do_fullsub, float pmass, int is_start,
+		int print_flag)
  {
    /* post->mmx[i][k]: posterior probability that posn i was emitted from node k's 
       match state */  
@@ -827,36 +838,86 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
 		     '1' for insert */
    int  max_sc;   /* score (log probability) from post matrix for max_k node max_type state type */
    int  k;        /* counter over nodes */
+   /* used only if do_fullsub = TRUE */
+   int reached_mass; /* TRUE if we've reached our pmass */
+   float curr_pmass; /* current pmass on left (if(is_start)) or right (if(is_end)) */
+
+   reached_mass = FALSE;
+   if(!is_start) pmass = 1. - pmass; /* we move left to right */
+
+   if(do_fullsub)
+     if((pmass > 0.) && (pmass - 0. < 0.000001))
+       do_fullsub = FALSE; /* if pmass is 0, we return max posterior, don't worry about sums */
+
+
+   /*printf("in CP9NodeForPosn, do_fullsub: %d is_start: %d pmass: %f\n", do_fullsub, is_start, pmass);*/
    if(x > j0 || x < i0)
      Die("ERROR in CP9NodeForPosn(), asking for position x: %d outside subseq bounds i0: %d j0: %d\n", x, i0, j0);
-
-   if(post->mmx[x][0] > post->imx[x][0])
+   
+   if(!do_fullsub)
      {
-       max_sc     = post->mmx[x][0];
-       max_type   = 0; /* match */
+       if(post->mmx[x][0] > post->imx[x][0])
+	 {
+	   max_sc     = post->mmx[x][0];
+	   max_type   = 0; /* match */
+	 }
+       else
+	 {
+	   max_sc     = post->imx[x][0];
+	   max_type   = 1; /* insert */
+	 }
+       max_k    = 0; 
      }
-   else
+   else if(do_fullsub)
      {
-       max_sc     = post->imx[x][0];
-       max_type   = 1; /* insert */
+       curr_pmass  = Score2Prob(post->mmx[x][0], 1.);
+       curr_pmass += Score2Prob(post->imx[x][0], 1.);
+       printf("k: %d curr_pmass: %f\n", 0, curr_pmass);
+       if(curr_pmass >= pmass)
+	 {
+	   if(print_flag || TRUE)
+	     printf("Reached pmass: k: %d curr_pmass: %f\n", 0, curr_pmass);
+	   *ret_type = -1; /* this is irrelevant */
+	   *ret_node = 1;
+	   return;
+	 }
      }
-   max_k    = 0; 
-
+   /* move left to right through HMM nodes */
    for(k = 1; k <= hmm->M; k++)
      {
-       if(post->mmx[x][k] > max_sc)
+       if(!do_fullsub)
 	 {
-	   max_k  = k;
-	   max_sc = post->mmx[x][k];
-	   max_type = 0; /* match */
+	   if(post->mmx[x][k] > max_sc)
+	     {
+	       max_k  = k;
+	       max_sc = post->mmx[x][k];
+	       max_type = 0; /* match */
+	     }
+	   if(post->imx[x][k] > max_sc) 
+	     {
+	       max_k  = k;
+	       max_sc = post->imx[x][k];
+	       max_type = 1; /* insert */
+	     }
 	 }
-       if(post->imx[x][k] > max_sc)
+       else if(do_fullsub)
 	 {
-	   max_k  = k;
-	   max_sc = post->imx[x][k];
-	   max_type = 1; /* insert */
+	   curr_pmass += Score2Prob(post->mmx[x][k], 1.);
+	   curr_pmass += Score2Prob(post->imx[x][k], 1.);
+	   printf("k: %d curr_pmass: %f\n", k, curr_pmass);
+	   if(curr_pmass >= pmass)
+	     {
+	       if(print_flag || TRUE)
+		 printf("Reached pmass: k: %d curr_pmass: %f\n", k, curr_pmass);
+	       *ret_type = -1; /* this is irrelevant */
+	       *ret_node = k;
+	       return;
+	     }
 	 }
      }
+   if(do_fullsub)
+     Die("ERROR, didn't reach pmass of %f (is_start: %d)\n", pmass, is_start);
+
    if(print_flag)
      {
        if(max_type == 0)

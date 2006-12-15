@@ -1609,7 +1609,7 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
 	    alpha[v][jp_roll][d] = IMPOSSIBLE;
 	  if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
 	    {
-	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= gamma_j; d++) 
+	      for (d = hdmin[v][jp_v]; ((d <= hdmax[v][jp_v] && d <= gamma_j) && d <= W); d++) 
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][jp_roll][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
@@ -1621,7 +1621,7 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
 	    }
 	  else if (cm->sttype[v] == MP_st) 
 	    {
-	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= gamma_j; d++)
+	      for (d = hdmin[v][jp_v]; ((d <= hdmax[v][jp_v] && d <= gamma_j) && d <= W); d++)
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
@@ -1640,7 +1640,7 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
 	    }
 	  else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) 
 	    {
-	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= gamma_j; d++)
+	      for (d = hdmin[v][jp_v]; ((d <= hdmax[v][jp_v] && d <= gamma_j) && d <= W); d++)
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
@@ -1659,7 +1659,7 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
 	    }
 	  else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) 
 	    {
-	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= gamma_j; d++)
+	      for (d = hdmin[v][jp_v]; ((d <= hdmax[v][jp_v] && d <= gamma_j) && d <= W); d++)
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
@@ -1691,7 +1691,7 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
 	       */
 
 	      /* initialize with endsc for all valid d for B state v */
-	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= gamma_j; d++) /* ensures (5) above */
+	      for (d = hdmin[v][jp_v]; ((d <= hdmax[v][jp_v] && d <= gamma_j) && d <= W); d++) /* ensures (5) above */
 		{
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
 		}
@@ -1706,7 +1706,7 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
 		    printf("hdmin[v][jp_v]: %d | hdmin[y][jp_y]: %d\n", hdmin[v][jp_v], hdmin[y][jp_y]);
 		    printf("hdmax[v][jp_v]: %d | hdmax[y][jp_y]: %d\n", hdmax[v][jp_v], hdmax[y][jp_y]);
 		  */
-		  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= gamma_j; d++) /* ensures (5) above */
+		  for (d = hdmin[v][jp_v]; ((d <= hdmax[v][jp_v] && d <= gamma_j) && d <= W); d++) /* ensures (5) above */
 		    {
 		      /* k is the length of the right fragment */
 		      tmp_kmin = ((j-jmax[w]) > hdmin[y][jp_y]) ? (j-jmax[w]) : hdmin[y][jp_y];
@@ -1782,7 +1782,7 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
       for (d = hdmax[0][jp_v]+1; d <= W;      d++) 
 	alpha[0][jp_roll][d] = IMPOSSIBLE;
       
-      for (d = hdmin[0][jp_v]; d <= hdmax[0][jp_v] && d <= gamma_j; d++)
+      for (d = hdmin[v][jp_v]; ((d <= hdmax[v][jp_v] && d <= gamma_j) && d <= W); d++) 
 	{
 	  y = cm->cfirst[0];
 	  alpha[0][cur][d] = alpha[y][cur][d] + cm->tsc[0][0];

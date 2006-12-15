@@ -32,3 +32,6 @@
 # i9 - QDB D&C versus non-D&C alignment score discrepancy
 2 exercise   i9/cmalign-qdb  ./i9 @cmbuild@ @cmscore@ i9.sto
 
+# i10 - QDB search error if W is set at command line
+2 exercise   i10/cmsearch-W  ./i10 @cmbuild@ @cmsearch@
+

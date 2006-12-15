@@ -52,8 +52,8 @@ static char experts[] = "\
    --post        : align with CYK and append posterior probabilities\n\
    --checkpost   : check that posteriors are correctly calc'ed\n\
    --sub         : build sub CM for columns b/t HMM predicted start/end points\n\
-   --fsub        : build sub CM for structure b/t HMM predicted start/end points\n\
    --elsilent    : disallow local end (EL) emissions\n\
+   --fsub <f>    : sub CM w/structure b/t HMM start/end pts w/ > <f> prob mass\n\
 \n\
   * HMM banded alignment related options (IN DEVELOPMENT):\n\
    --hbanded     : use experimental CM plan 9 HMM banded CYK aln algorithm\n\
@@ -90,7 +90,7 @@ static struct opt_s OPTIONS[] = {
   { "--post",       FALSE, sqdARG_NONE},
   { "--checkpost",  FALSE, sqdARG_NONE},
   { "--sub",        FALSE, sqdARG_NONE},
-  { "--fsub",       FALSE, sqdARG_NONE},
+  { "--fsub",       FALSE, sqdARG_FLOAT},
   { "--elsilent",   FALSE, sqdARG_NONE},
   { "--checkcp9",   FALSE, sqdARG_NONE},
 };
@@ -151,6 +151,8 @@ main(int argc, char **argv)
 				    * and build a separate sub CM for alignment of that seq */
   int                do_fullsub;   /* TRUE to only remove structure outside HMM predicted start
 				    * (spos) and end points (epos) */
+  float              fsub_pmass;   /* probability mass from HMM posteriors req'd of start before sstruct
+				    * and end after estruct */
   CM_t              *orig_cm;      /* the original, template covariance model the sub CM was built from */
   char            *check_outfile;  /* output file name for subCM stk file*/
   
@@ -195,6 +197,7 @@ main(int argc, char **argv)
   atest_pthresh = 0.00001;
   check_outfile = "check.stk";
   seed         = time ((time_t *) NULL);
+  fsub_pmass   = 0.;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -215,7 +218,8 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--post")      == 0) do_post      = TRUE;
     else if (strcmp(optname, "--checkpost") == 0) do_check     = TRUE;
     else if (strcmp(optname, "--sub")       == 0) do_sub       = TRUE; 
-    else if (strcmp(optname, "--fsub")      == 0) { do_sub = TRUE; do_fullsub = TRUE; }
+    else if (strcmp(optname, "--fsub")      == 0) 
+      { do_sub = TRUE; do_fullsub = TRUE; fsub_pmass = atof(optarg); }
     else if (strcmp(optname, "--elsilent")  == 0) do_elsilent= TRUE;
     else if (strcmp(optname, "--hbanded")   == 0) { do_hbanded = TRUE; do_small = FALSE; }
     else if (strcmp(optname, "--hbandp")    == 0) hbandp       = atof(optarg);
@@ -271,7 +275,7 @@ main(int argc, char **argv)
     Die("%s empty?\n", cmfile);
   CMFileClose(cmfp);
   orig_cm = cm;
-  
+
   /* We need to ensure that cm->el_selfsc * W >= IMPOSSIBLE
    * (cm->el_selfsc is the score for an EL self transition) This is
    * done because we potentially multiply cm->el_selfsc * W, and add
@@ -323,7 +327,7 @@ main(int argc, char **argv)
   
   AlignSeqsWrapper(cm, dsq, sqinfo, nseq, &tr, do_local, do_small, do_qdb,
 		   0.0000001, do_hbanded, use_sums, hbandp,
-		   do_sub, do_fullsub, do_hmmonly, do_inside, do_outside, do_check, 
+		   do_sub, do_fullsub, fsub_pmass, do_hmmonly, do_inside, do_outside, do_check, 
 		   do_post, &postcode, do_timings, bdump_level, debug_level, FALSE,
 		   NULL, NULL, NULL, NULL, NULL, NULL); 
   /* last 6 NULL args are specific to partial-test.c */

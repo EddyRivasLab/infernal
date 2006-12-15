@@ -72,6 +72,7 @@ static void remove_hits_over_e_cutoff (scan_results_t *results, char *seq,
  *           cp9bandp     - tail loss probability for CP9 hmm bands 
  *           do_sub       - TRUE to build and use a sub CM for alignment
  *           do_fullsub   - TRUE to build and use a full sub CM for alignment
+ *           fsub_pmass   - probability mass to require in fullsub mode 
  *           do_hmmonly   - TRUE to align to the CP9 HMM, with viterbi
  *           do_inside    - TRUE to do Inside, and not return a parsetree
  *           do_outside   - TRUE to do Outside, and not return a parsetree
@@ -93,8 +94,9 @@ static void remove_hits_over_e_cutoff (scan_results_t *results, char *seq,
 void
 AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***ret_tr, int do_local, 
 		 int do_small, int do_qdb, double qdb_beta,
-		 int do_hbanded, int use_sums, double hbandp, int do_sub, int do_fullsub, int do_hmmonly, 
-		 int do_inside, int do_outside, int do_check, int do_post, char ***ret_postcode, int do_timings, 
+		 int do_hbanded, int use_sums, double hbandp, int do_sub, int do_fullsub, float fsub_pmass,
+		 int do_hmmonly, int do_inside, int do_outside, int do_check, int do_post, 
+		 char ***ret_postcode, int do_timings, 
 		 int bdump_level, int debug_level, int silent_mode, 
 		 int *actual_spos, int *actual_epos, float **ret_post_spos, float **ret_post_epos,
 		 int **ret_dist_spos, int **ret_dist_epos)
@@ -162,6 +164,11 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
   float *post_epos;
   int   *dist_spos;
   int   *dist_epos;
+
+  if(do_fullsub)
+    do_sub = TRUE;
+
+  /*printf("in AlignSeqsWrapper() do_local: %d do_sub: %d do_fullsub: %d\n", do_local, do_sub, do_fullsub);*/
 
   do_ptest = FALSE;
   if(ret_post_spos != NULL)
@@ -308,9 +315,9 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
 			 &spos, &spos_state, &(post_spos[i]), debug_level);
 	  CP9NodeForPosn(orig_hmm, 1, sqinfo[i].len, actual_epos[i], cp9_posterior, 
 	  &epos, &spos_state, &(post_epos[i]), debug_level);*/
-	  printf("(%4d) s: %3d post: %8f\n", i, actual_spos[i], 
+	  printf("(%4d) s: %3d post: %.2f\n", i, actual_spos[i], 
 		 Score2Prob(cp9_posterior->mmx[1][actual_spos[i]], 1.));
-	  printf("(%4d) e: %3d post: %8f\n", i, actual_epos[i], 
+	  printf("(%4d) e: %3d post: %.2f\n", i, actual_epos[i], 
 		 Score2Prob(cp9_posterior->mmx[sqinfo[i].len][actual_epos[i]], 1.));
 	  /* Determine HMM post probability of most likely start and end */
 	  /*CP9NodeForPosn(orig_hmm, 1, sqinfo[i].len, 1, cp9_posterior, 
@@ -334,8 +341,10 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
 	  /* (2) infer the start and end HMM states by looking at the posterior matrix.
 	   * Remember: we're necessarily in local mode, the --sub option turns local mode on. 
 	   */
-	  CP9NodeForPosn(orig_hmm, 1, sqinfo[i].len, 1,             cp9_posterior, &spos, &spos_state, debug_level);
-	  CP9NodeForPosn(orig_hmm, 1, sqinfo[i].len, sqinfo[i].len, cp9_posterior, &epos, &epos_state, debug_level);
+	  CP9NodeForPosn(orig_hmm, 1, sqinfo[i].len, 1,             cp9_posterior, &spos, &spos_state, 
+			 do_fullsub, fsub_pmass, TRUE, debug_level);
+	  CP9NodeForPosn(orig_hmm, 1, sqinfo[i].len, sqinfo[i].len, cp9_posterior, &epos, &epos_state, 
+			 do_fullsub, fsub_pmass, FALSE, debug_level);
 	  /* If the most likely state to have emitted the first or last residue
 	   * is the insert state in node 0, it only makes sense to start modelling
 	   * at consensus column 1. */
@@ -360,10 +369,15 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
 	   * if we don't need to build a CP9 HMM from the sub_cm to do banded alignment.*/
 	  if(do_fullsub && !do_hbanded)
 	    {
+	      printf("calling ConfigLocal_fullsub_post()\n");
 	      /* FIX THIS WHOLE THING */
-	      ConfigLocal_fullsub(cm, 0.5, 0.5, orig_cp9map->pos2nd[submap->sstruct],
-				  orig_cp9map->pos2nd[submap->estruct]);
+	      ConfigLocal_fullsub_post(sub_cm, orig_cm, orig_cp9map, submap, cp9_posterior, sqinfo[i].len);
+	      /*ConfigLocal_fullsub(cm, 0.5, 0.5, orig_cp9map->pos2nd[submap->sstruct],
+		orig_cp9map->pos2nd[submap->estruct]);*/
 	      /*ConfigLocal(sub_cm, 0.5, 0.5);*/
+	      /*printf("DEBUG PRINTING CM PARAMS AFTER CONFIGLOCAL_FULLSUB_POST CALL\n");
+		debug_print_cm_params(cm);
+		printf("DONE DEBUG PRINTING CM PARAMS AFTER CONFIGLOCAL_FULLSUB_POST CALL\n");*/
 	      CMLogoddsify(cm);
 	      do_local = TRUE; /* we wait til we get here to set do_local, if we 
 				* configure for local alignment earlier it would've 
@@ -615,8 +629,8 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
 	    {
 	      /*printf("DEBUG PRINTING CM PARAMS BEFORE D&C CALL\n");
 		debug_print_cm_params(cm);
-		printf("DONE DEBUG PRINTING CM PARAMS BEFORE D&C CALL\n");
-	      */
+		printf("DONE DEBUG PRINTING CM PARAMS BEFORE D&C CALL\n");*/
+
 	      sc = CYKDivideAndConquer(cm, dsq[i], sqinfo[i].len, 0, 1, sqinfo[i].len, &(tr[i]),
 				       NULL, NULL); /* we're not in QDB mode */
 	      if(bdump_level > 0)

@@ -125,6 +125,8 @@ extern void ConfigLocal_fullsub(CM_t *cm, float p_internal_start,
 				float p_internal_exit, int sstruct_nd,
 				int estruct_nd);
 extern void ConfigLocal_DisallowELEmissions(CM_t *cm);
+extern void  ConfigLocal_fullsub_post(CM_t *sub_cm, CM_t *orig_cm, CP9Map_t *orig_cp9map, CMSubMap_t *submap,
+				      struct cp9_dpmatrix_s *post, int L);
 
 /* from modelmaker.c
  */
@@ -368,7 +370,8 @@ extern float CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, char *dsq);
 extern int  build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t **ret_submap, 
 			 int do_fullsub, int print_flag);
 extern void CP9NodeForPosn(struct cplan9_s *hmm, int i0, int j0, int x, 
-			   struct cp9_dpmatrix_s *post, int *ret_node, int *ret_type, int print_flag);
+			   struct cp9_dpmatrix_s *post, int *ret_node, int *ret_type,
+			   int do_fullsub, float pmass, int is_start, int print_flag);
 extern void StripWUSSGivenCC(MSA *msa, char **dsq, float gapthresh, int first_match, int last_match);
 extern int  check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, double threshold, 
 				       int print_flag);
@@ -390,9 +393,9 @@ extern void  debug_print_cm_params(CM_t *cm);
 extern void
 AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***ret_tr, 
 		 int do_local, int do_small, int do_qdb, double qdb_beta, int do_hbanded, 
-		 int use_sums, double hbandp, int do_sub, int do_fullsub, int do_hmmonly, 
-		 int do_inside, int do_outside, int do_check, int do_post, char ***ret_postcode, 
-		 int do_timings, int bdump_level, int debug_level, int silent_mode,
+		 int use_sums, double hbandp, int do_sub, int do_fullsub, float fsub_pmass, 
+		 int do_hmmonly, int do_inside, int do_outside, int do_check, int do_post, 
+		 char ***ret_postcode, int do_timings, int bdump_level, int debug_level, int silent_mode,
 		 int *actual_spos, int *actual_epos, float **ret_post_spos, float **ret_post_epos,
                  int **ret_dist_spos, int **ret_dist_epos);
 extern void 

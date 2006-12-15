@@ -237,3 +237,118 @@ ConfigLocal_DisallowELEmissions(CM_t *cm)
   cm->el_selfsc = (IMPOSSIBLE / (cm->W+1));
   return;
 }
+
+ /**************************************************************
+  * Function: ConfigLocal_fullsub_post()
+  * EPN, Mon Nov 13 13:32:27 2006
+  * 
+  * Purpose:  Configure a CM for local alignment in fullsub mode 
+  *           using posterior probabilites from a CP9 HMM posterior
+  *           decode of a sequence. Originally written for 'fullsub' 
+  *           sub CM construction. Allow local begins into sub CM
+  *           nodes that emit left before or at submap->sstruct,
+  *           and....
+  *
+  * Args:     sub_cm      - the sub cm built from orig_cm
+  *           orig_cm     - the original cm
+  *           orig_cp9map - map from orig CM to orig CP9 HMM and vice versa
+  *           submap      - the map from orig CM to sub CM and vice versa
+  *           post        - posterior matrix, already filled
+  *           L           - length of sequence to align
+  * Returns:  
+  * VOID
+  */
+
+ void 
+ ConfigLocal_fullsub_post(CM_t *sub_cm, CM_t *orig_cm, CP9Map_t *orig_cp9map, CMSubMap_t *submap,
+			  struct cp9_dpmatrix_s *post, int L)
+ {
+   int k;                       /* counter over HMM nodes */
+   int v;			/* counter over states */
+   int nd;			/* counter over nodes */
+   int nstarts;			/* number of possible internal starts */
+   int nexits;			/* number of possible internal ends */
+   float denom;
+   float sum_beg, sum_end;
+   int lpos, rpos, lins, rins;
+   int orig_v1, orig_v2;
+   int orig_il, orig_ir;
+   int orig_nd;
+   CMEmitMap_t *sub_emap;           /* consensus emit map for the sub CM */
+   int orig_v;
+
+   char **nodetypes;
+   char **sttypes;
+
+   nodetypes = malloc(sizeof(char *) * 8);
+   nodetypes[0] = "BIF";
+   nodetypes[1] = "MATP";
+   nodetypes[2] = "MATL";
+   nodetypes[3] = "MATR";
+   nodetypes[4] = "BEGL";
+   nodetypes[5] = "BEGR";
+   nodetypes[6] = "ROOT";
+   nodetypes[7] = "END";
+
+   sttypes = malloc(sizeof(char *) * 10);
+   sttypes[0] = "D";
+   sttypes[1] = "MP";
+   sttypes[2] = "ML";
+   sttypes[3] = "MR";
+   sttypes[4] = "IL";
+   sttypes[5] = "IR";
+   sttypes[6] = "S";
+   sttypes[7] = "E";
+   sttypes[8] = "B";
+   sttypes[9] = "EL";
+
+  /* Currently, EL emissions in fullsub mode are disallowed.
+   * To achieve, this set the EL self transition score to as close to IMPOSSIBLE 
+   * as we can while still guaranteeing we won't get underflow errors.
+   * we need cm->el_selfsc * W >= IMPOSSIBLE 
+   * because we will potentially multiply cm->el_selfsc * W, and add that to 
+   * 2 * IMPOSSIBLE, and IMPOSSIBLE must be > -FLT_MAX/3 so we can add it together 3 
+   * times (see structs.h). 
+   */
+   ConfigLocal_DisallowELEmissions(sub_cm);
+
+   sum_beg= sum_end = 0.;
+
+   /* Zero all begin probs */
+   for (v = 0; v < sub_cm->M; v++)  sub_cm->begin[v] = 0.;
+   sub_emap = CreateEmitMap(sub_cm);
+
+   printf("sstruct: %d\n", submap->sstruct);
+   /* Fill in local begins up to sstruct */
+   for(nd = 1; nd < submap->sstruct; nd++)
+     {
+       if(sub_cm->ndtype[nd] != MATL_nd)
+	 Die("ERROR in ConfigLocal_fullsub_post: sstruct: %d but sub_cm node %d not MATL\n", submap->sstruct, nd);
+       if(sub_emap->lpos[nd] != nd)
+	 Die("ERROR in ConfigLocal_fullsub_post: sstruct: %d but sub_cm node %d lpos is %d (should be %d)\n", submap->sstruct, sub_emap->lpos[nd], nd);
+
+       v = sub_cm->nodemap[nd];
+       sub_cm->begin[v]  = Score2Prob(post->mmx[1][nd], 1.);
+       sub_cm->begin[v] += Score2Prob(post->imx[1][nd], 1.);
+       sum_beg += sub_cm->begin[v];
+     }       
+   /* Now fill in local begin for posn sstruct */
+   orig_nd = orig_cp9map->pos2nd[submap->sstruct];
+   orig_v  = orig_cm->nodemap[orig_nd];
+   v       = submap->o2s_smap[orig_v][0];
+   if(sub_cm->stid[v] != MATP_MP && sub_cm->stid[v] != MATL_ML)
+     Die("ERROR in ConfigLocal_fullsub_post: 1st state of orig_cm node that maps to sstruct does not map to a sub CM MATP_MP or MATL_ML\n");
+   nd = submap->sstruct;
+   sub_cm->begin[v]  = Score2Prob(post->mmx[1][submap->sstruct], 1.);
+   sub_cm->begin[v] += Score2Prob(post->imx[1][submap->sstruct], 1.);
+
+   sum_beg += sub_cm->begin[v];
+   printf("sum beg: %f\n", sum_beg);
+
+   FNorm(sub_cm->begin, sub_cm->M);
+   sub_cm->flags |= CM_LOCAL_BEGIN;
+
+   free(sttypes);
+   free(nodetypes);
+   return;
+ }

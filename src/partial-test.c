@@ -58,7 +58,7 @@ static struct opt_s OPTIONS[] = {
   { "-n", TRUE, sqdARG_INT },
   { "-s", TRUE, sqdARG_INT },
   { "--sub",       FALSE, sqdARG_NONE},
-  { "--fsub",      FALSE, sqdARG_NONE},
+  { "--fsub",      FALSE, sqdARG_FLOAT},
   { "--cp9",       FALSE, sqdARG_NONE },
   { "--global",    FALSE, sqdARG_NONE },
   { "--post",      FALSE, sqdARG_FLOAT },
@@ -103,6 +103,8 @@ main(int argc, char **argv)
   int   do_fullsub;             /* TRUE to build sub CM(s) that model same number of columns
 				 * as the template CM, with structure outside sstruct..estruct
 				 * removed.                          */
+  float fsub_pmass;             /* probability mass from HMM posteriors req'd of start before sstruct
+				 * and end after estruct */
   int debug_level;              /* verbosity of debugging print statements */
   int L;
   int do_fixlen;                /* TRUE to set fixed length of partial sequences */
@@ -157,13 +159,15 @@ main(int argc, char **argv)
   beta           = 0.0000001;
   use_sums       = FALSE;
   do_histo       = FALSE;
+  fsub_pmass   = 0.;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
 		&optind, &optname, &optarg))  {
     if      (strcmp(optname, "-n") == 0) nseq         = atoi(optarg);
     else if (strcmp(optname, "-s") == 0) seed           = atoi(optarg);
     else if (strcmp(optname, "--sub")       == 0) do_sub = TRUE;
-    else if (strcmp(optname, "--fsub")      == 0) do_fullsub = TRUE;
+    else if (strcmp(optname, "--fsub")      == 0) 
+      { do_sub = TRUE; do_fullsub = TRUE; fsub_pmass = atof(optarg); }
     else if (strcmp(optname, "--global")    == 0) do_local = FALSE;
     else if (strcmp(optname, "--post")      == 0) pthresh  = atof(optarg); 
     else if (strcmp(optname, "--fixlen")    == 0) { do_fixlen = TRUE; fixlen   = atoi(optarg); }
@@ -308,11 +312,19 @@ main(int argc, char **argv)
       /* Emit a sequence from the CM, we don't care about the parsetree,
        * we'll determine this via alignment */
       EmitParsetree(cm, NULL, &(seq[i]), &(dsq[i]), &L);
+      while(L == 0)
+	{
+	  free(seq[i]);
+	  free(dsq[i]);
+	  EmitParsetree(cm, NULL, &(seq[i]), &(dsq[i]), &L);
+	}
+      strcpy(sqinfo[i].name, cm->name);
       sqinfo[i].len   = L;
       sqinfo[i].flags = SQINFO_NAME | SQINFO_LEN;
       
       temp_tr[0] = tr[i];
       temp_dsq[0] = dsq[i];
+      strcpy(temp_sqinfo[0].name, cm->name);
       temp_sqinfo[0].len   = L;
       temp_sqinfo[0].flags = SQINFO_NAME | SQINFO_LEN;
 
@@ -320,7 +332,7 @@ main(int argc, char **argv)
       AlignSeqsWrapper(cm, temp_dsq, temp_sqinfo, 1, &temp_tr, do_local, 
 		       do_small, do_qdb, beta, do_hbanded, use_sums, 
 		       hbandp, 
-		       FALSE, FALSE,  /* these are do_sub and do_fullsub */
+		       FALSE, FALSE, fsub_pmass, /* these are do_sub and do_fullsub */
 		       FALSE, FALSE, FALSE, 
 		       FALSE, FALSE, NULL, FALSE, 0, 0, TRUE,
 		       NULL, NULL, NULL, NULL, NULL, NULL);
@@ -349,6 +361,8 @@ main(int argc, char **argv)
 	      epos[i] = temp;
 	      passed = TRUE;
 	    }
+	  if(!do_minlen && !do_fixlen)
+	    passed = TRUE;
 	  if(do_minlen && ((epos[i]-spos[i]+1) < minlen))
 	    passed = FALSE;
 	  if(do_fixlen)
@@ -394,24 +408,36 @@ main(int argc, char **argv)
 	  printf("i: %d pseq: %s\n", i, pseq[0]);
 	}
       Lp = strlen(pseq[0]);
-      pdsq[i] = DigitizeSequence(pseq[0], Lp);
-      psqinfo[i].len   = Lp;
-      strcpy(psqinfo[i].name, cm->name);
-      psqinfo[i].flags = SQINFO_NAME | SQINFO_LEN;
+      if(Lp == 0) /* don't want 0 len seqs */
+	{
+	  /* we handle this oddly, decrement i and wait
+	   * for next iteration of the loop to increment i
+	   * and refill this seq.
+	   */
+	  free(pseq);
+	  i--;
+	}
+      else
+	{
+	  pdsq[i] = DigitizeSequence(pseq[0], Lp);
+	  psqinfo[i].len   = Lp;
+	  strcpy(psqinfo[i].name, cm->name);
+	  psqinfo[i].flags = SQINFO_NAME | SQINFO_LEN;
+	}
     }
 
   /* Align all the partial sequences to the CM */
   if(do_histo)
     AlignSeqsWrapper(cm, pdsq, psqinfo, nseq, &ptr, do_local, do_small, do_qdb,
 		     beta, do_hbanded, use_sums, hbandp,
-		     do_sub, do_fullsub, FALSE, FALSE, FALSE, 
+		     do_sub, do_fullsub, fsub_pmass, FALSE, FALSE, FALSE, 
 		     FALSE, FALSE, NULL, FALSE, 0, 0, TRUE,
 		     spos, epos, &post_spos, &post_epos, &dist_spos,
 		     &dist_epos);
   else
     AlignSeqsWrapper(cm, pdsq, psqinfo, nseq, &ptr, do_local, do_small, do_qdb,
 		     beta, do_hbanded, use_sums, hbandp,
-		     do_sub, do_fullsub, FALSE, FALSE, FALSE, 
+		     do_sub, do_fullsub, fsub_pmass, FALSE, FALSE, FALSE, 
 		     FALSE, FALSE, NULL, FALSE, 0, 0, TRUE,
 		     NULL, NULL, NULL, NULL, NULL, NULL);
   s_ct = 0;
@@ -464,8 +490,7 @@ main(int argc, char **argv)
 	Die("pred_spos is still -1!\n");
       if(pred_epos == -1)
 	Die("pred_epos is still -1!\n");
-      if(pred_spos != spos[i] || pred_epos != epos[i])
-	printf("(%4d) S: %4d %4d %4d E: %4d %4d %4d \n", i, spos[i], pred_spos, spos[i]-pred_spos, epos[i], pred_epos, epos[i]-pred_epos);
+      printf("(%4d) S: %4d %4d %4d E: %4d %4d %4d \n", i, spos[i], pred_spos, spos[i]-pred_spos, epos[i], pred_epos, epos[i]-pred_epos);
       
       if(pred_spos == spos[i])
 	s_ct++;
@@ -478,7 +503,7 @@ main(int argc, char **argv)
   /*if (tr[0] != NULL) FreeParsetree(tr[0]);  
     if (ptr[i] != NULL) FreeParsetree(ptr[i]); 
     free(dsq[0]);*/
-  printf("n: %d | s_ct: %d | e_ct: %d\n", nseq, s_ct, e_ct);
+  printf("N %d S %d E %d\n", nseq, s_ct, e_ct);
   /*free(sqinfo);*/
 }
   

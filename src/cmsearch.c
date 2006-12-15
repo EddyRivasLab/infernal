@@ -334,7 +334,10 @@ main(int argc, char **argv)
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
     if       (strcmp(optname, "-W")          == 0) 
-      { W    = atoi(optarg); set_window = TRUE; }
+      { 
+	W    = atoi(optarg); set_window = TRUE; 
+	if(W < 2) Die("-W <f>, W must be at least 2.\n");
+      }
     else if       (strcmp(optname, "-s")          == 0) 
       { 
 	sc_cutoff    = atof(optarg); 
@@ -1374,7 +1377,7 @@ int debug_print_stats(int *partitions, int num_partitions, double *lambda, doubl
 	  printf("partition i:%d starts at: %d\n", cur_partition, i);
 	  for(sc = 0.0; sc < 100.0; sc +=1.)
 	    {
-	      printf (" Score = %.2f, E = %.4g, P = %.4g\n", sc,
+	      printf (" DEBUG Score = %.2f, E = %.4g, P = %.4g\n", sc,
 		      RJK_ExtremeValueE(sc, mu[i], lambda[i]),
 		      esl_gumbel_surv((double) sc, mu[i], lambda[i]));
 	      printf("\tmu[%d]: %f lambda[%d]: %f\n", i, mu[i], i, lambda[i]);

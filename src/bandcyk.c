@@ -922,6 +922,13 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
   best_score = IMPOSSIBLE;
   L = j0-i0+1;
   if (W > L) W = L; 
+  /* If any bands are > W, reset them as W, no
+   * reason to allow d to go above W */
+  for (v = 0; v < cm->M-1; v++)
+    {
+      if(dmax[v] > W) dmax[v] = W;
+      if(dmin[v] > W) dmin[v] = W;
+    }
 
   if(dsq == NULL)
     Die("in BandedCYKScan, dsq is NULL\n");

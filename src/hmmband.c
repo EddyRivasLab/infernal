@@ -1009,9 +1009,9 @@ hmm2ij_bands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
 
 	      imin[v] = nss_imin[n];
 	      imax[v] = nss_imax[n] + 1; /* we add 1 because we have to figure in the emission
-					* of the MATL_ML (or final MATL_IL), which would increase
-					* i by 1 potentially relative to the imax of that state.
-					*/
+					  * of the MATL_ML (or final MATL_IL), which would increase
+					  * i by 1 potentially relative to the imax of that state.
+					  */
 	      jmin[v] = imin[v] - 1; /* d must be 0 for end states. */
 	      jmax[v] = imax[v] - 1; /* d must be 0 for end states. */
 
@@ -1083,7 +1083,7 @@ hmm2ij_bands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
 		nss_jmax[n] = pn_max_d[cp9map->nd2rpos[n-1]];
 
 	      /* unique situation. end's d must be 0, so we are constrained on what 
-	       * i can be relative to j, and j can be relative to i, but want we want
+	       * i can be relative to j, and j can be relative to i, but what we want
 	       * are the constraints on what i can be, and j can be. 
 	       * because d=0 => j-i+1 = 0. then imin should equal = jmin + 1 and imax = jmax + 1.
 	       * so we really just want to know a min over i and j, and a max over i and j.
@@ -1091,10 +1091,14 @@ hmm2ij_bands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
 	       * and max of imax and jmax (should always be jmax i think) after accounting for 
 	       * the possibility that a single base was just emitted left and/or right.
 	       */
-	      imax[v] = (nss_imax[n] + 1) > nss_jmax[n] ? 
+	      imax[v] = ((nss_imax[n] + 1) > nss_jmax[n]) ? 
 		(nss_imax[n] + 1) : nss_jmax[n];
-	      imin[v] = (nss_imin[n]) < (nss_jmin[n] - 1) ? 
+	      imin[v] = ((nss_imin[n]) < (nss_jmin[n] - 1)) ? 
 		(nss_imin[n]) : (nss_jmin[n] - 1);
+	      /* we can't have an i < 1 */
+	      if(imin[v] == 0) imin[v] = 1;
+	      if(imax[v] == 0) imax[v] = 1;
+
 	      jmin[v] = imin[v] - 1; /* d must be 0 for end states. */
 	      jmax[v] = imax[v] - 1; /* d must be 0 for end states. */
 
@@ -1596,6 +1600,15 @@ hmm2ij_bands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
 	imin[v] = (j0+1);
       if(imax[v] > (j0+1))
 	imax[v] = (j0+1);
+
+      if(imin[v] == 0 || imax[v] == 0)
+	{
+	  printf("ERROR imin[%d]: %d imax[%d]: %d %-4s %-2s\n", v, 
+		 imin[v], v, imax[v], nodetypes[(int) cm->ndtype[(int) cm->ndidx[v]]], 
+		 sttypes[(int) cm->sttype[v]]);
+	  printf("previous node type is: %-4s\n", nodetypes[(int) cm->ndtype[(int) (cm->ndidx[v]-1)]]);
+	  die_flag = 1;
+	}
       /* i can be L+1 to allow delete states to be entered with 
        * d = 0, after the entire seq has been emitted.
        */
@@ -1620,6 +1633,7 @@ hmm2ij_bands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
 	}
       if(jmin[v] == -1)
 	{
+	  printf("imin[v:%d]: %d imin[v-1:%d]: %d imin[v-2:%d]: %d\n", v, imin[v], (v-1), imin[(v-1)], v-2, imin[(v-2)]);
 	  printf("ERROR jmin[%d] %-4s %-2s is %d\n", v, 
 		 nodetypes[(int) cm->ndtype[(int) cm->ndidx[v]]], 
 		 sttypes[(int) cm->sttype[v]], jmin[v]);
