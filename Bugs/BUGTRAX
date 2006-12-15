@@ -207,4 +207,9 @@ and was fixed in the same manner. Related bugs were in the
 hbandcyk.c::BandedCYKScan_jd() and scaninside.c::BandedInsideScan_jd()
 functions are were also handled, though in a slightly different
 fashion.
+
+NOTE: I handled this bug wrong with subversion. Revision 1766 has the
+bug fix, but also has other changes since revision 1765 unrelated to
+the bug. To find the changes relevant only to the bug, do a 'svn diff
+-r 1765:1766' for bandcyk.c, hbandcyk.c, and scaninside.c
 //
