@@ -1,5 +1,4 @@
-/* cmscore.c
- * SRE, Thu Aug  3 17:08:45 2000 [StL]
+/* SRE, Thu Aug  3 17:08:45 2000 [StL]
  * SVN $Id$
  * 
  * Score a CM against unaligned sequence examples.
