@@ -348,14 +348,10 @@ extern void FreeCP9Map(CP9Map_t *cp9map);
 
 
 /* from scaninside.c */
-extern void  InsideScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
-			int *ret_nhits, int **ret_hitr, 
-			int **ret_hiti, int **ret_hitj, float **ret_hitsc,
-			float min_thresh);
-extern void  InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
-			      int *ret_nhits, int **ret_hitr, 
-			      int **ret_hiti, int **ret_hitj, float **ret_hitsc,
-			      float min_thresh);
+extern float  InsideScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
+			 float cutoff, float score_boost, scan_results_t *results);
+extern float  InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
+			       float cutoff, float score_boost, scan_results_t *results);
 extern void  InsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax,
 				 int i0, int j0, int W, 
 				 int *ret_nhits, int **ret_hitr, 
@@ -401,11 +397,11 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
 extern void 
 serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons, int W, int cutoff_type, 
 			float cutoff, int do_revcomp, int do_align, int do_stats, double *mu, 
-			double *lambda, int *dmin, int *dmax);
+			double *lambda, int *dmin, int *dmax, int do_inside);
 extern void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 				      int W, int cutoff_type, float cutoff, 
 				      int do_revcomp, int do_align, int do_stats,
-				      double *mu, double *lambda, int *dmin, int *dmax,
+				      double *mu, double *lambda, int *dmin, int *dmax, int do_inside,
 				      int mpi_my_rank, int mpi_master_rank, 
 				      int mpi_num_procs) ;
 

@@ -67,13 +67,15 @@ int get_master_rank (MPI_Comm comm, int mpi_my_rank) {
  * dmin and dmax will be NULL if QDB is not being used
  */
 void first_broadcast (int *num_samples, int *windowlen, float *W_scale,
-		      CM_t **cm, int do_qdb, int **dmin, int **dmax, int mpi_my_rank, 
+		      CM_t **cm, int *do_qdb, int **dmin, int **dmax, 
+		      int *do_inside, int mpi_my_rank, 
 		      int mpi_master_rank) {
   char buf[BUFSIZE];      /* Buffer for packing it all but the bulk of the CM */
   int position = 0;         /* Where I am in the buffer */
   int nstates, nnodes;
   float el_selfsc;
   int W;
+  printf("entered first_broadcast: do_qdb: %d do_inside: %d my: %d master: %d\n", *do_qdb, *do_inside, mpi_my_rank, mpi_master_rank);
 
   position = 0;
   if (mpi_my_rank == mpi_master_rank) 
@@ -94,7 +96,8 @@ void first_broadcast (int *num_samples, int *windowlen, float *W_scale,
       MPI_Pack (&((*cm)->flags), 1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (&el_selfsc, 1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (&W, 1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&do_qdb, 1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (do_qdb, 1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (do_inside, 1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
     }
   /* Broadcast to everyone */
   MPI_Bcast (buf, BUFSIZE, MPI_PACKED, mpi_master_rank, MPI_COMM_WORLD);
@@ -112,7 +115,8 @@ void first_broadcast (int *num_samples, int *windowlen, float *W_scale,
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->flags), 1, MPI_INT, MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &el_selfsc, 1, MPI_FLOAT, MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &W, 1, MPI_INT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &do_qdb, 1, MPI_INT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, do_qdb, 1, MPI_INT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, do_inside, 1, MPI_INT, MPI_COMM_WORLD);
       (*cm)->W = W;
       (*cm)->el_selfsc = el_selfsc;
     }
@@ -127,7 +131,7 @@ void first_broadcast (int *num_samples, int *windowlen, float *W_scale,
   MPI_Bcast ((*cm)->cnum, nstates, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
   MPI_Bcast ((*cm)->plast, nstates, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
   MPI_Bcast ((*cm)->pnum, nstates, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
-  
+ 
   MPI_Bcast ((*cm)->nodemap, nnodes, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
   MPI_Bcast ((*cm)->ndtype, nnodes, MPI_CHAR, mpi_master_rank, MPI_COMM_WORLD);
 
@@ -137,7 +141,7 @@ void first_broadcast (int *num_samples, int *windowlen, float *W_scale,
   MPI_Bcast ((*cm)->endsc, nstates, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
 
   /* if in QDB mode: broadcast dmin and dmax */
-  if(do_qdb) 
+  if(*do_qdb) 
     {
       if(mpi_my_rank != mpi_master_rank)
 	{
@@ -155,6 +159,9 @@ void first_broadcast (int *num_samples, int *windowlen, float *W_scale,
   MPI_Bcast ((*cm)->e[0], nstates*Alphabet_size*Alphabet_size, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
   MPI_Bcast ((*cm)->tsc[0], nstates*MAXCONNECT, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
   MPI_Bcast ((*cm)->esc[0], nstates*Alphabet_size*Alphabet_size, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+
+  printf("leaving first_broadcast: do_qdb: %d do_inside: %d\n", (*do_qdb), (*do_inside));
+
 }
 
 /*

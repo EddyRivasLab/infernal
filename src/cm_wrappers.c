@@ -865,18 +865,19 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
  *                    lambda       for stats
  *                    dmin         minimum bound on d for state v; 0..M (NULL if non-banded)
  *                    dmax         maximum bound on d for state v; 0..M (NULL if non-banded)         
+ *                    do_inside    TRUE to scan with inside instead of CYK
  */
 void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 			     int W, int cutoff_type, float cutoff, 
 			     int do_revcomp, int do_align, int do_stats,
-			     double *mu, double *lambda, int *dmin, int *dmax) 
+			     double *mu, double *lambda, int *dmin, int *dmax,
+			     int do_inside) 
 {
 
   int reversed;                /* Am I currently doing reverse complement? */
   int i,a;
   db_seq_t *dbseq;
   float min_cutoff;
-  
   /*printf("in serial_search database do_align: %d do_revcomp: %d\n", do_align, do_revcomp);*/
   
   if (cutoff_type == SCORE_CUTOFF) 
@@ -891,12 +892,23 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 	  /* Scan */
 	  dbseq->results[reversed] = CreateResults(INIT_RESULTS);
 	  if(dmin == NULL && dmax == NULL)
-	    CYKScan (cm, dbseq->sq[reversed]->dsq, 1, dbseq->sq[reversed]->n, W,
-		     min_cutoff, 0, dbseq->results[reversed]);
+	    if(do_inside)
+	      InsideScan(cm, dbseq->sq[reversed]->dsq, 1, dbseq->sq[reversed]->n, W,
+			 min_cutoff, 0, dbseq->results[reversed]);
+	    else /* !do_inside */
+	      CYKScan (cm, dbseq->sq[reversed]->dsq, 1, dbseq->sq[reversed]->n, W,
+		       min_cutoff, 0, dbseq->results[reversed]);
 	  else
+	    if(do_inside)
+	      InsideBandedScan(cm, dbseq->sq[reversed]->dsq, dmin, dmax, 
+			       1, dbseq->sq[reversed]->n, W,
+			       min_cutoff, 0, dbseq->results[reversed]);
+	    else /* !do_inside */
 	    CYKBandedScan (cm, dbseq->sq[reversed]->dsq, dmin, dmax, 1, 
 			   dbseq->sq[reversed]->n, W, min_cutoff, 0, 
 			   dbseq->results[reversed]);
+	  
+
 	  /* Align results */
 	  if (do_align) {
 	    for (i=0; i<dbseq->results[reversed]->num_results; i++) {
@@ -967,6 +979,7 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 			       int W, int cutoff_type, float cutoff, 
 			       int do_revcomp, int do_align, int do_stats,
 			       double *mu, double *lambda, int *dmin, int *dmax,
+			       int do_inside, 
 			       int mpi_my_rank, int mpi_master_rank, 
 			       int mpi_num_procs) 
 {
@@ -982,7 +995,6 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
   int bestr;       /* Best root state -- for alignments */
   Parsetree_t *tr;
   float min_cutoff;
-
   /*do_align = FALSE;
     dmin = NULL;
     dmax = NULL;*/
@@ -1095,11 +1107,19 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 	      /* Do the scan */
 	      results = CreateResults(INIT_RESULTS);
 	      if(dmin == NULL && dmax == NULL)
-		CYKScan (cm, seq, 1, seqlen, W,
-			 min_cutoff, 0, results);
+		if(do_inside)
+		  InsideScan(cm, seq, 1, seqlen, W,
+			     min_cutoff, 0, results);
+		else /* !do_inside */
+		  CYKScan (cm, seq, 1, seqlen, W,
+			   min_cutoff, 0, results);
 	      else
-		CYKBandedScan (cm, seq, dmin, dmax, 1, seqlen, W,
-			       min_cutoff, 0, results);
+		if(do_inside)
+		  InsideBandedScan(cm, seq, dmin, dmax, 1, seqlen, W,
+				   min_cutoff, 0, results);
+		else /* !do_inside */
+		  CYKBandedScan (cm, seq, dmin, dmax, 1, seqlen, W,
+				 min_cutoff, 0, results);
 
 	      send_scan_results (results, mpi_master_rank);
 	      FreeResults(results);

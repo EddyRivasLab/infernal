@@ -1,6 +1,6 @@
 /*
  * mpifuncs.h
- *
+ 
  * Basic functions for using MPI in rsearch 
  *
  * Robert J. Klein
@@ -51,7 +51,7 @@ extern int get_master_rank (MPI_Comm comm, int mpi_my_rank);
 
 /* First broadcast of information */
 extern void first_broadcast (int *num_samples, int *windowlen, float *W_scale,
-			     CM_t **cm, int do_qdb, int **dmin, int **dmax,
+			     CM_t **cm, int *do_qdb, int **dmin, int **dmax, int *do_inside,
 			     int mpi_my_rank, int mpi_master_rank);
 
 /* Second broadcast of information */

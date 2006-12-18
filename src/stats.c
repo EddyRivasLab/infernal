@@ -53,7 +53,7 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 			    CM_t *cm, int D, int num_samples,
 			    int sample_length, double *lambda, double *K,
 			    int *dmin, int *dmax, struct cplan9_s *hmm,
-			    int use_easel)
+			    int do_inside, int use_easel)
 {
   use_easel = 0;
   int i;
@@ -79,7 +79,7 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
   int   *hitj;                  /* end positions of hits */
   float *hitsc;			/* scores of hits */
 
-  /*printf("in serial_make_histogram, nparts: %d D: %d sample_len: %d\n", num_partitions, D, sample_length);*/
+  printf("in serial_make_histogram, nparts: %d D: %d sample_len: %d do_inside: %d\n", num_partitions, D, sample_length, do_inside);
 
   if (num_samples == 0) {
     for (i=0; i<GC_SEGMENTS; i++) {
@@ -134,10 +134,17 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 				   &nhits, &hitr, &hiti, &hitj, &hitsc, 
 				   0);
 	  else if(dmin == NULL && dmax == NULL)
-	    score = CYKScan(cm, dsq, 1, sample_length, D, 0, 0, NULL);
+	    if(do_inside)
+	      score = InsideScan(cm, dsq, 1, sample_length, D, 0, 0, NULL);
+	    else 
+	      score = CYKScan(cm, dsq, 1, sample_length, D, 0, 0, NULL);
 	  else /* use QDB */
-	    score = CYKBandedScan(cm, dsq, dmin, dmax, 1, sample_length, D,
-				  0, 0, NULL);
+	    if(do_inside)
+	      score = InsideBandedScan(cm, dsq, dmin, dmax, 1, sample_length, D, 
+				       0, 0, NULL);
+	    else
+	      score = CYKBandedScan(cm, dsq, dmin, dmax, 1, sample_length, D,
+				    0, 0, NULL);
 	  
 	  if(i % 100 == 0)
 	    printf("(%4d) SCORE: %f\n", i, score);
@@ -193,7 +200,7 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions, 
 			      CM_t *cm, int D, int num_samples,
 			      int sample_length,double *lambda, double *K, 
-			      int *dmin, int *dmax,
+			      int *dmin, int *dmax, int do_inside,
 			      int mpi_my_rank, int mpi_num_procs, 
 			      int mpi_master_rank) {
   /*struct histogram_s **h;*/
@@ -229,8 +236,8 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
   int   *hitj;                  /* end positions of hits */
   float *hitsc;			/* scores of hits */
 
-  /*printf("in parallel_make_histogram, nparts: %d D: %d sample_len: %d\n", num_partitions, D, sample_length);
-    printf("B PMH rank: %4d mast: %4d\n", mpi_my_rank, mpi_master_rank);*/
+  printf("in parallel_make_histogram, nparts: %d D: %d sample_len: %d do_inside: %d\n", num_partitions, D, sample_length, do_inside);
+  printf("B PMH rank: %4d mast: %4d\n", mpi_my_rank, mpi_master_rank);
 
   tmp_name = sre_strdup("random", -1);
   if (num_samples == 0) {
@@ -394,11 +401,19 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 	{
 	  job_type = receive_job(&seqlen, &dsq, &dummy, mpi_master_rank);
 	  if (job_type == HIST_SCAN_WORK) {
+
 	    if(dmin == NULL && dmax == NULL)
-	      score = CYKScan(cm, dsq, 1, sample_length, D, 0, 0, NULL);
+	      if(do_inside)
+		score = InsideScan(cm, dsq, 1, sample_length, D, 0, 0, NULL);
+	      else 
+		score = CYKScan(cm, dsq, 1, sample_length, D, 0, 0, NULL);
 	    else /* use QDB */
-	      score = CYKBandedScan(cm, dsq, dmin, dmax, 1, sample_length, D,
-				    0, 0, NULL);
+	      if(do_inside)
+		score = InsideBandedScan(cm, dsq, dmin, dmax, 1, sample_length, D, 
+					 0, 0, NULL);
+	      else
+		score = CYKBandedScan(cm, dsq, dmin, dmax, 1, sample_length, D,
+				      0, 0, NULL);
 	    send_hist_scan_results (score, mpi_master_rank);
 	  } 
 	  if (dsq != NULL)

@@ -62,6 +62,7 @@ The sequence file is expected to be in FASTA format.\n\
    -h     : help; print brief help on version and usage\n\
    -s <f> : use cutoff bit score of <f> [default: 0]\n\
    -E <f> : use cutoff E-value of <f> (default ignored; not-calc'ed)\n\
+   -n <n> : determine EVD with <n> samples (default with -E: 1000)\n\
    -W <n> : set scanning window size to <n> (default: precalc'd in cmbuild)\n\
 ";
 
@@ -100,6 +101,7 @@ static struct opt_s OPTIONS[] = {
   { "-h", TRUE, sqdARG_NONE }, 
   { "-s", TRUE, sqdARG_FLOAT }, 
   { "-E", TRUE, sqdARG_FLOAT }, 
+  { "-n", TRUE, sqdARG_INT }, 
   { "-W", TRUE, sqdARG_INT }, 
   { "--dumptrees",  FALSE, sqdARG_NONE },
   { "--informat",   FALSE, sqdARG_STRING },
@@ -182,7 +184,7 @@ main(int argc, char **argv)
   int    do_local;		/* TRUE to do local alignment */
   int    do_align;              /* TRUE to calculate and show alignments */
   int    do_dumptrees;		/* TRUE to dump parse trees */
-  int    do_qdb;		/* TRUE to do a priori banded CYK */
+  int    do_qdb=0;		/* TRUE to do a priori banded CYK */
   int    read_qdb;		/* TRUE to read QDBs from a cmbuild outputted file */
   char  *qdb_file;              /* file to read QDBs from (output from cmbuild) */
   FILE  *qdb_fp;
@@ -222,7 +224,7 @@ main(int argc, char **argv)
 			 * passed to many functions. */
   float hmm_thresh;     /* bit score threshold for reporting hits to HMM */
 
-  int do_inside;        /* TRUE to use scanning Inside algorithm instead of CYK */
+  int do_inside=0;      /* TRUE to use scanning Inside algorithm instead of CYK */
   int alloc_nhits;	/* used to grow the hit arrays */
   int do_scan2hbands;   /* TRUE to use scanning Forward and Backward algs instead of traditional
 			 * FB algs to get bands on seqs surviving the filter */
@@ -244,7 +246,7 @@ main(int argc, char **argv)
 
   /* E-value statistics (ported from rsearch-1.1) */
   int sample_length;            /* length of samples to use for calc'ing stats (2*W) */
-  int num_samples = DEFAULT_NUM_SAMPLES;
+  int num_samples;              /* number of samples to use to calculate EVDs */
   int cutoff_type;              /* either E_CUTOFF for e-values or SCORE_CUTOFF for bit scores */
   float sc_cutoff;              /* bit score cutoff, min bit score to report */
   float e_cutoff;               /* E-value cutoff, min E value to report */
@@ -330,6 +332,7 @@ main(int argc, char **argv)
   score_boost       = 0.;
   debug_level       = 0;
   do_partitions     = FALSE;
+  num_samples       = 0;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -350,6 +353,11 @@ main(int argc, char **argv)
 	do_stats = TRUE;
 	num_samples = 1000;
       }
+    else if       (strcmp(optname, "-n")          == 0) 
+      { 
+	num_samples = atoi(optarg);
+      }
+    else if  (strcmp(optname, "--dumptrees") == 0) do_dumptrees = TRUE;
     else if  (strcmp(optname, "--dumptrees") == 0) do_dumptrees = TRUE;
     else if  (strcmp(optname, "--local")     == 0) do_local     = TRUE;
     else if  (strcmp(optname, "--noalign")   == 0) do_align     = FALSE;
@@ -397,6 +405,8 @@ main(int argc, char **argv)
 
   if(do_bdump && !do_qdb)
     Die("The --banddump option is incompatible with the --noqdb option.\n");
+  if(num_samples != 0 && !do_stats)
+    Die("The -n option only makes sense with -E also.\n");
 
   if (argc - optind != 2) Die("Incorrect number of arguments.\n%s\n", usage);
   cmfile = argv[optind++];
@@ -564,10 +574,11 @@ main(int argc, char **argv)
   /* Barrier for debugging */
   MPI_Barrier(MPI_COMM_WORLD);
 
+  printf("do_qdb: %d\n", do_qdb);
   /* Here we need to broadcast the following parameters:
      num_samples, W, W_scale, cm and dmin and dmax if do_qdb == TRUE*/
     first_broadcast(&num_samples, &W, &W_scale, &cm,  
-		    do_qdb, &dmin, &dmax, mpi_my_rank, mpi_master_rank);
+		    &do_qdb, &dmin, &dmax, &do_inside, mpi_my_rank, mpi_master_rank);
     
 #endif
   /**************************************************
@@ -591,11 +602,10 @@ main(int argc, char **argv)
 #ifdef USE_MPI
     /*StopwatchZero(watch);
       StopwatchStart(watch);*/
-    /* UNTOUCHED FROM RSEARCH: need to add ability to do banded */
     if (mpi_num_procs > 1)
 	parallel_make_histogram(gc_ct, partitions, num_partitions,
 				cm, W, num_samples, sample_length, lambda, K, 
-				dmin, dmax, mpi_my_rank, mpi_num_procs, 
+				dmin, dmax, do_inside, mpi_my_rank, mpi_num_procs, 
 				mpi_master_rank);
     else 
 #endif
@@ -603,12 +613,12 @@ main(int argc, char **argv)
 	serial_make_histogram (gc_ct, partitions, num_partitions,
 			       cm, W, 
 			       num_samples, sample_length, lambda, K, 
-			       dmin, dmax, cp9_hmm, TRUE);
+			       dmin, dmax, cp9_hmm, do_inside, TRUE);
       else
 	serial_make_histogram (gc_ct, partitions, num_partitions,
 			       cm, W, 
 			       num_samples, sample_length, lambda, K, 
-			       dmin, dmax, NULL, TRUE);
+			       dmin, dmax, NULL, do_inside, TRUE);
 
     /*StopwatchStop(watch);
       StopwatchDisplay(stdout, "\nCPU time (histogram): ", watch);*/
@@ -677,12 +687,12 @@ main(int argc, char **argv)
 #ifdef USE_MPI
   if (mpi_num_procs > 1)
     parallel_search_database (dbfp, cm, cons, W, cutoff_type, cutoff, do_revcomp, do_align,
-			      do_stats, mu, lambda, dmin, dmax,
+			      do_stats, mu, lambda, dmin, dmax, do_inside,
 			      mpi_my_rank, mpi_master_rank, mpi_num_procs);
   else
 #endif
     serial_search_database (dbfp, cm, cons, W, cutoff_type, cutoff, do_revcomp, do_align,
-			    do_stats, mu, lambda, dmin, dmax);
+			    do_stats, mu, lambda, dmin, dmax, do_inside);
   
   FreeCM(cm);
 #ifdef USE_MPI
