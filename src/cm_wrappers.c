@@ -1100,6 +1100,7 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 	      else
 		CYKBandedScan (cm, seq, dmin, dmax, 1, seqlen, W,
 			       min_cutoff, 0, results);
+
 	      send_scan_results (results, mpi_master_rank);
 	      FreeResults(results);
 	    } 
