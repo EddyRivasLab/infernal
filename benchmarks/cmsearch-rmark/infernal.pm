@@ -85,7 +85,7 @@ sub ParseINFERNAL {
 	    $ntarget++;
 	}
 	# if statistics (E and P values) not reported:
-	elsif ($line =~ /^hit\s+(\d+)\s+\:\s+(\d+)\s+(\d+)\s+(\S+)\s+bits\S*$/)
+	elsif ($line =~ /^hit\s+(\d+)\s*\:\s+(\d+)\s+(\d+)\s+(\S+)\s+bits\S*$/)
 	{
 	    $hitnum[$nhit]      = $1;
 	    $hitsqfrom[$nhit]   = $2; 
@@ -95,7 +95,7 @@ sub ParseINFERNAL {
 	    $targname_byhit[$nhit]=$targname[$ntarget-1];
 	    $nhit++;
 	}
-        elsif ($line =~ /^hit\s+(\d+)\s+\:\s+(\d+)\s+(\d+)\s+(\S+)\s+bits\s+E\s+\=\s+(\S+)\,\s+P\s+\=\s+(\S+)\s*$/)
+        elsif ($line =~ /^hit\s+(\d+)\s*\:\s+(\d+)\s+(\d+)\s+(\S+)\s+bits\s+E\s+\=\s+(\S+)\,\s+P\s+\=\s+(\S+)\s*$/)
 	{
 	    $hitnum[$nhit]      = $1;
 	    $hitsqfrom[$nhit]   = $2; 
