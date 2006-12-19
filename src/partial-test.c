@@ -37,6 +37,7 @@ Usage: partial-test [-options] <cmfile>\n\
 ";
 
 static char experts[] = "\
+  --read <f> : read seqs to truncate from file <f>\n\ 
   --sub        : aln w/sub CM for columns b/t HMM predicted start/end points\n\
   --fsub       : aln w/sub CM for structure b/t HMM predicted start/end points\n\
   --cp9        : aln w/CM plan 9 HMM\n\
@@ -57,6 +58,7 @@ static struct opt_s OPTIONS[] = {
   { "-h", TRUE, sqdARG_NONE }, 
   { "-n", TRUE, sqdARG_INT },
   { "-s", TRUE, sqdARG_INT },
+  { "--read",    FALSE, sqdARG_STRING},
   { "--sub",       FALSE, sqdARG_NONE},
   { "--fsub",      FALSE, sqdARG_FLOAT},
   { "--cp9",       FALSE, sqdARG_NONE },
@@ -134,6 +136,39 @@ main(int argc, char **argv)
   double hbandp;                /* tail loss prob for HMM bands                   */
   int    use_sums;              /* TRUE to fill and use the posterior sums, false not to. */
   double beta;                  /* tail loss prob for QDB                         */
+
+  /* --read related variables */
+  int              do_read;     /* TRUE to read seqs from a file, instead of emitting */
+  char            *seqfile;     /* file to read sequences from */
+  int              format;      /* format of sequence file */
+
+  
+  Parsetree_t **tr;             /* Parsetrees of emitted sequence         */
+  Parsetree_t **ptr;            /* Parsetrees of partial emitted sequence */
+  char        **seq;            /* actual sequence                        */
+  char        **dsq;            /* digitized sequences                    */
+  SQINFO       *sqinfo;         /* info about sequences (name/desc)       */
+  char        **temp_dsq;       /* test digitized sequence                */
+  SQINFO       *temp_sqinfo;    /* info about test sequence (name/desc)   */
+  Parsetree_t **temp_tr;        /* Parsetrees of test emitted sequence    */
+  
+  SQINFO       *psqinfo;        /* info about test sequence (name/desc)   */
+  
+  int attempts = 0;
+  int eq = 0;
+  MSA               *msa;       /* alignment */
+  int *useme;
+  int apos;
+  int cc;
+  int do_full = FALSE;
+  int *spos;
+  int *epos;
+  char **partial;       /* dealigned seq after truncation            */
+  char **pseq;		/* dealigned seqs after truncation           */
+  char **pdsq;		/* partial digitized sequences               */
+  int x;
+  
+  CMEmitMap_t *emap; 
   
   /*********************************************** 
    * Parse command line
@@ -159,12 +194,15 @@ main(int argc, char **argv)
   beta           = 0.0000001;
   use_sums       = FALSE;
   do_histo       = FALSE;
-  fsub_pmass   = 0.;
+  fsub_pmass     = 0.;
+  do_read        = FALSE;
+  seqfile        = NULL;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
 		&optind, &optname, &optarg))  {
     if      (strcmp(optname, "-n") == 0) nseq         = atoi(optarg);
     else if (strcmp(optname, "-s") == 0) seed           = atoi(optarg);
+    else if (strcmp(optname, "--read")      == 0) { do_read = TRUE; seqfile = optarg; }
     else if (strcmp(optname, "--sub")       == 0) do_sub = TRUE;
     else if (strcmp(optname, "--fsub")      == 0) 
       { do_sub = TRUE; do_fullsub = TRUE; fsub_pmass = atof(optarg); }
@@ -246,88 +284,82 @@ main(int argc, char **argv)
   printf("Random seed:          %d\n", seed);
   printf("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n\n");
   
-  /*********************************************** 
-   * Do the work.
-   * Emit one sequence at a time, align it to the CM, IFF the optimal parsetree
-   * is identical to the emitted parsetree, truncate it and realign it.
-   ***********************************************/
-  
-  Parsetree_t **tr;             /* Parsetrees of emitted sequence         */
-  Parsetree_t **ptr;            /* Parsetrees of partial emitted sequence */
-  char        **seq;            /* actual sequence                        */
-  char        **dsq;            /* digitized sequences                    */
-  SQINFO       *sqinfo;         /* info about sequences (name/desc)       */
-  char        **temp_dsq;       /* test digitized sequence                */
-  SQINFO       *temp_sqinfo;    /* info about test sequence (name/desc)   */
-  Parsetree_t **temp_tr;        /* Parsetrees of test emitted sequence    */
+  /****************************************************** 
+   * Do the work. Read or emit seqs and align them.
+   ******************************************************/
+  if(do_read)
+    {
+      /* read the sequences from the input file */
+      format = SQFILE_FASTA;
+      printf("opening file: %s\n", seqfile);
+      if (! ReadMultipleRseqs(seqfile, format, &seq, &sqinfo, &nseq))
+	Die("Failed to read any sequences from file %s, expecting FASTA.", seqfile);
+      dsq = MallocOrDie(sizeof(char *) * nseq);
+      for (i = 0; i < nseq; i++) 
+	dsq[i] = DigitizeSequence(seq[i], sqinfo[i].len);
+    }      
 
-  SQINFO       *psqinfo;    /* info about test sequence (name/desc)   */
-
-  int attempts = 0;
-  int eq = 0;
-  MSA               *msa;       /* alignment */
-  int *useme;
-  int apos;
-  int cc;
-  int do_full = FALSE;
-  int *spos;
-  int *epos;
-  char **partial;       /* dealigned seq after truncation            */
-  char **pseq;		/* dealigned seqs after truncation           */
-  char **pdsq;		/* partial digitized sequences               */
-  int x;
-
-  CMEmitMap_t *emap; 
-
-  
-  dsq    = MallocOrDie(sizeof(char *)      * nseq);
-  seq    = MallocOrDie(sizeof(char *)      * nseq);
+  /* Allocate and initialize */
+  if(!do_read)
+    {
+      dsq    = MallocOrDie(sizeof(char *)      * nseq);
+      seq    = MallocOrDie(sizeof(char *)      * nseq);
+      sqinfo = MallocOrDie(sizeof(SQINFO)      * nseq);
+    }
   tr     = MallocOrDie(sizeof(Parsetree_t) * nseq);
   i = 0;
-  sqinfo = MallocOrDie(sizeof(SQINFO)      * nseq);
-
+  
   pdsq    = MallocOrDie(sizeof(char *)      * nseq);
   psqinfo = MallocOrDie(sizeof(SQINFO)      * nseq);
   ptr     = MallocOrDie(sizeof(Parsetree_t) * nseq);
-
+  
   temp_sqinfo = MallocOrDie(sizeof(SQINFO)      * 1);
   temp_dsq    = MallocOrDie(sizeof(char *)      * 1);
   temp_tr     = MallocOrDie(sizeof(Parsetree_t) * 1);
-  
-  emap = CreateEmitMap(cm);
 
   spos = MallocOrDie(sizeof(int) * nseq);
   epos = MallocOrDie(sizeof(int) * nseq);
+  
+  emap = CreateEmitMap(cm);
 
-  /* Emit nseq seqs from the CM, align them to the CM using
-   * the desired CYK algorithm (potentially banded), and truncate them
-   * to partial sequences. Then realign with the same CYK algorithm
-   * and determine how close the partial seq alignment is with 
-   * the corresponding subalignment of the full sequence.
+  /* Either use read seqs (if do_read) or emit nseq seqs from the CM,
+   * align them to the CM using the desired CYK algorithm (potentially
+   * banded), and truncate them to partial sequences. Then realign
+   * with the same CYK algorithm and determine how close the partial
+   * seq alignment is with the corresponding subalignment of the full
+   * sequence.
    */
+
   for(i = 0; i < nseq; i++)
     {
-      if(debug_level > 0) printf("i: %d\n", i);
-      attempts++;
-      /* Emit a sequence from the CM, we don't care about the parsetree,
-       * we'll determine this via alignment */
-      EmitParsetree(cm, NULL, &(seq[i]), &(dsq[i]), &L);
-      while(L == 0)
+      if(debug_level >= 0) printf("i: %d\n", i);
+      if(!(do_read))
 	{
-	  free(seq[i]);
-	  free(dsq[i]);
+	  attempts++;
+	  /* Emit a sequence from the CM, we don't care about the parsetree,
+	   * we'll determine this via alignment */
 	  EmitParsetree(cm, NULL, &(seq[i]), &(dsq[i]), &L);
+	  while(L == 0)
+	    {
+	      free(seq[i]);
+	      free(dsq[i]);
+	      EmitParsetree(cm, NULL, &(seq[i]), &(dsq[i]), &L);
+	    }
+	  strcpy(sqinfo[i].name, cm->name);
+	  sqinfo[i].len   = L;
+	  sqinfo[i].flags = SQINFO_NAME | SQINFO_LEN;
+	  strcpy(temp_sqinfo[0].name, cm->name);
+	  temp_sqinfo[0].len   = L;
+	} /* end of if(!(do_read)) */
+      else
+	{
+	  strcpy(temp_sqinfo[0].name, sqinfo[i].name);
+	  temp_sqinfo[0].len   = sqinfo[i].len;
 	}
-      strcpy(sqinfo[i].name, cm->name);
-      sqinfo[i].len   = L;
-      sqinfo[i].flags = SQINFO_NAME | SQINFO_LEN;
-      
-      temp_tr[0] = tr[i];
+      temp_tr[0]  = tr[i];
       temp_dsq[0] = dsq[i];
-      strcpy(temp_sqinfo[0].name, cm->name);
-      temp_sqinfo[0].len   = L;
       temp_sqinfo[0].flags = SQINFO_NAME | SQINFO_LEN;
-
+      
       /* Align the sequence, setting do_sub to FALSE */
       AlignSeqsWrapper(cm, temp_dsq, temp_sqinfo, 1, &temp_tr, do_local, 
 		       do_small, do_qdb, beta, do_hbanded, use_sums, 
@@ -336,8 +368,8 @@ main(int argc, char **argv)
 		       FALSE, FALSE, FALSE, 
 		       FALSE, FALSE, NULL, FALSE, 0, 0, TRUE,
 		       NULL, NULL, NULL, NULL, NULL, NULL);
-
-
+      
+      
       strcpy(temp_sqinfo[0].name, cm->name);
       msa = Parsetrees2Alignment(cm, temp_dsq, temp_sqinfo, NULL, temp_tr, 1, TRUE);
       /* important, the final variable do_full must be set to TRUE, we want
