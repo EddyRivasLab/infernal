@@ -78,6 +78,8 @@ extern char *UniqueStatetype(int type);
 extern int   UniqueStateCode(char *s);
 extern int   DeriveUniqueStateCode(int ndtype, int sttype);
 extern CM_t *CMRebalance(CM_t *cm);
+extern int ** IMX2Alloc(int rows, int cols);
+extern void  IMX2Free(int **mx);
 
 /*EPN 10.19.05*/
 extern void  CMDefaultNullModel(float *null);
@@ -357,6 +359,10 @@ extern void  InsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int 
 				 int *ret_nhits, int **ret_hitr, 
 				 int **ret_hiti, int **ret_hitj, float **ret_hitsc,
 				 float min_thresh);
+extern float iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
+			 float cutoff, float score_boost, scan_results_t *results);
+extern float iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
+			       float cutoff, float score_boost, scan_results_t *results);
 extern float LogSum2(float p1, float p2);
 
 /* from cm_masks.c */

@@ -893,14 +893,14 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 	  dbseq->results[reversed] = CreateResults(INIT_RESULTS);
 	  if(dmin == NULL && dmax == NULL)
 	    if(do_inside)
-	      InsideScan(cm, dbseq->sq[reversed]->dsq, 1, dbseq->sq[reversed]->n, W,
-			 min_cutoff, 0, dbseq->results[reversed]);
+	      iInsideScan(cm, dbseq->sq[reversed]->dsq, 1, dbseq->sq[reversed]->n, W,
+			  min_cutoff, 0, dbseq->results[reversed]);
 	    else /* !do_inside */
 	      CYKScan (cm, dbseq->sq[reversed]->dsq, 1, dbseq->sq[reversed]->n, W,
 		       min_cutoff, 0, dbseq->results[reversed]);
 	  else
 	    if(do_inside)
-	      InsideBandedScan(cm, dbseq->sq[reversed]->dsq, dmin, dmax, 
+	      iInsideBandedScan(cm, dbseq->sq[reversed]->dsq, dmin, dmax, 
 			       1, dbseq->sq[reversed]->n, W,
 			       min_cutoff, 0, dbseq->results[reversed]);
 	    else /* !do_inside */

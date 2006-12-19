@@ -378,7 +378,7 @@ CP9Logoddsify(struct cplan9_s *hmm)
     {
       for (x = 0; x < Alphabet_size; x++) 
 	{
-	  hmm->msc[x][k] = Prob2Score(hmm->mat[k][x], hmm->null[x]);
+	  hmm->msc[x][k] =  Prob2Score(hmm->mat[k][x], hmm->null[x]);
 	  hmm->isc[x][k] =  Prob2Score(hmm->ins[k][x], hmm->null[x]); 
 	}
       /* degenerate match/insert emissions */

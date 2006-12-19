@@ -1933,6 +1933,7 @@ cm2sub_cm_sum_subpaths(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, int orig
   free(sub_psi);
   return (float) to_return;
 }
+
 /**************************************************************************
  * EPN 09.01.06
  * debug_print_cm_params()

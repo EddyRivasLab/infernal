@@ -120,6 +120,11 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates)
   cm->beginsc= MallocOrDie(nstates * sizeof(float));
   cm->endsc  = MallocOrDie(nstates * sizeof(float));
 
+  cm->itsc   = IMX2Alloc(nstates, MAXCONNECT);
+  cm->iesc   = IMX2Alloc(nstates, Alphabet_size*Alphabet_size);
+  cm->ibeginsc= MallocOrDie(nstates * sizeof(int));
+  cm->iendsc  = MallocOrDie(nstates * sizeof(int));
+
   /* the EL state at M is special: we only need state
    * type info recorded, so functions looking at parsetrees  
    * can interpret what an "M" index means.
@@ -218,6 +223,10 @@ FreeCM(CM_t *cm)
   FMX2Free(cm->esc);
   free(cm->beginsc);
   free(cm->endsc);
+  IMX2Free(cm->itsc);
+  IMX2Free(cm->iesc);
+  free(cm->ibeginsc);
+  free(cm->iendsc);
   free(cm);
 }
 
@@ -346,7 +355,8 @@ CMSimpleProbify(CM_t *cm)
 /* Function: CMLogoddsify()
  * Date:     SRE, Tue Aug  1 15:18:26 2000 [St. Louis]
  *
- * Purpose:  Convert the probabilities in a CM to log-odds form.
+ * Purpose:  Convert the probabilities in a CM to log-odds 
+ *           EPN 12.19.06: also fill in integer log-odds scores.
  */
 void
 CMLogoddsify(CM_t *cm)
@@ -357,24 +367,41 @@ CMLogoddsify(CM_t *cm)
     {
       if (cm->sttype[v] != B_st && cm->sttype[v] != E_st)
 	for (x = 0; x < cm->cnum[v]; x++)
-	  cm->tsc[v][x] = sreLOG2(cm->t[v][x]);
-      
+	  {
+	    cm->tsc[v][x]  = sreLOG2(cm->t[v][x]);
+	    cm->itsc[v][x] = Prob2Score(cm->t[v][x], 1.0);
+	    printf("cm->t[%4d][%2d]: %f itsc->e: %f itsc: %d\n", v, x, cm->t[v][x], Score2Prob(cm->itsc[v][x], 1.0), cm->itsc[v][x]);
+	  }	    
       if (cm->sttype[v] == MP_st)
 	for (x = 0; x < Alphabet_size; x++)
 	  for (y = 0; y < Alphabet_size; y++)
-	    cm->esc[v][x*Alphabet_size+y] = sreLOG2(cm->e[v][x*Alphabet_size+y] / (cm->null[x]*cm->null[y]));
-
+	    {
+	      cm->esc[v][x*Alphabet_size+y]  = sreLOG2(cm->e[v][x*Alphabet_size+y] / (cm->null[x]*cm->null[y]));
+	      cm->iesc[v][x*Alphabet_size+y] = Prob2Score(cm->e[v][x*Alphabet_size+y], (cm->null[x]*cm->null[y]));
+	      printf("cm->e[%4d][%2d]: %f iesc->e: %f iesc: %d\n", v, (x*Alphabet_size+y), cm->e[v][(x*Alphabet_size+y)], Score2Prob(cm->iesc[v][x*Alphabet_size+y], (cm->null[x]*cm->null[y])), cm->iesc[v][(x*Alphabet_size+y)]);
+	    }
       if (cm->sttype[v] == ML_st || cm->sttype[v] == MR_st ||
 	  cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
 	for (x = 0; x < Alphabet_size; x++)
-	  cm->esc[v][x] = sreLOG2(cm->e[v][x] / cm->null[x]);
-
+	  {
+	    cm->esc[v][x]  = sreLOG2(cm->e[v][x] / cm->null[x]);
+	    cm->iesc[v][x] = Prob2Score(cm->e[v][x], cm->null[x]);
+	    printf("cm->e[%4d][%2d]: %f iesc->e: %f iesc: %d\n", v, x, cm->e[v][x], Score2Prob(cm->iesc[v][x], (cm->null[x])), cm->iesc[v][x]);
+	  }
       /* These work even if begin/end distributions are inactive 0's,
        * sreLOG2 will set beginsc, endsc to -infinity.
        */
-      cm->beginsc[v] = sreLOG2(cm->begin[v]);
-      cm->endsc[v]   = sreLOG2(cm->end[v]);
+      cm->beginsc[v]  = sreLOG2(cm->begin[v]);
+      cm->ibeginsc[v] = Prob2Score(cm->begin[v], 1.0);
+      printf("cm->begin[%4d]: %f ibeginsc->e: %f ibeginsc: %d\n", v, cm->begin[v], Score2Prob(cm->ibeginsc[v], 1.0), cm->ibeginsc[v]);
+      cm->endsc[v]    = sreLOG2(cm->end[v]);
+      cm->iendsc[v]   = Prob2Score(cm->end[v], 1.0);
+      printf("cm->end[%4d]: %f iendsc->e: %f iendsc: %d\n\n", v, cm->end[v], Score2Prob(cm->iendsc[v], 1.0), cm->iendsc[v]);
     }
+  cm->iel_selfsc = Prob2Score(sreEXP2(cm->el_selfsc), 1.0);
+  printf("cm->el_selfsc: %f prob: %f cm->iel_selfsc: %d prob: %f\n", cm->el_selfsc, 
+	 (sreEXP2(cm->el_selfsc)), cm->iel_selfsc, (Score2Prob(cm->iel_selfsc, 1.0)));
+  printf("-INFTY: %d prob: %f 2^: %f\n", -INFTY, (Score2Prob(-INFTY, 1.0)), sreEXP2(-INFTY));
 }
 
 /* Function:  CMHackInsertScores()
@@ -407,7 +434,10 @@ CMHackInsertScores(CM_t *cm)
     {
       if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
 	for (x = 0; x < Alphabet_size; x++)
-	  cm->esc[v][x] = 0.;
+	  {
+	    cm->esc[v][x]  = 0.;
+	    cm->iesc[v][x] = 0.;
+	  }
     }
 }
 
@@ -1096,4 +1126,27 @@ CMRebalance(CM_t *cm)
   free(newidx);
   FreeNstack(pda);
   return new;
+}
+
+/* EPN 12.19.06 
+ * 2D integer matrix operations, based on Squid's sre_math::{F,D}MX2Alloc() 
+ * and sre_math::{F,D}MX2Free(). Created for integer log odds score support.
+ */
+int **
+IMX2Alloc(int rows, int cols)
+{
+  int  **mx;
+  int     r;
+  
+  mx    = (int **) MallocOrDie(sizeof(int *) * rows);
+  mx[0] = (int *)  MallocOrDie(sizeof(int)   * rows * cols);
+  for (r = 1; r < rows; r++)
+    mx[r] = mx[0] + r*cols;
+  return mx;
+}
+void
+IMX2Free(int **mx)
+{
+  free(mx[0]);
+  free(mx);
 }

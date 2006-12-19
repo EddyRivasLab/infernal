@@ -149,6 +149,10 @@ extern int   DegenCount[MAXDEGEN];
  * (on a binary tree backbone); arranged physically as a set of arrays 0..M-1.
  *
  * State 0 is always the root state. State M-1 is always an end state.
+ * 
+ * EPN 12.19.06: added arrays to hold integer log-odds scores for faster 
+ * inside/outside
+ * 
  */
 typedef struct cm_s {			
 			/* General information about the model:            */
@@ -190,11 +194,18 @@ typedef struct cm_s {
   float *beginsc;	/*   Score for ROOT_S -> state v (local alignment) */
   float *endsc;   	/*   Score for state_v -> EL (local alignment)     */
 
+			/* Scaled int parameters the log odds model:       */
+  int  **itsc;		/*   Transition score vector, scaled log odds int  */
+  int  **iesc;		/*   Emission score vector, scaled log odds int    */
+  int   *ibeginsc;      /*   Score for ROOT_S -> state v (local alignment) */
+  int   *iendsc;  	/*   Score for state_v -> EL (local alignment)     */
+
   int    flags;		/* status flags                                    */
 
   int    W;             /* max d: max size of a hit (EPN 08.18.05) */
   float  el_selfsc;     /* score of a self transition in the EL state
 			 * the EL state emits only on self transition (EPN 11.15.05)*/
+  int   iel_selfsc;    /* scaled int version of el_selfsc         */
 
 } CM_t;
 
