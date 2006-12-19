@@ -45,7 +45,7 @@ Step 2: Clean up 'Makefile' in the $INFERNAL/src/ subdirectory.
 
 Step 3: Make the executables, and rename 'cmsearch' as 'mpicmsearch':
 
-  - Go to $INFERNAL/ and type 'make'.
+  - Go to $INFERNAL/ and type 'make clean; make;'.
   - Go to $INFERNAL/src and do:
        $ mv cmsearch mpicmsearch
 

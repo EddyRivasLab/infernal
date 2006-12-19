@@ -29,7 +29,12 @@
 # The example run above will create the following:
 #     - a inf-71_rmark-test_out_dir directory with all the files needed to run
 #       rmark.pl copied to it (except seq files which stay in <seq dir>)
-#     - 
+#     - the inf-71.com file (in inf-71_rmark-test_out_dir/) a shell script 
+#       which will submit the benchmark jobs to the cluster when executed
+#     - the inf-71_pp.script (in inf-71_rmark-test_out_dir/) a shell script 
+#       which will post-process and combine the results from all the jobs
+#       to be run after all jobs finish running.
+#
 # General Strategy (non-MPI mode)
 # (A) Create a script to execute on a cluster that will execute
 #     rmark.pl many times - namely one job for each family/chromosome

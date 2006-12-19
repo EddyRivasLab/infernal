@@ -187,29 +187,26 @@ child of v). A one line fix. Do 'svn diff -r 1717:1718' for the code
 change.
 //
 
-//
 ID              i10
 TITLE		QDB search error if W is set at command line
 STATUS          CLOSED
 XREF            ~nawrockie/notebook/6_1215_inf_72_release/bug_cmsearch_segfault_121506/
 REPORTED_BY     Michael Galloway <mgx@ornl.gov> 12.15.06 email to Sean
-CLOSED_DATE     EPN, Fri Dec 15 17:58:10 2006
+CLOSED_DATE     EPN, Tue Dec 19 13:24:45 2006
 DESCRIPTION     
 
 cmsearch sometimes segfaults when -W is invoked at the command
 line. Problem was in version 0.71 (and current development code, rev
 1765) bandcyk.c::BandedCYKScan(), during the scan recursion, the fact
 that d is less than W is not checked, rather d must only be < j and <
-dmax[v]. The segfault occurs when d is < dmax[v] but > W. Code now
-resets any dmin[v] or dmax[v] that exceed W to W at beginning of 
-that function. scaninside::BandedInsideScan() included the same bug,
-and was fixed in the same manner. Related bugs were in the
-hbandcyk.c::BandedCYKScan_jd() and scaninside.c::BandedInsideScan_jd()
-functions are were also handled, though in a slightly different
-fashion.
+dmax[v]. The segfault occurs when d is < dmax[v] but > W. The code now
+now explicitly checks to make sure d never exceeds W during the DP
+recursion. scaninside::BandedInsideScan(),
+scaninside.c::BandedInsideScan_jd() and hbandcyk::BandedCYKScan_jd() 
+all included the same bug, and were fixed in the same manner.
 
-NOTE: I handled this bug wrong with subversion. Revision 1766 has the
-bug fix, but also has other changes since revision 1765 unrelated to
-the bug. To find the changes relevant only to the bug, do a 'svn diff
--r 1765:1766' for bandcyk.c, hbandcyk.c, and scaninside.c
+NOTE: I originally "fixed" this bug with revision 1766, but later
+realized that introduced another bug - so it was really fixed with
+revision 1772. 
+
 //
