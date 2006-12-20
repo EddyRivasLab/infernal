@@ -116,6 +116,27 @@ DegeneratePairScore(float *esc, char syml, char symr)
       sc += esc[l*Alphabet_size+r] * left[l] * right[r];
   return sc;
 }
+int
+iDegeneratePairScore(int *iesc, char syml, char symr)
+{
+  float left[MAXABET], right[MAXABET];
+  int l,r;
+  float sc;
+
+  if (syml < Alphabet_size && symr < Alphabet_size) 
+    return iesc[(int) (syml*Alphabet_size+symr)];
+
+  FSet(left, MAXABET, 0.);
+  FSet(right, MAXABET, 0.);
+  SingletCount(left, syml, 1.);
+  SingletCount(right, symr, 1.);
+
+  sc = 0.;
+  for (l = 0; l < Alphabet_size; l++)
+    for (r = 0; r < Alphabet_size; r++)
+      sc += iesc[l*Alphabet_size+r] * left[l] * right[r];
+  return (int) sc;
+}
 float 
 DegenerateSingletScore(float *esc, char sym)
 {
@@ -131,6 +152,22 @@ DegenerateSingletScore(float *esc, char sym)
   for (x = 0; x < Alphabet_size; x++)
     sc += esc[x] * nt[x];
   return sc;
+}
+int
+iDegenerateSingletScore(int *iesc, char sym)
+{
+  float nt[MAXABET];		
+  float sc;
+  int   x;
+
+  if (sym < Alphabet_size) return iesc[(int) sym];
+
+  FSet(nt, MAXABET, 0.);
+  SingletCount(nt, sym, 1.);
+  sc = 0.;
+  for (x = 0; x < Alphabet_size; x++)
+    sc += iesc[x] * nt[x];
+  return (int) sc;
 }
 
 

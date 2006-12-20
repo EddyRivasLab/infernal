@@ -19,6 +19,8 @@ extern float  DegeneratePairScore(float *esc, char syml, char symr);
 extern float  DegenerateSingletScore(float *esc, char sym);
 extern char  *DigitizeSequence(char *seq, int L);
 extern char **DigitizeAlignment(char **aseq, int nseq, int alen);
+extern int    iDegeneratePairScore(float *esc, char syml, char symr);
+extern int    iDegenerateSingletScore(float *esc, char sym);
 
 /* from bandcyk.c
  */
@@ -169,7 +171,7 @@ extern int  compare_results (const void *a_void, const void *b_void);
 extern void sort_results (scan_results_t *results);
 extern void report_hit (int i, int j, int bestr, float score, scan_results_t *results);
 extern void remove_overlapping_hits (scan_results_t *results, int L);
-extern float  CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
+extern float CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
 		      float cutoff, float score_boost, scan_results_t *results);
 extern float CYKScanRequires(CM_t *cm, int L, int W);
 

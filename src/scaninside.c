@@ -696,6 +696,7 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
 	    }
 	}
 	if (alpha[0][cur][d] < IMPROBABLE) alpha[0][cur][d] = IMPOSSIBLE;
+	if (alpha[0][cur][d] > best_score) best_score = alpha[0][cur][d];
       }
       
       /* The little semi-Markov model that deals with multihit parsing:
@@ -1497,8 +1498,7 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 		  if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
 		    alpha[v][cur][d] += cm->iesc[v][(int) (dsq[i]*Alphabet_size+dsq[j])];
 		  else
-		    Die("ERROR, degenerate chars not yet supported in iInsideScan() FIX ME!\n");
-		    /*alpha[v][cur][d] += DegeneratePairScore(cm->esc[v], dsq[i], dsq[j]);*/
+		    alpha[v][cur][d] += iDegeneratePairScore(cm->esc[v], dsq[i], dsq[j]);
 		  
 		  /* ! */
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
@@ -1517,8 +1517,7 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 		  if (dsq[i] < Alphabet_size)
 		    alpha[v][cur][d] += cm->esc[v][(int) dsq[i]];
 		  else
-		    Die("ERROR, degenerate chars not yet supported in InsideScan() FIX ME!\n");
-		  /*alpha[v][cur][d] += DegenerateSingletScore(cm->esc[v], dsq[i]);*/
+		    alpha[v][cur][d] += iDegenerateSingletScore(cm->esc[v], dsq[i]);
 		  
 		  /* ! */
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
@@ -1536,8 +1535,7 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 		  if (dsq[j] < Alphabet_size)
 		    alpha[v][cur][d] += cm->esc[v][(int) dsq[j]];
 		  else
-		    /*alpha[v][cur][d] += DegenerateSingletScore(cm->esc[v], dsq[j]);*/
-		    Die("ERROR, degenerate chars not yet supported in InsideScan() FIX ME!\n");
+		    alpha[v][cur][d] += iDegenerateSingletScore(cm->esc[v], dsq[j]);
 		  
 		  /* ! */
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
@@ -1880,8 +1878,7 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
 		  if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
 		    alpha[v][cur][d] += cm->iesc[v][(int) (dsq[i]*Alphabet_size+dsq[j])];
 		  else
-		    /*alpha[v][cur][d] += DegeneratePairScore(cm->esc[v], dsq[i], dsq[j]);*/
-		    Die("ERROR, degenerate chars not yet supported in InsideScan() FIX ME!\n");
+		    alpha[v][cur][d] += iDegeneratePairScore(cm->esc[v], dsq[i], dsq[j]);
 		  
 		  /* ! */
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
@@ -1901,8 +1898,7 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
 		  if (dsq[i] < Alphabet_size)
 		    alpha[v][cur][d] += cm->iesc[v][(int) dsq[i]];
 		  else
-		    /*alpha[v][cur][d] += DegenerateSingletScore(cm->esc[v], dsq[i]);*/
-		    Die("ERROR, degenerate chars not yet supported in InsideScan() FIX ME!\n");
+		    alpha[v][cur][d] += iDegenerateSingletScore(cm->esc[v], dsq[i]);
 		  
 		  /* ! */
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
@@ -1921,8 +1917,7 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
 		  if (dsq[j] < Alphabet_size)
 		    alpha[v][cur][d] += cm->iesc[v][(int) dsq[j]];
 		  else
-		    /*alpha[v][cur][d] += DegenerateSingletScore(cm->esc[v], dsq[j]);*/
-		    Die("ERROR, degenerate chars not yet supported in InsideScan() FIX ME!\n");
+		    alpha[v][cur][d] += iDegenerateSingletScore(cm->esc[v], dsq[j]);
 		  
 		  /* ! */
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
