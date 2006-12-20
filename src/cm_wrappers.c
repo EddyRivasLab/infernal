@@ -896,7 +896,7 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 	      iInsideScan(cm, dbseq->sq[reversed]->dsq, 1, dbseq->sq[reversed]->n, W,
 			  min_cutoff, 0, dbseq->results[reversed]);
 	    else /* !do_inside */
-	      iCYKScan (cm, dbseq->sq[reversed]->dsq, 1, dbseq->sq[reversed]->n, W,
+	      CYKScan (cm, dbseq->sq[reversed]->dsq, 1, dbseq->sq[reversed]->n, W,
 			min_cutoff, 0, dbseq->results[reversed]);
 	  else
 	    if(do_inside)

@@ -342,20 +342,22 @@ InsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
    * Traceback stage.
    * Recover all hits: an (i,j,sc) triple for each one.
    *****************************************************************/ 
-  if(results != NULL)
+  j     = j0;
+  while (j >= i0) 
     {
-      j     = j0;
-      while (j >= i0) 
+      gamma_j = j-i0+1;
+      if (gback[gamma_j] == -1) /* no hit */
+	j--; 
+      else                /* a hit, a palpable hit */
 	{
-	  gamma_j = j-i0+1;
-	  if (gback[gamma_j] == -1) /* no hit */
-	    j--; 
-	  else                /* a hit, a palpable hit */
+	  if(savesc[gamma_j] >= cutoff) /* report the hit */
 	    {
-	      if(savesc[gamma_j] >= cutoff) /* report the hit */
+	      if(results != NULL)
 		report_hit(gback[gamma_j], j, saver[gamma_j], savesc[gamma_j], results);
-	      j = gback[gamma_j]-1;
+	      if(savesc[gamma_j] > best_score) 
+		best_score = savesc[gamma_j];
 	    }
+	  j = gback[gamma_j]-1;
 	}
     }
   free(gback);
@@ -743,22 +745,25 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
    * Traceback stage.
    * Recover all hits: an (i,j,sc) triple for each one.
    *****************************************************************/ 
-  if(results != NULL)
+  j     = j0;
+  while (j >= i0) 
     {
-      j     = j0;
-      while (j >= i0) 
+      gamma_j = j-i0+1;
+      if (gback[gamma_j] == -1) /* no hit */
+	j--; 
+      else                /* a hit, a palpable hit */
 	{
-	  gamma_j = j-i0+1;
-	  if (gback[gamma_j] == -1) /* no hit */
-	    j--; 
-	  else                /* a hit, a palpable hit */
+	  if(savesc[gamma_j] >= cutoff) /* report the hit */
 	    {
-	      if(savesc[gamma_j] >= cutoff) /* report the hit */
+	      if(results != NULL)
 		report_hit(gback[gamma_j], j, saver[gamma_j], savesc[gamma_j], results);
+	      if(savesc[gamma_j] > best_score) 
+		best_score = savesc[gamma_j];
+	    }		  
 	      j = gback[gamma_j]-1;
-	    }
 	}
     }
+
   free(gback);
   free(gamma);
   free(savesc);
@@ -1447,7 +1452,7 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 	  alpha[v][j][0] = alpha[v][0][0];
     }
   for (d = 1; d <= W; d++)
-    alpha[cm->M-1][0][d] = alpha[cm->M-1][1][d] = IMPOSSIBLE;
+    alpha[cm->M-1][0][d] = alpha[cm->M-1][1][d] = -INFTY;
 
   /*****************************************************************
    * gamma allocation and initialization.

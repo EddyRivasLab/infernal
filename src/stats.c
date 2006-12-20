@@ -135,12 +135,12 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 				   0);
 	  else if(dmin == NULL && dmax == NULL)
 	    if(do_inside)
-	      score = InsideScan(cm, dsq, 1, sample_length, D, 0, 0, NULL);
+	      score = iInsideScan(cm, dsq, 1, sample_length, D, 0, 0, NULL);
 	    else 
 	      score = CYKScan(cm, dsq, 1, sample_length, D, 0, 0, NULL);
 	  else /* use QDB */
 	    if(do_inside)
-	      score = InsideBandedScan(cm, dsq, dmin, dmax, 1, sample_length, D, 
+	      score = iInsideBandedScan(cm, dsq, dmin, dmax, 1, sample_length, D, 
 				       0, 0, NULL);
 	    else
 	      score = CYKBandedScan(cm, dsq, dmin, dmax, 1, sample_length, D,

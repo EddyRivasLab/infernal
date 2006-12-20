@@ -537,5 +537,6 @@ main(int argc, char **argv)
     free(dsq[0]);*/
   printf("N %d S %d E %d\n", nseq, s_ct, e_ct);
   /*free(sqinfo);*/
+  return EXIT_SUCCESS;
 }
   
