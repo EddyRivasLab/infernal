@@ -1486,7 +1486,6 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		    alpha[v][jp][d] = ILogsum(alpha[v][jp][d], (alpha[y+yoffset][cur][d] 
 								+ cm->itsc[v][yoffset]));
-		  /* ! */
 		  if (alpha[v][jp][d] < -INFTY) alpha[v][jp][d] = -INFTY;
 		}
 	    }
@@ -1503,9 +1502,8 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 		  if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
 		    alpha[v][cur][d] += cm->iesc[v][(int) (dsq[i]*Alphabet_size+dsq[j])];
 		  else
-		    alpha[v][cur][d] += iDegeneratePairScore(cm->esc[v], dsq[i], dsq[j]);
+		    alpha[v][cur][d] += iDegeneratePairScore(cm->iesc[v], dsq[i], dsq[j]);
 		  
-		  /* ! */
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
 		}
 	    }
@@ -1522,9 +1520,8 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 		  if (dsq[i] < Alphabet_size)
 		    alpha[v][cur][d] += cm->esc[v][(int) dsq[i]];
 		  else
-		    alpha[v][cur][d] += iDegenerateSingletScore(cm->esc[v], dsq[i]);
-		  
-		  /* ! */
+		    alpha[v][cur][d] += iDegenerateSingletScore(cm->iesc[v], dsq[i]);
+
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
 		}
 	    }
@@ -1540,9 +1537,8 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 		  if (dsq[j] < Alphabet_size)
 		    alpha[v][cur][d] += cm->esc[v][(int) dsq[j]];
 		  else
-		    alpha[v][cur][d] += iDegenerateSingletScore(cm->esc[v], dsq[j]);
-		  
-		  /* ! */
+		    alpha[v][cur][d] += iDegenerateSingletScore(cm->iesc[v], dsq[j]);
+
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
 		}
 	    }
@@ -1865,7 +1861,6 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		    alpha[v][jp][d] = ILogsum(alpha[v][jp][d], (alpha[y+yoffset][cur][d] 
 							       + cm->itsc[v][yoffset]));
-		  /* ! */
 		  if (alpha[v][jp][d] < -INFTY) alpha[v][jp][d] = -INFTY;
 		}
 	    }
@@ -1875,17 +1870,16 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->iendsc[v] + (cm->iel_selfsc * (d-StateDelta(cm->sttype[v])));
+
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		    alpha[v][cur][d] = ILogsum(alpha[v][cur][d], (alpha[y+yoffset][prv][d-2] 
-								  + cm->itsc[v][yoffset]));
-		  
+		      alpha[v][cur][d] = ILogsum(alpha[v][cur][d], (alpha[y+yoffset][prv][d-2] 
+								    + cm->itsc[v][yoffset]));
 		  i = j-d+1;
 		  if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
 		    alpha[v][cur][d] += cm->iesc[v][(int) (dsq[i]*Alphabet_size+dsq[j])];
 		  else
-		    alpha[v][cur][d] += iDegeneratePairScore(cm->esc[v], dsq[i], dsq[j]);
-		  
-		  /* ! */
+		    alpha[v][cur][d] += iDegeneratePairScore(cm->iesc[v], dsq[i], dsq[j]);
+
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
 		}
 	    }
@@ -1898,14 +1892,12 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		    alpha[v][cur][d] = ILogsum(alpha[v][cur][d], (alpha[y+yoffset][cur][d-1] 
 								  + cm->itsc[v][yoffset]));
-		  
 		  i = j-d+1;
 		  if (dsq[i] < Alphabet_size)
 		    alpha[v][cur][d] += cm->iesc[v][(int) dsq[i]];
 		  else
-		    alpha[v][cur][d] += iDegenerateSingletScore(cm->esc[v], dsq[i]);
-		  
-		  /* ! */
+		    alpha[v][cur][d] += iDegenerateSingletScore(cm->iesc[v], dsq[i]);
+
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
 		}
 	    }
@@ -1922,9 +1914,8 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
 		  if (dsq[j] < Alphabet_size)
 		    alpha[v][cur][d] += cm->iesc[v][(int) dsq[j]];
 		  else
-		    alpha[v][cur][d] += iDegenerateSingletScore(cm->esc[v], dsq[j]);
-		  
-		  /* ! */
+		    alpha[v][cur][d] += iDegenerateSingletScore(cm->iesc[v], dsq[j]);
+
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
 		}
 	    }
@@ -1953,7 +1944,6 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
 		      alpha[v][cur][d] = ILogsum(alpha[v][cur][d], (alpha[w][jp][d-k] 
 								    + alpha[y][cur][k]));
 		    }
-		  /* ! */
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
 		}
 	    }
@@ -1977,7 +1967,6 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
 	    alpha[0][cur][d] = ILogsum(alpha[0][cur][d], (alpha[y+yoffset][cur][d] 
 							  + cm->itsc[0][yoffset]));
 
-	  /* ! */
 	  if (alpha[0][cur][d] < -INFTY) alpha[0][cur][d] = -INFTY;
 	  if (Scorify(alpha[0][cur][d]) > best_score) best_score = Scorify(alpha[0][cur][d]);
 	}

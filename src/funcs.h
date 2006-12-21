@@ -19,8 +19,8 @@ extern float  DegeneratePairScore(float *esc, char syml, char symr);
 extern float  DegenerateSingletScore(float *esc, char sym);
 extern char  *DigitizeSequence(char *seq, int L);
 extern char **DigitizeAlignment(char **aseq, int nseq, int alen);
-extern int    iDegeneratePairScore(float *esc, char syml, char symr);
-extern int    iDegenerateSingletScore(float *esc, char sym);
+extern int    iDegeneratePairScore(int *esc, char syml, char symr);
+extern int    iDegenerateSingletScore(int *esc, char sym);
 
 /* from bandcyk.c
  */
