@@ -295,7 +295,7 @@ InsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 	    }
 	  }
 	  if (alpha[0][cur][d] < IMPOSSIBLE) alpha[0][cur][d] = IMPOSSIBLE;
-	  if (alpha[0][cur][d] > best_score) best_score = alpha[0][cur][d];
+	  /*if (alpha[0][cur][d] > best_score) best_score = alpha[0][cur][d];*/
 	}
 
       /* The little semi-Markov model that deals with multihit parsing:
@@ -666,7 +666,7 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
 							 + cm->tsc[0][yoffset]));
 
 	  if (alpha[0][cur][d] < IMPROBABLE) alpha[0][cur][d] = IMPOSSIBLE;
-	  if (alpha[0][cur][d] > best_score) best_score = alpha[0][cur][d];
+	  /*if (alpha[0][cur][d] > best_score) best_score = alpha[0][cur][d];*/
 	}
       
       /* EPN 11.09.05 
@@ -698,7 +698,7 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
 	    }
 	}
 	if (alpha[0][cur][d] < IMPROBABLE) alpha[0][cur][d] = IMPOSSIBLE;
-	if (alpha[0][cur][d] > best_score) best_score = alpha[0][cur][d];
+	/*if (alpha[0][cur][d] > best_score) best_score = alpha[0][cur][d];*/
       }
       
       /* The little semi-Markov model that deals with multihit parsing:
@@ -1595,7 +1595,7 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 	    }
 	  }
 	  if (alpha[0][cur][d] < -INFTY) alpha[0][cur][d] = -INFTY;
-	  if (Scorify(alpha[0][cur][d]) > best_score) best_score = Scorify(alpha[0][cur][d]);
+	  /*if (Scorify(alpha[0][cur][d]) > best_score) best_score = Scorify(alpha[0][cur][d]);*/
 	}
 
       /* The little semi-Markov model that deals with multihit parsing:
@@ -1642,20 +1642,22 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
    * Traceback stage.
    * Recover all hits: an (i,j,sc) triple for each one.
    *****************************************************************/ 
-  if(results != NULL)
+  j     = j0;
+  while (j >= i0) 
     {
-      j     = j0;
-      while (j >= i0) 
+      gamma_j = j-i0+1;
+      if (gback[gamma_j] == -1) /* no hit */
+	j--; 
+      else                /* a hit, a palpable hit */
 	{
-	  gamma_j = j-i0+1;
-	  if (gback[gamma_j] == -1) /* no hit */
-	    j--; 
-	  else                /* a hit, a palpable hit */
+	  if(savesc[gamma_j] >= cutoff) /* report the hit */
 	    {
-	      if(savesc[gamma_j] >= cutoff) /* report the hit */
+	      if(results != NULL)
 		report_hit(gback[gamma_j], j, saver[gamma_j], savesc[gamma_j], results);
-	      j = gback[gamma_j]-1;
+	      if(savesc[gamma_j] > best_score) 
+		best_score = savesc[gamma_j];
 	    }
+	  j = gback[gamma_j]-1;
 	}
     }
   free(gback);
@@ -1735,6 +1737,7 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
   L = j0-i0+1;
   if (W > L) W = L; 
 
+  CMLogoddsify(cm);
   /*PrintDPCellsSaved(cm, dmin, dmax, W);*/
 
   /*****************************************************************
@@ -1859,8 +1862,8 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
 		  y = cm->cfirst[v];
 		  alpha[v][jp][d] = cm->iendsc[v] + (cm->iel_selfsc * (d-StateDelta(cm->sttype[v])));
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		    alpha[v][jp][d] = ILogsum(alpha[v][jp][d], (alpha[y+yoffset][cur][d] 
-							       + cm->itsc[v][yoffset]));
+		      alpha[v][jp][d] = ILogsum(alpha[v][jp][d], (alpha[y+yoffset][cur][d] 
+								  + cm->itsc[v][yoffset]));
 		  if (alpha[v][jp][d] < -INFTY) alpha[v][jp][d] = -INFTY;
 		}
 	    }
@@ -1984,6 +1987,7 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
        * gives the highest Inside score. 
        */
 
+
       if (cm->flags & CM_LOCAL_BEGIN) {
 	for (y = 1; y < cm->M; y++) {
 	  d = (dmin[y] > dmin[0]) ? dmin[y]:dmin[0];
@@ -2001,6 +2005,7 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
 	}
 	/* ! */
 	if (alpha[0][cur][d] < -INFTY) alpha[0][cur][d] = -INFTY;
+	/*if (alpha[0][cur][d] > best_score) best_score = alpha[0][cur][d];*/
       }
       
       /* The little semi-Markov model that deals with multihit parsing:
@@ -2047,26 +2052,28 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
    * Traceback stage.
    * Recover all hits: an (i,j,sc) triple for each one.
    *****************************************************************/ 
-  if(results != NULL)
+  j     = j0;
+  while (j >= i0) 
     {
-      j     = j0;
-      while (j >= i0) 
+      gamma_j = j-i0+1;
+      if (gback[gamma_j] == -1) /* no hit */
+	j--; 
+      else                /* a hit, a palpable hit */
 	{
-	  gamma_j = j-i0+1;
-	  if (gback[gamma_j] == -1) /* no hit */
-	    j--; 
-	  else                /* a hit, a palpable hit */
+	  if(savesc[gamma_j] >= cutoff) /* report the hit */
 	    {
-	      if(savesc[gamma_j] >= cutoff) /* report the hit */
+	      if(results != NULL)
 		report_hit(gback[gamma_j], j, saver[gamma_j], savesc[gamma_j], results);
-	      j = gback[gamma_j]-1;
+	      if(savesc[gamma_j] > best_score) 
+		best_score = savesc[gamma_j];
 	    }
+	  j = gback[gamma_j]-1;
 	}
     }
   free(gback);
   free(gamma);
   free(savesc);
   free(saver);
-
+  printf("iInsideBandedScan() returning best_score: %f\n", best_score);
   return best_score;
 }
