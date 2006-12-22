@@ -245,7 +245,7 @@ main(int argc, char **argv)
   int   do_zero_inserts;        /* TRUE to zero insert emission scores */
 
   /* E-value statistics (ported from rsearch-1.1) */
-  int sample_length;            /* length of samples to use for calc'ing stats (2*W) */
+  int sample_length= 0;         /* length of samples to use for calc'ing stats (2*W) */
   int num_samples;              /* number of samples to use to calculate EVDs */
   int cutoff_type;              /* either E_CUTOFF for e-values or SCORE_CUTOFF for bit scores */
   float sc_cutoff;              /* bit score cutoff, min bit score to report */
@@ -596,7 +596,7 @@ main(int argc, char **argv)
 #endif
   /* Set sample_length to 2*W if not yet set */
   if (sample_length == 0) sample_length = W_scale * W;
-  
+  /*printf("0 W: %d W_scale: %f sample_length: %d\n", W, W_scale, sample_length);*/
   if (num_samples > 0) /* num_samples will be 0 unless do_stats is TRUE */
     {
 #ifdef USE_MPI

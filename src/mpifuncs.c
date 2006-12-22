@@ -83,7 +83,8 @@ void first_broadcast (int *num_samples, int *windowlen, float *W_scale,
     {   /* I'm in charge */
       nstates = (*cm)->M;
       nnodes = (*cm)->nodes;
-      el_selfsc = (*cm)->el_selfsc;
+      el_selfsc  = (*cm)->el_selfsc;
+      iel_selfsc = (*cm)->iel_selfsc;
       W = (*cm)->W;
       
       /* Some ints */

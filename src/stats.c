@@ -236,8 +236,8 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
   int   *hitj;                  /* end positions of hits */
   float *hitsc;			/* scores of hits */
 
-  printf("in parallel_make_histogram, nparts: %d D: %d sample_len: %d do_inside: %d\n", num_partitions, D, sample_length, do_inside);
-  printf("B PMH rank: %4d mast: %4d\n", mpi_my_rank, mpi_master_rank);
+  /*printf("in parallel_make_histogram, nparts: %d D: %d sample_len: %d do_inside: %d\n", num_partitions, D, sample_length, do_inside);
+    printf("B PMH rank: %4d mast: %4d\n", mpi_my_rank, mpi_master_rank);*/
 
   tmp_name = sre_strdup("random", -1);
   if (num_samples == 0) {

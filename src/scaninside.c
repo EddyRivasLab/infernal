@@ -1733,6 +1733,11 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
   float     best_score;         /* Best overall score to return */
 
   printf("in iInsideBandedScan i0: %d j0: %d\n", i0, j0);
+  /*printf("\tcm->ibeginsc[3]: %d\n", cm->ibeginsc[3]);
+    printf("\tcm->ibeginsc[6]: %d\n", cm->ibeginsc[6]);
+    printf("\tcm->iel_selfsc: %d\n", cm->iel_selfsc);
+    printf("\tcm->itsc[1][0]: %d\n", cm->itsc[1][0]);*/
+
   best_score = IMPOSSIBLE;
   L = j0-i0+1;
   if (W > L) W = L; 
