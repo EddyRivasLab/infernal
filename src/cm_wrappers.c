@@ -1108,14 +1108,14 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 	      results = CreateResults(INIT_RESULTS);
 	      if(dmin == NULL && dmax == NULL)
 		if(do_inside)
-		  InsideScan(cm, seq, 1, seqlen, W,
+		  iInsideScan(cm, seq, 1, seqlen, W,
 			     min_cutoff, 0, results);
 		else /* !do_inside */
 		  CYKScan (cm, seq, 1, seqlen, W,
 			   min_cutoff, 0, results);
 	      else
 		if(do_inside)
-		  InsideBandedScan(cm, seq, dmin, dmax, 1, seqlen, W,
+		  iInsideBandedScan(cm, seq, dmin, dmax, 1, seqlen, W,
 				   min_cutoff, 0, results);
 		else /* !do_inside */
 		  CYKBandedScan (cm, seq, dmin, dmax, 1, seqlen, W,
