@@ -410,12 +410,14 @@ extern void
 serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons, int W, int cutoff_type, 
 			float cutoff, int do_revcomp, int do_align, int do_stats, double *mu, 
 			double *lambda, int *dmin, int *dmax, int do_inside);
-extern void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
-				      int W, int cutoff_type, float cutoff, 
-				      int do_revcomp, int do_align, int do_stats,
-				      double *mu, double *lambda, int *dmin, int *dmax, int do_inside,
-				      int mpi_my_rank, int mpi_master_rank, 
-				      int mpi_num_procs) ;
-
+extern void 
+parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
+			  int W, int cutoff_type, float cutoff, 
+			  int do_revcomp, int do_align, int do_stats,
+			  double *mu, double *lambda, int *dmin, int *dmax, int do_inside,
+			  int mpi_my_rank, int mpi_master_rank, 
+			  int mpi_num_procs) ;
+extern int 
+EnforceSubsequence(CM_t *cm, int enf_start, char *enf_seq);
 
 

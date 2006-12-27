@@ -237,7 +237,7 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
 
   /* the --enforce option, added specifically for enforcing the template region of
    * telomerase RNA */
-  if(do_enforce)
+  if(do_enforce && do_local)
     {
       printf("Enforcing MATL stretch from %d to %d.\n", enf_start, enf_end);
       /* Configure local alignment so the MATL stretch is unavoidable */
@@ -1348,7 +1348,66 @@ void remove_hits_over_e_cutoff (scan_results_t *results, char *seq,
   while (results->num_results > 0 &&
 	 results->data[results->num_results-1].start == -1)
     results->num_results--;
-
   sort_results(results);
 }  
 
+int  
+EnforceSubsequence(CM_t *cm, int enf_start, char *enf_seq)
+{
+  int nd;
+  float small_chance = 1e-15; /* any parse not including the enforced path includes
+			       * an emission or transition with a -45 bit score */
+  char *enf_dsq;
+  int   enf_end;
+  int v;
+  int a;
+
+  enf_end = enf_start + strlen(enf_seq) - 1;
+  /*printf("in EnforceSubsequence, start posn: %d enf_seq: %s\n", enf_start, enf_seq);*/
+  for(nd = (enf_start-1); nd <= enf_end; nd++)
+    {
+      if(cm->ndtype[nd] != MATL_nd)
+	Die("ERROR, trying to enforce a non-MATL stretch (node: %d not MATL).\n", nd);
+    }
+
+  /* Go through each node and enforce the template by changing the emission and
+   * transition probabilities as appropriate. */
+  
+  /* First deal with node before enf_start, we want to ensure that enf_start is
+   * entered. We know enf_start - 1 and enf_start are both MATL nodes */
+  nd = enf_start - 1;
+  v  = cm->nodemap[nd];       /* MATL_ML*/
+  cm->t[v][2] = small_chance; /* ML->D  */
+  v++;                        /* MATL_D */
+  cm->t[v][2] = small_chance; /*  D->D  */
+  v++;                        /* MATL_IL*/
+  cm->t[v][2] = small_chance; /*  IL->D */
+
+  /* Now move on to the MATL nodes we're enforcing emits the enf_seq */
+  enf_dsq = DigitizeSequence(enf_seq, (strlen(enf_seq)));
+  for(a = 1; a <= strlen(enf_seq); a++)
+    if(enf_dsq[a] > 3) 
+      Die("ERROR enforced sequence must be contain only A,C,G,U.\n");
+
+  for(nd = enf_start; nd <= enf_end; nd++) 
+    {
+      /* Enforce the transitions, unless we're the last node of the stretch */
+      v  = cm->nodemap[nd];       /* MATL_ML*/
+      if(nd < enf_end)
+	{
+	  cm->t[v][0] = small_chance; /* ML->IL */
+	  cm->t[v][2] = small_chance; /* ML->D  */
+	}
+      /* Enforce the emission. */
+      for(a = 0; a < MAXABET; a++)
+	{
+	  if(a != enf_dsq[(nd-enf_start+1)])
+	    cm->e[v][a] = small_chance;
+	  else
+	    cm->e[v][a] = 1. - (3 * small_chance);
+	}
+    }
+  CMRenormalize(cm);
+  CMLogoddsify(cm);
+  return 1;
+}

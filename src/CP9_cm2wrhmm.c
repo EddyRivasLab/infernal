@@ -816,8 +816,7 @@ fill_psi(CM_t *cm, double *psi, char ***tmap)
       /*printf("psi[%d]: %15f\n", v, psi[v]);*/
     }  
   /* Sanity check. For any node the sum of psi values over
-   * all split set states should be 1.0. 
-   */
+   * all split set states should be 1.0. */
   for(n = 0; n < cm->nodes; n++)
     {
       summed_psi = 0.;
@@ -846,6 +845,11 @@ fill_psi(CM_t *cm, double *psi, char ***tmap)
 	Die("ERROR: summed psi of split states in node %d not 1.0 but : %f\n", n, summed_psi);
       /* printf("split summed psi[%d]: %f\n", n, summed_psi);*/
     }
+  /* Another sanity check, the only states that can have psi equal to 0
+   * are detached insert states (states immediately prior to END_Es) */
+  for(v = 0; v < cm->M; v++)
+    if(psi[v] == 0. && cm->sttype[(v+1)] != E_st)
+      Die("ERROR: psi of state v:%d is 0.0 and this state is not a detached insert! HMM banding would have failed...\n", v);
 }
 
 /**************************************************************************
@@ -2242,7 +2246,7 @@ check_psi_vs_phi_cp9(CM_t *cm, CP9Map_t *cp9map, double *psi, double **phi, doub
   int *ap; /*CM state that maps to HMM state in node k*/
   int k_state; /*0, 1 or 2, state in hmm node k*/
   int violation;
-  int v_ct; /* Number of violations not involving dual insert states. */
+  int v_ct; 
   double diff;
   int ret_val; /* return value */
 

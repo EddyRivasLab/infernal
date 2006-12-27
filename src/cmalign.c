@@ -54,7 +54,8 @@ static char experts[] = "\
    --sub         : build sub CM for columns b/t HMM predicted start/end points\n\
    --fsub <f>    : sub CM w/structure b/t HMM start/end pts w/ > <f> prob mass\n\
    --elsilent    : disallow local end (EL) emissions\n\
-   --enforce  <f>: enforce MATL stretch spec'd in .enforce format file <f>\n\
+   --enfstart <n>: enforce MATL stretch starting at CM node <n>\n\
+   --enfseq   <s>: enforce MATL stretch starting at --enfstart <n> emits seq <s>\n\
 \n\
   * HMM banded alignment related options (IN DEVELOPMENT):\n\
    --hbanded     : use experimental CM plan 9 HMM banded CYK aln algorithm\n\
@@ -94,7 +95,8 @@ static struct opt_s OPTIONS[] = {
   { "--fsub",       FALSE, sqdARG_FLOAT},
   { "--elsilent",   FALSE, sqdARG_NONE},
   { "--checkcp9",   FALSE, sqdARG_NONE},
-  { "--enforce",    FALSE, sqdARG_INT}
+  { "--enfstart",   FALSE, sqdARG_INT},
+  { "--enfseq",     FALSE, sqdARG_STRING}
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -168,10 +170,13 @@ main(int argc, char **argv)
   int               do_elsilent;  /* TRUE to disallow EL emissions, by setting EL self transition prob
 				   * to as close to IMPOSSIBLE as we can and avoid underflow errors */
   
-  /* The --enforce option, added specifically for enforcing the template region for telomerase RNA searches */
+  /* The enforce option (--enfstart and --enfseq), added specifically for enforcing the template 
+   * region for telomerase RNA searches */
   int   do_enforce;             /* TRUE to read .enforce file and enforce MATL stretch */
-  int   enf_start = 0;          /* if (do_enforce), first MATL node to enforce each parse enter */
-  int   enf_end = 0;            /* if (do_enforce), last  MATL node to enforce each parse enter */
+  int   enf_start;              /* if (do_enforce), first MATL node to enforce each parse enter */
+  int   enf_end;                /* if (do_enforce), last  MATL node to enforce each parse enter */
+  char *enf_seq;                /* if (do_enforce), the subsequence to enforce in nodes from enf_start to 
+				 * enf_end */
   int   nd;
 
   /*********************************************** 
@@ -207,7 +212,10 @@ main(int argc, char **argv)
   check_outfile = "check.stk";
   seed         = time ((time_t *) NULL);
   fsub_pmass   = 0.;
-  do_enforce        = FALSE;
+  do_enforce   = FALSE;
+  enf_start    = 0;
+  enf_end      = 0;
+  enf_seq      = NULL;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -236,7 +244,8 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--sums")      == 0) use_sums     = TRUE;
     else if (strcmp(optname, "--hmmonly")   == 0) do_hmmonly   = TRUE;
     else if (strcmp(optname, "--checkcp9")  == 0) do_checkcp9  = TRUE;
-    else if (strcmp(optname, "--enforce")   == 0) { do_enforce = TRUE; enf_start = atoi(optarg); enf_end = enf_start + 5; }
+    else if (strcmp(optname, "--enfstart")  == 0) { do_enforce = TRUE; enf_start = atoi(optarg); }
+    else if (strcmp(optname, "--enfseq")    == 0) { do_enforce = TRUE; enf_seq = optarg; } 
     else if (strcmp(optname, "--informat")  == 0) {
       format = String2SeqfileFormat(optarg);
       if (format == SQFILE_UNKNOWN) 
@@ -258,9 +267,12 @@ main(int argc, char **argv)
     Die("--sub and -l combination not supported.\n");
   if(do_sub && do_qdb)
     Die("Please pick either --sub or --qdb.\n");
-
   if(do_hmmonly)
     Die("--hmmonly not yet implemented.\n");
+  if(do_enforce && enf_seq == NULL)
+    Die("--enfstart only makes sense with --enfseq also.\n");
+  if(do_enforce && enf_start == 0)
+    Die("--enfseq only makes sense with --enfstart (which can't be 0) also.\n");
 
   if (bdump_level > 3) Die("Highest available --banddump verbosity level is 3\n%s", usage);
   if (argc - optind != 2) Die("Incorrect number of arguments.\n%s\n", usage);
@@ -306,6 +318,11 @@ main(int argc, char **argv)
   CMLogoddsify(cm);
   /*CMHackInsertScores(cm);*/	/* "TEMPORARY" fix for bad priors */
 
+  if(do_enforce)
+    {
+      enf_end = enf_start + strlen(enf_seq) - 1;
+      EnforceSubsequence(cm, enf_start, enf_seq);
+    }
   /*****************************************************************
    * Input and digitize the unaligned sequences
    *****************************************************************/
@@ -332,6 +349,7 @@ main(int argc, char **argv)
    *        collect parse trees for each sequence
    *        run them thru Parsetrees2Alignment().
    *****************************************************************/
+
   
   AlignSeqsWrapper(cm, dsq, sqinfo, nseq, &tr, do_local, do_small, do_qdb,
 		   0.0000001, do_hbanded, use_sums, hbandp,

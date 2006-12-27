@@ -423,11 +423,11 @@ ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_internal_exit,
       if(emap->lpos[nd] <= enf_start_pos &&
 	 emap->rpos[nd] >= enf_end_pos) /* diff from ConfigLocalEnds() */
 	{
-	  printf("enabling local begin into nd: %d lpos: %d rpos: %d s: %d e: %d\n", nd, emap->lpos[nd], emap->rpos[nd], enf_start_pos, enf_end_pos);
+	  /*printf("enabling local begin into nd: %d lpos: %d rpos: %d s: %d e: %d\n", nd, emap->lpos[nd], emap->rpos[nd], enf_start_pos, enf_end_pos);*/
 	  cm->begin[cm->nodemap[nd]] = p_internal_start/(float)nstarts;
 	}
       else
-	printf("NOT enabling local begin into nd: %d lpos: %d rpos: %d s: %d e: %d\n", nd, emap->lpos[nd], emap->rpos[nd], enf_start_pos, enf_end_pos);
+	;/*printf("NOT enabling local begin into nd: %d lpos: %d rpos: %d s: %d e: %d\n", nd, emap->lpos[nd], emap->rpos[nd], enf_start_pos, enf_end_pos);*/
 	
   }
   cm->flags |= CM_LOCAL_BEGIN;
@@ -464,7 +464,7 @@ ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_internal_exit,
 	if(emap->lpos[nd] >= enf_end_pos || 
 	   emap->rpos[nd] <  enf_start_pos) /* diff from ConfigLocalEnds() */
 	  {
-	    printf("enabling local end from nd: %d lpos: %d rpos: %d s: %d e: %d\n", nd, emap->lpos[nd], emap->rpos[nd], enf_start_pos, enf_end_pos);
+	    /*printf("enabling local end from nd: %d lpos: %d rpos: %d s: %d e: %d\n", nd, emap->lpos[nd], emap->rpos[nd], enf_start_pos, enf_end_pos);*/
 	    v = cm->nodemap[nd];
 	    cm->end[v] = p_internal_exit / (float) nexits;
 	    /* renormalize the main model transition distribution */
@@ -474,7 +474,7 @@ ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_internal_exit,
 	  }
 	else
 	  {
-	    printf("NOT enabling local end from nd: %d lpos: %d rpos: %d s: %d e: %d\n", nd, emap->lpos[nd], emap->rpos[nd], enf_start_pos, enf_end_pos);
+	    ;/*printf("NOT enabling local end from nd: %d lpos: %d rpos: %d s: %d e: %d\n", nd, emap->lpos[nd], emap->rpos[nd], enf_start_pos, enf_end_pos);*/
 	  }
       }
   }

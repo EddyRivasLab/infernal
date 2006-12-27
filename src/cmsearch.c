@@ -78,7 +78,8 @@ static char experts[] = "\
    --null2       : turn on the post hoc second null model [df:OFF]\n\
    --learninserts: do not set insert emission scores to 0\n\
    --negscore <f>: set min bit score to report as <f> < 0 (experimental)\n\
-   --enforce  <f>: enforce MATL stretch spec'd in .enforce format file <f>\n\
+   --enfstart <n>: enforce MATL stretch starting at CM node <n>\n\
+   --enfseq   <s>: enforce MATL stretch starting at --enfstart <n> emits seq <s>\n\
 \n\
   * Filtering options using a CM plan 9 HMM (*in development*):\n\
    --hmmfb        : use Forward to get end points & Backward to get start points\n\
@@ -127,7 +128,8 @@ static struct opt_s OPTIONS[] = {
   { "--sums",       FALSE, sqdARG_NONE},
   { "--scan2hbands",FALSE, sqdARG_NONE},
   { "--partition",  FALSE, sqdARG_STRING},
-  { "--enforce",    FALSE, sqdARG_INT}
+  { "--enfstart",   FALSE, sqdARG_INT},
+  { "--enfseq",     FALSE, sqdARG_STRING}
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -245,9 +247,14 @@ main(int argc, char **argv)
 				 */
   int   do_null2;		/* TRUE to adjust scores with null model #2 */
   int   do_zero_inserts;        /* TRUE to zero insert emission scores */
+
+  /* The enforce option (--enfstart and --enfseq), added specifically for enforcing the template 
+   * region for telomerase RNA searches */
   int   do_enforce;             /* TRUE to read .enforce file and enforce MATL stretch */
   int   enf_start;              /* if (do_enforce), first MATL node to enforce each parse enter */
   int   enf_end;                /* if (do_enforce), last  MATL node to enforce each parse enter */
+  char *enf_seq;                /* if (do_enforce), the subsequence to enforce in nodes from enf_start to 
+				 * enf_end */
   int   nd;
 
   /* E-value statistics (ported from rsearch-1.1) */
@@ -340,6 +347,9 @@ main(int argc, char **argv)
   do_partitions     = FALSE;
   num_samples       = 0;
   do_enforce        = FALSE;
+  enf_start         = 0;
+  enf_end           = 0;
+  enf_seq           = NULL;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -373,7 +383,8 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--null2")     == 0) do_null2     = TRUE;
     else if  (strcmp(optname, "--learninserts")== 0) do_zero_inserts = FALSE;
     else if  (strcmp(optname, "--negscore")   == 0) score_boost = -1. * atof(optarg);
-    else if  (strcmp(optname, "--enforce")    == 0) { do_enforce = TRUE; enf_start = atoi(optarg); enf_end = enf_start + 5; }
+    else if  (strcmp(optname, "--enfstart")  == 0) { do_enforce = TRUE; enf_start = atoi(optarg); }
+    else if  (strcmp(optname, "--enfseq")    == 0) { do_enforce = TRUE; enf_seq = optarg; } 
     else if  (strcmp(optname, "--hmmfb")   == 0)   { do_filter = TRUE; filter_fb  = TRUE; }
     else if  (strcmp(optname, "--hmmweinberg")   == 0)   
       {
@@ -414,6 +425,10 @@ main(int argc, char **argv)
     Die("The --banddump option is incompatible with the --noqdb option.\n");
   if(num_samples != 0 && !do_stats)
     Die("The -n option only makes sense with -E also.\n");
+  if(do_enforce && enf_seq == NULL)
+    Die("--enfstart only makes sense with --enfseq also.\n");
+  if(do_enforce && enf_start == 0)
+    Die("--enfseq only makes sense with --enfstart (which can't be 0) also.\n");
 
   if (argc - optind != 2) Die("Incorrect number of arguments.\n%s\n", usage);
   cmfile = argv[optind++];
@@ -485,6 +500,12 @@ main(int argc, char **argv)
   if(do_zero_inserts)
     CMHackInsertScores(cm);	/* "TEMPORARY" fix for bad priors */
       
+  if(do_enforce)
+    {
+      enf_end = enf_start + strlen(enf_seq) - 1;
+      EnforceSubsequence(cm, enf_start, enf_seq);
+    }
+
   cons = CreateCMConsensus(cm, 3.0, 1.0); 
   querylen = cons->clen;
 
@@ -505,8 +526,16 @@ main(int argc, char **argv)
    */
   if (do_local)
     { 
-      ConfigLocal(cm, 0.5, 0.5);
-      CMLogoddsify(cm);
+      if(do_enforce)
+	{
+	  ConfigLocalEnforce(cm, 0.5, 0.5, enf_start, enf_end);
+	  CMLogoddsify(cm);
+	}
+      else
+	{
+	  ConfigLocal(cm, 0.5, 0.5);
+	  CMLogoddsify(cm);
+	}
       if(do_zero_inserts)
 	CMHackInsertScores(cm);	/* "TEMPORARY" fix for bad priors */
       if(do_filter || do_hmmonly || do_hbanded)
@@ -575,17 +604,6 @@ main(int argc, char **argv)
   if((cm->el_selfsc * W) < IMPOSSIBLE)
     cm->el_selfsc = (IMPOSSIBLE / (W+1) * 3);
 
-  /* the --enforce option, added specifically for enforcing the template region of
-   * telomerase RNA */
-  if(do_enforce)
-    {
-      printf("Enforcing MATL stretch from %d to %d.\n", enf_start, enf_end);
-      /* Configure local alignment so the MATL stretch is unavoidable */
-      ConfigLocalEnforce(cm, 0.5, 0.5, enf_start, enf_end);
-      CMLogoddsify(cm);
-      printf("Done enforcing.\n");
-    }
-  	      
 #ifdef USE_MPI
   }   /* End of first block that is only done by master process */
   /* Barrier for debugging */
@@ -1416,3 +1434,4 @@ int debug_print_stats(int *partitions, int num_partitions, double *lambda, doubl
   printf("end of debug_print_stats\n");
   return 1;
 }
+
