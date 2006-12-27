@@ -1252,25 +1252,25 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
     printf ("  %s strand results:\n\n", in_revcomp ? "Minus" : "Plus");
 
     for (i=0; i<results->num_results; i++) {
+      gc_comp = get_gc_comp (dbseq->sq[in_revcomp]->seq, 
+			     results->data[i].start, results->data[i].stop);
       printf (" Query = %d - %d, Target = %d - %d\n", 
 	      cons->lpos[cm->ndidx[results->data[i].bestr]]+1,
 	      cons->rpos[cm->ndidx[results->data[i].bestr]]+1,
 	      coordinate(in_revcomp, results->data[i].start, len), 
 	      coordinate(in_revcomp, results->data[i].stop, len));
       if (do_stats) {
-	gc_comp = get_gc_comp (dbseq->sq[in_revcomp]->seq, 
-			       results->data[i].start, results->data[i].stop);
-	printf (" Score = %.2f, E = %.4g, P = %.4g\n", results->data[i].score,
+	printf (" Score = %.2f, E = %.4g, P = %.4g, GC = %3d\n", results->data[i].score,
 		RJK_ExtremeValueE(results->data[i].score, mu[gc_comp], 
 				  lambda[gc_comp]),
 		esl_gumbel_surv((double) results->data[i].score, mu[gc_comp], 
-				lambda[gc_comp]));
-	printf("  Mu[gc=%d]: %f, Lambda[gc=%d]: %f\n", gc_comp, mu[gc_comp], gc_comp,
-	       lambda[gc_comp]);
+				lambda[gc_comp]), gc_comp);
+	/*printf("  Mu[gc=%d]: %f, Lambda[gc=%d]: %f\n", gc_comp, mu[gc_comp], gc_comp,
+	  lambda[gc_comp]);*/
 	/*ExtremeValueP(results->data[i].score, mu[gc_comp], 
 	  lambda[gc_comp]));*/
       } else {
-	printf (" Score = %.2f\n", results->data[i].score);
+	printf (" Score = %.2f, GC = %3d\n", results->data[i].score, gc_comp);
       }
       printf ("\n");
       if (results->data[i].tr != NULL) {
