@@ -78,6 +78,7 @@ static char experts[] = "\
    --null2       : turn on the post hoc second null model [df:OFF]\n\
    --learninserts: do not set insert emission scores to 0\n\
    --negscore <f>: set min bit score to report as <f> < 0 (experimental)\n\
+   --enforce  <f>: enforce MATL stretch spec'd in .enforce format file <f>\n\
 \n\
   * Filtering options using a CM plan 9 HMM (*in development*):\n\
    --hmmfb        : use Forward to get end points & Backward to get start points\n\
@@ -125,7 +126,8 @@ static struct opt_s OPTIONS[] = {
   { "--banddump",   FALSE, sqdARG_NONE},
   { "--sums",       FALSE, sqdARG_NONE},
   { "--scan2hbands",FALSE, sqdARG_NONE},
-  { "--partition",  FALSE, sqdARG_STRING}
+  { "--partition",  FALSE, sqdARG_STRING},
+  { "--enforce",    FALSE, sqdARG_INT}
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -243,6 +245,10 @@ main(int argc, char **argv)
 				 */
   int   do_null2;		/* TRUE to adjust scores with null model #2 */
   int   do_zero_inserts;        /* TRUE to zero insert emission scores */
+  int   do_enforce;             /* TRUE to read .enforce file and enforce MATL stretch */
+  int   enf_start;              /* if (do_enforce), first MATL node to enforce each parse enter */
+  int   enf_end;                /* if (do_enforce), last  MATL node to enforce each parse enter */
+  int   nd;
 
   /* E-value statistics (ported from rsearch-1.1) */
   int sample_length= 0;         /* length of samples to use for calc'ing stats (2*W) */
@@ -333,6 +339,7 @@ main(int argc, char **argv)
   debug_level       = 0;
   do_partitions     = FALSE;
   num_samples       = 0;
+  do_enforce        = FALSE;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -366,7 +373,7 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--null2")     == 0) do_null2     = TRUE;
     else if  (strcmp(optname, "--learninserts")== 0) do_zero_inserts = FALSE;
     else if  (strcmp(optname, "--negscore")   == 0) score_boost = -1. * atof(optarg);
-
+    else if  (strcmp(optname, "--enforce")    == 0) { do_enforce = TRUE; enf_start = atoi(optarg); enf_end = enf_start + 5; }
     else if  (strcmp(optname, "--hmmfb")   == 0)   { do_filter = TRUE; filter_fb  = TRUE; }
     else if  (strcmp(optname, "--hmmweinberg")   == 0)   
       {
@@ -545,8 +552,7 @@ main(int argc, char **argv)
        * Change W (which is cm->W as read from the CM file) to dmax[0].
        * dmax[0] could be > cm->W if the beta we're using now is < 1E-7 
        * (1E-7 is the beta value used to determine cm->W in cmbuild). 
-       * NOTE: if W was set at the command line, the command line value is 
-       *       always used.
+       * If W was set at the command line, that value is always used.
        */
       if(!(set_window))
 	W = dmax[0];
@@ -569,6 +575,17 @@ main(int argc, char **argv)
   if((cm->el_selfsc * W) < IMPOSSIBLE)
     cm->el_selfsc = (IMPOSSIBLE / (W+1) * 3);
 
+  /* the --enforce option, added specifically for enforcing the template region of
+   * telomerase RNA */
+  if(do_enforce)
+    {
+      printf("Enforcing MATL stretch from %d to %d.\n", enf_start, enf_end);
+      /* Configure local alignment so the MATL stretch is unavoidable */
+      ConfigLocalEnforce(cm, 0.5, 0.5, enf_start, enf_end);
+      CMLogoddsify(cm);
+      printf("Done enforcing.\n");
+    }
+  	      
 #ifdef USE_MPI
   }   /* End of first block that is only done by master process */
   /* Barrier for debugging */

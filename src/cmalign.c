@@ -52,8 +52,9 @@ static char experts[] = "\
    --post        : align with CYK and append posterior probabilities\n\
    --checkpost   : check that posteriors are correctly calc'ed\n\
    --sub         : build sub CM for columns b/t HMM predicted start/end points\n\
-   --elsilent    : disallow local end (EL) emissions\n\
    --fsub <f>    : sub CM w/structure b/t HMM start/end pts w/ > <f> prob mass\n\
+   --elsilent    : disallow local end (EL) emissions\n\
+   --enforce  <f>: enforce MATL stretch spec'd in .enforce format file <f>\n\
 \n\
   * HMM banded alignment related options (IN DEVELOPMENT):\n\
    --hbanded     : use experimental CM plan 9 HMM banded CYK aln algorithm\n\
@@ -93,6 +94,7 @@ static struct opt_s OPTIONS[] = {
   { "--fsub",       FALSE, sqdARG_FLOAT},
   { "--elsilent",   FALSE, sqdARG_NONE},
   { "--checkcp9",   FALSE, sqdARG_NONE},
+  { "--enforce",    FALSE, sqdARG_INT}
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -165,6 +167,13 @@ main(int argc, char **argv)
 
   int               do_elsilent;  /* TRUE to disallow EL emissions, by setting EL self transition prob
 				   * to as close to IMPOSSIBLE as we can and avoid underflow errors */
+  
+  /* The --enforce option, added specifically for enforcing the template region for telomerase RNA searches */
+  int   do_enforce;             /* TRUE to read .enforce file and enforce MATL stretch */
+  int   enf_start = 0;          /* if (do_enforce), first MATL node to enforce each parse enter */
+  int   enf_end = 0;            /* if (do_enforce), last  MATL node to enforce each parse enter */
+  int   nd;
+
   /*********************************************** 
    * Parse command line
    ***********************************************/
@@ -198,6 +207,7 @@ main(int argc, char **argv)
   check_outfile = "check.stk";
   seed         = time ((time_t *) NULL);
   fsub_pmass   = 0.;
+  do_enforce        = FALSE;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -220,12 +230,13 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--sub")       == 0) do_sub       = TRUE; 
     else if (strcmp(optname, "--fsub")      == 0) 
       { do_sub = TRUE; do_fullsub = TRUE; fsub_pmass = atof(optarg); }
-    else if (strcmp(optname, "--elsilent")  == 0) do_elsilent= TRUE;
+    else if (strcmp(optname, "--elsilent")  == 0) do_elsilent  = TRUE;
     else if (strcmp(optname, "--hbanded")   == 0) { do_hbanded = TRUE; do_small = FALSE; }
     else if (strcmp(optname, "--hbandp")    == 0) hbandp       = atof(optarg);
     else if (strcmp(optname, "--sums")      == 0) use_sums     = TRUE;
     else if (strcmp(optname, "--hmmonly")   == 0) do_hmmonly   = TRUE;
     else if (strcmp(optname, "--checkcp9")  == 0) do_checkcp9  = TRUE;
+    else if (strcmp(optname, "--enforce")   == 0) { do_enforce = TRUE; enf_start = atoi(optarg); enf_end = enf_start + 5; }
     else if (strcmp(optname, "--informat")  == 0) {
       format = String2SeqfileFormat(optarg);
       if (format == SQFILE_UNKNOWN) 
@@ -287,9 +298,6 @@ main(int argc, char **argv)
   if((cm->el_selfsc * cm->W) < IMPOSSIBLE)
     cm->el_selfsc = (IMPOSSIBLE / (cm->W+1));
 
-  if(do_elsilent) 
-    ConfigLocal_DisallowELEmissions(cm);
-
   if (do_local && do_hbanded)
     {
       printf("Warning: banding with an HMM (--hbanded) and allowing\nlocal alignment (-l). This may not work very well.\n");
@@ -329,6 +337,7 @@ main(int argc, char **argv)
 		   0.0000001, do_hbanded, use_sums, hbandp,
 		   do_sub, do_fullsub, fsub_pmass, do_hmmonly, do_inside, do_outside, do_check, 
 		   do_post, &postcode, do_timings, bdump_level, debug_level, FALSE,
+		   do_enforce, enf_start, enf_end, do_elsilent, 
 		   NULL, NULL, NULL, NULL, NULL, NULL); 
   /* last 6 NULL args are specific to partial-test.c */
 

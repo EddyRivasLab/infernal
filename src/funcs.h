@@ -129,8 +129,10 @@ extern void ConfigLocal_fullsub(CM_t *cm, float p_internal_start,
 				float p_internal_exit, int sstruct_nd,
 				int estruct_nd);
 extern void ConfigLocal_DisallowELEmissions(CM_t *cm);
-extern void  ConfigLocal_fullsub_post(CM_t *sub_cm, CM_t *orig_cm, CP9Map_t *orig_cp9map, CMSubMap_t *submap,
-				      struct cp9_dpmatrix_s *post, int L);
+extern void ConfigLocal_fullsub_post(CM_t *sub_cm, CM_t *orig_cm, CP9Map_t *orig_cp9map, CMSubMap_t *submap,
+				     struct cp9_dpmatrix_s *post, int L);
+extern void ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_internal_exit,
+			       int enf_start, int enf_end);
 
 /* from modelmaker.c
  */
@@ -394,14 +396,16 @@ extern void  debug_print_cm_params(CM_t *cm);
 
 /* from cm_wrappers.c
  */
-extern void
-AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***ret_tr, 
-		 int do_local, int do_small, int do_qdb, double qdb_beta, int do_hbanded, 
-		 int use_sums, double hbandp, int do_sub, int do_fullsub, float fsub_pmass, 
+extern void 
+AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***ret_tr, int do_local, 
+		 int do_small, int do_qdb, double qdb_beta,
+		 int do_hbanded, int use_sums, double hbandp, int do_sub, int do_fullsub, float fsub_pmass,
 		 int do_hmmonly, int do_inside, int do_outside, int do_check, int do_post, 
-		 char ***ret_postcode, int do_timings, int bdump_level, int debug_level, int silent_mode,
+		 char ***ret_postcode, int do_timings, int bdump_level, int debug_level, int silent_mode, 
+		 int do_enforce, int enf_start, int enf_end, int do_elsilent,
 		 int *actual_spos, int *actual_epos, float **ret_post_spos, float **ret_post_epos,
-                 int **ret_dist_spos, int **ret_dist_epos);
+		 int **ret_dist_spos, int **ret_dist_epos);
+
 extern void 
 serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons, int W, int cutoff_type, 
 			float cutoff, int do_revcomp, int do_align, int do_stats, double *mu, 

@@ -83,6 +83,11 @@ static void remove_hits_over_e_cutoff (scan_results_t *results, char *seq,
  *           bdump_level  - verbosity level for band related print statements
  *           debug_level  - verbosity level for debugging print statements
  *           silent_mode  - TRUE to not print anything, FALSE to print scores 
+ *           do_enforce   - TRUE to read .enforce file and enforce MATL stretch 
+ *           enf_start    - if (do_enforce), first MATL node to enforce each parse enter
+ *           enf_end      - if (do_enforce), last  MATL node to enforce each parse enter
+ *           do_elsilent  - disallow EL emissions
+ * 
  *   Last 6 args are specific to partial-test.c (temporary?) these are usually NULL
  *           actual_spos  - [0..nseq-1] start consensus posn for truncated (partial) seq
  *           actual_epos  - [0..nseq-1] end   consensus posn for truncated (partial) seq
@@ -96,8 +101,8 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
 		 int do_small, int do_qdb, double qdb_beta,
 		 int do_hbanded, int use_sums, double hbandp, int do_sub, int do_fullsub, float fsub_pmass,
 		 int do_hmmonly, int do_inside, int do_outside, int do_check, int do_post, 
-		 char ***ret_postcode, int do_timings, 
-		 int bdump_level, int debug_level, int silent_mode, 
+		 char ***ret_postcode, int do_timings, int bdump_level, int debug_level, int silent_mode, 
+		 int do_enforce, int enf_start, int enf_end, int do_elsilent,
 		 int *actual_spos, int *actual_epos, float **ret_post_spos, float **ret_post_epos,
 		 int **ret_dist_spos, int **ret_dist_epos)
 {
@@ -110,7 +115,7 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
   float            maxsc;	/* max score in all seqs */
   float            minsc;	/* min score in all seqs */
   float            avgsc;	/* avg score over all seqs */
-
+  int              nd;          /* counter over nodes */
   /* variables related to CM Plan 9 HMMs */
   struct cplan9_s       *hmm;           /* constructed CP9 HMM */
   CP9Bands_t *cp9b;                     /* data structure for hmm bands (bands on the hmm states) 
@@ -225,6 +230,20 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
       ConfigLocal(cm, 0.5, 0.5);
       CMLogoddsify(cm);
       /*CMHackInsertScores(cm);*/	/* "TEMPORARY" fix for bad priors */
+    }
+
+  if(do_elsilent) 
+    ConfigLocal_DisallowELEmissions(cm);
+
+  /* the --enforce option, added specifically for enforcing the template region of
+   * telomerase RNA */
+  if(do_enforce)
+    {
+      printf("Enforcing MATL stretch from %d to %d.\n", enf_start, enf_end);
+      /* Configure local alignment so the MATL stretch is unavoidable */
+      ConfigLocalEnforce(cm, 0.5, 0.5, enf_start, enf_end);
+      CMLogoddsify(cm);
+      printf("Done enforcing.\n");
     }
 
   if((do_local && do_hbanded) && !do_sub)

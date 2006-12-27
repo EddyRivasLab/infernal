@@ -352,3 +352,134 @@ ConfigLocal_DisallowELEmissions(CM_t *cm)
    free(nodetypes);
    return;
  }
+
+void
+ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_internal_exit,
+		   int enf_start, int enf_end)
+{
+  int v;			/* counter over states */
+  int nd;			/* counter over nodes */
+  int nstarts;			/* number of possible internal starts */
+  int enf_start_pos;            /* consensus left position node enf_start emits to */
+  int enf_end_pos;              /* consensus left position node enf_end   emits to */
+  int nexits;			/* number of possible internal ends */
+  float denom;
+  CMEmitMap_t *emap;           /* consensus emit map for the CM */
+
+  /* We want every parse to go through the MATL stretch from enf_start
+   * to enf_end. To enforce this we disallow local begin and ends that
+   * would allow parses to miss these nodes. */
+  for(nd = enf_start; nd <= enf_end; nd++)
+    {
+      if(cm->ndtype[nd] != MATL_nd)
+	Die("ERROR, trying to enforce a non-MATL stretch (node: %d not MATL).\n", nd);
+    }
+  emap = CreateEmitMap(cm); /* diff from ConfigLocalEnds() */
+  enf_start_pos = emap->lpos[enf_start];
+  enf_end_pos   = emap->lpos[enf_end];
+
+  /* The following code is copied from ConfigLocal() and ConfigLocalEnds()
+   * with modification to disallow local begins before enf_start and 
+   * disallow exits from between closest_start and enf_end. This 
+   * implementation sets local entry to the first node as 1-p_internal_start,
+   * and end from final node as 1-p_internal_exit. */
+
+  /*****************************************************************
+   * Internal entry.
+   *****************************************************************/
+  /* Count "internal" nodes: MATP, MATL, MATR, and BIF nodes.
+   * Ignore all start nodes, and also node 1 (which is always the
+   * "first" node and gets an entry prob of 1-p_internal_start).
+   */
+  nstarts = 0;
+  for (nd = 2; nd < cm->nodes; nd++) {
+    if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+    	cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd) 
+      if(emap->lpos[nd] <= enf_start_pos &&
+	 emap->rpos[nd] >= enf_end_pos) /* diff from ConfigLocalEnds() */
+	nstarts++;
+  }
+
+  /* Zero everything.
+   */
+  for (v = 0; v < cm->M; v++)  cm->begin[v] = 0.;
+
+  /* Erase the previous transition p's from node 0. The only
+   * way out of node 0 is going to be local begin transitions
+   * from the root v=0 directly to MATP_MP, MATR_MR, MATL_ML,
+   * and BIF_B states.
+   */
+  for (v = 0; v < cm->cnum[0]; v++)  cm->t[0][v] = 0.;
+
+  /* Node 1 gets prob 1-p_internal_start.
+   */
+  cm->begin[cm->nodemap[1]] = 1.-p_internal_start;
+
+  /* Remaining nodes share p_internal_start.
+   */
+  for (nd = 2; nd < cm->nodes; nd++) {
+    if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+    	cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd)  
+      if(emap->lpos[nd] <= enf_start_pos &&
+	 emap->rpos[nd] >= enf_end_pos) /* diff from ConfigLocalEnds() */
+	{
+	  printf("enabling local begin into nd: %d lpos: %d rpos: %d s: %d e: %d\n", nd, emap->lpos[nd], emap->rpos[nd], enf_start_pos, enf_end_pos);
+	  cm->begin[cm->nodemap[nd]] = p_internal_start/(float)nstarts;
+	}
+      else
+	printf("NOT enabling local begin into nd: %d lpos: %d rpos: %d s: %d e: %d\n", nd, emap->lpos[nd], emap->rpos[nd], enf_start_pos, enf_end_pos);
+	
+  }
+  cm->flags |= CM_LOCAL_BEGIN;
+
+  /*****************************************************************
+   * Internal exit.
+   *****************************************************************/
+  /* Count internal nodes MATP, MATL, MATR, BEGL, BEGR that aren't
+   * adjacent to END nodes.
+   */
+  nexits = 0;
+  for (nd = 1; nd < cm->nodes; nd++) {
+    if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+	 cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BEGL_nd ||
+	 cm->ndtype[nd] == BEGR_nd) && 
+	cm->ndtype[nd+1] != END_nd)
+      if(emap->lpos[nd] >= enf_end_pos || 
+	 emap->rpos[nd] <  enf_start_pos) /* diff from ConfigLocalEnds() */
+	nexits++;
+  } 
+  /* Spread the exit probability across internal nodes.
+   * Currently does not compensate for the decreasing probability
+   * of reaching a node, the way HMMER does: therefore the probability
+   * of exiting at later nodes is actually lower than the probability 
+   * of exiting at earlier nodes. This should be a small effect.
+   */
+  for (v = 0; v < cm->M; v++) cm->end[v] = 0.;
+  for (nd = 1; nd < cm->nodes; nd++) {
+    if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+	 cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BEGL_nd ||
+	 cm->ndtype[nd] == BEGR_nd) && 
+	cm->ndtype[nd+1] != END_nd)
+      {
+	if(emap->lpos[nd] >= enf_end_pos || 
+	   emap->rpos[nd] <  enf_start_pos) /* diff from ConfigLocalEnds() */
+	  {
+	    printf("enabling local end from nd: %d lpos: %d rpos: %d s: %d e: %d\n", nd, emap->lpos[nd], emap->rpos[nd], enf_start_pos, enf_end_pos);
+	    v = cm->nodemap[nd];
+	    cm->end[v] = p_internal_exit / (float) nexits;
+	    /* renormalize the main model transition distribution */
+	    denom = FSum(cm->t[v], cm->cnum[v]);
+	    denom += cm->end[v];
+	    FScale(cm->t[v], cm->cnum[v], 1./denom);
+	  }
+	else
+	  {
+	    printf("NOT enabling local end from nd: %d lpos: %d rpos: %d s: %d e: %d\n", nd, emap->lpos[nd], emap->rpos[nd], enf_start_pos, enf_end_pos);
+	  }
+      }
+  }
+  cm->flags |= CM_LOCAL_END;
+  FreeEmitMap(emap);
+  return;
+}
+
