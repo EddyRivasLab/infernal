@@ -503,6 +503,8 @@ main(int argc, char **argv)
   if(do_enforce)
     {
       enf_end = enf_start + strlen(enf_seq) - 1;
+      printf("enf_start: %d v: %d enf_end: %d v: %d enf_seq: %s\n", enf_start, cm->nodemap[enf_start], 
+	     enf_end, cm->nodemap[enf_end], enf_seq);
       EnforceSubsequence(cm, enf_start, enf_seq);
     }
 
@@ -575,6 +577,13 @@ main(int argc, char **argv)
 	      free(dmax);
 	      safe_windowlen *= 2;
 	      /*printf("ERROR BandCalculationEngine returned false, windowlen adjusted to %d\n", safe_windowlen);*/
+	    }
+	  /* If we're enforcing a subsequence, we need to reenforce it b/c BandCalculationEngine() 
+	   * changes the local end probabilities */
+	  if(do_enforce && do_local)
+	    {
+	      ConfigLocalEnforce(cm, 0.5, 0.5, enf_start, enf_end);
+	      CMLogoddsify(cm);
 	    }
 	}	  
       /*

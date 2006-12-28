@@ -275,7 +275,13 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
 	  safe_windowlen *= 2;
 	  /*printf("ERROR BandCalculationEngine returned false, windowlen adjusted to %d\n", safe_windowlen);*/
 	}
-
+      /* If we're enforcing a subsequence, we need to reenforce it b/c BandCalculationEngine() 
+       * changes the local end probabilities */
+      if(do_enforce && do_local)
+	{
+	  ConfigLocalEnforce(cm, 0.5, 0.5, enf_start, enf_end);
+	  CMLogoddsify(cm);
+	}
       if(bdump_level > 1) 
 	  /*printf("qdb_beta:%f\n", qdb_beta);*/
 	  debug_print_bands(cm, dmin, dmax);

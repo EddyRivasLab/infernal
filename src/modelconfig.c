@@ -22,6 +22,7 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
   int nd;			/* counter over nodes */
   int nstarts;			/* number of possible internal starts */
 
+  printf("\n\n***Calling ConfigLocal()****\n");
   /*****************************************************************
    * Internal entry.
    *****************************************************************/
@@ -64,6 +65,7 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
    * Internal exit.
    *****************************************************************/
   ConfigLocalEnds(cm, p_internal_exit);
+  printf("\n\n***Done Calling ConfigLocal()****\n");
   return;
 }
 
@@ -461,21 +463,23 @@ ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_internal_exit,
 	 cm->ndtype[nd] == BEGR_nd) && 
 	cm->ndtype[nd+1] != END_nd)
       {
+	v = cm->nodemap[nd];
 	if(emap->lpos[nd] >= enf_end_pos || 
 	   emap->rpos[nd] <  enf_start_pos) /* diff from ConfigLocalEnds() */
 	  {
 	    /*printf("enabling local end from nd: %d lpos: %d rpos: %d s: %d e: %d\n", nd, emap->lpos[nd], emap->rpos[nd], enf_start_pos, enf_end_pos);*/
-	    v = cm->nodemap[nd];
 	    cm->end[v] = p_internal_exit / (float) nexits;
-	    /* renormalize the main model transition distribution */
-	    denom = FSum(cm->t[v], cm->cnum[v]);
-	    denom += cm->end[v];
-	    FScale(cm->t[v], cm->cnum[v], 1./denom);
 	  }
 	else
 	  {
 	    ;/*printf("NOT enabling local end from nd: %d lpos: %d rpos: %d s: %d e: %d\n", nd, emap->lpos[nd], emap->rpos[nd], enf_start_pos, enf_end_pos);*/
 	  }
+	/* renormalize the main model transition distribution,
+	 * it's important to do this for all states that
+	 * may have had a local end possible prior to this function call*/
+	denom = FSum(cm->t[v], cm->cnum[v]);
+	denom += cm->end[v];
+	FScale(cm->t[v], cm->cnum[v], 1./denom);
       }
   }
   cm->flags |= CM_LOCAL_END;
