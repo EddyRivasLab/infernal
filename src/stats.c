@@ -48,14 +48,17 @@
  *           hmm    - CP 9 HMM to scan with, NULL if we're scanning with the CM
  *           use_easel - TRUE to use Easel's histogram and EVD fitters, false to
  *                       use RSEARCH versions.
+ *           do_enforce - TRUE to enforce a subseq in each sample (for telomerase's template)
+ *           enf_seq    - the subseq to enforce, NULL if !do_enforce
+ *
  */  
 void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 			    CM_t *cm, int D, int num_samples,
 			    int sample_length, double *lambda, double *K,
 			    int *dmin, int *dmax, struct cplan9_s *hmm,
-			    int do_inside, int use_easel)
+			    int do_inside, int use_easel, int do_enforce,
+			    char *enf_seq)
 {
-  use_easel = 0;
   int i;
   char *randseq;
   char *dsq;
@@ -71,7 +74,10 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
   double *xv;
   int z;
   int n;
-
+  char *enf_dsq;              /* the digitized subseq to enforce in each sample */
+  float *enf_vec;             /* vector for FChoose to pick starting point for enf_seq */
+  int enf_start;           /* starting point for enf_seq */
+  int x;
   /* Infernal specific variables (not in RSEARCH's stats.c) */
   int    nhits;			/* number of hits in a seq */
   int   *hitr;			/* initial states for hits */
@@ -79,7 +85,9 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
   int   *hitj;                  /* end positions of hits */
   float *hitsc;			/* scores of hits */
 
-  printf("in serial_make_histogram, nparts: %d D: %d sample_len: %d do_inside: %d\n", num_partitions, D, sample_length, do_inside);
+  printf("in serial_make_histogram, nparts: %d D: %d sample_len: %d do_ins: %d do_enf: %d\n", num_partitions, D, sample_length, do_inside, do_enforce);
+  if(do_enforce)
+    printf("enf_seq: %s\n", enf_seq);
 
   if (num_samples == 0) {
     for (i=0; i<GC_SEGMENTS; i++) {
@@ -112,8 +120,16 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 	  else
 	    cur_gc_freq[i] = 0.;
 	}
+      /*sample_length = 10;*/
       FNorm(cur_gc_freq, GC_SEGMENTS);
-
+      if(do_enforce)
+	{
+	  enf_dsq = DigitizeSequence(enf_seq, (strlen(enf_seq)));
+	  enf_vec = MallocOrDie(sizeof(float) * (sample_length - strlen(enf_seq) + 1));
+	  for(i = 0; i < (sample_length - strlen(enf_seq) + 1); i++)
+	    enf_vec[i] = 0.;
+	  FNorm(enf_vec, (sample_length - strlen(enf_seq) + 1));
+	}
       /* Take num_samples samples */
       for (i=0; i<num_samples; i++) 
 	{
@@ -128,6 +144,16 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 	  /* Digitize the sequence, parse it, and add to histogram */
 	  dsq = DigitizeSequence (randseq, sample_length);
 	  
+	  if(do_enforce && (strstr(randseq, enf_seq) == NULL)) 
+	    {
+	      /* insert the sequence, but only if it's not already there. */
+	      /* pick a random position */
+	      enf_start = FChoose (enf_vec, (sample_length - strlen(enf_seq) + 1));
+	      /* insert the sequence */
+	      for(x = enf_start; x < (enf_start + strlen(enf_seq)); x++)
+		dsq[x] = enf_dsq[(x-enf_start+1)];
+	    }
+
 	  /* Do the scan */
 	  if(hmm != NULL)
 	    score = CP9ForwardScan(dsq, 1, sample_length, D, hmm, NULL,  /* don't save the DP mx */

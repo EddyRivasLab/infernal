@@ -12,7 +12,8 @@ extern void serial_make_histogram (int *gc_count, int *partitions, int num_parti
 				   CM_t *cm, int D, int num_samples, 
 				   int sample_length, double *lambda, double *K,
 				   int *dmin, int *dmax, struct cplan9_s *hmm,
-				   int do_inside, int use_easel);
+				   int do_inside, int use_easel, int do_enforce,
+				   char *enf_seq);
 
 #ifdef USE_MPI
 extern void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions,

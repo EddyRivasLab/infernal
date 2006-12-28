@@ -652,12 +652,14 @@ main(int argc, char **argv)
 	serial_make_histogram (gc_ct, partitions, num_partitions,
 			       cm, W, 
 			       num_samples, sample_length, lambda, K, 
-			       dmin, dmax, cp9_hmm, do_inside, TRUE);
+			       dmin, dmax, cp9_hmm, do_inside, TRUE,
+			       do_enforce, enf_seq);
       else
 	serial_make_histogram (gc_ct, partitions, num_partitions,
 			       cm, W, 
 			       num_samples, sample_length, lambda, K, 
-			       dmin, dmax, NULL, do_inside, TRUE);
+			       dmin, dmax, NULL, do_inside, TRUE,
+			       do_enforce, enf_seq);
 
     /*StopwatchStop(watch);
       StopwatchDisplay(stdout, "\nCPU time (histogram): ", watch);*/
