@@ -227,7 +227,10 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
    */
   if (do_local)
     { 
-      ConfigLocal(cm, 0.5, 0.5);
+      if(do_enforce)
+	ConfigLocalEnforce(cm, 0.5, 0.5, enf_start, enf_end);
+      else
+	ConfigLocal(cm, 0.5, 0.5);
       CMLogoddsify(cm);
       /*CMHackInsertScores(cm);*/	/* "TEMPORARY" fix for bad priors */
     }
@@ -237,7 +240,7 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
 
   /* the --enforce option, added specifically for enforcing the template region of
    * telomerase RNA */
-  if(do_enforce && do_local)
+
     {
       printf("Enforcing MATL stretch from %d to %d.\n", enf_start, enf_end);
       /* Configure local alignment so the MATL stretch is unavoidable */

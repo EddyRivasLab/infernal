@@ -74,7 +74,8 @@ InsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
   int       gamma_j;            /* j index in the gamma matrix, which is indexed 0..j0-i0+1, 
 				 * while j runs from i0..j0 */
   int       gamma_i;            /* i index in the gamma* data structures */
-  float     best_score;         /* Best overall score to return */
+  float     best_score;         /* Best overall score from semi-HMM to return */
+  float     best_neg_score;     /* Best score overall score to return, used if all scores > 0 */
 
   /*****************************************************************
    * alpha allocations.
@@ -88,7 +89,8 @@ InsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
    * Note that E memory is shared: all E decks point at M-1 deck.
    *****************************************************************/
 
-  best_score = IMPOSSIBLE;
+  best_score     = IMPOSSIBLE;
+  best_neg_score = IMPOSSIBLE;
   L = j0-i0+1;
   if (W > L) W = L; 
 
@@ -295,7 +297,7 @@ InsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 	    }
 	  }
 	  if (alpha[0][cur][d] < IMPOSSIBLE) alpha[0][cur][d] = IMPOSSIBLE;
-	  /*if (alpha[0][cur][d] > best_score) best_score = alpha[0][cur][d];*/
+	  if (alpha[0][cur][d] > best_neg_score) best_neg_score = alpha[0][cur][d];
 	}
 
       /* The little semi-Markov model that deals with multihit parsing:
@@ -362,6 +364,9 @@ InsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
   free(savesc);
   free(saver);
 
+  if(best_score <= 0.) /* there were no hits found by the semi-HMM, no hits above 0 bits */
+    best_score = best_neg_score;
+
   return best_score;
 }
 
@@ -424,10 +429,12 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
   int       gamma_j;            /* j index in the gamma matrix, which is indexed 0..j0-i0+1, 
 				 * while j runs from i0..j0 */
   int       gamma_i;            /* i index in the gamma* data structures */
-  float     best_score;         /* Best overall score to return */
+  float     best_score;         /* Best overall score from semi-HMM to return */
+  float     best_neg_score;     /* Best score overall score to return, used if all scores > 0 */
 
   /*printf("in InsideBandedScan i0: %d j0: %d\n", i0, j0);*/
-  best_score = IMPOSSIBLE;
+  best_score     = IMPOSSIBLE;
+  best_neg_score = IMPOSSIBLE;
   L = j0-i0+1;
   if (W > L) W = L; 
 
@@ -663,7 +670,7 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
 							 + cm->tsc[0][yoffset]));
 
 	  if (alpha[0][cur][d] < IMPROBABLE) alpha[0][cur][d] = IMPOSSIBLE;
-	  /*if (alpha[0][cur][d] > best_score) best_score = alpha[0][cur][d];*/
+	  if (alpha[0][cur][d] > best_neg_score) best_neg_score = alpha[0][cur][d];
 	}
       
       /* EPN 11.09.05 
@@ -692,10 +699,10 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
 		alpha[0][cur][d] = sc;
 		bestr[d]         = y;
 	      }
+	      if (alpha[0][cur][d] < IMPROBABLE) alpha[0][cur][d] = IMPOSSIBLE;
+	      if (alpha[0][cur][d] > best_neg_score) best_neg_score = alpha[0][cur][d];
 	    }
 	}
-	if (alpha[0][cur][d] < IMPROBABLE) alpha[0][cur][d] = IMPOSSIBLE;
-	/*if (alpha[0][cur][d] > best_score) best_score = alpha[0][cur][d];*/
       }
       
       /* The little semi-Markov model that deals with multihit parsing:
@@ -762,6 +769,9 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
   free(gamma);
   free(savesc);
   free(saver);
+
+  if(best_score <= 0.) /* there were no hits found by the semi-HMM, no hits above 0 bits */
+    best_score = best_neg_score;
 
   return best_score;
 }
@@ -1366,7 +1376,8 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
   int       gamma_j;            /* j index in the gamma matrix, which is indexed 0..j0-i0+1, 
 				 * while j runs from i0..j0 */
   int       gamma_i;            /* i index in the gamma* data structures */
-  float     best_score;         /* Best overall score to return */
+  float     best_score;         /* Best overall score from semi-HMM to return */
+  float     best_neg_score;     /* Best score overall score to return, used if all scores > 0 */
 
   /*****************************************************************
    * alpha allocations.
@@ -1380,7 +1391,8 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
    * Note that E memory is shared: all E decks point at M-1 deck.
    *****************************************************************/
 
-  best_score = IMPOSSIBLE;
+  best_score     = IMPOSSIBLE;
+  best_neg_score = IMPOSSIBLE;
   L = j0-i0+1;
   if (W > L) W = L; 
 
@@ -1589,7 +1601,7 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 	    }
 	  }
 	  if (alpha[0][cur][d] < -INFTY) alpha[0][cur][d] = -INFTY;
-	  /*if (Scorify(alpha[0][cur][d]) > best_score) best_score = Scorify(alpha[0][cur][d]);*/
+	  if (Scorify(alpha[0][cur][d]) > best_neg_score) best_neg_score = Scorify(alpha[0][cur][d]);
 	}
 
       /* The little semi-Markov model that deals with multihit parsing:
@@ -1656,6 +1668,9 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
   free(savesc);
   free(saver);
 
+  if(best_score <= 0.) /* there were no hits found by the semi-HMM, no hits above 0 bits */
+    best_score = best_neg_score;
+
   return best_score;
 }
 
@@ -1721,7 +1736,8 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
   int       gamma_j;            /* j index in the gamma matrix, which is indexed 0..j0-i0+1, 
 				 * while j runs from i0..j0 */
   int       gamma_i;            /* i index in the gamma* data structures */
-  float     best_score;         /* Best overall score to return */
+  float     best_score;         /* Best overall score from semi-HMM to return */
+  float     best_neg_score;     /* Best score overall score to return, used if all scores > 0 */
 
   printf("in iInsideBandedScan i0: %d j0: %d\n", i0, j0);
   /*printf("\tcm->ibeginsc[3]: %d\n", cm->ibeginsc[3]);
@@ -1729,7 +1745,8 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
     printf("\tcm->iel_selfsc: %d\n", cm->iel_selfsc);
     printf("\tcm->itsc[1][0]: %d\n", cm->itsc[1][0]);*/
 
-  best_score = IMPOSSIBLE;
+  best_score     = IMPOSSIBLE;
+  best_neg_score = IMPOSSIBLE;
   L = j0-i0+1;
   if (W > L) W = L; 
 
@@ -1967,7 +1984,7 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
 							  + cm->itsc[0][yoffset]));
 
 	  if (alpha[0][cur][d] < -INFTY) alpha[0][cur][d] = -INFTY;
-	  /*if (Scorify(alpha[0][cur][d]) > best_score) best_score = Scorify(alpha[0][cur][d]);*/
+	  if (Scorify(alpha[0][cur][d]) > best_neg_score) best_neg_score = Scorify(alpha[0][cur][d]);
 	}
       
       /* EPN 11.09.05 
@@ -1997,11 +2014,10 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
 		alpha[0][cur][d] = sc;
 		bestr[d]         = y;
 	      }
+	      if (alpha[0][cur][d] < -INFTY) alpha[0][cur][d] = -INFTY;
+	      if (Scorify(alpha[0][cur][d]) > best_neg_score) best_neg_score = Scorify(alpha[0][cur][d]);
 	    }
 	}
-	/* ! */
-	if (alpha[0][cur][d] < -INFTY) alpha[0][cur][d] = -INFTY;
-	/*if (alpha[0][cur][d] > best_score) best_score = alpha[0][cur][d];*/
       }
       
       /* The little semi-Markov model that deals with multihit parsing:
@@ -2067,6 +2083,10 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
   free(gamma);
   free(savesc);
   free(saver);
-  printf("iInsideBandedScan() returning best_score: %f\n", best_score);
+
+  if(best_score <= 0.) /* there were no hits found by the semi-HMM, no hits above 0 bits */
+    best_score = best_neg_score;
+
+  printf("iInsideBandedScan() returning best_score: %f best_neg_score: %f\n", best_score, best_neg_score);
   return best_score;
 }

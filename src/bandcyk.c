@@ -910,7 +910,8 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
   int       gamma_j;            /* j index in the gamma matrix, which is indexed 0..j0-i0+1, 
 				 * while j runs from i0..j0 */
   int       gamma_i;            /* i index in the gamma* data structures */
-  float     best_score;         /* Best overall score to return */
+  float     best_score;         /* Best overall score from semi-HMM to return */
+  float     best_neg_score;     /* Best score overall score to return, used if all scores > 0 */
 
   /* EPN 08.11.05 Next line prevents wasteful computations when imposing
    * bands before the main recursion.  There is no need to worry about
@@ -919,7 +920,8 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
    * of time if W is much larger than necessary, and the search sequences 
    * are short (as in a possible benchmark).
    */
-  best_score = IMPOSSIBLE;
+  best_score     = IMPOSSIBLE;
+  best_neg_score = IMPOSSIBLE;
   L = j0-i0+1;
   if (W > L) W = L; 
 
@@ -1157,7 +1159,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 	      alpha[0][cur][d] = sc;
 
 	  if (alpha[0][cur][d] < IMPROBABLE) alpha[0][cur][d] = IMPOSSIBLE;
-	  /*if (alpha[0][cur][d] > best_score) best_score = alpha[0][cur][d];*/
+	  if (alpha[0][cur][d] > best_neg_score) best_neg_score = alpha[0][cur][d];
 	}
       
       /* EPN 11.09.05 
@@ -1180,7 +1182,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 		bestr[d]         = y;
 	      }
 	      if (alpha[0][cur][d] < IMPROBABLE) alpha[0][cur][d] = IMPOSSIBLE;
-	      /*if (alpha[0][cur][d] > best_score) best_score = alpha[0][cur][d];*/
+	      if (alpha[0][cur][d] > best_neg_score) best_neg_score = alpha[0][cur][d];
 	    }
 	}
       }
@@ -1249,6 +1251,9 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
   free(gamma);
   free(savesc);
   free(saver);
+
+  if(best_score <= 0.) /* there were no hits found by the semi-HMM, no hits above 0 bits */
+    best_score = best_neg_score;
 
   return best_score;
 }

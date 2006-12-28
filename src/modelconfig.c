@@ -22,7 +22,6 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
   int nd;			/* counter over nodes */
   int nstarts;			/* number of possible internal starts */
 
-  printf("\n\n***Calling ConfigLocal()****\n");
   /*****************************************************************
    * Internal entry.
    *****************************************************************/
@@ -65,7 +64,7 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
    * Internal exit.
    *****************************************************************/
   ConfigLocalEnds(cm, p_internal_exit);
-  printf("\n\n***Done Calling ConfigLocal()****\n");
+
   return;
 }
 

@@ -529,15 +529,10 @@ main(int argc, char **argv)
   if (do_local)
     { 
       if(do_enforce)
-	{
-	  ConfigLocalEnforce(cm, 0.5, 0.5, enf_start, enf_end);
-	  CMLogoddsify(cm);
-	}
+	ConfigLocalEnforce(cm, 0.5, 0.5, enf_start, enf_end);
       else
-	{
-	  ConfigLocal(cm, 0.5, 0.5);
-	  CMLogoddsify(cm);
-	}
+	ConfigLocal(cm, 0.5, 0.5);
+
       if(do_zero_inserts)
 	CMHackInsertScores(cm);	/* "TEMPORARY" fix for bad priors */
       if(do_filter || do_hmmonly || do_hbanded)
