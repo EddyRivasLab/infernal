@@ -644,8 +644,8 @@ main(int argc, char **argv)
     if (mpi_num_procs > 1)
 	parallel_make_histogram(gc_ct, partitions, num_partitions,
 				cm, W, num_samples, sample_length, lambda, K, 
-				dmin, dmax, do_inside, mpi_my_rank, mpi_num_procs, 
-				mpi_master_rank);
+				dmin, dmax, do_inside, do_enforce, enf_seq,
+				mpi_my_rank, mpi_num_procs, mpi_master_rank);
     else 
 #endif
       if(do_hmmonly)
@@ -1419,10 +1419,9 @@ int debug_print_stats(int *partitions, int num_partitions, double *lambda, doubl
 
   printf("in debug_print_stats num_partitions: %d\n", num_partitions);
   cur_partition = 0;
-  printf("cur_partition: %d\n", cur_partition);
   for (i=0; i<GC_SEGMENTS; i++) 
     {
-      printf("i: %d\n", i);
+      /*printf("i: %d\n", i);*/
       if (partitions[i] == cur_partition) 
 	{
 	  printf("partition i:%d starts at: %d\n", cur_partition, i);

@@ -74,10 +74,10 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
   double *xv;
   int z;
   int n;
-  char *enf_dsq;              /* the digitized subseq to enforce in each sample */
   float *enf_vec;             /* vector for FChoose to pick starting point for enf_seq */
   int enf_start;           /* starting point for enf_seq */
   int x;
+
   /* Infernal specific variables (not in RSEARCH's stats.c) */
   int    nhits;			/* number of hits in a seq */
   int   *hitr;			/* initial states for hits */
@@ -88,6 +88,9 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
   printf("in serial_make_histogram, nparts: %d D: %d sample_len: %d do_ins: %d do_enf: %d\n", num_partitions, D, sample_length, do_inside, do_enforce);
   if(do_enforce)
     printf("enf_seq: %s\n", enf_seq);
+
+  if(do_enforce && enf_seq == NULL)
+    Die("ERROR do_enforce in serial_make_histogram, but enf_seq is NULL.\n");
 
   if (num_samples == 0) {
     for (i=0; i<GC_SEGMENTS; i++) {
@@ -120,11 +123,10 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 	  else
 	    cur_gc_freq[i] = 0.;
 	}
-      /*sample_length = 10;*/
+
       FNorm(cur_gc_freq, GC_SEGMENTS);
       if(do_enforce)
 	{
-	  enf_dsq = DigitizeSequence(enf_seq, (strlen(enf_seq)));
 	  enf_vec = MallocOrDie(sizeof(float) * (sample_length - strlen(enf_seq) + 1));
 	  for(i = 0; i < (sample_length - strlen(enf_seq) + 1); i++)
 	    enf_vec[i] = 0.;
@@ -141,9 +143,6 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 	  /* Get random sequence */
 	  randseq = RandomSequence (Alphabet, nt_p, Alphabet_size, sample_length);
 	  
-	  /* Digitize the sequence, parse it, and add to histogram */
-	  dsq = DigitizeSequence (randseq, sample_length);
-	  
 	  if(do_enforce && (strstr(randseq, enf_seq) == NULL)) 
 	    {
 	      /* insert the sequence, but only if it's not already there. */
@@ -151,9 +150,12 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 	      enf_start = FChoose (enf_vec, (sample_length - strlen(enf_seq) + 1));
 	      /* insert the sequence */
 	      for(x = enf_start; x < (enf_start + strlen(enf_seq)); x++)
-		dsq[x] = enf_dsq[(x-enf_start+1)];
+		randseq[x] = enf_seq[(x-enf_start)];
 	    }
 
+	  /* Digitize the sequence, parse it, and add to histogram */
+	  dsq = DigitizeSequence (randseq, sample_length);
+	  
 	  /* Do the scan */
 	  if(hmm != NULL)
 	    score = CP9ForwardScan(dsq, 1, sample_length, D, hmm, NULL,  /* don't save the DP mx */
@@ -227,8 +229,10 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 			      CM_t *cm, int D, int num_samples,
 			      int sample_length,double *lambda, double *K, 
 			      int *dmin, int *dmax, int do_inside,
+			      int do_enforce, char *enf_seq,
 			      int mpi_my_rank, int mpi_num_procs, 
-			      int mpi_master_rank) {
+			      int mpi_master_rank) 
+{
   /*struct histogram_s **h;*/
   ESL_HISTOGRAM **h;
   int z;
@@ -254,6 +258,9 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
   float **cur_gc_freqs;
   float gc_comp;
   char *tmp_name;
+  float *enf_vec;             /* vector for FChoose to pick starting point for enf_seq */
+  int enf_start;           /* starting point for enf_seq */
+  int x;
 
   /* Infernal specific variables (not in RSEARCH's stats.c) */
   int    nhits;			/* number of hits in a seq */
@@ -262,8 +269,13 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
   int   *hitj;                  /* end positions of hits */
   float *hitsc;			/* scores of hits */
 
-  /*printf("in parallel_make_histogram, nparts: %d D: %d sample_len: %d do_inside: %d\n", num_partitions, D, sample_length, do_inside);
-    printf("B PMH rank: %4d mast: %4d\n", mpi_my_rank, mpi_master_rank);*/
+  printf("in parallel_make_histogram, nparts: %d D: %d sample_len: %d do_inside: %d do_enforce: %d\n", num_partitions, D, sample_length, do_inside, do_enforce);
+  printf("B PMH rank: %4d mast: %4d\n", mpi_my_rank, mpi_master_rank);
+  if(do_enforce)
+    printf("enf_seq: %s\n", enf_seq);
+
+  if(do_enforce && enf_seq == NULL)
+    Die("ERROR do_enforce in serial_make_histogram, but enf_seq is NULL.\n");
 
   tmp_name = sre_strdup("random", -1);
   if (num_samples == 0) {
@@ -297,6 +309,13 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 	  }
 	}
 	FNorm (cur_gc_freqs[cur_partition], GC_SEGMENTS);
+	if(do_enforce)
+	  {
+	    enf_vec = MallocOrDie(sizeof(float) * (sample_length - strlen(enf_seq) + 1));
+	    for(i = 0; i < (sample_length - strlen(enf_seq) + 1); i++)
+	      enf_vec[i] = 0.;
+	    FNorm(enf_vec, (sample_length - strlen(enf_seq) + 1));
+	  }
       }
       
       /* Set up arrays to hold pointers to active seqs and jobs on
@@ -343,6 +362,16 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 		    esl_sq_CreateFrom(tmp_name, 
 				      RandomSequence (Alphabet, nt_p, Alphabet_size, sample_length),
 				      NULL, NULL, NULL);
+
+		  if(do_enforce && (strstr(randseqs[randseq_index]->sq[0]->seq, enf_seq) == NULL)) 
+		    {
+		      /* insert the sequence, but only if it's not already there. */
+		      /* pick a random position */
+		      enf_start = FChoose (enf_vec, (sample_length - strlen(enf_seq) + 1));
+		      /* insert the sequence */
+		      for(x = enf_start; x < (enf_start + strlen(enf_seq)); x++)
+			randseqs[randseq_index]->sq[0]->seq[x] = enf_seq[(x-enf_start)];
+		    }
 		  randseqs[randseq_index]->sq[0]->dsq = 
 		    DigitizeSequence(randseqs[randseq_index]->sq[0]->seq, 
 				     randseqs[randseq_index]->sq[0]->n);

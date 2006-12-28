@@ -20,6 +20,7 @@ extern void parallel_make_histogram (int *gc_count, int *partitions, int num_par
 				     CM_t *cm, int D, int num_samples,
 				     int sample_length, double *lambda, double *K, 
 				     int *dmin, int *dmax, int do_inside,
+				     int do_enforce, char *enf_seq,
 				     int mpi_my_rank, int num_procs, 
 				     int mpi_master_rank);
 #endif
