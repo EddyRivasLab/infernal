@@ -1157,7 +1157,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 	      alpha[0][cur][d] = sc;
 
 	  if (alpha[0][cur][d] < IMPROBABLE) alpha[0][cur][d] = IMPOSSIBLE;
-	  if (alpha[0][cur][d] > best_score) best_score = alpha[0][cur][d];
+	  /*if (alpha[0][cur][d] > best_score) best_score = alpha[0][cur][d];*/
 	}
       
       /* EPN 11.09.05 
@@ -1180,7 +1180,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 		bestr[d]         = y;
 	      }
 	      if (alpha[0][cur][d] < IMPROBABLE) alpha[0][cur][d] = IMPOSSIBLE;
-	      if (alpha[0][cur][d] > best_score) best_score = alpha[0][cur][d];
+	      /*if (alpha[0][cur][d] > best_score) best_score = alpha[0][cur][d];*/
 	    }
 	}
       }
@@ -1237,13 +1237,10 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 	j--; 
       else                /* a hit, a palpable hit */
 	{
-	  if(savesc[gamma_j] >= cutoff) /* report the hit */
-	    {
-	      if(results != NULL)
-		report_hit(gback[gamma_j], j, saver[gamma_j], savesc[gamma_j], results);
-	      if(savesc[gamma_j] > best_score) 
-		best_score = savesc[gamma_j];
-	    }
+	  if(savesc[gamma_j] > best_score) 
+	    best_score = savesc[gamma_j];
+	  if(savesc[gamma_j] >= cutoff && results != NULL) /* report the hit */
+	    report_hit(gback[gamma_j], j, saver[gamma_j], savesc[gamma_j], results);
 	  j = gback[gamma_j]-1;
 	}
     }

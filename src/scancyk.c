@@ -505,13 +505,10 @@ CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 	j--; 
       else                /* a hit, a palpable hit */
 	{
-	  if(savesc[gamma_j] >= cutoff) 
-	    {
-	      if(results != NULL) /* report the hit */
-		report_hit(gback[gamma_j], j, saver[gamma_j], savesc[gamma_j], results);
-	      if(savesc[gamma_j] > best_score) 
-		best_score = savesc[gamma_j];
-	    }
+	  if(savesc[gamma_j] > best_score) 
+	    best_score = savesc[gamma_j];
+	  if(savesc[gamma_j] >= cutoff && results != NULL) /* report the hit */
+	    report_hit(gback[gamma_j], j, saver[gamma_j], savesc[gamma_j], results);
 	  j = gback[gamma_j]-1;
 	}
     }

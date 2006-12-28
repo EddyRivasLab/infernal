@@ -250,10 +250,10 @@ main(int argc, char **argv)
 
   /* The enforce option (--enfstart and --enfseq), added specifically for enforcing the template 
    * region for telomerase RNA searches */
-  int   do_enforce;             /* TRUE to read .enforce file and enforce MATL stretch */
-  int   enf_start;              /* if (do_enforce), first MATL node to enforce each parse enter */
-  int   enf_end;                /* if (do_enforce), last  MATL node to enforce each parse enter */
-  char *enf_seq;                /* if (do_enforce), the subsequence to enforce in nodes from enf_start to 
+  int   do_enforce = FALSE;     /* TRUE to read .enforce file and enforce MATL stretch */
+  int   enf_start = 0;          /* if (do_enforce), first MATL node to enforce each parse enter */
+  int   enf_end = 0;            /* if (do_enforce), last  MATL node to enforce each parse enter */
+  char *enf_seq = NULL;         /* if (do_enforce), the subsequence to enforce in nodes from enf_start to 
 				 * enf_end */
   int   nd;
 
