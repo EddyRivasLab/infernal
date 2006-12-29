@@ -150,7 +150,7 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 	      enf_start = FChoose (enf_vec, (sample_length - strlen(enf_seq) + 1));
 	      /* insert the sequence */
 	      for(x = enf_start; x < (enf_start + strlen(enf_seq)); x++)
-		randseq[x] = enf_seq[(x-enf_start)];
+		;//randseq[x] = enf_seq[(x-enf_start)];
 	    }
 
 	  /* Digitize the sequence, parse it, and add to histogram */
@@ -370,7 +370,7 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 		      enf_start = FChoose (enf_vec, (sample_length - strlen(enf_seq) + 1));
 		      /* insert the sequence */
 		      for(x = enf_start; x < (enf_start + strlen(enf_seq)); x++)
-			randseqs[randseq_index]->sq[0]->seq[x] = enf_seq[(x-enf_start)];
+			;//randseqs[randseq_index]->sq[0]->seq[x] = enf_seq[(x-enf_start)];
 		    }
 		  randseqs[randseq_index]->sq[0]->dsq = 
 		    DigitizeSequence(randseqs[randseq_index]->sq[0]->seq, 

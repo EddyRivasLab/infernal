@@ -236,6 +236,7 @@ ConfigLocal_DisallowELEmissions(CM_t *cm)
    * times (see structs.h). 
    */
   cm->el_selfsc = (IMPOSSIBLE / (cm->W+1));
+  /*cm->iel_selfsc = -INFTY;*/
   return;
 }
 

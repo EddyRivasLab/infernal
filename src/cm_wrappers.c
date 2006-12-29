@@ -159,9 +159,13 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
   int safe_windowlen; 
 
   /* variables related to inside/outside */
-  float           ***alpha;     /* alpha DP matrix for Inside() */
-  float           ***beta;      /* beta DP matrix for Inside() */
-  float           ***post;      /* post DP matrix for Inside() */
+  /*float           ***alpha;*/     /* alpha DP matrix for Inside() */
+  /*float           ***beta; */     /* beta DP matrix for Inside() */
+  /*float           ***post; */     /* post DP matrix for Inside() */
+  int             ***alpha;    /* alpha DP matrix for Inside() */
+  int             ***beta;     /* beta DP matrix for Inside() */
+  int             ***post;     /* post DP matrix for Inside() */
+
 
   /* partial-test variables */
   int do_ptest;                 /* TRUE to fill partial-test variables */
@@ -173,7 +177,7 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
   if(do_fullsub)
     do_sub = TRUE;
 
-  /*printf("in AlignSeqsWrapper() do_local: %d do_sub: %d do_fullsub: %d\n", do_local, do_sub, do_fullsub);*/
+  printf("in AlignSeqsWrapper() do_local: %d do_sub: %d do_fullsub: %d do_enforce: %d\n", do_local, do_sub, do_fullsub, do_enforce);
 
   do_ptest = FALSE;
   if(ret_post_spos != NULL)
@@ -240,7 +244,7 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
 
   /* the --enforce option, added specifically for enforcing the template region of
    * telomerase RNA */
-
+  if(do_enforce)
     {
       printf("Enforcing MATL stretch from %d to %d.\n", enf_start, enf_end);
       /* Configure local alignment so the MATL stretch is unavoidable */
@@ -575,31 +579,37 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
       if (do_inside)
 	{
 	  if(do_hbanded)
-	    sc = FInside_b_jd_me(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
-				 BE_PARANOID,	/* non memory-saving mode */
-				 NULL, NULL,	/* manage your own matrix, I don't want it */
-				 NULL, NULL,	/* manage your own deckpool, I don't want it */
-				 do_local,        /* TRUE to allow local begins */
-				 cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
+	    {
+	      sc = IInside_b_jd_me(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
+				   BE_PARANOID,	/* non memory-saving mode */
+				   NULL, NULL,	/* manage your own matrix, I don't want it */
+				   NULL, NULL,	/* manage your own deckpool, I don't want it */
+				   do_local,        /* TRUE to allow local begins */
+				   cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
+	    }
 	  else
-	    sc = FInside(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
-			 BE_EFFICIENT,	/* memory-saving mode */
-			 NULL, NULL,	/* manage your own matrix, I don't want it */
-			 NULL, NULL,	/* manage your own deckpool, I don't want it */
-			 do_local);       /* TRUE to allow local begins */
+	    {
+	      sc = IInside(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
+			   BE_EFFICIENT,	/* memory-saving mode */
+			   NULL, NULL,	/* manage your own matrix, I don't want it */
+			   NULL, NULL,	/* manage your own deckpool, I don't want it */
+			   do_local);       /* TRUE to allow local begins */
+	    }
+
 	}
       else if(do_outside)
 	{	
 	  if(do_hbanded)
 	    {
-	      sc = FInside_b_jd_me(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
+	      
+	      sc = IInside_b_jd_me(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
 				   BE_PARANOID,	/* save full alpha so we can run outside */
 				   NULL, &alpha,	/* fill alpha, and return it, needed for FOutside() */
 				   NULL, NULL,	/* manage your own deckpool, I don't want it */
 				   do_local,        /* TRUE to allow local begins */
 				   cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
 	      /*do_check = TRUE;*/
-	      sc = FOutside_b_jd_me(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
+	      sc = IOutside_b_jd_me(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
 				    BE_PARANOID,	/* save full beta */
 				    NULL, NULL,	/* manage your own matrix, I don't want it */
 				    NULL, NULL,	/* manage your own deckpool, I don't want it */
@@ -611,17 +621,17 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
 	    }
 	  else
 	    {
-	      sc = FInside(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
+	      sc = IInside(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
 			   BE_PARANOID,	/* save full alpha so we can run outside */
 			   NULL, &alpha,	/* fill alpha, and return it, needed for FOutside() */
 			   NULL, NULL,	/* manage your own deckpool, I don't want it */
 			   do_local);       /* TRUE to allow local begins */
-	      sc = FOutside(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
+	      sc = IOutside(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
 			    BE_PARANOID,	/* save full beta */
 			    NULL, NULL,	/* manage your own matrix, I don't want it */
 			    NULL, NULL,	/* manage your own deckpool, I don't want it */
 			    do_local,       /* TRUE to allow local begins */
-			    alpha,          /* alpha matrix from FInside() */
+			    alpha,         /* alpha matrix from IInside() */
 			    NULL,           /* don't save alpha */
 			    do_check);      /* TRUE to check Outside probs agree with Inside */
 	    }
@@ -701,7 +711,7 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
 	  /*alpha = MallocOrDie(sizeof(float **) * (cm->M));
 	  beta  = MallocOrDie(sizeof(float **) * (cm->M+1));
 	  */
-	  post  = MallocOrDie(sizeof(float **) * (cm->M+1));
+	  post  = MallocOrDie(sizeof(int **) * (cm->M+1));
 	  /*
 	  for (v = 0; v < cm->M; v++) alpha[v] = NULL;
 	  for (v = 0; v < cm->M+1; v++) beta[v] = NULL;
@@ -711,29 +721,31 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
 	      for (v = 0; v < cm->M; v++)
 		{
 		  post[v] = NULL;
-		  post[v] = alloc_jdbanded_vjd_deck(sqinfo[i].len, 1, sqinfo[i].len, cp9b->jmin[v], 
-						    cp9b->jmax[v], cp9b->hdmin[v], cp9b->hdmax[v]);
+		  post[v] = Ialloc_jdbanded_vjd_deck(sqinfo[i].len, 1, sqinfo[i].len, cp9b->jmin[v], 
+						      cp9b->jmax[v], cp9b->hdmin[v], cp9b->hdmax[v]);
 		}
 	      post[cm->M] = NULL;
 	      post[cm->M] = alloc_vjd_deck(sqinfo[i].len, 1, sqinfo[i].len);
-	      sc = FInside_b_jd_me(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
+	      sc = IInside_b_jd_me(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
 				   BE_PARANOID,	/* save full alpha so we can run outside */
-				   NULL, &alpha,	/* fill alpha, and return it, needed for FOutside() */
+				   NULL, &alpha,	/* fill alpha, and return it, needed for IOutside() */
 				   NULL, NULL,	/* manage your own deckpool, I don't want it */
 				   do_local,       /* TRUE to allow local begins */
 				   cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
-	      sc = FOutside_b_jd_me(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
+	      sc = IOutside_b_jd_me(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
 				    BE_PARANOID,	/* save full beta */
-				    NULL, &beta,	/* fill beta, and return it, needed for CMPosterior() */
+				    NULL, &beta,	/* fill beta, and return it, needed for ICMPosterior() */
 				    NULL, NULL,	/* manage your own deckpool, I don't want it */
 				    do_local,       /* TRUE to allow local begins */
-				    alpha, &alpha,  /* alpha matrix from FInside(), and save it for CMPosterior*/
+				    alpha, &alpha,  /* alpha matrix from IInside(), and save it for CMPosterior*/
 				    do_check,      /* TRUE to check Outside probs agree with Inside */
 				    cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
-	      CMPosterior_b_jd_me(sqinfo[i].len, cm, alpha, NULL, beta, NULL, post, &post,
-				  cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax);
-	      postcode[i] = CMPostalCode_b_jd_me(cm, sqinfo[i].len, post, tr[i],
-						 cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax);
+	      ICMPosterior_b_jd_me(sqinfo[i].len, cm, alpha, NULL, beta, NULL, post, &post,
+				   cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax);
+	      postcode[i] = ICMPostalCode_b_jd_me(cm, sqinfo[i].len, post, tr[i],
+						  cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax);
+	      /*postcode[i] = CMPostalCode_b_jd_me(cm, sqinfo[i].len, post, tr[i],
+		cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax);*/
 	    }
 	  else
 	    {
@@ -741,26 +753,29 @@ AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***
 		{
 		  post[v] = NULL;
 		  post[v] = alloc_vjd_deck(sqinfo[i].len, 1, sqinfo[i].len);
+		  post[v] = NULL;
+		  post[v] = Ialloc_vjd_deck(sqinfo[i].len, 1, sqinfo[i].len);
 		}
-	      sc = FInside(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
+	      sc = IInside(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
 			   BE_PARANOID,	/* save full alpha so we can run outside */
-			   NULL, &alpha,	/* fill alpha, and return it, needed for FOutside() */
+			   NULL, &alpha,	/* fill alpha, and return it, needed for IOutside() */
 			   NULL, NULL,	/* manage your own deckpool, I don't want it */
 			   do_local);       /* TRUE to allow local begins */
-	      sc = FOutside(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
+	      sc = IOutside(cm, dsq[i], sqinfo[i].len, 1, sqinfo[i].len,
 			    BE_PARANOID,	/* save full beta */
 			    NULL, &beta,	/* fill beta, and return it, needed for CMPosterior() */
 			    NULL, NULL,	/* manage your own deckpool, I don't want it */
 			    do_local,       /* TRUE to allow local begins */
-			    alpha, &alpha,  /* alpha matrix from FInside(), and save it for CMPosterior*/
+			    alpha, &alpha,  /* alpha matrix from IInside(), and save it for CMPosterior*/
 			    do_check);      /* TRUE to check Outside probs agree with Inside */
-	      CMPosterior(sqinfo[i].len, cm, alpha, NULL, beta, NULL, post, &post);
-	      if(do_check)
+	      ICMPosterior(sqinfo[i].len, cm, alpha, NULL, beta, NULL, post, &post);
+	      if(do_check || TRUE)
 		{
-		  CMCheckPosterior(sqinfo[i].len, cm, post);
-		  printf("\nPosteriors checked.\n\n");
+		  ICMCheckPosterior(sqinfo[i].len, cm, post);
+		  printf("\nPosteriors checked (I).\n\n");
 		}
-	      postcode[i] = CMPostalCode(cm, sqinfo[i].len, post, tr[i]);
+	      postcode[i] = ICMPostalCode(cm, sqinfo[i].len, post, tr[i]);
+	      /*postcode[i] = CMPostalCode(cm, sqinfo[i].len, post, tr[i]);*/
 	    }
 
 	  /* free post */

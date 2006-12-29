@@ -1099,7 +1099,6 @@ alloc_jdbanded_vjd_yshadow_deck(int L, int i, int j, int jmin, int jmax, int *hd
       exit(1);
     }
 
-  SQD_DPRINTF3(("alloc_vjd_deck : %.4f\n", size_vjd_deck(L,i,j)));
   a = MallocOrDie(sizeof(float *) * (L+1));  /* always alloc 0..L rows, some of which are NULL */
   jfirst = ((i-1) > jmin) ? (i-1) : jmin;
   jlast = (j < jmax) ? j : jmax;
