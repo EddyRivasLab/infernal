@@ -1316,7 +1316,6 @@ void
 MarginalLeftOutsideExtend(CM_t *cm, char *dsq, BPA_t *root, int lbound, float dropoff_sc, float *total_sc, float *delta_sc, int *commit, int *complete)
 {
    int v,i,oldv;
-   int x;
    float tsc, esc;
    BPA_t *temp;
 
@@ -1453,7 +1452,6 @@ void
 MarginalRightOutsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dropoff_sc, float *total_sc, float *delta_sc, int *commit, int *complete)
 {
    int v,i,oldv;
-   int x;
    float tsc, esc;
    BPA_t *temp;
 
@@ -1539,7 +1537,7 @@ MarginalRightOutsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float d
             temp->left_child = root;
             root = temp;
             BPA_Init(root->right_child, cm->cfirst[v], i, -1, -1);
-            MarginalLeftInsideExtend(cm, dsq, root->right_child, lbound, dropoff_sc, total_sc, delta_sc, commit, complete);
+            MarginalLeftInsideExtend(cm, dsq, root->right_child, rbound, dropoff_sc, total_sc, delta_sc, commit, complete);
             if ( root->left_child->chunk->need_commit && *commit )
             {
                root->left_child->chunk->need_commit  = 0;
@@ -1555,6 +1553,405 @@ MarginalRightOutsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float d
                MarginalRightOutsideExtend(cm, dsq, root, rbound, dropoff_sc, total_sc, delta_sc, commit, complete);
             }
          }
+      }
+   }
+
+   return;
+}
+
+/* Function: InsideExtend()
+ * Author:   DLK
+ *
+ * Purpose:  A wrapper for generalized inside extension from a
+ *           double-stranded word hit.  Incorporates simultaneous
+ *           extension and marginal extension; calls itself 
+ *           recursively as needed.
+ *
+ * Args:     ...
+ *
+ */
+
+void InsideExtend(CM_t *cm, char *dsq, BPA_t *root, float dropoff_sc, float *total_sc, float *delta_sc, int *commit, int *complete)
+{
+   int i,j,d;
+   BPA_t *temp1, *temp2;
+   int lbound, rbound;
+   float t1_total_sc, t2_total_sc;
+   float t1_delta_sc, t2_delta_sc;
+   int t1_commit, t2_commit;
+   int t1_complete, t2_complete;
+
+   DoubleInsideExtend(cm, dsq, root, dropoff_sc, total_sc, delta_sc, commit, complete);
+   if (!(*complete))
+   {
+      if ( cm->sttype[root->chunk->cur_v] == B_st )
+      {
+         temp1 = BPA_Copy(root);
+         temp2 = BPA_Copy(root);
+         
+         BPA_Init(temp1->left_child, cm->cfirst[temp1->chunk->cur_v], temp1->chunk->cur_i, -1, -1);
+         rbound = temp1->chunk->cur_j;
+         t1_total_sc = *total_sc;
+         t1_delta_sc = 0.0;
+         t1_commit = 0;
+         t1_complete = 0;
+         MarginalLeftInsideExtend(cm, dsq, temp1->left_child, rbound, dropoff_sc, &t1_total_sc, &t1_delta_sc, &t1_commit, &t1_complete);
+         if ( t1_complete )
+         {
+            i = temp1->left_child->chunk->cur_i;
+            j = temp1->chunk->cur_j;
+            d = j-i+1;
+            BPA_Init(temp1->right_child, cm->cnum[temp1->chunk->cur_v], i, j, d);
+            InsideExtend(cm, dsq, temp1->right_child, dropoff_sc, &t1_total_sc, & t1_delta_sc, &t1_commit, &t1_complete);
+         }
+         else
+         {
+            BPA_Init(temp1->right_child, cm->cnum[temp1->chunk->cur_v], -1, temp1->chunk->cur_j, -1);
+            lbound = temp1->left_child->chunk->cur_i;
+            t1_delta_sc = 0.0;
+            t1_commit = 0;
+            t1_complete = 0;
+            MarginalRightInsideExtend(cm, dsq, temp1->right_child, lbound, dropoff_sc, &t1_total_sc, &t1_delta_sc, &t1_commit, &t1_complete);
+         }
+
+         BPA_Init(temp2->right_child, cm->cnum[temp2->chunk->cur_v], -1, temp2->chunk->cur_j, -1);
+         lbound = temp2->chunk->cur_i;
+         t2_total_sc = *total_sc;
+         t2_delta_sc = 0.0;
+         t2_commit = 0;
+         t2_complete = 0;
+         MarginalRightInsideExtend(cm, dsq, temp2->right_child, lbound, dropoff_sc, &t2_total_sc, &t2_delta_sc, &t2_commit, &t2_complete);
+         if ( t2_complete )
+         {
+            i = temp2->chunk->cur_i;
+            j = temp2->right_child->chunk->cur_j;
+            d = j-i+1;
+            BPA_Init(temp2->left_child, cm->cfirst[temp2->chunk->cur_v], i, j, d);
+            InsideExtend(cm, dsq, temp2->left_child, dropoff_sc, &t2_total_sc, &t2_delta_sc, &t2_commit, &t2_complete);
+         }
+         else
+         {
+            BPA_Init(temp2->left_child, cm->cfirst[temp2->chunk->cur_v], temp2->chunk->cur_i, -1, -1);
+            rbound = temp2->right_child->chunk->cur_j;
+            t2_delta_sc = 0.0;
+            t2_commit = 0;
+            t2_complete = 0;
+            MarginalLeftInsideExtend(cm, dsq, temp2->left_child, rbound, dropoff_sc, &t2_total_sc, &t2_delta_sc, &t2_commit, &t2_complete);
+         }
+
+         if ( t1_total_sc >= t2_total_sc )
+         {
+            root = BPA_Copy(temp1);
+            *total_sc = t1_total_sc;
+            *delta_sc = t1_delta_sc;
+            *commit = t1_commit;
+            *complete = t1_complete;
+         }
+         else
+         {
+            root = BPA_Copy(temp2);
+            *total_sc = t2_total_sc;
+            *delta_sc = t2_delta_sc;
+            *commit = t2_commit;
+            *complete = t2_complete;
+         }
+
+         BPA_Free(temp1);
+         BPA_Free(temp2);
+      }
+      else if ( (root->chunk->temp_v > root->chunk->cur_v) && (cm->sttype[root->chunk->temp_v] == B_st) )
+      {
+      /* This is the most complicated case.  Probably only marginal left or right inside extension
+       * will be appropriate, but we also want to test the cases as if the previous extension had 
+       * committed up to the bifurcation point.
+       */
+         temp1 = BPA_Copy(root);
+         temp2 = BPA_Copy(root);
+
+         rbound = temp1->chunk->cur_j;
+         t1_total_sc = *total_sc;
+         t1_delta_sc = 0.0;
+         t1_commit = 0;
+         t1_complete = 0;
+         MarginalLeftInsideExtend(cm, dsq, temp1, rbound, dropoff_sc, &t1_total_sc, &t1_delta_sc, &t1_commit, &t1_complete);
+
+         lbound = temp2->chunk->cur_i;
+         t2_total_sc = *total_sc;
+         t2_delta_sc = 0.0;
+         t2_commit = 0;
+         t2_complete = 0;
+         MarginalRightInsideExtend(cm, dsq, temp2, lbound, dropoff_sc, &t2_total_sc, &t2_delta_sc, &t2_commit, &t2_complete);
+
+         if ( t2_total_sc > t1_total_sc )
+         {
+            temp1 = BPA_Copy(temp2);
+            t1_total_sc = t2_total_sc;
+            t1_delta_sc = t2_delta_sc;
+            t1_commit = t2_commit;
+            t1_complete = t2_complete;
+         }
+
+         temp2 = BPA_Copy(root);
+         temp2->chunk->cur_v = temp2->chunk->temp_v;
+         temp2->chunk->cur_i = temp2->chunk->temp_i;
+         temp2->chunk->cur_j = temp2->chunk->temp_j;
+         temp2->chunk->cur_d = temp2->chunk->temp_d;
+         t2_total_sc = *total_sc + *delta_sc;
+         t2_delta_sc = 0.0;
+         t2_commit = 0;
+         t2_complete = 0;
+
+         BPA_Init(temp2->left_child, cm->cfirst[temp2->chunk->cur_v], temp2->chunk->cur_i, -1, -1);
+         rbound = temp2->chunk->cur_j;
+         t2_total_sc = *total_sc;
+         t2_delta_sc = 0.0;
+         t2_commit = 0;
+         t2_complete = 0;
+         MarginalLeftInsideExtend(cm, dsq, temp2->left_child, rbound, dropoff_sc, &t2_total_sc, &t2_delta_sc, &t2_commit, &t2_complete);
+         if ( t2_complete )
+         {
+            i = temp2->left_child->chunk->cur_i;
+            j = temp2->chunk->cur_j;
+            d = j-i+1;
+            BPA_Init(temp2->right_child, cm->cnum[temp2->chunk->cur_v], i, j, d);
+            InsideExtend(cm, dsq, temp2->right_child, dropoff_sc, &t2_total_sc, & t2_delta_sc, &t2_commit, &t2_complete);
+         }
+         else
+         {
+            BPA_Init(temp2->right_child, cm->cnum[temp2->chunk->cur_v], -1, temp2->chunk->cur_j, -1);
+            lbound = temp2->left_child->chunk->cur_i;
+            t2_delta_sc = 0.0;
+            t2_commit = 0;
+            t2_complete = 0;
+            MarginalRightInsideExtend(cm, dsq, temp2->right_child, lbound, dropoff_sc, &t2_total_sc, &t2_delta_sc, &t2_commit, &t2_complete);
+         }
+
+         if ( t2_total_sc > t1_total_sc )
+         {
+            temp1 = BPA_Copy(temp2);
+            t1_total_sc = t2_total_sc;
+            t1_delta_sc = t2_delta_sc;
+            t1_commit = t2_commit;
+            t1_complete = t2_complete;
+         }
+
+         temp2 = BPA_Copy(root);
+         temp2->chunk->cur_v = temp2->chunk->temp_v;
+         temp2->chunk->cur_i = temp2->chunk->temp_i;
+         temp2->chunk->cur_j = temp2->chunk->temp_j;
+         temp2->chunk->cur_d = temp2->chunk->temp_d;
+         t2_total_sc = *total_sc + *delta_sc;
+         t2_delta_sc = 0.0;
+         t2_commit = 0;
+         t2_complete = 0;
+
+         BPA_Init(temp2->right_child, cm->cnum[temp2->chunk->cur_v], -1, temp2->chunk->cur_j, -1);
+         lbound = temp2->chunk->cur_i;
+         t2_total_sc = *total_sc;
+         t2_delta_sc = 0.0;
+         t2_commit = 0;
+         t2_complete = 0;
+         MarginalRightInsideExtend(cm, dsq, temp2->right_child, lbound, dropoff_sc, &t2_total_sc, &t2_delta_sc, &t2_commit, &t2_complete);
+         if ( t2_complete )
+         {
+            i = temp2->chunk->cur_i;
+            j = temp2->right_child->chunk->cur_j;
+            d = j-i+1;
+            BPA_Init(temp2->left_child, cm->cfirst[temp2->chunk->cur_v], i, j, d);
+            InsideExtend(cm, dsq, temp2->left_child, dropoff_sc, &t2_total_sc, &t2_delta_sc, &t2_commit, &t2_complete);
+         }
+         else
+         {
+            BPA_Init(temp2->left_child, cm->cfirst[temp2->chunk->cur_v], temp2->chunk->cur_i, -1, -1);
+            rbound = temp2->right_child->chunk->cur_j;
+            t2_delta_sc = 0.0;
+            t2_commit = 0;
+            t2_complete = 0;
+            MarginalLeftInsideExtend(cm, dsq, temp2->left_child, rbound, dropoff_sc, &t2_total_sc, &t2_delta_sc, &t2_commit, &t2_complete);
+         }
+
+         if ( t1_total_sc >= t2_total_sc )
+         {
+            root = BPA_Copy(temp1);
+            *total_sc = t1_total_sc;
+            *delta_sc = t1_delta_sc;
+            *commit = t1_commit;
+            *complete = t1_complete;
+         }
+         else
+         {
+            root = BPA_Copy(temp2);
+            *total_sc = t2_total_sc;
+            *delta_sc = t2_delta_sc;
+            *commit = t2_commit;
+            *complete = t2_complete;
+         }
+
+         BPA_Free(temp1);
+         BPA_Free(temp2);
+      }
+      else
+      {
+         temp1 = BPA_Copy(root);
+         temp2 = BPA_Copy(root);
+
+         rbound = temp1->chunk->cur_j;
+         t1_total_sc = *total_sc;
+         t1_delta_sc = 0.0;
+         t1_commit = 0;
+         t1_complete = 0;
+         MarginalLeftInsideExtend(cm, dsq, temp1, rbound, dropoff_sc, &t1_total_sc, &t1_delta_sc, &t1_commit, &t1_complete);
+
+         lbound = temp2->chunk->cur_i;
+         t2_total_sc = *total_sc;
+         t2_delta_sc = 0.0;
+         t2_commit = 0;
+         t2_complete = 0;
+         MarginalRightInsideExtend(cm, dsq, temp2, lbound, dropoff_sc, &t2_total_sc, &t2_delta_sc, &t2_commit, &t2_complete);
+
+         if ( t1_total_sc >= t2_total_sc )
+         {
+            root = BPA_Copy(temp1);
+            *total_sc = t1_total_sc;
+            *delta_sc = t1_delta_sc;
+            *commit = t1_commit;
+            *complete = t1_complete;
+         }
+         else
+         {
+            root = BPA_Copy(temp2);
+            *total_sc = t2_total_sc;
+            *delta_sc = t2_delta_sc;
+            *commit = t2_commit;
+            *complete = t2_complete;
+         }
+
+         BPA_Free(temp1);
+         BPA_Free(temp2);
+      }
+   }
+
+   return;
+}
+
+
+/* Function: OutsideExtend()
+ * Author:   DLK
+ *
+ * Purpose:  A wrapper for generalized outside extension from a
+ *           double-stranded word hit.  Incorporates simultaneous
+ *           extension and marginal extension; calls itself 
+ *           recursively as needed.
+ *
+ * Args:     ...
+ *
+ */
+
+void OutsideExtend(CM_t *cm, char *dsq, BPA_t *root, int lbound, int rbound, float dropoff_sc, float *total_sc, float *delta_sc, int *commit, int *complete)
+{
+   int y;
+   BPA_t *temp1, *temp2;
+   float t1_total_sc, t2_total_sc;
+   float t1_delta_sc, t2_delta_sc;
+   int t1_commit, t2_commit;
+   int t1_complete, t2_complete;
+
+   DoubleOutsideExtend(cm, dsq, root, lbound, rbound, dropoff_sc, total_sc, delta_sc, commit, complete);
+   if (!complete)
+   {
+      if ( cm->sttype[root->chunk->init_v] == S_st )
+      {
+         y = cm->plast[root->chunk->init_v] - cm->pnum[root->chunk->init_v] + 1;
+         if ( cm->stid[y] == ROOT_S )
+         {
+            /* no action needed */
+         }
+         else if ( cm->stid[root->chunk->init_v] == BEGL_S )
+         {
+            temp1 = BPA_Copy(root);
+            BPA_Init(root, y, temp1->chunk->init_i, -1, -1);
+            root->left_child = temp1;
+            BPA_Init(root->right_child, cm->cnum[y], root->left_child->chunk->init_j, -1, -1);
+
+            MarginalLeftInsideExtend(cm, dsq, root->right_child, rbound, dropoff_sc, total_sc, delta_sc, commit, complete);
+            if (*complete)
+            {
+               /* need to transfer j value from right child to root.  will that be init_j, cur_j, or temp_j?
+                * also need to be absolutely clear about what we mean by 'complete' - here, I'd be assuming
+                * that the child is complete AND fully committed, which may not actually be what we want, and
+                * I think is not actually consistent with the usage in the Marginal Extend functions
+                */
+               OutsideExtend(cm, dsq, root, lbound, rbound, dropoff_sc, total_sc, delta_sc, commit, complete);
+            }
+            else
+            {
+               MarginalLeftOutsideExtend(cm, dsq, root, lbound, dropoff_sc, total_sc, delta_sc, commit, complete);
+            }
+         
+            temp1 = NULL;
+         }
+         else if ( cm->stid[root->chunk->init_v] == BEGR_S )
+         {
+            temp1 = BPA_Copy(root);
+            BPA_Init(root, y, -1, temp1->chunk->init_j, -1);
+            root->right_child = temp1;
+            BPA_Init(root->left_child, cm->cfirst[y], -1, root->right_child->chunk->init_i, -1);
+            
+            MarginalRightInsideExtend(cm, dsq, root->left_child, lbound, dropoff_sc, total_sc, delta_sc, commit, complete);
+            if (*complete)
+            {
+               OutsideExtend(cm, dsq, root, lbound, rbound, dropoff_sc, total_sc, delta_sc, commit, complete);
+            }
+            else
+            {
+               MarginalRightOutsideExtend(cm, dsq, root, rbound, dropoff_sc, total_sc, delta_sc, commit, complete);
+            }
+         }
+         else
+         {
+            /* Danger, danger!  How did we get here? */
+         }
+      }
+      else if ( (root->chunk->temp_v > 0) && (root->chunk->temp_v < root->chunk->init_v) && (cm->sttype[root->chunk->temp_v] == S_st) )
+      {
+         /* the complicated case... check both ways, as if we did or did not reach a start state */
+      }
+      else
+      {
+         temp1 = BPA_Copy(root);
+         temp2 = BPA_Copy(root);
+
+         t1_total_sc = *total_sc;
+         t1_delta_sc = 0.0;
+         t1_commit = 0;
+         t1_complete = 0;
+         MarginalLeftOutsideExtend(cm, dsq, root, lbound, dropoff_sc, total_sc, delta_sc, commit, complete);
+
+         t2_total_sc = *total_sc;
+         t2_delta_sc = 0.0;
+         t2_commit = 0;
+         t2_complete = 0;
+         MarginalRightOutsideExtend(cm, dsq, root, rbound, dropoff_sc, total_sc, delta_sc, commit, complete);
+
+         if ( t1_total_sc >= t2_total_sc )
+         {
+            root = BPA_Copy(temp1);
+            *total_sc = t1_total_sc;
+            *delta_sc = t1_delta_sc;
+            *commit = t1_commit;
+            *complete = t1_complete;
+         }
+         else
+         {
+            root = BPA_Copy(temp2);
+            *total_sc = t2_total_sc;
+            *delta_sc = t2_delta_sc;
+            *commit = t2_commit;
+            *complete = t2_complete;
+         }
+ 
+         BPA_Free(temp1);
+         BPA_Free(temp2);
       }
    }
 

@@ -70,5 +70,10 @@ PA_t* AstarExtension(CM_t *cm, char *dsq, int init_v, int init_j, int lower_d, i
 float LeftMarginalScore(float *esc, int dres);
 float RightMarginalScore(float *esc, int dres);
 void MarginalLeftInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dropoff_sc, float *total_sc, float *delta_sc, int *commit, int *complete);
+void MarginalRightInsideExtend(CM_t *cm, char *dsq, BPA_t *root, int lbound, float dropoff_sc, float *total_sc, float *delta_sc, int *commit, int *complete);
+void MarginalLeftOutsideExtend(CM_t *cm, char *dsq, BPA_t *root, int lbound, float dropoff_sc, float *total_sc, float *delta_sc, int *commit, int *complete);
+void MarginalRightOutsideExtend(CM_t *cm, char *dsq, BPA_t *root, int rbound, float dropoff_sc, float *total_sc, float *delta_sc, int *commit, int *complete);
 
+void InsideExtend(CM_t *cm, char *dsq, BPA_t *root, float dropoff_sc, float *total_sc, float *delta_sc, int *commit, int *complete);
+void OutsideExtend(CM_t *cm, char *dsq, BPA_t *root, int lbound, int rbound, float dropoff_sc, float *total_sc, float *delta_sc, int *commit, int *complete);
 #endif /* R_WHAT_H_INCLUDED */
