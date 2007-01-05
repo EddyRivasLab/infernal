@@ -554,6 +554,15 @@ typedef struct _seqs_to_aln_t {
   int index;                     /* the index of the first sq (sq[0]) in master structure */
 } seqs_to_aln_t;
 
+/* The integer log odds score deckpool for integer versions of 
+ * Inside and Outside, see cm_postprob.c */
+typedef struct Ideckpool_s {
+  int   ***pool;
+  int      n;
+  int      nalloc;
+  int      block;
+} Ideckpool_t;
+
 
 #define BUSY 1
 #define IDLE 0

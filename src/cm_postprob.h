@@ -76,7 +76,7 @@ extern char *ICMPostalCode_b_jd_me(CM_t *cm, int L, int ***post, Parsetree_t *tr
 /* And new memory management routines analogous to those in smallcyk.c for
  * handling scaled int log odds scores instead of floats. 
  */
-extern struct  Ideckpool_s *Ideckpool_create(void);
+extern Ideckpool_t *Ideckpool_create(void);
 extern void    Ideckpool_push(struct Ideckpool_s *dpool, int **deck);
 extern int     Ideckpool_pop(struct Ideckpool_s *d, int ***ret_deck);
 extern void    Ideckpool_free(struct Ideckpool_s *d);

@@ -383,7 +383,7 @@ FInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 float
 IInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
        int   ***alpha, int   ****ret_alpha, 
-       struct Ideckpool_s *dpool, struct Ideckpool_s **ret_dpool,
+       Ideckpool_t *dpool, Ideckpool_t **ret_dpool,
        int allow_begin)
 {
   int    **end;         /* we re-use the end deck. */
@@ -1106,7 +1106,7 @@ FOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 float
 IOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 	 int   ***beta, int   ****ret_beta, 
-	 struct Ideckpool_s *dpool, struct Ideckpool_s **ret_dpool,
+	 Ideckpool_t *dpool, Ideckpool_t **ret_dpool,
 	 int allow_begin, int   ***alpha, int   ****ret_alpha, 
 	 int do_check)
 {
@@ -2498,7 +2498,7 @@ FInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 float 
 IInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 		int   ***alpha, int   ****ret_alpha, 
-		struct Ideckpool_s *dpool, struct Ideckpool_s **ret_dpool,
+		Ideckpool_t *dpool, Ideckpool_t **ret_dpool,
 		int allow_begin, int *jmin, int *jmax, int **hdmin, int **hdmax)
 {
   int    **end;         /* we re-use the end deck. */
@@ -3606,7 +3606,7 @@ FOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 float 
 IOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 		 int   ***beta, int   ****ret_beta, 
-		 struct Ideckpool_s *dpool, struct Ideckpool_s **ret_dpool,
+		 Ideckpool_t *dpool, Ideckpool_t **ret_dpool,
 		 int allow_begin, int   ***alpha, int   ****ret_alpha, 
 		 int do_check, int *jmin, int *jmax, int **hdmin, int **hdmax)
 {
@@ -4459,17 +4459,10 @@ ICMPostalCode_b_jd_me(CM_t *cm, int L, int ***post, Parsetree_t *tr,
 }
 
 /*################################################################*/
-/* Integer versions of functions and structures necessary for implementation
+/* Integer versions of functions necessary for implementation
  * of cm_postprob.c functions using scaled integer log odds scores. Copied
  * and minimally changed from smallcyk.c.
  */
-
-struct Ideckpool_s {
-  int   ***pool;
-  int      n;
-  int      nalloc;
-  int      block;
-};
 
 /*################################################################*/
 /* Functions: Ideckpool_*()
@@ -4490,12 +4483,12 @@ struct Ideckpool_s {
  *            and subseq variants, because it's simply managing
  *            a deck as a float **.
  */
-struct Ideckpool_s *
+Ideckpool_t *
 Ideckpool_create(void)
 {
-  struct Ideckpool_s *dpool;
+  Ideckpool_t *dpool;
 
-  dpool = MallocOrDie(sizeof(struct Ideckpool_s));
+  dpool = MallocOrDie(sizeof(Ideckpool_t));
   dpool->block  = 10;		/* configurable if you want */
   dpool->pool   = MallocOrDie(sizeof(int **) * dpool->block);
   dpool->nalloc = dpool->block;
@@ -4503,7 +4496,7 @@ Ideckpool_create(void)
   return dpool;
 }
 void 
-Ideckpool_push(struct Ideckpool_s *dpool, int **deck)
+Ideckpool_push(Ideckpool_t *dpool, int **deck)
 {
   if (dpool->n == dpool->nalloc) {
     dpool->nalloc += dpool->block;
@@ -4514,7 +4507,7 @@ Ideckpool_push(struct Ideckpool_s *dpool, int **deck)
   SQD_DPRINTF3(("Ideckpool_push\n"));
 }
 int
-Ideckpool_pop(struct Ideckpool_s *d, int ***ret_deck)
+Ideckpool_pop(Ideckpool_t *d, int ***ret_deck)
 {
   if (d->n == 0) { *ret_deck = NULL; return 0;}
   d->n--;
@@ -4523,7 +4516,7 @@ Ideckpool_pop(struct Ideckpool_s *d, int ***ret_deck)
   return 1;
 }
 void
-Ideckpool_free(struct Ideckpool_s *d)
+Ideckpool_free(Ideckpool_t *d)
 {
   free(d->pool);
   free(d);
