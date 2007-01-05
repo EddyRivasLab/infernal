@@ -31,7 +31,7 @@ BandExperiment(CM_t *cm)
   int *dmin, *dmax;
 
   W = 1000;
-  while (! BandCalculationEngine(cm, W, 0.00001, FALSE, &dmin, &dmax, NULL, FALSE))
+  while (! BandCalculationEngine(cm, W, 0.00001, FALSE, &dmin, &dmax, NULL))
     {
       W += 1000;
       SQD_DPRINTF1(("increasing W to %d, redoing band calculation...\n", W));
@@ -96,8 +96,6 @@ BandExperiment(CM_t *cm)
  *                        Pass NULL if you don't want dmax back.
  *            ret_gamma - RETURN: gamma[v][n], [0..M-1][0..W], is the prob
  *                        density Prob(length=n | parse subtree rooted at v).
- *            do_local  - TRUE to factor in possibility of jumping from root
- *                        to any consensus state (see EPN for changes)
  *
  * Returns:   1 on success.
  *            0 if W was too small; caller needs to increase W and
@@ -114,8 +112,7 @@ BandExperiment(CM_t *cm)
  */
 int
 BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
-		      int **ret_dmin, int **ret_dmax, double ***ret_gamma,
-		      int do_local)
+		      int **ret_dmin, int **ret_dmax, double ***ret_gamma)
 {
   double **gamma;               /* P(length = n) for each state v            */
   double  *tmp;
@@ -138,7 +135,7 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
    * impossible for the band calculation than make them
    * possible again before exiting this function.
    */
-  if(do_local)
+  if(cm->opts & CM_CONFIG_LOCAL)
     ConfigNoLocalEnds(cm);
   
   /* gamma[v][n] is Prob(state v generates subseq of length n)
@@ -208,7 +205,7 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
 	    }
 	}
       /*EPN 11.11.05 adding following else if () to handle local begins*/
-      else if (do_local && v == 0) /*state 0 is the one and only ROOT_S state*/
+      else if ((cm->opts & CM_CONFIG_LOCAL) && v == 0) /*state 0 is the one and only ROOT_S state*/
 	{
 	  pdf = 0.;
 	  for (n = 0; n <= W; n++)
@@ -304,7 +301,7 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
        * to enforce this, we (hackishly) just don't reuse beams. Although
        * we could just save the match state beams...
        */
-      if ((! save_densities) && (! do_local)) {
+      if ((! save_densities) && (! (cm->opts & CM_CONFIG_LOCAL))) {
 	if (cm->sttype[v] == B_st)
 	  {  /* connected children of a B st are handled specially, remember */
 	    y = cm->cfirst[v]; PushMstack(beamstack, gamma[y]); gamma[y] = NULL;
@@ -339,7 +336,7 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
   /* If we're in local mode, we set all local ends to impossible at
    * the beginning of this function, we set them back here.
    */
-  if(do_local)
+  if(cm->flags & CM_CONFIG_LOCAL)
     ConfigLocalEnds(cm, 0.5);
 
   if (! BandTruncationNegligible(gamma[0], dmax[0], W, NULL)) 

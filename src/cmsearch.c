@@ -60,10 +60,9 @@ Usage: cmsearch [-options] <cmfile> <sequence file>\n\
 The sequence file is expected to be in FASTA format.\n\
   Available options are:\n\
    -h     : help; print brief help on version and usage\n\
-   -s <f> : use cutoff bit score of <f> [default: 0]\n\
    -E <f> : use cutoff E-value of <f> (default ignored; not-calc'ed)\n\
+   -s <f> : use cutoff bit score of <f> [default: 0]\n\
    -n <n> : determine EVD with <n> samples (default with -E: 1000)\n\
-   -W <n> : set scanning window size to <n> (default: precalc'd in cmbuild)\n\
 ";
 
 static char experts[] = "\
@@ -72,6 +71,7 @@ static char experts[] = "\
    --toponly     : only search the top strand\n\
    --local       : do local alignment\n\
    --noalign     : find start/stop only; don't do alignments\n\
+   --window <n>  : set scanning window size to <n> (default: precalc'd in cmbuild)\n\
    --dumptrees   : dump verbose parse tree information for each hit\n\
    --partition <n>[,<n>]... : partition points for different GC content EVDs\n\
    --inside      : scan with Inside, not CYK (caution much slower(!))\n\
@@ -79,7 +79,7 @@ static char experts[] = "\
    --learninserts: do not set insert emission scores to 0\n\
    --negscore <f>: set min bit score to report as <f> < 0 (experimental)\n\
    --enfstart <n>: enforce MATL stretch starting at CM node <n>\n\
-   --enfseq   <s>: enforce MATL stretch starting at --enfstart <n> emits seq <s>\n\
+   --enfseq <s>  : enforce MATL stretch starting at --enfstart <n> emits seq <s>\n\
 \n\
   * Filtering options using a CM plan 9 HMM (*in development*):\n\
    --hmmfb        : use Forward to get end points & Backward to get start points\n\
@@ -104,12 +104,12 @@ static struct opt_s OPTIONS[] = {
   { "-s", TRUE, sqdARG_FLOAT }, 
   { "-E", TRUE, sqdARG_FLOAT }, 
   { "-n", TRUE, sqdARG_INT }, 
-  { "-W", TRUE, sqdARG_INT }, 
   { "--dumptrees",  FALSE, sqdARG_NONE },
   { "--informat",   FALSE, sqdARG_STRING },
   { "--local",      FALSE, sqdARG_NONE },
   { "--noalign",    FALSE, sqdARG_NONE },
   { "--toponly",    FALSE, sqdARG_NONE },
+  { "--window",     FALSE, sqdARG_INT }, 
   { "--inside",     FALSE, sqdARG_NONE },
   { "--null2",      FALSE, sqdARG_NONE },
   { "--learninserts",FALSE, sqdARG_NONE},
@@ -136,84 +136,92 @@ static struct opt_s OPTIONS[] = {
 int
 main(int argc, char **argv)
 {
-  char            *cmfile;      /* file to read CM from */	
-  char            *seqfile;     /* file to read sequences from */
-  int              format = eslSQFILE_UNKNOWN;   /* format of sequence file */
-  int              status;
-  CMFILE          *cmfp;        /* open CM file for reading */
-  int             querylen;     /* consensus length of the CM query */
-  ESL_SQFILE	  *dbfp;        /* open seqfile for reading */
-  CM_t            *cm;          /* a covariance model       */
-  ESL_SQ           *sq;
-  char            *dsq;         /* digitized RNA sequence */
-  Stopwatch_t     *watch;       /* times band calc, then search time */
-  int              i, ip;
-  int              reversed;    /* TRUE when we're doing the reverse complement strand */
-  int              maxlen;
-  Parsetree_t     *tr;		/* parse of an individual hit */
+  char            *cmfile;      /* file to read CM from                     */	
+  CMFILE          *cmfp;        /* open CM file for reading                 */
+  char            *seqfile;     /* file to read sequences from              */
+  int              format;      /* format of sequence file                  */
+  int              status;      /* status of the sequence file              */
+  char            *optname;     /* name of option found by Getopt()         */
+  char            *optarg;      /* argument found by Getopt()               */
+  int              optind;      /* index in argv[]                          */
+  int              querylen;    /* consensus length of the CM query         */
+  ESL_SQFILE	  *dbfp;        /* open seqfile for reading                 */
+  CM_t            *cm;          /* a covariance model                       */
+  ESL_SQ          *sq;          /* the target database seqs to search       */
+  char            *dsq;         /* digitized RNA sequence                   */
+  Stopwatch_t     *watch;       /* times band calc, then search time        */
+  int              i, ip;       /* counters                                 */
+  int              reversed;    /* TRUE if working on reverse comp strand   */
+  int              maxlen;      /* length of longest db sequence            */
+  Parsetree_t     *tr;		/* parse of an individual hit               */
   CMConsensus_t   *cons;	/* precalculated consensus info for display */
-  Fancyali_t      *ali;         /* alignment, formatted for display */
+  Fancyali_t      *ali;         /* alignment, formatted for display         */
 
-  double  **gamma;              /* P(subseq length = n) for each state v    */
-  int     *dmin = NULL;		/* minimum d bound for state v, [0..v..M-1] */
-  int     *dmax = NULL; 	/* maximum d bound for state v, [0..v..M-1] */
-  double   beta;		/* tail loss probability for a priori banding */
+  double            beta;       /* tail loss prob for query dependent bands */
 
-  /* information on hits found with the CM */
-  int    nhits;			/* number of hits in a seq */
-  int   *hitr;			/* initial states for hits */
-  int   *hiti;                  /* start positions of hits */
-  int   *hitj;                  /* end positions of hits */
-  float *hitsc;			/* scores of hits */
+  int             *preset_dmin; /* if --qdbfile, dmins read from file       */
+  int             *preset_dmax; /* if --qdbfile, dmaxs read from file       */
+  int              do_revcomp;  /* true to do reverse complement also       */
+  int              do_local;    /* TRUE to do local alignment               */
+  int              do_align;    /* TRUE to calculate and show alignments    */
+  int              do_dumptrees;/* TRUE to dump parse trees                 */
+  int              do_qdb;      /* TRUE to do query dependent banded CYK    */
+  int              read_qdb;    /* TRUE to read QDBs from cmbuild file      */
+  char            *qdb_file;    /* cmbuild output file to read QDBs from    */
+  FILE            *qdb_fp;      /* the open qdb_file                        */
+  int              do_bdump;    /* TRUE to print out bands                  */
+  int              set_window;  /* TRUE to set window len b/c of -W option  */
+  int              set_W;	/* W set at command line, only works --noqdb*/
+  int              safe_W;	/* safe windowlen used for calc'ing bands   */
+  int              seed;        /* Random seed                              */
+  float       score_boost = 0.0;/* value added to CYK bit scores, allows    *
+				 * hits > (-1 * score_boost) (EXPERIMENTAL) */
 
-  /* information on hits found with the CP9 HMM derived from the CM */
-  int    hmm_nhits;		/* number of hits in a seq */
-  int   *hmm_hitr;		/* initial states for hits */
-  int   *hmm_hiti;              /* start positions of hits */
-  int   *hmm_hitj;              /* end positions of hits */
-  float *hmm_hitsc;		/* scores of hits */
-
-  /* temp info on hits found within a CYKBandedScan_jd() call 
-   * these are copied to the 'master' hit* structures, free'd
-   * and reallocated as nec
+  /* E-value statistics (ported from rsearch-1.1). 
+   * Some variables set to a value as they're defined to ease 
+   * MPI implementation. 
    */
-  int    tmp_nhits;		 /* number of hits in a seq */
-  int   *tmp_hitr;		 /* initial states for hits */
-  int   *tmp_hiti;               /* start positions of hits */
-  int   *tmp_hitj;               /* end positions of hits */
-  float *tmp_hitsc;		 /* scores of hits */
+  int do_stats;                 /* TRUE to calculate E-value statistics     */
+  int sample_length= 0;         /* sample len used for calc'ing stats (2*W) */
+  int num_samples;              /* # samples used to calculate EVDs         */
+  int cutoff_type;              /* E_CUTOFF or SCORE_CUTOFF                 */
+  float sc_cutoff;              /* min bit score to report                  */
+  float e_cutoff;               /* max E value to report                    */
+  float cutoff;                 /* either E-value cutoff or bit score cutoff*/
+  float e_value;                /* current E-value                          */
+  double lambda[GC_SEGMENTS];   /* lambda for EVDs, one for each GC seg     */
+  double K[GC_SEGMENTS];        /* K for EVDs, one for each GC seg          */
+  double mu[GC_SEGMENTS];       /* mu for EVDs, Set from lambda, K, N       */
+  long N;                       /* effective number of seqs for this search */
+  float W_scale = 2.0;          /* W_scale * W= sample_length               */
+  int defined_N = FALSE;        /* TRUE if N set at command length          */
+  int do_partitions;            /* TRUE if --partition enabled              */
+  int *partitions;              /* partition each GC % point seg goes to    */
+  int num_partitions = 1;       /* number of partitions                     */
+  int *gc_ct;                   /* gc_ct[x] observed 100-nt segs in DB with *
+				 * GC% of x [0..100]                        */
+  int gc_comp;                  /* current GC%                              */
 
-  int    W;   		        /* maximum len of hit; scanning window size */
-  int    do_revcomp;		/* true to do reverse complement too */
-  int    do_local;		/* TRUE to do local alignment */
-  int    do_align;              /* TRUE to calculate and show alignments */
-  int    do_dumptrees;		/* TRUE to dump parse trees */
-  int    do_qdb=0;		/* TRUE to do a priori banded CYK */
-  int    read_qdb;		/* TRUE to read QDBs from a cmbuild outputted file */
-  char  *qdb_file;              /* file to read QDBs from (output from cmbuild) */
-  FILE  *qdb_fp;
-  int    do_projectx;           /* TRUE to activate special in-progress testing code */
-  int    do_bdump;              /* TRUE to print out bands */
-  /*EPN 08.18.05*/
-  int    set_window;            /* TRUE to set window length due to -W option*/
-
-  char *optname;                /* name of option found by Getopt()        */
-  char *optarg;                 /* argument found by Getopt()              */
-  int   optind;                 /* index in argv[]                         */
-  int      safe_windowlen;	/* initial windowlen (W) used for calc'ing bands */
+  /* The enforce option (--enfstart and --enfseq), added specifically for   *
+   * enforcing the template region for telomerase RNA searches              */
+  int   do_enforce;             /* TRUE to enforce a MATL stretch is used   */
+  int   enf_start;              /* first MATL node to enforce each parse use*/
+  int   enf_end;                /* last  MATL node to enforce each parse use*/
+  char *enf_seq;                /* the subsequence to enforce emitted by    *
+                                 * in nodes from enf_start to enf_end       */
 
   /* CM Plan 9 HMM data structures */
-  struct cplan9_s       *cp9_hmm;       /* constructed CP9 HMM; written to hmmfile              */
-  CP9Map_t              *cp9map;        /* maps the hmm to the cm and vice versa                */
-  /*struct cp9_dpmatrix_s *cp9_mx;*/        /* growable DP matrix for viterbi                       */
-  struct cp9_dpmatrix_s *cp9_fwd;       /* growable DP matrix for forward                       */
-  struct cp9_dpmatrix_s *cp9_bck;       /* growable DP matrix for backward                      */
-  struct cp9_dpmatrix_s *cp9_posterior; /* growable DP matrix for posterior decode              */
-  float                  swentry;	/* S/W aggregate entry probability       */
-  float                  swexit;        /* S/W aggregate exit probability        */
-  float                  fwd_sc;        /* score for Forward() run */
-  float                  fb_sc;         /* score from Forward or Backward */
-  float                  sc;            /* score from CYK */
+  CP9_t           *cp9_hmm;     /* CP9 HMM constructed from the CM          */
+  CP9Map_t        *cp9map;      /* maps the hmm to the cm and vice versa    */
+  /*CP9_dpmatrix_t *cp9_mx;*/   /* growable DP matrix for viterbi           */
+  CP9_dpmatrix_t  *cp9_fwd;     /* growable DP matrix for forward           */
+  CP9_dpmatrix_t  *cp9_bck;     /* growable DP matrix for backward          */
+  CP9_dpmatrix_t  *cp9_post;    /* growable DP matrix for posterior decode  */
+  float            swentry;	/* S/W aggregate entry probability          */
+  float            swexit;      /* S/W aggregate exit probability           */
+  float            fwd_sc;      /* score for Forward() run                  */
+  float            fb_sc;       /* score from Forward or Backward           */
+  float            sc;          /* score from CYK                           */
 
   /* HMMERNAL!: hmm banded alignment data structures */
   CP9Bands_t *cp9b;             /* data structure for hmm bands (bands on the hmm states) 
@@ -248,39 +256,34 @@ main(int argc, char **argv)
   int   do_null2;		/* TRUE to adjust scores with null model #2 */
   int   do_zero_inserts;        /* TRUE to zero insert emission scores */
 
-  /* The enforce option (--enfstart and --enfseq), added specifically for enforcing the template 
-   * region for telomerase RNA searches */
-  int   do_enforce = FALSE;     /* TRUE to read .enforce file and enforce MATL stretch */
-  int   enf_start = 0;          /* if (do_enforce), first MATL node to enforce each parse enter */
-  int   enf_end = 0;            /* if (do_enforce), last  MATL node to enforce each parse enter */
-  char *enf_seq = NULL;         /* if (do_enforce), the subsequence to enforce in nodes from enf_start to 
-				 * enf_end */
   int   nd;
 
-  /* E-value statistics (ported from rsearch-1.1) */
-  int sample_length= 0;         /* length of samples to use for calc'ing stats (2*W) */
-  int num_samples;              /* number of samples to use to calculate EVDs */
-  int cutoff_type;              /* either E_CUTOFF for e-values or SCORE_CUTOFF for bit scores */
-  float sc_cutoff;              /* bit score cutoff, min bit score to report */
-  float e_cutoff;               /* E-value cutoff, min E value to report */
-  float cutoff;                 /* either E-value cutoff or bit score cutoff */
-  float e_value;                
-  int do_stats;                 /* TRUE to calculate E-value statistics */
-  double lambda[GC_SEGMENTS];
-  double K[GC_SEGMENTS];
-  double mu[GC_SEGMENTS];       /* Set from lambda, K, N */
-  int seed;                     /* Random seed */
-  float score_boost = 0.0;      /* add this value to CYK scores to try to return negative scoring
-				 * hits above -1 * score_boost (experimental) */
-  long N;                        /* Effective number of sequences for this search */
-  float W_scale = 2.0;           /* scale we'll multiply W by to get sample_length */
-  int defined_N = FALSE;
+  /* TO REMOVE */
+  /* information on hits found with the CM */
+  int    nhits;			/* number of hits in a seq */
+  int   *hitr;			/* initial states for hits */
+  int   *hiti;                  /* start positions of hits */
+  int   *hitj;                  /* end positions of hits */
+  float *hitsc;			/* scores of hits */
 
-  int do_partitions;            /* TRUE if --partition enabled */
-  int *partitions;              /* What partition each percentage point goes to */
-  int num_partitions = 1;
-  int *gc_ct;                   /* gc_ct[x] observed 100-nt segs in DB with GC% of x [0..100] */
-  int gc_comp; 
+  /* information on hits found with the CP9 HMM derived from the CM */
+  int    hmm_nhits;		/* number of hits in a seq */
+  int   *hmm_hitr;		/* initial states for hits */
+  int   *hmm_hiti;              /* start positions of hits */
+  int   *hmm_hitj;              /* end positions of hits */
+  float *hmm_hitsc;		/* scores of hits */
+
+  /* temp info on hits found within a CYKBandedScan_jd() call 
+   * these are copied to the 'master' hit* structures, free'd
+   * and reallocated as nec
+   */
+  int    tmp_nhits;		 /* number of hits in a seq */
+  int   *tmp_hitr;		 /* initial states for hits */
+  int   *tmp_hiti;               /* start positions of hits */
+  int   *tmp_hitj;               /* end positions of hits */
+  float *tmp_hitsc;		 /* scores of hits */
+  /* END OF TO_REMOVE */
+
 #ifdef USE_MPI
   int mpi_my_rank;              /* My rank in MPI */
   int mpi_num_procs;            /* Total number of processes */
@@ -310,9 +313,7 @@ main(int argc, char **argv)
   /*********************************************** 
    * Parse command line
    ***********************************************/
-
   format            = SQFILE_UNKNOWN;
-  set_window        = FALSE;
   do_revcomp        = TRUE;
   do_local          = FALSE;
   do_align          = TRUE;
@@ -322,10 +323,10 @@ main(int argc, char **argv)
   qdb_file          = NULL;
   qdb_fp            = NULL;
   beta              = 0.0000001;
-  do_projectx       = FALSE;
   do_bdump          = FALSE;
   do_hmmonly        = FALSE;
   do_filter         = FALSE;
+  set_window        = FALSE;
   filter_fb         = FALSE;
   filter_weinberg   = FALSE;
   do_inside         = FALSE;
@@ -355,8 +356,8 @@ main(int argc, char **argv)
                 &optind, &optname, &optarg))  {
     if       (strcmp(optname, "-W")          == 0) 
       { 
-	W    = atoi(optarg); set_window = TRUE; 
-	if(W < 2) Die("-W <f>, W must be at least 2.\n");
+	set_W = atoi(optarg); set_window = TRUE; 
+	if(set_W < 2) Die("-W <f>, W must be at least 2.\n");
       }
     else if       (strcmp(optname, "-s")          == 0) 
       { 
@@ -421,6 +422,7 @@ main(int argc, char **argv)
     }
   }
 
+  /* Check for incompatible option combos. */
   if(do_bdump && !do_qdb)
     Die("The --banddump option is incompatible with the --noqdb option.\n");
   if(num_samples != 0 && !do_stats)
@@ -429,6 +431,26 @@ main(int argc, char **argv)
     Die("--enfstart only makes sense with --enfseq also.\n");
   if(do_enforce && enf_start == 0)
     Die("--enfseq only makes sense with --enfstart (which can't be 0) also.\n");
+  if(do_qdb && do_hbanded) 
+    Die("Can't do --qdb and --hbanded. Pick one.\n");
+  if (do_scan2hbands && !(do_hbanded))
+    Die("Can't pick --scan2hbands without --hbanded option.\n");
+  if (do_hbanded && !(do_filter))
+    Die("Can't pick --hbanded without --hmmfb or --hmmweinberg filtering option.\n");
+  if (read_qdb && !(do_qdb))
+    Die("--qdbfile and --noqdb don't make sense together.\n");
+  if (score_boost < 0)
+    Die("for --negscore <f>, <f> must be negative.\n");
+  if (score_boost != 0. && do_stats)
+    Die("--negscore and -E combination not supported.\n");
+  if(do_bdump && !(do_qdb))
+    Die("--banddump and --noqdb combination not supported.\n");
+  if(set_window && do_qdb)
+    Die("--window only works with --noqdb.\n");
+#if USE_MPI
+  if(read_qdb && (mpi_num_procs > 1))
+    Die("Sorry, you can't read in bands with --qdbfile in MPI mode.\n");
+#endif
 
   if (argc - optind != 2) Die("Incorrect number of arguments.\n%s\n", usage);
   cmfile = argv[optind++];
@@ -455,10 +477,10 @@ main(int argc, char **argv)
       for (i = 0; i < GC_SEGMENTS; i++) 
 	partitions[i] = 0;
     }
-  /*********************************************** 
-   * Preliminaries: open our files for i/o; get a CM
-   ***********************************************/
-
+  /**************************************************
+   * Preliminaries: open our files for i/o; get a CM.
+   * We configure the CM with ConfigCM() later.
+   ************************************************/
   watch = StopwatchCreate();
 
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
@@ -468,157 +490,81 @@ main(int argc, char **argv)
     Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
   if (cm == NULL) 
     Die("%s empty?\n", cmfile);
+ 
+  cm->beta   = beta;
+  cm->hbandp = hbandp;
+  if (set_window) cm->W = set_W;
 
-  if(do_qdb && do_hbanded) 
-    Die("Can't do --qdb and --hbanded. Pick one.\n");
-  if (do_scan2hbands && !(do_hbanded))
-    Die("Can't pick --scan2hbands without --hbanded option.\n");
-  if (do_hbanded && !(do_filter))
-    Die("Can't pick --hbanded without --hmmfb or --hmmweinberg filtering option.\n");
-  if (read_qdb && !(do_qdb))
-    Die("--qdbfile and --noqdb don't make sense together.\n");
-  if (score_boost < 0)
-    Die("for --negscore <f>, <f> must be negative.\n");
-  if (score_boost != 0. && do_stats)
-    Die("--negscore and -E combination not yet implemented.\n");
+  /* Update cm->opts based on command line options */
+  if(do_local)        cm->opts |= CM_CONFIG_LOCAL;
+  if(do_zero_inserts) cm->opts |= CM_CONFIG_ZEROINSERTS;
+  if(!(do_qdb))       cm->opts |= CM_SEARCH_NOQDB;
+  if(do_hmmonly)      cm->opts |= CM_SEARCH_HMMONLY;
+  if(filter_fb)       cm->opts |= CM_SEARCH_HMMFB;
+  if(filter_weinberg) cm->opts |= CM_SEARCH_HMMWEINBERG;
+  if(do_scan2hbands)  cm->opts |= CM_SEARCH_SCANBANDS;
+  if(use_sums)        cm->opts |= CM_SEARCH_SUMS;
+  if(do_inside)       cm->opts |= CM_SEARCH_INSIDE;
+  if(!do_revcomp)     cm->opts |= CM_SEARCH_TOPONLY;
+  if(!do_align)       cm->opts |= CM_SEARCH_NOALIGN;
+  if(do_null2)        cm->opts |= CM_SEARCH_NULL2;
+  if(do_stats)        cm->opts |= CM_SEARCH_STATS;
 
+  if(do_enforce)
+    {
+      cm->opts |= CM_CONFIG_ENFORCE;
+      cm->enf_start = enf_start; 
+      cm->enf_seq   = enf_seq;
+    }
+  cm->score_boost = score_boost;
+  
+  cons = CreateCMConsensus(cm, 3.0, 1.0); 
+  querylen = cons->clen;
+  
+  if(read_qdb)
+    {
+      /* read the bands from a file */
+      if ((qdb_fp = fopen(qdb_file, "r")) == NULL)
+	Die("failed to open QDB file %s", qdb_file);
+      if(!(QDBFileRead(qdb_fp, cm, &preset_dmin, &preset_dmax)))
+	{
+	  Die("ERROR reading QDB file: %s.\nDoes it correspond (same number of states) to this model?\n", qdb_file);
+	}
+      fclose(qdb_fp);
+    }
+  else
+    preset_dmin = preset_dmax = NULL;
+  
   /* Open the sequence (db) file */
   status = esl_sqfile_Open(seqfile, format, NULL, &dbfp);
   if (status == eslENOTFOUND) esl_fatal("No such file."); 
   else if (status == eslEFORMAT) esl_fatal("Format unrecognized."); 
   else if (status == eslEINVAL) esl_fatal("Can’t autodetect stdin or .gz."); 
   else if (status != eslOK) esl_fatal("Failed to open sequence database file, code %d.", status); 
-
-  /* EPN 08.18.05 */
-  if (! (set_window)) W = cm->W;
-  /*printf("***cm->W : %d***\n", cm->W);*/
-
-  if (hmm_pad >= (W/2)) 
-    Die("Value for --hmmpad is too high (must be less than W/2=%d).\n", (int) (W/2));
-
-  CMLogoddsify(cm);
-  if(do_zero_inserts)
-    CMHackInsertScores(cm);	/* "TEMPORARY" fix for bad priors */
-      
-  if(do_enforce)
-    {
-      cm->align_flags |= CM_ALIGN_ENFORCE;
-      cm->enf_start = enf_start; 
-      cm->enf_seq   = enf_seq;
-    }
-
-  cons = CreateCMConsensus(cm, 3.0, 1.0); 
-  querylen = cons->clen;
-
-  if (do_filter || do_hmmonly || do_hbanded)
-    {
-      /* build a CM Plan 9 HMM, and use it to scan. */
-      if(!build_cp9_hmm(cm, &cp9_hmm, &cp9map, FALSE, 0.0001, debug_level))
-	Die("Couldn't build a CP9 HMM from the CM\n");
-      /*debug_print_cp9_params(cp9_hmm); */
-    }
-  if(do_hbanded)
-    cp9b = AllocCP9Bands(cm, cp9_hmm);
   
-  /* Relocated ConfigLocal() call to here, AFTER the CM Plan 9 construction.
-   * Otherwise its impossible to make a CM Plan 9 HMM from the local CM
-   * that passes the current tests to ensure the HMM is "close enough" to
-   * the CM. 
-   */
-  if (do_local)
-    { 
-      if(do_enforce)
-	ConfigLocalEnforce(cm, 0.5, 0.5);
-      else
-	ConfigLocal(cm, 0.5, 0.5);
-
-      if(do_zero_inserts)
-	CMHackInsertScores(cm);	/* "TEMPORARY" fix for bad priors */
-      if(do_filter || do_hmmonly || do_hbanded)
-	{
-	  printf("configuring the CM plan 9 HMM for local alignment.\n");
-	  swentry           = 0.5;
-	  swexit            = 0.5;
-	  CPlan9SWConfig(cp9_hmm, swentry, swexit);
-	  CP9Logoddsify(cp9_hmm);
-	}
-    }
-
-  if (do_qdb || do_bdump)
-    {
-      /*StopwatchZero(watch);
-	StopwatchStart(watch);*/
-      if(read_qdb)
-	{
-	  /* read the bands from a file */
-	  if ((qdb_fp = fopen(qdb_file, "r")) == NULL)
-	    Die("failed to open QDB file %s", qdb_file);
-	  if(!(QDBFileRead(qdb_fp, cm, &dmin, &dmax)))
-	    {
-	      Die("ERROR reading QDB file: %s.\nDoes it correspond (same number of states) to this model?\n", qdb_file);
-	    }
-	  fclose(qdb_fp);
-	}
-      else /* calculate the bands */
-	{
-	  /* start stopwatch for timing the band calculation */
-	  safe_windowlen = W * 2;
-	  while(!(BandCalculationEngine(cm, safe_windowlen, beta, 0, &dmin, &dmax, &gamma, do_local)))
-	    {
-	      /*Die("BandCalculationEngine() failed.\n");*/
-	      FreeBandDensities(cm, gamma);
-	      free(dmin);
-	      free(dmax);
-	      safe_windowlen *= 2;
-	      /*printf("ERROR BandCalculationEngine returned false, windowlen adjusted to %d\n", safe_windowlen);*/
-	    }
-	  /* If we're enforcing a subsequence, we need to reenforce it b/c BandCalculationEngine() 
-	   * changes the local end probabilities */
-	  if(do_enforce && do_local)
-	    {
-	      ConfigLocalEnforce(cm, 0.5, 0.5);
-	      CMLogoddsify(cm);
-	    }
-	}	  
-      /*
-       * Change W (which is cm->W as read from the CM file) to dmax[0].
-       * dmax[0] could be > cm->W if the beta we're using now is < 1E-7 
-       * (1E-7 is the beta value used to determine cm->W in cmbuild). 
-       * If W was set at the command line, that value is always used.
-       */
-      if(!(set_window))
-	W = dmax[0];
-      if(do_bdump) 
-	{
-	  printf("beta:%f\n", beta);
-	  debug_print_bands(cm, dmin, dmax);
-	  PrintDPCellsSaved(cm, dmin, dmax, W);
-	}
-      /*StopwatchStop(watch);
-	StopwatchDisplay(stdout, "\nCPU time (band calc): ", watch);*/
-    }
-
-  /* EPN 11.18.05 Now that we know what W is, we need to ensure that
-   * cm->el_selfsc * W >= IMPOSSIBLE (cm->el_selfsc is the score for an EL self transition)
-   * because we will potentially multiply cm->el_selfsc * W, and add that to 
-   * 2 * IMPOSSIBLE, and IMPOSSIBLE must be > -FLT_MAX/3 so we can add it together 3 
-   * times (see structs.h). 
-   */
-  if((cm->el_selfsc * W) < IMPOSSIBLE)
-    cm->el_selfsc = (IMPOSSIBLE / (W+1) * 3);
-
 #ifdef USE_MPI
   }   /* End of first block that is only done by master process */
   /* Barrier for debugging */
   MPI_Barrier(MPI_COMM_WORLD);
-
-  printf("do_qdb: %d\n", do_qdb);
+  
   /* Here we need to broadcast the following parameters:
-     num_samples, W, W_scale, cm and dmin and dmax if do_qdb == TRUE*/
-  search_first_broadcast(&num_samples, &W, &W_scale, &cm,  
-			 &do_qdb, &dmin, &dmax, &do_inside, mpi_my_rank, mpi_master_rank);
-    
+     num_samples, W, W_scale, and the CM */
+  search_first_broadcast(&num_samples, &W, &W_scale, &cm, mpi_my_rank, 
+			 mpi_master_rank);
+  
 #endif
+  /* Configure the CM for search based on cm->opts.
+   * set local mode, make cp9 HMM, calculate QD bands etc.,
+   * preset_dmin and preset_dmax are NULL unless --qdbfile. */
+  ConfigCM(cm, preset_dmin, preset_dmax);
+
+  if(do_bdump) 
+    {
+      printf("beta:%f\n", cm->beta);
+      debug_print_bands(cm, cm->dmin, cm->dmax);
+      PrintDPCellsSaved(cm, cm->dmin, cm->dmax, cm->W);
+    }
+
   /**************************************************
    * Make the histogram
    *************************************************/
@@ -633,7 +579,7 @@ main(int argc, char **argv)
     }
 #endif
   /* Set sample_length to 2*W if not yet set */
-  if (sample_length == 0) sample_length = W_scale * W;
+  if (sample_length == 0) sample_length = W_scale * cm->W;
   /*printf("0 W: %d W_scale: %f sample_length: %d\n", W, W_scale, sample_length);*/
   if (num_samples > 0) /* num_samples will be 0 unless do_stats is TRUE */
     {
@@ -642,23 +588,12 @@ main(int argc, char **argv)
       StopwatchStart(watch);*/
     if (mpi_num_procs > 1)
 	parallel_make_histogram(gc_ct, partitions, num_partitions,
-				cm, W, num_samples, sample_length, lambda, K, 
-				dmin, dmax, do_inside, do_enforce, enf_seq,
+				cm, num_samples, sample_length, lambda, K, 
 				mpi_my_rank, mpi_num_procs, mpi_master_rank);
     else 
 #endif
-      if(do_hmmonly)
-	serial_make_histogram (gc_ct, partitions, num_partitions,
-			       cm, W, 
-			       num_samples, sample_length, lambda, K, 
-			       dmin, dmax, cp9_hmm, do_inside, TRUE,
-			       do_enforce, enf_seq);
-      else
-	serial_make_histogram (gc_ct, partitions, num_partitions,
-			       cm, W, 
-			       num_samples, sample_length, lambda, K, 
-			       dmin, dmax, NULL, do_inside, TRUE,
-			       do_enforce, enf_seq);
+      serial_make_histogram (gc_ct, partitions, num_partitions,
+			     cm, num_samples, sample_length, lambda, K, TRUE);
 
     /*StopwatchStop(watch);
       StopwatchDisplay(stdout, "\nCPU time (histogram): ", watch);*/
@@ -726,13 +661,11 @@ main(int argc, char **argv)
 
 #ifdef USE_MPI
   if (mpi_num_procs > 1)
-    parallel_search_database (dbfp, cm, cons, W, cutoff_type, cutoff, do_revcomp, do_align,
-			      do_stats, mu, lambda, dmin, dmax, do_inside,
+    parallel_search_database (dbfp, cm, cons, cm->W, cutoff_type, cutoff, mu, lambda, 
 			      mpi_my_rank, mpi_master_rank, mpi_num_procs);
   else
 #endif
-    serial_search_database (dbfp, cm, cons, W, cutoff_type, cutoff, do_revcomp, do_align,
-			    do_stats, mu, lambda, dmin, dmax, do_inside);
+    serial_search_database (dbfp, cm, cons, cutoff_type, cutoff, mu, lambda);
   
   FreeCM(cm);
 #ifdef USE_MPI

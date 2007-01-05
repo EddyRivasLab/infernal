@@ -360,8 +360,8 @@ main(int argc, char **argv)
 				     */
       int nsampled;                 /* number of sequences sampled thus far */
 
-      struct cplan9_s  *shmm;
-      struct cp9trace_s **cp9_tr;   /* fake tracebacks for each seq            */
+      CP9_t  *shmm;
+      CP9trace_t **cp9_tr;   /* fake tracebacks for each seq            */
       int idx;
 
       msa_nseq = 1000;

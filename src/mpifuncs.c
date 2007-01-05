@@ -85,15 +85,11 @@ int get_master_rank (MPI_Comm comm, int mpi_my_rank) {
  * dmin and dmax will be NULL if QDB is not being used
  */
 void search_first_broadcast (int *num_samples, int *windowlen, float *W_scale,
-			     CM_t **cm, int *do_qdb, int **dmin, int **dmax, 
-			     int *do_inside, int mpi_my_rank, 
+			     CM_t **cm, int mpi_my_rank, 
 			     int mpi_master_rank) {
   char buf[BUFSIZE];      /* Buffer for packing it all but the bulk of the CM */
   int position = 0;         /* Where I am in the buffer */
   int nstates, nnodes;
-  float el_selfsc;
-  int  iel_selfsc;
-  int W;
   /*printf("entered first_broadcast: do_qdb: %d do_inside: %d my: %d master: %d\n", *do_qdb, *do_inside, 
     mpi_my_rank, mpi_master_rank);*/
 
@@ -102,24 +98,28 @@ void search_first_broadcast (int *num_samples, int *windowlen, float *W_scale,
     {   /* I'm in charge */
       nstates = (*cm)->M;
       nnodes = (*cm)->nodes;
-      el_selfsc  = (*cm)->el_selfsc;
-      iel_selfsc = (*cm)->iel_selfsc;
-      W = (*cm)->W;
-      
+
       /* Some ints */
       MPI_Pack (num_samples, 1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (windowlen, 1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
       /* A float */
       MPI_Pack (W_scale, 1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
       /* Basics of the model */
-      MPI_Pack (&nstates, 1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD); 
-      MPI_Pack (&nnodes, 1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->flags), 1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&el_selfsc, 1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&iel_selfsc, 1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&W, 1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (do_qdb, 1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (do_inside, 1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&nstates,              1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD); 
+      MPI_Pack (&nnodes,               1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->flags),       1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->opts),        1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->el_selfsc),   1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->iel_selfsc),  1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->W),           1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->enf_start),   1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->score_boost), 1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      if((*cm)->enf_start != 0)
+	{
+	  enf_len = strlen((*cm)->enf_seq);
+	  MPI_Pack (&enf_len,          1,       MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+	  MPI_Pack (&((*cm)->enf_seq), enf_len, MPI_CHAR,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
+	}
     }
   /* Broadcast to everyone */
   MPI_Bcast (buf, BUFSIZE, MPI_PACKED, mpi_master_rank, MPI_COMM_WORLD);
@@ -135,14 +135,17 @@ void search_first_broadcast (int *num_samples, int *windowlen, float *W_scale,
       MPI_Unpack (buf, BUFSIZE, &position, &nnodes, 1, MPI_INT, MPI_COMM_WORLD);
       *cm = CreateCM (nnodes, nstates);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->flags), 1, MPI_INT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &el_selfsc, 1, MPI_FLOAT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &iel_selfsc, 1, MPI_INT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &W, 1, MPI_INT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, do_qdb, 1, MPI_INT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, do_inside, 1, MPI_INT, MPI_COMM_WORLD);
-      (*cm)->W = W;
-      (*cm)->el_selfsc  =  el_selfsc;
-      (*cm)->iel_selfsc = iel_selfsc;
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->opts),  1, MPI_INT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->el_selfsc),   1, MPI_FLOAT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->iel_selfsc),  1, MPI_INT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->W),           1, MPI_INT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->enf_start),   1, MPI_INT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->score_boost), 1, MPI_FLOAT, MPI_COMM_WORLD);
+      if((*cm)->enf_start != 0)
+	{
+	  MPI_Unpack (buf, BUFSIZE, &position, &enf_len,                  1, MPI_INT, MPI_COMM_WORLD);
+	  MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->enf_seq),   enf_len, MPI_INT, MPI_COMM_WORLD);
+	}
     }
   /* Now we broadcast the rest of the model using many calls to MPI_Bcast.  
      This is inefficient, but is probably negligible compared to the actual 
@@ -691,11 +694,12 @@ void aln_broadcast (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
       MPI_Pack (&nstates,              1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD); 
       MPI_Pack (&nnodes,               1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (&((*cm)->flags),       1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->align_flags), 1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->opts),        1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (&((*cm)->el_selfsc),   1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (&((*cm)->iel_selfsc),  1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (&((*cm)->W),           1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (&((*cm)->enf_start),   1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->score_boost), 1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
       if((*cm)->enf_start != 0)
 	{
 	  enf_len = strlen((*cm)->enf_seq);
@@ -714,11 +718,12 @@ void aln_broadcast (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
       MPI_Unpack (buf, BUFSIZE, &position, &nnodes, 1, MPI_INT, MPI_COMM_WORLD);
       *cm = CreateCM (nnodes, nstates);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->flags),       1, MPI_INT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->align_flags), 1, MPI_INT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->opts),        1, MPI_INT, MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->el_selfsc),   1, MPI_FLOAT, MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->iel_selfsc),  1, MPI_INT, MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->W),           1, MPI_INT, MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->enf_start),   1, MPI_INT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->score_boost), 1, MPI_FLOAT, MPI_COMM_WORLD);
       if((*cm)->enf_start != 0)
 	{
 	  MPI_Unpack (buf, BUFSIZE, &position, &enf_len,                  1, MPI_INT, MPI_COMM_WORLD);

@@ -29,7 +29,7 @@ extern double **BandDistribution(CM_t *cm, int W, int do_local);
 extern int      BandCalculationEngine(CM_t *cm, int W, double p_thresh, 
 				      int save_densities,
 				      int **ret_dmin, int **ret_dmax, 
-				      double ***ret_gamma, int do_local);
+				      double ***ret_gamma);
 extern int      BandTruncationNegligible(double *density, int b, int W, double *ret_beta);
 extern int      BandMonteCarlo(CM_t *cm, int nsample, int W, double ***ret_gamma);
 extern void     FreeBandDensities(CM_t *cm, double **gamma);
@@ -122,7 +122,7 @@ extern void         FreeEmitMap(CMEmitMap_t *map);
 
 /* from modelconfig.c
  */
-extern void ConfigCM(CM_t *cm);
+extern void ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax);
 extern void ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit);
 extern void ConfigNoLocalEnds(CM_t *cm);
 extern void ConfigLocalEnds(CM_t *cm, float p_internal_exit);
@@ -275,19 +275,6 @@ extern void CP9FreeTrace(struct cp9trace_s *tr);
 extern void CP9_2sub_cp9(struct cplan9_s *orig_hmm, struct cplan9_s **ret_sub_hmm, int spos, int epos, double **orig_phi);
 extern void CP9_reconfig2sub(struct cplan9_s *hmm, int spos, int epos, int spos_nd, int epos_nd, double **orig_phi);
 
-/* from cp9_hmmio.c 
- * CM Plan9 HMM Input/output (saving/reading)
- */
-extern CP9HMMFILE *CP9_HMMFileOpen(char *hmmfile, char *env);
-extern int      CP9_HMMFileRead(CP9HMMFILE *hmmfp, struct cplan9_s **ret_hmm);
-extern void     CP9_HMMFileClose(CP9HMMFILE *hmmfp);
-extern int      CP9_HMMFileFormat(CP9HMMFILE *hmmfp);
-extern void     CP9_HMMFileRewind(CP9HMMFILE *hmmfp);
-extern int      CP9_HMMFilePositionByName(CP9HMMFILE *hmmfp, char *name);
-extern int      CP9_HMMFilePositionByIndex(CP9HMMFILE *hmmfp, int idx);
-extern void     CP9_WriteAscHMM(FILE *fp, struct cplan9_s *hmm);
-extern void     CP9_WriteBinHMM(FILE *fp, struct cplan9_s *hmm);
-
 /* from hbandcyk.c
  */
 extern float CYKInside_b_jd(CM_t *cm, char *dsq, int L, int r, int i0, int j0, 
@@ -411,9 +398,9 @@ parallel_align_targets(CM_t *cm, ESL_SQFILE *seqfp, ESL_SQ ***ret_sq, Parsetree_
 		       char ***ret_postcode, int *ret_nseq, int bdump_level, int debug_level,
 		       int silent_mode, int mpi_my_rank, int mpi_master_rank, int mpi_num_procs);
 extern void 
-serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons, int W, int cutoff_type, 
-			float cutoff, int do_revcomp, int do_align, int do_stats, double *mu, 
-			double *lambda, int *dmin, int *dmax, int do_inside);
+serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
+			int cutoff_type, float cutoff, 
+			double *mu, double *lambda);
 extern void 
 parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 			  int W, int cutoff_type, float cutoff, 
@@ -423,5 +410,21 @@ parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 			  int mpi_num_procs) ;
 extern int 
 EnforceSubsequence(CM_t *cm);
+
+/* Reading/writing of CP9 HMMs no longer supported. */
+#if 0
+/* from cp9_hmmio.c 
+ * CM Plan9 HMM Input/output (saving/reading)
+ */
+extern CP9HMMFILE *CP9_HMMFileOpen(char *hmmfile, char *env);
+extern int      CP9_HMMFileRead(CP9HMMFILE *hmmfp, struct cplan9_s **ret_hmm);
+extern void     CP9_HMMFileClose(CP9HMMFILE *hmmfp);
+extern int      CP9_HMMFileFormat(CP9HMMFILE *hmmfp);
+extern void     CP9_HMMFileRewind(CP9HMMFILE *hmmfp);
+extern int      CP9_HMMFilePositionByName(CP9HMMFILE *hmmfp, char *name);
+extern int      CP9_HMMFilePositionByIndex(CP9HMMFILE *hmmfp, int idx);
+extern void     CP9_WriteAscHMM(FILE *fp, struct cplan9_s *hmm);
+extern void     CP9_WriteBinHMM(FILE *fp, struct cplan9_s *hmm);
+#endif
 
 

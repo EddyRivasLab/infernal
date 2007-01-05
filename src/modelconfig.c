@@ -19,24 +19,127 @@
 /*
  * Function: ConfigCM
  * Date:     EPN, Thu Jan  4 06:36:09 2007
- * Purpose:  Configure a CM for alignment or search based on the flags in
- *           cm->align_flags and cm->search_flags. Calculates query dependent
- *           bands if appropriate. 
+ * Purpose:  Configure a CM for alignment or search based on cm->opts.
+ *           Calculates query dependent bands (QDBs) and CP9 HMM if nec.
+ *           QDBs can also be passed in. 
  * 
  * Args:     CM           - the covariance model
+ *           preset_dmin  - supplied dmin values, NULL if none
+ *           preset_dmax  - supplied dmax values, NULL if none
  */
 void
-ConfigCM(CM_t *cm)
+ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
 {
   int safe_windowlen;
   int enf_end;
   float swentry, swexit;
-  int do_local;
   double **gamma;               /* P(subseq length = n) for each state v, used in QDB mode */
+  int do_calc_qdb   = FALSE;
+  int do_preset_qdb = FALSE;
+  int do_build_cp9  = FALSE;
+  int v;
 
-  do_local = FALSE;
-  if(cm->align_flags & CM_ALIGN_LOCAL) do_local = TRUE;
+  /* Check for incompatible cm->opts */
+  if((cm->opts & CM_CONFIG_ELSILENT) && (!(cm->opts & CM_CONFIG_LOCAL)))
+    Die("ERROR trying to configure non-local CM to silence EL, this doesn't make sense.\n");
+  if((cm->opts & CM_SEARCH_SCANBANDS) && 
+     ((!(cm->opts & CM_SEARCH_HMMFB)) && (!(cm->opts & CM_SEARCH_HMMWEINBERG))))
+    Die("ERROR trying to search with HMM derived bands, but not an HMM filter, this doesn't make sense.\n");
+     
+  /* Check if we need to calculate QDBs and/or build a CP9 HMM. */
+  if((cm->opts & CM_ALIGN_QDB)      || (!(cm->opts & CM_SEARCH_NOQDB)))
+  {
+    if(preset_dmin == NULL && preset_dmax == NULL) 
+      do_calc_qdb   = TRUE;
+    else 
+      do_preset_qdb = TRUE;
+  }
+  if((cm->opts & CM_ALIGN_HBANDED)                                     ||
+     ((cm->opts & CM_ALIGN_HMMONLY) || (cm->opts & CM_SEARCH_HMMONLY)) ||
+     ((cm->opts & CM_ALIGN_SUB)     || (cm->opts & CM_ALIGN_FSUB))     ||
+     ((cm->opts & CM_SEARCH_HMMFB)  || (cm->opts & CM_SEARCH_HMMWEINBERG)))
+    do_build_cp9 = TRUE;
 
+  /* If nec, build the CP9 */
+  if(do_build_cp9)
+    {
+      /* IMPORTANT: do this before setting up CM for local mode
+       *            eventually, we'll do it after, but we can't build local CP9s yet. */
+      cm->cp9    = AllocCPlan9(cm->M);
+      cm->cp9map = AllocCP9Map(cm);
+      if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))
+	Die("Couldn't build a CP9 HMM from the CM\n");
+    }
+  /* The enforce option, added specifically for enforcing the template region of
+   * telomerase RNA */
+  if(cm->opts & CM_CONFIG_ENFORCE)
+    EnforceSubsequence(cm);
+  
+  /* Configure the CM for local alignment. */
+  if (cm->opts & CM_CONFIG_LOCAL)
+    { 
+      if(cm->opts & CM_CONFIG_ENFORCE)
+	ConfigLocalEnforce(cm, 0.5, 0.5);
+      else
+	ConfigLocal(cm, 0.5, 0.5);
+      CMLogoddsify(cm);
+      
+      if(cm->opts & CM_CONFIG_ELSILENT)
+	ConfigLocal_DisallowELEmissions(cm);
+    }
+  /* If in local mode and using a CP9 HMM, configure it for local alignment,
+   * but not in a way that matches the CM locality (that's a TODO) */
+  if(do_build_cp9 && (cm->opts & CM_CONFIG_LOCAL))
+    {
+      if((cm->opts & CM_ALIGN_SUB) || (cm->opts & CM_ALIGN_FSUB))
+	{
+	  /* To get spos and epos for the sub_cm, 
+	   * we config the HMM to local mode with equiprobable start/end points.*/
+	  swentry= ((cm->cp9->M)-1.)/cm->cp9->M; /* all start pts equiprobable, including 1 */
+	  swexit = ((cm->cp9->M)-1.)/cm->cp9->M; /* all end   pts equiprobable, including M */
+	}
+      else
+	{
+	  swentry = 0.5;
+	  swexit  = 0.5;
+	}
+      CPlan9SWConfig(cm->cp9, swentry, swexit);
+      CP9Logoddsify(cm->cp9);
+    }
+  
+  /* If nec, set up the query dependent bands, this has to be done after 
+   * the ConfigLocal() call. */
+  if (do_calc_qdb)
+    {
+      safe_windowlen = cm->W * 2;
+      while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta, 0, &(cm->dmin), &(cm->dmax), &gamma)))
+	{
+	  FreeBandDensities(cm, gamma);
+	  free(cm->dmin);
+	  free(cm->dmax);
+	  safe_windowlen *= 2;
+	}
+      /* If we're enforcing a subsequence, we need to reenforce it b/c BandCalculationEngine() 
+       * changes the local end probabilities */
+      if((cm->opts & CM_CONFIG_ENFORCE))
+	{
+	  ConfigLocalEnforce(cm, 0.5, 0.5);
+	  CMLogoddsify(cm);
+	}
+    }	  
+  else if(do_preset_qdb)
+    {
+      cm->dmin = MallocOrDie(sizeof(int) * cm->M);
+      cm->dmax = MallocOrDie(sizeof(int) * cm->M);
+      for(v = 0; v < cm->M; v++)
+	{
+	  cm->dmin[v] = preset_dmin[v];
+	  cm->dmax[v] = preset_dmax[v];
+	}
+      /* Set W as dmax[0], we're wasting time otherwise, looking at
+       * hits that are bigger than we're allowing with QDB. */
+      cm->W = cm->dmax[0];
+    }
   /* We need to ensure that cm->el_selfsc * W >= IMPOSSIBLE
    * (cm->el_selfsc is the score for an EL self transition) This is
    * done because we potentially multiply cm->el_selfsc * W, and add
@@ -49,74 +152,10 @@ ConfigCM(CM_t *cm)
       cm->el_selfsc = (IMPOSSIBLE / (cm->W+1));
       cm->iel_selfsc = -INFTY;
     }
+  if(cm->opts & CM_CONFIG_ZEROINSERTS)
+    CMHackInsertScores(cm);	/* insert emissions are all equiprobable */
 
-  /* Build a CP9 HMM if we're doing banded alignment OR in sub mode. */
-  if((cm->align_flags & CM_ALIGN_HBANDED) || (cm->align_flags & CM_ALIGN_SUB))
-    {
-      /* IMPORTANT: do this before setting up CM for local mode
-       *            eventually, we'll do it after, but we can't build local CP9s yet. */
-      cm->cp9    = AllocCPlan9(cm->M);
-      cm->cp9map = AllocCP9Map(cm);
-      if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))
-	Die("Couldn't build a CP9 HMM from the CM\n");
-    }
-  /* The enforce option, added specifically for enforcing the template region of
-   * telomerase RNA */
-  if(cm->align_flags & CM_ALIGN_ENFORCE)
-    EnforceSubsequence(cm);
-
-  /* Configure the CM for local alignment. */
-  if (cm->align_flags & CM_ALIGN_LOCAL)
-    { 
-      if(cm->align_flags & CM_ALIGN_ENFORCE)
-	ConfigLocalEnforce(cm, 0.5, 0.5);
-      else
-	ConfigLocal(cm, 0.5, 0.5);
-      CMLogoddsify(cm);
-      /*CMHackInsertScores(cm);*/	/* "TEMPORARY" fix for bad priors */
-
-      if(cm->align_flags & CM_ALIGN_ELSILENT)
-	ConfigLocal_DisallowELEmissions(cm);
-    }
-  /* If in local mode and using a CP9 HMM, configure it for local alignment,
-   * but not in a way that matches the CM locality (that's a TODO) */
-  if(((cm->align_flags & CM_ALIGN_LOCAL) && (cm->align_flags & CM_ALIGN_HBANDED))
-     && (cm->align_flags & CM_ALIGN_SUB))
-      {
-	/*printf("configuring the CM plan 9 HMM for local alignment.\n");*/
-	CPlan9SWConfig(cm->cp9, 0.5, 0.5);
-	CP9Logoddsify(cm->cp9);
-      }
-  /* To get spos and epos for the sub_cm, 
-   * we config the HMM to local mode with equiprobable start/end points.*/
-  if (cm->align_flags & CM_ALIGN_SUB)
-      {
-	/*printf("configuring the CM plan 9 HMM for local alignment.\n");*/
-	swentry= ((cm->cp9->M)-1.)/cm->cp9->M; /* all start pts equiprobable, including 1 */
-	swexit = ((cm->cp9->M)-1.)/cm->cp9->M; /* all end   pts equiprobable, including M */
-	CPlan9SWConfig(cm->cp9, swentry, swexit);
-	CP9Logoddsify(cm->cp9);
-      }
-  /* Set up the query dependent bands, this has to be done after the ConfigLocal() call */
-  if (cm->align_flags & CM_ALIGN_QDB)
-    {
-      safe_windowlen = cm->W * 2;
-      while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta, 0, &(cm->dmin), &(cm->dmax), &gamma, do_local)))
-	{
-	  FreeBandDensities(cm, gamma);
-	  free(cm->dmin);
-	  free(cm->dmax);
-	  safe_windowlen *= 2;
-	  /*printf("ERROR BandCalculationEngine returned false, windowlen adjusted to %d\n", safe_windowlen);*/
-	}
-      /* If we're enforcing a subsequence, we need to reenforce it b/c BandCalculationEngine() 
-       * changes the local end probabilities */
-      if((cm->align_flags & CM_ALIGN_ENFORCE) && (cm->align_flags & CM_ALIGN_LOCAL))
-	{
-	  ConfigLocalEnforce(cm, 0.5, 0.5);
-	  CMLogoddsify(cm);
-	}
-    }	  
+  CMLogoddsify(cm);
   return; 
 }
 

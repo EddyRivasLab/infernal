@@ -1,5 +1,9 @@
-/* cplan9.h Support for a CM plan 9 HMM architecture.
+/* cplan9.h 
+ *
+ Support for a CM plan 9 HMM architecture.
  * Data structures were morphed from their plan 7 analogs.
+ * 
+ * EPN 02.26.06 (based on SRE's HMMER's plan7.h)
  *
  * A few functions were hijacked from HMMER 2.4 and placed
  * here without modification. These first 4 are all from 
@@ -26,12 +30,8 @@ extern int   DegenerateSymbolScore(float *p, float *null, int ambig);
 
 #ifndef CPLAN9_INCLUDED
 #define CPLAN9_INCLUDED
-/* cplan9.h
- * 
- * A "CM Plan9" HMM structure that mirrors a CM as closely as possible.
- * 
- * EPN 02.26.06 (based on SRE's HMMER's plan7.h)
- */
+
+#define CP9MAXABET 4 /* should be same as MAXABET in structs.h */
 
 /* Structure: cm_plan9_s
  * 
@@ -72,88 +72,18 @@ extern int   DegenerateSymbolScore(float *p, float *null, int ambig);
  *    The CM_PLAN9_HASPROB flag is up when these all correspond to a fully normalized
  *    profile HMM.
  *    
- * (EPN 03.10.06 (next section UNTOUCHED from plan7.h, doesn't correspond with
- *  CM plan 9).
- * 2. The "configured" model adds the S,N,B; J; E,C,T special states
- *    of the Plan7 "algorithm-dependent" probability architecture. 
- *    
- *    The S and T states are not explicitly represented anywhere,
- *    including DP algorithms. S->N is implicitly 1.0. 
- *    
- *    N,E,C,J transitions are set in xt[]. N,C,J emissions are implicitly
- *    equal to the null model emission probabilities, and these states emit
- *    on transition. 
- *    
- *    Entry into the model is controlled by begin[], which is a normalized
- *    prob distribution \sum_{k=1}^{k=M} t(B->M_k) = 1.0. Exit from the model
- *    is controlled by end[], which is not a probability distribution itself;
- *    rather, \sum_{x=MDI} t(M_k->x) + t(M_k->E) = 1.0. 
- *    
- *    A configured model has no D_1 or D_M state. A process called
- *    "wing retraction" is applied by the configuration functions, to
- *    eliminate the mute all-delete B->D_1...D_M->E path. Wing
- *    retraction requires altering the transition probabilities in the
- *    nodes. In order to keep the core t[]'s unmodified, another state
- *    transition array t2[] is used to hold the configured state
- *    transition prob's for the model.  See documentation in plan7.c
- *    for the configuration functions for more detail on wing
- *    retraction (also, xref STL9/78-79).
- *    
- *    Only two combinations of wing retraction and internal entry/exit
- *    are allowed. In sw/fs mode models, algorithm-dependent entry and
- *    exit probabilities partially trump wing retraction, so begin[]
- *    and end[] are unaffected, though other effects of wing
- *    retraction take place; in an alignment, all B->M_k and M_k->E
- *    begins and exits are interpreted literally as B->M_k and M_k->E
- *    transitions. In ls/s mode models, there is no algorithmic
- *    internal entry/exit probability, but wing retraction contributes
- *    data-dependent probability to begin[] and [end]; in an
- *    alignment, B->M_k and M_k->E internal begins/ends are
- *    interpreted instead as delete paths B->D1->...->D_k-1->M_k or
- *    M_k->D_k+1->...->D_M->E.  That is, internal entry and exit probs
- *    may only be *entirely* algorithm dependent (from configuration)
- *    or *entirely* data-dependent (from wing retraction of the core
- *    model), not a mixture of both. (The reason is that if they're a
- *    sum of the two, you can't correctly extract a Viterbi alignment
- *    from the sum.) When the configuration is using
- *    algorithm-dependent entry, the PLAN7_BIMPOSED flag is raised;
- *    when it is using algorithm-dependent exit, the PLAN7_EIMPOSED
- *    flag is raised.  (xref STL9/79).
- *    
- *    After configuration, the core model is unchanged, and xt, t2, begin, end
- *    are set. In a configured model, tbd1 is not used (all entry into the model
- *    is controlled by B->M_k begins); D_1 and D_M don't exist and aren't used;
- *    D_M-1->M_M = 1.0 and M_M-1->D_M = 0.0 (because D_M doesn't exist); and
- *    all exits from the model are controlled by M_k->E ends.
- *    
- *    The PLAN7_HASALG flag is up when all of these (xt, t2, begin, end -- as
- *    well as mat and ins, which are unchanged from the core model) correspond
- *    to a fully normalized profile HMM.
- *    
- * 3. The "logoddsified" model is the configured model, converted to
+ * 2. The "logoddsified" model is the configured model, converted to
  *    integer score form and ready for alignment algorithms. 
- *    tsc, bsc, esc, xsc scores correspond to t2, begin, end, and xt
- *    probabilities.
+ *    bsc, esc scores correspond to begin, and end probabilities.
  *    
- *    The PLAN7_HASBITS flag is up when all of these are ready for
+ *    The CPLAN9_HASBITS flag is up when both of these are ready for
  *    alignment.
  *    
- *    
- * hmmbuild creates a core model, then configures it, then logoddsifies it,
- * then saves it. Both the core model and the logoddsified model are saved.
- * 
- * hmmemit reads a core model and a logoddsified model from a save file,
- * backcalculates a configured model from the logodds model, and can emit
- * from either the core or the configured model, both of which are fully
- * normalized profile HMMs. 
- * 
- * Search programs like hmmpfam and hmmsearch read only the
- * logoddsified model, ignoring the core model (which they don't need).
  */
-struct cplan9_s {
+typedef struct cplan9_s {
   /* The main model in probability form: data-dependent probabilities.
    * Transition probabilities are usually accessed as a
-   *   two-D array: hmm->t[k][TMM], for instance. They are allocated
+   *   two-D array: hmm->t[k][CTMM], for instance. They are allocated
    *   such that they can also be stepped through in 1D by pointer
    *   manipulations, for efficiency in DP algorithms.
    * CPLAN9_HASPROBS flag is raised when these probs are all valid.
@@ -201,87 +131,21 @@ struct cplan9_s {
   int   *esc;			/* end transitions       [1.M]              +*/
   int   *tsc_mem, *msc_mem, *isc_mem, *bsc_mem, *esc_mem;
 
-
-  /* EPN 03.10.06: didn't touch following block (until 'end block' comment)
-   * from plan7.h*/
-
-  /* Annotation on the model. A name is mandatory.
-   * Other fields are optional; whether they are present is
-   * flagged in the stateflags bit array.
-   * 
-   * desc is only valid if PLAN7_DESC is set in flags.
-   *  acc is only valid if PLAN7_ACC is set in flags.
-   *   rf is only valid if PLAN7_RF is set in flags.
-   *   cs is only valid if PLAN7_CS is set in flags.
-   *   ca is only valid if PLAN7_CA is set in flags.
-   *  map is only valid if PLAN7_MAP is set in flags.
-   */
-  char  *name;                  /* name of the model                    +*/
-  char  *acc;			/* accession number of model (Pfam)     +*/
-  char  *desc;                  /* brief description of model           +*/ 
-  char  *rf;                    /* reference line from alignment 0..M   +*/
-  char  *cs;                    /* consensus structure line      0..M   +*/ 
-  char  *ca;			/* consensus accessibility line  0..M    */
-  char  *comlog;		/* command line(s) that built model     +*/
-  int    nseq;			/* number of training sequences         +*/
-  char  *ctime;			/* creation date                        +*/
-  int   *map;			/* map of alignment cols onto model 1..M+*/
-  int    checksum;              /* checksum of training sequences       +*/
-
-  /* The following are annotations added to support work by Michael Asman, 
-   * CGR Stockholm. They are not stored in model files; they are only
-   * used in model construction.
-   * 
-   * #=GC X-PRM (PRT,PRI) annotation is picked up by hmmbuild and interpreted
-   * as specifying which mixture Dirichlet component to use. If these flags
-   * are non-NULL, the normal mixture Dirichlet code is bypassed, and a
-   * single specific Dirichlet is used at each position.
-   */
-  int   *tpri;                  /* which transition mixture prior to use */ 
-  int   *mpri;                  /* which match mixture prior to use */
-  int   *ipri;                  /* which insert mixture prior to use */
-
-  /* Pfam-specific score cutoffs.
-   * 
-   * ga1, ga2 are valid if PLAN7_GA is set in flags.
-   * tc1, tc2 are valid if PLAN7_TC is set in flags.
-   * nc1, nc2 are valid if PLAN7_NC is set in flags.
-   */
-  float  ga1, ga2;		/* per-seq/per-domain gathering thresholds (bits) +*/
-  float  tc1, tc2;		/* per-seq/per-domain trusted cutoff (bits)       +*/
-  float  nc1, nc2;		/* per-seq/per-domain noise cutoff (bits)         +*/
-
-
   /* The null model probabilities.
    */
-  float  null[MAXABET];         /* "random sequence" emission prob's     +*/
-  float  p1;                    /* null model loop probability           +*/
-
-  /* DNA translation scoring parameters
-   * For aligning protein Plan7 models to DNA sequence.
-   * Lookup value for a codon is calculated by pos1 * 16 + pos2 * 4 + pos3,
-   * where 'pos1' is the digitized value of the first nucleotide position;
-   * if any of the positions are ambiguous codes, lookup value 64 is used
-   * (which will generally have a score of zero)
-   * 
-   * Only valid if PLAN7_HASDNA is set.
-   */
-  int  **dnam;                  /* triplet match scores  [0.64][1.M]       -*/
-  int  **dnai;                  /* triplet insert scores [0.64][1.M]       -*/
-  int    dna2;			/* -1 frameshift, doublet emission, M or I -*/
-  int    dna4;			/* +1 frameshift, doublet emission, M or I -*/
+  float  null[CP9MAXABET];         /* "random sequence" emission prob's     +*/
+  float  p1;                        /* null model loop probability           +*/
 
   /* P-value and E-value statistical parameters
-   * Only valid if PLAN7_STATS is set.
+   * Only valid if CPLAN9_STATS is set.
    */
   float  mu;			/* EVD mu       +*/
   float  lambda;		/* EVD lambda   +*/
 
   int flags;                    /* bit flags indicating state of HMM, valid data +*/
-};
+} CP9_t;
 
-/* EPN 03.10.06: end untouched block */
-
+/* EPN 03.10.06 I left the flags alone from plan 7. */
 /* Flag codes for cplan9->flags.
  */
 #define CPLAN9_HASBITS (1<<0)    /* raised if model has log-odds scores      */
@@ -302,18 +166,6 @@ struct cplan9_s {
 #define CPLAN9_BIMPOSED (1<<15)  /* raised if all entries are B->M_k (not D) */
 #define CPLAN9_EIMPOSED (1<<16)  /* raised if all ends are M_k->E (not D)    */
 
-/* Indices for special state types, I: used for dynamic programming xmx[][]
- * mnemonic: Cm plan 9 eXtra Matrix for B state = CXMB
- */
-#define CXMB 0
-#define CXME 1
-#define CXMN 2
-
-/* Indices for special state types, II: used for hmm->xt[] indexing
- * mnemonic: Cm plan 9 eXtra Transition for N state = CXTN
- */
-#define CXTN  0
-
 /* Indices for CM Plan9 main model state transitions.
  * Used for indexing hmm->t[k][]
  * mnemonic: Cm plan 9 Transition from Match to Match = CTMM
@@ -330,7 +182,7 @@ struct cplan9_s {
 
 /* Declaration of CM Plan9 dynamic programming matrix structure.
  */
-struct cp9_dpmatrix_s {
+typedef struct cp9_dpmatrix_s {
   int **mmx;			/* match scores  [0.1..N][0..M] */
   int **imx;			/* insert scores [0.1..N][0..M] */
   int **dmx;			/* delete scores [0.1..N][0..M] */
@@ -356,7 +208,7 @@ struct cp9_dpmatrix_s {
 
   int padN;			/* extra pad in sequence length/rows */
   int padM;			/* extra pad in HMM length/columns   */
-};
+} CP9_dpmatrix_t;
 
 /* Structure: CP9HMMFILE
  * 
@@ -391,12 +243,12 @@ typedef struct CP9_hmmfile_s CP9HMMFILE;
  * Element 0 is always to M_0 (match state of node 0)
  * Element tlen-1 is always to the E_st
  */
-struct cp9trace_s {
+typedef struct cp9trace_s {
   int   tlen;                   /* length of traceback                           */
   char *statetype;              /* state type used for alignment                 */
   int  *nodeidx;                /* idx of aligned node, 0..M if M or I 1..M if D */
   int  *pos;                    /* position in dsq, 1..L, or 0 if none           */ 
-};
+} CP9trace_t;
 
 
 #endif /* CPLAN9_INCLUDED */

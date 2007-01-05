@@ -601,7 +601,7 @@ main(int argc, char **argv)
        * BandCalculationEngine() replaces BandDistribution() and BandBounds().
        * See ~nawrocki/notebook/5_1111_inf_banded_dist_vs_bandcalc/00LOG for details.
        */
-      while(!(BandCalculationEngine(cm, safe_windowlen, bandp, save_gamma, &dmin, &dmax, &gamma, FALSE)))
+      while(!(BandCalculationEngine(cm, safe_windowlen, bandp, save_gamma, &dmin, &dmax, &gamma)))
 	{
 	  free(dmin);
 	  free(dmax);
@@ -810,10 +810,11 @@ main(int argc, char **argv)
 	      /* Config the CM for local mode, we've already printed it to a file,
 	       * and all we use it for after this is SummarizeCM() and CYKDemands() 
 	       * which shouldn't be affected if we modify the begin and end probs */
+	      cm->opts |= CM_CONFIG_LOCAL;
 	      ConfigLocal(cm, 0.5, 0.5);
 	      CMLogoddsify(cm);
 	      safe_windowlen = 2 * MSAMaxSequenceLength(msa);
-	      while(!(BandCalculationEngine(cm, safe_windowlen, bandp, FALSE, &dmin, &dmax, &gamma, do_local)))
+	      while(!(BandCalculationEngine(cm, safe_windowlen, bandp, FALSE, &dmin, &dmax, &gamma)))
 		{
 		  free(dmin);
 		  free(dmax);

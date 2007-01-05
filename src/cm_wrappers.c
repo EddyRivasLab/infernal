@@ -65,31 +65,25 @@ static seqs_to_aln_t *read_next_aln_seqs(ESL_SQFILE *seqfp, int nseq, int index)
  * Parameters:        dbfp         the database
  *                    cm           the model
  *                    cons         precalc'ed consensus info for display
- *                    W            maximum size of hit
  *                    cutoff_type  either E_CUTOFF or SCORE_CUTOFF
  *                    cutoff       min. score to report
- *                    do_revcomp   search complementary strand
- *                    do_align     calculate and do alignment
- *                    do_stats     calculate statistics
  *                    mu           for stats
  *                    lambda       for stats
- *                    dmin         minimum bound on d for state v; 0..M (NULL if non-banded)
- *                    dmax         maximum bound on d for state v; 0..M (NULL if non-banded)         
- *                    do_inside    TRUE to scan with inside instead of CYK
  */
 void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
-			     int W, int cutoff_type, float cutoff, 
-			     int do_revcomp, int do_align, int do_stats,
-			     double *mu, double *lambda, int *dmin, int *dmax,
-			     int do_inside) 
+			     int cutoff_type, float cutoff, 
+			     double *mu, double *lambda)
 {
-
   int reversed;                /* Am I currently doing reverse complement? */
   int i,a;
   db_seq_t *dbseq;
   float min_cutoff;
+  int do_revcomp;
+  int do_align;
   /*printf("in serial_search database do_align: %d do_revcomp: %d\n", do_align, do_revcomp);*/
   
+  do_revcomp = (!(cm->opts & CM_SEARCH_TOPONLY));
+  do_align   = (!(cm->opts & CM_SEARCH_NOALIGN));
   if (cutoff_type == SCORE_CUTOFF) 
     min_cutoff = cutoff;
   else 
@@ -101,23 +95,22 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 	{
 	  /* Scan */
 	  dbseq->results[reversed] = CreateResults(INIT_RESULTS);
-	  if(dmin == NULL && dmax == NULL)
-	    if(do_inside)
-	      iInsideScan(cm, dbseq->sq[reversed]->dsq, 1, dbseq->sq[reversed]->n, W,
+	  if(cm->opts & CM_SEARCH_NOQDB)
+	    if(cm->opts & CM_SEARCH_INSIDE)
+	      iInsideScan(cm, dbseq->sq[reversed]->dsq, 1, dbseq->sq[reversed]->n, cm->W,
 			  min_cutoff, 0, dbseq->results[reversed]);
-	    else /* !do_inside */
-	      CYKScan (cm, dbseq->sq[reversed]->dsq, 1, dbseq->sq[reversed]->n, W,
+	    else /* don't do inside */
+	      CYKScan (cm, dbseq->sq[reversed]->dsq, 1, dbseq->sq[reversed]->n, cm->W,
 			min_cutoff, 0, dbseq->results[reversed]);
-	  else
-	    if(do_inside)
-	      iInsideBandedScan(cm, dbseq->sq[reversed]->dsq, dmin, dmax, 
-			       1, dbseq->sq[reversed]->n, W,
+	  else /* use QDB */
+	    if(cm->opts & CM_SEARCH_INSIDE)
+	      iInsideBandedScan(cm, dbseq->sq[reversed]->dsq, cm->dmin, cm->dmax, 
+			       1, dbseq->sq[reversed]->n, cm->W,
 			       min_cutoff, 0, dbseq->results[reversed]);
 	    else /* !do_inside */
-	    CYKBandedScan (cm, dbseq->sq[reversed]->dsq, dmin, dmax, 1, 
-			   dbseq->sq[reversed]->n, W, min_cutoff, 0, 
+	    CYKBandedScan (cm, dbseq->sq[reversed]->dsq, cm->dmin, cm->dmax, 1, 
+			   dbseq->sq[reversed]->n, cm->W, min_cutoff, 0, 
 			   dbseq->results[reversed]);
-	  
 
 	  /* Align results */
 	  if (do_align) {
@@ -128,9 +121,9 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 		 dbseq->results[reversed]->data[i].start, 
 		 dbseq->results[reversed]->data[i].stop, 
 		 &(dbseq->results[reversed]->data[i].tr),
-		 dmin, dmax); /* dmin and dmax will be NULL if non-banded,
-			       * alternatively, could always pass NULL to 
-			       * always do non-banded alignment. */
+		 cm->dmin, cm->dmax); /* dmin and dmax will be NULL if non-banded 
+				       * alternatively, could always pass NULL to 
+				       * always do non-banded alignment. */
 	      
 	      /* Now, subtract out the starting point of the result so 
 		 that it can be added in later.  This makes the print_alignment
@@ -146,7 +139,7 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 	  }
 	}
       /* Print results */
-      print_results (cm, cons, dbseq, do_revcomp, do_stats,
+      print_results (cm, cons, dbseq, do_revcomp, (cm->opts & CM_SEARCH_STATS),
 		     mu, lambda);
       fflush (stdout);
       
@@ -647,7 +640,7 @@ serial_align_targets(CM_t *cm, ESL_SQFILE *seqfp, ESL_SQ ***ret_sq, Parsetree_t 
 
   /* Clean up and return */
   *ret_tr = tr;
-  if((cm->align_flags & CM_ALIGN_POST) && ret_postcode != NULL) *ret_postcode = postcode;
+  if((cm->opts & CM_ALIGN_POST) && ret_postcode != NULL) *ret_postcode = postcode;
   *ret_nseq = nseq;
   *ret_sq   = sq;
   /*printf("leaving serial_align_targets\n");*/
@@ -697,7 +690,7 @@ parallel_align_targets(CM_t *cm, ESL_SQFILE *seqfp, ESL_SQ ***ret_sq, Parsetree_
   int              alloc_chunk = 2; 
   int              do_post;
 
-  if(cm->align_flags & CM_ALIGN_POST)
+  if(cm->opts & CM_ALIGN_POST)
     do_post = TRUE;
   else
     do_post = FALSE;
@@ -816,7 +809,7 @@ parallel_align_targets(CM_t *cm, ESL_SQFILE *seqfp, ESL_SQ ***ret_sq, Parsetree_
  * 
  * Purpose:  Given a CM and sequences, do preliminaries, call the correct 
  *           CYK function and return parsetrees and optionally postal codes 
- *           (if cm->flags & CM_ALIGN_POST)
+ *           (if cm->opts & CM_ALIGN_POST)
  * 
  * Args:     CM           - the covariance model
  *           sq           - the sequences
@@ -842,14 +835,14 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
   float            avgsc;	/* avg score over all seqs */
 
   /* variables related to CM Plan 9 HMMs */
-  struct cplan9_s       *hmm;           /* constructed CP9 HMM */
-  CP9Bands_t *cp9b;                     /* data structure for hmm bands (bands on the hmm states) 
+  CP9_t       *hmm;                     /* constructed CP9 HMM */
+  CP9Bands_t  *cp9b;                    /* data structure for hmm bands (bands on the hmm states) 
 				         * and arrays for CM state bands, derived from HMM bands*/
-  CP9Map_t              *cp9map;        /* maps the hmm to the cm and vice versa */
-  struct cp9_dpmatrix_s *cp9_mx;        /* growable DP matrix for viterbi                       */
-  struct cp9_dpmatrix_s *cp9_fwd;       /* growable DP matrix for forward                       */
-  struct cp9_dpmatrix_s *cp9_bck;       /* growable DP matrix for backward                      */
-  struct cp9_dpmatrix_s *cp9_posterior; /* growable DP matrix for posterior decode              */
+  CP9Map_t       *cp9map;        /* maps the hmm to the cm and vice versa */
+  CP9_dpmatrix_t *cp9_mx;        /* growable DP matrix for viterbi                       */
+  CP9_dpmatrix_t *cp9_fwd;       /* growable DP matrix for forward                       */
+  CP9_dpmatrix_t *cp9_bck;       /* growable DP matrix for backward                      */
+  CP9_dpmatrix_t *cp9_posterior; /* growable DP matrix for posterior decode              */
   float forward_sc; 
   float backward_sc; 
 
@@ -865,9 +858,9 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
   int                epos_state;   /* HMM state type for curr epos 0=match or  1=insert */
   Parsetree_t     *orig_tr;        /* parsetree for the orig_cm; created from the sub_cm parsetree */
 
-  struct cplan9_s *sub_hmm;        /* constructed CP9 HMM; written to hmmfile              */
+  CP9_t           *sub_hmm;        /* constructed CP9 HMM; written to hmmfile              */
   CP9Map_t        *sub_cp9map;     /* maps the sub_hmm to the sub_cm and vice versa */
-  struct cplan9_s *orig_hmm;       /* original CP9 HMM built from orig_cm */
+  CP9_t           *orig_hmm;       /* original CP9 HMM built from orig_cm */
   CP9Map_t        *orig_cp9map;    
 
   /* variables related to query dependent banding (qdb) */
@@ -901,25 +894,25 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 
   printf("in actually_align_targets\n");
 
-  /* set the options based on the cm align_flags */
-  if(cm->align_flags & CM_ALIGN_LOCAL)      do_local   = TRUE;
-  if(cm->align_flags & CM_ALIGN_QDB)        do_qdb     = TRUE;
-  if(cm->align_flags & CM_ALIGN_HBANDED)    do_hbanded = TRUE;
-  if(cm->align_flags & CM_ALIGN_SUMS)       use_sums   = TRUE;
-  if(cm->align_flags & CM_ALIGN_SUB)        do_sub     = TRUE;
-  if(cm->align_flags & CM_ALIGN_FSUB)       do_fullsub = TRUE;
-  if(cm->align_flags & CM_ALIGN_HMM)        do_hmmonly = TRUE;
-  if(cm->align_flags & CM_ALIGN_INSIDE)     do_inside  = TRUE;
-  if(cm->align_flags & CM_ALIGN_OUTSIDE)    do_outside = TRUE;
-  if(cm->align_flags & CM_ALIGN_NOSMALL)    do_small   = FALSE;
-  if(cm->align_flags & CM_ALIGN_POST)       do_post    = TRUE;
-  if(cm->align_flags & CM_ALIGN_TIME)       do_timings = TRUE;
-  if(cm->align_flags & CM_ALIGN_CHECKINOUT) do_check   = TRUE;
+  /* set the options based on cm->opts */
+  if(cm->opts & CM_CONFIG_LOCAL)     do_local   = TRUE;
+  if(cm->opts & CM_ALIGN_QDB)        do_qdb     = TRUE;
+  if(cm->opts & CM_ALIGN_HBANDED)    do_hbanded = TRUE;
+  if(cm->opts & CM_ALIGN_SUMS)       use_sums   = TRUE;
+  if(cm->opts & CM_ALIGN_SUB)        do_sub     = TRUE;
+  if(cm->opts & CM_ALIGN_FSUB)       do_fullsub = TRUE;
+  if(cm->opts & CM_ALIGN_HMMONLY)    do_hmmonly = TRUE;
+  if(cm->opts & CM_ALIGN_INSIDE)     do_inside  = TRUE;
+  if(cm->opts & CM_ALIGN_OUTSIDE)    do_outside = TRUE;
+  if(cm->opts & CM_ALIGN_NOSMALL)    do_small   = FALSE;
+  if(cm->opts & CM_ALIGN_POST)       do_post    = TRUE;
+  if(cm->opts & CM_ALIGN_TIME)       do_timings = TRUE;
+  if(cm->opts & CM_ALIGN_CHECKINOUT) do_check   = TRUE;
 
   if(do_fullsub)
     {
       do_sub = TRUE;
-      cm->align_flags |= CM_ALIGN_SUB;
+      cm->opts |= CM_ALIGN_SUB;
     }
     printf("do_local  : %d\n", do_local);
     printf("do_qdb    : %d\n", do_qdb);

@@ -38,26 +38,17 @@
  *
  * Inputs:   gc_comp     %GC of random seq
  *           cm          the model
- *           D           maximum value for D
  *           num_samples number of samples to take
  *           sample_length  length of each sample
  *           mu_p        pointer to final mu
  *           lambda_p    pointer to final lambda
- *           dmin   - minimum d bound for each state v; [0..v..M-1] (NULL if non-banded)
- *           dmax   - maximum d bound for each state v; [0..v..M-1] (NULL if non-banded)
- *           hmm    - CP 9 HMM to scan with, NULL if we're scanning with the CM
  *           use_easel - TRUE to use Easel's histogram and EVD fitters, false to
  *                       use RSEARCH versions.
- *           do_enforce - TRUE to enforce a subseq in each sample (for telomerase's template)
- *           enf_seq    - the subseq to enforce, NULL if !do_enforce
  *
  */  
 void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
-			    CM_t *cm, int D, int num_samples,
-			    int sample_length, double *lambda, double *K,
-			    int *dmin, int *dmax, struct cplan9_s *hmm,
-			    int do_inside, int use_easel, int do_enforce,
-			    char *enf_seq)
+			    CM_t *cm, int num_samples, int sample_length, 
+			    double *lambda, double *K, int use_easel)
 {
   int i;
   char *randseq;
@@ -85,12 +76,7 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
   int   *hitj;                  /* end positions of hits */
   float *hitsc;			/* scores of hits */
 
-  printf("in serial_make_histogram, nparts: %d D: %d sample_len: %d do_ins: %d do_enf: %d\n", num_partitions, D, sample_length, do_inside, do_enforce);
-  if(do_enforce)
-    printf("enf_seq: %s\n", enf_seq);
-
-  if(do_enforce && enf_seq == NULL)
-    Die("ERROR do_enforce in serial_make_histogram, but enf_seq is NULL.\n");
+  printf("in serial_make_histogram, nparts: %d sample_len: %d do_ins: %d do_enf: %d\n", num_partitions, sample_length, (cm->opts & CM_SEARCH_INSIDE), (cm->opts & CM_CONFIG_ENFORCE));
 
   if (num_samples == 0) {
     for (i=0; i<GC_SEGMENTS; i++) {
@@ -125,13 +111,15 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 	}
 
       FNorm(cur_gc_freq, GC_SEGMENTS);
-      if(do_enforce)
+
+      /* EXPERIMENTAL CODE: embed enforced subseq into each sample */
+      /*if(cm->opts & CM_CONFIG_ENFORCE)
 	{
-	  enf_vec = MallocOrDie(sizeof(float) * (sample_length - strlen(enf_seq) + 1));
-	  for(i = 0; i < (sample_length - strlen(enf_seq) + 1); i++)
+	  enf_vec = MallocOrDie(sizeof(float) * (sample_length - strlen(cm->enf_seq) + 1));
+	  for(i = 0; i < (sample_length - strlen(cm->enf_seq) + 1); i++)
 	    enf_vec[i] = 0.;
-	  FNorm(enf_vec, (sample_length - strlen(enf_seq) + 1));
-	}
+	  FNorm(enf_vec, (sample_length - strlen(cm->enf_seq) + 1));
+	  }*/
       /* Take num_samples samples */
       for (i=0; i<num_samples; i++) 
 	{
@@ -143,35 +131,36 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 	  /* Get random sequence */
 	  randseq = RandomSequence (Alphabet, nt_p, Alphabet_size, sample_length);
 	  
-	  if(do_enforce && (strstr(randseq, enf_seq) == NULL)) 
-	    {
+	  /* EXPERIMENTAL CODE: embed enforced subseq into each sample */
+	  //if(cm->opts & CM_CONFIG_ENFORCE && (strstr(randseq, cm->enf_seq) == NULL)) 
+	  //{
 	      /* insert the sequence, but only if it's not already there. */
 	      /* pick a random position */
-	      enf_start = FChoose (enf_vec, (sample_length - strlen(enf_seq) + 1));
+	  //enf_start = FChoose (enf_vec, (sample_length - strlen(cm->enf_seq) + 1));
 	      /* insert the sequence */
-	      for(x = enf_start; x < (enf_start + strlen(enf_seq)); x++)
-		;//randseq[x] = enf_seq[(x-enf_start)];
-	    }
+	  //for(x = cm->enf_start; x < (cm->enf_start + strlen(cm->enf_seq)); x++)
+	  //;//randseq[x] = cm->enf_seq[(x-cm->enf_start)];
+	  //}
 
 	  /* Digitize the sequence, parse it, and add to histogram */
 	  dsq = DigitizeSequence (randseq, sample_length);
 	  
 	  /* Do the scan */
-	  if(hmm != NULL)
-	    score = CP9ForwardScan(dsq, 1, sample_length, D, hmm, NULL,  /* don't save the DP mx */
+	  if(cm->opts & CM_SEARCH_HMMONLY)
+	    score = CP9ForwardScan(dsq, 1, sample_length, cm->W, cm->cp9, NULL,  /* don't save the DP mx */
 				   &nhits, &hitr, &hiti, &hitj, &hitsc, 
 				   0);
-	  else if(dmin == NULL && dmax == NULL)
-	    if(do_inside)
-	      score = iInsideScan(cm, dsq, 1, sample_length, D, 0, 0, NULL);
+	  else if(cm->opts & CM_SEARCH_NOQDB)
+	    if(cm->opts & CM_SEARCH_INSIDE)
+	      score = iInsideScan(cm, dsq, 1, sample_length, cm->W, 0, 0, NULL);
 	    else 
-	      score = CYKScan(cm, dsq, 1, sample_length, D, 0, 0, NULL);
+	      score = CYKScan(cm, dsq, 1, sample_length, cm->W, 0, 0, NULL);
 	  else /* use QDB */
-	    if(do_inside)
-	      score = iInsideBandedScan(cm, dsq, dmin, dmax, 1, sample_length, D, 
+	    if(cm->opts & CM_SEARCH_INSIDE)
+	      score = iInsideBandedScan(cm, dsq, cm->dmin, cm->dmax, 1, sample_length, cm->W, 
 				       0, 0, NULL);
 	    else
-	      score = CYKBandedScan(cm, dsq, dmin, dmax, 1, sample_length, D,
+	      score = CYKBandedScan(cm, dsq, cm->dmin, cm->dmax, 1, sample_length, cm->W,
 				    0, 0, NULL);
 	  
 	  if(i % 100 == 0)
@@ -226,10 +215,8 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 
 #ifdef USE_MPI
 void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions, 
-			      CM_t *cm, int D, int num_samples,
-			      int sample_length,double *lambda, double *K, 
-			      int *dmin, int *dmax, int do_inside,
-			      int do_enforce, char *enf_seq,
+			      CM_t *cm, int num_samples, int sample_length,
+			      double *lambda, double *K, 
 			      int mpi_my_rank, int mpi_num_procs, 
 			      int mpi_master_rank) 
 {

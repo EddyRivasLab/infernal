@@ -155,35 +155,13 @@ main(int argc, char **argv)
   }
 
   
-  if (do_local) ConfigLocal(cm, 0.5, 0.5);
-  CMLogoddsify(cm);
-  /*CMHackInsertScores(cm);*/	/* TEMPORARY: FIXME */
+  /* Configure the CM */
+  if (do_local) cm->opts |= CM_CONFIG_LOCAL;
+  if (do_qdb)   cm->opts |= CM_ALIGN_QDB;
+  ConfigCM(cm, NULL, NULL);
 
-  /* Now that know what windowlen is, we need to ensure that 
-   * cm->el_selfsc * W >= IMPOSSIBLE (cm->el_selfsc is the score for an EL self transition)
-   * This is done because we are potentially multiply cm->el_selfsc * W, and adding
-   * that to IMPOSSIBLE. To avoid underflow issues this value must be less than
-   * 3 * IMPOSSIBLE. Here, to be safe, we guarantee its less than 2 * IMPOSSIBLE.
-   */
-  if((cm->el_selfsc * cm->W) < IMPOSSIBLE)
-    cm->el_selfsc = (IMPOSSIBLE / (cm->W+1));
-
-  /* set up the query dependent bands, this has to be done after the ConfigLocal() call */
-  if(do_qdb)
-    {
-      safe_windowlen = cm->W * 2;
-      while(!(BandCalculationEngine(cm, safe_windowlen, qdb_beta, 0, &dmin, &dmax, &gamma, do_local)))
-	{
-	  FreeBandDensities(cm, gamma);
-	  free(dmin);
-	  free(dmax);
-	  safe_windowlen *= 2;
-	  /*printf("ERROR BandCalculationEngine returned false, windowlen adjusted to %d\n", safe_windowlen);*/
-	}
-      expand_flag = FALSE;
-    }
-  else
-    dmin = dmax = NULL;
+  dmin = cm->dmin; /* this will be NULL if !do_qdb */
+  dmax = cm->dmax; /* this will be NULL if !do_qdb */
 
   while (ReadSeq(sqfp, sqfp->format, &seq, &sqinfo))
     {
@@ -199,7 +177,7 @@ main(int argc, char **argv)
 	      FreeBandDensities(cm, gamma);
 	      free(dmin);
 	      free(dmax);
-	      while(!(BandCalculationEngine(cm, safe_windowlen, qdb_beta, 0, &dmin, &dmax, &gamma, do_local)))
+	      while(!(BandCalculationEngine(cm, safe_windowlen, qdb_beta, 0, &dmin, &dmax, &gamma)))
 		{
 		  FreeBandDensities(cm, gamma);
 		  free(dmin);

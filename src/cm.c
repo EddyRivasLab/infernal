@@ -90,8 +90,6 @@ CreateCMShell(void)
   cm->endsc  = NULL;
 
   cm->flags         = 0;
-  cm->align_flags   = 0;
-  cm->search_flags  = 0;
 
   cm->W      = 200;           /* for backwards compatibility */
   cm->el_selfsc = 0.;         /* this is backwards compatible also */
@@ -104,6 +102,7 @@ CreateCMShell(void)
   cm->cp9map = NULL;
   cm->enf_start = 0;
   cm->enf_seq = NULL;
+  cm->score_boost = 0.;
   return cm;
 }
 void
@@ -145,12 +144,11 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates)
   cm->stid[cm->M]   = END_EL;
 
   cm->flags         = 0;
-  cm->align_flags   = 0;
-  cm->search_flags  = 0;
-  cm->dmin   = MallocOrDie(nstates * sizeof(int));
-  cm->dmax   = MallocOrDie(nstates * sizeof(int));
-  cm->cp9    = NULL;
-  cm->cp9map = NULL;
+  cm->opts          = 0;
+  cm->dmin          = NULL;
+  cm->dmax          = NULL;
+  cm->cp9           = NULL;
+  cm->cp9map        = NULL;
   /* we'll allocate the cp9 and cp9map only if nec inside ConfigCM() */
 }
 

@@ -1,3 +1,5 @@
+/* Reading/writing of CP9 HMMs no longer supported. */
+#if 0
 /************************************************************
  * @LICENSE@
  ************************************************************/
@@ -989,3 +991,4 @@ multiline(FILE *fp, char *pfx, char *s)
     }
   free(buf);
 }
+#endif

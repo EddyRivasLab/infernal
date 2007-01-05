@@ -67,6 +67,7 @@ static char experts[] = "\
    --outside     : don't align; return scores from the Outside algorithm\n\
    --post        : align with CYK and append posterior probabilities\n\
    --checkpost   : check that posteriors are correctly calc'ed\n\
+   --zeroinserts : set insert emission scores to 0\n\
    --sub         : build sub CM for columns b/t HMM predicted start/end points\n\
    --fsub <f>    : sub CM w/structure b/t HMM start/end pts\n\
    --elsilent    : disallow local end (EL) emissions\n\
@@ -106,11 +107,13 @@ static struct opt_s OPTIONS[] = {
   { "--outside",    FALSE, sqdARG_NONE},
   { "--post",       FALSE, sqdARG_NONE},
   { "--checkpost",  FALSE, sqdARG_NONE},
+  { "--zeroinserts",FALSE, sqdARG_NONE},
   { "--sub",        FALSE, sqdARG_NONE},
   { "--fsub",       FALSE, sqdARG_NONE},
   { "--elsilent",   FALSE, sqdARG_NONE},
   { "--enfstart",   FALSE, sqdARG_INT},
-  { "--enfseq",     FALSE, sqdARG_STRING}
+  { "--enfseq",     FALSE, sqdARG_STRING},
+  { "--zeroinserts",FALSE, sqdARG_NONE}
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -121,7 +124,7 @@ main(int argc, char **argv)
   CMFILE          *cmfp;	/* open CM file                             */
   char            *seqfile;     /* file to read sequences from              */
   ESL_SQFILE	  *seqfp;       /* open seqfile for reading                 */
-  ESL_SQ	 **sq;          /* open seqfile for reading                 */
+  ESL_SQ	 **sq;          /* the target sequences to align            */
   char            *optname;     /* name of option found by Getopt()         */
   char            *optarg;      /* argument found by Getopt()               */
   int              optind;      /* index in argv[]                          */
@@ -171,7 +174,8 @@ main(int argc, char **argv)
 				 * predicted start (spos) and end points    *
 				 * (epos) (STILL IN DEVELOPMENT!)           */
   int              do_elsilent; /* TRUE to disallow EL emissions            */
-  
+  int              do_zero_inserts; /* TRUE to zero insert emission scores */
+
   /* The enforce option (--enfstart and --enfseq), added specifically for   *
    * enforcing the template region for telomerase RNA searches              */
   int   do_enforce;             /* TRUE to enforce a MATL stretch is used   */
@@ -234,6 +238,7 @@ main(int argc, char **argv)
   do_sub      = FALSE;
   do_fullsub  = FALSE;
   do_elsilent = FALSE;
+  do_zero_inserts =FALSE;
   do_enforce   = FALSE;
   enf_start    = 0;
   enf_end      = 0;
@@ -267,6 +272,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--hmmonly")   == 0) do_hmmonly   = TRUE;
     else if (strcmp(optname, "--enfstart")  == 0) { do_enforce = TRUE; enf_start = atoi(optarg); }
     else if (strcmp(optname, "--enfseq")    == 0) { do_enforce = TRUE; enf_seq = optarg; } 
+    else if (strcmp(optname, "--zeroinserts")== 0) do_zero_inserts = TRUE;
     else if (strcmp(optname, "--informat")  == 0) {
       format = String2SeqfileFormat(optarg);
       if (format == SQFILE_UNKNOWN) 
@@ -298,8 +304,13 @@ main(int argc, char **argv)
     Die("--bdump option does not work with --noqdb.\n");
   if(do_qdb && do_hbanded)
     Die("--qdb and --hbanded combo not supported, pick one.\n");
+  if (bdump_level > 3) 
+    Die("Highest available --banddump verbosity level is 3\n%s", usage);
+  if (do_local && do_hbanded)
+    {
+      printf("Warning: banding with an HMM (--hbanded) and allowing\nlocal alignment (-l). This may not work very well.\n");
+    } 
 
-  if (bdump_level > 3) Die("Highest available --banddump verbosity level is 3\n%s", usage);
   if (argc - optind != 2) Die("Incorrect number of arguments.\n%s\n", usage);
   cmfile = argv[optind++];
   seqfile = argv[optind++]; 
@@ -323,35 +334,28 @@ main(int argc, char **argv)
     Die("%s empty?\n", cmfile);
   CMFileClose(cmfp);
 
-  if (do_local && do_hbanded)
-    {
-      printf("Warning: banding with an HMM (--hbanded) and allowing\nlocal alignment (-l). This may not work very well.\n");
-    } 
-
-  CMLogoddsify(cm);
-  /*CMHackInsertScores(cm);*/	/* "TEMPORARY" fix for bad priors */
-
   cm->beta = qdb_beta;
   cm->hbandp = hbandp;
 
-  /* Update cm->align_flags based on command line options */
-  if(do_local)    cm->align_flags |= CM_ALIGN_LOCAL;
-  if(do_qdb)      cm->align_flags |= CM_ALIGN_QDB;
-  if(do_hbanded)  cm->align_flags |= CM_ALIGN_HBANDED;
-  if(use_sums)    cm->align_flags |= CM_ALIGN_SUMS;
-  if(do_sub)      cm->align_flags |= CM_ALIGN_SUB;
-  if(do_fullsub)  cm->align_flags |= CM_ALIGN_FSUB;
-  if(do_hmmonly)  cm->align_flags |= CM_ALIGN_HMM;
-  if(do_inside)   cm->align_flags |= CM_ALIGN_INSIDE;
-  if(do_outside)  cm->align_flags |= CM_ALIGN_OUTSIDE;
-  if(!do_small)   cm->align_flags |= CM_ALIGN_NOSMALL;
-  if(do_post)     cm->align_flags |= CM_ALIGN_POST;
-  if(do_timings)  cm->align_flags |= CM_ALIGN_TIME;
-  if(do_check)    cm->align_flags |= CM_ALIGN_CHECKINOUT;
-  if(do_elsilent) cm->align_flags |= CM_ALIGN_ELSILENT;
+  /* Update cm->opts based on command line options */
+  if(do_local)        cm->opts |= CM_CONFIG_LOCAL;
+  if(do_elsilent)     cm->opts |= CM_CONFIG_ELSILENT;
+  if(do_zero_inserts) cm->opts |= CM_CONFIG_ZEROINSERTS;
+  if(do_qdb)          cm->opts |= CM_ALIGN_QDB;
+  if(do_hbanded)      cm->opts |= CM_ALIGN_HBANDED;
+  if(use_sums)        cm->opts |= CM_ALIGN_SUMS;
+  if(do_sub)          cm->opts |= CM_ALIGN_SUB;
+  if(do_fullsub)      cm->opts |= CM_ALIGN_FSUB;
+  if(do_hmmonly)      cm->opts |= CM_ALIGN_HMMONLY;
+  if(do_inside)       cm->opts |= CM_ALIGN_INSIDE;
+  if(do_outside)      cm->opts |= CM_ALIGN_OUTSIDE;
+  if(!do_small)       cm->opts |= CM_ALIGN_NOSMALL;
+  if(do_post)         cm->opts |= CM_ALIGN_POST;
+  if(do_timings)      cm->opts |= CM_ALIGN_TIME;
+  if(do_check)        cm->opts |= CM_ALIGN_CHECKINOUT;
   if(do_enforce)
     {
-      cm->align_flags |= CM_ALIGN_ENFORCE;
+      cm->opts |= CM_CONFIG_ENFORCE;
       cm->enf_start = enf_start; 
       cm->enf_seq   = enf_seq;
     }
@@ -396,9 +400,9 @@ main(int argc, char **argv)
 
   if (mpi_num_procs > 1)
     {
-      /* Configure the CM for alignment based on cm->align_flags.
+      /* Configure the CM for alignment based on cm->opts.
        * set local mode, make cp9 HMM, calculate QD bands etc. */
-      ConfigCM(cm);
+      ConfigCM(cm, NULL, NULL);
       parallel_align_targets(cm, seqfp, &sq, &tr, &postcode, &nseq,
 			     bdump_level, debug_level, be_quiet,
 			     mpi_my_rank, mpi_master_rank, mpi_num_procs);
@@ -407,9 +411,9 @@ main(int argc, char **argv)
   else
 #endif /* (end of if USE_MPI) */
     {
-      /* Configure the CM for alignment based on cm->align_flags.
+      /* Configure the CM for alignment based on cm->opts.
        * set local mode, make cp9 HMM, calculate QD bands etc. */
-      ConfigCM(cm);
+      ConfigCM(cm, NULL, NULL);
       serial_align_targets(cm, seqfp, &sq, &tr, &postcode, &nseq, bdump_level, debug_level, 
 			   be_quiet);
     }
@@ -420,10 +424,10 @@ main(int argc, char **argv)
      * Create the MSA.                                                                   
      ****************************************************************/                   
     msa = NULL;                                                                          
-    if(!((cm->align_flags & CM_ALIGN_INSIDE) || (cm->align_flags & CM_ALIGN_OUTSIDE)))   
+    if(!((cm->opts & CM_ALIGN_INSIDE) || (cm->opts & CM_ALIGN_OUTSIDE)))   
       {                                                                                  
 	msa = ESL_Parsetrees2Alignment(cm, sq, NULL, tr, nseq, do_full);                 
-	if(cm->align_flags & CM_ALIGN_POST)                                              
+	if(cm->opts & CM_ALIGN_POST)                                              
         {                                                                              
 	  if(postcode == NULL)
 	    Die("ERROR CM_ALIGN_POST flag is up, but {serial,parallel}_align_targets() did not return post codes.\n");

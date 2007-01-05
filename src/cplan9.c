@@ -57,26 +57,6 @@ AllocCPlan9Shell(void)
   hmm    = (struct cplan9_s *) MallocOrDie (sizeof(struct cplan9_s));
   hmm->M = 0;
 
-  hmm->name     = NULL;
-  hmm->acc      = NULL;
-  hmm->desc     = NULL;
-  hmm->rf       = NULL;
-  hmm->cs       = NULL;
-  hmm->ca       = NULL;
-  hmm->comlog   = NULL; 
-  hmm->nseq     = 0;
-  hmm->ctime    = NULL;
-  hmm->map      = NULL;
-  hmm->checksum = 0;
-
-  hmm->tpri = NULL;
-  hmm->mpri = NULL;
-  hmm->ipri = NULL;
-
-  hmm->ga1 = hmm->ga2 = 0.0;
-  hmm->tc1 = hmm->tc2 = 0.0;
-  hmm->nc1 = hmm->nc2 = 0.0;
-
   hmm->t      = NULL;
   hmm->mat    = NULL;
   hmm->ins    = NULL;
@@ -89,12 +69,6 @@ AllocCPlan9Shell(void)
 
   hmm->bsc = hmm->bsc_mem = NULL;
   hmm->esc = hmm->esc_mem = NULL;
-
-				/* DNA translation is not enabled by default */
-  hmm->dnam   = NULL;
-  hmm->dnai   = NULL;
-  hmm->dna2   = -INFTY;
-  hmm->dna4   = -INFTY;
 			/* statistical parameters set to innocuous empty values */
   hmm->mu     = 0.; 
   hmm->lambda = 0.;
@@ -109,11 +83,6 @@ AllocCPlan9Body(struct cplan9_s *hmm, int M)
   int k, x;
 
   hmm->M = M;
-
-  hmm->rf     = MallocOrDie ((M+2) * sizeof(char));
-  hmm->cs     = MallocOrDie ((M+2) * sizeof(char));
-  hmm->ca     = MallocOrDie ((M+2) * sizeof(char));
-  hmm->map    = MallocOrDie ((M+1) * sizeof(int));
 
   hmm->t      = MallocOrDie ((M+1) *           sizeof(float *));
   hmm->mat    = MallocOrDie ((M+1) *           sizeof(float *));
@@ -170,18 +139,6 @@ AllocCPlan9Body(struct cplan9_s *hmm, int M)
 void
 FreeCPlan9(struct cplan9_s *hmm)
 {
-  if (hmm->name    != NULL) free(hmm->name);
-  if (hmm->acc     != NULL) free(hmm->acc);
-  if (hmm->desc    != NULL) free(hmm->desc);
-  if (hmm->rf      != NULL) free(hmm->rf);
-  if (hmm->cs      != NULL) free(hmm->cs);
-  if (hmm->ca      != NULL) free(hmm->ca);
-  if (hmm->comlog  != NULL) free(hmm->comlog);
-  if (hmm->ctime   != NULL) free(hmm->ctime);
-  if (hmm->map     != NULL) free(hmm->map);
-  if (hmm->tpri    != NULL) free(hmm->tpri);
-  if (hmm->mpri    != NULL) free(hmm->mpri);
-  if (hmm->ipri    != NULL) free(hmm->ipri);
   if (hmm->bsc_mem != NULL) free(hmm->bsc_mem);
   if (hmm->begin   != NULL) free(hmm->begin);
   if (hmm->esc_mem != NULL) free(hmm->esc_mem);
@@ -198,8 +155,6 @@ FreeCPlan9(struct cplan9_s *hmm)
   if (hmm->mat     != NULL) free(hmm->mat);
   if (hmm->ins     != NULL) free(hmm->ins);
   if (hmm->t       != NULL) free(hmm->t);
-  if (hmm->dnam    != NULL) free(hmm->dnam);
-  if (hmm->dnai    != NULL) free(hmm->dnai);
   free(hmm);
 }
 
@@ -224,102 +179,6 @@ ZeroCPlan9(struct cplan9_s *hmm)
   FSet(hmm->end+1, hmm->M, 0.);
   hmm->flags &= ~CPLAN9_HASBITS;	/* invalidates scores */
   hmm->flags &= ~CPLAN9_HASPROB;	/* invalidates probabilities */
-}
-
-
-/* Function: CPlan9SetName()
- * 
- * Purpose:  Change the name of a CPlan9 HMM. Convenience function.
- *      
- * Note:     Trailing whitespace and \n's are chopped.     
- */
-void
-CPlan9SetName(struct cplan9_s *hmm, char *name)
-{
-  if (hmm->name != NULL) free(hmm->name);
-  hmm->name = Strdup(name);
-  StringChop(hmm->name);
-}
-/* Function: Cplan9SetAccession()
- * 
- * Purpose:  Change the accession number of a Cplan9 HMM. Convenience function.
- *      
- * Note:     Trailing whitespace and \n's are chopped.     
- */
-void
-CPlan9SetAccession(struct cplan9_s *hmm, char *acc)
-{
-  if (hmm->acc != NULL) free(hmm->acc);
-  hmm->acc = Strdup(acc);
-  StringChop(hmm->acc);
-  hmm->flags |= CPLAN9_ACC;
-}
-
-/* Function: CPlan9SetDescription()
- * 
- * Purpose:  Change the description line of a Cplan9 HMM. Convenience function.
- * 
- * Note:     Trailing whitespace and \n's are chopped.
- */
-void
-CPlan9SetDescription(struct cplan9_s *hmm, char *desc)
-{
-  if (hmm->desc != NULL) free(hmm->desc);
-  hmm->desc = Strdup(desc);
-  StringChop(hmm->desc); 
-  hmm->flags |= CPLAN9_DESC;
-}
-
-/* Function: CPlan9ComlogAppend()
- * Date:     SRE, Wed Oct 29 09:57:30 1997 [TWA 721 over Greenland] 
- * 
- * Purpose:  Concatenate command line options and append to the
- *           command line log.
- */
-void
-CPlan9ComlogAppend(struct cplan9_s *hmm, int argc, char **argv)
-{
-  int len;
-  int i;
-
-  /* figure out length of command line, w/ spaces and \n */
-  len = argc;
-  for (i = 0; i < argc; i++)
-    len += strlen(argv[i]);
-
-  /* allocate */
-  if (hmm->comlog != NULL)
-    {
-      len += strlen(hmm->comlog);
-      hmm->comlog = ReallocOrDie(hmm->comlog, sizeof(char)* (len+1));
-    }
-  else
-    {
-      hmm->comlog = MallocOrDie(sizeof(char)* (len+1));
-      *(hmm->comlog) = '\0'; /* need this to make strcat work */
-    }
-
-  /* append */
-  strcat(hmm->comlog, "\n");
-  for (i = 0; i < argc; i++)
-    {
-      strcat(hmm->comlog, argv[i]);
-      if (i < argc-1) strcat(hmm->comlog, " ");
-    }
-}
-
-/* Function: CPlan9SetCtime()
- * Date:     SRE, Wed Oct 29 11:53:19 1997 [TWA 721 over the Atlantic]
- * 
- * Purpose:  Set the ctime field in a new HMM to the current time.
- */
-void
-CPlan9SetCtime(struct cplan9_s *hmm)
-{
-  time_t date = time(NULL);
-  if (hmm->ctime != NULL) free(hmm->ctime);
-  hmm->ctime = Strdup(ctime(&date));
-  StringChop(hmm->ctime);
 }
 
 
@@ -1317,3 +1176,103 @@ DegenerateSymbolScore(float *p, float *null, int ambig)
   }
   return (int) (INTSCALE * numer / denom);
 }
+
+/* Following functions for CPlan9 HMMs were deprecated 01.04.07,
+ * we never use these aspects of a CP9 HMM.
+ */
+#if 0
+/* Function: CPlan9SetName()
+ * 
+ * Purpose:  Change the name of a CPlan9 HMM. Convenience function.
+ *      
+ * Note:     Trailing whitespace and \n's are chopped.     
+ */
+void
+CPlan9SetName(struct cplan9_s *hmm, char *name)
+{
+  if (hmm->name != NULL) free(hmm->name);
+  hmm->name = Strdup(name);
+  StringChop(hmm->name);
+}
+/* Function: Cplan9SetAccession()
+ * 
+ * Purpose:  Change the accession number of a Cplan9 HMM. Convenience function.
+ *      
+ * Note:     Trailing whitespace and \n's are chopped.     
+ */
+void
+CPlan9SetAccession(struct cplan9_s *hmm, char *acc)
+{
+  if (hmm->acc != NULL) free(hmm->acc);
+  hmm->acc = Strdup(acc);
+  StringChop(hmm->acc);
+  hmm->flags |= CPLAN9_ACC;
+}
+
+/* Function: CPlan9SetDescription()
+ * 
+ * Purpose:  Change the description line of a Cplan9 HMM. Convenience function.
+ * 
+ * Note:     Trailing whitespace and \n's are chopped.
+ */
+void
+CPlan9SetDescription(struct cplan9_s *hmm, char *desc)
+{
+  if (hmm->desc != NULL) free(hmm->desc);
+  hmm->desc = Strdup(desc);
+  StringChop(hmm->desc); 
+  hmm->flags |= CPLAN9_DESC;
+}
+
+/* Function: CPlan9ComlogAppend()
+ * Date:     SRE, Wed Oct 29 09:57:30 1997 [TWA 721 over Greenland] 
+ * 
+ * Purpose:  Concatenate command line options and append to the
+ *           command line log.
+ */
+void
+CPlan9ComlogAppend(struct cplan9_s *hmm, int argc, char **argv)
+{
+  int len;
+  int i;
+
+  /* figure out length of command line, w/ spaces and \n */
+  len = argc;
+  for (i = 0; i < argc; i++)
+    len += strlen(argv[i]);
+
+  /* allocate */
+  if (hmm->comlog != NULL)
+    {
+      len += strlen(hmm->comlog);
+      hmm->comlog = ReallocOrDie(hmm->comlog, sizeof(char)* (len+1));
+    }
+  else
+    {
+      hmm->comlog = MallocOrDie(sizeof(char)* (len+1));
+      *(hmm->comlog) = '\0'; /* need this to make strcat work */
+    }
+
+  /* append */
+  strcat(hmm->comlog, "\n");
+  for (i = 0; i < argc; i++)
+    {
+      strcat(hmm->comlog, argv[i]);
+      if (i < argc-1) strcat(hmm->comlog, " ");
+    }
+}
+
+/* Function: CPlan9SetCtime()
+ * Date:     SRE, Wed Oct 29 11:53:19 1997 [TWA 721 over the Atlantic]
+ * 
+ * Purpose:  Set the ctime field in a new HMM to the current time.
+ */
+void
+CPlan9SetCtime(struct cplan9_s *hmm)
+{
+  time_t date = time(NULL);
+  if (hmm->ctime != NULL) free(hmm->ctime);
+  hmm->ctime = Strdup(ctime(&date));
+  StringChop(hmm->ctime);
+}
+#endif
