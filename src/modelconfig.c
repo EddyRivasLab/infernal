@@ -126,6 +126,9 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
 	  ConfigLocalEnforce(cm, 0.5, 0.5);
 	  CMLogoddsify(cm);
 	}
+      /* Set W as dmax[0], we're wasting time otherwise, looking at
+       * hits that are bigger than we're allowing with QDB. */
+      cm->W = cm->dmax[0];
     }	  
   else if(do_preset_qdb)
     {

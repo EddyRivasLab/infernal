@@ -72,20 +72,20 @@ typedef struct _job_t {
  ***************************************************************************/
 /* Get rank of master process (lowest ranked one that can do I/O 
  * Also checks the version string */
-extern int get_master_rank (MPI_Comm comm, int mpi_my_rank);
+extern int  get_master_rank (MPI_Comm comm, int mpi_my_rank);
+extern void broadcast_cm    (CM_t **cm, int mpi_my_rank, int mpi_master_rank);
 
 /**************************************************************
  * MPI search functions ("search_*") Originally from RSEARCH. *
  **************************************************************/
 
 /* First broadcast of information */
-extern void search_first_broadcast (int *num_samples, int *windowlen, float *W_scale,
-				    CM_t **cm, int *do_qdb, int **dmin, int **dmax, int *do_inside,
+extern void search_first_broadcast (int *num_samples, float *W_scale,
 				    int mpi_my_rank, int mpi_master_rank);
 
 /* Second broadcast of information */
 extern void search_second_broadcast (float *sc_cutoff, float *e_cutoff, int *cutoff_type, 
-				     int *do_revcomp, int *do_align, double *mu, double *lambda, 
+				     double *mu, double *lambda, 
 				     double *K, long *N, int mpi_my_rank, int mpi_master_rank);
 
 /* Get job from master process */
@@ -126,7 +126,6 @@ extern void search_send_terminate (int i);
 /**************************************************************
  * MPI alignment functions ("aln_*") (EPN 01.04.07)
  **************************************************************/
-extern void aln_broadcast       (CM_t **cm, int mpi_my_rank, int mpi_master_rank);
 extern int  aln_procs_working   (int *process_status, int mpi_num_procs, int mpi_master_rank);
 extern void aln_send_next_job   (seqs_to_aln_t *seqs_to_aln, int rank_to_send_to);
 extern char aln_receive_job     (seqs_to_aln_t **ret_seqs_to_aln, int mpi_master_rank);

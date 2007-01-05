@@ -17,7 +17,7 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 			      CM_t *cm, int num_samples, int sample_length,
 			      double *lambda, double *K, 
 			      int mpi_my_rank, int mpi_num_procs, 
-			      int mpi_master_rank) 
+			      int mpi_master_rank);
 #endif
 
 extern void GetDBInfo(ESL_SQFILE *sqfp, long *ret_N, int **ret_gc_ct);

@@ -74,41 +74,31 @@ int get_master_rank (MPI_Comm comm, int mpi_my_rank) {
   return (i);
 }
 
-/**************************************************************
- * MPI search functions ("search_*") Originally from RSEARCH. *
- **************************************************************/
 /*
- * Function: search_first_broadcast()
- * Date:     RJK, Tue May 28, 2002 [St. Louis]
- * Purpose:  Broadcasts the first set of parameters needed in all processes
+ * Function: broadcast_cm()
+ * Date:     EPN, Thu Jan  4 14:33:07 2007
+ * Purpose:  Broadcasts the CM for alignment or search.
  *
- * dmin and dmax will be NULL if QDB is not being used
  */
-void search_first_broadcast (int *num_samples, int *windowlen, float *W_scale,
-			     CM_t **cm, int mpi_my_rank, 
-			     int mpi_master_rank) {
+void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank) 
+{
   char buf[BUFSIZE];      /* Buffer for packing it all but the bulk of the CM */
   int position = 0;         /* Where I am in the buffer */
   int nstates, nnodes;
-  /*printf("entered first_broadcast: do_qdb: %d do_inside: %d my: %d master: %d\n", *do_qdb, *do_inside, 
-    mpi_my_rank, mpi_master_rank);*/
-
+  int enf_len;
+  /*printf("entered aln_broadcast my: %d master: %d\n", mpi_my_rank, mpi_master_rank);*/
+  
   position = 0;
   if (mpi_my_rank == mpi_master_rank) 
     {   /* I'm in charge */
       nstates = (*cm)->M;
       nnodes = (*cm)->nodes;
-
-      /* Some ints */
-      MPI_Pack (num_samples, 1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (windowlen, 1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      /* A float */
-      MPI_Pack (W_scale, 1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      
       /* Basics of the model */
-      MPI_Pack (&nstates,              1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD); 
-      MPI_Pack (&nnodes,               1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->flags),       1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->opts),        1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&nstates,              1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD); 
+      MPI_Pack (&nnodes,               1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->flags),       1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->opts),        1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (&((*cm)->el_selfsc),   1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (&((*cm)->iel_selfsc),  1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (&((*cm)->W),           1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
@@ -128,14 +118,11 @@ void search_first_broadcast (int *num_samples, int *windowlen, float *W_scale,
   position = 0;
   if (mpi_my_rank != mpi_master_rank) 
     {
-      MPI_Unpack (buf, BUFSIZE, &position, num_samples, 1, MPI_INT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, windowlen, 1, MPI_INT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, W_scale, 1, MPI_FLOAT, MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &nstates, 1, MPI_INT, MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &nnodes, 1, MPI_INT, MPI_COMM_WORLD);
       *cm = CreateCM (nnodes, nstates);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->flags), 1, MPI_INT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->opts),  1, MPI_INT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->flags),       1, MPI_INT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->opts),        1, MPI_INT, MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->el_selfsc),   1, MPI_FLOAT, MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->iel_selfsc),  1, MPI_INT, MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->W),           1, MPI_INT, MPI_COMM_WORLD);
@@ -150,36 +137,24 @@ void search_first_broadcast (int *num_samples, int *windowlen, float *W_scale,
   /* Now we broadcast the rest of the model using many calls to MPI_Bcast.  
      This is inefficient, but is probably negligible compared to the actual 
      searches */
-  MPI_Bcast ((*cm)->null, Alphabet_size, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->sttype, nstates, MPI_CHAR, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->ndidx, nstates, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->stid, nstates, MPI_CHAR, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->cfirst, nstates, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->cnum, nstates, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->plast, nstates, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->pnum, nstates, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->null,   Alphabet_size, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->sttype, nstates,       MPI_CHAR,  mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->ndidx,  nstates,       MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->stid,   nstates,       MPI_CHAR,  mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->cfirst, nstates,       MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->cnum,   nstates,       MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->plast,  nstates,       MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->pnum,   nstates,       MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
  
-  MPI_Bcast ((*cm)->nodemap, nnodes, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->ndtype, nnodes, MPI_CHAR, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->nodemap, nnodes, MPI_INT,  mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->ndtype,  nnodes, MPI_CHAR, mpi_master_rank, MPI_COMM_WORLD);
 
-  MPI_Bcast ((*cm)->begin, nstates, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->end, nstates, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->beginsc, nstates, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->endsc, nstates, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->ibeginsc, nstates, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->iendsc, nstates, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
-
-  /* if in QDB mode: broadcast dmin and dmax */
-  if(*do_qdb) 
-    {
-      if(mpi_my_rank != mpi_master_rank)
-	{
-	  *dmin = MallocOrDie(sizeof(int) * nstates);
-	  *dmax = MallocOrDie(sizeof(int) * nstates);
-	}
-      MPI_Bcast (*dmin, nstates, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
-      MPI_Bcast (*dmax, nstates, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
-    }
+  MPI_Bcast ((*cm)->begin,    nstates, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->end,      nstates, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->beginsc,  nstates, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->endsc,    nstates, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->ibeginsc, nstates, MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->iendsc,   nstates, MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
 
   /* These next calls depend on Sean's FMX2Alloc to be what CreateCM calls, and to allocate one large
      memory chunk at x[0] (where x is float **) and then fill in x[1]..x[n] with the appropriate offsets into
@@ -190,7 +165,45 @@ void search_first_broadcast (int *num_samples, int *windowlen, float *W_scale,
   MPI_Bcast ((*cm)->esc[0], nstates*Alphabet_size*Alphabet_size, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
   MPI_Bcast ((*cm)->itsc[0], nstates*MAXCONNECT, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
   MPI_Bcast ((*cm)->iesc[0], nstates*Alphabet_size*Alphabet_size, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
+  /*printf("leaving aln_broadcast\n");*/
+  return;
+}
 
+/**************************************************************
+ * MPI search functions ("search_*") Originally from RSEARCH. *
+ **************************************************************/
+/*
+ * Function: search_first_broadcast()
+ * Date:     RJK, Tue May 28, 2002 [St. Louis]
+ * Purpose:  Broadcasts only num_samples and W_scale for parallel cmsearch.
+ *
+ */
+void search_first_broadcast (int *num_samples, float *W_scale,
+			     int mpi_my_rank, int mpi_master_rank) 
+{
+  int   bufsize = sizeof(int) + sizeof(float);
+  char *buf;                /* Buffer for packing */
+  int   position = 0;         /* Where I am in the buffer */
+  buf = MallocOrDie(bufsize);
+
+  printf("entered search_first_broadcast: my: %d master: %d\n", mpi_my_rank, mpi_master_rank);
+
+  position = 0;
+  if (mpi_my_rank == mpi_master_rank) 
+    {   /* I'm in charge */
+      MPI_Pack (num_samples, 1, MPI_INT,   buf, bufsize, &position, MPI_COMM_WORLD);
+      MPI_Pack (W_scale,     1, MPI_FLOAT, buf, bufsize, &position, MPI_COMM_WORLD);
+    }
+  /* Broadcast to everyone */
+  MPI_Bcast (buf, bufsize, MPI_PACKED, mpi_master_rank, MPI_COMM_WORLD);
+
+  /* Decode it */
+  position = 0;
+  if (mpi_my_rank != mpi_master_rank) 
+    {
+      MPI_Unpack (buf, BUFSIZE, &position, num_samples, 1, MPI_INT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, W_scale, 1, MPI_FLOAT, MPI_COMM_WORLD);
+    }
   /*printf("leaving search_first_broadcast: do_qdb: %d do_inside: %d\n", (*do_qdb), (*do_inside));*/
 }
 
@@ -199,40 +212,40 @@ void search_first_broadcast (int *num_samples, int *windowlen, float *W_scale,
  * Date:     RJK, Tue May 28, 2002 [St. Louis]
  * Purpose:  Second broadcast of information to all processes.
  */
-void search_second_broadcast (float *sc_cutoff, float *e_cutoff, int *cutoff_type, int *do_revcomp, 
-			      int *do_align,
+void search_second_broadcast (float *sc_cutoff, float *e_cutoff, int *cutoff_type, 
 			      double *mu, double *lambda, double *K, long *N,
 			      int mpi_my_rank, int mpi_master_rank) {
   char buf[BUFSIZE];      /* Buffer for packing it all but the bulk of the CM */
   int position = 0;         /* Where I am in the buffer */
 
+  printf("entered search_second_broadcast rank: %d\n", mpi_my_rank);
   position = 0;
   if (mpi_my_rank == mpi_master_rank) {   /* I'm in charge */
     MPI_Pack (sc_cutoff, 1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-    MPI_Pack (e_cutoff, 1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+    MPI_Pack (e_cutoff,  1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
     MPI_Pack (cutoff_type, 1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-    MPI_Pack (do_revcomp, 1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-    MPI_Pack (do_align, 1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
     MPI_Pack (N, 1, MPI_LONG, buf, BUFSIZE, &position, MPI_COMM_WORLD);
     MPI_Pack (mu, GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
     MPI_Pack (lambda, GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
     MPI_Pack (K, GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+    printf("check\n");
   }
   MPI_Bcast (buf, BUFSIZE, MPI_PACKED, mpi_master_rank, MPI_COMM_WORLD);
+  printf("check 2\n");
 
-  /* Decode this first set */
+  /* Decode the packet */
   position = 0;
   if (mpi_my_rank != mpi_master_rank) {
+    printf("non mpi check\n");
     MPI_Unpack (buf, BUFSIZE, &position, sc_cutoff, 1, MPI_FLOAT, MPI_COMM_WORLD);
     MPI_Unpack (buf, BUFSIZE, &position, e_cutoff, 1, MPI_FLOAT, MPI_COMM_WORLD);
     MPI_Unpack (buf, BUFSIZE, &position, cutoff_type, 1, MPI_INT, MPI_COMM_WORLD);
-    MPI_Unpack (buf, BUFSIZE, &position, do_revcomp, 1, MPI_INT, MPI_COMM_WORLD);
-    MPI_Unpack (buf, BUFSIZE, &position, do_align, 1, MPI_INT, MPI_COMM_WORLD) ;
     MPI_Unpack (buf, BUFSIZE, &position, N, 1, MPI_LONG, MPI_COMM_WORLD);
     MPI_Unpack (buf, BUFSIZE, &position, mu, GC_SEGMENTS, MPI_FLOAT, MPI_COMM_WORLD);
     MPI_Unpack (buf, BUFSIZE, &position, lambda, GC_SEGMENTS, MPI_FLOAT, MPI_COMM_WORLD);
     MPI_Unpack (buf, BUFSIZE, &position, K, GC_SEGMENTS, MPI_FLOAT, MPI_COMM_WORLD);
   }
+  printf("leaving search_second_broadcast rank: %d\n", mpi_my_rank);
 }
 
 /*
@@ -255,6 +268,7 @@ char search_receive_job (int *seqlen_p, char **seq_p, int *bestr_p,
   MPI_Unpack (buf, 32, &position, seqlen_p, 1, MPI_INT, MPI_COMM_WORLD);
   MPI_Unpack (buf, 32, &position, bestr_p, 1, MPI_INT, MPI_COMM_WORLD);
 
+  printf("in receive job seqlen: %d\n", *seqlen_p);
   if (*seqlen_p > 0) {
     /* Receive a partial sequence and convert to digitized sequence format
        by placing sentinels at end */
@@ -350,7 +364,7 @@ int search_procs_working (job_t **process_status, int mpi_num_procs, int mpi_mas
  *           scanning.  Queue is a linked list.
  */
 job_t *search_enqueue (db_seq_t *active_seq, int db_seq_index, 
-		int D, int do_revcomp, int job_type) 
+		       int D, int do_revcomp, int job_type) 
 {
   job_t *queue = NULL;
   job_t *cur_tail = NULL;
@@ -374,7 +388,8 @@ job_t *search_enqueue (db_seq_t *active_seq, int db_seq_index,
   chunksize = ((active_seq->sq[0]->n+D*(mpi_num_procs-2))/(mpi_num_procs-1))+1;
   chunksize = ((chunksize/D)+1)*D;
 
-  /*printf("seq len: %d chunksize: %d procs: %d\n", active_seq->sq[0]->n, chunksize, mpi_num_procs);*/
+  printf("in search_enqueue, D: %d do_revcomp: %d\n", D, do_revcomp);
+  printf("seq len: %d chunksize: %d procs: %d\n", active_seq->sq[0]->n, chunksize, mpi_num_procs);
 
   if (do_revcomp)
     chunksize *= 2;
@@ -388,6 +403,7 @@ job_t *search_enqueue (db_seq_t *active_seq, int db_seq_index,
   active_seq->alignments_sent = -1;     /* None sent yet */
   for (in_revcomp = 0; in_revcomp <= do_revcomp; in_revcomp++) {
     for (curpos = 1; curpos <= active_seq->sq[0]->n; curpos += chunkoffset) {
+      printf("made a new entry\n");
       new_entry = MallocOrDie (sizeof(db_seq_t));
       new_entry->next = NULL;
       if (cur_tail != NULL)
@@ -484,6 +500,7 @@ void search_send_next_job (job_t **queue, job_t **process_status, int rank_to_se
   MPI_Pack (&((*process_status)->bestr), 1, MPI_INT, buf, 32, &position, MPI_COMM_WORLD);
   MPI_Send (buf, position, MPI_PACKED, rank_to_send_to, JOB_PACKET_TAG, MPI_COMM_WORLD);
 
+  printf("in search_send_next_job sent len: %d\n", (*process_status)->seqlen);
   if ((*process_status)->seqlen > 0) {
     MPI_Send ((*process_status)->dsq, (*process_status)->seqlen, MPI_CHAR, rank_to_send_to, SEQ_TAG, MPI_COMM_WORLD);
   }
@@ -670,102 +687,6 @@ void search_send_terminate (int i) {
 /**************************************************************
  * MPI alignment functions ("aln_*") (EPN 01.04.07)
  **************************************************************/
-/*
- * Function: aln_broadcast()
- * Date:     EPN, Thu Jan  4 14:33:07 2007
- * Purpose:  Broadcasts the CM for alignment (in cmalign).
- *
- */
-void aln_broadcast (CM_t **cm, int mpi_my_rank, int mpi_master_rank) 
-{
-  char buf[BUFSIZE];      /* Buffer for packing it all but the bulk of the CM */
-  int position = 0;         /* Where I am in the buffer */
-  int nstates, nnodes;
-  int enf_len;
-  /*printf("entered aln_broadcast my: %d master: %d\n", mpi_my_rank, mpi_master_rank);*/
-  
-  position = 0;
-  if (mpi_my_rank == mpi_master_rank) 
-    {   /* I'm in charge */
-      nstates = (*cm)->M;
-      nnodes = (*cm)->nodes;
-      
-      /* Basics of the model */
-      MPI_Pack (&nstates,              1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD); 
-      MPI_Pack (&nnodes,               1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->flags),       1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->opts),        1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->el_selfsc),   1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->iel_selfsc),  1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->W),           1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->enf_start),   1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->score_boost), 1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      if((*cm)->enf_start != 0)
-	{
-	  enf_len = strlen((*cm)->enf_seq);
-	  MPI_Pack (&enf_len,          1,       MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
-	  MPI_Pack (&((*cm)->enf_seq), enf_len, MPI_CHAR,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
-	}
-    }
-  /* Broadcast to everyone */
-  MPI_Bcast (buf, BUFSIZE, MPI_PACKED, mpi_master_rank, MPI_COMM_WORLD);
-
-  /* Decode this first set */
-  position = 0;
-  if (mpi_my_rank != mpi_master_rank) 
-    {
-      MPI_Unpack (buf, BUFSIZE, &position, &nstates, 1, MPI_INT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &nnodes, 1, MPI_INT, MPI_COMM_WORLD);
-      *cm = CreateCM (nnodes, nstates);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->flags),       1, MPI_INT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->opts),        1, MPI_INT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->el_selfsc),   1, MPI_FLOAT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->iel_selfsc),  1, MPI_INT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->W),           1, MPI_INT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->enf_start),   1, MPI_INT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->score_boost), 1, MPI_FLOAT, MPI_COMM_WORLD);
-      if((*cm)->enf_start != 0)
-	{
-	  MPI_Unpack (buf, BUFSIZE, &position, &enf_len,                  1, MPI_INT, MPI_COMM_WORLD);
-	  MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->enf_seq),   enf_len, MPI_INT, MPI_COMM_WORLD);
-	}
-    }
-  /* Now we broadcast the rest of the model using many calls to MPI_Bcast.  
-     This is inefficient, but is probably negligible compared to the actual 
-     searches */
-  MPI_Bcast ((*cm)->null,   Alphabet_size, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->sttype, nstates,       MPI_CHAR,  mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->ndidx,  nstates,       MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->stid,   nstates,       MPI_CHAR,  mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->cfirst, nstates,       MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->cnum,   nstates,       MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->plast,  nstates,       MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->pnum,   nstates,       MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
- 
-  MPI_Bcast ((*cm)->nodemap, nnodes, MPI_INT,  mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->ndtype,  nnodes, MPI_CHAR, mpi_master_rank, MPI_COMM_WORLD);
-
-  MPI_Bcast ((*cm)->begin,    nstates, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->end,      nstates, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->beginsc,  nstates, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->endsc,    nstates, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->ibeginsc, nstates, MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->iendsc,   nstates, MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
-
-  /* These next calls depend on Sean's FMX2Alloc to be what CreateCM calls, and to allocate one large
-     memory chunk at x[0] (where x is float **) and then fill in x[1]..x[n] with the appropriate offsets into
-     this chunk of memory */
-  MPI_Bcast ((*cm)->t[0], nstates*MAXCONNECT, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->e[0], nstates*Alphabet_size*Alphabet_size, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->tsc[0], nstates*MAXCONNECT, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->esc[0], nstates*Alphabet_size*Alphabet_size, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->itsc[0], nstates*MAXCONNECT, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->iesc[0], nstates*Alphabet_size*Alphabet_size, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
-  /*printf("leaving aln_broadcast\n");*/
-  return;
-}
-
-
 /*
  * Function: aln_procs_working
  * Date:     EPN, Sat Dec 30 21:38:54 2006

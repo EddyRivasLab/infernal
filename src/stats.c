@@ -120,6 +120,7 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 	    enf_vec[i] = 0.;
 	  FNorm(enf_vec, (sample_length - strlen(cm->enf_seq) + 1));
 	  }*/
+
       /* Take num_samples samples */
       for (i=0; i<num_samples; i++) 
 	{
@@ -256,13 +257,7 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
   int   *hitj;                  /* end positions of hits */
   float *hitsc;			/* scores of hits */
 
-  printf("in parallel_make_histogram, nparts: %d D: %d sample_len: %d do_inside: %d do_enforce: %d\n", num_partitions, D, sample_length, do_inside, do_enforce);
-  printf("B PMH rank: %4d mast: %4d\n", mpi_my_rank, mpi_master_rank);
-  if(do_enforce)
-    printf("enf_seq: %s\n", enf_seq);
-
-  if(do_enforce && enf_seq == NULL)
-    Die("ERROR do_enforce in serial_make_histogram, but enf_seq is NULL.\n");
+  printf("in parallel_make_histogram, nparts: %d sample_len: %d do_ins: %d do_enf: %d\n", num_partitions, sample_length, (cm->opts & CM_SEARCH_INSIDE), (cm->opts & CM_CONFIG_ENFORCE));
 
   tmp_name = sre_strdup("random", -1);
   if (num_samples == 0) {
@@ -296,14 +291,14 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 	  }
 	}
 	FNorm (cur_gc_freqs[cur_partition], GC_SEGMENTS);
-	if(do_enforce)
+	/* EXPERIMENTAL CODE: embed enforced subseq into each sample */
+	/*if(cm->opts & CM_CONFIG_ENFORCE)
 	  {
-	    enf_vec = MallocOrDie(sizeof(float) * (sample_length - strlen(enf_seq) + 1));
-	    for(i = 0; i < (sample_length - strlen(enf_seq) + 1); i++)
-	      enf_vec[i] = 0.;
-	    FNorm(enf_vec, (sample_length - strlen(enf_seq) + 1));
-	  }
-      }
+	  enf_vec = MallocOrDie(sizeof(float) * (sample_length - strlen(cm->enf_seq) + 1));
+	  for(i = 0; i < (sample_length - strlen(cm->enf_seq) + 1); i++)
+	    enf_vec[i] = 0.;
+	  FNorm(enf_vec, (sample_length - strlen(cm->enf_seq) + 1));
+	  }*/
       
       /* Set up arrays to hold pointers to active seqs and jobs on
 	 processes */
@@ -344,40 +339,42 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 		  gc_comp = 0.01*FChoose(cur_gc_freqs[cur_partition], GC_SEGMENTS);
 		  nt_p[1] = nt_p[2] = 0.5*gc_comp;
 		  nt_p[0] = nt_p[3] = 0.5*(1. - gc_comp);
-
+		  
 		  randseqs[randseq_index]->sq[0] = 
 		    esl_sq_CreateFrom(tmp_name, 
 				      RandomSequence (Alphabet, nt_p, Alphabet_size, sample_length),
 				      NULL, NULL, NULL);
-
-		  if(do_enforce && (strstr(randseqs[randseq_index]->sq[0]->seq, enf_seq) == NULL)) 
-		    {
-		      /* insert the sequence, but only if it's not already there. */
-		      /* pick a random position */
-		      enf_start = FChoose (enf_vec, (sample_length - strlen(enf_seq) + 1));
-		      /* insert the sequence */
-		      for(x = enf_start; x < (enf_start + strlen(enf_seq)); x++)
-			;//randseqs[randseq_index]->sq[0]->seq[x] = enf_seq[(x-enf_start)];
-		    }
+		  
+		  /* EXPERIMENTAL CODE: embed enforced subseq into each sample */
+		  //if(cm->opts & CM_CONFIG_ENFORCE && (strstr(randseq, cm->enf_seq) == NULL)) 
+		  //{
+		  /* insert the sequence, but only if it's not already there. */
+		  /* pick a random position */
+		  //enf_start = FChoose (enf_vec, (sample_length - strlen(cm->enf_seq) + 1));
+		  /* insert the sequence */
+		  //for(x = cm->enf_start; x < (cm->enf_start + strlen(cm->enf_seq)); x++)
+		  //;//randseq[x] = cm->enf_seq[(x-cm->enf_start)];
+		  //}
+		  
 		  randseqs[randseq_index]->sq[0]->dsq = 
 		    DigitizeSequence(randseqs[randseq_index]->sq[0]->seq, 
 				     randseqs[randseq_index]->sq[0]->n);
 		  /*esl_sqio_Write(stdout, randseqs[randseq_index]->sq[0], eslSQFILE_FASTA);*/
 		  
 		  /*randseqs[randseq_index]->seq[0] = 
-		  randseqs[randseq_index]->dsq[0] = 
+		    randseqs[randseq_index]->dsq[0] = 
 		    DigitizeSequence (randseqs[randseq_index]->seq[0], 
 		    randseqs[randseq_index]->sqinfo.len);*/
-
+		  
 		  /*randseqs[randseq_index]->best_score = 0;*/
 		  randseqs[randseq_index]->best_score = IMPOSSIBLE;
 		  
 		  randseqs[randseq_index]->partition = cur_partition;
-
-		  job_queue = search_enqueue(randseqs[randseq_index], randseq_index, D,
+		  
+		  job_queue = search_enqueue(randseqs[randseq_index], randseq_index, cm->W,
 					     FALSE, SEARCH_HIST_SCAN_WORK);
 		  num_seqs_made++;
-
+		  
 		}
 		if (job_queue != NULL)
 		  {
@@ -389,10 +386,10 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 	  }
 	/* Wait for next reply */
 	if (search_procs_working(process_status, mpi_num_procs, mpi_master_rank)) {
-	  randseq_index = search_check_hist_results (randseqs, process_status, D);
+	  randseq_index = search_check_hist_results (randseqs, process_status, cm->W);
 	  /* If the sequence is done */
 	  if (randseqs[randseq_index]->chunks_sent == 0) {
-	    /* Get best score at D and add */
+	    /* Get best score at cm->W and add */
 	    /*AddToHistogram (h[randseqs[randseq_index]->partition], 
 	      randseqs[randseq_index]->best_score);*/
 	    esl_histogram_Add(h[randseqs[randseq_index]->partition], randseqs[randseq_index]->best_score);
@@ -435,7 +432,8 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
       }
       free(cur_gc_freqs);
       free(h);
-    } 
+      }
+    }
   else 
     {
       dsq = NULL;
@@ -444,17 +442,17 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 	  job_type = search_receive_job(&seqlen, &dsq, &dummy, mpi_master_rank);
 	  if (job_type == SEARCH_HIST_SCAN_WORK) {
 
-	    if(dmin == NULL && dmax == NULL)
-	      if(do_inside)
-		score = iInsideScan(cm, dsq, 1, sample_length, D, 0, 0, NULL);
+	    if(cm->opts & CM_SEARCH_NOQDB)
+	      if(cm->opts & CM_SEARCH_INSIDE)
+		score = iInsideScan(cm, dsq, 1, sample_length, cm->W, 0, 0, NULL);
 	      else 
-		score = CYKScan(cm, dsq, 1, sample_length, D, 0, 0, NULL);
+		score = CYKScan(cm, dsq, 1, sample_length, cm->W, 0, 0, NULL);
 	    else /* use QDB */
-	      if(do_inside)
-		score = iInsideBandedScan(cm, dsq, dmin, dmax, 1, sample_length, D, 
+	      if(cm->opts & CM_SEARCH_INSIDE)
+		score = iInsideBandedScan(cm, dsq, cm->dmin, cm->dmax, 1, sample_length, cm->W, 
 					  0, 0, NULL);
 	      else
-		score = CYKBandedScan(cm, dsq, dmin, dmax, 1, sample_length, D,
+		score = CYKBandedScan(cm, dsq, cm->dmin, cm->dmax, 1, sample_length, cm->W,
 				      0, 0, NULL);
 	    search_send_hist_scan_results (score, mpi_master_rank);
 	  } 

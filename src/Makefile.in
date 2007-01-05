@@ -63,7 +63,6 @@ OBJS  = alphabet.o\
 	sub_cm.o\
 	stats.o\
 	mpifuncs.o\
-	histogram.o\
 	cm_wrappers.o
 
 HDRS  = funcs.h\
@@ -73,8 +72,7 @@ HDRS  = funcs.h\
 	cplan9.h\
 	cm_postprob.h\
 	stats.h\
-	mpifuncs.h\
-	histogram.h
+	mpifuncs.h
 
 .c.o: 
 	$(CC) $(CFLAGS) $(DEFS) $(MYINCDIR) -c $<

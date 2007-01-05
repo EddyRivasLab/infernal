@@ -28,6 +28,7 @@
 #include "esl_gumbel.h"
 #include "esl_sqio.h"
 #include "mpifuncs.h"
+#include "cm_wrappers.h"
 
 /* From rsearch-1.1 various defaults defined here */
 #define DEFAULT_NUM_SAMPLES 0
@@ -144,7 +145,6 @@ main(int argc, char **argv)
   char            *optname;     /* name of option found by Getopt()         */
   char            *optarg;      /* argument found by Getopt()               */
   int              optind;      /* index in argv[]                          */
-  int              querylen;    /* consensus length of the CM query         */
   ESL_SQFILE	  *dbfp;        /* open seqfile for reading                 */
   CM_t            *cm;          /* a covariance model                       */
   ESL_SQ          *sq;          /* the target database seqs to search       */
@@ -159,8 +159,8 @@ main(int argc, char **argv)
 
   double            beta;       /* tail loss prob for query dependent bands */
 
-  int             *preset_dmin; /* if --qdbfile, dmins read from file       */
-  int             *preset_dmax; /* if --qdbfile, dmaxs read from file       */
+  int             *preset_dmin = NULL; /* if --qdbfile, dmins read from file       */
+  int             *preset_dmax = NULL; /* if --qdbfile, dmaxs read from file       */
   int              do_revcomp;  /* true to do reverse complement also       */
   int              do_local;    /* TRUE to do local alignment               */
   int              do_align;    /* TRUE to calculate and show alignments    */
@@ -194,7 +194,7 @@ main(int argc, char **argv)
   double mu[GC_SEGMENTS];       /* mu for EVDs, Set from lambda, K, N       */
   long N;                       /* effective number of seqs for this search */
   float W_scale = 2.0;          /* W_scale * W= sample_length               */
-  int defined_N = FALSE;        /* TRUE if N set at command length          */
+  int defined_N = FALSE;        /* TRUE if N set at command line            */
   int do_partitions;            /* TRUE if --partition enabled              */
   int *partitions;              /* partition each GC % point seg goes to    */
   int num_partitions = 1;       /* number of partitions                     */
@@ -339,7 +339,7 @@ main(int argc, char **argv)
   do_null2          = FALSE;
   do_zero_inserts   = TRUE;
   sample_length     = 0;
-  sc_cutoff         = 0;
+  sc_cutoff         = 0.;
   e_cutoff          = 10;
   cutoff_type       = DEFAULT_CUTOFF_TYPE;
   do_stats          = FALSE;
@@ -448,7 +448,7 @@ main(int argc, char **argv)
   if(set_window && do_qdb)
     Die("--window only works with --noqdb.\n");
 #if USE_MPI
-  if(read_qdb && (mpi_num_procs > 1))
+  if(read_qdb && ((mpi_num_procs > 1) && (mpi_my_rank == mpi_master_rank)))
     Die("Sorry, you can't read in bands with --qdbfile in MPI mode.\n");
 #endif
 
@@ -490,9 +490,12 @@ main(int argc, char **argv)
     Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
   if (cm == NULL) 
     Die("%s empty?\n", cmfile);
+  CMFileClose(cmfp);
  
   cm->beta   = beta;
   cm->hbandp = hbandp;
+  cm->score_boost = score_boost;
+  
   if (set_window) cm->W = set_W;
 
   /* Update cm->opts based on command line options */
@@ -516,10 +519,6 @@ main(int argc, char **argv)
       cm->enf_start = enf_start; 
       cm->enf_seq   = enf_seq;
     }
-  cm->score_boost = score_boost;
-  
-  cons = CreateCMConsensus(cm, 3.0, 1.0); 
-  querylen = cons->clen;
   
   if(read_qdb)
     {
@@ -535,7 +534,9 @@ main(int argc, char **argv)
   else
     preset_dmin = preset_dmax = NULL;
   
-  /* Open the sequence (db) file */
+  /*******************************
+   * Open the sequence (db) file *
+   *******************************/
   status = esl_sqfile_Open(seqfile, format, NULL, &dbfp);
   if (status == eslENOTFOUND) esl_fatal("No such file."); 
   else if (status == eslEFORMAT) esl_fatal("Format unrecognized."); 
@@ -546,24 +547,38 @@ main(int argc, char **argv)
   }   /* End of first block that is only done by master process */
   /* Barrier for debugging */
   MPI_Barrier(MPI_COMM_WORLD);
-  
+
   /* Here we need to broadcast the following parameters:
      num_samples, W, W_scale, and the CM */
-  search_first_broadcast(&num_samples, &W, &W_scale, &cm, mpi_my_rank, 
+  broadcast_cm(&cm, mpi_my_rank, mpi_master_rank);
+  search_first_broadcast(&num_samples, &W_scale, mpi_my_rank, 
 			 mpi_master_rank);
   
 #endif
+
   /* Configure the CM for search based on cm->opts.
    * set local mode, make cp9 HMM, calculate QD bands etc.,
-   * preset_dmin and preset_dmax are NULL unless --qdbfile. */
+   * preset_dmin and preset_dmax are NULL unless --qdbfile, 
+   * and you can't enable --qdbfile in MPI mode 
+   * (we check for this and die if it's true above). */
   ConfigCM(cm, preset_dmin, preset_dmax);
 
-  if(do_bdump) 
+  cons = CreateCMConsensus(cm, 3.0, 1.0); 
+  
+  
+#ifdef USE_MPI
+  if(mpi_my_rank == mpi_master_rank)
+    {
+#endif
+  if(do_bdump && (!(cm->opts & CM_SEARCH_NOQDB))) 
     {
       printf("beta:%f\n", cm->beta);
       debug_print_bands(cm, cm->dmin, cm->dmax);
       PrintDPCellsSaved(cm, cm->dmin, cm->dmax, cm->W);
     }
+#ifdef USE_MPI
+    }
+#endif
 
   /**************************************************
    * Make the histogram
@@ -581,87 +596,88 @@ main(int argc, char **argv)
   /* Set sample_length to 2*W if not yet set */
   if (sample_length == 0) sample_length = W_scale * cm->W;
   /*printf("0 W: %d W_scale: %f sample_length: %d\n", W, W_scale, sample_length);*/
-  if (num_samples > 0) /* num_samples will be 0 unless do_stats is TRUE */
+  if (cm->opts & CM_SEARCH_STATS) 
     {
 #ifdef USE_MPI
-    /*StopwatchZero(watch);
-      StopwatchStart(watch);*/
-    if (mpi_num_procs > 1)
+      /*StopwatchZero(watch);
+	StopwatchStart(watch);*/
+      if (mpi_num_procs > 1)
 	parallel_make_histogram(gc_ct, partitions, num_partitions,
 				cm, num_samples, sample_length, lambda, K, 
 				mpi_my_rank, mpi_num_procs, mpi_master_rank);
-    else 
+      else 
 #endif
-      serial_make_histogram (gc_ct, partitions, num_partitions,
-			     cm, num_samples, sample_length, lambda, K, TRUE);
-
-    /*StopwatchStop(watch);
-      StopwatchDisplay(stdout, "\nCPU time (histogram): ", watch);*/
+	serial_make_histogram (gc_ct, partitions, num_partitions,
+			       cm, num_samples, sample_length, lambda, K, TRUE);
+    }      
+  /*StopwatchStop(watch);
+    StopwatchDisplay(stdout, "\nCPU time (histogram): ", watch);*/
+      
+#ifdef USE_MPI
+  if (mpi_my_rank == mpi_master_rank) {
+#endif
     
-#ifdef USE_MPI
-    if (mpi_my_rank == mpi_master_rank) {
-#endif
-      
-      /* Set mu from K, lambda, N */
-      if (num_samples > 0)
-	for (i=0; i<GC_SEGMENTS; i++) {
+    /* Set mu from K, lambda, N */
+    if (cm->opts & CM_SEARCH_STATS)
+      {
+	for (i=0; i<GC_SEGMENTS; i++) 
 	  mu[i] = log(K[i]*N)/lambda[i];
-	}
-      
-      debug_print_stats(partitions, num_partitions, lambda, mu);
-
-      if (cutoff_type == E_CUTOFF) {
-	if (num_samples < 1) 
-	  Die ("Cannot use -E option without defined lambda and K\n");
+	debug_print_stats(partitions, num_partitions, lambda, mu);
+      }    
+    else
+      {
+	for (i=0; i<GC_SEGMENTS; i++) 
+	  mu[i] = K[i] = lambda[i] = 0.;
       }
-      
-      if (num_samples > 0) {
+    if (cm->opts & CM_SEARCH_STATS) 
+      {
 	printf ("Statistics calculated with simulation of %d samples of length %d\n", num_samples, sample_length);
-	if (num_partitions == 1) {
+	if (num_partitions == 1) 
 	  printf ("No partition points\n");
-	} else {
+	else 
+	  {
 	    printf ("Partition points are: ");
-	    for (i=0; i<=GC_SEGMENTS; i++) {
-	      if (partitions[i] != partitions[i-1]) {
+	    for (i=0; i<=GC_SEGMENTS; i++)
+	      if (partitions[i] != partitions[i-1]) 
 		printf ("%d ", i);
-	      }
-	    }
-	}
-	for (i=0; i<GC_SEGMENTS; i++) {
-	  /*printf ("GC = %d\tlambda = %.4f\tmu = %.4f\n", i, lambda[i], mu[i]);*/
-	}
+	  }
+	for (i=0; i<GC_SEGMENTS; i++) 
+	  ;/*printf ("GC = %d\tlambda = %.4f\tmu = %.4f\n", i, lambda[i], mu[i]);*/
 	printf ("N = %ld\n", N);
-	if (cutoff_type == SCORE_CUTOFF) {
+	if (cutoff_type == SCORE_CUTOFF) 
 	  printf ("Using score cutoff of %.2f\n", sc_cutoff);
-	} else {
+	else 
 	  printf ("Using E cutoff of %.2f\n", e_cutoff);
+      } 
+    else 
+	{
+	  printf ("lambda and K undefined -- no statistics\n");
+	  printf ("Using score cutoff of %.2f\n", sc_cutoff);
 	}
-      } else {
-	printf ("lambda and K undefined -- no statistics\n");
-	printf ("Using score cutoff of %.2f\n", sc_cutoff);
-      }
-      fflush(stdout);
-    }
-  /*******************************************************************************
-   * End of making the histogram.
-   *******************************************************************************/
-  /*************************************************
-   *    Do the search
-   *************************************************/
+    fflush(stdout);
+
+    /*************************************************
+     * End of making the histogram.
+     *************************************************/
+    /*************************************************
+     *    Do the search
+     *************************************************/
 #ifdef USE_MPI
-  }                   /* Done with second master-only block */
+    } /* Done with second master-only block */
   
   /* Now I need to broadcast the following parameters:
      cutoff, cutoff_type, do_revcomp, do_align, mu, lambda, K, N */
-  search_second_broadcast(&sc_cutoff, &e_cutoff, &cutoff_type, &do_revcomp, &do_align, mu, lambda, 
+  search_second_broadcast(&sc_cutoff, &e_cutoff, &cutoff_type, mu, lambda, 
 			  K, &N, mpi_my_rank, mpi_master_rank);
 #endif
   if(cutoff_type == E_CUTOFF) cutoff = e_cutoff;
   else cutoff = sc_cutoff;
 
+  printf("cutoff: %f rank: %d\n", cutoff, mpi_my_rank);
+
 #ifdef USE_MPI
   if (mpi_num_procs > 1)
-    parallel_search_database (dbfp, cm, cons, cm->W, cutoff_type, cutoff, mu, lambda, 
+    parallel_search_database (dbfp, cm, cons, cutoff_type, cutoff, mu, lambda, 
 			      mpi_my_rank, mpi_master_rank, mpi_num_procs);
   else
 #endif

@@ -396,14 +396,14 @@ main(int argc, char **argv)
   MPI_Barrier(MPI_COMM_WORLD);
 
   /* Broadcast the CM, before we configure it. */
-  aln_broadcast(&cm, mpi_my_rank, mpi_master_rank);
+  broadcast_cm(&cm, mpi_my_rank, mpi_master_rank);
 
   if (mpi_num_procs > 1)
     {
       /* Configure the CM for alignment based on cm->opts.
        * set local mode, make cp9 HMM, calculate QD bands etc. */
       ConfigCM(cm, NULL, NULL);
-      parallel_align_targets(cm, seqfp, &sq, &tr, &postcode, &nseq,
+      parallel_align_targets(seqfp, cm, &sq, &tr, &postcode, &nseq,
 			     bdump_level, debug_level, be_quiet,
 			     mpi_my_rank, mpi_master_rank, mpi_num_procs);
       printf("done parallel align_seqs.\n");
@@ -414,7 +414,7 @@ main(int argc, char **argv)
       /* Configure the CM for alignment based on cm->opts.
        * set local mode, make cp9 HMM, calculate QD bands etc. */
       ConfigCM(cm, NULL, NULL);
-      serial_align_targets(cm, seqfp, &sq, &tr, &postcode, &nseq, bdump_level, debug_level, 
+      serial_align_targets(seqfp, cm, &sq, &tr, &postcode, &nseq, bdump_level, debug_level, 
 			   be_quiet);
     }
 #ifdef USE_MPI

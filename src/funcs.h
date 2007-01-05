@@ -384,33 +384,6 @@ extern CMSubInfo_t *AllocSubInfo(int clen);
 extern void         FreeSubInfo(CMSubInfo_t *subinfo);
 extern void  debug_print_cm_params(CM_t *cm);
 
-/* from cm_wrappers.c
- */
-extern void
-actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, char ***ret_postcode,
-		       int bdump_level, int debug_level, int silent_mode);
-extern void
-serial_align_targets(CM_t *cm, ESL_SQFILE *seqfp, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr, 
-		     char ***ret_postcode, int *ret_nseq, int bdump_level, int debug_level, 
-		     int silent_mode);
-extern void
-parallel_align_targets(CM_t *cm, ESL_SQFILE *seqfp, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr,
-		       char ***ret_postcode, int *ret_nseq, int bdump_level, int debug_level,
-		       int silent_mode, int mpi_my_rank, int mpi_master_rank, int mpi_num_procs);
-extern void 
-serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
-			int cutoff_type, float cutoff, 
-			double *mu, double *lambda);
-extern void 
-parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
-			  int W, int cutoff_type, float cutoff, 
-			  int do_revcomp, int do_align, int do_stats,
-			  double *mu, double *lambda, int *dmin, int *dmax, int do_inside,
-			  int mpi_my_rank, int mpi_master_rank, 
-			  int mpi_num_procs) ;
-extern int 
-EnforceSubsequence(CM_t *cm);
-
 /* Reading/writing of CP9 HMMs no longer supported. */
 #if 0
 /* from cp9_hmmio.c 

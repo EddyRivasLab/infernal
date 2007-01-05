@@ -33,6 +33,7 @@
 #include "stats.h"
 #include "esl_gumbel.h"
 #include "mpifuncs.h"
+#include "cm_wrappers.h"
 
 /* Helper functions called by the main functions (main functions
  * declared in cm_wrappers.h 
@@ -84,6 +85,7 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
   
   do_revcomp = (!(cm->opts & CM_SEARCH_TOPONLY));
   do_align   = (!(cm->opts & CM_SEARCH_NOALIGN));
+
   if (cutoff_type == SCORE_CUTOFF) 
     min_cutoff = cutoff;
   else 
@@ -107,10 +109,10 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 	      iInsideBandedScan(cm, dbseq->sq[reversed]->dsq, cm->dmin, cm->dmax, 
 			       1, dbseq->sq[reversed]->n, cm->W,
 			       min_cutoff, 0, dbseq->results[reversed]);
-	    else /* !do_inside */
-	    CYKBandedScan (cm, dbseq->sq[reversed]->dsq, cm->dmin, cm->dmax, 1, 
-			   dbseq->sq[reversed]->n, cm->W, min_cutoff, 0, 
-			   dbseq->results[reversed]);
+	    else /* don't do inside */
+	      CYKBandedScan (cm, dbseq->sq[reversed]->dsq, cm->dmin, cm->dmax, 1, 
+			     dbseq->sq[reversed]->n, cm->W, min_cutoff, 0, 
+			     dbseq->results[reversed]);
 
 	  /* Align results */
 	  if (do_align) {
@@ -179,10 +181,8 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
  *           }
  */
 void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
-			       int W, int cutoff_type, float cutoff, 
-			       int do_revcomp, int do_align, int do_stats,
-			       double *mu, double *lambda, int *dmin, int *dmax,
-			       int do_inside, 
+			       int cutoff_type, float cutoff, 
+			       double *mu, double *lambda, 
 			       int mpi_my_rank, int mpi_master_rank, 
 			       int mpi_num_procs) 
 {
@@ -198,10 +198,19 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
   int bestr;       /* Best root state -- for alignments */
   Parsetree_t *tr;
   float min_cutoff;
-  /*do_align = FALSE;
-    dmin = NULL;
-    dmax = NULL;*/
-  /*printf("B PSD rank: %4d mast: %4d\n", mpi_my_rank, mpi_master_rank);*/
+  int do_revcomp;
+  int do_align;
+
+  printf("B PSD rank: %4d mast: %4d cutoff: %f\n", mpi_my_rank, mpi_master_rank, cutoff);
+
+  do_revcomp = (!(cm->opts & CM_SEARCH_TOPONLY));
+  do_align   = (!(cm->opts & CM_SEARCH_NOALIGN));
+  printf("do_revcomp: %d\n", do_revcomp);
+
+  if (cutoff_type == SCORE_CUTOFF) 
+    min_cutoff = cutoff;
+  else 
+    min_cutoff = e_to_score (cutoff, mu, lambda);
 
   if (mpi_my_rank == mpi_master_rank) 
     {
@@ -217,36 +226,43 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
       do
 	{
 	  /* Check for idle processes.  Send jobs */
-	  for (proc_index=0; proc_index<mpi_num_procs; proc_index++) {
-	    if (proc_index == mpi_master_rank) continue;  /* Skip master process */
-	    if (process_status[proc_index] == NULL) {         
-	      /* I'm idle -- need a job */
-	      if (job_queue == NULL) {           /* Queue is empty */
-		/* Find next non-master open process */
-		for (active_seq_index=0; active_seq_index<mpi_num_procs; active_seq_index++) {
-		  if (active_seqs[active_seq_index] == NULL) break;
-		}
-		if (active_seq_index == mpi_num_procs) {
-		  Die ("Tried to read more than %d seqs at once\n", mpi_num_procs);
-		}
-		active_seqs[active_seq_index] = read_next_seq(dbfp, do_revcomp);
-		if (active_seqs[active_seq_index] == NULL) {
-		  eof = TRUE;
-		  break;            /* Queue is empty and no more seqs */
-		}
-		else
-		  job_queue = search_enqueue (active_seqs[active_seq_index], 
-					      active_seq_index, W, do_revcomp, 
-					      SEARCH_STD_SCAN_WORK);
-	      }
-	      if (job_queue != NULL)
-		search_send_next_job (&job_queue, process_status + proc_index, proc_index);
-	    } 
-	  }
+	  for (proc_index=0; proc_index<mpi_num_procs; proc_index++) 
+	    {
+	      if (proc_index == mpi_master_rank) continue;  /* Skip master process */
+	      if (process_status[proc_index] == NULL) 
+		{         
+		  /* I'm idle -- need a job */
+		  if (job_queue == NULL) 
+		    { 
+		      /* Queue is empty */
+		      /* Find next non-master open process */
+		      for (active_seq_index=0; active_seq_index<mpi_num_procs; active_seq_index++) 
+			if (active_seqs[active_seq_index] == NULL) break;
+		      if (active_seq_index == mpi_num_procs) 
+			Die ("Tried to read more than %d seqs at once\n", mpi_num_procs);
+		      active_seqs[active_seq_index] = read_next_seq(dbfp, do_revcomp);
+		      if (active_seqs[active_seq_index] == NULL) 
+			{
+			  printf("EOF TRUE\n");
+			  eof = TRUE;
+			  break;            /* Queue is empty and no more seqs */
+			}
+		      else
+			{
+			  printf("EOF NOT TRUE do_revcomp: %d\n", do_revcomp);
+			  job_queue = search_enqueue (active_seqs[active_seq_index], 
+						      active_seq_index, cm->W, do_revcomp, 
+						      SEARCH_STD_SCAN_WORK);
+			}
+		    }
+		  if (job_queue != NULL)
+		    search_send_next_job (&job_queue, process_status + proc_index, proc_index);
+		} 
+	    }
 	  /* Wait for next reply */
 	  if (search_procs_working(process_status, mpi_num_procs, mpi_master_rank)) 
 	    {
-	      active_seq_index = search_check_results (active_seqs, process_status, W);
+	      active_seq_index = search_check_results (active_seqs, process_status, cm->W);
 	      if (active_seqs[active_seq_index]->chunks_sent == 0) 
 		{
 		  if (cutoff_type == E_CUTOFF)
@@ -265,18 +281,20 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 	      /* Check here if doing alignments and queue them or check if 
 		 all done */
 		  if (do_align && 
-		      active_seqs[active_seq_index]->alignments_sent == -1) {
-		    search_enqueue_alignments (&job_queue, active_seqs[active_seq_index],
-					       active_seq_index, do_revcomp, ALN_WORK);
-		  }
+		      active_seqs[active_seq_index]->alignments_sent == -1) 
+		    {
+		      search_enqueue_alignments (&job_queue, active_seqs[active_seq_index],
+						 active_seq_index, do_revcomp, ALN_WORK);
+		    }
 		  if (!do_align || 
 		      active_seqs[active_seq_index]->alignments_sent == 0) {
 		    print_results (cm, cons, active_seqs[active_seq_index], 
-				   do_revcomp, do_stats, mu, lambda);
-		    if (do_revcomp) {
-		      FreeResults(active_seqs[active_seq_index]->results[1]);
-		      esl_sq_Destroy(active_seqs[active_seq_index]->sq[1]);
-		    }
+				   do_revcomp, (cm->opts & CM_SEARCH_STATS), mu, lambda);
+		    if (do_revcomp) 
+		      {
+			FreeResults(active_seqs[active_seq_index]->results[1]);
+			esl_sq_Destroy(active_seqs[active_seq_index]->sq[1]);
+		      }
 		    FreeResults(active_seqs[active_seq_index]->results[0]);
 		    esl_sq_Destroy(active_seqs[active_seq_index]->sq[0]);
 		    active_seqs[active_seq_index] = NULL;
@@ -285,11 +303,9 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 	    }
 	} while (!eof || job_queue != NULL || 
 		 (search_procs_working(process_status, mpi_num_procs, mpi_master_rank)));
-      for (proc_index=0; proc_index<mpi_num_procs; proc_index++) {
-	if (proc_index != mpi_master_rank) {
+      for (proc_index=0; proc_index<mpi_num_procs; proc_index++) 
+	if (proc_index != mpi_master_rank) 
 	  search_send_terminate (proc_index);
-	}
-      }
       free(active_seqs);
       free(process_status);
     } 
@@ -303,19 +319,19 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 	    {
 	      /* Do the scan */
 	      results = CreateResults(INIT_RESULTS);
-	      if(dmin == NULL && dmax == NULL)
-		if(do_inside)
-		  iInsideScan(cm, seq, 1, seqlen, W,
+	      if(cm->opts & CM_SEARCH_NOQDB)
+		if(cm->opts & CM_SEARCH_INSIDE)
+		  iInsideScan(cm, seq, 1, seqlen, cm->W,
 			     min_cutoff, 0, results);
-		else /* !do_inside */
-		  CYKScan (cm, seq, 1, seqlen, W,
+		else /* don't do inside */
+		  CYKScan (cm, seq, 1, seqlen, cm->W,
 			   min_cutoff, 0, results);
-	      else
-		if(do_inside)
-		  iInsideBandedScan(cm, seq, dmin, dmax, 1, seqlen, W,
+	      else /* use QDB */
+		if(cm->opts & CM_SEARCH_INSIDE)
+		  iInsideBandedScan(cm, seq, cm->dmin, cm->dmax, 1, seqlen, cm->W,
 				   min_cutoff, 0, results);
-		else /* !do_inside */
-		  CYKBandedScan (cm, seq, dmin, dmax, 1, seqlen, W,
+		else /* do't do inside */
+		  CYKBandedScan (cm, seq, cm->dmin, cm->dmax, 1, seqlen, cm->W,
 				 min_cutoff, 0, results);
 
 	      search_send_scan_results (results, mpi_master_rank);
@@ -324,7 +340,7 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 	  else if (job_type == ALN_WORK && do_align) 
 	    {
 	      CYKDivideAndConquer(cm, seq, seqlen, bestr, 1, seqlen, &tr,
-				  dmin, dmax);
+				  cm->dmin, cm->dmax);
 	      search_send_align_results (tr, mpi_master_rank);
 	      FreeParsetree(tr);
 	    }
@@ -580,8 +596,8 @@ seqs_to_aln_t * read_next_aln_seqs(ESL_SQFILE *seqfp, int nseq, int index)
  * Purpose:  Given a CM and a sequence file name, do preliminaries, align w/the correct 
  *           alignment function and print out the alignment.
  * 
- * Args:     CM           - the covariance model
- *           seqfp        - the open sequence file
+ * Args:     seqfp        - the open sequence file
+ *           CM           - the covariance model
  *           ret_sq       - RETURN: the sequences (EASEL)
  *           ret_tr       - RETURN: the parsetrees for seqs in seqfp
  *           ret_postcode - RETURN: the postal codes (NULL if not doing posteriors)
@@ -592,7 +608,7 @@ seqs_to_aln_t * read_next_aln_seqs(ESL_SQFILE *seqfp, int nseq, int index)
  * 
  */
 void
-serial_align_targets(CM_t *cm, ESL_SQFILE *seqfp, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr, 
+serial_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr, 
 		     char ***ret_postcode, int *ret_nseq, int bdump_level, int debug_level, 
 		     int silent_mode)
 {
@@ -655,7 +671,8 @@ serial_align_targets(CM_t *cm, ESL_SQFILE *seqfp, ESL_SQ ***ret_sq, Parsetree_t 
  * Purpose:  Given a CM, an open ESL_SQ sequence file, do preliminaries, and align
  *           seqs in parallel. After finishing, print out the alignment.
  * 
- * Args:     CM           - the covariance model
+ * Args:     seqfp        - the sequence file with target seqs to align
+ *           CM           - the covariance model
  *           seqfp        - the sequence file with target seqs to align
  *           ret_sq       - RETURN: the sequences (EASEL)
  *           ret_tr       - RETURN: the parsetrees for seqs in seqfp
@@ -670,7 +687,7 @@ serial_align_targets(CM_t *cm, ESL_SQFILE *seqfp, ESL_SQ ***ret_sq, Parsetree_t 
  *           mpi_num_procs - number of processes 
  */
 void
-parallel_align_targets(CM_t *cm, ESL_SQFILE *seqfp, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr,
+parallel_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr,
 		       char ***ret_postcode, int *ret_nseq, int bdump_level, int debug_level,
 		       int silent_mode, int mpi_my_rank, int mpi_master_rank, int mpi_num_procs)
 {
