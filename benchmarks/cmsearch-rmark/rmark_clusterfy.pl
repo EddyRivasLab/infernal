@@ -1,4 +1,4 @@
-#!/usr/local/bin/
+#!/usr/local/bin/perl
 #
 # Eric Nawrocki 10.09.05
 # rmark_clusterfy.pl

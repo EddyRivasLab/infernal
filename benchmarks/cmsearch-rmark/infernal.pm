@@ -34,6 +34,7 @@ package infernal;
 #    @hitbitscore  - hit bit scores
 #    @hitevalue    - hit E-values (only available if -E option used)
 #    @hitpvalue    - hit P-values (only available if -E option used)
+#    @hitgccontent - GC content (an integer 0..100) 
 #    @hitcmfrom    - array of cm-from coords
 #    @hitcmto      - array of cm-to coords
 
@@ -71,6 +72,7 @@ sub ParseINFERNAL {
     @hitbitscore    = ();
     @hitevalue   = ();
     @hitpvalue   = ();
+    @hitgccontent = ();
     #$aligndata   = "";
 
     @lines = split(/^/, $output);
@@ -124,18 +126,20 @@ sub ParseINFERNAL {
 	}
 	# ^Query line always followed by ^Score line
 	# ^Score line either has E and P values or doesn't
-	elsif ($line =~ /^\s+Score\s+\=\s+(\S+)\s*$/)
+	elsif ($line =~ /^\s+Score\s+\=\s+(\S+),\s+GC\s+\=\s+(\d+)\s*$/)
 	{
 	    # no E or P values reported 
 	    $hitbitscore[$nhit] = $1;
+	    $hitgccontent[$nhit]= $2;
 	    $nhit++;
 	}
-	elsif ($line =~ /^\s+Score\s+\=\s+(\S+),\s+E\s+\=\s+(\S+)\,\s+P\s+\=\s+(\S+)\s*$/)
+	elsif ($line =~ /^\s+Score\s+\=\s+(\S+),\s+E\s+\=\s+(\S+)\,\s+P\s+\=\s+(\S+),\s+GC\s+\=\s+(\d+)\s*$/)
 	{
 	    # E and P values reported 
 	    $hitbitscore[$nhit] = $1;
 	    $hitevalue[$nhit]   = $2;
 	    $hitpvalue[$nhit]   = $3;
+	    $hitgccontent[$nhit]= $4;
 	    $nhit++;
 	}
 	1;

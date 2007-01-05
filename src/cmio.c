@@ -535,9 +535,16 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
 				  TRUE); /* Detach the states by setting trans probs into them as 0.0   */
 
   /* Success.
-   * Renormalize the CM, and return.
+   * Renormalize the CM, build the CP9 HMM and return.
    */
   CMRenormalize(cm);
+
+  /* Build the CM Plan 9 HMM, the HMM and cp9map are allocated in build_cp9_hm() */
+  if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.001, 0))
+    Die("Couldn't build a CP9 HMM from the CM\n");
+
+
+
   if (buf != NULL) free(buf);
   *ret_cm = cm;
   return 1;
@@ -663,6 +670,10 @@ read_binary_cm(CMFILE *cmf, CM_t **ret_cm)
 					  * an old version (0.7 or earlier) of cmbuild was used, or  
 					  * cmbuild --nodetach  was used to build the CM  */
 				  TRUE); /* Detach the states by setting trans probs into them as 0.0   */
+
+  /* Build the CM Plan 9 HMM, the HMM and cp9map are allocated in build_cp9_hm() */
+  if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.001, 0))
+    Die("Couldn't build a CP9 HMM from the CM\n");
 
   /* EPN 10.29.06 Noticed there's no CMRenormalize() call here (for speed?), didn't add one 
      CMRenormalize(cm);

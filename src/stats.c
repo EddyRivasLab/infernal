@@ -62,7 +62,7 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
   int i;
   char *randseq;
   char *dsq;
-  struct histogram_s *h_old;
+  /*struct histogram_s *h_old;*/
   ESL_HISTOGRAM *h;
   float *nt_p;                /* Distribution for random sequences */
   float score;
@@ -109,7 +109,7 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
       /*printf("cur_partition: %d\n", cur_partition);*/
       
       /* Initialize histogram; these numbers are guesses */
-      if(!use_easel) h_old = AllocHistogram (0, 100, 100);
+      /*if(!use_easel) h_old = AllocHistogram (0, 100, 100);*/
       h     = esl_histogram_CreateFull(0., 100., 1.);    
       
       /* Set up cur_gc_freq */
@@ -177,14 +177,14 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 	  if(i % 100 == 0)
 	    printf("(%4d) SCORE: %f\n", i, score);
 	  /* Add best score to histogram */
-	  if(!use_easel) AddToHistogram (h_old, score); 
+	  /*if(!use_easel) AddToHistogram (h_old, score); */
 	  esl_histogram_Add(h, score);
 	}
 
       /* Fit the histogram.  */
-      if(!use_easel)
-	ExtremeValueFitHistogram (h_old, TRUE, 9999);
-      
+      /*if(!use_easel)
+	ExtremeValueFitHistogram (h_old, TRUE, 9999);*/
+
       /* Fit the scores to a Gumbel */
       
       /* If the esl_histogram example for 'complete data, high scores fit as
@@ -211,14 +211,14 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 	    }
 	  else /* use RSEARCH's histogram code */
 	    {
-	      lambda[i] = (double) h_old->param[EVD_LAMBDA];
-	      K[i] = (double) exp(h_old->param[EVD_MU]*h_old->param[EVD_LAMBDA])/sample_length;
+	      ;/*lambda[i] = (double) h_old->param[EVD_LAMBDA];
+		K[i] = (double) exp(h_old->param[EVD_MU]*h_old->param[EVD_LAMBDA])/sample_length;*/
 	      /*printf("OLD i: %d lambda: %f K: %f\n", i, lambda[i], K[i]);
 		printf("ESL i: %d lambda: %f K: %f\n\n", i, curr_lambda, exp(curr_mu * curr_lambda)/sample_length);*/
 	    }
 	}
       }
-    if(!use_easel) FreeHistogram(h_old);
+    /*if(!use_easel) FreeHistogram(h_old);*/
     esl_histogram_Destroy(h);
   }
   free(nt_p);
@@ -387,22 +387,22 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 		  
 		  randseqs[randseq_index]->partition = cur_partition;
 
-		  job_queue = enqueue(randseqs[randseq_index], randseq_index, D,
-				      FALSE, HIST_SCAN_WORK);
+		  job_queue = search_enqueue(randseqs[randseq_index], randseq_index, D,
+					     FALSE, SEARCH_HIST_SCAN_WORK);
 		  num_seqs_made++;
 
 		}
 		if (job_queue != NULL)
 		  {
 		    fflush(stdout);
-		    send_next_job (&job_queue, process_status + proc_index, 
-				   proc_index);
+		    search_send_next_job (&job_queue, process_status + proc_index, 
+					  proc_index);
 		  }
 	      }
 	  }
 	/* Wait for next reply */
-	if (procs_working(process_status, mpi_num_procs, mpi_master_rank)) {
-	  randseq_index = check_hist_results (randseqs, process_status, D);
+	if (search_procs_working(process_status, mpi_num_procs, mpi_master_rank)) {
+	  randseq_index = search_check_hist_results (randseqs, process_status, D);
 	  /* If the sequence is done */
 	  if (randseqs[randseq_index]->chunks_sent == 0) {
 	    /* Get best score at D and add */
@@ -415,12 +415,12 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 	  }
 	}
       } while (num_seqs_made < num_samples*num_partitions || job_queue != NULL ||
-	       procs_working(process_status, mpi_num_procs, mpi_master_rank));
+	       search_procs_working(process_status, mpi_num_procs, mpi_master_rank));
       
       /* Terminate the processes */
       for (proc_index=0; proc_index<mpi_num_procs; proc_index++) {
 	if (proc_index != mpi_master_rank) {
-	  send_terminate (proc_index);
+	  search_send_terminate (proc_index);
 	}
       }
       
@@ -454,8 +454,8 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
       dsq = NULL;
       do 
 	{
-	  job_type = receive_job(&seqlen, &dsq, &dummy, mpi_master_rank);
-	  if (job_type == HIST_SCAN_WORK) {
+	  job_type = search_receive_job(&seqlen, &dsq, &dummy, mpi_master_rank);
+	  if (job_type == SEARCH_HIST_SCAN_WORK) {
 
 	    if(dmin == NULL && dmax == NULL)
 	      if(do_inside)
@@ -469,7 +469,7 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 	      else
 		score = CYKBandedScan(cm, dsq, dmin, dmax, 1, sample_length, D,
 				      0, 0, NULL);
-	    send_hist_scan_results (score, mpi_master_rank);
+	    search_send_hist_scan_results (score, mpi_master_rank);
 	  } 
 	  if (dsq != NULL)
 	    free(dsq);

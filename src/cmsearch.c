@@ -19,7 +19,7 @@
 #include "squid.h"		/* general sequence analysis library    */
 #include "easel.h"              /* better general sequence analysis library */
 #include "msa.h"                /* squid's multiple alignment i/o       */
-#include "stopwatch.h"          /* squid's process tcp9b->iming module        */
+#include "stopwatch.h"          /* squid's process timing module        */
 
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
@@ -502,10 +502,9 @@ main(int argc, char **argv)
       
   if(do_enforce)
     {
-      enf_end = enf_start + strlen(enf_seq) - 1;
-      printf("enf_start: %d v: %d enf_end: %d v: %d enf_seq: %s\n", enf_start, cm->nodemap[enf_start], 
-	     enf_end, cm->nodemap[enf_end], enf_seq);
-      EnforceSubsequence(cm, enf_start, enf_seq);
+      cm->align_flags |= CM_ALIGN_ENFORCE;
+      cm->enf_start = enf_start; 
+      cm->enf_seq   = enf_seq;
     }
 
   cons = CreateCMConsensus(cm, 3.0, 1.0); 
@@ -529,7 +528,7 @@ main(int argc, char **argv)
   if (do_local)
     { 
       if(do_enforce)
-	ConfigLocalEnforce(cm, 0.5, 0.5, enf_start, enf_end);
+	ConfigLocalEnforce(cm, 0.5, 0.5);
       else
 	ConfigLocal(cm, 0.5, 0.5);
 
@@ -577,7 +576,7 @@ main(int argc, char **argv)
 	   * changes the local end probabilities */
 	  if(do_enforce && do_local)
 	    {
-	      ConfigLocalEnforce(cm, 0.5, 0.5, enf_start, enf_end);
+	      ConfigLocalEnforce(cm, 0.5, 0.5);
 	      CMLogoddsify(cm);
 	    }
 	}	  
@@ -616,8 +615,8 @@ main(int argc, char **argv)
   printf("do_qdb: %d\n", do_qdb);
   /* Here we need to broadcast the following parameters:
      num_samples, W, W_scale, cm and dmin and dmax if do_qdb == TRUE*/
-    first_broadcast(&num_samples, &W, &W_scale, &cm,  
-		    &do_qdb, &dmin, &dmax, &do_inside, mpi_my_rank, mpi_master_rank);
+  search_first_broadcast(&num_samples, &W, &W_scale, &cm,  
+			 &do_qdb, &dmin, &dmax, &do_inside, mpi_my_rank, mpi_master_rank);
     
 #endif
   /**************************************************
@@ -719,8 +718,8 @@ main(int argc, char **argv)
   
   /* Now I need to broadcast the following parameters:
      cutoff, cutoff_type, do_revcomp, do_align, mu, lambda, K, N */
-  second_broadcast(&sc_cutoff, &e_cutoff, &cutoff_type, &do_revcomp, &do_align, mu, lambda, 
-		   K, &N, mpi_my_rank, mpi_master_rank);
+  search_second_broadcast(&sc_cutoff, &e_cutoff, &cutoff_type, &do_revcomp, &do_align, mu, lambda, 
+			  K, &N, mpi_my_rank, mpi_master_rank);
 #endif
   if(cutoff_type == E_CUTOFF) cutoff = e_cutoff;
   else cutoff = sc_cutoff;

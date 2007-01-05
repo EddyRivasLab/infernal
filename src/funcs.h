@@ -122,6 +122,7 @@ extern void         FreeEmitMap(CMEmitMap_t *map);
 
 /* from modelconfig.c
  */
+extern void ConfigCM(CM_t *cm);
 extern void ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit);
 extern void ConfigNoLocalEnds(CM_t *cm);
 extern void ConfigLocalEnds(CM_t *cm, float p_internal_exit);
@@ -131,8 +132,8 @@ extern void ConfigLocal_fullsub(CM_t *cm, float p_internal_start,
 extern void ConfigLocal_DisallowELEmissions(CM_t *cm);
 extern void ConfigLocal_fullsub_post(CM_t *sub_cm, CM_t *orig_cm, CP9Map_t *orig_cp9map, CMSubMap_t *submap,
 				     struct cp9_dpmatrix_s *post, int L);
-extern void ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_internal_exit,
-			       int enf_start, int enf_end);
+extern void ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_internal_exit);
+extern int  EnforceSubsequence(CM_t *cm);
 
 /* from modelmaker.c
  */
@@ -161,8 +162,10 @@ extern void         ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq
 extern int          ParsetreeCompare(Parsetree_t *t1, Parsetree_t *t2);
 extern void         SummarizeMasterTrace(FILE *fp, Parsetree_t *tr);
 extern void         MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm);
-extern MSA *Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt, 
-				 Parsetree_t **tr, int nseq, int do_full);
+extern MSA         *Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt, 
+					 Parsetree_t **tr, int nseq, int do_full);
+extern MSA         *ESL_Parsetrees2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, 
+					     Parsetree_t **tr, int nseq, int do_full);
 
 /* from scancyk.c
  */
@@ -332,8 +335,8 @@ extern void CP9_combine_FBscan_hits(int i0, int j0, int W, int fwd_nhits, int *f
 				    float **ret_hitsc, int pad);
 
 /* from CP9_cm2wrhmm.c */
-extern int  build_cp9_hmm(CM_t *cm, struct cplan9_s **ret_hmm, CP9Map_t **ret_cp9map, 
-			  int do_psi_test, float psi_vs_phi_threshold, int debug_level);
+extern int build_cp9_hmm(CM_t *cm, struct cplan9_s **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
+			 float psi_vs_phi_threshold, int debug_level);
 extern void CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level);
 extern void map_helper(CM_t *cm, CP9Map_t *cp9map, int k, int ks, int v);
 extern int  CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, int debug_level);
@@ -396,16 +399,17 @@ extern void  debug_print_cm_params(CM_t *cm);
 
 /* from cm_wrappers.c
  */
-extern void 
-AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t ***ret_tr, int do_local, 
-		 int do_small, int do_qdb, double qdb_beta,
-		 int do_hbanded, int use_sums, double hbandp, int do_sub, int do_fullsub, float fsub_pmass,
-		 int do_hmmonly, int do_inside, int do_outside, int do_check, int do_post, 
-		 char ***ret_postcode, int do_timings, int bdump_level, int debug_level, int silent_mode, 
-		 int do_enforce, int enf_start, int enf_end, int do_elsilent,
-		 int *actual_spos, int *actual_epos, float **ret_post_spos, float **ret_post_epos,
-		 int **ret_dist_spos, int **ret_dist_epos);
-
+extern void
+actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, char ***ret_postcode,
+		       int bdump_level, int debug_level, int silent_mode);
+extern void
+serial_align_targets(CM_t *cm, ESL_SQFILE *seqfp, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr, 
+		     char ***ret_postcode, int *ret_nseq, int bdump_level, int debug_level, 
+		     int silent_mode);
+extern void
+parallel_align_targets(CM_t *cm, ESL_SQFILE *seqfp, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr,
+		       char ***ret_postcode, int *ret_nseq, int bdump_level, int debug_level,
+		       int silent_mode, int mpi_my_rank, int mpi_master_rank, int mpi_num_procs);
 extern void 
 serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons, int W, int cutoff_type, 
 			float cutoff, int do_revcomp, int do_align, int do_stats, double *mu, 
@@ -418,6 +422,6 @@ parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 			  int mpi_my_rank, int mpi_master_rank, 
 			  int mpi_num_procs) ;
 extern int 
-EnforceSubsequence(CM_t *cm, int enf_start, char *enf_seq);
+EnforceSubsequence(CM_t *cm);
 
 

@@ -1488,7 +1488,7 @@ IOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
    */
   if (ret_dpool == NULL) {
     int   **a;
-    while (deckpool_pop(dpool, &a)) Ifree_vjd_deck(a, i0, j0);
+    while (Ideckpool_pop(dpool, &a)) Ifree_vjd_deck(a, i0, j0);
     Ideckpool_free(dpool);
   } else {
     *ret_dpool = dpool;
@@ -2960,7 +2960,7 @@ IInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
    * Else, pass it back to him.
    */
   if (ret_dpool == NULL) {
-    while (deckpool_pop(dpool, &end)) Ifree_vjd_deck(end, i0, j0);
+    while (Ideckpool_pop(dpool, &end)) Ifree_vjd_deck(end, i0, j0);
     Ideckpool_free(dpool);
   } else {
     *ret_dpool = dpool;
@@ -4169,7 +4169,7 @@ IOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
    */
   if (ret_dpool == NULL) {
     int   **a;
-    while (deckpool_pop(dpool, &a)) Ifree_vjd_deck(a, i0, j0);
+    while (Ideckpool_pop(dpool, &a)) Ifree_vjd_deck(a, i0, j0);
     Ideckpool_free(dpool);
   } else {
     *ret_dpool = dpool;
@@ -4585,7 +4585,7 @@ Ifree_vjd_matrix(int ***a, int M, int i, int j)
   int v;
   for (v = 0; v <= M; v++)
     if (a[v] != NULL)		/* protect against double free's of reused decks (ends) */
-      { free_vjd_deck(a[v], i, j); a[v] = NULL; }
+      { Ifree_vjd_deck(a[v], i, j); a[v] = NULL; }
   free(a);
 }
 /*================================================================*/

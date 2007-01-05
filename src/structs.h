@@ -32,8 +32,7 @@
 #define MAXDEGEN         17     /* maximum for Alphabet_iupac        */
 #define DIGITAL_GAP      126	/* see alphabet.c:DigitizeSequence() */
 #define DIGITAL_SENTINEL 127    
-#define INTSCALE    1000.0      /* scaling constant for floats to integer scores
-				 * for use with CP9 HMMs */
+#define INTSCALE    1000.0      /* scaling constant for floats to integer scores */
 #define LOGSUM_TBL  20000       /* controls precision of ILogsum()            */
 
 extern int   Alphabet_type;
@@ -141,6 +140,42 @@ extern int   DegenCount[MAXDEGEN];
 #define PDA_STATE   1
 #define PDA_MARKER  2
 
+/* Structure: CP9Map_t
+ * Incept:    EPN, 10.23.06
+ *
+ * Maps a CM to a CM plan 9 HMM and vice versa. 
+ *    Consensus positions are indexed 1..hmm_M.
+ *
+ * The lpos and rpos arrays are somewhat redundant with 
+ * CMEmitMap_t, but they're not identical. I didn't realize emitmap existed
+ * prior to implementing CP9 HMMs - if I had I would have used emitmap's, but
+ * it's difficult to go back and use emitmap's now.
+ * 
+ * See emitmap.c for implementation and more documentation.
+ */
+typedef struct cp9map_s {
+  int   *nd2lpos;   /* [0..cm_nodes] left bound of consensus for subtree under this nd,
+		     *               -1 for non-{MATL|MATR|MATP} nodes */
+  int   *nd2rpos;   /* [0..cm_nodes] right bound of consensus for subtree under this nd  
+		     *               -1 for non-{MATL|MATR|MATP} nodes */
+  int   *pos2nd;    /* [1..clen], the MATL, MATR or MATP CM node that maps to this 
+		     *            consensus column */
+  int  **cs2hn;     /* [0..cm_M][0..1], 1 or 2 HMM nodes that maps to this CM state 
+		     *                  [x][1] is -1 if state x maps to only 1 HMM node */
+  int  **cs2hs;     /* [0..cm_M][0..1], 1 or 2 HMM states (0=MATCH, 1=INSERT, 2=DELETE)
+		     *            that maps to this CM state 
+		     *            [x][0] corresponds to the HMM node in cs2hn[x][0],
+		     *            [x][1] corresponds to the HMM node in cs2hn[x][1] (or -1) */
+  int ***hns2cs;    /* [0..clen][0..2][0..1]
+		     * hns2cs[x][y][0] 1st CM state that maps to HMM node x state type y (0,1,2)
+		     * hns2cs[x][y][1] 2nd CM state that maps to HMM node x state type y (0,1,2)
+		     *                 -1 if only 1 CM state maps to HMM node x state y */
+  int    hmm_M;     /* consensus length, the number of HMM nodes */
+  int    cm_M;      /* number of states in the CM this HMM maps to */
+  int    cm_nodes;  /* number of nodes in the CM this HMM maps to */
+} CP9Map_t;
+
+
 
 /* Structure: CM_t
  * Incept:    SRE, 9 Mar 2000 [San Carlos CA]
@@ -202,6 +237,23 @@ typedef struct cm_s {
 
   int    flags;		/* status flags                                    */
 
+  /* query dependent bands (QDB) on subsequence lengths at each state */
+  int   *dmin;          /* minimum d bound for each state v; [0..v..M-1] (NULL if non-banded) */
+  int   *dmax;          /* maximum d bound for each state v; [0..v..M-1] (NULL if non-banded) */
+  float beta;           /* tail loss probability for QDB */
+
+  float hbandp;         /* tail loss probability for HMM target dependent banding */
+
+  /* added by EPN, Tue Jan  2 14:24:08 2007 */
+  int    align_flags;	/* alignment flags, do_qdb, do_hbanded, etc...     */
+  int    search_flags;	/* search flags, do_qdb, do_hbanded, etc...     */
+  struct cplan9_s *cp9; /* a CM Plan 9 HMM, always built when the model is read from a file */
+  CP9Map_t *cp9map;     /* the map from the Plan 9 HMM to the CM and vice versa */
+  int    enf_start;     /* if(cm->align_flags & CM_ALIGN_ENFORCE) the first posn to enforce, else 0 */
+  char  *enf_seq;       /* if(cm->align_flags & CM_ALIGN_ENFORCE) the subseq to enforce, else NULL */
+
+  /* end of added by EPN */
+
   int    W;             /* max d: max size of a hit (EPN 08.18.05) */
   float  el_selfsc;     /* score of a self transition in the EL state
 			 * the EL state emits only on self transition (EPN 11.15.05)*/
@@ -214,6 +266,21 @@ typedef struct cm_s {
 #define CM_LOCAL_BEGIN  (1<<0)	/* Begin distribution is active (local ali) */
 #define CM_LOCAL_END    (1<<1)  /* End distribution is active (local ali)   */
 
+#define CM_ALIGN_QDB    (1<<2)  /* When aligning, use QDB                   */
+#define CM_ALIGN_HBANDED (1<<3) /* When aligning, use HMM bands             */
+#define CM_ALIGN_SUMS   (1<<4)  /* When aligning, if using HMM bands, use sums */
+#define CM_ALIGN_SUB    (1<<5)  /* When aligning, go into sub mode */
+#define CM_ALIGN_FSUB   (1<<6)  /* When aligning, go into full sub mode */
+#define CM_ALIGN_HMM    (1<<7)  /* When aligning, use a CP9 HMM only */
+#define CM_ALIGN_INSIDE (1<<8)  /* When aligning, use Inside, not CYK */
+#define CM_ALIGN_OUTSIDE (1<<9) /* When aligning, use Outside, not CYK */
+#define CM_ALIGN_NOSMALL  (1<<10) /* When aligning, DO NOT use small CYK D&C */
+#define CM_ALIGN_POST   (1<<11) /* When aligning, do inside/outside and append posteriors */
+#define CM_ALIGN_TIME   (1<<12) /* When aligning, print out timings */
+#define CM_ALIGN_CHECKINOUT (1<<13) /* When aligning, check inside/outside calculations */
+#define CM_ALIGN_LOCAL  (1<<14) /* When aligning, align locally wrt the CM */
+#define CM_ALIGN_ENFORCE (1<<15) /* When aligning, enforce a subsequence */
+#define CM_ALIGN_ELSILENT (1<<16) /* When aligning in local mode, disallow EL emissions */
 
 /* Structure: CMFILE
  * Incept:    SRE, Tue Aug 13 10:16:39 2002 [St. Louis]
@@ -407,42 +474,6 @@ typedef struct subinfo_s {
 			* predicted. */
 } CMSubInfo_t;
 
-/* Structure: CP9Map_t
- * Incept:    EPN, 10.23.06
- *
- * Maps a CM to a CM plan 9 HMM and vice versa. 
- *    Consensus positions are indexed 1..hmm_M.
- *
- * The lpos and rpos arrays are somewhat redundant with 
- * CMEmitMap_t, but they're not identical. I didn't realize emitmap existed
- * prior to implementing CP9 HMMs - if I had I would have used emitmap's, but
- * it's difficult to go back and use emitmap's now.
- * 
- * See emitmap.c for implementation and more documentation.
- */
-typedef struct cp9map_s {
-  int   *nd2lpos;   /* [0..cm_nodes] left bound of consensus for subtree under this nd,
-		     *               -1 for non-{MATL|MATR|MATP} nodes */
-  int   *nd2rpos;   /* [0..cm_nodes] right bound of consensus for subtree under this nd  
-		     *               -1 for non-{MATL|MATR|MATP} nodes */
-  int   *pos2nd;    /* [1..clen], the MATL, MATR or MATP CM node that maps to this 
-		     *            consensus column */
-  int  **cs2hn;     /* [0..cm_M][0..1], 1 or 2 HMM nodes that maps to this CM state 
-		     *                  [x][1] is -1 if state x maps to only 1 HMM node */
-  int  **cs2hs;     /* [0..cm_M][0..1], 1 or 2 HMM states (0=MATCH, 1=INSERT, 2=DELETE)
-		     *            that maps to this CM state 
-		     *            [x][0] corresponds to the HMM node in cs2hn[x][0],
-		     *            [x][1] corresponds to the HMM node in cs2hn[x][1] (or -1) */
-  int ***hns2cs;    /* [0..clen][0..2][0..1]
-		     * hns2cs[x][y][0] 1st CM state that maps to HMM node x state type y (0,1,2)
-		     * hns2cs[x][y][1] 2nd CM state that maps to HMM node x state type y (0,1,2)
-		     *                 -1 if only 1 CM state maps to HMM node x state y */
-  int    hmm_M;     /* consensus length, the number of HMM nodes */
-  int    cm_M;      /* number of states in the CM this HMM maps to */
-  int    cm_nodes;  /* number of nodes in the CM this HMM maps to */
-} CP9Map_t;
-
-
 /* Structure: CP9Bands_t
  * Incept:    EPN, 10.27.06
  *
@@ -513,6 +544,19 @@ typedef struct _db_seq_t {
   float best_score;              /* Best score for scan of this sequence */
   int partition;                 /* For histogram building */
 } db_seq_t;
+
+/* structure for MPI cmalign */
+typedef struct _seqs_to_aln_t {
+  ESL_SQ  **sq;                  /* the sequences */
+  int nseq;                      /* number of sequences */
+  Parsetree_t **tr;              /* parsetrees */
+  char **postcode;               /* postal codes, left NULL unless do_post */
+  int index;                     /* the index of the first sq (sq[0]) in master structure */
+} seqs_to_aln_t;
+
+
+#define BUSY 1
+#define IDLE 0
 
 #endif /*STRUCTSH_INCLUDED*/
 

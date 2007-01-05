@@ -89,9 +89,21 @@ CreateCMShell(void)
   cm->beginsc= NULL;
   cm->endsc  = NULL;
 
-  cm->flags  = 0;
+  cm->flags         = 0;
+  cm->align_flags   = 0;
+  cm->search_flags  = 0;
+
   cm->W      = 200;           /* for backwards compatibility */
   cm->el_selfsc = 0.;         /* this is backwards compatible also */
+  
+  cm->dmin   = NULL;
+  cm->dmax   = NULL;
+  cm->beta   = 0.0000001;     /* 1E-7 the default beta */
+  cm->hbandp = 0.0001;        /* 1E-4 the default hbandp */
+  cm->cp9    = NULL;          
+  cm->cp9map = NULL;
+  cm->enf_start = 0;
+  cm->enf_seq = NULL;
   return cm;
 }
 void
@@ -132,7 +144,14 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates)
   cm->sttype[cm->M] = EL_st;
   cm->stid[cm->M]   = END_EL;
 
-  cm->flags  = 0;
+  cm->flags         = 0;
+  cm->align_flags   = 0;
+  cm->search_flags  = 0;
+  cm->dmin   = MallocOrDie(nstates * sizeof(int));
+  cm->dmax   = MallocOrDie(nstates * sizeof(int));
+  cm->cp9    = NULL;
+  cm->cp9map = NULL;
+  /* we'll allocate the cp9 and cp9map only if nec inside ConfigCM() */
 }
 
 
@@ -204,6 +223,7 @@ FreeCM(CM_t *cm)
   if (cm->acc    != NULL) free(cm->acc);
   if (cm->desc   != NULL) free(cm->desc);
   if (cm->annote != NULL) free(cm->annote);
+  if (cm->enf_seq != NULL) free(cm->enf_seq);
 
   free(cm->null);
   free(cm->sttype);
@@ -227,6 +247,10 @@ FreeCM(CM_t *cm)
   IMX2Free(cm->iesc);
   free(cm->ibeginsc);
   free(cm->iendsc);
+  free(cm->dmin);
+  free(cm->dmax);
+  if(cm->cp9map != NULL) FreeCP9Map(cm->cp9map);
+  if(cm->cp9    != NULL) FreeCPlan9(cm->cp9);
   free(cm);
 }
 

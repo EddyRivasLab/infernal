@@ -11,9 +11,127 @@
 
 #include "squid.h"
 #include "vectorops.h"
+#include <string.h>
 
 #include "structs.h"
 #include "funcs.h"
+
+/*
+ * Function: ConfigCM
+ * Date:     EPN, Thu Jan  4 06:36:09 2007
+ * Purpose:  Configure a CM for alignment or search based on the flags in
+ *           cm->align_flags and cm->search_flags. Calculates query dependent
+ *           bands if appropriate. 
+ * 
+ * Args:     CM           - the covariance model
+ */
+void
+ConfigCM(CM_t *cm)
+{
+  int safe_windowlen;
+  int enf_end;
+  float swentry, swexit;
+  int do_local;
+  double **gamma;               /* P(subseq length = n) for each state v, used in QDB mode */
+
+  do_local = FALSE;
+  if(cm->align_flags & CM_ALIGN_LOCAL) do_local = TRUE;
+
+  /* We need to ensure that cm->el_selfsc * W >= IMPOSSIBLE
+   * (cm->el_selfsc is the score for an EL self transition) This is
+   * done because we potentially multiply cm->el_selfsc * W, and add
+   * that to IMPOSSIBLE. To avoid underflow issues this value must be
+   * less than 3 * IMPOSSIBLE. Here, to be safe, we guarantee its less
+   * than 2 * IMPOSSIBLE.
+   */
+  if((cm->el_selfsc * cm->W) < IMPOSSIBLE)
+    { 
+      cm->el_selfsc = (IMPOSSIBLE / (cm->W+1));
+      cm->iel_selfsc = -INFTY;
+    }
+
+  /* Build a CP9 HMM if we're doing banded alignment OR in sub mode. */
+  if((cm->align_flags & CM_ALIGN_HBANDED) || (cm->align_flags & CM_ALIGN_SUB))
+    {
+      /* IMPORTANT: do this before setting up CM for local mode
+       *            eventually, we'll do it after, but we can't build local CP9s yet. */
+      cm->cp9    = AllocCPlan9(cm->M);
+      cm->cp9map = AllocCP9Map(cm);
+      if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))
+	Die("Couldn't build a CP9 HMM from the CM\n");
+    }
+  /* The enforce option, added specifically for enforcing the template region of
+   * telomerase RNA */
+  if(cm->align_flags & CM_ALIGN_ENFORCE)
+    EnforceSubsequence(cm);
+
+  /* Configure the CM for local alignment. */
+  if (cm->align_flags & CM_ALIGN_LOCAL)
+    { 
+      if(cm->align_flags & CM_ALIGN_ENFORCE)
+	ConfigLocalEnforce(cm, 0.5, 0.5);
+      else
+	ConfigLocal(cm, 0.5, 0.5);
+      CMLogoddsify(cm);
+      /*CMHackInsertScores(cm);*/	/* "TEMPORARY" fix for bad priors */
+
+      if(cm->align_flags & CM_ALIGN_ELSILENT)
+	ConfigLocal_DisallowELEmissions(cm);
+    }
+  /* If in local mode and using a CP9 HMM, configure it for local alignment,
+   * but not in a way that matches the CM locality (that's a TODO) */
+  if(((cm->align_flags & CM_ALIGN_LOCAL) && (cm->align_flags & CM_ALIGN_HBANDED))
+     && (cm->align_flags & CM_ALIGN_SUB))
+      {
+	/*printf("configuring the CM plan 9 HMM for local alignment.\n");*/
+	CPlan9SWConfig(cm->cp9, 0.5, 0.5);
+	CP9Logoddsify(cm->cp9);
+      }
+  /* To get spos and epos for the sub_cm, 
+   * we config the HMM to local mode with equiprobable start/end points.*/
+  if (cm->align_flags & CM_ALIGN_SUB)
+      {
+	/*printf("configuring the CM plan 9 HMM for local alignment.\n");*/
+	swentry= ((cm->cp9->M)-1.)/cm->cp9->M; /* all start pts equiprobable, including 1 */
+	swexit = ((cm->cp9->M)-1.)/cm->cp9->M; /* all end   pts equiprobable, including M */
+	CPlan9SWConfig(cm->cp9, swentry, swexit);
+	CP9Logoddsify(cm->cp9);
+      }
+  /* Set up the query dependent bands, this has to be done after the ConfigLocal() call */
+  if (cm->align_flags & CM_ALIGN_QDB)
+    {
+      safe_windowlen = cm->W * 2;
+      while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta, 0, &(cm->dmin), &(cm->dmax), &gamma, do_local)))
+	{
+	  FreeBandDensities(cm, gamma);
+	  free(cm->dmin);
+	  free(cm->dmax);
+	  safe_windowlen *= 2;
+	  /*printf("ERROR BandCalculationEngine returned false, windowlen adjusted to %d\n", safe_windowlen);*/
+	}
+      /* If we're enforcing a subsequence, we need to reenforce it b/c BandCalculationEngine() 
+       * changes the local end probabilities */
+      if((cm->align_flags & CM_ALIGN_ENFORCE) && (cm->align_flags & CM_ALIGN_LOCAL))
+	{
+	  ConfigLocalEnforce(cm, 0.5, 0.5);
+	  CMLogoddsify(cm);
+	}
+    }	  
+  return; 
+}
+
+/*
+ * Function: ConfigLocal
+ * Purpose:  Configure a CM for local alignment by spreading 
+ *           p_internal_start local entry probability evenly
+ *           across all internal nodes, and by spreading
+ *           p_internal_exit local exit probability evenly
+ *           across all internal nodes.
+ * 
+ * Args:     CM               - the covariance model
+ *           p_internal_start - prob mass to spread for local begins
+ *           p_internal_exit  - prob mass to spread for local ends
+ */        
 
 void
 ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
@@ -103,10 +221,9 @@ ConfigNoLocalEnds(CM_t *cm)
   return;
 }
 
-/**************************************************************************
- * EPN 10.02.06
+/*
  * Function: ConfigLocalEnds()
- *
+ * Date:     EPN 10.02.06
  * Purpose:  Given a probability of local ends, spread the probability of
  *           local ends evenly across all states from which local ends are
  *           permitted (see code).
@@ -156,6 +273,12 @@ ConfigLocalEnds(CM_t *cm, float p_internal_exit)
   return;
 }
 
+/*
+ * Function: ConfigLocal_fullsub()
+ * Purpose:  Configure a CM for local alignment in fullsub mode. 
+ *           Still in development - suffering from some gaps in 
+ *           design logic.
+ */
 void
 ConfigLocal_fullsub(CM_t *cm, float p_internal_start, 
 		    float p_internal_exit, int sstruct_nd,
@@ -225,6 +348,11 @@ ConfigLocal_fullsub(CM_t *cm, float p_internal_start,
   return;
 }
 
+
+/*
+ * Function: ConfigLocal_DisallowELEmissions()
+ * Purpose:  Silence the EL state.
+ */
 void
 ConfigLocal_DisallowELEmissions(CM_t *cm)
 {
@@ -236,7 +364,7 @@ ConfigLocal_DisallowELEmissions(CM_t *cm)
    * times (see structs.h). 
    */
   cm->el_selfsc = (IMPOSSIBLE / (cm->W+1));
-  /*cm->iel_selfsc = -INFTY;*/
+  cm->iel_selfsc = -INFTY;
   return;
 }
 
@@ -265,16 +393,9 @@ ConfigLocal_DisallowELEmissions(CM_t *cm)
  ConfigLocal_fullsub_post(CM_t *sub_cm, CM_t *orig_cm, CP9Map_t *orig_cp9map, CMSubMap_t *submap,
 			  struct cp9_dpmatrix_s *post, int L)
  {
-   int k;                       /* counter over HMM nodes */
    int v;			/* counter over states */
    int nd;			/* counter over nodes */
-   int nstarts;			/* number of possible internal starts */
-   int nexits;			/* number of possible internal ends */
-   float denom;
    float sum_beg, sum_end;
-   int lpos, rpos, lins, rins;
-   int orig_v1, orig_v2;
-   int orig_il, orig_ir;
    int orig_nd;
    CMEmitMap_t *sub_emap;           /* consensus emit map for the sub CM */
    int orig_v;
@@ -355,9 +476,21 @@ ConfigLocal_DisallowELEmissions(CM_t *cm)
    return;
  }
 
+/* EPN, Thu Jan  4 10:10:07 2007
+ * 
+ * Function: ConfigLocalEnforce
+ * 
+ * Purpose:  Given a CM with valid cm->enf_start and cm->enf_seq variables,
+ *           modify local entries and exits so that the nodes starting
+ *           at cm->enf_start and going to cm->enf_start + strlen(cm->enf_seq)
+ *           must be entered, i.e. disallow any local pass that omits them.
+ * 
+ * Args:     CM           - the covariance model
+ *           p_internal_start - total prob of a local begin to spread 
+ *           p_internal_exit  - total prob of a local end to spread
+ */
 void
-ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_internal_exit,
-		   int enf_start, int enf_end)
+ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_internal_exit)
 {
   int v;			/* counter over states */
   int nd;			/* counter over nodes */
@@ -367,17 +500,22 @@ ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_internal_exit,
   int nexits;			/* number of possible internal ends */
   float denom;
   CMEmitMap_t *emap;           /* consensus emit map for the CM */
+  int enf_end;
 
+  if(cm->enf_seq == NULL || cm->enf_start == 0)
+    Die("ERROR, in ConfigLocalEnforce, but no subseq to enforce.\n");
+
+  enf_end = cm->enf_start + strlen(cm->enf_seq) - 1;
   /* We want every parse to go through the MATL stretch from enf_start
    * to enf_end. To enforce this we disallow local begin and ends that
    * would allow parses to miss these nodes. */
-  for(nd = enf_start; nd <= enf_end; nd++)
+  for(nd = cm->enf_start; nd <= enf_end; nd++)
     {
       if(cm->ndtype[nd] != MATL_nd)
 	Die("ERROR, trying to enforce a non-MATL stretch (node: %d not MATL).\n", nd);
     }
   emap = CreateEmitMap(cm); /* diff from ConfigLocalEnds() */
-  enf_start_pos = emap->lpos[enf_start];
+  enf_start_pos = emap->lpos[cm->enf_start];
   enf_end_pos   = emap->lpos[enf_end];
 
   /* The following code is copied from ConfigLocal() and ConfigLocalEnds()
@@ -486,4 +624,73 @@ ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_internal_exit,
   FreeEmitMap(emap);
   return;
 }
+
+/*
+ * Function: EnforceSubsequence()
+ * Date:     EPN, Thu Jan  4 10:13:08 2007
+ * Purpose:  Modify CM probabilities so that if a particular subsequence (cm->enf_subseq)
+ *           is not emitted, a big bit score penalty is incurred. Specifically designed
+ *           for enforcing the telomerase RNA template sequence.
+ */
+int  
+EnforceSubsequence(CM_t *cm)
+{
+  int nd;
+  float small_chance = 1e-15; /* any parse not including the enforced path includes
+			       * an emission or transition with a -45 bit score */
+  char *enf_dsq;
+  int   enf_end;
+  int v;
+  int a;
+
+  enf_end = cm->enf_start + strlen(cm->enf_seq) - 1;
+  /*printf("in EnforceSubsequence, start posn: %d cm->enf_seq: %s\n", cm->enf_start, cm->enf_seq);*/
+  for(nd = (cm->enf_start-1); nd <= enf_end; nd++)
+    {
+      if(cm->ndtype[nd] != MATL_nd)
+	Die("ERROR, trying to enforce a non-MATL stretch (node: %d not MATL).\n", nd);
+    }
+
+  /* Go through each node and enforce the template by changing the emission and
+   * transition probabilities as appropriate. */
+  
+  /* First deal with node before cm->enf_start, we want to ensure that cm->enf_start is
+   * entered. We know cm->enf_start - 1 and cm->enf_start are both MATL nodes */
+  nd = cm->enf_start - 1;
+  v  = cm->nodemap[nd];       /* MATL_ML*/
+  cm->t[v][2] = small_chance; /* ML->D  */
+  v++;                        /* MATL_D */
+  cm->t[v][2] = small_chance; /*  D->D  */
+  v++;                        /* MATL_IL*/
+  cm->t[v][2] = small_chance; /*  IL->D */
+
+  /* Now move on to the MATL nodes we're enforcing emits the cm->enf_seq */
+  enf_dsq = DigitizeSequence(cm->enf_seq, (strlen(cm->enf_seq)));
+  for(a = 1; a <= strlen(cm->enf_seq); a++)
+    if(enf_dsq[a] > 3) 
+      Die("ERROR enforced sequence must be contain only A,C,G,U.\n");
+
+  for(nd = cm->enf_start; nd <= enf_end; nd++) 
+    {
+      /* Enforce the transitions, unless we're the last node of the stretch */
+      v  = cm->nodemap[nd];       /* MATL_ML*/
+      if(nd < enf_end)
+	{
+	  cm->t[v][0] = small_chance; /* ML->IL */
+	  cm->t[v][2] = small_chance; /* ML->D  */
+	}
+      /* Enforce the emission. */
+      for(a = 0; a < MAXABET; a++)
+	{
+	  if(a != enf_dsq[(nd-cm->enf_start+1)])
+	    cm->e[v][a] = small_chance;
+	  else
+	    cm->e[v][a] = 1. - (3 * small_chance);
+	}
+    }
+  CMRenormalize(cm);
+  CMLogoddsify(cm);
+  return 1;
+}
+
 

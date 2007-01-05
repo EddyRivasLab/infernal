@@ -1,10 +1,22 @@
 /*
- *  mpifuncs.c
+ * mpifuncs.c
  *
- * Basic functions for using MPI in rsearch.
+ * Basic functions for using MPI in infernal.
+ * Functions can be organized into 2 groups, 
+ * 1 group starts with "search_", these
+ * were copied from Robbie Klein's RSEARCH
+ * and in many cases untouched (besides 
+ * renaming). The other group starts with
+ * "aln_", these were made for MPI alignment
+ * (which is easier to implement than search)
+ * by copying and morphing Robbie's functions.
+ * Functions that don't start with either
+ * "search_" or "aln_" are general.
  *
  * Robert J. Klein
  * May 28, 2002
+ * 
+ * EPN, Thu Jan  4 14:17:06 2007
  */
 
 #ifdef USE_MPI
@@ -23,6 +35,9 @@
 #define VERSION_STRING "INFERNAL 0.71"
 #define VERSION_STRING_SIZE 100
 
+/***************************************************************************
+ * General functions, which can be used for either MPI search or alignment *
+ ***************************************************************************/
 /*
  * Function: get_master_rank
  * Date:     RJK, Tue May 28, 2002 [St. Louis]
@@ -59,24 +74,28 @@ int get_master_rank (MPI_Comm comm, int mpi_my_rank) {
   return (i);
 }
 
+/**************************************************************
+ * MPI search functions ("search_*") Originally from RSEARCH. *
+ **************************************************************/
 /*
- * Function: first_broadcast()
+ * Function: search_first_broadcast()
  * Date:     RJK, Tue May 28, 2002 [St. Louis]
  * Purpose:  Broadcasts the first set of parameters needed in all processes
  *
  * dmin and dmax will be NULL if QDB is not being used
  */
-void first_broadcast (int *num_samples, int *windowlen, float *W_scale,
-		      CM_t **cm, int *do_qdb, int **dmin, int **dmax, 
-		      int *do_inside, int mpi_my_rank, 
-		      int mpi_master_rank) {
+void search_first_broadcast (int *num_samples, int *windowlen, float *W_scale,
+			     CM_t **cm, int *do_qdb, int **dmin, int **dmax, 
+			     int *do_inside, int mpi_my_rank, 
+			     int mpi_master_rank) {
   char buf[BUFSIZE];      /* Buffer for packing it all but the bulk of the CM */
   int position = 0;         /* Where I am in the buffer */
   int nstates, nnodes;
   float el_selfsc;
   int  iel_selfsc;
   int W;
-  printf("entered first_broadcast: do_qdb: %d do_inside: %d my: %d master: %d\n", *do_qdb, *do_inside, mpi_my_rank, mpi_master_rank);
+  /*printf("entered first_broadcast: do_qdb: %d do_inside: %d my: %d master: %d\n", *do_qdb, *do_inside, 
+    mpi_my_rank, mpi_master_rank);*/
 
   position = 0;
   if (mpi_my_rank == mpi_master_rank) 
@@ -169,19 +188,18 @@ void first_broadcast (int *num_samples, int *windowlen, float *W_scale,
   MPI_Bcast ((*cm)->itsc[0], nstates*MAXCONNECT, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
   MPI_Bcast ((*cm)->iesc[0], nstates*Alphabet_size*Alphabet_size, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
 
-  printf("leaving first_broadcast: do_qdb: %d do_inside: %d\n", (*do_qdb), (*do_inside));
-
+  /*printf("leaving search_first_broadcast: do_qdb: %d do_inside: %d\n", (*do_qdb), (*do_inside));*/
 }
 
 /*
- * Function: second_broadcast
+ * Function: search_second_broadcast
  * Date:     RJK, Tue May 28, 2002 [St. Louis]
  * Purpose:  Second broadcast of information to all processes.
  */
-void second_broadcast (float *sc_cutoff, float *e_cutoff, int *cutoff_type, int *do_revcomp, 
-		       int *do_align,
-		       double *mu, double *lambda, double *K, long *N,
-		       int mpi_my_rank, int mpi_master_rank) {
+void search_second_broadcast (float *sc_cutoff, float *e_cutoff, int *cutoff_type, int *do_revcomp, 
+			      int *do_align,
+			      double *mu, double *lambda, double *K, long *N,
+			      int mpi_my_rank, int mpi_master_rank) {
   char buf[BUFSIZE];      /* Buffer for packing it all but the bulk of the CM */
   int position = 0;         /* Where I am in the buffer */
 
@@ -215,11 +233,11 @@ void second_broadcast (float *sc_cutoff, float *e_cutoff, int *cutoff_type, int 
 }
 
 /*
- * Function: receive_job
+ * Function: search_receive_job
  * Date:     RJK, Mon May 28, 2002 [St. Louis]
  * Purpose:  Calls MPI_Recv to receive a work packet, and unpacks the packet
  */
-char receive_job (int *seqlen_p, char **seq_p, int *bestr_p,
+char search_receive_job (int *seqlen_p, char **seq_p, int *bestr_p,
 		  int mpi_master_rank) {
   char buf[32];
   MPI_Status status;
@@ -247,22 +265,22 @@ char receive_job (int *seqlen_p, char **seq_p, int *bestr_p,
 }
 
 /*
- * Function: send_scan_results
+ * Function: search_send_scan_results
  * Date:     RJK, Tue May 28, 2002 [St. Louis]
  * Purpose:  Given a list of scan results, sends them to master node using
  *           MPI_Send
  */
-void send_scan_results (scan_results_t *results, int mpi_master_node) {
+void search_send_scan_results (scan_results_t *results, int mpi_master_node) {
   char *buf;
   int pos = 0;
   int i;
   int bufsize;
-  char results_type = STD_SCAN_RESULTS;
+  char results_type = SEARCH_STD_SCAN_RESULTS;
 
   bufsize = sizeof(char)+sizeof(int)+(sizeof(scan_result_node_t)*(results->num_results+1));
   buf = MallocOrDie(bufsize);
   /* Send the size of the results */
-  MPI_Send (&bufsize, 1, MPI_INT, mpi_master_node, STD_SCAN_RESULTS_SIZE_TAG, MPI_COMM_WORLD);
+  MPI_Send (&bufsize, 1, MPI_INT, mpi_master_node, SEARCH_STD_SCAN_RESULTS_SIZE_TAG, MPI_COMM_WORLD);
 
   /* Send the results */
   MPI_Pack (&results_type, 1, MPI_CHAR, buf, bufsize, &pos, MPI_COMM_WORLD);
@@ -273,24 +291,24 @@ void send_scan_results (scan_results_t *results, int mpi_master_node) {
     MPI_Pack(&(results->data[i].bestr), 1, MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
     MPI_Pack(&(results->data[i].score), 1, MPI_FLOAT, buf, bufsize, &pos, MPI_COMM_WORLD);
   }
-  MPI_Send (buf, bufsize, MPI_PACKED, mpi_master_node, STD_SCAN_RESULTS_TAG, MPI_COMM_WORLD);
+  MPI_Send (buf, bufsize, MPI_PACKED, mpi_master_node, SEARCH_STD_SCAN_RESULTS_TAG, MPI_COMM_WORLD);
 }
 
 /*
- * Function: send_align_results
+ * Function: search_send_align_results
  * Date:     RJK, Tue Jun 25, 2002 [St. Louis]
  * Purpose:  Sends a parse tree back to the master process 
  */
-void send_align_results (Parsetree_t *tr, int mpi_master_node) {
+void search_send_align_results (Parsetree_t *tr, int mpi_master_node) {
   char *buf;
   int pos = 0;
   int bufsize;
-  char results_type = ALIGN_RESULTS;
+  char results_type = ALN_RESULTS;
 
   bufsize = sizeof(char)+sizeof(int)+sizeof(int)+6*((tr->n)+1)*sizeof(int);
   buf = MallocOrDie(bufsize);
   /* Send the size of the results */
-  MPI_Send (&bufsize, 1, MPI_INT, mpi_master_node, STD_SCAN_RESULTS_SIZE_TAG, MPI_COMM_WORLD);
+  MPI_Send (&bufsize, 1, MPI_INT, mpi_master_node, SEARCH_STD_SCAN_RESULTS_SIZE_TAG, MPI_COMM_WORLD);
 
   /* Send the results */
   MPI_Pack (&results_type, 1, MPI_CHAR, buf, bufsize, &pos, MPI_COMM_WORLD);
@@ -303,16 +321,16 @@ void send_align_results (Parsetree_t *tr, int mpi_master_node) {
   MPI_Pack (tr->nxtr, tr->n, MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
   MPI_Pack (tr->prv, tr->n, MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
 
-  MPI_Send (buf, bufsize, MPI_PACKED, mpi_master_node, STD_SCAN_RESULTS_TAG, MPI_COMM_WORLD);
+  MPI_Send (buf, bufsize, MPI_PACKED, mpi_master_node, SEARCH_STD_SCAN_RESULTS_TAG, MPI_COMM_WORLD);
 }
 
 /*
- * Function: procs_working
+ * Function: search_procs_working
  * Date:     RJK, Wed May 29, 2002 [St. Louis]
  * Purpose:  Returns TRUE if a slave is still working (status not NULL), false
  *           otherwise.
  */
-int procs_working (job_t **process_status, int mpi_num_procs, int mpi_master_rank) { 
+int search_procs_working (job_t **process_status, int mpi_num_procs, int mpi_master_rank) { 
   int i;
   for (i=0; i<mpi_num_procs; i++) {
     if (i == mpi_master_rank) continue;
@@ -323,12 +341,12 @@ int procs_working (job_t **process_status, int mpi_num_procs, int mpi_master_ran
 }
 
 /*
- * Function: enqueue
+ * Function: search_enqueue
  * Date:     RJK, Wed May 29, 2002 [St. Louis]
  * Purpose:  Chunks the given database sequence and enqueues all chunks for
  *           scanning.  Queue is a linked list.
  */
-job_t *enqueue (db_seq_t *active_seq, int db_seq_index, 
+job_t *search_enqueue (db_seq_t *active_seq, int db_seq_index, 
 		int D, int do_revcomp, int job_type) 
 {
   job_t *queue = NULL;
@@ -392,12 +410,12 @@ job_t *enqueue (db_seq_t *active_seq, int db_seq_index,
 }
 
 /*
- * Function: enqueue_alignments
+ * Function: search_enqueue_alignments
  * Date:     RJK, Tue Jun 25, 2002 [St. Louis]
  * Purpose:  Given a sequence and a job type, takes each result for sequence
  *           and enqueues an alignment.
  */
-void enqueue_alignments (job_t **queue, db_seq_t *active_seq, int db_seq_index,
+void search_enqueue_alignments (job_t **queue, db_seq_t *active_seq, int db_seq_index,
 			 int do_revcomp, int job_type) {
   job_t *cur_tail = NULL;
   job_t *new_entry;
@@ -443,12 +461,12 @@ void enqueue_alignments (job_t **queue, db_seq_t *active_seq, int db_seq_index,
 }
 
 /*
- * Function: send_next_job
+ * Function: search_send_next_job
  * Date:     RJK, Wed May 29, 2002 [St. Louis]
  * Purpose:  Takes first job in queue, sends it to the given rank, and updates
  *           queue and process_status to reflect this.
  */
-void send_next_job (job_t **queue, job_t **process_status, int rank_to_send_to) {
+void search_send_next_job (job_t **queue, job_t **process_status, int rank_to_send_to) {
   char buf[32];
   int position = 0;
 
@@ -469,12 +487,12 @@ void send_next_job (job_t **queue, job_t **process_status, int rank_to_send_to) 
 }
 
 /*
- * Function: check_results
+ * Function: search_check_results
  * Date:     RJK, Wed May 29, 2002 [St. Louis]
  * Purpose:  Does a blocking call to MPI_Recv until a process finishes, then
  *           processes results and returns.
  */
-int check_results (db_seq_t **active_seqs, job_t **process_status, int D) {
+int search_check_results (db_seq_t **active_seqs, job_t **process_status, int D) {
   char *buf;
   int bufsize;
   MPI_Status status;
@@ -493,7 +511,7 @@ int check_results (db_seq_t **active_seqs, job_t **process_status, int D) {
 
   /* Get the size of the buffer */
   MPI_Recv (&bufsize, 1, MPI_INT, MPI_ANY_SOURCE, 
-	    STD_SCAN_RESULTS_SIZE_TAG, MPI_COMM_WORLD, &status);
+	    SEARCH_STD_SCAN_RESULTS_SIZE_TAG, MPI_COMM_WORLD, &status);
   data_from = status.MPI_SOURCE;
   buf = MallocOrDie(sizeof(char)*bufsize);
 
@@ -508,12 +526,12 @@ int check_results (db_seq_t **active_seqs, job_t **process_status, int D) {
   process_status[data_from] = NULL;
 
   /* Now get the results */
-  MPI_Recv (buf, bufsize, MPI_PACKED, data_from, STD_SCAN_RESULTS_TAG, 
+  MPI_Recv (buf, bufsize, MPI_PACKED, data_from, SEARCH_STD_SCAN_RESULTS_TAG, 
 	    MPI_COMM_WORLD, &status);
   MPI_Unpack (buf, bufsize, &position, &results_type, 1, 
 	      MPI_CHAR, MPI_COMM_WORLD);
 
-  if (results_type == STD_SCAN_RESULTS) {
+  if (results_type == SEARCH_STD_SCAN_RESULTS) {
     MPI_Unpack (buf, bufsize, &position, &num_results, 1, 
 		MPI_INT, MPI_COMM_WORLD);
     if (num_results > 0 && cur_seq->results[(int)in_revcomp] == NULL) {
@@ -532,7 +550,7 @@ int check_results (db_seq_t **active_seqs, job_t **process_status, int D) {
 		    cur_seq->results[(int)in_revcomp]);
     }
     cur_seq->chunks_sent--;
-  } else if (results_type == ALIGN_RESULTS) {
+  } else if (results_type == ALN_RESULTS) {
     tr = MallocOrDie(sizeof(Parsetree_t));
     /* Get size of the tree */
     MPI_Unpack (buf, bufsize, &position, &(tr->memblock), 1, MPI_INT, MPI_COMM_WORLD);
@@ -555,36 +573,20 @@ int check_results (db_seq_t **active_seqs, job_t **process_status, int D) {
     cur_seq->results[(int)in_revcomp]->data[index].tr = tr;
     cur_seq->alignments_sent--;
   } else {
-    Die ("Got result type %d when expecting STD_SCAN_RESULTS (%d) or ALIGN_RESULTS (%d)\n", results_type, STD_SCAN_RESULTS, ALIGN_RESULTS);
+    Die ("Got result type %d when expecting SEARCH_STD_SCAN_RESULTS (%d) or ALN_RESULTS (%d)\n", results_type, SEARCH_STD_SCAN_RESULTS, ALN_RESULTS);
   }
   free(buf);
   return(cur_seq_index);
 }
 
-/* 
- * Function: send_terminate
- * Date:     RJK, Wed May 29, 2002 [St. Louis]
- * Purpose:  Sends termination code to specified process 
- */
-void send_terminate (int i) {
-  char buf[16];
-  int position = 0;
-  char job_type = TERMINATE_WORK;
-  int len = 0;
-
-  MPI_Pack (&job_type, 1, MPI_CHAR, buf, 16, &position, MPI_COMM_WORLD);
-  MPI_Pack (&len, 1, MPI_INT, buf, 16, &position, MPI_COMM_WORLD);
-  MPI_Send (buf, position, MPI_PACKED, i, JOB_PACKET_TAG, MPI_COMM_WORLD);
-}
-
 /*
- * Function: check_hist_results
+ * Function: search_check_hist_results
  * Date:     RJK, Sat Jun 01, 2002 [St. Louis]
  * Purpose:  Does a blocking call to MPI_Recv until a histogram scan process 
  *           finishes, then processes results and returns.  Based on
  *           check_results.
  */
-int check_hist_results (db_seq_t **seqs, job_t **process_status, int D) {
+int search_check_hist_results (db_seq_t **seqs, job_t **process_status, int D) {
 
   char buf[32];
   MPI_Status status;
@@ -596,7 +598,7 @@ int check_hist_results (db_seq_t **seqs, job_t **process_status, int D) {
 
   /* Get the hist results -- score to add and whether this score was
      masked by better score or not */
-  MPI_Recv (buf, 32, MPI_PACKED, MPI_ANY_SOURCE, HIST_RESULTS_TAG,
+  MPI_Recv (buf, 32, MPI_PACKED, MPI_ANY_SOURCE, SEARCH_HIST_RESULTS_TAG,
 	    MPI_COMM_WORLD, &status);
   data_from = status.MPI_SOURCE;
 
@@ -610,7 +612,7 @@ int check_hist_results (db_seq_t **seqs, job_t **process_status, int D) {
 
   MPI_Unpack (buf, 32, &position, &results_type, 1, 
 	      MPI_CHAR, MPI_COMM_WORLD);
-  if (results_type == HIST_SCAN_RESULTS) {
+  if (results_type == SEARCH_HIST_SCAN_RESULTS) {
     MPI_Unpack (buf, 32, &position, &score, 1, MPI_FLOAT, 
 		MPI_COMM_WORLD);
     seqs[db_seq_index]->chunks_sent--;
@@ -618,23 +620,23 @@ int check_hist_results (db_seq_t **seqs, job_t **process_status, int D) {
       seqs[db_seq_index]->best_score = score;
     }
   } else {
-    Die ("Got result type %d when expecting HIST_SCAN_RESULTS (%d)\n", 
-	 results_type, HIST_SCAN_RESULTS);
+    Die ("Got result type %d when expecting SEARCH_HIST_SCAN_RESULTS (%d)\n", 
+	 results_type, SEARCH_HIST_SCAN_RESULTS);
   }
   return(db_seq_index);
 }
 
 /*
- * Function: send_hist_scan_results
+ * Function: search_send_hist_scan_results
  * Date:     RJK, Sat Jun 01, 2002 [St. Louis]
  * Purpose:  Given best score for building a histogram, sends to master
  *           node using MPI_Send
  */
-void send_hist_scan_results (float score, int mpi_master_node) {
+void search_send_hist_scan_results (float score, int mpi_master_node) {
   char *buf;
   int pos = 0;
   int bufsize;
-  char results_type = HIST_SCAN_RESULTS;
+  char results_type = SEARCH_HIST_SCAN_RESULTS;
 
   bufsize = sizeof(char)+sizeof(float);
   buf = MallocOrDie(bufsize);
@@ -642,8 +644,432 @@ void send_hist_scan_results (float score, int mpi_master_node) {
   /* Send the results */
   MPI_Pack (&results_type, 1, MPI_CHAR, buf, bufsize, &pos, MPI_COMM_WORLD);
   MPI_Pack (&score, 1, MPI_FLOAT, buf, bufsize, &pos, MPI_COMM_WORLD);
-  MPI_Send (buf, bufsize, MPI_PACKED, mpi_master_node, HIST_RESULTS_TAG, MPI_COMM_WORLD);
+  MPI_Send (buf, bufsize, MPI_PACKED, mpi_master_node, SEARCH_HIST_RESULTS_TAG, MPI_COMM_WORLD);
 }
+
+
+/*
+ * Function: search_send_terminate
+ * Date:     RJK, Wed May 29, 2002 [St. Louis]
+ * Purpose:  Sends termination code to specified process 
+ */
+void search_send_terminate (int i) {
+  char buf[16];
+  int position = 0;
+  char job_type = TERMINATE_WORK;
+  int len = 0;
+
+  MPI_Pack (&job_type, 1, MPI_CHAR, buf, 16, &position, MPI_COMM_WORLD);
+  MPI_Pack (&len, 1, MPI_INT, buf, 16, &position, MPI_COMM_WORLD);
+  MPI_Send (buf, position, MPI_PACKED, i, JOB_PACKET_TAG, MPI_COMM_WORLD);
+}
+
+/**************************************************************
+ * MPI alignment functions ("aln_*") (EPN 01.04.07)
+ **************************************************************/
+/*
+ * Function: aln_broadcast()
+ * Date:     EPN, Thu Jan  4 14:33:07 2007
+ * Purpose:  Broadcasts the CM for alignment (in cmalign).
+ *
+ */
+void aln_broadcast (CM_t **cm, int mpi_my_rank, int mpi_master_rank) 
+{
+  char buf[BUFSIZE];      /* Buffer for packing it all but the bulk of the CM */
+  int position = 0;         /* Where I am in the buffer */
+  int nstates, nnodes;
+  int enf_len;
+  /*printf("entered aln_broadcast my: %d master: %d\n", mpi_my_rank, mpi_master_rank);*/
+  
+  position = 0;
+  if (mpi_my_rank == mpi_master_rank) 
+    {   /* I'm in charge */
+      nstates = (*cm)->M;
+      nnodes = (*cm)->nodes;
+      
+      /* Basics of the model */
+      MPI_Pack (&nstates,              1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD); 
+      MPI_Pack (&nnodes,               1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->flags),       1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->align_flags), 1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->el_selfsc),   1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->iel_selfsc),  1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->W),           1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->enf_start),   1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      if((*cm)->enf_start != 0)
+	{
+	  enf_len = strlen((*cm)->enf_seq);
+	  MPI_Pack (&enf_len,          1,       MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+	  MPI_Pack (&((*cm)->enf_seq), enf_len, MPI_CHAR,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
+	}
+    }
+  /* Broadcast to everyone */
+  MPI_Bcast (buf, BUFSIZE, MPI_PACKED, mpi_master_rank, MPI_COMM_WORLD);
+
+  /* Decode this first set */
+  position = 0;
+  if (mpi_my_rank != mpi_master_rank) 
+    {
+      MPI_Unpack (buf, BUFSIZE, &position, &nstates, 1, MPI_INT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &nnodes, 1, MPI_INT, MPI_COMM_WORLD);
+      *cm = CreateCM (nnodes, nstates);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->flags),       1, MPI_INT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->align_flags), 1, MPI_INT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->el_selfsc),   1, MPI_FLOAT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->iel_selfsc),  1, MPI_INT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->W),           1, MPI_INT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->enf_start),   1, MPI_INT, MPI_COMM_WORLD);
+      if((*cm)->enf_start != 0)
+	{
+	  MPI_Unpack (buf, BUFSIZE, &position, &enf_len,                  1, MPI_INT, MPI_COMM_WORLD);
+	  MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->enf_seq),   enf_len, MPI_INT, MPI_COMM_WORLD);
+	}
+    }
+  /* Now we broadcast the rest of the model using many calls to MPI_Bcast.  
+     This is inefficient, but is probably negligible compared to the actual 
+     searches */
+  MPI_Bcast ((*cm)->null,   Alphabet_size, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->sttype, nstates,       MPI_CHAR,  mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->ndidx,  nstates,       MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->stid,   nstates,       MPI_CHAR,  mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->cfirst, nstates,       MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->cnum,   nstates,       MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->plast,  nstates,       MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->pnum,   nstates,       MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
+ 
+  MPI_Bcast ((*cm)->nodemap, nnodes, MPI_INT,  mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->ndtype,  nnodes, MPI_CHAR, mpi_master_rank, MPI_COMM_WORLD);
+
+  MPI_Bcast ((*cm)->begin,    nstates, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->end,      nstates, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->beginsc,  nstates, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->endsc,    nstates, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->ibeginsc, nstates, MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->iendsc,   nstates, MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
+
+  /* These next calls depend on Sean's FMX2Alloc to be what CreateCM calls, and to allocate one large
+     memory chunk at x[0] (where x is float **) and then fill in x[1]..x[n] with the appropriate offsets into
+     this chunk of memory */
+  MPI_Bcast ((*cm)->t[0], nstates*MAXCONNECT, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->e[0], nstates*Alphabet_size*Alphabet_size, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->tsc[0], nstates*MAXCONNECT, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->esc[0], nstates*Alphabet_size*Alphabet_size, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->itsc[0], nstates*MAXCONNECT, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->iesc[0], nstates*Alphabet_size*Alphabet_size, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
+  /*printf("leaving aln_broadcast\n");*/
+  return;
+}
+
+
+/*
+ * Function: aln_procs_working
+ * Date:     EPN, Sat Dec 30 21:38:54 2006
+ * Purpose:  Returns TRUE if a slave is still working (status BUSY), false
+ *           otherwise.
+ */
+int aln_procs_working (int *process_status, int mpi_num_procs, int mpi_master_rank) { 
+  int i;
+  for (i=0; i<mpi_num_procs; i++) 
+    {
+      if (i == mpi_master_rank) continue;
+      if (process_status[i] == BUSY) return(TRUE); 
+    }
+  return (FALSE);
+}
+
+/*
+ * Function: aln_send_next_job
+ * Date:     EPN, Mon Jan  1 10:37:31 2007
+ * Purpose:  Given a seqs_to_aln_t data structure with sequences to send to 
+ *           a slave, send the important bits to the slave.
+ * Args:
+ *         seqs_to_aln - the seqs to send to the slave for alignment
+ */
+void aln_send_next_job (seqs_to_aln_t *seqs_to_aln, int rank_to_send_to) 
+{
+  char *buf;
+  int bufsize;
+  int position = 0;
+  char job_type = ALN_WORK;
+  int i;
+  int *namelen;
+  /*printf("in aln_send_next_job, rank_to_send_to: %d\n", rank_to_send_to);*/
+
+  bufsize = sizeof(char) + ((3 + (2 * seqs_to_aln->nseq)) * sizeof(int));
+  buf = MallocOrDie(bufsize);
+  
+  /* Send the size of the job */
+  MPI_Send (&bufsize, 1, MPI_INT, rank_to_send_to, ALN_JOB_SIZE_TAG, MPI_COMM_WORLD);
+
+  MPI_Pack (&job_type, 1, MPI_CHAR, buf, bufsize, &position, MPI_COMM_WORLD);
+  MPI_Pack (&(seqs_to_aln->index), 1, MPI_INT, buf, bufsize, &position, MPI_COMM_WORLD);
+
+  namelen = MallocOrDie(sizeof(int) * seqs_to_aln->nseq);
+
+  /* Send the seqs_to_aln_t data structure, piecewise */
+  /* First send the number of sequences */
+  MPI_Pack (&(seqs_to_aln->nseq), 1, MPI_INT, buf, bufsize, &position, MPI_COMM_WORLD);
+  /* For each sequence, send the length of each sequence, and the length of each sequence name */
+  for(i = 0; i < seqs_to_aln->nseq; i++)
+    {
+      namelen[i] = strlen(seqs_to_aln->sq[i]->name)+1;
+      MPI_Pack (&(seqs_to_aln->sq[i]->n), 1, MPI_INT, buf, bufsize, &position, MPI_COMM_WORLD);
+      MPI_Pack (&(namelen[i]), 1, MPI_INT, buf, bufsize, &position, MPI_COMM_WORLD);
+    }
+  MPI_Send (buf, position, MPI_PACKED, rank_to_send_to, ALN_JOB_PACKET_TAG, MPI_COMM_WORLD);
+
+  /* Send the names of the sequences */
+  for(i = 0; i < seqs_to_aln->nseq; i++)
+    if(seqs_to_aln->sq[i]->n > 0)
+      MPI_Send (seqs_to_aln->sq[i]->name, (namelen[i]), MPI_CHAR, rank_to_send_to, 
+		SEQ_TAG, MPI_COMM_WORLD);
+
+  /* send the digitized seqs only, (not the full ESL_SQ data structure) */
+  for(i = 0; i < seqs_to_aln->nseq; i++)
+    {
+      if(seqs_to_aln->sq[i]->n > 0)
+	MPI_Send (seqs_to_aln->sq[i]->dsq, (seqs_to_aln->sq[i]->n+2), MPI_CHAR, rank_to_send_to, SEQ_TAG, MPI_COMM_WORLD);
+    }
+
+  /*printf("leaving aln_send_next_job, rank_to_send_to: %d\n", rank_to_send_to);*/
+  free(namelen);
+}
+
+/*
+ * Function: aln_receive_job
+ * Date:     EPN, Sat Dec 30 22:13:24 2006
+ * Purpose:  Calls MPI_Recv to receive a aln work packet, and unpacks the packet
+ */
+char aln_receive_job (seqs_to_aln_t **ret_seqs_to_aln, int mpi_master_rank) 
+{
+  char *buf;
+  int bufsize;
+  MPI_Status status;
+  int position = 0;
+  char job_type;
+  seqs_to_aln_t *seqs_to_aln;
+  seqs_to_aln = MallocOrDie(sizeof(seqs_to_aln_t));
+  int i;
+  int *namelen;
+
+  /* Get the size of the buffer */
+  MPI_Recv (&bufsize, 1, MPI_INT, MPI_ANY_SOURCE, ALN_JOB_SIZE_TAG, MPI_COMM_WORLD, &status);
+  buf = MallocOrDie(sizeof(char)*bufsize);
+
+  printf("buf size: %d\n", bufsize);
+  
+  /* Get the job */
+  MPI_Recv (buf, bufsize, MPI_PACKED, mpi_master_rank, ALN_JOB_PACKET_TAG, 
+	    MPI_COMM_WORLD, &status);
+  MPI_Unpack (buf, bufsize, &position, &job_type, 1, MPI_CHAR, MPI_COMM_WORLD);
+
+  if(job_type == ALN_WORK)
+    {
+      MPI_Unpack (buf, bufsize, &position, &(seqs_to_aln->index), 1, MPI_INT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, bufsize, &position, &(seqs_to_aln->nseq),  1, MPI_INT, MPI_COMM_WORLD);
+      seqs_to_aln->sq = MallocOrDie(sizeof(ESL_SQ *) * seqs_to_aln->nseq);
+      namelen         = MallocOrDie(sizeof(int)      * seqs_to_aln->nseq);
+
+      for(i = 0; i < seqs_to_aln->nseq; i++)
+	{
+	  seqs_to_aln->sq[i] = esl_sq_Create();
+	  MPI_Unpack (buf, bufsize, &position, &(seqs_to_aln->sq[i]->n), 1, MPI_INT, MPI_COMM_WORLD);
+	  MPI_Unpack (buf, bufsize, &position, &(namelen[i]), 1, MPI_INT, MPI_COMM_WORLD);
+	}
+      
+      /* Receive the names of the sequences */
+      for(i = 0; i < seqs_to_aln->nseq; i++)
+	{
+	  if(seqs_to_aln->sq[i]->n > 0)
+	    MPI_Recv (seqs_to_aln->sq[i]->name, namelen[i], MPI_CHAR, 
+		      mpi_master_rank, SEQ_TAG, MPI_COMM_WORLD, &status);
+	}
+
+      /* Receive the digitized sequences */
+      for(i = 0; i < seqs_to_aln->nseq; i++)
+	{
+	  if(seqs_to_aln->sq[i]->n > 0)
+	    {
+	      seqs_to_aln->sq[i]->dsq = MallocOrDie(sizeof(char)*((seqs_to_aln->sq[i]->n)+2));
+	      MPI_Recv (seqs_to_aln->sq[i]->dsq, (seqs_to_aln->sq[i]->n+2), MPI_CHAR, 
+			mpi_master_rank, SEQ_TAG, MPI_COMM_WORLD, &status);
+	    }
+	}
+      *ret_seqs_to_aln = seqs_to_aln;
+    }
+  else if(job_type != TERMINATE_WORK)
+    Die("ERROR in aln_receive_job did not receive ALN_WORK or TERMINATE_WORK signal\n");
+
+  return(job_type);
+}
+
+/*
+ * Function: aln_send_results
+ * Date:     EPN, Sat Dec 30 22:05:30 2006
+ * Purpose:  Sends parse tree(s) and potentially postcodes, back to the master process. 
+ */
+void aln_send_results (seqs_to_aln_t *seqs_to_aln, int do_post, int mpi_master_node) 
+{
+  char *buf;
+  int pos = 0;
+  int bufsize;
+  int i;
+  char results_type = ALN_RESULTS;
+
+  bufsize = sizeof(char) + sizeof(int) + sizeof(int) + sizeof(int);
+  for(i = 0; i < seqs_to_aln->nseq; i++)
+    bufsize += (6 * (seqs_to_aln->tr[i]->n + 1) * sizeof(int));
+
+  if(do_post) /* add size of postcodes */
+    for(i = 0; i < seqs_to_aln->nseq; i++)
+      bufsize += (seqs_to_aln->sq[i]->n + 1) * sizeof(char) + sizeof(int);
+
+  buf = MallocOrDie(bufsize);
+
+  /* Send the size of the results */
+  MPI_Send (&bufsize, 1, MPI_INT, mpi_master_node, ALN_RESULTS_SIZE_TAG, MPI_COMM_WORLD);
+
+  /* Send the results */
+  MPI_Pack (&results_type,         1, MPI_CHAR, buf, bufsize, &pos, MPI_COMM_WORLD);
+  MPI_Pack (&(seqs_to_aln->index), 1, MPI_INT , buf, bufsize, &pos, MPI_COMM_WORLD);
+  MPI_Pack (&(seqs_to_aln->nseq),  1, MPI_INT , buf, bufsize, &pos, MPI_COMM_WORLD);
+  for(i = 0; i < seqs_to_aln->nseq; i++)
+    {
+      MPI_Pack (&(seqs_to_aln->tr[i]->memblock),1,                     MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
+      MPI_Pack (&(seqs_to_aln->tr[i]->n),       1,                     MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
+      MPI_Pack (seqs_to_aln->tr[i]->emitl,      seqs_to_aln->tr[i]->n, MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
+      MPI_Pack (seqs_to_aln->tr[i]->emitr,      seqs_to_aln->tr[i]->n, MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
+      MPI_Pack (seqs_to_aln->tr[i]->state,      seqs_to_aln->tr[i]->n, MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
+      MPI_Pack (seqs_to_aln->tr[i]->nxtl,       seqs_to_aln->tr[i]->n, MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
+      MPI_Pack (seqs_to_aln->tr[i]->nxtr,       seqs_to_aln->tr[i]->n, MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
+      MPI_Pack (seqs_to_aln->tr[i]->prv,        seqs_to_aln->tr[i]->n, MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
+    }
+  MPI_Pack (&do_post,  1, MPI_INT , buf, bufsize, &pos, MPI_COMM_WORLD);
+
+  if(do_post)
+    for(i = 0; i < seqs_to_aln->nseq; i++)
+      {
+	MPI_Pack (&(seqs_to_aln->sq[i]->n), 1                        , MPI_INT,  buf, bufsize, &pos, MPI_COMM_WORLD);
+	MPI_Pack (seqs_to_aln->postcode[i],   (seqs_to_aln->sq[i]->n+1), MPI_CHAR, buf, bufsize, &pos, MPI_COMM_WORLD);
+      }
+  MPI_Send (buf, bufsize, MPI_PACKED, mpi_master_node, ALN_RESULTS_TAG, MPI_COMM_WORLD);
+}
+
+/*
+ * Function: aln_check_results
+ * Date:     EPN, Sat Dec 30 21:49:42 2006
+ * Purpose:  Does a blocking call to MPI_Recv until a process finishes, then
+ *           processes results and returns.
+ */
+int aln_check_results (Parsetree_t **all_parsetrees, char **all_postcodes, int **process_status)
+{
+  char *buf;
+  int bufsize;
+  MPI_Status status;
+  int data_from;        /* Who's sending us data */
+  char results_type;
+  int position = 0;
+  int i;
+  Parsetree_t *tr;
+  int nseq;
+  int index;
+  int postsize;
+  int do_post;
+  char *postcode;
+
+  /*printf("in aln_check_results\n");*/
+
+  /* Get the size of the buffer */
+  MPI_Recv (&bufsize, 1, MPI_INT, MPI_ANY_SOURCE, 
+	    ALN_RESULTS_SIZE_TAG, MPI_COMM_WORLD, &status);
+  data_from = status.MPI_SOURCE;
+  buf = MallocOrDie(sizeof(char)*bufsize);
+
+  /* Clear this job -- it's done */
+  (*process_status)[data_from] = IDLE;
+
+  /* Now get the results */
+  MPI_Recv (buf, bufsize, MPI_PACKED, data_from, ALN_RESULTS_TAG, 
+	    MPI_COMM_WORLD, &status);
+  MPI_Unpack (buf, bufsize, &position, &results_type, 1, 
+	      MPI_CHAR, MPI_COMM_WORLD);
+
+  if (results_type == ALN_RESULTS) 
+    {
+      MPI_Unpack (buf, bufsize, &position, &index, 1, 
+		  MPI_INT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, bufsize, &position, &nseq, 1, 
+		  MPI_INT, MPI_COMM_WORLD);
+      for (i=0; i < nseq; i++) 
+	{
+	  /* Get a parsetree for each sequence */
+	  tr = MallocOrDie(sizeof(Parsetree_t));
+	  /* Get size of the tree */
+	  MPI_Unpack (buf, bufsize, &position, &(tr->memblock), 1, MPI_INT, MPI_COMM_WORLD);
+	  MPI_Unpack (buf, bufsize, &position, &(tr->n), 1, MPI_INT, MPI_COMM_WORLD);
+	  /* Allocate it */
+	  tr->emitl = MallocOrDie(sizeof(int)*tr->n);
+	  tr->emitr = MallocOrDie(sizeof(int)*tr->n);
+	  tr->state = MallocOrDie(sizeof(int)*tr->n);
+	  tr->nxtl  = MallocOrDie(sizeof(int)*tr->n);
+	  tr->nxtr  = MallocOrDie(sizeof(int)*tr->n);
+	  tr->prv   = MallocOrDie(sizeof(int)*tr->n);
+	  tr->nalloc = tr->n;
+	  /* Unpack it */
+	  MPI_Unpack (buf, bufsize, &position, tr->emitl, tr->n, MPI_INT, MPI_COMM_WORLD);
+	  MPI_Unpack (buf, bufsize, &position, tr->emitr, tr->n, MPI_INT, MPI_COMM_WORLD);
+	  MPI_Unpack (buf, bufsize, &position, tr->state, tr->n, MPI_INT, MPI_COMM_WORLD);
+	  MPI_Unpack (buf, bufsize, &position, tr->nxtl,  tr->n, MPI_INT, MPI_COMM_WORLD);
+	  MPI_Unpack (buf, bufsize, &position, tr->nxtr,  tr->n, MPI_INT, MPI_COMM_WORLD);
+	  MPI_Unpack (buf, bufsize, &position, tr->prv,   tr->n, MPI_INT, MPI_COMM_WORLD);
+	  /* add the parsetree onto the master array of parsetrees */
+	  all_parsetrees[index++] = tr;
+	}
+
+      MPI_Unpack (buf, bufsize, &position, &do_post,  1, MPI_INT, MPI_COMM_WORLD);
+
+      if(do_post)
+	{
+	  index -= nseq;
+	  for (i=0; i < nseq; i++) 
+	    {
+	      /* unpack the postcodes */
+	      MPI_Unpack (buf, bufsize, &position, &postsize,   1       , MPI_INT,  MPI_COMM_WORLD);
+	      postcode = MallocOrDie(sizeof(char) * (postsize+1));
+	      MPI_Unpack (buf, bufsize, &position, postcode, (postsize+1), MPI_CHAR, MPI_COMM_WORLD);
+	      all_postcodes[index++] = postcode;
+	    }
+	}
+    }
+  else 
+    Die ("Got result type %d when expecting ALN_RESULTS (%d)\n", results_type, ALN_RESULTS);
+      
+  free(buf);
+  return(data_from);
+}
+
+/*
+ * Function: aln_send_terminate
+ * Date:     EPN, Thu Jan  4 16:16:45 2007
+ * Purpose:  Sends termination code to specified process, specific for cmalign (not cmsearch).
+ */
+void aln_send_terminate (int rank_to_send_to) 
+{
+  int bufsize;
+  char *buf;
+  int position = 0;
+  char job_type = TERMINATE_WORK;
+
+  bufsize = sizeof(char);
+  buf = MallocOrDie(bufsize);
+  
+  /* Send the bufsize (only b/c aln_receive_job expects it) */
+  MPI_Send (&bufsize, 1, MPI_INT, rank_to_send_to, ALN_JOB_SIZE_TAG, MPI_COMM_WORLD);
+
+  MPI_Pack (&job_type, 1, MPI_CHAR, buf, bufsize, &position, MPI_COMM_WORLD);
+  MPI_Send (buf, position, MPI_PACKED, rank_to_send_to, ALN_JOB_PACKET_TAG, MPI_COMM_WORLD);
+}
+
 
 #endif
 
