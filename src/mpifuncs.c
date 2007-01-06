@@ -263,7 +263,7 @@ char search_receive_job (int *seqlen_p, char **seq_p, int *bestr_p,
   MPI_Unpack (buf, 32, &position, seqlen_p, 1, MPI_INT, MPI_COMM_WORLD);
   MPI_Unpack (buf, 32, &position, bestr_p, 1, MPI_INT, MPI_COMM_WORLD);
 
-  printf("in receive job seqlen: %d\n", *seqlen_p);
+  /*  printf("in receive job seqlen: %d\n", *seqlen_p);*/
   if (*seqlen_p > 0) {
     /* Receive a partial sequence and convert to digitized sequence format
        by placing sentinels at end */
@@ -383,8 +383,8 @@ job_t *search_enqueue (db_seq_t *active_seq, int db_seq_index,
   chunksize = ((active_seq->sq[0]->n+D*(mpi_num_procs-2))/(mpi_num_procs-1))+1;
   chunksize = ((chunksize/D)+1)*D;
 
-  printf("in search_enqueue, D: %d do_revcomp: %d\n", D, do_revcomp);
-  printf("seq len: %d chunksize: %d procs: %d\n", active_seq->sq[0]->n, chunksize, mpi_num_procs);
+  /*printf("in search_enqueue, D: %d do_revcomp: %d\n", D, do_revcomp);
+    printf("seq len: %d chunksize: %d procs: %d\n", active_seq->sq[0]->n, chunksize, mpi_num_procs);*/
 
   if (do_revcomp)
     chunksize *= 2;
@@ -398,7 +398,6 @@ job_t *search_enqueue (db_seq_t *active_seq, int db_seq_index,
   active_seq->alignments_sent = -1;     /* None sent yet */
   for (in_revcomp = 0; in_revcomp <= do_revcomp; in_revcomp++) {
     for (curpos = 1; curpos <= active_seq->sq[0]->n; curpos += chunkoffset) {
-      printf("made a new entry\n");
       new_entry = MallocOrDie (sizeof(db_seq_t));
       new_entry->next = NULL;
       if (cur_tail != NULL)
@@ -495,7 +494,7 @@ void search_send_next_job (job_t **queue, job_t **process_status, int rank_to_se
   MPI_Pack (&((*process_status)->bestr), 1, MPI_INT, buf, 32, &position, MPI_COMM_WORLD);
   MPI_Send (buf, position, MPI_PACKED, rank_to_send_to, JOB_PACKET_TAG, MPI_COMM_WORLD);
 
-  printf("in search_send_next_job sent len: %d\n", (*process_status)->seqlen);
+  /*printf("in search_send_next_job sent len: %d\n", (*process_status)->seqlen);*/
   if ((*process_status)->seqlen > 0) {
     MPI_Send ((*process_status)->dsq, (*process_status)->seqlen, MPI_CHAR, rank_to_send_to, SEQ_TAG, MPI_COMM_WORLD);
   }

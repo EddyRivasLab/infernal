@@ -243,13 +243,11 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 		      active_seqs[active_seq_index] = read_next_seq(dbfp, do_revcomp);
 		      if (active_seqs[active_seq_index] == NULL) 
 			{
-			  printf("EOF TRUE\n");
 			  eof = TRUE;
 			  break;            /* Queue is empty and no more seqs */
 			}
 		      else
 			{
-			  printf("EOF NOT TRUE do_revcomp: %d\n", do_revcomp);
 			  job_queue = search_enqueue (active_seqs[active_seq_index], 
 						      active_seq_index, cm->W, do_revcomp, 
 						      SEARCH_STD_SCAN_WORK);
