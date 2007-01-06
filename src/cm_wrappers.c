@@ -100,18 +100,18 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 	  if(cm->opts & CM_SEARCH_NOQDB)
 	    if(cm->opts & CM_SEARCH_INSIDE)
 	      iInsideScan(cm, dbseq->sq[reversed]->dsq, 1, dbseq->sq[reversed]->n, cm->W,
-			  min_cutoff, 0, dbseq->results[reversed]);
+			  min_cutoff, dbseq->results[reversed]);
 	    else /* don't do inside */
 	      CYKScan (cm, dbseq->sq[reversed]->dsq, 1, dbseq->sq[reversed]->n, cm->W,
-			min_cutoff, 0, dbseq->results[reversed]);
+			min_cutoff, dbseq->results[reversed]);
 	  else /* use QDB */
 	    if(cm->opts & CM_SEARCH_INSIDE)
 	      iInsideBandedScan(cm, dbseq->sq[reversed]->dsq, cm->dmin, cm->dmax, 
 			       1, dbseq->sq[reversed]->n, cm->W,
-			       min_cutoff, 0, dbseq->results[reversed]);
+			       min_cutoff, dbseq->results[reversed]);
 	    else /* don't do inside */
 	      CYKBandedScan (cm, dbseq->sq[reversed]->dsq, cm->dmin, cm->dmax, 1, 
-			     dbseq->sq[reversed]->n, cm->W, min_cutoff, 0, 
+			     dbseq->sq[reversed]->n, cm->W, min_cutoff, 
 			     dbseq->results[reversed]);
 
 	  /* Align results */
@@ -322,17 +322,17 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 	      if(cm->opts & CM_SEARCH_NOQDB)
 		if(cm->opts & CM_SEARCH_INSIDE)
 		  iInsideScan(cm, seq, 1, seqlen, cm->W,
-			     min_cutoff, 0, results);
+			     min_cutoff, results);
 		else /* don't do inside */
 		  CYKScan (cm, seq, 1, seqlen, cm->W,
-			   min_cutoff, 0, results);
+			   min_cutoff, results);
 	      else /* use QDB */
 		if(cm->opts & CM_SEARCH_INSIDE)
 		  iInsideBandedScan(cm, seq, cm->dmin, cm->dmax, 1, seqlen, cm->W,
-				   min_cutoff, 0, results);
+				   min_cutoff, results);
 		else /* do't do inside */
 		  CYKBandedScan (cm, seq, cm->dmin, cm->dmax, 1, seqlen, cm->W,
-				 min_cutoff, 0, results);
+				 min_cutoff, results);
 
 	      search_send_scan_results (results, mpi_master_rank);
 	      FreeResults(results);

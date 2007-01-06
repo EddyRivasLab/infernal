@@ -157,7 +157,6 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
     }
   if(cm->opts & CM_CONFIG_ZEROINSERTS)
     CMHackInsertScores(cm);	/* insert emissions are all equiprobable */
-
   CMLogoddsify(cm);
   return; 
 }

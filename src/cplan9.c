@@ -1075,6 +1075,8 @@ ILogsum(int p1, int p2)
   static int firsttime = 1;
   if (firsttime) { init_ilogsum(); firsttime = 0; }
 #endif
+  if(p1 == -INFTY) return p2; /* EPN */
+  if(p2 == -INFTY) return p1; /* EPN */
 
   diff = p1-p2;
   if      (diff >=  LOGSUM_TBL) return p1;

@@ -875,16 +875,13 @@ PrintDPCellsSaved(CM_t *cm, int *min, int *max, int W)
  *           j0        - end of target subsequence (L for full seq)
  *           W         - max d: max size of a hit
  *           cutoff      - minimum score to report 
- *           score_boost - boost in bits to temporarily add to all scores, 
- *                         experimental technique for finding significant 
- *                         hits < 0 bits. 0.0 if technique not used.
  *           results     - scan_results_t to add to; if NULL, don't add to it
  *
  * Returns:  score of best overall hit
  */
 float
 CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
-	      float cutoff, float score_boost, scan_results_t *results)
+	      float cutoff, scan_results_t *results)
 {
   float  ***alpha;              /* CYK DP score matrix, [v][j][d] */
   int      *bestr;              /* auxil info: best root state at alpha[0][cur][d] */
@@ -1194,7 +1191,9 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 	{
 	  i = j-d+1;
 	  gamma_i = j-d+1-i0+1;
-	  sc = gamma[gamma_i-1] + alpha[0][cur][d] + score_boost;
+	  sc = gamma[gamma_i-1] + alpha[0][cur][d] + cm->score_boost;
+	  /* score_boost is experimental technique for finding hits < 0 bits. 
+	   * value is 0.0 if technique not used. */
 	  if (sc > gamma[gamma_j])
 	    {
 	      gamma[gamma_j]  = sc;

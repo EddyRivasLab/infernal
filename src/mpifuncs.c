@@ -218,7 +218,6 @@ void search_second_broadcast (float *sc_cutoff, float *e_cutoff, int *cutoff_typ
   char buf[BUFSIZE];      /* Buffer for packing it all but the bulk of the CM */
   int position = 0;         /* Where I am in the buffer */
 
-  printf("entered search_second_broadcast rank: %d\n", mpi_my_rank);
   position = 0;
   if (mpi_my_rank == mpi_master_rank) {   /* I'm in charge */
     MPI_Pack (sc_cutoff, 1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
@@ -228,15 +227,12 @@ void search_second_broadcast (float *sc_cutoff, float *e_cutoff, int *cutoff_typ
     MPI_Pack (mu, GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
     MPI_Pack (lambda, GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
     MPI_Pack (K, GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-    printf("check\n");
   }
   MPI_Bcast (buf, BUFSIZE, MPI_PACKED, mpi_master_rank, MPI_COMM_WORLD);
-  printf("check 2\n");
 
   /* Decode the packet */
   position = 0;
   if (mpi_my_rank != mpi_master_rank) {
-    printf("non mpi check\n");
     MPI_Unpack (buf, BUFSIZE, &position, sc_cutoff, 1, MPI_FLOAT, MPI_COMM_WORLD);
     MPI_Unpack (buf, BUFSIZE, &position, e_cutoff, 1, MPI_FLOAT, MPI_COMM_WORLD);
     MPI_Unpack (buf, BUFSIZE, &position, cutoff_type, 1, MPI_INT, MPI_COMM_WORLD);
@@ -245,7 +241,6 @@ void search_second_broadcast (float *sc_cutoff, float *e_cutoff, int *cutoff_typ
     MPI_Unpack (buf, BUFSIZE, &position, lambda, GC_SEGMENTS, MPI_FLOAT, MPI_COMM_WORLD);
     MPI_Unpack (buf, BUFSIZE, &position, K, GC_SEGMENTS, MPI_FLOAT, MPI_COMM_WORLD);
   }
-  printf("leaving search_second_broadcast rank: %d\n", mpi_my_rank);
 }
 
 /*

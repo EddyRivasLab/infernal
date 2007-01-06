@@ -153,16 +153,16 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 				   0);
 	  else if(cm->opts & CM_SEARCH_NOQDB)
 	    if(cm->opts & CM_SEARCH_INSIDE)
-	      score = iInsideScan(cm, dsq, 1, sample_length, cm->W, 0, 0, NULL);
+	      score = iInsideScan(cm, dsq, 1, sample_length, cm->W, 0, NULL);
 	    else 
-	      score = CYKScan(cm, dsq, 1, sample_length, cm->W, 0, 0, NULL);
+	      score = CYKScan(cm, dsq, 1, sample_length, cm->W, 0, NULL);
 	  else /* use QDB */
 	    if(cm->opts & CM_SEARCH_INSIDE)
 	      score = iInsideBandedScan(cm, dsq, cm->dmin, cm->dmax, 1, sample_length, cm->W, 
-				       0, 0, NULL);
+				       0, NULL);
 	    else
 	      score = CYKBandedScan(cm, dsq, cm->dmin, cm->dmax, 1, sample_length, cm->W,
-				    0, 0, NULL);
+				    0, NULL);
 	  
 	  if(i % 100 == 0)
 	    printf("(%4d) SCORE: %f\n", i, score);
@@ -444,16 +444,16 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 
 	    if(cm->opts & CM_SEARCH_NOQDB)
 	      if(cm->opts & CM_SEARCH_INSIDE)
-		score = iInsideScan(cm, dsq, 1, sample_length, cm->W, 0, 0, NULL);
+		score = iInsideScan(cm, dsq, 1, sample_length, cm->W, 0, NULL);
 	      else 
-		score = CYKScan(cm, dsq, 1, sample_length, cm->W, 0, 0, NULL);
+		score = CYKScan(cm, dsq, 1, sample_length, cm->W, 0, NULL);
 	    else /* use QDB */
 	      if(cm->opts & CM_SEARCH_INSIDE)
 		score = iInsideBandedScan(cm, dsq, cm->dmin, cm->dmax, 1, sample_length, cm->W, 
-					  0, 0, NULL);
+					  0, NULL);
 	      else
 		score = CYKBandedScan(cm, dsq, cm->dmin, cm->dmax, 1, sample_length, cm->W,
-				      0, 0, NULL);
+				      0, NULL);
 	    search_send_hist_scan_results (score, mpi_master_rank);
 	  } 
 	  if (dsq != NULL)

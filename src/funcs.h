@@ -41,7 +41,7 @@ extern void     PrintBandGraph(FILE *fp, double **gamma, int *min, int *max, int
 
 extern void     PrintDPCellsSaved(CM_t *cm, int *min, int *max, int W);
 extern float    CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
-			      float cutoff, float score_boost, scan_results_t *results);
+			      float cutoff, scan_results_t *results);
 extern void     BandedParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq, 
 				    double **gamma, int W, int *dmin, int *dmax);
 extern void     ExpandBands(CM_t *cm, int qlen, int *dmin, int *dmax);
@@ -177,7 +177,7 @@ extern void sort_results (scan_results_t *results);
 extern void report_hit (int i, int j, int bestr, float score, scan_results_t *results);
 extern void remove_overlapping_hits (scan_results_t *results, int L);
 extern float CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
-		      float cutoff, float score_boost, scan_results_t *results);
+		      float cutoff, scan_results_t *results);
 extern float CYKScanRequires(CM_t *cm, int L, int W);
 
 /* from smallcyk.c
@@ -345,18 +345,18 @@ extern void FreeCP9Map(CP9Map_t *cp9map);
 
 /* from scaninside.c */
 extern float  InsideScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
-			 float cutoff, float score_boost, scan_results_t *results);
+			 float cutoff, scan_results_t *results);
 extern float  InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
-			       float cutoff, float score_boost, scan_results_t *results);
+			       float cutoff, scan_results_t *results);
 extern void  InsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax,
 				 int i0, int j0, int W, 
 				 int *ret_nhits, int **ret_hitr, 
 				 int **ret_hiti, int **ret_hitj, float **ret_hitsc,
 				 float min_thresh);
 extern float iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
-			 float cutoff, float score_boost, scan_results_t *results);
+			 float cutoff, scan_results_t *results);
 extern float iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
-			       float cutoff, float score_boost, scan_results_t *results);
+			       float cutoff, scan_results_t *results);
 extern float LogSum2(float p1, float p2);
 
 /* from cm_masks.c */

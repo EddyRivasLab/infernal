@@ -1982,29 +1982,30 @@ debug_print_cm_params(CM_t *cm)
      {
        printf("v:%4d:%4d %4s %2s\n", v, cm->ndidx[v], nodetypes[(int) cm->ndtype[cm->ndidx[v]]], sttypes[(int) cm->sttype[v]]);
        if(cm->nodemap[cm->ndidx[v]] == v)
-	 printf("beg: %0.3f | end %0.3f\n", cm->begin[v], cm->end[v]);
+	 printf("beg: %0.3f (%.3f %10d)| end %0.3f (%.3f %10d)\n", cm->begin[v], cm->beginsc[v], cm->ibeginsc[v],
+		cm->end[v], cm->endsc[v], cm->iendsc[v]);
        if(cm->sttype[v] == MP_st)
 	 {
 	   printf("\tE: ");
 	   for(i = 0; i < MAXABET*MAXABET; i++)
-	     printf("%0.3f ", cm->e[v][i]);
+	     printf("%0.3f (%.3f %6d) ", cm->e[v][i], cm->esc[v][i], cm->iesc[v][i]);
 	   printf("\n");
 	 }
        else if(cm->sttype[v] == ML_st ||
 	       cm->sttype[v] == MR_st ||
 	       cm->sttype[v] == IL_st ||
 	       cm->sttype[v] == IR_st)
-	 {
+	 {	   
 	   printf("\tE: ");
 	   for(i = 0; i < MAXABET; i++)
-	     printf("%0.3f ", cm->e[v][i]);
+	     printf("%0.3f (%0.3f %10d) ", cm->e[v][i], cm->esc[v][i], cm->iesc[v][i]);
 	   printf("\n");
 	 }
        if(cm->sttype[v] != B_st && cm->sttype[v] != E_st)
 	 {
 	   printf("\tT: ");
 	   for(yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-	     printf("%0.3f ", cm->t[v][yoffset]);
+	     printf("%0.3f (%0.3f %10d) ", cm->t[v][yoffset], cm->tsc[v][yoffset], cm->itsc[v][yoffset]);
 	   printf("\n");
 	 }	    
        else if(cm->sttype[v] == B_st)

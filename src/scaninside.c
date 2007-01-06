@@ -43,16 +43,13 @@
  *           j0        - end of target subsequence (L for full seq)
  *           W         - max d: max size of a hit
  *           cutoff    - minimum score to report 
- *           score_boost - boost in bits to temporarily add to all scores, 
- *                        experimental technique for finding significant 
- *                        hits < 0 bits. 0.0 if technique not used.
  *           results    - scan_results_t to add to; if NULL, don't add to it
  *
  * Returns:  score of best overall hit
  */
 float 
 InsideScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
-	   float cutoff, float score_boost, scan_results_t *results)
+	   float cutoff, scan_results_t *results)
 
 {
   float  ***alpha;              /* CYK DP score matrix, [v][j][d] */
@@ -310,7 +307,9 @@ InsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 	{
 	  i = j-d+1;
 	  gamma_i = j-d+1-i0+1;
-	  sc = gamma[gamma_i-1] + alpha[0][cur][d] + score_boost;
+	  sc = gamma[gamma_i-1] + alpha[0][cur][d] + cm->score_boost;
+	  /* score_boost is experimental technique for finding hits < 0 bits. 
+	   * value is 0.0 if technique not used. */
 	  if (sc > gamma[gamma_j])
 	    {
 	      gamma[gamma_j]  = sc;
@@ -397,16 +396,13 @@ InsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
  *           j0        - end of target subsequence (L for full seq)
  *           W         - max d: max size of a hit
  *           cutoff    - minimum score to report 
- *           score_boost - boost in bits to temporarily add to all scores, 
- *                        experimental technique for finding significant 
- *                        hits < 0 bits. 0.0 if technique not used.
  *           results    - scan_results_t to add to; if NULL, don't add to it
  *
  * Returns:  score of best overall hit
  */
 float
 InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
-		 float cutoff, float score_boost, scan_results_t *results)
+		 float cutoff, scan_results_t *results)
 {
   float  ***alpha;              /* CYK DP score matrix, [v][j][d] */
   int      *bestr;              /* auxil info: best root state at alpha[0][cur][d] */
@@ -715,7 +711,9 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
 	{
 	  i = j-d+1;
 	  gamma_i = j-d+1-i0+1;
-	  sc = gamma[gamma_i-1] + alpha[0][cur][d]  + score_boost;
+	  sc = gamma[gamma_i-1] + alpha[0][cur][d]  + cm->score_boost;
+	  /* score_boost is experimental technique for finding hits < 0 bits. 
+	   * value is 0.0 if technique not used. */
 	  if (sc > gamma[gamma_j])
 	    {
 	      gamma[gamma_j]  = sc;
@@ -1345,16 +1343,13 @@ InsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int 
  *           j0        - end of target subsequence (L for full seq)
  *           W         - max d: max size of a hit
  *           cutoff    - minimum score to report 
- *           score_boost - boost in bits to temporarily add to all scores, 
- *                        experimental technique for finding significant 
- *                        hits < 0 bits. 0.0 if technique not used.
  *           results    - scan_results_t to add to; if NULL, don't add to it
  *
  * Returns:  score (float - not scaled int) of best overall hit
  */
 float 
 iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
-	    float cutoff, float score_boost, scan_results_t *results)
+	    float cutoff, scan_results_t *results)
 
 {
   int    ***alpha;              /* inside DP score matrix (scaled ints), [v][j][d] */
@@ -1396,7 +1391,7 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
   L = j0-i0+1;
   if (W > L) W = L; 
 
-  printf("in iInsideScan i0: %d j0: %d\n", i0, j0);
+  /*printf("in iInsideScan i0: %d j0: %d\n", i0, j0);*/
   if(dsq == NULL)
     Die("in iInsideScan, dsq is NULL\n");
 
@@ -1524,7 +1519,7 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 								  + cm->itsc[v][yoffset]));
 		  i = j-d+1;
 		  if (dsq[i] < Alphabet_size)
-		    alpha[v][cur][d] += cm->esc[v][(int) dsq[i]];
+		    alpha[v][cur][d] += cm->iesc[v][(int) dsq[i]];
 		  else
 		    alpha[v][cur][d] += iDegenerateSingletScore(cm->iesc[v], dsq[i]);
 
@@ -1541,7 +1536,7 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 		    alpha[v][cur][d] = ILogsum(alpha[v][cur][d], (alpha[y+yoffset][prv][d-1] 
 								 + cm->itsc[v][yoffset]));
 		  if (dsq[j] < Alphabet_size)
-		    alpha[v][cur][d] += cm->esc[v][(int) dsq[j]];
+		    alpha[v][cur][d] += cm->iesc[v][(int) dsq[j]];
 		  else
 		    alpha[v][cur][d] += iDegenerateSingletScore(cm->iesc[v], dsq[j]);
 
@@ -1614,7 +1609,9 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 	{
 	  i = j-d+1;
 	  gamma_i = j-d+1-i0+1;
-	  sc = gamma[gamma_i-1] + Scorify(alpha[0][cur][d]) + score_boost;
+	  sc = gamma[gamma_i-1] + Scorify(alpha[0][cur][d]) + cm->score_boost;
+	  /* score_boost is experimental technique for finding hits < 0 bits. 
+	   * value is 0.0 if technique not used. */
 	  if (sc > gamma[gamma_j])
 	    {
 	      gamma[gamma_j]  = sc;
@@ -1671,6 +1668,7 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
   if(best_score <= 0.) /* there were no hits found by the semi-HMM, no hits above 0 bits */
     best_score = best_neg_score;
 
+  /*printf("iInsideScan() returning best_score: %f best_neg_score: %f\n", best_score, best_neg_score);*/
   return best_score;
 }
 
@@ -1704,16 +1702,13 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
  *           j0        - end of target subsequence (L for full seq)
  *           W         - max d: max size of a hit
  *           cutoff    - minimum score to report 
- *           score_boost - boost in bits to temporarily add to all scores, 
- *                        experimental technique for finding significant 
- *                        hits < 0 bits. 0.0 if technique not used.
  *           results    - scan_results_t to add to; if NULL, don't add to it
  *
  * Returns:  score (float - not scaled int) of best overall hit
  */
 float
 iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
-		  float cutoff, float score_boost, scan_results_t *results)
+		  float cutoff, scan_results_t *results)
 {
   int    ***alpha;              /* inside DP score matrix (scaled ints), [v][j][d] */
   int      *bestr;              /* auxil info: best root state at alpha[0][cur][d] */
@@ -1739,18 +1734,13 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
   float     best_score;         /* Best overall score from semi-HMM to return */
   float     best_neg_score;     /* Best score overall score to return, used if all scores > 0 */
 
-  printf("in iInsideBandedScan i0: %d j0: %d\n", i0, j0);
-  /*printf("\tcm->ibeginsc[3]: %d\n", cm->ibeginsc[3]);
-    printf("\tcm->ibeginsc[6]: %d\n", cm->ibeginsc[6]);
-    printf("\tcm->iel_selfsc: %d\n", cm->iel_selfsc);
-    printf("\tcm->itsc[1][0]: %d\n", cm->itsc[1][0]);*/
+  /*printf("in iInsideBandedScan i0: %d j0: %d\n", i0, j0);*/
 
   best_score     = IMPOSSIBLE;
   best_neg_score = IMPOSSIBLE;
   L = j0-i0+1;
   if (W > L) W = L; 
 
-  CMLogoddsify(cm);
   /*PrintDPCellsSaved(cm, dmin, dmax, W);*/
 
   /*****************************************************************
@@ -1913,7 +1903,6 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
 		    alpha[v][cur][d] += cm->iesc[v][(int) dsq[i]];
 		  else
 		    alpha[v][cur][d] += iDegenerateSingletScore(cm->iesc[v], dsq[i]);
-
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
 		}
 	    }
@@ -2030,7 +2019,9 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
 	{
 	  i = j-d+1;
 	  gamma_i = j-d+1-i0+1;
-	  sc = gamma[gamma_i-1] + Scorify(alpha[0][cur][d])  + score_boost;
+	  sc = gamma[gamma_i-1] + Scorify(alpha[0][cur][d])  + cm->score_boost;
+	  /* score_boost is experimental technique for finding hits < 0 bits. 
+	   * value is 0.0 if technique not used. */
 	  if (sc > gamma[gamma_j])
 	    {
 	      gamma[gamma_j]  = sc;
@@ -2087,6 +2078,6 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
   if(best_score <= 0.) /* there were no hits found by the semi-HMM, no hits above 0 bits */
     best_score = best_neg_score;
 
-  printf("iInsideBandedScan() returning best_score: %f best_neg_score: %f\n", best_score, best_neg_score);
+  /*printf("iInsideBandedScan() returning best_score: %f best_neg_score: %f\n", best_score, best_neg_score);*/
   return best_score;
 }
