@@ -97,23 +97,8 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 	{
 	  /* Scan */
 	  dbseq->results[reversed] = CreateResults(INIT_RESULTS);
-	  if(cm->opts & CM_SEARCH_NOQDB)
-	    if(cm->opts & CM_SEARCH_INSIDE)
-	      iInsideScan(cm, dbseq->sq[reversed]->dsq, 1, dbseq->sq[reversed]->n, cm->W,
-			  min_cutoff, dbseq->results[reversed]);
-	    else /* don't do inside */
-	      CYKScan (cm, dbseq->sq[reversed]->dsq, 1, dbseq->sq[reversed]->n, cm->W,
-			min_cutoff, dbseq->results[reversed]);
-	  else /* use QDB */
-	    if(cm->opts & CM_SEARCH_INSIDE)
-	      iInsideBandedScan(cm, dbseq->sq[reversed]->dsq, cm->dmin, cm->dmax, 
-			       1, dbseq->sq[reversed]->n, cm->W,
-			       min_cutoff, dbseq->results[reversed]);
-	    else /* don't do inside */
-	      CYKBandedScan (cm, dbseq->sq[reversed]->dsq, cm->dmin, cm->dmax, 1, 
-			     dbseq->sq[reversed]->n, cm->W, min_cutoff, 
-			     dbseq->results[reversed]);
-
+	  actually_search_target(cm, dbseq->sq[reversed]->dsq, 1, dbseq->sq[reversed]->n, 
+				 min_cutoff, dbseq->results[reversed]);
 	  /* Align results */
 	  if (do_align) {
 	    for (i=0; i<dbseq->results[reversed]->num_results; i++) {
@@ -317,21 +302,7 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 	    {
 	      /* Do the scan */
 	      results = CreateResults(INIT_RESULTS);
-	      if(cm->opts & CM_SEARCH_NOQDB)
-		if(cm->opts & CM_SEARCH_INSIDE)
-		  iInsideScan(cm, seq, 1, seqlen, cm->W,
-			     min_cutoff, results);
-		else /* don't do inside */
-		  CYKScan (cm, seq, 1, seqlen, cm->W,
-			   min_cutoff, results);
-	      else /* use QDB */
-		if(cm->opts & CM_SEARCH_INSIDE)
-		  iInsideBandedScan(cm, seq, cm->dmin, cm->dmax, 1, seqlen, cm->W,
-				   min_cutoff, results);
-		else /* do't do inside */
-		  CYKBandedScan (cm, seq, cm->dmin, cm->dmax, 1, seqlen, cm->W,
-				 min_cutoff, results);
-
+	      actually_search_target(cm, seq, 1, seqlen, min_cutoff, results);
 	      search_send_scan_results (results, mpi_master_rank);
 	      FreeResults(results);
 	    } 
@@ -401,6 +372,41 @@ db_seq_t *read_next_seq (ESL_SQFILE *dbfp, int do_revcomp)
 
   return(ret_dbseq);
 }
+
+/* EPN, Mon Jan  8 06:42:59 2007
+ * 
+ * Function: actually_search_target
+ * 
+ * Purpose:  Given a CM and a sequence, call the correct search algorithm
+ *           based on cm->opts.
+ * 
+ * Args:     CM         - the covariance model
+ *           dsq        - the digitized target sequence
+ *           i0         - start of target subsequence (often 1, beginning of dsq)
+ *           j0         - end of target subsequence (often L, end of dsq)
+ *           cutoff     - minimum score to report 
+ *           results    - scan_results_t to add to; if NULL, don't add to it
+ * 
+ * Returns: Highest scoring hit from search (even if below cutoff).
+ */
+float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cutoff, 
+			    scan_results_t *results)
+{
+  float best_score;
+
+  if(cm->opts & CM_SEARCH_NOQDB)
+    if(cm->opts & CM_SEARCH_INSIDE)
+      best_score = iInsideScan(cm, dsq, i0, j0, cm->W, cutoff, results);
+    else /* don't do inside */
+      best_score = CYKScan (cm, dsq, i0, j0, cm->W, cutoff, results);
+  else /* use QDB */
+    if(cm->opts & CM_SEARCH_INSIDE)
+      best_score = iInsideBandedScan(cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cutoff, results);
+    else /* do't do inside */
+      best_score = CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cutoff, results);
+
+  return best_score;
+}  
 
 /*
  * Function: print_results
@@ -854,10 +860,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
   CP9Bands_t  *cp9b;                    /* data structure for hmm bands (bands on the hmm states) 
 				         * and arrays for CM state bands, derived from HMM bands*/
   CP9Map_t       *cp9map;        /* maps the hmm to the cm and vice versa */
-  CP9_dpmatrix_t *cp9_mx;        /* growable DP matrix for viterbi                       */
-  CP9_dpmatrix_t *cp9_fwd;       /* growable DP matrix for forward                       */
-  CP9_dpmatrix_t *cp9_bck;       /* growable DP matrix for backward                      */
-  CP9_dpmatrix_t *cp9_posterior; /* growable DP matrix for posterior decode              */
+  CP9_dpmatrix_t *cp9_post;      /* growable DP matrix for posterior decode              */
   float forward_sc; 
   float backward_sc; 
 
@@ -956,12 +959,9 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
        * pointer swapping to ease the sub_cm alignment implementation. */
       hmm         = cm->cp9;
       cp9map      = cm->cp9map;
-      cp9_mx      = CreateCPlan9Matrix(1, hmm->M, 25, 0);
 
       orig_hmm    = hmm;
       orig_cp9map = cp9map;
-      if(do_hbanded)
-	cp9b = AllocCP9Bands(cm, hmm);
 
       StopwatchZero(watch2);
       StopwatchStart(watch2);
@@ -1001,27 +1001,13 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
       
       if (sq[i]->n == 0) Die("ERROR: sequence named %s has length 0.\n", sq[i]->name);
 
+      printf("do_hbanded: %d\n", do_hbanded);
       /* Potentially, do HMM calculations. */
-      if(do_hbanded || do_sub)
-	{
-	  /* We want HMM posteriors for this sequence to the full length (non-sub) HMM */
-	  StopwatchZero(watch1);
-	  StopwatchStart(watch1);
-
-	  /* Step 1: Get HMM posteriors.*/
-	  /*sc = CP9Viterbi(sq[i]->dsq, 1, sq[i]->n, hmm, cp9_mx);*/
-	  forward_sc = CP9Forward(sq[i]->dsq, 1, sq[i]->n, orig_hmm, &cp9_fwd);
-	  if(debug_level > 0) printf("CP9 i: %d | forward_sc : %.2f\n", i, forward_sc);
-	  backward_sc = CP9Backward(sq[i]->dsq, 1, sq[i]->n, orig_hmm, &cp9_bck);
-	  if(debug_level > 0) printf("CP9 i: %d | backward_sc: %.2f\n", i, backward_sc);
-	  
-	  /*debug_check_CP9_FB(cp9_fwd, cp9_bck, hmm, forward_sc, 1, sq[i]->n, sq[i]->dsq);*/
-	  cp9_posterior = cp9_bck;
-	  CP9FullPosterior(sq[i]->dsq, 1, sq[i]->n, orig_hmm, cp9_fwd, cp9_bck, cp9_posterior);
-	}
+      if(do_hbanded)
+	CP9_seq2bands(orig_cm, sq[i]->dsq, 1, sq[i]->n, &cp9b, debug_level);
 
       /* If we're in sub mode:
-       * (1) Get HMM posteriors. (we already did this above)
+       * (1) Get HMM posteriors. 
        * (2) Infer the start (spos) and end (epos) HMM states by 
        *     looking at the posterior matrix.
        * (3) Build the sub_cm from the original CM.
@@ -1032,12 +1018,13 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
        */
       if(do_sub)
 	{
+	  CP9_seq2posteriors(orig_cm, sq[i]->dsq, 1, sq[i]->n, &cp9_post, debug_level);
 	  /* (2) infer the start and end HMM states by looking at the posterior matrix.
 	   * Remember: we're necessarily in local mode, the --sub option turns local mode on. 
 	   */
-	  CP9NodeForPosn(orig_hmm, 1, sq[i]->n, 1,             cp9_posterior, &spos, &spos_state, 
+	  CP9NodeForPosn(orig_hmm, 1, sq[i]->n, 1,             cp9_post, &spos, &spos_state, 
 			 do_fullsub, 0., TRUE, debug_level);
-	  CP9NodeForPosn(orig_hmm, 1, sq[i]->n, sq[i]->n, cp9_posterior, &epos, &epos_state, 
+	  CP9NodeForPosn(orig_hmm, 1, sq[i]->n, sq[i]->n, cp9_post, &epos, &epos_state, 
 			 do_fullsub, 0., FALSE, debug_level);
 	  /* If the most likely state to have emitted the first or last residue
 	   * is the insert state in node 0, it only makes sense to start modelling
@@ -1056,142 +1043,22 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 			    do_fullsub,         /* build or not build a sub CM that models all columns */
 			    debug_level)))      /* print or don't print debugging info                 */
 	    Die("Couldn't build a sub CM from the CM\n");
+	  /* Configure the sub_cm, the same as the cm, this will build a CP9 HMM if (do_hbanded) */
+	  ConfigCM(sub_cm, NULL, NULL);
+
 	  cm    = sub_cm; /* orig_cm still points to the original CM */
-	  /* If the sub_cm models the full consensus length of the orig_cm, with only
-	   * structure removed, we configure it for local alignment to allow it to 
-	   * skip the single stranded regions at the beginning and end. But only 
-	   * if we don't need to build a CP9 HMM from the sub_cm to do banded alignment.*/
-	  if(do_fullsub && !do_hbanded)
-	    {
-	      printf("calling ConfigLocal_fullsub_post()\n");
-	      /* FIX THIS WHOLE THING */
-	      ConfigLocal_fullsub_post(sub_cm, orig_cm, orig_cp9map, submap, cp9_posterior, sq[i]->n);
-	      /*ConfigLocal_fullsub(cm, 0.5, 0.5, orig_cp9map->pos2nd[submap->sstruct],
-		orig_cp9map->pos2nd[submap->estruct]);*/
-	      /*ConfigLocal(sub_cm, 0.5, 0.5);*/
-	      /*printf("DEBUG PRINTING CM PARAMS AFTER CONFIGLOCAL_FULLSUB_POST CALL\n");
-		debug_print_cm_params(cm);
-		printf("DONE DEBUG PRINTING CM PARAMS AFTER CONFIGLOCAL_FULLSUB_POST CALL\n");*/
-	      CMLogoddsify(cm);
-	      do_local = TRUE; /* we wait til we get here to set do_local, if we 
-				* configure for local alignment earlier it would've 
-				* screwed up CP9 construction. */
-	    }	  
+	  printf("do_hbanded 2: %d\n", do_hbanded);
 	  if(do_hbanded) /* we're doing HMM banded alignment to the sub_cm */
 	    {
-	      /* (4) Build a new CP9 HMM from the sub CM. */
-	      /* Eventually, I think we can do this by just adjusting the parameters of the original HMM 
-		 CP9_2sub_cp9(hmm, &sub_hmm2, spos, epos, orig_phi);
-	      */
-	      if(!build_cp9_hmm(sub_cm, &sub_hmm, &sub_cp9map, FALSE, 0.0001, debug_level))
-		Die("Couldn't build a sub CP9 HMM from the sub CM\n");
-
-	      /* Allocate HMM banding data structures for use with the sub CM and sub HMM */
-	      sub_cp9b = AllocCP9Bands(sub_cm, sub_hmm);
-	      
-	      if(do_fullsub)
-		{
-		  /* FIX THIS WHOLE THING! */
-		  CPlan9SWConfig(sub_hmm, 0.5, 0.5);
-		  CP9Logoddsify(sub_hmm);
-		  ConfigLocal_fullsub(sub_cm, 0.5, 0.5, sub_cp9map->pos2nd[submap->sstruct],
-				      sub_cp9map->pos2nd[submap->estruct]);
-		  /*ConfigLocal(sub_cm, 0.5, 0.5);*/
-		  /*printf("debug printing sub cm params after config local full sub:\n");
-		  debug_print_cm_params(sub_cm);
-		  printf("done debug printing sub cm params after config local full sub:\n");*/
-		  
-		  CMLogoddsify(cm);
-		  do_local = TRUE;
-		}
-	      /* (5) Do Forward/Backward again, and get a new posterior matrix. 
-	       * We have to free cp9_fwd and cp9_posterior because we used them 
-	       * to find spos and epos. */
-
-	      FreeCPlan9Matrix(cp9_fwd);
-	      FreeCPlan9Matrix(cp9_posterior);
-	      forward_sc = CP9Forward(sq[i]->dsq, 1, sq[i]->n, sub_hmm, &cp9_fwd);
-	      if(debug_level) printf("CP9 i: %d | forward_sc : %.2f\n", i, forward_sc);
-	      backward_sc = CP9Backward(sq[i]->dsq, 1, sq[i]->n, sub_hmm, &cp9_bck);
-	      if(debug_level) printf("CP9 i: %d | backward_sc: %.2f\n", i, backward_sc);
-	      /*debug_check_CP9_FB(cp9_fwd, cp9_bck, hmm, forward_sc, 1, sq[i]->n, sq[i]->dsq);*/
-	      cp9_posterior = cp9_bck;
-	      CP9FullPosterior(sq[i]->dsq, 1, sq[i]->n, sub_hmm, cp9_fwd, cp9_bck, cp9_posterior);
-	      /* cp9_posterior has the posteriors for the sub_hmm */
-
-	      /* Change some pointers so that the functions that create bands use the
-	       * sub_* data structures. The orig_* data structures will still point
-	       * to the original CM versions. */
+	      /* Get the HMM bands for the sub_cm */
+	      sub_hmm = sub_cm->cp9;
+	      sub_cp9map = sub_cm->cp9map;
+	      CP9_seq2bands(sub_cm, sq[i]->dsq, 1, sq[i]->n, &sub_cp9b, debug_level);
 	      hmm           = sub_hmm;    
 	      cp9map        = sub_cp9map;
 	      cp9b          = sub_cp9b;
 	    }
 	}
-      if(do_hbanded)
-	{
-	  StopwatchStop(watch1);
-	  if(do_timings) StopwatchDisplay(stdout, "CP9 Forward/Backward CPU time: ", watch1);
-	  StopwatchZero(watch1);
-	  StopwatchStart(watch1);
-      
-	  /* Align the current seq to the cp9 HMM, we don't care
-	   * about the trace, just the posteriors.
-	   * Step 1: Get HMM posteriors. (if do_sub, we already did this above,
-	   *                              the posteriors are for the sub_hmm)
-	   * Step 2: posteriors -> HMM bands.
-	   * Step 3: HMM bands  ->  CM bands.
-	   */
-	  
-	  /* Step 2: posteriors -> HMM bands.*/
-	  if(use_sums)
-	    CP9_ifill_post_sums(cp9_posterior, 1, sq[i]->n, cp9b->hmm_M,
-				cp9b->isum_pn_m, cp9b->isum_pn_i, cp9b->isum_pn_d);
-	  /* match states */
-	  CP9_hmm_band_bounds(cp9_posterior->mmx, 1, sq[i]->n, cp9b->hmm_M, 
-			      cp9b->isum_pn_m, cp9b->pn_min_m, cp9b->pn_max_m,
-			      (1.-cm->hbandp), HMMMATCH, use_sums, debug_level);
-	  /* insert states */
-	  CP9_hmm_band_bounds(cp9_posterior->imx, 1, sq[i]->n, cp9b->hmm_M,
-			      cp9b->isum_pn_i, cp9b->pn_min_i, cp9b->pn_max_i,
-			      (1.-cm->hbandp), HMMINSERT, use_sums, debug_level);
-	  /* delete states (note: delete_flag set to TRUE) */
-	  CP9_hmm_band_bounds(cp9_posterior->dmx, 1, sq[i]->n, cp9b->hmm_M,
-			      cp9b->isum_pn_d, cp9b->pn_min_d, cp9b->pn_max_d,
-			      (1.-cm->hbandp), HMMDELETE, use_sums, debug_level);
-
-	  if(debug_level != 0)
-	    {
-	      printf("printing hmm bands\n");
-	      print_hmm_bands(stdout, sq[i]->n, cp9b->hmm_M, cp9b->pn_min_m, 
-			      cp9b->pn_max_m, cp9b->pn_min_i, cp9b->pn_max_i, 
-			      cp9b->pn_min_d, cp9b->pn_max_d, cm->hbandp, debug_level);
-	    }
-	  
-	  /* Step 3: HMM bands  ->  CM bands. */
-	  hmm2ij_bands(cm, cp9map, 1, sq[i]->n, cp9b->pn_min_m, cp9b->pn_max_m, 
-		       cp9b->pn_min_i, cp9b->pn_max_i, cp9b->pn_min_d, cp9b->pn_max_d, 
-		       cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, debug_level);
-	  
-	  StopwatchStop(watch1);
-	  if(do_timings) StopwatchDisplay(stdout, "CP9 Band calculation CPU time: ", watch1);
-	  /* Use the CM bands on i and j to get bands on d, specific to j. */
-	  for(v = 0; v < cm->M; v++)
-	    {
-	      cp9b->hdmin[v] = malloc(sizeof(int) * (cp9b->jmax[v] - cp9b->jmin[v] + 1));
-	      cp9b->hdmax[v] = malloc(sizeof(int) * (cp9b->jmax[v] - cp9b->jmin[v] + 1));
-	    }
-	  ij2d_bands(cm, sq[i]->n, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax,
-		     cp9b->hdmin, cp9b->hdmax, -1);
-	  
-	  if(debug_level != 0)
-	    PrintDPCellsSaved_jd(cm, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
-				 sq[i]->n);
-	  
-	  FreeCPlan9Matrix(cp9_fwd);
-	  FreeCPlan9Matrix(cp9_posterior);
-	  /* Done with the HMM. On to the CM. */
-	}
-      
       /* Determine which CYK alignment algorithm to use, based
        * on command-line options AND memory requirements.
        */
@@ -1504,19 +1371,13 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	  FreeSubMap(submap);
 	  FreeCM(sub_cm); /* cm and sub_cm now point to NULL */
 	  if(do_hbanded)
-	    {
-	      FreeCP9Map(sub_cp9map);
-	      FreeCPlan9(sub_hmm);
-	      FreeCP9Bands(sub_cp9b);
-	    }
+	    FreeCP9Bands(sub_cp9b);
 	}
     }
   /* Clean up. */
   if(do_hbanded && !do_sub)
     FreeCP9Bands(cp9b);
 
-  if(do_hbanded || do_sub)
-    FreeCPlan9Matrix(cp9_mx);
   if (do_qdb)
     {
       free(orig_dmin);

@@ -132,7 +132,7 @@ extern char aln_receive_job     (seqs_to_aln_t **ret_seqs_to_aln, int mpi_master
 extern void aln_send_results    (seqs_to_aln_t *seqs_to_aln, int do_post, int mpi_master_node);
 extern int  aln_check_results   (Parsetree_t **all_parsetrees, char **all_postcodes, 
 				 int **process_status);
-extern int  aln_send_terminatets(int rank_to_send_to);
+extern void aln_send_terminate  (int rank_to_send_to);
 
 #endif
 #endif

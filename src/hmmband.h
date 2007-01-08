@@ -25,9 +25,18 @@
 #include "cplan9.h"
 
 extern CP9Bands_t * AllocCP9Bands(CM_t *cm, struct cplan9_s *hmm);
-extern void FreeCP9Bands(CP9Bands_t *cp9bands);
+extern void         FreeCP9Bands(CP9Bands_t *cp9bands);
 
 extern double dbl_Score2Prob(int sc, float null);
+
+/* CP9_seq2bands() takes a CM, sequence, and allocated CP9Bands_t structure and
+ * calculates the CP9Bands_t by calling many of the other functions below. */
+extern void CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t **ret_cp9b, int debug_level);
+
+/* CP9_seq2posteriors() takes a CM and sequence and runs Forward and Backward algorithms
+ * (or scanning Forward/Backward) and returns a CP9 posterior matrix. */
+extern void CP9_seq2posteriors(CM_t *cm, char *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9_post,
+			       int debug_level);
 
 /* Functions for getting posterior probabilities from CP9 HMMs 
  * based on Ian Holmes' hmmer/src/postprob.c functions 
@@ -42,14 +51,13 @@ extern void  CP9FullPosterior(char *dsq, int i0, int j0,
 			      struct cp9_dpmatrix_s *fmx,
 			      struct cp9_dpmatrix_s *bmx,
 			      struct cp9_dpmatrix_s *mx);
-extern void CP9_ifill_post_sums(struct cp9_dpmatrix_s *post, int i0, int j0, int M,
-				int *isum_pn_m, int *isum_pn_i, int *isum_pn_d);
+extern void CP9_ifill_post_sums(struct cp9_dpmatrix_s *post, CP9Bands_t *cp9, int i0, int j0);
 
 /* Functions to determine HMM bands */
 extern void CP9_hmm_band_bounds(int **post, int i0, int j0, int M, int *isum_pn, int *pn_min, int *pn_max, double p_thresh, 
 				int state_type, int use_sums, int debug_level);
 
-/* Functions to go from HMM bands to i and j bands on a CM */
+/* Function to go from HMM bands to i and j bands on a CM */
 extern void hmm2ij_bands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m, 
 			 int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, 
 			 int *pn_max_d, int *imin, int *imax, int *jmin, int *jmax, 
@@ -94,9 +102,7 @@ extern void hmm2ij_state_step4_update_safe_holders(int v, int n, int imin_v, int
 extern void hmm2ij_state_step5_non_emitter_d0_hack(int v, int imax_v, int *jmin);
 
 /* Debugging print functions */
-extern void print_hmm_bands(FILE *ofp, int L, int M, int *pn_min_m, int *pn_max_m,
-			    int *pn_min_i, int *pn_max_i, int *pn_min_d,
-			    int *pn_max_d, double hmm_bandp, int debug_level);
+extern void debug_print_hmm_bands(FILE *ofp, int L, CP9Bands_t *cp9b, double hmm_bandp, int debug_level);
 extern void ij_banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax, 
 				      int *jmin, int *jmax, int debug_level);
 extern void ijd_banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax, 

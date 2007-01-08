@@ -242,10 +242,10 @@ main(int argc, char **argv)
       int cc;
       int *ct;		/* 0..alen-1 base pair partners array         */
 
-      dsq    = MallocOrDie(sizeof(char *)    * nseq);
+      dsq    = MallocOrDie(sizeof(char *)      * nseq);
       tr     = MallocOrDie(sizeof(Parsetree_t) * nseq);
-      sqinfo = MallocOrDie(sizeof(SQINFO)             * nseq);
-      wgt    = MallocOrDie(sizeof(float)              * nseq);
+      sqinfo = MallocOrDie(sizeof(SQINFO)      * nseq);
+      wgt    = MallocOrDie(sizeof(float)       * nseq);
       FSet(wgt, nseq, 1.0);
       
       for (i = 0; i < nseq; i++)

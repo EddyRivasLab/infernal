@@ -159,6 +159,20 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
     CMHackInsertScores(cm);	/* insert emissions are all equiprobable */
   CMLogoddsify(cm);
   return; 
+  /* TO DO, set up a SUB CM and/or FULL SUB */
+  /* if(cm->opts & CM_IS_SUB)
+   * do something
+   * if(cm->opts & CM_IS_FSUB)
+	      printf("calling ConfigLocal_fullsub_post()\n");
+	      /* FIX THIS WHOLE THING 
+	      ConfigLocal_fullsub_post(sub_cm, orig_cm, orig_cp9map, submap, cp9_post, sq[i]->n);
+	      /*ConfigLocal_fullsub(cm, 0.5, 0.5, orig_cp9map->pos2nd[submap->sstruct],
+		orig_cp9map->pos2nd[submap->estruct]);*/
+	      /*ConfigLocal(sub_cm, 0.5, 0.5);*/
+	      /*printf("DEBUG PRINTING CM PARAMS AFTER CONFIGLOCAL_FULLSUB_POST CALL\n");
+		debug_print_cm_params(cm);
+		printf("DONE DEBUG PRINTING CM PARAMS AFTER CONFIGLOCAL_FULLSUB_POST CALL\n");*/   
+
 }
 
 /*

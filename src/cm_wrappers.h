@@ -27,6 +27,9 @@ parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 			  double *mu, double *lambda, 
 			  int mpi_my_rank, int mpi_master_rank, 
 			  int mpi_num_procs) ;
+extern float
+actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cutoff, 
+		       scan_results_t *results);
 
 extern void
 serial_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr, 

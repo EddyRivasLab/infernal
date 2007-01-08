@@ -27,6 +27,7 @@
 #include "esl_histogram.h"
 #include "esl_gumbel.h"
 #include "esl_sqio.h"
+#include "cm_wrappers.h"
 
 /*
  * Function: serial_make_histogram()
@@ -76,7 +77,7 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
   int   *hitj;                  /* end positions of hits */
   float *hitsc;			/* scores of hits */
 
-  printf("in serial_make_histogram, nparts: %d sample_len: %d do_ins: %d do_enf: %d\n", num_partitions, sample_length, (cm->opts & CM_SEARCH_INSIDE), (cm->opts & CM_CONFIG_ENFORCE));
+  /*printf("in serial_make_histogram, nparts: %d sample_len: %d do_ins: %d do_enf: %d\n", num_partitions, sample_length, (cm->opts & CM_SEARCH_INSIDE), (cm->opts & CM_CONFIG_ENFORCE));*/
 
   if (num_samples == 0) {
     for (i=0; i<GC_SEGMENTS; i++) {
@@ -147,23 +148,7 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 	  dsq = DigitizeSequence (randseq, sample_length);
 	  
 	  /* Do the scan */
-	  if(cm->opts & CM_SEARCH_HMMONLY)
-	    score = CP9ForwardScan(dsq, 1, sample_length, cm->W, cm->cp9, NULL,  /* don't save the DP mx */
-				   &nhits, &hitr, &hiti, &hitj, &hitsc, 
-				   0);
-	  else if(cm->opts & CM_SEARCH_NOQDB)
-	    if(cm->opts & CM_SEARCH_INSIDE)
-	      score = iInsideScan(cm, dsq, 1, sample_length, cm->W, 0, NULL);
-	    else 
-	      score = CYKScan(cm, dsq, 1, sample_length, cm->W, 0, NULL);
-	  else /* use QDB */
-	    if(cm->opts & CM_SEARCH_INSIDE)
-	      score = iInsideBandedScan(cm, dsq, cm->dmin, cm->dmax, 1, sample_length, cm->W, 
-				       0, NULL);
-	    else
-	      score = CYKBandedScan(cm, dsq, cm->dmin, cm->dmax, 1, sample_length, cm->W,
-				    0, NULL);
-	  
+	  score = actually_search_target(cm, dsq, 1, sample_length, 0., NULL);
 	  if(i % 100 == 0)
 	    printf("(%4d) SCORE: %f\n", i, score);
 	  /* Add best score to histogram */
@@ -440,22 +425,12 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
       do 
 	{
 	  job_type = search_receive_job(&seqlen, &dsq, &dummy, mpi_master_rank);
-	  if (job_type == SEARCH_HIST_SCAN_WORK) {
-
-	    if(cm->opts & CM_SEARCH_NOQDB)
-	      if(cm->opts & CM_SEARCH_INSIDE)
-		score = iInsideScan(cm, dsq, 1, sample_length, cm->W, 0, NULL);
-	      else 
-		score = CYKScan(cm, dsq, 1, sample_length, cm->W, 0, NULL);
-	    else /* use QDB */
-	      if(cm->opts & CM_SEARCH_INSIDE)
-		score = iInsideBandedScan(cm, dsq, cm->dmin, cm->dmax, 1, sample_length, cm->W, 
-					  0, NULL);
-	      else
-		score = CYKBandedScan(cm, dsq, cm->dmin, cm->dmax, 1, sample_length, cm->W,
-				      0, NULL);
-	    search_send_hist_scan_results (score, mpi_master_rank);
-	  } 
+	  if (job_type == SEARCH_HIST_SCAN_WORK) 
+	    {
+	      score = actually_search_target(cm, dsq, 1, sample_length, 0., NULL);
+	      printf("score: %f\n", score);
+	      search_send_hist_scan_results (score, mpi_master_rank);
+	    }
 	  if (dsq != NULL)
 	    free(dsq);
 	  dsq = NULL;

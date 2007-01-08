@@ -296,6 +296,10 @@ typedef struct cm_s {
 #define CM_SEARCH_NULL2       (1<<25) /* use post hoc second null model           */
 #define CM_SEARCH_STATS       (1<<26) /* calculate E-value statistics             */
 
+/* info on if the CM is a sub model or fullsub model */
+#define CM_IS_SUB             (1<<27) /* the CM is a sub CM                       */
+#define CM_IS_FSUB            (1<<28) /* the CM is a fullsub CM                   */
+
 /* Structure: CMFILE
  * Incept:    SRE, Tue Aug 13 10:16:39 2002 [St. Louis]
  *

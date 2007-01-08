@@ -115,6 +115,150 @@ dbl_Score2Prob(int sc, float null)
   else              return (null * sreEXP2((double) sc / INTSCALE));
 }
 
+/*
+ * Function: CP9_seq2bands
+ * Date    : EPN, Mon Jan  8 07:23:34 2007
+ *
+ * Purpose:  Given a CM with precalc'ed CP9 HMM and CP9Map, a sequence and 
+ *           a CP9Bands_t structure, calculate the HMM bands and store them
+ *           in the CP9Bands_t structure.
+ *           
+ * Args:     cm          - the covariance model
+ *           dsq         - sequence in digitized form
+ *           i0          - start of target subsequence (often 1, beginning of dsq)
+ *           j0          - end of target subsequence (often L, end of dsq)
+ *           ret_cp9b    - RETURN: the HMM bands for this sequence.
+ *           debug_level - verbosity level for debugging printf()s
+ * Return:  void
+ */
+void 
+CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t **ret_cp9b, int debug_level)
+{
+  CP9Bands_t     *cp9b;     /* data structure for hmm bands (bands on the hmm states)    * 
+  		 	     * and arrays for CM state bands, derived from HMM bands     */
+  Stopwatch_t    *watch;    /* for timings if cm->opts & CM_ALIGN_TIME                   */
+  int             use_sums; /* TRUE to fill and use posterior sums during HMM band calc  *
+			     * leads to wider bands                                      */
+  CP9_dpmatrix_t *cp9_post; /* growable DP matrix for CP9 posteriors                     */
+  int             v;        /* state index                                               */
+
+  if(cm->cp9 == NULL)
+    Die("ERROR in CP9_seq2bands, but cm->cp9 is NULL.\n");
+  if(cm->cp9map == NULL)
+    Die("ERROR in CP9_seq2bands, but cm->cp9map is NULL.\n");
+
+  use_sums = FALSE;
+  if((cm->opts & CM_ALIGN_SUMS) || (cm->opts & CM_SEARCH_SUMS))
+    use_sums = TRUE;
+    
+  if(cm->opts & CM_ALIGN_TIME) 
+    {
+      watch = StopwatchCreate(); 
+      StopwatchZero(watch);
+      StopwatchStart(watch);
+    }
+
+  /* Step 1: Get HMM posteriors.
+   * Step 2: posteriors -> HMM bands.
+   * Step 3: HMM bands  ->  CM bands.
+   */
+  cp9b = AllocCP9Bands(cm, cm->cp9);
+
+  /* Step 1: Get HMM posteriors.*/
+  CP9_seq2posteriors(cm, dsq, i0, j0, &cp9_post, debug_level);
+
+  /* Step 2: posteriors -> HMM bands.*/
+  if(use_sums) CP9_ifill_post_sums(cp9_post, cp9b, i0, j0);
+  /* match states */
+  CP9_hmm_band_bounds(cp9_post->mmx, i0, j0, cp9b->hmm_M, 
+		      cp9b->isum_pn_m, cp9b->pn_min_m, cp9b->pn_max_m,
+		      (1.-cm->hbandp), HMMMATCH, use_sums, debug_level);
+  /* insert states */
+  CP9_hmm_band_bounds(cp9_post->imx, i0, j0, cp9b->hmm_M,
+		      cp9b->isum_pn_i, cp9b->pn_min_i, cp9b->pn_max_i,
+		      (1.-cm->hbandp), HMMINSERT, use_sums, debug_level);
+  /* delete states */
+  CP9_hmm_band_bounds(cp9_post->dmx, i0, j0, cp9b->hmm_M,
+		      cp9b->isum_pn_d, cp9b->pn_min_d, cp9b->pn_max_d,
+		      (1.-cm->hbandp), HMMDELETE, use_sums, debug_level);
+  
+  if(debug_level != 0) debug_print_hmm_bands(stdout, j0, cp9b, cm->hbandp, debug_level);
+
+  /* Step 3: HMM bands  ->  CM bands. */
+  hmm2ij_bands(cm, cm->cp9map, i0, j0, cp9b->pn_min_m, cp9b->pn_max_m, 
+	       cp9b->pn_min_i, cp9b->pn_max_i, cp9b->pn_min_d, cp9b->pn_max_d, 
+	       cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, debug_level);
+	  
+  if(cm->opts & CM_ALIGN_TIME) 
+    {
+      StopwatchStop(watch);
+      StopwatchDisplay(stdout, "CP9 Band calculation CPU time: ", watch);
+      StopwatchFree(watch);
+    }
+  /* Use the CM bands on i and j to get bands on d, specific to j. */
+  for(v = 0; v < cm->M; v++)
+    {
+      cp9b->hdmin[v] = malloc(sizeof(int) * (cp9b->jmax[v] - cp9b->jmin[v] + 1));
+      cp9b->hdmax[v] = malloc(sizeof(int) * (cp9b->jmax[v] - cp9b->jmin[v] + 1));
+    }
+  ij2d_bands(cm, (j0-i0+1), cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax,
+	     cp9b->hdmin, cp9b->hdmax, debug_level);
+  
+  if(debug_level != 0)
+    PrintDPCellsSaved_jd(cm, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
+			 (j0-i0+1));
+
+  *ret_cp9b = cp9b;
+  return;
+}
+
+/*
+ * Function: CP9_seq2posteriors
+ * Date    : EPN, Mon Jan  8 07:27:21 2007
+ *
+ * Purpose:  Given a CM with precalc'ed CP9 HMM and CP9Map, and a sequence,
+ *           run HMM Forward and Backward algorithms, and return a CP9 posterior
+ *           matrix.
+ *           
+ * Args:     cm           - the covariance model
+ *           dsq          - sequence in digitized form
+ *           i0           - start of target subsequence (often 1, beginning of dsq)
+ *           j0           - end of target subsequence (often L, end of dsq)
+ *           ret_cp9_post - RETURN: the HMM posterior matrix for this sequence
+ *           debug_level  - verbosity level for debugging printf()s
+ *           
+ * Return:  void
+ */
+void 
+CP9_seq2posteriors(CM_t *cm, char *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9_post,
+		   int debug_level)
+{
+  /*CP9_dpmatrix_t *cp9_mx;*/    /* growable DP matrix for viterbi                       */
+  CP9_dpmatrix_t *cp9_fwd;       /* growable DP matrix for forward                       */
+  CP9_dpmatrix_t *cp9_bck;       /* growable DP matrix for backward                      */
+  CP9_dpmatrix_t *cp9_post;      /* growable DP matrix for posterior decode              */
+  float sc;
+
+  if(cm->cp9 == NULL)
+    Die("ERROR in CP9_seq2posteriors, but cm->cp9 is NULL.\n");
+  if(cm->cp9map == NULL)
+    Die("ERROR in CP9_seq2posteriors, but cm->cp9map is NULL.\n");
+
+  /* Step 1: Get HMM posteriors.*/
+  /*sc = CP9Viterbi(dsq, i0, j0, cm->cp9, cp9_mx);*/
+  sc = CP9Forward(dsq, i0, j0, cm->cp9, &cp9_fwd);
+  if(debug_level > 0) printf("CP9 Forward  score : %.2f\n", sc);
+  sc = CP9Backward(dsq, i0, j0, cm->cp9, &cp9_bck);
+  if(debug_level > 0) printf("CP9 Backward score : %.2f\n", sc);
+  
+  /*debug_check_CP9_FB(cp9_fwd, cp9_bck, hmm, forward_sc, 1, sq[i]->n, sq[i]->dsq);*/
+  cp9_post = cp9_bck;
+  CP9FullPosterior(dsq, i0, j0, cm->cp9, cp9_fwd, cp9_bck, cp9_post);
+
+  *ret_cp9_post = cp9_post;
+  return;
+}
+
 /* Functions for getting posterior probabilities from the HMMs 
  * based on Ian Holmes' hmmer/src/postprob.c functions 
  * CP9Forward()
@@ -620,27 +764,18 @@ CP9FullPosterior(char *dsq, int i0, int j0,
  * arguments:
  * cp9_dpmatrix_s *post  dpmatrix_s posterior matrix, xmx, mmx, imx, dmx 
  *                       2D int arrays. [0.1..N][0.1..M]
+ * CP9Bands_t *cp9b - the cp9 bands data structure
  * int  i0          start of target subsequence (often 1, beginning of dsq)
  * int  j0          end of target subsequence (often L, end of dsq)
- * int   M          number of nodes in HMM (num columns of matrix)
- * int  *isum_pn_m  [0..M] sum_pn_m[k] = sum over i of log probabilities
- *                  from post->mmx[i][k]
- *                  filled in this function, must be freed by caller.
- * int  *isum_pn_i  [0..M] sum_pn_m[k] = sum over i of log probabilities
- *                  from post->imx[i][k]
- *                  filled in this function, must be freed by caller.
- * int  *isum_pn_d  [0..M] sum_pn_m[k] = sum over i of log probabilities
- *                  from post->dmx[i][k]
- *                  filled in this function, must be freed by caller.
  *****************************************************************************/
 void
-CP9_ifill_post_sums(struct cp9_dpmatrix_s *post, int i0, int j0, int M,
-		    int *isum_pn_m, int *isum_pn_i, int *isum_pn_d)
+CP9_ifill_post_sums(struct cp9_dpmatrix_s *post, CP9Bands_t *cp9b, int i0, int j0)
 {
   int i;            /* counter over positions of the sequence */
   int k;            /* counter over nodes of the model */
-  int   W;		/* subsequence length */
-
+  int   W;	    /* subsequence length */
+  int M;            /* consensus length of cp9 */
+  M = cp9b->hmm_M;
   W  = j0-i0+1;		/* the length of the subsequence */
 
   /* step through each node, fill the post sum structures */
@@ -652,23 +787,23 @@ CP9_ifill_post_sums(struct cp9_dpmatrix_s *post, int i0, int j0, int M,
   /* matches */
   for(k = 0; k <= M; k++)
     {
-      isum_pn_m[k] = post->mmx[0][k];
+      cp9b->isum_pn_m[k] = post->mmx[0][k];
       for(i = 1; i <= W; i++)
-	  isum_pn_m[k] = ILogsum(isum_pn_m[k], post->mmx[i][k]);
+	  cp9b->isum_pn_m[k] = ILogsum(cp9b->isum_pn_m[k], post->mmx[i][k]);
     }
   /* inserts */
   for(k = 0; k <= M; k++)
     {
-      isum_pn_i[k] = post->imx[0][k];
+      cp9b->isum_pn_i[k] = post->imx[0][k];
       for(i = 1; i <= W; i++)
-	isum_pn_i[k] = ILogsum(isum_pn_i[k], post->imx[i][k]);
+	cp9b->isum_pn_i[k] = ILogsum(cp9b->isum_pn_i[k], post->imx[i][k]);
     }
   /* deletes */
   for(k = 1; k <= M; k++)
     {
-      isum_pn_d[k] = post->dmx[0][k];
+      cp9b->isum_pn_d[k] = post->dmx[0][k];
       for(i = 1; i <= W; i++)
-	isum_pn_d[k] = ILogsum(isum_pn_d[k], post->dmx[i][k]);
+	cp9b->isum_pn_d[k] = ILogsum(cp9b->isum_pn_d[k], post->dmx[i][k]);
     }
 }
 
@@ -1965,7 +2100,7 @@ hmm2ij_state_step5_non_emitter_d0_hack(int v, int imax_v, int *jmin)
  */
 /**************************************************************
  * EPN 12.18.05
- * print_hmm_bands()
+ * debug_print_hmm_bands()
  * based loosely on: cmbuild.c's
  * Function: model_trace_info_dump
  *
@@ -1975,13 +2110,7 @@ hmm2ij_state_step5_non_emitter_d0_hack(int v, int imax_v, int *jmin)
  * Args:    
  * FILE *ofp      - filehandle to print to (can by STDOUT)
  * int L          - length of sequence
- * int M          - number of nodes in HMM
- * int *pn_min_m  - pn_min_m[k] = first position in band for match state of node k
- * int *pn_max_m  - pn_max_m[k] = last position in band for match state of node k
- * int *pn_min_i  - pn_min_i[k] = first position in band for insert state of node k
- * int *pn_max_i  - pn_max_i[k] = last position in band for insert state of node k
- * int *pn_min_d  - pn_min_d[k] = first position in band for delete state of node k
- * int *pn_max_d  - pn_max_d[k] = last position in band for delete state of node k
+ * CP9Bands_t     - the CP9 bands data structure
  * double hmm_bandp - fraction of probability mass allowed outside each band.
  * int debug_level  [0..3] tells the function what level of debugging print
  *                  statements to print.
@@ -1989,10 +2118,9 @@ hmm2ij_state_step5_non_emitter_d0_hack(int v, int imax_v, int *jmin)
  */
 
 void
-print_hmm_bands(FILE *ofp, int L, int M, int *pn_min_m, int *pn_max_m,
-  int *pn_min_i, int *pn_max_i, int *pn_min_d,
-  int *pn_max_d, double hmm_bandp, int debug_level)
+debug_print_hmm_bands(FILE *ofp, int L, CP9Bands_t *cp9b, double hmm_bandp, int debug_level)
 {
+  int M;
   int k;
   int cells_in_bands_m; /* number of cells within all the bands for match states*/
   int cells_in_bands_i; /* number of cells within all the bands for insert states*/
@@ -2003,6 +2131,7 @@ print_hmm_bands(FILE *ofp, int L, int M, int *pn_min_m, int *pn_max_m,
   /*double fraction_excluded_d;*/ /* fraction of the dp matrix excluded from bands for all delete states*/
   /*double fraction_excluded_all;*/ /* fraction of the dp matrix excluded from bands for all match and insert states*/
 
+  M = cp9b->hmm_M;
   cells_in_bands_m = cells_in_bands_i = cells_in_bands_d = cells_in_bands_all = 0;
 
   /* first print the bands on the match states */
@@ -2015,31 +2144,31 @@ print_hmm_bands(FILE *ofp, int L, int M, int *pn_min_m, int *pn_max_m,
       fprintf(ofp, "\n");
       fprintf(ofp, "match states\n");
     }
-  for(k = 0; k <= M; k++)
+  for(k = 0; k <= cp9b->hmm_M; k++)
     {
       if(debug_level > 0 || debug_level == -1)
-	fprintf(ofp, "M node: %3d | min %3d | max %3d\n", k, pn_min_m[k], pn_max_m[k]);
-      cells_in_bands_m += pn_max_m[k] - pn_min_m[k] + 1;
+	fprintf(ofp, "M node: %3d | min %3d | max %3d\n", k, cp9b->pn_min_m[k], cp9b->pn_max_m[k]);
+      cells_in_bands_m += cp9b->pn_max_m[k] - cp9b->pn_min_m[k] + 1;
     }
   if(debug_level > 0)
     fprintf(ofp, "\n");
   if(debug_level > 0)
     fprintf(ofp, "insert states\n");
-  for(k = 0; k <= M; k++)
+  for(k = 0; k <= cp9b->hmm_M; k++)
     {
       if(debug_level > 0 || debug_level == -1)
-	fprintf(ofp, "I node: %3d | min %3d | max %3d\n", k, pn_min_i[k], pn_max_i[k]);
-      cells_in_bands_i += pn_max_i[k] - pn_min_i[k] + 1;
+	fprintf(ofp, "I node: %3d | min %3d | max %3d\n", k, cp9b->pn_min_i[k], cp9b->pn_max_i[k]);
+      cells_in_bands_i += cp9b->pn_max_i[k] - cp9b->pn_min_i[k] + 1;
     }
   if(debug_level > 0)
     fprintf(ofp, "\n");
   if(debug_level > 0)
     fprintf(ofp, "delete states\n");
-  for(k = 1; k <= M; k++)
+  for(k = 1; k <= cp9b->hmm_M; k++)
     {
       if(debug_level > 0 || debug_level == -1)
-	fprintf(ofp, "D node: %3d | min %3d | max %3d\n", k, pn_min_d[k], pn_max_d[k]);
-      cells_in_bands_d += pn_max_d[k] - pn_min_d[k] + 1;
+	fprintf(ofp, "D node: %3d | min %3d | max %3d\n", k, cp9b->pn_min_d[k], cp9b->pn_max_d[k]);
+      cells_in_bands_d += cp9b->pn_max_d[k] - cp9b->pn_min_d[k] + 1;
     }
   if(debug_level > 0)
     {

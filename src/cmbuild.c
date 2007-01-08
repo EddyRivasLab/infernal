@@ -443,11 +443,8 @@ main(int argc, char **argv)
 	Die("failed... Failed to parse consensus structure annotation.");
       printf("done.\n");
 
-      /* If user inputted the --ignorant option, strip the consensus
-       * structure of all base pair information.
-       */
-      if (be_ignorant)
-	StripWUSS(msa->ss_cons);
+      /* if --ignorant, strip all base pair info from consensus structure */
+      if (be_ignorant) StripWUSS(msa->ss_cons);
 
       eff_nseq_set = FALSE;
 
@@ -469,9 +466,7 @@ main(int argc, char **argv)
        * do nothing.
        */
       if (weight_strategy == WGT_NONE) 
-	{
-	  FSet(msa->wgt, msa->nseq, 1.0);
-	}
+	FSet(msa->wgt, msa->nseq, 1.0);
       else if (weight_strategy == WGT_GSC)
 	{
 	  printf("%-40s ... ", "Weighting sequences by GSC rule");

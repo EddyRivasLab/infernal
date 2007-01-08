@@ -685,7 +685,25 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
    CMZero(sub_cm);
    CMSetNullModel(sub_cm, orig_cm->null);
    sub_cm->el_selfsc = orig_cm->el_selfsc;
+   /* copy the options from the template CM, but turn off the CM_ALIGN_SUB and CM_ALIGN_FSUB options
+    * and turn on the CM_IS_SUB and/or CM_IS_FSUB options */
+   sub_cm->opts      = orig_cm->opts;
+   printf("0 sub_cm->opts CM_ALIGN_SUB: %d\n", (sub_cm->opts & CM_ALIGN_SUB));
+   if(sub_cm->opts & CM_ALIGN_SUB)
+     sub_cm->opts &= ~CM_ALIGN_SUB;
+   printf("1 sub_cm->opts CM_ALIGN_SUB: %d\n", (sub_cm->opts & CM_ALIGN_SUB));
+   if(sub_cm->opts & CM_ALIGN_FSUB)
+     sub_cm->opts &= ~CM_ALIGN_FSUB;
 
+   if(!(sub_cm->opts & CM_IS_SUB))
+     sub_cm->opts |= CM_IS_SUB;
+   else
+     Die("ERROR building a sub CM of a CM that is already itself a sub CM.\n");
+   if(!(sub_cm->opts & CM_IS_FSUB))
+     sub_cm->opts |= CM_IS_FSUB;
+   else
+     Die("ERROR building a sub CM of a CM that is already itself a full sub CM.\n");
+   
    /* Fill in emission probabilities */
    for(v_s = 0; v_s < sub_cm->M; v_s++)
      {

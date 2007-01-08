@@ -673,9 +673,9 @@ main(int argc, char **argv)
   if(cutoff_type == E_CUTOFF) cutoff = e_cutoff;
   else cutoff = sc_cutoff;
 
+#ifdef USE_MPI
   printf("cutoff: %f rank: %d\n", cutoff, mpi_my_rank);
 
-#ifdef USE_MPI
   if (mpi_num_procs > 1)
     parallel_search_database (dbfp, cm, cons, cutoff_type, cutoff, mu, lambda, 
 			      mpi_my_rank, mpi_master_rank, mpi_num_procs);
