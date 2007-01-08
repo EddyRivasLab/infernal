@@ -24,7 +24,7 @@
 #include "sre_stack.h"
 #include "cplan9.h"
 
-extern CP9Bands_t * AllocCP9Bands(CM_t *cm, struct cplan9_s *hmm);
+extern CP9Bands_t * AllocCP9Bands(CM_t *cm, CP9_t *hmm);
 extern void         FreeCP9Bands(CP9Bands_t *cp9bands);
 
 extern double dbl_Score2Prob(int sc, float null);
@@ -42,12 +42,12 @@ extern void CP9_seq2posteriors(CM_t *cm, char *dsq, int i0, int j0, CP9_dpmatrix
  * based on Ian Holmes' hmmer/src/postprob.c functions 
  * P7Forward() is in HMMER's core_algorithms.c 
  * and P7Backward() is in HMMER's postprob.c*/
-extern float CP9Forward(char *dsq, int i0, int j0, struct cplan9_s *hmm, 
+extern float CP9Forward(char *dsq, int i0, int j0, CP9_t *hmm, 
 			struct cp9_dpmatrix_s **ret_mx);
-extern float CP9Viterbi(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s *mx);
-extern float CP9Backward(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s **ret_mx);
+extern float CP9Viterbi(char *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s *mx);
+extern float CP9Backward(char *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s **ret_mx);
 extern void  CP9FullPosterior(char *dsq, int i0, int j0,
-			      struct cplan9_s *hmm,
+			      CP9_t *hmm,
 			      struct cp9_dpmatrix_s *fmx,
 			      struct cp9_dpmatrix_s *bmx,
 			      struct cp9_dpmatrix_s *mx);
@@ -110,7 +110,7 @@ extern void ijd_banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *imin, int
 				      int debug_level);
 extern void debug_check_CP9_FB(struct cp9_dpmatrix_s *fmx, 
 			       struct cp9_dpmatrix_s *bmx, 
-			       struct cplan9_s *hmm, float sc, int i0, int j0,
+			       CP9_t *hmm, float sc, int i0, int j0,
 			       char *dsq);
 
 /* Other misc. functions */

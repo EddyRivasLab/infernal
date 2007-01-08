@@ -242,20 +242,20 @@ extern double DRelEntropy(double *p, double *f, int n);
 /* from cplan9.c 
  * CM Plan9 HMM structure support
  */
-extern struct cplan9_s *AllocCPlan9(int M);
-extern struct cplan9_s *AllocCPlan9Shell(void);
-extern void AllocCPlan9Body(struct cplan9_s *hmm, int M);
-extern void FreeCPlan9(struct cplan9_s *hmm);
-extern void ZeroCPlan9(struct cplan9_s *hmm);
-extern void CPlan9SetName(struct cplan9_s *hmm, char *name);
-extern void CPlan9SetAccession(struct cplan9_s *hmm, char *acc);
-extern void CPlan9SetDescription(struct cplan9_s *hmm, char *desc);
-extern void CPlan9ComlogAppend(struct cplan9_s *hmm, int argc, char **argv);
-extern void CPlan9SetCtime(struct cplan9_s *hmm);
-extern void CPlan9SetNullModel(struct cplan9_s *hmm, float null[MAXABET], float p1);
-extern void CP9Logoddsify(struct cplan9_s *hmm);
-extern void CPlan9Rescale(struct cplan9_s *hmm, float scale);
-extern void CPlan9Renormalize(struct cplan9_s *hmm);
+extern CP9_t *AllocCPlan9(int M);
+extern CP9_t *AllocCPlan9Shell(void);
+extern void AllocCPlan9Body(CP9_t *hmm, int M);
+extern void FreeCPlan9(CP9_t *hmm);
+extern void ZeroCPlan9(CP9_t *hmm);
+extern void CPlan9SetName(CP9_t *hmm, char *name);
+extern void CPlan9SetAccession(CP9_t *hmm, char *acc);
+extern void CPlan9SetDescription(CP9_t *hmm, char *desc);
+extern void CPlan9ComlogAppend(CP9_t *hmm, int argc, char **argv);
+extern void CPlan9SetCtime(CP9_t *hmm);
+extern void CPlan9SetNullModel(CP9_t *hmm, float null[MAXABET], float p1);
+extern void CP9Logoddsify(CP9_t *hmm);
+extern void CPlan9Rescale(CP9_t *hmm, float scale);
+extern void CPlan9Renormalize(CP9_t *hmm);
 extern struct cp9_dpmatrix_s *AllocCPlan9Matrix(int rows, int M, int ***mmx, 
 						int ***imx, int ***dmx, int ***emx);
 extern float SizeCPlan9Matrix(int rows, int M);
@@ -263,17 +263,17 @@ extern void  FreeCPlan9Matrix(struct cp9_dpmatrix_s *mx);
 extern struct cp9_dpmatrix_s *CreateCPlan9Matrix(int N, int M, int padN, int padM);
 extern void  ResizeCPlan9Matrix(struct cp9_dpmatrix_s *mx, int N, int M, 
 			       int ***mmx, int ***imx, int ***dmx, int ***emx);
-extern void CPlan9SWConfig(struct cplan9_s *hmm, float pentry, float pexit);
-extern void CPlan9GlobalConfig(struct cplan9_s *hmm);
-extern void sub_CPlan9GlobalConfig(struct cplan9_s *hmm, int spos, int epos, double **phi);
+extern void CPlan9SWConfig(CP9_t *hmm, float pentry, float pexit);
+extern void CPlan9GlobalConfig(CP9_t *hmm);
+extern void sub_CPlan9GlobalConfig(CP9_t *hmm, int spos, int epos, double **phi);
 
-extern void CPlan9RenormalizeExits(struct cplan9_s *hmm, int spos);
+extern void CPlan9RenormalizeExits(CP9_t *hmm, int spos);
 extern void CP9AllocTrace(int tlen, struct cp9trace_s **ret_tr);
 extern void CP9ReallocTrace(struct cp9trace_s *tr, int tlen);
 extern void CP9FreeTrace(struct cp9trace_s *tr);
 
-extern void CP9_2sub_cp9(struct cplan9_s *orig_hmm, struct cplan9_s **ret_sub_hmm, int spos, int epos, double **orig_phi);
-extern void CP9_reconfig2sub(struct cplan9_s *hmm, int spos, int epos, int spos_nd, int epos_nd, double **orig_phi);
+extern void CP9_2sub_cp9(CP9_t *orig_hmm, CP9_t **ret_sub_hmm, int spos, int epos, double **orig_phi);
+extern void CP9_reconfig2sub(CP9_t *hmm, int spos, int epos, int spos_nd, int epos_nd, double **orig_phi);
 
 /* from hbandcyk.c
  */
@@ -296,22 +296,20 @@ extern void CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hd
 
 
 /* from CP9_scan.c */
-extern float CP9ForwardScan(char *dsq, int i0, int j0, int W, struct cplan9_s *hmm, 
-			    struct cp9_dpmatrix_s **ret_mx, int *ret_nhits, int **ret_hitr,
-			    int **ret_hiti, int **ret_hitj,  
-			    float **ret_hitsc, float min_thresh);
-extern float CP9BackwardScan(char *dsq, int i0, int j0, int W, struct cplan9_s *hmm, 
+extern float CP9ForwardScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
+				float cutoff, scan_results_t *results);
+extern float CP9BackwardScan(char *dsq, int i0, int j0, int W, CP9_t *hmm, 
 			     struct cp9_dpmatrix_s **ret_mx, int *ret_nhits, int **ret_hitr,
 			     int **ret_hiti, int **ret_hitj,  
 			     float **ret_hitsc, float min_thresh);
-extern float CP9ForwardScanRequires(struct cplan9_s *hmm, int L, int W);
+extern float CP9ForwardScanRequires(CP9_t *hmm, int L, int W);
 extern float CP9ForwardBackwardScan(char *dsq, int i0, int j0, int W, 
-				    struct cplan9_s *hmm, struct cp9_dpmatrix_s **ret_fmx,
+				    CP9_t *hmm, struct cp9_dpmatrix_s **ret_fmx,
 				    struct cp9_dpmatrix_s **ret_bmx, int *ret_nhits, 
 				    int **ret_hitr, int **ret_hiti, 
 				    int **ret_hitj, float **ret_hitsc, float min_thresh, int pad);
 extern void CP9ScanFullPosterior(char *dsq, int L,
-				 struct cplan9_s *hmm,
+				 CP9_t *hmm,
 				 struct cp9_dpmatrix_s *fmx,
 				 struct cp9_dpmatrix_s *bmx,
 				 struct cp9_dpmatrix_s *mx);
@@ -322,22 +320,22 @@ extern void CP9_combine_FBscan_hits(int i0, int j0, int W, int fwd_nhits, int *f
 				    float **ret_hitsc, int pad);
 
 /* from CP9_cm2wrhmm.c */
-extern int build_cp9_hmm(CM_t *cm, struct cplan9_s **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
+extern int build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
 			 float psi_vs_phi_threshold, int debug_level);
 extern void CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level);
 extern void map_helper(CM_t *cm, CP9Map_t *cp9map, int k, int ks, int v);
-extern int  CP9_check_wrhmm(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, int debug_level);
+extern int  CP9_check_wrhmm(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, int debug_level);
 extern void fill_psi(CM_t *cm, double *psi, char ***tmap);
-extern void fill_phi_cp9(struct cplan9_s *hmm, double ***ret_phi, int spos);
+extern void fill_phi_cp9(CP9_t *hmm, double ***ret_phi, int spos);
 extern void make_tmap(char ****ret_tmap);
 
-extern int  CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo, int spos, int epos, 
+extern int  CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, CMSubInfo_t *subinfo, int spos, int epos, 
 				  float chi_thresh, int nsamples, int print_flag);
 extern void CP9_fake_tracebacks(char **aseq, int nseq, int alen, int *matassign, struct cp9trace_s ***ret_tr);
 
-extern void CP9TraceCount(struct cplan9_s *hmm, char *dsq, float wt, struct cp9trace_s *tr);
-extern void debug_print_cp9_params(struct cplan9_s *hmm);
-extern void debug_print_phi_cp9(struct cplan9_s *hmm, double **phi);
+extern void CP9TraceCount(CP9_t *hmm, char *dsq, float wt, struct cp9trace_s *tr);
+extern void debug_print_cp9_params(CP9_t *hmm);
+extern void debug_print_phi_cp9(CP9_t *hmm, double **phi);
 extern CP9Map_t *AllocCP9Map(CM_t *cm);
 extern void FreeCP9Map(CP9Map_t *cp9map);
 
@@ -365,7 +363,7 @@ extern float CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, char *dsq);
 /* from sub_cm.c */
 extern int  build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t **ret_submap, 
 			 int do_fullsub, int print_flag);
-extern void CP9NodeForPosn(struct cplan9_s *hmm, int i0, int j0, int x, 
+extern void CP9NodeForPosn(CP9_t *hmm, int i0, int j0, int x, 
 			   struct cp9_dpmatrix_s *post, int *ret_node, int *ret_type,
 			   int do_fullsub, float pmass, int is_start, int print_flag);
 extern void StripWUSSGivenCC(MSA *msa, char **dsq, float gapthresh, int first_match, int last_match);
@@ -390,14 +388,14 @@ extern void  debug_print_cm_params(CM_t *cm);
  * CM Plan9 HMM Input/output (saving/reading)
  */
 extern CP9HMMFILE *CP9_HMMFileOpen(char *hmmfile, char *env);
-extern int      CP9_HMMFileRead(CP9HMMFILE *hmmfp, struct cplan9_s **ret_hmm);
+extern int      CP9_HMMFileRead(CP9HMMFILE *hmmfp, CP9_t **ret_hmm);
 extern void     CP9_HMMFileClose(CP9HMMFILE *hmmfp);
 extern int      CP9_HMMFileFormat(CP9HMMFILE *hmmfp);
 extern void     CP9_HMMFileRewind(CP9HMMFILE *hmmfp);
 extern int      CP9_HMMFilePositionByName(CP9HMMFILE *hmmfp, char *name);
 extern int      CP9_HMMFilePositionByIndex(CP9HMMFILE *hmmfp, int idx);
-extern void     CP9_WriteAscHMM(FILE *fp, struct cplan9_s *hmm);
-extern void     CP9_WriteBinHMM(FILE *fp, struct cplan9_s *hmm);
+extern void     CP9_WriteAscHMM(FILE *fp, CP9_t *hmm);
+extern void     CP9_WriteBinHMM(FILE *fp, CP9_t *hmm);
 #endif
 
 

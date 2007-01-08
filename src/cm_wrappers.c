@@ -98,7 +98,7 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 	  /* Scan */
 	  dbseq->results[reversed] = CreateResults(INIT_RESULTS);
 	  actually_search_target(cm, dbseq->sq[reversed]->dsq, 1, dbseq->sq[reversed]->n, 
-				 min_cutoff, dbseq->results[reversed]);
+				 min_cutoff, dbseq->results[reversed], FALSE);
 	  /* Align results */
 	  if (do_align) {
 	    for (i=0; i<dbseq->results[reversed]->num_results; i++) {
@@ -302,7 +302,7 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 	    {
 	      /* Do the scan */
 	      results = CreateResults(INIT_RESULTS);
-	      actually_search_target(cm, seq, 1, seqlen, min_cutoff, results);
+	      actually_search_target(cm, seq, 1, seqlen, min_cutoff, results, FALSE);
 	      search_send_scan_results (results, mpi_master_rank);
 	      FreeResults(results);
 	    } 
@@ -386,26 +386,36 @@ db_seq_t *read_next_seq (ESL_SQFILE *dbfp, int do_revcomp)
  *           j0         - end of target subsequence (often L, end of dsq)
  *           cutoff     - minimum score to report 
  *           results    - scan_results_t to add to; if NULL, don't add to it
+ *           filtered   - TRUE if this function was called on a chunk that has
+ *                        survived a CP9 filter. 
  * 
  * Returns: Highest scoring hit from search (even if below cutoff).
  */
 float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cutoff, 
-			    scan_results_t *results)
+			    scan_results_t *results, int filtered)
 {
-  float best_score;
+
+  float sc;
+  /* check for CP9 related (either filtering or HMMONLY) options first */
+  if(cm->opts & CM_SEARCH_HMMONLY)
+    {
+      return CP9ForwardScan(cm, dsq, i0, j0, cm->W, cutoff, NULL, results);
+      //return EFF_CP9ForwardScan(cm, dsq, i0, j0, cm->W, cutoff, results);
+    }
+  //if((!filtered) && cm->opts & CM_SEARCH_HMMFB)
+  //{
+  //return CP9_FB_filtered_search(cm, dsq, i0, j0, cm->W, cutoff, 
 
   if(cm->opts & CM_SEARCH_NOQDB)
     if(cm->opts & CM_SEARCH_INSIDE)
-      best_score = iInsideScan(cm, dsq, i0, j0, cm->W, cutoff, results);
+      return iInsideScan(cm, dsq, i0, j0, cm->W, cutoff, results);
     else /* don't do inside */
-      best_score = CYKScan (cm, dsq, i0, j0, cm->W, cutoff, results);
+      return CYKScan (cm, dsq, i0, j0, cm->W, cutoff, results);
   else /* use QDB */
     if(cm->opts & CM_SEARCH_INSIDE)
-      best_score = iInsideBandedScan(cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cutoff, results);
+      return iInsideBandedScan(cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cutoff, results);
     else /* do't do inside */
-      best_score = CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cutoff, results);
-
-  return best_score;
+      return CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cutoff, results);
 }  
 
 /*

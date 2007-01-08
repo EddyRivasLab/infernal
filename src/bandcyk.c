@@ -905,15 +905,8 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 				 * while j runs from i0..j0 */
   int       gamma_i;            /* i index in the gamma* data structures */
   float     best_score;         /* Best overall score from semi-HMM to return */
-  float     best_neg_score;     /* Best score overall score to return, used if all scores > 0 */
+  float     best_neg_score;     /* Best score overall score to return, used if all scores < 0 */
 
-  /* EPN 08.11.05 Next line prevents wasteful computations when imposing
-   * bands before the main recursion.  There is no need to worry about
-   * alpha cells corresponding to subsequence distances within the windowlen
-   * (W) but LONGER than the full sequence (L).  Saves a significant amount 
-   * of time if W is much larger than necessary, and the search sequences 
-   * are short (as in a possible benchmark).
-   */
   best_score     = IMPOSSIBLE;
   best_neg_score = IMPOSSIBLE;
   L = j0-i0+1;

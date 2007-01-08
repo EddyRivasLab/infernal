@@ -228,8 +228,9 @@ CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 				 * while j runs from i0..j0 */
   int       gamma_i;            /* i index in the gamma* data structures */
   float     best_score;         /* Best overall score from semi-HMM to return */
-  float     best_neg_score;     /* Best score overall score to return, used if all scores > 0 */
+  float     best_neg_score;     /* Best score overall score to return, used if all scores < 0 */
   /*int     updated_flag;*/         /* strategy 2 */
+
   /*****************************************************************
    * alpha allocations.
    * The scanning matrix is indexed [v][j][d]. 
@@ -326,7 +327,7 @@ CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W,
    *****************************************************************/
   for (j = i0; j <= j0; j++) 
     {
-      gamma_j = j-i0+1; /* j is actual index in j, gamma_j is offeset j index in gamma* data structures */
+      gamma_j = j-i0+1; /* j is actual index in j, gamma_j is offset j index in gamma* data structures */
       cur = j%2;
       prv = (j-1)%2;
       for (v = cm->M-1; v > 0; v--) /* ...almost to ROOT; we handle ROOT specially... */

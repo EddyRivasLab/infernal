@@ -72,7 +72,7 @@ InsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 				 * while j runs from i0..j0 */
   int       gamma_i;            /* i index in the gamma* data structures */
   float     best_score;         /* Best overall score from semi-HMM to return */
-  float     best_neg_score;     /* Best score overall score to return, used if all scores > 0 */
+  float     best_neg_score;     /* Best score overall score to return, used if all scores < 0 */
 
   /*****************************************************************
    * alpha allocations.
@@ -426,7 +426,7 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
 				 * while j runs from i0..j0 */
   int       gamma_i;            /* i index in the gamma* data structures */
   float     best_score;         /* Best overall score from semi-HMM to return */
-  float     best_neg_score;     /* Best score overall score to return, used if all scores > 0 */
+  float     best_neg_score;     /* Best score overall score to return, used if all scores < 0 */
 
   /*printf("in InsideBandedScan i0: %d j0: %d\n", i0, j0);*/
   best_score     = IMPOSSIBLE;
@@ -1372,7 +1372,7 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 				 * while j runs from i0..j0 */
   int       gamma_i;            /* i index in the gamma* data structures */
   float     best_score;         /* Best overall score from semi-HMM to return */
-  float     best_neg_score;     /* Best score overall score to return, used if all scores > 0 */
+  float     best_neg_score;     /* Best score overall score to return, used if all scores < 0 */
 
   /*****************************************************************
    * alpha allocations.
@@ -1732,7 +1732,7 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
 				 * while j runs from i0..j0 */
   int       gamma_i;            /* i index in the gamma* data structures */
   float     best_score;         /* Best overall score from semi-HMM to return */
-  float     best_neg_score;     /* Best score overall score to return, used if all scores > 0 */
+  float     best_neg_score;     /* Best score overall score to return, used if all scores < 0 */
 
   /*printf("in iInsideBandedScan i0: %d j0: %d\n", i0, j0);*/
 
