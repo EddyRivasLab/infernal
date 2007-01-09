@@ -148,7 +148,7 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 	  dsq = DigitizeSequence (randseq, sample_length);
 	  
 	  /* Do the scan */
-	  score = actually_search_target(cm, dsq, 1, sample_length, 0., NULL, FALSE);
+	  score = actually_search_target(cm, dsq, 1, sample_length, 0., NULL, FALSE, NULL);
 	  if(i % 100 == 0)
 	    printf("(%4d) SCORE: %f\n", i, score);
 	  /* Add best score to histogram */
@@ -427,7 +427,7 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 	  job_type = search_receive_job(&seqlen, &dsq, &dummy, mpi_master_rank);
 	  if (job_type == SEARCH_HIST_SCAN_WORK) 
 	    {
-	      score = actually_search_target(cm, dsq, 1, sample_length, 0., NULL, FALSE);
+	      score = actually_search_target(cm, dsq, 1, sample_length, 0., NULL, FALSE, NULL);
 	      printf("score: %f\n", score);
 	      search_send_hist_scan_results (score, mpi_master_rank);
 	    }

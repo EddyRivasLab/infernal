@@ -296,13 +296,15 @@ extern void CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hd
 
 
 /* from CP9_scan.c */
-extern float CP9ForwardScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
-				float cutoff, scan_results_t *results);
+extern float CP9ForwardScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_isc, 
+			    int **ret_hitj, int *ret_nhits, scan_results_t *results);
+extern float CP9ForwardScanRequires(CP9_t *hmm, int L, int W);
+extern float CP9FilteredScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, 
+			     scan_results_t *results, int *ret_flen);
 extern float CP9BackwardScan(char *dsq, int i0, int j0, int W, CP9_t *hmm, 
 			     struct cp9_dpmatrix_s **ret_mx, int *ret_nhits, int **ret_hitr,
 			     int **ret_hiti, int **ret_hitj,  
 			     float **ret_hitsc, float min_thresh);
-extern float CP9ForwardScanRequires(CP9_t *hmm, int L, int W);
 extern float CP9ForwardBackwardScan(char *dsq, int i0, int j0, int W, 
 				    CP9_t *hmm, struct cp9_dpmatrix_s **ret_fmx,
 				    struct cp9_dpmatrix_s **ret_bmx, int *ret_nhits, 

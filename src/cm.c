@@ -103,6 +103,7 @@ CreateCMShell(void)
   cm->enf_start = 0;
   cm->enf_seq = NULL;
   cm->score_boost = 0.;
+  cm->ffract  = 0.;
   return cm;
 }
 void

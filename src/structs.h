@@ -249,12 +249,14 @@ typedef struct cm_s {
   int       enf_start;  /* if(cm->opts & CM_CONFIG_ENFORCE) the first posn to enforce, else 0 */
   char     *enf_seq;    /* if(cm->opts & CM_CONFIG_ENFORCE) the subseq to enforce, else NULL  */
   float     score_boost;/* value added to CYK bit scores during search (usually 0.)           */
+  float     ffract;     /* desired filter fraction (0.99 -> filter out 99% of db), default: 0.*/
   /* end of added by EPN */
 
   int    W;             /* max d: max size of a hit (EPN 08.18.05) */
   float  el_selfsc;     /* score of a self transition in the EL state
 			 * the EL state emits only on self transition (EPN 11.15.05)*/
   int   iel_selfsc;    /* scaled int version of el_selfsc         */
+
 
 } CM_t;
 
@@ -295,6 +297,7 @@ typedef struct cm_s {
 #define CM_SEARCH_NOALIGN     (1<<24) /* don't align hits, just report locations  */
 #define CM_SEARCH_NULL2       (1<<25) /* use post hoc second null model           */
 #define CM_SEARCH_STATS       (1<<26) /* calculate E-value statistics             */
+#define CM_SEARCH_FFRACT      (1<<27) /* filter to filter fraction cm->ffract     */
 
 /* info on if the CM is a sub model or fullsub model */
 #define CM_IS_SUB             (1<<27) /* the CM is a sub CM                       */

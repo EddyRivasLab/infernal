@@ -98,7 +98,7 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 	  /* Scan */
 	  dbseq->results[reversed] = CreateResults(INIT_RESULTS);
 	  actually_search_target(cm, dbseq->sq[reversed]->dsq, 1, dbseq->sq[reversed]->n, 
-				 min_cutoff, dbseq->results[reversed], FALSE);
+				 min_cutoff, dbseq->results[reversed], TRUE, NULL);
 	  /* Align results */
 	  if (do_align) {
 	    for (i=0; i<dbseq->results[reversed]->num_results; i++) {
@@ -302,7 +302,7 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 	    {
 	      /* Do the scan */
 	      results = CreateResults(INIT_RESULTS);
-	      actually_search_target(cm, seq, 1, seqlen, min_cutoff, results, FALSE);
+	      actually_search_target(cm, seq, 1, seqlen, min_cutoff, results, TRUE, NULL);
 	      search_send_scan_results (results, mpi_master_rank);
 	      FreeResults(results);
 	    } 
@@ -386,36 +386,39 @@ db_seq_t *read_next_seq (ESL_SQFILE *dbfp, int do_revcomp)
  *           j0         - end of target subsequence (often L, end of dsq)
  *           cutoff     - minimum score to report 
  *           results    - scan_results_t to add to; if NULL, don't add to it
- *           filtered   - TRUE if this function was called on a chunk that has
- *                        survived a CP9 filter. 
+ *           do_filter  - TRUE if we should filter, but only if cm->opts tells us to 
+ *           ret_flen   - RETURN: subseq len that survived filter (NULL if not filtering)
  * 
  * Returns: Highest scoring hit from search (even if below cutoff).
  */
 float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cutoff, 
-			    scan_results_t *results, int filtered)
+			     scan_results_t *results, int do_filter, int *ret_flen)
 {
 
   float sc;
+  printf("in actually_search_target: i0: %d j0: %d do_filter: %d\n", i0, j0, do_filter);
+  int flen;
+  flen = (j0-i0+1);
+  
   /* check for CP9 related (either filtering or HMMONLY) options first */
   if(cm->opts & CM_SEARCH_HMMONLY)
+    sc = CP9ForwardScan(cm, dsq, i0, j0, cm->W, cutoff, NULL, NULL, NULL, results);
+  else if(do_filter && cm->opts & CM_SEARCH_HMMFB)
+    sc = CP9FilteredScan(cm, dsq, i0, j0, cm->W, cutoff, results, ret_flen);
+  else
     {
-      return CP9ForwardScan(cm, dsq, i0, j0, cm->W, cutoff, NULL, results);
-      //return EFF_CP9ForwardScan(cm, dsq, i0, j0, cm->W, cutoff, results);
-    }
-  //if((!filtered) && cm->opts & CM_SEARCH_HMMFB)
-  //{
-  //return CP9_FB_filtered_search(cm, dsq, i0, j0, cm->W, cutoff, 
-
-  if(cm->opts & CM_SEARCH_NOQDB)
-    if(cm->opts & CM_SEARCH_INSIDE)
-      return iInsideScan(cm, dsq, i0, j0, cm->W, cutoff, results);
-    else /* don't do inside */
-      return CYKScan (cm, dsq, i0, j0, cm->W, cutoff, results);
-  else /* use QDB */
-    if(cm->opts & CM_SEARCH_INSIDE)
-      return iInsideBandedScan(cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cutoff, results);
-    else /* do't do inside */
-      return CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cutoff, results);
+      if(cm->opts & CM_SEARCH_NOQDB)
+	if(cm->opts & CM_SEARCH_INSIDE)
+	  sc = iInsideScan(cm, dsq, i0, j0, cm->W, cutoff, results);
+	else /* don't do inside */
+	  sc = CYKScan (cm, dsq, i0, j0, cm->W, cutoff, results);
+      else /* use QDB */
+	if(cm->opts & CM_SEARCH_INSIDE)
+	  sc = iInsideBandedScan(cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cutoff, results);
+	else /* do't do inside */
+	  sc = CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cutoff, results);
+    }    
+  return sc;
 }  
 
 /*
@@ -871,8 +874,6 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 				         * and arrays for CM state bands, derived from HMM bands*/
   CP9Map_t       *cp9map;        /* maps the hmm to the cm and vice versa */
   CP9_dpmatrix_t *cp9_post;      /* growable DP matrix for posterior decode              */
-  float forward_sc; 
-  float backward_sc; 
 
   /* variables related to the do_sub option */
   CM_t              *sub_cm;       /* sub covariance model                      */
