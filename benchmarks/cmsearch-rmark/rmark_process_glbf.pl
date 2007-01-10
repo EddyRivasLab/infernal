@@ -208,7 +208,7 @@ print FAM "    configfile = $rmk\n";
 print FAM "    index      = $idx\n";
 print FAM "    genome     = $genome_file\n";
 print FAM "    glbf       = $glbf_file\n";
-print FAM "    mode       = $res_mode\n\n";
+print FAM "    mode       = $res_opt\n\n";
 
 print ALL "RMARK benchmark (processed with rmark_process_glbf.pl)\n";
 print ALL "    module     = $rmm\n";
@@ -216,7 +216,7 @@ print ALL "    configfile = $rmk\n";
 print ALL "    index      = $idx\n";
 print ALL "    genome     = $genome_file\n";
 print ALL "    glbf       = $glbf_file\n";
-print ALL "    mode       = $res_mode\n\n";
+print ALL "    mode       = $res_opt\n\n";
 
 #BLAST scores are E values where lower is better, this messes up
 #our calculation of $highnoise, so we have a flag

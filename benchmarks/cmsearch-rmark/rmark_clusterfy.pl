@@ -24,7 +24,12 @@
 # The example run above will create the following:
 #     - a inf-71_rmark-test_out_dir directory with all the files needed to run
 #       rmark.pl copied to it (except seq files which stay in <seq dir>)
-#     - 
+#     - the inf-71.com file (in inf-71_rmark-test_out_dir/) a shell script 
+#       which will submit the benchmark jobs to the cluster when executed
+#     - the inf-71_pp.script (in inf-71_rmark-test_out_dir/) a shell script 
+#       which will post-process and combine the results from all the jobs
+#       to be run after all jobs finish running.
+#
 # General Strategy
 #
 # (A) Create a script to execute on a cluster that will execute
@@ -79,6 +84,8 @@ if(! (-e ("rmark.pl"))) { die("ERROR, rmark.pl must exist in the current directo
 else { system("cp rmark.pl $run_dir"); } 
 if(! (-e ("rmark_process_glbf.pl"))) { die("ERROR, rmark_process_glbf.pl must exist in the current directory."); } 
 else { system("cp rmark_process_glbf.pl $run_dir"); } 
+if(! (-e ("rmark_times.pl"))) { die("ERROR, rmark_process_glbf.pl must exist in the current directory."); } 
+else { system("cp rmark_times.pl $run_dir"); } 
 if(! (-e ("infernal.pm"))) { die("ERROR, infernal.pm must exist in the current directory."); } 
 else { system("cp infernal.pm $run_dir"); } 
 if(! (-e ("infernal2glbf.pl"))) { die("ERROR, infernal2glbf.pl must exist in the current directory."); } 
@@ -174,7 +181,7 @@ $all_time_out = $out_file_root . "_all_time.concat";
 print PP ("cat *.glbf > $all_glbf_out\n");
 print PP ("cat *.time > $all_time_out\n");
 #11.25.05 - get timing info
-print PP ("perl ~/src/scripts/rmark/rmark_times.pl *.time > merged_" . $out_file_root . ".time\n");
+print PP ("perl rmark_times.pl *.time > merged_" . $out_file_root . ".time\n");
 
 # Call rmark_process_glbf.pl with defaults: 'hit' resolution mode and 
 # ignore cross-hits on both strands.

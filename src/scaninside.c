@@ -579,7 +579,7 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
 	  if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
 	    {
 	      if (cm->stid[v] == BEGL_S) jp = j % (W+1); else jp = cur;
-	      for (d = dmin[v]; d <= dmax[v] && d <= gamma_j; d++) 
+	      for (d = dmin[v]; (d <= dmax[v] && d <= gamma_j) && d <= W; d++) 
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][jp][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
@@ -591,7 +591,7 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
 	    }
 	  else if (cm->sttype[v] == MP_st) 
 	    {
-	      for (d = dmin[v]; d <= dmax[v] && d <= gamma_j; d++)
+	      for (d = dmin[v]; (d <= dmax[v] && d <= gamma_j) && d <= W; d++)
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
@@ -610,7 +610,7 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
 	    }
 	  else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) 
 	    {
-	      for (d = dmin[v]; d <= dmax[v] && d <= gamma_j; d++)
+	      for (d = dmin[v]; (d <= dmax[v] && d <= gamma_j) && d <= W; d++)
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
@@ -629,7 +629,7 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
 	    }
 	  else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) 
 	    {
-	      for (d = dmin[v]; d <= dmax[v] && d <= gamma_j; d++)
+	      for (d = dmin[v]; (d <= dmax[v] && d <= gamma_j) && d <= W; d++)
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
@@ -650,7 +650,7 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
 	      w = cm->cfirst[v];
 	      y = cm->cnum[v];
 	      i = j-d+1;
-	      for (d = dmin[v]; d <= dmax[v] && d <= gamma_j; d++) 
+	      for (d = dmin[v]; (d <= dmax[v] && d <= gamma_j) && d <= W; d++) 
 		{
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
 
@@ -684,7 +684,7 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
        * by the way local alignment is parameterized (other transitions are
        * -INFTY), which is probably a little too fragile of a method. 
        */
-      for (d = dmin[0]; d <= dmax[0] && d <= gamma_j; d++)
+      for (d = dmin[0]; (d <= dmax[0] && d <= gamma_j) && d <= W; d++)
 	{
 	  y = cm->cfirst[0];
 	  alpha[0][cur][d] = alpha[y][cur][d] + cm->tsc[0][0];
@@ -693,7 +693,7 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
 	    alpha[0][cur][d] = LogSum2(alpha[0][cur][d], (alpha[y+yoffset][cur][d] 
 							 + cm->tsc[0][yoffset]));
 
-	  if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
+	  if (alpha[0][cur][d] < IMPROBABLE) alpha[0][cur][d] = IMPOSSIBLE;
 	}
       
       /* EPN 11.09.05 
@@ -714,7 +714,7 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
 	  d = (dmin[y] > dmin[0]) ? dmin[y]:dmin[0];
 	  /*if (dmin[y] > dmin[0]) d = dmin[y];
 	    else d = dmin[0];*/
-	  for (; d <= dmax[y] && d <= gamma_j; d++)
+	  for (; (d <= dmax[y] && d <= gamma_j) && d <= W; d++)
 	    {
 	      if (cm->stid[y] == BEGL_S) sc = alpha[y][j%(W+1)][d] + cm->beginsc[y];
 	      else                       sc = alpha[y][cur][d]     + cm->beginsc[y];
@@ -733,11 +733,11 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
       gback[gamma_j]  = -1;
       savesc[gamma_j] = IMPOSSIBLE;
       saver[gamma_j]  = -1;
-      for (d = dmin[0]; d <= dmax[0] && d <= gamma_j; d++) 
+      for (d = dmin[0]; (d <= dmax[0] && d <= gamma_j) && d <= W; d++) 
 	{
 	  i = j-d+1;
 	  gamma_i = j-d+1-i0+1;
-	  sc = gamma[gamma_i-1] + alpha[0][cur][d]  - min_thresh; 
+	  sc = gamma[gamma_i-1] + alpha[0][cur][d]  - min_thresh;
 	  if (sc > gamma[gamma_j])
 	    {
 	      gamma[gamma_j]  = sc;
@@ -1059,7 +1059,7 @@ InsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int 
 	    alpha[v][jp_roll][d] = IMPOSSIBLE;
 	  if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
 	    {
-	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= gamma_j; d++) 
+	      for (d = hdmin[v][jp_v]; ((d <= hdmax[v][jp_v] && d <= gamma_j) && d <= W); d++) 
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][jp_roll][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
@@ -1071,7 +1071,7 @@ InsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int 
 	    }
 	  else if (cm->sttype[v] == MP_st) 
 	    {
-	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= gamma_j; d++)
+	      for (d = hdmin[v][jp_v]; ((d <= hdmax[v][jp_v] && d <= gamma_j) && d <= W); d++)
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
@@ -1089,7 +1089,7 @@ InsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int 
 	    }
 	  else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) 
 	    {
-	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= gamma_j; d++)
+	      for (d = hdmin[v][jp_v]; ((d <= hdmax[v][jp_v] && d <= gamma_j) && d <= W); d++)
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
@@ -1107,7 +1107,7 @@ InsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int 
 	    }
 	  else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) 
 	    {
-	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= gamma_j; d++)
+	      for (d = hdmin[v][jp_v]; ((d <= hdmax[v][jp_v] && d <= gamma_j) && d <= W); d++)
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
@@ -1139,7 +1139,7 @@ InsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int 
 	       */
 
 	      /* initialize with endsc for all valid d for B state v */
-	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= gamma_j; d++) /* ensures (5) above */
+	      for (d = hdmin[v][jp_v]; ((d <= hdmax[v][jp_v] && d <= gamma_j) && d <= W); d++) /* ensures (5) above */
 		{
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
 		}
@@ -1154,7 +1154,7 @@ InsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int 
 		    printf("hdmin[v][jp_v]: %d | hdmin[y][jp_y]: %d\n", hdmin[v][jp_v], hdmin[y][jp_y]);
 		    printf("hdmax[v][jp_v]: %d | hdmax[y][jp_y]: %d\n", hdmax[v][jp_v], hdmax[y][jp_y]);
 		  */
-		  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= gamma_j; d++) /* ensures (5) above */
+		  for (d = hdmin[v][jp_v]; ((d <= hdmax[v][jp_v] && d <= gamma_j) && d <= W); d++) /* ensures (5) above */
 		    {
 		      /* k is the length of the right fragment */
 		      tmp_kmin = ((j-jmax[w]) > hdmin[y][jp_y]) ? (j-jmax[w]) : hdmin[y][jp_y];
@@ -1230,7 +1230,7 @@ InsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int 
       for (d = hdmax[0][jp_v]+1; d <= W;      d++) 
 	alpha[0][jp_roll][d] = IMPOSSIBLE;
       
-      for (d = hdmin[0][jp_v]; d <= hdmax[0][jp_v] && d <= gamma_j; d++)
+      for (d = hdmin[v][jp_v]; ((d <= hdmax[v][jp_v] && d <= gamma_j) && d <= W); d++) 
 	{
 	  y = cm->cfirst[0];
 	  alpha[0][cur][d] = alpha[y][cur][d] + cm->tsc[0][0];
@@ -1275,7 +1275,7 @@ InsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int 
       gback[gamma_j]  = -1;
       savesc[gamma_j] = IMPOSSIBLE;
       saver[gamma_j]  = -1;
-      for (d = hdmin[0][jp_v]; d <= hdmax[0][jp_v] && d <= gamma_j; d++) 
+      for (d = hdmin[0][jp_v]; ((d <= hdmax[0][jp_v] && d <= gamma_j) && d <= W); d++) 
 	{
 	  i       = j-d+1;
 	  gamma_i = j-d+1-i0+1;

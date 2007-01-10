@@ -78,7 +78,7 @@ static struct opt_s OPTIONS[] = {
   { "--X",          FALSE, sqdARG_NONE },
   { "--inside",     FALSE, sqdARG_NONE },
   { "--null2",      FALSE, sqdARG_NONE },
-  { "--zeroinserts",FALSE, sqdARG_NONE},
+  { "--learninserts",FALSE, sqdARG_NONE},
   { "--hmmfb",      FALSE, sqdARG_NONE },
   { "--hmmweinberg",FALSE, sqdARG_NONE},
   { "--hmmpad",     FALSE, sqdARG_INT },
@@ -719,7 +719,7 @@ main(int argc, char **argv)
       ip = 0;
       for (i = 0; i < nhits; i++)
 	{
-	  if(!do_null2)
+	  if(!do_null2 && !do_align)
 	    {
 	      printf("hit %-4d: %6d %6d %8.2f bits\n", ip, 
 		     reversed ? sqinfo.len - hiti[i] + 1 : hiti[i], 

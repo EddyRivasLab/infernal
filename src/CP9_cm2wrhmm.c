@@ -845,6 +845,11 @@ fill_psi(CM_t *cm, double *psi, char ***tmap)
       if((summed_psi < 0.999) || (summed_psi > 1.001))
 	Die("ERROR: summed psi of split states in node %d not 1.0 but : %f\n", n, summed_psi);
       /* printf("split summed psi[%d]: %f\n", n, summed_psi);*/
+      /* Another sanity check, the only states that can have psi equal to 0
+       * are detached insert states (states immediately prior to END_Es) */
+      for(v = 0; v < cm->M; v++)
+	if(psi[v] == 0. && cm->sttype[(v+1)] != E_st)
+	  Die("ERROR: psi of state v:%d is 0.0 and this state is not a detached insert! HMM banding would have failed...\n", v);
     }
 }
 

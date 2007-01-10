@@ -61,9 +61,6 @@ sub ParseINFERNAL {
     $ntarget     = 0;
     @targname    = ();
     @targname_byhit = ();
-    #targdesc    = ();
-    #%seqscore    = ();
-    #%seqeval     = ();
     %seqnhit     = ();
 
     $nhit        = 0;
@@ -72,9 +69,9 @@ sub ParseINFERNAL {
     @hitsqfrom   = ();
     @hitsqto     = ();
     #@hitsqbounds = ();
-    #@hithmmfrom  = ();
-    #@hithmmto    = ();
-    #@hithmmbounds= ();
+    #@hitcmfrom  = ();
+    #@hitcmto    = ();
+    #@hitcmbounds= ();
     @hitbitscore    = ();
     #@hitevalue   = ();
     #$aligndata   = "";
@@ -84,22 +81,24 @@ sub ParseINFERNAL {
     $ntarget=0;
     foreach $line (@lines) 
     {
-	if ($line =~ s/^sequence:\s+//) {chomp $line; $targname[$ntarget]=$line; $ntarget++}
-	if ($line =~ s/^hit\s//) 
+	chomp $line;
+	if ($line =~ /^sequence:\s+(.+)/)
 	{
-	    chomp $line; 
-	    $line =~ s/\s+bits$//;
-	    ($hitnum[$nhit], 
-	     $colon_trash, 
-	     $hitsqfrom[$nhit], 
-	     $hitsqto[$nhit], 
-	     $hitbitscore[$nhit]) = split ' ', $line;
+	    $targname[$ntarget] = $1;
+	    $ntarget++;
+	}
+	elsif ($line =~ /^hit\s+(\d+)\s*\:\s+(\d+)\s+(\d+)\s+(\S+)\s+bits\S*$/)
+	{
+	    $hitnum[$nhit]      = $1;
+	    $hitsqfrom[$nhit]   = $2; 
+
+	    $hitsqto[$nhit]     = $3;
+	    $hitbitscore[$nhit] = $4;
 	    $targname_byhit[$nhit]=$targname[$ntarget-1];
 	    $nhit++;
 	}
 	#could choose to try and read the alignment data and parse it
 	#but not now
-	#if ($inali) { $aligndata .= $line; }
     }
     1;
 }
