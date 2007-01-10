@@ -256,7 +256,8 @@ typedef struct cm_s {
   CP9Map_t *cp9map;     /* the map from the Plan 9 HMM to the CM and vice versa               */
   int       enf_start;  /* if(cm->opts & CM_CONFIG_ENFORCE) the first posn to enforce, else 0 */
   char     *enf_seq;    /* if(cm->opts & CM_CONFIG_ENFORCE) the subseq to enforce, else NULL  */
-  float     score_boost;/* value added to CYK bit scores during search (usually 0.)           */
+  float     sc_boost;/* value added to CYK bit scores during search (usually 0.)           */
+  float cp9_sc_boost;/* value added to Forward bit scores during CP9 search (usually 0.)   */
   float     ffract;     /* desired filter fraction (0.99 -> filter out 99% of db), default: 0.*/
 
   /* search cutoffs */

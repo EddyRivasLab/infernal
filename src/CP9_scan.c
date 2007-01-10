@@ -28,7 +28,7 @@
 
 #include "stopwatch.h"          /* squid's process timing module        */
 #include "hmmband.h"
-
+#include "cm_wrappers.h"
   
 /***********************************************************************
  * Function: CP9ForwardScan()
@@ -81,7 +81,7 @@ CP9ForwardScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **r
   if(cm->cp9 == NULL)
     Die("ERROR in CP9ForwardScan, but cm->cp9 is NULL.\n");
 
-  printf("CP9 Forward memory  :   %8.2f MB\n", CP9ForwardScanRequires(cm->cp9, (j0-i0+1), W));
+  /*printf("CP9 Forward memory  :   %8.2f MB\n", CP9ForwardScanRequires(cm->cp9, (j0-i0+1), W));*/
 
   best_sc     = IMPOSSIBLE;
   best_negsc  = IMPOSSIBLE;
@@ -190,8 +190,8 @@ CP9ForwardScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **r
       savesc[jp] = IMPOSSIBLE;
       i = ((j-W+1)> i0) ? (j-W+1) : i0;
       ip = i-i0+1;
-      curr_sc = gamma[ip-1] + fsc + cm->score_boost;
-      /* score_boost is experimental technique for finding hits < 0 bits. 
+      curr_sc = gamma[ip-1] + fsc + cm->cp9_sc_boost;
+      /* cp9_sc_boost is experimental technique for finding hits < 0 bits. 
        * value is 0.0 if technique not used. */
       if (curr_sc > gamma[jp])
 	{
@@ -241,7 +241,7 @@ CP9ForwardScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **r
   free(gamma);
   free(savesc);
 
-  printf("returning from CP9ForwardScan()\n");
+  /*printf("returning from CP9ForwardScan()\n");*/
   if(ret_isc != NULL) *ret_isc = isc;
   else free(isc);
   if(ret_hitj != NULL) *ret_hitj = hitj;
@@ -320,11 +320,11 @@ CP9FilteredScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
   flen = 0;
   for(h = 0; h <= nhits-1; h++) 
     {
-      curr_j0 = hitj[h] + W;
+      curr_j0 = ((hitj[h] + W) <= j0)    ? (hitj[h] + W)     : j0;
       curr_i0 = ((curr_j0 - (2*W)) >= 1) ? (curr_j0 - (2*W)) : 1;
       if((h+1) != nhits)
 	{	
-	  next_j0 = hitj[h+1] + W;
+	  next_j0 = ((hitj[h] + W) <= j0)    ? (hitj[h] + W)     : j0;
 	  next_i0 = ((next_j0 - (2*W)) >= 1) ? (next_j0 - (2*W)) : 1;
 	}
       else next_i0 = next_j0 = -1;
@@ -336,18 +336,19 @@ CP9FilteredScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
 	  printf("\tsucked in hit: %d i0: %d j0: %d\n", h, curr_i0, curr_j0);
 	  if((h+1) != nhits)
 	    {	
-	      next_j0 = hitj[h+1] + W;
+	      next_j0 = ((hitj[h] + W) <= j0)    ? (hitj[h] + W)     : j0;
 	      next_i0 = ((next_j0 - (2*W)) >= 1) ? (next_j0 - (2*W)) : 1;
 	    }
 	  else next_i0 = next_j0 = -1;
 	}
       printf("calling actually_search_target: %d %d\n", curr_i0, curr_j0);
       cm_sc =
-	actually_search_target(cm, dsq, curr_i0, curr_j0, cm_cutoff, results, 
-			       FALSE, /* don't filter, we already have                */
-			       FALSE, /* we're not building a histogram for CM stats  */
-			       FALSE, /* we're not building a histogram for CP9 stats */
-			       NULL); /* filter fraction N/A                          */
+	actually_search_target(cm, dsq, curr_i0, curr_j0, cm_cutoff, cp9_cutoff,
+			       results, /* keep results                                 */
+			       FALSE,   /* don't filter, we already have                */
+			       FALSE,   /* we're not building a histogram for CM stats  */
+			       FALSE,   /* we're not building a histogram for CP9 stats */
+			       NULL);   /* filter fraction N/A                          */
       flen += (curr_j0 - curr_i0 + 1);
       if(cm_sc > best_cm_sc) best_cm_sc = cm_sc;
     }
@@ -1605,8 +1606,8 @@ CP9ForwardScan(CM_t *cm, char *dsq, int i0, int j0, int W,
       saver[jp]  = -1;
       i = ((j-W+1)> i0) ? (j-W+1) : i0;
       ip = i-i0+1;
-      sc = gamma[ip-1] + Scorify(emx[0][jp]) + cm->score_boost;
-      /* score_boost is experimental technique for finding hits < 0 bits. 
+      sc = gamma[ip-1] + Scorify(emx[0][jp]) + cm->cp9_sc_boost;
+      /* cp9_sc_boost is experimental technique for finding hits < 0 bits. 
        * value is 0.0 if technique not used. */
       if (sc > gamma[jp])
 	{

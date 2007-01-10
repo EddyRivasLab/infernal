@@ -103,7 +103,8 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
       MPI_Pack (&((*cm)->iel_selfsc),      1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (&((*cm)->W),               1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (&((*cm)->enf_start),       1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->score_boost),     1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->sc_boost),     1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->cp9_sc_boost), 1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (&((*cm)->ffract),          1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (&((*cm)->cutoff_type),     1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (&((*cm)->cutoff),          1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
@@ -139,18 +140,19 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
       MPI_Unpack (buf, BUFSIZE, &position, &nstates, 1, MPI_INT, MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &nnodes, 1, MPI_INT, MPI_COMM_WORLD);
       *cm = CreateCM (nnodes, nstates);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->flags),       1, MPI_INT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->opts),        1, MPI_INT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->el_selfsc),   1, MPI_FLOAT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->iel_selfsc),  1, MPI_INT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->W),           1, MPI_INT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->enf_start),   1, MPI_INT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->score_boost), 1, MPI_FLOAT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->ffract),      1, MPI_FLOAT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cutoff_type), 1, MPI_INT,   MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cutoff),      1, MPI_FLOAT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->flags),           1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->opts),            1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->el_selfsc),       1, MPI_FLOAT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->iel_selfsc),      1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->W),               1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->enf_start),       1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->sc_boost),     1, MPI_FLOAT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cp9_sc_boost), 1, MPI_FLOAT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->ffract),          1, MPI_FLOAT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cutoff_type),     1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cutoff),          1, MPI_FLOAT, MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cp9_cutoff_type), 1, MPI_FLOAT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cp9_cutoff),  1, MPI_FLOAT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cp9_cutoff),      1, MPI_FLOAT, MPI_COMM_WORLD);
       /*MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->lambda),GC_SEGMENTS, MPI_FLOAT, MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->K),     GC_SEGMENTS, MPI_FLOAT, MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->mu),    GC_SEGMENTS, MPI_FLOAT, MPI_COMM_WORLD);
@@ -216,7 +218,7 @@ void search_first_broadcast (int *num_samples, float *W_scale,
   int   position = 0;         /* Where I am in the buffer */
   buf = MallocOrDie(bufsize);
 
-  printf("entered search_first_broadcast: my: %d master: %d\n", mpi_my_rank, mpi_master_rank);
+  /*printf("entered search_first_broadcast: my: %d master: %d\n", mpi_my_rank, mpi_master_rank);*/
 
   position = 0;
   if (mpi_my_rank == mpi_master_rank) 
@@ -242,34 +244,34 @@ void search_first_broadcast (int *num_samples, float *W_scale,
  * Date:     RJK, Tue May 28, 2002 [St. Louis]
  * Purpose:  Second broadcast of information to all processes.
  */
-void search_second_broadcast (CM_t **cm, int *N, int mpi_my_rank, int mpi_master_rank) 
+void search_second_broadcast (CM_t **cm, long *N, int mpi_my_rank, int mpi_master_rank) 
 {
   char buf[BUFSIZE];      /* Buffer for packing it all but the bulk of the CM */
   int position = 0;         /* Where I am in the buffer */
-  double *lambda;
-  double *mu;
-  double *K;
-  double *cp9_lambda;
-  double *cp9_mu;
-  double *cp9_K;
+  double lambda[GC_SEGMENTS];
+  double mu[GC_SEGMENTS];
+  double K[GC_SEGMENTS];
+  double cp9_lambda[GC_SEGMENTS];
+  double cp9_mu[GC_SEGMENTS];
+  double cp9_K[GC_SEGMENTS];
   int     i;
 
   position = 0;
-  if (mpi_my_rank == mpi_master_rank) 
-    {   /* I'm in charge */
+  if (mpi_my_rank == mpi_master_rank)    /* I'm in charge */
+    { 
       /* we always send N */
       MPI_Pack (&N, 1, MPI_LONG, buf, BUFSIZE, &position, MPI_COMM_WORLD);
       if((*cm)->opts & CM_SEARCH_CMSTATS) /* pack the CM EVD parameters */
 	{
-	  MPI_Pack (&((*cm)->lambda),GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-	  MPI_Pack (&((*cm)->K),     GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-	  MPI_Pack (&((*cm)->mu),    GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+	  MPI_Pack ((*cm)->lambda,GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+	  MPI_Pack ((*cm)->K,     GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+	  MPI_Pack ((*cm)->mu,    GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
 	}
       if((*cm)->opts & CM_SEARCH_CP9STATS) /* pack the CP9 EVD parameters */
 	{
-	  MPI_Pack (&((*cm)->cp9_lambda), GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-	  MPI_Pack (&((*cm)->cp9_mu),     GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-	  MPI_Pack (&((*cm)->cp9_K),      GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+	  MPI_Pack ((*cm)->cp9_lambda, GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+	  MPI_Pack ((*cm)->cp9_mu,     GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+	  MPI_Pack ((*cm)->cp9_K,      GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
 	}
     }
   MPI_Bcast (buf, BUFSIZE, MPI_PACKED, mpi_master_rank, MPI_COMM_WORLD);
@@ -284,29 +286,27 @@ void search_second_broadcast (CM_t **cm, int *N, int mpi_my_rank, int mpi_master
        * the one we're sending from the master node. */
       if((*cm)->opts & CM_SEARCH_CMSTATS) /* unpack the CM EVD parameters */
 	{
-	  MPI_Unpack (buf, BUFSIZE, &position, ((*cm)->lambda), GC_SEGMENTS, MPI_FLOAT, MPI_COMM_WORLD);
-	  MPI_Unpack (buf, BUFSIZE, &position, ((*cm)->mu),     GC_SEGMENTS, MPI_FLOAT, MPI_COMM_WORLD);
-	  MPI_Unpack (buf, BUFSIZE, &position, ((*cm)->K),      GC_SEGMENTS, MPI_FLOAT, MPI_COMM_WORLD);
+	  MPI_Unpack (buf, BUFSIZE, &position, ((*cm)->lambda), GC_SEGMENTS, MPI_DOUBLE, MPI_COMM_WORLD);
+	  MPI_Unpack (buf, BUFSIZE, &position, ((*cm)->mu),     GC_SEGMENTS, MPI_DOUBLE, MPI_COMM_WORLD);
+	  MPI_Unpack (buf, BUFSIZE, &position, ((*cm)->K),      GC_SEGMENTS, MPI_DOUBLE, MPI_COMM_WORLD);
 	  for(i = 0; i < GC_SEGMENTS; i++)
 	    {
 	      (*cm)->lambda[i] = lambda[i];
 	      (*cm)->mu[i]     = mu[i];
 	      (*cm)->K[i]      = K[i];
-	      /* free lambda, mu and k ? */
 	    }
 	}
       if((*cm)->opts & CM_SEARCH_CP9STATS) /* unpack the CP9 EVD parameters */
 	{
-	  MPI_Unpack (buf, BUFSIZE, &position, cp9_lambda, GC_SEGMENTS, MPI_FLOAT, MPI_COMM_WORLD);
-	  MPI_Unpack (buf, BUFSIZE, &position, cp9_mu,     GC_SEGMENTS, MPI_FLOAT, MPI_COMM_WORLD);
-	  MPI_Unpack (buf, BUFSIZE, &position, cp9_K,      GC_SEGMENTS, MPI_FLOAT, MPI_COMM_WORLD);
+	  MPI_Unpack (buf, BUFSIZE, &position, cp9_lambda, GC_SEGMENTS, MPI_DOUBLE, MPI_COMM_WORLD);
+	  MPI_Unpack (buf, BUFSIZE, &position, cp9_mu,     GC_SEGMENTS, MPI_DOUBLE, MPI_COMM_WORLD);
+	  MPI_Unpack (buf, BUFSIZE, &position, cp9_K,      GC_SEGMENTS, MPI_DOUBLE, MPI_COMM_WORLD);
 	  for(i = 0; i < GC_SEGMENTS; i++)
 	    {
 	      (*cm)->cp9_lambda[i] = cp9_lambda[i];
 	      (*cm)->cp9_mu[i]     = cp9_mu[i];
 	      (*cm)->cp9_K[i]      = cp9_K[i];
 	    }
-	  /* free cp9_lambda, cp9_mu and cp9_k ? */
 	}
     }
 }

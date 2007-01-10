@@ -435,7 +435,7 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
 {
   float sc;
 
-  printf("in actually_search_target: i0: %d j0: %d do_filter: %d doing_cm_stats: %d doing_cp9_stats: %d\n", i0, j0, do_filter, doing_cm_stats, doing_cp9_stats);
+  /*printf("in actually_search_target: i0: %d j0: %d do_filter: %d doing_cm_stats: %d doing_cp9_stats: %d\n", i0, j0, do_filter, doing_cm_stats, doing_cp9_stats);*/
   int flen;
   flen = (j0-i0+1);
 
@@ -461,7 +461,7 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
       else /* do't do inside */
 	sc = CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
     }    
-  printf("returning from actually_search_target, sc: %f\n", sc);
+  /*printf("returning from actually_search_target, sc: %f\n", sc);*/
   return sc;
 }  
 

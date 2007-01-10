@@ -66,14 +66,6 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
   int n;
   float *enf_vec;             /* vector for FChoose to pick starting point for enf_seq */
   int enf_start;           /* starting point for enf_seq */
-  int x;
-
-  /* Infernal specific variables (not in RSEARCH's stats.c) */
-  int    nhits;			/* number of hits in a seq */
-  int   *hitr;			/* initial states for hits */
-  int   *hiti;                  /* start positions of hits */
-  int   *hitj;                  /* end positions of hits */
-  float *hitsc;			/* scores of hits */
 
   printf("in serial_make_histogram, nparts: %d sample_len: %d cp9_stats: %d do_ins: %d do_enf: %d\n", num_partitions, sample_length, doing_cp9_stats, (cm->opts & CM_SEARCH_INSIDE), (cm->opts & CM_CONFIG_ENFORCE));
 

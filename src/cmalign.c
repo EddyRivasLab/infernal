@@ -26,6 +26,7 @@
 #include "hmmband.h"         
 #include "cm_postprob.h"
 #include "mpifuncs.h"
+#include "cm_wrappers.h"
 
 static int in_mpi;
 
