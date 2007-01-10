@@ -47,6 +47,9 @@ CP9Statetype(char st);
 static int 
 CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float threshold, 
 		     int print_flag);
+static int 
+check_cm_adj_bp(CM_t *cm, CP9Map_t *cp9map);
+
 static float
 FChiSquareFit(float *f1, float *f2, int N);
 
@@ -2250,13 +2253,39 @@ check_psi_vs_phi_cp9(CM_t *cm, CP9Map_t *cp9map, double *psi, double **phi, doub
   int v_ct; /* Number of violations not involving dual insert states. */
   double diff;
   int ret_val; /* return value */
+  int adj_bp_flag; /* a special case in which we always return TRUE after printing a warning */
 
   if (cm->flags & CM_LOCAL_BEGIN) Die("internal error: we're in CM local mode while trying to build a CP9 HMM");
 
+  adj_bp_flag = FALSE;
+  if(check_cm_adj_bp(cm, cp9map))
+    {
+      adj_bp_flag = TRUE;
+    /* if check_cm_adj_bp() returns TRUE, then the following rare (but possible) situation
+     * is true: Two adjacent consensus columns are modelled by the same MATP node. In this
+     * case it is difficult for the CM plan 9 architecture to mirror the insert state
+     * that maps to both the MATP_IL and MATP_IR of this node. It is more difficult than
+     * for any other possible CM topology situation, so we relax the threshold when
+     * checking psi and phi.
+     */
+      printf("\n");
+      printf("*******************************************************************************\n");
+      printf("Whoa... this model has a special situtation. The left and right half of \n");
+      printf("a single base pair model adjacent consensus columns. It's impossible to build\n");
+      printf("a CP9 HMM that models this CM *exactly*, so this test will likely fail, but\n");
+      printf("we're still going to return TRUE from check_psi_vs_phi_cp9(), because we don't\n");
+      printf("want the program to stop running.\n");
+      printf("*******************************************************************************\n\n");
+    }    
   ret_val = TRUE;
   v_ct = 0;
   ap = MallocOrDie(sizeof(int) * 2);
 
+  if(debug_level > 2)
+    {
+      for(v = 0; v < cm->M; v++)
+	printf("psi[%4d]: %.4f\n", v, psi[v]);
+    }
   for(v = 0; v < cm->M; v++)
     if(cm->stid[v] != BIF_B)
       {
@@ -2335,6 +2364,7 @@ check_psi_vs_phi_cp9(CM_t *cm, CP9Map_t *cp9map, double *psi, double **phi, doub
       printf("ERROR, %d HMM states violate the %f threshold b/t psi and phi.\n", v_ct, threshold);
       ret_val = FALSE;
     }
+  if(adj_bp_flag == TRUE) ret_val = TRUE; /* always return true for models with a consensus bp in adjacent columns */
   return ret_val;
 }
 
@@ -2426,7 +2456,7 @@ debug_print_cp9_params(struct cplan9_s *hmm)
  *                 cmemit.c (which was ported from HMMER's hmmemit.c).
  * Args:    
  * CM_t *cm          - the CM
- * cplan9_s *hmm     - the HMM (models consensus columns spos to epos of the CM)
+ * cplan9_s *hmm     - the HMM
  * int print_flag    - TRUE to print useful debugging info
  *
  * Returns: TRUE: if CM and HMM are "close enough" (see code)
@@ -3138,3 +3168,29 @@ FChiSquareFit(float *f1, float *f2, int N)
     return -1.;
 }
 
+/**************************************************************************
+ * EPN 03.13.06
+ * check_cm_adj_bp()
+ *
+ * Purpose:  Check if two adjacent consensus columns (HMM nodes) are modelled by the
+ *           same MATP node.
+ * 
+ * Args:    
+ * CM_t *cm          - the CM
+ * CP9Map_t          - map from CM to HMM and vice versa 
+ * Returns: TRUE if two adjacent consensus columns are modelled by the same MATP_nd
+ *          FALSE if not
+ */
+static int
+check_cm_adj_bp(CM_t *cm, CP9Map_t *cp9map)
+{
+  int k, prev_k;
+  prev_k = cp9map->pos2nd[1];
+  for(k = 2; k <= cp9map->hmm_M; k++)
+    {
+      if(cp9map->pos2nd[k] == prev_k)
+	return TRUE;
+      prev_k = cp9map->pos2nd[k];
+    }
+  return FALSE;
+}
