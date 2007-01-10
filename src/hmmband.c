@@ -1095,6 +1095,10 @@ hmm2ij_bands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
 		(nss_imax[n] + 1) : nss_jmax[n];
 	      imin[v] = (nss_imin[n]) < (nss_jmin[n] - 1) ? 
 		(nss_imin[n]) : (nss_jmin[n] - 1);
+	      /* we can't have an i < 1 */
+	      if(imin[v] == 0) imin[v] = 1;
+	      if(imax[v] == 0) imax[v] = 1;
+
 	      jmin[v] = imin[v] - 1; /* d must be 0 for end states. */
 	      jmax[v] = imax[v] - 1; /* d must be 0 for end states. */
 
