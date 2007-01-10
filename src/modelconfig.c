@@ -38,6 +38,7 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
   int do_preset_qdb = FALSE;
   int do_build_cp9  = FALSE;
   int v;
+  int i;
 
   /* Check for incompatible cm->opts */
   if((cm->opts & CM_CONFIG_ELSILENT) && (!(cm->opts & CM_CONFIG_LOCAL)))
@@ -46,6 +47,20 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
      ((!(cm->opts & CM_SEARCH_HMMFB)) && (!(cm->opts & CM_SEARCH_HMMWEINBERG))))
     Die("ERROR trying to search with HMM derived bands, but not an HMM filter, this doesn't make sense.\n");
      
+  /* If we're not doing stats set the EVD stats to defaults (0.0) */
+  if(!(cm->opts & CM_SEARCH_CMSTATS))
+    {
+      for(i = 0; i < GC_SEGMENTS; i++)
+	cm->lambda[i] = cm->mu[i] = cm->K[i] = 0.0;
+      cm->opts &= ~CM_STATS; /* make sure the stats ready flag is down. */
+   }
+  if(!(cm->opts & CM_SEARCH_CP9STATS))
+    {
+      for(i = 0; i < GC_SEGMENTS; i++)
+	cm->cp9_lambda[i] = cm->cp9_mu[i] = cm->cp9_K[i] = 0.0;
+      cm->opts &= ~CM_CP9STATS; /* make sure the CP9 stats ready flag is down. */
+    }
+
   /* Check if we need to calculate QDBs and/or build a CP9 HMM. */
   if((cm->opts & CM_ALIGN_QDB)      || (!(cm->opts & CM_SEARCH_NOQDB)))
   {
@@ -69,6 +84,7 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
       cm->cp9map = AllocCP9Map(cm);
       if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))
 	Die("Couldn't build a CP9 HMM from the CM\n");
+      cm->flags |= CM_CP9; /* raise the CP9 flag */
     }
   /* The enforce option, added specifically for enforcing the template region of
    * telomerase RNA */

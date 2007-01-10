@@ -223,13 +223,13 @@ main(int argc, char **argv)
   regressfile = NULL;
   tracefile   = NULL;
   do_qdb      = FALSE;
-  qdb_beta    = 0.0000001;    
+  qdb_beta    = DEFAULT_BETA;
   do_full     = FALSE;
   bdump_level = 0;
   debug_level = 0;
   do_hbanded  = FALSE;
   do_hmmonly  = FALSE;
-  hbandp      = 0.0001;
+  hbandp      = DEFAULT_HBANDP;
   use_sums    = FALSE;
   do_timings  = FALSE;
   do_inside   = FALSE;
@@ -334,8 +334,8 @@ main(int argc, char **argv)
     Die("%s empty?\n", cmfile);
   CMFileClose(cmfp);
 
-  cm->beta = qdb_beta;
-  cm->hbandp = hbandp;
+  cm->beta   = qdb_beta; /* this will be DEFAULT_BETA unless changed at command line */
+  cm->hbandp = hbandp;   /* this will be DEFAULT_HBANDP unless changed at command line */
 
   /* Update cm->opts based on command line options */
   if(do_local)        cm->opts |= CM_CONFIG_LOCAL;

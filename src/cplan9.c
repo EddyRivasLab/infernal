@@ -70,9 +70,6 @@ AllocCPlan9Shell(void)
   hmm->bsc = hmm->bsc_mem = NULL;
   hmm->esc = hmm->esc_mem = NULL;
 			/* statistical parameters set to innocuous empty values */
-  hmm->mu     = 0.; 
-  hmm->lambda = 0.;
-  
   hmm->flags = 0;
   return hmm;
 }  

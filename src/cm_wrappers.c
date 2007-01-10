@@ -66,31 +66,32 @@ static seqs_to_aln_t *read_next_aln_seqs(ESL_SQFILE *seqfp, int nseq, int index)
  * Parameters:        dbfp         the database
  *                    cm           the model
  *                    cons         precalc'ed consensus info for display
- *                    cutoff_type  either E_CUTOFF or SCORE_CUTOFF
- *                    cutoff       min. score to report
- *                    mu           for stats
- *                    lambda       for stats
  */
-void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
-			     int cutoff_type, float cutoff, 
-			     double *mu, double *lambda)
+void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons)
 {
   int reversed;                /* Am I currently doing reverse complement? */
   int i,a;
   db_seq_t *dbseq;
-  float min_cutoff;
+  float min_cm_cutoff;
+  float min_cp9_cutoff;
   int do_revcomp;
   int do_align;
   /*printf("in serial_search database do_align: %d do_revcomp: %d\n", do_align, do_revcomp);*/
   
+  /* Determine minimum cutoff for CM and for CP9 */
+  if (cm->cutoff_type == SCORE_CUTOFF) 
+    min_cm_cutoff = cm->cutoff;
+  else 
+    min_cm_cutoff = e_to_score (cm->cutoff, cm->mu, cm->lambda);
+
+  if (cm->cp9_cutoff_type == SCORE_CUTOFF) 
+    min_cp9_cutoff = cm->cp9_cutoff;
+  else 
+    min_cp9_cutoff = e_to_score (cm->cp9_cutoff, cm->cp9_mu, cm->cp9_lambda);
+  
   do_revcomp = (!(cm->opts & CM_SEARCH_TOPONLY));
   do_align   = (!(cm->opts & CM_SEARCH_NOALIGN));
 
-  if (cutoff_type == SCORE_CUTOFF) 
-    min_cutoff = cutoff;
-  else 
-    min_cutoff = e_to_score (cutoff, mu, lambda);
-  
   while ((dbseq = read_next_seq(dbfp, do_revcomp)))
     {
       for (reversed = 0; reversed <= do_revcomp; reversed++) 
@@ -98,36 +99,49 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 	  /* Scan */
 	  dbseq->results[reversed] = CreateResults(INIT_RESULTS);
 	  actually_search_target(cm, dbseq->sq[reversed]->dsq, 1, dbseq->sq[reversed]->n, 
-				 min_cutoff, dbseq->results[reversed], TRUE, NULL);
+				 min_cm_cutoff, min_cp9_cutoff, 
+				 dbseq->results[reversed], 
+				 TRUE,  /* filter with a CP9 HMM if appropriate */
+				 FALSE, /* we're not building a histogram for CM stats  */
+				 FALSE, /* we're not building a histogram for CP9 stats */
+				 NULL); /* filter fraction, TEMPORARILY NULL            */
 	  /* Align results */
-	  if (do_align) {
-	    for (i=0; i<dbseq->results[reversed]->num_results; i++) {
-	      CYKDivideAndConquer
-		(cm, dbseq->sq[reversed]->dsq, dbseq->sq[reversed]->n,
-		 dbseq->results[reversed]->data[i].bestr,
-		 dbseq->results[reversed]->data[i].start, 
-		 dbseq->results[reversed]->data[i].stop, 
-		 &(dbseq->results[reversed]->data[i].tr),
-		 cm->dmin, cm->dmax); /* dmin and dmax will be NULL if non-banded 
-				       * alternatively, could always pass NULL to 
-				       * always do non-banded alignment. */
-	      
-	      /* Now, subtract out the starting point of the result so 
-		 that it can be added in later.  This makes the print_alignment
-		 routine compatible with the parallel version, while not needing
-		 to send the entire database seq over for each alignment. */
-	      for (a=0; a<dbseq->results[reversed]->data[i].tr->n; a++) {
-		dbseq->results[reversed]->data[i].tr->emitl[a] -= 
-		  (dbseq->results[reversed]->data[i].start - 1);
-		dbseq->results[reversed]->data[i].tr->emitr[a] -= 
-		  (dbseq->results[reversed]->data[i].start - 1);
+	  if (do_align) 
+	    {
+	    for (i=0; i<dbseq->results[reversed]->num_results; i++) 
+	      {
+		CYKDivideAndConquer
+		  (cm, dbseq->sq[reversed]->dsq, dbseq->sq[reversed]->n,
+		   dbseq->results[reversed]->data[i].bestr,
+		   dbseq->results[reversed]->data[i].start, 
+		   dbseq->results[reversed]->data[i].stop, 
+		   &(dbseq->results[reversed]->data[i].tr),
+		   cm->dmin, cm->dmax); /* dmin and dmax will be NULL if non-banded 
+					 * alternatively, could always pass NULL to 
+					 * always do non-banded alignment. */
+		
+		/* Now, subtract out the starting point of the result so 
+		   that it can be added in later.  This makes the print_alignment
+		   routine compatible with the parallel version, while not needing
+		   to send the entire database seq over for each alignment. */
+		for (a=0; a<dbseq->results[reversed]->data[i].tr->n; a++) 
+		  {
+		    dbseq->results[reversed]->data[i].tr->emitl[a] -= 
+		      (dbseq->results[reversed]->data[i].start - 1);
+		    dbseq->results[reversed]->data[i].tr->emitr[a] -= 
+		      (dbseq->results[reversed]->data[i].start - 1);
+		  }
 	      }
 	    }
-	  }
 	}
       /* Print results */
-      print_results (cm, cons, dbseq, do_revcomp, (cm->opts & CM_SEARCH_STATS),
-		     mu, lambda);
+      if(cm->opts & CM_SEARCH_HMMONLY) /* pass CP9 EVD params */
+	print_results (cm, cons, dbseq, do_revcomp, (cm->opts & CM_SEARCH_CP9STATS),
+		       cm->cp9_mu, cm->cp9_lambda);
+      else /* pass CM EVD params */
+	print_results (cm, cons, dbseq, do_revcomp, (cm->opts & CM_SEARCH_CMSTATS),
+		       cm->mu, cm->lambda);
+
       fflush (stdout);
       
       FreeResults(dbseq->results[0]);
@@ -166,8 +180,6 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
  *           }
  */
 void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
-			       int cutoff_type, float cutoff, 
-			       double *mu, double *lambda, 
 			       int mpi_my_rank, int mpi_master_rank, 
 			       int mpi_num_procs) 
 {
@@ -182,20 +194,27 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
   int proc_index, active_seq_index;
   int bestr;       /* Best root state -- for alignments */
   Parsetree_t *tr;
-  float min_cutoff;
+  float min_cm_cutoff;
+  float min_cp9_cutoff;
   int do_revcomp;
   int do_align;
 
-  printf("B PSD rank: %4d mast: %4d cutoff: %f\n", mpi_my_rank, mpi_master_rank, cutoff);
 
   do_revcomp = (!(cm->opts & CM_SEARCH_TOPONLY));
   do_align   = (!(cm->opts & CM_SEARCH_NOALIGN));
-  printf("do_revcomp: %d\n", do_revcomp);
 
-  if (cutoff_type == SCORE_CUTOFF) 
-    min_cutoff = cutoff;
+  /* Determine minimum cutoff for CM and for CP9 */
+  if (cm->cutoff_type == SCORE_CUTOFF) 
+    min_cm_cutoff = cm->cutoff;
   else 
-    min_cutoff = e_to_score (cutoff, mu, lambda);
+    min_cm_cutoff = e_to_score (cm->cutoff, cm->mu, cm->lambda);
+
+  if (cm->cp9_cutoff_type == SCORE_CUTOFF) 
+    min_cp9_cutoff = cm->cp9_cutoff;
+  else 
+    min_cp9_cutoff = e_to_score (cm->cp9_cutoff, cm->cp9_mu, cm->cp9_lambda);
+
+  printf("B PSD rank: %4d mast: %4d cm_cutoff: %f cp9_cutoff: %f\n", mpi_my_rank, mpi_master_rank, min_cm_cutoff, min_cp9_cutoff);
 
   if (mpi_my_rank == mpi_master_rank) 
     {
@@ -248,21 +267,21 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 	      active_seq_index = search_check_results (active_seqs, process_status, cm->W);
 	      if (active_seqs[active_seq_index]->chunks_sent == 0) 
 		{
-		  if (cutoff_type == E_CUTOFF)
+		  if (cm->cutoff_type == E_CUTOFF)
 		    remove_hits_over_e_cutoff 
 		      (active_seqs[active_seq_index]->results[0],
 		       active_seqs[active_seq_index]->sq[0]->seq,
-		       cutoff, lambda, mu);
+		       cm->cutoff, cm->lambda, cm->mu);
 		  if (do_revcomp) 
 		    {
-		      if (cutoff_type == E_CUTOFF)
+		      if (cm->cutoff_type == E_CUTOFF)
 			remove_hits_over_e_cutoff 
 			  (active_seqs[active_seq_index]->results[1],
 			   active_seqs[active_seq_index]->sq[1]->seq,
-			   cutoff, lambda, mu);
+			   cm->cutoff, cm->lambda, cm->mu);
 		    }
-	      /* Check here if doing alignments and queue them or check if 
-		 all done */
+		  /* Check here if doing alignments and queue them or check if 
+		     all done */
 		  if (do_align && 
 		      active_seqs[active_seq_index]->alignments_sent == -1) 
 		    {
@@ -270,9 +289,17 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 						 active_seq_index, do_revcomp, ALN_WORK);
 		    }
 		  if (!do_align || 
-		      active_seqs[active_seq_index]->alignments_sent == 0) {
-		    print_results (cm, cons, active_seqs[active_seq_index], 
-				   do_revcomp, (cm->opts & CM_SEARCH_STATS), mu, lambda);
+		      active_seqs[active_seq_index]->alignments_sent == 0) 
+		    {
+		      /* Print results */
+		      if(cm->opts & CM_SEARCH_HMMONLY) /* pass CP9 EVD params */
+			print_results (cm, cons, active_seqs[active_seq_index], 
+				       do_revcomp, (cm->opts & CM_SEARCH_CP9STATS), 
+				       cm->cp9_mu, cm->cp9_lambda);
+		      else /* pass CM EVD params */
+			print_results (cm, cons, active_seqs[active_seq_index], 
+				       do_revcomp, (cm->opts & CM_SEARCH_CMSTATS), cm->mu, cm->lambda);
+		      
 		    if (do_revcomp) 
 		      {
 			FreeResults(active_seqs[active_seq_index]->results[1]);
@@ -302,7 +329,13 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 	    {
 	      /* Do the scan */
 	      results = CreateResults(INIT_RESULTS);
-	      actually_search_target(cm, seq, 1, seqlen, min_cutoff, results, TRUE, NULL);
+	      actually_search_target(cm, seq, 1, seqlen, min_cm_cutoff, min_cp9_cutoff,
+				     results, /* keep results */
+				     TRUE,  /* filter with a CP9 HMM if appropriate */
+				     FALSE, /* we're not building a histogram for CM stats  */
+				     FALSE, /* we're not building a histogram for CP9 stats */
+				     NULL); /* filter fraction, TEMPORARILY NULL            */
+
 	      search_send_scan_results (results, mpi_master_rank);
 	      FreeResults(results);
 	    } 
@@ -384,40 +417,51 @@ db_seq_t *read_next_seq (ESL_SQFILE *dbfp, int do_revcomp)
  *           dsq        - the digitized target sequence
  *           i0         - start of target subsequence (often 1, beginning of dsq)
  *           j0         - end of target subsequence (often L, end of dsq)
- *           cutoff     - minimum score to report 
+ *           cm_cutoff  - minimum CM  score to report 
+ *           cp9_cutoff - minimum CP9 score to report (or keep if filtering)
  *           results    - scan_results_t to add to; if NULL, don't add to it
  *           do_filter  - TRUE if we should filter, but only if cm->opts tells us to 
+ *           doing_cm_stats - TRUE if the reason we're scanning this seq is to build
+ *                            a histogram to calculate EVDs for the CM, in this
+ *                            case we don't filter regardless of what cm->opts says.
+ *           doing_cp9_stats- TRUE if we're calc'ing stats for the CP9, in this 
+ *                            case we always run CP9ForwardScan()
  *           ret_flen   - RETURN: subseq len that survived filter (NULL if not filtering)
- * 
  * Returns: Highest scoring hit from search (even if below cutoff).
  */
-float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cutoff, 
-			     scan_results_t *results, int do_filter, int *ret_flen)
+float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutoff, 
+			     float cp9_cutoff, scan_results_t *results, int do_filter, 
+			     int doing_cm_stats, int doing_cp9_stats, int *ret_flen)
 {
-
   float sc;
-  printf("in actually_search_target: i0: %d j0: %d do_filter: %d\n", i0, j0, do_filter);
+
+  printf("in actually_search_target: i0: %d j0: %d do_filter: %d doing_cm_stats: %d doing_cp9_stats: %d\n", i0, j0, do_filter, doing_cm_stats, doing_cp9_stats);
   int flen;
   flen = (j0-i0+1);
+
+  if(doing_cm_stats && doing_cp9_stats)
+    Die("ERROR in actually_search_target doing_cm_stats and doing_cp9_stats both TRUE.\n");
   
   /* check for CP9 related (either filtering or HMMONLY) options first */
-  if(cm->opts & CM_SEARCH_HMMONLY)
-    sc = CP9ForwardScan(cm, dsq, i0, j0, cm->W, cutoff, NULL, NULL, NULL, results);
-  else if(do_filter && cm->opts & CM_SEARCH_HMMFB)
-    sc = CP9FilteredScan(cm, dsq, i0, j0, cm->W, cutoff, results, ret_flen);
+  if((cm->opts & CM_SEARCH_HMMONLY) || doing_cp9_stats)
+    sc = CP9ForwardScan(cm, dsq, i0, j0, cm->W, cp9_cutoff, NULL, NULL, NULL, results);
+  else if(do_filter && (cm->opts & CM_SEARCH_HMMWEINBERG) 
+	  && (!doing_cm_stats)) /* if we're doing CM stats, don't filter. */
+      sc = CP9FilteredScan(cm, dsq, i0, j0, cm->W, cm_cutoff, cp9_cutoff, results, ret_flen);
   else
     {
       if(cm->opts & CM_SEARCH_NOQDB)
 	if(cm->opts & CM_SEARCH_INSIDE)
-	  sc = iInsideScan(cm, dsq, i0, j0, cm->W, cutoff, results);
-	else /* don't do inside */
-	  sc = CYKScan (cm, dsq, i0, j0, cm->W, cutoff, results);
-      else /* use QDB */
-	if(cm->opts & CM_SEARCH_INSIDE)
-	  sc = iInsideBandedScan(cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cutoff, results);
-	else /* do't do inside */
-	  sc = CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cutoff, results);
+	sc = iInsideScan(cm, dsq, i0, j0, cm->W, cm_cutoff, results);
+      else /* don't do inside */
+	sc = CYKScan (cm, dsq, i0, j0, cm->W, cm_cutoff, results);
+    else /* use QDB */
+      if(cm->opts & CM_SEARCH_INSIDE)
+	sc = iInsideBandedScan(cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
+      else /* do't do inside */
+	sc = CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
     }    
+  printf("returning from actually_search_target, sc: %f\n", sc);
   return sc;
 }  
 

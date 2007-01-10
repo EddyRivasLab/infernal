@@ -96,14 +96,26 @@ CreateCMShell(void)
   
   cm->dmin   = NULL;
   cm->dmax   = NULL;
-  cm->beta   = 0.0000001;     /* 1E-7 the default beta */
-  cm->hbandp = 0.0001;        /* 1E-4 the default hbandp */
+  cm->beta   = DEFAULT_BETA;     /* 1E-7 the default beta */
+  cm->hbandp = DEFAULT_HBANDP;   /* 1E-4 the default hbandp */
   cm->cp9    = NULL;          
   cm->cp9map = NULL;
-  cm->enf_start = 0;
-  cm->enf_seq = NULL;
+  cm->enf_start   = 0;
+  cm->enf_seq     = NULL;
   cm->score_boost = 0.;
-  cm->ffract  = 0.;
+  cm->ffract      = 0.;
+  cm->cutoff_type = DEFAULT_CM_CUTOFF_TYPE; /* score cutoff */
+  cm->cutoff      = DEFAULT_CM_CUTOFF;      /* 0.0 bits */
+  cm->cp9_cutoff_type = DEFAULT_CP9_CUTOFF_TYPE; /* score cutoff */
+  cm->cp9_cutoff      = DEFAULT_CP9_CUTOFF;      /* 0.0 bits */
+
+  /* initialize statically allocated EVD stats to 0.'s */
+  int i;
+  for(i = 0; i < GC_SEGMENTS; i++)
+    {
+      cm->mu[i]     = cm->lambda[i]     = cm->K[i]     = 0.;
+      cm->cp9_mu[i] = cm->cp9_lambda[i] = cm->cp9_K[i] = 0.;
+    }
   return cm;
 }
 void

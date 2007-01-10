@@ -41,15 +41,13 @@
  *           cm          the model
  *           num_samples number of samples to take
  *           sample_length  length of each sample
- *           mu_p        pointer to final mu
- *           lambda_p    pointer to final lambda
  *           use_easel - TRUE to use Easel's histogram and EVD fitters, false to
  *                       use RSEARCH versions.
  *
  */  
 void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 			    CM_t *cm, int num_samples, int sample_length, 
-			    double *lambda, double *K, int use_easel)
+			    int doing_cp9_stats, int use_easel)
 {
   int i;
   char *randseq;
@@ -77,15 +75,7 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
   int   *hitj;                  /* end positions of hits */
   float *hitsc;			/* scores of hits */
 
-  /*printf("in serial_make_histogram, nparts: %d sample_len: %d do_ins: %d do_enf: %d\n", num_partitions, sample_length, (cm->opts & CM_SEARCH_INSIDE), (cm->opts & CM_CONFIG_ENFORCE));*/
-
-  if (num_samples == 0) {
-    for (i=0; i<GC_SEGMENTS; i++) {
-      K[i] = 0.;
-      lambda[i] = 0.;
-    }
-    return;        /* No sequence to analyse */
-  }
+  printf("in serial_make_histogram, nparts: %d sample_len: %d cp9_stats: %d do_ins: %d do_enf: %d\n", num_partitions, sample_length, doing_cp9_stats, (cm->opts & CM_SEARCH_INSIDE), (cm->opts & CM_CONFIG_ENFORCE));
 
   /* Allocate for random distribution */
   nt_p = MallocOrDie(sizeof(float)*Alphabet_size); 
@@ -148,7 +138,16 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 	  dsq = DigitizeSequence (randseq, sample_length);
 	  
 	  /* Do the scan */
-	  score = actually_search_target(cm, dsq, 1, sample_length, 0., NULL, FALSE, NULL);
+	  score = 
+	    actually_search_target(cm, dsq, 1, sample_length, 
+				   0.,    /* cutoff is 0 bits (actually we'll find highest
+					   * negative score if it's < 0.0) */
+				   0.,    /* CP9 cutoff is 0 bits */
+				   NULL,  /* don't keep results */
+				   FALSE, /* don't filter with a CP9 HMM */
+				   (!doing_cp9_stats), /* TRUE if we're calc'ing CM stats */
+				   doing_cp9_stats,    /* TRUE if we're calc'ing CP9 stats */
+				   NULL);          /* filter fraction N/A */
 	  if(i % 100 == 0)
 	    printf("(%4d) SCORE: %f\n", i, score);
 	  /* Add best score to histogram */
@@ -178,8 +177,16 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 	{
 	  if(use_easel)
 	    {
-	      lambda[i] = curr_lambda;
-	      K[i] = exp(curr_mu * curr_lambda)/sample_length;
+	      if(doing_cp9_stats)
+		{
+		  cm->cp9_lambda[i] = curr_lambda;
+		  cm->cp9_K[i] = exp(curr_mu * curr_lambda)/sample_length;
+		}
+	      else /* we're calc'ing stats for the CM */
+		{
+		  cm->lambda[i] = curr_lambda;
+		  cm->K[i] = exp(curr_mu * curr_lambda)/sample_length;
+		}
 	      /*printf("ESL i: %d lambda: %f K: %f\n", i, lambda[i], K[i]);*/
 	      /*printf("OLD i: %d lambda: %f K: %f\n\n", i, ((double) h_old->param[EVD_LAMBDA]),
 		((double) exp(h_old->param[EVD_MU]*h_old->param[EVD_LAMBDA])/sample_length));*/
@@ -202,7 +209,7 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 #ifdef USE_MPI
 void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions, 
 			      CM_t *cm, int num_samples, int sample_length,
-			      double *lambda, double *K, 
+			      int doing_cp9_stats,
 			      int mpi_my_rank, int mpi_num_procs, 
 			      int mpi_master_rank) 
 {
@@ -242,16 +249,9 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
   int   *hitj;                  /* end positions of hits */
   float *hitsc;			/* scores of hits */
 
-  printf("in parallel_make_histogram, nparts: %d sample_len: %d do_ins: %d do_enf: %d\n", num_partitions, sample_length, (cm->opts & CM_SEARCH_INSIDE), (cm->opts & CM_CONFIG_ENFORCE));
+  printf("in parallel_make_histogram, nparts: %d sample_len: %d cp9_stats: %d do_ins: %d do_enf: %d\n", num_partitions, sample_length, doing_cp9_stats, (cm->opts & CM_SEARCH_INSIDE), (cm->opts & CM_CONFIG_ENFORCE));
 
   tmp_name = sre_strdup("random", -1);
-  if (num_samples == 0) {
-    for (i = 0; i<GC_SEGMENTS; i++) {
-      K[i] = 0.;
-      lambda[i] = 0.;
-    }
-    return;  /* No sequence to analyse */
-  }
 
   if (mpi_my_rank == mpi_master_rank) 
     {
@@ -400,13 +400,24 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 	esl_histogram_GetTailByMass(h[cur_partition], 0.5, &xv, &n, &z); /* fit to right 50% */
 	esl_gumbel_FitCensored(xv, n, z, xv[0], &curr_mu, &curr_lambda);
 	
-	for (i=0; i<GC_SEGMENTS; i++) {
-	  if (partitions[i] == cur_partition) {
-	    lambda[i] = curr_lambda;
-	    K[i] = exp(curr_mu * curr_lambda)/sample_length;
-	    /*printf("P ESL i: %d lambda: %f K: %f\n", i, lambda[i], K[i]);*/
+	for (i=0; i<GC_SEGMENTS; i++) 
+	  {
+	    if (partitions[i] == cur_partition) 
+	      {
+		if(doing_cp9_stats) 
+		  {
+		    cm->cp9_lambda[i] = curr_lambda;
+		    cm->cp9_K[i] = exp(curr_mu * curr_lambda)/sample_length;
+		    /*printf("P ESL i: %d lambda: %f K: %f\n", i, lambda[i], K[i]);*/
+		  }
+		else /* we're calcing stats for the CM */
+		  {
+		    cm->lambda[i] = curr_lambda;
+		    cm->K[i] = exp(curr_mu * curr_lambda)/sample_length;
+		    /*printf("P ESL i: %d lambda: %f K: %f\n", i, lambda[i], K[i]);*/
+		  }
+	      }
 	  }
-	}
       }
       free(randseqs);
       free(process_status);
@@ -427,7 +438,16 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 	  job_type = search_receive_job(&seqlen, &dsq, &dummy, mpi_master_rank);
 	  if (job_type == SEARCH_HIST_SCAN_WORK) 
 	    {
-	      score = actually_search_target(cm, dsq, 1, sample_length, 0., NULL, FALSE, NULL);
+	      score = 
+		actually_search_target(cm, dsq, 1, sample_length, 
+				       0.,    /* CM cutoff is 0 bits (actually we'll find highest
+					       * negative score if it's < 0.0) */
+				       0.,    /* CP9 cutoff is 0 bits */
+				       NULL,  /* don't keep results */
+				       FALSE, /* don't filter with a CP9 HMM */
+				       (!doing_cp9_stats), /* TRUE if we're calc'ing CM stats */
+				       doing_cp9_stats,    /* TRUE if we're calc'ing CP9 stats */
+				       NULL);          /* filter fraction N/A */
 	      printf("score: %f\n", score);
 	      search_send_hist_scan_results (score, mpi_master_rank);
 	    }

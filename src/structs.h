@@ -18,6 +18,14 @@
 #include "esl_sqio.h"
 #include "cplan9.h"
 
+/* various default parameters for CMs and CP9 HMMs */ 
+#define DEFAULT_CM_CUTOFF 0.0
+#define DEFAULT_CM_CUTOFF_TYPE SCORE_CUTOFF
+#define DEFAULT_CP9_CUTOFF 0.0
+#define DEFAULT_CP9_CUTOFF_TYPE SCORE_CUTOFF
+#define DEFAULT_BETA   0.0000001
+#define DEFAULT_HBANDP 0.0001
+
 #define GC_SEGMENTS 101                   /* Possible integer GC contents */
 
 #define BE_EFFICIENT  0		/* setting for do_full: small memory mode */
@@ -25,7 +33,7 @@
 
 /* Constants for type of cutoff */
 #define SCORE_CUTOFF 0
-#define E_CUTOFF 1
+#define E_CUTOFF     1
 
 /* Alphabet information is declared here, and defined in globals.c.
  */
@@ -250,12 +258,27 @@ typedef struct cm_s {
   char     *enf_seq;    /* if(cm->opts & CM_CONFIG_ENFORCE) the subseq to enforce, else NULL  */
   float     score_boost;/* value added to CYK bit scores during search (usually 0.)           */
   float     ffract;     /* desired filter fraction (0.99 -> filter out 99% of db), default: 0.*/
+
+  /* search cutoffs */
+  int       cutoff_type;/* either SC_CUTOFF or E_CUTOFF                                       */
+  float     cutoff;     /* min bit score or max E val to keep in a scan (depending on cutoff_type) */
+  int   cp9_cutoff_type;/* either SC_CUTOFF or E_CUTOFF                                       */
+  float cp9_cutoff;     /* min bit score or max E val to keep from a CP9 scan                 */
+  
+
+  /* EVD statistics for the CM */
+  double    lambda[GC_SEGMENTS];    /* EVD lambda, one for each GC segment   */
+  double    K     [GC_SEGMENTS];    /* EVD K, one for each GC segment        */
+  double    mu    [GC_SEGMENTS];    /* EVD mu, one for each GC segment       */
+  double cp9_lambda[GC_SEGMENTS];   /* CP9's EVD lambda, one for each GC segment   */
+  double cp9_K     [GC_SEGMENTS];   /* CP9's EVD K, one for each GC segment        */
+  double cp9_mu    [GC_SEGMENTS];   /* CP9's EVD mu, one for each GC segment       */
   /* end of added by EPN */
 
   int    W;             /* max d: max size of a hit (EPN 08.18.05) */
   float  el_selfsc;     /* score of a self transition in the EL state
 			 * the EL state emits only on self transition (EPN 11.15.05)*/
-  int   iel_selfsc;    /* scaled int version of el_selfsc         */
+  int   iel_selfsc;     /* scaled int version of el_selfsc         */
 
 
 } CM_t;
@@ -263,6 +286,9 @@ typedef struct cm_s {
 /* status flags, cm->flags */
 #define CM_LOCAL_BEGIN        (1<<0)  /* Begin distribution is active (local ali) */
 #define CM_LOCAL_END          (1<<1)  /* End distribution is active (local ali)   */
+#define CM_STATS              (1<<2)  /* EVD stats, mu, lambda, K are set         */
+#define CM_CP9                (1<<3)  /* CP9 HMM is valid in cm->cp9              */
+#define CM_CP9STATS           (1<<4)  /* CP9 HMM has EVD stats                    */
 
 /* options, cm->opts */
 /* model configuration options */
@@ -296,8 +322,9 @@ typedef struct cm_s {
 #define CM_SEARCH_TOPONLY     (1<<23) /* don't search reverse complement          */
 #define CM_SEARCH_NOALIGN     (1<<24) /* don't align hits, just report locations  */
 #define CM_SEARCH_NULL2       (1<<25) /* use post hoc second null model           */
-#define CM_SEARCH_STATS       (1<<26) /* calculate E-value statistics             */
-#define CM_SEARCH_FFRACT      (1<<27) /* filter to filter fraction cm->ffract     */
+#define CM_SEARCH_CMSTATS     (1<<26) /* calculate E-value statistics for CM      */
+#define CM_SEARCH_CP9STATS    (1<<27) /* calculate E-value stats for CP9 HMM      */
+#define CM_SEARCH_FFRACT      (1<<28) /* filter to filter fraction cm->ffract     */
 
 /* info on if the CM is a sub model or fullsub model */
 #define CM_IS_SUB             (1<<27) /* the CM is a sub CM                       */

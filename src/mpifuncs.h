@@ -84,9 +84,7 @@ extern void search_first_broadcast (int *num_samples, float *W_scale,
 				    int mpi_my_rank, int mpi_master_rank);
 
 /* Second broadcast of information */
-extern void search_second_broadcast (float *sc_cutoff, float *e_cutoff, int *cutoff_type, 
-				     double *mu, double *lambda, 
-				     double *K, long *N, int mpi_my_rank, int mpi_master_rank);
+extern void search_second_broadcast (CM_t **cm, int *N, int mpi_my_rank, int mpi_master_rank);
 
 /* Get job from master process */
 extern char search_receive_job (int *seqlen_p, char **seq_p, int *bestr_p, int mpi_master_rank);

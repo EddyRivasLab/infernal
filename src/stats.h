@@ -10,12 +10,13 @@
 
 extern void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 				   CM_t *cm, int num_samples, int sample_length, 
-				   double *lambda, double *K, int use_easel);
+				   int doing_cp9_stats,
+				   int use_easel);
 
 #ifdef USE_MPI
 void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions, 
 			      CM_t *cm, int num_samples, int sample_length,
-			      double *lambda, double *K, 
+			      int doing_cp9_stats,
 			      int mpi_my_rank, int mpi_num_procs, 
 			      int mpi_master_rank);
 #endif

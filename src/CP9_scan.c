@@ -110,7 +110,7 @@ CP9ForwardScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **r
       dmx[j]   = MallocOrDie(sizeof(int) * (cm->cp9->M+1));
     }
   /* isc will hold P(seq up to j | Model) in int log odds form */
-  isc   = MallocOrDie(sizeof(int) * (j0-i0+1));
+  isc   = MallocOrDie(sizeof(int) * (j0-i0+2));
 			
   /* Initialization of the zero row. */
   mmx[0][0] = 0;      /* M_0 is state B, and everything starts in B */
@@ -282,20 +282,21 @@ CP9ForwardScanRequires(CP9_t *hmm, int L, int W)
  *           scanned with a CM scan. 
  * 
  * Args:     
- *           cm      - the covariance model, includes cm->cp9: a CP9 HMM
- *           dsq     - sequence in digitized form
- *           i0      - start of target subsequence (1 for beginning of dsq)
- *           j0      - end of target subsequence (L for end of dsq)
- *           W       - the maximum size of a hit (often cm->W)
- *           cutoff  - minimum score to report
- *           results - scan_results_t to add to, only passed to 
- *                     actually_search_target()
- *           ret_flen- RETURN: subseq len that survived filter
+ *           cm         - the covariance model, includes cm->cp9: a CP9 HMM
+ *           dsq        - sequence in digitized form
+ *           i0         - start of target subsequence (1 for beginning of dsq)
+ *           j0         - end of target subsequence (L for end of dsq)
+ *           W          - the maximum size of a hit (often cm->W)
+ *           cm_cutoff  - minimum CM  score to report 
+ *           cp9_cutoff - minimum CP9 score to report (or keep if filtering)
+ *           results    - scan_results_t to add to, only passed to 
+ *                        actually_search_target()
+ *           ret_flen   - RETURN: subseq len that survived filter
  * Returns:  best_sc, score of maximally scoring end position j 
  */
 float
-CP9FilteredScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
-		float cutoff, scan_results_t *results, int *ret_flen)
+CP9FilteredScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff, 
+		float cp9_cutoff, scan_results_t *results, int *ret_flen)
 {
   printf("in CP9FilteredScan()\n");
   int *hitj;
@@ -309,7 +310,7 @@ CP9FilteredScan(CM_t *cm, char *dsq, int i0, int j0, int W,
   float ffrac;
 
   /* Scan the (sub)seq w/Forward, getting j end points of hits above cutoff */
-  best_hmm_sc = CP9ForwardScan(cm, dsq, i0, j0, W, cutoff, NULL, &hitj, &nhits, NULL);
+  best_hmm_sc = CP9ForwardScan(cm, dsq, i0, j0, W, cp9_cutoff, NULL, &hitj, &nhits, NULL);
   /* Send promising subseqs to actually_search_target(): send subseq [j-W..j..j+W] 
    * for each hit endpoint j returned from CP9ForwardScan, or if there's overlap, send 
    * minimal subseq that encompasses all overlapping hits with W residue 'pad' on 
@@ -341,7 +342,12 @@ CP9FilteredScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 	  else next_i0 = next_j0 = -1;
 	}
       printf("calling actually_search_target: %d %d\n", curr_i0, curr_j0);
-      cm_sc = actually_search_target(cm, dsq, curr_i0, curr_j0, cutoff, results, FALSE);
+      cm_sc =
+	actually_search_target(cm, dsq, curr_i0, curr_j0, cm_cutoff, results, 
+			       FALSE, /* don't filter, we already have                */
+			       FALSE, /* we're not building a histogram for CM stats  */
+			       FALSE, /* we're not building a histogram for CP9 stats */
+			       NULL); /* filter fraction N/A                          */
       flen += (curr_j0 - curr_i0 + 1);
       if(cm_sc > best_cm_sc) best_cm_sc = cm_sc;
     }

@@ -136,35 +136,13 @@ typedef struct cplan9_s {
   float  null[CP9MAXABET];         /* "random sequence" emission prob's     +*/
   float  p1;                        /* null model loop probability           +*/
 
-  /* P-value and E-value statistical parameters
-   * Only valid if CPLAN9_STATS is set.
-   */
-  float  mu;			/* EVD mu       +*/
-  float  lambda;		/* EVD lambda   +*/
-
   int flags;                    /* bit flags indicating state of HMM, valid data +*/
 } CP9_t;
 
-/* EPN 03.10.06 I left the flags alone from plan 7. */
 /* Flag codes for cplan9->flags.
  */
 #define CPLAN9_HASBITS (1<<0)    /* raised if model has log-odds scores      */
-#define CPLAN9_DESC    (1<<1)    /* raised if description exists             */
-#define CPLAN9_RF      (1<<2)    /* raised if #RF annotation available       */
-#define CPLAN9_CS      (1<<3)    /* raised if #CS annotation available       */
-#define CPLAN9_XRAY    (1<<4)    /* raised if structural data available      */
-#define CPLAN9_HASPROB (1<<5)    /* raised if model has probabilities        */
-#define CPLAN9_HASDNA  (1<<6)	/* raised if protein HMM->DNA seq params set*/
-#define CPLAN9_STATS   (1<<7)	/* raised if EVD parameters are available   */
-#define CPLAN9_MAP     (1<<8)	/* raised if alignment map is available     */
-#define CPLAN9_ACC     (1<<9)	/* raised if accession number is available  */
-#define CPLAN9_GA      (1<<10)	/* raised if gathering thresholds available */
-#define CPLAN9_TC      (1<<11)	/* raised if trusted cutoffs available      */
-#define CPLAN9_NC      (1<<12)	/* raised if noise cutoffs available        */
-#define CPLAN9_CA      (1<<13)   /* raised if surface accessibility avail.   */
-#define CPLAN9_HASALG  (1<<14)   /* raised if model is algorithm-configured  */
-#define CPLAN9_BIMPOSED (1<<15)  /* raised if all entries are B->M_k (not D) */
-#define CPLAN9_EIMPOSED (1<<16)  /* raised if all ends are M_k->E (not D)    */
+#define CPLAN9_HASPROB (1<<1)    /* raised if model has probabilities        */
 
 /* Indices for CM Plan9 main model state transitions.
  * Used for indexing hmm->t[k][]
