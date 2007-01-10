@@ -210,3 +210,25 @@ realized that introduced another bug - so it was really fixed with
 revision 1772. 
 
 //
+
+ID              i11
+TITLE		Incorrect insert state detachment in zero length hairpin loops
+STATUS          CLOSED
+XREF            ~nawrockie/notebook/7_0110_inf_bug_adj_bp_detach_insert/
+REPORTED_BY     Eric Nawrocki
+CLOSED_DATE     EPN, Wed Jan 10 17:56:33 2007
+DESCRIPTION     
+
+If two consensus columns are modelled by the left and right half of 
+a single base pair, then the code for checking and detaching so-called
+dual-inserts (the sole source of ambiguity in the CM architecture)
+incorrectly detached the MATP_IL state, instead of the MATP_IR state.
+
+NOTE: A cp9-test run in testsuites/ will likely still fail for 
+      any model with a zero length consensus hairpin b/c they
+      represent a special case of CM architecture where a CP9 HMM just
+      can't achieve the same first order Markov chain characteristics
+      as the CM in the region near the offending 0-length hairpin.
+      cp9-test now checks for zero length hairpins and prints a 
+      warning to the screen.
+//

@@ -35,3 +35,6 @@
 # i10 - QDB search error if W is set at command line
 2 exercise   i10/cmsearch-W  ./i10 @cmbuild@ @cmsearch@
 
+# i11 - Incorrect insert state detachment in zero length hairpin loops
+2 exercise   i11/cmbuild-detach ./i11 @cmbuild@ @cmalign@
+

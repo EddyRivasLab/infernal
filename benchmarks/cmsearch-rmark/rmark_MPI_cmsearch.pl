@@ -144,18 +144,10 @@ for($i = 0; $i < scalar(@fam_roots_arr); $i++)
     $job_name = "rm-$fam";
     $cmsearch_name = "rm-$fam.cmsearch";
     $out_name = "rm-$fam.out";
-    $err_name = "rm-$fam.err";
 
-    if($use_evalues)
-    {
-	$cmsearch_call = "mpirun C $cms -E $e_cutoff --noalign $cm $genome_file";
-    }
-    elsif($use_bitscores)
-    {
-	$cmsearch_call = "mpirun C $cms -s $b_cutoff --noalign $cm $genome_file";
-    }	
+    $cmsearch_call = "mpirun C $cms --noalign $cm $genome_file";
 
-    $exec_line = "qsub -N $job_name -o $out_name -e $err_name -b y -cwd -V -j y -pe lam-mpi-tight $nprocs \'" . $cmsearch_call . " > $cmsearch_name\'";
+    $exec_line = "qsub -N $job_name -o $out_name -b y -cwd -V -j y -pe lam-mpi-tight $nprocs \'" . $cmsearch_call . " > $cmsearch_name\'";
     push(@exec_lines, $exec_line);
 }
 

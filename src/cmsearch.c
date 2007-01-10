@@ -348,7 +348,7 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--banddump")  == 0) do_bdump     = TRUE;
     else if  (strcmp(optname, "--sums")      == 0) use_sums     = TRUE;
     else if  (strcmp(optname, "--scan2hbands")== 0) do_scan2hbands= TRUE;
-    else if (strcmp (optname, "--partition") == 0) 
+    else if  (strcmp (optname, "--partition") == 0) 
       {
 	do_partitions = TRUE;
 	if (!(set_partitions (&partitions, &num_partitions, optarg)))

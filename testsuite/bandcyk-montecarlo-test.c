@@ -117,7 +117,7 @@ main(int argc, char **argv)
 
   /* BandCalculationEngine() calculates a real density for each state v
    */
-  if (! BandCalculationEngine(cm, maxW, 0.001, TRUE, NULL, NULL, &gamma, FALSE))
+  if (! BandCalculationEngine(cm, maxW, 0.001, TRUE, NULL, NULL, &gamma))
     Die("Your maxW (%d) must be too small, sorry...\n", maxW);
 
   for (v = 0; v < cm->M; v++)

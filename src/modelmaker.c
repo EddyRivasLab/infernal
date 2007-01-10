@@ -1367,6 +1367,7 @@ cm_detach_state(CM_t *cm, int insert1, int insert2)
   int ret_val;
   int x, y;
   int to_detach;
+  int x_offset;
 
   ret_val = FALSE;
 
@@ -1389,18 +1390,28 @@ cm_detach_state(CM_t *cm, int insert1, int insert2)
     }
   if(ret_val)
     {
+      /* Determine if we're detaching an IL_st, or the rare case of a MATP_IR st */
+      if(cm->sttype[to_detach] == IL_st)
+	x_offset = 0;
+      else
+	{
+	  if(cm->stid[to_detach] != MATP_IR)
+	    Die("ERROR: in cm_detach_state trying to detach a non-IL, non-MATP_IR state!\n");
+	  x_offset = 1; /* MATP_* -> MATP_IR is second possible transition for MATP_*,
+			 * unless * == MATP_IR, but we don't get there in for loop below. */
+	}
       for (y = cm->pnum[to_detach]-1; y >= 1; y--)  
 	/* y >= 1 means we never get to 
 	 * to_detach->to_detach prob, which is irrelevant. */
 	{
 	  x = cm->plast[to_detach] - y;
-	  cm->t[x][0] = 0.0; /* x is a split set state in same node
+	  cm->t[x][x_offset] = 0.0; /* x is a split set state in same node
 			      * as insert1, we're setting transition
 			      * from x -> to_detach as impossible.
 			      */
 	  /* Renormalize transitions out of x */
 	  FNorm(cm->t[x], cm->cnum[x]);
-	  /*printf("****setting transition probabilitity of x: %d to to_detach: %d cm->t[x][0] as 0.0\n", x, to_detach);*/
+	  /*printf("****setting transition probabilitity of x: %d to to_detach: %d cm->t[x][%d] as 0.0\n", x, to_detach, x_offset);*/
 	}
     }
   return ret_val;
@@ -1415,10 +1426,16 @@ cm_detach_state(CM_t *cm, int insert1, int insert2)
  * the parses implicit in the seed alignment), check the following
  * two guarantees are met:
  * (a) exactly one of the two inserts is immediately prior to an END_E
- *     state (END_E - 1)
+ *     state (END_E - 1).
  * (b) the END_E - 1 state has been parameterized with 0 counts from
  *     the input alignment.
- * 
+ *
+ * NOTE: A special case is when insert1 is the MATP_IL and insert2 the 
+ *       MATP_IR of the same MATP node. This is the only case where
+ *       the insert state to be detached is not an IL state, but rather
+ *       the MATP_IR (but the guarantees still hold, the MATP_IR is 
+ *       END_E - 1, and always gets 0 counts)
+ *
  * Args:    
  * CM_t  cm,
  * int   insert1; 
