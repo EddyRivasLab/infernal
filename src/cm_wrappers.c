@@ -918,6 +918,8 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 				         * and arrays for CM state bands, derived from HMM bands*/
   CP9Map_t       *cp9map;        /* maps the hmm to the cm and vice versa */
   CP9_dpmatrix_t *cp9_post;      /* growable DP matrix for posterior decode              */
+  float           swentry;	 /* S/W aggregate entry probability       */
+  float           swexit;        /* S/W aggregate exit probability        */
 
   /* variables related to the do_sub option */
   CM_t              *sub_cm;       /* sub covariance model                      */
@@ -1038,6 +1040,17 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	  orig_dmax[v] = cm->dmax[v];
 	}
     }	  
+
+  if(do_sub) /* to get spos and epos for the sub_cm, 
+	      * we config the HMM to local mode with equiprobably start/end points.*/
+      {
+	/*printf("configuring the CM plan 9 HMM for local alignment.\n");*/
+	swentry= ((hmm->M)-1.)/hmm->M; /* all start pts equiprobable, including 1 */
+	swexit = ((hmm->M)-1.)/hmm->M; /* all end   pts equiprobable, including M */
+	CPlan9SWConfig(hmm, swentry, swexit);
+	CP9Logoddsify(hmm);
+      }
+
   if(do_post)
     postcode = malloc(sizeof(char *) * nseq);
 
@@ -1059,10 +1072,18 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
       printf("do_hbanded: %d\n", do_hbanded);
       /* Potentially, do HMM calculations. */
       if(do_hbanded)
-	CP9_seq2bands(orig_cm, sq[i]->dsq, 1, sq[i]->n, &cp9b, debug_level);
-
+	{
+	  if(do_sub)
+	    CP9_seq2bands(orig_cm, sq[i]->dsq, 1, sq[i]->n, &cp9b, 
+			  &cp9_post, /* we DO want the posterior matrix back */
+			  debug_level);
+	  else
+	    CP9_seq2bands(orig_cm, sq[i]->dsq, 1, sq[i]->n, &cp9b, 
+			  NULL, /* we don't want the posterior matrix back */
+			  debug_level);
+	}
       /* If we're in sub mode:
-       * (1) Get HMM posteriors. 
+       * (1) Get HMM posteriors (if do_hbanded, we already have them) 
        * (2) Infer the start (spos) and end (epos) HMM states by 
        *     looking at the posterior matrix.
        * (3) Build the sub_cm from the original CM.
@@ -1073,7 +1094,10 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
        */
       if(do_sub)
 	{
-	  CP9_seq2posteriors(orig_cm, sq[i]->dsq, 1, sq[i]->n, &cp9_post, debug_level);
+	  /* (1) Get HMM posteriors (if do_hbanded, we already have them) */
+	  if(!do_hbanded) 
+	    CP9_seq2posteriors(orig_cm, sq[i]->dsq, 1, sq[i]->n, &cp9_post, debug_level); 
+	  
 	  /* (2) infer the start and end HMM states by looking at the posterior matrix.
 	   * Remember: we're necessarily in local mode, the --sub option turns local mode on. 
 	   */
@@ -1108,7 +1132,9 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	      /* Get the HMM bands for the sub_cm */
 	      sub_hmm = sub_cm->cp9;
 	      sub_cp9map = sub_cm->cp9map;
-	      CP9_seq2bands(sub_cm, sq[i]->dsq, 1, sq[i]->n, &sub_cp9b, debug_level);
+	      CP9_seq2bands(sub_cm, sq[i]->dsq, 1, sq[i]->n, &sub_cp9b, 
+			    NULL, /* we don't want posterior matrix back */
+			    debug_level);
 	      hmm           = sub_hmm;    
 	      cp9map        = sub_cp9map;
 	      cp9b          = sub_cp9b;

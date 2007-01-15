@@ -128,11 +128,13 @@ dbl_Score2Prob(int sc, float null)
  *           i0          - start of target subsequence (often 1, beginning of dsq)
  *           j0          - end of target subsequence (often L, end of dsq)
  *           ret_cp9b    - RETURN: the HMM bands for this sequence.
+ *           ret_cp9_post - RETURN: the HMM posterior matrix (NULL if not wanted)
  *           debug_level - verbosity level for debugging printf()s
  * Return:  void
  */
 void 
-CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t **ret_cp9b, int debug_level)
+CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t **ret_cp9b, 
+	      CP9_dpmatrix_t **ret_cp9_post, int debug_level)
 {
   CP9Bands_t     *cp9b;     /* data structure for hmm bands (bands on the hmm states)    * 
   		 	     * and arrays for CM state bands, derived from HMM bands     */
@@ -209,6 +211,10 @@ CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t **ret_cp9b, int de
 			 (j0-i0+1));
 
   *ret_cp9b = cp9b;
+  if(ret_cp9_post != NULL)
+    *ret_cp9_post = cp9_post;
+  else
+    ;/* free cp9post */
   return;
 }
 

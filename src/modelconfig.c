@@ -105,7 +105,9 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
     }
   /* If in local mode and using a CP9 HMM, configure it for local alignment,
    * but not in a way that matches the CM locality (that's a TODO) */
-  if(do_build_cp9 && (cm->opts & CM_CONFIG_LOCAL))
+  if((do_build_cp9 && (cm->opts & CM_CONFIG_LOCAL)) ||
+     (do_build_cp9 && (cm->opts & CM_ALIGN_SUB))    ||
+     (do_build_cp9 && (cm->opts & CM_ALIGN_FSUB)))
     {
       if((cm->opts & CM_ALIGN_SUB) || (cm->opts & CM_ALIGN_FSUB))
 	{

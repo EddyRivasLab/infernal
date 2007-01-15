@@ -904,8 +904,10 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
   int       gamma_j;            /* j index in the gamma matrix, which is indexed 0..j0-i0+1, 
 				 * while j runs from i0..j0 */
   int       gamma_i;            /* i index in the gamma* data structures */
+  int       curr_dmax;          /* temporary value for max d in for loops */
   float     best_score;         /* Best overall score from semi-HMM to return */
   float     best_neg_score;     /* Best score overall score to return, used if all scores < 0 */
+
 
   best_score     = IMPOSSIBLE;
   best_neg_score = IMPOSSIBLE;
@@ -1030,10 +1032,14 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
       prv = (j-1)%2;
       for (v = cm->M-1; v > 0; v--) /* ...almost to ROOT; we handle ROOT specially... */
 	{
+	  /* determine max d we're allowing for this state v and this position j */
+	  curr_dmax = (gamma_j < dmax[v]) ? gamma_j : dmax[v];
+	  if(curr_dmax > W) curr_dmax = W;
+
 	  if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
 	    {
 	      if (cm->stid[v] == BEGL_S) jp = j % (W+1); else jp = cur;
-	      for (d = dmin[v]; (d <= dmax[v] && d <= gamma_j) && d <= W; d++) 
+	      for (d = dmin[v]; d <= curr_dmax; d++) 
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][jp][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
@@ -1045,7 +1051,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 	    }
 	  else if (cm->sttype[v] == MP_st) 
 	    {
-	      for (d = dmin[v]; (d <= dmax[v] && d <= gamma_j) && d <= W; d++)
+	      for (d = dmin[v]; d <= curr_dmax; d++)
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
@@ -1064,7 +1070,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 	    }
 	  else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) 
 	    {
-	      for (d = dmin[v]; (d <= dmax[v] && d <= gamma_j) && d <= W; d++)
+	      for (d = dmin[v]; d <= curr_dmax; d++)
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
@@ -1083,7 +1089,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 	    }
 	  else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) 
 	    {
-	      for (d = dmin[v]; (d <= dmax[v] && d <= gamma_j) && d <= W; d++)
+	      for (d = dmin[v]; d <= curr_dmax; d++)
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
@@ -1104,7 +1110,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 	      w = cm->cfirst[v];
 	      y = cm->cnum[v];
 	      i = j-d+1;
-	      for (d = dmin[v]; (d <= dmax[v] && d <= gamma_j) && d <= W; d++) 
+	      for (d = dmin[v]; d <= curr_dmax; d++) 
 		{
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
 		  /* k is the length of the right fragment */
@@ -1136,7 +1142,12 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
        * by the way local alignment is parameterized (other transitions are
        * -INFTY), which is probably a little too fragile of a method. 
        */
-      for (d = dmin[0]; (d <= dmax[0] && d <= gamma_j) && d <= W; d++)
+
+      /* determine max d we're allowing for the root state and this position j */
+      curr_dmax = (gamma_j < dmax[0]) ? gamma_j : dmax[0];
+      if(curr_dmax > W) curr_dmax = W;
+
+      for (d = dmin[0]; d <= curr_dmax; d++)
 	{
 	  y = cm->cfirst[0];
 	  alpha[0][cur][d] = alpha[y][cur][d] + cm->tsc[0][0];
@@ -1180,7 +1191,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
       gback[gamma_j]  = -1;
       savesc[gamma_j] = IMPOSSIBLE;
       saver[gamma_j]  = -1;
-      for (d = dmin[0]; (d <= dmax[0] && d <= gamma_j) && d <= W; d++) 
+      for (d = dmin[0]; d <= curr_dmax; d++) 
 	{
 	  i = j-d+1;
 	  gamma_i = j-d+1-i0+1;

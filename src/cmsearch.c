@@ -509,7 +509,6 @@ main(int argc, char **argv)
 
 #ifdef USE_MPI
 }   /* End of first block that is only done by master process */
-  printf("check 0 rank: %d\n", mpi_my_rank);
   /* Barrier for debugging */
   MPI_Barrier(MPI_COMM_WORLD);
 
@@ -518,7 +517,6 @@ main(int argc, char **argv)
   broadcast_cm(&cm, mpi_my_rank, mpi_master_rank);
   search_first_broadcast(&num_samples, &W_scale, mpi_my_rank, 
 			 mpi_master_rank);
-  printf("check 0b rank: %d\n", mpi_my_rank);
   
 #endif
 
@@ -527,10 +525,8 @@ main(int argc, char **argv)
    * preset_dmin and preset_dmax are NULL unless --qdbfile, 
    * and you can't enable --qdbfile in MPI mode 
    * (we check for this and die if it's true above). */
-  printf("check 0c rank: %d\n", mpi_my_rank);
   ConfigCM(cm, preset_dmin, preset_dmax);
 
-  printf("check 0d rank: %d\n", mpi_my_rank);
   cons = CreateCMConsensus(cm, 3.0, 1.0); 
 #ifdef USE_MPI
   if(mpi_my_rank == mpi_master_rank)
@@ -559,14 +555,12 @@ main(int argc, char **argv)
 #ifdef USE_MPI
     }
 #endif
-  printf("check 0c rank: %d\n", mpi_my_rank);
   /* Set sample_length to 2*W if not yet set */
   if (sample_length == 0) sample_length = W_scale * cm->W;
   /*printf("0 W: %d W_scale: %f sample_length: %d\n", W, W_scale, sample_length);*/
   printf("cm stats: %d (%d) cp9 stats: %d (%d)\n", (cm->opts & CM_SEARCH_CMSTATS),
     do_cm_stats, (cm->opts & CM_SEARCH_CP9STATS), do_cp9_stats);
   
-  printf("check 1 rank: %d\n", mpi_my_rank);
   if (cm->opts & CM_SEARCH_CMSTATS) 
     {
       printf("CALCING CM STATS\n");
