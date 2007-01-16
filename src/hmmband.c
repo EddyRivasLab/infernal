@@ -214,7 +214,7 @@ CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t **ret_cp9b,
   if(ret_cp9_post != NULL)
     *ret_cp9_post = cp9_post;
   else
-    ;/* free cp9post */
+    FreeCPlan9Matrix(cp9_post);
   return;
 }
 
@@ -261,7 +261,11 @@ CP9_seq2posteriors(CM_t *cm, char *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9
   cp9_post = cp9_bck;
   CP9FullPosterior(dsq, i0, j0, cm->cp9, cp9_fwd, cp9_bck, cp9_post);
 
-  *ret_cp9_post = cp9_post;
+  FreeCPlan9Matrix(cp9_fwd);
+  if(ret_cp9_post != NULL)
+    *ret_cp9_post = cp9_post;
+  else
+    FreeCPlan9Matrix(cp9_post);
   return;
 }
 

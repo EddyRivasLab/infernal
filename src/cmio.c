@@ -539,11 +539,6 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
    */
   CMRenormalize(cm);
 
-  /* Build the CM Plan 9 HMM, the HMM and cp9map are allocated in build_cp9_hm() */
-  if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.001, 0))
-    Die("Couldn't build a CP9 HMM from the CM\n");
-  
-
   if (buf != NULL) free(buf);
   *ret_cm = cm;
   return 1;

@@ -59,6 +59,7 @@ static char experts[] = "\
   --minlen <n> : set minimum length of partial seqs as <n>\n\
   --debug  <n> : set verbosity of debugging print statements to <n> [1..3]\n\
   --histo  <n> : build histogram of HMM posterior probability of start/end\n\
+  --repeat <n> : randomly truncate each seq <n> times (default 1)\n\
 \n\
   * HMM banded alignment related options:\n\
    --hbanded     : use experimental CM plan 9 HMM banded CYK aln algorithm\n\
@@ -82,7 +83,8 @@ static struct opt_s OPTIONS[] = {
   { "--hbandp",    FALSE, sqdARG_FLOAT},
   { "--debug",     FALSE, sqdARG_INT},
   { "--sums",      FALSE, sqdARG_NONE},
-  { "--histo",     FALSE, sqdARG_NONE}
+  { "--histo",     FALSE, sqdARG_NONE},
+  { "--repeat",    FALSE, sqdARG_INT}
 
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
@@ -98,6 +100,7 @@ main(int argc, char **argv)
   CMSubInfo_t *subinfo;
   int      do_local;
   int      nseq;                /* number of seqs to aln */
+  int      nrepeats;            /* number of times to truncate each seq */
   int      v;			/* counter over states */
   int      sstruct;             /* start position for sub CM */
   int      estruct;             /* end position for sub CM */
@@ -132,7 +135,6 @@ main(int argc, char **argv)
   int pred_epos;                /* predicted consensus column res Lp of partial seq aligns to */
   int s_ct;                     /* num times pred_spos = spos */
   int e_ct;                     /* num times pred_epos = epos */
-
   /* posterior histogram related variables */
   int    do_histo;              /* TRUE to build histograms */
   float *post_spos;             /* [0..nseq-1] posterior probability from HMM of spos being start */
@@ -190,7 +192,8 @@ main(int argc, char **argv)
   pthresh        = 0.1;
   do_sub         = FALSE;
   do_fullsub     = FALSE;
-  nseq           =  100;
+  nseq           = 100;
+  nrepeats       = 1;
   debug_level    = 0;
   do_local       = FALSE;
   do_fixlen      = FALSE;
@@ -227,6 +230,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--sums")      == 0) use_sums     = TRUE;
     else if (strcmp(optname, "--debug")     == 0) debug_level = atoi(optarg);
     else if (strcmp(optname, "--histo")     == 0) do_histo = TRUE;
+    else if (strcmp(optname, "--repeat")    == 0) nrepeats = atoi(optarg);
     else if (strcmp(optname, "-h") == 0) {
       MainBanner(stdout, banner);
       puts(usage);
@@ -260,12 +264,16 @@ main(int argc, char **argv)
 
   /* Update cm->opts based on command line options */
   if(do_local)        cm->opts |= CM_CONFIG_LOCAL;
-  if(do_qdb)          cm->opts |= CM_ALIGN_QDB;
   if(do_hbanded)      cm->opts |= CM_ALIGN_HBANDED;
   if(use_sums)        cm->opts |= CM_ALIGN_SUMS;
   if(do_sub)          cm->opts |= CM_ALIGN_SUB;
   if(do_fullsub)      cm->opts |= CM_ALIGN_FSUB;
   if(!do_small)       cm->opts |= CM_ALIGN_NOSMALL;
+  if(do_qdb)          
+    { 
+      cm->opts |= CM_ALIGN_QDB;
+      cm->opts |= CM_CONFIG_QDB;
+    }
 
   /* Configure the CM for alignment based on cm->opts.
    * set local mode, make cp9 HMM, calculate QD bands etc. */
@@ -295,16 +303,6 @@ main(int argc, char **argv)
      if ((fp = fopen(ofile, "w")) == NULL)
        Die("Failed to open output file %s for writing", ofile);
        }*/
-
-  /*********************************************** 
-   * Show the options banner
-   ***********************************************/
-
-  MainBanner(stdout, banner);
-  printf("CM file:             %s\n", cmfile);
-  printf("Number of seqs:       %d\n", nseq);
-  printf("Random seed:          %d\n", seed);
-  printf("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n\n");
   
   /****************************************************** 
    * Do the work. Read or emit seqs and align them.
@@ -321,26 +319,37 @@ main(int argc, char **argv)
 	dsq[i] = DigitizeSequence(seq[i], sqinfo[i].len);
     }      
 
+  /*********************************************** 
+   * Show the options banner
+   ***********************************************/
+
+  MainBanner(stdout, banner);
+  printf("CM file:                     %s\n", cmfile);
+  printf("Number of seqs:              %d\n", nseq);
+  printf("Number of truncs per seq:    %d\n", nrepeats);
+  printf("Random seed:                 %d\n", seed);
+  printf("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n\n");
+
   /* Allocate and initialize */
   if(!do_read)
     {
-      dsq    = MallocOrDie(sizeof(char *)      * nseq);
-      seq    = MallocOrDie(sizeof(char *)      * nseq);
-      sqinfo = MallocOrDie(sizeof(SQINFO)      * nseq);
+      dsq    = MallocOrDie(sizeof(char *)      * (nseq));
+      seq    = MallocOrDie(sizeof(char *)      * (nseq));
+      sqinfo = MallocOrDie(sizeof(SQINFO)      * (nseq));
+      tr     = MallocOrDie(sizeof(Parsetree_t) * (nseq));
     }
-  tr     = MallocOrDie(sizeof(Parsetree_t) * nseq);
   i = 0;
   
-  pdsq    = MallocOrDie(sizeof(char *)      * nseq);
-  psqinfo = MallocOrDie(sizeof(SQINFO)      * nseq);
-  ptr     = MallocOrDie(sizeof(Parsetree_t) * nseq);
+  pdsq    = MallocOrDie(sizeof(char *)      * (nrepeats * nseq));
+  psqinfo = MallocOrDie(sizeof(SQINFO)      * (nrepeats * nseq));
+  ptr     = MallocOrDie(sizeof(Parsetree_t) * (nrepeats * nseq));
   
   temp_sqinfo = MallocOrDie(sizeof(SQINFO)      * 1);
   temp_dsq    = MallocOrDie(sizeof(char *)      * 1);
   temp_tr     = MallocOrDie(sizeof(Parsetree_t) * 1);
 
-  spos = MallocOrDie(sizeof(int) * nseq);
-  epos = MallocOrDie(sizeof(int) * nseq);
+  spos = MallocOrDie(sizeof(int) * (nrepeats * nseq));
+  epos = MallocOrDie(sizeof(int) * (nrepeats * nseq));
   
   emap = CreateEmitMap(cm);
 
@@ -351,15 +360,10 @@ main(int argc, char **argv)
    * seq alignment is with the corresponding subalignment of the full
    * sequence.
    */
-
-  /* turn off the do_sub option for initial alignment */
-  if(do_sub) cm->opts &= ~CM_ALIGN_SUB;
-  for(i = 0; i < nseq; i++)
+  if(!(do_read))
     {
-      if(debug_level >= 0) printf("i: %d\n", i);
-      if(!(do_read))
+      for(i = 0; i < nseq; i++)
 	{
-	  attempts++;
 	  /* Emit a sequence from the CM, we don't care about the parsetree,
 	   * we'll determine this via alignment */
 	  EmitParsetree(cm, NULL, &(seq[i]), &(dsq[i]), &L);
@@ -372,34 +376,32 @@ main(int argc, char **argv)
 	  strcpy(sqinfo[i].name, cm->name);
 	  sqinfo[i].len   = L;
 	  sqinfo[i].flags = SQINFO_NAME | SQINFO_LEN;
-	  strcpy(temp_sqinfo[0].name, cm->name);
-	  temp_sqinfo[0].len   = L;
-	} /* end of if(!(do_read)) */
-      else
-	{
-	  strcpy(temp_sqinfo[0].name, sqinfo[i].name);
-	  temp_sqinfo[0].len   = sqinfo[i].len;
 	}
-      temp_tr[0]  = tr[i];
-      temp_dsq[0] = dsq[i];
+    }
+  /* Align the sequences */
+  /* turn off the do_sub option for initial alignment */
+  printf("%-40s ... ", "Aligning full length sequences");
+  if(do_sub) cm->opts &= ~CM_ALIGN_SUB;
+  pt_AlignSeqsWrapper(cm, dsq, sqinfo, nseq, &tr, 
+		      fsub_pmass, 0, 0, TRUE,
+		      NULL, NULL, NULL, NULL, NULL, NULL);
+  printf("done.\n");
+  
+  for(i = 0; i < (nrepeats * nseq); i++)
+    {
+      strcpy(temp_sqinfo[0].name, sqinfo[(i%nseq)].name);
+      temp_sqinfo[0].len   = sqinfo[(i%nseq)].len;
+      temp_tr[0]  = tr[(i%nseq)];
+      temp_dsq[0] = dsq[(i%nseq)];
       temp_sqinfo[0].flags = SQINFO_NAME | SQINFO_LEN;
-      
-      /* Align the sequence, setting do_sub to FALSE */
-      pt_AlignSeqsWrapper(cm, temp_dsq, temp_sqinfo, 1, &temp_tr, 
-			  fsub_pmass, 0, 0, TRUE,
-			  NULL, NULL, NULL, NULL, NULL, NULL);
-
+	  
       strcpy(temp_sqinfo[0].name, cm->name);
       msa = Parsetrees2Alignment(cm, temp_dsq, temp_sqinfo, NULL, temp_tr, 1, TRUE);
       /* important, the final variable do_full must be set to TRUE, we want
-       * all match columns in the alignment.
-       */
-      /*msa->name = sre_strdup(cm->name, -1);
-	msa->desc = sre_strdup("Synthetic sequence alignment", -1);*/
+       * all match columns in the alignment.  */
       
       /* Step 1: pick random start and end consensus position
-       *         for truncation
-       */
+       *         for truncation.*/
       passed = FALSE;
       while(!passed)
 	{
@@ -452,7 +454,7 @@ main(int argc, char **argv)
       */
       MSAShorterAlignment(msa, useme);
       free(useme);
-      
+	  
       /* Get the dealigned sequence, and save it as pdsq[i] */
       DealignAseqs(msa->aseq, msa->nseq, &pseq);
       if(debug_level > 0)
@@ -478,22 +480,27 @@ main(int argc, char **argv)
 	  psqinfo[i].flags = SQINFO_NAME | SQINFO_LEN;
 	}
     }
+  /*****************************************************
+   * Align the partial seqs to the CM and collect stats 
+   * on how often we correctly get spos and epos.
+   *****************************************************/
 
-  /* Turn do_sub option back on */
+  /* Turn do_sub option back on if nec. */
   if(do_sub) cm->opts |= CM_ALIGN_SUB;
   printf("do_sub: %d\n", (cm->opts & CM_ALIGN_SUB));
+
   /* Align all the partial sequences to the CM */
   if(do_histo)
-    pt_AlignSeqsWrapper(cm, pdsq, psqinfo, nseq, &ptr, fsub_pmass, 0, 0, TRUE, 
+    pt_AlignSeqsWrapper(cm, pdsq, psqinfo, (nseq*nrepeats), &ptr, fsub_pmass, 0, 0, TRUE, 
 			spos, epos, &post_spos, &post_epos, &dist_spos, &dist_epos);
   else
-    pt_AlignSeqsWrapper(cm, pdsq, psqinfo, nseq, &ptr, fsub_pmass, 0, 0, TRUE,
+    pt_AlignSeqsWrapper(cm, pdsq, psqinfo, (nseq*nrepeats), &ptr, fsub_pmass, 0, 0, TRUE,
 			NULL, NULL, NULL, NULL, NULL, NULL);
   s_ct = 0;
   e_ct = 0;
   /* For each sequence, compare the partial alignment with
    * the full alignment */
-  for(i = 0; i < nseq; i++)
+  for(i = 0; i < (nrepeats * nseq); i++)
     {
       Lp = psqinfo[i].len;
       /*printf("dumping parsetree for partial seq of length %d\n", Lp);
@@ -506,17 +513,17 @@ main(int argc, char **argv)
 	{
 	  /* find consensus column that residue 1 aligns to */
 	  if(ptr[i]->emitl[x] == 1 && (cm->sttype[ptr[i]->state[x]] == ML_st ||
-				    cm->sttype[ptr[i]->state[x]] == MP_st))
+				       cm->sttype[ptr[i]->state[x]] == MP_st))
 	    pred_spos = emap->lpos[cm->ndidx[ptr[i]->state[x]]];
 	  if(ptr[i]->emitl[x] == 1 && cm->sttype[ptr[i]->state[x]] == IL_st)
 	    pred_spos = emap->lpos[cm->ndidx[ptr[i]->state[x]]] + 1;
 	  
 	  if(ptr[i]->emitr[x] == 1 && (cm->sttype[ptr[i]->state[x]] == MR_st ||
-				    cm->sttype[ptr[i]->state[x]] == MP_st))
+				       cm->sttype[ptr[i]->state[x]] == MP_st))
 	    pred_spos = emap->rpos[cm->ndidx[ptr[i]->state[x]]];
 	  if(ptr[i]->emitr[x] == 1 && cm->sttype[ptr[i]->state[x]] == IR_st)
 	    pred_spos = emap->rpos[cm->ndidx[ptr[i]->state[x]]];
-
+	  
 	  /* find consensus column that residue Lp aligns to */
 	  if(ptr[i]->emitl[x] == Lp && (cm->sttype[ptr[i]->state[x]] == ML_st ||
 					cm->sttype[ptr[i]->state[x]] == MP_st))
@@ -530,7 +537,12 @@ main(int argc, char **argv)
 	  if(ptr[i]->emitr[x] == Lp && cm->sttype[ptr[i]->state[x]] == IR_st)
 	    {
 	      if(cm->ndidx[ptr[i]->state[x]] == 0)
-		pred_epos = 0; /* ROOT is special */
+		{
+		  if(ptr[i]->state[x] == 2) /* ROOT_IR */
+		    pred_epos = emap->rpos[cm->ndidx[ptr[i]->state[x]]] - 1;
+		  else
+		    pred_epos = 0; /* ROOT_IL */
+		}
 	      else
 		pred_epos = emap->rpos[cm->ndidx[ptr[i]->state[x]]] - 1;
 	    }
@@ -548,12 +560,33 @@ main(int argc, char **argv)
       /*WriteStockholm(stdout, msa);*/
       /*printf("attempts: %3d passed (i=%3d)\n", attempts, i);*/
     }
-
+  FreeCM(cm);
   /*if (tr[0] != NULL) FreeParsetree(tr[0]);  
     if (ptr[i] != NULL) FreeParsetree(ptr[i]); 
     free(dsq[0]);*/
   printf("N %d S %d E %d\n", nseq, s_ct, e_ct);
   /*free(sqinfo);*/
+  for (i = 0; i < nseq; i++) 
+    {
+      free(dsq[i]);
+      free(seq[i]);
+      FreeParsetree(tr[i]);
+    }
+  for (i = 0; i < (nrepeats*nseq); i++) 
+    {
+      free(pdsq[i]);
+      FreeParsetree(ptr[i]);
+    }
+  free(sqinfo);
+  free(psqinfo);
+  free(spos);
+  free(epos);
+  free(tr);
+  free(ptr);
+  free(pdsq);
+  free(dsq);
+  free(seq);
+  FreeEmitMap(emap);
   return EXIT_SUCCESS;
 }
   
@@ -766,7 +799,6 @@ pt_AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t 
 	}
       if(do_sub && !do_hbanded)
 	{
-	  /* HEREHEREHEREHERE, hmm that's configed for local alignment must be cm->cp9! */
 	  /* (1) Get HMM posteriors (if do_hbanded, we already have them) */
 	  CP9_seq2posteriors(orig_cm, dsq[i], 1, sqinfo[i].len, &cp9_post, debug_level); 
 	}
@@ -815,9 +847,12 @@ pt_AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t 
 	      spos = 1;
 	  if(epos == 0 && epos_state == 1) 
 	      epos = 1;
-	  if(epos < spos) /* This is a possible but hopefully rarely encountered situation. */
-	    epos = spos;
-	  
+	  if(epos < spos) /* This is a possible but hopefully rarely encountered situation, we
+			   * build a sub_cm identical to the CM, be setting spos = 1, epos = L */
+	    {
+	      spos = 1;
+	      epos = sqinfo[i].len;
+	    }
 	  /* (3) Build the sub_cm from the original CM. */
 	  if(!(build_sub_cm(orig_cm, &sub_cm, 
 			    spos, epos,         /* first and last col of structure kept in the sub_cm  */
@@ -1075,6 +1110,7 @@ pt_AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t 
 	  tr[i] = orig_tr;
 	  
 	  FreeSubMap(submap);
+	  FreeCPlan9Matrix(cp9_post);
 	  FreeCM(sub_cm); /* cm and sub_cm now point to NULL */
 	  if(do_hbanded)
 	    FreeCP9Bands(sub_cp9b);
@@ -1083,7 +1119,6 @@ pt_AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t 
   /* Clean up. */
   if(do_hbanded && !do_sub)
     FreeCP9Bands(cp9b);
-
   if (do_qdb)
     {
       free(orig_dmin);

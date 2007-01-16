@@ -134,8 +134,9 @@ AllocCPlan9Body(struct cplan9_s *hmm, int M)
 
 
 void
-FreeCPlan9(struct cplan9_s *hmm)
+FreeCPlan9(CP9_t *hmm)
 {
+  printf("in FreeCPlan9\n");
   if (hmm->bsc_mem != NULL) free(hmm->bsc_mem);
   if (hmm->begin   != NULL) free(hmm->begin);
   if (hmm->esc_mem != NULL) free(hmm->esc_mem);

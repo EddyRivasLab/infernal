@@ -52,17 +52,17 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
     {
       for(i = 0; i < GC_SEGMENTS; i++)
 	cm->lambda[i] = cm->mu[i] = cm->K[i] = 0.0;
-      cm->opts &= ~CM_STATS; /* make sure the stats ready flag is down. */
+      cm->flags &= ~CM_STATS; /* make sure the stats ready flag is down. */
    }
   if(!(cm->opts & CM_SEARCH_CP9STATS))
     {
       for(i = 0; i < GC_SEGMENTS; i++)
 	cm->cp9_lambda[i] = cm->cp9_mu[i] = cm->cp9_K[i] = 0.0;
-      cm->opts &= ~CM_CP9STATS; /* make sure the CP9 stats ready flag is down. */
+      cm->flags &= ~CM_CP9STATS; /* make sure the CP9 stats ready flag is down. */
     }
 
   /* Check if we need to calculate QDBs and/or build a CP9 HMM. */
-  if((cm->opts & CM_ALIGN_QDB)      || (!(cm->opts & CM_SEARCH_NOQDB)))
+  if(cm->opts & CM_CONFIG_QDB)
   {
     if(preset_dmin == NULL && preset_dmax == NULL) 
       do_calc_qdb   = TRUE;
@@ -80,8 +80,6 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
     {
       /* IMPORTANT: do this before setting up CM for local mode
        *            eventually, we'll do it after, but we can't build local CP9s yet. */
-      cm->cp9    = AllocCPlan9(cm->M);
-      cm->cp9map = AllocCP9Map(cm);
       if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))
 	Die("Couldn't build a CP9 HMM from the CM\n");
       cm->flags |= CM_CP9; /* raise the CP9 flag */
@@ -118,15 +116,17 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
 	}
       else
 	{
-	  swentry = 0.5;
-	  swexit  = 0.5;
+	  /*swentry = 0.5;
+	    swexit  = 0.5;*/
+	  swentry= ((cm->cp9->M)-1.)/cm->cp9->M; /* all start pts equiprobable, including 1 */
+	  swexit = ((cm->cp9->M)-1.)/cm->cp9->M; /* all end   pts equiprobable, including M */
 	}
       CPlan9SWConfig(cm->cp9, swentry, swexit);
       CP9Logoddsify(cm->cp9);
     }
   
   /* If nec, set up the query dependent bands, this has to be done after 
-   * the ConfigLocal() call. */
+   * the local is set up */
   if (do_calc_qdb)
     {
       safe_windowlen = cm->W * 2;

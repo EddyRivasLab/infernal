@@ -70,7 +70,6 @@ static char experts[] = "\
    --checkpost   : check that posteriors are correctly calc'ed\n\
    --zeroinserts : set insert emission scores to 0\n\
    --sub         : build sub CM for columns b/t HMM predicted start/end points\n\
-   --fsub <f>    : sub CM w/structure b/t HMM start/end pts\n\
    --elsilent    : disallow local end (EL) emissions\n\
    --enfstart <n>: enforce MATL stretch starting at CM node <n>\n\
    --enfseq   <s>: enforce MATL stretch starting at --enfstart <n> emits seq <s>\n\
@@ -110,7 +109,6 @@ static struct opt_s OPTIONS[] = {
   { "--checkpost",  FALSE, sqdARG_NONE},
   { "--zeroinserts",FALSE, sqdARG_NONE},
   { "--sub",        FALSE, sqdARG_NONE},
-  { "--fsub",       FALSE, sqdARG_NONE},
   { "--elsilent",   FALSE, sqdARG_NONE},
   { "--enfstart",   FALSE, sqdARG_INT},
   { "--enfseq",     FALSE, sqdARG_STRING},
@@ -264,8 +262,6 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--post")      == 0) do_post      = TRUE;
     else if (strcmp(optname, "--checkpost") == 0) do_check     = TRUE;
     else if (strcmp(optname, "--sub")       == 0) do_sub       = TRUE; 
-    else if (strcmp(optname, "--fsub")      == 0) 
-      { do_sub = TRUE; do_fullsub = TRUE; } 
     else if (strcmp(optname, "--elsilent")  == 0) do_elsilent  = TRUE;
     else if (strcmp(optname, "--hbanded")   == 0) { do_hbanded = TRUE; do_small = FALSE; }
     else if (strcmp(optname, "--hbandp")    == 0) hbandp       = atof(optarg);
@@ -291,7 +287,7 @@ main(int argc, char **argv)
   if(do_inside && do_outside)
     Die("Please pick either --inside or --outside (--outside will run Inside()\nalso and check to make sure Inside() and Outside() scores agree).\n");
 
-  if(do_sub && do_local && !do_fullsub)
+  if(do_sub && do_local)
     Die("--sub and -l combination not supported.\n");
   if(do_sub && do_qdb)
     Die("Please pick either --sub or --qdb.\n");
@@ -342,7 +338,6 @@ main(int argc, char **argv)
   if(do_local)        cm->opts |= CM_CONFIG_LOCAL;
   if(do_elsilent)     cm->opts |= CM_CONFIG_ELSILENT;
   if(do_zero_inserts) cm->opts |= CM_CONFIG_ZEROINSERTS;
-  if(do_qdb)          cm->opts |= CM_ALIGN_QDB;
   if(do_hbanded)      cm->opts |= CM_ALIGN_HBANDED;
   if(use_sums)        cm->opts |= CM_ALIGN_SUMS;
   if(do_sub)          cm->opts |= CM_ALIGN_SUB;
@@ -360,7 +355,11 @@ main(int argc, char **argv)
       cm->enf_start = enf_start; 
       cm->enf_seq   = enf_seq;
     }
-
+  if(do_qdb)          
+    { 
+      cm->opts |= CM_ALIGN_QDB;
+      cm->opts |= CM_CONFIG_QDB;
+    }
   /*****************************************************************
    * Open the target sequence file
    *****************************************************************/
@@ -492,7 +491,8 @@ main(int argc, char **argv)
 	if(!(do_inside || do_outside)) FreeParsetree(tr[i]);
 	esl_sq_Destroy(sq[i]);
       }
-    
+    esl_sqfile_Close(seqfp);
+
     if(!(do_inside || do_outside)) MSAFree(msa);
     free(sq);
     free(tr);

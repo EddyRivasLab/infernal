@@ -264,7 +264,7 @@ main(int argc, char **argv)
   set_window        = FALSE;
   do_hmmfb          = FALSE;
   do_hmmweinberg    = FALSE;
-  do_cp9_stats       = FALSE;
+  do_cp9_stats      = FALSE;
   do_inside         = FALSE;
   do_hbanded        = FALSE;
   hbandp            = DEFAULT_HBANDP;
@@ -463,8 +463,8 @@ main(int argc, char **argv)
   
   /* Update cm->opts based on command line options */
   if(do_local)        cm->opts |= CM_CONFIG_LOCAL;
-  if(do_zero_inserts) cm->opts |= CM_CONFIG_ZEROINSERTS;
   if(!(do_qdb))       cm->opts |= CM_SEARCH_NOQDB;
+  if(do_zero_inserts) cm->opts |= CM_CONFIG_ZEROINSERTS;
   if(do_hmmonly)      cm->opts |= CM_SEARCH_HMMONLY;
   if(do_hmmfb)        cm->opts |= CM_SEARCH_HMMFB;
   if(do_hmmweinberg)  cm->opts |= CM_SEARCH_HMMWEINBERG;
@@ -474,7 +474,7 @@ main(int argc, char **argv)
   if(!do_revcomp)     cm->opts |= CM_SEARCH_TOPONLY;
   if(!do_align)       cm->opts |= CM_SEARCH_NOALIGN;
   if(do_null2)        cm->opts |= CM_SEARCH_NULL2;
-  if(do_cm_stats)        cm->opts |= CM_SEARCH_CMSTATS;
+  if(do_cm_stats)     cm->opts |= CM_SEARCH_CMSTATS;
   if(do_cp9_stats)    cm->opts |= CM_SEARCH_CP9STATS;
 
   if(do_enforce)
@@ -483,7 +483,8 @@ main(int argc, char **argv)
       cm->enf_start = enf_start; 
       cm->enf_seq   = enf_seq;
     }
-  
+
+  if(do_qdb) cm->opts |= CM_CONFIG_QDB;
   if(read_qdb)
     {
       /* read the bands from a file */

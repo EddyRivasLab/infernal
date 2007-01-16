@@ -157,7 +157,11 @@ main(int argc, char **argv)
   
   /* Configure the CM */
   if (do_local) cm->opts |= CM_CONFIG_LOCAL;
-  if (do_qdb)   cm->opts |= CM_ALIGN_QDB;
+  if(do_qdb)          
+    { 
+      cm->opts |= CM_ALIGN_QDB;
+      cm->opts |= CM_CONFIG_QDB;
+    }
   ConfigCM(cm, NULL, NULL);
 
   dmin = cm->dmin; /* this will be NULL if !do_qdb */
