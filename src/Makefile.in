@@ -50,6 +50,7 @@ OBJS  = alphabet.o\
 	prior.o\
 	scancyk.o\
 	smallcyk.o\
+	truncyk.o\
 	cm_eweight.o\
 	hmmband.o\
 	hbandcyk.o\
