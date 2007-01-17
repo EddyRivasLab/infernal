@@ -805,7 +805,7 @@ main(int argc, char **argv)
 	      /* Config the CM for local mode, we've already printed it to a file,
 	       * and all we use it for after this is SummarizeCM() and CYKDemands() 
 	       * which shouldn't be affected if we modify the begin and end probs */
-	      cm->opts |= CM_CONFIG_LOCAL;
+	      cm->config_opts |= CM_CONFIG_LOCAL;
 	      ConfigLocal(cm, 0.5, 0.5);
 	      CMLogoddsify(cm);
 	      safe_windowlen = 2 * MSAMaxSequenceLength(msa);

@@ -156,7 +156,6 @@ main(int argc, char **argv)
   double           hbandp;      /* tail loss probability for hmm bands      */
   int              use_sums;    /* TRUE: use the posterior sums w/HMM bands */
   int              do_hmmonly;  /* TRUE: align with the HMM, not the CM     */
-  
   /* Alternatives to CYK */
   int              do_inside;   /* TRUE to use Inside algorithm, not CYK    */
   int              do_outside;  /* TRUE to use Outside algorithm, not CYK   */
@@ -334,31 +333,31 @@ main(int argc, char **argv)
   cm->beta   = qdb_beta; /* this will be DEFAULT_BETA unless changed at command line */
   cm->hbandp = hbandp;   /* this will be DEFAULT_HBANDP unless changed at command line */
 
-  /* Update cm->opts based on command line options */
-  if(do_local)        cm->opts |= CM_CONFIG_LOCAL;
-  if(do_elsilent)     cm->opts |= CM_CONFIG_ELSILENT;
-  if(do_zero_inserts) cm->opts |= CM_CONFIG_ZEROINSERTS;
-  if(do_hbanded)      cm->opts |= CM_ALIGN_HBANDED;
-  if(use_sums)        cm->opts |= CM_ALIGN_SUMS;
-  if(do_sub)          cm->opts |= CM_ALIGN_SUB;
-  if(do_fullsub)      cm->opts |= CM_ALIGN_FSUB;
-  if(do_hmmonly)      cm->opts |= CM_ALIGN_HMMONLY;
-  if(do_inside)       cm->opts |= CM_ALIGN_INSIDE;
-  if(do_outside)      cm->opts |= CM_ALIGN_OUTSIDE;
-  if(!do_small)       cm->opts |= CM_ALIGN_NOSMALL;
-  if(do_post)         cm->opts |= CM_ALIGN_POST;
-  if(do_timings)      cm->opts |= CM_ALIGN_TIME;
-  if(do_check)        cm->opts |= CM_ALIGN_CHECKINOUT;
+  /* Update cm->config_opts and cm->align_opts based on command line options */
+  if(do_local)        cm->config_opts |= CM_CONFIG_LOCAL;
+  if(do_elsilent)     cm->config_opts |= CM_CONFIG_ELSILENT;
+  if(do_zero_inserts) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
+  if(do_hbanded)      cm->align_opts  |= CM_ALIGN_HBANDED;
+  if(use_sums)        cm->align_opts  |= CM_ALIGN_SUMS;
+  if(do_sub)          cm->align_opts  |= CM_ALIGN_SUB;
+  if(do_fullsub)      cm->align_opts  |= CM_ALIGN_FSUB;
+  if(do_hmmonly)      cm->align_opts  |= CM_ALIGN_HMMONLY;
+  if(do_inside)       cm->align_opts  |= CM_ALIGN_INSIDE;
+  if(do_outside)      cm->align_opts  |= CM_ALIGN_OUTSIDE;
+  if(!do_small)       cm->align_opts  |= CM_ALIGN_NOSMALL;
+  if(do_post)         cm->align_opts  |= CM_ALIGN_POST;
+  if(do_timings)      cm->align_opts  |= CM_ALIGN_TIME;
+  if(do_check)        cm->align_opts  |= CM_ALIGN_CHECKINOUT;
   if(do_enforce)
     {
-      cm->opts |= CM_CONFIG_ENFORCE;
+      cm->config_opts |= CM_CONFIG_ENFORCE;
       cm->enf_start = enf_start; 
       cm->enf_seq   = enf_seq;
     }
   if(do_qdb)          
     { 
-      cm->opts |= CM_ALIGN_QDB;
-      cm->opts |= CM_CONFIG_QDB;
+      cm->align_opts  |= CM_ALIGN_QDB;
+      cm->config_opts |= CM_CONFIG_QDB;
     }
   /*****************************************************************
    * Open the target sequence file
@@ -400,7 +399,7 @@ main(int argc, char **argv)
 
   if (mpi_num_procs > 1)
     {
-      /* Configure the CM for alignment based on cm->opts.
+      /* Configure the CM for alignment based on cm->config_opts and cm->align_opts.
        * set local mode, make cp9 HMM, calculate QD bands etc. */
       ConfigCM(cm, NULL, NULL);
       parallel_align_targets(seqfp, cm, &sq, &tr, &postcode, &nseq,
@@ -411,7 +410,7 @@ main(int argc, char **argv)
   else
 #endif /* (end of if USE_MPI) */
     {
-      /* Configure the CM for alignment based on cm->opts.
+      /* Configure the CM for alignment based on cm->config_opts and cm->align_opts.
        * set local mode, make cp9 HMM, calculate QD bands etc. */
       ConfigCM(cm, NULL, NULL);
       serial_align_targets(seqfp, cm, &sq, &tr, &postcode, &nseq, bdump_level, debug_level, 
@@ -424,10 +423,10 @@ main(int argc, char **argv)
      * Create the MSA.                                                                   
      ****************************************************************/                   
     msa = NULL;                                                                          
-    if(!((cm->opts & CM_ALIGN_INSIDE) || (cm->opts & CM_ALIGN_OUTSIDE)))   
+    if(!((cm->align_opts & CM_ALIGN_INSIDE) || (cm->align_opts & CM_ALIGN_OUTSIDE)))   
       {                                                                                  
 	msa = ESL_Parsetrees2Alignment(cm, sq, NULL, tr, nseq, do_full);                 
-	if(cm->opts & CM_ALIGN_POST)                                              
+	if(cm->align_opts & CM_ALIGN_POST)                                              
         {                                                                              
 	  if(postcode == NULL)
 	    Die("ERROR CM_ALIGN_POST flag is up, but {serial,parallel}_align_targets() did not return post codes.\n");

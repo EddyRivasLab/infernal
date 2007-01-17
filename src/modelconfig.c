@@ -19,9 +19,9 @@
 /*
  * Function: ConfigCM
  * Date:     EPN, Thu Jan  4 06:36:09 2007
- * Purpose:  Configure a CM for alignment or search based on cm->opts.
- *           Calculates query dependent bands (QDBs) and CP9 HMM if nec.
- *           QDBs can also be passed in. 
+ * Purpose:  Configure a CM for alignment or search based on cm->config_opts,
+ *           cm->align_opts and cm->search_opts. Calculates query dependent 
+ *           bands (QDBs) and CP9 HMM if nec. QDBs can also be passed in. 
  * 
  * Args:     CM           - the covariance model
  *           preset_dmin  - supplied dmin values, NULL if none
@@ -40,21 +40,21 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
   int v;
   int i;
 
-  /* Check for incompatible cm->opts */
-  if((cm->opts & CM_CONFIG_ELSILENT) && (!(cm->opts & CM_CONFIG_LOCAL)))
+  /* Check for incompatible cm->*_opts */
+  if((cm->config_opts & CM_CONFIG_ELSILENT) && (!(cm->config_opts & CM_CONFIG_LOCAL)))
     Die("ERROR trying to configure non-local CM to silence EL, this doesn't make sense.\n");
-  if((cm->opts & CM_SEARCH_SCANBANDS) && 
-     ((!(cm->opts & CM_SEARCH_HMMFB)) && (!(cm->opts & CM_SEARCH_HMMWEINBERG))))
+  if((cm->search_opts & CM_SEARCH_SCANBANDS) && 
+     ((!(cm->search_opts & CM_SEARCH_HMMFB)) && (!(cm->search_opts & CM_SEARCH_HMMWEINBERG))))
     Die("ERROR trying to search with HMM derived bands, but not an HMM filter, this doesn't make sense.\n");
      
   /* If we're not doing stats set the EVD stats to defaults (0.0) */
-  if(!(cm->opts & CM_SEARCH_CMSTATS))
+  if(!(cm->search_opts & CM_SEARCH_CMSTATS))
     {
       for(i = 0; i < GC_SEGMENTS; i++)
 	cm->lambda[i] = cm->mu[i] = cm->K[i] = 0.0;
       cm->flags &= ~CM_STATS; /* make sure the stats ready flag is down. */
    }
-  if(!(cm->opts & CM_SEARCH_CP9STATS))
+  if(!(cm->search_opts & CM_SEARCH_CP9STATS))
     {
       for(i = 0; i < GC_SEGMENTS; i++)
 	cm->cp9_lambda[i] = cm->cp9_mu[i] = cm->cp9_K[i] = 0.0;
@@ -62,17 +62,17 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
     }
 
   /* Check if we need to calculate QDBs and/or build a CP9 HMM. */
-  if(cm->opts & CM_CONFIG_QDB)
+  if(cm->config_opts & CM_CONFIG_QDB)
   {
     if(preset_dmin == NULL && preset_dmax == NULL) 
       do_calc_qdb   = TRUE;
     else 
       do_preset_qdb = TRUE;
   }
-  if((cm->opts & CM_ALIGN_HBANDED)                                     ||
-     ((cm->opts & CM_ALIGN_HMMONLY) || (cm->opts & CM_SEARCH_HMMONLY)) ||
-     ((cm->opts & CM_ALIGN_SUB)     || (cm->opts & CM_ALIGN_FSUB))     ||
-     ((cm->opts & CM_SEARCH_HMMFB)  || (cm->opts & CM_SEARCH_HMMWEINBERG)))
+  if((cm->align_opts & CM_ALIGN_HBANDED)                                     ||
+     ((cm->align_opts & CM_ALIGN_HMMONLY)  || (cm->search_opts & CM_SEARCH_HMMONLY)) ||
+     ((cm->align_opts & CM_ALIGN_SUB)      || (cm->align_opts  & CM_ALIGN_FSUB))     ||
+     ((cm->search_opts & CM_SEARCH_HMMFB)  || (cm->search_opts & CM_SEARCH_HMMWEINBERG)))
     do_build_cp9 = TRUE;
 
   /* If nec, build the CP9 */
@@ -86,28 +86,28 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
     }
   /* The enforce option, added specifically for enforcing the template region of
    * telomerase RNA */
-  if(cm->opts & CM_CONFIG_ENFORCE)
+  if(cm->config_opts & CM_CONFIG_ENFORCE)
     EnforceSubsequence(cm);
   
   /* Configure the CM for local alignment. */
-  if (cm->opts & CM_CONFIG_LOCAL)
+  if (cm->config_opts & CM_CONFIG_LOCAL)
     { 
-      if(cm->opts & CM_CONFIG_ENFORCE)
+      if(cm->config_opts & CM_CONFIG_ENFORCE)
 	ConfigLocalEnforce(cm, 0.5, 0.5);
       else
 	ConfigLocal(cm, 0.5, 0.5);
       CMLogoddsify(cm);
       
-      if(cm->opts & CM_CONFIG_ELSILENT)
+      if(cm->config_opts & CM_CONFIG_ELSILENT)
 	ConfigLocal_DisallowELEmissions(cm);
     }
   /* If in local mode and using a CP9 HMM, configure it for local alignment,
    * but not in a way that matches the CM locality (that's a TODO) */
-  if((do_build_cp9 && (cm->opts & CM_CONFIG_LOCAL)) ||
-     (do_build_cp9 && (cm->opts & CM_ALIGN_SUB))    ||
-     (do_build_cp9 && (cm->opts & CM_ALIGN_FSUB)))
+  if((do_build_cp9 && (cm->config_opts & CM_CONFIG_LOCAL)) ||
+     (do_build_cp9 && (cm->align_opts  & CM_ALIGN_SUB))    ||
+     (do_build_cp9 && (cm->align_opts  & CM_ALIGN_FSUB)))
     {
-      if((cm->opts & CM_ALIGN_SUB) || (cm->opts & CM_ALIGN_FSUB))
+      if((cm->align_opts & CM_ALIGN_SUB) || (cm->align_opts & CM_ALIGN_FSUB))
 	{
 	  /* To get spos and epos for the sub_cm, 
 	   * we config the HMM to local mode with equiprobable start/end points.*/
@@ -139,7 +139,7 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
 	}
       /* If we're enforcing a subsequence, we need to reenforce it b/c BandCalculationEngine() 
        * changes the local end probabilities */
-      if((cm->opts & CM_CONFIG_ENFORCE))
+      if((cm->config_opts & CM_CONFIG_ENFORCE))
 	{
 	  ConfigLocalEnforce(cm, 0.5, 0.5);
 	  CMLogoddsify(cm);
@@ -173,14 +173,14 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
       cm->el_selfsc = (IMPOSSIBLE / (cm->W+1));
       cm->iel_selfsc = -INFTY;
     }
-  if(cm->opts & CM_CONFIG_ZEROINSERTS)
+  if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
     CMHackInsertScores(cm);	/* insert emissions are all equiprobable */
   CMLogoddsify(cm);
   return; 
   /* TO DO, set up a SUB CM and/or FULL SUB */
-  /* if(cm->opts & CM_IS_SUB)
+  /* if(cm->flags & CM_IS_SUB)
    * do something
-   * if(cm->opts & CM_IS_FSUB)
+   * if(cm->flags & CM_IS_FSUB)
 	      printf("calling ConfigLocal_fullsub_post()\n");
 	       FIX THIS WHOLE THING 
 	      ConfigLocal_fullsub_post(sub_cm, orig_cm, orig_cp9map, submap, cp9_post, sq[i]->n);

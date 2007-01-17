@@ -461,30 +461,30 @@ main(int argc, char **argv)
   else
     cm->cp9_cutoff = cp9_e_cutoff;
   
-  /* Update cm->opts based on command line options */
-  if(do_local)        cm->opts |= CM_CONFIG_LOCAL;
-  if(!(do_qdb))       cm->opts |= CM_SEARCH_NOQDB;
-  if(do_zero_inserts) cm->opts |= CM_CONFIG_ZEROINSERTS;
-  if(do_hmmonly)      cm->opts |= CM_SEARCH_HMMONLY;
-  if(do_hmmfb)        cm->opts |= CM_SEARCH_HMMFB;
-  if(do_hmmweinberg)  cm->opts |= CM_SEARCH_HMMWEINBERG;
-  if(do_scan2hbands)  cm->opts |= CM_SEARCH_SCANBANDS;
-  if(use_sums)        cm->opts |= CM_SEARCH_SUMS;
-  if(do_inside)       cm->opts |= CM_SEARCH_INSIDE;
-  if(!do_revcomp)     cm->opts |= CM_SEARCH_TOPONLY;
-  if(!do_align)       cm->opts |= CM_SEARCH_NOALIGN;
-  if(do_null2)        cm->opts |= CM_SEARCH_NULL2;
-  if(do_cm_stats)     cm->opts |= CM_SEARCH_CMSTATS;
-  if(do_cp9_stats)    cm->opts |= CM_SEARCH_CP9STATS;
+  /* Update cm->config_opts and cm->search_opts based on command line options */
+  if(do_local)        cm->config_opts |= CM_CONFIG_LOCAL;
+  if(do_zero_inserts) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
+  if(!(do_qdb))       cm->search_opts |= CM_SEARCH_NOQDB;
+  if(do_hmmonly)      cm->search_opts |= CM_SEARCH_HMMONLY;
+  if(do_hmmfb)        cm->search_opts |= CM_SEARCH_HMMFB;
+  if(do_hmmweinberg)  cm->search_opts |= CM_SEARCH_HMMWEINBERG;
+  if(do_scan2hbands)  cm->search_opts |= CM_SEARCH_SCANBANDS;
+  if(use_sums)        cm->search_opts |= CM_SEARCH_SUMS;
+  if(do_inside)       cm->search_opts |= CM_SEARCH_INSIDE;
+  if(!do_revcomp)     cm->search_opts |= CM_SEARCH_TOPONLY;
+  if(!do_align)       cm->search_opts |= CM_SEARCH_NOALIGN;
+  if(do_null2)        cm->search_opts |= CM_SEARCH_NULL2;
+  if(do_cm_stats)     cm->search_opts |= CM_SEARCH_CMSTATS;
+  if(do_cp9_stats)    cm->search_opts |= CM_SEARCH_CP9STATS;
 
   if(do_enforce)
     {
-      cm->opts |= CM_CONFIG_ENFORCE;
+      cm->config_opts |= CM_CONFIG_ENFORCE;
       cm->enf_start = enf_start; 
       cm->enf_seq   = enf_seq;
     }
 
-  if(do_qdb) cm->opts |= CM_CONFIG_QDB;
+  if(do_qdb) cm->config_opts |= CM_CONFIG_QDB;
   if(read_qdb)
     {
       /* read the bands from a file */
@@ -521,11 +521,12 @@ main(int argc, char **argv)
   
 #endif
 
-  /* Configure the CM for search based on cm->opts.
-   * set local mode, make cp9 HMM, calculate QD bands etc.,
-   * preset_dmin and preset_dmax are NULL unless --qdbfile, 
-   * and you can't enable --qdbfile in MPI mode 
-   * (we check for this and die if it's true above). */
+  /* Configure the CM for search based on cm->config_opts 
+   * and cm->search_opts. Set local mode, make cp9 HMM, 
+   * calculate QD bands etc., preset_dmin and preset_dmax
+   * are NULL unless --qdbfile, and you can't enable 
+   * --qdbfile in MPI mode (we check for this and die if
+   * we're trying to above). */
   ConfigCM(cm, preset_dmin, preset_dmax);
 
   cons = CreateCMConsensus(cm, 3.0, 1.0); 
@@ -533,7 +534,7 @@ main(int argc, char **argv)
   if(mpi_my_rank == mpi_master_rank)
     {
 #endif
-  if(do_bdump && (!(cm->opts & CM_SEARCH_NOQDB))) 
+  if(do_bdump && (!(cm->search_opts & CM_SEARCH_NOQDB))) 
     {
       printf("beta:%f\n", cm->beta);
       debug_print_bands(cm, cm->dmin, cm->dmax);
@@ -559,10 +560,10 @@ main(int argc, char **argv)
   /* Set sample_length to 2*W if not yet set */
   if (sample_length == 0) sample_length = W_scale * cm->W;
   /*printf("0 W: %d W_scale: %f sample_length: %d\n", W, W_scale, sample_length);*/
-  printf("cm stats: %d (%d) cp9 stats: %d (%d)\n", (cm->opts & CM_SEARCH_CMSTATS),
-    do_cm_stats, (cm->opts & CM_SEARCH_CP9STATS), do_cp9_stats);
+  printf("cm stats: %d (%d) cp9 stats: %d (%d)\n", (cm->search_opts & CM_SEARCH_CMSTATS),
+    do_cm_stats, (cm->search_opts & CM_SEARCH_CP9STATS), do_cp9_stats);
   
-  if (cm->opts & CM_SEARCH_CMSTATS) 
+  if (cm->search_opts & CM_SEARCH_CMSTATS) 
     {
       printf("CALCING CM STATS\n");
 #ifdef USE_MPI
@@ -584,7 +585,7 @@ main(int argc, char **argv)
     StopwatchDisplay(stdout, "\nCPU time (histogram): ", watch);*/
 
   /* If we're calculating stats for the CP9, build CP9 histograms */
-  if (cm->opts & CM_SEARCH_CP9STATS) 
+  if (cm->search_opts & CM_SEARCH_CP9STATS) 
     {
       printf("CALCING CP9 STATS\n");
 #ifdef USE_MPI
@@ -611,7 +612,7 @@ main(int argc, char **argv)
 #endif
     
     /* Set CM mu from K, lambda, N */
-    if (cm->opts & CM_SEARCH_CMSTATS)
+    if (cm->search_opts & CM_SEARCH_CMSTATS)
       {
 	for (i=0; i<GC_SEGMENTS; i++) 
 	  cm->mu[i] = log(cm->K[i]*N)/cm->lambda[i];
@@ -620,7 +621,7 @@ main(int argc, char **argv)
     /* else they've been set to default 0.0s in ConfigCM() */
 
     /* Set CP9 mu from K, lambda, N */
-    if (cm->opts & CM_SEARCH_CP9STATS)
+    if (cm->search_opts & CM_SEARCH_CP9STATS)
       {
 	for (i=0; i<GC_SEGMENTS; i++) 
 	  cm->cp9_mu[i] = log(cm->cp9_K[i]*N)/cm->cp9_lambda[i];
@@ -628,7 +629,7 @@ main(int argc, char **argv)
       }    
     /* else they've been set to default 0.0s in ConfigCM() */
 
-    if (cm->opts & CM_SEARCH_CMSTATS) 
+    if (cm->search_opts & CM_SEARCH_CMSTATS) 
       {
 	printf ("CM statistics calculated with simulation of %d samples of length %d\n", num_samples, sample_length);
 	if (num_partitions == 1) 
@@ -655,7 +656,7 @@ main(int argc, char **argv)
 	}
     fflush(stdout);
 
-    if (cm->opts & CM_SEARCH_CP9STATS) 
+    if (cm->search_opts & CM_SEARCH_CP9STATS) 
       {
 	printf ("CP9 statistics calculated with simulation of %d samples of length %d\n", num_samples, sample_length);
 	if (num_partitions == 1) 
@@ -675,7 +676,7 @@ main(int argc, char **argv)
 	else 
 	  printf ("Using E cutoff of %.2f\n", cm->cp9_cutoff);
       } 
-    else if(cm->opts & CM_SEARCH_HMMONLY || cm->opts & CM_SEARCH_HMMWEINBERG)
+    else if(cm->search_opts & CM_SEARCH_HMMONLY || cm->search_opts & CM_SEARCH_HMMWEINBERG)
 	{
 	  printf ("lambda and K undefined -- no statistics\n");
 	  printf ("Using score cutoff of %.2f\n", cm->cp9_cutoff);

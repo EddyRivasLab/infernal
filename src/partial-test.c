@@ -262,20 +262,20 @@ main(int argc, char **argv)
     Die("%s empty?\n", cmfile);
   CMFileClose(cmfp);
 
-  /* Update cm->opts based on command line options */
-  if(do_local)        cm->opts |= CM_CONFIG_LOCAL;
-  if(do_hbanded)      cm->opts |= CM_ALIGN_HBANDED;
-  if(use_sums)        cm->opts |= CM_ALIGN_SUMS;
-  if(do_sub)          cm->opts |= CM_ALIGN_SUB;
-  if(do_fullsub)      cm->opts |= CM_ALIGN_FSUB;
-  if(!do_small)       cm->opts |= CM_ALIGN_NOSMALL;
+  /* Update cm->config_opts and cm->align_opts based on command line options */
+  if(do_local)        cm->config_opts |= CM_CONFIG_LOCAL;
+  if(do_hbanded)      cm->align_opts  |= CM_ALIGN_HBANDED;
+  if(use_sums)        cm->align_opts  |= CM_ALIGN_SUMS;
+  if(do_sub)          cm->align_opts  |= CM_ALIGN_SUB;
+  if(do_fullsub)      cm->align_opts  |= CM_ALIGN_FSUB;
+  if(!do_small)       cm->align_opts  |= CM_ALIGN_NOSMALL;
   if(do_qdb)          
     { 
-      cm->opts |= CM_ALIGN_QDB;
-      cm->opts |= CM_CONFIG_QDB;
+      cm->align_opts  |= CM_ALIGN_QDB;
+      cm->config_opts |= CM_CONFIG_QDB;
     }
 
-  /* Configure the CM for alignment based on cm->opts.
+  /* Configure the CM for alignment based on cm->config_opts and cm->align_opts.
    * set local mode, make cp9 HMM, calculate QD bands etc. */
   ConfigCM(cm, NULL, NULL);
 
@@ -381,7 +381,7 @@ main(int argc, char **argv)
   /* Align the sequences */
   /* turn off the do_sub option for initial alignment */
   printf("%-40s ... ", "Aligning full length sequences");
-  if(do_sub) cm->opts &= ~CM_ALIGN_SUB;
+  if(do_sub) cm->align_opts &= ~CM_ALIGN_SUB;
   pt_AlignSeqsWrapper(cm, dsq, sqinfo, nseq, &tr, 
 		      fsub_pmass, 0, 0, TRUE,
 		      NULL, NULL, NULL, NULL, NULL, NULL);
@@ -486,8 +486,8 @@ main(int argc, char **argv)
    *****************************************************/
 
   /* Turn do_sub option back on if nec. */
-  if(do_sub) cm->opts |= CM_ALIGN_SUB;
-  printf("do_sub: %d\n", (cm->opts & CM_ALIGN_SUB));
+  if(do_sub) cm->align_opts |= CM_ALIGN_SUB;
+  printf("do_sub: %d\n", (cm->align_opts & CM_ALIGN_SUB));
 
   /* Align all the partial sequences to the CM */
   if(do_histo)
@@ -695,14 +695,14 @@ pt_AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t 
   int do_check = FALSE;
   int do_post = FALSE;
   
-  int do_local    = cm->opts & CM_CONFIG_LOCAL;
-  int do_hbanded  = cm->opts & CM_ALIGN_HBANDED;
-  int do_sub      = cm->opts & CM_ALIGN_SUB;
-  int do_fullsub  = cm->opts & CM_ALIGN_FSUB;
-  int do_qdb      = cm->opts & CM_ALIGN_QDB;
-  int do_inside   = cm->opts & CM_ALIGN_INSIDE;
-  int do_outside  = cm->opts & CM_ALIGN_OUTSIDE;
-  int do_small    = !(cm->opts & CM_ALIGN_NOSMALL);
+  int do_local    = cm->config_opts  & CM_CONFIG_LOCAL;
+  int do_hbanded  = cm->align_opts   & CM_ALIGN_HBANDED;
+  int do_sub      = cm->align_opts   & CM_ALIGN_SUB;
+  int do_fullsub  = cm->align_opts   & CM_ALIGN_FSUB;
+  int do_qdb      = cm->align_opts   & CM_ALIGN_QDB;
+  int do_inside   = cm->align_opts   & CM_ALIGN_INSIDE;
+  int do_outside  = cm->align_opts   & CM_ALIGN_OUTSIDE;
+  int do_small    = !(cm->align_opts & CM_ALIGN_NOSMALL);
   
   if(do_fullsub)
     do_sub = TRUE;
@@ -1094,7 +1094,7 @@ pt_AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t 
 	  /* Convert the sub_cm parsetree to a full CM parsetree */
 	  if(debug_level > 0)
 	    ParsetreeDump(stdout, tr[i], cm, dsq[i]);
-	  if(!(sub_cm2cm_parsetree(orig_cm, sub_cm, &orig_tr, tr[i], submap, (cm->opts & CM_ALIGN_FSUB), debug_level)))
+	  if(!(sub_cm2cm_parsetree(orig_cm, sub_cm, &orig_tr, tr[i], submap, (cm->align_opts & CM_ALIGN_FSUB), debug_level)))
 	    {
 	      printf("\n\nIncorrectly converted original trace:\n");
 	      ParsetreeDump(stdout, orig_tr, orig_cm, dsq[i]);

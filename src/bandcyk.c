@@ -135,7 +135,7 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
    * impossible for the band calculation than make them
    * possible again before exiting this function.
    */
-  if(cm->opts & CM_CONFIG_LOCAL)
+  if(cm->config_opts & CM_CONFIG_LOCAL)
     ConfigNoLocalEnds(cm);
   
   /* gamma[v][n] is Prob(state v generates subseq of length n)
@@ -205,7 +205,7 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
 	    }
 	}
       /*EPN 11.11.05 adding following else if () to handle local begins*/
-      else if ((cm->opts & CM_CONFIG_LOCAL) && v == 0) /*state 0 is the one and only ROOT_S state*/
+      else if ((cm->config_opts & CM_CONFIG_LOCAL) && v == 0) /*state 0 is the one and only ROOT_S state*/
 	{
 	  pdf = 0.;
 	  for (n = 0; n <= W; n++)
@@ -301,7 +301,7 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
        * to enforce this, we (hackishly) just don't reuse beams. Although
        * we could just save the match state beams...
        */
-      if ((! save_densities) && (! (cm->opts & CM_CONFIG_LOCAL))) {
+      if ((! save_densities) && (! (cm->config_opts & CM_CONFIG_LOCAL))) {
 	if (cm->sttype[v] == B_st)
 	  {  /* connected children of a B st are handled specially, remember */
 	    y = cm->cfirst[v]; PushMstack(beamstack, gamma[y]); gamma[y] = NULL;

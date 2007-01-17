@@ -98,7 +98,9 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
       MPI_Pack (&nstates,                  1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD); 
       MPI_Pack (&nnodes,                   1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (&((*cm)->flags),           1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->opts),            1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->config_opts),     1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->align_opts),      1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->search_opts),     1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (&((*cm)->el_selfsc),       1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (&((*cm)->iel_selfsc),      1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (&((*cm)->W),               1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
@@ -112,12 +114,12 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
       MPI_Pack (&((*cm)->cp9_cutoff),      1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
       /* DO NOT pass CM or CP9 EVD stats, they're set later if we're doing stats, and set
        * to defaults in ConfigCM() if we're not doing stats. */
-       /*if((*cm)->opts & CM_SEARCH_CMSTATS)
+       /*if((*cm)->search_opts & CM_SEARCH_CMSTATS)
 	{
 	  MPI_Pack (&((*cm)->lambda),GC_SEGMENTS, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
 	  MPI_Pack (&((*cm)->K),     GC_SEGMENTS, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
 	  MPI_Pack (&((*cm)->mu),    GC_SEGMENTS, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-	  if((*cm)->opts & CM_SEARCH_CP9STATS)
+	  if((*cm)->search_opts & CM_SEARCH_CP9STATS)
 	  {
 	  MPI_Pack (&((*cm)->cp9_lambda),GC_SEGMENTS, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
 	  MPI_Pack (&((*cm)->cp9_mu),GC_SEGMENTS, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
@@ -141,7 +143,9 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
       MPI_Unpack (buf, BUFSIZE, &position, &nnodes, 1, MPI_INT, MPI_COMM_WORLD);
       *cm = CreateCM (nnodes, nstates);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->flags),           1, MPI_INT,   MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->opts),            1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->config_opts),     1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->align_opts),      1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->search_opts),     1, MPI_INT,   MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->el_selfsc),       1, MPI_FLOAT, MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->iel_selfsc),      1, MPI_INT,   MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->W),               1, MPI_INT,   MPI_COMM_WORLD);
@@ -282,7 +286,7 @@ void search_second_broadcast (CM_t **cm, long *N, int mpi_my_rank, int mpi_maste
     {
       MPI_Unpack (buf, BUFSIZE, &position, N, 1, MPI_LONG, MPI_COMM_WORLD);
       /* this is fragile, we rely on the fact that we broadcasted the CM
-       * in broadcast_cm() earlier, so it will have the same cm->opts as
+       * in broadcast_cm() earlier, so it will have the same cm->*opts as
        * the one we're sending from the master node. */
       if((*cm)->opts & CM_SEARCH_CMSTATS) /* unpack the CM EVD parameters */
 	{

@@ -158,7 +158,9 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates)
   cm->stid[cm->M]   = END_EL;
 
   cm->flags         = 0;
-  cm->opts          = 0;
+  cm->config_opts   = 0;
+  cm->align_opts    = 0;
+  cm->search_opts   = 0;
   cm->dmin          = NULL;
   cm->dmax          = NULL;
   cm->cp9           = NULL;

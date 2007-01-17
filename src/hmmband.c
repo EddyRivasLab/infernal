@@ -138,7 +138,7 @@ CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t **ret_cp9b,
 {
   CP9Bands_t     *cp9b;     /* data structure for hmm bands (bands on the hmm states)    * 
   		 	     * and arrays for CM state bands, derived from HMM bands     */
-  Stopwatch_t    *watch;    /* for timings if cm->opts & CM_ALIGN_TIME                   */
+  Stopwatch_t    *watch;    /* for timings if cm->align_opts & CM_ALIGN_TIME             */
   int             use_sums; /* TRUE to fill and use posterior sums during HMM band calc  *
 			     * leads to wider bands                                      */
   CP9_dpmatrix_t *cp9_post; /* growable DP matrix for CP9 posteriors                     */
@@ -150,10 +150,10 @@ CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t **ret_cp9b,
     Die("ERROR in CP9_seq2bands, but cm->cp9map is NULL.\n");
 
   use_sums = FALSE;
-  if((cm->opts & CM_ALIGN_SUMS) || (cm->opts & CM_SEARCH_SUMS))
+  if((cm->align_opts & CM_ALIGN_SUMS) || (cm->search_opts & CM_SEARCH_SUMS))
     use_sums = TRUE;
     
-  if(cm->opts & CM_ALIGN_TIME) 
+  if(cm->align_opts & CM_ALIGN_TIME) 
     {
       watch = StopwatchCreate(); 
       StopwatchZero(watch);
@@ -191,7 +191,7 @@ CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t **ret_cp9b,
 	       cp9b->pn_min_i, cp9b->pn_max_i, cp9b->pn_min_d, cp9b->pn_max_d, 
 	       cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, debug_level);
 	  
-  if(cm->opts & CM_ALIGN_TIME) 
+  if(cm->align_opts & CM_ALIGN_TIME) 
     {
       StopwatchStop(watch);
       StopwatchDisplay(stdout, "CP9 Band calculation CPU time: ", watch);

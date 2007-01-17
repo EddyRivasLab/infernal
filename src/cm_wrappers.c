@@ -89,8 +89,8 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons)
   else 
     min_cp9_cutoff = e_to_score (cm->cp9_cutoff, cm->cp9_mu, cm->cp9_lambda);
   
-  do_revcomp = (!(cm->opts & CM_SEARCH_TOPONLY));
-  do_align   = (!(cm->opts & CM_SEARCH_NOALIGN));
+  do_revcomp = (!(cm->search_opts & CM_SEARCH_TOPONLY));
+  do_align   = (!(cm->search_opts & CM_SEARCH_NOALIGN));
 
   while ((dbseq = read_next_seq(dbfp, do_revcomp)))
     {
@@ -135,11 +135,11 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons)
 	    }
 	}
       /* Print results */
-      if(cm->opts & CM_SEARCH_HMMONLY) /* pass CP9 EVD params */
-	print_results (cm, cons, dbseq, do_revcomp, (cm->opts & CM_SEARCH_CP9STATS),
+      if(cm->search_opts & CM_SEARCH_HMMONLY) /* pass CP9 EVD params */
+	print_results (cm, cons, dbseq, do_revcomp, (cm->search_opts & CM_SEARCH_CP9STATS),
 		       cm->cp9_mu, cm->cp9_lambda);
       else /* pass CM EVD params */
-	print_results (cm, cons, dbseq, do_revcomp, (cm->opts & CM_SEARCH_CMSTATS),
+	print_results (cm, cons, dbseq, do_revcomp, (cm->search_opts & CM_SEARCH_CMSTATS),
 		       cm->mu, cm->lambda);
 
       fflush (stdout);
@@ -200,8 +200,8 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
   int do_align;
 
 
-  do_revcomp = (!(cm->opts & CM_SEARCH_TOPONLY));
-  do_align   = (!(cm->opts & CM_SEARCH_NOALIGN));
+  do_revcomp = (!(cm->search_opts & CM_SEARCH_TOPONLY));
+  do_align   = (!(cm->search_opts & CM_SEARCH_NOALIGN));
 
   /* Determine minimum cutoff for CM and for CP9 */
   if (cm->cutoff_type == SCORE_CUTOFF) 
@@ -292,13 +292,13 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 		      active_seqs[active_seq_index]->alignments_sent == 0) 
 		    {
 		      /* Print results */
-		      if(cm->opts & CM_SEARCH_HMMONLY) /* pass CP9 EVD params */
+		      if(cm->search_opts & CM_SEARCH_HMMONLY) /* pass CP9 EVD params */
 			print_results (cm, cons, active_seqs[active_seq_index], 
-				       do_revcomp, (cm->opts & CM_SEARCH_CP9STATS), 
+				       do_revcomp, (cm->search_opts & CM_SEARCH_CP9STATS), 
 				       cm->cp9_mu, cm->cp9_lambda);
 		      else /* pass CM EVD params */
 			print_results (cm, cons, active_seqs[active_seq_index], 
-				       do_revcomp, (cm->opts & CM_SEARCH_CMSTATS), cm->mu, cm->lambda);
+				       do_revcomp, (cm->search_opts & CM_SEARCH_CMSTATS), cm->mu, cm->lambda);
 		      
 		    if (do_revcomp) 
 		      {
@@ -411,7 +411,7 @@ db_seq_t *read_next_seq (ESL_SQFILE *dbfp, int do_revcomp)
  * Function: actually_search_target
  * 
  * Purpose:  Given a CM and a sequence, call the correct search algorithm
- *           based on cm->opts.
+ *           based on cm->search_opts.
  * 
  * Args:     CM         - the covariance model
  *           dsq        - the digitized target sequence
@@ -420,10 +420,10 @@ db_seq_t *read_next_seq (ESL_SQFILE *dbfp, int do_revcomp)
  *           cm_cutoff  - minimum CM  score to report 
  *           cp9_cutoff - minimum CP9 score to report (or keep if filtering)
  *           results    - scan_results_t to add to; if NULL, don't add to it
- *           do_filter  - TRUE if we should filter, but only if cm->opts tells us to 
+ *           do_filter  - TRUE if we should filter, but only if cm->search_opts tells us to 
  *           doing_cm_stats - TRUE if the reason we're scanning this seq is to build
  *                            a histogram to calculate EVDs for the CM, in this
- *                            case we don't filter regardless of what cm->opts says.
+ *                            case we don't filter regardless of what cm->search_opts says.
  *           doing_cp9_stats- TRUE if we're calc'ing stats for the CP9, in this 
  *                            case we always run CP9ForwardScan()
  *           ret_flen   - RETURN: subseq len that survived filter (NULL if not filtering)
@@ -443,20 +443,20 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
     Die("ERROR in actually_search_target doing_cm_stats and doing_cp9_stats both TRUE.\n");
   
   /* check for CP9 related (either filtering or HMMONLY) options first */
-  if((cm->opts & CM_SEARCH_HMMONLY) || doing_cp9_stats)
+  if((cm->search_opts & CM_SEARCH_HMMONLY) || doing_cp9_stats)
     sc = CP9ForwardScan(cm, dsq, i0, j0, cm->W, cp9_cutoff, NULL, NULL, NULL, results);
-  else if(do_filter && (cm->opts & CM_SEARCH_HMMWEINBERG) 
+  else if(do_filter && (cm->search_opts & CM_SEARCH_HMMWEINBERG) 
 	  && (!doing_cm_stats)) /* if we're doing CM stats, don't filter. */
       sc = CP9FilteredScan(cm, dsq, i0, j0, cm->W, cm_cutoff, cp9_cutoff, results, ret_flen);
   else
     {
-      if(cm->opts & CM_SEARCH_NOQDB)
-	if(cm->opts & CM_SEARCH_INSIDE)
+      if(cm->search_opts & CM_SEARCH_NOQDB)
+	if(cm->search_opts & CM_SEARCH_INSIDE)
 	sc = iInsideScan(cm, dsq, i0, j0, cm->W, cm_cutoff, results);
       else /* don't do inside */
 	sc = CYKScan (cm, dsq, i0, j0, cm->W, cm_cutoff, results);
     else /* use QDB */
-      if(cm->opts & CM_SEARCH_INSIDE)
+      if(cm->search_opts & CM_SEARCH_INSIDE)
 	sc = iInsideBandedScan(cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
       else /* do't do inside */
 	sc = CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
@@ -717,7 +717,7 @@ serial_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t 
 
   /* Clean up and return */
   *ret_tr = tr;
-  if((cm->opts & CM_ALIGN_POST) && ret_postcode != NULL) *ret_postcode = postcode;
+  if((cm->align_opts & CM_ALIGN_POST) && ret_postcode != NULL) *ret_postcode = postcode;
   *ret_nseq = nseq;
   *ret_sq   = sq;
   /*printf("leaving serial_align_targets\n");*/
@@ -768,7 +768,7 @@ parallel_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_
   int              alloc_chunk = 2; 
   int              do_post;
 
-  if(cm->opts & CM_ALIGN_POST)
+  if(cm->align_opts & CM_ALIGN_POST)
     do_post = TRUE;
   else
     do_post = FALSE;
@@ -887,7 +887,7 @@ parallel_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_
  * 
  * Purpose:  Given a CM and sequences, do preliminaries, call the correct 
  *           CYK function and return parsetrees and optionally postal codes 
- *           (if cm->opts & CM_ALIGN_POST)
+ *           (if cm->align_opts & CM_ALIGN_POST)
  * 
  * Args:     CM           - the covariance model
  *           sq           - the sequences
@@ -902,9 +902,9 @@ void
 actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, char ***ret_postcode,
 		       int bdump_level, int debug_level, int silent_mode)
 {
-  Stopwatch_t  *watch1, *watch2;      /* for timings */
-  int i;                              /* counter over sequences */
-  int v;                              /* state counter */
+  Stopwatch_t      *watch;      /* for timings */
+  int i;                        /* counter over sequences */
+  int v;                        /* state counter */
   char           **postcode;    /* posterior decode array of strings        */
   Parsetree_t    **tr;          /* parse trees for the sequences */
   float            sc;		/* score for one sequence alignment */
@@ -967,29 +967,29 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
   int do_timings = FALSE;
   int do_check   = FALSE;
 
-  printf("in actually_align_targets\n");
+  /*printf("in actually_align_targets\n");*/
 
-  /* set the options based on cm->opts */
-  if(cm->opts & CM_CONFIG_LOCAL)     do_local   = TRUE;
-  if(cm->opts & CM_ALIGN_QDB)        do_qdb     = TRUE;
-  if(cm->opts & CM_ALIGN_HBANDED)    do_hbanded = TRUE;
-  if(cm->opts & CM_ALIGN_SUMS)       use_sums   = TRUE;
-  if(cm->opts & CM_ALIGN_SUB)        do_sub     = TRUE;
-  if(cm->opts & CM_ALIGN_FSUB)       do_fullsub = TRUE;
-  if(cm->opts & CM_ALIGN_HMMONLY)    do_hmmonly = TRUE;
-  if(cm->opts & CM_ALIGN_INSIDE)     do_inside  = TRUE;
-  if(cm->opts & CM_ALIGN_OUTSIDE)    do_outside = TRUE;
-  if(cm->opts & CM_ALIGN_NOSMALL)    do_small   = FALSE;
-  if(cm->opts & CM_ALIGN_POST)       do_post    = TRUE;
-  if(cm->opts & CM_ALIGN_TIME)       do_timings = TRUE;
-  if(cm->opts & CM_ALIGN_CHECKINOUT) do_check   = TRUE;
+  /* set the options based on cm->align_opts */
+  if(cm->config_opts & CM_CONFIG_LOCAL)     do_local   = TRUE;
+  if(cm->align_opts  & CM_ALIGN_QDB)        do_qdb     = TRUE;
+  if(cm->align_opts  & CM_ALIGN_HBANDED)    do_hbanded = TRUE;
+  if(cm->align_opts  & CM_ALIGN_SUMS)       use_sums   = TRUE;
+  if(cm->align_opts  & CM_ALIGN_SUB)        do_sub     = TRUE;
+  if(cm->align_opts  & CM_ALIGN_FSUB)       do_fullsub = TRUE;
+  if(cm->align_opts  & CM_ALIGN_HMMONLY)    do_hmmonly = TRUE;
+  if(cm->align_opts  & CM_ALIGN_INSIDE)     do_inside  = TRUE;
+  if(cm->align_opts  & CM_ALIGN_OUTSIDE)    do_outside = TRUE;
+  if(cm->align_opts  & CM_ALIGN_NOSMALL)    do_small   = FALSE;
+  if(cm->align_opts  & CM_ALIGN_POST)       do_post    = TRUE;
+  if(cm->align_opts  & CM_ALIGN_TIME)       do_timings = TRUE;
+  if(cm->align_opts  & CM_ALIGN_CHECKINOUT) do_check   = TRUE;
 
   if(do_fullsub)
     {
       do_sub = TRUE;
-      cm->opts |= CM_ALIGN_SUB;
+      cm->align_opts |= CM_ALIGN_SUB;
     }
-    printf("do_local  : %d\n", do_local);
+  /*printf("do_local  : %d\n", do_local);
     printf("do_qdb    : %d\n", do_qdb);
     printf("do_hbanded: %d\n", do_hbanded);
     printf("use_sums  : %d\n", use_sums);
@@ -1000,16 +1000,14 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
     printf("do_outside: %d\n", do_outside);
     printf("do_small  : %d\n", do_small);
     printf("do_post   : %d\n", do_post);
-    printf("do_timings: %d\n", do_timings);
+    printf("do_timings: %d\n", do_timings);*/
     
   tr    = MallocOrDie(sizeof(Parsetree_t) * nseq);
   minsc = FLT_MAX;
   maxsc = -FLT_MAX;
   avgsc = 0;
 
-  watch1 = StopwatchCreate(); /* watch1 is used to time each step individually */
-  watch2 = StopwatchCreate(); /* watch2 times the full alignment (including band calc)
-				 for each seq */
+  watch = StopwatchCreate(); 
   if(do_hbanded || do_sub) /* We need a CP9 HMM to build sub_cms */
     {
       /* Keep this data for the original CM safe; we'll be doing
@@ -1019,9 +1017,6 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 
       orig_hmm    = hmm;
       orig_cp9map = cp9map;
-
-      StopwatchZero(watch2);
-      StopwatchStart(watch2);
     }
 
   /* Copy the QD bands in case we expand them. */
@@ -1062,14 +1057,11 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 
   for (i = 0; i < nseq; i++)
     {
-      StopwatchZero(watch1);
-      StopwatchStart(watch1);
-      StopwatchZero(watch2);
-      StopwatchStart(watch2);
+      StopwatchZero(watch);
+      StopwatchStart(watch);
       
       if (sq[i]->n == 0) Die("ERROR: sequence named %s has length 0.\n", sq[i]->name);
 
-      printf("do_hbanded: %d\n", do_hbanded);
       /* Potentially, do HMM calculations. */
       if(do_hbanded)
 	{
@@ -1399,8 +1391,16 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
       
       if(!silent_mode) printf("    score: %10.2f bits\n", sc);
       
+      /* check parsetree score if cm->align_opts & CM_ALIGN_CHECKPARSESC */
+      if((cm->align_opts & CM_ALIGN_CHECKPARSESC) &&
+	 (!(cm->flags & CM_IS_SUB) && (!(cm->flags & CM_IS_FSUB))))
+	{
+	  if (fabs(sc - ParsetreeScore(cm, tr[i], sq[i]->dsq, FALSE)) >= 0.01)
+	    Die("ERROR in actually_align_target(), alignment score differs from its parse tree's score");
+	}
+
       /* If debug level high enough, print out the parse tree */
-      if(debug_level > 2)
+      if((cm->align_opts & CM_ALIGN_PRINTTREES) || (debug_level > 2))
 	{
 	  fprintf(stdout, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr[i], sq[i]->dsq, FALSE));;
 	  ParsetreeDump(stdout, tr[i], cm, sq[i]->dsq);
@@ -1421,12 +1421,6 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	    { 
 	      free(cp9b->hdmin[v]); 
 	      free(cp9b->hdmax[v]);
-	    }
-	  StopwatchStop(watch2);
-	  if(do_timings) 
-	    { 
-	      StopwatchDisplay(stdout, "band calc and jd CYK CPU time: ", watch2);
-	      printf("\n");
 	    }
 	}
       if(do_sub && !(do_inside || do_outside))
@@ -1454,6 +1448,12 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	  if(do_hbanded)
 	    FreeCP9Bands(sub_cp9b);
 	}
+      StopwatchStop(watch);
+      if(do_timings) 
+	{ 
+	  StopwatchDisplay(stdout, "seq alignment CPU time: ", watch);
+	  printf("\n");
+	}
     }
   /* Clean up. */
   if(do_hbanded && !do_sub)
@@ -1464,8 +1464,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
       free(orig_dmin);
       free(orig_dmax);
     }
-  StopwatchFree(watch1);
-  StopwatchFree(watch2);
+  StopwatchFree(watch);
   
   *ret_tr = tr; 
   if (do_post) *ret_postcode = postcode; 
