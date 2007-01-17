@@ -257,18 +257,25 @@ ParsetreeScore(CM_t *cm, Parsetree_t *tr, char *dsq, int do_null2)
 	  {
 	    symi = dsq[tr->emitl[tidx]];
 	    symj = dsq[tr->emitr[tidx]];
-	    if (symi < Alphabet_size && symj < Alphabet_size)
-	      sc += cm->esc[v][(int) (symi*Alphabet_size+symj)];
-	    else
-	      sc += DegeneratePairScore(cm->esc[v], symi, symj);
+            if (mode == 3)
+              {
+  	        if (symi < Alphabet_size && symj < Alphabet_size)
+	          sc += cm->esc[v][(int) (symi*Alphabet_size+symj)];
+	        else
+	          sc += DegeneratePairScore(cm->esc[v], symi, symj);
+              }
+            else if (mode == 2)
+              sc += LeftMarginalScore(cm->esc[v], symi);
+            else if (mode == 1)
+              sc += RightMarginalScore(cm->esv[v], symj);
 	  } 
-	else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) 
+	else if ( (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) && (mode == 3 || mode == 2) )
 	  {
 	    symi = dsq[tr->emitl[tidx]];
 	    if (symi < Alphabet_size) sc += cm->esc[v][(int) symi];
 	    else                      sc += DegenerateSingletScore(cm->esc[v], symi);
 	  } 
-	else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) 
+	else if ( (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && (mode == 3 || mode == 2) )
 	  {
 	    symj = dsq[tr->emitr[tidx]];
 	    if (symj < Alphabet_size) sc += cm->esc[v][(int) symj];
