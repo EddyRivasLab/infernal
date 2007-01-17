@@ -347,6 +347,7 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq)
   float tsc;
   float esc;
   int   v,y;
+  int   mode;
 
   fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s\n",
 	  " idx ","emitl", "emitr", "state", " nxtl", " nxtr", " prv ", " tsc ", " esc ");
@@ -355,6 +356,7 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq)
   for (x = 0; x < tr->n; x++)
     {
       v = tr->state[x];
+      mode = tr->mode[x];
 
       /* Set syml, symr: one char representation of what we emit, or ' '.
        * Set esc:        emission score, or 0.
@@ -363,13 +365,15 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq)
       syml = symr = ' ';
       esc = 0.;
       if (cm->sttype[v] == MP_st) {
-	syml = Alphabet[(int)dsq[tr->emitl[x]]]; 
-	symr = Alphabet[(int)dsq[tr->emitr[x]]];
-	esc  = DegeneratePairScore(cm->esc[v], dsq[tr->emitl[x]], dsq[tr->emitr[x]]);
-      } else if (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) {
+	if (mode == 3 || mode == 2) syml = Alphabet[(int)dsq[tr->emitl[x]]]; 
+	if (mode == 3 || mode == 1) symr = Alphabet[(int)dsq[tr->emitr[x]]];
+	if      (mode == 3) esc = DegeneratePairScore(cm->esc[v], dsq[tr->emitl[x]], dsq[tr->emitr[x]]);
+        else if (mode == 2) esc =   LeftMarginalScore(cm->esc[v], dsq[tr->emitl[x]]);
+        else if (mode == 1) esc =  RightMarginalScore(cm->esc[v],                    dsq[tr->emitr[x]]);
+      } else if ( (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) && (mode == 3 || mode == 2) ) {
 	syml = Alphabet[(int)dsq[tr->emitl[x]]];
 	esc  = DegenerateSingletScore(cm->esc[v], dsq[tr->emitl[x]]);
-      } else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) {
+      } else if ( (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) && (mode == 3 || mode == 1) ) {
 	symr = Alphabet[(int)dsq[tr->emitr[x]]];
 	esc  = DegenerateSingletScore(cm->esc[v], dsq[tr->emitr[x]]);
       }
@@ -419,6 +423,7 @@ ParsetreeCompare(Parsetree_t *t1, Parsetree_t *t2)
       if (t1->emitl[x] != t2->emitl[x]) return 0;
       if (t1->emitr[x] != t2->emitr[x]) return 0;
       if (t1->state[x] != t2->state[x]) return 0;
+      if (t1->mode[x]  != t2->mode[x])  return 0;
       if (t1->nxtl[x]  != t2->nxtl[x])  return 0;
       if (t1->nxtr[x]  != t2->nxtr[x])  return 0;
     }
