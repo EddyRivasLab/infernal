@@ -170,6 +170,41 @@ iDegenerateSingletScore(int *iesc, char sym)
   return (int) sc;
 }
 
+/* Function: LeftMarginalScore()
+ * Author:   DLK
+ *
+ * Purpose:  Calculate marginal probability for left half
+ *           of an emission pair.  Implicitly assumes
+ *           a uniform background distribution
+ */
+float
+LeftMarginalScore(float *esc, int dres)
+{
+   float sc;
+   sc = esl_vec_FLogSum(&(esc[dres*Alphabet_size]),Alphabet_size);
+   sc -= log(Alphabet_size);
+   return sc;
+}
+
+/* Function: RightMarginalScore()
+ * Author:   DLK
+ *
+ * Purpose:  Calculate marginal probability for right half
+ *           of an emission pair.  Implicitly assumes
+ *           a uniform background distribution
+ */
+float
+RightMarginalScore(float *esc, int dres)
+{
+   int i;
+   float sc;
+   float row[Alphabet_size];
+   for (i=0; i<Alphabet_size; i++)
+      row[i] = esc[i*Alphabet_size+dres];
+   sc = esl_vec_FLogSum(row,Alphabet_size);
+   sc -= log(Alphabet_size);
+   return sc;
+}
 
 /* Function: DigitizeSequence()
  * Date:     SRE, Wed Aug  2 13:05:49 2000 [St. Louis]

@@ -21,6 +21,8 @@ extern char  *DigitizeSequence(char *seq, int L);
 extern char **DigitizeAlignment(char **aseq, int nseq, int alen);
 extern int    iDegeneratePairScore(int *esc, char syml, char symr);
 extern int    iDegenerateSingletScore(int *esc, char sym);
+float         LeftMarginalScore(float *esc, int dres);
+float         RightMarginalScore(float *esc, int dres);
 
 /* from bandcyk.c
  */
@@ -155,6 +157,8 @@ extern void         GrowParsetree(Parsetree_t *tr);
 extern void         FreeParsetree(Parsetree_t *tr);
 extern int          InsertTraceNode(Parsetree_t *tr, int y, int whichway, 
 				    int emitl, int emitr, int state);
+extern int          InsertTraceNodewithMode(Parsetree_t *tr, int y, int whichway, 
+				    int emitl, int emitr, int state, int mode);
 extern void         ParsetreeCount(CM_t *cm, Parsetree_t *tr, char *seq, float wgt);
 extern float        ParsetreeScore(CM_t *cm, Parsetree_t *tr, char *dsq, int do_null2);
 extern void         PrintParsetree(FILE *fp, Parsetree_t *tr);

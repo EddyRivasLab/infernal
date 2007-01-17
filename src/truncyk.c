@@ -938,8 +938,6 @@ trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
    j = j0;
    i = i0;
    d = j0-i0+1;
-   mode = 3;
-   
 
    while (1)
    {
@@ -999,7 +997,7 @@ trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
          d = d-k;
          i = j-d+1;
          v = cm->cfirst[v];
-         ITN(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
+         InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
       }
       else if ( (cm->sttype[v] == E_st) || (cm->sttype[v] == EL_st) )
       {
@@ -1012,7 +1010,7 @@ trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
          i = j-d+1;
 
          v = y;
-         ITN(tr, bifparent, TRACE_RIGHT_CHILD, i, j, v, mode);
+         InsertTraceNodewithMode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, v, mode);
       }
       else
       {
@@ -1062,18 +1060,18 @@ trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
          if ( yoffset == USED_EL )
          {
             v = cm->M;
-            ITN(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
+            InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
          }
          else if ( yoffset == USED_LOCAL_BEGIN )
          {  /* local begin, can only happen once, from root */
             v = b;
             mode = bmode;
-            ITN(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
+            InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
          }
          else
          {
             v = cm->cfirst[v] + yoffset;
-            ITN(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
+            InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
          }
       }
    }

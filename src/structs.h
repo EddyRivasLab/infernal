@@ -390,6 +390,8 @@ typedef struct parsetree_s {
   int *emitl;		/* i position in seq or ali (1..L or alen) */
   int *emitr;		/* j position in seq or ali (1..L or alen) */
   int *state;		/* y of state (0..M-1)                     */
+  int *mode;		/* mode of state (used in marginal         *
+                         * alignment), (0,1,2,3)                   */
 
   int *nxtl;		/* index in trace of left child            */
   int *nxtr;		/* index in trace of right child           */

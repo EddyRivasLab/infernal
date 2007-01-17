@@ -50,6 +50,7 @@ CreateParsetree(void)
   new->emitl    = MallocOrDie(sizeof(int) * new->nalloc);
   new->emitr    = MallocOrDie(sizeof(int) * new->nalloc);
   new->state    = MallocOrDie(sizeof(int) * new->nalloc);
+  new->mode     = MallocOrDie(sizeof(int) * new->nalloc);
   new->nxtl     = MallocOrDie(sizeof(int) * new->nalloc);
   new->nxtr     = MallocOrDie(sizeof(int) * new->nalloc);
   new->prv      = MallocOrDie(sizeof(int) * new->nalloc);
@@ -69,6 +70,7 @@ GrowParsetree(Parsetree_t *tr)
   tr->emitl = ReallocOrDie(tr->emitl, sizeof(int) * tr->nalloc);
   tr->emitr = ReallocOrDie(tr->emitr, sizeof(int) * tr->nalloc);
   tr->state = ReallocOrDie(tr->state, sizeof(int) * tr->nalloc);
+  tr->mode  = ReallocOrDie(tr->mode,  sizeof(int) * tr->nalloc);
   tr->nxtl  = ReallocOrDie(tr->nxtl,  sizeof(int) * tr->nalloc);
   tr->nxtr  = ReallocOrDie(tr->nxtr,  sizeof(int) * tr->nalloc);
   tr->prv   = ReallocOrDie(tr->prv,   sizeof(int) * tr->nalloc);
@@ -85,13 +87,14 @@ FreeParsetree(Parsetree_t *tr)
   free(tr->emitl);
   free(tr->emitr);
   free(tr->state);
+  free(tr->mode);
   free(tr->nxtl);
   free(tr->nxtr);
   free(tr->prv);
   free(tr);
 }
 
-/* Function: InsertTraceNode()
+/* Function: InsertTraceNodewithMode()
  * Incept:   SRE 1 March 2000 [Seattle]
  * 
  * Purpose:  Insert a new node in a trace tree, attached to node y,
@@ -124,7 +127,7 @@ FreeParsetree(Parsetree_t *tr)
  * Returns:  index of new node.
  */          
 int
-InsertTraceNode(Parsetree_t *tr, int y, int whichway, int emitl, int emitr, int state)
+InsertTraceNodewithMode(Parsetree_t *tr, int y, int whichway, int emitl, int emitr, int state, int mode)
 {
   int a;
   int n;
@@ -141,6 +144,7 @@ InsertTraceNode(Parsetree_t *tr, int y, int whichway, int emitl, int emitr, int 
   tr->emitl[n] = emitl;
   tr->emitr[n] = emitr;
   tr->state[n] = state;
+  tr->mode[n]  = mode;
 				/* connectivity of new node */
   tr->nxtl[n]  = a;
   tr->nxtr[n]  = -1;
@@ -158,6 +162,23 @@ InsertTraceNode(Parsetree_t *tr, int y, int whichway, int emitl, int emitr, int 
   return n;
 }
 
+/* Function: InsertTraceNode()
+ *
+ * Purpose:  Standard, non-mode-aware API
+ *           Calls InsertTraceNodewithMode()
+ *           with default mode value
+ *
+ * Returns:  index of new node
+ */
+int
+InsertTraceNode(Parsetree_t *tr, int y, int whichway, int emitl, int emitr, int state)
+{
+   int n;
+
+   n = InsertTraceNodewithMode(tr, y, whichway, emitl, emitr, state, 3);
+
+   return n;
+}
 
 /* Function: ParsetreeCount()
  * Date:     SRE, Mon Jul 31 19:19:08 2000 [St. Louis]
