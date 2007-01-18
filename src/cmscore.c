@@ -39,6 +39,7 @@ static char experts[] = "\
   Expert options\n\
    --smallonly   : do only d&c, don't do second stage full CYK/inside\n\
    --local       : align locally w.r.t the model\n\
+   --sub         : build sub CM for columns b/t HMM predicted start/end points\n\
    --regress <f> : save regression test data to file <f>\n\
    --stringent   : require the two parse trees to be identical\n\
    --scoreonly   : for full CYK/inside stage, do only score, save memory\n\
@@ -62,6 +63,7 @@ static struct opt_s OPTIONS[] = {
   { "-i", TRUE, sqdARG_NONE }, 
   { "--smallonly",  FALSE, sqdARG_NONE },
   { "--local",      FALSE, sqdARG_NONE },
+  { "--sub",        FALSE, sqdARG_NONE },
   { "--regress",    FALSE, sqdARG_STRING },
   { "--stringent",  FALSE, sqdARG_NONE },
   { "--scoreonly",  FALSE, sqdARG_NONE },
@@ -112,6 +114,7 @@ main(int argc, char **argv)
   int do_individuals;            /* TRUE to print individual scores/times        */
   int do_smallonly;	  	 /* TRUE to do only d&c, not full CYK/inside     */
   int do_local;		         /* TRUE to align locally w.r.t. model           */
+  int do_sub;		         /* TRUE to align to a sub CM                    */
   int compare_stringently;	 /* TRUE to demand identical parse trees         */
   int do_scoreonly;		 /* TRUE for score-only (small mem) full CYK     */
   int do_trees;		         /* TRUE to print parse trees to stdout          */
@@ -146,6 +149,7 @@ main(int argc, char **argv)
   do_individuals      = FALSE;
   do_smallonly        = FALSE;
   do_local            = FALSE;
+  do_sub              = FALSE;
   compare_stringently = FALSE;
   do_scoreonly        = FALSE;
   do_trees            = FALSE;
@@ -167,6 +171,7 @@ main(int argc, char **argv)
     if      (strcmp(optname, "-i")          == 0) do_individuals      = TRUE;
     else if (strcmp(optname, "--smallonly") == 0) do_smallonly        = TRUE;
     else if (strcmp(optname, "--local")     == 0) do_local            = TRUE;
+    else if (strcmp(optname, "--sub")       == 0) do_sub              = TRUE;
     else if (strcmp(optname, "--regress")   == 0) regressfile         = optarg;
     else if (strcmp(optname, "--stringent") == 0) compare_stringently = TRUE;
     else if (strcmp(optname, "--scoreonly") == 0) do_scoreonly        = TRUE;
@@ -219,6 +224,8 @@ main(int argc, char **argv)
   /* Check for incompatible or misused options */
   if(s2_set && do_smallonly)
     Die("ERROR: --smallonly doesn't make sense with --qdb, --qdbsmall, --qdbboth, --hbanded, --hmmonly\n");
+  if(do_sub && do_local)
+    Die("--sub and --local combination not supported.\n");
 
   if (argc - optind != 2) Die("Incorrect number of arguments.\n%s\n", usage);
   cmfile = argv[optind++];
@@ -292,6 +299,12 @@ main(int argc, char **argv)
   if (do_individuals) cm->align_opts  |= CM_ALIGN_TIME;
   if (do_trees)       cm->align_opts  |= CM_ALIGN_PRINTTREES;
   if (do_local)       cm->config_opts |= CM_CONFIG_LOCAL;
+  if (do_sub)
+    {
+      cm->align_opts |= CM_ALIGN_SUB;
+      cm->align_opts & ~CM_ALIGN_CHECKPARSESC; /* parsetree sc != aln sc in sub mode */
+    }
+
   if(s1_do_qdb)          
     { 
       cm->align_opts  |= CM_ALIGN_QDB;
@@ -342,6 +355,12 @@ main(int argc, char **argv)
       if (do_individuals) cm->align_opts  |= CM_ALIGN_TIME;
       if (do_trees)       cm->align_opts  |= CM_ALIGN_PRINTTREES;
       if (do_local)       cm->config_opts |= CM_CONFIG_LOCAL;
+      if (do_sub)
+	{
+	  cm->align_opts |= CM_ALIGN_SUB;
+	  cm->align_opts & ~CM_ALIGN_CHECKPARSESC; /* parsetree sc != aln sc in sub mode */
+	}
+
       if(s2_do_qdb)          
 	{ 
 	  cm->align_opts  |= CM_ALIGN_QDB;
