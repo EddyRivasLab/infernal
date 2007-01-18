@@ -75,6 +75,13 @@ AllocCP9Bands(CM_t *cm, struct cplan9_s *hmm)
   cp9bands->safe_hdmax  = MallocOrDie(sizeof(int)   * cp9bands->cm_M);
   cp9bands->hdmin       = MallocOrDie(sizeof(int *) * cp9bands->cm_M);
   cp9bands->hdmax       = MallocOrDie(sizeof(int *) * cp9bands->cm_M);
+  /* NOTE: cp9bands->hdmin and hdmax are 2D arrays, that are alloc'ed
+   * inside hmmband.c::CP9_seq2bands() dependent on size of j bands
+   * for each state. They are the only part of the CP9Bands_t data
+   * structure that is allocated in seq-dependent fastion, so they
+   * must be freed after bands are used for each seq (this is done
+   * in cm_wrappers::actually_align_targets()) 
+   */
   return cp9bands;
 }
 
@@ -88,16 +95,17 @@ FreeCP9Bands(CP9Bands_t *cp9bands)
   free(cp9bands->imax);
   free(cp9bands->jmin);
   free(cp9bands->jmax);
+  free(cp9bands->safe_hdmin);
+  free(cp9bands->safe_hdmax);
   free(cp9bands->hdmin);
   free(cp9bands->hdmax);
+
   free(cp9bands->pn_min_m);
   free(cp9bands->pn_max_m);
   free(cp9bands->pn_min_i);
   free(cp9bands->pn_max_i);
   free(cp9bands->pn_min_d);
   free(cp9bands->pn_max_d);
-  free(cp9bands->safe_hdmin);
-  free(cp9bands->safe_hdmax);
   free(cp9bands->isum_pn_m);
   free(cp9bands->isum_pn_i);
   free(cp9bands->isum_pn_d);
@@ -127,17 +135,15 @@ dbl_Score2Prob(int sc, float null)
  *           dsq         - sequence in digitized form
  *           i0          - start of target subsequence (often 1, beginning of dsq)
  *           j0          - end of target subsequence (often L, end of dsq)
- *           ret_cp9b    - RETURN: the HMM bands for this sequence.
+ *           cp9b        - PRE-ALLOCATED, the HMM bands for this sequence, filled here.
  *           ret_cp9_post - RETURN: the HMM posterior matrix (NULL if not wanted)
  *           debug_level - verbosity level for debugging printf()s
  * Return:  void
  */
 void 
-CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t **ret_cp9b, 
+CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t *cp9b, 
 	      CP9_dpmatrix_t **ret_cp9_post, int debug_level)
 {
-  CP9Bands_t     *cp9b;     /* data structure for hmm bands (bands on the hmm states)    * 
-  		 	     * and arrays for CM state bands, derived from HMM bands     */
   Stopwatch_t    *watch;    /* for timings if cm->align_opts & CM_ALIGN_TIME             */
   int             use_sums; /* TRUE to fill and use posterior sums during HMM band calc  *
 			     * leads to wider bands                                      */
@@ -164,7 +170,6 @@ CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t **ret_cp9b,
    * Step 2: posteriors -> HMM bands.
    * Step 3: HMM bands  ->  CM bands.
    */
-  cp9b = AllocCP9Bands(cm, cm->cp9);
 
   /* Step 1: Get HMM posteriors.*/
   CP9_seq2posteriors(cm, dsq, i0, j0, &cp9_post, debug_level);
@@ -210,7 +215,6 @@ CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t **ret_cp9b,
     PrintDPCellsSaved_jd(cm, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
 			 (j0-i0+1));
 
-  *ret_cp9b = cp9b;
   if(ret_cp9_post != NULL)
     *ret_cp9_post = cp9_post;
   else

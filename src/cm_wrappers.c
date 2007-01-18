@@ -704,6 +704,8 @@ serial_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t 
     }
     sq[i] = esl_sq_Create();
   }
+  /* destroy the last sequence that was alloc'ed but not filled */
+  esl_sq_Destroy(sq[i]);
   if (status != eslEOF) 
     esl_fatal("Parse failed, line %d, file %s:\n%s", 
 	      seqfp->linenumber, seqfp->filename, seqfp->errbuf);
@@ -937,6 +939,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
   CP9Map_t        *sub_cp9map;     /* maps the sub_hmm to the sub_cm and vice versa */
   CP9_t           *orig_hmm;       /* original CP9 HMM built from orig_cm */
   CP9Map_t        *orig_cp9map;    
+  CP9Bands_t      *orig_cp9b; 
 
   /* variables related to query dependent banding (qdb) */
   int    expand_flag;           /* TRUE if the dmin and dmax vectors have just been 
@@ -1048,9 +1051,12 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 
   if(do_post)
     postcode = malloc(sizeof(char *) * nseq);
-
+  if(do_hbanded)
+    {
+      cp9b = AllocCP9Bands(cm, cm->cp9);
+      orig_cp9b = cp9b; 
+    }
   orig_cm = cm;
-
   /*****************************************************************
    *  Collect parse trees for each sequence
    *****************************************************************/
@@ -1066,11 +1072,11 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
       if(do_hbanded)
 	{
 	  if(do_sub)
-	    CP9_seq2bands(orig_cm, sq[i]->dsq, 1, sq[i]->n, &cp9b, 
+	    CP9_seq2bands(orig_cm, sq[i]->dsq, 1, sq[i]->n, cp9b, 
 			  &cp9_post, /* we DO want the posterior matrix back */
 			  debug_level);
 	  else
-	    CP9_seq2bands(orig_cm, sq[i]->dsq, 1, sq[i]->n, &cp9b, 
+	    CP9_seq2bands(orig_cm, sq[i]->dsq, 1, sq[i]->n, cp9b, 
 			  NULL, /* we don't want the posterior matrix back */
 			  debug_level);
 	}
@@ -1122,9 +1128,10 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	  if(do_hbanded) /* we're doing HMM banded alignment to the sub_cm */
 	    {
 	      /* Get the HMM bands for the sub_cm */
-	      sub_hmm = sub_cm->cp9;
+	      sub_hmm    = sub_cm->cp9;
 	      sub_cp9map = sub_cm->cp9map;
-	      CP9_seq2bands(sub_cm, sq[i]->dsq, 1, sq[i]->n, &sub_cp9b, 
+	      sub_cp9b   = AllocCP9Bands(sub_cm, sub_cm->cp9);
+	      CP9_seq2bands(sub_cm, sq[i]->dsq, 1, sq[i]->n, sub_cp9b, 
 			    NULL, /* we don't want posterior matrix back */
 			    debug_level);
 	      hmm           = sub_hmm;    
@@ -1456,9 +1463,8 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	}
     }
   /* Clean up. */
-  if(do_hbanded && !do_sub)
-    FreeCP9Bands(cp9b);
-
+  if(do_hbanded)
+    FreeCP9Bands(orig_cp9b);
   if (do_qdb)
     {
       free(orig_dmin);

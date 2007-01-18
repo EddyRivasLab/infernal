@@ -31,7 +31,7 @@ extern double dbl_Score2Prob(int sc, float null);
 
 /* CP9_seq2bands() takes a CM, sequence, and allocated CP9Bands_t structure and
  * calculates the CP9Bands_t by calling many of the other functions below. */
-extern void CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t **ret_cp9b, 
+extern void CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t *cp9b, 
 			  CP9_dpmatrix_t **ret_cp9_post, int debug_level);
 
 /* CP9_seq2posteriors() takes a CM and sequence and runs Forward and Backward algorithms
