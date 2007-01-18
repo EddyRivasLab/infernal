@@ -173,9 +173,9 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
       cm->el_selfsc = (IMPOSSIBLE / (cm->W+1));
       cm->iel_selfsc = -INFTY;
     }
+  CMLogoddsify(cm);
   if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
     CMHackInsertScores(cm);	/* insert emissions are all equiprobable */
-  CMLogoddsify(cm);
   return; 
   /* TO DO, set up a SUB CM and/or FULL SUB */
   /* if(cm->flags & CM_IS_SUB)

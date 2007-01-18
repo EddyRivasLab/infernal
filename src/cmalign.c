@@ -77,6 +77,7 @@ static char experts[] = "\
   * HMM banded alignment related options (IN DEVELOPMENT):\n\
    --hbanded     : use experimental CM plan 9 HMM banded CYK aln algorithm\n\
    --hbandp <f>  : tail loss prob for --hbanded [default: 0.0001]\n\
+   --hsafe       : realign (non-banded) seqs with HMM banded CYK score < 0 bits\n\
    --sums        : use posterior sums during HMM band calculation (widens bands)\n\
    --hmmonly     : align with the CM Plan 9 HMM\n\
 \n\
@@ -101,13 +102,13 @@ static struct opt_s OPTIONS[] = {
   { "--dlev",       FALSE, sqdARG_INT },
   { "--hbanded",    FALSE, sqdARG_NONE },
   { "--hbandp",     FALSE, sqdARG_FLOAT},
+  { "--hsafe",      FALSE, sqdARG_NONE},
   { "--sums",       FALSE, sqdARG_NONE},
   { "--time",       FALSE, sqdARG_NONE},
   { "--inside",     FALSE, sqdARG_NONE},
   { "--outside",    FALSE, sqdARG_NONE},
   { "--post",       FALSE, sqdARG_NONE},
   { "--checkpost",  FALSE, sqdARG_NONE},
-  { "--zeroinserts",FALSE, sqdARG_NONE},
   { "--sub",        FALSE, sqdARG_NONE},
   { "--elsilent",   FALSE, sqdARG_NONE},
   { "--enfstart",   FALSE, sqdARG_INT},
@@ -151,11 +152,12 @@ main(int argc, char **argv)
   int              do_timings;  /* TRUE to print timings, FALSE not to      */
   double           qdb_beta;	/* tail loss prob for query dependent bands */
 
-  /* HMM banded alignment data structures */
+  /* HMM banded alignment */
   int              do_hbanded;  /* TRUE to use CP9 HMM to band CYK          */
   double           hbandp;      /* tail loss probability for hmm bands      */
   int              use_sums;    /* TRUE: use the posterior sums w/HMM bands */
   int              do_hmmonly;  /* TRUE: align with the HMM, not the CM     */
+  int              do_hsafe;    /* TRUE: realign seqs with banded sc < 0    */
   /* Alternatives to CYK */
   int              do_inside;   /* TRUE to use Inside algorithm, not CYK    */
   int              do_outside;  /* TRUE to use Outside algorithm, not CYK   */
@@ -227,6 +229,7 @@ main(int argc, char **argv)
   debug_level = 0;
   do_hbanded  = FALSE;
   do_hmmonly  = FALSE;
+  do_hsafe    = FALSE;
   hbandp      = DEFAULT_HBANDP;
   use_sums    = FALSE;
   do_timings  = FALSE;
@@ -236,7 +239,7 @@ main(int argc, char **argv)
   do_sub      = FALSE;
   do_fullsub  = FALSE;
   do_elsilent = FALSE;
-  do_zero_inserts =FALSE;
+  do_zero_inserts=FALSE;
   do_enforce   = FALSE;
   enf_start    = 0;
   enf_end      = 0;
@@ -264,6 +267,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--elsilent")  == 0) do_elsilent  = TRUE;
     else if (strcmp(optname, "--hbanded")   == 0) { do_hbanded = TRUE; do_small = FALSE; }
     else if (strcmp(optname, "--hbandp")    == 0) hbandp       = atof(optarg);
+    else if (strcmp(optname, "--hsafe")     == 0) do_hsafe     = TRUE;
     else if (strcmp(optname, "--sums")      == 0) use_sums     = TRUE;
     else if (strcmp(optname, "--hmmonly")   == 0) do_hmmonly   = TRUE;
     else if (strcmp(optname, "--enfstart")  == 0) { do_enforce = TRUE; enf_start = atoi(optarg); }
@@ -302,6 +306,8 @@ main(int argc, char **argv)
     Die("--qdb and --hbanded combo not supported, pick one.\n");
   if (bdump_level > 3) 
     Die("Highest available --banddump verbosity level is 3\n%s", usage);
+  if (do_hsafe && !do_hbanded)
+    Die("--hsafe only makes sense with --hbanded\n%s", usage);
   if (do_local && do_hbanded)
     {
       printf("Warning: banding with an HMM (--hbanded) and allowing\nlocal alignment (-l). This may not work very well.\n");
@@ -348,6 +354,7 @@ main(int argc, char **argv)
   if(do_post)         cm->align_opts  |= CM_ALIGN_POST;
   if(do_timings)      cm->align_opts  |= CM_ALIGN_TIME;
   if(do_check)        cm->align_opts  |= CM_ALIGN_CHECKINOUT;
+  if(do_hsafe)        cm->align_opts  |= CM_ALIGN_HMMSAFE;
   if(do_enforce)
     {
       cm->config_opts |= CM_CONFIG_ENFORCE;

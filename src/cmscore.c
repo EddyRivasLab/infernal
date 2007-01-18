@@ -54,6 +54,7 @@ static char experts[] = "\
    --beta <f>    : tail loss prob for QDB [default:1E-7]\n\
    --hbanded     : compare non-banded d&c versus HMM banded CYK\n\
    --hbandp <f>  : tail loss prob for HMM bands [default: 1E-4]\n\
+   --hsafe       : realign (non-banded) seqs with HMM banded CYK score < 0 bits\n\
    --sums        : use posterior sums during HMM band calculation (widens bands)\n\
    --hmmonly     : align with the CM Plan 9 HMM (NOT YET IMPLEMENTED)\n\
 ";
@@ -76,6 +77,7 @@ static struct opt_s OPTIONS[] = {
   { "--beta",       FALSE, sqdARG_FLOAT },
   { "--hbanded",    FALSE, sqdARG_NONE },
   { "--hbandp",     FALSE, sqdARG_FLOAT},
+  { "--hsafe",      FALSE, sqdARG_NONE},
   { "--sums",       FALSE, sqdARG_NONE },
   { "--hmmonly",    FALSE, sqdARG_NONE }
 };
@@ -133,6 +135,7 @@ main(int argc, char **argv)
   int            s2_do_small;    /* TRUE to do qdb CYK in stage 2                */
   int            s2_do_hbanded;  /* TRUE to do HMM banded CYK in stage 2         */
   int            s2_do_hmmonly;  /* TRUE: stage 2 align with the HMM, not the CM */
+  int            s2_do_hsafe;    /* TRUE: stage 2 realign seqs with banded sc < 0*/
   double         hbandp; 	 /* tail loss probability for HMM banding        */
   int            use_sums;       /* TRUE: use the posterior sums w/HMM bands     */
 
@@ -161,10 +164,11 @@ main(int argc, char **argv)
   s2_do_qdb           = FALSE;
   s2_do_small         = FALSE;
   s2_do_hbanded       = FALSE;
+  s2_do_hmmonly       = FALSE;
+  s2_do_hsafe         = FALSE;
   s2_set              = FALSE;
   hbandp              = DEFAULT_HBANDP;
   use_sums            = FALSE;
-  s2_do_hmmonly       = FALSE;
   
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -179,8 +183,9 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--nocheck")   == 0) do_checkscores      = FALSE;
     else if (strcmp(optname, "--std")        == 0) { /* this is default */ }
     else if (strcmp(optname, "--beta")      == 0) qdb_beta            = atof(optarg);
-    else if (strcmp(optname, "--hbandp")    == 0) hbandp       = atof(optarg);
-    else if (strcmp(optname, "--sums")      == 0) use_sums     = TRUE;
+    else if (strcmp(optname, "--hbandp")    == 0) hbandp              = atof(optarg);
+    else if (strcmp(optname, "--hsafe")     == 0) s2_do_hsafe         = TRUE;
+    else if (strcmp(optname, "--sums")      == 0) use_sums            = TRUE;
     else if (strcmp(optname, "--qdb")       == 0) 
       {
 	if(s2_set) Die("Please only pick one: --qdb, --qdbsmall, --qdbboth, --hbanded, --hmmonly\n");
@@ -226,6 +231,8 @@ main(int argc, char **argv)
     Die("ERROR: --smallonly doesn't make sense with --qdb, --qdbsmall, --qdbboth, --hbanded, --hmmonly\n");
   if(do_sub && do_local)
     Die("--sub and --local combination not supported.\n");
+  if (s2_do_hsafe && !s2_do_hbanded)
+    Die("--hsafe only makes sense with --hbanded\n%s", usage);
 
   if (argc - optind != 2) Die("Incorrect number of arguments.\n%s\n", usage);
   cmfile = argv[optind++];
@@ -355,21 +362,21 @@ main(int argc, char **argv)
       if (do_individuals) cm->align_opts  |= CM_ALIGN_TIME;
       if (do_trees)       cm->align_opts  |= CM_ALIGN_PRINTTREES;
       if (do_local)       cm->config_opts |= CM_CONFIG_LOCAL;
+      if (!s2_do_small)   cm->align_opts  |= CM_ALIGN_NOSMALL;
+      if (s2_do_hbanded)  cm->align_opts  |= CM_ALIGN_HBANDED;
+      if (use_sums)       cm->align_opts  |= CM_ALIGN_SUMS;
+      if (s2_do_hmmonly)  cm->align_opts  |= CM_ALIGN_HMMONLY;
+      if (s2_do_hsafe)    cm->align_opts  |= CM_ALIGN_HMMSAFE;
       if (do_sub)
 	{
 	  cm->align_opts |= CM_ALIGN_SUB;
 	  cm->align_opts & ~CM_ALIGN_CHECKPARSESC; /* parsetree sc != aln sc in sub mode */
 	}
-
       if(s2_do_qdb)          
 	{ 
 	  cm->align_opts  |= CM_ALIGN_QDB;
 	  cm->config_opts |= CM_CONFIG_QDB;
 	}
-      if(!s2_do_small)  cm->align_opts |= CM_ALIGN_NOSMALL;
-      if(s2_do_hbanded) cm->align_opts |= CM_ALIGN_HBANDED;
-      if(use_sums)      cm->align_opts |= CM_ALIGN_SUMS;
-      if(s2_do_hmmonly)    cm->align_opts |= CM_ALIGN_HMMONLY;
 
       ConfigCM(cm, NULL, NULL);
       printf("Stage 2 alignment:\n");

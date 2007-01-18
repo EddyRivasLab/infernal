@@ -318,6 +318,7 @@ typedef struct cm_s {
 #define CM_ALIGN_CHECKINOUT   (1<<11) /* check inside/outside calculations        */
 #define CM_ALIGN_CHECKPARSESC (1<<12) /* check parsetree score against aln alg sc */
 #define CM_ALIGN_PRINTTREES   (1<<13) /* print parsetrees to stdout               */
+#define CM_ALIGN_HMMSAFE      (1<<14) /* realign seqs w/HMM banded CYK bit sc < 0 */
 
 /* search options, cm->search_opts */
 #define CM_SEARCH_NOQDB       (1<<0)  /* DO NOT use QDB to search (QDB is default)*/

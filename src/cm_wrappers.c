@@ -913,6 +913,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
   float            maxsc;	/* max score in all seqs */
   float            minsc;	/* min score in all seqs */
   float            avgsc;	/* avg score over all seqs */
+  float            tmpsc;       /* temporary score */
 
   /* variables related to CM Plan 9 HMMs */
   CP9_t       *hmm;                     /* constructed CP9 HMM */
@@ -1301,6 +1302,19 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 			      cp9b->jmax, cp9b->hdmin, cp9b->hdmax, cp9b->safe_hdmin, cp9b->safe_hdmax);
 	  if(bdump_level > 0)
 	    qdb_trace_info_dump(cm, tr[i], cp9b->safe_hdmin, cp9b->safe_hdmax, bdump_level);
+	  /* if CM_ALIGN_HMMSAFE option is enabled, realign seqs w/HMM banded parses < 0 bits */
+	  if(cm->align_opts & CM_ALIGN_HMMSAFE && sc < 0.)
+	    {
+	      tmpsc = sc;
+	      printf("\n%s HMM banded parse had a negative score, realigning with non-banded CYK.\n", sq[i]->name);
+	      FreeParsetree(tr[i]);
+	      sc = CYKDivideAndConquer(cm, sq[i]->dsq, sq[i]->n, 0, 1, sq[i]->n, &(tr[i]),
+				       NULL, NULL); /* we're not in QDB mode */
+	      if(fabs(sc-tmpsc) < 0.01)
+		printf("HMM banded parse was the optimal parse.\n\n");
+	      else
+		printf("HMM banded parse was non-optimal, it was %.2f bits below the optimal.\n\n", (fabs(sc-tmpsc)));
+	    }	      
 	}
       else
 	{
