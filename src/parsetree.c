@@ -236,11 +236,13 @@ ParsetreeScore(CM_t *cm, Parsetree_t *tr, char *dsq, int do_null2)
   int v,y;			/* parent, child state index in CM                   */
   char symi, symj;		/* symbol indices for emissions, 0..Alphabet_iupac-1 */
   float sc;			/* the log-odds score of the parse tree */
+  int mode;
 
 		/* trivial preorder traverse, since we're already numbered that way */
   sc = 0.;
   for (tidx = 0; tidx < tr->n; tidx++) {
     v = tr->state[tidx];        	/* index of parent state in CM */
+    mode = tr->mode[tidx];
     if (v == cm->M) continue;      	/* special case: v is EL, local alignment end */
     if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) /* no scores in B,E */
       {
@@ -267,7 +269,7 @@ ParsetreeScore(CM_t *cm, Parsetree_t *tr, char *dsq, int do_null2)
             else if (mode == 2)
               sc += LeftMarginalScore(cm->esc[v], symi);
             else if (mode == 1)
-              sc += RightMarginalScore(cm->esv[v], symj);
+              sc += RightMarginalScore(cm->esc[v], symj);
 	  } 
 	else if ( (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) && (mode == 3 || mode == 2) )
 	  {

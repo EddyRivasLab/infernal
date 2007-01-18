@@ -58,6 +58,7 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
   int         pos;		/* position in growing ali */
   int         lc, rc;		/* indices for left, right pos in consensus */
   int         symi, symj;
+  int         mode;
   int         lannote, rannote; /* chars in annotation line; left, right     */
   int         lstr, rstr;	/* chars in structure line; left, right      */
   int         lcons, rcons;	/* chars in consensus line; left, right      */
@@ -176,6 +177,7 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
       rc   = cons->rpos[nd];
       symi = dsq[tr->emitl[ti]];  /* residue indices that node is aligned to */
       symj = dsq[tr->emitr[ti]];
+      mode = tr->mode[ti];
 
       /* Calculate four of the five lines: annote, str, cons, and seq.
        */
@@ -185,7 +187,8 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
 	if (cm->annote != NULL) lannote = '.';
 	lstr    = '.';
 	lcons   = '.';
-	lseq    = tolower((int) Alphabet[symi]);
+	if (mode == 3 || mode == 2) lseq = tolower((int) Alphabet[symi]);
+        else                        lseq = '~';
 	cpos_l  = 0;
 	spos_l  = tr->emitl[ti];
       } else if (cm->sttype[v] == IR_st) {
@@ -193,7 +196,8 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
 	if (cm->annote != NULL) rannote = '.';
 	rstr    = '.';
 	rcons   = '.';
-	rseq    = tolower((int) Alphabet[symj]);
+	if (mode == 3 || mode == 1) rseq = tolower((int) Alphabet[symj]);
+        else                        rseq = '~';
 	cpos_r  = 0;
 	spos_r  = tr->emitr[ti];
       } else {
@@ -204,7 +208,8 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
 	  lcons  = cons->cseq[lc];
 	  cpos_l = lc+1;
 	  if (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st) {
-	    lseq   = Alphabet[symi];
+	    if (mode == 3 || mode ==2) lseq = Alphabet[symi];
+            else                       lseq = '~';
 	    spos_l = tr->emitl[ti];
 	  } else {
 	    lseq   = '-';
@@ -218,7 +223,8 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
 	  rcons  = cons->cseq[rc];
 	  cpos_r = rc+1;
 	  if (cm->sttype[v] == MP_st || cm->sttype[v] == MR_st) {
-	    rseq   = Alphabet[symj];
+	    if (mode == 3 || mode == 1) rseq = Alphabet[symj];
+            else                        rseq = '~';
 	    spos_r = tr->emitr[ti];
 	  } else {
 	    rseq   = '-';
@@ -236,6 +242,8 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
 	    lmid = lseq;
 	    rmid = rseq;
 	  }
+        else if (mode != 3)
+          ;
 	else if (IsCompensatory(cm->e[v], symi, symj)) 
 	  lmid = rmid = ':';
 	else if (DegeneratePairScore(cm->esc[v], symi, symj) >= 0)
@@ -243,11 +251,15 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
       } else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) {
 	if (lseq == toupper(lcons)) 
 	  lmid = lseq;
+        else if ( (mode != 3) && (mode != 2) )
+          ;
 	else if (DegenerateSingletScore(cm->esc[v], symi) > 0)
 	  lmid = '+';
       } else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) {
 	if (rseq == toupper(rcons)) 
 	  rmid = rseq;
+        else if ( (mode != 3) && (mode != 1) )
+          ;
 	else if (DegenerateSingletScore(cm->esc[v], symj) > 0)
 	  rmid = '+';
       }
