@@ -1073,11 +1073,11 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
       if(do_hbanded)
 	{
 	  if(do_sub)
-	    CP9_seq2bands(orig_cm, sq[i]->dsq, 1, sq[i]->n, cp9b, 
+	    CP9_seq2bands(orig_cm, sq[i]->dsq, 1, sq[i]->n, orig_cp9b, 
 			  &cp9_post, /* we DO want the posterior matrix back */
 			  debug_level);
 	  else
-	    CP9_seq2bands(orig_cm, sq[i]->dsq, 1, sq[i]->n, cp9b, 
+	    CP9_seq2bands(orig_cm, sq[i]->dsq, 1, sq[i]->n, orig_cp9b, 
 			  NULL, /* we don't want the posterior matrix back */
 			  debug_level);
 	}
@@ -1097,8 +1097,8 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	  if(!do_hbanded) 
 	    CP9_seq2posteriors(orig_cm, sq[i]->dsq, 1, sq[i]->n, &cp9_post, debug_level); 
 	  
-	  /* (2) infer the start and end HMM states by looking at the posterior matrix.
-	   * Remember: we're necessarily in local mode, the --sub option turns local mode on. 
+	  /* (2) infer the start and end HMM nodes (consensus cols) from posterior matrix.
+	   * Remember: we're necessarily in CP9 local mode, the --sub option turns local mode on. 
 	   */
 	  CP9NodeForPosn(orig_hmm, 1, sq[i]->n, 1,             cp9_post, &spos, &spos_state, 
 			 do_fullsub, 0., TRUE, debug_level);

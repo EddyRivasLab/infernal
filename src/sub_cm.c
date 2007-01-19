@@ -581,6 +581,14 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
 				 * total number of columns modelled by the orig_cm  */
    CMSubMap_t *submap;
 
+   /* check to make sure that we can actually build a sub CM of this model */
+   if((orig_cm->flags & CM_LOCAL_BEGIN) ||
+      (orig_cm->flags & CM_LOCAL_END))
+     Die("ERROR trying to build a sub CM of a CM already in local mode, not yet supported.\n");
+   if((orig_cm->flags & CM_IS_SUB)      ||
+      (orig_cm->flags & CM_IS_FSUB))
+     Die("ERROR trying to build a sub CM of a CM that is itself a sub CM.\n");
+
    /* Much of the code for building and checking sub CMs relies on the fact that every insert
     * state in the sub CM maps exactly 1 insert state in the original CM. This is fine if we
     * have removed ambiguities by detaching all original CM insert states that are 1 state
@@ -667,7 +675,6 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
    sub_cm = new;
 
    submap = AllocSubMap(sub_cm, orig_cm, sstruct, estruct, do_fullsub);
-
    if(print_flag)
      {
        printf("\n\norig struct: %s\n", con->cstr);
@@ -690,19 +697,13 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
    sub_cm->config_opts      = orig_cm->config_opts;
    sub_cm->align_opts       = orig_cm->align_opts;
    sub_cm->search_opts      = orig_cm->search_opts;
+   sub_cm->flags            = 0;
    if(sub_cm->align_opts & CM_ALIGN_SUB)
      sub_cm->align_opts &= ~CM_ALIGN_SUB;
    if(sub_cm->align_opts & CM_ALIGN_FSUB)
      sub_cm->align_opts &= ~CM_ALIGN_FSUB;
-
-   if(!(sub_cm->flags & CM_IS_SUB))
-     sub_cm->flags |= CM_IS_SUB;
-   else
-     Die("ERROR building a sub CM of a CM that is already itself a sub CM.\n");
-   if(!(sub_cm->flags & CM_IS_FSUB))
-     sub_cm->flags |= CM_IS_FSUB;
-   else
-     Die("ERROR building a sub CM of a CM that is already itself a full sub CM.\n");
+   if(do_fullsub) sub_cm->flags |= CM_IS_FSUB;
+   else sub_cm->flags |= CM_IS_SUB;
    
    /* Fill in emission probabilities */
    for(v_s = 0; v_s < sub_cm->M; v_s++)

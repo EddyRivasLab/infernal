@@ -21,6 +21,9 @@
 #include <float.h>
 
 #include "squid.h"
+#include "easel.h"
+#include "esl_vectorops.h"
+#include "esl_random.h"
 #include "sqfuncs.h"
 #include "dirichlet.h"
 #include "sre_stack.h"
@@ -49,7 +52,8 @@ Usage: partial-test [-options] <cmfile>\n\
 ";
 
 static char experts[] = "\
-  --read <f> : read seqs to truncate from file <f>\n\ 
+  --read <f>   : read seqs to truncate from file <f>\n\
+  --distro <f> : truncate based on inferred start/ends of seqs in file <f>\n\
   --sub        : aln w/sub CM for columns b/t HMM predicted start/end points\n\
   --fsub       : aln w/sub CM for structure b/t HMM predicted start/end points\n\
   --cp9        : aln w/CM plan 9 HMM\n\
@@ -71,7 +75,8 @@ static struct opt_s OPTIONS[] = {
   { "-h", TRUE, sqdARG_NONE }, 
   { "-n", TRUE, sqdARG_INT },
   { "-s", TRUE, sqdARG_INT },
-  { "--read",    FALSE, sqdARG_STRING},
+  { "--read",      FALSE, sqdARG_STRING},
+  { "--distro",    FALSE, sqdARG_STRING},
   { "--sub",       FALSE, sqdARG_NONE},
   { "--fsub",      FALSE, sqdARG_FLOAT},
   { "--cp9",       FALSE, sqdARG_NONE },
@@ -95,22 +100,18 @@ main(int argc, char **argv)
   char    *cmfile;		/* file to read CM from */	
   CMFILE  *cmfp;		/* open CM file for reading */
   CM_t    *cm;			/* a covariance model       */
-  CM_t    *sub_cm;              /* sub covariance model     */
-  CMSubMap_t *submap;
-  CMSubInfo_t *subinfo;
   int      do_local;
   int      nseq;                /* number of seqs to aln */
   int      nrepeats;            /* number of times to truncate each seq */
   int      v;			/* counter over states */
-  int      sstruct;             /* start position for sub CM */
-  int      estruct;             /* end position for sub CM */
   int      ncols;               /* number of consensus (match) columns in CM */
   int      i;                   /* counter over sub CMs */
-  int      j;                   /* counter */
   int      temp;
 
   double   pthresh;		
-  int      seed;		/* random number seed for MC */
+
+  ESL_RANDOMNESS *r;            /* Easel's random object */
+  long     seed;		/* random number seed */
 
   char *optname;                /* name of option found by Getopt()        */
   char *optarg;                 /* argument found by Getopt()              */
@@ -145,7 +146,6 @@ main(int argc, char **argv)
   /* CYK modes */
   int do_small;                 /* TRUE to use D&C; FALSE to use full CYKInside() */
   int do_qdb;                   /* TRUE to use query dependent bands (QDB)        */
-  double qdb_beta;              /* tail loss prob for QDB                         */
   int do_hbanded;               /* TRUE to use CP9 HMM bands for alignment        */
   double hbandp;                /* tail loss prob for HMM bands                   */
   int    use_sums;              /* TRUE to fill and use the posterior sums, false not to. */
@@ -153,10 +153,26 @@ main(int argc, char **argv)
 
   /* --read related variables */
   int              do_read;     /* TRUE to read seqs from a file, instead of emitting */
-  char            *seqfile;     /* file to read sequences from */
+  char            *read_seqfile;/* file to read sequences from */
   int              format;      /* format of sequence file */
 
-  
+  /* --distro related variables */
+  int              do_distro;   /* TRUE to read seqs from a file, and build probability
+				 * distro of start/ends based on their inferred start/ends */
+  char            *distro_seqfile; /* file to read sequences from */
+  CP9_dpmatrix_t  *cp9_post;    /* growable DP matrix for CP9 posteriors     */
+  int              distro_nseq; /* number of seqs to aln */
+  char           **distro_seq;  /* actual sequence                        */
+  char           **distro_dsq;  /* digitized sequences                    */
+  SQINFO          *distro_sqinfo; /* info about sequences (name/desc)       */
+  float           *sdistro;     /* distribution of inferred starts from seqs in distro_seqfile */
+  float           *edistro;     /* distribution of inferred ends   from seqs in distro_seqfile */
+  int              distro_spos; /* current inferred start pos for seq from distro_seqfile */
+  int              distro_epos; /* current inferred end pos for seq from distro_seqfile */
+  int              distro_spos_state; /* current inferred state type (0=match, 1=insert) */
+  int              distro_epos_state; /* current inferred state type (0=match, 1=insert) */
+  float            swentry, swexit;  /* for configuring the CP9 HMM for local aln */
+
   Parsetree_t **tr;             /* Parsetrees of emitted sequence         */
   Parsetree_t **ptr;            /* Parsetrees of partial emitted sequence */
   char        **seq;            /* actual sequence                        */
@@ -168,22 +184,21 @@ main(int argc, char **argv)
   
   SQINFO       *psqinfo;        /* info about test sequence (name/desc)   */
   
-  int attempts = 0;
-  int eq = 0;
   MSA               *msa;       /* alignment */
   int *useme;
   int apos;
   int cc;
-  int do_full = FALSE;
   int *spos;
   int *epos;
-  char **partial;       /* dealigned seq after truncation            */
   char **pseq;		/* dealigned seqs after truncation           */
   char **pdsq;		/* partial digitized sequences               */
-  int x;
   
   CMEmitMap_t *emap; 
   
+  float *emit_sdistro;
+  float *emit_edistro;
+  int x;
+
   /*********************************************** 
    * Parse command line
    ***********************************************/
@@ -211,13 +226,16 @@ main(int argc, char **argv)
   do_histo       = FALSE;
   fsub_pmass     = 0.;
   do_read        = FALSE;
-  seqfile        = NULL;
+  read_seqfile   = NULL;
+  do_distro      = FALSE;
+  distro_seqfile = NULL;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
 		&optind, &optname, &optarg))  {
     if      (strcmp(optname, "-n") == 0) nseq         = atoi(optarg);
-    else if (strcmp(optname, "-s") == 0) seed           = atoi(optarg);
-    else if (strcmp(optname, "--read")      == 0) { do_read = TRUE; seqfile = optarg; }
+    else if (strcmp(optname, "-s") == 0) seed           = (long) atoi(optarg);
+    else if (strcmp(optname, "--read")      == 0) { do_read = TRUE;   read_seqfile = optarg;   }
+    else if (strcmp(optname, "--distro")    == 0) { do_distro = TRUE; distro_seqfile = optarg; }
     else if (strcmp(optname, "--sub")       == 0) do_sub = TRUE;
     else if (strcmp(optname, "--fsub")      == 0) 
       { do_sub = TRUE; do_fullsub = TRUE; fsub_pmass = atof(optarg); }
@@ -287,12 +305,84 @@ main(int argc, char **argv)
       else if(cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR)	ncols++;
     }
 
+  /* check for incompatible/misused options */
   if(do_minlen && do_fixlen)
     Die("Pick either --fixlen or --minlen, not both.\n");
   if(do_minlen && (minlen <= 0 || minlen > ncols))
     Die("--minlen enabled, but non-sensical, must be >= 0 and <= %d (# match cols)\n", ncols);
   if(do_fixlen && (fixlen <= 0 || fixlen > ncols))
     Die("--fixlen enabled, but non-sensical, must be >= 0 and <= %d (# match cols)\n", ncols);
+
+  /****************************************************** 
+   * If do_distro, open and read sequences from distro file,
+   * We'll build probability distributions of the predicted
+   * start/ends of these sequences, from which to pick
+   * start/ends for truncation events later.
+   ******************************************************/
+  if(do_distro)
+    {
+      /* read the sequences from the input file */
+      format = SQFILE_FASTA;
+      printf("opening file: %s\n", distro_seqfile);
+      if (! ReadMultipleRseqs(distro_seqfile, format, &distro_seq, &distro_sqinfo, &distro_nseq))
+	Die("Failed to read any sequences from file %s, expecting FASTA.", distro_seqfile);
+      distro_dsq = MallocOrDie(sizeof(char *) * distro_nseq);
+
+      /* allocate and initialize the distributions */
+      sdistro    = MallocOrDie(sizeof(float) * (ncols));
+      edistro    = MallocOrDie(sizeof(float) * (ncols));
+      emit_sdistro = MallocOrDie(sizeof(int) * ncols);
+      emit_edistro = MallocOrDie(sizeof(int) * ncols);
+      for(i = 0; i < ncols; i++)
+	{
+	  sdistro[i] = 0.;
+	  edistro[i] = 0.;
+	  emit_sdistro[i] = 0.;
+	  emit_edistro[i] = 0.;
+	}
+      /* build a CP9 for the CM if nec. (we may have already if --hbanded enabled) */
+      if(!(cm->flags & CM_CP9))
+	{
+	  if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))
+	    Die("Couldn't build a CP9 HMM from the CM\n");
+	  cm->flags |= CM_CP9; /* raise the CP9 flag */
+	  /* configure the CP9 HMM for local alignment, all positions equiprobable */
+	  swentry= ((cm->cp9->M)-1.)/cm->cp9->M; /* all start pts equiprobable, including 1 */
+	  swexit = ((cm->cp9->M)-1.)/cm->cp9->M; /* all end   pts equiprobable, including M */
+	  CPlan9SWConfig(cm->cp9, swentry, swexit);
+	  CP9Logoddsify(cm->cp9);
+	}
+      for (i = 0; i < distro_nseq; i++) 
+	{
+	  distro_dsq[i] = DigitizeSequence(distro_seq[i], distro_sqinfo[i].len);
+	  CP9_seq2posteriors(cm, distro_dsq[i], 1, distro_sqinfo[i].len, &cp9_post, 0); 
+	  /* infer the start and end HMM nodes (consensus cols) from posterior matrix.
+	   * Remember: we're necessarily in local mode, the --sub option turns local mode on. 
+	   */
+	  CP9NodeForPosn(cm->cp9, 1, distro_sqinfo[i].len, 1, 
+			 cp9_post, &distro_spos, &distro_spos_state, do_fullsub, 0., TRUE, 0);
+	  CP9NodeForPosn(cm->cp9, 1, distro_sqinfo[i].len, distro_sqinfo[i].len, 
+			 cp9_post, &distro_epos, &distro_epos_state, do_fullsub, 0., TRUE, 0);
+	  printf("i: %d ncols: %d S: %d E: %d\n", i, ncols, distro_spos, distro_epos);
+	  if(distro_spos == 0 && distro_spos_state == 1) distro_spos = 1;
+	  if(distro_epos == 0 && distro_epos_state == 1) distro_epos = 1;
+	  sdistro[distro_spos-1] += 1.;
+	  edistro[distro_epos-1] += 1.;
+	}
+      /* We've got all we need for the distribution, free distro_* data structures */
+      for(i = 0; i < distro_nseq; i++)
+	{
+	  free(distro_seq[i]);
+	  free(distro_dsq[i]);
+	}
+      free(distro_sqinfo);
+      FreeCPlan9Matrix(cp9_post);
+
+      /* Normalize the distros */
+      esl_vec_FNorm(sdistro, ncols);
+      esl_vec_FNorm(edistro, ncols);
+      printf("\n\n");
+    }      
 
   /*********************************************** 
    * Open output file, if needed.
@@ -311,9 +401,9 @@ main(int argc, char **argv)
     {
       /* read the sequences from the input file */
       format = SQFILE_FASTA;
-      printf("opening file: %s\n", seqfile);
-      if (! ReadMultipleRseqs(seqfile, format, &seq, &sqinfo, &nseq))
-	Die("Failed to read any sequences from file %s, expecting FASTA.", seqfile);
+      printf("opening file: %s\n", read_seqfile);
+      if (! ReadMultipleRseqs(read_seqfile, format, &seq, &sqinfo, &nseq))
+	Die("Failed to read any sequences from file %s, expecting FASTA.", read_seqfile);
       dsq = MallocOrDie(sizeof(char *) * nseq);
       for (i = 0; i < nseq; i++) 
 	dsq[i] = DigitizeSequence(seq[i], sqinfo[i].len);
@@ -327,10 +417,11 @@ main(int argc, char **argv)
   printf("CM file:                     %s\n", cmfile);
   printf("Number of seqs:              %d\n", nseq);
   printf("Number of truncs per seq:    %d\n", nrepeats);
-  printf("Random seed:                 %d\n", seed);
+  printf("Random seed:                 %ld\n", seed);
   printf("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n\n");
 
   /* Allocate and initialize */
+  r = esl_randomness_Create(seed); 
   if(!do_read)
     {
       dsq    = MallocOrDie(sizeof(char *)      * (nseq));
@@ -401,12 +492,23 @@ main(int argc, char **argv)
        * all match columns in the alignment.  */
       
       /* Step 1: pick random start and end consensus position
-       *         for truncation.*/
+       *         for truncation, or if(do_distro) pick from
+       *         the empirical distribution. */
       passed = FALSE;
       while(!passed)
 	{
-	  spos[i] = ((int) (sre_random() * ncols)) + 1;
-	  epos[i] = ((int) (sre_random() * ncols)) + 1;
+	  if(do_distro)
+	    {
+	      spos[i] = esl_rnd_FChoose(r, sdistro, ncols) + 1;
+	      epos[i] = esl_rnd_FChoose(r, edistro, ncols) + 1;
+	      emit_sdistro[(spos[i]-1)] += 1.;
+	      emit_edistro[(epos[i]-1)] += 1.;
+	    }
+	  else
+	    {
+	      spos[i] = ((int) (esl_random(r) * ncols)) + 1;
+	      epos[i] = ((int) (esl_random(r) * ncols)) + 1;
+	    }
 	  if(spos[i] > epos[i])
 	    {
 	      temp = spos[i];
@@ -560,6 +662,26 @@ main(int argc, char **argv)
       /*WriteStockholm(stdout, msa);*/
       /*printf("attempts: %3d passed (i=%3d)\n", attempts, i);*/
     }
+  if(do_distro)
+    {
+      /* Normalize the distros */
+      esl_vec_FNorm(emit_sdistro, ncols);
+      esl_vec_FNorm(emit_edistro, ncols);
+      for(i = 0; i < ncols; i++)
+	printf("Start[%4d]: %.4f %.4f\n", i, sdistro[i], emit_sdistro[i]);
+      printf("\n\n");
+      for(i = 0; i < ncols; i++)
+	printf("End  [%4d]: %.4f %.4f\n", i, edistro[i], emit_edistro[i]);
+    }
+  /* Clean up. */
+  if(do_distro)
+    {
+      free(sdistro);
+      free(edistro);
+      free(emit_sdistro);
+      free(emit_edistro);
+    }
+
   FreeCM(cm);
   /*if (tr[0] != NULL) FreeParsetree(tr[0]);  
     if (ptr[i] != NULL) FreeParsetree(ptr[i]); 
@@ -629,21 +751,13 @@ pt_AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t 
   float            maxsc;	/* max score in all seqs */
   float            minsc;	/* min score in all seqs */
   float            avgsc;	/* avg score over all seqs */
-  int              nd;          /* counter over nodes */
 
   /* variables related to CM Plan 9 HMMs */
   struct cplan9_s       *hmm;           /* constructed CP9 HMM */
-  CP9Bands_t *cp9b;                     /* data structure for hmm bands (bands on the hmm states) 
+  CP9Bands_t            *cp9b;          /* data structure for hmm bands (bands on the hmm states) 
 				         * and arrays for CM state bands, derived from HMM bands*/
   CP9Map_t              *cp9map;        /* maps the hmm to the cm and vice versa */
-  struct cp9_dpmatrix_s *cp9_mx;        /* growable DP matrix for viterbi                       */
-  struct cp9_dpmatrix_s *cp9_fwd;       /* growable DP matrix for forward                       */
-  struct cp9_dpmatrix_s *cp9_bck;       /* growable DP matrix for backward                      */
   struct cp9_dpmatrix_s *cp9_post;      /* growable DP matrix for posterior decode              */
-  float                  swentry;	/* S/W aggregate entry probability       */
-  float                  swexit;        /* S/W aggregate exit probability        */
-  float forward_sc; 
-  float backward_sc; 
 
   /* variables related to the do_sub option */
   CM_t              *sub_cm;       /* sub covariance model                      */
@@ -661,25 +775,22 @@ pt_AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t 
   CP9Map_t        *sub_cp9map;     /* maps the sub_hmm to the sub_cm and vice versa */
   struct cplan9_s *orig_hmm;       /* original CP9 HMM built from orig_cm */
   CP9Map_t        *orig_cp9map;    
+  CP9Bands_t      *orig_cp9b; 
 
   /* variables related to query dependent banding (qdb) */
   int    expand_flag;           /* TRUE if the dmin and dmax vectors have just been 
 				 * expanded (in which case we want to recalculate them 
 				 * before we align a new sequence), and FALSE if not*/
-  double **gamma;               /* P(subseq length = n) for each state v    */
   int     *dmin;                /* minimum d bound for state v, [0..v..M-1] */
   int     *dmax;                /* maximum d bound for state v, [0..v..M-1] */
   int *orig_dmin;               /* original dmin values passed in */
   int *orig_dmax;               /* original dmax values passed in */
-  int safe_windowlen; 
 
   /* variables related to inside/outside */
   /*float           ***alpha;*/     /* alpha DP matrix for Inside() */
   /*float           ***beta; */     /* beta DP matrix for Inside() */
   /*float           ***post; */     /* post DP matrix for Inside() */
   int             ***alpha;    /* alpha DP matrix for Inside() */
-  int             ***beta;     /* beta DP matrix for Inside() */
-  int             ***post;     /* post DP matrix for Inside() */
 
 
   /* partial-test variables */
@@ -770,6 +881,11 @@ pt_AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t 
   if(do_elsilent) 
     ConfigLocal_DisallowELEmissions(cm);
 
+  if(do_hbanded)
+    {
+      cp9b = AllocCP9Bands(cm, cm->cp9);
+      orig_cp9b = cp9b; 
+    }
   orig_cm = cm;
 
   /*****************************************************************
@@ -789,11 +905,11 @@ pt_AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t 
       if(do_hbanded)
 	{
 	  if(do_sub || do_ptest)
-	    CP9_seq2bands(orig_cm, dsq[i], 1, sqinfo[i].len, &cp9b, 
+	    CP9_seq2bands(orig_cm, dsq[i], 1, sqinfo[i].len, orig_cp9b, 
 			  &cp9_post, /* we DO want the posterior matrix back */
 			  debug_level);
 	  else
-	    CP9_seq2bands(orig_cm, dsq[i], 1, sqinfo[i].len, &cp9b, 
+	    CP9_seq2bands(orig_cm, dsq[i], 1, sqinfo[i].len, orig_cp9b, 
 			  NULL, /* we don't want the posterior matrix back */
 			  debug_level);
 	}
@@ -869,7 +985,8 @@ pt_AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t 
 	      /* Get the HMM bands for the sub_cm */
 	      sub_hmm = sub_cm->cp9;
 	      sub_cp9map = sub_cm->cp9map;
-	      CP9_seq2bands(sub_cm, dsq[i], 1, sqinfo[i].len, &sub_cp9b, 
+	      sub_cp9b   = AllocCP9Bands(sub_cm, sub_cm->cp9);
+	      CP9_seq2bands(sub_cm, dsq[i], 1, sqinfo[i].len, sub_cp9b, 
 			    NULL, /* we don't want the posterior matrix back */
 			    debug_level);
 	      hmm           = sub_hmm;    
@@ -1112,12 +1229,9 @@ pt_AlignSeqsWrapper(CM_t *cm, char **dsq, SQINFO *sqinfo, int nseq, Parsetree_t 
 	  FreeSubMap(submap);
 	  FreeCPlan9Matrix(cp9_post);
 	  FreeCM(sub_cm); /* cm and sub_cm now point to NULL */
-	  if(do_hbanded)
-	    FreeCP9Bands(sub_cp9b);
 	}
     }
-  /* Clean up. */
-  if(do_hbanded && !do_sub)
+  if(do_hbanded)
     FreeCP9Bands(cp9b);
   if (do_qdb)
     {
