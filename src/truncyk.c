@@ -194,32 +194,32 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
    if ( ret_shadow != NULL ) 
    {
       shadow = (void ***) MallocOrDie(sizeof(void **) * cm->M);
-      for ( v=0; v<cm->M; v++ ) { shadow[v] == NULL; }
+      for ( v=0; v<cm->M; v++ ) { shadow[v] = NULL; }
    }
    if ( ret_L_shadow != NULL ) 
    {
       L_shadow = (void ***) MallocOrDie(sizeof(void **) * cm->M);
-      for ( v=0; v<cm->M; v++ ) { L_shadow[v] == NULL; }
+      for ( v=0; v<cm->M; v++ ) { L_shadow[v] = NULL; }
    }
    if ( ret_R_shadow != NULL ) 
    {
       R_shadow = (void ***) MallocOrDie(sizeof(void **) * cm->M);
-      for ( v=0; v<cm->M; v++ ) { R_shadow[v] == NULL; }
+      for ( v=0; v<cm->M; v++ ) { R_shadow[v] = NULL; }
    }
    if ( ret_T_shadow != NULL ) 
    {
       T_shadow = (void ***) MallocOrDie(sizeof(void **) * cm->M);
-      for ( v=0; v<cm->M; v++ ) { T_shadow[v] == NULL; }
+      for ( v=0; v<cm->M; v++ ) { T_shadow[v] = NULL; }
    }
    if ( ret_Lmode_shadow != NULL ) 
    {
       Lmode_shadow = (int ***) MallocOrDie(sizeof(int **) * cm->M);
-      for ( v=0; v<cm->M; v++ ) { Lmode_shadow[v] == NULL; }
+      for ( v=0; v<cm->M; v++ ) { Lmode_shadow[v] = NULL; }
    }
    if ( ret_Rmode_shadow != NULL ) 
    {
       Rmode_shadow = (int ***) MallocOrDie(sizeof(int **) * cm->M);
-      for ( v=0; v<cm->M; v++ ) { Rmode_shadow[v] == NULL; }
+      for ( v=0; v<cm->M; v++ ) { Rmode_shadow[v] = NULL; }
    }
 
    /* Main recursion */
@@ -532,7 +532,7 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
       }
       else if ( cm->sttype[v] == IL_st || cm->sttype[v] == ML_st )
       {
-         for ( j = 0; jp <= W; jp++ )
+         for ( jp = 0; jp <= W; jp++ )
          {
             j = i0-1+jp;
             y = cm->cfirst[v];
@@ -870,6 +870,8 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
    /* No option for returning deckpool - delete it */
    while ( deckpool_pop(dpool, &end)) free_vjd_deck(end, i0, j0);
    deckpool_free(dpool);
+
+if (R_shadow[12] == NULL) Die("R_shadow[12] NULL before exiting inside()");
  
    free(touch);
    if ( ret_shadow != NULL ) *ret_shadow = shadow;
@@ -878,6 +880,7 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
    if ( ret_T_shadow != NULL ) *ret_T_shadow = T_shadow;
    if ( ret_Lmode_shadow != NULL ) *ret_Lmode_shadow = (void ***)Lmode_shadow;
    if ( ret_Rmode_shadow != NULL ) *ret_Rmode_shadow = (void ***)Rmode_shadow;
+if ((*ret_R_shadow)[12] == NULL) Die("(*ret_R_shadow)[12] NULL before exiting inside()");
    return sc;
 }
 
@@ -927,9 +930,8 @@ trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
    sc = trinside(cm, dsq, L, r, z, i0, j0,
                  BE_PARANOID,
                  &shadow,
-                 &L_shadow, &Lmode_shadow,
-                 &R_shadow, &Rmode_shadow,
-                 &T_shadow,
+                 &L_shadow, &R_shadow, &T_shadow,
+                 &Lmode_shadow, &Rmode_shadow,
                  &mode,
                  allow_begin,
                  &b, &bsc, &bmode);
@@ -963,14 +965,14 @@ trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
             esl_stack_IPush(pda, tr->n-1);
 
             /* Retrieve mode of left child (should be 3 or 2) */
-            mode = ((int **) Lmode_shadow[v])[j][d];
+            mode = ((int **)Lmode_shadow[v])[j][d];
          }
          else if ( mode == 1 )
          {
             k = ((int **) R_shadow[v])[j][d];
 
             /* Retrieve mode of right child (should be 3 or 1) */
-            mode = ((int **) Rmode_shadow[v])[j][d];
+            mode = ((int **)Rmode_shadow[v])[j][d];
             esl_stack_IPush(pda, j);
             esl_stack_IPush(pda, k);
             esl_stack_IPush(pda, mode);
@@ -1021,12 +1023,12 @@ trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
          else if ( mode == 2 )
          {
             yoffset = ((char **) L_shadow[v])[j][d];
-            mode = ((char **) Lmode_shadow[v])[j][d];
+            mode = ((int **)Lmode_shadow[v])[j][d];
          }
          else if ( mode == 1 )
          {
             yoffset = ((char **) R_shadow[v])[j][d];
-            mode = ((char **) Rmode_shadow[v])[j][d];
+            mode = ((int **)Rmode_shadow[v])[j][d];
          }
          else { Die("Unknown mode in traceback!"); }
 
@@ -1055,7 +1057,7 @@ trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
             default:
                Die("'Inconceivable!'\n'You keep using that word...'");
          }
-         d = j-1+1;
+         d = j-i+1;
 
          if ( yoffset == USED_EL )
          {
