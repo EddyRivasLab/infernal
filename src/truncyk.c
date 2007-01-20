@@ -639,7 +639,7 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
       }
       else if ( cm->sttype[v] == IR_st || cm->sttype[v] == MR_st )
       {
-         for ( j = 0; jp <= W; jp++ )
+         for ( jp = 0; jp <= W; jp++ )
          {
             j = i0-1+jp;
             y = cm->cfirst[v];

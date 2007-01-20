@@ -232,6 +232,10 @@ extern void debug_print_shadow(void ***shadow, CM_t *cm, int L);
 extern void debug_print_shadow_banded(void ***shadow, CM_t *cm, int L, int *dmin, int *dmax);
 extern void debug_print_shadow_banded_deck(int v, void ***shadow, CM_t *cm, int L, int *dmin, int *dmax);
 
+/* from truncyk.c
+ */
+float TrCYKInside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, int *dmin, int *dmax);
+
 /* from cm_eweight.c
  * Entropy-based sequence weighting */
 extern double CM_Eweight(CM_t *cm,  Prior_t *pri, 
