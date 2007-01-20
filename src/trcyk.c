@@ -70,6 +70,8 @@ int j0 = sqinfo.len;
       /* Do alignment */
       sc = TrCYKInside(cm, dsq, sqinfo.len, 0, i0, j0, &tr, NULL, NULL);
       /* Print alignment */
+/* ParsetreeDump(stdout,tr,cm,dsq); printf("\n\n"); */
+      printf("score:    %f\n",sc);
       fali = CreateFancyAli(tr, cm, cons, dsq);
       PrintFancyAli(stdout, fali);
 
