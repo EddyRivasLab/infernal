@@ -1003,7 +1003,7 @@ trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
       }
       else if ( (cm->sttype[v] == E_st) || (cm->sttype[v] == EL_st) )
       {
-         if (! esl_stack_IPop(pda, &bifparent)) break;
+         if (esl_stack_IPop(pda, &bifparent) == eslEOD) break;
          esl_stack_IPop(pda, &mode);
          esl_stack_IPop(pda, &d);
          esl_stack_IPop(pda, &j);
