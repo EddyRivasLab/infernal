@@ -1,0 +1,22 @@
+Covariance models (CMs) are computational tools used to search for
+homologous non-coding RNAs (ncRNAs) in genomic sequences. CMs consider
+both primary sequence and structural conservation of the family being
+modelled, and have been shown to be very specific and sensitive when
+constructed for families for which many (hundreds) of examples are
+known. For example tRNAscan-SE is a CM based tool routinely used to
+annotate tRNAs in sequenced genomes. But generally, CMs suffer from
+two main drawbacks. First, they are very compute-intensive; a search
+for RNaseP in the human genome would take roughly 10
+compute-years. Secondly, if only a few examples of the family are
+known (which is the case for the majority of recognized families),
+they perform poorly due to simplistic parameterization strategies.  We
+describe our work on alleviating both of these issues. For speed, we
+introduce a method for skipping computations that are
+probabilistically determined to be unlikely to help identify
+homologous sequences. For sensitivity, we've implemented informative
+priors and an entropy based weighting scheme, both borrowed from the
+profile HMM community. Based on a simple benchmark we report that CMs
+are now significantly more sensitive and about four times faster for
+an average ncRNA family.
+
+

@@ -192,8 +192,8 @@ these subsequences are obviously too long or short, when one considers
 the size of the query substructure under state $v$.  For example, when
 state $v$ models the closing base pair of a consensus four-base loop,
 only $i..j$ subsequences of length six are likely to occur in any
-optimal alignment to state $v$ ($i=j-5,j$ being the base pair, and
-$j-4..j-1$ being the four bases of the hairpin loop). Likewise, the
+optimal alignment to state $v$. That is $(i=j-5,j)$ being the base pair, and
+$(j-4..j-1)$ being the four bases of the hairpin loop. Likewise, the
 optimal subsequence aligned to the next consensus base pair in that stem is
 almost certainly of length eight.
 
@@ -401,7 +401,6 @@ to guarantee that, for all $v$:
   \frac{ \sum_{d = Z+1}^{\infty}  \gamma_v(d)}
        { \sum_{d' = \mbox{dmax}(v) + 1}^{Z} \gamma_v(d')}  \leq \epsilon
 \]
-
 Empirically, we observe that the tails of the $\gamma_v(d)$ densities
 decrease approximately geometrically. We can estimate the mass
 remaining in the unseen tail by fitting a geometric tail to the
@@ -430,7 +429,7 @@ production rules, and for scanning long genomic sequences for
 high-scoring subsequences (hits) \cite{Durbin98}.
 
 The CM search algorithm recursively calculates $\alpha_v(j,d)$, the
-log odds score of the most likely CM parse subtree rooted at state $v$
+log probability of the most likely CM parse subtree rooted at state $v$
 that generates (aligns to) the length $d$ subsequence $x_{j-d+1}..x_j$
 that ends at position $j$ of target sequence $x$
 \cite{Eddy94,Durbin98}. This calculation initializes at the smallest
@@ -472,8 +471,8 @@ $v = $ delete or start $(D,S)$: & $\alpha_v(j,d) = \max_{y \in C_v} [\alpha_y(j,
   \log t_v(y)];$ \\
 else $(v = P, L, R):$ & $\alpha_v(j,d) = \max_{y \in C_v}
   [\alpha_y(j-\Delta_v^{R}, d-(\Delta_v^{L}+\Delta_v^{R})) + \log
-  t_v(y)].$ \\
-& \hspace{4.5em} $+ \log e_v(x_i,x_j)$ \\ 
+  t_v(y)]$ \\
+& \hspace{4.5em} $+ \log e_v(x_i,x_j).$ \\ 
 \end{tabular}
 \vspace{0.5em}
 
@@ -575,10 +574,9 @@ filtered alignments and collected counts in the training dataset are
 given in Table~\ref{tbl:emissioncounts}. These data were used to
 estimate a nine-component Dirichlet mixture prior for base pairs, and
 an eight-component Dirichlet mixture prior for single stranded
-residues. (The decision to use nine and eight components was
-empirical, after benchmarking different choices.) The base pair prior
-is given in Table~\ref{tbl:basepairs}, and the singlet residue prior
-is given in Table~\ref{tbl:singlets}.
+residues. The base pair prior is given in
+Table~\ref{tbl:basepairs}, and the singlet residue prior is given in
+Table~\ref{tbl:singlets}. 
 
 The reason to use two different datasets to estimate transition versus
 emission priors is the following. Rfam provides many different
@@ -608,8 +606,17 @@ U's, for example) while other components favor more variation
 (components 4 and 5, for example), and the marginal $\alpha$
 parameters show a strong A bias, reflecting the known bias for adenine
 in single-stranded positions of structural RNAs (especially ribosomal
-RNAs).
-
+RNAs). Some components are similar (notably 5 and 8 in the base pair
+mixture and 2, 3 and 8 in the singlet mixture) and appear redundant,
+but the decision to use these nine and eight component mixtures was
+empirical, as these mixtures performed better than those with fewer
+components (data not shown). As implemented in \textsc{infernal}, the
+Dirichlet priors do not differentiate between location of singlets, or
+base pairs. For example, singlets in hairpin loops and in interior
+loops are treated identically, and base pairs at the end and middle of
+helices are treated identically, although different priors could be
+trained and used for these different situations in future
+implementations.
 
 \ifdraft
 \input{tbl-emissioncounts}
@@ -639,9 +646,17 @@ alignment), thereby increasing the influence of the Dirichlet priors,
 flattening the transition and emission distributions, and reducing the
 overall information content, until a desired target entropy is
 achieved. We approximate a model's entropy as the mean match state
-entropy, the summed entropy of all consensus match states (MATP\_MP,
-MATL\_ML, and MATR\_MR) divided by the consensus query length.  The
-target entropy for \textsc{infernal} is a free parameter, which we
+entropy as follows. Let $C$ be the set of all MATP\_MP states, each emitting
+base pairs ($a$,$b$), and let $D$ be the set of all MATL\_ML and MATR\_MR
+states, each emitting singlets ($a$): 
+
+\[
+\frac{ \sum_{v \in C} \sum_{a,b} e_v(a,b) \log \frac{1}{e_v(a,b)} +
+       \sum_{v \in D} \sum_{a}   e_v(a)   \log \frac{1}{e_v(a)}}
+{2 * |C| + |D|}
+\]
+
+The target entropy for \textsc{infernal} is a free parameter, which we
 optimized on the benchmark described below to identify our default
 value of 1.46 bits.
 
@@ -749,8 +764,8 @@ sequence with each of the 51 models, as a function of the average
 query RNA length. QDB reduces the average-case running time complexity
 of the CM search algorithm from $LN^{2.36}$ to $LN^{1.32}$. Observed
 accelerations relative to the standard algorithm range from 1.4-fold
-(for the IRE, iron response element) to 12.6-fold (for CsrB RNA), with
-an average speed-up per family of 4.1-fold. In total search time for
+(for the IRE, iron response element) to 12.7-fold (for CsrB RNA), with
+an average speed-up per family of 4.2-fold. In total search time for
 the benchmark (sum of all 51 searches), the acceleration is six-fold,
 because large queries have disproportionate effect on the total
 time.
@@ -766,7 +781,7 @@ bands. This is expected to compromise sensitivity. The hope is
 that QDB's bands are sufficiently wide and accurate that the loss is
 negligible.  Figure~\ref{fig:roc} shows ROC plots (sensitivity versus
 false positive rate) on the benchmark for the new version of
-\textsc{infernal} (version 0.71) in standard versus QDB mode.  These
+\textsc{infernal} (version 0.72) in standard versus QDB mode.  These
 plots are nearly superposed, showing that the loss in accuracy is
 small at the default QDB setting of $\beta=10^{-7}$.
 
@@ -778,7 +793,7 @@ small at the default QDB setting of $\beta=10^{-7}$.
 How much do our changes in parameterization (the addition of
 informative Dirichlet priors and entropy weighting) improve
 sensitivity and specificity? Figure~\ref{fig:roc} shows that the new
-\textsc{infernal} 0.71 is a large improvement over the previous
+\textsc{infernal} 0.72 is a large improvement over the previous
 \textsc{infernal} version 0.55, independent of QDB. (On average, in
 this benchmark, \textsc{infernal} 0.55 is no better than a
 family-pairwise-search with \textsc{blastn}.) Table~\ref{tbl:rmarkmerlist}
@@ -799,21 +814,20 @@ improvements in sensitivity and specificity.
 \begin{comment}
 %old
 CM searches take a long time, and this is the most limiting factor in
-using the \textsc{infernal} software to identify RNA similarities. 
+using the \textsc{infernal} software to identify RNA similarities.
 Prior to this work, \textsc{infernal} (version 0.55) required 508
 CPU-hours to search 51 models against just 1 megabase of sequence in
-our benchmarks (Table~\ref{tbl:rmark}). With QDB (version 0.71), this
+our benchmarks (Table~\ref{tbl:rmark}). With QDB (version 0.72), this
 time is reduced to 84.51 hours, a six-fold speed-up. Our eventual goal
 is to enable routine genome annotation of structural RNAs: to be able
-to search thousands of RNA
-models against complete genome sequences. 
+to search thousands of RNA models against complete genome sequences.
 A search of all 503 Rfam 7.0 models against the 3 GB human genome
 would take on the order of 2000 CPU-years. We need to be able to do it
-in at most a few days, so  we need to increase CM search speed by five
-to six orders of magnitude. Parallelization is feasible, but even large clusters will
-give us only about three orders of magnitude.  Moreover,
-parallelization on this scale is prohibitively expensive for all but a
-few centers. Software improvement (code optimization) will
+in at most a few days, so we need to increase CM search speed by five
+to six orders of magnitude. Parallelization is feasible, but even
+large clusters will give us only about three orders of magnitude.
+Moreover, parallelization on this scale is prohibitively expensive for
+all but a few centers. Software improvement (code optimization) will
 contribute, but probably only about two-fold.  Hardware improvements
 will contribute about two-fold per year or so so long as Moore's law
 continues. None of this is sufficient for our immediate purposes.
@@ -837,11 +851,11 @@ Prior to this work, \textsc{infernal} 0.55 required 508 CPU-hours to
 search 51 models against just 1 megabase of sequence in our benchmarks
 (Table~\ref{tbl:rmark}).  Using QDB with $\beta$ banding cutoffs that
 do not appreciably compromise sensitivity and specificity,
-\textsc{infernal} 0.71 offers a six-fold speedup, performing the
+\textsc{infernal} 0.72 offers a six-fold speedup, performing the
 benchmark in 85 hours.  Our eventual goal is to enable routine genome
 annotation of structural RNAs: to be able to search thousands of RNA
 models against complete genome sequences.  A search of all 503 Rfam
-7.0 models against the 3 GB human genome with \textsc{infernal} 0.71
+7.0 models against the 3 GB human genome with \textsc{infernal} 0.72
 in QDB mode would take on the order of 300 CPU-years (down from 1800
 with \textsc{infernal} 0.55).  We need to be able to do it in at most
 a few days, so we still need to increase CM search speed by five
@@ -898,19 +912,28 @@ developers are notoriously biased, and however honest we may try to
 be, it is difficult to entirely avoid such biases. For one thing,
 establishing an internal benchmark for ongoing code development
 creates an insidious form of training on the test set, because we
-accept code changes that improve benchmark performance.  Currently we
-are aware of only one independent benchmark to date, BRaliBase III
-(Freyhult, Bollback, and Gardner, unpublished; available at
-\url{http://www.binf.ku.dk/~pgardner/bralibase/bralibase3/}). BRaliBase
-III consists of many different query alignments of 5 or 20 RNA
-sequences, drawn from three different RNA families (U5, 5S rRNA, and
-tRNA). These authors' results broadly confirm our internal
-observations: while \textsc{infernal} 0.55 showed mediocre performance
-compared to \textsc{blastn} and several other tools, a recent version
-of \textsc{infernal} stood out as a superior method for RNA similarity
+accept code changes that improve benchmark performance. In particular,
+we set the target of 1.46 bits for entropy weighting because it gave
+optimal performance on our benchmark.  
+Further, our benchmark is flawed in that the background sequence of
+the ``pseudo-genome'' is independent and identically-distributed (IID)
+and of uniform composition, and thus poorly reflects the heterogeneous
+nature of genomic sequence.  Because the way that background sequence
+is modelled has not changed between versions 0.55 and 0.72 of
+\textsc{infernal}, we expect that the improvements shown in our
+benchmark will be mirrored in searches in real genomes, though we have
+not shown this.
+Currently we are aware of only one independent
+benchmark to date, BRaliBase III \cite{Freyhult07}. BRaliBase III
+consists of many different query alignments of 5 or 20 RNA sequences,
+drawn from three different RNA families (U5, 5S rRNA, and tRNA). These
+authors' results broadly confirm our internal observations: while
+\textsc{infernal} 0.55 showed mediocre performance compared to
+\textsc{blastn} and several other tools, a recent version of
+\textsc{infernal} stood out as a superior method for RNA similarity
 search.
 
-Nonetheless, though \textsc{infernal} 0.71 shows large improvements in
+Nonetheless, though \textsc{infernal} 0.72 shows large improvements in
 speed, sensitivity, and specificity over previous versions, there are
 numerous areas where we need to improve further. 
 
@@ -942,9 +965,10 @@ appear to be mathematically sophisticated, fundamentally assume that
 observed counts are drawn as independent multinomial samples, and
 therefore the use of Dirichlet priors is fundamentally flawed.
 Probabilistic phylogenetic inference methodology needs to be
-integrated with profile search methods, but this area continues to be
-stymied by a lack of understanding of how to model insertions and
-deletions efficiently in a phylogenetic probability model.
+integrated with profile search methods. This is an area of active
+research \cite{Holmes04, Holmes05b, Rivas05} in which important
+challenges remain, in particular, how to efficiently model insertions
+and deletions in a phylogenetic probability model.
 
 Finally, QDB is not the only algorithmic acceleration method we can
 envision.  Michael Brown described a complementary banding method to
@@ -964,7 +988,7 @@ for us.
 
 The version and options used for \textsc{blast} in our benchmark are
 \texttt{WU-BLASTN-2.0MP --kap -W=7}.  For \textsc{infernal}, versions 0.55
-and 0.71 were used as indicated. The complete \textsc{infernal}
+and 0.72 were used as indicated. The complete \textsc{infernal}
 software package, including documentation and the Rfam-based benchmark
 described here, may be downloaded from
 \url{http://infernal.janelia.org}. It is developed on GNU/Linux
