@@ -1,11 +1,11 @@
-# inf_qdb-71.rmk: options for a infernal 0.71 rmark benchmark
+# inf_qdb-72.rmk: options for a infernal 0.72 rmark benchmark
 #                 with default priors, default entropy weighting
-#                 and QDB (default in cmsearch 0.71).
+#                 and QDB (default in cmsearch 0.72).
 #
 # This infernal benchmark corresponds to Table 7 row 3, and the
-# "Infernal v0.71, with QDB, \beta=1E-7" ROC curve in Figure 5 of the 
+# "Infernal v0.72, with QDB, \beta=1E-7" ROC curve in Figure 5 of the 
 # of the banded cyk manuscript. To duplicate those results, cmsearch 
-# and cmbuild must be infernal version 0.71 executables.
+# and cmbuild must be infernal version 0.72 executables.
 #
 $cmb = "/groups/eddy/home/nawrockie/notebook/6_1215_inf_72_release/infernal-0.7stable/src/cmbuild ";
 $cms = "/groups/eddy/home/nawrockie/notebook/6_1215_inf_72_release/infernal-0.7stable/src/cmsearch --local ";
