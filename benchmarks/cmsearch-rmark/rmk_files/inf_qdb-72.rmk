@@ -7,6 +7,6 @@
 # of the banded cyk manuscript. To duplicate those results, cmsearch 
 # and cmbuild must be infernal version 0.72 executables.
 #
-$cmb = "/groups/eddy/home/nawrockie/notebook/6_1215_inf_72_release/infernal-0.7stable/src/cmbuild ";
-$cms = "/groups/eddy/home/nawrockie/notebook/6_1215_inf_72_release/infernal-0.7stable/src/cmsearch --local ";
+$cmb = "cmbuild ";
+$cms = "cmsearch --local ";
 1;

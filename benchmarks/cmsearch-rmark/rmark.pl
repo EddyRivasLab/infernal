@@ -18,7 +18,7 @@
 #        -T <x> : set minimum bit score to keep as <x> [default: 8]
 #
 #
-# Example:  perl rmark.pl infernal.rmm inf-71.rmk rmark-test/ rmark-test.idx
+# Example:  perl rmark.pl infernal.rmm inf-72.rmk rmark-test/ rmark-test.idx
 #                         rmark-test.fa rmark-test_out
 #
 # The example run above will result in the following files:

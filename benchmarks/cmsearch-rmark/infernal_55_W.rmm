@@ -15,9 +15,9 @@ $testfile   = shift;
 $thresh     = shift;
 
 #infernal_55_W.rmm specific info, hard-coded W values for each of the
-#51 RMARK families. derived from infernal version 0.71 code:
+#51 RMARK families. derived from infernal version 0.72 code:
 #for example 
-#  $ cmbuild-0.71 --priorfile plus1.prior --effnone --nodetach -F RF00504.cm 
+#  $ cmbuild-0.72 --priorfile plus1.prior --effnone --nodetach -F RF00504.cm 
 #    RF00504.ali > RF00504_cmbuild.out'
 #  
 $W_hash{"RF00002"} = 211;

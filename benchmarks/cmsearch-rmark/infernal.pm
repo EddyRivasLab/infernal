@@ -11,7 +11,7 @@ package infernal;
 
 #------------ ParseInfernal ------------
 #
-# Parse cmsearch (v0.55->v0.71) output into
+# Parse cmsearch (v0.55->v0.72) output into
 # arrays that we can use in perl scripts.
 #
 # Illustrative example:
