@@ -368,6 +368,7 @@ main(int argc, char **argv)
 	  if(distro_epos == 0 && distro_epos_state == 1) distro_epos = 1;
 	  sdistro[distro_spos-1] += 1.;
 	  edistro[distro_epos-1] += 1.;
+	  FreeCPlan9Matrix(cp9_post);
 	}
       /* We've got all we need for the distribution, free distro_* data structures */
       for(i = 0; i < distro_nseq; i++)
@@ -376,7 +377,8 @@ main(int argc, char **argv)
 	  free(distro_dsq[i]);
 	}
       free(distro_sqinfo);
-      FreeCPlan9Matrix(cp9_post);
+      free(distro_seq);
+      free(distro_dsq);
 
       /* Normalize the distros */
       esl_vec_FNorm(sdistro, ncols);
@@ -501,8 +503,6 @@ main(int argc, char **argv)
 	    {
 	      spos[i] = esl_rnd_FChoose(r, sdistro, ncols) + 1;
 	      epos[i] = esl_rnd_FChoose(r, edistro, ncols) + 1;
-	      emit_sdistro[(spos[i]-1)] += 1.;
-	      emit_edistro[(epos[i]-1)] += 1.;
 	    }
 	  else
 	    {
@@ -515,6 +515,11 @@ main(int argc, char **argv)
 	      spos[i] = epos[i];
 	      epos[i] = temp;
 	      passed = TRUE;
+	    }
+	  if(do_distro)
+	    {
+	      emit_sdistro[(spos[i]-1)] += 1.;
+	      emit_edistro[(epos[i]-1)] += 1.;
 	    }
 	  if(!do_minlen && !do_fixlen)
 	    passed = TRUE;
@@ -709,6 +714,7 @@ main(int argc, char **argv)
   free(dsq);
   free(seq);
   FreeEmitMap(emap);
+  esl_randomness_Destroy(r);
   return EXIT_SUCCESS;
 }
   
