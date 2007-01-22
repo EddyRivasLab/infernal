@@ -425,6 +425,10 @@ main(int argc, char **argv)
       printf("2/1 speedup (user):      %.2f\n", spdup);
     }
   printf("Avg bit score diff:      %.2f\n", (diff_sc / ((float) s1_nseq)));
+  if(diff_ct == 0)
+    printf("Avg sc diff(>1e-4):      %.2f\n", 0.);
+  else
+    printf("Avg sc diff(>1e-4):      %.2f\n", (diff_sc / ((float) diff_ct)));
   printf("Num   diff (>1e-4):      %d\n", (diff_ct));
   printf("Fract diff (>1e-4):      %.5f\n", (((float) diff_ct) / ((float) s1_nseq)));
   printf("\n");
