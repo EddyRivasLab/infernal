@@ -921,6 +921,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 				         * and arrays for CM state bands, derived from HMM bands*/
   CP9Map_t       *cp9map;        /* maps the hmm to the cm and vice versa */
   CP9_dpmatrix_t *cp9_post;      /* growable DP matrix for posterior decode              */
+  CP9_dpmatrix_t *cp9_mx;        /* growable DP matrix for viterbi                       */
   float           swentry;	 /* S/W aggregate entry probability       */
   float           swexit;        /* S/W aggregate exit probability        */
 
@@ -1068,6 +1069,18 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
       StopwatchStart(watch);
       
       if (sq[i]->n == 0) Die("ERROR: sequence named %s has length 0.\n", sq[i]->name);
+
+      /* Special case, if do_hmmonly, align seq with Viterbi, print score and move 
+       * on to next seq */
+      if(do_hmmonly)
+	{
+	  cp9_mx  = CreateCPlan9Matrix(1, cm->cp9->M, 25, 0);
+	  if(!silent_mode) printf("Aligning (to a CP9 HMM w/viterbi) %-30s", sq[i]->name);
+	  sc = CP9Viterbi(sq[i]->dsq, 1, sq[i]->n, cm->cp9, cp9_mx);
+	  if(!silent_mode) printf("    score: %10.2f bits\n", sc);
+	  FreeCPlan9Matrix(cp9_mx);
+	  continue;
+	}
 
       /* Potentially, do HMM calculations. */
       if(do_hbanded)

@@ -265,13 +265,13 @@ void search_second_broadcast (CM_t **cm, long *N, int mpi_my_rank, int mpi_maste
     { 
       /* we always send N */
       MPI_Pack (&N, 1, MPI_LONG, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      if((*cm)->opts & CM_SEARCH_CMSTATS) /* pack the CM EVD parameters */
+      if((*cm)->search_opts & CM_SEARCH_CMSTATS) /* pack the CM EVD parameters */
 	{
 	  MPI_Pack ((*cm)->lambda,GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
 	  MPI_Pack ((*cm)->K,     GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
 	  MPI_Pack ((*cm)->mu,    GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
 	}
-      if((*cm)->opts & CM_SEARCH_CP9STATS) /* pack the CP9 EVD parameters */
+      if((*cm)->search_opts & CM_SEARCH_CP9STATS) /* pack the CP9 EVD parameters */
 	{
 	  MPI_Pack ((*cm)->cp9_lambda, GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
 	  MPI_Pack ((*cm)->cp9_mu,     GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
@@ -288,7 +288,7 @@ void search_second_broadcast (CM_t **cm, long *N, int mpi_my_rank, int mpi_maste
       /* this is fragile, we rely on the fact that we broadcasted the CM
        * in broadcast_cm() earlier, so it will have the same cm->*opts as
        * the one we're sending from the master node. */
-      if((*cm)->opts & CM_SEARCH_CMSTATS) /* unpack the CM EVD parameters */
+      if((*cm)->search_opts & CM_SEARCH_CMSTATS) /* unpack the CM EVD parameters */
 	{
 	  MPI_Unpack (buf, BUFSIZE, &position, ((*cm)->lambda), GC_SEGMENTS, MPI_DOUBLE, MPI_COMM_WORLD);
 	  MPI_Unpack (buf, BUFSIZE, &position, ((*cm)->mu),     GC_SEGMENTS, MPI_DOUBLE, MPI_COMM_WORLD);
@@ -300,7 +300,7 @@ void search_second_broadcast (CM_t **cm, long *N, int mpi_my_rank, int mpi_maste
 	      (*cm)->K[i]      = K[i];
 	    }
 	}
-      if((*cm)->opts & CM_SEARCH_CP9STATS) /* unpack the CP9 EVD parameters */
+      if((*cm)->search_opts & CM_SEARCH_CP9STATS) /* unpack the CP9 EVD parameters */
 	{
 	  MPI_Unpack (buf, BUFSIZE, &position, cp9_lambda, GC_SEGMENTS, MPI_DOUBLE, MPI_COMM_WORLD);
 	  MPI_Unpack (buf, BUFSIZE, &position, cp9_mu,     GC_SEGMENTS, MPI_DOUBLE, MPI_COMM_WORLD);

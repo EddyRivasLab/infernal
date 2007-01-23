@@ -440,7 +440,7 @@ CP9Viterbi(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_
      dmx[0][k] is possible for all k 1..M */
   for (k = 1; k <= hmm->M; k++)
     mmx[0][k] = imx[0][k] = -INFTY;      /* need seq to get here */
-  for (k = 1; k < hmm->M; k++)
+  for (k = 1; k <= hmm->M; k++)
     {
       dmx[0][k]  = -INFTY;
       if((sc = mmx[0][k-1] + hmm->tsc[CTMD][k-1]) > dmx[0][k])

@@ -56,7 +56,7 @@ static char experts[] = "\
    --hbandp <f>  : tail loss prob for HMM bands [default: 1E-4]\n\
    --hsafe       : realign (non-banded) seqs with HMM banded CYK score < 0 bits\n\
    --sums        : use posterior sums during HMM band calculation (widens bands)\n\
-   --hmmonly     : align with the CM Plan 9 HMM (NOT YET IMPLEMENTED)\n\
+   --hmmonly     : align with the CM Plan 9 HMM (only gives timings)\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -214,7 +214,6 @@ main(int argc, char **argv)
       }
     else if (strcmp(optname, "--hmmonly")     == 0) 
       {
-	Die("-hmmonly not yet implemented.\n");
 	if(s2_set) Die("Please only pick one: --qdb, --qdbsmall, --qdbboth, --hbanded, --hmmonly\n");
 	s2_do_hmmonly = TRUE;
 	s2_set = TRUE;
@@ -398,7 +397,12 @@ main(int argc, char **argv)
   for(i = 0; i < s1_nseq; i++)
     {
       s1_sc[i] = ParsetreeScore(cm, s1_tr[i], s1_sq[i]->dsq, FALSE);
-      s2_sc[i] = ParsetreeScore(cm, s2_tr[i], s2_sq[i]->dsq, FALSE);
+      /* TO DO: write function that in actually_align_targets(), takes
+       * a CP9 parse, and converts it to a CM parsetree */
+      if(!s2_do_hmmonly)
+	s2_sc[i] = ParsetreeScore(cm, s2_tr[i], s2_sq[i]->dsq, FALSE);
+      else
+	s2_sc[i] = 0.;
       if(do_individuals)
 	printf("%-12s S1: %.3f S2: %.3f diff: %.3f\n", s1_sq[i]->name, s1_sc[i], s2_sc[i], fabs(s1_sc[i]-s2_sc[i]));
       if(fabs(s1_sc[i] -  s2_sc[i]) > 0.0001)
@@ -451,7 +455,8 @@ main(int argc, char **argv)
       for(i = 0; i < s2_nseq; i++)
 	{
 	  esl_sq_Destroy(s2_sq[i]);
-	  FreeParsetree(s2_tr[i]);  
+	  if(!s2_do_hmmonly)
+	    FreeParsetree(s2_tr[i]);  
 	}
       free(s2_sq);
       free(s2_tr);
@@ -472,10 +477,10 @@ void SummarizeAlignOptions(CM_t *cm)
   /* Algorithm */
   if(cm->align_opts & CM_ALIGN_INSIDE)
     printf("Algorithm:               Inside\n");
-  else if(cm->align_opts & CM_ALIGN_NOSMALL)
-    printf("Algorithm:               CYK Standard\n");
   else if(cm->align_opts & CM_ALIGN_HMMONLY)
     printf("Algorithm:               CP9 HMM Viterbi\n");
+  else if(cm->align_opts & CM_ALIGN_NOSMALL)
+    printf("Algorithm:               CYK Standard\n");
   else 
     printf("Algorithm:               CYK D&C\n");
 
@@ -513,3 +518,4 @@ void SummarizeAlignOptions(CM_t *cm)
   printf("---------------------------------\n");
   return;
 }
+
