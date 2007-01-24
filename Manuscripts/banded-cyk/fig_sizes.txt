@@ -1,0 +1,25 @@
+ref: http://journals.plos.org/ploscompbiol/figure_guidelines.php
+
+from website:
+"Research Articles
+
+    * Width:  9cm-18cm (or 3.5-7  in)
+    * Height: 1cm-24cm (or 0.5-9.5in)"
+
+fig 1: cmintro_bandcyk 
+in latex pdf: 15.6cm W X 8.3cm H
+
+fig 2: bands
+in latex pdf: 14.7cm W X 12cm  H 
+
+fig 3: betavaried
+in latex pdf: 15.7cm W X 8.8cm H
+
+fig 4: speedup
+in latex pdf: 15.6cm W X 9.8cm H
+
+fig 5: roc
+in latex pdf: 15.6cm W X 9.6cm W
+
+
+
