@@ -58,6 +58,7 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
   int         pos;		/* position in growing ali */
   int         lc, rc;		/* indices for left, right pos in consensus */
   int         symi, symj;
+  int         d;
   int         mode;
   int         lannote, rannote; /* chars in annotation line; left, right     */
   int         lstr, rstr;	/* chars in structure line; left, right      */
@@ -177,6 +178,7 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
       rc   = cons->rpos[nd];
       symi = dsq[tr->emitl[ti]];  /* residue indices that node is aligned to */
       symj = dsq[tr->emitr[ti]];
+      d = tr->emitr[ti] - tr->emitl[ti] + 1;
       mode = tr->mode[ti];
 
       /* Calculate four of the five lines: annote, str, cons, and seq.
@@ -208,11 +210,13 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
 	  lcons  = cons->cseq[lc];
 	  cpos_l = lc+1;
 	  if (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st) {
-	    if (mode == 3 || mode ==2) lseq = Alphabet[symi];
-            else                       lseq = '~';
+	    if      (mode == 3)         lseq = Alphabet[symi];
+            else if (mode == 2 && d>0 ) lseq = Alphabet[symi];
+            else                        lseq = '~';
 	    spos_l = tr->emitl[ti];
 	  } else {
-	    lseq   = '-';
+	    if (mode == 3 || mode == 2) lseq = '-';
+            else                        lseq = '~';
 	    spos_l = 0;
 	  }
 	}
@@ -223,11 +227,13 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
 	  rcons  = cons->cseq[rc];
 	  cpos_r = rc+1;
 	  if (cm->sttype[v] == MP_st || cm->sttype[v] == MR_st) {
-	    if (mode == 3 || mode == 1) rseq = Alphabet[symj];
+	    if      (mode == 3)         rseq = Alphabet[symj];
+            else if (mode == 1 && d>0 ) rseq = Alphabet[symj];
             else                        rseq = '~';
 	    spos_r = tr->emitr[ti];
 	  } else {
-	    rseq   = '-';
+	    if (mode == 3 || mode == 1) rseq = '-';
+            else                        rseq = '~';
 	    spos_r = 0;
 	  }
 	}

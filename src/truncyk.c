@@ -320,7 +320,8 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
 
                for ( yoffset=0; yoffset<cm->cnum[v]; yoffset++ )
                {
-                  if ( (sc = alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) > alpha[v][j][d] )
+                  sc = alpha[y+yoffset][j][d] + cm->tsc[v][yoffset];
+                  if ( sc > alpha[v][j][d] )
                   {
                      alpha[v][j][d] = sc;
                      if ( ret_shadow != NULL ) ((char **)shadow[v])[j][d] = yoffset;
@@ -928,7 +929,7 @@ trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
    int        bmode;		/* mode  for local begin */
 
    sc = trinside(cm, dsq, L, r, z, i0, j0,
-                 BE_PARANOID,
+                 BE_EFFICIENT,
                  &shadow,
                  &L_shadow, &R_shadow, &T_shadow,
                  &Lmode_shadow, &Rmode_shadow,
@@ -1037,20 +1038,26 @@ trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
             case  D_st:
                break;
             case MP_st:
-               if ( mode == 3 || mode == 2 ) i++;
-               if ( mode == 3 || mode == 1 ) j--;
+               if ( mode == 3 )          i++;
+               if ( mode == 2 && d > 0 ) i++;
+               if ( mode == 3 )          j--;
+               if ( mode == 1 && d > 0 ) j--;
                break;
             case ML_st:
-               if ( mode == 3 || mode == 2 ) i++;
+               if ( mode == 3 )          i++;
+               if ( mode == 2 && d > 0 ) i++;
                break;
             case MR_st:
-               if ( mode == 3 || mode == 1 ) j--;
+               if ( mode == 3 )          j--;
+               if ( mode == 1 && d > 0 ) j--;
                break;
             case IL_st:
-               if ( mode == 3 || mode == 2 ) i++;
+               if ( mode == 3 )          i++;
+               if ( mode == 2 && d > 0 ) i++;
                break;
             case IR_st:
-               if ( mode == 3 || mode == 1 ) j--;
+               if ( mode == 3 )          j--;
+               if ( mode == 1 && d > 0 ) j--;
                break;
             case  S_st:
                break;

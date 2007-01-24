@@ -15,6 +15,9 @@
 #include "squid.h"
 #include "vectorops.h"
 
+#include "easel.h"
+#include "esl_vectorops.h"
+
 #include "structs.h"
 
 /* Function: SymbolIndex()
