@@ -37,12 +37,11 @@ Usage: cmscore [-options] <cmfile> <sequence file>\n\
 
 static char experts[] = "\
   Expert options\n\
-   --smallonly   : do only d&c, don't do second stage full CYK/inside\n\
    --local       : align locally w.r.t the model\n\
    --sub         : build sub CM for columns b/t HMM predicted start/end points\n\
+   --smallonly   : do only d&c, don't do second stage full CYK/inside\n\
    --regress <f> : save regression test data to file <f>\n\
    --stringent   : require the two parse trees to be identical\n\
-   --scoreonly   : for full CYK/inside stage, do only score, save memory\n\
    --trees       : print parsetrees\n\
    --nocheck     : don't check parsetree scores vs alignment scores\n\
 \n\
@@ -57,6 +56,7 @@ static char experts[] = "\
    --hsafe       : realign (non-banded) seqs with HMM banded CYK score < 0 bits\n\
    --sums        : use posterior sums during HMM band calculation (widens bands)\n\
    --hmmonly     : align with the CM Plan 9 HMM (only gives timings)\n\
+   --scoreonly   : for full CYK/inside stage, do only score, save memory\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -67,7 +67,6 @@ static struct opt_s OPTIONS[] = {
   { "--sub",        FALSE, sqdARG_NONE },
   { "--regress",    FALSE, sqdARG_STRING },
   { "--stringent",  FALSE, sqdARG_NONE },
-  { "--scoreonly",  FALSE, sqdARG_NONE },
   { "--trees",      FALSE, sqdARG_NONE },
   { "--nocheck",    FALSE, sqdARG_NONE },
   { "--std",        FALSE, sqdARG_NONE },
@@ -79,7 +78,8 @@ static struct opt_s OPTIONS[] = {
   { "--hbandp",     FALSE, sqdARG_FLOAT},
   { "--hsafe",      FALSE, sqdARG_NONE},
   { "--sums",       FALSE, sqdARG_NONE },
-  { "--hmmonly",    FALSE, sqdARG_NONE }
+  { "--hmmonly",    FALSE, sqdARG_NONE },
+  { "--scoreonly",  FALSE, sqdARG_NONE }
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -118,7 +118,6 @@ main(int argc, char **argv)
   int do_local;		         /* TRUE to align locally w.r.t. model           */
   int do_sub;		         /* TRUE to align to a sub CM                    */
   int compare_stringently;	 /* TRUE to demand identical parse trees         */
-  int do_scoreonly;		 /* TRUE for score-only (small mem) full CYK     */
   int do_trees;		         /* TRUE to print parse trees to stdout          */
   int do_checkscores;            /* TRUE to check parsetree scores vs aln scs    */
 
@@ -136,6 +135,7 @@ main(int argc, char **argv)
   int            s2_do_hbanded;  /* TRUE to do HMM banded CYK in stage 2         */
   int            s2_do_hmmonly;  /* TRUE: stage 2 align with the HMM, not the CM */
   int            s2_do_hsafe;    /* TRUE: stage 2 realign seqs with banded sc < 0*/
+  int            s2_do_scoreonly;/* TRUE for score-only (small mem) full CYK     */
   double         hbandp; 	 /* tail loss probability for HMM banding        */
   int            use_sums;       /* TRUE: use the posterior sums w/HMM bands     */
 
@@ -154,7 +154,6 @@ main(int argc, char **argv)
   do_local            = FALSE;
   do_sub              = FALSE;
   compare_stringently = FALSE;
-  do_scoreonly        = FALSE;
   do_trees            = FALSE;
   do_checkscores      = TRUE;
   qdb_beta            = DEFAULT_BETA;
@@ -167,6 +166,7 @@ main(int argc, char **argv)
   s2_do_hmmonly       = FALSE;
   s2_do_hsafe         = FALSE;
   s2_set              = FALSE;
+  s2_do_scoreonly     = FALSE;
   hbandp              = DEFAULT_HBANDP;
   use_sums            = FALSE;
   
@@ -178,44 +178,50 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--sub")       == 0) do_sub              = TRUE;
     else if (strcmp(optname, "--regress")   == 0) regressfile         = optarg;
     else if (strcmp(optname, "--stringent") == 0) compare_stringently = TRUE;
-    else if (strcmp(optname, "--scoreonly") == 0) do_scoreonly        = TRUE;
     else if (strcmp(optname, "--trees")     == 0) do_trees            = TRUE;
     else if (strcmp(optname, "--nocheck")   == 0) do_checkscores      = FALSE;
     else if (strcmp(optname, "--std")        == 0) { /* this is default */ }
     else if (strcmp(optname, "--beta")      == 0) qdb_beta            = atof(optarg);
     else if (strcmp(optname, "--hbandp")    == 0) hbandp              = atof(optarg);
     else if (strcmp(optname, "--hsafe")     == 0) s2_do_hsafe         = TRUE;
-    else if (strcmp(optname, "--sums")      == 0) use_sums            = TRUE;
+    else if (strcmp(optname, "--scoreonly") == 0) s2_do_scoreonly     = TRUE;
     else if (strcmp(optname, "--qdb")       == 0) 
       {
-	if(s2_set) Die("Please only pick one: --qdb, --qdbsmall, --qdbboth, --hbanded, --hmmonly\n");
+	if(s2_set) Die("Please only pick one: --qdb, --qdbsmall, --qdbboth, --hbanded, --hmmonly --scoreonly\n");
 	s2_do_qdb = TRUE;
 	s2_do_small = FALSE;
 	s2_set = TRUE;
       }
     else if (strcmp(optname, "--qdbsmall")     == 0) 
       {
-	if(s2_set) Die("Please only pick one: --qdb, --qdbsmall, --qdbboth, --hbanded, --hmmonly\n");
+	if(s2_set) Die("Please only pick one: --qdb, --qdbsmall, --qdbboth, --hbanded, --hmmonly --scoreonly\n");
 	s2_do_qdb = TRUE;
 	s2_do_small = FALSE;
 	s2_set = TRUE;
       }
     else if (strcmp(optname, "--qdbboth")     == 0) 
       {
-	if(s2_set) Die("Please only pick one: --qdb, --qdbsmall, --qdbboth, --hbanded, --hmmonly\n");
+	if(s2_set) Die("Please only pick one: --qdb, --qdbsmall, --qdbboth, --hbanded, --hmmonly --scoreonly\n");
 	s1_do_qdb = s2_do_qdb = TRUE;
 	s2_set = TRUE;
       }
     else if (strcmp(optname, "--hbanded")     == 0) 
       {
-	if(s2_set) Die("Please only pick one: --qdb, --qdbsmall, --qdbboth, --hbanded, --hmmonly\n");
+	if(s2_set) Die("Please only pick one: --qdb, --qdbsmall, --qdbboth, --hbanded, --hmmonly --scoreonly\n");
 	s2_do_hbanded = TRUE;
 	s2_set = TRUE;
       }
     else if (strcmp(optname, "--hmmonly")     == 0) 
       {
-	if(s2_set) Die("Please only pick one: --qdb, --qdbsmall, --qdbboth, --hbanded, --hmmonly\n");
+	if(s2_set) Die("Please only pick one: --qdb, --qdbsmall, --qdbboth, --hbanded, --hmmonly, --scoreonly\n");
 	s2_do_hmmonly = TRUE;
+	s2_set = TRUE;
+      }
+    else if (strcmp(optname, "--scoreonly")     == 0) 
+      {
+	if(s2_set) Die("Please only pick one: --qdb, --qdbsmall, --qdbboth, --hbanded, --hmmonly --scoreonly\n");
+	s2_do_scoreonly = TRUE;
+	s2_do_small = FALSE;
 	s2_set = TRUE;
       }
     else if (strcmp(optname, "-h") == 0) {
@@ -366,6 +372,7 @@ main(int argc, char **argv)
       if (use_sums)       cm->align_opts  |= CM_ALIGN_SUMS;
       if (s2_do_hmmonly)  cm->align_opts  |= CM_ALIGN_HMMONLY;
       if (s2_do_hsafe)    cm->align_opts  |= CM_ALIGN_HMMSAFE;
+      if (s2_do_scoreonly) cm->align_opts |= CM_ALIGN_SCOREONLY;
       if (do_sub)
 	{
 	  cm->align_opts |= CM_ALIGN_SUB;
@@ -399,7 +406,7 @@ main(int argc, char **argv)
       s1_sc[i] = ParsetreeScore(cm, s1_tr[i], s1_sq[i]->dsq, FALSE);
       /* TO DO: write function that in actually_align_targets(), takes
        * a CP9 parse, and converts it to a CM parsetree */
-      if(!s2_do_hmmonly)
+      if(!s2_do_hmmonly && !s2_do_scoreonly)
 	s2_sc[i] = ParsetreeScore(cm, s2_tr[i], s2_sq[i]->dsq, FALSE);
       else
 	s2_sc[i] = 0.;
@@ -428,15 +435,17 @@ main(int argc, char **argv)
       spdup = watch1->user / watch2->user;
       printf("2/1 speedup (user):      %.2f\n", spdup);
     }
-  printf("Avg bit score diff:      %.2f\n", (diff_sc / ((float) s1_nseq)));
-  if(diff_ct == 0)
-    printf("Avg sc diff(>1e-4):      %.2f\n", 0.);
-  else
-    printf("Avg sc diff(>1e-4):      %.2f\n", (diff_sc / ((float) diff_ct)));
-  printf("Num   diff (>1e-4):      %d\n", (diff_ct));
-  printf("Fract diff (>1e-4):      %.5f\n", (((float) diff_ct) / ((float) s1_nseq)));
-  printf("\n");
-
+  if(!s2_do_scoreonly)
+    {
+      printf("Avg bit score diff:      %.2f\n", (diff_sc / ((float) s1_nseq)));
+      if(diff_ct == 0)
+	printf("Avg sc diff(>1e-4):      %.2f\n", 0.);
+      else
+	printf("Avg sc diff(>1e-4):      %.2f\n", (diff_sc / ((float) diff_ct)));
+      printf("Num   diff (>1e-4):      %d\n", (diff_ct));
+      printf("Fract diff (>1e-4):      %.5f\n", (((float) diff_ct) / ((float) s1_nseq)));
+      printf("\n");
+    }
   /* Clean up and exit */
   StopwatchFree(watch1);
   FreeCM(cm);
@@ -455,7 +464,7 @@ main(int argc, char **argv)
       for(i = 0; i < s2_nseq; i++)
 	{
 	  esl_sq_Destroy(s2_sq[i]);
-	  if(!s2_do_hmmonly)
+	  if(!s2_do_hmmonly && !s2_do_scoreonly)
 	    FreeParsetree(s2_tr[i]);  
 	}
       free(s2_sq);
@@ -479,6 +488,8 @@ void SummarizeAlignOptions(CM_t *cm)
     printf("Algorithm:               Inside\n");
   else if(cm->align_opts & CM_ALIGN_HMMONLY)
     printf("Algorithm:               CP9 HMM Viterbi\n");
+  else if(cm->align_opts & CM_ALIGN_SCOREONLY)
+    printf("Algorithm:               CYK Standard (score only)\n");
   else if(cm->align_opts & CM_ALIGN_NOSMALL)
     printf("Algorithm:               CYK Standard\n");
   else 

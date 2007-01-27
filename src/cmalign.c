@@ -79,7 +79,7 @@ static char experts[] = "\
    --hbandp <f>  : tail loss prob for --hbanded [default: 0.0001]\n\
    --hsafe       : realign (non-banded) seqs with HMM banded CYK score < 0 bits\n\
    --sums        : use posterior sums during HMM band calculation (widens bands)\n\
-   --hmmonly     : align with the CM Plan 9 HMM\n\
+   --hmmonly     : align with the CM Plan 9 HMM (no alignment given)\n\
 \n\
   * Query dependent banded (qdb) alignment related options:\n\
    --qdb         : use query dependent banded CYK alignment algorithm\n\
@@ -103,6 +103,7 @@ static struct opt_s OPTIONS[] = {
   { "--hbanded",    FALSE, sqdARG_NONE },
   { "--hbandp",     FALSE, sqdARG_FLOAT},
   { "--hsafe",      FALSE, sqdARG_NONE},
+  { "--hmmonly",    FALSE, sqdARG_NONE },
   { "--sums",       FALSE, sqdARG_NONE},
   { "--time",       FALSE, sqdARG_NONE},
   { "--inside",     FALSE, sqdARG_NONE},
@@ -236,6 +237,7 @@ main(int argc, char **argv)
   do_inside   = FALSE;
   do_outside  = FALSE;
   do_post     = FALSE;
+  do_check    = FALSE;
   do_sub      = FALSE;
   do_fullsub  = FALSE;
   do_elsilent = FALSE;
@@ -269,7 +271,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--hbandp")    == 0) hbandp       = atof(optarg);
     else if (strcmp(optname, "--hsafe")     == 0) do_hsafe     = TRUE;
     else if (strcmp(optname, "--sums")      == 0) use_sums     = TRUE;
-    else if (strcmp(optname, "--hmmonly")   == 0) do_hmmonly   = TRUE;
+    else if (strcmp(optname, "--hmmonly")   == 0) { do_hmmonly   = TRUE; do_timings = TRUE; } 
     else if (strcmp(optname, "--enfstart")  == 0) { do_enforce = TRUE; enf_start = atoi(optarg); }
     else if (strcmp(optname, "--enfseq")    == 0) { do_enforce = TRUE; enf_seq = optarg; } 
     else if (strcmp(optname, "--zeroinserts")== 0) do_zero_inserts = TRUE;
@@ -294,8 +296,8 @@ main(int argc, char **argv)
     Die("--sub and -l combination not supported.\n");
   if(do_sub && do_qdb)
     Die("Please pick either --sub or --qdb.\n");
-  if(do_hmmonly)
-    Die("--hmmonly not yet implemented.\n");
+  /*if(do_hmmonly)
+    Die("--hmmonly not yet implemented.\n");*/
   if(do_enforce && enf_seq == NULL)
     Die("--enfstart only makes sense with --enfseq also.\n");
   if(do_enforce && enf_start == 0)
@@ -412,7 +414,7 @@ main(int argc, char **argv)
       parallel_align_targets(seqfp, cm, &sq, &tr, &postcode, &nseq,
 			     bdump_level, debug_level, be_quiet,
 			     mpi_my_rank, mpi_master_rank, mpi_num_procs);
-      printf("done parallel align_seqs.\n");
+      printf("done parallel align seqs.\n");
     }
   else
 #endif /* (end of if USE_MPI) */
@@ -430,7 +432,8 @@ main(int argc, char **argv)
      * Create the MSA.                                                                   
      ****************************************************************/                   
     msa = NULL;                                                                          
-    if(!((cm->align_opts & CM_ALIGN_INSIDE) || (cm->align_opts & CM_ALIGN_OUTSIDE)))   
+    if((!((cm->align_opts & CM_ALIGN_INSIDE) || (cm->align_opts & CM_ALIGN_OUTSIDE))) &&
+       (!(cm->align_opts & CM_ALIGN_HMMONLY)))   
       {                                                                                  
 	msa = ESL_Parsetrees2Alignment(cm, sq, NULL, tr, nseq, do_full);                 
 	if(cm->align_opts & CM_ALIGN_POST)                                              
@@ -494,12 +497,12 @@ main(int argc, char **argv)
     
     for (i = 0; i < nseq; i++) 
       {
-	if(!(do_inside || do_outside)) FreeParsetree(tr[i]);
+	if((!(do_inside || do_outside)) && !do_hmmonly) FreeParsetree(tr[i]);
 	esl_sq_Destroy(sq[i]);
       }
     esl_sqfile_Close(seqfp);
 
-    if(!(do_inside || do_outside)) MSAFree(msa);
+    if((!(do_inside || do_outside)) && !do_hmmonly) MSAFree(msa);
     free(sq);
     free(tr);
     SqdClean();

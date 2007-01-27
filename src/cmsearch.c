@@ -313,7 +313,6 @@ main(int argc, char **argv)
       }
     else if  (strcmp(optname, "-n")          == 0) num_samples = atoi(optarg);
     else if  (strcmp(optname, "--dumptrees") == 0) do_dumptrees = TRUE;
-    else if  (strcmp(optname, "--dumptrees") == 0) do_dumptrees = TRUE;
     else if  (strcmp(optname, "--local")     == 0) do_local     = TRUE;
     else if  (strcmp(optname, "--noalign")   == 0) do_align     = FALSE;
     else if  (strcmp(optname, "--toponly")   == 0) do_revcomp   = FALSE;
@@ -480,8 +479,8 @@ main(int argc, char **argv)
   if(do_enforce)
     {
       cm->config_opts |= CM_CONFIG_ENFORCE;
-      cm->enf_start = enf_start; 
-      cm->enf_seq   = enf_seq;
+      cm->enf_start    = enf_start; 
+      cm->enf_seq      = enf_seq;
     }
 
   if(do_qdb) cm->config_opts |= CM_CONFIG_QDB;

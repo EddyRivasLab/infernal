@@ -965,6 +965,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
   int do_sub     = FALSE;
   int do_fullsub = FALSE;
   int do_hmmonly = FALSE;
+  int do_scoreonly = FALSE;
   int do_inside  = FALSE;
   int do_outside = FALSE;
   int do_small   = TRUE;
@@ -988,6 +989,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
   if(cm->align_opts  & CM_ALIGN_POST)       do_post    = TRUE;
   if(cm->align_opts  & CM_ALIGN_TIME)       do_timings = TRUE;
   if(cm->align_opts  & CM_ALIGN_CHECKINOUT) do_check   = TRUE;
+  if(cm->align_opts  & CM_ALIGN_SCOREONLY)  do_scoreonly = TRUE;
 
   if(do_fullsub)
     {
@@ -1011,8 +1013,8 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
   minsc = FLT_MAX;
   maxsc = -FLT_MAX;
   avgsc = 0;
-
   watch = StopwatchCreate(); 
+
   if(do_hbanded || do_sub) /* We need a CP9 HMM to build sub_cms */
     {
       /* Keep this data for the original CM safe; we'll be doing
@@ -1067,18 +1069,28 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
     {
       StopwatchZero(watch);
       StopwatchStart(watch);
-      
-      if (sq[i]->n == 0) Die("ERROR: sequence named %s has length 0.\n", sq[i]->name);
+
+      if (sq[i]->n == 0) continue;
 
       /* Special case, if do_hmmonly, align seq with Viterbi, print score and move 
        * on to next seq */
       if(do_hmmonly)
 	{
 	  cp9_mx  = CreateCPlan9Matrix(1, cm->cp9->M, 25, 0);
-	  if(!silent_mode) printf("Aligning (to a CP9 HMM w/viterbi) %-30s", sq[i]->name);
+	  if(!silent_mode) printf("Aligning (to a CP9 HMM w/viterbi) %-20s", sq[i]->name);
 	  sc = CP9Viterbi(sq[i]->dsq, 1, sq[i]->n, cm->cp9, cp9_mx);
-	  if(!silent_mode) printf("    score: %10.2f bits\n", sc);
+	  if(!silent_mode) printf(" score: %10.2f bits\n", sc);
 	  FreeCPlan9Matrix(cp9_mx);
+	  continue;
+	}
+      /* Special case, if do_scoreonly, align seq with full CYK inside, just to 
+       * get the score. For testing, probably in cmscore. */
+      if(do_scoreonly)
+	{
+	  if(!silent_mode) printf("Aligning (w/full CYK score only) %-30s", sq[i]->name);
+	  sc = CYKInsideScore(cm, sq[i]->dsq, 0, 1, sq[i]->n, sq[i]->n,
+			      NULL, NULL); /* don't do QDB mode */
+	  if(!silent_mode) printf("    score: %10.2f bits\n", sc);
 	  continue;
 	}
 

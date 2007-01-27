@@ -236,7 +236,7 @@ typedef struct cm_s {
   float *beginsc;	/*   Score for ROOT_S -> state v (local alignment) */
   float *endsc;   	/*   Score for state_v -> EL (local alignment)     */
 
-			/* Scaled int parameters the log odds model:       */
+			/* Scaled int parameters of the log odds model:       */
   int  **itsc;		/*   Transition score vector, scaled log odds int  */
   int  **iesc;		/*   Emission score vector, scaled log odds int    */
   int   *ibeginsc;      /*   Score for ROOT_S -> state v (local alignment) */
@@ -244,11 +244,11 @@ typedef struct cm_s {
 
   int    flags;		/* status flags                                    */
 
-  /* query dependent bands (QDB) on subsequence lengths at each state */
+  /* query dependent bands (QDB) on subsequence lengths at each state                         */
   int   *dmin;          /* minimum d bound for each state v; [0..v..M-1] (NULL if non-banded) */
   int   *dmax;          /* maximum d bound for each state v; [0..v..M-1] (NULL if non-banded) */
-  float  beta;          /* tail loss probability for QDB */
-  float  hbandp;        /* tail loss probability for HMM target dependent banding */
+  float  beta;          /* tail loss probability for QDB                                      */
+  float  hbandp;        /* tail loss probability for HMM target dependent banding             */
 
   /* added by EPN, Tue Jan  2 14:24:08 2007 */
   int       config_opts;/* model configuration options                                        */
@@ -258,8 +258,8 @@ typedef struct cm_s {
   CP9Map_t *cp9map;     /* the map from the Plan 9 HMM to the CM and vice versa               */
   int       enf_start;  /* if(cm->config_opts & CM_CONFIG_ENFORCE) the first posn to enforce, else 0 */
   char     *enf_seq;    /* if(cm->config_opts & CM_CONFIG_ENFORCE) the subseq to enforce, else NULL  */
-  float     sc_boost;/* value added to CYK bit scores during search (usually 0.)           */
-  float cp9_sc_boost;/* value added to Forward bit scores during CP9 search (usually 0.)   */
+  float     sc_boost;   /* value added to CYK bit scores during search (usually 0.)           */
+  float cp9_sc_boost;   /* value added to Forward bit scores during CP9 search (usually 0.)   */
   float     ffract;     /* desired filter fraction (0.99 -> filter out 99% of db), default: 0.*/
 
   /* search cutoffs */
@@ -268,15 +268,13 @@ typedef struct cm_s {
   int   cp9_cutoff_type;/* either SC_CUTOFF or E_CUTOFF                                       */
   float cp9_cutoff;     /* min bit score or max E val to keep from a CP9 scan                 */
   
-
   /* EVD statistics for the CM */
-  double    lambda[GC_SEGMENTS];    /* EVD lambda, one for each GC segment   */
-  double    K     [GC_SEGMENTS];    /* EVD K, one for each GC segment        */
-  double    mu    [GC_SEGMENTS];    /* EVD mu, one for each GC segment       */
+  double     lambda[GC_SEGMENTS];   /* EVD lambda, one for each GC segment   */
+  double     K     [GC_SEGMENTS];   /* EVD K, one for each GC segment        */
+  double     mu    [GC_SEGMENTS];   /* EVD mu, one for each GC segment       */
   double cp9_lambda[GC_SEGMENTS];   /* CP9's EVD lambda, one for each GC segment   */
   double cp9_K     [GC_SEGMENTS];   /* CP9's EVD K, one for each GC segment        */
   double cp9_mu    [GC_SEGMENTS];   /* CP9's EVD mu, one for each GC segment       */
-  /* end of added by EPN */
 
   int    W;             /* max d: max size of a hit (EPN 08.18.05) */
   float  el_selfsc;     /* score of a self transition in the EL state
@@ -298,10 +296,10 @@ typedef struct cm_s {
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL       (1<<0)  /* configure the model for local alignment  */
-#define CM_CONFIG_ENFORCE     (1<<1)  /* enforce a subseq beincl. in each parse   */
+#define CM_CONFIG_ENFORCE     (1<<1)  /* enforce a subseq be incl. in each parse  */
 #define CM_CONFIG_ELSILENT    (1<<2)  /* disallow EL state emissions              */
 #define CM_CONFIG_ZEROINSERTS (1<<3)  /* make all insert emissions equiprobable   */
-#define CM_CONFIG_QDB         (1<<4)  /* make all insert emissions equiprobable   */
+#define CM_CONFIG_QDB         (1<<4)  /* calculate query dependent bands          */
 
 /* alignment options, cm->align_opts */
 #define CM_ALIGN_NOSMALL      (1<<0)  /* DO NOT use small CYK D&C                 */
@@ -319,6 +317,7 @@ typedef struct cm_s {
 #define CM_ALIGN_CHECKPARSESC (1<<12) /* check parsetree score against aln alg sc */
 #define CM_ALIGN_PRINTTREES   (1<<13) /* print parsetrees to stdout               */
 #define CM_ALIGN_HMMSAFE      (1<<14) /* realign seqs w/HMM banded CYK bit sc < 0 */
+#define CM_ALIGN_SCOREONLY    (1<<15) /* do full CYK/inside to get score only     */
 
 /* search options, cm->search_opts */
 #define CM_SEARCH_NOQDB       (1<<0)  /* DO NOT use QDB to search (QDB is default)*/
