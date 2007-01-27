@@ -940,7 +940,7 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
    if(do_fullsub)
      Die("ERROR, didn't reach pmass of %f (is_start: %d)\n", pmass, is_start);
 
-   if(print_flag || TRUE)
+   if(print_flag)
      {
        if(max_type == 0)
 	 printf("MATCH | mx->mmx[%3d][%3d]: %9d | %8f\n", x, max_k, post->mmx[x][max_k], Score2Prob(post->mmx[x][max_k], 1.));
