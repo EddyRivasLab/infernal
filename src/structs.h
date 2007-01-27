@@ -76,6 +76,7 @@ extern int   DegenCount[MAXDEGEN];
 #define NOT_IMPOSSIBLE(x)  ((x) > -9.999e35) 
 #define sreLOG2(x)  ((x) > 0 ? log(x) * 1.44269504 : IMPOSSIBLE)
 #define sreEXP2(x)  (exp((x) * 0.69314718 )) 
+#define epnEXP10(x) (exp((x) * 2.30258509 ))
 
 /* For CM Plan 9 HMMs which has scores as integers */
 #define INFTY       987654321   /* infinity for purposes of integer DP cells       */
