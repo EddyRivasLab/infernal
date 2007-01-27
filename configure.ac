@@ -24,12 +24,12 @@
 # The output variables are used in Makefiles.
 #
 AC_PREREQ(2.57)
-AC_INIT(Infernal, 0.71, eddys@janelia.hhmi.org, infernal)
+AC_INIT(Infernal, 0.72, eddys@janelia.hhmi.org, infernal)
 AC_MSG_NOTICE([Welcome. Configuring Infernal for your system.])
 
-PACKAGE_RELCODE="infernal0_71"
-PACKAGE_DATE="December 2006"
-PACKAGE_COPYRIGHT="Copyright (C) 2001-2006 HHMI Janelia Farm"
+PACKAGE_RELCODE="infernal0_72"
+PACKAGE_DATE="January 2007"
+PACKAGE_COPYRIGHT="Copyright (C) 2001-2007 HHMI Janelia Farm"
 PACKAGE_LICENSE="Freely distributed under the GNU General Public License (GPL)"
 PACKAGE_LICENSETAG=gnu
 

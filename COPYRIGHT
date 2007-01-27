@@ -1,11 +1,17 @@
 Infernal - inference of RNA secondary structural alignments
 
-Copyright (C) 2001-2006 HHMI Janelia Farm
-   Portions Copyright (C) 1991-2006      Sean R. Eddy
+Copyright (C) 2001-2007 HHMI Janelia Farm
+   Portions Copyright (C) 1991-2007      Sean R. Eddy
+   Portions Copyright (C) 2005-2007      Eric P. Nawrocki
+   Portions Copyright (C) 2005-2007      Diana L. Kolbe
+   Portions Copyright (C) 2004           Zasha Weinberg
    Portions Copyright (C) 1990           Don G. Gilbert
+   Portions Copyright (C) 1995-2006      Washington University in St. Louis
+   Portions Copyright (C) 1992-1995      Medical Research Council, UK
+   Portions Copyright (C) 2004           University of Washington, Seattle
    Portions Copyright (C) 1986,1993,1995 University of Toronto
-   Portions Copyright (C) 1991           Massachusetts Institute of Technology
    Portions Copyright (C) 1989-2001      Free Software Foundation
+   Portions Copyright (C) 1991           Massachusetts Institute of Technology
 
 This suite of programs is free software. You can redistribute it
 and/or modify it under the terms of the GNU General Public License as
