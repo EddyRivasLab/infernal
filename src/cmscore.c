@@ -343,8 +343,6 @@ main(int argc, char **argv)
       qdb_beta_vec[2] = epnEXP10(-1. * init_beta);
       for(s = 3; s <= nstages; s++)
 	qdb_beta_vec[s] = qdb_beta_vec[(s-1)] / 10.;
-      for(s = 0; s <= nstages; s++)
-	printf("stage %d beta: %f\n", s, qdb_beta_vec[s]);
     }
   if(do_step_hbandp)
     { 
@@ -355,8 +353,6 @@ main(int argc, char **argv)
       hbandp_vec[2] = epnEXP10(-1. * init_hbandp);
       for(s = 3; s <= nstages; s++)
 	hbandp_vec[s] = hbandp_vec[(s-1)] / 10.;
-      for(s = 0; s <= nstages; s++)
-	printf("stage %d hbandp: %f\n", s, hbandp_vec[s]);
     }
 
   if (argc - optind != 2) Die("Incorrect number of arguments.\n%s\n", usage);
@@ -449,6 +445,7 @@ main(int argc, char **argv)
 
   printf("Stage 1 alignment:\n");
   SummarizeAlignOptions(cm);
+  printf("\n");
   serial_align_targets(seqfp, cm, &s1_sq, &s1_tr, NULL, &s1_nseq, 0, 0, 
 		       (!do_individuals));
   StopwatchStop(watch1);

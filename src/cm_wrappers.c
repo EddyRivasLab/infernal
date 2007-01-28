@@ -1150,7 +1150,6 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	  ConfigCM(sub_cm, NULL, NULL);
 
 	  cm    = sub_cm; /* orig_cm still points to the original CM */
-	  printf("do_hbanded 2: %d\n", do_hbanded);
 	  if(do_hbanded) /* we're doing HMM banded alignment to the sub_cm */
 	    {
 	      /* Get the HMM bands for the sub_cm */

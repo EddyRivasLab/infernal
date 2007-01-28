@@ -210,7 +210,7 @@ main(int argc, char **argv)
   nseq           = 100;
   nrepeats       = 1;
   debug_level    = 0;
-  do_local       = FALSE;
+  do_local       = TRUE;
   do_fixlen      = FALSE;
   fixlen         = 0;
   do_minlen      = FALSE;
@@ -281,7 +281,8 @@ main(int argc, char **argv)
   CMFileClose(cmfp);
 
   /* Update cm->config_opts and cm->align_opts based on command line options */
-  if(do_local)        cm->config_opts |= CM_CONFIG_LOCAL;
+  /* We can't turn local on yet, because we have to emit the sequences first,
+   * (EmitParsetree() doesn't in local */
   if(do_hbanded)      cm->align_opts  |= CM_ALIGN_HBANDED;
   if(use_sums)        cm->align_opts  |= CM_ALIGN_SUMS;
   if(do_sub)          cm->align_opts  |= CM_ALIGN_SUB;
@@ -471,6 +472,27 @@ main(int argc, char **argv)
 	  sqinfo[i].flags = SQINFO_NAME | SQINFO_LEN;
 	}
     }
+
+  /* Turn local on if we're supposed to */
+  if(do_local)
+    {
+      cm->config_opts |= CM_CONFIG_LOCAL;
+      /* Configure the CM and potentially HMM for local alignment. */
+      if (cm->config_opts & CM_CONFIG_LOCAL)
+	{ 
+	  ConfigLocal(cm, 0.5, 0.5);
+	  ConfigLocal_DisallowELEmissions(cm);
+	  CMLogoddsify(cm);
+	  if(cm->flags & CM_CP9)
+	    {
+	      swentry= ((cm->cp9->M)-1.)/cm->cp9->M; /* all start pts equiprobable, including 1 */
+	      swexit = ((cm->cp9->M)-1.)/cm->cp9->M; /* all end   pts equiprobable, including M */
+	      CPlan9SWConfig(cm->cp9, swentry, swexit);
+	      CP9Logoddsify(cm->cp9);
+	    }
+	}
+    }
+
   /* Align the sequences */
   /* turn off the do_sub option for initial alignment */
   printf("%-40s ... ", "Aligning full length sequences");
