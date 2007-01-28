@@ -236,9 +236,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "-s") == 0) seed           = (long) atoi(optarg);
     else if (strcmp(optname, "--read")      == 0) { do_read = TRUE;   read_seqfile = optarg;   }
     else if (strcmp(optname, "--distro")    == 0) { do_distro = TRUE; distro_seqfile = optarg; }
-    else if (strcmp(optname, "--sub")       == 0) do_sub = TRUE;
-    else if (strcmp(optname, "--fsub")      == 0) 
-      { do_sub = TRUE; do_fullsub = TRUE; fsub_pmass = atof(optarg); }
+    else if (strcmp(optname, "--sub")       == 0) { do_sub = TRUE; do_local = FALSE; }
     else if (strcmp(optname, "--global")    == 0) do_local = FALSE;
     else if (strcmp(optname, "--post")      == 0) pthresh  = atof(optarg); 
     else if (strcmp(optname, "--fixlen")    == 0) { do_fixlen = TRUE; fixlen   = atoi(optarg); }
@@ -502,6 +500,42 @@ main(int argc, char **argv)
 		      NULL, NULL, NULL, NULL, NULL, NULL);
   printf("done.\n");
   
+  /* Temporary code: We can't build sub CMs of a CM in local mode, what  
+   * should be done here is to make the CM global again and then align 
+   * the seqs, but that code doesn't exist now. The temporary solution
+   * is below, free the CM, read it in again and configure it again,
+   * NOT in local mode.
+   */
+  if(do_sub) 
+    {
+      cm->align_opts |= CM_ALIGN_SUB;
+
+      FreeCM(cm);
+      if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
+	Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
+      if (! CMFileRead(cmfp, &cm))
+	Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
+      if (cm == NULL) 
+	Die("%s empty?\n", cmfile);
+      CMFileClose(cmfp);
+      /* Update cm->config_opts and cm->align_opts based on command line options */
+      /* We can't turn local on yet, because we have to emit the sequences first,
+       * (EmitParsetree() doesn't in local */
+      if(do_hbanded)      cm->align_opts  |= CM_ALIGN_HBANDED;
+      if(use_sums)        cm->align_opts  |= CM_ALIGN_SUMS;
+      if(do_sub)          cm->align_opts  |= CM_ALIGN_SUB;
+      if(do_fullsub)      cm->align_opts  |= CM_ALIGN_FSUB;
+      if(!do_small)       cm->align_opts  |= CM_ALIGN_NOSMALL;
+      if(do_qdb)          
+	{ 
+	  cm->align_opts  |= CM_ALIGN_QDB;
+	  cm->config_opts |= CM_CONFIG_QDB;
+	}
+      /* Configure the CM for alignment based on cm->config_opts and cm->align_opts.
+       * set local mode, make cp9 HMM, calculate QD bands etc. */
+      ConfigCM(cm, NULL, NULL);
+    }
+
   for(i = 0; i < (nrepeats * nseq); i++)
     {
       strcpy(temp_sqinfo[0].name, sqinfo[(i%nseq)].name);
@@ -613,10 +647,6 @@ main(int argc, char **argv)
    * Align the partial seqs to the CM and collect stats 
    * on how often we correctly get spos and epos.
    *****************************************************/
-
-  /* Turn do_sub option back on if nec. */
-  if(do_sub) cm->align_opts |= CM_ALIGN_SUB;
-  printf("do_sub: %d\n", (cm->align_opts & CM_ALIGN_SUB));
 
   /* Align all the partial sequences to the CM */
   if(do_histo)
