@@ -278,7 +278,7 @@ CP9ForwardScanRequires(CP9_t *hmm, int L, int W)
  * 
  * Purpose:  Scan a sequence with a CP9, filtering for promising subseqs
  *           that could be hits to the CM the CP9 was derived from.
- *           Pass filtered subseqs to actually_search_target() to be.
+ *           Pass filtered subseqs to actually_search_target() to be
  *           scanned with a CM scan. 
  * 
  * Args:     
@@ -298,7 +298,6 @@ float
 CP9FilteredScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff, 
 		float cp9_cutoff, scan_results_t *results, int *ret_flen)
 {
-  printf("in CP9FilteredScan()\n");
   int *hitj;
   int  nhits;
   int h;
@@ -309,6 +308,8 @@ CP9FilteredScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
   int   flen;
   float ffrac;
 
+  /*printf("in CP9FilteredScan(), i0: %d j0: %d\n", i0, j0);
+    printf("cp9_cutoff: %f\n", cp9_cutoff);*/
   /* Scan the (sub)seq w/Forward, getting j end points of hits above cutoff */
   best_hmm_sc = CP9ForwardScan(cm, dsq, i0, j0, W, cp9_cutoff, NULL, &hitj, &nhits, NULL);
   /* Send promising subseqs to actually_search_target(): send subseq [j-W..j..j+W] 
@@ -324,17 +325,17 @@ CP9FilteredScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
       curr_i0 = ((curr_j0 - (2*W)) >= 1) ? (curr_j0 - (2*W)) : 1;
       if((h+1) != nhits)
 	{	
-	  next_j0 = ((hitj[h] + W) <= j0)    ? (hitj[h] + W)     : j0;
+	  next_j0 = ((hitj[h+1] + W) <= j0)    ? (hitj[h+1] + W)     : j0;
 	  next_i0 = ((next_j0 - (2*W)) >= 1) ? (next_j0 - (2*W)) : 1;
 	}
       else next_i0 = next_j0 = -1;
       /*printf("hit: %d j: %d j-W: %d j+W: %d\n", h, hitj[h], (hitj[h]-W), (hitj[h]+W));*/
       while(curr_i0 <= next_j0)
 	{
-	  curr_i0 = next_i0;
 	  h++;
 	  /*printf("\tsucked in hit: %d i0: %d j0: %d\n", h, curr_i0, curr_j0);*/
-	  if((h+1) != nhits)
+	  curr_i0 = next_i0;
+	  if(h != nhits)
 	    {	
 	      next_j0 = ((hitj[h] + W) <= j0)    ? (hitj[h] + W)     : j0;
 	      next_i0 = ((next_j0 - (2*W)) >= 1) ? (next_j0 - (2*W)) : 1;
@@ -1153,12 +1154,6 @@ CP9_combine_FBscan_hits(int i0, int j0, int W, int fwd_nhits, int *fwd_hitr, int
  *           Very similar to CP9Backward with the only difference being
  *           that parses can end at any position j, not only j0 (the endpoint).
  *           
- *           This function is messy in that it does not check that
- *           the log-odds scores are -INFTY (-987654321) before
- *           adding them. This means that -INFTY is interpreted
- *           as a possible transition, with a very low probability
- *           (2^-987654321).
- * 
  * Args:     dsq    - sequence in digitized form
  *           i0        - start of target subsequence (1 for beginning of dsq)
  *           j0        - end of target subsequence (L for end of dsq)
