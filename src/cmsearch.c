@@ -615,7 +615,7 @@ main(int argc, char **argv)
       {
 	for (i=0; i<GC_SEGMENTS; i++) 
 	  cm->mu[i] = log(cm->K[i]*N)/cm->lambda[i];
-	debug_print_stats(partitions, num_partitions, cm->lambda, cm->mu);
+	//debug_print_stats(partitions, num_partitions, cm->lambda, cm->mu);
       }    
     /* else they've been set to default 0.0s in ConfigCM() */
 

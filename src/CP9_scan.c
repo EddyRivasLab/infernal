@@ -328,12 +328,12 @@ CP9FilteredScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
 	  next_i0 = ((next_j0 - (2*W)) >= 1) ? (next_j0 - (2*W)) : 1;
 	}
       else next_i0 = next_j0 = -1;
-      printf("hit: %d j: %d j-W: %d j+W: %d\n", h, hitj[h], (hitj[h]-W), (hitj[h]+W));
+      /*printf("hit: %d j: %d j-W: %d j+W: %d\n", h, hitj[h], (hitj[h]-W), (hitj[h]+W));*/
       while(curr_i0 <= next_j0)
 	{
 	  curr_i0 = next_i0;
 	  h++;
-	  printf("\tsucked in hit: %d i0: %d j0: %d\n", h, curr_i0, curr_j0);
+	  /*printf("\tsucked in hit: %d i0: %d j0: %d\n", h, curr_i0, curr_j0);*/
 	  if((h+1) != nhits)
 	    {	
 	      next_j0 = ((hitj[h] + W) <= j0)    ? (hitj[h] + W)     : j0;
@@ -341,7 +341,7 @@ CP9FilteredScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
 	    }
 	  else next_i0 = next_j0 = -1;
 	}
-      printf("calling actually_search_target: %d %d\n", curr_i0, curr_j0);
+      /*printf("calling actually_search_target: %d %d\n", curr_i0, curr_j0);*/
       cm_sc =
 	actually_search_target(cm, dsq, curr_i0, curr_j0, cm_cutoff, cp9_cutoff,
 			       results, /* keep results                                 */
@@ -356,7 +356,7 @@ CP9FilteredScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
   free(hitj);
   if(flen == 0) ffrac = 100.;
   else ffrac = 1. - (((float) flen) / (((float) (j0-i0+1))));
-  printf("orig_len: %d flen: %d fraction %6.2f\n", (j0-i0+1), (flen), ffrac);
+  /*printf("orig_len: %d flen: %d fraction %6.2f\n", (j0-i0+1), (flen), ffrac);*/
   if(ret_flen != NULL) *ret_flen = flen;
   return best_cm_sc;
 }
