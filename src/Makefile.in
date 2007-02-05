@@ -64,7 +64,9 @@ OBJS  = alphabet.o\
 	sub_cm.o\
 	stats.o\
 	mpifuncs.o\
-	cm_wrappers.o
+	cm_wrappers.o\
+	rsearch_buildcm.o\
+	rnamat.o\
 
 HDRS  = funcs.h\
 	prior.h\
