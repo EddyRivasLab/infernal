@@ -4,6 +4,7 @@
 #include "structs.h"
 #include "cplan9.h"
 #include "prior.h"
+#include "rnamat.h"
 
 #ifdef USE_MPI
 #include "mpi.h"
@@ -409,4 +410,9 @@ extern void     CP9_WriteAscHMM(FILE *fp, CP9_t *hmm);
 extern void     CP9_WriteBinHMM(FILE *fp, CP9_t *hmm);
 #endif
 
-
+/* from rsearch_buildcm.c
+ */
+extern CM_t *build_cm (MSA *msa, fullmat_t *fullmat, int *querylen,
+		       float alpha, float beta, float alphap, float betap,
+		       float beginsc, float endsc);
+extern CM_t *read_cm (char *queryfile);

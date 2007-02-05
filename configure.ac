@@ -58,38 +58,6 @@ AC_DEFINE_UNQUOTED(PACKAGE_LICENSE, "$PACKAGE_LICENSE")
 if ((! test -d binaries) && test -d src); then 
 AC_MSG_NOTICE([This is a full source distribution - using full config])
 
-# The first thing we want to do is see if we're supposed to use MPI
-# or not.  By default, MPI is off.  It is turned on with --with-mpi.
-# If MPI is turned on, force use of MPICC.  This works fine for most
-# versions of MPI, but is known not to work on NCSA's Itanium cluster
-# AC_PROG called from within here
-AC_ARG_WITH([mpi],
-  [AC_HELP_STRING([--with-mpi],[Parallelize with MPI (default is NO)])],
-  [if test $withval = "no"; then
-    MPI=""
-   else 
-     AC_DEFINE(USE_MPI)
-     if test $withval = "yes"; then
-       MPI="mpicc"
-     else
-       MPI=$withval
-     fi 
-  fi],
-  [MPI=""])
-
-# Now, if $MPI is not set, set a regular compiler.  Otherwise, set an
-# mpicc compiler.  Also set PROGS here
-if test -z "$MPI"; then
-  AC_PROG_CC(icc gcc cc)
-  PROGS="$SERIAL_PROGS"
-  MPI=""
-else
-  AC_PROG_CC($MPI)
-  PROGS="$PARALLEL_PROGS"
-  MPI="mpi"
-fi
-AC_SUBST(PROGS)
-AC_SUBST(MPI)
 
 # Checks for programs.
 # Sets output variables CC, CFLAGS, and RANLIB.
@@ -266,65 +234,34 @@ if test "$rigfilters" = 1; then
 fi
 AC_SUBST(RIGFILTERS,$rigfilters)
 
+# Default option for rigfilters is OFF
+rigfilters=0;
+# --with-rigfilters     install rigorous filters
+AC_ARG_WITH(rigfilters,
+[  --with-rigfilters       enable rigorous filters, requires CFSQP package],
+[case $with_rigfilters in
+   yes) AC_MSG_NOTICE([Rigorous filters selected])
+	rigfilters=1
+	;;
+   no)  rigfilters=0
+        ;;
+    *)  echo "Ignoring unknown argument to --with-rigfilters: $with_rigfilters"
+        ;;
+esac])
 
-# Default location of cfsqp
-cfsqp_path=$PWD/rigfilters/cfsqp;
-# --with-cfsqp             specify location of cfsqp
-AC_ARG_WITH(cfsqp,
-[  --with-cfsqp=PATH       specify the location of CFSQP source files],
-[case $with_cfsqp in
-   /*)  cfsqp_path=$with_cfsqp
+#
+# --with-mpi    MPI support for cmalign and cmsearch
+AC_ARG_WITH(mpi,
+[  --with-mpi            enable MPI for search and alignment],
+[case $with_mpi in
+   yes) AC_MSG_NOTICE([configured cmalign and cmsearch for MPI])
+        AC_PROG_CC(mpicc)
         ;;
-   ~*)  cfsqp_path=`echo $with_cfsqp | sed 's/^~//'`
-        cfsqp_path=$HOME/../$cfsqp_path
-        ;;
-   *)   #NOTE: relative path not normalized
-        cfsqp_path=$PWD/$with_cfsqp
-        ;;
-  esac
-#  if test -d $cfsqp_path; then
-#    AC_MSG_NOTICE([path recognized as directory])
-#  else
-#    AC_MSG_NOTICE([path not recognized as directory!: $cfsqp_path])
-#  fi
-  if test -f $cfsqp_path/cfsqp.c; then
-    cp $cfsqp_path/cfsqp.c rigfilters/cfsqp/.
-  fi
-  if test -f $cfsqp_path/cfsqpusr.h; then
-    cp $cfsqp_path/cfsqpusr.h rigfilters/cfsqp/.
-  fi
-  if test -f $cfsqp_path/qld.c; then
-    cp $cfsqp_path/qld.c rigfilters/cfsqp/.
-  fi
-])
-if test "$rigfilters" = 1; then
-  if test -f rigfilters/cfsqp/cfsqp.c; then
-    :
-  else
-    AC_MSG_NOTICE([CFSQP: Unable to locate cfsqp.c])
-    rigfilters=0;
-  fi
-  if test -f rigfilters/cfsqp/cfsqpusr.h; then
-    :
-  else
-    AC_MSG_NOTICE([CFSQP: Unable to locate cfsqpusr.h])
-    rigfilters=0
-  fi
-  if test -f rigfilters/cfsqp/qld.c; then
-    :
-  else
-    AC_MSG_NOTICE([CFSQP: Unable to locate qld.c])
-    rigfilters=0
-  fi
-  if test "$rigfilters" = 0; then
-    AC_MSG_NOTICE([CFSQP: Source not found; disabling rigorous filters])
-    rigfilters=""
-  else
-    AC_MSG_NOTICE([CFSQP located, including rigfilters package in build])
-    rigfilters="rigfilters"
-  fi
-fi
-AC_SUBST(RIGFILTERS,$rigfilters)
+    no) ;;
+     *) echo "Ignoring unknown argument to --with-mpi: $with_mpi"
+        ;;	
+  esac])
+
 
 #
 # end of optionally configured features
@@ -353,7 +290,6 @@ AC_CONFIG_FILES(rigfilters/Makefile)
 AC_CONFIG_FILES(rigfilters/cfsqp/Makefile)
 AC_CONFIG_FILES(rigfilters/cm2hmm-1.0/Makefile)
 
-AC_SUBST(MDEFS)
 
 # remember that sneaky if statement that wraps the source
 # configuration? well, it ends here.

@@ -622,6 +622,15 @@ typedef struct Ideckpool_s {
 #define BUSY 1
 #define IDLE 0
 
+/* RSEARCH defaults defined here */
+#define DEFAULT_RMATRIX "RIBOSUM85-60"
+#define DEFAULT_RALPHA 10.
+#define DEFAULT_RBETA 5.
+#define DEFAULT_RALPHAP 0.
+#define DEFAULT_RBETAP 15.
+#define DEFAULT_RBEGINSC 0.
+#define DEFAULT_RENDSC -15.
+
 #endif /*STRUCTSH_INCLUDED*/
 
 
