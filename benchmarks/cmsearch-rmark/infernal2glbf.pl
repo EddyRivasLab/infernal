@@ -52,7 +52,7 @@ if($infernal::nhit > 0)
     }
 }
 
-if($use_evalues && (!$has_evalues))
+if(($infernal::nhit > 0) && ($use_evalues && (!$has_evalues)))
 {
     die("ERROR in infernal2glbf.pl, trying to use E-values but none reported.\n");
 }

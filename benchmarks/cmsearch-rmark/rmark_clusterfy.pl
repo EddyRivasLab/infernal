@@ -152,61 +152,12 @@ file_lines_to_arr($chrom_list, \@chrom_files_arr);
 # Read in the roots of the test families
 file_lines_to_arr($fam_idx, \@fam_roots_arr);
 
-if(!($do_mpi))
+# Create the script for the cluster that will submit
+# all the jobs. 
+push(@exec_lines, "#!/bin/sh");
+# For each family...
+for($i = 0; $i < scalar(@fam_roots_arr); $i++)
 {
-    # Create the script for the cluster that will submit
-    # all the jobs. 
-    push(@exec_lines, "#!/bin/sh");
-    # For each family...
-    for($i = 0; $i < scalar(@fam_roots_arr); $i++)
-    {
-	$fam = $fam_roots_arr[$i];
-	$num = $i + 1;
-	$index_file = "$run_dir/INDEX" . $num;
-	# Create a INDEX file for rmark.pl to read.
-	open(OUT, ">" . $index_file);
-	print OUT ("$fam\n");
-	close(OUT);
-	# For each chromosome...
-	for($j = 0; $j < scalar(@chrom_files_arr); $j++)
-	{
-	    #Determine the chromosome file, and check that it exists in the test_dir.
-	    $chrom_file = $chrom_files_arr[$j];
-	    if(! (-e ("$seq_dir" . "\/$chrom_file")))
-	    { die("ERROR, $chrom_file must exist in " . $seq_dir. "\n"); }
-	    $rmark_output = $out_file_root . "_" . $fam_roots_arr[$i] . "_" . $chrom_files_arr[$j];
-	    $cluster_index_file = $index_file;
-	    $cluster_index_file =~ s/.+\///;
-	    $job_name = "rm-$fam-$j";
-	    # Create the rmark.pl executing line for this family, this chromosome.
-	    if($use_evalues)
-	    {
-		$rmark_call = "rmark.pl -E " . $e_cutoff . " " . $rmm . " " . $rmk . " " . $seq_dir . " " . $cluster_index_file . " " . $chrom_files_arr[$j] . " " . $rmark_output;
-	    }
-	elsif($use_bitscores)
-	{
-	    $rmark_call = "rmark.pl -B " . $b_cutoff . " " . $rmm . " " . $rmk . " " . $seq_dir . " " . $cluster_index_file . " " . $chrom_files_arr[$j] . " " . $rmark_output;
-	}
-	    # Create a command the cluster will make to run rmark.pl
-	    # IMPORTANT 1: this is a version 6 SGE qsub command - works at Janelia Farm; 
-	    #              not sure about elsewhere...
-	    $exec_line = "qsub -N $job_name -o /dev/null -b y -cwd -V -j y perl " . $rmark_call;
-	    push(@exec_lines, $exec_line);
-	}
-    }	
-}
-elsif($do_mpi)
-{
-    require "$orig_rmk";
-
-    if($cms eq "")
-    {
-	die("ERROR, in MPI mode the RMARK config file $orig_rmk must define \$cms\n");
-    }
-    # Create the script for the cluster that will submit
-    # all the jobs. 
-    push(@exec_lines, "#!/bin/sh");
-    
     $fam = $fam_roots_arr[$i];
     $num = $i + 1;
     $index_file = "$run_dir/INDEX" . $num;
@@ -225,11 +176,11 @@ elsif($do_mpi)
 	$cluster_index_file = $index_file;
 	$cluster_index_file =~ s/.+\///;
 	$job_name = "rm-$fam-$j";
-	# Create the cmsearch call for this family, this chromosome.
+	# Create the rmark.pl executing line for this family, this chromosome.
 	if($use_evalues)
 	{
 	    $rmark_call = "rmark.pl -E " . $e_cutoff . " " . $rmm . " " . $rmk . " " . $seq_dir . " " . $cluster_index_file . " " . $chrom_files_arr[$j] . " " . $rmark_output;
-	}
+	    }
 	elsif($use_bitscores)
 	{
 	    $rmark_call = "rmark.pl -B " . $b_cutoff . " " . $rmm . " " . $rmk . " " . $seq_dir . " " . $cluster_index_file . " " . $chrom_files_arr[$j] . " " . $rmark_output;
@@ -237,17 +188,10 @@ elsif($do_mpi)
 	# Create a command the cluster will make to run rmark.pl
 	# IMPORTANT 1: this is a version 6 SGE qsub command - works at Janelia Farm; 
 	#              not sure about elsewhere...
-	$exec_line = "qsub -N $job_name -o /dev/null -b y -cwd -V -j y -pe lam-mpi-tight $nprocs \'" . $cmsearch_call . "\'";
+	$exec_line = "qsub -N $job_name -o /dev/null -b y -cwd -V -j y perl " . $rmark_call;
 	push(@exec_lines, $exec_line);
     }
 }	
-
-
-
-
-
-
-
 $command_file_name = $out_file_root . ".com";
 print_arr_to_file(\@exec_lines, $command_file_name);
 print_out_file_notice($run_dir . "/" . $command_file_name, "Command file with " . (scalar(@exec_lines)-1) . " qsub calls for the cluster.");

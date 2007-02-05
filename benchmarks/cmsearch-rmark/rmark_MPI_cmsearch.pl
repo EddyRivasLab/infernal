@@ -12,9 +12,10 @@
 #             <seq dir with *.ali *.idx *.test and *.raw files>
 #             <index file with fam names; provide path>
 #             <genome root X, X.fa, X.ebd must be in seq dir>
+#             <dir with CM files, must have <fam>.cm for each <fam>>
 #             <output file root>
 # Options:
-#        -E <x> : use E-values [default], set max E-val to keep as <x> [df: 10]
+#        -E <x> : use E-values [default], set max E-val to keep as <x> [df: 100]
 #        -B <x> : use bit scores, set min score to keep as <x>
 # Example:  perl rmark_MPI_cmsearch.pl 100 infernal.rmm inf-71.rmk rmark-test/ rmark-test 
 #                                      inf-71
@@ -22,14 +23,13 @@
 # The example run above will create the following:
 #     - a inf-71_rmark-test_out_dir directory with all the files needed to run
 #       rmark.pl copied to it (except seq files which stay in <seq dir>)
-#     - 
+#
 # General Strategy 
-# (A) Locally build the CMs necessary for running the benchmark.
-# (B) Create a script to submit X jobs (one for each family) to the 
+# (A) Create a script to submit X jobs (one for each family) to the 
 #     cluster to run cmsearch in MPI mode. 
-# (C) Copy all required files into a new directory where the cmsearch jobs 
+# (B) Copy all required files into a new directory where the cmsearch jobs 
 #     will be run (SEE 'IMPORTANT 2:' below).
-# (D) Create a shell script to post-process the results, that will be run 
+# (C) Create a shell script to post-process the results, that will be run 
 #     locally after all the jobs have finished running.
 #
 # IMPORTANT: This script may need to be modified to suit the user's purposes. 
@@ -39,7 +39,7 @@
 require "sre.pl";
 use Getopt::Std;
 use Cwd;
-$e_cutoff = 10;
+$e_cutoff = 100;
 $b_cutoff = 0.0;
 $use_evalues   = 1;
 $use_bitscores = 0;
@@ -49,21 +49,21 @@ if (defined $opt_E) { $e_cutoff = $opt_E; }
 if (defined $opt_B) { $b_cutoff = $opt_B; $use_evalues = 0; $use_bitscores = 1; }
 if (defined $opt_P) { $nprocs   = $opt_P; $do_mpi = 1; }
 
-$usage = "Usage: perl rmark_MPI_cmsearch.pl\n\t<num processors to use>\n\t<.rmm file name>\n\t<.rmk file name>\n\t<dir with *.ali *.idx *.test and *.raw files>\n\t<index file with family names; provide path>\n\t<genome root X, X.fa, X.ebd must be in seq dir>\n\t<output file root>\n";
+$usage = "Usage: perl rmark_MPI_cmsearch.pl\n\t<num processors to use>\n\t<.rmm file name>\n\t<.rmk file name>\n\t<dir with *.ali *.idx *.test and *.raw files>\n\t<index file with family names; provide path>\n\t<genome root X, X.fa, X.ebd must be in seq dir>\n\t<directory with CM files>\n\t<output file root>\n";
 $options_usage  = "\nOptions:\n\t";
 $options_usage .= "-E <x> : use E-values [default], set max E-val to keep as <x> [df: 2]\n\t";
 $options_usage .= "-B <x> : use bit scores, set min score to keep as <x>\n\n";
 
-if(@ARGV != 7)
+if(@ARGV != 8)
 {
     print $usage;
     print $options_usage;
     exit();
 }
 
-($nprocs, $rmm, $rmk, $seq_dir, $fam_idx, $genome_root, $out_file_root) = @ARGV;
+($nprocs, $rmm, $rmk, $seq_dir, $fam_idx, $genome_root, $cm_dir, $out_file_root) = @ARGV;
 $seq_dir = getcwd() . "\/" . $seq_dir;
-
+$cm_dir  = getcwd() . "\/" . $cm_dir;
 $orig_rmk = $rmk;
 
 # Make a new directory where the benchmark will run ($run_dir)
@@ -99,9 +99,9 @@ if(! (-e ("$rmk"))) { die("ERROR, $rmk doesn't exist."); }
 else { system("cp $rmk $run_dir"); }
 
 require("$orig_rmk");
-if($cms eq "" || $cmb eq "")
+if($cms eq "")
 {
-    die("ERROR, in MPI mode the RMARK config file $orig_rmk\nmust define variables \$cms and \$cmb\n");
+    die("ERROR, in MPI mode the RMARK config file $orig_rmk\nmust define variable \$cm\n");
 }
 
 #IMPORTANT, we've copied the $rmm and $rmk files, now make sure they
@@ -127,9 +127,8 @@ for($i = 0; $i < scalar(@fam_roots_arr); $i++)
     $num = $i + 1;
     $cm_file = $fam . ".cm";
     $ali_file = $seq_dir . "/" . $fam . ".ali";
-    system("$cmb $fam.cm $ali_file > /dev/null");
-    #printf("$cmb $fam.cm $ali_file > /dev/null\n");
-    system("mv $fam.cm $run_dir");
+    #system("$cmb $fam.cm $ali_file > /dev/null");
+    #system("mv $fam.cm $run_dir");
     #printf("mv $fam.cm $run_dir\n");
 }
 
@@ -140,10 +139,11 @@ push(@exec_lines, "#!/bin/sh");
 for($i = 0; $i < scalar(@fam_roots_arr); $i++)
 {
     $fam = $fam_roots_arr[$i];
-    $cm  = $fam . ".cm";
+    $cm  = $cm_dir . "/" . $fam . ".cm";
+    if(! (-e "$cm")) { die("ERROR cm $cm does not exist.\n"); } 
     $job_name = "rm-$fam";
-    $cmsearch_name = "rm-$fam.cmsearch";
-    $out_name = "rm-$fam.out";
+    $cmsearch_name = $run_dir . "\/" . "rm-$fam.cmsearch";
+    $out_name = $run_dir . "\/" . "rm-$fam.out";
 
     $cmsearch_call = "mpirun C $cms --noalign $cm $genome_file";
 
@@ -151,14 +151,16 @@ for($i = 0; $i < scalar(@fam_roots_arr); $i++)
     push(@exec_lines, $exec_line);
 }
 
-    
-$command_file_name = $out_file_root . ".com";
+
+$command_file_name = getcwd() . "\/" . $out_file_root . ".com";
 print_arr_to_file(\@exec_lines, $command_file_name);
-print_out_file_notice($run_dir . "/" . $command_file_name, "Command file with " . (scalar(@exec_lines)-1) . " qsub calls for the cluster.");
+print_out_file_notice($command_file_name, "Command file with " . (scalar(@exec_lines)-1) . " qsub calls for the cluster.");
 
+# 01.22.07 Keep the command file where it is, dammit.
 # Move the command file into the dir we're going to run from:
-system("mv $command_file_name $run_dir");
-
+#system("mv $command_file_name $run_dir");
+system("cp $command_file_name $run_dir");
+    
 # Create a shell script to post-process the results to run after
 # all the jobs have finished running.
 $pp_file = $out_file_root . "_pp.script";
@@ -167,8 +169,8 @@ open(PP, ">" . $pp_file);
 for($i = 0; $i < scalar(@fam_roots_arr); $i++)
 {
     $fam = $fam_roots_arr[$i];
-    $cmsearch_name = "rm-$fam.cmsearch";
-    $glbf_name = "rm-$fam.glbf";
+    $cmsearch_name = $run_dir . "\/" . "rm-$fam.cmsearch";
+    $glbf_name = $run_dir . "\/" . "rm-$fam.glbf";
 
     if($use_evalues)
     {
@@ -186,11 +188,11 @@ for($i = 0; $i < scalar(@fam_roots_arr); $i++)
 # rmark_clusterfy.pl.
 print PP ("rm merged_" . $out_file_root . "*\n");
 $all_glbf_out = $out_file_root . "_all_glbf.concat";
-$all_time_out = $out_file_root . "_all_time.concat";
-print PP ("cat *.glbf > $all_glbf_out\n");
-print PP ("cat *.time > $all_time_out\n");
+#$all_time_out = $out_file_root . "_all_time.concat";
+print PP ("cat "  . $run_dir . "\/" . "*.glbf > $all_glbf_out\n");
+#print PP ("cat "  . $run_dir . "\/" . "*.time > $all_time_out\n");
 #11.25.05 - get timing info
-print PP ("perl rmark_times.pl *.time > merged_" . $out_file_root . ".time\n");
+#print PP ("perl rmark_times.pl " . $run_dir . "\/" . "*.time > merged_" . $out_file_root . ".time\n");
 
 # Call rmark_process_glbf.pl with defaults: 'hit' resolution mode and 
 # ignore cross-hits on both strands.
@@ -219,18 +221,20 @@ print PP ("perl rmark_process_glbf.pl $rmark_process_option $rmm $rmk $seq_dir $
 #print PP ("perl rmark_process_glbf.pl -I opp -R fnt $rmark_process_option $rmm $rmk  $seq_dir $fam_idx_root $genome_root $all_glbf_out merged_" . $out_file_root . "_fnt_samecross\n");
 #print PP ("perl rmark_process_glbf.pl -I opp -R nnt $rmark_process_option $rmm $rmk  $seq_dir $fam_idx_root $genome_root $all_glbf_out merged_" . $out_file_root . "_nnt_samecross\n");
 
-print PP ("cp merged_*fam ../\n");
-print PP ("cp merged_*all ../\n");
-print PP ("cp merged_*time ../\n");
-print PP ("cp merged_*roc ../\n");
+#print PP ("cp merged_*fam ../\n");
+#print PP ("cp merged_*all ../\n");
+#print PP ("cp merged_*time ../\n");
+#print PP ("cp merged_*roc ../\n");
 close(PP);
-print_out_file_notice($run_dir . "/" . $pp_file, "Shell script to merge and process the collective output\n               after all the cluster jobs are finished.");
-system("mv $pp_file $run_dir");
+print_out_file_notice($pp_file, "Shell script to merge and process the collective output\n               after all the cluster jobs are finished.");
+# 01.22.07 Keep the pp file where it is, dammit.
+#system("mv $pp_file $run_dir");
+system("cp $pp_file $run_dir");
 system("cp $genome_file $run_dir");
 system("cp $fam_idx $run_dir");
 system("cp $embed_file $run_dir");
 
-system("chmod +x $run_dir/$pp_file");
+system("chmod +x $pp_file");
 # END OF SCRIPT
 #################################################################
 
