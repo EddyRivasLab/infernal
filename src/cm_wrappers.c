@@ -146,10 +146,12 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons)
       
       FreeResults(dbseq->results[0]);
       esl_sq_Destroy(dbseq->sq[0]);
-      if (do_revcomp) {
-	esl_sq_Destroy(dbseq->sq[1]);
-	FreeResults(dbseq->results[1]);
-      }
+      if (do_revcomp) 
+	{
+	  esl_sq_Destroy(dbseq->sq[1]);
+	  FreeResults(dbseq->results[1]);
+	}
+      free(dbseq);
     }
 }
 
@@ -316,6 +318,7 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
       for (proc_index=0; proc_index<mpi_num_procs; proc_index++) 
 	if (proc_index != mpi_master_rank) 
 	  search_send_terminate (proc_index);
+
       free(active_seqs);
       free(process_status);
     } 
@@ -396,6 +399,7 @@ db_seq_t *read_next_seq (ESL_SQFILE *dbfp, int do_revcomp)
       ret_dbseq->sq[1] = esl_sq_CreateFrom(ret_dbseq->sq[0]->name, tmp_seq, 
 					ret_dbseq->sq[0]->desc, ret_dbseq->sq[0]->acc, 
 					ret_dbseq->sq[0]->ss);
+      free(tmp_seq);
       /* Following line will be unnecessary once ESL_SQ objects have dsq's implemented
        * (i.e. allocated and filled within a esl_sq_CreateFrom() call */
       ret_dbseq->sq[1]->dsq = DigitizeSequence (ret_dbseq->sq[1]->seq, ret_dbseq->sq[1]->n);
@@ -533,6 +537,7 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 			      dbseq->sq[in_revcomp]->dsq +
 			      (results->data[i].start-1));
 	PrintFancyAli(stdout, ali);
+	FreeFancyAli(ali);
 	printf ("\n");
       }
     }

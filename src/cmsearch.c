@@ -57,8 +57,9 @@ The sequence file is expected to be in FASTA format.\n\
   Available options are:\n\
    -h     : help; print brief help on version and usage\n\
    -E <f> : use cutoff E-value of <f> (default ignored; not-calc'ed)\n\
-   -S <f> : use cutoff bit score of <f> [default: 0]\n\
    -n <n> : determine EVD with <n> samples (default with -E: 1000)\n\
+   -S <f> : use cutoff bit score of <f> [default: 0]\n\
+   -R     : build RSEARCH CM from 1 seq <aln file> (replaces <cmfile>)\n\
 ";
 
 static char experts[] = "\
@@ -102,6 +103,7 @@ static struct opt_s OPTIONS[] = {
   { "-S", TRUE, sqdARG_FLOAT }, 
   { "-E", TRUE, sqdARG_FLOAT }, 
   { "-n", TRUE, sqdARG_INT }, 
+  { "-R", TRUE, sqdARG_NONE }, 
   { "--dumptrees",  FALSE, sqdARG_NONE },
   { "--informat",   FALSE, sqdARG_STRING },
   { "--local",      FALSE, sqdARG_NONE },
@@ -150,8 +152,8 @@ main(int argc, char **argv)
   int              i;           /* counter                                  */
   CMConsensus_t   *cons;	/* precalculated consensus info for display */
   double            beta;       /* tail loss prob for query dependent bands */
-  int             *preset_dmin = NULL; /* if --qdbfile, dmins read from file       */
-  int             *preset_dmax = NULL; /* if --qdbfile, dmaxs read from file       */
+  int             *preset_dmin = NULL; /* if --qdbfile, dmins read from file*/
+  int             *preset_dmax = NULL; /* if --qdbfile, dmaxs read from file*/
   int              do_revcomp;  /* true to do reverse complement also       */
   int              do_local;    /* TRUE to do local alignment               */
   int              do_align;    /* TRUE to calculate and show alignments    */
@@ -182,12 +184,12 @@ main(int argc, char **argv)
   int   cp9_cutoff_type;        /* E_CUTOFF or SCORE_CUTOFF for CP9         */
   float cp9_sc_cutoff;          /* min CP9 bit score to report              */
   float cp9_e_cutoff;           /* max CP9 E value to report                */
-  long N;                       /* effective number of seqs for this search */
+  long  N;                      /* effective number of seqs for this search */
   float W_scale = 2.0;          /* W_scale * W= sample_length               */
-  int do_partitions;            /* TRUE if --partition enabled              */
-  int *partitions;              /* partition each GC % point seg goes to    */
-  int num_partitions = 1;       /* number of partitions                     */
-  int *gc_ct;                   /* gc_ct[x] observed 100-nt segs in DB with *
+  int   do_partitions;          /* TRUE if --partition enabled              */
+  int  *partitions;             /* partition each GC % point seg goes to    */
+  int   num_partitions = 1;     /* number of partitions                     */
+  int  *gc_ct;                  /* gc_ct[x] observed 100-nt segs in DB with *
 				 * GC% of x [0..100]                        */
 
   /* The enforce option (--enfstart and --enfseq), added specifically for   *
@@ -199,33 +201,52 @@ main(int argc, char **argv)
                                  * in nodes from enf_start to enf_end       */
 
   /* HMMERNAL!: hmm banded alignment data structures */
-  int         do_hbanded;       /* TRUE to first scan with a CP9 HMM to derive bands for a CYK scan */
-  double      hbandp;           /* tail loss probability for hmm bands */
-  int         use_sums;         /* TRUE to fill and use the posterior sums, false not to. */
-  int    debug_level;   /* verbosity level for debugging printf() statements,
-			 * passed to many functions. */
+  int         do_hbanded;  /* TRUE to scan 1st with a CP9 to derive bands for CYK scan */
+  double      hbandp;      /* tail loss probability for hmm bands */
+  int         use_sums;    /* TRUE to fill and use the posterior sums, false not to. */
+  int         debug_level; /* verbosity level for debugging printf() statements,
+			    * passed to many functions. */
 
-  int do_inside;        /* TRUE to use scanning Inside algorithm instead of CYK */
-  int do_scan2hbands;   /* TRUE to use scanning Forward and Backward algs instead of traditional
-			 * FB algs to get bands on seqs surviving the filter */
-  int   do_hmmfb;             /* TRUE to use Forward to get start points and Backward
-			       * to get end points of promising subsequences*/
-  int   do_hmmweinberg;        /* TRUE to use Forward to get start points and subtract W
-				 * to get start points of promising subsequences*/
-  int   do_hmmonly;             /* TRUE to scan with a CM Plan 9 HMM ONLY!*/
-  int   do_cp9_stats;            /* TRUE to calculate CP9 stats for HMM */
-  int   hmm_pad;                /* number of residues to add to and subtract from end and 
-				 * start points of HMM hits prior to CM reevauation, 
-				 * respectively. */
-  int   do_null2;		/* TRUE to adjust scores with null model #2 */
-  int   do_zero_inserts;        /* TRUE to zero insert emission scores */
+  int   do_inside;         /* TRUE to use scanning Inside algorithm instead of CYK */
+  int   do_scan2hbands;    /* TRUE to use scanning Forward/Backward algs instead 
+			    * of traditional FB algs to get bands on seqs surviving 
+			    * the filter */
+  int   do_hmmfb;          /* TRUE to use Forward to get start points and Backward
+			    * to get end points of promising subsequences*/
+  int   do_hmmweinberg;    /* TRUE to use Forward to get start points and subtract W
+			    * to get start points of promising subsequences*/
+  int   do_hmmonly;        /* TRUE to scan with a CM Plan 9 HMM ONLY!*/
+  int   do_cp9_stats;      /* TRUE to calculate CP9 stats for HMM */
+  int   hmm_pad;           /* number of residues to add to and subtract from end and 
+			    * start points of HMM hits prior to CM reevauation, 
+			    * respectively. */
+  int   do_null2;	   /* TRUE to adjust scores with null model #2 */
+  int   do_zero_inserts;   /* TRUE to zero insert emission scores */
+  
+  /* variables related to the -R rsearch option */
+  int      do_rsearch;	   /* TRUE to build RSEARCH CM                    */
+  char    *alifile;        /* seqfile to read single seq alignment from   */ 
+  int      aliformat;	   /* format of seqfile                       */
+  MSAFILE *afp;            /* open alignment file                     */
+  MSA     *msa;            /* a multiple sequence alignment           */
+  fullmat_t       *fullmat;     /* The full matrix */
+  char matrixname[256];         /* Name of the matrix, from -m */
+  FILE            *matfp;       /* open matrix file for reading */
+  float           ralpha =   DEFAULT_RALPHA; 
+  float           rbeta =    DEFAULT_RBETA;
+  float           ralphap =  DEFAULT_RALPHAP;
+  float           rbetap =   DEFAULT_RBETAP;
+  float           rbeginsc = DEFAULT_RBEGINSC;
+  float           rendsc =   DEFAULT_RENDSC;
+  float           rmin_alpha_beta_sum;
+  int             rquerylen;     /* length of the query file */
 
 #ifdef USE_MPI
   int mpi_my_rank;              /* My rank in MPI */
   int mpi_num_procs;            /* Total number of processes */
   int mpi_master_rank;          /* Rank of master process */
 
-  /* Initailize MPI, get values for rank and num procs */
+  /* Initailize MPI, get values for rank and naum procs */
   MPI_Init (&argc, &argv);
   
   atexit (exit_from_mpi);
@@ -291,6 +312,8 @@ main(int argc, char **argv)
   enf_start         = 0;
   enf_end           = 0;
   enf_seq           = NULL;
+  do_rsearch        = FALSE;
+  aliformat         = MSAFILE_UNKNOWN;   /* autodetect by default */
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -311,7 +334,8 @@ main(int argc, char **argv)
 	do_cm_stats = TRUE;
 	num_samples = 1000;
       }
-    else if  (strcmp(optname, "-n")          == 0) num_samples = atoi(optarg);
+    else if  (strcmp(optname, "-R")          == 0) do_rsearch   = TRUE;
+    else if  (strcmp(optname, "-n")          == 0) num_samples  = atoi(optarg);
     else if  (strcmp(optname, "--dumptrees") == 0) do_dumptrees = TRUE;
     else if  (strcmp(optname, "--local")     == 0) do_local     = TRUE;
     else if  (strcmp(optname, "--noalign")   == 0) do_align     = FALSE;
@@ -402,7 +426,8 @@ main(int argc, char **argv)
 #endif
 
   if (argc - optind != 2) Die("Incorrect number of arguments.\n%s\n", usage);
-  cmfile = argv[optind++];
+  if (!do_rsearch) cmfile = argv[optind++];
+  else alifile = argv[optind++];
   seqfile = argv[optind++]; 
   
   /**********************************************
@@ -432,19 +457,61 @@ main(int argc, char **argv)
    ************************************************/
   watch = StopwatchCreate();
   
-  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
-    Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
+  if(!do_rsearch)
+    {
+      if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
+	Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
+      if (! CMFileRead(cmfp, &cm))
+	Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
+      if (cm == NULL) 
+	Die("%s empty?\n", cmfile);
+      CMFileClose(cmfp);
+    }
+  else  /* do RSEARCH */
+    {
+      /* Read in the alignment (with 1 seq) to build RSEARCH CM from */
+      if ((afp = MSAFileOpen(alifile, format, NULL)) == NULL)
+	Die("Alignment file %s could not be opened for reading", alifile);
+      /* read file */
+      if ((msa = MSAFileRead(afp)) == NULL) 
+	Die ("Could not read in query\n");
+      MSAFileClose(afp);
+
+      /* Set up matrix */
+      matrixname[0]          = '\0';
+      if ((matfp = MatFileOpen (DEFAULT_RMATRIX, getenv("RNAMAT"), matrixname)) == NULL) 
+	Die ("Failed to open matrix file\n%s\n", usage);
+      if (! (fullmat = ReadMatrix(matfp)))
+	Die ("Failed to read matrix file \n%s\n", usage);
+      printf ("Matrix: %s\n", fullmat->name);
+      /* print alphas and betas */
+      printf ("Alpha: %.2f\n", ralpha);
+      printf ("Beta: %.2f\n", rbeta);
+      printf ("Alpha': %.2f\n", ralphap);
+      printf ("Beta': %.2f\n", rbetap);
+      /* check if alpha+beta sum too low  */
+      rmin_alpha_beta_sum = get_min_alpha_beta_sum(fullmat);
+      if (ralpha + rbeta < rmin_alpha_beta_sum) 
+	Die ("alpha + beta must sum to less than %.2f\n", rmin_alpha_beta_sum);
+      if (ralphap + rbetap < rmin_alpha_beta_sum) 
+	Die ("alpha' + beta' must sum to less than %.2f\n", rmin_alpha_beta_sum);
   
-  if (! CMFileRead(cmfp, &cm))
-    Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
-  if (cm == NULL) 
-   Die("%s empty?\n", cmfile);
-  CMFileClose(cmfp);
+      /* Build the CM */
+      cm = build_cm (msa, fullmat, &rquerylen, ralpha, rbeta, ralphap, rbetap,
+		     rbeginsc, rendsc);
+      /* done with the matrix, free it */
+      FreeMat(fullmat);
+
+      cm->W = 2 * MSAAverageSequenceLength(msa);
+      /* NO NULL MODEL SET! */
+      cm->el_selfsc  = 0.; /* temporary to match RSEARCH */
+      cm->iel_selfsc = Prob2Score(sreEXP2(cm->el_selfsc), 1.0);
+    } 
   
   /* Set CM and CP9 parameters that can be changed at command line */
-  cm->beta   = beta;      /* this will be DEFAULT_BETA unless set at command line */
-  cm->hbandp = hbandp;    /* this will be DEFAULT_HBANDP unless set at command line */
-  cm->sc_boost = sc_boost; /* this will be 0.0 unless set at command line */
+  cm->beta         = beta;     /* this will be DEFAULT_BETA unless set at command line */
+  cm->hbandp       = hbandp;   /* this will be DEFAULT_HBANDP unless set at command line */
+  cm->sc_boost     = sc_boost; /* this will be 0.0 unless set at command line */
   cm->cp9_sc_boost = sc_boost; /* this will be 0.0 unless set at command line */
   if (set_window) cm->W = set_W;
 
@@ -475,7 +542,22 @@ main(int argc, char **argv)
   if(do_null2)        cm->search_opts |= CM_SEARCH_NULL2;
   if(do_cm_stats)     cm->search_opts |= CM_SEARCH_CMSTATS;
   if(do_cp9_stats)    cm->search_opts |= CM_SEARCH_CP9STATS;
-
+  if(do_rsearch) 
+    {
+      /* TEMPORARILY: we don't do anything (no QDB, no CP9s, no CMLogoddisfy calls etc.) 
+       * if in RSEARCH mode */
+      /* RSEARCH: always local, never QDB, never null2 (?), never anything CP9 related */
+      cm->search_opts |= CM_SEARCH_NOQDB;
+      cm->config_opts |= CM_CONFIG_LOCAL;
+      cm->search_opts |= CM_SEARCH_RSEARCH;
+      cm->search_opts &= ~CM_SEARCH_NULL2;
+      cm->search_opts &= ~CM_SEARCH_HMMONLY;
+      cm->search_opts &= ~CM_SEARCH_HMMFB;
+      cm->search_opts &= ~CM_SEARCH_HMMWEINBERG;
+      cm->search_opts &= ~CM_SEARCH_SCANBANDS;
+      cm->search_opts &= ~CM_SEARCH_CP9STATS;
+      cm->flags       |= CM_IS_RSEARCH;
+    }
   if(do_enforce)
     {
       cm->config_opts |= CM_CONFIG_ENFORCE;
@@ -705,6 +787,13 @@ main(int argc, char **argv)
     serial_search_database (dbfp, cm, cons);
   
   FreeCM(cm);
+  free(partitions);
+  StopwatchFree(watch);
+  esl_sqfile_Close(dbfp);
+  FreeCMConsensus(cons);
+  free(gc_ct);
+  if(do_rsearch)
+    MSAFree(msa);
 #ifdef USE_MPI
   MPI_Barrier(MPI_COMM_WORLD);
   MPI_Finalize();
@@ -712,13 +801,13 @@ main(int argc, char **argv)
   if (mpi_my_rank == mpi_master_rank) {
 #endif
     printf ("Fin\n");
+
 #ifdef USE_MPI
   }
 #endif
   return EXIT_SUCCESS;
 }
 
-  
 static int  
 QDBFileRead(FILE *fp, CM_t *cm, int **ret_dmin, int **ret_dmax)
 {

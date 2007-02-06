@@ -1059,7 +1059,7 @@ clean_cs(char *cs, int alen)
  *
  * Args:     msa  - the alignment
  *
- * Returns:  average length
+ * Returns:  maximum length of unaligned seq in msa
  */
 int 
 MSAMaxSequenceLength(MSA *msa)

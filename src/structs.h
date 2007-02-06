@@ -294,6 +294,7 @@ typedef struct cm_s {
 /* info on if the CM is a sub model or fullsub model */
 #define CM_IS_SUB             (1<<5)  /* the CM is a sub CM                       */
 #define CM_IS_FSUB            (1<<6)  /* the CM is a fullsub CM                   */
+#define CM_IS_RSEARCH         (1<<7)  /* the CM was parameterized a la RSEARCH    */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL       (1<<0)  /* configure the model for local alignment  */
@@ -334,6 +335,7 @@ typedef struct cm_s {
 #define CM_SEARCH_CMSTATS     (1<<10) /* calculate E-value statistics for CM      */
 #define CM_SEARCH_CP9STATS    (1<<11) /* calculate E-value stats for CP9 HMM      */
 #define CM_SEARCH_FFRACT      (1<<12) /* filter to filter fraction cm->ffract     */
+#define CM_SEARCH_RSEARCH     (1<<13) /* use RSEARCH parameterized CM             */
 
 /* Structure: CMFILE
  * Incept:    SRE, Tue Aug 13 10:16:39 2002 [St. Louis]
@@ -628,7 +630,11 @@ typedef struct Ideckpool_s {
 #define DEFAULT_RBETA 5.
 #define DEFAULT_RALPHAP 0.
 #define DEFAULT_RBETAP 15.
-#define DEFAULT_RBEGINSC 0.
+/* the RSEARCH default is below, it was changed b/c 
+ * with no local begin penalty, a glocal hit is ALWAYS
+ * going to be decomposed into it's subtrees.
+ *#define DEFAULT_RBEGINSC 0.  */
+#define DEFAULT_RBEGINSC -0.01
 #define DEFAULT_RENDSC -15.
 
 #endif /*STRUCTSH_INCLUDED*/

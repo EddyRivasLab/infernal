@@ -664,4 +664,21 @@ float get_min_alpha_beta_sum (fullmat_t *fullmat) {
 	}
   return (-1. * max_sum);
 }
-    
+
+/* EPN, Tue Feb  6 15:34:00 2007 */
+void FreeMat(fullmat_t *fullmat) 
+{
+  if(fullmat->unpaired != NULL)
+    {
+      free(fullmat->unpaired->matrix);
+      free(fullmat->unpaired);
+    }
+  if(fullmat->paired != NULL)
+    {
+      free(fullmat->paired->matrix);
+      free(fullmat->paired);
+    }
+  if(fullmat->name != NULL)
+    free(fullmat->name);
+  free(fullmat);
+}

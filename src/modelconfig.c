@@ -31,7 +31,6 @@ void
 ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
 {
   int safe_windowlen;
-  int enf_end;
   float swentry, swexit;
   double **gamma;               /* P(subseq length = n) for each state v, used in QDB mode */
   int do_calc_qdb   = FALSE;
@@ -39,6 +38,10 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
   int do_build_cp9  = FALSE;
   int v;
   int i;
+
+  /* TEMPORARILY: we don't do anything (no QDB, no CP9s, no CMLogoddisfy() calls etc.) 
+   * if in RSEARCH mode */
+  if(cm->flags & CM_IS_RSEARCH) return;
 
   /* Check for incompatible cm->*_opts */
   if((cm->config_opts & CM_CONFIG_ELSILENT) && (!(cm->config_opts & CM_CONFIG_LOCAL)))
@@ -619,21 +622,23 @@ ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_internal_exit)
 
   /* Remaining nodes share p_internal_start.
    */
-  for (nd = 2; nd < cm->nodes; nd++) {
-    if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
-    	cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd)  
-      if(emap->lpos[nd] <= enf_start_pos &&
-	 emap->rpos[nd] >= enf_end_pos) /* diff from ConfigLocalEnds() */
+  for (nd = 2; nd < cm->nodes; nd++) 
+    {
+      if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+	  cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd)  
 	{
-	  /*printf("enabling local begin into nd: %d lpos: %d rpos: %d s: %d e: %d\n", nd, emap->lpos[nd], emap->rpos[nd], enf_start_pos, enf_end_pos);*/
-	  cm->begin[cm->nodemap[nd]] = p_internal_start/(float)nstarts;
+	  if(emap->lpos[nd] <= enf_start_pos &&
+	     emap->rpos[nd] >= enf_end_pos) /* diff from ConfigLocalEnds() */
+	    {
+	      /*printf("enabling local begin into nd: %d lpos: %d rpos: %d s: %d e: %d\n", nd, emap->lpos[nd], emap->rpos[nd], enf_start_pos, enf_end_pos);*/
+	      cm->begin[cm->nodemap[nd]] = p_internal_start/(float)nstarts;
+	    }
+	  else
+	    ;/*printf("NOT enabling local begin into nd: %d lpos: %d rpos: %d s: %d e: %d\n", nd, emap->lpos[nd], emap->rpos[nd], enf_start_pos, enf_end_pos);*/
 	}
-      else
-	;/*printf("NOT enabling local begin into nd: %d lpos: %d rpos: %d s: %d e: %d\n", nd, emap->lpos[nd], emap->rpos[nd], enf_start_pos, enf_end_pos);*/
-	
-  }
+    }
   cm->flags |= CM_LOCAL_BEGIN;
-
+  
   /*****************************************************************
    * Internal exit.
    *****************************************************************/

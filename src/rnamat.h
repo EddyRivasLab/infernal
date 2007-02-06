@@ -117,6 +117,9 @@ FILE *MatFileOpen (char *deflt, char *matdir, char *matfile);
  * Reports minium allowed sum of alpha + beta for matrix 
  */
 float get_min_alpha_beta_sum (fullmat_t *fullmat);
-    
+
+/* Free a fullmat_t object */    
+void FreeMat(fullmat_t *fullmat);
+
 #endif
   
