@@ -779,7 +779,7 @@ main(int argc, char **argv)
     else 
 	{
 	  printf ("lambda and K undefined -- no statistics\n");
-	  printf ("Using score cutoff of %.2f\n", cm->cutoff);
+	  printf ("Using CM score cutoff of %.2f\n", cm->cutoff);
 	}
     fflush(stdout);
 
@@ -806,7 +806,7 @@ main(int argc, char **argv)
     else if(cm->search_opts & CM_SEARCH_HMMONLY || cm->search_opts & CM_SEARCH_HMMWEINBERG)
 	{
 	  printf ("lambda and K undefined -- no statistics\n");
-	  printf ("Using score cutoff of %.2f\n", cm->cp9_cutoff);
+	  printf ("Using CP9 score cutoff of %.2f\n", cm->cp9_cutoff);
 	}
     fflush(stdout);
 
@@ -854,28 +854,33 @@ main(int argc, char **argv)
       StopwatchStop(watch);
       StopwatchDisplay(stdout, "search time:", watch);
     }
-
   
   FreeCM(cm);
-  free(partitions);
   if(do_timings) StopwatchFree(watch);
+#ifdef USE_MPI
+  if(mpi_my_rank == mpi_master_rank)
+    {
+#endif
+  free(partitions);
   esl_sqfile_Close(dbfp);
   FreeCMConsensus(cons);
   free(gc_ct);
   if(do_rsearch)
     MSAFree(msa);
 #ifdef USE_MPI
+    }
+#endif
+#ifdef USE_MPI
   MPI_Barrier(MPI_COMM_WORLD);
   MPI_Finalize();
   in_mpi = 0;
-  if (mpi_my_rank == mpi_master_rank) {
+  if (mpi_my_rank == mpi_master_rank) 
+    {
 #endif
-    StopwatchFree(mpi_watch);
-    
-    printf ("Fin\n");
-
+      StopwatchFree(mpi_watch);
+      printf ("Fin\n");
 #ifdef USE_MPI
-  }
+    }
 #endif
   return EXIT_SUCCESS;
 }
