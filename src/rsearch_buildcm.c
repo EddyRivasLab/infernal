@@ -403,6 +403,13 @@ CM_t *build_cm (MSA *msa, fullmat_t *fullmat, int *querylen,
      and gap penalties*/
   SingleSequenceLogoddsify (cm, fullmat, alpha, beta, alphap, betap);
 
+  /* Infernal specific function: we're writing a CM file for the
+   * RSEARCH parameterized CM, so we need valid probabilities (cm->e and
+   * cm->t) which we call prob2ascii() on when writing the CM file. To
+   * get these we go backwards from the log odds to the probabilities.
+   */
+  /*SingleSequenceProbify(cm);*/
+
   /* Put in beginsc and endsc parameters */
   SingleSequenceLocalScores (cm, beginsc, endsc);
 

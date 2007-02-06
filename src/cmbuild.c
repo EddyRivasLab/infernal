@@ -606,35 +606,18 @@ main(int argc, char **argv)
 	  if(!no_prior)
 	    PriorifyCM(cm, pri);
 	  
-	} /* End of sequence weighting (if(!(do_rsearch))) */
-      else /* if do_rsearch */
-	{
-	  printf("%-40s ... ", "Building RSEARCH CM from single sequence"); fflush(stdout);
-	  cm = build_cm (msa, fullmat, &querylen, alpha, beta, alphap, betap,
-			 beginsc, endsc);
-	}
-      
-      CMSetNullModel(cm, randomseq);
-
-      if(do_detach) /* Detach dual inserts where appropriate, if
+	  CMSetNullModel(cm, randomseq);
+	  
+	  if(do_detach) /* Detach dual inserts where appropriate, if
 		     * we get here we've already checked these states */
-	{
-	  cm_find_and_detach_dual_inserts(cm, 
+	    {
+	      cm_find_and_detach_dual_inserts(cm, 
 					  FALSE, /* Don't check states have 0 counts (they won't due to priors) */
-					  TRUE); /* Detach the states by setting trans probs into them as 0.0   */
-	}
-      CMLogoddsify(cm);
-      printf("done.\n");
+					      TRUE); /* Detach the states by setting trans probs into them as 0.0   */
+	    }
+	  CMLogoddsify(cm);
+	  printf("done.\n");
 
-      /* If we try to use band calculation to get W we can't satisfy that
-       * that the amount of probability mass ignored is negligible. Current
-       * fix is to just skip it, set W to twice query length */
-      if(do_rsearch)
-	{
-	  cm->W = 2 * MSAMaxSequenceLength(msa);
-	}
-      else
-	{
 	  /* EPN 08.18.05
 	   * Calculate W for the model based on the seed seqs' tracebacks.
 	   *              Brief expt on effect of different bandp and 
@@ -663,8 +646,23 @@ main(int argc, char **argv)
 	  /*debug_print_bands(cm, dmin, dmax);*/
 	  cm->W = dmax[0];
 	  printf("done. [%d]\n", cm->W);
+	  
+	} /* End of sequence weighting (if(!(do_rsearch))) */
+      else /* if do_rsearch */
+	{
+	  /* 02.06.07 Postponed implementation of RSEARCH in cmbuild */
+	  Die("--rsearch not yet implemented.\n");
+	  printf("%-40s ... ", "Building RSEARCH CM from single sequence"); fflush(stdout);
+	  cm = build_cm (msa, fullmat, &querylen, alpha, beta, alphap, betap,
+			 beginsc, endsc);
+	  /* If we try to use band calculation to get W we can't satisfy that
+	   * that the amount of probability mass ignored is negligible. Current
+	   * fix is to just skip it, set W to twice query length */
+	  cm->W = 2 * MSAMaxSequenceLength(msa);
+	  CMSetNullModel(cm, randomseq);
+	  PrintFullCM(cm); 
 	}
-
+      
       /*11.15.05 EPN Set the EL self transition score, by default its log2(0.94).*/
       cm->el_selfsc = sreLOG2(el_selfprob);
       /* Next line is very hacky. 
@@ -896,16 +894,19 @@ main(int argc, char **argv)
       */
 
       /* Free aln specific CM related data structures */
-      FreeParsetree(mtr);
-      Free2DArray((void**)dsq, msa->nseq);
+      if(!do_rsearch)
+	{
+	  FreeParsetree(mtr);
+	  Free2DArray((void**)dsq, msa->nseq);
+	  FreeBandDensities(cm, gamma);	  
+	  free(dmin);
+	  free(dmax);
+	}
       MSAFree(msa);
       fflush(cmfp);
       puts("//\n");
       nali++;
 
-      FreeBandDensities(cm, gamma);	  
-      free(dmin);
-      free(dmax);
       FreeCM(cm);
     }
 
