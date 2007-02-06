@@ -216,7 +216,7 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
   else 
     min_cp9_cutoff = e_to_score (cm->cp9_cutoff, cm->cp9_mu, cm->cp9_lambda);
 
-  printf("B PSD rank: %4d mast: %4d cm_cutoff: %f cp9_cutoff: %f\n", mpi_my_rank, mpi_master_rank, min_cm_cutoff, min_cp9_cutoff);
+  /*printf("B PSD rank: %4d mast: %4d cm_cutoff: %f cp9_cutoff: %f\n", mpi_my_rank, mpi_master_rank, min_cm_cutoff, min_cp9_cutoff);*/
 
   if (mpi_my_rank == mpi_master_rank) 
     {

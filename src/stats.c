@@ -67,7 +67,7 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
   float *enf_vec;             /* vector for FChoose to pick starting point for enf_seq */
   int enf_start;           /* starting point for enf_seq */
 
-  printf("in serial_make_histogram, nparts: %d sample_len: %d cp9_stats: %d do_ins: %d do_enf: %d\n", num_partitions, sample_length, doing_cp9_stats, (cm->search_opts & CM_SEARCH_INSIDE), (cm->config_opts & CM_CONFIG_ENFORCE));
+  /*printf("in serial_make_histogram, nparts: %d sample_len: %d cp9_stats: %d do_ins: %d do_enf: %d\n", num_partitions, sample_length, doing_cp9_stats, (cm->search_opts & CM_SEARCH_INSIDE), (cm->config_opts & CM_CONFIG_ENFORCE));*/
 
   /* Allocate for random distribution */
   nt_p = MallocOrDie(sizeof(float)*Alphabet_size); 
@@ -140,8 +140,8 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 				   (!doing_cp9_stats), /* TRUE if we're calc'ing CM stats */
 				   doing_cp9_stats,    /* TRUE if we're calc'ing CP9 stats */
 				   NULL);          /* filter fraction N/A */
-	  if(i % 100 == 0)
-	    printf("(%4d) SCORE: %f\n", i, score);
+	  /*if(i % 100 == 0)
+	    printf("(%4d) SCORE: %f\n", i, score);*/
 	  /* Add best score to histogram */
 	  /*if(!use_easel) AddToHistogram (h_old, score); */
 	  esl_histogram_Add(h, score);
@@ -241,7 +241,7 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
   int   *hitj;                  /* end positions of hits */
   float *hitsc;			/* scores of hits */
 
-  printf("in parallel_make_histogram, nparts: %d sample_len: %d cp9_stats: %d do_ins: %d do_enf: %d\n", num_partitions, sample_length, doing_cp9_stats, (cm->search_opts & CM_SEARCH_INSIDE), (cm->config_opts & CM_CONFIG_ENFORCE));
+  /*printf("in parallel_make_histogram, nparts: %d sample_len: %d cp9_stats: %d do_ins: %d do_enf: %d\n", num_partitions, sample_length, doing_cp9_stats, (cm->search_opts & CM_SEARCH_INSIDE), (cm->config_opts & CM_CONFIG_ENFORCE));*/
 
   tmp_name = sre_strdup("random", -1);
 
@@ -440,7 +440,7 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 				       (!doing_cp9_stats), /* TRUE if we're calc'ing CM stats */
 				       doing_cp9_stats,    /* TRUE if we're calc'ing CP9 stats */
 				       NULL);          /* filter fraction N/A */
-	      printf("score: %f\n", score);
+	      /*printf("score: %f\n", score);*/
 	      search_send_hist_scan_results (score, mpi_master_rank);
 	    }
 	  if (dsq != NULL)

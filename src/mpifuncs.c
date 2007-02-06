@@ -389,7 +389,7 @@ void search_send_align_results (Parsetree_t *tr, int mpi_master_node) {
   int bufsize;
   char results_type = ALN_RESULTS;
 
-  bufsize = sizeof(char)+sizeof(int)+sizeof(int)+6*((tr->n)+1)*sizeof(int);
+  bufsize = sizeof(char)+sizeof(int)+sizeof(int)+7*((tr->n)+1)*sizeof(int);
   buf = MallocOrDie(bufsize);
   /* Send the size of the results */
   MPI_Send (&bufsize, 1, MPI_INT, mpi_master_node, SEARCH_STD_SCAN_RESULTS_SIZE_TAG, MPI_COMM_WORLD);
@@ -403,7 +403,8 @@ void search_send_align_results (Parsetree_t *tr, int mpi_master_node) {
   MPI_Pack (tr->state, tr->n, MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
   MPI_Pack (tr->nxtl, tr->n, MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
   MPI_Pack (tr->nxtr, tr->n, MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
-  MPI_Pack (tr->prv, tr->n, MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
+  MPI_Pack (tr->prv,  tr->n, MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
+  MPI_Pack (tr->mode, tr->n, MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
 
   MPI_Send (buf, bufsize, MPI_PACKED, mpi_master_node, SEARCH_STD_SCAN_RESULTS_TAG, MPI_COMM_WORLD);
 }
@@ -648,6 +649,7 @@ int search_check_results (db_seq_t **active_seqs, job_t **process_status, int D)
     tr->nxtl = MallocOrDie(sizeof(int)*tr->n);
     tr->nxtr = MallocOrDie(sizeof(int)*tr->n);
     tr->prv = MallocOrDie(sizeof(int)*tr->n);
+    tr->mode = MallocOrDie(sizeof(int)*tr->n);
     tr->nalloc = tr->n;
     /* Unpack it */
     MPI_Unpack (buf, bufsize, &position, tr->emitl, tr->n, MPI_INT, MPI_COMM_WORLD);
@@ -656,6 +658,7 @@ int search_check_results (db_seq_t **active_seqs, job_t **process_status, int D)
     MPI_Unpack (buf, bufsize, &position, tr->nxtl, tr->n, MPI_INT, MPI_COMM_WORLD);
     MPI_Unpack (buf, bufsize, &position, tr->nxtr, tr->n, MPI_INT, MPI_COMM_WORLD);
     MPI_Unpack (buf, bufsize, &position, tr->prv, tr->n, MPI_INT, MPI_COMM_WORLD);
+    MPI_Unpack (buf, bufsize, &position, tr->mode, tr->n, MPI_INT, MPI_COMM_WORLD);
     cur_seq->results[(int)in_revcomp]->data[index].tr = tr;
     cur_seq->alignments_sent--;
   } else {
@@ -910,7 +913,7 @@ void aln_send_results (seqs_to_aln_t *seqs_to_aln, int do_post, int mpi_master_n
 
   bufsize = sizeof(char) + sizeof(int) + sizeof(int) + sizeof(int);
   for(i = 0; i < seqs_to_aln->nseq; i++)
-    bufsize += (6 * (seqs_to_aln->tr[i]->n + 1) * sizeof(int));
+    bufsize += (7 * (seqs_to_aln->tr[i]->n + 1) * sizeof(int));
 
   if(do_post) /* add size of postcodes */
     for(i = 0; i < seqs_to_aln->nseq; i++)
@@ -935,6 +938,7 @@ void aln_send_results (seqs_to_aln_t *seqs_to_aln, int do_post, int mpi_master_n
       MPI_Pack (seqs_to_aln->tr[i]->nxtl,       seqs_to_aln->tr[i]->n, MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
       MPI_Pack (seqs_to_aln->tr[i]->nxtr,       seqs_to_aln->tr[i]->n, MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
       MPI_Pack (seqs_to_aln->tr[i]->prv,        seqs_to_aln->tr[i]->n, MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
+      MPI_Pack (seqs_to_aln->tr[i]->mode,       seqs_to_aln->tr[i]->n, MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
     }
   MPI_Pack (&do_post,  1, MPI_INT , buf, bufsize, &pos, MPI_COMM_WORLD);
 
@@ -1006,6 +1010,7 @@ int aln_check_results (Parsetree_t **all_parsetrees, char **all_postcodes, int *
 	  tr->nxtl  = MallocOrDie(sizeof(int)*tr->n);
 	  tr->nxtr  = MallocOrDie(sizeof(int)*tr->n);
 	  tr->prv   = MallocOrDie(sizeof(int)*tr->n);
+	  tr->mode  = MallocOrDie(sizeof(int)*tr->n);
 	  tr->nalloc = tr->n;
 	  /* Unpack it */
 	  MPI_Unpack (buf, bufsize, &position, tr->emitl, tr->n, MPI_INT, MPI_COMM_WORLD);
@@ -1014,6 +1019,7 @@ int aln_check_results (Parsetree_t **all_parsetrees, char **all_postcodes, int *
 	  MPI_Unpack (buf, bufsize, &position, tr->nxtl,  tr->n, MPI_INT, MPI_COMM_WORLD);
 	  MPI_Unpack (buf, bufsize, &position, tr->nxtr,  tr->n, MPI_INT, MPI_COMM_WORLD);
 	  MPI_Unpack (buf, bufsize, &position, tr->prv,   tr->n, MPI_INT, MPI_COMM_WORLD);
+	  MPI_Unpack (buf, bufsize, &position, tr->mode,  tr->n, MPI_INT, MPI_COMM_WORLD);
 	  /* add the parsetree onto the master array of parsetrees */
 	  all_parsetrees[index++] = tr;
 	}

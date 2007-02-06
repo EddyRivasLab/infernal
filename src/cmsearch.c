@@ -77,6 +77,7 @@ static char experts[] = "\
    --negsc    <f>: set min bit score to report as <f> < 0 (experimental)\n\
    --enfstart <n>: enforce MATL stretch starting at CM node <n>\n\
    --enfseq <s>  : enforce MATL stretch starting at --enfstart <n> emits seq <s>\n\
+   --time        : print timings for histogram building, and full search\n\
 \n\
   * Filtering options using a CM plan 9 HMM (*in development*):\n\
    --hmmfb        : use Forward to get end points & Backward to get start points\n\
@@ -131,7 +132,8 @@ static struct opt_s OPTIONS[] = {
   { "--scan2hbands",FALSE, sqdARG_NONE},
   { "--partition",  FALSE, sqdARG_STRING},
   { "--enfstart",   FALSE, sqdARG_INT},
-  { "--enfseq",     FALSE, sqdARG_STRING}
+  { "--enfseq",     FALSE, sqdARG_STRING},
+  { "--time",       FALSE, sqdARG_NONE}
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -148,7 +150,6 @@ main(int argc, char **argv)
   int              optind;      /* index in argv[]                          */
   ESL_SQFILE	  *dbfp;        /* open seqfile for reading                 */
   CM_t            *cm;          /* a covariance model                       */
-  Stopwatch_t     *watch;       /* times band calc, then search time        */
   int              i;           /* counter                                  */
   CMConsensus_t   *cons;	/* precalculated consensus info for display */
   double            beta;       /* tail loss prob for query dependent bands */
@@ -199,6 +200,8 @@ main(int argc, char **argv)
   int   enf_end;                /* last  MATL node to enforce each parse use*/
   char *enf_seq;                /* the subsequence to enforce emitted by    *
                                  * in nodes from enf_start to enf_end       */
+  int           do_timings;     /* TRUE to print timings, FALSE not to      */
+  Stopwatch_t  *watch;          /* times histogram building, search time    */
 
   /* HMMERNAL!: hmm banded alignment data structures */
   int         do_hbanded;  /* TRUE to scan 1st with a CP9 to derive bands for CYK scan */
@@ -245,6 +248,7 @@ main(int argc, char **argv)
   int mpi_my_rank;              /* My rank in MPI */
   int mpi_num_procs;            /* Total number of processes */
   int mpi_master_rank;          /* Rank of master process */
+  Stopwatch_t  *mpi_watch;      /* for timings in MPI mode                  */
 
   /* Initailize MPI, get values for rank and naum procs */
   MPI_Init (&argc, &argv);
@@ -265,6 +269,7 @@ main(int argc, char **argv)
   /* If I'm the master, do the following set up code -- parse arguments, read
      in matrix and query, build model */
   if (mpi_my_rank == mpi_master_rank) {
+    mpi_watch = StopwatchCreate(); 
 #endif
 
   /*********************************************** 
@@ -313,6 +318,7 @@ main(int argc, char **argv)
   enf_end           = 0;
   enf_seq           = NULL;
   do_rsearch        = FALSE;
+  do_timings        = FALSE;
   aliformat         = MSAFILE_UNKNOWN;   /* autodetect by default */
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
@@ -346,6 +352,7 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--negsc")       == 0) sc_boost = -1. * atof(optarg);
     else if  (strcmp(optname, "--enfstart")    == 0) { do_enforce = TRUE; enf_start = atoi(optarg); }
     else if  (strcmp(optname, "--enfseq")      == 0) { do_enforce = TRUE; enf_seq = optarg; } 
+    else if  (strcmp(optname, "--time")        == 0) do_timings   = TRUE;
     else if  (strcmp(optname, "--hmmfb")       == 0)   do_hmmfb = TRUE;
     else if  (strcmp(optname, "--hmmweinberg") == 0)   do_hmmweinberg = TRUE;
     else if  (strcmp(optname, "--hmmnegsc")    == 0) cp9_sc_boost = -1. * atof(optarg);
@@ -389,6 +396,9 @@ main(int argc, char **argv)
       exit(EXIT_SUCCESS);
     }
   }
+
+  if(in_mpi && mpi_num_procs > 1)
+    do_timings = FALSE; /* we don't do per node timings, but we do do master node timings */
   
   /* Check for incompatible option combos. */
   if(do_cp9_stats && 
@@ -455,7 +465,8 @@ main(int argc, char **argv)
    * Preliminaries: open our files for i/o; get a CM.
    * We configure the CM with ConfigCM() later.
    ************************************************/
-  watch = StopwatchCreate();
+  if(do_timings)
+    watch = StopwatchCreate();
   
   if(!do_rsearch)
     {
@@ -593,7 +604,6 @@ main(int argc, char **argv)
 }   /* End of first block that is only done by master process */
   /* Barrier for debugging */
   MPI_Barrier(MPI_COMM_WORLD);
-
   /* Here we need to broadcast the following parameters:
      num_samples, W, W_scale, and the CM */
   broadcast_cm(&cm, mpi_my_rank, mpi_master_rank);
@@ -641,52 +651,88 @@ main(int argc, char **argv)
   /* Set sample_length to 2*W if not yet set */
   if (sample_length == 0) sample_length = W_scale * cm->W;
   /*printf("0 W: %d W_scale: %f sample_length: %d\n", W, W_scale, sample_length);*/
-  printf("cm stats: %d (%d) cp9 stats: %d (%d)\n", (cm->search_opts & CM_SEARCH_CMSTATS),
-    do_cm_stats, (cm->search_opts & CM_SEARCH_CP9STATS), do_cp9_stats);
+  /*printf("cm stats: %d (%d) cp9 stats: %d (%d)\n", (cm->search_opts & CM_SEARCH_CMSTATS),
+    do_cm_stats, (cm->search_opts & CM_SEARCH_CP9STATS), do_cp9_stats);*/
   
   if (cm->search_opts & CM_SEARCH_CMSTATS) 
     {
-      printf("CALCING CM STATS\n");
+      /*printf("CALCING CM STATS\n");*/
+      if(do_timings) /* will be off if in_mpi */
+	{
+	  StopwatchZero(watch);
+	  StopwatchStart(watch);
+	}	  
 #ifdef USE_MPI
-      /*StopwatchZero(watch);
-	StopwatchStart(watch);*/
+      if(mpi_my_rank == mpi_master_rank && mpi_num_procs > 1)
+	{
+	  StopwatchZero(mpi_watch);
+	  StopwatchStart(mpi_watch);
+	}
       if (mpi_num_procs > 1)
-	parallel_make_histogram(gc_ct, partitions, num_partitions,
-				cm, num_samples, sample_length, 
-				FALSE, /* we're not doing CP9 stats */
-				mpi_my_rank, mpi_num_procs, mpi_master_rank);
+	{
+	  parallel_make_histogram(gc_ct, partitions, num_partitions,
+				  cm, num_samples, sample_length, 
+				  FALSE, /* we're not doing CP9 stats */
+				  mpi_my_rank, mpi_num_procs, mpi_master_rank);
+	  if(mpi_my_rank == mpi_master_rank && mpi_num_procs > 1)
+	    {
+	      StopwatchStop(mpi_watch);
+	      StopwatchDisplay(stdout, "MPI CM  histogram building time:", mpi_watch);
+	    }
+	}	  
       else 
 #endif
 	serial_make_histogram (gc_ct, partitions, num_partitions,
 			       cm, num_samples, sample_length, 
 			       FALSE, /* we're not doing CP9 stats */
 			       TRUE); /* use easel, discard eventually */
+      if(do_timings) /* this will be false if in_mpi */
+	{
+	  StopwatchStop(watch);
+	  StopwatchDisplay(stdout, "CM  histogram building time:", watch);
+	}
     }      
-  /*StopwatchStop(watch);
-    StopwatchDisplay(stdout, "\nCPU time (histogram): ", watch);*/
 
   /* If we're calculating stats for the CP9, build CP9 histograms */
   if (cm->search_opts & CM_SEARCH_CP9STATS) 
     {
-      printf("CALCING CP9 STATS\n");
+      /*printf("CALCING CP9 STATS\n");*/
+      if(do_timings) /* will be off if in_mpi */
+	{
+	  StopwatchZero(watch);
+	  StopwatchStart(watch);
+	}	  
 #ifdef USE_MPI
-      /*StopwatchZero(watch);
-	StopwatchStart(watch);*/
+      if(mpi_my_rank == mpi_master_rank && mpi_num_procs > 1)
+	{
+	  StopwatchZero(mpi_watch);
+	  StopwatchStart(mpi_watch);
+	}
       if (mpi_num_procs > 1)
-	parallel_make_histogram(gc_ct, partitions, num_partitions,
-				cm, num_samples, sample_length, 
-				TRUE, /* we are doing CP9 stats */
-				mpi_my_rank, mpi_num_procs, mpi_master_rank);
+	{
+	  parallel_make_histogram(gc_ct, partitions, num_partitions,
+				  cm, num_samples, sample_length, 
+				  TRUE, /* we are doing CP9 stats */
+				  mpi_my_rank, mpi_num_procs, mpi_master_rank);
+	  if(mpi_my_rank == mpi_master_rank && mpi_num_procs > 1)
+	    {
+	      StopwatchStop(mpi_watch);
+	      StopwatchDisplay(stdout, "MPI CP9 histogram building time:", mpi_watch);
+	    }
+	}
       else 
 #endif
 	serial_make_histogram (gc_ct, partitions, num_partitions,
 			       cm, num_samples, sample_length, 
 			       TRUE, /* we are doing CP9 stats */
 			       TRUE);/* use easel, discard eventually */
+      if(do_timings) /* this will be false if in_mpi */
+	{
+	  StopwatchStop(watch);
+	  StopwatchDisplay(stdout, "CP9 histogram building time:", watch);
+	}
+	
     }      
-  printf("done calcing CP9 stats\n");
-  /*StopwatchStop(watch);
-    StopwatchDisplay(stdout, "\nCPU time (histogram): ", watch);*/
       
 #ifdef USE_MPI
   if (mpi_my_rank == mpi_master_rank) {
@@ -726,9 +772,9 @@ main(int argc, char **argv)
 	  ;/*printf ("GC = %d\tlambda = %.4f\tmu = %.4f\n", i, lambda[i], mu[i]);*/
 	printf ("N = %ld\n", N);
 	if (cm->cutoff_type == SCORE_CUTOFF) 
-	  printf ("Using score cutoff of %.2f\n", cm->cutoff);
+	  printf ("Using CM score cutoff of %.2f\n", cm->cutoff);
 	else 
-	  printf ("Using E cutoff of %.2f\n", cm->cutoff);
+	  printf ("Using CM E cutoff of %.2f\n\n", cm->cutoff);
       } 
     else 
 	{
@@ -753,9 +799,9 @@ main(int argc, char **argv)
 	  ;/*printf ("GC = %d\tlambda = %.4f\tmu = %.4f\n", i, lambda[i], mu[i]);*/
 	printf ("N = %ld\n", N);
 	if (cm->cp9_cutoff_type == SCORE_CUTOFF) 
-	  printf ("Using score cutoff of %.2f\n", cm->cp9_cutoff);
+	  printf ("Using CP9 score cutoff of %.2f\n", cm->cp9_cutoff);
 	else 
-	  printf ("Using E cutoff of %.2f\n", cm->cp9_cutoff);
+	  printf ("Using CP9 E cutoff of %.2f\n\n", cm->cp9_cutoff);
       } 
     else if(cm->search_opts & CM_SEARCH_HMMONLY || cm->search_opts & CM_SEARCH_HMMWEINBERG)
 	{
@@ -770,6 +816,12 @@ main(int argc, char **argv)
     /*************************************************
      *    Do the search
      *************************************************/
+    if(do_timings) /* will be off if in_mpi */
+      {
+	StopwatchZero(watch);
+	StopwatchStart(watch);
+      }	  
+
 #ifdef USE_MPI
     } /* Done with second master-only block */
   
@@ -777,18 +829,36 @@ main(int argc, char **argv)
    * we're doing CM stats and/or CP9 stats. */
   search_second_broadcast(&cm, &N, mpi_my_rank, mpi_master_rank);
 
-  printf("cm->cutoff: %f cp9->cutoff: %f rank: %d\n", cm->cutoff, cm->cp9_cutoff, mpi_my_rank);
-
+  /*printf("cm->cutoff: %f cp9->cutoff: %f rank: %d\n", cm->cutoff, cm->cp9_cutoff, mpi_my_rank);*/
+  if(mpi_my_rank == mpi_master_rank && mpi_num_procs > 1)
+    {
+      StopwatchZero(mpi_watch);
+      StopwatchStart(mpi_watch);
+    }
   if (mpi_num_procs > 1)
-    parallel_search_database (dbfp, cm, cons,
-			      mpi_my_rank, mpi_master_rank, mpi_num_procs);
+    {
+      parallel_search_database (dbfp, cm, cons,
+				mpi_my_rank, mpi_master_rank, mpi_num_procs);
+      if(mpi_my_rank == mpi_master_rank && mpi_num_procs > 1)
+	{
+	  StopwatchStop(mpi_watch);
+	  StopwatchDisplay(stdout, "MPI search time:", mpi_watch);
+	}
+    }
   else
 #endif
     serial_search_database (dbfp, cm, cons);
+
+  if(do_timings) /* this will be false if in_mpi */
+    {
+      StopwatchStop(watch);
+      StopwatchDisplay(stdout, "search time:", watch);
+    }
+
   
   FreeCM(cm);
   free(partitions);
-  StopwatchFree(watch);
+  if(do_timings) StopwatchFree(watch);
   esl_sqfile_Close(dbfp);
   FreeCMConsensus(cons);
   free(gc_ct);
@@ -800,6 +870,8 @@ main(int argc, char **argv)
   in_mpi = 0;
   if (mpi_my_rank == mpi_master_rank) {
 #endif
+    StopwatchFree(mpi_watch);
+    
     printf ("Fin\n");
 
 #ifdef USE_MPI
