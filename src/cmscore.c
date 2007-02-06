@@ -22,7 +22,7 @@
 
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
-#include "cm_wrappers.h"	/* alignment functions                   */
+#include "cm_dispatch.h"	/* alignment functions                   */
 
 void SummarizeAlignOptions(CM_t *cm);
 

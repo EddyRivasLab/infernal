@@ -2,11 +2,11 @@
  * @LICENSE@
  ************************************************************/
 
-/* cm_wrappers.c
+/* cm_dispatch.c
  * EPN, Wed Dec  6 06:11:46 2006
  * 
- * Wrapper functions for aligning and searching seqs
- * with a CM, with helper functions.
+ * Dispatch functions for aligning and searching seqs
+ * with a CM.
  * 
  */
 
@@ -33,10 +33,10 @@
 #include "stats.h"
 #include "esl_gumbel.h"
 #include "mpifuncs.h"
-#include "cm_wrappers.h"
+#include "cm_dispatch.h"
 
 /* Helper functions called by the main functions (main functions
- * declared in cm_wrappers.h 
+ * declared in cm_dispatch.h) 
  */
 static db_seq_t *read_next_seq (ESL_SQFILE *dbfp, int do_revcomp);
 static void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,

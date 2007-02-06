@@ -80,7 +80,7 @@ AllocCP9Bands(CM_t *cm, struct cplan9_s *hmm)
    * for each state. They are the only part of the CP9Bands_t data
    * structure that is allocated in seq-dependent fastion, so they
    * must be freed after bands are used for each seq (this is done
-   * in cm_wrappers::actually_align_targets()) 
+   * in cm_dispatch::actually_align_targets()) 
    */
   return cp9bands;
 }

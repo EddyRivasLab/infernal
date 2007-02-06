@@ -28,7 +28,7 @@
 
 #include "stopwatch.h"          /* squid's process timing module        */
 #include "hmmband.h"
-#include "cm_wrappers.h"
+#include "cm_dispatch.h"
   
 /***********************************************************************
  * Function: CP9ForwardScan()

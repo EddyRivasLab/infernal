@@ -2,7 +2,7 @@
  * @LICENSE@
  ************************************************************/
 
-/* cm_wrappers.h
+/* cm_dispatch.h
  * 
  * Functions that actually do the work for cmalign and cmsearch,
  * in parallel and serial varieties.
@@ -10,8 +10,8 @@
  * Eric Nawrocki
  */
 
-#ifndef CMWRAPPERS_INCLUDED
-#define CMWRAPPERS_INCLUDED
+#ifndef CMDISPATCH_INCLUDED
+#define CMDISPATCH_INCLUDED
 
 #include "config.h"
 #include "structs.h"		/* data structures, macros, #define's   */

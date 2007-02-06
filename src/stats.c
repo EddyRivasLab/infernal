@@ -27,7 +27,7 @@
 #include "esl_histogram.h"
 #include "esl_gumbel.h"
 #include "esl_sqio.h"
-#include "cm_wrappers.h"
+#include "cm_dispatch.h"
 
 /*
  * Function: serial_make_histogram()

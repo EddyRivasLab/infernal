@@ -28,7 +28,7 @@
 #include "esl_gumbel.h"
 #include "esl_sqio.h"
 #include "mpifuncs.h"
-#include "cm_wrappers.h"
+#include "cm_dispatch.h"
 
 static int in_mpi;
 
