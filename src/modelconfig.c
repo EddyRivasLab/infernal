@@ -64,6 +64,11 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
       cm->flags &= ~CM_CP9STATS; /* make sure the CP9 stats ready flag is down. */
     }
 
+  /* The enforce option, added specifically for enforcing the template region of
+   * telomerase RNA */
+  if(cm->config_opts & CM_CONFIG_ENFORCE)
+    EnforceSubsequence(cm);
+
   /* Check if we need to calculate QDBs and/or build a CP9 HMM. */
   if(cm->config_opts & CM_CONFIG_QDB)
   {
@@ -83,14 +88,18 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
     {
       /* IMPORTANT: do this before setting up CM for local mode
        *            eventually, we'll do it after, but we can't build local CP9s yet. */
-      if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))
-	Die("Couldn't build a CP9 HMM from the CM\n");
+      if(!(cm->config_opts & CM_CONFIG_ENFORCE))
+	{
+	  if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))
+	    Die("Couldn't build a CP9 HMM from the CM\n");
+	}
+      else /* we're enforcing a subseq, let's check the CP9 (note FALSE becomes TRUE) */
+	{
+	  if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), TRUE, 0.0001, 0))
+	    Die("Couldn't build a CP9 HMM from the CM\n");
+	}
       cm->flags |= CM_CP9; /* raise the CP9 flag */
     }
-  /* The enforce option, added specifically for enforcing the template region of
-   * telomerase RNA */
-  if(cm->config_opts & CM_CONFIG_ENFORCE)
-    EnforceSubsequence(cm);
   
   /* Configure the CM for local alignment. */
   if (cm->config_opts & CM_CONFIG_LOCAL)

@@ -237,7 +237,10 @@ FreeCM(CM_t *cm)
   if (cm->acc    != NULL) free(cm->acc);
   if (cm->desc   != NULL) free(cm->desc);
   if (cm->annote != NULL) free(cm->annote);
-  if (cm->enf_seq != NULL) free(cm->enf_seq);
+  /* This gives a memory error, b/c it's copied from optarg
+   * in cmsearch.c (I can't find where optarg is Malloc'ed,
+   * worst case scenario: small memory leak here */
+  /*if (cm->enf_seq != NULL) free(cm->enf_seq);*/
 
   free(cm->null);
   free(cm->sttype);

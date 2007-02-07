@@ -322,7 +322,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--tfile")     == 0) tracefile         = optarg;
     else if (strcmp(optname, "--regress")   == 0) regressionfile    = optarg;
     else if (strcmp(optname, "--priorfile") == 0) prifile           = optarg;
-    else if (strcmp(optname, "--bfile")     == 0) bandfile         = optarg;
+    else if (strcmp(optname, "--bfile")     == 0) bandfile          = optarg;
     else if (strcmp(optname, "--local")     == 0) do_local          = TRUE;
     else if (strcmp(optname, "--bdfile")    == 0) {banddensityfile  = optarg; save_gamma = TRUE;}
     else if (strcmp(optname, "--bandp")     == 0) bandp             = atof(optarg);
@@ -434,16 +434,19 @@ main(int argc, char **argv)
 	 cmfile, do_append? "[appending]" : "");
   printf("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n\n");
 
+
   /**************************************************
    *   Set up matrix
    **************************************************/
   matrixname[0]          = '\0';
-  if ((matfp = MatFileOpen (DEFAULT_RMATRIX, getenv("RNAMAT"), matrixname)) == NULL) 
-    Die ("Failed to open matrix file\n%s\n", usage);
-  if (! (fullmat = ReadMatrix(matfp)))
-    Die ("Failed to read matrix file \n%s\n", usage);
-  printf ("Matrix: %s\n", fullmat->name);
-
+  if(do_rsearch)
+    {
+      if ((matfp = MatFileOpen (DEFAULT_RMATRIX, getenv("RNAMAT"), matrixname)) == NULL) 
+	Die ("Failed to open matrix file\n%s\n", usage);
+      if (! (fullmat = ReadMatrix(matfp)))
+	Die ("Failed to read matrix file \n%s\n", usage);
+      printf ("Matrix: %s\n", fullmat->name);
+    }
   /*********************************************** 
    * Get alignment(s), build CMs one at a time
    ***********************************************/
@@ -625,9 +628,7 @@ main(int argc, char **argv)
 	   *              ~nawrocki/notebook/5_0818_inf_cmbuild_bands/00LOG
 	   */
 	  printf("%-40s ... ", "Calculating max hit length for model"); fflush(stdout);
-	  printf("msa->nseq: %d\n", msa->nseq);
 	  safe_windowlen = 2 * MSAMaxSequenceLength(msa);
-	  printf("check\n");
 	  
 	  /* EPN 11.13.05 
 	   * BandCalculationEngine() replaces BandDistribution() and BandBounds().
@@ -638,7 +639,7 @@ main(int argc, char **argv)
 	      free(dmin);
 	      free(dmax);
 	      FreeBandDensities(cm, gamma);	  
-	      printf("Failure in BandCalculationEngine(). W:%d | bandp: %4e\n", safe_windowlen, bandp);
+	      /*printf("Failure in BandCalculationEngine(). W:%d | bandp: %4e\n", safe_windowlen, bandp);*/
 	      safe_windowlen *= 2;
 	    }
 	  
