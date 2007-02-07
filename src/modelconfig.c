@@ -701,7 +701,7 @@ ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_internal_exit)
   return;
 }
 
-/*
+/*******************************************************************************
  * Function: EnforceSubsequence()
  * Date:     EPN, Thu Jan  4 10:13:08 2007
  * Purpose:  Modify CM probabilities so that if a particular subsequence (cm->enf_subseq)
@@ -718,6 +718,8 @@ EnforceSubsequence(CM_t *cm)
   int   enf_end;
   int v;
   int a;
+  float nt[MAXABET];		
+  int x;
 
   enf_end = cm->enf_start + strlen(cm->enf_seq) - 1;
   /*printf("in EnforceSubsequence, start posn: %d cm->enf_seq: %s\n", cm->enf_start, cm->enf_seq);*/
@@ -742,12 +744,10 @@ EnforceSubsequence(CM_t *cm)
 
   /* Now move on to the MATL nodes we're enforcing emits the cm->enf_seq */
   enf_dsq = DigitizeSequence(cm->enf_seq, (strlen(cm->enf_seq)));
-  for(a = 1; a <= strlen(cm->enf_seq); a++)
-    if(enf_dsq[a] > 3) 
-      Die("ERROR enforced sequence must be contain only A,C,G,U.\n");
 
   for(nd = cm->enf_start; nd <= enf_end; nd++) 
     {
+      /*printf("enforcing subseq for node: %d\n", nd);*/
       /* Enforce the transitions, unless we're the last node of the stretch */
       v  = cm->nodemap[nd];       /* MATL_ML*/
       if(nd < enf_end)
@@ -755,17 +755,32 @@ EnforceSubsequence(CM_t *cm)
 	  cm->t[v][0] = small_chance; /* ML->IL */
 	  cm->t[v][2] = small_chance; /* ML->D  */
 	}
-      /* Enforce the emission. */
+      /* Enforce the emission. Taking into account ambiguities. */
+      FSet(nt, MAXABET, 0.);
+      /*printf("enf_dsq[%d]: %d\n", (nd-cm->enf_start+1), (int) (enf_dsq[(nd-cm->enf_start+1)]));*/
+      SingletCount(nt, enf_dsq[(nd-cm->enf_start+1)], 1.);
+      /* nt is now a count vector norm'ed to 1.0 with relative contributions 
+       * of each (A,C,G,U) nucleotides towards the (potentially ambiguous)
+       * residue in enf_dsq[(nd-cm->enf_start+1)]) 
+       */
+
       for(a = 0; a < MAXABET; a++)
 	{
-	  if(a != enf_dsq[(nd-cm->enf_start+1)])
-	    cm->e[v][a] = small_chance;
-	  else
-	    cm->e[v][a] = 1. - (3 * small_chance);
+	  /* start out by setting each residue to 'small_chance' */
+	  cm->e[v][a] =  small_chance;
+	  cm->e[v][a] += nt[a];
 	}
     }
   CMRenormalize(cm);
   CMLogoddsify(cm);
+
+  /*for(nd = cm->enf_start; nd <= enf_end; nd++) 
+    {
+      v  = cm->nodemap[nd];      
+      for(a = 0; a < MAXABET; a++)
+	printf("cm->e[v:%d][a:%d]: %f sc: %f\n", v, a, cm->e[v][a], cm->esc[v][a]);
+    }
+  printf("\n");*/
   return 1;
 }
 

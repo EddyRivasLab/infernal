@@ -71,7 +71,7 @@ static char experts[] = "\
    --zeroinserts : set insert emission scores to 0\n\
    --sub         : build sub CM for columns b/t HMM predicted start/end points\n\
    --elsilent    : disallow local end (EL) emissions\n\
-   --enfstart <n>: enforce MATL stretch starting at CM node <n>\n\
+   --enfstart <n>: enforce MATL stretch starting at consensus position <n>\n\
    --enfseq   <s>: enforce MATL stretch starting at --enfstart <n> emits seq <s>\n\
 \n\
   * HMM banded alignment related options (IN DEVELOPMENT):\n\
@@ -180,10 +180,13 @@ main(int argc, char **argv)
   /* The enforce option (--enfstart and --enfseq), added specifically for   *
    * enforcing the template region for telomerase RNA searches              */
   int   do_enforce;             /* TRUE to enforce a MATL stretch is used   */
+  int   enf_cc_start;           /* first consensus position to enforce      */
   int   enf_start;              /* first MATL node to enforce each parse use*/
   int   enf_end;                /* last  MATL node to enforce each parse use*/
   char *enf_seq;                /* the subsequence to enforce emitted by    *
                                  * in nodes from enf_start to enf_end       */
+  CMEmitMap_t  *emap;           /* for finding the MATL nodes to enforce    */
+  int           nd;             /* counter over nodes                       */
 
 #ifdef USE_MPI
   int mpi_my_rank;              /* My rank in MPI                           */
@@ -243,6 +246,7 @@ main(int argc, char **argv)
   do_elsilent = FALSE;
   do_zero_inserts=FALSE;
   do_enforce   = FALSE;
+  enf_cc_start = 0;
   enf_start    = 0;
   enf_end      = 0;
   enf_seq      = NULL;
@@ -272,7 +276,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--hsafe")     == 0) do_hsafe     = TRUE;
     else if (strcmp(optname, "--sums")      == 0) use_sums     = TRUE;
     else if (strcmp(optname, "--hmmonly")   == 0) { do_hmmonly   = TRUE; do_timings = TRUE; } 
-    else if (strcmp(optname, "--enfstart")  == 0) { do_enforce = TRUE; enf_start = atoi(optarg); }
+    else if (strcmp(optname, "--enfstart")  == 0) { do_enforce = TRUE; enf_cc_start = atoi(optarg); }
     else if (strcmp(optname, "--enfseq")    == 0) { do_enforce = TRUE; enf_seq = optarg; } 
     else if (strcmp(optname, "--zeroinserts")== 0) do_zero_inserts = TRUE;
     else if (strcmp(optname, "--informat")  == 0) {
@@ -300,7 +304,7 @@ main(int argc, char **argv)
     Die("--hmmonly not yet implemented.\n");*/
   if(do_enforce && enf_seq == NULL)
     Die("--enfstart only makes sense with --enfseq also.\n");
-  if(do_enforce && enf_start == 0)
+  if(do_enforce && enf_cc_start == 0)
     Die("--enfseq only makes sense with --enfstart (which can't be 0) also.\n");
   if(bdump_level > 0 && (!do_qdb))
     Die("--bdump option does not work with --noqdb.\n");
@@ -359,6 +363,36 @@ main(int argc, char **argv)
   if(do_hsafe)        cm->align_opts  |= CM_ALIGN_HMMSAFE;
   if(do_enforce)
     {
+      /* determine which CM node emits to consensus column: enf_cc_start */
+      emap      = CreateEmitMap(cm); 
+      enf_start = -1;
+      if(enf_cc_start > emap->clen)
+	Die("ERROR --enfstart <n>, there's only %d columns, you chose column %d\n", 
+	    enf_cc_start, emap->clen);
+      for(nd = 0; nd < cm->nodes; nd++)
+	{
+	  if(emap->lpos[nd] == enf_cc_start) 
+	    {
+	      if(cm->ndtype[nd] == MATL_nd)	      
+		{
+		  enf_start = nd;
+		  break;
+		}
+	      else if(cm->ndtype[nd] == MATP_nd)	      
+		Die("ERROR --enfstart <n>, <n> must correspond to MATL modelled column\nbut %d is modelled by a MATP node.\n", enf_cc_start);
+	    }
+	  else if(emap->rpos[nd] == enf_cc_start)
+	    {
+	      if(cm->ndtype[nd] == MATR_nd)	      
+		Die("ERROR --enfstart <n>, <n> must correspond to MATL modelled column\nbut %d is modelled by a MATR node.\n", enf_cc_start);
+	      if(cm->ndtype[nd] == MATP_nd)	      
+		Die("ERROR --enfstart <n>, <n> must correspond to MATL modelled column\nbut %d is modelled by the right half of a MATP node.\n", enf_cc_start);
+	    }	      
+	}
+      if(enf_start == -1)
+	Die("ERROR trying to determine the start node for the enforced subsequence.\n");
+      FreeEmitMap(emap);
+
       cm->config_opts |= CM_CONFIG_ENFORCE;
       cm->enf_start = enf_start; 
       cm->enf_seq   = enf_seq;
