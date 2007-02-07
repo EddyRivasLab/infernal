@@ -166,6 +166,12 @@ system("cp $command_file_name $run_dir");
 $pp_file = $out_file_root . "_pp.script";
 open(PP, ">" . $pp_file);
 # First we need to get the glbf files:
+$time_name = $run_dir . "\/" . "rm_time.concat";
+print PP ("grep \"time\" " . $run_dir . "\/*.cmsearch > $time_name\n");
+$all_time_out = $out_file_root . ".time";
+print PP ("perl infernal2time.pl $time_name > $run_dir/$all_time_out\n");
+print PP ("cp $run_dir/$all_time_out ./\n");
+
 for($i = 0; $i < scalar(@fam_roots_arr); $i++)
 {
     $fam = $fam_roots_arr[$i];

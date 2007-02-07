@@ -660,7 +660,6 @@ main(int argc, char **argv)
 	   * fix is to just skip it, set W to twice query length */
 	  cm->W = 2 * MSAMaxSequenceLength(msa);
 	  CMSetNullModel(cm, randomseq);
-	  PrintFullCM(cm); 
 	}
       
       /*11.15.05 EPN Set the EL self transition score, by default its log2(0.94).*/
@@ -706,7 +705,6 @@ main(int argc, char **argv)
       if (msa->desc != NULL) cm->desc = Strdup(msa->desc);
       printf("done.\n");
 
-      PrintFullCM(cm); 
       /* Save the CM. 
        */
       printf("%-40s ... ", "Saving model to file"); fflush(stdout);

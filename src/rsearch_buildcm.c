@@ -416,8 +416,8 @@ CM_t *build_cm (MSA *msa, fullmat_t *fullmat, int *querylen,
   FreeParsetree(mtr);
   Free2DArray((void**)dsq, msa->nseq);
 
-  /* PrintFullCM(cm); */
-
+  /*PrintFullCM(cm);*/
+  
   return (cm);
 }
 
