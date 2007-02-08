@@ -96,8 +96,8 @@ CreateCMShell(void)
   
   cm->dmin   = NULL;
   cm->dmax   = NULL;
-  cm->beta   = DEFAULT_BETA;     /* 1E-7 the default beta */
-  cm->hbandp = DEFAULT_HBANDP;   /* 1E-4 the default hbandp */
+  cm->beta   = DEFAULT_BETA;     /* 1E-7 the default beta (tail loss for QDB) */
+  cm->tau    = DEFAULT_TAU;      /* 1E-7 the default tau  (tail loss for HMM banding) */
   cm->cp9    = NULL;          
   cm->cp9map = NULL;
   cm->enf_start   = 0;

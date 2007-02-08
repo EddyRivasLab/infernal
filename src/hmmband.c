@@ -179,17 +179,17 @@ CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t *cp9b,
   /* match states */
   CP9_hmm_band_bounds(cp9_post->mmx, i0, j0, cp9b->hmm_M, 
 		      cp9b->isum_pn_m, cp9b->pn_min_m, cp9b->pn_max_m,
-		      (1.-cm->hbandp), HMMMATCH, use_sums, debug_level);
+		      (1.-cm->tau), HMMMATCH, use_sums, debug_level);
   /* insert states */
   CP9_hmm_band_bounds(cp9_post->imx, i0, j0, cp9b->hmm_M,
 		      cp9b->isum_pn_i, cp9b->pn_min_i, cp9b->pn_max_i,
-		      (1.-cm->hbandp), HMMINSERT, use_sums, debug_level);
+		      (1.-cm->tau), HMMINSERT, use_sums, debug_level);
   /* delete states */
   CP9_hmm_band_bounds(cp9_post->dmx, i0, j0, cp9b->hmm_M,
 		      cp9b->isum_pn_d, cp9b->pn_min_d, cp9b->pn_max_d,
-		      (1.-cm->hbandp), HMMDELETE, use_sums, debug_level);
+		      (1.-cm->tau), HMMDELETE, use_sums, debug_level);
   
-  if(debug_level != 0) debug_print_hmm_bands(stdout, j0, cp9b, cm->hbandp, debug_level);
+  if(debug_level != 0) debug_print_hmm_bands(stdout, j0, cp9b, cm->tau, debug_level);
 
   /* Step 3: HMM bands  ->  CM bands. */
   hmm2ij_bands(cm, cm->cp9map, i0, j0, cp9b->pn_min_m, cp9b->pn_max_m, 
@@ -920,7 +920,7 @@ CP9_hmm_band_bounds(int **post, int i0, int j0, int M, int *isum_pn, int *pn_min
       if(pn_min[k] > pn_max[k])
 	{
 	  /* The sum of the posteriors for all posns for this state
-	   * is less than hbandp. Current strategy, set band to a single
+	   * is less than tau. Current strategy, set band to a single
 	   * cell, the most likely posn found when creeping in from left.
 	   */
 	  pn_min[k] = argmax_pn;
@@ -2665,7 +2665,7 @@ P7_hmm_band_bounds(int **post, int L, int M, int *isum_pn, int *pn_min, int *pn_
       if(pn_min[k] > pn_max[k])
 	{
 	  /* The sum of the posteriors for all posns for this state
-	   * is less than hbandp. Current strategy, set band to a single
+	   * is less than tau. Current strategy, set band to a single
 	   * cell, the most likely posn found when creeping in from left.
 	   */
 	  pn_min[k] = argmax_pn;

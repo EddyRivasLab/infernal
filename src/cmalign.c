@@ -76,7 +76,7 @@ static char experts[] = "\
 \n\
   * HMM banded alignment related options (IN DEVELOPMENT):\n\
    --hbanded     : use experimental CM plan 9 HMM banded CYK aln algorithm\n\
-   --hbandp <f>  : tail loss prob for --hbanded [default: 0.0001]\n\
+   --tau <f>     : tail loss prob for --hbanded [default: 0.0001]\n\
    --hsafe       : realign (non-banded) seqs with HMM banded CYK score < 0 bits\n\
    --sums        : use posterior sums during HMM band calculation (widens bands)\n\
    --hmmonly     : align with the CM Plan 9 HMM (no alignment given)\n\
@@ -101,7 +101,7 @@ static struct opt_s OPTIONS[] = {
   { "--full",       FALSE, sqdARG_NONE },
   { "--dlev",       FALSE, sqdARG_INT },
   { "--hbanded",    FALSE, sqdARG_NONE },
-  { "--hbandp",     FALSE, sqdARG_FLOAT},
+  { "--tau",       FALSE, sqdARG_FLOAT},
   { "--hsafe",      FALSE, sqdARG_NONE},
   { "--hmmonly",    FALSE, sqdARG_NONE },
   { "--sums",       FALSE, sqdARG_NONE},
@@ -155,7 +155,7 @@ main(int argc, char **argv)
 
   /* HMM banded alignment */
   int              do_hbanded;  /* TRUE to use CP9 HMM to band CYK          */
-  double           hbandp;      /* tail loss probability for hmm bands      */
+  double           tau;         /* tail loss probability for hmm bands      */
   int              use_sums;    /* TRUE: use the posterior sums w/HMM bands */
   int              do_hmmonly;  /* TRUE: align with the HMM, not the CM     */
   int              do_hsafe;    /* TRUE: realign seqs with banded sc < 0    */
@@ -234,7 +234,7 @@ main(int argc, char **argv)
   do_hbanded  = FALSE;
   do_hmmonly  = FALSE;
   do_hsafe    = FALSE;
-  hbandp      = DEFAULT_HBANDP;
+  tau         = DEFAULT_TAU;
   use_sums    = FALSE;
   do_timings  = FALSE;
   do_inside   = FALSE;
@@ -272,7 +272,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--sub")       == 0) do_sub       = TRUE; 
     else if (strcmp(optname, "--elsilent")  == 0) do_elsilent  = TRUE;
     else if (strcmp(optname, "--hbanded")   == 0) { do_hbanded = TRUE; do_small = FALSE; }
-    else if (strcmp(optname, "--hbandp")    == 0) hbandp       = atof(optarg);
+    else if (strcmp(optname, "--tau")       == 0) tau          = atof(optarg);
     else if (strcmp(optname, "--hsafe")     == 0) do_hsafe     = TRUE;
     else if (strcmp(optname, "--sums")      == 0) use_sums     = TRUE;
     else if (strcmp(optname, "--hmmonly")   == 0) { do_hmmonly   = TRUE; do_timings = TRUE; } 
@@ -343,7 +343,7 @@ main(int argc, char **argv)
   CMFileClose(cmfp);
 
   cm->beta   = qdb_beta; /* this will be DEFAULT_BETA unless changed at command line */
-  cm->hbandp = hbandp;   /* this will be DEFAULT_HBANDP unless changed at command line */
+  cm->tau    = tau;      /* this will be DEFAULT_TAU unless changed at command line */
 
   /* Update cm->config_opts and cm->align_opts based on command line options */
   if(do_local)        cm->config_opts |= CM_CONFIG_LOCAL;

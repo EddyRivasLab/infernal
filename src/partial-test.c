@@ -67,7 +67,7 @@ static char experts[] = "\
 \n\
   * HMM banded alignment related options:\n\
    --hbanded     : use experimental CM plan 9 HMM banded CYK aln algorithm\n\
-   --hbandp <f>  : tail loss prob for --hbanded [default: 0.0001]\n\
+   --tau <f>     : tail loss prob for --hbanded [default: 0.0001]\n\
    --sums        : use posterior sums during HMM band calculation (widens bands)\n\
 ";
 
@@ -85,7 +85,7 @@ static struct opt_s OPTIONS[] = {
   { "--fixlen",    FALSE, sqdARG_INT },
   { "--minlen",    FALSE, sqdARG_INT },
   { "--hbanded",   FALSE, sqdARG_NONE },
-  { "--hbandp",    FALSE, sqdARG_FLOAT},
+  { "--tau",       FALSE, sqdARG_FLOAT},
   { "--debug",     FALSE, sqdARG_INT},
   { "--sums",      FALSE, sqdARG_NONE},
   { "--histo",     FALSE, sqdARG_NONE},
@@ -147,7 +147,7 @@ main(int argc, char **argv)
   int do_small;                 /* TRUE to use D&C; FALSE to use full CYKInside() */
   int do_qdb;                   /* TRUE to use query dependent bands (QDB)        */
   int do_hbanded;               /* TRUE to use CP9 HMM bands for alignment        */
-  double hbandp;                /* tail loss prob for HMM bands                   */
+  double tau;                   /* tail loss prob for HMM bands                   */
   int    use_sums;              /* TRUE to fill and use the posterior sums, false not to. */
   double beta;                  /* tail loss prob for QDB                         */
 
@@ -220,7 +220,7 @@ main(int argc, char **argv)
   do_small       = TRUE;
   do_qdb         = FALSE;
   do_hbanded     = FALSE;
-  hbandp         = 0.0001;
+  tau            = 0.0001;
   beta           = 0.0000001;
   use_sums       = FALSE;
   do_histo       = FALSE;
@@ -242,7 +242,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--fixlen")    == 0) { do_fixlen = TRUE; fixlen   = atoi(optarg); }
     else if (strcmp(optname, "--minlen")    == 0) { do_minlen = TRUE; minlen   = atoi(optarg); }
     else if (strcmp(optname, "--hbanded")   == 0) { do_hbanded = TRUE; do_small = FALSE; }
-    else if (strcmp(optname, "--hbandp")    == 0) hbandp       = atof(optarg);
+    else if (strcmp(optname, "--tau")       == 0) tau          = atof(optarg);
     else if (strcmp(optname, "--sums")      == 0) use_sums     = TRUE;
     else if (strcmp(optname, "--debug")     == 0) debug_level = atoi(optarg);
     else if (strcmp(optname, "--histo")     == 0) do_histo = TRUE;

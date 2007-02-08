@@ -24,7 +24,7 @@
 #define DEFAULT_CP9_CUTOFF 0.0
 #define DEFAULT_CP9_CUTOFF_TYPE SCORE_CUTOFF
 #define DEFAULT_BETA   0.0000001
-#define DEFAULT_HBANDP 0.0001
+#define DEFAULT_TAU    0.0000001
 
 #define GC_SEGMENTS 101                   /* Possible integer GC contents */
 
@@ -248,8 +248,8 @@ typedef struct cm_s {
   /* query dependent bands (QDB) on subsequence lengths at each state                         */
   int   *dmin;          /* minimum d bound for each state v; [0..v..M-1] (NULL if non-banded) */
   int   *dmax;          /* maximum d bound for each state v; [0..v..M-1] (NULL if non-banded) */
-  float  beta;          /* tail loss probability for QDB                                      */
-  float  hbandp;        /* tail loss probability for HMM target dependent banding             */
+  double beta;          /* tail loss probability for QDB                                      */
+  double tau;           /* tail loss probability for HMM target dependent banding             */
 
   /* added by EPN, Tue Jan  2 14:24:08 2007 */
   int       config_opts;/* model configuration options                                        */
@@ -286,56 +286,57 @@ typedef struct cm_s {
 } CM_t;
 
 /* status flags, cm->flags */
-#define CM_LOCAL_BEGIN        (1<<0)  /* Begin distribution is active (local ali) */
-#define CM_LOCAL_END          (1<<1)  /* End distribution is active (local ali)   */
-#define CM_STATS              (1<<2)  /* EVD stats, mu, lambda, K are set         */
-#define CM_CP9                (1<<3)  /* CP9 HMM is valid in cm->cp9              */
-#define CM_CP9STATS           (1<<4)  /* CP9 HMM has EVD stats                    */
+#define CM_LOCAL_BEGIN         (1<<0)  /* Begin distribution is active (local ali) */
+#define CM_LOCAL_END           (1<<1)  /* End distribution is active (local ali)   */
+#define CM_STATS               (1<<2)  /* EVD stats, mu, lambda, K are set         */
+#define CM_CP9                 (1<<3)  /* CP9 HMM is valid in cm->cp9              */
+#define CM_CP9STATS            (1<<4)  /* CP9 HMM has EVD stats                    */
 /* info on if the CM is a sub model or fullsub model */
-#define CM_IS_SUB             (1<<5)  /* the CM is a sub CM                       */
-#define CM_IS_FSUB            (1<<6)  /* the CM is a fullsub CM                   */
-#define CM_IS_RSEARCH         (1<<7)  /* the CM was parameterized a la RSEARCH    */
+#define CM_IS_SUB              (1<<5)  /* the CM is a sub CM                       */
+#define CM_IS_FSUB             (1<<6)  /* the CM is a fullsub CM                   */
+#define CM_IS_RSEARCH          (1<<7)  /* the CM was parameterized a la RSEARCH    */
 
 /* model configuration options, cm->config_opts */
-#define CM_CONFIG_LOCAL       (1<<0)  /* configure the model for local alignment  */
-#define CM_CONFIG_ENFORCE     (1<<1)  /* enforce a subseq be incl. in each parse  */
-#define CM_CONFIG_ELSILENT    (1<<2)  /* disallow EL state emissions              */
-#define CM_CONFIG_ZEROINSERTS (1<<3)  /* make all insert emissions equiprobable   */
-#define CM_CONFIG_QDB         (1<<4)  /* calculate query dependent bands          */
+#define CM_CONFIG_LOCAL        (1<<0)  /* configure the model for local alignment  */
+#define CM_CONFIG_ENFORCE      (1<<1)  /* enforce a subseq be incl. in each parse  */
+#define CM_CONFIG_ELSILENT     (1<<2)  /* disallow EL state emissions              */
+#define CM_CONFIG_ZEROINSERTS  (1<<3)  /* make all insert emissions equiprobable   */
+#define CM_CONFIG_QDB          (1<<4)  /* calculate query dependent bands          */
 
 /* alignment options, cm->align_opts */
-#define CM_ALIGN_NOSMALL      (1<<0)  /* DO NOT use small CYK D&C                 */
-#define CM_ALIGN_QDB          (1<<1)  /* use QD bands                             */
-#define CM_ALIGN_HBANDED      (1<<2)  /* use HMM bands                            */
-#define CM_ALIGN_SUMS         (1<<3)  /* if using HMM bands, use posterior sums   */
-#define CM_ALIGN_SUB          (1<<4)  /* build a sub CM for each seq to align     */
-#define CM_ALIGN_FSUB         (1<<5)  /* build a 'full sub' CM for each seq       */
-#define CM_ALIGN_HMMONLY      (1<<6)  /* use a CP9 HMM only to align              */
-#define CM_ALIGN_INSIDE       (1<<7)  /* use Inside, not CYK                      */
-#define CM_ALIGN_OUTSIDE      (1<<8)  /* use Outside, not CYK (for testing)       */
-#define CM_ALIGN_POST         (1<<9)  /* do inside/outside and append posteriors  */
-#define CM_ALIGN_TIME         (1<<10) /* print out alignment timings              */
-#define CM_ALIGN_CHECKINOUT   (1<<11) /* check inside/outside calculations        */
-#define CM_ALIGN_CHECKPARSESC (1<<12) /* check parsetree score against aln alg sc */
-#define CM_ALIGN_PRINTTREES   (1<<13) /* print parsetrees to stdout               */
-#define CM_ALIGN_HMMSAFE      (1<<14) /* realign seqs w/HMM banded CYK bit sc < 0 */
-#define CM_ALIGN_SCOREONLY    (1<<15) /* do full CYK/inside to get score only     */
+#define CM_ALIGN_NOSMALL       (1<<0)  /* DO NOT use small CYK D&C                 */
+#define CM_ALIGN_QDB           (1<<1)  /* use QD bands                             */
+#define CM_ALIGN_HBANDED       (1<<2)  /* use HMM bands                            */
+#define CM_ALIGN_SUMS          (1<<3)  /* if using HMM bands, use posterior sums   */
+#define CM_ALIGN_SUB           (1<<4)  /* build a sub CM for each seq to align     */
+#define CM_ALIGN_FSUB          (1<<5)  /* build a 'full sub' CM for each seq       */
+#define CM_ALIGN_HMMONLY       (1<<6)  /* use a CP9 HMM only to align              */
+#define CM_ALIGN_INSIDE        (1<<7)  /* use Inside, not CYK                      */
+#define CM_ALIGN_OUTSIDE       (1<<8)  /* use Outside, not CYK (for testing)       */
+#define CM_ALIGN_POST          (1<<9)  /* do inside/outside and append posteriors  */
+#define CM_ALIGN_TIME          (1<<10) /* print out alignment timings              */
+#define CM_ALIGN_CHECKINOUT    (1<<11) /* check inside/outside calculations        */
+#define CM_ALIGN_CHECKPARSESC  (1<<12) /* check parsetree score against aln alg sc */
+#define CM_ALIGN_PRINTTREES    (1<<13) /* print parsetrees to stdout               */
+#define CM_ALIGN_HMMSAFE       (1<<14) /* realign seqs w/HMM banded CYK bit sc < 0 */
+#define CM_ALIGN_SCOREONLY     (1<<15) /* do full CYK/inside to get score only     */
 
 /* search options, cm->search_opts */
-#define CM_SEARCH_NOQDB       (1<<0)  /* DO NOT use QDB to search (QDB is default)*/
-#define CM_SEARCH_HMMONLY     (1<<1)  /* use a CP9 HMM only to search             */
-#define CM_SEARCH_HMMFB       (1<<2)  /* filter w/CP9 HMM, forward/backward mode  */
-#define CM_SEARCH_HMMWEINBERG (1<<3)  /* filter w/CP9 HMM, Zasha Weinberg mode    */
-#define CM_SEARCH_SCANBANDS   (1<<4)  /* filter w/CP9 HMM, and derive HMM bands   */
-#define CM_SEARCH_SUMS        (1<<5)  /* if using HMM bands, use posterior sums   */
-#define CM_SEARCH_INSIDE      (1<<6)  /* scan with Inside, not CYK                */
-#define CM_SEARCH_TOPONLY     (1<<7)  /* don't search reverse complement          */
-#define CM_SEARCH_NOALIGN     (1<<8)  /* don't align hits, just report locations  */
-#define CM_SEARCH_NULL2       (1<<9)  /* use post hoc second null model           */
-#define CM_SEARCH_CMSTATS     (1<<10) /* calculate E-value statistics for CM      */
-#define CM_SEARCH_CP9STATS    (1<<11) /* calculate E-value stats for CP9 HMM      */
-#define CM_SEARCH_FFRACT      (1<<12) /* filter to filter fraction cm->ffract     */
-#define CM_SEARCH_RSEARCH     (1<<13) /* use RSEARCH parameterized CM             */
+#define CM_SEARCH_NOQDB        (1<<0)  /* DO NOT use QDB to search (QDB is default)*/
+#define CM_SEARCH_HMMONLY      (1<<1)  /* use a CP9 HMM only to search             */
+#define CM_SEARCH_HMMFB        (1<<2)  /* filter w/CP9 HMM, forward/backward mode  */
+#define CM_SEARCH_HMMWEINBERG  (1<<3)  /* filter w/CP9 HMM, Zasha Weinberg mode    */
+#define CM_SEARCH_HMMRESCAN    (1<<4)  /* rescan HMM hits b/c Forward is inf length*/
+#define CM_SEARCH_HMMSCANBANDS (1<<5)  /* filter w/CP9 HMM, and derive HMM bands   */
+#define CM_SEARCH_SUMS         (1<<6)  /* if using HMM bands, use posterior sums   */
+#define CM_SEARCH_INSIDE       (1<<7)  /* scan with Inside, not CYK                */
+#define CM_SEARCH_TOPONLY      (1<<8)  /* don't search reverse complement          */
+#define CM_SEARCH_NOALIGN      (1<<9)  /* don't align hits, just report locations  */
+#define CM_SEARCH_NULL2        (1<<10) /* use post hoc second null model           */
+#define CM_SEARCH_CMSTATS      (1<<11) /* calculate E-value statistics for CM      */
+#define CM_SEARCH_CP9STATS     (1<<12) /* calculate E-value stats for CP9 HMM      */
+#define CM_SEARCH_FFRACT       (1<<13) /* filter to filter fraction cm->ffract     */
+#define CM_SEARCH_RSEARCH      (1<<14) /* use RSEARCH parameterized CM             */
 
 /* Structure: CMFILE
  * Incept:    SRE, Tue Aug 13 10:16:39 2002 [St. Louis]

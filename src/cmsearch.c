@@ -78,23 +78,24 @@ static char experts[] = "\
    --enfstart <n>: enforce MATL stretch starting at consensus position <n>\n\
    --enfseq <s>  : enforce MATL stretch starting at --enfstart <n> emits seq <s>\n\
    --time        : print timings for histogram building, and full search\n\
-   --matrix <s>  : matrix: use matrix <s>, either full path or in $RNAMAT\n\
+   --matrix <s>  : with -R use matrix <s>, either full path or in $RNAMAT\n\
 \n\
   * Filtering options using a CM plan 9 HMM (*in development*):\n\
    --hmmfb        : use Forward to get end points & Backward to get start points\n\
    --hmmweinberg  : use Forward to get end points, subtract W for start points\n\
    --hmmpad <n>   : subtract/add <n> residues from start/end [df:0]\n\
    --hmmonly      : don't use CM at all, just scan with HMM (Forward + Backward)\n\
-   --hmmE <f>     : use cutoff E-value of <f> for CP9 (possibly filtered) scan\n\
-   --hmmS <f>     : use cutoff bit score of <f> for CP9 (possibly filtered) scan\n\
+   --hmmE <f>     : use cutoff E-value of <f> for CP9 (possibly filtering) scan\n\
+   --hmmS <f>     : use cutoff bit score of <f> for CP9 (possibly filtering) scan\n\
    --hmmnegsc <f> : set min bit score to report as <f> < 0 (experimental)\n\
+   --hmmrescan    : rescan subseq hits w/Forward (auto ON if --enfseq)\n\
 \n\
   * Options for accelerating CM search/alignment (*in development*):\n\
    --beta <f>    : tail loss prob for QBD (default:0.0000001)\n\
    --noqdb       : DO NOT use query dependent bands (QDB) to accelerate CYK\n\
    --qdbfile <f> : read QDBs from file <f> (outputted from cmbuild)\n\
    --hbanded     : use HMM bands from a CM plan 9 HMM scan for CYK\n\
-   --hbandp <f>  : tail loss prob for --hbanded (default:0.0001)\n\
+   --tau <f>     : tail loss prob for --hbanded (default:0.0001)\n\
    --banddump    : print bands for each state\n\
    --sums        : use posterior sums during HMM band calculation (widens bands)\n\
    --scan2bands  : use scanning Forward and Backward to get bands (EXPTL!)\n\
@@ -123,11 +124,12 @@ static struct opt_s OPTIONS[] = {
   { "--hmmE",       FALSE, sqdARG_FLOAT},
   { "--hmmS",       FALSE, sqdARG_FLOAT},
   { "--hmmnegsc",   FALSE, sqdARG_FLOAT},
+  { "--hmmrescan",  FALSE, sqdARG_NONE},
   { "--noqdb",      FALSE, sqdARG_NONE },
   { "--qdbfile",    FALSE, sqdARG_STRING},
   { "--beta",       FALSE, sqdARG_FLOAT},
   { "--hbanded",    FALSE, sqdARG_NONE },
-  { "--hbandp",     FALSE, sqdARG_FLOAT},
+  { "--tau",     FALSE, sqdARG_FLOAT},
   { "--banddump",   FALSE, sqdARG_NONE},
   { "--sums",       FALSE, sqdARG_NONE},
   { "--scan2hbands",FALSE, sqdARG_NONE},
@@ -154,7 +156,7 @@ main(int argc, char **argv)
   CM_t            *cm;          /* a covariance model                       */
   int              i;           /* counter                                  */
   CMConsensus_t   *cons;	/* precalculated consensus info for display */
-  double            beta;       /* tail loss prob for query dependent bands */
+  double           beta;        /* tail loss prob for query dependent bands */
   int             *preset_dmin = NULL; /* if --qdbfile, dmins read from file*/
   int             *preset_dmax = NULL; /* if --qdbfile, dmaxs read from file*/
   int              do_revcomp;  /* true to do reverse complement also       */
@@ -210,7 +212,7 @@ main(int argc, char **argv)
   
   /* HMMERNAL!: hmm banded alignment data structures */
   int         do_hbanded;  /* TRUE to scan 1st with a CP9 to derive bands for CYK scan */
-  double      hbandp;      /* tail loss probability for hmm bands */
+  double      tau;         /* tail loss probability for hmm bands */
   int         use_sums;    /* TRUE to fill and use the posterior sums, false not to. */
   int         debug_level; /* verbosity level for debugging printf() statements,
 			    * passed to many functions. */
@@ -224,6 +226,7 @@ main(int argc, char **argv)
   int   do_hmmweinberg;    /* TRUE to use Forward to get start points and subtract W
 			    * to get start points of promising subsequences*/
   int   do_hmmonly;        /* TRUE to scan with a CM Plan 9 HMM ONLY!*/
+  int   do_hmmrescan;      /* TRUE to rescan HMM hits b/c Forward scan is "inf" length*/
   int   do_cp9_stats;      /* TRUE to calculate CP9 stats for HMM */
   int   hmm_pad;           /* number of residues to add to and subtract from end and 
 			    * start points of HMM hits prior to CM reevauation, 
@@ -296,10 +299,11 @@ main(int argc, char **argv)
   set_window        = FALSE;
   do_hmmfb          = FALSE;
   do_hmmweinberg    = FALSE;
+  do_hmmrescan      = FALSE;
   do_cp9_stats      = FALSE;
   do_inside         = FALSE;
   do_hbanded        = FALSE;
-  hbandp            = DEFAULT_HBANDP;
+  tau               = DEFAULT_TAU;
   use_sums          = FALSE;
   do_scan2hbands    = FALSE;
   hmm_pad           = 0;
@@ -391,7 +395,7 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--noqdb")  == 0) do_qdb    = FALSE;
     else if  (strcmp(optname, "--qdbfile")== 0) { read_qdb  = TRUE; qdb_file = optarg; }
     else if  (strcmp(optname, "--hbanded")   == 0) do_hbanded   = TRUE; 
-    else if  (strcmp(optname, "--hbandp")    == 0) hbandp       = atof(optarg);
+    else if  (strcmp(optname, "--tau")    == 0) tau       = atof(optarg);
     else if  (strcmp(optname, "--banddump")  == 0) do_bdump     = TRUE;
     else if  (strcmp(optname, "--sums")      == 0) use_sums     = TRUE;
     else if  (strcmp(optname, "--scan2hbands")== 0) do_scan2hbands= TRUE;
@@ -417,10 +421,15 @@ main(int argc, char **argv)
   if(in_mpi && mpi_num_procs > 1)
     do_timings = FALSE; /* we don't do per node timings, but we do do master node timings */
   
-  /* Check for incompatible option combos. */
+  /* Check for incompatible option combos. (It's likely this is not exhaustive) */
   if(do_cp9_stats && 
      ((!do_hmmonly) && (!do_hmmweinberg)))
     Die("--hmmE only makes sense with --hmmonly or --hmmweinberg.\n");
+  if(do_hmmonly && do_hmmweinberg)
+    Die("-hmmweinberg and --hmmonly combo doesn't make sense, pick one.\n");
+  if(do_hmmrescan && 
+     ((!do_hmmweinberg) && (!do_hmmonly) && (!do_hmmfb)))
+    Die("-hmmrescan doesn't make sense without --hmmonly, --hmmweinberg, or --hmmfb.\n");
   if(do_cm_stats && do_hmmonly)
     Die("-E and --hmmonly combo doesn't make sense, did you mean --hmmE and --hmmonly?\n");
   if(do_bdump && !do_qdb)
@@ -539,7 +548,7 @@ main(int argc, char **argv)
   
   /* Set CM and CP9 parameters that can be changed at command line */
   cm->beta         = beta;     /* this will be DEFAULT_BETA unless set at command line */
-  cm->hbandp       = hbandp;   /* this will be DEFAULT_HBANDP unless set at command line */
+  cm->tau          = tau;      /* this will be DEFAULT_TAU unless set at command line */
   cm->sc_boost     = sc_boost; /* this will be 0.0 unless set at command line */
   cm->cp9_sc_boost = sc_boost; /* this will be 0.0 unless set at command line */
   if (set_window) cm->W = set_W;
@@ -556,6 +565,11 @@ main(int argc, char **argv)
   else
     cm->cp9_cutoff = cp9_e_cutoff;
   
+  /* If do_enforce set do_hmm_rescan to TRUE if we're filtering or scanning with an HMM,
+   * this way only subseqs that include the enf_subseq should pass the filter */
+  if(do_enforce && (do_hmmfb || do_hmmweinberg || do_hmmonly))
+    do_hmmrescan = TRUE;
+
   /* Update cm->config_opts and cm->search_opts based on command line options */
   if(do_local)        cm->config_opts |= CM_CONFIG_LOCAL;
   if(do_zero_inserts) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
@@ -563,7 +577,8 @@ main(int argc, char **argv)
   if(do_hmmonly)      cm->search_opts |= CM_SEARCH_HMMONLY;
   if(do_hmmfb)        cm->search_opts |= CM_SEARCH_HMMFB;
   if(do_hmmweinberg)  cm->search_opts |= CM_SEARCH_HMMWEINBERG;
-  if(do_scan2hbands)  cm->search_opts |= CM_SEARCH_SCANBANDS;
+  if(do_scan2hbands)  cm->search_opts |= CM_SEARCH_HMMSCANBANDS;
+  if(do_hmmrescan)    cm->search_opts |= CM_SEARCH_HMMRESCAN;
   if(use_sums)        cm->search_opts |= CM_SEARCH_SUMS;
   if(do_inside)       cm->search_opts |= CM_SEARCH_INSIDE;
   if(!do_revcomp)     cm->search_opts |= CM_SEARCH_TOPONLY;
@@ -571,6 +586,8 @@ main(int argc, char **argv)
   if(do_null2)        cm->search_opts |= CM_SEARCH_NULL2;
   if(do_cm_stats)     cm->search_opts |= CM_SEARCH_CMSTATS;
   if(do_cp9_stats)    cm->search_opts |= CM_SEARCH_CP9STATS;
+
+
   if(do_rsearch) 
     {
       /* TEMPORARILY: we don't do anything (no QDB, no CP9s, no CMLogoddisfy calls etc.) 
@@ -583,7 +600,8 @@ main(int argc, char **argv)
       cm->search_opts &= ~CM_SEARCH_HMMONLY;
       cm->search_opts &= ~CM_SEARCH_HMMFB;
       cm->search_opts &= ~CM_SEARCH_HMMWEINBERG;
-      cm->search_opts &= ~CM_SEARCH_SCANBANDS;
+      cm->search_opts &= ~CM_SEARCH_HMMSCANBANDS;
+      cm->search_opts &= ~CM_SEARCH_HMMRESCAN;
       cm->search_opts &= ~CM_SEARCH_CP9STATS;
       cm->flags       |= CM_IS_RSEARCH;
     }

@@ -51,18 +51,18 @@ static char experts[] = "\
    --qdbboth     : compare        QDB d&c versus QDB standard CYK\n\
    --beta <f>    : tail loss prob for QDB [default:1E-7]\n\
    --hbanded     : compare non-banded d&c versus HMM banded CYK\n\
-   --hbandp <f>  : tail loss prob for HMM bands [default: 1E-4]\n\
+   --tau <f>     : tail loss prob for HMM bands [default: 1E-7]\n\
    --hsafe       : realign (non-banded) seqs with HMM banded CYK score < 0 bits\n\
    --sums        : use posterior sums during HMM band calculation (widens bands)\n\
    --hmmonly     : align with the CM Plan 9 HMM (only gives timings)\n\
    --scoreonly   : for full CYK/inside stage, do only score, save memory\n\
 \n\
   Expert stage 2-N alignment options, to compare to stage 1 (D&C non-banded)\n\
-  For --hbanded or --qdb, try multiple hbandp or beta values, all will = 10^-n\n\
+  For --hbanded or --qdb, try multiple tau or beta values, all will = 10^-n\n\
    --betas <x>   : set initial (stage 2) tail loss prob to 10^-(<x>) for qdb\n\
    --betae <x>   : set final   (stage N) tail loss prob to 10^-(<x>) for qdb\n\
-   --hbandps <x> : set initial (stage 2) tail loss prob to 10^-(<x>) for hmm\n\
-   --hbandpe <x> : set final   (stage N) tail loss prob to 10^-(<x>) for hmm\n\
+   --taus <x> : set initial (stage 2) tail loss prob to 10^-(<x>) for hmm\n\
+   --taue <x> : set final   (stage N) tail loss prob to 10^-(<x>) for hmm\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -80,15 +80,15 @@ static struct opt_s OPTIONS[] = {
   { "--qdbboth",    FALSE, sqdARG_NONE },
   { "--beta",       FALSE, sqdARG_FLOAT },
   { "--hbanded",    FALSE, sqdARG_NONE },
-  { "--hbandp",     FALSE, sqdARG_FLOAT},
+  { "--tau",        FALSE, sqdARG_FLOAT},
   { "--hsafe",      FALSE, sqdARG_NONE},
   { "--sums",       FALSE, sqdARG_NONE },
   { "--hmmonly",    FALSE, sqdARG_NONE },
   { "--scoreonly",  FALSE, sqdARG_NONE },
   { "--betas",      FALSE, sqdARG_INT },
   { "--betae",      FALSE, sqdARG_INT },
-  { "--hbandps",    FALSE, sqdARG_INT },
-  { "--hbandpe",    FALSE, sqdARG_INT }
+  { "--taus",       FALSE, sqdARG_INT },
+  { "--taue",       FALSE, sqdARG_INT }
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -147,22 +147,22 @@ main(int argc, char **argv)
   int            s2_do_hmmonly;  /* TRUE: stage 2 align with the HMM, not the CM */
   int            s2_do_hsafe;    /* TRUE: stage 2 realign seqs with banded sc < 0*/
   int            s2_do_scoreonly;/* TRUE for score-only (small mem) full CYK     */
-  double         hbandp; 	 /* tail loss probability for HMM banding        */
-  double        *hbandp_vec; 	 /* [1..nstages] hbandp per stage (no stage 0)   */
+  double         tau;     	 /* tail loss probability for HMM banding        */
+  double        *tau_vec; 	 /* [1..nstages] tau per stage (no stage 0)      */
   int            use_sums;       /* TRUE: use the posterior sums w/HMM bands     */
 
-  /* Special 'step-mode' options, allows different hbandps or betas to be tested 
+  /* Special 'step-mode' options, allows different taus or betas to be tested 
    * with a single cmscore call.                                                 */
   int            do_step_beta;   /* TRUE to step through beta values             */
   double         init_beta;      /* first beta value to use 10^-x for some x     */
   int            init_beta_set;  /* TRUE if --betas set on command line          */
   double         final_beta;     /* final beta value to use 10^-x for some x     */
   int            final_beta_set; /* TRUE if --betae set on command line          */
-  int            do_step_hbandp; /* TRUE to step through hbandp values           */
-  double         init_hbandp;    /* first hbandp value to use 10^-x for some x   */
-  int            init_hbandp_set;/* TRUE if --hbandps set on command line        */
-  double         final_hbandp;   /* final hbandp value to use 10^-x for some x   */
-  int            final_hbandp_set;/* TRUE if --hbandpe set on command line       */
+  int            do_step_tau;    /* TRUE to step through tau values              */
+  double         init_tau;       /* first tau value to use 10^-x for some x      */
+  int            init_tau_set;   /* TRUE if --taus set on command line           */
+  double         final_tau;      /* final tau value to use 10^-x for some x      */
+  int            final_tau_set;  /* TRUE if --taue set on command line           */
 
   /* statistics we'll keep comparing stage 1 and stage 2 alignment               */
   float          spdup;          /* stage 1 time elapsed / stage 2 time elapsed  */
@@ -191,18 +191,18 @@ main(int argc, char **argv)
   s2_do_hsafe         = FALSE;
   s2_set              = FALSE;
   s2_do_scoreonly     = FALSE;
-  hbandp              = DEFAULT_HBANDP;
+  tau                 = DEFAULT_TAU;
   use_sums            = FALSE;
   do_step_beta        = FALSE;
   init_beta           = 0.;
   final_beta          = 0.;
   init_beta_set       = FALSE;
   final_beta_set      = FALSE;
-  do_step_hbandp      = FALSE;
-  init_hbandp_set     = FALSE;
-  final_hbandp_set    = FALSE;
-  init_hbandp         = 0.;     
-  final_hbandp        = 0.;     
+  do_step_tau         = FALSE;
+  init_tau_set        = FALSE;
+  final_tau_set       = FALSE;
+  init_tau            = 0.;     
+  final_tau           = 0.;     
   
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -213,9 +213,9 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--stringent") == 0) compare_stringently = TRUE;
     else if (strcmp(optname, "--trees")     == 0) do_trees            = TRUE;
     else if (strcmp(optname, "--nocheck")   == 0) do_checkscores      = FALSE;
-    else if (strcmp(optname, "--std")        == 0) { /* this is default */ }
+    else if (strcmp(optname, "--std")       == 0) { /* this is default */ }
     else if (strcmp(optname, "--beta")      == 0) qdb_beta            = atof(optarg);
-    else if (strcmp(optname, "--hbandp")    == 0) hbandp              = atof(optarg);
+    else if (strcmp(optname, "--tau")       == 0) tau                 = atof(optarg);
     else if (strcmp(optname, "--hsafe")     == 0) s2_do_hsafe         = TRUE;
     else if (strcmp(optname, "--scoreonly") == 0) s2_do_scoreonly     = TRUE;
     else if (strcmp(optname, "--betas")     == 0) 
@@ -230,17 +230,17 @@ main(int argc, char **argv)
 	final_beta = atoi(optarg);
 	final_beta_set = TRUE;
       }
-    else if (strcmp(optname, "--hbandps")     == 0) 
+    else if (strcmp(optname, "--taus")     == 0) 
       { 
-	do_step_hbandp=TRUE; 
-	init_hbandp = atoi(optarg);
-	init_hbandp_set = TRUE;
+	do_step_tau=TRUE; 
+	init_tau = atoi(optarg);
+	init_tau_set = TRUE;
       }
-    else if (strcmp(optname, "--hbandpe")     == 0) 
+    else if (strcmp(optname, "--taue")     == 0) 
       { 
-	do_step_hbandp=TRUE; 
-	final_hbandp = atoi(optarg);
-	final_hbandp_set = TRUE;
+	do_step_tau=TRUE; 
+	final_tau = atoi(optarg);
+	final_tau_set = TRUE;
       }
     else if (strcmp(optname, "--scoreonly") == 0) s2_do_scoreonly     = TRUE;
     else if (strcmp(optname, "--qdb")       == 0) 
@@ -296,43 +296,43 @@ main(int argc, char **argv)
     Die("--hsafe only makes sense with --hbanded\n%s", usage);
   if(do_step_beta && ( (!init_beta_set) || (!final_beta_set)))
     Die("--betas and --betae only make sense if they're both enabled\n%s", usage);
-  if(do_step_hbandp && ( (!init_hbandp_set) || (!final_hbandp_set)))
-    Die("--hbandps and --hbandpe only make sense if they're both enabled\n%s", usage);
+  if(do_step_tau && ( (!init_tau_set) || (!final_tau_set)))
+    Die("--taus and --taue only make sense if they're both enabled\n%s", usage);
   if(do_step_beta && (init_beta >= final_beta))
     Die("--betas argument must be LOWER than --betae argument\n%s", usage);
-  if(do_step_hbandp && (init_hbandp >= final_hbandp))
-    Die("--hbandps argument must be LOWER than --hbandpe argument\n%s", usage);
-  if(do_step_hbandp && do_step_beta)
-    Die("--betas --betae combo is exclusive of --hbandps --hbandpe combo\n%s", usage);
-  if(do_step_hbandp && (!s2_do_hbanded))
-    Die("--hbandps --hbandpe combo only makes sense with --hbanded\n%s", usage);
+  if(do_step_tau && (init_tau >= final_tau))
+    Die("--taus argument must be LOWER than --taue argument\n%s", usage);
+  if(do_step_tau && do_step_beta)
+    Die("--betas --betae combo is exclusive of --taus --taue combo\n%s", usage);
+  if(do_step_tau && (!s2_do_hbanded))
+    Die("--taus --taue combo only makes sense with --hbanded\n%s", usage);
   if(do_step_beta && (!s2_do_qdb))
     Die("--betas --betae combo only makes sense with --qdb\n%s", usage);
 
   if(do_step_beta)
     nstages = final_beta - init_beta + 2;
-  else if(do_step_hbandp)
-    nstages = final_hbandp - init_hbandp + 2;
+  else if(do_step_tau)
+    nstages = final_tau - init_tau + 2;
   else
     nstages = 2;
-  /* Set up qdb_beta_vec and hbandp_vec defaults as:
+  /* Set up qdb_beta_vec and tau_vec defaults as:
    * qdb_beta_vec[0] = -1 (dummy value)
-   * hbandp_vec[0]   = -1 (dummy value)
+   * tau_vec[0]   = -1 (dummy value)
    * qdb_beta_vec[1..nstages] = qdb_beta
-   * hbandp_vec[1..nstages]   = hbandp
+   * tau_vec[1..nstages]   = tau
    *
-   * If either (--hbandps & --hbandpe) or (--betas & --betae) were set:
+   * If either (--taus & --taue) or (--betas & --betae) were set:
    *    we have to recalculate one or the other vector based on those 
    *    arguments, 
    */
   qdb_beta_vec = MallocOrDie(sizeof(double) * (nstages+1));
-  hbandp_vec   = MallocOrDie(sizeof(double) * (nstages+1));
+  tau_vec   = MallocOrDie(sizeof(double) * (nstages+1));
   qdb_beta_vec[0] = -1.; /* dummy value no stage 0 */
-  hbandp_vec[0]   = -1.; /* dummy value no stage 0 */
+  tau_vec[0]   = -1.; /* dummy value no stage 0 */
   for(s = 1; s <= nstages; s++)
     {
       qdb_beta_vec[s] = qdb_beta;
-      hbandp_vec[s]   = hbandp;
+      tau_vec[s]   = tau;
     }
   if(do_step_beta)
     {
@@ -344,15 +344,15 @@ main(int argc, char **argv)
       for(s = 3; s <= nstages; s++)
 	qdb_beta_vec[s] = qdb_beta_vec[(s-1)] / 10.;
     }
-  if(do_step_hbandp)
+  if(do_step_tau)
     { 
-      if(init_hbandp == 0 || final_hbandp == 0) /* this shouldn't be, but we check */
-	Die("ERROR do_step_hbandp, but init_hbandp and final_hbandp not both non-zero\n");
-      hbandp_vec[0] = -1.; /* dummy value no stage 0 */
-      hbandp_vec[1] = 0.; /* this won't matter b/c stage 1 is non-qdb */
-      hbandp_vec[2] = epnEXP10(-1. * init_hbandp);
+      if(init_tau == 0 || final_tau == 0) /* this shouldn't be, but we check */
+	Die("ERROR do_step_tau, but init_tau and final_tau not both non-zero\n");
+      tau_vec[0] = -1.; /* dummy value no stage 0 */
+      tau_vec[1] = 0.; /* this won't matter b/c stage 1 is non-qdb */
+      tau_vec[2] = epnEXP10(-1. * init_tau);
       for(s = 3; s <= nstages; s++)
-	hbandp_vec[s] = hbandp_vec[(s-1)] / 10.;
+	tau_vec[s] = tau_vec[(s-1)] / 10.;
     }
 
   if (argc - optind != 2) Die("Incorrect number of arguments.\n%s\n", usage);
@@ -366,7 +366,7 @@ main(int argc, char **argv)
    *    - Align all seqs using stage 1 alignment options
    *    - Free CM
    * 2. Stage s=2..N (usually N=2 unless in 'step' mode,
-   *                  in which we step through beta or hbandp)
+   *                  in which we step through beta or tau)
    *    - Read in CM
    *    - Align all seqs using stage s alignment options
    *    - Free CM
@@ -387,7 +387,7 @@ main(int argc, char **argv)
   CMFileClose(cmfp);
 
   cm->beta   = qdb_beta_vec[1]; /* this will be DEFAULT_BETA unless changed at command line */
-  cm->hbandp = hbandp_vec[1];   /* this will be DEFAULT_HBANDP unless changed at command line */
+  cm->tau    = tau_vec[1];      /* this will be DEFAULT_TAU unless changed at command line */
 
   /*****************************************************************
    * Open the target sequence file
@@ -476,7 +476,7 @@ main(int argc, char **argv)
       StopwatchStart(watch2);
       
       cm->beta   = qdb_beta_vec[s]; /* this will be DEFAULT_BETA unless changed at command line */
-      cm->hbandp = hbandp_vec[s];   /* this will be DEFAULT_HBANDP unless changed at command line */
+      cm->tau    = tau_vec[s];      /* this will be DEFAULT_TAU unless changed at command line */
 
       /* Reopen the sequence file, we'll wastefully reread the seqs. */
       status = esl_sqfile_Open(seqfile, format, NULL, &seqfp);
@@ -622,7 +622,7 @@ void SummarizeAlignOptions(CM_t *cm)
 	printf("Bands:                   CP9 HMM (sums)\n");
       else
 	printf("Bands:                   CP9 HMM\n"); 
-      printf("Tail loss:               %g\n", cm->hbandp);
+      printf("Tail loss:               %g\n", cm->tau);
     }
   else if(cm->align_opts & CM_ALIGN_QDB)
     {

@@ -77,9 +77,11 @@ CP9ForwardScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **r
   int          alloc_nhits; /* used to grow the hitj array                                  */
   float        best_sc;     /* Best overall score from semi-HMM to return                   */
   float        best_negsc;  /* Best score overall score to return, used if all scores < 0.  */
+  int          accept;      /* Flag used if cm->search_opts & CM_SEARCH_HMMRESCAN           */
+  float        temp_sc;     /* temporary score                                              */
 
   if(cm->cp9 == NULL)
-    Die("ERROR in CP9ForwardScan, but cm->cp9 is NULL.\n");
+    Die("ERROR in CP9ForwardScan, cm->cp9 is NULL.\n");
 
   /*printf("CP9 Forward memory  :   %8.2f MB\n", CP9ForwardScanRequires(cm->cp9, (j0-i0+1), W));*/
 
@@ -221,7 +223,29 @@ CP9ForwardScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **r
 	{
 	  if(results != NULL) /* report the hit */
 	    {
-	      report_hit(gback[jp], j, -1, savesc[jp], results); 
+	      accept = TRUE;
+	      /* Potentially rescan just the subseq that is the hit we're about to report.
+	       * Implemented to deal with fact that --enfseq option was enforcing the subseq
+	       * to have hit pass filter b/c this Forward scanning function is 'infinite' length
+	       * (coined by Weinberg). Sometimes the subseq we're about to report has a really
+	       * crappy score, even though the cumulative Forward score (starting at i0) is good. */
+	      if(cm->search_opts & CM_SEARCH_HMMRESCAN)
+		{
+		  /*printf("rechecking hit from %d to %d\n", gback[jp], j);*/
+		  temp_sc = CP9ForwardScan(cm, dsq, gback[jp], j, cm->W, cutoff, NULL, NULL, NULL, NULL);
+		  /*printf("new score: %f old score %f\n", temp_sc, savesc[jp]);*/
+		  if(temp_sc >= cutoff) 
+		    { 
+		      accept = TRUE; 
+		      printf("rechecked hit from %d to %d\n", gback[jp], j);
+		      printf("new score: %f old score %f\n", temp_sc, savesc[jp]);
+		      printf("cm->enf_seq: %s\n", cm->enf_seq);
+		    }
+		  else accept = FALSE;
+		  savesc[jp] = temp_sc;
+		}
+	      if(accept)
+		report_hit(gback[jp], j, -1, savesc[jp], results); 
 	      /* -1 is for saver, which is irrelevant for HMM hits */
 	    }
 	  hitj[nhits] = j;

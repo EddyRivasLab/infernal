@@ -693,7 +693,7 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
    CMSetNullModel(sub_cm, orig_cm->null);
    sub_cm->el_selfsc = orig_cm->el_selfsc;
    sub_cm->beta      = orig_cm->beta;
-   sub_cm->hbandp    = orig_cm->hbandp;
+   sub_cm->tau       = orig_cm->tau;
 
    /* copy the options from the template CM, but turn off the CM_ALIGN_SUB and CM_ALIGN_FSUB options
     * and turn on the CM_IS_SUB and/or CM_IS_FSUB flags */

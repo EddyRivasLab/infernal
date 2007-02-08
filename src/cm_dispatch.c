@@ -451,7 +451,7 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
     sc = CP9ForwardScan(cm, dsq, i0, j0, cm->W, cp9_cutoff, NULL, NULL, NULL, results);
   else if(do_filter && (cm->search_opts & CM_SEARCH_HMMWEINBERG) 
 	  && (!doing_cm_stats)) /* if we're doing CM stats, don't filter. */
-      sc = CP9FilteredScan(cm, dsq, i0, j0, cm->W, cm_cutoff, cp9_cutoff, results, ret_flen);
+    sc = CP9FilteredScan(cm, dsq, i0, j0, cm->W, cm_cutoff, cp9_cutoff, results, ret_flen);
   else
     {
       if(cm->search_opts & CM_SEARCH_NOQDB)
@@ -561,7 +561,9 @@ int get_gc_comp(char *seq, int start, int stop) {
     stop = i;
   }
   gc_ct = 0;
-  for (i=start; i<=stop; i++) {
+  /* Careful: seq is indexed 0..n-1 so start and
+   * stop are off-by-one. This is a bug in RSEARCH-1.1 */
+  for (i=(start-1); i<=(stop-1); i++) {
     c = resolve_degenerate(seq[i]);
     if (c=='G' || c == 'C')
       gc_ct++;

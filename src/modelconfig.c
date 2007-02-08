@@ -46,7 +46,7 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
   /* Check for incompatible cm->*_opts */
   if((cm->config_opts & CM_CONFIG_ELSILENT) && (!(cm->config_opts & CM_CONFIG_LOCAL)))
     Die("ERROR trying to configure non-local CM to silence EL, this doesn't make sense.\n");
-  if((cm->search_opts & CM_SEARCH_SCANBANDS) && 
+  if((cm->search_opts & CM_SEARCH_HMMSCANBANDS) && 
      ((!(cm->search_opts & CM_SEARCH_HMMFB)) && (!(cm->search_opts & CM_SEARCH_HMMWEINBERG))))
     Die("ERROR trying to search with HMM derived bands, but not an HMM filter, this doesn't make sense.\n");
      
@@ -151,7 +151,8 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
 	}
       /* If we're enforcing a subsequence, we need to reenforce it b/c BandCalculationEngine() 
        * changes the local end probabilities */
-      if((cm->config_opts & CM_CONFIG_ENFORCE))
+      if((cm->config_opts & CM_CONFIG_ENFORCE) &&
+	 (cm->config_opts & CM_CONFIG_LOCAL))	 
 	{
 	  ConfigLocalEnforce(cm, 0.5, 0.5);
 	  CMLogoddsify(cm);
@@ -173,6 +174,7 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
        * hits that are bigger than we're allowing with QDB. */
       cm->W = cm->dmax[0];
     }
+
   /* We need to ensure that cm->el_selfsc * W >= IMPOSSIBLE
    * (cm->el_selfsc is the score for an EL self transition) This is
    * done because we potentially multiply cm->el_selfsc * W, and add
@@ -186,6 +188,7 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
   CMLogoddsify(cm);
   if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
     CMHackInsertScores(cm);	/* insert emissions are all equiprobable */
+
   return; 
 
   /* TO DO, set up a SUB CM and/or FULL SUB */

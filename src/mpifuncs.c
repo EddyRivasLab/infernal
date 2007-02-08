@@ -86,6 +86,7 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
   int position = 0;         /* Where I am in the buffer */
   int nstates, nnodes;
   int enf_len;
+  int i;
   /*printf("entered aln_broadcast my: %d master: %d\n", mpi_my_rank, mpi_master_rank);*/
   
   position = 0;
@@ -112,25 +113,14 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
       MPI_Pack (&((*cm)->cutoff),          1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (&((*cm)->cp9_cutoff_type), 1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (&((*cm)->cp9_cutoff),      1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      /* DO NOT pass CM or CP9 EVD stats, they're set later if we're doing stats, and set
-       * to defaults in ConfigCM() if we're not doing stats. */
-       /*if((*cm)->search_opts & CM_SEARCH_CMSTATS)
-	{
-	  MPI_Pack (&((*cm)->lambda),GC_SEGMENTS, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-	  MPI_Pack (&((*cm)->K),     GC_SEGMENTS, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-	  MPI_Pack (&((*cm)->mu),    GC_SEGMENTS, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-	  if((*cm)->search_opts & CM_SEARCH_CP9STATS)
-	  {
-	  MPI_Pack (&((*cm)->cp9_lambda),GC_SEGMENTS, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-	  MPI_Pack (&((*cm)->cp9_mu),GC_SEGMENTS, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-	  MPI_Pack (&((*cm)->cp9_K), GC_SEGMENTS, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      */
-      if((*cm)->enf_start != 0)
-	{
-	  enf_len = strlen((*cm)->enf_seq);
-	  MPI_Pack (&enf_len,          1,       MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
-	  MPI_Pack (&((*cm)->enf_seq), enf_len, MPI_CHAR,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
-	}
+      MPI_Pack (&((*cm)->beta),            1, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->tau),             1, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+
+      /* Take special care with enf_len, this is used later to get cm->enf_seq if nec */
+      if((*cm)->enf_start != 0) enf_len = strlen((*cm)->enf_seq);
+      else enf_len = 0;
+      MPI_Pack (&enf_len,                  1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+
     }
   /* Broadcast to everyone */
   MPI_Bcast (buf, BUFSIZE, MPI_PACKED, mpi_master_rank, MPI_COMM_WORLD);
@@ -150,25 +140,17 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->iel_selfsc),      1, MPI_INT,   MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->W),               1, MPI_INT,   MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->enf_start),       1, MPI_INT,   MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->sc_boost),     1, MPI_FLOAT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cp9_sc_boost), 1, MPI_FLOAT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->sc_boost),        1, MPI_FLOAT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cp9_sc_boost),    1, MPI_FLOAT, MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->ffract),          1, MPI_FLOAT, MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cutoff_type),     1, MPI_INT,   MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cutoff),          1, MPI_FLOAT, MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cp9_cutoff_type), 1, MPI_FLOAT, MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cp9_cutoff),      1, MPI_FLOAT, MPI_COMM_WORLD);
-      /*MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->lambda),GC_SEGMENTS, MPI_FLOAT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->K),     GC_SEGMENTS, MPI_FLOAT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->mu),    GC_SEGMENTS, MPI_FLOAT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cp9_lambda),GC_SEGMENTS, MPI_FLOAT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cp9_K), GC_SEGMENTS, MPI_FLOAT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cp9_mu),GC_SEGMENTS, MPI_FLOAT, MPI_COMM_WORLD);
-      */
-      if((*cm)->enf_start != 0)
-	{
-	  MPI_Unpack (buf, BUFSIZE, &position, &enf_len,                  1, MPI_INT, MPI_COMM_WORLD);
-	  MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->enf_seq),   enf_len, MPI_INT, MPI_COMM_WORLD);
-	}
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->beta),            1, MPI_DOUBLE, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->tau),             1, MPI_DOUBLE, MPI_COMM_WORLD);
+
+      MPI_Unpack (buf, BUFSIZE, &position, &enf_len,                  1, MPI_INT,   MPI_COMM_WORLD);
     }
   /* Now we broadcast the rest of the model using many calls to MPI_Bcast.  
      This is inefficient, but is probably negligible compared to the actual 
@@ -201,7 +183,17 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
   MPI_Bcast ((*cm)->esc[0], nstates*Alphabet_size*Alphabet_size, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
   MPI_Bcast ((*cm)->itsc[0], nstates*MAXCONNECT, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
   MPI_Bcast ((*cm)->iesc[0], nstates*Alphabet_size*Alphabet_size, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
-  /*printf("leaving aln_broadcast\n");*/
+
+  /* Finally broadcast the enf_seq, if it's NULL (enf_start == 0) we don't */
+  if((*cm)->enf_start != 0)
+    {
+      if (mpi_my_rank != mpi_master_rank) 
+	(*cm)->enf_seq = MallocOrDie(sizeof(char) * (enf_len+1));
+      MPI_Bcast((*cm)->enf_seq, enf_len, MPI_CHAR, mpi_master_rank, MPI_COMM_WORLD);
+      if (mpi_my_rank != mpi_master_rank) 
+	(*cm)->enf_seq[enf_len] = '\0';
+    }
+
   return;
 }
 
