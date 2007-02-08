@@ -74,10 +74,11 @@ static char experts[] = "\
    --inside      : scan with Inside, not CYK (caution much slower(!))\n\
    --null2       : turn on the post hoc second null model [df:OFF]\n\
    --learninserts: do not set insert emission scores to 0\n\
-   --negsc    <f>: set min bit score to report as <f> < 0 (experimental)\n\
+   --negsc <f>   : set min bit score to report as <f> < 0 (experimental)\n\
    --enfstart <n>: enforce MATL stretch starting at consensus position <n>\n\
    --enfseq <s>  : enforce MATL stretch starting at --enfstart <n> emits seq <s>\n\
    --time        : print timings for histogram building, and full search\n\
+   --matrix <s>  : matrix: use matrix <s>, either full path or in $RNAMAT\n\
 \n\
   * Filtering options using a CM plan 9 HMM (*in development*):\n\
    --hmmfb        : use Forward to get end points & Backward to get start points\n\
@@ -133,7 +134,8 @@ static struct opt_s OPTIONS[] = {
   { "--partition",  FALSE, sqdARG_STRING},
   { "--enfstart",   FALSE, sqdARG_INT},
   { "--enfseq",     FALSE, sqdARG_STRING},
-  { "--time",       FALSE, sqdARG_NONE}
+  { "--time",       FALSE, sqdARG_NONE},
+  { "--matrix",     FALSE, sqdARG_STRING}
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -235,8 +237,9 @@ main(int argc, char **argv)
   int      aliformat;	   /* format of seqfile                       */
   MSAFILE *afp;            /* open alignment file                     */
   MSA     *msa;            /* a multiple sequence alignment           */
-  fullmat_t       *fullmat;     /* The full matrix */
-  char matrixname[256];         /* Name of the matrix, from -m */
+  fullmat_t       *fullmat;/* The full matrix */
+  char matrixname[256];    /* Name of the matrix, from -m */
+  int  matrix_set;         /* TRUE if --matrix enabled at command line */
   FILE            *matfp;       /* open matrix file for reading */
   float           ralpha =   DEFAULT_RALPHA; 
   float           rbeta =    DEFAULT_RBETA;
@@ -324,6 +327,8 @@ main(int argc, char **argv)
   do_rsearch        = FALSE;
   do_timings        = FALSE;
   aliformat         = MSAFILE_UNKNOWN;   /* autodetect by default */
+  matrixname[0]     = '\0';
+  matrix_set        = FALSE;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -357,8 +362,16 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--enfstart")    == 0) { do_enforce = TRUE; enf_cc_start = atoi(optarg); }
     else if  (strcmp(optname, "--enfseq")      == 0) { do_enforce = TRUE; enf_seq = optarg; } 
     else if  (strcmp(optname, "--time")        == 0) do_timings   = TRUE;
-    else if  (strcmp(optname, "--hmmfb")       == 0)   do_hmmfb = TRUE;
-    else if  (strcmp(optname, "--hmmweinberg") == 0)   do_hmmweinberg = TRUE;
+    else if  (strcmp(optname, "--matrix")      == 0) 
+      {
+	if (strlen(optarg) > 255)
+	  Die ("Matrix name can't exceed 255 characters\n");
+	strncpy (matrixname, optarg, 255);
+	matrixname[255] = '\0';
+	matrix_set = TRUE;
+      }
+    else if  (strcmp(optname, "--hmmfb")       == 0) do_hmmfb = TRUE;
+    else if  (strcmp(optname, "--hmmweinberg") == 0) do_hmmweinberg = TRUE;
     else if  (strcmp(optname, "--hmmnegsc")    == 0) cp9_sc_boost = -1. * atof(optarg);
     else if  (strcmp(optname, "--hmmE")        == 0)   
       { 
@@ -434,6 +447,8 @@ main(int argc, char **argv)
     Die("--banddump and --noqdb combination not supported.\n");
   if(set_window && do_qdb)
     Die("--window only works with --noqdb.\n");
+  if(!do_rsearch && matrix_set)
+    Die("--matrix doesn't make sense without -R.\n");
 #if USE_MPI
   if(read_qdb && ((mpi_num_procs > 1) && (mpi_my_rank == mpi_master_rank)))
     Die("Sorry, you can't read in bands with --qdbfile in MPI mode.\n");
@@ -493,9 +508,8 @@ main(int argc, char **argv)
       MSAFileClose(afp);
 
       /* Set up matrix */
-      matrixname[0]          = '\0';
       if ((matfp = MatFileOpen (DEFAULT_RMATRIX, getenv("RNAMAT"), matrixname)) == NULL) 
-	Die ("Failed to open matrix file\n%s\n", usage);
+	Die ("Failed to open matrix file %s\n%s\n", matrixname, usage);
       if (! (fullmat = ReadMatrix(matfp)))
 	Die ("Failed to read matrix file \n%s\n", usage);
       printf ("Matrix: %s\n", fullmat->name);

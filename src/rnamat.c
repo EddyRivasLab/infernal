@@ -586,6 +586,11 @@ FILE *MatFileOpen (char *deflt, char *matdir, char *matfile) {
        buf[1023] = '\0';
        fp = fopen (buf, "r");
        if (fp != NULL) return (fp);
+
+       /* EPN added, we couldn't open the matfile specified
+	* at the command line, we should die. 
+	*/
+       return (NULL);
      }
 
      /* 5.  matdir/default */
