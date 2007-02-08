@@ -320,23 +320,10 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
 
                for ( yoffset=0; yoffset<cm->cnum[v]; yoffset++ )
                {
-                  sc = alpha[y+yoffset][j][d] + cm->tsc[v][yoffset];
-                  if ( sc > alpha[v][j][d] )
+                  if ( (sc = alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) > alpha[v][j][d] )
                   {
                      alpha[v][j][d] = sc;
                      if ( ret_shadow != NULL ) ((char **)shadow[v])[j][d] = yoffset;
-                  }
-                  if ( sc > L_alpha[v][j][d] )
-                  {
-                     L_alpha[v][j][d] = sc;
-                     if ( ret_L_shadow != NULL ) ((char **)L_shadow[v])[j][d] = yoffset;
-                     if ( ret_Lmode_shadow != NULL ) Lmode_shadow[v][j][d] = 3;
-                  }
-                  if ( sc > R_alpha[v][j][d] )
-                  {
-                     R_alpha[v][j][d] = sc;
-                     if ( ret_R_shadow != NULL ) ((char **)R_shadow[v])[j][d] = yoffset;
-                     if ( ret_Rmode_shadow != NULL ) Rmode_shadow[v][j][d] = 3;
                   }
                   if ( (sc = L_alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) > L_alpha[v][j][d] )
                   {
@@ -349,6 +336,18 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                      R_alpha[v][j][d] = sc;
                      if ( ret_R_shadow != NULL ) ((char **)R_shadow[v])[j][d] = yoffset;
                      if ( ret_Rmode_shadow != NULL ) Rmode_shadow[v][j][d] = 1;
+                  }
+                  if ( (sc = alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) > L_alpha[v][j][d] )
+                  {
+                     L_alpha[v][j][d] = sc;
+                     if ( ret_L_shadow != NULL ) ((char **)L_shadow[v])[j][d] = yoffset;
+                     if ( ret_Lmode_shadow != NULL ) Lmode_shadow[v][j][d] = 3;
+                  }
+                  if ( (sc = alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) > R_alpha[v][j][d] )
+                  {
+                     R_alpha[v][j][d] = sc;
+                     if ( ret_R_shadow != NULL ) ((char **)R_shadow[v])[j][d] = yoffset;
+                     if ( ret_Rmode_shadow != NULL ) Rmode_shadow[v][j][d] = 3;
                   }
                }
 
@@ -488,30 +487,30 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
 
                for ( yoffset = 0; yoffset < cm->cnum[v]; yoffset++ )
                {
-                  if ( (sc = alpha[y+yoffset][j][d-1] + cm->tsc[v][yoffset]) > L_alpha[v][j][d])
-                  {
-                     L_alpha[v][j][d] = sc;
-                     if ( ret_L_shadow != NULL ) { ((char **)L_shadow[v])[j][d] = yoffset; }
-                     if ( ret_Lmode_shadow != NULL ) { Lmode_shadow[v][j][d] = 3; }
-                  }
                   if ( (sc = L_alpha[y+yoffset][j][d-1] + cm->tsc[v][yoffset]) > L_alpha[v][j][d])
                   {
                      L_alpha[v][j][d] = sc;
                      if ( ret_L_shadow != NULL ) { ((char **)L_shadow[v])[j][d] = yoffset; }
                      if ( ret_Lmode_shadow != NULL ) { Lmode_shadow[v][j][d] = 2; }
                   }
-
-                  if ( (sc = alpha[y+yoffset][j-1][d-1] + cm->tsc[v][yoffset]) > R_alpha[v][j][d])
+                  if ( (sc = alpha[y+yoffset][j][d-1] + cm->tsc[v][yoffset]) > L_alpha[v][j][d])
                   {
-                     R_alpha[v][j][d] = sc;
-                     if ( ret_R_shadow != NULL ) { ((char **)R_shadow[v])[j][d] = yoffset; }
-                     if ( ret_Rmode_shadow != NULL ) { Rmode_shadow[v][j][d] = 3; }
+                     L_alpha[v][j][d] = sc;
+                     if ( ret_L_shadow != NULL ) { ((char **)L_shadow[v])[j][d] = yoffset; }
+                     if ( ret_Lmode_shadow != NULL ) { Lmode_shadow[v][j][d] = 3; }
                   }
+
                   if ( (sc = R_alpha[y+yoffset][j-1][d-1] + cm->tsc[v][yoffset]) > R_alpha[v][j][d])
                   {
                      R_alpha[v][j][d] = sc;
                      if ( ret_R_shadow != NULL ) { ((char **)R_shadow[v])[j][d] = yoffset; }
                      if ( ret_Rmode_shadow != NULL ) { Rmode_shadow[v][j][d] = 1; }
+                  }
+                  if ( (sc = alpha[y+yoffset][j-1][d-1] + cm->tsc[v][yoffset]) > R_alpha[v][j][d])
+                  {
+                     R_alpha[v][j][d] = sc;
+                     if ( ret_R_shadow != NULL ) { ((char **)R_shadow[v])[j][d] = yoffset; }
+                     if ( ret_Rmode_shadow != NULL ) { Rmode_shadow[v][j][d] = 3; }
                   }
                }
 
@@ -550,21 +549,21 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
             for ( yoffset = 0; yoffset < cm->cnum[v]; yoffset++ )
             {
                tsc = cm->tsc[v][yoffset];
-               if ( (sc = L_alpha[v][j][0] + tsc) > L_alpha[v][j][0] )
+               if ( (sc = L_alpha[y+yoffset][j][0] + tsc) > L_alpha[v][j][0] )
                {
                    L_alpha[v][j][0] = sc;
                    if ( ret_L_shadow != NULL ) { ((char **)L_shadow[v])[j][0] = yoffset; }
                    if ( ret_Lmode_shadow != NULL ) { Lmode_shadow[v][j][0] = 2; }
                }
 
-               if ( (sc = R_alpha[v][j][0] + tsc) > R_alpha[v][j][0] )
+               if ( (sc = R_alpha[y+yoffset][j][0] + tsc) > R_alpha[v][j][0] )
                {
                   R_alpha[v][j][0] = sc;
                   if ( ret_R_shadow != NULL ) { ((char **)R_shadow[v])[j][0] = yoffset; }
                   if ( ret_Rmode_shadow != NULL ) { Rmode_shadow[v][j][0] = 1; }
                }
 
-               if ( (sc = alpha[v][j][0] + tsc) > R_alpha[v][j][0] )
+               if ( (sc = alpha[y+yoffset][j][0] + tsc) > R_alpha[v][j][0] )
                {
                   R_alpha[v][j][0] = sc;
                   if ( ret_R_shadow != NULL ) { ((char **)R_shadow[v])[j][0] = yoffset; }
@@ -591,13 +590,6 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                      if ( ret_shadow != NULL ) { ((char **)shadow[v])[j][d] = yoffset; }
                   }
 
-                  if  ( (sc = alpha[y+yoffset][j][d-1] + cm->tsc[v][yoffset]) > L_alpha[v][j][d] )
-                  {
-                     L_alpha[v][j][d] = sc;
-                     if ( ret_L_shadow != NULL ) { ((char **)L_shadow[v])[j][d] = yoffset; }
-                     if ( ret_Lmode_shadow != NULL ) { Lmode_shadow[v][j][d] = 3; }
-                  }
-
                   if  ( (sc = L_alpha[y+yoffset][j][d-1] + cm->tsc[v][yoffset]) > L_alpha[v][j][d] )
                   {
                      L_alpha[v][j][d] = sc;
@@ -605,11 +597,11 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                      if ( ret_Lmode_shadow != NULL ) { Lmode_shadow[v][j][d] = 2; }
                   }
 
-                  if  ( (sc = alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) > R_alpha[v][j][d] )
+                  if  ( (sc = alpha[y+yoffset][j][d-1] + cm->tsc[v][yoffset]) > L_alpha[v][j][d] )
                   {
-                     R_alpha[v][j][d] = sc;
-                     if ( ret_R_shadow != NULL ) { ((char **)R_shadow[v])[j][d] = yoffset; }
-                     if ( ret_Rmode_shadow != NULL ) { Rmode_shadow[v][j][d] = 3; }
+                     L_alpha[v][j][d] = sc;
+                     if ( ret_L_shadow != NULL ) { ((char **)L_shadow[v])[j][d] = yoffset; }
+                     if ( ret_Lmode_shadow != NULL ) { Lmode_shadow[v][j][d] = 3; }
                   }
 
                   if  ( (sc = R_alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) > R_alpha[v][j][d] )
@@ -617,6 +609,13 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                      R_alpha[v][j][d] = sc;
                      if ( ret_R_shadow != NULL ) { ((char **)R_shadow[v])[j][d] = yoffset; }
                      if ( ret_Rmode_shadow != NULL ) { Rmode_shadow[v][j][d] = 1; }
+                  }
+
+                  if  ( (sc = alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) > R_alpha[v][j][d] )
+                  {
+                     R_alpha[v][j][d] = sc;
+                     if ( ret_R_shadow != NULL ) { ((char **)R_shadow[v])[j][d] = yoffset; }
+                     if ( ret_Rmode_shadow != NULL ) { Rmode_shadow[v][j][d] = 3; }
                   }
                }
 
@@ -657,21 +656,21 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
             for ( yoffset = 0; yoffset < cm->cnum[v]; yoffset++ )
             {
                tsc = cm->tsc[v][yoffset];
-               if ( (sc = alpha[v][j][0] + tsc) > L_alpha[v][j][0] )
+               if ( (sc = alpha[y+yoffset][j][0] + tsc) > L_alpha[v][j][0] )
                {
                   L_alpha[v][j][0] = sc;
                   if ( ret_L_shadow != NULL ) { ((char **)L_shadow[v])[j][0] = yoffset; }
                   if ( ret_Lmode_shadow != NULL ) { Lmode_shadow[v][j][0] = 3; }
                }
 
-               if ( (sc = L_alpha[v][j][0] + tsc) > L_alpha[v][j][0] )
+               if ( (sc = L_alpha[y+yoffset][j][0] + tsc) > L_alpha[v][j][0] )
                {
                    L_alpha[v][j][0] = sc;
                    if ( ret_L_shadow != NULL ) { ((char **)L_shadow[v])[j][0] = yoffset; }
                    if ( ret_Lmode_shadow != NULL ) { Lmode_shadow[v][j][0] = 2; }
                }
 
-               if ( (sc = R_alpha[v][j][0] + tsc) > R_alpha[v][j][0] )
+               if ( (sc = R_alpha[y+yoffset][j][0] + tsc) > R_alpha[v][j][0] )
                {
                   R_alpha[v][j][0] = sc;
                   if ( ret_R_shadow != NULL ) { ((char **)R_shadow[v])[j][0] = yoffset; }
@@ -698,13 +697,6 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                      if ( ret_shadow != NULL ) { ((char **)shadow[v])[j][d] = yoffset; }
                   }
 
-                  if  ( (sc = alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) > L_alpha[v][j][d] )
-                  {
-                     L_alpha[v][j][d] = sc;
-                     if ( ret_L_shadow != NULL ) { ((char **)L_shadow[v])[j][d] = yoffset; }
-                     if ( ret_Lmode_shadow != NULL ) { Lmode_shadow[v][j][d] = 3; }
-                  }
-
                   if  ( (sc = L_alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) > L_alpha[v][j][d] )
                   {
                      L_alpha[v][j][d] = sc;
@@ -712,11 +704,11 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                      if ( ret_Lmode_shadow != NULL ) { Lmode_shadow[v][j][d] = 2; }
                   }
 
-                  if  ( (sc = alpha[y+yoffset][j-1][d-1] + cm->tsc[v][yoffset]) > R_alpha[v][j][d] )
+                  if  ( (sc = alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) > L_alpha[v][j][d] )
                   {
-                     R_alpha[v][j][d] = sc;
-                     if ( ret_R_shadow != NULL ) { ((char **)R_shadow[v])[j][d] = yoffset; }
-                     if ( ret_Rmode_shadow != NULL ) { Rmode_shadow[v][j][d] = 3; }
+                     L_alpha[v][j][d] = sc;
+                     if ( ret_L_shadow != NULL ) { ((char **)L_shadow[v])[j][d] = yoffset; }
+                     if ( ret_Lmode_shadow != NULL ) { Lmode_shadow[v][j][d] = 3; }
                   }
 
                   if  ( (sc = R_alpha[y+yoffset][j-1][d-1] + cm->tsc[v][yoffset]) > R_alpha[v][j][d] )
@@ -724,6 +716,13 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                      R_alpha[v][j][d] = sc;
                      if ( ret_R_shadow != NULL ) { ((char **)R_shadow[v])[j][d] = yoffset; }
                      if ( ret_Rmode_shadow != NULL ) { Rmode_shadow[v][j][d] = 1; }
+                  }
+
+                  if  ( (sc = alpha[y+yoffset][j-1][d-1] + cm->tsc[v][yoffset]) > R_alpha[v][j][d] )
+                  {
+                     R_alpha[v][j][d] = sc;
+                     if ( ret_R_shadow != NULL ) { ((char **)R_shadow[v])[j][d] = yoffset; }
+                     if ( ret_Rmode_shadow != NULL ) { Rmode_shadow[v][j][d] = 3; }
                   }
                }
 
@@ -920,7 +919,7 @@ trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
    float      sc;		/* score of the CYK alignment */
    ESL_STACK *pda;		/* stack for storing info of 2nd child at B_st */
    int        v,i,j,d;		/* indices for state, position, & distance */
-   int        mode;
+   int        mode,nxtmode;
    int        k;
    int        y, yoffset;
    int        bifparent;
@@ -1020,16 +1019,17 @@ trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
          if      ( mode == 3 )
          {
             yoffset = ((char **)   shadow[v])[j][d];
+            nxtmode = 3;
          }
          else if ( mode == 2 )
          {
             yoffset = ((char **) L_shadow[v])[j][d];
-            mode = ((int **)Lmode_shadow[v])[j][d];
+            nxtmode = ((int **)Lmode_shadow[v])[j][d];
          }
          else if ( mode == 1 )
          {
             yoffset = ((char **) R_shadow[v])[j][d];
-            mode = ((int **)Rmode_shadow[v])[j][d];
+            nxtmode = ((int **)Rmode_shadow[v])[j][d];
          }
          else { Die("Unknown mode in traceback!"); }
 
@@ -1065,6 +1065,7 @@ trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
                Die("'Inconceivable!'\n'You keep using that word...'");
          }
          d = j-i+1;
+         mode = nxtmode;
 
          if ( yoffset == USED_EL )
          {
