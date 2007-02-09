@@ -482,6 +482,8 @@ CMHackInsertScores(CM_t *cm)
 	    cm->iesc[v][x] = 0.;
 	  }
     }
+  if(cm->cp9 != NULL)
+    CP9HackInsertScores(cm->cp9);
 }
 
 

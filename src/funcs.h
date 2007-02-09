@@ -137,6 +137,7 @@ extern void ConfigLocal_fullsub_post(CM_t *sub_cm, CM_t *orig_cm, CP9Map_t *orig
 				     struct cp9_dpmatrix_s *post, int L);
 extern void ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_internal_exit);
 extern int  EnforceSubsequence(CM_t *cm);
+extern int  EnforceFindEnfStart(CM_t *cm, int enf_cc_start);
 
 /* from modelmaker.c
  */
@@ -273,6 +274,8 @@ extern struct cp9_dpmatrix_s *CreateCPlan9Matrix(int N, int M, int padN, int pad
 extern void  ResizeCPlan9Matrix(struct cp9_dpmatrix_s *mx, int N, int M, 
 			       int ***mmx, int ***imx, int ***dmx, int ***emx);
 extern void CPlan9SWConfig(CP9_t *hmm, float pentry, float pexit);
+extern void CPlan9SWConfigEnforce(CP9_t *hmm, float pentry, float pexit, 
+				  int enf_start_pos, int enf_end_pos);
 extern void CPlan9GlobalConfig(CP9_t *hmm);
 extern void sub_CPlan9GlobalConfig(CP9_t *hmm, int spos, int epos, double **phi);
 
@@ -283,6 +286,8 @@ extern void CP9FreeTrace(struct cp9trace_s *tr);
 
 extern void CP9_2sub_cp9(CP9_t *orig_hmm, CP9_t **ret_sub_hmm, int spos, int epos, double **orig_phi);
 extern void CP9_reconfig2sub(CP9_t *hmm, int spos, int epos, int spos_nd, int epos_nd, double **orig_phi);
+extern void CP9HackInsertScores(CP9_t *cp9);
+extern void CP9EnforceHackMatchScores(CP9_t *cp9, int enf_start_pos, int enf_end_pos);
 
 /* from hbandcyk.c
  */

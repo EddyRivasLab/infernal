@@ -36,6 +36,10 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
   int do_calc_qdb   = FALSE;
   int do_preset_qdb = FALSE;
   int do_build_cp9  = FALSE;
+  int enf_start_pos;            /* consensus left position node enf_start emits to */
+  int enf_end_pos;              /* consensus left position node enf_end   emits to */
+  int enf_end;                  /* last node we're enforcing                       */
+  CMEmitMap_t *emap;            /* consensus emit map for the CM, used iff enforcing */
   int v;
   int i;
 
@@ -133,7 +137,31 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
 	  swentry= ((cm->cp9->M)-1.)/cm->cp9->M; /* all start pts equiprobable, including 1 */
 	  swexit = ((cm->cp9->M)-1.)/cm->cp9->M; /* all end   pts equiprobable, including M */
 	}
-      CPlan9SWConfig(cm->cp9, swentry, swexit);
+      if(cm->config_opts & CM_CONFIG_ENFORCE)
+	{
+	  /* Set up the CP9 locality to enforce a subseq, we don't want local parses
+	   * to skip the enforced subseq */
+	  emap = CreateEmitMap(cm); 
+	  enf_end = cm->enf_start + strlen(cm->enf_seq) - 1;
+	  enf_start_pos = emap->lpos[cm->enf_start];
+	  enf_end_pos   = emap->lpos[enf_end];
+	  FreeEmitMap(emap);
+	  CPlan9SWConfigEnforce(cm->cp9, 0.5, 0.5, enf_start_pos, enf_end_pos);
+	  if(cm->config_opts & CM_CONFIG_ENFORCEHMM)
+	    {
+	      /* We make the HMM ignorant of any sequence conservation besides
+	       * the enforced subseq. This way all subseqs with the enforced
+	       * subseq will be recognized as high scoring by the HMM and 
+	       * be passed to the CM (if filtering (which is default in this mode)).
+	       * To achieve this, make all emissions (match and insert) score 0,
+	       * except for the few fmatch emissions that model the enforced subseq */
+	      CP9HackInsertScores(cm->cp9);
+	      CP9EnforceHackMatchScores(cm->cp9, enf_start_pos, enf_end_pos);
+	    }	
+	}  
+      else
+	CPlan9SWConfig(cm->cp9, swentry, swexit);
+
       CP9Logoddsify(cm->cp9);
     }
   
@@ -187,8 +215,8 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
     }
   CMLogoddsify(cm);
   if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
-    CMHackInsertScores(cm);	/* insert emissions are all equiprobable */
-
+      CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
+				     * makes all CP9 (if non-null) inserts equiprobable*/
   return; 
 
   /* TO DO, set up a SUB CM and/or FULL SUB */
@@ -576,7 +604,7 @@ ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_internal_exit)
   int enf_end_pos;              /* consensus left position node enf_end   emits to */
   int nexits;			/* number of possible internal ends */
   float denom;
-  CMEmitMap_t *emap;           /* consensus emit map for the CM */
+  CMEmitMap_t *emap;            /* consensus emit map for the CM */
   int enf_end;
 
   if(cm->enf_seq == NULL || cm->enf_start == 0)
@@ -722,7 +750,6 @@ EnforceSubsequence(CM_t *cm)
   int v;
   int a;
   float nt[MAXABET];		
-  int x;
 
   enf_end = cm->enf_start + strlen(cm->enf_seq) - 1;
   /*printf("in EnforceSubsequence, start posn: %d cm->enf_seq: %s\n", cm->enf_start, cm->enf_seq);*/
@@ -787,4 +814,49 @@ EnforceSubsequence(CM_t *cm)
   return 1;
 }
 
-
+/*******************************************************************************
+ * Function: EnforceFindEnfStart()
+ * Date:     EPN, Fri Feb  9 10:32:44 2007
+ * Purpose:  Determine the node cm->enf_start given the consensus column it 
+ *           models, and check that it's a MATL node (this requirement could 
+ *           be relaxed in the future).
+ * Returns:  (int) the CM MATL node index that emits to consensus column 
+ *           enf_cc_start. Dies if there's no such node.
+ */
+int  
+EnforceFindEnfStart(CM_t *cm, int enf_cc_start)
+{
+  CMEmitMap_t *emap;            /* consensus emit map for the CM */
+  int enf_start;                /* CM MATL node that emits to enf_cc_start */
+  int nd;                       /* counter over nodes */
+  
+  emap      = CreateEmitMap(cm); 
+  enf_start = -1;
+  if(enf_cc_start > emap->clen)
+    Die("ERROR --enfstart <n>, there's only %d columns, you chose column %d\n", 
+	enf_cc_start, emap->clen);
+  for(nd = 0; nd < cm->nodes; nd++)
+    {
+      if(emap->lpos[nd] == enf_cc_start) 
+	{
+	  if(cm->ndtype[nd] == MATL_nd)	      
+	    {
+	      enf_start = nd;
+	      break;
+	    }
+	  else if(cm->ndtype[nd] == MATP_nd)	      
+	    Die("ERROR --enfstart <n>, <n> must correspond to MATL modelled column\nbut %d is modelled by a MATP node.\n", enf_cc_start);
+	}
+      else if(emap->rpos[nd] == enf_cc_start)
+	{
+	  if(cm->ndtype[nd] == MATR_nd)	      
+	    Die("ERROR --enfstart <n>, <n> must correspond to MATL modelled column\nbut %d is modelled by a MATR node.\n", enf_cc_start);
+	  if(cm->ndtype[nd] == MATP_nd)	      
+	    Die("ERROR --enfstart <n>, <n> must correspond to MATL modelled column\nbut %d is modelled by the right half of a MATP node.\n", enf_cc_start);
+	}	      
+    }
+  if(enf_start == -1)
+    Die("ERROR trying to determine the start node for the enforced subsequence.\n");
+  FreeEmitMap(emap);
+  return(enf_start);
+}

@@ -77,6 +77,7 @@ static char experts[] = "\
    --negsc <f>   : set min bit score to report as <f> < 0 (experimental)\n\
    --enfstart <n>: enforce MATL stretch starting at consensus position <n>\n\
    --enfseq <s>  : enforce MATL stretch starting at --enfstart <n> emits seq <s>\n\
+   --enfnohmm    : do not filter first w/a HMM that only enforces <x> from --enfseq\n\
    --time        : print timings for histogram building, and full search\n\
    --matrix <s>  : with -R use matrix <s>, either full path or in $RNAMAT\n\
 \n\
@@ -136,6 +137,7 @@ static struct opt_s OPTIONS[] = {
   { "--partition",  FALSE, sqdARG_STRING},
   { "--enfstart",   FALSE, sqdARG_INT},
   { "--enfseq",     FALSE, sqdARG_STRING},
+  { "--enfnohmm",   FALSE, sqdARG_NONE},
   { "--time",       FALSE, sqdARG_NONE},
   { "--matrix",     FALSE, sqdARG_STRING}
 };
@@ -198,15 +200,26 @@ main(int argc, char **argv)
 				 * GC% of x [0..100]                        */
 
   /* The enforce option (--enfstart and --enfseq), added specifically for   *
-   * enforcing the template region for telomerase RNA searches              */
+   * enforcing the template region for telomerase RNA searches.             *
+   * Notes on current implementation:
+   * 1. requires consensus columns <x>..(<x>+len(<s>)-1) modelled by MATL_nds *
+   *    (<x> = --enfstart <x>, <s> = --enfseq <s>). This is a limitation      *
+   *    that could be relaxed in future implementations.                      * 
+   * 2. builds a CP9 HMM from the CM after enforcing the subseq, and          *
+   *    zeroes all emission scores except the match scores from nodes         *
+   *    that model the enforced subseq, this CP9 HMM is then used to          *
+   *    filter the DB, the DB bits that survive this filter should ALL        *
+   *    have the subseq, and all such bits should survive. This CP9 HMM       *
+   *    is NOT used to filter if --enfnohmm is enabled.                       *
+   * 3. if --local, the CM and CP9 HMM will be configured locally in a special*
+   *    way so that no local parse can bypass the enforced subseq. This is    *
+   *    probably unnecessary for the CP9 HMM due to 2., but it's still done.  */
+
   int   do_enforce;             /* TRUE to enforce a MATL stretch is used   */
+  int   do_enforce_hmm;         /* TRUE to filter with enforced HMM first   */
   int   enf_cc_start;           /* first consensus position to enforce      */
-  int   enf_start;              /* first MATL node to enforce each parse use*/
-  int   enf_end;                /* last  MATL node to enforce each parse use*/
   char *enf_seq;                /* the subsequence to enforce emitted by    *
-                                 * in nodes from enf_start to enf_end       */
-  CMEmitMap_t  *emap;           /* for finding the MATL nodes to enforce    */
-  int           nd;             /* counter over nodes                       */
+                                 * MATL nodes starting at cm->enf_start     */
   int           do_timings;     /* TRUE to print timings, FALSE not to      */
   Stopwatch_t  *watch;          /* times histogram building, search time    */
   
@@ -324,9 +337,8 @@ main(int argc, char **argv)
   do_partitions     = FALSE;
   num_samples       = 0;
   do_enforce        = FALSE;
+  do_enforce_hmm    = TRUE;  /* this is set to FALSE later if do_enforce is not enabled */
   enf_cc_start      = 0;
-  enf_start         = 0;
-  enf_end           = 0;
   enf_seq           = NULL;
   do_rsearch        = FALSE;
   do_timings        = FALSE;
@@ -363,8 +375,11 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--null2")     == 0) do_null2     = TRUE;
     else if  (strcmp(optname, "--learninserts")== 0) do_zero_inserts = FALSE;
     else if  (strcmp(optname, "--negsc")       == 0) sc_boost = -1. * atof(optarg);
-    else if  (strcmp(optname, "--enfstart")    == 0) { do_enforce = TRUE; enf_cc_start = atoi(optarg); }
-    else if  (strcmp(optname, "--enfseq")      == 0) { do_enforce = TRUE; enf_seq = optarg; } 
+    else if  (strcmp(optname, "--enfstart")    == 0) 
+      { do_enforce = TRUE; do_enforce_hmm = TRUE; enf_cc_start = atoi(optarg); }
+    else if  (strcmp(optname, "--enfseq")      == 0) 
+      { do_enforce = TRUE; do_enforce_hmm = TRUE; enf_seq = optarg; } 
+    else if  (strcmp(optname, "--enfnohmm")    == 0) do_enforce_hmm = FALSE;
     else if  (strcmp(optname, "--time")        == 0) do_timings   = TRUE;
     else if  (strcmp(optname, "--matrix")      == 0) 
       {
@@ -438,6 +453,10 @@ main(int argc, char **argv)
     Die("The -n option only makes sense with -E or --hmmE also.\n");
   if(do_enforce && enf_seq == NULL)
     Die("--enfstart only makes sense with --enfseq also.\n");
+  if((!do_enforce_hmm) && (!do_enforce))
+    Die("--enfnohmm only makes sense with --enfseq and --enfstart also.\n");
+  if(do_enforce && enf_cc_start == 0)
+    Die("--enfseq only makes sense with --enfstart (which can't be 0) also.\n");
   if(do_enforce && enf_cc_start == 0)
     Die("--enfseq only makes sense with --enfstart (which can't be 0) also.\n");
   if(do_qdb && do_hbanded) 
@@ -458,6 +477,8 @@ main(int argc, char **argv)
     Die("--window only works with --noqdb.\n");
   if(!do_rsearch && matrix_set)
     Die("--matrix doesn't make sense without -R.\n");
+  if(do_rsearch && do_enforce)
+    Die("--enf* options currently incompatible with -R.\n");
 #if USE_MPI
   if(read_qdb && ((mpi_num_procs > 1) && (mpi_my_rank == mpi_master_rank)))
     Die("Sorry, you can't read in bands with --qdbfile in MPI mode.\n");
@@ -495,7 +516,8 @@ main(int argc, char **argv)
    ************************************************/
   if(do_timings)
     watch = StopwatchCreate();
-  
+  if(!do_enforce) 
+    do_enforce_hmm = FALSE;
   if(!do_rsearch)
     {
       if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
@@ -567,7 +589,8 @@ main(int argc, char **argv)
   
   /* If do_enforce set do_hmm_rescan to TRUE if we're filtering or scanning with an HMM,
    * this way only subseqs that include the enf_subseq should pass the filter */
-  if(do_enforce && (do_hmmfb || do_hmmweinberg || do_hmmonly))
+  if((do_enforce && do_enforce_hmm) || 
+     (do_enforce && (do_hmmfb || do_hmmweinberg || do_hmmonly)))
     do_hmmrescan = TRUE;
 
   /* Update cm->config_opts and cm->search_opts based on command line options */
@@ -587,6 +610,27 @@ main(int argc, char **argv)
   if(do_cm_stats)     cm->search_opts |= CM_SEARCH_CMSTATS;
   if(do_cp9_stats)    cm->search_opts |= CM_SEARCH_CP9STATS;
 
+  if(do_enforce)
+    {
+      cm->config_opts |= CM_CONFIG_ENFORCE;
+      printf("ENF enabled CONFIG_ENFORCEHMM\n");
+      if(do_enforce_hmm) 
+	{
+	  /* This will be TRUE by default if(do_enforce).
+	   * Unless --hmmonly or --hmmfb enabled, act like --hmmweinberg was 
+	   * enabled, to filter with the special enforced CP9 HMM.  */
+	  cm->config_opts |= CM_CONFIG_ENFORCEHMM;
+	  printf("ENF enabled CONFIG_ENFORCEHMM\n");
+	  if((!do_hmmonly) && (!do_hmmfb))
+	    {
+	      do_hmmweinberg = TRUE;
+	      cm->search_opts |= CM_SEARCH_HMMWEINBERG;
+	      printf("ENF enabled HMMWEINBERG\n");
+	    }
+	}
+      cm->enf_start    = EnforceFindEnfStart(cm, enf_cc_start); 
+      cm->enf_seq      = enf_seq;
+    }
 
   if(do_rsearch) 
     {
@@ -604,42 +648,6 @@ main(int argc, char **argv)
       cm->search_opts &= ~CM_SEARCH_HMMRESCAN;
       cm->search_opts &= ~CM_SEARCH_CP9STATS;
       cm->flags       |= CM_IS_RSEARCH;
-    }
-  if(do_enforce)
-    {
-      /* determine which CM node emits to consensus column: enf_cc_start */
-      emap      = CreateEmitMap(cm); 
-      enf_start = -1;
-      if(enf_cc_start > emap->clen)
-	Die("ERROR --enfstart <n>, there's only %d columns, you chose column %d\n", 
-	    enf_cc_start, emap->clen);
-      for(nd = 0; nd < cm->nodes; nd++)
-	{
-	  if(emap->lpos[nd] == enf_cc_start) 
-	    {
-	      if(cm->ndtype[nd] == MATL_nd)	      
-		{
-		  enf_start = nd;
-		  break;
-		}
-	      else if(cm->ndtype[nd] == MATP_nd)	      
-		Die("ERROR --enfstart <n>, <n> must correspond to MATL modelled column\nbut %d is modelled by a MATP node.\n", enf_cc_start);
-	    }
-	  else if(emap->rpos[nd] == enf_cc_start)
-	    {
-	      if(cm->ndtype[nd] == MATR_nd)	      
-		Die("ERROR --enfstart <n>, <n> must correspond to MATL modelled column\nbut %d is modelled by a MATR node.\n", enf_cc_start);
-	      if(cm->ndtype[nd] == MATP_nd)	      
-		Die("ERROR --enfstart <n>, <n> must correspond to MATL modelled column\nbut %d is modelled by the right half of a MATP node.\n", enf_cc_start);
-	    }	      
-	}
-      if(enf_start == -1)
-	Die("ERROR trying to determine the start node for the enforced subsequence.\n");
-      FreeEmitMap(emap);
-
-      cm->config_opts |= CM_CONFIG_ENFORCE;
-      cm->enf_start    = enf_start; 
-      cm->enf_seq      = enf_seq;
     }
 
   if(do_qdb) cm->config_opts |= CM_CONFIG_QDB;

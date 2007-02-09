@@ -299,9 +299,10 @@ typedef struct cm_s {
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL        (1<<0)  /* configure the model for local alignment  */
 #define CM_CONFIG_ENFORCE      (1<<1)  /* enforce a subseq be incl. in each parse  */
-#define CM_CONFIG_ELSILENT     (1<<2)  /* disallow EL state emissions              */
-#define CM_CONFIG_ZEROINSERTS  (1<<3)  /* make all insert emissions equiprobable   */
-#define CM_CONFIG_QDB          (1<<4)  /* calculate query dependent bands          */
+#define CM_CONFIG_ENFORCEHMM   (1<<2)  /* build CP9 HMM to only enforce subseq     */
+#define CM_CONFIG_ELSILENT     (1<<3)  /* disallow EL state emissions              */
+#define CM_CONFIG_ZEROINSERTS  (1<<4)  /* make all insert emissions equiprobable   */
+#define CM_CONFIG_QDB          (1<<5)  /* calculate query dependent bands          */
 
 /* alignment options, cm->align_opts */
 #define CM_ALIGN_NOSMALL       (1<<0)  /* DO NOT use small CYK D&C                 */

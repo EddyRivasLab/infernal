@@ -169,8 +169,8 @@ CP9ForwardScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **r
 			       dmx[prv][k] + cm->cp9->tsc[CTDI][k]);
 	  imx[cur][k] += cm->cp9->isc[(int) dsq[j]][k];
 	  /*printf("mmx[jp:%d][%d]: %d\n", jp, k, mmx[cur][k]);
-	    printf("imx[jp:%d][%d]: %d\n", jp, k, imx[cur][k]);
-	    printf("dmx[jp:%d][%d]: %d\n", jp, k, dmx[cur][k]);*/
+	  printf("imx[jp:%d][%d]: %d\n", jp, k, imx[cur][k]);
+	  printf("dmx[jp:%d][%d]: %d\n", jp, k, dmx[cur][k]);*/
 	}
       /* determine isc, the int score of all possible parses ending at the current
        * position (j) of the target sequence. */
@@ -181,6 +181,7 @@ CP9ForwardScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **r
       isc[jp] = ILogsum(isc[jp], imx[cur][cm->cp9->M] + cm->cp9->tsc[CTIM][cm->cp9->M]); 
       /* transition from D_M -> end */
       fsc = Scorify(isc[jp]);
+      /*printf("jp: %d fsc: %f\n", jp, fsc);*/
 
       if(fsc > best_negsc) 
 	best_negsc = fsc;

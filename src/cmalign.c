@@ -181,10 +181,8 @@ main(int argc, char **argv)
    * enforcing the template region for telomerase RNA searches              */
   int   do_enforce;             /* TRUE to enforce a MATL stretch is used   */
   int   enf_cc_start;           /* first consensus position to enforce      */
-  int   enf_start;              /* first MATL node to enforce each parse use*/
-  int   enf_end;                /* last  MATL node to enforce each parse use*/
   char *enf_seq;                /* the subsequence to enforce emitted by    *
-                                 * in nodes from enf_start to enf_end       */
+                                 * MATL nodes starting at cm->enf_start     */
   CMEmitMap_t  *emap;           /* for finding the MATL nodes to enforce    */
   int           nd;             /* counter over nodes                       */
 
@@ -247,8 +245,6 @@ main(int argc, char **argv)
   do_zero_inserts=FALSE;
   do_enforce   = FALSE;
   enf_cc_start = 0;
-  enf_start    = 0;
-  enf_end      = 0;
   enf_seq      = NULL;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
@@ -363,39 +359,9 @@ main(int argc, char **argv)
   if(do_hsafe)        cm->align_opts  |= CM_ALIGN_HMMSAFE;
   if(do_enforce)
     {
-      /* determine which CM node emits to consensus column: enf_cc_start */
-      emap      = CreateEmitMap(cm); 
-      enf_start = -1;
-      if(enf_cc_start > emap->clen)
-	Die("ERROR --enfstart <n>, there's only %d columns, you chose column %d\n", 
-	    enf_cc_start, emap->clen);
-      for(nd = 0; nd < cm->nodes; nd++)
-	{
-	  if(emap->lpos[nd] == enf_cc_start) 
-	    {
-	      if(cm->ndtype[nd] == MATL_nd)	      
-		{
-		  enf_start = nd;
-		  break;
-		}
-	      else if(cm->ndtype[nd] == MATP_nd)	      
-		Die("ERROR --enfstart <n>, <n> must correspond to MATL modelled column\nbut %d is modelled by a MATP node.\n", enf_cc_start);
-	    }
-	  else if(emap->rpos[nd] == enf_cc_start)
-	    {
-	      if(cm->ndtype[nd] == MATR_nd)	      
-		Die("ERROR --enfstart <n>, <n> must correspond to MATL modelled column\nbut %d is modelled by a MATR node.\n", enf_cc_start);
-	      if(cm->ndtype[nd] == MATP_nd)	      
-		Die("ERROR --enfstart <n>, <n> must correspond to MATL modelled column\nbut %d is modelled by the right half of a MATP node.\n", enf_cc_start);
-	    }	      
-	}
-      if(enf_start == -1)
-	Die("ERROR trying to determine the start node for the enforced subsequence.\n");
-      FreeEmitMap(emap);
-
       cm->config_opts |= CM_CONFIG_ENFORCE;
-      cm->enf_start = enf_start; 
-      cm->enf_seq   = enf_seq;
+      cm->enf_start    = EnforceFindEnfStart(cm, enf_cc_start); 
+      cm->enf_seq      = enf_seq;
     }
   if(do_qdb)          
     { 

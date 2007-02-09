@@ -626,26 +626,24 @@ CPlan9SWConfig(struct cplan9_s *hmm, float pentry, float pexit)
 
   /* No special (*x* states in Plan 7) states in CM Plan 9 */
 
+  /*for (k = 1; k <= hmm->M; k++)
+    printf("before anything: end[%d]: %f\n", k, hmm->end[k]);*/
   /* Configure entry.
    */
-  for (k = 1; k <= hmm->M; k++)
-    hmm->begin[k] = 2. * (float) (hmm->M-k+1) / (float) hmm->M / (float) (hmm->M+1);
-
   hmm->begin[1] = (1. - pentry) * (1. - (hmm->t[0][CTMI] + hmm->t[0][CTMD]));
   FSet(hmm->begin+2, hmm->M-1, (pentry * (1.- (hmm->t[0][CTMI] + hmm->t[0][CTMD]))) / (float)(hmm->M-1));
   
   /* Configure exit.
-   * hmm->end[hmm->M] = 1. - hmm->t[hmm->M][XTMI] 
-   *
-   * hmm->t[hmm->M][CTIM] is M_I->E transition
-   * hmm->t[hmm->M][CTDM] is M_D->E transition
-   * and we don't want to ignore these.
+   * Don't touch hmm->end[hmm->M]
    */
 
   basep = pexit / (float) (hmm->M-1);
   for (k = 1; k < hmm->M; k++)
     hmm->end[k] = basep / (1. - basep * (float) (k-1));
   CPlan9RenormalizeExits(hmm, 1);
+  /*for (k = 1; k <= hmm->M; k++)
+    printf("after renormalizing: end[%d]: %f\n", k, hmm->end[k]);*/
+
   hmm->flags       &= ~CPLAN9_HASBITS; /* reconfig invalidates log-odds scores */
 }
 
@@ -684,6 +682,61 @@ CPlan9GlobalConfig(struct cplan9_s *hmm)
   hmm->flags       &= ~CPLAN9_HASBITS; /* reconfig invalidates log-odds scores */
 }
 
+
+/* Function: CPlan9SWConfigEnforce()
+ * EPN, Fri Feb  9 05:47:37 2007
+ * based on SRE's Plan7SWConfig() from HMMER's plan7.c
+ * 
+ * Purpose:  Set the alignment independent parameters of
+ *           a CM Plan 9 model to hmmsw (Smith/Waterman) configuration.
+ *           Same as CPlan9SWConfig but enforces a contiguous subset of
+ *           nodes start at x, ending at y must be entered by forbidding
+ *           local entries after x and local exits before y.
+ *           
+ * Args:     hmm    - the CM Plan 9 model w/ data-dep prob's valid
+ *           pentry - probability of an internal entry somewhere;
+ *                    will be evenly distributed over (enf_start) 
+ *                    match states
+ *           pexit  - probability of an internal exit somewhere; 
+ *                    will be distributed over (M-enf_end) match 
+ *                    states.
+ *           enf_start_pos - HMM node where enforced node subset begins         
+ *           enf_end_pos   - HMM node where enforced node subset ends
+ * Return:   (void)
+ *           HMM probabilities are modified.
+ */
+void
+CPlan9SWConfigEnforce(struct cplan9_s *hmm, float pentry, float pexit,
+		      int enf_start_pos, int enf_end_pos)
+{
+  float basep;			/* p1 for exits: the base p */
+  int   k;			/* counter over states      */
+
+  /* No special (*x* states in Plan 7) states in CM Plan 9 */
+
+  /* Configure entry.
+   */
+  hmm->begin[1] = (1. - pentry) * (1. - (hmm->t[0][CTMI] + hmm->t[0][CTMD]));
+  for (k = 2; k <= enf_start_pos; k++)
+    hmm->begin[k] = (pentry * (1.- (hmm->t[0][CTMI] + hmm->t[0][CTMD]))) / (float)(enf_start_pos-1);
+  for (k = (enf_start_pos+1); k <= hmm->M; k++)
+    hmm->begin[k] = 0.;
+    
+  /* Configure exit.
+   * Don't touch hmm->end[hmm->M]
+   */
+  if(enf_end_pos == hmm->M) /* no local exit possible */
+    basep = 0.0;
+  else
+    basep = pexit / (float) (hmm->M-enf_end_pos);
+
+  for (k = 0; k < enf_end_pos; k++)
+    hmm->end[k] = 0.;
+  for (k = enf_end_pos; k < hmm->M; k++)
+    hmm->end[k] = basep / (1. - basep * (float) ((k-enf_end_pos)-1));
+  CPlan9RenormalizeExits(hmm, 1);
+  hmm->flags       &= ~CPLAN9_HASBITS; /* reconfig invalidates log-odds scores */
+}
 
 /* Function: CPlan9RenormalizeExits()
  * EPN 05.30.06 based on SRE's Plan7RenormalizeExits() from
@@ -1176,6 +1229,49 @@ DegenerateSymbolScore(float *p, float *null, int ambig)
   return (int) (INTSCALE * numer / denom);
 }
 
+/* Function:  CP9HackInsertScores()
+ * Incept:    EPN, Fri Feb  9 10:59:12 2007
+ *
+ * Purpose:   Make all inserts 0. Usually called from CMHackInsertScores()
+ *            to make the HMM inserts match the CM inserts.
+ *
+ * Args:      cp9 - the CP9 HMM 
+ *
+ * Returns:   (void)
+ */
+void
+CP9HackInsertScores(CP9_t *cp9)
+{
+  int k, x;
+  for (k = 0; k <= cp9->M; k++)
+    /* CP9 HMMs have insert states in nodes 0 and M */
+    for (x = 0; x < MAXDEGEN; x++)
+      cp9->isc[x][k] = 0.;
+}
+/* Function:  CP9EnforceHackMatchScores()
+ * Incept:    EPN, Fri Feb  9 11:06:31 2007
+ *
+ * Purpose:   Make all match emissions 0, except those enforce
+ *            a specified subsequence (it's assumed the CP9 
+ *            is already set up for this enforcement). 
+ *
+ * Args:      cp9           - the CP9 HMM 
+ *            enf_start_pos - first posn of enforced subseq
+ *            enf_end_pos   - last  posn of enforced subseq
+ * Returns:   (void)
+ */
+void
+CP9EnforceHackMatchScores(CP9_t *cp9, int enf_start_pos, int enf_end_pos)
+{
+  int k, x;
+  for (k = 1; k < enf_start_pos; k++) /* M_0 is the begin state, it's silent */
+    for (x = 0; x < MAXDEGEN; x++)
+      cp9->msc[x][k] = 0.;
+  for (k = enf_end_pos+1; k <= cp9->M; k++)
+    for (x = 0; x < MAXDEGEN; x++)
+      cp9->msc[x][k] = 0.;
+}
+
 /* Following functions for CPlan9 HMMs were deprecated 01.04.07,
  * we never use these aspects of a CP9 HMM.
  */
@@ -1275,3 +1371,4 @@ CPlan9SetCtime(struct cplan9_s *hmm)
   StringChop(hmm->ctime);
 }
 #endif
+
