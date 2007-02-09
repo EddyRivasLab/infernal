@@ -17,8 +17,8 @@ CFLAGS = @CFLAGS@
 #  DEFS contains stuff that autoconf decides on. 
 #  LIBS contains system libraries that the configure script decides we need.
 #
-#DEFS  = @DEFS@
-MDEFS = @MDEFS@ @DEFS@ -DMATRIX_DIR=\"$(DATADIR)/infernal/matrices\"
+DEFS  = @DEFS@ -DMATRIX_DIR=\"$(DATADIR)/infernal/matrices\"
+#MDEFS = @MDEFS@ @DEFS@ -DMATRIX_DIR=\"$(DATADIR)/infernal/matrices\"
 LIBS  = @LIBS@ 
 
 ## archiving command, and ranlib command if you need one.
@@ -79,7 +79,7 @@ HDRS  = funcs.h\
 	mpifuncs.h
 
 .c.o: 
-	$(CC) $(CFLAGS) $(MDEFS) $(MYINCDIR) -c $<
+	$(CC) $(CFLAGS) $(DEFS) $(MYINCDIR) -c $<
 
 #################################################################
 ## Targets defining how to make INFERNAL executables.
@@ -87,7 +87,7 @@ HDRS  = funcs.h\
 all: 	$(PROGS)
 
 $(PROGS): @EXEC_DEPENDENCY@ $(OBJS) ${HDRS}
-	$(CC) $(CFLAGS) $(MDEFS) $(MYLIBDIR) -o $@ $@.o $(OBJS) $(MYLIBS) $(LIBS)
+	$(CC) $(CFLAGS) $(DEFS) $(MYLIBDIR) -o $@ $@.o $(OBJS) $(MYLIBS) $(LIBS)
 
 #################################################################
 ## Targets used in making INFERNAL module for testsuite compilation.

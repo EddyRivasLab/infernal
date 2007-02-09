@@ -433,8 +433,10 @@ main(int argc, char **argv)
     }
   }
 
-  if(in_mpi && mpi_num_procs > 1)
+#if USE_MPI
+  if(mpi_num_procs > 1)
     do_timings = FALSE; /* we don't do per node timings, but we do do master node timings */
+#endif
   
   /* Check for incompatible option combos. (It's likely this is not exhaustive) */
   if(do_cp9_stats && 
@@ -950,8 +952,8 @@ main(int argc, char **argv)
   in_mpi = 0;
   if (mpi_my_rank == mpi_master_rank) 
     {
-#endif
       StopwatchFree(mpi_watch);
+#endif
       printf ("Fin\n");
 #ifdef USE_MPI
     }
