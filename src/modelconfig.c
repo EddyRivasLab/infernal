@@ -84,7 +84,8 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
   if((cm->align_opts & CM_ALIGN_HBANDED)                                     ||
      ((cm->align_opts & CM_ALIGN_HMMONLY)  || (cm->search_opts & CM_SEARCH_HMMONLY)) ||
      ((cm->align_opts & CM_ALIGN_SUB)      || (cm->align_opts  & CM_ALIGN_FSUB))     ||
-     ((cm->search_opts & CM_SEARCH_HMMFB)  || (cm->search_opts & CM_SEARCH_HMMWEINBERG)))
+     ((cm->search_opts & CM_SEARCH_HMMFB)  || (cm->search_opts & CM_SEARCH_HMMWEINBERG)) ||
+     (cm->config_opts & CM_CONFIG_ENFORCEHMM))
     do_build_cp9 = TRUE;
 
   /* If nec, build the CP9 */
@@ -147,17 +148,6 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
 	  enf_end_pos   = emap->lpos[enf_end];
 	  FreeEmitMap(emap);
 	  CPlan9SWConfigEnforce(cm->cp9, 0.5, 0.5, enf_start_pos, enf_end_pos);
-	  if(cm->config_opts & CM_CONFIG_ENFORCEHMM)
-	    {
-	      /* We make the HMM ignorant of any sequence conservation besides
-	       * the enforced subseq. This way all subseqs with the enforced
-	       * subseq will be recognized as high scoring by the HMM and 
-	       * be passed to the CM (if filtering (which is default in this mode)).
-	       * To achieve this, make all emissions (match and insert) score 0,
-	       * except for the few fmatch emissions that model the enforced subseq */
-	      CP9HackInsertScores(cm->cp9);
-	      CP9EnforceHackMatchScores(cm->cp9, enf_start_pos, enf_end_pos);
-	    }	
 	}  
       else
 	CPlan9SWConfig(cm->cp9, swentry, swexit);
@@ -217,6 +207,25 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
   if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
       CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
 				     * makes all CP9 (if non-null) inserts equiprobable*/
+  if(cm->config_opts & CM_CONFIG_ENFORCEHMM)
+    {
+      if(!(cm->flags & CM_CP9))
+	Die("ERROR trying to configure the HMM for naive enforcement, but the cm's CM_CP9 flag is down.\n");
+      /* We make the HMM ignorant of any sequence conservation besides
+       * the enforced subseq. This way all subseqs with the enforced
+       * subseq will be recognized as high scoring by the HMM and 
+       * be passed to the CM (if filtering (which is default in this mode)).
+       * To achieve this, make all emissions (match and insert) score 0,
+       * except for the few fmatch emissions that model the enforced subseq */
+      emap = CreateEmitMap(cm); 
+      enf_end = cm->enf_start + strlen(cm->enf_seq) - 1;
+      enf_start_pos = emap->lpos[cm->enf_start];
+      enf_end_pos   = emap->lpos[enf_end];
+      FreeEmitMap(emap);
+      CP9HackInsertScores(cm->cp9);
+      CP9EnforceHackMatchScores(cm->cp9, enf_start_pos, enf_end_pos);
+    }	
+
   return; 
 
   /* TO DO, set up a SUB CM and/or FULL SUB */

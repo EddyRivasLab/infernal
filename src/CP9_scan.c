@@ -49,12 +49,14 @@
  *           ret_nhits - RETURN: number of hits above cutoff saved.
  *           ret_hitj  - RETURN: end positions of hits, 0..ret_nhits-1
  *           results   - scan_results_t to add to; if NULL, don't keep results
+ *           doing_rescan - TRUE if we've called this function recursively, and we don't
+ *                          want to again
  *
  * Returns:  best_sc, score of maximally scoring end position j 
  */
 float
 CP9ForwardScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_isc, 
-	       int **ret_hitj, int *ret_nhits, scan_results_t *results)
+	       int **ret_hitj, int *ret_nhits, scan_results_t *results, int doing_rescan)
 {
   int          j;           /*     actual   position in the subsequence                     */
   int          jp;          /* j': relative position in the subsequence                     */
@@ -222,39 +224,42 @@ CP9ForwardScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **r
 	  best_sc = savesc[jp];
 	if(savesc[jp] >= cutoff)
 	{
-	  if(results != NULL) /* report the hit */
+	  accept = TRUE;
+	  /* Potentially rescan just the subseq that is the hit we're about to report.
+	   * Implemented to deal with fact that --enfseq option was enforcing the subseq
+	   * to have hit pass filter b/c this Forward scanning function is 'infinite' length
+	   * (Weinberg). Sometimes the subseq we're about to report has a really
+	   * crappy score, even though the cumulative Forward score (starting at i0) is good. */
+	  if(cm->search_opts & CM_SEARCH_HMMRESCAN && doing_rescan == FALSE)
 	    {
-	      accept = TRUE;
-	      /* Potentially rescan just the subseq that is the hit we're about to report.
-	       * Implemented to deal with fact that --enfseq option was enforcing the subseq
-	       * to have hit pass filter b/c this Forward scanning function is 'infinite' length
-	       * (coined by Weinberg). Sometimes the subseq we're about to report has a really
-	       * crappy score, even though the cumulative Forward score (starting at i0) is good. */
-	      if(cm->search_opts & CM_SEARCH_HMMRESCAN)
-		{
-		  /*printf("rechecking hit from %d to %d\n", gback[jp], j);*/
-		  temp_sc = CP9ForwardScan(cm, dsq, gback[jp], j, cm->W, cutoff, NULL, NULL, NULL, NULL);
-		  /*printf("new score: %f old score %f\n", temp_sc, savesc[jp]);*/
-		  if(temp_sc >= cutoff) 
-		    { 
-		      accept = TRUE; 
-		      printf("rechecked hit from %d to %d\n", gback[jp], j);
-		      printf("new score: %f old score %f\n", temp_sc, savesc[jp]);
-		      printf("cm->enf_seq: %s\n", cm->enf_seq);
-		    }
-		  else accept = FALSE;
-		  savesc[jp] = temp_sc;
+	      /*printf("rechecking hit from %d to %d\n", gback[jp], j);*/
+	      temp_sc = CP9ForwardScan(cm, dsq, gback[jp], j, cm->W, cutoff, NULL, NULL, NULL, NULL,
+				       TRUE); /* set the doing_rescan arg to TRUE, 
+						 so we don't potentially infinitely recurse */
+	      /*printf("new score: %f old score %f\n", temp_sc, savesc[jp]);*/
+	      if(temp_sc >= cutoff) 
+		{ 
+		  accept = TRUE; 
+		  /*printf("rechecked hit from %d to %d\n", gback[jp], j);
+		    printf("new score: %f old score %f\n", temp_sc, savesc[jp]);*/
 		}
-	      if(accept)
-		report_hit(gback[jp], j, -1, savesc[jp], results); 
-	      /* -1 is for saver, which is irrelevant for HMM hits */
+	      else accept = FALSE;
+	      savesc[jp] = temp_sc;
 	    }
-	  hitj[nhits] = j;
-	  nhits++;
-	  if (nhits == alloc_nhits) 
+	  if(accept)
 	    {
-	      alloc_nhits += 10;
-	      hitj = ReallocOrDie(hitj,  sizeof(int)   * (alloc_nhits));
+	      if(results != NULL) /* report the hit */
+		{
+		  report_hit(gback[jp], j, 0, savesc[jp], results); 
+		  /* 0 is for saver, which is irrelevant for HMM hits */
+		}
+	      hitj[nhits] = j;
+	      nhits++;
+	      if (nhits == alloc_nhits) 
+		{
+		  alloc_nhits += 10;
+		  hitj = ReallocOrDie(hitj,  sizeof(int)   * (alloc_nhits));
+		}
 	    }
 	}
 	j = gback[jp]-1;
@@ -336,7 +341,7 @@ CP9FilteredScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
   /*printf("in CP9FilteredScan(), i0: %d j0: %d\n", i0, j0);
     printf("cp9_cutoff: %f\n", cp9_cutoff);*/
   /* Scan the (sub)seq w/Forward, getting j end points of hits above cutoff */
-  best_hmm_sc = CP9ForwardScan(cm, dsq, i0, j0, W, cp9_cutoff, NULL, &hitj, &nhits, NULL);
+  best_hmm_sc = CP9ForwardScan(cm, dsq, i0, j0, W, cp9_cutoff, NULL, &hitj, &nhits, NULL, FALSE);
   /* Send promising subseqs to actually_search_target(): send subseq [j-W..j..j+W] 
    * for each hit endpoint j returned from CP9ForwardScan, or if there's overlap, send 
    * minimal subseq that encompasses all overlapping hits with W residue 'pad' on 
@@ -354,11 +359,11 @@ CP9FilteredScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
 	  next_i0 = ((next_j0 - (2*W)) >= 1) ? (next_j0 - (2*W)) : 1;
 	}
       else next_i0 = next_j0 = -1;
-      /*printf("hit: %d j: %d j-W: %d j+W: %d\n", h, hitj[h], (hitj[h]-W), (hitj[h]+W));*/
+      printf("hit: %d j: %d j-W: %d j+W: %d\n", h, hitj[h], (hitj[h]-W), (hitj[h]+W));
       while(curr_i0 <= next_j0)
 	{
 	  h++;
-	  /*printf("\tsucked in hit: %d i0: %d j0: %d\n", h, curr_i0, curr_j0);*/
+	  printf("\tsucked in hit: %d i0: %d j0: %d\n", h, curr_i0, curr_j0);
 	  curr_i0 = next_i0;
 	  if(h != nhits)
 	    {	

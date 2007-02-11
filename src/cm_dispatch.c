@@ -448,7 +448,7 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
   
   /* check for CP9 related (either filtering or HMMONLY) options first */
   if((cm->search_opts & CM_SEARCH_HMMONLY) || doing_cp9_stats)
-    sc = CP9ForwardScan(cm, dsq, i0, j0, cm->W, cp9_cutoff, NULL, NULL, NULL, results);
+    sc = CP9ForwardScan(cm, dsq, i0, j0, cm->W, cp9_cutoff, NULL, NULL, NULL, results, FALSE);
   else if(do_filter && (cm->search_opts & CM_SEARCH_HMMWEINBERG) 
 	  && (!doing_cm_stats)) /* if we're doing CM stats, don't filter. */
     sc = CP9FilteredScan(cm, dsq, i0, j0, cm->W, cm_cutoff, cp9_cutoff, results, ret_flen);

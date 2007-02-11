@@ -220,7 +220,7 @@ main(int argc, char **argv)
   int   enf_cc_start;           /* first consensus position to enforce      */
   char *enf_seq;                /* the subsequence to enforce emitted by    *
                                  * MATL nodes starting at cm->enf_start     */
-  int           do_timings;     /* TRUE to print timings, FALSE not to      */
+  int           do_timings =FALSE;/* TRUE to print timings, FALSE not to      */
   Stopwatch_t  *watch;          /* times histogram building, search time    */
   
   /* HMMERNAL!: hmm banded alignment data structures */
@@ -518,7 +518,7 @@ main(int argc, char **argv)
    ************************************************/
   if(do_timings)
     watch = StopwatchCreate();
-  if(!do_enforce) 
+  if(!do_enforce || do_hmmonly) 
     do_enforce_hmm = FALSE;
   if(!do_rsearch)
     {
@@ -593,8 +593,7 @@ main(int argc, char **argv)
    * this way only subseqs that include the enf_subseq should pass the filter */
   if((do_enforce && do_enforce_hmm) || 
      (do_enforce && (do_hmmfb || do_hmmweinberg || do_hmmonly)))
-    do_hmmrescan = TRUE;
-
+    {  do_hmmrescan = TRUE; } 
   /* Update cm->config_opts and cm->search_opts based on command line options */
   if(do_local)        cm->config_opts |= CM_CONFIG_LOCAL;
   if(do_zero_inserts) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
@@ -615,19 +614,17 @@ main(int argc, char **argv)
   if(do_enforce)
     {
       cm->config_opts |= CM_CONFIG_ENFORCE;
-      printf("ENF enabled CONFIG_ENFORCEHMM\n");
       if(do_enforce_hmm) 
 	{
-	  /* This will be TRUE by default if(do_enforce).
-	   * Unless --hmmonly or --hmmfb enabled, act like --hmmweinberg was 
+	  /* This will be TRUE by default if(do_enforce). Off if --hmmonly
+	   * was also enabled.
+	   * Unless --hmmfb enabled, act like --hmmweinberg was 
 	   * enabled, to filter with the special enforced CP9 HMM.  */
 	  cm->config_opts |= CM_CONFIG_ENFORCEHMM;
-	  printf("ENF enabled CONFIG_ENFORCEHMM\n");
 	  if((!do_hmmonly) && (!do_hmmfb))
 	    {
 	      do_hmmweinberg = TRUE;
 	      cm->search_opts |= CM_SEARCH_HMMWEINBERG;
-	      printf("ENF enabled HMMWEINBERG\n");
 	    }
 	}
       cm->enf_start    = EnforceFindEnfStart(cm, enf_cc_start); 
