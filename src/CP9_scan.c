@@ -349,25 +349,29 @@ CP9FilteredScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
    */
   best_cm_sc = IMPOSSIBLE;
   flen = 0;
+  curr_i0 = curr_j0 = next_i0 = next_j0 = -1;
+  if(nhits >= 1)
+    {
+      curr_j0 = ((hitj[0] + W) <= j0)    ? (hitj[0] + W)     : j0;
+      curr_i0 = ((curr_j0 - (2*W)) >= 1) ? (curr_j0 - (2*W)) : 1;
+    }
   for(h = 0; h <= nhits-1; h++) 
     {
-      curr_j0 = ((hitj[h] + W) <= j0)    ? (hitj[h] + W)     : j0;
-      curr_i0 = ((curr_j0 - (2*W)) >= 1) ? (curr_j0 - (2*W)) : 1;
       if((h+1) != nhits)
 	{	
 	  next_j0 = ((hitj[h+1] + W) <= j0)    ? (hitj[h+1] + W)     : j0;
-	  next_i0 = ((next_j0 - (2*W)) >= 1) ? (next_j0 - (2*W)) : 1;
+	  next_i0 = ((next_j0 - (2*W)) >= 1)   ? (next_j0 - (2*W))   : 1;
 	}
       else next_i0 = next_j0 = -1;
-      printf("hit: %d j: %d j-W: %d j+W: %d\n", h, hitj[h], (hitj[h]-W), (hitj[h]+W));
+      /*printf("hit: %d j: %d j-W: %d j+W: %d\n", h, hitj[h], (hitj[h]-W), (hitj[h]+W));*/
       while(curr_i0 <= next_j0)
 	{
 	  h++;
-	  printf("\tsucked in hit: %d i0: %d j0: %d\n", h, curr_i0, curr_j0);
+	  /*printf("\tsucked in hit: %d i0: %d j0: %d\n", h, next_i0, next_j0);*/
 	  curr_i0 = next_i0;
 	  if(h != nhits)
 	    {	
-	      next_j0 = ((hitj[h] + W) <= j0)    ? (hitj[h] + W)     : j0;
+	      next_j0 = ((hitj[h+1] + W) <= j0)    ? (hitj[h+1] + W)     : j0;
 	      next_i0 = ((next_j0 - (2*W)) >= 1) ? (next_j0 - (2*W)) : 1;
 	    }
 	  else next_i0 = next_j0 = -1;
@@ -382,6 +386,8 @@ CP9FilteredScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
 			       NULL);   /* filter fraction N/A                          */
       flen += (curr_j0 - curr_i0 + 1);
       if(cm_sc > best_cm_sc) best_cm_sc = cm_sc;
+      curr_i0 = next_i0;
+      curr_j0 = next_j0;
     }
 
   free(hitj);

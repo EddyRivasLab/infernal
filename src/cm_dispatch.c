@@ -96,6 +96,7 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons)
     {
       for (reversed = 0; reversed <= do_revcomp; reversed++) 
 	{
+	  /*printf("SEARCHING >%s %d\n", dbseq->sq[reversed]->name, reversed);*/
 	  /* Scan */
 	  dbseq->results[reversed] = CreateResults(INIT_RESULTS);
 	  actually_search_target(cm, dbseq->sq[reversed]->dsq, 1, dbseq->sq[reversed]->n, 
@@ -397,8 +398,8 @@ db_seq_t *read_next_seq (ESL_SQFILE *dbfp, int do_revcomp)
       tmp_seq = MallocOrDie(sizeof(char) * (ret_dbseq->sq[0]->n+1));
       revcomp(tmp_seq, ret_dbseq->sq[0]->seq);
       ret_dbseq->sq[1] = esl_sq_CreateFrom(ret_dbseq->sq[0]->name, tmp_seq, 
-					ret_dbseq->sq[0]->desc, ret_dbseq->sq[0]->acc, 
-					ret_dbseq->sq[0]->ss);
+					   ret_dbseq->sq[0]->desc, ret_dbseq->sq[0]->acc, 
+					   ret_dbseq->sq[0]->ss);
       free(tmp_seq);
       /* Following line will be unnecessary once ESL_SQ objects have dsq's implemented
        * (i.e. allocated and filled within a esl_sq_CreateFrom() call */
@@ -438,9 +439,10 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
 			     int doing_cm_stats, int doing_cp9_stats, int *ret_flen)
 {
   float sc;
+  int flen;
 
   /*printf("in actually_search_target: i0: %d j0: %d do_filter: %d doing_cm_stats: %d doing_cp9_stats: %d\n", i0, j0, do_filter, doing_cm_stats, doing_cp9_stats);*/
-  int flen;
+  /*printf("\ti0: %d j0: %d filter: %d\n", i0, j0, do_filter);*/
   flen = (j0-i0+1);
 
   if(doing_cm_stats && doing_cp9_stats)
