@@ -331,7 +331,7 @@ CP9FilteredScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
   int *hitj;
   int  nhits;
   int h;
-  int curr_i0, curr_j0, next_i0, next_j0;
+  int i, j;
   float best_hmm_sc;
   float best_cm_sc;
   float cm_sc;
@@ -349,45 +349,29 @@ CP9FilteredScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
    */
   best_cm_sc = IMPOSSIBLE;
   flen = 0;
-  curr_i0 = curr_j0 = next_i0 = next_j0 = -1;
-  if(nhits >= 1)
-    {
-      curr_j0 = ((hitj[0] + W) <= j0)    ? (hitj[0] + W)     : j0;
-      curr_i0 = ((curr_j0 - (2*W)) >= 1) ? (curr_j0 - (2*W)) : 1;
-    }
+  /* hits are always sorted by decreasing j */
   for(h = 0; h <= nhits-1; h++) 
     {
-      if((h+1) != nhits)
-	{	
-	  next_j0 = ((hitj[h+1] + W) <= j0)    ? (hitj[h+1] + W)     : j0;
-	  next_i0 = ((next_j0 - (2*W)) >= 1)   ? (next_j0 - (2*W))   : 1;
-	}
-      else next_i0 = next_j0 = -1;
-      /*printf("hit: %d j: %d j-W: %d j+W: %d\n", h, hitj[h], (hitj[h]-W), (hitj[h]+W));*/
-      while(curr_i0 <= next_j0)
-	{
-	  h++;
-	  /*printf("\tsucked in hit: %d i0: %d j0: %d\n", h, next_i0, next_j0);*/
-	  curr_i0 = next_i0;
-	  if(h != nhits)
-	    {	
-	      next_j0 = ((hitj[h+1] + W) <= j0)    ? (hitj[h+1] + W)     : j0;
-	      next_i0 = ((next_j0 - (2*W)) >= 1) ? (next_j0 - (2*W)) : 1;
-	    }
-	  else next_i0 = next_j0 = -1;
-	}
-      /*printf("calling actually_search_target: %d %d\n", curr_i0, curr_j0);*/
+      j = ((hitj[h] + W) <= j0) ? (hitj[h] + W) : j0;
+      i = ((j - (2*W)) >= 1)    ? (j - (2*W))   : 1;
+      /*printf("subseq: hit %d j: %d i: %d j: %d\n", h, hitj[h], i, j);*/
+      while(((h+1) < nhits) && ((hitj[(h+1)]+W) >= i))
+      {
+	/* suck in hit */
+	h++;
+	i = ((hitj[h]-W) >= 1) ? (hitj[h]-W) : 1;
+	/*printf("\tsucked in subseq: hit %d new_i: %d j (still): %d\n", h, i, j);*/
+      }
+      /*printf("calling actually_search_target: %d %d h: %d nhits: %d\n", i, j, h, nhits);*/
       cm_sc =
-	actually_search_target(cm, dsq, curr_i0, curr_j0, cm_cutoff, cp9_cutoff,
+	actually_search_target(cm, dsq, i, j, cm_cutoff, cp9_cutoff,
 			       results, /* keep results                                 */
 			       FALSE,   /* don't filter, we already have                */
 			       FALSE,   /* we're not building a histogram for CM stats  */
 			       FALSE,   /* we're not building a histogram for CP9 stats */
 			       NULL);   /* filter fraction N/A                          */
-      flen += (curr_j0 - curr_i0 + 1);
+      flen += (j - i + 1);
       if(cm_sc > best_cm_sc) best_cm_sc = cm_sc;
-      curr_i0 = next_i0;
-      curr_j0 = next_j0;
     }
 
   free(hitj);

@@ -914,7 +914,9 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
   L = j0-i0+1;
   if (W > L) W = L; 
 
-  /*printf("in BandedCYKScan\n");*/
+  /*printf("in BandedCYKScan i0: %d j0: %d\n", i0, j0);*/
+  if(j0 < i0)
+    Die("in BandedCYKScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL)
     Die("in BandedCYKScan, dsq is NULL\n");
 
