@@ -125,19 +125,22 @@ extern void         FreeEmitMap(CMEmitMap_t *map);
 
 /* from modelconfig.c
  */
-extern void ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax);
-extern void ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit);
-extern void ConfigNoLocalEnds(CM_t *cm);
-extern void ConfigLocalEnds(CM_t *cm, float p_internal_exit);
-extern void ConfigLocal_fullsub(CM_t *cm, float p_internal_start, 
+extern void  ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax);
+extern void  ConfigCMEnforce(CM_t *cm);
+extern void  ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit);
+extern void  ConfigGlobal(CM_t *cm);
+extern void  ConfigNoLocalEnds(CM_t *cm);
+extern void  ConfigLocalEnds(CM_t *cm, float p_internal_exit);
+extern void  ConfigLocal_fullsub(CM_t *cm, float p_internal_start, 
 				float p_internal_exit, int sstruct_nd,
 				int estruct_nd);
-extern void ConfigLocal_DisallowELEmissions(CM_t *cm);
-extern void ConfigLocal_fullsub_post(CM_t *sub_cm, CM_t *orig_cm, CP9Map_t *orig_cp9map, CMSubMap_t *submap,
+extern void  ConfigLocal_DisallowELEmissions(CM_t *cm);
+extern void  ConfigLocal_fullsub_post(CM_t *sub_cm, CM_t *orig_cm, CP9Map_t *orig_cp9map, CMSubMap_t *submap,
 				     struct cp9_dpmatrix_s *post, int L);
-extern void ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_internal_exit);
-extern int  EnforceSubsequence(CM_t *cm);
-extern int  EnforceFindEnfStart(CM_t *cm, int enf_cc_start);
+extern void  ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_internal_exit);
+extern int   EnforceSubsequence(CM_t *cm);
+extern float EnforceScore(CM_t *cm);
+extern int   EnforceFindEnfStart(CM_t *cm, int enf_cc_start);
 
 /* from modelmaker.c
  */

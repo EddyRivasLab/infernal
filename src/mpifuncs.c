@@ -86,8 +86,7 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
   int position = 0;         /* Where I am in the buffer */
   int nstates, nnodes;
   int enf_len;
-  int i;
-  /*printf("entered aln_broadcast my: %d master: %d\n", mpi_my_rank, mpi_master_rank);*/
+  /*printf("entered broadcast_cm my: %d master: %d\n", mpi_my_rank, mpi_master_rank);*/
   
   position = 0;
   if (mpi_my_rank == mpi_master_rank) 
@@ -96,23 +95,24 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
       nnodes = (*cm)->nodes;
       
       /* Basics of the model */
-      MPI_Pack (&nstates,                  1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD); 
-      MPI_Pack (&nnodes,                   1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->flags),           1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->config_opts),     1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->align_opts),      1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->search_opts),     1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->el_selfsc),       1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->iel_selfsc),      1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->W),               1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->enf_start),       1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->sc_boost),     1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->cp9_sc_boost), 1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->ffract),          1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->cutoff_type),     1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->cutoff),          1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->cp9_cutoff_type), 1, MPI_INT,   buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->cp9_cutoff),      1, MPI_FLOAT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&nstates,                  1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD); 
+      MPI_Pack (&nnodes,                   1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->flags),           1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->config_opts),     1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->align_opts),      1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->search_opts),     1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->el_selfsc),       1, MPI_FLOAT,  buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->iel_selfsc),      1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->W),               1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->enf_start),       1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->enf_scdiff),      1, MPI_FLOAT,  buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->sc_boost),        1, MPI_FLOAT,  buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->cp9_sc_boost),    1, MPI_FLOAT,  buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->ffract),          1, MPI_FLOAT,  buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->cutoff_type),     1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->cutoff),          1, MPI_FLOAT,  buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->cp9_cutoff_type), 1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->cp9_cutoff),      1, MPI_FLOAT,  buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (&((*cm)->beta),            1, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (&((*cm)->tau),             1, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
 
@@ -140,6 +140,7 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->iel_selfsc),      1, MPI_INT,   MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->W),               1, MPI_INT,   MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->enf_start),       1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->enf_scdiff),      1, MPI_FLOAT, MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->sc_boost),        1, MPI_FLOAT, MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cp9_sc_boost),    1, MPI_FLOAT, MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->ffract),          1, MPI_FLOAT, MPI_COMM_WORLD);

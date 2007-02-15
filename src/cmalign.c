@@ -411,6 +411,8 @@ main(int argc, char **argv)
       /* Configure the CM for alignment based on cm->config_opts and cm->align_opts.
        * set local mode, make cp9 HMM, calculate QD bands etc. */
       ConfigCM(cm, NULL, NULL);
+      if(cm->config_opts & CM_CONFIG_ENFORCE) ConfigCMEnforce(cm);
+
       parallel_align_targets(seqfp, cm, &sq, &tr, &postcode, &nseq,
 			     bdump_level, debug_level, be_quiet,
 			     mpi_my_rank, mpi_master_rank, mpi_num_procs);
@@ -422,6 +424,8 @@ main(int argc, char **argv)
       /* Configure the CM for alignment based on cm->config_opts and cm->align_opts.
        * set local mode, make cp9 HMM, calculate QD bands etc. */
       ConfigCM(cm, NULL, NULL);
+      if(cm->config_opts & CM_CONFIG_ENFORCE) ConfigCMEnforce(cm);
+      debug_print_cm_params(cm);
       serial_align_targets(seqfp, cm, &sq, &tr, &postcode, &nseq, bdump_level, debug_level, 
 			   be_quiet);
     }

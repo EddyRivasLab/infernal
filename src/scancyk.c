@@ -109,10 +109,11 @@ void sort_results (scan_results_t *results) {
  * Non-overlap algorithm is now done in the scanning routine by Sean's
  * Semi-HMM code.  I've just kept the hit report structure for convenience.
  */
-void report_hit (int i, int j, int bestr, float score, scan_results_t *results) {
-  if (results->num_results == results->num_allocated) {
+void report_hit (int i, int j, int bestr, float score, scan_results_t *results) 
+{
+  if (results->num_results == results->num_allocated) 
     ExpandResults (results, INIT_RESULTS);
-  }
+
   results->data[results->num_results].score = score;
   results->data[results->num_results].start = i;
   results->data[results->num_results].stop = j;

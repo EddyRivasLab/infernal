@@ -276,7 +276,7 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 	    enf_vec[i] = 0.;
 	  FNorm(enf_vec, (sample_length - strlen(cm->enf_seq) + 1));
 	  }*/
-      
+      }
       /* Set up arrays to hold pointers to active seqs and jobs on
 	 processes */
       randseqs = MallocOrDie(sizeof(db_seq_t *) * mpi_num_procs);
@@ -420,7 +420,6 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
       }
       free(cur_gc_freqs);
       free(h);
-      }
     }
   else 
     {

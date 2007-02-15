@@ -102,13 +102,15 @@ CreateCMShell(void)
   cm->cp9map = NULL;
   cm->enf_start   = 0;
   cm->enf_seq     = NULL;
-  cm->sc_boost = 0.;
+  cm->enf_scdiff  = 0.;
+  cm->sc_boost    = 0.;
   cm->ffract      = 0.;
   cm->cutoff_type = DEFAULT_CM_CUTOFF_TYPE; /* score cutoff */
   cm->cutoff      = DEFAULT_CM_CUTOFF;      /* 0.0 bits */
   cm->cp9_cutoff_type = DEFAULT_CP9_CUTOFF_TYPE; /* score cutoff */
   cm->cp9_cutoff      = DEFAULT_CP9_CUTOFF;      /* 0.0 bits */
   cm->cp9_sc_boost = 0.;
+  cm->root_trans = NULL;
 
   /* initialize statically allocated EVD stats to 0.'s */
   int i;

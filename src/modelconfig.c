@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include "structs.h"
+#include "easel.h"
 #include "funcs.h"
 
 /*
@@ -26,6 +27,8 @@
  * Args:     CM           - the covariance model
  *           preset_dmin  - supplied dmin values, NULL if none
  *           preset_dmax  - supplied dmax values, NULL if none
+ *
+ * Returns:   <eslOK> on success.
  */
 void
 ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
@@ -36,24 +39,20 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
   int do_calc_qdb   = FALSE;
   int do_preset_qdb = FALSE;
   int do_build_cp9  = FALSE;
-  int enf_start_pos;            /* consensus left position node enf_start emits to */
-  int enf_end_pos;              /* consensus left position node enf_end   emits to */
-  int enf_end;                  /* last node we're enforcing                       */
-  CMEmitMap_t *emap;            /* consensus emit map for the CM, used iff enforcing */
   int v;
   int i;
-
+  
+  /* Contract checks */
+  if((cm->config_opts & CM_CONFIG_ELSILENT) && (!(cm->config_opts & CM_CONFIG_LOCAL)))
+    Die("ERROR in ConfigCM() trying to non-local CM to silence EL\n");
+  if((cm->search_opts & CM_SEARCH_HMMSCANBANDS) && 
+     ((!(cm->search_opts & CM_SEARCH_HMMFB)) && (!(cm->search_opts & CM_SEARCH_HMMWEINBERG))))
+    Die("ERROR in ConfigCM() trying to search with HMM derived bands, but w/o using a  HMM filter.");
+    
   /* TEMPORARILY: we don't do anything (no QDB, no CP9s, no CMLogoddisfy() calls etc.) 
    * if in RSEARCH mode */
   if(cm->flags & CM_IS_RSEARCH) return;
-
-  /* Check for incompatible cm->*_opts */
-  if((cm->config_opts & CM_CONFIG_ELSILENT) && (!(cm->config_opts & CM_CONFIG_LOCAL)))
-    Die("ERROR trying to configure non-local CM to silence EL, this doesn't make sense.\n");
-  if((cm->search_opts & CM_SEARCH_HMMSCANBANDS) && 
-     ((!(cm->search_opts & CM_SEARCH_HMMFB)) && (!(cm->search_opts & CM_SEARCH_HMMWEINBERG))))
-    Die("ERROR trying to search with HMM derived bands, but not an HMM filter, this doesn't make sense.\n");
-     
+  
   /* If we're not doing stats set the EVD stats to defaults (0.0) */
   if(!(cm->search_opts & CM_SEARCH_CMSTATS))
     {
@@ -68,11 +67,6 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
       cm->flags &= ~CM_CP9STATS; /* make sure the CP9 stats ready flag is down. */
     }
 
-  /* The enforce option, added specifically for enforcing the template region of
-   * telomerase RNA */
-  if(cm->config_opts & CM_CONFIG_ENFORCE)
-    EnforceSubsequence(cm);
-
   /* Check if we need to calculate QDBs and/or build a CP9 HMM. */
   if(cm->config_opts & CM_CONFIG_QDB)
   {
@@ -84,35 +78,23 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
   if((cm->align_opts & CM_ALIGN_HBANDED)                                     ||
      ((cm->align_opts & CM_ALIGN_HMMONLY)  || (cm->search_opts & CM_SEARCH_HMMONLY)) ||
      ((cm->align_opts & CM_ALIGN_SUB)      || (cm->align_opts  & CM_ALIGN_FSUB))     ||
-     ((cm->search_opts & CM_SEARCH_HMMFB)  || (cm->search_opts & CM_SEARCH_HMMWEINBERG)) ||
-     (cm->config_opts & CM_CONFIG_ENFORCEHMM))
+     ((cm->search_opts & CM_SEARCH_HMMFB)  || (cm->search_opts & CM_SEARCH_HMMWEINBERG)))
     do_build_cp9 = TRUE;
-
+  
   /* If nec, build the CP9 */
   if(do_build_cp9)
     {
       /* IMPORTANT: do this before setting up CM for local mode
        *            eventually, we'll do it after, but we can't build local CP9s yet. */
-      if(!(cm->config_opts & CM_CONFIG_ENFORCE))
-	{
-	  if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))
-	    Die("Couldn't build a CP9 HMM from the CM\n");
-	}
-      else /* we're enforcing a subseq, let's check the CP9 (note FALSE becomes TRUE) */
-	{
-	  if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), TRUE, 0.0001, 0))
-	    Die("Couldn't build a CP9 HMM from the CM\n");
-	}
+      if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))
+	Die("Couldn't build a CP9 HMM from the CM\n");
       cm->flags |= CM_CP9; /* raise the CP9 flag */
     }
   
   /* Configure the CM for local alignment. */
   if (cm->config_opts & CM_CONFIG_LOCAL)
     { 
-      if(cm->config_opts & CM_CONFIG_ENFORCE)
-	ConfigLocalEnforce(cm, 0.5, 0.5);
-      else
-	ConfigLocal(cm, 0.5, 0.5);
+      ConfigLocal(cm, 0.5, 0.5);
       CMLogoddsify(cm);
       
       if(cm->config_opts & CM_CONFIG_ELSILENT)
@@ -138,20 +120,7 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
 	  swentry= ((cm->cp9->M)-1.)/cm->cp9->M; /* all start pts equiprobable, including 1 */
 	  swexit = ((cm->cp9->M)-1.)/cm->cp9->M; /* all end   pts equiprobable, including M */
 	}
-      if(cm->config_opts & CM_CONFIG_ENFORCE)
-	{
-	  /* Set up the CP9 locality to enforce a subseq, we don't want local parses
-	   * to skip the enforced subseq */
-	  emap = CreateEmitMap(cm); 
-	  enf_end = cm->enf_start + strlen(cm->enf_seq) - 1;
-	  enf_start_pos = emap->lpos[cm->enf_start];
-	  enf_end_pos   = emap->lpos[enf_end];
-	  FreeEmitMap(emap);
-	  CPlan9SWConfigEnforce(cm->cp9, 0.5, 0.5, enf_start_pos, enf_end_pos);
-	}  
-      else
-	CPlan9SWConfig(cm->cp9, swentry, swexit);
-
+      CPlan9SWConfig(cm->cp9, swentry, swexit);
       CP9Logoddsify(cm->cp9);
     }
   
@@ -166,14 +135,6 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
 	  free(cm->dmin);
 	  free(cm->dmax);
 	  safe_windowlen *= 2;
-	}
-      /* If we're enforcing a subsequence, we need to reenforce it b/c BandCalculationEngine() 
-       * changes the local end probabilities */
-      if((cm->config_opts & CM_CONFIG_ENFORCE) &&
-	 (cm->config_opts & CM_CONFIG_LOCAL))	 
-	{
-	  ConfigLocalEnforce(cm, 0.5, 0.5);
-	  CMLogoddsify(cm);
 	}
       /* Set W as dmax[0], we're wasting time otherwise, looking at
        * hits that are bigger than we're allowing with QDB. */
@@ -207,16 +168,120 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
   if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
       CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
 				     * makes all CP9 (if non-null) inserts equiprobable*/
+  return;
+
+  /* TO DO, set up a SUB CM */
+  /* if(cm->flags & CM_IS_SUB)
+   * do something
+   */
+}
+
+/*
+ * Function: ConfigCMEnforce
+ * Date:     EPN, Wed Feb 14 12:57:21 2007
+ * Purpose:  Configure a CM for enforcing a subsequence for search or 
+ *           alignment. 
+ * 
+ * Args:     CM           - the covariance model
+ */
+void
+ConfigCMEnforce(CM_t *cm)
+{
+  int do_build_cp9  = FALSE;
+  int enf_start_pos;            /* consensus left position node enf_start emits to   */
+  int enf_end_pos;              /* consensus left position node enf_end   emits to   */
+  int enf_end;                  /* last node we're enforcing                         */
+  CMEmitMap_t *emap;            /* consensus emit map for the CM, used iff enforcing */
+  float nonenf_sc;              /* score of cm->enfseq we're about to enforce before *
+				 * we reparameterize the CM                          */
+  float enf_sc;                 /* score of cm->enfseq subseq after CM is            *
+				 * reparameterized to enforce it                     */
+
+  /* Contract checks */
+  if(!(cm->config_opts & CM_CONFIG_ENFORCE))
+    Die("ERROR in ConfigCMEnforce() trying to enforce a subsequence but CM_CONFIG_ENFORCE flag is down.");
+  if(cm->flags & CM_ENFORCED)
+    Die("ERROR in ConfigCMEnforce() trying to enforce a subsequence but CM_IS_ENFORCED flag is up.");
+  if(!(cm->config_opts & CM_CONFIG_ENFORCE))
+    Die("ERROR in ConfigCMEnforce() trying to enforce a subsequence but CM_CONFIG_ENFORCE flag is down.");     
+  /* Can't enforce in RSEARCH mode yet */  
+  if(cm->flags & CM_IS_RSEARCH)
+    Die("ERROR in ConfigCMEnforce() trying to enforce a subsequence in RSEARCH mode, not yet implemented.");
+  /* Can't enforce in sub mode */  
+  if(cm->align_opts & CM_ALIGN_SUB)
+    Die("ERROR in ConfigCMEnforce() can't enforce a subsequence in sub alignment mode.");
+
+  /* First, get the score of the enforced subseq for the non-enforced model */
+  nonenf_sc = EnforceScore(cm);
+
+  /* IMPORTANT: if CM has local begins, make it global, we'll relocalize 
+   * it later based on cm->config_opts, cm->search_opts, and/or cm->align_opts,
+   * we need to do this so we can build a CP9 (which can't be done with local CMs yet)*/
+  if(cm->flags & CM_LOCAL_BEGIN)
+    ConfigGlobal(cm);
+
+  /* Enforce the sequence */
+  EnforceSubsequence(cm);
+
+  /* if we have a CP9, free it, and build a new one, (this one will automatically
+   * have the subseq enforced b/c it's built from the reparam'ized CM) */
+  if(cm->flags & CM_CP9)
+    {
+      FreeCPlan9(cm->cp9);
+      cm->flags &= ~CM_CP9; /* drop the CP9 flag */
+      do_build_cp9 = TRUE;
+    }
+  else if (cm->config_opts & CM_CONFIG_ENFORCEHMM)
+    {
+      /* we didn't have a CP9 before, but we need one now */
+      do_build_cp9 = TRUE;
+    }
+  if(do_build_cp9)
+    {
+      if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), 
+			TRUE, /* b/c we're enforcing, check CP9 mirrors CM */
+			0.0001, 0))
+	Die("Couldn't build a CP9 HMM from the CM\n");
+      cm->flags |= CM_CP9; /* raise the CP9 flag */
+    }
+
+  /* Configure the CM for local alignment . */
+  if (cm->config_opts & CM_CONFIG_LOCAL)
+    { 
+      ConfigLocalEnforce(cm, 0.5, 0.5); /* even in local we require each parse 
+					 * go through the enforced subseq */
+      CMLogoddsify(cm);
+      if(cm->config_opts & CM_CONFIG_ELSILENT)
+	ConfigLocal_DisallowELEmissions(cm);
+    }
+  /* If in local mode w/CP9, configure the CP9 for local alignment,
+   * but not in a way that matches the CM locality (that's a TODO) */
+  if((cm->flags & CM_CP9) && (cm->config_opts & CM_CONFIG_LOCAL))
+    {
+      /* Set up the CP9 locality to enforce a subseq */
+      emap = CreateEmitMap(cm); 
+      enf_end = cm->enf_start + strlen(cm->enf_seq) - 1;
+      enf_start_pos = emap->lpos[cm->enf_start];
+      enf_end_pos   = emap->lpos[enf_end];
+      FreeEmitMap(emap);
+      CPlan9SWConfigEnforce(cm->cp9, 0.5, 0.5, enf_start_pos, enf_end_pos);
+      CP9Logoddsify(cm->cp9);
+    }
+     
+  if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
+    CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
+				     * makes all CP9 (if non-null) inserts equiprobable*/
+
   if(cm->config_opts & CM_CONFIG_ENFORCEHMM)
     {
       if(!(cm->flags & CM_CP9))
 	Die("ERROR trying to configure the HMM for naive enforcement, but the cm's CM_CP9 flag is down.\n");
       /* We make the HMM ignorant of any sequence conservation besides
-       * the enforced subseq. This way all subseqs with the enforced
+       * the enforced subseq. This way ALL subseqs with the enforced
        * subseq will be recognized as high scoring by the HMM and 
        * be passed to the CM (if filtering (which is default in this mode)).
        * To achieve this, make all emissions (match and insert) score 0,
-       * except for the few fmatch emissions that model the enforced subseq */
+       * except for the few match emissions that model the enforced subseq */
       emap = CreateEmitMap(cm); 
       enf_end = cm->enf_start + strlen(cm->enf_seq) - 1;
       enf_start_pos = emap->lpos[cm->enf_start];
@@ -226,12 +291,12 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
       CP9EnforceHackMatchScores(cm->cp9, enf_start_pos, enf_end_pos);
     }	
 
+  /* Determine the score of the enforced subseq for the enforced model */
+  enf_sc = EnforceScore(cm);
+  
+  cm->enf_scdiff = enf_sc - nonenf_sc;
+  cm->flags |= CM_ENFORCED; /* raise the enforced flag */
   return; 
-
-  /* TO DO, set up a SUB CM and/or FULL SUB */
-  /* if(cm->flags & CM_IS_SUB)
-   * do something
-   */
 }
 
 /*
@@ -276,9 +341,23 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
    * way out of node 0 is going to be local begin transitions
    * from the root v=0 directly to MATP_MP, MATR_MR, MATL_ML,
    * and BIF_B states.
+   *
+   * EPN, Wed Feb 14 13:56:02 2007: First we want to save
+   * the transition probs we're about to zero, so we can
+   * globalize this model later if we have to (IFF we're enforcing 
+   * a subseq (CM_CONFIG_ENFORCE), using a CP9 HMM in someway, 
+   * AND trying to get E-values. Eventually we should be able to 
+   * get rid of this. 
+   * Also, cm->root_trans is NULL prior to this, so 
+   * if we call ConfigGlobal() w/o executing this code,
+   * we'll die (with an EASEL contract exception).
    */
-  for (v = 0; v < cm->cnum[0]; v++)  cm->t[0][v] = 0.;
-
+  cm->root_trans = MallocOrDie(sizeof(float) * cm->cnum[0]);
+  for (v = 0; v < cm->cnum[0]; v++) 
+    {
+      cm->root_trans[v] = cm->t[0][v];
+      cm->t[0][v] = 0.;
+    }
   /* Node 1 gets prob 1-p_internal_start.
    */
   cm->begin[cm->nodemap[1]] = 1.-p_internal_start;
@@ -296,6 +375,47 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
    * Internal exit.
    *****************************************************************/
   ConfigLocalEnds(cm, p_internal_exit);
+
+  return;
+}
+
+/*
+ * Function: ConfigGlobal
+ * Purpose:  Configure a CM in local alignment mode to global
+ *           alignment mode.
+ *
+ * Args:     CM               - the covariance model
+ */        
+
+void
+ConfigGlobal(CM_t *cm)
+{
+  int v;			/* counter over states */
+
+  printf("in configGlobal\n");
+  /* Contract check: local begins MUST be active, if not then cm->root_trans (the 
+   * transition probs from state 0 before local configuration) will be NULL, 
+   * so we can't copy them back into cm->t[0], which is a problem. This is fragile. */
+  if(!(cm->flags & CM_LOCAL_BEGIN))
+    Die("ERROR in ConfigGlobal() trying to globally configure a CM that has no local begins.");
+
+  /*****************************************************************
+   * Make local begins impossible
+   *****************************************************************/
+  for (v = 0; v < cm->M; v++)  cm->begin[v] = 0.;
+  /* Now reset transitions out of ROOT_S to their initial state, 
+   * ConfigLocal() zeroes these guys, but they've been saved in 
+   * the CM data structure in (C
+   * in the CM data structure. */
+  for (v = 0; v < cm->cnum[0]; v++)  cm->t[0][v] = cm->root_trans[v];
+  
+  cm->flags &= ~CM_LOCAL_BEGIN; /* drop the local begin flag */
+  
+  /*****************************************************************
+   * Make local ends impossible
+   *****************************************************************/
+  ConfigNoLocalEnds(cm);
+  CMLogoddsify(cm);
 
   return;
 }
@@ -768,9 +888,9 @@ EnforceSubsequence(CM_t *cm)
 	Die("ERROR, trying to enforce a non-MATL stretch (node: %d not MATL).\n", nd);
     }
 
-  /* Go through each node and enforce the template by changing the emission and
-   * transition probabilities as appropriate. */
-  
+  /* Go through each node and enforce the template by changing the
+   * emission and transition probabilities as appropriate. */
+
   /* First deal with node before cm->enf_start, we want to ensure that cm->enf_start is
    * entered. We know cm->enf_start - 1 and cm->enf_start are both MATL nodes */
   nd = cm->enf_start - 1;
@@ -821,6 +941,77 @@ EnforceSubsequence(CM_t *cm)
     }
   printf("\n");*/
   return 1;
+}
+
+/*******************************************************************************
+ * Function: EnforceScore()
+ * Date:     EPN, Wed Feb 14 16:19:22 2007
+ * Purpose:  Determine the subparse score of aligning cm->enfseq to the MATL_ML 
+ *           states of consecutive MATL nodes starting at cm->enfstart. This
+ *           function can be called before and after enforcing the subseq 
+ *           via reparameterization of the relevant nodes, to determine the
+ *           score difference of cm->enfseq b/t the non-enforced and enforced
+ *           CMs.
+ */
+float
+EnforceScore(CM_t *cm)
+{
+  char *enf_dsq; /* the digitized version of cm->enf_seq */
+  int   enf_end; /* last node to be enforced */
+  int   nd;      /* node index  */
+  int   v;       /* state index */
+  int   i;       /* sequence position index */
+  float score;   /* score of subparse that starts in first MATL_ML of enforced stretch,
+		  * goes through each MATL_ML and emits the enforced residues (which
+		  * can be ambiguous). */
+
+  /* Contract check. */
+  if(!(cm->config_opts & CM_CONFIG_ENFORCE))
+    Die("ERROR in EnforceScore(), cm->config_opt CM_CONFIG_ENFORCE not raised.\n");
+
+  enf_end = cm->enf_start + strlen(cm->enf_seq) - 1;
+  /*printf("in EnforceScore(), start posn: %d cm->enf_seq: %s\n", cm->enf_start, cm->enf_seq);*/
+  for(nd = (cm->enf_start-1); nd <= enf_end; nd++)
+    {
+      if(cm->ndtype[nd] != MATL_nd)
+	Die("ERROR, trying to enforce a non-MATL stretch (node: %d not MATL).\n", nd);
+    }
+
+  /* Go through each node and determine the score of the subparse that
+   * goes through the nodes that are/will be enforced.  To start, we
+   * have to transit to MATL_ML of cm->enf_start from either MATL_ML
+   * of MATL_ML or MATL_IL of nd=cm->enf_start-1, but we don't know
+   * which.  Can't think of robust way of handling this, current
+   * strategy is to take the average of the two transition scores.
+   * (this is hacky, but should have small effect on cm->enf_scdiff).
+   */
+  nd = cm->enf_start - 1;
+  v  = cm->nodemap[nd];       /* MATL_ML*/
+  score =  (cm->tsc[v][1] + cm->tsc[v+2][1]) / 2;
+  printf("init v: %d ML->ML: %f IL->ML: %f avg: %f\n", v, cm->tsc[v][1], cm->tsc[(v+2)][1], score);
+
+  /* Now move on to the MATL nodes we're enforcing emits the cm->enf_seq */
+  enf_dsq = DigitizeSequence(cm->enf_seq, (strlen(cm->enf_seq)));
+
+  for(nd = cm->enf_start; nd <= enf_end; nd++) 
+    {
+      i = nd - cm->enf_start+1; /* enf_dsq goes 1..(strlen(cm->enf_seq)) 
+				 * bordered by sentinels */
+      /* Add score for the MATL_ML->MATL_ML transition, 
+       * unless we're the last node of the stretch */
+      v  = cm->nodemap[nd];       /* MATL_ML*/
+      if(nd < enf_end)
+	score += cm->tsc[v][1]; /* ML->ML */
+
+      /* Add score for the emission. Taking into account ambiguities. */
+      if (enf_dsq[i] < Alphabet_size)
+	score += cm->esc[v][(int) enf_dsq[i]];
+      else
+	score += DegenerateSingletScore(cm->esc[v], enf_dsq[i]);
+    }
+  printf("in EnforceScore() returning sc: %f\n", score);
+
+  return score;
 }
 
 /*******************************************************************************

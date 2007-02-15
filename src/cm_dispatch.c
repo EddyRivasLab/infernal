@@ -43,7 +43,7 @@ static void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 			   int do_complement, int do_stats, double *mu, 
 			   double *lambda) ;
 static int get_gc_comp(char *seq, int start, int stop);
-static void remove_hits_over_e_cutoff (scan_results_t *results, char *seq,
+static void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, char *seq,
 				       float cutoff, double *lambda, double *mu);
 static seqs_to_aln_t *read_next_aln_seqs(ESL_SQFILE *seqfp, int nseq, int index);
 
@@ -272,14 +272,14 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 		{
 		  if (cm->cutoff_type == E_CUTOFF)
 		    remove_hits_over_e_cutoff 
-		      (active_seqs[active_seq_index]->results[0],
+		      (cm, active_seqs[active_seq_index]->results[0],
 		       active_seqs[active_seq_index]->sq[0]->seq,
 		       cm->cutoff, cm->lambda, cm->mu);
 		  if (do_revcomp) 
 		    {
 		      if (cm->cutoff_type == E_CUTOFF)
 			remove_hits_over_e_cutoff 
-			  (active_seqs[active_seq_index]->results[1],
+			  (cm, active_seqs[active_seq_index]->results[1],
 			   active_seqs[active_seq_index]->sq[1]->seq,
 			   cm->cutoff, cm->lambda, cm->mu);
 		    }
@@ -482,7 +482,7 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
  *           dbseq               the database seq
  *           name                sequence name
  *           len                 length of the sequence
- *           in_revcomp       are we doing the minus strand
+ *           in_revcomp          are we doing the minus strand
  *           do_stats            should we calculate stats?
  *           mu, lambda          for statistics
  */
@@ -498,52 +498,70 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
   int in_revcomp;
   int header_printed = 0;
   int gc_comp;
+  float score_for_Eval; /* the score we'll determine the statistical signifance
+			 * of. This will be the bit score stored in
+			 * dbseq unless (cm->flags & CM_ENFORCED)
+			 * in which case we subtract cm->enf_scdiff first. */
 
   name = dbseq->sq[0]->name;
   len = dbseq->sq[0]->n;
 
-  for (in_revcomp = 0; in_revcomp <= do_complement; in_revcomp++) {
-    results = dbseq->results[in_revcomp];
-    if (results == NULL || results->num_results == 0) continue;
-
-    if (!header_printed) {
-      header_printed = 1;
-      printf (">%s\n\n", name);
+  for (in_revcomp = 0; in_revcomp <= do_complement; in_revcomp++) 
+    {
+      results = dbseq->results[in_revcomp];
+      if (results == NULL || results->num_results == 0) continue;
+      
+      if (!header_printed) 
+	{
+	  header_printed = 1;
+	  printf (">%s\n\n", name);
+	}
+      printf ("  %s strand results:\n\n", in_revcomp ? "Minus" : "Plus");
+      
+      for (i=0; i<results->num_results; i++) 
+	{
+	  gc_comp = get_gc_comp (dbseq->sq[in_revcomp]->seq, 
+				 results->data[i].start, results->data[i].stop);
+	  printf (" Query = %d - %d, Target = %d - %d\n", 
+		  cons->lpos[cm->ndidx[results->data[i].bestr]]+1,
+		  cons->rpos[cm->ndidx[results->data[i].bestr]]+1,
+		  coordinate(in_revcomp, results->data[i].start, len), 
+		  coordinate(in_revcomp, results->data[i].stop, len));
+	  if (do_stats) 
+	    {
+	      score_for_Eval = results->data[i].score;
+	      if(cm->flags & CM_ENFORCED)
+		{
+		  printf("\n\torig sc: %.3f", score_for_Eval);
+		  score_for_Eval -= cm->enf_scdiff;
+		  printf(" new sc: %.3f (diff: %.3f\n\n", score_for_Eval, cm->enf_scdiff);
+		}
+	      printf (" Score = %.2f, E = %.4g, P = %.4g, GC = %3d\n", results->data[i].score,
+		      RJK_ExtremeValueE(score_for_Eval, mu[gc_comp], 
+					lambda[gc_comp]),
+		      esl_gumbel_surv((double) score_for_Eval, mu[gc_comp], 
+				      lambda[gc_comp]), gc_comp);
+	      /*printf("  Mu[gc=%d]: %f, Lambda[gc=%d]: %f\n", gc_comp, mu[gc_comp], gc_comp,
+		lambda[gc_comp]);*/
+	      /*ExtremeValueP(results->data[i].score, mu[gc_comp], 
+		lambda[gc_comp]));*/
+	    } 
+	  else 
+	    {
+	      printf (" Score = %.2f, GC = %3d\n", results->data[i].score, gc_comp);
+	    }
+	  printf ("\n");
+	  if (results->data[i].tr != NULL) 
+	    {
+	      ali = CreateFancyAli (results->data[i].tr, cm, cons, 
+				    dbseq->sq[in_revcomp]->dsq +
+				    (results->data[i].start-1));
+	      PrintFancyAli(stdout, ali);
+	      FreeFancyAli(ali);
+	      printf ("\n");
+	    }
+	}
     }
-    printf ("  %s strand results:\n\n", in_revcomp ? "Minus" : "Plus");
-
-    for (i=0; i<results->num_results; i++) {
-      gc_comp = get_gc_comp (dbseq->sq[in_revcomp]->seq, 
-			     results->data[i].start, results->data[i].stop);
-      printf (" Query = %d - %d, Target = %d - %d\n", 
-	      cons->lpos[cm->ndidx[results->data[i].bestr]]+1,
-	      cons->rpos[cm->ndidx[results->data[i].bestr]]+1,
-	      coordinate(in_revcomp, results->data[i].start, len), 
-	      coordinate(in_revcomp, results->data[i].stop, len));
-      if (do_stats) {
-	printf (" Score = %.2f, E = %.4g, P = %.4g, GC = %3d\n", results->data[i].score,
-		RJK_ExtremeValueE(results->data[i].score, mu[gc_comp], 
-				  lambda[gc_comp]),
-		esl_gumbel_surv((double) results->data[i].score, mu[gc_comp], 
-				lambda[gc_comp]), gc_comp);
-	/*printf("  Mu[gc=%d]: %f, Lambda[gc=%d]: %f\n", gc_comp, mu[gc_comp], gc_comp,
-	  lambda[gc_comp]);*/
-	/*ExtremeValueP(results->data[i].score, mu[gc_comp], 
-	  lambda[gc_comp]));*/
-      } else {
-	printf (" Score = %.2f, GC = %3d\n", results->data[i].score, gc_comp);
-      }
-      printf ("\n");
-      if (results->data[i].tr != NULL) {
-	ali = CreateFancyAli (results->data[i].tr, cm, cons, 
-			      dbseq->sq[in_revcomp]->dsq +
-			      (results->data[i].start-1));
-	PrintFancyAli(stdout, ali);
-	FreeFancyAli(ali);
-	printf ("\n");
-      }
-    }
-  }
   fflush(stdout);
 }
 
@@ -580,35 +598,50 @@ int get_gc_comp(char *seq, int start, int stop) {
  *           a list of results, calculates GC content for each hit, 
  *           calculates E-value, and decides wheter to keep hit or not.
  */
-void remove_hits_over_e_cutoff (scan_results_t *results, char *seq,
+void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, char *seq,
 				float cutoff, double *lambda, double *mu) 
 {
   int gc_comp;
   int i, x;
   scan_result_node_t swap;
+  float score_for_Eval; /* the score we'll determine the statistical signifance
+			 * of. This will be the bit score stored in
+			 * dbseq unless (cm->flags & CM_ENFORCED)
+			 * in which case we subtract cm->enf_scdiff first. */
 
   if (results == NULL)
     return;
 
-  for (i=0; i<results->num_results; i++) {
-    gc_comp = get_gc_comp (seq, results->data[i].start, results->data[i].stop);
-    if (RJK_ExtremeValueE(results->data[i].score, 
-			  mu[gc_comp], lambda[gc_comp])> cutoff) {
-      results->data[i].start = -1;
+  for (i=0; i<results->num_results; i++) 
+    {
+      gc_comp = get_gc_comp (seq, results->data[i].start, results->data[i].stop);
+      score_for_Eval = results->data[i].score;
+      if(cm->flags & CM_ENFORCED)
+	{
+	  printf("\n\tRM orig sc: %.3f", score_for_Eval);
+	  score_for_Eval -= cm->enf_scdiff;
+	  printf(" new sc: %.3f (diff: %.3f\n\n", score_for_Eval, cm->enf_scdiff);
+	}
+      if (RJK_ExtremeValueE(score_for_Eval,
+			    mu[gc_comp], lambda[gc_comp]) > cutoff) 
+	{
+	  results->data[i].start = -1;
+	}
     }
-  }
-
-  for (x=0; x<results->num_results; x++) {
-    while (results->num_results > 0 && 
-	   results->data[results->num_results-1].start == -1)
-      results->num_results--;
-    if (x<results->num_results && results->data[x].start == -1) {
-      swap = results->data[x];
-      results->data[x] = results->data[results->num_results-1];
-      results->data[results->num_results-1] = swap;
-      results->num_results--;
+  
+  for (x=0; x<results->num_results; x++) 
+    {
+      while (results->num_results > 0 && 
+	     results->data[results->num_results-1].start == -1)
+	results->num_results--;
+      if (x<results->num_results && results->data[x].start == -1) 
+	{
+	  swap = results->data[x];
+	  results->data[x] = results->data[results->num_results-1];
+	  results->data[results->num_results-1] = swap;
+	  results->num_results--;
+	}
     }
-  }
   while (results->num_results > 0 &&
 	 results->data[results->num_results-1].start == -1)
     results->num_results--;

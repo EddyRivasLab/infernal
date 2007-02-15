@@ -690,10 +690,13 @@ main(int argc, char **argv)
    * calculate QD bands etc., preset_dmin and preset_dmax
    * are NULL unless --qdbfile, and you can't enable 
    * --qdbfile in MPI mode (we check for this and die if
-   * we're trying to above). */
+   * we're trying to above). This function no longer 
+   * enforces a subseq as of 02.14.07, ConfigCMEnforce()
+   * now does that, but later after we (potentially) 
+   * calculate stats */
+  CMLogoddsify(cm); /* temporary */
   ConfigCM(cm, preset_dmin, preset_dmax);
 
-  cons = CreateCMConsensus(cm, 3.0, 1.0); 
 #ifdef USE_MPI
   if(mpi_my_rank == mpi_master_rank)
     {
@@ -709,7 +712,7 @@ main(int argc, char **argv)
 #endif
 
   /**************************************************
-   * Make the histogram(s)
+   * Calculate EVD stats
    *************************************************/
   
 #ifdef USE_MPI
@@ -816,7 +819,7 @@ main(int argc, char **argv)
       {
 	for (i=0; i<GC_SEGMENTS; i++) 
 	  cm->mu[i] = log(cm->K[i]*N)/cm->lambda[i];
-	//debug_print_stats(partitions, num_partitions, cm->lambda, cm->mu);
+	debug_print_stats(partitions, num_partitions, cm->lambda, cm->mu);
       }    
     /* else they've been set to default 0.0s in ConfigCM() */
 
@@ -894,10 +897,20 @@ main(int argc, char **argv)
 	StopwatchZero(watch);
 	StopwatchStart(watch);
       }	  
-
+    
 #ifdef USE_MPI
     } /* Done with second master-only block */
-  
+#endif 
+
+  /* We have the EVD stats for the CM and/or CP9, now we 
+   * enforce the subsequence if necessary. This must be
+   * done by all nodes if in_mpi */
+  if(cm->config_opts & CM_CONFIG_ENFORCE)
+    ConfigCMEnforce(cm);
+
+  cons = CreateCMConsensus(cm, 3.0, 1.0); 
+
+#ifdef USE_MPI
   /* Second broadcast, send N, and the EVD stats if
    * we're doing CM stats and/or CP9 stats. */
   search_second_broadcast(&cm, &N, mpi_my_rank, mpi_master_rank);

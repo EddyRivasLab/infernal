@@ -259,10 +259,14 @@ typedef struct cm_s {
   CP9Map_t *cp9map;     /* the map from the Plan 9 HMM to the CM and vice versa               */
   int       enf_start;  /* if(cm->config_opts & CM_CONFIG_ENFORCE) the first posn to enforce, else 0 */
   char     *enf_seq;    /* if(cm->config_opts & CM_CONFIG_ENFORCE) the subseq to enforce, else NULL  */
+  float     enf_scdiff; /* if(cm->config_opts & CM_CONFIG_ENFORCE) the difference in scoring  *
+			 * cm->enfseq b/t the non-enforced & enforced CMs, this is subtracted *
+			 * from bit scores in cmsearch before assigned E-value stats which    *
+			 * are always calc'ed (histograms built) using non-enforced CMs/CP9s  */
   float     sc_boost;   /* value added to CYK bit scores during search (usually 0.)           */
   float cp9_sc_boost;   /* value added to Forward bit scores during CP9 search (usually 0.)   */
   float     ffract;     /* desired filter fraction (0.99 -> filter out 99% of db), default: 0.*/
-
+  float    *root_trans; /* transition probs from state 0, saved IFF zeroed in ConfigLocal()   */
   /* search cutoffs */
   int       cutoff_type;/* either SC_CUTOFF or E_CUTOFF                                       */
   float     cutoff;     /* min bit score or max E val to keep in a scan (depending on cutoff_type) */
@@ -295,6 +299,7 @@ typedef struct cm_s {
 #define CM_IS_SUB              (1<<5)  /* the CM is a sub CM                       */
 #define CM_IS_FSUB             (1<<6)  /* the CM is a fullsub CM                   */
 #define CM_IS_RSEARCH          (1<<7)  /* the CM was parameterized a la RSEARCH    */
+#define CM_ENFORCED            (1<<8)  /* CM is reparam'ized to enforce a subseq   */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL        (1<<0)  /* configure the model for local alignment  */
