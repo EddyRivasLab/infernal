@@ -295,7 +295,6 @@ typedef struct cm_s {
 #define CM_STATS               (1<<2)  /* EVD stats, mu, lambda, K are set         */
 #define CM_CP9                 (1<<3)  /* CP9 HMM is valid in cm->cp9              */
 #define CM_CP9STATS            (1<<4)  /* CP9 HMM has EVD stats                    */
-/* info on if the CM is a sub model or fullsub model */
 #define CM_IS_SUB              (1<<5)  /* the CM is a sub CM                       */
 #define CM_IS_FSUB             (1<<6)  /* the CM is a fullsub CM                   */
 #define CM_IS_RSEARCH          (1<<7)  /* the CM was parameterized a la RSEARCH    */

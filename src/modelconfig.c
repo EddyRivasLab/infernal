@@ -988,7 +988,7 @@ EnforceScore(CM_t *cm)
   nd = cm->enf_start - 1;
   v  = cm->nodemap[nd];       /* MATL_ML*/
   score =  (cm->tsc[v][1] + cm->tsc[v+2][1]) / 2;
-  printf("init v: %d ML->ML: %f IL->ML: %f avg: %f\n", v, cm->tsc[v][1], cm->tsc[(v+2)][1], score);
+  /*printf("init v: %d ML->ML: %f IL->ML: %f avg: %f\n", v, cm->tsc[v][1], cm->tsc[(v+2)][1], score);*/
 
   /* Now move on to the MATL nodes we're enforcing emits the cm->enf_seq */
   enf_dsq = DigitizeSequence(cm->enf_seq, (strlen(cm->enf_seq)));
@@ -1009,7 +1009,7 @@ EnforceScore(CM_t *cm)
       else
 	score += DegenerateSingletScore(cm->esc[v], enf_dsq[i]);
     }
-  printf("in EnforceScore() returning sc: %f\n", score);
+  /*printf("in EnforceScore() returning sc: %f\n", score);*/
 
   return score;
 }

@@ -106,6 +106,12 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons)
 				 FALSE, /* we're not building a histogram for CM stats  */
 				 FALSE, /* we're not building a histogram for CP9 stats */
 				 NULL); /* filter fraction, TEMPORARILY NULL            */
+
+	  if (cm->cutoff_type == E_CUTOFF) 
+	    remove_hits_over_e_cutoff (cm, dbseq->results[reversed],
+				       dbseq->sq[reversed]->seq,
+				       cm->cutoff, cm->lambda, cm->mu);
+
 	  /* Align results */
 	  if (do_align) 
 	    {
@@ -609,6 +615,7 @@ void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, char *seq,
 			 * dbseq unless (cm->flags & CM_ENFORCED)
 			 * in which case we subtract cm->enf_scdiff first. */
 
+  /*printf("in remove_hits_over_e_cutoff()\n");*/
   if (results == NULL)
     return;
 
@@ -618,15 +625,19 @@ void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, char *seq,
       score_for_Eval = results->data[i].score;
       if(cm->flags & CM_ENFORCED)
 	{
-	  printf("\n\tRM orig sc: %.3f", score_for_Eval);
+	  /*printf("\n\tRM orig sc: %.3f", score_for_Eval);*/
 	  score_for_Eval -= cm->enf_scdiff;
-	  printf(" new sc: %.3f (diff: %.3f\n\n", score_for_Eval, cm->enf_scdiff);
+	  /*printf(" new sc: %.3f (diff: %.3f\n", score_for_Eval, cm->enf_scdiff);*/
 	}
+      /*printf("score_for_Eval: %f \n", score_for_Eval);*/
       if (RJK_ExtremeValueE(score_for_Eval,
 			    mu[gc_comp], lambda[gc_comp]) > cutoff) 
 	{
 	  results->data[i].start = -1;
 	}
+      /*printf("Eval: %f, start: %d\n", RJK_ExtremeValueE(score_for_Eval,
+	mu[gc_comp], lambda[gc_comp]),
+	results->data[i].start);*/
     }
   
   for (x=0; x<results->num_results; x++) 

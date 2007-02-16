@@ -87,7 +87,7 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 	  if (partitions[i] == cur_partition) 
 	    {
 	      cur_gc_freq[i] = (float)gc_count[i];
-	      /*printf("cur_gc_freq[%d] set to %f\n", i, cur_gc_freq[i]);*/
+	      /*printf("cur_gc_freq(cur_partition:%d)[i:%d]: %f\n", cur_partition, i, cur_gc_freq[i]);*/
 	    } 
 	  else
 	    cur_gc_freq[i] = 0.;
@@ -95,36 +95,18 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 
       FNorm(cur_gc_freq, GC_SEGMENTS);
 
-      /* EXPERIMENTAL CODE: embed enforced subseq into each sample */
-      /*if(cm->config_opts & CM_CONFIG_ENFORCE)
-	{
-	  enf_vec = MallocOrDie(sizeof(float) * (sample_length - strlen(cm->enf_seq) + 1));
-	  for(i = 0; i < (sample_length - strlen(cm->enf_seq) + 1); i++)
-	    enf_vec[i] = 0.;
-	  FNorm(enf_vec, (sample_length - strlen(cm->enf_seq) + 1));
-	  }*/
-
       /* Take num_samples samples */
       for (i=0; i<num_samples; i++) 
 	{
 	  /* Get random GC content */
 	  gc_comp = 0.01*FChoose (cur_gc_freq, GC_SEGMENTS);
+	  /*printf("SH GC: %f part: %d randseq%d\n", gc_comp, cur_partition, i);*/
+
 	  nt_p[1] = nt_p[2] = 0.5*gc_comp;
 	  nt_p[0] = nt_p[3] = 0.5*(1. - gc_comp);
 	  
 	  /* Get random sequence */
 	  randseq = RandomSequence (Alphabet, nt_p, Alphabet_size, sample_length);
-	  
-	  /* EXPERIMENTAL CODE: embed enforced subseq into each sample */
-	  //if(cm->config_opts & CM_CONFIG_ENFORCE && (strstr(randseq, cm->enf_seq) == NULL)) 
-	  //{
-	      /* insert the sequence, but only if it's not already there. */
-	      /* pick a random position */
-	  //enf_start = FChoose (enf_vec, (sample_length - strlen(cm->enf_seq) + 1));
-	      /* insert the sequence */
-	  //for(x = cm->enf_start; x < (cm->enf_start + strlen(cm->enf_seq)); x++)
-	  //;//randseq[x] = cm->enf_seq[(x-cm->enf_start)];
-	  //}
 
 	  /* Digitize the sequence, parse it, and add to histogram */
 	  dsq = DigitizeSequence (randseq, sample_length);
@@ -145,6 +127,10 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 	  /* Add best score to histogram */
 	  /*if(!use_easel) AddToHistogram (h_old, score); */
 	  esl_histogram_Add(h, score);
+	  /*printf("\n\nSH RANDOMSEQ BIT SC: %f\n", score);
+	    printf(">randseq\n");
+	    printf("%s\n", randseq);*/
+
 	}
 
       /* Fit the histogram.  */
@@ -263,19 +249,13 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 	for (i=0; i<GC_SEGMENTS; i++) {
 	  if (partitions[i] == cur_partition) {
 	    cur_gc_freqs[cur_partition][i] = (float)gc_count[i];
+	    /*printf("cur_gc_freqs[cur_partition:%d][i:%d]: %f\n", cur_partition, i, cur_gc_freqs[cur_partition][i]);*/
 	  } else {
 	    cur_gc_freqs[cur_partition][i] = 0.;
 	  }
 	}
 	FNorm (cur_gc_freqs[cur_partition], GC_SEGMENTS);
-	/* EXPERIMENTAL CODE: embed enforced subseq into each sample */
-	/*if(cm->config_opts & CM_CONFIG_ENFORCE)
-	  {
-	  enf_vec = MallocOrDie(sizeof(float) * (sample_length - strlen(cm->enf_seq) + 1));
-	  for(i = 0; i < (sample_length - strlen(cm->enf_seq) + 1); i++)
-	    enf_vec[i] = 0.;
-	  FNorm(enf_vec, (sample_length - strlen(cm->enf_seq) + 1));
-	  }*/
+	/*printf("\n\n");*/
       }
       /* Set up arrays to hold pointers to active seqs and jobs on
 	 processes */
@@ -316,34 +296,16 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 		  gc_comp = 0.01*FChoose(cur_gc_freqs[cur_partition], GC_SEGMENTS);
 		  nt_p[1] = nt_p[2] = 0.5*gc_comp;
 		  nt_p[0] = nt_p[3] = 0.5*(1. - gc_comp);
-		  
+		  /*printf("PH GC: %f part: %d %s\n", gc_comp, cur_partition, tmp_name);*/
 		  randseqs[randseq_index]->sq[0] = 
 		    esl_sq_CreateFrom(tmp_name, 
 				      RandomSequence (Alphabet, nt_p, Alphabet_size, sample_length),
 				      NULL, NULL, NULL);
 		  
-		  /* EXPERIMENTAL CODE: embed enforced subseq into each sample */
-		  //if(cm->config_opts & CM_CONFIG_ENFORCE && (strstr(randseq, cm->enf_seq) == NULL)) 
-		  //{
-		  /* insert the sequence, but only if it's not already there. */
-		  /* pick a random position */
-		  //enf_start = FChoose (enf_vec, (sample_length - strlen(cm->enf_seq) + 1));
-		  /* insert the sequence */
-		  //for(x = cm->enf_start; x < (cm->enf_start + strlen(cm->enf_seq)); x++)
-		  //;//randseq[x] = cm->enf_seq[(x-cm->enf_start)];
-		  //}
-		  
 		  randseqs[randseq_index]->sq[0]->dsq = 
 		    DigitizeSequence(randseqs[randseq_index]->sq[0]->seq, 
 				     randseqs[randseq_index]->sq[0]->n);
-		  /*esl_sqio_Write(stdout, randseqs[randseq_index]->sq[0], eslSQFILE_FASTA);*/
-		  
-		  /*randseqs[randseq_index]->seq[0] = 
-		    randseqs[randseq_index]->dsq[0] = 
-		    DigitizeSequence (randseqs[randseq_index]->seq[0], 
-		    randseqs[randseq_index]->sqinfo.len);*/
-		  
-		  /*randseqs[randseq_index]->best_score = 0;*/
+
 		  randseqs[randseq_index]->best_score = IMPOSSIBLE;
 		  
 		  randseqs[randseq_index]->partition = cur_partition;
@@ -370,6 +332,10 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 	    /*AddToHistogram (h[randseqs[randseq_index]->partition], 
 	      randseqs[randseq_index]->best_score);*/
 	    esl_histogram_Add(h[randseqs[randseq_index]->partition], randseqs[randseq_index]->best_score);
+
+	    /*printf("\n\nPH RANDOMSEQ BIT SC: %f\n", randseqs[randseq_index]->best_score);
+	      printf(">randseq\n");
+	      printf("%s\n", randseqs[randseq_index]->sq[0]->seq);*/
 	    esl_sq_Destroy(randseqs[randseq_index]->sq[0]);
 	    free(randseqs[randseq_index]);
 	    randseqs[randseq_index] = NULL;
@@ -461,9 +427,11 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
  */
 char random_from_string (char *s) {
   int i;
-  do {
-    i = (int) ((float)(strlen(s)-1)*sre_random()/(RAND_MAX+1.0));
-  } while (i<0 || i>=strlen(s));
+  do 
+    {
+      /*i = (int) ((float)(strlen(s)-1)*sre_random()/(RAND_MAX+1.0));*/
+      i = (int) ((float)(strlen(s))*sre_random());
+    } while (i<0 || i>=strlen(s));
   return(s[i]);
 }
 
@@ -534,24 +502,58 @@ void GetDBInfo (ESL_SQFILE *sqfp, long *ret_N, int **ret_gc_ct)
   int               status;
   int               gc;
   char              c;
+  char              allN[100]; /* used to check if curr DB chunk is all N's, if it is,
+				* we don't count it towards the GC content info */
+  int               allN_flag; /* stays up if curr DB chunk is all Ns */
+  /*printf("in GetDBInfo\n");*/
+
   for (i=0; i<GC_SEGMENTS; i++)
     gc_ct[i] = 0;
+
+  for (j=0; j<100; j++)
+    allN[j] = 'N';
   
   sq = esl_sq_Create(); 
   while ((status = esl_sqio_Read(sqfp, sq)) == eslOK) 
     { 
       N += sq->n;
+      /*printf("new N: %d\n", N);*/
       for(i = 0; i < sq->n; i += 100)
 	{
 	  gc = 0;
-
+	  /*printf(">%d.raw\n", i);*/
+	  allN_flag = TRUE;
 	  for(j = 0; j < 100 && (j+i) < sq->n; j++)
 	    {
+	      if(allN_flag && sq->seq[(j+i)] != 'N')
+		allN_flag = FALSE;
+	      /*printf("%c", sq->seq[(j+i)]);*/
 	      c = resolve_degenerate(sq->seq[(j+i)]);
 	      if (c == 'G' || c == 'C') gc++;
 	    }
-	  if(j < 100) gc *= 100. / (float) j;
-	  if(j > 20)  gc_ct[(int) gc]++;
+	  /*printf("\n>%d.resolved\n", i);*/
+	  for(j = 0; j < 100 && (j+i) < sq->n; j++)
+	    {
+	      c = resolve_degenerate(sq->seq[(j+i)]);
+	      /*printf("%c", c);*/
+	    }
+	  /*printf("N: %d i: %d gc: %d\n", N, i, gc);*/
+	  /* scale gc for chunks < 100 nt */
+	  if(j < 100)
+	    {
+	      gc *= 100. / (float) j;
+	    }
+	  /*if(allN_flag)
+	    printf("allN_flag UP!\n");*/
+	  /* don't count GC content of chunks < 20 nt, very hacky;
+	   * don't count GC content of chunks that are all N, this
+	   * will be common in RepeatMasked genomes where poly-Ns could
+	   * skew the base composition stats of the genome */
+	  if(j > 20 && !allN_flag)
+	    {
+	      /*printf("j: %d i: %d N: %d adding 1 to gc_ct[%d]\n", j, i, N, ((int) gc));*/
+	      gc_ct[(int) gc]++;
+	    }
 	}
       esl_sq_Reuse(sq); 
     } 
