@@ -425,7 +425,6 @@ main(int argc, char **argv)
        * set local mode, make cp9 HMM, calculate QD bands etc. */
       ConfigCM(cm, NULL, NULL);
       if(cm->config_opts & CM_CONFIG_ENFORCE) ConfigCMEnforce(cm);
-      debug_print_cm_params(cm);
       serial_align_targets(seqfp, cm, &sq, &tr, &postcode, &nseq, bdump_level, debug_level, 
 			   be_quiet);
     }

@@ -392,7 +392,7 @@ ConfigGlobal(CM_t *cm)
 {
   int v;			/* counter over states */
 
-  printf("in configGlobal\n");
+  /*printf("in configGlobal\n");*/
   /* Contract check: local begins MUST be active, if not then cm->root_trans (the 
    * transition probs from state 0 before local configuration) will be NULL, 
    * so we can't copy them back into cm->t[0], which is a problem. This is fragile. */
