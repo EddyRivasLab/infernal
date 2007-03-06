@@ -32,6 +32,9 @@
 
 
 #include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+#include <ctype.h>
 
 #include "squid.h"		
 #include "msa.h"		/* multiple sequence alignments */

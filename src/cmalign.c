@@ -34,7 +34,7 @@
 static int in_mpi;
 
 static void include_alignment(char *seqfile, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr,
-			      char ***ret_postcode, int *ret_nseq);
+			      int *ret_nseq, int *ret_nnewseq);
 static int compare_cms(CM_t *cm1, CM_t *cm2);
 
 #ifdef USE_MPI
@@ -194,6 +194,8 @@ main(int argc, char **argv)
                                  * MATL nodes starting at cm->enf_start     */
 
   char  *withali;               /* name of additional aln file to align     */
+  int    withali_nseq;          /* num seqs in withali ali file, 0 if none  */
+  int    ip;                    /* used to  assign post codes w/--withali   */
 
 
 #ifdef USE_MPI
@@ -453,20 +455,22 @@ main(int argc, char **argv)
        (!(cm->align_opts & CM_ALIGN_HMMONLY)))   
       {                                                                                  
 	/* optionally include a fixed alignment provided with --withali */
+	withali_nseq = 0;
 	if(withali != NULL)
-	  include_alignment(withali, cm, &sq, &tr, &postcode, &nseq);
+	  include_alignment(withali, cm, &sq, &tr, &nseq, &withali_nseq);
 
 	msa = ESL_Parsetrees2Alignment(cm, sq, NULL, tr, nseq, do_full);                 
 	if(cm->align_opts & CM_ALIGN_POST)                                              
         {                                                                              
 	  if(postcode == NULL)
 	    Die("ERROR CM_ALIGN_POST flag is up, but {serial,parallel}_align_targets() did not return post codes.\n");
-          for (i = 0; i < nseq; i++)                                                   
+          for (i = withali_nseq; i < nseq; i++)                                                   
             {                                                                          
-              MakeAlignedString(msa->aseq[i], msa->alen, postcode[i], &apostcode);     
+	      ip = i - withali_nseq;
+	      MakeAlignedString(msa->aseq[i], msa->alen, postcode[ip], &apostcode);     
               MSAAppendGR(msa, "POST", i, apostcode);                                  
               free(apostcode);                                                         
-              free(postcode[i]);                                                       
+              free(postcode[ip]);                                                       
             }                                                                          
           free(postcode);                                                              
         }                                                                              
@@ -558,41 +562,39 @@ main(int argc, char **argv)
  *
  * Args:     seqfile      - the alignment file name to include
  *           CM           - the covariance model
- *           seqfp        - the sequence file with target seqs to align
- *           FIX ME: SHOULD THESE BE ret_ ???
- *           sq       - RETURN: the sequences (EASEL)
- *           tr       - RETURN: the parsetrees for seqs in seqfp
- *           postcode - RETURN: the postcodes, NULL if not doing posteriors
- *           nseq     - RETURN: the number of seqs in seqfp
+ *           seqfp        - the alignment file with ali to include
+ *           ret_sq       - RETURN: the sequences (EASEL)
+ *           ret_tr       - RETURN: the parsetrees for seqs in seqfp
+ *           ret_nseq     - RETURN: the new total number of seqs 
+ *           ret_nnewseq  - RETURN: number of new seqs added
  * 
  * Returns:  new, realloc'ed arrays for sq, tr; nseq is
- *           increased by number of seqs in seqfp.
+ *           increased by number of seqs in seqfp.a
  */
-static void include_alignment(char *seqfile, CM_t *cm, ESL_SQ ***sq, Parsetree_t ***tr,
-			      char ***postcode,  int *nseq)
+static void include_alignment(char *seqfile, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr,
+			      int *ret_nseq, int *ret_nnewseq)
 {
-  int format;			/* format of alignment file */
   /* TODO: Easelfy! */
-  MSA             *msa;		/* alignment to align to    */
-  MSAFILE         *afp;         /* open alignment file      */
-  int   idx;			/* counter over aseqs       */
-  int   use_rf = FALSE;
-  float gapthresh = 0.5;
-  CM_t *new_cm;
-  CM_t *newer_cm;
-  char           **dsq;		/* digitized aligned sequences             */
-  Parsetree_t     *mtr;         /* master structure tree from the alignment*/
-  char **newseq;
-  void *tmp;
-  Parsetree_t **new_tr; 
-  int **map;                    /* [0..msa->nseq-1][0..msa->alen] map from aligned
-				 * positions to unaligned (non-gap) positions for
-				 * each seq */
-  int  apos;                    /*   aligned position index */
-  int uapos;                    /* unaligned position index */
-  int x;                        /* counter of parsetree nodes */
-  ESL_SQ      **new_sq; 
-  
+  int           format;	  /* format of alignment file */
+  MSA          *msa;      /* alignment we're including  */
+  MSAFILE      *afp;      /* open alignment file      */
+  int           i;	  /* counter over aseqs       */
+  int           ip;	  /* offset counter over aseqs */
+  int           use_rf;   /* TRUE to use #=GC RF to determine consensus columns */
+  float         gapthresh;/* gap threshold for defining consensus columns if (!use_rf) */
+  CM_t         *new_cm;   /* CM built from MSA, we check it has same guide tree as 'cm' */
+  CM_t         *newer_cm; /* used briefly if we rebalance new_cm */
+  char        **dsq;	  /* digitized aligned sequences             */
+  Parsetree_t  *mtr;      /* master structure tree from the MSA */
+  char        **uaseq;    /* unaligned seqs, dealigned from the MSA */
+  int           apos;     /*   aligned position index */
+  int           uapos;    /* unaligned position index */
+  int           x;        /* counter of parsetree nodes */
+  int         **map;      /* [0..msa->nseq-1][0..msa->alen] map from aligned
+			   * positions to unaligned (non-gap) positions */
+  gapthresh = 0.5;
+  use_rf    = FALSE;
+
   format = MSAFILE_UNKNOWN;	/* invoke Babelfish */
   if ((afp = MSAFileOpen(seqfile, format, NULL)) == NULL)
     Die("Alignment file %s could not be opened for reading", seqfile);
@@ -602,26 +604,17 @@ static void include_alignment(char *seqfile, CM_t *cm, ESL_SQ ***sq, Parsetree_t
 
   dsq = DigitizeAlignment(msa->aseq, msa->nseq, msa->alen);
 
-  /* Print some stuff about what we're about to do.
-   */
-  /*if (msa->name != NULL) printf("Alignment:           %s\n",  msa->name);
-  printf                       ("Number of sequences: %d\n",  msa->nseq);
-  printf                       ("Number of columns:   %d\n",  msa->alen);
-  puts("");
-  fflush(stdout);*/
-
-  /* Some input data cleaning. 
-   */
-  /*printf("%-40s ... ", "Alignment format checks"); fflush(stdout);*/
+  /* Some input data cleaning. */
   if (msa->ss_cons == NULL) 
     Die("failed... Alignment has no consensus structure annotation.");
   if (! clean_cs(msa->ss_cons, msa->alen))
     Die("failed... Failed to parse consensus structure annotation.");
-  /*printf("done.\n");*/
 
   /* Build a CM from a master guide tree built from the msa, 
    * then check to make sure this CM has same emit map as the CM
    * we've had passed in. This is fragile and hopefully temporary. 
+   * Another solution would be to use a checksum, but CM files don't 
+   * have checksums yet.
    */
   HandModelmaker(msa, dsq, use_rf, gapthresh, &new_cm, &mtr);
   if(!(compare_cms(cm, new_cm)))
@@ -630,74 +623,77 @@ static void include_alignment(char *seqfile, CM_t *cm, ESL_SQ ***sq, Parsetree_t
       FreeCM(new_cm);
       new_cm = newer_cm;
       if(!(compare_cms(cm, new_cm)))
-	Die("ERROR, in include_alignment(), CMs differ (even after rebalancing).\nAre you sure you used *seqfile to build this CM?\n");
+	Die("ERROR, in include_alignment(), CMs differ (even after rebalancing).\nAre you sure you used %s to build this CM?\n", *seqfile);
     }
+  /* If we get here, a CM built from the seqfile MSA has same node 
+   * architecture as the CM that was passed in, now we don't care
+   * about the new_cm anymore, free it. 
+   */
+  FreeCM(new_cm);
 
-  DealignAseqs(msa->aseq, msa->nseq, &newseq);
-  /*HERE*/
-  /*tr = ReallocOrDie((*tr), (sizeof(Parsetree_t *) * (*nseq + msa->nseq)));
-    sq  = ReallocOrDie((*sq), sizeof (ESL_SQ *) * (*nseq + msa->nseq));*/
-  new_tr = MallocOrDie(sizeof(Parsetree_t *) * msa->nseq);
-  new_sq = MallocOrDie(sizeof(ESL_SQ *)      * msa->nseq);
-  int z;
-
-  /* Map the aligned sequences coords to the unaligned coords,
-   * we stay in digitized seq coords (1..alen) */
+  /* For each seq in the MSA, map the aligned sequences coords to 
+   * the unaligned coords, we stay in digitized seq coords (1..alen),
+   * we need this for converting parsetrees from Transmogrify, which
+   * have emitl and emitr in aligned coords to unaligned coords, so 
+   * we can call Parsetrees2Alignment() with them. */
   map = MallocOrDie(sizeof(int *) * msa->nseq);
-  for (idx = 0; idx < msa->nseq; idx++)
+  for (i = 0; i < msa->nseq; i++)
     {
-      map[idx] = MallocOrDie(sizeof(int) * (msa->alen+1));
-      map[idx][0] = -1; /* invalid */
+      map[i] = MallocOrDie(sizeof(int) * (msa->alen+1));
+      map[i][0] = -1; /* invalid */
       uapos = 1;
       for(apos = 0; apos < msa->alen; apos++)
 	{
-	  if (!isgap(msa->aseq[idx][apos]))
-	    map[idx][(apos+1)] = uapos++;
+	  if (!isgap(msa->aseq[i][apos]))
+	    map[i][(apos+1)] = uapos++;
 	  else
-	    map[idx][(apos+1)] = -1;
-
+	    map[i][(apos+1)] = -1;
 	}
     }
 
-  for (idx = 0; idx < msa->nseq; idx++)
+  DealignAseqs(msa->aseq, msa->nseq, &uaseq);
+  *ret_tr  = ReallocOrDie((*ret_tr), (sizeof(Parsetree_t *) * (*ret_nseq + msa->nseq)));
+  *ret_sq  = ReallocOrDie((*ret_sq), (sizeof (ESL_SQ *)     * (*ret_nseq + msa->nseq)));
+
+  /* Swap some pointers so the included alignment appears at the top of the output 
+   * alignment instead of the bottom. */
+  for(i = 0; i < *ret_nseq; i++)
     {
-      /*printf("idx + *nseq: %d\n", (idx + *nseq));
-      tr[(idx + *nseq)] = Transmogrify(cm, mtr, dsq[idx], msa->aseq[idx], msa->alen);
-      sq[(idx + *nseq)] = esl_sq_CreateFrom(msa->sqname[idx], newseq[idx], NULL, NULL, NULL);
-      *(sq[(idx + *nseq)])->dsq = DigitizeSequence ((*sq[(idx + *nseq)])->seq, (*sq[(idx + *nseq)])->n);*/
+      ip = i + msa->nseq;
+      (*ret_tr)[ip] = (*ret_tr)[i];
+      (*ret_sq)[ip] = (*ret_sq)[i];
+    }
 
-      new_tr[idx] = Transmogrify(cm, mtr, dsq[idx], msa->aseq[idx], msa->alen);
+  /* Transmogrify each aligned seq to get a parsetree */
+  for (i = 0; i < msa->nseq; i++)
+    {
+      /*ip = i + *ret_nseq;*/
+      (*ret_tr)[i] = Transmogrify(cm, mtr, dsq[i], msa->aseq[i], msa->alen);
 
-      /* new_tr[idx] is in alignment coords, convert it to unaligned coords, 
-       * so it's like a parsetree returned from a CYK function and we can call
-       * Parsetrees2MSA with it. This is why we've calc'ed map above. */
-      for(x = 0; x < new_tr[idx]->n; x++)
+      /* ret_tr[i] is in alignment coords, convert it to unaligned coords, */
+      for(x = 0; x < (*ret_tr)[i]->n; x++)
 	{
-	  if(new_tr[idx]->emitl[x] != -1)
-	    new_tr[idx]->emitl[x] = map[idx][new_tr[idx]->emitl[x]];
-	  if(new_tr[idx]->emitr[x] != -1)
-	    new_tr[idx]->emitr[x] = map[idx][new_tr[idx]->emitr[x]];
+	  if((*ret_tr)[i]->emitl[x] != -1)
+	    (*ret_tr)[i]->emitl[x] = map[i][(*ret_tr)[i]->emitl[x]];
+	  if((*ret_tr)[i]->emitr[x] != -1)
+	    (*ret_tr)[i]->emitr[x] = map[i][(*ret_tr)[i]->emitr[x]];
 	}
-      new_sq[idx] = esl_sq_CreateFrom(msa->sqname[idx], newseq[idx], NULL, NULL, NULL);
-      new_sq[idx]->dsq = DigitizeSequence (new_sq[idx]->seq, (new_sq[idx]->n));
+      (*ret_sq)[i]      = esl_sq_CreateFrom(msa->sqname[i], uaseq[i], NULL, NULL, NULL);
+      (*ret_sq)[i]->dsq = DigitizeSequence ((*ret_sq)[i]->seq, ((*ret_sq)[i]->n));
     }
-  /* add the new seqs and traces to those that were passed in */
-  *tr = ReallocOrDie((*tr), sizeof(Parsetree_t *) * (*nseq + msa->nseq));
-  *sq = ReallocOrDie((*sq), sizeof(ESL_SQ *) * (*nseq + msa->nseq));
-  for(idx = *nseq; idx < (*nseq + msa->nseq); idx++)
+  *ret_nseq    += msa->nseq;
+  *ret_nnewseq  = msa->nseq;
+
+  /* Clean up and exit. */
+  for(i = 0; i < msa->nseq; i++)
     {
-      (*tr)[idx] = new_tr[(idx - *nseq)];
-      (*sq)[idx] = new_sq[(idx - *nseq)];
-    }
-  *nseq += msa->nseq;
-  FreeCM(new_cm);
-  for(idx = 0; idx < msa->nseq; idx++)
-    {
-      free(map[idx]);
-      free(newseq[idx]);
+      free(map[i]);
+      free(uaseq[i]);
     }
   free(map);
-  free(newseq);
+  free(uaseq);
+  FreeParsetree(mtr);
+  Free2DArray((void**)dsq, msa->nseq);
   MSAFree(msa);
   return;
 }
@@ -706,42 +702,19 @@ static void include_alignment(char *seqfile, CM_t *cm, ESL_SQ ***sq, Parsetree_t
 /* Function: compare_cms()
  * EPN, Tue Mar  6 08:32:12 2007
  *
- * Purpose:  Given two CMs, cm1 and cm2, compare them, returning TRUE if the 
- *           following are all true, FALSE otherwise:
- *           1. cm1 and cm2 have same number of nodes
- *           2. cm1->ndtype[nd] == cm2->ndtype[nd] for nd = 0..cm1->nodes
- *           3. cm1 and cm2 have identical emit maps
+ * Purpose:  Given two CMs, cm1 and cm2, compare them, returning TRUE 
+ *           iff they have the same guide tree (same node architecture).
  *
  * Args:     cm1          - covariance model number 1
  *           cm2          - covariance model number 2
  * 
- * Returns:  TRUE if CMs satisfy 1,2,3 above, FALSE otherwise
+ * Returns:  TRUE if CMs have same guide tree, FALSE otherwise
  */
 static int compare_cms(CM_t *cm1, CM_t *cm2)
 {
-  CMEmitMap_t *emap1;        /* consensus emit map for cm1 */
-  CMEmitMap_t *emap2;        /* consensus emit map for cm2 */
   int          nd; 
-  emap1 = NULL;
-  emap2 = NULL;
-  
-  if(cm1->nodes != cm2->nodes) goto RETFALSE; 
-  emap1 = CreateEmitMap(cm1); 
-  emap2 = CreateEmitMap(cm2); 
-
-  if(emap1->clen != emap2->clen) goto RETFALSE;
+    if(cm1->nodes != cm2->nodes) return FALSE;
   for(nd = 0; nd < cm1->nodes; nd++)
-    {
-      if(cm1->ndtype[nd] != cm2->ndtype[nd]) goto RETFALSE;
-      if(emap1->lpos[nd] != emap2->lpos[nd]) goto RETFALSE;
-      if(emap1->epos[nd] != emap2->epos[nd]) goto RETFALSE;
-    }
-  FreeEmitMap(emap1);
-  FreeEmitMap(emap2);
+    if(cm1->ndtype[nd] != cm2->ndtype[nd]) return FALSE;
   return TRUE;
-
-  RETFALSE:
-  if (emap1  != NULL) FreeEmitMap(emap1);
-  if (emap2  != NULL) FreeEmitMap(emap2);
-  return FALSE;
 }
