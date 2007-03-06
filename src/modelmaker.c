@@ -1498,3 +1498,67 @@ cm_check_before_detaching(CM_t *cm, int insert1, int insert2)
   return ret_val;
 }
 
+/* Functions: clean_cs()
+ * Date:      SRE, Fri May 17 14:52:42 2002 [St. Louis]
+ *
+ * Purpose:   Verify and (if needed) clean the consensus structure annotation.
+ */
+int
+clean_cs(char *cs, int alen)
+{
+  int   i;
+  int  *ct;
+  int   status;
+  int   nright = 0;
+  int   nleft = 0;
+  int   nbad = 0;
+  char  example;
+  int   first;
+  int   has_pseudoknots = FALSE;
+
+  /* 1. Maybe we're ok and don't need any cleaning.
+   */
+  status = WUSS2ct(cs, alen, FALSE, &ct);
+  free(ct);
+  if (status == 1) return 1;
+
+  /* 2. Maybe we have a good CS line but it annotates one or
+   *    or more pseudoknots that have to be deleted.
+   */
+  if ((status = WUSS2ct(cs, alen, TRUE, &ct)) == 1) { 
+    has_pseudoknots = TRUE; 
+    printf("    [Consensus structure has annotated pseudoknots that will be ignored.]\n");
+    fflush(stdout);
+  }
+  free(ct);
+
+  /* 3. Delete everything we don't recognize.
+   */
+  for (i = 0; i < alen; i++)
+    {
+      if      (strchr("{[(<", cs[i]) != NULL) nleft++;  
+      else if (strchr(">)]}", cs[i]) != NULL) nright++; 
+      else if (strchr(":_-,.~", cs[i]) != NULL) ;
+      else if (has_pseudoknots && isalpha((int) cs[i])) cs[i] = '.';
+      else {	/* count bad chars; remember first one; replace w/gap */
+	if (nbad == 0) { example = cs[i]; first = i; }
+	nbad++;
+	cs[i] = '.';
+      }
+    }
+  if (nbad > 0) {
+    printf("    [Removed %d bad chars from consensus line. Example: a %c at position %d.]\n",
+	   nbad, example, first);
+    fflush(stdout);
+  }
+
+  /* Check it again.
+   */
+  status = WUSS2ct(cs, alen, FALSE, &ct);
+  free(ct);
+  if (status == 1) return 1;
+
+  printf("    [Failed to parse the consensus structure line.]\n");
+  return 0;
+}
+
