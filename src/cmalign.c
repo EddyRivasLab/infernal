@@ -33,7 +33,8 @@
 
 static int in_mpi;
 
-static void include_alignment(char *seqfile, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr,
+static void include_alignment(char *seqfile, int use_rf, float gapthresh, CM_t *cm, 
+			      ESL_SQ ***ret_sq, Parsetree_t ***ret_tr,
 			      int *ret_nseq, int *ret_nnewseq);
 static int compare_cms(CM_t *cm1, CM_t *cm2);
 
@@ -64,7 +65,6 @@ Usage: cmalign [-options] <cmfile> <sequence file>\n\
 static char experts[] = "\
   Expert, in development, or infrequently used options are:\n\
    --informat <s>: specify that input alignment is in format <s>\n\
-   --withali <f> : include alignment to (fixed) alignment in file <f>\n\
    --nosmall     : use normal alignment algorithm, not d&c\n\
    --regress <f> : save regression test data to file <f>\n\
    --full        : include all match columns in output alignment\n\
@@ -92,6 +92,11 @@ static char experts[] = "\
   * Query dependent banded (qdb) alignment related options:\n\
    --qdb         : use query dependent banded CYK alignment algorithm\n\
    --beta <f>    : tail loss prob for --qdb [default:0.0000001]\n\
+\n\
+  * Options for including the alignment used to build the CM in the output:\n\
+   --withali <f> : incl. alignment in <f> (must be aln <cm file> was built from>\n\
+   --rf          : (only with --withali) cmbuild --rf was used\n\
+   --gapthresh <x>:(only with --withali) cmbuild --gapthresh <x> was used\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -100,7 +105,6 @@ static struct opt_s OPTIONS[] = {
   { "-o", TRUE, sqdARG_STRING },
   { "-q", TRUE, sqdARG_NONE },
   { "--informat",   FALSE, sqdARG_STRING },
-  { "--withali",    FALSE, sqdARG_STRING },
   { "--nosmall",    FALSE, sqdARG_NONE },
   { "--regress",    FALSE, sqdARG_STRING },
   { "--qdb",        FALSE, sqdARG_NONE },
@@ -123,7 +127,10 @@ static struct opt_s OPTIONS[] = {
   { "--elsilent",   FALSE, sqdARG_NONE},
   { "--enfstart",   FALSE, sqdARG_INT},
   { "--enfseq",     FALSE, sqdARG_STRING},
-  { "--zeroinserts",FALSE, sqdARG_NONE}
+  { "--zeroinserts",FALSE, sqdARG_NONE},
+  { "--withali",    FALSE, sqdARG_STRING },
+  { "--gapthresh",  FALSE, sqdARG_FLOAT},
+  { "--rf",         FALSE, sqdARG_NONE }
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -193,9 +200,13 @@ main(int argc, char **argv)
   char *enf_seq;                /* the subsequence to enforce emitted by    *
                                  * MATL nodes starting at cm->enf_start     */
 
+  /* variables for appending query aln CM was built from to output aln      */
+  int    do_withali;            /* TRUE to incl. original query aln         */
   char  *withali;               /* name of additional aln file to align     */
   int    withali_nseq;          /* num seqs in withali ali file, 0 if none  */
   int    ip;                    /* used to  assign post codes w/--withali   */
+  int    use_rf;		/* TRUE was used #=RF to define consensus   */
+  float  gapthresh;		/* 0=all cols inserts; 1=all cols consensus */
 
 
 #ifdef USE_MPI
@@ -233,7 +244,6 @@ main(int argc, char **argv)
   be_quiet    = FALSE;
   do_local    = FALSE;
   do_small    = TRUE;
-  withali     = NULL;
   outfile     = NULL;
   regressfile = NULL;
   tracefile   = NULL;
@@ -256,9 +266,13 @@ main(int argc, char **argv)
   do_fullsub  = FALSE;
   do_elsilent = FALSE;
   do_zero_inserts=FALSE;
-  do_enforce   = FALSE;
-  enf_cc_start = 0;
-  enf_seq      = NULL;
+  do_enforce  = FALSE;
+  enf_cc_start= 0;
+  enf_seq     = NULL;
+  do_withali  = FALSE;
+  withali     = NULL;
+  use_rf      = FALSE;
+  gapthresh   = 0.5;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -266,7 +280,6 @@ main(int argc, char **argv)
     else if (strcmp(optname, "-o")          == 0) outfile     = optarg;
     else if (strcmp(optname, "-q")          == 0) be_quiet    = TRUE;
     else if (strcmp(optname, "--nosmall")   == 0) do_small    = FALSE;
-    else if (strcmp(optname, "--withali")   == 0) withali     = optarg;
     else if (strcmp(optname, "--regress")   == 0) regressfile = optarg;
     else if (strcmp(optname, "--qdb")       == 0) do_qdb       = TRUE;
     else if (strcmp(optname, "--beta")      == 0) qdb_beta     = atof(optarg);
@@ -289,7 +302,10 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--enfstart")  == 0) { do_enforce = TRUE; enf_cc_start = atoi(optarg); }
     else if (strcmp(optname, "--enfseq")    == 0) { do_enforce = TRUE; enf_seq = optarg; } 
     else if (strcmp(optname, "--zeroinserts")== 0) do_zero_inserts = TRUE;
-    else if (strcmp(optname, "--informat")  == 0) {
+    else if (strcmp(optname, "--withali")   == 0) { do_withali = TRUE; withali = optarg; } 
+    else if (strcmp(optname, "--rf")        == 0) { do_withali = TRUE; use_rf  = TRUE;   } 
+    else if (strcmp(optname, "--gapthresh") == 0) { do_withali = TRUE; gapthresh = atof(optarg);} 
+    else if (strcmp(optname, "--informat")  == 0) { 
       format = String2SeqfileFormat(optarg);
       if (format == SQFILE_UNKNOWN) 
 	Die("unrecognized sequence file format \"%s\"", optarg);
@@ -305,7 +321,6 @@ main(int argc, char **argv)
   /* Check for incompatible or misused options */
   if(do_inside && do_outside)
     Die("Please pick either --inside or --outside (--outside will run Inside()\nalso and check to make sure Inside() and Outside() scores agree).\n");
-
   if(do_sub && do_local)
     Die("--sub and -l combination not supported.\n");
   if(do_sub && do_qdb)
@@ -326,6 +341,8 @@ main(int argc, char **argv)
     Die("--hsafe only makes sense with --hbanded\n%s", usage);
   if(withali != NULL && (do_inside || do_outside || do_hmmonly))
     Die("--withali does not work with --hmmonly, --inside or --outside\n%s", usage);
+  if(do_withali && withali == NULL)
+    Die("--rf and --gapthresh only make sense with --withali\n%s", usage);
   if (do_local && do_hbanded)
     {
       printf("Warning: banding with an HMM (--hbanded) and allowing\nlocal alignment (-l). This may not work very well.\n");
@@ -457,7 +474,7 @@ main(int argc, char **argv)
 	/* optionally include a fixed alignment provided with --withali */
 	withali_nseq = 0;
 	if(withali != NULL)
-	  include_alignment(withali, cm, &sq, &tr, &nseq, &withali_nseq);
+	  include_alignment(withali, use_rf, gapthresh, cm, &sq, &tr, &nseq, &withali_nseq);
 
 	msa = ESL_Parsetrees2Alignment(cm, sq, NULL, tr, nseq, do_full);                 
 	if(cm->align_opts & CM_ALIGN_POST)                                              
@@ -561,6 +578,8 @@ main(int argc, char **argv)
  *           Based on HMMER 2.4devl's hmmalign.c::include_alignment.
  *
  * Args:     seqfile      - the alignment file name to include
+ *           use_rf       - TRUE to use #=GC RF line for consensus
+ *           gapthresh    - gap threshold for consensus columns
  *           CM           - the covariance model
  *           seqfp        - the alignment file with ali to include
  *           ret_sq       - RETURN: the sequences (EASEL)
@@ -571,7 +590,8 @@ main(int argc, char **argv)
  * Returns:  new, realloc'ed arrays for sq, tr; nseq is
  *           increased by number of seqs in seqfp.a
  */
-static void include_alignment(char *seqfile, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr,
+static void include_alignment(char *seqfile, int use_rf, float gapthresh, CM_t *cm, 
+			      ESL_SQ ***ret_sq, Parsetree_t ***ret_tr,
 			      int *ret_nseq, int *ret_nnewseq)
 {
   /* TODO: Easelfy! */
@@ -580,8 +600,6 @@ static void include_alignment(char *seqfile, CM_t *cm, ESL_SQ ***ret_sq, Parsetr
   MSAFILE      *afp;      /* open alignment file      */
   int           i;	  /* counter over aseqs       */
   int           ip;	  /* offset counter over aseqs */
-  int           use_rf;   /* TRUE to use #=GC RF to determine consensus columns */
-  float         gapthresh;/* gap threshold for defining consensus columns if (!use_rf) */
   CM_t         *new_cm;   /* CM built from MSA, we check it has same guide tree as 'cm' */
   CM_t         *newer_cm; /* used briefly if we rebalance new_cm */
   char        **dsq;	  /* digitized aligned sequences             */
@@ -592,8 +610,6 @@ static void include_alignment(char *seqfile, CM_t *cm, ESL_SQ ***ret_sq, Parsetr
   int           x;        /* counter of parsetree nodes */
   int         **map;      /* [0..msa->nseq-1][0..msa->alen] map from aligned
 			   * positions to unaligned (non-gap) positions */
-  gapthresh = 0.5;
-  use_rf    = FALSE;
 
   format = MSAFILE_UNKNOWN;	/* invoke Babelfish */
   if ((afp = MSAFileOpen(seqfile, format, NULL)) == NULL)
@@ -623,7 +639,7 @@ static void include_alignment(char *seqfile, CM_t *cm, ESL_SQ ***ret_sq, Parsetr
       FreeCM(new_cm);
       new_cm = newer_cm;
       if(!(compare_cms(cm, new_cm)))
-	Die("ERROR, in include_alignment(), CMs differ (even after rebalancing).\nAre you sure you used %s to build this CM?\n", *seqfile);
+	Die("ERROR, in include_alignment(), CMs differ (even after rebalancing).\nAre you sure you used %s to build this CM?\nDid you use --rf or --gapthresh <x> options with cmbuild?\nIf so, use them again them with cmalign.", seqfile);
     }
   /* If we get here, a CM built from the seqfile MSA has same node 
    * architecture as the CM that was passed in, now we don't care
@@ -713,7 +729,7 @@ static void include_alignment(char *seqfile, CM_t *cm, ESL_SQ ***ret_sq, Parsetr
 static int compare_cms(CM_t *cm1, CM_t *cm2)
 {
   int          nd; 
-    if(cm1->nodes != cm2->nodes) return FALSE;
+  if(cm1->nodes != cm2->nodes) return FALSE;
   for(nd = 0; nd < cm1->nodes; nd++)
     if(cm1->ndtype[nd] != cm2->ndtype[nd]) return FALSE;
   return TRUE;
