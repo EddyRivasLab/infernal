@@ -8,7 +8,6 @@
  * @LICENSE@
  *****************************************************************
  */
-#include "config.h"
 #include "esl_config.h"
 
 #include <stdio.h>
@@ -94,7 +93,7 @@ static char experts[] = "\
    --beta <f>    : tail loss prob for --qdb [default:0.0000001]\n\
 \n\
   * Options for including the alignment used to build the CM in the output:\n\
-   --withali <f> : incl. alignment in <f> (must be aln <cm file> was built from>\n\
+   --withali <f> : incl. alignment in <f> (must be aln <cm file> was built from)\n\
    --rf          : (only with --withali) cmbuild --rf was used\n\
    --gapthresh <x>:(only with --withali) cmbuild --gapthresh <x> was used\n\
 ";

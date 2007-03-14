@@ -15,6 +15,8 @@
 #include "structs.h"
 #include "rnamat.h"
 #include "sre_stack.h"
+#include "easel.h"
+#include "esl_vectorops.h"
 
 /*
  * Maps c as follows:
@@ -378,22 +380,38 @@ void count_matrix (MSA *msa, fullmat_t *fullmat, double *background_nt,
  *
  * Dumps the paired and unpaired matrices and gap penalties
  */
-void print_matrix (FILE *fp, fullmat_t *fullmat) { 
-      
+void print_matrix (FILE *fp, fullmat_t *fullmat)
+{
   int i, j;
 
   fprintf (fp, "%s\n\n", fullmat->name);
 
+  /* EPN: print background NT frequencies */
   fprintf (fp, "    ");
   for (i=0; i<sizeof(RNA_ALPHABET)-1; i++) {
-    fprintf (fp, "%c         ", RNA_ALPHABET[i]);
+    fprintf (fp, "%c           ", RNA_ALPHABET[i]);
   }
   fprintf (fp, "\n");
+
+  fprintf (fp, "    ");
+  for (i=0; i<sizeof(RNA_ALPHABET)-1; i++) {
+    fprintf (fp, "%-11f ", fullmat->g[i]);
+  }
+  fprintf (fp, "\n\n");
+
+  fprintf (fp, "    ");
+  for (i=0; i<sizeof(RNA_ALPHABET)-1; i++) {
+    fprintf (fp, "%c           ", RNA_ALPHABET[i]);
+  }
+  fprintf (fp, "\n");
+
   for (i=0; i<sizeof(RNA_ALPHABET)-1; i++) {
     fprintf (fp, "%c   ", RNA_ALPHABET[i]);
     for (j=0; j<=i; j++) {
-	fprintf (fp, "%-9.2f ", fullmat->unpaired->matrix[matrix_index(numbered_nucleotide(RNA_ALPHABET[i]), numbered_nucleotide(RNA_ALPHABET[j]))]);
-     }
+      /* ORIGINAL: fprintf (fp, "%-9.2f ", fullmat->unpaired->matrix[matrix_index(numbered_nucleotide(RNA_ALPHABET[i]), numbered_nucleotide(RNA_ALPHABET[j]))]);*/
+      /* EPN: */
+      fprintf (fp, "%-11f ", fullmat->unpaired->matrix[matrix_index(numbered_nucleotide(RNA_ALPHABET[i]), numbered_nucleotide(RNA_ALPHABET[j]))]);
+	}
     fprintf (fp, "\n");
   }
   if (strstr (fullmat->name, "RIBOPROB") == NULL)    /* Not probability mat */
@@ -401,13 +419,15 @@ void print_matrix (FILE *fp, fullmat_t *fullmat) {
 
   fprintf (fp, "\n    ");
   for (i=0; i<sizeof(RNAPAIR_ALPHABET)-1; i++) {
-    fprintf (fp, "%c%c        ", RNAPAIR_ALPHABET[i], RNAPAIR_ALPHABET2[i]);
+    fprintf (fp, "%c%c          ", RNAPAIR_ALPHABET[i], RNAPAIR_ALPHABET2[i]);
   }
   fprintf (fp, "\n");
   for (i=0; i<sizeof(RNAPAIR_ALPHABET)-1; i++) {
     fprintf (fp, "%c%c  ", RNAPAIR_ALPHABET[i], RNAPAIR_ALPHABET2[i]);
     for (j=0; j<=i; j++) {
-      fprintf (fp, "%-9.2f ", fullmat->paired->matrix[matrix_index(numbered_basepair(RNAPAIR_ALPHABET[i], RNAPAIR_ALPHABET2[i]), numbered_basepair (RNAPAIR_ALPHABET[j], RNAPAIR_ALPHABET2[j]))]);
+      /* ORIGINAL: fprintf (fp, "%-9.2f ", fullmat->paired->matrix[matrix_index(numbered_basepair(RNAPAIR_ALPHABET[i], RNAPAIR_ALPHABET2[i]), numbered_basepair (RNAPAIR_ALPHABET[j], RNAPAIR_ALPHABET2[j]))]);*/
+      /*EPN: */
+      fprintf (fp, "%-11f ", fullmat->paired->matrix[matrix_index(numbered_basepair(RNAPAIR_ALPHABET[i], RNAPAIR_ALPHABET2[i]), numbered_basepair (RNAPAIR_ALPHABET[j], RNAPAIR_ALPHABET2[j]))]);
     }
     fprintf (fp, "\n");
   }
@@ -417,11 +437,11 @@ void print_matrix (FILE *fp, fullmat_t *fullmat) {
   fprintf (fp, "\n");
 }
 
-
 /*
- * Read the matrix from a file
+ * Read the matrix from a file. Original RSEARCH version,
+ * expects no background freqs in the file.
  */
-fullmat_t *ReadMatrix(FILE *matfp) {
+fullmat_t *OldReadMatrix(FILE *matfp) {
   char linebuf[256];
   char fullbuf[16384];
   int fullbuf_used = 0;
@@ -447,6 +467,7 @@ fullmat_t *ReadMatrix(FILE *matfp) {
   fullmat->name = MallocOrDie(sizeof(char)*(i+1));
   strncpy (fullmat->name, cp, i);
   fullmat->name[i] = '\0';
+
   cp = cp + i;
 
   /* Now, find the first A */
@@ -532,6 +553,150 @@ fullmat_t *ReadMatrix(FILE *matfp) {
   cp = strstr (cp, "E:") + 2;
   fullmat->paired->E = atof(cp);
 
+  return (fullmat);
+}
+
+/*
+ * Read the matrix from a file. 
+ * New EPN version, expects background freqs in file.
+ */
+fullmat_t *ReadMatrix(FILE *matfp) {
+  char linebuf[256];
+  char fullbuf[16384];
+  int fullbuf_used = 0;
+  fullmat_t *fullmat;
+  int i;
+  char *cp, *end_mat_pos;
+
+  fullmat = MallocOrDie (sizeof(fullmat_t));
+  fullmat->unpaired = setup_matrix (RNA_ALPHABET_SIZE);
+  fullmat->paired = setup_matrix (RNA_ALPHABET_SIZE*RNA_ALPHABET_SIZE);
+  fullmat->g      = MallocOrDie(sizeof(float) * RNA_ALPHABET_SIZE); 
+
+  while (fgets (linebuf, 255, matfp)) {
+    strncpy (fullbuf+fullbuf_used, linebuf, 16384-fullbuf_used-1);
+    fullbuf_used += strlen(linebuf);
+    if (fullbuf_used >= 16384) {
+      Die ("ERROR: Matrix file bigger than 16kb\n");
+    }
+  }
+
+  /* First, find RIBO, and copy matrix name to fullmat->name */
+  cp = strstr (fullbuf, "RIBO");
+  for (i = 0; cp[i] && !isspace(cp[i]); i++);   /* Find space after RIBO */
+  fullmat->name = MallocOrDie(sizeof(char)*(i+1));
+  strncpy (fullmat->name, cp, i);
+  fullmat->name[i] = '\0';
+  cp = cp + i;
+  if(strstr (fullmat->name, "SUM")) fullmat->scores_flag = TRUE;
+  else if(strstr (fullmat->name, "PROB")) fullmat->scores_flag = FALSE;
+  else Die("ERROR reading matrix, name does not include SUM or PROB.\n");
+
+  /* Now, find the first A */
+  cp = strchr (cp, 'A');
+  fullmat->unpaired->edge_size = 0;
+  /* And count how edge size of the matrix */
+  while (*cp != '\n' && cp-fullbuf < fullbuf_used) {
+    if (!isspace (cp[0]) && isspace (cp[1])) {
+      fullmat->unpaired->edge_size++;
+    }
+    cp++;
+  }
+  /* EPN added to read background freqs to store in g vector */
+
+  /* Read background freqs until we hit the next A */
+  end_mat_pos = strchr (cp, 'A');
+  for (i=0; cp - fullbuf < end_mat_pos-fullbuf; i++) {
+    while (!isdigit(*cp) && *cp != '-' && *cp != '.' && \
+	   cp-fullbuf < fullbuf_used && cp != end_mat_pos) { 
+	cp++;
+    }
+    if (cp == end_mat_pos)
+      break;
+    if (cp-fullbuf < fullbuf_used) {
+      fullmat->g[i] = atof(cp);
+      while ((isdigit (*cp) || *cp == '-' || *cp == '.') &&\
+	     (cp-fullbuf <fullbuf_used)) {
+	cp++;
+      }
+    }
+  }
+  /* we've read the background, normalize it */
+  esl_vec_FNorm(fullmat->g, fullmat->unpaired->edge_size);
+
+  /* We've already found the next A */
+  /* end EPN block */
+
+  /* Take numbers until we hit the H: */
+  end_mat_pos = strstr (cp, "H:");
+  for (i=0; cp - fullbuf < end_mat_pos-fullbuf; i++) {
+    while (!isdigit(*cp) && *cp != '-' && *cp != '.' && \
+	   cp-fullbuf < fullbuf_used && cp != end_mat_pos) { 
+	cp++;
+    }
+    if (cp == end_mat_pos)
+      break;
+    if (cp-fullbuf < fullbuf_used) {
+      fullmat->unpaired->matrix[i] = atof(cp);
+      while ((isdigit (*cp) || *cp == '-' || *cp == '.') &&\
+	     (cp-fullbuf <fullbuf_used)) {
+	cp++;
+      }
+    }
+  }
+  fullmat->unpaired->full_size = i;
+
+  /* Skip the H: */
+  cp += 2;
+  fullmat->unpaired->H = atof(cp);
+
+  /* Now, go past the E: */
+  cp = strstr (cp, "E:") + 2;
+  fullmat->unpaired->E = atof(cp);
+
+  /********* PAIRED MATRIX ************/
+  /* Now, find the first A */
+  cp = strchr (cp, 'A');
+  fullmat->paired->edge_size = 0;
+  /* And count how edge size of the matrix */
+  while (*cp != '\n') {
+    if (!isspace (cp[0]) && isspace (cp[1])) {
+      fullmat->paired->edge_size++;
+    }
+    cp++;
+  }
+
+  /* Find next A */
+  while (*cp != 'A' && (cp-fullbuf) < fullbuf_used) cp++;
+
+  /* Take numbers until we hit the H: */
+  end_mat_pos = strstr (cp, "H:");
+  for (i=0; cp - fullbuf < end_mat_pos-fullbuf; i++) {
+    while (!isdigit(*cp) && *cp != '-' && *cp != '.' && \
+	   cp-fullbuf < fullbuf_used && cp != end_mat_pos) { 
+	cp++;
+    }
+    if (cp == end_mat_pos)
+      break;
+    if (cp-fullbuf < fullbuf_used) {
+      fullmat->paired->matrix[i] = atof(cp);
+      while ((isdigit (*cp) || *cp == '-' || *cp == '.') &&\
+	     (cp-fullbuf <fullbuf_used)) {
+	cp++;
+      }
+    }
+  }
+  fullmat->paired->full_size = i;
+
+  /* Skip the H: */
+  cp += 2;
+  fullmat->paired->H = atof(cp);
+
+  /* Now, go past the E: */
+  cp = strstr (cp, "E:") + 2;
+  fullmat->paired->E = atof(cp);
+
+  /*print_matrix(stdout, fullmat);*/
   return (fullmat);
 }
 
@@ -685,5 +850,73 @@ void FreeMat(fullmat_t *fullmat)
     }
   if(fullmat->name != NULL)
     free(fullmat->name);
+  if(fullmat->g != NULL)
+    free(fullmat->g);
   free(fullmat);
+}
+
+
+/* Function: ribosum_calc_targets()
+ * Incept:   EPN, Wed Mar 14 06:01:11 2007
+ * 
+ * Purpose:  Given a RIBOSUM score matrix data structure (fullmat_t) with
+ *           log odds scores (as read in from a RIBOSUM file) and a background
+ *           model (fullmat->g), overwrite the log-odds scores with target
+ *           probabilities.
+ *
+ */
+void ribosum_calc_targets(fullmat_t *fullmat)
+{
+  int       idx;
+  int       a,b,i,j,k,l;
+
+  /* Check the contract. */
+  if(!(fullmat->scores_flag)) Die("ERROR, in ribosum_calc_targets(), matrix is not in log odds mode, this violates the contract.\n");
+
+  /* convert log odds score s_ij, to target (f_ij) 
+   * using background freqs (g), by:
+   * f_ij = g_i * g_j * 2^{s_ij} */
+
+  /* first convert the unpaired (singlet) matrix,
+  *  remember matrix is set up as a vector */
+  idx = 0;
+  for(i = 0; i < sizeof(RNA_ALPHABET)-1; i++)
+    for(j = 0; j <= i; j++)
+      {
+	fullmat->unpaired->matrix[idx] = 
+	  fullmat->g[i] * fullmat->g[j] * sreEXP2(fullmat->unpaired->matrix[idx]);
+	if(i != j) fullmat->unpaired->matrix[idx] *= 2.; 
+	/* careful, we're dealing with a symmetric matrix multiply off-diagonal by 2 */
+	idx++;
+      }					       
+
+  /* and the paired matrix, careful about for loops here, we 
+   * use 4 nested ones just to keep track of which backgrounds to multiply 
+   * (the g[i] * g[j] * g[k] * g[l] part) */
+
+  idx = 0;
+  for(a = 0; a < sizeof(RNAPAIR_ALPHABET)-1; a++)
+    for(b = 0; b <= a; b++)
+      {
+	i = a / (sizeof(RNA_ALPHABET) - 1);
+	j = a % (sizeof(RNA_ALPHABET) - 1);
+	k = b / (sizeof(RNA_ALPHABET) - 1);
+	l = b % (sizeof(RNA_ALPHABET) - 1);
+
+	fullmat->paired->matrix[idx] = 
+	  fullmat->g[i] * fullmat->g[j] * fullmat->g[k] * fullmat->g[l] * 
+	  sreEXP2(fullmat->paired->matrix[idx]);
+	if(a != b) fullmat->paired->matrix[idx] *= 2.; 
+	/* careful, we're dealing with a symmetric matrix multiply off-diagonal by 2 */
+	idx++;
+      }					       
+
+  /* Normalize the target frequencies. */
+  esl_vec_DNorm(fullmat->unpaired->matrix, fullmat->unpaired->full_size);
+  esl_vec_DNorm(fullmat->paired->matrix,   fullmat->paired->full_size);
+  /* Lower the scores_flag, we've got probs now */
+  fullmat->scores_flag = FALSE;
+
+  /*printf("\nend of ribosum_calc_targets, printing mx:\n");
+    print_matrix(stdout, fullmat);*/
 }

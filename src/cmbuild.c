@@ -224,7 +224,7 @@ main(int argc, char **argv)
 				* large regions 'skipped' by EL states. 
 				* see ~nawrocki/notebook/5_1115_inf_el_trans_prob/00LOG for details.
 				*/
-  int                debug_level;  /* level of debugging print statements     */
+  int        debug_level;      /* level of debugging print statements     */
 		      
   /* variables for 'detach' mode: we find columns that are modelled by two insert states (an ambiguity
    * in the CM architecture), and *handle* them (right hand in fist pounding open left palm) by 
@@ -355,6 +355,26 @@ main(int argc, char **argv)
     }
   }
 
+  /* Check for incompatible or misused options */
+  if(do_rsearch)
+    {
+      if(use_rf)
+	Die("--rsearch and --rf combination doesn't make sense.\nFor a single seq each residue becomes a consensus column.\n,%s\n", usage);
+      if(gapthresh != 0.5)
+	Die("--rsearch and --gapthresh <x> combination doesn't make sense.\nFor a single seq each residue becomes a consensus column.\n,%s\n", usage);
+      if(rndfile != NULL)
+	Die("--rsearch and --null <f> combination doesn't make sense.\nThe null model used will be specified in the RIBOSUM matrix file.\n,%s\n", usage);
+      if(prifile != NULL)
+	Die("--rsearch and --prior <f> combination doesn't make sense.\nNo prior file is used to build RSEARCH CMs, a RIBOSUM scoring matrix is used.\n%s\n", usage);
+    }      
+  
+  /* Set up default options for rsearch mode */
+  if(do_rsearch)
+    {
+      weight_strategy = WGT_NONE;
+      eff_strategy    = EFF_NONE;
+    }
+
   if (argc - optind != 2) Die("Incorrect number of arguments.\n%s\n", usage);
   cmfile = argv[optind++];
   alifile = argv[optind++]; 
@@ -409,8 +429,13 @@ main(int argc, char **argv)
 	 SeqfileFormat2String(afp->format));
   printf("Model construction strategy:       %s\n",
 	 (use_rf)? "Manual, from RF annotation" : "Fast/ad-hoc");
-  printf("Null model used:                   %s\n",
-	 (rndfile == NULL) ? "(default)" : rndfile);
+  printf("Null model used:                   ");
+  if(do_rsearch) 
+    printf("read from matrix file (RIBOSUM)\n");
+  else if(rndfile == NULL) 
+    printf("(default)\n");
+  else
+    printf("%s\n",rndfile);
   printf("Prior used:                        %s\n",
 	 (prifile == NULL) ? "(default)" : prifile);
   printf("Effective sequence # calculation:  ");
@@ -435,7 +460,7 @@ main(int argc, char **argv)
 
 
   /**************************************************
-   *   Set up matrix
+   *   if --rsearch was enabled, set up RIBOSUM matrix
    **************************************************/
   matrixname[0]          = '\0';
   if(do_rsearch)
@@ -444,7 +469,6 @@ main(int argc, char **argv)
 	Die ("Failed to open matrix file\n%s\n", usage);
       if (! (fullmat = ReadMatrix(matfp)))
 	Die ("Failed to read matrix file \n%s\n", usage);
-      printf ("Matrix: %s\n", fullmat->name);
     }
   /*********************************************** 
    * Get alignment(s), build CMs one at a time
@@ -460,6 +484,7 @@ main(int argc, char **argv)
       if (msa->name != NULL) printf("Alignment:           %s\n",  msa->name);
       else                   printf("Alignment:           #%d\n", nali+1);
       printf                       ("Number of sequences: %d\n",  msa->nseq);
+      if(do_rsearch)        printf ("RIBOSUM Matrix:      %s\n",  fullmat->name);
       printf                       ("Number of columns:   %d\n",  msa->alen);
       printf                       ("Average seq length:  %d\n",  avlen);
       puts("");
@@ -492,175 +517,169 @@ main(int argc, char **argv)
 	{
 	  /* Set up the null/random seq model */
 	  if (rndfile == NULL)  CMDefaultNullModel(randomseq);
-	  else                  CMReadNullModel(rndfile, randomseq);
+	  else                       CMReadNullModel(rndfile, randomseq);
+
 	}
 
-
-      if(!(do_rsearch))
+      /* Sequence weighting. Default: GSC weights. If WGT_GIVEN,
+       * do nothing.
+       */
+      if (weight_strategy == WGT_NONE) /* if do_rsearch, this is true */
+	FSet(msa->wgt, msa->nseq, 1.0);
+      else if (weight_strategy == WGT_GSC)
 	{
-	  /* Sequence weighting. Default: GSC weights. If WGT_GIVEN,
-	   * do nothing.
-	   */
-	  if (weight_strategy == WGT_NONE) 
-	    FSet(msa->wgt, msa->nseq, 1.0);
-	  else if (weight_strategy == WGT_GSC)
-	    {
-	      printf("%-40s ... ", "Weighting sequences by GSC rule");
-	      fflush(stdout);
-	      GSCWeights(msa->aseq, msa->nseq, msa->alen, msa->wgt);
-	      printf("done.\n");
-	    }
-	  
-	  /* Digitize the alignment: this takes care of
-	   * case sensivitity (A vs. a), speeds all future
-	   * array indexing, and deals with the poor fools
-	   * who would give us horrid DNA (T) instead of
-	   * lovely RNA (U). It does cause one wee problem:
-	   * you need to keep in mind that a digitized seq
-	   * is indexed 1..alen, but msa (and its annotation!!)
-	   * is indexed 0..alen-1.
-	   */
-	  printf("%-40s ... ", "Digitizing alignment"); fflush(stdout);
-	  dsq = DigitizeAlignment(msa->aseq, msa->nseq, msa->alen);
-	  printf("done.\n");
-	  
-	  if (eff_strategy == EFF_NONE)
-	    {
-	      eff_nseq = (float) msa->nseq;
-	      eff_nseq_set = TRUE;
-	    }
-	  
-	  /* Construct a model, and collect observed counts.
-	   * Note on "treeforce": this is the number of sequences that we
-	   *   will ignore for the purposes of count-collection and parameterization
-	   *   of the CM. We will only use this for debugging. These seqs
-	   *   are then dumped as full parsetrees to stdout.
-	   */
-	  printf("%-40s ... ", "Constructing model architecture");
+	  printf("%-40s ... ", "Weighting sequences by GSC rule");
 	  fflush(stdout);
-	  HandModelmaker(msa, dsq, use_rf, gapthresh, &cm, &mtr);
-	  
+	  GSCWeights(msa->aseq, msa->nseq, msa->alen, msa->wgt);
 	  printf("done.\n");
-	  
-	  if(do_balance)
-	    {
-	      CM_t *new;
-	      new = CMRebalance(cm);
-	      FreeCM(cm);
-	      cm = new;
-	    }
-	  for (idx = treeforce; idx < msa->nseq; idx++)
-	    {
-	      tr = Transmogrify(cm, mtr, dsq[idx], msa->aseq[idx], msa->alen);
-	      ParsetreeCount(cm, tr, dsq[idx], msa->wgt[idx]);
-	      FreeParsetree(tr);
-	    }
-	  if(do_detach)
-	    {
-	      printf("%-40s ... ", "Finding and checking dual inserts");
-	      cm_find_and_detach_dual_inserts(cm, 
-					      TRUE,   /* Do check (END_E-1) insert states have 0 counts */
-					      FALSE); /* Don't detach the states yet, wait til CM is priorified */
-	    }
-	  
-	  printf("done.\n");
-	  
-	  /* Before converting to probabilities,
-	   * save a count vector file, if asked.
-	   * Used primarily for making data files for training priors.
-	   */
-	  if (cfile != NULL) {
-	    printf("%-40s ... ", "Saving count vector file"); fflush(stdout);
-	    if (! save_countvectors(cfile, cm)) printf("[FAILED]\n");
-	    else                                printf("done. [%s]\n", cfile);
-	  }
-	  
-	  /* EPN 11.07.05 - EFF_ENTROPY effective sequence number strategy
-	   *                ported from HMMER 2.4devl. 
-	   * Effective sequence number calculation.
-	   * (if we don't have eff_nseq yet, calculate it now).
-	   */
-	  if (! eff_nseq_set) {
-	    if (eff_strategy == EFF_ENTROPY) {
-	      printf("%-40s ... ", "Determining eff seq # by entropy target");
-	      fflush(stdout);
-	      eff_nseq = CM_Eweight(cm, pri, (float) msa->nseq, etarget);
-	    }
-	    /*EPN 11.28.05
-	     * Uncomment this block for relative entropy weighting.
-	     * else if (eff_strategy == EFF_RELENTROPY) {
-	     * printf("%-40s ... ", "Determining eff seq # by relative entropy target");
-	     * fflush(stdout);
-	     * eff_nseq = CM_Eweight_RE(cm, pri, (float) msa->nseq, (2.0-etarget), randomseq);
-	     * }
-	     */
-	    else Die("no effective seq #: shouldn't happen");
-	    
-	    CMRescale(cm, eff_nseq / (float) msa->nseq);
-	    eff_nseq_set = TRUE;
-	    printf("done. [%.2f]\n", eff_nseq);
-	  }/* End of effective seq number port code block. */
-	  
-	  /* Convert to probabilities, and the global log-odds form
-	   * we save the model in.
-	   */
-	  printf("%-40s ... ", "Converting counts to probabilities"); fflush(stdout);
-	  if(!no_prior)
-	    PriorifyCM(cm, pri);
-	  
-	  CMSetNullModel(cm, randomseq);
-	  
-	  if(do_detach) /* Detach dual inserts where appropriate, if
-		     * we get here we've already checked these states */
-	    {
-	      cm_find_and_detach_dual_inserts(cm, 
-					  FALSE, /* Don't check states have 0 counts (they won't due to priors) */
-					      TRUE); /* Detach the states by setting trans probs into them as 0.0   */
-	    }
-	  CMLogoddsify(cm);
-	  printf("done.\n");
-
-	  /* EPN 08.18.05
-	   * Calculate W for the model based on the seed seqs' tracebacks.
-	   *              Brief expt on effect of different bandp and 
-	   *              safe_windowlen scaling factor values in 
-	   *              ~nawrocki/notebook/5_0818_inf_cmbuild_bands/00LOG
-	   */
-	  printf("%-40s ... ", "Calculating max hit length for model"); fflush(stdout);
-	  safe_windowlen = 2 * MSAMaxSequenceLength(msa);
-	  
-	  /* EPN 11.13.05 
-	   * BandCalculationEngine() replaces BandDistribution() and BandBounds().
-	   * See ~nawrocki/notebook/5_1111_inf_banded_dist_vs_bandcalc/00LOG for details.
-	   */
-	  while(!(BandCalculationEngine(cm, safe_windowlen, bandp, save_gamma, &dmin, &dmax, &gamma)))
-	    {
-	      free(dmin);
-	      free(dmax);
-	      FreeBandDensities(cm, gamma);	  
-	      /*printf("Failure in BandCalculationEngine(). W:%d | bandp: %4e\n", safe_windowlen, bandp);*/
-	      safe_windowlen *= 2;
-	    }
-	  
-	  /*printf("Success in BandCalculationEngine(). W:%d | bandp: %4e\n", safe_windowlen, bandp);*/
-	  /*debug_print_bands(cm, dmin, dmax);*/
-	  cm->W = dmax[0];
-	  printf("done. [%d]\n", cm->W);
-	  
-	} /* End of sequence weighting (if(!(do_rsearch))) */
-      else /* if do_rsearch */
-	{
-	  /* 02.06.07 Postponed implementation of RSEARCH in cmbuild */
-	  Die("--rsearch not yet implemented.\n");
-	  printf("%-40s ... ", "Building RSEARCH CM from single sequence"); fflush(stdout);
-	  cm = build_cm (msa, fullmat, &querylen, alpha, beta, alphap, betap,
-			 beginsc, endsc);
-	  /* If we try to use band calculation to get W we can't satisfy that
-	   * that the amount of probability mass ignored is negligible. Current
-	   * fix is to just skip it, set W to twice query length */
-	  cm->W = 2 * MSAMaxSequenceLength(msa);
-	  CMSetNullModel(cm, randomseq);
 	}
+      
+      /* Digitize the alignment: this takes care of
+       * case sensivitity (A vs. a), speeds all future
+       * array indexing, and deals with the poor fools
+       * who would give us horrid DNA (T) instead of
+       * lovely RNA (U). It does cause one wee problem:
+       * you need to keep in mind that a digitized seq
+       * is indexed 1..alen, but msa (and its annotation!!)
+       * is indexed 0..alen-1.
+       */
+      printf("%-40s ... ", "Digitizing alignment"); fflush(stdout);
+      dsq = DigitizeAlignment(msa->aseq, msa->nseq, msa->alen);
+      printf("done.\n");
+      
+      if (eff_strategy == EFF_NONE) /* if do_rsearch, this is true */
+	{
+	  eff_nseq = (float) msa->nseq;
+	  eff_nseq_set = TRUE;
+	}
+      
+      /* Construct a model, and collect observed counts.
+       * Note on "treeforce": this is the number of sequences that we
+       *   will ignore for the purposes of count-collection and parameterization
+       *   of the CM. We will only use this for debugging. These seqs
+       *   are then dumped as full parsetrees to stdout.
+       */
+      printf("%-40s ... ", "Constructing model architecture");
+      fflush(stdout);
+      HandModelmaker(msa, dsq, use_rf, gapthresh, &cm, &mtr);
+      printf("done.\n");
+      
+      /* if we're using RSEARCH emissions (--rsearch) set the flag */
+      if(do_rsearch)  cm->flags |= CM_RSEARCHEMIT;
+
+      if(do_balance)
+	{
+	  CM_t *new;
+	  new = CMRebalance(cm);
+	  FreeCM(cm);
+	  cm = new;
+	}
+      for (idx = treeforce; idx < msa->nseq; idx++)
+	{
+	  tr = Transmogrify(cm, mtr, dsq[idx], msa->aseq[idx], msa->alen);
+	  ParsetreeCount(cm, tr, dsq[idx], msa->wgt[idx]);
+	  FreeParsetree(tr);
+	}
+      if(do_detach)
+	{
+	  printf("%-40s ... ", "Finding and checking dual inserts");
+	  cm_find_and_detach_dual_inserts(cm, 
+					  TRUE,   /* Do check (END_E-1) insert states have 0 counts */
+					  FALSE); /* Don't detach the states yet, wait til CM is priorified */
+	}
+      
+      printf("done.\n");
+      
+      /* Before converting to probabilities,
+       * save a count vector file, if asked.
+       * Used primarily for making data files for training priors.
+       */
+      if (cfile != NULL) {
+	printf("%-40s ... ", "Saving count vector file"); fflush(stdout);
+	if (! save_countvectors(cfile, cm)) printf("[FAILED]\n");
+	else                                printf("done. [%s]\n", cfile);
+      }
+	  
+      /* EPN 11.07.05 - EFF_ENTROPY effective sequence number strategy
+       *                ported from HMMER 2.4devl. 
+       * Effective sequence number calculation.
+       * (if we don't have eff_nseq yet, calculate it now).
+       */
+      if (! eff_nseq_set) {
+	if (eff_strategy == EFF_ENTROPY) {
+	  printf("%-40s ... ", "Determining eff seq # by entropy target");
+	  fflush(stdout);
+	  eff_nseq = CM_Eweight(cm, pri, (float) msa->nseq, etarget);
+	}
+	/*EPN 11.28.05
+	 * Uncomment this block for relative entropy weighting.
+	 * else if (eff_strategy == EFF_RELENTROPY) {
+	 * printf("%-40s ... ", "Determining eff seq # by relative entropy target");
+	 * fflush(stdout);
+	 * eff_nseq = CM_Eweight_RE(cm, pri, (float) msa->nseq, (2.0-etarget), randomseq);
+	 * }
+	 */
+	else Die("no effective seq #: shouldn't happen");
+	
+	CMRescale(cm, eff_nseq / (float) msa->nseq);
+	eff_nseq_set = TRUE;
+	printf("done. [%.2f]\n", eff_nseq);
+      }/* End of effective seq number port code block. */
+      
+      /* Convert to probabilities, and the global log-odds form
+       * we save the model in.
+       */
+      printf("%-40s ... ", "Converting counts to probabilities"); fflush(stdout);
+      if(!no_prior)
+	PriorifyCM(cm, pri);
+      if(do_rsearch)
+	{
+	  ribosum_calc_targets(fullmat); /* overwrite score matrix scores w/target probs */
+	  rsearch_CMProbifyEmissions(cm, fullmat); /* use those probs to set CM probs from cts */
+	  /*debug_print_cm_params(cm);*/
+	}
+      if(no_prior) CMRenormalize(cm);
+
+      /* Set cm->null null model, if rsearch mode, use bg probs used to calc RIBOSUM */
+      if(do_rsearch) CMSetNullModel(cm, fullmat->g); 
+      else           CMSetNullModel(cm, randomseq);
+      
+      if(do_detach) /* Detach dual inserts where appropriate, if
+		     * we get here we've already checked these states */
+	{
+	  cm_find_and_detach_dual_inserts(cm, 
+					  FALSE, /* Don't check states have 0 counts (they won't due to priors) */
+					  TRUE); /* Detach the states by setting trans probs into them as 0.0   */
+	}
+      CMLogoddsify(cm);
+      printf("done.\n");
+      
+      /* EPN 08.18.05
+       * Calculate W for the model based on the seed seqs' tracebacks.
+       *              Brief expt on effect of different bandp and 
+       *              safe_windowlen scaling factor values in 
+       *              ~nawrocki/notebook/5_0818_inf_cmbuild_bands/00LOG
+       */
+      printf("%-40s ... ", "Calculating max hit length for model"); fflush(stdout);
+      safe_windowlen = 2 * MSAMaxSequenceLength(msa);
+      
+      /* EPN 11.13.05 
+       * BandCalculationEngine() replaces BandDistribution() and BandBounds().
+       * See ~nawrocki/notebook/5_1111_inf_banded_dist_vs_bandcalc/00LOG for details.
+       */
+      while(!(BandCalculationEngine(cm, safe_windowlen, bandp, save_gamma, &dmin, &dmax, &gamma)))
+	{
+	  free(dmin);
+	  free(dmax);
+	  FreeBandDensities(cm, gamma);	  
+	  /*printf("Failure in BandCalculationEngine(). W:%d | bandp: %4e\n", safe_windowlen, bandp);*/
+	  safe_windowlen *= 2;
+	}
+      
+      /*printf("Success in BandCalculationEngine(). W:%d | bandp: %4e\n", safe_windowlen, bandp);*/
+      /*debug_print_bands(cm, dmin, dmax);*/
+      cm->W = dmax[0];
+      printf("done. [%d]\n", cm->W);
       
       /*11.15.05 EPN Set the EL self transition score, by default its log2(0.94).*/
       cm->el_selfsc = sreLOG2(el_selfprob);

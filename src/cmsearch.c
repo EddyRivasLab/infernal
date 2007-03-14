@@ -565,7 +565,9 @@ main(int argc, char **argv)
       FreeMat(fullmat);
 
       cm->W = 2 * MSAAverageSequenceLength(msa);
-      /* NO NULL MODEL SET! */
+      /* set null model */
+      CMSetNullModel(cm, fullmat->g); 
+
       cm->el_selfsc  = 0.; /* temporary to match RSEARCH */
       cm->iel_selfsc = Prob2Score(sreEXP2(cm->el_selfsc), 1.0);
     } 
@@ -636,6 +638,7 @@ main(int argc, char **argv)
       /* TEMPORARILY: we don't do anything (no QDB, no CP9s, no CMLogoddisfy calls etc.) 
        * if in RSEARCH mode */
       /* RSEARCH: always local, never QDB, never null2 (?), never anything CP9 related */
+      do_qdb = FALSE;
       cm->search_opts |= CM_SEARCH_NOQDB;
       cm->config_opts |= CM_CONFIG_LOCAL;
       cm->search_opts |= CM_SEARCH_RSEARCH;

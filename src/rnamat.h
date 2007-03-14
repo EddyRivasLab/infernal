@@ -24,7 +24,7 @@
  * Matrix type
  *
  * Contains array in one dimension (to be indexed later), matrix size,
- * H, and E.
+ * H, and E. 
  */
 typedef struct _matrix_t {
   double *matrix;
@@ -35,12 +35,16 @@ typedef struct _matrix_t {
 } matrix_t;
 
 /*
- * Full matrix definition
+ * Full matrix definition, includes the g background freq vector (added by EPN). 
  */
 typedef struct _fullmat_t {
   matrix_t *unpaired;
   matrix_t *paired;
   char     *name;
+  float    *g;           /* EPN: the background distro, g vector in RSEARCH paper
+			  * this now appears in the RIBOSUM matrix files */
+  int       scores_flag; /* TRUE if matrix values are log odds scores, false if 
+			  * they're log odds probs */
 } fullmat_t;
 
 /* Returns true if pos. C of seq B of msa A is a gap as defined by isgap(c) 
@@ -106,6 +110,7 @@ void print_matrix (FILE *fp, fullmat_t *fullmat);
 /*
  * Read the matrix from a file
  */
+fullmat_t *OldReadMatrix(FILE *matfp);
 fullmat_t *ReadMatrix(FILE *matfp);
 
 /*
@@ -120,6 +125,9 @@ float get_min_alpha_beta_sum (fullmat_t *fullmat);
 
 /* Free a fullmat_t object */    
 void FreeMat(fullmat_t *fullmat);
+
+/* convert a matrix with log odds scores to target freqs */
+void ribosum_calc_targets(fullmat_t *fullmat);
 
 #endif
   

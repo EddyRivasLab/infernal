@@ -20,6 +20,8 @@
 
 #include "structs.h"
 #include "funcs.h"
+#include "easel.h"
+#include "esl_vectorops.h"
 
 
 /* Function: CreateCM(); CreateCMShell(); CreateCMBody()
@@ -395,6 +397,104 @@ CMSimpleProbify(CM_t *cm)
     }
 }
 
+/* Function: rsearch_CMProbifyEmissions()
+ * Date:     EPN, Wed Mar 14 06:14:51 2007
+ *
+ * Purpose:  Convert emissions in a counts-based CM built from a single sequence, 
+ *           we expect 1 count in each vector to be 1.0, all others 0.0,
+ *           to probability form, using a RIBOSUM matrix with background
+ *           and target frequencies.
+ * 
+ *           The code that does this in RSEARCH is buildcm.c::SingleSequenceLogoddsify(), 
+ *           but that's different in that it fills in log odds scores, here we
+ *           fill in probabilities, derived from the RIBOSUM log odds scores.
+ * 
+ * Returns:   <eslOK> on success.           
+ *
+ * Throws:    <eslEINVAL> if an emission vector does not have exactly 1 non-zero
+ *                        count that is exactly 1.0 (or within 0.000001 of it)
+ */
+int
+rsearch_CMProbifyEmissions(CM_t *cm, fullmat_t *fullmat)
+{
+  int v,x,y;
+  int cur_emission;
+  float thresh;
+  int found_ct_flag;
+  int is_ct;
+  thresh = 0.000001;
+
+
+
+  /* Check the contract. */
+  if(fullmat->scores_flag) ESL_EXCEPTION(eslECONTRACT, "in rsearch_CMProbifyEmissions(), matrix is in log odds mode, it should be in probs mode");
+  for (v = 0; v < cm->M; v++) 
+    {
+      found_ct_flag = FALSE;
+      if (cm->stid[v] == MATP_MP) 
+	{
+	  /* First, figure out which letter was in the query */
+	  for (x=0; x<Alphabet_size; x++) 
+	    for (y=0; y<Alphabet_size; y++) 
+	      if (fabs(cm->e[v][x*Alphabet_size+y] - 0.) > thresh) 
+		{
+		  if(found_ct_flag) ESL_EXCEPTION(eslEINVAL, "cm->e[v:%d] a MATP_MP has > 1 non-zero count"); 
+		  cur_emission = numbered_basepair(Alphabet[x], Alphabet[y]);
+		  found_ct_flag = TRUE;
+		}
+	  /* Now, set emission probs as target probs in correct cells of score matrix */
+	  for (x=0; x<Alphabet_size*Alphabet_size; x++) 
+	    cm->e[v][x] = fullmat->paired->matrix[matrix_index(cur_emission, x)];
+	  esl_vec_FNorm(cm->e[v], Alphabet_size*Alphabet_size);
+	}
+      else if (cm->stid[v] == MATL_ML || cm->sttype[v] == MATR_MR)
+	{
+	  for (x=0; x<Alphabet_size; x++) 
+	    if (fabs(cm->e[v][x] - 0.) > thresh) 
+		{
+		  if(found_ct_flag) ESL_EXCEPTION(eslEINVAL, "cm->e[v:%d] a MAT{L,R}_M{L,R} has > 1 non-zero count"); 
+		  cur_emission = numbered_nucleotide(Alphabet[x]);
+		  found_ct_flag = TRUE;
+		}
+	  /* Now, set emission probs as target probs in correct cells of score matrix */
+	  for (x=0; x<Alphabet_size*Alphabet_size; x++) 
+	    cm->e[v][x] = fullmat->unpaired->matrix[matrix_index(cur_emission, x)];
+	  esl_vec_FNorm(cm->e[v], Alphabet_size);
+	}
+      else if (cm->stid[v] == MATP_ML || cm->sttype[v] == MATP_MR)
+	{
+	  /* RSEARCH technique: determine residue emitted to left and right, 
+	   * use target freqs from unpaired matrix for this residue. 
+	   * Alternative technique: determine residue emitted to left and right, 
+	   * marginalize target freqs from paired matrix for this residue. 
+	   * RSEARCH technique currently implemented */
+	  for (x=0; x<Alphabet_size; x++) 
+	    for (y=0; y<Alphabet_size; y++) 
+	      {
+		if (cm->stid[v] == MATP_ML && (fabs(cm->e[(v-1)][x*Alphabet_size + y] - 0.) > thresh))
+		  cur_emission = numbered_nucleotide(Alphabet[x]);
+		else if (cm->stid[v] == MATP_MR && (fabs(cm->e[(v-2)][x*Alphabet_size + y] - 0.) > thresh))
+		  cur_emission = numbered_nucleotide(Alphabet[y]);
+		/* We don't have to check we have only 1 non-zero count, we've already
+		 * done so when we filled e for the MATP_MP in the same node as v */
+	      }		
+	  /* fill emission probs */
+	  for (x=0; x<Alphabet_size; x++) 
+	    cm->e[v][x] = fullmat->unpaired->matrix[matrix_index(cur_emission, x)];
+	  esl_vec_FNorm(cm->e[v], Alphabet_size);
+	}
+      else if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) 
+	{
+	  /* Don't give any score for emissions matching to an Insert state,
+	   * but make sure we don't have any counts in any of these guys */
+	  for (x = 0; x < Alphabet_size; x++) 
+	    if(fabs(cm->e[v][x] - 0.) > thresh) ESL_EXCEPTION(eslEINVAL, "cm->e[v:%d] an I{L,R} has > 0 non-zero count", v); 
+	  esl_vec_FNorm(cm->e[v], Alphabet_size); /* these will have all been zero */
+	}
+    }
+  return eslOK;
+}
+
 /* Function: CMLogoddsify()
  * Date:     SRE, Tue Aug  1 15:18:26 2000 [St. Louis]
  *
@@ -429,6 +529,7 @@ CMLogoddsify(CM_t *cm)
 	  {
 	    cm->esc[v][x]  = sreLOG2(cm->e[v][x] / cm->null[x]);
 	    cm->iesc[v][x] = Prob2Score(cm->e[v][x], cm->null[x]);
+	    /*printf("cm->e[%4d][%2d]: %f esc: %f null[%d]: %f\n", v, x, cm->e[v][x], cm->esc[v][x], x, cm->null[x]);*/
 	    /*printf("cm->e[%4d][%2d]: %f iesc->e: %f iesc: %d\n", v, x, cm->e[v][x], Score2Prob(cm->iesc[v][x], (cm->null[x])), cm->iesc[v][x]);*/
 	  }
       /* These work even if begin/end distributions are inactive 0's,
@@ -447,6 +548,9 @@ CMLogoddsify(CM_t *cm)
   /*printf("cm->el_selfsc: %f prob: %f cm->iel_selfsc: %d prob: %f\n", cm->el_selfsc, 
 	 (sreEXP2(cm->el_selfsc)), cm->iel_selfsc, (Score2Prob(cm->iel_selfsc, 1.0)));
 	 printf("-INFTY: %d prob: %f 2^: %f\n", -INFTY, (Score2Prob(-INFTY, 1.0)), sreEXP2(-INFTY));*/
+
+  /* raise flags saying we have valid log odds scores */
+  cm->flags |= CM_HASBITS;
 }
 
 /* Function:  CMHackInsertScores()
@@ -1039,6 +1143,7 @@ CMRebalance(CM_t *cm)
   new->name = sre_strdup(cm->name, -1);
   new->acc  = sre_strdup(cm->acc,  -1);
   new->desc = sre_strdup(cm->desc, -1);
+  new->flags = cm->flags;
   for (x = 0; x < Alphabet_size; x++) new->null[x] = cm->null[x];
 
   /* Calculate "weights" (# of required extra decks) on every B and S state.
@@ -1197,3 +1302,4 @@ IMX2Free(int **mx)
   free(mx[0]);
   free(mx);
 }
+

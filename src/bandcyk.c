@@ -1029,7 +1029,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
    *****************************************************************/
   for (j = i0; j <= j0; j++) 
     {
-      gamma_j = j-i0+1; /* j is actual index in j, gamma_j is offeset j index in gamma* data structures */
+      gamma_j = j-i0+1; /* j is actual index in j, gamma_j is offset j index in gamma* data structures */
       cur = j%2;
       prv = (j-1)%2;
       for (v = cm->M-1; v > 0; v--) /* ...almost to ROOT; we handle ROOT specially... */

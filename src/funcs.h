@@ -60,6 +60,7 @@ extern void  CMZero(CM_t *cm);
 extern void  CMRenormalize(CM_t *cm);
 extern void  FreeCM(CM_t *cm);
 extern void  CMSimpleProbify(CM_t *cm);
+extern int   rsearch_CMProbifyEmissions(CM_t *cm, fullmat_t *fullmat);
 extern void  CMLogoddsify(CM_t *cm);
 extern void  CMHackInsertScores(CM_t *cm);
 extern int   CMCountStatetype(CM_t *cm, char type);

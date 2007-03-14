@@ -48,11 +48,9 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
   if((cm->search_opts & CM_SEARCH_HMMSCANBANDS) && 
      ((!(cm->search_opts & CM_SEARCH_HMMFB)) && (!(cm->search_opts & CM_SEARCH_HMMWEINBERG))))
     Die("ERROR in ConfigCM() trying to search with HMM derived bands, but w/o using a  HMM filter.");
-    
-  /* TEMPORARILY: we don't do anything (no QDB, no CP9s, no CMLogoddisfy() calls etc.) 
-   * if in RSEARCH mode */
-  if(cm->flags & CM_IS_RSEARCH) return;
-  
+
+
+  printf("in ConfigCM()\n");
   /* If we're not doing stats set the EVD stats to defaults (0.0) */
   if(!(cm->search_opts & CM_SEARCH_CMSTATS))
     {
@@ -166,8 +164,10 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
     }
   CMLogoddsify(cm);
   if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
-      CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
+    CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
 				     * makes all CP9 (if non-null) inserts equiprobable*/
+
+  printf("leaving ConfigCM()\n");
   return;
 
   /* TO DO, set up a SUB CM */
@@ -376,6 +376,8 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
    *****************************************************************/
   ConfigLocalEnds(cm, p_internal_exit);
 
+  /* new local probs invalidate log odds scores */
+  cm->flags &= ~CM_HASBITS;
   return;
 }
 
@@ -415,8 +417,11 @@ ConfigGlobal(CM_t *cm)
    * Make local ends impossible
    *****************************************************************/
   ConfigNoLocalEnds(cm);
-  CMLogoddsify(cm);
 
+  /* new probs invalidate log odds scores */
+  cm->flags &= ~CM_HASBITS;
+
+  CMLogoddsify(cm);
   return;
 }
 
@@ -452,6 +457,8 @@ ConfigNoLocalEnds(CM_t *cm)
       }
   }
   cm->flags &= ~CM_LOCAL_END; /* turn off local ends flag */
+  /* new probs invalidate log odds scores */
+  cm->flags &= ~CM_HASBITS;
   return;
 }
 
@@ -504,6 +511,8 @@ ConfigLocalEnds(CM_t *cm, float p_internal_exit)
       }
   }
   cm->flags |= CM_LOCAL_END;
+  /* new probs invalidate log odds scores */
+  cm->flags &= ~CM_HASBITS;
   return;
 }
 
@@ -931,6 +940,9 @@ EnforceSubsequence(CM_t *cm)
 	}
     }
   CMRenormalize(cm);
+  /* new probs invalidate log odds scores */
+  cm->flags &= ~CM_HASBITS;
+
   CMLogoddsify(cm);
 
   /*for(nd = cm->enf_start; nd <= enf_end; nd++) 

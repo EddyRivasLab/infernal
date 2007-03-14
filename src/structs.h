@@ -299,6 +299,9 @@ typedef struct cm_s {
 #define CM_IS_FSUB             (1<<6)  /* the CM is a fullsub CM                   */
 #define CM_IS_RSEARCH          (1<<7)  /* the CM was parameterized a la RSEARCH    */
 #define CM_ENFORCED            (1<<8)  /* CM is reparam'ized to enforce a subseq   */
+#define CM_HASBITS             (1<<9)  /* CM has valid log odds scores             */
+#define CM_RSEARCHTRANS        (1<<10) /* CM has/will have RSEARCH transitions     */
+#define CM_RSEARCHEMIT         (1<<11) /* CM has/will have RSEARCH emissions       */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL        (1<<0)  /* configure the model for local alignment  */

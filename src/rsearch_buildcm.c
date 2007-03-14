@@ -190,21 +190,31 @@ float calculate_gap_penalty (char from_state, char to_state,
  * Assumes that only one emission for each state is greater than 0.
  */
 void SingleSequenceLogoddsify (CM_t *cm, fullmat_t *fullmat, float alpha, 
-			       float beta, float alphap, float betap) {
+			       float beta, float alphap, float betap) 
+{
   int v, x, y;
   int cur_emission;
 
-  for (v=0; v<cm->M; v++) {
-    if (cm->sttype[v] != B_st && cm->sttype[v] != E_st) {
-      for (x=0; x<cm->cnum[v]; x++) {
-	cm->tsc[v][x] = -1. * calculate_gap_penalty 
-	  (cm->stid[v], cm->stid[cm->cfirst[v]+x], 
-	   cm->ndtype[cm->ndidx[v]], cm->ndtype[cm->ndidx[cm->cfirst[v]+x]],
-	   alpha, beta, alphap, betap);
-	/* alphas and betas were positive -- gap score is a penalty, so
-	   multiply by -1 */
-      }
-    }
+  /*  if(!do_priorify_trans)
+      {*/
+      for (v=0; v<cm->M; v++) 
+	{
+	  if (cm->sttype[v] != B_st && cm->sttype[v] != E_st) 
+	    {
+	      for (x=0; x<cm->cnum[v]; x++) {
+		cm->tsc[v][x] = -1. * calculate_gap_penalty 
+		  (cm->stid[v], cm->stid[cm->cfirst[v]+x], 
+		   cm->ndtype[cm->ndidx[v]], cm->ndtype[cm->ndidx[cm->cfirst[v]+x]],
+		   alpha, beta, alphap, betap);
+	    /* alphas and betas were positive -- gap score is a penalty, so
+	       multiply by -1 */
+	      }
+	    }
+      /*}
+  else
+    {
+      PriorifyCM(cm, pri, only_transitions);
+      }*/
 
     if (cm->stid[v] == MATP_MP) {
       /* First, figure out which letter was in the query */

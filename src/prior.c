@@ -214,45 +214,47 @@ PriorifyCM(CM_t *cm, Prior_t *pri)
 	    cm->t[v][i] = (float) probs[i];
 	}
       
-
-      /* Emission priors
-       */
-      if (cm->sttype[v] == MP_st)
-	{       /* Consensus base pairs */
-	  for (i = 0; i < MAXABET*MAXABET; i++)
-	    counts[i] = (double) cm->e[v][i];
-
-	  esl_mixdchlet_MPParameters(counts, MAXABET*MAXABET,
-				     pri->mbp,
-				     mixq, probs);
-
-	  for (i = 0; i < MAXABET*MAXABET; i++)
-	    cm->e[v][i] = (float) probs[i];
-	}
-      else if (cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR)
-	{      /* Consensus singlets */
-	  for (i = 0; i < MAXABET; i++)
-	    counts[i] = (double) cm->e[v][i];
-
-	  esl_mixdchlet_MPParameters(counts, MAXABET,
-				     pri->mnt,
-				     mixq, probs);
-
-	  for (i = 0; i < MAXABET; i++)
-	    cm->e[v][i] = (float) probs[i];
-	}
-      else if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st ||
-	       cm->stid[v] == MATP_ML || cm->stid[v] == MATP_MR)
-	{	/* nonconsensus singlets */
-	  for (i = 0; i < MAXABET; i++)
-	    counts[i] = (double) cm->e[v][i];
-
-	  esl_mixdchlet_MPParameters(counts, MAXABET,
-				     pri->i,
-				     mixq, probs);
-
-	  for (i = 0; i < MAXABET; i++)
-	    cm->e[v][i] = (float) probs[i];
+      if(!(cm->flags & CM_RSEARCHEMIT)) /* in rsearch emit mode, do not priorify emissions */
+	{
+	  /* Emission priors
+	   */
+	  if (cm->sttype[v] == MP_st)
+	    {       /* Consensus base pairs */
+	      for (i = 0; i < MAXABET*MAXABET; i++)
+		counts[i] = (double) cm->e[v][i];
+	      
+	      esl_mixdchlet_MPParameters(counts, MAXABET*MAXABET,
+					 pri->mbp,
+					 mixq, probs);
+	      
+	      for (i = 0; i < MAXABET*MAXABET; i++)
+		cm->e[v][i] = (float) probs[i];
+	    }
+	  else if (cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR)
+	    {      /* Consensus singlets */
+	      for (i = 0; i < MAXABET; i++)
+		counts[i] = (double) cm->e[v][i];
+	      
+	      esl_mixdchlet_MPParameters(counts, MAXABET,
+					 pri->mnt,
+					 mixq, probs);
+	      
+	      for (i = 0; i < MAXABET; i++)
+		cm->e[v][i] = (float) probs[i];
+	    }
+	  else if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st ||
+		   cm->stid[v] == MATP_ML || cm->stid[v] == MATP_MR)
+	    {	/* nonconsensus singlets */
+	      for (i = 0; i < MAXABET; i++)
+		counts[i] = (double) cm->e[v][i];
+	      
+	      esl_mixdchlet_MPParameters(counts, MAXABET,
+					 pri->i,
+					 mixq, probs);
+	      
+	      for (i = 0; i < MAXABET; i++)
+		cm->e[v][i] = (float) probs[i];
+	    }
 	}
     }/* end loop over states v */
 
