@@ -25,6 +25,7 @@
 #include "prior.h"		/* mixture Dirichlet prior */
 #include "funcs.h"		/* external functions                   */
 #include "hmmband.h"
+#include "stats.h"              /* for resolve_degenerate               */
 
 static char banner[] = "cmbuild - build RNA covariance model from alignment";
 
@@ -250,7 +251,8 @@ main(int argc, char **argv)
   float           endsc =   DEFAULT_RENDSC;
   float           min_alpha_beta_sum;
   int             querylen;     /* length of the query file */
-
+  int             seed;        /* Random seed                              */
+  int             i;
 
   /*********************************************** 
    * Parse command line
@@ -469,6 +471,7 @@ main(int argc, char **argv)
 	Die ("Failed to open matrix file\n%s\n", usage);
       if (! (fullmat = ReadMatrix(matfp)))
 	Die ("Failed to read matrix file \n%s\n", usage);
+      ribosum_calc_targets(fullmat); /* overwrite score matrix scores w/target probs */
     }
   /*********************************************** 
    * Get alignment(s), build CMs one at a time
@@ -534,6 +537,19 @@ main(int argc, char **argv)
 	  printf("done.\n");
 	}
       
+      if(do_rsearch)
+	{
+	  if(msa->nseq != 1)
+	    Die("ERROR trying to build RSEARCH CM from MSA with > 1 seqs (%d seqs)\n", msa->nseq);
+	  /* We can't have ambiguous bases in the MSA, only A,C,G,U will do.
+	   * The reason is that rsearch_CMProbifyEmissions() expects each
+	   * cm->e prob vector to have exactly 1.0 count for exactly 1 singlet
+	   * or base pair. If we have ambiguous residues though, we'll have a 
+	   * fraction of a count for more than one residue/base pair for some v.
+	   */
+	  ribosum_MSA_resolve_degeneracies(fullmat, msa);
+	}
+
       /* Digitize the alignment: this takes care of
        * case sensivitity (A vs. a), speeds all future
        * array indexing, and deals with the poor fools
@@ -552,7 +568,7 @@ main(int argc, char **argv)
 	  eff_nseq = (float) msa->nseq;
 	  eff_nseq_set = TRUE;
 	}
-      
+
       /* Construct a model, and collect observed counts.
        * Note on "treeforce": this is the number of sequences that we
        *   will ignore for the purposes of count-collection and parameterization
@@ -634,7 +650,6 @@ main(int argc, char **argv)
 	PriorifyCM(cm, pri);
       if(do_rsearch)
 	{
-	  ribosum_calc_targets(fullmat); /* overwrite score matrix scores w/target probs */
 	  rsearch_CMProbifyEmissions(cm, fullmat); /* use those probs to set CM probs from cts */
 	  /*debug_print_cm_params(cm);*/
 	}

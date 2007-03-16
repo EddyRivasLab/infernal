@@ -53,8 +53,8 @@ int numbered_nucleotide (char c) {
  * AA -> 0
  * AC -> 1
  * ....
- * TG -> 15
- * TT -> 16 (T==U)
+ * TG -> 14
+ * TT -> 15 (T==U)
  * Anything else maps to -1
  */
 int numbered_basepair (char c, char d) {
@@ -588,8 +588,8 @@ fullmat_t *ReadMatrix(FILE *matfp) {
   strncpy (fullmat->name, cp, i);
   fullmat->name[i] = '\0';
   cp = cp + i;
-  if(strstr (fullmat->name, "SUM")) fullmat->scores_flag = TRUE;
-  else if(strstr (fullmat->name, "PROB")) fullmat->scores_flag = FALSE;
+  if(strstr (fullmat->name, "SUM")) { fullmat->scores_flag = TRUE; fullmat->probs_flag = FALSE; }
+  else if(strstr (fullmat->name, "PROB")) { fullmat->scores_flag = FALSE; fullmat->probs_flag = TRUE; }
   else Die("ERROR reading matrix, name does not include SUM or PROB.\n");
 
   /* Now, find the first A */
@@ -862,16 +862,30 @@ void FreeMat(fullmat_t *fullmat)
  * Purpose:  Given a RIBOSUM score matrix data structure (fullmat_t) with
  *           log odds scores (as read in from a RIBOSUM file) and a background
  *           model (fullmat->g), overwrite the log-odds scores with target
- *           probabilities.
+ *           probabilities f_ij that satisfy:
+ * 
+ *           sum_ij f_ij = 1.0
+ *
+ *           NOTE: these target probs are not the same target probs
+ *                 dumped by makernamat -p in RSEARCH, those *off-diagonals*
+ *                 are double what I'm calculating here.
+ *                 (so that sum_ii f'_ii + sum_j<i f'_ij = 1.0)
+ *                 
+ *
+ * Returns:   <eslOK> on success.
  *
  */
-void ribosum_calc_targets(fullmat_t *fullmat)
+int ribosum_calc_targets(fullmat_t *fullmat)
 {
   int       idx;
   int       a,b,i,j,k,l;
 
   /* Check the contract. */
-  if(!(fullmat->scores_flag)) Die("ERROR, in ribosum_calc_targets(), matrix is not in log odds mode, this violates the contract.\n");
+  if(!(fullmat->scores_flag)) ESL_EXCEPTION(eslECONTRACT, "in ribosum_calc_targets(), matrix is not in log odds mode");
+  if(fullmat->probs_flag) ESL_EXCEPTION(eslECONTRACT, "in ribosum_calc_targets(), matrix is already in probs mode");
+  
+  /*printf("\nbeginning of ribosum_calc_targets, printing mx:\n");
+    print_matrix(stdout, fullmat);*/
 
   /* convert log odds score s_ij, to target (f_ij) 
    * using background freqs (g), by:
@@ -885,15 +899,11 @@ void ribosum_calc_targets(fullmat_t *fullmat)
       {
 	fullmat->unpaired->matrix[idx] = 
 	  fullmat->g[i] * fullmat->g[j] * sreEXP2(fullmat->unpaired->matrix[idx]);
-	if(i != j) fullmat->unpaired->matrix[idx] *= 2.; 
-	/* careful, we're dealing with a symmetric matrix multiply off-diagonal by 2 */
 	idx++;
       }					       
-
   /* and the paired matrix, careful about for loops here, we 
    * use 4 nested ones just to keep track of which backgrounds to multiply 
    * (the g[i] * g[j] * g[k] * g[l] part) */
-
   idx = 0;
   for(a = 0; a < sizeof(RNAPAIR_ALPHABET)-1; a++)
     for(b = 0; b <= a; b++)
@@ -906,17 +916,311 @@ void ribosum_calc_targets(fullmat_t *fullmat)
 	fullmat->paired->matrix[idx] = 
 	  fullmat->g[i] * fullmat->g[j] * fullmat->g[k] * fullmat->g[l] * 
 	  sreEXP2(fullmat->paired->matrix[idx]);
-	if(a != b) fullmat->paired->matrix[idx] *= 2.; 
-	/* careful, we're dealing with a symmetric matrix multiply off-diagonal by 2 */
 	idx++;
       }					       
 
-  /* Normalize the target frequencies. */
+  /* We have to be careful with normalizing the matrices b/c they are
+   * symmetric and fullmat_t only stores f_ij i<=j. So we double
+   * the f_ij if i!=j, normalize it (it should then sum to 1.)
+   * and then halve the f_ij i != j's. */
+  /* normalize the unpaired matrix */
+  idx = 0;
+  for(i = 0; i < sizeof(RNA_ALPHABET)-1; i++)
+    for(j = 0; j <= i; j++)
+      {
+	if(i != j) fullmat->unpaired->matrix[idx] *= 2.;
+	idx++;
+      }
   esl_vec_DNorm(fullmat->unpaired->matrix, fullmat->unpaired->full_size);
+  idx = 0;
+  for(i = 0; i < sizeof(RNA_ALPHABET)-1; i++)
+    for(j = 0; j <= i; j++)
+      {
+	if(i != j) fullmat->unpaired->matrix[idx] *= 0.5;
+	idx++;
+      }
+
+  /* normalize the paired matrix */
+  idx = 0;
+  for(a = 0; a < sizeof(RNAPAIR_ALPHABET)-1; a++)
+    for(b = 0; b <= a; b++)
+      {
+	if(a != b) fullmat->paired->matrix[idx] *= 2.;
+	idx++;
+      }
   esl_vec_DNorm(fullmat->paired->matrix,   fullmat->paired->full_size);
-  /* Lower the scores_flag, we've got probs now */
+  idx = 0;
+  for(a = 0; a < sizeof(RNAPAIR_ALPHABET)-1; a++)
+    for(b = 0; b <= a; b++)
+      {
+	if(a != b) fullmat->paired->matrix[idx] *= 0.5;
+	idx++;
+      }
+
+  /* Lower the scores_flag, raise probs_flag */
   fullmat->scores_flag = FALSE;
+  fullmat->probs_flag = TRUE;
 
   /*printf("\nend of ribosum_calc_targets, printing mx:\n");
     print_matrix(stdout, fullmat);*/
+  return eslOK;
 }
+
+/* Function: ribosum_MSA_resolve_degeneracies
+ * 
+ * Incept:   EPN, Thu Mar 15 05:37:22 2007
+ * 
+ * Purpose:  Given a RIBOSUM score matrix data structure (fullmat_t) with
+ *           target probabilites and a MSA with SS markup, remove all 
+ *           ambiguous bases. Do this by selecting the most likely 
+ *           singlet or base pair that matches each ambiguity given the
+ *           RIBOSUM matrix.
+ *           (ex: (G|A) for 'R', or (GG|GC|AG|AC) bp for 'RS' base pair)
+ *
+ *
+ * Returns:   <eslOK> on success.
+ * 
+ * The degenerate code used here is:
+ * (taken from http://www.neb.com/neb/products/REs/RE_code.html
+ *
+ *                         X = A or C or G or T
+ *                         R = G or A
+ *                         Y = C or T
+ *                         M = A or C
+ *                         K = G or T
+ *                         S = G or C
+ *                         W = A or T
+ *                         H = not G (A or C or T)
+ *                         B = not A (C or G or T)
+ *                         V = not T (A or C or G)
+ *                         D = not C (A or G or T)
+ *                         N = A or C or G or T
+ */
+int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, MSA *msa)
+{
+  int       idx;
+  int       i,j,l;
+  int      *ct;		  /* 0..alen-1 base pair partners array         */
+  int       apos;
+  char degen_string[12] = "XRYMKSWHBVDN";
+  char rna_string[4] =    "ACGU";
+  int  degen_mx[12][Alphabet_size];
+  char       c;           /* tmp char for current degeneracy, uppercase */
+  char      *cp;          /* tmp char pointer for finding c in degen_string */
+  char       c_m;         /* tmp char for current bp mate's degeneracy, uppercase */
+  char      *cp_m;        /* tmp char pointer for finding c_m in degen_string */
+  float      unpaired_marginals[Alphabet_size]; 
+  float      paired_marginals[Alphabet_size*Alphabet_size]; 
+  float  cur_unpaired_marginals[Alphabet_size]; 
+  float  cur_paired_marginals[Alphabet_size*Alphabet_size]; 
+  int        dpos;       /* position of c within degen_string */
+  int        dpos_m;     /* position of c_m within degen_string */
+  int        argmax;    
+  int        mate;       /* used as ct[apos-1] */
+  int        status;
+
+  /* Check the contract. */
+  if(!(fullmat->probs_flag)) ESL_EXCEPTION(eslECONTRACT, "in ribosum_MSA_resolve_degeneracies(), matrix is not in probs mode");
+  if(fullmat->scores_flag) ESL_EXCEPTION(eslECONTRACT, "in ribosum_MSA_resolve_degeneracies(), matrix is in scores mode");
+  if(msa->nseq != 1) ESL_EXCEPTION(eslECONTRACT, "MSA does not have exactly 1 seq"); 
+  if(Alphabet_size != 4) ESL_EXCEPTION(eslECONTRACT, "Alphabet_size not 4");
+  
+  printf("in ribosum_MSA_resolve_degeneracies()\n");
+  
+  /* Laboriously fill in degen_mx, NOTE: this will fall over if alphabet is not RNA! */
+  for(l = 0; l < 11; l++)
+    for(i = 0; i < Alphabet_size; i++)
+      degen_mx[l][i] = 0;
+  
+  /* 'X' = A|C|G|U */
+  degen_mx[0][0] = degen_mx[0][1] = degen_mx[0][2] = degen_mx[0][3] = 1;
+  /* 'R' = A|G */
+  degen_mx[1][0] = degen_mx[1][2] = 1;
+  /* 'Y' = C|U */
+  degen_mx[2][1] = degen_mx[2][3] = 1;
+  /* 'M' = A|C */
+  degen_mx[3][0] = degen_mx[3][1] = 1;
+  /* 'K' = G|U */
+  degen_mx[4][2] = degen_mx[4][3] = 1;
+  /* 'S' = C|G */
+  degen_mx[5][1] = degen_mx[5][2] = 1;
+  /* 'W' = A|U */
+  degen_mx[6][0] = degen_mx[6][3] = 1;
+  /* 'H' = A|C|U */
+  degen_mx[7][0] = degen_mx[7][1] = degen_mx[7][3] = 1;
+  /* 'B' = C|G|U */
+  degen_mx[8][1] = degen_mx[8][2] = degen_mx[8][3] = 1;
+  /* 'V' = A|C|G */
+  degen_mx[9][0] = degen_mx[9][1] = degen_mx[9][2] = 1;
+  /* 'D' = A|G|U */
+  degen_mx[10][0] = degen_mx[10][2] = degen_mx[10][3] = 1;
+  /* 'N' = A|C|G|U */
+  degen_mx[11][0] = degen_mx[11][1] = degen_mx[11][2] = degen_mx[11][3] = 1;
+
+  /* calculate paired_marginals and unpaired_marginals as: 
+   * marginal[x] = sum_y P(x,y) 
+   */
+  esl_vec_FSet(unpaired_marginals, Alphabet_size, 0.);
+  esl_vec_FSet(paired_marginals, Alphabet_size * Alphabet_size, 0.);
+
+  for(i = 0; i < Alphabet_size; i++)
+    for(j = 0; j < Alphabet_size; j++)
+      unpaired_marginals[i] += fullmat->unpaired->matrix[matrix_index(i,j)];
+  idx = 0;
+  for(i = 0; i < (Alphabet_size*Alphabet_size); i++)
+    for(j = 0; j < (Alphabet_size*Alphabet_size); j++)
+      paired_marginals[i] += fullmat->paired->matrix[matrix_index(i,j)];
+
+  /*for(i = 0; i < (Alphabet_size); i++)
+    printf("unpaired_marginals[i:%d]: %f\n", i, unpaired_marginals[i]);
+    for(i = 0; i < (Alphabet_size*Alphabet_size); i++)
+    printf("paired_marginals[i:%d]: %f\n", i, paired_marginals[i]);*/
+
+  esl_vec_FNorm(unpaired_marginals, Alphabet_size);
+  esl_vec_FNorm(paired_marginals, Alphabet_size*Alphabet_size);
+
+  /* get ct array, indexed 1..alen while apos is 0..alen-1 */
+  WUSS2ct(msa->ss_cons, msa->alen, FALSE, &ct);  
+  for(apos = 0; apos < msa->alen; apos++)
+    {
+      if (isgap(msa->aseq[0][apos])) ESL_EXCEPTION(eslECONTRACT, "MSA has gaps, should be ungapped (1 seq)");
+      mate = ct[apos+1];
+      if(mate != 0 && (mate-1) < apos) continue; /* we've already dealt with that guy */ 
+      c = toupper(msa->aseq[0][apos]);
+      if(c == 'T') c = 'U';
+      cp = strchr(rna_string, c);
+      if(cp == NULL)
+	{
+	  /* a degeneracy */
+	  if((cp = strchr(degen_string, c)) == NULL) ESL_XEXCEPTION(eslEINVAL, "character is not ACGTU or a recognized ambiguity code");
+	  dpos = cp-degen_string;
+	  if(mate == 0) /* single stranded */
+	    {
+	      /*printf("\nCASE 1 SS AMBIG\n");
+		printf("apos: %d c: %c\n", apos, c);*/
+	      /* of possible residues, find the one with the highest marginal
+	       * in RIBOSUM: argmax_x sum_Y P(x,y)  */
+	      for(i = 0; i < Alphabet_size; i++)
+		cur_unpaired_marginals[i] = degen_mx[dpos][i] * unpaired_marginals[i];
+	      argmax = esl_vec_FArgMax(cur_unpaired_marginals, Alphabet_size);
+	      msa->aseq[0][apos] = rna_string[argmax];
+	      /*printf("c: %c at posn %d argmax: %d msa[apos:%d]: %c\n", c, (int) (cp-degen_string), argmax, apos, msa->aseq[0][apos]);
+		printf("new ss: %c\n", rna_string[argmax]);*/
+	    }
+	  else /* paired */
+	    {
+	      /* is mate ambiguous? */
+	      c_m = toupper(msa->aseq[0][(mate-1)]);
+	      if(c_m == 'T') c_m = 'U';
+	      cp_m = strchr(rna_string, c_m);
+	      if(cp_m == NULL)
+		{
+		  /* mate is ambiguous */
+		  /*printf("\nCASE 4 PAIR, BOTH AMBIG\n");
+		    printf("left (apos) %d c: %c mate %d c_m: %c\n", apos, c, (mate-1), c_m);
+		  */
+		  if((cp_m = strchr(degen_string, c_m)) == NULL) ESL_XEXCEPTION(eslEINVAL, "character is not ACGTU or a recognized ambiguity code");
+		  dpos_m = cp_m-degen_string;
+		  /* we know that mate-1 > apos, we continued above if that was false */
+		  idx = 0;
+		  for(i = 0; i < (Alphabet_size); i++)
+		    for(j = 0; j < (Alphabet_size); j++)
+		      {
+			cur_paired_marginals[idx] = degen_mx[dpos][i] * degen_mx[dpos_m][j] * 
+			  paired_marginals[idx];
+			/*printf("degen_mx[dpos:  %d][i:%d]: %d\n", dpos, i, degen_mx[dpos][i]);
+			  printf("degen_mx[dpos_m:%d][j:%d]: %d\n", dpos_m, j, degen_mx[dpos_m][j]);
+			  printf("cur_paired_marginals[idx:%d]: %f\n", idx, cur_paired_marginals[idx]);*/
+			idx++;
+		      }
+		  argmax = esl_vec_FArgMax(cur_paired_marginals, (Alphabet_size*Alphabet_size));
+		  msa->aseq[0][apos]     = RNAPAIR_ALPHABET[argmax];
+		  msa->aseq[0][(mate-1)] = RNAPAIR_ALPHABET2[argmax];
+		  /*printf("new bp: left: %c right: %c\n", RNAPAIR_ALPHABET[argmax], RNAPAIR_ALPHABET2[argmax]);*/
+
+		}
+	      else /* mate is unambiguous */
+		{
+		  /*printf("\nCASE 2 PAIR, LEFT AMBIG, RIGHT NOT\n");
+		    printf("left (apos) %d c: %c mate %d c_m: %c\n", apos, c, (mate-1), c_m);*/
+		  cp_m = strchr(rna_string, c_m);
+		  dpos_m = cp_m - rna_string;
+		  /* cp_m is 0 for A, 1 for C, 2 for G, 3 for U in mate-1 */
+		  idx = 0;
+		  for(i = 0; i < (Alphabet_size); i++)
+		    for(j = 0; j < (Alphabet_size); j++)
+		      {
+			cur_paired_marginals[idx] = degen_mx[dpos][i] * (j == dpos_m) *
+			  paired_marginals[idx];
+			/*printf("cur_paired_marginals[idx:%d]: %f\n", idx, cur_paired_marginals[idx]);*/
+			idx++;
+		      }
+		  argmax = esl_vec_FArgMax(cur_paired_marginals, (Alphabet_size*Alphabet_size));
+		  msa->aseq[0][apos]     = RNAPAIR_ALPHABET[argmax];
+		  msa->aseq[0][(mate-1)] = RNAPAIR_ALPHABET2[argmax];
+		  /*printf("new bp: left: %c right: %c\n", RNAPAIR_ALPHABET[argmax], RNAPAIR_ALPHABET2[argmax]);*/
+		}
+	    }
+	}
+      /* we could still have unambiguous apos, but an ambiguous mate, which we deal 
+       * with here: */
+      if(mate != 0)
+	{
+	  c_m = toupper(msa->aseq[0][(mate-1)]);
+	  if(c_m == 'T') c = 'U';
+	  cp_m = strchr(rna_string, c_m);
+	  if(cp_m == NULL)
+	    {
+	      /* mate is ambiguous */
+	      if((cp_m = strchr(degen_string, c_m)) == NULL) ESL_XEXCEPTION(eslEINVAL, "character is not ACGTU or a recognized ambiguity code");
+	      dpos_m = cp_m - degen_string;
+	      /*printf("\nCASE 3 PAIR, LEFT NOT, RIGHT AMBIG\n");
+		printf("left (apos) %d c: %c mate %d c_m: %c dpos_m\n", apos, c, (mate-1), c_m, dpos);*/
+	      cp = strchr(rna_string, c); 
+	      if(cp == NULL) ESL_XEXCEPTION(eslEINVAL, "character is not ACGTU or a recognized ambiguity code");
+	      dpos = cp - rna_string;
+	      idx = 0;
+	      for(i = 0; i < (Alphabet_size); i++)
+		for(j = 0; j < (Alphabet_size); j++)
+		  {
+		    cur_paired_marginals[idx] = (i == dpos) * degen_mx[dpos_m][j] * 
+		      paired_marginals[idx];
+		    /*printf("cur_paired_marginals[idx:%d]: %f\n", idx, cur_paired_marginals[idx]);*/
+		    idx++;
+		  }
+	      argmax = esl_vec_FArgMax(cur_paired_marginals, (Alphabet_size*Alphabet_size));
+	      msa->aseq[0][apos]     = RNAPAIR_ALPHABET[argmax];
+	      msa->aseq[0][(mate-1)] = RNAPAIR_ALPHABET2[argmax];
+	      /*printf("new bp: left: %c right: %c\n", RNAPAIR_ALPHABET[argmax], RNAPAIR_ALPHABET2[argmax]);*/
+	    }	      
+	}
+    }
+  return eslOK;
+ ERROR:
+  return eslEINVAL;
+}
+
+/*
+ * Maps i as follows:
+ * 0->A
+ * 1->C
+ * 2->G
+ * 3->U
+ * else->-1
+ */
+int unpaired_res (int i) 
+{
+  switch (i) {
+  case 0: 
+    return ('A');
+  case 1: 
+    return ('C');
+  case 2: 
+    return ('G');
+  case 3: 
+    return ('U');
+  }
+  return (-1);
+}
+
+

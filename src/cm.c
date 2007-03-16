@@ -428,17 +428,26 @@ rsearch_CMProbifyEmissions(CM_t *cm, fullmat_t *fullmat)
 
   /* Check the contract. */
   if(fullmat->scores_flag) ESL_EXCEPTION(eslECONTRACT, "in rsearch_CMProbifyEmissions(), matrix is in log odds mode, it should be in probs mode");
+  if(!(cm->flags &= CM_RSEARCHEMIT)) (eslECONTRACT, "in rsearch_CMProbifyEmissions(), matrix is in log odds mode, it should be in probs mode");
+  
   for (v = 0; v < cm->M; v++) 
     {
       found_ct_flag = FALSE;
       if (cm->stid[v] == MATP_MP) 
 	{
 	  /* First, figure out which letter was in the query */
+	  
 	  for (x=0; x<Alphabet_size; x++) 
 	    for (y=0; y<Alphabet_size; y++) 
 	      if (fabs(cm->e[v][x*Alphabet_size+y] - 0.) > thresh) 
 		{
-		  if(found_ct_flag) ESL_EXCEPTION(eslEINVAL, "cm->e[v:%d] a MATP_MP has > 1 non-zero count"); 
+		  if(found_ct_flag)
+		    {
+		      for (x=0; x<Alphabet_size; x++) 
+			for (y=0; y<Alphabet_size; y++) 
+			  printf("cm->e[v:%d][%d]: %f\n", v, (x*Alphabet_size+y), cm->e[v][(x*Alphabet_size+y)]);
+		      ESL_EXCEPTION(eslEINVAL, "cm->e[v:%d] a MATP_MP has > 1 non-zero count"); 
+		    }
 		  cur_emission = numbered_basepair(Alphabet[x], Alphabet[y]);
 		  found_ct_flag = TRUE;
 		}
@@ -447,7 +456,7 @@ rsearch_CMProbifyEmissions(CM_t *cm, fullmat_t *fullmat)
 	    cm->e[v][x] = fullmat->paired->matrix[matrix_index(cur_emission, x)];
 	  esl_vec_FNorm(cm->e[v], Alphabet_size*Alphabet_size);
 	}
-      else if (cm->stid[v] == MATL_ML || cm->sttype[v] == MATR_MR)
+      else if (cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR)
 	{
 	  for (x=0; x<Alphabet_size; x++) 
 	    if (fabs(cm->e[v][x] - 0.) > thresh) 
@@ -457,11 +466,11 @@ rsearch_CMProbifyEmissions(CM_t *cm, fullmat_t *fullmat)
 		  found_ct_flag = TRUE;
 		}
 	  /* Now, set emission probs as target probs in correct cells of score matrix */
-	  for (x=0; x<Alphabet_size*Alphabet_size; x++) 
+	  for (x=0; x<Alphabet_size; x++) 
 	    cm->e[v][x] = fullmat->unpaired->matrix[matrix_index(cur_emission, x)];
 	  esl_vec_FNorm(cm->e[v], Alphabet_size);
 	}
-      else if (cm->stid[v] == MATP_ML || cm->sttype[v] == MATP_MR)
+      else if (cm->stid[v] == MATP_ML || cm->stid[v] == MATP_MR)
 	{
 	  /* RSEARCH technique: determine residue emitted to left and right, 
 	   * use target freqs from unpaired matrix for this residue. 

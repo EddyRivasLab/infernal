@@ -195,87 +195,80 @@ void SingleSequenceLogoddsify (CM_t *cm, fullmat_t *fullmat, float alpha,
   int v, x, y;
   int cur_emission;
 
-  /*  if(!do_priorify_trans)
-      {*/
-      for (v=0; v<cm->M; v++) 
+  for (v=0; v<cm->M; v++) 
+    {
+      if (cm->sttype[v] != B_st && cm->sttype[v] != E_st) 
 	{
-	  if (cm->sttype[v] != B_st && cm->sttype[v] != E_st) 
-	    {
-	      for (x=0; x<cm->cnum[v]; x++) {
-		cm->tsc[v][x] = -1. * calculate_gap_penalty 
-		  (cm->stid[v], cm->stid[cm->cfirst[v]+x], 
-		   cm->ndtype[cm->ndidx[v]], cm->ndtype[cm->ndidx[cm->cfirst[v]+x]],
-		   alpha, beta, alphap, betap);
+	  for (x=0; x<cm->cnum[v]; x++) {
+	    cm->tsc[v][x] = -1. * calculate_gap_penalty 
+	      (cm->stid[v], cm->stid[cm->cfirst[v]+x], 
+	       cm->ndtype[cm->ndidx[v]], cm->ndtype[cm->ndidx[cm->cfirst[v]+x]],
+	       alpha, beta, alphap, betap);
 	    /* alphas and betas were positive -- gap score is a penalty, so
 	       multiply by -1 */
-	      }
-	    }
-      /*}
-  else
-    {
-      PriorifyCM(cm, pri, only_transitions);
-      }*/
-
-    if (cm->stid[v] == MATP_MP) {
-      /* First, figure out which letter was in the query */
-      for (x=0; x<Alphabet_size; x++) {
-	for (y=0; y<Alphabet_size; y++) {
-	  if (cm->e[v][x*Alphabet_size+y] > 0) {
-	    cur_emission = numbered_basepair(Alphabet[x], Alphabet[y]);
-	    x = Alphabet_size;
-	    y = Alphabet_size;
 	  }
 	}
-      }
-      /* Now, calculate the scores from that */
-      for (x=0; x<Alphabet_size*Alphabet_size; x++) {
+      
+      if (cm->stid[v] == MATP_MP) {
+	/* First, figure out which letter was in the query */
+	for (x=0; x<Alphabet_size; x++) {
+	  for (y=0; y<Alphabet_size; y++) {
+	    if (cm->e[v][x*Alphabet_size+y] > 0) {
+	      cur_emission = numbered_basepair(Alphabet[x], Alphabet[y]);
+	      x = Alphabet_size;
+	      y = Alphabet_size;
+	    }
+	  }
+	}
+	/* Now, calculate the scores from that */
+	for (x=0; x<Alphabet_size*Alphabet_size; x++) {
 	  cm->esc[v][x] = \
 	    fullmat->paired->matrix[matrix_index(cur_emission, x)];
-      }
-    } else if (cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR) {
-      /* Which letter was in the query */
-      for (x=0; x<Alphabet_size; x++) {
-	if (cm->e[v][x] > 0) {
-	  cur_emission = numbered_nucleotide(Alphabet[x]);
-	  x = Alphabet_size;
 	}
-      }
-      for (x=0; x<Alphabet_size; x++) {
-	cm->esc[v][x] = \
-	  fullmat->unpaired->matrix[matrix_index(cur_emission, x)];
-      }
-    } else if (cm->stid[v] == MATP_ML || cm->stid[v] == MATP_MR) {
-      /* Which letter was in the query */
-      for (x=0; x<Alphabet_size; x++) {
-	for (y=0; y<Alphabet_size; y++) {
-	  /* Get emisison count for MATP state of this state's node */
-          /* Depends on states in a given node being ordered always in 
-             same order, which is same as how they're indexed in the 
-             defines for UNIQUESTATES */
-	  if (cm->e[v-(cm->stid[v]-MATP_MP)][x*Alphabet_size + y] > 0) {
-	    if (cm->stid[v] == MATP_ML) {
-	      cur_emission = numbered_nucleotide(Alphabet[x]);
-	    } else {
-	      cur_emission = numbered_nucleotide(Alphabet[y]);
-	    }
+      } else if (cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR) {
+	/* Which letter was in the query */
+	for (x=0; x<Alphabet_size; x++) {
+	  if (cm->e[v][x] > 0) {
+	    cur_emission = numbered_nucleotide(Alphabet[x]);
 	    x = Alphabet_size;
-	    y = Alphabet_size;
 	  }
 	}
-      }
-      for (x=0; x<Alphabet_size; x++) {
-	cm->esc[v][x] = \
-	  fullmat->unpaired->matrix[matrix_index(cur_emission, x)];
-      }
-    } else if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) {
-      /* Don't give any score for emissions matching to an Insert state */
-      if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) {
-	for (x = 0; x < Alphabet_size; x++) {
-	  cm->esc[v][x] = 0;
+	for (x=0; x<Alphabet_size; x++) {
+	  cm->esc[v][x] = \
+	    fullmat->unpaired->matrix[matrix_index(cur_emission, x)];
+	}
+      } else if (cm->stid[v] == MATP_ML || cm->stid[v] == MATP_MR) {
+	/* Which letter was in the query */
+	for (x=0; x<Alphabet_size; x++) {
+	  for (y=0; y<Alphabet_size; y++) {
+	    /* Get emisison count for MATP state of this state's node */
+	    /* Depends on states in a given node being ordered always in 
+	       same order, which is same as how they're indexed in the 
+	       defines for UNIQUESTATES */
+	    if (cm->e[v-(cm->stid[v]-MATP_MP)][x*Alphabet_size + y] > 0) {
+	      if (cm->stid[v] == MATP_ML) {
+		cur_emission = numbered_nucleotide(Alphabet[x]);
+	      } else {
+		cur_emission = numbered_nucleotide(Alphabet[y]);
+	      }
+	      x = Alphabet_size;
+	      y = Alphabet_size;
+	    }
+	  }
+	}
+	for (x=0; x<Alphabet_size; x++) {
+	  cm->esc[v][x] = \
+	    fullmat->unpaired->matrix[matrix_index(cur_emission, x)];
+	}
+      } else if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) {
+	/* Don't give any score for emissions matching to an Insert state */
+	if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) {
+	  for (x = 0; x < Alphabet_size; x++) {
+	    cm->esc[v][x] = 0;
+	  }
 	}
       }
     }
-  }
   fflush(stdout);
 }
 

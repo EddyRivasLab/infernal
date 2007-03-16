@@ -17,6 +17,7 @@
 
 #define RNA_ALPHABET_SIZE Alphabet_size
 
+#define RNA_ALPHABET "ACGU"
 #define RNAPAIR_ALPHABET "AAAACCCCGGGGUUUU"
 #define RNAPAIR_ALPHABET2 "ACGUACGUACGUACGU"
 
@@ -43,8 +44,10 @@ typedef struct _fullmat_t {
   char     *name;
   float    *g;           /* EPN: the background distro, g vector in RSEARCH paper
 			  * this now appears in the RIBOSUM matrix files */
-  int       scores_flag; /* TRUE if matrix values are log odds scores, false if 
-			  * they're log odds probs */
+  int       scores_flag; /* TRUE if matrix values are log odds scores, FALSE if 
+			  * they're target probs, or unfilled */
+  int       probs_flag;  /* TRUE if matrix values are target probs, FALSE if 
+			  * they're log odds scores, or unfilled */
 } fullmat_t;
 
 /* Returns true if pos. C of seq B of msa A is a gap as defined by isgap(c) 
@@ -127,7 +130,21 @@ float get_min_alpha_beta_sum (fullmat_t *fullmat);
 void FreeMat(fullmat_t *fullmat);
 
 /* convert a matrix with log odds scores to target freqs */
-void ribosum_calc_targets(fullmat_t *fullmat);
+int ribosum_calc_targets(fullmat_t *fullmat);
+
+/* resolve degeneracies in a single seq MSA by replacing
+ * with most likely target residue within degenerate alphabet */
+int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, MSA *msa);
+
+/*
+ * Maps i as follows:
+ * 0->A
+ * 1->C
+ * 2->G
+ * 3->U
+ * else->-1
+ */
+int unpaired_res (int i);
 
 #endif
   
