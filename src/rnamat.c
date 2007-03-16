@@ -1083,9 +1083,12 @@ int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, MSA *msa)
   WUSS2ct(msa->ss_cons, msa->alen, FALSE, &ct);  
   for(apos = 0; apos < msa->alen; apos++)
     {
-      if (isgap(msa->aseq[0][apos])) ESL_EXCEPTION(eslECONTRACT, "MSA has gaps, should be ungapped (1 seq)");
+      if (isgap(msa->aseq[0][apos])) continue; /* we can still gaps in 1 seq MSA, they'll
+						* be dealt with (ignored) in 
+						* modelmaker.c:HandModelMaker() */
       mate = ct[apos+1];
       if(mate != 0 && (mate-1) < apos) continue; /* we've already dealt with that guy */ 
+      if(mate != 0 && isgap(msa->aseq[0][(mate-1)])) mate = 0; /* pretend he's SS */
       c = toupper(msa->aseq[0][apos]);
       if(c == 'T') c = 'U';
       cp = strchr(rna_string, c);

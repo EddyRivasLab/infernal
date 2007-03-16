@@ -421,14 +421,13 @@ rsearch_CMProbifyEmissions(CM_t *cm, fullmat_t *fullmat)
   int cur_emission;
   float thresh;
   int found_ct_flag;
-  int is_ct;
   thresh = 0.000001;
 
 
 
   /* Check the contract. */
   if(fullmat->scores_flag) ESL_EXCEPTION(eslECONTRACT, "in rsearch_CMProbifyEmissions(), matrix is in log odds mode, it should be in probs mode");
-  if(!(cm->flags &= CM_RSEARCHEMIT)) (eslECONTRACT, "in rsearch_CMProbifyEmissions(), matrix is in log odds mode, it should be in probs mode");
+  if(!(cm->flags & CM_RSEARCHEMIT)) ESL_EXCEPTION(eslECONTRACT, "in rsearch_CMProbifyEmissions(), CM_RSEARCHEMIT flag is down");
   
   for (v = 0; v < cm->M; v++) 
     {
