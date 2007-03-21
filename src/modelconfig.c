@@ -162,12 +162,18 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
       cm->el_selfsc = (IMPOSSIBLE / (cm->W+1));
       cm->iel_selfsc = -INFTY;
     }
+  /* Potentially, overwrite transitions with non-probabilistic 
+   * RSEARCH transitions, we do this after setting up QDBs and
+   * the CP9 HMM, so they'll correspond to the probabilistic 
+   * transitions that existed prior to overwriting with RSEARCH
+   * transitions. Transitions scores are overwritten in CMLogoddsify() 
+   */
   CMLogoddsify(cm);
   if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
     CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
-				     * makes all CP9 (if non-null) inserts equiprobable*/
-
-  printf("leaving ConfigCM()\n");
+				     * makes all CP9 (if non-null) inserts equiprobable */
+  /*printf("leaving ConfigCM()\n");
+    debug_print_cm_params(cm);*/
   return;
 
   /* TO DO, set up a SUB CM */

@@ -80,6 +80,7 @@ static char experts[] = "\
    --enfnohmm    : do not filter first w/a HMM that only enforces <x> from --enfseq\n\
    --time        : print timings for histogram building, and full search\n\
    --matrix <s>  : with -R use matrix <s>, either full path or in $RNAMAT\n\
+   --rtrans      : replace CM transition scores from <cm file> with RSEARCH scores\n\
 \n\
   * Filtering options using a CM plan 9 HMM (*in development*):\n\
    --hmmfb        : use Forward to get end points & Backward to get start points\n\
@@ -139,7 +140,8 @@ static struct opt_s OPTIONS[] = {
   { "--enfseq",     FALSE, sqdARG_STRING},
   { "--enfnohmm",   FALSE, sqdARG_NONE},
   { "--time",       FALSE, sqdARG_NONE},
-  { "--matrix",     FALSE, sqdARG_STRING}
+  { "--matrix",     FALSE, sqdARG_STRING},
+  { "--rtrans",     FALSE, sqdARG_NONE}
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -265,6 +267,7 @@ main(int argc, char **argv)
   float           rendsc =   DEFAULT_RENDSC;
   float           rmin_alpha_beta_sum;
   int             rquerylen;     /* length of the query file */
+  int             do_rtrans; /* TRUE to overwrite CM transition scores with RSEARCH scores */
 
 #ifdef USE_MPI
   int mpi_my_rank;              /* My rank in MPI */
@@ -345,6 +348,7 @@ main(int argc, char **argv)
   aliformat         = MSAFILE_UNKNOWN;   /* autodetect by default */
   matrixname[0]     = '\0';
   matrix_set        = FALSE;
+  do_rtrans         = FALSE;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -389,6 +393,7 @@ main(int argc, char **argv)
 	matrixname[255] = '\0';
 	matrix_set = TRUE;
       }
+    else if  (strcmp(optname, "--rtrans")      == 0) do_rtrans = TRUE;
     else if  (strcmp(optname, "--hmmfb")       == 0) do_hmmfb = TRUE;
     else if  (strcmp(optname, "--hmmweinberg") == 0) do_hmmweinberg = TRUE;
     else if  (strcmp(optname, "--hmmnegsc")    == 0) cp9_sc_boost = -1. * atof(optarg);
@@ -481,6 +486,8 @@ main(int argc, char **argv)
     Die("--matrix doesn't make sense without -R.\n");
   if(do_rsearch && do_enforce)
     Die("--enf* options currently incompatible with -R.\n");
+  if(do_rtrans && do_enforce)
+    Die("--enf* options incompatible with --rtrans.\n");
 #if USE_MPI
   if(read_qdb && ((mpi_num_procs > 1) && (mpi_my_rank == mpi_master_rank)))
     Die("Sorry, you can't read in bands with --qdbfile in MPI mode.\n");
@@ -612,6 +619,7 @@ main(int argc, char **argv)
   if(do_null2)        cm->search_opts |= CM_SEARCH_NULL2;
   if(do_cm_stats)     cm->search_opts |= CM_SEARCH_CMSTATS;
   if(do_cp9_stats)    cm->search_opts |= CM_SEARCH_CP9STATS;
+  if(do_rtrans)       cm->flags       |= CM_RSEARCHTRANS;
 
   if(do_enforce)
     {

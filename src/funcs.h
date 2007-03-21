@@ -86,6 +86,10 @@ extern int   DeriveUniqueStateCode(int ndtype, int sttype);
 extern CM_t *CMRebalance(CM_t *cm);
 extern int ** IMX2Alloc(int rows, int cols);
 extern void  IMX2Free(int **mx);
+extern float rsearch_calculate_gap_penalty (char from_state, char to_state, 
+					    int from_node, int to_node, 
+					    float input_alpha, float input_beta, 
+					    float input_alphap, float input_betap);
 
 /*EPN 10.19.05*/
 extern void  CMDefaultNullModel(float *null);

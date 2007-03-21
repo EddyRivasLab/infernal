@@ -557,7 +557,69 @@ CMLogoddsify(CM_t *cm)
 	 (sreEXP2(cm->el_selfsc)), cm->iel_selfsc, (Score2Prob(cm->iel_selfsc, 1.0)));
 	 printf("-INFTY: %d prob: %f 2^: %f\n", -INFTY, (Score2Prob(-INFTY, 1.0)), sreEXP2(-INFTY));*/
 
-  /* raise flags saying we have valid log odds scores */
+  /* Potentially, overwrite transitions with non-probabilistic 
+   * RSEARCH transitions. Currently only default transition
+   * parameters are allowed, these are defined as DEFAULT_R*
+   * in structs.h */
+  if(cm->flags & CM_RSEARCHTRANS)
+    {
+      float           alpha =   DEFAULT_RALPHA; 
+      float           beta =    DEFAULT_RBETA;
+      float           alphap =  DEFAULT_RALPHAP;
+      float           betap =   DEFAULT_RBETAP;
+      float           beginsc = DEFAULT_RBEGINSC;
+      float           endsc =   DEFAULT_RENDSC;
+      int             nd;
+      /* First do the normal transitions */
+      for (v=0; v<cm->M; v++) 
+	{
+	  if (cm->sttype[v] != B_st && cm->sttype[v] != E_st) 
+	    {
+	      for (x=0; x<cm->cnum[v]; x++) 
+		{
+		  cm->tsc[v][x] = -1. * rsearch_calculate_gap_penalty 
+		    (cm->stid[v], cm->stid[cm->cfirst[v]+x], 
+		     cm->ndtype[cm->ndidx[v]], cm->ndtype[cm->ndidx[cm->cfirst[v]+x]],
+		     alpha, beta, alphap, betap);
+		  /* alphas and rbetas were positive -- gap score is a penalty, so
+		     multiply by -1 */
+		  cm->itsc[v][x] = INTSCALE * cm->tsc[v][x];
+		}
+	    }
+	}
+      /* Overwrite local begin and end scores */
+      for (v=cm->M - 1; v>=0; v--) {
+	cm->beginsc[v] = IMPOSSIBLE;
+	cm->endsc[v] = IMPOSSIBLE;
+      }
+      
+      /* beginsc states */
+      for (nd = 2; nd < cm->nodes; nd++) {
+	if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+	    cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd)
+	  {	 
+	    cm->beginsc[cm->nodemap[nd]] = beginsc;
+	    cm->ibeginsc[cm->nodemap[nd]] = INTSCALE * beginsc;
+	  }
+      }
+      
+      /* endsc states */
+      for (nd = 1; nd < cm->nodes; nd++) {
+	if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+	     cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BEGL_nd ||
+	     cm->ndtype[nd] == BEGR_nd) &&
+	    cm->ndtype[nd+1] != END_nd)
+	  {
+	  cm->endsc[cm->nodemap[nd]] = endsc;
+	  cm->iendsc[cm->nodemap[nd]] = INTSCALE * endsc;
+	  }
+      }
+      
+      cm->flags |= CM_LOCAL_BEGIN;
+      cm->flags |= CM_LOCAL_END;
+    }
+
+  /* raise flag saying we have valid log odds scores */
   cm->flags |= CM_HASBITS;
 }
 
@@ -1311,3 +1373,157 @@ IMX2Free(int **mx)
   free(mx);
 }
 
+
+/*
+ * EPN, Wed Mar 21 09:29:55 2007
+ * 
+ * rsearch_calculate_gap_penalty (FROM RSEARCH::buildcm.c)
+ *
+ * Given the from state, the to state, and the gap parameters, returns
+ * the gap penalty.
+ */
+float rsearch_calculate_gap_penalty (char from_state, char to_state, 
+				     int from_node, int to_node, 
+				     float input_alpha, float input_beta, 
+				     float input_alphap, float input_betap) {
+  int from_class, to_class;
+  double alpha, beta;          /* Alpha or beta values to use */
+
+  /* There are potentially 400 different combinations of state pairs here.
+     To make it manageable, break down into the 6 classes on p. 8 of lab
+     book 7, numbered as follows
+     0    M    ROOT_S, BEGL_S, BEGR_S, MATP_MP, MATL_ML, MATR_MR, END_E, BIF_B
+     1    IL   ROOT_IL, BEGR_IL, MATP_IL, MATL_IL
+     2    DL   MATP_MR, MATL_D
+     3    IR   ROOT_IR, MATP_IR, MATR_IR
+     4    DR   MATP_ML, MATR_D
+     5    DB   MATP_D
+  */
+  switch (from_state) {
+  case MATP_D:
+    from_class = DB_cl;
+    break;
+  case MATP_ML:
+  case MATR_D:
+    from_class = DR_cl;
+    break;
+  case ROOT_IR:
+  case MATP_IR:
+  case MATR_IR:
+    from_class = IR_cl;
+    break;
+  case MATP_MR:
+  case MATL_D:
+    from_class = DL_cl;
+    break;
+  case ROOT_IL:
+  case BEGR_IL:
+  case MATP_IL:
+  case MATL_IL:
+    from_class = IL_cl;
+    break;
+  default:
+    from_class = M_cl;
+  }
+
+  switch (to_state) {
+  case MATP_D:
+    to_class = DB_cl;
+    break;
+  case MATP_ML:
+  case MATR_D:
+    to_class = DR_cl;
+    break;
+  case ROOT_IR:
+  case MATP_IR:
+  case MATR_IR:
+    to_class = IR_cl;
+    break;
+  case MATP_MR:
+  case MATL_D:
+    to_class = DL_cl;
+    break;
+  case ROOT_IL:
+  case BEGR_IL:
+  case MATP_IL:
+  case MATL_IL:
+    to_class = IL_cl;
+    break;
+  default:
+    to_class = M_cl;
+  }
+
+  /* Now set alpha and beta according to state classes and nodes */
+  /* Alpha is alpha' for MATP->MATP, alpha otherwise */
+  if (from_node == MATP_nd && to_node == MATP_nd)
+    alpha = input_alphap;
+  else
+    alpha = input_alpha;
+  /* Beta is beta' iff from_cl is DB and MATP->MATP */
+  if (from_class == DB_cl && from_node == MATP_nd && to_node == MATP_nd)
+    beta = input_betap;
+  else 
+    beta = input_beta;
+
+  /* Now that we have the proper class, return the appropriate gap penalty */
+  if (from_class == M_cl) {
+    if (to_class == M_cl) {
+      return (0.);
+    } else if (to_class == DB_cl) {
+      return (alpha);
+    } else {
+      return (0.5*alpha);
+    }
+  } else if (from_class == IL_cl) {
+    if (to_class == M_cl) {
+      return (beta + 0.5*alpha);
+    } else if (to_class == IL_cl) {
+      return (beta);
+    } else if (to_class == DB_cl) {
+      return (beta+1.5*alpha);
+    } else {
+      return (beta + alpha);
+    }
+  } else if (from_class == DL_cl) {
+    if (to_class == M_cl) {
+      return (beta + 0.5*alpha);
+    } else if (to_class == DL_cl) {
+      return (beta);
+    } else if (to_class == DB_cl) {
+      return (beta + 0.5*alpha);
+    } else {
+      return (beta + alpha);
+    }
+  } else if (from_class == IR_cl) {
+    if (to_class == M_cl) {
+      return (beta + 0.5*alpha);
+    } else if (to_class == IR_cl) {
+      return (beta);
+    } else if (to_class == DB_cl) {
+      return (beta+1.5*alpha);
+    } else {
+      return (beta + alpha);
+    }
+  } else if (from_class == DR_cl) {
+    if (to_class == M_cl) {
+      return (beta + 0.5*alpha);
+    } else if (to_class == DR_cl) {
+      return (beta);
+    } else if (to_class == DB_cl) {
+      return (beta + 0.5*alpha);
+    } else {
+      return (beta + alpha);
+    }
+  } else {                /* DB_cl */
+    if (to_class == IL_cl || to_class == IR_cl) {
+      return (2*beta + 1.5*alpha);
+    } else if (to_class == M_cl) {
+      return (2*beta + alpha);
+    } else if (to_class == DB_cl) {
+      return (2*beta);
+    } else {
+      return (2*beta + 0.5*alpha);
+    }
+  }
+  return (0);
+}

@@ -647,6 +647,14 @@ typedef struct Ideckpool_s {
 #define DEFAULT_RBEGINSC -0.01
 #define DEFAULT_RENDSC -15.
 
+/* The six classes of states in RSEARCH */
+#define M_cl 0
+#define IL_cl 1
+#define DL_cl 2
+#define IR_cl 3
+#define DR_cl 4
+#define DB_cl 5
+
 #endif /*STRUCTSH_INCLUDED*/
 
 
