@@ -18,7 +18,9 @@
 #    -X <f>         : extract hit subseqs from database in <f>
 #    -E <x>         : use E values [default], sets max E-val to keep as <x> [df = 10]
 #    -B <x>         : use bit scores, sets min score to keep as <x>
+#    -A <x>         : sort all hits across CMs [default: sort hits for each CM]
 
+require "sre.pl";
 use constant FASTA_LINE_LENGTH       => 50;
 use Getopt::Std;
 use infernal;
@@ -28,39 +30,67 @@ $use_bitscores = 0;
 $e_cutoff =   10;
 $b_cutoff = 0.0;
 $sort_scores = 1;
+$sort_all_scores = 0;
 $do_extract = 0;
+$do_overlap = 0;
 
-getopts('E:B:S:X:');
+getopts('E:B:X:AR:');
 if (defined $opt_X) { $do_extract = 1; $db_file = $opt_X; }
 if (defined $opt_E) { $e_cutoff = $opt_E; }
 if (defined $opt_B) { $b_cutoff = $opt_B; $use_evalues = 0; $use_bitscores = 1; }
-if (defined $opt_S) { $sort_scores = 1; }
+if (defined $opt_A) { $sort_all_scores = 1; }
+if (defined $opt_R) { $remove_overlaps = 1; $overlap_fraction = $opt_R; }
 
-$usage = "Usage: perl cmsearch_pp.pl\n\t<cmsearch output file>\n\t<id for output files>\n";
+$usage = "Usage: perl cmsearch_pp.pl\n\t<cmsearch output file>\n\t<output file (ONLY if -X enabled)>\n";
 $options_usage  = "\nOptions:\n\t";
-$options_usage .= "-X <f> : extract hit subseqs from database in <f>\n\t";
+$options_usage .= "-X <f> : extract hit subseqs from database in <f> using 'sfetch'\n\t";
 $options_usage .= "-E <x> : use E values [default], sets max E-val to keep as <x> [df= 10]\n\t";
-$options_usage .= "-B <x> : use bit scores, sets min score to keep as <x>\n";
+$options_usage .= "-B <x> : use bit scores, sets min score to keep as <x>\n\t";
+$options_usage .= "-A     : sort all hits across CMs [default: sort hits for each CM]\n\t";
+$options_usage .= "-R <x> : remove overlapping hits of <x> fraction (0: no overlap allowed)\n";
 
-if(scalar(@ARGV) != 2)
+if(scalar(@ARGV) == 2)
 {
-    #printf("argv: %d\n", scalar(@ARGV));
+    if(!($do_extract))
+    {
+	print $usage;
+	print $options_usage;
+	exit();
+    }
+    ($cmsearch_output, $extract_out) = @ARGV;
+}
+elsif(scalar(@ARGV) == 1)
+{
+    if($do_extract)
+    {
+	print $usage;
+	print $options_usage;
+	exit();
+    }
+    ($cmsearch_output) = $ARGV[0];
+}
+else
+{
     print $usage;
     print $options_usage;
     exit();
 }
-
-($cmsearch_output, $id) = @ARGV;
+if($do_extract)
+{
+    if(! (-e "$db_file")) { die("ERROR, -X $db_file enabled but $db_file does not exist.\n") };
+}
 
  open(IN, $cmsearch_output);
-$output = join("",<IN>);
+ $output = join("",<IN>);
  close(IN);
 &infernal::ParseINFERNAL($output);
 
+
+
 # First determine if infernal was run with or without E-values
-if($infernal::nhit > 0)
+if($infernal::nhit[0] > 0)
 {
-    if (exists($infernal::hitevalue[0]))
+    if (exists($infernal::hitevalue[0][0]))
     {
 	$has_evalues = 1;
     }
@@ -69,483 +99,323 @@ if($infernal::nhit > 0)
 	$has_evalues = 0;
     }
 }
-
+else
+{
+    die("No hits found in $cmsearch_output. Exiting.\n");
+}
 if($use_evalues && (!$has_evalues))
 {
-    die("ERROR in infernal2glbf.pl, trying to use E-values but none reported.\n");
+    die("ERROR, trying to use E-values but none reported.\n");
 }
 
 # Get all scores
-for ($i = 0; $i < $infernal::nhit; $i++)
-{
-    if($use_evalues)
-    {
-	$sc_H{$i} = $infernal::hitevalue[$i];
-    }
-    else
-    {
-	$sc_H{$i} = $infernal::hitbitscore[$i];
-    }
-}
-
-# Sort by score and print out info about hits above threshold
 if($use_evalues)
 {
-    @sorted_i_A = sort { $sc_H{$a} <=> $sc_H{$b} } (keys (%sc_H));
-}
-else
-{
-    @sorted_i_A = sort { $sc_H{$b} <=> $sc_H{$a} } (keys (%sc_H));
-}
-for ($j = 0; $j < scalar(@sorted_i_A); $j++)
-{
-    $i = $sorted_i_A[$j];
-    if ((($use_bitscores) && $infernal::hitbitscore[$i] > $b_cutoff) ||
-	(($use_evalues)  && $infernal::hitevalue[$i]   < $e_cutoff))
+    for ($c = 0; $c < $infernal::ncm; $c++)
     {
-	$gc_content = $infernal::hitgccontent[$i];
+	for ($i = 0; $i < $infernal::nhit[$c]; $i++)
+	{
+	    $all_key = "$c:$i";
+	    $all_sc_H{$all_key} = $infernal::hitevalue[$c][$i];
+	    $sc_AH[$c]{$i}     = $infernal::hitevalue[$c][$i];
+	}
+	if(!($sort_all_scores))
+	{ 
+	    @{$sorted_i_AA[$c]} = sort { $sc_AH[$c]{$a} <=> $sc_AH[$c]{$b} } (keys (%{$sc_AH[$c]}));
+	}
+    }
+    if($sort_all_scores)
+    {
+	@sorted_c_i_A = sort { $all_sc_H{$a} <=> $all_sc_H{$b} } (keys (%all_sc_H));
+    }
+}
+else #use bit scores
+{
+    for ($c = 0; $c < $infernal::ncm; $c++)
+    {
+	for ($i = 0; $i < $infernal::nhit[$c]; $i++)
+	{
+	    $all_key = "$c:$i";
+	    $all_sc_H{$all_key} = $infernal::hitbitscore[$c][$i];
+	    $sc_AH[$c]{$i}     = $infernal::hitbitscore[$c][$i];
+	}
+	if(!($sort_all_scores))
+	{ 
+	    @{$sorted_i_AA[$c]} = sort { $sc_AH[$c]{$b} <=> $sc_AH[$c]{$a} } (keys (%{$sc_AH[$c]}));
+	}
+    }
+    if($sort_all_scores)
+    {
+	@sorted_ci_A = sort { $all_sc_H{$b} <=> $all_sc_H{$a} } (keys (%all_sc_H));
+    }
+}
+# print out info about hits above threshold
+if(!($sort_all_scores)) # build @sorted_ci_A by concatenating sorted list for each CM
+{
+    @sorted_ci_A = ();
+    for ($c = 0; $c < $infernal::ncm; $c++)
+    {
+	for ($j = 0; $j < scalar(@{$sorted_i_AA[$c]}); $j++)
+	{
+	    $i = $sorted_i_AA[$c][$j];
+	    push(@sorted_ci_A, ($c. ":" . $i));
+	}
+    }
+}
+$prev_c = 0;
+if($use_evalues) { $sctype = "E"; } 
+else { $sctype = "B"; }
+for($x = 0; $x < scalar(@sorted_ci_A); $x++)
+{
+    $print_lines_A[$x] = 1; #this will be changed to 0 if we're removing overlaps
+                            #and determine this line to be have a better scoring
+                            #overlap
+
+    ($c, $i) = split(":", $sorted_ci_A[$x]);
+
+    if ((($use_bitscores) && $infernal::hitbitscore[$c][$i] > $b_cutoff) ||
+	(($use_evalues)  && $infernal::hitevalue[$c][$i]   < $e_cutoff))
+    {
+	$gc_content = $infernal::hitgccontent[$c][$i];
 	#printf("%-24s %-6f\n", $infernal::targname[$i], $infernal::seqbitscore{$infernal::targname[$i]}); 
-	if($infernal::hitsqfrom[$i] > $infernal::hitsqto[$i])
+	if($infernal::hitsqfrom[$c][$i] > $infernal::hitsqto[$c][$i])
 	{
 	    #hit to reverse strand of query
 	    $orient = 1;
-	    $start = $infernal::hitsqto[$i] - 1; 
-	    $end   = $infernal::hitsqfrom[$i] - 1; 
-	    # cmsearch reports first res as posn 1, but it's posn 0 in the string
+	    $start = $infernal::hitsqto[$c][$i]; 
+	    $end   = $infernal::hitsqfrom[$c][$i]; 
 	}
 	else
 	{
 	    $orient = 0;
-	    $start = $infernal::hitsqfrom[$i] - 1; 
-	    $end   = $infernal::hitsqto[$i] - 1; 
-	    # cmsearch reports first res as posn 1, but it's posn 0 in the string
+	    $start = $infernal::hitsqfrom[$c][$i]; 
+	    $end   = $infernal::hitsqto[$c][$i]; 
 	}
-	
-	$targname = $infernal::targname_byhit[$i];
-	#printf("targname: $targname orient: $orient start: $start\n");
-	push(@{$targ_starts_AHA[$orient]{$targname}}, $start);
-	$targ_ends_AHH[$orient]{$targname}{$start} = $end;
-	$targ_gc_AHH[$orient]{$targname}{$start} = $gc_content;
-	
-	if($use_evalues)
+	$cm       = $infernal::cm[$c];
+	$targname = $infernal::targname_byhit[$c][$i];
+	if(!(exists($all_targets_H{$targname}))) { $all_targets_H{$targname} = 1; }
+	if($use_evalues) { $sc = $infernal::hitevalue[$c][$i]; }
+	else             { $sc = $infernal::hitbitscore[$c][$i]; }
+	if($remove_overlaps)
 	{
-	    $score = "E" . $infernal::hitevalue[$i];
-	    $targ_scores_AHH[$orient]{$targname}{$start} = $score;
-	    printf("%-24s %-6f %d %d %d (GC=%d)\n", $infernal::targname_byhit[$i], $infernal::hitevalue[$i], $infernal::hitsqfrom[$i], $infernal::hitsqto[$i], $orient, $gc_content); 
+	    $start_key = $start . "." . $c; # CM #3 hit starts at 124 will be 124.3
+	    push(@{$targ_starts_AH[$orient]{$targname}}, $start_key);
+	    $targ_ends_AHH[$orient]{$targname}{$start_key}    = $end;
+	    $targ_scores_AHH[$orient]{$targname}{$start_key}  = $sc;
+	    $targ_x_AHH[$orient]{$targname}{$start_key}       = $x;
+	}
+	if($cm =~ m/\w/)
+	{
+	    $out_lines_A[$x] = sprintf("%-24s %-24s %7.2f %9d %9d %d (GC=%2d)\n", $cm, $targname, $sc, $start, $end, $orient, $gc_content); 
+	    $cm .= "|";
 	}
 	else
 	{
-	    $score = "B" . $infernal::hitbitscore[$i];
-	    $targ_scores_AHH[$orient]{$targname}{$start} = $score;
-	    printf("%-24s %-6f %d %d %d (GC=%d)\n", $infernal::targname_byhit[$i], $infernal::hitbitscore[$i], $infernal::hitsqfrom[$i], $infernal::hitsqto[$i], $orient, $gc_content); 
+	    $out_lines_A[$x] = sprintf("%-24s %7.2f %9d %9d %d (GC=%2d)\n", $targname, $sc, $start, $end, $orient, $gc_content); 
 	}
-	$subseq_name = $targname . "|" . ($start+1) . "-" . ($end+1) . "|" . $orient . "|" . $gc_content . "|" . $score;
-	push(@subseq_rank_A, $subseq_name);
+	if($do_extract)
+	{
+	    $sfetch_lines_A[$x] = $targname . ":" . $start . ":" . $end . ":" . $orient . ":" . 
+		$cm . $targname . "|" . $start . "-" . $end . "|" . $orient . "|" . $gc_content . "|" . $sctype. $sc;
+	}
     }
 }
 
-
-############################################
-# Optionally, extract the hits from the db # 
-############################################
-if($do_extract)
+# remove overlaps
+if($remove_overlaps)
 {
-    for($t = 0; $t < $infernal::ntarget; $t++)
+    @all_targets_A = keys(%all_targets_H);
+    $nall_targets = scalar(@all_targets_A);
+    for($t = 0; $t < $nall_targets; $t++)
     {
 	for($orient = 0 ; $orient <= 1; $orient++)
 	{
-	    # targ_starts_AHA[]{$key}[] = is an array of starting points of hits
-	    #                            in target seq $key
-	    # targ_ends_AHH[]{$key1}{$key2} = is the end point of hit that starts
-	    #    
-	    # targ_scores_AHH[]{$key1}{$key2} = is bit score or E value of the hit that
-	    #                                starts at $key2 in target seq $key1
-	    $targ = $infernal::targname[$t];
-	    @sorted_starts = sort {$a <=> $b} @{$targ_starts_AHA[$orient]{$targ}};
-	    foreach $start (@sorted_starts)
+	    $targname = $all_targets_A[$t];
+	    #printf("checking target: $targname orient $orient\n");
+	    @sorted_starts = sort {$a <=> $b} @{$targ_starts_AH[$orient]{$targname}};
+	    for($s = 0; $s < (scalar(@sorted_starts) -1); $s++)
 	    {
-		#printf("$targ $start %d %s\n", $targ_ends_AHH[$orient]{$targ}{$start}, 
-		 #      $targ_scores_AHH[$orient]{$targ}{$start});
+		$start = $sorted_starts[$s];
+		$real_start = $start;
+		$real_start =~ s/\.(\d+)$//;
+		$end   = $targ_ends_AHH[$orient]{$targname}{$start};
+		$sc    = $targ_scores_AHH[$orient]{$targname}{$start};
+		$x     = $targ_x_AHH[$orient]{$targname}{$start};
+		
+		$ns = $s+1;
+		#printf("end: $end, next_start: %d\n", $sorted_starts[$ns]);
+		while($sorted_starts[$ns] < ($end+1)) #remember $start and $nstart
+		                                      #have "\.<cm num>" appended at end
+		{
+		    $nstart = $sorted_starts[($ns)];
+		    $real_nstart = $nstart;
+		    $real_nstart =~ s/\.(\d+)$//;
+		    $nend   = $targ_ends_AHH[$orient]{$targname}{$nstart};
+		    $nsc    = $targ_scores_AHH[$orient]{$targname}{$nstart};
+		    $nx     = $targ_x_AHH[$orient]{$targname}{$nstart};
+		    
+		    $too_much_overlap = overlap($real_start, $end, $real_nstart, $nend, 
+						$overlap_fraction);
+		    if($too_much_overlap)
+		    {
+			if($use_evalues && ($sc < $nsc)) # remove $ns
+			{ $print_lines_A[$nx] = 0; }
+			elsif($use_evalues)              # remove $s
+			{ $print_lines_A[$x]  = 0; last; }     
+			elsif($use_bitscores && ($sc >= $nsc))  #remove $ns
+			{ $print_lines_A[$nx] = 0; }
+			elsif($use_bitscores)                   #remove $s
+			{ $print_lines_A[$x]  = 0; last; }
+		    }
+		    $ns++;
+		    if($ns == scalar(@sorted_starts)) { last; }
+		}
 	    }
 	}
     }
-    for($orient = 0; $orient <= 1; $orient++)
-    {
-	read_fasta_saving_subseqs_efficiently($db_file, \%{$subseq_H[$orient]}, 
-					      \%{$targ_starts_AHA[$orient]}, \%{$targ_ends_AHH[$orient]}, 
-					      \%{$targ_gc_AHH[$orient]},
-					      \%{$targ_scores_AHH[$orient]}, $orient);
-    }
-
-    # print out the sequences
-    $subseq_file = $id . "_hits.fa";
-    for($orient = 0; $orient <= 1; $orient++)
-    {
-	foreach $subseq (keys(%{$subseq_H[$orient]}))
-	{
-	    #printf("subseq: $subseq\n");
-	    $subseq_all_H{$subseq} = $subseq_H[$orient]{$subseq};
-	}
-    }
-    
-    print_fasta_ordered(\%subseq_all_H, $subseq_file, \@subseq_rank_A);
-    $num_hits = scalar(@subseq_rank_A);
-    printf("*********************************************************\n");
-    printf("* Output file: $subseq_file created with top -%5d    \n", $num_hits);
-    printf("*              hits from %-20s           \n", ($cmsearch_output . "."));
-    printf("*********************************************************\n");
 }
-1;
-
-#################################################################
-# subroutine : read_fasta_saving_subseqs_efficiently
-# sub class  : crw and sequence
-# 
-# EPN, Sun Dec 17 19:07:58 2006
-#
-# purpose : Open and read a fasta file, saving subsequences to
-#           a sequence hash as dictacted by input information.
-#
-# args : (1) $in_file
-#            name of .fa file in current directory
-#        (2) $subseq_HR
-#            reference to the hash that will contain the subsequence
-#            information.  Fasta description line used as key for
-#            each sequence, sequence is value.
-#        (3) $starts_HAR
-#            ref to hash of arrays, key is seq name, array is
-#            start positions of subseqs to extract
-#        (4) $ends_HHR
-#            ref to hash of hashes, 1D key is seq name, 2D
-#            key is start point
-#        (5) $gc_HHR
-#            ref to hash of hashes, 1D key is seq name, 2D
-#            key is start point, value is gc content
-#        (6) $add2names_HHR
-#            ref to hash of hashes, 1D key is seq name, 2D
-#            key is string to add to name of subseq
-#        (7) $do_revcomp
-#            TRUE to reverse complement the sequences, false
-#            not to.
-################################################################# 
-sub read_fasta_saving_subseqs_efficiently
+# print output, from which overlapping hits may have been removed (if $remove_overlaps)
+$prev_c = 0;
+for($x = 0; $x < scalar(@sorted_ci_A); $x++)
 {
-    #printf("in read_fasta_saving_subseqs_efficiently\n");
-    if(scalar(@_) != 7)
+    ($c, $i) = split(":", $sorted_ci_A[$x]);
+    if((!($sort_all_scores)) && ($prev_c != $c)) { printf("\n"); }
+    $prev_c = $c;
+    if($print_lines_A[$x])
     {
-	die("ERROR read_fasta_saving_subseqs_efficiently takes exactly 7 arguments\n");
+	printf $out_lines_A[$x];
     }
-    ($in_file, $subseq_HR, $starts_HAR, $ends_HHR, $gc_HHR, $add2names_HHR, $do_revcomp) = @_;
-    open(IN, $in_file);
-    #printf("in read_fasta do_revcomp $do_revcomp\n");
-    
-    #chomp up beginning blank lines
-    $line = <IN>;
-    while(!($line =~ m/^>/))
-    {
-	$line = <IN>;
-	print("$line\n");
-    }
-    chomp $line;
-    $targname = $line;
-    $targname =~ s/^>//;
-    $targname =~ s/\s*$//;
-    $targname =~ s/\s+.+$//;
-    @sorted_starts = sort {$a <=> $b} @{$starts_HAR->{$targname}};
-    
-    foreach $start (@sorted_starts)
-    {
-	#printf("start: $start end: %d\n", $ends_HHR->{$targname}{$start});
-    }
-    $subseq_idx = 0;
-    $seq_posn = 0;
-    if(scalar(@sorted_starts) > 0)
-    {
-	$subseq_remains = 1;
-	$next_start = $sorted_starts[$subseq_idx];
-	$next_end   = $ends_HHR->{$targname}{$next_start};
-	$subseq_name = $targname . "|" . ($next_start+1) . "-" . ($next_end+1) . "|" . $do_revcomp . "|" . $gc_HHR->{$targname}{$next_start} . "|" . $add2names_HHR->{$targname}{$next_start};
-    }
+}
 
-    $line_ct = 0;
-    while($line = <IN>)
+###############################################################################
+# Optionally, extract the hits (after possibly removing overlaps) from the db # 
+###############################################################################
+if($do_extract)
+{
+    @sys_sfetch_lines_A = ();
+    @sys_rm_lines_A = ();
+    for($x = 0; $x < scalar(@sorted_ci_A); $x++)
     {
-	$line_ct++;
-	chomp $line;
-	while((!($line =~ m/^>/)) && ($line ne ""))
+	if($print_lines_A[$x])
 	{
-	    if(!($donotread))
-	    {
-		$seq_posn += length($line);
-	    }
-	    #printf("seq_posn: $seq_posn\n");
+	    $sfetch_line = $sfetch_lines_A[$x];
+	    open(OUT, ">" . $extract_out);
+	    close(OUT);
+	    ($seq, $start, $end, $orient, $extra) = split(":", $sfetch_line);
 	    
-	    if($subseq_remains)
+	    $extra =~ s/\|/\\\|/g;
+	    $extra =~ s/\-/\\\-/g;
+	    $tmp  = &tempname(); # requires sre.pl
+	    
+	    if($extra ne "")
 	    {
-		if(!($in_subseq) && $seq_posn < $next_start)
-		{
-		    #printf("case1: doing nothing\n");
-		    $donotread = 0;
-		    ;#do nothing
-		}
-		elsif(!($in_subseq) && $seq_posn >= $next_start)
-		{
-		    #our subseq starts (and may end) in this chunk
-		    #printf("case2: subseq starts here\n");
-		    $prev_seq_posn = $seq_posn - length($line);
-		    #printf("prev seq posn: $prev_seq_posn next_start: $next_start\n");
-		    $to_add = $line;
-		    if($next_start != $prev_seq_posn)
-		    {
-			$to_add = substr($to_add, ($next_start - $prev_seq_posn));
-		    }
-		    #printf("to_add: $to_add\n");
-		    $in_subseq = 1;
-		    $donotread = 0;
-		    
-		    if(($next_end+1) <= $seq_posn)
-		    {
-			#printf("case 2 seq ends here also\n");
-			if(($next_end + 1) != $seq_posn)
-			{
-			    #printf("next_end:%d - seq_posn:%d: %d\n", $next_end, $seq_posn, ($next_end-$seq_posn));
-			    $to_add = substr($to_add, 0, ($next_end-$seq_posn+1));
-			}
-			#reset our flags
-			$subseq_idx++;
-			if($subseq_idx < scalar(@sorted_starts))
-			{
-			    $subseq_HR->{$subseq_name} .= $to_add;
-			    $next_start = $sorted_starts[$subseq_idx];
-			    $next_end   = $ends_HHR->{$targname}{$next_start};
-			    $in_subseq = 0;
-			    $subseq_name = $targname . "|" . ($next_start+1) . "-" . ($next_end+1) . "|" . $do_revcomp . "|" . $gc_HHR->{$targname}{$next_start} . "|" . $add2names_HHR->{$targname}{$next_start};
-			    # the next subseq may start in this line, so we flag not to read another line yet
-			    $donotread = 1;
-			    #printf("new subseq_idx: $subseq_idx start: $next_start end: $next_end $subseq_name\n");
-			}
-			else
-			{
-			    $subseq_HR->{$subseq_name} .= $to_add;
-			    $subseq_remains = 0;
-			    $in_subseq = 0;
-			}
-		    }
-		    else
-		    {
-			$subseq_HR->{$subseq_name} .= $to_add;
-		    }			
-		}
-		elsif($in_subseq && $seq_posn <= $next_end)
-		{
-		    #our subseq includes this full chunk
-		    $subseq_HR->{$subseq_name} .= $line;
-		    $donotread = 0;
-		}
-		elsif($in_subseq && $seq_posn > $next_end)
-		{
-		    #our subseq ends in this chunk
-		    #printf("subseq ends here seq_posn: $seq_posn, next_end: $next_end\n");
-		    $to_add = $line;
-		    if(($next_end + 1) != $seq_posn)
-		    {
-			$to_add = substr($to_add, 0, ($next_end-$seq_posn+1));
-		    }
-		    $subseq_HR->{$subseq_name} .= $to_add;
-		    
-		    #reset our flags
-		    $subseq_idx++;
-		    if($subseq_idx < scalar(@sorted_starts))
-		    {
-			$next_start = $sorted_starts[$subseq_idx];
-			$next_end   = $ends_HHR->{$targname}{$next_start};
-			$in_subseq = 0;
-			$subseq_name = $targname . "|" . ($next_start+1) . "-" . ($next_end+1) . "|" . $do_revcomp . "|" . $gc_HHR->{$targname}{$next_start} . "|" . $add2names_HHR->{$targname}{$next_start};
-			# the next subseq may start in this line, so we flag not to read another line yet
-			$donotread = 1;
-			#printf("new subseq_idx: $subseq_idx start: $next_start end: $next_end $subseq_name\n");
-		    }
-		    else
-		    {
-			$subseq_remains = 0;
-			$in_subseq = 0;
-			$donotread = 0;
-		    }
-		}	
-		#printf("curr seq $subseq_name: $subseq_HR->{$subseq_name}\n");
+		$sfetch_com = "sfetch -f $start -t $end -F fasta -r $extra -d $db_file $seq > $tmp";
 	    }
-	    if(!($donotread)) 
+	    else
 	    {
-		#printf("donotread FALSE, reading line\n");
-		$line = <IN>;
-		$line_ct++;
-		chomp $line;
+		$sfetch_com = "sfetch -f $start -t $end -F fasta -d $db_file $seq > $tmp";
+	    }
+	    if($orient == 1)
+	    {
+		#set up revcomp calls
+		$tmp2  = &tempname(); # requires sre.pl
+		$revcomp_com = "revcomp $tmp > $tmp2";
+		$cat_com = "cat $tmp2 >> $extract_out";
+		$rm_com  = "rm $tmp2";
+		push(@sys_sfetch_lines_A, $sfetch_com);
+		push(@sys_sfetch_lines_A, $revcomp_com);
+		push(@sys_sfetch_lines_A, $cat_com);
+		push(@sys_sfetch_lines_A, $rm_com);
+	    }
+	    else
+	    {
+		$cat_com = "cat $tmp >> $extract_out";
+		$rm_com  = "rm $tmp";
+		push(@sys_sfetch_lines_A, $sfetch_com);
+		push(@sys_sfetch_lines_A, $cat_com);
+		push(@sys_sfetch_lines_A, $rm_com);
 	    }
 	}
-	chomp $line;
-	$targname = $line;
-	$targname =~ s/^>//;
-	$targname =~ s/\s*$//;
-	@sorted_starts = sort {$a <=> $b} @{$starts_HAR->{$targname}};
-	
-	#printf("\nnew targ seq: $targname\n");
-	foreach $start (@sorted_starts)
-	{
-	    #printf("start: $start end: %d\n", $ends_HHR->{$targname}{$start});
-	}
-	$subseq_idx = 0;
-	$seq_posn = 0;
-	if(scalar(@sorted_starts) > 0)
-	{
-	    $subseq_remains = 1;
-	    $next_start = $sorted_starts[$subseq_idx];
-	    $next_end   = $ends_HHR->{$targname}{$next_start};
-	    $subseq_name = $targname . "|" . ($next_start+1) . "-" . ($next_end+1) . "|" . $do_revcomp . "|" . $gc_HHR->{$targname}{$next_start} . "|" . $add2names_HHR->{$targname}{$next_start};
-	}
     }
-    # reverse complement if necessary and do some checks 
-    foreach $subseq (keys(%{$subseq_HR}))
+    #open(OUT, ">" . temp);
+    foreach $line (@sys_sfetch_lines_A)
     {
-	if($do_revcomp == 1)
-	{
-	    $revcomp = rev_comp($subseq_HR->{$subseq});
-	    $subseq_HR->{$subseq} = $revcomp
-	}
-
-	$length = length($subseq_HR->{$subseq});
-	$temp = $subseq;
-	$temp =~ /.+\|(\d+)\-(\d+)\|[01]\|.+$/;
-	$start = $1;
-	$end   = $2;
-	#printf("subseq: $subseq start: $start end: $end\n");
-	if($length != ($end-$start+1))
-	{
-	    printf("ERROR subseq: $subseq length should be %d, but it's $length\n", ($end-$start+1));
-	    die;
-	}
-	else
-	{
-	    #printf("checked $subseq length: $length\n");
-	}
+	#print OUT ("$line\n");
+	system("$line");
     }
-    #debug_print_hash($subseq_HR, "subseq");
-    #trim_keys_in_hash($seq_hash_ref, DEFAULT_MAX_SEQ_HEADER_LENGTH);
+    #close(OUT);
 }
 
 #################################################################
-# subroutine : rev_comp
-# sub class  : sequence
+# subroutine : overlap
 #
-# EPN 09.13.05
+# EPN 09.15.05
 #
-# purpose : Given a string that is a RNA sequence string, return the
-#           reverse complement.  String may have gaps.
+# purpose : Determine if one hit overlaps significantly with a given 
+#           region by more than $min_overlap_fract.
 #
-# args : (1) $seq
-#            seq string to rev comp
+# args : (1) $begin1
+#            begin position of region 1
+#        (2) $end1
+#            end of region 1
+#        (3) $begin2 
+#            begin position of region 2  
+#        (4) $end2 
+#            end position of region 2  
+#        (5) $min_overlap_fract
+#            to return TRUE (1) the overlap between region 1 and 2
+#            must be > $min_overlap_fract * len(min(len(region1), len(region2))
 ################################################################# 
-sub rev_comp
+sub overlap
 {
-    ($seq) = $_[0];
-
-    #print("in rc in seq is :\n$seq\n");
-    $comp = $seq;
-    #$comp =~ tr/AUCGaucg/UAGCuagc/;
-    $comp =~ tr/ACGUTRYMKSWHDBVacgutrymkswhdbv/UGCAAYRKMSWDHVBugcaayrkmswdhvb/;
-    #leave X's, N's and gaps
-    @comp_arr = split("", $comp);
-    @rev_comp_arr = reverse @comp_arr;
-    $rc = "";
-    foreach $letter (@rev_comp_arr)
+    if(scalar(@_) != 5)
     {
-	$rc .= $letter;
+	die "ERROR in overlap, exactly 5 arguments expected.\n";
     }
-    #print("in rc returning rc is :\n$rc\n");
-    return $rc;
+
+    my($begin1, $end1, $begin2, $end2, $min_overlap_fract) = @_;
+    my $overlap = 0;
+    my $overlap_fract = 0;
+    #four mutually exclusive possibilities of actual overlap
+    if(($begin2 <= $begin1) && ($end2 >= $end1))
+    {
+	$overlap = $end1 - $begin1 + 1;
+    }
+    elsif(($begin2 > $begin) && ($end2 >= $end))
+    {
+	$overlap = $end1 - $begin2 + 1;
+    }
+    elsif(($begin2 <= $begin1) && ($end2 < $end1))
+    {
+	$overlap = $end2 - $begin1 + 1;
+    }
+    elsif(($begin2 > $begin1) && ($end2 < $end1))
+    {
+	$overlap = $end2 - $begin2 + 1;
+    }
+    $len1 = $end1-$begin1+1;
+    $len2 = $end2-$begin2+1;
+    $min_len = $len1;
+    if($len2 < $len1) { $min_len = $len2; }
+    $overlap_fract = $overlap / $min_len;
+    if($overlap_fract > $min_overlap_fract)
+    {
+	#printf("returning 1, overlap_fract: $overlap_fract\n");
+	return 1;
+    }
+    #printf("returning 0, overlap_fract: $overlap_fract\n");
+    return 0;
 }
 #################################################################
 
-#################################################################
-# subroutine : print_fasta_ordered
-# sub class  : sequence
-# 
-# EPN 04.20.05
-# 
-# purpose : Create a single new file and print all sequences
-#           in the input hash to that file in the order 
-#           specified in the array referenced in $aln_order_arr_ref
-#
-# args : (1) $seq_hash_ref 
-#            reference to hash with sequences as values, and
-#            headers as keys
-#        (2) $out_file_name
-#            name of resulting gapless fasta file
-#        (3) $aln_order_arr_ref
-#            reference to an array with order of seq headers
-#            we want alignment to be printed in
-################################################################# 
 
-sub print_fasta_ordered
-{
-    ($seq_hash_ref, $out_file_name, $aln_order_arr_ref) = @_;
-    
-    #open and close file just so to ensure its empty
-    open(OUT, ">" . $out_file_name);
-    close(OUT);
-    
-    foreach $header (@{$aln_order_arr_ref})
-    {
-	if(!(exists($seq_hash_ref->{$header})))
-	{
-	    die "ERROR in print_fasta_ordered - no sequence with key $header that exists in the alignment order array\n";
-	}
-	$curr_seq = $seq_hash_ref->{$header};
-	print_fasta_single_seq($out_file_name, ">>", $header, $curr_seq);
-    }
-}
-#################################################################
-# subroutine : print_fasta_single_seq
-# sub class  : sequence
-# 
-# EPN 03.08.05
-# 
-# purpose : Print a single fasta sequence to a specified file
-#           using line lengths of FASTA_LINE_LENGTH (a constant)
-#
-# args : (1) $out_file_name
-#            name of file to open, print to, and close
-#        (2) $output_mode
-#            either ">" or ">>"
-#        (3) $header
-#            sequence header to be placed after ">"
-#        (4) $seq
-#            sequence to print (after breaking up into multiple lines)
-################################################################# 
 
-sub print_fasta_single_seq
-{
-    ($out_file_name, $output_mode, $header, $seq) = @_;
-    #print("in print fasta seq\n");
-    #print("out file name is $out_file_name\n");
-    #print("output mode is $output_mode\n");
-    #print("header is $header\n");
-    #print("seq is $seq\n");
-    
-    #open file with output mode
-    open(OUT, $output_mode . $out_file_name);
-    if(length($seq) != 0)
-    {
-	
-	print OUT (">" . $header . "\n");
-	
-	$index = 0;
-	$length = length($seq);
-	while($index < $length)
-	{
-	    $substr = substr($seq, $index, FASTA_LINE_LENGTH);
-	    print OUT ($substr . "\n");
-	    $index += FASTA_LINE_LENGTH;
-	}
-	close(OUT);
-    }
-}
+
+
+
+
+
+
+
+
+
