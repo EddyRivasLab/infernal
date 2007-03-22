@@ -430,3 +430,8 @@ extern CM_t *build_cm (MSA *msa, fullmat_t *fullmat, int *querylen,
 		       float alpha, float beta, float alphap, float betap,
 		       float beginsc, float endsc);
 extern CM_t *read_cm (char *queryfile);
+
+/* from cm_single.c
+ */
+int
+DivideMSA2SingleMSAs(MSA *mMSA, int do_sall, int nrep, int *ret_nMSA, MSA ***ret_MSA);

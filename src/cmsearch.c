@@ -59,7 +59,6 @@ The sequence file is expected to be in FASTA format.\n\
    -E <f> : use cutoff E-value of <f> (default ignored; not-calc'ed)\n\
    -n <n> : determine EVD with <n> samples (default with -E: 1000)\n\
    -S <f> : use cutoff bit score of <f> [default: 0]\n\
-   -R     : build RSEARCH CM from 1 seq <aln file> (replaces <cmfile>)\n\
 ";
 
 static char experts[] = "\
@@ -79,7 +78,6 @@ static char experts[] = "\
    --enfseq <s>  : enforce MATL stretch starting at --enfstart <n> emits seq <s>\n\
    --enfnohmm    : do not filter first w/a HMM that only enforces <x> from --enfseq\n\
    --time        : print timings for histogram building, and full search\n\
-   --matrix <s>  : with -R use matrix <s>, either full path or in $RNAMAT\n\
    --rtrans      : replace CM transition scores from <cm file> with RSEARCH scores\n\
 \n\
   * Filtering options using a CM plan 9 HMM (*in development*):\n\
@@ -108,7 +106,6 @@ static struct opt_s OPTIONS[] = {
   { "-S", TRUE, sqdARG_FLOAT }, 
   { "-E", TRUE, sqdARG_FLOAT }, 
   { "-n", TRUE, sqdARG_INT }, 
-  { "-R", TRUE, sqdARG_NONE }, 
   { "--dumptrees",  FALSE, sqdARG_NONE },
   { "--informat",   FALSE, sqdARG_STRING },
   { "--local",      FALSE, sqdARG_NONE },
@@ -140,7 +137,6 @@ static struct opt_s OPTIONS[] = {
   { "--enfseq",     FALSE, sqdARG_STRING},
   { "--enfnohmm",   FALSE, sqdARG_NONE},
   { "--time",       FALSE, sqdARG_NONE},
-  { "--matrix",     FALSE, sqdARG_STRING},
   { "--rtrans",     FALSE, sqdARG_NONE}
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
@@ -249,26 +245,9 @@ main(int argc, char **argv)
   int   do_null2;	   /* TRUE to adjust scores with null model #2 */
   int   do_zero_inserts;   /* TRUE to zero insert emission scores */
   
-  /* variables related to the -R rsearch option */
-  int      do_rsearch;	   /* TRUE to build RSEARCH CM                    */
-  char    *alifile;        /* seqfile to read single seq alignment from   */ 
-  int      aliformat;	   /* format of seqfile                       */
-  MSAFILE *afp;            /* open alignment file                     */
-  MSA     *msa;            /* a multiple sequence alignment           */
-  fullmat_t       *fullmat;/* The full matrix */
-  char matrixname[256];    /* Name of the matrix, from -m */
-  int  matrix_set;         /* TRUE if --matrix enabled at command line */
-  FILE            *matfp;       /* open matrix file for reading */
-  float           ralpha =   DEFAULT_RALPHA; 
-  float           rbeta =    DEFAULT_RBETA;
-  float           ralphap =  DEFAULT_RALPHAP;
-  float           rbetap =   DEFAULT_RBETAP;
-  float           rbeginsc = DEFAULT_RBEGINSC;
-  float           rendsc =   DEFAULT_RENDSC;
-  float           rmin_alpha_beta_sum;
-  int             rquerylen;     /* length of the query file */
+  /* the --rtrans option */
   int             do_rtrans; /* TRUE to overwrite CM transition scores with RSEARCH scores */
-
+  int             ncm;       /* counter over CMs */
 #ifdef USE_MPI
   int mpi_my_rank;              /* My rank in MPI */
   int mpi_num_procs;            /* Total number of processes */
@@ -293,8 +272,9 @@ main(int argc, char **argv)
 
   /* If I'm the master, do the following set up code -- parse arguments, read
      in matrix and query, build model */
-  if (mpi_my_rank == mpi_master_rank) {
-    mpi_watch = StopwatchCreate(); 
+  if (mpi_my_rank == mpi_master_rank) 
+    {
+      mpi_watch = StopwatchCreate(); 
 #endif
 
   /*********************************************** 
@@ -343,11 +323,7 @@ main(int argc, char **argv)
   do_enforce_hmm    = TRUE;  /* this is set to FALSE later if do_enforce is not enabled */
   enf_cc_start      = 0;
   enf_seq           = NULL;
-  do_rsearch        = FALSE;
   do_timings        = FALSE;
-  aliformat         = MSAFILE_UNKNOWN;   /* autodetect by default */
-  matrixname[0]     = '\0';
-  matrix_set        = FALSE;
   do_rtrans         = FALSE;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
@@ -369,7 +345,6 @@ main(int argc, char **argv)
 	do_cm_stats = TRUE;
 	num_samples = 1000;
       }
-    else if  (strcmp(optname, "-R")          == 0) do_rsearch   = TRUE;
     else if  (strcmp(optname, "-n")          == 0) num_samples  = atoi(optarg);
     else if  (strcmp(optname, "--dumptrees") == 0) do_dumptrees = TRUE;
     else if  (strcmp(optname, "--local")     == 0) do_local     = TRUE;
@@ -385,14 +360,6 @@ main(int argc, char **argv)
       { do_enforce = TRUE; do_enforce_hmm = TRUE; enf_seq = optarg; } 
     else if  (strcmp(optname, "--enfnohmm")    == 0) do_enforce_hmm = FALSE;
     else if  (strcmp(optname, "--time")        == 0) do_timings   = TRUE;
-    else if  (strcmp(optname, "--matrix")      == 0) 
-      {
-	if (strlen(optarg) > 255)
-	  Die ("Matrix name can't exceed 255 characters\n");
-	strncpy (matrixname, optarg, 255);
-	matrixname[255] = '\0';
-	matrix_set = TRUE;
-      }
     else if  (strcmp(optname, "--rtrans")      == 0) do_rtrans = TRUE;
     else if  (strcmp(optname, "--hmmfb")       == 0) do_hmmfb = TRUE;
     else if  (strcmp(optname, "--hmmweinberg") == 0) do_hmmweinberg = TRUE;
@@ -482,10 +449,6 @@ main(int argc, char **argv)
     Die("--banddump and --noqdb combination not supported.\n");
   if(set_window && do_qdb)
     Die("--window only works with --noqdb.\n");
-  if(!do_rsearch && matrix_set)
-    Die("--matrix doesn't make sense without -R.\n");
-  if(do_rsearch && do_enforce)
-    Die("--enf* options currently incompatible with -R.\n");
   if(do_rtrans && do_enforce)
     Die("--enf* options incompatible with --rtrans.\n");
 #if USE_MPI
@@ -494,8 +457,7 @@ main(int argc, char **argv)
 #endif
 
   if (argc - optind != 2) Die("Incorrect number of arguments.\n%s\n", usage);
-  if (!do_rsearch) cmfile = argv[optind++];
-  else alifile = argv[optind++];
+  cmfile = argv[optind++];
   seqfile = argv[optind++]; 
   
   /**********************************************
@@ -519,6 +481,7 @@ main(int argc, char **argv)
       for (i = 0; i < GC_SEGMENTS; i++) 
 	partitions[i] = 0;
     }
+
   /**************************************************
    * Preliminaries: open our files for i/o; get a CM.
    * We configure the CM with ConfigCM() later.
@@ -527,446 +490,402 @@ main(int argc, char **argv)
     watch = StopwatchCreate();
   if(!do_enforce || do_hmmonly) 
     do_enforce_hmm = FALSE;
-  if(!do_rsearch)
-    {
-      if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
-	Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
-      if (! CMFileRead(cmfp, &cm))
-	Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
-      if (cm == NULL) 
-	Die("%s empty?\n", cmfile);
-      CMFileClose(cmfp);
-    }
-  else  /* do RSEARCH */
-    {
-      /* Read in the alignment (with 1 seq) to build RSEARCH CM from */
-      if ((afp = MSAFileOpen(alifile, format, NULL)) == NULL)
-	Die("Alignment file %s could not be opened for reading", alifile);
-      /* read file */
-      if ((msa = MSAFileRead(afp)) == NULL) 
-	Die ("Could not read in query\n");
-      MSAFileClose(afp);
 
-      /* Set up matrix */
-      if ((matfp = MatFileOpen (DEFAULT_RMATRIX, getenv("RNAMAT"), matrixname)) == NULL) 
-	Die ("Failed to open matrix file %s\n%s\n", matrixname, usage);
-      if (! (fullmat = ReadMatrix(matfp)))
-	Die ("Failed to read matrix file \n%s\n", usage);
-      printf ("Matrix: %s\n", fullmat->name);
-      /* print alphas and betas */
-      printf ("Alpha: %.2f\n", ralpha);
-      printf ("Beta: %.2f\n", rbeta);
-      printf ("Alpha': %.2f\n", ralphap);
-      printf ("Beta': %.2f\n", rbetap);
-      /* check if alpha+beta sum too low  */
-      rmin_alpha_beta_sum = get_min_alpha_beta_sum(fullmat);
-      if (ralpha + rbeta < rmin_alpha_beta_sum) 
-	Die ("alpha + beta must sum to less than %.2f\n", rmin_alpha_beta_sum);
-      if (ralphap + rbetap < rmin_alpha_beta_sum) 
-	Die ("alpha' + beta' must sum to less than %.2f\n", rmin_alpha_beta_sum);
-  
-      /* Build the CM */
-      cm = build_cm (msa, fullmat, &rquerylen, ralpha, rbeta, ralphap, rbetap,
-		     rbeginsc, rendsc);
-      /* done with the matrix, free it */
-      FreeMat(fullmat);
-
-      cm->W = 2 * MSAAverageSequenceLength(msa);
-      /* set null model */
-      CMSetNullModel(cm, fullmat->g); 
-
-      cm->el_selfsc  = 0.; /* temporary to match RSEARCH */
-      cm->iel_selfsc = Prob2Score(sreEXP2(cm->el_selfsc), 1.0);
-    } 
-  
-  /* Set CM and CP9 parameters that can be changed at command line */
-  cm->beta         = beta;     /* this will be DEFAULT_BETA unless set at command line */
-  cm->tau          = tau;      /* this will be DEFAULT_TAU unless set at command line */
-  cm->sc_boost     = sc_boost; /* this will be 0.0 unless set at command line */
-  cm->cp9_sc_boost = sc_boost; /* this will be 0.0 unless set at command line */
-  if (set_window) cm->W = set_W;
-
-  /* Set the cutoffs */
-  cm->cutoff_type = cm_cutoff_type;  /* this will be DEFAULT_CM_CUTOFF_TYPE unless set at command line */
-  if(cm->cutoff_type == SCORE_CUTOFF)
-    cm->cutoff = cm_sc_cutoff;
-  else
-    cm->cutoff = cm_e_cutoff;
-  cm->cp9_cutoff_type = cp9_cutoff_type; /* this will be DEFAULT_CP9_CUTOFF_TYPE unless set at command line */
-  if(cm->cp9_cutoff_type == SCORE_CUTOFF)
-    cm->cp9_cutoff = cp9_sc_cutoff;
-  else
-    cm->cp9_cutoff = cp9_e_cutoff;
-  
-  /* If do_enforce set do_hmm_rescan to TRUE if we're filtering or scanning with an HMM,
-   * this way only subseqs that include the enf_subseq should pass the filter */
-  if((do_enforce && do_enforce_hmm) || 
-     (do_enforce && (do_hmmfb || do_hmmweinberg || do_hmmonly)))
-    {  do_hmmrescan = TRUE; } 
-  /* Update cm->config_opts and cm->search_opts based on command line options */
-  if(do_local)        cm->config_opts |= CM_CONFIG_LOCAL;
-  if(do_zero_inserts) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
-  if(!(do_qdb))       cm->search_opts |= CM_SEARCH_NOQDB;
-  if(do_hmmonly)      cm->search_opts |= CM_SEARCH_HMMONLY;
-  if(do_hmmfb)        cm->search_opts |= CM_SEARCH_HMMFB;
-  if(do_hmmweinberg)  cm->search_opts |= CM_SEARCH_HMMWEINBERG;
-  if(do_scan2hbands)  cm->search_opts |= CM_SEARCH_HMMSCANBANDS;
-  if(do_hmmrescan)    cm->search_opts |= CM_SEARCH_HMMRESCAN;
-  if(use_sums)        cm->search_opts |= CM_SEARCH_SUMS;
-  if(do_inside)       cm->search_opts |= CM_SEARCH_INSIDE;
-  if(!do_revcomp)     cm->search_opts |= CM_SEARCH_TOPONLY;
-  if(!do_align)       cm->search_opts |= CM_SEARCH_NOALIGN;
-  if(do_null2)        cm->search_opts |= CM_SEARCH_NULL2;
-  if(do_cm_stats)     cm->search_opts |= CM_SEARCH_CMSTATS;
-  if(do_cp9_stats)    cm->search_opts |= CM_SEARCH_CP9STATS;
-  if(do_rtrans)       cm->flags       |= CM_RSEARCHTRANS;
-
-  if(do_enforce)
-    {
-      cm->config_opts |= CM_CONFIG_ENFORCE;
-      if(do_enforce_hmm) 
-	{
-	  /* This will be TRUE by default if(do_enforce). Off if --hmmonly
-	   * was also enabled.
-	   * Unless --hmmfb enabled, act like --hmmweinberg was 
-	   * enabled, to filter with the special enforced CP9 HMM.  */
-	  cm->config_opts |= CM_CONFIG_ENFORCEHMM;
-	  if((!do_hmmonly) && (!do_hmmfb))
-	    {
-	      do_hmmweinberg = TRUE;
-	      cm->search_opts |= CM_SEARCH_HMMWEINBERG;
-	    }
-	}
-      cm->enf_start    = EnforceFindEnfStart(cm, enf_cc_start); 
-      cm->enf_seq      = enf_seq;
-    }
-
-  if(do_rsearch) 
-    {
-      /* TEMPORARILY: we don't do anything (no QDB, no CP9s, no CMLogoddisfy calls etc.) 
-       * if in RSEARCH mode */
-      /* RSEARCH: always local, never QDB, never null2 (?), never anything CP9 related */
-      do_qdb = FALSE;
-      cm->search_opts |= CM_SEARCH_NOQDB;
-      cm->config_opts |= CM_CONFIG_LOCAL;
-      cm->search_opts |= CM_SEARCH_RSEARCH;
-      cm->search_opts &= ~CM_SEARCH_NULL2;
-      cm->search_opts &= ~CM_SEARCH_HMMONLY;
-      cm->search_opts &= ~CM_SEARCH_HMMFB;
-      cm->search_opts &= ~CM_SEARCH_HMMWEINBERG;
-      cm->search_opts &= ~CM_SEARCH_HMMSCANBANDS;
-      cm->search_opts &= ~CM_SEARCH_HMMRESCAN;
-      cm->search_opts &= ~CM_SEARCH_CP9STATS;
-      cm->flags       |= CM_IS_RSEARCH;
-    }
-
-  if(do_qdb) cm->config_opts |= CM_CONFIG_QDB;
-  if(read_qdb)
-    {
-      /* read the bands from a file */
-      if ((qdb_fp = fopen(qdb_file, "r")) == NULL)
-	Die("failed to open QDB file %s", qdb_file);
-      if(!(QDBFileRead(qdb_fp, cm, &preset_dmin, &preset_dmax)))
-	{
-	  Die("ERROR reading QDB file: %s.\nDoes it correspond (same number of states) to this model?\n", qdb_file);
-	}
-      fclose(qdb_fp);
-    }
-  else
-    preset_dmin = preset_dmax = NULL;
-  
-  /*******************************
-   * Open the sequence (db) file *
-   *******************************/
-  status = esl_sqfile_Open(seqfile, format, NULL, &dbfp);
-  if (status == eslENOTFOUND) esl_fatal("No such file."); 
-  else if (status == eslEFORMAT) esl_fatal("Format unrecognized."); 
-  else if (status == eslEINVAL) esl_fatal("Can’t autodetect stdin or .gz."); 
-  else if (status != eslOK) esl_fatal("Failed to open sequence database file, code %d.", status); 
+  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
+    Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
 
 #ifdef USE_MPI
-}   /* End of first block that is only done by master process */
-  /* Barrier for debugging */
-  MPI_Barrier(MPI_COMM_WORLD);
-  /* Here we need to broadcast the following parameters:
-     num_samples, W, W_scale, and the CM */
-  broadcast_cm(&cm, mpi_my_rank, mpi_master_rank);
-  search_first_broadcast(&num_samples, &W_scale, mpi_my_rank, 
-			 mpi_master_rank);
-  
+  }   /* End of first block that is only done by master process */
 #endif
+  /* begin */
+  ncm = 0;
 
-  /* Configure the CM for search based on cm->config_opts 
-   * and cm->search_opts. Set local mode, make cp9 HMM, 
-   * calculate QD bands etc., preset_dmin and preset_dmax
-   * are NULL unless --qdbfile, and you can't enable 
-   * --qdbfile in MPI mode (we check for this and die if
-   * we're trying to above). This function no longer 
-   * enforces a subseq as of 02.14.07, ConfigCMEnforce()
-   * now does that, but later after we (potentially) 
-   * calculate stats */
-  CMLogoddsify(cm); /* temporary */
-  ConfigCM(cm, preset_dmin, preset_dmax);
+  while (CMFileRead(cmfp, &cm))
+    {
+#ifdef USE_MPI
+      /* If I'm the master, read CM */
+      if (mpi_my_rank == mpi_master_rank) 
+	{
+#endif
+	  if (cm == NULL) 
+	    Die("%s empty?\n", cmfile);
 
-#ifdef USE_MPI
-  if(mpi_my_rank == mpi_master_rank)
-    {
-#endif
-  if(do_bdump && (!(cm->search_opts & CM_SEARCH_NOQDB))) 
-    {
-      printf("beta:%f\n", cm->beta);
-      debug_print_bands(cm, cm->dmin, cm->dmax);
-      PrintDPCellsSaved(cm, cm->dmin, cm->dmax, cm->W);
-    }
-#ifdef USE_MPI
-    }
-#endif
+	  printf("\nCM %d: %s\n", (ncm+1), cm->name);
+	  if(cm->desc == NULL) printf("desc: (NONE)\n");
+	  else printf("desc: %s\n", cm->desc);
 
-  /**************************************************
-   * Calculate EVD stats
-   *************************************************/
-  
-#ifdef USE_MPI
-  if (mpi_my_rank == mpi_master_rank) 
-    {
-#endif
-      GetDBInfo(dbfp, &N, &gc_ct);
-      if (do_revcomp) N*=2;
-#ifdef USE_MPI
-    }
-#endif
-  /* Set sample_length to 2*W if not yet set */
-  if (sample_length == 0) sample_length = W_scale * cm->W;
-  /*printf("0 W: %d W_scale: %f sample_length: %d\n", W, W_scale, sample_length);*/
-  /*printf("cm stats: %d (%d) cp9 stats: %d (%d)\n", (cm->search_opts & CM_SEARCH_CMSTATS),
-    do_cm_stats, (cm->search_opts & CM_SEARCH_CP9STATS), do_cp9_stats);*/
-  
-  if (cm->search_opts & CM_SEARCH_CMSTATS) 
-    {
-      /*printf("CALCING CM STATS\n");*/
-      if(do_timings) /* will be off if in_mpi */
-	{
-	  StopwatchZero(watch);
-	  StopwatchStart(watch);
-	}	  
-#ifdef USE_MPI
-      if(mpi_my_rank == mpi_master_rank && mpi_num_procs > 1)
-	{
-	  StopwatchZero(mpi_watch);
-	  StopwatchStart(mpi_watch);
-	}
-      if (mpi_num_procs > 1)
-	{
-	  parallel_make_histogram(gc_ct, partitions, num_partitions,
-				  cm, num_samples, sample_length, 
-				  FALSE, /* we're not doing CP9 stats */
-				  mpi_my_rank, mpi_num_procs, mpi_master_rank);
-	  if(mpi_my_rank == mpi_master_rank && mpi_num_procs > 1)
-	    {
-	      StopwatchStop(mpi_watch);
-	      StopwatchDisplay(stdout, "MPI CM  histogram building time:", mpi_watch);
-	    }
-	}	  
-      else 
-#endif
-	serial_make_histogram (gc_ct, partitions, num_partitions,
-			       cm, num_samples, sample_length, 
-			       FALSE, /* we're not doing CP9 stats */
-			       TRUE); /* use easel, discard eventually */
-      if(do_timings) /* this will be false if in_mpi */
-	{
-	  StopwatchStop(watch);
-	  StopwatchDisplay(stdout, "CM  histogram building time:", watch);
-	}
-    }      
-
-  /* If we're calculating stats for the CP9, build CP9 histograms */
-  if (cm->search_opts & CM_SEARCH_CP9STATS) 
-    {
-      /*printf("CALCING CP9 STATS\n");*/
-      if(do_timings) /* will be off if in_mpi */
-	{
-	  StopwatchZero(watch);
-	  StopwatchStart(watch);
-	}	  
-#ifdef USE_MPI
-      if(mpi_my_rank == mpi_master_rank && mpi_num_procs > 1)
-	{
-	  StopwatchZero(mpi_watch);
-	  StopwatchStart(mpi_watch);
-	}
-      if (mpi_num_procs > 1)
-	{
-	  parallel_make_histogram(gc_ct, partitions, num_partitions,
-				  cm, num_samples, sample_length, 
-				  TRUE, /* we are doing CP9 stats */
-				  mpi_my_rank, mpi_num_procs, mpi_master_rank);
-	  if(mpi_my_rank == mpi_master_rank && mpi_num_procs > 1)
-	    {
-	      StopwatchStop(mpi_watch);
-	      StopwatchDisplay(stdout, "MPI CP9 histogram building time:", mpi_watch);
-	    }
-	}
-      else 
-#endif
-	serial_make_histogram (gc_ct, partitions, num_partitions,
-			       cm, num_samples, sample_length, 
-			       TRUE, /* we are doing CP9 stats */
-			       TRUE);/* use easel, discard eventually */
-      if(do_timings) /* this will be false if in_mpi */
-	{
-	  StopwatchStop(watch);
-	  StopwatchDisplay(stdout, "CP9 histogram building time:", watch);
-	}
-	
-    }      
+	  /* Set CM and CP9 parameters that can be changed at command line */
+	  cm->beta         = beta;     /* this will be DEFAULT_BETA unless set at command line */
+	  cm->tau          = tau;      /* this will be DEFAULT_TAU unless set at command line */
+	  cm->sc_boost     = sc_boost; /* this will be 0.0 unless set at command line */
+	  cm->cp9_sc_boost = sc_boost; /* this will be 0.0 unless set at command line */
+	  if (set_window) cm->W = set_W;
       
+	  /* Set the cutoffs */
+	  cm->cutoff_type = cm_cutoff_type;  /* this will be DEFAULT_CM_CUTOFF_TYPE unless set at command line */
+	  if(cm->cutoff_type == SCORE_CUTOFF)
+	    cm->cutoff = cm_sc_cutoff;
+	  else
+	    cm->cutoff = cm_e_cutoff;
+	  cm->cp9_cutoff_type = cp9_cutoff_type; /* this will be DEFAULT_CP9_CUTOFF_TYPE unless set at command line */
+	  if(cm->cp9_cutoff_type == SCORE_CUTOFF)
+	    cm->cp9_cutoff = cp9_sc_cutoff;
+	  else
+	    cm->cp9_cutoff = cp9_e_cutoff;
+      
+	  /* If do_enforce set do_hmm_rescan to TRUE if we're filtering or scanning with an HMM,
+	   * this way only subseqs that include the enf_subseq should pass the filter */
+	  if((do_enforce && do_enforce_hmm) || 
+	     (do_enforce && (do_hmmfb || do_hmmweinberg || do_hmmonly)))
+	    {  do_hmmrescan = TRUE; } 
+	  /* Update cm->config_opts and cm->search_opts based on command line options */
+	  if(do_local)        cm->config_opts |= CM_CONFIG_LOCAL;
+	  if(do_zero_inserts) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
+	  if(!(do_qdb))       cm->search_opts |= CM_SEARCH_NOQDB;
+	  if(do_hmmonly)      cm->search_opts |= CM_SEARCH_HMMONLY;
+	  if(do_hmmfb)        cm->search_opts |= CM_SEARCH_HMMFB;
+	  if(do_hmmweinberg)  cm->search_opts |= CM_SEARCH_HMMWEINBERG;
+	  if(do_scan2hbands)  cm->search_opts |= CM_SEARCH_HMMSCANBANDS;
+	  if(do_hmmrescan)    cm->search_opts |= CM_SEARCH_HMMRESCAN;
+	  if(use_sums)        cm->search_opts |= CM_SEARCH_SUMS;
+	  if(do_inside)       cm->search_opts |= CM_SEARCH_INSIDE;
+	  if(!do_revcomp)     cm->search_opts |= CM_SEARCH_TOPONLY;
+	  if(!do_align)       cm->search_opts |= CM_SEARCH_NOALIGN;
+	  if(do_null2)        cm->search_opts |= CM_SEARCH_NULL2;
+	  if(do_cm_stats)     cm->search_opts |= CM_SEARCH_CMSTATS;
+	  if(do_cp9_stats)    cm->search_opts |= CM_SEARCH_CP9STATS;
+	  if(do_rtrans)       cm->flags       |= CM_RSEARCHTRANS;
+
+	  if(do_enforce)
+	    {
+	      cm->config_opts |= CM_CONFIG_ENFORCE;
+	      if(do_enforce_hmm) 
+		{
+		  /* This will be TRUE by default if(do_enforce). Off if --hmmonly
+		   * was also enabled.
+		   * Unless --hmmfb enabled, act like --hmmweinberg was 
+		   * enabled, to filter with the special enforced CP9 HMM.  */
+		  cm->config_opts |= CM_CONFIG_ENFORCEHMM;
+		  if((!do_hmmonly) && (!do_hmmfb))
+		    {
+		      do_hmmweinberg = TRUE;
+		      cm->search_opts |= CM_SEARCH_HMMWEINBERG;
+		    }
+		}
+	      cm->enf_start    = EnforceFindEnfStart(cm, enf_cc_start); 
+	      cm->enf_seq      = enf_seq;
+	    }
+
+	  if(do_qdb) cm->config_opts |= CM_CONFIG_QDB;
+	  if(read_qdb)
+	    {
+	      /* read the bands from a file */
+	      if ((qdb_fp = fopen(qdb_file, "r")) == NULL)
+		Die("failed to open QDB file %s", qdb_file);
+	      if(!(QDBFileRead(qdb_fp, cm, &preset_dmin, &preset_dmax)))
+		{
+		  Die("ERROR reading QDB file: %s.\nDoes it correspond (same number of states) to this model?\n", qdb_file);
+		}
+	      fclose(qdb_fp);
+	    }
+	  else
+	    preset_dmin = preset_dmax = NULL;
+      
+	  /*******************************
+	   * Open the sequence (db) file *
+	   *******************************/
+	  status = esl_sqfile_Open(seqfile, format, NULL, &dbfp);
+	  if (status == eslENOTFOUND) esl_fatal("No such file."); 
+	  else if (status == eslEFORMAT) esl_fatal("Format unrecognized."); 
+	  else if (status == eslEINVAL) esl_fatal("Can’t autodetect stdin or .gz."); 
+	  else if (status != eslOK) esl_fatal("Failed to open sequence database file, code %d.", status); 
+
 #ifdef USE_MPI
-  if (mpi_my_rank == mpi_master_rank) {
+	}   /* End of first block that is only done by master process */
+      /* Barrier for debugging */
+      MPI_Barrier(MPI_COMM_WORLD);
+      /* Here we need to broadcast the following parameters:
+	 num_samples, W, W_scale, and the CM */
+      broadcast_cm(&cm, mpi_my_rank, mpi_master_rank);
+      search_first_broadcast(&num_samples, &W_scale, mpi_my_rank, 
+			     mpi_master_rank);
+      
+#endif
+
+      /* Configure the CM for search based on cm->config_opts 
+       * and cm->search_opts. Set local mode, make cp9 HMM, 
+       * calculate QD bands etc., preset_dmin and preset_dmax
+       * are NULL unless --qdbfile, and you can't enable 
+       * --qdbfile in MPI mode (we check for this and die if
+       * we're trying to above). This function no longer 
+       * enforces a subseq as of 02.14.07, ConfigCMEnforce()
+       * now does that, but later after we (potentially) 
+       * calculate stats */
+      CMLogoddsify(cm); /* temporary */
+      ConfigCM(cm, preset_dmin, preset_dmax);
+
+#ifdef USE_MPI
+      if(mpi_my_rank == mpi_master_rank)
+	{
+#endif
+	  if(do_bdump && (!(cm->search_opts & CM_SEARCH_NOQDB))) 
+	    {
+	      printf("beta:%f\n", cm->beta);
+	      debug_print_bands(cm, cm->dmin, cm->dmax);
+	      PrintDPCellsSaved(cm, cm->dmin, cm->dmax, cm->W);
+	    }
+#ifdef USE_MPI
+	}
+#endif
+
+      /**************************************************
+       * Calculate EVD stats
+       *************************************************/
+  
+#ifdef USE_MPI
+      if (mpi_my_rank == mpi_master_rank) 
+	{
+#endif
+	  GetDBInfo(dbfp, &N, &gc_ct);
+	  if (do_revcomp) N*=2;
+#ifdef USE_MPI
+	}
+#endif
+      /* Set sample_length to 2*W if not yet set */
+      if (sample_length == 0) sample_length = W_scale * cm->W;
+      /*printf("0 W: %d W_scale: %f sample_length: %d\n", W, W_scale, sample_length);*/
+      /*printf("cm stats: %d (%d) cp9 stats: %d (%d)\n", (cm->search_opts & CM_SEARCH_CMSTATS),
+	do_cm_stats, (cm->search_opts & CM_SEARCH_CP9STATS), do_cp9_stats);*/
+
+      if (cm->search_opts & CM_SEARCH_CMSTATS) 
+	{
+	  /*printf("CALCING CM STATS\n");*/
+	  if(do_timings) /* will be off if in_mpi */
+	    {
+	      StopwatchZero(watch);
+	      StopwatchStart(watch);
+	    }	  
+#ifdef USE_MPI
+	  if(mpi_my_rank == mpi_master_rank && mpi_num_procs > 1)
+	    {
+	      StopwatchZero(mpi_watch);
+	      StopwatchStart(mpi_watch);
+	    }
+	  if (mpi_num_procs > 1)
+	    {
+	      parallel_make_histogram(gc_ct, partitions, num_partitions,
+				      cm, num_samples, sample_length, 
+				      FALSE, /* we're not doing CP9 stats */
+				      mpi_my_rank, mpi_num_procs, mpi_master_rank);
+	      if(mpi_my_rank == mpi_master_rank && mpi_num_procs > 1)
+		{
+		  StopwatchStop(mpi_watch);
+		  StopwatchDisplay(stdout, "MPI CM  histogram building time:", mpi_watch);
+		}
+	    }	  
+	  else 
+#endif
+	    serial_make_histogram (gc_ct, partitions, num_partitions,
+				   cm, num_samples, sample_length, 
+				   FALSE, /* we're not doing CP9 stats */
+				   TRUE); /* use easel, discard eventually */
+	  if(do_timings) /* this will be false if in_mpi */
+	    {
+	      StopwatchStop(watch);
+	      StopwatchDisplay(stdout, "CM  histogram building time:", watch);
+	    }
+	}      
+
+      /* If we're calculating stats for the CP9, build CP9 histograms */
+      if (cm->search_opts & CM_SEARCH_CP9STATS) 
+	{
+	  /*printf("CALCING CP9 STATS\n");*/
+	  if(do_timings) /* will be off if in_mpi */
+	    {
+	      StopwatchZero(watch);
+	      StopwatchStart(watch);
+	    }	  
+#ifdef USE_MPI
+	  if(mpi_my_rank == mpi_master_rank && mpi_num_procs > 1)
+	    {
+	      StopwatchZero(mpi_watch);
+	      StopwatchStart(mpi_watch);
+	    }
+	  if (mpi_num_procs > 1)
+	    {
+	      parallel_make_histogram(gc_ct, partitions, num_partitions,
+				      cm, num_samples, sample_length, 
+				      TRUE, /* we are doing CP9 stats */
+				      mpi_my_rank, mpi_num_procs, mpi_master_rank);
+	      if(mpi_my_rank == mpi_master_rank && mpi_num_procs > 1)
+		{
+		  StopwatchStop(mpi_watch);
+		  StopwatchDisplay(stdout, "MPI CP9 histogram building time:", mpi_watch);
+		}
+	    }
+	  else 
+	    {
+#endif
+	      serial_make_histogram (gc_ct, partitions, num_partitions,
+				     cm, num_samples, sample_length, 
+				     TRUE, /* we are doing CP9 stats */
+				     TRUE);/* use easel, discard eventually */
+#ifdef USE_MPI
+	    }
+#endif
+	  if(do_timings) /* this will be false if in_mpi */
+	    {
+	      StopwatchStop(watch);
+	      StopwatchDisplay(stdout, "CP9 histogram building time:", watch);
+	    }
+	}      
+
+#ifdef USE_MPI
+      if (mpi_my_rank == mpi_master_rank) {
 #endif
     
-    /* Set CM mu from K, lambda, N */
-    if (cm->search_opts & CM_SEARCH_CMSTATS)
-      {
-	for (i=0; i<GC_SEGMENTS; i++) 
-	  cm->mu[i] = log(cm->K[i]*N)/cm->lambda[i];
-	debug_print_stats(partitions, num_partitions, cm->lambda, cm->mu);
-      }    
-    /* else they've been set to default 0.0s in ConfigCM() */
+	/* Set CM mu from K, lambda, N */
+	if (cm->search_opts & CM_SEARCH_CMSTATS)
+	  {
+	    for (i=0; i<GC_SEGMENTS; i++) 
+	      cm->mu[i] = log(cm->K[i]*N)/cm->lambda[i];
+	    debug_print_stats(partitions, num_partitions, cm->lambda, cm->mu);
+	  }    
+	/* else they've been set to default 0.0s in ConfigCM() */
 
-    /* Set CP9 mu from K, lambda, N */
-    if (cm->search_opts & CM_SEARCH_CP9STATS)
-      {
-	for (i=0; i<GC_SEGMENTS; i++) 
-	  cm->cp9_mu[i] = log(cm->cp9_K[i]*N)/cm->cp9_lambda[i];
-	//debug_print_stats(partitions, num_partitions, cm->cp9_lambda, cm->cp9_mu);
-      }    
-    /* else they've been set to default 0.0s in ConfigCM() */
+	/* Set CP9 mu from K, lambda, N */
+	if (cm->search_opts & CM_SEARCH_CP9STATS)
+	  {
+	    for (i=0; i<GC_SEGMENTS; i++) 
+	      cm->cp9_mu[i] = log(cm->cp9_K[i]*N)/cm->cp9_lambda[i];
+	    //debug_print_stats(partitions, num_partitions, cm->cp9_lambda, cm->cp9_mu);
+	  }    
+	/* else they've been set to default 0.0s in ConfigCM() */
 
-    if (cm->search_opts & CM_SEARCH_CMSTATS) 
-      {
-	printf ("CM statistics calculated with simulation of %d samples of length %d\n", num_samples, sample_length);
-	if (num_partitions == 1) 
-	  printf ("No partition points\n");
+	if (cm->search_opts & CM_SEARCH_CMSTATS) 
+	  {
+	    printf ("CM statistics calculated with simulation of %d samples of length %d\n", num_samples, sample_length);
+	    if (num_partitions == 1) 
+	      printf ("No partition points\n");
+	    else 
+	      {
+		printf ("Partition points are: ");
+		for (i=0; i<=GC_SEGMENTS; i++)
+		  if (partitions[i] != partitions[i-1]) 
+		    printf ("%d ", i);
+	      }
+	    for (i=0; i<GC_SEGMENTS; i++) 
+	      ;/*printf ("GC = %d\tlambda = %.4f\tmu = %.4f\n", i, lambda[i], mu[i]);*/
+	    printf ("N = %ld\n", N);
+	    if (cm->cutoff_type == SCORE_CUTOFF) 
+	      printf ("Using CM score cutoff of %.2f\n", cm->cutoff);
+	    else 
+	      printf ("Using CM E cutoff of %.2f\n\n", cm->cutoff);
+	  } 
 	else 
 	  {
-	    printf ("Partition points are: ");
-	    for (i=0; i<=GC_SEGMENTS; i++)
-	      if (partitions[i] != partitions[i-1]) 
-		printf ("%d ", i);
+	    printf ("CM lambda and K undefined -- no statistics\n");
+	    printf ("Using CM score cutoff of %.2f\n", cm->cutoff);
 	  }
-	for (i=0; i<GC_SEGMENTS; i++) 
-	  ;/*printf ("GC = %d\tlambda = %.4f\tmu = %.4f\n", i, lambda[i], mu[i]);*/
-	printf ("N = %ld\n", N);
-	if (cm->cutoff_type == SCORE_CUTOFF) 
-	  printf ("Using CM score cutoff of %.2f\n", cm->cutoff);
-	else 
-	  printf ("Using CM E cutoff of %.2f\n\n", cm->cutoff);
-      } 
-    else 
-	{
-	  printf ("CM lambda and K undefined -- no statistics\n");
-	  printf ("Using CM score cutoff of %.2f\n", cm->cutoff);
-	}
-    fflush(stdout);
+	fflush(stdout);
 
-    if (cm->search_opts & CM_SEARCH_CP9STATS) 
-      {
-	printf ("CP9 statistics calculated with simulation of %d samples of length %d\n", num_samples, sample_length);
-	if (num_partitions == 1) 
-	  printf ("No partition points\n");
-	else 
+	if (cm->search_opts & CM_SEARCH_CP9STATS) 
 	  {
-	    printf ("Partition points are: ");
-	    for (i=0; i<=GC_SEGMENTS; i++)
-	      if (partitions[i] != partitions[i-1]) 
-		printf ("%d ", i);
+	    printf ("CP9 statistics calculated with simulation of %d samples of length %d\n", num_samples, sample_length);
+	    if (num_partitions == 1) 
+	      printf ("No partition points\n");
+	    else 
+	      {
+		printf ("Partition points are: ");
+		for (i=0; i<=GC_SEGMENTS; i++)
+		  if (partitions[i] != partitions[i-1]) 
+		    printf ("%d ", i);
+	      }
+	    for (i=0; i<GC_SEGMENTS; i++) 
+	      ;/*printf ("GC = %d\tlambda = %.4f\tmu = %.4f\n", i, lambda[i], mu[i]);*/
+	    printf ("N = %ld\n", N);
+	    if (cm->cp9_cutoff_type == SCORE_CUTOFF) 
+	      printf ("Using CP9 score cutoff of %.2f\n", cm->cp9_cutoff);
+	    else 
+	      printf ("Using CP9 E cutoff of %.2f\n\n", cm->cp9_cutoff);
+	  } 
+	else if(cm->search_opts & CM_SEARCH_HMMONLY || cm->search_opts & CM_SEARCH_HMMWEINBERG)
+	  {
+	    printf ("CP9 lambda and K undefined -- no statistics\n");
+	    printf ("Using CP9 score cutoff of %.2f\n", cm->cp9_cutoff);
 	  }
-	for (i=0; i<GC_SEGMENTS; i++) 
-	  ;/*printf ("GC = %d\tlambda = %.4f\tmu = %.4f\n", i, lambda[i], mu[i]);*/
-	printf ("N = %ld\n", N);
-	if (cm->cp9_cutoff_type == SCORE_CUTOFF) 
-	  printf ("Using CP9 score cutoff of %.2f\n", cm->cp9_cutoff);
-	else 
-	  printf ("Using CP9 E cutoff of %.2f\n\n", cm->cp9_cutoff);
-      } 
-    else if(cm->search_opts & CM_SEARCH_HMMONLY || cm->search_opts & CM_SEARCH_HMMWEINBERG)
-	{
-	  printf ("CP9 lambda and K undefined -- no statistics\n");
-	  printf ("Using CP9 score cutoff of %.2f\n", cm->cp9_cutoff);
-	}
-    fflush(stdout);
+	fflush(stdout);
 
-    /*************************************************
-     * End of making the histogram(s).
-     *************************************************/
-    /*************************************************
-     *    Do the search
-     *************************************************/
-    if(do_timings) /* will be off if in_mpi */
-      {
-	StopwatchZero(watch);
-	StopwatchStart(watch);
-      }	  
-    
+	/*************************************************
+	 * End of making the histogram(s).
+	 *************************************************/
+	/*************************************************
+	 *    Do the search
+	 *************************************************/
+	if(do_timings) /* will be off if in_mpi */
+	  {
+	    StopwatchZero(watch);
+	    StopwatchStart(watch);
+	  }	  
 #ifdef USE_MPI
-    } /* Done with second master-only block */
+      } /* Done with second master-only block */
 #endif 
 
-  /* We have the EVD stats for the CM and/or CP9, now we 
-   * enforce the subsequence if necessary. This must be
-   * done by all nodes if in_mpi */
-  if(cm->config_opts & CM_CONFIG_ENFORCE)
-    ConfigCMEnforce(cm);
-
-  cons = CreateCMConsensus(cm, 3.0, 1.0); 
-
+      /* We have the EVD stats for the CM and/or CP9, now we 
+       * enforce the subsequence if necessary. This must be
+       * done by all nodes if in_mpi */
+      if(cm->config_opts & CM_CONFIG_ENFORCE)
+	ConfigCMEnforce(cm);
+  
+      cons = CreateCMConsensus(cm, 3.0, 1.0); 
+  
 #ifdef USE_MPI
-  /* Second broadcast, send N, and the EVD stats if
-   * we're doing CM stats and/or CP9 stats. */
-  search_second_broadcast(&cm, &N, mpi_my_rank, mpi_master_rank);
+      /* Second broadcast, send N, and the EVD stats if
+       * we're doing CM stats and/or CP9 stats. */
+      search_second_broadcast(&cm, &N, mpi_my_rank, mpi_master_rank);
 
-  /*printf("cm->cutoff: %f cp9->cutoff: %f rank: %d\n", cm->cutoff, cm->cp9_cutoff, mpi_my_rank);*/
-  if(mpi_my_rank == mpi_master_rank && mpi_num_procs > 1)
-    {
-      StopwatchZero(mpi_watch);
-      StopwatchStart(mpi_watch);
-    }
-  if (mpi_num_procs > 1)
-    {
-      parallel_search_database (dbfp, cm, cons,
-				mpi_my_rank, mpi_master_rank, mpi_num_procs);
+      /*printf("cm->cutoff: %f cp9->cutoff: %f rank: %d\n", cm->cutoff, cm->cp9_cutoff, mpi_my_rank);*/
       if(mpi_my_rank == mpi_master_rank && mpi_num_procs > 1)
 	{
-	  StopwatchStop(mpi_watch);
-	  StopwatchDisplay(stdout, "MPI search time:", mpi_watch);
+	  StopwatchZero(mpi_watch);
+	  StopwatchStart(mpi_watch);
 	}
-    }
-  else
+      if (mpi_num_procs > 1)
+	{
+	  parallel_search_database (dbfp, cm, cons,
+				    mpi_my_rank, mpi_master_rank, mpi_num_procs);
+	  if(mpi_my_rank == mpi_master_rank && mpi_num_procs > 1)
+	    {
+	      StopwatchStop(mpi_watch);
+	      StopwatchDisplay(stdout, "MPI search time:", mpi_watch);
+	    }
+	}
+      else
 #endif
-    serial_search_database (dbfp, cm, cons);
+	serial_search_database (dbfp, cm, cons);
 
-  if(do_timings) /* this will be false if in_mpi */
-    {
-      StopwatchStop(watch);
-      StopwatchDisplay(stdout, "search time:", watch);
-    }
-  
-  FreeCM(cm);
-  if(do_timings) StopwatchFree(watch);
+      if(do_timings) /* this will be false if in_mpi */
+	{
+	  StopwatchStop(watch);
+	  StopwatchDisplay(stdout, "search time:", watch);
+	}
+      FreeCM(cm);
+      printf("//\n");
+      ncm++;
+      if(do_timings) StopwatchFree(watch);
 #ifdef USE_MPI
-  if(mpi_my_rank == mpi_master_rank)
-    {
+      if(mpi_my_rank == mpi_master_rank)
+	{
 #endif
-  free(partitions);
-  esl_sqfile_Close(dbfp);
-  FreeCMConsensus(cons);
-  free(gc_ct);
-  if(do_rsearch)
-    MSAFree(msa);
+	  esl_sqfile_Close(dbfp);
+	  FreeCMConsensus(cons);
+	  free(gc_ct);
 #ifdef USE_MPI
-    }
+	}
 #endif
+    } /* end of while(CMFileRead..) */
+  if (ncm == 0)
+    Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
 #ifdef USE_MPI
   MPI_Barrier(MPI_COMM_WORLD);
   MPI_Finalize();
@@ -975,11 +894,13 @@ main(int argc, char **argv)
     {
       StopwatchFree(mpi_watch);
 #endif
+      free(partitions);
       printf ("Fin\n");
 #ifdef USE_MPI
     }
 #endif
   return EXIT_SUCCESS;
+  /* end */
 }
 
 static int  
