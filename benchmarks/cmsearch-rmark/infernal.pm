@@ -18,131 +18,203 @@ package infernal;
 #    use infernal;
 #    $output = `cmsearch foo.cm RF0005`;
 #    &infernal::ParseINFERNAL($output);
-#    printf "The top scoring sequence is %s\n", $infernal:targname[0];
 #    printf "The total number of hits is %d\n", $infernal::nhit;
 #
-# Data made available:
-#    $ntarget      - total number of sequences with at least 1 hit
-#    @targname     - array of target names
-#    %seqnhit      - number of sequences hit (indexed by target name)
+# Data made available for each CM $c:
+#    $ncm              - number of CMs used to search
+#    $ntarget[$c]      - total number of sequences with at least 1 hit
+#    @{$targname[$c]}  - array of target names
+#    %{$seqnhit[$c]}   - number of sequences hit (indexed by target name)
 #
-#    $nhit         - total number of hits
-#    @hitname      - target names hit
-#    @hitnum       - hit number (starts at 0)
-#    @hitsqfrom    - sequence from coords (start positions)
-#    @hitsqto      - sequence to coords (end positions)
-#    @hitbitscore  - hit bit scores
-#    @hitevalue    - hit E-values (only available if -E option used)
-#    @hitpvalue    - hit P-values (only available if -E option used)
-#    @hitgccontent - GC content (an integer 0..100) 
-#    @hitcmfrom    - array of cm-from coords
-#    @hitcmto      - array of cm-to coords
+#    $cm[$c]        - name of query CM 
+#    $cmdesc[$c]    - description of query CM
+#
+#    $nhit[$c]            - total number of hits
+#    @{$hitname[$c]}      - target names hit
+#    @{$hitnum[$c]}       - hit number (starts at 0)
+#    @{$hitsqfrom[$c]}    - sequence from coords (start positions)
+#    @{$hitsqto[$c]}      - sequence to coords (end positions)
+#    @{$hitbitscore[$c]}  - hit bit scores
+#    @{$hitevalue[$c]}    - hit E-values (only available if -E option used)
+#    @{$hitpvalue[$c]}    - hit P-values (only available if -E option used)
+#    @{$hitgccontent[$c]} - GC content (an integer 0..100) 
+#    @{$hitcmfrom[$c]}    - array of cm-from coords
+#    @{$hitcmto[$c]}      - array of cm-to coords
 
 # Data not made available that a future cmsearch might output:
 #
-#    $query        - name of query CM or sequence
-#    $querydesc    - description of query,
-#
 #    @hitsqbounds  - e.g. "[]" or ".." for seq
-
+#
 #    @hitcmbounds - e.g. "[]" or ".." for CM
 #
 #    $aligndata    - the raw alignment text (currently not parsed further)
 #
 sub ParseINFERNAL {
     my($output) = @_;
-    #my($inhit, $inseq, $inali);
     my(@lines, $line);
 
-    #$query       = "";
-    #$querydesc   = "";
+    $cm[0]       = "";
+    $cmdesc[0]   = "";
 
-    $ntarget     = 0;
-    @targname    = ();
-    @targname_byhit = ();
-    %seqnhit     = ();
+    @targname             = ();
+    @{$targname[0]}       = ();
+    @targname_byhit       = ();
+    @{$targname_byhit[0]} = ();
+    @seqnhit              = ();
+    %{$seqnhit[0]}        = ();
 
-    $nhit        = 0;
-    @hitname     = ();
-    @hitnum      = ();
-    @hitsqfrom   = ();
-    @hitsqto     = ();
-    @hitcmfrom  = ();
-    @hitcmto    = ();
-    @hitbitscore    = ();
-    @hitevalue   = ();
-    @hitpvalue   = ();
-    @hitgccontent = ();
-    #$aligndata   = "";
+    @nhit              = ();
+    $nhit[0]           = 0;
+    @ntarget           = ();
+    $ntarget[0]        = 0;
+
+    @hitname           = ();
+    @{$hitname[0]}     = ();
+    @hitnum            = ();
+    @{$hitnum[0]}      = ();
+    @hitsqfrom         = ();
+    @{$hitsqfrom[0]}   = ();
+    @hitsqto           = ();
+    @{$hitsqto[0]}     = ();
+    @hitcmfrom         = ();
+    @{$hitcmfrom[0]}   = ();
+    @hitcmto           = ();
+    @{$hitcmto[0]}     = ();
+    @hitbitscore       = ();
+    @{$hitbitscore[0]} = ();
+    @hitevalue         = ();
+    @{$hitevalue[0]}   = ();
+    @hitpvalue         = ();
+    @{$hitpvalue[0]}   = ();
+    @hitgccontent      = ();
+    @{$hitgccontent[0]}= ();
 
     @lines = split(/^/, $output);
-    $nhit=0;
-    $ntarget=0;
+    $ncm = 0;
+    $seen_cm = 0;
     foreach $line (@lines) 
     {
 	chomp $line;
-	if ($line =~ /^sequence:\s+(.+)/)
+	########################################################################################
+	# 03.21.07 New cmsearch output prints CM name (and results for potentially multiple CMs)
+	########################################################################################
+	if ($line =~ /^CM (\d+):\s+(.+)$/)
 	{
-	    $targname[$ntarget] = $1;
-	    $ntarget++;
+	    if(!($seen_cm)) { $seen_cm = 1; } #$ncm stays 0 for first CM 
+	    else { $ncm++; }
+	    $cm[$ncm] = $2;
+	    if($ncm >= 1)
+	    {	    
+		$cmdesc[$ncm] = "";
+		$nhit[$ncm] = 0;
+		$ntarget[$ncm] = 0;
+		@{$targname[$ncm]}       = ();
+		@{$targname_byhit[$ncm]} = ();
+		%{$seqnhit[$ncm]}        = ();
+		@{$hitname[$ncm]}     = ();
+		@{$hitnum[$ncm]}      = ();
+		@{$hitsqfrom[$ncm]}   = ();
+		@{$hitsqto[$ncm]}     = ();
+		@{$hitcmfrom[$ncm]}   = ();
+		@{$hitcmto[$ncm]}     = ();
+		@{$hitbitscore[$ncm]} = ();
+		@{$hitevalue[$ncm]}   = ();
+		@{$hitpvalue[$ncm]}   = ();
+		@{$hitgccontent[$ncm]}= ();
+	    }
+	}
+	elsif ($line =~ /^CM desc:\s+(.+)$/)
+	{
+	    $cmdesc[$ncm] = $1;
+	}
+	#########################################################################
+	# 12.08.06 OLD cmsearch output 0.72 and before, handled by next 3 elsif's
+	#########################################################################
+	elsif ($line =~ /^sequence:\s+(.+)/)
+	{
+	    $targname[$ncm][$ntarget] = $1;
+	    $ntarget[$ncm]++;
 	}
 	# if statistics (E and P values) not reported:
 	elsif ($line =~ /^hit\s+(\d+)\s*\:\s+(\d+)\s+(\d+)\s+(\S+)\s+bits\S*$/)
 	{
-	    $hitnum[$nhit]      = $1;
-	    $hitsqfrom[$nhit]   = $2; 
+	    $hitnum[$ncm][($nhit[$ncm])]      = $1;
+	    $hitsqfrom[$ncm][($nhit[$ncm])]   = $2; 
 
-	    $hitsqto[$nhit]     = $3;
-	    $hitbitscore[$nhit] = $4;
-	    $targname_byhit[$nhit]=$targname[$ntarget-1];
+	    $hitsqto[$ncm][($nhit[$ncm])]     = $3;
+	    $hitbitscore[$ncm][($nhit[$ncm])] = $4;
+	    $targname_byhit[$ncm][($nhit[$ncm])]=$targname[$ncm][$ntarget-1];
 	    $nhit++;
 	}
         elsif ($line =~ /^hit\s+(\d+)\s*\:\s+(\d+)\s+(\d+)\s+(\S+)\s+bits\s+E\s+\=\s+(\S+)\,\s+P\s+\=\s+(\S+)\s*$/)
 	{
-	    $hitnum[$nhit]      = $1;
-	    $hitsqfrom[$nhit]   = $2; 
-	    $hitsqto[$nhit]     = $3;
-	    $hitbitscore[$nhit] = $4;
-	    $hitevalue[$nhit]   = $5;
-	    $hitpvalue[$nhit]   = $6;
-	    $targname_byhit[$nhit]=$targname[$ntarget-1];
-	    $nhit++;
+	    $hitnum[$ncm][($nhit[$ncm])]      = $1;
+	    $hitsqfrom[$ncm][($nhit[$ncm])]   = $2; 
+	    $hitsqto[$ncm][($nhit[$ncm])]     = $3;
+	    $hitbitscore[$ncm][($nhit[$ncm])] = $4;
+	    $hitevalue[$ncm][($nhit[$ncm])]   = $5;
+	    $hitpvalue[$ncm][($nhit[$ncm])]   = $6;
+	    $targname_byhit[$ncm][($nhit[$ncm])]=$targname[$ncm][$ntarget-1];
+	    $nhit[$ncm]++;
 	}
 	#########################################################################
 	# 12.08.06 New cmsearch output (from RSEARCH) picked up by next 4 elsif's
 	#########################################################################
 	elsif($line =~ /^>(.+)$/)
 	{
-	    $targname[$ntarget] = $1;
-	    $ntarget++;
+	    $targname[$ncm][$ntarget] = $1;
+	    $ntarget[$ncm]++;
 	}
 	elsif($line =~ /^\s+Query\s+\=\s+(\d+)\s+\-\s+(\d+)\,\s+Target\s+\=\s+(\d+)\s+\-\s+(\d+)\s*$/)
 	{
-	    $hitcmfrom[$nhit]   = $1;
-	    $hitcmto[$nhit]     = $2;
-	    $hitsqfrom[$nhit]   = $3; 
-	    $hitsqto[$nhit]     = $4;
-	    $targname_byhit[$nhit]=$targname[$ntarget-1];
+	    $hitcmfrom[$ncm][($nhit[$ncm])]   = $1;
+	    $hitcmto[$ncm][($nhit[$ncm])]     = $2;
+	    $hitsqfrom[$ncm][($nhit[$ncm])]   = $3; 
+	    $hitsqto[$ncm][($nhit[$ncm])]     = $4;
+	    $targname_byhit[$ncm][($nhit[$ncm])]=$targname[$ncm][$ntarget-1];
 	}
 	# ^Query line always followed by ^Score line
 	# ^Score line either has E and P values or doesn't
 	elsif ($line =~ /^\s+Score\s+\=\s+(\S+),\s+GC\s+\=\s+(\d+)\s*$/)
 	{
 	    # no E or P values reported 
-	    $hitbitscore[$nhit] = $1;
-	    $hitgccontent[$nhit]= $2;
-	    $nhit++;
+	    $hitbitscore[$ncm][($nhit[$ncm])] = $1;
+	    $hitgccontent[$ncm][($nhit[$ncm])]= $2;
+	    $nhit[$ncm]++;
 	}
 	elsif ($line =~ /^\s+Score\s+\=\s+(\S+),\s+E\s+\=\s+(\S+)\,\s+P\s+\=\s+(\S+),\s+GC\s+\=\s+(\d+)\s*$/)
 	{
 	    # E and P values reported 
-	    $hitbitscore[$nhit] = $1;
-	    $hitevalue[$nhit]   = $2;
-	    $hitpvalue[$nhit]   = $3;
-	    $hitgccontent[$nhit]= $4;
-	    $nhit++;
+	    $hitbitscore[$ncm][($nhit[$ncm])] = $1;
+	    $hitevalue[$ncm][($nhit[$ncm])]   = $2;
+	    $hitpvalue[$ncm][($nhit[$ncm])]   = $3;
+	    $hitgccontent[$ncm][($nhit[$ncm])]= $4;
+	    $nhit[$ncm]++;
+	}
+
+	####################################################
+	# Special section for parsing RSEARCH output,
+	# only difference with infernal output is GC content
+	# not reported.
+	####################################################
+	# ^Query line always followed by ^Score line
+	# ^Score line either has E and P values or doesn't
+	elsif ($line =~ /^\s+Score\s+\=\s+(\S+)\s*$/)
+	{
+	    # no E or P values reported 
+	    $hitbitscore[$ncm][($nhit[$ncm])] = $1;
+	    $nhit[$ncm]++;
+	}
+	elsif ($line =~ /^\s+Score\s+\=\s+(\S+),\s+E\s+\=\s+(\S+)\,\s+P\s+\=\s+(\S+)\s*$/)
+	{
+	    # E and P values reported 
+	    $hitbitscore[$ncm][($nhit[$ncm])] = $1;
+	    $hitevalue[$ncm][($nhit[$ncm])]   = $2;
+	    $hitpvalue[$ncm][($nhit[$ncm])]   = $3;
+	    $nhit[$ncm]++;
 	}
 	1;
     }
+    $ncm++; # account for off-by-one with array indexing
 }
 1;
