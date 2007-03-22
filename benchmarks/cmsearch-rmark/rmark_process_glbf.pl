@@ -25,7 +25,7 @@
 #        -I none: don't ignore cross hits on either strand
 #        -I opp : don't ignore cross hits on opposite strand
 #
-# Example:  perl rmark_process_glbf.pl infernal.rmm inf-71.rmk 
+# Example:  perl rmark_process_glbf.pl infernal.rmm inf-72.rmk 
 #                rmark-test/ rmark-test/rmark-test.idx rmark-test 
 #                rmark-test_out.glbf rmark-test_out
 #

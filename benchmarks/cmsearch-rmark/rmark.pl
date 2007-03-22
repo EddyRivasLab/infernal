@@ -18,7 +18,7 @@
 #        -E <x> : use E-values [default], set max E-val to keep as <x> [default: 2]
 #        -B <x> : use bit scores, set min score to keep as <x>
 #
-# Example:  perl rmark.pl infernal.rmm inf-71.rmk rmark-test/ rmark-test.idx
+# Example:  perl rmark.pl infernal.rmm inf-72.rmk rmark-test/ rmark-test.idx
 #                         rmark-test.fa rmark-test_out
 #
 # The example run above will result in the following files:

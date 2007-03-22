@@ -108,7 +108,7 @@ script that will perform this trial run). This trial benchmark, called
 The rmark-test benchmark contains exactly 2 of the 51 RNA families in
 rmark-1: SECIS (RF00031) and tRNA (RF00005) and exactly 2 rmark-1
 pseudo-genome chromosomes (numbers 12 and 13). The trial run uses
-infernal v0.71's cmsearch in query dependent banding (QDB) mode and
+infernal v0.72's cmsearch in query dependent banding (QDB) mode and
 takes about 6 minutes (on a computer with a Intel Xeon 3.0 GHz processor).
 
 The relevant files are in infernal/benchmarks/cmsearch-rmark/rmark-test/
@@ -146,7 +146,7 @@ Options:
   <*.rmm rmark module>           
      - Actually runs the search program see infernal.rmm for an example
   <*.rmk rmark config file>
-     - Defines options for the *.rmm module, see inf_qdb-71.rmk.
+     - Defines options for the *.rmm module, see inf_qdb-72.rmk.
   <seq directory with...>
      - the directory with all the sequence files for the benchmark, 
        in this case it's 'rmark-test', for a full rmark-1 benchmark run
@@ -166,7 +166,7 @@ Options:
   setting the minimum bit score to keep as 8 bits (takes about 6
   minutes). 
 
-$ perl rmark.pl -B 8 infernal.rmm rmk_files/inf_qdb-71.rmk rmark-test/
+$ perl rmark.pl -B 8 infernal.rmm rmk_files/inf_qdb-72.rmk rmark-test/
        rmark-test/rmark-test.idx rmark-test.fa rmark-test_out
 
 - 2 new files will be created in the current working dir:
@@ -175,7 +175,7 @@ $ ls -ltr | tail -2
 -rw-r--r--   1 nawrockie eddy    124 Nov 10 11:24 rmark-test_out.time
 
 - rmark-test_out.glbf should have exactly 62 lines (if you're
-  benchmarking infernal version 0.71). The .glbf line describes 
+  benchmarking infernal version 0.72). The .glbf line describes 
   the hits returned by cmsearch, it has the following format:
 
   Each line has exactly 5 fields separated by single space:
@@ -242,7 +242,7 @@ Options: (see code for details)
   we want to use the defaults.
 
 - Now actually run the script:
-$ perl rmark_process_glbf.pl B infernal.rmm rmk_files/inf_qdb-71.rmk
+$ perl rmark_process_glbf.pl B infernal.rmm rmk_files/inf_qdb-72.rmk
        rmark-test/ rmark-test/rmark-test.idx rmark-test
        rmark-test_out.glbf rmark-test_out
 
@@ -280,7 +280,7 @@ which these mini-benchmark jobs will be run, and a shell script to
 combine the results of all the jobs after they've finished running.
 
 For an example, I'll walk through the steps necessary for duplicating
-the rmark-1 benchmark for infernal version 0.71 in QDB mode described
+the rmark-1 benchmark for infernal version 0.72 in QDB mode described
 in the banded-cyk manuscript (data in Table 5 (row 7), Table 6, and
 Figure 5). 
 
@@ -324,43 +324,43 @@ Options:
 
 - Now actually run the script, we're using bit scores, and want to
   keep only scores above 8 bits:
-  $ perl rmark_clusterfy.pl -B 8 infernal.rmm rmk_files/inf_qdb-71.rmk
-  rmark-1/ rmark-1/rmark-1.idx rmark-1 inf_qdb-71
+  $ perl rmark_clusterfy.pl -B 8 infernal.rmm rmk_files/inf_qdb-72.rmk
+  rmark-1/ rmark-1/rmark-1.idx rmark-1 inf_qdb-72
 
 - The following output prints to the screen:
 ***************************************************************************
  Output file notice
- File name   : inf_qdb-71_rmark-1_out_dir/inf_qdb-71.com
+ File name   : inf_qdb-72_rmark-1_out_dir/inf_qdb-72.com
  description : Command file with 1020 qsub calls for the cluster.
 ***************************************************************************
 ***************************************************************************
  Output file notice
- File name   : inf_qdb-71_rmark-1_out_dir/inf_qdb-71_pp.script
+ File name   : inf_qdb-72_rmark-1_out_dir/inf_qdb-72_pp.script
  description : Shell script to merge and process the collective output
                after all the cluster jobs are finished.
 ***************************************************************************
-- The script has created the inf_qdb-71_rmark-1_out_dir and copied a
+- The script has created the inf_qdb-72_rmark-1_out_dir and copied a
   bunch of files there. This is the directory in which the benchmark
   should be performed on the cluster. 
 
-- The inf_qdb-71.com file has 1020 'qsub' commands that should work
+- The inf_qdb-72.com file has 1020 'qsub' commands that should work
   with Sun Grid Engine (SGE) version 6. Each 'qsub' command submits a
   mini-benchmark run of 1 family versus 1 chromosome to a cluster
   node. If your cluster uses something besides SGE version 6, you'll
   have to change the code in rmark_clusterfy.pl to create a different
   .com file or modify the .com file after it's created. 
 
- -The inf_qdb-71_pp.script is a post-processing script ('pp') that
+ -The inf_qdb-72_pp.script is a post-processing script ('pp') that
   should be run after ALL the 1020 jobs are finished. It looks like
   this:
 
-  $ cat inf_qdb-71_rmark-1_out_dir/inf_qdb-71_pp.script 
-  rm merged_inf_qdb-71*
-  cat *.glbf > inf_qdb-71_all_glbf.concat
-  cat *.time > inf_qdb-71_all_time.concat
-  perl rmark_times.pl *.time > merged_inf_qdb-71.time
-  perl rmark_process_glbf.pl B infernal.rmm rmk_files/inf_qdb-71.rmk
-  rmark-1 inf_qdb-71_all_glbf.concat merged_inf_qdb-71_hit
+  $ cat inf_qdb-72_rmark-1_out_dir/inf_qdb-72_pp.script 
+  rm merged_inf_qdb-72*
+  cat *.glbf > inf_qdb-72_all_glbf.concat
+  cat *.time > inf_qdb-72_all_time.concat
+  perl rmark_times.pl *.time > merged_inf_qdb-72.time
+  perl rmark_process_glbf.pl B infernal.rmm rmk_files/inf_qdb-72.rmk
+  rmark-1 inf_qdb-72_all_glbf.concat merged_inf_qdb-72_hit
   cp merged_*fam ../
   cp merged_*all ../
   cp merged_*time ../
@@ -370,10 +370,10 @@ Options:
   1020 runs together, and calls rmark_process_glbf.pl and
   rmark_times.pl on these concatenated files. The rmark_times.pl
   script is a simple script (not described here, but see the code for
-  details), it will create a merged_inf_qdb-71_hit.time file with
+  details), it will create a merged_inf_qdb-72_hit.time file with
   the total time required for the 1020 runs. The rmark_process_glbf.pl
-  script will create the files merged_inf_qdb-71_hit.fam,
-  merged_inf_qdb-71_hit.all and merged_inf_qdb-71_hit.roc. The
+  script will create the files merged_inf_qdb-72_hit.fam,
+  merged_inf_qdb-72_hit.all and merged_inf_qdb-72_hit.roc. The
   rmark_process_glbf.pl script is able to treat the concatenated
   .glbf output as if it were created by a single instance of the
   benchmark (a single rmark.pl run, like in the 'rmark-test' trial run
@@ -384,18 +384,18 @@ Step 2 - login to the cluster, submit the jobs, wait for them to
          finish and post-process the output:
   
 - After logging into a cluster node that accepts job submissions, you
-  can submit the jobs from the inf_qdb-71_rmark-1_out_dir/
+  can submit the jobs from the inf_qdb-72_rmark-1_out_dir/
 
-$ sh inf_qdb-71.com 
+$ sh inf_qdb-72.com 
 
 - The longest run takes about 25 minutes (on a Intel 3.0 GHz Xeon).
-- After they're all finished, run the inf_qdb-71_pp.script: 
+- After they're all finished, run the inf_qdb-72_pp.script: 
 
-$ sh inf_qdb-71_pp.script 
+$ sh inf_qdb-72_pp.script 
 
 The results are in the merged_* files:
 
-$ tail -10 merged_inf_qdb-71_hit.fam
+$ tail -10 merged_inf_qdb-72_hit.fam
 
 MER:        113
 MER_fp:     2

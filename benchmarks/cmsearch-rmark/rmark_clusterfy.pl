@@ -23,15 +23,15 @@
 #        -E <x> : use E-values [default], set max E-val to keep as <x> [df: 2]
 #        -B <x> : use bit scores, set min score to keep as <x>
 #        -P <x> : parallelize using MPI on <x> processors
-# Example:  perl rmark_clusterfy.pl infernal.rmm inf-71.rmk rmark-test/ rmark-test 
-#                                   inf-71
+# Example:  perl rmark_clusterfy.pl infernal.rmm inf-72.rmk rmark-test/ rmark-test 
+#                                   inf-72
 #
 # The example run above will create the following:
-#     - a inf-71_rmark-test_out_dir directory with all the files needed to run
+#     - a inf-72_rmark-test_out_dir directory with all the files needed to run
 #       rmark.pl copied to it (except seq files which stay in <seq dir>)
-#     - the inf-71.com file (in inf-71_rmark-test_out_dir/) a shell script 
+#     - the inf-72.com file (in inf-72_rmark-test_out_dir/) a shell script 
 #       which will submit the benchmark jobs to the cluster when executed
-#     - the inf-71_pp.script (in inf-71_rmark-test_out_dir/) a shell script 
+#     - the inf-72_pp.script (in inf-72_rmark-test_out_dir/) a shell script 
 #       which will post-process and combine the results from all the jobs
 #       to be run after all jobs finish running.
 #
