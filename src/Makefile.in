@@ -68,7 +68,7 @@ OBJS  = alphabet.o\
 	cm_dispatch.o\
 	rsearch_buildcm.o\
 	rnamat.o\
-	cm_single.o
+	cm_cluster.o
 
 HDRS  = funcs.h\
 	prior.h\

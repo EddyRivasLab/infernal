@@ -50,7 +50,7 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
     Die("ERROR in ConfigCM() trying to search with HMM derived bands, but w/o using a  HMM filter.");
 
 
-  printf("in ConfigCM()\n");
+  /*printf("in ConfigCM()\n");*/
   /* If we're not doing stats set the EVD stats to defaults (0.0) */
   if(!(cm->search_opts & CM_SEARCH_CMSTATS))
     {

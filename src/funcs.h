@@ -431,7 +431,8 @@ extern CM_t *build_cm (MSA *msa, fullmat_t *fullmat, int *querylen,
 		       float beginsc, float endsc);
 extern CM_t *read_cm (char *queryfile);
 
-/* from cm_single.c
+/* from cm_cluster.c
  */
-int
-DivideMSA2SingleMSAs(MSA *mMSA, int do_sall, int nrep, int *ret_nMSA, MSA ***ret_MSA);
+int MSADivide(MSA *mmsa, int do_all, int target_nc, float mindiff, int do_pickone,
+	      int do_corig, int *ret_num_msa, MSA ***ret_cmsa);
+

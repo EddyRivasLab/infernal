@@ -881,8 +881,8 @@ int ribosum_calc_targets(fullmat_t *fullmat)
   int       a,b,i,j,k,l;
 
   /* Check the contract. */
-  if(!(fullmat->scores_flag)) ESL_EXCEPTION(eslECONTRACT, "in ribosum_calc_targets(), matrix is not in log odds mode");
-  if(fullmat->probs_flag) ESL_EXCEPTION(eslECONTRACT, "in ribosum_calc_targets(), matrix is already in probs mode");
+  if(!(fullmat->scores_flag)) ESL_EXCEPTION(eslEINVAL, "in ribosum_calc_targets(), matrix is not in log odds mode");
+  if(fullmat->probs_flag) ESL_EXCEPTION(eslEINVAL, "in ribosum_calc_targets(), matrix is already in probs mode");
   
   /*printf("\nbeginning of ribosum_calc_targets, printing mx:\n");
     print_matrix(stdout, fullmat);*/
@@ -1020,10 +1020,10 @@ int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, MSA *msa)
   int        status;
 
   /* Check the contract. */
-  if(!(fullmat->probs_flag)) ESL_EXCEPTION(eslECONTRACT, "in ribosum_MSA_resolve_degeneracies(), matrix is not in probs mode");
-  if(fullmat->scores_flag) ESL_EXCEPTION(eslECONTRACT, "in ribosum_MSA_resolve_degeneracies(), matrix is in scores mode");
-  if(msa->nseq != 1) ESL_EXCEPTION(eslECONTRACT, "MSA does not have exactly 1 seq"); 
-  if(Alphabet_size != 4) ESL_EXCEPTION(eslECONTRACT, "Alphabet_size not 4");
+  if(!(fullmat->probs_flag)) ESL_EXCEPTION(eslEINVAL, "in ribosum_MSA_resolve_degeneracies(), matrix is not in probs mode");
+  if(fullmat->scores_flag) ESL_EXCEPTION(eslEINVAL, "in ribosum_MSA_resolve_degeneracies(), matrix is in scores mode");
+  if(msa->nseq != 1) ESL_EXCEPTION(eslEINVAL, "MSA does not have exactly 1 seq"); 
+  if(Alphabet_size != 4) ESL_EXCEPTION(eslEINVAL, "Alphabet_size not 4");
   
   printf("in ribosum_MSA_resolve_degeneracies()\n");
   

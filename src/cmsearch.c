@@ -248,6 +248,8 @@ main(int argc, char **argv)
   /* the --rtrans option */
   int             do_rtrans; /* TRUE to overwrite CM transition scores with RSEARCH scores */
   int             ncm;       /* counter over CMs */
+  int             continue_flag; /* used to continue through the main loop for multiple CMs,
+				  * nec. only for MPI mode, to keep slave nodes appraised. */
 #ifdef USE_MPI
   int mpi_my_rank;              /* My rank in MPI */
   int mpi_num_procs;            /* Total number of processes */
@@ -493,22 +495,25 @@ main(int argc, char **argv)
 
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
     Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
-
+  CMFileRead(cmfp, &cm);
+  if(cm == NULL) Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
 #ifdef USE_MPI
   }   /* End of first block that is only done by master process */
 #endif
-  /* begin */
-  ncm = 0;
 
-  while (CMFileRead(cmfp, &cm))
+  ncm = 0;
+  continue_flag = 1; /* crudely used in MPI mode to make non-master MPIs go
+		      * through the main loop for potentially multiple CMs */
+  /*printf("0 continue_flag: %d rank: %d\n", continue_flag, mpi_my_rank);*/
+  while (continue_flag)
     {
 #ifdef USE_MPI
-      /* If I'm the master, read CM */
+      /* If I'm the master, configure the CM based on command line options */
       if (mpi_my_rank == mpi_master_rank) 
 	{
 #endif
 	  if (cm == NULL) 
-	    Die("%s empty?\n", cmfile);
+	    Die("%s corrupt\n", cmfile);
 
 	  printf("\nCM %d: %s\n", (ncm+1), cm->name);
 	  if(cm->desc == NULL) printf("desc: (NONE)\n");
@@ -601,15 +606,15 @@ main(int argc, char **argv)
 	  else if (status != eslOK) esl_fatal("Failed to open sequence database file, code %d.", status); 
 
 #ifdef USE_MPI
-	}   /* End of first block that is only done by master process */
+	}   /* End of second block that is only done by master process */
       /* Barrier for debugging */
+
       MPI_Barrier(MPI_COMM_WORLD);
       /* Here we need to broadcast the following parameters:
 	 num_samples, W, W_scale, and the CM */
       broadcast_cm(&cm, mpi_my_rank, mpi_master_rank);
       search_first_broadcast(&num_samples, &W_scale, mpi_my_rank, 
 			     mpi_master_rank);
-      
 #endif
 
       /* Configure the CM for search based on cm->config_opts 
@@ -870,7 +875,14 @@ main(int argc, char **argv)
 	  StopwatchDisplay(stdout, "search time:", watch);
 	}
       FreeCM(cm);
+#ifdef USE_MPI
+      if(mpi_my_rank == mpi_master_rank)
+	{
+#endif
       printf("//\n");
+#ifdef USE_MPI
+	}
+#endif
       ncm++;
       if(do_timings) StopwatchFree(watch);
 #ifdef USE_MPI
@@ -880,12 +892,17 @@ main(int argc, char **argv)
 	  esl_sqfile_Close(dbfp);
 	  FreeCMConsensus(cons);
 	  free(gc_ct);
+	  if(!(CMFileRead(cmfp, &cm))) continue_flag = 0;
 #ifdef USE_MPI
 	}
 #endif
-    } /* end of while(CMFileRead..) */
-  if (ncm == 0)
-    Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
+#ifdef USE_MPI
+      MPI_Barrier(MPI_COMM_WORLD);
+      MPI_Bcast (&continue_flag,  1, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
+      /*printf("1 continue_flag: %d rank: %d\n", continue_flag, mpi_my_rank);*/
+#endif
+    } /* end of while(continue_flag) (continue_flag remains TRUE as long as we are
+       * reading CMs from the CM file. */
 #ifdef USE_MPI
   MPI_Barrier(MPI_COMM_WORLD);
   MPI_Finalize();

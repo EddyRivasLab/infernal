@@ -82,9 +82,13 @@ static char experts[] = "\
    --null      <f>: read null (random sequence) model from file <f>\n\
    --priorfile <f>: read priors from file <f>\n\
 \n\
- * single sequence CM options:\n\
-   --sall         : build a separate CM from every seq in <aln file>\n\
-   --srep <n>     : build <n> CMs from representative seqs in <aln file>\n\
+ * options for building multiple CMs after clustering input MSA:\n\
+   --ctarget <n>  : build (at most) <n> CMs by partitioning MSA into <n> clusters\n\
+   --cmindiff <x> : min difference b/t 2 clusters is <x>, each cluster -> CM\n\
+   --cpickone     : w/--c{target,mindiff}, build CMs from 1 seq in each clust\n\
+   --call         : build a separate CM from every seq in MSA\n\
+   --cdump <f>    : dump an MSA for each cluster (CM) to file <f>\n\ 
+   --corig        : build an additional CM from the original MSA\n\
 \n\
 ";
 
@@ -125,8 +129,12 @@ static struct opt_s OPTIONS[] = {
   { "--dlev",      FALSE, sqdARG_INT },
   { "--nodetach",  FALSE, sqdARG_NONE},
   { "--noprior",   FALSE, sqdARG_NONE},
-  { "--sall",      FALSE, sqdARG_NONE},
-  { "--srep",      FALSE, sqdARG_INT}
+  { "--ctarget",   FALSE, sqdARG_INT},
+  { "--cmindiff",  FALSE, sqdARG_FLOAT},
+  { "--cpickone",  FALSE, sqdARG_NONE},
+  { "--call",      FALSE, sqdARG_NONE},
+  { "--corig",     FALSE, sqdARG_NONE},
+  { "--cdump",     FALSE, sqdARG_STRING}
 }
 ;
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
@@ -245,19 +253,25 @@ main(int argc, char **argv)
 
   /* RSEARCH variables */
   fullmat_t       *fullmat;     /* The full matrix */
-  char matrixname[256];         /* Name of the matrix, from -m */
+  char             matrixname[256]; /* Name of the matrix, from -m */
   FILE            *matfp;       /* open matrix file for reading */
-  int             i;
 
   /* single sequence CM variables */
-  int             do_single;  /* TRUE to build single sequence CMs */
-  int             do_sall;    /* TRUE to build single sequence CMs for all seqs in MSA */
-  int             do_srep;    /* TRUE to build single sequence CMs for representative seqs in MSA */
-  int             nrep;       /* number of representative single sequence CMs to build */
-  int             nsingle;    /* number of single sequence CMs we're building for current model */
-  int             nseq;       /* counter of single seq CMs we're building */
-  MSA           **smsa;       /* pointer to single sequence multiple sequence alignments
-			       * to build CMs from */
+  int          do_cluster;    /* TRUE to cluster input MSA, and build a CM from each cluster */
+  int          do_ctarget;    /* TRUE if --ctarget enabled */
+  int          target_nc;     /* target number of clusters, 0 unless do_ctarget */
+  int          do_cmindiff;   /* TRUE if --cmindiff enabled */
+  float        mindiff;       /* mindiff b/t any 2 seqs in different clusters, 0. unless do_cmindiff */
+  int          do_cpickone;   /* TRUE if --cpickone enabled, pick 1 seq from each cluster to build CM from */
+  int          do_corig;      /* TRUE to build 1 additional CM, from the original MSA */
+  int          do_all;        /* TRUE to build single sequence CMs */
+  int          do_cdump;      /* TRUE if --cdump enabled, to dump cluser MSAs to a new file */
+  char        *cdump_file;    /* name of file to dump cluster MSAs to if --cdump enabled */
+  FILE        *cdump_fp;      /* output file handle for cdump_file */
+  int          curr_ncm;      /* number of CMs we're building for current MSA */
+  int          curr_cm_ctr;   /* counter over CMs we're building for current MSA */
+  MSA        **cmsa;          /* pointer to cluster MSAs to build CMs from */
+  char         buffer[50];    /* for naming the cluster MSAs */
 
   /*********************************************** 
    * Parse command line
@@ -305,12 +319,19 @@ main(int argc, char **argv)
   debug_level       = 0; 
   do_detach         = TRUE;  /* default: detach 1 of 2 ambiguous inserts */
   no_prior          = FALSE; /* default: use a prior */
-  do_single         = FALSE; /* default: do not build single seq CMs */
-  do_sall           = FALSE; /* default: do not build single seq CMs for all seqs in MSA */
-  do_srep           = FALSE; /* default: do not build single seq CMs for representative seqs in MSA */
-  nsingle           = 1;     /* default: 1, will be overwritten if do_single */
-  nseq              = 0;     /* ctr over number of single seq CMs */
-  nrep              = 0;     /* 0 reprentative seqs to build CMs for by default */
+
+  do_cluster        = FALSE; /* default: do not build CMs from clusters of input MSA */
+  do_all            = FALSE; /* default: do not build single seq CMs for all seqs in MSA */
+  do_ctarget        = FALSE; /* set to TRUE only if --ctarget  enabled */
+  do_cmindiff       = FALSE; /* set to TRUE only if --cmindiff enabled */
+  do_cpickone       = FALSE; /* set to TRUE only if --cpickone enabled */
+  curr_ncm          = 1;     /* default: only build 1 CM for each MSA in alignment file */
+  mindiff           = 0.;    /* overwritten if --cmindiff enabled */
+  target_nc         = 0;     /* overwritten if --ctarget enabled */
+  do_cdump          = FALSE; /* set to TRUE only if --cdump enabled */
+  do_corig          = FALSE; /* set to TRUE only if --corig enabled */
+  cdump_file        = NULL;  /* overwritten if --cdump enabled */
+
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
     if      (strcmp(optname, "-A") == 0)          do_append         = TRUE; 
@@ -346,6 +367,12 @@ main(int argc, char **argv)
     /*else if (strcmp(optname, "--effrelent")  == 0) eff_strategy   = EFF_RELENTROPY;*/
     else if (strcmp(optname, "--effnone")   == 0) eff_strategy      = EFF_NONE;
     else if (strcmp(optname, "--etarget")   == 0) { etarget = atof(optarg); etarget_set  = TRUE; }
+    else if (strcmp(optname, "--ctarget")   == 0) { do_cluster = TRUE; do_ctarget  = TRUE; target_nc = atoi(optarg); }
+    else if (strcmp(optname, "--cmindiff")  == 0) { do_cluster = TRUE; do_cmindiff = TRUE; mindiff   = atof(optarg); }
+    else if (strcmp(optname, "--call")      == 0) { do_cluster = TRUE; do_all = TRUE; }
+    else if (strcmp(optname, "--cpickone")  == 0) { do_cpickone = TRUE; }
+    else if (strcmp(optname, "--cdump")     == 0) { do_cdump   = TRUE; cdump_file = optarg; }
+    else if (strcmp(optname, "--corig")     == 0) { do_corig   = TRUE; }
 
     else if (strcmp(optname, "--elself")    == 0) { 
       el_selfprob= atof(optarg); 
@@ -366,8 +393,6 @@ main(int argc, char **argv)
       puts(experts);
       exit(EXIT_SUCCESS);
     }
-    else if (strcmp(optname, "--sall")   == 0) { do_single = TRUE; do_sall = TRUE; }
-    else if (strcmp(optname, "--srep")   == 0) { do_single = TRUE; do_srep = TRUE; nrep = atof(optarg); }
   }
 
   /* Check for incompatible or misused options */
@@ -381,10 +406,22 @@ main(int argc, char **argv)
 	Die("--rsearch and --null <f> combination doesn't make sense.\nThe null model used will be specified in the RIBOSUM matrix file.\n,%s\n", usage);
       if(prifile != NULL)
 	Die("--rsearch and --prior <f> combination doesn't make sense.\nNo prior file is used to build RSEARCH CMs, a RIBOSUM scoring matrix is used.\n%s\n", usage);
-      if(do_srep && do_sall)
-	Die("--sall and --srep combination doesn't make sense. Pick one.\n%s\n", usage);
-      if(do_srep && nrep <= 0)
-	Die("--srep <n>, <n> must be >= 1\n%s\n", usage);
+      if(do_all && do_cmindiff)
+	Die("--call and --cmindiff combination doesn't make sense. Pick one.\n%s\n", usage);
+      if(do_all && do_ctarget)
+	Die("--call and --ctarget combination doesn't make sense. Pick one.\n%s\n", usage);
+      if(do_cmindiff && do_ctarget)
+	Die("--cmindiff and --ctarget combination doesn't make sense. Pick one.\n%s\n", usage);
+      if(do_cpickone && ((!do_ctarget) && (!do_cmindiff)))
+	Die("--cpickone only makes sense with --ctarget or --cmindiff.\n%s\n", usage);
+      if(do_ctarget && target_nc <= 0)
+	Die("--ctarget <n>, <n> must be >= 1\n%s\n", usage);
+      if(do_cmindiff && (mindiff <= 0. || mindiff > 1.))
+	Die("--cmindiff <x>, <x> must satisfy: 0.0 < <x> <= 1.0\n%s\n", usage);
+      if(do_cdump && !do_cluster)
+	Die("--cdump <f> only makes sense with --ctarget, --cmindiff, or --call\n%s\n", usage);
+      if(do_corig && !do_cluster)
+	Die("--corig only makes sense with --ctarget, --cmindiff, or --call\n%s\n", usage);
     }      
   
   /* Set up default options for rsearch mode */
@@ -490,6 +527,14 @@ main(int argc, char **argv)
 	Die ("Failed to read matrix file \n%s\n", usage);
       ribosum_calc_targets(fullmat); /* overwrite score matrix scores w/target probs */
     }
+
+  /* if --cdump enabled, open output file for MSAs */
+  if (cdump_file != NULL)
+    {
+      if ((cdump_fp = fopen(cdump_file, "w")) == NULL)
+       Die("Failed to open output file %s for writing MSAs to", cdump_file);
+    }
+
   /*********************************************** 
    * Get alignment(s), build CMs one at a time
    ***********************************************/
@@ -497,34 +542,31 @@ main(int argc, char **argv)
   nali = 0;
   while ((msa = MSAFileRead(afp)) != NULL)
     {
-      if(do_single)
+      /* EPN changed default behavior for naming MSAs, if name is NULL, 
+       * set it to the number: (nali+1) */
+      if (msa->name == NULL) 
 	{
-	  printf("i'm single baby!\n");
-	  /* Single seqs from the CM will be used to 
-	   * build the CM */
-	  if(do_sall)
-	    {
-	      DivideMSA2SingleMSAs(msa, do_sall, 0, &nsingle, &smsa);
-	    }
-	  if(do_srep)
-	    {
-	      printf("--srep not enabled yet.\n");
-	      exit(1);
-	    }
+	  sprintf(buffer, "%d", (nali+1)); /* buffer is string of length 50, this is fragile */
+	  msa->name = sre_strdup(buffer, -1);
 	}
-      /* if do_single is FALSE, nsingle is 1 */
-      for(nseq = 0; nseq < nsingle; nseq++)
+      if(do_cluster)
 	{
-	  if(do_single)
+	  /* Divide input MSA into clusters, and build CM from each cluster */
+	  MSADivide(msa, do_all, target_nc, mindiff, do_cpickone, do_corig, &curr_ncm, &cmsa);
+	  if(!(do_corig)) /* if(!do_corig) we don't need the master msa anymore. */
+	    MSAFree(msa); /* if( do_corig) cmsa[(curr_ncm-1)] points to msa, we'll free it later */
+	}
+      /* if do_single is FALSE, nsingle is curr_ncm */
+      for(curr_cm_ctr = 0; curr_cm_ctr < curr_ncm; curr_cm_ctr++)
+	{
+	  if(do_cluster)
 	    {
-	      msa = smsa[nseq];
-	      /*printf("msa->aseq[0]: %s\n", msa->aseq[0]);
-		printf("msa->nseq: %d\n", msa->nseq);*/
+	      msa = cmsa[curr_cm_ctr];
+	      if(do_cdump)
+		WriteStockholm(cdump_fp, msa);
 	    }
-
 
 	  avlen = (int) MSAAverageSequenceLength(msa);
-	  
 	  /* Print some stuff about what we're about to do.
 	   */
 	  if (msa->name != NULL) printf("Alignment:           %s\n",  msa->name);
@@ -981,10 +1023,13 @@ main(int argc, char **argv)
 	  fflush(cmfp);
 	  puts("//\n");
 	  nali++;
-	  
 	  FreeCM(cm);
 	}
+      if(do_cluster && cmsa != NULL)
+	free(cmsa);
     }
+
+  if (cdump_file != NULL) fclose(cdump_fp);
 
   /* Clean up and exit
    */
