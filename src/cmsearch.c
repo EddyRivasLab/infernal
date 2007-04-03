@@ -79,6 +79,7 @@ static char experts[] = "\
    --enfnohmm    : do not filter first w/a HMM that only enforces <x> from --enfseq\n\
    --time        : print timings for histogram building, and full search\n\
    --rtrans      : replace CM transition scores from <cm file> with RSEARCH scores\n\
+   --greedy      : resolve overlapping hits with greedy algorithm a la RSEARCH\n\
 \n\
   * Filtering options using a CM plan 9 HMM (*in development*):\n\
    --hmmfb        : use Forward to get end points & Backward to get start points\n\
@@ -137,7 +138,8 @@ static struct opt_s OPTIONS[] = {
   { "--enfseq",     FALSE, sqdARG_STRING},
   { "--enfnohmm",   FALSE, sqdARG_NONE},
   { "--time",       FALSE, sqdARG_NONE},
-  { "--rtrans",     FALSE, sqdARG_NONE}
+  { "--rtrans",     FALSE, sqdARG_NONE},
+  { "--greedy",     FALSE, sqdARG_NONE}
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -250,6 +252,9 @@ main(int argc, char **argv)
   int             ncm;       /* counter over CMs */
   int             continue_flag; /* used to continue through the main loop for multiple CMs,
 				  * nec. only for MPI mode, to keep slave nodes appraised. */
+  /* the --greedy option */
+  int             do_greedy; /* TRUE to not use greedy hit resolution for overlaps */
+
 #ifdef USE_MPI
   int mpi_my_rank;              /* My rank in MPI */
   int mpi_num_procs;            /* Total number of processes */
@@ -327,6 +332,7 @@ main(int argc, char **argv)
   enf_seq           = NULL;
   do_timings        = FALSE;
   do_rtrans         = FALSE;
+  do_greedy         = FALSE;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -388,6 +394,7 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--banddump")  == 0) do_bdump     = TRUE;
     else if  (strcmp(optname, "--sums")      == 0) use_sums     = TRUE;
     else if  (strcmp(optname, "--scan2hbands")== 0) do_scan2hbands= TRUE;
+    else if  (strcmp(optname, "--greedy")     == 0) do_greedy = TRUE;
     else if  (strcmp (optname, "--partition") == 0) 
       {
 	do_partitions = TRUE;
@@ -453,6 +460,10 @@ main(int argc, char **argv)
     Die("--window only works with --noqdb.\n");
   if(do_rtrans && do_enforce)
     Die("--enf* options incompatible with --rtrans.\n");
+  if(do_greedy && do_inside)
+    Die("--greedy option not yet implemented for inside scans (implement it!)\n");
+  if(do_greedy && do_hmmonly)
+    Die("--greedy option not implemented for --hmmonly scans\n");
 #if USE_MPI
   if(read_qdb && ((mpi_num_procs > 1) && (mpi_my_rank == mpi_master_rank)))
     Die("Sorry, you can't read in bands with --qdbfile in MPI mode.\n");
@@ -559,6 +570,7 @@ main(int argc, char **argv)
 	  if(do_null2)        cm->search_opts |= CM_SEARCH_NULL2;
 	  if(do_cm_stats)     cm->search_opts |= CM_SEARCH_CMSTATS;
 	  if(do_cp9_stats)    cm->search_opts |= CM_SEARCH_CP9STATS;
+	  if(do_greedy)       cm->search_opts |= CM_SEARCH_GREEDY;
 	  if(do_rtrans)       cm->flags       |= CM_RSEARCHTRANS;
 
 	  if(do_enforce)

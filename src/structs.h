@@ -346,6 +346,7 @@ typedef struct cm_s {
 #define CM_SEARCH_CP9STATS     (1<<12) /* calculate E-value stats for CP9 HMM      */
 #define CM_SEARCH_FFRACT       (1<<13) /* filter to filter fraction cm->ffract     */
 #define CM_SEARCH_RSEARCH      (1<<14) /* use RSEARCH parameterized CM             */
+#define CM_SEARCH_GREEDY       (1<<15) /* use greedy alg to resolve overlaps       */
 
 /* Structure: CMFILE
  * Incept:    SRE, Tue Aug 13 10:16:39 2002 [St. Louis]

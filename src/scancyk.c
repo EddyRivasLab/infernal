@@ -90,53 +90,22 @@ int compare_results (const void *a_void, const void *b_void) {
 }
 
 /*
- * Function: sort_results()
- * Date:    RJK,  Sun Mar 31, 2002 [AA Flight 2869 LGA->STL]
- * Purpose: Given a results array, sorts it with a call to qsort
- *
- */
-void sort_results (scan_results_t *results) {
-  qsort (results->data, results->num_results, sizeof(scan_result_node_t), compare_results);
-}
-
-/*
- * Function: report_hit()
- * Date:     RJK, Sun Mar 31, 2002 [LGA Gate D7]
- *
- * Given j,d, coordinates, a score, and a scan_results_t data type,
- * adds result into the set of reportable results.  Naively adds hit.
- *
- * Non-overlap algorithm is now done in the scanning routine by Sean's
- * Semi-HMM code.  I've just kept the hit report structure for convenience.
- */
-void report_hit (int i, int j, int bestr, float score, scan_results_t *results) 
-{
-  if (results->num_results == results->num_allocated) 
-    ExpandResults (results, INIT_RESULTS);
-
-  results->data[results->num_results].score = score;
-  results->data[results->num_results].start = i;
-  results->data[results->num_results].stop = j;
-  results->data[results->num_results].bestr = bestr;
-  results->data[results->num_results].tr = NULL;
-  results->num_results++;
-}
-
-/*
  * Function: remove_overlapping_hits ()
- * Date:     RJK, Sun Mar 31, 2002 [LGA Gate D7]
+ * Date:     EPN, Tue Apr  3 14:36:38 2007
+ * Plucked verbatim out of RSEARCH
+ * 
+ * RSEARCH date: RJK, Sun Mar 31, 2002 [LGA Gate D7]
  *
  * Purpose:  Given a list of hits, removes overlapping hits to produce
  * a list consisting of at most one hit covering each nucleotide in the
  * sequence.  Works as follows:
- * 1.  Bubble sort hits (I know this is ridiculously slow, but I want
- *     to get something working.  I can replace this later with a faster
- *     algorithm.)  (O(N^2))
+ * 1.  quicksort hits 
  * 2.  For each hit, sees if any nucleotide covered yet
  *     If yes, remove hit
  *     If no, mark each nt as covered
  */
-void remove_overlapping_hits (scan_results_t *results, int L) {
+void remove_overlapping_hits (scan_results_t *results, int L) 
+{
   char *covered_yet;
   int x,y;
   int covered;
@@ -189,6 +158,40 @@ void remove_overlapping_hits (scan_results_t *results, int L) {
   sort_results(results);
 }
 
+/*
+ * Function: sort_results()
+ * Date:    RJK,  Sun Mar 31, 2002 [AA Flight 2869 LGA->STL]
+ * Purpose: Given a results array, sorts it with a call to qsort
+ *
+ */
+void sort_results (scan_results_t *results) 
+{
+  qsort (results->data, results->num_results, sizeof(scan_result_node_t), compare_results);
+}
+
+/*
+ * Function: report_hit()
+ * Date:     RJK, Sun Mar 31, 2002 [LGA Gate D7]
+ *
+ * Given j,d, coordinates, a score, and a scan_results_t data type,
+ * adds result into the set of reportable results.  Naively adds hit.
+ *
+ * Non-overlap algorithm is now done in the scanning routine by Sean's
+ * Semi-HMM code.  I've just kept the hit report structure for convenience.
+ */
+void report_hit (int i, int j, int bestr, float score, scan_results_t *results) 
+{
+  if (results->num_results == results->num_allocated) 
+    ExpandResults (results, INIT_RESULTS);
+
+  results->data[results->num_results].score = score;
+  results->data[results->num_results].start = i;
+  results->data[results->num_results].stop = j;
+  results->data[results->num_results].bestr = bestr;
+  results->data[results->num_results].tr = NULL;
+  results->num_results++;
+}
+
 /* Function: CYKScan()
  * Date:     SRE, Thu May  2 11:56:11 2002 [AA 3050 SFO->STL]
  *
@@ -230,7 +233,7 @@ CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W,
   int       gamma_i;            /* i index in the gamma* data structures */
   float     best_score;         /* Best overall score from semi-HMM to return */
   float     best_neg_score;     /* Best score overall score to return, used if all scores < 0 */
-  /*int     updated_flag;*/         /* strategy 2 */
+  int       bestd;              /* d value of best hit thus far seen for j (used if greedy strategy) */
 
   /*****************************************************************
    * alpha allocations.
@@ -453,29 +456,67 @@ CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 	  if (alpha[0][cur][d] < IMPOSSIBLE) alpha[0][cur][d] = IMPOSSIBLE;
 	  if (alpha[0][cur][d] > best_neg_score) best_neg_score = alpha[0][cur][d];
 	}
-      /* The little semi-Markov model that deals with multihit parsing:
-       */
-      gamma[gamma_j]  = gamma[gamma_j-1] + 0; 
-      gback[gamma_j]  = -1;
-      savesc[gamma_j] = IMPOSSIBLE;
-      saver[gamma_j]  = -1;
-      for (d = 1; d <= W && d <= gamma_j; d++) 
+
+      if(!(cm->search_opts & CM_SEARCH_GREEDY)) /* resolve overlaps optimally */
 	{
-	  i = j-d+1;
-	  gamma_i = j-d+1-i0+1;
-	  sc = gamma[gamma_i-1] + alpha[0][cur][d] + cm->sc_boost; 
-	  /* sc_boost is experimental technique for finding hits < 0 bits. 
-	   * value is 0.0 if technique not used. */
-	  if (sc > gamma[gamma_j])
+	  /* The little semi-Markov model that deals with multihit parsing:
+	   */
+	  gamma[gamma_j]  = gamma[gamma_j-1] + 0; 
+	  gback[gamma_j]  = -1;
+	  savesc[gamma_j] = IMPOSSIBLE;
+	  saver[gamma_j]  = -1;
+	  for (d = 1; d <= W && d <= gamma_j; d++) 
 	    {
-	      gamma[gamma_j]  = sc;
-	      gback[gamma_j]  = i;
-	      savesc[gamma_j] = alpha[0][cur][d]; 
-	      saver[gamma_j]  = bestr[d];
+	      i = j-d+1;
+	      gamma_i = j-d+1-i0+1;
+	      sc = gamma[gamma_i-1] + alpha[0][cur][d] + cm->sc_boost; 
+	      /* sc_boost is experimental technique for finding hits < 0 bits. 
+	       * value is 0.0 if technique not used. */
+	      if (sc > gamma[gamma_j])
+		{
+		  gamma[gamma_j]  = sc;
+		  gback[gamma_j]  = i;
+		  savesc[gamma_j] = alpha[0][cur][d]; 
+		  saver[gamma_j]  = bestr[d];
+		}
+	    }
+	}
+      else
+	{
+	  /* Resolving overlaps greedily (RSEARCH style),  
+	   * At least one hit is sent back for each j here.
+	   * However, some hits can already be removed for the greedy overlap
+	   * resolution algorithm.  Specifically, at the given j, any hit with a
+	   * d of d1 is guaranteed to mask any hit of lesser score with a d > d1 */
+	  /* First, report hit with d of 1 if > cutoff */
+	  if (alpha[0][cur][1] >= cutoff) 
+	    if(results != NULL) 
+	      {
+		report_hit (j, j, bestr[1], alpha[0][cur][1], results);
+	      }
+	  bestd = 1;
+	  if (alpha[0][cur][1] > best_score) 
+	    best_score = alpha[0][cur][1];
+	  
+	  /* Now, if current score is greater than maximum seen previous, report
+	     it if >= cutoff and set new max */
+	  for (d = 2; d <= W && d <= gamma_j; d++) 
+	    {
+	      if (alpha[0][cur][d] > best_score) 
+		best_score = alpha[0][cur][d];
+	      if (alpha[0][cur][d] > alpha[0][cur][bestd]) 
+		{
+		  if (alpha[0][cur][d] >= cutoff)
+		    if(results != NULL) 
+		      {
+			report_hit (j-d+1, j, bestr[d], alpha[0][cur][d], results);
+		      }
+		  bestd = d;
+		}
 	    }
 	}
     } /* end loop over end positions j */
-
+  
   /*****************************************************************
    * we're done with alpha, free it; everything we need is in gamma.
    *****************************************************************/ 
@@ -499,26 +540,28 @@ CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W,
    * Traceback stage.
    * Recover all hits: an (i,j,sc) triple for each one.
    *****************************************************************/ 
-  j     = j0;
-  while (j >= i0) 
+  if(!(cm->search_opts & CM_SEARCH_GREEDY)) /* resolve overlaps optimally */
     {
-      gamma_j = j-i0+1;
-      if (gback[gamma_j] == -1) /* no hit */
-	j--; 
-      else                /* a hit, a palpable hit */
+      j     = j0;
+      while (j >= i0) 
 	{
-	  if(savesc[gamma_j] > best_score) 
-	    best_score = savesc[gamma_j];
-	  if(savesc[gamma_j] >= cutoff && results != NULL) /* report the hit */
-	    report_hit(gback[gamma_j], j, saver[gamma_j], savesc[gamma_j], results);
-	  j = gback[gamma_j]-1;
+	  gamma_j = j-i0+1;
+	  if (gback[gamma_j] == -1) /* no hit */
+	    j--; 
+	  else                /* a hit, a palpable hit */
+	    {
+	      if(savesc[gamma_j] > best_score) 
+		best_score = savesc[gamma_j];
+	      if(savesc[gamma_j] >= cutoff && results != NULL) /* report the hit */
+		report_hit(gback[gamma_j], j, saver[gamma_j], savesc[gamma_j], results);
+	      j = gback[gamma_j]-1;
+	    }
 	}
     }
   free(gback);
   free(gamma);
   free(savesc);
   free(saver);
-
   if(best_score <= 0.) /* there were no hits found by the semi-HMM, no hits above 0 bits */
     best_score = best_neg_score;
 

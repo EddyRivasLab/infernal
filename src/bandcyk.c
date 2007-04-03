@@ -907,7 +907,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
   int       curr_dmax;          /* temporary value for max d in for loops */
   float     best_score;         /* Best overall score from semi-HMM to return */
   float     best_neg_score;     /* Best score overall score to return, used if all scores < 0 */
-
+  int       bestd;              /* d value of best hit thus far seen for j (used if greedy strategy) */
 
   best_score     = IMPOSSIBLE;
   best_neg_score = IMPOSSIBLE;
@@ -1187,29 +1187,62 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 	}
       }
       
-      /* The little semi-Markov model that deals with multihit parsing:
-       */
-      gamma[gamma_j]  = gamma[gamma_j-1] + 0; /* extend without adding a new hit */
-      gback[gamma_j]  = -1;
-      savesc[gamma_j] = IMPOSSIBLE;
-      saver[gamma_j]  = -1;
-      for (d = dmin[0]; d <= curr_dmax; d++) 
+      if(!(cm->search_opts & CM_SEARCH_GREEDY)) /* resolve overlaps optimally */
 	{
-	  i = j-d+1;
-	  gamma_i = j-d+1-i0+1;
-	  sc = gamma[gamma_i-1] + alpha[0][cur][d] + cm->sc_boost;
-	  /* sc_boost is experimental technique for finding hits < 0 bits. 
-	   * value is 0.0 if technique not used. */
-	  if (sc > gamma[gamma_j])
+	  /* The little semi-Markov model that deals with multihit parsing:
+	   */
+	  gamma[gamma_j]  = gamma[gamma_j-1] + 0; /* extend without adding a new hit */
+	  gback[gamma_j]  = -1;
+	  savesc[gamma_j] = IMPOSSIBLE;
+	  saver[gamma_j]  = -1;
+	  for (d = dmin[0]; d <= curr_dmax; d++) 
 	    {
-	      gamma[gamma_j]  = sc;
-	      gback[gamma_j]  = i;
-	      savesc[gamma_j] = alpha[0][cur][d]; 
-	      saver[gamma_j]  = bestr[d];
+	      i = j-d+1;
+	      gamma_i = j-d+1-i0+1;
+	      sc = gamma[gamma_i-1] + alpha[0][cur][d] + cm->sc_boost;
+	      /* sc_boost is experimental technique for finding hits < 0 bits. 
+	       * value is 0.0 if technique not used. */
+	      if (sc > gamma[gamma_j])
+		{
+		  gamma[gamma_j]  = sc;
+		  gback[gamma_j]  = i;
+		  savesc[gamma_j] = alpha[0][cur][d]; 
+		  saver[gamma_j]  = bestr[d];
+		}
+	    }
+	}
+      else
+	{
+	  /* Resolving overlaps greedily (RSEARCH style),  
+	   * At least one hit is sent back for each j here.
+	   * However, some hits can already be removed for the greedy overlap
+	   * resolution algorithm.  Specifically, at the given j, any hit with a
+	   * d of d1 is guaranteed to mask any hit of lesser score with a d > d1 */
+	  /* First, report hit with d of 1 if > cutoff */
+	  if (alpha[0][cur][dmin[v]] >= cutoff) 
+	    if(results != NULL) 
+	      report_hit (j, j, bestr[1], alpha[0][cur][dmin[v]], results);
+	  bestd = 1;
+	  if (alpha[0][cur][dmin[v]] > best_score) 
+	    best_score = alpha[0][cur][dmin[v]];
+	  
+	  /* Now, if current score is greater than maximum seen previous, report
+	     it if >= cutoff and set new max */
+	  for (d = dmin[v]; d <= curr_dmax; d++) 
+	    {
+	      if (alpha[0][cur][d] > best_score) 
+		best_score = alpha[0][cur][d];
+	      if (alpha[0][cur][d] > alpha[0][cur][bestd]) 
+		{
+		  if (alpha[0][cur][d] >= cutoff)
+		    if(results != NULL) 
+		      report_hit (j-d+1, j, bestr[d], alpha[0][cur][d], results);
+		  bestd = d;
+		}
 	    }
 	}
     } /* end loop over end positions j */
-
+      
   /*****************************************************************
    * we're done with alpha, free it; everything we need is in gamma.
    *****************************************************************/ 
@@ -1233,30 +1266,32 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
    * Traceback stage.
    * Recover all hits: an (i,j,sc) triple for each one.
    *****************************************************************/ 
-  j     = j0;
-  while (j >= i0) 
+  if(!(cm->search_opts & CM_SEARCH_GREEDY)) /* resolve overlaps optimally */
     {
-      gamma_j = j-i0+1;
-      if (gback[gamma_j] == -1) /* no hit */
-	j--; 
-      else                /* a hit, a palpable hit */
+      j     = j0;
+      while (j >= i0) 
 	{
-	  if(savesc[gamma_j] > best_score) 
-	    best_score = savesc[gamma_j];
-	  if(savesc[gamma_j] >= cutoff && results != NULL) /* report the hit */
-	    report_hit(gback[gamma_j], j, saver[gamma_j], savesc[gamma_j], results);
-	  j = gback[gamma_j]-1;
+	  gamma_j = j-i0+1;
+	  if (gback[gamma_j] == -1) /* no hit */
+	    j--; 
+	  else                /* a hit, a palpable hit */
+	    {
+	      if(savesc[gamma_j] > best_score) 
+		best_score = savesc[gamma_j];
+	      if(savesc[gamma_j] >= cutoff && results != NULL) /* report the hit */
+		report_hit(gback[gamma_j], j, saver[gamma_j], savesc[gamma_j], results);
+	      j = gback[gamma_j]-1;
+	    }
 	}
     }
-  
   free(gback);
   free(gamma);
   free(savesc);
   free(saver);
-
+  
   if(best_score <= 0.) /* there were no hits found by the semi-HMM, no hits above 0 bits */
     best_score = best_neg_score;
-
+  
   return best_score;
 }
 

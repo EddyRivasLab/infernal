@@ -106,7 +106,11 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons)
 				 FALSE, /* we're not building a histogram for CM stats  */
 				 FALSE, /* we're not building a histogram for CP9 stats */
 				 NULL); /* filter fraction, TEMPORARILY NULL            */
-
+	  if(cm->search_opts & CM_SEARCH_GREEDY)
+	    {
+	      remove_overlapping_hits (dbseq->results[reversed],
+				       dbseq->sq[reversed]->n);
+	    }
 	  if (cm->cutoff_type == E_CUTOFF) 
 	    remove_hits_over_e_cutoff (cm, dbseq->results[reversed],
 				       dbseq->sq[reversed]->seq,
@@ -276,6 +280,9 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 	      active_seq_index = search_check_results (active_seqs, process_status, cm->W);
 	      if (active_seqs[active_seq_index]->chunks_sent == 0) 
 		{
+		  remove_overlapping_hits
+		    (active_seqs[active_seq_index]->results[0], 
+		     active_seqs[active_seq_index]->sq[0]->n);
 		  if (cm->cutoff_type == E_CUTOFF)
 		    remove_hits_over_e_cutoff 
 		      (cm, active_seqs[active_seq_index]->results[0],
@@ -283,6 +290,9 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 		       cm->cutoff, cm->lambda, cm->mu);
 		  if (do_revcomp) 
 		    {
+		      remove_overlapping_hits 
+			(active_seqs[active_seq_index]->results[1],
+			 active_seqs[active_seq_index]->sq[1]->n);
 		      if (cm->cutoff_type == E_CUTOFF)
 			remove_hits_over_e_cutoff 
 			  (cm, active_seqs[active_seq_index]->results[1],
@@ -658,6 +668,7 @@ void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, char *seq,
     results->num_results--;
   sort_results(results);
 }  
+
 
 /*
  * Function: read_next_aln_seqs
@@ -1578,3 +1589,4 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
   
   /*printf("leaving actually_align_targets()\n");*/
 }
+
