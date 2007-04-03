@@ -42,6 +42,7 @@ The alignment file is expected to be in Stockholm format.\n\
 static char experts[] = "\
   Expert, in development, or infrequently used options are:\n\
    --rsearch      : use RSEARCH parameterization (1 seq in aln file)\n\
+   --rsw          : use RSEARCH's default method for setting W (2*seq length)\n\
    --binary       : save the model in binary format\n\
    --rf           : use reference coordinate annotation to specify consensus\n\
    --gapthresh <x>: fraction of gaps to allow in a consensus column (0..1)\n\
@@ -98,6 +99,7 @@ static struct opt_s OPTIONS[] = {
   { "-A", TRUE, sqdARG_NONE },
   { "-F", TRUE, sqdARG_NONE },
   { "--rsearch",   FALSE, sqdARG_NONE },
+  { "--rsw",       FALSE, sqdARG_NONE },
   { "--binary",    FALSE, sqdARG_NONE },
   { "--nobalance", FALSE, sqdARG_NONE },
   { "--cfile",     FALSE, sqdARG_STRING },
@@ -171,6 +173,7 @@ main(int argc, char **argv)
   int   optind;                 /* index in argv[]                         */
 
   int   do_rsearch;		/* TRUE to use RSEARCH parameterization    */
+  int   do_rsw;		        /* TRUE to set cm->W as 2 * seq length     */
   int   do_append;		/* TRUE to append CM to cmfile             */
   int   do_balance;		/* TRUE to balance the CM                  */
   int   do_binary;		/* TRUE to use binary file format for CM   */
@@ -279,6 +282,7 @@ main(int argc, char **argv)
 
   format            = MSAFILE_UNKNOWN;   /* autodetect by default */
   do_rsearch        = FALSE;
+  do_rsw            = FALSE;
   do_append         = FALSE;
   do_balance        = TRUE;
   do_binary         = FALSE;	/* default: save CMs in ASCII flatfile format */
@@ -339,6 +343,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "-F") == 0)          allow_overwrite   = TRUE;
     else if (strcmp(optname, "-n") == 0)          setname           = optarg;
     else if (strcmp(optname, "--rsearch")   == 0) do_rsearch        = TRUE;
+    else if (strcmp(optname, "--rsw")       == 0) do_rsw            = TRUE;
     else if (strcmp(optname, "--binary")    == 0) do_binary         = TRUE;
     else if (strcmp(optname, "--nobalance") == 0) do_balance        = FALSE;
     else if (strcmp(optname, "--gapthresh") == 0) gapthresh         = atof(optarg);
@@ -422,6 +427,8 @@ main(int argc, char **argv)
 	Die("--cdump <f> only makes sense with --ctarget, --cmindiff, or --call\n%s\n", usage);
       if(do_corig && !do_cluster)
 	Die("--corig only makes sense with --ctarget, --cmindiff, or --call\n%s\n", usage);
+      if(do_rsw && !do_rsearch)
+	Die("--rsw only works with --rsearch\n%s\n", usage);
     }      
   
   /* Set up default options for rsearch mode */
@@ -778,7 +785,8 @@ main(int argc, char **argv)
 	  
 	  /*printf("Success in BandCalculationEngine(). W:%d | bandp: %4e\n", safe_windowlen, bandp);*/
 	  /*debug_print_bands(cm, dmin, dmax);*/
-	  cm->W = dmax[0];
+	  if(do_rsw) cm->W = 2*avlen; 
+	  else cm->W = dmax[0];
 	  printf("done. [%d]\n", cm->W);
 	  
 	  /*11.15.05 EPN Set the EL self transition score, by default its log2(0.94).*/

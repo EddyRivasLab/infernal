@@ -228,12 +228,15 @@ MSADivide(MSA *mmsa, int do_all, int target_nc, float mindiff, int do_pickone,
   else        *ret_num_msa = nc;
   *ret_cmsa = cmsa;
 
-  esl_tree_Destroy(T);
-  esl_dmatrix_Destroy(D);
-  free(diff);
-  free(clust);
-  free(c_nseq);
-  free(csize);
+  if(!do_all) /* else we didn't allocate these structures */
+    {
+      esl_tree_Destroy(T);
+      esl_dmatrix_Destroy(D);
+      free(diff);
+      free(c_nseq);
+    }
+  if(clust != NULL)  free(clust);
+  if(csize != NULL)  free(csize);
   return eslOK;
 
  ERROR: 
