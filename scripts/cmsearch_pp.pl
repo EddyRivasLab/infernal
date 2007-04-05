@@ -19,6 +19,8 @@
 #    -E <x>         : use E values [default], sets max E-val to keep as <x> [df = 10]
 #    -B <x>         : use bit scores, sets min score to keep as <x>
 #    -A <x>         : sort all hits across CMs [default: sort hits for each CM]
+#    -Q <x>         : print top <x> hits per query
+#    -T <x>         : print top <x> hits per target
 
 require "sre.pl";
 use constant FASTA_LINE_LENGTH       => 50;
@@ -33,13 +35,17 @@ $sort_scores = 1;
 $sort_all_scores = 0;
 $do_extract = 0;
 $do_overlap = 0;
+$do_top_query = 0;
+$do_top_target = 0;
 
-getopts('E:B:X:AR:');
+getopts('E:B:X:AR:Q:T:');
 if (defined $opt_X) { $do_extract = 1; $db_file = $opt_X; }
 if (defined $opt_E) { $e_cutoff = $opt_E; }
 if (defined $opt_B) { $b_cutoff = $opt_B; $use_evalues = 0; $use_bitscores = 1; }
 if (defined $opt_A) { $sort_all_scores = 1; }
 if (defined $opt_R) { $remove_overlaps = 1; $overlap_fraction = $opt_R; }
+if (defined $opt_Q) { $do_top_query = 1;  $ntop_query = $opt_Q; }
+if (defined $opt_T) { $do_top_target = 1; $ntop_target= $opt_T; }
 
 $usage = "Usage: perl cmsearch_pp.pl\n\t<cmsearch output file>\n\t<output file (ONLY if -X enabled)>\n";
 $options_usage  = "\nOptions:\n\t";
@@ -47,7 +53,10 @@ $options_usage .= "-X <f> : extract hit subseqs from database in <f> using 'sfet
 $options_usage .= "-E <x> : use E values [default], sets max E-val to keep as <x> [df= 10]\n\t";
 $options_usage .= "-B <x> : use bit scores, sets min score to keep as <x>\n\t";
 $options_usage .= "-A     : sort all hits across CMs [default: sort hits for each CM]\n\t";
-$options_usage .= "-R <x> : remove overlapping hits of <x> fraction (0: no overlap allowed)\n";
+$options_usage .= "-R <x> : remove overlapping hits of <x> fraction (0: no overlap allowed)\n\t";
+$options_usage .= "-Q <x> : print top <x> hits per query\n\t";
+$options_usage .= "-T <x> : print top <x> hits per target\n\n";
+#    -T <x>         : print top <x> hits per target
 
 if(scalar(@ARGV) == 2)
 {
@@ -88,18 +97,24 @@ if($do_extract)
 
 
 # First determine if infernal was run with or without E-values
-if($infernal::nhit[0] > 0)
+$at_least_one_hit = 0;
+for($c = 0; $c < $infernal::ncm; $c++)
 {
-    if (exists($infernal::hitevalue[0][0]))
+    if($infernal::nhit[$c] > 0)
     {
-	$has_evalues = 1;
-    }
-    else
-    {
-	$has_evalues = 0;
+	$at_least_one_hit = 1;
+	if (exists($infernal::hitevalue[$c][0]))
+	{
+	    $has_evalues = 1;
+	}
+	else
+	{
+	    $has_evalues = 0;
+	}
+	last;
     }
 }
-else
+if(!($at_least_one_hit))
 {
     die("No hits found in $cmsearch_output. Exiting.\n");
 }
@@ -174,7 +189,7 @@ for($x = 0; $x < scalar(@sorted_ci_A); $x++)
     ($c, $i) = split(":", $sorted_ci_A[$x]);
 
     if ((($use_bitscores) && $infernal::hitbitscore[$c][$i] > $b_cutoff) ||
-	(($use_evalues)  && $infernal::hitevalue[$c][$i]   < $e_cutoff))
+	(($use_evalues)   && $infernal::hitevalue[$c][$i]   < $e_cutoff))
     {
 	$gc_content = $infernal::hitgccontent[$c][$i];
 	#printf("%-24s %-6f\n", $infernal::targname[$i], $infernal::seqbitscore{$infernal::targname[$i]}); 
@@ -208,10 +223,14 @@ for($x = 0; $x < scalar(@sorted_ci_A); $x++)
 	{
 	    $out_lines_A[$x] = sprintf("%-24s %-24s %7.2f %9d %9d %d (GC=%2d)\n", $cm, $targname, $sc, $start, $end, $orient, $gc_content); 
 	    $cm .= "|";
+	    if($do_top_query) { $cm_for_out_lines_A[$x]     = $cm;    }
+	    if($do_top_target){ $target_for_out_lines_A[$x] = $targname;}
 	}
 	else
 	{
 	    $out_lines_A[$x] = sprintf("%-24s %7.2f %9d %9d %d (GC=%2d)\n", $targname, $sc, $start, $end, $orient, $gc_content); 
+	    if($do_top_query) { $cm_for_out_lines_A[$x]     = "ONLYONE";}
+	    if($do_top_target){ $target_for_out_lines_A[$x] = $targname;  }
 	}
 	if($do_extract)
 	{
@@ -283,7 +302,22 @@ for($x = 0; $x < scalar(@sorted_ci_A); $x++)
     $prev_c = $c;
     if($print_lines_A[$x])
     {
-	printf $out_lines_A[$x];
+	$print_flag = 1;
+	if($do_top_query)
+	{
+	    if(($printed_per_cm_H{$cm_for_out_lines_A[$x]}++) >= $ntop_query)
+	    {
+		$print_flag = 0;
+	    }
+	}
+	if($do_top_target)
+	{
+	    if(($printed_per_target_H{$target_for_out_lines_A[$x]}++) >= $ntop_target)
+	    {
+		$print_flag = 0;
+	    }
+	}
+	if($print_flag) { printf $out_lines_A[$x]; }
     }
 }
 

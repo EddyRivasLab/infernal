@@ -58,12 +58,43 @@ AC_DEFINE_UNQUOTED(PACKAGE_LICENSE, "$PACKAGE_LICENSE")
 if ((! test -d binaries) && test -d src); then 
 AC_MSG_NOTICE([This is a full source distribution - using full config])
 
+cwd=`pwd`
+AC_SUBST(TOPDIR,$cwd)
+# EPN, Thu Apr  5 07:58:07 2007
+# First, check for --with-mpi=<x> to build MPI cmsearch and cmalign progs.
+# if enabled, set compiler as <x>, if no "=<x>" provided, set compiler as mpicc
+# currently PROGS are not affected, though eventually we may want
+# to create 'mpicmsearch' and 'mpicmalign'
+usempi=0
+AC_ARG_WITH(mpi,
+[  --with-mpi            enable MPI for search and alignment],
+[case $with_mpi in
+   yes) AC_MSG_NOTICE([configured cmalign and cmsearch for MPI])
+	mpi="mpicc"
+	usempi=1
+	AC_DEFINE(USE_MPI)
+        ;;
+    no) mpi=""
+        ;;
+     *) mpi=$with_mpi
+	usempi=1
+        ;;	
+  esac])
+AC_SUBST(USEMPI,$usempi)
+
+# if $mpi == "", use default C compiler, set CFLAGS by default
+if test -z "$mpi"; then
+   AC_PROG_CC 
+# if $mpi != "", use compiler $mpi, manually set CFLAGS
+else 
+     AC_PROG_CC($mpi)
+     CFLAGS="-g -O2"
+fi
 
 # Checks for programs.
-# Sets output variables CC, CFLAGS, and RANLIB.
+# Sets output variables RANLIB.
 # AR might be hidden away on Solaris; provide some hints in the PATH.
 #
-AC_PROG_CC
 AC_PROG_CXX
 AC_PROG_RANLIB
 AC_PATH_PROG([AR], [ar], [:], [$PATH:/usr/ccs/bin:/usr/xpg4/bin])
@@ -248,20 +279,6 @@ AC_ARG_WITH(rigfilters,
     *)  echo "Ignoring unknown argument to --with-rigfilters: $with_rigfilters"
         ;;
 esac])
-
-#
-# --with-mpi    MPI support for cmalign and cmsearch
-AC_ARG_WITH(mpi,
-[  --with-mpi            enable MPI for search and alignment],
-[case $with_mpi in
-   yes) AC_MSG_NOTICE([configured cmalign and cmsearch for MPI])
-        AC_PROG_CC(mpicc)
-        ;;
-    no) ;;
-     *) echo "Ignoring unknown argument to --with-mpi: $with_mpi"
-        ;;	
-  esac])
-
 
 #
 # end of optionally configured features

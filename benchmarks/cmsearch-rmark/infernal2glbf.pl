@@ -40,96 +40,113 @@ $output = join("",<>);
 &infernal::ParseINFERNAL($output);
 
 # First determine if infernal was run with or without E-values
-if($infernal::nhit > 0)
+$at_least_one_hit = 0;
+for($c = 0; $c < $infernal::ncm; $c++)
 {
-    if (exists($infernal::hitevalue[0]))
+    if($infernal::nhit[$c] > 0)
     {
-	$has_evalues = 1;
-    }
-    else
-    {
-	$has_evalues = 0;
+	$at_least_one_hit = 1;
+	if (exists($infernal::hitevalue[$c][0]))
+	{
+	    $has_evalues = 1;
+	}
+	else
+	{
+	    $has_evalues = 0;
+	}
+	last;
     }
 }
-
-if(($infernal::nhit > 0) && ($use_evalues && (!$has_evalues)))
+if(!($at_least_one_hit))
 {
-    die("ERROR in infernal2glbf.pl, trying to use E-values but none reported.\n");
+    die("No hits found. Exiting.\n");
+}
+if($use_evalues && (!$has_evalues))
+{
+    die("ERROR, trying to use E-values but none reported.\n");
 }
 
 # if we're not sorting the scores, print them out in the order cmsearch reported them 
 if(!($sort_scores))
 {
-    for ($i = 0; $i < $infernal::nhit; $i++)
+    for ($c = 0; $c < $infernal::ncm; $c++)
     {
-	if ((($use_bitscores) && $infernal::hitbitscore[$i] > $b_cutoff) ||
-	    (($use_evalues)  && $infernal::hitevalue[$i]   < $e_cutoff))
+	for ($i = 0; $i < $infernal::nhit[$c]; $i++)
 	{
-	    #printf("%-24s %-6f\n", $infernal::targname[$i], $infernal::seqbitscore{$infernal::targname[$i]}); 
-	    if($infernal::hitsqfrom[$i] > $infernal::hitsqto[$i])
+	    if ((($use_bitscores) && $infernal::hitbitscore[$c][$i] > $b_cutoff) ||
+		(($use_evalues)  && $infernal::hitevalue[$c][$i]   < $e_cutoff))
 	    {
-		#hit to reverse strand of query
-		$orient = 1;
-	    }
-	    else
-	    {
-		$orient = 0;
-	    }
-	    if($use_evalues)
-	    {
-		printf("%-24s %-6f %d %d %d\n", $infernal::targname_byhit[$i], $infernal::hitevalue[$i], $infernal::hitsqfrom[$i], $infernal::hitsqto[$i], $orient); 
-	    }
-	    else
-	    {
-		printf("%-24s %-6f %d %d %d\n", $infernal::targname_byhit[$i], $infernal::hitbitscore[$i], $infernal::hitsqfrom[$i], $infernal::hitsqto[$i], $orient); 
+		#printf("%-24s %-6f\n", $infernal::targname[$i], $infernal::seqbitscore{$infernal::targname[$i]}); 
+		if($infernal::hitsqfrom[$c][$i] > $infernal::hitsqto[$c][$i])
+		{
+		    #hit to reverse strand of query
+		    $orient = 1;
+		}
+		else
+		{
+		    $orient = 0;
+		}
+		if($use_evalues)
+		{
+		    printf("%-24s %-6f %d %d %d\n", $infernal::targname_byhit[$c][$i], $infernal::hitevalue[$c][$i], $infernal::hitsqfrom[$c][$i], $infernal::hitsqto[$c][$i], $orient); 
+		}
+		else
+		{
+		    printf("%-24s %-6f %d %d %d\n", $infernal::targname_byhit[$c][$i], $infernal::hitbitscore[$c][$i], $infernal::hitsqfrom[$c][$i], $infernal::hitsqto[$c][$i], $orient); 
+		}
 	    }
 	}
     }
 }
 else # sort scores 
 {
-    for ($i = 0; $i < $infernal::nhit; $i++)
+    for ($c = 0; $c < $infernal::ncm; $c++)
     {
+	for ($i = 0; $i < $infernal::nhit; $i++)
+	{
+	    $key = "$c:$i";
+	    if($use_evalues)
+	    {
+		$sc_H{$key} = $infernal::hitevalue[$c][$i];
+	    }
+	    else
+	    {
+		$sc_H{$key} = $infernal::hitbitscore[$c][$i];
+	    }
+	}
 	if($use_evalues)
 	{
-	    $sc_H{$i} = $infernal::hitevalue[$i];
+	    @sorted_i_A = sort { $sc_H{$a} <=> $sc_H{$b} } (keys (%sc_H));
 	}
 	else
 	{
-	    $sc_H{$i} = $infernal::hitbitscore[$i];
+	    @sorted_i_A = sort { $sc_H{$b} <=> $sc_H{$a} } (keys (%sc_H));
 	}
-    }
-    if($use_evalues)
-    {
-	@sorted_i_A = sort { $sc_H{$a} <=> $sc_H{$b} } (keys (%sc_H));
-    }
-    else
-    {
-	@sorted_i_A = sort { $sc_H{$b} <=> $sc_H{$a} } (keys (%sc_H));
-    }
-    for ($j = 0; $j < scalar(@sorted_i_A); $j++)
-    {
-	$i = $sorted_i_A[$j];
-	if ((($use_bitscores) && $infernal::hitbitscore[$i] > $b_cutoff) ||
-	    (($use_evalues)  && $infernal::hitevalue[$i]   < $e_cutoff))
+	for ($j = 0; $j < scalar(@sorted_i_A); $j++)
 	{
-	    #printf("%-24s %-6f\n", $infernal::targname[$i], $infernal::seqbitscore{$infernal::targname[$i]}); 
-	    if($infernal::hitsqfrom[$i] > $infernal::hitsqto[$i])
+	    $key = $sorted_i_A[$j];
+	    ($c, $i) = split(":", $key);
+	    if ((($use_bitscores) && $infernal::hitbitscore[$c][$i] > $b_cutoff) ||
+		(($use_evalues)  && $infernal::hitevalue[$c][$i]   < $e_cutoff))
 	    {
-		#hit to reverse strand of query
-		$orient = 1;
-	    }
-	    else
-	    {
-		$orient = 0;
-	    }
-	    if($use_evalues)
-	    {
-		printf("%-24s %-6f %d %d %d\n", $infernal::targname_byhit[$i], $infernal::hitevalue[$i], $infernal::hitsqfrom[$i], $infernal::hitsqto[$i], $orient); 
-	    }
-	    else
-	    {
-		printf("%-24s %-6f %d %d %d\n", $infernal::targname_byhit[$i], $infernal::hitbitscore[$i], $infernal::hitsqfrom[$i], $infernal::hitsqto[$i], $orient); 
+		#printf("%-24s %-6f\n", $infernal::targname[$c][$i], $infernal::seqbitscore{$infernal::targname[$c][$i]}); 
+		if($infernal::hitsqfrom[$c][$i] > $infernal::hitsqto[$c][$i])
+		{
+		    #hit to reverse strand of query
+		    $orient = 1;
+		}
+		else
+		{
+		    $orient = 0;
+		}
+		if($use_evalues)
+		{
+		    printf("%-24s %-6f %d %d %d\n", $infernal::targname_byhit[$c][$i], $infernal::hitevalue[$c][$i], $infernal::hitsqfrom[$c][$i], $infernal::hitsqto[$c][$i], $orient); 
+		}
+		else
+		{
+		    printf("%-24s %-6f %d %d %d\n", $infernal::targname_byhit[$c][$i], $infernal::hitbitscore[$c][$i], $infernal::hitsqfrom[$c][$i], $infernal::hitsqto[$c][$i], $orient); 
+		}
 	    }
 	}
     }
