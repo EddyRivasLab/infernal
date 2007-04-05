@@ -65,19 +65,18 @@ AC_SUBST(TOPDIR,$cwd)
 # if enabled, set compiler as <x>, if no "=<x>" provided, set compiler as mpicc
 # currently PROGS are not affected, though eventually we may want
 # to create 'mpicmsearch' and 'mpicmalign'
-usempi=0
+usempi=""
 AC_ARG_WITH(mpi,
 [  --with-mpi            enable MPI for search and alignment],
 [case $with_mpi in
    yes) AC_MSG_NOTICE([configured cmalign and cmsearch for MPI])
 	mpi="mpicc"
-	usempi=1
-	AC_DEFINE(USE_MPI)
+	usempi="-DUSE_MPI=1"
         ;;
     no) mpi=""
         ;;
      *) mpi=$with_mpi
-	usempi=1
+	usempi="-DUSE_MPI=1"
         ;;	
   esac])
 AC_SUBST(USEMPI,$usempi)

@@ -17,9 +17,12 @@ CFLAGS = @CFLAGS@
 #  DEFS contains stuff that autoconf decides on. 
 #  LIBS contains system libraries that the configure script decides we need.
 #
-# EPN 04.05.07 -DMATRIX_DIR is set as 'matrices' subdir within directory
-#     that 'configure' was run in, probably not the best way to do this
-DEFS  = @DEFS@ -DMATRIX_DIR=\"@TOPDIR@/matrices\" -DUSE_MPI=@USEMPI@
+# EPN 04.05.07 
+# @USEMPI@ get's replaced with "-DUSE_MPI=1" if --with-mpi enabled,
+# and "" if it was not enabled - probably not the best way to do this 
+# -DMATRIX_DIR is set as 'matrices' subdir within directory
+# that 'configure' was run in - probably not the best way to do this
+DEFS  = @DEFS@ @USEMPI@ -DMATRIX_DIR=\"@TOPDIR@/matrices\" 
 LIBS  = @LIBS@ 
 
 ## archiving command, and ranlib command if you need one.
