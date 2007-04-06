@@ -88,7 +88,7 @@ static char experts[] = "\
    --cmindiff <x> : min difference b/t 2 clusters is <x>, each cluster -> CM\n\
    --cpickone     : w/--c{target,mindiff}, build CMs from 1 seq in each clust\n\
    --call         : build a separate CM from every seq in MSA\n\
-   --cdump <f>    : dump an MSA for each cluster (CM) to file <f>\n\ 
+   --cdump <f>    : dump an MSA for each cluster (CM) to file <f>\n\
    --corig        : build an additional CM from the original MSA\n\
 \n\
 ";
@@ -550,11 +550,12 @@ main(int argc, char **argv)
   while ((msa = MSAFileRead(afp)) != NULL)
     {
       /* EPN changed default behavior for naming MSAs, if name is NULL, 
-       * set it to the number: (nali+1) */
+       * set it to the alifile file tail . "." . (nali+1) */
       if (msa->name == NULL) 
 	{
-	  sprintf(buffer, "%d", (nali+1)); /* buffer is string of length 50, this is fragile */
-	  msa->name = sre_strdup(buffer, -1);
+	  sprintf(buffer, ".%d", (nali+1)); /* buffer is string of length 50, this is fragile */
+	  msa->name = FileTail(alifile, TRUE);
+	  sre_strcat(&msa->name, -1, buffer, -1);
 	}
       if(do_cluster)
 	{
