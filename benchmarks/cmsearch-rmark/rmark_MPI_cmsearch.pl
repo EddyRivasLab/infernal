@@ -83,6 +83,8 @@ if(! (-e ("rmark_process_glbf.pl"))) { die("ERROR, rmark_process_glbf.pl must ex
 else { system("cp rmark_process_glbf.pl $run_dir"); } 
 if(! (-e ("rmark_times.pl"))) { die("ERROR, rmark_process_glbf.pl must exist in the current directory."); } 
 else { system("cp rmark_times.pl $run_dir"); } 
+if(! (-e ("infernal2time.pl"))) { die("ERROR, infernal2time.pl must exist in the current directory."); } 
+else { system("cp infernal2time.pl $run_dir"); }
 if(! (-e ("infernal.pm"))) { die("ERROR, infernal.pm must exist in the current directory."); } 
 else { system("cp infernal.pm $run_dir"); } 
 if(! (-e ("infernal2glbf.pl"))) { die("ERROR, infernal2glbf.pl must exist in the current directory."); } 
@@ -119,18 +121,19 @@ system("cp *.null* $run_dir");
 # Read in the roots of the test families
 file_lines_to_arr($fam_idx, \@fam_roots_arr);
 
-# For each family, build a CM using the specifications in the 
-# RMARK module ($rmk) file
-for($i = 0; $i < scalar(@fam_roots_arr); $i++)
-{
-    $fam = $fam_roots_arr[$i];
-    $num = $i + 1;
-    $cm_file = $fam . ".cm";
-    $ali_file = $seq_dir . "/" . $fam . ".ali";
-    #system("$cmb $fam.cm $ali_file > /dev/null");
-    #system("mv $fam.cm $run_dir");
-    #printf("mv $fam.cm $run_dir\n");
-}
+# For each family, build a CM using specs in 
+# rmk file. THIS IS NO LONGER DONE, WE REQUIRE
+# THE CM ALREADY BUILT. CODE LEFT HERE FOR REFERENCE
+#for($i = 0; $i < scalar(@fam_roots_arr); $i++)
+#{
+#    $fam = $fam_roots_arr[$i];
+#   $num = $i + 1;
+#    $cm_file = $fam . ".cm";
+#    $ali_file = $seq_dir . "/" . $fam . ".ali";
+#    system("$cmb $fam.cm $ali_file > /dev/null");
+#    system("mv $fam.cm $run_dir");
+#    printf("mv $fam.cm $run_dir\n");
+#}
 
 # Create the script for the cluster that will submit
 # the cmsearch jobs, one job for each family.

@@ -14,6 +14,8 @@
 #                <output root>
 #
 # Options: 
+#        -G     : work in BRALIBASE3 Genome benchmark mode
+#
 #        Hit resolution options:
 #        -R hit : [default] each hit is a single positive/negative
 #        -R fnt : treat every nucleotide as a separate positive or negative.
@@ -119,13 +121,16 @@
 use Getopt::Std;
 $res_opt    = "hit";
 $ignore_opt = "both";
+$do_bralibase3 = 0;
 
-getopts('R:I:');
+getopts('R:I:G');
 if (defined $opt_R) { $res_opt    = $opt_R; }
 if (defined $opt_I) { $ignore_opt = $opt_I; }
+if (defined $opt_G) { $do_bralibase3 = 1; }
 
 $usage = "Usage: perl rmark_process_glbf.pl\n\t<'E' if E-values used (lower score is better), 'B' if higher is better>\n\t<.rmm file used>\n\t<.rmk file used>\n\t<seq directory with *.ali, *.test, *.idx, *.raw files>\n\t<index file with family names; provide path>\n\t<genome root <X>, <X>.fa and <X>.ebd must be in seq dir>\n\t<concatenated *.glbf output from >= 1 rmark.pl runs; in CWD>\n\t<output root>\n";
 $options_usage  = "\nOptions: (see code for details)\n\t";
+$options_usage  = "-G     : operate in BRALIBASE3 Genome benchmark mode (not RMARK.pl)\n\n\t";
 $options_usage .= "Hit resolution options:\n\t";
 $options_usage .= "-R hit : [default] each hit is a single positive/negative\n\t";
 $options_usage .= "-R fnt : treat every nucleotide as a separate positive or negative.\n\t";
@@ -154,6 +159,8 @@ $out_root = shift;
 
 $genome_file = $dir . "/" . $genome_root . ".fa";
 $embed_file = $dir . "/" . $genome_root . ".ebd";
+if(! (-e ("$genome_file"))) { die("ERROR, genome file $genome_file does not exist."); } 
+if(! (-e ("$embed_file"))) { die("ERROR, embed file $embed_file does not exist."); } 
 
 if($score_method eq "E")
 {
@@ -215,7 +222,14 @@ open(ALL, ">" . $out_root . ".all");
 open(FAM, ">" . $out_root . ".fam");
 open(ROC, ">" . $out_root . ".roc");
 
-print FAM "RMARK benchmark (processed with rmark_process_glbf.pl)\n";
+if($do_bralibase3)
+{
+    print FAM "BRALIBASE3G benchmark (processed with rmark_process_glbf.pl -G )\n";
+}
+else
+{
+    print FAM "RMARK benchmark (processed with rmark_process_glbf.pl)\n";
+}
 print FAM "    module     = $rmm\n";
 print FAM "    configfile = $rmk\n"; 
 print FAM "    index      = $idx\n";
@@ -223,7 +237,14 @@ print FAM "    genome     = $genome_file\n";
 print FAM "    glbf       = $glbf_file\n";
 print FAM "    mode       = $res_opt\n\n";
 
-print ALL "RMARK benchmark (processed with rmark_process_glbf.pl)\n";
+if($do_bralibase3)
+{
+    print ALL "BRALIBASE3G benchmark (processed with rmark_process_glbf.pl -G )\n";
+}
+else
+{
+    print ALL "RMARK benchmark (processed with rmark_process_glbf.pl)\n";
+}
 print ALL "    module     = $rmm\n";
 print ALL "    configfile = $rmk\n"; 
 print ALL "    index      = $idx\n";
@@ -301,6 +322,12 @@ while (<INDEX>)
 {
     if (/^(\S+)/) {
 	$curr_fam = $1;
+	if($do_bralibase3) 
+	{
+	    $curr_fam =~ s/.+id//;
+	    $curr_fam = "id" . $curr_fam;
+	    $curr_fam =~ s/\//\./;
+	}	    
 	$fam_hash{$curr_fam} = 1;
 	if(!(exists($fam_nt_HHAH{$curr_fam})))
 	{
@@ -326,8 +353,11 @@ close(INDEX);
 # We take advantage of fact that true positives cannot overlap
 # based on how we constructed the pseudo-genome.
 open(EBDLIST,"$embed_file") || die;
-while (<EBDLIST>) {
-    if (/^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)/) { 
+$read_a_line = 0;
+while (<EBDLIST>) 
+{
+    if (/^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)/) 
+    {
 	$curr_fam = $1;
 	$curr_tp = $2;
 	$curr_chrom = $3;
@@ -338,7 +368,7 @@ while (<EBDLIST>) {
 	#print("curr fam : $curr_fam\n");
 	if(exists($fam_hash{$curr_fam}))
 	{
-	    #print("adding positives\n");
+	    #printf("ADDING fam: $curr_fam chrom: $curr_chrom tp: $curr_tp, b: $curr_begin e: $curr_end O: $curr_orient\n");
 	    $pos_chrom_begin_hash{$curr_fam}{$curr_orient}{$curr_chrom}{$curr_tp} = $curr_begin;
 	    $pos_chrom_end_hash{$curr_fam}{$curr_orient}{$curr_chrom}{$curr_tp} = $curr_end;
 	    $haspos{$curr_chrom} = 1;
@@ -354,9 +384,11 @@ while (<EBDLIST>) {
 		$all_pos_chars++;
 	    }
 	}
+	$read_a_line = 1;
     }
 }
 close EBDLIST;
+if(!($read_a_line)) { die("ERROR didn't parse any lines from $embed_file, is it formatted correctly?\n"); }
 
 
 # Read the *.glbf file, and parse it appropriately. 
@@ -403,6 +435,12 @@ while (<INDEX>)
     if (/^(\S+)/) 
     {
 	$fam = $1;
+	if($do_bralibase3) 
+	{
+	    $fam =~ s/.+id//;
+	    $fam = "id" . $fam;
+	    $fam =~ s/\//\./;
+	}	    
 	if($fnt)
 	{
 	    printf FAM ("family: %-15s (%3d pos seqs covering %d nts)\n", $fam, $ntrue_perfam{$fam}, $pos_chars_per_fam{$fam});
@@ -1457,7 +1495,7 @@ sub parse_glbf_hit
 	    $begin = $3;
 	    $end = $4;
 	    $orient = $5;
-	    #printf("\n\nexamining hit : chrom : $chrom | score : $score | begin : $begin | end : $end\n");
+	    #printf("fam: $fam examining hit : chrom : $chrom | score : $score | begin : $begin | end : $end\n");
 	    #its possible that infernal reported the hit as a reverse so
 	    #$begin > $end, switch these two in this case.
 	    if($begin > $end) { $temp = $end; $end = $begin; $begin = $temp; }
@@ -1465,7 +1503,7 @@ sub parse_glbf_hit
 	    $found_pos = 0;
 	    foreach $pos_key (keys(%{$pos_chrom_begin_HHHHR->{$fam}{$orient}{$chrom}}))
 	    {
-		#print("pos : $pos_key | begin : $pos_chrom_begin_hash{$fam}{$chrom}{$pos_key} | end : $pos_chrom_end_hash{$fam}{$chrom}{$pos_key}\n");
+		#print("pos : $pos_key | begin : $pos_chrom_begin_HHHHR->{$fam}{$orient}{$chrom}{$pos_key} | end : $pos_chrom_end_HHHHR->{$fam}{$orient}{$chrom}{$pos_key}\n");
 		#for the overlap call its important $begin and $end of the
 		#hit go first, requiring only that $min_overlap_fract
 		#of the hit must be inside the positive region.

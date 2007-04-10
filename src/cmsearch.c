@@ -80,6 +80,7 @@ static char experts[] = "\
    --time        : print timings for histogram building, and full search\n\
    --rtrans      : replace CM transition scores from <cm file> with RSEARCH scores\n\
    --greedy      : resolve overlapping hits with greedy algorithm a la RSEARCH\n\
+   --gcfile <f>  : save GC content stats of target sequence file to <f>\n\
 \n\
   * Filtering options using a CM plan 9 HMM (*in development*):\n\
    --hmmfb        : use Forward to get end points & Backward to get start points\n\
@@ -139,7 +140,8 @@ static struct opt_s OPTIONS[] = {
   { "--enfnohmm",   FALSE, sqdARG_NONE},
   { "--time",       FALSE, sqdARG_NONE},
   { "--rtrans",     FALSE, sqdARG_NONE},
-  { "--greedy",     FALSE, sqdARG_NONE}
+  { "--greedy",     FALSE, sqdARG_NONE},
+  { "--gcfile",     FALSE, sqdARG_STRING}
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -198,6 +200,9 @@ main(int argc, char **argv)
   int   num_partitions = 1;     /* number of partitions                     */
   int  *gc_ct;                  /* gc_ct[x] observed 100-nt segs in DB with *
 				 * GC% of x [0..100]                        */
+  int   nwindows;               /* number of 100-nt segs in DB              */
+  FILE *ofp;                    /* filehandle to dump gc content to */
+  char *gcfile;		        /* file to GC content stats to              */
 
   /* The enforce option (--enfstart and --enfseq), added specifically for   *
    * enforcing the template region for telomerase RNA searches.             *
@@ -333,6 +338,7 @@ main(int argc, char **argv)
   do_timings        = FALSE;
   do_rtrans         = FALSE;
   do_greedy         = FALSE;
+  gcfile            = NULL;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -395,6 +401,7 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--sums")      == 0) use_sums     = TRUE;
     else if  (strcmp(optname, "--scan2hbands")== 0) do_scan2hbands= TRUE;
     else if  (strcmp(optname, "--greedy")     == 0) do_greedy = TRUE;
+    else if  (strcmp(optname, "--gcfile")     == 0) gcfile = optarg;
     else if  (strcmp (optname, "--partition") == 0) 
       {
 	do_partitions = TRUE;
@@ -665,6 +672,19 @@ main(int argc, char **argv)
 #endif
 	  GetDBInfo(dbfp, &N, &gc_ct);
 	  if (do_revcomp) N*=2;
+	  if(gcfile != NULL)
+	    {
+	      printf("%-40s ... ", "Saving statistics on GC content"); fflush(stdout);
+	      if ((ofp = fopen(gcfile,"w")) == NULL)
+		Die("failed to open GC content file %s", gcfile);
+	      nwindows = 0;
+	      for (i=0; i<GC_SEGMENTS; i++)
+		nwindows += gc_ct[i];
+	      for (i=0; i<GC_SEGMENTS; i++)
+		fprintf(ofp, "GC[%3d]: %12d %12.8f\n", i, gc_ct[i], ((float) gc_ct[i] / (float) nwindows));
+	      fclose(ofp);
+	      printf("done. [%s] %d 100-nt windows\n", gcfile, nwindows );
+	    }
 #ifdef USE_MPI
 	}
 #endif
