@@ -457,8 +457,8 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
   float sc;
   int flen;
 
-  /*printf("in actually_search_target: i0: %d j0: %d do_filter: %d doing_cm_stats: %d doing_cp9_stats: %d\n", i0, j0, do_filter, doing_cm_stats, doing_cp9_stats);*/
-  /*printf("\ti0: %d j0: %d filter: %d\n", i0, j0, do_filter);*/
+  /*printf("in actually_search_target: i0: %d j0: %d do_filter: %d doing_cm_stats: %d doing_cp9_stats: %d\n", i0, j0, do_filter, doing_cm_stats, doing_cp9_stats);
+    printf("\ti0: %d j0: %d filter: %d\n", i0, j0, do_filter);*/
   flen = (j0-i0+1);
 
   if(doing_cm_stats && doing_cp9_stats)
@@ -466,9 +466,10 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
   
   /* check for CP9 related (either filtering or HMMONLY) options first */
   if((cm->search_opts & CM_SEARCH_HMMONLY) || doing_cp9_stats)
-    sc = CP9ForwardScan(cm, dsq, i0, j0, cm->W, cp9_cutoff, NULL, NULL, NULL, results, FALSE);
-  else if(do_filter && (cm->search_opts & CM_SEARCH_HMMWEINBERG) 
-	  && (!doing_cm_stats)) /* if we're doing CM stats, don't filter. */
+    sc = CP9ForwardScan(cm, dsq, i0, j0, cm->W, cp9_cutoff, NULL, NULL, NULL, NULL, results, FALSE);
+  else if(do_filter && 
+	  ((cm->search_opts & CM_SEARCH_HMMWEINBERG) || (cm->search_opts & CM_SEARCH_HMMFB)) &&  
+	  !doing_cm_stats) /* if we're doing CM stats, don't filter. */
     sc = CP9FilteredScan(cm, dsq, i0, j0, cm->W, cm_cutoff, cp9_cutoff, results, ret_flen);
   else
     {

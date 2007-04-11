@@ -378,6 +378,7 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--hmmfb")       == 0) do_hmmfb = TRUE;
     else if  (strcmp(optname, "--hmmweinberg") == 0) do_hmmweinberg = TRUE;
     else if  (strcmp(optname, "--hmmnegsc")    == 0) cp9_sc_boost = -1. * atof(optarg);
+    else if  (strcmp(optname, "--hmmrescan")   == 0) do_hmmrescan = TRUE; 
     else if  (strcmp(optname, "--hmmE")        == 0)   
       { 
 	cp9_e_cutoff = atof(optarg); 
@@ -402,7 +403,7 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--scan2hbands")== 0) do_scan2hbands= TRUE;
     else if  (strcmp(optname, "--greedy")     == 0) do_greedy = TRUE;
     else if  (strcmp(optname, "--gcfile")     == 0) gcfile = optarg;
-    else if  (strcmp (optname, "--partition") == 0) 
+    else if  (strcmp(optname, "--partition") == 0) 
       {
 	do_partitions = TRUE;
 	if (!(set_partitions (&partitions, &num_partitions, optarg)))
