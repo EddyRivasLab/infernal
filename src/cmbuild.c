@@ -41,7 +41,7 @@ The alignment file is expected to be in Stockholm format.\n\
 
 static char experts[] = "\
   Expert, in development, or infrequently used options are:\n\
-   --rsearch      : use RSEARCH parameterization (1 seq in aln file)\n\
+   --rsearch <f>  : use RSEARCH parameterization with matrix file <f>\n\
    --rsw          : use RSEARCH's default method for setting W (2*seq length)\n\
    --binary       : save the model in binary format\n\
    --rf           : use reference coordinate annotation to specify consensus\n\
@@ -98,7 +98,7 @@ static struct opt_s OPTIONS[] = {
   { "-n", TRUE, sqdARG_STRING },
   { "-A", TRUE, sqdARG_NONE },
   { "-F", TRUE, sqdARG_NONE },
-  { "--rsearch",   FALSE, sqdARG_NONE },
+  { "--rsearch",   FALSE, sqdARG_STRING },
   { "--rsw",       FALSE, sqdARG_NONE },
   { "--binary",    FALSE, sqdARG_NONE },
   { "--nobalance", FALSE, sqdARG_NONE },
@@ -172,8 +172,6 @@ main(int argc, char **argv)
   char *optarg;                 /* argument found by Getopt()              */
   int   optind;                 /* index in argv[]                         */
 
-  int   do_rsearch;		/* TRUE to use RSEARCH parameterization    */
-  int   do_rsw;		        /* TRUE to set cm->W as 2 * seq length     */
   int   do_append;		/* TRUE to append CM to cmfile             */
   int   do_balance;		/* TRUE to balance the CM                  */
   int   do_binary;		/* TRUE to use binary file format for CM   */
@@ -255,8 +253,10 @@ main(int argc, char **argv)
   int                no_prior;    /* TRUE to not use a prior */
 
   /* RSEARCH variables */
+  int              do_rsearch;	/* TRUE to use RSEARCH parameterization    */
+  int              do_rsw;	/* TRUE to set cm->W as 2 * seq length     */
   fullmat_t       *fullmat;     /* The full matrix */
-  char             matrixname[256]; /* Name of the matrix, from -m */
+  char            *matrixfile;  /* matrix file name <f> from --rsearch <f> */
   FILE            *matfp;       /* open matrix file for reading */
 
   /* single sequence CM variables */
@@ -282,6 +282,7 @@ main(int argc, char **argv)
 
   format            = MSAFILE_UNKNOWN;   /* autodetect by default */
   do_rsearch        = FALSE;
+  matrixfile        = NULL;
   do_rsw            = FALSE;
   do_append         = FALSE;
   do_balance        = TRUE;
@@ -342,7 +343,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "-B") == 0)          format            = MSAFILE_UNKNOWN;
     else if (strcmp(optname, "-F") == 0)          allow_overwrite   = TRUE;
     else if (strcmp(optname, "-n") == 0)          setname           = optarg;
-    else if (strcmp(optname, "--rsearch")   == 0) do_rsearch        = TRUE;
+    else if (strcmp(optname, "--rsearch")   == 0) { do_rsearch        = TRUE; matrixfile = optarg; }
     else if (strcmp(optname, "--rsw")       == 0) do_rsw            = TRUE;
     else if (strcmp(optname, "--binary")    == 0) do_binary         = TRUE;
     else if (strcmp(optname, "--nobalance") == 0) do_balance        = FALSE;
@@ -525,13 +526,12 @@ main(int argc, char **argv)
   /**************************************************
    *   if --rsearch was enabled, set up RIBOSUM matrix
    **************************************************/
-  matrixname[0]          = '\0';
   if(do_rsearch)
     {
-      if ((matfp = MatFileOpen (DEFAULT_RMATRIX, getenv("RNAMAT"), matrixname)) == NULL) 
-	Die ("Failed to open matrix file\n%s\n", usage);
+      if ((matfp = MatFileOpen (matrixfile)) == NULL) 
+	Die ("Failed to open matrix file %s\n", matrixfile, usage);
       if (! (fullmat = ReadMatrix(matfp)))
-	Die ("Failed to read matrix file \n%s\n", usage);
+	Die ("Failed to read matrix file %s\n", matrixfile, usage);
       ribosum_calc_targets(fullmat); /* overwrite score matrix scores w/target probs */
     }
 

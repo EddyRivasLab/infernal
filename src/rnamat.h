@@ -119,7 +119,7 @@ fullmat_t *ReadMatrix(FILE *matfp);
 /*
  * Opens matrix file, trying many different filenames
  */
-FILE *MatFileOpen (char *deflt, char *matdir, char *matfile);
+FILE *MatFileOpen (char *matfile);
 
 /*
  * Reports minium allowed sum of alpha + beta for matrix 

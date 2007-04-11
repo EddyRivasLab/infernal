@@ -703,100 +703,19 @@ fullmat_t *ReadMatrix(FILE *matfp) {
 /*
  * MatFileOpen
  *
- * Given three strings, tries combinations to open the matrix file
- * as follows:
- *
- * MATRIX_DIR = default matrix directory provided at compile-time through
- *   ./configure and setting of data directory ($prefix/share/rsearch/matrices)
- * deflt = default matrix name
- * matdir = matrix directory from RNAMAT environment variable
- * matfile = filenane/matrix name override from -m parameter
- *
- * Order to test:
- * 1.  matfile
- * 2.  matfile.mat
- * 3.  matdir/matfile
- * 4.  matdir/matfile.mat
- * 5.  matdir/default
- * 6.  matdir/default.mat
- * 7.  MATRIX_DIR/matfile
- * 8.  MATRIX_DIR/matfile.mat
- * 9.  MATRIX_DIR/default
- * 10. MATRIX_DIR/default.mat
+ * Given name of matrix file, open it
+ * 
  */
-FILE *MatFileOpen (char *deflt, char *matdir, char *matfile) {
-     char buf[1024];
+FILE *MatFileOpen (char *matfile)
+{
      FILE *fp;
+
+     if (matfile == NULL) 
+       return NULL;
+
+     fp = fopen (matfile, "r");
+     if (fp != NULL) return (fp);
      
-     /* Only do 1-4 if matfile defined */
-     if (matfile[0] != '\0') {
-       /* 1.  matfile */
-       fp = fopen (matfile, "r");
-       if (fp != NULL) return (fp);
-
-       /* 2.  matfile.mat */
-       snprintf (buf, 1023, "%s.mat", matfile);
-       buf[1023] = '\0';
-       fp = fopen (buf, "r");
-       if (fp != NULL) return (fp);
-
-       /* 3. matdir/matfile */
-       snprintf (buf, 1023, "%s/%s", matdir, matfile);
-       buf[1023] = '\0';
-       fp = fopen (buf, "r");
-       if (fp != NULL) return (fp);
-
-       /* 4.  matdir/matfile.mat */
-       snprintf (buf, 1023, "%s/%s.mat", matdir, matfile);
-       buf[1023] = '\0';
-       fp = fopen (buf, "r");
-       if (fp != NULL) return (fp);
-
-       /* EPN added, we couldn't open the matfile specified
-	* at the command line, we should die. 
-	*/
-       return (NULL);
-     }
-
-     /* 5.  matdir/default */
-     snprintf (buf, 1023, "%s/%s", matdir, deflt);
-     buf[1023] = '\0';
-     fp = fopen (buf, "r");
-     if (fp != NULL) return (fp);
-
-     /* 6.  matdir/default.mat */
-     snprintf (buf, 1023, "%s/%s.mat", matdir, deflt);
-     buf[1023] = '\0';
-     fp = fopen (buf, "r");
-     if (fp != NULL) return (fp);
-
-     /* Only do 7-8 if matfile defined */
-     if (matfile[0] != '\0') {
-      /* 7. MATRIX_DIR/matfile */
-       snprintf (buf, 1023, "%s/%s", MATRIX_DIR, matfile);
-       buf[1023] = '\0';
-       fp = fopen (buf, "r");
-       if (fp != NULL) return (fp);
-
-       /* 8.  MATRIX_DIR/matfile.mat */
-       snprintf (buf, 1023, "%s/%s.mat", MATRIX_DIR, matfile);
-       buf[1023] = '\0';
-       fp = fopen (buf, "r");
-       if (fp != NULL) return (fp);
-     }
-
-     /* 9.  MATRIX_DIR/default */
-     snprintf (buf, 1023, "%s/%s", MATRIX_DIR, deflt);
-     buf[1023] = '\0';
-     fp = fopen (buf, "r");
-     if (fp != NULL) return (fp);
-
-     /* 10.  MATRIX_DIR/default.mat */
-     snprintf (buf, 1023, "%s/%s.mat", MATRIX_DIR, deflt);
-     buf[1023] = '\0';
-     fp = fopen (buf, "r");
-     if (fp != NULL) return (fp);
-
      return (NULL);
 }
      

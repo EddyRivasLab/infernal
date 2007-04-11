@@ -17,7 +17,7 @@ CFLAGS = @CFLAGS@
 #  DEFS contains stuff that autoconf decides on. 
 #  LIBS contains system libraries that the configure script decides we need.
 #
-DEFS  = @DEFS@ @USEMPI@ -DMATRIX_DIR=\"@TOPDIR@/matrices\" 
+DEFS  = @DEFS@
 LIBS  = @LIBS@ 
 
 ## archiving command, and ranlib command if you need one.
