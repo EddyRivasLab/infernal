@@ -442,7 +442,7 @@ main(int argc, char **argv)
   
   /* Check for incompatible option combos. (It's likely this is not exhaustive) */
   if(do_cp9_stats && 
-     ((!do_hmmonly) && (!do_hmmweinberg)))
+     ((!do_hmmonly) && ((!do_hmmweinberg) && (!do_hmmfb))))
     Die("--hmmE only makes sense with --hmmonly or --hmmweinberg.\n");
   if(do_hmmonly && do_hmmweinberg)
     Die("-hmmweinberg and --hmmonly combo doesn't make sense, pick one.\n");
