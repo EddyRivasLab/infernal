@@ -7,6 +7,7 @@
 #ifndef _stats_h
 #define _stats_h
 #include "esl_sqio.h"
+#include "config.h"
 
 extern void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 				   CM_t *cm, int num_samples, int sample_length, 

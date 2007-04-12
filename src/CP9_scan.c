@@ -678,13 +678,28 @@ CP9BackwardScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **
 }
 
 /***********************************************************************
- * Function: CP9FilteredScan()
+ * Function: CP9Scan_dispatch()
  * Incept:   EPN, Tue Jan  9 06:28:49 2007
  * 
- * Purpose:  Scan a sequence with a CP9, filtering for promising subseqs
- *           that could be hits to the CM the CP9 was derived from.
- *           Pass filtered subseqs to actually_search_target() to be
- *           scanned with a CM scan. 
+ * Purpose:  Scan a sequence with a CP9, potentially rescan CP9 hits with CM.
+ *
+ *           3 possible modes:
+ *
+ *           Mode 1: Filter Weinberg style (IF cm->search_opts & CM_SEARCH_HMMWEINBERG)
+ *                   Scan with CP9ForwardScan() to get likely endpoints (j) of 
+ *                   hits, set i for each j as j-W+1. Then, set i' = i-W+1 j'= j+W-1.
+ *                   Each i'..j' CP9 subequence is then rescanned with the CM. 
+ *
+ *           Mode 2: Filter FB style (IF cm->search_opts & CM_SEARCH_HMMFB)
+ *                   Scan with CP9ForwardScan() to get likely endpoints (j) of 
+ *                   hits, for each j do a CP9BackwardScan() from j-W+1..j to get
+ *                   the most likely start point i for this j. Set i' = j-W+1 and
+ *                   j' = i+W-1. Each i'..j' subsequence is rescanned with the CM.
+ * 
+ *           Mode 3: HMM only mode (IF cm->search_opts & CM_SEARCH_HMMONLY)
+ *                   Hit boundaries i and j are defined the same as in mode 2, but
+ *                   no rescanning with CM takes place. i..j hits are reported 
+ *                   (note i' and j' are never calculated).
  * 
  * Args:     
  *           cm         - the covariance model, includes cm->cp9: a CP9 HMM
@@ -696,21 +711,31 @@ CP9BackwardScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **
  *           cp9_cutoff - minimum CP9 score to report (or keep if filtering)
  *           results    - scan_results_t to add to, only passed to 
  *                        actually_search_target()
+ *           doing_cp9_stats- TRUE if we're calc'ing stats for the CP9, in this 
+ *                            case we never rescan with CM
  *           ret_flen   - RETURN: subseq len that survived filter
  * Returns:  best_sc, score of maximally scoring end position j 
  */
 float
-CP9FilteredScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff, 
-		float cp9_cutoff, scan_results_t *results, int *ret_flen)
+CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff, 
+		 float cp9_cutoff, scan_results_t *results, int doing_cp9_stats,
+		 int *ret_flen)
 {
-  int *hiti;
-  int *hitj;
-  int  nhits;
+  int  f_nhits; /* number of hits above threshold from Forward scan */
+  int *f_hitj;  /* end points of hits from Forward scan */
+  int  nhits;   /* number of hits */
+  int *hiti;    /* start points of hits from Backward scan */
+  int *hitj;    /* end points j of hits from Forward scan for which 
+		 * Backward found a hit j-W+1..j with sc >= cp9_cutoff */
+  float *hitsc; /* scores of hits */
+  int alloc_nhits; /* for growing hit arrays */
   int h;
   int i, j;
-  int tmp_i;
+  int min_i;
+  float best_hmm_sc;
   float best_hmm_fsc;
   float best_hmm_bsc;
+  float cur_best_hmm_bsc;
   float best_cm_sc;
   float cm_sc;
   int   flen;
@@ -721,18 +746,15 @@ CP9FilteredScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
   int j_lpad;
   int j_rpad;
 
-  /*printf("in CP9FilteredScan(), i0: %d j0: %d\n", i0, j0);
+  /*printf("in CP9Scan_dispatch(), i0: %d j0: %d\n", i0, j0);
     printf("cp9_cutoff: %f\n", cp9_cutoff);*/
-  /* Scan the (sub)seq w/Forward, getting j end points of hits above cutoff */
-  best_hmm_fsc = CP9ForwardScan(cm, dsq, i0, j0, W, cp9_cutoff, NULL, &hitj, &nhits, NULL, NULL, FALSE);
-  hiti = MallocOrDie(sizeof(int) * nhits);
 
+  best_cm_sc = best_hmm_sc = IMPOSSIBLE;
+  /* set up options for RescanFilterSurvivors() if we're filtering */
   if(cm->search_opts & CM_SEARCH_HMMWEINBERG)
     {
       i_lpad = j_rpad = W;
       i_rpad = j_lpad = 0;
-      for(h = 0; h < nhits; h++) 
-	hiti[h] = (hitj[h] - W + 1) >= 1 ? (hitj[h] - W + 1) : 1;
       do_collapse = TRUE;
     }
   else if(cm->search_opts & CM_SEARCH_HMMFB)
@@ -740,32 +762,92 @@ CP9FilteredScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
       i_lpad = j_rpad = 0;
       i_rpad = j_lpad = W-1;
       do_collapse = TRUE;
-      /* determine i based on Backward scan starting at j */
-      for(h = 0; h <= nhits-1; h++) 
+    }
+
+  /* Scan the (sub)seq w/Forward, getting j end points of hits above cutoff */
+  best_hmm_fsc = CP9ForwardScan(cm, dsq, i0, j0, W, cp9_cutoff, NULL, &f_hitj, &f_nhits, NULL, NULL, FALSE);
+
+  /* Determine start points (i) of the hits */
+  if(cm->search_opts & CM_SEARCH_HMMWEINBERG)
+    {
+      /* i is j - W + 1 */
+      hiti = MallocOrDie(sizeof(int) * f_nhits);
+      hitj = MallocOrDie(sizeof(int) * f_nhits);
+      hitsc = MallocOrDie(sizeof(float) * f_nhits); /* only used in mode 3 HMMONLY */
+      nhits = f_nhits;
+      for(h = 0; h < f_nhits; h++) 
 	{
-	  tmp_i = (hitj[h] - W + 1) >= 1 ? (hitj[h] - W + 1) : 1;
-	  best_hmm_bsc = CP9BackwardScan(cm, dsq, tmp_i, hitj[h], W, cp9_cutoff, 
-					 NULL, /* don't care about score of each posn */
-					 NULL, /* don't care about locations of hits */
-					 NULL, /* don't care about number of hits */
-					 &i,   /* set i as the best scoring start point from j-W..j */
-					 NULL,  /* don't report hits */
-					 FALSE); /* don't rescan */
-	  hiti[h] = i;
+	  hitj[h] = f_hitj[h];
+	  hiti[h] = (hitj[h] - W + 1) >= 1 ? (hitj[h] - W + 1) : 1;
+	}
+      best_hmm_sc = best_hmm_fsc;
+    }
+  else if((cm->search_opts & CM_SEARCH_HMMFB) || (cm->search_opts & CM_SEARCH_HMMONLY))
+    {
+      /* determine i based on Backward scan starting at j */
+
+      alloc_nhits = 10 < f_nhits ? 10 : f_nhits;
+      hiti  = MallocOrDie(sizeof(int)   * alloc_nhits);
+      hitj  = MallocOrDie(sizeof(int)   * alloc_nhits);
+      hitsc = MallocOrDie(sizeof(float) * alloc_nhits);
+
+      nhits = 0;
+      for(h = 0; h < f_nhits; h++) 
+	{
+	  min_i = (f_hitj[h] - W + 1) >= 1 ? (f_hitj[h] - W + 1) : 1;
+	  cur_best_hmm_bsc = CP9BackwardScan(cm, dsq, min_i, f_hitj[h], W, cp9_cutoff, 
+					     NULL, /* don't care about score of each posn */
+					     NULL, /* don't care about locations of hits */
+					     NULL, /* don't care about number of hits */
+					     &i,   /* set i as the best scoring start point from j-W..j */
+					     NULL,  /* don't report hits */
+					     FALSE); /* don't rescan */
+	  if(cur_best_hmm_bsc > best_hmm_sc) best_hmm_sc = cur_best_hmm_bsc;
+	  if(cur_best_hmm_bsc >= cp9_cutoff)
+	    {
+	      /* this is a real hit, Backward found hit from j-W+1..j >= cutoff */
+	      hiti[nhits]  = i;
+	      hitj[nhits]  = f_hitj[h];
+	      hitsc[nhits] = cur_best_hmm_bsc; /* only used if CM_SEARCH_HMMONLY */
+	      nhits++;
+	      if (nhits == alloc_nhits) 
+		{
+		  alloc_nhits += 10;
+		  hiti  = ReallocOrDie(hiti,  sizeof(int)   * alloc_nhits);
+		  hitj  = ReallocOrDie(hitj,  sizeof(int)   * alloc_nhits);
+		  hitsc = ReallocOrDie(hitsc, sizeof(float) * alloc_nhits);
+		}
+	    }
 	}	  
     }
-  else Die("ERROR neither filter mode selected.\n");
+  else Die("ERROR neither filter mode selected and CM_SEARCH_HMMONLY is false.\n");
 
-  best_cm_sc = RescanFilterSurvivors(cm, dsq, hiti, hitj, nhits, i0, j0, W, 
-				     i_lpad, i_rpad, j_lpad, j_rpad,
-				     do_collapse, cm_cutoff, cp9_cutoff, 
-				     results, ret_flen);
-
+  /* Rescan with CM if we're filtering and not doing cp9 stats */
+  if(!doing_cp9_stats && ((cm->search_opts & CM_SEARCH_HMMWEINBERG) ||
+			  (cm->search_opts & CM_SEARCH_HMMFB)))
+    {
+      best_cm_sc = RescanFilterSurvivors(cm, dsq, hiti, hitj, nhits, i0, j0, W, 
+					 i_lpad, i_rpad, j_lpad, j_rpad,
+					 do_collapse, cm_cutoff, cp9_cutoff, 
+					 results, ret_flen);
+    }
+  else if(cm->search_opts & CM_SEARCH_HMMONLY)
+    {
+      /* report hits as i,j pairs i from CP9ForwardScan() and j from CP9BackwardScan() */
+      for(h = 0; h <= nhits-1; h++) 
+	{
+	  report_hit(hiti[h], hitj[h], 0, hitsc[h], results); 
+	  /* 0 is for saver, which is irrelevant for HMM hits */
+	}
+    }
   free(hiti);
   free(hitj);
-  return best_cm_sc;
+  free(hitsc);
+  if(doing_cp9_stats || cm->search_opts & CM_SEARCH_HMMONLY)
+    return best_hmm_sc;
+  else
+    return best_cm_sc;
 }
-
 
 /***********************************************************************
  * Function: RescanFilterSurvivors()

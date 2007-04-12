@@ -19,20 +19,22 @@
  * EPN, Thu Jan  4 14:17:06 2007
  */
 
+#include "config.h"
+
 #ifdef USE_MPI
 
 #define BUFSIZE 16384
 #define MIN_CHUNK_D_MULTIPLIER 10
 #define MAX_CHUNK_SIZE 1000000
 
-#include <string.h>
-
 #include "mpi.h"
 #include "mpifuncs.h"
 #include "structs.h"
 #include "funcs.h"
 
-#define VERSION_STRING "INFERNAL 0.71"
+#include <string.h>
+
+#define VERSION_STRING "INFERNAL 0.72"
 #define VERSION_STRING_SIZE 100
 
 /***************************************************************************

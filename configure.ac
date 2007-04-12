@@ -58,37 +58,56 @@ AC_DEFINE_UNQUOTED(PACKAGE_LICENSE, "$PACKAGE_LICENSE")
 if ((! test -d binaries) && test -d src); then 
 AC_MSG_NOTICE([This is a full source distribution - using full config])
 
-cwd=`pwd`
-AC_SUBST(TOPDIR,$cwd)
 # EPN, Thu Apr  5 07:58:07 2007
-# First, check for --with-mpi=<x> to build MPI cmsearch and cmalign progs.
-# if enabled, set compiler as <x>, if no "=<x>" provided, set compiler as mpicc
-# currently PROGS are not affected, though eventually we may want
-# to create 'mpicmsearch' and 'mpicmalign'
-usempi=""
-AC_ARG_WITH(mpi,
-[  --with-mpi            enable MPI for search and alignment],
-[case $with_mpi in
-   yes) AC_MSG_NOTICE([configured cmalign and cmsearch for MPI])
-	mpi="mpicc"
-	usempi="-DUSE_MPI=1"
+# First, check for --enable-mpi=<x> to build MPI cmsearch and cmalign progs.
+# if enabled, set compiler as <x>, if no "=<x>" provided, set compiler as mpicc.
+# PROGS and PROGNAMES defined by default here as serial programs. 
+# If --enable-mpi PROGS becomes "cmalign cmsearch", and PROGNAMES becomse
+# "mpicmalign mpicmsearch". These are both necessary b/c there are
+# no mpicmalign.c or mpicmsearch.c files, but we want the MPI executables
+# to have distinct names.
+#
+
+# Program names
+SERIALPROGS="cmalign cmbuild cmscore cmsearch cmemit trcyk"
+PROGS="$SERIALPROGS"
+PROGNAMES="$SERIALPROGS"
+MPIPROGS="cmalign cmsearch"
+MPIPROGNAMES="mpicmalign mpicmsearch"
+MPI=""
+AC_ARG_ENABLE(mpi,
+[  AS_HELP_STRING([--enable-mpi],
+                  [enable MPI, Message Passing Interface])],
+[case $enable_mpi in
+   yes) AC_MSG_NOTICE([enabled optional MPI (Message Passing Interface) support])
+ 	MPI="mpi"
+ 	MPICOMPILER="mpicc"
+	PROGS="$MPIPROGS"
+	PROGNAMES="$MPIPROGNAMES"
+	AC_DEFINE(USE_MPI, 1)
         ;;
-    no) mpi=""
+    no) MPICOMPILER=""
         ;;
-     *) mpi=$with_mpi
-	usempi="-DUSE_MPI=1"
+     *) MPI="mpi"
+	MPICOMPILER=$with_mpi
+	PROGS="$MPIPROGS"
+	PROGNAMES="$MPIPROGNAMES"
+	AC_DEFINE(USE_MPI, 1)
         ;;	
   esac])
-AC_SUBST(USEMPI,$usempi)
 
-# if $mpi == "", use default C compiler, set CFLAGS by default
-if test -z "$mpi"; then
+# if $MPICOMPILER == "", use default C compiler, set CFLAGS by default
+if test -z "$MPICOMPILER"; then
    AC_PROG_CC 
-# if $mpi != "", use compiler $mpi, manually set CFLAGS
+# if $MPICOMPILER != "", use compiler $mpi, manually set CFLAGS
 else 
-     AC_PROG_CC($mpi)
+     AC_PROG_CC($MPICOMPILER)
      CFLAGS="-g -O2"
 fi
+AC_SUBST(MPI)
+AC_SUBST(MPICOMPILER)
+AC_SUBST(PROGS)
+AC_SUBST(PROGNAMES)
 
 # Checks for programs.
 # Sets output variables RANLIB.

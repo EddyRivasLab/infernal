@@ -169,6 +169,30 @@ To build the executables, include these two options to configure:
 
 \user{./configure --with-rigfilters --with-cfsqp=/path/to/cfsqp}
 
+\subsubsection{installing Message Passing Interface (MPI) programs}
+
+\software{Infernal} includes two programs \prog{mpicmsearch} and
+\prog{mpicmalign} that use MPI parallelization. This software
+currently requires the MPI C compiler \prog{mpicc}.  The MPI
+executables are built with the \prog{--enable-mpi} option:
+
+\user{./configure --enable-mpi}
+
+A \prog{make install} following a \user{./configure --enable-mpi} will
+install only the programs \prog{mpicmsearch} and \prog{mpicmalign}. To
+install the full suite of non-MPI executables repeat \prog{configure}
+without \prog{--enable-mpi}, and repeat the \prog{make install}.
+
+\subsubsection{running the MPI programs}
+The \prog{mpicmsearch} and \prog{mpicmalign} binaries must be run
+using \prog{mpirun}. The \prog{infernal} MPI programs are under
+current development, and we have only tested them using the LAM
+implementation of MPI. Here's example runs using LAM:
+
+\user{mpirun C mpicmsearch query.cm target.fa}
+
+\user{mpirun C mpicmalign query.cm target.fa}
+
 \subsection{Example configuration}
 
 The Intel GNU/Linux version installed at Janelia Farm is configured as

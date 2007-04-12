@@ -41,6 +41,9 @@ CFLAGS = @CFLAGS@
 # Flags related to conditional install of rigorous filters
 RIGFILTERS = @RIGFILTERS@
 
+# Flags related to conditional install of rigorous filters
+MPI = @MPI@
+
 #######
 ## You should not need to modify below this line.
 ## Some of it is concerned with maintenance of the development version
@@ -60,16 +63,13 @@ COMPRESS    = gzip
 FTPDIR      = /nfs/ftp/eddy/software/infernal
 REPOSITORY  = https://svn.janelia.org/eddylab/eddys/src/
 
-# The program lists below for INFERNAL are not necessarily
-# a complete manifest. They are the list of stable programs that the
-# package will install. (The list in src/Makefile.in is the complete manifest
-# of INFERNAL programs.)
+# EPN @PROGS@ and @PROGNAMES@ set by configure, to handle MPI, in which case only
+# mpicmsearch and mpicmalign are built, but .o files are cmsearch.o and
+# cmalign.o.
 #
-PROGS = cmalign\
-	cmbuild\
-	cmemit\
-	cmscore\
-	cmsearch
+PROGS     = @PROGS@
+PROGNAMES = @PROGNAMES@
+
 # Optional programs for rigorous filters
 RFPROGS = cm2hmm cm2hmmsearch
 
@@ -190,15 +190,17 @@ ftpdist:
 check:
 	(cd testsuite; ./sqc -p ../squid 4 exercises.sqc . ../src)
 
-# "make install" installs the programs in BINDIR
+# "make install" installs the programs in BINDIR, if in MPI mode,
+# @MPI@ = "mpi", else it's ""
 #
 install:
 	for file in $(PROGS); do\
-	   cp src/$$file $(BINDIR)/;\
+		cp src/@MPI@$$file $(BINDIR)/;\
 	done
 	if test -d $(RIGFILTERS); then\
 	   for file in $(RFPROGS); do\
 	      cp rigfilters/cm2hmm-1.0/$$file $(BINDIR)/;\
+	   done;\
 	   done;\
 	fi
 

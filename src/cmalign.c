@@ -9,6 +9,7 @@
  *****************************************************************
  */
 #include "esl_config.h"
+#include "config.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -50,8 +51,8 @@ void exit_from_mpi () {
 }
 #endif
 
+#ifndef USE_MPI
 static char banner[] = "cmalign - align sequences to an RNA CM";
-
 static char usage[]  = "\
 Usage: cmalign [-options] <cmfile> <sequence file>\n\
   Most commonly used options are:\n\
@@ -60,6 +61,18 @@ Usage: cmalign [-options] <cmfile> <sequence file>\n\
    -o <f> : output the alignment file to file <f>\n\
    -q     : quiet; suppress verbose banner\n\
 ";
+#endif
+#ifdef USE_MPI
+static char banner[] = "mpicmalign - align sequences to an RNA CM";
+static char usage[]  = "\
+Usage: mpicmalign [-options] <cmfile> <sequence file>\n\
+  Most commonly used options are:\n\
+   -h     : help; print brief help on version and usage\n\
+   -l     : local; align locally w.r.t. the model\n\
+   -o <f> : output the alignment file to file <f>\n\
+   -q     : quiet; suppress verbose banner\n\
+";
+#endif
 
 static char experts[] = "\
   Expert, in development, or infrequently used options are:\n\
@@ -81,16 +94,16 @@ static char experts[] = "\
    --enfstart <n>: enforce MATL stretch starting at consensus position <n>\n\
    --enfseq   <s>: enforce MATL stretch starting at --enfstart <n> emits seq <s>\n\
 \n\
-  * HMM banded alignment related options (IN DEVELOPMENT):\n\
+  * HMM banded alignment related options (*in development*):\n\
    --hbanded     : use experimental CM plan 9 HMM banded CYK aln algorithm\n\
-   --tau <f>     : tail loss prob for --hbanded [default: 0.0001]\n\
+   --tau <f>     : tail loss prob for --hbanded [default: 1E-7]\n\
    --hsafe       : realign (non-banded) seqs with HMM banded CYK score < 0 bits\n\
    --sums        : use posterior sums during HMM band calculation (widens bands)\n\
-   --hmmonly     : align with the CM Plan 9 HMM (no alignment given)\n\
+   --hmmonly     : align with the CM Plan 9 HMM (no alignment given, just score)\n\
 \n\
   * Query dependent banded (qdb) alignment related options:\n\
    --qdb         : use query dependent banded CYK alignment algorithm\n\
-   --beta <f>    : tail loss prob for --qdb [default:0.0000001]\n\
+   --beta <f>    : tail loss prob for --qdb [default:1E-7]\n\
 \n\
   * Options for including the alignment used to build the CM in the output:\n\
    --withali <f> : incl. alignment in <f> (must be aln <cm file> was built from)\n\

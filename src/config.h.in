@@ -69,9 +69,9 @@
 #undef _LARGEFILE64_SOURCE
 #undef _FILE_OFFSET_BITS
 
-/* --with-mpi            MPI parallelization
+/* --enable-mpi            MPI parallelization
  */
-#undef DUSE_MPI
+#undef USE_MPI
 
 #endif /* CONFIGH_INCLUDED */
 

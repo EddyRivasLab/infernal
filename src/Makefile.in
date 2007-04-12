@@ -34,7 +34,8 @@ MYLIBS   = -lsquid -leasel
 MYLIBDIR = -L../squid -L../easel 
 MYINCDIR = -I../squid -I../easel 
 
-PROGS = cmalign cmbuild cmscore cmsearch cmemit trcyk
+PROGS     = @PROGS@
+PROGNAMES = @PROGNAMES@
 
 OBJS  = alphabet.o\
 	bandcyk.o\
@@ -65,7 +66,6 @@ OBJS  = alphabet.o\
 	stats.o\
 	mpifuncs.o\
 	cm_dispatch.o\
-	rsearch_buildcm.o\
 	rnamat.o\
 	cm_cluster.o
 
@@ -87,7 +87,7 @@ HDRS  = funcs.h\
 all: 	$(PROGS)
 
 $(PROGS): @EXEC_DEPENDENCY@ $(OBJS) ${HDRS}
-	$(CC) $(CFLAGS) $(DEFS) $(MYLIBDIR) -o $@ $@.o $(OBJS) $(MYLIBS) $(LIBS)
+	$(CC) $(CFLAGS) $(DEFS) $(MYLIBDIR) -o @MPI@$@ $@.o $(OBJS) $(MYLIBS) $(LIBS)
 
 #################################################################
 ## Targets used in making INFERNAL module for testsuite compilation.
@@ -104,10 +104,10 @@ libinfernal.a: $(OBJS) ${HDRS}
 ## Miscellaneous targets.
 ##
 clean:
-	-rm -f *.o *~ Makefile.bak core $(PROGS) TAGS gmon.out libinfernal.a
+	-rm -f *.o *~ Makefile.bak core $(PROGNAMES) TAGS gmon.out libinfernal.a
 
 distclean:
-	-rm -f *.o *~ Makefile.bak core $(PROGS) TAGS gmon.out libinfernal.a
+	-rm -f *.o *~ Makefile.bak core $(PROGNAMES) TAGS gmon.out libinfernal.a
 	-rm -f Makefile config.h
 
 TAGS:

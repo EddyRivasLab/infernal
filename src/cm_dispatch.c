@@ -465,12 +465,14 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
     Die("ERROR in actually_search_target doing_cm_stats and doing_cp9_stats both TRUE.\n");
   
   /* check for CP9 related (either filtering or HMMONLY) options first */
-  if((cm->search_opts & CM_SEARCH_HMMONLY) || doing_cp9_stats)
-    sc = CP9ForwardScan(cm, dsq, i0, j0, cm->W, cp9_cutoff, NULL, NULL, NULL, NULL, results, FALSE);
-  else if(do_filter && 
-	  ((cm->search_opts & CM_SEARCH_HMMWEINBERG) || (cm->search_opts & CM_SEARCH_HMMFB)) &&  
-	  !doing_cm_stats) /* if we're doing CM stats, don't filter. */
-    sc = CP9FilteredScan(cm, dsq, i0, j0, cm->W, cm_cutoff, cp9_cutoff, results, ret_flen);
+
+  if(doing_cp9_stats || 
+     ((do_filter) && 
+     (!doing_cm_stats) &&  /* if we're doing CM stats, don't filter. */
+     ((cm->search_opts & CM_SEARCH_HMMONLY) ||
+      (cm->search_opts & CM_SEARCH_HMMFB) ||
+      (cm->search_opts & CM_SEARCH_HMMWEINBERG))))
+    sc = CP9Scan_dispatch(cm, dsq, i0, j0, cm->W, cm_cutoff, cp9_cutoff, results, doing_cp9_stats, ret_flen);  
   else
     {
       if(cm->search_opts & CM_SEARCH_NOQDB)

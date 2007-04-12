@@ -238,6 +238,10 @@ for($x = 0; $x < scalar(@sorted_ci_A); $x++)
 		$cm . $targname . "|" . $start . "-" . $end . "|" . $orient . "|" . $gc_content . "|" . $sctype. $sc;
 	}
     }
+    else
+    {
+	$print_lines_A[$x] = 0;
+    }
 }
 
 # remove overlaps

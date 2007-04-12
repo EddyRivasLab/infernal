@@ -49,8 +49,8 @@ static int QDBFileRead(FILE *fp, CM_t *cm, int **ret_dmin, int **ret_dmax);
 static int set_partitions(int **ret_partitions, int *num_partitions, char *list);
 static int debug_print_stats(int *partitions, int num_partitions, double *lambda, double *mu);
 
+#ifndef USE_MPI
 static char banner[] = "cmsearch - search a sequence database with an RNA covariance model";
-
 static char usage[]  = "\
 Usage: cmsearch [-options] <cmfile> <sequence file>\n\
 The sequence file is expected to be in FASTA format.\n\
@@ -60,6 +60,19 @@ The sequence file is expected to be in FASTA format.\n\
    -n <n> : determine EVD with <n> samples (default with -E: 1000)\n\
    -S <f> : use cutoff bit score of <f> [default: 0]\n\
 ";
+#endif 
+#ifdef USE_MPI
+static char banner[] = "mpicmsearch - search a sequence database with an RNA covariance model";
+static char usage[]  = "\
+Usage: mpicmsearch [-options] <cmfile> <sequence file>\n\
+The sequence file is expected to be in FASTA format.\n\
+  Available options are:\n\
+   -h     : help; print brief help on version and usage\n\
+   -E <f> : use cutoff E-value of <f> (default ignored; not-calc'ed)\n\
+   -n <n> : determine EVD with <n> samples (default with -E: 1000)\n\
+   -S <f> : use cutoff bit score of <f> [default: 0]\n\
+";
+#endif
 
 static char experts[] = "\
   Expert, in development, or infrequently used options are:\n\
@@ -70,13 +83,13 @@ static char experts[] = "\
    --window <n>  : set scanning window size to <n> (default: precalc'd in cmbuild)\n\
    --dumptrees   : dump verbose parse tree information for each hit\n\
    --partition <n>[,<n>]... : partition points for different GC content EVDs\n\
-   --inside      : scan with Inside, not CYK (caution much slower(!))\n\
+   --inside      : scan with Inside, not CYK (~2X slower)\n\
    --null2       : turn on the post hoc second null model [df:OFF]\n\
    --learninserts: do not set insert emission scores to 0\n\
    --negsc <f>   : set min bit score to report as <f> < 0 (experimental)\n\
    --enfstart <n>: enforce MATL stretch starting at consensus position <n>\n\
    --enfseq <s>  : enforce MATL stretch starting at --enfstart <n> emits seq <s>\n\
-   --enfnohmm    : do not filter first w/a HMM that only enforces <x> from --enfseq\n\
+   --enfnohmm    : do not filter first w/a HMM that only enforces <s> from --enfseq\n\
    --time        : print timings for histogram building, and full search\n\
    --rtrans      : replace CM transition scores from <cm file> with RSEARCH scores\n\
    --greedy      : resolve overlapping hits with greedy algorithm a la RSEARCH\n\
@@ -93,11 +106,11 @@ static char experts[] = "\
    --hmmrescan    : rescan subseq hits w/Forward (auto ON if --enfseq)\n\
 \n\
   * Options for accelerating CM search/alignment (*in development*):\n\
-   --beta <f>    : tail loss prob for QBD (default:0.0000001)\n\
+   --beta <f>    : tail loss prob for QBD (default:1E-7)\n\
    --noqdb       : DO NOT use query dependent bands (QDB) to accelerate CYK\n\
    --qdbfile <f> : read QDBs from file <f> (outputted from cmbuild)\n\
    --hbanded     : use HMM bands from a CM plan 9 HMM scan for CYK\n\
-   --tau <f>     : tail loss prob for --hbanded (default:0.0001)\n\
+   --tau <f>     : tail loss prob for --hbanded (default:1E-7)\n\
    --banddump    : print bands for each state\n\
    --sums        : use posterior sums during HMM band calculation (widens bands)\n\
    --scan2bands  : use scanning Forward and Backward to get bands (EXPTL!)\n\

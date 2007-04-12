@@ -22,6 +22,8 @@
 #ifndef _MPIFUNCS_H
 #define _MPIFUNCS_H
 
+#include "config.h"
+
 #ifdef USE_MPI
 
 #include "mpi.h"

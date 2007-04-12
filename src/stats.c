@@ -10,6 +10,8 @@
  * Separate file started May 17, 2002
  */
 
+#include "config.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <float.h>
