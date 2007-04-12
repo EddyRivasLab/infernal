@@ -948,7 +948,7 @@ parallel_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_
     }
   MPI_Barrier(MPI_COMM_WORLD);
 
-  printf("leaving parallel_align_targets rank: %4d mast: %4d\n", mpi_my_rank, mpi_master_rank);
+  /*printf("leaving parallel_align_targets rank: %4d mast: %4d\n", mpi_my_rank, mpi_master_rank);*/
 }
 #endif
 

@@ -461,7 +461,6 @@ main(int argc, char **argv)
       parallel_align_targets(seqfp, cm, &sq, &tr, &postcode, &nseq,
 			     bdump_level, debug_level, be_quiet,
 			     mpi_my_rank, mpi_master_rank, mpi_num_procs);
-      printf("done parallel align seqs.\n");
     }
   else
 #endif /* (end of if USE_MPI) */
@@ -575,7 +574,7 @@ main(int argc, char **argv)
 #endif
   FreeCM(cm);
 #ifdef USE_MPI
-  printf("EXITING rank:%d\n", mpi_my_rank);
+  /*printf("EXITING rank:%d\n", mpi_my_rank);*/
 #endif
   return EXIT_SUCCESS;
 }
