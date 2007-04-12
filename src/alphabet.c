@@ -185,7 +185,7 @@ LeftMarginalScore(float *esc, int dres)
 {
    float sc;
    sc = esl_vec_FLogSum(&(esc[dres*Alphabet_size]),Alphabet_size);
-   sc -= log(Alphabet_size);
+   sc -= sreLOG2(Alphabet_size);
    return sc;
 }
 
@@ -205,7 +205,7 @@ RightMarginalScore(float *esc, int dres)
    for (i=0; i<Alphabet_size; i++)
       row[i] = esc[i*Alphabet_size+dres];
    sc = esl_vec_FLogSum(row,Alphabet_size);
-   sc -= log(Alphabet_size);
+   sc -= sreLOG2(Alphabet_size);
    return sc;
 }
 
