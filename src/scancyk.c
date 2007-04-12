@@ -181,6 +181,9 @@ void sort_results (scan_results_t *results)
  */
 void report_hit (int i, int j, int bestr, float score, scan_results_t *results) 
 {
+
+  if(results == NULL) 
+    Die("in report_hit, but results is NULL\n");
   if (results->num_results == results->num_allocated) 
     ExpandResults (results, INIT_RESULTS);
 

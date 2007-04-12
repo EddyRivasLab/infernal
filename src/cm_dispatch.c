@@ -472,7 +472,9 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
      ((cm->search_opts & CM_SEARCH_HMMONLY) ||
       (cm->search_opts & CM_SEARCH_HMMFB) ||
       (cm->search_opts & CM_SEARCH_HMMWEINBERG))))
-    sc = CP9Scan_dispatch(cm, dsq, i0, j0, cm->W, cm_cutoff, cp9_cutoff, results, doing_cp9_stats, ret_flen);  
+    {
+      sc = CP9Scan_dispatch(cm, dsq, i0, j0, cm->W, cm_cutoff, cp9_cutoff, results, doing_cp9_stats, ret_flen);;
+    }
   else
     {
       if(cm->search_opts & CM_SEARCH_NOQDB)

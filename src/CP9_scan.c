@@ -766,6 +766,7 @@ CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
 
   /* Scan the (sub)seq w/Forward, getting j end points of hits above cutoff */
   best_hmm_fsc = CP9ForwardScan(cm, dsq, i0, j0, W, cp9_cutoff, NULL, &f_hitj, &f_nhits, NULL, NULL, FALSE);
+  best_hmm_sc = best_hmm_fsc;
 
   /* Determine start points (i) of the hits */
   if(cm->search_opts & CM_SEARCH_HMMWEINBERG)
@@ -780,7 +781,6 @@ CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
 	  hitj[h] = f_hitj[h];
 	  hiti[h] = (hitj[h] - W + 1) >= 1 ? (hitj[h] - W + 1) : 1;
 	}
-      best_hmm_sc = best_hmm_fsc;
     }
   else if((cm->search_opts & CM_SEARCH_HMMFB) || (cm->search_opts & CM_SEARCH_HMMONLY))
     {
@@ -831,7 +831,7 @@ CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
 					 do_collapse, cm_cutoff, cp9_cutoff, 
 					 results, ret_flen);
     }
-  else if(cm->search_opts & CM_SEARCH_HMMONLY)
+  else if(!doing_cp9_stats && (cm->search_opts & CM_SEARCH_HMMONLY))
     {
       /* report hits as i,j pairs i from CP9ForwardScan() and j from CP9BackwardScan() */
       for(h = 0; h <= nhits-1; h++) 
