@@ -325,6 +325,7 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
   int nd;			/* counter over nodes */
   int nstarts;			/* number of possible internal starts */
 
+//p_internal_start = 1.0;
   /*****************************************************************
    * Internal entry.
    *****************************************************************/
@@ -367,6 +368,11 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
   /* Node 1 gets prob 1-p_internal_start.
    */
   cm->begin[cm->nodemap[1]] = 1.-p_internal_start;
+  if ( (1.-p_internal_start) < 1./(float)nstarts ) {
+    nstarts++;
+    p_internal_start = 1.;
+    cm->begin[cm->nodemap[1]] = p_internal_start/(float)nstarts;
+  }
 
   /* Remaining nodes share p_internal_start.
    */
