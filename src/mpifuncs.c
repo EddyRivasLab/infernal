@@ -846,8 +846,6 @@ char aln_receive_job (seqs_to_aln_t **ret_seqs_to_aln, int mpi_master_rank)
   MPI_Recv (&bufsize, 1, MPI_INT, MPI_ANY_SOURCE, ALN_JOB_SIZE_TAG, MPI_COMM_WORLD, &status);
   buf = MallocOrDie(sizeof(char)*bufsize);
 
-  printf("buf size: %d\n", bufsize);
-  
   /* Get the job */
   MPI_Recv (buf, bufsize, MPI_PACKED, mpi_master_rank, ALN_JOB_PACKET_TAG, 
 	    MPI_COMM_WORLD, &status);
