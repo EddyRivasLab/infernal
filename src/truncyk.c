@@ -20,7 +20,7 @@
 float trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
                 void ****ret_shadow, void ****ret_L_shadow, void ****ret_R_shadow,
                 void ****ret_T_shadow, void ****ret_Lmode_shadow, void ****ret_Rmode_shadow,
-                int *mode, int allow_begin, int *ret_b, float *ret_bsc, int *ret_bmode);
+                int *ret_mode, int *ret_v, int *ret_i, int *ret_j);
 
 
 /* Traceback routine */
@@ -116,7 +116,7 @@ float
 trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
           void ****ret_shadow, void ****ret_L_shadow, void ****ret_R_shadow,
           void ****ret_T_shadow, void ****ret_Lmode_shadow, void ****ret_Rmode_shadow,
-          int *ret_mode, int allow_begin, int *ret_b, float *ret_bsc, int *ret_bmode)
+          int *ret_mode, int *ret_v, int *ret_i, int *ret_j)
 {
    float  **end;
    int      nends;
@@ -135,9 +135,9 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
    int   ***Rmode_shadow;
    int    **kshad;
    char   **yshad;
-   int      b;
+   int      r_v, r_i, r_j, r_mode;
+   float    r_sc;
    float    bsc;
-   int      bmode;
 
    struct deckpool_s *dpool = NULL;
    float ***alpha   = NULL;
@@ -146,10 +146,13 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
    float ***T_alpha = NULL;
 
    /*Initialization */
-   b = -1;
-   bsc = IMPOSSIBLE;
-   bmode = 3;
+   r_v = -1;
+   r_i = i0;
+   r_j = j0;
+   r_mode = 3;
+   r_sc = IMPOSSIBLE;
    W = j0-i0+1;
+   bsc = sreLOG2(2/(W*(W+1)));
 
    /* Make a deckpool */
    if ( dpool == NULL ) dpool = deckpool_create();
@@ -337,18 +340,6 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                      if ( ret_R_shadow != NULL ) ((char **)R_shadow[v])[j][d] = yoffset;
                      if ( ret_Rmode_shadow != NULL ) Rmode_shadow[v][j][d] = 1;
                   }
-                  if ( (sc = alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) > L_alpha[v][j][d] )
-                  {
-                     L_alpha[v][j][d] = sc;
-                     if ( ret_L_shadow != NULL ) ((char **)L_shadow[v])[j][d] = yoffset;
-                     if ( ret_Lmode_shadow != NULL ) Lmode_shadow[v][j][d] = 3;
-                  }
-                  if ( (sc = alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) > R_alpha[v][j][d] )
-                  {
-                     R_alpha[v][j][d] = sc;
-                     if ( ret_R_shadow != NULL ) ((char **)R_shadow[v])[j][d] = yoffset;
-                     if ( ret_Rmode_shadow != NULL ) Rmode_shadow[v][j][d] = 3;
-                  }
                }
 
                if (   alpha[v][j][d] < IMPOSSIBLE ) {   alpha[v][j][d] = IMPOSSIBLE; }
@@ -417,6 +408,11 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                if (   alpha[v][j][d] < IMPOSSIBLE ) {   alpha[v][j][d] = IMPOSSIBLE; }
                if ( L_alpha[v][j][d] < IMPOSSIBLE ) { L_alpha[v][j][d] = IMPOSSIBLE; }
                if ( R_alpha[v][j][d] < IMPOSSIBLE ) { R_alpha[v][j][d] = IMPOSSIBLE; }
+
+               if (   alpha[v][j][d] + bsc > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc +   alpha[v][j][d]; }
+               if ( L_alpha[v][j][d] + bsc > r_sc ) { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc + L_alpha[v][j][d]; }
+               if ( R_alpha[v][j][d] + bsc > r_sc ) { r_mode = 1; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc + R_alpha[v][j][d]; }
+               if ( T_alpha[v][j][d] + bsc > r_sc ) { r_mode = 0; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc + T_alpha[v][j][d]; }
             }
          }
       }
@@ -528,6 +524,13 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                if ( L_alpha[v][j][d] < IMPOSSIBLE ) { L_alpha[v][j][d] = IMPOSSIBLE; }
                if ( R_alpha[v][j][d] < IMPOSSIBLE ) { R_alpha[v][j][d] = IMPOSSIBLE; }
             }
+
+            for ( d = 0; d <= jp; d++ )
+            {
+               if (   alpha[v][j][d] + bsc > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc +   alpha[v][j][d]; }
+               if ( L_alpha[v][j][d] + bsc > r_sc ) { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc + L_alpha[v][j][d]; }
+               if ( R_alpha[v][j][d] + bsc > r_sc ) { r_mode = 1; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc + R_alpha[v][j][d]; }
+            }
          }
       }
       else if ( cm->sttype[v] == IL_st || cm->sttype[v] == ML_st )
@@ -597,13 +600,6 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                      if ( ret_Lmode_shadow != NULL ) { Lmode_shadow[v][j][d] = 2; }
                   }
 
-                  if  ( (sc = alpha[y+yoffset][j][d-1] + cm->tsc[v][yoffset]) > L_alpha[v][j][d] )
-                  {
-                     L_alpha[v][j][d] = sc;
-                     if ( ret_L_shadow != NULL ) { ((char **)L_shadow[v])[j][d] = yoffset; }
-                     if ( ret_Lmode_shadow != NULL ) { Lmode_shadow[v][j][d] = 3; }
-                  }
-
                   if  ( (sc = R_alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) > R_alpha[v][j][d] )
                   {
                      R_alpha[v][j][d] = sc;
@@ -634,6 +630,12 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                if (   alpha[v][j][d] < IMPOSSIBLE ) {   alpha[v][j][d] = IMPOSSIBLE; }
                if ( L_alpha[v][j][d] < IMPOSSIBLE ) { L_alpha[v][j][d] = IMPOSSIBLE; }
                if ( R_alpha[v][j][d] < IMPOSSIBLE ) { R_alpha[v][j][d] = IMPOSSIBLE; }
+            }
+
+            for ( d = 0; d <= jp; d++ )
+            {
+               if (   alpha[v][j][d] + bsc > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc +   alpha[v][j][d]; }
+               if ( L_alpha[v][j][d] + bsc > r_sc ) { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc + L_alpha[v][j][d]; }
             }
          }
       }
@@ -717,13 +719,6 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                      if ( ret_R_shadow != NULL ) { ((char **)R_shadow[v])[j][d] = yoffset; }
                      if ( ret_Rmode_shadow != NULL ) { Rmode_shadow[v][j][d] = 1; }
                   }
-
-                  if  ( (sc = alpha[y+yoffset][j-1][d-1] + cm->tsc[v][yoffset]) > R_alpha[v][j][d] )
-                  {
-                     R_alpha[v][j][d] = sc;
-                     if ( ret_R_shadow != NULL ) { ((char **)R_shadow[v])[j][d] = yoffset; }
-                     if ( ret_Rmode_shadow != NULL ) { Rmode_shadow[v][j][d] = 3; }
-                  }
                }
 
                if ( dsq[j] < Alphabet_size ) 
@@ -741,6 +736,12 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                if ( L_alpha[v][j][d] < IMPOSSIBLE ) { L_alpha[v][j][d] = IMPOSSIBLE; }
                if ( R_alpha[v][j][d] < IMPOSSIBLE ) { R_alpha[v][j][d] = IMPOSSIBLE; }
             }
+
+            for ( d = 0; d <= jp; d++ )
+            {
+               if (   alpha[v][j][d] + bsc > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc +   alpha[v][j][d]; }
+               if ( R_alpha[v][j][d] + bsc > r_sc ) { r_mode = 1; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc + R_alpha[v][j][d]; }
+            }
          }
       }
       else
@@ -748,41 +749,16 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
          Die("'Inconceivable!'\n'You keep using that word...'");
       }
 
-      if ( allow_begin && alpha[v][j0][W] + cm->beginsc[v] > bsc )
+      if ( v==0 )
       {
-         b = v;
-         bsc = alpha[v][j0][W] + cm->beginsc[v];
-         bmode = 3;
-      }
-      else if ( allow_begin && L_alpha[v][j0][W] + cm->beginsc[v] > bsc )
-      {
-         b = v;
-         bsc = L_alpha[v][j0][W] + cm->beginsc[v];
-         bmode = 2;
-      }
-      else if ( allow_begin && R_alpha[v][j0][W] + cm->beginsc[v] > bsc )
-      {
-         b = v;
-         bsc = R_alpha[v][j0][W] + cm->beginsc[v];
-         bmode = 1;
-      }
-      else if ( allow_begin && cm->sttype[v] == B_st && T_alpha[v][j0][W] + cm->beginsc[v] > bsc )
-      {
-         b = v;
-         bsc = T_alpha[v][j0][W] + cm->beginsc[v];
-         bmode = 0;
-      }
-
-      if ( allow_begin && v==0 && bsc > alpha[0][j0][W] && bsc > L_alpha[0][j0][W] && bsc > R_alpha[0][j0][W])
-      {
-           alpha[0][j0][W] = bsc;
-         L_alpha[0][j0][W] = bsc;
-         R_alpha[0][j0][W] = bsc;
+           alpha[0][j0][W] = r_sc;
+         L_alpha[0][j0][W] = r_sc;
+         R_alpha[0][j0][W] = r_sc;
          if ( ret_shadow   != NULL ) { ((char **)  shadow[0])[j0][W] = USED_LOCAL_BEGIN; }
          if ( ret_L_shadow != NULL ) { ((char **)L_shadow[0])[j0][W] = USED_LOCAL_BEGIN; }
          if ( ret_R_shadow != NULL ) { ((char **)R_shadow[0])[j0][W] = USED_LOCAL_BEGIN; }
-         if ( ret_Lmode_shadow != NULL ) { Lmode_shadow[0][j0][W] = bmode; }
-         if ( ret_Rmode_shadow != NULL ) { Rmode_shadow[0][j0][W] = bmode; }
+         if ( ret_Lmode_shadow != NULL ) { Lmode_shadow[0][j0][W] = r_mode; }
+         if ( ret_Rmode_shadow != NULL ) { Rmode_shadow[0][j0][W] = r_mode; }
       }
 
       if (! do_full)
@@ -828,21 +804,11 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
       }
    } /* end loop over all v */
 
-   sc = alpha[vroot][j0][W];
-   *ret_mode = 3;
-   if ( L_alpha[vroot][j0][W] > sc )
-   {
-      sc = L_alpha[vroot][j0][W];
-      *ret_mode = 2;
-   }
-   if ( R_alpha[vroot][j0][W] > sc )
-   {
-      sc = R_alpha[vroot][j0][W];
-      *ret_mode = 1;
-   }
-   if ( ret_b     != NULL ) { *ret_b     = b; } 
-   if ( ret_bsc   != NULL ) { *ret_bsc   = bsc; }
-   if ( ret_bmode != NULL ) { *ret_bmode = bmode; }
+   sc = r_sc;
+   if ( ret_v     != NULL ) { *ret_v     = r_v; } 
+   if ( ret_i     != NULL ) { *ret_i     = r_i; } 
+   if ( ret_j     != NULL ) { *ret_j     = r_j; } 
+   if ( ret_mode  != NULL ) { *ret_mode  = r_mode; }
 
    /* No option for returning score matrices - delete them all */
    for ( v = vroot; v <= vend; v++ )
@@ -871,8 +837,6 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
    while ( deckpool_pop(dpool, &end)) free_vjd_deck(end, i0, j0);
    deckpool_free(dpool);
 
-if (R_shadow[12] == NULL) Die("R_shadow[12] NULL before exiting inside()");
- 
    free(touch);
    if ( ret_shadow != NULL ) *ret_shadow = shadow;
    if ( ret_L_shadow != NULL ) *ret_L_shadow = L_shadow;
@@ -880,7 +844,6 @@ if (R_shadow[12] == NULL) Die("R_shadow[12] NULL before exiting inside()");
    if ( ret_T_shadow != NULL ) *ret_T_shadow = T_shadow;
    if ( ret_Lmode_shadow != NULL ) *ret_Lmode_shadow = (void ***)Lmode_shadow;
    if ( ret_Rmode_shadow != NULL ) *ret_Rmode_shadow = (void ***)Rmode_shadow;
-if ((*ret_R_shadow)[12] == NULL) Die("(*ret_R_shadow)[12] NULL before exiting inside()");
    return sc;
 }
 
@@ -923,23 +886,15 @@ trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
    int        k;
    int        y, yoffset;
    int        bifparent;
-   int        b;		/* state for local begin */
-   float      bsc;		/* score for local begin */
-   int        bmode;		/* mode  for local begin */
 
    sc = trinside(cm, dsq, L, r, z, i0, j0,
                  BE_EFFICIENT,
                  &shadow,
                  &L_shadow, &R_shadow, &T_shadow,
                  &Lmode_shadow, &Rmode_shadow,
-                 &mode,
-                 allow_begin,
-                 &b, &bsc, &bmode);
+                 &mode, &v, &i, &j );
    pda = esl_stack_ICreate();
-   v = r;
-   j = j0;
-   i = i0;
-   d = j0-i0+1;
+   d = j-i+1;
 
    while (1)
    {
@@ -1074,9 +1029,10 @@ trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
          }
          else if ( yoffset == USED_LOCAL_BEGIN )
          {  /* local begin, can only happen once, from root */
-            v = b;
-            mode = bmode;
-            InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
+            /* However, all hits from truncyk() are local hits, and this should have
+               been dealt with immediately after return from the DP function.
+               If we've reached this point, there's a major problem */
+            Die("Impossible local begin in traceback\n");
          }
          else
          {
