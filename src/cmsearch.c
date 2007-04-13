@@ -98,7 +98,6 @@ static char experts[] = "\
   * Filtering options using a CM plan 9 HMM (*in development*):\n\
    --hmmfb        : use Forward to get end points & Backward to get start points\n\
    --hmmweinberg  : use Forward to get end points, subtract W for start points\n\
-   --hmmpad <n>   : subtract/add <n> residues from start/end [df:0]\n\
    --hmmonly      : don't use CM at all, just scan with HMM (Forward + Backward)\n\
    --hmmE <f>     : use cutoff E-value of <f> for CP9 (possibly filtering) scan\n\
    --hmmS <f>     : use cutoff bit score of <f> for CP9 (possibly filtering) scan\n\
@@ -109,11 +108,7 @@ static char experts[] = "\
    --beta <f>    : tail loss prob for QBD (default:1E-7)\n\
    --noqdb       : DO NOT use query dependent bands (QDB) to accelerate CYK\n\
    --qdbfile <f> : read QDBs from file <f> (outputted from cmbuild)\n\
-   --hbanded     : use HMM bands from a CM plan 9 HMM scan for CYK\n\
-   --tau <f>     : tail loss prob for --hbanded (default:1E-7)\n\
    --banddump    : print bands for each state\n\
-   --sums        : use posterior sums during HMM band calculation (widens bands)\n\
-   --scan2bands  : use scanning Forward and Backward to get bands (EXPTL!)\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -133,7 +128,7 @@ static struct opt_s OPTIONS[] = {
   { "--negsc",      FALSE, sqdARG_FLOAT},
   { "--hmmfb",      FALSE, sqdARG_NONE },
   { "--hmmweinberg",FALSE, sqdARG_NONE},
-  { "--hmmpad",     FALSE, sqdARG_INT },
+  /*{ "--hmmpad",     FALSE, sqdARG_INT },*/
   { "--hmmonly",    FALSE, sqdARG_NONE },
   { "--hmmE",       FALSE, sqdARG_FLOAT},
   { "--hmmS",       FALSE, sqdARG_FLOAT},
@@ -142,11 +137,11 @@ static struct opt_s OPTIONS[] = {
   { "--noqdb",      FALSE, sqdARG_NONE },
   { "--qdbfile",    FALSE, sqdARG_STRING},
   { "--beta",       FALSE, sqdARG_FLOAT},
-  { "--hbanded",    FALSE, sqdARG_NONE },
-  { "--tau",     FALSE, sqdARG_FLOAT},
+  /*  { "--hbanded",    FALSE, sqdARG_NONE },*/
+  /*{ "--tau",     FALSE, sqdARG_FLOAT},*/
   { "--banddump",   FALSE, sqdARG_NONE},
-  { "--sums",       FALSE, sqdARG_NONE},
-  { "--scan2hbands",FALSE, sqdARG_NONE},
+  /*{ "--sums",       FALSE, sqdARG_NONE},*/
+  /*  { "--scan2hbands",FALSE, sqdARG_NONE},*/
   { "--partition",  FALSE, sqdARG_STRING},
   { "--enfstart",   FALSE, sqdARG_INT},
   { "--enfseq",     FALSE, sqdARG_STRING},
