@@ -686,16 +686,12 @@ CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
   float *hitsc; /* scores of hits */
   int alloc_nhits; /* for growing hit arrays */
   int h;
-  int i, j;
+  int i;
   int min_i;
   float best_hmm_sc;
   float best_hmm_fsc;
-  float best_hmm_bsc;
   float cur_best_hmm_bsc;
   float best_cm_sc;
-  float cm_sc;
-  int   flen;
-  float ffrac;
   int do_collapse;
   int i_lpad;
   int i_rpad;

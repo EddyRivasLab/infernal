@@ -45,7 +45,9 @@ static void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 static int get_gc_comp(char *seq, int start, int stop);
 static void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, char *seq,
 				       float cutoff, double *lambda, double *mu);
+#ifdef USE_MPI
 static seqs_to_aln_t *read_next_aln_seqs(ESL_SQFILE *seqfp, int nseq, int index);
+#endif
 
 /* coordinate -- macro that checks if it's reverse complement and if so 
    returns coordinate in original strand
@@ -675,6 +677,7 @@ void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, char *seq,
 }  
 
 
+#ifdef USE_MPI
 /*
  * Function: read_next_aln_seqs
  * Date:     EPN, Fri Dec 29 17:44:25 2006
@@ -717,6 +720,7 @@ seqs_to_aln_t * read_next_aln_seqs(ESL_SQFILE *seqfp, int nseq, int index)
   ret_seqs_to_aln->index = index;
   return(ret_seqs_to_aln);
 }
+#endif
 
 
 /* EPN, Tue Dec  5 14:25:02 2006

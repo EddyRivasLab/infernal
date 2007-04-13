@@ -851,7 +851,6 @@ InsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int 
   int      gamma_j;             /* j index in the gamma matrix, which is indexed 0..j0-i0+1, 
 				 * while j runs from i0..j0 */
   int      gamma_i;             /* i index in the gamma matrix */
-  int       curr_dmax;          /* temporary value for max d in for loops */
   int       v;			/* a state index, 0..M-1 */
   int       w, y;		/* child state indices */
   int       yoffset;		/* offset to a child state */

@@ -66,8 +66,6 @@ void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
   double *xv;
   int z;
   int n;
-  float *enf_vec;             /* vector for FChoose to pick starting point for enf_seq */
-  int enf_start;           /* starting point for enf_seq */
 
   /*printf("in serial_make_histogram, nparts: %d sample_len: %d cp9_stats: %d do_ins: %d do_enf: %d\n", num_partitions, sample_length, doing_cp9_stats, (cm->search_opts & CM_SEARCH_INSIDE), (cm->config_opts & CM_CONFIG_ENFORCE));*/
 

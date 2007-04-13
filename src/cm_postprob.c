@@ -391,7 +391,6 @@ IInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
   int     *touch;       /* keeps track of how many higher decks still need this deck */
   int      v,y,z;	/* indices for states  */
   int      j,d,i,k;	/* indices in sequence dimensions */
-  int      sc;		/* a temporary variable holding a score */
   float    return_sc;   /* the return score, converted to bits (Scorified) */
   int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
   int      W;		/* subsequence length */
@@ -2506,7 +2505,6 @@ IInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
   int     *touch;       /* keeps track of how many higher decks still need this deck */
   int      v,y,z;	/* indices for states  */
   int      j,d,i,k;	/* indices in sequence dimensions */
-  int      sc;		/* a temporary variable holding a score */
   float    return_sc;   /* the return score, converted to bits (Scorified) */
   int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
   int      W;		/* subsequence length */
