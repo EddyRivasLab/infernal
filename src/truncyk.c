@@ -153,7 +153,6 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
    r_mode = 3;
    r_sc = IMPOSSIBLE;
    W = j0-i0+1;
-/* Not right - need L (length of consensus model), not W (window size) */
    model_len = 0;
    for ( v = vend; v >= vroot; v-- )
    {
@@ -161,7 +160,8 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
       else if ( cm->stid[v] == MATL_ML ) model_len += 1;
       else if ( cm->stid[v] == MATR_MR ) model_len += 1;
    }
-   bsc = sreLOG2(2/(model_len*(model_len+1)));
+   /* 2.0 instead of 2 to force floating point division, not integer division */
+   bsc = sreLOG2(2.0/(model_len*(model_len+1)));
 
    /* Make a deckpool */
    if ( dpool == NULL ) dpool = deckpool_create();
