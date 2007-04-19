@@ -497,9 +497,6 @@ main(int argc, char **argv)
   seed = (time ((time_t *) NULL));   
   /*seed = 33;*/
   sre_srandom (seed);
-  printf ("Random seed: %d\n", seed);
-  
-  printf ("W scale of %.1f\n", W_scale);
   
   /* Initialize partition array, only if we haven't already in set_partitions,
    * in this case we don't use partitions, a single Gumbel is used.
@@ -542,7 +539,7 @@ main(int argc, char **argv)
 	  if (cm == NULL) 
 	    Die("%s corrupt\n", cmfile);
 
-	  printf("\nCM %d: %s\n", (ncm+1), cm->name);
+	  printf("CM %d: %s\n", (ncm+1), cm->name);
 	  if(cm->desc == NULL) printf("desc: (NONE)\n");
 	  else printf("desc: %s\n", cm->desc);
 
@@ -795,7 +792,7 @@ main(int argc, char **argv)
 	  {
 	    for (i=0; i<GC_SEGMENTS; i++) 
 	      cm->mu[i] = log(cm->K[i]*N)/cm->lambda[i];
-	    debug_print_stats(partitions, num_partitions, cm->lambda, cm->mu);
+	    /*debug_print_stats(partitions, num_partitions, cm->lambda, cm->mu);*/
 	  }    
 	/* else they've been set to default 0.0s in ConfigCM() */
 
@@ -804,13 +801,15 @@ main(int argc, char **argv)
 	  {
 	    for (i=0; i<GC_SEGMENTS; i++) 
 	      cm->cp9_mu[i] = log(cm->cp9_K[i]*N)/cm->cp9_lambda[i];
-	    //debug_print_stats(partitions, num_partitions, cm->cp9_lambda, cm->cp9_mu);
+	    /*debug_print_stats(partitions, num_partitions, cm->cp9_lambda, cm->cp9_mu);*/
 	  }    
 	/* else they've been set to default 0.0s in ConfigCM() */
 
 	if (cm->search_opts & CM_SEARCH_CMSTATS) 
 	  {
 	    printf ("CM statistics calculated with simulation of %d samples of length %d\n", num_samples, sample_length);
+	    printf ("Random seed: %d\n", seed);
+	    /*printf ("W scale of %.1f\n", W_scale);*/
 	    if (num_partitions == 1) 
 	      printf ("No partition points\n");
 	    else 
@@ -822,7 +821,7 @@ main(int argc, char **argv)
 	      }
 	    for (i=0; i<GC_SEGMENTS; i++) 
 	      ;/*printf ("GC = %d\tlambda = %.4f\tmu = %.4f\n", i, lambda[i], mu[i]);*/
-	    printf ("N = %ld\n", N);
+	    /*printf ("N = %ld\n", N);*/
 	    if (cm->cutoff_type == SCORE_CUTOFF) 
 	      printf ("Using CM score cutoff of %.2f\n", cm->cutoff);
 	    else 
@@ -838,6 +837,8 @@ main(int argc, char **argv)
 	if (cm->search_opts & CM_SEARCH_CP9STATS) 
 	  {
 	    printf ("CP9 statistics calculated with simulation of %d samples of length %d\n", num_samples, sample_length);
+	    if (!(cm->search_opts & CM_SEARCH_CMSTATS))
+	      printf ("Random seed: %d\n", seed);
 	    if (num_partitions == 1) 
 	      printf ("No partition points\n");
 	    else 

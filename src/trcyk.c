@@ -73,7 +73,8 @@ int j0 = sqinfo.len;
 /* ParsetreeDump(stdout,tr,cm,dsq); printf("\n\n"); */
       printf("score:    %.2f\n",sc);
       fali = CreateFancyAli(tr, cm, cons, dsq);
-      PrintFancyAli(stdout, fali);
+      PrintFancyAli(stdout, fali, 
+		    0); /* offset in seq index */
 
       FreeFancyAli(fali);
       free(dsq);

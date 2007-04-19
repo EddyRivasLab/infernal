@@ -579,7 +579,8 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 	      ali = CreateFancyAli (results->data[i].tr, cm, cons, 
 				    dbseq->sq[in_revcomp]->dsq +
 				    (results->data[i].start-1));
-	      PrintFancyAli(stdout, ali);
+	      PrintFancyAli(stdout, ali,
+			    (coordinate(in_revcomp, results->data[i].start, len)-1)); /* offset in sq index */
 	      FreeFancyAli(ali);
 	      printf ("\n");
 	    }

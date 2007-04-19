@@ -348,11 +348,13 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
  *
  * Args:     fp  - where to print it (stdout or open FILE)
  *           ali - alignment structure t print.      
+ *           offset- number of residues to add to target seq index,
+ *                   to ease MPI search, all target hits start at posn 1
  *
  * Returns:  (void)
  */
 void
-PrintFancyAli(FILE *fp, Fancyali_t *ali)
+PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset)
 {
   char *buf;
   int   pos;
@@ -416,7 +418,7 @@ PrintFancyAli(FILE *fp, Fancyali_t *ali)
       if (ali->aseq != NULL) {
 	strncpy(buf, ali->aseq+pos, linelength);  
 	if (sqj && sqi) 
-	  fprintf(fp, "  %8d %s %-8d\n", sqi, buf, sqj);
+	  fprintf(fp, "  %8d %s %-8d\n", sqi+offset, buf, sqj+offset);
 	else
 	  fprintf(fp, "  %8s %s %-8s\n", "-", buf, "-");
       }
