@@ -123,27 +123,57 @@ target database, and returns alignments for high scoring hits.  In
 this case, it returns one hit:
 
 \begin{sreoutput}
-sequence: example
-hit 0   :    101    173    22.29 bits
+CM 1: tutorial.1
+desc: (NONE)
+CM lambda and K undefined -- no statistics
+Using CM score cutoff of 0.00
+>example
+
+  Plus strand results:
+
+ Query = 1 - 73, Target = 101 - 173
+ Score = 65.96, GC =  53
+
            (((((((,,<<<<___.____>>>>,<<<<<_______>>>>>,,,,,<<<<<_______
-         1 gccgauaUagcgcAgU.GGuAgcgcgccacccUgucaagguggAGgUCcggggUUCGAUu 59      
-           GC:+AU:UAGC:CAGU GG AG:GCGCCA::CUG ++A::UGGAGGUCC:G:GUUCGAU+
+         1 gccgacaUaGcgcAgu.GGuAgcgCgccagcuUgaaaagcuggAGguccgggGUUCgAuu 59      
+           GC:+A::UAGC:CAGU GG AG:GCGCCAG:+UGAA A:CUGGAGGUCC:G:GUUCGAU 
        101 GCGGAUUUAGCUCAGUuGGGAGAGCGCCAGACUGAAGAUCUGGAGGUCCUGUGUUCGAUC 160     
 
            >>>>>))))))):
-        60 ccccguaucggcg 72      
-           C:C:G:AU+:GC+
+        60 Ccccgugucggca 72      
+           C:C:G::U+:GCA
        161 CACAGAAUUCGCA 173     
+
+
+//
+Fin
 \end{sreoutput}
 
-Hits are numbered starting from 0. This one shows hit 0, from position
-101 to 173 on the sequence named ``example'', with a score of 22.29
-bits. There are no E-value statistics yet in \software{infernal}, so
-this score is all you have to go by to determine significance of a
-hit.  Larger scores are better. As a rough guide, scores greater than
-the log (base two) of the target database size are significant.  Here,
-given a 600 nt target (300 nt $\times$ 2 strands), scores over 9-10
-bits are significant - so a score of 22.29 is a good hit. 
+The first two lines give the name of the CM and a description (if any,
+this can be defined in the input Stockholm file, as described later).
+The next two lines give information on E-value statistics, which were
+not enabled in our example search (more on this later).  Next comes
+the results section, the name of each target sequence in the target
+database is given starting with a \>, in this case there is only one:
+example. Next, all the hits to the Plus strand of ``example'' are
+given, in this there is a single hit from position 101 to 173 with a
+score of 65.96 bits. As discussed next, E-value statistics can give an
+estimate of the significance of bit scores. We have not rigorously
+tested our implementation of E-values, so by default E-values are not
+calculated. As for bit scores, larger scores are better. As a rough
+guide, scores greater than the log (base two) of the target database
+size are significant.  Here, given a 600 nt target (300 nt $\times$ 2
+strands), scores over 9-10 bits are significant - so a score of 65.96
+is a good hit.
+
+%Hits are numbered starting from 0. This one shows hit 0, from position
+%101 to 173 on the sequence named ``example'', with a score of 22.29
+%bits. There are no E-value statistics yet in \software{infernal}, so
+%this score is all you have to go by to determine significance of a
+%hit.  Larger scores are better. As a rough guide, scores greater than
+%the log (base two) of the target database size are significant.  Here,
+%given a 600 nt target (300 nt $\times$ 2 strands), scores over 9-10
+%bits are significant - so a score of 22.29 is a good hit. 
 
 The alignment is shown in a BLAST-like format, augmented by secondary
 structure annotation. 
@@ -183,6 +213,54 @@ space, indicating a negative contribution to the alignment score.
 
 Finally, the fourth line is the target sequence.
 
+Now let's see what happens with E-values. When run with the \prog{-E}
+option, cmsearch estimates the E-value of each hit found. This is
+computed by sampling 1000 random sequences and determining the bit
+score of the best hit within each sequence, these
+scores are fit to a Gumbel distribution. This procedure used by
+cmsearch very similar to that described for the RSEARCH program in
+\cite{KleinEddy03}. Because E-value calculation requires searching
+1000 random sequences, it takes quite a bit longer than a regular
+search. To repeat the search saving all hits with E-values of 10 or
+less, do:
+
+\user{cmsearch -E 10 my.cm tutorial.db}
+
+\begin{sreoutput}
+CM 1: tutorial.1
+desc: (NONE)
+CM statistics calculated with simulation of 1000 samples of length 180
+Random seed: 1177014463
+No partition points
+Using CM E cutoff of 10.00
+
+>example
+
+  Plus strand results:
+
+ Query = 1 - 73, Target = 101 - 173
+ Score = 65.96, E = 3.91e-12, P = 3.91e-12, GC =  53
+
+           (((((((,,<<<<___.____>>>>,<<<<<_______>>>>>,,,,,<<<<<_______
+         1 gccgacaUaGcgcAgu.GGuAgcgCgccagcuUgaaaagcuggAGguccgggGUUCgAuu 59      
+           GC:+A::UAGC:CAGU GG AG:GCGCCAG:+UGAA A:CUGGAGGUCC:G:GUUCGAU 
+       101 GCGGAUUUAGCUCAGUuGGGAGAGCGCCAGACUGAAGAUCUGGAGGUCCUGUGUUCGAUC 160     
+
+           >>>>>))))))):
+        60 Ccccgugucggca 72      
+           C:C:G::U+:GCA
+       161 CACAGAAUUCGCA 173     
+
+
+//
+Fin
+
+\end{sreoutput}
+
+The output tells us that the E-value is $3.91e-12$, this is the number
+of hits we expect to find with a bit score of 65.96 or better if we
+were searching a database of random sequence of length 300.
+
 \subsection{Creating new multiple alignments with \prog{cmalign}}
 
 You can also use a model to structurally align any number of new RNA
@@ -211,16 +289,16 @@ This results in an alignment that looks like:
 {\samepage
 \begin{sreoutput}
 # STOCKHOLM 1.0
-#=GF AU    Infernal 0.54
+#=GF AU    Infernal 0.72
 
 tRNA1             GCGGAUUUAGCUCAGUuGGG.AGAGCGCCAGACUGAAGAUCUGGAGGUCC
 tRNA2             UCCGAUAUAGUGUAAC.GGCuAUCACAUCACGCUUUCACCGUGGAGA-CC
 tRNA3             UCCGUGAUAGUUUAAU.GGUcAGAAUGGGCGCUUGUCGCGUGCCAGA-UC
 tRNA4             GCUCGUAUGGCGCAGU.GGU.AGCGCAGCAGAUUGCAAAUCUGUUGGUCC
 tRNA5             GGGCACAUGGCGCAGUuGGU.AGCGCGCUUCCCUUGCAAGGAAGAGGUCA
-tRNA6             GCGGAUUUAGCUCAGUuGGG.AGAGCGCC-------AGA---CGAGGUCC
+tRNA6             GCGGAUUUAGCUCAGUuGGG.AGAGCGC------CAGAC----GAGGUCC
 #=GC SS_cons      (((((((,,<<<<___.___._>>>>,<<<<<_______>>>>>,,,,,<
-#=GC RF           gccgauaUagcgcAgU.GGu.AgcgcgccacccUgucaagguggAGgUCc
+#=GC RF           gccgacaUaGcgcAgu.GGu.AgcgCgccagcuUgaaaagcuggAGgucc
 
 tRNA1             UGUGUUCGAUCCACAGAAUUCGCA
 tRNA2             GGGGUUCGACUCCCCGUAUCGGAG
@@ -229,7 +307,7 @@ tRNA4             UUAGUUCGAUCCUGAGUGCGAGCU
 tRNA5             UCGGUUCGAUUCCGGUUGCGUCCA
 tRNA6             UGUGUUCGAUCCACAGAAUUCGCA
 #=GC SS_cons      <<<<_______>>>>>))))))):
-#=GC RF           ggggUUCGAUuccccguaucggcg
+#=GC RF           gggGUUCgAuuCcccgugucggca
 //
 \end{sreoutput}
 }
@@ -310,7 +388,7 @@ the target: so-called \emph{glocal} alignment (global with respect to
 the query model, local with respect to the target sequence). But in
 many cases, a homologous RNA structure has undergone enough changes
 that parts of its structure cannot be aligned to the
-consensus. \emph{Local} alignment, in which only part of the query
+onsensus. \emph{Local} alignment, in which only part of the query
 model needs to match the target to detect a hit, can be a more
 sensitive searching strategy.
 
@@ -330,19 +408,25 @@ Local alignment is activated for \prog{cmsearch} by using the
 
 \user{cmsearch --local my.cm tutorial.fa}
 
-Look at the last alignment in this output, the alignment for tRNA6:
+Look at the first alignment for the target sequence tRNA6 (the second
+to last alignment in the output): 
 
 \begin{sreoutput}
-sequence: tRNA6
-hit 0   :      1     63    11.52 bits
+>tRNA6
+
+  Plus strand results:
+
+ Query = 1 - 72, Target = 1 - 63
+ Score = 44.94, GC =  55
+
            (((((((,,<<<<___.____>>>>,<~~~~~~>,,,,,<<<<<_______>>>>>))))
-         1 gccgauaUagcgcAgU.GGuAgcgcgc*[15]*gAGgUCcggggUUCGAUuccccguauc 68
-           GC:+AU:UAGC:CAGU GG AG:GCGC      GAGGUCC:G:GUUCGAU+C:C:G:AU+
-         1 GCGGAUUUAGCUCAGUuGGGAGAGCGC*[ 5]*GAGGUCCUGUGUUCGAUCCACAGAAUU 59
+         1 gccgacaUaGcgcAgu.GGuAgcgCgc*[15]*gAGguccgggGUUCgAuuCcccguguc 68      
+           GC:+A::UAGC:CAGU GG AG:GCGC      GAGGUCC:G:GUUCGAU C:C:G::U+
+         1 GCGGAUUUAGCUCAGUuGGGAGAGCGC*[ 5]*GAGGUCCUGUGUUCGAUCCACAGAAUU 59      
 
            ))):
-        69 ggcg 72      
-           :GC+
+        69 ggca 72      
+           :GCA
         60 CGCA 63      
 \end{sreoutput}
 
@@ -379,7 +463,7 @@ alignment would prevent that.}
 {\samepage
 \begin{sreoutput}
 # STOCKHOLM 1.0
-#=GF AU    Infernal 0.54
+#=GF AU    Infernal 0.72
 
 tRNA1             GCGGAUUUAGCUCAGUuGGG.AGAGCGCCAGACUGAAGA.....UCUGGA
 tRNA2             UCCGAUAUAGUGUAAC.GGCuAUCACAUCACGCUUUCAC.....CGUGGA
@@ -388,7 +472,7 @@ tRNA4             GCUCGUAUGGCGCAGU.GGU.AGCGCAGCAGAUUGCAAA.....UCUGUU
 tRNA5             GGGCACAUGGCGCAGUuGGU.AGCGCGCUUCCCUUGCAA.....GGAAGA
 tRNA6             GCGGAUUUAGCUCAGUuGGG.AGAGCGC-----------cagac----GA
 #=GC SS_cons      (((((((,,<<<<___.___._>>>>,<<<<<_______~~~~~>>>>>,
-#=GC RF           gccgauaUagcgcAgU.GGu.AgcgcgccacccUgucaa~~~~~gguggA
+#=GC RF           gccgacaUaGcgcAgu.GGu.AgcgCgccagcuUgaaaa~~~~~gcuggA
 
 tRNA1             GGUCCUGUGUUCGAUCCACAGAAUUCGCA
 tRNA2             GA-CCGGGGUUCGACUCCCCGUAUCGGAG
@@ -397,7 +481,7 @@ tRNA4             GGUCCUUAGUUCGAUCCUGAGUGCGAGCU
 tRNA5             GGUCAUCGGUUCGAUUCCGGUUGCGUCCA
 tRNA6             GGUCCUGUGUUCGAUCCACAGAAUUCGCA
 #=GC SS_cons      ,,,,<<<<<_______>>>>>))))))):
-#=GC RF           GgUCcggggUUCGAUuccccguaucggcg
+#=GC RF           GguccgggGUUCgAuuCcccgugucggca
 //
 \end{sreoutput}
 }
@@ -465,21 +549,54 @@ For version information and a complete listing of options, use the
 and you'll see something like:
 
 \begin{sreoutput}
-Infernal 0.54 (Jan 2003)
-Copyright (C) 2002-2003 Washington University, Saint Louis
+cmsearch - search a sequence database with an RNA covariance model
+Infernal 0.72 (January 2007)
+Copyright (C) 2001-2007 HHMI Janelia Farm
 Freely distributed under the GNU General Public License (GPL)
 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 Usage: cmsearch [-options] <cmfile> <sequence file>
 The sequence file is expected to be in FASTA format.
-  Most commonly used options are:
+  Available options are:
    -h     : help; print brief help on version and usage
-   -W <n> : set scanning window size to <n> (default: 200)
+   -E <f> : use cutoff E-value of <f> (default ignored; not-calc'ed)
+   -n <n> : determine EVD with <n> samples (default with -E: 1000)
+   -S <f> : use cutoff bit score of <f> [default: 0]
 
   Expert, in development, or infrequently used options are:
    --informat <s>: specify that input alignment is in format <s>, not FASTA
    --toponly     : only search the top strand
    --local       : do local alignment
+   --noalign     : find start/stop only; don't do alignments
+   --window <n>  : set scanning window size to <n> (default: precalc'd in cmbuild)
    --dumptrees   : dump verbose parse tree information for each hit
+   --partition <n>[,<n>]... : partition points for different GC content EVDs
+   --inside      : scan with Inside, not CYK (~2X slower)
+   --null2       : turn on the post hoc second null model [df:OFF]
+   --learninserts: do not set insert emission scores to 0
+   --negsc <f>   : set min bit score to report as <f> < 0 (experimental)
+   --enfstart <n>: enforce MATL stretch starting at consensus position <n>
+   --enfseq <s>  : enforce MATL stretch starting at --enfstart <n> emits seq <s>
+   --enfnohmm    : do not filter first w/a HMM that only enforces <s> from --enfseq
+   --time        : print timings for histogram building, and full search
+   --rtrans      : replace CM transition scores from <cm file> with RSEARCH scores
+   --greedy      : resolve overlapping hits with greedy algorithm a la RSEARCH
+   --gcfile <f>  : save GC content stats of target sequence file to <f>
+
+  * Filtering options using a CM plan 9 HMM (*in development*):
+   --hmmfb        : use Forward to get end points & Backward to get start points
+   --hmmweinberg  : use Forward to get end points, subtract W for start points
+   --hmmonly      : don't use CM at all, just scan with HMM (Forward + Backward)
+   --hmmE <f>     : use cutoff E-value of <f> for CP9 (possibly filtering) scan
+   --hmmS <f>     : use cutoff bit score of <f> for CP9 (possibly filtering) scan
+   --hmmnegsc <f> : set min bit score to report as <f> < 0 (experimental)
+   --hmmrescan    : rescan subseq hits w/Forward (auto ON if --enfseq)
+
+  * Options for accelerating CM search/alignment (*in development*):
+   --beta <f>    : tail loss prob for QBD (default:1E-7)
+   --noqdb       : DO NOT use query dependent bands (QDB) to accelerate CYK
+   --qdbfile <f> : read QDBs from file <f> (outputted from cmbuild)
+   --banddump    : print bands for each state
+
 \end{sreoutput}
 
 More detailed information on usage and command line options is
