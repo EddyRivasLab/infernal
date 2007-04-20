@@ -154,7 +154,7 @@ this can be defined in the input Stockholm file, as described later).
 The next two lines give information on E-value statistics, which were
 not enabled in our example search (more on this later).  Next comes
 the results section, the name of each target sequence in the target
-database is given starting with a \>, in this case there is only one:
+database is given starting with a \prog{$>$}, in this case there is only one:
 example. Next, all the hits to the Plus strand of ``example'' are
 given, in this there is a single hit from position 101 to 173 with a
 score of 65.96 bits. As discussed next, E-value statistics can give an
@@ -260,6 +260,55 @@ Fin
 The output tells us that the E-value is $3.91e-12$, this is the number
 of hits we expect to find with a bit score of 65.96 or better if we
 were searching a database of random sequence of length 300.
+
+\subsection{Accelerating \prog{cmsearch}}
+The \prog{cmsearch} program is very slow, and several techniques have
+been developed for acceleration. We'll briefly discuss two here. The
+first is filtering the input database with a profile HMM, and using
+the expensive CM based search on only subsequences that receive high 
+HMM scores. This was pioneered by Zasha Weinberg and
+Larry Ruzzo at the University of Washington \cite{WeinbergRuzzo05,
+  WeinbergRuzzo05b, WeinbergRuzzo06}. Here we consider two of their
+techniques for constructing a profile HMM. The first builds a
+``rigorous  filter'' that is guaranteed to find all CM hits above a
+certain threshold. We have incorporated Weinberg's implementation of
+``rigorous filters'' into \software{infernal}, for details see X. The
+second builds a maximum likelihood (ML) HMM that is not guaranteed to find
+all hits, but is more practical for many RNA families. As discussed
+below, we have reimplemented ML HMMs within \software{infernal}.
+The second acceleration technique, called
+query-dependent banding (QDB) precalculates
+regions of the dynamic programming matrix that are very low
+probability prior to search, and skips these regions during search
+\cite{NawrockiEddy07}. 
+
+By default, QDB is on in \prog{cmsearch}, you can turn it off with the
+\prog{--noqdb} option. We still consider our implementation of the HMM
+filtering technique experimental, so it is not on by default. You can
+turn it on using \prog{--hmmfilter}. By default, any hit with an HMM
+score > 0 bits will be passed (along with some flanking sequence) to
+the CM to be researched.  The \prog{--hmmE} option calculates E-values
+for the HMM hits (in a an analagous manner to how CM hit E-values are
+calculated). This is our recommended way of using --hmmfilter. Here's
+an example searching a larger sample database of tutorial.big.db,
+which is 30,000 nt and still has the tRNA from position 101 to 173:
+
+\user{cmsearch --hmmfilter --hmmE 50 my.cm tutorial.big.db}
+
+This search should take about 4 seconds, if you're curious you can
+rerun the search without HMM filtering, with the --time option to
+print the CPU time used:
+
+\user{cmsearch --time my.cm tutorial.big.db}
+
+This should take about 40 seconds, meaning the HMM gave us about a 10
+fold speedup. This speedup will increase significantly for larger
+databases and for RNA families with longer sequence
+lengths. The speedup comes at a cost to sensitivity though, and we haven't
+rigorously tested this to our satisfaction. This is the main reason
+this option is not on by default. There are more options related to
+HMM filtering for \prog{cmsearch} discussed in the man pages at the
+end of this guide.
 
 \subsection{Creating new multiple alignments with \prog{cmalign}}
 
@@ -492,32 +541,32 @@ consensus columns are marked by - characters. The unaligned
 marked with \verb+~+ characters in the consensus secondary structure
 annotation and the reference (RF) annotation lines.
 
-\subsection{An important limitation to \prog{cmsearch}: the -W option}
+%\subsection{An important limitation to \prog{cmsearch}: the -W option}
 
-\prog{cmsearch} implements a ``scanning CYK'' dynamic programming
-algorithm \cite{Durbin98} that looks for high-scoring alignments of
-the structural model to any subsequence of the target sequence. It
-works even if the target sequence is very large (e.g.\ a whole
-chromosome) -- though it is slow, like all SCFG algorithms. An
-important feature of the scanning CYK algorithm is that it needs to
-know the \emph{maximum length} of an aligned target subsequence, e.g.
-the size of its scanning window on the target sequence.
+%\prog{cmsearch} implements a ``scanning CYK'' dynamic programming
+%algorithm \cite{Durbin98} that looks for high-scoring alignments of
+%the structural model to any subsequence of the target sequence. It
+%works even if the target sequence is very large (e.g.\ a whole
+%chromosome) -- though it is slow, like all SCFG algorithms. An
+%important feature of the scanning CYK algorithm is that it needs to
+%know the \emph{maximum length} of an aligned target subsequence, e.g.
+%the size of its scanning window on the target sequence.
 
-By default, the scanning window is calculated by \prog{cmbuild} and
-stored in the model. The calculation is fairly rigorous, based on the
-expected probability density over possible lengths
-\cite{NawrockiEddy07}. The result will almost certainly be fine for
-your purposes.  However, you can override it and set the scanning
-window width yourself to \verb+<n>+ with the \prog{-W <n>} option.
-
-Even if the target RNA is larger than the scanning window, there is
-some chance of finding part of it -- particularly in combination with
-local alignment (\prog{--local}), which explicitly allows partial
-matches to the query model. Thus, it may be possible to speed up a
-search with a large model by deliberately scanning a genome with
-\prog{--local} and a small window size, looking for possible hits,
-then realigning candidate regions with a more appropriate value of
-\prog{-W}. This strategy has not been systematically tested.
+%By default, the scanning window is calculated by \prog{cmbuild} and
+%stored in the model. The calculation is fairly rigorous, based on the
+%expected probability density over possible lengths
+%\cite{NawrockiEddy07}. The result will almost certainly be fine for
+%your purposes.  However, you can override it and set the scanning
+%window width yourself to \verb+<n>+ with the \prog{-W <n>} option.
+%
+%Even if the target RNA is larger than the scanning window, there is
+%some chance of finding part of it -- particularly in combination with
+%local alignment (\prog{--local}), which explicitly allows partial
+%matches to the query model. Thus, it may be possible to speed up a
+%search with a large model by deliberately scanning a genome with
+%\prog{--local} and a small window size, looking for possible hits,
+%then realigning candidate regions with a more appropriate value of
+%\prog{-W}. This strategy has not been systematically tested.
 
 
 \subsubsection{Getting more information}
@@ -544,59 +593,48 @@ The alignment file is expected to be in Stockholm format.
 For version information and a complete listing of options, use the
 \prog{-h} option with any program, e.g.\
 
-\user{cmsearch -h}
+\user{cmscore -h}
 
 and you'll see something like:
 
 \begin{sreoutput}
-cmsearch - search a sequence database with an RNA covariance model
+cmscore - score RNA covariance model against sequences
 Infernal 0.72 (January 2007)
 Copyright (C) 2001-2007 HHMI Janelia Farm
 Freely distributed under the GNU General Public License (GPL)
 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-Usage: cmsearch [-options] <cmfile> <sequence file>
-The sequence file is expected to be in FASTA format.
-  Available options are:
+Usage: cmscore [-options] <cmfile> <sequence file>
+  Most commonly used options are:
    -h     : help; print brief help on version and usage
-   -E <f> : use cutoff E-value of <f> (default ignored; not-calc'ed)
-   -n <n> : determine EVD with <n> samples (default with -E: 1000)
-   -S <f> : use cutoff bit score of <f> [default: 0]
+   -i     : print individual timings & score comparisons, not just summary
 
-  Expert, in development, or infrequently used options are:
-   --informat <s>: specify that input alignment is in format <s>, not FASTA
-   --toponly     : only search the top strand
-   --local       : do local alignment
-   --noalign     : find start/stop only; don't do alignments
-   --window <n>  : set scanning window size to <n> (default: precalc'd in cmbuild)
-   --dumptrees   : dump verbose parse tree information for each hit
-   --partition <n>[,<n>]... : partition points for different GC content EVDs
-   --inside      : scan with Inside, not CYK (~2X slower)
-   --null2       : turn on the post hoc second null model [df:OFF]
-   --learninserts: do not set insert emission scores to 0
-   --negsc <f>   : set min bit score to report as <f> < 0 (experimental)
-   --enfstart <n>: enforce MATL stretch starting at consensus position <n>
-   --enfseq <s>  : enforce MATL stretch starting at --enfstart <n> emits seq <s>
-   --enfnohmm    : do not filter first w/a HMM that only enforces <s> from --enfseq
-   --time        : print timings for histogram building, and full search
-   --rtrans      : replace CM transition scores from <cm file> with RSEARCH scores
-   --greedy      : resolve overlapping hits with greedy algorithm a la RSEARCH
-   --gcfile <f>  : save GC content stats of target sequence file to <f>
+  Expert options
+   --local       : align locally w.r.t the model
+   --sub         : build sub CM for columns b/t HMM predicted start/end points
+   --regress <f> : save regression test data to file <f>
+   --stringent   : require the two parse trees to be identical
+   --trees       : print parsetrees
+   --nocheck     : don't check parsetree scores vs alignment scores
 
-  * Filtering options using a CM plan 9 HMM (*in development*):
-   --hmmfb        : use Forward to get end points & Backward to get start points
-   --hmmweinberg  : use Forward to get end points, subtract W for start points
-   --hmmonly      : don't use CM at all, just scan with HMM (Forward + Backward)
-   --hmmE <f>     : use cutoff E-value of <f> for CP9 (possibly filtering) scan
-   --hmmS <f>     : use cutoff bit score of <f> for CP9 (possibly filtering) scan
-   --hmmnegsc <f> : set min bit score to report as <f> < 0 (experimental)
-   --hmmrescan    : rescan subseq hits w/Forward (auto ON if --enfseq)
+  Expert stage 2 alignment options, to compare to stage 1 (D&C non-banded)
+   --std         : compare divide and conquer versus standard CYK (default)
+   --qdb         : compare non-banded d&c versus QDB standard CYK
+   --qdbsmall    : compare non-banded d&c versus QDB d&c
+   --qdbboth     : compare        QDB d&c versus QDB standard CYK
+   --beta <f>    : tail loss prob for QDB [default:1E-7]
+   --hbanded     : compare non-banded d&c versus HMM banded CYK
+   --tau <f>     : tail loss prob for HMM bands [default: 1E-7]
+   --hsafe       : realign (non-banded) seqs with HMM banded CYK score < 0 bits
+   --sums        : use posterior sums during HMM band calculation (widens bands)
+   --hmmonly     : align with the CM Plan 9 HMM (only gives timings)
+   --scoreonly   : for full CYK/inside stage, do only score, save memory
 
-  * Options for accelerating CM search/alignment (*in development*):
-   --beta <f>    : tail loss prob for QBD (default:1E-7)
-   --noqdb       : DO NOT use query dependent bands (QDB) to accelerate CYK
-   --qdbfile <f> : read QDBs from file <f> (outputted from cmbuild)
-   --banddump    : print bands for each state
-
+  Expert stage 2-N alignment options, to compare to stage 1 (D&C non-banded)
+  For --hbanded or --qdb, try multiple tau or beta values, all will = 10^-n
+   --betas <x>   : set initial (stage 2) tail loss prob to 10^-(<x>) for qdb
+   --betae <x>   : set final   (stage N) tail loss prob to 10^-(<x>) for qdb
+   --taus <x>    : set initial (stage 2) tail loss prob to 10^-(<x>) for hmm
+   --taue <x>    : set final   (stage N) tail loss prob to 10^-(<x>) for hmm
 \end{sreoutput}
 
 More detailed information on usage and command line options is
