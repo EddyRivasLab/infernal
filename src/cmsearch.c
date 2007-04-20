@@ -96,8 +96,7 @@ static char experts[] = "\
    --gcfile <f>  : save GC content stats of target sequence file to <f>\n\
 \n\
   * Filtering options using a CM plan 9 HMM (*in development*):\n\
-   --hmmfb        : use Forward to get end points & Backward to get start points\n\
-   --hmmweinberg  : use Forward to get end points, subtract W for start points\n\
+   --hmmfilter    : use Forward to get end points & Backward to get start points\n\
    --hmmonly      : don't use CM at all, just scan with HMM (Forward + Backward)\n\
    --hmmE <f>     : use cutoff E-value of <f> for CP9 (possibly filtering) scan\n\
    --hmmS <f>     : use cutoff bit score of <f> for CP9 (possibly filtering) scan\n\
@@ -126,8 +125,8 @@ static struct opt_s OPTIONS[] = {
   { "--null2",      FALSE, sqdARG_NONE },
   { "--learninserts",FALSE, sqdARG_NONE},
   { "--negsc",      FALSE, sqdARG_FLOAT},
-  { "--hmmfb",      FALSE, sqdARG_NONE },
-  { "--hmmweinberg",FALSE, sqdARG_NONE},
+  { "--hmmfilter",  FALSE, sqdARG_NONE },
+  /*{ "--hmmweinberg",FALSE, sqdARG_NONE},*/
   /*{ "--hmmpad",     FALSE, sqdARG_INT },*/
   { "--hmmonly",    FALSE, sqdARG_NONE },
   { "--hmmE",       FALSE, sqdARG_FLOAT},
@@ -383,8 +382,8 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--enfnohmm")    == 0) do_enforce_hmm = FALSE;
     else if  (strcmp(optname, "--time")        == 0) do_timings   = TRUE;
     else if  (strcmp(optname, "--rtrans")      == 0) do_rtrans = TRUE;
-    else if  (strcmp(optname, "--hmmfb")       == 0) do_hmmfb = TRUE;
-    else if  (strcmp(optname, "--hmmweinberg") == 0) do_hmmweinberg = TRUE;
+    else if  (strcmp(optname, "--hmmfilter")   == 0) do_hmmfb = TRUE;
+    /*else if  (strcmp(optname, "--hmmweinberg") == 0) do_hmmweinberg = TRUE;*/
     else if  (strcmp(optname, "--hmmnegsc")    == 0) cp9_sc_boost = -1. * atof(optarg);
     else if  (strcmp(optname, "--hmmrescan")   == 0) do_hmmrescan = TRUE; 
     else if  (strcmp(optname, "--hmmE")        == 0)   

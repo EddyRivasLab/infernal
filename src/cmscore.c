@@ -61,8 +61,8 @@ static char experts[] = "\
   For --hbanded or --qdb, try multiple tau or beta values, all will = 10^-n\n\
    --betas <x>   : set initial (stage 2) tail loss prob to 10^-(<x>) for qdb\n\
    --betae <x>   : set final   (stage N) tail loss prob to 10^-(<x>) for qdb\n\
-   --taus <x> : set initial (stage 2) tail loss prob to 10^-(<x>) for hmm\n\
-   --taue <x> : set final   (stage N) tail loss prob to 10^-(<x>) for hmm\n\
+   --taus <x>    : set initial (stage 2) tail loss prob to 10^-(<x>) for hmm\n\
+   --taue <x>    : set final   (stage N) tail loss prob to 10^-(<x>) for hmm\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -326,7 +326,7 @@ main(int argc, char **argv)
    *    arguments, 
    */
   qdb_beta_vec = MallocOrDie(sizeof(double) * (nstages+1));
-  tau_vec   = MallocOrDie(sizeof(double) * (nstages+1));
+  tau_vec      = MallocOrDie(sizeof(double) * (nstages+1));
   qdb_beta_vec[0] = -1.; /* dummy value no stage 0 */
   tau_vec[0]   = -1.; /* dummy value no stage 0 */
   for(s = 1; s <= nstages; s++)
@@ -591,6 +591,8 @@ main(int argc, char **argv)
   free(s1_sq);
   free(s1_tr);
   free(s1_sc);
+  free(qdb_beta_vec);
+  free(tau_vec);
 
   SqdClean();
   return EXIT_SUCCESS;

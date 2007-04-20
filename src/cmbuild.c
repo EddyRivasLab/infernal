@@ -823,7 +823,7 @@ main(int argc, char **argv)
 	  else
 	    {
 	      if (setname != NULL)
-		Die("FAILED.\nOops. Wait. You can't use -n w/ an alignment database");
+		Die("FAILED.\nOops. Wait. You can't use -n w/ an alignment database or with --c* options.");
 	      else if (msa->name != NULL)
 		cm->name = Strdup(msa->name);
 	      else
