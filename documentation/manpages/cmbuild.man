@@ -30,10 +30,7 @@ of the CM.
 The alignment file may be a database containing more than one
 alignment.  If it does, the resulting
 .I cmfile
-will be a database of CMs, one per alignment. In this case, each
-alignment must have a name (a #=GF ID tag, in Stockholm
-format).
-
+will be a database of CMs, one per alignment.
 
 .SH OPTIONS
 
@@ -48,13 +45,15 @@ Name the covariance model
 .I <s>. 
 (Does not work if 
 .I alifile
-contains more than one alignment.)
-The default is to use the name of the alignment
+contains more than one alignment or in combination with any --c* option listed
+below.)
+The default is to use the name of the alignment 
 (given by the #=GF ID tag, in Stockholm format),
 or if that is not present, to use the name of
-the alignment file minus any file type extension
-(that is, a file "myrnas.sto" would give
-a CM named "myrnas").
+the alignment file minus any file type extension plus a positive
+integer indicating the position of that alignment in the file
+(that is, the first alignment in a file "myrnas.sto" would give
+a CM named "myrnas.1", the second alignment would give a CM named "myrnas.2").
 
 .TP
 .B -A
@@ -79,6 +78,27 @@ or
 option is set.
 
 .SH EXPERT OPTIONS
+
+.TP
+.BI --rsearch " <f>"
+Use RSEARCH's parameterization method with the RIBOSUM matrix in file
+.I <f>.
+The 
+.I alifile
+must contain exactly 1 sequence. 
+
+.TP
+.BI --rsw
+set the window length as 2 * the average sequence length in 
+.I alifile
+
+
+<HERE!>
+
+.I <f>.
+The 
+.I alifile
+must contain exactly 1 sequence. 
 
 .TP
 .B --binary 
