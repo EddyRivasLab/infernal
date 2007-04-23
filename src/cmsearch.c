@@ -68,8 +68,8 @@ Usage: mpicmsearch [-options] <cmfile> <sequence file>\n\
 The sequence file is expected to be in FASTA format.\n\
   Available options are:\n\
    -h     : help; print brief help on version and usage\n\
-   -E <f> : use cutoff E-value of <f> (default ignored; not-calc'ed)\n\
-   -n <n> : determine EVD with <n> samples (default with -E: 1000)\n\
+   -E <f> : use cutoff E-value of <f> [default ignored; not-calc'ed]\n\
+   -n <n> : determine EVD(s) with <n> samples [default w/-E and/or --hmmE: 1000]\n\
    -S <f> : use cutoff bit score of <f> [default: 0]\n\
 ";
 #endif
@@ -86,7 +86,7 @@ static char experts[] = "\
    --inside      : scan with Inside, not CYK (~2X slower)\n\
    --null2       : turn on the post hoc second null model [df:OFF]\n\
    --learninserts: do not set insert emission scores to 0\n\
-   --negsc <f>   : set min bit score to report as <f> < 0 (experimental)\n\
+   --negsc <x>   : set min bit score to report as <x> < 0 (experimental)\n\
    --enfstart <n>: enforce MATL stretch starting at consensus position <n>\n\
    --enfseq <s>  : enforce MATL stretch starting at --enfstart <n> emits seq <s>\n\
    --enfnohmm    : do not filter first w/a HMM that only enforces <s> from --enfseq\n\
@@ -95,19 +95,20 @@ static char experts[] = "\
    --greedy      : resolve overlapping hits with greedy algorithm a la RSEARCH\n\
    --gcfile <f>  : save GC content stats of target sequence file to <f>\n\
 \n\
+  * Options for accelerating CM search/alignment:\n\
+   --beta <x>    : set tail loss prob for QBD to <x> (default:1E-7)\n\
+   --noqdb       : DO NOT use query dependent bands (QDB) to accelerate CYK\n\
+   --qdbfile <x> : read QDBs from file <f> (outputted from cmbuild)\n\
+   --banddump    : print bands for each state\n\
+\n\
   * Filtering options using a CM plan 9 HMM (*in development*):\n\
    --hmmfilter    : use Forward to get end points & Backward to get start points\n\
    --hmmonly      : don't use CM at all, just scan with HMM (Forward + Backward)\n\
-   --hmmE <f>     : use cutoff E-value of <f> for CP9 (possibly filtering) scan\n\
-   --hmmS <f>     : use cutoff bit score of <f> for CP9 (possibly filtering) scan\n\
-   --hmmnegsc <f> : set min bit score to report as <f> < 0 (experimental)\n\
+   --hmmE <x>     : use cutoff E-value of <x> for CP9 (possibly filtering) scan\n\
+   --hmmS <x>     : use cutoff bit score of <x> for CP9 (possibly filtering) scan\n\
+   --hmmnegsc <x> : set min bit score to report as <x> < 0 (experimental)\n\
    --hmmrescan    : rescan subseq hits w/Forward (auto ON if --enfseq)\n\
 \n\
-  * Options for accelerating CM search/alignment (*in development*):\n\
-   --beta <f>    : tail loss prob for QBD (default:1E-7)\n\
-   --noqdb       : DO NOT use query dependent bands (QDB) to accelerate CYK\n\
-   --qdbfile <f> : read QDBs from file <f> (outputted from cmbuild)\n\
-   --banddump    : print bands for each state\n\
 ";
 
 static struct opt_s OPTIONS[] = {
