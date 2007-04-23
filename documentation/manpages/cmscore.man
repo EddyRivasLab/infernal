@@ -147,7 +147,8 @@ Turn on the sub model construction and alignment procedure. For each
 sequence, an HMM is first used to predict the model start and end
 consensus columns, and a new sub CM is constructed that only models
 consensus columns from start to end. The sequence is
-then aligned to this sub CM.
+then aligned to this sub CM. This "sub CM" procedure is not the same
+as the "sub CMs" described by Weinberg and Ruzzo.
 
 .TP
 .BI --regress " <f>"
