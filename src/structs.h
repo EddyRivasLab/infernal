@@ -21,10 +21,13 @@
 /* various default parameters for CMs and CP9 HMMs */ 
 #define DEFAULT_CM_CUTOFF 0.0
 #define DEFAULT_CM_CUTOFF_TYPE SCORE_CUTOFF
-#define DEFAULT_CP9_CUTOFF 0.0
-#define DEFAULT_CP9_CUTOFF_TYPE SCORE_CUTOFF
+#define DEFAULT_CP9_CUTOFF 50.0
+#define DEFAULT_CP9_CUTOFF_TYPE E_CUTOFF
 #define DEFAULT_BETA   0.0000001
 #define DEFAULT_TAU    0.0000001
+
+/* default num samples for CM and CP9 E-values */
+#define DEFAULT_NUM_SAMPLES 1000
 
 #define GC_SEGMENTS 101                   /* Possible integer GC contents */
 

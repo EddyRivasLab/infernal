@@ -520,8 +520,7 @@ The threshold defaults to 0.5. It can be changed to another number
 \verb+<x>+ (from 0 to 1.0) by the \prog{--gapthresh <x>} option.  The
 higher the number, the more columns are included in the model.  At
 \prog{--gapthresh 1.0}, all the columns are considered to be part of
-the consensus. At \prog{--gapthresh 0.0}, none of them are (probably
-not a good idea). 
+the consensus. At \prog{--gapthresh 0.0}, only columns with no gaps are.
 
 You can also manually specify which columns are consensus versus
 insert by including reference coordinate annotation (e.g. a

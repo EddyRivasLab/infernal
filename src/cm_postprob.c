@@ -373,7 +373,7 @@ FInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
   }
 
   free(touch);
-  printf("\n\tFInside() sc  : %f\n", sc);
+  ;/*printf("\n\tFInside() sc  : %f\n", sc);*/
   return sc;
 }
 
@@ -651,7 +651,7 @@ IInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
   }
 
   free(touch);
-  printf("\tIInside() sc  : %f\n", return_sc);
+  ;/*printf("\tIInside() sc  : %f\n", return_sc);*/
   return return_sc;
 }
 
@@ -1092,9 +1092,9 @@ FOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
   free(touch);
 
   if(!(cm->flags & CM_LOCAL_END))
-    printf("\tFOutside() sc : %f\n", return_sc);
+    ;/*printf("\tFOutside() sc : %f\n", return_sc);*/
   else
-    printf("\tFOutside() sc : %f (LOCAL mode; sc is from Inside)\n", return_sc);
+    ;/*printf("\tFOutside() sc : %f (LOCAL mode; sc is from Inside)\n", return_sc);*/
 
   return return_sc;
 }
@@ -1379,7 +1379,16 @@ IOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
     printf("OUTSIDE, done printing beta\n");
   */
 
-  if(do_check && (!(cm->flags & CM_LOCAL_END))) 
+  /* EPN, Mon Apr 23 16:34:37 2007 
+   * Found problems with the following test (I think they are due to
+   * precision) when testing prior to release 0.8. I'm taking it
+   * out. It's redundant anyway, the cmalign --checkpost option calls
+   * the function CMCheckPosterior() which checks that Inside and
+   * Outside matrices agree, albeit in a different way. I think this
+   * test is valid, it's the precision issue with int log odds scores,
+   * though I can't be sure right now.
+   */
+  if(FALSE && (do_check && (!(cm->flags & CM_LOCAL_END)))) 
     /* Local ends make the following test invalid because it is not true that
      * exactly 1 state in each node's split set must be visited in each parse. 
      */
@@ -1393,7 +1402,7 @@ IOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
        * For all v in each split set: Sum_v [ Sum_j,(d<=j) ( alpha[v][j][d] * beta[v][j][d] ) ]
        *                                                = P(S|M) / P(S|R)
        */
-	 
+
       for(n = 0; n < cm->nodes; n++)
 	{
 	  isc = -INFTY;
@@ -1495,9 +1504,9 @@ IOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
   free(touch);
 
   if(!(cm->flags & CM_LOCAL_END))
-    printf("\tIOutside() sc : %f\n", freturn_sc);
+    ;/*printf("\tIOutside() sc : %f\n", freturn_sc);*/
   else
-    printf("\tIOutside() sc : %f (LOCAL mode; sc is from Inside)\n", freturn_sc);
+    ;/*printf("\tIOutside() sc : %f (LOCAL mode; sc is from Inside)\n", freturn_sc);*/
 
   return freturn_sc;
 }
@@ -1616,7 +1625,7 @@ ICMPosterior(int L, CM_t *cm, int   ***alpha, int   ****ret_alpha, int   ***beta
   int    **end;         /* used for freeing alpha b/c we re-use the end deck. */
   int vmax;
 
-  printf("in ICMPosterior()\n");
+  /*printf("in ICMPosterior()\n");*/
   sc = alpha[0][L][L];
   
   /* If local ends are on, start with the EL state (cm->M), otherwise

@@ -108,11 +108,8 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons)
 				 FALSE, /* we're not building a histogram for CM stats  */
 				 FALSE, /* we're not building a histogram for CP9 stats */
 				 NULL); /* filter fraction, TEMPORARILY NULL            */
-	  if(cm->search_opts & CM_SEARCH_GREEDY)
-	    {
-	      remove_overlapping_hits (dbseq->results[reversed],
-				       dbseq->sq[reversed]->n);
-	    }
+	  remove_overlapping_hits (dbseq->results[reversed],
+				   dbseq->sq[reversed]->n);
 	  if (cm->cutoff_type == E_CUTOFF) 
 	    remove_hits_over_e_cutoff (cm, dbseq->results[reversed],
 				       dbseq->sq[reversed]->seq,
@@ -580,7 +577,8 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 				    dbseq->sq[in_revcomp]->dsq +
 				    (results->data[i].start-1));
 	      PrintFancyAli(stdout, ali,
-			    (coordinate(in_revcomp, results->data[i].start, len)-1)); /* offset in sq index */
+			    (coordinate(in_revcomp, results->data[i].start, len)-1), /* offset in sq index */
+			    in_revcomp);
 	      FreeFancyAli(ali);
 	      printf ("\n");
 	    }
@@ -934,7 +932,6 @@ parallel_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_
 	  job_type = aln_receive_job (&seqs_to_aln, mpi_master_rank);
 	  if (job_type == ALN_WORK) 
 	    {
-	      silent_mode = FALSE;
 	      debug_level = 0;
 	      bdump_level = 0;
 	      /* align the targets */
@@ -1487,7 +1484,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 			    alpha, &alpha,  /* alpha matrix from IInside(), and save it for CMPosterior*/
 			    do_check);      /* TRUE to check Outside probs agree with Inside */
 	      ICMPosterior(sq[i]->n, cm, alpha, NULL, beta, NULL, post, &post);
-	      if(do_check || TRUE)
+	      if(do_check)
 		{
 		  ICMCheckPosterior(sq[i]->n, cm, post);
 		  printf("\nPosteriors checked (I).\n\n");

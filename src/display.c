@@ -347,14 +347,15 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
  *           eponymous function.
  *
  * Args:     fp  - where to print it (stdout or open FILE)
- *           ali - alignment structure t print.      
+ *           ali - alignment structure to print.      
  *           offset- number of residues to add to target seq index,
  *                   to ease MPI search, all target hits start at posn 1
- *
+ *           in_revcomp- TRUE if hit we're printing an alignment for a
+ *                       cmsearch hit on reverse complement strand.
  * Returns:  (void)
  */
 void
-PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset)
+PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp)
 {
   char *buf;
   int   pos;
@@ -362,7 +363,8 @@ PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset)
   int   ci,  cj;		/* positions in CM consensus 1..clen */
   int   sqi, sqj;		/* positions in target seq 1..L      */
   int   i;
-
+  int   i2print, j2print; /* i,j indices we'll print, used to deal
+				 * with case of reverse complement */
   linelength = 60;
   buf = MallocOrDie(sizeof(char) * (linelength + 1));
   buf[linelength] = '\0';
@@ -418,7 +420,19 @@ PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset)
       if (ali->aseq != NULL) {
 	strncpy(buf, ali->aseq+pos, linelength);  
 	if (sqj && sqi) 
-	  fprintf(fp, "  %8d %s %-8d\n", sqi+offset, buf, sqj+offset);
+	  {
+	    if(in_revcomp) 
+	      {
+		i2print = offset - (sqi-1)    + 1;
+		j2print = i2print - (sqj-sqi);
+	      }
+	    else
+	      {
+		i2print = sqi + offset;
+		j2print = sqj + offset;
+	      }
+	    fprintf(fp, "  %8d %s %-8d\n", i2print, buf, j2print);
+	  }
 	else
 	  fprintf(fp, "  %8s %s %-8s\n", "-", buf, "-");
       }

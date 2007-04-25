@@ -21,10 +21,7 @@ to search for homologous RNAs in
 and outputs high-scoring alignments.
 
 .PP
-The sequence file can be in most any common biosequence format,
-including alignment file formats (in which case the sequences
-will be read as if they were unaligned). FASTA format is
-recommended.
+Currently, the sequence file must be in FASTA format.
 
 .PP
 CM files are profiles of RNA consensus secondary structure. A
@@ -34,13 +31,99 @@ program, from a given RNA sequence alignment of known
 consensus structure.
 
 .PP
-The output that 
 .B cmsearch
-produces is currently extremely rudimentary. All hits of
-score greater than zero bits are output as alignments, in
-the order they are found. Niceties like ranking hits by
-their score, E-values, and reporting thresholds will come
-later.
+output consists of alignments of all hits of
+score greater than zero bits sorted by decreasing score per sequence
+and per strand. That is, all hits for the same sequence and the same
+(Watson or Crick) strand are sorted, but hits across sequences or
+strands are not sorted.  The threshold of zero bits can be changed to
+any positive number 
+.I <x>
+using the 
+.BI -T " <x>"
+option as described below. If the 
+.BI -E " <x>" 
+option is enabled
+E-values are calculated and all hits with
+an E-value less than or equal to <x> will be reported, ranked by
+increasing E-value. E-values are not turned on by default because they
+have not yet been rigorously tested to our satisfaction.
+
+.PP
+RNA homology search with CMs is slow. To speed it up, query-dependent
+banding (QDB) is turned on by default. QDB can be turned off with the 
+.B --noqdb 
+option. Briefly, QDB precalculates regions of the dynamic
+programming matrix that have negligible probability based on the query
+CM's transition probabilities. 
+During search, these regions of the
+matrix are ignored to make searches faster. 
+For more information on QDB see 
+(Nawrocki and Eddy, PLoS Computational Biology 3(3): e56). 
+QDB sacrifices the
+guarantee that the optimal alignment for any subsequence will be found,
+so the acceleration potentially comes at a cost to sensitivity. The
+beta paramater is the amount of
+probability mass considered negligible during band calculation, lower
+values of beta yield greater speedups but also a greater chance of missing
+the optimal alignment. The default beta is 1E-7: determined
+empirically as a good tradeoff between sensitivity and speed, though
+this value can be changed with the
+.BI --beta " <x>" 
+option. The speedups for an average RNA family with the default beta
+of 1E-7 is about four-fold relative to a non-banded search, but in
+general the greater the sequence length of a family, the greater the
+speedup achieved by QDB.
+
+.PP
+Another option for accelerating 
+.B cmsearch
+is HMM filtering. The idea is to first search the database with an HMM
+using HMM search algorithms that are much
+faster than CM search algorithms. High-scoring hits to the HMM are
+then searched again using the expensive CM methods. 
+This concept was first introduced by Zasha Weinberg
+and Larry Ruzzo at the University of Washington. 
+One technique Weinberg and Ruzzo put forth is to build an HMM that is
+a "maximum likelihood HMM" (ML HMM). This HMM is derived from the model
+parameters of the CM and is as similar as possible to the CM, while
+not modelling the interactions between base-paired consensus columns
+(which an HMM's regular grammar cannot do). We have implemented 
+a version of ML HMMs within @PACKAGE@, which we call CM Plan 9 HMMs (CP9 HMMs) to
+distinguish them from the Plan 7 HMMs of the HMMER package. A CP9 HMM
+can be used to filter the database prior to search with a CM using the 
+.B --hmmfilter
+option as described below. By default, when 
+.B --hmmfilter
+is enabled, E-values are calculated for CP9 HMM hits and those hits
+with E-values less than or equal to 50 
+survive the filter. This E-value threshold can be changed to 
+.I <x> 
+with the
+.BI --hmmE " <x>"
+option. Also, a bit score threshold can be used 
+by enabling the option
+.BI --hmmT " <x>".
+When this option is enabled CP9 HMM hits
+with a bit score greater than
+.I <x>
+survive the filter. HMM filtering can decrease
+sensitivity of CM searches because high-scoring CM hits may not
+survive the HMM filter.  
+However, in our tests, CP9 HMM filtering often yields a very
+significant speed-up of about 30-40 fold or more while sacrificing a
+small level of sensitivity. QDB remains on when HMM filtering is
+turned on. 
+
+.PP
+Another HMM filtering technique pioneered by Weinberg and Ruzzo is
+the construction and use of a "rigorous filter" HMM. All hits above
+a certain CM bit score threshold are
+guaranteed to survive the HMM filtering step. Their implementation of
+rigorous filters has been included with @PACKAGE@ but is not available
+as an option to
+.B cmsearch.
+For more information see the User's Guide. 
 
 .SH OPTIONS
 
@@ -49,22 +132,47 @@ later.
 Print brief help; includes version number and summary of
 all options, including expert options.
 
+.TP 
+.BI -T " <x>"
+Set the bit score cutoff for the per-sequence ranked hit list to
+.I <x>,
+where
+.I <x> 
+is a positive real number.
+The default is 0 bits. 
+Hits with bit scores better than (greater than) this threshold
+will be shown.
+
 .TP
-.BI -W " <n>"
-Set the scanning window width to 
-.I <n>.
-This is the maximum length of a homologous sequence. 
-By default, this is set to 200, which will be too small
-for many RNAs. In the future, this
-number will be automatically set to something sensible, instead
-of relying on you setting it sensibly on the command line.
+.BI -E " <x>"
+Set the E-value cutoff for the per-sequence/strand ranked hit list to 
+.I <x>,
+where
+.I <x>
+is a positive real number. Hits with E-values
+better than (less than) or equal to this threshold will be shown. E-values are
+calculated by scoring the CM against a large number (1000 by default, but this
+number can be changed with the 
+.B --nsamples
+option) of random synthesized sequences, and fitting an extreme value
+distribution (EVD) to the histogram of those scores. The sequences are
+randomly synthesized by first selecting a GC content from the
+distribution of GC contents of 100 nucleotide windows in the
+.I seqfile 
+and generating a 2*W length sequence based on that GC content, where W
+is the window length of the model as calculated in 
+.B cmbuild
+and stored in the 
+.I cmfile.
+This procedure for determining E-values is based on the procedure
+described in (Klein and Eddy, BMC Bioinformatics 4:44, 2003).
 
 .SH EXPERT OPTIONS
 
 .TP
 .BI --informat " <s>"
 Assert that the input 
-.I seqfile
+.I alifile
 is in format
 .I <s>.
 Do not run Babelfish format autodection. This increases
@@ -73,12 +181,11 @@ the Babelfish can make mistakes; particularly
 recommended for unattended, high-throughput runs
 of @PACKAGE@. 
 .I <s>
-is case-insensitive;
-valid formats include FASTA,
-GENBANK, EMBL, GCG, PIR, STOCKHOLM, SELEX, MSF,
-CLUSTAL, and PHYLIP. 
-See the User's Guide for a complete
-list.
+is case-insensitive.
+This option is a bit forward-looking;
+.B cmsearch 
+currently only accepts FASTA format, but
+this may not be true in the future.
 
 .TP 
 .B --toponly
@@ -95,8 +202,377 @@ allowing certain large insertions and deletions in the structure
 to be penalized differently than normal indels.
 The default is to globally align the query model to the target
 sequences.
+When enabled in combination with
+.B --hmmfilter
+or
+.B --hmmonly,
+the CP9 HMM local alignment algorithm is turned on, which allows
+alignments to start and stop at any consensus HMM node. Currently, as
+implemented HMM local alignment does not have a good way of modelling
+the CM local end behavior.
+
+.TP 
+.B --noalign
+Do not calculate and print alignments of each hit, only print locations
+and scores.
+
+.TP
+.BI --window " <n>"
+Set the scanning window width to 
+.I <n>.
+This is the maximum length of a homologous sequence. 
+By default, this is set within the CM file by 
+.B cmbuild
+using the query-dependent band calculation (Nawrocki
+and Eddy, PLoS Computational Biology 3(3): e56).
+See the man entry for
+.B cmbuild
+for more information. This option must be enabled in combination with
+the 
+.B --noqdb 
+option, which turns off query-dependent banding (QDB). The reason is
+that QDB sets the window length based on an expected length
+distribution calculated from the transition probabilities of the CM. 
 
 .TP 
 .B --dumptrees
 Dump verbose, ugly parse trees for each hit. Useful only for
 debugging purposes.
+
+.TP
+.BI --nsamples " <n>"
+When 
+.B -E
+and/or
+.B --hmmE  
+is/are enabled, set the number of synthetic sequences to 
+.I <n>,
+where 
+.I <n>
+is a positive integer. If
+.I <n> 
+is less than about 1000, the fit to the EVD may fail.
+Higher numbers of
+.I <n> 
+will give better determined EVD parameters but will take more
+time. The default with
+.B -E
+and/or
+.B --hmmE
+enabled is 1000: it was empirically chosen as
+a tradeoff between accuracy and computation time.
+ Note that currently the same number of
+samples is always used to calculate both CM and CP9 HMM E-values if
+both the
+.B -E
+and
+.B --hmmE
+options are enabled. 
+
+.TP
+.BI --partition " <n>[,<n>]"
+Used to calculate E-values for hits based on the GC content of the
+hit. Must be used in combination with the 
+.B -E
+and/or
+.B --hmmE 
+options. The <n> values specify partition points for percentage GC
+content. A separate EVD is fit to a histogram of scores from random
+sequences for each partition, and the relevant EVD is used to
+determine the E-value of each hit based on it's GC content. For
+example, if the option
+.BI --partition " 40,60" 
+is enabled, three seperate EVDs will be calculated as described for
+.B -E
+with the following exceptions. For the first EVD,
+GC contents for the random samples will be selected from the
+distribution of 100 nucleotide windows with GC content between 0 and 39
+percent in 
+.I seqfile.
+For the second EVD, the same is true but now from windows between
+40 and 59 percent. Similary for the third EVD, but now from windows
+between 60 and 100 percent. The E-values of three hits to subsequences
+with 35, 55, and 80 percent GC content would be calculated from the
+1st, 2nd and 3rd EVDs respectively. 
+For more detail on the partitioning
+procedure see (Klein and Eddy, BMC Bioinformatics 4:44, 2003). 
+
+.TP
+.B --inside
+Use a scanning Inside algorithm, instead of the default scanning CYK
+algorithm.
+With the Inside algorithm the score of a subsequence is the summed
+score of the all possible alignments of that subsequence to the CM,
+as opposed to the CYK score which is the score of the single most
+likely alignment to the CM. This option increases sensitivity at but
+slows down searches about two-fold.
+
+.TP
+.BI --null2
+Turn on the post hoc second null model that attempts to deal with
+the potential biased composition of hits. This option has not been
+rigorously tested, use at your own risk.
+
+.TP
+.B --learninserts
+Turn off the default 
+.B cmsearch 
+behavior of setting all CM insert emission scores to 0 bits prior to search.
+This default behavior is to avoid high-scoring hits to low complexity
+sequence favored by high insert state emission scores. When 
+.B --learninserts 
+is enabled the insert emission scores are read from
+.I cmfile
+that were calculated in 
+.B cmbuild 
+and are unmodified prior to search. 
+
+.TP
+.BI --negsc " <x>" 
+Set the minimum CM bit score to report as <x> where <x> is any real
+negative number. This option is untested and very experimental, use at
+your own risk. It's probably only potentially useful in non-local
+mode, when no positive scoring real hits can be found.  
+
+.TP
+.BI --enfstart " <n>"
+Used in combination with 
+.BI --enfseq " <s>"
+to attempt to enforce the subsequence 
+.I <s>
+align beginning at consensus column 
+.I <n>.
+A major limitation to this option is that the consensus columns from (
+.I <n>
+-1) to (
+.I <n> 
++ length(
+.I <s>
+)-1) must all be modelled by MATL nodes. This may change in future versions.
+
+.TP
+.BI --enfseq " <s>"
+Used in combination with 
+.BI --enfstart " <n>"
+to enforce the subsequence 
+.I <s>
+occur beginning at consensus column
+.I <n> 
+as described above for the
+.B --enstart 
+option. 
+By default, when this option is enabled an HMM that enforces only the
+subsequence
+.I <s>
+is used to filter the database prior to searching with the CM. This
+HMM filtering behavior can be turned off with the
+.B --enfnohmm
+option.
+
+.TP
+.B --enfnohmm 
+Used in combination with 
+.BI --enfstart " <n>"
+and
+.BI --enfseq " <s>".
+Do not filter the database first with an HMM that enforces the
+subsequence
+.I <s>
+prior to searching with the CM.
+
+.TP
+.B --time
+Print timings for the search and histogram construction (if E-values
+are being used).
+
+.TP
+.B --rtrans
+Replace the transition scores read from
+.I cmfile
+with RSEARCH transition scores as described in (Klein and Eddy, BMC
+Bioinformatics 4:44, 2003). Not recommended because empirically RSEARCH
+transition scores result in poorer performance than the default
+transitions.
+
+.TP
+.B --greedy
+Resolve overlapping this with a greedy strategy instead of the default
+technique of using dynamic programming for optimal hit resolution. This is the
+technique used by RSEARCH to resolve overlapping hits. This option
+has not yet been implemented to work in combination with
+.B --inside.
+
+.TP
+.BI --gcfile " <f>"
+Print information on the GC content of 
+.I seqfile
+to file 
+.I <f>.
+First, the GC content of all non-overlapping 100 nucleotide windows
+in 
+.I seqfile 
+is calculated, and the the distribution of counts is normalized to
+frequencies for each possible GC percentage [0..100] which are printed
+to
+.I <f>.
+
+.TP
+.BI --beta " <x>"
+For query-dependent banding (QDB), which is on by default, set beta
+parameter to 
+.I <x>
+where
+.I <x>
+is any positive real number less than 1.0. Beta is the probability
+mass considered negligible during band calculation. The default beta
+is 1E-7.
+
+.TP
+.BI --noqdb 
+Turn the query-dependent banding (QDB) acceleration strategy off, it
+is on by default.
+
+.TP
+.BI --qdbfile " <f>" 
+Read bands for QDB from file
+.I <f>
+which was output from 
+.B cmbuild
+using the 
+.B --bfile
+option. By default, bands are calculated within
+.B cmsearch.
+This is not a very useful option and it was only developed for testing the
+performance of banded search for  CMs built from old versions of 
+.B cmbuild.
+
+.TP
+.BI --banddump
+Print information on the query-dependent bands for each state to standard output.
+
+.TP
+.BI --hmmfilter
+This option is used to accelerate searches. Build a CM Plan 9 HMM from the CM in 
+.I cmfile 
+and use it to filter the database in 
+.I seqfile.
+Only hits to the HMM with E-values less than or equal to 50 will then
+be searched with the CM. This E-value threshold of 50 can be changed 
+using the 
+.B --hmmE 
+option or to a bit score threshold using the 
+.B --hmmT
+option as explained below.
+The HMM hits are found using a scanning Forward HMM algorithm 
+to determine likely end point positions (j) of hits. Then for
+each likely end point j, a HMM Backward scan is performed starting at
+j and moving backward to find the likely start point i. The region
+from residues i+W-1 to j-W+1 survives the filter, and is then passed
+to the CM to be searched. 
+
+.TP
+.B --hmmonly
+Search only with a CP9 HMM derived from
+.I cmfile.
+Do not pass HMM hits to be searched with the CM, but simply report
+them. By default E-values are calculated and all hits with an E-value
+of 50 or less are reported. Works with the
+.B --hmmE
+and
+.B --hmmT
+options the same way 
+.B --hmmfilter
+does.
+Currently, no alignments are printed, only start and stop positions
+and scores of hits.
+
+.TP
+.BI --hmmE " <x>"
+Set the E-value cutoff for hits to survive the CP9 HMM filter as 
+.I <x>,
+where
+.I <x>
+is a positive real number. HMM hits with E-values
+better than (less than) or equal to this threshold will survive the
+filter and be searched with the CM as described above for the
+.B --hmmfilter
+option. The default value is 50. CP9 HMM E-values are
+calculated in the same manner as CM E-values (see the
+.B -E
+option) except scoring is performed with the CP9 HMM instead of the
+CM.
+The number of randomly synthesized samples is 1000 by default but can
+be changed with the 
+.B --nsamples
+option.
+The 
+.B --hmmE
+option must be used in combination with
+either the 
+.B --hmmfilter
+or the
+.B --hmmonly
+option. 
+
+.TP 
+.BI --hmmT " <x>"
+Set the bit score cutoff for hits to survive the CP9 HMM filter as
+.I <x>
+.I <x>,
+where
+.I <x> 
+is a positive real number.
+There is no default value because by default E-values are calculated
+when 
+.B --hmmfilter
+is enabled.
+Hits with bit scores better than (greater than) this threshold 
+.I <x>
+will survive the filter and be passed to the CM as described above for
+the 
+.B --hmmfilter
+option. 
+This option must be used in combination with
+either the 
+.B --hmmfilter
+or the
+.B --hmmonly
+option. 
+
+.TP 
+.BI --hmmnegsc " <x>"
+Set the minimum CP9 HMM bit score to survive the filter, or be
+returned as an HMM hit (if 
+.B --hmmonly
+) as <x> where
+<x> is any real negative number. This option is untested and very
+experimental, use at your own risk. It's probably only potentially
+useful in non-local mode, when positive scoring CP9 HMM hits are rare.
+This option must be used in combination with
+the
+.B --hmmT 
+option and either the 
+.B --hmmfilter
+or the
+.B --hmmonly
+option. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

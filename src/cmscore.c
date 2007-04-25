@@ -71,7 +71,6 @@ static struct opt_s OPTIONS[] = {
   { "--regress",    FALSE, sqdARG_STRING },
   { "--stringent",  FALSE, sqdARG_NONE },
   { "--trees",      FALSE, sqdARG_NONE },
-  { "--nocheck",    FALSE, sqdARG_NONE },
   { "--std",        FALSE, sqdARG_NONE },
   { "--qdb",        FALSE, sqdARG_NONE },
   { "--qdbsmall",   FALSE, sqdARG_NONE },

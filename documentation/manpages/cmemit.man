@@ -16,7 +16,7 @@ cmemit - generate sequences from a covariance model
 reads the first covariance model (CM) in
 .I cmfile
 and generates a number of sequences from the CM;
-or if the -c option is selected, generates a single majority-fule
+or if the -c option is selected, generates a single majority-rule
 consensus. This can be useful for various application in which one
 needs a simulation of sequences consistent with a sequence family
 consensus. By default,
@@ -67,25 +67,33 @@ Set the random seed to
 .I <n>, 
 where <n> is a positive integer. The default is to use time() to
 generate a different seed for each run, which means that two different
-runs of cmmemit on the same CM will give slightly different
+runs of 
+.B cmemit 
+on the same CM will give slightly different
 results. You can use this option to generate reproducible results.
 
 .TP
 .BI --begin " <n>"
-Truncate the resulting alignment by beginning at match column 
+Truncate the resulting alignment by beginning at consensus column 
 .I <n>,
 where <n> is a positive integer no greater than the consensus length of
-the CM. Must be used in combination with --end and either -a or --cp9.
+the CM. Must be used in combination with 
+.B --end and either 
+.B -a or
+.B --cp9.
 
 .TP
 .BI --end " <n>"
-Truncate the resulting alignment by ending at match column 
+Truncate the resulting alignment by ending at consensus column 
 .I <n>,
 where <n> is a positive integer no greater than the consensus length of
-the CM. Must be used in combination with --begin and either -a or --cp9.
+the CM. Must be used in combination with 
+.B --begin and either 
+.B -a or 
+.B --cp9.
 
 .TP
-.BI --cp9 " <n>"
+.B --cp9 
 Use the generated sequences to train a CM Plan 9 maximum-likelihood
 HMM without using pseudo-counts. Print the counts and normalized
 probabilities of the HMM. Primarily useful for debugging.

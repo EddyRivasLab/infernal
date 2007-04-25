@@ -35,7 +35,7 @@ The expert options allow different algorithms to be compared as explained below.
 
 Among the algorithms that can be tested are
 two banded variants of CYK, query-dependent banded (QDB) CYK (Nawrocki
-and Eddy, PLoS Computational Biology 3(3): e56) with the 
+and Eddy, PLoS Computational Biology 3(3): e56, 2007) with the 
 .B --qdb
 option and HMM banded CYK with the 
 .B --hbanded 
@@ -54,7 +54,7 @@ missed. The greater
 is, the greater the acceleration, but the greater the chance of
 missing the optimal alignment. By default 
 .I <x> 
-is set as 10^-7 for both 
+is set as 1E-7 for both 
 .B --qdb 
 and
 .B --hbanded.
@@ -79,9 +79,9 @@ and
 would first align the sequences in 
 .I seqfile
 with non-banded CYK, and then perform 3 additional QDB alignments, first with
-beta=10^-3, next with beta=10^-4 and finally with
-beta=10^-5. The tau options work in the same way. Currently, only
-values of 10^-<x> can be used. Summary statistics on timings and how
+beta=1E-3, next with beta=1E-4 and finally with
+beta=1E-5. The tau options work in the same way. Currently, only
+values of 1E-<x> can be used. Summary statistics on timings and how
 often the optimal alignment are missed for each value of beta or tau are then
 printed to standard output.
 
@@ -191,7 +191,7 @@ Specify the first alignment algorithm as QDB D&C CYK and the second
 algorithm as QDB standard CYK.
 
 .TP
-.BI --beta " <-x>" 
+.BI --beta " <x>" 
 Set the probability tail loss beta parameter for 
 .B --qdb 
 to
@@ -199,15 +199,15 @@ to
 In general higher values of beta give greater acceleration but greater
 chance of missing the optimal alignment. The default beta with 
 .B --qdb
-is 10^-7.
+is 1E-7.
 
 .TP
 .B --hbanded
-Specify the first alignment algorithm as non-banded Divide and Conquer
+Specify the first alignment algorithm as non-banded D&C
 (D&C) CYK, and the second algorithm as HMM banded standard CYK.
 
 .TP
-.BI --beta " <-x>" 
+.BI --beta " <x>" 
 Set the probability tail loss tau parameter for 
 .B --hbanded 
 to
@@ -215,7 +215,7 @@ to
 In general higher values of tau give greater acceleration but greater
 chance of missing the optimal alignment. The default tau with 
 .B --hbanded
-is 10^-7.
+is 1E-7.
 
 .TP
 .B --hsafe
@@ -226,7 +226,7 @@ score using non-banded D&C CYK.
 
 .TP
 .B --hmmonly
-Specify the first alignment algorithm as non-banded Divide and Conquer
+Specify the first alignment algorithm as non-banded D&C
 (D&C) CYK, and the second algorithm as Viterbi to a CM Plan 9 HMM
 derived from the CM in
 .I cmfile.
@@ -248,7 +248,7 @@ or
 .BI --betas " <x>"
 Specify the first alignment algorithm as non-banded 
 D&C CYK, and multiple stages of QDB CYK alignment. The first QDB
-alignment will use beta=10^-<x>, which will be the highest value of
+alignment will use beta=1E-<x>, which will be the highest value of
 beta used.
 Must be used in combination with 
 .B --qdb
@@ -259,18 +259,18 @@ and
 .BI --betae " <x>"
 Specify the first alignment algorithm as non-banded 
 D&C CYK, and multiple stages of QDB CYK alignment. The final QDB
-alignment will use beta=10^-<x>, which will be the lowest value of
+alignment will use beta=1E-<x>, which will be the lowest value of
 beta used.
 Must be used in combination with 
 .B --qdb
 and
-.B --betae.
+.B --betas.
 
 .TP
 .BI --taus " <x>"
 Specify the first alignment algorithm as non-banded D&C CYK, and
 multiple stages of HMM banded CYK alignment. The first HMM banded
-alignment will use tau=10^-<x>, which will be the highest value of tau
+alignment will use tau=1E-<x>, which will be the highest value of tau
 used.  Must be used in combination with
 .B --qdb
 and
@@ -280,9 +280,9 @@ and
 .BI --taue " <x>"
 Specify the first alignment algorithm as non-banded D&C CYK, and
 multiple stages of HMM banded CYK alignment. The final HMM banded
-alignment will use tau=10^-<x>, which will be the lowest value of tau
+alignment will use tau=1E-<x>, which will be the lowest value of tau
 used.  Must be used in combination with
 .B --qdb
 and
-.B --taue.
+.B --taus.
 

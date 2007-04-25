@@ -495,4 +495,21 @@ change. Therefore, it is not currently documented here. If you
 absolutely need to interpret it, see the file \verb+cmio.c+ in the
 source code.
 
+\subsection{Null model file format}
+
+The Infernal source distribution includes an example prior file, 
+\prog{rna.null}. This null model is identical to the hardcoded default
+prior used by Infernal, all four RNA nucleotides are equiprobable in
+the null, background model. 
+
+A null model file must contain exactly four non-comment lines. A
+comment line begins with a ``\# ``, that is a \# followed by a single
+space. Each of the four non-comment lines must contain a single floating point
+number, the four of which sum to 1.0. The first non-comment line is interpreted as
+the background probability of an ``A'' residue, the second, third, and
+fourth non-comment lines are interpreted as the background
+probabilities of a ``C'', ``G'' and ``U'' respectively. 
+
+
+
 

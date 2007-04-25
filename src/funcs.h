@@ -110,7 +110,7 @@ extern void    CMFileWrite(FILE *fp, CM_t *cm, int do_binary);
 /* from display.c
  */
 extern Fancyali_t    *CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq);
-extern void           PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset);
+extern void           PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp);
 extern void           FreeFancyAli(Fancyali_t *ali);
 extern CMConsensus_t *CreateCMConsensus(CM_t *cm, float pthresh, float sthresh);
 extern void           FreeCMConsensus(CMConsensus_t *con);

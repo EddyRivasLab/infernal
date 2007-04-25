@@ -104,6 +104,7 @@ architecture dependent files; normally it defaults to being the same
 as \prog{--prefix}. You could change this, for example, by:
 
 \user{./configure --prefix=/usr/share --exec-prefix=/usr/share/Linux/}\\
+
 In summary, a complete list of the \prog{./configure} installation
 options that affect \software{Infernal}:
 
@@ -177,20 +178,10 @@ executables are built with the \prog{--enable-mpi} option:
 
 \user{./configure --enable-mpi}
 
-A \prog{make install} following a \user{./configure --enable-mpi} will
+A \prog{make install} following a \prog{./configure --enable-mpi} will
 install only the programs \prog{mpicmsearch} and \prog{mpicmalign}. To
 install the full suite of non-MPI executables repeat \prog{configure}
 without \prog{--enable-mpi}, and repeat the \prog{make install}.
-
-\subsubsection{running the MPI programs}
-The \prog{mpicmsearch} and \prog{mpicmalign} binaries must be run
-using \prog{mpirun}. The \prog{infernal} MPI programs are under
-current development, and we have only tested them using the LAM
-implementation of MPI. Here's example runs using LAM:
-
-\user{mpirun C mpicmsearch query.cm target.fa}
-
-\user{mpirun C mpicmalign query.cm target.fa}
 
 \subsection{Example configuration}
 

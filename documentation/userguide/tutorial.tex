@@ -19,6 +19,9 @@ subdirectory of the distribution:
        that contains a tRNA. The file is
        in FASTA format, which \software{infernal} uses for unaligned sequence
        data.
+  \item[\prog{tutorial.big.db}]  A larger 300,000 nt sequence database; 
+       with the same tRNA as in \prog{tutorial.db}. Used to
+       demonstrate HMM filtered search. 
   \item[\prog{tutorial.fa}] The same sequences as in \prog{tutorial.sto}, plus
        one more tRNA with an internal deletion (to demonstrate local alignment),
        in unaligned FASTA format.
@@ -109,6 +112,7 @@ look at it (e.g. \prog{> more my.cm}) if you like, but it isn't really
 designed to be human-interpretable. You can treat \prog{.cm} files as
 compiled models of your RNA alignment.
 
+\newpage
 \subsection{Searching a sequence database with \prog{cmsearch}}
 
 You can use your model to search for new homologues of your RNA
@@ -124,7 +128,6 @@ this case, it returns one hit:
 
 \begin{sreoutput}
 CM 1: tutorial.1
-desc: (NONE)
 CM lambda and K undefined -- no statistics
 Using CM score cutoff of 0.00
 >example
@@ -149,22 +152,23 @@ Using CM score cutoff of 0.00
 Fin
 \end{sreoutput}
 
-The first two lines give the name of the CM and a description (if any,
-this can be defined in the input Stockholm file, as described later).
+The first line gives the name of the CM (this can be defined in the
+input Stockholm alignment file or as an option to \prog{cmbuild}, as
+described later).
 The next two lines give information on E-value statistics, which were
-not enabled in our example search (more on this later).  Next comes
+turned off in our example search (more on this later).  Next comes
 the results section, the name of each target sequence in the target
-database is given starting with a \prog{$>$}, in this case there is only one:
-example. Next, all the hits to the Plus strand of ``example'' are
-given, in this there is a single hit from position 101 to 173 with a
-score of 65.96 bits. As discussed next, E-value statistics can give an
-estimate of the significance of bit scores. We have not rigorously
-tested our implementation of E-values, so by default E-values are not
-calculated. As for bit scores, larger scores are better. As a rough
-guide, scores greater than the log (base two) of the target database
-size are significant.  Here, given a 600 nt target (300 nt $\times$ 2
-strands), scores over 9-10 bits are significant - so a score of 65.96
-is a good hit.
+database is given starting with a \prog{$>$}, in this case there is
+only one: \prog{example}. Next, all the hits to the top (Watson)
+strand of \prog{example} are given, in this example there is a single hit from
+position 101 to 173 with a score of 65.96 bits. As discussed next,
+E-value statistics can give an estimate of the significance of bit
+scores. We have not rigorously tested our implementation of E-values,
+so by default E-values are not calculated. Larger bit scores
+scores are better. As a rough guide, scores greater than the log (base
+two) of the target database size are significant.  Here, given a 600
+nt target (300 nt $\times$ 2 strands), scores over 9-10 bits are
+significant - so a score of 65.96 is a good hit.
 
 %Hits are numbered starting from 0. This one shows hit 0, from position
 %101 to 173 on the sequence named ``example'', with a score of 22.29
@@ -213,24 +217,27 @@ space, indicating a negative contribution to the alignment score.
 
 Finally, the fourth line is the target sequence.
 
-Now let's see what happens with E-values. When run with the \prog{-E}
-option, cmsearch estimates the E-value of each hit found. This is
+Let's repeat this example search, now with E-values. When run with the
+\prog{-E} option, \prog{cmsearch} estimates the E-value of each hit
+found. This is
 computed by sampling 1000 random sequences and determining the bit
-score of the best hit within each sequence, these
-scores are fit to a Gumbel distribution. This procedure used by
-cmsearch very similar to that described for the RSEARCH program in
-\cite{KleinEddy03}. Because E-value calculation requires searching
+score of the best hit within each sequence, these scores are fit to a
+Gumbel distribution. The search is then carried out, and the Gumbel
+distribution is used to estimate the significance of the bit scores of
+the hits found. This procedure used by \prog{cmsearch} is very
+similar to that described for the \software{RSEARCH} program in
+\cite{KleinEddy03}. Because using E-values requires searching
 1000 random sequences, it takes quite a bit longer than a regular
 search. To repeat the search saving all hits with E-values of 10 or
 less, do:
 
 \user{cmsearch -E 10 my.cm tutorial.db}
 
+{\samepage
 \begin{sreoutput}
 CM 1: tutorial.1
-desc: (NONE)
 CM statistics calculated with simulation of 1000 samples of length 180
-Random seed: 1177014463
+Random seed: 1177493993
 No partition points
 Using CM E cutoff of 10.00
 
@@ -239,7 +246,7 @@ Using CM E cutoff of 10.00
   Plus strand results:
 
  Query = 1 - 73, Target = 101 - 173
- Score = 65.96, E = 3.91e-12, P = 3.91e-12, GC =  53
+ Score = 65.96, E = 1.626e-11, P = 1.626e-11, GC =  53
 
            (((((((,,<<<<___.____>>>>,<<<<<_______>>>>>,,,,,<<<<<_______
          1 gccgacaUaGcgcAgu.GGuAgcgCgccagcuUgaaaagcuggAGguccgggGUUCgAuu 59      
@@ -254,8 +261,8 @@ Using CM E cutoff of 10.00
 
 //
 Fin
-
 \end{sreoutput}
+}
 
 The output tells us that the E-value is $3.91e-12$, this is the number
 of hits we expect to find with a bit score of 65.96 or better if we
@@ -263,47 +270,65 @@ were searching a database of random sequence of length 300.
 
 \subsection{Accelerating \prog{cmsearch}}
 The \prog{cmsearch} program is very slow, and several techniques have
-been developed for acceleration. We'll briefly discuss two here. The
-first is filtering the input database with a profile HMM, and using
-the expensive CM based search on only subsequences that receive high 
-HMM scores. This was pioneered by Zasha Weinberg and
-Larry Ruzzo at the University of Washington \cite{WeinbergRuzzo05,
-  WeinbergRuzzo05b, WeinbergRuzzo06}. Here we consider two of their
-techniques for constructing a profile HMM. The first builds a
-``rigorous  filter'' that is guaranteed to find all CM hits above a
-certain threshold. We have incorporated Weinberg's implementation of
-``rigorous filters'' into \software{infernal}, for details see X. The
-second builds a maximum likelihood (ML) HMM that is not guaranteed to find
-all hits, but is more practical for many RNA families. As discussed
-below, we have reimplemented ML HMMs within \software{infernal}.
-The second acceleration technique, called
-query-dependent banding (QDB) precalculates
-regions of the dynamic programming matrix that are very low
-probability prior to search, and skips these regions during search
-\cite{NawrockiEddy07}. 
+been developed for acceleration. We'll briefly discuss two here (for
+more information see the \prog{cmsearch} man pages at the end of this
+guide).
 
+The first acceleration strategy is called query-dependent banding
+(QDB). Briefly, this technique precalculates regions of the dynamic programming
+matrix that have very low probability before the search, and skips these
+regions during the search \cite{NawrockiEddy07}. 
 By default, QDB is on in \prog{cmsearch}, you can turn it off with the
-\prog{--noqdb} option. We still consider our implementation of the HMM
-filtering technique experimental, so it is not on by default. You can
-turn it on using \prog{--hmmfilter}. By default, any hit with an HMM
-score > 0 bits will be passed (along with some flanking sequence) to
-the CM to be researched.  The \prog{--hmmE} option calculates E-values
-for the HMM hits (in a an analagous manner to how CM hit E-values are
-calculated). This is our recommended way of using --hmmfilter. Here's
-an example searching a larger sample database of tutorial.big.db,
-which is 30,000 nt and still has the tRNA from position 101 to 173:
+\prog{--noqdb} option. QDB offers about a four-fold speedup for an
+average RNA family, with very little impact on sensitivity. In
+general, the longer the average sequence length of an RNA family, the
+greater the acceleration achieved by using QDB.
 
-\user{cmsearch --hmmfilter --hmmE 50 my.cm tutorial.big.db}
+The second acceleration technique is filtering the target database
+with a profile HMM, and using the expensive CM based search on only
+subsequences that receive high HMM scores. This was pioneered by Zasha
+Weinberg and Larry Ruzzo at the University of Washington
+\cite{WeinbergRuzzo04,WeinbergRuzzo04b,WeinbergRuzzo06}. Here we
+consider two of their techniques for constructing a profile HMM. The
+first builds a ``rigorous filter'' that is guaranteed to find all CM
+hits above a certain threshold. We have incorporated Weinberg's
+implementation of ``rigorous filters'' into \software{infernal} but
+not within the \prog{cmsearch} program, for details see the file
+\prog{rigfilters\_doc.html} in the \prog{documentation/userguide}
+subdirectory of the top level \prog{infernal} directory. The second
+HMM filtering method involves a maximum likelihood (ML) HMM that is
+not guaranteed to find all hits, but is more practical than rigorous
+filters for many RNA families. We have implemented a version of ML
+HMMs in \software{infernal}, which we call these CM Plan 9 HMMs (CP9
+HMMs), to distinguish them from the Plan 7 HMMs of \software{hmmer}.
+CP9 HMMs can be used to accelerate \prog{cmsearch} using the
+\prog{--hmmfilter} option, as well as to accelerate \prog{cmalign} as
+discussed later in this guide.  We still consider our implementation
+of the CP9 HMM filtering technique experimental, so it is not on by
+default.  When the \prog{--hmmfilter} option is enabled, E-values are
+calculated for the CP9 HMM in the same manner that CM E-values are
+calculated, except this time each of the 1000 random sequences is
+searched with the HMM, so it is much quicker. The database is then
+searched with the CP9 HMM and high scoring HMM hits with E-values of
+50 or less (along with some flanking sequence) are searched again with
+the CM.  The default E-value threshold of 50 can be changed with the
+\prog{--hmmE} option. Also, a bit score threshold can be set instead
+of an E-value threshold with the \prog{--hmmT} option.  Here's an
+example searching a larger sample database called
+\prog{tutorial.big.db}, which is 300,000 nt and still has the tRNA
+from position 101 to 173:
 
-This search should take about 4 seconds, if you're curious you can
-rerun the search without HMM filtering, with the --time option to
-print the CPU time used:
+\user{cmsearch --hmmfilter my.cm tutorial.big.db}
+
+This search finds the real tRNA and takes about 15 seconds on my
+machine. The same search without HMM filtering and with the \prog{--time}
+option to print timings can be run with:
 
 \user{cmsearch --time my.cm tutorial.big.db}
 
-This should take about 40 seconds, meaning the HMM gave us about a 10
-fold speedup. This speedup will increase significantly for larger
-databases and for RNA families with longer sequence
+On my machine, this non-filtered search takes about 8 minutes, meaning
+the HMM gave us about a 30-fold speedup. This speedup will likely increase 
+for larger databases and for RNA families with longer sequence
 lengths. The speedup comes at a cost to sensitivity though, and we haven't
 rigorously tested this to our satisfaction. This is the main reason
 this option is not on by default. There are more options related to
@@ -385,7 +410,35 @@ option:
 
 \user{cmalign -o my.sto my.cm tutorial.fa}
 
-We'll use this \prog{my.sto} alignment file in the next section.
+We'll use this \prog{my.sto} alignment file in an upcoming section.
+
+\subsection{Accelerating \prog{cmalign}}
+Earlier in this guide, we described the use of CM Plan 9 HMMs (CP9
+HMMs) as filters to accelerate \prog{cmsearch} using the
+\prog{--hmmfilter} option. CP9 HMMs can also be used to accelerate CM
+alignment. The basic idea is to first align each sequence to the CP9
+HMM and to use that alignment to derive constraints, which we call
+bands, for the more
+computationally expensive CM alignment. These bands are then
+applied during CM alignment, reducing the time necessary for
+alignment. This technique can be enabled with the \prog{--hbanded}
+option to \prog{cmalign}. Here's an
+example: 
+
+\user{cmalign --hbanded my.cm tutorial.fa}
+
+You may notice that this time the program runs a bit
+quicker than before. It's almost imperceptible here, but for large RNAs the
+difference is significant. For example, alignment of small subunit ribosomal
+RNA (SSU rRNA) sequences (which are roughly 1500 nucleotides) using
+the \prog{--hbanded} option takes close to one second for one sequence, whereas
+non-banded alignment takes several minutes. Importantly, using the HMM banded
+technique sacrifices the guarantee that the optimal alignment will be
+found, but our tests suggests this happens very rarely for non-local
+alignment (these tests were done using the \prog{cmscore} program).
+However, we have not rigorously tested the \prog{--hbanded} option for local
+alignment. More information on HMM banded alignment can be found in
+the \prog{cmalign} and \prog{cmscore} man pages at the end of this guide.
 
 \subsection{Using optional annotation to completely specify model architecture
 to \prog{cmbuild}}
@@ -569,7 +622,20 @@ annotation and the reference (RF) annotation lines.
 %\prog{-W}. This strategy has not been systematically tested.
 
 
-\subsubsection{Getting more information}
+\subsection{Parallelizing search and alignment with \prog{mpicmsearch}
+  and \prog{mpicmalign}}
+As mentioned in the Installation section, \software{infernal} contains
+two MPI programs: \prog{mpicmsearch} and \prog{mpicmalign}.
+These programs must be run using \prog{mpirun}. These MPI programs are
+under current development, and we have only tested them using the LAM
+implementation of MPI. Here are example runs using LAM:  
+
+
+\user{mpirun C mpicmsearch query.cm target.fa}
+
+\user{mpirun C mpicmalign query.cm target.fa}
+
+\subsection{Getting more information}
 
 For a quick refresher on the command line usage of any program and its
 commonly used options, just type the name of the program with no other
@@ -614,27 +680,26 @@ Usage: cmscore [-options] <cmfile> <sequence file>
    --regress <f> : save regression test data to file <f>
    --stringent   : require the two parse trees to be identical
    --trees       : print parsetrees
-   --nocheck     : don't check parsetree scores vs alignment scores
 
   Expert stage 2 alignment options, to compare to stage 1 (D&C non-banded)
-   --std         : compare divide and conquer versus standard CYK (default)
+   --std         : compare divide and conquer versus standard CYK [default]
    --qdb         : compare non-banded d&c versus QDB standard CYK
    --qdbsmall    : compare non-banded d&c versus QDB d&c
    --qdbboth     : compare        QDB d&c versus QDB standard CYK
-   --beta <f>    : tail loss prob for QDB [default:1E-7]
+   --beta <x>    : set tail loss prob for QDB to <x> [default:1E-7]
    --hbanded     : compare non-banded d&c versus HMM banded CYK
-   --tau <f>     : tail loss prob for HMM bands [default: 1E-7]
+   --tau <x>     : set tail loss prob for HMM bands to <x> [default: 1E-7]
    --hsafe       : realign (non-banded) seqs with HMM banded CYK score < 0 bits
-   --sums        : use posterior sums during HMM band calculation (widens bands)
    --hmmonly     : align with the CM Plan 9 HMM (only gives timings)
-   --scoreonly   : for full CYK/inside stage, do only score, save memory
+   --scoreonly   : for standard CYK stage, do only score, save memory
 
   Expert stage 2-N alignment options, to compare to stage 1 (D&C non-banded)
   For --hbanded or --qdb, try multiple tau or beta values, all will = 10^-n
-   --betas <x>   : set initial (stage 2) tail loss prob to 10^-(<x>) for qdb
-   --betae <x>   : set final   (stage N) tail loss prob to 10^-(<x>) for qdb
-   --taus <x>    : set initial (stage 2) tail loss prob to 10^-(<x>) for hmm
-   --taue <x>    : set final   (stage N) tail loss prob to 10^-(<x>) for hmm
+   --betas <n>   : set initial (stage 2) tail loss prob to 10^-(<x>) for qdb
+   --betae <n>   : set final   (stage N) tail loss prob to 10^-(<x>) for qdb
+   --taus <n>    : set initial (stage 2) tail loss prob to 10^-(<x>) for hmm
+   --taue <n>    : set final   (stage N) tail loss prob to 10^-(<x>) for hmm
+
 \end{sreoutput}
 
 More detailed information on usage and command line options is
@@ -644,6 +709,12 @@ system, you can see this information with, e.g.:
 \user{man cmalign}
 
 Copies of the man pages are also provided at the end of this guide.
+
+
+
+
+
+
 
 
 

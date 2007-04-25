@@ -111,7 +111,7 @@ This is part of the automated testing procedure at each release.
 .TP
 .B --full
 Include all match columns in the output alignment. By default only
-consensus columns in which at least one sequence has a non-gap residue
+consensus columns in which at least one sequence has a non-gap character
 are included.
 
 .TP
@@ -177,12 +177,12 @@ is used, it is still the CYK optimal alignment. The confidence
 estimates appear as "#=GR <seq name> POST" annotation in the output
 Stockholm alignment for each sequence. This annotation includes the
 digits "0-9", "*" and "." characters. A "8" indicates that the
-corresponding residue aligns to the corresponding column in between 80
-and 90% of all possible alignments to the CM. A "7" indicates the
+confidence estimate for the corresponding residue being aligned to the
+corresponding column is between 80
+and 90%. A "7" indicates the
 same, but between 70 and 80%, and so on for the other digits. A "*"
-indicates that "very nearly" 100% (it's hard to be exact here due to
-numerical precision issues) of all possible alignments to the CM have
-the corresponding residue aligned to the corresponding column. A "." 
+indicates that the confidence estimate is "very nearly" 100% (it's
+hard to be exact here due to numerical precision issues) A "." 
 indicates that that column aligns to a gap in the corresponding sequence.
 
 .TP
@@ -212,7 +212,7 @@ as the "sub CMs" described by Weinberg and Ruzzo.
 
 .TP
 .BI --elsilent
-Disallow emissions for the local end (EL) state.
+Disallow emissions from the local end (EL) state.
 
 .TP
 .BI --enfstart " <n>"
@@ -243,7 +243,7 @@ occur beginning at consensus column
 .B --hbanded
 Score each sequence to an HMM derived from the CM in
 .I cmfile 
-using the Forward and Backward HMM algorithms and derive posterior
+using the Forward and Backward HMM algorithms and calculate posterior
 probabilities each residue aligns to each state of the HMM. Use these
 posterior probabilities to derive constraints (bands) for the CM, and
 use them to accelerate CM alignment. This method sacrifices the
@@ -261,7 +261,7 @@ yet, so use at your own risk with
 Set the tail loss probability used during HMM band calculation to
 .I <f>. 
 This is the amount of probability mass within the HMM posterior
-probabilities that is considered negligible. The default value is 10^-7.
+probabilities that is considered negligible. The default value is 1E-7.
 In general, higher values will result in greater acceleration, but
 increase the chance of missing the optimal alignment due to the HMM
 bands.
@@ -286,19 +286,19 @@ printed when this option is enabled, only scores are printed.
 .TP
 .B --qdb
 Accelerate alignment using query-dependent bands (QDB) as described in
-(Nawrocki and Eddy, PLoS Computational Biology 3(3): e56) to constrain
-the CYK alignment. In practice, the acceleration of 
-.B --qdb 
-seems to be significantly less and the chance of missing the optimal
-alignment slightly more relative to the 
+(Nawrocki and Eddy, PLoS Computational Biology 3(3): e56, 2007) to constrain
+the CYK alignment. In practice, acceleration due to
+QDB seems to be significantly less than acceleration due to 
+the 
 .B --hbanded 
-option. 
+option, and the chance of missing the optimal alignment is slightly
+more with QDB.
 
 .TP
 .BI --beta " <x>"
 Set the tail loss probability of QDB to 
 .I <x>
-The default value is 10^-7.
+The default value is 1E-7.
 In general, higher values will result in greater acceleration, but
 increase the chance of missing the optimal alignment due to the bands.
 
@@ -323,8 +323,9 @@ is to use the
 .B --rf
 option to 
 .B cmbuild
-(see man page for cmbuild) 
-and to maintain the "#=GC RF" annotation in the alignment when
+(see man page for 
+.B cmbuild
+) and to maintain the "#=GC RF" annotation in the alignment when
 removing sequences to create the subset alignment 
 .I <f>. 
 To specify that the
