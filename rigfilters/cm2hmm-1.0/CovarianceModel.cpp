@@ -974,5 +974,5 @@ const char *CovarianceModelBase::GetName (void) const {
 void CovarianceModelBase::CYKScan (char *dsq, int L, int W,int *ret_nhits, int **ret_hitr, int **ret_hiti, int **ret_hitj, float **ret_hitsc) const
 {
 	CM_t *nonConstCM=(CM_t *)cm;
-	::CYKScan(nonConstCM,dsq,0,L-1,W,ret_nhits,ret_hitr,ret_hiti,ret_hitj,ret_hitsc,0.0);
+	::CYKScan(nonConstCM,dsq,1,L,W,ret_nhits,ret_hitr,ret_hiti,ret_hitj,ret_hitsc,0.0);
 }
