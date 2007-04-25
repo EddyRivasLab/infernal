@@ -12,7 +12,7 @@ CFSQP_PATH=$(INFERNAL_PATH)/rigfilters/cfsqp
 MYLIBS = -linfernal -lsquid -lcfsqp -lm
 MYLIBDIR = -L$(INFERNAL_PATH)/src -L$(INFERNAL_PATH)/squid -L$(CFSQP_PATH)
 
-common_CFLAGS=-ftemplate-depth-30 -I. -I$(INFERNAL_PATH)/src -I$(INFERNAL_PATH)/squid -I$(CFSQP_PATH)
+common_CFLAGS=-ftemplate-depth-30 -I. -I$(INFERNAL_PATH)/src -I$(INFERNAL_PATH)/squid -I$(INFERNAL_PATH)/easel -I$(CFSQP_PATH)
 common_LFLAGS= -g
 
 # debug build
