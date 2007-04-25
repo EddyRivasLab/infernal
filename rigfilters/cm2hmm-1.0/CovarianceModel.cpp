@@ -923,11 +923,11 @@ void CovarianceModelBase::SetBeginsc (State state,float score)
 }
 float CovarianceModelBase::CYKDivideAndConquer(char *seq,int L,State state,int i,int j,Parsetree_t **retr) const {
 	CM_t *nonConstCM=(CM_t *)cm;
-	return ::CYKDivideAndConquer(nonConstCM,seq,L,StateToInt(state),i,j,retr);
+	return ::CYKDivideAndConquer(nonConstCM,seq,L,StateToInt(state),i,j,retr,NULL,NULL);
 }
 float CovarianceModelBase::CYKInsideScore (char *seq,int L,State state,int i,int j) const {
 	CM_t *nonConstCM=(CM_t *)cm;
-	return ::CYKInsideScore(nonConstCM,seq,L,StateToInt(state),i,j);
+	return ::CYKInsideScore(nonConstCM,seq,L,StateToInt(state),i,j,NULL,NULL);
 }
 CMConsensus_t *CovarianceModelBase::CreateCMConsensus (float x,float y) const
 {
@@ -974,5 +974,5 @@ const char *CovarianceModelBase::GetName (void) const {
 void CovarianceModelBase::CYKScan (char *dsq, int L, int W,int *ret_nhits, int **ret_hitr, int **ret_hiti, int **ret_hitj, float **ret_hitsc) const
 {
 	CM_t *nonConstCM=(CM_t *)cm;
-	::CYKScan(nonConstCM,dsq,L,W,ret_nhits,ret_hitr,ret_hiti,ret_hitj,ret_hitsc);
+	::CYKScan(nonConstCM,dsq,0,L-1,W,ret_nhits,ret_hitr,ret_hiti,ret_hitj,ret_hitsc,0.0);
 }
