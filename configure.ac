@@ -58,57 +58,6 @@ AC_DEFINE_UNQUOTED(PACKAGE_LICENSE, "$PACKAGE_LICENSE")
 if ((! test -d binaries) && test -d src); then 
 AC_MSG_NOTICE([This is a full source distribution - using full config])
 
-# EPN, Thu Apr  5 07:58:07 2007
-# First, check for --enable-mpi=<x> to build MPI cmsearch and cmalign progs.
-# if enabled, set compiler as <x>, if no "=<x>" provided, set compiler as mpicc.
-# PROGS and PROGNAMES defined by default here as serial programs. 
-# If --enable-mpi PROGS becomes "cmalign cmsearch", and PROGNAMES becomse
-# "mpicmalign mpicmsearch". These are both necessary b/c there are
-# no mpicmalign.c or mpicmsearch.c files, but we want the MPI executables
-# to have distinct names.
-#
-
-# Program names
-SERIALPROGS="cmalign cmbuild cmscore cmsearch cmemit trcyk"
-PROGS="$SERIALPROGS"
-PROGNAMES="$SERIALPROGS"
-MPIPROGS="cmalign cmsearch"
-MPIPROGNAMES="mpicmalign mpicmsearch"
-MPI=""
-AC_ARG_ENABLE(mpi,
-[  AS_HELP_STRING([--enable-mpi],
-                  [enable MPI, Message Passing Interface])],
-[case $enable_mpi in
-   yes) AC_MSG_NOTICE([enabled optional MPI (Message Passing Interface) support])
- 	MPI="mpi"
- 	MPICOMPILER="mpicc"
-	PROGS="$MPIPROGS"
-	PROGNAMES="$MPIPROGNAMES"
-	AC_DEFINE(USE_MPI, 1)
-        ;;
-    no) MPICOMPILER=""
-        ;;
-     *) MPI="mpi"
-	MPICOMPILER=$with_mpi
-	PROGS="$MPIPROGS"
-	PROGNAMES="$MPIPROGNAMES"
-	AC_DEFINE(USE_MPI, 1)
-        ;;	
-  esac])
-
-# if $MPICOMPILER == "", use default C compiler, set CFLAGS by default
-if test -z "$MPICOMPILER"; then
-   AC_PROG_CC 
-# if $MPICOMPILER != "", use compiler $mpi, manually set CFLAGS
-else 
-     AC_PROG_CC($MPICOMPILER)
-     CFLAGS="-g -O2"
-fi
-AC_SUBST(MPI)
-AC_SUBST(MPICOMPILER)
-AC_SUBST(PROGS)
-AC_SUBST(PROGNAMES)
-
 # Checks for programs.
 # Sets output variables RANLIB.
 # AR might be hidden away on Solaris; provide some hints in the PATH.
@@ -297,6 +246,30 @@ AC_ARG_WITH(rigfilters,
     *)  echo "Ignoring unknown argument to --with-rigfilters: $with_rigfilters"
         ;;
 esac])
+
+# --enable-mpi       Enable MPI parallelization
+# 
+# Sets CC, MPICC, MPILIBS, MPIPROGS output variables
+# Defines HAVE_MPI preprocessor variable.
+#
+AC_ARG_ENABLE(mpi, 
+[AS_HELP_STRING([--enable-mpi], [enable MPI parallelization])],
+[case $enable_mpi in
+   yes) ACX_MPI([
+           AC_MSG_NOTICE([enabled optional MPI parallelization])
+	   AC_DEFINE(USE_MPI, 1)
+	   CC=$MPICC
+   	   MPIPROGS="mpi-cmalign mpi-cmsearch"
+          ], [
+           AC_MSG_ERROR([MPI library not found])
+          ])
+	 ;;
+   no)   AC_MSG_NOTICE([MPI parallelization disabled])
+         ;;
+   *)    echo "Ignoring unknown argument to --enable-mpi: $enable_mpi"
+	 ;;
+esac])
+AC_SUBST(MPIPROGS)
 
 #
 # end of optionally configured features

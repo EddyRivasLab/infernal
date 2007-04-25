@@ -171,17 +171,17 @@ To build the executables, include these two options to configure:
 
 \subsubsection{installing Message Passing Interface (MPI) programs}
 
-\software{Infernal} includes two programs \prog{mpicmsearch} and
-\prog{mpicmalign} that use MPI parallelization. This software
+\software{Infernal} includes two programs \prog{mpi-cmsearch} and
+\prog{mpi-cmalign} that use MPI parallelization. This software
 currently requires the MPI C compiler \prog{mpicc}.  The MPI
 executables are built with the \prog{--enable-mpi} option:
 
 \user{./configure --enable-mpi}
 
-A \prog{make install} following a \prog{./configure --enable-mpi} will
-install only the programs \prog{mpicmsearch} and \prog{mpicmalign}. To
-install the full suite of non-MPI executables repeat \prog{configure}
-without \prog{--enable-mpi}, and repeat the \prog{make install}.
+A \prog{> make install} following a \prog{./configure --enable-mpi} will
+install the non-MPI programs (\prog{cmalign}, \prog{cmbuild},
+\prog{cmemit}, \prog{cmscore}, and \prog{cmsearch} as well as
+\prog{mpi-cmsearch} and \prog{mpi-cmalign}. 
 
 \subsection{Example configuration}
 

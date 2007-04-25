@@ -622,18 +622,17 @@ annotation and the reference (RF) annotation lines.
 %\prog{-W}. This strategy has not been systematically tested.
 
 
-\subsection{Parallelizing search and alignment with \prog{mpicmsearch}
-  and \prog{mpicmalign}}
+\subsection{Parallelizing search and alignment with \prog{mpi-cmsearch}
+  and \prog{mpi-cmalign}}
 As mentioned in the Installation section, \software{infernal} contains
-two MPI programs: \prog{mpicmsearch} and \prog{mpicmalign}.
+two MPI programs: \prog{mpi-cmsearch} and \prog{mpi-cmalign}.
 These programs must be run using \prog{mpirun}. These MPI programs are
 under current development, and we have only tested them using the LAM
 implementation of MPI. Here are example runs using LAM:  
 
+\user{mpirun C mpi-cmsearch query.cm target.fa}
 
-\user{mpirun C mpicmsearch query.cm target.fa}
-
-\user{mpirun C mpicmalign query.cm target.fa}
+\user{mpirun C mpi-cmalign query.cm target.fa}
 
 \subsection{Getting more information}
 

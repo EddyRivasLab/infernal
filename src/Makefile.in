@@ -28,14 +28,18 @@ LIBS  = @LIBS@
 AR     = @AR@ rcv 
 RANLIB = @RANLIB@
 
+# configuration for optional MPI functionality
+MPICC     = @MPICC@
+MPILIBS   = @MPILIBS@
+MPIPROGS  = @MPIPROGS@
+
 # Where the build arena is (module .h and .o files)
 #
 MYLIBS   = -lsquid -leasel 
 MYLIBDIR = -L../squid -L../easel 
 MYINCDIR = -I../squid -I../easel 
 
-PROGS     = @PROGS@
-PROGNAMES = @PROGNAMES@
+PROGS = cmalign cmbuild cmscore cmsearch cmemit
 
 OBJS  = alphabet.o\
 	bandcyk.o\
@@ -84,10 +88,16 @@ HDRS  = funcs.h\
 #################################################################
 ## Targets defining how to make INFERNAL executables.
 ##
-all: 	$(PROGS)
+all: 	$(PROGS) $(MPIPROGS)
 
 $(PROGS): @EXEC_DEPENDENCY@ $(OBJS) ${HDRS}
-	$(CC) $(CFLAGS) $(DEFS) $(MYLIBDIR) -o @MPI@$@ $@.o $(OBJS) $(MYLIBS) $(LIBS)
+	$(CC) $(CFLAGS) $(DEFS) $(MYLIBDIR) -o $@ $@.o $(OBJS) $(MYLIBS) $(LIBS)
+
+mpi-cmalign: cmalign.c $(OBJS) ${HDRS}
+	$(CC) $(CFLAGS) $(DEFS) $(MYLIBDIR) -o mpi-cmalign cmalign.o $(OBJS) $(MYLIBS) $(LIBS)
+
+mpi-cmsearch: cmsearch.c $(OBJS) ${HDRS}
+	$(CC) $(CFLAGS) $(DEFS) $(MYLIBDIR) -o mpi-cmsearch cmsearch.o $(OBJS) $(MYLIBS) $(LIBS)
 
 #################################################################
 ## Targets used in making INFERNAL module for testsuite compilation.
@@ -104,10 +114,10 @@ libinfernal.a: $(OBJS) ${HDRS}
 ## Miscellaneous targets.
 ##
 clean:
-	-rm -f *.o *~ Makefile.bak core $(PROGNAMES) TAGS gmon.out libinfernal.a
+	-rm -f *.o *~ Makefile.bak core $(PROGS) $(MPIPROGS) TAGS gmon.out libinfernal.a
 
 distclean:
-	-rm -f *.o *~ Makefile.bak core $(PROGNAMES) TAGS gmon.out libinfernal.a
+	-rm -f *.o *~ Makefile.bak core $(PROGS) $(MPIPROGS) TAGS gmon.out libinfernal.a
 	-rm -f Makefile config.h
 
 TAGS:
