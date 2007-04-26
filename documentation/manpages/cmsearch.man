@@ -96,7 +96,7 @@ can be used to filter the database prior to search with a CM using the
 option as described below. By default, when 
 .B --hmmfilter
 is enabled, E-values are calculated for CP9 HMM hits and those hits
-with E-values less than or equal to 50 
+with E-values less than or equal to 500 
 survive the filter. This E-value threshold can be changed to 
 .I <x> 
 with the
@@ -456,8 +456,8 @@ This option is used to accelerate searches. Build a CM Plan 9 HMM from the CM in
 .I cmfile 
 and use it to filter the database in 
 .I seqfile.
-Only hits to the HMM with E-values less than or equal to 50 will then
-be searched with the CM. This E-value threshold of 50 can be changed 
+Only hits to the HMM with E-values less than or equal to 500 will then
+be searched with the CM. This E-value threshold of 500 can be changed 
 using the 
 .B --hmmE 
 option or to a bit score threshold using the 

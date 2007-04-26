@@ -310,8 +310,8 @@ calculated for the CP9 HMM in the same manner that CM E-values are
 calculated, except this time each of the 1000 random sequences is
 searched with the HMM, so it is much quicker. The database is then
 searched with the CP9 HMM and high scoring HMM hits with E-values of
-50 or less (along with some flanking sequence) are searched again with
-the CM.  The default E-value threshold of 50 can be changed with the
+500 or less (along with some flanking sequence) are searched again with
+the CM.  The default E-value threshold of 500 can be changed with the
 \prog{--hmmE} option. Also, a bit score threshold can be set instead
 of an E-value threshold with the \prog{--hmmT} option.  Here's an
 example searching a larger sample database called
@@ -320,14 +320,14 @@ from position 101 to 173:
 
 \user{cmsearch --hmmfilter my.cm tutorial.big.db}
 
-This search finds the real tRNA and takes about 15 seconds on my
+This search finds the real tRNA and takes about 45 seconds on my
 machine. The same search without HMM filtering and with the \prog{--time}
 option to print timings can be run with:
 
 \user{cmsearch --time my.cm tutorial.big.db}
 
 On my machine, this non-filtered search takes about 8 minutes, meaning
-the HMM gave us about a 30-fold speedup. This speedup will likely increase 
+the HMM gave us about a 10-fold speedup. This speedup will likely increase 
 for larger databases and for RNA families with longer sequence
 lengths. The speedup comes at a cost to sensitivity though, and we haven't
 rigorously tested this to our satisfaction. This is the main reason
