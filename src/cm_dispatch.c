@@ -522,7 +522,9 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 			 * of. This will be the bit score stored in
 			 * dbseq unless (cm->flags & CM_ENFORCED)
 			 * in which case we subtract cm->enf_scdiff first. */
+  CMEmitMap_t *emap;           /* consensus emit map for the CM */
 
+  emap = CreateEmitMap(cm);
   name = dbseq->sq[0]->name;
   len = dbseq->sq[0]->n;
 
@@ -543,8 +545,10 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 	  gc_comp = get_gc_comp (dbseq->sq[in_revcomp]->seq, 
 				 results->data[i].start, results->data[i].stop);
 	  printf (" Query = %d - %d, Target = %d - %d\n", 
-		  cons->lpos[cm->ndidx[results->data[i].bestr]]+1,
-		  cons->rpos[cm->ndidx[results->data[i].bestr]]+1,
+		  (emap->lpos[cm->ndidx[results->data[i].bestr]] + 1 
+		   - StateLeftDelta(cm->sttype[results->data[i].bestr])),
+		  (emap->rpos[cm->ndidx[results->data[i].bestr]] - 1 
+		   + StateRightDelta(cm->sttype[results->data[i].bestr])),
 		  coordinate(in_revcomp, results->data[i].start, len), 
 		  coordinate(in_revcomp, results->data[i].stop, len));
 	  if (do_stats) 
@@ -585,6 +589,7 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 	}
     }
   fflush(stdout);
+  FreeEmitMap(emap);
 }
 
 /* Function: get_gc_comp
