@@ -103,7 +103,7 @@ static char experts[] = "\
   * Filtering options using a CM plan 9 HMM (*in development*):\n\
    --hmmfilter    : subseqs j-W+1..i+W-1 survive (j=end from Fwd, i=start from Bwd)\n\
    --hmmonly      : don't use CM at all, just scan with HMM (Forward + Backward)\n\
-   --hmmE <x>     : use cutoff E-value of <x> for CP9 (possibly filtered) scan [df:50]\n\
+   --hmmE <x>     : use cutoff E-value of <x> for CP9 (possibly filtered) scan [df:500]\n\
    --hmmT <x>     : use cutoff bit score of <x> for CP9 (possibly filtered) scan\n\
    --hmmnegsc <x> : set min bit score to report as <x> < 0 (experimental)\n\
 \n\
