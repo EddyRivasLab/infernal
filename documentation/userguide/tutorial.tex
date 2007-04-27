@@ -327,9 +327,10 @@ option to print timings can be run with:
 \user{cmsearch --time my.cm tutorial.big.db}
 
 On my machine, this non-filtered search takes about 8 minutes, meaning
-the HMM gave us about a 10-fold speedup. This speedup will likely increase 
-for larger databases and for RNA families with longer sequence
-lengths. The speedup comes at a cost to sensitivity though, and we haven't
+the HMM gave us about a 10-fold speedup. This speedup will increase 
+for RNA families with longer sequence lengths, or if you lower the
+E-value cutoff with \prog{--hmmE}. The speedup comes at a
+cost to sensitivity though, and we haven't
 rigorously tested this to our satisfaction. This is the main reason
 this option is not on by default. There are more options related to
 HMM filtering for \prog{cmsearch} discussed in the man pages at the
