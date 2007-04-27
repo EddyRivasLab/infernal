@@ -110,7 +110,7 @@ extern void    CMFileWrite(FILE *fp, CM_t *cm, int do_binary);
 /* from display.c
  */
 extern Fancyali_t    *CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq);
-extern void           PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp);
+extern void           PrintFancyAli(FILE *fp, Fancyali_t *ali);
 extern void           FreeFancyAli(Fancyali_t *ali);
 extern CMConsensus_t *CreateCMConsensus(CM_t *cm, float pthresh, float sthresh);
 extern void           FreeCMConsensus(CMConsensus_t *con);
@@ -327,21 +327,10 @@ extern float CP9BackwardScan(CM_t *cm, char *dsq, int i0, int j0, int W, float c
 			     int doing_rescan);
 extern float CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff, 
 			      float cp9_cutoff, scan_results_t *results, int doing_cp9_stats, int *ret_flen);
-extern float RescanFilterSurvivors(CM_t *cm, char *dsq, int *hiti, int *hitj, int nhits, int i0, int j0,
-				   int W, int i_lpad, int i_rpad, int j_lpad, int j_rpad, int do_collapse,
-				   float cm_cutoff, float cp9_cutoff, scan_results_t *results, int *ret_flen);
-
-extern float CP9FilteredWeinbergScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff, 
-				     float cp9_cutoff, scan_results_t *results, int *ret_flen);
-extern void CP9ScanFullPosterior(char *dsq, int L, CP9_t *hmm,
-				 struct cp9_dpmatrix_s *fmx,
-				 struct cp9_dpmatrix_s *bmx,
-				 struct cp9_dpmatrix_s *mx);
-extern void CP9_combine_FBscan_hits(int i0, int j0, int W, int fwd_nhits, int *fwd_hitr, int *fwd_hiti, 
-				    int *fwd_hitj, float *fwd_hitsc, int bck_nhits, 
-				    int *bck_hitr, int *bck_hiti, int *bck_hitj, float *bck_hitsc, 
-				    int *ret_nhits, int **ret_hitr, int **ret_hiti, int **ret_hitj, 
-				    float **ret_hitsc, int pad);
+extern float RescanFilterSurvivors(CM_t *cm, char *dsq, int *hiti, int *hitj, int nhits, int i0, 
+				   int j0, int W, int padmode, int ipad, int jpad, int do_collapse,
+				   float cm_cutoff, float cp9_cutoff, scan_results_t *results, 
+				   int *ret_flen);
 
 /* from CP9_cm2wrhmm.c */
 extern int build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,

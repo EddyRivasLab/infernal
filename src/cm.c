@@ -113,6 +113,7 @@ CreateCMShell(void)
   cm->cp9_cutoff      = DEFAULT_CP9_CUTOFF;      /* 0.0 bits */
   cm->cp9_sc_boost = 0.;
   cm->root_trans = NULL;
+  cm->hmmpad = DEFAULT_HMMPAD; /* 0 residues */
 
   /* initialize statically allocated EVD stats to 0.'s */
   int i;
@@ -272,7 +273,6 @@ FreeCM(CM_t *cm)
   free(cm->dmax);
   if(cm->cp9map != NULL) FreeCP9Map(cm->cp9map);
   if(cm->cp9    != NULL) FreeCPlan9(cm->cp9);
-  if(cm->root_trans != NULL) free(cm->root_trans);
   free(cm);
 }
 

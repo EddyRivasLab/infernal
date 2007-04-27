@@ -45,7 +45,7 @@ static void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 static int get_gc_comp(char *seq, int start, int stop);
 static void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, char *seq,
 				       float cutoff, double *lambda, double *mu);
-#ifdef USE_MPI
+#if USE_MPI
 static seqs_to_aln_t *read_next_aln_seqs(ESL_SQFILE *seqfp, int nseq, int index);
 #endif
 
@@ -108,8 +108,11 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons)
 				 FALSE, /* we're not building a histogram for CM stats  */
 				 FALSE, /* we're not building a histogram for CP9 stats */
 				 NULL); /* filter fraction, TEMPORARILY NULL            */
-	  remove_overlapping_hits (dbseq->results[reversed],
-				   dbseq->sq[reversed]->n);
+	  if(cm->search_opts & CM_SEARCH_GREEDY)
+	    {
+	      remove_overlapping_hits (dbseq->results[reversed],
+				       dbseq->sq[reversed]->n);
+	    }
 	  if (cm->cutoff_type == E_CUTOFF) 
 	    remove_hits_over_e_cutoff (cm, dbseq->results[reversed],
 				       dbseq->sq[reversed]->seq,
@@ -522,9 +525,7 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 			 * of. This will be the bit score stored in
 			 * dbseq unless (cm->flags & CM_ENFORCED)
 			 * in which case we subtract cm->enf_scdiff first. */
-  CMEmitMap_t *emap;           /* consensus emit map for the CM */
 
-  emap = CreateEmitMap(cm);
   name = dbseq->sq[0]->name;
   len = dbseq->sq[0]->n;
 
@@ -545,10 +546,8 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 	  gc_comp = get_gc_comp (dbseq->sq[in_revcomp]->seq, 
 				 results->data[i].start, results->data[i].stop);
 	  printf (" Query = %d - %d, Target = %d - %d\n", 
-		  (emap->lpos[cm->ndidx[results->data[i].bestr]] + 1 
-		   - StateLeftDelta(cm->sttype[results->data[i].bestr])),
-		  (emap->rpos[cm->ndidx[results->data[i].bestr]] - 1 
-		   + StateRightDelta(cm->sttype[results->data[i].bestr])),
+		  cons->lpos[cm->ndidx[results->data[i].bestr]]+1,
+		  cons->rpos[cm->ndidx[results->data[i].bestr]]+1,
 		  coordinate(in_revcomp, results->data[i].start, len), 
 		  coordinate(in_revcomp, results->data[i].stop, len));
 	  if (do_stats) 
@@ -580,16 +579,13 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 	      ali = CreateFancyAli (results->data[i].tr, cm, cons, 
 				    dbseq->sq[in_revcomp]->dsq +
 				    (results->data[i].start-1));
-	      PrintFancyAli(stdout, ali,
-			    (coordinate(in_revcomp, results->data[i].start, len)-1), /* offset in sq index */
-			    in_revcomp);
+	      PrintFancyAli(stdout, ali);
 	      FreeFancyAli(ali);
 	      printf ("\n");
 	    }
 	}
     }
   fflush(stdout);
-  FreeEmitMap(emap);
 }
 
 /* Function: get_gc_comp
@@ -679,52 +675,6 @@ void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, char *seq,
     results->num_results--;
   sort_results(results);
 }  
-
-
-#ifdef USE_MPI
-/*
- * Function: read_next_aln_seqs
- * Date:     EPN, Fri Dec 29 17:44:25 2006
- *
- * Purpose:  Given a pointer to a seq file we're reading seqs to align
- *           from, read in nseq seqs from the seq file. 
- */
-seqs_to_aln_t * read_next_aln_seqs(ESL_SQFILE *seqfp, int nseq, int index) 
-{
-  seqs_to_aln_t *ret_seqs_to_aln;
-  int status;
-  int i;
-
-  ret_seqs_to_aln = MallocOrDie(sizeof(seqs_to_aln_t));
-  ret_seqs_to_aln->sq = MallocOrDie(sizeof(ESL_SQ *) * nseq);
-  /*ret_seqs_to_aln->sq = MallocOrDie(sizeof(ESL_SQ *) * nseq);*/
-  
-  for(i=0; i < nseq; i++)
-  {
-    ret_seqs_to_aln->sq[i] = esl_sq_Create();
-    status = (esl_sqio_Read(seqfp, ret_seqs_to_aln->sq[i]) == eslOK);
-    while(status && ret_seqs_to_aln->sq[i]->n == 0) /* skip zero length seqs */
-      {
-	esl_sq_Reuse(ret_seqs_to_aln->sq[i]);
-	status = (esl_sqio_Read(seqfp, ret_seqs_to_aln->sq[i]) == eslOK);
-      }
-    if(!status)
-      {
-	if(i == 0) return NULL; /* we're at the end of the file and we didn't read any sequences. */
-	else break; /* we're at the end of the file, but we read some sequences */
-      }
-    /* Following line will be unnecessary once ESL_SQ objects have dsq's implemented
-     * (i.e. allocated and filled within a esl_sqio_Read() call) */
-    ret_seqs_to_aln->sq[i]->dsq = DigitizeSequence (ret_seqs_to_aln->sq[i]->seq, ret_seqs_to_aln->sq[i]->n);
-  }
-
-  ret_seqs_to_aln->nseq = i; /* however many seqs we read, up to nseq */
-  ret_seqs_to_aln->tr   = NULL;
-  ret_seqs_to_aln->postcode = NULL;
-  ret_seqs_to_aln->index = index;
-  return(ret_seqs_to_aln);
-}
-#endif
 
 
 /* EPN, Tue Dec  5 14:25:02 2006
@@ -937,6 +887,7 @@ parallel_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_
 	  job_type = aln_receive_job (&seqs_to_aln, mpi_master_rank);
 	  if (job_type == ALN_WORK) 
 	    {
+	      silent_mode = FALSE;
 	      debug_level = 0;
 	      bdump_level = 0;
 	      /* align the targets */
@@ -958,6 +909,52 @@ parallel_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_
   /*printf("leaving parallel_align_targets rank: %4d mast: %4d\n", mpi_my_rank, mpi_master_rank);*/
 }
 #endif
+
+#ifdef USE_MPI
+/*
+ * Function: read_next_aln_seqs
+ * Date:     EPN, Fri Dec 29 17:44:25 2006
+ *
+ * Purpose:  Given a pointer to a seq file we're reading seqs to align
+ *           from, read in nseq seqs from the seq file. 
+ */
+seqs_to_aln_t * read_next_aln_seqs(ESL_SQFILE *seqfp, int nseq, int index) 
+{
+  seqs_to_aln_t *ret_seqs_to_aln;
+  int status;
+  int i;
+
+  ret_seqs_to_aln = MallocOrDie(sizeof(seqs_to_aln_t));
+  ret_seqs_to_aln->sq = MallocOrDie(sizeof(ESL_SQ *) * nseq);
+  /*ret_seqs_to_aln->sq = MallocOrDie(sizeof(ESL_SQ *) * nseq);*/
+  
+  for(i=0; i < nseq; i++)
+  {
+    ret_seqs_to_aln->sq[i] = esl_sq_Create();
+    status = (esl_sqio_Read(seqfp, ret_seqs_to_aln->sq[i]) == eslOK);
+    while(status && ret_seqs_to_aln->sq[i]->n == 0) /* skip zero length seqs */
+      {
+	esl_sq_Reuse(ret_seqs_to_aln->sq[i]);
+	status = (esl_sqio_Read(seqfp, ret_seqs_to_aln->sq[i]) == eslOK);
+      }
+    if(!status)
+      {
+	if(i == 0) return NULL; /* we're at the end of the file and we didn't read any sequences. */
+	else break; /* we're at the end of the file, but we read some sequences */
+      }
+    /* Following line will be unnecessary once ESL_SQ objects have dsq's implemented
+     * (i.e. allocated and filled within a esl_sqio_Read() call) */
+    ret_seqs_to_aln->sq[i]->dsq = DigitizeSequence (ret_seqs_to_aln->sq[i]->seq, ret_seqs_to_aln->sq[i]->n);
+  }
+
+  ret_seqs_to_aln->nseq = i; /* however many seqs we read, up to nseq */
+  ret_seqs_to_aln->tr   = NULL;
+  ret_seqs_to_aln->postcode = NULL;
+  ret_seqs_to_aln->index = index;
+  return(ret_seqs_to_aln);
+}
+#endif
+
 
 /* EPN, Tue Dec  5 14:25:02 2006
  * 
@@ -1489,7 +1486,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 			    alpha, &alpha,  /* alpha matrix from IInside(), and save it for CMPosterior*/
 			    do_check);      /* TRUE to check Outside probs agree with Inside */
 	      ICMPosterior(sq[i]->n, cm, alpha, NULL, beta, NULL, post, &post);
-	      if(do_check)
+	      if(do_check || TRUE)
 		{
 		  ICMCheckPosterior(sq[i]->n, cm, post);
 		  printf("\nPosteriors checked (I).\n\n");
