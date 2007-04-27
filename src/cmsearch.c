@@ -56,9 +56,8 @@ Usage: cmsearch [-options] <cmfile> <sequence file>\n\
 The sequence file is expected to be in FASTA format.\n\
   Available options are:\n\
    -h     : help; print brief help on version and usage\n\
-   -E <f> : use cutoff E-value of <f> (default ignored; not-calc'ed)\n\
-   -n <n> : determine EVD with <n> samples (default with -E: 1000)\n\
-   -S <f> : use cutoff bit score of <f> [default: 0]\n\
+   -T <f> : use cutoff bit score of <f> [default: 0]\n\
+   -E <f> : use cutoff E-value of <f> [default ignored; not-calc'ed]\n\
 ";
 #endif 
 #ifdef USE_MPI
@@ -68,9 +67,8 @@ Usage: mpicmsearch [-options] <cmfile> <sequence file>\n\
 The sequence file is expected to be in FASTA format.\n\
   Available options are:\n\
    -h     : help; print brief help on version and usage\n\
-   -E <f> : use cutoff E-value of <f> (default ignored; not-calc'ed)\n\
-   -n <n> : determine EVD with <n> samples (default with -E: 1000)\n\
-   -S <f> : use cutoff bit score of <f> [default: 0]\n\
+   -T <x> : use cutoff bit score of <x> [default: 0]\n\
+   -E <x> : use cutoff E-value of <x> [default ignored; not-calc'ed]\n\
 ";
 #endif
 
@@ -80,13 +78,14 @@ static char experts[] = "\
    --toponly     : only search the top strand\n\
    --local       : do local alignment\n\
    --noalign     : find start/stop only; don't do alignments\n\
-   --window <n>  : set scanning window size to <n> (default: precalc'd in cmbuild)\n\
+   --window <n>  : set scanning window size to <n> [default: precalc'd in cmbuild]\n\
    --dumptrees   : dump verbose parse tree information for each hit\n\
+   --nsamples <n>: determine EVD with <n> samples [default with -E: 1000]\n\
    --partition <n>[,<n>]... : partition points for different GC content EVDs\n\
    --inside      : scan with Inside, not CYK (~2X slower)\n\
-   --null2       : turn on the post hoc second null model [df:OFF]\n\
+   --null2       : turn on the post hoc second null model [default: OFF]\n\
    --learninserts: do not set insert emission scores to 0\n\
-   --negsc <f>   : set min bit score to report as <f> < 0 (experimental)\n\
+   --negsc <x>   : set min bit score to report as <x> < 0 (experimental)\n\
    --enfstart <n>: enforce MATL stretch starting at consensus position <n>\n\
    --enfseq <s>  : enforce MATL stretch starting at --enfstart <n> emits seq <s>\n\
    --enfnohmm    : do not filter first w/a HMM that only enforces <s> from --enfseq\n\
@@ -95,49 +94,52 @@ static char experts[] = "\
    --greedy      : resolve overlapping hits with greedy algorithm a la RSEARCH\n\
    --gcfile <f>  : save GC content stats of target sequence file to <f>\n\
 \n\
-  * Filtering options using a CM plan 9 HMM (*in development*):\n\
-   --hmmfb        : subseqs j-W+1..i+W-1 survive (j=end from Fwd, i=start from Bwd)\n\
-   --hmmpad <n>   : w/--hmmfb: subseqs i-<n>..j+<n> survive\n\
-   --hmmweinberg  : subseqs j-W+1..j+W-1 survive (j=end point from Forward)\n\
-   --hmmonly      : don't use CM at all, just scan with HMM (Forward + Backward)\n\
-   --hmmE <f>     : use cutoff E-value of <f> for CP9 (possibly filtering) scan\n\
-   --hmmS <f>     : use cutoff bit score of <f> for CP9 (possibly filtering) scan\n\
-   --hmmnegsc <f> : set min bit score to report as <f> < 0 (experimental)\n\
-   --hmmrescan    : rescan subseq hits w/Forward (auto ON if --enfseq)\n\
-\n\
-  * Options for accelerating CM search/alignment (*in development*):\n\
-   --beta <f>    : tail loss prob for QBD (default:1E-7)\n\
+  * Options for accelerating CM search/alignment:\n\
+   --beta <x>    : set tail loss prob for QBD to <x> [default:1E-7]\n\
    --noqdb       : DO NOT use query dependent bands (QDB) to accelerate CYK\n\
-   --qdbfile <f> : read QDBs from file <f> (outputted from cmbuild)\n\
+   --qdbfile <x> : read QDBs from file <f> (outputted from cmbuild)\n\
    --banddump    : print bands for each state\n\
-   --hbanded     : w/--hmmfb: calculate and use HMM bands in CM search\n\
+   --hbanded     : w/--hmmfilter: calculate and use HMM bands in CM search\n\
+   --scan2bands  : derive bands from scanning Forward/Backward algs EXPTL!\n\
    --tau         : tail loss for HMM banding [default: 1E-7]\n\
    --sums        : use posterior sums during HMM band calculation (widens bands)\n\
+\n\
+  * Filtering options using a CM plan 9 HMM (*in development*):\n\
+   --hmmfilter    : subseqs j-W+1..i+W-1 survive (j=end from Fwd, i=start from Bwd)\n\
+   --hmmpad <n>   : w/--hmmfilter: subseqs i-<n>..j+<n> survive\n\
+   --hmmonly      : don't use CM at all, just scan with HMM (Forward + Backward)\n\
+   --hmmE <x>     : use cutoff E-value of <x> for CP9 (possibly filtered) scan [df:500]\n\
+   --hmmT <x>     : use cutoff bit score of <x> for CP9 (possibly filtered) scan\n\
+   --hmmgreedy    : resolve HMM overlapping hits with greedy algorithm a la RSEARCH\n\
+   --hmmnegsc <x> : set min bit score to report as <x> < 0 (experimental)\n\
+\n\
 ";
+
+/* Removed prior to 0.8 release, not worth documenting, highly experimental:
+   --hmmrescan    : rescan subseq hits w/Forward (auto ON if --enfseq)\n\*/
 
 static struct opt_s OPTIONS[] = {
   { "-h", TRUE, sqdARG_NONE }, 
-  { "-S", TRUE, sqdARG_FLOAT }, 
+  { "-T", TRUE, sqdARG_FLOAT }, 
   { "-E", TRUE, sqdARG_FLOAT }, 
-  { "-n", TRUE, sqdARG_INT }, 
   { "--dumptrees",  FALSE, sqdARG_NONE },
   { "--informat",   FALSE, sqdARG_STRING },
   { "--local",      FALSE, sqdARG_NONE },
   { "--noalign",    FALSE, sqdARG_NONE },
   { "--toponly",    FALSE, sqdARG_NONE },
-  { "--window",     FALSE, sqdARG_INT }, 
+  { "--widnow",     FALSE, sqdARG_INT }, 
   { "--inside",     FALSE, sqdARG_NONE },
   { "--null2",      FALSE, sqdARG_NONE },
   { "--learninserts",FALSE, sqdARG_NONE},
   { "--negsc",      FALSE, sqdARG_FLOAT},
-  { "--hmmfb",      FALSE, sqdARG_NONE },
-  { "--hmmweinberg",FALSE, sqdARG_NONE},
+  { "--nsamples",   FALSE, sqdARG_INT }, 
+  { "--hmmfilter",  FALSE, sqdARG_NONE },
   { "--hmmpad",     FALSE, sqdARG_INT },
   { "--hmmonly",    FALSE, sqdARG_NONE },
   { "--hmmE",       FALSE, sqdARG_FLOAT},
-  { "--hmmS",       FALSE, sqdARG_FLOAT},
+  { "--hmmT",       FALSE, sqdARG_FLOAT},
   { "--hmmnegsc",   FALSE, sqdARG_FLOAT},
-  { "--hmmrescan",  FALSE, sqdARG_NONE},
+  /*{ "--hmmrescan",  FALSE, sqdARG_NONE},*/
   { "--noqdb",      FALSE, sqdARG_NONE },
   { "--qdbfile",    FALSE, sqdARG_STRING},
   { "--beta",       FALSE, sqdARG_FLOAT},
@@ -145,7 +147,7 @@ static struct opt_s OPTIONS[] = {
   { "--tau",     FALSE, sqdARG_FLOAT},
   { "--banddump",   FALSE, sqdARG_NONE},
   { "--sums",       FALSE, sqdARG_NONE},
-  /*  { "--scan2hbands",FALSE, sqdARG_NONE},*/
+  { "--scan2bands", FALSE, sqdARG_NONE},
   { "--partition",  FALSE, sqdARG_STRING},
   { "--enfstart",   FALSE, sqdARG_INT},
   { "--enfseq",     FALSE, sqdARG_STRING},
@@ -153,6 +155,7 @@ static struct opt_s OPTIONS[] = {
   { "--time",       FALSE, sqdARG_NONE},
   { "--rtrans",     FALSE, sqdARG_NONE},
   { "--greedy",     FALSE, sqdARG_NONE},
+  { "--hmmgreedy",  FALSE, sqdARG_NONE},
   { "--gcfile",     FALSE, sqdARG_STRING}
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
@@ -187,8 +190,10 @@ main(int argc, char **argv)
   int              set_window;  /* TRUE to set window len b/c of -W option  */
   int              set_W;	/* W set at command line, only works --noqdb*/
   int              seed;        /* Random seed                              */
+  int              sc_boost_set;/* TRUE if --negsc enabled                  */
   float            sc_boost;    /* value added to CYK bit scores, allows    *
 				 * hits > (-1 * sc_boost) (EXPERIMENTAL)    */
+  int              cp9_sc_boost_set;/* TRUE if --hmmnegsc enabled           */
   float            cp9_sc_boost;/* value added to Forward bit scores, allows*
 				 * hits > (-1 * sc_boost) (EXPERIMENTAL)    */
 
@@ -248,13 +253,11 @@ main(int argc, char **argv)
 			    * passed to many functions. */
 
   int   do_inside;         /* TRUE to use scanning Inside algorithm instead of CYK */
-  int   do_scan2hbands;    /* TRUE to use scanning Forward/Backward algs instead 
+  int   do_scan2bands;     /* TRUE to use scanning Forward/Backward algs instead 
 			    * of traditional FB algs to get bands on seqs surviving 
 			    * the filter */
-  int   do_hmmfb;          /* TRUE to use Forward to get start points and Backward
+  int   do_hmmfilter;          /* TRUE to use Forward to get start points and Backward
 			    * to get end points of promising subsequences*/
-  int   do_hmmweinberg;    /* TRUE to use Forward to get start points and subtract W
-			    * to get start points of promising subsequences*/
   int   do_hmmonly;        /* TRUE to scan with a CM Plan 9 HMM ONLY!*/
   int   do_hmmrescan;      /* TRUE to rescan HMM hits b/c Forward scan is "inf" length*/
   int   do_cp9_stats;      /* TRUE to calculate CP9 stats for HMM */
@@ -269,8 +272,9 @@ main(int argc, char **argv)
   int             ncm;       /* counter over CMs */
   int             continue_flag; /* used to continue through the main loop for multiple CMs,
 				  * nec. only for MPI mode, to keep slave nodes appraised. */
-  /* the --greedy option */
-  int             do_greedy; /* TRUE to not use greedy hit resolution for overlaps */
+  /* the greedy options */
+  int             do_cmgreedy;  /* TRUE to use greedy hit resolution for CM  overlaps */
+  int             do_hmmgreedy; /* TRUE to use greedy hit resolution for HMM overlaps */
 
 #ifdef USE_MPI
   int mpi_my_rank;              /* My rank in MPI */
@@ -317,17 +321,16 @@ main(int argc, char **argv)
   do_bdump          = FALSE;
   do_hmmonly        = FALSE;
   set_window        = FALSE;
-  do_hmmfb          = FALSE;
+  do_hmmfilter      = FALSE;
   do_hmmpad         = FALSE;
   hmmpad            = 0;
-  do_hmmweinberg    = FALSE;
   do_hmmrescan      = FALSE;
   do_cp9_stats      = FALSE;
   do_inside         = FALSE;
   do_hbanded        = FALSE;
   tau               = DEFAULT_TAU;
   use_sums          = FALSE;
-  do_scan2hbands    = FALSE;
+  do_scan2bands     = FALSE;
   do_null2          = FALSE;
   do_zero_inserts   = TRUE;
   sample_length     = 0;
@@ -338,8 +341,10 @@ main(int argc, char **argv)
   cp9_sc_cutoff     = DEFAULT_CP9_CUTOFF;
   cp9_e_cutoff      = DEFAULT_CP9_CUTOFF;
   do_cm_stats       = FALSE;
-  do_cp9_stats      = FALSE;
+  do_cp9_stats      = FALSE;   /* changed to TRUE if --hmmfilter enabled */
+  sc_boost_set      = FALSE;
   sc_boost          = 0.;
+  cp9_sc_boost_set  = FALSE;
   cp9_sc_boost      = 0.;
   debug_level       = 0;
   do_partitions     = FALSE;
@@ -350,7 +355,8 @@ main(int argc, char **argv)
   enf_seq           = NULL;
   do_timings        = FALSE;
   do_rtrans         = FALSE;
-  do_greedy         = FALSE;
+  do_cmgreedy       = FALSE;
+  do_hmmgreedy      = FALSE;
   gcfile            = NULL;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
@@ -360,7 +366,7 @@ main(int argc, char **argv)
 	set_W = atoi(optarg); set_window = TRUE; 
 	if(set_W < 2) Die("-W <f>, W must be at least 2.\n");
       }
-    else if       (strcmp(optname, "-S")          == 0) 
+    else if       (strcmp(optname, "-T")          == 0) 
       { 
 	cm_sc_cutoff    = atof(optarg); 
 	cm_cutoff_type  = SCORE_CUTOFF;
@@ -370,17 +376,23 @@ main(int argc, char **argv)
 	cm_e_cutoff = atof(optarg); 
 	cm_cutoff_type  = E_CUTOFF;
 	do_cm_stats = TRUE;
-	num_samples = 1000;
+	if(num_samples == 0) num_samples = 1000;
       }
-    else if  (strcmp(optname, "-n")          == 0) num_samples  = atoi(optarg);
     else if  (strcmp(optname, "--dumptrees") == 0) do_dumptrees = TRUE;
     else if  (strcmp(optname, "--local")     == 0) do_local     = TRUE;
     else if  (strcmp(optname, "--noalign")   == 0) do_align     = FALSE;
     else if  (strcmp(optname, "--toponly")   == 0) do_revcomp   = FALSE;
     else if  (strcmp(optname, "--inside")    == 0) do_inside    = TRUE;
     else if  (strcmp(optname, "--null2")     == 0) do_null2     = TRUE;
+    else if  (strcmp(optname, "--nsamples")  == 0) 
+      {
+	num_samples  = atoi(optarg);
+	if(num_samples <= 0)
+	  Die("With --nsamples <n>, <n> must be a positive integer.\n");
+      }
     else if  (strcmp(optname, "--learninserts")== 0) do_zero_inserts = FALSE;
-    else if  (strcmp(optname, "--negsc")       == 0) sc_boost = -1. * atof(optarg);
+    else if  (strcmp(optname, "--negsc")       == 0) {
+      sc_boost_set = TRUE;  sc_boost = -1. * atof(optarg); }
     else if  (strcmp(optname, "--enfstart")    == 0) 
       { do_enforce = TRUE; do_enforce_hmm = TRUE; enf_cc_start = atoi(optarg); }
     else if  (strcmp(optname, "--enfseq")      == 0) 
@@ -388,24 +400,44 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--enfnohmm")    == 0) do_enforce_hmm = FALSE;
     else if  (strcmp(optname, "--time")        == 0) do_timings   = TRUE;
     else if  (strcmp(optname, "--rtrans")      == 0) do_rtrans = TRUE;
-    else if  (strcmp(optname, "--hmmfb")       == 0) do_hmmfb = TRUE;
+    else if  (strcmp(optname, "--hmmfilter")   == 0) 
+      {
+	do_hmmfilter = TRUE;
+	do_cp9_stats = TRUE;
+	if(num_samples == 0) num_samples = 1000;
+      }
     else if  (strcmp(optname, "--hmmpad")      == 0) { do_hmmpad = TRUE; hmmpad = atoi(optarg); }
-    else if  (strcmp(optname, "--hmmweinberg") == 0) do_hmmweinberg = TRUE;
-    else if  (strcmp(optname, "--hmmnegsc")    == 0) cp9_sc_boost = -1. * atof(optarg);
+    else if  (strcmp(optname, "--hmmnegsc")    == 0) 
+      { cp9_sc_boost_set = TRUE; cp9_sc_boost = -1. * atof(optarg); }
     else if  (strcmp(optname, "--hmmrescan")   == 0) do_hmmrescan = TRUE; 
+    else if  (strcmp(optname, "--hmmnegsc")    == 0) { 
+      cp9_sc_boost_set = TRUE; cp9_sc_boost = -1. * atof(optarg); }
+    else if  (strcmp(optname, "--hmmrescan")   == 0) do_hmmrescan = TRUE; 
+    else if  (strcmp(optname, "--hmmfilter")   == 0) 
+      {
+	do_hmmfilter = TRUE;
+	do_cp9_stats = TRUE;
+	if(num_samples == 0) num_samples = 1000;
+      }
+    else if  (strcmp(optname, "--hmmonly")   == 0) 
+      { 
+	do_cp9_stats = TRUE;
+	if(num_samples == 0) num_samples = 1000;
+	do_hmmonly = TRUE; 
+	do_align = FALSE; 
+      } 
     else if  (strcmp(optname, "--hmmE")        == 0)   
       { 
 	cp9_e_cutoff = atof(optarg); 
 	cp9_cutoff_type  = E_CUTOFF;
 	do_cp9_stats = TRUE;
-	num_samples = 1000;
+	if(num_samples == 0) num_samples = 1000;
       }
-    else if  (strcmp(optname, "--hmmS")        == 0)   
+    else if  (strcmp(optname, "--hmmT")        == 0)   
       { 
 	cp9_sc_cutoff = atof(optarg); 
 	cp9_cutoff_type  = SCORE_CUTOFF;
       }
-    else if  (strcmp(optname, "--hmmonly")   == 0) { do_hmmonly = TRUE; do_align = FALSE; } 
     else if  (strcmp(optname, "--beta")   == 0) beta      = atof(optarg);
     else if  (strcmp(optname, "--noqdb")  == 0) do_qdb    = FALSE;
     else if  (strcmp(optname, "--qdbfile")== 0) { read_qdb  = TRUE; qdb_file = optarg; }
@@ -413,8 +445,9 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--tau")    == 0) tau       = atof(optarg);
     else if  (strcmp(optname, "--banddump")  == 0) do_bdump     = TRUE;
     else if  (strcmp(optname, "--sums")      == 0) use_sums     = TRUE;
-    else if  (strcmp(optname, "--scan2hbands")== 0) do_scan2hbands= TRUE;
-    else if  (strcmp(optname, "--greedy")     == 0) do_greedy = TRUE;
+    else if  (strcmp(optname, "--scan2bands")== 0)  do_scan2bands= TRUE;
+    else if  (strcmp(optname, "--greedy")     == 0) do_cmgreedy = TRUE;
+    else if  (strcmp(optname, "--hmmgreedy")  == 0) do_hmmgreedy = TRUE;
     else if  (strcmp(optname, "--gcfile")     == 0) gcfile = optarg;
     else if  (strcmp(optname, "--partition") == 0) 
       {
@@ -442,19 +475,19 @@ main(int argc, char **argv)
   
   /* Check for incompatible option combos. (It's likely this is not exhaustive) */
   if(do_cp9_stats && 
-     ((!do_hmmonly) && ((!do_hmmweinberg) && (!do_hmmfb))))
-    Die("--hmmE only makes sense with --hmmonly or --hmmweinberg.\n");
-  if(do_hmmonly && do_hmmweinberg)
-    Die("-hmmweinberg and --hmmonly combo doesn't make sense, pick one.\n");
+     ((!do_hmmonly) && (!do_hmmfilter)))
+    Die("--hmmE only makes sense with --hmmonly or --hmmfilter.\n");
+  if(do_hmmonly && do_hmmfilter)
+    Die("-hmmfilter and --hmmonly combo doesn't make sense, pick one.\n");
   if(do_hmmrescan && 
-     ((!do_hmmweinberg) && (!do_hmmonly) && (!do_hmmfb)))
-    Die("-hmmrescan doesn't make sense without --hmmonly, --hmmweinberg, or --hmmfb.\n");
+     ((!do_hmmfilter) && (!do_hmmonly)))
+    Die("-hmmrescan doesn't make sense without --hmmonly, or --hmmfilter.\n");
   if(do_cm_stats && do_hmmonly)
     Die("-E and --hmmonly combo doesn't make sense, did you mean --hmmE and --hmmonly?\n");
   if(do_bdump && !do_qdb)
     Die("The --banddump option is incompatible with the --noqdb option.\n");
   if(num_samples != 0 && (!do_cm_stats && !do_cp9_stats))
-    Die("The -n option only makes sense with -E or --hmmE also.\n");
+    Die("The --nsamples option only makes sense in combination with -E and/or --hmmfilter.\n");
   if(do_enforce && enf_seq == NULL)
     Die("--enfstart only makes sense with --enfseq also.\n");
   if((!do_enforce_hmm) && (!do_enforce))
@@ -463,34 +496,40 @@ main(int argc, char **argv)
     Die("--enfseq only makes sense with --enfstart (which can't be 0) also.\n");
   if(do_enforce && enf_cc_start == 0)
     Die("--enfseq only makes sense with --enfstart (which can't be 0) also.\n");
-  if(do_qdb && do_hbanded) 
-    Die("Can't do --qdb and --hbanded. Pick one.\n");
-  if (do_scan2hbands && !(do_hbanded))
-    Die("Can't pick --scan2hbands without --hbanded option.\n");
-  if (do_hbanded && !(do_hmmfb))
-    Die("Can't pick --hbanded without --hmmfb option.\n");
-  if (do_hbanded && !(do_hmmweinberg || do_hmmfb))
-    Die("Can't pick --hbanded without --hmmfb or --hmmweinberg filtering option.\n");
+  if (do_scan2bands && !(do_hbanded))
+    Die("Can't pick --scan2bands without --hbanded option.\n");
+  if (do_hbanded && !(do_hmmfilter))
+    Die("Can't pick --hbanded without --hmmfilter option.\n");
+  if (do_hbanded && !(do_hmmfilter))
+    Die("Can't pick --hbanded without --hmmfilter filtering option.\n");
   if (read_qdb && !(do_qdb))
     Die("--qdbfile and --noqdb don't make sense together.\n");
-  if (sc_boost < 0)
-    Die("for --negsc <f>, <f> must be negative.\n");
-  if (cp9_sc_boost < 0)
-    Die("for --hmmnegsc <f>, <f> must be negative.\n");
+  if (sc_boost_set && sc_boost < 0)
+    Die("for --negsc <x>, <x> must be negative.\n");
+  if (cp9_sc_boost_set && cp9_sc_boost < 0)
+    Die("for --hmmnegsc <x>, <x> must be negative.\n");
+  if (sc_boost_set && do_cm_stats)
+    Die("The -E and --negsc options are incompatible, pick one or the other.\n");
+  if (cp9_sc_boost_set && do_cp9_stats)
+    Die("The --hmmnegsc option is not compatible with E-value statistics, it must be used in combination with --hmmT.\n");
   if(do_bdump && !(do_qdb))
     Die("--banddump and --noqdb combination not supported.\n");
   if(set_window && do_qdb)
     Die("--window only works with --noqdb.\n");
   if(do_rtrans && do_enforce)
     Die("--enf* options incompatible with --rtrans.\n");
-  if(do_greedy && do_inside)
+  if(do_cmgreedy && do_inside)
     Die("--greedy option not yet implemented for inside scans (implement it!)\n");
-  if(do_greedy && do_hmmonly)
-    Die("--greedy option not implemented for --hmmonly scans\n");
-  if(do_hmmpad && !do_hmmfb)
-    Die("--hmmpad <n> option only works in combination with --hmmfb\n");
+  if(do_cmgreedy && do_hmmonly)
+    Die("--greedy option doesn't make sense with --hmmonly scans, did you mean --hmmgreedy?\n");
+  if(do_hmmpad && !do_hmmfilter)
+    Die("--hmmpad <n> option only works in combination with --hmmfilter\n");
   if(do_hmmpad && hmmpad < 0)
     Die("with --hmmpad <n>, <n> must be >= 0\n");
+  if(beta >= 1.)
+    Die("when using --beta <x>, <x> must be greater than 0 and less than 1.\n");
+  if(do_partitions && (!do_cm_stats && !do_cp9_stats))
+    Die("--partition only makes sense in combination with either -E, --hmmfilter or both.\n");
 #if USE_MPI
   if(read_qdb && ((mpi_num_procs > 1) && (mpi_my_rank == mpi_master_rank)))
     Die("Sorry, you can't read in bands with --qdbfile in MPI mode.\n");
@@ -508,9 +547,6 @@ main(int argc, char **argv)
   seed = (time ((time_t *) NULL));   
   /*seed = 33;*/
   sre_srandom (seed);
-  printf ("Random seed: %d\n", seed);
-  
-  printf ("W scale of %.1f\n", W_scale);
   
   /* Initialize partition array, only if we haven't already in set_partitions,
    * in this case we don't use partitions, a single Gumbel is used.
@@ -530,6 +566,8 @@ main(int argc, char **argv)
     watch = StopwatchCreate();
   if(!do_enforce || do_hmmonly) 
     do_enforce_hmm = FALSE;
+  if(cp9_cutoff_type == SCORE_CUTOFF)
+    do_cp9_stats = FALSE;
 
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
     Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
@@ -553,9 +591,9 @@ main(int argc, char **argv)
 	  if (cm == NULL) 
 	    Die("%s corrupt\n", cmfile);
 
-	  printf("\nCM %d: %s\n", (ncm+1), cm->name);
-	  if(cm->desc == NULL) printf("desc: (NONE)\n");
-	  else printf("desc: %s\n", cm->desc);
+	  printf("CM %d: %s\n", (ncm+1), cm->name);
+	  /*if(cm->desc == NULL) printf("desc: (NONE)\n");
+	    else printf("desc: %s\n", cm->desc);*/
 
 	  /* Set CM and CP9 parameters that can be changed at command line */
 	  cm->beta         = beta;     /* this will be DEFAULT_BETA unless set at command line */
@@ -580,17 +618,16 @@ main(int argc, char **argv)
 	  /* If do_enforce set do_hmm_rescan to TRUE if we're filtering or scanning with an HMM,
 	   * this way only subseqs that include the enf_subseq should pass the filter */
 	  if((do_enforce && do_enforce_hmm) || 
-	     (do_enforce && (do_hmmfb || do_hmmweinberg || do_hmmonly)))
+	     (do_enforce && (do_hmmfilter)))
 	    {  do_hmmrescan = TRUE; } 
 	  /* Update cm->config_opts and cm->search_opts based on command line options */
 	  if(do_local)        cm->config_opts |= CM_CONFIG_LOCAL;
 	  if(do_zero_inserts) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
 	  if(!(do_qdb))       cm->search_opts |= CM_SEARCH_NOQDB;
 	  if(do_hmmonly)      cm->search_opts |= CM_SEARCH_HMMONLY;
-	  if(do_hmmfb)        cm->search_opts |= CM_SEARCH_HMMFB;
+	  if(do_hmmfilter)    cm->search_opts |= CM_SEARCH_HMMFILTER;
 	  if(do_hmmpad)       cm->search_opts |= CM_SEARCH_HMMPAD;
-	  if(do_hmmweinberg)  cm->search_opts |= CM_SEARCH_HMMWEINBERG;
-	  if(do_scan2hbands)  cm->search_opts |= CM_SEARCH_HMMSCANBANDS;
+	  if(do_scan2bands)   cm->search_opts |= CM_SEARCH_HMMSCANBANDS;
 	  if(do_hmmrescan)    cm->search_opts |= CM_SEARCH_HMMRESCAN;
 	  if(use_sums)        cm->search_opts |= CM_SEARCH_SUMS;
 	  if(do_inside)       cm->search_opts |= CM_SEARCH_INSIDE;
@@ -599,7 +636,8 @@ main(int argc, char **argv)
 	  if(do_null2)        cm->search_opts |= CM_SEARCH_NULL2;
 	  if(do_cm_stats)     cm->search_opts |= CM_SEARCH_CMSTATS;
 	  if(do_cp9_stats)    cm->search_opts |= CM_SEARCH_CP9STATS;
-	  if(do_greedy)       cm->search_opts |= CM_SEARCH_GREEDY;
+	  if(do_cmgreedy)     cm->search_opts |= CM_SEARCH_CMGREEDY;
+	  if(do_hmmgreedy)    cm->search_opts |= CM_SEARCH_HMMGREEDY;
 	  if(do_hbanded)      cm->search_opts |= CM_SEARCH_HBANDED;
 	  if(do_rtrans)       cm->flags       |= CM_RSEARCHTRANS;
 
@@ -610,13 +648,13 @@ main(int argc, char **argv)
 		{
 		  /* This will be TRUE by default if(do_enforce). Off if --hmmonly
 		   * was also enabled.
-		   * Unless --hmmfb enabled, act like --hmmweinberg was 
-		   * enabled, to filter with the special enforced CP9 HMM.  */
+		   * We want to filter with the special enforced CP9 HMM,
+		   * unless --hmmfilter was enabled.*/
 		  cm->config_opts |= CM_CONFIG_ENFORCEHMM;
-		  if((!do_hmmonly) && (!do_hmmfb))
+		  if((!do_hmmonly) && (!do_hmmfilter))
 		    {
-		      do_hmmweinberg = TRUE;
-		      cm->search_opts |= CM_SEARCH_HMMWEINBERG;
+		      do_hmmfilter = TRUE;
+		      cm->search_opts |= CM_SEARCH_HMMFILTER;
 		    }
 		}
 	      cm->enf_start    = EnforceFindEnfStart(cm, enf_cc_start); 
@@ -809,7 +847,7 @@ main(int argc, char **argv)
 	  {
 	    for (i=0; i<GC_SEGMENTS; i++) 
 	      cm->mu[i] = log(cm->K[i]*N)/cm->lambda[i];
-	    debug_print_stats(partitions, num_partitions, cm->lambda, cm->mu);
+	    /*debug_print_stats(partitions, num_partitions, cm->lambda, cm->mu);*/
 	  }    
 	/* else they've been set to default 0.0s in ConfigCM() */
 
@@ -818,13 +856,15 @@ main(int argc, char **argv)
 	  {
 	    for (i=0; i<GC_SEGMENTS; i++) 
 	      cm->cp9_mu[i] = log(cm->cp9_K[i]*N)/cm->cp9_lambda[i];
-	    //debug_print_stats(partitions, num_partitions, cm->cp9_lambda, cm->cp9_mu);
+	    /*debug_print_stats(partitions, num_partitions, cm->cp9_lambda, cm->cp9_mu);*/
 	  }    
 	/* else they've been set to default 0.0s in ConfigCM() */
 
 	if (cm->search_opts & CM_SEARCH_CMSTATS) 
 	  {
 	    printf ("CM statistics calculated with simulation of %d samples of length %d\n", num_samples, sample_length);
+	    printf ("Random seed: %d\n", seed);
+	    /*printf ("W scale of %.1f\n", W_scale);*/
 	    if (num_partitions == 1) 
 	      printf ("No partition points\n");
 	    else 
@@ -836,7 +876,7 @@ main(int argc, char **argv)
 	      }
 	    for (i=0; i<GC_SEGMENTS; i++) 
 	      ;/*printf ("GC = %d\tlambda = %.4f\tmu = %.4f\n", i, lambda[i], mu[i]);*/
-	    printf ("N = %ld\n", N);
+	    /*printf ("N = %ld\n", N);*/
 	    if (cm->cutoff_type == SCORE_CUTOFF) 
 	      printf ("Using CM score cutoff of %.2f\n", cm->cutoff);
 	    else 
@@ -852,6 +892,8 @@ main(int argc, char **argv)
 	if (cm->search_opts & CM_SEARCH_CP9STATS) 
 	  {
 	    printf ("CP9 statistics calculated with simulation of %d samples of length %d\n", num_samples, sample_length);
+	    if (!(cm->search_opts & CM_SEARCH_CMSTATS))
+	      printf ("Random seed: %d\n", seed);
 	    if (num_partitions == 1) 
 	      printf ("No partition points\n");
 	    else 
@@ -860,6 +902,7 @@ main(int argc, char **argv)
 		for (i=0; i<=GC_SEGMENTS; i++)
 		  if (partitions[i] != partitions[i-1]) 
 		    printf ("%d ", i);
+		printf("\n");
 	      }
 	    for (i=0; i<GC_SEGMENTS; i++) 
 	      ;/*printf ("GC = %d\tlambda = %.4f\tmu = %.4f\n", i, lambda[i], mu[i]);*/
@@ -869,7 +912,7 @@ main(int argc, char **argv)
 	    else 
 	      printf ("Using CP9 E cutoff of %.2f\n\n", cm->cp9_cutoff);
 	  } 
-	else if(cm->search_opts & CM_SEARCH_HMMONLY || cm->search_opts & CM_SEARCH_HMMWEINBERG)
+	else if(cm->search_opts & CM_SEARCH_HMMONLY || cm->search_opts & CM_SEARCH_HMMFILTER)
 	  {
 	    printf ("CP9 lambda and K undefined -- no statistics\n");
 	    printf ("Using CP9 score cutoff of %.2f\n", cm->cp9_cutoff);

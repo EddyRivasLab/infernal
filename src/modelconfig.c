@@ -46,9 +46,8 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
   if((cm->config_opts & CM_CONFIG_ELSILENT) && (!(cm->config_opts & CM_CONFIG_LOCAL)))
     Die("ERROR in ConfigCM() trying to non-local CM to silence EL\n");
   if((cm->search_opts & CM_SEARCH_HMMSCANBANDS) && 
-     ((!(cm->search_opts & CM_SEARCH_HMMFB)) && (!(cm->search_opts & CM_SEARCH_HMMWEINBERG))))
+     (!(cm->search_opts & CM_SEARCH_HMMFILTER)))
     Die("ERROR in ConfigCM() trying to search with HMM derived bands, but w/o using a  HMM filter.");
-
 
   /*printf("in ConfigCM()\n");*/
   /* If we're not doing stats set the EVD stats to defaults (0.0) */
@@ -76,7 +75,7 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
   if((cm->align_opts & CM_ALIGN_HBANDED)                                     ||
      ((cm->align_opts & CM_ALIGN_HMMONLY)  || (cm->search_opts & CM_SEARCH_HMMONLY)) ||
      ((cm->align_opts & CM_ALIGN_SUB)      || (cm->align_opts  & CM_ALIGN_FSUB))     ||
-     ((cm->search_opts & CM_SEARCH_HMMFB)  || (cm->search_opts & CM_SEARCH_HMMWEINBERG)))
+     (cm->search_opts & CM_SEARCH_HMMFILTER))
     do_build_cp9 = TRUE;
   
   /* If nec, build the CP9 */

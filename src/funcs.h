@@ -110,7 +110,7 @@ extern void    CMFileWrite(FILE *fp, CM_t *cm, int do_binary);
 /* from display.c
  */
 extern Fancyali_t    *CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq);
-extern void           PrintFancyAli(FILE *fp, Fancyali_t *ali);
+extern void           PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp);
 extern void           FreeFancyAli(Fancyali_t *ali);
 extern CMConsensus_t *CreateCMConsensus(CM_t *cm, float pthresh, float sthresh);
 extern void           FreeCMConsensus(CMConsensus_t *con);
@@ -307,30 +307,35 @@ extern void PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, in
 		     int W);
 extern void ij2d_bands(CM_t *cm, int L, int *imin, int *imax, int *jmin, int *jmax,
 		       int **hdmin, int **hdmax, int debug_level);
+extern void combine_qdb_hmm_d_bands(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax);
 extern void hd2safe_hd_bands(int M, int *jmin, int *jmax, int **hdmin, int **hdmax,
 			     int *safe_hdmin, int *safe_hdmax);
 extern void debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax);
 extern void debug_print_alpha_banded_jd(float ***alpha, CM_t *cm, int L, int *jmin, int *jmax, 
 					int **hdmin, int **hdmax);
 extern float ** alloc_jdbanded_vjd_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
-extern void CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax, int i0, 
-			     int j0, int W, int *ret_nhits, int **ret_hitr, int **ret_hiti, 
-			     int **ret_hitj, float **ret_hitsc, float min_thresh);
+extern float CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax, int i0, 
+			      int j0, int W, float cutoff, scan_results_t *results);
+
 
 
 /* from CP9_scan.c */
 extern float CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_isc, 
 			int **ret_hitj, int *ret_nhits, int *ret_maxres, scan_results_t *results,
-			int do_scan, int doing_rescan, int be_efficient, CP9_dpmatrix_t **ret_mx);
+			int do_scan, int doing_align, int doing_rescan, int be_efficient, 
+			CP9_dpmatrix_t **ret_mx);
 extern float CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_isc, 
 			 int **ret_hiti, int *ret_nhits, int *ret_maxres, scan_results_t *results, 
-			 int do_scan, int doing_rescan, int be_efficient, CP9_dpmatrix_t **ret_mx);
+			 int do_scan, int doing_align, int doing_rescan, int be_efficient, 
+			 CP9_dpmatrix_t **ret_mx);
 extern float CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff, 
 			      float cp9_cutoff, scan_results_t *results, int doing_cp9_stats, int *ret_flen);
 extern float RescanFilterSurvivors(CM_t *cm, char *dsq, int *hiti, int *hitj, int nhits, int i0, 
 				   int j0, int W, int padmode, int ipad, int jpad, int do_collapse,
 				   float cm_cutoff, float cp9_cutoff, scan_results_t *results, 
 				   int *ret_flen);
+extern void CP9ScanPosterior(char *dsq, int i0, int j0, CP9_t *hmm, CP9_dpmatrix_t *fmx, 
+			     CP9_dpmatrix_t *bmx, CP9_dpmatrix_t *mx);
 
 /* from CP9_cm2wrhmm.c */
 extern int build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,

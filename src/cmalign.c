@@ -95,15 +95,15 @@ static char experts[] = "\
    --enfseq   <s>: enforce MATL stretch starting at --enfstart <n> emits seq <s>\n\
 \n\
   * HMM banded alignment related options (*in development*):\n\
-   --hbanded     : use experimental CM plan 9 HMM banded CYK aln algorithm\n\
-   --tau <f>     : tail loss prob for --hbanded [default: 1E-7]\n\
+   --hbanded     : accelerate using CM plan 9 HMM banded CYK aln algorithm\n\
+   --tau <x>     : set tail loss prob for --hbanded to <x> [default: 1E-7]\n\
    --hsafe       : realign (non-banded) seqs with HMM banded CYK score < 0 bits\n\
    --sums        : use posterior sums during HMM band calculation (widens bands)\n\
    --hmmonly     : align with the CM Plan 9 HMM (no alignment given, just score)\n\
 \n\
   * Query dependent banded (qdb) alignment related options:\n\
    --qdb         : use query dependent banded CYK alignment algorithm\n\
-   --beta <f>    : tail loss prob for --qdb [default:1E-7]\n\
+   --beta <x>    : set tail loss prob for QDB to <x> [default:1E-7]\n\
 \n\
   * Options for including the alignment used to build the CM in the output:\n\
    --withali <f> : incl. alignment in <f> (must be aln <cm file> was built from)\n\
@@ -129,7 +129,7 @@ static struct opt_s OPTIONS[] = {
   { "--tau",       FALSE, sqdARG_FLOAT},
   { "--hsafe",      FALSE, sqdARG_NONE},
   { "--hmmonly",    FALSE, sqdARG_NONE },
-  { "--sums",       FALSE, sqdARG_NONE},
+  /*  { "--sums",       FALSE, sqdARG_NONE},*/ 
   { "--time",       FALSE, sqdARG_NONE},
   { "--inside",     FALSE, sqdARG_NONE},
   { "--outside",    FALSE, sqdARG_NONE},
@@ -333,6 +333,8 @@ main(int argc, char **argv)
   /* Check for incompatible or misused options */
   if(do_inside && do_outside)
     Die("Please pick either --inside or --outside (--outside will run Inside()\nalso and check to make sure Inside() and Outside() scores agree).\n");
+  if((do_inside || do_outside) && (outfile != NULL))
+    Die("-o <f> cannot be used in combination with --inside or --outside, as no alignment is created.\n");
   if(do_sub && do_local)
     Die("--sub and -l combination not supported.\n");
   if(do_sub && do_qdb)
@@ -459,7 +461,10 @@ main(int argc, char **argv)
       if(cm->config_opts & CM_CONFIG_ENFORCE) ConfigCMEnforce(cm);
 
       parallel_align_targets(seqfp, cm, &sq, &tr, &postcode, &nseq,
-			     bdump_level, debug_level, be_quiet,
+			     bdump_level, debug_level, 
+			     TRUE, /* be_quiet=TRUE we don't print scores in MPI
+				    * mode yet, b/c they get jumbled due to potentially
+				    * multiple simultaneous writes to stdout */
 			     mpi_my_rank, mpi_master_rank, mpi_num_procs);
     }
   else

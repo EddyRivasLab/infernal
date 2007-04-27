@@ -21,11 +21,14 @@
 /* various default parameters for CMs and CP9 HMMs */ 
 #define DEFAULT_CM_CUTOFF 0.0
 #define DEFAULT_CM_CUTOFF_TYPE SCORE_CUTOFF
-#define DEFAULT_CP9_CUTOFF 0.0
-#define DEFAULT_CP9_CUTOFF_TYPE SCORE_CUTOFF
+#define DEFAULT_CP9_CUTOFF 500.0
+#define DEFAULT_CP9_CUTOFF_TYPE E_CUTOFF
 #define DEFAULT_BETA   0.0000001
 #define DEFAULT_TAU    0.0000001
 #define DEFAULT_HMMPAD 0
+
+/* default num samples for CM and CP9 E-values */
+#define DEFAULT_NUM_SAMPLES 1000
 
 #define GC_SEGMENTS 101                   /* Possible integer GC contents */
 
@@ -336,22 +339,22 @@ typedef struct cm_s {
 /* search options, cm->search_opts */
 #define CM_SEARCH_NOQDB        (1<<0)  /* DO NOT use QDB to search (QDB is default)*/
 #define CM_SEARCH_HMMONLY      (1<<1)  /* use a CP9 HMM only to search             */
-#define CM_SEARCH_HMMFB        (1<<2)  /* filter w/CP9 HMM, forward/backward mode  */
+#define CM_SEARCH_HMMFILTER    (1<<2)  /* filter w/CP9 HMM, using forward/backward */
 #define CM_SEARCH_HMMPAD       (1<<3)  /* +/- cm->hmmpad residues from j/i in HMMFB*/
-#define CM_SEARCH_HMMWEINBERG  (1<<4)  /* filter w/CP9 HMM, Zasha Weinberg mode    */
-#define CM_SEARCH_HMMRESCAN    (1<<5)  /* rescan HMM hits b/c Forward is inf length*/
-#define CM_SEARCH_HBANDED      (1<<6)  /* use HMM bands for search                 */
-#define CM_SEARCH_HMMSCANBANDS (1<<7)  /* filter w/CP9 HMM, and derive HMM bands   */
-#define CM_SEARCH_SUMS         (1<<8)  /* if using HMM bands, use posterior sums   */
-#define CM_SEARCH_INSIDE       (1<<9)  /* scan with Inside, not CYK                */
-#define CM_SEARCH_TOPONLY      (1<<10) /* don't search reverse complement          */
-#define CM_SEARCH_NOALIGN      (1<<11) /* don't align hits, just report locations  */
-#define CM_SEARCH_NULL2        (1<<12) /* use post hoc second null model           */
-#define CM_SEARCH_CMSTATS      (1<<13) /* calculate E-value statistics for CM      */
-#define CM_SEARCH_CP9STATS     (1<<14) /* calculate E-value stats for CP9 HMM      */
-#define CM_SEARCH_FFRACT       (1<<15) /* filter to filter fraction cm->ffract     */
-#define CM_SEARCH_RSEARCH      (1<<16) /* use RSEARCH parameterized CM             */
-#define CM_SEARCH_GREEDY       (1<<17) /* use greedy alg to resolve overlaps       */
+#define CM_SEARCH_HMMRESCAN    (1<<4)  /* rescan HMM hits b/c Forward is inf length*/
+#define CM_SEARCH_HBANDED      (1<<5)  /* use HMM bands for search                 */
+#define CM_SEARCH_HMMSCANBANDS (1<<6)  /* filter w/CP9 HMM, and derive HMM bands   */
+#define CM_SEARCH_SUMS         (1<<7)  /* if using HMM bands, use posterior sums   */
+#define CM_SEARCH_INSIDE       (1<<8)  /* scan with Inside, not CYK                */
+#define CM_SEARCH_TOPONLY      (1<<9) /* don't search reverse complement          */
+#define CM_SEARCH_NOALIGN      (1<<10) /* don't align hits, just report locations  */
+#define CM_SEARCH_NULL2        (1<<11) /* use post hoc second null model           */
+#define CM_SEARCH_CMSTATS      (1<<12) /* calculate E-value statistics for CM      */
+#define CM_SEARCH_CP9STATS     (1<<13) /* calculate E-value stats for CP9 HMM      */
+#define CM_SEARCH_FFRACT       (1<<14) /* filter to filter fraction cm->ffract     */
+#define CM_SEARCH_RSEARCH      (1<<15) /* use RSEARCH parameterized CM             */
+#define CM_SEARCH_CMGREEDY     (1<<16) /* use greedy alg to resolve CM overlaps    */
+#define CM_SEARCH_HMMGREEDY    (1<<17) /* use greedy alg to resolve HMM overlaps   */
 
 /* Structure: CMFILE
  * Incept:    SRE, Tue Aug 13 10:16:39 2002 [St. Louis]

@@ -47,11 +47,11 @@ extern float CP9ForwardOLD(char *dsq, int i0, int j0, CP9_t *hmm,
 			struct cp9_dpmatrix_s **ret_mx);
 extern float CP9Viterbi(char *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s *mx);
 extern float CP9BackwardOLD(char *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s **ret_mx);
-extern void  CP9FullPosterior(char *dsq, int i0, int j0,
-			      CP9_t *hmm,
-			      struct cp9_dpmatrix_s *fmx,
-			      struct cp9_dpmatrix_s *bmx,
-			      struct cp9_dpmatrix_s *mx);
+extern void  CP9Posterior(char *dsq, int i0, int j0,
+			  CP9_t *hmm,
+			  struct cp9_dpmatrix_s *fmx,
+			  struct cp9_dpmatrix_s *bmx,
+			  struct cp9_dpmatrix_s *mx);
 extern void CP9_ifill_post_sums(struct cp9_dpmatrix_s *post, CP9Bands_t *cp9, int i0, int j0);
 
 /* Functions to determine HMM bands */

@@ -1251,6 +1251,48 @@ ij2d_bands(CM_t *cm, int W, int *imin, int *imax, int *jmin, int *jmax,
     }
 }
 
+/*****************************************************************************
+ * EPN, Thu Apr 26 13:27:16 2007
+ * Function: combine_qdb_hmm_d_bands()
+ *
+ * Purpose:  Given hdmin and hdmax bands, and query dependent bands (QDBs)
+ *           in cm->dmin and cm->dmax, combine them by redefining the 
+ *           hdmin and hdmax bands where necessary:
+ *           hdmin[v][j] = max(hdmin[v][j], dmin[v])
+ *           hdmax[v][j] = min(hdmin[v][j], dmin[v])
+ * 
+ * arguments:
+ *
+ * CM_t *cm         the CM 
+ * int *jmin        jmin[v] = first position in band on j for state v
+ * int *jmax        jmax[v] = last position in band on j for state v
+ * int **hdmin      hdmin[v][j0] = first position in band on d for state v
+ *                                 and j position: j = j0+jmin[v].
+ *                  Redefined in this function.
+ * int **hdmax      hdmax[v][j0] = last position in band on d for state v
+ *                                 and j position: j = j0+jmin[v].
+ *                  Redefined in this function.
+ *****************************************************************************/
+void
+combine_qdb_hmm_d_bands(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax)
+{
+  int v;            /* counter over states of the CM */
+  int jp;           /* counter over valid j's, but offset. jp+jmin[v] = actual j */
+
+  /* Contract check */
+  if(cm->dmin == NULL || cm->dmax == NULL)
+    Die("ERROR, in combine_qdb_hmm_d_bands() but cm->dmin and/or cm->dmax is NULL.\n");
+
+  for(v = 0; v < cm->M; v++)
+    {
+      for(jp = 0; jp <= (jmax[v]-jmin[v]); jp++)
+	{
+	  hdmin[v][jp] = hdmin[v][jp] > cm->dmin[v] ? hdmin[v][jp] : cm->dmin[v];
+	  hdmax[v][jp] = hdmax[v][jp] < cm->dmax[v] ? hdmax[v][jp] : cm->dmax[v];
+	}
+    }
+}
+
 
 /*****************************************************************************
  * EPN 11.04.05
@@ -1365,7 +1407,7 @@ debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax)
 
 }
 
-/* Function: CYKBandedScan_jd() EXPERIMENTAL
+/* Function: CYKBandedScan_jd() 
  * Date:     EPN, 06.22.06
  * based on: CYKBandedScan() by SRE in bandcyk.c
  *
@@ -1383,7 +1425,7 @@ debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax)
  *           [0..v..cm-M-1][0..(jmax[v]-jmin[v]+1)].
  *           
  *           The j band for v is jmin[v]..jmax[v], inclusive; that is,
- *           jmin[v] is the minimum allowed j for state v (inclusive);
+ *           jmin[v] is the minimum allowed j for state v;
  *           jmax[v] is the maximum; 
  * 
  *           The d bands are v and j specific (in contrast to the a priori d bands
@@ -1403,22 +1445,19 @@ debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax)
  *           i0        - start of target subsequence (1 for beginning of dsq)
  *           j0        - end of target subsequence (L for end of dsq)
  *           W         - max d: max size of a hit
- *           ret_nhits - RETURN: number of hits (found only within current function call from i0 to j0)
- *           ret_hitr  - RETURN: start states of hits, 0..nhits-1
- *           ret_hiti  - RETURN: start positions of hits, 0..nhits-1
- *           ret_hitj  - RETURN: end positions of hits, 0..nhits-1
- *           ret_hitsc - RETURN: scores of hits, 0..nhits-1            
- *           min_thresh- minimum score to report (EPN via Alex Coventry 03.11.06)
+ *           cutoff    - minimum score to report 
+ *           results   - scan_results_t to add to; if NULL, don't add to it
  *
- * Returns:  
- *           hiti, hitj, hitsc are allocated here if nec; caller free's w/ free().
+ * Returns:  score of best overall hit
  */
-void
+float
 CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax, int i0, 
-		 int j0, int W, int *ret_nhits, int **ret_hitr, int **ret_hiti, 
-		 int **ret_hitj, float **ret_hitsc, float min_thresh)
+		 int j0, int W, float cutoff, scan_results_t *results)
 {
   float  ***alpha;              /* CYK DP score matrix, [v][j][d] */
+  float  ***alpha_mem;          /* pointers to original alpha memory */
+  float    *imp_row;           /* an IMPOSSIBLE deck (full of IMPOSSIBLE scores), 
+				 * pointed to when j is outside j band for v */
   int      *bestr;              /* auxil info: best root state at alpha[0][cur][d] */
   float    *gamma;              /* SHMM DP matrix for optimum nonoverlap resolution */
   int      *gback;              /* traceback pointers for SHMM */ 
@@ -1445,27 +1484,25 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
   int      x;
   int      tmp_y;
   float    tmp_alpha_w, tmp_alpha_y;
-  int       nhits;		/* # of hits in optimal parse */
-  int      *hitr;		/* initial state indices of hits in optimal parse */
-  int      *hiti;               /* start positions of hits in optimal parse */
-  int      *hitj;               /* end positions of hits in optimal parse */
-  float    *hitsc;              /* scores of hits in optimal parse */
-  int       alloc_nhits;	/* used to grow the hit arrays */
+  float     best_score;         /* Best overall score from semi-HMM to return */
+  float     best_neg_score;     /* Best score overall score to return, used if all scores < 0 */
+  int       do_qdb;             /* TRUE to also use QDB, for every v, set dmin/dmax as
+				 * min/max of HMM band and QD band */
+  
+  /* Contract checks */
+  if((!(cm->search_opts & CM_SEARCH_NOQDB)) && (cm->dmin == NULL || cm->dmax == NULL))
+    Die("ERROR in CYKBandedScan_jd(), trying to use QDB, but cm->dmin, cm->dmax are NULL.\n");
 
+  if(!(cm->search_opts & CM_SEARCH_NOQDB)) /* we're doing qdb */
+    combine_qdb_hmm_d_bands(cm, jmin, jmax, hdmin, hdmax);
 
-  /* EPN 08.11.05 Next line prevents wasteful computations when imposing
-   * bands before the main recursion.  There is no need to worry about
-   * alpha cells corresponding to subsequence distances within the windowlen
-   * (W) but LONGER than the full sequence (L).  Saves a significant amount 
-   * of time only if W is much larger than necessary, and the search sequences 
-   * are short.
-   */
+  best_score     = IMPOSSIBLE;
+  best_neg_score = IMPOSSIBLE;
   L = j0-i0+1;
-  /*printf("i0: %5d | j0: %5d | L: %5d | W: %5d\n", i0, j0, L, W);*/
-  if (W > L) W = L; 
+  /*printf("in CYKBandedScan_jd i0: %5d | j0: %5d | L: %5d | W: %5d\n", i0, j0, L, W);*/
+  if (W > L) W = L; /* shouldn't look longer than seq length L */
 
   /*PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, (j0-i0+1));*/
-
   /*****************************************************************
    * alpha allocations.
    * The scanning matrix is indexed [v][j][d]. 
@@ -1480,19 +1517,33 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
    * due to the j bands. 
    * 
    *****************************************************************/
-  alpha = MallocOrDie (sizeof(float **) * cm->M);
+  alpha     = MallocOrDie (sizeof(float **) * cm->M);
+  alpha_mem = MallocOrDie (sizeof(float **) * cm->M);
+  /* we use alpha_mem to remember where each alpha row (alpha[v][j]) is
+   * in case we've set alpha[v][cur] to imp_row (the precalc'ed IMPOSSIBLE row)
+   * in a prior iteration, and we are about to overwrite it, and we don't
+   * want to overwrite our special IMPOSSIBLE row.
+   */
   for (v = cm->M-1; v >= 0; v--) {	/* reverse, because we allocate E_M-1 first */
     if (cm->stid[v] == BEGL_S)
       {
-	alpha[v] = MallocOrDie(sizeof(float *) * (W+1));
+	alpha[v]     = MallocOrDie(sizeof(float *)  * (W+1));
+	alpha_mem[v] = MallocOrDie(sizeof(float *)  * (W+1));
 	for (j = 0; j <= W; j++)
-	  alpha[v][j] = MallocOrDie(sizeof(float) * (W+1));
+	  {
+	    alpha_mem[v][j] = MallocOrDie(sizeof(float) * (W+1));
+	    alpha[v][j]     = alpha_mem[v][j];
+	  }
       }
     else 
       {
-	alpha[v] = MallocOrDie(sizeof(float *) * 2);
+	alpha[v]     = MallocOrDie(sizeof(float *) * 2);
+	alpha_mem[v] = MallocOrDie(sizeof(float *) * 2);
 	for (j = 0; j < 2; j++) 
-	  alpha[v][j] = MallocOrDie(sizeof(float) * (W+1));
+	  {
+	    alpha_mem[v][j] = MallocOrDie(sizeof(float) * (W+1));
+	    alpha[v][j]     = alpha_mem[v][j];
+	  }
       }
   }
   bestr = MallocOrDie(sizeof(int) * (W+1));
@@ -1509,6 +1560,11 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
   savesc   = MallocOrDie(sizeof(float) * (L+1));
   saver    = MallocOrDie(sizeof(int)   * (L+1));
 
+  /* Initialize the impossible deck, which we'll point to for 
+   * j positions that are outside of the j band on v */
+  imp_row = MallocOrDie (sizeof(float) * (W+1));
+  for (d = 0; d <= W; d++) imp_row[d] = IMPOSSIBLE;
+    
   /*****************************************************************
    * The main loop: scan the sequence from position 1 to L.
    *****************************************************************/
@@ -1516,8 +1572,8 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
     {
 
       gamma_j = j-i0+1;
-      cur = j%2;
-      prv = (j-1)%2;
+      cur = (j-i0+1)%2; /* cur == 1 when j == i0 */
+      prv = (j-i0)  %2; /* prv == 0 when j == i0 */
 
       /*****************************************************************
        * alpha initializations.
@@ -1530,19 +1586,36 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
 	  /* Check to see if we're outside the bounds on j */
 	  if(j < jmin[v] || j > jmax[v])
 	    {
-	      if (cm->stid[v] == BEGL_S) jp_roll = j % (W+1); else jp_roll = cur;
-	      for (d = 0; d <= W; d++) 
-		alpha[v][jp_roll][d] = IMPOSSIBLE;
+	      if (cm->stid[v] == BEGL_S) 
+		{
+		  jp_roll = j % (W+1); 
+		  for (d = 0; d <= W; d++) 
+		    alpha[v][jp_roll][d] = IMPOSSIBLE;
+		}
+	      else
+		{
+		  jp_roll = cur;
+		  alpha[v][jp_roll] = imp_row;
+		}
 	      /* Special boundary case: have to initialize alpha[v][prv] also */
 	      if (j == i0)
-		for (d = 0; d <= W; d++) 
-		  alpha[v][prv][d] = IMPOSSIBLE;
+		alpha[v][prv] = imp_row;
+	      /*for (d = 0; d <= W; d++) 
+		alpha[v][prv][d] = IMPOSSIBLE;*/
+
 	      continue;
+	    }
+	  if(alpha[v][cur] == imp_row)
+	    {
+	      /* we don't want to overwrite imp_row */
+	      alpha[v][cur] = alpha_mem[v][cur];
+	      for (d = 0; d <= W; d++) 
+		alpha[v][cur][d] = IMPOSSIBLE;
 	    }
 	  
 	  /* else we initialize on d = 0 */
 	  alpha[v][cur][0] = IMPOSSIBLE;
-
+	  
 	  if      (cm->sttype[v] == E_st)  alpha[v][cur][0] = 0;
 	  else if (cm->sttype[v] == MP_st) alpha[v][cur][1] = alpha[v][prv][1] = IMPOSSIBLE;
 	  else if (cm->sttype[v] == S_st || cm->sttype[v] == D_st) 
@@ -1602,6 +1675,7 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
 	   *   dependent on v AND j. 
 	   */
 	  if (cm->stid[v] == BEGL_S) jp_roll = j % (W+1); else jp_roll = cur;
+
 	  for (d =0; d < hdmin[v][jp_v] && d <=W; d++) 
 	    alpha[v][jp_roll][d] = IMPOSSIBLE;
 	  for (d = hdmax[v][jp_v]+1; d <= W;      d++) 
@@ -1730,7 +1804,7 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
 		}
 	    }
 	} /* end loop over decks v>0 */
-	  
+
       /* Finish up with the ROOT_S, state v=0; and deal w/ local begins.
        * 
        * If local begins are off, the hit must be rooted at v=0.
@@ -1743,8 +1817,9 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
       /* Check to see if we're within bounds on j */
       if(j < jmin[0] || j > jmax[0])
 	{
+	  /*printf("j: %d (gamma_j: %d) IMPOSSIBLE BABY! min: %d max: %d\n", j, gamma_j, jmin[0], jmax[0]);*/
 	  for (d = 0; d <= W; d++) 
-	    alpha[0][jp_roll][d] = IMPOSSIBLE;
+	    alpha[0][jp_roll][d] = IMPOSSIBLE; 
 	  /* Inform the little semi-Markov model that deals with multihit parsing
 	   * that a hit is impossible, j is outside root band on j:
 	   */
@@ -1775,11 +1850,10 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
        *   We have to do this here because d bands are
        *   dependent on v AND j. 
        */
-      jp_roll = cur;
       for (d =0; d < hdmin[0][jp_v] && d <=W; d++) 
-	alpha[0][jp_roll][d] = IMPOSSIBLE;
+	alpha[0][cur][d] = IMPOSSIBLE;
       for (d = hdmax[0][jp_v]+1; d <= W;      d++) 
-	alpha[0][jp_roll][d] = IMPOSSIBLE;
+	alpha[0][cur][d] = IMPOSSIBLE;
       
       for (d = hdmin[v][jp_v]; ((d <= hdmax[v][jp_v] && d <= gamma_j) && d <= W); d++) 
 	{
@@ -1795,6 +1869,7 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
 	    }
 	  /*printf("j: %d | alpha[0][cur][%d]: %f\n", j, d, alpha[0][cur][d]);*/
 	  if (alpha[0][cur][d] < IMPROBABLE) alpha[0][cur][d] = IMPOSSIBLE;
+	  if (alpha[0][cur][d] > best_neg_score) best_neg_score = alpha[0][cur][d];
 	}
 
       if (cm->flags & CM_LOCAL_BEGIN) {
@@ -1814,23 +1889,27 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
 		    bestr[d]         = y;
 		  }
 		  if (alpha[0][cur][d] < IMPROBABLE) alpha[0][cur][d] = IMPOSSIBLE;
+		  if (alpha[0][cur][d] > best_neg_score) best_neg_score = alpha[0][cur][d];
 		}
 	    }
 	}
       }
-      
+	      
       /* The little semi-Markov model that deals with multihit parsing:
        */
       gamma[gamma_j]  = gamma[gamma_j-1] + 0; /* extend without adding a new hit */
       gback[gamma_j]  = -1;
       savesc[gamma_j] = IMPOSSIBLE;
       saver[gamma_j]  = -1;
-      for (d = hdmin[0][jp_v]; d <= hdmax[0][jp_v] && d <= gamma_j; d++) 
+      for (d = hdmin[0][jp_v]; (d <= hdmax[0][jp_v] && d <= gamma_j) && d <= W; d++) 
 	{
 	  i       = j-d+1;
 	  gamma_i = j-d+1-i0+1;
 	  assert(i > 0);
-	  sc = gamma[gamma_i-1] + alpha[0][cur][d]  - min_thresh; 
+	  /*printf("v: %d gamma_i: %d d: %d\n", v, gamma_i, d);*/
+	  sc = gamma[gamma_i-1] + alpha[0][cur][d] + cm->sc_boost;
+	  /* sc_boost is experimental technique for finding hits < 0 bits. 
+	   * value is 0.0 if technique not used. */
 	  if (sc > gamma[gamma_j])
 	    {
 	      gamma[gamma_j]  = sc;
@@ -1843,18 +1922,21 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
 
   /*****************************************************************
    * we're done with alpha, free it; everything we need is in gamma.
+   * be careful about only freeing our impossible deck, imp_row, once
    *****************************************************************/ 
-  for (v = 0; v < cm->M; v++) 
+for (v = 0; v < cm->M; v++) 
     {
       if (cm->stid[v] == BEGL_S) {                     /* big BEGL_S decks */
-	for (j = 0; j <= W; j++) free(alpha[v][j]);
+	for (j = 0; j <= W; j++) 
+	  if(alpha[v][j] != imp_row) free(alpha[v][j]); 
 	free(alpha[v]);
       } else {
-	free(alpha[v][0]);
-	free(alpha[v][1]);
+	if(alpha[v][0] != imp_row) free(alpha[v][0]);
+	if(alpha[v][1] != imp_row) free(alpha[v][1]); 
 	free(alpha[v]);
       }
     }
+  free(imp_row);
   free(alpha);
   free(bestr);
 
@@ -1862,58 +1944,30 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
    * Traceback stage.
    * Recover all hits: an (i,j,sc) triple for each one.
    *****************************************************************/ 
-  alloc_nhits = 10;
-  hitr  = MallocOrDie(sizeof(int)   * alloc_nhits);
-  hitj  = MallocOrDie(sizeof(int)   * alloc_nhits);
-  hiti  = MallocOrDie(sizeof(int)   * alloc_nhits);
-  hitsc = MallocOrDie(sizeof(float) * alloc_nhits);
-
   j     = j0;
-  nhits = 0;
-  while (j >= i0) {
-    gamma_j = j-i0+1;
-    if (gback[gamma_j] == -1) /* no hit */
-      j--; 
-    else                /* a hit, a palpable hit */
-      {
-	hitr[nhits]   = saver[gamma_j];
-	hitj[nhits]   = j;
-	hiti[nhits]   = gback[gamma_j];
-	hitsc[nhits]  = savesc[gamma_j];
-	//printf("new hit num %d | i: %d | j: %d | sc: %f\n", nhits, hiti[nhits], hitj[nhits], hitsc[nhits]); 
-	nhits++;
-	j = gback[gamma_j]-1;
-	
-	if (nhits == alloc_nhits) {
-	  hitr  = ReallocOrDie(hitr,  sizeof(int)   * (alloc_nhits + 10));
-	  hitj  = ReallocOrDie(hitj,  sizeof(int)   * (alloc_nhits + 10));
-	  hiti  = ReallocOrDie(hiti,  sizeof(int)   * (alloc_nhits + 10));
-	  hitsc = ReallocOrDie(hitsc, sizeof(float) * (alloc_nhits + 10));
-	  alloc_nhits += 10;
+  while (j >= i0) 
+    {
+      gamma_j = j-i0+1;
+      if (gback[gamma_j] == -1) /* no hit */
+	j--; 
+      else                /* a hit, a palpable hit */
+	{
+	  if(savesc[gamma_j] > best_score) 
+	    best_score = savesc[gamma_j];
+	  if(savesc[gamma_j] >= cutoff && results != NULL) /* report the hit */
+	    report_hit(gback[gamma_j], j, saver[gamma_j], savesc[gamma_j], results);
+	  j = gback[gamma_j]-1;
 	}
-      }
-  }
+    }
   free(gback);
   free(gamma);
   free(savesc);
   free(saver);
 
-  //printf("end nhis: %d\n", nhits);
-  *ret_nhits = nhits;
-  *ret_hitr  = hitr;
-  *ret_hiti  = hiti;
-  *ret_hitj  = hitj;
-  *ret_hitsc = hitsc;
+  if(best_score <= 0.) /* there were no hits found by the semi-HMM, no hits above 0 bits */
+    best_score = best_neg_score;
 
-  for (i = 0; i < nhits; i++)
-    {
-      /*printf("j0: %d end hit %-4d: %6d %6d %8.2f bits\n", j0, i, 
-	     hiti[i], 
-	     hitj[i],
-	     hitsc[i]);
-      */
-    }
-  return;
+  return best_score;
 }
 
 #if 0

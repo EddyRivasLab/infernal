@@ -41,14 +41,15 @@ The alignment file is expected to be in Stockholm format.\n\
 
 static char experts[] = "\
   Expert, in development, or infrequently used options are:\n\
-   --rsearch <f>  : use RSEARCH parameterization with matrix file <f>\n\
-   --rsw          : use RSEARCH's default method for setting W (2*seq length)\n\
    --binary       : save the model in binary format\n\
    --rf           : use reference coordinate annotation to specify consensus\n\
-   --gapthresh <x>: fraction of gaps to allow in a consensus column (0..1)\n\
    --informat <s> : specify input alignment is in format <s>, not Stockholm\n\
-   --bandp <x>    : tail loss prob for calc'ing W using bands [default: 1E-7]\n\
+   --gapthresh <x>: fraction of gaps to allow in a consensus column [0..1]\n\
+   --beta <x>     : tail loss prob for query-dependent bands (QBD) [df:1E-7]\n\
+   --window <n>   : set scanning window size to <n> [default: calc using QDB]\n\
    --elself <x>   : set EL self transition prob to <x> [df: 0.94]\n\
+   --rsearch <f>  : use RSEARCH parameterization with RIBOSUM matrix file <f>\n\
+   --rsw          : use RSEARCH's default method for setting W (2*seq length)\n\
    --nodetach     : do not 'detach' one of two inserts that model same column\n\
 \n\
  * sequence weighting options [default: GSC weighting]:\n\
@@ -56,7 +57,7 @@ static char experts[] = "\
    --wnone        : no weighting; re-set all weights to 1.\n\
    --wgsc         : use Gerstein/Sonnhammer/Chothia tree weights [default]\n\
 \n\
- * alternative effective sequence number strategies:\n\
+ * effective sequence number related options:\n\
    --effent       : entropy loss target [default]\n\
    --etarget <x>  : for --effent: set target entropy to <x> [default: 1.46]\n\
    --effnone      : effective sequence number is just # of seqs\n\
@@ -69,7 +70,6 @@ static char experts[] = "\
    --gtbl  <f>    : save tabular description of master tree to file <f>\n\
    --tfile <f>    : dump individual sequence tracebacks to file <f>\n\
    --bfile <f>    : save bands to file <f>, which can be read by cmsearch\n\
-   --local        : only works w/ --bfile, calc bands in local mode then output\n\
    --bdfile <f>   : save band density data to file <f>\n\
 \n\
  * debugging, experimentation:\n\
@@ -77,7 +77,6 @@ static char experts[] = "\
    --regress <f>  : save regression test information to file <f>\n\
    --treeforce    : score first seq in alignment and show parsetree\n\
    --ignorant     : strip the structural info from input alignment\n\
-   --dlev <x>     : set verbosity of debugging print statements to <x> [1..3]\n\
 \n\
  * customization of null model and priors:\n\
    --null      <f>: read null (random sequence) model from file <f>\n\
@@ -86,12 +85,14 @@ static char experts[] = "\
  * options for building multiple CMs after clustering input MSA:\n\
    --ctarget <n>  : build (at most) <n> CMs by partitioning MSA into <n> clusters\n\
    --cmindiff <x> : min difference b/t 2 clusters is <x>, each cluster -> CM\n\
-   --cpickone     : w/--c{target,mindiff}, build CMs from 1 seq in each clust\n\
    --call         : build a separate CM from every seq in MSA\n\
-   --cdump <f>    : dump an MSA for each cluster (CM) to file <f>\n\
    --corig        : build an additional CM from the original MSA\n\
+   --cdump <f>    : dump an MSA for each cluster (CM) to file <f>\n\
 \n\
 ";
+
+/* To be implemented:
+   --cpickone     : w/--c{target,mindiff}, build CMs from 1 seq in each clust\n\*/
 
 static struct opt_s OPTIONS[] = {
   { "-h", TRUE, sqdARG_NONE }, 
@@ -99,6 +100,7 @@ static struct opt_s OPTIONS[] = {
   { "-A", TRUE, sqdARG_NONE },
   { "-F", TRUE, sqdARG_NONE },
   { "--rsearch",   FALSE, sqdARG_STRING },
+  { "--window",    FALSE, sqdARG_INT },
   { "--rsw",       FALSE, sqdARG_NONE },
   { "--binary",    FALSE, sqdARG_NONE },
   { "--nobalance", FALSE, sqdARG_NONE },
@@ -118,9 +120,8 @@ static struct opt_s OPTIONS[] = {
   { "--wgsc",      FALSE, sqdARG_NONE },
   { "--priorfile", FALSE, sqdARG_STRING },
   { "--bfile",     FALSE, sqdARG_STRING },
-  { "--local",     FALSE, sqdARG_NONE },
   { "--bdfile",    FALSE, sqdARG_STRING },
-  { "--bandp",     FALSE, sqdARG_FLOAT},
+  { "--beta",      FALSE, sqdARG_FLOAT},
   { "--ignorant",  FALSE, sqdARG_NONE },
   { "--null",      FALSE, sqdARG_STRING },
   { "--effnone",   FALSE, sqdARG_NONE },
@@ -128,15 +129,14 @@ static struct opt_s OPTIONS[] = {
   /*{ "--effrelent",  FALSE, sqdARG_NONE },*/
   { "--etarget",   FALSE, sqdARG_FLOAT },
   { "--elself",    FALSE, sqdARG_FLOAT},
-  { "--dlev",      FALSE, sqdARG_INT },
   { "--nodetach",  FALSE, sqdARG_NONE},
   { "--noprior",   FALSE, sqdARG_NONE},
   { "--ctarget",   FALSE, sqdARG_INT},
   { "--cmindiff",  FALSE, sqdARG_FLOAT},
-  { "--cpickone",  FALSE, sqdARG_NONE},
+  /*{ "--cpickone",  FALSE, sqdARG_NONE},*/
   { "--call",      FALSE, sqdARG_NONE},
-  { "--corig",     FALSE, sqdARG_NONE},
-  { "--cdump",     FALSE, sqdARG_STRING}
+  { "--cdump",     FALSE, sqdARG_STRING},
+  { "--corig",     FALSE, sqdARG_NONE}
 }
 ;
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
@@ -181,6 +181,8 @@ main(int argc, char **argv)
   float gapthresh;		/* 0=all cols inserts; 1=all cols consensus*/
   int   treeforce;		/* number of seqs to show parsetrees for   */
   char *setname;                /* name to give to HMM, overriding others  */
+  int    do_set_window;	        /* TRUE if --window enabled                */
+  int    window_set_as;	        /* size of window, set with --window       */
   enum  weight_flags {		/* sequence weighting strategy to use      */
     WGT_GIVEN, WGT_NONE, WGT_GSC } weight_strategy;
 
@@ -209,13 +211,10 @@ main(int argc, char **argv)
   double   **gamma;             /* P(subseq length = n) for each state v    */
   int       *dmin;		/* minimum d bound for state v, [0..v..M-1] */
   int       *dmax; 		/* maximum d bound for state v, [0..v..M-1] */
-  double     bandp;		/* tail loss probability for banding        */
+  double     beta;		/* tail loss probability for banding        */
   int        safe_windowlen;	/* initial windowlen (W) used for calculating bands,
 				 * once bands are calculated we'll set cm->W to dmax[0] */
   char      *bandfile;          /* file to print bands to, can be read by cmsearch */
-  int        do_local;          /* Always FALSE, unless --bandfile <f> --local 
-				 * is enabled at command line. If TRUE calc 
-				 * bands in local mode before outputting.   */
   char      *banddensityfile;
   int        v;                 /* counter over states                      */
   int        be_ignorant;       /* TRUE to strip all bp info from the input structure */
@@ -240,7 +239,6 @@ main(int argc, char **argv)
 				* large regions 'skipped' by EL states. 
 				* see ~nawrocki/notebook/5_1115_inf_el_trans_prob/00LOG for details.
 				*/
-  int        debug_level;      /* level of debugging print statements     */
 		      
   /* variables for 'detach' mode: we find columns that are modelled by two insert states (an ambiguity
    * in the CM architecture), and *handle* them (right hand in fist pounding open left palm) by 
@@ -310,18 +308,16 @@ main(int argc, char **argv)
   eff_strategy      = EFF_ENTROPY; /* 11.28.05 EPN entropy weighting is default. */
   etarget_set       = FALSE;
   eff_nseq_set      = FALSE;
-  do_local          = FALSE;
   save_gamma        = FALSE;
   etarget           = 1.46;  /* EPN: empirically determined optimal etarget (2.0-0.54)
 			      * using RMARK benchmark*/ 
 
-  bandp             = 0.0000001; 
+  beta              = DEFAULT_BETA;
   safe_windowlen    = 0;
   be_ignorant       = FALSE; /* default: leave in bp information */
   el_selfprob       = 0.94;  /* EPN: empirically determined optimal 
 			      * EL self transition prob using RMARK benchmark 
 			      * (11.28.05) */
-  debug_level       = 0; 
   do_detach         = TRUE;  /* default: detach 1 of 2 ambiguous inserts */
   no_prior          = FALSE; /* default: use a prior */
 
@@ -333,9 +329,11 @@ main(int argc, char **argv)
   curr_ncm          = 1;     /* default: only build 1 CM for each MSA in alignment file */
   mindiff           = 0.;    /* overwritten if --cmindiff enabled */
   target_nc         = 0;     /* overwritten if --ctarget enabled */
-  do_cdump          = FALSE; /* set to TRUE only if --cdump enabled */
   do_corig          = FALSE; /* set to TRUE only if --corig enabled */
+  do_cdump          = FALSE; /* set to TRUE only if --cdump enabled */
   cdump_file        = NULL;  /* overwritten if --cdump enabled */
+  do_set_window     = FALSE;
+  window_set_as     = -1;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -345,6 +343,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "-n") == 0)          setname           = optarg;
     else if (strcmp(optname, "--rsearch")   == 0) { do_rsearch        = TRUE; matrixfile = optarg; }
     else if (strcmp(optname, "--rsw")       == 0) do_rsw            = TRUE;
+    else if (strcmp(optname, "--window")    == 0) { do_set_window   = TRUE; window_set_as = atoi(optarg); }
     else if (strcmp(optname, "--binary")    == 0) do_binary         = TRUE;
     else if (strcmp(optname, "--nobalance") == 0) do_balance        = FALSE;
     else if (strcmp(optname, "--gapthresh") == 0) gapthresh         = atof(optarg);
@@ -362,9 +361,8 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--regress")   == 0) regressionfile    = optarg;
     else if (strcmp(optname, "--priorfile") == 0) prifile           = optarg;
     else if (strcmp(optname, "--bfile")     == 0) bandfile          = optarg;
-    else if (strcmp(optname, "--local")     == 0) do_local          = TRUE;
     else if (strcmp(optname, "--bdfile")    == 0) {banddensityfile  = optarg; save_gamma = TRUE;}
-    else if (strcmp(optname, "--bandp")     == 0) bandp             = atof(optarg);
+    else if (strcmp(optname, "--beta")      == 0) beta              = atof(optarg);
     else if (strcmp(optname, "--ignorant")  == 0) be_ignorant       = TRUE;
     else if (strcmp(optname, "--null")      == 0) rndfile           = optarg;
     else if (strcmp(optname, "--nodetach")  == 0) do_detach         = FALSE;   
@@ -377,15 +375,13 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--cmindiff")  == 0) { do_cluster = TRUE; do_cmindiff = TRUE; mindiff   = atof(optarg); }
     else if (strcmp(optname, "--call")      == 0) { do_cluster = TRUE; do_all = TRUE; }
     else if (strcmp(optname, "--cpickone")  == 0) { do_cpickone = TRUE; }
-    else if (strcmp(optname, "--cdump")     == 0) { do_cdump   = TRUE; cdump_file = optarg; }
     else if (strcmp(optname, "--corig")     == 0) { do_corig   = TRUE; }
-
+    else if (strcmp(optname, "--cdump")     == 0) { do_cdump   = TRUE; cdump_file = optarg; }
     else if (strcmp(optname, "--elself")    == 0) { 
       el_selfprob= atof(optarg); 
       if(el_selfprob < 0 || el_selfprob > 1)
 	Die("EL self transition probability must be between 0 and 1.\n");
     }
-    else if (strcmp(optname, "--dlev")      == 0)  debug_level  = atoi(optarg);
     else if (strcmp(optname, "--informat") == 0) {
       format = String2SeqfileFormat(optarg);
       if (format == MSAFILE_UNKNOWN) 
@@ -411,7 +407,7 @@ main(int argc, char **argv)
       if(rndfile != NULL)
 	Die("--rsearch and --null <f> combination doesn't make sense.\nThe null model used will be specified in the RIBOSUM matrix file.\n,%s\n", usage);
       if(prifile != NULL)
-	Die("--rsearch and --prior <f> combination doesn't make sense.\nNo prior file is used to build RSEARCH CMs, a RIBOSUM scoring matrix is used.\n%s\n", usage);
+	Die("--rsearch and --priorfile <f> combination doesn't make sense.\nNo prior file is used to build RSEARCH CMs, a RIBOSUM scoring matrix is used.\n%s\n", usage);
       if(do_all && do_cmindiff)
 	Die("--call and --cmindiff combination doesn't make sense. Pick one.\n%s\n", usage);
       if(do_all && do_ctarget)
@@ -428,8 +424,10 @@ main(int argc, char **argv)
 	Die("--cdump <f> only makes sense with --ctarget, --cmindiff, or --call\n%s\n", usage);
       if(do_corig && !do_cluster)
 	Die("--corig only makes sense with --ctarget, --cmindiff, or --call\n%s\n", usage);
-      if(do_rsw && !do_rsearch)
-	Die("--rsw only works with --rsearch\n%s\n", usage);
+      if(bandfile != NULL && (do_rsw || do_set_window))
+	Die("--bandfile does not work with --rsw or --window\n%s\n", usage);
+      if(do_cpickone)
+	Die("--cpickone not yet implemented (why don't you do it?)\n");
     }      
   
   /* Set up default options for rsearch mode */
@@ -445,8 +443,6 @@ main(int argc, char **argv)
 
   if (!allow_overwrite && !do_append && FileExists(cmfile))
     Die("CM file %s already exists. Rename or delete it.", cmfile); 
-  if (do_local && bandfile == NULL)
-    Die("--local option only allowed with --bandfile <f> option.\nThis is strictly for printing bands derived in local mode.\n");
 
   /*********************************************** 
    * Preliminaries: open our files for i/o
@@ -762,34 +758,47 @@ main(int argc, char **argv)
 	  CMLogoddsify(cm);
 	  printf("done.\n");
 	  
-	  /* EPN 08.18.05
-	   * Calculate W for the model based on the seed seqs' tracebacks.
-	   *              Brief expt on effect of different bandp and 
-	   *              safe_windowlen scaling factor values in 
-	   *              ~nawrocki/notebook/5_0818_inf_cmbuild_bands/00LOG
-	   */
-	  printf("%-40s ... ", "Calculating max hit length for model"); fflush(stdout);
-	  safe_windowlen = 2 * MSAMaxSequenceLength(msa);
-	  
-	  /* EPN 11.13.05 
-	   * BandCalculationEngine() replaces BandDistribution() and BandBounds().
-	   * See ~nawrocki/notebook/5_1111_inf_banded_dist_vs_bandcalc/00LOG for details.
-	   */
-	  while(!(BandCalculationEngine(cm, safe_windowlen, bandp, save_gamma, &dmin, &dmax, &gamma)))
+	  if(!do_set_window && !do_rsw)
 	    {
-	      free(dmin);
-	      free(dmax);
-	      FreeBandDensities(cm, gamma);	  
-	      /*printf("Failure in BandCalculationEngine(). W:%d | bandp: %4e\n", safe_windowlen, bandp);*/
-	      safe_windowlen *= 2;
+	      /* EPN 08.18.05
+	       * Calculate W for the model based on the seed seqs' tracebacks.
+	       *              Brief expt on effect of different beta and 
+	       *              safe_windowlen scaling factor values in 
+	       *              ~nawrocki/notebook/5_0818_inf_cmbuild_bands/00LOG
+	       */
+	      printf("%-40s ... ", "Calculating max hit length for model"); fflush(stdout);
+	      safe_windowlen = 2 * MSAMaxSequenceLength(msa);
+	      
+	      /* EPN 11.13.05 
+	       * BandCalculationEngine() replaces BandDistribution() and BandBounds().
+	       * See ~nawrocki/notebook/5_1111_inf_banded_dist_vs_bandcalc/00LOG for details.
+	       */
+	      while(!(BandCalculationEngine(cm, safe_windowlen, beta, save_gamma, &dmin, &dmax, &gamma)))
+		{
+		  free(dmin);
+		  free(dmax);
+		  FreeBandDensities(cm, gamma);	  
+		  /*printf("Failure in BandCalculationEngine(). W:%d | beta: %4e\n", safe_windowlen, beta);*/
+		  safe_windowlen *= 2;
+		}
+	      
+	      /*printf("Success in BandCalculationEngine(). W:%d | beta: %4e\n", safe_windowlen, beta);*/
+	      /*debug_print_bands(cm, dmin, dmax);*/
+	      cm->W = dmax[0];
+	      printf("done. [%d]\n", cm->W);
 	    }
-	  
-	  /*printf("Success in BandCalculationEngine(). W:%d | bandp: %4e\n", safe_windowlen, bandp);*/
-	  /*debug_print_bands(cm, dmin, dmax);*/
-	  if(do_rsw) cm->W = 2*avlen; 
-	  else cm->W = dmax[0];
-	  printf("done. [%d]\n", cm->W);
-	  
+	  else if(do_set_window)
+	    {
+	      printf("%-40s ... ", "Setting max hit length for CM (--window)"); fflush(stdout);
+		cm->W = window_set_as;
+	      printf("done. [%d]\n", cm->W);
+	    }
+	  else if(do_rsw)
+	    {
+	      printf("%-40s ... ", "Setting max hit length for CM (--rsw)"); fflush(stdout);
+	      cm->W = 2*avlen; 
+	      printf("done. [%d]\n", cm->W);
+	    }
 	  /*11.15.05 EPN Set the EL self transition score, by default its log2(0.94).*/
 	  cm->el_selfsc = sreLOG2(el_selfprob);
 	  /* Next line is very hacky. 
@@ -823,7 +832,7 @@ main(int argc, char **argv)
 	  else
 	    {
 	      if (setname != NULL)
-		Die("FAILED.\nOops. Wait. You can't use -n w/ an alignment database");
+		Die("FAILED.\nOops. Wait. You can't use -n w/ an alignment database or with --c* options.");
 	      else if (msa->name != NULL)
 		cm->name = Strdup(msa->name);
 	      else
@@ -956,12 +965,12 @@ main(int argc, char **argv)
 		Die("failed to open band density file %s", banddensityfile);
 	      
 	      /* We want band information for bands we'd use in a cmsearch
-	       * with bandp as its set now (default is 1E-7, but it can
+	       * with beta as its set now (default is 1E-7, but it can
 	       * be set at the command line). We already have gamma from
 	       * the band calculation we used to get cm->W.
 	       */
 	      fprintf(ofp, "acc:%s\n", msa->acc);
-	      fprintf(ofp, "bandp:%g\n", bandp);
+	      fprintf(ofp, "beta:%g\n", beta);
 	      for (v = 0; v < cm->M; v++)
 		if(cm->sttype[v] == S_st)
 		  PrintBandDensity(ofp, gamma, v, cm->W, dmin[v], dmax[v]);
@@ -980,27 +989,7 @@ main(int argc, char **argv)
 	  /* EPN 11.15.06 Print the bands out, in a format we can read in cmsearch */
 	  if (bandfile != NULL)       
 	    {
-	      if(do_local) /* Recalculate bands in local mode */
-		{
-		  /* Config the CM for local mode, we've already printed it to a file,
-		   * and all we use it for after this is SummarizeCM() and CYKDemands() 
-		   * which shouldn't be affected if we modify the begin and end probs */
-		  cm->config_opts |= CM_CONFIG_LOCAL;
-		  ConfigLocal(cm, 0.5, 0.5);
-		  CMLogoddsify(cm);
-		  safe_windowlen = 2 * MSAMaxSequenceLength(msa);
-		  while(!(BandCalculationEngine(cm, safe_windowlen, bandp, FALSE, &dmin, &dmax, &gamma)))
-		    {
-		      free(dmin);
-		      free(dmax);
-		      FreeBandDensities(cm, gamma);	  
-		      /*printf("Failure in BandCalculationEngine(). W:%d | bandp: %4e\n", safe_windowlen, bandp);*/
-		      safe_windowlen *= 2;
-		    }
-		  printf("%-40s ... ", "Saving band information from local CM"); fflush(stdout);
-		}
-	      else
-		printf("%-40s ... ", "Saving band information from CM"); fflush(stdout);
+	      printf("%-40s ... ", "Saving band information from CM"); fflush(stdout);
 	      
 	      if ((ofp = fopen(bandfile,"w")) == NULL)
 		Die("failed to open band file %s", bandfile);

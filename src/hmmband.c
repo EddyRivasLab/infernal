@@ -91,12 +91,24 @@ AllocCP9Bands(CM_t *cm, struct cplan9_s *hmm)
 void 
 FreeCP9Bands(CP9Bands_t *cp9bands)
 {
+  int v;
   free(cp9bands->imin);
   free(cp9bands->imax);
   free(cp9bands->jmin);
   free(cp9bands->jmax);
   free(cp9bands->safe_hdmin);
   free(cp9bands->safe_hdmax);
+  /* the v&j dependent d bands might have already been freed, for
+   * example if one CP9Bands_t structure was used for multiple seqs,
+   * the hdmin bands are the only part that is seq and CM dependent,
+   * instead of just CM dependent. */
+  for(v = 0; v < cp9bands->cm_M; v++)
+    {
+      if(cp9bands->hdmin[v] != NULL)
+	free(cp9bands->hdmin[v]);
+      if(cp9bands->hdmax[v] != NULL)
+	free(cp9bands->hdmax[v]);
+    }
   free(cp9bands->hdmin);
   free(cp9bands->hdmax);
 
@@ -109,6 +121,7 @@ FreeCP9Bands(CP9Bands_t *cp9bands)
   free(cp9bands->isum_pn_m);
   free(cp9bands->isum_pn_i);
   free(cp9bands->isum_pn_d);
+
 }
 
 /* Function: dbl_Score2Prob()
@@ -150,11 +163,18 @@ CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t *cp9b,
   CP9_dpmatrix_t *cp9_post; /* growable DP matrix for CP9 posteriors                     */
   int             v;        /* state index                                               */
 
+  /* Contract checks */
   if(cm->cp9 == NULL)
     Die("ERROR in CP9_seq2bands, but cm->cp9 is NULL.\n");
   if(cm->cp9map == NULL)
     Die("ERROR in CP9_seq2bands, but cm->cp9map is NULL.\n");
-
+  if((cm->align_opts & CM_ALIGN_HBANDED) && (cm->search_opts & CM_SEARCH_HBANDED)) 
+    Die("ERROR in CP9_seq2bands, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
+  if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED))) 
+    Die("ERROR in CP9_seq2bands, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
+  if((cm->search_opts & CM_SEARCH_HMMSCANBANDS) && (!(cm->search_opts & CM_SEARCH_HBANDED))) 
+    Die("ERROR in CP9_seq2bands, CM_SEARCH_HMMSCANBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
+  
   use_sums = FALSE;
   if((cm->align_opts & CM_ALIGN_SUMS) || (cm->search_opts & CM_SEARCH_SUMS))
     use_sums = TRUE;
@@ -195,7 +215,7 @@ CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t *cp9b,
   hmm2ij_bands(cm, cm->cp9map, i0, j0, cp9b->pn_min_m, cp9b->pn_max_m, 
 	       cp9b->pn_min_i, cp9b->pn_max_i, cp9b->pn_min_d, cp9b->pn_max_d, 
 	       cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, debug_level);
-	  
+  
   if(cm->align_opts & CM_ALIGN_TIME) 
     {
       StopwatchStop(watch);
@@ -239,8 +259,8 @@ CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t *cp9b,
  *           
  * Return:  void
  */
-#define OLDHMMALGS 1
-#define NEWHMMALGS 0
+#define OLDHMMALGS 0 /* use CP9ForwardOLD() and CP9BackwardOLD() */
+#define NEWHMMALGS 1 /* use CP9Forward() and CP9Backward() */
 void 
 CP9_seq2posteriors(CM_t *cm, char *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9_post,
 		   int debug_level)
@@ -250,13 +270,25 @@ CP9_seq2posteriors(CM_t *cm, char *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9
   CP9_dpmatrix_t *cp9_bck;       /* growable DP matrix for backward                      */
   CP9_dpmatrix_t *cp9_post;      /* growable DP matrix for posterior decode              */
   float sc;
-
+  int do_scan2bands;             /* TRUE to use scanning Forward/Backward to get posteriors
+				  * that we'll use for a CM scan */
+  /* Contract checks */
   if(cm->cp9 == NULL)
     Die("ERROR in CP9_seq2posteriors, but cm->cp9 is NULL.\n");
   if(cm->cp9map == NULL)
     Die("ERROR in CP9_seq2posteriors, but cm->cp9map is NULL.\n");
+  if((cm->align_opts & CM_ALIGN_HBANDED) && (cm->search_opts & CM_SEARCH_HBANDED)) 
+    Die("ERROR in CP9_seq2posteriors, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
+  if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED))) 
+    Die("ERROR in CP9_seq2posteriors, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
+  if((cm->search_opts & CM_SEARCH_HMMSCANBANDS) && (!(cm->search_opts & CM_SEARCH_HBANDED))) 
+    Die("ERROR in CP9_seq2bands, CM_SEARCH_HMMSCANBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
 
-  debug_print_cp9_params(cm->cp9);
+  if(cm->search_opts & CM_SEARCH_HMMSCANBANDS)
+    do_scan2bands = TRUE;
+  else
+    do_scan2bands = FALSE;
+
   /* Step 1: Get HMM posteriors.*/
   /*sc = CP9Viterbi(dsq, i0, j0, cm->cp9, cp9_mx);*/
   if(OLDHMMALGS)
@@ -269,12 +301,13 @@ CP9_seq2posteriors(CM_t *cm, char *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9
 		    NULL,  /* don't keep track of number of hits */
 		    NULL,  /* don't care about best scoring start point */
 		    NULL,  /* don't report hits */
-		    FALSE, /* we're not scanning */
+		    do_scan2bands, /* are we using scanning Forward/Backward */
+		    TRUE,  /* we are going to use posteriors to align */
 		    FALSE, /* we're not rescanning */
 		    FALSE, /* don't be memory efficient */
 		    &cp9_fwd); /* give the DP matrix back */
 
-  if(debug_level >= 0) printf("CP9 Forward  score : %.4f\n", sc);
+  if(debug_level > 0) printf("CP9 Forward  score : %.4f\n", sc);
   if(OLDHMMALGS)
     sc = CP9BackwardOLD(dsq, i0, j0, cm->cp9, &cp9_bck);
   else if(NEWHMMALGS)
@@ -285,16 +318,20 @@ CP9_seq2posteriors(CM_t *cm, char *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9
 		     NULL,  /* don't keep track of number of hits */
 		     NULL,  /* don't care about best scoring start point */
 		     NULL,  /* don't report hits */
-		     FALSE, /* we're not scanning */
+		     do_scan2bands, /* are we using scanning Forward/Backward */
+		     TRUE,  /* we are going to use posteriors to align */
 		     FALSE, /* we're not rescanning */
 		     FALSE, /* don't be memory efficient */
 		     &cp9_bck); /* give the DP matrix back */
 
-  if(debug_level >= 0) printf("CP9 Backward score : %.4f\n", sc);
+  if(debug_level > 0) printf("CP9 Backward score : %.4f\n", sc);
   
-  debug_check_CP9_FB(cp9_fwd, cp9_bck, cm->cp9, sc, i0, j0, dsq);
+  /*debug_check_CP9_FB(cp9_fwd, cp9_bck, cm->cp9, sc, i0, j0, dsq);*/
   cp9_post = cp9_bck;
-  CP9FullPosterior(dsq, i0, j0, cm->cp9, cp9_fwd, cp9_bck, cp9_post);
+  if(do_scan2bands)
+    CP9ScanPosterior(dsq, i0, j0, cm->cp9, cp9_fwd, cp9_bck, cp9_post);
+  else /* !doing_search */
+    CP9Posterior(dsq, i0, j0, cm->cp9, cp9_fwd, cp9_bck, cp9_post);
 
   FreeCPlan9Matrix(cp9_fwd);
   if(ret_cp9_post != NULL)
@@ -309,7 +346,7 @@ CP9_seq2posteriors(CM_t *cm, char *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9
  * CP9ForwardOLD()
  * CP9Viterbi()
  * CP9BackwardOLD()
- * CP9FullPosterior()
+ * CP9Posterior()
  * CP9_ifill_post_sums()
  */
 
@@ -703,7 +740,7 @@ CP9BackwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmat
   return Scorify(sc);		/* the total Backward score. */
 }
 
-/* Function: CP9FullPosterior()
+/* Function: CP9Posterior()
  * based on Ian Holmes' hmmer/src/postprob.c::P7EmitterPosterior()
  *
  * Purpose:  Combines Forward and Backward matrices into a posterior
@@ -731,11 +768,11 @@ CP9BackwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmat
  * Return:   void
  */
 void
-CP9FullPosterior(char *dsq, int i0, int j0,
-		 struct cplan9_s *hmm,
-		 struct cp9_dpmatrix_s *fmx,
-		 struct cp9_dpmatrix_s *bmx,
-		 struct cp9_dpmatrix_s *mx)
+CP9Posterior(char *dsq, int i0, int j0,
+	     struct cplan9_s *hmm,
+	     struct cp9_dpmatrix_s *fmx,
+	     struct cp9_dpmatrix_s *bmx,
+	     struct cp9_dpmatrix_s *mx)
 {
   int i;
   int k;
@@ -1093,7 +1130,18 @@ hmm2ij_bands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
   int tmp_jmax;
 
   int n;            /* counter over CM nodes. */
-  
+  int doing_search; /* TRUE if bands will be used to accelerate search, FALSE for alignment */
+  /* Contract checks */
+  if((cm->align_opts & CM_ALIGN_HBANDED) && (cm->search_opts & CM_SEARCH_HBANDED)) 
+    Die("ERROR in hmm2ij_bands(), CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
+  if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED))) 
+    Die("ERROR in hmm2ij_bands(), CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
+
+  if(cm->search_opts & CM_SEARCH_HBANDED)
+    doing_search = TRUE;
+  else
+    doing_search = FALSE;
+
   nss_imin = malloc(sizeof(int) * cm->nodes);
   nss_imax = malloc(sizeof(int) * cm->nodes);
   nss_jmin = malloc(sizeof(int) * cm->nodes);
@@ -1585,10 +1633,20 @@ hmm2ij_bands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
 						   cp9map);
 	  /* 3 states, ROOT_S, ROOT_IL, and ROOT_IR*/
 	  v = cm->nodemap[n]; /* ROOT_S SPECIAL CASE */
-	  tmp_imin = i0;
-	  tmp_imax = i0;
-	  tmp_jmin = j0;
-	  tmp_jmax = j0;
+	  if(doing_search) /* we're doing search, ROOT_S doesn't necessarily emit full sequence */
+	    {
+	      tmp_imin = nss_imin[n+1];
+	      tmp_imax = nss_imax[n+1];
+	      tmp_jmin = nss_jmin[n+1];
+	      tmp_jmax = nss_jmax[n+1];
+	    }
+	    else /* we're doing alignment, enforce ROOT_S emits full sequence */
+	    {
+	      tmp_imin = i0;
+	      tmp_imax = i0;
+	      tmp_jmin = j0;
+	      tmp_jmax = j0;
+	    }
 	  hmm2ij_split_state_step1_set_state_bands(v, n, tmp_imin, tmp_imax, tmp_jmin,
 						   tmp_jmax, imin, imax, jmin, jmax,
 						   nss_imin, nss_imax, nss_jmin, nss_jmax);
@@ -1598,10 +1656,22 @@ hmm2ij_bands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
 	  hmm2ij_state_step4_update_safe_holders(v, n, imin[v], jmax[v], nss_max_imin, nss_min_jmax);
 	  
 	  v++; /*ROOT_IL SPECIAL CASE*/
-	  tmp_imin =  i0; /* Have to be able to transit here from ROOT_S */
+	  /* This state maps to the insert state of HMM node cp9map->cs2hn[v][0], which is HMM node 0*/
+	  if(doing_search)
+	    tmp_imin =  pn_min_i[cp9map->cs2hn[v][0]]; /* should this be imin[0]? */
+	  else
+	    tmp_imin =  i0; /* Have to be able to transit here from ROOT_S */
 	  tmp_imax = nss_imax[n+1];
-	  tmp_jmin = j0; /* we never emit to the right in this state */
-	  tmp_jmax = j0; /* we never emit to the right in this state */
+	  if(doing_search)
+	    {
+	      tmp_jmin = nss_jmin[n+1];
+	      tmp_jmax = nss_jmax[n+1];
+	    }
+	  else
+	    {
+	      tmp_jmin = j0; /* we never emit to the right in this state */
+	      tmp_jmax = j0; /* we never emit to the right in this state */
+	    }
 	  hmm2ij_insert_state_step1_set_state_bands(v, tmp_imin, tmp_imax, tmp_jmin,
 						    tmp_jmax, imin, imax, jmin, jmax);
 	  /* Enforce safe transitions, this makes sure that at least one state
@@ -1615,7 +1685,10 @@ hmm2ij_bands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
 	  hmm2ij_state_step3_enforce_state_delta(cm, v, jmin, jmax);
 
 	  v++; /*ROOT_IR SPECIAL CASE analagous to ROOT_IL*/
-	  tmp_imin = i0; /* we never emit to the left in this state */
+	  if(doing_search)
+	    tmp_imin = nss_imin[n+1]; /* same tmp_imin as ROOT_S */
+	  else
+	    tmp_imin = i0; /* we never emit to the left in this state */
 	  tmp_imax = nss_imax[n+1]; 
 	  tmp_jmin = nss_jmin[n+1];
 	  tmp_jmax = j0; /* Have to be able to transit here from ROOT_S */
@@ -2631,8 +2704,10 @@ void
 relax_root_bands(int *imin, int *imax, int *jmin, int *jmax)
 {
   /* Function 'knows' CM architecture */
+  imin[0] = (imin[3]-1 >= 0) ? imin[3]-1 : 0;  /* HACK!!!!!!!FIX THIS */
   imax[0] = imax[1]; /* state 1 = ROOT_IL */
   jmin[0] = jmin[2]; /* state 2 = ROOT_IR */
+  jmax[0] = jmax[3]; /*HACK!!!!!!! FIX THIS */
 }
 
 #if 0

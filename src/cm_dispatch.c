@@ -45,7 +45,7 @@ static void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 static int get_gc_comp(char *seq, int start, int stop);
 static void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, char *seq,
 				       float cutoff, double *lambda, double *mu);
-#if USE_MPI
+#ifdef USE_MPI
 static seqs_to_aln_t *read_next_aln_seqs(ESL_SQFILE *seqfp, int nseq, int index);
 #endif
 
@@ -108,11 +108,8 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons)
 				 FALSE, /* we're not building a histogram for CM stats  */
 				 FALSE, /* we're not building a histogram for CP9 stats */
 				 NULL); /* filter fraction, TEMPORARILY NULL            */
-	  if(cm->search_opts & CM_SEARCH_GREEDY)
-	    {
-	      remove_overlapping_hits (dbseq->results[reversed],
-				       dbseq->sq[reversed]->n);
-	    }
+	  remove_overlapping_hits (dbseq->results[reversed],
+				   dbseq->sq[reversed]->n);
 	  if (cm->cutoff_type == E_CUTOFF) 
 	    remove_hits_over_e_cutoff (cm, dbseq->results[reversed],
 				       dbseq->sq[reversed]->seq,
@@ -448,7 +445,7 @@ db_seq_t *read_next_seq (ESL_SQFILE *dbfp, int do_revcomp)
  *                            a histogram to calculate EVDs for the CM, in this
  *                            case we don't filter regardless of what cm->search_opts says.
  *           doing_cp9_stats- TRUE if we're calc'ing stats for the CP9, in this 
- *                            case we always run CP9ForwardScan()
+ *                            case we always run CP9Forward()
  *           ret_flen   - RETURN: subseq len that survived filter (NULL if not filtering)
  * Returns: Highest scoring hit from search (even if below cutoff).
  */
@@ -474,8 +471,7 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
      ((do_filter) && 
      (!doing_cm_stats) &&  /* if we're doing CM stats, don't filter. */
      ((cm->search_opts & CM_SEARCH_HMMONLY) ||
-      (cm->search_opts & CM_SEARCH_HMMFB) ||
-      (cm->search_opts & CM_SEARCH_HMMWEINBERG))))
+      (cm->search_opts & CM_SEARCH_HMMFILTER))))
     {
       sc = CP9Scan_dispatch(cm, dsq, i0, j0, cm->W, cm_cutoff, cp9_cutoff, results, doing_cp9_stats, ret_flen);;
     }
@@ -486,14 +482,14 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
 	  cp9b = AllocCP9Bands(cm, cm->cp9);
 	  CP9_seq2bands(cm, dsq, i0, j0, cp9b, 
 			NULL, /* we don't want the posterior matrix back */
-			0);
-	  debug_print_hmm_bands(stdout, (j0-i0+1), cp9b, cm->tau, 3);
-	  /* HERE HERE HERE HERE HERE HERE */
-	  /*CYKBandedScan_jd(cm, dsq, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
-			   hmm_hiti[i], hmm_hitj[i], windowlen, 
-			   &tmp_nhits, &tmp_hitr, &tmp_hiti, &tmp_hitj, &tmp_hitsc, thresh);	  */
+			0);   /* debug level */
+
+	  /*debug_print_hmm_bands(stdout, (j0-i0+1), cp9b, cm->tau, 3);*/
+	  sc = CYKBandedScan_jd(cm, dsq, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
+				i0, j0, cm->W, cm_cutoff, results);
+	  FreeCP9Bands(cp9b);
 	}
-      if(cm->search_opts & CM_SEARCH_NOQDB)
+      else if(cm->search_opts & CM_SEARCH_NOQDB)
 	if(cm->search_opts & CM_SEARCH_INSIDE)
 	  sc = iInsideScan(cm, dsq, i0, j0, cm->W, cm_cutoff, results);
 	else /* don't do inside */
@@ -501,10 +497,9 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
       else /* use QDB */
 	if(cm->search_opts & CM_SEARCH_INSIDE)
 	  sc = iInsideBandedScan(cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
-	else /* do't do inside */
+	else /* don't do inside */
 	  sc = CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
     }    
-  /*printf("returning from actually_search_target, sc: %f\n", sc);*/
   return sc;
 }  
 
@@ -539,7 +534,9 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 			 * of. This will be the bit score stored in
 			 * dbseq unless (cm->flags & CM_ENFORCED)
 			 * in which case we subtract cm->enf_scdiff first. */
+  CMEmitMap_t *emap;           /* consensus emit map for the CM */
 
+  emap = CreateEmitMap(cm);
   name = dbseq->sq[0]->name;
   len = dbseq->sq[0]->n;
 
@@ -560,8 +557,10 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 	  gc_comp = get_gc_comp (dbseq->sq[in_revcomp]->seq, 
 				 results->data[i].start, results->data[i].stop);
 	  printf (" Query = %d - %d, Target = %d - %d\n", 
-		  cons->lpos[cm->ndidx[results->data[i].bestr]]+1,
-		  cons->rpos[cm->ndidx[results->data[i].bestr]]+1,
+		  (emap->lpos[cm->ndidx[results->data[i].bestr]] + 1 
+		   - StateLeftDelta(cm->sttype[results->data[i].bestr])),
+		  (emap->rpos[cm->ndidx[results->data[i].bestr]] - 1 
+		   + StateRightDelta(cm->sttype[results->data[i].bestr])),
 		  coordinate(in_revcomp, results->data[i].start, len), 
 		  coordinate(in_revcomp, results->data[i].stop, len));
 	  if (do_stats) 
@@ -593,13 +592,16 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 	      ali = CreateFancyAli (results->data[i].tr, cm, cons, 
 				    dbseq->sq[in_revcomp]->dsq +
 				    (results->data[i].start-1));
-	      PrintFancyAli(stdout, ali);
+	      PrintFancyAli(stdout, ali,
+			    (coordinate(in_revcomp, results->data[i].start, len)-1), /* offset in sq index */
+			    in_revcomp);
 	      FreeFancyAli(ali);
 	      printf ("\n");
 	    }
 	}
     }
   fflush(stdout);
+  FreeEmitMap(emap);
 }
 
 /* Function: get_gc_comp
@@ -689,7 +691,6 @@ void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, char *seq,
     results->num_results--;
   sort_results(results);
 }  
-
 
 /* EPN, Tue Dec  5 14:25:02 2006
  * 
@@ -901,7 +902,6 @@ parallel_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_
 	  job_type = aln_receive_job (&seqs_to_aln, mpi_master_rank);
 	  if (job_type == ALN_WORK) 
 	    {
-	      silent_mode = FALSE;
 	      debug_level = 0;
 	      bdump_level = 0;
 	      /* align the targets */
@@ -1207,7 +1207,8 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	{
 	  /* (1) Get HMM posteriors (if do_hbanded, we already have them) */
 	  if(!do_hbanded) 
-	    CP9_seq2posteriors(orig_cm, sq[i]->dsq, 1, sq[i]->n, &cp9_post, debug_level); 
+	    CP9_seq2posteriors(orig_cm, sq[i]->dsq, 1, sq[i]->n, &cp9_post, 
+			       debug_level); 
 	  
 	  /* (2) infer the start and end HMM nodes (consensus cols) from posterior matrix.
 	   * Remember: we're necessarily in CP9 local mode, the --sub option turns local mode on. 
@@ -1500,7 +1501,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 			    alpha, &alpha,  /* alpha matrix from IInside(), and save it for CMPosterior*/
 			    do_check);      /* TRUE to check Outside probs agree with Inside */
 	      ICMPosterior(sq[i]->n, cm, alpha, NULL, beta, NULL, post, &post);
-	      if(do_check || TRUE)
+	      if(do_check)
 		{
 		  ICMCheckPosterior(sq[i]->n, cm, post);
 		  printf("\nPosteriors checked (I).\n\n");

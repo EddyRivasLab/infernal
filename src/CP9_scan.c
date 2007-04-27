@@ -103,6 +103,8 @@
  *           results   - scan_results_t to add to; if NULL, don't keep results
  *           do_scan   - TRUE if we're scanning, HMM can start to emit anywhere i0..j0,
  *                       FALSE if we're not, HMM must start emitting at i0, end emitting at j0
+ *           doing_align  - TRUE if reason we've called this function is to help get posteriors
+ *                          for CM alignment, in which case we can skip the traceback. 
  *           doing_rescan - TRUE if we've called this function recursively, and we don't
  *                          want to again
  *           be_efficient- TRUE to keep only 2 rows of DP matrix in memory, FALSE keep whole thing
@@ -113,8 +115,9 @@
  */
 float
 CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
-	       int **ret_hitj, int *ret_nhits, int *ret_bestpos, scan_results_t *results, 
-	       int do_scan, int doing_rescan, int be_efficient, CP9_dpmatrix_t **ret_mx)
+	   int **ret_hitj, int *ret_nhits, int *ret_bestpos, scan_results_t *results, 
+	   int do_scan, int doing_align, int doing_rescan, int be_efficient, 
+	   CP9_dpmatrix_t **ret_mx)
 {
   int          j;           /*     actual   position in the subsequence                     */
   int          jp;          /* j': relative position in the subsequence                     */
@@ -136,17 +139,19 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
   int          nhits;       /* number of hits found w/bit score >= cutoff                   */
   int         *hitj;        /* end positions (j) of hits [0..nhits-1]                       */
   int          alloc_nhits; /* used to grow the hitj array                                  */
-  float        best_sc;     /* Best overall score from semi-HMM to return                   */
-  float        best_pos;    /* residue giving best score overall                            */
-  float        best_negsc;  /* Best score overall score to return, used if all scores < 0.  */
-  float        best_negpos; /* residue giving best score overall score used if all scores < 0.*/
+  float        best_hmm_sc; /* Best overall score from semi-HMM to return if do_scan        */
+  float        best_hmm_pos;/* residue giving best_hmm_sc                                   */
+  float        best_sc;     /* Best score overall, returned if 0 hits found by HMM & do_scan*/
+  float        best_pos;    /* residue giving best_sc                                       */
+  float        return_sc;   /* score to return, if (!do_scan) return overall Forward sc,    *
+			     * else return best_hmm_sc if # HMM hits>0, else return best_sc */
   int          accept;      /* Flag used if cm->search_opts & CM_SEARCH_HMMRESCAN           */
   float        temp_sc;     /* temporary score                                              */
   int          nrows;       /* num rows for DP matrix, 2 or L+1 depending on be_efficient   */
 
   /*debug_print_cp9_params(cm->cp9);*/
 
-  printf("in CP9Forward()\n");  
+  /*printf("in CP9Forward() i0: %d j0: %d\n", i0, j0);  */
   /* Contract checks */
   if(cm->cp9 == NULL)
     Die("ERROR in CP9Forward, cm->cp9 is NULL.\n");
@@ -156,11 +161,14 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
     Die("ERROR in CP9Forward, be_efficient is TRUE, but ret_mx is non-NULL\n");
   if(results != NULL && !do_scan)
     Die("ERROR in CP9Forward, passing in results data structure, but not in scanning mode.\n");
+  if((cm->search_opts & CM_SEARCH_HMMGREEDY) && 
+     (cm->search_opts & CM_SEARCH_HMMRESCAN))
+    Die("ERROR in CP9Forward, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
     
   best_sc     = IMPOSSIBLE;
   best_pos    = -1;
-  best_negsc  = IMPOSSIBLE;
-  best_negpos = -1;
+  best_hmm_sc = IMPOSSIBLE;
+  best_hmm_pos= -1;
   L = j0-i0+1;
   if (W > L) W = L; 
 
@@ -212,10 +220,10 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
   sc[0] = dmx[0][cm->cp9->M] + cm->cp9->tsc[CTDM][cm->cp9->M]; 
   fsc = Scorify(sc[0]);
   /*printf("jp: %d j: %d fsc: %f isc: %d\n", jp, j, fsc, isc[jp]);*/
-  if(fsc > best_negsc)
+  if(fsc > best_sc) 
     {
-      best_negsc = fsc;
-      best_negpos= i0-1;
+      best_sc = fsc;
+      best_pos= i0-1;
     }
   /*printf("jp: %d j: %d fsc: %f sc: %d\n", 0, i0-1, Scorify(sc[0]), sc[0]);*/
 
@@ -281,33 +289,54 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
       /* transition from D_M -> end */
       fsc = Scorify(sc[jp]);
       /*printf("jp: %d j: %d fsc: %f sc: %d\n", jp, j, fsc, sc[jp]);*/
-      if(fsc > best_negsc)
+      if(fsc > best_sc)
 	{
-	  best_negsc = fsc;
-	  best_negpos= j;
+	  best_sc = fsc;
+	  best_pos= j;
 	}
-      /* The little semi-Markov model that deals with multihit parsing:
-       */
-      gamma[jp]  = gamma[jp-1] + 0; /* extend without adding a new hit */
-      gback[jp]  = -1;
-      savesc[jp] = IMPOSSIBLE;
-      i = ((j-W+1)> i0) ? (j-W+1) : i0;
-      ip = i-i0+1;
-      curr_sc = gamma[ip-1] + fsc + cm->cp9_sc_boost;
-      /* cp9_sc_boost is experimental technique for finding hits < 0 bits. 
-       * value is 0.0 if technique not used. */
-      if (curr_sc > gamma[jp])
+      if(!(cm->search_opts & CM_SEARCH_CMGREEDY)) /* resolve overlaps optimally */
 	{
-	  gamma[jp]  = curr_sc;
-	  gback[jp]  = i;
-	  savesc[jp] = fsc;
+	  /* The little semi-Markov model that deals with multihit parsing:
+	   */
+	  gamma[jp]  = gamma[jp-1] + 0; /* extend without adding a new hit */
+	  gback[jp]  = -1;
+	  savesc[jp] = IMPOSSIBLE;
+	  i = ((j-W+1)> i0) ? (j-W+1) : i0;
+	  ip = i-i0+1;
+	  curr_sc = gamma[ip-1] + fsc + cm->cp9_sc_boost;
+	  /* cp9_sc_boost is experimental technique for finding hits < 0 bits. 
+	   * value is 0.0 if technique not used. */
+	  if (curr_sc > gamma[jp])
+	    {
+	      gamma[jp]  = curr_sc;
+	      gback[jp]  = i;
+	      savesc[jp] = fsc;
+	    }
+	}
+      else
+	{
+	  /* Resolving overlaps greedily (RSEARCH style),  
+	   * Return best hit for each j, IFF it's above threshold */
+	  if (fsc >= cutoff) 
+	    if(results != NULL) 
+	      {
+		i = ((j-W+1)> i0) ? (j-W+1) : i0;
+		report_hit (i, j, 0, fsc, results);
+		/* 0 is for saver, which is irrelevant for HMM hits */
+	      }
+	  if (fsc > best_hmm_sc)
+	    {
+	      best_hmm_sc = fsc;
+	      best_hmm_pos= j;
+	    }
 	}
     } /* end loop over end positions j */
-
-  if(ret_nhits != NULL || ret_hitj != NULL)
+      
+  if((!(cm->search_opts & CM_SEARCH_HMMGREEDY)) && /* resolve overlaps optimally */
+     (!doing_align || do_scan)) /* else we can save time by skipping traceback */
     {
       /*****************************************************************
-       * Traceback stage. (only if do_scan) 
+       * Traceback stage.
        * Recover all hits: an (i,j,sc) triple for each one and report them.
        *****************************************************************/ 
       alloc_nhits = 10;
@@ -320,10 +349,10 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
 	  j--; 
 	else                /* a hit, a palpable hit */
 	  {
-	    if(savesc[jp] > best_sc) 
+	    if(savesc[jp] > best_hmm_sc) 
 	      {
-		best_sc = savesc[jp];
-		best_pos= j;
+		best_hmm_sc = savesc[jp];
+		best_hmm_pos= j;
 	      }
 	    if(savesc[jp] >= cutoff)
 	      {
@@ -337,16 +366,17 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
 		  {
 		    /*printf("rechecking hit from %d to %d\n", gback[jp], j);*/
 		    temp_sc = CP9Forward(cm, dsq, gback[jp], j, cm->W, cutoff, 
-					     NULL,  /* don't care about scores of each pos */
-					     NULL,  /* don't care about locations of hits */
-					     NULL,  /* don't care about num hits found */
-					     NULL,  /* don't care about best scoring position */
-					     NULL,  /* don't report hits */
-					     TRUE,  /* we're scanning */
-					     TRUE,  /* set the doing_rescan arg to TRUE, 
-						       so we don't potentially infinitely recurse */
-					     TRUE,  /* be memory efficient */
-					     NULL); /* don't want the DP matrix back */
+					 NULL,  /* don't care about scores of each pos */
+					 NULL,  /* don't care about locations of hits */
+					 NULL,  /* don't care about num hits found */
+					 NULL,  /* don't care about best scoring position */
+					 NULL,  /* don't report hits */
+					 TRUE,  /* we're scanning */
+					 FALSE, /* we're not ultimately aligning */
+					 TRUE,  /* set the doing_rescan arg to TRUE, 
+						   so we don't potentially infinitely recurse */
+					 TRUE,  /* be memory efficient */
+					 NULL); /* don't want the DP matrix back */
 		    /*printf("new score: %f old score %f\n", temp_sc, savesc[jp]);*/
 		    if(temp_sc >= cutoff) 
 		      { 
@@ -386,22 +416,29 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
 
   /*printf("returning from CP9Forward()\n");*/
   if(ret_nhits != NULL) *ret_nhits = nhits;
-  if(!do_scan)
+  /* determine score to return: (I know, too complex) */
+  if(doing_align)
     {
-      best_sc = Scorify(sc[(j0-i0+1)]);
+      return_sc = Scorify(sc[(j0-i0+1)]); /* L = i0-j0+1 */
       if(ret_bestpos != NULL) *ret_bestpos = i0;
     }
-  else if(best_sc <= 0.) /* there were no hits found by the semi-HMM, no hits above 0 bits */
+  else if(best_hmm_sc <= 0.) /* scanning and there were no hits found by the 
+			      * semi-HMM above 0.0 bits */
     {
-      best_sc = best_negsc;
-      if(ret_bestpos != NULL) *ret_bestpos = best_negpos;
+      return_sc = best_sc;
+      if(ret_bestpos != NULL) *ret_bestpos = best_pos;
     }
-  else if(ret_bestpos != NULL) *ret_bestpos = best_pos;
+  else
+    {
+      return_sc = best_hmm_sc;
+      if(ret_bestpos != NULL) *ret_bestpos = best_hmm_pos;
+    }
   if(ret_sc != NULL) *ret_sc = sc;
   else free(sc);
   if (ret_mx != NULL) *ret_mx = mx;
   else                FreeCPlan9Matrix(mx);
-  return best_sc;
+  /*printf("Forward return_sc: %f\n", return_sc);*/
+  return return_sc;
 }
 
 /***********************************************************************
@@ -496,6 +533,8 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
  *           results   - scan_results_t to add to; if NULL, don't keep results
  *           do_scan   - TRUE if we're scanning, HMM can start to emit anywhere i0..j0,
  *                       FALSE if we're not, HMM must start emitting at i0, end emitting at j0
+ *           doing_align  - TRUE if reason we've called this function is to help get posteriors
+ *                          for CM alignment, in which case we can skip the traceback. 
  *           doing_rescan - TRUE if we've called this function recursively, and we don't
  *                          want to again
  *           be_efficient- TRUE to keep only 2 rows of DP matrix in memory, FALSE keep whole thing
@@ -508,7 +547,8 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
 float
 CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
 	    int **ret_hiti, int *ret_nhits, int *ret_bestpos, scan_results_t *results, 
-	    int do_scan, int doing_rescan, int be_efficient, CP9_dpmatrix_t **ret_mx)
+	    int do_scan, int doing_align, int doing_rescan, int be_efficient, 
+	    CP9_dpmatrix_t **ret_mx)
 {
   int          j;           /*     actual   position in the subsequence                     */
   int          jp;          /* j': relative position in the subsequence                     */
@@ -530,14 +570,17 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
   int          nhits;       /* number of hits found w/bit score >= cutoff                   */
   int         *hiti;        /* start positions (i) of hits [0..nhits-1]                     */
   int          alloc_nhits; /* used to grow the hitj array                                  */
-  float        best_sc;     /* Best overall score from semi-HMM to return                   */
-  float        best_pos;    /* residue giving best score overall                            */
-  float        best_negsc;  /* Best score overall score to return, used if all scores < 0.  */
-  float        best_negpos; /* residue giving best score overall score used if all scores < 0.*/
+  float        best_hmm_sc; /* Best overall score from semi-HMM to return if do_scan        */
+  float        best_hmm_pos;/* residue giving best_hmm_sc                                   */
+  float        best_sc;     /* Best score overall, returned if 0 hits found by HMM & do_scan*/
+  float        best_pos;    /* residue giving best_sc                                       */
+  float        return_sc;   /* score to return, if (!do_scan) return overall Backward sc,   *
+			     * else return best_hmm_sc if # HMM hits>0, else return best_sc */
   int          accept;      /* Flag used if cm->search_opts & CM_SEARCH_HMMRESCAN           */
   float        temp_sc;     /* temporary score                                              */
   int          nrows;       /* num rows for DP matrix, 2 or L+1 depending on be_efficient   */
 
+  /*printf("in CP9Backward() i0: %d j0: %d do_scan: %d \n", i0, j0, do_scan);  */
   /* Contract checks */
   if(cm->cp9 == NULL)
     Die("ERROR in CP9Backward, cm->cp9 is NULL.\n");
@@ -547,11 +590,14 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
     Die("ERROR in CP9Backward, be_efficient is TRUE, but ret_mx is non-NULL\n");
   if(results != NULL && !do_scan)
     Die("ERROR in CP9Backward, passing in results data structure, but not in scanning mode.a\n");
-
+  if((cm->search_opts & CM_SEARCH_HMMGREEDY) && 
+     (cm->search_opts & CM_SEARCH_HMMRESCAN))
+    Die("ERROR in CP9Backward, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
+    
   best_sc     = IMPOSSIBLE;
   best_pos    = -1;
-  best_negsc  = IMPOSSIBLE;
-  best_negpos = -1;
+  best_hmm_sc = IMPOSSIBLE;
+  best_hmm_pos= -1;
   L = j0-i0+1;
   if (W > L) W = L; 
 
@@ -561,11 +607,15 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
    * of multiple nonoverlapping hits. We use it first for
    * the Forward scan, and reuse it for the Backward scan.
    *****************************************************************/ 
-  gamma        = MallocOrDie(sizeof(float) * (L+1));
-  gamma[L]     = 0.;
-  gback        = MallocOrDie(sizeof(int)   * (L+1));
-  gback[L]     = -1;
-  savesc       = MallocOrDie(sizeof(float) * (L+1));
+  gamma        = MallocOrDie(sizeof(float) * (L+2));
+  gamma[0]     = 0.; /* this is impossible, no hit can be rooted at ip=0, 
+		      * we require hits to have at least 1 emission,
+		      * plus, no positive scoring hit can have 0 emissions as 
+		      * all transition scores are negative */
+  gamma[L]   = 0.;
+  gback        = MallocOrDie(sizeof(int)   * (L+2));
+  gback[L]   = -1;
+  savesc       = MallocOrDie(sizeof(float) * (L+2));
 
   /* Allocate DP matrix, either 2 rows or L+1 rows (depending on be_efficient),
    * M+1 columns */ 
@@ -612,6 +662,11 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
   dmx[cur][0]  = -INFTY; /*D_0 doesn't exist*/
 
   sc[ip] = mmx[cur][0]; /* all parses must start in M_0, the B state */
+  fsc = Scorify(sc[ip]);
+  /*printf("ip: %d i: %d fsc: %f i: %d\n", ip, i, fsc, sc[ip]);*/
+  /* we can't have a hit starting here, b/c it would correspond to all deletes,
+   * no seq emitted, so we skip the check for if(fsc > best_sc) */
+
   /*printf("sc[ip:%d]: %d\n", ip, sc[ip]);*/
 
   /*printf("mmx[ip:%d][%d]: %d cur: %d\n", L+1, 0, mmx[cur][0], cur);
@@ -646,7 +701,7 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
 	}
       else /* ip == 0 */
 	{
-	  mmx[cur][cm->cp9->M] = -INFTY; /* need seq to get here, unless we come from E in a scanner (below) */
+	  mmx[cur][cm->cp9->M] = -INFTY; /* need seq to get here */
 	  imx[cur][cm->cp9->M] = -INFTY; /* need seq to get here */
 	}
       dmx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + cm->cp9->tsc[CTDI][cm->cp9->M]; 
@@ -657,18 +712,20 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
        * the final position j0. */
       if(do_scan) 
 	{	
-	  mmx[cur][cm->cp9->M]  =  
-	    ILogsum(mmx[cur][cm->cp9->M],
-		    (cm->cp9->esc[cm->cp9->M] +                  /* M_M<-E + (only in scanner)     */ 
-		     0));                                        /* all parses end in E, 2^0 = 1.0;*/
-	  mmx[cur][cm->cp9->M] += cm->cp9->msc[(int) dsq[i]][cm->cp9->M]; /* ... + emitted match symbol */
-
-	  imx[cur][cm->cp9->M]  =
-	  ILogsum(imx[cur][cm->cp9->M],
-		    (cm->cp9->tsc[CTIM][cm->cp9->M] +            /* I_M<-E + (only in scanner)     */
-		     0));                                        /* all parses end in E, 2^0 = 1.0;*/
-	  imx[cur][cm->cp9->M] += cm->cp9->isc[(int) dsq[i]][cm->cp9->M]; /* ... + emitted insert symbol */  
-
+	  if(ip > 0)
+	    {
+	      mmx[cur][cm->cp9->M]  =  
+		ILogsum(mmx[cur][cm->cp9->M],
+			(cm->cp9->esc[cm->cp9->M] +                  /* M_M<-E + (only in scanner)     */ 
+			 0));                                        /* all parses end in E, 2^0 = 1.0;*/
+	      mmx[cur][cm->cp9->M] += cm->cp9->msc[(int) dsq[i]][cm->cp9->M]; /* ... + emitted match symbol */
+	      
+	      imx[cur][cm->cp9->M]  =
+		ILogsum(imx[cur][cm->cp9->M],
+			(cm->cp9->tsc[CTIM][cm->cp9->M] +            /* I_M<-E + (only in scanner)     */
+			 0));                                        /* all parses end in E, 2^0 = 1.0;*/
+	      imx[cur][cm->cp9->M] += cm->cp9->isc[(int) dsq[i]][cm->cp9->M]; /* ... + emitted insert symbol */  
+	    }
 	  dmx[cur][cm->cp9->M] =  
 	    ILogsum(dmx[cur][cm->cp9->M],
 		    (cm->cp9->tsc[CTDM][cm->cp9->M] +            /* D_M<-E + (only in scanner)     */
@@ -697,14 +754,13 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
 	      mmx[cur][k] = -INFTY; /* need seq to get here, unless we come from E in a scanner (below) */
 	      imx[cur][k] = -INFTY; /* need seq to get here */
 	    }
-	  if(do_scan) /* add possibility of ending at his position from this state */
+	  if(do_scan && ip > 0) /* add possibility of ending at his position from this state */
 	    {
 	      mmx[cur][k] = 
 		ILogsum(mmx[cur][k], 
 			(cm->cp9->esc[k] +                    /* M_k<-E + (only in scanner)     */ 
 			 0));                                 /* all parses end in E, 2^0 = 1.0;*/
-	      if(ip == 0) mmx[cur][k] += cm->cp9->msc[(int) dsq[i]][k];
-	      /* else DO NOT add contribution of emitting i from M, it's been added above */
+	      /* DO NOT add contribution of emitting i from M, it's been added above */
 	    }	      
 	  dmx[cur][k]  = ILogsum(ILogsum((mmx[prv][k+1] + cm->cp9->tsc[CTDM][k]),
 					 (imx[prv][k]   + cm->cp9->tsc[CTDI][k])),
@@ -736,45 +792,69 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
       sc[ip] = mmx[cur][0]; /* all parses must start in M_0, the B state */
       fsc = Scorify(sc[ip]);
       /*printf("ip: %d i: %d fsc: %f i: %d\n", ip, i, fsc, sc[ip]);*/
-	
-      if(fsc > best_negsc) 
+      if(fsc > best_sc)
 	{
-	  best_negsc = fsc;
-	  best_negpos= i;
+	  best_sc = fsc;
+	  best_pos= i+1; /* *off-by-one* (see *off-by-one* below) */
 	}
-
-      /* The little semi-Markov model that deals with multihit parsing:
-       * *off-by-one*:
-       * There's an off-by-one issue here: all Backward hits are rooted in 
-       * M_O, the B (begin) state, which is a non-emitter.
-       * so sc[i] = backward->mmx[i][0] = summed log prob of all parses end at j0, 
-       * and start at position i+1 of the sequence (because i+1 is the last residue
-       * whose emission has been accounted for). As a result, gamma indexing is off-by-one
-       * with respect to sequence position, hence the i+1 or i-1 in the following
-       * code blocks, each marked by "*off-by-one*" comment below. 
-       */
-      gamma[ip]  = gamma[ip+1] + 0; /* extend without adding a new hit */
-      /*printf("i: %d | gamma[i]: %f | gamma[i+1]: %f\n", i, gamma[i], gamma[i+1]);*/
-      gback[ip]  = -1;
-      savesc[ip] = IMPOSSIBLE;
-      j = (((i+1)+W-1) < j0) ? ((i+1)+W-1) : j0; /* *off-by-one* */
-      jp = j-i0+1;
-      curr_sc = gamma[jp+1-1] + fsc + cm->cp9_sc_boost; /* *off-by-one* */
-      /* cp9_sc_boost is experimental technique for finding hits < 0 bits. 
-       * value is 0.0 if technique not used. */
-      if (curr_sc > gamma[ip])
+      if(!(cm->search_opts & CM_SEARCH_CMGREEDY)) /* resolve overlaps optimally */
 	{
-	  gamma[ip]  = curr_sc;
-	  gback[ip]  = j;
-	  savesc[ip] = fsc;
+	  /* The little semi-Markov model that deals with multihit parsing:
+	   * *off-by-one*:
+	   * There's an off-by-one issue here: all Backward hits are rooted in 
+	   * M_O, the B (begin) state, which is a non-emitter.
+	   * let i = ip+i0-1 => ip = i-i0+1;
+	   * so sc[ip] = backward->mmx[ip][0] = summed log prob of all parses that end at j0, 
+	   * and start at position i+1 of the sequence (because i+1 is the last residue
+	   * whose emission has been accounted for). As a result, gamma indexing is off-by-one
+	   * with respect to sequence position, hence the i+1 or i-1 in the following
+	   * code blocks, each marked by "*off-by-one*" comment below. 
+	   * for example: let i0 = 2 gamma[ip=4], normally this means ip=4 corresponds to i=5 
+	   *              but due to this off-by-one sc[ip=4] corresponds to hits that start at i=6
+	   */
+	  gamma[ip]  = gamma[ip+1] + 0; /* extend without adding a new hit */
+	  /*printf("ip: %d | gamma[ip]: %f | gamma[ip+1]: %f\n", ip, gamma[ip], gamma[ip+1]);*/
+	  gback[ip]  = -1;
+	  savesc[ip] = IMPOSSIBLE;
+	  j = (((i+1)+W-1) < j0) ? ((i+1)+W-1) : j0; /* *off-by-one* */
+	  jp = j-i0+1;
+	  curr_sc = gamma[jp+1-1] + fsc + cm->cp9_sc_boost; /* *off-by-one* */
+	  /* cp9_sc_boost is experimental technique for finding hits < 0 bits. 
+	   * value is 0.0 if technique not used. */
+	  if (curr_sc > gamma[ip])
+	    {
+	      gamma[ip]  = curr_sc;
+	      /*printf("\ti: %d | gamma[i]: %f\n", i+1, gamma[ip]);*/
+	      gback[ip]  = j;
+	      savesc[ip] = fsc;
+	    }
+	  /*printf("i: %d ip: %d gamma[ip]: %f\n", i, ip, gamma[ip]);*/
+	}
+      else
+	{
+	  /* Resolving overlaps greedily (RSEARCH style),  
+	   * Return best hit for each j, IFF it's above threshold */
+	  if (fsc >= cutoff) 
+	    if(results != NULL) 
+	      {
+		j = (((i+1)+W-1) < j0) ? ((i+1)+W-1) : j0; /* *off-by-one* */
+		report_hit (i, j, 0, fsc, results);
+		/* 0 is for saver, which is irrelevant for HMM hits */
+	      }
+	  if (fsc > best_hmm_sc)
+	    {
+	      best_hmm_sc = fsc;
+	      best_hmm_pos= i;
+	    }
 	}
     }
   /* End of Backward recursion */
   
-  if(ret_nhits != NULL || ret_hiti != NULL)
+  if((!(cm->search_opts & CM_SEARCH_HMMGREEDY)) && /* resolve overlaps optimally */
+     (!doing_align || do_scan)) /* else we can save time by skipping traceback */
     {
       /*****************************************************************
-       * Traceback stage for Backward. (only if do_scan)
+       * Traceback stage for Backward.
        * Recover all hits: an (i,j,sc) triple for each one.
        * Remember the off-by-one b/t seq index and gamma (see *off-by-one* above)
        *****************************************************************/ 
@@ -784,15 +864,16 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
       i     = i0; 
       while (i <= j0) 
 	{
-	  ip    = (i-1)-i0+1; /* *off-by-one*, i-1 */
+	  ip    = (i-1)-i0+1; /* *off-by-one*, i-1, ip corresponds to i+1 
+			       * (yes: i *-* 1 =>   ip corresponds to i *+* 1) */
 	  if (gback[ip] == -1) /* no hit */
 	    i++; 
 	  else                /* a hit, a palpable hit */
 	    {
-	      if(savesc[ip] > best_sc) 
+	      if(savesc[ip] > best_hmm_sc) 
 		{
-		  best_sc = savesc[ip];
-		  best_pos= i;
+		  best_hmm_sc = savesc[ip];
+		  best_hmm_pos= i;
 		}
 	      if(savesc[ip] >= cutoff)
 		{
@@ -805,13 +886,14 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
 		  if(do_scan && cm->search_opts & CM_SEARCH_HMMRESCAN && doing_rescan == FALSE)
 		    {
 		      /*printf("rechecking hit from %d to %d\n", i, gback[ip]);*/
-		      temp_sc = CP9Backward(cm, dsq, i, gback[ip], cm->W, cutoff, 
+		      temp_sc = CP9Backward(cm, dsq, i, gback[ip], cm->W, cutoff,  /* *off-by-one* i+1 */
 					    NULL,  /* don't care about scores of each pos */
 					    NULL,  /* don't care about locations of hits */
 					    NULL,  /* don't care about num hits found */
 					    NULL,  /* don't care about best scoring position */
 					    NULL,  /* don't report hits */
 					    TRUE,  /* we're scanning */
+					    FALSE, /* we're not ultimately aligning */
 					    TRUE,  /* set the doing_rescan arg to TRUE, 
 						      so we don't potentially infinitely recurse */
 					    TRUE,  /* be memory efficient */
@@ -830,10 +912,11 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
 		    {
 		      if(results != NULL) /* report the hit */
 			{
-			  report_hit(i, gback[ip], 0, savesc[ip], results); 
+			  report_hit(i, gback[ip], 0, savesc[ip], results); /* *off-by-one */
 			  /* 0 is for saver, which is irrelevant for HMM hits */
 			}
-		      hiti[nhits] = i;
+		      hiti[nhits] = i; 
+		      /*printf("accepted hiti[%d]: %d\n", nhits, hiti[nhits]);*/
 		      nhits++;
 		      if (nhits == alloc_nhits) 
 			{
@@ -856,21 +939,27 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
   if(ret_sc != NULL) *ret_sc = sc;
   else free(sc);
   if(ret_nhits != NULL) *ret_nhits = nhits;
-  if(!do_scan)
+  /* determine score to return: (I know, too complex) */
+  if(doing_align)
     {
-      best_sc = Scorify(mmx[cur][0]);
+      return_sc = Scorify(mmx[cur][0]);
       if(ret_bestpos != NULL) *ret_bestpos = i0;
     }
-  else if(best_sc <= 0.) /* scanning and there were no hits found by the 
-			  * semi-HMM above cutoff */
+  else if(best_hmm_sc <= 0.) /* scanning and there were no hits found by the 
+			      * semi-HMM above 0.0 bits */
     {
-      best_sc = best_negsc;
-      if(ret_bestpos != NULL) *ret_bestpos = best_negpos;
+      return_sc = best_sc;
+      if(ret_bestpos != NULL) *ret_bestpos = best_pos;
     }
-  else if(ret_bestpos != NULL) *ret_bestpos = best_pos;
+  else
+    {
+      return_sc = best_hmm_sc;
+      if(ret_bestpos != NULL) *ret_bestpos = best_hmm_pos;
+    }
   if (ret_mx != NULL) *ret_mx = mx;
   else                FreeCPlan9Matrix(mx);
-  return best_sc;
+  /*printf("Backward return_sc: %f\n", return_sc);*/
+  return return_sc;
 }
 
 /***********************************************************************
@@ -879,21 +968,26 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
  * 
  * Purpose:  Scan a sequence with a CP9, potentially rescan CP9 hits with CM.
  *
- *           3 possible modes:
+ *           2 possible modes:
  *
- *           Mode 1: Filter Weinberg style (IF cm->search_opts & CM_SEARCH_HMMWEINBERG)
- *                   Scan with CP9Forward() to get likely endpoints (j) of 
- *                   hits, set i for each j as j-W+1. Then, set i' = i-W+1 j'= j+W-1.
- *                   Each i'..j' CP9 subequence is then rescanned with the CM. 
- *
- *           Mode 2: Filter FB style (IF cm->search_opts & CM_SEARCH_HMMFB)
+ *           Mode 1: Filter mode with default pad 
+ *                   (IF cm->search_opts & CM_SEARCH_HMMFILTER and 
+ *                      !cm->search_opts & CM_SEARCH_HMMPAD)
  *                   Scan with CP9Forward() to get likely endpoints (j) of 
  *                   hits, for each j do a CP9Backward() from j-W+1..j to get
  *                   the most likely start point i for this j. Set i' = j-W+1 and
  *                   j' = i+W-1. Each i'..j' subsequence is rescanned with the CM.
  * 
+ *           Mode 2: Filter mode with user-defined pad 
+ *                   (IF cm->search_opts & CM_SEARCH_HMMFILTER and 
+ *                       cm->search_opts & CM_SEARCH_HMMPAD)
+ *                   Same as mode 1, but i' and j' defined differently:
+ *                   Set i' = i - (cm->hmmpad) and
+ *                       j' = j + (cm->hmmpad) 
+ *                   Each i'..j' subsequence is rescanned with the CM.
+ * 
  *           Mode 3: HMM only mode (IF cm->search_opts & CM_SEARCH_HMMONLY)
- *                   Hit boundaries i and j are defined the same as in mode 2, but
+ *                   Hit boundaries i and j are defined the same as in mode 1, but
  *                   no rescanning with CM takes place. i..j hits are reported 
  *                   (note i' and j' are never calculated).
  * 
@@ -945,28 +1039,25 @@ CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
   if(cm->cp9 == NULL)
     Die("ERROR in CP9Scan_dispatch(), cm->cp9 is NULL\n");
   if((cm->search_opts & CM_SEARCH_HMMPAD) &&
-     (!(cm->search_opts & CM_SEARCH_HMMFB)))
-     Die("ERROR in CP9Scan_dispatch(), CM_SEARCH_HMMPAD flag up, but CM_SEARCH_HMMFB flag down.\n");
+     (!(cm->search_opts & CM_SEARCH_HMMFILTER)))
+     Die("ERROR in CP9Scan_dispatch(), CM_SEARCH_HMMPAD flag up, but CM_SEARCH_HMMFILTER flag down.\n");
+  if(!((cm->search_opts & CM_SEARCH_HMMFILTER) || 
+       (cm->search_opts & CM_SEARCH_HMMONLY)))
+    Die("ERROR in CP9Scan_dispatch(), neither CM_SEARCH_HMMFILTER nor CM_SEARCH_HMMONLY flag is up.\n");
 
   /*printf("in CP9Scan_dispatch(), i0: %d j0: %d\n", i0, j0);
     printf("cp9_cutoff: %f\n", cp9_cutoff);*/
 
   best_cm_sc = best_hmm_sc = IMPOSSIBLE;
   /* set up options for RescanFilterSurvivors() if we're filtering */
-  if(cm->search_opts & CM_SEARCH_HMMWEINBERG)
+  if(cm->search_opts & CM_SEARCH_HMMFILTER)
     {
-      padmode = PAD_SUBI_ADDJ;
-      ipad = jpad = W-1;
-      do_collapse = TRUE;
-    }
-  else if(cm->search_opts & CM_SEARCH_HMMFB)
-    {
-      if(cm->search_opts & CM_SEARCH_HMMPAD)
+      if(cm->search_opts & CM_SEARCH_HMMPAD) /* mode 2 */
 	{
 	  padmode = PAD_SUBI_ADDJ;
 	  ipad = jpad = cm->hmmpad; /* subtract hmmpad from i, add hmmpad to j */
 	}
-      else
+      else /* mode 1 */
 	{
 	  padmode = PAD_ADDI_SUBJ;
 	  ipad = jpad = W-1; /* subtract W-1 from j, add W-1 to i */
@@ -976,82 +1067,62 @@ CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
 
   /* Scan the (sub)seq w/Forward, getting j end points of hits above cutoff */
   best_hmm_fsc = CP9Forward(cm, dsq, i0, j0, W, cp9_cutoff, NULL, &f_hitj, &f_nhits, NULL, NULL, 
-				//TRUE,  /* we're scanning */
-				FALSE,   /* we're not scanning */
-				FALSE,   /* we're not rescanning */
-				/*TRUE,*/  /* be memory efficient */
-				/*NULL);*/ /* don't want the DP matrix back */
-				FALSE,  /* don't be memory efficient */
-				&fmx); /* give the DP matrix back */
+			    TRUE,   /* we're scanning */
+			    FALSE,  /* we're not ultimately aligning */
+			    FALSE,  /* we're not rescanning */
+			    TRUE,   /* be memory efficient */
+			    NULL);  /* don't want the DP matrix back */
   best_hmm_sc = best_hmm_fsc;
 
-  /* Determine start points (i) of the hits */
-  if(cm->search_opts & CM_SEARCH_HMMWEINBERG)
+  /* Determine start points (i) of the hits 
+   * based on Backward scan starting at j */
+  alloc_nhits = 10 < f_nhits ? 10 : f_nhits;
+  hiti  = MallocOrDie(sizeof(int)   * alloc_nhits);
+  hitj  = MallocOrDie(sizeof(int)   * alloc_nhits);
+  hitsc = MallocOrDie(sizeof(float) * alloc_nhits);
+  
+  nhits = 0;
+  for(h = 0; h < f_nhits; h++) 
     {
-      /* i is j - W + 1 */
-      hiti = MallocOrDie(sizeof(int) * f_nhits);
-      hitj = MallocOrDie(sizeof(int) * f_nhits);
-      hitsc = MallocOrDie(sizeof(float) * f_nhits); /* only used in mode 3 HMMONLY */
-      nhits = f_nhits;
-      for(h = 0; h < f_nhits; h++) 
+      min_i = (f_hitj[h] - W + 1) >= 1 ? (f_hitj[h] - W + 1) : 1;
+      cur_best_hmm_bsc = CP9Backward(cm, dsq, min_i, f_hitj[h], W, cp9_cutoff, 
+				     NULL, /* don't care about score of each posn */
+				     NULL, /* don't care about locations of hits */
+				     NULL, /* don't care about number of hits */
+				     &i,   /* set i as the best scoring start point from j-W..j */
+				     NULL,  /* don't report hits */
+				     TRUE,  /* we're scanning */
+				     FALSE, /* we're not ultimately aligning */
+				     //FALSE,  /* we're not scanning */
+				     FALSE,  /* don't rescan */
+				     TRUE,  /* be memory efficient */
+				     NULL); /* don't want the DP matrix back */
+      //FALSE,  /* don't be memory efficient */
+      //&bmx); /* give the DP matrix back */
+      /* this only works if we've saved the matrices, and didn't do scan mode
+       * for both Forward and Backward:
+       * debug_check_CP9_FB(fmx, bmx, cm->cp9, cur_best_hmm_bsc, i0, j0, dsq); */
+      
+      if(cur_best_hmm_bsc > best_hmm_sc) best_hmm_sc = cur_best_hmm_bsc;
+      if(cur_best_hmm_bsc >= cp9_cutoff)
 	{
-	  hitj[h] = f_hitj[h];
-	  hiti[h] = (hitj[h] - W + 1) >= 1 ? (hitj[h] - W + 1) : 1;
-	}
-    }
-  else if((cm->search_opts & CM_SEARCH_HMMFB) || (cm->search_opts & CM_SEARCH_HMMONLY))
-    {
-      /* determine i based on Backward scan starting at j */
-
-      alloc_nhits = 10 < f_nhits ? 10 : f_nhits;
-      hiti  = MallocOrDie(sizeof(int)   * alloc_nhits);
-      hitj  = MallocOrDie(sizeof(int)   * alloc_nhits);
-      hitsc = MallocOrDie(sizeof(float) * alloc_nhits);
-
-      nhits = 0;
-      for(h = 0; h < f_nhits; h++) 
-	{
-	  min_i = (f_hitj[h] - W + 1) >= 1 ? (f_hitj[h] - W + 1) : 1;
-	  cur_best_hmm_bsc = CP9Backward(cm, dsq, min_i, f_hitj[h], W, cp9_cutoff, 
-					 NULL, /* don't care about score of each posn */
-					 NULL, /* don't care about locations of hits */
-					 NULL, /* don't care about number of hits */
-					 &i,   /* set i as the best scoring start point from j-W..j */
-					 NULL,  /* don't report hits */
-					 //TRUE,  /* we're scanning */
-					 FALSE,  /* we're not scanning */
-					 FALSE,  /* don't rescan */
-					 /*TRUE,*/  /* be memory efficient */
-					 /*NULL);*/ /* don't want the DP matrix back */
-					 FALSE,  /* don't be memory efficient */
-					 &bmx); /* give the DP matrix back */
-	  if(i != i0) Die("ERROR start is not i0\n");
-	  if(f_hitj[h] != j0) Die("ERROR end is not j0\n");
-	  debug_check_CP9_FB(fmx, bmx, cm->cp9, cur_best_hmm_bsc, i0, j0, dsq);
-
-	  if(cur_best_hmm_bsc > best_hmm_sc) best_hmm_sc = cur_best_hmm_bsc;
-	  if(cur_best_hmm_bsc >= cp9_cutoff)
+	  /* this is a real hit, Backward found hit from j-W+1..j >= cutoff */
+	  hiti[nhits]  = i;
+	  hitj[nhits]  = f_hitj[h];
+	  /*printf("HMM hit: %d i: %d j: %d\n", nhits, i,  f_hitj[h]);*/
+	  hitsc[nhits] = cur_best_hmm_bsc; /* only used if CM_SEARCH_HMMONLY */
+	  nhits++;
+	  if (nhits == alloc_nhits) 
 	    {
-	      /* this is a real hit, Backward found hit from j-W+1..j >= cutoff */
-	      hiti[nhits]  = i;
-	      hitj[nhits]  = f_hitj[h];
-	      hitsc[nhits] = cur_best_hmm_bsc; /* only used if CM_SEARCH_HMMONLY */
-	      nhits++;
-	      if (nhits == alloc_nhits) 
-		{
-		  alloc_nhits += 10;
-		  hiti  = ReallocOrDie(hiti,  sizeof(int)   * alloc_nhits);
-		  hitj  = ReallocOrDie(hitj,  sizeof(int)   * alloc_nhits);
-		  hitsc = ReallocOrDie(hitsc, sizeof(float) * alloc_nhits);
-		}
+	      alloc_nhits += 10;
+	      hiti  = ReallocOrDie(hiti,  sizeof(int)   * alloc_nhits);
+	      hitj  = ReallocOrDie(hitj,  sizeof(int)   * alloc_nhits);
+	      hitsc = ReallocOrDie(hitsc, sizeof(float) * alloc_nhits);
 	    }
-	}	  
-    }
-  else Die("ERROR neither filter mode selected and CM_SEARCH_HMMONLY is false.\n");
-
+	}
+    }	  
   /* Rescan with CM if we're filtering and not doing cp9 stats */
-  if(!doing_cp9_stats && ((cm->search_opts & CM_SEARCH_HMMWEINBERG) ||
-			  (cm->search_opts & CM_SEARCH_HMMFB)))
+  if(!doing_cp9_stats && (cm->search_opts & CM_SEARCH_HMMFILTER))
     {
       best_cm_sc = RescanFilterSurvivors(cm, dsq, hiti, hitj, nhits, i0, j0, W, 
 					 padmode, ipad, ipad, 
@@ -1215,961 +1286,16 @@ RescanFilterSurvivors(CM_t *cm, char *dsq, int *hiti, int *hitj, int nhits, int 
   return best_cm_sc;
 }
 
-#if 0 
-/* Below are CP9 functions for scanning a sequence that are memory inefficient, 
- * in that they keep the entire matrix in memory. I originally wrote these
- * functions b/c so I wouldn't need to 'rescan' the hits that survive the 
- * CP9 filter to get HMM bands. The currently implemented versions of
- * these functions are memory efficient in that they only allocate
- * and fill 2 rows of a DP matrix. I think these are more useful right now,
- * but the old versions are kept here for reference 
- * (EPN, Mon Jan  8 15:57:13 2007)
- */
-/***********************************************************************
- * Function: CP9ForwardScan()
- * 
- * Purpose:  A Forward dynamic programming algorithm that scans an input sequence.
- *           The scaling issue is dealt with by working in log space
- *           and calling ILogsum(); this is a slow but robust approach.
- * 
- * Args:     
- *           cm      - the covariance model, includes cm->cp9: a CP9 HMM
- *           dsq     - sequence in digitized form
- *           i0      - start of target subsequence (1 for beginning of dsq)
- *           j0      - end of target subsequence (L for end of dsq)
- *           W       - the maximum size of a hit (often cm->W)
- *           cutoff  - minimum score to report
- *           ret_mx  - RETURN: the Forward matrix alloc'ed here (NULL if not wanted)
- *           results - scan_results_t to add to; if NULL, don't keep results
- *
- * Returns:  best_score, score of maximally scoring end position j 
- */
-float
-CP9ForwardScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
-	       float cutoff, CP9_dpmatrix_t **ret_mx, 
-	       scan_results_t *results)
-{
-  CP9_dpmatrix_t *mx;
-  int **mmx;
-  int **imx;
-  int **dmx;
-  int **emx;
-  int   i,j,k;
-  float sc;
-  float    *gamma;              /* SHMM DP matrix for optimum nonoverlap resolution */
-  int      *gback;              /* traceback pointers for SHMM */ 
-  float    *savesc;             /* saves score of hit added to best parse at j */
-  int      *saver;		/* saves initial non-ROOT state of best parse ended at j */
-
-  int      L;                   /* j0-i0+1: subsequence length */
-  int      jp;		        /* j': relative position in the subsequence  */
-  int      ip;		        /* i': relative position in the subsequence  */
-
-  float     best_score;         /* Best overall score from semi-HMM to return */
-  float     best_neg_score;     /* Best score overall score to return, used if all scores < 0. */
-
-  if(cm->cp9 == NULL)
-    Die("ERROR in CP9ForwardScan, but cm->cp9 is NULL.\n");
-
-  best_score     = IMPOSSIBLE;
-  best_neg_score = IMPOSSIBLE;
-  L = j0-i0+1;
-  if (W > L) W = L; 
-
-  /*****************************************************************
-   * gamma allocation and initialization.
-   * This is a little SHMM that finds an optimal scoring parse
-   * of multiple nonoverlapping hits.
-   *****************************************************************/ 
-  gamma    = MallocOrDie(sizeof(float) * (L+1));
-  gamma[0] = 0.;
-  gback    = MallocOrDie(sizeof(int)   * (L+1));
-  gback[0] = -1;
-  savesc   = MallocOrDie(sizeof(float) * (L+1));
-  saver    = MallocOrDie(sizeof(int)   * (L+1));
-
-  /* Allocate a DP matrix with 0..L rows, 0..M-1 
-   */ 
-  mx = AllocCPlan9Matrix(L+1, cm->cp9->M, &mmx, &imx, &dmx, &emx);
-
-  /* Initialization of the zero row.
-   */
-  mmx[0][0] = 0;      /* M_0 is state B, and everything starts in B */
-  imx[0][0] = -INFTY; /* I_0 is state N, can't get here without emitting*/
-  dmx[0][0] = -INFTY; /* D_0 doesn't exist. */
-
-  /* Because there's a D state for every node 1..M, 
-     dmx[0][k] is possible for all k 1..M */
-  for (k = 1; k <= cm->cp9->M; k++)
-    mmx[0][k] = imx[0][k] = -INFTY;      /* need seq to get here */
-  for (k = 1; k <= cm->cp9->M; k++)
-    dmx[0][k] = ILogsum(ILogsum(mmx[0][k-1] + cm->cp9->tsc[CTMD][k-1],
-				imx[0][k-1] + cm->cp9->tsc[CTID][k-1]),
-			dmx[0][k-1] + cm->cp9->tsc[CTDD][k-1]);
-  
-  emx[0][0] = dmx[0][cm->cp9->M] + cm->cp9->tsc[CTDM][cm->cp9->M]; 
-
-  /*****************************************************************
-   * The main loop: scan the sequence from position i0 to j0.
-   *****************************************************************/
-  
-  /* Recursion. Done as a pull.
-   */
-  for (j = i0; j <= j0; j++)
-    {
-      jp = j-i0+1;     /* jp is relative position in the sequence */
-      mmx[jp][0] = 0;  /* This is the 1 difference between a Forward scanner and the 
-			* regular Forward (CP9Forward), 
-			* in CP9Forward, this cell is set to -INFTY.
-			* Here, we can start at any position in the seq,
-			* this isn't true in global alignment. 
-			*/
-      dmx[jp][0] = -INFTY;  /*D_0 is non-existent*/
-      imx[jp][0]  = ILogsum(ILogsum(mmx[jp-1][0] + cm->cp9->tsc[CTMI][0],
-				    imx[jp-1][0] + cm->cp9->tsc[CTII][0]),
-			    dmx[jp-1][0] + cm->cp9->tsc[CTDI][0]);
-      imx[jp][0] += cm->cp9->isc[(int) dsq[j]][0];
-      
-      for (k = 1; k <= cm->cp9->M; k++)
-	{
-	  mmx[jp][k]  = ILogsum(ILogsum(mmx[jp-1][k-1] + cm->cp9->tsc[CTMM][k-1],
-				       imx[jp-1][k-1] + cm->cp9->tsc[CTIM][k-1]),
-			       ILogsum(mmx[jp-1][0] + cm->cp9->bsc[k],
-				       dmx[jp-1][k-1] + cm->cp9->tsc[CTDM][k-1]));
-	  mmx[jp][k] += cm->cp9->msc[(int) dsq[j]][k];
-	  
-	  dmx[jp][k]  = ILogsum(ILogsum(mmx[jp][k-1] + cm->cp9->tsc[CTMD][k-1],
-					imx[jp][k-1] + cm->cp9->tsc[CTID][k-1]),
-				dmx[jp][k-1] + cm->cp9->tsc[CTDD][k-1]);
-	  
-	  imx[jp][k]  = ILogsum(ILogsum(mmx[jp-1][k] + cm->cp9->tsc[CTMI][k],
-				       imx[jp-1][k] + cm->cp9->tsc[CTII][k]),
-			       dmx[jp-1][k] + cm->cp9->tsc[CTDI][k]);
-	  imx[jp][k] += cm->cp9->isc[(int) dsq[j]][k];
-	  //printf("mmx[%d][%d]: %d\n", i, k, mmx[jp][k]);
-	  //printf("imx[%d][%d]: %d\n", i, k, imx[jp][k]);
-	  //printf("dmx[%d][%d]: %d\n", i, k, dmx[jp][k]);
-
-	}
-      
-      emx[0][jp] = -INFTY;
-      for (k = 1; k <= cm->cp9->M; k++)
-	emx[0][jp] = ILogsum(emx[0][jp], mmx[jp][k] + cm->cp9->esc[k]);
-      emx[0][jp] = ILogsum(emx[0][jp], dmx[jp][cm->cp9->M] + cm->cp9->tsc[CTDM][cm->cp9->M]); 
-      emx[0][jp] = ILogsum(emx[0][jp], imx[jp][cm->cp9->M] + cm->cp9->tsc[CTIM][cm->cp9->M]); 
-      /* transition from D_M -> end */
-      sc = Scorify(emx[0][jp]);
-
-      if(sc > best_neg_score) 
-	best_neg_score = sc;
-
-      /* The little semi-Markov model that deals with multihit parsing:
-       */
-      gamma[jp]  = gamma[jp-1] + 0; /* extend without adding a new hit */
-      gback[jp]  = -1;
-      savesc[jp] = IMPOSSIBLE;
-      saver[jp]  = -1;
-      i = ((j-W+1)> i0) ? (j-W+1) : i0;
-      ip = i-i0+1;
-      sc = gamma[ip-1] + Scorify(emx[0][jp]) + cm->cp9_sc_boost;
-      /* cp9_sc_boost is experimental technique for finding hits < 0 bits. 
-       * value is 0.0 if technique not used. */
-      if (sc > gamma[jp])
-	{
-	  gamma[jp]  = sc;
-	  gback[jp]  = i;
-	  savesc[jp] = Scorify(emx[0][jp]);
-	  saver[jp]  = 0;
-	  //saver[jp]  = bestr[d];
-	}
-    } /* end loop over end positions j */
-  sc = Scorify(emx[0][L]);
-  //printf("END %d %10.2f\n", j, sc);
-
-  /*****************************************************************
-   * Traceback stage.
-   * Recover all hits: an (i,j,sc) triple for each one.
-   *****************************************************************/ 
-  j     = j0;
-  while (j > i0) {
-    jp = j-i0+1;
-    if (gback[jp] == -1) /* no hit */
-      j--; 
-    else                /* a hit, a palpable hit */
-      {
-	if(savesc[jp] > best_score) 
-	  best_score = savesc[jp];
-	if(savesc[jp] >= cutoff && results != NULL) /* report the hit */
-	  report_hit(gback[jp], j, saver[jp], savesc[jp], results);
-	j = gback[jp]-1;
-      }
-  }
-  free(gback);
-  free(gamma);
-  free(savesc);
-  free(saver);
-  
-  if (ret_mx != NULL) *ret_mx = mx;
-  else                FreeCPlan9Matrix(mx);
-  
-  if(best_score <= 0.) /* there were no hits found by the semi-HMM, no hits above 0 bits */
-    best_score = best_neg_score;
-  return best_score;
-}
-
-/* This function is never called, but could be useful for debugging
- * in the future */
-
-static void debug_check_CP9_FBscan(CP9_dpmatrix_t *fmx, CP9_dpmatrix_t *bmx, 
-				   CP9_t *hmm, float sc, int L, char *dsq);
-
-/*********************************************************************
- * Function: debug_CP9_check_FBscan()
- * 
- * Purpose:  Debugging function for CP9ForwardBackwardScan(),
- *           print probability each position of the target
- *           sequence is emitted by some state of the model.
- *           Notably different from debug_CP9_check_FB() 
- *           because parses are allowed to start at any
- *           position and end at any position (during alignment
- *           its assumed the entire sequence is involved in 
- *           each parse).
- *           
- * Args:     
- *           fmx    - forward dp matrix, already filled
- *           bmx    - backward dp matrix, already filled
- *           hmm    - the model
- *           sc     - ~P(x|hmm) the summed probability of 
- *                    subsequences of the target sequence
- *                    given the model
- *           L      - length of the sequence
- *           
- * Return:   (void) Exits if any errors are found.
- */
-static void
-debug_check_CP9_FBscan(CP9_dpmatrix_t *fmx, CP9_dpmatrix_t *bmx, 
-		       CP9_t *hmm, float sc, int L, char *dsq)
-{
-  int k, i;
-  float max_diff;  /* maximum allowed difference between sc and 
-		    * sum_k f[i][k] * b[i][k] for any i */
-  int fb_sum;
-  float fb_sc;
-
-  max_diff = 0.01;
-  printf("sc: %f\n", sc);
-
-  /* In all possible paths through the model, each residue of the sequence must have 
-   * been emitted by exactly 1 insert or match state. */
-  for (i = 0; i <= L; i++)
-    {
-      fb_sum = -INFTY;
-      for (k = 0; k <= hmm->M; k++) 
-	{
-	  if(i == 0)
-	    {
-	      printf("fmx->mmx[%d][%d]: %d\n", i, k, fmx->mmx[i][k]);
-	      printf("bmx->mmx[%d][%d]: %d\n", i, k, bmx->mmx[i][k]);
-	      printf("hmm->msc[dsq[i]][%d]: %d\n", k, hmm->msc[(int) dsq[i]][k]);
-	    }
-	  fb_sum = ILogsum(fb_sum, (fmx->mmx[i][k] + bmx->mmx[i][k] - hmm->msc[(int) dsq[i]][k]));
-	  /*hmm->msc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
-	  fb_sum = ILogsum(fb_sum, (fmx->imx[i][k] + bmx->imx[i][k] - hmm->isc[(int) dsq[i]][k]));
-	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
-	  /*fb_sum = ILogsum(fb_sum, fmx->dmx[i][k] + bmx->dmx[i][k]);*/
-	}
-      fb_sc  = Scorify(fb_sum);
-      printf("position %5d | sc: %f\n", i, fb_sc);
-      diff = sc - fb_sc;
-      if(diff < 0.) diff *= -1.;
-      if(diff > max_diff)
-	{
-	  printf("ERROR, fb_sc[%d]: %f too different from P(x|hmm): %f\n", i, fb_sc, sc);
-	  exit(1);
-	}
-    }
-}
-
-/***********************************************************************
- * Function: CP9ForwardBackwardScan()
- * 
- * Purpose:  Runs the Forward dynamic programming algorithm that scans an 
- *           input subsequence (i0-j0). And then the Backward DP algorithm on the
- *           same sequence. Forward finds likely endpoints of hits, 
- *           and Backward finds likely startpoints of hits.
- *           The scaling issue is dealt with by working in log space
- *           and calling ILogsum(); this is a slow but robust approach.
- *           
- *           This function is messy in that it does not check that
- *           the log-odds scores are -INFTY (-987654321) before
- *           adding them. This means that -INFTY is interpreted
- *           as a possible transition, with a very low probability
- *           (2^-987654321).
- * 
- * Args: 
- *           cm         - the covariance model, includes cm->cp9: a CP9 HMM
- *           dsq        - sequence in digitized form
- *           i0         - start of target subsequence (1 for beginning of dsq)
- *           j0         - end of target subsequence (L for end of dsq)
- *           W          - the maximum size of a hit (often cm->W)
- *           cp9_cutoff - minimum CP9 score to report (or keep if filtering)
- *           ret_hitsc  - RETURN: scores of hits, 0..nhits-1            
- *           ret_nhits  - RETURN: number of hits
- *           ret_hiti   - RETURN: start positions of hits, 0..nhits-1
- *           ret_hitj   - RETURN: end positions of hits, 0..nhits-1
- *           results    - scan_results_t to add to, only passed to 
- *                        actually_search_target()
- *           doing_rescan - TRUE if we've called this function recursively, and we don't
- *                          want to again
- *           pad        - number of nucleotides to add on to start and end points
- *
- * Returns:  
- *           hiti, hitj, hitsc are allocated in a helper function; caller free's w/ free().
- */
-float
-CP9ForwardBackwardScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
-		       int **ret_hitsc, int *ret_nhits, int **ret_hiti, int **ret_hitj, 
-		       scan_results_t *results, int doing_rescan, int pad)
-{
-  int      L;                   /* j0-i0+1: subsequence length */
-  int      jp;		        /* j': relative position in the subsequence  */
-  int      ip;		        /* i': relative position in the subsequence  */
-  int        **mmx;         /* DP matrix for match  state scores [0..1][0..cm->cp9->M]      */
-  int        **imx;         /* DP matrix for insert state scores [0..1][0..cm->cp9->M]      */
-  int        **dmx;         /* DP matrix for delete state scores [0..1][0..cm->cp9->M]      */
-  int         *isc;         /* prob (seq from j0..jp | HMM) [0..jp..cm->cp9->M]             */
-  int   i,j,k;
-  float     fsc;     
-  float    *gamma;              /* SHMM DP matrix for optimum nonoverlap resolution */
-  int      *gback;              /* traceback pointers for SHMM */ 
-  float    *savesc;             /* saves score of hit added to best parse at j */
-  int       alloc_nhits;	/* used to grow the hit arrays */
-
-  int fwd_sum;                  /* calc'ed from the Forward matrix, the sum over all
-				 * positions 1..L of all parses that start and end 
-				 * anywhere from 1..L */
-  int bck_sum;                  /* same as above, but calc'ed from the Backward matrix*/
-  float fwd_sc;                 /* fwd_sum as a score */
-  float bck_sc;                 /* bck_sum as a score */
-  
-  int fwd_nhits;                /* number of hits from Forward */
-  int *fwd_hiti;                /* start positions of hits from Forward, 0..nhits-1, (calc'ed as end points - W) */
-  int *fwd_hitj;                /* end positions of hits from Forward, 0..nhits-1 */
-  float *fwd_hitsc;             /* scores of hits, 0..nhits-1 */
-
-  int bck_nhits;                /* number of hits from Backward */
-  int *bck_hiti;                /* start positions of hits from Backward, 0..nhits-1 */
-  int *bck_hitj;                /* end positions of hits from Backward, 0..nhits-1 (calc'ed as start points + W) */
-  float *bck_hitsc;             /* scores of hits, 0..nhits-1 */
-
-  /* Contract checks */
-  if(cm->cp9 == NULL)
-    Die("ERROR in CP9ForwardBackwardScan, cm->cp9 is NULL.\n");
-
-  best_sc     = IMPOSSIBLE;
-  best_negsc  = IMPOSSIBLE;
-  L = j0-i0+1;
-  if (W > L) W = L; 
-
-  fwd_sum = -INFTY;
-  bck_sum = -INFTY;
-
-  /*****************************************************************
-   * gamma allocation and initialization.
-   * This is a little SHMM that finds an optimal scoring parse
-   * of multiple nonoverlapping hits. We use it first for
-   * the Forward scan, and reuse it for the Backward scan.
-   *****************************************************************/ 
-  gamma    = MallocOrDie(sizeof(float) * (L+2));
-  gamma[0] = 0.;
-  gamma[L+1] = 0.;
-  gback    = MallocOrDie(sizeof(int)   * (L+2));
-  gback[0] = -1;
-  gback[L+1] = -1;
-  savesc   = MallocOrDie(sizeof(float) * (L+2));
-
-  /* Allocate a DP matrix with 2 rows, 0..M 
-   */ 
-  mmx   = MallocOrDie(sizeof(int *) * 2);
-  imx   = MallocOrDie(sizeof(int *) * 2);
-  dmx   = MallocOrDie(sizeof(int *) * 2);
-  for(j = 0; j < 2; j++)
-    {
-      mmx[j]   = MallocOrDie(sizeof(int) * (cm->cp9->M+1));
-      imx[j]   = MallocOrDie(sizeof(int) * (cm->cp9->M+1));
-      dmx[j]   = MallocOrDie(sizeof(int) * (cm->cp9->M+1));
-    }
-  /* isc will hold P(seq up to j | Model) in int log odds form */
-  isc   = MallocOrDie(sizeof(int) * (j0-i0+2));
-			
-
-  /*****************************************************************
-   * The main Forward loop: scan the sequence from position 1 to L.
-   *****************************************************************/
-  /* Initialization of the zero row. */
-  mmx[0][0] = 0;      /* M_0 is state B, and everything starts in B */
-  imx[0][0] = -INFTY; /* I_0 is state N, can't get here without emitting*/
-  dmx[0][0] = -INFTY; /* D_0 doesn't exist. */
-
-  /* Because there's a D state for every node 1..M, 
-     fdmx[0][k] is possible for all k 1..M */
-  for (k = 1; k <= hmm->M; k++)
-    fmmx[0][k] = fimx[0][k] = -INFTY;      /* need seq to get here */
-  for (k = 1; k <= hmm->M; k++)
-    fdmx[0][k] = ILogsum(ILogsum(fmmx[0][k-1] + hmm->tsc[CTMD][k-1],
-				fimx[0][k-1] + hmm->tsc[CTID][k-1]),
-			 fdmx[0][k-1] + hmm->tsc[CTDD][k-1]);
-  femx[0][0] = fdmx[0][hmm->M] + hmm->tsc[CTDM][hmm->M]; 
-  
-  fwd_sum = ILogsum(fwd_sum, femx[0][0]);
-  /* Recursion. Done as a pull.
-   */
-  for (j = i0; j <= j0; j++) 
-    {
-      jp = j-i0+1;     /* e.g. jp is relative position in j */
-      fmmx[jp][0] = 0; /* This is the 1 difference between a Forward scanner and the 
-		       * regular Forward (CP9Forward), 
-		       * in CP9Forward, this cell is set to -INFTY.
-		       * Here, we can start at any position in the seq,
-		       * this isn't true in global alignment. 
-		       */
-      fdmx[jp][0] = -INFTY;  /*D_0 is non-existent*/
-      fimx[jp][0]  = ILogsum(fmmx[jp-1][0] + hmm->tsc[CTMI][0],
-			    fimx[jp-1][0] + hmm->tsc[CTII][0]);
-      fimx[jp][0] += hmm->isc[(int) dsq[j]][0];
-      
-      for (k = 1; k <= hmm->M; k++)
-	{
-	  fmmx[jp][k]  = ILogsum(ILogsum(fmmx[jp-1][k-1] + hmm->tsc[CTMM][k-1],
-				       fimx[jp-1][k-1] + hmm->tsc[CTIM][k-1]),
-			       ILogsum(fmmx[jp-1][0] + hmm->bsc[k],
-				       fdmx[jp-1][k-1] + hmm->tsc[CTDM][k-1]));
-	  fmmx[jp][k] += hmm->msc[(int) dsq[j]][k];
-	  
-	  fdmx[jp][k]  = ILogsum(ILogsum(fmmx[jp][k-1] + hmm->tsc[CTMD][k-1],
-				       fimx[jp][k-1] + hmm->tsc[CTID][k-1]),
-			       fdmx[jp][k-1] + hmm->tsc[CTDD][k-1]);
-	  
-	  fimx[jp][k]  = ILogsum(ILogsum(fmmx[jp-1][k] + hmm->tsc[CTMI][k],
-				       fimx[jp-1][k] + hmm->tsc[CTII][k]),
-			       fdmx[jp-1][k] + hmm->tsc[CTDI][k]);
-	  fimx[jp][k] += hmm->isc[(int) dsq[j]][k];
-	  //printf("fmmx[%d][%d]: %d\n", i, k, fmmx[jp][k]);
-	  //printf("fimx[%d][%d]: %d\n", i, k, fimx[jp][k]);
-	  //printf("fdmx[%d][%d]: %d\n", i, k, fdmx[jp][k]);
-	}
-      
-      femx[0][jp] = -INFTY;
-      for (k = 1; k <= hmm->M; k++)
-	{
-	  femx[0][jp] = ILogsum(femx[0][jp], fmmx[jp][k] + hmm->esc[k]);
-	  /*if(j == L) printf("k: %d | femx[0][L]: %d | fmmx[L][k]: %d | hmm->esc[k]: %d\n", k, femx[0][L], fmmx[jp][k], hmm->esc[k]);*/
-	}
-      femx[0][jp] = ILogsum(femx[0][jp], fdmx[jp][hmm->M] + hmm->tsc[CTDM][hmm->M]); 
-      /*if(j == L) printf("added D trans | femx[0][L]: %d\n", femx[0][L]);*/
-      /* transition from D_M -> end */
-      femx[0][jp] = ILogsum(femx[0][jp], fimx[jp][hmm->M] + hmm->tsc[CTIM][hmm->M]); 
-      /*if(j == L) printf("added I trans | femx[0][L]: %d\n", femx[0][L]);*/
-      /* transition from I_M -> end */
-
-      fwd_sc = Scorify(femx[0][jp]);
-      /*printf("femx[0][%3d]: %10.5f\n", j, fwd_sc);*/
-
-      fwd_sum = ILogsum(fwd_sum, femx[0][jp]);
-
-      /* The little semi-Markov model that deals with multihit parsing:
-       */
-      gamma[jp]  = gamma[jp-1] + 0; /* extend without adding a new hit */
-      gback[jp]  = -1;
-      savesc[jp] = IMPOSSIBLE;
-      saver[jp]  = -1;
-      i = ((j-W+1)> i0) ? (j-W+1) : i0;
-      sc = gamma[i-1] + Scorify(femx[0][jp]) - min_thresh;
-      /*printf("j: %d | gamma[jp]: %f | sc: %f\n", j, gamma[jp], sc);*/
-      if (sc > gamma[jp])
-	{
-	  gamma[jp]  = sc;
-	  gback[jp]  = i;
-	  savesc[jp] = Scorify(femx[0][jp]);
-	  saver[jp]  = 0;
-	  //saver[jp]  = bestr[d];
-	}
-    } /* end loop over end positions j */
-
-  /*fwd_sc = Scorify(femx[0][L]);*/
-  /*printf("Total Forward  score (summed over all posns): %f\n", Scorify(fwd_sum));*/
-  fwd_sc = Scorify(fwd_sum); /* the total Forward score. */
-
-  /*****************************************************************
-   * Traceback stage.
-   * Recover all hits: an (i,j,sc) triple for each one.
-   *****************************************************************/ 
-  alloc_nhits = 10;
-  fwd_hitr  = MallocOrDie(sizeof(int)   * alloc_nhits);
-  fwd_hitj  = MallocOrDie(sizeof(int)   * alloc_nhits);
-  fwd_hiti  = MallocOrDie(sizeof(int)   * alloc_nhits);
-  fwd_hitsc = MallocOrDie(sizeof(float) * alloc_nhits);
-
-  j     = j0;
-  fwd_nhits = 0;
-  while (j >= i0) {
-    jp = j-i0+1;
-    if (gback[jp] == -1) /* no hit */
-      j--; 
-    else                /* a hit, a palpable hit */
-      {
-	fwd_hitr[fwd_nhits]   = saver[jp];
-	fwd_hitj[fwd_nhits]   = j;
-	fwd_hiti[fwd_nhits]   = gback[jp];
-	fwd_hitsc[fwd_nhits]  = savesc[jp];
-	fwd_nhits++;
-	/*printf("fwd_nhits: %d\n", fwd_nhits);*/
-	j = gback[jp]-1;
-	
-	if (fwd_nhits == alloc_nhits) {
-	  fwd_hitr  = ReallocOrDie(fwd_hitr,  sizeof(int)   * (alloc_nhits + 10));
-	  fwd_hitj  = ReallocOrDie(fwd_hitj,  sizeof(int)   * (alloc_nhits + 10));
-	  fwd_hiti  = ReallocOrDie(fwd_hiti,  sizeof(int)   * (alloc_nhits + 10));
-	  fwd_hitsc = ReallocOrDie(fwd_hitsc, sizeof(float) * (alloc_nhits + 10));
-	  alloc_nhits += 10;
-	}
-      }
-  }
-
-  /*****************************************************************
-   * The main Backward loop: scan the sequence from position L to 1.
-   *****************************************************************/
-
-  /* Initialization of the L row.
-   */
-  bemx[0][L] = 0; /*have to end in E*/
-
-  bmmx[L][hmm->M] = bemx[0][L] + hmm->esc[hmm->M]; /* M<-E ...                   */
-  bmmx[L][hmm->M] += hmm->msc[(int) dsq[j0]][hmm->M]; /* ... + emitted match symbol */
-  bimx[L][hmm->M] = bemx[0][L] + hmm->tsc[CTIM][hmm->M];   /* I_M(C)<-E ... */
-  bimx[L][hmm->M] += hmm->isc[(int) dsq[j0]][hmm->M];           /* ... + emitted match symbol */
-  bdmx[L][hmm->M] = bemx[0][L] + hmm->tsc[CTDM][hmm->M];    /* D_M<-E */
-  for (k = hmm->M-1; k >= 1; k--)
-    {
-      bmmx[L][k]  = bemx[0][L] + hmm->esc[k];
-      bmmx[L][k]  = ILogsum(bmmx[L][k], bdmx[L][k+1] + hmm->tsc[CTMD][k]);
-      bmmx[L][k] += hmm->msc[(int) dsq[j0]][k];
-
-      bimx[L][k] = bdmx[L][k+1] + hmm->tsc[CTID][k];
-      bimx[L][k] += hmm->isc[(int) dsq[j0]][k];
-
-      bdmx[L][k] = bdmx[L][k+1] + hmm->tsc[CTDD][k];
-    }
-  
-  bmmx[L][0] = -INFTY; /* no esc[0] b/c its impossible */
-  bimx[L][0] = bdmx[L][1] + hmm->tsc[CTID][0];
-  bimx[L][0] += hmm->isc[(int) dsq[j0]][hmm->M];    
-  bdmx[L][0] = -INFTY; /*D_0 doesn't exist*/
-
-  bck_sum = ILogsum(bck_sum, bmmx[L][0]);
-
-  bck_sc = Scorify(bmmx[L][0]);
-  /*printf("bmmx[L][  0]: %10.5f\n", bck_sc);*/
-  /*printf("tmp_bck_sum L: %d\n", tmp_bck_sum);*/
-
-  /* Recursion. Done as a pull.
-   */
-  for (i = j0-1; i >= i0; i--)
-    {
-      ip = i-i0 + 1;		/* ip is relative index in dsq (1 to L) */
-      if(i > 0)
-	{
-	  bemx[0][ip] = 0; /* This is 1 of 3 differences between a Backward scanner and the 
-			   * regular Backward (CP9Backward), 
-			   * in CP9Backward, this cell is set to -INFTY.
-			   * Here, we can end at the END state at any position,
-			   * this isn't true in global alignment. 
-			   * Second and third differences are related, 
-			   * see the four comments 
-			   * labelled "2nd diff" or "3rd diff" below
-			   */
-	  
-	  /* Now the main states. Note the boundary conditions at M.
-	   */
-	  bmmx[ip][hmm->M] = ILogsum(bemx[0][i+1] + hmm->esc[hmm->M], /* M<-E ... 2nd diff w/non-scanner*/
-				    bimx[ip+1][hmm->M] + hmm->tsc[CTMI][hmm->M]);
-	  bmmx[ip][hmm->M] += hmm->msc[(int) dsq[i]][hmm->M];
-	  bimx[ip][hmm->M] = ILogsum(bemx[0][ip] + hmm->tsc[CTIM][hmm->M],    /* I_M(C)<-E ... */
-				    bimx[ip+1][hmm->M] + hmm->tsc[CTII][hmm->M]);
-	  bimx[ip][hmm->M] += hmm->isc[(int) dsq[i]][hmm->M];
-	  bdmx[ip][hmm->M] = ILogsum(bemx[0][ip] + hmm->tsc[CTDM][hmm->M], /* D_M<-E */
-				    bimx[ip+1][hmm->M] + hmm->tsc[CTDI][hmm->M]);  
-	  for (k = hmm->M-1; k >= 1; k--)
-	    {
-	      bmmx[ip][k]  = ILogsum(ILogsum(bemx[0][i+1] + hmm->esc[k], /* M<-E ... 2nd diff w/non-scanner*/
-					    bmmx[ip+1][k+1] + hmm->tsc[CTMM][k]),
-				    ILogsum(bimx[ip+1][k] + hmm->tsc[CTMI][k],
-					    bdmx[ip][k+1] + hmm->tsc[CTMD][k]));	  
-	      /*if(k == 1 && i == 1) printf("\tk: %d | bemx[0][i+1]: %d | hmm->esc[k]: %d\n\t\tbmmx[ip+1][k+1]: %d | hmm->tsc[CTMM][k]: %d\n\t\tbimx[ip+1][k]: %d | hmm->tsc[CTMI][k]: %d\n\t\tbdmx[ip][k+1]: %d | hmm->tsc[CTMD][k]: %d\n", k, bemx[0][(i+1)], hmm->esc[k], bmmx[(i+1)][(k+1)], hmm->tsc[CTMM][k], bimx[(i+1)][k], hmm->tsc[CTMI][k], bdmx[ip][(k+1)], hmm->tsc[CTMD][k]);*/
-	      
-	      bmmx[ip][k] += hmm->msc[(int) dsq[i]][k];
-	      
-	      bimx[ip][k]  = ILogsum(ILogsum(bmmx[ip+1][k+1] + hmm->tsc[CTIM][k],
-					    bimx[ip+1][k] + hmm->tsc[CTII][k]),
-				    bdmx[ip][k+1] + hmm->tsc[CTID][k]);
-	      bimx[ip][k] += hmm->isc[(int) dsq[i]][k];
-	      
-	      bdmx[ip][k]  = ILogsum(ILogsum(bmmx[ip+1][k+1] + hmm->tsc[CTDM][k],
-					    bimx[ip+1][k] + hmm->tsc[CTDI][k]),
-				    bdmx[ip][k+1] + hmm->tsc[CTDD][k]);
-	    }
-	  
-	  bimx[ip][0]  = ILogsum(ILogsum(bmmx[ip+1][1] + hmm->tsc[CTIM][0],
-					bimx[ip+1][0] + hmm->tsc[CTII][0]),
-				bdmx[ip][1] + hmm->tsc[CTID][0]);
-	  bimx[ip][0] += hmm->isc[(int) dsq[i]][0];
-	  bmmx[ip][0] = -INFTY;
-	  /*for (k = hmm->M-1; k >= 1; k--)*/ /*M_0 is the B state, it doesn't emit*/
-	  for (k = hmm->M; k >= 1; k--) /*M_0 is the B state, it doesn't emit*/
-	    {
-	      bmmx[ip][0] = ILogsum(bmmx[ip][0], bmmx[ip+1][k] + hmm->bsc[k]);
-	      /*printf("hmm->bsc[%d]: %d | bmmx[ip+1][k]: %d\n", k, hmm->bsc[k], bmmx[(i+1)][k]);
-		printf("bmmx[%3d][%3d]: %d | k: %3d\n", i, 0, bmmx[ip][0], k);*/
-	    }
-	  bmmx[ip][0] = ILogsum(bmmx[ip][0], bimx[ip+1][k] + hmm->tsc[CTMI][k]);
-	  bmmx[ip][0] = ILogsum(bmmx[ip][0], bdmx[ip][k+1] + hmm->tsc[CTMD][k]);
-	  
-	  bdmx[ip][0] = -INFTY; /* D_0 does not exist */
-	  
-	}
-      else if(i == 0)
-	{
-	  /* case when i = 0 */
-	  bemx[0][0] = 0.; /* 3rd diff with non-scanner */
-	  bmmx[0][hmm->M] = -INFTY; /* need seq to get here */
-	  bimx[0][hmm->M] = -INFTY; /* need seq to get here */
-	  bdmx[0][hmm->M] = ILogsum(bemx[0][0] + hmm->tsc[CTDM][hmm->M],  /*D_M<-E*/ /* 3rd diff with non-scanner */
-				    bimx[1][hmm->M] + hmm->tsc[CTDI][hmm->M]);  
-	  for (k = hmm->M-1; k >= 1; k--)
-	    {
-	      bmmx[0][k] = -INFTY; /* need seq to get here */
-	      bimx[0][k] = -INFTY; /* need seq to get here */
-	      bdmx[0][k]  = ILogsum(ILogsum(bmmx[1][k+1] + hmm->tsc[CTDM][k],
-					    bimx[1][k] + hmm->tsc[CTDI][k]),
-				    bdmx[0][k+1] + hmm->tsc[CTDD][k]);
-	    }
-	  bimx[0][0] = -INFTY; /*need seq to get here*/
-	  bdmx[0][0] = -INFTY; /*D_0 doesn't exist*/
-	  
-	  bmmx[0][0] = -INFTY;
-	  for (k = hmm->M; k >= 1; k--) /*M_0 is the B state, it doesn't emit*/
-	    {
-	      bmmx[0][0] = ILogsum(bmmx[0][0], bmmx[1][k] + hmm->bsc[k]);
-	      /*printf("k: %d | bmmx[0][0]: %d | bmmx[1][k]: %d | hmm->bsc[k]: %d\n", k, bmmx[0][0], bmmx[1][k], hmm->bsc[k]);*/
-	    }
-	  bmmx[0][0] = ILogsum(bmmx[0][0], bdmx[0][1] + hmm->tsc[CTMD][0]);
-	  /*printf("added D trans | bmmx[0][0]: %d \n", bmmx[0][0]);*/
-	  bmmx[0][0] = ILogsum(bmmx[0][0], bimx[1][0] + hmm->tsc[CTMI][0]);
-	  /*printf("added I trans | bmmx[0][0]: %d \n", bmmx[0][0]);*/
-	  
-	  bck_sc = Scorify(bmmx[0][0]);
-	  /*printf("bmmx[0][  0]: %10.5f\n", bck_sc);*/
-	  
-	  bck_sum = ILogsum(bck_sum, bmmx[0][0]);
-	  /*printf("Total Backward score (summed over all posns): %f\n", Scorify(bck_sum));		*/
-	  bck_sc  = Scorify(bck_sum);  /* the total Backward score. */
-	}
-      /* The little semi-Markov model that deals with multihit parsing:
-       */
-      /* Here's a vicious off-by-one with HMMs and CMs:
-       * an HMM parse can begin at position 0, i.e. backward[0][0] is the probability
-       * of the entire sequence being emitted starting at the Begin state at position 0.
-       * But a CM always has parses that start at position 1. So we have to translate
-       * from HMM to CM in this way, and that's why there's a i+1 in the following loop.
-       */
-      gamma[ip+1]  = gamma[ip+2] + 0; /* extend without adding a new hit */
-      /*printf("i: %d | gamma[i]: %f | gamma[i+1]: %f\n", i, gamma[i], gamma[i+1]);*/
-      gback[ip+1]  = -1;
-      savesc[ip+1] = IMPOSSIBLE;
-      saver[ip+1]  = -1;
-      j = ((i+1+W-1) < j0) ? (i+1+W-1) : j0;
-      jp = j-i0+1;
-      sc = gamma[jp+1] + Scorify(bmmx[ip][0]) - min_thresh;
-
-      /*printf("bmmx[%3d][0]: %10.5f\n", i, Scorify(bmmx[ip][0]));*/
-      bck_sum = ILogsum(bck_sum, bmmx[ip][0]);
-
-      bck_sc = Scorify(bmmx[ip][0]);
-      /*printf("bmmx[%3d][0]: %10.5f\n", i, bck_sc);*/
-      /*printf("i: %d | bmmx[ip][0]: %f | j: %d | gamma[i]: %f | sc: %f\n", i, Scorify(bmmx[ip][0]), j, gamma[i], sc);*/
-      if (sc > gamma[ip+1])
-	{
-	  gamma[ip+1]  = sc;
-	  gback[ip+1]  = j;
-	  savesc[ip+1] = Scorify(bmmx[ip][0]);
-	  saver[ip+1]  = 0;
-	  //saver[ip+1]  = bestr[d];
-	}
-    }
-  /* End of Backward() code */
-
-  /*****************************************************************
-   * Traceback stage for Backward.
-   * Recover all hits: an (i,j,sc) triple for each one.
-   *****************************************************************/ 
-
-  alloc_nhits = 10;
-  bck_hitr  = MallocOrDie(sizeof(int)   * alloc_nhits);
-  bck_hitj  = MallocOrDie(sizeof(int)   * alloc_nhits);
-  bck_hiti  = MallocOrDie(sizeof(int)   * alloc_nhits);
-  bck_hitsc = MallocOrDie(sizeof(float) * alloc_nhits);
-
-  i     = i0;
-  bck_nhits = 0;
-  ip = i-i0+1;
-  while (i <= L) {
-    if (gback[ip] == -1) /* no hit */
-      { i++; ip++; }
-    else                /* a hit, a palpable hit */
-      {
-	bck_hitr[bck_nhits]   = saver[ip];
-	bck_hitj[bck_nhits]   = gback[ip];
-	bck_hiti[bck_nhits]   = i;
-	bck_hitsc[bck_nhits]  = savesc[ip];
-	bck_nhits++;
-	i = gback[ip]+1;
-	ip = i-i0+1;
-	if (bck_nhits == alloc_nhits) {
-	  bck_hitr  = ReallocOrDie(bck_hitr,  sizeof(int)   * (alloc_nhits + 10));
-	  bck_hitj  = ReallocOrDie(bck_hitj,  sizeof(int)   * (alloc_nhits + 10));
-	  bck_hiti  = ReallocOrDie(bck_hiti,  sizeof(int)   * (alloc_nhits + 10));
-	  bck_hitsc = ReallocOrDie(bck_hitsc, sizeof(float) * (alloc_nhits + 10));
-	  alloc_nhits += 10;
-	}
-      }
-  }
-  free(gback);
-  free(gamma);
-  free(savesc);
-  free(saver);
-
-  /*debug_check_CP9_FBscan(fmx, bmx, hmm, Scorify(femx[0][L]), L, dsq);*/
-
-  CP9_combine_FBscan_hits(i0, j0, W, fwd_nhits, fwd_hitr, fwd_hiti, fwd_hitj, fwd_hitsc, 
-			  bck_nhits, bck_hitr, bck_hiti, bck_hitj, bck_hitsc,
-			  ret_nhits, ret_hitr, ret_hiti, ret_hitj, ret_hitsc, pad);
-
-  free(fwd_hitr);
-  free(fwd_hitj);
-  free(fwd_hiti);
-  free(fwd_hitsc);
-
-  free(bck_hitr);
-  free(bck_hitj);
-  free(bck_hiti);
-  free(bck_hitsc);
-
-  if (ret_fmx != NULL) *ret_fmx = fmx;
-  else                FreeCPlan9Matrix(fmx);
-
-  if (ret_bmx != NULL) *ret_bmx = bmx;
-  else                FreeCPlan9Matrix(bmx);
-
-  return fwd_sc;		/* the total Forward score. */
-}
-
-
-/***********************************************************************
- * Function: CP9FilteredFBScan()
- * Incept:   EPN, Tue Apr 10 06:25:09 2007
- * 
- * Purpose:  Scan a sequence with a CP9, using Forward() to get end points
- *           and Backward() to get startpoints of CP9 HMM hits that could 
- *           hits to the CM the CP9 was derived from.
- *           Pass filtered subseqs to actually_search_target() to be
- *           scanned with a CM scan. 
- * 
- * Args:     
- *           cm         - the covariance model, includes cm->cp9: a CP9 HMM
- *           dsq        - sequence in digitized form
- *           i0         - start of target subsequence (1 for beginning of dsq)
- *           j0         - end of target subsequence (L for end of dsq)
- *           W          - the maximum size of a hit (often cm->W)
- *           cm_cutoff  - minimum CM  score to report 
- *           cp9_cutoff - minimum CP9 score to report (or keep if filtering)
- *           results    - scan_results_t to add to, only passed to 
- *                        actually_search_target()
- *           ret_flen   - RETURN: subseq len that survived filter
- * Returns:  best_sc, score of maximally scoring end position j 
- */
-float
-CP9FilteredFBScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff, 
-		  float cp9_cutoff, scan_results_t *results, int *ret_flen)
-{
-  int *hiti;
-  int *hitj;
-  int  nhits;
-  int h;
-  int i, j;
-  float best_hmm_fsc;
-  float best_cm_sc;
-  /*int   flen;
-    float ffrac;*/
-
-  printf("in CP9FilteredFBScan(), i0: %d j0: %d\n", i0, j0);
-  printf("cp9_cutoff: %f\n", cp9_cutoff);
-  /* Scan the (sub)seq w/Forward getting likely j end points */
-  best_hmm_fsc = CP9ForwardScan(cm, dsq, i0, j0, W, cp9_cutoff, 
-				NULL,  /* don't care about score of each posn */
-				&hitj, /* keep track of locations of hits */
-				&nhits,/* keep track of number of hits */
-				NULL,  /* don't care about best scoring start point */
-				NULL,  /* don't report hits */
-				TRUE,  /* we're scanning */
-				FALSE, /* don't rescan */
-				TRUE,  /* be memory efficient */
-				NULL); /* don't want the DP matrix back */
-  
-  /* OLD STRATEGY AS OF 04.10.07 */
-  /* Combine likely start and end points with greedy strategy */
-  /*  CP9_combine_FBscan_hits(i0, j0, W, fwd_nhits, fwd_hitr, fwd_hiti, fwd_hitj, fwd_hitsc, 
-      bck_nhits, bck_hitr, bck_hiti, bck_hitj, bck_hitsc,
-      ret_nhits, ret_hitr, ret_hiti, ret_hitj, ret_hitsc, pad);*/
-
-  /* NEW STRATEGY AS OF 04.10.07 */
-  /* For each likely end point j, find the most likely start point with CP9BackwardScan() */
-  for(h = 0; h <= nhits-1; h++) 
-    {
-      best_hmm_bsc = CP9BackwardScan(cm, dsq, (hitj[h]-W+1), hitj[h], W, cp9_cutoff, 
-				     NULL, /* don't care about score of each posn */
-				     NULL, /* don't care about locations of hits */
-				     NULL, /* don't care about number of hits */
-				     &i,   /* set i as the best scoring start point from j-W..j */
-				     NULL, /* don't report hits */
-				     TRUE, /* we're scanning */
-				     FALSE, /* don't rescan */
-				     TRUE, /* be memory efficient */
-				     NULL);/* don't want the DP matrix back */
-      if(best_hmm_bsc > cp9_cutoff)
-	{
-	  /* Rescan this hit with the CM. 
-	   * OPTIONS FOR IMPLEMENTATION.
-	   * 1. pad 'pad' residues on left of i and right of j
-	   * 2. if do_hbanded_scan, first get full scanning matrices 
-	   *    (this will require new code can I modify CP9ForwardScan 
-	   *     and CP9BackwardScan() to keep matrix?), 
-	   *    then call (after modifying) CP9ScanFullPosterior to get
-	   *    bands, then make actually_search_target optionally use
-	   *    HMM bands.
-	   */
-	  cm_sc =
-	    actually_search_target(cm, dsq, i, j, cm_cutoff, cp9_cutoff,
-				   results, /* keep results                                 */
-				   FALSE,   /* don't filter, we already have                */
-				   FALSE,   /* we're not building a histogram for CM stats  */
-				   FALSE,   /* we're not building a histogram for CP9 stats */
-				   NULL);   /* filter fraction N/A                          */
-	  flen += (j - i + 1);
-	  if(cm_sc > best_cm_sc) best_cm_sc = cm_sc;
-	}
-    }
-  free(hitj);
-  if(flen == 0) ffrac = 100.;
-  else ffrac = 1. - (((float) flen) / (((float) (j0-i0+1))));
-  /*printf("orig_len: %d flen: %d fraction %6.2f\n", (j0-i0+1), (flen), ffrac);*/
-  if(ret_flen != NULL) *ret_flen = flen;
-  return best_cm_sc;
-}
-
-/***********************************************************************
- * Function: CP9FilteredWeinbergScan()
- * Incept:   EPN, Tue Jan  9 06:28:49 2007
- * 
- * Purpose:  Scan a sequence with a CP9, filtering for promising subseqs
- *           that could be hits to the CM the CP9 was derived from.
- *           Pass filtered subseqs to actually_search_target() to be
- *           scanned with a CM scan. 
- * 
- * Args:     
- *           cm         - the covariance model, includes cm->cp9: a CP9 HMM
- *           dsq        - sequence in digitized form
- *           i0         - start of target subsequence (1 for beginning of dsq)
- *           j0         - end of target subsequence (L for end of dsq)
- *           W          - the maximum size of a hit (often cm->W)
- *           cm_cutoff  - minimum CM  score to report 
- *           cp9_cutoff - minimum CP9 score to report (or keep if filtering)
- *           results    - scan_results_t to add to, only passed to 
- *                        actually_search_target()
- *           ret_flen   - RETURN: subseq len that survived filter
- * Returns:  best_sc, score of maximally scoring end position j 
- */
-float
-CP9FilteredWeinbergScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff, 
-			float cp9_cutoff, scan_results_t *results, int *ret_flen)
-{
-  int *hitj;
-  int  nhits;
-  int h;
-  int i, j;
-  float best_hmm_sc;
-  float best_cm_sc;
-  float cm_sc;
-  int   flen;
-  float ffrac;
-  /*printf("in CP9FilteredWeinbergScan(), i0: %d j0: %d\n", i0, j0);*/
-  /*printf("cp9_cutoff: %f\n", cp9_cutoff);*/
-  /* Scan the (sub)seq w/Forward, getting j end points of hits above cutoff */
-  best_hmm_sc = CP9ForwardScan(cm, dsq, i0, j0, W, cp9_cutoff, NULL, &hitj, &nhits, NULL, NULL, 
-			       TRUE;   /* we're scanning */
-			       FALSE,  /* we're not rescanning */
-			       TRUE,   /* be memory efficient */
-			       NULL);  /* don't want the DP matrix back */
-  /* Send promising subseqs to actually_search_target(): send subseq [j-W..j..j+W] 
-   * for each hit endpoint j returned from CP9ForwardScan, or if there's overlap, send 
-   * minimal subseq that encompasses all overlapping hits with W residue 'pad' on 
-   * both sides.
-   */
-  best_cm_sc = IMPOSSIBLE;
-  flen = 0;
-  /* hits are always sorted by decreasing j */
-  for(h = 0; h <= nhits-1; h++) 
-    {
-      j = ((hitj[h] + W) <= j0) ? (hitj[h] + W) : j0;
-      i = ((j - (2*W)) >= 1)    ? (j - (2*W))   : 1;
-      /*printf("subseq: hit %d j: %d i: %d j: %d\n", h, hitj[h], i, j);*/
-      while(((h+1) < nhits) && ((hitj[(h+1)]+W) >= i))
-      {
-	/* suck in hit */
-	h++;
-	i = ((hitj[h]-W) >= 1) ? (hitj[h]-W) : 1;
-	/*printf("\tsucked in subseq: hit %d new_i: %d j (still): %d\n", h, i, j);*/
-      }
-      /*printf("calling actually_search_target: %d %d h: %d nhits: %d\n", i, j, h, nhits);*/
-      cm_sc =
-	actually_search_target(cm, dsq, i, j, cm_cutoff, cp9_cutoff,
-			       results, /* keep results                                 */
-			       FALSE,   /* don't filter, we already have                */
-			       FALSE,   /* we're not building a histogram for CM stats  */
-			       FALSE,   /* we're not building a histogram for CP9 stats */
-			       NULL);   /* filter fraction N/A                          */
-      flen += (j - i + 1);
-      if(cm_sc > best_cm_sc) best_cm_sc = cm_sc;
-    }
-
-  free(hitj);
-  if(flen == 0) ffrac = 100.;
-  else ffrac = 1. - (((float) flen) / (((float) (j0-i0+1))));
-  /*printf("orig_len: %d flen: %d fraction %6.2f\n", (j0-i0+1), (flen), ffrac);*/
-  if(ret_flen != NULL) *ret_flen = flen;
-  return best_cm_sc;
-}
-
-
-/* Function: CP9ScanFullPosterior()
+/* Function: CP9ScanPosterior()
  * based on Ian Holmes' hmmer/src/postprob.c::P7EmitterPosterior()
  *
  * Purpose:  Combines Forward and Backward scanning matrices into a posterior
  *           probability matrix. 
  *
- *           The main difference between this function and CP9FullPosterior()
+ *           The main difference between this function and CP9Posterior()
  *           in hmmband.c is that this func takes matrices from CP9ForwardBackwardScan()
  *           in which parses are allowed to start and end in any residue.
- *           In CP9FullPosterior(), the matrices are calc'ed in CP9Forward()
+ *           In CP9Posterior(), the matrices are calc'ed in CP9Forward()
  *           and CP9Backward() which force all parses considered to start at posn
  *           1 and end at L. This means here we have to calculate probability
  *           that each residue from 1 to L is contained in any parse prior
@@ -2182,7 +1308,7 @@ CP9FilteredWeinbergScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cut
  *           For non-emitters the entries in row i of this matrix are the 
  *           logs of the posterior probabilities of each state being 'visited' 
  *           when the last emitted residue in the parse was symbol i of the
- *           sequence (I think this is valid, but not sure (EPN)). 
+ *           sequence. 
  *           The last point distinguishes this function from P7EmitterPosterior() 
  *           which set all posterior values for for non-emitting states to -INFTY.
  *           The caller must allocate space for the matrix, although the
@@ -2190,7 +1316,8 @@ CP9FilteredWeinbergScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cut
  *           compromise the algorithm).
  *           
  * Args:     dsq      - sequence in digitized form
- *           L        - length of sequence
+ *           i0       - start of target subsequence
+ *           j0       - end of target subsequence 
  *           hmm      - the model
  *           forward  - pre-calculated forward matrix
  *           backward - pre-calculated backward matrix
@@ -2199,23 +1326,30 @@ CP9FilteredWeinbergScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cut
  * Return:   void
  */
 void
-CP9ScanFullPosterior(char *dsq, int L,
+CP9ScanPosterior(char *dsq, int i0, int j0,
 		     CP9_t *hmm,
 		     CP9_dpmatrix_t *fmx,
 		     CP9_dpmatrix_t *bmx,
 		     CP9_dpmatrix_t *mx)
 {
   int i;
+  int ip;
   int k;
   int fb_sum; /* tmp value, the probability that the current residue (i) was
 	       * visited in any parse */
+  int L = j0-i0+1;
+  /*printf("\n\nin CP9ScanPosterior() i0: %d, j0: %d\n", i0, j0);*/
   fb_sum = -INFTY;
-  for (i = 0; i <= L; i++) 
+  for (i = i0-1; i <= j0; i++) 
     {
-      fb_sum = ILogsum(fb_sum, (fmx->emx[0][i]));
+      ip = i-i0+1; /* ip is relative position in seq, 0..L */
+      /*printf("bmx->mmx[i:%d][0]: %d\n", i, bmx->mmx[ip][0]); */
+      fb_sum = ILogsum(fb_sum, (bmx->mmx[ip][0])); 
     }
   /*printf("fb_sc: %f\n", Scorify(fb_sum));*/
-  /*for(k = 1; k <= hmm->M; k++)*/
+    /* fb_sum is the probability of all parses */
+
+    /*for(k = 1; k <= hmm->M; k++)*/
   /*{*/
       /*fbsum_ = ILogsum(fmx->mmx[0][k] + bmx->mmx[0][k]))*/; /* residue 0 can't be emitted
 								    * but we can start in BEGIN,
@@ -2234,8 +1368,9 @@ CP9ScanFullPosterior(char *dsq, int L,
       mx->dmx[0][k] = fmx->dmx[0][k] + bmx->dmx[0][k] - fb_sum;
     }
       
-  for (i = 1; i <= L; i++)
+  for (i = i0; i <= j0; i++)
     {
+      ip = i-i0+1; /* ip is relative position in seq, 0..L */
       /*fb_sum = -INFTY;*/ /* this will be probability of seeing residue i in any parse */
       /*for (k = 0; k <= hmm->M; k++) 
 	{
@@ -2244,221 +1379,36 @@ CP9ScanFullPosterior(char *dsq, int L,
       /*fb_sum = ILogsum(fb_sum, (fmx->imx[i][k] + bmx->imx[i][k] - hmm->isc[dsq[i]][k]));*/
 	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
       /*}*/
-      mx->mmx[i][0] = -INFTY; /*M_0 does not emit*/
-      mx->imx[i][0] = fmx->imx[i][0] + bmx->imx[i][0] - hmm->isc[(int) dsq[i]][0] - fb_sum;
+      mx->mmx[ip][0] = -INFTY; /*M_0 does not emit*/
+      mx->imx[ip][0] = fmx->imx[ip][0] + bmx->imx[ip][0] - hmm->isc[(int) dsq[i]][0] - fb_sum;
       /*hmm->isc[dsq[i]][0] will have been counted in both fmx->imx and bmx->imx*/
-      mx->dmx[i][0] = -INFTY; /*D_0 does not exist*/
+      mx->dmx[ip][0] = -INFTY; /*D_0 does not exist*/
       for (k = 1; k <= hmm->M; k++) 
 	{
-	  mx->mmx[i][k] = fmx->mmx[i][k] + bmx->mmx[i][k] - hmm->msc[(int) dsq[i]][k] - fb_sum;
+	  mx->mmx[ip][k] = fmx->mmx[ip][k] + bmx->mmx[ip][k] - hmm->msc[(int) dsq[i]][k] - fb_sum;
 	  /*hmm->msc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
-	  mx->imx[i][k] = fmx->imx[i][k] + bmx->imx[i][k] - hmm->isc[(int) dsq[i]][k] - fb_sum;
+	  mx->imx[ip][k] = fmx->imx[ip][k] + bmx->imx[ip][k] - hmm->isc[(int) dsq[i]][k] - fb_sum;
 	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
-	  mx->dmx[i][k] = fmx->dmx[i][k] + bmx->dmx[i][k] - fb_sum;
+	  mx->dmx[ip][k] = fmx->dmx[ip][k] + bmx->dmx[ip][k] - fb_sum;
 	}	  
     }
-
-  /*  for(i = 0; i <= L; i++)
+  /*
+  float temp_sc;
+  for (i = i0; i <= j0; i++)
     {
+      ip = i-i0+1; 
       for(k = 0; k <= hmm->M; k++)
 	{
-	  temp_sc = Score2Prob(mx->mmx[i][k], 1.);
+	  temp_sc = Score2Prob(mx->mmx[ip][k], 1.);
 	  if(temp_sc > .0001)
-	    printf("mx->mmx[%3d][%3d]: %9d | %8f\n", i, k, mx->mmx[i][k], temp_sc);
-	  temp_sc = Score2Prob(mx->imx[i][k], 1.);
+	    printf("mx->mmx[%3d][%3d]: %9d | %8f\n", i, k, mx->mmx[ip][k], temp_sc);
+	  temp_sc = Score2Prob(mx->imx[ip][k], 1.);
 	  if(temp_sc > .0001)
-	    printf("mx->imx[%3d][%3d]: %9d | %8f\n", i, k, mx->imx[i][k], temp_sc);
-	  temp_sc = Score2Prob(mx->dmx[i][k], 1.);
+	    printf("mx->imx[%3d][%3d]: %9d | %8f\n", i, k, mx->imx[ip][k], temp_sc);
+	  temp_sc = Score2Prob(mx->dmx[ip][k], 1.);
 	  if(temp_sc > .0001)
-	    printf("mx->dmx[%3d][%3d]: %9d | %8f\n", i, k, mx->dmx[i][k], temp_sc);
+	    printf("mx->dmx[%3d][%3d]: %9d | %8f\n", i, k, mx->dmx[ip][k], temp_sc);
 	}
     }
   */
 }
-
-/***********************************************************************
- * Function: CP9_combine_FBscan_hit()
- * 
- * Purpose:  Given likely end points of hits from a CP9ForwardScan() and
- *           likely end points from a CP9BackwardScan() combine them in 
- *           a greedy manner to get subseqs to research with CM.
- * 
- * Args:     i0        - start of target subsequence (1 for beginning of dsq)
- *           j0        - end of target subsequence (L for end of dsq)
- *           W         - window length (maximum size of a hit considered)
- *           fwd_nhits - Forward: number of hits
- *           fwd_hitr  - Forward: start states of hits, 0..nhits-1
- *           fwd_hiti  - Forward: start positions of hits, 0..nhits-1
- *           fwd_hitj  - Forward: end positions of hits, 0..nhits-1
- *           fwd_hitsc - Forward: scores of hits, 0..nhits-1            
- *           bck_nhits - Backward: number of hits
- *           bck_hitr  - Backward: start states of hits, 0..nhits-1
- *           bck_hiti  - Backward: start positions of hits, 0..nhits-1
- *           bck_hitj  - Backward: end positions of hits, 0..nhits-1
- *           bck_hitsc - Backward: scores of hits, 0..nhits-1            
- *           ret_nhits - RETURN: number of hits
- *           ret_hitr  - RETURN: start states of hits, 0..nhits-1
- *           ret_hiti  - RETURN: start positions of hits, 0..nhits-1
- *           ret_hitj  - RETURN: end positions of hits, 0..nhits-1
- *           ret_hitsc - RETURN: scores of hits, 0..nhits-1            
- *           pad       - number of nucleotides to add on to start and end points
- * Returns:  
- *           hiti, hitj, hitsc are allocated here; caller free's w/ free().
- */
-void
-CP9_combine_FBscan_hits(int i0, int j0, int W, int fwd_nhits, int *fwd_hitr, int *fwd_hiti, 
-			int *fwd_hitj, float *fwd_hitsc, int bck_nhits, 
-			int *bck_hitr, int *bck_hiti, int *bck_hitj, float *bck_hitsc, 
-			int *ret_nhits, int **ret_hitr, int **ret_hiti, int **ret_hitj, 
-			float **ret_hitsc, int pad)
-{
-  int i,j;
-  int       nhits;		/* # of hits in optimal parse */
-  int      *hitr;		/* initial state indices of hits in optimal parse */
-  int      *hiti;		/* initial state indices of hits in optimal parse */
-  int      *hitj;               /* end positions of hits in optimal parse */
-  float    *hitsc;              /* scores of hits in optimal parse */
-  int       alloc_nhits;	/* used to grow the hit arrays */
-  int       fwd_ctr;
-  int       bck_ctr;
-  
-  alloc_nhits = 10;
-  hitr  = MallocOrDie(sizeof(int)   * alloc_nhits);
-  hitj  = MallocOrDie(sizeof(int)   * alloc_nhits);
-  hiti  = MallocOrDie(sizeof(int)   * alloc_nhits);
-  hitsc = MallocOrDie(sizeof(float) * alloc_nhits);
-
-  /*if(fwd_nhits != bck_nhits)
-    {
-      printf("ERROR: fwd_nhits: %d | bck_nhits: %d\n", fwd_nhits, bck_nhits);
-    }
-  */
-
-  /*
-  for(i = 0; i < fwd_nhits; i++)
-    {
-      printf("FWD hit %3d | i: %3d | j: %3d | sc: %f\n", i, fwd_hiti[i], fwd_hitj[i], fwd_hitsc[i]);
-    }
-  printf("\n\n");
-  for(i = 0; i < bck_nhits; i++)
-    {
-      printf("BCK hit %3d | i: %3d | j: %3d | sc: %f\n", i, bck_hiti[i], bck_hitj[i], bck_hitsc[i]);
-    }
-  printf("\n\n");
-  */
-
-  bck_ctr = 0;
-  fwd_ctr = fwd_nhits - 1;
-  nhits = 0;
-  while(bck_ctr < bck_nhits || fwd_ctr >= 0)
-    {
-      /*printf("fwd_ctr: %d | bck_ctr: %d\n", fwd_ctr, bck_ctr);*/
-      if(bck_ctr > (bck_nhits+1))
-	{
-	  printf("ERROR: bck_ctr: %d | bck_nhits: %d\n", bck_ctr, bck_nhits);
-	  exit(1);
-	}
-      if(fwd_ctr < -1)
-	{
-	  printf("ERROR: fwd_ctr: %d\n", fwd_ctr);
-	  exit(1);
-	}
-      if(fwd_ctr == -1 && bck_ctr == bck_nhits)
-	{
-	  printf("ERROR: bck_ctr: %d | fwd_ctr: %d\n", bck_ctr, fwd_ctr);
-	  exit(1);
-	}
-      if(fwd_ctr == -1) 
-	{
-	  i = (bck_hiti[bck_ctr] - pad >= i0) ? (bck_hiti[bck_ctr] - pad) : i0;
-	  j = (bck_hitj[bck_ctr] + pad <= j0) ? (bck_hitj[bck_ctr] + pad) : j0;
-	  while ((j-i+1) > W)
-	    { i++; if((j-i+1) > W) j--; }
-	  hiti[nhits]   = i;
-	  hitj[nhits]   = j;
-	  hitsc[nhits]  = bck_hitsc[bck_ctr];
-	  hitr[nhits]   = bck_hitr[bck_ctr];
-	  bck_ctr++;
-	}
-      else if(bck_ctr == bck_nhits) 
-	{
-	  i = (fwd_hiti[fwd_ctr] - pad >= i0) ? (fwd_hiti[fwd_ctr] - pad) : i0;
-	  j = (fwd_hitj[fwd_ctr] + pad <= j0) ? (fwd_hitj[fwd_ctr] + pad) : j0;
-	  while ((j-i+1) > W)
-	    { i++; if((j-i+1) > W) j--; }
-	  hiti[nhits]   = i;
-	  hitj[nhits]   = j;
-	  hitsc[nhits]  = fwd_hitsc[fwd_ctr];
-	  hitr[nhits]   = fwd_hitr[fwd_ctr];
-	  fwd_ctr--;
-	}
-      else
-	{
-	  i = (bck_hiti[bck_ctr] - pad >= i0) ? (bck_hiti[bck_ctr] - pad) : i0;
-	  j = (fwd_hitj[fwd_ctr] + pad <= j0) ? (fwd_hitj[fwd_ctr] + pad) : j0;
-	  
-	  if((j-i+1 > 0) && (j-i+1 <= (W + 2 * pad)))
-	    {
-	      /* creep in on i and j until we're at the window size */
-	      while ((j-i+1) > W)
-		{ i++; if((j-i+1) > W) j--; }
-	      hiti[nhits]   = i;
-	      hitj[nhits]   = j;
-	      hitsc[nhits]  = 0.5 * (fwd_hitsc[fwd_ctr] + bck_hitsc[bck_ctr]);
-	      if(fwd_hitr[fwd_ctr] != bck_hitr[bck_ctr]) { printf("ERROR: hitr's don't match!\n"); exit(1); }
-	      hitr[nhits] = fwd_hitr[fwd_ctr];
-	      fwd_ctr--;
-	      bck_ctr++;
-	    }
-	  else if(j > i) /* hit from Backward() unmatched by a Forward hit */
-	    {
-	      hiti[nhits]   = i;
-	      hitj[nhits]   = ((i+W-1) < j0) ? (i+W-1) : j0;
-	      /*hitj[nhits]   = bck_hitj[bck_ctr]; *//* this will be (i+W) */
-	      hitsc[nhits]  = bck_hitsc[bck_ctr];
-	      hitr[nhits]   = bck_hitr[bck_ctr];
-	      bck_ctr++;
-	    }
-	  else if(i > j) /* hit from Backward() unmatched by a Forward hit */
-	    {
-	      hitj[nhits]   = j;
-	      hiti[nhits]   = ((j-W+1) > i0) ? (j-W+1) : i0;
-	      /*hiti[nhits]   = fwd_hiti[fwd_ctr]; *//* this will be (j-W) */
-	      hitsc[nhits]  = fwd_hitsc[fwd_ctr];
-	      hitr[nhits]   = fwd_hitr[fwd_ctr];
-	      fwd_ctr--;
-	    }
-	  else
-	    {
-	      printf("Uh... this shouldn't happen.\n");
-	      exit(1);
-	    }
-	}
-
-      nhits++;
-      if (nhits == alloc_nhits) 
-	{
-	  hitr  = ReallocOrDie(hitr,  sizeof(int)   * (alloc_nhits + 10));
-	  hitj  = ReallocOrDie(hitj,  sizeof(int)   * (alloc_nhits + 10));
-	  hiti  = ReallocOrDie(hiti,  sizeof(int)   * (alloc_nhits + 10));
-	  hitsc = ReallocOrDie(hitsc, sizeof(float) * (alloc_nhits + 10));
-	  alloc_nhits += 10;
-	}
-    }
-  
-  /*printf("\n\n");
-  for(i = 0; i < nhits; i++)
-    {
-      printf("COMBINED hit %3d | i: %3d | j: %3d | sc: %f\n", i, hiti[i], hitj[i], hitsc[i]);
-    }
-  */
-
-  *ret_nhits = nhits;
-  *ret_hitr  = hitr;
-  *ret_hiti  = hiti;
-  *ret_hitj  = hitj;
-  *ret_hitsc = hitsc;
-}
-
-
-#endif
