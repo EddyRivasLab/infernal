@@ -1907,6 +1907,7 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
 	  gamma_i = j-d+1-i0+1;
 	  assert(i > 0);
 	  /*printf("v: %d gamma_i: %d d: %d\n", v, gamma_i, d);*/
+	  /*printf("alpha[0][j:%3d][d:%3d]: %f\n", j, d, alpha[0][cur][d]);*/
 	  sc = gamma[gamma_i-1] + alpha[0][cur][d] + cm->sc_boost;
 	  /* sc_boost is experimental technique for finding hits < 0 bits. 
 	   * value is 0.0 if technique not used. */
@@ -2064,7 +2065,7 @@ iInsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int
   best_score     = -INFTY;
   best_neg_score = -INFTY;
   L = j0-i0+1;
-  printf("in iInsideBandedScan_jd i0: %5d | j0: %5d | L: %5d | W: %5d\n", i0, j0, L, W);
+  /*printf("in iInsideBandedScan_jd i0: %5d | j0: %5d | L: %5d | W: %5d\n", i0, j0, L, W);*/
   if (W > L) W = L; /* shouldn't look longer than seq length L */
 
   /*PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, (j0-i0+1));*/
@@ -2127,7 +2128,7 @@ iInsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int
 
   /* Initialize the impossible deck, which we'll point to for 
    * j positions that are outside of the j band on v */
-  imp_row = MallocOrDie (sizeof(float) * (W+1));
+  imp_row = MallocOrDie (sizeof(int) * (W+1));
   for (d = 0; d <= W; d++) imp_row[d] = -INFTY;
     
   /*****************************************************************
@@ -2220,6 +2221,7 @@ iInsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int
 		tmp_alpha_y = ILogsum(tmp_alpha_y, (alpha[tmp_y+yoffset][cur][0],
 						    + cm->itsc[y][yoffset]));
 	      alpha[v][cur][0] = tmp_alpha_w + tmp_alpha_y;
+	      /*printf("! alpha[v][j:%3d][d:%3d]: %f\n", v, j, 0, Scorify(alpha[v][cur][0]));*/
 	      if (alpha[v][cur][0] < -INFTY) alpha[v][cur][0] = -INFTY;	
 	    }
 	  
@@ -2252,8 +2254,8 @@ iInsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int
 		  y = cm->cfirst[v];
 		  alpha[v][jp_roll][d] = cm->iendsc[v] + (cm->iel_selfsc * (d-StateDelta(cm->sttype[v])));
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		    ILogsum(alpha[v][jp_roll][d], (alpha[y+yoffset][cur][d] + 
-						   cm->itsc[v][yoffset]));
+		    alpha[v][jp_roll][d] = ILogsum(alpha[v][jp_roll][d], (alpha[y+yoffset][cur][d] + 
+									  cm->itsc[v][yoffset]));
 		  if (alpha[v][jp_roll][d] < -INFTY) alpha[v][jp_roll][d] = -INFTY;
 		}
 	    }
@@ -2264,8 +2266,8 @@ iInsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->iendsc[v] + (cm->iel_selfsc * (d-StateDelta(cm->sttype[v])));
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		    ILogsum(alpha[v][cur][d], (alpha[y+yoffset][prv][d-2] + 
-					       cm->itsc[v][yoffset]));
+		    alpha[v][cur][d] = ILogsum(alpha[v][cur][d], (alpha[y+yoffset][prv][d-2] + 
+								  cm->itsc[v][yoffset]));
 		  i = j-d+1;
 		  if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
 		    alpha[v][cur][d] += cm->iesc[v][(int) (dsq[i]*Alphabet_size+dsq[j])];
@@ -2282,8 +2284,8 @@ iInsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->iendsc[v] + (cm->iel_selfsc * (d-StateDelta(cm->sttype[v])));
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		    ILogsum(alpha[v][cur][d], (alpha[y+yoffset][cur][d-1] + 
-						   cm->itsc[v][yoffset]));
+		    alpha[v][cur][d] = ILogsum(alpha[v][cur][d], (alpha[y+yoffset][cur][d-1] + 
+								  cm->itsc[v][yoffset]));
 		  i = j-d+1;
 		  if (dsq[i] < Alphabet_size)
 		    alpha[v][cur][d] += cm->iesc[v][(int) dsq[i]];
@@ -2291,6 +2293,8 @@ iInsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int
 		    alpha[v][cur][d] += iDegenerateSingletScore(cm->iesc[v], dsq[i]);
 		  
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
+		  /*printf("alpha[v][j:%3d][d:%3d]: %f\n", v, j, d, Scorify(alpha[v][cur][d]));*/
+
 		}
 	    }
 	  else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) 
@@ -2300,8 +2304,8 @@ iInsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->iendsc[v] + (cm->iel_selfsc * (d-StateDelta(cm->sttype[v])));
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		    ILogsum(alpha[v][cur][d], (alpha[y+yoffset][prv][d-1] + 
-						   cm->itsc[v][yoffset]));
+		    alpha[v][cur][d] = ILogsum(alpha[v][cur][d], (alpha[y+yoffset][prv][d-1] + 
+								  cm->itsc[v][yoffset]));
 		  if (dsq[j] < Alphabet_size)
 		    alpha[v][cur][d] += cm->iesc[v][(int) dsq[j]];
 		  else
@@ -2358,8 +2362,8 @@ iInsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int
 			{
 			  jp_roll = (j-k)%(W+1); /* jp_roll is rolling index into BEGL_S (state w) 
 						  * deck j dimension */
-			  ILogsum(alpha[v][cur][d], (alpha[w][jp_roll][d-k] + 
-						     alpha[y][cur][k]));
+			  alpha[v][cur][d] = ILogsum(alpha[v][cur][d], (alpha[w][jp_roll][d-k] + 
+									alpha[y][cur][k]));
 			}
 		      if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
 		      /*printf("B alpha[%d][%d][%d]: %f\n", v, cur, d, alpha[v][cur][d]);*/
@@ -2468,6 +2472,7 @@ iInsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int
 	  gamma_i = j-d+1-i0+1;
 	  assert(i > 0);
 	  /*printf("v: %d gamma_i: %d d: %d\n", v, gamma_i, d);*/
+	  /*printf("alpha[0][j:%3d][d:%3d]: %f\n", j, d, Scorify(alpha[0][cur][d]));*/
 	  sc = gamma[gamma_i-1] + Scorify(alpha[0][cur][d]) + cm->sc_boost;
 	  /* sc_boost is experimental technique for finding hits < 0 bits. 
 	   * value is 0.0 if technique not used. */
