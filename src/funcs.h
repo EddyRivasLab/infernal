@@ -307,6 +307,7 @@ extern void PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, in
 		     int W);
 extern void ij2d_bands(CM_t *cm, int L, int *imin, int *imax, int *jmin, int *jmax,
 		       int **hdmin, int **hdmax, int debug_level);
+extern void combine_qdb_hmm_d_bands(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax);
 extern void hd2safe_hd_bands(int M, int *jmin, int *jmax, int **hdmin, int **hdmax,
 			     int *safe_hdmin, int *safe_hdmax);
 extern void debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax);
@@ -315,6 +316,8 @@ extern void debug_print_alpha_banded_jd(float ***alpha, CM_t *cm, int L, int *jm
 extern float ** alloc_jdbanded_vjd_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
 extern float CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax, int i0, 
 			      int j0, int W, float cutoff, scan_results_t *results);
+extern float iInsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax, int i0, 
+				  int j0, int W, float cutoff, scan_results_t *results);
 
 
 

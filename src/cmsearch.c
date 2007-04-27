@@ -106,8 +106,9 @@ static char experts[] = "\
    --hmmfilter    : subseqs j-W+1..i+W-1 survive (j=end from Fwd, i=start from Bwd)\n\
    --hmmpad <n>   : w/--hmmfilter: subseqs i-<n>..j+<n> survive\n\
    --hmmonly      : don't use CM at all, just scan with HMM (Forward + Backward)\n\
-   --hmmE <x>     : use cutoff E-value of <x> for CP9 (possibly filtered) scan [df:50]\n\
+   --hmmE <x>     : use cutoff E-value of <x> for CP9 (possibly filtered) scan [df:500]\n\
    --hmmT <x>     : use cutoff bit score of <x> for CP9 (possibly filtered) scan\n\
+   --hmmgreedy    : resolve HMM overlapping hits with greedy algorithm a la RSEARCH\n\
    --hmmnegsc <x> : set min bit score to report as <x> < 0 (experimental)\n\
 \n\
 ";
@@ -152,6 +153,7 @@ static struct opt_s OPTIONS[] = {
   { "--time",       FALSE, sqdARG_NONE},
   { "--rtrans",     FALSE, sqdARG_NONE},
   { "--greedy",     FALSE, sqdARG_NONE},
+  { "--hmmgreedy",  FALSE, sqdARG_NONE},
   { "--gcfile",     FALSE, sqdARG_STRING}
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
@@ -268,8 +270,9 @@ main(int argc, char **argv)
   int             ncm;       /* counter over CMs */
   int             continue_flag; /* used to continue through the main loop for multiple CMs,
 				  * nec. only for MPI mode, to keep slave nodes appraised. */
-  /* the --greedy option */
-  int             do_greedy; /* TRUE to not use greedy hit resolution for overlaps */
+  /* the greedy options */
+  int             do_cmgreedy;  /* TRUE to use greedy hit resolution for CM  overlaps */
+  int             do_hmmgreedy; /* TRUE to use greedy hit resolution for HMM overlaps */
 
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
   int mpi_my_rank;              /* My rank in MPI */
@@ -350,7 +353,8 @@ main(int argc, char **argv)
   enf_seq           = NULL;
   do_timings        = FALSE;
   do_rtrans         = FALSE;
-  do_greedy         = FALSE;
+  do_cmgreedy       = FALSE;
+  do_hmmgreedy      = FALSE;
   gcfile            = NULL;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
@@ -440,7 +444,8 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--banddump")  == 0) do_bdump     = TRUE;
     else if  (strcmp(optname, "--sums")      == 0) use_sums     = TRUE;
     else if  (strcmp(optname, "--scan2bands")== 0)  do_scan2bands= TRUE;
-    else if  (strcmp(optname, "--greedy")     == 0) do_greedy = TRUE;
+    else if  (strcmp(optname, "--greedy")     == 0) do_cmgreedy = TRUE;
+    else if  (strcmp(optname, "--hmmgreedy")  == 0) do_hmmgreedy = TRUE;
     else if  (strcmp(optname, "--gcfile")     == 0) gcfile = optarg;
     else if  (strcmp(optname, "--partition") == 0) 
       {
@@ -489,8 +494,6 @@ main(int argc, char **argv)
     Die("--enfseq only makes sense with --enfstart (which can't be 0) also.\n");
   if(do_enforce && enf_cc_start == 0)
     Die("--enfseq only makes sense with --enfstart (which can't be 0) also.\n");
-  if(do_qdb && do_hbanded) 
-    Die("Can't do --qdb and --hbanded. Pick one.\n");
   if (do_scan2bands && !(do_hbanded))
     Die("Can't pick --scan2bands without --hbanded option.\n");
   if (do_hbanded && !(do_hmmfilter))
@@ -513,10 +516,10 @@ main(int argc, char **argv)
     Die("--window only works with --noqdb.\n");
   if(do_rtrans && do_enforce)
     Die("--enf* options incompatible with --rtrans.\n");
-  if(do_greedy && do_inside)
+  if(do_cmgreedy && do_inside)
     Die("--greedy option not yet implemented for inside scans (implement it!)\n");
-  if(do_greedy && do_hmmonly)
-    Die("--greedy option not implemented for --hmmonly scans\n");
+  if(do_cmgreedy && do_hmmonly)
+    Die("--greedy option doesn't make sense with --hmmonly scans, did you mean --hmmgreedy?\n");
   if(do_hmmpad && !do_hmmfilter)
     Die("--hmmpad <n> option only works in combination with --hmmfilter\n");
   if(do_hmmpad && hmmpad < 0)
@@ -631,7 +634,8 @@ main(int argc, char **argv)
 	  if(do_null2)        cm->search_opts |= CM_SEARCH_NULL2;
 	  if(do_cm_stats)     cm->search_opts |= CM_SEARCH_CMSTATS;
 	  if(do_cp9_stats)    cm->search_opts |= CM_SEARCH_CP9STATS;
-	  if(do_greedy)       cm->search_opts |= CM_SEARCH_GREEDY;
+	  if(do_cmgreedy)     cm->search_opts |= CM_SEARCH_CMGREEDY;
+	  if(do_hmmgreedy)    cm->search_opts |= CM_SEARCH_HMMGREEDY;
 	  if(do_hbanded)      cm->search_opts |= CM_SEARCH_HBANDED;
 	  if(do_rtrans)       cm->flags       |= CM_RSEARCHTRANS;
 

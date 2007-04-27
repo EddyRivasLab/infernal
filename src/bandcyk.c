@@ -1187,7 +1187,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 	}
       }
       
-      if(!(cm->search_opts & CM_SEARCH_GREEDY)) /* resolve overlaps optimally */
+      if(!(cm->search_opts & CM_SEARCH_CMGREEDY)) /* resolve overlaps optimally */
 	{
 	  /* The little semi-Markov model that deals with multihit parsing:
 	   */
@@ -1266,7 +1266,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
    * Traceback stage.
    * Recover all hits: an (i,j,sc) triple for each one.
    *****************************************************************/ 
-  if(!(cm->search_opts & CM_SEARCH_GREEDY)) /* resolve overlaps optimally */
+  if(!(cm->search_opts & CM_SEARCH_CMGREEDY)) /* resolve overlaps optimally */
     {
       j     = j0;
       while (j >= i0) 

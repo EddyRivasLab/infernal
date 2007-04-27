@@ -91,12 +91,24 @@ AllocCP9Bands(CM_t *cm, struct cplan9_s *hmm)
 void 
 FreeCP9Bands(CP9Bands_t *cp9bands)
 {
+  int v;
   free(cp9bands->imin);
   free(cp9bands->imax);
   free(cp9bands->jmin);
   free(cp9bands->jmax);
   free(cp9bands->safe_hdmin);
   free(cp9bands->safe_hdmax);
+  /* the v&j dependent d bands might have already been freed, for
+   * example if one CP9Bands_t structure was used for multiple seqs,
+   * the hdmin bands are the only part that is seq and CM dependent,
+   * instead of just CM dependent. */
+  for(v = 0; v < cp9bands->cm_M; v++)
+    {
+      if(cp9bands->hdmin[v] != NULL)
+	free(cp9bands->hdmin[v]);
+      if(cp9bands->hdmax[v] != NULL)
+	free(cp9bands->hdmax[v]);
+    }
   free(cp9bands->hdmin);
   free(cp9bands->hdmax);
 
@@ -109,6 +121,7 @@ FreeCP9Bands(CP9Bands_t *cp9bands)
   free(cp9bands->isum_pn_m);
   free(cp9bands->isum_pn_i);
   free(cp9bands->isum_pn_d);
+
 }
 
 /* Function: dbl_Score2Prob()

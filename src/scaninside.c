@@ -1695,8 +1695,6 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
  *           Allows multiple nonoverlapping hits and local alignment.
  *           Derived from scancyk.c.
  *           Log sums are performed using scaled ints with ILogsum().
- *           -INFTY is -987654321, but treated as valid score! This
- *           seems okay.
  *
  *           dmin,dmax set the bounds. Both are arrays, 0..v..cm->M. 
  *           The band for v is dmin[v]..dmax[v], inclusive; that is,

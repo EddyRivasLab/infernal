@@ -485,8 +485,12 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
 			0);   /* debug level */
 
 	  /*debug_print_hmm_bands(stdout, (j0-i0+1), cp9b, cm->tau, 3);*/
-	  CYKBandedScan_jd(cm, dsq, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
-			   i0, j0, cm->W, cm_cutoff, results);
+	  if(cm->search_opts & CM_SEARCH_INSIDE)
+	    sc = iInsideBandedScan_jd(cm, dsq, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
+				      i0, j0, cm->W, cm_cutoff, results);
+	  else /* don't do inside */
+	    sc = CYKBandedScan_jd(cm, dsq, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
+				  i0, j0, cm->W, cm_cutoff, results);
 	  FreeCP9Bands(cp9b);
 	}
       else if(cm->search_opts & CM_SEARCH_NOQDB)
@@ -497,7 +501,7 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
       else /* use QDB */
 	if(cm->search_opts & CM_SEARCH_INSIDE)
 	  sc = iInsideBandedScan(cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
-	else /* do't do inside */
+	else /* don't do inside */
 	  sc = CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
     }    
   return sc;
@@ -534,7 +538,9 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 			 * of. This will be the bit score stored in
 			 * dbseq unless (cm->flags & CM_ENFORCED)
 			 * in which case we subtract cm->enf_scdiff first. */
+  CMEmitMap_t *emap;           /* consensus emit map for the CM */
 
+  emap = CreateEmitMap(cm);
   name = dbseq->sq[0]->name;
   len = dbseq->sq[0]->n;
 
@@ -555,8 +561,10 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 	  gc_comp = get_gc_comp (dbseq->sq[in_revcomp]->seq, 
 				 results->data[i].start, results->data[i].stop);
 	  printf (" Query = %d - %d, Target = %d - %d\n", 
-		  cons->lpos[cm->ndidx[results->data[i].bestr]]+1,
-		  cons->rpos[cm->ndidx[results->data[i].bestr]]+1,
+		  (emap->lpos[cm->ndidx[results->data[i].bestr]] + 1 
+		   - StateLeftDelta(cm->sttype[results->data[i].bestr])),
+		  (emap->rpos[cm->ndidx[results->data[i].bestr]] - 1 
+		   + StateRightDelta(cm->sttype[results->data[i].bestr])),
 		  coordinate(in_revcomp, results->data[i].start, len), 
 		  coordinate(in_revcomp, results->data[i].stop, len));
 	  if (do_stats) 
@@ -597,6 +605,7 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 	}
     }
   fflush(stdout);
+  FreeEmitMap(emap);
 }
 
 /* Function: get_gc_comp

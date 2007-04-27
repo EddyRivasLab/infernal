@@ -21,7 +21,7 @@
 /* various default parameters for CMs and CP9 HMMs */ 
 #define DEFAULT_CM_CUTOFF 0.0
 #define DEFAULT_CM_CUTOFF_TYPE SCORE_CUTOFF
-#define DEFAULT_CP9_CUTOFF 50.0
+#define DEFAULT_CP9_CUTOFF 500.0
 #define DEFAULT_CP9_CUTOFF_TYPE E_CUTOFF
 #define DEFAULT_BETA   0.0000001
 #define DEFAULT_TAU    0.0000001
@@ -353,7 +353,8 @@ typedef struct cm_s {
 #define CM_SEARCH_CP9STATS     (1<<13) /* calculate E-value stats for CP9 HMM      */
 #define CM_SEARCH_FFRACT       (1<<14) /* filter to filter fraction cm->ffract     */
 #define CM_SEARCH_RSEARCH      (1<<15) /* use RSEARCH parameterized CM             */
-#define CM_SEARCH_GREEDY       (1<<16) /* use greedy alg to resolve overlaps       */
+#define CM_SEARCH_CMGREEDY     (1<<16) /* use greedy alg to resolve CM overlaps    */
+#define CM_SEARCH_HMMGREEDY    (1<<17) /* use greedy alg to resolve HMM overlaps   */
 
 /* Structure: CMFILE
  * Incept:    SRE, Tue Aug 13 10:16:39 2002 [St. Louis]

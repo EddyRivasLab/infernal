@@ -161,6 +161,9 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
     Die("ERROR in CP9Forward, be_efficient is TRUE, but ret_mx is non-NULL\n");
   if(results != NULL && !do_scan)
     Die("ERROR in CP9Forward, passing in results data structure, but not in scanning mode.\n");
+  if((cm->search_opts & CM_SEARCH_HMMGREEDY) && 
+     (cm->search_opts & CM_SEARCH_HMMRESCAN))
+    Die("ERROR in CP9Forward, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
     
   best_sc     = IMPOSSIBLE;
   best_pos    = -1;
@@ -291,25 +294,46 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
 	  best_sc = fsc;
 	  best_pos= j;
 	}
-      /* The little semi-Markov model that deals with multihit parsing:
-       */
-      gamma[jp]  = gamma[jp-1] + 0; /* extend without adding a new hit */
-      gback[jp]  = -1;
-      savesc[jp] = IMPOSSIBLE;
-      i = ((j-W+1)> i0) ? (j-W+1) : i0;
-      ip = i-i0+1;
-      curr_sc = gamma[ip-1] + fsc + cm->cp9_sc_boost;
-      /* cp9_sc_boost is experimental technique for finding hits < 0 bits. 
-       * value is 0.0 if technique not used. */
-      if (curr_sc > gamma[jp])
+      if(!(cm->search_opts & CM_SEARCH_CMGREEDY)) /* resolve overlaps optimally */
 	{
-	  gamma[jp]  = curr_sc;
-	  gback[jp]  = i;
-	  savesc[jp] = fsc;
+	  /* The little semi-Markov model that deals with multihit parsing:
+	   */
+	  gamma[jp]  = gamma[jp-1] + 0; /* extend without adding a new hit */
+	  gback[jp]  = -1;
+	  savesc[jp] = IMPOSSIBLE;
+	  i = ((j-W+1)> i0) ? (j-W+1) : i0;
+	  ip = i-i0+1;
+	  curr_sc = gamma[ip-1] + fsc + cm->cp9_sc_boost;
+	  /* cp9_sc_boost is experimental technique for finding hits < 0 bits. 
+	   * value is 0.0 if technique not used. */
+	  if (curr_sc > gamma[jp])
+	    {
+	      gamma[jp]  = curr_sc;
+	      gback[jp]  = i;
+	      savesc[jp] = fsc;
+	    }
+	}
+      else
+	{
+	  /* Resolving overlaps greedily (RSEARCH style),  
+	   * Return best hit for each j, IFF it's above threshold */
+	  if (fsc >= cutoff) 
+	    if(results != NULL) 
+	      {
+		i = ((j-W+1)> i0) ? (j-W+1) : i0;
+		report_hit (i, j, 0, fsc, results);
+		/* 0 is for saver, which is irrelevant for HMM hits */
+	      }
+	  if (fsc > best_hmm_sc)
+	    {
+	      best_hmm_sc = fsc;
+	      best_hmm_pos= j;
+	    }
 	}
     } /* end loop over end positions j */
-
-  if(!doing_align || do_scan) /* else we can save time by skipping traceback */
+      
+  if((!(cm->search_opts & CM_SEARCH_HMMGREEDY)) && /* resolve overlaps optimally */
+     (!doing_align || do_scan)) /* else we can save time by skipping traceback */
     {
       /*****************************************************************
        * Traceback stage.
@@ -566,7 +590,10 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
     Die("ERROR in CP9Backward, be_efficient is TRUE, but ret_mx is non-NULL\n");
   if(results != NULL && !do_scan)
     Die("ERROR in CP9Backward, passing in results data structure, but not in scanning mode.a\n");
-
+  if((cm->search_opts & CM_SEARCH_HMMGREEDY) && 
+     (cm->search_opts & CM_SEARCH_HMMRESCAN))
+    Die("ERROR in CP9Backward, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
+    
   best_sc     = IMPOSSIBLE;
   best_pos    = -1;
   best_hmm_sc = IMPOSSIBLE;
@@ -770,41 +797,61 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
 	  best_sc = fsc;
 	  best_pos= i+1; /* *off-by-one* (see *off-by-one* below) */
 	}
-
-      /* The little semi-Markov model that deals with multihit parsing:
-       * *off-by-one*:
-       * There's an off-by-one issue here: all Backward hits are rooted in 
-       * M_O, the B (begin) state, which is a non-emitter.
-       * let i = ip+i0-1 => ip = i-i0+1;
-       * so sc[ip] = backward->mmx[ip][0] = summed log prob of all parses that end at j0, 
-       * and start at position i+1 of the sequence (because i+1 is the last residue
-       * whose emission has been accounted for). As a result, gamma indexing is off-by-one
-       * with respect to sequence position, hence the i+1 or i-1 in the following
-       * code blocks, each marked by "*off-by-one*" comment below. 
-       * for example: let i0 = 2 gamma[ip=4], normally this means ip=4 corresponds to i=5 
-       *              but due to this off-by-one sc[ip=4] corresponds to hits that start at i=6
-       */
-      gamma[ip]  = gamma[ip+1] + 0; /* extend without adding a new hit */
-      /*printf("ip: %d | gamma[ip]: %f | gamma[ip+1]: %f\n", ip, gamma[ip], gamma[ip+1]);*/
-      gback[ip]  = -1;
-      savesc[ip] = IMPOSSIBLE;
-      j = (((i+1)+W-1) < j0) ? ((i+1)+W-1) : j0; /* *off-by-one* */
-      jp = j-i0+1;
-      curr_sc = gamma[jp+1-1] + fsc + cm->cp9_sc_boost; /* *off-by-one* */
-      /* cp9_sc_boost is experimental technique for finding hits < 0 bits. 
-       * value is 0.0 if technique not used. */
-      if (curr_sc > gamma[ip])
+      if(!(cm->search_opts & CM_SEARCH_CMGREEDY)) /* resolve overlaps optimally */
 	{
-	  gamma[ip]  = curr_sc;
-	  /*printf("\ti: %d | gamma[i]: %f\n", i+1, gamma[ip]);*/
-	  gback[ip]  = j;
-	  savesc[ip] = fsc;
+	  /* The little semi-Markov model that deals with multihit parsing:
+	   * *off-by-one*:
+	   * There's an off-by-one issue here: all Backward hits are rooted in 
+	   * M_O, the B (begin) state, which is a non-emitter.
+	   * let i = ip+i0-1 => ip = i-i0+1;
+	   * so sc[ip] = backward->mmx[ip][0] = summed log prob of all parses that end at j0, 
+	   * and start at position i+1 of the sequence (because i+1 is the last residue
+	   * whose emission has been accounted for). As a result, gamma indexing is off-by-one
+	   * with respect to sequence position, hence the i+1 or i-1 in the following
+	   * code blocks, each marked by "*off-by-one*" comment below. 
+	   * for example: let i0 = 2 gamma[ip=4], normally this means ip=4 corresponds to i=5 
+	   *              but due to this off-by-one sc[ip=4] corresponds to hits that start at i=6
+	   */
+	  gamma[ip]  = gamma[ip+1] + 0; /* extend without adding a new hit */
+	  /*printf("ip: %d | gamma[ip]: %f | gamma[ip+1]: %f\n", ip, gamma[ip], gamma[ip+1]);*/
+	  gback[ip]  = -1;
+	  savesc[ip] = IMPOSSIBLE;
+	  j = (((i+1)+W-1) < j0) ? ((i+1)+W-1) : j0; /* *off-by-one* */
+	  jp = j-i0+1;
+	  curr_sc = gamma[jp+1-1] + fsc + cm->cp9_sc_boost; /* *off-by-one* */
+	  /* cp9_sc_boost is experimental technique for finding hits < 0 bits. 
+	   * value is 0.0 if technique not used. */
+	  if (curr_sc > gamma[ip])
+	    {
+	      gamma[ip]  = curr_sc;
+	      /*printf("\ti: %d | gamma[i]: %f\n", i+1, gamma[ip]);*/
+	      gback[ip]  = j;
+	      savesc[ip] = fsc;
+	    }
+	  /*printf("i: %d ip: %d gamma[ip]: %f\n", i, ip, gamma[ip]);*/
 	}
-      /*printf("i: %d ip: %d gamma[ip]: %f\n", i, ip, gamma[ip]);*/
+      else
+	{
+	  /* Resolving overlaps greedily (RSEARCH style),  
+	   * Return best hit for each j, IFF it's above threshold */
+	  if (fsc >= cutoff) 
+	    if(results != NULL) 
+	      {
+		j = (((i+1)+W-1) < j0) ? ((i+1)+W-1) : j0; /* *off-by-one* */
+		report_hit (i, j, 0, fsc, results);
+		/* 0 is for saver, which is irrelevant for HMM hits */
+	      }
+	  if (fsc > best_hmm_sc)
+	    {
+	      best_hmm_sc = fsc;
+	      best_hmm_pos= i;
+	    }
+	}
     }
   /* End of Backward recursion */
   
-  if(!doing_align || do_scan) /* else we can save time by skipping traceback */
+  if((!(cm->search_opts & CM_SEARCH_HMMGREEDY)) && /* resolve overlaps optimally */
+     (!doing_align || do_scan)) /* else we can save time by skipping traceback */
     {
       /*****************************************************************
        * Traceback stage for Backward.
