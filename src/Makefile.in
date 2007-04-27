@@ -94,10 +94,12 @@ $(PROGS): @EXEC_DEPENDENCY@ $(OBJS) ${HDRS}
 	$(CC) $(CFLAGS) $(DEFS) $(MYLIBDIR) -o $@ $@.o $(OBJS) $(MYLIBS) $(LIBS)
 
 mpi-cmalign: cmalign.c $(OBJS) ${HDRS}
-	$(CC) $(CFLAGS) $(DEFS) $(MYLIBDIR) -o mpi-cmalign cmalign.o $(OBJS) $(MYLIBS) $(LIBS)
+	$(CC) -DMPI_EXECUTABLE $(CFLAGS) $(DEFS) $(MYINCDIR) -c cmalign.c
+	$(CC) -DMPI_EXECUTABLE $(CFLAGS) $(DEFS) $(MYLIBDIR) -o mpi-cmalign cmalign.o $(OBJS) $(MYLIBS) $(LIBS)
 
 mpi-cmsearch: cmsearch.c $(OBJS) ${HDRS}
-	$(CC) $(CFLAGS) $(DEFS) $(MYLIBDIR) -o mpi-cmsearch cmsearch.o $(OBJS) $(MYLIBS) $(LIBS)
+	$(CC) -DMPI_EXECUTABLE $(CFLAGS) $(DEFS) $(MYINCDIR) -c cmsearch.c
+	$(CC) -DMPI_EXECUTABLE $(CFLAGS) $(DEFS) $(MYLIBDIR) -o mpi-cmsearch cmsearch.o $(OBJS) $(MYLIBS) $(LIBS)
 
 #################################################################
 ## Targets used in making INFERNAL module for testsuite compilation.
