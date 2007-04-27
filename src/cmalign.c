@@ -38,7 +38,7 @@ static void include_alignment(char *seqfile, int use_rf, float gapthresh, CM_t *
 			      int *ret_nseq, int *ret_nnewseq);
 static int compare_cms(CM_t *cm1, CM_t *cm2);
 
-#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+#ifdef USE_MPI
 /*
  * Function: exit_from_mpi
  * Date:     RJK, Thu Jun 6, 2002 [St. Louis]
@@ -51,20 +51,21 @@ void exit_from_mpi () {
 }
 #endif
 
-#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-static char banner[] = "mpicmalign - align sequences to an RNA CM";
+#ifndef USE_MPI
+static char banner[] = "cmalign - align sequences to an RNA CM";
 static char usage[]  = "\
-Usage: mpicmalign [-options] <cmfile> <sequence file>\n\
+Usage: cmalign [-options] <cmfile> <sequence file>\n\
   Most commonly used options are:\n\
    -h     : help; print brief help on version and usage\n\
    -l     : local; align locally w.r.t. the model\n\
    -o <f> : output the alignment file to file <f>\n\
    -q     : quiet; suppress verbose banner\n\
 ";
-#else
-static char banner[] = "cmalign - align sequences to an RNA CM";
+#endif
+#ifdef USE_MPI
+static char banner[] = "mpicmalign - align sequences to an RNA CM";
 static char usage[]  = "\
-Usage: cmalign [-options] <cmfile> <sequence file>\n\
+Usage: mpicmalign [-options] <cmfile> <sequence file>\n\
   Most commonly used options are:\n\
    -h     : help; print brief help on version and usage\n\
    -l     : local; align locally w.r.t. the model\n\
@@ -94,14 +95,15 @@ static char experts[] = "\
    --enfseq   <s>: enforce MATL stretch starting at --enfstart <n> emits seq <s>\n\
 \n\
   * HMM banded alignment related options (*in development*):\n\
-   --hbanded     : accelerate using CM plan 9 HMM banded CYK aln algorithm\n\
-   --tau <x>     : set tail loss prob for --hbanded to <x> [default: 1E-7]\n\
+   --hbanded     : use experimental CM plan 9 HMM banded CYK aln algorithm\n\
+   --tau <f>     : tail loss prob for --hbanded [default: 1E-7]\n\
    --hsafe       : realign (non-banded) seqs with HMM banded CYK score < 0 bits\n\
+   --sums        : use posterior sums during HMM band calculation (widens bands)\n\
    --hmmonly     : align with the CM Plan 9 HMM (no alignment given, just score)\n\
 \n\
   * Query dependent banded (qdb) alignment related options:\n\
    --qdb         : use query dependent banded CYK alignment algorithm\n\
-   --beta <x>    : set tail loss prob for QDB to <x> [default:1E-7]\n\
+   --beta <f>    : tail loss prob for --qdb [default:1E-7]\n\
 \n\
   * Options for including the alignment used to build the CM in the output:\n\
    --withali <f> : incl. alignment in <f> (must be aln <cm file> was built from)\n\
@@ -127,7 +129,7 @@ static struct opt_s OPTIONS[] = {
   { "--tau",       FALSE, sqdARG_FLOAT},
   { "--hsafe",      FALSE, sqdARG_NONE},
   { "--hmmonly",    FALSE, sqdARG_NONE },
-  /*  { "--sums",       FALSE, sqdARG_NONE},*/ 
+  { "--sums",       FALSE, sqdARG_NONE},
   { "--time",       FALSE, sqdARG_NONE},
   { "--inside",     FALSE, sqdARG_NONE},
   { "--outside",    FALSE, sqdARG_NONE},
@@ -219,7 +221,7 @@ main(int argc, char **argv)
   float  gapthresh;		/* 0=all cols inserts; 1=all cols consensus */
 
 
-#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+#ifdef USE_MPI
   int mpi_my_rank;              /* My rank in MPI                           */
   int mpi_num_procs;            /* Total number of processes                */
   int mpi_master_rank;          /* Rank of master process                   */
@@ -331,8 +333,6 @@ main(int argc, char **argv)
   /* Check for incompatible or misused options */
   if(do_inside && do_outside)
     Die("Please pick either --inside or --outside (--outside will run Inside()\nalso and check to make sure Inside() and Outside() scores agree).\n");
-  if((do_inside || do_outside) && (outfile != NULL))
-    Die("-o <f> cannot be used in combination with --inside or --outside, as no alignment is created.\n");
   if(do_sub && do_local)
     Die("--sub and -l combination not supported.\n");
   if(do_sub && do_qdb)
@@ -443,7 +443,7 @@ main(int argc, char **argv)
    * (EPN 01.04.07).
    ****************************************************************************/
 
-#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+#ifdef USE_MPI
   }   /* End of first block that is only done by master process */
   /* Barrier for debugging */
   MPI_Barrier(MPI_COMM_WORLD);
@@ -459,10 +459,7 @@ main(int argc, char **argv)
       if(cm->config_opts & CM_CONFIG_ENFORCE) ConfigCMEnforce(cm);
 
       parallel_align_targets(seqfp, cm, &sq, &tr, &postcode, &nseq,
-			     bdump_level, debug_level, 
-			     TRUE, /* be_quiet=TRUE we don't print scores in MPI
-				    * mode yet, b/c they get jumbled due to potentially
-				    * multiple simultaneous writes to stdout */
+			     bdump_level, debug_level, be_quiet,
 			     mpi_my_rank, mpi_master_rank, mpi_num_procs);
     }
   else
@@ -475,7 +472,7 @@ main(int argc, char **argv)
       serial_align_targets(seqfp, cm, &sq, &tr, &postcode, &nseq, bdump_level, debug_level, 
 			   be_quiet);
     }
-#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+#ifdef USE_MPI
   if (mpi_my_rank == mpi_master_rank) {
 #endif  
     /***************************************************************                     
@@ -563,7 +560,7 @@ main(int argc, char **argv)
     free(tr);
     SqdClean();
 
-#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+#ifdef USE_MPI
   } /* end  of block to convert traces to alignment and clean up */
   if(mpi_my_rank == mpi_master_rank)
     {
@@ -576,7 +573,7 @@ main(int argc, char **argv)
   in_mpi = 0;
 #endif
   FreeCM(cm);
-#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+#ifdef USE_MPI
   /*printf("EXITING rank:%d\n", mpi_my_rank);*/
 #endif
   return EXIT_SUCCESS;

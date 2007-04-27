@@ -78,7 +78,7 @@ AllocCP9Bands(CM_t *cm, struct cplan9_s *hmm)
   /* NOTE: cp9bands->hdmin and hdmax are 2D arrays, that are alloc'ed
    * inside hmmband.c::CP9_seq2bands() dependent on size of j bands
    * for each state. They are the only part of the CP9Bands_t data
-   * structure that is allocated in seq-dependent fastion, so they
+   * structure that is allocated in seq-dependent fashion, so they
    * must be freed after bands are used for each seq (this is done
    * in cm_dispatch::actually_align_targets()) 
    */
@@ -189,7 +189,7 @@ CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t *cp9b,
 		      cp9b->isum_pn_d, cp9b->pn_min_d, cp9b->pn_max_d,
 		      (1.-cm->tau), HMMDELETE, use_sums, debug_level);
   
-  if(debug_level != 0) debug_print_hmm_bands(stdout, j0, cp9b, cm->tau, debug_level);
+  if(debug_level > 0) debug_print_hmm_bands(stdout, j0, cp9b, cm->tau, 1);
 
   /* Step 3: HMM bands  ->  CM bands. */
   hmm2ij_bands(cm, cm->cp9map, i0, j0, cp9b->pn_min_m, cp9b->pn_max_m, 
@@ -211,7 +211,7 @@ CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t *cp9b,
   ij2d_bands(cm, (j0-i0+1), cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax,
 	     cp9b->hdmin, cp9b->hdmax, debug_level);
   
-  if(debug_level != 0)
+  if(debug_level > 0)
     PrintDPCellsSaved_jd(cm, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
 			 (j0-i0+1));
 
@@ -239,6 +239,8 @@ CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t *cp9b,
  *           
  * Return:  void
  */
+#define OLDHMMALGS 1
+#define NEWHMMALGS 0
 void 
 CP9_seq2posteriors(CM_t *cm, char *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9_post,
 		   int debug_level)
@@ -256,12 +258,40 @@ CP9_seq2posteriors(CM_t *cm, char *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9
 
   /* Step 1: Get HMM posteriors.*/
   /*sc = CP9Viterbi(dsq, i0, j0, cm->cp9, cp9_mx);*/
-  sc = CP9Forward(dsq, i0, j0, cm->cp9, &cp9_fwd);
-  if(debug_level > 0) printf("CP9 Forward  score : %.2f\n", sc);
-  sc = CP9Backward(dsq, i0, j0, cm->cp9, &cp9_bck);
-  if(debug_level > 0) printf("CP9 Backward score : %.2f\n", sc);
+  if(OLDHMMALGS)
+    sc = CP9Forward(dsq, i0, j0, cm->cp9, &cp9_fwd);
+  else if(NEWHMMALGS)
+    sc = CP9ForwardScan(cm, dsq, i0, j0, (j0-i0+1), 
+			0,    /* cp9_cutoff score, irrelevant */
+			NULL,  /* don't care about score of each posn */
+			NULL,  /* don't keep track of locations of hits */
+			NULL,  /* don't keep track of number of hits */
+			NULL,  /* don't care about best scoring start point */
+			NULL,  /* don't report hits */
+			FALSE, /* we're not scanning */
+			FALSE, /* we're not rescanning */
+			FALSE, /* don't be memory efficient */
+			&cp9_fwd); /* give the DP matrix back */
+
+  if(debug_level >= 0) printf("CP9 Forward  score : %.2f\n", sc);
+  if(OLDHMMALGS)
+    sc = CP9Backward(dsq, i0, j0, cm->cp9, &cp9_bck);
+  else if(NEWHMMALGS)
+    sc = CP9BackwardScan(cm, dsq, i0, j0, (j0-i0+1), 
+			0,    /* cp9_cutoff score, irrelevant */
+			NULL,  /* don't care about score of each posn */
+			NULL,  /* don't keep track of locations of hits */
+			NULL,  /* don't keep track of number of hits */
+			NULL,  /* don't care about best scoring start point */
+			NULL,  /* don't report hits */
+			FALSE, /* we're not scanning */
+			FALSE, /* we're not rescanning */
+			FALSE, /* don't be memory efficient */
+			&cp9_bck); /* give the DP matrix back */
+
+  if(debug_level >= 0) printf("CP9 Backward score : %.2f\n", sc);
   
-  /*debug_check_CP9_FB(cp9_fwd, cp9_bck, hmm, forward_sc, 1, sq[i]->n, sq[i]->dsq);*/
+  debug_check_CP9_FB(cp9_fwd, cp9_bck, cm->cp9, sc, i0, j0, dsq);
   cp9_post = cp9_bck;
   CP9FullPosterior(dsq, i0, j0, cm->cp9, cp9_fwd, cp9_bck, cp9_post);
 
@@ -313,6 +343,7 @@ CP9Forward(char *dsq, int i0, int j0, struct cplan9_s *hmm,
   int   L;		/* subsequence length */
   int   ip;		/* i': relative position in the subsequence  */
 
+  printf("in CP9Forward()\n");
   L  = j0-i0+1;		/* the length of the subsequence */
 
   /* Allocate a DP matrix with 0..L rows, 0..M-1 
@@ -335,7 +366,7 @@ CP9Forward(char *dsq, int i0, int j0, struct cplan9_s *hmm,
 			dmx[0][k-1] + hmm->tsc[CTDD][k-1]);
   
   emx[0][0] = dmx[0][hmm->M] + hmm->tsc[CTDM][hmm->M]; 
-  
+  /*printf("i: %d score(emx[0][ip]): %f emx[0][ip]: %d\n", 0, Scorify(emx[0][0]), emx[0][0]);*/
   /* Recursion. Done as a pull.
    */
   for (ip = 1; ip <= L; ip++) /* ip is the relative position in the seq */
@@ -366,14 +397,13 @@ CP9Forward(char *dsq, int i0, int j0, struct cplan9_s *hmm,
 			       dmx[ip-1][k] + hmm->tsc[CTDI][k]);
 	  imx[ip][k] += hmm->isc[(int) dsq[i]][k];
 	}
-
       emx[0][ip] = -INFTY;
       for (k = 1; k <= hmm->M; k++)
 	emx[0][ip] = ILogsum(emx[0][ip], mmx[ip][k] + hmm->esc[k]);
       emx[0][ip] = ILogsum(emx[0][ip], dmx[ip][hmm->M] + hmm->tsc[CTDM][hmm->M]); 
       emx[0][ip] = ILogsum(emx[0][ip], imx[ip][hmm->M] + hmm->tsc[CTIM][hmm->M]); 
 		       /* transition from D_M -> end */
-      /*printf("F emx[%d]: %d\n", i, emx[0][ip]);*/
+      /*printf("i: %d score(emx[0][ip]): %f emx[0][ip]: %d\n", i, Scorify(emx[0][ip]), emx[0][ip]);*/
     }		
   sc = emx[0][L];
   /*printf("F emx[%d]: %d\n", i, emx[0][L]);*/
@@ -571,6 +601,7 @@ CP9Backward(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix
 
   mmx[W][hmm->M] = emx[0][W] + hmm->esc[hmm->M]; /* M<-E ...                   */
   mmx[W][hmm->M] += hmm->msc[(int) dsq[i]][hmm->M]; /* ... + emitted match symbol */
+  /* can't come from I_M b/c we've emitted a single residue, L from M_M */
   imx[W][hmm->M] = emx[0][W] + hmm->tsc[CTIM][hmm->M];   /* I_M(C)<-E ... */
   imx[W][hmm->M] += hmm->isc[(int) dsq[i]][hmm->M];           /* ... + emitted match symbol */
   dmx[W][hmm->M] = emx[0][W] + hmm->tsc[CTDM][hmm->M];    /* D_M<-E */
@@ -611,7 +642,8 @@ CP9Backward(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix
 	  mmx[ip][k]  = ILogsum(ILogsum(mmx[ip+1][k+1] + hmm->tsc[CTMM][k],
 				       imx[ip+1][k] + hmm->tsc[CTMI][k]),
 			       dmx[ip][k+1] + hmm->tsc[CTMD][k]);
-	  
+	  /* 04.17.07 NOTE: mmx[ip][k>0] takes mmx[ip+1][k+1] but only
+	   * b/c M states in nodes k>0 emit! */
 	  mmx[ip][k] += hmm->msc[(int) dsq[i]][k];
 	  
 	  imx[ip][k]  = ILogsum(ILogsum(mmx[ip+1][k+1] + hmm->tsc[CTIM][k],
@@ -625,13 +657,15 @@ CP9Backward(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix
 	}
 
       imx[ip][0]  = ILogsum(ILogsum(mmx[ip+1][1] + hmm->tsc[CTIM][0],
-				   imx[ip+1][0] + hmm->tsc[CTII][0]),
-			   dmx[ip][1] + hmm->tsc[CTID][0]);
+				    imx[ip+1][0] + hmm->tsc[CTII][0]),
+			    dmx[ip][1] + hmm->tsc[CTID][0]);
       imx[ip][0] += hmm->isc[(int) dsq[i]][0];
       mmx[ip][0] = -INFTY;
       /*for (k = hmm->M-1; k >= 1; k--)*/ /*M_0 is the B state, it doesn't emit*/
       for (k = hmm->M; k >= 1; k--) /*M_0 is the B state, it doesn't emit*/
 	mmx[ip][0] = ILogsum(mmx[ip][0], mmx[ip+1][k] + hmm->bsc[k]);
+      /* 04.17.07 NOTE: ERROR! mmx[ip][k==0] should takes mmx[ip+0(not 1)][k] b/c
+       * M_0 does not emit, and ip was accounted for in mmx[ip][k] */
       mmx[ip][0] = ILogsum(mmx[ip][0], imx[ip+1][k] + hmm->tsc[CTMI][k]);
       mmx[ip][0] = ILogsum(mmx[ip][0], dmx[ip][k+1] + hmm->tsc[CTMD][k]);
 
@@ -662,6 +696,7 @@ CP9Backward(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix
   mmx[0][0] = ILogsum(mmx[0][0], dmx[0][1] + hmm->tsc[CTMD][0]);
 
   sc = mmx[0][0];
+  /*printf("B final score: %f (i: %d)\n", Scorify(sc), sc);*/
 
   if (ret_mx != NULL) *ret_mx = mx;
   else                FreeCPlan9Matrix(mx);
@@ -712,10 +747,13 @@ CP9FullPosterior(char *dsq, int i0, int j0,
 
   W  = j0-i0+1;		/* the length of the subsequence */
 
-  sc = bmx->mmx[0][0];
+  if(OLDHMMALGS)
+    sc = bmx->mmx[0][0];
+  else if(NEWHMMALGS)
+    sc = bmx->mmx[1][0];
 
   /* note boundary conditions, case by case by case... */
-  mx->mmx[0][0] = fmx->mmx[0][0] + bmx->mmx[0][0] - sc;
+  mx->mmx[0][0] = fmx->mmx[0][0] + bmx->mmx[0][0] - sc; /* fmx->mmx[0][0] is 0, bmx->mmx[1][0] is overall score */
   mx->imx[0][0] = -INFTY; /*need seq to get here*/
   mx->dmx[0][0] = -INFTY; /*D_0 does not exist*/
   for (k = 1; k <= hmm->M; k++) 
@@ -732,6 +770,10 @@ CP9FullPosterior(char *dsq, int i0, int j0,
       mx->imx[ip][0] = fmx->imx[ip][0] + bmx->imx[ip][0] - hmm->isc[(int) dsq[i]][0] - sc;
       /*hmm->isc[(int) dsq[i]][0] will have been counted in both fmx->imx and bmx->imx*/
       mx->dmx[ip][0] = -INFTY; /*D_0 does not exist*/
+
+      /*printf("fmx->mmx[ip:%d][0]: %d\n bmx->mmx[ip:%d][0]: %d\n", ip, fmx->mmx[ip][0], ip, bmx->mmx[ip][0]);
+	printf("fmx->imx[ip:%d][0]: %d\n bmx->imx[ip:%d][0]: %d\n", ip, fmx->imx[ip][0], ip, bmx->imx[ip][0]);
+	printf("fmx->dmx[ip:%d][0]: %d\n bmx->dmx[ip:%d][0]: %d\n", ip, fmx->dmx[ip][0], ip, bmx->dmx[ip][0]);*/
       for (k = 1; k <= hmm->M; k++) 
 	{
 	  mx->mmx[ip][k] = fmx->mmx[ip][k] + bmx->mmx[ip][k] - hmm->msc[(int) dsq[i]][k] - sc;
@@ -739,10 +781,13 @@ CP9FullPosterior(char *dsq, int i0, int j0,
 	  mx->imx[ip][k] = fmx->imx[ip][k] + bmx->imx[ip][k] - hmm->isc[(int) dsq[i]][k] - sc;
 	  /*hmm->isc[(int) dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
 	  mx->dmx[ip][k] = fmx->dmx[ip][k] + bmx->dmx[ip][k] - sc;
+	  /*printf("fmx->mmx[ip:%d][%d]: %d\n bmx->mmx[ip:%d][%d]: %d\n", ip, k, fmx->mmx[ip][k], ip, k, bmx->mmx[ip][k]);
+	  printf("fmx->imx[ip:%d][%d]: %d\n bmx->imx[ip:%d][%d]: %d\n", ip, k, fmx->imx[ip][k], ip, k, bmx->imx[ip][k]);
+	  printf("fmx->dmx[ip:%d][%d]: %d\n bmx->dmx[ip:%d][%d]: %d\n\n", ip, k, fmx->dmx[ip][k], ip, k, bmx->dmx[ip][k]);*/
 	}	  
     }
 
-  /*
+  /*  float temp_sc;
   for(i = 0; i <= W; i++)
     {
       for(k = 0; k <= hmm->M; k++)
@@ -757,8 +802,7 @@ CP9FullPosterior(char *dsq, int i0, int j0,
 	  if(temp_sc > .0001)
 	  printf("mx->dmx[%3d][%3d]: %9d | %8f\n", i, k, mx->dmx[i][k], temp_sc);
 	}
-    }
-  */
+	}*/
 }
 
 /*****************************************************************************
@@ -2512,6 +2556,7 @@ debug_check_CP9_FB(struct cp9_dpmatrix_s *fmx, struct cp9_dpmatrix_s *bmx,
   float fb_sc;
   int   W;		/* subsequence length */
   int   ip;		/* i': relative position in the subsequence  */
+  int to_add;
 
   W  = j0-i0+1;		/* the length of the subsequence */
 
@@ -2524,16 +2569,41 @@ debug_check_CP9_FB(struct cp9_dpmatrix_s *fmx, struct cp9_dpmatrix_s *bmx,
     {
       i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from i0 to j0 */
       fb_sum = -INFTY;
+      //fb_sum = ILogsum(fb_sum, (fmx->mmx[ip][0] + bmx->mmx[ip][0]));
+      //fb_sum = ILogsum(fb_sum, (fmx->imx[ip][0] + bmx->imx[ip][0]));
       for (k = 0; k <= hmm->M; k++) 
 	{
-	  fb_sum = ILogsum(fb_sum, (fmx->mmx[ip][k] + bmx->mmx[ip][k] - hmm->msc[(int) dsq[i]][k]));
-	  /*hmm->msc[(int) dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
-	  fb_sum = ILogsum(fb_sum, (fmx->imx[ip][k] + bmx->imx[ip][k] - hmm->isc[(int) dsq[i]][k]));
-	  /*hmm->isc[(int) dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
+	  if(fmx->mmx[ip][k] == -INFTY) to_add = -INFTY;
+	  else if(bmx->mmx[ip][k] == -INFTY) to_add = -INFTY;
+	  else 
+	    {
+	      to_add = fmx->mmx[ip][k] + bmx->mmx[ip][k];
+	      if(k > 0 && OLDHMMALGS) to_add -= hmm->msc[(int) dsq[i]][k];
+	    }
+	  /* hmm->msc[(int) dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx
+	   * unless, we're talking about M_0, the B state, it doesn't emit */
+	  fb_sum = ILogsum(fb_sum, to_add);
+	  /*printf("fmx->mmx[ip:%d][k:%d]: %d\n", ip, k, fmx->mmx[ip][k]);
+	    printf("bmx->mmx[ip:%d][k:%d]: %d sum: %d\n", ip, k, bmx->mmx[ip][k], fb_sum);*/
+
+	  if(fmx->imx[ip][k] == -INFTY) to_add = -INFTY;
+	  else if(bmx->imx[ip][k] == -INFTY) to_add = -INFTY;
+	  else 
+	    {
+	      to_add = fmx->imx[ip][k] + bmx->imx[ip][k]; 
+	      if(OLDHMMALGS) to_add -= hmm->isc[(int) dsq[i]][k];
+	    }
+	  /*hmm->isc[(int) dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
+	  fb_sum = ILogsum(fb_sum, to_add);
+	  /*printf("fmx->imx[ip:%d][k:%d]: %d\n", ip, k, fmx->imx[ip][k]);
+	    printf("bmx->imx[ip:%d][k:%d]: %d sum: %d\n", ip, k, bmx->imx[ip][k], fb_sum);*/
+
+
 	  /*fb_sum = ILogsum(fb_sum, fmx->dmx[ip][k] + bmx->dmx[ip][k]);*/
 	}
       fb_sc  = Scorify(fb_sum);
       diff = sc - fb_sc;
+      printf("ip: %d sc: %f diff: %f\n", ip, fb_sc, diff);
       if(diff < 0.) diff *= -1.;
       if(diff > max_diff)
 	{

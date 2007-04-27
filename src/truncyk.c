@@ -370,9 +370,11 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                alpha[v][j][d]   =   alpha[y][j][d] +   alpha[z][j][0];
                L_alpha[v][j][d] = L_alpha[y][j][d] + L_alpha[z][j][0];
                R_alpha[v][j][d] = R_alpha[y][j][0] + R_alpha[z][j][d];
+               T_alpha[v][j][d] = R_alpha[y][j][d] + L_alpha[z][j][0];
                if ( ret_shadow   != NULL ) { ((int **)  shadow[v])[j][d] = 0; }
                if ( ret_L_shadow != NULL ) { ((int **)L_shadow[v])[j][d] = 0; }
                if ( ret_R_shadow != NULL ) { ((int **)R_shadow[v])[j][d] = d; }
+               if ( ret_T_shadow != NULL ) { ((int **)T_shadow[v])[j][d] = 0; }
                if ( ret_Lmode_shadow != NULL) { Lmode_shadow[v][j][d] = 2; }
                if ( ret_Rmode_shadow != NULL) { Rmode_shadow[v][j][d] = 1; }
 
@@ -396,6 +398,11 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                      if ( ret_L_shadow != NULL ) { ((int **)L_shadow[v])[j][d] = k; }
                      if ( ret_Lmode_shadow != NULL ) { Lmode_shadow[v][j][d] = 3; }
                   }
+                  if ( (sc = R_alpha[y][j-k][d-k] + L_alpha[z][j][k]) > T_alpha[v][j][d] )
+                  {
+                     T_alpha[v][j][d] = sc;
+                     if ( ret_T_shadow != NULL) { ((int **)T_shadow[v])[j][d] = k; }
+                  }
                }
                for ( k=0; k<=d; k++ )
                {
@@ -404,17 +411,6 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                      R_alpha[v][j][d] = sc;
                      if ( ret_R_shadow != NULL ) { ((int **)R_shadow[v])[j][d] = k; }
                      if ( ret_Rmode_shadow != NULL ) { Rmode_shadow[v][j][d] = 3; }
-                  }
-               }
-
-               T_alpha[v][j][d] = R_alpha[y][j-1][d-1] + L_alpha[z][j][1];
-               if ( ret_T_shadow != NULL ) { ((int **)T_shadow[v])[j][d] = 1; }
-               for ( k=2; k<d; k++ )
-               {
-                  if ( (sc = R_alpha[y][j-k][d-k] + L_alpha[z][j][k]) > T_alpha[v][j][d] )
-                  {
-                     T_alpha[v][j][d] = sc;
-                     if ( ret_T_shadow != NULL) { ((int **)T_shadow[v])[j][d] = k; }
                   }
                }
 

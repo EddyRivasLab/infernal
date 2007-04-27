@@ -425,9 +425,9 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
   int       gamma_j;            /* j index in the gamma matrix, which is indexed 0..j0-i0+1, 
 				 * while j runs from i0..j0 */
   int       gamma_i;            /* i index in the gamma* data structures */
-  int       curr_dmax;          /* temporary value for max d in for loops */
   float     best_score;         /* Best overall score from semi-HMM to return */
   float     best_neg_score;     /* Best score overall score to return, used if all scores < 0 */
+  int       curr_dmax;          /* temporary value for max d in for loops */
 
   /*printf("in InsideBandedScan i0: %d j0: %d\n", i0, j0);*/
   best_score     = IMPOSSIBLE;

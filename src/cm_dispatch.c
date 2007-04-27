@@ -458,6 +458,8 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
 {
   float sc;
   int flen;
+  CP9Bands_t  *cp9b;                    /* data structure for hmm bands (bands on the hmm states) 
+				         * and arrays for CM state bands, derived from HMM bands*/
 
   /*printf("in actually_search_target: i0: %d j0: %d do_filter: %d doing_cm_stats: %d doing_cp9_stats: %d\n", i0, j0, do_filter, doing_cm_stats, doing_cp9_stats);
     printf("\ti0: %d j0: %d filter: %d\n", i0, j0, do_filter);*/
@@ -465,7 +467,7 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
 
   if(doing_cm_stats && doing_cp9_stats)
     Die("ERROR in actually_search_target doing_cm_stats and doing_cp9_stats both TRUE.\n");
-  
+
   /* check for CP9 related (either filtering or HMMONLY) options first */
 
   if(doing_cp9_stats || 
@@ -479,16 +481,28 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
     }
   else
     {
+      if(cm->search_opts & CM_SEARCH_HBANDED)
+	{
+	  cp9b = AllocCP9Bands(cm, cm->cp9);
+	  CP9_seq2bands(cm, dsq, i0, j0, cp9b, 
+			NULL, /* we don't want the posterior matrix back */
+			0);
+	  debug_print_hmm_bands(stdout, (j0-i0+1), cp9b, cm->tau, 3);
+	  /* HERE HERE HERE HERE HERE HERE */
+	  /*CYKBandedScan_jd(cm, dsq, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
+			   hmm_hiti[i], hmm_hitj[i], windowlen, 
+			   &tmp_nhits, &tmp_hitr, &tmp_hiti, &tmp_hitj, &tmp_hitsc, thresh);	  */
+	}
       if(cm->search_opts & CM_SEARCH_NOQDB)
 	if(cm->search_opts & CM_SEARCH_INSIDE)
-	sc = iInsideScan(cm, dsq, i0, j0, cm->W, cm_cutoff, results);
-      else /* don't do inside */
-	sc = CYKScan (cm, dsq, i0, j0, cm->W, cm_cutoff, results);
-    else /* use QDB */
-      if(cm->search_opts & CM_SEARCH_INSIDE)
-	sc = iInsideBandedScan(cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
-      else /* do't do inside */
-	sc = CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
+	  sc = iInsideScan(cm, dsq, i0, j0, cm->W, cm_cutoff, results);
+	else /* don't do inside */
+	  sc = CYKScan (cm, dsq, i0, j0, cm->W, cm_cutoff, results);
+      else /* use QDB */
+	if(cm->search_opts & CM_SEARCH_INSIDE)
+	  sc = iInsideBandedScan(cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
+	else /* do't do inside */
+	  sc = CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
     }    
   /*printf("returning from actually_search_target, sc: %f\n", sc);*/
   return sc;

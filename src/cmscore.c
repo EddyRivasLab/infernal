@@ -42,25 +42,27 @@ static char experts[] = "\
    --regress <f> : save regression test data to file <f>\n\
    --stringent   : require the two parse trees to be identical\n\
    --trees       : print parsetrees\n\
+   --nocheck     : don't check parsetree scores vs alignment scores\n\
 \n\
   Expert stage 2 alignment options, to compare to stage 1 (D&C non-banded)\n\
-   --std         : compare divide and conquer versus standard CYK [default]\n\
+   --std         : compare divide and conquer versus standard CYK (default)\n\
    --qdb         : compare non-banded d&c versus QDB standard CYK\n\
    --qdbsmall    : compare non-banded d&c versus QDB d&c\n\
    --qdbboth     : compare        QDB d&c versus QDB standard CYK\n\
-   --beta <x>    : set tail loss prob for QDB to <x> [default:1E-7]\n\
+   --beta <f>    : tail loss prob for QDB [default:1E-7]\n\
    --hbanded     : compare non-banded d&c versus HMM banded CYK\n\
-   --tau <x>     : set tail loss prob for HMM bands to <x> [default: 1E-7]\n\
+   --tau <f>     : tail loss prob for HMM bands [default: 1E-7]\n\
    --hsafe       : realign (non-banded) seqs with HMM banded CYK score < 0 bits\n\
+   --sums        : use posterior sums during HMM band calculation (widens bands)\n\
    --hmmonly     : align with the CM Plan 9 HMM (only gives timings)\n\
-   --scoreonly   : for standard CYK stage, do only score, save memory\n\
+   --scoreonly   : for full CYK/inside stage, do only score, save memory\n\
 \n\
   Expert stage 2-N alignment options, to compare to stage 1 (D&C non-banded)\n\
   For --hbanded or --qdb, try multiple tau or beta values, all will = 10^-n\n\
-   --betas <n>   : set initial (stage 2) tail loss prob to 10^-(<x>) for qdb\n\
-   --betae <n>   : set final   (stage N) tail loss prob to 10^-(<x>) for qdb\n\
-   --taus <n>    : set initial (stage 2) tail loss prob to 10^-(<x>) for hmm\n\
-   --taue <n>    : set final   (stage N) tail loss prob to 10^-(<x>) for hmm\n\
+   --betas <x>   : set initial (stage 2) tail loss prob to 10^-(<x>) for qdb\n\
+   --betae <x>   : set final   (stage N) tail loss prob to 10^-(<x>) for qdb\n\
+   --taus <x> : set initial (stage 2) tail loss prob to 10^-(<x>) for hmm\n\
+   --taue <x> : set final   (stage N) tail loss prob to 10^-(<x>) for hmm\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -71,6 +73,7 @@ static struct opt_s OPTIONS[] = {
   { "--regress",    FALSE, sqdARG_STRING },
   { "--stringent",  FALSE, sqdARG_NONE },
   { "--trees",      FALSE, sqdARG_NONE },
+  { "--nocheck",    FALSE, sqdARG_NONE },
   { "--std",        FALSE, sqdARG_NONE },
   { "--qdb",        FALSE, sqdARG_NONE },
   { "--qdbsmall",   FALSE, sqdARG_NONE },
@@ -79,7 +82,7 @@ static struct opt_s OPTIONS[] = {
   { "--hbanded",    FALSE, sqdARG_NONE },
   { "--tau",        FALSE, sqdARG_FLOAT},
   { "--hsafe",      FALSE, sqdARG_NONE},
-  /*{ "--sums",       FALSE, sqdARG_NONE },*/
+  { "--sums",       FALSE, sqdARG_NONE },
   { "--hmmonly",    FALSE, sqdARG_NONE },
   { "--scoreonly",  FALSE, sqdARG_NONE },
   { "--betas",      FALSE, sqdARG_INT },
@@ -124,6 +127,7 @@ main(int argc, char **argv)
   int do_sub;		         /* TRUE to align to a sub CM                    */
   int compare_stringently;	 /* TRUE to demand identical parse trees         */
   int do_trees;		         /* TRUE to print parse trees to stdout          */
+  int do_checkscores;            /* TRUE to check parsetree scores vs aln scs    */
 
   double         qdb_beta;	 /* tail loss probability for QDB                */
   double        *qdb_beta_vec; 	 /* [1..nstages] qdb per stage (no stage 0)      */
@@ -145,7 +149,7 @@ main(int argc, char **argv)
   int            s2_do_scoreonly;/* TRUE for score-only (small mem) full CYK     */
   double         tau;     	 /* tail loss probability for HMM banding        */
   double        *tau_vec; 	 /* [1..nstages] tau per stage (no stage 0)      */
-  /*int            use_sums;*/       /* TRUE: use the posterior sums w/HMM bands     */
+  int            use_sums;       /* TRUE: use the posterior sums w/HMM bands     */
 
   /* Special 'step-mode' options, allows different taus or betas to be tested 
    * with a single cmscore call.                                                 */
@@ -175,6 +179,7 @@ main(int argc, char **argv)
   do_sub              = FALSE;
   compare_stringently = FALSE;
   do_trees            = FALSE;
+  do_checkscores      = TRUE;
   qdb_beta            = DEFAULT_BETA;
   s1_do_qdb           = FALSE;
   s1_do_small         = TRUE;
@@ -187,7 +192,7 @@ main(int argc, char **argv)
   s2_set              = FALSE;
   s2_do_scoreonly     = FALSE;
   tau                 = DEFAULT_TAU;
-  /*use_sums            = FALSE;*/
+  use_sums            = FALSE;
   do_step_beta        = FALSE;
   init_beta           = 0.;
   final_beta          = 0.;
@@ -207,10 +212,12 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--regress")   == 0) regressfile         = optarg;
     else if (strcmp(optname, "--stringent") == 0) compare_stringently = TRUE;
     else if (strcmp(optname, "--trees")     == 0) do_trees            = TRUE;
+    else if (strcmp(optname, "--nocheck")   == 0) do_checkscores      = FALSE;
     else if (strcmp(optname, "--std")       == 0) { /* this is default */ }
     else if (strcmp(optname, "--beta")      == 0) qdb_beta            = atof(optarg);
     else if (strcmp(optname, "--tau")       == 0) tau                 = atof(optarg);
     else if (strcmp(optname, "--hsafe")     == 0) s2_do_hsafe         = TRUE;
+    else if (strcmp(optname, "--scoreonly") == 0) s2_do_scoreonly     = TRUE;
     else if (strcmp(optname, "--betas")     == 0) 
       { 
 	do_step_beta=TRUE; 
@@ -235,6 +242,7 @@ main(int argc, char **argv)
 	final_tau = atoi(optarg);
 	final_tau_set = TRUE;
       }
+    else if (strcmp(optname, "--scoreonly") == 0) s2_do_scoreonly     = TRUE;
     else if (strcmp(optname, "--qdb")       == 0) 
       {
 	if(s2_set) Die("Please only pick one: --qdb, --qdbsmall, --qdbboth, --hbanded, --hmmonly --scoreonly\n");
@@ -269,7 +277,7 @@ main(int argc, char **argv)
       }
     else if (strcmp(optname, "--scoreonly")     == 0) 
       {
-	if(s2_set) Die("Please only pick one: --qdb, --qdbsmall, --qdbboth, --hbanded, --hmmonly, --scoreonly\n");
+	if(s2_set) Die("Please only pick one: --qdb, --qdbsmall, --qdbboth, --hbanded, --hmmonly --scoreonly\n");
 	s2_do_scoreonly = TRUE;
 	s2_do_small = FALSE;
 	s2_set = TRUE;
@@ -318,7 +326,7 @@ main(int argc, char **argv)
    *    arguments, 
    */
   qdb_beta_vec = MallocOrDie(sizeof(double) * (nstages+1));
-  tau_vec      = MallocOrDie(sizeof(double) * (nstages+1));
+  tau_vec   = MallocOrDie(sizeof(double) * (nstages+1));
   qdb_beta_vec[0] = -1.; /* dummy value no stage 0 */
   tau_vec[0]   = -1.; /* dummy value no stage 0 */
   for(s = 1; s <= nstages; s++)
@@ -416,7 +424,7 @@ main(int argc, char **argv)
   /* Configure the CM for stage 1 alignment */
   /* Update cm->config_opts and cm->align_opts based on command line options */
   /* enable option to check parsetree score against the alignment score */
-  cm->align_opts  |= CM_ALIGN_CHECKPARSESC;
+  if (do_checkscores) cm->align_opts  |= CM_ALIGN_CHECKPARSESC;
   if (do_individuals) cm->align_opts  |= CM_ALIGN_TIME;
   if (do_trees)       cm->align_opts  |= CM_ALIGN_PRINTTREES;
   if (do_local)       cm->config_opts |= CM_CONFIG_LOCAL;
@@ -479,13 +487,13 @@ main(int argc, char **argv)
   
       /* Configure the CM for stage 2 alignment */
       /* enable option to check parsetree score against the alignment score */
-      cm->align_opts  |= CM_ALIGN_CHECKPARSESC;
+      if (do_checkscores) cm->align_opts  |= CM_ALIGN_CHECKPARSESC;
       if (do_individuals) cm->align_opts  |= CM_ALIGN_TIME;
       if (do_trees)       cm->align_opts  |= CM_ALIGN_PRINTTREES;
       if (do_local)       cm->config_opts |= CM_CONFIG_LOCAL;
       if (!s2_do_small)   cm->align_opts  |= CM_ALIGN_NOSMALL;
       if (s2_do_hbanded)  cm->align_opts  |= CM_ALIGN_HBANDED;
-      /*if (use_sums)       cm->align_opts  |= CM_ALIGN_SUMS;*/
+      if (use_sums)       cm->align_opts  |= CM_ALIGN_SUMS;
       if (s2_do_hmmonly)  cm->align_opts  |= CM_ALIGN_HMMONLY;
       if (s2_do_hsafe)    cm->align_opts  |= CM_ALIGN_HMMSAFE;
       if (s2_do_scoreonly) cm->align_opts |= CM_ALIGN_SCOREONLY;
@@ -583,8 +591,6 @@ main(int argc, char **argv)
   free(s1_sq);
   free(s1_tr);
   free(s1_sc);
-  free(qdb_beta_vec);
-  free(tau_vec);
 
   SqdClean();
   return EXIT_SUCCESS;

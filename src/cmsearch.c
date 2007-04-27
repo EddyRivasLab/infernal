@@ -110,6 +110,9 @@ static char experts[] = "\
    --noqdb       : DO NOT use query dependent bands (QDB) to accelerate CYK\n\
    --qdbfile <f> : read QDBs from file <f> (outputted from cmbuild)\n\
    --banddump    : print bands for each state\n\
+   --hbanded     : w/--hmmfb: calculate and use HMM bands in CM search\n\
+   --tau         : tail loss for HMM banding [default: 1E-7]\n\
+   --sums        : use posterior sums during HMM band calculation (widens bands)\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -138,10 +141,10 @@ static struct opt_s OPTIONS[] = {
   { "--noqdb",      FALSE, sqdARG_NONE },
   { "--qdbfile",    FALSE, sqdARG_STRING},
   { "--beta",       FALSE, sqdARG_FLOAT},
-  /*  { "--hbanded",    FALSE, sqdARG_NONE },*/
-  /*{ "--tau",     FALSE, sqdARG_FLOAT},*/
+  { "--hbanded",    FALSE, sqdARG_NONE },
+  { "--tau",     FALSE, sqdARG_FLOAT},
   { "--banddump",   FALSE, sqdARG_NONE},
-  /*{ "--sums",       FALSE, sqdARG_NONE},*/
+  { "--sums",       FALSE, sqdARG_NONE},
   /*  { "--scan2hbands",FALSE, sqdARG_NONE},*/
   { "--partition",  FALSE, sqdARG_STRING},
   { "--enfstart",   FALSE, sqdARG_INT},
@@ -464,6 +467,8 @@ main(int argc, char **argv)
     Die("Can't do --qdb and --hbanded. Pick one.\n");
   if (do_scan2hbands && !(do_hbanded))
     Die("Can't pick --scan2hbands without --hbanded option.\n");
+  if (do_hbanded && !(do_hmmfb))
+    Die("Can't pick --hbanded without --hmmfb option.\n");
   if (do_hbanded && !(do_hmmweinberg || do_hmmfb))
     Die("Can't pick --hbanded without --hmmfb or --hmmweinberg filtering option.\n");
   if (read_qdb && !(do_qdb))
@@ -595,6 +600,7 @@ main(int argc, char **argv)
 	  if(do_cm_stats)     cm->search_opts |= CM_SEARCH_CMSTATS;
 	  if(do_cp9_stats)    cm->search_opts |= CM_SEARCH_CP9STATS;
 	  if(do_greedy)       cm->search_opts |= CM_SEARCH_GREEDY;
+	  if(do_hbanded)      cm->search_opts |= CM_SEARCH_HBANDED;
 	  if(do_rtrans)       cm->flags       |= CM_RSEARCHTRANS;
 
 	  if(do_enforce)

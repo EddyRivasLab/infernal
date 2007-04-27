@@ -340,17 +340,18 @@ typedef struct cm_s {
 #define CM_SEARCH_HMMPAD       (1<<3)  /* +/- cm->hmmpad residues from j/i in HMMFB*/
 #define CM_SEARCH_HMMWEINBERG  (1<<4)  /* filter w/CP9 HMM, Zasha Weinberg mode    */
 #define CM_SEARCH_HMMRESCAN    (1<<5)  /* rescan HMM hits b/c Forward is inf length*/
-#define CM_SEARCH_HMMSCANBANDS (1<<6)  /* filter w/CP9 HMM, and derive HMM bands   */
-#define CM_SEARCH_SUMS         (1<<7)  /* if using HMM bands, use posterior sums   */
-#define CM_SEARCH_INSIDE       (1<<8)  /* scan with Inside, not CYK                */
-#define CM_SEARCH_TOPONLY      (1<<9)  /* don't search reverse complement          */
-#define CM_SEARCH_NOALIGN      (1<<10) /* don't align hits, just report locations  */
-#define CM_SEARCH_NULL2        (1<<11) /* use post hoc second null model           */
-#define CM_SEARCH_CMSTATS      (1<<12) /* calculate E-value statistics for CM      */
-#define CM_SEARCH_CP9STATS     (1<<13) /* calculate E-value stats for CP9 HMM      */
-#define CM_SEARCH_FFRACT       (1<<14) /* filter to filter fraction cm->ffract     */
-#define CM_SEARCH_RSEARCH      (1<<15) /* use RSEARCH parameterized CM             */
-#define CM_SEARCH_GREEDY       (1<<16) /* use greedy alg to resolve overlaps       */
+#define CM_SEARCH_HBANDED      (1<<6)  /* use HMM bands for search                 */
+#define CM_SEARCH_HMMSCANBANDS (1<<7)  /* filter w/CP9 HMM, and derive HMM bands   */
+#define CM_SEARCH_SUMS         (1<<8)  /* if using HMM bands, use posterior sums   */
+#define CM_SEARCH_INSIDE       (1<<9)  /* scan with Inside, not CYK                */
+#define CM_SEARCH_TOPONLY      (1<<10) /* don't search reverse complement          */
+#define CM_SEARCH_NOALIGN      (1<<11) /* don't align hits, just report locations  */
+#define CM_SEARCH_NULL2        (1<<12) /* use post hoc second null model           */
+#define CM_SEARCH_CMSTATS      (1<<13) /* calculate E-value statistics for CM      */
+#define CM_SEARCH_CP9STATS     (1<<14) /* calculate E-value stats for CP9 HMM      */
+#define CM_SEARCH_FFRACT       (1<<15) /* filter to filter fraction cm->ffract     */
+#define CM_SEARCH_RSEARCH      (1<<16) /* use RSEARCH parameterized CM             */
+#define CM_SEARCH_GREEDY       (1<<17) /* use greedy alg to resolve overlaps       */
 
 /* Structure: CMFILE
  * Incept:    SRE, Tue Aug 13 10:16:39 2002 [St. Louis]

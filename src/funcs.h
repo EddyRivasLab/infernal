@@ -321,10 +321,10 @@ extern void CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hd
 /* from CP9_scan.c */
 extern float CP9ForwardScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_isc, 
 			    int **ret_hitj, int *ret_nhits, int *ret_maxres, scan_results_t *results,
-			    int doing_rescan);
+			    int do_scan, int doing_rescan, int be_efficient, CP9_dpmatrix_t **ret_mx);
 extern float CP9BackwardScan(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_isc, 
 			     int **ret_hiti, int *ret_nhits, int *ret_maxres, scan_results_t *results, 
-			     int doing_rescan);
+			     int do_scan, int doing_rescan, int be_efficient, CP9_dpmatrix_t **ret_mx);
 extern float CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff, 
 			      float cp9_cutoff, scan_results_t *results, int doing_cp9_stats, int *ret_flen);
 extern float RescanFilterSurvivors(CM_t *cm, char *dsq, int *hiti, int *hitj, int nhits, int i0, 
