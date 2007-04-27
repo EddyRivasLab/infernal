@@ -43,10 +43,10 @@ extern void CP9_seq2posteriors(CM_t *cm, char *dsq, int i0, int j0, CP9_dpmatrix
  * based on Ian Holmes' hmmer/src/postprob.c functions 
  * P7Forward() is in HMMER's core_algorithms.c 
  * and P7Backward() is in HMMER's postprob.c*/
-extern float CP9Forward(char *dsq, int i0, int j0, CP9_t *hmm, 
+extern float CP9ForwardOLD(char *dsq, int i0, int j0, CP9_t *hmm, 
 			struct cp9_dpmatrix_s **ret_mx);
 extern float CP9Viterbi(char *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s *mx);
-extern float CP9Backward(char *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s **ret_mx);
+extern float CP9BackwardOLD(char *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s **ret_mx);
 extern void  CP9FullPosterior(char *dsq, int i0, int j0,
 			      CP9_t *hmm,
 			      struct cp9_dpmatrix_s *fmx,

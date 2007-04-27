@@ -256,40 +256,41 @@ CP9_seq2posteriors(CM_t *cm, char *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9
   if(cm->cp9map == NULL)
     Die("ERROR in CP9_seq2posteriors, but cm->cp9map is NULL.\n");
 
+  debug_print_cp9_params(cm->cp9);
   /* Step 1: Get HMM posteriors.*/
   /*sc = CP9Viterbi(dsq, i0, j0, cm->cp9, cp9_mx);*/
   if(OLDHMMALGS)
-    sc = CP9Forward(dsq, i0, j0, cm->cp9, &cp9_fwd);
+    sc = CP9ForwardOLD(dsq, i0, j0, cm->cp9, &cp9_fwd);
   else if(NEWHMMALGS)
-    sc = CP9ForwardScan(cm, dsq, i0, j0, (j0-i0+1), 
-			0,    /* cp9_cutoff score, irrelevant */
-			NULL,  /* don't care about score of each posn */
-			NULL,  /* don't keep track of locations of hits */
-			NULL,  /* don't keep track of number of hits */
-			NULL,  /* don't care about best scoring start point */
-			NULL,  /* don't report hits */
-			FALSE, /* we're not scanning */
-			FALSE, /* we're not rescanning */
-			FALSE, /* don't be memory efficient */
-			&cp9_fwd); /* give the DP matrix back */
+    sc = CP9Forward(cm, dsq, i0, j0, (j0-i0+1), 
+		    0,    /* cp9_cutoff score, irrelevant */
+		    NULL,  /* don't care about score of each posn */
+		    NULL,  /* don't keep track of locations of hits */
+		    NULL,  /* don't keep track of number of hits */
+		    NULL,  /* don't care about best scoring start point */
+		    NULL,  /* don't report hits */
+		    FALSE, /* we're not scanning */
+		    FALSE, /* we're not rescanning */
+		    FALSE, /* don't be memory efficient */
+		    &cp9_fwd); /* give the DP matrix back */
 
-  if(debug_level >= 0) printf("CP9 Forward  score : %.2f\n", sc);
+  if(debug_level >= 0) printf("CP9 Forward  score : %.4f\n", sc);
   if(OLDHMMALGS)
-    sc = CP9Backward(dsq, i0, j0, cm->cp9, &cp9_bck);
+    sc = CP9BackwardOLD(dsq, i0, j0, cm->cp9, &cp9_bck);
   else if(NEWHMMALGS)
-    sc = CP9BackwardScan(cm, dsq, i0, j0, (j0-i0+1), 
-			0,    /* cp9_cutoff score, irrelevant */
-			NULL,  /* don't care about score of each posn */
-			NULL,  /* don't keep track of locations of hits */
-			NULL,  /* don't keep track of number of hits */
-			NULL,  /* don't care about best scoring start point */
-			NULL,  /* don't report hits */
-			FALSE, /* we're not scanning */
-			FALSE, /* we're not rescanning */
-			FALSE, /* don't be memory efficient */
-			&cp9_bck); /* give the DP matrix back */
+    sc = CP9Backward(cm, dsq, i0, j0, (j0-i0+1), 
+		     0,    /* cp9_cutoff score, irrelevant */
+		     NULL,  /* don't care about score of each posn */
+		     NULL,  /* don't keep track of locations of hits */
+		     NULL,  /* don't keep track of number of hits */
+		     NULL,  /* don't care about best scoring start point */
+		     NULL,  /* don't report hits */
+		     FALSE, /* we're not scanning */
+		     FALSE, /* we're not rescanning */
+		     FALSE, /* don't be memory efficient */
+		     &cp9_bck); /* give the DP matrix back */
 
-  if(debug_level >= 0) printf("CP9 Backward score : %.2f\n", sc);
+  if(debug_level >= 0) printf("CP9 Backward score : %.4f\n", sc);
   
   debug_check_CP9_FB(cp9_fwd, cp9_bck, cm->cp9, sc, i0, j0, dsq);
   cp9_post = cp9_bck;
@@ -305,15 +306,15 @@ CP9_seq2posteriors(CM_t *cm, char *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9
 
 /* Functions for getting posterior probabilities from the HMMs 
  * based on Ian Holmes' hmmer/src/postprob.c functions 
- * CP9Forward()
+ * CP9ForwardOLD()
  * CP9Viterbi()
- * CP9Backward()
+ * CP9BackwardOLD()
  * CP9FullPosterior()
  * CP9_ifill_post_sums()
  */
 
 /***********************************************************************
- * Function: CP9Forward
+ * Function: CP9ForwardOLD
  * based on  P7Forward() <-- this function's comments below  
  *           from HMMER 2.4devl core_algorithms.c
  *
@@ -330,8 +331,8 @@ CP9_seq2posteriors(CM_t *cm, char *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9
  * Return:   log P(S|M)/P(S|R), as a bit score.
  */
 float
-CP9Forward(char *dsq, int i0, int j0, struct cplan9_s *hmm, 
-	   struct cp9_dpmatrix_s **ret_mx)
+CP9ForwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, 
+	      struct cp9_dpmatrix_s **ret_mx)
 {
   struct cp9_dpmatrix_s *mx;
   int **mmx;
@@ -557,7 +558,7 @@ CP9Viterbi(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_
 }
 
 /*********************************************************************
- * Function: CP9Backward
+ * Function: CP9BackwardOLD
  * based on  P7Backward() <-- this function's comments below
  *           from HMMER 2.4devl core_algorithms.c
  * 
@@ -574,7 +575,7 @@ CP9Viterbi(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_
  * Return:   log P(S|M)/P(S|R), as a bit score.
  */
 float
-CP9Backward(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s **ret_mx)
+CP9BackwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s **ret_mx)
 {
   struct cp9_dpmatrix_s *mx;
   int **emx;
@@ -641,9 +642,7 @@ CP9Backward(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix
 	{
 	  mmx[ip][k]  = ILogsum(ILogsum(mmx[ip+1][k+1] + hmm->tsc[CTMM][k],
 				       imx[ip+1][k] + hmm->tsc[CTMI][k]),
-			       dmx[ip][k+1] + hmm->tsc[CTMD][k]);
-	  /* 04.17.07 NOTE: mmx[ip][k>0] takes mmx[ip+1][k+1] but only
-	   * b/c M states in nodes k>0 emit! */
+				dmx[ip][k+1] + hmm->tsc[CTMD][k]);
 	  mmx[ip][k] += hmm->msc[(int) dsq[i]][k];
 	  
 	  imx[ip][k]  = ILogsum(ILogsum(mmx[ip+1][k+1] + hmm->tsc[CTIM][k],
@@ -747,10 +746,7 @@ CP9FullPosterior(char *dsq, int i0, int j0,
 
   W  = j0-i0+1;		/* the length of the subsequence */
 
-  if(OLDHMMALGS)
-    sc = bmx->mmx[0][0];
-  else if(NEWHMMALGS)
-    sc = bmx->mmx[1][0];
+  sc = bmx->mmx[0][0];
 
   /* note boundary conditions, case by case by case... */
   mx->mmx[0][0] = fmx->mmx[0][0] + bmx->mmx[0][0] - sc; /* fmx->mmx[0][0] is 0, bmx->mmx[1][0] is overall score */
@@ -2578,28 +2574,27 @@ debug_check_CP9_FB(struct cp9_dpmatrix_s *fmx, struct cp9_dpmatrix_s *bmx,
 	  else 
 	    {
 	      to_add = fmx->mmx[ip][k] + bmx->mmx[ip][k];
-	      if(k > 0 && OLDHMMALGS) to_add -= hmm->msc[(int) dsq[i]][k];
+	      if(k > 0) to_add -= hmm->msc[(int) dsq[i]][k];
 	    }
 	  /* hmm->msc[(int) dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx
 	   * unless, we're talking about M_0, the B state, it doesn't emit */
 	  fb_sum = ILogsum(fb_sum, to_add);
-	  /*printf("fmx->mmx[ip:%d][k:%d]: %d\n", ip, k, fmx->mmx[ip][k]);
-	    printf("bmx->mmx[ip:%d][k:%d]: %d sum: %d\n", ip, k, bmx->mmx[ip][k], fb_sum);*/
-
+	  printf("fmx->mmx[ip:%d][k:%d]: %d\n", ip, k, fmx->mmx[ip][k]);
+	  printf("bmx->mmx[ip:%d][k:%d]: %d sum: %d\n", ip, k, (bmx->mmx[ip][k]-hmm->msc[(int) dsq[i]][k]), fb_sum);
 	  if(fmx->imx[ip][k] == -INFTY) to_add = -INFTY;
 	  else if(bmx->imx[ip][k] == -INFTY) to_add = -INFTY;
 	  else 
 	    {
 	      to_add = fmx->imx[ip][k] + bmx->imx[ip][k]; 
-	      if(OLDHMMALGS) to_add -= hmm->isc[(int) dsq[i]][k];
+	      to_add -= hmm->isc[(int) dsq[i]][k];
 	    }
 	  /*hmm->isc[(int) dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
 	  fb_sum = ILogsum(fb_sum, to_add);
-	  /*printf("fmx->imx[ip:%d][k:%d]: %d\n", ip, k, fmx->imx[ip][k]);
-	    printf("bmx->imx[ip:%d][k:%d]: %d sum: %d\n", ip, k, bmx->imx[ip][k], fb_sum);*/
-
-
+	  printf("fmx->imx[ip:%d][k:%d]: %d\n", ip, k, fmx->imx[ip][k]);
+	  printf("bmx->imx[ip:%d][k:%d]: %d sum: %d\n", ip, k, (bmx->imx[ip][k]-hmm->isc[(int) dsq[i]][k]), fb_sum);
 	  /*fb_sum = ILogsum(fb_sum, fmx->dmx[ip][k] + bmx->dmx[ip][k]);*/
+	  printf("fmx->dmx[ip:%d][k:%d]: %d\n",   ip, k, fmx->dmx[ip][k]);
+	  printf("bmx->dmx[ip:%d][k:%d]: %d\n\n", ip, k, bmx->dmx[ip][k]);
 	}
       fb_sc  = Scorify(fb_sum);
       diff = sc - fb_sc;
