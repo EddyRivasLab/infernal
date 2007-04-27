@@ -38,7 +38,7 @@ static void include_alignment(char *seqfile, int use_rf, float gapthresh, CM_t *
 			      int *ret_nseq, int *ret_nnewseq);
 static int compare_cms(CM_t *cm1, CM_t *cm2);
 
-#ifdef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 /*
  * Function: exit_from_mpi
  * Date:     RJK, Thu Jun 6, 2002 [St. Louis]
@@ -51,21 +51,20 @@ void exit_from_mpi () {
 }
 #endif
 
-#ifndef USE_MPI
-static char banner[] = "cmalign - align sequences to an RNA CM";
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+static char banner[] = "mpicmalign - align sequences to an RNA CM";
 static char usage[]  = "\
-Usage: cmalign [-options] <cmfile> <sequence file>\n\
+Usage: mpicmalign [-options] <cmfile> <sequence file>\n\
   Most commonly used options are:\n\
    -h     : help; print brief help on version and usage\n\
    -l     : local; align locally w.r.t. the model\n\
    -o <f> : output the alignment file to file <f>\n\
    -q     : quiet; suppress verbose banner\n\
 ";
-#endif
-#ifdef USE_MPI
-static char banner[] = "mpicmalign - align sequences to an RNA CM";
+#else
+static char banner[] = "cmalign - align sequences to an RNA CM";
 static char usage[]  = "\
-Usage: mpicmalign [-options] <cmfile> <sequence file>\n\
+Usage: cmalign [-options] <cmfile> <sequence file>\n\
   Most commonly used options are:\n\
    -h     : help; print brief help on version and usage\n\
    -l     : local; align locally w.r.t. the model\n\
@@ -221,7 +220,7 @@ main(int argc, char **argv)
   float  gapthresh;		/* 0=all cols inserts; 1=all cols consensus */
 
 
-#ifdef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
   int mpi_my_rank;              /* My rank in MPI                           */
   int mpi_num_procs;            /* Total number of processes                */
   int mpi_master_rank;          /* Rank of master process                   */
@@ -445,7 +444,7 @@ main(int argc, char **argv)
    * (EPN 01.04.07).
    ****************************************************************************/
 
-#ifdef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
   }   /* End of first block that is only done by master process */
   /* Barrier for debugging */
   MPI_Barrier(MPI_COMM_WORLD);
@@ -477,7 +476,7 @@ main(int argc, char **argv)
       serial_align_targets(seqfp, cm, &sq, &tr, &postcode, &nseq, bdump_level, debug_level, 
 			   be_quiet);
     }
-#ifdef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
   if (mpi_my_rank == mpi_master_rank) {
 #endif  
     /***************************************************************                     
@@ -565,7 +564,7 @@ main(int argc, char **argv)
     free(tr);
     SqdClean();
 
-#ifdef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
   } /* end  of block to convert traces to alignment and clean up */
   if(mpi_my_rank == mpi_master_rank)
     {
@@ -578,7 +577,7 @@ main(int argc, char **argv)
   in_mpi = 0;
 #endif
   FreeCM(cm);
-#ifdef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
   /*printf("EXITING rank:%d\n", mpi_my_rank);*/
 #endif
   return EXIT_SUCCESS;

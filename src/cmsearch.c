@@ -32,7 +32,7 @@
 
 static int in_mpi;
 
-#ifdef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 /*
  * Function: exit_from_mpi
  * Date:     RJK, Thu Jun 6, 2002 [St. Louis]
@@ -49,7 +49,17 @@ static int QDBFileRead(FILE *fp, CM_t *cm, int **ret_dmin, int **ret_dmax);
 static int set_partitions(int **ret_partitions, int *num_partitions, char *list);
 static int debug_print_stats(int *partitions, int num_partitions, double *lambda, double *mu);
 
-#ifndef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+static char banner[] = "mpicmsearch - search a sequence database with an RNA covariance model";
+static char usage[]  = "\
+Usage: mpicmsearch [-options] <cmfile> <sequence file>\n\
+The sequence file is expected to be in FASTA format.\n\
+  Available options are:\n\
+   -h     : help; print brief help on version and usage\n\
+   -T <x> : use cutoff bit score of <x> [default: 0]\n\
+   -E <x> : use cutoff E-value of <x> [default ignored; not-calc'ed]\n\
+";
+#else
 static char banner[] = "cmsearch - search a sequence database with an RNA covariance model";
 static char usage[]  = "\
 Usage: cmsearch [-options] <cmfile> <sequence file>\n\
@@ -60,18 +70,6 @@ The sequence file is expected to be in FASTA format.\n\
    -E <f> : use cutoff E-value of <f> [default ignored; not-calc'ed]\n\
 ";
 #endif 
-#ifdef USE_MPI
-static char banner[] = "mpicmsearch - search a sequence database with an RNA covariance model";
-static char usage[]  = "\
-Usage: mpicmsearch [-options] <cmfile> <sequence file>\n\
-The sequence file is expected to be in FASTA format.\n\
-  Available options are:\n\
-   -h     : help; print brief help on version and usage\n\
-   -T <x> : use cutoff bit score of <x> [default: 0]\n\
-   -E <x> : use cutoff E-value of <x> [default ignored; not-calc'ed]\n\
-";
-#endif
-
 static char experts[] = "\
   Expert, in development, or infrequently used options are:\n\
    --informat <s>: specify that input alignment is in format <s>, not FASTA\n\
@@ -108,9 +106,8 @@ static char experts[] = "\
    --hmmfilter    : subseqs j-W+1..i+W-1 survive (j=end from Fwd, i=start from Bwd)\n\
    --hmmpad <n>   : w/--hmmfilter: subseqs i-<n>..j+<n> survive\n\
    --hmmonly      : don't use CM at all, just scan with HMM (Forward + Backward)\n\
-   --hmmE <x>     : use cutoff E-value of <x> for CP9 (possibly filtered) scan [df:500]\n\
+   --hmmE <x>     : use cutoff E-value of <x> for CP9 (possibly filtered) scan [df:50]\n\
    --hmmT <x>     : use cutoff bit score of <x> for CP9 (possibly filtered) scan\n\
-   --hmmgreedy    : resolve HMM overlapping hits with greedy algorithm a la RSEARCH\n\
    --hmmnegsc <x> : set min bit score to report as <x> < 0 (experimental)\n\
 \n\
 ";
@@ -155,7 +152,6 @@ static struct opt_s OPTIONS[] = {
   { "--time",       FALSE, sqdARG_NONE},
   { "--rtrans",     FALSE, sqdARG_NONE},
   { "--greedy",     FALSE, sqdARG_NONE},
-  { "--hmmgreedy",  FALSE, sqdARG_NONE},
   { "--gcfile",     FALSE, sqdARG_STRING}
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
@@ -272,11 +268,10 @@ main(int argc, char **argv)
   int             ncm;       /* counter over CMs */
   int             continue_flag; /* used to continue through the main loop for multiple CMs,
 				  * nec. only for MPI mode, to keep slave nodes appraised. */
-  /* the greedy options */
-  int             do_cmgreedy;  /* TRUE to use greedy hit resolution for CM  overlaps */
-  int             do_hmmgreedy; /* TRUE to use greedy hit resolution for HMM overlaps */
+  /* the --greedy option */
+  int             do_greedy; /* TRUE to not use greedy hit resolution for overlaps */
 
-#ifdef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
   int mpi_my_rank;              /* My rank in MPI */
   int mpi_num_procs;            /* Total number of processes */
   int mpi_master_rank;          /* Rank of master process */
@@ -355,8 +350,7 @@ main(int argc, char **argv)
   enf_seq           = NULL;
   do_timings        = FALSE;
   do_rtrans         = FALSE;
-  do_cmgreedy       = FALSE;
-  do_hmmgreedy      = FALSE;
+  do_greedy         = FALSE;
   gcfile            = NULL;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
@@ -446,8 +440,7 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--banddump")  == 0) do_bdump     = TRUE;
     else if  (strcmp(optname, "--sums")      == 0) use_sums     = TRUE;
     else if  (strcmp(optname, "--scan2bands")== 0)  do_scan2bands= TRUE;
-    else if  (strcmp(optname, "--greedy")     == 0) do_cmgreedy = TRUE;
-    else if  (strcmp(optname, "--hmmgreedy")  == 0) do_hmmgreedy = TRUE;
+    else if  (strcmp(optname, "--greedy")     == 0) do_greedy = TRUE;
     else if  (strcmp(optname, "--gcfile")     == 0) gcfile = optarg;
     else if  (strcmp(optname, "--partition") == 0) 
       {
@@ -468,7 +461,7 @@ main(int argc, char **argv)
     }
   }
 
-#if USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
   if(mpi_num_procs > 1)
     do_timings = FALSE; /* we don't do per node timings, but we do do master node timings */
 #endif
@@ -496,6 +489,8 @@ main(int argc, char **argv)
     Die("--enfseq only makes sense with --enfstart (which can't be 0) also.\n");
   if(do_enforce && enf_cc_start == 0)
     Die("--enfseq only makes sense with --enfstart (which can't be 0) also.\n");
+  if(do_qdb && do_hbanded) 
+    Die("Can't do --qdb and --hbanded. Pick one.\n");
   if (do_scan2bands && !(do_hbanded))
     Die("Can't pick --scan2bands without --hbanded option.\n");
   if (do_hbanded && !(do_hmmfilter))
@@ -518,10 +513,10 @@ main(int argc, char **argv)
     Die("--window only works with --noqdb.\n");
   if(do_rtrans && do_enforce)
     Die("--enf* options incompatible with --rtrans.\n");
-  if(do_cmgreedy && do_inside)
+  if(do_greedy && do_inside)
     Die("--greedy option not yet implemented for inside scans (implement it!)\n");
-  if(do_cmgreedy && do_hmmonly)
-    Die("--greedy option doesn't make sense with --hmmonly scans, did you mean --hmmgreedy?\n");
+  if(do_greedy && do_hmmonly)
+    Die("--greedy option not implemented for --hmmonly scans\n");
   if(do_hmmpad && !do_hmmfilter)
     Die("--hmmpad <n> option only works in combination with --hmmfilter\n");
   if(do_hmmpad && hmmpad < 0)
@@ -530,7 +525,7 @@ main(int argc, char **argv)
     Die("when using --beta <x>, <x> must be greater than 0 and less than 1.\n");
   if(do_partitions && (!do_cm_stats && !do_cp9_stats))
     Die("--partition only makes sense in combination with either -E, --hmmfilter or both.\n");
-#if USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
   if(read_qdb && ((mpi_num_procs > 1) && (mpi_my_rank == mpi_master_rank)))
     Die("Sorry, you can't read in bands with --qdbfile in MPI mode.\n");
 #endif
@@ -573,7 +568,7 @@ main(int argc, char **argv)
     Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
   CMFileRead(cmfp, &cm);
   if(cm == NULL) Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
-#ifdef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
   }   /* End of first block that is only done by master process */
 #endif
 
@@ -583,7 +578,7 @@ main(int argc, char **argv)
   /*printf("0 continue_flag: %d rank: %d\n", continue_flag, mpi_my_rank);*/
   while (continue_flag)
     {
-#ifdef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
       /* If I'm the master, configure the CM based on command line options */
       if (mpi_my_rank == mpi_master_rank) 
 	{
@@ -636,8 +631,7 @@ main(int argc, char **argv)
 	  if(do_null2)        cm->search_opts |= CM_SEARCH_NULL2;
 	  if(do_cm_stats)     cm->search_opts |= CM_SEARCH_CMSTATS;
 	  if(do_cp9_stats)    cm->search_opts |= CM_SEARCH_CP9STATS;
-	  if(do_cmgreedy)     cm->search_opts |= CM_SEARCH_CMGREEDY;
-	  if(do_hmmgreedy)    cm->search_opts |= CM_SEARCH_HMMGREEDY;
+	  if(do_greedy)       cm->search_opts |= CM_SEARCH_GREEDY;
 	  if(do_hbanded)      cm->search_opts |= CM_SEARCH_HBANDED;
 	  if(do_rtrans)       cm->flags       |= CM_RSEARCHTRANS;
 
@@ -685,7 +679,7 @@ main(int argc, char **argv)
 	  else if (status == eslEINVAL) esl_fatal("Can’t autodetect stdin or .gz."); 
 	  else if (status != eslOK) esl_fatal("Failed to open sequence database file, code %d.", status); 
 
-#ifdef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	}   /* End of second block that is only done by master process */
       /* Barrier for debugging */
 
@@ -709,7 +703,7 @@ main(int argc, char **argv)
       CMLogoddsify(cm); /* temporary */
       ConfigCM(cm, preset_dmin, preset_dmax);
 
-#ifdef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
       if(mpi_my_rank == mpi_master_rank)
 	{
 #endif
@@ -719,7 +713,7 @@ main(int argc, char **argv)
 	      debug_print_bands(cm, cm->dmin, cm->dmax);
 	      PrintDPCellsSaved(cm, cm->dmin, cm->dmax, cm->W);
 	    }
-#ifdef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	}
 #endif
 
@@ -727,7 +721,7 @@ main(int argc, char **argv)
        * Calculate EVD stats
        *************************************************/
   
-#ifdef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
       if (mpi_my_rank == mpi_master_rank) 
 	{
 #endif
@@ -746,7 +740,7 @@ main(int argc, char **argv)
 	      fclose(ofp);
 	      printf("done. [%s] %d 100-nt windows\n", gcfile, nwindows );
 	    }
-#ifdef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	}
 #endif
       /* Set sample_length to 2*W if not yet set */
@@ -763,7 +757,7 @@ main(int argc, char **argv)
 	      StopwatchZero(watch);
 	      StopwatchStart(watch);
 	    }	  
-#ifdef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	  if(mpi_my_rank == mpi_master_rank && mpi_num_procs > 1)
 	    {
 	      StopwatchZero(mpi_watch);
@@ -803,7 +797,7 @@ main(int argc, char **argv)
 	      StopwatchZero(watch);
 	      StopwatchStart(watch);
 	    }	  
-#ifdef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	  if(mpi_my_rank == mpi_master_rank && mpi_num_procs > 1)
 	    {
 	      StopwatchZero(mpi_watch);
@@ -828,7 +822,7 @@ main(int argc, char **argv)
 				     cm, num_samples, sample_length, 
 				     TRUE, /* we are doing CP9 stats */
 				     TRUE);/* use easel, discard eventually */
-#ifdef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	    }
 #endif
 	  if(do_timings) /* this will be false if in_mpi */
@@ -838,7 +832,7 @@ main(int argc, char **argv)
 	    }
 	}      
 
-#ifdef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
       if (mpi_my_rank == mpi_master_rank) {
 #endif
     
@@ -930,7 +924,7 @@ main(int argc, char **argv)
 	    StopwatchZero(watch);
 	    StopwatchStart(watch);
 	  }	  
-#ifdef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
       } /* Done with second master-only block */
 #endif 
 
@@ -942,7 +936,7 @@ main(int argc, char **argv)
   
       cons = CreateCMConsensus(cm, 3.0, 1.0); 
   
-#ifdef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
       /* Second broadcast, send N, and the EVD stats if
        * we're doing CM stats and/or CP9 stats. */
       search_second_broadcast(&cm, &N, mpi_my_rank, mpi_master_rank);
@@ -973,17 +967,17 @@ main(int argc, char **argv)
 	  StopwatchDisplay(stdout, "search time:", watch);
 	}
       FreeCM(cm);
-#ifdef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
       if(mpi_my_rank == mpi_master_rank)
 	{
 #endif
       printf("//\n");
-#ifdef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	}
 #endif
       ncm++;
       if(do_timings) StopwatchFree(watch);
-#ifdef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
       if(mpi_my_rank == mpi_master_rank)
 	{
 #endif
@@ -991,17 +985,17 @@ main(int argc, char **argv)
 	  FreeCMConsensus(cons);
 	  free(gc_ct);
 	  if(!(CMFileRead(cmfp, &cm))) continue_flag = 0;
-#ifdef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	}
 #endif
-#ifdef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
       MPI_Barrier(MPI_COMM_WORLD);
       MPI_Bcast (&continue_flag,  1, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
       /*printf("1 continue_flag: %d rank: %d\n", continue_flag, mpi_my_rank);*/
 #endif
     } /* end of while(continue_flag) (continue_flag remains TRUE as long as we are
        * reading CMs from the CM file. */
-#ifdef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
   MPI_Barrier(MPI_COMM_WORLD);
   MPI_Finalize();
   in_mpi = 0;
@@ -1011,7 +1005,7 @@ main(int argc, char **argv)
 #endif
       free(partitions);
       printf ("Fin\n");
-#ifdef USE_MPI
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
     }
 #endif
   return EXIT_SUCCESS;

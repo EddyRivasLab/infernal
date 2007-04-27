@@ -460,7 +460,7 @@ CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 	  if (alpha[0][cur][d] > best_neg_score) best_neg_score = alpha[0][cur][d];
 	}
 
-      if(!(cm->search_opts & CM_SEARCH_CMGREEDY)) /* resolve overlaps optimally */
+      if(!(cm->search_opts & CM_SEARCH_GREEDY)) /* resolve overlaps optimally */
 	{
 	  /* The little semi-Markov model that deals with multihit parsing:
 	   */
@@ -543,7 +543,7 @@ CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W,
    * Traceback stage.
    * Recover all hits: an (i,j,sc) triple for each one.
    *****************************************************************/ 
-  if(!(cm->search_opts & CM_SEARCH_CMGREEDY)) /* resolve overlaps optimally */
+  if(!(cm->search_opts & CM_SEARCH_GREEDY)) /* resolve overlaps optimally */
     {
       j     = j0;
       while (j >= i0) 
