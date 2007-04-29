@@ -219,14 +219,14 @@ main(int argc, char **argv)
   int    use_rf;		/* TRUE was used #=RF to define consensus   */
   float  gapthresh;		/* 0=all cols inserts; 1=all cols consensus */
 
-
+  in_mpi = 0;			/* to silence overzealous compiler warnings */
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
   int mpi_my_rank;              /* My rank in MPI                           */
   int mpi_num_procs;            /* Total number of processes                */
   int mpi_master_rank;          /* Rank of master process                   */
   Stopwatch_t  *mpi_watch;      /* for timings in MPI mode                  */
 
-  /* Initailize MPI, get values for rank and num procs */
+  /* Initialize MPI, get values for rank and num procs */
   MPI_Init (&argc, &argv);
   
   atexit (exit_from_mpi);

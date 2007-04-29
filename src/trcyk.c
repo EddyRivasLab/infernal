@@ -15,7 +15,6 @@ main(int argc, char **argv)
    char          *seqfile;
    SQFILE        *sqfp;
    int            format;
-   int            status;
    CMFILE        *cmfp;
    CM_t          *cm;
    char          *seq;
@@ -28,8 +27,9 @@ main(int argc, char **argv)
 
    int do_local;
 
-   char *optname;
-   char *optarg;
+   /* int status;    */
+   /* char *optname; */
+   /* char *optarg; */
    int   optind;
 
    format = SQFILE_UNKNOWN;

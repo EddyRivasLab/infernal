@@ -114,6 +114,7 @@ A release goes on a stable branch.
    0.6:       875        1477          ?          72
    0.7:       1477       1534         72          84
    0.71:      1534       1725         84         139
+   0.72:      1725       1862        139         149
 
 
 7. Update the copyright, year stamps. 
@@ -133,7 +134,7 @@ A release goes on a stable branch.
 	 ./configure          <-- makes a Makefile (needed for "make dist")
 	 make dist
           [or: 'make -n dist' and execute commands yourself one at a
-           time, under a Bourne shell like 'bash' so the if loops
+           time, under a Bourne shell like 'bash' so the for loops
            work.]
 
    This exports into a infernal-$RELEASE directory, alongside the
@@ -144,14 +145,14 @@ A release goes on a stable branch.
 10. Build for our system (on login-eddy)
          ssh login-eddy
 	 cd releases/infernal-xxx
-	 env CFLAGS="-O3" ./configure --enable-lfs --prefix=/usr/local/infernal-0.71/
+	 env CFLAGS="-O3" ./configure --enable-lfs --prefix=/usr/local/infernal-0.72/
 	 make
 	 make check
          (cd testsuite; ./sqc -p ../squid/ -r ../../infernal-0.52/src 4 regressions.sqc ../src/)
                                                   ^^^^ replace w/ latest old version
          
-   Didn't run regressions at the 0.71 release. Need to leave old release in
-   the releases subdir for the regressions test above to work.
+   Didn't run regressions at the 0.71 or 0.72 releases. Need to leave
+   old release in the releases subdir for the regressions test above to work.
 
    Currently, I don't have permission to install software on login-eddy, so 
    just email Goran at this point.
@@ -160,17 +161,20 @@ A release goes on a stable branch.
 11. Put on the FTP site. (on selab)
           eval `ssh-agent`; ssh-add
           scp 00README                selab:/opt/www/ftp/pub/software/infernal/
+          scp COPYRIGHT               selab:/opt/www/ftp/pub/software/infernal/
           scp Userguide.pdf           selab:/opt/www/ftp/pub/software/infernal/
-          scp ../infernal-0.71.tar.gz selab:/opt/www/ftp/pub/software/infernal/
-          ssh selab  rm -f /opt/www/ftp/pub/software/infernal.tar.gz
-          ssh selab  "(cd /opt/www/ftp/pub/software/infernal; ln -s infernal-0.71.tar.gz infernal.tar.gz)"
+          scp ../infernal-0.72.tar.gz selab:/opt/www/ftp/pub/software/infernal/
+          ssh selab  rm -f /opt/www/ftp/pub/softwareinfernal/infernal.tar.gz
+          ssh selab  "(cd /opt/www/ftp/pub/software/infernal; ln -s infernal-0.72.tar.gz infernal.tar.gz)"
 
 
 12. Update the web site
-         ssh selab
-         cd /home/www/fisher/docs/eddy/infernal
+         cd ~/web/infernal
+         svn update
          emacs index.html 
-	
+         make
+	 texclean
+         svn commit
 
 13. Clean up. Don't remove the old directory though, we'll use it for regression testing 
     at the next release.
@@ -220,18 +224,18 @@ A release goes on a stable branch.
        ( cd easel ; svn commit )
 
 15. Convert the branches to tags.
-         svn move https://svn.janelia.org/eddylab/eddys/src/infernal/branches/release-0.7\
-                  https://svn.janelia.org/eddylab/eddys/src/infernal/tags/0.7\
-                 -m "tagged Infernal 0.7 release"          
-         svn move https://svn.janelia.org/eddylab/eddys/src/squid/branches/infernal/0.7\
-                  https://svn.janelia.org/eddylab/eddys/src/squid/tags/infernal/0.7\
-                 -m "tagged Infernal 0.7 release"          
-         svn move https://svn.janelia.org/eddylab/eddys/src/ssdk/branches/infernal/0.7\
-                  https://svn.janelia.org/eddylab/eddys/src/ssdk/tags/infernal/0.7\
-                 -m "tagged Infernal 0.7 release"          
-         svn move https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/0.7\
-	          https://svn.janelia.org/eddylab/eddys/easel/tags/infernal/0.7\
-                 -m "tagged Infernal 0.7 release"          
+         svn move https://svn.janelia.org/eddylab/eddys/src/infernal/branches/release-0.71\
+                  https://svn.janelia.org/eddylab/eddys/src/infernal/tags/0.71\
+                 -m "tagged Infernal 0.71 release"          
+         svn move https://svn.janelia.org/eddylab/eddys/src/squid/branches/infernal/0.71\
+                  https://svn.janelia.org/eddylab/eddys/src/squid/tags/infernal/0.71\
+                 -m "tagged Infernal 0.71 release"          
+         svn move https://svn.janelia.org/eddylab/eddys/src/ssdk/branches/infernal/0.71\
+                  https://svn.janelia.org/eddylab/eddys/src/ssdk/tags/infernal/0.71\
+                 -m "tagged Infernal 0.71 release"          
+         svn move https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/0.71\
+	          https://svn.janelia.org/eddylab/eddys/easel/tags/infernal/0.71\
+                 -m "tagged Infernal 0.71 release"          
      
    First time only creation of Infernal release subdir for library branches:
          svn mkdir https://svn.janelia.org/eddylab/eddys/easel/tags/infernal\
@@ -248,3 +252,6 @@ A release goes on a stable branch.
 0.55 - SRE, Wed Apr  2 18:12:23 2003   r875
 0.6  - SRE, Tue Nov  1 17:13:00 2005   r1477  Easel:r72
 0.7  - SRE, Tue Dec 13 14:54:30 2005   r1534  Easel:r84
+0.71 - SRE, Thu Nov 30 11:43:57 2006   r1730  Easel:r142
+0.72 - SRE, Sat Jan 27 10:44:46 2007   r1862  Easel:r149
+

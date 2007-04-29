@@ -1,50 +1,33 @@
-EPN, Wed Dec 13 14:17:26 2006
-EPN, Thu Apr  5 08:46:59 2007 (updated)
+Configuring Infernal for MPI parallelization.
+---------------------------------------------
 
-00README-MPI
+If you have an MPI-compliant library installed (LAM, MPICH, OpenMPI)
+and you want to use MPI parallelization, enable MPI with the
+--enable-mpi flag to the configure script:
 
-Notes on configuring developmental (post version 0.72) infernal for
-MPI.
+  % ./configure --with-mpi
+  % make
 
-Currently MPI can be used by cmsearch and cmalign only. 
+This will build both the usual set of (non-MPI) executables including
+cmsearch and cmalign, and two MPI executables, mpi-cmsearch and
+mpi-cmalign.
 
-$INFERNAL = the top level dir 'infernal/' where infernal has been
-            installed, ex: '/usr/local/infernal/'
+Notes on running mpi-cmsearch in MPI mode on the cluster
+--------------------------------------------------------
 
-There's 2 steps, running the configure script and making the
-executables. Both are performed in $INFERNAL/:
+The following is an example from our configuration. We use LAM MPI, on
+a cluster that uses the Sun Grid Engine (SGE) as its queueing manager.
+Your mileage may vary: you may need to consult your local MPI or
+cluster guru if you're running a different MPI package or a different
+queue manager.
 
-To make MPI executables:
-  $ sh ./configure --with-mpi
-  $ make clean; make;
-
-To make non-MPI executables:
-  $ sh ./configure --with-mpi
-  $ make clean; make;
-
-NOTE: MPI executables (cmbuild, cmsearch, cmalign, cmscore, cmeit) in
-$INFERNAL/src will only work on a CPU that supports MPI.
-
-----------------------------------------------------
-Notes on running cmsearch in MPI mode on the cluster
-----------------------------------------------------
-
-Make sure 'cmsearch' has been compiled in MPI mode and it's in your
-path. 
+Make sure 'mpi-cmsearch' is in your $PATH.
 
 To run the CM foo.cm against the database genome.fa on 100 CPUs
-execute the following on the cluster's login server
-(login-eddy.int.janelia.org):
+execute the following on the head node (login-eddy.int.janelia.org):
 
-$ qsub -N foo -o foo.out -b y -cwd -V -j y -pe lam-mpi-tight 100 'mpirun C cmsearch -E 50 --local foo.cm genome.fa > cmsearch.out'
+$ qsub -N foo -o foo.out -b y -cwd -V -j y -pe lam-mpi-tight 100 'mpirun C mpi-cmsearch -E 50 --local foo.cm genome.fa > cmsearch.out'
  
-This will submit a single job called 'foo' to the cluster's queuing
-system, which will run cmsearch in local mode and report all hits with
-E-values above 50. You might also be interested in the --partition
-option for E-values. (Ask me for more info if you're interested).
-
-
-
-
-
-
+This submits a single SGE job named 'foo' to the cluster. This job
+will run mpi-cmsearch in local mode and report all hits with E-values
+above 50.

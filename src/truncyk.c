@@ -123,7 +123,8 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
    int     *touch;
    int      v,y,z;
    int      j,d,i,k;
-   float    sc,esc,tsc;
+   float    sc,tsc;
+   /* float esc; */  /* removed to silence a compiler warning: it's unused at present (SRE) */
    int      yoffset;
    int      W;
    int      jp;

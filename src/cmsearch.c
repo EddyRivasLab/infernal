@@ -47,12 +47,12 @@ void exit_from_mpi () {
 
 static int QDBFileRead(FILE *fp, CM_t *cm, int **ret_dmin, int **ret_dmax);
 static int set_partitions(int **ret_partitions, int *num_partitions, char *list);
-static int debug_print_stats(int *partitions, int num_partitions, double *lambda, double *mu);
+/*static int debug_print_stats(int *partitions, int num_partitions, double *lambda, double *mu); */
 
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-static char banner[] = "mpicmsearch - search a sequence database with an RNA covariance model";
+static char banner[] = "mpi-cmsearch - search a sequence database with an RNA covariance model";
 static char usage[]  = "\
-Usage: mpicmsearch [-options] <cmfile> <sequence file>\n\
+Usage: mpi-cmsearch [-options] <cmfile> <sequence file>\n\
 The sequence file is expected to be in FASTA format.\n\
   Available options are:\n\
    -h     : help; print brief help on version and usage\n\
@@ -70,6 +70,7 @@ The sequence file is expected to be in FASTA format.\n\
    -E <f> : use cutoff E-value of <f> [default ignored; not-calc'ed]\n\
 ";
 #endif 
+
 static char experts[] = "\
   Expert, in development, or infrequently used options are:\n\
    --informat <s>: specify that input alignment is in format <s>, not FASTA\n\
@@ -845,7 +846,7 @@ main(int argc, char **argv)
 	  {
 	    for (i=0; i<GC_SEGMENTS; i++) 
 	      cm->mu[i] = log(cm->K[i]*N)/cm->lambda[i];
-	    /*debug_print_stats(partitions, num_partitions, cm->lambda, cm->mu);*/
+	    /* debug_print_stats(partitions, num_partitions, cm->lambda, cm->mu); */
 	  }    
 	/* else they've been set to default 0.0s in ConfigCM() */
 
@@ -1151,6 +1152,7 @@ int set_partitions (int **ret_partitions, int *num_partitions, char *list)
 
 /* Function: debug_print_stats
  */
+#if 0
 int debug_print_stats(int *partitions, int num_partitions, double *lambda, double *mu)
 {
   int i;
@@ -1179,3 +1181,4 @@ int debug_print_stats(int *partitions, int num_partitions, double *lambda, doubl
   printf("end of debug_print_stats\n");
   return 1;
 }
+#endif

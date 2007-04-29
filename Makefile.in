@@ -198,6 +198,7 @@ check:
 # "make install" installs the programs in BINDIR
 #
 install:
+	mkdir -p ${BINDIR}
 	for file in $(PROGS); do\
 		cp src/$$file $(BINDIR)/;\
 	done

@@ -6,7 +6,8 @@
 
 # Initialize w/ AC_INIT(<package> <version> <bug-report> <tarname>)
 # 
-# The four AC_INIT args set the following output variables and preprocessor symbols:
+# The four AC_INIT args set the following output variables and preprocessor 
+# symbols:
 #     PACKAGE_NAME      <package>     e.g. "Infernal"
 #     PACKAGE_VERSION   <version>     e.g. "0.42"
 #     PACKAGE_BUGREPORT <bug-report>  e.g. "eddy@genetics.wustl.edu"
@@ -24,11 +25,11 @@
 # The output variables are used in Makefiles.
 #
 AC_PREREQ(2.57)
-AC_INIT(Infernal, 0.72, eddys@janelia.hhmi.org, infernal)
+AC_INIT(Infernal, 0.8, eddys@janelia.hhmi.org, infernal)
 AC_MSG_NOTICE([Welcome. Configuring Infernal for your system.])
 
-PACKAGE_RELCODE="infernal0_72"
-PACKAGE_DATE="January 2007"
+PACKAGE_RELCODE="infernal0_8"
+PACKAGE_DATE="April 2007"
 PACKAGE_COPYRIGHT="Copyright (C) 2001-2007 HHMI Janelia Farm"
 PACKAGE_LICENSE="Freely distributed under the GNU General Public License (GPL)"
 PACKAGE_LICENSETAG=gnu
