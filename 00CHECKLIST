@@ -21,31 +21,36 @@ A release goes on a stable branch.
    Compile should be entirely clean when compiled -Wall.
    'make check' should be clean.
 
+   ./configure; make; make check
+   ./configure --enable-mpi; make; make check
+
 3. Create stable release branches in Subversion for all packages.
    All subsequent bugfixes go into this branch, while trunk keeps moving.
    [Query replace the version # here]
          svn copy https://svn.janelia.org/eddylab/eddys/src/infernal/trunk\
-                 https://svn.janelia.org/eddylab/eddys/src/infernal/branches/release-0.71\
-                 -m "created 0.71 release branch"          
+                 https://svn.janelia.org/eddylab/eddys/src/infernal/branches/release-0.8\
+                 -m "created 0.8 release branch"          
          svn copy https://svn.janelia.org/eddylab/eddys/src/squid/trunk\
-                 https://svn.janelia.org/eddylab/eddys/src/squid/branches/infernal/0.71\
-                 -m "created Infernal 0.71 release branch"          
+                 https://svn.janelia.org/eddylab/eddys/src/squid/branches/infernal/0.8\
+                 -m "created Infernal 0.8 release branch"          
          svn copy https://svn.janelia.org/eddylab/eddys/src/ssdk/trunk\
-                 https://svn.janelia.org/eddylab/eddys/src/ssdk/branches/infernal/0.71\
-                 -m "created Infernal 0.71 release branch"          
+                 https://svn.janelia.org/eddylab/eddys/src/ssdk/branches/infernal/0.8\
+                 -m "created Infernal 0.8 release branch"          
          svn copy https://svn.janelia.org/eddylab/eddys/easel/trunk\
-                 https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/0.71\
-                 -m "created Infernal 0.71 release branch"          
+                 https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/0.8\
+                 -m "created Infernal 0.8 release branch"          
 
 4. Check out a working copy of the release branch; update the "svn:externals".
    [Query replace the version # here]
+   Don't call this working directory infernal-xx, just call it infernal, because
+   later "make dist" is going to try to create infernal-xx as its release.
          cd ~/releases
-         svn checkout https://svn.janelia.org/eddylab/eddys/src/infernal/branches/release-0.71 infernal
-         svn proplist --verbose https://svn.janelia.org/eddylab/eddys/src/infernal/branches/release-0.71
+         svn checkout https://svn.janelia.org/eddylab/eddys/src/infernal/branches/release-0.8 infernal
+         svn proplist --verbose https://svn.janelia.org/eddylab/eddys/src/infernal/branches/release-0.8
          svn propedit svn:externals infernal
-           squid   https://svn.janelia.org/eddylab/eddys/src/squid/branches/infernal/0.71
-           ssdk    https://svn.janelia.org/eddylab/eddys/src/ssdk/branches/infernal/0.71
-           easel   https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/0.71
+           squid   https://svn.janelia.org/eddylab/eddys/src/squid/branches/infernal/0.8
+           ssdk    https://svn.janelia.org/eddylab/eddys/src/ssdk/branches/infernal/0.8
+           easel   https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/0.8
          cd infernal
          svn update
          (cd testsuite/; ln -s ../ssdk/sqc .)
@@ -72,7 +77,7 @@ A release goes on a stable branch.
          (./configure; make; make check)
          make clean
 
-  For 0.71, I left out the ccmalloc tests. ccmalloc 0.4.0 
+  For 0.71 and later, I left out the ccmalloc tests. ccmalloc 0.4.0 
   is causing segfaults, and I don't think it's my problem.
   ccmalloc doesn't compile cleanly and its own tests fail.
   In the future, replace w/ valgrind.
@@ -115,6 +120,9 @@ A release goes on a stable branch.
    0.7:       1477       1534         72          84
    0.71:      1534       1725         84         139
    0.72:      1725       1862        139         149
+   0.8:       1862       1968        149         174
+
+
 
 
 7. Update the copyright, year stamps. 
@@ -126,6 +134,8 @@ A release goes on a stable branch.
 	 svn commit
     Remember to separately commit in Easel, squid, ssdk if any
     changes were made there.
+
+   (for 0.8: r1980)
 
 9. Make a distribution tarball.
    (Remaking configure scripts w/ autoconf is needed)
@@ -141,17 +151,19 @@ A release goes on a stable branch.
    infernal working directory in ~/releases/. The tarball is also
    left in ~/releases/.
    
+   Go into infernal-$RELEASE and make sure it looks good from the 
+   perspective of a new user: start by reading the README's.
 
 10. Build for our system (on login-eddy)
          ssh login-eddy
 	 cd releases/infernal-xxx
-	 env CFLAGS="-O3" ./configure --enable-lfs --prefix=/usr/local/infernal-0.72/
+	 env CFLAGS="-O3" ./configure --enable-mpi --enable-lfs --prefix=/usr/local/infernal-0.8/
 	 make
 	 make check
          (cd testsuite; ./sqc -p ../squid/ -r ../../infernal-0.52/src 4 regressions.sqc ../src/)
                                                   ^^^^ replace w/ latest old version
          
-   Didn't run regressions at the 0.71 or 0.72 releases. Need to leave
+   Didn't run regressions at the 0.71 or later releases. Need to leave
    old release in the releases subdir for the regressions test above to work.
 
    Currently, I don't have permission to install software on login-eddy, so 
@@ -163,9 +175,9 @@ A release goes on a stable branch.
           scp 00README                selab:/opt/www/ftp/pub/software/infernal/
           scp COPYRIGHT               selab:/opt/www/ftp/pub/software/infernal/
           scp Userguide.pdf           selab:/opt/www/ftp/pub/software/infernal/
-          scp ../infernal-0.72.tar.gz selab:/opt/www/ftp/pub/software/infernal/
-          ssh selab  rm -f /opt/www/ftp/pub/softwareinfernal/infernal.tar.gz
-          ssh selab  "(cd /opt/www/ftp/pub/software/infernal; ln -s infernal-0.72.tar.gz infernal.tar.gz)"
+          scp ../infernal-0.8.tar.gz  selab:/opt/www/ftp/pub/software/infernal/
+          ssh selab  rm -f /opt/www/ftp/pub/software/infernal/infernal.tar.gz
+          ssh selab  "(cd /opt/www/ftp/pub/software/infernal; ln -s infernal-0.8.tar.gz infernal.tar.gz)"
 
 
 12. Update the web site
@@ -178,7 +190,7 @@ A release goes on a stable branch.
 
 13. Clean up. Don't remove the old directory though, we'll use it for regression testing 
     at the next release.
-        mv infernal-0.71.tar.gz ~/Archive/
+        mv infernal-0.8.tar.gz ~/Archives/
         cd infernal
 	make distclean
 
@@ -189,26 +201,28 @@ A release goes on a stable branch.
        svn log --verbose --stop-on-copy      <-- ssdk, squid are the same
        cd easel
        svn log --verbose --stop-on-copy 
+           infernal   squid      ssdk   easel
     0.6:  (r1465; Easel is r72.)
     0.7:  (r1522; Easel is r81.)
     0.71: (r1723; Easel is r139.)
+    0.8:   r1966       r1967     r1968   r173
 
     Go back to working copies of the trunks, and merge the release branches into it.
        cd ~/src/infernal
        svn update
-       svn merge -r 1723:HEAD https://svn.janelia.org/eddylab/eddys/src/infernal/branches/release-0.71
+       svn merge -r 1966:HEAD https://svn.janelia.org/eddylab/eddys/src/infernal/branches/release-0.8
 
        cd squid
        svn update
-       svn merge -r 1723:HEAD https://svn.janelia.org/eddylab/eddys/src/squid/branches/infernal/0.71
+       svn merge -r 1967:HEAD https://svn.janelia.org/eddylab/eddys/src/squid/branches/infernal/0.8
 
        cd ../ssdk
        svn update
-       svn merge -r 1723:HEAD https://svn.janelia.org/eddylab/eddys/src/ssdk/branches/infernal/0.71
+       svn merge -r 1968:HEAD https://svn.janelia.org/eddylab/eddys/src/ssdk/branches/infernal/0.8
 
        cd ../easel
        svn update
-       svn merge -r 139:HEAD https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/0.71
+       svn merge -r 173:HEAD https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/0.8
        
     Now, the merge will always screw up the svn:externals for Infernal. Reset them.
        cd ..
@@ -224,18 +238,18 @@ A release goes on a stable branch.
        ( cd easel ; svn commit )
 
 15. Convert the branches to tags.
-         svn move https://svn.janelia.org/eddylab/eddys/src/infernal/branches/release-0.71\
-                  https://svn.janelia.org/eddylab/eddys/src/infernal/tags/0.71\
-                 -m "tagged Infernal 0.71 release"          
-         svn move https://svn.janelia.org/eddylab/eddys/src/squid/branches/infernal/0.71\
-                  https://svn.janelia.org/eddylab/eddys/src/squid/tags/infernal/0.71\
-                 -m "tagged Infernal 0.71 release"          
-         svn move https://svn.janelia.org/eddylab/eddys/src/ssdk/branches/infernal/0.71\
-                  https://svn.janelia.org/eddylab/eddys/src/ssdk/tags/infernal/0.71\
-                 -m "tagged Infernal 0.71 release"          
-         svn move https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/0.71\
-	          https://svn.janelia.org/eddylab/eddys/easel/tags/infernal/0.71\
-                 -m "tagged Infernal 0.71 release"          
+         svn move https://svn.janelia.org/eddylab/eddys/src/infernal/branches/release-0.8\
+                  https://svn.janelia.org/eddylab/eddys/src/infernal/tags/0.8\
+                 -m "tagged Infernal 0.8 release"          
+         svn move https://svn.janelia.org/eddylab/eddys/src/squid/branches/infernal/0.8\
+                  https://svn.janelia.org/eddylab/eddys/src/squid/tags/infernal/0.8\
+                 -m "tagged Infernal 0.8 release"          
+         svn move https://svn.janelia.org/eddylab/eddys/src/ssdk/branches/infernal/0.8\
+                  https://svn.janelia.org/eddylab/eddys/src/ssdk/tags/infernal/0.8\
+                 -m "tagged Infernal 0.8 release"          
+         svn move https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/0.8\
+	          https://svn.janelia.org/eddylab/eddys/easel/tags/infernal/0.8\
+                 -m "tagged Infernal 0.8 release"          
      
    First time only creation of Infernal release subdir for library branches:
          svn mkdir https://svn.janelia.org/eddylab/eddys/easel/tags/infernal\
@@ -254,4 +268,6 @@ A release goes on a stable branch.
 0.7  - SRE, Tue Dec 13 14:54:30 2005   r1534  Easel:r84
 0.71 - SRE, Thu Nov 30 11:43:57 2006   r1730  Easel:r142
 0.72 - SRE, Sat Jan 27 10:44:46 2007   r1862  Easel:r149
+0.8  - SRE, Sun Apr 29 11:55:56 2007   r1984  Easel:r176
+
 
