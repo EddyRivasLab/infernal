@@ -172,23 +172,32 @@ To build the executables, include these two options to configure:
 \subsubsection{installing Message Passing Interface (MPI) programs}
 
 \software{Infernal} includes two programs \prog{mpi-cmsearch} and
-\prog{mpi-cmalign} that use MPI parallelization. This software
-currently requires the MPI C compiler \prog{mpicc}.  The MPI
-executables are built with the \prog{--enable-mpi} option:
+\prog{mpi-cmalign} that use MPI parallelization. You have the option
+of compiling these two executables, if you have MPI installed. (We use
+LAM MPI here, but alternative MPI libraries should also work.)  To
+enable MPI and compile these two additional executables, add
+\prog{--enable-mpi} to the configuration command:
 
 \user{./configure --enable-mpi}
 
-A \prog{> make install} following a \prog{./configure --enable-mpi} will
+A \prog{make install} following a \prog{./configure --enable-mpi} will
 install the non-MPI programs (\prog{cmalign}, \prog{cmbuild},
 \prog{cmemit}, \prog{cmscore}, and \prog{cmsearch} as well as
-\prog{mpi-cmsearch} and \prog{mpi-cmalign}. 
+\prog{mpi-cmsearch} and \prog{mpi-cmalign}.
+
+\prog{mpi-cmsearch} and \prog{mpi-cmalign} have the same command line
+arguments as \prog{cmsearch} and \prog{cmalign}, but you must run them
+in an MPI environment with \prog{mpirun} or \prog{mpiexec}, for
+instance (in our LAM environment) with:
+
+\user{mpirun C mpi-cmsearch query.cm target.fa}
 
 \subsection{Example configuration}
 
 The Intel GNU/Linux version installed at Janelia Farm is configured as
 follows:
 
-\user{env CFLAGS="-O3" ./configure --enable-lfs --prefix=/usr/local/infernal-xx}
+\user{env CFLAGS="-O3" ./configure --enable-mpi --enable-lfs --prefix=/usr/local/infernal-xx}
 
 
 
