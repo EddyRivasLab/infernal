@@ -182,6 +182,9 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
   gback    = MallocOrDie(sizeof(int)   * (L+1));
   gback[0] = -1;
   savesc   = MallocOrDie(sizeof(float) * (L+1));
+  alloc_nhits = 10;
+  hitj        = MallocOrDie(sizeof(int)   * alloc_nhits);
+  nhits       = 0;
 
   /* Allocate DP matrix, either 2 rows or L+1 rows (depending on be_efficient),
    * M+1 columns */ 
@@ -294,7 +297,7 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
 	  best_sc = fsc;
 	  best_pos= j;
 	}
-      if(!(cm->search_opts & CM_SEARCH_CMGREEDY)) /* resolve overlaps optimally */
+      if(!(cm->search_opts & CM_SEARCH_HMMGREEDY)) /* resolve overlaps optimally */
 	{
 	  /* The little semi-Markov model that deals with multihit parsing:
 	   */
@@ -318,17 +321,28 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
 	  /* Resolving overlaps greedily (RSEARCH style),  
 	   * Return best hit for each j, IFF it's above threshold */
 	  if (fsc >= cutoff) 
-	    if(results != NULL) 
-	      {
-		i = ((j-W+1)> i0) ? (j-W+1) : i0;
-		report_hit (i, j, 0, fsc, results);
-		/* 0 is for saver, which is irrelevant for HMM hits */
-	      }
-	  if (fsc > best_hmm_sc)
 	    {
-	      best_hmm_sc = fsc;
-	      best_hmm_pos= j;
+	      if(results != NULL) 
+		{
+		  i = ((j-W+1)> i0) ? (j-W+1) : i0;
+		  report_hit (i, j, 0, fsc, results);
+		  /* 0 is for saver, which is irrelevant for HMM hits */
+		}
+	      /* HERE! we need hitj for greedy strategy too */
+	      /*printf("FWD hit[%d]: j: %d sc: %f\n", nhits, j, fsc);*/
+	      hitj[nhits] = j;
+	      nhits++;
+	      if (nhits == alloc_nhits) 
+		{
+		  alloc_nhits += 10;
+		  hitj = ReallocOrDie(hitj,  sizeof(int)   * (alloc_nhits));
+		}
 	    }
+	}
+      if (fsc > best_hmm_sc)
+	{
+	  best_hmm_sc = fsc;
+	  best_hmm_pos= j;
 	}
     } /* end loop over end positions j */
       
@@ -339,9 +353,6 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
        * Traceback stage.
        * Recover all hits: an (i,j,sc) triple for each one and report them.
        *****************************************************************/ 
-      alloc_nhits = 10;
-      hitj        = MallocOrDie(sizeof(int)   * alloc_nhits);
-      nhits       = 0;
       j           = j0;
       while (j >= i0) {
 	jp = j-i0+1;
@@ -616,6 +627,9 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
   gback        = MallocOrDie(sizeof(int)   * (L+2));
   gback[L]   = -1;
   savesc       = MallocOrDie(sizeof(float) * (L+2));
+  alloc_nhits = 10;
+  hiti        = MallocOrDie(sizeof(int)   * alloc_nhits);
+  nhits       = 0;
 
   /* Allocate DP matrix, either 2 rows or L+1 rows (depending on be_efficient),
    * M+1 columns */ 
@@ -797,7 +811,7 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
 	  best_sc = fsc;
 	  best_pos= i+1; /* *off-by-one* (see *off-by-one* below) */
 	}
-      if(!(cm->search_opts & CM_SEARCH_CMGREEDY)) /* resolve overlaps optimally */
+      if(!(cm->search_opts & CM_SEARCH_HMMGREEDY)) /* resolve overlaps optimally */
 	{
 	  /* The little semi-Markov model that deals with multihit parsing:
 	   * *off-by-one*:
@@ -835,17 +849,27 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
 	  /* Resolving overlaps greedily (RSEARCH style),  
 	   * Return best hit for each j, IFF it's above threshold */
 	  if (fsc >= cutoff) 
-	    if(results != NULL) 
-	      {
-		j = (((i+1)+W-1) < j0) ? ((i+1)+W-1) : j0; /* *off-by-one* */
-		report_hit (i, j, 0, fsc, results);
-		/* 0 is for saver, which is irrelevant for HMM hits */
-	      }
-	  if (fsc > best_hmm_sc)
 	    {
-	      best_hmm_sc = fsc;
-	      best_hmm_pos= i;
+	      if(results != NULL) 
+		{
+		  j = (((i+1)+W-1) < j0) ? ((i+1)+W-1) : j0; /* *off-by-one* */
+		  /*printf("BWD REPORTING HIT: i: %d j: %d fsc: %f\n", i, j, fsc);*/
+		  report_hit (i, j, 0, fsc, results);
+		  /* 0 is for saver, which is irrelevant for HMM hits */
+		}
+	      hiti[nhits] = i;
+	      nhits++;
+	      if (nhits == alloc_nhits) 
+		{
+		  alloc_nhits += 10;
+		  hiti = ReallocOrDie(hiti,  sizeof(int)   * (alloc_nhits));
+		}
 	    }
+	}
+      if (fsc > best_hmm_sc)
+	{
+	  best_hmm_sc = fsc;
+	  best_hmm_pos= i;
 	}
     }
   /* End of Backward recursion */
@@ -858,9 +882,6 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
        * Recover all hits: an (i,j,sc) triple for each one.
        * Remember the off-by-one b/t seq index and gamma (see *off-by-one* above)
        *****************************************************************/ 
-      alloc_nhits = 10;
-      hiti  = MallocOrDie(sizeof(int)   * alloc_nhits);
-      nhits = 0;
       i     = i0; 
       while (i <= j0) 
 	{
@@ -968,15 +989,17 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
  * 
  * Purpose:  Scan a sequence with a CP9, potentially rescan CP9 hits with CM.
  *
- *           2 possible modes:
+ *           3 possible modes:
  *
  *           Mode 1: Filter mode with default pad 
  *                   (IF cm->search_opts & CM_SEARCH_HMMFILTER and 
  *                      !cm->search_opts & CM_SEARCH_HMMPAD)
  *                   Scan with CP9Forward() to get likely endpoints (j) of 
  *                   hits, for each j do a CP9Backward() from j-W+1..j to get
- *                   the most likely start point i for this j. Set i' = j-W+1 and
- *                   j' = i+W-1. Each i'..j' subsequence is rescanned with the CM.
+ *                   the most likely start point i for this j. 
+ *                   Set i' = j-W+1 and
+ *                       j' = i+W-1. 
+ *                   Each i'..j' subsequence is rescanned with the CM.
  * 
  *           Mode 2: Filter mode with user-defined pad 
  *                   (IF cm->search_opts & CM_SEARCH_HMMFILTER and 
