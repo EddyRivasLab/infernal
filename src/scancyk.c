@@ -103,12 +103,18 @@ int compare_results (const void *a_void, const void *b_void) {
  * 2.  For each hit, sees if any nucleotide covered yet
  *     If yes, remove hit
  *     If no, mark each nt as covered
+ * 
+ * Args: 
+ *        i0    - first position of subsequence results work for (1 for full seq)
+ *        j0    - last  position of subsequence results work for (L for full seq)
  */
-void remove_overlapping_hits (scan_results_t *results, int L) 
+void remove_overlapping_hits (scan_results_t *results, int i0, int j0)
 {
   char *covered_yet;
   int x,y;
   int covered;
+  int L;
+  int yp;          /* offset position, yp = y-i0+1 */
   scan_result_node_t swap;
 
   if (results == NULL)
@@ -117,6 +123,7 @@ void remove_overlapping_hits (scan_results_t *results, int L)
   if (results->num_results == 0)
     return;
 
+  L = j0-i0+1;
   covered_yet = MallocOrDie (sizeof(char)*(L+1));
   for (x=0; x<=L; x++)
     covered_yet[x] = 0;
@@ -126,15 +133,20 @@ void remove_overlapping_hits (scan_results_t *results, int L)
   for (x=0; x<results->num_results; x++) {
     covered = 0;
     for (y=results->data[x].start; y<=results->data[x].stop && !covered; y++) {
-      if (covered_yet[y] != 0) {
+      {
+	yp = y-i0+1; 
+	assert(yp > 0 && yp <= L);
+	if (covered_yet[yp] != 0) {
 	covered = 1;
-      } 
+	} 
+      }
     }
     if (covered == 1) {
       results->data[x].start = -1;        /* Flag -- remove later to keep sorted */
     } else {
       for (y=results->data[x].start; y<=results->data[x].stop; y++) {
-	covered_yet[y] = 1;
+	yp = y-i0+1; 
+	covered_yet[yp] = 1;
       }
     }
   }

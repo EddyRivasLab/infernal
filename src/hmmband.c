@@ -297,10 +297,8 @@ CP9_seq2posteriors(CM_t *cm, char *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9
     sc = CP9Forward(cm, dsq, i0, j0, (j0-i0+1), 
 		    0,    /* cp9_cutoff score, irrelevant */
 		    NULL,  /* don't care about score of each posn */
-		    NULL,  /* don't keep track of locations of hits */
-		    NULL,  /* don't keep track of number of hits */
 		    NULL,  /* don't care about best scoring start point */
-		    NULL,  /* don't report hits */
+		    NULL,  /* don't report hits to results data structure */
 		    do_scan2bands, /* are we using scanning Forward/Backward */
 		    TRUE,  /* we are going to use posteriors to align */
 		    FALSE, /* we're not rescanning */
@@ -314,10 +312,8 @@ CP9_seq2posteriors(CM_t *cm, char *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9
     sc = CP9Backward(cm, dsq, i0, j0, (j0-i0+1), 
 		     0,    /* cp9_cutoff score, irrelevant */
 		     NULL,  /* don't care about score of each posn */
-		     NULL,  /* don't keep track of locations of hits */
-		     NULL,  /* don't keep track of number of hits */
 		     NULL,  /* don't care about best scoring start point */
-		     NULL,  /* don't report hits */
+		     NULL,  /* don't report hits to results data structure */
 		     do_scan2bands, /* are we using scanning Forward/Backward */
 		     TRUE,  /* we are going to use posteriors to align */
 		     FALSE, /* we're not rescanning */

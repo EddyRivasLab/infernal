@@ -645,6 +645,8 @@ CPlan9SWConfig(struct cplan9_s *hmm, float pentry, float pexit)
     printf("after renormalizing: end[%d]: %f\n", k, hmm->end[k]);*/
 
   hmm->flags       &= ~CPLAN9_HASBITS; /* reconfig invalidates log-odds scores */
+  hmm->flags       |= CPLAN9_LOCAL_BEGIN; /* local begins now on */
+  hmm->flags       |= CPLAN9_LOCAL_END;   /* local ends now on */
 }
 
 /* Function: CPlan9GlobalConfig()
@@ -680,8 +682,9 @@ CPlan9GlobalConfig(struct cplan9_s *hmm)
 
   CPlan9RenormalizeExits(hmm, 1);
   hmm->flags       &= ~CPLAN9_HASBITS; /* reconfig invalidates log-odds scores */
+  hmm->flags       &= ~CPLAN9_LOCAL_BEGIN; /* local begins now off */
+  hmm->flags       &= ~CPLAN9_LOCAL_END;   /* local ends now off */
 }
-
 
 /* Function: CPlan9SWConfigEnforce()
  * EPN, Fri Feb  9 05:47:37 2007
@@ -735,7 +738,9 @@ CPlan9SWConfigEnforce(struct cplan9_s *hmm, float pentry, float pexit,
   for (k = enf_end_pos; k < hmm->M; k++)
     hmm->end[k] = basep / (1. - basep * (float) ((k-enf_end_pos)-1));
   CPlan9RenormalizeExits(hmm, 1);
-  hmm->flags       &= ~CPLAN9_HASBITS; /* reconfig invalidates log-odds scores */
+  hmm->flags       &= ~CPLAN9_HASBITS;     /* reconfig invalidates log-odds scores */
+  hmm->flags       |= CPLAN9_LOCAL_BEGIN; /* local begins now on */
+  hmm->flags       |= CPLAN9_LOCAL_END;   /* local ends now on */
 }
 
 /* Function: CPlan9RenormalizeExits()

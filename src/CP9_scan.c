@@ -97,8 +97,6 @@
  *           W         - the maximum size of a hit (often cm->W)
  *           cutoff    - minimum score to report
  *           ret_sc    - RETURN: int log odds Forward score for each end point [0..(j0-i0+1)]
- *           ret_nhits - RETURN: number of hits above cutoff saved.
- *           ret_hitj  - RETURN: end positions of hits, 0..ret_nhits-1
  *           ret_maxres- RETURN: start position that gives maximum score max argmax_i sc[i]
  *           results   - scan_results_t to add to; if NULL, don't keep results
  *           do_scan   - TRUE if we're scanning, HMM can start to emit anywhere i0..j0,
@@ -115,9 +113,8 @@
  */
 float
 CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
-	   int **ret_hitj, int *ret_nhits, int *ret_bestpos, scan_results_t *results, 
-	   int do_scan, int doing_align, int doing_rescan, int be_efficient, 
-	   CP9_dpmatrix_t **ret_mx)
+	   int *ret_bestpos, scan_results_t *results, int do_scan, int doing_align, int doing_rescan, 
+	   int be_efficient, CP9_dpmatrix_t **ret_mx)
 {
   int          j;           /*     actual   position in the subsequence                     */
   int          jp;          /* j': relative position in the subsequence                     */
@@ -136,9 +133,6 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
   float       *gamma;       /* SHMM DP matrix for optimum nonoverlap resolution [0..j0-i0+1]*/
   int         *gback;       /* traceback pointers for SHMM                      [0..j0-i0+1]*/ 
   float       *savesc;      /* saves score of hit added to best parse at j      [0..j0-i0+1]*/ 
-  int          nhits;       /* number of hits found w/bit score >= cutoff                   */
-  int         *hitj;        /* end positions (j) of hits [0..nhits-1]                       */
-  int          alloc_nhits; /* used to grow the hitj array                                  */
   float        best_hmm_sc; /* Best overall score from semi-HMM to return if do_scan        */
   float        best_hmm_pos;/* residue giving best_hmm_sc                                   */
   float        best_sc;     /* Best score overall, returned if 0 hits found by HMM & do_scan*/
@@ -182,9 +176,6 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
   gback    = MallocOrDie(sizeof(int)   * (L+1));
   gback[0] = -1;
   savesc   = MallocOrDie(sizeof(float) * (L+1));
-  alloc_nhits = 10;
-  hitj        = MallocOrDie(sizeof(int)   * alloc_nhits);
-  nhits       = 0;
 
   /* Allocate DP matrix, either 2 rows or L+1 rows (depending on be_efficient),
    * M+1 columns */ 
@@ -325,17 +316,9 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
 	      if(results != NULL) 
 		{
 		  i = ((j-W+1)> i0) ? (j-W+1) : i0;
+		  /*printf("FWD greedy REPORTING HIT: i: %d j: %d fsc: %f\n", i, j, fsc);*/
 		  report_hit (i, j, 0, fsc, results);
 		  /* 0 is for saver, which is irrelevant for HMM hits */
-		}
-	      /* HERE! we need hitj for greedy strategy too */
-	      /*printf("FWD hit[%d]: j: %d sc: %f\n", nhits, j, fsc);*/
-	      hitj[nhits] = j;
-	      nhits++;
-	      if (nhits == alloc_nhits) 
-		{
-		  alloc_nhits += 10;
-		  hitj = ReallocOrDie(hitj,  sizeof(int)   * (alloc_nhits));
 		}
 	    }
 	}
@@ -378,10 +361,8 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
 		    /*printf("rechecking hit from %d to %d\n", gback[jp], j);*/
 		    temp_sc = CP9Forward(cm, dsq, gback[jp], j, cm->W, cutoff, 
 					 NULL,  /* don't care about scores of each pos */
-					 NULL,  /* don't care about locations of hits */
-					 NULL,  /* don't care about num hits found */
 					 NULL,  /* don't care about best scoring position */
-					 NULL,  /* don't report hits */
+					 NULL,  /* don't report hits to results data structure */
 					 TRUE,  /* we're scanning */
 					 FALSE, /* we're not ultimately aligning */
 					 TRUE,  /* set the doing_rescan arg to TRUE, 
@@ -402,31 +383,21 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
 		  {
 		    if(results != NULL) /* report the hit */
 		      {
+			/*printf("FWD reporting hit: i: %d j: %d sc: %f\n", gback[jp], j, savesc[jp]);*/
 			report_hit(gback[jp], j, 0, savesc[jp], results); 
 			/* 0 is for saver, which is irrelevant for HMM hits */
-		      }
-		    hitj[nhits] = j;
-		    nhits++;
-		    if (nhits == alloc_nhits) 
-		      {
-			alloc_nhits += 10;
-			hitj = ReallocOrDie(hitj,  sizeof(int)   * (alloc_nhits));
 		      }
 		  }
 	      }
 	    j = gback[jp]-1;
 	  }
       }
-      if(ret_hitj != NULL) *ret_hitj = hitj;
-      else free(hitj);
     }
   /* clean up and exit */
   free(gback);
   free(gamma);
   free(savesc);
 
-  /*printf("returning from CP9Forward()\n");*/
-  if(ret_nhits != NULL) *ret_nhits = nhits;
   /* determine score to return: (I know, too complex) */
   if(doing_align)
     {
@@ -538,8 +509,6 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
  *           W         - the maximum size of a hit (often cm->W)
  *           cutoff    - minimum score to report
  *           ret_sc    - RETURN: int log odds Backward score for each end point [0..(j0-i0+1)]
- *           ret_nhits - RETURN: number of hits above cutoff saved.
- *           ret_hiti  - RETURN: start positions of hits, 0..ret_nhits-1
  *           ret_bestpos- RETURN: start position that gives maximum score max argmax_i sc[i]
  *           results   - scan_results_t to add to; if NULL, don't keep results
  *           do_scan   - TRUE if we're scanning, HMM can start to emit anywhere i0..j0,
@@ -557,9 +526,8 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
  */
 float
 CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
-	    int **ret_hiti, int *ret_nhits, int *ret_bestpos, scan_results_t *results, 
-	    int do_scan, int doing_align, int doing_rescan, int be_efficient, 
-	    CP9_dpmatrix_t **ret_mx)
+	    int *ret_bestpos, scan_results_t *results, int do_scan, int doing_align, 
+	    int doing_rescan, int be_efficient, CP9_dpmatrix_t **ret_mx)
 {
   int          j;           /*     actual   position in the subsequence                     */
   int          jp;          /* j': relative position in the subsequence                     */
@@ -578,9 +546,6 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
   float       *gamma;       /* SHMM DP matrix for optimum nonoverlap resolution [0..j0-i0+1]*/
   int         *gback;       /* traceback pointers for SHMM                      [0..j0-i0+1]*/ 
   float       *savesc;      /* saves score of hit added to best parse at j      [0..j0-i0+1]*/ 
-  int          nhits;       /* number of hits found w/bit score >= cutoff                   */
-  int         *hiti;        /* start positions (i) of hits [0..nhits-1]                     */
-  int          alloc_nhits; /* used to grow the hitj array                                  */
   float        best_hmm_sc; /* Best overall score from semi-HMM to return if do_scan        */
   float        best_hmm_pos;/* residue giving best_hmm_sc                                   */
   float        best_sc;     /* Best score overall, returned if 0 hits found by HMM & do_scan*/
@@ -627,9 +592,6 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
   gback        = MallocOrDie(sizeof(int)   * (L+2));
   gback[L]   = -1;
   savesc       = MallocOrDie(sizeof(float) * (L+2));
-  alloc_nhits = 10;
-  hiti        = MallocOrDie(sizeof(int)   * alloc_nhits);
-  nhits       = 0;
 
   /* Allocate DP matrix, either 2 rows or L+1 rows (depending on be_efficient),
    * M+1 columns */ 
@@ -853,16 +815,9 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
 	      if(results != NULL) 
 		{
 		  j = (((i+1)+W-1) < j0) ? ((i+1)+W-1) : j0; /* *off-by-one* */
-		  /*printf("BWD REPORTING HIT: i: %d j: %d fsc: %f\n", i, j, fsc);*/
-		  report_hit (i, j, 0, fsc, results);
+		  /*printf("BWD greedy REPORTING HIT: i: %d j: %d fsc: %f\n", i+1, j, fsc);*/ /* *off-by-one* */
+		  report_hit (i+1, j, 0, fsc, results); 
 		  /* 0 is for saver, which is irrelevant for HMM hits */
-		}
-	      hiti[nhits] = i;
-	      nhits++;
-	      if (nhits == alloc_nhits) 
-		{
-		  alloc_nhits += 10;
-		  hiti = ReallocOrDie(hiti,  sizeof(int)   * (alloc_nhits));
 		}
 	    }
 	}
@@ -909,10 +864,8 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
 		      /*printf("rechecking hit from %d to %d\n", i, gback[ip]);*/
 		      temp_sc = CP9Backward(cm, dsq, i, gback[ip], cm->W, cutoff,  /* *off-by-one* i+1 */
 					    NULL,  /* don't care about scores of each pos */
-					    NULL,  /* don't care about locations of hits */
-					    NULL,  /* don't care about num hits found */
 					    NULL,  /* don't care about best scoring position */
-					    NULL,  /* don't report hits */
+					    NULL,  /* don't report hits to results data structure */
 					    TRUE,  /* we're scanning */
 					    FALSE, /* we're not ultimately aligning */
 					    TRUE,  /* set the doing_rescan arg to TRUE, 
@@ -933,24 +886,15 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
 		    {
 		      if(results != NULL) /* report the hit */
 			{
-			  report_hit(i, gback[ip], 0, savesc[ip], results); /* *off-by-one */
+			  /*printf("BWD optimal reporting hit i: %d j: %d sc: %f\n", i, gback[ip], savesc[ip]);*/
+			  report_hit(i, gback[ip], 0, savesc[ip], results); 
 			  /* 0 is for saver, which is irrelevant for HMM hits */
-			}
-		      hiti[nhits] = i; 
-		      /*printf("accepted hiti[%d]: %d\n", nhits, hiti[nhits]);*/
-		      nhits++;
-		      if (nhits == alloc_nhits) 
-			{
-			  alloc_nhits += 10;
-			  hiti = ReallocOrDie(hiti,  sizeof(int)   * (alloc_nhits));
 			}
 		    }
 		}
 	      i = gback[ip]+1;
 	    }
 	}
-      if(ret_hiti != NULL) *ret_hiti = hiti;
-      else free(hiti);
     }
   free(gback);
   free(gamma);
@@ -959,7 +903,6 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
   /*printf("returning from CP9Backward()\n");*/
   if(ret_sc != NULL) *ret_sc = sc;
   else free(sc);
-  if(ret_nhits != NULL) *ret_nhits = nhits;
   /* determine score to return: (I know, too complex) */
   if(doing_align)
     {
@@ -1057,6 +1000,8 @@ CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
   int padmode;
   CP9_dpmatrix_t *fmx;
   CP9_dpmatrix_t *bmx;
+  scan_results_t *fwd_results;
+  scan_results_t *bwd_results;
 
   /* check contract */
   if(cm->cp9 == NULL)
@@ -1067,6 +1012,15 @@ CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
   if(!((cm->search_opts & CM_SEARCH_HMMFILTER) || 
        (cm->search_opts & CM_SEARCH_HMMONLY)))
     Die("ERROR in CP9Scan_dispatch(), neither CM_SEARCH_HMMFILTER nor CM_SEARCH_HMMONLY flag is up.\n");
+  if((cm->search_opts & CM_SEARCH_HGBANDED) &&
+     (!(cm->search_opts & CM_SEARCH_HBANDED)))
+     Die("ERROR in CP9Scan_dispatch(), CM_SEARCH_HGBANDED flag up, but CM_SEARCH_HBANDED flag down.\n");
+  if((cm->search_opts & CM_SEARCH_HMMGLOCAL) &&
+     (!(cm->search_opts & CM_SEARCH_HMMFILTER)))
+     Die("ERROR in CP9Scan_dispatch(), CM_SEARCH_HMMGLOCAL flag up, but CM_SEARCH_HMMFILTER flag down.\n");
+  if((cm->search_opts & CM_SEARCH_HMMGLOCAL) &&
+     (!((cm->cp9->flags & CPLAN9_LOCAL_BEGIN) && (cm->cp9->flags & CPLAN9_LOCAL_END))))
+    Die("ERROR in CP9Scan_dispatch(), CM_SEARCH_HMMGLOCAL flag up, but CP9 not configured for local alignment.\n");
 
   /*printf("in CP9Scan_dispatch(), i0: %d j0: %d\n", i0, j0);
     printf("cp9_cutoff: %f\n", cp9_cutoff);*/
@@ -1085,11 +1039,21 @@ CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
 	  padmode = PAD_ADDI_SUBJ;
 	  ipad = jpad = W-1; /* subtract W-1 from j, add W-1 to i */
 	}
-      do_collapse = TRUE;
+      if(cm->search_opts && CM_SEARCH_HBANDED)
+	do_collapse = FALSE;
+      else
+	do_collapse = TRUE;
     }
-
+  
   /* Scan the (sub)seq w/Forward, getting j end points of hits above cutoff */
-  best_hmm_fsc = CP9Forward(cm, dsq, i0, j0, W, cp9_cutoff, NULL, &f_hitj, &f_nhits, NULL, NULL, 
+  fwd_results = CreateResults(INIT_RESULTS);
+  /* Configure HMM for global alignment if flag is set */
+  if(cm->search_opts & CM_SEARCH_HMMGLOCAL)
+    {
+      CPlan9GlobalConfig(cm->cp9);
+      CP9Logoddsify(cm->cp9);
+    }
+  best_hmm_fsc = CP9Forward(cm, dsq, i0, j0, W, cp9_cutoff, NULL, NULL, fwd_results,
 			    TRUE,   /* we're scanning */
 			    FALSE,  /* we're not ultimately aligning */
 			    FALSE,  /* we're not rescanning */
@@ -1097,27 +1061,27 @@ CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
 			    NULL);  /* don't want the DP matrix back */
   best_hmm_sc = best_hmm_fsc;
 
-  /* Determine start points (i) of the hits 
-   * based on Backward scan starting at j */
-  alloc_nhits = 10 < f_nhits ? 10 : f_nhits;
-  hiti  = MallocOrDie(sizeof(int)   * alloc_nhits);
-  hitj  = MallocOrDie(sizeof(int)   * alloc_nhits);
-  hitsc = MallocOrDie(sizeof(float) * alloc_nhits);
-  
-  nhits = 0;
-  for(h = 0; h < f_nhits; h++) 
+  /* Remove overlapping hits, if we're being greedy */
+  if(cm->search_opts & CM_SEARCH_HMMGREEDY) /* resolve overlaps by being greedy */
     {
-      min_i = (f_hitj[h] - W + 1) >= 1 ? (f_hitj[h] - W + 1) : 1;
-      cur_best_hmm_bsc = CP9Backward(cm, dsq, min_i, f_hitj[h], W, cp9_cutoff, 
+      assert(i0 == 1); 
+      remove_overlapping_hits (fwd_results, i0, j0);
+    }
+
+  /* Determine start points (i) of the hits based on Backward scan starting at j,
+   * report hits IFF CM_SEARCH_HMMONLY */
+  bwd_results = CreateResults(INIT_RESULTS);
+  for(h = 0; h < fwd_results->num_results; h++) 
+    {
+      min_i = (fwd_results->data[h].stop - W + 1) >= 1 ? (fwd_results->data[h].stop - W + 1) : 1;
+      cur_best_hmm_bsc = CP9Backward(cm, dsq, min_i, fwd_results->data[h].stop, W, cp9_cutoff, 
 				     NULL, /* don't care about score of each posn */
-				     NULL, /* don't care about locations of hits */
-				     NULL, /* don't care about number of hits */
 				     &i,   /* set i as the best scoring start point from j-W..j */
-				     NULL,  /* don't report hits */
+				     ((cm->search_opts & CM_SEARCH_HMMONLY) ? results : bwd_results),  
 				     TRUE,  /* we're scanning */
+				     /*FALSE,*/  /* we're not scanning */
 				     FALSE, /* we're not ultimately aligning */
-				     //FALSE,  /* we're not scanning */
-				     FALSE,  /* don't rescan */
+				     FALSE, /* don't rescan */
 				     TRUE,  /* be memory efficient */
 				     NULL); /* don't want the DP matrix back */
       //FALSE,  /* don't be memory efficient */
@@ -1127,43 +1091,41 @@ CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
        * debug_check_CP9_FB(fmx, bmx, cm->cp9, cur_best_hmm_bsc, i0, j0, dsq); */
       
       if(cur_best_hmm_bsc > best_hmm_sc) best_hmm_sc = cur_best_hmm_bsc;
-      if(cur_best_hmm_bsc >= cp9_cutoff)
-	{
-	  /* this is a real hit, Backward found hit from j-W+1..j >= cutoff */
-	  hiti[nhits]  = i;
-	  hitj[nhits]  = f_hitj[h];
-	  /*printf("HMM hit: %d i: %d j: %d\n", nhits, i,  f_hitj[h]);*/
-	  hitsc[nhits] = cur_best_hmm_bsc; /* only used if CM_SEARCH_HMMONLY */
-	  nhits++;
-	  if (nhits == alloc_nhits) 
-	    {
-	      alloc_nhits += 10;
-	      hiti  = ReallocOrDie(hiti,  sizeof(int)   * alloc_nhits);
-	      hitj  = ReallocOrDie(hitj,  sizeof(int)   * alloc_nhits);
-	      hitsc = ReallocOrDie(hitsc, sizeof(float) * alloc_nhits);
-	    }
-	}
     }	  
+  /* Reconfigure HMM for local alignment if flag is set */
+  if(cm->search_opts & CM_SEARCH_HMMGLOCAL)
+    {
+      CPlan9SWConfig(cm->cp9, ((cm->cp9->M)-1.)/cm->cp9->M,  /* all start pts equiprobable, including 1 */
+		     ((cm->cp9->M)-1.)/cm->cp9->M);  /* all end pts equiprobable, including 1 */
+      CP9Logoddsify(cm->cp9);
+    }
   /* Rescan with CM if we're filtering and not doing cp9 stats */
   if(!doing_cp9_stats && (cm->search_opts & CM_SEARCH_HMMFILTER))
     {
-      best_cm_sc = RescanFilterSurvivors(cm, dsq, hiti, hitj, nhits, i0, j0, W, 
-					 padmode, ipad, ipad, 
+      /* Remove overlapping hits, if we're being greedy */
+      if(cm->search_opts & CM_SEARCH_HMMGREEDY) 
+	{
+	  assert(i0 == 1); 
+	  remove_overlapping_hits (bwd_results, i0, j0);
+	}
+      if(cm->search_opts & CM_SEARCH_HGBANDED)
+	{
+	  CPlan9GlobalConfig(cm->cp9);
+	  CP9Logoddsify(cm->cp9);
+	}
+      best_cm_sc = RescanFilterSurvivors(cm, dsq, bwd_results, i0, j0, W, 
+					 padmode, ipad, jpad, 
 					 do_collapse, cm_cutoff, cp9_cutoff, 
 					 results, ret_flen);
-    }
-  else if(!doing_cp9_stats && (cm->search_opts & CM_SEARCH_HMMONLY))
-    {
-      /* report hits as i,j pairs i from CP9Forward() and j from CP9Backward() */
-      for(h = 0; h <= nhits-1; h++) 
+      /* Reconfigure HMM for local alignment if flag is set */
+      if(cm->search_opts & CM_SEARCH_HMMGLOCAL)
 	{
-	  report_hit(hiti[h], hitj[h], 0, hitsc[h], results); 
-	  /* 0 is for saver, which is irrelevant for HMM hits */
+	  CPlan9SWConfig(cm->cp9, ((cm->cp9->M)-1.)/cm->cp9->M,  /* all start pts equiprobable, including 1 */
+			 ((cm->cp9->M)-1.)/cm->cp9->M);  /* all end pts equiprobable, including 1 */
+	  CP9Logoddsify(cm->cp9);
 	}
     }
-  free(hiti);
-  free(hitj);
-  free(hitsc);
+  FreeResults (fwd_results);
   if(doing_cp9_stats || cm->search_opts & CM_SEARCH_HMMONLY)
     return best_hmm_sc;
   else
@@ -1195,9 +1157,7 @@ CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
  * Args:     
  *           cm         - the covariance model, includes cm->cp9: a CP9 HMM
  *           dsq        - sequence in digitized form
- *           hiti       - start of subseqs that survived filter [0..nhits-1]
- *           hitj       - end of subseqs that survived filter   [0..nhits-1]
- *           nhits      - number of hits that survived filter
+ *           hmm_results- info on HMM hits that survived filter
  *           i0         - start of target subsequence (1 for beginning of dsq)
  *           j0         - end of target subsequence (L for end of dsq)
  *           W          - the maximum size of a hit (often cm->W)
@@ -1213,7 +1173,7 @@ CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
  * Returns:  best_sc found when rescanning with CM 
  */
 float
-RescanFilterSurvivors(CM_t *cm, char *dsq, int *hiti, int *hitj, int nhits, int i0, int j0,
+RescanFilterSurvivors(CM_t *cm, char *dsq, scan_results_t *hmm_results, int i0, int j0,
 		      int W, int padmode, int ipad, int jpad, int do_collapse,
 		      float cm_cutoff, float cp9_cutoff, scan_results_t *results, int *ret_flen)
 {
@@ -1225,6 +1185,7 @@ RescanFilterSurvivors(CM_t *cm, char *dsq, int *hiti, int *hitj, int nhits, int 
   float ffrac;
   int   prev_j;
   int   next_j;
+  int   nhits;
 
   best_cm_sc = IMPOSSIBLE;
   flen = 0;
@@ -1242,54 +1203,59 @@ RescanFilterSurvivors(CM_t *cm, char *dsq, int *hiti, int *hitj, int nhits, int 
   /* For each hit, add pad according to mode and rescan by calling actually_search_target(). 
    * If do_collapse, collapse multiple overlapping hits into 1 before rescanning */
   /* hits should always be sorted by decreasing j, if this is violated - die. */
+  nhits = hmm_results->num_results;
   for(h = 0; h < nhits; h++) 
     {
-      if(h != 0 && hitj[h] > prev_j) 
+      if(h != 0 && hmm_results->data[h].stop > prev_j) 
 	ESL_EXCEPTION(eslEINCOMPAT, "j's not in descending order");
-      prev_j = hitj[h];
+      prev_j = hmm_results->data[h].stop;
 
       /* add pad */
       if(padmode == PAD_SUBI_ADDJ)
 	{
-	  i = ((hiti[h] - ipad) >= 1)    ? (hiti[h] - ipad) : 1;
-	  j = ((hitj[h] + jpad) <= j0)   ? (hitj[h] + jpad) : j0;
+	  i = ((hmm_results->data[h].start - ipad) >= 1)    ? (hmm_results->data[h].start - ipad) : 1;
+	  j = ((hmm_results->data[h].stop  + jpad) <= j0)   ? (hmm_results->data[h].stop  + jpad) : j0;
 	  if((h+1) < nhits)
-	    next_j = ((hitj[h+1] + jpad) <= j0)   ? (hitj[h+1] + jpad) : j0;
+	    next_j = ((hmm_results->data[h+1].stop + jpad) <= j0)   ? (hmm_results->data[h+1].stop + jpad) : j0;
 	  else
 	    next_j = -1;
 	}
       else if(padmode == PAD_ADDI_SUBJ)
 	{
-	  i = ((hitj[h] - jpad) >= 1)    ? (hitj[h] - jpad) : 1;
-	  j = ((hiti[h] + ipad) <= j0)   ? (hiti[h] + ipad) : j0;
+	  i = ((hmm_results->data[h].stop  - jpad) >= 1)    ? (hmm_results->data[h].stop  - jpad) : 1;
+	  j = ((hmm_results->data[h].start + ipad) <= j0)   ? (hmm_results->data[h].start + ipad) : j0;
 	  if((h+1) < nhits)
-	    next_j = ((hiti[h+1] + ipad) <= j0)   ? (hiti[h+1] + ipad) : j0;
+	    next_j = ((hmm_results->data[h+1].start + ipad) <= j0)   ? (hmm_results->data[h+1].start + ipad) : j0;
 	  else
 	    next_j = -1;
 	}
-      /*printf("subseq: hit %d i: %d (%d) j: %d (%d)\n", h, i, hiti[h], j, hitj[h]);*/
-      while(((h+1) < nhits) && (next_j >= i))
-      {
-	/* suck in hit */
-	h++;
-	if(padmode == PAD_SUBI_ADDJ)
-	  {
-	    i = ((hiti[h] - ipad) >= 1)    ? (hiti[h] - ipad) : 1;
-	    if((h+1) < nhits)
-	      next_j = ((hitj[h+1] + jpad) <= j0)   ? (hitj[h+1] + jpad) : j0;
-	    else
-	      next_j = -1;
-	  }
-	else if(padmode == PAD_ADDI_SUBJ)
-	  {
-	    i = ((hitj[h] - jpad) >= 1)    ? (hitj[h] - jpad) : 1;
-	    if((h+1) < nhits)
-	      next_j = ((hiti[h+1] + ipad) <= j0)   ? (hiti[h+1] + ipad) : j0;
-	    else
-	      next_j = -1;
-	  }
-	/*printf("\tsucked in subseq: hit %d new_i: %d j (still): %d\n", h, i, j);*/
-      }
+      /*printf("subseq: hit %d i: %d (%d) j: %d (%d)\n", h, i, hmm_results->data[h].start[h], j, hmm_results->data[h].stop[h]);*/
+
+      if(do_collapse) /* collapse multiple hits that overlap after padding on both sides into a single hit */
+	{
+	  while(((h+1) < nhits) && (next_j >= i))
+	    {
+	      /* suck in hit */
+	      h++;
+	      if(padmode == PAD_SUBI_ADDJ)
+		{
+		  i = ((hmm_results->data[h].start - ipad) >= 1)    ? (hmm_results->data[h].start - ipad) : 1;
+		  if((h+1) < nhits)
+		    next_j = ((hmm_results->data[h+1].stop + jpad) <= j0)   ? (hmm_results->data[h+1].stop + jpad) : j0;
+		  else
+		    next_j = -1;
+		}
+	      else if(padmode == PAD_ADDI_SUBJ)
+		{
+		  i = ((hmm_results->data[h].stop - jpad) >= 1)    ? (hmm_results->data[h].stop - jpad) : 1;
+		  if((h+1) < nhits)
+		    next_j = ((hmm_results->data[h+1].start + ipad) <= j0)   ? (hmm_results->data[h+1].start + ipad) : j0;
+		  else
+		    next_j = -1;
+		}
+	      /*printf("\tsucked in subseq: hit %d new_i: %d j (still): %d\n", h, i, j);*/
+	    }
+	}
       /*printf("in RescanFilterSurvivors(): calling actually_search_target: %d %d h: %d nhits: %d\n", i, j, h, nhits);*/
       cm_sc =
 	actually_search_target(cm, dsq, i, j, cm_cutoff, cp9_cutoff,

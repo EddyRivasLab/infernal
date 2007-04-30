@@ -141,8 +141,10 @@ typedef struct cplan9_s {
 
 /* Flag codes for cplan9->flags.
  */
-#define CPLAN9_HASBITS (1<<0)    /* raised if model has log-odds scores      */
-#define CPLAN9_HASPROB (1<<1)    /* raised if model has probabilities        */
+#define CPLAN9_HASBITS     (1<<0)    /* raised if model has log-odds scores      */
+#define CPLAN9_HASPROB     (1<<1)    /* raised if model has probabilities        */
+#define CPLAN9_LOCAL_BEGIN (1<<2)    /* raised if model has local begins turned on */
+#define CPLAN9_LOCAL_END   (1<<3)    /* raised if model has local ends turned on */
 
 /* Indices for CM Plan9 main model state transitions.
  * Used for indexing hmm->t[k][]

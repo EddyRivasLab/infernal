@@ -190,7 +190,7 @@ extern void FreeResults (scan_results_t *r);
 extern int  compare_results (const void *a_void, const void *b_void);
 extern void sort_results (scan_results_t *results);
 extern void report_hit (int i, int j, int bestr, float score, scan_results_t *results);
-extern void remove_overlapping_hits (scan_results_t *results, int L);
+extern void remove_overlapping_hits (scan_results_t *results, int i0, int j0);
 extern float CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
 		      float cutoff, scan_results_t *results);
 extern float CYKScanRequires(CM_t *cm, int L, int W);
@@ -323,16 +323,14 @@ extern float iInsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int
 
 /* from CP9_scan.c */
 extern float CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_isc, 
-			int **ret_hitj, int *ret_nhits, int *ret_maxres, scan_results_t *results,
-			int do_scan, int doing_align, int doing_rescan, int be_efficient, 
-			CP9_dpmatrix_t **ret_mx);
+			int *ret_maxres, scan_results_t *results, int do_scan, int doing_align, 
+			int doing_rescan, int be_efficient, CP9_dpmatrix_t **ret_mx);
 extern float CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_isc, 
-			 int **ret_hiti, int *ret_nhits, int *ret_maxres, scan_results_t *results, 
-			 int do_scan, int doing_align, int doing_rescan, int be_efficient, 
-			 CP9_dpmatrix_t **ret_mx);
+			 int *ret_maxres, scan_results_t *results, int do_scan, int doing_align, 
+			 int doing_rescan, int be_efficient, CP9_dpmatrix_t **ret_mx);
 extern float CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff, 
 			      float cp9_cutoff, scan_results_t *results, int doing_cp9_stats, int *ret_flen);
-extern float RescanFilterSurvivors(CM_t *cm, char *dsq, int *hiti, int *hitj, int nhits, int i0, 
+extern float RescanFilterSurvivors(CM_t *cm, char *dsq, scan_results_t *hmm_results, int i0, 
 				   int j0, int W, int padmode, int ipad, int jpad, int do_collapse,
 				   float cm_cutoff, float cp9_cutoff, scan_results_t *results, 
 				   int *ret_flen);

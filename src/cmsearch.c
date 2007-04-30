@@ -99,6 +99,7 @@ static char experts[] = "\
    --qdbfile <x> : read QDBs from file <f> (outputted from cmbuild)\n\
    --banddump    : print bands for each state\n\
    --hbanded     : w/--hmmfilter: calculate and use HMM bands in CM search\n\
+   --hgbanded    : w/--hmmfilter and --local; use Glocal CP9 to get bands\n\
    --scan2bands  : derive bands from scanning Forward/Backward algs EXPTL!\n\
    --tau         : tail loss for HMM banding [default: 1E-7]\n\
    --sums        : use posterior sums during HMM band calculation (widens bands)\n\
@@ -110,6 +111,7 @@ static char experts[] = "\
    --hmmE <x>     : use cutoff E-value of <x> for CP9 (possibly filtered) scan [df:500]\n\
    --hmmT <x>     : use cutoff bit score of <x> for CP9 (possibly filtered) scan\n\
    --hmmgreedy    : resolve HMM overlapping hits with greedy algorithm a la RSEARCH\n\
+   --hmmglocal    : w/--hmmfilter and --local; use Glocal CP9 to filter\n\
    --hmmnegsc <x> : set min bit score to report as <x> < 0 (experimental)\n\
 \n\
 ";
@@ -155,6 +157,8 @@ static struct opt_s OPTIONS[] = {
   { "--rtrans",     FALSE, sqdARG_NONE},
   { "--greedy",     FALSE, sqdARG_NONE},
   { "--hmmgreedy",  FALSE, sqdARG_NONE},
+  { "--hgbanded",   FALSE, sqdARG_NONE},
+  { "--hmmglocal",  FALSE, sqdARG_NONE},
   { "--gcfile",     FALSE, sqdARG_STRING}
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
@@ -274,6 +278,8 @@ main(int argc, char **argv)
   /* the greedy options */
   int             do_cmgreedy;  /* TRUE to use greedy hit resolution for CM  overlaps */
   int             do_hmmgreedy; /* TRUE to use greedy hit resolution for HMM overlaps */
+  int             do_hmmglocal; /* TRUE to use glocal CP9 to filter for local CM */
+  int             do_hgbanded;  /* TRUE to use glocal CP9 to derive bands for local CM */
 
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
   int mpi_my_rank;              /* My rank in MPI */
@@ -356,6 +362,8 @@ main(int argc, char **argv)
   do_rtrans         = FALSE;
   do_cmgreedy       = FALSE;
   do_hmmgreedy      = FALSE;
+  do_hmmglocal      = FALSE;
+  do_hgbanded       = FALSE;
   gcfile            = NULL;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
@@ -447,6 +455,8 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--scan2bands")== 0)  do_scan2bands= TRUE;
     else if  (strcmp(optname, "--greedy")     == 0) do_cmgreedy = TRUE;
     else if  (strcmp(optname, "--hmmgreedy")  == 0) do_hmmgreedy = TRUE;
+    else if  (strcmp(optname, "--hmmglocal")  == 0) do_hmmglocal = TRUE;
+    else if  (strcmp(optname, "--hgbanded")  == 0) do_hgbanded = TRUE;
     else if  (strcmp(optname, "--gcfile")     == 0) gcfile = optarg;
     else if  (strcmp(optname, "--partition") == 0) 
       {
@@ -523,6 +533,10 @@ main(int argc, char **argv)
     Die("--greedy option doesn't make sense with --hmmonly scans, did you mean --hmmgreedy?\n");
   if(do_hmmpad && !do_hmmfilter)
     Die("--hmmpad <n> option only works in combination with --hmmfilter\n");
+  if(do_hmmglocal && (!do_hmmfilter || !do_local))
+    Die("--hmmglocal option only works in combination with --hmmfilter AND --local\n");
+  if(do_hgbanded && (!do_hmmfilter || !do_local || !do_hbanded))
+    Die("--hgbanded option only works in combination with --hmmfilter AND --local AND --hbanded\n");
   if(do_hmmpad && hmmpad < 0)
     Die("with --hmmpad <n>, <n> must be >= 0\n");
   if(beta >= 1.)
@@ -637,6 +651,8 @@ main(int argc, char **argv)
 	  if(do_cp9_stats)    cm->search_opts |= CM_SEARCH_CP9STATS;
 	  if(do_cmgreedy)     cm->search_opts |= CM_SEARCH_CMGREEDY;
 	  if(do_hmmgreedy)    cm->search_opts |= CM_SEARCH_HMMGREEDY;
+	  if(do_hmmglocal)    cm->search_opts |= CM_SEARCH_HMMGLOCAL;
+	  if(do_hgbanded)     cm->search_opts |= CM_SEARCH_HGBANDED;
 	  if(do_hbanded)      cm->search_opts |= CM_SEARCH_HBANDED;
 	  if(do_rtrans)       cm->flags       |= CM_RSEARCHTRANS;
 
