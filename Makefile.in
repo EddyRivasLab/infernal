@@ -9,7 +9,7 @@
 # On most Unices, you can build the package without modifying anything 
 #   by just typing "./configure; make".
 #
-# You may want to modify the following make variables:
+# Post-configuration, you may still want to modify the following make variables:
 #   BINDIR  - where the executables will be installed by a 'make install'
 #   MANDIR  - where the man pages will be installed by a 'make install'
 #   CC      - which compiler to use
@@ -44,8 +44,8 @@ RIGFILTERS = @RIGFILTERS@
 #######
 ## You should not need to modify below this line.
 ## Some of it is concerned with maintenance of the development version
-## and building the release (indeed, several commands will only work in 
-## St. Louis)
+## and building the release (indeed, several commands will only work at
+## Janelia)
 #######
 SHELL       = /bin/sh
 PACKAGE     = @PACKAGE_NAME@
@@ -57,7 +57,6 @@ LICENSELINE = "@PACKAGE_LICENSE@"
 RELCODE     = @PACKAGE_RELCODE@
 LICENSETAG  = gnu
 COMPRESS    = gzip
-FTPDIR      = /nfs/ftp/eddy/software/infernal
 REPOSITORY  = https://svn.janelia.org/eddylab/eddys/src/
 
 
@@ -107,7 +106,7 @@ dist:
         # Because we use svn:externals, this automatically exports 
 	# the ssdk, squid, and Easel libraries as well.
 	#
-	svn export ${REPOSITORY}/${BASENAME}/branches/release-${RELEASE} ../${BASENAME}-${RELEASE}
+	svn export ${REPOSITORY}/${BASENAME}/tags/${RELEASE} ../${BASENAME}-${RELEASE}
 	# 
 	# We won't include the ssdk, but we need it temporarily,
 	# for rmanprocess.pl (when making the user guide); we also 
@@ -180,14 +179,6 @@ dist:
 	(cd ..; $(COMPRESS) ${BASENAME}-$(RELEASE).tar)
 
 
-# "make ftpdist" installs a new tarball on the FTP site.
-# (StL specific)
-#
-ftpdist:
-	cp -f ../${BASENAME}-$(RELEASE).tar.gz ${FTPDIR}/
-	rm -f ${FTPDIR}/${BASENAME}.tar.gz 
-	(cd ${FTPDIR}; ln -s ${BASENAME}-${RELEASE}.tar.gz ${BASENAME}.tar.gz)
-
 # "make check" runs a set of sqc exercises in the test suite, at level 4.
 # To run faster, reduce the level (level 1 runs a few tests, level 4
 # runs a lot). 
@@ -208,7 +199,6 @@ install:
 	if test -d $(RIGFILTERS); then\
 	   for file in $(RFPROGS); do\
 	      cp rigfilters/cm2hmm-1.0/$$file $(BINDIR)/;\
-	   done;\
 	   done;\
 	fi
 
