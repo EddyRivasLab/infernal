@@ -114,7 +114,8 @@ A release goes on a stable branch.
    0.6:       875        1477          ?          72
    0.7:       1477       1534         72          84
    0.71:      1534       1725         84         139
-
+   0.72:      1725       1862        139         149
+   0.8:       1862       1968        149         174
 
 7. Update the copyright, year stamps. 
 	- configure.ac (release, relcode, date)
