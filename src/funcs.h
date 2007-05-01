@@ -256,7 +256,8 @@ extern void CMRescale(CM_t *hmm, float scale);
 extern double CM_Eweight_RE(CM_t *cm, Prior_t *pri, float numb_seqs, 
 			    float target_relent, float *randomseq);
 extern double DRelEntropy(double *p, double *f, int n);
-
+extern float CMAverageMatchEntropy(CM_t *cm);
+extern float CP9AverageMatchEntropy(CP9_t *cp9);
 
 /* from cplan9.c 
  * CM Plan9 HMM structure support

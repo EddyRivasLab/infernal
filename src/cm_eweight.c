@@ -631,3 +631,64 @@ double DRelEntropy(double *p, double *f, int n)
     }
   return(1.44269504 * rel_entropy); /* converts to bits */
 }
+
+/***********************************************************************
+ * Function: CMAverageMatchEntropy
+ * Incept:   EPN, Tue May  1 14:06:37 2007
+ * 
+ * Purpose:  Return the average match state entropy for a CM. 
+ *           Calculated as summed entropy of all match states (including
+ *           MATP_MPs) divided by (2*|MATP_MP| + |MATL_ML| + |MATR_MR|).
+ *
+ * Args:    cm       - the covariance model
+ *
+ * Returns: (void) 
+ */
+float
+CMAverageMatchEntropy(CM_t *cm)
+{
+  float summed_entropy, denom; 
+  int v;
+  summed_entropy = denom = 0.;
+  for(v = 0; v < cm->M; v++)
+    { 
+      if(cm->stid[v] == MATP_MP)
+	{
+	  denom          += 2.; /* two match columns */
+	  summed_entropy += esl_vec_FEntropy(cm->e[v], (MAXABET * MAXABET));
+	}
+      else if(cm->stid[v] == MATL_ML || 
+	      cm->stid[v] == MATR_MR)
+	{
+	  denom          += 1.; /* two match columns */
+	  summed_entropy += esl_vec_FEntropy(cm->e[v], MAXABET);
+	}
+    }
+  /*printf("\nCM  average entropy: %.5f / %.2f = %.5f\n", summed_entropy, denom, (summed_entropy/denom));*/
+  return (summed_entropy / denom);
+}
+
+/***********************************************************************
+ * Function: CP9AverageMatchEntropy
+ * Incept:   EPN, Tue May  1 14:13:39 2007
+ * 
+ * Purpose:  Return the average match state entropy for a CP9 HMM. 
+ *           Calculated as summed entropy of all match states divided
+ *           by number of match states. One match state per node.
+ * 
+ * Args:    cp9       - the CM Plan 9 HMM
+ *
+ * Returns: (void) 
+ */
+float
+CP9AverageMatchEntropy(CP9_t *cp9)
+{
+  float summed_entropy;
+  int k;
+  summed_entropy = 0.;
+  for(k = 1; k <= cp9->M; k++)
+    summed_entropy += esl_vec_FEntropy(cp9->mat[k], MAXABET);
+
+  /*printf("CP9 average entropy: %.5f / %.2f = %.5f\n", summed_entropy, (float) cp9->M, (summed_entropy/cp9->M));*/
+  return (summed_entropy / ((float) cp9->M));
+}

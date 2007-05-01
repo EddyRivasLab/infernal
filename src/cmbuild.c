@@ -814,6 +814,15 @@ main(int argc, char **argv)
 	   */
 	  if(cm->el_selfsc < (IMPOSSIBLE/(2 * cm->W)))
 	    cm->el_selfsc = (IMPOSSIBLE/(2 * cm->W));
+
+	  /* Determine the average match state entropy for the CM, and for a 
+	   * CP9 that is built from it, print this to standard out. This information
+	   * is not used for anything but could be useful to user. 
+	   */
+	  if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))
+	    Die("Couldn't build a CP9 HMM from the CM\n");
+	  printf("%-40s ... ", "Calculating CM/HMM entropy fraction"); fflush(stdout);
+	  printf("done. [%.4f]\n", (CMAverageMatchEntropy(cm) / (CP9AverageMatchEntropy(cm->cp9))));
 	  
 	  /* Give the model a name (mandatory in the CM file).
 	   * Order of precedence:
@@ -1211,6 +1220,7 @@ PrintBandDensity(FILE *fp, double **gamma, int v, int W, int min, int max)
     fprintf(fp, "%d:%.12f\n", n, gamma[v][n]);
 }
 
+
 /* EPN 08.18.05
  * PrintBands2BandFile()
  * Function: PrintBands2BandFile
@@ -1266,3 +1276,4 @@ StripWUSS(char *ss)
       if ((*s != '~') && (*s != '.')) *s = ':';
   return;
 }
+
