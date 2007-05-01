@@ -127,6 +127,20 @@ A release goes on a stable branch.
     Remember to separately commit in Easel, squid, ssdk if any
     changes were made there.
 
+9. Tag it.
+         svn copy https://svn.janelia.org/eddylab/eddys/src/infernal/branches/0.8\
+                  https://svn.janelia.org/eddylab/eddys/src/infernal/tags/0.81\
+                 -m "tagged Infernal 0.81 release, from 0.8 stable branch"          
+         svn copy https://svn.janelia.org/eddylab/eddys/src/squid/branches/infernal/0.8\
+                  https://svn.janelia.org/eddylab/eddys/src/squid/tags/infernal/0.81\
+                 -m "tagged Infernal 0.81 release, from 0.8 stable branch"          
+         svn copy https://svn.janelia.org/eddylab/eddys/src/ssdk/branches/infernal/0.8\
+                  https://svn.janelia.org/eddylab/eddys/src/ssdk/tags/infernal/0.81\
+                 -m "tagged Infernal 0.81 release, from 0.8 stable branch"          
+         svn copy https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/0.8\
+	          https://svn.janelia.org/eddylab/eddys/easel/tags/infernal/0.81\
+                 -m "tagged Infernal 0.81 release, from 0.8 stable branch"          
+
 9. Make a distribution tarball.
    (Remaking configure scripts w/ autoconf is needed)
 	 make distclean

@@ -106,7 +106,7 @@ dist:
         # Because we use svn:externals, this automatically exports 
 	# the ssdk, squid, and Easel libraries as well.
 	#
-	svn export ${REPOSITORY}/${BASENAME}/branches/release-${RELEASE} ../${BASENAME}-${RELEASE}
+	svn export ${REPOSITORY}/${BASENAME}/tags/${RELEASE} ../${BASENAME}-${RELEASE}
 	# 
 	# We won't include the ssdk, but we need it temporarily,
 	# for rmanprocess.pl (when making the user guide); we also 
