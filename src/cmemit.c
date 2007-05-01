@@ -21,6 +21,8 @@
 #include "funcs.h"		/* function declarations                */
 #include "squid.h"		/* general sequence analysis library    */
 #include "msa.h"		/* squid's multiple sequence i/o        */
+#include "cm_dispatch.h"	/* squid's multiple sequence i/o        */
+#include <esl_vectorops.h>
 
 static char banner[] = "cmemit - generate sequences from a covariance model";
 
@@ -39,7 +41,9 @@ static char experts[] = "\
    --seed <n>     : set random number seed to <n>\n\
    --begin <n>    : truncate alignment, begin at match column <n>\n\
    --end   <n>    : truncate alignment, end   at match column <n>\n\
-   --cp9          : build a ML CM Plan 9 HMM from the samples\n\
+   --hmmbuild     : build a ML CM Plan 9 HMM from the samples\n\
+   --hmmscore     : score samples with a CM Plan 9 HMM\n\
+   --hmmlocal     : w/hmmscore, search with CP9 HMM in local mode\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -52,7 +56,9 @@ static struct opt_s OPTIONS[] = {
   { "--seed",    FALSE, sqdARG_INT},
   { "--begin",   FALSE, sqdARG_INT },
   { "--end",     FALSE, sqdARG_INT },
-  { "--cp9",     FALSE, sqdARG_NONE },
+  { "--hmmbuild",FALSE, sqdARG_NONE },
+  { "--hmmscore",FALSE, sqdARG_NONE },
+  { "--hmmlocal",FALSE, sqdARG_NONE }
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -85,6 +91,8 @@ main(int argc, char **argv)
   int   v;                      /* counter over states                     */
   int   build_cp9;              /* TRUE to build a ML CP9 HMM from the 
 				 * sampled parses of the CM                */
+  int   do_score_cp9;           /* TRUE to score each seq against CP9 HMM  */
+  int   do_local_cp9;           /* if score_cp9, put CP9 in local mode     */
 
   /*********************************************** 
    * Parse command line
@@ -98,6 +106,8 @@ main(int argc, char **argv)
   begin_set    = FALSE;
   end_set      = FALSE;
   build_cp9    = FALSE;
+  do_score_cp9 = FALSE;
+  do_local_cp9 = FALSE;
   ofile        = NULL;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
@@ -110,7 +120,9 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--seed")  == 0) seed         = atoi(optarg);
     else if (strcmp(optname, "--begin") == 0) { begin_set  = TRUE; spos = atoi(optarg); }
     else if (strcmp(optname, "--end")   == 0) { end_set    = TRUE; epos = atoi(optarg); }
-    else if (strcmp(optname, "--cp9")   == 0) build_cp9 = TRUE;
+    else if (strcmp(optname, "--hmmbuild") == 0) build_cp9 = TRUE;
+    else if (strcmp(optname, "--hmmscore") == 0) do_score_cp9 = TRUE;
+    else if (strcmp(optname, "--hmmlocal") == 0) do_local_cp9 = TRUE;
     else if (strcmp(optname, "-h")      == 0) 
       {
 	MainBanner(stdout, banner);
@@ -126,6 +138,7 @@ main(int argc, char **argv)
 
   sre_srandom(seed);
 
+  /* Check for incompatible option combos */
   if (do_alignment && do_consensus)
     Die("Sorry, -a and -c are incompatible.\nUsage:\n%s", usage); 
   if (nseq != 10 && do_consensus)
@@ -136,7 +149,11 @@ main(int argc, char **argv)
     Die("--begin and --end only work with -a or --cp9\n");
   if(build_cp9 && do_alignment)
     Die("Sorry, --cp9 and -a are incompatible.\nUsage:\n%s", usage);
-
+  if(do_local_cp9 && !do_score_cp9)
+    Die("ERROR --hmmlocal only makes sense in combination with --hmmscore.\n");
+  if(do_score_cp9 && (do_alignment || do_consensus))
+    Die("ERROR --hmmscore does not work in combination with -a or -c.\n");
+  
   /*****************************************************************
    * Input and configure the CM
    *****************************************************************/
@@ -497,6 +514,62 @@ main(int argc, char **argv)
       free(seq);
       free(dsq);
     }      
+  else if(do_score_cp9)				/* emit unaligned seqs and score 
+						 * each with a CP9 HMM */
+    {
+      Parsetree_t      *tr;         /* generated trace                        */
+      char             *dsq;        /* digitized sequence                     */
+      char             *seq;        /* alphabetic sequence                    */
+      float             cm_sc;
+      float             *hmm_sc;
+      float             cm_minsc = 17.0;
+      int               max_attempts = 50 * nseq;
+      int               nattempts = 0;
+      float             f;
+      float             hmm_cutoff = 0.;
+      cm->search_opts |= CM_SEARCH_HMMONLY;
+      ConfigCM(cm, NULL, NULL);
+      hmm_sc = MallocOrDie(sizeof(float) * nseq);
+      for (i = 0; i < nseq; i++)
+	{
+	  if(nattempts++ > max_attempts) 
+	    Die("ERROR number of attempts exceeded 50 times number of seqs.\n");
+	  EmitParsetree(cm, &tr, &seq, &dsq, &L);
+	  cm_sc = ParsetreeScore(cm, tr, dsq, FALSE);
+	  while(cm_sc < cm_minsc)
+	    {
+	      FreeParsetree(tr);
+	      free(dsq);
+	      free(seq);
+	      EmitParsetree(cm, &tr, &seq, &dsq, &L);
+	      cm_sc = ParsetreeScore(cm, tr, dsq, FALSE);
+	      if(nattempts++ > max_attempts)
+		Die("ERROR number of attempts exceeded 50 times number of seqs.\n");
+	    }
+	  hmm_sc[i] = actually_search_target(cm, dsq, 1, L,
+					     cm->cutoff, cm->cp9_cutoff,
+					     NULL,  /* don't report hits to a results structure */
+					     FALSE, /* we're not filtering with a CP9 HMM */
+					     FALSE, /* we're not building a histogram for CM stats  */
+					     FALSE, /* we're not building a histogram for CP9 stats */
+					     NULL); /* filter fraction, irrelevant here */
+	  FreeParsetree(tr);
+	  free(dsq);
+	  free(seq);
+	  printf("i: %4d cm sc: %10.4f hmm sc: %10.4f\n", i, cm_sc, hmm_sc[i]);
+	}
+      /* Sort the HMM scores with quicksort */
+      esl_vec_FSortIncreasing(hmm_sc, nseq);
+      
+      f = 0.9;
+      while(f < 1.001)
+	{
+	  hmm_cutoff = hmm_sc[(int) ((1. - f) * (float) nseq)];
+	  printf("HMM glocal filter bit score threshold for finding %.2f CM hits > %.2f bits: %.4f\n", f, cm_minsc, hmm_cutoff);
+	  f += 0.01;
+	} 
+      printf("\n\nnattempts: %d\n", nattempts);
+    }
   else				/* unaligned sequence output */
     {
       Parsetree_t      *tr;         /* generated trace                        */

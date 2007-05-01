@@ -457,7 +457,7 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
   int flen;
   CP9Bands_t  *cp9b;                    /* data structure for hmm bands (bands on the hmm states) 
 				         * and arrays for CM state bands, derived from HMM bands*/
-
+  int use_cp9;    
   /*printf("in actually_search_target: i0: %d j0: %d do_filter: %d doing_cm_stats: %d doing_cp9_stats: %d\n", i0, j0, do_filter, doing_cm_stats, doing_cp9_stats);
     printf("\ti0: %d j0: %d filter: %d\n", i0, j0, do_filter);*/
   flen = (j0-i0+1);
@@ -466,15 +466,20 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
     Die("ERROR in actually_search_target doing_cm_stats and doing_cp9_stats both TRUE.\n");
 
   /* check for CP9 related (either filtering or HMMONLY) options first */
+  use_cp9 = FALSE;
+  /* use the CP9 b/c we're calcing CP9 EVD stats */
+  if(doing_cp9_stats) use_cp9 = TRUE;                     
+  /* use the CP9 b/c we're searching only with the CP9 HMM */
+  if(cm->search_opts & CM_SEARCH_HMMONLY) use_cp9 = TRUE; 
+  /* The third way we use the CP9 is if we're filtering, AND we haven't 
+   * called this function recursively from AFTER filtering (the do_filter flag)
+   * AND we're not determinig CM EVD stats. */
+  if((cm->search_opts & CM_SEARCH_HMMFILTER) &&
+     (do_filter && !doing_cm_stats)) 
+    use_cp9 = TRUE;
 
-  if(doing_cp9_stats || 
-     ((do_filter) && 
-     (!doing_cm_stats) &&  /* if we're doing CM stats, don't filter. */
-     ((cm->search_opts & CM_SEARCH_HMMONLY) ||
-      (cm->search_opts & CM_SEARCH_HMMFILTER))))
-    {
-      sc = CP9Scan_dispatch(cm, dsq, i0, j0, cm->W, cm_cutoff, cp9_cutoff, results, doing_cp9_stats, ret_flen);;
-    }
+  if(use_cp9)
+    sc = CP9Scan_dispatch(cm, dsq, i0, j0, cm->W, cm_cutoff, cp9_cutoff, results, doing_cp9_stats, ret_flen);
   else
     {
       if(cm->search_opts & CM_SEARCH_HBANDED)

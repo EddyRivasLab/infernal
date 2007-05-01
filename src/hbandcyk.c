@@ -2218,7 +2218,7 @@ iInsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int
 	      tmp_alpha_y = cm->iendsc[y];
 	      /* treat EL as emitting only on self transition */
 	      for (yoffset = 0; yoffset < cm->cnum[y]; yoffset++)
-		tmp_alpha_y = ILogsum(tmp_alpha_y, (alpha[tmp_y+yoffset][cur][0],
+		tmp_alpha_y = ILogsum(tmp_alpha_y, (alpha[tmp_y+yoffset][cur][0]
 						    + cm->itsc[y][yoffset]));
 	      alpha[v][cur][0] = tmp_alpha_w + tmp_alpha_y;
 	      /*printf("! alpha[v][j:%3d][d:%3d]: %f\n", v, j, 0, Scorify(alpha[v][cur][0]));*/

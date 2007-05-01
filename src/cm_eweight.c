@@ -689,6 +689,6 @@ CP9AverageMatchEntropy(CP9_t *cp9)
   for(k = 1; k <= cp9->M; k++)
     summed_entropy += esl_vec_FEntropy(cp9->mat[k], MAXABET);
 
-  /*printf("CP9 average entropy: %.5f / %.2f = %.5f\n", summed_entropy, (float) cp9->M, (summed_entropy/cp9->M));*/
+  /*printf("\nCP9 average entropy: %.5f / %.2f = %.5f\n", summed_entropy, (float) cp9->M, (summed_entropy/cp9->M));*/
   return (summed_entropy / ((float) cp9->M));
 }
