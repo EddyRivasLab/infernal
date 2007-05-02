@@ -1126,6 +1126,7 @@ CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
 	}
     }
   FreeResults (fwd_results);
+  FreeResults (bwd_results);
   if(doing_cp9_stats || cm->search_opts & CM_SEARCH_HMMONLY)
     return best_hmm_sc;
   else

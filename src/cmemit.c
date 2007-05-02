@@ -29,6 +29,7 @@ static char banner[] = "cmemit - generate sequences from a covariance model";
 static char usage[]  = "\
 Usage: cmemit [-options] <cm file>\n\
 Available options are:\n\
+   -l     : local; emit from a locally configured CM\n\
    -a     : write generated sequences as an alignment, not FASTA\n\
    -c     : generate a single \"consensus\" sequence\n\
    -h     : help; print brief help on version and usage\n\
@@ -47,9 +48,10 @@ static char experts[] = "\
 ";
 
 static struct opt_s OPTIONS[] = {
+  { "-h",        TRUE,  sqdARG_NONE }, 
+  { "-l",        TRUE, sqdARG_NONE },
   { "-a",        TRUE,  sqdARG_NONE },  
   { "-c",        TRUE,  sqdARG_NONE },  
-  { "-h",        TRUE,  sqdARG_NONE }, 
   { "-n",        TRUE,  sqdARG_INT},  
   { "-o",        TRUE,  sqdARG_STRING},
   { "-q",        TRUE,  sqdARG_NONE},  
@@ -76,6 +78,7 @@ main(int argc, char **argv)
 
   int              nseq;	/* number of seqs to sample                */
   int              seed;	/* random number generator seed            */
+  int              do_local;	/* TRUE to config the model in local mode  */
   int              be_quiet;	/* TRUE to silence header/footer           */
   int              do_alignment;/* TRUE to output in aligned format        */ 
   int              do_consensus;/* TRUE to do a single consensus seq       */
@@ -101,6 +104,7 @@ main(int argc, char **argv)
   nseq         = 10;
   seed         = time ((time_t *) NULL);
   be_quiet     = FALSE;
+  do_local     = FALSE;
   do_alignment = FALSE;  
   do_consensus = FALSE;
   begin_set    = FALSE;
@@ -112,7 +116,8 @@ main(int argc, char **argv)
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
-    if      (strcmp(optname, "-a")      == 0) do_alignment = TRUE;
+    if      (strcmp(optname, "-l")      == 0) do_local     = TRUE;
+    else if (strcmp(optname, "-a")      == 0) do_alignment = TRUE;
     else if (strcmp(optname, "-c")      == 0) do_consensus = TRUE;
     else if (strcmp(optname, "-n")      == 0) nseq         = atoi(optarg); 
     else if (strcmp(optname, "-o")      == 0) ofile        = optarg;
@@ -165,7 +170,10 @@ main(int argc, char **argv)
   if (cm == NULL) 
     Die("%s empty?\n", cmfile);
   CMFileClose(cmfp);
-  CMLogoddsify(cm);
+
+  if(do_local)        cm->config_opts |= CM_CONFIG_LOCAL;
+  if(do_score_cp9)    cm->search_opts |= CM_SEARCH_HMMONLY;
+  ConfigCM(cm, NULL, NULL);
 
   /* Determine number of consensus columns modelled by CM */
   ncols = 0;
@@ -523,17 +531,22 @@ main(int argc, char **argv)
       float             cm_sc;
       float             *hmm_sc;
       float             cm_minsc = 17.0;
-      int               max_attempts = 50 * nseq;
+      int               max_attempts = 500 * nseq;
       int               nattempts = 0;
       float             f;
       float             hmm_cutoff = 0.;
-      cm->search_opts |= CM_SEARCH_HMMONLY;
-      ConfigCM(cm, NULL, NULL);
       hmm_sc = MallocOrDie(sizeof(float) * nseq);
+
+      /* Put the CP9 in global alignment mode, unless --hmmlocal was specified */
+      if(!do_local_cp9)
+	{
+	  CPlan9GlobalConfig(cm->cp9);
+	  CP9Logoddsify(cm->cp9);
+	}
       for (i = 0; i < nseq; i++)
 	{
 	  if(nattempts++ > max_attempts) 
-	    Die("ERROR number of attempts exceeded 50 times number of seqs.\n");
+	    Die("ERROR number of attempts exceeded 500 times number of seqs.\n");
 	  EmitParsetree(cm, &tr, &seq, &dsq, &L);
 	  cm_sc = ParsetreeScore(cm, tr, dsq, FALSE);
 	  while(cm_sc < cm_minsc)
@@ -569,6 +582,7 @@ main(int argc, char **argv)
 	  f += 0.01;
 	} 
       printf("\n\nnattempts: %d\n", nattempts);
+      free(hmm_sc);
     }
   else				/* unaligned sequence output */
     {

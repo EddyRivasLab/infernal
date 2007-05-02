@@ -19,6 +19,7 @@
 
 #include "structs.h"
 #include "funcs.h"
+#include <esl_vectorops.h>
 
 /* Function:  EmitParsetree()
  * Incept:    SRE, Mon Oct 13 22:35:46 2003 [Rams whupping Falcons, Monday Night Football]
@@ -46,7 +47,9 @@
  *            attach V, store a, push b back onto the pda (now storing
  *            the trace position tpos for V), then produce from V.
  *            Yeesh.
- *            
+ *
+ *            Added capacity for local begins/ends. [EPN, Wed May  2 05:59:19 2007]
+ *
  * Args:      cm      - covariance model to generate from
  *            ret_tr  - RETURN: generated parse tree. Pass NULL if unwanted.
  *            ret_seq - RETURN: generated sequence (alphabetic). Pass NULL if unwanted.
@@ -76,12 +79,19 @@ EmitParsetree(CM_t *cm, Parsetree_t **ret_tr, char **ret_seq, char **ret_dsq, in
   int lchar, rchar;		/* index of emitted chars in Alphabet[], or -1 for nothing */
   int whichway;			/* how to attach: TRACE_LEFT_CHILD or TRACE_RIGHT_CHILD */
   int x;			/* tmp variable for sampling MP emission */
+  int lpos;                     /* tmp variable for inserting EL trace node */
+  float *tmp_tvec;              /* tmp transition vector to choose from, 
+				 * for dealing with local end transitions */
+  /* Contract check */
+  if(cm->flags & CM_LOCAL_END && (fabs(sreEXP2(cm->el_selfsc) - 1.0) < 0.01))
+    Die("Contract violation in EmitParsetree(), EL self transition probability too close to 1.0.\nEL emissions will be way too long.\n", sreEXP2(cm->el_selfsc));
 
   tr  = CreateParsetree();
   pda = CreateNstack();
   gsq = CreateCstack();
   N   = 0;			
-
+  tmp_tvec = MallocOrDie(sizeof(float) * (MAXCONNECT+1)); /* enough room for max possible transitions, plus
+							   * a local end transition */
   /* Init by pushing root state's info onto pda
    */
   PushNstack(pda, -1);		/* doesn't emit an rchar */
@@ -164,9 +174,21 @@ EmitParsetree(CM_t *cm, Parsetree_t **ret_tr, char **ret_seq, char **ret_dsq, in
 	      PushNstack(pda, y);		/* state z */
 	      PushNstack(pda, PDA_STATE);
 	    }
-	  else			/* all other parent states v: */
+	  else
 	    {
-	      y = cm->cfirst[v] + FChoose(cm->t[v], cm->cnum[v]); /* choose next state, y */
+	      if(v == 0 && cm->flags & CM_LOCAL_BEGIN)		/* ROOT_S with local begins, special */
+		y = FChoose(cm->begin, cm->M); /* choose next state, y */
+	      else if(cm->flags & CM_LOCAL_END) /* special case, we could transit to EL */
+		{
+		  esl_vec_FSet(tmp_tvec, (MAXCONNECT+1), 0.);
+		  esl_vec_FCopy(cm->t[v], cm->cnum[v], tmp_tvec);
+		  tmp_tvec[cm->cnum[v]] = cm->end[v];
+		  y = FChoose(tmp_tvec, (cm->cnum[v]+1)); /* choose next state, y's offset */
+		  if(y == cm->cnum[v]) y = cm->M; /* local end */
+		  else y += cm->cfirst[v];        
+		}		  
+	      else
+		y = cm->cfirst[v] + FChoose(cm->t[v], cm->cnum[v]); /* choose next state, y */
 
 	      switch (cm->sttype[y]) {
 	      case MP_st: 
@@ -184,29 +206,56 @@ EmitParsetree(CM_t *cm, Parsetree_t **ret_tr, char **ret_seq, char **ret_dsq, in
 		lchar = -1;
 		rchar = FChoose(cm->e[y], Alphabet_size);
 		break;
+	      case EL_st: /* EL emits on transition, here we don't emit */
+		lchar = -1;
+		rchar = -1;
+		break;
 	      default:
 		lchar = -1;
 		rchar = -1;
 	      }
-
-	      if (cm->sttype[y] == E_st) {
-		/*InsertTraceNode(tr, tpos, TRACE_LEFT_CHILD, -1, -1, y);*/
-		InsertTraceNode(tr, tpos, TRACE_LEFT_CHILD, N+1, N, y);
-	      } else {
-		PushNstack(pda, rchar);		/* does it emit right? */
-		PushNstack(pda, lchar);		/* does it emit left? */
-		PushNstack(pda, TRACE_LEFT_CHILD); /* non-B's: attach as left child by conv */
-		PushNstack(pda, tpos);		/* attach it to v, which is tpos in parsetree*/
-		PushNstack(pda, y);		/* next state we're going to */
-		PushNstack(pda, PDA_STATE);
-	      }
-	    }
-	} /* end of PDA_STATE logic */  
+	      if (cm->sttype[y] == E_st)
+		{
+		  /*InsertTraceNode(tr, tpos, TRACE_LEFT_CHILD, -1, -1, y);*/
+		  InsertTraceNode(tr, tpos, TRACE_LEFT_CHILD, N+1, N, y);
+		} 
+	      else if(cm->sttype[y] == EL_st) /* y == cm->M */
+		{
+		  lpos = N+1; /* remember lpos, we need it after we emit from EL */
+		  /* Now choose number of residues emitted from EL, could be 0.
+		   * We do this here b/c convention for EL is to have a single trace node,
+		   * even if multiple residues are emitted. */
+		  esl_vec_FSet(tmp_tvec, (MAXCONNECT+1), 0.);
+		  tmp_tvec[0] = sreEXP2(cm->el_selfsc); /* EL self probability */
+		  tmp_tvec[1] = 1. - tmp_tvec[0];       /* probability of going to implicit END */
+		  y = FChoose(tmp_tvec, 2); /* choose next state, either EL or implicit END */
+		  while(y == 0) /* we've self-transitioned, emit 1 res from NULL distro */
+		    {
+		      lchar = FChoose(cm->null, Alphabet_size);
+		      PushCstack(gsq, Alphabet[lchar]);
+		      N++;
+		      y = FChoose(tmp_tvec, 2); /* choose next state, either EL or implicit END */
+		    }
+		  InsertTraceNode(tr, tpos, TRACE_LEFT_CHILD, lpos, N, cm->M); /* careful to reset y to cm->M */
+		}
+	      else 
+		{
+		  PushNstack(pda, rchar);		/* does it emit right? */
+		  PushNstack(pda, lchar);		/* does it emit left? */
+		  PushNstack(pda, TRACE_LEFT_CHILD); /* non-B's: attach as left child by conv */
+		  PushNstack(pda, tpos);		/* attach it to v, which is tpos in parsetree*/
+		  PushNstack(pda, y);		/* next state we're going to */
+		  PushNstack(pda, PDA_STATE);
+		}
+	    } /* end of PDA_STATE logic */  
+	} /* end of else (which we enter if v not a B state) */
     } /* end of main "while PopNstack()" loop */
 
   seq = CstackString(gsq);
   dsq = DigitizeSequence(seq, N);
   FreeNstack(pda);
+  free(tmp_tvec);
+  /*ParsetreeDump(stdout, tr, cm, dsq);*/ 
 
   if (ret_tr  != NULL) *ret_tr  = tr;  else FreeParsetree(tr);
   if (ret_seq != NULL) *ret_seq = seq; else free(seq);
