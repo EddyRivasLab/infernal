@@ -388,7 +388,11 @@ main(int argc, char **argv)
   cm->tau    = tau;      /* this will be DEFAULT_TAU unless changed at command line */
 
   /* Update cm->config_opts and cm->align_opts based on command line options */
-  if(do_local)        cm->config_opts |= CM_CONFIG_LOCAL;
+  if(do_local)        
+    {
+      cm->config_opts |= CM_CONFIG_LOCAL;
+      cm->config_opts |= CM_CONFIG_HMMLOCAL;
+    }
   if(do_elsilent)     cm->config_opts |= CM_CONFIG_ELSILENT;
   if(do_zero_inserts) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
   if(do_hbanded)      cm->align_opts  |= CM_ALIGN_HBANDED;

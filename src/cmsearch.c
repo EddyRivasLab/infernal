@@ -47,7 +47,7 @@ void exit_from_mpi () {
 
 static int QDBFileRead(FILE *fp, CM_t *cm, int **ret_dmin, int **ret_dmax);
 static int set_partitions(int **ret_partitions, int *num_partitions, char *list);
-/*static int debug_print_stats(int *partitions, int num_partitions, double *lambda, double *mu); */
+static int debug_print_stats(int *partitions, int num_partitions, double *lambda, double *mu); 
 
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 static char banner[] = "mpi-cmsearch - search a sequence database with an RNA covariance model";
@@ -330,7 +330,6 @@ main(int argc, char **argv)
   do_hmmpad         = FALSE;
   hmmpad            = 0;
   do_hmmrescan      = FALSE;
-  do_cp9_stats      = FALSE;
   do_inside         = FALSE;
   do_hbanded        = FALSE;
   tau               = DEFAULT_TAU;
@@ -634,7 +633,11 @@ main(int argc, char **argv)
 	     (do_enforce && (do_hmmfilter)))
 	    {  do_hmmrescan = TRUE; } 
 	  /* Update cm->config_opts and cm->search_opts based on command line options */
-	  if(do_local)        cm->config_opts |= CM_CONFIG_LOCAL;
+	  if(do_local)        
+	    {
+	      cm->config_opts |= CM_CONFIG_LOCAL;
+	      cm->config_opts |= CM_CONFIG_HMMLOCAL;
+	    }
 	  if(do_zero_inserts) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
 	  if(!(do_qdb))       cm->search_opts |= CM_SEARCH_NOQDB;
 	  if(do_hmmonly)      cm->search_opts |= CM_SEARCH_HMMONLY;
@@ -862,7 +865,7 @@ main(int argc, char **argv)
 	  {
 	    for (i=0; i<GC_SEGMENTS; i++) 
 	      cm->mu[i] = log(cm->K[i]*N)/cm->lambda[i];
-	    /* debug_print_stats(partitions, num_partitions, cm->lambda, cm->mu); */
+	     debug_print_stats(partitions, num_partitions, cm->lambda, cm->mu); 
 	  }    
 	/* else they've been set to default 0.0s in ConfigCM() */
 
@@ -1168,7 +1171,6 @@ int set_partitions (int **ret_partitions, int *num_partitions, char *list)
 
 /* Function: debug_print_stats
  */
-#if 0
 int debug_print_stats(int *partitions, int num_partitions, double *lambda, double *mu)
 {
   int i;
@@ -1197,4 +1199,4 @@ int debug_print_stats(int *partitions, int num_partitions, double *lambda, doubl
   printf("end of debug_print_stats\n");
   return 1;
 }
-#endif
+

@@ -75,7 +75,8 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
   if((cm->align_opts & CM_ALIGN_HBANDED)                                     ||
      ((cm->align_opts & CM_ALIGN_HMMONLY)  || (cm->search_opts & CM_SEARCH_HMMONLY)) ||
      ((cm->align_opts & CM_ALIGN_SUB)      || (cm->align_opts  & CM_ALIGN_FSUB))     ||
-     (cm->search_opts & CM_SEARCH_HMMFILTER))
+     (cm->search_opts & CM_SEARCH_HMMFILTER) ||
+     (cm->search_opts & CM_SEARCH_CP9STATS))
     do_build_cp9 = TRUE;
   
   /* If nec, build the CP9 */
@@ -99,7 +100,7 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
     }
   /* If in local mode and using a CP9 HMM, configure it for local alignment,
    * but not in a way that matches the CM locality (that's a TODO) */
-  if((do_build_cp9 && (cm->config_opts & CM_CONFIG_LOCAL)) ||
+  if((do_build_cp9 && (cm->config_opts & CM_CONFIG_HMMLOCAL)) ||
      (do_build_cp9 && (cm->align_opts  & CM_ALIGN_SUB))    ||
      (do_build_cp9 && (cm->align_opts  & CM_ALIGN_FSUB)))
     {

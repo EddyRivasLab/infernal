@@ -21,7 +21,7 @@
 #include "funcs.h"		/* function declarations                */
 #include "squid.h"		/* general sequence analysis library    */
 #include "msa.h"		/* squid's multiple sequence i/o        */
-#include "cm_dispatch.h"	/* squid's multiple sequence i/o        */
+#include "cm_dispatch.h"	
 #include <esl_vectorops.h>
 
 static char banner[] = "cmemit - generate sequences from a covariance model";

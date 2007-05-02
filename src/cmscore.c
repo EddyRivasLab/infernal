@@ -418,7 +418,11 @@ main(int argc, char **argv)
   cm->align_opts  |= CM_ALIGN_CHECKPARSESC;
   if (do_individuals) cm->align_opts  |= CM_ALIGN_TIME;
   if (do_trees)       cm->align_opts  |= CM_ALIGN_PRINTTREES;
-  if (do_local)       cm->config_opts |= CM_CONFIG_LOCAL;
+  if (do_local)    
+    {
+      cm->config_opts |= CM_CONFIG_LOCAL;
+      cm->config_opts |= CM_CONFIG_HMMLOCAL;
+    }
   if (do_sub)
     {
       cm->align_opts |= CM_ALIGN_SUB;
@@ -481,7 +485,11 @@ main(int argc, char **argv)
       cm->align_opts  |= CM_ALIGN_CHECKPARSESC;
       if (do_individuals) cm->align_opts  |= CM_ALIGN_TIME;
       if (do_trees)       cm->align_opts  |= CM_ALIGN_PRINTTREES;
-      if (do_local)       cm->config_opts |= CM_CONFIG_LOCAL;
+      if (do_local)
+	{
+	  cm->config_opts |= CM_CONFIG_LOCAL;
+	  cm->config_opts |= CM_CONFIG_HMMLOCAL;
+	}
       if (!s2_do_small)   cm->align_opts  |= CM_ALIGN_NOSMALL;
       if (s2_do_hbanded)  cm->align_opts  |= CM_ALIGN_HBANDED;
       /*if (use_sums)       cm->align_opts  |= CM_ALIGN_SUMS;*/
