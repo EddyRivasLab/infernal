@@ -194,6 +194,10 @@ extern void remove_overlapping_hits (scan_results_t *results, int L);
 extern float CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
 		      float cutoff, scan_results_t *results);
 extern float CYKScanRequires(CM_t *cm, int L, int W);
+/* CYKScanRFWrapper() used ONLY by rigfilters code, for compatibility */
+extern void  CYKScanRFWrapper(CM_t *cm, char *dsq, int i0, int j0, int W, 
+			      int *ret_nhits, int **ret_hitr, int **ret_hiti, 
+			      int **ret_hitj, float **ret_hitsc, float min_thresh);
 
 /* from smallcyk.c
  */

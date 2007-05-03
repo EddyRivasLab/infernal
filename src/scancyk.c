@@ -606,3 +606,75 @@ CYKScanRequires(CM_t *cm, int L, int W)
   ram += (float) (sizeof(float) * (L+1)); /* savesc allocation */
   return (ram / 1000000.);
 }
+
+/* Function: CYKScanRFWrapper()
+ * Date:     EPN, Thu May  3 15:48:03 2007
+ *
+ * Purpose:  Scan a sequence for matches to a covariance model.
+ *           Multiple nonoverlapping hits and local alignment.
+ *
+ *           Called by Zasha Weinberg's rigorous filter code.
+ *           Created solely to maintain compatibility with rigfilters.
+ *           This function has the same prototype as the old
+ *           (0.72 and before) CYKScan() that was called
+ *           by the original rigfilters code. We call
+ *           the new function, and convert the results to 
+ *           the old format.
+ *
+ * Args:     cm        - the covariance model
+ *           dsq       - digitized sequence to search; i0..j0
+ *           i0        - start of target subsequence (1 for full seq)
+ *           j0        - end of target subsequence (L for full seq)
+ *           W         - max d: max size of a hit
+ *           ret_nhits - RETURN: number of hits
+ *           ret_hitr  - RETURN: start states of hits, 0..nhits-1
+ *           ret_hiti  - RETURN: start positions of hits, 0..nhits-1
+ *           ret_hitj  - RETURN: end positions of hits, 0..nhits-1
+ *           ret_hitsc - RETURN: scores of hits, 0..nhits-1            
+ *           min_thresh- minimum score to report (EPN via Alex Coventry 03.11.06)
+ *
+ * Returns:  
+ *           hiti, hitj, hitsc are allocated here; caller free's w/ free().
+ */
+void
+CYKScanRFWrapper(CM_t *cm, char *dsq, int i0, int j0, int W, 
+		 int *ret_nhits, int **ret_hitr, int **ret_hiti, int **ret_hitj, float **ret_hitsc, 
+		 float min_thresh)
+{
+  int       nhits;		/* # of hits in optimal parse */
+  int      *hitr;		/* initial state indices of hits in optimal parse */
+  int      *hiti;               /* start positions of hits in optimal parse */
+  int      *hitj;               /* end positions of hits in optimal parse */
+  float    *hitsc;              /* scores of hits in optimal parse */
+  scan_results_t *results;      /* the results data structure, we extract hits from */
+  int       h;                  /* counter over hits */
+
+  hitr = NULL;
+  hiti = NULL;
+  hitj = NULL;
+  hitsc = NULL;
+  results = CreateResults(INIT_RESULTS);
+  CYKScan(cm, dsq, i0, j0, W, 0.0, /* cutoff, in 0.72 and before, implicitly 0.0 */
+	  results);
+  nhits = results->num_results;
+  if(nhits > 0)
+    {
+      hitr  = MallocOrDie(sizeof(int)   * nhits);
+      hitj  = MallocOrDie(sizeof(int)   * nhits);
+      hiti  = MallocOrDie(sizeof(int)   * nhits);
+      hitsc = MallocOrDie(sizeof(float) * nhits);
+      for(h = 0; h < nhits; h++)
+	{
+	  hitr[h]  = results->data[h].bestr;
+	  hiti[h]  = results->data[h].start;
+	  hitj[h]  = results->data[h].stop;
+	  hitsc[h] = results->data[h].score;
+	}
+    }  
+  *ret_nhits = nhits;
+  *ret_hitr  = hitr;
+  *ret_hiti  = hiti;
+  *ret_hitj  = hitj;
+  *ret_hitsc = hitsc;
+  return;
+}
