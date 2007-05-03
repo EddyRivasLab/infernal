@@ -676,5 +676,6 @@ CYKScanRFWrapper(CM_t *cm, char *dsq, int i0, int j0, int W,
   *ret_hiti  = hiti;
   *ret_hitj  = hitj;
   *ret_hitsc = hitsc;
+  FreeResults(results);
   return;
 }
