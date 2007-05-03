@@ -585,9 +585,8 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
    if((orig_cm->flags & CM_LOCAL_BEGIN) ||
       (orig_cm->flags & CM_LOCAL_END))
      Die("ERROR trying to build a sub CM of a CM already in local mode, not yet supported.\n");
-   if((orig_cm->flags & CM_IS_SUB)      ||
-      (orig_cm->flags & CM_IS_FSUB))
-     Die("ERROR trying to build a sub CM of a CM that is itself a sub CM.\n");
+   if(orig_cm->flags & CM_IS_SUB)  
+      Die("ERROR trying to build a sub CM of a CM that is itself a sub CM.\n");
 
    /* Much of the code for building and checking sub CMs relies on the fact that every insert
     * state in the sub CM maps exactly 1 insert state in the original CM. This is fine if we
@@ -664,8 +663,8 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
      }
    sub_cstr[(epos-spos+1)] = '\0';
 
-   /* Build the new sub_cm given the new consensus structure. But don't
-    * parameterize it yet.
+      /* Build the new sub_cm given the new consensus structure. But don't
+       * parameterize it yet.
     */
    ConsensusModelmaker(sub_cstr, (epos-spos+1), &sub_cm, &mtr);
    /* Rebalance the CM for optimization of D&C */
@@ -688,25 +687,22 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
    make_tmap(&tmap);
    orig_psi = malloc(sizeof(double) * orig_cm->M);
    fill_psi(orig_cm, orig_psi, tmap);
-
+   
    CMZero(sub_cm);
    CMSetNullModel(sub_cm, orig_cm->null);
    sub_cm->el_selfsc = orig_cm->el_selfsc;
    sub_cm->beta      = orig_cm->beta;
    sub_cm->tau       = orig_cm->tau;
-
+   
    /* copy the options from the template CM, but turn off the CM_ALIGN_SUB and CM_ALIGN_FSUB options
-    * and turn on the CM_IS_SUB and/or CM_IS_FSUB flags */
+    * and turn on the CM_IS_SUB flag */
    sub_cm->config_opts      = orig_cm->config_opts;
    sub_cm->align_opts       = orig_cm->align_opts;
    sub_cm->search_opts      = orig_cm->search_opts;
    sub_cm->flags            = 0;
    if(sub_cm->align_opts & CM_ALIGN_SUB)
      sub_cm->align_opts &= ~CM_ALIGN_SUB;
-   if(sub_cm->align_opts & CM_ALIGN_FSUB)
-     sub_cm->align_opts &= ~CM_ALIGN_FSUB;
-   if(do_fullsub) sub_cm->flags |= CM_IS_FSUB;
-   else sub_cm->flags |= CM_IS_SUB;
+   sub_cm->flags |= CM_IS_SUB;
    
    /* Fill in emission probabilities */
    for(v_s = 0; v_s < sub_cm->M; v_s++)

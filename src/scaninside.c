@@ -429,6 +429,14 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
   float     best_neg_score;     /* Best score overall score to return, used if all scores < 0 */
   int       curr_dmax;          /* temporary value for max d in for loops */
 
+  /* Contract check */
+  if(j0 < i0)
+    Die("in InsideBandedScan, i0: %d j0: %d\n", i0, j0);
+  if(dsq == NULL)
+    Die("in InsideBandedScan, dsq is NULL\n");
+  if(!(cm->flags & CM_QDB))
+    Die("in InsideBandedScan, QDBs invalid\n");
+
   /*printf("in InsideBandedScan i0: %d j0: %d\n", i0, j0);*/
   best_score     = IMPOSSIBLE;
   best_neg_score = IMPOSSIBLE;
@@ -1742,6 +1750,14 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
   int       curr_dmax;          /* temporary value for max d in for loops */
   float     best_score;         /* Best overall score from semi-HMM to return */
   float     best_neg_score;     /* Best score overall score to return, used if all scores < 0 */
+
+  /* Contract check */
+  if(j0 < i0)
+    Die("in iInsideBandedScan, i0: %d j0: %d\n", i0, j0);
+  if(dsq == NULL)
+    Die("in iInsideBandedScan, dsq is NULL\n");
+  if(!(cm->flags & CM_QDB))
+    Die("in iInsideBandedScan, QDBs invalid\n");
 
   /*printf("in iInsideBandedScan i0: %d j0: %d\n", i0, j0);*/
 

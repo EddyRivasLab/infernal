@@ -202,46 +202,36 @@ typedef struct evdinfo_s {
  * by sampling from the CM
  */
 typedef struct cp9filterthr_s {
-  float gT;          /* glocal CP9 scanning bit score threshold    */
-  float lT;          /*  local CP9 scanning bit score threshold    */
-  float cmT;           /* CM bit score threshold, we rejected < than   */
+  float gsc;           /* glocal CP9 scanning score threshold    */
+  float lsc;           /*  local CP9 scanning score threshold    */
+  float cmsc;          /* CM score threshold, we rejected worse than   */
   float fraction;      /* fraction of empirical CM hits survive filter */
+  int   is_pval;       /* gsc, lsc, cmsc are P-values if TRUE, bit sc if FALSE */
 } CP9FilterThr_t;
 
 /* Structure CMStats_t
  */
 typedef struct cmstats_s {
-  int np;                   /* number of partitions, df: 1 */
-  int *ps;                  /* start GC content [0..100] of each partition */
-  int *pe;                  /* end   GC content [0..100] of each partition */
-  int gc2p[GC_SEGMENTS];    /* map from GC content to partition number     */
-  EVDInfo_t **lcstats;      /*  local CYK    [0..np-1] */
-  EVDInfo_t **gcstats;      /* glocal CYK    [0..np-1] */
-  EVDInfo_t **cm_lc;        /*  local CYK    [0..np-1] */
-  EVDInfo_t **cm_gc;        /* glocal CYK    [0..np-1] */
-  EVDInfo_t **cm_li;      /*  local inside [0..np-1] */
-  EVDInfo_t **cm_gi;      /* glocal inside [0..np-1] */
-  EVDInfo_t **cp9_l;        /* glocal Forward for CP9  [0..np-1] */
-  EVDInfo_t **cp9_g;        /*  local Forward for CP9  [0..np-1] */
-  CP9FilterThr_t **fthr_lc;  /*  local CYK    [0..np-1] */
-  CP9FilterThr_t **fthr_gc;  /* glocal CYK    [0..np-1] */
-  CP9FilterThr_t **fthr_li;  /*  local inside [0..np-1] */
-  CP9FilterThr_t **fthr_gi;  /* glocal inside [0..np-1] */
+  int np;                    /* number of partitions, df: 1 */
+  int *ps;                   /* start GC content [0..100] of each partition */
+  int *pe;                   /* end   GC content [0..100] of each partition */
+  int gc2p[GC_SEGMENTS];     /* map from GC content to partition number     */
+  EVDInfo_t ***evdAA;         /* [0..NSTATMODES-1][0..np-1] */
+  CP9FilterThr_t ***fthrAA;   /* [0..NFTHRMODES-1][0..np-1] */
 } CMStats_t;
 
-/* Stat modes */
-#define CM_LC 0
+/* Stat modes, 
+ * 0..NSTATMODES-1 are first dimension of cmstats->evdAA 
+ * 0..NFTHRMODES-1 are first dimension of cmstats->fthrAA 
+ */
+#define CM_LC 0  
 #define CM_GC 1
 #define CM_LI 2
 #define CM_GI 3
 #define CP9_L 4
 #define CP9_G 5
 #define NSTATMODES 6
-
-#define FTHR_LC 0
-#define FTHR_GC 1
-#define FTHR_LI 2
-#define FTHR_GI 3
+#define NFTHRMODES 4
 
 /* Structure: CM_t
  * Incept:    SRE, 9 Mar 2000 [San Carlos CA]
@@ -351,16 +341,16 @@ typedef struct cm_s {
 } CM_t;
 
 /* status flags, cm->flags */
-#define CM_LOCAL_BEGIN         (1<<0)  /* Begin distribution is active (local ali) */
-#define CM_LOCAL_END           (1<<1)  /* End distribution is active (local ali)   */
-#define CM_STATS               (1<<2)  /* EVD stats, mu, lambda, K are set         */
-#define CM_CP9                 (1<<3)  /* CP9 HMM is valid in cm->cp9              */
-#define CM_CP9STATS            (1<<4)  /* CP9 HMM has EVD stats                    */
-#define CM_IS_SUB              (1<<5)  /* the CM is a sub CM                       */
-#define CM_IS_FSUB             (1<<6)  /* the CM is a fullsub CM                   */
-#define CM_IS_RSEARCH          (1<<7)  /* the CM was parameterized a la RSEARCH    */
+#define CM_HASBITS             (1<<0)  /* CM has valid log odds scores             */
+#define CM_LOCAL_BEGIN         (1<<1)  /* Begin distribution is active (local ali) */
+#define CM_LOCAL_END           (1<<2)  /* End distribution is active (local ali)   */
+#define CM_STATS               (1<<3)  /* EVD stats, mu, lambda, K are set         */
+#define CM_QDB                 (1<<4)  /* query-dependent bands, QDB valid         */
+#define CM_CP9                 (1<<5)  /* CP9 HMM is valid in cm->cp9              */
+#define CM_CP9STATS            (1<<6)  /* CP9 HMM has EVD stats                    */
+#define CM_IS_SUB              (1<<7)  /* the CM is a sub CM                       */
 #define CM_ENFORCED            (1<<8)  /* CM is reparam'ized to enforce a subseq   */
-#define CM_HASBITS             (1<<9)  /* CM has valid log odds scores             */
+#define CM_IS_RSEARCH          (1<<9)  /* the CM was parameterized a la RSEARCH    */
 #define CM_RSEARCHTRANS        (1<<10) /* CM has/will have RSEARCH transitions     */
 #define CM_RSEARCHEMIT         (1<<11) /* CM has/will have RSEARCH emissions       */
 

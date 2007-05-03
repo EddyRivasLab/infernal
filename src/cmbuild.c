@@ -1,3 +1,4 @@
+
 /* cmbuild.c
  * SRE, Thu Jul 27 13:19:43 2000 [StL]
  * SVN $Id$
@@ -755,36 +756,16 @@ main(int argc, char **argv)
 					      FALSE, /* Don't check states have 0 counts (they won't due to priors) */
 					      TRUE); /* Detach the states by setting trans probs into them as 0.0   */
 	    }
+	  CMRenormalize(cm);
 	  CMLogoddsify(cm);
 	  printf("done.\n");
 	  
 	  if(!do_set_window && !do_rsw)
 	    {
-	      /* EPN 08.18.05
-	       * Calculate W for the model based on the seed seqs' tracebacks.
-	       *              Brief expt on effect of different beta and 
-	       *              safe_windowlen scaling factor values in 
-	       *              ~nawrocki/notebook/5_0818_inf_cmbuild_bands/00LOG
-	       */
 	      printf("%-40s ... ", "Calculating max hit length for model"); fflush(stdout);
-	      safe_windowlen = 2 * MSAMaxSequenceLength(msa);
-	      
-	      /* EPN 11.13.05 
-	       * BandCalculationEngine() replaces BandDistribution() and BandBounds().
-	       * See ~nawrocki/notebook/5_1111_inf_banded_dist_vs_bandcalc/00LOG for details.
-	       */
-	      while(!(BandCalculationEngine(cm, safe_windowlen, beta, save_gamma, &dmin, &dmax, &gamma)))
-		{
-		  free(dmin);
-		  free(dmax);
-		  FreeBandDensities(cm, gamma);	  
-		  /*printf("Failure in BandCalculationEngine(). W:%d | beta: %4e\n", safe_windowlen, beta);*/
-		  safe_windowlen *= 2;
-		}
-	      
-	      /*printf("Success in BandCalculationEngine(). W:%d | beta: %4e\n", safe_windowlen, beta);*/
-	      /*debug_print_bands(cm, dmin, dmax);*/
-	      cm->W = dmax[0];
+	      cm->W = MSAMaxSequenceLength(msa); /* this will be reset in ConfigQDB */
+	      ConfigQDB(cm);
+	      cm->W = cm->dmax[0];
 	      printf("done. [%d]\n", cm->W);
 	    }
 	  else if(do_set_window)
@@ -819,6 +800,7 @@ main(int argc, char **argv)
 	   * CP9 that is built from it, print this to standard out. This information
 	   * is not used for anything but could be useful to user. 
 	   */
+	  debug_print_cm_params(cm);
 	  if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))
 	    Die("Couldn't build a CP9 HMM from the CM\n");
 	  printf("%-40s ... ", "Calculating CM/HMM entropy fraction"); fflush(stdout);
@@ -1022,9 +1004,6 @@ main(int argc, char **argv)
 	    {
 	      FreeParsetree(mtr);
 	      Free2DArray((void**)dsq, msa->nseq);
-	      FreeBandDensities(cm, gamma);	  
-	      free(dmin);
-	      free(dmax);
 	    }
 	  MSAFree(msa);
 	  fflush(cmfp);

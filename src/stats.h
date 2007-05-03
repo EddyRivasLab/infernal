@@ -12,6 +12,8 @@
 extern CMStats_t *AllocCMStats(int np);
 extern void FreeCMStats(CMStats_t *cmstats);
 
+extern int  get_gc_comp(char *seq, int start, int stop);
+
 extern void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 				   CM_t *cm, int num_samples, 
 				   int sample_length, int doing_cp9_stats,

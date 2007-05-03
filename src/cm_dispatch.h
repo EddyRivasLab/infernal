@@ -39,5 +39,4 @@ extern void
 actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, char ***ret_postcode,
 		       int bdump_level, int debug_level, int silent_mode);
 
-
 #endif

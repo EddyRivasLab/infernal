@@ -33,9 +33,7 @@
 void
 ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
 {
-  int safe_windowlen;
   float swentry, swexit;
-  double **gamma;               /* P(subseq length = n) for each state v, used in QDB mode */
   int do_calc_qdb   = FALSE;
   int do_preset_qdb = FALSE;
   int do_build_cp9  = FALSE;
@@ -125,19 +123,7 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
   /* If nec, set up the query dependent bands, this has to be done after 
    * local is set up */
   if (do_calc_qdb)
-    {
-      safe_windowlen = cm->W * 2;
-      while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta, 0, &(cm->dmin), &(cm->dmax), &gamma)))
-	{
-	  FreeBandDensities(cm, gamma);
-	  free(cm->dmin);
-	  free(cm->dmax);
-	  safe_windowlen *= 2;
-	}
-      /* Set W as dmax[0], we're wasting time otherwise, looking at
-       * hits that are bigger than we're allowing with QDB. */
-      cm->W = cm->dmax[0];
-    }	  
+    ConfigQDB(cm);
   else if(do_preset_qdb)
     {
       cm->dmin = MallocOrDie(sizeof(int) * cm->M);
@@ -150,6 +136,7 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
       /* Set W as dmax[0], we're wasting time otherwise, looking at
        * hits that are bigger than we're allowing with QDB. */
       cm->W = cm->dmax[0];
+      cm->flags |= CM_QDB; /* raise the QDB flag */
     }
 
   /* We need to ensure that cm->el_selfsc * W >= IMPOSSIBLE
@@ -358,12 +345,14 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
    * if we call ConfigGlobal() w/o executing this code,
    * we'll die (with an EASEL contract exception).
    */
-  cm->root_trans = MallocOrDie(sizeof(float) * cm->cnum[0]);
-  for (v = 0; v < cm->cnum[0]; v++) 
+  if(cm->root_trans == NULL) /* otherwise they've already been set */
     {
-      cm->root_trans[v] = cm->t[0][v];
-      cm->t[0][v] = 0.;
+      cm->root_trans = MallocOrDie(sizeof(float) * cm->cnum[0]);
+      for (v = 0; v < cm->cnum[0]; v++)
+	cm->root_trans[v] = cm->t[0][v];
     }
+  for (v = 0; v < cm->cnum[0]; v++)cm->t[0][v] = 0.;
+
   /* Node 1 gets prob 1-p_internal_start.
    */
   cm->begin[cm->nodemap[1]] = 1.-p_internal_start;
@@ -382,8 +371,12 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
    *****************************************************************/
   ConfigLocalEnds(cm, p_internal_exit);
 
-  /* new local probs invalidate log odds scores */
+  /* new local probs invalidate log odds scores and QDBs */
   cm->flags &= ~CM_HASBITS;
+  cm->flags &= ~CM_QDB;
+
+  CMLogoddsify(cm);
+  ConfigQDB(cm);
   return;
 }
 
@@ -400,7 +393,7 @@ ConfigGlobal(CM_t *cm)
 {
   int v;			/* counter over states */
 
-  /*printf("in configGlobal\n");*/
+  printf("in configGlobal\n");
   /* Contract check: local begins MUST be active, if not then cm->root_trans (the 
    * transition probs from state 0 before local configuration) will be NULL, 
    * so we can't copy them back into cm->t[0], which is a problem. This is fragile. */
@@ -416,7 +409,8 @@ ConfigGlobal(CM_t *cm)
    * the CM data structure in (C
    * in the CM data structure. */
   for (v = 0; v < cm->cnum[0]; v++)  cm->t[0][v] = cm->root_trans[v];
-  
+  for (v = 0; v < cm->cnum[0]; v++)  printf("cm->t[0][v:%d]: %f\n", v, cm->t[0][v]);
+
   cm->flags &= ~CM_LOCAL_BEGIN; /* drop the local begin flag */
   
   /*****************************************************************
@@ -424,10 +418,14 @@ ConfigGlobal(CM_t *cm)
    *****************************************************************/
   ConfigNoLocalEnds(cm);
 
-  /* new probs invalidate log odds scores */
+  /* new probs invalidate log odds scores and QDB */
   cm->flags &= ~CM_HASBITS;
+  cm->flags &= ~CM_QDB;
 
   CMLogoddsify(cm);
+  printf("calling configqdb from configglobal\n");
+  ConfigQDB(cm);
+  printf("back from configqdb from configglobal\n");
   return;
 }
 
@@ -465,6 +463,7 @@ ConfigNoLocalEnds(CM_t *cm)
   cm->flags &= ~CM_LOCAL_END; /* turn off local ends flag */
   /* new probs invalidate log odds scores */
   cm->flags &= ~CM_HASBITS;
+  /* QDB still valid, local ends don't affect them */
   return;
 }
 
@@ -519,6 +518,8 @@ ConfigLocalEnds(CM_t *cm, float p_internal_exit)
   cm->flags |= CM_LOCAL_END;
   /* new probs invalidate log odds scores */
   cm->flags &= ~CM_HASBITS;
+  /* local end changes don't invalidate QDBs */
+
   return;
 }
 
@@ -948,8 +949,10 @@ EnforceSubsequence(CM_t *cm)
   CMRenormalize(cm);
   /* new probs invalidate log odds scores */
   cm->flags &= ~CM_HASBITS;
+  cm->flags &= ~CM_QDB;
 
   CMLogoddsify(cm);
+  ConfigQDB(cm);
 
   /*for(nd = cm->enf_start; nd <= enf_end; nd++) 
     {
@@ -1077,4 +1080,131 @@ EnforceFindEnfStart(CM_t *cm, int enf_cc_start)
     Die("ERROR trying to determine the start node for the enforced subsequence.\n");
   FreeEmitMap(emap);
   return(enf_start);
+}
+
+/*
+ * Function: ConfigForStatmode
+ * Date:     EPN, Thu May  3 09:05:48 2007
+ * Purpose:  Configure a CM and it's CP9 for determining statistics for 
+ *           a specific 'statmode'.
+ *
+ *           0. CM_LC: !cm->search_opts & CM_SEARCH_INSIDE  w/  local CM
+ *           1. CM_GC: !cm->search_opts & CM_SEARCH_INSIDE  w/ glocal CM
+ *           2. CM_LI:  cm->search_opts & CM_SEARCH_INSIDE  w/  local CM
+ *           3. CM_GI:  cm->search_opts & CM_SEARCH_INSIDE  w/ glocal CM
+ *           4. CP9_L:  cm->search_opts & CM_SEARCH_HMMONLY w/  local CP9 HMM
+ *           5. CP9_G:  cm->search_opts & CM_SEARCH_HMMONLY w/ glocal CP9 HMM
+ * 
+ * Args:
+ *           CM           - the covariance model
+ *           statmode     - the mode 0..5
+ */
+int
+ConfigForStatmode(CM_t *cm, int statmode)
+{
+  int do_cm_local = FALSE;
+  int do_cp9_local = FALSE;
+
+  /* First set search opts and flags based on statmode */
+  switch (statmode) {
+  case CM_LC: /* local CYK */
+    printf("CM_LC\n");
+    cm->search_opts &= ~CM_SEARCH_INSIDE;
+    cm->search_opts &= ~CM_SEARCH_HMMONLY;
+    do_cm_local  = TRUE;
+    break;
+  case CM_GC: /* glocal CYK */
+    printf("CM_GC\n");
+    cm->search_opts &= ~CM_SEARCH_INSIDE;
+    cm->search_opts &= ~CM_SEARCH_HMMONLY;
+    do_cm_local  = FALSE;
+    break;
+  case CM_LI: /* local inside */
+    printf("CM_LI\n");
+    cm->search_opts |= CM_SEARCH_INSIDE;
+    cm->search_opts &= ~CM_SEARCH_HMMONLY;
+    do_cm_local  = TRUE;
+    break;
+  case CM_GI: /* glocal inside */
+    printf("CM_GI\n");
+    cm->search_opts |= CM_SEARCH_INSIDE;
+    cm->search_opts &= ~CM_SEARCH_HMMONLY;
+    do_cm_local  = FALSE;
+    break;
+  case CP9_L: /* local CP9 Forward */
+    printf("CP9_L\n");
+    cm->search_opts &= ~CM_SEARCH_INSIDE;
+    cm->search_opts |= CM_SEARCH_HMMONLY;
+    do_cp9_local  = TRUE;
+    break;
+  case CP9_G: /* glocal CP9 Forward */
+    printf("CP9_G\n");
+    cm->search_opts &= ~CM_SEARCH_INSIDE;
+    cm->search_opts |= CM_SEARCH_HMMONLY;
+    do_cp9_local  = FALSE;
+    break;
+  default: 
+    Die("ERROR unrecognized statmode: %d in ConfigForStatmode");
+  }
+  /* configure CM and, if needed, CP9 */
+  if(cm->search_opts & CM_SEARCH_HMMONLY)
+    {
+      if(cm->cp9 == NULL) /* build it */
+	{
+	  if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))
+	    Die("Couldn't build a CP9 HMM from the CM\n");
+	  cm->flags |= CM_CP9; /* raise the CP9 flag */
+	}
+      if(do_cp9_local)
+	CPlan9SWConfig(cm->cp9, ((cm->cp9->M)-1.)/cm->cp9->M,  /* all start pts equiprobable, including 1 */
+		     ((cm->cp9->M)-1.)/cm->cp9->M);          /* all end pts equiprobable, including M */
+      else
+	CPlan9GlobalConfig(cm->cp9);
+      CP9Logoddsify(cm->cp9);
+    }
+  else /* we're using the CM, make sure it's configured properly */
+    {
+      if(do_cm_local)
+	ConfigLocal(cm, 0.5, 0.5);
+      else if(cm->flags & CM_LOCAL_BEGIN || cm->flags & CM_LOCAL_END) /* these *should* both either be up or down */
+	ConfigGlobal(cm);
+      CMLogoddsify(cm);
+    }
+  return eslOK;
+}
+
+
+/*
+ * Function: ConfigQDB
+ * Date:     EPN, Thu May  3 14:37:09 2007
+ * Purpose:  Configure a CM's QDB.
+ * Args:
+ *           CM           - the covariance model
+ */
+int
+ConfigQDB(CM_t *cm)
+{
+  int safe_windowlen;
+  double **gamma;               /* P(subseq length = n) for each state v, used in QDB mode */
+
+  safe_windowlen = cm->W * 2;
+  if(cm->dmin != NULL) free(cm->dmin);
+  if(cm->dmax != NULL) free(cm->dmax);
+
+  /*debug_print_cm_params(cm);*/
+  while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta, 0, &(cm->dmin), &(cm->dmax), &gamma)))
+    {
+      FreeBandDensities(cm, gamma);
+      free(cm->dmin);
+      free(cm->dmax);
+      safe_windowlen *= 2;
+      if(safe_windowlen > 1000000)
+	Die("ERROR safe_windowlen big: %d\n", safe_windowlen);
+    }
+  /* Set W as dmax[0], we're wasting time otherwise, looking at
+   * hits that are bigger than we're allowing with QDB. */
+  cm->W = cm->dmax[0];
+  cm->flags |= CM_QDB; /* raise the QDB flag */
+  FreeBandDensities(cm, gamma);
+  return eslOK;
 }

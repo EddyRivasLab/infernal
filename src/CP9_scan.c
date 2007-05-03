@@ -37,6 +37,10 @@
 #include "stopwatch.h"          /* squid's process timing module        */
 #include "hmmband.h"
 #include "cm_dispatch.h"
+#include "stats.h"
+#include "easel.h"
+#include "esl_gumbel.h"
+#include "esl_vectorops.h"
   
 /***********************************************************************
  * Function: CP9Forward()
@@ -977,14 +981,6 @@ CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
 		 float cp9_cutoff, scan_results_t *results, int doing_cp9_stats,
 		 int *ret_flen)
 {
-  int  f_nhits; /* number of hits above threshold from Forward scan */
-  int *f_hitj;  /* end points of hits from Forward scan */
-  int  nhits;   /* number of hits */
-  int *hiti;    /* start points of hits from Backward scan */
-  int *hitj;    /* end points j of hits from Forward scan for which 
-		 * Backward found a hit j-W+1..j with sc >= cp9_cutoff */
-  float *hitsc; /* scores of hits */
-  int alloc_nhits; /* for growing hit arrays */
   int h;
   int i;
   int min_i;
@@ -998,8 +994,6 @@ CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
   int ipad;
   int jpad;
   int padmode;
-  CP9_dpmatrix_t *fmx;
-  CP9_dpmatrix_t *bmx;
   scan_results_t *fwd_results;
   scan_results_t *bwd_results;
 
@@ -1327,7 +1321,6 @@ CP9ScanPosterior(char *dsq, int i0, int j0,
   int k;
   int fb_sum; /* tmp value, the probability that the current residue (i) was
 	       * visited in any parse */
-  int L = j0-i0+1;
   /*printf("\n\nin CP9ScanPosterior() i0: %d, j0: %d\n", i0, j0);*/
   fb_sum = -INFTY;
   for (i = i0-1; i <= j0; i++) 
@@ -1402,132 +1395,6 @@ CP9ScanPosterior(char *dsq, int i0, int j0,
     }
   */
 }
-
-/*
- * Function: FindHMMFilterThreshold
- * Incept:   EPN, Wed May  2 10:00:45 2007
- *
- * Purpose:  Sample sequences from a CM and determine the CP9 HMM bit score
- *           threshold necessary to recognize a specified fraction of those
- *           hits.
- *
- * Args:
- *           cm           - the CM
- *           do_cm_local  - TRUE to configure CM  for local alignment 
- *           do_cp9_local - TRUE to configure CP9 for local alignment 
- *           fraction     - target fraction of CM hits to detect with CP9
- *           cm_minsc     - minimum CM score to consider, reject < min_cmsc
- *           nseq         - number of sequences to sample from CM 
- */
-float FindHMMFilterThreshold(CM_t *cm, int do_cm_local, int do_cp9_local,
-			     float fraction, float cm_minsc, int nseq)
-{
-  Parsetree_t      *tr;         /* generated trace                        */
-  char             *dsq;        /* digitized sequence                     */
-  char             *seq;        /* alphabetic sequence                    */
-  float             cm_sc;
-  float            *hmm_sc;
-
-  int               nattempts = 0;
-  float             f;
-  float             hmm_cutoff = 0.;
-  int               L;
-  int               max_attempts;
-  int i;
-  float return_sc;
-  int cm_entered_local;
-  int cp9_entered_local;
-
-  /* Contract check */
-  if (cm->cp9 == NULL) 
-    Die("ERROR in FindHMMFilterThreshold() cp9 is NULL\n");
-  if (fraction < 0. || fraction > 1.) 
-    Die("ERROR in FindHMMFilterThreshold() fraction is %f, should be [0.0..1.0]\n", fraction);
-
-  max_attempts = 500 * nseq;
-
-  if(cm->flags & CM_LOCAL_BEGIN) cm_entered_local = TRUE;
-  else cm_entered_local = FALSE;
-  if(cm->cp9->flags & CPLAN9_LOCAL_BEGIN) cp9_entered_local = TRUE;
-  else  cp9_entered_local = FALSE;
-
-  /* configure CM global or local */
-  if(do_cm_local && !cm_entered_local)
-    ConfigLocal(cm, 0.5, 0.5);
-  if(!do_cm_local && cm_entered_local)
-    ConfigGlobal(cm);
-  CMLogoddsify(cm);
-  /* configure CP9 global or local */
-  if(do_cp9_local && !cp9_entered_local)
-    CPlan9SWConfig(cm->cp9, ((cm->cp9->M)-1.)/cm->cp9->M,  /* all start pts equiprobable, including 1 */
-		   ((cm->cp9->M)-1.)/cm->cp9->M);  /* all end pts equiprobable, including 1 */
-  if(!do_cp9_local && cp9_entered_local)
-    CPlan9GlobalConfig(cm->cp9);
-  CP9Logoddsify(cm->cp9);
-
-  cm->search_opts |= CM_SEARCH_HMMONLY; /* turn on HMMONLY searching */
-  hmm_sc = MallocOrDie(sizeof(float) * nseq);
-
-  for (i = 0; i < nseq; i++)
-    {
-      if(nattempts++ > max_attempts) 
-	Die("ERROR number of attempts exceeded 500 times number of seqs.\n");
-      EmitParsetree(cm, &tr, &seq, &dsq, &L);
-      cm_sc = ParsetreeScore(cm, tr, dsq, FALSE);
-      while(cm_sc < cm_minsc)
-	{
-	  FreeParsetree(tr);
-	  free(dsq);
-	  free(seq);
-	  EmitParsetree(cm, &tr, &seq, &dsq, &L);
-	  cm_sc = ParsetreeScore(cm, tr, dsq, FALSE);
-	  if(nattempts++ > max_attempts)
-	    Die("ERROR number of attempts exceeded 50 times number of seqs.\n");
-	}
-      hmm_sc[i] = actually_search_target(cm, dsq, 1, L,
-					 cm->cutoff, cm->cp9_cutoff,
-					 NULL,  /* don't report hits to a results structure */
-					 FALSE, /* we're not filtering with a CP9 HMM */
-					 FALSE, /* we're not building a histogram for CM stats  */
-					 FALSE, /* we're not building a histogram for CP9 stats */
-					 NULL); /* filter fraction, irrelevant here */
-      FreeParsetree(tr);
-      free(dsq);
-      free(seq);
-      /*printf("i: %4d cm sc: %10.4f hmm sc: %10.4f\n", i, cm_sc, hmm_sc[i]);*/
-    }
-  /* Sort the HMM scores with quicksort */
-  esl_vec_FSortIncreasing(hmm_sc, nseq);
-  
-  f = 0.9;
-  /*  while(f < 1.001)
-    {
-      hmm_cutoff = hmm_sc[(int) ((1. - f) * (float) nseq)];
-      printf("HMM glocal filter bit score threshold for finding %.2f CM hits > %.2f bits: %.4f\n", f, cm_minsc, hmm_cutoff);
-      f += 0.01;
-      } */
-  printf("\n\nnattempts: %d\n", nattempts);
-  return_sc = hmm_sc[(int) ((1. - fraction) * (float) nseq)];
-  free(hmm_sc);
-
-  /* put CM and CP9 back in local/global configuration they entered function in */
-  /* configure CM global or local */
-  if(do_cm_local && !cm_entered_local)
-    ConfigGlobal(cm);
-  if(!do_cm_local && cm_entered_local)
-    ConfigLocal(cm, 0.5, 0.5);
-  CMLogoddsify(cm);
-  /* configure CP9 global or local */
-  if(do_cp9_local && !cp9_entered_local)
-    CPlan9GlobalConfig(cm->cp9);
-  if(!do_cp9_local && cp9_entered_local)
-    CPlan9SWConfig(cm->cp9, ((cm->cp9->M)-1.)/cm->cp9->M,  /* all start pts equiprobable, including 1 */
-		   ((cm->cp9->M)-1.)/cm->cp9->M);  /* all end pts equiprobable, including 1 */
-  CP9Logoddsify(cm->cp9);
-
-  return return_sc;
-}
-
 
   
     

@@ -146,6 +146,8 @@ extern void  ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_intern
 extern int   EnforceSubsequence(CM_t *cm);
 extern float EnforceScore(CM_t *cm);
 extern int   EnforceFindEnfStart(CM_t *cm, int enf_cc_start);
+extern int   ConfigForStatmode(CM_t *cm, int statmode);
+extern int   ConfigQDB(CM_t *cm);
 
 /* from modelmaker.c
  */
@@ -337,8 +339,6 @@ extern float RescanFilterSurvivors(CM_t *cm, char *dsq, scan_results_t *hmm_resu
 				   int *ret_flen);
 extern void CP9ScanPosterior(char *dsq, int i0, int j0, CP9_t *hmm, CP9_dpmatrix_t *fmx, 
 			     CP9_dpmatrix_t *bmx, CP9_dpmatrix_t *mx);
-extern float FindHMMFilterThreshold(CM_t *cm, int do_cm_local, int do_cp9_local,
-				    float fraction, float cm_minsc, int nseq);
 
 /* from CP9_cm2wrhmm.c */
 extern int build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,

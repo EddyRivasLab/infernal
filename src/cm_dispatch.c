@@ -42,7 +42,6 @@ static db_seq_t *read_next_seq (ESL_SQFILE *dbfp, int do_revcomp);
 static void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 			   int do_complement, int do_stats, double *mu, 
 			   double *lambda) ;
-static int get_gc_comp(char *seq, int start, int stop);
 static void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, char *seq,
 				       float cutoff, double *lambda, double *mu);
 #ifdef USE_MPI
@@ -464,29 +463,32 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
   /* Contract checks */
   if(!(cm->flags & CM_HASBITS)) 
     Die("ERROR in actually_search_target, CM_HASBITS flag down.\n");
-
-  flen = (j0-i0+1);
-
   if(doing_cm_stats && doing_cp9_stats)
     Die("ERROR in actually_search_target doing_cm_stats and doing_cp9_stats both TRUE.\n");
 
-  /* check for CP9 related (either filtering or HMMONLY) options first */
+  flen = (j0-i0+1);
+
+  /* Check if we need the CP9 */
   use_cp9 = FALSE;
   /* use the CP9 b/c we're calcing CP9 EVD stats */
   if(doing_cp9_stats) use_cp9 = TRUE;                     
   /* use the CP9 b/c we're searching only with the CP9 HMM */
   if(cm->search_opts & CM_SEARCH_HMMONLY) use_cp9 = TRUE; 
-  if(cm->cp9 == NULL)
-    Die("ERROR in actually_search_target, trying to use CP9 HMM that is NULL\n");
-  if(!(cm->cp9->flags & CPLAN9_HASBITS))
-    Die("ERROR in actually_search_target, trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
- 
   /* The third way we use the CP9 is if we're filtering, AND we haven't 
    * called this function recursively from AFTER filtering (the do_filter flag)
    * AND we're not determinig CM EVD stats. */
   if((cm->search_opts & CM_SEARCH_HMMFILTER) &&
      (do_filter && !doing_cm_stats)) 
     use_cp9 = TRUE;
+
+  /* Check if we have a valid CP9 (if we need it) */
+  if(use_cp9)
+    {
+      if(cm->cp9 == NULL)
+	Die("ERROR in actually_search_target, trying to use CP9 HMM that is NULL\n");
+      if(!(cm->cp9->flags & CPLAN9_HASBITS))
+	Die("ERROR in actually_search_target, trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
+    }      
 
   if(use_cp9)
     sc = CP9Scan_dispatch(cm, dsq, i0, j0, cm->W, cm_cutoff, cp9_cutoff, results, doing_cp9_stats, ret_flen);
@@ -623,32 +625,6 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
   FreeEmitMap(emap);
 }
 
-/* Function: get_gc_comp
- * Date:     RJK, Mon Oct 7, 2002 [St. Louis]
- * Purpose:  Given a sequence and start and stop coordinates, returns 
- *           integer GC composition of the region 
- */
-int get_gc_comp(char *seq, int start, int stop) {
-  int i;
-  int gc_ct;
-  char c;
-
-  if (start > stop) {
-    i = start;
-    start = stop;
-    stop = i;
-  }
-  gc_ct = 0;
-  /* Careful: seq is indexed 0..n-1 so start and
-   * stop are off-by-one. This is a bug in RSEARCH-1.1 */
-  for (i=(start-1); i<=(stop-1); i++) {
-    c = resolve_degenerate(seq[i]);
-    if (c=='G' || c == 'C')
-      gc_ct++;
-  }
-  return ((int)(100.*gc_ct/(stop-start+1)));
-}
- 
 /*
  * Function: remove_hits_over_e_cutoff
  * Date:     RJK, Tue Oct 8, 2002 [St. Louis]
@@ -1555,7 +1531,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
       
       /* check parsetree score if cm->align_opts & CM_ALIGN_CHECKPARSESC */
       if((cm->align_opts & CM_ALIGN_CHECKPARSESC) &&
-	 (!(cm->flags & CM_IS_SUB) && (!(cm->flags & CM_IS_FSUB))))
+	 (!(cm->flags & CM_IS_SUB)))
 	{
 	  if (fabs(sc - ParsetreeScore(cm, tr[i], sq[i]->dsq, FALSE)) >= 0.01)
 	    Die("ERROR in actually_align_target(), alignment score differs from its parse tree's score");

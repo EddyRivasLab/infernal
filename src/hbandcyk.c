@@ -1280,6 +1280,8 @@ combine_qdb_hmm_d_bands(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax
   int jp;           /* counter over valid j's, but offset. jp+jmin[v] = actual j */
 
   /* Contract check */
+  if(!(cm->flags & CM_QDB))
+    Die("ERROR, in combine_qdb_hmm_d_bands(), CM QDBs invalid.\n");
   if(cm->dmin == NULL || cm->dmax == NULL)
     Die("ERROR, in combine_qdb_hmm_d_bands() but cm->dmin and/or cm->dmax is NULL.\n");
 
@@ -1486,8 +1488,6 @@ CYKBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **h
   float    tmp_alpha_w, tmp_alpha_y;
   float     best_score;         /* Best overall score from semi-HMM to return */
   float     best_neg_score;     /* Best score overall score to return, used if all scores < 0 */
-  int       do_qdb;             /* TRUE to also use QDB, for every v, set dmin/dmax as
-				 * min/max of HMM band and QD band */
   
   /* Contract checks */
   if((!(cm->search_opts & CM_SEARCH_NOQDB)) && (cm->dmin == NULL || cm->dmax == NULL))
@@ -2052,8 +2052,6 @@ iInsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int
   int      tmp_alpha_w, tmp_alpha_y;
   float     best_score;         /* Best overall score from semi-HMM to return */
   float     best_neg_score;     /* Best score overall score to return, used if all scores < 0 */
-  int       do_qdb;             /* TRUE to also use QDB, for every v, set dmin/dmax as
-				 * min/max of HMM band and QD band */
   
   /* Contract checks */
   if((!(cm->search_opts & CM_SEARCH_NOQDB)) && (cm->dmin == NULL || cm->dmax == NULL))
