@@ -32,6 +32,86 @@
 #include "cm_dispatch.h"
 
 /*
+ * Function: AllocCMStats()
+ * Date:     EPN, Wed May  2 14:10:25 2007      
+ *
+ * Purpose:  Allocate a CMStats_t data structure given
+ *           the number of partitions.
+ */
+CMStats_t *
+AllocCMStats(int np)
+{
+  CMStats_t  *cmstats;
+  int i;
+
+  cmstats = (struct cmstats_s *) MallocOrDie(sizeof(struct cmstats_s));
+
+  cmstats->np = np;
+  cmstats->ps = MallocOrDie(sizeof(int) * cmstats->np);
+  cmstats->pe = MallocOrDie(sizeof(int) * cmstats->np);
+  cmstats->cm_lc = MallocOrDie(sizeof(struct evdinfo_s *));
+  cmstats->cm_gc = MallocOrDie(sizeof(struct evdinfo_s *));
+  cmstats->cm_li = MallocOrDie(sizeof(struct evdinfo_s *));
+  cmstats->cm_gi = MallocOrDie(sizeof(struct evdinfo_s *));
+  cmstats->cp9_l = MallocOrDie(sizeof(struct evdinfo_s *));
+  cmstats->cp9_g = MallocOrDie(sizeof(struct evdinfo_s *));
+  cmstats->fthr_lc  = MallocOrDie(sizeof(struct cp9filterthr_s *));
+  cmstats->fthr_gc  = MallocOrDie(sizeof(struct cp9filterthr_s *));
+  cmstats->fthr_li  = MallocOrDie(sizeof(struct cp9filterthr_s *));
+  cmstats->fthr_gi  = MallocOrDie(sizeof(struct cp9filterthr_s *));
+  for(i = 0; i < cmstats->np; i++)
+    {
+      cmstats->cm_lc[i] = MallocOrDie(sizeof(struct evdinfo_s));
+      cmstats->cm_gc[i] = MallocOrDie(sizeof(struct evdinfo_s));
+      cmstats->cm_li[i] = MallocOrDie(sizeof(struct evdinfo_s));
+      cmstats->cm_gi[i] = MallocOrDie(sizeof(struct evdinfo_s));
+      cmstats->cp9_l[i] = MallocOrDie(sizeof(struct evdinfo_s));
+      cmstats->cp9_g[i] = MallocOrDie(sizeof(struct evdinfo_s));
+      cmstats->fthr_lc[i]  = MallocOrDie(sizeof(struct cp9filterthr_s));
+      cmstats->fthr_gc[i]  = MallocOrDie(sizeof(struct cp9filterthr_s));
+      cmstats->fthr_li[i]  = MallocOrDie(sizeof(struct cp9filterthr_s));
+      cmstats->fthr_gi[i]  = MallocOrDie(sizeof(struct cp9filterthr_s));
+    }      
+  return cmstats;
+}
+
+/* Function: FreeCMStats()
+ * Returns: (void) 
+ */
+void 
+FreeCMStats(CMStats_t *cmstats)
+{
+  int i;
+  for(i = 0; i < cmstats->np; i++)
+    {
+      free(cmstats->cm_lc[i]);
+      free(cmstats->cm_gc[i]);
+      free(cmstats->cm_li[i]);
+      free(cmstats->cm_gi[i]);
+      free(cmstats->cp9_l[i]);
+      free(cmstats->cp9_g[i]);
+      free(cmstats->fthr_lc[i]);
+      free(cmstats->fthr_gc[i]);
+      free(cmstats->fthr_li[i]);
+      free(cmstats->fthr_gi[i]);
+    }      
+  free(cmstats->cm_lc);
+  free(cmstats->cm_gc);
+  free(cmstats->cm_li);
+  free(cmstats->cm_gi);
+  free(cmstats->cp9_l);
+  free(cmstats->cp9_g);
+  free(cmstats->fthr_lc);
+  free(cmstats->fthr_gc);
+  free(cmstats->fthr_li);
+  free(cmstats->fthr_gi);
+
+  free(cmstats->ps);
+  free(cmstats->pe);
+  free(cmstats);
+}  
+
+/*
  * Function: serial_make_histogram()
  * Date:     Mon Apr 1 2002 [St. Louis]
  * Purpose:  Makes a histogram using random sequences.  Returns mu and lambda.

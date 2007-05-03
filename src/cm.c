@@ -122,6 +122,8 @@ CreateCMShell(void)
       cm->mu[i]     = cm->lambda[i]     = cm->K[i]     = 0.;
       cm->cp9_mu[i] = cm->cp9_lambda[i] = cm->cp9_K[i] = 0.;
     }
+  cm->stats = NULL;
+
   return cm;
 }
 void

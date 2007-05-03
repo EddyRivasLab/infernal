@@ -190,6 +190,59 @@ typedef struct cp9map_s {
   int    cm_nodes;  /* number of nodes in the CM this HMM maps to */
 } CP9Map_t;
 
+/* Structure EVDInfo_t
+ */
+typedef struct evdinfo_s {
+  double K;		/* ? */
+  double mu;		/* location param for gumbel, calced w/K,lambda*/
+  double lambda;	/* scale param gumbel                          */
+} EVDInfo_t;
+
+/* Structure CP9FThresh_t: CP9 HMM filter thresholds, determined empirically
+ * by sampling from the CM
+ */
+typedef struct cp9filterthr_s {
+  float gT;          /* glocal CP9 scanning bit score threshold    */
+  float lT;          /*  local CP9 scanning bit score threshold    */
+  float cmT;           /* CM bit score threshold, we rejected < than   */
+  float fraction;      /* fraction of empirical CM hits survive filter */
+} CP9FilterThr_t;
+
+/* Structure CMStats_t
+ */
+typedef struct cmstats_s {
+  int np;                   /* number of partitions, df: 1 */
+  int *ps;                  /* start GC content [0..100] of each partition */
+  int *pe;                  /* end   GC content [0..100] of each partition */
+  int gc2p[GC_SEGMENTS];    /* map from GC content to partition number     */
+  EVDInfo_t **lcstats;      /*  local CYK    [0..np-1] */
+  EVDInfo_t **gcstats;      /* glocal CYK    [0..np-1] */
+  EVDInfo_t **cm_lc;        /*  local CYK    [0..np-1] */
+  EVDInfo_t **cm_gc;        /* glocal CYK    [0..np-1] */
+  EVDInfo_t **cm_li;      /*  local inside [0..np-1] */
+  EVDInfo_t **cm_gi;      /* glocal inside [0..np-1] */
+  EVDInfo_t **cp9_l;        /* glocal Forward for CP9  [0..np-1] */
+  EVDInfo_t **cp9_g;        /*  local Forward for CP9  [0..np-1] */
+  CP9FilterThr_t **fthr_lc;  /*  local CYK    [0..np-1] */
+  CP9FilterThr_t **fthr_gc;  /* glocal CYK    [0..np-1] */
+  CP9FilterThr_t **fthr_li;  /*  local inside [0..np-1] */
+  CP9FilterThr_t **fthr_gi;  /* glocal inside [0..np-1] */
+} CMStats_t;
+
+/* Stat modes */
+#define CM_LC 0
+#define CM_GC 1
+#define CM_LI 2
+#define CM_GI 3
+#define CP9_L 4
+#define CP9_G 5
+#define NSTATMODES 6
+
+#define FTHR_LC 0
+#define FTHR_GC 1
+#define FTHR_LI 2
+#define FTHR_GI 3
+
 /* Structure: CM_t
  * Incept:    SRE, 9 Mar 2000 [San Carlos CA]
  * 
@@ -281,9 +334,9 @@ typedef struct cm_s {
   float cp9_cutoff;     /* min bit score or max E val to keep from a CP9 scan                 */
   
   /* EVD statistics for the CM */
-  double     lambda[GC_SEGMENTS];   /* EVD lambda, one for each GC segment   */
-  double     K     [GC_SEGMENTS];   /* EVD K, one for each GC segment        */
-  double     mu    [GC_SEGMENTS];   /* EVD mu, one for each GC segment       */
+  double    lambda[GC_SEGMENTS];   /* EVD lambda, one for each GC segment   */
+  double    K     [GC_SEGMENTS];   /* EVD K, one for each GC segment        */
+  double    mu    [GC_SEGMENTS];   /* EVD mu, one for each GC segment       */
   double cp9_lambda[GC_SEGMENTS];   /* CP9's EVD lambda, one for each GC segment   */
   double cp9_K     [GC_SEGMENTS];   /* CP9's EVD K, one for each GC segment        */
   double cp9_mu    [GC_SEGMENTS];   /* CP9's EVD mu, one for each GC segment       */
@@ -293,7 +346,8 @@ typedef struct cm_s {
 			 * the EL state emits only on self transition (EPN 11.15.05)*/
   int   iel_selfsc;     /* scaled int version of el_selfsc         */
 
-
+  CMStats_t *stats;     /* holds EVD stats and HMM filtering thresholds, will
+			 * eventually be filled ONLY by cmcalibrate. */
 } CM_t;
 
 /* status flags, cm->flags */
@@ -672,5 +726,4 @@ typedef struct Ideckpool_s {
 #define PAD_ADDI_SUBJ 2
 
 #endif /*STRUCTSH_INCLUDED*/
-
 

@@ -909,18 +909,20 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
   float     best_neg_score;     /* Best score overall score to return, used if all scores < 0 */
   int       bestd;              /* d value of best hit thus far seen for j (used if greedy strategy) */
 
-  best_score     = IMPOSSIBLE;
-  best_neg_score = IMPOSSIBLE;
-  L = j0-i0+1;
-  if (W > L) W = L; 
-
-  /*printf("in BandedCYKScan i0: %d j0: %d\n", i0, j0);*/
+  /* Contract check */
   if(j0 < i0)
     Die("in BandedCYKScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL)
     Die("in BandedCYKScan, dsq is NULL\n");
 
   /*PrintDPCellsSaved(cm, dmin, dmax, W);*/
+
+  best_score     = IMPOSSIBLE;
+  best_neg_score = IMPOSSIBLE;
+  L = j0-i0+1;
+  if (W > L) W = L; 
+
+  /*printf("in BandedCYKScan i0: %d j0: %d\n", i0, j0);*/
 
   /*****************************************************************
    * alpha allocations.

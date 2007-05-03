@@ -460,6 +460,11 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
   int use_cp9;    
   /*printf("in actually_search_target: i0: %d j0: %d do_filter: %d doing_cm_stats: %d doing_cp9_stats: %d\n", i0, j0, do_filter, doing_cm_stats, doing_cp9_stats);
     printf("\ti0: %d j0: %d filter: %d\n", i0, j0, do_filter);*/
+
+  /* Contract checks */
+  if(!(cm->flags & CM_HASBITS)) 
+    Die("ERROR in actually_search_target, CM_HASBITS flag down.\n");
+
   flen = (j0-i0+1);
 
   if(doing_cm_stats && doing_cp9_stats)
@@ -471,6 +476,11 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
   if(doing_cp9_stats) use_cp9 = TRUE;                     
   /* use the CP9 b/c we're searching only with the CP9 HMM */
   if(cm->search_opts & CM_SEARCH_HMMONLY) use_cp9 = TRUE; 
+  if(cm->cp9 == NULL)
+    Die("ERROR in actually_search_target, trying to use CP9 HMM that is NULL\n");
+  if(!(cm->cp9->flags & CPLAN9_HASBITS))
+    Die("ERROR in actually_search_target, trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
+ 
   /* The third way we use the CP9 is if we're filtering, AND we haven't 
    * called this function recursively from AFTER filtering (the do_filter flag)
    * AND we're not determinig CM EVD stats. */
@@ -1069,6 +1079,11 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
   int do_timings = FALSE;
   int do_check   = FALSE;
 
+  /* Contract checks */
+  /* Contract checks */
+  if(!(cm->flags & CM_HASBITS)) 
+    Die("ERROR in actually_align_targets, CM_HASBITS flag down.\n");
+
   /*printf("in actually_align_targets\n");*/
 
   /* set the options based on cm->align_opts */
@@ -1113,6 +1128,11 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 
   if(do_hbanded || do_sub) /* We need a CP9 HMM to build sub_cms */
     {
+      if(cm->cp9 == NULL)
+	Die("ERROR in actually_align_targets, trying to use CP9 HMM that is NULL\n");
+      if(!(cm->cp9->flags & CPLAN9_HASBITS))
+	Die("ERROR in actually_align_targets, trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
+
       /* Keep this data for the original CM safe; we'll be doing
        * pointer swapping to ease the sub_cm alignment implementation. */
       hmm         = cm->cp9;
