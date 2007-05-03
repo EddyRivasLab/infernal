@@ -142,7 +142,9 @@ void DumpHitsAndAlignments_LocalCoords(int nhits,int *hitr,int *hiti,int *hitj,f
 
 			ali = cm.CreateFancyAli(tr, cons, localRnaSequence);
 			FixupAlignmentByShiftingDatabasePosition(ali,startOfLocalWithinLargerSequence);
-			PrintFancyAli(stdout, ali);
+			PrintFancyAli(stdout, ali, 
+				      0,  /* offset in seq index */
+				      reversed); /*TRUE if reverse complement*/
 
 			printf("----endhit\n");
 
@@ -211,7 +213,7 @@ void Cm2Hmm_Search(int windowLen,float scoreThreshold,const CovarianceModel& cm,
 			int localRnaSequenceLen=i->second - i->first;
 			if (runCM) {
 				// run the CM
-				cm.CYKScan(localRnaSequence, localRnaSequenceLen, windowLen, 
+				cm.CYKScanRFWrapper(localRnaSequence, localRnaSequenceLen, windowLen, 
 					&nhits, &hitr, &hiti, &hitj, &hitsc);
 				// translate the local nucleotide coordinates into coordinates relative to the start of the whole sequence
 				TranslateHitsFromSubsequence (nhits,hitr,hiti,hitj,hitsc,i->first,i->second);

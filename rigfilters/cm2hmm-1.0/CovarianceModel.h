@@ -178,7 +178,7 @@ public:
 	float CYKInsideScore (char *seq,int L,State state,int i,int j) const;
 	void CYKScanZasha (char *dsq, int L, int W,int *ret_nhits, int **ret_hitr, int **ret_hiti, int **ret_hitj, float **ret_hitsc,CykscanStats& cykscanStats) const;
 	void CYKScan_OptionalBug (char *dsq, int L, int W,int *ret_nhits, int **ret_hitr, int **ret_hiti, int **ret_hitj, float **ret_hitsc,bool fixBug) const;
-	void CYKScan (char *dsq, int L, int W,int *ret_nhits, int **ret_hitr, int **ret_hiti, int **ret_hitj, float **ret_hitsc) const;
+	void CYKScanRFWrapper (char *dsq, int L, int W,int *ret_nhits, int **ret_hitr, int **ret_hiti, int **ret_hitj, float **ret_hitsc) const;
 	Fancyali_t *CreateFancyAli(Parsetree_t *tr, CMConsensus_t *cons, char *rnaSequence) const;
 	void ParsetreeDump(FILE *out, Parsetree_t *tr, char *rnaSequence) const;
 	float ParsetreeScore(Parsetree_t *tr,char *rnaSequence) const;
