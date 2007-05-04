@@ -276,6 +276,7 @@ FreeCM(CM_t *cm)
   if(cm->cp9map != NULL) FreeCP9Map(cm->cp9map);
   if(cm->cp9    != NULL) FreeCPlan9(cm->cp9);
   if(cm->root_trans != NULL) free(cm->root_trans);
+  if(cm->stats != NULL) free(cm->stats);
   free(cm);
 }
 

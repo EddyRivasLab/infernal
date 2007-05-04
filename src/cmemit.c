@@ -530,7 +530,8 @@ main(int argc, char **argv)
       char             *seq;        /* alphabetic sequence                    */
       float             cm_sc;
       float             *hmm_sc;
-      float             cm_minsc = 17.0;
+      //float             cm_minsc = 9.8;
+      float             cm_minsc = 17;
       int               max_attempts = 500 * nseq;
       int               nattempts = 0;
       float             f;

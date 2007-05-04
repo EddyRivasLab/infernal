@@ -210,8 +210,6 @@ main(int argc, char **argv)
 
   /* EPN 08.18.05 So we can calculate an appropriate W when building the CM */
   double   **gamma;             /* P(subseq length = n) for each state v    */
-  int       *dmin;		/* minimum d bound for state v, [0..v..M-1] */
-  int       *dmax; 		/* maximum d bound for state v, [0..v..M-1] */
   double     beta;		/* tail loss probability for banding        */
   int        safe_windowlen;	/* initial windowlen (W) used for calculating bands,
 				 * once bands are calculated we'll set cm->W to dmax[0] */
@@ -800,10 +798,10 @@ main(int argc, char **argv)
 	   * CP9 that is built from it, print this to standard out. This information
 	   * is not used for anything but could be useful to user. 
 	   */
-	  debug_print_cm_params(cm);
+	  /*debug_print_cm_params(cm);*/
+	  printf("%-40s ... ", "Calculating CM/HMM entropy fraction"); fflush(stdout);
 	  if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))
 	    Die("Couldn't build a CP9 HMM from the CM\n");
-	  printf("%-40s ... ", "Calculating CM/HMM entropy fraction"); fflush(stdout);
 	  printf("done. [%.4f]\n", (CMAverageMatchEntropy(cm) / (CP9AverageMatchEntropy(cm->cp9))));
 	  
 	  /* Give the model a name (mandatory in the CM file).
@@ -964,7 +962,7 @@ main(int argc, char **argv)
 	      fprintf(ofp, "beta:%g\n", beta);
 	      for (v = 0; v < cm->M; v++)
 		if(cm->sttype[v] == S_st)
-		  PrintBandDensity(ofp, gamma, v, cm->W, dmin[v], dmax[v]);
+		  PrintBandDensity(ofp, gamma, v, cm->W, cm->dmin[v], cm->dmax[v]);
 	      for (idx = treeforce; idx < msa->nseq; idx++)
 		{
 		  fprintf(ofp, "> %s\n", msa->sqname[idx]);
@@ -984,7 +982,7 @@ main(int argc, char **argv)
 	      
 	      if ((ofp = fopen(bandfile,"w")) == NULL)
 		Die("failed to open band file %s", bandfile);
-	      PrintBands2BandFile(ofp, cm, dmin, dmax);
+	      PrintBands2BandFile(ofp, cm, cm->dmin, cm->dmax);
 	      fprintf(ofp, "//\n");
 	      fclose(ofp);
 	      printf("done. [%s]\n", bandfile);
@@ -996,7 +994,7 @@ main(int argc, char **argv)
 	  CYKDemands(cm, avlen, NULL, NULL);     
 	  /*
 	    puts("\n");
-	    CYKDemands(cm, avlen, dmin, dmax);
+	    CYKDemands(cm, avlen, cm->dmin, cm->dmax);
 	  */
 	  
 	  /* Free aln specific CM related data structures */

@@ -36,11 +36,11 @@
 
 static int NEW_serial_make_histogram (CM_t *cm, double *gc_freq, int N, int L,
 				       int statmode);
-static int  FindHMMFilterThreshold(CM_t *cm, float fraction, int N, float cm_pcutoff, 
+static int  FindCP9FilterThreshold(CM_t *cm, float fraction, int N, float cm_pcutoff, 
 				   int statmode);
-static int debug_print_cmstats(CMStats_t *cmstats);
+static int debug_print_cmstats(CM_t *cm, CMStats_t *cmstats);
 static int debug_print_evdinfo(EVDInfo_t *evd);
-static int debug_print_filterthrinfo(CP9FilterThr_t *fthr);
+static int debug_print_filterthrinfo(CM_t *cm, CP9FilterThr_t *fthr);
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs   incomp  help   docgroup*/
@@ -104,6 +104,7 @@ main(int argc, char **argv)
   if (cm == NULL) 
     Die("%s empty?\n", cmfile);
   CMFileClose(cmfp);
+
   if(do_qdb)          cm->config_opts |= CM_CONFIG_QDB;
   if(do_cp9_stats)    cm->search_opts |= CM_SEARCH_CP9STATS;
 
@@ -171,18 +172,17 @@ main(int argc, char **argv)
    * Determine CP9 filtering thresholds
    *****************************************************************/
   float fraction = 0.95;
-  float cm_pcutoff = 0.001;
+  float cm_pcutoff = 0.01;
   for(statmode = 0; statmode < NFTHRMODES; statmode++)
     //for(statmode = 0; statmode < 1; statmode++)
     {
       printf("%-40s ... ", "Determining HMM filter threshold "); fflush(stdout);
-      FindHMMFilterThreshold(cm, fraction, 1000, cm_pcutoff, statmode);
+      FindCP9FilterThreshold(cm, fraction, 1000, cm_pcutoff, statmode);
     }
-  debug_print_cmstats(cm->stats);
+  debug_print_cmstats(cm, cm->stats);
   
-  FreeCMStats(cmstats);
-
   FreeCM(cm);
+
   return eslOK;
 }
 
@@ -230,6 +230,8 @@ static int NEW_serial_make_histogram (CM_t *cm, double *gc_freq, int N, int L, i
   ESL_RANDOMNESS  *r       = NULL;     /* source of randomness                    */
   EVDInfo_t **evd; 
   int p; /* counter over partitions */
+  double tmp_mu;
+  double x;
   /*printf("in serial_make_histogram, nparts: %d sample_len: %d cp9_stats: %d do_ins: %d do_enf: %d\n", num_partitions, L, doing_cp9_stats, (cm->search_opts & CM_SEARCH_INSIDE), (cm->config_opts & CM_CONFIG_ENFORCE));*/
 
   /* Check contract */
@@ -296,6 +298,18 @@ static int NEW_serial_make_histogram (CM_t *cm, double *gc_freq, int N, int L, i
       esl_histogram_GetTailByMass(h, 0.5, &xv, &n, &z); /* fit to right 50% */
       esl_gumbel_FitCensored(xv, n, z, xv[0], &(evd[p]->mu), &(evd[p]->lambda));
       evd[p]->K = exp(evd[p]->mu * evd[p]->lambda) / L;
+      
+      /* RSEARCH code to set mu, TEMPORARY */
+      /* Set mu from K, lambda, N */
+      N = 2000000;
+      tmp_mu = log(evd[p]->K*N)/evd[p]->lambda;
+      printf("RSEARCH mu: %f\n", tmp_mu);
+      x = esl_gumbel_invcdf(0.01, tmp_mu, evd[p]->lambda);
+      printf("bit score cutoff for Pval of 0.01: %f\n", x);
+      printf("Eval for bit score of: %f: %f\n", x,    
+	     RJK_ExtremeValueE(x, tmp_mu, 
+			       evd[p]->lambda));
+      
     }
   esl_histogram_Destroy(h);
   esl_randomness_Destroy(r);
@@ -308,7 +322,7 @@ static int NEW_serial_make_histogram (CM_t *cm, double *gc_freq, int N, int L, i
 
 
 /*
- * Function: FindHMMFilterThreshold
+ * Function: FindCP9FilterThreshold
  * Incept:   EPN, Wed May  2 10:00:45 2007
  *
  * Purpose:  Sample sequences from a CM and determine the CP9 HMM bit score
@@ -337,8 +351,9 @@ static int NEW_serial_make_histogram (CM_t *cm, double *gc_freq, int N, int L, i
  *           cm_pcutoff   - minimum CM P-value to accept 
  *           statmode     - gives CM search strategy to use, and EVD to use
  */
-int FindHMMFilterThreshold(CM_t *cm, float fraction, int N, float cm_pcutoff, int statmode)
+int FindCP9FilterThreshold(CM_t *cm, float fraction, int N, float cm_pcutoff, int statmode)
 {
+  Parsetree_t      *tr;         /* parsetree (TEMPORARY NOT REALLY NEEDED)*/
   char            **dsq;        /* digitized sequences                    */
   char            **seq;        /* alphabetic sequences                   */
   float             sc;
@@ -355,16 +370,29 @@ int FindHMMFilterThreshold(CM_t *cm, float fraction, int N, float cm_pcutoff, in
   int *p;                   /* partition each seq belongs in based on 1..L gc_comp (not entirely correct) */
   int  pctr;                /* counter over partitions */
   double pval;
+  double x;     
+
   /* Contract check */
   if (cm->cp9 == NULL) 
-    Die("ERROR in FindHMMFilterThreshold() cp9 is NULL\n");
+    Die("ERROR in FindCP9FilterThreshold() cp9 is NULL\n");
   if (fraction < 0. || fraction > 1.)  
-   Die("ERROR in FindHMMFilterThreshold() fraction is %f, should be [0.0..1.0]\n", fraction);
+   Die("ERROR in FindCP9FilterThreshold() fraction is %f, should be [0.0..1.0]\n", fraction);
 
   /* Configure the CM based on the stat mode */
   ConfigForStatmode(cm, statmode);
   fthr = cm->stats->fthrAA[statmode];
   evd  = cm->stats->evdAA[statmode];
+
+  /* Print info about bit cutoff calc'ed from Pval cutoff */
+  printf("CM Pcutoff: %f\n", cm_pcutoff);
+  for (pctr = 0; pctr < cm->stats->np; pctr++)
+    {
+      /*printf("using mu: %f lambda: %f\n", evd[pctr]->mu, evd[pctr]->lambda);*/
+      x = esl_gumbel_invcdf(cm_pcutoff, evd[pctr]->mu, evd[pctr]->lambda);
+      printf("%f P: %d %d--%d bit score: %f\n", cm_pcutoff, pctr, cm->stats->ps[pctr], cm->stats->pe[pctr], x);
+      x = esl_gumbel_invcdf((1-cm_pcutoff), evd[pctr]->mu, evd[pctr]->lambda);
+      printf("%f P: %d %d--%d bit score: %f\n", (1-cm_pcutoff), pctr, cm->stats->ps[pctr], cm->stats->pe[pctr], x);
+    }
 
   /* Strategy: emit sequences one at a time from CM, scanning each with CM 
    * (local or glocal, CYK or Inside as specified by mode). If best scan
@@ -380,6 +408,7 @@ int FindHMMFilterThreshold(CM_t *cm, float fraction, int N, float cm_pcutoff, in
   dsq    = MallocOrDie(sizeof(char *) * N);
   L      = MallocOrDie(sizeof(char *) * N);
   p      = MallocOrDie(sizeof(int *) * N);
+  tr     = NULL;
   for (i = 0; i < N; i++)
     {
       if(nattempts++ > max_attempts) 
@@ -390,7 +419,8 @@ int FindHMMFilterThreshold(CM_t *cm, float fraction, int N, float cm_pcutoff, in
 	{
 	  if(dsq[i] != NULL) free(dsq[i]);
 	  if(seq[i] != NULL) free(seq[i]);
-	  EmitParsetree(cm, NULL, &seq[i], &dsq[i], &L[i]); /* we don't care about the parsetree, 
+	  if(tr != NULL) FreeParsetree(tr);
+	  EmitParsetree(cm, &tr, &seq[i], &dsq[i], &L[i]); /* we don't care about the parsetree, 
 							  * we have to scan each seq to get score */
 	  sc = actually_search_target(cm, dsq[i], 1, L[i],
 				      0.,    /* cutoff is 0 bits (actually we'll find highest
@@ -408,10 +438,15 @@ int FindHMMFilterThreshold(CM_t *cm, float fraction, int N, float cm_pcutoff, in
 						* GC_COMP of full sample seq, not of best hit
 						* within it. */
 	  p[i] = cm->stats->gc2p[gc_comp];
+	  /*printf("using mu: %f lambda: %f\n", evd[p[i]]->mu, evd[p[i]]->lambda);*/
 	  pval = esl_gumbel_surv((double) sc, evd[p[i]]->mu, evd[p[i]]->lambda);
-	  //printf("i: %d pval: %f\n", i, pval);
+	  printf("i: %4d L: %4d sc: %10.4f (PT: %10.4f) pval: %10.4f\n", i, L[i], sc, 
+		 ParsetreeScore(cm, tr, dsq[i], FALSE), pval);
 	  if(pval < cm_pcutoff)
-	     passed = TRUE;
+	    {
+	      printf("\tpassed\n");
+	      passed = TRUE;
+	    }
 	  nattempts++;
 	}
       if(nattempts > max_attempts)
@@ -460,12 +495,26 @@ int FindHMMFilterThreshold(CM_t *cm, float fraction, int N, float cm_pcutoff, in
       hmm_glocal_pval[i] = esl_gumbel_surv((double) sc, 
 					   cm->stats->evdAA[CP9_G][p[i]]->mu, 
 					   cm->stats->evdAA[CP9_G][p[i]]->lambda);
-      printf("G i: %4d hmm sc: %10.4f hmm P: %10.4f\n", i, sc, hmm_glocal_pval[i]);
     }
 
   /* Sort the HMM P-values with quicksort */
-  esl_vec_FSortDecreasing(hmm_local_pval, N);
-  esl_vec_FSortDecreasing(hmm_glocal_pval, N);
+  esl_vec_FSortIncreasing(hmm_local_pval, N);
+  esl_vec_FSortIncreasing(hmm_glocal_pval, N);
+  for (i = 0; i < N; i++)
+    printf("G i: %4d hmm sc: %10.4f hmm P: %10.4f\n", i, sc, hmm_glocal_pval[i]);
+  for (i = 0; i < N; i++)
+    printf("L i: %4d hmm sc: %10.4f hmm P: %10.4f\n", i, sc, hmm_local_pval[i]);
+  float tmp_f = 0.9;
+  double g_x;
+  float tmp_sc;
+  while(tmp_f < 1.001)
+    {
+      tmp_sc = hmm_glocal_pval[(int) (tmp_f * ((float) N))];
+      g_x = esl_gumbel_invcdf((1.-tmp_sc), cm->stats->evdAA[CP9_G][0]->mu, cm->stats->evdAA[CP9_G][0]->lambda);
+      printf("HMM glocal filter bit score threshold for finding %.2f CM hits: %f bits %f (Pval)\n", tmp_f, g_x, tmp_sc);
+      tmp_f += 0.01;
+    } 
+
   /* Set thresholds */
   /* TEMPORARY set thresholds for all partitions as equal
    * you have to decide if you want to set them differently, or
@@ -473,11 +522,19 @@ int FindHMMFilterThreshold(CM_t *cm, float fraction, int N, float cm_pcutoff, in
    * case you'll need to change the CP9FilterThr_t data structure */
   for(pctr = 0; pctr < cm->stats->np; pctr++)
     {
-      fthr[pctr]->gsc = hmm_glocal_pval[(int) ((1. - fraction) * (float) N)];
-      fthr[pctr]->lsc = hmm_local_pval[(int) ((1. - fraction) * (float) N)];
+      fthr[pctr]->gsc = hmm_glocal_pval[(int) ((fraction) * (float) N)];
+      fthr[pctr]->lsc = hmm_local_pval[(int) ((fraction) * (float) N)];
       fthr[pctr]->cmsc = cm_pcutoff;
       fthr[pctr]->fraction = fraction;
       fthr[pctr]->is_pval = TRUE;
+      x = esl_gumbel_invcdf(0.01, cm->stats->evdAA[CP9_G][pctr]->mu, cm->stats->evdAA[CP9_G][pctr]->lambda);
+      printf("hmm glocal: ");
+      debug_print_evdinfo(cm->stats->evdAA[CP9_G][pctr]);
+      printf("hmm glocal bit score cutoff: %f\n", x);
+      x = esl_gumbel_invcdf(0.01, cm->stats->evdAA[CP9_L][pctr]->mu, cm->stats->evdAA[CP9_L][pctr]->lambda);
+      printf("hmm local: ");
+      debug_print_evdinfo(cm->stats->evdAA[CP9_L][pctr]);
+      printf("hmm  local bit score cutoff: %f\n", x);
     }
   printf("\n\nnattempts: %d\n", nattempts);
   free(hmm_local_pval);
@@ -496,7 +553,7 @@ int FindHMMFilterThreshold(CM_t *cm, float fraction, int N, float cm_pcutoff, in
 
 /* Function: debug_print_cmstats
  */
-int debug_print_cmstats(CMStats_t *cmstats)
+int debug_print_cmstats(CM_t *cm, CMStats_t *cmstats)
 {
   int p;
   printf("Num partitions: %d\n", cmstats->np);
@@ -516,14 +573,14 @@ int debug_print_cmstats(CMStats_t *cmstats)
       printf("cp9_g EVD:\t");
       debug_print_evdinfo(cmstats->evdAA[CP9_G][p]);
       printf("\n\n");
-      printf("fthr lc filter threshold:\t");
-      debug_print_filterthrinfo(cmstats->fthrAA[CM_LC][p]);
-      printf("fthr gc filter threshold:\t");
-      debug_print_filterthrinfo(cmstats->fthrAA[CM_GC][p]);
-      printf("fthr li filter threshold:\t");
-      debug_print_filterthrinfo(cmstats->fthrAA[CM_LI][p]);
-      printf("fthr gi filter threshold:\t");
-      debug_print_filterthrinfo(cmstats->fthrAA[CM_GI][p]);
+      printf("fthr lc filter threshold:\n");
+      debug_print_filterthrinfo(cm, cmstats->fthrAA[CM_LC][p]);
+      printf("fthr gc filter threshold:\n");
+      debug_print_filterthrinfo(cm, cmstats->fthrAA[CM_GC][p]);
+      printf("fthr li filter threshold:\n");
+      debug_print_filterthrinfo(cm, cmstats->fthrAA[CM_LI][p]);
+      printf("fthr gi filter threshold:\n");
+      debug_print_filterthrinfo(cm, cmstats->fthrAA[CM_GI][p]);
       printf("\n\n");
     }
   return 0;
@@ -539,10 +596,14 @@ int debug_print_evdinfo(EVDInfo_t *evd)
 
 /* Function: debug_print_filterthrinfo
  */
-int debug_print_filterthrinfo(CP9FilterThr_t *fthr)
+int debug_print_filterthrinfo(CM_t *cm, CP9FilterThr_t *fthr)
 {
-  printf("gsc: %.5f lsc: %.5f cmsc: %.5f fraction: %.3f is_pval: %d\n", 
-	 fthr->gsc, fthr->lsc, fthr->cmsc, fthr->fraction, fthr->is_pval);
+  double l_x;
+  double g_x;
+  g_x = esl_gumbel_invcdf((1.-fthr->gsc), cm->stats->evdAA[CP9_G][0]->mu, cm->stats->evdAA[CP9_G][0]->lambda);
+  l_x = esl_gumbel_invcdf((1.-fthr->lsc), cm->stats->evdAA[CP9_L][0]->mu, cm->stats->evdAA[CP9_L][0]->lambda);
+  printf("\tgsc: %.5f (%.5f bits) lsc: %.5f (%.5f bits)\n\tcmsc: %.5f fraction: %.3f is_pval: %d\n", 
+	 fthr->gsc, g_x, fthr->lsc, l_x, fthr->cmsc, fthr->fraction, fthr->is_pval);
   return 0;
 }
 

@@ -49,8 +49,8 @@ AllocCMStats(int np)
   cmstats->np = np;
   cmstats->ps = MallocOrDie(sizeof(int) * cmstats->np);
   cmstats->pe = MallocOrDie(sizeof(int) * cmstats->np);
-  cmstats->evdAA = MallocOrDie(sizeof(struct evdinfo_s **));
-  cmstats->fthrAA = MallocOrDie(sizeof(struct cp9filterthr_s **));
+  cmstats->evdAA = MallocOrDie(sizeof(struct evdinfo_s **) * NSTATMODES);
+  cmstats->fthrAA = MallocOrDie(sizeof(struct cp9filterthr_s **) * NFTHRMODES);
   for(i = 0; i < NSTATMODES; i++)
     {
       cmstats->evdAA[i] = MallocOrDie(sizeof(struct evdinfo_s *));

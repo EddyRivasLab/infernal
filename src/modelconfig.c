@@ -393,7 +393,7 @@ ConfigGlobal(CM_t *cm)
 {
   int v;			/* counter over states */
 
-  printf("in configGlobal\n");
+  /*printf("in configGlobal\n");*/
   /* Contract check: local begins MUST be active, if not then cm->root_trans (the 
    * transition probs from state 0 before local configuration) will be NULL, 
    * so we can't copy them back into cm->t[0], which is a problem. This is fragile. */
@@ -409,7 +409,7 @@ ConfigGlobal(CM_t *cm)
    * the CM data structure in (C
    * in the CM data structure. */
   for (v = 0; v < cm->cnum[0]; v++)  cm->t[0][v] = cm->root_trans[v];
-  for (v = 0; v < cm->cnum[0]; v++)  printf("cm->t[0][v:%d]: %f\n", v, cm->t[0][v]);
+  /*for (v = 0; v < cm->cnum[0]; v++)  printf("cm->t[0][v:%d]: %f\n", v, cm->t[0][v]);*/
 
   cm->flags &= ~CM_LOCAL_BEGIN; /* drop the local begin flag */
   
@@ -423,9 +423,7 @@ ConfigGlobal(CM_t *cm)
   cm->flags &= ~CM_QDB;
 
   CMLogoddsify(cm);
-  printf("calling configqdb from configglobal\n");
   ConfigQDB(cm);
-  printf("back from configqdb from configglobal\n");
   return;
 }
 
@@ -579,7 +577,6 @@ ConfigLocal_fullsub(CM_t *cm, float p_internal_start,
    */
   cm->begin[cm->nodemap[sstruct_nd]] = 1.-p_internal_start;
   printf("set cm->begin[%d]: %f\n", cm->nodemap[sstruct_nd], cm->begin[cm->nodemap[sstruct_nd]]);
-
 
   /* Remaining nodes share p_internal_start.
    */
