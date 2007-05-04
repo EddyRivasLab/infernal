@@ -988,8 +988,8 @@ CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
   float best_hmm_fsc;
   float cur_best_hmm_bsc;
   float best_cm_sc;
-  /*int   flen;
-    float ffrac;*/
+  int   flen;
+  float ffrac;
   int do_collapse;
   int ipad;
   int jpad;
@@ -1110,7 +1110,10 @@ CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
       best_cm_sc = RescanFilterSurvivors(cm, dsq, bwd_results, i0, j0, W, 
 					 padmode, ipad, jpad, 
 					 do_collapse, cm_cutoff, cp9_cutoff, 
-					 results, ret_flen);
+					 results, &flen);
+      if(flen == 0) ffrac = 100.;
+      else ffrac = 1. - (((float) flen) / (((float) (j0-i0+1))));
+      printf("orig_len: %d flen: %d fraction %6.2f\n", (j0-i0+1), (flen), ffrac);
       /* Reconfigure HMM for local alignment if flag is set */
       if(cm->search_opts & CM_SEARCH_HMMGLOCAL)
 	{
@@ -1263,9 +1266,8 @@ RescanFilterSurvivors(CM_t *cm, char *dsq, scan_results_t *hmm_results, int i0, 
       if(cm_sc > best_cm_sc) best_cm_sc = cm_sc;
     }
 
-  if(flen == 0) ffrac = 100.;
-  else ffrac = 1. - (((float) flen) / (((float) (j0-i0+1))));
-  /*printf("orig_len: %d flen: %d fraction %6.2f\n", (j0-i0+1), (flen), ffrac);*/
+  //if(flen == 0) ffrac = 100.;
+  //else ffrac = 1. - (((float) flen) / (((float) (j0-i0+1))));
   if(ret_flen != NULL) *ret_flen = flen;
   return best_cm_sc;
 }

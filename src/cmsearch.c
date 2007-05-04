@@ -898,7 +898,8 @@ main(int argc, char **argv)
 	    if (cm->cutoff_type == SCORE_CUTOFF) 
 	      printf ("Using CM score cutoff of %.2f\n", cm->cutoff);
 	    else 
-	      printf ("Using CM E cutoff of %.2f\n\n", cm->cutoff);
+	      printf ("Using CM E cutoff of %.2f (%.4f bits)\n\n", cm->cutoff, 
+		      e_to_score (cm->cp9_cutoff, cm->cp9_mu, cm->cp9_lambda));
 	  } 
 	else 
 	  {
@@ -928,7 +929,8 @@ main(int argc, char **argv)
 	    if (cm->cp9_cutoff_type == SCORE_CUTOFF) 
 	      printf ("Using CP9 score cutoff of %.2f\n", cm->cp9_cutoff);
 	    else 
-	      printf ("Using CP9 E cutoff of %.2f\n\n", cm->cp9_cutoff);
+	      printf ("Using CP9 E cutoff of %.2f (%.4f bits)\n\n", cm->cp9_cutoff, 
+		      e_to_score (cm->cp9_cutoff, cm->cp9_mu, cm->cp9_lambda));
 	  } 
 	else if(cm->search_opts & CM_SEARCH_HMMONLY || cm->search_opts & CM_SEARCH_HMMFILTER)
 	  {

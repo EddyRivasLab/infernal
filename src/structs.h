@@ -216,8 +216,8 @@ typedef struct cmstats_s {
   int *ps;                   /* start GC content [0..100] of each partition */
   int *pe;                   /* end   GC content [0..100] of each partition */
   int gc2p[GC_SEGMENTS];     /* map from GC content to partition number     */
-  EVDInfo_t ***evdAA;         /* [0..NSTATMODES-1][0..np-1] */
-  CP9FilterThr_t ***fthrAA;   /* [0..NFTHRMODES-1][0..np-1] */
+  EVDInfo_t ***evdAA;        /* [0..NSTATMODES-1][0..np-1] */
+  CP9FilterThr_t **fthrAA;   /* [0..NFTHRMODES-1] */
 } CMStats_t;
 
 /* Stat modes, 

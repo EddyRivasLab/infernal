@@ -50,7 +50,7 @@ AllocCMStats(int np)
   cmstats->ps = MallocOrDie(sizeof(int) * cmstats->np);
   cmstats->pe = MallocOrDie(sizeof(int) * cmstats->np);
   cmstats->evdAA = MallocOrDie(sizeof(struct evdinfo_s **) * NSTATMODES);
-  cmstats->fthrAA = MallocOrDie(sizeof(struct cp9filterthr_s **) * NFTHRMODES);
+  cmstats->fthrAA = MallocOrDie(sizeof(struct cp9filterthr_s *) * NFTHRMODES);
   for(i = 0; i < NSTATMODES; i++)
     {
       cmstats->evdAA[i] = MallocOrDie(sizeof(struct evdinfo_s *));
@@ -58,11 +58,7 @@ AllocCMStats(int np)
 	cmstats->evdAA[i][p] = MallocOrDie(sizeof(struct evdinfo_s));
     }
   for(i = 0; i < NFTHRMODES; i++)
-    {
-      cmstats->fthrAA[i]  = MallocOrDie(sizeof(struct cp9filterthr_s *));
-      for(p = 0; p < cmstats->np; p++)
-	cmstats->fthrAA[i][p]  = MallocOrDie(sizeof(struct cp9filterthr_s));
-    }
+    cmstats->fthrAA[i]  = MallocOrDie(sizeof(struct cp9filterthr_s));
   return cmstats;
 }
 
@@ -81,11 +77,7 @@ FreeCMStats(CMStats_t *cmstats)
     }
   free(cmstats->evdAA);
   for(i = 0; i < NFTHRMODES; i++)
-    {
-      for(p = 0; p < cmstats->np; p++)
-	free(cmstats->fthrAA[i][p]);
-      free(cmstats->fthrAA[i]);
-    }
+    free(cmstats->fthrAA[i]);
   free(cmstats->fthrAA);
   free(cmstats->ps);
   free(cmstats->pe);
