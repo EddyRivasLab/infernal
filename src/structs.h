@@ -344,15 +344,16 @@ typedef struct cm_s {
 #define CM_HASBITS             (1<<0)  /* CM has valid log odds scores             */
 #define CM_LOCAL_BEGIN         (1<<1)  /* Begin distribution is active (local ali) */
 #define CM_LOCAL_END           (1<<2)  /* End distribution is active (local ali)   */
-#define CM_STATS               (1<<3)  /* EVD stats, mu, lambda, K are set         */
-#define CM_QDB                 (1<<4)  /* query-dependent bands, QDB valid         */
-#define CM_CP9                 (1<<5)  /* CP9 HMM is valid in cm->cp9              */
-#define CM_CP9STATS            (1<<6)  /* CP9 HMM has EVD stats                    */
-#define CM_IS_SUB              (1<<7)  /* the CM is a sub CM                       */
-#define CM_ENFORCED            (1<<8)  /* CM is reparam'ized to enforce a subseq   */
-#define CM_IS_RSEARCH          (1<<9)  /* the CM was parameterized a la RSEARCH    */
-#define CM_RSEARCHTRANS        (1<<10) /* CM has/will have RSEARCH transitions     */
-#define CM_RSEARCHEMIT         (1<<11) /* CM has/will have RSEARCH emissions       */
+#define CM_EVD_STATS           (1<<3)  /* EVD stats, mu, lambda, K for CYK/Ins set */
+#define CM_FTHR_STATS          (1<<4)  /* CP9 HMM filter threshold stats are set   */
+#define CM_QDB                 (1<<5)  /* query-dependent bands, QDB valid         */
+#define CM_CP9                 (1<<6)  /* CP9 HMM is valid in cm->cp9              */
+#define CM_CP9STATS            (1<<7)  /* CP9 HMM has EVD stats                    */
+#define CM_IS_SUB              (1<<8)  /* the CM is a sub CM                       */
+#define CM_ENFORCED            (1<<9)  /* CM is reparam'ized to enforce a subseq   */
+#define CM_IS_RSEARCH          (1<<10) /* the CM was parameterized a la RSEARCH    */
+#define CM_RSEARCHTRANS        (1<<11) /* CM has/will have RSEARCH transitions     */
+#define CM_RSEARCHEMIT         (1<<12) /* CM has/will have RSEARCH emissions       */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL        (1<<0)  /* configure the model for local alignment  */
@@ -391,7 +392,7 @@ typedef struct cm_s {
 #define CM_SEARCH_HMMSCANBANDS (1<<6)  /* filter w/CP9 HMM, and derive HMM bands   */
 #define CM_SEARCH_SUMS         (1<<7)  /* if using HMM bands, use posterior sums   */
 #define CM_SEARCH_INSIDE       (1<<8)  /* scan with Inside, not CYK                */
-#define CM_SEARCH_TOPONLY      (1<<9) /* don't search reverse complement          */
+#define CM_SEARCH_TOPONLY      (1<<9)  /* don't search reverse complement          */
 #define CM_SEARCH_NOALIGN      (1<<10) /* don't align hits, just report locations  */
 #define CM_SEARCH_NULL2        (1<<11) /* use post hoc second null model           */
 #define CM_SEARCH_CMSTATS      (1<<12) /* calculate E-value statistics for CM      */
