@@ -220,12 +220,12 @@ typedef struct cmstats_s {
   int *pe;                   /* end   GC content [0..100] of each partition */
   int gc2p[GC_SEGMENTS];     /* map from GC content to partition number     */
   EVDInfo_t ***evdAA;        /* [0..NSTATMODES-1][0..np-1] */
-  CP9FilterThr_t **fthrAA;   /* [0..NFTHRMODES-1] */
+  CP9FilterThr_t **fthrA;   /* [0..NFTHRMODES-1] */
 } CMStats_t;
 
 /* Stat modes, 
  * 0..NSTATMODES-1 are first dimension of cmstats->evdAA 
- * 0..NFTHRMODES-1 are only dimension cmstats->fthrAA 
+ * 0..NFTHRMODES-1 are only dimension cmstats->fthrA 
  */
 #define CM_LC 0  
 #define CM_GC 1
@@ -347,7 +347,7 @@ typedef struct cm_s {
 #define CM_HASBITS             (1<<0)  /* CM has valid log odds scores             */
 #define CM_LOCAL_BEGIN         (1<<1)  /* Begin distribution is active (local ali) */
 #define CM_LOCAL_END           (1<<2)  /* End distribution is active (local ali)   */
-#define CM_EVD_STATS           (1<<3)  /* EVD stats, mu, lambda, K for CYK/Ins set */
+#define CM_EVD_STATS           (1<<3)  /* EVD stats for local/glocal CYK/Ins set   */
 #define CM_FTHR_STATS          (1<<4)  /* CP9 HMM filter threshold stats are set   */
 #define CM_QDB                 (1<<5)  /* query-dependent bands, QDB valid         */
 #define CM_CP9                 (1<<6)  /* CP9 HMM is valid in cm->cp9              */

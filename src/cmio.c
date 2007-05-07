@@ -49,6 +49,22 @@ static unsigned int v01swap  = 0xb1b0ede3; /* v0.1 binary, byteswapped         *
 #define CMIO_E            19
 #define CMIO_W            20
 #define CMIO_ELSELFSC     21
+#define CMIO_NPART        22
+#define CMIO_PARTS        23
+#define CMIO_PARTE        24
+#define CMIO_EVDN         25
+#define CMIO_EVDL         26
+#define CMIO_EVDMU        27
+#define CMIO_EVDLAMBDA    28
+#define CMIO_EVDK         29
+#define CMIO_FTHRN        30
+#define CMIO_FTHRFR       31
+#define CMIO_FTHRCMP      32
+#define CMIO_FTHRLP       33
+#define CMIO_FTHRGP       34
+#define CMIO_FTHRFAST     35
+#define CMIO_HASEVD       36
+#define CMIO_HASFTHR      37
 
 static void write_ascii_cm(FILE *fp, CM_t *cm);
 static int  read_ascii_cm(CMFILE *cmf, CM_t **ret_cm);
@@ -350,27 +366,29 @@ write_ascii_cm(FILE *fp, CM_t *cm)
 		  cm->stats->evdAA[CP9_G][p]->K);
 	}
       /* currently either all EVD stats are calc'ed or none */
-    }
-  if (cm->flags & CM_FTHR_STATS)
-    {
-      fprintf(fp, "FT-LC  %5d  %.3f  %.5f  %.5f  %.5f  %d\n", 
-	      cm->stats->fthrAA[CM_LC]->N, cm->stats->fthrAA[CM_LC]->fraction, 
-	      cm->stats->fthrAA[CM_LC]->cm_pval, cm->stats->fthrAA[CM_LC]->l_pval,
-	      cm->stats->fthrAA[CM_LC]->g_pval, cm->stats->fthrAA[CM_LC]->was_fast);
-      fprintf(fp, "FT-GC  %5d  %.3f  %.5f  %.5f  %.5f  %d\n", 
-	      cm->stats->fthrAA[CM_GC]->N, cm->stats->fthrAA[CM_GC]->fraction, 
-	      cm->stats->fthrAA[CM_GC]->cm_pval, cm->stats->fthrAA[CM_GC]->l_pval,
-	      cm->stats->fthrAA[CM_GC]->g_pval, cm->stats->fthrAA[CM_GC]->was_fast);
-      fprintf(fp, "FT-LI  %5d  %.3f  %.5f  %.5f  %.5f  %d\n", 
-	      cm->stats->fthrAA[CM_LI]->N, cm->stats->fthrAA[CM_LI]->fraction, 
-	      cm->stats->fthrAA[CM_LI]->cm_pval, cm->stats->fthrAA[CM_LI]->l_pval,
-	      cm->stats->fthrAA[CM_LI]->g_pval, cm->stats->fthrAA[CM_LI]->was_fast);
-      fprintf(fp, "FT-GI  %5d  %.3f  %.5f  %.5f  %.5f  %d\n", 
-	      cm->stats->fthrAA[CM_GI]->N, cm->stats->fthrAA[CM_GI]->fraction, 
-	      cm->stats->fthrAA[CM_GI]->cm_pval, cm->stats->fthrAA[CM_GI]->l_pval,
-	      cm->stats->fthrAA[CM_GI]->g_pval, cm->stats->fthrAA[CM_GI]->was_fast);
-    } /* currently either all filter threshold stats are calc'ed or none */
 
+      if (cm->flags & CM_FTHR_STATS) /* FTHR stats are only possibly valid IF EVD stats valid */
+	{
+	  fprintf(fp, "FT-LC  %5d  %.3f  %.5f  %.5f  %.5f  %d\n", 
+		  cm->stats->fthrA[CM_LC]->N, cm->stats->fthrA[CM_LC]->fraction, 
+		  cm->stats->fthrA[CM_LC]->cm_pval, cm->stats->fthrA[CM_LC]->l_pval,
+		  cm->stats->fthrA[CM_LC]->g_pval, cm->stats->fthrA[CM_LC]->was_fast);
+	  fprintf(fp, "FT-GC  %5d  %.3f  %.5f  %.5f  %.5f  %d\n", 
+		  cm->stats->fthrA[CM_GC]->N, cm->stats->fthrA[CM_GC]->fraction, 
+		  cm->stats->fthrA[CM_GC]->cm_pval, cm->stats->fthrA[CM_GC]->l_pval,
+		  cm->stats->fthrA[CM_GC]->g_pval, cm->stats->fthrA[CM_GC]->was_fast);
+	  fprintf(fp, "FT-LI  %5d  %.3f  %.5f  %.5f  %.5f  %d\n", 
+		  cm->stats->fthrA[CM_LI]->N, cm->stats->fthrA[CM_LI]->fraction, 
+		  cm->stats->fthrA[CM_LI]->cm_pval, cm->stats->fthrA[CM_LI]->l_pval,
+		  cm->stats->fthrA[CM_LI]->g_pval, cm->stats->fthrA[CM_LI]->was_fast);
+	  fprintf(fp, "FT-GI  %5d  %.3f  %.5f  %.5f  %.5f  %d\n", 
+	      cm->stats->fthrA[CM_GI]->N, cm->stats->fthrA[CM_GI]->fraction, 
+		  cm->stats->fthrA[CM_GI]->cm_pval, cm->stats->fthrA[CM_GI]->l_pval,
+		  cm->stats->fthrA[CM_GI]->g_pval, cm->stats->fthrA[CM_GI]->was_fast);
+	} /* currently either all filter threshold stats are calc'ed or none */
+    }
+
+  /* main model section */
   fputs("MODEL:\n", fp);
   for (v = 0; v < cm->M; v++) 
     {
@@ -588,22 +606,22 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
 	/* now we know what mode we're reading, read it */
 	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
 	if (! IsInt(tok))                                     goto FAILURE;
-	cm->stats->fthrAA[fthr_mode]->N = atoi(tok);
+	cm->stats->fthrA[fthr_mode]->N = atoi(tok);
 	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
 	if (! IsReal(tok))                                    goto FAILURE;
-	cm->stats->fthrAA[fthr_mode]->fraction = atof(tok);
+	cm->stats->fthrA[fthr_mode]->fraction = atof(tok);
 	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
 	if (! IsReal(tok))                                    goto FAILURE;
-	cm->stats->fthrAA[fthr_mode]->cm_pval = atof(tok);
+	cm->stats->fthrA[fthr_mode]->cm_pval = atof(tok);
 	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
 	if (! IsReal(tok))                                    goto FAILURE;
-	cm->stats->fthrAA[fthr_mode]->l_pval = atof(tok);
+	cm->stats->fthrA[fthr_mode]->l_pval = atof(tok);
 	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
 	if (! IsReal(tok))                                    goto FAILURE;
-	cm->stats->fthrAA[fthr_mode]->g_pval = atof(tok);
+	cm->stats->fthrA[fthr_mode]->g_pval = atof(tok);
 	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
 	if (! IsInt(tok))                                     goto FAILURE;
-	cm->stats->fthrAA[fthr_mode]->was_fast = atoi(tok);
+	cm->stats->fthrA[fthr_mode]->was_fast = atoi(tok);
 
 	fthr_flags[fthr_mode] = TRUE;
       }
@@ -757,7 +775,8 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
 static void
 write_binary_cm(FILE *fp, CM_t *cm)
 {
-  int v;
+  int v, i ,p;
+  int has_evd, has_fthr;
 
   fwrite((char *) &(v01magic), sizeof(unsigned int), 1, fp);
 
@@ -788,6 +807,52 @@ write_binary_cm(FILE *fp, CM_t *cm)
   /* EPN 11.15.05 */
   tagged_fwrite(CMIO_ELSELFSC,    &cm->el_selfsc,   sizeof(float),  1, fp);  
 
+  /* EVD stats */
+  if (!(cm->flags & CM_EVD_STATS))
+    {
+      has_evd = has_fthr = FALSE;
+      tagged_fwrite(CMIO_HASEVD,   &has_evd, sizeof(int),  1, fp);  /* put a 0 to indicate no EVD stats */
+      tagged_fwrite(CMIO_HASFTHR,  &has_fthr, sizeof(int),  1, fp);  /* put a 0 to indicate no HMM filter stats */
+    }
+  else /* (cm->flags & CM_EVD_STATS), if this flag is up, ALL EVD stats are valid */
+    {
+      has_evd = TRUE;
+      tagged_fwrite(CMIO_HASEVD,  &has_evd,         sizeof(int),  1, fp);  /* put a 1 to indicate valid EVD stats */
+      tagged_fwrite(CMIO_NPART,   &cm->stats->np,   sizeof(int),  1, fp);  
+      tagged_fwrite(CMIO_PARTS,   cm->stats->ps,    sizeof(int),  cm->stats->np, fp);  
+      tagged_fwrite(CMIO_PARTE,   cm->stats->pe,    sizeof(int),  cm->stats->np, fp);  
+      for(i = 0; i < NEVDMODES; i++)
+	{
+	  for(p = 0; p < cm->stats->np; p++)
+	    {
+	      tagged_fwrite(CMIO_EVDN,      &cm->stats->evdAA[i][p]->N,      sizeof(int),    1, fp);
+	      tagged_fwrite(CMIO_EVDL,      &cm->stats->evdAA[i][p]->L,      sizeof(int),    1, fp);
+	      tagged_fwrite(CMIO_EVDMU,     &cm->stats->evdAA[i][p]->mu,     sizeof(float),  1, fp);
+	      tagged_fwrite(CMIO_EVDLAMBDA, &cm->stats->evdAA[i][p]->lambda, sizeof(float),  1, fp);
+	      tagged_fwrite(CMIO_EVDK,      &cm->stats->evdAA[i][p]->K,      sizeof(float),  1, fp);
+	    }
+	}
+      /* HMM filter threshold stats, can only be valid if EVD_STATS also valid */ 
+      if (!(cm->flags & CM_FTHR_STATS))
+	{
+	  has_fthr = FALSE;
+ 	  tagged_fwrite(CMIO_HASFTHR,  &has_fthr,   sizeof(int),  1, fp);  /* put a 0 to indicate no HMM filter stats */
+	} 
+     else /* (cm->flags & CM_FTHR_STATS) */
+	{
+	  has_fthr = TRUE;
+	  tagged_fwrite(CMIO_HASFTHR,  &has_fthr,   sizeof(int),  1, fp);  /* put a 1 to indicate valid HMM filter stats */
+	  for(i = 0; i < NFTHRMODES; i++)
+	    {
+	      tagged_fwrite(CMIO_FTHRN,    &cm->stats->fthrA[i]->N,        sizeof(int),   1, fp);      
+	      tagged_fwrite(CMIO_FTHRFR,   &cm->stats->fthrA[i]->fraction, sizeof(float), 1, fp);      
+	      tagged_fwrite(CMIO_FTHRCMP,  &cm->stats->fthrA[i]->cm_pval,  sizeof(float), 1, fp);      
+	      tagged_fwrite(CMIO_FTHRLP,   &cm->stats->fthrA[i]->l_pval,   sizeof(float), 1, fp);      
+	      tagged_fwrite(CMIO_FTHRGP,   &cm->stats->fthrA[i]->g_pval,   sizeof(float), 1, fp);      
+	      tagged_fwrite(CMIO_FTHRFAST, &cm->stats->fthrA[i]->was_fast, sizeof(int),   1, fp);      
+	    }
+	}
+    }
   for (v = 0; v < cm->M; v++) {
     tagged_fwrite(CMIO_T, cm->t[v], sizeof(float), MAXCONNECT, fp);
     tagged_fwrite(CMIO_E, cm->e[v], sizeof(float), Alphabet_size*Alphabet_size, fp);
@@ -817,6 +882,10 @@ read_binary_cm(CMFILE *cmf, CM_t **ret_cm)
   int           atype;
   int           asize;
   int           v;
+  int           has_evd;
+  int           has_fthr;
+  int           np;
+  int           i, p;
 
   cm = NULL;
   fp = cmf->f;
@@ -845,10 +914,43 @@ read_binary_cm(CMFILE *cmf, CM_t **ret_cm)
   if (! tagged_fread(CMIO_NODEMAP,      (void *) cm->nodemap,    sizeof(int),   cm->nodes, fp))     goto FAILURE;
   if (! tagged_fread(CMIO_NDTYPE,       (void *) cm->ndtype,     sizeof(char),  cm->nodes, fp))     goto FAILURE;
   /* EPN 08.18.05 */
-  if (! tagged_fread(CMIO_W,            (void *) &(cm->W),       sizeof(int),   1,         fp))     goto FAILURE;
-
-  if (! tagged_fread(CMIO_ELSELFSC,     (void *) &(cm->el_selfsc), sizeof(float),1,        fp))     goto FAILURE;
-  
+  if (! tagged_fread(CMIO_W,            (void *) &(cm->W),       sizeof(int),   1,         fp))    goto FAILURE;
+  if (! tagged_fread(CMIO_ELSELFSC,     (void *) &(cm->el_selfsc),sizeof(float),1,         fp))    goto FAILURE;
+  /* We might have EVD stats */
+  if (! tagged_fread(CMIO_HASEVD,       (void *) &(has_evd),     sizeof(int),   1,         fp))    goto FAILURE;
+  if(has_evd)
+    {
+      /* First is num partitions, allocate cmstats object based on this */
+      if (! tagged_fread(CMIO_NPART,     (void *) &(np),         sizeof(int),       1,        fp))     goto FAILURE;
+      cm->stats = AllocCMStats(np);
+      if (! tagged_fread(CMIO_PARTS,     (void *) cm->stats->ps, sizeof(int),      np,        fp))     goto FAILURE;
+      if (! tagged_fread(CMIO_PARTE,     (void *) cm->stats->pe, sizeof(int),      np,        fp))     goto FAILURE;
+      for(i = 0; i < NEVDMODES; i++)
+	{
+	  for(p = 0; p < cm->stats->np; p++)
+	    {
+	      if (! tagged_fread(CMIO_EVDN,     (void *) &(cm->stats->evdAA[i][p]->N),     sizeof(int),   1, fp)) goto FAILURE;
+	      if (! tagged_fread(CMIO_EVDL,     (void *) &(cm->stats->evdAA[i][p]->L),     sizeof(int),   1, fp)) goto FAILURE;
+	      if (! tagged_fread(CMIO_EVDMU,    (void *) &(cm->stats->evdAA[i][p]->mu),    sizeof(float), 1, fp)) goto FAILURE;
+	      if (! tagged_fread(CMIO_EVDLAMBDA,(void *) &(cm->stats->evdAA[i][p]->lambda),sizeof(float), 1, fp)) goto FAILURE;
+	      if (! tagged_fread(CMIO_EVDK,     (void *) &(cm->stats->evdAA[i][p]->K),     sizeof(float), 1, fp)) goto FAILURE;
+	    }
+	}
+    }
+  if (! tagged_fread(CMIO_HASFTHR,     (void *) &(has_fthr), sizeof(int),         1,        fp))     goto FAILURE;
+  /* We might have HMM filter threshold stats */
+  if(has_fthr)
+    {
+      for(i = 0; i < NFTHRMODES; i++)
+	{
+	  if (! tagged_fread(CMIO_FTHRN,    (void *) &(cm->stats->fthrA[i]->N),          sizeof(int),   1, fp)) goto FAILURE;
+	  if (! tagged_fread(CMIO_FTHRFR,   (void *) &(cm->stats->fthrA[i]->fraction),   sizeof(float), 1, fp)) goto FAILURE;
+	  if (! tagged_fread(CMIO_FTHRCMP,  (void *) &(cm->stats->fthrA[i]->cm_pval),    sizeof(float), 1, fp)) goto FAILURE;
+	  if (! tagged_fread(CMIO_FTHRLP,   (void *) &(cm->stats->fthrA[i]->l_pval),     sizeof(float), 1, fp)) goto FAILURE;
+	  if (! tagged_fread(CMIO_FTHRGP,   (void *) &(cm->stats->fthrA[i]->g_pval),     sizeof(float), 1, fp)) goto FAILURE;
+	  if (! tagged_fread(CMIO_FTHRFAST, (void *) &(cm->stats->fthrA[i]->was_fast),   sizeof(int),   1, fp)) goto FAILURE;
+	}
+    }
   for (v = 0; v < cm->M; v++) {
     if (! tagged_fread(CMIO_T, (void *) cm->t[v], sizeof(float), MAXCONNECT, fp)) goto FAILURE;
     if (! tagged_fread(CMIO_E, (void *) cm->e[v], sizeof(float), Alphabet_size*Alphabet_size, fp)) goto FAILURE;

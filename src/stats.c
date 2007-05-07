@@ -50,7 +50,7 @@ AllocCMStats(int np)
   cmstats->ps = MallocOrDie(sizeof(int) * cmstats->np);
   cmstats->pe = MallocOrDie(sizeof(int) * cmstats->np);
   cmstats->evdAA = MallocOrDie(sizeof(struct evdinfo_s **) * NEVDMODES);
-  cmstats->fthrAA = MallocOrDie(sizeof(struct cp9filterthr_s *) * NFTHRMODES);
+  cmstats->fthrA = MallocOrDie(sizeof(struct cp9filterthr_s *) * NFTHRMODES);
   for(i = 0; i < NEVDMODES; i++)
     {
       cmstats->evdAA[i] = MallocOrDie(sizeof(struct evdinfo_s *));
@@ -58,7 +58,7 @@ AllocCMStats(int np)
 	cmstats->evdAA[i][p] = MallocOrDie(sizeof(struct evdinfo_s));
     }
   for(i = 0; i < NFTHRMODES; i++)
-    cmstats->fthrAA[i]  = MallocOrDie(sizeof(struct cp9filterthr_s));
+    cmstats->fthrA[i]  = MallocOrDie(sizeof(struct cp9filterthr_s));
   return cmstats;
 }
 
@@ -77,8 +77,8 @@ FreeCMStats(CMStats_t *cmstats)
     }
   free(cmstats->evdAA);
   for(i = 0; i < NFTHRMODES; i++)
-    free(cmstats->fthrAA[i]);
-  free(cmstats->fthrAA);
+    free(cmstats->fthrA[i]);
+  free(cmstats->fthrA);
   free(cmstats->ps);
   free(cmstats->pe);
   free(cmstats);
@@ -108,13 +108,13 @@ int debug_print_cmstats(CMStats_t *cmstats)
       printf("\n\n");
     }
   printf("fthr lc filter threshold:\n");
-  debug_print_filterthrinfo(cmstats, cmstats->fthrAA[CM_LC]);
+  debug_print_filterthrinfo(cmstats, cmstats->fthrA[CM_LC]);
   printf("fthr gc filter threshold:\n");
-  debug_print_filterthrinfo(cmstats, cmstats->fthrAA[CM_GC]);
+  debug_print_filterthrinfo(cmstats, cmstats->fthrA[CM_GC]);
   printf("fthr li filter threshold:\n");
-  debug_print_filterthrinfo(cmstats, cmstats->fthrAA[CM_LI]);
+  debug_print_filterthrinfo(cmstats, cmstats->fthrA[CM_LI]);
   printf("fthr gi filter threshold:\n");
-  debug_print_filterthrinfo(cmstats, cmstats->fthrAA[CM_GI]);
+  debug_print_filterthrinfo(cmstats, cmstats->fthrA[CM_GI]);
   printf("\n\n");
   return 0;
 }

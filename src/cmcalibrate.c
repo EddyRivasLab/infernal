@@ -251,26 +251,26 @@ main(int argc, char **argv)
 	      /* with do_fastfil we can't call FindCP9FilterThreshold()
 	       * for Inside, we set Inside thresholds as CYK thresholds */
 	      if(do_timings) esl_stopwatch_Start(w);
-	      cmstats[ncm]->fthrAA[CM_LC]->N        = filN;
-	      cmstats[ncm]->fthrAA[CM_LC]->fraction = fraction;
-	      cmstats[ncm]->fthrAA[CM_LC]->cm_pval  = cmP;
-	      cmstats[ncm]->fthrAA[CM_LC]->was_fast = TRUE;
-	      cmstats[ncm]->fthrAA[CM_LC]->l_pval   = 
+	      cmstats[ncm]->fthrA[CM_LC]->N        = filN;
+	      cmstats[ncm]->fthrA[CM_LC]->fraction = fraction;
+	      cmstats[ncm]->fthrA[CM_LC]->cm_pval  = cmP;
+	      cmstats[ncm]->fthrA[CM_LC]->was_fast = TRUE;
+	      cmstats[ncm]->fthrA[CM_LC]->l_pval   = 
 		FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, cmP, CM_LC, CP9_L, do_fastfil);
-	      cmstats[ncm]->fthrAA[CM_LC]->g_pval   = 
+	      cmstats[ncm]->fthrA[CM_LC]->g_pval   = 
 		FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, cmP, CM_LC, CP9_G, do_fastfil);
 
-	      cmstats[ncm]->fthrAA[CM_GC]->N        = filN;
-	      cmstats[ncm]->fthrAA[CM_GC]->fraction = fraction;
-	      cmstats[ncm]->fthrAA[CM_GC]->cm_pval  = cmP;
-	      cmstats[ncm]->fthrAA[CM_GC]->was_fast = TRUE;
-	      cmstats[ncm]->fthrAA[CM_GC]->l_pval   = 
+	      cmstats[ncm]->fthrA[CM_GC]->N        = filN;
+	      cmstats[ncm]->fthrA[CM_GC]->fraction = fraction;
+	      cmstats[ncm]->fthrA[CM_GC]->cm_pval  = cmP;
+	      cmstats[ncm]->fthrA[CM_GC]->was_fast = TRUE;
+	      cmstats[ncm]->fthrA[CM_GC]->l_pval   = 
 		FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, cmP, CM_GC, CP9_L, do_fastfil);
-	      cmstats[ncm]->fthrAA[CM_GC]->g_pval = 
+	      cmstats[ncm]->fthrA[CM_GC]->g_pval = 
 		FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, cmP, CM_GC, CP9_G, do_fastfil);
 
-	      CopyFThrInfo(cmstats[ncm]->fthrAA[CM_LC], cmstats[ncm]->fthrAA[CM_LI]);
-	      CopyFThrInfo(cmstats[ncm]->fthrAA[CM_GC], cmstats[ncm]->fthrAA[CM_GI]);
+	      CopyFThrInfo(cmstats[ncm]->fthrA[CM_LC], cmstats[ncm]->fthrA[CM_LI]);
+	      CopyFThrInfo(cmstats[ncm]->fthrA[CM_GC], cmstats[ncm]->fthrA[CM_GI]);
 	      if(do_timings) 
 		{ 
 		  esl_stopwatch_Stop(w);  
@@ -281,13 +281,13 @@ main(int argc, char **argv)
 	    for(fthr_mode = 0; fthr_mode < NFTHRMODES; fthr_mode++)
 	      {
 		if(do_timings) esl_stopwatch_Start(w);
-		cmstats[ncm]->fthrAA[fthr_mode]->N        = filN;
-		cmstats[ncm]->fthrAA[fthr_mode]->fraction = fraction;
-		cmstats[ncm]->fthrAA[fthr_mode]->cm_pval  = cmP;
-		cmstats[ncm]->fthrAA[fthr_mode]->was_fast = FALSE;
-		cmstats[ncm]->fthrAA[fthr_mode]->l_pval =  /*  local */
+		cmstats[ncm]->fthrA[fthr_mode]->N        = filN;
+		cmstats[ncm]->fthrA[fthr_mode]->fraction = fraction;
+		cmstats[ncm]->fthrA[fthr_mode]->cm_pval  = cmP;
+		cmstats[ncm]->fthrA[fthr_mode]->was_fast = FALSE;
+		cmstats[ncm]->fthrA[fthr_mode]->l_pval =  /*  local */
 		  FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, cmP, fthr_mode, CP9_L, do_fastfil);
-		cmstats[ncm]->fthrAA[fthr_mode]->g_pval =  /* glocal */
+		cmstats[ncm]->fthrA[fthr_mode]->g_pval =  /* glocal */
 		  FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, cmP, fthr_mode, CP9_G, do_fastfil);
 		if(do_timings) 
 		  { 
