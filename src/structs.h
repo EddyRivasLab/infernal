@@ -233,7 +233,7 @@ typedef struct cmstats_s {
 #define CM_GI 3
 #define CP9_L 4
 #define CP9_G 5
-#define NSTATMODES 6
+#define NEVDMODES 6
 #define NFTHRMODES 4
 
 /* Structure: CM_t

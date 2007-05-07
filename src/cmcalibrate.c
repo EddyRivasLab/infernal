@@ -38,13 +38,10 @@
 #define ALGORITHMS "--cyk,--inside"
 
 static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_freq, 
-				      int N, int L, int statmode);
+				      int N, int L, int evd_mode);
 static float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N, 
-				    float cm_pcutoff, int cm_statmode, int hmm_statmode, 
+				    float cm_pcutoff, int cm_evd_mode, int hmm_evd_mode, 
 				    int do_fastfil);
-static int debug_print_cmstats(CMStats_t *cmstats);
-static int debug_print_evdinfo(EVDInfo_t *evd);
-static int debug_print_filterthrinfo(CMStats_t *cmstats, CP9FilterThr_t *fthr);
 static int CopyFThrInfo(CP9FilterThr_t *src, CP9FilterThr_t *dest);
 static int CopyCMStatsEVD(CMStats_t *src, CMStats_t *dest);
 
@@ -96,7 +93,8 @@ main(int argc, char **argv)
   int              do_fastfil = FALSE; /* TRUE: use fast hacky filter thr calc method */
   float            fraction = 0.95;    /* fraction of CM hits req'd to find with HMM  */
   float            cmP = 0.001;        /* maximum CM P-value we care about            */
-  int              statmode;           /* counter over stat modes                     */
+  int              evd_mode;           /* counter over evd modes                      */
+  int              fthr_mode;          /* counter over fthr modes                     */
   int              i;                  /* counter over GC segnments                   */
   double          *gc_freq;            /* GC frequency array [0..100(GC_SEGMENTS)]    */
   int              optset;             /* boolean value for esl_get_opts()            */
@@ -223,12 +221,12 @@ main(int argc, char **argv)
       if(do_evd)
 	{
 	  sample_length = 2.0 * cm->W;
-	  for(statmode = 0; statmode < NSTATMODES; statmode++)
+	  for(evd_mode = 0; evd_mode < NEVDMODES; evd_mode++)
 	    {
 	      if(do_timings) esl_stopwatch_Start(w);
-	      if(statmode == CP9_G || statmode == CP9_L) evdN = hmmevdN;
+	      if(evd_mode == CP9_G || evd_mode == CP9_L) evdN = hmmevdN;
 	      else evdN = cmevdN;
-	      NEW_serial_make_histogram (cm, cmstats[ncm], gc_freq, evdN, sample_length, statmode);
+	      NEW_serial_make_histogram (cm, cmstats[ncm], gc_freq, evdN, sample_length, evd_mode);
 	      if(do_timings) 
 		{ 
 		  esl_stopwatch_Stop(w);  
@@ -280,17 +278,17 @@ main(int argc, char **argv)
 		}
 	    }
 	  else /* !do_fastfil */
-	    for(statmode = 0; statmode < NFTHRMODES; statmode++)
+	    for(fthr_mode = 0; fthr_mode < NFTHRMODES; fthr_mode++)
 	      {
 		if(do_timings) esl_stopwatch_Start(w);
-		cmstats[ncm]->fthrAA[statmode]->N        = filN;
-		cmstats[ncm]->fthrAA[statmode]->fraction = fraction;
-		cmstats[ncm]->fthrAA[statmode]->cm_pval  = cmP;
-		cmstats[ncm]->fthrAA[statmode]->was_fast = FALSE;
-		cmstats[ncm]->fthrAA[statmode]->l_pval =  /*  local */
-		  FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, cmP, statmode, CP9_L, do_fastfil);
-		cmstats[ncm]->fthrAA[statmode]->g_pval =  /* glocal */
-		  FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, cmP, statmode, CP9_G, do_fastfil);
+		cmstats[ncm]->fthrAA[fthr_mode]->N        = filN;
+		cmstats[ncm]->fthrAA[fthr_mode]->fraction = fraction;
+		cmstats[ncm]->fthrAA[fthr_mode]->cm_pval  = cmP;
+		cmstats[ncm]->fthrAA[fthr_mode]->was_fast = FALSE;
+		cmstats[ncm]->fthrAA[fthr_mode]->l_pval =  /*  local */
+		  FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, cmP, fthr_mode, CP9_L, do_fastfil);
+		cmstats[ncm]->fthrAA[fthr_mode]->g_pval =  /* glocal */
+		  FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, cmP, fthr_mode, CP9_G, do_fastfil);
 		if(do_timings) 
 		  { 
 		    esl_stopwatch_Stop(w);  
@@ -369,10 +367,10 @@ main(int argc, char **argv)
  * Purpose:  Makes histogram(s) using random sequences.  Fills the relevant
  *           EVD information in the CMStats_t data structure (cmstats) w/mu,
  *           K, and lambda. Determines desired search strategy and 
- *           local/glocal CM/CP9 configuration from statmode.
+ *           local/glocal CM/CP9 configuration from evd_mode.
  *           One histogram is made for each partition of GC frequency. 
  *
- *           This function should be called 6 times, once with each statmode
+ *           This function should be called 6 times, once with each evd_mode
  *           below, to fill all the EVD stats in the cmstats data structure:
  *
  *           0. CM_LC: !cm->search_opts & CM_SEARCH_INSIDE  w/  local CM
@@ -388,11 +386,11 @@ main(int argc, char **argv)
  *           gc_freq  - GC frequencies for each GC content
  *           N        - number of random seqs to search 
  *           L        - length of random samples
- *           statmode - gives search strategy to use for CM or CP9
+ *           evd_mode - gives search strategy to use for CM or CP9
  *
  */  
 static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_freq, 
-				      int N, int L, int statmode)
+				      int N, int L, int evd_mode)
 {
   int i;
   char *randseq;
@@ -425,8 +423,8 @@ static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_f
   ESL_ALLOC(randseq, sizeof(char) * (L+1));
 
   /* Configure the CM based on the stat mode */
-  ConfigForStatmode(cm, statmode);
-  evd = cmstats->evdAA[statmode];
+  ConfigForEVDMode(cm, evd_mode);
+  evd = cmstats->evdAA[evd_mode];
 
   /* For each partition */
   for (p = 0; p < cmstats->np; p++)
@@ -511,15 +509,15 @@ static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_f
  *           hits. Sequences are sampled from the CM until N with a P-value
  *           better than cm_pcutoff are sampled (those with worse P-values
  *           are rejected). CP9 scans are carried out in either local or
- *           glocal mode depending on hmm_statmode. CM is configured in 
+ *           glocal mode depending on hmm_evd_mode. CM is configured in 
  *           local/glocal and sampled seqs are scored in CYK/inside depending
- *           on cm_statmode (4 possibilities). 
+ *           on fthr_mode (4 possibilities). 
  *
- *           If do_fastfil and cm_statmode is local or glocal CYK, parsetree 
+ *           If do_fastfil and fthr_mode is local or glocal CYK, parsetree 
  *           scores of emitted sequences are assumed to an optimal CYK scores 
  *           (not nec true). This saves a lot of time b/c no need to
  *           scan emitted seqs, but it's statistically wrong. 
- *           If do_fastfil and cm_statmode is local or glocal inside, 
+ *           If do_fastfil and fthr_mode is local or glocal inside, 
  *           contract is violated and we Die. Current strategy *outside*
  *           of this function is to copy HMM filtering thresholds from
  *           CYK for Inside cases.
@@ -537,8 +535,8 @@ static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_f
  *           fraction     - target fraction of CM hits to detect with CP9
  *           N            - number of sequences to sample from CM better than cm_minsc
  *           cm_pcutoff   - minimum CM P-value to accept 
- *           cm_statmode  - gives CM search strategy to use, and EVD to use
- *           hmm_statmode - CP9_L to search with  local HMM (we're filling a fthr->l_pval)
+ *           fthr_mode  - gives CM search strategy to use, and EVD to use
+ *           hmm_evd_mode - CP9_L to search with  local HMM (we're filling a fthr->l_pval)
  *                          CP9_G to search with glocal HMM (we're filling a fthr->g_pval)
  *           do_fastfil   - TRUE to use fast method: assume parsetree score
  *                          is optimal CYK score
@@ -548,7 +546,7 @@ static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_f
  * 
  */
 float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N, float cm_pcutoff, 
-			     int cm_statmode, int hmm_statmode, int do_fastfil)
+			     int fthr_mode, int hmm_evd_mode, int do_fastfil)
 {
   Parsetree_t      *tr;         /* parsetree (TEMPORARY NOT REALLY NEEDED)*/
   char             *dsq;        /* digitized sequence                     */
@@ -573,16 +571,16 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N
     Die("ERROR in FindCP9FilterThreshold() cp9 is NULL\n");
   if (fraction < 0. || fraction > 1.)  
     Die("ERROR in FindCP9FilterThreshold() fraction is %f, should be [0.0..1.0]\n", fraction);
-  if((cm_statmode != CM_LI) && (cm_statmode != CM_GI) && (cm_statmode != CM_LC) && (cm_statmode != CM_GC))
-    Die("ERROR in FindCP9FilterThreshold() cm_statmode not CM_LI, CM_GI, CM_LC, or CM_GC\n");
-  if(hmm_statmode != CP9_L && hmm_statmode != CP9_G)
-    Die("ERROR in FindCP9FilterThreshold() hmm_statmode not CP9_L or CP9_G\n");
-  if(do_fastfil && (cm_statmode == CM_LI || cm_statmode == CM_GI))
-    Die("ERROR in FindCP9FilterThreshold() do_fastfil TRUE, but cm_statmode CM_GI or CM_LI\n");
+  if((fthr_mode != CM_LI) && (fthr_mode != CM_GI) && (fthr_mode != CM_LC) && (fthr_mode != CM_GC))
+    Die("ERROR in FindCP9FilterThreshold() fthr_mode not CM_LI, CM_GI, CM_LC, or CM_GC\n");
+  if(hmm_evd_mode != CP9_L && hmm_evd_mode != CP9_G)
+    Die("ERROR in FindCP9FilterThreshold() hmm_evd_mode not CP9_L or CP9_G\n");
+  if(do_fastfil && (fthr_mode == CM_LI || fthr_mode == CM_GI))
+    Die("ERROR in FindCP9FilterThreshold() do_fastfil TRUE, but fthr_mode CM_GI or CM_LI\n");
 
   /* Configure the CM based on the stat mode */
-  ConfigForStatmode(cm, cm_statmode);
-  evd  = cmstats->evdAA[cm_statmode];
+  ConfigForEVDMode(cm, fthr_mode);
+  evd  = cmstats->evdAA[fthr_mode];
 
   hmm_pval  = MallocOrDie(sizeof(float) * N);
   hmm_sc    = MallocOrDie(sizeof(float) * N);
@@ -591,11 +589,11 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N
   dsq    = NULL;
   tr     = NULL;
 
-  /* Configure the HMM based on the hmm_statmode */
-  if(hmm_statmode == CP9_L)
+  /* Configure the HMM based on the hmm_evd_mode */
+  if(hmm_evd_mode == CP9_L)
     CPlan9SWConfig(cm->cp9, ((cm->cp9->M)-1.)/cm->cp9->M,  /* all start pts equiprobable, including 1 */
 		   ((cm->cp9->M)-1.)/cm->cp9->M);          /* all end pts equiprobable, including M */
-  else /* hmm_statmode == CP9_G (it's in the contract) */
+  else /* hmm_evd_mode == CP9_G (it's in the contract) */
     CPlan9GlobalConfig(cm->cp9);
   CP9Logoddsify(cm->cp9);
 
@@ -612,9 +610,9 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N
 
   /* Strategy: 
    * Emit sequences one at a time from CM, scanning each with CM 
-   * (local or glocal, CYK or Inside as specified by cm_statmode). If best scan
+   * (local or glocal, CYK or Inside as specified by fthr_mode). If best scan
    * score meets cm_pcutoff threshold, search it with CP9 in local or glocal 
-   * mode (specified by hmm_statmode) and save top CP9 score. Repeat
+   * mode (specified by hmm_evd_mode) and save top CP9 score. Repeat
    * until N seqs have been searched with CP9.
    */
 
@@ -668,15 +666,15 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N
 					 FALSE, /* we're not building a histogram for CP9 stats */
 					 NULL); /* filter fraction, irrelevant here */
       hmm_pval[i] = esl_gumbel_surv((double) hmm_sc[i], 
-				    cmstats->evdAA[hmm_statmode][p]->mu, 
-				    cmstats->evdAA[hmm_statmode][p]->lambda);
+				    cmstats->evdAA[hmm_evd_mode][p]->mu, 
+				    cmstats->evdAA[hmm_evd_mode][p]->lambda);
     }
   /* Sort the HMM P-values with quicksort */
   esl_vec_FSortIncreasing(hmm_pval, N);
   esl_vec_FSortDecreasing(hmm_sc, N);
 
   for (i = 0; i < N; i++)
-    printf("%d i: %4d hmm sc: %10.4f hmm P: %10.4f\n", hmm_statmode, i, hmm_sc[i], hmm_pval[i]);
+    printf("%d i: %4d hmm sc: %10.4f hmm P: %10.4f\n", hmm_evd_mode, i, hmm_sc[i], hmm_pval[i]);
   printf("\n\nnattempts: %d\n", nattempts);
 
   /* Clean up and exit */
@@ -688,61 +686,6 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N
   return hmm_pval[(int) ((fraction) * (float) N)];
 }
 
-/* Function: debug_print_cmstats
- */
-int debug_print_cmstats(CMStats_t *cmstats)
-{
-  int p;
-  printf("Num partitions: %d\n", cmstats->np);
-  for (p = 0; p < cmstats->np; p++)
-    {
-      printf("Partition %d: start: %d end: %d\n", p, cmstats->ps[p], cmstats->pe[p]);
-      printf("cm_lc EVD:\t");
-      debug_print_evdinfo(cmstats->evdAA[CM_LC][p]);
-      printf("cm_gc EVD:\t");
-      debug_print_evdinfo(cmstats->evdAA[CM_GC][p]);
-      printf("cm_li EVD:\t");
-      debug_print_evdinfo(cmstats->evdAA[CM_LI][p]);
-      printf("cm_gi EVD:\t");
-      debug_print_evdinfo(cmstats->evdAA[CM_GI][p]);
-      printf("cp9_l EVD:\t");
-      debug_print_evdinfo(cmstats->evdAA[CP9_L][p]);
-      printf("cp9_g EVD:\t");
-      debug_print_evdinfo(cmstats->evdAA[CP9_G][p]);
-      printf("\n\n");
-    }
-  printf("fthr lc filter threshold:\n");
-  debug_print_filterthrinfo(cmstats, cmstats->fthrAA[CM_LC]);
-  printf("fthr gc filter threshold:\n");
-  debug_print_filterthrinfo(cmstats, cmstats->fthrAA[CM_GC]);
-  printf("fthr li filter threshold:\n");
-  debug_print_filterthrinfo(cmstats, cmstats->fthrAA[CM_LI]);
-  printf("fthr gi filter threshold:\n");
-  debug_print_filterthrinfo(cmstats, cmstats->fthrAA[CM_GI]);
-  printf("\n\n");
-  return 0;
-}
-
-/* Function: debug_print_evdinfo
- */
-int debug_print_evdinfo(EVDInfo_t *evd)
-{
-  printf("N: %d L: %d lambda: %.5f mu: %.5f K: %.5f\n", evd->N, evd->L, evd->lambda, evd->mu, evd->K);
-  return 0;
-}
-
-/* Function: debug_print_filterthrinfo
- */
-int debug_print_filterthrinfo(CMStats_t *cmstats, CP9FilterThr_t *fthr)
-{
-  double l_x;
-  double g_x;
-  g_x = esl_gumbel_invcdf((1.-fthr->g_pval), cmstats->evdAA[CP9_G][0]->mu, cmstats->evdAA[CP9_G][0]->lambda);
-  l_x = esl_gumbel_invcdf((1.-fthr->l_pval), cmstats->evdAA[CP9_L][0]->mu, cmstats->evdAA[CP9_L][0]->lambda);
-  printf("\tN: %d gsc: %.5f (%.5f bits) lsc: %.5f (%.5f bits)\n\tcmsc: %.5f fraction: %.3f, was_fast: %d\n",
-	 fthr->N, fthr->g_pval, g_x, fthr->l_pval, l_x, fthr->cm_pval, fthr->fraction, fthr->was_fast);
-  return 0;
-}
 
 /* Function: CopyFThrInfo()
  * Incept:   EPN, Fri May  4 15:54:51 2007
@@ -780,7 +723,7 @@ int CopyCMStatsEVD(CMStats_t *src, CMStats_t *dest)
   for(i = 0; i < GC_SEGMENTS; i++)
     dest->gc2p[i] = src->gc2p[i]; 
 
-  for(i = 0; i < NSTATMODES; i++)
+  for(i = 0; i < NEVDMODES; i++)
     {
       for(p = 0; p < src->np; p++)
 	{

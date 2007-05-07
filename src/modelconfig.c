@@ -1080,10 +1080,10 @@ EnforceFindEnfStart(CM_t *cm, int enf_cc_start)
 }
 
 /*
- * Function: ConfigForStatmode
+ * Function: ConfigForEVDMode
  * Date:     EPN, Thu May  3 09:05:48 2007
  * Purpose:  Configure a CM and it's CP9 for determining statistics for 
- *           a specific 'statmode'.
+ *           a specific 'evd_mode'.
  *
  *           0. CM_LC: !cm->search_opts & CM_SEARCH_INSIDE  w/  local CM
  *           1. CM_GC: !cm->search_opts & CM_SEARCH_INSIDE  w/ glocal CM
@@ -1094,16 +1094,16 @@ EnforceFindEnfStart(CM_t *cm, int enf_cc_start)
  * 
  * Args:
  *           CM           - the covariance model
- *           statmode     - the mode 0..5
+ *           evd_mode     - the mode 0..5
  */
 int
-ConfigForStatmode(CM_t *cm, int statmode)
+ConfigForEVDMode(CM_t *cm, int evd_mode)
 {
   int do_cm_local = FALSE;
   int do_cp9_local = FALSE;
 
-  /* First set search opts and flags based on statmode */
-  switch (statmode) {
+  /* First set search opts and flags based on evd_mode */
+  switch (evd_mode) {
   case CM_LC: /* local CYK */
     printf("CM_LC\n");
     cm->search_opts &= ~CM_SEARCH_INSIDE;
@@ -1141,7 +1141,7 @@ ConfigForStatmode(CM_t *cm, int statmode)
     do_cp9_local  = FALSE;
     break;
   default: 
-    Die("ERROR unrecognized statmode: %d in ConfigForStatmode");
+    Die("ERROR unrecognized evd_mode: %d in ConfigForEVDMode");
   }
   /* configure CM and, if needed, CP9 */
   if(cm->search_opts & CM_SEARCH_HMMONLY)

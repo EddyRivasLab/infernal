@@ -49,9 +49,9 @@ AllocCMStats(int np)
   cmstats->np = np;
   cmstats->ps = MallocOrDie(sizeof(int) * cmstats->np);
   cmstats->pe = MallocOrDie(sizeof(int) * cmstats->np);
-  cmstats->evdAA = MallocOrDie(sizeof(struct evdinfo_s **) * NSTATMODES);
+  cmstats->evdAA = MallocOrDie(sizeof(struct evdinfo_s **) * NEVDMODES);
   cmstats->fthrAA = MallocOrDie(sizeof(struct cp9filterthr_s *) * NFTHRMODES);
-  for(i = 0; i < NSTATMODES; i++)
+  for(i = 0; i < NEVDMODES; i++)
     {
       cmstats->evdAA[i] = MallocOrDie(sizeof(struct evdinfo_s *));
       for(p = 0; p < cmstats->np; p++)
@@ -69,7 +69,7 @@ void
 FreeCMStats(CMStats_t *cmstats)
 {
   int i, p;
-  for(i = 0; i < NSTATMODES; i++)
+  for(i = 0; i < NEVDMODES; i++)
     {
       for(p = 0; p < cmstats->np; p++)
 	free(cmstats->evdAA[i][p]);
@@ -83,6 +83,62 @@ FreeCMStats(CMStats_t *cmstats)
   free(cmstats->pe);
   free(cmstats);
 }  
+
+/* Function: debug_print_cmstats
+ */
+int debug_print_cmstats(CMStats_t *cmstats)
+{
+  int p;
+  printf("Num partitions: %d\n", cmstats->np);
+  for (p = 0; p < cmstats->np; p++)
+    {
+      printf("Partition %d: start: %d end: %d\n", p, cmstats->ps[p], cmstats->pe[p]);
+      printf("cm_lc EVD:\t");
+      debug_print_evdinfo(cmstats->evdAA[CM_LC][p]);
+      printf("cm_gc EVD:\t");
+      debug_print_evdinfo(cmstats->evdAA[CM_GC][p]);
+      printf("cm_li EVD:\t");
+      debug_print_evdinfo(cmstats->evdAA[CM_LI][p]);
+      printf("cm_gi EVD:\t");
+      debug_print_evdinfo(cmstats->evdAA[CM_GI][p]);
+      printf("cp9_l EVD:\t");
+      debug_print_evdinfo(cmstats->evdAA[CP9_L][p]);
+      printf("cp9_g EVD:\t");
+      debug_print_evdinfo(cmstats->evdAA[CP9_G][p]);
+      printf("\n\n");
+    }
+  printf("fthr lc filter threshold:\n");
+  debug_print_filterthrinfo(cmstats, cmstats->fthrAA[CM_LC]);
+  printf("fthr gc filter threshold:\n");
+  debug_print_filterthrinfo(cmstats, cmstats->fthrAA[CM_GC]);
+  printf("fthr li filter threshold:\n");
+  debug_print_filterthrinfo(cmstats, cmstats->fthrAA[CM_LI]);
+  printf("fthr gi filter threshold:\n");
+  debug_print_filterthrinfo(cmstats, cmstats->fthrAA[CM_GI]);
+  printf("\n\n");
+  return 0;
+}
+
+/* Function: debug_print_evdinfo
+ */
+int debug_print_evdinfo(EVDInfo_t *evd)
+{
+  printf("N: %d L: %d lambda: %.5f mu: %.5f K: %.5f\n", evd->N, evd->L, evd->lambda, evd->mu, evd->K);
+  return 0;
+}
+
+/* Function: debug_print_filterthrinfo
+ */
+int debug_print_filterthrinfo(CMStats_t *cmstats, CP9FilterThr_t *fthr)
+{
+  double l_x;
+  double g_x;
+  g_x = esl_gumbel_invcdf((1.-fthr->g_pval), cmstats->evdAA[CP9_G][0]->mu, cmstats->evdAA[CP9_G][0]->lambda);
+  l_x = esl_gumbel_invcdf((1.-fthr->l_pval), cmstats->evdAA[CP9_L][0]->mu, cmstats->evdAA[CP9_L][0]->lambda);
+  printf("\tN: %d gsc: %.5f (%.5f bits) lsc: %.5f (%.5f bits)\n\tcmsc: %.5f fraction: %.3f, was_fast: %d\n",
+	 fthr->N, fthr->g_pval, g_x, fthr->l_pval, l_x, fthr->cm_pval, fthr->fraction, fthr->was_fast);
+  return 0;
+}
 
 /* Function: get_gc_comp
  * Date:     RJK, Mon Oct 7, 2002 [St. Louis]

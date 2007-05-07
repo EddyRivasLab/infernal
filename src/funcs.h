@@ -146,7 +146,7 @@ extern void  ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_intern
 extern int   EnforceSubsequence(CM_t *cm);
 extern float EnforceScore(CM_t *cm);
 extern int   EnforceFindEnfStart(CM_t *cm, int enf_cc_start);
-extern int   ConfigForStatmode(CM_t *cm, int statmode);
+extern int   ConfigForEVDMode(CM_t *cm, int statmode);
 extern int   ConfigQDB(CM_t *cm);
 
 /* from modelmaker.c

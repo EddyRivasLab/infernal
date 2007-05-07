@@ -18,6 +18,7 @@
 
 #include "structs.h"
 #include "funcs.h"
+#include "stats.h"
 
 /* Magic numbers identifying binary formats.
 */
@@ -317,32 +318,34 @@ write_ascii_cm(FILE *fp, CM_t *cm)
   int p;
   if (cm->flags & CM_EVD_STATS)
     {
-      fprintf(fp, "NPART %3d\n", cm->stats->np);
+      fprintf(fp, "PART %3d  ", cm->stats->np);
+      for(p = 0; p < cm->stats->np; p++)
+	fprintf(fp, "%3d  %3d  ", cm->stats->ps[p], cm->stats->pe[p]);
+      fprintf(fp, "\n");
       for(p = 0; p < cm->stats->np; p++)
 	{
-	  fprintf(fp, "PART  %3d  %3d\n", cm->stats->ps[p], cm->stats->pe[p]);
-	  fprintf(fp, "E-LC  %5d  %4d  %.5f  %.5f  %.5f\n", 
-		  cm->stats->evdAA[CM_LC][p]->N, cm->stats->evdAA[CM_LC][p]->L, 
+	  fprintf(fp, "E-LC  %3d  %5d  %4d  %.5f  %.5f  %.5f\n", 
+		  p, cm->stats->evdAA[CM_LC][p]->N, cm->stats->evdAA[CM_LC][p]->L, 
 		  cm->stats->evdAA[CM_LC][p]->mu, cm->stats->evdAA[CM_LC][p]->lambda, 
 		  cm->stats->evdAA[CM_LC][p]->K);
-	  fprintf(fp, "E-GC  %5d  %4d  %.5f  %.5f  %.5f\n", 
-		  cm->stats->evdAA[CM_GC][p]->N, cm->stats->evdAA[CM_GC][p]->L, 
+	  fprintf(fp, "E-GC  %3d  %5d  %4d  %.5f  %.5f  %.5f\n", 
+		  p, cm->stats->evdAA[CM_GC][p]->N, cm->stats->evdAA[CM_GC][p]->L, 
 		  cm->stats->evdAA[CM_GC][p]->mu, cm->stats->evdAA[CM_GC][p]->lambda, 
 		  cm->stats->evdAA[CM_GC][p]->K);
-	  fprintf(fp, "E-LI  %5d  %4d  %.5f  %.5f  %.5f\n", 
-		  cm->stats->evdAA[CM_LI][p]->N, cm->stats->evdAA[CM_LI][p]->L, 
+	  fprintf(fp, "E-LI  %3d  %5d  %4d  %.5f  %.5f  %.5f\n", 
+		  p, cm->stats->evdAA[CM_LI][p]->N, cm->stats->evdAA[CM_LI][p]->L, 
 		  cm->stats->evdAA[CM_LI][p]->mu, cm->stats->evdAA[CM_LI][p]->lambda, 
 		  cm->stats->evdAA[CM_LI][p]->K);
-	  fprintf(fp, "E-GI  %5d  %4d  %.5f  %.5f  %.5f\n", 
-		  cm->stats->evdAA[CM_GI][p]->N, cm->stats->evdAA[CM_GI][p]->L, 
+	  fprintf(fp, "E-GI  %3d %5d  %4d  %.5f  %.5f  %.5f\n", 
+		  p, cm->stats->evdAA[CM_GI][p]->N, cm->stats->evdAA[CM_GI][p]->L, 
 		  cm->stats->evdAA[CM_GI][p]->mu, cm->stats->evdAA[CM_GI][p]->lambda, 
 		  cm->stats->evdAA[CM_GI][p]->K);
-	  fprintf(fp, "E-CP9_L  %5d  %4d  %.5f  %.5f  %.5f\n", 
-		  cm->stats->evdAA[CP9_L][p]->N, cm->stats->evdAA[CP9_L][p]->L, 
+	  fprintf(fp, "E-CP9L  %3d %5d  %4d  %.5f  %.5f  %.5f\n", 
+		  p, cm->stats->evdAA[CP9_L][p]->N, cm->stats->evdAA[CP9_L][p]->L, 
 		  cm->stats->evdAA[CP9_L][p]->mu, cm->stats->evdAA[CP9_L][p]->lambda, 
 		  cm->stats->evdAA[CP9_L][p]->K);
-	  fprintf(fp, "E-CP9_G  %5d  %4d  %.5f  %.5f  %.5f\n", 
-		  cm->stats->evdAA[CP9_G][p]->N, cm->stats->evdAA[CP9_G][p]->L, 
+	  fprintf(fp, "E-CP9G  %3d %5d  %4d  %.5f  %.5f  %.5f\n", 
+		  p, cm->stats->evdAA[CP9_G][p]->N, cm->stats->evdAA[CP9_G][p]->L, 
 		  cm->stats->evdAA[CP9_G][p]->mu, cm->stats->evdAA[CP9_G][p]->lambda, 
 		  cm->stats->evdAA[CP9_G][p]->K);
 	}
@@ -350,22 +353,22 @@ write_ascii_cm(FILE *fp, CM_t *cm)
     }
   if (cm->flags & CM_FTHR_STATS)
     {
-      fprintf(fp, "FT-LC  %5d  %.3f  %.5f  %.5f  %.5f\n", 
+      fprintf(fp, "FT-LC  %5d  %.3f  %.5f  %.5f  %.5f  %d\n", 
 	      cm->stats->fthrAA[CM_LC]->N, cm->stats->fthrAA[CM_LC]->fraction, 
-	      cm->stats->fthrAA[CM_LC]->cm_pval, cm->stats->fthrAA[CM_LC]->g_pval,
-	      cm->stats->fthrAA[CM_LC]->l_pval);
-      fprintf(fp, "FT-GC  %5d  %.3f  %.5f  %.5f  %.5f\n", 
+	      cm->stats->fthrAA[CM_LC]->cm_pval, cm->stats->fthrAA[CM_LC]->l_pval,
+	      cm->stats->fthrAA[CM_LC]->g_pval, cm->stats->fthrAA[CM_LC]->was_fast);
+      fprintf(fp, "FT-GC  %5d  %.3f  %.5f  %.5f  %.5f  %d\n", 
 	      cm->stats->fthrAA[CM_GC]->N, cm->stats->fthrAA[CM_GC]->fraction, 
-	      cm->stats->fthrAA[CM_GC]->cm_pval, cm->stats->fthrAA[CM_GC]->g_pval,
-	      cm->stats->fthrAA[CM_GC]->l_pval);
-      fprintf(fp, "FT-LI  %5d  %.3f  %.5f  %.5f  %.5f\n", 
+	      cm->stats->fthrAA[CM_GC]->cm_pval, cm->stats->fthrAA[CM_GC]->l_pval,
+	      cm->stats->fthrAA[CM_GC]->g_pval, cm->stats->fthrAA[CM_GC]->was_fast);
+      fprintf(fp, "FT-LI  %5d  %.3f  %.5f  %.5f  %.5f  %d\n", 
 	      cm->stats->fthrAA[CM_LI]->N, cm->stats->fthrAA[CM_LI]->fraction, 
-	      cm->stats->fthrAA[CM_LI]->cm_pval, cm->stats->fthrAA[CM_LI]->g_pval,
-	      cm->stats->fthrAA[CM_LI]->l_pval);
-      fprintf(fp, "FT-GI  %5d  %.3f  %.5f  %.5f  %.5f\n", 
+	      cm->stats->fthrAA[CM_LI]->cm_pval, cm->stats->fthrAA[CM_LI]->l_pval,
+	      cm->stats->fthrAA[CM_LI]->g_pval, cm->stats->fthrAA[CM_LI]->was_fast);
+      fprintf(fp, "FT-GI  %5d  %.3f  %.5f  %.5f  %.5f  %d\n", 
 	      cm->stats->fthrAA[CM_GI]->N, cm->stats->fthrAA[CM_GI]->fraction, 
-	      cm->stats->fthrAA[CM_GI]->cm_pval, cm->stats->fthrAA[CM_GI]->g_pval,
-	      cm->stats->fthrAA[CM_GI]->l_pval);
+	      cm->stats->fthrAA[CM_GI]->cm_pval, cm->stats->fthrAA[CM_GI]->l_pval,
+	      cm->stats->fthrAA[CM_GI]->g_pval, cm->stats->fthrAA[CM_GI]->was_fast);
     } /* currently either all filter threshold stats are calc'ed or none */
 
   fputs("MODEL:\n", fp);
@@ -420,10 +423,22 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
   int     v,x,y,nd;		/* counters for states, events, nodes */
   char   *tok;
   int     toklen;
+  int     evd_flags[NEVDMODES]; /* keep track of which EVDs we've read */
+  int     fthr_flags[NFTHRMODES];/* keep track of which EVDs we've read */
+  int     evd_mode;             /* index of EVD info               */
+  int     fthr_mode;            /* HMM filter threshold info       */
+  int     have_evds;            /* for checking we get 0 or all EVDs*/
+  int     have_fthrs;           /* for checking we get 0 or all fthrs */
+  int     p;                    /* counter for partitions          */
+  int     gc;                   /* counter over gc contents        */
+  int     i;                    /* counter over evd_modes for EVDs */
 
   cm  = NULL;
   buf = NULL;
   n   = 0;
+  for(i = 0; i < NEVDMODES; i++)  evd_flags[i] = FALSE;
+  for(i = 0; i < NFTHRMODES; i++) fthr_flags[i] = FALSE;
+
   if (feof(cmf->f) || sre_fgets(&buf, &n, cmf->f) == NULL) return 0;
   if (strncmp(buf, "INFERNAL-1", 10) != 0)                 goto FAILURE;
 
@@ -482,6 +497,116 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
 	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
 	  cm->el_selfsc = atof(tok);
 	}
+      /* information on partitions for EVDs */
+      else if (strcmp(tok, "PART") == 0) 
+	{
+	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+	  if (! IsInt(tok))                                     goto FAILURE;
+	  /* First token is num partitions, allocate cmstats object based on this */
+	  cm->stats = AllocCMStats(atoi(tok));
+	  for(p = 0; p < cm->stats->np; p++)
+	    {
+	      /* there are 2 * cm->stats->np tokens left on this line,
+	       * (ps, pe) pairs for each partition */
+	      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+	      if (! IsInt(tok))                                     goto FAILURE;
+	      cm->stats->ps[p] = atoi(tok);
+	      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+	      if (! IsInt(tok))                                     goto FAILURE;
+	      cm->stats->pe[p] = atoi(tok);
+	    }
+	  /* Now set the gc2p GC content to partition map, 
+	   * [0..GC_SEGMENTS], telling which partition each belongs to */
+	  gc = 0;
+	  for(p = 0; p < cm->stats->np; p++)
+	    {
+	      if(cm->stats->ps[p] != gc)                   goto FAILURE;
+	      while(gc <= cm->stats->pe[p]) 
+		cm->stats->gc2p[gc++] = p;
+	    }
+	  if(gc != GC_SEGMENTS)                         goto FAILURE;
+	}
+      /* EVD info */
+      else if (strncmp(tok, "E-", 2) == 0) 
+      {				
+	/* determine which EVD we're reading */
+	if (strncmp(tok+2, "LC", 2) == 0) 
+	  evd_mode = CM_LC;
+	else if (strncmp(tok+2, "GC", 2) == 0) 
+	  evd_mode = CM_GC;
+	else if (strncmp(tok+2, "LI", 2) == 0) 
+	  evd_mode = CM_LI;
+	else if (strncmp(tok+2, "GI", 2) == 0) 
+	  evd_mode = CM_GI;
+	else if (strncmp(tok+2, "CP9L", 4) == 0) 
+	  evd_mode = CP9_L;
+	else if (strncmp(tok+2, "CP9G", 4) == 0) 
+	  evd_mode = CP9_G;
+	else                                         goto FAILURE;
+
+	/* now we know what EVD we're reading, read it */
+	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+	if (! IsInt(tok))                                     goto FAILURE;
+	p = atoi(tok);
+	if (p >= cm->stats->np)                               goto FAILURE;
+	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+	if (! IsInt(tok))                                     goto FAILURE;
+	cm->stats->evdAA[evd_mode][p]->N = atoi(tok);
+	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+	if (! IsInt(tok))                                     goto FAILURE;
+	cm->stats->evdAA[evd_mode][p]->L = atoi(tok);
+	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+	if (! IsReal(tok))                                    goto FAILURE;
+	cm->stats->evdAA[evd_mode][p]->mu = atof(tok);
+	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+	if (! IsReal(tok))                                    goto FAILURE;
+	cm->stats->evdAA[evd_mode][p]->lambda = atof(tok);
+	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+	if (! IsReal(tok))                                    goto FAILURE;
+	cm->stats->evdAA[evd_mode][p]->K = atof(tok);
+	
+	evd_flags[evd_mode] = TRUE;
+      }
+      /* HMM filter threshold info */
+      else if (strncmp(tok, "FT-", 3) == 0) 
+      {				
+	/* cm->stats should've been alloc'ed when EVDs were read */
+	if(cm->stats == NULL) 	                     goto FAILURE;
+
+
+	/* determine which filter threshold we're reading */
+	if (strncmp(tok+3, "LC", 2) == 0) 
+	  fthr_mode = CM_LC;
+	else if (strncmp(tok+3, "GC", 2) == 0) 
+	  fthr_mode = CM_GC;
+	else if (strncmp(tok+3, "LI", 2) == 0) 
+	  fthr_mode = CM_LI;
+	else if (strncmp(tok+3, "GI", 2) == 0) 
+	  fthr_mode = CM_GI;
+	else                                         goto FAILURE;
+
+	/* now we know what mode we're reading, read it */
+	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+	if (! IsInt(tok))                                     goto FAILURE;
+	cm->stats->fthrAA[fthr_mode]->N = atoi(tok);
+	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+	if (! IsReal(tok))                                    goto FAILURE;
+	cm->stats->fthrAA[fthr_mode]->fraction = atof(tok);
+	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+	if (! IsReal(tok))                                    goto FAILURE;
+	cm->stats->fthrAA[fthr_mode]->cm_pval = atof(tok);
+	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+	if (! IsReal(tok))                                    goto FAILURE;
+	cm->stats->fthrAA[fthr_mode]->l_pval = atof(tok);
+	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+	if (! IsReal(tok))                                    goto FAILURE;
+	cm->stats->fthrAA[fthr_mode]->g_pval = atof(tok);
+	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+	if (! IsInt(tok))                                     goto FAILURE;
+	cm->stats->fthrAA[fthr_mode]->was_fast = atoi(tok);
+
+	fthr_flags[fthr_mode] = TRUE;
+      }
       else if (strcmp(tok, "MODEL:") == 0)
 	break;
     }
@@ -494,6 +619,23 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
   if (N < 1)              goto FAILURE;
   if (cm->name == NULL)   goto FAILURE;
 
+  /* if we have any EVD stats, we (currently) require all of them */
+  have_evds = evd_flags[0];
+  for(evd_mode = 1; evd_mode < NEVDMODES; evd_mode++)
+    if(((have_evds && (!evd_flags[evd_mode]))) ||
+       ((!have_evds) && (evd_flags[evd_mode])))
+      goto FAILURE;
+  if(have_evds) cm->flags |= CM_EVD_STATS;
+
+  /* if we have any HMM filter stats, we (currently) require all of them */
+  have_fthrs = fthr_flags[0];
+  for(i = fthr_mode; fthr_mode < NFTHRMODES; fthr_mode++)
+    if(((have_fthrs && (!fthr_flags[fthr_mode]))) ||
+       ((!have_fthrs) && (fthr_flags[fthr_mode])))
+      goto FAILURE;
+  if(have_fthrs) cm->flags |= CM_FTHR_STATS;
+
+  if(have_evds && have_fthrs) debug_print_cmstats(cm->stats);
   /* Main model section. 
    */
   CreateCMBody(cm, N, M);
