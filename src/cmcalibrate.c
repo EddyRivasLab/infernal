@@ -33,6 +33,7 @@
 #include "esl_ratematrix.h"
 #include "esl_exponential.h"
 #include "esl_gumbel.h"
+#include "esl_stopwatch.h"
 
 #define ALGORITHMS "--cyk,--inside"
 
@@ -78,12 +79,13 @@ main(int argc, char **argv)
   char            *mode;               /* write mode, "w" or "wb"                     */
   int              idx;		       /* counter over CMs                            */
   sigset_t         blocksigs;	       /* list of signals to protect from             */
+  int              do_timings = TRUE;  /* TRUE to print timings, FALSE not to         */
+  ESL_STOPWATCH   *w;                  /* watch for timing EVD, filter thr calc times */
 
   /* EVD related variables */
   int              do_qdb = TRUE;      /* TRUE to use QDB while searching with CM     */
   int              do_evd = TRUE;      /* TRUE to calc EVDs, set FALSE if --onlyfil   */
   int              sample_length;      /* sample len used for calc'ing stats (2*W)    */
-  int              N;                  /* N is the database size used to calc K?????  */
   int              cmevdN  = 1000;     /* # samples used to calculate  CM EVDs        */
   int              hmmevdN = 5000;     /* # samples used to calculate HMM EVDs        */
   int              evdN;               /* either cmevdN or hmmevdN                    */
@@ -195,6 +197,9 @@ main(int argc, char **argv)
   if (cmfp->is_binary) mode = "wb";
   else                 mode = "w"; 
 
+  if(do_timings)
+    w = esl_stopwatch_Create(); 
+
   while (CMFileRead(cmfp, &cm))
     {
       if (cm == NULL) 
@@ -217,16 +222,20 @@ main(int argc, char **argv)
        *****************************************************************/
       if(do_evd)
 	{
-	  N = 2000000;
 	  sample_length = 2.0 * cm->W;
 	  for(statmode = 0; statmode < NSTATMODES; statmode++)
 	    {
-	      printf("%-40s ... ", "Determining EVD "); fflush(stdout);
+	      if(do_timings) esl_stopwatch_Start(w);
 	      if(statmode == CP9_G || statmode == CP9_L) evdN = hmmevdN;
 	      else evdN = cmevdN;
 	      NEW_serial_make_histogram (cm, cmstats[ncm], gc_freq, evdN, sample_length, statmode);
-	      printf("done.\n");
+	      if(do_timings) 
+		{ 
+		  esl_stopwatch_Stop(w);  
+		  esl_stopwatch_Display(stdout, w, "CM EVD fitting time:");
+		}
 	    }
+	  cm->flags &= CM_EVD_STATS;
 	}
       /****************************************************************
        * Determine CP9 filtering thresholds
@@ -243,36 +252,52 @@ main(int argc, char **argv)
 	    {
 	      /* with do_fastfil we can't call FindCP9FilterThreshold()
 	       * for Inside, we set Inside thresholds as CYK thresholds */
-	      cmstats[ncm]->fthrAA[CM_LC]->cmsc     = cmP;
+	      if(do_timings) esl_stopwatch_Start(w);
+	      cmstats[ncm]->fthrAA[CM_LC]->N        = filN;
 	      cmstats[ncm]->fthrAA[CM_LC]->fraction = fraction;
-	      cmstats[ncm]->fthrAA[CM_LC]->is_pval  = TRUE;
-	      cmstats[ncm]->fthrAA[CM_LC]->lsc = 
+	      cmstats[ncm]->fthrAA[CM_LC]->cm_pval  = cmP;
+	      cmstats[ncm]->fthrAA[CM_LC]->was_fast = TRUE;
+	      cmstats[ncm]->fthrAA[CM_LC]->l_pval   = 
 		FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, cmP, CM_LC, CP9_L, do_fastfil);
-	      cmstats[ncm]->fthrAA[CM_LC]->gsc = 
+	      cmstats[ncm]->fthrAA[CM_LC]->g_pval   = 
 		FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, cmP, CM_LC, CP9_G, do_fastfil);
 
-	      cmstats[ncm]->fthrAA[CM_GC]->cmsc     = cmP;
+	      cmstats[ncm]->fthrAA[CM_GC]->N        = filN;
 	      cmstats[ncm]->fthrAA[CM_GC]->fraction = fraction;
-	      cmstats[ncm]->fthrAA[CM_GC]->is_pval  = TRUE;
-	      cmstats[ncm]->fthrAA[CM_GC]->lsc = 
+	      cmstats[ncm]->fthrAA[CM_GC]->cm_pval  = cmP;
+	      cmstats[ncm]->fthrAA[CM_GC]->was_fast = TRUE;
+	      cmstats[ncm]->fthrAA[CM_GC]->l_pval   = 
 		FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, cmP, CM_GC, CP9_L, do_fastfil);
-	      cmstats[ncm]->fthrAA[CM_GC]->gsc = 
+	      cmstats[ncm]->fthrAA[CM_GC]->g_pval = 
 		FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, cmP, CM_GC, CP9_G, do_fastfil);
 
 	      CopyFThrInfo(cmstats[ncm]->fthrAA[CM_LC], cmstats[ncm]->fthrAA[CM_LI]);
 	      CopyFThrInfo(cmstats[ncm]->fthrAA[CM_GC], cmstats[ncm]->fthrAA[CM_GI]);
+	      if(do_timings) 
+		{ 
+		  esl_stopwatch_Stop(w);  
+		  esl_stopwatch_Display(stdout, w, "Fast HMM threshold (2 modes) calculation time:");
+		}
 	    }
 	  else /* !do_fastfil */
 	    for(statmode = 0; statmode < NFTHRMODES; statmode++)
 	      {
-		cmstats[ncm]->fthrAA[statmode]->cmsc     = cmP;
+		if(do_timings) esl_stopwatch_Start(w);
+		cmstats[ncm]->fthrAA[statmode]->N        = filN;
 		cmstats[ncm]->fthrAA[statmode]->fraction = fraction;
-		cmstats[ncm]->fthrAA[statmode]->is_pval  = TRUE;
-		cmstats[ncm]->fthrAA[statmode]->lsc =  /*  local */
+		cmstats[ncm]->fthrAA[statmode]->cm_pval  = cmP;
+		cmstats[ncm]->fthrAA[statmode]->was_fast = FALSE;
+		cmstats[ncm]->fthrAA[statmode]->l_pval =  /*  local */
 		  FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, cmP, statmode, CP9_L, do_fastfil);
-		cmstats[ncm]->fthrAA[statmode]->gsc =  /* glocal */
+		cmstats[ncm]->fthrAA[statmode]->g_pval =  /* glocal */
 		  FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, cmP, statmode, CP9_G, do_fastfil);
+		if(do_timings) 
+		  { 
+		    esl_stopwatch_Stop(w);  
+		    esl_stopwatch_Display(stdout, w, "Slow HMM threshold (1/4 modes) calculation time:");
+		  }
 	      }
+	  cm->flags &= CM_FTHR_STATS;
 	}
       debug_print_cmstats(cmstats[ncm]);
 
@@ -283,10 +308,10 @@ main(int argc, char **argv)
 	cmalloc *= 2;		/* realloc by doubling */
 	cmstats = ReallocOrDie(cmstats, sizeof(CMStats_t *) * cmalloc);
       }
-
       FreeCM(cm);
     }
-  
+  esl_stopwatch_Destroy(w);
+
   /*****************************************************************
    * Rewind the CM file for a second pass.
    * Write a temporary CM file with new stats information in it
@@ -306,7 +331,7 @@ main(int argc, char **argv)
     if (cm == NULL) 
       Die("CM file %s was corrupted? Parse failed in pass 2", cmfile);
     
-    cm->stats = cmstats[ncm];
+    cm->stats = cmstats[idx];
     if(do_evd) cm->flags |= CM_EVD_STATS; 
     if(do_fil) cm->flags |= CM_FTHR_STATS; 
 
@@ -314,14 +339,14 @@ main(int argc, char **argv)
      */
     CMFileWrite(outfp, cm, cmfp->is_binary);
     FreeCM(cm);
-  } /* end of from idx = 0 to ncm
+  } /* end of from idx = 0 to ncm */
   
-    /*****************************************************************
-    * Now, carefully remove original file and replace it
-    * with the tmpfile. Note the protection from signals;
-    * we wouldn't want a user to ctrl-C just as we've deleted
-    * their CM file but before the new one is moved.
-    *****************************************************************/
+  /*****************************************************************
+   * Now, carefully remove original file and replace it
+   * with the tmpfile. Note the protection from signals;
+   * we wouldn't want a user to ctrl-C just as we've deleted
+   * their CM file but before the new one is moved.
+   *****************************************************************/
   
   CMFileClose(cmfp);
   if (fclose(outfp)   != 0)                            PANIC;
@@ -452,6 +477,8 @@ static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_f
       esl_histogram_GetTailByMass(h, 0.5, &xv, &n, &z); /* fit to right 50% */
       esl_gumbel_FitCensored(xv, n, z, xv[0], &(evd[p]->mu), &(evd[p]->lambda));
       evd[p]->K = exp(evd[p]->mu * evd[p]->lambda) / L;
+      evd[p]->N = N;
+      evd[p]->L = L;
       
       /* RSEARCH code to set mu, TEMPORARY */
       /* Set mu from K, lambda, N */
@@ -511,8 +538,8 @@ static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_f
  *           N            - number of sequences to sample from CM better than cm_minsc
  *           cm_pcutoff   - minimum CM P-value to accept 
  *           cm_statmode  - gives CM search strategy to use, and EVD to use
- *           hmm_statmode - CP9_L to search with  local HMM (we're filling a fthr->lsc)
- *                          CP9_G to search with glocal HMM (we're filling a fthr->gsc)
+ *           hmm_statmode - CP9_L to search with  local HMM (we're filling a fthr->l_pval)
+ *                          CP9_G to search with glocal HMM (we're filling a fthr->g_pval)
  *           do_fastfil   - TRUE to use fast method: assume parsetree score
  *                          is optimal CYK score
  * 
@@ -700,7 +727,7 @@ int debug_print_cmstats(CMStats_t *cmstats)
  */
 int debug_print_evdinfo(EVDInfo_t *evd)
 {
-  printf("lambda: %.5f mu: %.5f K: %.5f\n", evd->lambda, evd->mu, evd->K);
+  printf("N: %d L: %d lambda: %.5f mu: %.5f K: %.5f\n", evd->N, evd->L, evd->lambda, evd->mu, evd->K);
   return 0;
 }
 
@@ -710,10 +737,10 @@ int debug_print_filterthrinfo(CMStats_t *cmstats, CP9FilterThr_t *fthr)
 {
   double l_x;
   double g_x;
-  g_x = esl_gumbel_invcdf((1.-fthr->gsc), cmstats->evdAA[CP9_G][0]->mu, cmstats->evdAA[CP9_G][0]->lambda);
-  l_x = esl_gumbel_invcdf((1.-fthr->lsc), cmstats->evdAA[CP9_L][0]->mu, cmstats->evdAA[CP9_L][0]->lambda);
-  printf("\tgsc: %.5f (%.5f bits) lsc: %.5f (%.5f bits)\n\tcmsc: %.5f fraction: %.3f is_pval: %d\n", 
-	 fthr->gsc, g_x, fthr->lsc, l_x, fthr->cmsc, fthr->fraction, fthr->is_pval);
+  g_x = esl_gumbel_invcdf((1.-fthr->g_pval), cmstats->evdAA[CP9_G][0]->mu, cmstats->evdAA[CP9_G][0]->lambda);
+  l_x = esl_gumbel_invcdf((1.-fthr->l_pval), cmstats->evdAA[CP9_L][0]->mu, cmstats->evdAA[CP9_L][0]->lambda);
+  printf("\tN: %d gsc: %.5f (%.5f bits) lsc: %.5f (%.5f bits)\n\tcmsc: %.5f fraction: %.3f, was_fast: %d\n",
+	 fthr->N, fthr->g_pval, g_x, fthr->l_pval, l_x, fthr->cm_pval, fthr->fraction, fthr->was_fast);
   return 0;
 }
 
@@ -722,11 +749,12 @@ int debug_print_filterthrinfo(CMStats_t *cmstats, CP9FilterThr_t *fthr)
  */
 int CopyFThrInfo(CP9FilterThr_t *src, CP9FilterThr_t *dest)
 {
-  dest->gsc      = src->gsc;
-  dest->lsc      = src->lsc;
-  dest->cmsc     = src->cmsc;
-  dest->fraction = src->fraction;
-  dest->is_pval  = src->is_pval;
+  dest->N           = src->N;
+  dest->fraction    = src->fraction;
+  dest->cm_pval     = src->cm_pval;
+  dest->l_pval      = src->l_pval;
+  dest->g_pval      = src->g_pval;
+  dest->was_fast    = src->was_fast;
   return eslOK;
 }
 

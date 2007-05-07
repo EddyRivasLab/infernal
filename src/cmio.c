@@ -312,6 +312,62 @@ write_ascii_cm(FILE *fp, CM_t *cm)
     fprintf(fp, "%6s ", prob2ascii(cm->null[x], 1/(float)(Alphabet_size)));
   fputs("\n", fp);
 
+  /* E-value statistics
+   */
+  int p;
+  if (cm->flags & CM_EVD_STATS)
+    {
+      fprintf(fp, "NPART %3d\n", cm->stats->np);
+      for(p = 0; p < cm->stats->np; p++)
+	{
+	  fprintf(fp, "PART  %3d  %3d\n", cm->stats->ps[p], cm->stats->pe[p]);
+	  fprintf(fp, "E-LC  %5d  %4d  %.5f  %.5f  %.5f\n", 
+		  cm->stats->evdAA[CM_LC][p]->N, cm->stats->evdAA[CM_LC][p]->L, 
+		  cm->stats->evdAA[CM_LC][p]->mu, cm->stats->evdAA[CM_LC][p]->lambda, 
+		  cm->stats->evdAA[CM_LC][p]->K);
+	  fprintf(fp, "E-GC  %5d  %4d  %.5f  %.5f  %.5f\n", 
+		  cm->stats->evdAA[CM_GC][p]->N, cm->stats->evdAA[CM_GC][p]->L, 
+		  cm->stats->evdAA[CM_GC][p]->mu, cm->stats->evdAA[CM_GC][p]->lambda, 
+		  cm->stats->evdAA[CM_GC][p]->K);
+	  fprintf(fp, "E-LI  %5d  %4d  %.5f  %.5f  %.5f\n", 
+		  cm->stats->evdAA[CM_LI][p]->N, cm->stats->evdAA[CM_LI][p]->L, 
+		  cm->stats->evdAA[CM_LI][p]->mu, cm->stats->evdAA[CM_LI][p]->lambda, 
+		  cm->stats->evdAA[CM_LI][p]->K);
+	  fprintf(fp, "E-GI  %5d  %4d  %.5f  %.5f  %.5f\n", 
+		  cm->stats->evdAA[CM_GI][p]->N, cm->stats->evdAA[CM_GI][p]->L, 
+		  cm->stats->evdAA[CM_GI][p]->mu, cm->stats->evdAA[CM_GI][p]->lambda, 
+		  cm->stats->evdAA[CM_GI][p]->K);
+	  fprintf(fp, "E-CP9_L  %5d  %4d  %.5f  %.5f  %.5f\n", 
+		  cm->stats->evdAA[CP9_L][p]->N, cm->stats->evdAA[CP9_L][p]->L, 
+		  cm->stats->evdAA[CP9_L][p]->mu, cm->stats->evdAA[CP9_L][p]->lambda, 
+		  cm->stats->evdAA[CP9_L][p]->K);
+	  fprintf(fp, "E-CP9_G  %5d  %4d  %.5f  %.5f  %.5f\n", 
+		  cm->stats->evdAA[CP9_G][p]->N, cm->stats->evdAA[CP9_G][p]->L, 
+		  cm->stats->evdAA[CP9_G][p]->mu, cm->stats->evdAA[CP9_G][p]->lambda, 
+		  cm->stats->evdAA[CP9_G][p]->K);
+	}
+      /* currently either all EVD stats are calc'ed or none */
+    }
+  if (cm->flags & CM_FTHR_STATS)
+    {
+      fprintf(fp, "FT-LC  %5d  %.3f  %.5f  %.5f  %.5f\n", 
+	      cm->stats->fthrAA[CM_LC]->N, cm->stats->fthrAA[CM_LC]->fraction, 
+	      cm->stats->fthrAA[CM_LC]->cm_pval, cm->stats->fthrAA[CM_LC]->g_pval,
+	      cm->stats->fthrAA[CM_LC]->l_pval);
+      fprintf(fp, "FT-GC  %5d  %.3f  %.5f  %.5f  %.5f\n", 
+	      cm->stats->fthrAA[CM_GC]->N, cm->stats->fthrAA[CM_GC]->fraction, 
+	      cm->stats->fthrAA[CM_GC]->cm_pval, cm->stats->fthrAA[CM_GC]->g_pval,
+	      cm->stats->fthrAA[CM_GC]->l_pval);
+      fprintf(fp, "FT-LI  %5d  %.3f  %.5f  %.5f  %.5f\n", 
+	      cm->stats->fthrAA[CM_LI]->N, cm->stats->fthrAA[CM_LI]->fraction, 
+	      cm->stats->fthrAA[CM_LI]->cm_pval, cm->stats->fthrAA[CM_LI]->g_pval,
+	      cm->stats->fthrAA[CM_LI]->l_pval);
+      fprintf(fp, "FT-GI  %5d  %.3f  %.5f  %.5f  %.5f\n", 
+	      cm->stats->fthrAA[CM_GI]->N, cm->stats->fthrAA[CM_GI]->fraction, 
+	      cm->stats->fthrAA[CM_GI]->cm_pval, cm->stats->fthrAA[CM_GI]->g_pval,
+	      cm->stats->fthrAA[CM_GI]->l_pval);
+    } /* currently either all filter threshold stats are calc'ed or none */
+
   fputs("MODEL:\n", fp);
   for (v = 0; v < cm->M; v++) 
     {

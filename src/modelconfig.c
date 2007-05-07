@@ -53,7 +53,7 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
     {
       for(i = 0; i < GC_SEGMENTS; i++)
 	cm->lambda[i] = cm->mu[i] = cm->K[i] = 0.0;
-      cm->flags &= ~CM_STATS; /* make sure the stats ready flag is down. */
+      cm->flags &= ~CM_EVD_STATS; /* make sure the stats ready flag is down. */
    }
   if(!(cm->search_opts & CM_SEARCH_CP9STATS))
     {

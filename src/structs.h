@@ -193,20 +193,23 @@ typedef struct cp9map_s {
 /* Structure EVDInfo_t
  */
 typedef struct evdinfo_s {
-  double K;		/* ? */
+  int    N;             /* number of samples stats calc'ed from        */
+  int    L;             /* length of samples stats calc'ed from        */
   double mu;		/* location param for gumbel, calced w/K,lambda*/
   double lambda;	/* scale param gumbel                          */
+  double K;		/* ? */
 } EVDInfo_t;
 
 /* Structure CP9FThresh_t: CP9 HMM filter thresholds, determined empirically
  * by sampling from the CM
  */
 typedef struct cp9filterthr_s {
-  float gsc;           /* glocal CP9 scanning score threshold    */
-  float lsc;           /*  local CP9 scanning score threshold    */
-  float cmsc;          /* CM score threshold, we rejected worse than   */
+  int   N;             /* number of CM hits used to get threshold ((N*fraction) passed)*/
   float fraction;      /* fraction of empirical CM hits survive filter */
-  int   is_pval;       /* gsc, lsc, cmsc are P-values if TRUE, bit sc if FALSE */
+  float cm_pval;       /* CM P-value threshold, we rejected worse than   */
+  float l_pval;        /*  local CP9 scanning P-value threshold    */
+  float g_pval;        /* glocal CP9 scanning P-value threshold    */
+  int   was_fast;      /* TRUE if hacky fast method for calcing thresholds was used */
 } CP9FilterThr_t;
 
 /* Structure CMStats_t
@@ -222,7 +225,7 @@ typedef struct cmstats_s {
 
 /* Stat modes, 
  * 0..NSTATMODES-1 are first dimension of cmstats->evdAA 
- * 0..NFTHRMODES-1 are first dimension of cmstats->fthrAA 
+ * 0..NFTHRMODES-1 are only dimension cmstats->fthrAA 
  */
 #define CM_LC 0  
 #define CM_GC 1
