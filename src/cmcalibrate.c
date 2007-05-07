@@ -4,7 +4,7 @@
 /* cmcalibrate.c
  * Score a CM and a CM Plan 9 HMM against random sequence 
  * data to set the statistical parameters for E-value determination,
- * and HMM filtering thresholds. 
+ * and CP9 HMM filtering thresholds. 
  * 
  * EPN, Wed May  2 07:02:52 2007
  * based on HMMER-2.3.2's hmmcalibrate.c from SRE
@@ -66,37 +66,40 @@ static char usage[]  = "cmcalibrate [-options]";
 int
 main(int argc, char **argv)
 {
-  int status;			       /* status of a function call               */
-  ESL_GETOPTS     *go	   = NULL;     /* command line processing                 */
-  ESL_RANDOMNESS  *r       = NULL;     /* source of randomness                    */
-  CM_t            *cm      = NULL;     /* the covariance model                    */
-  char            *cmfile;             /* file to read CM(s) from                 */
-  char    *tmpfile;             /* temporary calibrated CM file   */
-  FILE    *outfp;               /* for writing CM(s) into tmpfile */
-  char    *mode;                /* write mode, "w" or "wb"         */
-  int     idx;			/* counter over CMs          */
-  CMFILE          *cmfp;        /* open CM file for reading                 */
-  int   cmevdN = 1000;             /* # samples used to calculate  CM EVDs     */
-  int  hmmevdN = 5000;             /* # samples used to calculate  CM EVDs     */
-  int     filN =  500;             /* # emitted seqs to use to calc filter thr */
-  int   sample_length;          /* sample len used for calc'ing stats (2*W) */
-  int   do_evd = TRUE;
-  int   do_fil = TRUE;
-  int   do_fastfil = FALSE;
-  int   do_qdb = TRUE;
-  int   do_cp9_stats = TRUE;
-  float fraction = 0.95;
-  float cmP = 0.001;
-  CMStats_t **cmstats;
-  int N; /* N is the database size (2 * length) */
-  int statmode;
-  int i;
-  int evdN;
-  double *gc_freq = MallocOrDie(sizeof(double) * GC_SEGMENTS); /* this should really be doubles */
-  int              optset;
-  int ncm = 0;
-  int cmalloc;
-  sigset_t blocksigs;		/* list of signals to protect from */
+  int status;			       /* status of a function call                   */
+  ESL_GETOPTS     *go	   = NULL;     /* command line processing                     */
+  ESL_RANDOMNESS  *r       = NULL;     /* source of randomness                        */
+  CMFILE          *cmfp;               /* open CM file for reading                    */
+  CM_t            *cm      = NULL;     /* the covariance model                        */
+  CMStats_t      **cmstats;            /* the CM stats data structures, 1 for each CM */
+  char            *cmfile;             /* file to read CM(s) from                     */
+  char            *tmpfile;            /* temporary calibrated CM file                */
+  FILE            *outfp;              /* for writing CM(s) into tmpfile              */
+  char            *mode;               /* write mode, "w" or "wb"                     */
+  int              idx;		       /* counter over CMs                            */
+  sigset_t         blocksigs;	       /* list of signals to protect from             */
+
+  /* EVD related variables */
+  int              do_qdb = TRUE;      /* TRUE to use QDB while searching with CM     */
+  int              do_evd = TRUE;      /* TRUE to calc EVDs, set FALSE if --onlyfil   */
+  int              sample_length;      /* sample len used for calc'ing stats (2*W)    */
+  int              N;                  /* N is the database size used to calc K?????  */
+  int              cmevdN  = 1000;     /* # samples used to calculate  CM EVDs        */
+  int              hmmevdN = 5000;     /* # samples used to calculate HMM EVDs        */
+  int              evdN;               /* either cmevdN or hmmevdN                    */
+
+  /* CP9 HMM filtering threshold related variables */
+  int              do_fil = TRUE;      /* TRUE to calc filter thr, FALSE if --onlyevd */
+  int              filN    =  500;     /* # emitted seqs to use to calc filter thr    */
+  int              do_fastfil = FALSE; /* TRUE: use fast hacky filter thr calc method */
+  float            fraction = 0.95;    /* fraction of CM hits req'd to find with HMM  */
+  float            cmP = 0.001;        /* maximum CM P-value we care about            */
+  int              statmode;           /* counter over stat modes                     */
+  int              i;                  /* counter over GC segnments                   */
+  double          *gc_freq;            /* GC frequency array [0..100(GC_SEGMENTS)]    */
+  int              optset;             /* boolean value for esl_get_opts()            */
+  int              ncm;                /* number of CMs read from cmfile              */
+  int              cmalloc;            /* for alloc'ing CMStats_t objects             */
 
   /*****************************************************************
    * Parse the command line
@@ -132,6 +135,7 @@ main(int argc, char **argv)
    *****************************************************************/
   /* human_chr1.gc.code from ~/notebook/7_0502_inf_cmcalibrate/gc_distros/ */
   /* Replace with RFAMSEQ derived one */
+  gc_freq = MallocOrDie(sizeof(double) * GC_SEGMENTS);
   gc_freq[0] = 79.; 
   gc_freq[1] = 59.; gc_freq[2] = 56.; gc_freq[3] = 79.; gc_freq[4] = 91.; gc_freq[5] = 89.;
   gc_freq[6] = 114.; gc_freq[7] = 105.; gc_freq[8] = 152.; gc_freq[9] = 149.; gc_freq[10] = 181.;
@@ -191,7 +195,6 @@ main(int argc, char **argv)
   if (cmfp->is_binary) mode = "wb";
   else                 mode = "w"; 
 
-
   while (CMFileRead(cmfp, &cm))
     {
       if (cm == NULL) 
@@ -199,7 +202,6 @@ main(int argc, char **argv)
       
       /* Configure for QDB */
       if(do_qdb)          cm->config_opts |= CM_CONFIG_QDB;
-      if(do_cp9_stats)    cm->search_opts |= CM_SEARCH_CP9STATS;
       cm->config_opts |= CM_CONFIG_LOCAL;
       ConfigCM(cm, NULL, NULL);
 
@@ -272,6 +274,8 @@ main(int argc, char **argv)
 		  FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, cmP, statmode, CP9_G, do_fastfil);
 	      }
 	}
+      debug_print_cmstats(cmstats[ncm]);
+
       /* Reallocation, if needed.
        */
       ncm++;
@@ -281,7 +285,6 @@ main(int argc, char **argv)
       }
 
       FreeCM(cm);
-      debug_print_cmstats(cmstats[ncm]);
     }
   
   /*****************************************************************
