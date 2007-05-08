@@ -19,8 +19,8 @@
 #include "cplan9.h"
 
 /* various default parameters for CMs and CP9 HMMs */ 
-#define DEFAULT_CM_CUTOFF 0.0
-#define DEFAULT_CM_CUTOFF_TYPE SCORE_CUTOFF
+#define DEFAULT_CM_CUTOFF 50.0
+#define DEFAULT_CM_CUTOFF_TYPE E_CUTOFF
 #define DEFAULT_CP9_CUTOFF 500.0
 #define DEFAULT_CP9_CUTOFF_TYPE E_CUTOFF
 #define DEFAULT_BETA   0.0000001
@@ -326,13 +326,13 @@ typedef struct cm_s {
   int   cp9_cutoff_type;/* either SC_CUTOFF or E_CUTOFF                                       */
   float cp9_cutoff;     /* min bit score or max E val to keep from a CP9 scan                 */
   
-  /* EVD statistics for the CM */
-  double    lambda[GC_SEGMENTS];   /* EVD lambda, one for each GC segment   */
-  double    K     [GC_SEGMENTS];   /* EVD K, one for each GC segment        */
-  double    mu    [GC_SEGMENTS];   /* EVD mu, one for each GC segment       */
-  double cp9_lambda[GC_SEGMENTS];   /* CP9's EVD lambda, one for each GC segment   */
-  double cp9_K     [GC_SEGMENTS];   /* CP9's EVD K, one for each GC segment        */
-  double cp9_mu    [GC_SEGMENTS];   /* CP9's EVD mu, one for each GC segment       */
+  /* EVD statistics for the CM */  
+  //double    lambda[GC_SEGMENTS];   /* EVD lambda, one for each GC segment   */
+  //double    K     [GC_SEGMENTS];   /* EVD K, one for each GC segment        */
+  //double    mu    [GC_SEGMENTS];   /* EVD mu, one for each GC segment       */
+  //double cp9_lambda[GC_SEGMENTS];   /* CP9's EVD lambda, one for each GC segment   */
+  //double cp9_K     [GC_SEGMENTS];   /* CP9's EVD K, one for each GC segment        */
+  //double cp9_mu    [GC_SEGMENTS];   /* CP9's EVD mu, one for each GC segment       */
 
   int    W;             /* max d: max size of a hit (EPN 08.18.05) */
   float  el_selfsc;     /* score of a self transition in the EL state

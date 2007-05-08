@@ -22,6 +22,7 @@
 #include "funcs.h"
 #include "easel.h"
 #include "esl_vectorops.h"
+#include "stats.h"
 
 
 /* Function: CreateCM(); CreateCMShell(); CreateCMBody()
@@ -116,12 +117,12 @@ CreateCMShell(void)
   cm->hmmpad = DEFAULT_HMMPAD; /* 0 residues */
 
   /* initialize statically allocated EVD stats to 0.'s */
-  int i;
+  /*int i;
   for(i = 0; i < GC_SEGMENTS; i++)
     {
       cm->mu[i]     = cm->lambda[i]     = cm->K[i]     = 0.;
       cm->cp9_mu[i] = cm->cp9_lambda[i] = cm->cp9_K[i] = 0.;
-    }
+      }*/
   cm->stats = NULL;
 
   return cm;

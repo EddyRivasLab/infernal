@@ -334,7 +334,7 @@ write_ascii_cm(FILE *fp, CM_t *cm)
   int p;
   if (cm->flags & CM_EVD_STATS)
     {
-      fprintf(fp, "PART %3d  ", cm->stats->np);
+      fprintf(fp, "PART  %3d  ", cm->stats->np);
       for(p = 0; p < cm->stats->np; p++)
 	fprintf(fp, "%3d  %3d  ", cm->stats->ps[p], cm->stats->pe[p]);
       fprintf(fp, "\n");
@@ -352,7 +352,7 @@ write_ascii_cm(FILE *fp, CM_t *cm)
 		  p, cm->stats->evdAA[CM_LI][p]->N, cm->stats->evdAA[CM_LI][p]->L, 
 		  cm->stats->evdAA[CM_LI][p]->mu, cm->stats->evdAA[CM_LI][p]->lambda, 
 		  cm->stats->evdAA[CM_LI][p]->K);
-	  fprintf(fp, "E-GI  %3d %5d  %4d  %.5f  %.5f  %.5f\n", 
+	  fprintf(fp, "E-GI  %3d  %5d  %4d  %.5f  %.5f  %.5f\n", 
 		  p, cm->stats->evdAA[CM_GI][p]->N, cm->stats->evdAA[CM_GI][p]->L, 
 		  cm->stats->evdAA[CM_GI][p]->mu, cm->stats->evdAA[CM_GI][p]->lambda, 
 		  cm->stats->evdAA[CM_GI][p]->K);
@@ -643,7 +643,6 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
     if(((have_evds && (!evd_flags[evd_mode]))) ||
        ((!have_evds) && (evd_flags[evd_mode])))
       goto FAILURE;
-  if(have_evds) cm->flags |= CM_EVD_STATS;
 
   /* if we have any HMM filter stats, we (currently) require all of them */
   have_fthrs = fthr_flags[0];
@@ -651,13 +650,14 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
     if(((have_fthrs && (!fthr_flags[fthr_mode]))) ||
        ((!have_fthrs) && (fthr_flags[fthr_mode])))
       goto FAILURE;
-  if(have_fthrs) cm->flags |= CM_FTHR_STATS;
 
   if(have_evds && have_fthrs) debug_print_cmstats(cm->stats);
   /* Main model section. 
    */
   CreateCMBody(cm, N, M);
   CMZero(cm);
+  if(have_evds) cm->flags  |= CM_EVD_STATS;
+  if(have_fthrs) cm->flags |= CM_FTHR_STATS;
   nd = -1;
   for (v = 0; v < cm->M; v++)
     {
@@ -936,6 +936,7 @@ read_binary_cm(CMFILE *cmf, CM_t **ret_cm)
 	      if (! tagged_fread(CMIO_EVDK,     (void *) &(cm->stats->evdAA[i][p]->K),     sizeof(float), 1, fp)) goto FAILURE;
 	    }
 	}
+      cm->flags |= CM_EVD_STATS;
     }
   if (! tagged_fread(CMIO_HASFTHR,     (void *) &(has_fthr), sizeof(int),         1,        fp))     goto FAILURE;
   /* We might have HMM filter threshold stats */
@@ -950,6 +951,7 @@ read_binary_cm(CMFILE *cmf, CM_t **ret_cm)
 	  if (! tagged_fread(CMIO_FTHRGP,   (void *) &(cm->stats->fthrA[i]->g_pval),     sizeof(float), 1, fp)) goto FAILURE;
 	  if (! tagged_fread(CMIO_FTHRFAST, (void *) &(cm->stats->fthrA[i]->was_fast),   sizeof(int),   1, fp)) goto FAILURE;
 	}
+      cm->flags |= CM_FTHR_STATS;
     }
   for (v = 0; v < cm->M; v++) {
     if (! tagged_fread(CMIO_T, (void *) cm->t[v], sizeof(float), MAXCONNECT, fp)) goto FAILURE;

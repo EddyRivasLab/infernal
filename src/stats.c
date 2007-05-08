@@ -169,6 +169,321 @@ int get_gc_comp(char *seq, int start, int stop) {
 
 
 /*
+ * Function: random_from_string
+ * Date:     September, 1998 (approx.) -- from hmmgcc
+ * This function returns a character randomly chosen from the string.
+ * Used in conjunction with the function below that resolves degenerate code
+ * nucleotides.
+ */
+char random_from_string (char *s) {
+  int i;
+  do 
+    {
+      /*i = (int) ((float)(strlen(s)-1)*sre_random()/(RAND_MAX+1.0));*/
+      i = (int) ((float)(strlen(s))*sre_random());
+    } while (i<0 || i>=strlen(s));
+  return(s[i]);
+}
+
+/*
+ * Function: resolve_degenerate
+ * Date:     September, 1998 (from hmmgcc)
+ * This function resolves "degnerate" nucleotides by selecting a random 
+ * A, C, G, or T as appropriate by the code present there.  Returns
+ * the character passed in if that character does not represent a
+ * non-degnerate nucleotide (either A, C, G, or T or not representative
+ * at all of a nucleotide.
+ *
+ * The degenerate code used here is:
+ * (taken from http://www.neb.com/neb/products/REs/RE_code.html
+ *
+ *                         R = G or A
+ *                         K = G or T
+ *                         B = not A (C or G or T)
+ *                         V = not T (A or C or G)
+ *                         Y = C or T
+ *                         S = G or C
+ *                         D = not C (A or G or T)
+ *                         N = A or C or G or T
+ *                         M = A or C
+ *                         W = A or T
+ *                         H = not G (A or C or T)
+ *
+ * This function assumes all letters are already uppercased via toupper
+ * before calling.  In other words, it will return a "n" if passed an "n"
+ * because it will assume that the symbol for all nucleotides will be passed
+ * in as "N".
+ */
+char resolve_degenerate (char c) {
+  c = toupper(c);
+  switch (c) {
+    case 'R' : return(random_from_string("GA"));
+    case 'K' : return(random_from_string("GT"));
+    case 'B' : return(random_from_string("CGT"));
+    case 'V' : return(random_from_string("ACG"));
+    case 'Y' : return(random_from_string("CT"));
+    case 'S' : return(random_from_string("GC"));
+    case 'D' : return(random_from_string("AGT"));
+    case 'N' : return(random_from_string("ACGT"));
+    case 'M' : return(random_from_string("AC"));
+    case 'W' : return(random_from_string("AT"));
+    case 'H' : return(random_from_string("ACT"));
+  }
+  return(c);
+}
+
+/*
+ * Function: GetDBInfo()
+ * Date:     Easelification: EPN, Thu Dec  7 06:07:58 2006
+ *           (initial - RSEARCH::get_dbinfo()) RJK, Thu Apr 11, 2002 [St. Louis]
+ * Purpose:  Given a sequence file name, determine the total size of the
+ *           seqs in the file (DB) and GC content information.
+ * Args:     seqfile  - name of sequence file
+ *           ret_N    - RETURN: total length (residues) or all seqs in seqfile
+ *           gc_ct    - RETURN: gc_ct[x] observed 100-nt segments with GC% of x [0..100] 
+ * seqfile   
+ */
+void GetDBInfo (ESL_SQFILE *sqfp, long *ret_N, int **ret_gc_ct) 
+{
+  ESL_SQ           *sq;
+  int               i, j;  
+  long              N = 0;
+  int              *gc_ct = MallocOrDie(sizeof(int) * GC_SEGMENTS);
+  int               status;
+  int               gc;
+  char              c;
+  char              allN[100]; /* used to check if curr DB chunk is all N's, if it is,
+				* we don't count it towards the GC content info */
+  int               allN_flag; /* stays up if curr DB chunk is all Ns */
+  /*printf("in GetDBInfo\n");*/
+
+  for (i=0; i<GC_SEGMENTS; i++)
+    gc_ct[i] = 0;
+
+  for (j=0; j<100; j++)
+    allN[j] = 'N';
+  
+  sq = esl_sq_Create(); 
+  while ((status = esl_sqio_Read(sqfp, sq)) == eslOK) 
+    { 
+      N += sq->n;
+      /*printf("new N: %d\n", N);*/
+      for(i = 0; i < sq->n; i += 100)
+	{
+	  gc = 0;
+	  /*printf(">%d.raw\n", i);*/
+	  allN_flag = TRUE;
+	  for(j = 0; j < 100 && (j+i) < sq->n; j++)
+	    {
+	      if(allN_flag && sq->seq[(j+i)] != 'N')
+		allN_flag = FALSE;
+	      /*printf("%c", sq->seq[(j+i)]);*/
+	      c = resolve_degenerate(sq->seq[(j+i)]);
+	      if (c == 'G' || c == 'C') gc++;
+	    }
+	  /*printf("\n>%d.resolved\n", i);*/
+	  for(j = 0; j < 100 && (j+i) < sq->n; j++)
+	    {
+	      c = resolve_degenerate(sq->seq[(j+i)]);
+	      /*printf("%c", c);*/
+	    }
+	  /*printf("N: %d i: %d gc: %d\n", N, i, gc);*/
+	  /* scale gc for chunks < 100 nt */
+	  if(j < 100)
+	    {
+	      gc *= 100. / (float) j;
+	    }
+	  /*if(allN_flag)
+	    printf("allN_flag UP!\n");*/
+	  /* don't count GC content of chunks < 20 nt, very hacky;
+	   * don't count GC content of chunks that are all N, this
+	   * will be common in RepeatMasked genomes where poly-Ns could
+	   * skew the base composition stats of the genome */
+	  if(j > 20 && !allN_flag)
+	    {
+	      /*printf("j: %d i: %d N: %d adding 1 to gc_ct[%d]\n", j, i, N, ((int) gc));*/
+	      gc_ct[(int) gc]++;
+	    }
+	}
+      esl_sq_Reuse(sq); 
+    } 
+  if (status != eslEOF) 
+    esl_fatal("Parse failed, line %d, file %s:\n%s", 
+	      sqfp->linenumber, sqfp->filename, sqfp->errbuf); 
+  esl_sq_Destroy(sq); 
+  esl_sqio_Rewind(sqfp);
+
+  if(ret_N != NULL)      *ret_N     = N;
+  if(ret_gc_ct != NULL)  *ret_gc_ct = gc_ct;
+#ifdef PRINT_GC_COUNTS
+  for (i=0; i<GC_SEGMENTS; i++) 
+    printf ("%d\t%d\n", i, gc_ct[i]);
+#endif
+  
+  return; 
+}
+
+/*
+ * Function: e_to_score()
+ * Date:     RJK, Mon April 15 2002 [St. Louis]
+ * Purpose:  Given an E-value and mu, lambda, and N, returns a value for S
+ *           that will give such an E-value.  Basically the inverse of 
+ *           ExtremeValueE
+ */
+float e_to_score (float E, double *mu, double *lambda) {
+  float lowest_score, result;
+  int i;
+
+  lowest_score = mu[0] - (log(E)/lambda[0]);
+  for (i=1; i<GC_SEGMENTS; i++) {
+    result = mu[i] - (log(E)/lambda[i]);
+    if (result < lowest_score)
+      lowest_score = result;
+  }
+  return (lowest_score);
+}
+
+
+/*
+ * Function: RJK_ExtremeValueE
+ * Date:     RJK, Mon Sep 30, 2002 [St. Louis]
+ * Purpose:  Given a score (x), mu, and lambda, calculates 
+ *           E=exp(-1*lambda(x-mu)) using first part of code from Sean's
+ *           ExtremeValueP
+ */
+double RJK_ExtremeValueE (float x, double mu, double lambda) {
+                        /* avoid underflow fp exceptions near P=0.0*/
+  if ((lambda * (x - mu)) >= 2.3 * (double) DBL_MAX_10_EXP) 
+    return 0.0;
+  else 
+    return(exp(-1. * lambda * (x - mu)));
+}
+
+/*
+ * Function: MinCMScCutoff
+ * Date:     EPN, Mon May  7 17:36:56 2007
+ * Purpose:  Return the minimum bit score cutoff for a CM.
+ *           Trivial if cm->cutoff_type == SCORE_CUTOFF,
+ *           if E_CUTOFF return minimal bit score across 
+ *           all partitions for the E cutoff in the 
+ *           appropriate search algorithm (local/glocal
+ *           CYK/Inside combo)
+ */
+float MinCMScCutoff (CM_t *cm)
+{
+  float E, low_sc, sc;
+  int evd_mode;
+  int p; 
+
+  if(cm->cutoff_type == SCORE_CUTOFF)
+    return cm->cutoff;
+  
+  /* we better have stats */
+  if(!(cm->flags & CM_EVD_STATS))
+    Die("ERROR in MinCMScCutoff, cutoff type E value, but no stats.\n");
+
+  /* Determine appropriate EVD mode */
+  CM2EVD_mode(cm, &evd_mode, 
+	      NULL); /* don't care about CP9 EVD mode */
+  E = cm->cutoff;
+
+  low_sc = cm->stats->evdAA[evd_mode][0]->mu - 
+    (log(E) / cm->stats->evdAA[evd_mode][0]->lambda);
+  for (p = 1; p < cm->stats->np; p++) 
+    {
+      sc = cm->stats->evdAA[evd_mode][p]->mu - 
+	(log(E) / cm->stats->evdAA[evd_mode][p]->lambda);
+      if (sc < low_sc)
+	low_sc = sc;
+  }
+  return (low_sc);
+}
+
+/*
+ * Function: MinCP9ScCutoff
+ * Date:     EPN, Mon May  7 17:36:56 2007
+ * Purpose:  Return the minimum bit score cutoff for a CM's
+ *           CP9 HMM. Trivial if cm->cp9_cutoff_type == SCORE_CUTOFF,
+ *           if E_CUTOFF return minimal bit score across 
+ *           all partitions for the E cutoff in the 
+ *           appropriate search algorithm (local/glocal)
+ */
+float MinCP9ScCutoff (CM_t *cm)
+{
+  float E, low_sc, sc;
+  int evd_mode;
+  int p;
+
+  if(cm->cp9_cutoff_type == SCORE_CUTOFF)
+    return cm->cp9_cutoff;
+  
+  /* we better have stats */
+  if(!(cm->flags & CM_EVD_STATS))
+    Die("ERROR in MinCMScCutoff, cutoff type E value, but no stats.\n");
+
+  /* Determine appropriate EVD mode */
+  CM2EVD_mode(cm, NULL,  /* don't care about CM EVD mode */
+	      &evd_mode);
+  E = cm->cp9_cutoff;
+
+  low_sc = cm->stats->evdAA[evd_mode][0]->mu - 
+    (log(E) / cm->stats->evdAA[evd_mode][0]->lambda);
+  for (p=1; p < cm->stats->np; p++) 
+    {
+      sc = cm->stats->evdAA[evd_mode][p]->mu - 
+	(log(E) / cm->stats->evdAA[evd_mode][p]->lambda);
+      if (sc < low_sc)
+	low_sc = sc;
+  }
+  return (low_sc);
+}
+
+
+/*
+ * Function: CM2EVD_mode
+ * Date:     EPN, Mon May  7 17:43:28 2007
+ * Purpose:  Return the EVD_mode for the CM and HMM
+ *           given the flags and search options in the
+ *           CM data structure.
+ */
+int CM2EVD_mode(CM_t *cm, int *ret_cm_evd_mode, 
+		int *ret_cp9_evd_mode)
+{
+  int cm_evd_mode;
+  int cp9_evd_mode;
+
+  /* check contract */
+  if((!cm->flags & CM_CP9) || cm->cp9 == NULL)
+    Die("ERROR no CP9 in CM2EVD_mode()\n");
+
+  if(cm->flags & CM_LOCAL_BEGIN)
+    {
+      if(cm->search_opts & CM_SEARCH_INSIDE)
+	cm_evd_mode = CM_LI;
+      else
+	cm_evd_mode = CM_LC;
+    }
+  else
+    {
+      if(cm->search_opts & CM_SEARCH_INSIDE)
+	cm_evd_mode = CM_GI;
+      else
+	cm_evd_mode = CM_GC;
+    }
+
+  if(cm->cp9->flags & CPLAN9_LOCAL_BEGIN)
+    cp9_evd_mode = CP9_L;
+  else
+    cp9_evd_mode = CP9_G;
+
+  if(ret_cm_evd_mode  != NULL) *ret_cm_evd_mode  = cm_evd_mode;
+  if(ret_cp9_evd_mode != NULL) *ret_cp9_evd_mode = cp9_evd_mode;
+  return eslOK;
+}
+
+
+#if 0
+/*
  * Function: serial_make_histogram()
  * Date:     Mon Apr 1 2002 [St. Louis]
  * Purpose:  Makes a histogram using random sequences.  Returns mu and lambda.
@@ -554,194 +869,4 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 }
 
 #endif
-
-/*
- * Function: random_from_string
- * Date:     September, 1998 (approx.) -- from hmmgcc
- * This function returns a character randomly chosen from the string.
- * Used in conjunction with the function below that resolves degenerate code
- * nucleotides.
- */
-char random_from_string (char *s) {
-  int i;
-  do 
-    {
-      /*i = (int) ((float)(strlen(s)-1)*sre_random()/(RAND_MAX+1.0));*/
-      i = (int) ((float)(strlen(s))*sre_random());
-    } while (i<0 || i>=strlen(s));
-  return(s[i]);
-}
-
-/*
- * Function: resolve_degenerate
- * Date:     September, 1998 (from hmmgcc)
- * This function resolves "degnerate" nucleotides by selecting a random 
- * A, C, G, or T as appropriate by the code present there.  Returns
- * the character passed in if that character does not represent a
- * non-degnerate nucleotide (either A, C, G, or T or not representative
- * at all of a nucleotide.
- *
- * The degenerate code used here is:
- * (taken from http://www.neb.com/neb/products/REs/RE_code.html
- *
- *                         R = G or A
- *                         K = G or T
- *                         B = not A (C or G or T)
- *                         V = not T (A or C or G)
- *                         Y = C or T
- *                         S = G or C
- *                         D = not C (A or G or T)
- *                         N = A or C or G or T
- *                         M = A or C
- *                         W = A or T
- *                         H = not G (A or C or T)
- *
- * This function assumes all letters are already uppercased via toupper
- * before calling.  In other words, it will return a "n" if passed an "n"
- * because it will assume that the symbol for all nucleotides will be passed
- * in as "N".
- */
-char resolve_degenerate (char c) {
-  c = toupper(c);
-  switch (c) {
-    case 'R' : return(random_from_string("GA"));
-    case 'K' : return(random_from_string("GT"));
-    case 'B' : return(random_from_string("CGT"));
-    case 'V' : return(random_from_string("ACG"));
-    case 'Y' : return(random_from_string("CT"));
-    case 'S' : return(random_from_string("GC"));
-    case 'D' : return(random_from_string("AGT"));
-    case 'N' : return(random_from_string("ACGT"));
-    case 'M' : return(random_from_string("AC"));
-    case 'W' : return(random_from_string("AT"));
-    case 'H' : return(random_from_string("ACT"));
-  }
-  return(c);
-}
-
-/*
- * Function: GetDBInfo()
- * Date:     Easelification: EPN, Thu Dec  7 06:07:58 2006
- *           (initial - RSEARCH::get_dbinfo()) RJK, Thu Apr 11, 2002 [St. Louis]
- * Purpose:  Given a sequence file name, determine the total size of the
- *           seqs in the file (DB) and GC content information.
- * Args:     seqfile  - name of sequence file
- *           ret_N    - RETURN: total length (residues) or all seqs in seqfile
- *           gc_ct    - RETURN: gc_ct[x] observed 100-nt segments with GC% of x [0..100] 
- * seqfile   
- */
-void GetDBInfo (ESL_SQFILE *sqfp, long *ret_N, int **ret_gc_ct) 
-{
-  ESL_SQ           *sq;
-  int               i, j;  
-  long              N = 0;
-  int              *gc_ct = MallocOrDie(sizeof(int) * GC_SEGMENTS);
-  int               status;
-  int               gc;
-  char              c;
-  char              allN[100]; /* used to check if curr DB chunk is all N's, if it is,
-				* we don't count it towards the GC content info */
-  int               allN_flag; /* stays up if curr DB chunk is all Ns */
-  /*printf("in GetDBInfo\n");*/
-
-  for (i=0; i<GC_SEGMENTS; i++)
-    gc_ct[i] = 0;
-
-  for (j=0; j<100; j++)
-    allN[j] = 'N';
-  
-  sq = esl_sq_Create(); 
-  while ((status = esl_sqio_Read(sqfp, sq)) == eslOK) 
-    { 
-      N += sq->n;
-      /*printf("new N: %d\n", N);*/
-      for(i = 0; i < sq->n; i += 100)
-	{
-	  gc = 0;
-	  /*printf(">%d.raw\n", i);*/
-	  allN_flag = TRUE;
-	  for(j = 0; j < 100 && (j+i) < sq->n; j++)
-	    {
-	      if(allN_flag && sq->seq[(j+i)] != 'N')
-		allN_flag = FALSE;
-	      /*printf("%c", sq->seq[(j+i)]);*/
-	      c = resolve_degenerate(sq->seq[(j+i)]);
-	      if (c == 'G' || c == 'C') gc++;
-	    }
-	  /*printf("\n>%d.resolved\n", i);*/
-	  for(j = 0; j < 100 && (j+i) < sq->n; j++)
-	    {
-	      c = resolve_degenerate(sq->seq[(j+i)]);
-	      /*printf("%c", c);*/
-	    }
-	  /*printf("N: %d i: %d gc: %d\n", N, i, gc);*/
-	  /* scale gc for chunks < 100 nt */
-	  if(j < 100)
-	    {
-	      gc *= 100. / (float) j;
-	    }
-	  /*if(allN_flag)
-	    printf("allN_flag UP!\n");*/
-	  /* don't count GC content of chunks < 20 nt, very hacky;
-	   * don't count GC content of chunks that are all N, this
-	   * will be common in RepeatMasked genomes where poly-Ns could
-	   * skew the base composition stats of the genome */
-	  if(j > 20 && !allN_flag)
-	    {
-	      /*printf("j: %d i: %d N: %d adding 1 to gc_ct[%d]\n", j, i, N, ((int) gc));*/
-	      gc_ct[(int) gc]++;
-	    }
-	}
-      esl_sq_Reuse(sq); 
-    } 
-  if (status != eslEOF) 
-    esl_fatal("Parse failed, line %d, file %s:\n%s", 
-	      sqfp->linenumber, sqfp->filename, sqfp->errbuf); 
-  esl_sq_Destroy(sq); 
-  esl_sqio_Rewind(sqfp);
-
-  *ret_N     = N;
-  *ret_gc_ct = gc_ct;
-#ifdef PRINT_GC_COUNTS
-  for (i=0; i<GC_SEGMENTS; i++) 
-    printf ("%d\t%d\n", i, gc_ct[i]);
 #endif
-  
-  return; 
-}
-
-/*
- * Function: e_to_score()
- * Date:     RJK, Mon April 15 2002 [St. Louis]
- * Purpose:  Given an E-value and mu, lambda, and N, returns a value for S
- *           that will give such an E-value.  Basically the inverse of 
- *           ExtremeValueE
- */
-float e_to_score (float E, double *mu, double *lambda) {
-  float lowest_score, result;
-  int i;
-
-  lowest_score = mu[0] - (log(E)/lambda[0]);
-  for (i=1; i<GC_SEGMENTS; i++) {
-    result = mu[i] - (log(E)/lambda[i]);
-    if (result < lowest_score)
-      lowest_score = result;
-  }
-  return (lowest_score);
-}
-
-
-/*
- * Function: RJK_ExtremeValueE
- * Date:     RJK, Mon Sep 30, 2002 [St. Louis]
- * Purpose:  Given a score (x), mu, and lambda, calculates 
- *           E=exp(-1*lambda(x-mu)) using first part of code from Sean's
- *           ExtremeValueP
- */
-double RJK_ExtremeValueE (float x, double mu, double lambda) {
-                        /* avoid underflow fp exceptions near P=0.0*/
-  if ((lambda * (x - mu)) >= 2.3 * (double) DBL_MAX_10_EXP) 
-    return 0.0;
-  else 
-    return(exp(-1. * lambda * (x - mu)));
-}

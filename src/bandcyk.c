@@ -129,15 +129,18 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
   int      status;		/* return status. */
   int      nd;                  /* counter over nodes */
   int      yoffset;             /* counter over children */
-
+  int      reset_local_ends;    /* TRUE if we erased them and need to reset */
   /* If we're in local to avoid extremely wide bands due to 
    * the permissive nature of local ends, we make local ends
    * impossible for the band calculation than make them
    * possible again before exiting this function.
    */
+  reset_local_ends = FALSE;
   if(cm->flags & CM_LOCAL_END)
-    ConfigNoLocalEnds(cm);
-  
+    {
+      ConfigNoLocalEnds(cm);
+      reset_local_ends = TRUE;
+    }
   /* gamma[v][n] is Prob(state v generates subseq of length n)
    */
   gamma = MallocOrDie(sizeof(double *) * cm->M);        
@@ -338,7 +341,7 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
   /* If we're in local mode, we set all local ends to impossible at
    * the beginning of this function, we set them back here.
    */
-  if(cm->flags & CM_LOCAL_END)
+  if(reset_local_ends)
     ConfigLocalEnds(cm, 0.5);
 
   if (! BandTruncationNegligible(gamma[0], dmax[0], W, NULL)) 

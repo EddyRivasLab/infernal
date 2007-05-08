@@ -92,8 +92,7 @@ int compare_results (const void *a_void, const void *b_void) {
 /*
  * Function: remove_overlapping_hits ()
  * Date:     EPN, Tue Apr  3 14:36:38 2007
- * Plucked verbatim out of RSEARCH
- * 
+ * Plucked verbatim out of RSEARCH.
  * RSEARCH date: RJK, Sun Mar 31, 2002 [LGA Gate D7]
  *
  * Purpose:  Given a list of hits, removes overlapping hits to produce

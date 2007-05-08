@@ -38,5 +38,8 @@ extern double RJK_ExtremeValueE (float x, double mu, double lambda);
 
 extern char resolve_degenerate (char c);
 
+extern float MinCMScCutoff (CM_t *cm);
+extern float MinCP9ScCutoff (CM_t *cm);
+extern int   CM2EVD_mode(CM_t *cm, int *ret_cm_evd_mode, int *ret_cp9_evd_mode);
 
 #endif

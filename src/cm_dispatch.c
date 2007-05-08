@@ -40,10 +40,9 @@
  */
 static db_seq_t *read_next_seq (ESL_SQFILE *dbfp, int do_revcomp);
 static void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
-			   int do_complement, int do_stats, double *mu, 
-			   double *lambda) ;
+			   int do_complement, int used_HMM);
 static void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, char *seq,
-				       float cutoff, double *lambda, double *mu);
+				       int used_HMM);
 #ifdef USE_MPI
 static seqs_to_aln_t *read_next_aln_seqs(ESL_SQFILE *seqfp, int nseq, int index);
 #endif
@@ -80,15 +79,8 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons)
   /*printf("in serial_search database do_align: %d do_revcomp: %d\n", do_align, do_revcomp);*/
   
   /* Determine minimum cutoff for CM and for CP9 */
-  if (cm->cutoff_type == SCORE_CUTOFF) 
-    min_cm_cutoff = cm->cutoff;
-  else 
-    min_cm_cutoff = e_to_score (cm->cutoff, cm->mu, cm->lambda);
-
-  if (cm->cp9_cutoff_type == SCORE_CUTOFF) 
-    min_cp9_cutoff = cm->cp9_cutoff;
-  else 
-    min_cp9_cutoff = e_to_score (cm->cp9_cutoff, cm->cp9_mu, cm->cp9_lambda);
+  min_cm_cutoff  = MinCMScCutoff(cm);
+  min_cp9_cutoff = MinCP9ScCutoff(cm);
   
   do_revcomp = (!(cm->search_opts & CM_SEARCH_TOPONLY));
   do_align   = (!(cm->search_opts & CM_SEARCH_NOALIGN));
@@ -111,8 +103,8 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons)
 				   1, dbseq->sq[reversed]->n);
 	  if (cm->cutoff_type == E_CUTOFF) 
 	    remove_hits_over_e_cutoff (cm, dbseq->results[reversed],
-				       dbseq->sq[reversed]->seq,
-				       cm->cutoff, cm->lambda, cm->mu);
+				       dbseq->sq[reversed]->seq, 
+				       (cm->search_opts & CM_SEARCH_HMMONLY)); /* HMM hits? */
 
 	  /* Align results */
 	  if (do_align) 
@@ -144,12 +136,8 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons)
 	    }
 	}
       /* Print results */
-      if(cm->search_opts & CM_SEARCH_HMMONLY) /* pass CP9 EVD params */
-	print_results (cm, cons, dbseq, do_revcomp, (cm->search_opts & CM_SEARCH_CP9STATS),
-		       cm->cp9_mu, cm->cp9_lambda);
-      else /* pass CM EVD params */
-	print_results (cm, cons, dbseq, do_revcomp, (cm->search_opts & CM_SEARCH_CMSTATS),
-		       cm->mu, cm->lambda);
+      print_results (cm, cons, dbseq, do_revcomp, 
+		     (cm->search_opts & CM_SEARCH_HMMONLY)); /* use HMM stats? */
 
       fflush (stdout);
       
@@ -285,7 +273,7 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 		    remove_hits_over_e_cutoff 
 		      (cm, active_seqs[active_seq_index]->results[0],
 		       active_seqs[active_seq_index]->sq[0]->seq,
-		       cm->cutoff, cm->lambda, cm->mu);
+		       (cm->search_opts & CM_SEARCH_HMMONLY)); /* HMM hits? */
 		  if (do_revcomp) 
 		    {
 		      remove_overlapping_hits 
@@ -295,7 +283,8 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 			remove_hits_over_e_cutoff 
 			  (cm, active_seqs[active_seq_index]->results[1],
 			   active_seqs[active_seq_index]->sq[1]->seq,
-			   cm->cutoff, cm->lambda, cm->mu);
+			   (cm->search_opts & CM_SEARCH_HMMONLY)); /* HMM hits? */
+
 		    }
 		  /* Check here if doing alignments and queue them or check if 
 		     all done */
@@ -309,15 +298,9 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 		      active_seqs[active_seq_index]->alignments_sent == 0) 
 		    {
 		      /* Print results */
-		      if(cm->search_opts & CM_SEARCH_HMMONLY) /* pass CP9 EVD params */
-			print_results (cm, cons, active_seqs[active_seq_index], 
-				       do_revcomp, (cm->search_opts & CM_SEARCH_CP9STATS), 
-				       cm->cp9_mu, cm->cp9_lambda);
-		      else /* pass CM EVD params */
-			print_results (cm, cons, active_seqs[active_seq_index], 
-				       do_revcomp, (cm->search_opts & CM_SEARCH_CMSTATS), cm->mu, cm->lambda);
-		      
-		    if (do_revcomp) 
+		      print_results (cm, cons, active_seqs[active_seq_index], 
+				     do_revcomp, (cm->search_opts & CM_SEARCH_HMMONLY)); /* use HMM stats? */
+		      if (do_revcomp) 
 		      {
 			FreeResults(active_seqs[active_seq_index]->results[1]);
 			esl_sq_Destroy(active_seqs[active_seq_index]->sq[1]);
@@ -536,12 +519,10 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
  *           name                sequence name
  *           len                 length of the sequence
  *           in_revcomp          are we doing the minus strand
- *           do_stats            should we calculate stats?
- *           mu, lambda          for statistics
+ *           used_HMM            did we use an HMM to get hits?
  */
 void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
-		    int do_complement, int do_stats, double *mu, 
-		    double *lambda) 
+		    int do_complement, int used_HMM)
 {
   int i;
   char *name;
@@ -555,11 +536,37 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 			 * of. This will be the bit score stored in
 			 * dbseq unless (cm->flags & CM_ENFORCED)
 			 * in which case we subtract cm->enf_scdiff first. */
-  CMEmitMap_t *emap;           /* consensus emit map for the CM */
+  CMEmitMap_t *emap;    /* consensus emit map for the CM */
+  int do_stats;        
+  EVDInfo_t **evd;      /* pointer to evd to use */
+  int cm_evd_mode;      /* EVD mode if we're using CM hits */
+  int cp9_evd_mode;     /* EVD mode if we're using HMM hits */
+  int p;                /* relevant partition */
+
+  if(used_HMM)
+    {
+      if(cm->cp9_cutoff_type == E_CUTOFF) do_stats = TRUE;
+      else do_stats = FALSE;
+    }
+  else
+  {
+    if(cm->cutoff_type == E_CUTOFF) do_stats = TRUE;
+    else do_stats = FALSE;
+  }
+  if(do_stats  && !(cm->flags & CM_EVD_STATS))
+    Die("ERROR in print_results, stats wanted but CM has no EVD stats\n");
+
+  /* Determine EVD mode to use */
+  CM2EVD_mode(cm, &cm_evd_mode, &cp9_evd_mode);
+  if(used_HMM) evd = cm->stats->evdAA[cp9_evd_mode];
+  else evd = cm->stats->evdAA[cm_evd_mode];
+
+  printf("CM  evd mode in print results: %d\n", cm_evd_mode);
+  printf("CP9 evd mode in print results: %d\n", cp9_evd_mode);
 
   emap = CreateEmitMap(cm);
   name = dbseq->sq[0]->name;
-  len = dbseq->sq[0]->n;
+  len  = dbseq->sq[0]->n;
 
   for (in_revcomp = 0; in_revcomp <= do_complement; in_revcomp++) 
     {
@@ -586,6 +593,7 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 		  coordinate(in_revcomp, results->data[i].stop, len));
 	  if (do_stats) 
 	    {
+	      p = cm->stats->gc2p[gc_comp];
 	      score_for_Eval = results->data[i].score;
 	      if(cm->flags & CM_ENFORCED)
 		{
@@ -594,10 +602,10 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 		  printf(" new sc: %.3f (diff: %.3f\n\n", score_for_Eval, cm->enf_scdiff);
 		}
 	      printf (" Score = %.2f, E = %.4g, P = %.4g, GC = %3d\n", results->data[i].score,
-		      RJK_ExtremeValueE(score_for_Eval, mu[gc_comp], 
-					lambda[gc_comp]),
-		      esl_gumbel_surv((double) score_for_Eval, mu[gc_comp], 
-				      lambda[gc_comp]), gc_comp);
+		      RJK_ExtremeValueE(score_for_Eval, evd[p]->mu, 
+					evd[p]->lambda),
+		      esl_gumbel_surv((double) score_for_Eval, evd[p]->mu, 
+				      evd[p]->lambda), gc_comp);
 	      /*printf("  Mu[gc=%d]: %f, Lambda[gc=%d]: %f\n", gc_comp, mu[gc_comp], gc_comp,
 		lambda[gc_comp]);*/
 	      /*ExtremeValueP(results->data[i].score, mu[gc_comp], 
@@ -630,10 +638,16 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
  * Date:     RJK, Tue Oct 8, 2002 [St. Louis]
  * Purpose:  Given an E-value cutoff, lambdas, mus, a sequence, and
  *           a list of results, calculates GC content for each hit, 
- *           calculates E-value, and decides wheter to keep hit or not.
+ *           calculates E-value, and decides whether to keep hit or not.
+ * 
+ * Args:    
+ *           cm      - the covariance model
+ *           results - the hits data structure
+ *           seq     - seq hits lie within, needed to determine gc content
+ *           used_HMM- TRUE if hits are to the CM's CP9 HMM, not the CMa
  */
 void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, char *seq,
-				float cutoff, double *lambda, double *mu) 
+				int used_HMM)
 {
   int gc_comp;
   int i, x;
@@ -642,14 +656,31 @@ void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, char *seq,
 			 * of. This will be the bit score stored in
 			 * dbseq unless (cm->flags & CM_ENFORCED)
 			 * in which case we subtract cm->enf_scdiff first. */
+  int cm_evd_mode;      /* EVD mode if we're using CM hits */
+  int cp9_evd_mode;     /* EVD mode if we're using HMM hits */
+  int p;                /* relevant partition */
+  EVDInfo_t **evd;      /* pointer to evd to use */
+  float cutoff;         /* the max E-value we want to keep */
 
-  /*printf("in remove_hits_over_e_cutoff()\n");*/
+  /* Check contract */
+  if(!(cm->flags & CM_EVD_STATS))
+    Die("ERROR in remove_hits_over_e_cutoff, but CM has no EVD stats\n");
+
   if (results == NULL)
     return;
+
+  /* Determine EVD mode to use */
+  CM2EVD_mode(cm, &cm_evd_mode, &cp9_evd_mode);
+  if(used_HMM) evd = cm->stats->evdAA[cp9_evd_mode];
+  else evd = cm->stats->evdAA[cm_evd_mode];
+
+  if(used_HMM) cutoff = cm->cp9_cutoff;
+  else         cutoff = cm->cutoff;
 
   for (i=0; i<results->num_results; i++) 
     {
       gc_comp = get_gc_comp (seq, results->data[i].start, results->data[i].stop);
+      p = cm->stats->gc2p[gc_comp];
       score_for_Eval = results->data[i].score;
       if(cm->flags & CM_ENFORCED)
 	{
@@ -659,7 +690,7 @@ void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, char *seq,
 	}
       /*printf("score_for_Eval: %f \n", score_for_Eval);*/
       if (RJK_ExtremeValueE(score_for_Eval,
-			    mu[gc_comp], lambda[gc_comp]) > cutoff) 
+			    evd[p]->mu, evd[p]->lambda) > cutoff) 
 	{
 	  results->data[i].start = -1;
 	}
