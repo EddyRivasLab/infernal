@@ -19,7 +19,7 @@
 #include "cplan9.h"
 
 /* various default parameters for CMs and CP9 HMMs */ 
-#define DEFAULT_CM_CUTOFF 50.0
+#define DEFAULT_CM_CUTOFF 10.0
 #define DEFAULT_CM_CUTOFF_TYPE E_CUTOFF
 #define DEFAULT_CP9_CUTOFF 0.0
 #define DEFAULT_CP9_CUTOFF_TYPE SCORE_CUTOFF
@@ -398,8 +398,6 @@ typedef struct cm_s {
 #define CM_SEARCH_RSEARCH      (1<<15) /* use RSEARCH parameterized CM             */
 #define CM_SEARCH_CMGREEDY     (1<<16) /* use greedy alg to resolve CM overlaps    */
 #define CM_SEARCH_HMMGREEDY    (1<<17) /* use greedy alg to resolve HMM overlaps   */
-#define CM_SEARCH_HMMGLOCAL    (1<<18) /* use glocal CP9 to filter for local CM    */
-#define CM_SEARCH_HGBANDED     (1<<19) /* use glocal CP9 to get bands for local CM */
 
 /* Structure: CMFILE
  * Incept:    SRE, Tue Aug 13 10:16:39 2002 [St. Louis]

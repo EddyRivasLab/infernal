@@ -373,8 +373,8 @@ write_ascii_cm(FILE *fp, CM_t *cm)
 	  fprintf(fp, "FT-LC  %5d  %.3f  %.5f  %.5f  %.5f  %d  %d\n", 
 		  cm->stats->fthrA[CM_LC]->N, cm->stats->fthrA[CM_LC]->fraction, 
 		  cm->stats->fthrA[CM_LC]->cm_eval, cm->stats->fthrA[CM_LC]->l_eval,
-		  cm->stats->fthrA[CM_GC]->g_eval, cm->stats->fthrA[CM_GC]->db_size,
-		  cm->stats->fthrA[CM_GC]->was_fast);
+		  cm->stats->fthrA[CM_LC]->g_eval, cm->stats->fthrA[CM_LC]->db_size,
+		  cm->stats->fthrA[CM_LC]->was_fast);
 	  fprintf(fp, "FT-GC  %5d  %.3f  %.5f  %.5f  %.5f  %d  %d\n", 
 		  cm->stats->fthrA[CM_GC]->N, cm->stats->fthrA[CM_GC]->fraction, 
 		  cm->stats->fthrA[CM_GC]->cm_eval, cm->stats->fthrA[CM_GC]->l_eval,

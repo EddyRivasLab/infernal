@@ -340,10 +340,12 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
 
   /* If we're in local mode, we set all local ends to impossible at
    * the beginning of this function, we set them back here.
-   */
+   * Careful we can only call this once */
   if(reset_local_ends)
-    ConfigLocalEnds(cm, 0.5);
-
+    {
+      ConfigLocalEnds(cm, 0.5);
+      reset_local_ends = FALSE;
+    }
   if (! BandTruncationNegligible(gamma[0], dmax[0], W, NULL)) 
     { status = 0; goto CLEANUP; }
 
@@ -351,7 +353,14 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
 
  CLEANUP:
   free(touch);
-
+  /* If we're in local mode, we set all local ends to impossible at
+   * the beginning of this function, we set them back here.
+   * Careful we can only call this once */
+  if(reset_local_ends)
+    {
+      ConfigLocalEnds(cm, 0.5);
+      reset_local_ends = FALSE;
+    }
   if (ret_dmin  != NULL) *ret_dmin = dmin;   else free(dmin);
   if (ret_dmax  != NULL) *ret_dmax = dmax;   else free(dmax);
   if (ret_gamma != NULL) *ret_gamma = gamma; else FreeBandDensities(cm, gamma);
@@ -362,8 +371,6 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
   FreeMstack(beamstack);
   return status;
 }
-
-
 
 /* Function:  BandTruncationNegligible()
  * Incept:    SRE, Sun Oct 19 10:43:21 2003 [St. Louis]

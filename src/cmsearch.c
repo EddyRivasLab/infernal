@@ -97,17 +97,18 @@ static char experts[] = "\
    --qdbfile <x> : read QDBs from file <f> (outputted from cmbuild)\n\
    --banddump    : print bands for each state\n\
    --hbanded     : w/--hmmfilter: calculate and use HMM bands in CM search\n\
-   --hgbanded    : w/--hmmfilter; use Glocal CP9 to get bands\n\
    --scan2bands  : derive bands from scanning Forward/Backward algs EXPTL!\n\
    --tau         : tail loss for HMM banding [default: 1E-7]\n\
    --sums        : use posterior sums during HMM band calculation (widens bands)\n\
 \n\
   * Filtering options using a CM plan 9 HMM (*in development*):\n\
+   --hmmlocal     : configure HMM for local alignment [default: glocal alignment]\n\
    --hmmfilter    : subseqs j-W+1..i+W-1 survive (j=end from Fwd, i=start from Bwd)\n\
    --hmmpad <n>   : w/--hmmfilter: subseqs i-<n>..j+<n> survive\n\
    --hmmonly      : don't use CM at all, just scan with HMM (Forward + Backward)\n\
    --hmmE <x>     : use cutoff E-value of <x> for CP9 (possibly filtered) scan\n\
    --hmmT <x>     : use cutoff bit score of <x> for CP9 (possibly filtered) scan\n\
+   --hmmcalcthr   : calc HMM filter threshold by empirically sampling from CM\n\
    --hmmgreedy    : resolve HMM overlapping hits with greedy algorithm a la RSEARCH\n\
    --hmmglocal    : w/--hmmfilter; use Glocal CP9 to filter\n\
    --hmmnegsc <x> : set min bit score to report as <x> < 0 (experimental)\n\
@@ -131,11 +132,13 @@ static struct opt_s OPTIONS[] = {
   { "--null2",      FALSE, sqdARG_NONE },
   { "--learninserts",FALSE, sqdARG_NONE},
   { "--negsc",      FALSE, sqdARG_FLOAT},
+  { "--hmmlocal",   FALSE, sqdARG_NONE },
   { "--hmmfilter",  FALSE, sqdARG_NONE },
   { "--hmmpad",     FALSE, sqdARG_INT },
   { "--hmmonly",    FALSE, sqdARG_NONE },
   { "--hmmE",       FALSE, sqdARG_FLOAT},
   { "--hmmT",       FALSE, sqdARG_FLOAT},
+  { "--hmmcalcthr", FALSE, sqdARG_NONE},
   { "--hmmnegsc",   FALSE, sqdARG_FLOAT},
   /*{ "--hmmrescan",  FALSE, sqdARG_NONE},*/
   { "--noqdb",      FALSE, sqdARG_NONE },
@@ -153,8 +156,6 @@ static struct opt_s OPTIONS[] = {
   { "--rtrans",     FALSE, sqdARG_NONE},
   { "--greedy",     FALSE, sqdARG_NONE},
   { "--hmmgreedy",  FALSE, sqdARG_NONE},
-  { "--hgbanded",   FALSE, sqdARG_NONE},
-  { "--hmmglocal",  FALSE, sqdARG_NONE},
   { "--gcfile",     FALSE, sqdARG_STRING},
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
@@ -251,6 +252,7 @@ main(int argc, char **argv)
   int   do_scan2bands;     /* TRUE to use scanning Forward/Backward algs instead 
 			    * of traditional FB algs to get bands on seqs surviving 
 			    * the filter */
+  int   do_hmmlocal;       /* TRUE to do HMM local alignment, default is glocal */
   int   do_hmmfilter;          /* TRUE to use Forward to get start points and Backward
 			    * to get end points of promising subsequences*/
   int   do_hmmonly;        /* TRUE to scan with a CM Plan 9 HMM ONLY!*/
@@ -269,8 +271,14 @@ main(int argc, char **argv)
   /* the greedy options */
   int             do_cmgreedy;  /* TRUE to use greedy hit resolution for CM  overlaps */
   int             do_hmmgreedy; /* TRUE to use greedy hit resolution for HMM overlaps */
-  int             do_hmmglocal; /* TRUE to use glocal CP9 to filter for local CM */
-  int             do_hgbanded;  /* TRUE to use glocal CP9 to derive bands for local CM */
+
+  /* variables used to calculate HMM filter threshold by sampling from CM */
+  int   do_hmmcalcthr;        /* TRUE to sample from CM, score with HMM to get HMM cutoff */
+  //  int   do_fastfil = TRUE;    /* TRUE: use fast hacky filter thr calc method */
+  int   do_fastfil = FALSE;    /* TRUE: use fast hacky filter thr calc method */
+  float filt_fract = 0.95;    /* fraction of CM hits req'd to find with HMM  */
+  int   use_cm_cutoff = TRUE; /* TRUE to use cm_ecutoff, FALSE not to      */
+  int   filN = 1000;          /* Number of sequences to sample from the CM */
 
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
   int mpi_my_rank;              /* My rank in MPI */
@@ -317,6 +325,7 @@ main(int argc, char **argv)
   do_bdump          = FALSE;
   do_hmmonly        = FALSE;
   set_window        = FALSE;
+  do_hmmlocal       = FALSE;     /* OPPOSITE of default CM mode! */
   do_hmmfilter      = FALSE;
   do_hmmpad         = FALSE;
   hmmpad            = 0;
@@ -348,8 +357,7 @@ main(int argc, char **argv)
   do_rtrans         = FALSE;
   do_cmgreedy       = FALSE;
   do_hmmgreedy      = FALSE;
-  do_hmmglocal      = FALSE;
-  do_hgbanded       = FALSE;
+  do_hmmcalcthr     = FALSE;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -385,6 +393,7 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--time")        == 0) do_timings   = TRUE;
     else if  (strcmp(optname, "--rtrans")      == 0) do_rtrans = TRUE;
     else if  (strcmp(optname, "--hmmfilter")   == 0) do_hmmfilter = TRUE;
+    else if  (strcmp(optname, "--hmmlocal")    == 0) do_hmmlocal  = TRUE;
     else if  (strcmp(optname, "--hmmpad")      == 0) { do_hmmpad = TRUE; hmmpad = atoi(optarg); }
     else if  (strcmp(optname, "--hmmnegsc")    == 0) 
       { cp9_sc_boost_set = TRUE; cp9_sc_boost = -1. * atof(optarg); }
@@ -392,10 +401,7 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--hmmnegsc")    == 0) { 
       cp9_sc_boost_set = TRUE; cp9_sc_boost = -1. * atof(optarg); }
     else if  (strcmp(optname, "--hmmrescan")   == 0) do_hmmrescan = TRUE; 
-    else if  (strcmp(optname, "--hmmfilter")   == 0) 
-      {
-	do_hmmfilter = TRUE;
-      }
+    else if  (strcmp(optname, "--hmmfilter")   == 0) do_hmmfilter = TRUE;
     else if  (strcmp(optname, "--hmmonly")   == 0) 
       { 
 	do_hmmonly = TRUE; 
@@ -413,6 +419,7 @@ main(int argc, char **argv)
 	cp9_sc_cutoff = atof(optarg); 
 	cp9_cutoff_type  = SCORE_CUTOFF;
       }
+    else if  (strcmp(optname, "--hmmcalcthr")  == 0) do_hmmcalcthr = TRUE;
     else if  (strcmp(optname, "--beta")   == 0) beta      = atof(optarg);
     else if  (strcmp(optname, "--noqdb")  == 0) do_qdb    = FALSE;
     else if  (strcmp(optname, "--qdbfile")== 0) { read_qdb  = TRUE; qdb_file = optarg; }
@@ -423,8 +430,6 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--scan2bands")== 0) do_scan2bands= TRUE;
     else if  (strcmp(optname, "--greedy")    == 0) do_cmgreedy = TRUE;
     else if  (strcmp(optname, "--hmmgreedy") == 0) do_hmmgreedy = TRUE;
-    else if  (strcmp(optname, "--hmmglocal") == 0) do_hmmglocal = TRUE;
-    else if  (strcmp(optname, "--hgbanded")  == 0) do_hgbanded = TRUE;
     else if  (strcmp(optname, "--informat")  == 0) {
       format = String2SeqfileFormat(optarg);
       if (format == SQFILE_UNKNOWN) 
@@ -483,10 +488,8 @@ main(int argc, char **argv)
     Die("--greedy option doesn't make sense with --hmmonly scans, did you mean --hmmgreedy?\n");
   if(do_hmmpad && !do_hmmfilter)
     Die("--hmmpad <n> option only works in combination with --hmmfilter\n");
-  if(do_hmmglocal && (!do_hmmfilter || !do_local))
-    Die("--hmmglocal option only works in combination with --hmmfilter AND not --glocal\n");
-  if(do_hgbanded && (!do_hmmfilter || !do_local || !do_hbanded))
-    Die("--hgbanded option only works in combination with --hmmfilter AND --hbanded AND not --glocal\n");
+  if(do_hmmcalcthr && cp9_cutoff_set)
+    Die("--hmmcalcthr option does not make sense in combination with --hmmT OR --hmmE.\n");
   if(do_hmmpad && hmmpad < 0)
     Die("with --hmmpad <n>, <n> must be >= 0\n");
   if(beta >= 1.)
@@ -557,11 +560,8 @@ main(int argc, char **argv)
 	 (do_enforce && (do_hmmfilter)))
 	{  do_hmmrescan = TRUE; } 
       /* Update cm->config_opts and cm->search_opts based on command line options */
-      if(do_local)        
-	{
-	  cm->config_opts |= CM_CONFIG_LOCAL;
-	  cm->config_opts |= CM_CONFIG_HMMLOCAL;
-	}
+      if(do_local)        cm->config_opts |= CM_CONFIG_LOCAL;
+      if(do_hmmlocal)     cm->config_opts |= CM_CONFIG_HMMLOCAL;
       if(do_zero_inserts) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
       if(!(do_qdb))       cm->search_opts |= CM_SEARCH_NOQDB;
       if(do_hmmonly)      cm->search_opts |= CM_SEARCH_HMMONLY;
@@ -576,8 +576,6 @@ main(int argc, char **argv)
       if(do_null2)        cm->search_opts |= CM_SEARCH_NULL2;
       if(do_cmgreedy)     cm->search_opts |= CM_SEARCH_CMGREEDY;
       if(do_hmmgreedy)    cm->search_opts |= CM_SEARCH_HMMGREEDY;
-      if(do_hmmglocal)    cm->search_opts |= CM_SEARCH_HMMGLOCAL;
-      if(do_hgbanded)     cm->search_opts |= CM_SEARCH_HGBANDED;
       if(do_hbanded)      cm->search_opts |= CM_SEARCH_HBANDED;
       if(do_rtrans)       cm->flags       |= CM_RSEARCHTRANS;
 
@@ -666,42 +664,112 @@ main(int argc, char **argv)
 	  if(!(cm->flags & CM_EVD_STATS))
 	    Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T and/or --hmmT.\n");
 	}
-      /* Set HMM cutoff as filter threshold read from CM file, unless --hmmT or --hmmE invoked. 
+      /* Set HMM cutoff as filter threshold read from CM file, unless --hmmT, --hmmE or --hmmcalcthr. 
        * To do this we need to convert the E-value cutoff written by cmcalibrate for database size
        * of cm->stats->fthr[p]->dbsize to the corresponding E-value for the database size (N) 
        * by converting it to a bit score then back to an E-value. 
        */
       if(!cp9_cutoff_set) /* cp9_cutoff_set is TRUE if --hmmT or --hmmE invoked at command line */
 	{
-	  /* If we don't have filther threshold stats in CM file, we require either 
-	   * --hmmE or --hmmT be invoked - so the user knows what's happening. */
-	  if(!(cm->flags & CM_EVD_STATS))
-	    Die("ERROR trying to use HMM filter thresholds but no EVD stats in CM file.\nUse cmcalibrate or use --hmmT or --hmmE.\n");
-	  if(!(cm->flags & CM_FTHR_STATS))
-	    Die("ERROR trying to use HMM filter thresholds but none in CM file.\nUse cmcalibrate or use --hmmT or --hmmE.\n");
-	  /* Use HMM filter threshold stats from CM file,
+	  /* Use HMM filter threshold stats from CM file, or that we calculate here 
 	     First determine CM scanning mode */
-	  /* this call only works if CM has already been configured */
 	  if(do_local  && !do_inside) cm_mode = CM_LC;
 	  if(do_local  &&  do_inside) cm_mode = CM_LI;
 	  if(!do_local && !do_inside) cm_mode = CM_GC;
 	  if(!do_local &&  do_inside) cm_mode = CM_GI;
-	  //if(do_hmmlocal) cp9_mode = CP9_L;
-	  if(do_local)    cp9_mode = CP9_L;
+	  if(do_hmmlocal) cp9_mode = CP9_L;
 	  else            cp9_mode = CP9_G;
 	  fthr    = cm->stats->fthrA[cm_mode];
 	  cp9_evd = cm->stats->evdAA[cp9_mode][0]; 
-	  /* we use 1st partition, shouldn't make a difference which
-	   * one we use, b/c we're only converting E-value cutoff    */
-	  cp9_cutoff_type = E_CUTOFF;
-	  if(cp9_mode == CP9_L) 
-	    cp9_eval   = fthr->l_eval;
-	  else if(cp9_mode == CP9_G) 
-	    cp9_eval   = fthr->g_eval;
-	  tmp_mu       = log(cp9_evd->K  * ((double) fthr->db_size)) / cp9_evd->lambda;
-	  cp9_bit_sc   = tmp_mu - (log(cp9_eval) / cp9_evd->lambda);
-	  cp9_e_cutoff = RJK_ExtremeValueE(cp9_bit_sc,  cp9_evd->mu, cp9_evd->lambda);
-	  printf("CP9 bit score cutoff: %f\ncmcalibrate e-val cutoff: %f\nnew e-val cutoff: %f\n", cp9_bit_sc, cp9_eval, cp9_e_cutoff);
+
+	  /**********************************************************************	   
+	   * This block will be relocated to after a first MPI broadcast, and 
+	   * ConfigCM() call once MPI is implemented with a parallel version of
+	   * FindCP9FilterThreshold(). 
+	   */
+	  if(do_hmmcalcthr)
+	    {
+	      /* Calculate threshold here, use CM E-value cutoff we'll use for the search */
+	      if(!(cm->flags & CM_EVD_STATS))
+		Die("ERROR trying to use HMM filter thresholds but no EVD stats in CM file.\nUse cmcalibrate or use --hmmT or --hmmE.\n");
+	      if(cm->cutoff_type == SCORE_CUTOFF)
+		Die("ERROR can't use --hmmcalcthr with -T, currently you must use CM E-values with --hmmcalcthr.\n");
+	      cp9_cutoff_type = E_CUTOFF;
+	      /* We need QDBs and a CP9 HMM to get the filter threshold, but it's not set up til our
+	       * ConfigCM() call a bit later. That's later so in MPI the slaves configure the CM
+	       * properly, so we sloppily get around this here by building a temp CP9, then freeing
+	       * it. 
+	       */
+	      int orig_flags, orig_search_opts, orig_config_opts;
+	      orig_flags = cm->flags;
+	      orig_search_opts = cm->search_opts;
+	      orig_config_opts = cm->config_opts;
+	      
+	      ConfigQDB(cm);
+	      if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))
+		Die("Couldn't build a CP9 HMM from the CM\n");
+	      cm->flags |= CM_CP9; /* raise the CP9 flag */
+	      cp9_e_cutoff = FindCP9FilterThreshold(cm, cm->stats, filt_fract, filN, use_cm_cutoff,
+						    cm->cutoff, N, cm_mode, cp9_mode, do_fastfil);
+	      FreeCPlan9(cm->cp9);
+	      cm->cp9 = NULL;
+	      cm->flags &= ~CM_CP9;
+	      if(cm->flags & CM_QDB)
+		{
+		  free(cm->dmin);
+		  free(cm->dmax);
+		  cm->dmin = NULL;
+		  cm->dmax = NULL;
+		  cm->flags &= ~CM_QDB;
+		}
+	      /* if FindCP9FilterThreshold()'s ConfigForEVDMode set up local begins/ends,
+	       * undo them, they'll be redone in CMConfig(). This is sloppy, and it is
+	       * temporary, once a parallel (MPI) version of FindCP9FilterThreshold() exists,
+	       * this call will be made AFTER each slave configs it's own CM with ConfigCM(). 
+	       */
+	      if(cm->flags & CM_LOCAL_BEGIN || cm->flags & CM_LOCAL_END)
+		ConfigGlobal(cm);
+	      /* following lines are printfs, just for curiousity */
+	      if(cp9_mode == CP9_L) 
+		cp9_eval   = fthr->l_eval;
+	      else if(cp9_mode == CP9_G) 
+		cp9_eval   = fthr->g_eval;
+	      cp9_bit_sc   = cp9_evd->mu - (log(cp9_e_cutoff) / cp9_evd->lambda);
+	      printf("Calc'ed CP9 bit score cutoff: %f\ncmcalibrate e-val cutoff: %f\nnew e-val cutoff: %f\n", cp9_bit_sc, cp9_eval, cp9_e_cutoff);
+	      if(cm->flags & CM_HASBITS)
+		cm->flags &= ~CM_HASBITS;
+	      if(cm->flags & CM_HASBITS)
+		cm->flags &= ~CM_HASBITS;
+	      if((cm->search_opts & CM_SEARCH_HMMONLY) && (!do_hmmonly))
+		cm->search_opts &= ~CM_SEARCH_HMMONLY;
+
+
+	      if(cm->flags != orig_flags) Die("ERROR cm->flags different after determining CP9 threshold.\n");
+	      if(cm->search_opts != orig_search_opts) Die("ERROR cm->search_opts different after determining CP9 threshold.\n");
+	      if(cm->config_opts != orig_config_opts) Die("ERROR cm->config_opts different after determining CP9 threshold.\n");
+	    }
+	  /*End of block to be relocated once MPI is implemented*/	   
+	  /******************************************************/
+	  else
+	    {
+	      /* Use a HMM filter threshold from file, check we read them */
+	      if(!(cm->flags & CM_EVD_STATS))
+		Die("ERROR trying to use HMM filter thresholds but no EVD stats in CM file.\nUse cmcalibrate or use --hmmT or --hmmE.\n");
+	      if(!(cm->flags & CM_FTHR_STATS))
+		Die("ERROR trying to use HMM filter thresholds but none in CM file.\nUse cmcalibrate or use --hmmT or --hmmE.\n");
+	      /* Convert E-value from CM file to E-value for current DB size,
+	       * we use 1st partition, shouldn't make a difference which
+	       * one we use, b/c we're only converting E-value cutoff    */
+	      cp9_cutoff_type = E_CUTOFF;
+	      if(cp9_mode == CP9_L) 
+		cp9_eval   = fthr->l_eval;
+	      else if(cp9_mode == CP9_G) 
+		cp9_eval   = fthr->g_eval;
+	      tmp_mu       = log(cp9_evd->K  * ((double) fthr->db_size)) / cp9_evd->lambda;
+	      cp9_bit_sc   = tmp_mu - (log(cp9_eval) / cp9_evd->lambda);
+	      cp9_e_cutoff = RJK_ExtremeValueE(cp9_bit_sc,  cp9_evd->mu, cp9_evd->lambda);
+	      printf("CP9 bit score cutoff: %f\ncmcalibrate e-val cutoff: %f\nnew e-val cutoff: %f\n", cp9_bit_sc, cp9_eval, cp9_e_cutoff);
+	    }
 	}
       /* Set CP9 cutoff */
       cm->cp9_cutoff_type = cp9_cutoff_type;

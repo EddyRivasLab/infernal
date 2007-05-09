@@ -63,7 +63,7 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
     Die("Couldn't build a CP9 HMM from the CM\n");
   cm->flags |= CM_CP9; /* raise the CP9 flag */
   
-  /* Configure the CM for local alignment. */
+  /* Possibly configure the CM for local alignment. */
   if (cm->config_opts & CM_CONFIG_LOCAL)
     { 
       ConfigLocal(cm, 0.5, 0.5);
@@ -72,8 +72,9 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
       if(cm->config_opts & CM_CONFIG_ELSILENT)
 	ConfigLocal_DisallowELEmissions(cm);
     }
-  /* If in local mode, configure the CP9 HMM for local alignment,
-   * but not in a way that matches the CM locality (that's a TODO) */
+  /* Possibly configure the CP9 for local alignment
+   * Note: CP9 local/glocal config does not necessarily match CM config 
+   *       in fact cmsearch default is local CM, glocal CP9 */
   if((cm->config_opts & CM_CONFIG_HMMLOCAL) ||
      (cm->align_opts  & CM_ALIGN_SUB)    ||
      (cm->align_opts  & CM_ALIGN_FSUB))
@@ -225,9 +226,10 @@ ConfigCMEnforce(CM_t *cm)
       if(cm->config_opts & CM_CONFIG_ELSILENT)
 	ConfigLocal_DisallowELEmissions(cm);
     }
-  /* If in local mode w/CP9, configure the CP9 for local alignment,
-   * but not in a way that matches the CM locality (that's a TODO) */
-  if((cm->flags & CM_CP9) && (cm->config_opts & CM_CONFIG_LOCAL))
+  /* Possibly configure the CP9 for local alignment
+   * Note: CP9 local/glocal config does not necessarily match CM config 
+   *       in fact cmsearch default is local CM, glocal CP9 */
+  if((cm->flags & CM_CP9) && (cm->config_opts & CM_CONFIG_HMMLOCAL))
     {
       /* Set up the CP9 locality to enforce a subseq */
       emap = CreateEmitMap(cm); 
@@ -388,6 +390,8 @@ ConfigGlobal(CM_t *cm)
    * so we can't copy them back into cm->t[0], which is a problem. This is fragile. */
   if(!(cm->flags & CM_LOCAL_BEGIN))
     Die("ERROR in ConfigGlobal() trying to globally configure a CM that has no local begins.");
+  if(!(cm->flags & CM_LOCAL_END))
+    Die("ERROR in ConfigGlobal() trying to globally configure a CM that has no local ends.");
   if(cm->root_trans == NULL)
     Die("ERROR in ConfigGlobal() cm->root_trans NULL. CM must have been configured with local begins before we can configure it back to global");
   
@@ -937,7 +941,7 @@ EnforceFindEnfStart(CM_t *cm, int enf_cc_start)
 int
 ConfigForEVDMode(CM_t *cm, int evd_mode)
 {
-  int do_cm_local = FALSE;
+  int do_cm_local  = FALSE;
   int do_cp9_local = FALSE;
 
   /* First set search opts and flags based on evd_mode */
@@ -984,7 +988,7 @@ ConfigForEVDMode(CM_t *cm, int evd_mode)
   /* configure CM and, if needed, CP9 */
   if(cm->search_opts & CM_SEARCH_HMMONLY)
     {
-      if(cm->cp9 == NULL) /* build it */
+      if(!(cm->flags & CM_CP9) || cm->cp9 == NULL) /* build it */
 	{
 	  if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))
 	    Die("Couldn't build a CP9 HMM from the CM\n");

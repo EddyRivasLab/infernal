@@ -39,9 +39,6 @@
 
 static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_freq, 
 				      int N, int L, int evd_mode);
-static float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N, 
-				    int use_cm_cutoff, float cm_ecutoff, int db_size,
-				    int cm_evd_mode, int hmm_evd_mode, int do_fastfil);
 static int CopyFThrInfo(CP9FilterThr_t *src, CP9FilterThr_t *dest);
 static int CopyCMStatsEVD(CMStats_t *src, CMStats_t *dest);
 
@@ -79,6 +76,11 @@ main(int argc, char **argv)
   sigset_t         blocksigs;	       /* list of signals to protect from             */
   int              do_timings = TRUE;  /* TRUE to print timings, FALSE not to         */
   ESL_STOPWATCH   *w;                  /* watch for timing EVD, filter thr calc times */
+  int              ncm;                /* number of CMs read from cmfile              */
+  int              cmalloc;            /* for alloc'ing CMStats_t objects             */
+  int              optset;             /* boolean value for esl_get_opts()            */
+  double          *gc_freq;            /* GC frequency array [0..100(GC_SEGMENTS)]    */
+  int              i;                  /* counter over GC segments                    */
 
   /* EVD related variables */
   int              do_qdb = TRUE;      /* TRUE to use QDB while searching with CM     */
@@ -87,6 +89,7 @@ main(int argc, char **argv)
   int              cmevdN  = 1000;     /* # samples used to calculate  CM EVDs        */
   int              hmmevdN = 5000;     /* # samples used to calculate HMM EVDs        */
   int              evdN;               /* either cmevdN or hmmevdN                    */
+  int              evd_mode;           /* counter over evd modes                      */
 
   /* CP9 HMM filtering threshold related variables */
   int              do_fil = TRUE;      /* TRUE to calc filter thr, FALSE if --onlyevd */
@@ -95,13 +98,7 @@ main(int argc, char **argv)
   float            fraction = 0.95;    /* fraction of CM hits req'd to find with HMM  */
   float            cm_ecutoff = 10;    /* minimum CM E-value we care about            */
   int              use_cm_cutoff = TRUE; /* TRUE to use cm_ecutoff, FALSE not to      */
-  int              evd_mode;           /* counter over evd modes                      */
   int              fthr_mode;          /* counter over fthr modes                     */
-  int              i;                  /* counter over GC segnments                   */
-  double          *gc_freq;            /* GC frequency array [0..100(GC_SEGMENTS)]    */
-  int              optset;             /* boolean value for esl_get_opts()            */
-  int              ncm;                /* number of CMs read from cmfile              */
-  int              cmalloc;            /* for alloc'ing CMStats_t objects             */
   int              db_size = 1000000;  /* we assume a 1MB database, for use w/cm_ecutoff     */
 
   /*****************************************************************
@@ -495,212 +492,6 @@ static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_f
 
  ERROR:
   return status;
-}
-
-
-/*
- * Function: FindCP9FilterThreshold()
- * Incept:   EPN, Wed May  2 10:00:45 2007
- *
- * Purpose:  Sample sequences from a CM and determine the CP9 HMM E-value
- *           threshold necessary to recognize a specified fraction of those
- *           hits. Sequences are sampled from the CM until N with a E-value
- *           better than cm_ecutoff are sampled (those with worse E-values
- *           are rejected). CP9 scans are carried out in either local or
- *           glocal mode depending on hmm_evd_mode. CM is configured in 
- *           local/glocal and sampled seqs are scored in CYK/inside depending
- *           on fthr_mode (4 possibilities). E-values are determined using
- *           lambda from cm->stats, and a recalc'ed mu using database size
- *           of 'db_size'.
- *
- *           If do_fastfil and fthr_mode is local or glocal CYK, parsetree 
- *           scores of emitted sequences are assumed to an optimal CYK scores 
- *           (not nec true). This saves a lot of time b/c no need to
- *           scan emitted seqs, but it's statistically wrong. 
- *           If do_fastfil and fthr_mode is local or glocal inside, 
- *           contract is violated and we Die. Current strategy *outside*
- *           of this function is to copy HMM filtering thresholds from
- *           CYK for Inside cases.
- *
- *           If !do_fastfil this function takes much longer b/c emitted 
- *           parsetree score is not necessarily (a) optimal nor (b) highest 
- *           score returned from a CYK scan (a subseq of the full seq could
- *           score higher even if parsetree was optimal). For Inside, Inside
- *           scan will always be higher than parstree score. This means we have
- *           to scan each emitted seq with CYK or Inside.
- *
- * Args:
- *           cm           - the CM
- *           cmstats      - CM stats object we'll get EVD stats from
- *           fraction     - target fraction of CM hits to detect with CP9
- *           N            - number of sequences to sample from CM better than cm_minsc
- *           use_cm_cutoff- TRUE to only accept CM parses w/E-values above cm_ecutoff
- *           cm_ecutoff   - minimum CM E-value to accept 
- *           db_size      - DB size (nt) to use w/cm_ecutoff to calc CM bit score cutoff 
- *           fthr_mode    - gives CM search strategy to use, and EVD to use
- *           hmm_evd_mode - CP9_L to search with  local HMM (we're filling a fthr->l_eval)
- *                          CP9_G to search with glocal HMM (we're filling a fthr->g_eval)
- *           do_fastfil   - TRUE to use fast method: assume parsetree score
- *                          is optimal CYK score
- * 
- * Returns: HMM E-value cutoff above which the HMM scores (fraction * N) CM 
- *          hits with CM E-values better than cm_ecutoff 
- * 
- */
-float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N, 
-			     int use_cm_cutoff, float cm_ecutoff, int db_size, 
-			     int fthr_mode, int hmm_evd_mode, int do_fastfil)
-{
-  Parsetree_t      *tr;         /* parsetree (TEMPORARY NOT REALLY NEEDED)*/
-  char             *dsq;        /* digitized sequence                     */
-  char             *seq;        /* alphabetic sequence                    */
-  float             sc;
-  float            *hmm_eval;
-  float            *hmm_sc;
-  int               nattempts = 0;
-  int               max_attempts;
-  int               L;
-  int               i;
-  int               gc_comp;
-  EVDInfo_t **cm_evd; 
-  EVDInfo_t **hmm_evd; 
-  double *cm_mu;
-  double *hmm_mu;
-  int passed;
-  int p;                    /* counter over partitions */
-  double pval;
-  double x;     
-  float *cm_minbitsc = NULL;/* minimum CM bit score to allow to pass for each partition */
-
-  /* Contract check */
-  if (cm->cp9 == NULL) 
-    Die("ERROR in FindCP9FilterThreshold() cp9 is NULL\n");
-  if (fraction < 0. || fraction > 1.)  
-    Die("ERROR in FindCP9FilterThreshold() fraction is %f, should be [0.0..1.0]\n", fraction);
-  if((fthr_mode != CM_LI) && (fthr_mode != CM_GI) && (fthr_mode != CM_LC) && (fthr_mode != CM_GC))
-    Die("ERROR in FindCP9FilterThreshold() fthr_mode not CM_LI, CM_GI, CM_LC, or CM_GC\n");
-  if(hmm_evd_mode != CP9_L && hmm_evd_mode != CP9_G)
-    Die("ERROR in FindCP9FilterThreshold() hmm_evd_mode not CP9_L or CP9_G\n");
-  if(do_fastfil && (fthr_mode == CM_LI || fthr_mode == CM_GI))
-    Die("ERROR in FindCP9FilterThreshold() do_fastfil TRUE, but fthr_mode CM_GI or CM_LI\n");
-
-  /* Configure the CM based on the stat mode */
-  ConfigForEVDMode(cm, fthr_mode);
-  cm_evd   = cmstats->evdAA[fthr_mode];
-  hmm_evd  = cmstats->evdAA[hmm_evd_mode];
-
-  hmm_eval  = MallocOrDie(sizeof(float) * N);
-  hmm_sc    = MallocOrDie(sizeof(float) * N);
-  max_attempts = 500 * N;
-  seq    = NULL;
-  dsq    = NULL;
-  tr     = NULL;
-  /* Configure the HMM based on the hmm_evd_mode */
-  if(hmm_evd_mode == CP9_L)
-    CPlan9SWConfig(cm->cp9, ((cm->cp9->M)-1.)/cm->cp9->M,  /* all start pts equiprobable, including 1 */
-		   ((cm->cp9->M)-1.)/cm->cp9->M);          /* all end pts equiprobable, including M */
-  else /* hmm_evd_mode == CP9_G (it's in the contract) */
-    CPlan9GlobalConfig(cm->cp9);
-  CP9Logoddsify(cm->cp9);
-
-  if(use_cm_cutoff) printf("CM E cutoff: %f\n", cm_ecutoff);
-  else              printf("Not using CM cutoff\n");
-
-  /* Determine bit cutoff for each partition, calc'ed from cm_ecutoff */
-  cm_minbitsc = MallocOrDie(sizeof(float)  * cmstats->np);
-  cm_mu       = MallocOrDie(sizeof(double) * cmstats->np);
-  hmm_mu      = MallocOrDie(sizeof(double) * cmstats->np);
-  for (p = 0; p < cmstats->np; p++)
-    {
-      /* First determine mu based on db_size */
-      hmm_mu[p]  = log(hmm_evd[p]->K * ((double) db_size)) / hmm_evd[p]->lambda;
-      cm_mu[p]   = log(cm_evd[p]->K  * ((double) db_size)) / cm_evd[p]->lambda;
-      /* Now determine bit score */
-      cm_minbitsc[p] = cm_mu[p] - (log(cm_ecutoff) / cm_evd[p]->lambda);
-      if(use_cm_cutoff)
-	printf("E: %f p: %d %d--%d bit score: %f\n", cm_ecutoff, p, 
-	       cmstats->ps[p], cmstats->pe[p], cm_minbitsc[p]);
-    }
-
-  /* Strategy: 
-   * Emit sequences one at a time from CM, scanning each with CM 
-   * (local or glocal, CYK or Inside as specified by fthr_mode). If best scan
-   * score meets cm_ecutoff threshold, search it with CP9 in local or glocal 
-   * mode (specified by hmm_evd_mode) and save top CP9 score. Repeat
-   * until N seqs have been searched with CP9.
-   */
-
-  /* Emit seqs until we have N that meet score cutoff */
-  for (i = 0; i < N; i++)
-    {
-      if(nattempts++ > max_attempts) 
-	Die("ERROR number of attempts exceeded 500 times number of seqs.\n");
-      passed = FALSE;
-      cm->search_opts &= ~CM_SEARCH_HMMONLY;
-      while(!passed && nattempts <= max_attempts)
-	{
-	  if(dsq != NULL) free(dsq);
-	  if(seq != NULL) free(seq);
-	  if(tr != NULL) FreeParsetree(tr);
-	  EmitParsetree(cm, &tr, &seq, &dsq, &L); /* we don't care about the parsetree, 
-						   * we have to scan each seq to get score */
-	  if(do_fastfil) 
-	    sc = ParsetreeScore(cm, tr, dsq, FALSE); 
-	  else
-	    sc = actually_search_target(cm, dsq, 1, L,
-					0.,    /* cutoff is 0 bits (actually we'll find highest
-						* negative score if it's < 0.0) */
-					0.,    /* CP9 cutoff is 0 bits */
-					NULL,  /* don't keep results */
-					FALSE, /* don't filter with a CP9 HMM */
-					FALSE, /* we're not calcing CM  stats */
-					FALSE, /* we're not calcing CP9 stats */
-					NULL); /* filter fraction N/A */
-	  /* Only accept if E-value of best hit in this seq is better than our cutoff.
-	   * To do that we first determine which partition to use EVD from */
-	  gc_comp = get_gc_comp(seq, 1, L); /* should be i and j of best hit, but
-					     * EVD construction is wrong too, it uses 
-					     * GC_COMP of full sample seq, not of best hit
-					     * within it. */
-	  p    = cmstats->gc2p[gc_comp];
-	  if(sc >= cm_minbitsc[p])
-	    passed = TRUE;
-	  nattempts++;
-	}
-      if(nattempts > max_attempts)
-	Die("ERROR number of attempts exceeded 50 times number of seqs.\n");
-      /* Scan seq with HMM */
-      cm->search_opts |= CM_SEARCH_HMMONLY;
-      hmm_sc[i] = actually_search_target(cm, dsq, 1, L,
-					 cm->cutoff, cm->cp9_cutoff,
-					 NULL,  /* don't report hits to a results structure */
-					 FALSE, /* we're not filtering with a CP9 HMM */
-					 FALSE, /* we're not building a histogram for CM stats  */
-					 FALSE, /* we're not building a histogram for CP9 stats */
-					 NULL); /* filter fraction, irrelevant here */
-      /*printf("hmm_mu[p]: %f hmm_evd[p]->mu: %f\n", hmm_mu[p], hmm_evd[p]->mu);*/
-      hmm_eval[i] = RJK_ExtremeValueE(hmm_sc[i], hmm_mu[p], hmm_evd[p]->lambda);
-      /*printf("hmm_eval[i]: %f orig eval: %f\n", hmm_eval[i], 
-	RJK_ExtremeValueE(hmm_sc[i], hmm_evd[p]->mu, hmm_evd[p]->lambda));*/
-   }
-  /* Sort the HMM E-values with quicksort */
-  esl_vec_FSortIncreasing(hmm_eval, N);
-  esl_vec_FSortDecreasing(hmm_sc, N);
-
-  for (i = 0; i < N; i++)
-    printf("%d i: %4d hmm sc: %10.4f hmm E: %10.4f\n", hmm_evd_mode, i, hmm_sc[i], hmm_eval[i]);
-  printf("\n\nnattempts: %d\n", nattempts);
-
-  /* Clean up and exit */
-  free(hmm_eval);
-  free(hmm_sc);
-  free(hmm_mu);
-  free(cm_mu);
-  free(cm_minbitsc);
-  if(dsq != NULL) free(dsq);
-  if(seq != NULL) free(seq);
-  /* Return threshold */
-  return hmm_eval[(int) ((fraction) * (float) N)];
 }
 
 

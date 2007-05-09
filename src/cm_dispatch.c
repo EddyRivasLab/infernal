@@ -101,7 +101,8 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons)
 				 NULL); /* filter fraction, TEMPORARILY NULL            */
 	  remove_overlapping_hits (dbseq->results[reversed],
 				   1, dbseq->sq[reversed]->n);
-	  if (cm->cutoff_type == E_CUTOFF) 
+	  if ((!cm->search_opts & CM_SEARCH_HMMONLY) && (cm->cutoff_type == E_CUTOFF) || 
+	      ( cm->search_opts & CM_SEARCH_HMMONLY) && (cm->cp9_cutoff_type == E_CUTOFF))
 	    remove_hits_over_e_cutoff (cm, dbseq->results[reversed],
 				       dbseq->sq[reversed]->seq, 
 				       (cm->search_opts & CM_SEARCH_HMMONLY)); /* HMM hits? */
@@ -269,7 +270,8 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 		  remove_overlapping_hits
 		    (active_seqs[active_seq_index]->results[0], 
 		     1, active_seqs[active_seq_index]->sq[0]->n);
-		  if (cm->cutoff_type == E_CUTOFF)
+		  if ((!cm->search_opts & CM_SEARCH_HMMONLY) && (cm->cutoff_type == E_CUTOFF) || 
+		      ( cm->search_opts & CM_SEARCH_HMMONLY) && (cm->cp9_cutoff_type == E_CUTOFF))
 		    remove_hits_over_e_cutoff 
 		      (cm, active_seqs[active_seq_index]->results[0],
 		       active_seqs[active_seq_index]->sq[0]->seq,
@@ -279,7 +281,8 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 		      remove_overlapping_hits 
 			(active_seqs[active_seq_index]->results[1],
 			 1, active_seqs[active_seq_index]->sq[1]->n);
-		      if (cm->cutoff_type == E_CUTOFF)
+		      if ((!cm->search_opts & CM_SEARCH_HMMONLY) && (cm->cutoff_type == E_CUTOFF) || 
+			  ( cm->search_opts & CM_SEARCH_HMMONLY) && (cm->cp9_cutoff_type == E_CUTOFF))
 			remove_hits_over_e_cutoff 
 			  (cm, active_seqs[active_seq_index]->results[1],
 			   active_seqs[active_seq_index]->sq[1]->seq,
@@ -1165,7 +1168,6 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	  orig_dmax[v] = cm->dmax[v];
 	}
     }	  
-
   if(do_sub) /* to get spos and epos for the sub_cm, 
 	      * we config the HMM to local mode with equiprobably start/end points.*/
       {
