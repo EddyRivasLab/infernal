@@ -116,7 +116,7 @@ int debug_print_cmstats(CMStats_t *cmstats)
   printf("fthr gi filter threshold:\n");
   debug_print_filterthrinfo(cmstats, cmstats->fthrA[CM_GI]);
   printf("\n\n");
-  return 0;
+  return eslOK;
 }
 
 /* Function: debug_print_evdinfo
@@ -124,7 +124,7 @@ int debug_print_cmstats(CMStats_t *cmstats)
 int debug_print_evdinfo(EVDInfo_t *evd)
 {
   printf("N: %d L: %d lambda: %.5f mu: %.5f K: %.5f\n", evd->N, evd->L, evd->lambda, evd->mu, evd->K);
-  return 0;
+  return eslOK;
 }
 
 /* Function: debug_print_filterthrinfo
@@ -133,11 +133,14 @@ int debug_print_filterthrinfo(CMStats_t *cmstats, CP9FilterThr_t *fthr)
 {
   double l_x;
   double g_x;
-  g_x = esl_gumbel_invcdf((1.-fthr->g_pval), cmstats->evdAA[CP9_G][0]->mu, cmstats->evdAA[CP9_G][0]->lambda);
-  l_x = esl_gumbel_invcdf((1.-fthr->l_pval), cmstats->evdAA[CP9_L][0]->mu, cmstats->evdAA[CP9_L][0]->lambda);
-  printf("\tN: %d gsc: %.5f (%.5f bits) lsc: %.5f (%.5f bits)\n\tcmsc: %.5f fraction: %.3f, was_fast: %d\n",
-	 fthr->N, fthr->g_pval, g_x, fthr->l_pval, l_x, fthr->cm_pval, fthr->fraction, fthr->was_fast);
-  return 0;
+  
+  g_x = cmstats->evdAA[CP9_G][0]->mu - 
+    (log(fthr->g_eval) / cmstats->evdAA[CP9_G][0]->lambda);
+  l_x = cmstats->evdAA[CP9_L][0]->mu - 
+    (log(fthr->l_eval) / cmstats->evdAA[CP9_L][0]->lambda);
+  printf("\tN: %d gsc: %.5f (%.5f bits) lsc: %.5f (%.5f bits)\n\tcmsc: %.5f fraction: %.3f db_size: %d was_fast: %d\n",
+	 fthr->N, fthr->g_eval, g_x, fthr->l_eval, l_x, fthr->cm_eval, fthr->fraction, fthr->db_size, fthr->was_fast);
+  return eslOK;
 }
 
 /* Function: get_gc_comp
@@ -453,7 +456,7 @@ int CM2EVD_mode(CM_t *cm, int *ret_cm_evd_mode,
   int cp9_evd_mode;
 
   /* check contract */
-  if((!cm->flags & CM_CP9) || cm->cp9 == NULL)
+  if(!(cm->flags & CM_CP9) || cm->cp9 == NULL)
     Die("ERROR no CP9 in CM2EVD_mode()\n");
 
   if(cm->flags & CM_LOCAL_BEGIN)

@@ -920,7 +920,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
   if(dsq == NULL)
     Die("in CYKBandedScan, dsq is NULL\n");
   if(!(cm->flags & CM_QDB))
-    Die("in CYkBandedScan, QDBs invalid\n");
+    Die("in CYKBandedScan, QDBs invalid\n");
 
   /*PrintDPCellsSaved(cm, dmin, dmax, W);*/
 

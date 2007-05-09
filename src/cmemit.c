@@ -23,6 +23,8 @@
 #include "msa.h"		/* squid's multiple sequence i/o        */
 #include "cm_dispatch.h"	
 #include <esl_vectorops.h>
+#include <esl_histogram.h>
+#include <esl_stats.h>
 
 static char banner[] = "cmemit - generate sequences from a covariance model";
 
@@ -531,11 +533,16 @@ main(int argc, char **argv)
       float             cm_sc;
       float             *hmm_sc;
       //float             cm_minsc = 9.8;
-      float             cm_minsc = 17;
+      float             cm_minsc = IMPOSSIBLE;
       int               max_attempts = 500 * nseq;
       int               nattempts = 0;
       float             f;
       float             hmm_cutoff = 0.;
+      double           *xv;
+      int               n;
+      double            mean, var;
+      ESL_HISTOGRAM *h = esl_histogram_CreateFull(100, 1000, 0.2);
+
       hmm_sc = MallocOrDie(sizeof(float) * nseq);
 
       /* Put the CP9 in global alignment mode, unless --hmmlocal was specified */
@@ -560,6 +567,7 @@ main(int argc, char **argv)
 	      if(nattempts++ > max_attempts)
 		Die("ERROR number of attempts exceeded 50 times number of seqs.\n");
 	    }
+	  esl_histogram_Add(h, cm_sc);
 	  hmm_sc[i] = actually_search_target(cm, dsq, 1, L,
 					     cm->cutoff, cm->cp9_cutoff,
 					     NULL,  /* don't report hits to a results structure */
@@ -574,6 +582,14 @@ main(int argc, char **argv)
 	}
       /* Sort the HMM scores with quicksort */
       esl_vec_FSortIncreasing(hmm_sc, nseq);
+
+      esl_histogram_Print(stdout, h);
+
+      esl_histogram_GetData(h, &xv, &n);
+      esl_stats_Mean(xv, n, &mean, &var);
+      printf("N: %d\nMean:   %f\nVar:    %f\nSt dev: %f\n", n, mean, var, sqrt(var));
+
+      esl_histogram_Destroy(h);
       
       f = 0.9;
       while(f < 1.001)

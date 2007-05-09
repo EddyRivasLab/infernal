@@ -359,11 +359,11 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
     {
       free(cm->dmin);
       free(cm->dmax);
+      cm->dmin = NULL;
+      cm->dmax = NULL;
       cm->flags &= ~CM_QDB;
       ConfigQDB(cm);
     }      
-  else
-    cm->flags &= ~CM_QDB;
 
   CMLogoddsify(cm);
   return;
@@ -416,11 +416,11 @@ ConfigGlobal(CM_t *cm)
     {
       free(cm->dmin);
       free(cm->dmax);
+      cm->dmin = NULL;
+      cm->dmax = NULL;
       cm->flags &= ~CM_QDB;
       ConfigQDB(cm);
     }      
-  else
-    cm->flags &= ~CM_QDB;
 
   CMLogoddsify(cm);
   return;
@@ -781,11 +781,11 @@ EnforceSubsequence(CM_t *cm)
     {
       free(cm->dmin);
       free(cm->dmax);
+      cm->dmin = NULL;
+      cm->dmax = NULL;
       cm->flags &= ~CM_QDB;
       ConfigQDB(cm);
     }      
-  else
-    cm->flags &= ~CM_QDB;
 
   CMLogoddsify(cm);
 
@@ -999,8 +999,17 @@ ConfigForEVDMode(CM_t *cm, int evd_mode)
     }
   else /* we're using the CM, make sure it's configured properly */
     {
-      if(do_cm_local)
-	ConfigLocal(cm, 0.5, 0.5);
+      if(do_cm_local) 
+	{
+	  /* If we're in local, wastefully convert to global, 
+	   * then back to local, so we follow our rule that ConfigLocal()
+	   * cannot be called with a model already locally configured.
+	   * That rule was put in place to force caller to understand, what
+	   * it's doing. */
+	  if(cm->flags & CM_LOCAL_BEGIN || cm->flags & CM_LOCAL_END) 
+	    ConfigGlobal(cm);
+	  ConfigLocal(cm, 0.5, 0.5);
+	}
       else if(cm->flags & CM_LOCAL_BEGIN || cm->flags & CM_LOCAL_END) /* these *should* both either be up or down */
 	ConfigGlobal(cm);
       CMLogoddsify(cm);
@@ -1027,15 +1036,24 @@ ConfigQDB(CM_t *cm)
     Die("ERROR in ConfigQDB() CM_QDB flag already up.\n");
 
   safe_windowlen = cm->W * 2;
-  if(cm->dmin != NULL) free(cm->dmin);
-  if(cm->dmax != NULL) free(cm->dmax);
-
+  if(cm->dmin != NULL) 
+    {
+      free(cm->dmin);
+      cm->dmin = NULL;
+    }
+  if(cm->dmax != NULL)
+    {
+      free(cm->dmax);
+      cm->dmax = NULL;
+    }
   /*debug_print_cm_params(cm);*/
   while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta, 0, &(cm->dmin), &(cm->dmax), &gamma)))
     {
       FreeBandDensities(cm, gamma);
       free(cm->dmin);
       free(cm->dmax);
+      cm->dmin = NULL;
+      cm->dmax = NULL;
       safe_windowlen *= 2;
       if(safe_windowlen > 1000000)
 	Die("ERROR safe_windowlen big: %d\n", safe_windowlen);

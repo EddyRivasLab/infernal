@@ -40,22 +40,23 @@
 static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_freq, 
 				      int N, int L, int evd_mode);
 static float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N, 
-				    float cm_pcutoff, int cm_evd_mode, int hmm_evd_mode, 
-				    int do_fastfil);
+				    int use_cm_cutoff, float cm_ecutoff, int db_size,
+				    int cm_evd_mode, int hmm_evd_mode, int do_fastfil);
 static int CopyFThrInfo(CP9FilterThr_t *src, CP9FilterThr_t *dest);
 static int CopyCMStatsEVD(CMStats_t *src, CMStats_t *dest);
 
 static ESL_OPTIONS options[] = {
-  /* name           type      default  env  range     toggles      reqs   incomp  help   docgroup*/
-  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,    NULL, "show brief help on version and usage",   1 },
-  { "--cmevdN",  eslARG_INT,   "1000", NULL, "n>0",     NULL,      NULL,    NULL, "number of random sequences for CM EVD estimation",    1 },
-  { "--hmmevdN", eslARG_INT,   "5000", NULL, "n>0",     NULL,      NULL,    NULL, "number of random sequences for CP9 HMM EVD estimation",    1 },
-  { "--filN",    eslARG_INT,   "1000", NULL, "n>0",     NULL,      NULL,    NULL, "number of emitted sequences for HMM filter threshold calculation",    1 },
-  { "--cmP",     eslARG_REAL,   "0.001",NULL,"0<x<1",   NULL,      NULL,    NULL, "minimum CM P value to consider for filter threshold calculation", 1}, 
-  { "--fract",   eslARG_REAL, "0.95",  NULL, "0<x<=1",  NULL,      NULL,    NULL, "required fraction of CM hits that survive HMM filter", 1},
-  { "--onlyevd", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,    NULL, "only estimate EVDs, don't calculate filter thresholds", 1},
-  { "--onlyfil", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,    NULL, "only calculate filter thresholds, don't estimate EVDs", 1},
-  { "--fastfil", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,    NULL, "calculate filter thresholds quickly, by assuming parsetree score is optimal", 1},
+  /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
+  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
+  { "--cmevdN",  eslARG_INT,   "1000", NULL, "n>0",     NULL,      NULL, "--onlyfil", "number of random sequences for CM EVD estimation",    1 },
+  { "--hmmevdN", eslARG_INT,   "5000", NULL, "n>0",     NULL,      NULL, "--onlyfil", "number of random sequences for CP9 HMM EVD estimation",    1 },
+  { "--filN",    eslARG_INT,   "1000", NULL, "n>0",     NULL,      NULL, "--onlyevd", "number of emitted sequences for HMM filter threshold calc",    1 },
+  { "--cmeval",  eslARG_REAL,    "10", NULL, "x>0",     NULL,      NULL, "--onlyevd", "min CM E-val (for a 1MB db) to consider for filter thr calc", 1}, 
+  { "--nocmeval",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  "--cmeval", "accept all CM hits for filter calc, DO NOT use E-val cutoff", 1}, 
+  { "--fract",   eslARG_REAL,  "0.95", NULL, "0<x<=1",  NULL,      NULL, "--onlyevd",  "required fraction of CM hits that survive HMM filter", 1},
+  { "--onlyevd", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--onlyfil", "only estimate EVDs, don't calculate filter thresholds", 1},
+  { "--onlyfil", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--onlyevd", "only calculate filter thresholds, don't estimate EVDs", 1},
+  { "--fastfil", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--onlyevd", "calc filter thr quickly, assume parsetree sc is optimal", 1},
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -92,7 +93,8 @@ main(int argc, char **argv)
   int              filN    =  500;     /* # emitted seqs to use to calc filter thr    */
   int              do_fastfil = FALSE; /* TRUE: use fast hacky filter thr calc method */
   float            fraction = 0.95;    /* fraction of CM hits req'd to find with HMM  */
-  float            cmP = 0.001;        /* maximum CM P-value we care about            */
+  float            cm_ecutoff = 10;    /* minimum CM E-value we care about            */
+  int              use_cm_cutoff = TRUE; /* TRUE to use cm_ecutoff, FALSE not to      */
   int              evd_mode;           /* counter over evd modes                      */
   int              fthr_mode;          /* counter over fthr modes                     */
   int              i;                  /* counter over GC segnments                   */
@@ -100,6 +102,7 @@ main(int argc, char **argv)
   int              optset;             /* boolean value for esl_get_opts()            */
   int              ncm;                /* number of CMs read from cmfile              */
   int              cmalloc;            /* for alloc'ing CMStats_t objects             */
+  int              db_size = 1000000;  /* we assume a 1MB database, for use w/cm_ecutoff     */
 
   /*****************************************************************
    * Parse the command line
@@ -117,11 +120,13 @@ main(int argc, char **argv)
   esl_opt_GetIntegerOption(go, "--cmevdN",  &cmevdN);
   esl_opt_GetIntegerOption(go, "--hmmevdN", &hmmevdN);
   esl_opt_GetIntegerOption(go, "--filN",    &filN);
-  esl_opt_GetFloatOption  (go, "--cmP",     &cmP);
+  esl_opt_GetFloatOption  (go, "--cmeval",  &cm_ecutoff);
   esl_opt_GetFloatOption  (go, "--fract",   &fraction);
   esl_opt_GetBooleanOption(go, "--onlyevd", &optset); if(optset) do_fil = FALSE;
   esl_opt_GetBooleanOption(go, "--onlyfil", &optset); if(optset) do_evd = FALSE;
   esl_opt_GetBooleanOption(go, "--fastfil", &do_fastfil);
+  esl_opt_GetBooleanOption(go, "--nocmeval",&optset); 
+  if(optset) { use_cm_cutoff = FALSE; cm_ecutoff = -1.; }
 
   if (esl_opt_ArgNumber(go) != 1) {
     puts("Incorrect number of command line arguments.");
@@ -205,7 +210,6 @@ main(int argc, char **argv)
       
       /* Configure for QDB */
       if(do_qdb)          cm->config_opts |= CM_CONFIG_QDB;
-      cm->config_opts |= CM_CONFIG_LOCAL;
       ConfigCM(cm, NULL, NULL);
 
       /* Allocate and initialize cmstats data structure */
@@ -233,7 +237,7 @@ main(int argc, char **argv)
 		  esl_stopwatch_Display(stdout, w, "CM EVD fitting time:");
 		}
 	    }
-	  cm->flags &= CM_EVD_STATS;
+	  cm->flags |= CM_EVD_STATS;
 	}
       /****************************************************************
        * Determine CP9 filtering thresholds
@@ -253,21 +257,26 @@ main(int argc, char **argv)
 	      if(do_timings) esl_stopwatch_Start(w);
 	      cmstats[ncm]->fthrA[CM_LC]->N        = filN;
 	      cmstats[ncm]->fthrA[CM_LC]->fraction = fraction;
-	      cmstats[ncm]->fthrA[CM_LC]->cm_pval  = cmP;
+	      cmstats[ncm]->fthrA[CM_LC]->cm_eval  = cm_ecutoff;
+	      cmstats[ncm]->fthrA[CM_LC]->db_size  = db_size;
 	      cmstats[ncm]->fthrA[CM_LC]->was_fast = TRUE;
-	      cmstats[ncm]->fthrA[CM_LC]->l_pval   = 
-		FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, cmP, CM_LC, CP9_L, do_fastfil);
-	      cmstats[ncm]->fthrA[CM_LC]->g_pval   = 
-		FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, cmP, CM_LC, CP9_G, do_fastfil);
-
+	      cmstats[ncm]->fthrA[CM_LC]->l_eval   = 
+		FindCP9FilterThreshold(cm, cmstats[ncm], fraction, filN, use_cm_cutoff,
+				       cm_ecutoff, db_size, CM_LC, CP9_L, do_fastfil);
+	      cmstats[ncm]->fthrA[CM_LC]->g_eval   = 
+		FindCP9FilterThreshold(cm, cmstats[ncm], fraction, filN, use_cm_cutoff,
+				       cm_ecutoff, db_size, CM_LC, CP9_G, do_fastfil);
 	      cmstats[ncm]->fthrA[CM_GC]->N        = filN;
 	      cmstats[ncm]->fthrA[CM_GC]->fraction = fraction;
-	      cmstats[ncm]->fthrA[CM_GC]->cm_pval  = cmP;
+	      cmstats[ncm]->fthrA[CM_GC]->cm_eval  = cm_ecutoff;
+	      cmstats[ncm]->fthrA[CM_GC]->db_size  = db_size;
 	      cmstats[ncm]->fthrA[CM_GC]->was_fast = TRUE;
-	      cmstats[ncm]->fthrA[CM_GC]->l_pval   = 
-		FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, cmP, CM_GC, CP9_L, do_fastfil);
-	      cmstats[ncm]->fthrA[CM_GC]->g_pval = 
-		FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, cmP, CM_GC, CP9_G, do_fastfil);
+	      cmstats[ncm]->fthrA[CM_GC]->l_eval   = 
+		FindCP9FilterThreshold(cm, cmstats[ncm], fraction, filN, use_cm_cutoff, 
+				       cm_ecutoff, db_size, CM_GC, CP9_L, do_fastfil);
+	      cmstats[ncm]->fthrA[CM_GC]->g_eval = 
+		FindCP9FilterThreshold(cm, cmstats[ncm], fraction, filN, use_cm_cutoff, 
+				       cm_ecutoff, db_size, CM_GC, CP9_G, do_fastfil);
 
 	      CopyFThrInfo(cmstats[ncm]->fthrA[CM_LC], cmstats[ncm]->fthrA[CM_LI]);
 	      CopyFThrInfo(cmstats[ncm]->fthrA[CM_GC], cmstats[ncm]->fthrA[CM_GI]);
@@ -283,12 +292,15 @@ main(int argc, char **argv)
 		if(do_timings) esl_stopwatch_Start(w);
 		cmstats[ncm]->fthrA[fthr_mode]->N        = filN;
 		cmstats[ncm]->fthrA[fthr_mode]->fraction = fraction;
-		cmstats[ncm]->fthrA[fthr_mode]->cm_pval  = cmP;
+		cmstats[ncm]->fthrA[fthr_mode]->cm_eval  = cm_ecutoff;
+		cmstats[ncm]->fthrA[fthr_mode]->db_size  = db_size;
 		cmstats[ncm]->fthrA[fthr_mode]->was_fast = FALSE;
-		cmstats[ncm]->fthrA[fthr_mode]->l_pval =  /*  local */
-		  FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, cmP, fthr_mode, CP9_L, do_fastfil);
-		cmstats[ncm]->fthrA[fthr_mode]->g_pval =  /* glocal */
-		  FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, cmP, fthr_mode, CP9_G, do_fastfil);
+		cmstats[ncm]->fthrA[fthr_mode]->l_eval =  /*  local */
+		  FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, use_cm_cutoff,
+					 cm_ecutoff, db_size, fthr_mode, CP9_L, do_fastfil);
+		cmstats[ncm]->fthrA[fthr_mode]->g_eval =  /* glocal */
+		  FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, use_cm_cutoff,
+					 cm_ecutoff, db_size, fthr_mode, CP9_G, do_fastfil);
 		if(do_timings) 
 		  { 
 		    esl_stopwatch_Stop(w);  
@@ -466,8 +478,6 @@ static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_f
 				   (!(cm->search_opts & CM_SEARCH_HMMONLY)), /* TRUE if we're calcing CM  stats */
 				   (cm->search_opts & CM_SEARCH_HMMONLY),    /* TRUE if we're calcing CP9 stats */
 				   NULL);          /* filter fraction N/A */
-	  /*if(i % 100 == 0)
-	    printf("(%4d) SCORE: %f\n", i, score);*/
 	  /* Add best score to histogram */
 	  esl_histogram_Add(h, score);
 	}
@@ -477,18 +487,6 @@ static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_f
       evd[p]->K = exp(evd[p]->mu * evd[p]->lambda) / L;
       evd[p]->N = N;
       evd[p]->L = L;
-      
-      /* RSEARCH code to set mu, TEMPORARY */
-      /* Set mu from K, lambda, N */
-      N = 2000000;
-      tmp_mu = log(evd[p]->K*N)/evd[p]->lambda;
-      printf("RSEARCH mu: %f\n", tmp_mu);
-      x = esl_gumbel_invcdf(0.001, tmp_mu, evd[p]->lambda);
-      printf("bit score cutoff for Pval of 0.001: %f\n", x);
-      printf("Eval for bit score of: %f: %f\n", x,    
-	     RJK_ExtremeValueE(x, tmp_mu, 
-			       evd[p]->lambda));
-      
     }
   esl_histogram_Destroy(h);
   esl_randomness_Destroy(r);
@@ -504,14 +502,16 @@ static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_f
  * Function: FindCP9FilterThreshold()
  * Incept:   EPN, Wed May  2 10:00:45 2007
  *
- * Purpose:  Sample sequences from a CM and determine the CP9 HMM P-value
+ * Purpose:  Sample sequences from a CM and determine the CP9 HMM E-value
  *           threshold necessary to recognize a specified fraction of those
- *           hits. Sequences are sampled from the CM until N with a P-value
- *           better than cm_pcutoff are sampled (those with worse P-values
+ *           hits. Sequences are sampled from the CM until N with a E-value
+ *           better than cm_ecutoff are sampled (those with worse E-values
  *           are rejected). CP9 scans are carried out in either local or
  *           glocal mode depending on hmm_evd_mode. CM is configured in 
  *           local/glocal and sampled seqs are scored in CYK/inside depending
- *           on fthr_mode (4 possibilities). 
+ *           on fthr_mode (4 possibilities). E-values are determined using
+ *           lambda from cm->stats, and a recalc'ed mu using database size
+ *           of 'db_size'.
  *
  *           If do_fastfil and fthr_mode is local or glocal CYK, parsetree 
  *           scores of emitted sequences are assumed to an optimal CYK scores 
@@ -534,37 +534,43 @@ static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_f
  *           cmstats      - CM stats object we'll get EVD stats from
  *           fraction     - target fraction of CM hits to detect with CP9
  *           N            - number of sequences to sample from CM better than cm_minsc
- *           cm_pcutoff   - minimum CM P-value to accept 
- *           fthr_mode  - gives CM search strategy to use, and EVD to use
- *           hmm_evd_mode - CP9_L to search with  local HMM (we're filling a fthr->l_pval)
- *                          CP9_G to search with glocal HMM (we're filling a fthr->g_pval)
+ *           use_cm_cutoff- TRUE to only accept CM parses w/E-values above cm_ecutoff
+ *           cm_ecutoff   - minimum CM E-value to accept 
+ *           db_size      - DB size (nt) to use w/cm_ecutoff to calc CM bit score cutoff 
+ *           fthr_mode    - gives CM search strategy to use, and EVD to use
+ *           hmm_evd_mode - CP9_L to search with  local HMM (we're filling a fthr->l_eval)
+ *                          CP9_G to search with glocal HMM (we're filling a fthr->g_eval)
  *           do_fastfil   - TRUE to use fast method: assume parsetree score
  *                          is optimal CYK score
  * 
- * Returns: HMM P-value cutoff above which the HMM scores (fraction * N) CM 
- *          hits with CM P-values better than cm_pcutoff 
+ * Returns: HMM E-value cutoff above which the HMM scores (fraction * N) CM 
+ *          hits with CM E-values better than cm_ecutoff 
  * 
  */
-float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N, float cm_pcutoff, 
+float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N, 
+			     int use_cm_cutoff, float cm_ecutoff, int db_size, 
 			     int fthr_mode, int hmm_evd_mode, int do_fastfil)
 {
   Parsetree_t      *tr;         /* parsetree (TEMPORARY NOT REALLY NEEDED)*/
   char             *dsq;        /* digitized sequence                     */
   char             *seq;        /* alphabetic sequence                    */
   float             sc;
-  float            *hmm_pval;
+  float            *hmm_eval;
   float            *hmm_sc;
   int               nattempts = 0;
   int               max_attempts;
   int               L;
   int               i;
   int               gc_comp;
-  EVDInfo_t **evd; 
+  EVDInfo_t **cm_evd; 
+  EVDInfo_t **hmm_evd; 
+  double *cm_mu;
+  double *hmm_mu;
   int passed;
-  int p;                    /* partition each seq belongs in based on 1..L gc_comp (not entirely correct) */
-  int  pctr;                /* counter over partitions */
+  int p;                    /* counter over partitions */
   double pval;
   double x;     
+  float *cm_minbitsc = NULL;/* minimum CM bit score to allow to pass for each partition */
 
   /* Contract check */
   if (cm->cp9 == NULL) 
@@ -580,15 +586,15 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N
 
   /* Configure the CM based on the stat mode */
   ConfigForEVDMode(cm, fthr_mode);
-  evd  = cmstats->evdAA[fthr_mode];
+  cm_evd   = cmstats->evdAA[fthr_mode];
+  hmm_evd  = cmstats->evdAA[hmm_evd_mode];
 
-  hmm_pval  = MallocOrDie(sizeof(float) * N);
+  hmm_eval  = MallocOrDie(sizeof(float) * N);
   hmm_sc    = MallocOrDie(sizeof(float) * N);
   max_attempts = 500 * N;
   seq    = NULL;
   dsq    = NULL;
   tr     = NULL;
-
   /* Configure the HMM based on the hmm_evd_mode */
   if(hmm_evd_mode == CP9_L)
     CPlan9SWConfig(cm->cp9, ((cm->cp9->M)-1.)/cm->cp9->M,  /* all start pts equiprobable, including 1 */
@@ -597,21 +603,29 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N
     CPlan9GlobalConfig(cm->cp9);
   CP9Logoddsify(cm->cp9);
 
-  /* Print info about bit cutoff calc'ed from Pval cutoff */
-  printf("CM Pcutoff: %f\n", cm_pcutoff);
-  for (pctr = 0; pctr < cmstats->np; pctr++)
+  if(use_cm_cutoff) printf("CM E cutoff: %f\n", cm_ecutoff);
+  else              printf("Not using CM cutoff\n");
+
+  /* Determine bit cutoff for each partition, calc'ed from cm_ecutoff */
+  cm_minbitsc = MallocOrDie(sizeof(float)  * cmstats->np);
+  cm_mu       = MallocOrDie(sizeof(double) * cmstats->np);
+  hmm_mu      = MallocOrDie(sizeof(double) * cmstats->np);
+  for (p = 0; p < cmstats->np; p++)
     {
-      /*printf("using mu: %f lambda: %f\n", evd[pctr]->mu, evd[pctr]->lambda);*/
-      x = esl_gumbel_invcdf(cm_pcutoff, evd[pctr]->mu, evd[pctr]->lambda);
-      printf("%f P: %d %d--%d bit score: %f\n", cm_pcutoff, pctr, cmstats->ps[pctr], cmstats->pe[pctr], x);
-      x = esl_gumbel_invcdf((1-cm_pcutoff), evd[pctr]->mu, evd[pctr]->lambda);
-      printf("%f P: %d %d--%d bit score: %f\n", (1-cm_pcutoff), pctr, cmstats->ps[pctr], cmstats->pe[pctr], x);
+      /* First determine mu based on db_size */
+      hmm_mu[p]  = log(hmm_evd[p]->K * ((double) db_size)) / hmm_evd[p]->lambda;
+      cm_mu[p]   = log(cm_evd[p]->K  * ((double) db_size)) / cm_evd[p]->lambda;
+      /* Now determine bit score */
+      cm_minbitsc[p] = cm_mu[p] - (log(cm_ecutoff) / cm_evd[p]->lambda);
+      if(use_cm_cutoff)
+	printf("E: %f p: %d %d--%d bit score: %f\n", cm_ecutoff, p, 
+	       cmstats->ps[p], cmstats->pe[p], cm_minbitsc[p]);
     }
 
   /* Strategy: 
    * Emit sequences one at a time from CM, scanning each with CM 
    * (local or glocal, CYK or Inside as specified by fthr_mode). If best scan
-   * score meets cm_pcutoff threshold, search it with CP9 in local or glocal 
+   * score meets cm_ecutoff threshold, search it with CP9 in local or glocal 
    * mode (specified by hmm_evd_mode) and save top CP9 score. Repeat
    * until N seqs have been searched with CP9.
    */
@@ -642,15 +656,14 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N
 					FALSE, /* we're not calcing CM  stats */
 					FALSE, /* we're not calcing CP9 stats */
 					NULL); /* filter fraction N/A */
-	  /* Only accept if P-value of best hit in this seq is better than our cutoff.
+	  /* Only accept if E-value of best hit in this seq is better than our cutoff.
 	   * To do that we first determine which partition to use EVD from */
 	  gc_comp = get_gc_comp(seq, 1, L); /* should be i and j of best hit, but
 					     * EVD construction is wrong too, it uses 
 					     * GC_COMP of full sample seq, not of best hit
 					     * within it. */
 	  p    = cmstats->gc2p[gc_comp];
-	  pval = esl_gumbel_surv((double) sc, evd[p]->mu, evd[p]->lambda);
-	  if(pval < cm_pcutoff)
+	  if(sc >= cm_minbitsc[p])
 	    passed = TRUE;
 	  nattempts++;
 	}
@@ -665,25 +678,29 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N
 					 FALSE, /* we're not building a histogram for CM stats  */
 					 FALSE, /* we're not building a histogram for CP9 stats */
 					 NULL); /* filter fraction, irrelevant here */
-      hmm_pval[i] = esl_gumbel_surv((double) hmm_sc[i], 
-				    cmstats->evdAA[hmm_evd_mode][p]->mu, 
-				    cmstats->evdAA[hmm_evd_mode][p]->lambda);
-    }
-  /* Sort the HMM P-values with quicksort */
-  esl_vec_FSortIncreasing(hmm_pval, N);
+      /*printf("hmm_mu[p]: %f hmm_evd[p]->mu: %f\n", hmm_mu[p], hmm_evd[p]->mu);*/
+      hmm_eval[i] = RJK_ExtremeValueE(hmm_sc[i], hmm_mu[p], hmm_evd[p]->lambda);
+      /*printf("hmm_eval[i]: %f orig eval: %f\n", hmm_eval[i], 
+	RJK_ExtremeValueE(hmm_sc[i], hmm_evd[p]->mu, hmm_evd[p]->lambda));*/
+   }
+  /* Sort the HMM E-values with quicksort */
+  esl_vec_FSortIncreasing(hmm_eval, N);
   esl_vec_FSortDecreasing(hmm_sc, N);
 
   for (i = 0; i < N; i++)
-    printf("%d i: %4d hmm sc: %10.4f hmm P: %10.4f\n", hmm_evd_mode, i, hmm_sc[i], hmm_pval[i]);
+    printf("%d i: %4d hmm sc: %10.4f hmm E: %10.4f\n", hmm_evd_mode, i, hmm_sc[i], hmm_eval[i]);
   printf("\n\nnattempts: %d\n", nattempts);
 
   /* Clean up and exit */
-  free(hmm_pval);
+  free(hmm_eval);
   free(hmm_sc);
+  free(hmm_mu);
+  free(cm_mu);
+  free(cm_minbitsc);
   if(dsq != NULL) free(dsq);
   if(seq != NULL) free(seq);
   /* Return threshold */
-  return hmm_pval[(int) ((fraction) * (float) N)];
+  return hmm_eval[(int) ((fraction) * (float) N)];
 }
 
 
@@ -694,9 +711,10 @@ int CopyFThrInfo(CP9FilterThr_t *src, CP9FilterThr_t *dest)
 {
   dest->N           = src->N;
   dest->fraction    = src->fraction;
-  dest->cm_pval     = src->cm_pval;
-  dest->l_pval      = src->l_pval;
-  dest->g_pval      = src->g_pval;
+  dest->cm_eval     = src->cm_eval;
+  dest->l_eval      = src->l_eval;
+  dest->g_eval      = src->g_eval;
+  dest->db_size     = src->db_size;
   dest->was_fast    = src->was_fast;
   return eslOK;
 }
@@ -734,5 +752,6 @@ int CopyCMStatsEVD(CMStats_t *src, CMStats_t *dest)
     }
   return eslOK;
 }
+
 
 

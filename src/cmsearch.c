@@ -106,7 +106,7 @@ static char experts[] = "\
    --hmmfilter    : subseqs j-W+1..i+W-1 survive (j=end from Fwd, i=start from Bwd)\n\
    --hmmpad <n>   : w/--hmmfilter: subseqs i-<n>..j+<n> survive\n\
    --hmmonly      : don't use CM at all, just scan with HMM (Forward + Backward)\n\
-   --hmmE <x>     : use cutoff E-value of <x> for CP9 (possibly filtered) scan [df:500]\n\
+   --hmmE <x>     : use cutoff E-value of <x> for CP9 (possibly filtered) scan\n\
    --hmmT <x>     : use cutoff bit score of <x> for CP9 (possibly filtered) scan\n\
    --hmmgreedy    : resolve HMM overlapping hits with greedy algorithm a la RSEARCH\n\
    --hmmglocal    : w/--hmmfilter; use Glocal CP9 to filter\n\
@@ -201,10 +201,20 @@ main(int argc, char **argv)
   int   cm_cutoff_type;         /* E_CUTOFF or SCORE_CUTOFF for CM          */
   float cm_sc_cutoff;           /* min CM bit score to report               */
   float cm_e_cutoff;            /* max CM E value to report                 */
+  int   cp9_cutoff_set;         /* TRUE if --hmmE or --hmmT                 */
   int   cp9_cutoff_type;        /* E_CUTOFF or SCORE_CUTOFF for CP9         */
   float cp9_sc_cutoff;          /* min CP9 bit score to report              */
   float cp9_e_cutoff;           /* max CP9 E value to report                */
   int   p;                      /* counter over partitions                  */
+
+  /* For calculating HMM thresholds if they're set from cm->stats->fthr     */
+  int   cm_mode;                /* CM algorithm mode for calc'ing HMM thr   */
+  int   cp9_mode;               /* CP9 algorithm mode for calc'ing HMM thr  */
+  float cp9_eval;               /* HMM threshold P-val, from cm->stats->fthr*/
+  float cp9_bit_sc;             /* bit sc cp9_eval corresonds to            */
+  EVDInfo_t *cp9_evd;           /* pointer to CP9 EVD info to calc threshold*/
+  CP9FilterThr_t *fthr;         /* pointer to filter threshold stats        */
+  double tmp_mu;                /* for converting filtering E-value from fthr*/
 
   /* The enforce option (--enfstart and --enfseq), added specifically for   *
    * enforcing the template region for telomerase RNA searches.             *
@@ -324,6 +334,7 @@ main(int argc, char **argv)
   cp9_cutoff_type   = DEFAULT_CP9_CUTOFF_TYPE;
   cp9_sc_cutoff     = DEFAULT_CP9_CUTOFF;
   cp9_e_cutoff      = DEFAULT_CP9_CUTOFF;
+  cp9_cutoff_set    = FALSE;
   sc_boost_set      = FALSE;
   sc_boost          = 0.;
   cp9_sc_boost_set  = FALSE;
@@ -392,11 +403,13 @@ main(int argc, char **argv)
       } 
     else if  (strcmp(optname, "--hmmE")        == 0)   
       { 
+	cp9_cutoff_set = TRUE;
 	cp9_e_cutoff = atof(optarg); 
 	cp9_cutoff_type  = E_CUTOFF;
       }
     else if  (strcmp(optname, "--hmmT")        == 0)   
       { 
+	cp9_cutoff_set = TRUE;
 	cp9_sc_cutoff = atof(optarg); 
 	cp9_cutoff_type  = SCORE_CUTOFF;
       }
@@ -407,7 +420,7 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--tau")    == 0) tau       = atof(optarg);
     else if  (strcmp(optname, "--banddump")  == 0) do_bdump     = TRUE;
     else if  (strcmp(optname, "--sums")      == 0) use_sums     = TRUE;
-    else if  (strcmp(optname, "--scan2bands")== 0)  do_scan2bands= TRUE;
+    else if  (strcmp(optname, "--scan2bands")== 0) do_scan2bands= TRUE;
     else if  (strcmp(optname, "--greedy")    == 0) do_cmgreedy = TRUE;
     else if  (strcmp(optname, "--hmmgreedy") == 0) do_hmmgreedy = TRUE;
     else if  (strcmp(optname, "--hmmglocal") == 0) do_hmmglocal = TRUE;
@@ -524,113 +537,195 @@ main(int argc, char **argv)
       if (mpi_my_rank == mpi_master_rank) 
 	{
 #endif
-	  if (cm == NULL) 
-	    Die("%s corrupt\n", cmfile);
-
-	  printf("CM %d: %s\n", (ncm+1), cm->name);
-	  /*if(cm->desc == NULL) printf("desc: (NONE)\n");
-	    else printf("desc: %s\n", cm->desc);*/
-
-	  /* Set CM and CP9 parameters that can be changed at command line */
-	  cm->beta         = beta;     /* this will be DEFAULT_BETA unless set at command line */
-	  cm->tau          = tau;      /* this will be DEFAULT_TAU unless set at command line */
-	  cm->sc_boost     = sc_boost; /* this will be 0.0 unless set at command line */
-	  cm->cp9_sc_boost = sc_boost; /* this will be 0.0 unless set at command line */
-	  cm->hmmpad       = hmmpad;   /* this will be 0   unless set at command line */
-	  if (set_window) cm->W = set_W;
+      if (cm == NULL) 
+	Die("%s corrupt\n", cmfile);
       
-	  /* Set the cutoffs */
-	  cm->cutoff_type = cm_cutoff_type;  /* this will be DEFAULT_CM_CUTOFF_TYPE unless set at command line */
-	  if(cm->cutoff_type == SCORE_CUTOFF)
-	    cm->cutoff = cm_sc_cutoff;
-	  else
-	    {
-	      cm->cutoff = cm_e_cutoff;
-	      if(!(cm->flags & ~CM_EVD_STATS))
-		Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T and/or --hmmT.\n");
-	    }
-	  cm->cp9_cutoff_type = cp9_cutoff_type; /* this will be DEFAULT_CP9_CUTOFF_TYPE unless set at command line */
-	  if(cm->cp9_cutoff_type == SCORE_CUTOFF)
-	    cm->cp9_cutoff = cp9_sc_cutoff;
-	  else
-	    {
-	      cm->cp9_cutoff = cp9_e_cutoff;
-	      if(!(cm->flags & CM_EVD_STATS))
-		Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T and/or --hmmT.\n");
-	    }      
-	  /* If do_enforce set do_hmm_rescan to TRUE if we're filtering or scanning with an HMM,
-	   * this way only subseqs that include the enf_subseq should pass the filter */
-	  if((do_enforce && do_enforce_hmm) || 
-	     (do_enforce && (do_hmmfilter)))
-	    {  do_hmmrescan = TRUE; } 
-	  /* Update cm->config_opts and cm->search_opts based on command line options */
-	  if(do_local)        
-	    {
-	      cm->config_opts |= CM_CONFIG_LOCAL;
-	      cm->config_opts |= CM_CONFIG_HMMLOCAL;
-	    }
-	  if(do_zero_inserts) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
-	  if(!(do_qdb))       cm->search_opts |= CM_SEARCH_NOQDB;
-	  if(do_hmmonly)      cm->search_opts |= CM_SEARCH_HMMONLY;
-	  if(do_hmmfilter)    cm->search_opts |= CM_SEARCH_HMMFILTER;
-	  if(do_hmmpad)       cm->search_opts |= CM_SEARCH_HMMPAD;
-	  if(do_scan2bands)   cm->search_opts |= CM_SEARCH_HMMSCANBANDS;
-	  if(do_hmmrescan)    cm->search_opts |= CM_SEARCH_HMMRESCAN;
-	  if(use_sums)        cm->search_opts |= CM_SEARCH_SUMS;
-	  if(do_inside)       cm->search_opts |= CM_SEARCH_INSIDE;
-	  if(!do_revcomp)     cm->search_opts |= CM_SEARCH_TOPONLY;
-	  if(!do_align)       cm->search_opts |= CM_SEARCH_NOALIGN;
-	  if(do_null2)        cm->search_opts |= CM_SEARCH_NULL2;
-	  if(do_cmgreedy)     cm->search_opts |= CM_SEARCH_CMGREEDY;
-	  if(do_hmmgreedy)    cm->search_opts |= CM_SEARCH_HMMGREEDY;
-	  if(do_hmmglocal)    cm->search_opts |= CM_SEARCH_HMMGLOCAL;
-	  if(do_hgbanded)     cm->search_opts |= CM_SEARCH_HGBANDED;
-	  if(do_hbanded)      cm->search_opts |= CM_SEARCH_HBANDED;
-	  if(do_rtrans)       cm->flags       |= CM_RSEARCHTRANS;
+      printf("CM %d: %s\n", (ncm+1), cm->name);
+      /*if(cm->desc == NULL) printf("desc: (NONE)\n");
+	else printf("desc: %s\n", cm->desc);*/
 
-	  if(do_enforce)
-	    {
-	      cm->config_opts |= CM_CONFIG_ENFORCE;
-	      if(do_enforce_hmm) 
-		{
-		  /* This will be TRUE by default if(do_enforce). Off if --hmmonly
-		   * was also enabled.
-		   * We want to filter with the special enforced CP9 HMM,
-		   * unless --hmmfilter was enabled.*/
-		  cm->config_opts |= CM_CONFIG_ENFORCEHMM;
-		  if((!do_hmmonly) && (!do_hmmfilter))
-		    {
-		      do_hmmfilter = TRUE;
-		      cm->search_opts |= CM_SEARCH_HMMFILTER;
-		    }
-		}
-	      cm->enf_start    = EnforceFindEnfStart(cm, enf_cc_start); 
-	      cm->enf_seq      = enf_seq;
-	    }
-
-	  if(do_qdb) cm->config_opts |= CM_CONFIG_QDB;
-	  if(read_qdb)
-	    {
-	      /* read the bands from a file */
-	      if ((qdb_fp = fopen(qdb_file, "r")) == NULL)
-		Die("failed to open QDB file %s", qdb_file);
-	      if(!(QDBFileRead(qdb_fp, cm, &preset_dmin, &preset_dmax)))
-		{
-		  Die("ERROR reading QDB file: %s.\nDoes it correspond (same number of states) to this model?\n", qdb_file);
-		}
-	      fclose(qdb_fp);
-	    }
-	  else
-	    preset_dmin = preset_dmax = NULL;
+      /* Set CM and CP9 parameters that can be changed at command line */
+      cm->beta         = beta;     /* this will be DEFAULT_BETA unless set at command line */
+      cm->tau          = tau;      /* this will be DEFAULT_TAU unless set at command line */
+      cm->sc_boost     = sc_boost; /* this will be 0.0 unless set at command line */
+      cm->cp9_sc_boost = sc_boost; /* this will be 0.0 unless set at command line */
+      cm->hmmpad       = hmmpad;   /* this will be 0   unless set at command line */
       
-	  /*******************************
-	   * Open the sequence (db) file *
-	   *******************************/
-	  status = esl_sqfile_Open(seqfile, format, NULL, &dbfp);
-	  if (status == eslENOTFOUND) esl_fatal("No such file."); 
-	  else if (status == eslEFORMAT) esl_fatal("Format unrecognized."); 
-	  else if (status == eslEINVAL) esl_fatal("Can’t autodetect stdin or .gz."); 
-	  else if (status != eslOK) esl_fatal("Failed to open sequence database file, code %d.", status); 
+      /* If do_enforce set do_hmm_rescan to TRUE if we're filtering or scanning with an HMM,
+       * this way only subseqs that include the enf_subseq should pass the filter */
+      if((do_enforce && do_enforce_hmm) || 
+	 (do_enforce && (do_hmmfilter)))
+	{  do_hmmrescan = TRUE; } 
+      /* Update cm->config_opts and cm->search_opts based on command line options */
+      if(do_local)        
+	{
+	  cm->config_opts |= CM_CONFIG_LOCAL;
+	  cm->config_opts |= CM_CONFIG_HMMLOCAL;
+	}
+      if(do_zero_inserts) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
+      if(!(do_qdb))       cm->search_opts |= CM_SEARCH_NOQDB;
+      if(do_hmmonly)      cm->search_opts |= CM_SEARCH_HMMONLY;
+      if(do_hmmfilter)    cm->search_opts |= CM_SEARCH_HMMFILTER;
+      if(do_hmmpad)       cm->search_opts |= CM_SEARCH_HMMPAD;
+      if(do_scan2bands)   cm->search_opts |= CM_SEARCH_HMMSCANBANDS;
+      if(do_hmmrescan)    cm->search_opts |= CM_SEARCH_HMMRESCAN;
+      if(use_sums)        cm->search_opts |= CM_SEARCH_SUMS;
+      if(do_inside)       cm->search_opts |= CM_SEARCH_INSIDE;
+      if(!do_revcomp)     cm->search_opts |= CM_SEARCH_TOPONLY;
+      if(!do_align)       cm->search_opts |= CM_SEARCH_NOALIGN;
+      if(do_null2)        cm->search_opts |= CM_SEARCH_NULL2;
+      if(do_cmgreedy)     cm->search_opts |= CM_SEARCH_CMGREEDY;
+      if(do_hmmgreedy)    cm->search_opts |= CM_SEARCH_HMMGREEDY;
+      if(do_hmmglocal)    cm->search_opts |= CM_SEARCH_HMMGLOCAL;
+      if(do_hgbanded)     cm->search_opts |= CM_SEARCH_HGBANDED;
+      if(do_hbanded)      cm->search_opts |= CM_SEARCH_HBANDED;
+      if(do_rtrans)       cm->flags       |= CM_RSEARCHTRANS;
+
+      if(do_enforce)
+	{
+	  cm->config_opts |= CM_CONFIG_ENFORCE;
+	  if(do_enforce_hmm) 
+	    {
+	      /* This will be TRUE by default if(do_enforce). Off if --hmmonly
+	       * was also enabled.
+	       * We want to filter with the special enforced CP9 HMM,
+	       * unless --hmmfilter was enabled.*/
+	      cm->config_opts |= CM_CONFIG_ENFORCEHMM;
+	      if((!do_hmmonly) && (!do_hmmfilter))
+		{
+		  do_hmmfilter = TRUE;
+		  cm->search_opts |= CM_SEARCH_HMMFILTER;
+		}
+	    }
+	  cm->enf_start    = EnforceFindEnfStart(cm, enf_cc_start); 
+	  cm->enf_seq      = enf_seq;
+	}
+
+      if(do_qdb) cm->config_opts |= CM_CONFIG_QDB;
+      if(read_qdb)
+	{
+	  /* read the bands from a file */
+	  if ((qdb_fp = fopen(qdb_file, "r")) == NULL)
+	    Die("failed to open QDB file %s", qdb_file);
+	  if(!(QDBFileRead(qdb_fp, cm, &preset_dmin, &preset_dmax)))
+	    {
+	      Die("ERROR reading QDB file: %s.\nDoes it correspond (same number of states) to this model?\n", qdb_file);
+	    }
+	  fclose(qdb_fp);
+	}
+      else
+	preset_dmin = preset_dmax = NULL;
+	  
+      /* Set W here, after QDB is configured, which set W as dmax[0] */
+      if (set_window) cm->W = set_W;
+
+      /*******************************
+       * Open the sequence (db) file *
+       *******************************/
+      status = esl_sqfile_Open(seqfile, format, NULL, &dbfp);
+      if (status == eslENOTFOUND) esl_fatal("No such file."); 
+      else if (status == eslEFORMAT) esl_fatal("Format unrecognized."); 
+      else if (status == eslEINVAL) esl_fatal("Can’t autodetect stdin or .gz."); 
+      else if (status != eslOK) esl_fatal("Failed to open sequence database file, code %d.", status); 
+
+      GetDBInfo(dbfp, &N, NULL);
+      if (do_revcomp) N*=2;
+
+      /**************************************************************
+       * Set mu for EVD stats based on DB size, if EVD stats exist  *
+       **************************************************************/
+      if (cm->flags & CM_EVD_STATS)
+	{
+	  /* Set CM mu from K, lambda, N */
+	  for(i = 0; i < NEVDMODES; i++)
+	    for(p = 0; p < cm->stats->np; p++)
+	      cm->stats->evdAA[i][p]->mu = 
+		log(cm->stats->evdAA[i][p]->K * ((double) N)) /
+		cm->stats->evdAA[i][p]->lambda;
+	  printf ("CM/CP9 statistics read from CM file\n");
+	  if (cm->stats->np == 1) 
+	    printf ("No partition points\n");
+	  else 
+	    {
+	      printf ("Partition points are: ");
+	      for (p=0; p < cm->stats->np; p++)
+		printf ("%d %d..%d", p, cm->stats->ps[p], cm->stats->pe[p]);
+	    }
+	}
+      /*********************
+       * Set score cutoffs *
+       *********************/
+      /* Set the cutoffs, after we've read the DB file so can set up E-value cutoff for CP9 
+       * if we're using the P-value HMM threshold in CM file */
+      cm->cutoff_type = cm_cutoff_type;  /* this will be DEFAULT_CM_CUTOFF_TYPE unless set at command line */
+      if(cm->cutoff_type == SCORE_CUTOFF)
+	cm->cutoff = cm_sc_cutoff;
+      else
+	{
+	  cm->cutoff = cm_e_cutoff;
+	  if(!(cm->flags & CM_EVD_STATS))
+	    Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T and/or --hmmT.\n");
+	}
+      /* Set HMM cutoff as filter threshold read from CM file, unless --hmmT or --hmmE invoked. 
+       * To do this we need to convert the E-value cutoff written by cmcalibrate for database size
+       * of cm->stats->fthr[p]->dbsize to the corresponding E-value for the database size (N) 
+       * by converting it to a bit score then back to an E-value. 
+       */
+      if(!cp9_cutoff_set) /* cp9_cutoff_set is TRUE if --hmmT or --hmmE invoked at command line */
+	{
+	  /* If we don't have filther threshold stats in CM file, we require either 
+	   * --hmmE or --hmmT be invoked - so the user knows what's happening. */
+	  if(!(cm->flags & CM_EVD_STATS))
+	    Die("ERROR trying to use HMM filter thresholds but no EVD stats in CM file.\nUse cmcalibrate or use --hmmT or --hmmE.\n");
+	  if(!(cm->flags & CM_FTHR_STATS))
+	    Die("ERROR trying to use HMM filter thresholds but none in CM file.\nUse cmcalibrate or use --hmmT or --hmmE.\n");
+	  /* Use HMM filter threshold stats from CM file,
+	     First determine CM scanning mode */
+	  /* this call only works if CM has already been configured */
+	  if(do_local  && !do_inside) cm_mode = CM_LC;
+	  if(do_local  &&  do_inside) cm_mode = CM_LI;
+	  if(!do_local && !do_inside) cm_mode = CM_GC;
+	  if(!do_local &&  do_inside) cm_mode = CM_GI;
+	  //if(do_hmmlocal) cp9_mode = CP9_L;
+	  if(do_local)    cp9_mode = CP9_L;
+	  else            cp9_mode = CP9_G;
+	  fthr    = cm->stats->fthrA[cm_mode];
+	  cp9_evd = cm->stats->evdAA[cp9_mode][0]; 
+	  /* we use 1st partition, shouldn't make a difference which
+	   * one we use, b/c we're only converting E-value cutoff    */
+	  cp9_cutoff_type = E_CUTOFF;
+	  if(cp9_mode == CP9_L) 
+	    cp9_eval   = fthr->l_eval;
+	  else if(cp9_mode == CP9_G) 
+	    cp9_eval   = fthr->g_eval;
+	  tmp_mu       = log(cp9_evd->K  * ((double) fthr->db_size)) / cp9_evd->lambda;
+	  cp9_bit_sc   = tmp_mu - (log(cp9_eval) / cp9_evd->lambda);
+	  cp9_e_cutoff = RJK_ExtremeValueE(cp9_bit_sc,  cp9_evd->mu, cp9_evd->lambda);
+	  printf("CP9 bit score cutoff: %f\ncmcalibrate e-val cutoff: %f\nnew e-val cutoff: %f\n", cp9_bit_sc, cp9_eval, cp9_e_cutoff);
+	}
+      /* Set CP9 cutoff */
+      cm->cp9_cutoff_type = cp9_cutoff_type;
+      if(cm->cp9_cutoff_type == SCORE_CUTOFF)
+	cm->cp9_cutoff = cp9_sc_cutoff;
+      else
+	{
+	  cm->cp9_cutoff = cp9_e_cutoff;
+	  if(!(cm->flags & CM_EVD_STATS))
+	    Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T and/or --hmmT.\n");
+	}            
+      if(cm->cutoff_type == E_CUTOFF)
+	printf ("Using CM  E cutoff of %.2f\n", cm->cutoff);
+      else if (cm->cutoff_type == SCORE_CUTOFF) 
+	printf ("Using CM  score cutoff of %.2f\n", cm->cutoff);
+      fflush(stdout);
+      if(cm->cp9_cutoff_type == E_CUTOFF)
+	printf ("Using CP9 E cutoff of %.2f\n", cm->cp9_cutoff);
+      else if (cm->cp9_cutoff_type == SCORE_CUTOFF) 
+	printf ("Using CP9 score cutoff of %.2f\n", cm->cp9_cutoff);
+      fflush(stdout);
+
+      printf ("N = %ld\n\n", N);
+      fflush(stdout);
 
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	}   /* End of second block that is only done by master process */
@@ -641,12 +736,9 @@ main(int argc, char **argv)
       broadcast_cm(&cm, mpi_my_rank, mpi_master_rank);
 #endif
 
-      /* Configure the CM for search based on cm->config_opts 
-       * and cm->search_opts. Set local mode, make cp9 HMM, 
-       * calculate QD bands etc., preset_dmin and preset_dmax
-       * are NULL unless --qdbfile, and you can't enable 
-       * --qdbfile in MPI mode (we check for this and die if
-       * we're trying to above). 
+      /* Configure the CM for search based on cm->config_opts and cm->search_opts. 
+       * Set local mode, make cp9 HMM, calculate QD bands etc.
+       */
       CMLogoddsify(cm); /* temporary */
       ConfigCM(cm, preset_dmin, preset_dmax);
       if(cm->config_opts & CM_CONFIG_ENFORCE)
@@ -666,51 +758,6 @@ main(int argc, char **argv)
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	}
 #endif
-
-#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-      if (mpi_my_rank == mpi_master_rank) 
-	{
-#endif
-	  GetDBInfo(dbfp, &N, NULL);
-	  if (do_revcomp) N*=2;
-#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-	}
-      if (mpi_my_rank == mpi_master_rank) 
-	{
-#endif
-      if (cm->cutoff_type == E_CUTOFF ||   /* if either is TRUE, we've necessarily */
-	  cm->cp9_cutoff_type == E_CUTOFF) /* read stats from CM file (we checked above) */
-	
-	{
-	  /* Set CM mu from K, lambda, N */
-	  for(i = 0; i < NEVDMODES; i++)
-	    for(p = 0; p < cm->stats->np; p++)
-	      cm->stats->evdAA[i][p]->mu = 
-		log(cm->stats->evdAA[i][p]->K * ((double) N)) /
-		cm->stats->evdAA[i][p]->lambda;
-	  printf ("CM/CP9 statistics read from CM file\n");
-	  if (cm->stats->np == 1) 
-	    printf ("No partition points\n");
-	  else 
-	    {
-	      printf ("Partition points are: ");
-	      for (p=0; p < cm->stats->np; p++)
-		printf ("%d %d..%d", p, cm->stats->ps[p], cm->stats->pe[p]);
-	    }
-	}
-      if(cm->cutoff_type == E_CUTOFF)
-	printf ("Using CM  E cutoff of %.2f\n", cm->cutoff);
-      else if (cm->cutoff_type == SCORE_CUTOFF) 
-	printf ("Using CM  score cutoff of %.2f\n", cm->cutoff);
-      fflush(stdout);
-      if(cm->cp9_cutoff_type == E_CUTOFF)
-	printf ("Using CP9 E cutoff of %.2f\n", cm->cp9_cutoff);
-      else if (cm->cp9_cutoff_type == SCORE_CUTOFF) 
-	printf ("Using CP9 score cutoff of %.2f\n", cm->cp9_cutoff);
-      fflush(stdout);
-
-      printf ("N = %ld\n\n", N);
-      fflush(stdout);
 
       /*************************************************
        *    Do the search
@@ -784,7 +831,7 @@ main(int argc, char **argv)
     {
       StopwatchFree(mpi_watch);
 #endif
-      printf ("Fin\n");
+printf ("Fin\n");
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
     }
 #endif

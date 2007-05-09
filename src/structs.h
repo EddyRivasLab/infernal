@@ -21,8 +21,8 @@
 /* various default parameters for CMs and CP9 HMMs */ 
 #define DEFAULT_CM_CUTOFF 50.0
 #define DEFAULT_CM_CUTOFF_TYPE E_CUTOFF
-#define DEFAULT_CP9_CUTOFF 500.0
-#define DEFAULT_CP9_CUTOFF_TYPE E_CUTOFF
+#define DEFAULT_CP9_CUTOFF 0.0
+#define DEFAULT_CP9_CUTOFF_TYPE SCORE_CUTOFF
 #define DEFAULT_BETA   0.0000001
 #define DEFAULT_TAU    0.0000001
 #define DEFAULT_HMMPAD 0
@@ -38,6 +38,7 @@
 /* Constants for type of cutoff */
 #define SCORE_CUTOFF 0
 #define E_CUTOFF     1
+#define MAX_E_CUTOFF 1000000
 
 /* Alphabet information is declared here, and defined in globals.c.
  */
@@ -206,9 +207,10 @@ typedef struct evdinfo_s {
 typedef struct cp9filterthr_s {
   int   N;             /* number of CM hits used to get threshold ((N*fraction) passed)*/
   float fraction;      /* fraction of empirical CM hits survive filter */
-  float cm_pval;       /* CM P-value threshold, we rejected worse than   */
-  float l_pval;        /*  local CP9 scanning P-value threshold    */
-  float g_pval;        /* glocal CP9 scanning P-value threshold    */
+  float cm_eval;       /* CM E-value threshold, we rejected worse than   */
+  float l_eval;        /*  local CP9 scanning E-value threshold    */
+  float g_eval;        /* glocal CP9 scanning E-value threshold    */
+  int   db_size;       /* db size used to calculate EVD mu for *_eval calculations */
   int   was_fast;      /* TRUE if hacky fast method for calcing thresholds was used */
 } CP9FilterThr_t;
 
@@ -326,14 +328,6 @@ typedef struct cm_s {
   int   cp9_cutoff_type;/* either SC_CUTOFF or E_CUTOFF                                       */
   float cp9_cutoff;     /* min bit score or max E val to keep from a CP9 scan                 */
   
-  /* EVD statistics for the CM */  
-  //double    lambda[GC_SEGMENTS];   /* EVD lambda, one for each GC segment   */
-  //double    K     [GC_SEGMENTS];   /* EVD K, one for each GC segment        */
-  //double    mu    [GC_SEGMENTS];   /* EVD mu, one for each GC segment       */
-  //double cp9_lambda[GC_SEGMENTS];   /* CP9's EVD lambda, one for each GC segment   */
-  //double cp9_K     [GC_SEGMENTS];   /* CP9's EVD K, one for each GC segment        */
-  //double cp9_mu    [GC_SEGMENTS];   /* CP9's EVD mu, one for each GC segment       */
-
   int    W;             /* max d: max size of a hit (EPN 08.18.05) */
   float  el_selfsc;     /* score of a self transition in the EL state
 			 * the EL state emits only on self transition (EPN 11.15.05)*/
