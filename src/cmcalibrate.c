@@ -584,7 +584,6 @@ static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_f
       /* Fit the scores to a Gumbel */
       esl_histogram_GetTailByMass(h, 0.5, &xv, &n, &z); /* fit to right 50% */
       esl_gumbel_FitCensored(xv, n, z, xv[0], &(evd[p]->mu), &(evd[p]->lambda));
-      evd[p]->K = exp(evd[p]->mu * evd[p]->lambda) / L;
       evd[p]->N = N;
       evd[p]->L = L;
     }
@@ -641,7 +640,6 @@ int CopyCMStatsEVD(CMStats_t *src, CMStats_t *dest)
 	{
 	  dest->evdAA[i][p]->N      = src->evdAA[i][p]->N;
 	  dest->evdAA[i][p]->L      = src->evdAA[i][p]->L;
-	  dest->evdAA[i][p]->K      = src->evdAA[i][p]->K;
 	  dest->evdAA[i][p]->mu     = src->evdAA[i][p]->mu;
 	  dest->evdAA[i][p]->lambda = src->evdAA[i][p]->lambda;
 	}
@@ -789,7 +787,6 @@ static int mpi_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_freq,
 	  /* Fit the scores to a Gumbel */
 	  esl_histogram_GetTailByMass(h, 0.5, &xv, &n, &z); /* fit to right 50% */
 	  esl_gumbel_FitCensored(xv, n, z, xv[0], &(evd[p]->mu), &(evd[p]->lambda));
-	  evd[p]->K = exp(evd[p]->mu * evd[p]->lambda) / L;
 	  evd[p]->N = N;
 	  evd[p]->L = L;
 	}

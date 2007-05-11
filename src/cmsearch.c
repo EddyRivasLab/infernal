@@ -207,6 +207,7 @@ main(int argc, char **argv)
   float cp9_sc_cutoff;          /* min CP9 bit score to report              */
   float cp9_e_cutoff;           /* max CP9 E value to report                */
   int   p;                      /* counter over partitions                  */
+  double tmp_K;                 /* for converting mu from cmfile to mu for N*/
 
   /* For calculating HMM thresholds if they're set from cm->stats->fthr     */
   int   cm_mode;                /* CM algorithm mode for calc'ing HMM thr   */
@@ -634,12 +635,15 @@ main(int argc, char **argv)
        **************************************************************/
       if (cm->flags & CM_EVD_STATS)
 	{
-	  /* Set CM mu from K, lambda, N */
+	  /* Determine K from mu, lambda, L, then set CM mu for N */
 	  for(i = 0; i < NEVDMODES; i++)
 	    for(p = 0; p < cm->stats->np; p++)
-	      cm->stats->evdAA[i][p]->mu = 
-		log(cm->stats->evdAA[i][p]->K * ((double) N)) /
-		cm->stats->evdAA[i][p]->lambda;
+	      {
+		tmp_K = exp(cm->stats->evdAA[i][p]->mu * cm->stats->evdAA[i][p]->lambda) / 
+		  cm->stats->evdAA[i][p]->L;
+		cm->stats->evdAA[i][p]->mu = log(tmp_K * ((double) N)) /
+		  cm->stats->evdAA[i][p]->lambda;
+	      }
 	  printf ("CM/CP9 statistics read from CM file\n");
 	  if (cm->stats->np == 1) 
 	    printf ("No partition points\n");
@@ -765,7 +769,8 @@ main(int argc, char **argv)
 		cp9_eval   = fthr->l_eval;
 	      else if(cp9_mode == CP9_G) 
 		cp9_eval   = fthr->g_eval;
-	      tmp_mu       = log(cp9_evd->K  * ((double) fthr->db_size)) / cp9_evd->lambda;
+	      tmp_K        = exp(cp9_evd->mu * cp9_evd->lambda) / cp9_evd->L;
+	      tmp_mu       = log(tmp_K  * ((double) fthr->db_size)) / cp9_evd->lambda;
 	      cp9_bit_sc   = tmp_mu - (log(cp9_eval) / cp9_evd->lambda);
 	      cp9_e_cutoff = RJK_ExtremeValueE(cp9_bit_sc,  cp9_evd->mu, cp9_evd->lambda);
 	      printf("CP9 bit score cutoff: %f\ncmcalibrate e-val cutoff: %f\nnew e-val cutoff: %f\n", cp9_bit_sc, cp9_eval, cp9_e_cutoff);

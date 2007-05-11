@@ -1440,6 +1440,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N
   double x;     
   float *cm_minbitsc = NULL;/* minimum CM bit score to allow to pass for each partition */
   float return_eval;
+  double tmp_K;
 
   /* Contract check */
   if (!(cm->flags & CM_CP9) || cm->cp9 == NULL) 
@@ -1482,8 +1483,10 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N
   for (p = 0; p < cmstats->np; p++)
     {
       /* First determine mu based on db_size */
-      hmm_mu[p]  = log(hmm_evd[p]->K * ((double) db_size)) / hmm_evd[p]->lambda;
-      cm_mu[p]   = log(cm_evd[p]->K  * ((double) db_size)) / cm_evd[p]->lambda;
+      tmp_K      = exp(hmm_evd[p]->mu * hmm_evd[p]->lambda) / hmm_evd[p]->L;
+      hmm_mu[p]  = log(tmp_K * ((double) db_size)) / hmm_evd[p]->lambda;
+      tmp_K      = exp(cm_evd[p]->mu * cm_evd[p]->lambda) / cm_evd[p]->L;
+      cm_mu[p]   = log(tmp_K  * ((double) db_size)) / cm_evd[p]->lambda;
       /* Now determine bit score */
       cm_minbitsc[p] = cm_mu[p] - (log(cm_ecutoff) / cm_evd[p]->lambda);
       if(use_cm_cutoff)
@@ -1562,6 +1565,8 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N
 
   /* Clean up and exit */
   return_eval = hmm_eval[(int) ((fraction) * (float) N)];
+  if(return_eval > ((float) db_size)) /* E-val > db_size is useless */
+    return_eval = (float) db_size;
   free(hmm_eval);
   free(hmm_sc);
   free(hmm_mu);
@@ -1651,6 +1656,7 @@ float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, i
       EVDInfo_t **hmm_evd; 
       double *cm_mu;
       double *hmm_mu;
+      double  tmp_K;
       int passed;
       int p;                    /* counter over partitions */
       double pval;
@@ -1694,8 +1700,10 @@ float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, i
       for (p = 0; p < cmstats->np; p++)
 	{
 	  /* First determine mu based on db_size */
-	  hmm_mu[p]  = log(hmm_evd[p]->K * ((double) db_size)) / hmm_evd[p]->lambda;
-	  cm_mu[p]   = log(cm_evd[p]->K  * ((double) db_size)) / cm_evd[p]->lambda;
+	  tmp_K      = exp(hmm_evd[p]->mu * hmm_evd[p]->lambda) / hmm_evd[p]->L;
+	  hmm_mu[p]  = log(tmp_K * ((double) db_size)) / hmm_evd[p]->lambda;
+	  tmp_K      = exp(cm_evd[p]->mu * cm_evd[p]->lambda) / cm_evd[p]->L;
+	  cm_mu[p]   = log(tmp_K  * ((double) db_size)) / cm_evd[p]->lambda;
 	  /* Now determine bit score */
 	  cm_minbitsc[p] = cm_mu[p] - (log(cm_ecutoff) / cm_evd[p]->lambda);
 	  if(use_cm_cutoff)
@@ -1797,6 +1805,8 @@ float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, i
       
       /* Clean up and exit */
       return_eval = hmm_eval[(int) ((fraction) * (float) N)];
+      if(return_eval > ((float) db_size)) /* E-val > db_size is useless */
+	return_eval = (float) db_size;
       free(scores);
       free(dsqlist);
       free(plist);

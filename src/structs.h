@@ -198,7 +198,6 @@ typedef struct evdinfo_s {
   int    L;             /* length of samples stats calc'ed from        */
   double mu;		/* location param for gumbel, calced w/K,lambda*/
   double lambda;	/* scale param gumbel                          */
-  double K;		/* ? */
 } EVDInfo_t;
 
 /* Structure CP9FThresh_t: CP9 HMM filter thresholds, determined empirically

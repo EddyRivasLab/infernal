@@ -127,7 +127,7 @@ int debug_print_cmstats(CMStats_t *cmstats, int has_fthr)
  */
 int debug_print_evdinfo(EVDInfo_t *evd)
 {
-  printf("N: %d L: %d lambda: %.5f mu: %.5f K: %.5f\n", evd->N, evd->L, evd->lambda, evd->mu, evd->K);
+  printf("N: %d L: %d lambda: %.5f mu: %.5f\n", evd->N, evd->L, evd->lambda, evd->mu);
   return eslOK;
 }
 

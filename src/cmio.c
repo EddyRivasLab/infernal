@@ -56,16 +56,15 @@ static unsigned int v01swap  = 0xb1b0ede3; /* v0.1 binary, byteswapped         *
 #define CMIO_EVDL         26
 #define CMIO_EVDMU        27
 #define CMIO_EVDLAMBDA    28
-#define CMIO_EVDK         29
-#define CMIO_FTHRN        30
-#define CMIO_FTHRFR       31
-#define CMIO_FTHRCMP      32
-#define CMIO_FTHRLE       33
-#define CMIO_FTHRGE       34
-#define CMIO_FTHRDB       35
-#define CMIO_FTHRFAST     36
-#define CMIO_HASEVD       37
-#define CMIO_HASFTHR      38
+#define CMIO_FTHRN        29
+#define CMIO_FTHRFR       30
+#define CMIO_FTHRCMP      31
+#define CMIO_FTHRLE       32
+#define CMIO_FTHRGE       33
+#define CMIO_FTHRDB       34
+#define CMIO_FTHRFAST     35
+#define CMIO_HASEVD       36
+#define CMIO_HASFTHR      37
 
 static void write_ascii_cm(FILE *fp, CM_t *cm);
 static int  read_ascii_cm(CMFILE *cmf, CM_t **ret_cm);
@@ -335,57 +334,51 @@ write_ascii_cm(FILE *fp, CM_t *cm)
   int p;
   if (cm->flags & CM_EVD_STATS)
     {
-      fprintf(fp, "PART  %3d  ", cm->stats->np);
+      fprintf(fp, "PART    %3d  ", cm->stats->np);
       for(p = 0; p < cm->stats->np; p++)
-	fprintf(fp, "%3d  %3d  ", cm->stats->ps[p], cm->stats->pe[p]);
+	fprintf(fp, "%5d  %5d  ", cm->stats->ps[p], cm->stats->pe[p]);
       fprintf(fp, "\n");
       for(p = 0; p < cm->stats->np; p++)
 	{
-	  fprintf(fp, "E-LC  %3d  %5d  %4d  %.5f  %.5f  %.5f\n", 
+	  fprintf(fp, "E-LC    %3d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->evdAA[CM_LC][p]->N, cm->stats->evdAA[CM_LC][p]->L, 
-		  cm->stats->evdAA[CM_LC][p]->mu, cm->stats->evdAA[CM_LC][p]->lambda, 
-		  cm->stats->evdAA[CM_LC][p]->K);
-	  fprintf(fp, "E-GC  %3d  %5d  %4d  %.5f  %.5f  %.5f\n", 
+		  cm->stats->evdAA[CM_LC][p]->mu, cm->stats->evdAA[CM_LC][p]->lambda);
+	  fprintf(fp, "E-GC    %3d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->evdAA[CM_GC][p]->N, cm->stats->evdAA[CM_GC][p]->L, 
-		  cm->stats->evdAA[CM_GC][p]->mu, cm->stats->evdAA[CM_GC][p]->lambda, 
-		  cm->stats->evdAA[CM_GC][p]->K);
-	  fprintf(fp, "E-LI  %3d  %5d  %4d  %.5f  %.5f  %.5f\n", 
+		  cm->stats->evdAA[CM_GC][p]->mu, cm->stats->evdAA[CM_GC][p]->lambda);
+	  fprintf(fp, "E-LI    %3d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->evdAA[CM_LI][p]->N, cm->stats->evdAA[CM_LI][p]->L, 
-		  cm->stats->evdAA[CM_LI][p]->mu, cm->stats->evdAA[CM_LI][p]->lambda, 
-		  cm->stats->evdAA[CM_LI][p]->K);
-	  fprintf(fp, "E-GI  %3d  %5d  %4d  %.5f  %.5f  %.5f\n", 
+		  cm->stats->evdAA[CM_LI][p]->mu, cm->stats->evdAA[CM_LI][p]->lambda);
+	  fprintf(fp, "E-GI    %3d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->evdAA[CM_GI][p]->N, cm->stats->evdAA[CM_GI][p]->L, 
-		  cm->stats->evdAA[CM_GI][p]->mu, cm->stats->evdAA[CM_GI][p]->lambda, 
-		  cm->stats->evdAA[CM_GI][p]->K);
-	  fprintf(fp, "E-CP9L  %3d %5d  %4d  %.5f  %.5f  %.5f\n", 
+		  cm->stats->evdAA[CM_GI][p]->mu, cm->stats->evdAA[CM_GI][p]->lambda);
+	  fprintf(fp, "E-CP9L  %3d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->evdAA[CP9_L][p]->N, cm->stats->evdAA[CP9_L][p]->L, 
-		  cm->stats->evdAA[CP9_L][p]->mu, cm->stats->evdAA[CP9_L][p]->lambda, 
-		  cm->stats->evdAA[CP9_L][p]->K);
-	  fprintf(fp, "E-CP9G  %3d %5d  %4d  %.5f  %.5f  %.5f\n", 
+		  cm->stats->evdAA[CP9_L][p]->mu, cm->stats->evdAA[CP9_L][p]->lambda);
+	  fprintf(fp, "E-CP9G  %3d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->evdAA[CP9_G][p]->N, cm->stats->evdAA[CP9_G][p]->L, 
-		  cm->stats->evdAA[CP9_G][p]->mu, cm->stats->evdAA[CP9_G][p]->lambda, 
-		  cm->stats->evdAA[CP9_G][p]->K);
+		  cm->stats->evdAA[CP9_G][p]->mu, cm->stats->evdAA[CP9_G][p]->lambda);
 	}
       /* currently either all EVD stats are calc'ed or none */
 
       if (cm->flags & CM_FTHR_STATS) /* FTHR stats are only possibly valid IF EVD stats valid */
 	{
-	  fprintf(fp, "FT-LC  %5d  %.3f  %.5f  %.5f  %.5f  %d  %d\n", 
+	  fprintf(fp, "FT-LC  %5d  %.3f  %.3f  %15.3f  %15.3f  %d  %d\n", 
 		  cm->stats->fthrA[CM_LC]->N, cm->stats->fthrA[CM_LC]->fraction, 
 		  cm->stats->fthrA[CM_LC]->cm_eval, cm->stats->fthrA[CM_LC]->l_eval,
 		  cm->stats->fthrA[CM_LC]->g_eval, cm->stats->fthrA[CM_LC]->db_size,
 		  cm->stats->fthrA[CM_LC]->was_fast);
-	  fprintf(fp, "FT-GC  %5d  %.3f  %.5f  %.5f  %.5f  %d  %d\n", 
+	  fprintf(fp, "FT-GC  %5d  %.3f  %.3f  %15.3f  %15.3f  %d  %d\n", 
 		  cm->stats->fthrA[CM_GC]->N, cm->stats->fthrA[CM_GC]->fraction, 
 		  cm->stats->fthrA[CM_GC]->cm_eval, cm->stats->fthrA[CM_GC]->l_eval,
 		  cm->stats->fthrA[CM_GC]->g_eval, cm->stats->fthrA[CM_GC]->db_size,
 		  cm->stats->fthrA[CM_GC]->was_fast);
-	  fprintf(fp, "FT-LI  %5d  %.3f  %.5f  %.5f  %.5f  %d  %d\n", 
+	  fprintf(fp, "FT-LI  %5d  %.3f  %.3f  %15.3f  %15.3f  %d  %d\n", 
 		  cm->stats->fthrA[CM_LI]->N, cm->stats->fthrA[CM_LI]->fraction, 
 		  cm->stats->fthrA[CM_LI]->cm_eval, cm->stats->fthrA[CM_LI]->l_eval,
 		  cm->stats->fthrA[CM_LI]->g_eval, cm->stats->fthrA[CM_LI]->db_size,
 		  cm->stats->fthrA[CM_LI]->was_fast);
-	  fprintf(fp, "FT-GI  %5d  %.3f  %.5f  %.5f  %.5f  %d  %d\n", 
+	  fprintf(fp, "FT-GI  %5d  %.3f  %.3f  %15.3f  %15.3f  %d  %d\n", 
 	      cm->stats->fthrA[CM_GI]->N, cm->stats->fthrA[CM_GI]->fraction, 
 		  cm->stats->fthrA[CM_GI]->cm_eval, cm->stats->fthrA[CM_GI]->l_eval,
 		  cm->stats->fthrA[CM_GI]->g_eval, cm->stats->fthrA[CM_GI]->db_size,
@@ -584,9 +577,6 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
 	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
 	if (! IsReal(tok))                                    goto FAILURE;
 	cm->stats->evdAA[evd_mode][p]->lambda = atof(tok);
-	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	if (! IsReal(tok))                                    goto FAILURE;
-	cm->stats->evdAA[evd_mode][p]->K = atof(tok);
 	
 	evd_flags[evd_mode] = TRUE;
       }
@@ -837,7 +827,6 @@ write_binary_cm(FILE *fp, CM_t *cm)
 	      tagged_fwrite(CMIO_EVDL,      &cm->stats->evdAA[i][p]->L,      sizeof(int),    1, fp);
 	      tagged_fwrite(CMIO_EVDMU,     &cm->stats->evdAA[i][p]->mu,     sizeof(float),  1, fp);
 	      tagged_fwrite(CMIO_EVDLAMBDA, &cm->stats->evdAA[i][p]->lambda, sizeof(float),  1, fp);
-	      tagged_fwrite(CMIO_EVDK,      &cm->stats->evdAA[i][p]->K,      sizeof(float),  1, fp);
 	    }
 	}
       /* HMM filter threshold stats, can only be valid if EVD_STATS also valid */ 
@@ -942,7 +931,6 @@ read_binary_cm(CMFILE *cmf, CM_t **ret_cm)
 	      if (! tagged_fread(CMIO_EVDL,     (void *) &(cm->stats->evdAA[i][p]->L),     sizeof(int),   1, fp)) goto FAILURE;
 	      if (! tagged_fread(CMIO_EVDMU,    (void *) &(cm->stats->evdAA[i][p]->mu),    sizeof(float), 1, fp)) goto FAILURE;
 	      if (! tagged_fread(CMIO_EVDLAMBDA,(void *) &(cm->stats->evdAA[i][p]->lambda),sizeof(float), 1, fp)) goto FAILURE;
-	      if (! tagged_fread(CMIO_EVDK,     (void *) &(cm->stats->evdAA[i][p]->K),     sizeof(float), 1, fp)) goto FAILURE;
 	    }
 	}
       cm->flags |= CM_EVD_STATS;
