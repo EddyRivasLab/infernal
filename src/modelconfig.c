@@ -947,37 +947,37 @@ ConfigForEVDMode(CM_t *cm, int evd_mode)
   /* First set search opts and flags based on evd_mode */
   switch (evd_mode) {
   case CM_LC: /* local CYK */
-    printf("CM_LC\n");
+    //printf("CM_LC\n");
     cm->search_opts &= ~CM_SEARCH_INSIDE;
     cm->search_opts &= ~CM_SEARCH_HMMONLY;
     do_cm_local  = TRUE;
     break;
   case CM_GC: /* glocal CYK */
-    printf("CM_GC\n");
+    //printf("CM_GC\n");
     cm->search_opts &= ~CM_SEARCH_INSIDE;
     cm->search_opts &= ~CM_SEARCH_HMMONLY;
     do_cm_local  = FALSE;
     break;
   case CM_LI: /* local inside */
-    printf("CM_LI\n");
+    //printf("CM_LI\n");
     cm->search_opts |= CM_SEARCH_INSIDE;
     cm->search_opts &= ~CM_SEARCH_HMMONLY;
     do_cm_local  = TRUE;
     break;
   case CM_GI: /* glocal inside */
-    printf("CM_GI\n");
+    //printf("CM_GI\n");
     cm->search_opts |= CM_SEARCH_INSIDE;
     cm->search_opts &= ~CM_SEARCH_HMMONLY;
     do_cm_local  = FALSE;
     break;
   case CP9_L: /* local CP9 Forward */
-    printf("CP9_L\n");
+    //printf("CP9_L\n");
     cm->search_opts &= ~CM_SEARCH_INSIDE;
     cm->search_opts |= CM_SEARCH_HMMONLY;
     do_cp9_local  = TRUE;
     break;
   case CP9_G: /* glocal CP9 Forward */
-    printf("CP9_G\n");
+    //printf("CP9_G\n");
     cm->search_opts &= ~CM_SEARCH_INSIDE;
     cm->search_opts |= CM_SEARCH_HMMONLY;
     do_cp9_local  = FALSE;
@@ -1008,7 +1008,7 @@ ConfigForEVDMode(CM_t *cm, int evd_mode)
 	  /* If we're in local, wastefully convert to global, 
 	   * then back to local, so we follow our rule that ConfigLocal()
 	   * cannot be called with a model already locally configured.
-	   * That rule was put in place to force caller to understand, what
+	   * That rule was put in place to force caller to understand what
 	   * it's doing. */
 	  if(cm->flags & CM_LOCAL_BEGIN || cm->flags & CM_LOCAL_END) 
 	    ConfigGlobal(cm);
@@ -1051,9 +1051,8 @@ ConfigQDB(CM_t *cm)
       cm->dmax = NULL;
     }
   /*debug_print_cm_params(cm);*/
-  while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta, 0, &(cm->dmin), &(cm->dmax), &gamma)))
+  while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta, 0, &(cm->dmin), &(cm->dmax), NULL)))
     {
-      FreeBandDensities(cm, gamma);
       free(cm->dmin);
       free(cm->dmax);
       cm->dmin = NULL;
@@ -1066,6 +1065,5 @@ ConfigQDB(CM_t *cm)
    * hits that are bigger than we're allowing with QDB. */
   cm->W = cm->dmax[0];
   cm->flags |= CM_QDB; /* raise the QDB flag */
-  FreeBandDensities(cm, gamma);
   return eslOK;
 }

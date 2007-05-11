@@ -21,7 +21,7 @@
 
 #include "config.h"
 
-#ifdef USE_MPI
+#ifdef USE_MPI 
 
 #define BUFSIZE 16384
 #define MIN_CHUNK_D_MULTIPLIER 10
@@ -31,6 +31,7 @@
 #include "mpifuncs.h"
 #include "structs.h"
 #include "funcs.h"
+#include "cm_dispatch.h"
 
 #include <string.h>
 
@@ -88,8 +89,6 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
   int position = 0;         /* Where I am in the buffer */
   int nstates, nnodes;
   int enf_len;
-  /*printf("entered broadcast_cm my: %d master: %d\n", mpi_my_rank, mpi_master_rank);*/
-  
   position = 0;
   if (mpi_my_rank == mpi_master_rank) 
     {   /* I'm in charge */
@@ -264,15 +263,15 @@ void search_second_broadcast (CM_t **cm, long *N, int mpi_my_rank, int mpi_maste
       MPI_Pack (&N, 1, MPI_LONG, buf, BUFSIZE, &position, MPI_COMM_WORLD);
       if((*cm)->search_opts & CM_SEARCH_CMSTATS) /* pack the CM EVD parameters */
 	{
-	  MPI_Pack ((*cm)->lambda,GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-	  MPI_Pack ((*cm)->K,     GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-	  MPI_Pack ((*cm)->mu,    GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+	  //MPI_Pack ((*cm)->lambda,GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+	  //MPI_Pack ((*cm)->K,     GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+	  //MPI_Pack ((*cm)->mu,    GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
 	}
       if((*cm)->search_opts & CM_SEARCH_CP9STATS) /* pack the CP9 EVD parameters */
 	{
-	  MPI_Pack ((*cm)->cp9_lambda, GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-	  MPI_Pack ((*cm)->cp9_mu,     GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-	  MPI_Pack ((*cm)->cp9_K,      GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+	  //MPI_Pack ((*cm)->cp9_lambda, GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+	  //MPI_Pack ((*cm)->cp9_mu,     GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+	  //MPI_Pack ((*cm)->cp9_K,      GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
 	}
     }
   MPI_Bcast (buf, BUFSIZE, MPI_PACKED, mpi_master_rank, MPI_COMM_WORLD);
@@ -287,26 +286,26 @@ void search_second_broadcast (CM_t **cm, long *N, int mpi_my_rank, int mpi_maste
        * the one we're sending from the master node. */
       if((*cm)->search_opts & CM_SEARCH_CMSTATS) /* unpack the CM EVD parameters */
 	{
-	  MPI_Unpack (buf, BUFSIZE, &position, ((*cm)->lambda), GC_SEGMENTS, MPI_DOUBLE, MPI_COMM_WORLD);
-	  MPI_Unpack (buf, BUFSIZE, &position, ((*cm)->mu),     GC_SEGMENTS, MPI_DOUBLE, MPI_COMM_WORLD);
-	  MPI_Unpack (buf, BUFSIZE, &position, ((*cm)->K),      GC_SEGMENTS, MPI_DOUBLE, MPI_COMM_WORLD);
+	  //MPI_Unpack (buf, BUFSIZE, &position, ((*cm)->lambda), GC_SEGMENTS, MPI_DOUBLE, MPI_COMM_WORLD);
+	  //MPI_Unpack (buf, BUFSIZE, &position, ((*cm)->mu),     GC_SEGMENTS, MPI_DOUBLE, MPI_COMM_WORLD);
+	  //MPI_Unpack (buf, BUFSIZE, &position, ((*cm)->K),      GC_SEGMENTS, MPI_DOUBLE, MPI_COMM_WORLD);
 	  for(i = 0; i < GC_SEGMENTS; i++)
 	    {
-	      (*cm)->lambda[i] = lambda[i];
-	      (*cm)->mu[i]     = mu[i];
-	      (*cm)->K[i]      = K[i];
+	      //(*cm)->lambda[i] = lambda[i];
+	      //(*cm)->mu[i]     = mu[i];
+	      //(*cm)->K[i]      = K[i];
 	    }
 	}
       if((*cm)->search_opts & CM_SEARCH_CP9STATS) /* unpack the CP9 EVD parameters */
 	{
-	  MPI_Unpack (buf, BUFSIZE, &position, cp9_lambda, GC_SEGMENTS, MPI_DOUBLE, MPI_COMM_WORLD);
-	  MPI_Unpack (buf, BUFSIZE, &position, cp9_mu,     GC_SEGMENTS, MPI_DOUBLE, MPI_COMM_WORLD);
-	  MPI_Unpack (buf, BUFSIZE, &position, cp9_K,      GC_SEGMENTS, MPI_DOUBLE, MPI_COMM_WORLD);
+	  //MPI_Unpack (buf, BUFSIZE, &position, cp9_lambda, GC_SEGMENTS, MPI_DOUBLE, MPI_COMM_WORLD);
+	  //MPI_Unpack (buf, BUFSIZE, &position, cp9_mu,     GC_SEGMENTS, MPI_DOUBLE, MPI_COMM_WORLD);
+	  //MPI_Unpack (buf, BUFSIZE, &position, cp9_K,      GC_SEGMENTS, MPI_DOUBLE, MPI_COMM_WORLD);
 	  for(i = 0; i < GC_SEGMENTS; i++)
 	    {
-	      (*cm)->cp9_lambda[i] = cp9_lambda[i];
-	      (*cm)->cp9_mu[i]     = cp9_mu[i];
-	      (*cm)->cp9_K[i]      = cp9_K[i];
+	      //(*cm)->cp9_lambda[i] = cp9_lambda[i];
+	      //(*cm)->cp9_mu[i]     = cp9_mu[i];
+	      //(*cm)->cp9_K[i]      = cp9_K[i];
 	    }
 	}
     }
@@ -1063,6 +1062,171 @@ void aln_send_terminate (int rank_to_send_to)
   MPI_Send (buf, position, MPI_PACKED, rank_to_send_to, ALN_JOB_PACKET_TAG, MPI_COMM_WORLD);
 }
 
+/**************************************************************************************/
+/* EPN, Thu May 10 10:11:18 2007 New functions roughly following Easel/H3 conventions */
+/* Function: mpi_worker_search_target()
+ * Incept:   EPN, Wed May  9 17:07:48 2007
+ * Purpose:  The main control for an MPI worker process for searching sequences. 
+ *           Worker receives CM, then loops over receipt of sequences, returning
+ *           best score and results data structure for each.
+ *           Never do revcomp, we'll call this function twice once with 
+ *           plus once with minus strand.
+ */
+void
+mpi_worker_search_target(CM_t *cm, int my_rank)
+{
+  int status;
+  char *dsq = NULL;
+  int   L;
+  float best_sc;
+
+  int doing_cm_stats  = FALSE;
+  int doing_cp9_stats = FALSE;
+
+  int ctr = 0;
+  if(cm->search_opts & CM_SEARCH_HMMONLY) doing_cp9_stats = TRUE;
+  else doing_cm_stats = TRUE;
+  /* Main loop */
+  while (dsq_MPIRecv(&dsq, &L) == eslOK)
+    {
+      best_sc = actually_search_target(cm, dsq, 1, L, 
+				       0.,    /* minimum CM bit cutoff, irrelevant (?) */
+				       0.,    /* minimum CP9 bit cutoff, irrelevant (?) */
+				       NULL,  /* do not keep results */
+				       FALSE, /* do not filter with a CP9 HMM */
+				       doing_cm_stats, doing_cp9_stats,
+				       NULL); /* filter fraction, nobody cares */
+      
+      MPI_Send(&(best_sc), 1,MPI_FLOAT, 0, 0, MPI_COMM_WORLD);
+      free(dsq);
+    }
+  return;
+
+ ERROR:
+  if (dsq != NULL) free(dsq);
+  return;
+}
+
+/* Function:  dsq_MPISend()
+ * Incept:    EPN, Wed May  9 17:30:14 2007
+ *
+ * Purpose:   Send sequence <dsq> to processor <dest>.
+ *            
+ *            If <dsq> is NULL, sends a end-of-data signal to <dest>, to
+ *            tell it to shut down.
+ */
+int
+dsq_MPISend(char *dsq, int L, int dest)
+{
+  if(dsq == NULL) 
+    {
+      int eod = -1;
+      MPI_Send(&eod, 1, MPI_INT, dest, 0, MPI_COMM_WORLD);
+      return eslOK;
+    }
+  MPI_Send(&(L), 1, MPI_INT, dest, 0, MPI_COMM_WORLD);
+  /* receiver will now allocate storage, before reading on...*/
+  MPI_Send(dsq, (L+2), MPI_CHAR, dest, 0, MPI_COMM_WORLD);
+  return eslOK;
+}
+
+/* Function:  dsq_MPIRecv()
+ * Incept:    EPN, Wed May  9 17:34:43 2007
+ *
+ * Purpose:   Receive a sequence sent from the master MPI process (src=0)
+ *            on a worker MPI process. 
+ *            
+ *            If it receives an end-of-data signal, returns <eslEOD>.
+ */
+int
+dsq_MPIRecv(char **ret_dsq, int *ret_L)
+{
+  int status;
+  char *dsq = NULL;
+  MPI_Status mpistatus;
+  int L;
+  
+  MPI_Recv(&L, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &mpistatus);
+  if (L == -1) return eslEOD;
+  ESL_ALLOC(dsq, sizeof(char) * (L+2));
+  MPI_Recv(dsq, (L+2), MPI_CHAR, 0, 0, MPI_COMM_WORLD, &mpistatus);
+  *ret_L   = L;
+  *ret_dsq = dsq;
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
+/* Function:  cm_MPIBroadcast()
+ * Incept:    EPN, Wed May  9 17:24:53 2007
+ *
+ * Purpose:   Sends CM <cm> to processor <dest>.
+ *            
+ *            If <cm> is NULL, sends a end-of-data signal to <dest>, to
+ *            tell it to shut down.
+ *            
+ */
+int
+cm_MPIBroadcast(CM_t *cm)
+{
+  return eslOK;
+}  
+
+/* Function: mpi_worker_cm_and_cp9_search()
+ * Incept:   EPN, Thu May 10 10:04:02 2007
+ * Purpose:  The main control for an MPI worker process for searching sequences
+ *           twice, once with a CM and once with a CP9, both scores are returned.
+ *           Called in mpi_FindCP9FilterThreshold9).
+ * Args:
+ *           cm       - the covariance model
+ *           do_fast  - don't search with CM, only do CP9 search
+ *           my_rank  - my MPI rank
+ */
+void
+mpi_worker_cm_and_cp9_search(CM_t *cm, int do_fast, int my_rank)
+{
+  int status;
+  char *dsq = NULL;
+  int   L;
+  float *scores = NULL;
+  ESL_ALLOC(scores, sizeof(float) * 2);
+
+  /* Main loop */
+  while (dsq_MPIRecv(&dsq, &L) == eslOK)
+    {
+      /* Do the CM search first */
+      cm->search_opts &= ~CM_SEARCH_HMMONLY;
+      if(do_fast)
+	scores[0] = 0.;
+      else
+	scores[0] = actually_search_target(cm, dsq, 1, L, 
+					   0.,    /* minimum CM bit cutoff, irrelevant (?) */
+					   0.,    /* minimum CP9 bit cutoff, irrelevant (?) */
+					   NULL,  /* do not keep results */
+					   FALSE, /* do not filter with a CP9 HMM */
+					   FALSE, FALSE, /* not doing CM or CP9 evd calcs */
+					   NULL); /* filter fraction, nobody cares */
+      cm->search_opts |= CM_SEARCH_HMMONLY;
+      scores[1] = actually_search_target(cm, dsq, 1, L, 
+					 0.,    /* minimum CM bit cutoff, irrelevant (?) */
+					 0.,    /* minimum CP9 bit cutoff, irrelevant (?) */
+					 NULL,  /* do not keep results */
+					 FALSE, /* do not filter with a CP9 HMM */
+					 FALSE, FALSE, /* not doing CM or CP9 evd calcs */
+					 NULL); /* filter fraction, nobody cares */
+      MPI_Send(scores, 2, MPI_FLOAT, 0, 0, MPI_COMM_WORLD); /* send together so results don't interleave */
+      free(dsq);
+    }
+  if(scores != NULL) free(scores);
+  /*printf("\trank: %d RETURNING!\n", my_rank);*/
+  return;
+
+ ERROR:
+  if (dsq != NULL) free(dsq);
+  if (scores != NULL) free(scores);
+  return;
+}
 
 #endif
 

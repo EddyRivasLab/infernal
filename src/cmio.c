@@ -654,12 +654,12 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
 
   /* if we have any HMM filter stats, we (currently) require all of them */
   have_fthrs = fthr_flags[0];
-  for(i = fthr_mode; fthr_mode < NFTHRMODES; fthr_mode++)
-    if(((have_fthrs && (!fthr_flags[fthr_mode]))) ||
-       ((!have_fthrs) && (fthr_flags[fthr_mode])))
+  for(i = 0; i < NFTHRMODES; i++)
+    if(((have_fthrs && (!fthr_flags[i]))) ||
+       ((!have_fthrs) && (fthr_flags[i])))
       goto FAILURE;
 
-  if(have_evds && have_fthrs) debug_print_cmstats(cm->stats);
+  if(have_evds && have_fthrs) debug_print_cmstats(cm->stats, have_fthrs);
   /* Main model section. 
    */
   CreateCMBody(cm, N, M);

@@ -86,7 +86,7 @@ FreeCMStats(CMStats_t *cmstats)
 
 /* Function: debug_print_cmstats
  */
-int debug_print_cmstats(CMStats_t *cmstats)
+int debug_print_cmstats(CMStats_t *cmstats, int has_fthr)
 {
   int p;
   printf("Num partitions: %d\n", cmstats->np);
@@ -107,15 +107,19 @@ int debug_print_cmstats(CMStats_t *cmstats)
       debug_print_evdinfo(cmstats->evdAA[CP9_G][p]);
       printf("\n\n");
     }
-  printf("fthr lc filter threshold:\n");
-  debug_print_filterthrinfo(cmstats, cmstats->fthrA[CM_LC]);
-  printf("fthr gc filter threshold:\n");
-  debug_print_filterthrinfo(cmstats, cmstats->fthrA[CM_GC]);
-  printf("fthr li filter threshold:\n");
-  debug_print_filterthrinfo(cmstats, cmstats->fthrA[CM_LI]);
-  printf("fthr gi filter threshold:\n");
-  debug_print_filterthrinfo(cmstats, cmstats->fthrA[CM_GI]);
-  printf("\n\n");
+
+  if(has_fthr)
+    {
+      printf("fthr lc filter threshold:\n");
+      debug_print_filterthrinfo(cmstats, cmstats->fthrA[CM_LC]);
+      printf("fthr gc filter threshold:\n");
+      debug_print_filterthrinfo(cmstats, cmstats->fthrA[CM_GC]);
+      printf("fthr li filter threshold:\n");
+      debug_print_filterthrinfo(cmstats, cmstats->fthrA[CM_LI]);
+      printf("fthr gi filter threshold:\n");
+      debug_print_filterthrinfo(cmstats, cmstats->fthrA[CM_GI]);
+      printf("\n\n");
+    }
   return eslOK;
 }
 

@@ -260,7 +260,7 @@ AC_ARG_ENABLE(mpi,
            AC_MSG_NOTICE([enabled optional MPI parallelization])
 	   AC_DEFINE(USE_MPI, 1)
 	   CC=$MPICC
-   	   MPIPROGS="mpi-cmalign mpi-cmsearch"
+   	   MPIPROGS="mpi-cmalign mpi-cmsearch mpi-cmcalibrate"
           ], [
            AC_MSG_ERROR([MPI library not found])
           ])

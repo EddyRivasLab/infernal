@@ -836,7 +836,6 @@ main(int argc, char **argv)
 	  StopwatchStart(watch);
 	}	  
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-	} /* Done with second master-only block */
 
       /*printf("cm->cutoff: %f cp9->cutoff: %f rank: %d\n", cm->cutoff, cm->cp9_cutoff, mpi_my_rank);*/
       if(mpi_my_rank == mpi_master_rank && mpi_num_procs > 1)
@@ -883,18 +882,16 @@ main(int argc, char **argv)
 	  if(!(CMFileRead(cmfp, &cm))) continue_flag = 0;
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	}
-#endif
-#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
       MPI_Barrier(MPI_COMM_WORLD);
       MPI_Bcast (&continue_flag,  1, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
       /*printf("1 continue_flag: %d rank: %d\n", continue_flag, mpi_my_rank);*/
 #endif
-    } /* end of while(continue_flag) (continue_flag remains TRUE as long as we are
+} /* end of while(continue_flag) (continue_flag remains TRUE as long as we are
        * reading CMs from the CM file. */
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-  MPI_Barrier(MPI_COMM_WORLD);
+MPI_Barrier(MPI_COMM_WORLD);
   MPI_Finalize();
-  in_mpi = 0;
+in_mpi = 0;
   if (mpi_my_rank == mpi_master_rank) 
     {
       StopwatchFree(mpi_watch);

@@ -8,6 +8,10 @@
  * 
  * EPN, Wed May  2 07:02:52 2007
  * based on HMMER-2.3.2's hmmcalibrate.c from SRE
+ *
+ * MPI example:  
+ * qsub -N testrun -j y -R y -b y -cwd -V -pe lam-mpi-tight 32 'mpirun -l C ./mpi-cmcalibrate foo.cm > foo.out'
+ * -l forces line buffered output
  *  
  */
 #include "config.h"	
@@ -24,6 +28,7 @@
 #include "funcs.h"		/* external functions                   */
 #include "stats.h"              /* EVD functions */
 #include "cm_dispatch.h"	
+#include "mpifuncs.h"	
 #include "easel.h"
 #include "esl_alphabet.h"
 #include "esl_getopts.h"
@@ -35,12 +40,15 @@
 #include "esl_gumbel.h"
 #include "esl_stopwatch.h"
 
-#define ALGORITHMS "--cyk,--inside"
-
 static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_freq, 
 				      int N, int L, int evd_mode);
 static int CopyFThrInfo(CP9FilterThr_t *src, CP9FilterThr_t *dest);
 static int CopyCMStatsEVD(CMStats_t *src, CMStats_t *dest);
+
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+static int mpi_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_freq, 
+			       int N, int L, int evd_mode, int my_rank, int nproc);
+#endif
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
@@ -57,7 +65,11 @@ static ESL_OPTIONS options[] = {
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+static char usage[]  = "mpi-cmcalibrate [-options]";
+#else
 static char usage[]  = "cmcalibrate [-options]";
+#endif
 
 int
 main(int argc, char **argv)
@@ -81,6 +93,7 @@ main(int argc, char **argv)
   int              optset;             /* boolean value for esl_get_opts()            */
   double          *gc_freq;            /* GC frequency array [0..100(GC_SEGMENTS)]    */
   int              i;                  /* counter over GC segments                    */
+  int              continue_flag;      /* we still have a CM to get stats for?        */
 
   /* EVD related variables */
   int              do_qdb = TRUE;      /* TRUE to use QDB while searching with CM     */
@@ -100,6 +113,10 @@ main(int argc, char **argv)
   int              use_cm_cutoff = TRUE; /* TRUE to use cm_ecutoff, FALSE not to      */
   int              fthr_mode;          /* counter over fthr modes                     */
   int              db_size = 1000000;  /* we assume a 1MB database, for use w/cm_ecutoff     */
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+  int my_rank;              /* My rank in MPI                           */
+  int nproc;                /* number of processors */
+#endif
 
   /*****************************************************************
    * Parse the command line
@@ -162,6 +179,16 @@ main(int argc, char **argv)
   /* distro is skewed towards low GC, you can see it, thanks to fixed width font */
   esl_vec_DNorm(gc_freq, GC_SEGMENTS);
 
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+  /* Initialize MPI, figure out who we are, and whether we're running
+   * this show (proc 0) or working in it (procs >0)
+   */
+  MPI_Init(&argc, &argv);
+  MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &nproc);
+  if(my_rank == 0) /* master only block 1 */
+    {
+#endif
   /*****************************************************************
    * Initializations, including opening the CM file 
    *****************************************************************/
@@ -199,23 +226,35 @@ main(int argc, char **argv)
 
   if(do_timings)
     w = esl_stopwatch_Create(); 
-
-  while (CMFileRead(cmfp, &cm))
+  CMFileRead(cmfp, &cm);
+  if(cm == NULL) Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+    }  /* end of master only block 1 */
+#endif
+  ncm = 0;
+  continue_flag = 1; /* crudely used in MPI mode to make non-master MPIs go
+		      * through the main loop for potentially multiple CMs */
+  while (continue_flag)
     {
-      if (cm == NULL) 
-	Die("CM file may be corrupt or incorrect format, parse failed\n");
-      
-      /* Configure for QDB */
-      if(do_qdb)          cm->config_opts |= CM_CONFIG_QDB;
-      ConfigCM(cm, NULL, NULL);
-
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+      MPI_Barrier(MPI_COMM_WORLD);
+      broadcast_cm(&cm, my_rank, 0);
+      if(my_rank == 0) /* second master only block */
+	{
+#endif
       /* Allocate and initialize cmstats data structure */
       cmstats[ncm] = AllocCMStats(1); /* Always 1 partition (TEMPORARY) */
       cmstats[ncm]->ps[0] = 0;
       cmstats[ncm]->pe[0] = 100;
       for(i = 0; i < GC_SEGMENTS; i++)
 	cmstats[ncm]->gc2p[i] = 0; 
-      
+      if(do_timings) esl_stopwatch_Start(w);
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+	} /* end of second master only block */
+#endif
+      /* Configure for QDB */
+      if(do_qdb) cm->config_opts |= CM_CONFIG_QDB;
+      ConfigCM(cm, NULL, NULL);
       /****************************************************************
        * Determine CM and CP9 EVDs 
        *****************************************************************/
@@ -224,99 +263,159 @@ main(int argc, char **argv)
 	  sample_length = 2.0 * cm->W;
 	  for(evd_mode = 0; evd_mode < NEVDMODES; evd_mode++)
 	    {
-	      if(do_timings) esl_stopwatch_Start(w);
 	      if(evd_mode == CP9_G || evd_mode == CP9_L) evdN = hmmevdN;
 	      else evdN = cmevdN;
+
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+	      MPI_Barrier(MPI_COMM_WORLD);
+	      if(my_rank == 0)
+		mpi_make_histogram (cm, cmstats[ncm], gc_freq, evdN, sample_length, evd_mode, my_rank, nproc);
+	      else if (my_rank > 0)
+		mpi_make_histogram (cm, NULL, NULL, 0, 0, evd_mode, my_rank, nproc);
+	      else /* we'll never get here */
+#endif
 	      NEW_serial_make_histogram (cm, cmstats[ncm], gc_freq, evdN, sample_length, evd_mode);
-	      if(do_timings) 
-		{ 
-		  esl_stopwatch_Stop(w);  
-		  esl_stopwatch_Display(stdout, w, "CM EVD fitting time:");
-		}
 	    }
 	  cm->flags |= CM_EVD_STATS;
 	}
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+      if(my_rank == 0) /* master */
+	{
+#endif
+      if(do_timings) 
+	{ 
+	  esl_stopwatch_Stop(w);  
+	  esl_stopwatch_Display(stdout, w, "EVD calculation time:");
+	}
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+	}
+#endif
       /****************************************************************
        * Determine CP9 filtering thresholds
        *****************************************************************/
       if(do_fil)
 	{
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+	  if(my_rank == 0) /* master */
+	    {
+#endif
 	  if(!do_evd) /* we can only calc filter thresholds if we had EVD stats in input CM file */
 	    {
 	      if(!(cm->flags & CM_EVD_STATS))
-		Die("ERROR no EVD stats for CM %d in cmfile: %s, rerun without --onlyevd.\n", (ncm+1), cmfile);
+		Die("ERROR no EVD stats for CM %d in cmfile: %s, rerun without --onlyfil.\n", (ncm+1), cmfile);
 	      CopyCMStatsEVD(cm->stats, cmstats[ncm]);
 	    }
-	  if(do_fastfil)
-	    {
-	      /* with do_fastfil we can't call FindCP9FilterThreshold()
-	       * for Inside, we set Inside thresholds as CYK thresholds */
-	      if(do_timings) esl_stopwatch_Start(w);
-	      cmstats[ncm]->fthrA[CM_LC]->N        = filN;
-	      cmstats[ncm]->fthrA[CM_LC]->fraction = fraction;
-	      cmstats[ncm]->fthrA[CM_LC]->cm_eval  = cm_ecutoff;
-	      cmstats[ncm]->fthrA[CM_LC]->db_size  = db_size;
-	      cmstats[ncm]->fthrA[CM_LC]->was_fast = TRUE;
-	      cmstats[ncm]->fthrA[CM_LC]->l_eval   = 
-		FindCP9FilterThreshold(cm, cmstats[ncm], fraction, filN, use_cm_cutoff,
-				       cm_ecutoff, db_size, CM_LC, CP9_L, do_fastfil);
-	      cmstats[ncm]->fthrA[CM_LC]->g_eval   = 
-		FindCP9FilterThreshold(cm, cmstats[ncm], fraction, filN, use_cm_cutoff,
-				       cm_ecutoff, db_size, CM_LC, CP9_G, do_fastfil);
-	      cmstats[ncm]->fthrA[CM_GC]->N        = filN;
-	      cmstats[ncm]->fthrA[CM_GC]->fraction = fraction;
-	      cmstats[ncm]->fthrA[CM_GC]->cm_eval  = cm_ecutoff;
-	      cmstats[ncm]->fthrA[CM_GC]->db_size  = db_size;
-	      cmstats[ncm]->fthrA[CM_GC]->was_fast = TRUE;
-	      cmstats[ncm]->fthrA[CM_GC]->l_eval   = 
-		FindCP9FilterThreshold(cm, cmstats[ncm], fraction, filN, use_cm_cutoff, 
-				       cm_ecutoff, db_size, CM_GC, CP9_L, do_fastfil);
-	      cmstats[ncm]->fthrA[CM_GC]->g_eval = 
-		FindCP9FilterThreshold(cm, cmstats[ncm], fraction, filN, use_cm_cutoff, 
-				       cm_ecutoff, db_size, CM_GC, CP9_G, do_fastfil);
-
-	      CopyFThrInfo(cmstats[ncm]->fthrA[CM_LC], cmstats[ncm]->fthrA[CM_LI]);
-	      CopyFThrInfo(cmstats[ncm]->fthrA[CM_GC], cmstats[ncm]->fthrA[CM_GI]);
-	      if(do_timings) 
-		{ 
-		  esl_stopwatch_Stop(w);  
-		  esl_stopwatch_Display(stdout, w, "Fast HMM threshold (2 modes) calculation time:");
-		}
+	  if(do_timings) esl_stopwatch_Start(w);
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	    }
-	  else /* !do_fastfil */
-	    for(fthr_mode = 0; fthr_mode < NFTHRMODES; fthr_mode++)
-	      {
-		if(do_timings) esl_stopwatch_Start(w);
-		cmstats[ncm]->fthrA[fthr_mode]->N        = filN;
-		cmstats[ncm]->fthrA[fthr_mode]->fraction = fraction;
-		cmstats[ncm]->fthrA[fthr_mode]->cm_eval  = cm_ecutoff;
-		cmstats[ncm]->fthrA[fthr_mode]->db_size  = db_size;
-		cmstats[ncm]->fthrA[fthr_mode]->was_fast = FALSE;
+#endif
+	  for(fthr_mode = 0; fthr_mode < NFTHRMODES; fthr_mode++)
+	    {
+	      if(do_fastfil && (fthr_mode == CM_LI || fthr_mode == CM_GI)) continue;
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+	      if(TRUE)
+		{
+		  MPI_Barrier(MPI_COMM_WORLD);
+		  if(my_rank == 0) /* master */
+		    {
+		      cmstats[ncm]->fthrA[fthr_mode]->l_eval =  
+			mpi_FindCP9FilterThreshold(cm, cmstats[ncm], fraction, filN, use_cm_cutoff, 
+						   cm_ecutoff, db_size, fthr_mode, CP9_L, do_fastfil,
+						   my_rank, nproc);
+		    }
+		  else /* worker */
+		    mpi_FindCP9FilterThreshold(cm, NULL, fraction, filN, use_cm_cutoff, 
+					     cm_ecutoff, db_size, fthr_mode, CP9_L, do_fastfil,
+					     my_rank, nproc);
+
+		    
+		  MPI_Barrier(MPI_COMM_WORLD);
+		  if(my_rank == 0) /* master */
+		    {
+		      cmstats[ncm]->fthrA[fthr_mode]->g_eval =  
+		      mpi_FindCP9FilterThreshold(cm, cmstats[ncm], fraction, filN, use_cm_cutoff, 
+						 cm_ecutoff, db_size, fthr_mode, CP9_G, do_fastfil,
+						 my_rank, nproc);
+		    }
+		  else
+		    mpi_FindCP9FilterThreshold(cm, NULL, fraction, filN, use_cm_cutoff, 
+					       cm_ecutoff, db_size, fthr_mode, CP9_G, do_fastfil,
+					       my_rank, nproc);
+		}
+	      else /* if MPI we want to skip serial calls below */
+		{
+#endif
 		cmstats[ncm]->fthrA[fthr_mode]->l_eval =  /*  local */
 		  FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, use_cm_cutoff,
 					 cm_ecutoff, db_size, fthr_mode, CP9_L, do_fastfil);
 		cmstats[ncm]->fthrA[fthr_mode]->g_eval =  /* glocal */
 		  FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, use_cm_cutoff,
 					 cm_ecutoff, db_size, fthr_mode, CP9_G, do_fastfil);
-		if(do_timings) 
-		  { 
-		    esl_stopwatch_Stop(w);  
-		    esl_stopwatch_Display(stdout, w, "Slow HMM threshold (1/4 modes) calculation time:");
-		  }
-	      }
-	  cm->flags &= CM_FTHR_STATS;
-	}
-      debug_print_cmstats(cmstats[ncm]);
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+		}
+	      if(my_rank == 0)
+		{
+#endif
+	      /* Fill in the rest of the stats */
+	      cmstats[ncm]->fthrA[fthr_mode]->N        = filN;
+	      cmstats[ncm]->fthrA[fthr_mode]->fraction = fraction;
+	      cmstats[ncm]->fthrA[fthr_mode]->cm_eval  = cm_ecutoff;
+	      cmstats[ncm]->fthrA[fthr_mode]->db_size  = db_size;
+	      cmstats[ncm]->fthrA[fthr_mode]->was_fast = FALSE;
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+		}
+#endif
+	    }
 
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+	  if(my_rank == 0) /* master */
+	    {
+#endif
+	  if(do_fastfil) 
+	    {
+	      /* we skipped CM_LI and CM_GI, copy CM_LC to CM_LI and CM_GC to CM_GI */
+	      CopyFThrInfo(cmstats[ncm]->fthrA[CM_LC], cmstats[ncm]->fthrA[CM_LI]);
+	      CopyFThrInfo(cmstats[ncm]->fthrA[CM_GC], cmstats[ncm]->fthrA[CM_GI]);
+	    }
+	  if(do_timings) 
+	    { 
+	      esl_stopwatch_Stop(w);  
+	      esl_stopwatch_Display(stdout, w, "Slow HMM threshold (1/4 modes) calculation time:");
+	    }
+	  cm->flags &= CM_FTHR_STATS;
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+	    }
+#endif
+	}
+      FreeCM(cm);
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+      if(my_rank == 0) /* master */
+	{
+#endif
+      debug_print_cmstats(cmstats[ncm], do_fil);
       /* Reallocation, if needed.
        */
       ncm++;
-      if (ncm == cmalloc) {
-	cmalloc *= 2;		/* realloc by doubling */
-	cmstats = ReallocOrDie(cmstats, sizeof(CMStats_t *) * cmalloc);
-      }
-      FreeCM(cm);
+      if (ncm == cmalloc) 
+	{
+	  cmalloc *= 2;		/* realloc by doubling */
+	  cmstats = ReallocOrDie(cmstats, sizeof(CMStats_t *) * cmalloc);
+	}
+      if(!(CMFileRead(cmfp, &cm))) continue_flag = 0;
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+	}
+      MPI_Barrier(MPI_COMM_WORLD);
+      MPI_Bcast (&continue_flag,  1, MPI_INT, 0, MPI_COMM_WORLD);
+#endif
+    } /* end of while(continue_flag */
+
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+  if(my_rank > 0) /* job's done worker */
+    {
+      MPI_Finalize();
+      return 0;
     }
+#endif
   esl_stopwatch_Destroy(w);
 
   /*****************************************************************
@@ -367,6 +466,10 @@ main(int argc, char **argv)
   /***********************************************
    * Exit
    ***********************************************/
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+  if(my_rank == 0) /* master */
+    MPI_Finalize();
+#endif
   return eslOK;
 }
 
@@ -429,7 +532,7 @@ static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_f
     esl_fatal("Failed to create random number generator: probably out of memory");
   /* Allocate for random distribution */
   ESL_ALLOC(nt_p,   sizeof(double) * Alphabet_size);
-  ESL_ALLOC(randseq, sizeof(char) * (L+1));
+  ESL_ALLOC(randseq, sizeof(char) * (L+2));
 
   /* Configure the CM based on the stat mode */
   ConfigForEVDMode(cm, evd_mode);
@@ -536,6 +639,8 @@ int CopyCMStatsEVD(CMStats_t *src, CMStats_t *dest)
     {
       for(p = 0; p < src->np; p++)
 	{
+	  dest->evdAA[i][p]->N      = src->evdAA[i][p]->N;
+	  dest->evdAA[i][p]->L      = src->evdAA[i][p]->L;
 	  dest->evdAA[i][p]->K      = src->evdAA[i][p]->K;
 	  dest->evdAA[i][p]->mu     = src->evdAA[i][p]->mu;
 	  dest->evdAA[i][p]->lambda = src->evdAA[i][p]->lambda;
@@ -545,4 +650,159 @@ int CopyCMStatsEVD(CMStats_t *src, CMStats_t *dest)
 }
 
 
+
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+/*
+ * Function: mpi_make_histogram()
+ * Date:     EPN, Wed May  9 13:23:37 2007
+ * Purpose:  Parallel version of serial_make_histogram for use with MPI.
+ *
+ * Args:
+ *           cm       - the model
+ *           cmstats  - data structure that will hold EVD stats (NULL if my_rank > 0)
+ *           gc_freq  - GC frequencies for each GC content      (NULL if my_rank > 0)
+ *           N        - number of random seqs to search   (irrelevant if my_rank > 0)
+ *           L        - length of random samples          (irrelevant if my_rank > 0)
+ *           evd_mode - gives search strategy to use for CM or CP9
+ *           my_rank  - MPI rank
+ */  
+static int mpi_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_freq, 
+					int N, int L, int evd_mode, int my_rank, int nproc)
+{
+  int status = 0;
+  /*printf("in mpi_make_histogram, my_rank: %d\n", my_rank);*/
+  /* Configure the CM based on the stat mode */
+  ConfigForEVDMode(cm, evd_mode);
+  
+  if(my_rank > 0)
+    {
+      mpi_worker_search_target(cm, my_rank);
+      return eslOK;
+    }
+  else /* my_rank == 0, master */
+    {
+      int i;
+      char *randseq;
+      char *dsq;
+      ESL_HISTOGRAM *h;
+      double  *nt_p;		     /* Distribution for random sequences */
+      float score;
+      double cur_gc_freq[GC_SEGMENTS];
+      float gc_comp;
+      double *xv;
+      int z;
+      int n;
+      ESL_RANDOMNESS  *r       = NULL;     /* source of randomness                    */
+      EVDInfo_t **evd; 
+      int p; /* counter over partitions */
+      double tmp_mu;
+      double x;
+      int              have_work;
+      int              nproc_working;
+      int              wi;
+      MPI_Status       mstatus;
+      float sc;
+      char        **dsqlist = NULL;      /* queue of digitized seqs being worked on, 1..nproc-1 */
+
+      /* Check contract */
+      if(cmstats == NULL)
+	Die("ERROR in mpi_make_histogram(), master's cmstats is NULL\n");
+      evd = cmstats->evdAA[evd_mode];
+
+      /*if ((r = esl_randomness_CreateTimeseeded() == NULL */
+      if ((r = esl_randomness_Create(33)) == NULL)
+	esl_fatal("Failed to create random number generator: probably out of memory");
+      /* Allocate for random distribution */
+      ESL_ALLOC(nt_p,   sizeof(double) * Alphabet_size);
+      ESL_ALLOC(randseq, sizeof(char) * (L+2));
+      ESL_ALLOC(dsqlist, sizeof(char *) * nproc);
+      for (wi = 0; wi < nproc; wi++) dsqlist[wi] = NULL;
+      
+      /* For each partition */
+      for (p = 0; p < cmstats->np; p++)
+	{
+	  /* Initialize histogram; these numbers are guesses */
+	  h = esl_histogram_CreateFull(0., 100., 1.);    
+	      
+	  /* Set up cur_gc_freq */
+	  esl_vec_DSet(cur_gc_freq, GC_SEGMENTS, 0.);
+	  for (i = cmstats->ps[p]; i < cmstats->pe[p]; i++) 
+	    cur_gc_freq[i] = gc_freq[i];
+	  esl_vec_DNorm(cur_gc_freq, GC_SEGMENTS);
+	  
+	  /* From Sean's design pattern in mpi-hmmsim.c */
+	  /* Sean's design pattern for data parallelization in a master/worker model:
+	   * three phases: 
+	   *  1. load workers;
+	   *  2. recv result/send work loop;
+	   *  3. collect remaining results
+	   * but implemented in a single while loop to avoid redundancy.
+	   */
+	  have_work     = TRUE;
+	  nproc_working = 0;
+	  wi            = 1;
+	  i             = 0;
+	  while (have_work || nproc_working)
+	    {
+	      /* Get next work unit. */
+	      if (i < N)
+		{
+		  /* Get random GC content */
+		  gc_comp = 0.01 * esl_rnd_DChoose(r, cur_gc_freq, GC_SEGMENTS);
+		  nt_p[1] = nt_p[2] = 0.5 * gc_comp;
+		  nt_p[0] = nt_p[3] = 0.5 * (1. - gc_comp);
+		  /* Get random sequence */
+		  /* We have to generate a text sequence for now, b/c the digitized
+		   * version els_rnd_xIID() generates a ESL_DSQ seq, which actually_search_target()
+		   * can't handle. */
+		  if (esl_rnd_IID(r, Alphabet, nt_p, Alphabet_size, L, randseq)  != eslOK) 
+		    esl_fatal("Failure creating random seq for GC content distro");
+		  /* Digitize the sequence, send it off to be searched, receive score and add to histogram */
+		  dsq = DigitizeSequence (randseq, L);
+		  i++;
+		}
+	      else have_work = FALSE;
+	      /* If we have work but no free workers, or we have no work but workers
+	       * are still working, then wait for a result to return from any worker.
+	       */
+	      if ( (have_work && nproc_working == nproc-1) || (! have_work && nproc_working > 0))
+		{
+		  MPI_Recv(&sc, 1, MPI_FLOAT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &mstatus);
+		  wi = mstatus.MPI_SOURCE;
+		  esl_histogram_Add(h, sc);
+		  nproc_working--;
+		  free(dsqlist[wi]);
+		  dsqlist[wi] = NULL;
+		}
+	      /* If we have work, assign it to a free worker;
+	       * else, terminate the free worker.
+	       */
+	      if (have_work) 
+		{
+		  dsq_MPISend(dsq, L, wi);
+		  dsqlist[wi] = dsq;
+		  wi++;
+		  nproc_working++;
+		}
+	      else dsq_MPISend(NULL, -1, wi);	
+	    } /* we have all the scores for this partition*/
+	  /* Fit the scores to a Gumbel */
+	  esl_histogram_GetTailByMass(h, 0.5, &xv, &n, &z); /* fit to right 50% */
+	  esl_gumbel_FitCensored(xv, n, z, xv[0], &(evd[p]->mu), &(evd[p]->lambda));
+	  evd[p]->K = exp(evd[p]->mu * evd[p]->lambda) / L;
+	  evd[p]->N = N;
+	  evd[p]->L = L;
+	}
+      esl_histogram_Destroy(h);
+      esl_randomness_Destroy(r);
+      free(nt_p);
+      free(randseq);
+      return eslOK;
+    }
+ ERROR:
+  return status;
+}
+
+
+#endif
 

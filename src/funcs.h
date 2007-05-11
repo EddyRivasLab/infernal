@@ -342,6 +342,13 @@ extern void CP9ScanPosterior(char *dsq, int i0, int j0, CP9_t *hmm, CP9_dpmatrix
 extern float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N, 
 				    int use_cm_cutoff, float cm_ecutoff, int db_size,
 				    int cm_evd_mode, int hmm_evd_mode, int do_fastfil);
+#ifdef USE_MPI 
+extern float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N, 
+					int use_cm_cutoff, float cm_ecutoff, int db_size,
+					int cm_evd_mode, int hmm_evd_mode, int do_fastfil,
+					int my_rank, int nproc);
+#endif
+
 /* from CP9_cm2wrhmm.c */
 extern int build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
 			 float psi_vs_phi_threshold, int debug_level);

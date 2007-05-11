@@ -47,6 +47,7 @@ static char experts[] = "\
    --hmmbuild     : build a ML CM Plan 9 HMM from the samples\n\
    --hmmscore     : score samples with a CM Plan 9 HMM\n\
    --hmmlocal     : w/hmmscore, search with CP9 HMM in local mode\n\
+   --cmbitsc      : w/hmmscore, min CM bit score to consider\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -62,7 +63,8 @@ static struct opt_s OPTIONS[] = {
   { "--end",     FALSE, sqdARG_INT },
   { "--hmmbuild",FALSE, sqdARG_NONE },
   { "--hmmscore",FALSE, sqdARG_NONE },
-  { "--hmmlocal",FALSE, sqdARG_NONE }
+  { "--hmmlocal",FALSE, sqdARG_NONE },
+  { "--cmbitsc", FALSE, sqdARG_FLOAT }
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -98,6 +100,7 @@ main(int argc, char **argv)
 				 * sampled parses of the CM                */
   int   do_score_cp9;           /* TRUE to score each seq against CP9 HMM  */
   int   do_local_cp9;           /* if score_cp9, put CP9 in local mode     */
+  float cm_minsc = IMPOSSIBLE;  
 
   /*********************************************** 
    * Parse command line
@@ -130,6 +133,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--hmmbuild") == 0) build_cp9 = TRUE;
     else if (strcmp(optname, "--hmmscore") == 0) do_score_cp9 = TRUE;
     else if (strcmp(optname, "--hmmlocal") == 0) do_local_cp9 = TRUE;
+    else if (strcmp(optname, "--cmbitsc")  == 0) cm_minsc  = atof(optarg);
     else if (strcmp(optname, "-h")      == 0) 
       {
 	MainBanner(stdout, banner);
@@ -532,8 +536,6 @@ main(int argc, char **argv)
       char             *seq;        /* alphabetic sequence                    */
       float             cm_sc;
       float             *hmm_sc;
-      //float             cm_minsc = 9.8;
-      float             cm_minsc = IMPOSSIBLE;
       int               max_attempts = 500 * nseq;
       int               nattempts = 0;
       float             f;

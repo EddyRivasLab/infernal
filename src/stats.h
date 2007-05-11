@@ -11,7 +11,7 @@
 
 extern CMStats_t *AllocCMStats(int np);
 extern void FreeCMStats(CMStats_t *cmstats);
-extern int debug_print_cmstats(CMStats_t *cmstats);
+extern int debug_print_cmstats(CMStats_t *cmstats, int has_fthr);
 extern int debug_print_evdinfo(EVDInfo_t *evd);
 extern int debug_print_filterthrinfo(CMStats_t *cmstats, CP9FilterThr_t *fthr);
 

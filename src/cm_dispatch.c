@@ -204,15 +204,8 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
   do_align   = (!(cm->search_opts & CM_SEARCH_NOALIGN));
 
   /* Determine minimum cutoff for CM and for CP9 */
-  if (cm->cutoff_type == SCORE_CUTOFF) 
-    min_cm_cutoff = cm->cutoff;
-  else 
-    min_cm_cutoff = e_to_score (cm->cutoff, cm->mu, cm->lambda);
-
-  if (cm->cp9_cutoff_type == SCORE_CUTOFF) 
-    min_cp9_cutoff = cm->cp9_cutoff;
-  else 
-    min_cp9_cutoff = e_to_score (cm->cp9_cutoff, cm->cp9_mu, cm->cp9_lambda);
+  min_cm_cutoff  = MinCMScCutoff(cm);
+  min_cp9_cutoff = MinCP9ScCutoff(cm);
 
   /*printf("B PSD rank: %4d mast: %4d cm_cutoff: %f cp9_cutoff: %f\n", mpi_my_rank, mpi_master_rank, min_cm_cutoff, min_cp9_cutoff);*/
 

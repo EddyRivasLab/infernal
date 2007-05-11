@@ -134,5 +134,14 @@ extern int  aln_check_results   (Parsetree_t **all_parsetrees, char **all_postco
 				 int **process_status);
 extern void aln_send_terminate  (int rank_to_send_to);
 
+/**************************************************************************************
+ * EPN, Thu May 10 10:11:34 2007 New functions roughly following Easel/H3 conventions *
+ *********************** **************************************************************/
+extern void mpi_worker_search_target(CM_t *cm, int my_rank);
+extern void mpi_worker_cm_and_cp9_search(CM_t *cm, int do_fast, int my_rank);
+extern int dsq_MPISend(char *dsq, int L, int dest);
+extern int dsq_MPIRecv(char **ret_dsq, int *ret_L);
+extern int cm_MPIBroadcast(CM_t *cm);
+
 #endif
 #endif

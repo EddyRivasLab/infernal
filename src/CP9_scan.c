@@ -37,6 +37,7 @@
 #include "stopwatch.h"          /* squid's process timing module        */
 #include "hmmband.h"
 #include "cm_dispatch.h"
+#include "mpifuncs.h"
 #include "stats.h"
 #include "easel.h"
 #include "esl_gumbel.h"
@@ -1572,4 +1573,245 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N
   return return_eval;
 }
 
-    
+#if USE_MPI
+/*
+ * Function: mpi_FindCP9FilterThreshold()
+ * Incept:   EPN, Thu May 10 09:03:25 2007
+ *
+ * Purpose:  MPI version of FindCP9FilterThreshold(). 
+ *
+ * Args:
+ *           cm           - the CM
+ *           cmstats      - CM stats object we'll get EVD stats from
+ *           fraction     - target fraction of CM hits to detect with CP9
+ *           N            - number of sequences to sample from CM better than cm_minsc
+ *           use_cm_cutoff- TRUE to only accept CM parses w/E-values above cm_ecutoff
+ *           cm_ecutoff   - minimum CM E-value to accept 
+ *           db_size      - DB size (nt) to use w/cm_ecutoff to calc CM bit score cutoff 
+ *           fthr_mode    - gives CM search strategy to use, and EVD to use
+ *           hmm_evd_mode - CP9_L to search with  local HMM (we're filling a fthr->l_eval)
+ *                          CP9_G to search with glocal HMM (we're filling a fthr->g_eval)
+ *           do_fastfil   - TRUE to use fast method: assume parsetree score
+ *                          is optimal CYK score
+ *           my_rank      - my MPI rank, 0 is master, >0 is worker
+ *           nproc       - number of MPI processors
+ *
+ * Returns: HMM E-value cutoff above which the HMM scores (fraction * N) CM 
+ *          hits with CM E-values better than cm_ecutoff 
+ * 
+ */
+float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N, 
+				 int use_cm_cutoff, float cm_ecutoff, int db_size, 
+				 int fthr_mode, int hmm_evd_mode, int do_fastfil,
+				 int my_rank, int nproc)
+{
+  /* Contract checks */
+  if (!(cm->flags & CM_CP9) || cm->cp9 == NULL) 
+    Die("ERROR in mpi_FindCP9FilterThreshold() CP9 does not exist\n");
+  if (fraction < 0. || fraction > 1.)  
+    Die("ERROR in mpi_FindCP9FilterThreshold() fraction is %f, should be [0.0..1.0]\n", fraction);
+  if((fthr_mode != CM_LI) && (fthr_mode != CM_GI) && (fthr_mode != CM_LC) && (fthr_mode != CM_GC))
+    Die("ERROR in mpi_FindCP9FilterThreshold() fthr_mode not CM_LI, CM_GI, CM_LC, or CM_GC\n");
+  if(hmm_evd_mode != CP9_L && hmm_evd_mode != CP9_G)
+    Die("ERROR in mpi_FindCP9FilterThreshold() hmm_evd_mode not CP9_L or CP9_G\n");
+  if(do_fastfil && (fthr_mode == CM_LI || fthr_mode == CM_GI))
+    Die("ERROR in mpi_FindCP9FilterThreshold() do_fastfil TRUE, but fthr_mode CM_GI or CM_LI\n");
+
+  /* Configure the CM based on the stat mode */
+  ConfigForEVDMode(cm, fthr_mode);
+  /* Configure the HMM based on the hmm_evd_mode */
+  if(hmm_evd_mode == CP9_L)
+    CPlan9SWConfig(cm->cp9, ((cm->cp9->M)-1.)/cm->cp9->M,  /* all start pts equiprobable, including 1 */
+		   ((cm->cp9->M)-1.)/cm->cp9->M);          /* all end pts equiprobable, including M */
+  else /* hmm_evd_mode == CP9_G (it's in the contract) */
+    CPlan9GlobalConfig(cm->cp9);
+  CP9Logoddsify(cm->cp9);
+      
+  if(my_rank > 0)
+    {
+      mpi_worker_cm_and_cp9_search(cm, do_fastfil, my_rank);
+      return eslOK;
+    }
+  else /* my_rank == 0, master */
+    {
+      /* GETS HERE IN MASTER! */
+      int status;
+      Parsetree_t      *tr;         /* parsetree */
+      char             *dsq;        /* digitized sequence                     */
+      char             *seq;        /* alphabetic sequence                    */
+      float             sc;
+      float            *hmm_eval;
+      float            *hmm_sc;
+      int               nattempts = 0;
+      int               max_attempts;
+      int               L;
+      int               i;
+      int               gc_comp;
+      EVDInfo_t **cm_evd; 
+      EVDInfo_t **hmm_evd; 
+      double *cm_mu;
+      double *hmm_mu;
+      int passed;
+      int p;                    /* counter over partitions */
+      double pval;
+      double x;     
+      float *cm_minbitsc = NULL;/* minimum CM bit score to allow to pass for each partition */
+      float return_eval;
+      int              have_work;
+      int              nproc_working;
+      int              wi;
+      char        **dsqlist = NULL;      /* queue of digitized seqs being worked on, 1..nproc-1 */
+      int            *plist = NULL;      /* queue of partition indices of seqs being worked on, 1..nproc-1 */
+      Parsetree_t  **trlist = NULL;      /* queue of traces of seqs being worked on, 1..nproc-1 */
+      float *scores;
+      float cur_cm_sc;
+      float cur_hmm_sc;
+
+      MPI_Status       mstatus;
+      
+      cm_evd   = cmstats->evdAA[fthr_mode];
+      hmm_evd  = cmstats->evdAA[hmm_evd_mode];
+
+      ESL_ALLOC(scores,      sizeof(float)         * 2);
+      ESL_ALLOC(dsqlist,     sizeof(char *)        * nproc);
+      ESL_ALLOC(plist,       sizeof(int)           * nproc);
+      ESL_ALLOC(trlist,      sizeof(Parsetree_t *) * nproc);
+      ESL_ALLOC(hmm_eval,    sizeof(float)         * N);
+      ESL_ALLOC(hmm_sc,      sizeof(float)         * N);
+      ESL_ALLOC(cm_minbitsc, sizeof(float)         * cmstats->np);
+      ESL_ALLOC(cm_mu,       sizeof(float)         * cmstats->np);
+      ESL_ALLOC(hmm_mu,      sizeof(float)         * cmstats->np);
+
+      max_attempts = 500 * N;
+      seq    = NULL;
+      dsq    = NULL;
+      tr     = NULL;
+
+      if(use_cm_cutoff) printf("CM E cutoff: %f\n", cm_ecutoff);
+      else              printf("Not using CM cutoff\n");
+      
+      /* Determine bit cutoff for each partition, calc'ed from cm_ecutoff */
+      for (p = 0; p < cmstats->np; p++)
+	{
+	  /* First determine mu based on db_size */
+	  hmm_mu[p]  = log(hmm_evd[p]->K * ((double) db_size)) / hmm_evd[p]->lambda;
+	  cm_mu[p]   = log(cm_evd[p]->K  * ((double) db_size)) / cm_evd[p]->lambda;
+	  /* Now determine bit score */
+	  cm_minbitsc[p] = cm_mu[p] - (log(cm_ecutoff) / cm_evd[p]->lambda);
+	  if(use_cm_cutoff)
+	    printf("E: %f p: %d %d--%d bit score: %f\n", cm_ecutoff, p, 
+		   cmstats->ps[p], cmstats->pe[p], cm_minbitsc[p]);
+	}
+      fflush(stdout);
+      /* Strategy: 
+       * Emit seqs from the CM and send them to workers to search with 
+       * CM and with CP9 HMM and return scores of both searches.
+       * Master collects these scores and determines if they are better 
+       * than cm_ecutoff, and continues to do so until N seqs with E-values 
+       * better than cm_ecutoff have been collected.
+       *
+       * If do_fastfil, the worker skips the CM search and returns 0. bits
+       * as CM score, which master replaces with parsetree score.
+       *
+       * Sean's design pattern for data parallelization in a master/worker model:
+       * three phases: 
+       *  1. load workers;
+       *  2. recv result/send work loop;
+       *  3. collect remaining results
+       * but implemented in a single while loop to avoid redundancy.
+       */
+      have_work     = TRUE;
+      nproc_working = 0;
+      wi            = 1;
+      i             = 0;
+      while (have_work || nproc_working)
+	{
+	  /* Get next work unit. */
+	  if (i < N)
+	    {
+	      EmitParsetree(cm, &tr, &seq, &dsq, &L);
+	      gc_comp = get_gc_comp(seq, 1, L); /* should be i and j of best hit, but
+						 * EVD construction is wrong too, it uses 
+						 * GC_COMP of full sample seq, not of best hit
+						 * within it. */
+	      fflush(stdout);
+	      p    = cmstats->gc2p[gc_comp];
+	      free(seq);
+	      if(!do_fastfil)
+		FreeParsetree(tr);
+	    }
+	  else have_work = FALSE;
+	  /* If we have work but no free workers, or we have no work but workers
+	   * are still working, then wait for a result to return from any worker.
+	   */
+	  if ( (have_work && nproc_working == nproc-1) || (! have_work && nproc_working > 0))
+	    {
+	      MPI_Recv(scores,  2, MPI_FLOAT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &mstatus);
+	      cur_cm_sc  = scores[0];
+	      cur_hmm_sc = scores[1];
+	      wi = mstatus.MPI_SOURCE;
+	      /* could change this to keep ALL CP9 and CM bit scores */
+	      if(do_fastfil)
+		{
+		  cur_cm_sc = ParsetreeScore(cm, trlist[wi], dsqlist[wi], FALSE); 
+		  FreeParsetree(tr);
+		  trlist[wi] = NULL;
+		}
+	      /* careful not go let i get bigger than N, which can happen due to send/recv lag */
+	      if(cur_cm_sc >= cm_minbitsc[plist[wi]] && i < N)
+		{
+		  hmm_eval[i] = RJK_ExtremeValueE(cur_hmm_sc, hmm_mu[plist[wi]], hmm_evd[plist[wi]]->lambda);
+		  hmm_sc[i]   = cur_hmm_sc;
+		  i++;
+		}		  
+	      nattempts++;
+	      nproc_working--;
+	      free(dsqlist[wi]);
+	      dsqlist[wi] = NULL;
+	    }
+	  /* If we have work, assign it to a free worker;
+	   * else, terminate the free worker.
+	   */
+	  if (have_work) 
+	    {
+	      dsq_MPISend(dsq, L, wi);
+	      dsqlist[wi] = dsq;
+	      plist[wi]   = p;
+	      if(do_fastfil)
+		trlist[wi] = tr;
+	      wi++;
+	      nproc_working++;
+	    }
+	  else 
+	    dsq_MPISend(NULL, -1, wi);	
+	}
+      /* Sort the HMM E-values with quicksort */
+      esl_vec_FSortIncreasing(hmm_eval, N);
+      esl_vec_FSortDecreasing(hmm_sc, N);
+      
+      printf("Dumping HMM scores fthr_mode: %d hmm_mode: %d\n", fthr_mode, hmm_evd_mode);
+      for (i = 0; i < N; i++)
+	printf("i: %4d hmm sc: %10.4f hmm E: %10.4f\n", i, hmm_sc[i], hmm_eval[i]);
+      printf("\n\nnattempts: %d\n", nattempts);
+      fflush(stdout);
+      
+      /* Clean up and exit */
+      return_eval = hmm_eval[(int) ((fraction) * (float) N)];
+      free(scores);
+      free(dsqlist);
+      free(plist);
+      free(trlist);
+      free(hmm_eval);
+      free(hmm_sc);
+      free(cm_minbitsc);
+      free(cm_mu);
+      free(hmm_mu);
+      fflush(stdout);
+      /* Return threshold */
+      return return_eval;
+    }    
+
+ ERROR:
+  return;
+}
+#endif

@@ -148,7 +148,7 @@ for($i = 0; $i < scalar(@fam_roots_arr); $i++)
     $cmsearch_name = $run_dir . "\/" . "rm-$fam.cmsearch";
     $out_name = $run_dir . "\/" . "rm-$fam.out";
 
-    $cmsearch_call = "mpirun C $cms --noalign $cm $genome_file";
+    $cmsearch_call = "mpirun -l C $cms --noalign $cm $genome_file";
 
     $exec_line = "qsub -N $job_name -o $out_name -b y -cwd -V -j y -pe lam-mpi-tight $nprocs \'" . $cmsearch_call . " > $cmsearch_name\'";
     push(@exec_lines, $exec_line);
@@ -195,7 +195,7 @@ for($i = 0; $i < scalar(@fam_roots_arr); $i++)
 
 # Now we build the PP (post-processing) script the same as in
 # rmark_clusterfy.pl.
-print PP ("rm merged_" . $out_file_root . "*\n");
+print PP ("rm merged_" . $out_file_root . "_hit*\n");
 $all_glbf_out = $out_file_root . "_all_glbf.concat";
 #$all_time_out = $out_file_root . "_all_time.concat";
 print PP ("cat "  . $run_dir . "\/" . "*.glbf > $all_glbf_out\n");
