@@ -1484,14 +1484,19 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N
     {
       /* First determine mu based on db_size */
       tmp_K      = exp(hmm_evd[p]->mu * hmm_evd[p]->lambda) / hmm_evd[p]->L;
+      printf("HMM mu: %f lambda: %f K: %f\n", hmm_evd[p]->mu, hmm_evd[p]->lambda, tmp_K);
       hmm_mu[p]  = log(tmp_K * ((double) db_size)) / hmm_evd[p]->lambda;
+      printf("HMM new mu: %f\n", hmm_mu[p]);
       tmp_K      = exp(cm_evd[p]->mu * cm_evd[p]->lambda) / cm_evd[p]->L;
+      printf("CM mu: %f lambda: %f K: %f\n", cm_evd[p]->mu, cm_evd[p]->lambda, tmp_K);
       cm_mu[p]   = log(tmp_K  * ((double) db_size)) / cm_evd[p]->lambda;
+      printf("CM new mu: %f\n", cm_mu[p]);
       /* Now determine bit score */
       cm_minbitsc[p] = cm_mu[p] - (log(cm_ecutoff) / cm_evd[p]->lambda);
       if(use_cm_cutoff)
 	printf("E: %f p: %d %d--%d bit score: %f\n", cm_ecutoff, p, 
-	       cmstats->ps[p], cmstats->pe[p], cm_minbitsc[p]);
+	       cmstats->ps[p], cmstats->pe[p], cm_minbitsc[p],
+	       RJK_ExtremeValueE(cm_minbitsc[p], cm_evd[p]->mu, cm_evd[p]->lambda));
     }
 
   /* Strategy: 
@@ -1552,8 +1557,9 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N
 					 NULL); /* filter fraction, irrelevant here */
       /*printf("hmm_mu[p]: %f hmm_evd[p]->mu: %f\n", hmm_mu[p], hmm_evd[p]->mu);*/
       hmm_eval[i] = RJK_ExtremeValueE(hmm_sc[i], hmm_mu[p], hmm_evd[p]->lambda);
-      /*printf("hmm_eval[i]: %f orig eval: %f\n", hmm_eval[i], 
-	RJK_ExtremeValueE(hmm_sc[i], hmm_evd[p]->mu, hmm_evd[p]->lambda));*/
+      printf("sc: %f hmm_eval[i]: %f orig eval: %f ", hmm_sc[i], hmm_eval[i], 
+	RJK_ExtremeValueE(hmm_sc[i], hmm_evd[p]->mu, hmm_evd[p]->lambda));
+      printf("hmm P: %f\n", esl_gumbel_surv((double) hmm_sc[i], hmm_mu[p], hmm_evd[p]->lambda));
    }
   /* Sort the HMM E-values with quicksort */
   esl_vec_FSortIncreasing(hmm_eval, N);
@@ -1770,6 +1776,8 @@ float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, i
 		{
 		  hmm_eval[i] = RJK_ExtremeValueE(cur_hmm_sc, hmm_mu[plist[wi]], hmm_evd[plist[wi]]->lambda);
 		  hmm_sc[i]   = cur_hmm_sc;
+		  printf("i: %d sc: %f E: %f P: %f\n", hmm_sc[i], hmm_eval[i], esl_gumbel_surv((double) hmm_sc[i], hmm_mu[plist[wi]], hmm_evd[plist[wi]]->lambda));
+		  fflush(stdout);
 		  i++;
 		}		  
 	      nattempts++;

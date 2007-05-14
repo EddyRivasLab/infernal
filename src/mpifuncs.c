@@ -1097,7 +1097,7 @@ mpi_worker_search_target(CM_t *cm, int my_rank)
 				       doing_cm_stats, doing_cp9_stats,
 				       NULL); /* filter fraction, nobody cares */
       
-      MPI_Send(&(best_sc), 1,MPI_FLOAT, 0, 0, MPI_COMM_WORLD);
+      MPI_Send(&(best_sc), 1, MPI_FLOAT, 0, 0, MPI_COMM_WORLD);
       free(dsq);
     }
   return;

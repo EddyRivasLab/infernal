@@ -1033,7 +1033,6 @@ int
 ConfigQDB(CM_t *cm)
 {
   int safe_windowlen;
-  double **gamma;               /* P(subseq length = n) for each state v */
 
   /* Contract check */
   if(cm->flags & CM_QDB)

@@ -37,17 +37,19 @@
 #include "esl_dmatrix.h"
 #include "esl_ratematrix.h"
 #include "esl_exponential.h"
+#include "esl_random.h"
 #include "esl_gumbel.h"
 #include "esl_stopwatch.h"
 
 static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_freq, 
-				      int N, int L, int evd_mode);
+				      int N, int L, int evd_mode, FILE *hfp, FILE *qfp);
 static int CopyFThrInfo(CP9FilterThr_t *src, CP9FilterThr_t *dest);
 static int CopyCMStatsEVD(CMStats_t *src, CMStats_t *dest);
 
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 static int mpi_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_freq, 
-			       int N, int L, int evd_mode, int my_rank, int nproc);
+			       int N, int L, int evd_mode, int my_rank, int nproc,
+			       FILE *hfp, FILE *qfp);
 #endif
 
 static ESL_OPTIONS options[] = {
@@ -62,6 +64,8 @@ static ESL_OPTIONS options[] = {
   { "--onlyevd", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--onlyfil", "only estimate EVDs, don't calculate filter thresholds", 1},
   { "--onlyfil", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--onlyevd", "only calculate filter thresholds, don't estimate EVDs", 1},
   { "--fastfil", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--onlyevd", "calc filter thr quickly, assume parsetree sc is optimal", 1},
+  { "--histfile",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL, "--onlyfil", "save fitted histogram(s) to file <s>", 1},
+  { "--qqfile",  eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL, "--onlyfil", "save Q-Q plot for histogram(s) to file <s>", 1},
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -103,6 +107,13 @@ main(int argc, char **argv)
   int              hmmevdN = 5000;     /* # samples used to calculate HMM EVDs        */
   int              evdN;               /* either cmevdN or hmmevdN                    */
   int              evd_mode;           /* counter over evd modes                      */
+  char            *histfile;           /* file for saving fitted histogram(s)         */
+  FILE            *hfp;                /* open file pointer for histfile              */
+  char            *qqfile;             /* file for saving Q-Q plot(s)                 */
+  FILE            *qfp;                /* open file pointer for qqfile                */
+  double           params[2];          /* used if printing Q-Q file                   */
+  ESL_HISTOGRAM   *h;                  /* a histogram of scores, reused               */
+  int              p;                  /* counter over partitions                     */
 
   /* CP9 HMM filtering threshold related variables */
   int              do_fil = TRUE;      /* TRUE to calc filter thr, FALSE if --onlyevd */
@@ -121,33 +132,47 @@ main(int argc, char **argv)
   /*****************************************************************
    * Parse the command line
    *****************************************************************/
-  go = esl_getopts_Create(options, usage);
-  esl_opt_ProcessCmdline(go, argc, argv);
-  esl_opt_VerifyConfig(go);
-  if (esl_opt_IsSet(go, "-h")) {
+  go = esl_getopts_Create(options);
+  if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK) esl_fatal("Failed to parse command line: %s\n", go->errbuf);
+  if (esl_opt_VerifyConfig(go)               != eslOK) esl_fatal("Failed to parse command line: %s\n", go->errbuf);
+  if (esl_opt_GetBoolean(go, "-h") == TRUE) {
     puts(usage);
     puts("\ngeneral options are:");
     esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 2 = indentation; 80=textwidth*/
     return eslOK;
   }
 
-  esl_opt_GetIntegerOption(go, "--cmevdN",  &cmevdN);
-  esl_opt_GetIntegerOption(go, "--hmmevdN", &hmmevdN);
-  esl_opt_GetIntegerOption(go, "--filN",    &filN);
-  esl_opt_GetFloatOption  (go, "--cmeval",  &cm_ecutoff);
-  esl_opt_GetFloatOption  (go, "--fract",   &fraction);
-  esl_opt_GetBooleanOption(go, "--onlyevd", &optset); if(optset) do_fil = FALSE;
-  esl_opt_GetBooleanOption(go, "--onlyfil", &optset); if(optset) do_evd = FALSE;
-  esl_opt_GetBooleanOption(go, "--fastfil", &do_fastfil);
-  esl_opt_GetBooleanOption(go, "--nocmeval",&optset); 
-  if(optset) { use_cm_cutoff = FALSE; cm_ecutoff = -1.; }
+  cmevdN  = esl_opt_GetInteger(go, "--cmevdN");
+  hmmevdN = esl_opt_GetInteger(go, "--hmmevdN");
+  filN    = esl_opt_GetInteger(go, "--filN");
+  cm_ecutoff = esl_opt_GetReal(go, "--cmeval");
+  fraction = esl_opt_GetReal  (go, "--fract");
+  do_fil = !(esl_opt_GetBoolean(go, "--onlyevd"));
+  do_evd = !(esl_opt_GetBoolean(go, "--onlyfil"));
+  do_fastfil = esl_opt_GetBoolean(go, "--fastfil");
+  use_cm_cutoff = !(esl_opt_GetBoolean(go, "--nocmeval"));
+  histfile  = esl_opt_GetString(go, "--histfile");
+  qqfile    = esl_opt_GetString(go, "--qqfile");
+  if(!use_cm_cutoff) cm_ecutoff = -1.; 
 
   if (esl_opt_ArgNumber(go) != 1) {
     puts("Incorrect number of command line arguments.");
     puts(usage);
     return eslFAIL;
   }
-  cmfile = esl_opt_GetCmdlineArg(go, eslARG_STRING, NULL); /* NULL=no range checking */
+  cmfile = esl_opt_GetArg(go, eslARG_STRING, NULL); /* NULL=no range checking */
+
+				/* histogram files, fitted and predicted */
+  hfp = NULL;
+  if (histfile != NULL) {
+    if ((hfp = fopen(histfile, "w")) == NULL)
+      Die("Failed to open histogram save file %s for writing\n", histfile);
+  }
+  qfp = NULL;
+  if (qqfile != NULL) {
+    if ((qfp = fopen(qqfile, "w")) == NULL)
+      Die("Failed to open Q-Q plot file %s for writing\n", qqfile);
+  }
 
   /****************************************************************
    * Get distribution of GC content from a long random sequence
@@ -192,9 +217,10 @@ main(int argc, char **argv)
   /*****************************************************************
    * Initializations, including opening the CM file 
    *****************************************************************/
-  /*if ((r = esl_randomness_CreateTimeseeded()) == NULL)*/
-  if ((r = esl_randomness_Create(33)) == NULL)
+  if ((r = esl_randomness_CreateTimeseeded()) == NULL)
+      //if ((r = esl_randomness_Create(33)) == NULL)
     esl_fatal("Failed to create random number generator: probably out of memory");
+  printf("Random seed: %ld\n", r->seed);
 
   /* Initial allocations for results per CM;
    * we'll resize these arrays dynamically as we read more CMs.
@@ -269,14 +295,32 @@ main(int argc, char **argv)
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	      MPI_Barrier(MPI_COMM_WORLD);
 	      if(my_rank == 0)
-		mpi_make_histogram (cm, cmstats[ncm], gc_freq, evdN, sample_length, evd_mode, my_rank, nproc);
+		mpi_make_histogram (cm, cmstats[ncm], gc_freq, evdN, sample_length, evd_mode, my_rank, nproc,
+				    hfp, qfp);
 	      else if (my_rank > 0)
-		mpi_make_histogram (cm, NULL, NULL, 0, 0, evd_mode, my_rank, nproc);
+		mpi_make_histogram (cm, NULL, NULL, 0, 0, evd_mode, my_rank, nproc, hfp, qfp);
 	      else /* we'll never get here */
 #endif
-	      NEW_serial_make_histogram (cm, cmstats[ncm], gc_freq, evdN, sample_length, evd_mode);
+		NEW_serial_make_histogram (cm, cmstats[ncm], gc_freq, evdN, sample_length, evd_mode,
+					   hfp, qfp);
+	      
+	      /*
+	      if(hfp != NULL)
+		for(p = 0; p < cmstats[ncm]->np; p++)
+		  esl_histogram_Plot(hfp, h);
+
+	      if (qfp != NULL)
+		for(p = 0; p < cmstats[ncm]->np; p++)
+		  {
+		    params[0] = cmstats[ncm]->evdAA[evd_mode][p]->mu;
+		    params[1] = cmstats[ncm]->evdAA[evd_mode][p]->lambda;
+		    esl_histogram_PlotQQ(qfp, h, &esl_exp_generic_invcdf, params);
+		  }
+	      esl_histogram_Destroy(h);
+	      */
 	    }
 	  cm->flags |= CM_EVD_STATS;
+	  
 	}
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
       if(my_rank == 0) /* master */
@@ -499,10 +543,12 @@ main(int argc, char **argv)
  *           N        - number of random seqs to search 
  *           L        - length of random samples
  *           evd_mode - gives search strategy to use for CM or CP9
+ *           hfp      - open file pointer for histfile (NULL if not wanted)
+ *           qfp      - open file pointer for Q-Q file (NULL if not wanted)
  *
  */  
 static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_freq, 
-				      int N, int L, int evd_mode)
+				      int N, int L, int evd_mode, FILE *hfp, FILE *qfp)
 {
   int i;
   char *randseq;
@@ -521,6 +567,7 @@ static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_f
   int p; /* counter over partitions */
   double tmp_mu;
   double x;
+  double params[2];          /* used if printing Q-Q file                   */
   /*printf("in serial_make_histogram, nparts: %d sample_len: %d cp9_stats: %d do_ins: %d do_enf: %d\n", num_partitions, L, doing_cp9_stats, (cm->search_opts & CM_SEARCH_INSIDE), (cm->config_opts & CM_CONFIG_ENFORCE));*/
 
   /* Check contract */
@@ -586,8 +633,16 @@ static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_f
       esl_gumbel_FitCensored(xv, n, z, xv[0], &(evd[p]->mu), &(evd[p]->lambda));
       evd[p]->N = N;
       evd[p]->L = L;
+      if(hfp != NULL)
+	esl_histogram_Plot(hfp, h);
+      if (qfp != NULL)
+	{
+	  params[0] = evd[p]->mu;
+	  params[1] = evd[p]->lambda;
+	  esl_histogram_PlotQQ(qfp, h, &esl_exp_generic_invcdf, params);
+	}
+      esl_histogram_Destroy(h);
     }
-  esl_histogram_Destroy(h);
   esl_randomness_Destroy(r);
   free(nt_p);
   free(randseq);
@@ -663,12 +718,15 @@ int CopyCMStatsEVD(CMStats_t *src, CMStats_t *dest)
  *           L        - length of random samples          (irrelevant if my_rank > 0)
  *           evd_mode - gives search strategy to use for CM or CP9
  *           my_rank  - MPI rank
+ *           hfp      - open file pointer for histfile (NULL if not wanted)
+ *           qfp      - open file pointer for Q-Q file (NULL if not wanted)
+ *
  */  
 static int mpi_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_freq, 
-					int N, int L, int evd_mode, int my_rank, int nproc)
+			       int N, int L, int evd_mode, int my_rank, int nproc,
+			       FILE *hfp, FILE *qfp)
 {
   int status = 0;
-  /*printf("in mpi_make_histogram, my_rank: %d\n", my_rank);*/
   /* Configure the CM based on the stat mode */
   ConfigForEVDMode(cm, evd_mode);
   
@@ -684,24 +742,25 @@ static int mpi_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_freq,
       char *dsq;
       ESL_HISTOGRAM *h;
       double  *nt_p;		     /* Distribution for random sequences */
-      float score;
-      double cur_gc_freq[GC_SEGMENTS];
-      float gc_comp;
+      double *cur_gc_freq;
+      double gc_comp;
       double *xv;
       int z;
       int n;
       ESL_RANDOMNESS  *r       = NULL;     /* source of randomness                    */
       EVDInfo_t **evd; 
       int p; /* counter over partitions */
-      double tmp_mu;
-      double x;
       int              have_work;
       int              nproc_working;
       int              wi;
       MPI_Status       mstatus;
-      float sc;
+      float         sc;
+      float         sc2;
       char        **dsqlist = NULL;      /* queue of digitized seqs being worked on, 1..nproc-1 */
+      double        params[2];           /* used if printing Q-Q file                   */
 
+      printf("in mpi_make_histogram, my_rank: %d evd_mode: %d\n", my_rank, evd_mode);
+      fflush(stdout);
       /* Check contract */
       if(cmstats == NULL)
 	Die("ERROR in mpi_make_histogram(), master's cmstats is NULL\n");
@@ -712,15 +771,16 @@ static int mpi_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_freq,
 	esl_fatal("Failed to create random number generator: probably out of memory");
       /* Allocate for random distribution */
       ESL_ALLOC(nt_p,   sizeof(double) * Alphabet_size);
-      ESL_ALLOC(randseq, sizeof(char) * (L+2));
+      ESL_ALLOC(randseq, sizeof(char) * (L+1));
       ESL_ALLOC(dsqlist, sizeof(char *) * nproc);
+      ESL_ALLOC(cur_gc_freq, sizeof(double) * GC_SEGMENTS);
       for (wi = 0; wi < nproc; wi++) dsqlist[wi] = NULL;
       
       /* For each partition */
       for (p = 0; p < cmstats->np; p++)
 	{
 	  /* Initialize histogram; these numbers are guesses */
-	  h = esl_histogram_CreateFull(0., 100., 1.);    
+	  h = esl_histogram_CreateFull(-100., 100., .1);    
 	      
 	  /* Set up cur_gc_freq */
 	  esl_vec_DSet(cur_gc_freq, GC_SEGMENTS, 0.);
@@ -747,11 +807,16 @@ static int mpi_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_freq,
 		{
 		  /* Get random GC content */
 		  gc_comp = 0.01 * esl_rnd_DChoose(r, cur_gc_freq, GC_SEGMENTS);
+		  fflush(stdout);
+		  ///gc_comp = 0.5; works if this is uncommented
 		  nt_p[1] = nt_p[2] = 0.5 * gc_comp;
 		  nt_p[0] = nt_p[3] = 0.5 * (1. - gc_comp);
+		  esl_vec_DNorm(nt_p, Alphabet_size);
+
+		  ///nt_p[0] = nt_p[1] = nt_p[2] = nt_p[3] = 0.25;/// works if this is uncommented.
 		  /* Get random sequence */
 		  /* We have to generate a text sequence for now, b/c the digitized
-		   * version els_rnd_xIID() generates a ESL_DSQ seq, which actually_search_target()
+		   * version esl_rnd_xIID() generates a ESL_DSQ seq, which actually_search_target()
 		   * can't handle. */
 		  if (esl_rnd_IID(r, Alphabet, nt_p, Alphabet_size, L, randseq)  != eslOK) 
 		    esl_fatal("Failure creating random seq for GC content distro");
@@ -767,7 +832,10 @@ static int mpi_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_freq,
 		{
 		  MPI_Recv(&sc, 1, MPI_FLOAT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &mstatus);
 		  wi = mstatus.MPI_SOURCE;
-		  esl_histogram_Add(h, sc);
+		  sc2 = esl_gumbel_Sample(r, -20., 0.4);
+
+		  if(esl_histogram_Add(h, (double) sc) != eslOK)
+		    ESL_EXCEPTION(eslENOHALT, "Not eslOK from esl_histogram_Add().");
 		  nproc_working--;
 		  free(dsqlist[wi]);
 		  dsqlist[wi] = NULL;
@@ -789,9 +857,19 @@ static int mpi_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_freq,
 	  esl_gumbel_FitCensored(xv, n, z, xv[0], &(evd[p]->mu), &(evd[p]->lambda));
 	  evd[p]->N = N;
 	  evd[p]->L = L;
+	  if(hfp != NULL)
+	    esl_histogram_Plot(hfp, h);
+	  if (qfp != NULL)
+	    {
+	      params[0] = evd[p]->mu;
+	      params[1] = evd[p]->lambda;
+	      esl_histogram_PlotQQ(qfp, h, &esl_exp_generic_invcdf, params);
+	    }
+	  esl_histogram_Destroy(h);
 	}
-      esl_histogram_Destroy(h);
       esl_randomness_Destroy(r);
+      free(dsqlist);
+      free(cur_gc_freq);
       free(nt_p);
       free(randseq);
       return eslOK;
