@@ -210,8 +210,8 @@ main(int argc, char **argv)
   double tmp_K;                 /* for converting mu from cmfile to mu for N*/
 
   /* For calculating HMM thresholds if they're set from cm->stats->fthr     */
-  int   cm_mode;                /* CM algorithm mode for calc'ing HMM thr   */
-  int   cp9_mode;               /* CP9 algorithm mode for calc'ing HMM thr  */
+  int   cm_mode  = -1;          /* CM algorithm mode for calc'ing HMM thr   */
+  int   cp9_mode = -1;          /* CP9 algorithm mode for calc'ing HMM thr  */
   float cp9_eval;               /* HMM threshold P-val, from cm->stats->fthr*/
   float cp9_bit_sc;             /* bit sc cp9_eval corresonds to            */
   EVDInfo_t *cp9_evd;           /* pointer to CP9 EVD info to calc threshold*/
@@ -282,8 +282,8 @@ main(int argc, char **argv)
   int   filN = 1000;          /* Number of sequences to sample from the CM */
 
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-  int mpi_my_rank;              /* My rank in MPI */
-  int mpi_num_procs;            /* Total number of processes */
+  int my_rank;              /* My rank in MPI */
+  int nproc;            /* Total number of processes */
   int mpi_master_rank;          /* Rank of master process */
   Stopwatch_t  *mpi_watch;      /* for timings in MPI mode                  */
 
@@ -293,19 +293,19 @@ main(int argc, char **argv)
   atexit (exit_from_mpi);
   in_mpi = 1;                /* Flag for exit_from_mpi() */
 
-  MPI_Comm_rank (MPI_COMM_WORLD, &mpi_my_rank);
-  MPI_Comm_size (MPI_COMM_WORLD, &mpi_num_procs);
+  MPI_Comm_rank (MPI_COMM_WORLD, &my_rank);
+  MPI_Comm_size (MPI_COMM_WORLD, &nproc);
 
   /*
    * Determine master process.  This is the lowest ranking one that can do I/O
    */
-  mpi_master_rank = get_master_rank (MPI_COMM_WORLD, mpi_my_rank);
+  mpi_master_rank = get_master_rank (MPI_COMM_WORLD, my_rank);
 
-  /*printf("B CS rank: %4d master: %4d num: %4d\n", mpi_my_rank, mpi_master_rank, mpi_num_procs);*/
+  /*printf("B CS rank: %4d master: %4d num: %4d\n", my_rank, mpi_master_rank, nproc);*/
 
   /* If I'm the master, do the following set up code -- parse arguments, read
      in matrix and query, build model */
-  if (mpi_my_rank == mpi_master_rank) 
+  if (my_rank == mpi_master_rank) 
     {
       mpi_watch = StopwatchCreate(); 
 #endif
@@ -445,7 +445,7 @@ main(int argc, char **argv)
   }
 
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-  if(mpi_num_procs > 1)
+  if(nproc > 1)
     do_timings = FALSE; /* we don't do per node timings, but we do do master node timings */
 #endif
   
@@ -496,7 +496,7 @@ main(int argc, char **argv)
   if(beta >= 1.)
     Die("when using --beta <x>, <x> must be greater than 0 and less than 1.\n");
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-  if(read_qdb && ((mpi_num_procs > 1) && (mpi_my_rank == mpi_master_rank)))
+  if(read_qdb && ((nproc > 1) && (my_rank == mpi_master_rank)))
     Die("Sorry, you can't read in bands with --qdbfile in MPI mode.\n");
 #endif
 
@@ -533,12 +533,12 @@ main(int argc, char **argv)
   ncm = 0;
   continue_flag = 1; /* crudely used in MPI mode to make non-master MPIs go
 		      * through the main loop for potentially multiple CMs */
-  /*printf("0 continue_flag: %d rank: %d\n", continue_flag, mpi_my_rank);*/
+  /*printf("0 continue_flag: %d rank: %d\n", continue_flag, my_rank);*/
   while (continue_flag)
     {
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
       /* If I'm the master, configure the CM based on command line options */
-      if (mpi_my_rank == mpi_master_rank) 
+      if (my_rank == mpi_master_rank) 
 	{
 #endif
       if (cm == NULL) 
@@ -643,6 +643,7 @@ main(int argc, char **argv)
 		  cm->stats->evdAA[i][p]->L;
 		cm->stats->evdAA[i][p]->mu = log(tmp_K * ((double) N)) /
 		  cm->stats->evdAA[i][p]->lambda;
+		cm->stats->evdAA[i][p]->L = N; /* update L, the seq size stats correspond to */
 	      }
 	  printf ("CM/CP9 statistics read from CM file\n");
 	  if (cm->stats->np == 1) 
@@ -654,11 +655,36 @@ main(int argc, char **argv)
 		printf ("%d %d..%d", p, cm->stats->ps[p], cm->stats->pe[p]);
 	    }
 	}
-      /*********************
-       * Set score cutoffs *
-       *********************/
-      /* Set the cutoffs, after we've read the DB file so can set up E-value cutoff for CP9 
-       * if we're using the P-value HMM threshold in CM file */
+
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+	}   /* End of second block that is only done by master process */
+      /* Barrier for debugging */
+
+      MPI_Barrier(MPI_COMM_WORLD);
+      /* Broadcase the CM, complete with stats if they were in cmfile */
+      broadcast_cm(&cm, my_rank, mpi_master_rank);
+#endif
+
+      /* Configure the CM for search based on cm->config_opts and cm->search_opts. 
+       * Set local mode, make cp9 HMM, calculate QD bands etc.
+       */
+      CMLogoddsify(cm); /* temporary */
+      ConfigCM(cm, preset_dmin, preset_dmax);
+      if(cm->config_opts & CM_CONFIG_ENFORCE)
+	ConfigCMEnforce(cm);
+      cons = CreateCMConsensus(cm, 3.0, 1.0); 
+
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+      if(my_rank == mpi_master_rank) /* 3rd master-only block */
+	{
+#endif
+      /***************************************************************
+       * Set score cutoffs block
+       ***************************************************************/
+      /* Set the cutoffs after we've read the DB file, broadcasted and configured CM,
+       * so can recalculate up CP9 filtering E-value cutoff based on new DB size and
+       * CM E cutoff if nec (via --hmmcalcthr) 
+       */
       cm->cutoff_type = cm_cutoff_type;  /* this will be DEFAULT_CM_CUTOFF_TYPE unless set at command line */
       if(cm->cutoff_type == SCORE_CUTOFF)
 	cm->cutoff = cm_sc_cutoff;
@@ -669,9 +695,6 @@ main(int argc, char **argv)
 	    Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T and/or --hmmT.\n");
 	}
       /* Set HMM cutoff as filter threshold read from CM file, unless --hmmT, --hmmE or --hmmcalcthr. 
-       * To do this we need to convert the E-value cutoff written by cmcalibrate for database size
-       * of cm->stats->fthr[p]->dbsize to the corresponding E-value for the database size (N) 
-       * by converting it to a bit score then back to an E-value. 
        */
       if(!cp9_cutoff_set) /* cp9_cutoff_set is TRUE if --hmmT or --hmmE invoked at command line */
 	{
@@ -686,75 +709,7 @@ main(int argc, char **argv)
 	  fthr    = cm->stats->fthrA[cm_mode];
 	  cp9_evd = cm->stats->evdAA[cp9_mode][0]; 
 
-	  /**********************************************************************	   
-	   * This block will be relocated to after a first MPI broadcast, and 
-	   * ConfigCM() call once MPI is implemented with a parallel version of
-	   * FindCP9FilterThreshold(). 
-	   */
-	  if(do_hmmcalcthr)
-	    {
-	      /* Calculate threshold here, use CM E-value cutoff we'll use for the search */
-	      if(!(cm->flags & CM_EVD_STATS))
-		Die("ERROR trying to use HMM filter thresholds but no EVD stats in CM file.\nUse cmcalibrate or use --hmmT or --hmmE.\n");
-	      if(cm->cutoff_type == SCORE_CUTOFF)
-		Die("ERROR can't use --hmmcalcthr with -T, currently you must use CM E-values with --hmmcalcthr.\n");
-	      cp9_cutoff_type = E_CUTOFF;
-	      /* We need QDBs and a CP9 HMM to get the filter threshold, but it's not set up til our
-	       * ConfigCM() call a bit later. That's later so in MPI the slaves configure the CM
-	       * properly, so we sloppily get around this here by building a temp CP9, then freeing
-	       * it. 
-	       */
-	      int orig_flags, orig_search_opts, orig_config_opts;
-	      orig_flags = cm->flags;
-	      orig_search_opts = cm->search_opts;
-	      orig_config_opts = cm->config_opts;
-	      
-	      ConfigQDB(cm);
-	      if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))
-		Die("Couldn't build a CP9 HMM from the CM\n");
-	      cm->flags |= CM_CP9; /* raise the CP9 flag */
-	      cp9_e_cutoff = FindCP9FilterThreshold(cm, cm->stats, filt_fract, filN, use_cm_cutoff,
-						    cm->cutoff, N, cm_mode, cp9_mode, do_fastfil);
-	      FreeCPlan9(cm->cp9);
-	      cm->cp9 = NULL;
-	      cm->flags &= ~CM_CP9;
-	      if(cm->flags & CM_QDB)
-		{
-		  free(cm->dmin);
-		  free(cm->dmax);
-		  cm->dmin = NULL;
-		  cm->dmax = NULL;
-		  cm->flags &= ~CM_QDB;
-		}
-	      /* if FindCP9FilterThreshold()'s ConfigForEVDMode set up local begins/ends,
-	       * undo them, they'll be redone in CMConfig(). This is sloppy, and it is
-	       * temporary, once a parallel (MPI) version of FindCP9FilterThreshold() exists,
-	       * this call will be made AFTER each slave configs it's own CM with ConfigCM(). 
-	       */
-	      if(cm->flags & CM_LOCAL_BEGIN || cm->flags & CM_LOCAL_END)
-		ConfigGlobal(cm);
-	      /* following lines are printfs, just for curiousity */
-	      if(cp9_mode == CP9_L) 
-		cp9_eval   = fthr->l_eval;
-	      else if(cp9_mode == CP9_G) 
-		cp9_eval   = fthr->g_eval;
-	      cp9_bit_sc   = cp9_evd->mu - (log(cp9_e_cutoff) / cp9_evd->lambda);
-	      printf("Calc'ed CP9 bit score cutoff: %f\ncmcalibrate e-val cutoff: %f\nnew e-val cutoff: %f\n", cp9_bit_sc, cp9_eval, cp9_e_cutoff);
-	      if(cm->flags & CM_HASBITS)
-		cm->flags &= ~CM_HASBITS;
-	      if(cm->flags & CM_HASBITS)
-		cm->flags &= ~CM_HASBITS;
-	      if((cm->search_opts & CM_SEARCH_HMMONLY) && (!do_hmmonly))
-		cm->search_opts &= ~CM_SEARCH_HMMONLY;
-
-
-	      if(cm->flags != orig_flags) Die("ERROR cm->flags different after determining CP9 threshold.\n");
-	      if(cm->search_opts != orig_search_opts) Die("ERROR cm->search_opts different after determining CP9 threshold.\n");
-	      if(cm->config_opts != orig_config_opts) Die("ERROR cm->config_opts different after determining CP9 threshold.\n");
-	    }
-	  /*End of block to be relocated once MPI is implemented*/	   
-	  /******************************************************/
-	  else
+	  if(!do_hmmcalcthr)
 	    {
 	      /* Use a HMM filter threshold from file, check we read them */
 	      if(!(cm->flags & CM_EVD_STATS))
@@ -762,75 +717,114 @@ main(int argc, char **argv)
 	      if(!(cm->flags & CM_FTHR_STATS))
 		Die("ERROR trying to use HMM filter thresholds but none in CM file.\nUse cmcalibrate or use --hmmT or --hmmE.\n");
 	      /* Convert E-value from CM file to E-value for current DB size,
-	       * we use 1st partition, shouldn't make a difference which
-	       * one we use, b/c we're only converting E-value cutoff    */
+	       * multiply E-val by N/fthr->db_size, want CP9 bit score cutoffs to 
+	       * remain the same. 
+	       */
 	      cp9_cutoff_type = E_CUTOFF;
 	      if(cp9_mode == CP9_L) 
-		cp9_eval   = fthr->l_eval;
+		cp9_e_cutoff   = fthr->l_eval;
 	      else if(cp9_mode == CP9_G) 
-		cp9_eval   = fthr->g_eval;
-	      tmp_K        = exp(cp9_evd->mu * cp9_evd->lambda) / cp9_evd->L;
-	      tmp_mu       = log(tmp_K  * ((double) fthr->db_size)) / cp9_evd->lambda;
-	      cp9_bit_sc   = tmp_mu - (log(cp9_eval) / cp9_evd->lambda);
-	      cp9_e_cutoff = RJK_ExtremeValueE(cp9_bit_sc,  cp9_evd->mu, cp9_evd->lambda);
-	      printf("CP9 bit score cutoff: %f\ncmcalibrate e-val cutoff: %f\nnew e-val cutoff: %f\n", cp9_bit_sc, cp9_eval, cp9_e_cutoff);
+		cp9_e_cutoff   = fthr->g_eval;
+	      printf("CP9 cmcalibrate e-val cutoff: %f\n", cp9_e_cutoff);
+	      cp9_e_cutoff *= (double) N / (double) fthr->db_size; /* correct for new db size */
+	      printf("CP9 new e-val cutoff: %f\n", cp9_e_cutoff);
 	    }
+	}
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+	}
+      /* Broadcast cm_mode and cp9_mode, they *may* be used */
+	      MPI_Barrier(MPI_COMM_WORLD);
+      MPI_Bcast (&cm_mode,    1, MPI_INT, 0, MPI_COMM_WORLD);
+      MPI_Bcast (&cp9_mode,   1, MPI_INT, 0, MPI_COMM_WORLD);
+#endif
+      if(do_hmmcalcthr)
+	{
+	  printf("\n!DO_HMMCALCTHR! cp9_mode:%d \n", cp9_mode);
+	  /* Calculate CP9 threshold here, use CM E-value cutoff we'll use for the search */
+	  cp9_cutoff_type = E_CUTOFF;
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+	  if(TRUE)
+	    {
+	      MPI_Barrier(MPI_COMM_WORLD);
+	      if(my_rank == 0) /* master */
+		{
+		  if(!(cm->flags & CM_EVD_STATS))
+		    Die("ERROR trying to use HMM filter thresholds but no EVD stats in CM file.\nUse cmcalibrate or use --hmmT or --hmmE.\n");
+		  if(cm->cutoff_type == SCORE_CUTOFF)
+		    Die("ERROR can't use --hmmcalcthr with -T, currently you must use CM E-values with --hmmcalcthr.\n");
+		  cp9_e_cutoff = 
+		    mpi_FindCP9FilterThreshold(cm, cm->stats, filt_fract, filN, use_cm_cutoff, 
+					       cm->cutoff, N, cm_mode, cp9_mode, do_fastfil,
+					       my_rank, nproc);
+		}
+	      else /* worker */
+		mpi_FindCP9FilterThreshold(cm, NULL, 0., 0, FALSE, 0, 0, cm_mode, cp9_mode, FALSE,
+					   my_rank, nproc); /* all params but cm_mode, cp9_mode, my_rank
+							     * and cm are irrelevant for worker */
+	      /* broadcast cp9_e_cutoff */
+	      MPI_Barrier(MPI_COMM_WORLD);
+	      MPI_Bcast (&cp9_e_cutoff,   1, MPI_FLOAT, 0, MPI_COMM_WORLD);
+	      printf("rank: %d cp9_e_cutoff: %f\n", my_rank, cp9_e_cutoff);
+	    }
+	  else /* never get here in MPI */
+#endif
+	    cp9_e_cutoff = FindCP9FilterThreshold(cm, cm->stats, filt_fract, filN, use_cm_cutoff,
+						  cm->cutoff, N, cm_mode, cp9_mode, do_fastfil);
+
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+          if(my_rank == 0) /* master */
+	    {
+#endif
+	  /* following lines are printfs, just for curiousity */
+	  if(cp9_mode == CP9_L) 
+	    cp9_eval   = fthr->l_eval;
+	  else if(cp9_mode == CP9_G) 
+	    cp9_eval   = fthr->g_eval;
+	  cp9_bit_sc   = cp9_evd->mu - (log(cp9_e_cutoff) / cp9_evd->lambda);
+	  printf("Calc'ed CP9 bit score cutoff: %f\ncmcalibrate e-val cutoff: %f\nnew e-val cutoff: %f\n", cp9_bit_sc, cp9_eval, cp9_e_cutoff);
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+	    }
+#endif
 	}
       /* Set CP9 cutoff */
       cm->cp9_cutoff_type = cp9_cutoff_type;
       if(cm->cp9_cutoff_type == SCORE_CUTOFF)
 	cm->cp9_cutoff = cp9_sc_cutoff;
       else
+	cm->cp9_cutoff = cp9_e_cutoff;
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+      if(my_rank == 0) /* master */
 	{
-	  cm->cp9_cutoff = cp9_e_cutoff;
-	  if(!(cm->flags & CM_EVD_STATS))
-	    Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T and/or --hmmT.\n");
-	}            
+#endif
       if(cm->cutoff_type == E_CUTOFF)
 	printf ("Using CM  E cutoff of %.2f\n", cm->cutoff);
       else if (cm->cutoff_type == SCORE_CUTOFF) 
 	printf ("Using CM  score cutoff of %.2f\n", cm->cutoff);
       fflush(stdout);
       if(cm->cp9_cutoff_type == E_CUTOFF)
-	printf ("Using CP9 E cutoff of %.2f\n", cm->cp9_cutoff);
+	{
+	  if(!(cm->flags & CM_EVD_STATS))
+	    Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T and/or --hmmT.\n");
+	  printf ("Using CP9 E cutoff of %.2f\n", cm->cp9_cutoff);
+	}
       else if (cm->cp9_cutoff_type == SCORE_CUTOFF) 
 	printf ("Using CP9 score cutoff of %.2f\n", cm->cp9_cutoff);
       fflush(stdout);
-
       printf ("N = %ld\n\n", N);
       fflush(stdout);
 
-#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-	}   /* End of second block that is only done by master process */
-      /* Barrier for debugging */
-
-      MPI_Barrier(MPI_COMM_WORLD);
-      /* Broadcase the CM, complete with stats if they were in cmfile */
-      broadcast_cm(&cm, mpi_my_rank, mpi_master_rank);
-#endif
-
-      /* Configure the CM for search based on cm->config_opts and cm->search_opts. 
-       * Set local mode, make cp9 HMM, calculate QD bands etc.
-       */
-      CMLogoddsify(cm); /* temporary */
-      ConfigCM(cm, preset_dmin, preset_dmax);
-      if(cm->config_opts & CM_CONFIG_ENFORCE)
-	ConfigCMEnforce(cm);
-      cons = CreateCMConsensus(cm, 3.0, 1.0); 
-
-#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-      if(mpi_my_rank == mpi_master_rank)
+      if(do_bdump && (!(cm->search_opts & CM_SEARCH_NOQDB))) 
 	{
-#endif
-	  if(do_bdump && (!(cm->search_opts & CM_SEARCH_NOQDB))) 
-	    {
-	      printf("beta:%f\n", cm->beta);
-	      debug_print_bands(cm, cm->dmin, cm->dmax);
-	      PrintDPCellsSaved(cm, cm->dmin, cm->dmax, cm->W);
-	    }
-#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+	  printf("beta:%f\n", cm->beta);
+	  debug_print_bands(cm, cm->dmin, cm->dmax);
+	  PrintDPCellsSaved(cm, cm->dmin, cm->dmax, cm->W);
 	}
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+	} /* end of master block */
+      printf("rank: %d cm->cutoff: %f cm->cutoff_type: %d\n", my_rank, cm->cutoff, cm->cutoff_type);
+      printf("rank: %d cm->cutoff: %f cm->cutoff_type: %d\n", my_rank, cm->cp9_cutoff, cm->cp9_cutoff_type);
 #endif
+      return 0;
 
       /*************************************************
        *    Do the search
@@ -842,17 +836,17 @@ main(int argc, char **argv)
 	}	  
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 
-      /*printf("cm->cutoff: %f cp9->cutoff: %f rank: %d\n", cm->cutoff, cm->cp9_cutoff, mpi_my_rank);*/
-      if(mpi_my_rank == mpi_master_rank && mpi_num_procs > 1)
+      /*printf("cm->cutoff: %f cp9->cutoff: %f rank: %d\n", cm->cutoff, cm->cp9_cutoff, my_rank);*/
+      if(my_rank == mpi_master_rank && nproc > 1)
 	{
 	  StopwatchZero(mpi_watch);
 	  StopwatchStart(mpi_watch);
 	}
-      if (mpi_num_procs > 1)
+      if (nproc > 1)
 	{
 	  parallel_search_database (dbfp, cm, cons,
-				    mpi_my_rank, mpi_master_rank, mpi_num_procs);
-	  if(mpi_my_rank == mpi_master_rank && mpi_num_procs > 1)
+				    my_rank, mpi_master_rank, nproc);
+	  if(my_rank == mpi_master_rank && nproc > 1)
 	    {
 	      StopwatchStop(mpi_watch);
 	      StopwatchDisplay(stdout, "MPI search time:", mpi_watch);
@@ -869,7 +863,7 @@ main(int argc, char **argv)
 	}
       FreeCM(cm);
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-      if(mpi_my_rank == mpi_master_rank)
+      if(my_rank == mpi_master_rank)
 	{
 #endif
       printf("//\n");
@@ -879,7 +873,7 @@ main(int argc, char **argv)
       ncm++;
       if(do_timings) StopwatchFree(watch);
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-      if(mpi_my_rank == mpi_master_rank)
+      if(my_rank == mpi_master_rank)
 	{
 #endif
 	  esl_sqfile_Close(dbfp);
@@ -889,7 +883,7 @@ main(int argc, char **argv)
 	}
       MPI_Barrier(MPI_COMM_WORLD);
       MPI_Bcast (&continue_flag,  1, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
-      /*printf("1 continue_flag: %d rank: %d\n", continue_flag, mpi_my_rank);*/
+      /*printf("1 continue_flag: %d rank: %d\n", continue_flag, my_rank);*/
 #endif
 } /* end of while(continue_flag) (continue_flag remains TRUE as long as we are
        * reading CMs from the CM file. */
@@ -897,7 +891,7 @@ main(int argc, char **argv)
 MPI_Barrier(MPI_COMM_WORLD);
   MPI_Finalize();
 in_mpi = 0;
-  if (mpi_my_rank == mpi_master_rank) 
+  if (my_rank == mpi_master_rank) 
     {
       StopwatchFree(mpi_watch);
 #endif

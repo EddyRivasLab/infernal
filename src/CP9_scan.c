@@ -1442,6 +1442,8 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N
   float return_eval;
   double tmp_K;
 
+  printf("in FindCP9FilterThreshold hmm_evd_mode: %d\n", hmm_evd_mode);
+
   /* Contract check */
   if (!(cm->flags & CM_CP9) || cm->cp9 == NULL) 
     Die("ERROR in FindCP9FilterThreshold() CP9 does not exist\n");
@@ -1776,7 +1778,7 @@ float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, i
 		{
 		  hmm_eval[i] = RJK_ExtremeValueE(cur_hmm_sc, hmm_mu[plist[wi]], hmm_evd[plist[wi]]->lambda);
 		  hmm_sc[i]   = cur_hmm_sc;
-		  printf("i: %d sc: %f E: %f P: %f\n", hmm_sc[i], hmm_eval[i], esl_gumbel_surv((double) hmm_sc[i], hmm_mu[plist[wi]], hmm_evd[plist[wi]]->lambda));
+		  printf("i: %4d sc: %f E: %f P: %f\n", i, hmm_sc[i], hmm_eval[i], esl_gumbel_surv((double) hmm_sc[i], hmm_mu[plist[wi]], hmm_evd[plist[wi]]->lambda));
 		  fflush(stdout);
 		  i++;
 		}		  
