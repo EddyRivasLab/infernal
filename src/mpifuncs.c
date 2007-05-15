@@ -32,6 +32,7 @@
 #include "structs.h"
 #include "funcs.h"
 #include "cm_dispatch.h"
+#include "stats.h"
 
 #include <string.h>
 
@@ -89,9 +90,16 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
   int position = 0;         /* Where I am in the buffer */
   int nstates, nnodes;
   int enf_len;
+  int nparts;
+  int i;
+  int p;
+
   position = 0;
   if (mpi_my_rank == mpi_master_rank) 
     {   /* I'm in charge */
+      /* contract check, if we claim to have EVD stats, we better have them */
+      if((*cm)->flags & CM_EVD_STATS && (*cm)->stats == NULL)
+	Die("ERROR in broadcast_cm() master node claims to have EVD stats but cm->stats is NULL!\n");
       nstates = (*cm)->M;
       nnodes = (*cm)->nodes;
       
@@ -122,6 +130,11 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
       if((*cm)->enf_start != 0) enf_len = strlen((*cm)->enf_seq);
       else enf_len = 0;
       MPI_Pack (&enf_len,                  1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+
+      /* Take special care with number of partitions, used later to get cm->stats if nec */
+      if((*cm)->flags & CM_EVD_STATS) nparts = (*cm)->stats->np;
+      else nparts = 0;
+      MPI_Pack (&nparts,                  1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
 
     }
   /* Broadcast to everyone */
@@ -155,6 +168,7 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->hmmpad),          1, MPI_INT,   MPI_COMM_WORLD);
 
       MPI_Unpack (buf, BUFSIZE, &position, &enf_len,                  1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &nparts,                   1, MPI_INT,   MPI_COMM_WORLD);
     }
   /* Now we broadcast the rest of the model using many calls to MPI_Bcast.  
      This is inefficient, but is probably negligible compared to the actual 
@@ -188,7 +202,7 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
   MPI_Bcast ((*cm)->itsc[0], nstates*MAXCONNECT, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
   MPI_Bcast ((*cm)->iesc[0], nstates*Alphabet_size*Alphabet_size, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
 
-  /* Finally broadcast the enf_seq, if it's NULL (enf_start == 0) we don't */
+  /* Broadcast the enf_seq, if it's NULL (enf_start == 0) we don't */
   if((*cm)->enf_start != 0)
     {
       if (mpi_my_rank != mpi_master_rank) 
@@ -198,6 +212,24 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
 	(*cm)->enf_seq[enf_len] = '\0';
     }
 
+  /* Broadcast the EVD stats if they exist 
+   * IMPT: currently filter threshold stats are NOT broadcasted as they're only
+   * used to get cm->cp9_cutoff, which is broadcasted separately. We could get 
+   * away with not broadcasting these stats too - though we'd have to modify 
+   * parallel_search_database() to be independent on EVD params */
+  if((*cm)->flags & CM_EVD_STATS) /* flags were already sent/received */
+    {
+      if (mpi_my_rank != mpi_master_rank) 
+	(*cm)->stats = AllocCMStats(nparts); /* nparts was already sent/recd */
+      for(i = 0; i < NEVDMODES; i++)
+	for(p = 0; p < nparts; p++)
+	  {	    
+	    MPI_Bcast(&((*cm)->stats->evdAA[i][p]->N),      1, MPI_INT,    mpi_master_rank, MPI_COMM_WORLD);
+	    MPI_Bcast(&((*cm)->stats->evdAA[i][p]->L),      1, MPI_INT,    mpi_master_rank, MPI_COMM_WORLD);
+	    MPI_Bcast(&((*cm)->stats->evdAA[i][p]->mu),     1, MPI_DOUBLE, mpi_master_rank, MPI_COMM_WORLD);
+	    MPI_Bcast(&((*cm)->stats->evdAA[i][p]->lambda), 1, MPI_DOUBLE, mpi_master_rank, MPI_COMM_WORLD);
+	  }
+    }
   return;
 }
 
@@ -1191,7 +1223,9 @@ mpi_worker_cm_and_cp9_search(CM_t *cm, int do_fast, int my_rank)
   int   L;
   float *scores = NULL;
   ESL_ALLOC(scores, sizeof(float) * 2);
-
+  int was_hmmonly;
+  if(cm->search_opts & CM_SEARCH_HMMONLY) was_hmmonly = TRUE;
+  else was_hmmonly = FALSE;
   /* Main loop */
   while (dsq_MPIRecv(&dsq, &L) == eslOK)
     {
@@ -1218,6 +1252,8 @@ mpi_worker_cm_and_cp9_search(CM_t *cm, int do_fast, int my_rank)
       MPI_Send(scores, 2, MPI_FLOAT, 0, 0, MPI_COMM_WORLD); /* send together so results don't interleave */
       free(dsq);
     }
+  if(was_hmmonly) cm->search_opts |= CM_SEARCH_HMMONLY;
+  else cm->search_opts &= ~CM_SEARCH_HMMONLY;
   if(scores != NULL) free(scores);
   /*printf("\trank: %d RETURNING!\n", my_rank);*/
   return;

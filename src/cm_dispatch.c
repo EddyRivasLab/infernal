@@ -76,6 +76,16 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons)
   float min_cp9_cutoff;
   int do_revcomp;
   int do_align;
+  int *dmin, *dmax;
+
+  if(cm->align_opts & CM_ALIGN_QDB)
+    {
+      dmin = cm->dmin;
+      dmax = cm->dmax;
+    }
+  else dmin = dmax = NULL;
+      
+	
   /*printf("in serial_search database do_align: %d do_revcomp: %d\n", do_align, do_revcomp);*/
   
   /* Determine minimum cutoff for CM and for CP9 */
@@ -101,8 +111,8 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons)
 				 NULL); /* filter fraction, TEMPORARILY NULL            */
 	  remove_overlapping_hits (dbseq->results[reversed],
 				   1, dbseq->sq[reversed]->n);
-	  if ((!cm->search_opts & CM_SEARCH_HMMONLY) && (cm->cutoff_type == E_CUTOFF) || 
-	      ( cm->search_opts & CM_SEARCH_HMMONLY) && (cm->cp9_cutoff_type == E_CUTOFF))
+	  if (((!(cm->search_opts & CM_SEARCH_HMMONLY)) && (cm->cutoff_type == E_CUTOFF)) || 
+	      ((cm->search_opts & CM_SEARCH_HMMONLY) && (cm->cp9_cutoff_type == E_CUTOFF)))
 	    remove_hits_over_e_cutoff (cm, dbseq->results[reversed],
 				       dbseq->sq[reversed]->seq, 
 				       (cm->search_opts & CM_SEARCH_HMMONLY)); /* HMM hits? */
@@ -118,10 +128,9 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons)
 		   dbseq->results[reversed]->data[i].start, 
 		   dbseq->results[reversed]->data[i].stop, 
 		   &(dbseq->results[reversed]->data[i].tr),
-		   cm->dmin, cm->dmax); /* dmin and dmax will be NULL if non-banded 
-					 * alternatively, could always pass NULL to 
-					 * always do non-banded alignment. */
-		
+		   //cm->dmin, cm->dmax);  
+		   dmin, dmax); /* dmin and dmax will be NULL unless cm->align_opts & CM_ALIGN_QDB */
+
 		/* Now, subtract out the starting point of the result so 
 		   that it can be added in later.  This makes the print_alignment
 		   routine compatible with the parallel version, while not needing
@@ -198,7 +207,14 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
   float min_cp9_cutoff;
   int do_revcomp;
   int do_align;
+  int *dmin, *dmax;
 
+  if(cm->align_opts & CM_ALIGN_QDB)
+    {
+      dmin = cm->dmin;
+      dmax = cm->dmax;
+    }
+  else dmin = dmax = NULL;
 
   do_revcomp = (!(cm->search_opts & CM_SEARCH_TOPONLY));
   do_align   = (!(cm->search_opts & CM_SEARCH_NOALIGN));
@@ -263,8 +279,8 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 		  remove_overlapping_hits
 		    (active_seqs[active_seq_index]->results[0], 
 		     1, active_seqs[active_seq_index]->sq[0]->n);
-		  if ((!cm->search_opts & CM_SEARCH_HMMONLY) && (cm->cutoff_type == E_CUTOFF) || 
-		      ( cm->search_opts & CM_SEARCH_HMMONLY) && (cm->cp9_cutoff_type == E_CUTOFF))
+		  if ((!(cm->search_opts & CM_SEARCH_HMMONLY)) && (cm->cutoff_type == E_CUTOFF) || 
+		      (  cm->search_opts & CM_SEARCH_HMMONLY) && (cm->cp9_cutoff_type == E_CUTOFF))
 		    remove_hits_over_e_cutoff 
 		      (cm, active_seqs[active_seq_index]->results[0],
 		       active_seqs[active_seq_index]->sq[0]->seq,
@@ -274,8 +290,8 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 		      remove_overlapping_hits 
 			(active_seqs[active_seq_index]->results[1],
 			 1, active_seqs[active_seq_index]->sq[1]->n);
-		      if ((!cm->search_opts & CM_SEARCH_HMMONLY) && (cm->cutoff_type == E_CUTOFF) || 
-			  ( cm->search_opts & CM_SEARCH_HMMONLY) && (cm->cp9_cutoff_type == E_CUTOFF))
+		      if ((!(cm->search_opts & CM_SEARCH_HMMONLY)) && (cm->cutoff_type == E_CUTOFF) || 
+			  (  cm->search_opts & CM_SEARCH_HMMONLY) && (cm->cp9_cutoff_type == E_CUTOFF))
 			remove_hits_over_e_cutoff 
 			  (cm, active_seqs[active_seq_index]->results[1],
 			   active_seqs[active_seq_index]->sq[1]->seq,
@@ -339,7 +355,7 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 	  else if (job_type == ALN_WORK && do_align) 
 	    {
 	      CYKDivideAndConquer(cm, seq, seqlen, bestr, 1, seqlen, &tr,
-				  cm->dmin, cm->dmax);
+				  dmin, dmax); /* dmin and dmax will be NULL unless cm->align_opts & CM_ALIGN_QDB */
 	      search_send_align_results (tr, mpi_master_rank);
 	      FreeParsetree(tr);
 	    }

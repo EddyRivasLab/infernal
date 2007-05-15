@@ -1441,6 +1441,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N
   float *cm_minbitsc = NULL;/* minimum CM bit score to allow to pass for each partition */
   float return_eval;
   double tmp_K;
+  int was_hmmonly;
 
   printf("in FindCP9FilterThreshold hmm_evd_mode: %d\n", hmm_evd_mode);
 
@@ -1455,6 +1456,9 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N
     Die("ERROR in FindCP9FilterThreshold() hmm_evd_mode not CP9_L or CP9_G\n");
   if(do_fastfil && (fthr_mode == CM_LI || fthr_mode == CM_GI))
     Die("ERROR in FindCP9FilterThreshold() do_fastfil TRUE, but fthr_mode CM_GI or CM_LI\n");
+
+  if(cm->search_opts & CM_SEARCH_HMMONLY) was_hmmonly = TRUE;
+  else was_hmmonly = FALSE;
 
   /* Configure the CM based on the stat mode */
   ConfigForEVDMode(cm, fthr_mode);
@@ -1571,7 +1575,12 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N
     printf("%d i: %4d hmm sc: %10.4f hmm E: %10.4f\n", hmm_evd_mode, i, hmm_sc[i], hmm_eval[i]);
   printf("\n\nnattempts: %d\n", nattempts);
 
+  /* Reset CM_SEARCH_HMMONLY search option as it was when function was entered */
+  if(was_hmmonly) cm->search_opts |= CM_SEARCH_HMMONLY;
+  else cm->search_opts &= ~CM_SEARCH_HMMONLY;
+
   /* Clean up and exit */
+
   return_eval = hmm_eval[(int) ((fraction) * (float) N)];
   if(return_eval > ((float) db_size)) /* E-val > db_size is useless */
     return_eval = (float) db_size;
@@ -1778,8 +1787,8 @@ float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, i
 		{
 		  hmm_eval[i] = RJK_ExtremeValueE(cur_hmm_sc, hmm_mu[plist[wi]], hmm_evd[plist[wi]]->lambda);
 		  hmm_sc[i]   = cur_hmm_sc;
-		  printf("i: %4d sc: %f E: %f P: %f\n", i, hmm_sc[i], hmm_eval[i], esl_gumbel_surv((double) hmm_sc[i], hmm_mu[plist[wi]], hmm_evd[plist[wi]]->lambda));
-		  fflush(stdout);
+		  /*printf("i: %4d sc: %f E: %f P: %f\n", i, hmm_sc[i], hmm_eval[i], esl_gumbel_surv((double) hmm_sc[i], hmm_mu[plist[wi]], hmm_evd[plist[wi]]->lambda));
+		    fflush(stdout);*/
 		  i++;
 		}		  
 	      nattempts++;

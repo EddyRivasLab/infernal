@@ -274,8 +274,8 @@ main(int argc, char **argv)
   int             do_hmmgreedy; /* TRUE to use greedy hit resolution for HMM overlaps */
 
   /* variables used to calculate HMM filter threshold by sampling from CM */
-  int   do_hmmcalcthr;        /* TRUE to sample from CM, score with HMM to get HMM cutoff */
-  //  int   do_fastfil = TRUE;    /* TRUE: use fast hacky filter thr calc method */
+  int   do_hmmcalcthr = FALSE; /* TRUE to sample from CM, score with HMM to get HMM cutoff */
+  //  int   do_fastfil = TRUE; /* TRUE: use fast hacky filter thr calc method */
   int   do_fastfil = FALSE;    /* TRUE: use fast hacky filter thr calc method */
   float filt_fract = 0.95;    /* fraction of CM hits req'd to find with HMM  */
   int   use_cm_cutoff = TRUE; /* TRUE to use cm_ecutoff, FALSE not to      */
@@ -402,7 +402,6 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--hmmnegsc")    == 0) { 
       cp9_sc_boost_set = TRUE; cp9_sc_boost = -1. * atof(optarg); }
     else if  (strcmp(optname, "--hmmrescan")   == 0) do_hmmrescan = TRUE; 
-    else if  (strcmp(optname, "--hmmfilter")   == 0) do_hmmfilter = TRUE;
     else if  (strcmp(optname, "--hmmonly")   == 0) 
       { 
 	do_hmmonly = TRUE; 
@@ -661,7 +660,7 @@ main(int argc, char **argv)
       /* Barrier for debugging */
 
       MPI_Barrier(MPI_COMM_WORLD);
-      /* Broadcase the CM, complete with stats if they were in cmfile */
+      /* Broadcast the CM, complete with stats if they were in cmfile */
       broadcast_cm(&cm, my_rank, mpi_master_rank);
 #endif
 
@@ -675,6 +674,11 @@ main(int argc, char **argv)
       cons = CreateCMConsensus(cm, 3.0, 1.0); 
 
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+      /* Broadcast the options that are not stored in the CM */
+      MPI_Barrier(MPI_COMM_WORLD);
+      MPI_Bcast (&do_hmmcalcthr,  1, MPI_INT, 0, MPI_COMM_WORLD);
+      MPI_Bcast (&cp9_cutoff_set, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
       if(my_rank == mpi_master_rank) /* 3rd master-only block */
 	{
 #endif
@@ -727,19 +731,18 @@ main(int argc, char **argv)
 		cp9_e_cutoff   = fthr->g_eval;
 	      printf("CP9 cmcalibrate e-val cutoff: %f\n", cp9_e_cutoff);
 	      cp9_e_cutoff *= (double) N / (double) fthr->db_size; /* correct for new db size */
-	      printf("CP9 new e-val cutoff: %f\n", cp9_e_cutoff);
+	      printf("CP9 new e-val cutoff: %f\n\n", cp9_e_cutoff);
 	    }
 	}
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	}
       /* Broadcast cm_mode and cp9_mode, they *may* be used */
-	      MPI_Barrier(MPI_COMM_WORLD);
+      MPI_Barrier(MPI_COMM_WORLD);
       MPI_Bcast (&cm_mode,    1, MPI_INT, 0, MPI_COMM_WORLD);
       MPI_Bcast (&cp9_mode,   1, MPI_INT, 0, MPI_COMM_WORLD);
 #endif
       if(do_hmmcalcthr)
 	{
-	  printf("\n!DO_HMMCALCTHR! cp9_mode:%d \n", cp9_mode);
 	  /* Calculate CP9 threshold here, use CM E-value cutoff we'll use for the search */
 	  cp9_cutoff_type = E_CUTOFF;
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
@@ -764,7 +767,6 @@ main(int argc, char **argv)
 	      /* broadcast cp9_e_cutoff */
 	      MPI_Barrier(MPI_COMM_WORLD);
 	      MPI_Bcast (&cp9_e_cutoff,   1, MPI_FLOAT, 0, MPI_COMM_WORLD);
-	      printf("rank: %d cp9_e_cutoff: %f\n", my_rank, cp9_e_cutoff);
 	    }
 	  else /* never get here in MPI */
 #endif
@@ -792,25 +794,50 @@ main(int argc, char **argv)
 	cm->cp9_cutoff = cp9_sc_cutoff;
       else
 	cm->cp9_cutoff = cp9_e_cutoff;
+      /* TO DO: if cp9 cutoff is E value and we're HMM filtering, ensure that the cutoff
+       * is low enough that it's worthwhile to filter, else turn filtering off */
+
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
       if(my_rank == 0) /* master */
 	{
 #endif
-      if(cm->cutoff_type == E_CUTOFF)
-	printf ("Using CM  E cutoff of %.2f\n", cm->cutoff);
-      else if (cm->cutoff_type == SCORE_CUTOFF) 
-	printf ("Using CM  score cutoff of %.2f\n", cm->cutoff);
-      fflush(stdout);
-      if(cm->cp9_cutoff_type == E_CUTOFF)
+     
+      /* Print some info about the search parameters */
+      if(!(cm->search_opts & CM_SEARCH_HMMONLY))
 	{
-	  if(!(cm->flags & CM_EVD_STATS))
-	    Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T and/or --hmmT.\n");
-	  printf ("Using CP9 E cutoff of %.2f\n", cm->cp9_cutoff);
+	  if(cm->cutoff_type == E_CUTOFF)
+	    printf("CM cutoff (E value):  %.2f\n", cm->cutoff);
+	  else if (cm->cutoff_type == SCORE_CUTOFF) 
+	    printf("CM cutoff (bit sc):   %.2f\n", cm->cutoff);
+	  printf ("CM search algorithm:  ");
+	  if(cm->search_opts & CM_SEARCH_INSIDE) printf("Inside\n");
+	  else printf("CYK\n");
+	  printf ("CM configuration:     ");
+	  if(cm->flags & CM_LOCAL_BEGIN) printf("Local\n");
+	  else printf("Glocal\n");
 	}
-      else if (cm->cp9_cutoff_type == SCORE_CUTOFF) 
-	printf ("Using CP9 score cutoff of %.2f\n", cm->cp9_cutoff);
-      fflush(stdout);
-      printf ("N = %ld\n\n", N);
+      else 
+	printf("Scanning with CP9 HMM only\n");
+      if (cm->search_opts & CM_SEARCH_HMMFILTER)
+	printf("Filtering with a CP9 HMM\n");
+	
+      if(cm->search_opts & CM_SEARCH_HMMONLY || 
+	 cm->search_opts & CM_SEARCH_HMMFILTER)
+	{
+	  if(cm->cp9_cutoff_type == E_CUTOFF)
+	    {
+	      if(!(cm->flags & CM_EVD_STATS))
+		Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T and/or --hmmT.\n");
+	      printf("CP9 cutoff (E value): %.2f\n", cm->cp9_cutoff);
+	    }
+	  else if (cm->cp9_cutoff_type == SCORE_CUTOFF) 
+	    printf("CP9 cutoff (bit sc):   %.2f\n", cm->cp9_cutoff);
+	  printf ("CP9 search algorithm: Forward/Backward\n");
+	  printf ("CP9 configuration:    ");
+	  if(cm->cp9->flags & CPLAN9_LOCAL_BEGIN) printf("Local.\n");
+	  else printf("Glocal\n");
+	}
+      printf     ("N (db size, nt):      %ld\n\n", N);
       fflush(stdout);
 
       if(do_bdump && (!(cm->search_opts & CM_SEARCH_NOQDB))) 
@@ -821,10 +848,7 @@ main(int argc, char **argv)
 	}
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	} /* end of master block */
-      printf("rank: %d cm->cutoff: %f cm->cutoff_type: %d\n", my_rank, cm->cutoff, cm->cutoff_type);
-      printf("rank: %d cm->cutoff: %f cm->cutoff_type: %d\n", my_rank, cm->cp9_cutoff, cm->cp9_cutoff_type);
 #endif
-      return 0;
 
       /*************************************************
        *    Do the search
