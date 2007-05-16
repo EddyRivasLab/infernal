@@ -689,6 +689,12 @@ main(int argc, char **argv)
        * so can recalculate up CP9 filtering E-value cutoff based on new DB size and
        * CM E cutoff if nec (via --hmmcalcthr) 
        */
+      if(do_local  && !do_inside) cm_mode = CM_LC;
+      if(do_local  &&  do_inside) cm_mode = CM_LI;
+      if(!do_local && !do_inside) cm_mode = CM_GC;
+      if(!do_local &&  do_inside) cm_mode = CM_GI;
+      if(do_hmmlocal) cp9_mode = CP9_L;
+      else            cp9_mode = CP9_G;
       cm->cutoff_type = cm_cutoff_type;  /* this will be DEFAULT_CM_CUTOFF_TYPE unless set at command line */
       if(cm->cutoff_type == SCORE_CUTOFF)
 	cm->cutoff = cm_sc_cutoff;
@@ -704,12 +710,6 @@ main(int argc, char **argv)
 	{
 	  /* Use HMM filter threshold stats from CM file, or that we calculate here 
 	     First determine CM scanning mode */
-	  if(do_local  && !do_inside) cm_mode = CM_LC;
-	  if(do_local  &&  do_inside) cm_mode = CM_LI;
-	  if(!do_local && !do_inside) cm_mode = CM_GC;
-	  if(!do_local &&  do_inside) cm_mode = CM_GI;
-	  if(do_hmmlocal) cp9_mode = CP9_L;
-	  else            cp9_mode = CP9_G;
 	  fthr    = cm->stats->fthrA[cm_mode];
 	  cp9_evd = cm->stats->evdAA[cp9_mode][0]; 
 
@@ -806,7 +806,14 @@ main(int argc, char **argv)
       if(!(cm->search_opts & CM_SEARCH_HMMONLY))
 	{
 	  if(cm->cutoff_type == E_CUTOFF)
-	    printf("CM cutoff (E value):  %.2f\n", cm->cutoff);
+	    {
+	      printf("CM cutoff (E value):  %.2f\n", cm->cutoff);
+	      for(p = 0; p < cm->stats->np; p++)
+		printf("   GC %2d-%3d bit sc:  %.2f mu: %.5f lambda: %.5f\n", cm->stats->ps[p], cm->stats->pe[p], 
+		       (cm->stats->evdAA[cm_mode][p]->mu - 
+			(log(cm->cutoff) / cm->stats->evdAA[cm_mode][p]->lambda)), 
+		       cm->stats->evdAA[cm_mode][p]->mu, cm->stats->evdAA[cm_mode][p]->lambda);
+	    }		       
 	  else if (cm->cutoff_type == SCORE_CUTOFF) 
 	    printf("CM cutoff (bit sc):   %.2f\n", cm->cutoff);
 	  printf ("CM search algorithm:  ");
@@ -919,7 +926,8 @@ in_mpi = 0;
     {
       StopwatchFree(mpi_watch);
 #endif
-printf ("Fin\n");
+ printf ("Fin\n");
+ fflush(stdout); 
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
     }
 #endif

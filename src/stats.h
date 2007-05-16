@@ -30,7 +30,7 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 			      int mpi_master_rank);
 #endif
 
-extern void GetDBInfo(ESL_SQFILE *sqfp, long *ret_N, int **ret_gc_ct);
+extern void GetDBInfo(ESL_SQFILE *sqfp, long *ret_N, double **ret_gc_ct);
 
 extern float e_to_score (float E, double *mu, double *lambda);
 

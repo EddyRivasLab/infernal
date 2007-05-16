@@ -66,6 +66,7 @@ static ESL_OPTIONS options[] = {
   { "--fastfil", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--onlyevd", "calc filter thr quickly, assume parsetree sc is optimal", 1},
   { "--histfile",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL, "--onlyfil", "save fitted histogram(s) to file <s>", 1},
   { "--qqfile",  eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL, "--onlyfil", "save Q-Q plot for histogram(s) to file <s>", 1},
+  { "--dbfile",  eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL, "--onlyfil", "use GC content distribution from file <s>",  1},
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -114,6 +115,10 @@ main(int argc, char **argv)
   double           params[2];          /* used if printing Q-Q file                   */
   ESL_HISTOGRAM   *h;                  /* a histogram of scores, reused               */
   int              p;                  /* counter over partitions                     */
+  char            *dbfile;             /* database file for reading, getting GC distro*/
+  ESL_SQFILE      *dbfp;               /* open file pointer for dbfile                */
+  int              format;	       /* format of dbfile                            */
+  long             N;                  /* database size if --dbfile enabled           */
 
   /* CP9 HMM filtering threshold related variables */
   int              do_fil = TRUE;      /* TRUE to calc filter thr, FALSE if --onlyevd */
@@ -153,6 +158,7 @@ main(int argc, char **argv)
   use_cm_cutoff = !(esl_opt_GetBoolean(go, "--nocmeval"));
   histfile  = esl_opt_GetString(go, "--histfile");
   qqfile    = esl_opt_GetString(go, "--qqfile");
+  dbfile    = esl_opt_GetString(go, "--dbfile");
   if(!use_cm_cutoff) cm_ecutoff = -1.; 
 
   if (esl_opt_ArgNumber(go) != 1) {
@@ -174,36 +180,6 @@ main(int argc, char **argv)
       Die("Failed to open Q-Q plot file %s for writing\n", qqfile);
   }
 
-  /****************************************************************
-   * Get distribution of GC content from a long random sequence
-   *****************************************************************/
-  /* human_chr1.gc.code from ~/notebook/7_0502_inf_cmcalibrate/gc_distros/ */
-  /* Replace with RFAMSEQ derived one */
-  gc_freq = MallocOrDie(sizeof(double) * GC_SEGMENTS);
-  gc_freq[0] = 79.; 
-  gc_freq[1] = 59.; gc_freq[2] = 56.; gc_freq[3] = 79.; gc_freq[4] = 91.; gc_freq[5] = 89.;
-  gc_freq[6] = 114.; gc_freq[7] = 105.; gc_freq[8] = 152.; gc_freq[9] = 149.; gc_freq[10] = 181.;
-  gc_freq[11] = 203.; gc_freq[12] = 293.; gc_freq[13] = 401.; gc_freq[14] = 586.; gc_freq[15] = 894.;
-  gc_freq[16] = 1256.; gc_freq[17] = 1909.; gc_freq[18] = 2901.; gc_freq[19] = 4333.; gc_freq[20] = 6421.;
-  gc_freq[21] = 9027.; gc_freq[22] = 12494.; gc_freq[23] = 16458.; gc_freq[24] = 20906.; gc_freq[25] = 26706.;
-  gc_freq[26] = 32624.; gc_freq[27] = 38814.; gc_freq[28] = 44862.; gc_freq[29] = 51035.; gc_freq[30] = 57425.;
-  gc_freq[31] = 62700.; gc_freq[32] = 67732.; gc_freq[33] = 72385.; gc_freq[34] = 75656.; gc_freq[35] = 78714.;
-  gc_freq[36] = 80693.; gc_freq[37] = 81741.; gc_freq[38] = 81731.; gc_freq[39] = 81291.; gc_freq[40] = 79600.;
-  gc_freq[41] = 76883.; gc_freq[42] = 75118.; gc_freq[43] = 71834.; gc_freq[44] = 69564.; gc_freq[45] = 68058.;
-  gc_freq[46] = 66882.; gc_freq[47] = 64922.; gc_freq[48] = 63846.; gc_freq[49] = 61481.; gc_freq[50] = 57994.;
-  gc_freq[51] = 54322.; gc_freq[52] = 50144.; gc_freq[53] = 46483.; gc_freq[54] = 43104.; gc_freq[55] = 40144.;
-  gc_freq[56] = 36987.; gc_freq[57] = 33653.; gc_freq[58] = 29844.; gc_freq[59] = 25838.; gc_freq[60] = 21861.;
-  gc_freq[61] = 17858.; gc_freq[62] = 14685.; gc_freq[63] = 12233.; gc_freq[64] = 9981.; gc_freq[65] = 8047.;
-  gc_freq[66] = 6495.; gc_freq[67] = 5263.; gc_freq[68] = 4210.; gc_freq[69] = 3405.; gc_freq[70] = 2653.;
-  gc_freq[71] = 2157.; gc_freq[72] = 1786.; gc_freq[73] = 1458.; gc_freq[74] = 1230.; gc_freq[75] = 1048.;
-  gc_freq[76] = 915.; gc_freq[77] = 802.; gc_freq[78] = 769.; gc_freq[79] = 668.; gc_freq[80] = 544.;
-  gc_freq[81] = 462.; gc_freq[82] = 395.; gc_freq[83] = 329.; gc_freq[84] = 228.; gc_freq[85] = 170.;
-  gc_freq[86] = 116.; gc_freq[87] = 94.; gc_freq[88] = 39.; gc_freq[89] = 46.; gc_freq[90] = 22.;
-  gc_freq[91] = 11.; gc_freq[92] = 5.; gc_freq[93] = 3.; gc_freq[94] = 0.; gc_freq[95] = 1.;
-  gc_freq[96] = 0.; gc_freq[97] = 1.; gc_freq[98] = 0.; gc_freq[99] = 0.; gc_freq[100] = 0.;
-  /* distro is skewed towards low GC, you can see it, thanks to fixed width font */
-  esl_vec_DNorm(gc_freq, GC_SEGMENTS);
-
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
   /* Initialize MPI, figure out who we are, and whether we're running
    * this show (proc 0) or working in it (procs >0)
@@ -214,6 +190,49 @@ main(int argc, char **argv)
   if(my_rank == 0) /* master only block 1 */
     {
 #endif
+  /****************************************************************
+   * Get distribution of GC content from a long random sequence
+   *****************************************************************/
+  if(dbfile != NULL)
+    {
+      status = esl_sqfile_Open(dbfile, format, NULL, &dbfp);
+      if (status == eslENOTFOUND) esl_fatal("No such file."); 
+      else if (status == eslEFORMAT) esl_fatal("Format unrecognized."); 
+      else if (status == eslEINVAL) esl_fatal("Can’t autodetect stdin or .gz."); 
+      else if (status != eslOK) esl_fatal("Failed to open sequence database file, code %d.", status); 
+      GetDBInfo(dbfp, &N, &gc_freq);
+      printf("Read DB file: %s of length %ld residues (both strands) for GC distro.\n", dbfile, (2*N));
+    }
+  else /* use default GC distro */
+    {
+      /* rmark-1.gc.code from ~/notebook/7_0502_inf_cmcalibrate/gc_distros/
+      /* Replace with RFAMSEQ derived one */
+      gc_freq = MallocOrDie(sizeof(double) * GC_SEGMENTS);
+      gc_freq[ 0] = 0.; 
+      gc_freq[ 1] = 0.; gc_freq[ 2] = 0.; gc_freq[ 3] = 0.; gc_freq[ 4] = 0.; gc_freq[ 5] = 0.;
+      gc_freq[ 6] = 1.; gc_freq[ 7] = 0.; gc_freq[ 8] = 0.; gc_freq[ 9] = 0.; gc_freq[10] = 0.;
+      gc_freq[11] = 1.; gc_freq[12] = 0.; gc_freq[13] = 0.; gc_freq[14] = 0.; gc_freq[15] = 1.;
+      gc_freq[16] = 3.; gc_freq[17] = 1.; gc_freq[18] = 4.; gc_freq[19] = 0.; gc_freq[20] = 2.;
+      gc_freq[21] = 2.; gc_freq[22] = 2.; gc_freq[23] = 3.; gc_freq[24] = 2.; gc_freq[25] = 11.;
+      gc_freq[26] = 6.; gc_freq[27] = 3.; gc_freq[28] = 13.; gc_freq[29] = 9.; gc_freq[30] = 8.;
+      gc_freq[31] = 8.; gc_freq[32] = 7.; gc_freq[33] = 18.; gc_freq[34] = 10.; gc_freq[35] = 18.;
+      gc_freq[36] = 27.; gc_freq[37] = 38.; gc_freq[38] = 71.; gc_freq[39] = 86.; gc_freq[40] = 129.;
+      gc_freq[41] = 198.; gc_freq[42] = 235.; gc_freq[43] = 300.; gc_freq[44] = 362.; gc_freq[45] = 470.;
+      gc_freq[46] = 557.; gc_freq[47] = 631.; gc_freq[48] = 689.; gc_freq[49] = 754.; gc_freq[50] = 696.;
+      gc_freq[51] = 756.; gc_freq[52] = 696.; gc_freq[53] = 633.; gc_freq[54] = 560.; gc_freq[55] = 447.;
+      gc_freq[56] = 403.; gc_freq[57] = 282.; gc_freq[58] = 202.; gc_freq[59] = 182.; gc_freq[60] = 116.;
+      gc_freq[61] = 96.; gc_freq[62] = 56.; gc_freq[63] = 43.; gc_freq[64] = 27.; gc_freq[65] = 13.;
+      gc_freq[66] = 14.; gc_freq[67] = 13.; gc_freq[68] = 14.; gc_freq[69] = 9.; gc_freq[70] = 8.;
+      gc_freq[71] = 12.; gc_freq[72] = 11.; gc_freq[73] = 6.; gc_freq[74] = 4.; gc_freq[75] = 7.;
+      gc_freq[76] = 3.; gc_freq[77] = 2.; gc_freq[78] = 1.; gc_freq[79] = 4.; gc_freq[80] = 0.;
+      gc_freq[81] = 2.; gc_freq[82] = 0.; gc_freq[83] = 1.; gc_freq[84] = 0.; gc_freq[85] = 1.;
+      gc_freq[86] = 0.; gc_freq[87] = 0.; gc_freq[88] = 0.; gc_freq[89] = 0.; gc_freq[90] = 0.;
+      gc_freq[91] = 0.; gc_freq[92] = 0.; gc_freq[93] = 0.; gc_freq[94] = 0.; gc_freq[95] = 0.;
+      gc_freq[96] = 0.; gc_freq[97] = 0.; gc_freq[98] = 0.; gc_freq[99] = 0.; gc_freq[100] = 0.;
+      /* distro is centered at just about 50, you can see it, thanks to fixed width font */
+    }
+  esl_vec_DNorm(gc_freq, GC_SEGMENTS);
+
   /*****************************************************************
    * Initializations, including opening the CM file 
    *****************************************************************/

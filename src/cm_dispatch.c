@@ -573,9 +573,6 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
   if(used_HMM) evd = cm->stats->evdAA[cp9_evd_mode];
   else evd = cm->stats->evdAA[cm_evd_mode];
 
-  printf("CM  evd mode in print results: %d\n", cm_evd_mode);
-  printf("CP9 evd mode in print results: %d\n", cp9_evd_mode);
-
   emap = CreateEmitMap(cm);
   name = dbseq->sq[0]->name;
   len  = dbseq->sq[0]->n;

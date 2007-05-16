@@ -250,12 +250,12 @@ char resolve_degenerate (char c) {
  *           gc_ct    - RETURN: gc_ct[x] observed 100-nt segments with GC% of x [0..100] 
  * seqfile   
  */
-void GetDBInfo (ESL_SQFILE *sqfp, long *ret_N, int **ret_gc_ct) 
+void GetDBInfo (ESL_SQFILE *sqfp, long *ret_N, double **ret_gc_ct) 
 {
   ESL_SQ           *sq;
   int               i, j;  
   long              N = 0;
-  int              *gc_ct = MallocOrDie(sizeof(int) * GC_SEGMENTS);
+  double           *gc_ct = MallocOrDie(sizeof(double) * GC_SEGMENTS);
   int               status;
   int               gc;
   char              c;
@@ -265,7 +265,7 @@ void GetDBInfo (ESL_SQFILE *sqfp, long *ret_N, int **ret_gc_ct)
   /*printf("in GetDBInfo\n");*/
 
   for (i=0; i<GC_SEGMENTS; i++)
-    gc_ct[i] = 0;
+    gc_ct[i] = 0.;
 
   for (j=0; j<100; j++)
     allN[j] = 'N';
@@ -309,7 +309,7 @@ void GetDBInfo (ESL_SQFILE *sqfp, long *ret_N, int **ret_gc_ct)
 	  if(j > 20 && !allN_flag)
 	    {
 	      /*printf("j: %d i: %d N: %d adding 1 to gc_ct[%d]\n", j, i, N, ((int) gc));*/
-	      gc_ct[(int) gc]++;
+	      gc_ct[(int) gc] += 1.;
 	    }
 	}
       esl_sq_Reuse(sq); 
@@ -392,6 +392,7 @@ float MinCMScCutoff (CM_t *cm)
   /* Determine appropriate EVD mode */
   CM2EVD_mode(cm, &evd_mode, 
 	      NULL); /* don't care about CP9 EVD mode */
+  printf("in MinCMScCutoff, evd_mode: %d\n", evd_mode);
   E = cm->cutoff;
 
   low_sc = cm->stats->evdAA[evd_mode][0]->mu - 
