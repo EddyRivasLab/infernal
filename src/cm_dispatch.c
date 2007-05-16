@@ -568,11 +568,13 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
   if(do_stats  && !(cm->flags & CM_EVD_STATS))
     Die("ERROR in print_results, stats wanted but CM has no EVD stats\n");
 
-  /* Determine EVD mode to use */
-  CM2EVD_mode(cm, &cm_evd_mode, &cp9_evd_mode);
-  if(used_HMM) evd = cm->stats->evdAA[cp9_evd_mode];
-  else evd = cm->stats->evdAA[cm_evd_mode];
-
+  if(do_stats)
+    {
+      /* Determine EVD mode to use */
+      CM2EVD_mode(cm, &cm_evd_mode, &cp9_evd_mode);
+      if(used_HMM) evd = cm->stats->evdAA[cp9_evd_mode];
+      else evd = cm->stats->evdAA[cm_evd_mode];
+    }
   emap = CreateEmitMap(cm);
   name = dbseq->sq[0]->name;
   len  = dbseq->sq[0]->n;

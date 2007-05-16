@@ -1087,8 +1087,8 @@ CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
 					 results, &flen);
       if(flen == 0) ffrac = 100.;
       else ffrac = 1. - (((float) flen) / (((float) (j0-i0+1))));
-      if(!(cm->search_opts & CM_SEARCH_HMMONLY))
-	printf("orig_len: %d flen: %d fraction %6.2f\n", (j0-i0+1), (flen), ffrac);
+      /*if(!(cm->search_opts & CM_SEARCH_HMMONLY))
+	printf("orig_len: %d flen: %d fraction %6.2f\n", (j0-i0+1), (flen), ffrac);*/
     }
   FreeResults (fwd_results);
   FreeResults (bwd_results);
@@ -1443,7 +1443,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N
   double tmp_K;
   int was_hmmonly;
 
-  printf("in FindCP9FilterThreshold hmm_evd_mode: %d\n", hmm_evd_mode);
+  /*printf("in FindCP9FilterThreshold hmm_evd_mode: %d\n", hmm_evd_mode);*/
 
   /* Contract check */
   if (!(cm->flags & CM_CP9) || cm->cp9 == NULL) 

@@ -392,7 +392,7 @@ float MinCMScCutoff (CM_t *cm)
   /* Determine appropriate EVD mode */
   CM2EVD_mode(cm, &evd_mode, 
 	      NULL); /* don't care about CP9 EVD mode */
-  printf("in MinCMScCutoff, evd_mode: %d\n", evd_mode);
+  /*printf("in MinCMScCutoff, evd_mode: %d\n", evd_mode);*/
   E = cm->cutoff;
 
   low_sc = cm->stats->evdAA[evd_mode][0]->mu - 
