@@ -326,21 +326,6 @@ main(int argc, char **argv)
 #endif
 		NEW_serial_make_histogram (cm, cmstats[ncm], gc_freq, evdN, sample_length, evd_mode,
 					   hfp, qfp);
-	      
-	      /*
-	      if(hfp != NULL)
-		for(p = 0; p < cmstats[ncm]->np; p++)
-		  esl_histogram_Plot(hfp, h);
-
-	      if (qfp != NULL)
-		for(p = 0; p < cmstats[ncm]->np; p++)
-		  {
-		    params[0] = cmstats[ncm]->evdAA[evd_mode][p]->mu;
-		    params[1] = cmstats[ncm]->evdAA[evd_mode][p]->lambda;
-		    esl_histogram_PlotQQ(qfp, h, &esl_exp_generic_invcdf, params);
-		  }
-	      esl_histogram_Destroy(h);
-	      */
 	    }
 	  cm->flags |= CM_EVD_STATS;
 	  

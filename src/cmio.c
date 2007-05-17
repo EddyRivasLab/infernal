@@ -363,22 +363,22 @@ write_ascii_cm(FILE *fp, CM_t *cm)
 
       if (cm->flags & CM_FTHR_STATS) /* FTHR stats are only possibly valid IF EVD stats valid */
 	{
-	  fprintf(fp, "FT-LC  %5d  %.3f  %.3f  %15.3f  %15.3f  %d  %d\n", 
+	  fprintf(fp, "FT-LC  %5d  %.3f  %.3f  %15.5f  %15.5f  %d  %d\n", 
 		  cm->stats->fthrA[CM_LC]->N, cm->stats->fthrA[CM_LC]->fraction, 
 		  cm->stats->fthrA[CM_LC]->cm_eval, cm->stats->fthrA[CM_LC]->l_eval,
 		  cm->stats->fthrA[CM_LC]->g_eval, cm->stats->fthrA[CM_LC]->db_size,
 		  cm->stats->fthrA[CM_LC]->was_fast);
-	  fprintf(fp, "FT-GC  %5d  %.3f  %.3f  %15.3f  %15.3f  %d  %d\n", 
+	  fprintf(fp, "FT-GC  %5d  %.3f  %.3f  %15.5f  %15.5f  %d  %d\n", 
 		  cm->stats->fthrA[CM_GC]->N, cm->stats->fthrA[CM_GC]->fraction, 
 		  cm->stats->fthrA[CM_GC]->cm_eval, cm->stats->fthrA[CM_GC]->l_eval,
 		  cm->stats->fthrA[CM_GC]->g_eval, cm->stats->fthrA[CM_GC]->db_size,
 		  cm->stats->fthrA[CM_GC]->was_fast);
-	  fprintf(fp, "FT-LI  %5d  %.3f  %.3f  %15.3f  %15.3f  %d  %d\n", 
+	  fprintf(fp, "FT-LI  %5d  %.3f  %.3f  %15.5f  %15.5f  %d  %d\n", 
 		  cm->stats->fthrA[CM_LI]->N, cm->stats->fthrA[CM_LI]->fraction, 
 		  cm->stats->fthrA[CM_LI]->cm_eval, cm->stats->fthrA[CM_LI]->l_eval,
 		  cm->stats->fthrA[CM_LI]->g_eval, cm->stats->fthrA[CM_LI]->db_size,
 		  cm->stats->fthrA[CM_LI]->was_fast);
-	  fprintf(fp, "FT-GI  %5d  %.3f  %.3f  %15.3f  %15.3f  %d  %d\n", 
+	  fprintf(fp, "FT-GI  %5d  %.3f  %.3f  %15.5f  %15.5f  %d  %d\n", 
 	      cm->stats->fthrA[CM_GI]->N, cm->stats->fthrA[CM_GI]->fraction, 
 		  cm->stats->fthrA[CM_GI]->cm_eval, cm->stats->fthrA[CM_GI]->l_eval,
 		  cm->stats->fthrA[CM_GI]->g_eval, cm->stats->fthrA[CM_GI]->db_size,

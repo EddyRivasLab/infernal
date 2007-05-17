@@ -48,6 +48,9 @@ void exit_from_mpi () {
 static int QDBFileRead(FILE *fp, CM_t *cm, int **ret_dmin, int **ret_dmax);
 static int set_partitions(int **ret_partitions, int *num_partitions, char *list);
 static int debug_print_stats(int *partitions, int num_partitions, double *lambda, double *mu); 
+static int SetCMCutoff(CM_t *cm, int cm_cutoff_type, float cm_sc_cutoff, float cm_e_cutoff);
+static int SetCP9Cutoff(CM_t *cm, int cp9_cutoff_type, float cp9_sc_cutoff, float cp9_e_cutoff);
+static int PrintSearchInfo(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N);
 
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 static char banner[] = "mpi-cmsearch - search a sequence database with an RNA covariance model";
@@ -216,8 +219,6 @@ main(int argc, char **argv)
   int   cp9_mode = -1;          /* CP9 algorithm mode for calc'ing HMM thr  */
   float cp9_eval;               /* HMM threshold P-val, from cm->stats->fthr*/
   float cp9_bit_sc;             /* bit sc cp9_eval corresonds to            */
-  EVDInfo_t *cp9_evd;           /* pointer to CP9 EVD info to calc threshold*/
-  CP9FilterThr_t *fthr;         /* pointer to filter threshold stats        */
   double tmp_mu;                /* for converting filtering E-value from fthr*/
 
   /* The enforce option (--enfstart and --enfseq), added specifically for   *
@@ -619,9 +620,6 @@ main(int argc, char **argv)
       else
 	preset_dmin = preset_dmax = NULL;
 	  
-      /* Set W here, after QDB is configured, which set W as dmax[0] */
-      if (set_window) cm->W = set_W;
-
       /*******************************
        * Open the sequence (db) file *
        *******************************/
@@ -659,16 +657,45 @@ main(int argc, char **argv)
 		printf ("%d %d..%d", p, cm->stats->ps[p], cm->stats->pe[p]);
 	    }
 	}
-
+      /***************************************************************
+       * Set score cutoffs block
+       ***************************************************************/
+      /* Determine cm_mode and cp9_mode BEFORE we configure CM (if
+       * we did it after we could use CM2EVD_mode(), which we do below for
+       * MPI workers. This is sloppy; a result of keeping serial and MPI 
+       * main's in one .c file */
+      if(do_local  && !do_inside) cm_mode = CM_LC;
+      if(do_local  &&  do_inside) cm_mode = CM_LI;
+      if(!do_local && !do_inside) cm_mode = CM_GC;
+      if(!do_local &&  do_inside) cm_mode = CM_GI;
+      if(do_hmmlocal) cp9_mode = CP9_L;
+      else            cp9_mode = CP9_G;
+      if(!cp9_cutoff_set) /* cp9_cutoff_set is TRUE if --hmmT or --hmmE invoked at command line */
+	{
+	  /* Default behavior: use HMM filter threshold stats from CM file.
+	   * We overwrite these after recalc'ing HMM threshold (if --hmmcalcthr) 
+	   */
+	  if(!(cm->flags & CM_EVD_STATS)) 
+	    Die("ERROR trying to use HMM filter thresholds but no EVD stats in CM file.\nUse cmcalibrate or use --hmmT or --hmmE.\n");
+	  if(!(cm->flags & CM_FTHR_STATS)) 
+	    Die("ERROR trying to use HMM filter thresholds but none in CM file.\nUse cmcalibrate or use --hmmT or --hmmE.\n");
+	  /* Convert E-value from CM file to E-value for current DB size */
+	  cp9_cutoff_type = E_CUTOFF;
+	  if(cp9_mode == CP9_L)      cp9_e_cutoff   = cm->stats->fthrA[cm_mode]->l_eval;
+	  else if(cp9_mode == CP9_G) cp9_e_cutoff   = cm->stats->fthrA[cm_mode]->g_eval;
+	  cp9_e_cutoff *= (double) N / (double) cm->stats->fthrA[cm_mode]->db_size; /* correct for new db size */
+	}
+      /* Set CM and CP9 cutoffs, we overwrite CP9 cutoff below if --hmmcalcthr was enabled */
+      SetCMCutoff (cm,  cm_cutoff_type,  cm_sc_cutoff,  cm_e_cutoff);
+      SetCP9Cutoff(cm, cp9_cutoff_type, cp9_sc_cutoff, cp9_e_cutoff);
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	}   /* End of second block that is only done by master process */
-      /* Barrier for debugging */
-
+      /* Broadcast the CM, complete with EVD stats if they were in cmfile */
       MPI_Barrier(MPI_COMM_WORLD);
-      /* Broadcast the CM, complete with stats if they were in cmfile */
       broadcast_cm(&cm, my_rank, mpi_master_rank);
+      MPI_Barrier(MPI_COMM_WORLD);
+      MPI_Bcast (&do_hmmcalcthr,  1, MPI_INT, 0, MPI_COMM_WORLD);
 #endif
-
       /* Configure the CM for search based on cm->config_opts and cm->search_opts. 
        * Set local mode, make cp9 HMM, calculate QD bands etc.
        */
@@ -677,92 +704,19 @@ main(int argc, char **argv)
       if(cm->config_opts & CM_CONFIG_ENFORCE)
 	ConfigCMEnforce(cm);
       cons = CreateCMConsensus(cm, 3.0, 1.0); 
+      /* Set W here, after QDB is configured, which set W as dmax[0] */
+      if (set_window) cm->W = set_W;
+      CM2EVD_mode(cm, &cm_mode, &cp9_mode); /* MPI workers need to know this (sloppily 
+					     * redundant for master and for serial version) */
 
+      /* Recalculate CP9 threshold if --hmmcalcthr by sampling from the CM */
+      if(do_hmmcalcthr) /* this was broadcasted to workers in MPI mode */
+	{
+	  /* Will we sample from the CM in global mode? */
+	  if     (cm_mode == CM_GC || cm_mode == CM_GI) emit_global = TRUE;
+	  else if(cm_mode == CM_LC || cm_mode == CM_LI) emit_global = do_hmmgemit; /* emit_global irrelevant for MPI workers */
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-      /* Broadcast the options that are not stored in the CM */
-      MPI_Barrier(MPI_COMM_WORLD);
-      MPI_Bcast (&do_hmmcalcthr,  1, MPI_INT, 0, MPI_COMM_WORLD);
-      MPI_Bcast (&cp9_cutoff_set, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-      if(my_rank == mpi_master_rank) /* 3rd master-only block */
-	{
-#endif
-      /***************************************************************
-       * Set score cutoffs block
-       ***************************************************************/
-      /* Set the cutoffs after we've read the DB file, broadcasted and configured CM,
-       * so can recalculate up CP9 filtering E-value cutoff based on new DB size and
-       * CM E cutoff if nec (via --hmmcalcthr) 
-       */
-      if(do_local  && !do_inside) cm_mode = CM_LC;
-      if(do_local  &&  do_inside) cm_mode = CM_LI;
-      if(!do_local && !do_inside) cm_mode = CM_GC;
-      if(!do_local &&  do_inside) cm_mode = CM_GI;
-      if(do_hmmlocal) cp9_mode = CP9_L;
-      else            cp9_mode = CP9_G;
-
-      if(cm->search_opts & CM_SEARCH_HMMONLY) cm_cutoff_type = SCORE_CUTOFF;
-      cm->cutoff_type = cm_cutoff_type;  /* this will be DEFAULT_CM_CUTOFF_TYPE unless set at command line */
-      if(cm->cutoff_type == SCORE_CUTOFF)
-	cm->cutoff = cm_sc_cutoff;
-      else 
-	{
-	  cm->cutoff = cm_e_cutoff;
-	  if(!(cm->flags & CM_EVD_STATS) && (!(cm->search_opts & CM_SEARCH_HMMONLY)))
-	    Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T and/or --hmmT.\n");
-	}
-      /* Set HMM cutoff as filter threshold read from CM file, unless --hmmT, --hmmE or --hmmcalcthr. 
-       */
-      if(cm->search_opts & CM_SEARCH_HMMONLY || 
-	 cm->search_opts & CM_SEARCH_HMMFILTER)
-	{
-	  if(!cp9_cutoff_set) /* cp9_cutoff_set is TRUE if --hmmT or --hmmE invoked at command line */
-	    {
-	      if(!(cm->flags & CM_EVD_STATS))
-		Die("ERROR trying to use HMM filter thresholds but no EVD stats in CM file.\nUse cmcalibrate or use --hmmT or --hmmE.\n");
-	      if(!(cm->flags & CM_FTHR_STATS))
-		Die("ERROR trying to use HMM filter thresholds but none in CM file.\nUse cmcalibrate or use --hmmT or --hmmE.\n");
-	      /* Use HMM filter threshold stats from CM file, or that we calculate here */
-	      fthr    = cm->stats->fthrA[cm_mode];
-	      cp9_evd = cm->stats->evdAA[cp9_mode][0]; 
-	      
-	      if(!do_hmmcalcthr)
-		{
-		  /* Use a HMM filter threshold from file, check we read them */
-		  /* Convert E-value from CM file to E-value for current DB size,
-		   * multiply E-val by N/fthr->db_size, want CP9 bit score cutoffs to 
-		   * remain the same. 
-		   */
-		  cp9_cutoff_type = E_CUTOFF;
-		  if(cp9_mode == CP9_L) 
-		    cp9_e_cutoff   = fthr->l_eval;
-		  else if(cp9_mode == CP9_G) 
-		    cp9_e_cutoff   = fthr->g_eval;
-		  printf("CP9 cmcalibrate e-val cutoff: %f\n", cp9_e_cutoff);
-		  cp9_e_cutoff *= (double) N / (double) fthr->db_size; /* correct for new db size */
-		  printf("CP9 new e-val cutoff: %f\n\n", cp9_e_cutoff);
-		}
-	    }
-	}
-#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-	}
-      /* Broadcast cm_mode and cp9_mode, they *may* be used */
-      MPI_Barrier(MPI_COMM_WORLD);
-      MPI_Bcast (&cm_mode,    1, MPI_INT, 0, MPI_COMM_WORLD);
-      MPI_Bcast (&cp9_mode,   1, MPI_INT, 0, MPI_COMM_WORLD);
-#endif
-      if(do_hmmcalcthr)
-	{
-	  /* Calculate CP9 threshold here, use CM E-value cutoff we'll use for the search */
-	  cp9_cutoff_type = E_CUTOFF;
-	  if(cm_mode == CM_GC || cm_mode == CM_GI) emit_global = TRUE;
-	  else if(cm_mode == CM_LC || cm_mode == CM_LI)
-	    {
-	      if(do_hmmgemit) emit_global = TRUE; /* do_hmmgemit irrelevant for MPI workers */
-	      else emit_global = FALSE;
-	    }
-#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-	  if(TRUE)
+	  if(TRUE) 
 	    {
 	      MPI_Barrier(MPI_COMM_WORLD);
 	      if(my_rank == 0) /* master */
@@ -782,7 +736,7 @@ main(int argc, char **argv)
 							     * and cm are irrelevant for worker */
 	      /* broadcast cp9_e_cutoff */
 	      MPI_Barrier(MPI_COMM_WORLD);
-	      MPI_Bcast (&cp9_e_cutoff,   1, MPI_FLOAT, 0, MPI_COMM_WORLD);
+	      MPI_Bcast (&cp9_e_cutoff,    1, MPI_FLOAT, 0, MPI_COMM_WORLD);
 	    }
 	  else /* never get here in MPI */
 #endif
@@ -793,23 +747,21 @@ main(int argc, char **argv)
           if(my_rank == 0) /* master */
 	    {
 #endif
-	  /* following lines are printfs, just for curiousity */
+	  /* following lines are printfs just for curiousity */
 	  if(cp9_mode == CP9_L) 
-	    cp9_eval   = fthr->l_eval;
+	    cp9_eval   = cm->stats->fthrA[cm_mode]->l_eval;
 	  else if(cp9_mode == CP9_G) 
-	    cp9_eval   = fthr->g_eval;
-	  cp9_bit_sc   = cp9_evd->mu - (log(cp9_e_cutoff) / cp9_evd->lambda);
+	    cp9_eval   = cm->stats->fthrA[cm_mode]->g_eval;
+	  cp9_bit_sc   = cm->stats->evdAA[cp9_mode][0]->mu - (log(cp9_e_cutoff) / cm->stats->evdAA[cp9_mode][0]->lambda);
 	  printf("Calc'ed CP9 bit score cutoff: %f\ncmcalibrate e-val cutoff: %f\nnew e-val cutoff: %f\n", cp9_bit_sc, cp9_eval, cp9_e_cutoff);
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	    }
 #endif
+	  /* Overwrite CP9 cutoff info */
+	  cm->cp9_cutoff_type = E_CUTOFF;
+	  if(cp9_e_cutoff < DEFAULT_MIN_CP9_E_CUTOFF) cp9_e_cutoff = DEFAULT_MIN_CP9_E_CUTOFF;
+	  cm->cp9_cutoff = cp9_e_cutoff; /* cp9_e_cutoff was broadcasted to workers in MPI */
 	}
-      /* Set CP9 cutoff */
-      cm->cp9_cutoff_type = cp9_cutoff_type;
-      if(cm->cp9_cutoff_type == SCORE_CUTOFF)
-	cm->cp9_cutoff = cp9_sc_cutoff;
-      else
-	cm->cp9_cutoff = cp9_e_cutoff;
       /* TO DO: if cp9 cutoff is E value and we're HMM filtering, ensure that the cutoff
        * is low enough that it's worthwhile to filter, else turn filtering off */
 
@@ -817,56 +769,8 @@ main(int argc, char **argv)
       if(my_rank == 0) /* master */
 	{
 #endif
-     
-      /* Print some info about the search parameters */
-      if(!(cm->search_opts & CM_SEARCH_HMMONLY))
-	{
-	  if(cm->cutoff_type == E_CUTOFF)
-	    {
-	      printf("CM cutoff (E value):  %.2f\n", cm->cutoff);
-	      for(p = 0; p < cm->stats->np; p++)
-		printf("   GC %2d-%3d bit sc:  %.2f mu: %.5f lambda: %.5f\n", cm->stats->ps[p], cm->stats->pe[p], 
-		       (cm->stats->evdAA[cm_mode][p]->mu - 
-			(log(cm->cutoff) / cm->stats->evdAA[cm_mode][p]->lambda)), 
-		       cm->stats->evdAA[cm_mode][p]->mu, cm->stats->evdAA[cm_mode][p]->lambda);
-	    }		       
-	  else if (cm->cutoff_type == SCORE_CUTOFF) 
-	    printf("CM cutoff (bit sc):   %.2f\n", cm->cutoff);
-	  printf ("CM search algorithm:  ");
-	  if(cm->search_opts & CM_SEARCH_INSIDE) printf("Inside\n");
-	  else printf("CYK\n");
-	  printf ("CM configuration:     ");
-	  if(cm->flags & CM_LOCAL_BEGIN) printf("Local\n");
-	  else printf("Glocal\n");
-	}
-      else 
-	printf("Scanning with CP9 HMM only\n");
-      if (cm->search_opts & CM_SEARCH_HMMFILTER)
-	printf("Filtering with a CP9 HMM\n");
-	
-      if(cm->search_opts & CM_SEARCH_HMMONLY || 
-	 cm->search_opts & CM_SEARCH_HMMFILTER)
-	{
-	  if(cm->cp9_cutoff_type == E_CUTOFF)
-	    {
-	      if(!(cm->flags & CM_EVD_STATS))
-		Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T and/or --hmmT.\n");
-	      printf("CP9 cutoff (E value): %.2f\n", cm->cp9_cutoff);
-	      for(p = 0; p < cm->stats->np; p++)
-		printf("   GC %2d-%3d bit sc:  %.2f mu: %.5f lambda: %.5f\n", cm->stats->ps[p], cm->stats->pe[p], 
-		       (cm->stats->evdAA[cp9_mode][p]->mu - 
-			(log(cm->cp9_cutoff) / cm->stats->evdAA[cp9_mode][p]->lambda)), 
-		       cm->stats->evdAA[cp9_mode][p]->mu, cm->stats->evdAA[cp9_mode][p]->lambda);
-	    }
-	  else if (cm->cp9_cutoff_type == SCORE_CUTOFF) 
-	    printf("CP9 cutoff (bit sc):  %.2f\n", cm->cp9_cutoff);
-	  printf ("CP9 search algorithm: Forward/Backward\n");
-	  printf ("CP9 configuration:    ");
-	  if(cm->cp9->flags & CPLAN9_LOCAL_BEGIN) printf("Local\n");
-	  else printf("Glocal\n");
-	}
-      printf     ("N (db size, nt):      %ld\n\n", N);
-      fflush(stdout);
+      printf("CM mode: %d\nCP9 mode; %d\n", cm_mode, cp9_mode);
+      PrintSearchInfo(stdout, cm, cm_mode, cp9_mode, N);
 
       if(do_bdump && (!(cm->search_opts & CM_SEARCH_NOQDB))) 
 	{
@@ -896,6 +800,8 @@ main(int argc, char **argv)
 	}
       if (nproc > 1)
 	{
+	  printf("my_rank: %d cm->cp9_cutoff: %f\n", my_rank, cm->cp9_cutoff);
+	  fflush(stdout);
 	  parallel_search_database (dbfp, cm, cons,
 				    my_rank, mpi_master_rank, nproc);
 	  if(my_rank == mpi_master_rank && nproc > 1)
@@ -1120,3 +1026,117 @@ int debug_print_stats(int *partitions, int num_partitions, double *lambda, doubl
   return 1;
 }
 
+/*
+ * Function: SetCMCutoff
+ * Date:     EPN, Thu May 17 13:30:41 2007
+ * Purpose:  Fill cm->cutoff and cm->cutoff_type.
+ */
+int SetCMCutoff(CM_t *cm, int cm_cutoff_type, float cm_sc_cutoff, float cm_e_cutoff)
+{
+  if(cm->search_opts & CM_SEARCH_HMMONLY) /* CM score cutoff won't be used */
+    {
+      cm_cutoff_type = SCORE_CUTOFF;
+      cm_sc_cutoff   = 0.;
+    }
+  else
+    {
+      cm->cutoff_type = cm_cutoff_type;
+      if(cm->cutoff_type == SCORE_CUTOFF)
+	cm->cutoff = cm_sc_cutoff;
+      else 
+	{
+	  cm->cutoff = cm_e_cutoff;
+	  if(!(cm->flags & CM_EVD_STATS) && (!(cm->search_opts & CM_SEARCH_HMMONLY)))
+	    Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T.\n");
+	}
+    }
+  return eslOK;
+}
+
+/*
+ * Function: SetCP9Cutoff
+ * Date:     EPN, Thu May 17 13:33:14 2007
+ * Purpose:  Fill cm->cp9_cutoff and cm->cp9_cutoff_type.
+ */
+int SetCP9Cutoff(CM_t *cm, int cp9_cutoff_type, float cp9_sc_cutoff, float cp9_e_cutoff)
+{
+  if(cm->search_opts & CM_SEARCH_HMMONLY || 
+     cm->search_opts & CM_SEARCH_HMMFILTER)
+    {
+      cm->cp9_cutoff_type = cp9_cutoff_type;  
+      if(cm->cp9_cutoff_type == SCORE_CUTOFF)
+	cm->cp9_cutoff = cp9_sc_cutoff;
+      else 
+	{
+	  if(!(cm->flags & CM_EVD_STATS))
+	    Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try --hmmT.\n");
+	  if(cp9_e_cutoff < DEFAULT_MIN_CP9_E_CUTOFF) cp9_e_cutoff = DEFAULT_MIN_CP9_E_CUTOFF;
+	  cm->cp9_cutoff = cp9_e_cutoff;
+	}
+    }
+  else /* we won't use the CP9 at all, set score cutoff with 0 bit cutoff */
+    {
+      cm->cp9_cutoff_type = SCORE_CUTOFF;
+      cm->cp9_cutoff      = 0.;
+    }
+  return eslOK;
+}
+
+/*
+ * Function: PrintSearchInfo
+ * Date:     EPN, Thu May 17 14:47:36 2007
+ * Purpose:  Print info about search (cutoffs, algorithm, etc.) to file or stdout 
+ */
+int PrintSearchInfo(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N)
+{
+  int p;
+  if(!(cm->search_opts & CM_SEARCH_HMMONLY))
+    {
+      if(cm->cutoff_type == E_CUTOFF)
+	{
+	  fprintf(fp, "CM cutoff (E value):  %.2f\n", cm->cutoff);
+	  for(p = 0; p < cm->stats->np; p++)
+	    fprintf(fp, "   GC %2d-%3d bit sc:  %.2f mu: %.5f lambda: %.5f\n", cm->stats->ps[p], cm->stats->pe[p], 
+		    (cm->stats->evdAA[cm_mode][p]->mu - 
+		     (log(cm->cutoff) / cm->stats->evdAA[cm_mode][p]->lambda)), 
+		    cm->stats->evdAA[cm_mode][p]->mu, cm->stats->evdAA[cm_mode][p]->lambda);
+	}		       
+      else if (cm->cutoff_type == SCORE_CUTOFF) 
+	fprintf(fp, "CM cutoff (bit sc):   %.2f\n", cm->cutoff);
+      printf ("CM search algorithm:  ");
+      if(cm->search_opts & CM_SEARCH_INSIDE) fprintf(fp, "Inside\n");
+      else fprintf(fp, "CYK\n");
+      printf ("CM configuration:     ");
+      if(cm->flags & CM_LOCAL_BEGIN) fprintf(fp, "Local\n");
+      else fprintf(fp, "Glocal\n");
+    }
+  else 
+    fprintf(fp, "Scanning with CP9 HMM only\n");
+  if (cm->search_opts & CM_SEARCH_HMMFILTER)
+    fprintf(fp, "Filtering with a CP9 HMM\n");
+  
+  if(cm->search_opts & CM_SEARCH_HMMONLY || 
+     cm->search_opts & CM_SEARCH_HMMFILTER)
+    {
+      if(cm->cp9_cutoff_type == E_CUTOFF)
+	{
+	  if(!(cm->flags & CM_EVD_STATS))
+	    Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T and/or --hmmT.\n");
+	  fprintf(fp, "CP9 cutoff (E value): %.2f\n", cm->cp9_cutoff);
+	  for(p = 0; p < cm->stats->np; p++)
+	    fprintf(fp, "   GC %2d-%3d bit sc:  %.2f mu: %.5f lambda: %.5f\n", cm->stats->ps[p], cm->stats->pe[p], 
+		    (cm->stats->evdAA[cp9_mode][p]->mu - 
+		     (log(cm->cp9_cutoff) / cm->stats->evdAA[cp9_mode][p]->lambda)), 
+		    cm->stats->evdAA[cp9_mode][p]->mu, cm->stats->evdAA[cp9_mode][p]->lambda);
+	}
+      else if (cm->cp9_cutoff_type == SCORE_CUTOFF) 
+	fprintf(fp, "CP9 cutoff (bit sc):  %.2f\n", cm->cp9_cutoff);
+      printf ("CP9 search algorithm: Forward/Backward\n");
+      printf ("CP9 configuration:    ");
+      if(cm->cp9->flags & CPLAN9_LOCAL_BEGIN) fprintf(fp, "Local\n");
+      else fprintf(fp, "Glocal\n");
+    }
+  printf     ("N (db size, nt):      %ld\n\n", N);
+  fflush(stdout);
+  return eslOK;
+}
