@@ -404,7 +404,8 @@ ConfigGlobal(CM_t *cm)
    * the CM data structure in (C
    * in the CM data structure. */
   for (v = 0; v < cm->cnum[0]; v++)  cm->t[0][v] = cm->root_trans[v];
-  /*for (v = 0; v < cm->cnum[0]; v++)  printf("cm->t[0][v:%d]: %f\n", v, cm->t[0][v]);*/
+  /*printf("in ConfigGlobal, printing transitions from the root.\n");
+    for (v = 0; v < cm->cnum[0]; v++)  printf("cm->t[0][v:%d]: %f\n", v, cm->t[0][v]);*/
 
   cm->flags &= ~CM_LOCAL_BEGIN; /* drop the local begin flag */
   
@@ -944,40 +945,41 @@ ConfigForEVDMode(CM_t *cm, int evd_mode)
   int do_cm_local  = FALSE;
   int do_cp9_local = FALSE;
 
+  /*printf("in ConfigForEVDMode\n");*/
   /* First set search opts and flags based on evd_mode */
   switch (evd_mode) {
   case CM_LC: /* local CYK */
-    //printf("CM_LC\n");
+    /*printf("CM_LC\n");*/
     cm->search_opts &= ~CM_SEARCH_INSIDE;
     cm->search_opts &= ~CM_SEARCH_HMMONLY;
     do_cm_local  = TRUE;
     break;
   case CM_GC: /* glocal CYK */
-    //printf("CM_GC\n");
+    /*printf("CM_GC\n");*/
     cm->search_opts &= ~CM_SEARCH_INSIDE;
     cm->search_opts &= ~CM_SEARCH_HMMONLY;
     do_cm_local  = FALSE;
     break;
   case CM_LI: /* local inside */
-    //printf("CM_LI\n");
+    /*printf("CM_LI\n");*/
     cm->search_opts |= CM_SEARCH_INSIDE;
     cm->search_opts &= ~CM_SEARCH_HMMONLY;
     do_cm_local  = TRUE;
     break;
   case CM_GI: /* glocal inside */
-    //printf("CM_GI\n");
+    /*printf("CM_GI\n");*/
     cm->search_opts |= CM_SEARCH_INSIDE;
     cm->search_opts &= ~CM_SEARCH_HMMONLY;
     do_cm_local  = FALSE;
     break;
   case CP9_L: /* local CP9 Forward */
-    //printf("CP9_L\n");
+    /*printf("CP9_L\n");*/
     cm->search_opts &= ~CM_SEARCH_INSIDE;
     cm->search_opts |= CM_SEARCH_HMMONLY;
     do_cp9_local  = TRUE;
     break;
   case CP9_G: /* glocal CP9 Forward */
-    //printf("CP9_G\n");
+    /*printf("CP9_G\n");*/
     cm->search_opts &= ~CM_SEARCH_INSIDE;
     cm->search_opts |= CM_SEARCH_HMMONLY;
     do_cp9_local  = FALSE;

@@ -109,6 +109,7 @@ static char experts[] = "\
    --hmmE <x>     : use cutoff E-value of <x> for CP9 (possibly filtered) scan\n\
    --hmmT <x>     : use cutoff bit score of <x> for CP9 (possibly filtered) scan\n\
    --hmmcalcthr   : calc HMM filter threshold by sampling from CM\n\
+   --hmmgemit     : w/--hmmcalcthr, always emit from CM in global mode\n\
    --hmmgreedy    : resolve HMM overlapping hits with greedy algorithm a la RSEARCH\n\
    --hmmglocal    : w/--hmmfilter; use Glocal CP9 to filter\n\
    --hmmnegsc <x> : set min bit score to report as <x> < 0 (experimental)\n\
@@ -139,6 +140,7 @@ static struct opt_s OPTIONS[] = {
   { "--hmmE",       FALSE, sqdARG_FLOAT},
   { "--hmmT",       FALSE, sqdARG_FLOAT},
   { "--hmmcalcthr", FALSE, sqdARG_NONE},
+  { "--hmmgemit",   FALSE, sqdARG_NONE},
   { "--hmmnegsc",   FALSE, sqdARG_FLOAT},
   /*{ "--hmmrescan",  FALSE, sqdARG_NONE},*/
   { "--noqdb",      FALSE, sqdARG_NONE },
@@ -280,6 +282,8 @@ main(int argc, char **argv)
   float filt_fract = 0.95;    /* fraction of CM hits req'd to find with HMM  */
   int   use_cm_cutoff = TRUE; /* TRUE to use cm_ecutoff, FALSE not to      */
   int   filN = 1000;          /* Number of sequences to sample from the CM */
+  int   do_hmmgemit = FALSE;    /* always emit globally from CM in FindCP9Fthr */
+  int   emit_global;         /* in FindCP9FilterThreshold(), emit globally  */
 
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
   int my_rank;              /* My rank in MPI */
@@ -420,6 +424,7 @@ main(int argc, char **argv)
 	cp9_cutoff_type  = SCORE_CUTOFF;
       }
     else if  (strcmp(optname, "--hmmcalcthr")  == 0) do_hmmcalcthr = TRUE;
+    else if  (strcmp(optname, "--hmmgemit")  == 0)   do_hmmgemit = TRUE;
     else if  (strcmp(optname, "--beta")   == 0) beta      = atof(optarg);
     else if  (strcmp(optname, "--noqdb")  == 0) do_qdb    = FALSE;
     else if  (strcmp(optname, "--qdbfile")== 0) { read_qdb  = TRUE; qdb_file = optarg; }
@@ -750,6 +755,12 @@ main(int argc, char **argv)
 	{
 	  /* Calculate CP9 threshold here, use CM E-value cutoff we'll use for the search */
 	  cp9_cutoff_type = E_CUTOFF;
+	  if(cm_mode == CM_GC || cm_mode == CM_GI) emit_global = TRUE;
+	  else if(cm_mode == CM_LC || cm_mode == CM_LI)
+	    {
+	      if(do_hmmgemit) emit_global = TRUE; /* do_hmmgemit irrelevant for MPI workers */
+	      else emit_global = FALSE;
+	    }
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	  if(TRUE)
 	    {
@@ -762,11 +773,11 @@ main(int argc, char **argv)
 		    Die("ERROR can't use --hmmcalcthr with -T, currently you must use CM E-values with --hmmcalcthr.\n");
 		  cp9_e_cutoff = 
 		    mpi_FindCP9FilterThreshold(cm, cm->stats, filt_fract, filN, use_cm_cutoff, 
-					       cm->cutoff, N, cm_mode, cp9_mode, do_fastfil,
+					       cm->cutoff, N, emit_global, cm_mode, cp9_mode, do_fastfil,
 					       my_rank, nproc);
 		}
 	      else /* worker */
-		mpi_FindCP9FilterThreshold(cm, NULL, 0., 0, FALSE, 0, 0, cm_mode, cp9_mode, FALSE,
+		mpi_FindCP9FilterThreshold(cm, NULL, 0., 0, FALSE, 0, 0, 0, cm_mode, cp9_mode, FALSE,
 					   my_rank, nproc); /* all params but cm_mode, cp9_mode, my_rank
 							     * and cm are irrelevant for worker */
 	      /* broadcast cp9_e_cutoff */
@@ -776,7 +787,7 @@ main(int argc, char **argv)
 	  else /* never get here in MPI */
 #endif
 	    cp9_e_cutoff = FindCP9FilterThreshold(cm, cm->stats, filt_fract, filN, use_cm_cutoff,
-						  cm->cutoff, N, cm_mode, cp9_mode, do_fastfil);
+						  cm->cutoff, N, emit_global, cm_mode, cp9_mode, do_fastfil);
 
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
           if(my_rank == 0) /* master */
@@ -851,7 +862,7 @@ main(int argc, char **argv)
 	    printf("CP9 cutoff (bit sc):  %.2f\n", cm->cp9_cutoff);
 	  printf ("CP9 search algorithm: Forward/Backward\n");
 	  printf ("CP9 configuration:    ");
-	  if(cm->cp9->flags & CPLAN9_LOCAL_BEGIN) printf("Local.\n");
+	  if(cm->cp9->flags & CPLAN9_LOCAL_BEGIN) printf("Local\n");
 	  else printf("Glocal\n");
 	}
       printf     ("N (db size, nt):      %ld\n\n", N);

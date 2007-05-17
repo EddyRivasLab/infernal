@@ -137,11 +137,16 @@ int debug_print_filterthrinfo(CMStats_t *cmstats, CP9FilterThr_t *fthr)
 {
   double l_x;
   double g_x;
-  
-  g_x = cmstats->evdAA[CP9_G][0]->mu - 
-    (log(fthr->g_eval) / cmstats->evdAA[CP9_G][0]->lambda);
-  l_x = cmstats->evdAA[CP9_L][0]->mu - 
-    (log(fthr->l_eval) / cmstats->evdAA[CP9_L][0]->lambda);
+  double tmp_K, tmp_mu;
+  tmp_K = exp(cmstats->evdAA[CP9_G][0]->mu * cmstats->evdAA[CP9_G][0]->lambda) / 
+    cmstats->evdAA[CP9_G][0]->L;
+  tmp_mu = log(tmp_K * ((double) fthr->db_size)) / cmstats->evdAA[CP9_G][0]->lambda;
+  g_x = tmp_mu - (log(fthr->g_eval) / cmstats->evdAA[CP9_G][0]->lambda);
+
+  tmp_K = exp(cmstats->evdAA[CP9_L][0]->mu * cmstats->evdAA[CP9_L][0]->lambda) / 
+    cmstats->evdAA[CP9_L][0]->L;
+  tmp_mu = log(tmp_K * ((double) fthr->db_size)) / cmstats->evdAA[CP9_L][0]->lambda;
+  l_x = tmp_mu - (log(fthr->l_eval) / cmstats->evdAA[CP9_L][0]->lambda);
   printf("\tN: %d gsc: %.5f (%.5f bits) lsc: %.5f (%.5f bits)\n\tcmsc: %.5f fraction: %.3f db_size: %d was_fast: %d\n",
 	 fthr->N, fthr->g_eval, g_x, fthr->l_eval, l_x, fthr->cm_eval, fthr->fraction, fthr->db_size, fthr->was_fast);
   return eslOK;

@@ -67,6 +67,7 @@ static ESL_OPTIONS options[] = {
   { "--histfile",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL, "--onlyfil", "save fitted histogram(s) to file <s>", 1},
   { "--qqfile",  eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL, "--onlyfil", "save Q-Q plot for histogram(s) to file <s>", 1},
   { "--dbfile",  eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL, "--onlyfil", "use GC content distribution from file <s>",  1},
+  { "--gemit",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--onlyevd", "when calc'ing filter thresholds, always emit globally from CM",  1},
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -119,6 +120,8 @@ main(int argc, char **argv)
   ESL_SQFILE      *dbfp;               /* open file pointer for dbfile                */
   int              format;	       /* format of dbfile                            */
   long             N;                  /* database size if --dbfile enabled           */
+  int              always_global;      /* always emit globally from CM in FindCP9Fthr */
+  int              emit_global;        /* in FindCP9FilterThreshold(), emit globally  */
 
   /* CP9 HMM filtering threshold related variables */
   int              do_fil = TRUE;      /* TRUE to calc filter thr, FALSE if --onlyevd */
@@ -159,6 +162,7 @@ main(int argc, char **argv)
   histfile  = esl_opt_GetString(go, "--histfile");
   qqfile    = esl_opt_GetString(go, "--qqfile");
   dbfile    = esl_opt_GetString(go, "--dbfile");
+  always_global = esl_opt_GetBoolean(go, "--gemit");
   if(!use_cm_cutoff) cm_ecutoff = -1.; 
 
   if (esl_opt_ArgNumber(go) != 1) {
@@ -236,8 +240,8 @@ main(int argc, char **argv)
   /*****************************************************************
    * Initializations, including opening the CM file 
    *****************************************************************/
-  if ((r = esl_randomness_CreateTimeseeded()) == NULL)
-      //if ((r = esl_randomness_Create(33)) == NULL)
+  //if ((r = esl_randomness_CreateTimeseeded()) == NULL)
+  if ((r = esl_randomness_Create(33)) == NULL)
     esl_fatal("Failed to create random number generator: probably out of memory");
   printf("Random seed: %ld\n", r->seed);
 
@@ -375,6 +379,13 @@ main(int argc, char **argv)
 	  for(fthr_mode = 0; fthr_mode < NFTHRMODES; fthr_mode++)
 	    {
 	      if(do_fastfil && (fthr_mode == CM_LI || fthr_mode == CM_GI)) continue;
+	      if(fthr_mode == CM_GC || fthr_mode == CM_GI) 
+		emit_global = TRUE;
+	      else if(fthr_mode == CM_LC || fthr_mode == CM_LI)
+		{
+		  if(always_global) emit_global = TRUE;
+		  else emit_global = FALSE;
+		}
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	      if(TRUE)
 		{
@@ -383,13 +394,13 @@ main(int argc, char **argv)
 		    {
 		      cmstats[ncm]->fthrA[fthr_mode]->l_eval =  
 			mpi_FindCP9FilterThreshold(cm, cmstats[ncm], fraction, filN, use_cm_cutoff, 
-						   cm_ecutoff, db_size, fthr_mode, CP9_L, do_fastfil,
-						   my_rank, nproc);
+						   cm_ecutoff, db_size, emit_global, fthr_mode, 
+						   CP9_L, do_fastfil, my_rank, nproc);
 		    }
 		  else /* worker */
 		    mpi_FindCP9FilterThreshold(cm, NULL, fraction, filN, use_cm_cutoff, 
-					     cm_ecutoff, db_size, fthr_mode, CP9_L, do_fastfil,
-					     my_rank, nproc);
+					       cm_ecutoff, db_size, emit_global, fthr_mode, 
+					       CP9_L, do_fastfil,  my_rank, nproc);
 
 		    
 		  MPI_Barrier(MPI_COMM_WORLD);
@@ -397,12 +408,12 @@ main(int argc, char **argv)
 		    {
 		      cmstats[ncm]->fthrA[fthr_mode]->g_eval =  
 		      mpi_FindCP9FilterThreshold(cm, cmstats[ncm], fraction, filN, use_cm_cutoff, 
-						 cm_ecutoff, db_size, fthr_mode, CP9_G, do_fastfil,
+						 cm_ecutoff, db_size, emit_global, fthr_mode, CP9_G, do_fastfil,
 						 my_rank, nproc);
 		    }
 		  else
 		    mpi_FindCP9FilterThreshold(cm, NULL, fraction, filN, use_cm_cutoff, 
-					       cm_ecutoff, db_size, fthr_mode, CP9_G, do_fastfil,
+					       cm_ecutoff, db_size, emit_global, fthr_mode, CP9_G, do_fastfil,
 					       my_rank, nproc);
 		}
 	      else /* if MPI we want to skip serial calls below */
@@ -410,10 +421,10 @@ main(int argc, char **argv)
 #endif
 		cmstats[ncm]->fthrA[fthr_mode]->l_eval =  /*  local */
 		  FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, use_cm_cutoff,
-					 cm_ecutoff, db_size, fthr_mode, CP9_L, do_fastfil);
+					 cm_ecutoff, db_size, emit_global, fthr_mode, CP9_L, do_fastfil);
 		cmstats[ncm]->fthrA[fthr_mode]->g_eval =  /* glocal */
 		  FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, use_cm_cutoff,
-					 cm_ecutoff, db_size, fthr_mode, CP9_G, do_fastfil);
+					 cm_ecutoff, db_size, emit_global, fthr_mode, CP9_G, do_fastfil);
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 		}
 	      if(my_rank == 0)

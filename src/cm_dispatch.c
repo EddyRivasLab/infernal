@@ -85,7 +85,9 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons)
     }
   else dmin = dmax = NULL;
       
-	
+  /* Check contract */
+  if(!(cm->flags & CM_HASBITS))
+    Die("ERROR in serial_search_database CM_HAS_BITS flag is down\n");
   /*printf("in serial_search database do_align: %d do_revcomp: %d\n", do_align, do_revcomp);*/
   
   /* Determine minimum cutoff for CM and for CP9 */
@@ -208,6 +210,10 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
   int do_revcomp;
   int do_align;
   int *dmin, *dmax;
+
+  /* Contract check */
+  if(!(cm->flags & CM_HASBITS))
+    Die("ERROR in parallel_search_database CM_HAS_BITS flag is down\n");
 
   if(cm->align_opts & CM_ALIGN_QDB)
     {
