@@ -49,7 +49,8 @@ static int QDBFileRead(FILE *fp, CM_t *cm, int **ret_dmin, int **ret_dmax);
 static int set_partitions(int **ret_partitions, int *num_partitions, char *list);
 static int debug_print_stats(int *partitions, int num_partitions, double *lambda, double *mu); 
 static int SetCMCutoff(CM_t *cm, int cm_cutoff_type, float cm_sc_cutoff, float cm_e_cutoff);
-static int SetCP9Cutoff(CM_t *cm, int cp9_cutoff_type, float cp9_sc_cutoff, float cp9_e_cutoff);
+static int SetCP9Cutoff(CM_t *cm, int cp9_cutoff_type, float cp9_sc_cutoff, float cp9_e_cutoff,
+			float cm_e_cutoff);
 static int PrintSearchInfo(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N);
 
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
@@ -217,9 +218,10 @@ main(int argc, char **argv)
   /* For calculating HMM thresholds if they're set from cm->stats->fthr     */
   int   cm_mode  = -1;          /* CM algorithm mode for calc'ing HMM thr   */
   int   cp9_mode = -1;          /* CP9 algorithm mode for calc'ing HMM thr  */
-  float cp9_eval;               /* HMM threshold P-val, from cm->stats->fthr*/
+  float cp9_eval;               /* HMM threshold E-val, from cm->stats->fthr*/
   float cp9_bit_sc;             /* bit sc cp9_eval corresonds to            */
   double tmp_mu;                /* for converting filtering E-value from fthr*/
+  double max_cp9_eval;          /* (N / (2*W-clen)) max allowed E-val cutoff*/
 
   /* The enforce option (--enfstart and --enfseq), added specifically for   *
    * enforcing the template region for telomerase RNA searches.             *
@@ -687,7 +689,23 @@ main(int argc, char **argv)
 	}
       /* Set CM and CP9 cutoffs, we overwrite CP9 cutoff below if --hmmcalcthr was enabled */
       SetCMCutoff (cm,  cm_cutoff_type,  cm_sc_cutoff,  cm_e_cutoff);
-      SetCP9Cutoff(cm, cp9_cutoff_type, cp9_sc_cutoff, cp9_e_cutoff);
+      SetCP9Cutoff(cm, cp9_cutoff_type, cp9_sc_cutoff, cp9_e_cutoff, cm_e_cutoff);
+      /* Determine maximum reasonable CP9 E cutoff as the E-value that predicts the entire
+       * database will survive the filter, assuming the average hit size is the consensus
+       * length of the sequence (which it isn't it's the weighted sum of gamma[0] from the QDB calc.)
+       * Later we'll use this to turn off filtering if cm->cp9_e_cutoff exceeds it. */
+      max_cp9_eval = ((double) N) / ((2. * cm->W) - 
+				     (2*CMCountStatetype(cm, MATP_MP) + 
+				        CMCountStatetype(cm, MATL_ML) + 
+				        CMCountStatetype(cm, MATR_MR)));
+
+      /* Set W here if --window set on command line, only works if QDB is
+       * turned off, otherwise bands will not make sense with set W */
+      if (set_window) 
+	{
+	  if(do_qdb) Die("ERROR --window currently only works in combination with --noqdb.\n");
+	  cm->W = set_W;
+	}
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	}   /* End of second block that is only done by master process */
       /* Broadcast the CM, complete with EVD stats if they were in cmfile */
@@ -695,6 +713,8 @@ main(int argc, char **argv)
       broadcast_cm(&cm, my_rank, mpi_master_rank);
       MPI_Barrier(MPI_COMM_WORLD);
       MPI_Bcast (&do_hmmcalcthr,  1, MPI_INT, 0, MPI_COMM_WORLD);
+      MPI_Barrier(MPI_COMM_WORLD);
+      MPI_Bcast (&max_cp9_eval,   1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 #endif
       /* Configure the CM for search based on cm->config_opts and cm->search_opts. 
        * Set local mode, make cp9 HMM, calculate QD bands etc.
@@ -704,8 +724,6 @@ main(int argc, char **argv)
       if(cm->config_opts & CM_CONFIG_ENFORCE)
 	ConfigCMEnforce(cm);
       cons = CreateCMConsensus(cm, 3.0, 1.0); 
-      /* Set W here, after QDB is configured, which set W as dmax[0] */
-      if (set_window) cm->W = set_W;
       CM2EVD_mode(cm, &cm_mode, &cp9_mode); /* MPI workers need to know this (sloppily 
 					     * redundant for master and for serial version) */
 
@@ -760,11 +778,23 @@ main(int argc, char **argv)
 	  /* Overwrite CP9 cutoff info */
 	  cm->cp9_cutoff_type = E_CUTOFF;
 	  if(cp9_e_cutoff < DEFAULT_MIN_CP9_E_CUTOFF) cp9_e_cutoff = DEFAULT_MIN_CP9_E_CUTOFF;
+	  if(cm->cutoff_type == E_CUTOFF && cp9_e_cutoff < cm_e_cutoff) cp9_e_cutoff = cm_e_cutoff;
 	  cm->cp9_cutoff = cp9_e_cutoff; /* cp9_e_cutoff was broadcasted to workers in MPI */
 	}
-      /* TO DO: if cp9 cutoff is E value and we're HMM filtering, ensure that the cutoff
-       * is low enough that it's worthwhile to filter, else turn filtering off */
+      if(cm->search_opts & CM_SEARCH_HMMFILTER)
+	{
+	  /* Check to make sure our E-value cutoff is reasonable, if it predicts the whole DB will
+	   * survive the filter, turn filtering off */
+	  if(cm->cp9_cutoff > max_cp9_eval)
+	    {
+	      cm->search_opts &= ~CM_SEARCH_HMMFILTER;
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+	      if(my_rank == 0) /* master */
+#endif
 
+	      printf("Turned HMM filtering off (CP9 E-value cutoff: %.2f > %.2f (N/(2*W-clen)))\n", cm->cp9_cutoff, max_cp9_eval);
+	    }
+	}
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
       if(my_rank == 0) /* master */
 	{
@@ -800,8 +830,6 @@ main(int argc, char **argv)
 	}
       if (nproc > 1)
 	{
-	  printf("my_rank: %d cm->cp9_cutoff: %f\n", my_rank, cm->cp9_cutoff);
-	  fflush(stdout);
 	  parallel_search_database (dbfp, cm, cons,
 				    my_rank, mpi_master_rank, nproc);
 	  if(my_rank == mpi_master_rank && nproc > 1)
@@ -1058,7 +1086,8 @@ int SetCMCutoff(CM_t *cm, int cm_cutoff_type, float cm_sc_cutoff, float cm_e_cut
  * Date:     EPN, Thu May 17 13:33:14 2007
  * Purpose:  Fill cm->cp9_cutoff and cm->cp9_cutoff_type.
  */
-int SetCP9Cutoff(CM_t *cm, int cp9_cutoff_type, float cp9_sc_cutoff, float cp9_e_cutoff)
+int SetCP9Cutoff(CM_t *cm, int cp9_cutoff_type, float cp9_sc_cutoff, float cp9_e_cutoff,
+		 float cm_e_cutoff)
 {
   if(cm->search_opts & CM_SEARCH_HMMONLY || 
      cm->search_opts & CM_SEARCH_HMMFILTER)
@@ -1068,9 +1097,11 @@ int SetCP9Cutoff(CM_t *cm, int cp9_cutoff_type, float cp9_sc_cutoff, float cp9_e
 	cm->cp9_cutoff = cp9_sc_cutoff;
       else 
 	{
+
 	  if(!(cm->flags & CM_EVD_STATS))
 	    Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try --hmmT.\n");
 	  if(cp9_e_cutoff < DEFAULT_MIN_CP9_E_CUTOFF) cp9_e_cutoff = DEFAULT_MIN_CP9_E_CUTOFF;
+	  if(cm->cutoff_type == E_CUTOFF && cp9_e_cutoff < cm_e_cutoff) cp9_e_cutoff = cm_e_cutoff;
 	  cm->cp9_cutoff = cp9_e_cutoff;
 	}
     }
@@ -1079,6 +1110,7 @@ int SetCP9Cutoff(CM_t *cm, int cp9_cutoff_type, float cp9_sc_cutoff, float cp9_e
       cm->cp9_cutoff_type = SCORE_CUTOFF;
       cm->cp9_cutoff      = 0.;
     }
+  
   return eslOK;
 }
 
@@ -1089,7 +1121,15 @@ int SetCP9Cutoff(CM_t *cm, int cp9_cutoff_type, float cp9_sc_cutoff, float cp9_e
  */
 int PrintSearchInfo(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N)
 {
-  int p;
+  int p, n;
+  int clen = 0;
+  float surv_fract;
+  float avg_hit_len;
+
+  for(n = 0; n < cm->nodes; n++) 
+    if     (cm->ndtype[n] == MATP_nd) clen += 2;
+    else if(cm->ndtype[n] == MATL_nd || cm->ndtype[n] == MATR_nd) clen += 1;
+
   if(!(cm->search_opts & CM_SEARCH_HMMONLY))
     {
       if(cm->cutoff_type == E_CUTOFF)
@@ -1122,7 +1162,14 @@ int PrintSearchInfo(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N)
 	{
 	  if(!(cm->flags & CM_EVD_STATS))
 	    Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T and/or --hmmT.\n");
+
+	  /* Predict survival fraction from filter based on E-value, consensus length, W and N */
+	  if(cp9_mode == CP9_G) avg_hit_len = clen;       /* should be weighted sum of gamma[0] from QDB calc */
+	  if(cp9_mode == CP9_L) avg_hit_len = clen * 0.5; /* should be weighted sum of gamma[0] from QDB calc */
+	  surv_fract = (cm->cp9_cutoff * ((2. * cm->W) - avg_hit_len)) / ((double) N); 
+	  /* HMM filtering sends j-W..i+W to be researched with CM for HMM hits i..j */
 	  fprintf(fp, "CP9 cutoff (E value): %.2f\n", cm->cp9_cutoff);
+	  fprintf(fp, "   Predicted survival fraction: %.5f (1/%.3f)\n", surv_fract, (1./surv_fract));
 	  for(p = 0; p < cm->stats->np; p++)
 	    fprintf(fp, "   GC %2d-%3d bit sc:  %.2f mu: %.5f lambda: %.5f\n", cm->stats->ps[p], cm->stats->pe[p], 
 		    (cm->stats->evdAA[cp9_mode][p]->mu - 

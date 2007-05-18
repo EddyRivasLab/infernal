@@ -116,7 +116,6 @@ CreateCMShell(void)
   cm->root_trans = NULL;
   cm->hmmpad = DEFAULT_HMMPAD; /* 0 residues */
   cm->stats = NULL;
-
   return cm;
 }
 void
