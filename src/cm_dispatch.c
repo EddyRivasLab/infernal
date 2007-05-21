@@ -1606,6 +1606,8 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	    { 
 	      free(cp9b->hdmin[v]); 
 	      free(cp9b->hdmax[v]);
+	      cp9b->hdmin[v] = NULL;
+	      cp9b->hdmax[v] = NULL;
 	    }
 	}
       if(do_sub && !(do_inside || do_outside))

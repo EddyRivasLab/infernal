@@ -21,6 +21,7 @@
 #include "funcs.h"		/* function declarations                */
 #include "squid.h"		/* general sequence analysis library    */
 #include "msa.h"		/* squid's multiple sequence i/o        */
+#include "stats.h"
 #include "cm_dispatch.h"	
 #include <esl_vectorops.h>
 #include <esl_histogram.h>
@@ -47,7 +48,10 @@ static char experts[] = "\
    --hmmbuild     : build a ML CM Plan 9 HMM from the samples\n\
    --hmmscore     : score samples with a CM Plan 9 HMM\n\
    --hmmlocal     : w/hmmscore, search with CP9 HMM in local mode\n\
-   --cmbitsc      : w/hmmscore, min CM bit score to consider\n\
+   --hmmfast      : w/hmmscore, assume parse tree scores are optimal\n\
+   --cmeval       : w/hmmscore, min CM E-value to consider\n\
+   --ptest        : do parse test, are generated parses optimal?\n\
+   --exp <x>      : exponentiate CM probs by <x> prior to emitting\n\
 ";
 
 static struct opt_s OPTIONS[] = {
@@ -64,7 +68,10 @@ static struct opt_s OPTIONS[] = {
   { "--hmmbuild",FALSE, sqdARG_NONE },
   { "--hmmscore",FALSE, sqdARG_NONE },
   { "--hmmlocal",FALSE, sqdARG_NONE },
-  { "--cmbitsc", FALSE, sqdARG_FLOAT }
+  { "--hmmfast", FALSE, sqdARG_NONE },
+  { "--cmeval",  FALSE, sqdARG_FLOAT },
+  { "--ptest",   FALSE, sqdARG_NONE },
+  { "--exp",     FALSE, sqdARG_FLOAT }
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -82,6 +89,7 @@ main(int argc, char **argv)
 
   int              nseq;	/* number of seqs to sample                */
   int              seed;	/* random number generator seed            */
+  int              do_qdb;	/* TRUE to config QDBs (on by default)     */
   int              do_local;	/* TRUE to config the model in local mode  */
   int              be_quiet;	/* TRUE to silence header/footer           */
   int              do_alignment;/* TRUE to output in aligned format        */ 
@@ -100,7 +108,13 @@ main(int argc, char **argv)
 				 * sampled parses of the CM                */
   int   do_score_cp9;           /* TRUE to score each seq against CP9 HMM  */
   int   do_local_cp9;           /* if score_cp9, put CP9 in local mode     */
-  float cm_minsc = IMPOSSIBLE;  
+  int   do_fastfil;             /* TRUE to assume parse tree score is opt  */
+  float cm_sc_cutoff = IMPOSSIBLE;  
+  float cm_e_cutoff  = 10.;
+  int   cm_cutoff_type = SCORE_CUTOFF; 
+  int   do_ptest;               /* TRUE:check if emitted parses are optimal*/
+  int   do_exp;                 /* TRUE to exponentiate CM before emitting */
+  double exp_factor;            /* factor to exponentiate CM params by     */
 
   /*********************************************** 
    * Parse command line
@@ -109,6 +123,7 @@ main(int argc, char **argv)
   nseq         = 10;
   seed         = time ((time_t *) NULL);
   be_quiet     = FALSE;
+  do_qdb       = TRUE;  /* on by default */
   do_local     = FALSE;
   do_alignment = FALSE;  
   do_consensus = FALSE;
@@ -116,7 +131,10 @@ main(int argc, char **argv)
   end_set      = FALSE;
   build_cp9    = FALSE;
   do_score_cp9 = FALSE;
+  do_fastfil   = FALSE;
   do_local_cp9 = FALSE;
+  do_ptest     = FALSE;
+  do_exp       = FALSE;
   ofile        = NULL;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
@@ -133,7 +151,10 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--hmmbuild") == 0) build_cp9 = TRUE;
     else if (strcmp(optname, "--hmmscore") == 0) do_score_cp9 = TRUE;
     else if (strcmp(optname, "--hmmlocal") == 0) do_local_cp9 = TRUE;
-    else if (strcmp(optname, "--cmbitsc")  == 0) cm_minsc  = atof(optarg);
+    else if (strcmp(optname, "--hmmfast")  == 0) do_fastfil   = TRUE;
+    else if (strcmp(optname, "--cmeval")   == 0) { cm_cutoff_type = E_CUTOFF; cm_e_cutoff = atof(optarg); } 
+    else if (strcmp(optname, "--ptest")    == 0) do_ptest = TRUE; 
+    else if (strcmp(optname, "--exp")      == 0) { do_exp = TRUE; exp_factor = atof(optarg); }
     else if (strcmp(optname, "-h")      == 0) 
       {
 	MainBanner(stdout, banner);
@@ -164,6 +185,8 @@ main(int argc, char **argv)
     Die("ERROR --hmmlocal only makes sense in combination with --hmmscore.\n");
   if(do_score_cp9 && (do_alignment || do_consensus))
     Die("ERROR --hmmscore does not work in combination with -a or -c.\n");
+  if(do_fastfil && do_ptest)
+    Die("ERROR --hmmfast does not work in combination with --ptest.\n");
   
   /*****************************************************************
    * Input and configure the CM
@@ -177,8 +200,8 @@ main(int argc, char **argv)
     Die("%s empty?\n", cmfile);
   CMFileClose(cmfp);
 
+  if(do_qdb)          cm->config_opts |= CM_CONFIG_QDB;
   if(do_local)        cm->config_opts |= CM_CONFIG_LOCAL;
-  if(do_score_cp9)    cm->search_opts |= CM_SEARCH_HMMONLY;
   ConfigCM(cm, NULL, NULL);
 
   /* Determine number of consensus columns modelled by CM */
@@ -231,6 +254,9 @@ main(int argc, char **argv)
      * all our traces, then output. If we're generating unaligned
      * sequences, we can emit one at a time.
      ***********************************************/
+
+  if (do_exp)
+    ExponentiateCM(cm, exp_factor);
 
   if (do_consensus) 
     {
@@ -535,7 +561,7 @@ main(int argc, char **argv)
       char             *dsq;        /* digitized sequence                     */
       char             *seq;        /* alphabetic sequence                    */
       float             cm_sc;
-      float             *hmm_sc;
+      float            *hmm_sc;
       int               max_attempts = 500 * nseq;
       int               nattempts = 0;
       float             f;
@@ -543,8 +569,32 @@ main(int argc, char **argv)
       double           *xv;
       int               n;
       double            mean, var;
-      ESL_HISTOGRAM *h = esl_histogram_CreateFull(100, 1000, 0.2);
+      float             diff = 0.;  /* total diff b/t optimal/emitted parse scs */
+      float             esc;        /* emitted parse tree score               */
+      SQINFO            sqinfo;     /* info about sequence (name/len)         */
+      int               cm_mode;    /* EVD mode to use for CM */
+      int               cp9_mode;   /* EVD mode to use for CP9 */
 
+      SetCMCutoff(cm, cm_cutoff_type, cm_sc_cutoff, cm_e_cutoff);
+      SetCP9Cutoff(cm, SCORE_CUTOFF, 0., 0., cm->cutoff);
+      CM2EVD_mode(cm, &cm_mode, &cp9_mode); 
+
+      if(cm->cutoff_type == E_CUTOFF)
+	{
+	  /* Working with first partition */
+	  if(cm->stats->np > 1)
+	    Die("ERROR CM EVD stats for > 1 partition, not yet implemented.\n");
+	  cm_sc_cutoff = (cm->stats->evdAA[cm_mode][0]->mu - 
+			  (log(cm->cutoff) / cm->stats->evdAA[cm_mode][0]->lambda));
+	  PrintSearchInfo(stdout, cm, cm_mode, cp9_mode, cm->stats->evdAA[cm_mode][0]->N);
+	}
+      else
+	{
+	  cm_sc_cutoff = IMPOSSIBLE;
+	  PrintSearchInfo(stdout, cm, cm_mode, cp9_mode, 0);
+	}
+      
+      ESL_HISTOGRAM *h = esl_histogram_CreateFull(100, 1000, 0.2);
       hmm_sc = MallocOrDie(sizeof(float) * nseq);
 
       /* Put the CP9 in global alignment mode, unless --hmmlocal was specified */
@@ -553,23 +603,54 @@ main(int argc, char **argv)
 	  CPlan9GlobalConfig(cm->cp9);
 	  CP9Logoddsify(cm->cp9);
 	}
+      printf("do fastfil: %d\n", do_fastfil);
       for (i = 0; i < nseq; i++)
 	{
 	  if(nattempts++ > max_attempts) 
 	    Die("ERROR number of attempts exceeded 500 times number of seqs.\n");
 	  EmitParsetree(cm, &tr, &seq, &dsq, &L);
-	  cm_sc = ParsetreeScore(cm, tr, dsq, FALSE);
-	  while(cm_sc < cm_minsc)
+
+	  cm->search_opts &= ~CM_SEARCH_HMMONLY;
+	  if(do_fastfil) 
+	    cm_sc = ParsetreeScore(cm, tr, dsq, FALSE);
+	  else
+	    cm_sc = actually_search_target(cm, dsq, 1, L,
+					   0.,    /* cutoff is 0 bits (actually we'll find highest
+						   * negative score if it's < 0.0) */
+					   0.,    /* CP9 cutoff is 0 bits */
+					   NULL,  /* don't keep results */
+					   FALSE, /* don't filter with a CP9 HMM */
+					   FALSE, /* we're not calcing CM  stats */
+					   FALSE, /* we're not calcing CP9 stats */
+					   NULL); /* filter fraction N/A */
+	  while(cm_sc < cm_sc_cutoff)
 	    {
 	      FreeParsetree(tr);
 	      free(dsq);
 	      free(seq);
 	      EmitParsetree(cm, &tr, &seq, &dsq, &L);
-	      cm_sc = ParsetreeScore(cm, tr, dsq, FALSE);
+	      if(do_fastfil) 
+		cm_sc = ParsetreeScore(cm, tr, dsq, FALSE);
+	      else
+		cm_sc = actually_search_target(cm, dsq, 1, L,
+					       0.,    /* cutoff is 0 bits (actually we'll find highest
+						       * negative score if it's < 0.0) */
+					       0.,    /* CP9 cutoff is 0 bits */
+					       NULL,  /* don't keep results */
+					       FALSE, /* don't filter with a CP9 HMM */
+					       FALSE, /* we're not calcing CM  stats */
+					       FALSE, /* we're not calcing CP9 stats */
+					       NULL); /* filter fraction N/A */
 	      if(nattempts++ > max_attempts)
 		Die("ERROR number of attempts exceeded 50 times number of seqs.\n");
 	    }
 	  esl_histogram_Add(h, cm_sc);
+	  if(do_ptest) 
+	    {
+	      esc   = ParsetreeScore(cm, tr, dsq, FALSE);
+	      diff += fabs(cm_sc - esc);
+	    }
+	  cm->search_opts |= CM_SEARCH_HMMONLY;
 	  hmm_sc[i] = actually_search_target(cm, dsq, 1, L,
 					     cm->cutoff, cm->cp9_cutoff,
 					     NULL,  /* don't report hits to a results structure */
@@ -580,8 +661,11 @@ main(int argc, char **argv)
 	  FreeParsetree(tr);
 	  free(dsq);
 	  free(seq);
-	  printf("i: %4d cm sc: %10.4f hmm sc: %10.4f\n", i, cm_sc, hmm_sc[i]);
+	  printf("i: %4d cm sc: %10.4f hmm sc: %10.4f ", i, cm_sc, hmm_sc[i]);
+	  if(do_ptest) printf("D: %10.3f (E: %10.3f)\n", (cm_sc - esc), esc);
+	  else printf("\n");
 	}
+      if(do_ptest) printf("Bit diff: %.3f Avg: %.3f\n", diff, (diff/nseq));
       /* Sort the HMM scores with quicksort */
       esl_vec_FSortIncreasing(hmm_sc, nseq);
 
@@ -597,7 +681,7 @@ main(int argc, char **argv)
       while(f < 1.001)
 	{
 	  hmm_cutoff = hmm_sc[(int) ((1. - f) * (float) nseq)];
-	  printf("HMM glocal filter bit score threshold for finding %.2f CM hits > %.2f bits: %.4f\n", f, cm_minsc, hmm_cutoff);
+	  printf("HMM glocal filter bit score threshold for finding %.2f CM hits > %.2f bits: %.4f\n", f, cm_sc_cutoff, hmm_cutoff);
 	  f += 0.01;
 	} 
       printf("\n\nnattempts: %d\n", nattempts);
@@ -609,7 +693,10 @@ main(int argc, char **argv)
       char             *dsq;        /* digitized sequence                     */
       char             *seq;        /* alphabetic sequence                    */
       SQINFO            sqinfo;     /* info about sequence (name/len)         */
-      
+      float             diff = 0.;  /* total diff b/t optimal/emitted parse scs */
+      float             esc;        /* emitted parse tree score               */
+      float             osc;        /* optimal parse tree score               */
+
       for (i = 0; i < nseq; i++)
 	{
 	  EmitParsetree(cm, &tr, &seq, &dsq, &L);
@@ -619,10 +706,26 @@ main(int argc, char **argv)
 	  
 	  WriteSeq(fp, SQFILE_FASTA, seq, &sqinfo);
 	  
+	  if(do_ptest) /* Check score diff, if any w/optimal parse */
+	    {
+	      esc = ParsetreeScore(cm, tr, dsq, FALSE);
+	      osc = actually_search_target(cm, dsq, 1, L,
+					   0.,    /* cutoff is 0 bits (actually we'll find highest
+						   * negative score if it's < 0.0) */
+					   0.,    /* CP9 cutoff is 0 bits */
+					   NULL,  /* don't keep results */
+					   FALSE, /* don't filter with a CP9 HMM */
+					   FALSE, /* we're not calcing CM  stats */
+					   FALSE, /* we're not calcing CP9 stats */
+					   NULL); /* filter fraction N/A */
+	      diff += fabs(osc-esc);
+	      printf("i: %5d %10.3f (E: %10.3f O: %10.3f)\n", i, (osc-esc), esc, osc);
+	    }
 	  FreeParsetree(tr);
 	  free(dsq);
 	  free(seq);
 	}
+      if(do_ptest) printf("Bit diff: %.3f Avg: %.3f\n", diff, (diff/nseq));
     }
   FreeCM(cm);
   

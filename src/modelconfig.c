@@ -1068,3 +1068,4 @@ ConfigQDB(CM_t *cm)
   cm->flags |= CM_QDB; /* raise the QDB flag */
   return eslOK;
 }
+

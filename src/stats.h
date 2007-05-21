@@ -11,6 +11,10 @@
 
 extern CMStats_t *AllocCMStats(int np);
 extern void FreeCMStats(CMStats_t *cmstats);
+extern int SetCMCutoff(CM_t *cm, int cm_cutoff_type, float cm_sc_cutoff, float cm_e_cutoff);
+extern int SetCP9Cutoff(CM_t *cm, int cp9_cutoff_type, float cp9_sc_cutoff, float cp9_e_cutoff,
+			float cm_e_cutoff);
+extern int PrintSearchInfo(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N);
 extern int debug_print_cmstats(CMStats_t *cmstats, int has_fthr);
 extern int debug_print_evdinfo(EVDInfo_t *evd);
 extern int debug_print_filterthrinfo(CMStats_t *cmstats, CP9FilterThr_t *fthr);

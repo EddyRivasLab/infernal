@@ -617,3 +617,4 @@ CYKScanRequires(CM_t *cm, int L, int W)
   ram += (float) (sizeof(float) * (L+1)); /* savesc allocation */
   return (ram / 1000000.);
 }
+

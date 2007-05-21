@@ -1524,3 +1524,43 @@ float rsearch_calculate_gap_penalty (char from_state, char to_state,
   }
   return (0);
 }
+
+/*
+ * Function: ExponentiateCM
+ * Date:     EPN, Sun May 20 13:10:06 2007
+ * Purpose:  Exponentiate the emission and transition probabilities of a CM
+ *           by z. Local Begin and End probabilities untouched.
+ * 
+ * Args:
+ *           CM           - the covariance model
+ *           z            - factor to exponentiate by
+ */
+int
+ExponentiateCM(CM_t *cm, double z)
+{
+  printf("in ExponentiateCM, z: %f\n", z);
+  int v;
+  int x,y;
+  for(v = 0; v < cm->M; v++)
+    {
+      if (cm->sttype[v] != B_st && cm->sttype[v] != E_st)
+	for (x = 0; x < cm->cnum[v]; x++)
+	  cm->t[v][x]  = pow(cm->t[v][x], z);
+      if (cm->sttype[v] == MP_st)
+	{
+	  for (x = 0; x < Alphabet_size; x++)
+	    for (y = 0; y < Alphabet_size; y++)
+	      cm->e[v][x*Alphabet_size+y]  = pow(cm->e[v][x*Alphabet_size+y], z);
+	}
+      if (cm->sttype[v] == ML_st || cm->sttype[v] == MR_st ||
+	  cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
+	{
+	  for (x = 0; x < Alphabet_size; x++)
+	    cm->e[v][x]  = pow(cm->e[v][x], z);
+	}
+    }
+  CMRenormalize(cm);
+  /* new probs invalidate log odds scores */
+  cm->flags &= ~CM_HASBITS;
+  return eslOK;
+}

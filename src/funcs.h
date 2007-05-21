@@ -90,6 +90,7 @@ extern float rsearch_calculate_gap_penalty (char from_state, char to_state,
 					    int from_node, int to_node, 
 					    float input_alpha, float input_beta, 
 					    float input_alphap, float input_betap);
+extern int ExponentiateCM(CM_t *cm, double z);
 
 /*EPN 10.19.05*/
 extern void  CMDefaultNullModel(float *null);

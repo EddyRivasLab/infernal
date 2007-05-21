@@ -102,13 +102,16 @@ FreeCP9Bands(CP9Bands_t *cp9bands)
    * example if one CP9Bands_t structure was used for multiple seqs,
    * the hdmin bands are the only part that is seq and CM dependent,
    * instead of just CM dependent. */
-  for(v = 0; v < cp9bands->cm_M; v++)
+  if(cp9bands->hdmin != NULL)
     {
-      if(cp9bands->hdmin[v] != NULL)
+      for(v = 0; v < cp9bands->cm_M; v++)
 	free(cp9bands->hdmin[v]);
-      if(cp9bands->hdmax[v] != NULL)
-	free(cp9bands->hdmax[v]);
     }
+  if(cp9bands->hdmax != NULL)
+    {
+      for(v = 0; v < cp9bands->cm_M; v++)
+	free(cp9bands->hdmax[v]);
+    }  
   free(cp9bands->hdmin);
   free(cp9bands->hdmax);
 

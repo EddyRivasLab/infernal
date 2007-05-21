@@ -48,10 +48,6 @@ void exit_from_mpi () {
 static int QDBFileRead(FILE *fp, CM_t *cm, int **ret_dmin, int **ret_dmax);
 static int set_partitions(int **ret_partitions, int *num_partitions, char *list);
 static int debug_print_stats(int *partitions, int num_partitions, double *lambda, double *mu); 
-static int SetCMCutoff(CM_t *cm, int cm_cutoff_type, float cm_sc_cutoff, float cm_e_cutoff);
-static int SetCP9Cutoff(CM_t *cm, int cp9_cutoff_type, float cp9_sc_cutoff, float cp9_e_cutoff,
-			float cm_e_cutoff);
-static int PrintSearchInfo(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N);
 
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 static char banner[] = "mpi-cmsearch - search a sequence database with an RNA covariance model";
@@ -724,8 +720,11 @@ main(int argc, char **argv)
       if(cm->config_opts & CM_CONFIG_ENFORCE)
 	ConfigCMEnforce(cm);
       cons = CreateCMConsensus(cm, 3.0, 1.0); 
-      CM2EVD_mode(cm, &cm_mode, &cp9_mode); /* MPI workers need to know this (sloppily 
-					     * redundant for master and for serial version) */
+      CM2EVD_mode(cm, &cm_mode, &cp9_mode); /* MPI workers need to know this */
+
+      /*#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+	printf("my_rank: %d cm_mode: %d cp9_mode: %d\n", my_rank, cm_mode, cp9_mode);
+	#endif*/
 
       /* Recalculate CP9 threshold if --hmmcalcthr by sampling from the CM */
       if(do_hmmcalcthr) /* this was broadcasted to workers in MPI mode */
@@ -835,6 +834,7 @@ main(int argc, char **argv)
 	  if(my_rank == mpi_master_rank && nproc > 1)
 	    {
 	      StopwatchStop(mpi_watch);
+	      printf("%d processors ", nproc);
 	      StopwatchDisplay(stdout, "MPI search time:", mpi_watch);
 	    }
 	}
@@ -1052,138 +1052,4 @@ int debug_print_stats(int *partitions, int num_partitions, double *lambda, doubl
     }
   printf("end of debug_print_stats\n");
   return 1;
-}
-
-/*
- * Function: SetCMCutoff
- * Date:     EPN, Thu May 17 13:30:41 2007
- * Purpose:  Fill cm->cutoff and cm->cutoff_type.
- */
-int SetCMCutoff(CM_t *cm, int cm_cutoff_type, float cm_sc_cutoff, float cm_e_cutoff)
-{
-  if(cm->search_opts & CM_SEARCH_HMMONLY) /* CM score cutoff won't be used */
-    {
-      cm_cutoff_type = SCORE_CUTOFF;
-      cm_sc_cutoff   = 0.;
-    }
-  else
-    {
-      cm->cutoff_type = cm_cutoff_type;
-      if(cm->cutoff_type == SCORE_CUTOFF)
-	cm->cutoff = cm_sc_cutoff;
-      else 
-	{
-	  cm->cutoff = cm_e_cutoff;
-	  if(!(cm->flags & CM_EVD_STATS) && (!(cm->search_opts & CM_SEARCH_HMMONLY)))
-	    Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T.\n");
-	}
-    }
-  return eslOK;
-}
-
-/*
- * Function: SetCP9Cutoff
- * Date:     EPN, Thu May 17 13:33:14 2007
- * Purpose:  Fill cm->cp9_cutoff and cm->cp9_cutoff_type.
- */
-int SetCP9Cutoff(CM_t *cm, int cp9_cutoff_type, float cp9_sc_cutoff, float cp9_e_cutoff,
-		 float cm_e_cutoff)
-{
-  if(cm->search_opts & CM_SEARCH_HMMONLY || 
-     cm->search_opts & CM_SEARCH_HMMFILTER)
-    {
-      cm->cp9_cutoff_type = cp9_cutoff_type;  
-      if(cm->cp9_cutoff_type == SCORE_CUTOFF)
-	cm->cp9_cutoff = cp9_sc_cutoff;
-      else 
-	{
-
-	  if(!(cm->flags & CM_EVD_STATS))
-	    Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try --hmmT.\n");
-	  if(cp9_e_cutoff < DEFAULT_MIN_CP9_E_CUTOFF) cp9_e_cutoff = DEFAULT_MIN_CP9_E_CUTOFF;
-	  if(cm->cutoff_type == E_CUTOFF && cp9_e_cutoff < cm_e_cutoff) cp9_e_cutoff = cm_e_cutoff;
-	  cm->cp9_cutoff = cp9_e_cutoff;
-	}
-    }
-  else /* we won't use the CP9 at all, set score cutoff with 0 bit cutoff */
-    {
-      cm->cp9_cutoff_type = SCORE_CUTOFF;
-      cm->cp9_cutoff      = 0.;
-    }
-  
-  return eslOK;
-}
-
-/*
- * Function: PrintSearchInfo
- * Date:     EPN, Thu May 17 14:47:36 2007
- * Purpose:  Print info about search (cutoffs, algorithm, etc.) to file or stdout 
- */
-int PrintSearchInfo(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N)
-{
-  int p, n;
-  int clen = 0;
-  float surv_fract;
-  float avg_hit_len;
-
-  for(n = 0; n < cm->nodes; n++) 
-    if     (cm->ndtype[n] == MATP_nd) clen += 2;
-    else if(cm->ndtype[n] == MATL_nd || cm->ndtype[n] == MATR_nd) clen += 1;
-
-  if(!(cm->search_opts & CM_SEARCH_HMMONLY))
-    {
-      if(cm->cutoff_type == E_CUTOFF)
-	{
-	  fprintf(fp, "CM cutoff (E value):  %.2f\n", cm->cutoff);
-	  for(p = 0; p < cm->stats->np; p++)
-	    fprintf(fp, "   GC %2d-%3d bit sc:  %.2f mu: %.5f lambda: %.5f\n", cm->stats->ps[p], cm->stats->pe[p], 
-		    (cm->stats->evdAA[cm_mode][p]->mu - 
-		     (log(cm->cutoff) / cm->stats->evdAA[cm_mode][p]->lambda)), 
-		    cm->stats->evdAA[cm_mode][p]->mu, cm->stats->evdAA[cm_mode][p]->lambda);
-	}		       
-      else if (cm->cutoff_type == SCORE_CUTOFF) 
-	fprintf(fp, "CM cutoff (bit sc):   %.2f\n", cm->cutoff);
-      printf ("CM search algorithm:  ");
-      if(cm->search_opts & CM_SEARCH_INSIDE) fprintf(fp, "Inside\n");
-      else fprintf(fp, "CYK\n");
-      printf ("CM configuration:     ");
-      if(cm->flags & CM_LOCAL_BEGIN) fprintf(fp, "Local\n");
-      else fprintf(fp, "Glocal\n");
-    }
-  else 
-    fprintf(fp, "Scanning with CP9 HMM only\n");
-  if (cm->search_opts & CM_SEARCH_HMMFILTER)
-    fprintf(fp, "Filtering with a CP9 HMM\n");
-  
-  if(cm->search_opts & CM_SEARCH_HMMONLY || 
-     cm->search_opts & CM_SEARCH_HMMFILTER)
-    {
-      if(cm->cp9_cutoff_type == E_CUTOFF)
-	{
-	  if(!(cm->flags & CM_EVD_STATS))
-	    Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T and/or --hmmT.\n");
-
-	  /* Predict survival fraction from filter based on E-value, consensus length, W and N */
-	  if(cp9_mode == CP9_G) avg_hit_len = clen;       /* should be weighted sum of gamma[0] from QDB calc */
-	  if(cp9_mode == CP9_L) avg_hit_len = clen * 0.5; /* should be weighted sum of gamma[0] from QDB calc */
-	  surv_fract = (cm->cp9_cutoff * ((2. * cm->W) - avg_hit_len)) / ((double) N); 
-	  /* HMM filtering sends j-W..i+W to be researched with CM for HMM hits i..j */
-	  fprintf(fp, "CP9 cutoff (E value): %.2f\n", cm->cp9_cutoff);
-	  fprintf(fp, "   Predicted survival fraction: %.5f (1/%.3f)\n", surv_fract, (1./surv_fract));
-	  for(p = 0; p < cm->stats->np; p++)
-	    fprintf(fp, "   GC %2d-%3d bit sc:  %.2f mu: %.5f lambda: %.5f\n", cm->stats->ps[p], cm->stats->pe[p], 
-		    (cm->stats->evdAA[cp9_mode][p]->mu - 
-		     (log(cm->cp9_cutoff) / cm->stats->evdAA[cp9_mode][p]->lambda)), 
-		    cm->stats->evdAA[cp9_mode][p]->mu, cm->stats->evdAA[cp9_mode][p]->lambda);
-	}
-      else if (cm->cp9_cutoff_type == SCORE_CUTOFF) 
-	fprintf(fp, "CP9 cutoff (bit sc):  %.2f\n", cm->cp9_cutoff);
-      printf ("CP9 search algorithm: Forward/Backward\n");
-      printf ("CP9 configuration:    ");
-      if(cm->cp9->flags & CPLAN9_LOCAL_BEGIN) fprintf(fp, "Local\n");
-      else fprintf(fp, "Glocal\n");
-    }
-  printf     ("N (db size, nt):      %ld\n\n", N);
-  fflush(stdout);
-  return eslOK;
 }

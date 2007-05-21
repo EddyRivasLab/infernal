@@ -39,4 +39,6 @@ extern void
 actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, char ***ret_postcode,
 		       int bdump_level, int debug_level, int silent_mode);
 
+extern int PrintSearchInfo(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N);
+
 #endif
