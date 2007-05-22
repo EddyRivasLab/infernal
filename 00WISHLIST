@@ -1,0 +1,64 @@
+==========================
+Infernal Features Wishlist
+==========================
+
+
+-----------------
+|  Small Tweaks |
+-----------------
+
+(1) Search Summary [TAJ]
+------------------
+Wublast has a useful recap at the end of the report. This includes non-default parameters used
+(ie switches), as well as DB statistics such as size and number of records. It's not clear how
+you'd handle the case where the user specifies the DB size as a switch. I think you'd want to 
+report both the size specified (and thus used for E-values), and the actual size. 
+
+
+(2) E-value _and_ Score cutoff reported [TAJ]
+---------------------------------------
+Currently, the E-value cutoff is reported. Now that the debugging table converting bit scores
+to E-values is no longer included, it would be useful to at least report the bit score that
+corresponds to the E-value cutoff. This is most useful if no hits are reported. 
+
+
+(3) Alignment is Broken/Shifted for large coordinate values [TAJ]
+----------------------------------------------------------- 
+When the coordinate values are very large (>99,999,999), the coordinate number ends up
+shifting the target sequence to the right, so it's no longer properly lined up. 
+	Example:
+
+Query = 1 - 65, Target = 155751926 - 155751869
+ Score = 29.06, E = 42.62, P = 1, GC =  48
+
+           <<<<<<-----<<<<<<_~~~~~~>>>>>>------->>>>>>
+         1 gCuGGGUUUUUCCuuGuU*[29]*gCaaGGUUUUUAUCCCaGu 65
+           GCUGG: U U :C:UGUU      GCA:G:UUUUUA :CCAGU
+  155751926 GCUGGACUGUCACCUGUU*[21]*GCAGGUUUUUUAAUCCAGU 155751869
+
+
+
+
+-------------------------
+|  Substantial Changes  |
+-------------------------
+
+(1) Summarize "canonical basepairs" in match [TAJ]
+--------------------------------------------
+I know this would break Eric's current parser. But I'd like to see an additional structure
+line that summarizes and evaluates the model-imposed structure in terms of canonical 
+RNA basepairs. An example, semi-made up, would be as follows:
+
+
+
+MODEL      <<<<<<-----<<<<<<__________________~~~~~~>>>>>>------->>>>>>
+         1 gCuGGGUUUUUCCuuGuUCGCACCGGACACCUCCA*[12]*gCaaGGUUUUUAUCCCaGu 65
+           GCU:::UUUU ::UU :UC  ACCG ACAC U CA      : AA:  UU UAU::: GU
+  73425315 GCUAUUUUUUAUUUUAUUCAUACCGUACACAUACA*[16]*ACAAACAUUGUAUGGUCGU 73425384
+CANONCIAL  <<x<<<-----x<<<<<__________________~~~~~~>>>>>x------->>>x>>
+
+
+I propose using "x" as a symbol for pairs that form in the model, but are not Watson-
+Crick or G:U in the target alignment. Any symbol could be used, but I prefer one that
+has high contrast in ASCII with brackets and other gap symbols (.,_~ etc). 
+
