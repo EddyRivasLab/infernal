@@ -19,7 +19,10 @@
 
 #include "structs.h"
 #include "funcs.h"
-#include <esl_vectorops.h>
+
+#include "easel.h"
+#include "esl_vectorops.h"
+#include "esl_random.h"
 
 /* Function:  EmitParsetree()
  * Incept:    SRE, Mon Oct 13 22:35:46 2003 [Rams whupping Falcons, Monday Night Football]
@@ -51,6 +54,7 @@
  *            Added capacity for local begins/ends. [EPN, Wed May  2 05:59:19 2007]
  *
  * Args:      cm      - covariance model to generate from
+ *            r       - source of randomness
  *            ret_tr  - RETURN: generated parse tree. Pass NULL if unwanted.
  *            ret_seq - RETURN: generated sequence (alphabetic). Pass NULL if unwanted.
  *            ret_dsq - RETURN: generated sequence (digitized). Pass NULL if unwanted.
@@ -63,7 +67,7 @@
  *               FreeParsetree(tr); free(seq); free(dsq);
  */
 void
-EmitParsetree(CM_t *cm, Parsetree_t **ret_tr, char **ret_seq, char **ret_dsq, int *ret_N)
+EmitParsetree(CM_t *cm, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, char **ret_seq, char **ret_dsq, int *ret_N)
 {
   Parsetree_t *tr;              /* parse tree under construction */
   Nstack_t *pda;                /* pushdown automaton for traversing parse tree */              
@@ -177,34 +181,34 @@ EmitParsetree(CM_t *cm, Parsetree_t **ret_tr, char **ret_seq, char **ret_dsq, in
 	  else
 	    {
 	      if(v == 0 && cm->flags & CM_LOCAL_BEGIN)		/* ROOT_S with local begins, special */
-		y = FChoose(cm->begin, cm->M); /* choose next state, y */
+		y = esl_rnd_FChoose(r, cm->begin, cm->M); /* choose next state, y */
 	      else if(cm->flags & CM_LOCAL_END) /* special case, we could transit to EL */
 		{
 		  esl_vec_FSet(tmp_tvec, (MAXCONNECT+1), 0.);
 		  esl_vec_FCopy(cm->t[v], cm->cnum[v], tmp_tvec);
 		  tmp_tvec[cm->cnum[v]] = cm->end[v];
-		  y = FChoose(tmp_tvec, (cm->cnum[v]+1)); /* choose next state, y's offset */
+		  y = esl_rnd_FChoose(r, tmp_tvec, (cm->cnum[v]+1)); /* choose next state, y's offset */
 		  if(y == cm->cnum[v]) y = cm->M; /* local end */
 		  else y += cm->cfirst[v];        
 		}		  
 	      else
-		y = cm->cfirst[v] + FChoose(cm->t[v], cm->cnum[v]); /* choose next state, y */
+		y = cm->cfirst[v] + esl_rnd_FChoose(r, cm->t[v], cm->cnum[v]); /* choose next state, y */
 
 	      switch (cm->sttype[y]) {
 	      case MP_st: 
-		x     = FChoose(cm->e[y], Alphabet_size*Alphabet_size);
+		x     = esl_rnd_FChoose(r, cm->e[y], Alphabet_size*Alphabet_size);
 		lchar = x / Alphabet_size;
 		rchar = x % Alphabet_size;
 		break;
 	      case ML_st:
 	      case IL_st:
-		lchar = FChoose(cm->e[y], Alphabet_size);
+		lchar = esl_rnd_FChoose(r, cm->e[y], Alphabet_size);
 		rchar = -1;
 		break;
 	      case MR_st:
 	      case IR_st:
 		lchar = -1;
-		rchar = FChoose(cm->e[y], Alphabet_size);
+		rchar = esl_rnd_FChoose(r, cm->e[y], Alphabet_size);
 		break;
 	      case EL_st: /* EL emits on transition, here we don't emit */
 		lchar = -1;
@@ -228,13 +232,13 @@ EmitParsetree(CM_t *cm, Parsetree_t **ret_tr, char **ret_seq, char **ret_dsq, in
 		  esl_vec_FSet(tmp_tvec, (MAXCONNECT+1), 0.);
 		  tmp_tvec[0] = sreEXP2(cm->el_selfsc); /* EL self probability */
 		  tmp_tvec[1] = 1. - tmp_tvec[0];       /* probability of going to implicit END */
-		  y = FChoose(tmp_tvec, 2); /* choose next state, either EL or implicit END */
+		  y = esl_rnd_FChoose(r, tmp_tvec, 2); /* choose next state, either EL or implicit END */
 		  while(y == 0) /* we've self-transitioned, emit 1 res from NULL distro */
 		    {
-		      lchar = FChoose(cm->null, Alphabet_size);
+		      lchar = esl_rnd_FChoose(r, cm->null, Alphabet_size);
 		      PushCstack(gsq, Alphabet[lchar]);
 		      N++;
-		      y = FChoose(tmp_tvec, 2); /* choose next state, either EL or implicit END */
+		      y = esl_rnd_FChoose(r, tmp_tvec, 2); /* choose next state, either EL or implicit END */
 		    }
 		  InsertTraceNode(tr, tpos, TRACE_LEFT_CHILD, lpos, N, cm->M); /* careful to reset y to cm->M */
 		}

@@ -23,9 +23,11 @@
 #include "msa.h"		/* squid's multiple sequence i/o        */
 #include "stats.h"
 #include "cm_dispatch.h"	
+#include "sre_random.h"
 #include <esl_vectorops.h>
 #include <esl_histogram.h>
 #include <esl_stats.h>
+#include <esl_random.h>
 
 static char banner[] = "cmemit - generate sequences from a covariance model";
 
@@ -33,6 +35,7 @@ static char usage[]  = "\
 Usage: cmemit [-options] <cm file>\n\
 Available options are:\n\
    -l     : local; emit from a locally configured CM\n\
+   -s <n> : set random number seed to <n>\n\
    -a     : write generated sequences as an alignment, not FASTA\n\
    -c     : generate a single \"consensus\" sequence\n\
    -h     : help; print brief help on version and usage\n\
@@ -42,36 +45,41 @@ Available options are:\n\
 ";
 
 static char experts[] = "\
-   --seed <n>     : set random number seed to <n>\n\
    --begin <n>    : truncate alignment, begin at match column <n>\n\
    --end   <n>    : truncate alignment, end   at match column <n>\n\
+   --zeroinserts  : set insert emission scores to 0\n\
    --hmmbuild     : build a ML CM Plan 9 HMM from the samples\n\
    --hmmscore     : score samples with a CM Plan 9 HMM\n\
    --hmmlocal     : w/hmmscore, search with CP9 HMM in local mode\n\
    --hmmfast      : w/hmmscore, assume parse tree scores are optimal\n\
    --cmeval       : w/hmmscore, min CM E-value to consider\n\
+   --cmN <n>      : w/hmmscore & cmeval, db size E-val corresponds with\n\
+   --inside       : w/hmmscore, score CM seqs with inside\n\
    --ptest        : do parse test, are generated parses optimal?\n\
    --exp <x>      : exponentiate CM probs by <x> prior to emitting\n\
 ";
 
 static struct opt_s OPTIONS[] = {
   { "-h",        TRUE,  sqdARG_NONE }, 
-  { "-l",        TRUE, sqdARG_NONE },
+  { "-s",        TRUE,  sqdARG_INT},
+  { "-l",        TRUE,  sqdARG_NONE },
   { "-a",        TRUE,  sqdARG_NONE },  
   { "-c",        TRUE,  sqdARG_NONE },  
   { "-n",        TRUE,  sqdARG_INT},  
   { "-o",        TRUE,  sqdARG_STRING},
   { "-q",        TRUE,  sqdARG_NONE},  
-  { "--seed",    FALSE, sqdARG_INT},
   { "--begin",   FALSE, sqdARG_INT },
   { "--end",     FALSE, sqdARG_INT },
+  { "--zeroinserts",FALSE, sqdARG_NONE},
   { "--hmmbuild",FALSE, sqdARG_NONE },
   { "--hmmscore",FALSE, sqdARG_NONE },
   { "--hmmlocal",FALSE, sqdARG_NONE },
   { "--hmmfast", FALSE, sqdARG_NONE },
   { "--cmeval",  FALSE, sqdARG_FLOAT },
+  { "--cmN",     FALSE, sqdARG_FLOAT },
   { "--ptest",   FALSE, sqdARG_NONE },
-  { "--exp",     FALSE, sqdARG_FLOAT }
+  { "--exp",     FALSE, sqdARG_FLOAT },
+  { "--inside",  FALSE, sqdARG_NONE }
 };
 #define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
 
@@ -80,6 +88,7 @@ main(int argc, char **argv)
 {
   char            *cmfile;      /* file to read CM from */	
   CMFILE          *cmfp;	/* open CM file */
+  ESL_RANDOMNESS  *r = NULL;    /* source of randomness                    */
   CM_t            *cm;          /* CM to generate from */
 
   FILE            *fp;          /* output file handle                      */
@@ -88,7 +97,8 @@ main(int argc, char **argv)
   int              i;		/* counter over sequences                  */
 
   int              nseq;	/* number of seqs to sample                */
-  int              seed;	/* random number generator seed            */
+  long             seed;	/* random number generator seed            */
+  int              seed_set;	/* TRUE if -s set on command line      */
   int              do_qdb;	/* TRUE to config QDBs (on by default)     */
   int              do_local;	/* TRUE to config the model in local mode  */
   int              be_quiet;	/* TRUE to silence header/footer           */
@@ -104,18 +114,21 @@ main(int argc, char **argv)
   int   epos;                   /* end match column for MSA                */
   int   ncols;                  /* number of match columns modelled by CM  */
   int   v;                      /* counter over states                     */
+  int   do_zero_inserts;         /* TRUE to zero insert emission scores    */
   int   build_cp9;              /* TRUE to build a ML CP9 HMM from the 
 				 * sampled parses of the CM                */
   int   do_score_cp9;           /* TRUE to score each seq against CP9 HMM  */
-  int   do_local_cp9;           /* if score_cp9, put CP9 in local mode     */
+  int   do_hmmlocal;           /* if score_cp9, put CP9 in local mode     */
   int   do_fastfil;             /* TRUE to assume parse tree score is opt  */
   float cm_sc_cutoff = IMPOSSIBLE;  
   float cm_e_cutoff  = 10.;
   int   cm_cutoff_type = SCORE_CUTOFF; 
+  long  cmN = 0;                /* if nec, db size associated with cm_e_cutoff */
+  int   cmN_set;                /* TRUE if --cmN enabled                   */
   int   do_ptest;               /* TRUE:check if emitted parses are optimal*/
   int   do_exp;                 /* TRUE to exponentiate CM before emitting */
   double exp_factor;            /* factor to exponentiate CM params by     */
-
+  int   do_inside;              /* TRUE to search emitted seqs w/inside    */
   /*********************************************** 
    * Parse command line
    ***********************************************/
@@ -123,38 +136,45 @@ main(int argc, char **argv)
   nseq         = 10;
   seed         = time ((time_t *) NULL);
   be_quiet     = FALSE;
+  seed_set     = FALSE;
   do_qdb       = TRUE;  /* on by default */
   do_local     = FALSE;
   do_alignment = FALSE;  
   do_consensus = FALSE;
   begin_set    = FALSE;
   end_set      = FALSE;
+  do_zero_inserts=FALSE;
   build_cp9    = FALSE;
   do_score_cp9 = FALSE;
   do_fastfil   = FALSE;
-  do_local_cp9 = FALSE;
+  do_hmmlocal = FALSE;
   do_ptest     = FALSE;
   do_exp       = FALSE;
+  do_inside    = FALSE;
+  cmN_set      = FALSE;
   ofile        = NULL;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
     if      (strcmp(optname, "-l")      == 0) do_local     = TRUE;
+    else if (strcmp(optname, "-s")      == 0) { seed_set = TRUE; seed = (long) atoi(optarg); } 
     else if (strcmp(optname, "-a")      == 0) do_alignment = TRUE;
     else if (strcmp(optname, "-c")      == 0) do_consensus = TRUE;
     else if (strcmp(optname, "-n")      == 0) nseq         = atoi(optarg); 
     else if (strcmp(optname, "-o")      == 0) ofile        = optarg;
     else if (strcmp(optname, "-q")      == 0) be_quiet     = TRUE;
-    else if (strcmp(optname, "--seed")  == 0) seed         = atoi(optarg);
     else if (strcmp(optname, "--begin") == 0) { begin_set  = TRUE; spos = atoi(optarg); }
     else if (strcmp(optname, "--end")   == 0) { end_set    = TRUE; epos = atoi(optarg); }
+    else if (strcmp(optname, "--zeroinserts")== 0) do_zero_inserts = TRUE;
     else if (strcmp(optname, "--hmmbuild") == 0) build_cp9 = TRUE;
     else if (strcmp(optname, "--hmmscore") == 0) do_score_cp9 = TRUE;
-    else if (strcmp(optname, "--hmmlocal") == 0) do_local_cp9 = TRUE;
+    else if (strcmp(optname, "--hmmlocal") == 0) do_hmmlocal = TRUE;
     else if (strcmp(optname, "--hmmfast")  == 0) do_fastfil   = TRUE;
     else if (strcmp(optname, "--cmeval")   == 0) { cm_cutoff_type = E_CUTOFF; cm_e_cutoff = atof(optarg); } 
+    else if (strcmp(optname, "--cmN")      == 0) { cmN_set = TRUE; cmN = (long) atoi(optarg); } 
     else if (strcmp(optname, "--ptest")    == 0) do_ptest = TRUE; 
     else if (strcmp(optname, "--exp")      == 0) { do_exp = TRUE; exp_factor = atof(optarg); }
+    else if (strcmp(optname, "--inside")   == 0) do_inside = TRUE; 
     else if (strcmp(optname, "-h")      == 0) 
       {
 	MainBanner(stdout, banner);
@@ -168,8 +188,6 @@ main(int argc, char **argv)
 
   cmfile = argv[optind++];
 
-  sre_srandom(seed);
-
   /* Check for incompatible option combos */
   if (do_alignment && do_consensus)
     Die("Sorry, -a and -c are incompatible.\nUsage:\n%s", usage); 
@@ -181,12 +199,14 @@ main(int argc, char **argv)
     Die("--begin and --end only work with -a or --cp9\n");
   if(build_cp9 && do_alignment)
     Die("Sorry, --cp9 and -a are incompatible.\nUsage:\n%s", usage);
-  if(do_local_cp9 && !do_score_cp9)
+  if(do_hmmlocal && !do_score_cp9)
     Die("ERROR --hmmlocal only makes sense in combination with --hmmscore.\n");
   if(do_score_cp9 && (do_alignment || do_consensus))
     Die("ERROR --hmmscore does not work in combination with -a or -c.\n");
   if(do_fastfil && do_ptest)
     Die("ERROR --hmmfast does not work in combination with --ptest.\n");
+  if((!cmN_set) && (cm_cutoff_type == E_CUTOFF))
+    Die("ERROR --cmN and --cmeval must both be used if one is used.\n");
   
   /*****************************************************************
    * Input and configure the CM
@@ -202,6 +222,9 @@ main(int argc, char **argv)
 
   if(do_qdb)          cm->config_opts |= CM_CONFIG_QDB;
   if(do_local)        cm->config_opts |= CM_CONFIG_LOCAL;
+  if(do_hmmlocal)     cm->config_opts |= CM_CONFIG_HMMLOCAL;
+  if(do_inside)       cm->search_opts |= CM_SEARCH_INSIDE;
+  if(do_zero_inserts) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
   ConfigCM(cm, NULL, NULL);
 
   /* Determine number of consensus columns modelled by CM */
@@ -220,6 +243,16 @@ main(int argc, char **argv)
       if(epos > ncols) Die("ERROR, --end %d selected; there's only %d match columns.\n", epos, ncols);
     }
 
+
+  /**********************
+   * Creae and seed RNG *
+   **********************/
+  if (!(seed_set)) 
+    seed = time ((time_t *) NULL);
+  if ((r = esl_randomness_Create(seed)) == NULL) /* we want to know what seed is, this is why
+						  * we don't use esl_randomness_CreateTimeseeded(),
+						  * b/c we lose the seed in that function. */
+    esl_fatal("Failed to create random number generator: probably out of memory");
 
   /*********************************************** 
    * Open output file, if needed.
@@ -241,7 +274,7 @@ main(int argc, char **argv)
       printf("CM file:             %s\n", cmfile);
       if (! do_consensus) {
 	printf("Number of seqs:       %d\n", nseq);
-	printf("Random seed:          %d\n", seed);
+	printf("Random seed:          %ld\n", seed);
       } else {
 	printf("Generating consensus sequence.\n");
       }
@@ -300,7 +333,7 @@ main(int argc, char **argv)
       
       for (i = 0; i < nseq; i++)
 	{
-	  EmitParsetree(cm, &(tr[i]), NULL, &(dsq[i]), &L);
+	  EmitParsetree(cm, r, &(tr[i]), NULL, &(dsq[i]), &L);
 	  sprintf(sqinfo[i].name, "seq%d", i+1);
 	  sqinfo[i].len   = L;
 	  sqinfo[i].flags = SQINFO_NAME | SQINFO_LEN;
@@ -459,7 +492,7 @@ main(int argc, char **argv)
 	    msa_nseq = nseq - nsampled;
 	  for (i = 0; i < msa_nseq; i++)
 	    {
-	      EmitParsetree(cm, &(tr[i]), NULL, &(dsq[i]), &L);
+	      EmitParsetree(cm, r, &(tr[i]), NULL, &(dsq[i]), &L);
 	      sprintf(sqinfo[i].name, "seq%d", i+1);
 	      sqinfo[i].len   = L;
 	      sqinfo[i].flags = SQINFO_NAME | SQINFO_LEN;
@@ -574,6 +607,7 @@ main(int argc, char **argv)
       SQINFO            sqinfo;     /* info about sequence (name/len)         */
       int               cm_mode;    /* EVD mode to use for CM */
       int               cp9_mode;   /* EVD mode to use for CP9 */
+      float             tmp_K;
 
       SetCMCutoff(cm, cm_cutoff_type, cm_sc_cutoff, cm_e_cutoff);
       SetCP9Cutoff(cm, SCORE_CUTOFF, 0., 0., cm->cutoff);
@@ -584,9 +618,23 @@ main(int argc, char **argv)
 	  /* Working with first partition */
 	  if(cm->stats->np > 1)
 	    Die("ERROR CM EVD stats for > 1 partition, not yet implemented.\n");
+	  /* First update mu based on --cmN argument */
+	  tmp_K = exp(cm->stats->evdAA[cm_mode][0]->mu * cm->stats->evdAA[cm_mode][0]->lambda) / 
+	    cm->stats->evdAA[cm_mode][0]->L;
+	  cm->stats->evdAA[cm_mode][0]->mu = log(tmp_K * ((double) cmN)) /
+	    cm->stats->evdAA[cm_mode][0]->lambda;
+	  cm->stats->evdAA[cm_mode][0]->L = cmN; /* update L, the seq size stats correspond to */
 	  cm_sc_cutoff = (cm->stats->evdAA[cm_mode][0]->mu - 
 			  (log(cm->cutoff) / cm->stats->evdAA[cm_mode][0]->lambda));
-	  PrintSearchInfo(stdout, cm, cm_mode, cp9_mode, cm->stats->evdAA[cm_mode][0]->N);
+
+	  tmp_K = exp(cm->stats->evdAA[cp9_mode][0]->mu * cm->stats->evdAA[cp9_mode][0]->lambda) / 
+	    cm->stats->evdAA[cp9_mode][0]->L;
+	  cm->stats->evdAA[cp9_mode][0]->mu = log(tmp_K * ((double) cmN)) /
+	    cm->stats->evdAA[cp9_mode][0]->lambda;
+	  cm->stats->evdAA[cp9_mode][0]->L = cmN; /* update L, the seq size stats correspond to */
+
+	  PrintSearchInfo(stdout, cm, cm_mode, cp9_mode, cmN);
+
 	}
       else
 	{
@@ -596,19 +644,19 @@ main(int argc, char **argv)
       
       ESL_HISTOGRAM *h = esl_histogram_CreateFull(100, 1000, 0.2);
       hmm_sc = MallocOrDie(sizeof(float) * nseq);
+      sre_srandom(33);
 
-      /* Put the CP9 in global alignment mode, unless --hmmlocal was specified */
-      if(!do_local_cp9)
-	{
-	  CPlan9GlobalConfig(cm->cp9);
-	  CP9Logoddsify(cm->cp9);
-	}
       printf("do fastfil: %d\n", do_fastfil);
       for (i = 0; i < nseq; i++)
 	{
 	  if(nattempts++ > max_attempts) 
 	    Die("ERROR number of attempts exceeded 500 times number of seqs.\n");
-	  EmitParsetree(cm, &tr, &seq, &dsq, &L);
+	  EmitParsetree(cm, r, &tr, &seq, &dsq, &L);
+	  /*sprintf(sqinfo.name, "seq%d", i+1);
+	    sqinfo.len   = L;
+	    sqinfo.flags = SQINFO_NAME | SQINFO_LEN;
+	    printf("nattempts: %d\n", nattempts);
+	    WriteSeq(stdout, SQFILE_FASTA, seq, &sqinfo);*/
 
 	  cm->search_opts &= ~CM_SEARCH_HMMONLY;
 	  if(do_fastfil) 
@@ -628,7 +676,14 @@ main(int argc, char **argv)
 	      FreeParsetree(tr);
 	      free(dsq);
 	      free(seq);
-	      EmitParsetree(cm, &tr, &seq, &dsq, &L);
+	      EmitParsetree(cm, r, &tr, &seq, &dsq, &L);
+
+	      /*sprintf(sqinfo.name, "seq%d", i+1);
+		sqinfo.len   = L;
+		sqinfo.flags = SQINFO_NAME | SQINFO_LEN;
+		printf("nattempts: %d\n", nattempts);
+		WriteSeq(stdout, SQFILE_FASTA, seq, &sqinfo);*/
+
 	      if(do_fastfil) 
 		cm_sc = ParsetreeScore(cm, tr, dsq, FALSE);
 	      else
@@ -651,16 +706,20 @@ main(int argc, char **argv)
 	      diff += fabs(cm_sc - esc);
 	    }
 	  cm->search_opts |= CM_SEARCH_HMMONLY;
-	  hmm_sc[i] = actually_search_target(cm, dsq, 1, L,
-					     cm->cutoff, cm->cp9_cutoff,
-					     NULL,  /* don't report hits to a results structure */
-					     FALSE, /* we're not filtering with a CP9 HMM */
-					     FALSE, /* we're not building a histogram for CM stats  */
-					     FALSE, /* we're not building a histogram for CP9 stats */
-					     NULL); /* filter fraction, irrelevant here */
+	  hmm_sc[i] = CP9Forward(cm, dsq, 1, L, cm->W, 0., 
+				 NULL,   /* don't return scores of hits */
+				 NULL,   /* don't return posns of hits */
+				 NULL,   /* don't keep track of hits */
+				 TRUE,   /* we're scanning */
+				 FALSE,  /* we're not ultimately aligning */
+				 FALSE,  /* we're not rescanning */
+				 TRUE,   /* be memory efficient */
+				 NULL);  /* don't want the DP matrix back */
 	  FreeParsetree(tr);
 	  free(dsq);
 	  free(seq);
+
+
 	  printf("i: %4d cm sc: %10.4f hmm sc: %10.4f ", i, cm_sc, hmm_sc[i]);
 	  if(do_ptest) printf("D: %10.3f (E: %10.3f)\n", (cm_sc - esc), esc);
 	  else printf("\n");
@@ -669,7 +728,7 @@ main(int argc, char **argv)
       /* Sort the HMM scores with quicksort */
       esl_vec_FSortIncreasing(hmm_sc, nseq);
 
-      esl_histogram_Print(stdout, h);
+      /*esl_histogram_Print(stdout, h);*/
 
       esl_histogram_GetData(h, &xv, &n);
       esl_stats_Mean(xv, n, &mean, &var);
@@ -677,14 +736,15 @@ main(int argc, char **argv)
 
       esl_histogram_Destroy(h);
       
-      f = 0.9;
-      while(f < 1.001)
-	{
-	  hmm_cutoff = hmm_sc[(int) ((1. - f) * (float) nseq)];
-	  printf("HMM glocal filter bit score threshold for finding %.2f CM hits > %.2f bits: %.4f\n", f, cm_sc_cutoff, hmm_cutoff);
-	  f += 0.01;
-	} 
+      f = 0.95;
+      hmm_cutoff = hmm_sc[(int) ((1. - f) * (float) nseq)];
+      printf("HMM glocal filter bit score threshold for finding %.2f CM hits > %.2f bits: %.4f\n", f, cm_sc_cutoff, hmm_cutoff);
       printf("\n\nnattempts: %d\n", nattempts);
+
+      float eval = RJK_ExtremeValueE(hmm_cutoff, 
+				     cm->stats->evdAA[cp9_mode][0]->mu,
+				     cm->stats->evdAA[cp9_mode][0]->lambda);
+      printf("05.21.07 %d %d %f %f\n", cm_mode, cp9_mode, hmm_cutoff, eval);
       free(hmm_sc);
     }
   else				/* unaligned sequence output */
@@ -699,11 +759,11 @@ main(int argc, char **argv)
 
       for (i = 0; i < nseq; i++)
 	{
-	  EmitParsetree(cm, &tr, &seq, &dsq, &L);
+	  EmitParsetree(cm, r, &tr, &seq, &dsq, &L);
+
 	  sprintf(sqinfo.name, "%s-%d", cm->name, i+1);
 	  sqinfo.len   = L;
 	  sqinfo.flags = SQINFO_NAME | SQINFO_LEN;
-	  
 	  WriteSeq(fp, SQFILE_FASTA, seq, &sqinfo);
 	  
 	  if(do_ptest) /* Check score diff, if any w/optimal parse */

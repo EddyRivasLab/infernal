@@ -120,8 +120,8 @@ extern int            IsCompensatory(float *pij, int symi, int symj);
 
 /* in emit.c
  */
-extern void EmitParsetree(CM_t *cm, Parsetree_t **ret_tr, char **ret_seq, 
-			  char **ret_dsq, int *ret_N);
+extern void EmitParsetree(CM_t *cm, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, 
+			  char **ret_seq, char **ret_dsq, int *ret_N);
 
 /* in emitmap.c
  */
@@ -340,12 +340,14 @@ extern float RescanFilterSurvivors(CM_t *cm, char *dsq, scan_results_t *hmm_resu
 				   int *ret_flen);
 extern void CP9ScanPosterior(char *dsq, int i0, int j0, CP9_t *hmm, CP9_dpmatrix_t *fmx, 
 			     CP9_dpmatrix_t *bmx, CP9_dpmatrix_t *mx);
-extern float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N, 
+extern float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
+				    float fraction, int N, 
 				    int use_cm_cutoff, float cm_ecutoff, int db_size,
 				    int emit_global, int cm_evd_mode, int hmm_evd_mode, 
 				    int do_fastfil);
 #ifdef USE_MPI 
-extern float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, float fraction, int N, 
+extern float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
+					float fraction, int N, 
 					int use_cm_cutoff, float cm_ecutoff, int db_size,
 					int emit_global, int cm_evd_mode, int hmm_evd_mode, int do_fastfil,
 					int my_rank, int nproc);

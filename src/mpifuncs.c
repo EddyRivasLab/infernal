@@ -1241,14 +1241,21 @@ mpi_worker_cm_and_cp9_search(CM_t *cm, int do_fast, int my_rank)
 					   FALSE, /* do not filter with a CP9 HMM */
 					   FALSE, FALSE, /* not doing CM or CP9 evd calcs */
 					   NULL); /* filter fraction, nobody cares */
-      cm->search_opts |= CM_SEARCH_HMMONLY;
-      scores[1] = actually_search_target(cm, dsq, 1, L, 
-					 0.,    /* minimum CM bit cutoff, irrelevant (?) */
-					 0.,    /* minimum CP9 bit cutoff, irrelevant (?) */
-					 NULL,  /* do not keep results */
-					 FALSE, /* do not filter with a CP9 HMM */
-					 FALSE, FALSE, /* not doing CM or CP9 evd calcs */
-					 NULL); /* filter fraction, nobody cares */
+      /* DO NOT CALL actually_search_target b/c that will run Forward then 
+       * Backward to get score of best hit, but we'll be detecting by a
+       * Forward scan (then running Backward only on hits above our threshold),
+       * since we're calc'ing the threshold here it's impt we only do Forward.
+       */
+      scores[1] =  CP9Forward(cm, dsq, 1, L, cm->W, 0., 
+			      NULL,   /* don't return scores of hits */
+			      NULL,   /* don't return posns of hits */
+			      NULL,   /* don't keep track of hits */
+			      TRUE,   /* we're scanning */
+			      FALSE,  /* we're not ultimately aligning */
+			      FALSE,  /* we're not rescanning */
+			      TRUE,   /* be memory efficient */
+			      NULL);  /* don't want the DP matrix back */
+      
       MPI_Send(scores, 2, MPI_FLOAT, 0, 0, MPI_COMM_WORLD); /* send together so results don't interleave */
       free(dsq);
     }

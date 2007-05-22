@@ -615,7 +615,6 @@ CMLogoddsify(CM_t *cm)
       cm->flags |= CM_LOCAL_BEGIN;
       cm->flags |= CM_LOCAL_END;
     }
-
   /* raise flag saying we have valid log odds scores */
   cm->flags |= CM_HASBITS;
 }

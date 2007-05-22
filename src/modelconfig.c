@@ -88,10 +88,10 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
 	}
       else
 	{
-	  /*swentry = 0.5;
-	    swexit  = 0.5;*/
-	  swentry= ((cm->cp9->M)-1.)/cm->cp9->M; /* all start pts equiprobable, including 1 */
-	  swexit = ((cm->cp9->M)-1.)/cm->cp9->M; /* all end   pts equiprobable, including M */
+	  swentry = 0.5;
+	  swexit  = 0.5;
+	  /*swentry= ((cm->cp9->M)-1.)/cm->cp9->M;*/ /* all start pts equiprobable, including 1 */
+	  /*swexit = ((cm->cp9->M)-1.)/cm->cp9->M;*/ /* all end   pts equiprobable, including M */
 	}
       CPlan9SWConfig(cm->cp9, swentry, swexit);
       CP9Logoddsify(cm->cp9);
@@ -225,6 +225,9 @@ ConfigCMEnforce(CM_t *cm)
       CMLogoddsify(cm);
       if(cm->config_opts & CM_CONFIG_ELSILENT)
 	ConfigLocal_DisallowELEmissions(cm);
+      if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
+	CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
+				     * makes all CP9 (if non-null) inserts equiprobable */
     }
   /* Possibly configure the CP9 for local alignment
    * Note: CP9 local/glocal config does not necessarily match CM config 
@@ -368,6 +371,9 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
     }      
 
   CMLogoddsify(cm);
+  if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
+    CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
+				     * makes all CP9 (if non-null) inserts equiprobable */
   return;
 }
 
@@ -428,6 +434,9 @@ ConfigGlobal(CM_t *cm)
     }      
 
   CMLogoddsify(cm);
+  if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
+    CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
+				     * makes all CP9 (if non-null) inserts equiprobable */
   return;
 }
 
@@ -793,6 +802,9 @@ EnforceSubsequence(CM_t *cm)
     }      
 
   CMLogoddsify(cm);
+  if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
+    CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
+				     * makes all CP9 (if non-null) inserts equiprobable */
 
   /*for(nd = cm->enf_start; nd <= enf_end; nd++) 
     {
@@ -997,11 +1009,15 @@ ConfigForEVDMode(CM_t *cm, int evd_mode)
 	  cm->flags |= CM_CP9; /* raise the CP9 flag */
 	}
       if(do_cp9_local)
-	CPlan9SWConfig(cm->cp9, ((cm->cp9->M)-1.)/cm->cp9->M,  /* all start pts equiprobable, including 1 */
-		     ((cm->cp9->M)-1.)/cm->cp9->M);          /* all end pts equiprobable, including M */
+	CPlan9SWConfig(cm->cp9, 0.5, 0.5);
+	/* EPN, Mon May 21 17:01:43 2007 OLD WAY: all starts/ends equiprobable, doesn't match CM */
+	/*CPlan9SWConfig(cm->cp9, ((cm->cp9->M)-1.)/cm->cp9->M,*/  /* all start pts equiprobable, including 1 */
+	/*((cm->cp9->M)-1.)/cm->cp9->M);*/          /* all end pts equiprobable, including M */
       else
 	CPlan9GlobalConfig(cm->cp9);
       CP9Logoddsify(cm->cp9);
+      if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
+	CP9HackInsertScores(cm->cp9);
     }
   else /* we're using the CM, make sure it's configured properly */
     {
@@ -1019,6 +1035,10 @@ ConfigForEVDMode(CM_t *cm, int evd_mode)
       else if(cm->flags & CM_LOCAL_BEGIN || cm->flags & CM_LOCAL_END) /* these *should* both either be up or down */
 	ConfigGlobal(cm);
       CMLogoddsify(cm);
+      if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
+	CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
+				     * makes all CP9 (if non-null) inserts equiprobable*/
+
     }
   return eslOK;
 }

@@ -27,6 +27,9 @@
 #include "funcs.h"
 #include "hmmband.h"
 
+#include "easel.h"
+#include "esl_random.h"
+
 static void  map_orig2sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, int print_flag);
 static int   map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, int orig_v, int sub_v);
 static int   cm2sub_cm_check_id_next_node(CM_t *orig_cm, CM_t *sub_cm, int orig_nd, int sub_nd,
@@ -2155,7 +2158,12 @@ check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int n
   int nsampled;                 /* number of sequences sampled thus far */
   int debug_level;
   int cc;
+  ESL_RANDOMNESS  *r = NULL;    /* source of randomness */
   
+  /* Create and seed RNG */
+  if ((r = esl_randomness_CreateTimeseeded()) == NULL) 
+    esl_fatal("Failed to create random number generator: probably out of memory");
+
   printf("\n\n*****************\nin check_sub_cm_by_sampling2()\n\n");
   
   debug_level = 0;
@@ -2207,7 +2215,7 @@ check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int n
 	msa_nseq = nseq - nsampled;
       for (i = 0; i < msa_nseq; i++)
 	{
-	  EmitParsetree(orig_cm, &(tr[i]), &(seq[i]), &(dsq[i]), &L);
+	  EmitParsetree(orig_cm, r, &(tr[i]), &(seq[i]), &(dsq[i]), &L);
 	  sprintf(sqinfo[i].name, "seq%d", i+1);
 	  sqinfo[i].len   = L;
 	  sqinfo[i].flags = SQINFO_NAME | SQINFO_LEN;
@@ -2316,7 +2324,7 @@ check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int n
 	msa_nseq = nseq - nsampled;
       for (i = 0; i < msa_nseq; i++)
 	{
-	  EmitParsetree(sub_cm, &(tr[i]), &(seq[i]), &(dsq[i]), &L);
+	  EmitParsetree(sub_cm, r, &(tr[i]), &(seq[i]), &(dsq[i]), &L);
 	  sprintf(sqinfo[i].name, "seq%d", i+1);
 	  sqinfo[i].len   = L;
 	  sqinfo[i].flags = SQINFO_NAME | SQINFO_LEN;
@@ -2360,7 +2368,8 @@ check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int n
   
   FreeCPlan9(orig_hmm);
   FreeCPlan9(sub_hmm);
-   return TRUE;
+  esl_randomness_Destroy(r);
+  return TRUE;
 }
 
 

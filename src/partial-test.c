@@ -458,12 +458,12 @@ main(int argc, char **argv)
 	{
 	  /* Emit a sequence from the CM, we don't care about the parsetree,
 	   * we'll determine this via alignment */
-	  EmitParsetree(cm, NULL, &(seq[i]), &(dsq[i]), &L);
+	  EmitParsetree(cm, r, NULL, &(seq[i]), &(dsq[i]), &L);
 	  while(L == 0)
 	    {
 	      free(seq[i]);
 	      free(dsq[i]);
-	      EmitParsetree(cm, NULL, &(seq[i]), &(dsq[i]), &L);
+	      EmitParsetree(cm, r, NULL, &(seq[i]), &(dsq[i]), &L);
 	    }
 	  strcpy(sqinfo[i].name, cm->name);
 	  sqinfo[i].len   = L;

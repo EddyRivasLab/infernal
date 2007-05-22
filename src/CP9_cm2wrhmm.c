@@ -28,6 +28,9 @@
 #include "stopwatch.h"          /* squid's process timing module        */
 #include "cplan9.h"
 
+#include "easel.h"
+#include "esl_random.h"
+
 static float
 cm2hmm_emit_prob(CM_t *cm, CP9Map_t *cp9map, int x, int i, int k);
 static void
@@ -2484,12 +2487,17 @@ CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo,
   int v_ct;                 /* number of nodes that violate our threshold */
   int spredict_total_ct;       /* total number of nodes we thought would be violations */
   int swrong_total_ct; /* total number of nodes we thought would be violations but were not */
+  ESL_RANDOMNESS  *r = NULL;    /* source of randomness */
 
   spredict_total_ct = 0;
   swrong_total_ct = 0;
   v_ct = 0;
       
   msa_nseq = 1000;
+
+  /* Create and seed RNG */
+  if ((r = esl_randomness_CreateTimeseeded()) == NULL) 
+    esl_fatal("Failed to create random number generator: probably out of memory");
 
   /* Allocate and zero the new HMM we're going to build by sampling from
    * the CM.
@@ -2531,7 +2539,7 @@ CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo,
 	msa_nseq = nsamples - nsampled;
       for (i = 0; i < msa_nseq; i++)
 	{
-	  EmitParsetree(cm, &(tr[i]), NULL, &(dsq[i]), &L);
+	  EmitParsetree(cm, r, &(tr[i]), NULL, &(dsq[i]), &L);
 	  sprintf(sqinfo[i].name, "seq%d", i+1);
 	  sqinfo[i].len   = L;
 	  sqinfo[i].flags = SQINFO_NAME | SQINFO_LEN;
@@ -2675,7 +2683,7 @@ CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo,
       /*WriteStockholm(stdout, msa);*/
     }      
   FreeCPlan9(shmm);
-  /* compare new CP9 to existing CP9 */
+  esl_randomness_Destroy(r);
 
   if(v_ct > 0)
     return FALSE;

@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <math.h>
+#include <time.h>
 
 #include "structs.h"
 #include "funcs.h"		/* external functions                   */
@@ -41,13 +42,13 @@
 #include "esl_gumbel.h"
 #include "esl_stopwatch.h"
 
-static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_freq, 
+static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, double *gc_freq, 
 				      int N, int L, int evd_mode, FILE *hfp, FILE *qfp);
 static int CopyFThrInfo(CP9FilterThr_t *src, CP9FilterThr_t *dest);
 static int CopyCMStatsEVD(CMStats_t *src, CMStats_t *dest);
 
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-static int mpi_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_freq, 
+static int mpi_make_histogram (CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, double *gc_freq, 
 			       int N, int L, int evd_mode, int my_rank, int nproc,
 			       FILE *hfp, FILE *qfp);
 #endif
@@ -55,6 +56,7 @@ static int mpi_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_freq,
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
+  { "-s",        eslARG_INT,      "0", NULL, "n>=0",    NULL,      NULL,        NULL, "set random number seed to <n>",   1 },
   { "--cmevdN",  eslARG_INT,   "1000", NULL, "n>0",     NULL,      NULL, "--onlyfil", "number of random sequences for CM EVD estimation",    1 },
   { "--hmmevdN", eslARG_INT,   "5000", NULL, "n>0",     NULL,      NULL, "--onlyfil", "number of random sequences for CP9 HMM EVD estimation",    1 },
   { "--filN",    eslARG_INT,   "1000", NULL, "n>0",     NULL,      NULL, "--onlyevd", "number of emitted sequences for HMM filter threshold calc",    1 },
@@ -68,6 +70,7 @@ static ESL_OPTIONS options[] = {
   { "--qqfile",  eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL, "--onlyfil", "save Q-Q plot for histogram(s) to file <s>", 1},
   { "--dbfile",  eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL, "--onlyfil", "use GC content distribution from file <s>",  1},
   { "--gemit",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--onlyevd", "when calc'ing filter thresholds, always emit globally from CM",  1},
+  { "--learninserts",eslARG_NONE,FALSE,NULL, NULL,      NULL,      NULL,        NULL, "DO NOT zero insert emission scores",  1},
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -84,6 +87,8 @@ main(int argc, char **argv)
   ESL_GETOPTS     *go	   = NULL;     /* command line processing                     */
   ESL_RANDOMNESS  *r       = NULL;     /* source of randomness                        */
   CMFILE          *cmfp;               /* open CM file for reading                    */
+  long             seed = 0;           /* seed for RNG                                */
+  int              seed_set = FALSE;   /* TRUE if -s enabled                          */
   CM_t            *cm      = NULL;     /* the covariance model                        */
   CMStats_t      **cmstats;            /* the CM stats data structures, 1 for each CM */
   char            *cmfile;             /* file to read CM(s) from                     */
@@ -100,6 +105,7 @@ main(int argc, char **argv)
   double          *gc_freq;            /* GC frequency array [0..100(GC_SEGMENTS)]    */
   int              i;                  /* counter over GC segments                    */
   int              continue_flag;      /* we still have a CM to get stats for?        */
+  int              do_learn_inserts;   /* TRUE to NOT zero insert emission scores */
 
   /* EVD related variables */
   int              do_qdb = TRUE;      /* TRUE to use QDB while searching with CM     */
@@ -150,6 +156,7 @@ main(int argc, char **argv)
     return eslOK;
   }
 
+  seed    = (long) esl_opt_GetInteger(go, "-s");
   cmevdN  = esl_opt_GetInteger(go, "--cmevdN");
   hmmevdN = esl_opt_GetInteger(go, "--hmmevdN");
   filN    = esl_opt_GetInteger(go, "--filN");
@@ -163,7 +170,9 @@ main(int argc, char **argv)
   qqfile    = esl_opt_GetString(go, "--qqfile");
   dbfile    = esl_opt_GetString(go, "--dbfile");
   always_global = esl_opt_GetBoolean(go, "--gemit");
+  do_learn_inserts = esl_opt_GetBoolean(go, "--learninserts");
   if(!use_cm_cutoff) cm_ecutoff = -1.; 
+  if(seed > 0) seed_set = TRUE; /* seed will be 0 if -s not enabled */
 
   if (esl_opt_ArgNumber(go) != 1) {
     puts("Incorrect number of command line arguments.");
@@ -240,10 +249,16 @@ main(int argc, char **argv)
   /*****************************************************************
    * Initializations, including opening the CM file 
    *****************************************************************/
-  //if ((r = esl_randomness_CreateTimeseeded()) == NULL)
-  if ((r = esl_randomness_Create(33)) == NULL)
+  printf("about to seed RNG\n");
+  fflush(stdout);
+  if (!(seed_set)) 
+    seed = (long) time ((time_t *) NULL);
+  if ((r = esl_randomness_Create(seed)) == NULL) /* we want to know what seed is, this is why
+						  * we don't use esl_randomness_CreateTimeseeded(),
+						  */
     esl_fatal("Failed to create random number generator: probably out of memory");
-  printf("Random seed: %ld\n", r->seed);
+  printf("Random seed: %ld\n", seed);
+  fflush(stdout);
 
   /* Initial allocations for results per CM;
    * we'll resize these arrays dynamically as we read more CMs.
@@ -301,9 +316,10 @@ main(int argc, char **argv)
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	} /* end of second master only block */
 #endif
+      if(!do_learn_inserts) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
+      if(do_qdb)            cm->config_opts |= CM_CONFIG_QDB;
       /* Configure for QDB */
-      if(do_qdb) cm->config_opts |= CM_CONFIG_QDB;
-      ConfigCM(cm, NULL, NULL);
+       ConfigCM(cm, NULL, NULL);
       /****************************************************************
        * Determine CM and CP9 EVDs 
        *****************************************************************/
@@ -318,13 +334,17 @@ main(int argc, char **argv)
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	      MPI_Barrier(MPI_COMM_WORLD);
 	      if(my_rank == 0)
-		mpi_make_histogram (cm, cmstats[ncm], gc_freq, evdN, sample_length, evd_mode, my_rank, nproc,
-				    hfp, qfp);
+		{
+		  mpi_make_histogram (cm, cmstats[ncm], r, gc_freq, evdN, sample_length, evd_mode, my_rank, nproc,
+				      hfp, qfp);
+		}
 	      else if (my_rank > 0)
-		mpi_make_histogram (cm, NULL, NULL, 0, 0, evd_mode, my_rank, nproc, hfp, qfp);
+		{
+		  mpi_make_histogram (cm, NULL, NULL, NULL, 0, 0, evd_mode, my_rank, nproc, hfp, qfp);
+		}
 	      else /* we'll never get here */
 #endif
-		NEW_serial_make_histogram (cm, cmstats[ncm], gc_freq, evdN, sample_length, evd_mode,
+		NEW_serial_make_histogram (cm, cmstats[ncm], r, gc_freq, evdN, sample_length, evd_mode,
 					   hfp, qfp);
 	    }
 	  cm->flags |= CM_EVD_STATS;
@@ -378,12 +398,12 @@ main(int argc, char **argv)
 		  if(my_rank == 0) /* master */
 		    {
 		      cmstats[ncm]->fthrA[fthr_mode]->l_eval =  
-			mpi_FindCP9FilterThreshold(cm, cmstats[ncm], fraction, filN, use_cm_cutoff, 
+			mpi_FindCP9FilterThreshold(cm, cmstats[ncm], r, fraction, filN, use_cm_cutoff, 
 						   cm_ecutoff, db_size, emit_global, fthr_mode, 
 						   CP9_L, do_fastfil, my_rank, nproc);
 		    }
 		  else /* worker */
-		    mpi_FindCP9FilterThreshold(cm, NULL, fraction, filN, use_cm_cutoff, 
+		    mpi_FindCP9FilterThreshold(cm, NULL, NULL, fraction, filN, use_cm_cutoff, 
 					       cm_ecutoff, db_size, emit_global, fthr_mode, 
 					       CP9_L, do_fastfil,  my_rank, nproc);
 
@@ -392,12 +412,12 @@ main(int argc, char **argv)
 		  if(my_rank == 0) /* master */
 		    {
 		      cmstats[ncm]->fthrA[fthr_mode]->g_eval =  
-		      mpi_FindCP9FilterThreshold(cm, cmstats[ncm], fraction, filN, use_cm_cutoff, 
+		      mpi_FindCP9FilterThreshold(cm, cmstats[ncm], r, fraction, filN, use_cm_cutoff, 
 						 cm_ecutoff, db_size, emit_global, fthr_mode, CP9_G, do_fastfil,
 						 my_rank, nproc);
 		    }
 		  else
-		    mpi_FindCP9FilterThreshold(cm, NULL, fraction, filN, use_cm_cutoff, 
+		    mpi_FindCP9FilterThreshold(cm, NULL, NULL, fraction, filN, use_cm_cutoff, 
 					       cm_ecutoff, db_size, emit_global, fthr_mode, CP9_G, do_fastfil,
 					       my_rank, nproc);
 		}
@@ -405,10 +425,10 @@ main(int argc, char **argv)
 		{
 #endif
 		cmstats[ncm]->fthrA[fthr_mode]->l_eval =  /*  local */
-		  FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, use_cm_cutoff,
+		  FindCP9FilterThreshold(cm, cmstats[ncm], r, fraction, filN, use_cm_cutoff,
 					 cm_ecutoff, db_size, emit_global, fthr_mode, CP9_L, do_fastfil);
 		cmstats[ncm]->fthrA[fthr_mode]->g_eval =  /* glocal */
-		  FindCP9FilterThreshold(cm, cmstats[ncm],fraction, filN, use_cm_cutoff,
+		  FindCP9FilterThreshold(cm, cmstats[ncm], r, fraction, filN, use_cm_cutoff,
 					 cm_ecutoff, db_size, emit_global, fthr_mode, CP9_G, do_fastfil);
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 		}
@@ -554,6 +574,7 @@ main(int argc, char **argv)
  * Args:
  *           cm       - the model
  *           cmstats  - data structure that will hold EVD stats
+ *           r        - source of randomness
  *           gc_freq  - GC frequencies for each GC content
  *           N        - number of random seqs to search 
  *           L        - length of random samples
@@ -562,8 +583,9 @@ main(int argc, char **argv)
  *           qfp      - open file pointer for Q-Q file (NULL if not wanted)
  *
  */  
-static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_freq, 
-				      int N, int L, int evd_mode, FILE *hfp, FILE *qfp)
+static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
+				      double *gc_freq, int N, int L, int evd_mode, 
+				      FILE *hfp, FILE *qfp)
 {
   int i;
   char *randseq;
@@ -577,7 +599,6 @@ static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_f
   double *xv;
   int z;
   int n;
-  ESL_RANDOMNESS  *r       = NULL;     /* source of randomness                    */
   EVDInfo_t **evd; 
   int p; /* counter over partitions */
   double tmp_mu;
@@ -588,10 +609,9 @@ static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_f
   /* Check contract */
   if(cmstats == NULL)
     Die("ERROR in serial_make_histogram(), cmstats is NULL\n");
+  if(r == NULL)
+    Die("ERROR in serial_make_histogram(), source of randomness is NULL\n");
 
-  /*if ((r = esl_randomness_CreateTimeseeded() == NULL */
-  if ((r = esl_randomness_Create(33)) == NULL)
-    esl_fatal("Failed to create random number generator: probably out of memory");
   /* Allocate for random distribution */
   ESL_ALLOC(nt_p,   sizeof(double) * Alphabet_size);
   ESL_ALLOC(randseq, sizeof(char) * (L+2));
@@ -658,7 +678,6 @@ static int NEW_serial_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_f
 	}
       esl_histogram_Destroy(h);
     }
-  esl_randomness_Destroy(r);
   free(nt_p);
   free(randseq);
 
@@ -728,6 +747,7 @@ int CopyCMStatsEVD(CMStats_t *src, CMStats_t *dest)
  * Args:
  *           cm       - the model
  *           cmstats  - data structure that will hold EVD stats (NULL if my_rank > 0)
+ *           r        - source of randomness                    (NULL if my_rank > 0)
  *           gc_freq  - GC frequencies for each GC content      (NULL if my_rank > 0)
  *           N        - number of random seqs to search   (irrelevant if my_rank > 0)
  *           L        - length of random samples          (irrelevant if my_rank > 0)
@@ -737,7 +757,7 @@ int CopyCMStatsEVD(CMStats_t *src, CMStats_t *dest)
  *           qfp      - open file pointer for Q-Q file (NULL if not wanted)
  *
  */  
-static int mpi_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_freq, 
+static int mpi_make_histogram (CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, double *gc_freq, 
 			       int N, int L, int evd_mode, int my_rank, int nproc,
 			       FILE *hfp, FILE *qfp)
 {
@@ -762,7 +782,6 @@ static int mpi_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_freq,
       double *xv;
       int z;
       int n;
-      ESL_RANDOMNESS  *r       = NULL;     /* source of randomness                    */
       EVDInfo_t **evd; 
       int p; /* counter over partitions */
       int              have_work;
@@ -779,11 +798,10 @@ static int mpi_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_freq,
       /* Check contract */
       if(cmstats == NULL)
 	Die("ERROR in mpi_make_histogram(), master's cmstats is NULL\n");
+      if(r == NULL)
+	Die("ERROR in mpi_make_histogram(), master's source of randomness is NULL\n");
       evd = cmstats->evdAA[evd_mode];
 
-      /*if ((r = esl_randomness_CreateTimeseeded() == NULL */
-      if ((r = esl_randomness_Create(33)) == NULL)
-	esl_fatal("Failed to create random number generator: probably out of memory");
       /* Allocate for random distribution */
       ESL_ALLOC(nt_p,   sizeof(double) * Alphabet_size);
       ESL_ALLOC(randseq, sizeof(char) * (L+1));
@@ -823,12 +841,10 @@ static int mpi_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_freq,
 		  /* Get random GC content */
 		  gc_comp = 0.01 * esl_rnd_DChoose(r, cur_gc_freq, GC_SEGMENTS);
 		  fflush(stdout);
-		  ///gc_comp = 0.5; works if this is uncommented
 		  nt_p[1] = nt_p[2] = 0.5 * gc_comp;
 		  nt_p[0] = nt_p[3] = 0.5 * (1. - gc_comp);
 		  esl_vec_DNorm(nt_p, Alphabet_size);
 
-		  ///nt_p[0] = nt_p[1] = nt_p[2] = nt_p[3] = 0.25;/// works if this is uncommented.
 		  /* Get random sequence */
 		  /* We have to generate a text sequence for now, b/c the digitized
 		   * version esl_rnd_xIID() generates a ESL_DSQ seq, which actually_search_target()
@@ -882,7 +898,6 @@ static int mpi_make_histogram (CM_t *cm, CMStats_t *cmstats, double *gc_freq,
 	    }
 	  esl_histogram_Destroy(h);
 	}
-      esl_randomness_Destroy(r);
       free(dsqlist);
       free(cur_gc_freq);
       free(nt_p);

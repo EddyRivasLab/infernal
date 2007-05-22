@@ -10,6 +10,7 @@
  */
 
 #include "config.h"
+#include "easel.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,6 +23,7 @@
 
 #include "structs.h"
 #include "funcs.h"
+#include "esl_random.h"
 
 
 void
@@ -503,7 +505,12 @@ BandMonteCarlo(CM_t *cm, int nsample, int W, double ***ret_gamma)
   int           v;		/* state used at a parsetree node */
   int           n;		/* subseq length at a parsetree node */
   int           status;		/* return status. */
-  
+  ESL_RANDOMNESS  *r = NULL;    /* source of randomness */
+
+  /* Create and seed RNG */
+  if ((r = esl_randomness_CreateTimeseeded()) == NULL) 
+    esl_fatal("Failed to create random number generator: probably out of memory");
+
   /* Allocate gamma, completely; and initialize to zeros. 
    * For consistency w/ BandCalculationEngine(), allocate a single
    * shared end deck at M-1, and point other ends at it - even
@@ -531,7 +538,7 @@ BandMonteCarlo(CM_t *cm, int nsample, int W, double ***ret_gamma)
   status = 1;			
   for (i = 0; i < nsample; i++)
     {
-      EmitParsetree(cm, &tr, NULL, NULL, &seqlen);
+      EmitParsetree(cm, r, &tr, NULL, NULL, &seqlen);
       if (seqlen > W) {
 	FreeParsetree(tr);
 	status = 0;		/* set status to FAILED */
@@ -554,6 +561,7 @@ BandMonteCarlo(CM_t *cm, int nsample, int W, double ***ret_gamma)
   /* Return gamma, the observed counts (unnormalized densities).
    */
   *ret_gamma = gamma;
+  esl_randomness_Destroy(r);
   return status;
 }
 

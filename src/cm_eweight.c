@@ -18,6 +18,7 @@
 
 #include "config.h"
 #include "squidconf.h"
+#include "easel.h"
 
 #include <stdio.h>
 #include <string.h>

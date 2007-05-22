@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <time.h>
 
 #include "squid.h"		/* general sequence analysis library    */
 #include "easel.h"              /* better general sequence analysis library */
@@ -68,6 +69,7 @@ The sequence file is expected to be in FASTA format.\n\
    -h     : help; print brief help on version and usage\n\
    -E <f> : use cutoff E-value of <f> [default: 50]\n\
    -T <f> : use cutoff bit score of <f> [default: 0]\n\
+   -s <n> : set random number seed to <n>\n\
 ";
 #endif 
 
@@ -109,6 +111,8 @@ static char experts[] = "\
    --hmmE <x>     : use cutoff E-value of <x> for CP9 (possibly filtered) scan\n\
    --hmmT <x>     : use cutoff bit score of <x> for CP9 (possibly filtered) scan\n\
    --hmmcalcthr   : calc HMM filter threshold by sampling from CM\n\
+   --hmmfast      : w/hmmcalcthr, for speed assume parse tree scores are optimal\n\
+   --hmmfilN      : w/hmmcalcthr, num emitted seqs to use for filter threshold calc\n\
    --hmmgemit     : w/--hmmcalcthr, always emit from CM in global mode\n\
    --hmmgreedy    : resolve HMM overlapping hits with greedy algorithm a la RSEARCH\n\
    --hmmglocal    : w/--hmmfilter; use Glocal CP9 to filter\n\
@@ -123,6 +127,7 @@ static struct opt_s OPTIONS[] = {
   { "-h", TRUE, sqdARG_NONE }, 
   { "-T", TRUE, sqdARG_FLOAT }, 
   { "-E", TRUE, sqdARG_FLOAT }, 
+  { "-s", TRUE,  sqdARG_INT},
   { "--dumptrees",  FALSE, sqdARG_NONE },
   { "--informat",   FALSE, sqdARG_STRING },
   { "--glocal",     FALSE, sqdARG_NONE },
@@ -140,6 +145,8 @@ static struct opt_s OPTIONS[] = {
   { "--hmmE",       FALSE, sqdARG_FLOAT},
   { "--hmmT",       FALSE, sqdARG_FLOAT},
   { "--hmmcalcthr", FALSE, sqdARG_NONE},
+  { "--hmmfast",    FALSE, sqdARG_NONE},
+  { "--hmmfilN",    FALSE, sqdARG_INT},
   { "--hmmgemit",   FALSE, sqdARG_NONE},
   { "--hmmnegsc",   FALSE, sqdARG_FLOAT},
   /*{ "--hmmrescan",  FALSE, sqdARG_NONE},*/
@@ -167,6 +174,7 @@ main(int argc, char **argv)
 {
   char            *cmfile;      /* file to read CM from                     */	
   CMFILE          *cmfp;        /* open CM file for reading                 */
+  ESL_RANDOMNESS  *r = NULL;    /* source of randomness                     */
   char            *seqfile;     /* file to read sequences from              */
   int              format;      /* format of sequence file                  */
   int              status;      /* status of the sequence file              */
@@ -177,6 +185,8 @@ main(int argc, char **argv)
   CM_t            *cm;          /* a covariance model                       */
   long             N;           /* number of nts in both strands of the db  */
   int              i;           /* counter                                  */
+  long             seed;        /* seed for RNG                             */
+  int              seed_set;	/* TRUE if -s set on command line           */
   CMConsensus_t   *cons;	/* precalculated consensus info for display */
   double           beta;        /* tail loss prob for query dependent bands */
   int             *preset_dmin = NULL; /* if --qdbfile, dmins read from file*/
@@ -192,7 +202,6 @@ main(int argc, char **argv)
   int              do_bdump;    /* TRUE to print out bands                  */
   int              set_window;  /* TRUE to set window len b/c of -W option  */
   int              set_W;	/* W set at command line, only works --noqdb*/
-  int              seed;        /* Random seed                              */
   int              sc_boost_set;/* TRUE if --negsc enabled                  */
   float            sc_boost;    /* value added to CYK bit scores, allows    *
 				 * hits > (-1 * sc_boost) (EXPERIMENTAL)    */
@@ -263,7 +272,7 @@ main(int argc, char **argv)
 			    * of HMM hits prior to rescanning with CM */
   int   hmmpad;            /* number of residues to add/subtract from i/j */
   int   do_null2;	   /* TRUE to adjust scores with null model #2 */
-  int   do_zero_inserts;   /* TRUE to zero insert emission scores */
+  int   do_learn_inserts;  /* TRUE to NOT zero insert emission scores */
   
   /* the --rtrans option */
   int             do_rtrans; /* TRUE to overwrite CM transition scores with RSEARCH scores */
@@ -276,11 +285,10 @@ main(int argc, char **argv)
 
   /* variables used to calculate HMM filter threshold by sampling from CM */
   int   do_hmmcalcthr = FALSE; /* TRUE to sample from CM, score with HMM to get HMM cutoff */
-  //  int   do_fastfil = TRUE; /* TRUE: use fast hacky filter thr calc method */
-  int   do_fastfil = FALSE;    /* TRUE: use fast hacky filter thr calc method */
+  int   do_fastfil    = FALSE; /* TRUE: use fast hacky filter thr calc method */
   float filt_fract = 0.95;    /* fraction of CM hits req'd to find with HMM  */
   int   use_cm_cutoff = TRUE; /* TRUE to use cm_ecutoff, FALSE not to      */
-  int   filN = 1000;          /* Number of sequences to sample from the CM */
+  int   filN = 100;          /* Number of sequences to sample from the CM */
   int   do_hmmgemit = FALSE;    /* always emit globally from CM in FindCP9Fthr */
   int   emit_global;         /* in FindCP9FilterThreshold(), emit globally  */
 
@@ -289,7 +297,7 @@ main(int argc, char **argv)
   int nproc;            /* Total number of processes */
   int mpi_master_rank;          /* Rank of master process */
   Stopwatch_t  *mpi_watch;      /* for timings in MPI mode                  */
-
+  
   /* Initailize MPI, get values for rank and naum procs */
   MPI_Init (&argc, &argv);
   
@@ -340,7 +348,7 @@ main(int argc, char **argv)
   use_sums          = FALSE;
   do_scan2bands     = FALSE;
   do_null2          = FALSE;
-  do_zero_inserts   = TRUE;
+  do_learn_inserts  = FALSE;
   cm_cutoff_type    = DEFAULT_CM_CUTOFF_TYPE;
   cm_sc_cutoff      = DEFAULT_CM_CUTOFF;
   cm_e_cutoff       = DEFAULT_CM_CUTOFF;
@@ -362,6 +370,8 @@ main(int argc, char **argv)
   do_cmgreedy       = FALSE;
   do_hmmgreedy      = FALSE;
   do_hmmcalcthr     = FALSE;
+  do_fastfil        = FALSE;
+  seed_set          = FALSE;
 
   while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
                 &optind, &optname, &optarg))  {
@@ -380,13 +390,14 @@ main(int argc, char **argv)
 	cm_sc_cutoff    = atof(optarg); 
 	cm_cutoff_type  = SCORE_CUTOFF;
       }
+    else if (strcmp(optname, "-s")      == 0) { seed_set = TRUE; seed = (long) atoi(optarg); }
     else if  (strcmp(optname, "--dumptrees") == 0) do_dumptrees = TRUE;
     else if  (strcmp(optname, "--glocal")    == 0) do_local     = FALSE;
     else if  (strcmp(optname, "--noalign")   == 0) do_align     = FALSE;
     else if  (strcmp(optname, "--toponly")   == 0) do_revcomp   = FALSE;
     else if  (strcmp(optname, "--inside")    == 0) do_inside    = TRUE;
     else if  (strcmp(optname, "--null2")     == 0) do_null2     = TRUE;
-    else if  (strcmp(optname, "--learninserts")== 0) do_zero_inserts = FALSE;
+    else if  (strcmp(optname, "--learninserts")== 0) do_learn_inserts = TRUE;
     else if  (strcmp(optname, "--negsc")       == 0) {
       sc_boost_set = TRUE;  sc_boost = -1. * atof(optarg); }
     else if  (strcmp(optname, "--enfstart")    == 0) 
@@ -423,7 +434,9 @@ main(int argc, char **argv)
 	cp9_cutoff_type  = SCORE_CUTOFF;
       }
     else if  (strcmp(optname, "--hmmcalcthr")  == 0) do_hmmcalcthr = TRUE;
-    else if  (strcmp(optname, "--hmmgemit")  == 0)   do_hmmgemit = TRUE;
+    else if  (strcmp(optname, "--hmmfast")     == 0) do_fastfil = TRUE;
+    else if  (strcmp(optname, "--hmmfilN")     == 0) filN = atoi(optarg);
+    else if  (strcmp(optname, "--hmmgemit")    == 0) do_hmmgemit = TRUE;
     else if  (strcmp(optname, "--beta")   == 0) beta      = atof(optarg);
     else if  (strcmp(optname, "--noqdb")  == 0) do_qdb    = FALSE;
     else if  (strcmp(optname, "--qdbfile")== 0) { read_qdb  = TRUE; qdb_file = optarg; }
@@ -494,6 +507,8 @@ main(int argc, char **argv)
     Die("--hmmpad <n> option only works in combination with --hmmfilter\n");
   if(do_hmmcalcthr && cp9_cutoff_set)
     Die("--hmmcalcthr option does not make sense in combination with --hmmT OR --hmmE.\n");
+  if((!do_hmmcalcthr) && do_fastfil)
+    Die("--hmmfast option only makes sense in combination with --hmmcalcthr.\n");
   if(do_hmmpad && hmmpad < 0)
     Die("with --hmmpad <n>, <n> must be >= 0\n");
   if(beta >= 1.)
@@ -510,11 +525,13 @@ main(int argc, char **argv)
   /**********************************************
    * Seed random number generator
    **********************************************/
-  /* Seed the random number generator with the time */
-  /* This is the seed used in the HMMER code */
-  seed = (time ((time_t *) NULL));   
-  /*seed = 33;*/
-  sre_srandom (seed);
+  if (!(seed_set)) 
+    seed = time ((time_t *) NULL);
+  if ((r = esl_randomness_Create(seed)) == NULL) /* we want to know what seed is, this is why
+						  * we don't use esl_randomness_CreateTimeseeded(),
+						  * b/c we lose the seed in that function. */
+    esl_fatal("Failed to create random number generator: probably out of memory");
+  printf("Random seed: %ld\n", seed);
   
   /**************************************************
    * Preliminaries: open our files for i/o; get a CM.
@@ -566,7 +583,7 @@ main(int argc, char **argv)
       /* Update cm->config_opts and cm->search_opts based on command line options */
       if(do_local)        cm->config_opts |= CM_CONFIG_LOCAL;
       if(do_hmmlocal)     cm->config_opts |= CM_CONFIG_HMMLOCAL;
-      if(do_zero_inserts) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
+      if(!do_learn_inserts) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
       if(!(do_qdb))       cm->search_opts |= CM_SEARCH_NOQDB;
       if(do_hmmonly)      cm->search_opts |= CM_SEARCH_HMMONLY;
       if(do_hmmfilter)    cm->search_opts |= CM_SEARCH_HMMFILTER;
@@ -743,12 +760,12 @@ main(int argc, char **argv)
 		  if(cm->cutoff_type == SCORE_CUTOFF)
 		    Die("ERROR can't use --hmmcalcthr with -T, currently you must use CM E-values with --hmmcalcthr.\n");
 		  cp9_e_cutoff = 
-		    mpi_FindCP9FilterThreshold(cm, cm->stats, filt_fract, filN, use_cm_cutoff, 
+		    mpi_FindCP9FilterThreshold(cm, cm->stats, r, filt_fract, filN, use_cm_cutoff, 
 					       cm->cutoff, N, emit_global, cm_mode, cp9_mode, do_fastfil,
 					       my_rank, nproc);
 		}
 	      else /* worker */
-		mpi_FindCP9FilterThreshold(cm, NULL, 0., 0, FALSE, 0, 0, 0, cm_mode, cp9_mode, FALSE,
+		mpi_FindCP9FilterThreshold(cm, NULL, NULL, 0., 0, FALSE, 0, 0, 0, cm_mode, cp9_mode, FALSE,
 					   my_rank, nproc); /* all params but cm_mode, cp9_mode, my_rank
 							     * and cm are irrelevant for worker */
 	      /* broadcast cp9_e_cutoff */
@@ -756,11 +773,13 @@ main(int argc, char **argv)
 	      MPI_Bcast (&cp9_e_cutoff,    1, MPI_FLOAT, 0, MPI_COMM_WORLD);
 	    }
 	  else /* never get here in MPI */
+	    {
 #endif
-	    cp9_e_cutoff = FindCP9FilterThreshold(cm, cm->stats, filt_fract, filN, use_cm_cutoff,
+	    cp9_e_cutoff = FindCP9FilterThreshold(cm, cm->stats, r, filt_fract, filN, use_cm_cutoff,
 						  cm->cutoff, N, emit_global, cm_mode, cp9_mode, do_fastfil);
 
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+	    }
           if(my_rank == 0) /* master */
 	    {
 #endif
