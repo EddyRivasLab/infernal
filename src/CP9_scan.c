@@ -1430,6 +1430,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   char            **dsq;        /* digitized sequences                   */
   char            **seq;        /* alphabetic sequences                  */
   float             sc;
+  float            *tr_sc = NULL; /* scores of the parsetrees, remains NULL if !do_fastfil */
   float            *hmm_eval;
   float            *hmm_sc;
   int               nattempts = 0;
@@ -1520,6 +1521,9 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   seq         = MallocOrDie(sizeof(char *) * nbatch);
   dsq         = MallocOrDie(sizeof(char *) * nbatch);
   L           = MallocOrDie(sizeof(int) * nbatch);
+  if(do_fastfil) 
+    tr_sc       = MallocOrDie(sizeof(float) * nbatch);
+
   for (p = 0; p < cmstats->np; p++)
     {
       /* First determine mu based on db_size */
@@ -1559,7 +1563,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
       for(j = 0; j < nbatch; j++)
 	{
 	  EmitParsetree(cm, r, &(tr[j]), &(seq[j]), &(dsq[j]), &(L[j])); 
-
+	  if(do_fastfil) tr_sc[j] = ParsetreeScore(cm, tr[j], dsq[j], FALSE); 
 	  /*	  printf("nattempts: %d\n", nattempts+j+1);
 	    sqinfo.len   = L[j];
 	    sprintf(sqinfo.name, "seq%d", i+1);
@@ -1569,6 +1573,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	    printf("%d Parsetree Score: %f\n\n", (nattempts+j), ParsetreeScore(cm, tr[j], dsq[j], FALSE)); */
 	}
       /*printf("\nDone emitting nbatch: %d seqs, nattempts: %d npassed: %d\n", nbatch, nattempts, npassed);*/
+
       /* configure CM for searching, which may be different from emitting mode */
       ConfigForEVDMode(cm, fthr_mode);
       for(j = 0; j < nbatch; j++)
@@ -1576,7 +1581,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	  if(npassed < N) /* else we still need to free tr[j], dsq[j], seq[j] at bottom */
 	    {
 	      if(do_fastfil) 
-		sc = ParsetreeScore(cm, tr[j], dsq[j], FALSE); 
+		sc = tr_sc[j];
 	      else
 		sc = actually_search_target(cm, dsq[j], 1, L[j],
 					    0.,    /* cutoff is 0 bits (actually we'll find highest
@@ -1661,6 +1666,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   free(dsq);
   free(seq);
   free(L);
+  if(do_fastfil) free(tr_sc);
   /* Return threshold */
   printf("05.21.07 %d %d %f %f\n", fthr_mode, hmm_evd_mode,  hmm_sc[(int) ((fraction) * (float) N) - 1], return_eval);
 
@@ -1869,7 +1875,6 @@ float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r
 						 * EVD construction is wrong too, it uses 
 						 * GC_COMP of full sample seq, not of best hit
 						 * within it. */
-	      fflush(stdout);
 	      p    = cmstats->gc2p[gc_comp];
 	      free(seq);
 	      if(!do_fastfil)
@@ -1889,7 +1894,7 @@ float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r
 	      if(do_fastfil)
 		{
 		  cur_cm_sc = ParsetreeScore(cm, trlist[wi], dsqlist[wi], FALSE); 
-		  FreeParsetree(tr);
+		  FreeParsetree(trlist[wi]);
 		  trlist[wi] = NULL;
 		}
 	      /* careful not go let i get bigger than N, which can happen due to send/recv lag */

@@ -603,6 +603,7 @@ main(int argc, char **argv)
       int               n;
       double            mean, var;
       float             diff = 0.;  /* total diff b/t optimal/emitted parse scs */
+      int               ndiff = 0;
       float             esc;        /* emitted parse tree score               */
       SQINFO            sqinfo;     /* info about sequence (name/len)         */
       int               cm_mode;    /* EVD mode to use for CM */
@@ -722,9 +723,10 @@ main(int argc, char **argv)
 
 	  printf("i: %4d cm sc: %10.4f hmm sc: %10.4f ", i, cm_sc, hmm_sc[i]);
 	  if(do_ptest) printf("D: %10.3f (E: %10.3f)\n", (cm_sc - esc), esc);
+	  if(fabs(cm_sc-esc) > 0.0001) ndiff++;
 	  else printf("\n");
 	}
-      if(do_ptest) printf("Bit diff: %.3f Avg: %.3f\n", diff, (diff/nseq));
+      if(do_ptest) printf("Summary: Num diff: %d Bit diff: %.3f Avg per seq: %.3f\n", ndiff, diff, (diff/nseq));
       /* Sort the HMM scores with quicksort */
       esl_vec_FSortIncreasing(hmm_sc, nseq);
 
@@ -756,7 +758,7 @@ main(int argc, char **argv)
       float             diff = 0.;  /* total diff b/t optimal/emitted parse scs */
       float             esc;        /* emitted parse tree score               */
       float             osc;        /* optimal parse tree score               */
-
+      int               ndiff = 0;
       for (i = 0; i < nseq; i++)
 	{
 	  EmitParsetree(cm, r, &tr, &seq, &dsq, &L);
@@ -768,6 +770,7 @@ main(int argc, char **argv)
 	  
 	  if(do_ptest) /* Check score diff, if any w/optimal parse */
 	    {
+	      
 	      esc = ParsetreeScore(cm, tr, dsq, FALSE);
 	      osc = actually_search_target(cm, dsq, 1, L,
 					   0.,    /* cutoff is 0 bits (actually we'll find highest
@@ -780,12 +783,13 @@ main(int argc, char **argv)
 					   NULL); /* filter fraction N/A */
 	      diff += fabs(osc-esc);
 	      printf("i: %5d %10.3f (E: %10.3f O: %10.3f)\n", i, (osc-esc), esc, osc);
+	      if(fabs(osc-esc) > 0.0001) ndiff++;
 	    }
 	  FreeParsetree(tr);
 	  free(dsq);
 	  free(seq);
 	}
-      if(do_ptest) printf("Bit diff: %.3f Avg: %.3f\n", diff, (diff/nseq));
+      if(do_ptest) printf("Summary: Num diff: %d Bit diff: %.3f Avg per seq: %.3f\n", ndiff, diff, (diff/nseq));
     }
   FreeCM(cm);
   
