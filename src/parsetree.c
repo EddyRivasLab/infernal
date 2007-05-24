@@ -28,6 +28,8 @@
 #include "structs.h"
 #include "funcs.h"
 
+#include "easel.h"
+#include "esl_vectorops.h"
 
 /* Function: CreateParsetree()
  * Incept:   SRE 29 Feb 2000 [Seattle] from cove2.0 code.
@@ -1182,3 +1184,158 @@ ESL_Parsetrees2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt,
   free(irmap);
   return msa;
 }
+
+/* Function: ParsetreeScore_Global2Local()
+ * Date:     EPN, Wed May 23 09:57:38 2007
+ *
+ * Purpose:  Given a parsetree of dsq that corresponds to a globally
+ *           configured CM, return the highest scoring local parsetree 
+ *           of dsq or a subsequence of dsq (due to local begins)
+ *           that is consistent with it. The hope is that this
+ *           score will *be close* to the optimal local parse of dsq so we
+ *           can calculate CP9 filter thresholds without the need to 
+ *           search for the optimal local parse. 
+ * 
+ *           All residues 1..L must exist in the local parse emitted 
+ *           from the same states they were emitted in the global
+ *           parse unless (1) the local parse contains a local begin into
+ *           state v at parstree node t, where tr->emitl[t] > 1 and/or
+ *           tr->emitr[t] < L, (2) residues were emitted from an EL
+ *           state because it was higher scoring than the subtree
+ *           of the global parse.
+ *           
+ */
+float
+ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, char *dsq)
+{
+  int   status;
+  int tidx;			/* counter through positions in the parsetree        */
+  int v,y;			/* parent, child state index in CM                   */
+  char symi, symj;		/* symbol indices for emissions, 0..Alphabet_iupac-1 */
+  int mode;
+  float *tr_esc;                /* [0..tr->n-1] score of emissions from each trace node */
+  float *tr_tsc;                /* [0..tr->n-1] score of transitions from each trace node */
+  float *v2n_map;               /* [0..cm->M-1], the trace node each state v corresponds to 
+				 * -1 if none */
+  float *lsc;                   /* [0..tr->n-1], the score of the best local parse *
+				 * rooted at v = v2n_map[tidx] for trace node tidx *
+				 * -1 if none */
+  float max_local_sc;           /* the best local parse score consistent with tr */
+  float below_me_sc;            /* score of tr-consistent best local parse under v */
+  float tmp_endsc;              /* score of jumping out of v to EL */
+  /* Contract check, CM must be LOCALLY configured, (could demand global, but
+   * we assume we'll be calling this function serially for many parses and don't
+   * want to need to switch CM back and forth from local/global */
+  if((!(cm->flags & CM_LOCAL_BEGIN)) || (!(cm->flags & CM_LOCAL_END)))
+    esl_fatal("ERROR in ParsetreeScore_Global2Local() CM is not in local mode.\n");
+
+  /* Allocate and initialize */
+  ESL_ALLOC(v2n_map, sizeof(int)   * cm->M); 
+  ESL_ALLOC(lsc,     sizeof(float) * tr->n);
+  ESL_ALLOC(tr_esc,  sizeof(float) * tr->n); 
+  ESL_ALLOC(tr_tsc,  sizeof(float) * tr->n); 
+  esl_vec_FSet(v2n_map, cm->M, -1);
+  esl_vec_FSet(lsc, tr->n, 0.);
+  esl_vec_FSet(tr_tsc, tr->n, 0.);
+  esl_vec_FSet(tr_esc, tr->n, 0.);
+
+  /* Determine the score that each trace node contributes to the overall parsetree score */
+
+  for (tidx = 0; tidx < tr->n; tidx++) {
+    v = tr->state[tidx];        	/* index of parent state in CM */
+    v2n_map[v] = tidx;
+    mode = tr->mode[tidx];
+    if (v == cm->M) 
+      esl_fatal("ERROR in ParsetreeScore_Global2Local(), EL in parse, but it should be global!\n");
+    if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) /* no scores in B,E */
+      {
+	y = tr->state[tr->nxtl[tidx]];      /* index of child state in CM  */
+
+	if (y == cm->M) 
+	  esl_fatal("ERROR in ParsetreeScore_Global2Local(), EL in parse, but it should be global!\n");
+	if (v == 0 && y > cm->cnum[0])
+	  esl_fatal("ERROR in ParsetreeScore_Global2Local(), we did a local begin in the parse, but it should be global!\n");
+
+	/* y - cm->first[v] gives us the offset in the transition vector */
+	tr_tsc[tidx] = cm->tsc[v][y - cm->cfirst[v]];
+	
+	if (cm->sttype[v] == MP_st) 
+	  {
+	    symi = dsq[tr->emitl[tidx]];
+	    symj = dsq[tr->emitr[tidx]];
+            if (mode == 3)
+              {
+  	        if (symi < Alphabet_size && symj < Alphabet_size)
+	          tr_esc[tidx] = cm->esc[v][(int) (symi*Alphabet_size+symj)];
+	        else
+	          tr_esc[tidx] = DegeneratePairScore(cm->esc[v], symi, symj);
+              }
+            else if (mode == 2)
+              tr_esc[tidx] = LeftMarginalScore(cm->esc[v], symi);
+            else if (mode == 1)
+              tr_esc[tidx] = RightMarginalScore(cm->esc[v], symj);
+	  } 
+	else if ( (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) && (mode == 3 || mode == 2) )
+	  {
+	    symi = dsq[tr->emitl[tidx]];
+	    if (symi < Alphabet_size) tr_esc[tidx] = cm->esc[v][(int) symi];
+	    else                      tr_esc[tidx] = DegenerateSingletScore(cm->esc[v], symi);
+	  } 
+	else if ( (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && (mode == 3 || mode == 2) )
+	  {
+	    symj = dsq[tr->emitr[tidx]];
+	    if (symj < Alphabet_size) tr_esc[tidx] = cm->esc[v][(int) symj];
+	    else                      tr_esc[tidx] = DegenerateSingletScore(cm->esc[v], symj);
+	  }
+      }
+  }
+
+  /* Now traverse CM from inside-out, for each v in the parse, 
+   * keep track of the best local CM score of the parse rooted 
+   * at v, with the possibility of local ends. Keep track 
+   * of maximum score considering all possible local begins */
+  max_local_sc = IMPOSSIBLE;
+  for(v = cm->M-1; v > 0; v--)
+    {
+      tidx = v2n_map[v];
+      if(tidx == -1) continue; /* v's not in the parse */
+
+      if(cm->sttype[v] == B_st)
+	below_me_sc = lsc[tr->nxtl[tidx]] + lsc[tr->nxtr[tidx]];
+      else if(cm->sttype[v] == E_st)
+	below_me_sc = 0.;
+      else
+	below_me_sc = lsc[tr->nxtl[tidx]];
+
+      /* Check if we could've jumped to an EL instead of traversing the 
+       * subparse rooted here at v, would it have been worth it? */
+      tmp_endsc = cm->endsc[v] + 
+	cm->el_selfsc *  /* score of emitting 1 residue */
+	((tr->emitr[tidx] - StateRightDelta(cm->sttype[v])) - 
+	 (tr->emitl[tidx] + StateLeftDelta(cm->sttype[v])) + 1); /* number of residues EL must emit */
+      if(below_me_sc < tmp_endsc -tr_tsc[tidx]) /* careful to consider sc of transition out of v */
+	below_me_sc = tmp_endsc - tr_tsc[tidx]; /* we'll add tr_tsc[idx] back in next */
+	
+      lsc[tidx] = tr_esc[tidx] + tr_tsc[tidx] + below_me_sc; /* note we add in tsc even if local end taken */
+
+      /*printf("tidx: %d\nv: %d\nlsc[tidx]: %f\nbegin_sc: %f\nmax_local_sc: %f\ntmp_endsc: %f\n\n", tidx, v, lsc[tidx], cm->beginsc[v], max_local_sc, tmp_endsc);
+	printf("tr_esc[tidx]: %f\ntr_tsc[tidx]: %f\nbelow_me_sc: %f\n", tr_esc[tidx], tr_tsc[tidx], below_me_sc);*/
+
+      /* Could we have jumped into this state from ROOT_S? Would it have
+       * been worth it (based on what I've seen so far) */
+      if((cm->beginsc[v] + lsc[tidx]) > max_local_sc)
+	max_local_sc = cm->beginsc[v] + lsc[tidx];
+    }
+
+  free(v2n_map);
+  free(lsc);
+  free(tr_esc);
+  free(tr_tsc);
+  printf("in ParsetreeScore_Global2Local() returning sc: %f\n", max_local_sc);
+  return max_local_sc;
+
+ ERROR: 
+  esl_fatal("ERROR in ParsetreeScore_Global2Local()\n");
+  return -1.;
+}
+

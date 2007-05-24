@@ -55,7 +55,7 @@ static char experts[] = "\
    --cmeval       : w/hmmscore, min CM E-value to consider\n\
    --cmN <n>      : w/hmmscore & cmeval, db size E-val corresponds with\n\
    --inside       : w/hmmscore, score CM seqs with inside\n\
-   --ptest        : do parse test, are generated parses optimal?\n\
+   --ptest        : do parse test, are sampled parses optimal?\n\
    --exp <x>      : exponentiate CM probs by <x> prior to emitting\n\
 ";
 
@@ -683,7 +683,8 @@ main(int argc, char **argv)
 		sqinfo.len   = L;
 		sqinfo.flags = SQINFO_NAME | SQINFO_LEN;
 		printf("nattempts: %d\n", nattempts);
-		WriteSeq(stdout, SQFILE_FASTA, seq, &sqinfo);*/
+		WriteSeq(stdout, SQFILE_FASTA, seq, &sqinfo);
+		ParsetreeDump(stdout, tr, cm, dsq);*/
 
 	      if(do_fastfil) 
 		cm_sc = ParsetreeScore(cm, tr, dsq, FALSE);

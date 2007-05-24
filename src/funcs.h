@@ -84,13 +84,14 @@ extern char *UniqueStatetype(int type);
 extern int   UniqueStateCode(char *s);
 extern int   DeriveUniqueStateCode(int ndtype, int sttype);
 extern CM_t *CMRebalance(CM_t *cm);
-extern int ** IMX2Alloc(int rows, int cols);
+extern int **IMX2Alloc(int rows, int cols);
 extern void  IMX2Free(int **mx);
 extern float rsearch_calculate_gap_penalty (char from_state, char to_state, 
 					    int from_node, int to_node, 
 					    float input_alpha, float input_beta, 
 					    float input_alphap, float input_betap);
-extern int ExponentiateCM(CM_t *cm, double z);
+extern int   ExponentiateCM(CM_t *cm, double z);
+extern CM_t *DuplicateCM(CM_t *cm);
 
 /*EPN 10.19.05*/
 extern void  CMDefaultNullModel(float *null);
@@ -184,6 +185,7 @@ extern MSA         *Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, f
 					 Parsetree_t **tr, int nseq, int do_full);
 extern MSA         *ESL_Parsetrees2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, 
 					     Parsetree_t **tr, int nseq, int do_full);
+extern float        ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, char *dsq);
 
 /* from scancyk.c
  */

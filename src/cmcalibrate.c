@@ -320,6 +320,7 @@ main(int argc, char **argv)
       if(do_qdb)            cm->config_opts |= CM_CONFIG_QDB;
       /* Configure for QDB */
        ConfigCM(cm, NULL, NULL);
+
       /****************************************************************
        * Determine CM and CP9 EVDs 
        *****************************************************************/

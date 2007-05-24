@@ -186,8 +186,11 @@ CMZero(CM_t *cm)
     for (x = 0; x < MAXCONNECT; x++)                    cm->t[v][x]   = 0.0;
     for (x = 0; x < Alphabet_size * Alphabet_size; x++) cm->esc[v][x] = 0.0;
     for (x = 0; x < MAXCONNECT; x++)                    cm->tsc[v][x] = 0.0;
+    for (x = 0; x < Alphabet_size * Alphabet_size; x++) cm->iesc[v][x] = 0.0;
+    for (x = 0; x < MAXCONNECT; x++)                    cm->itsc[v][x] = 0.0;
     cm->begin[v] = cm->end[v] = 0.;
     cm->beginsc[v] = cm->endsc[v] = 0.;
+    cm->ibeginsc[v] = cm->iendsc[v] = 0.;
   }
 }
 
@@ -1563,3 +1566,125 @@ ExponentiateCM(CM_t *cm, double z)
   cm->flags &= ~CM_HASBITS;
   return eslOK;
 }
+
+
+/*
+ * Function: DuplicateCM
+ * Date:     EPN, Thu May 24 09:57:12 2007
+ * Purpose:  Given a template CM 'cm', copy it's params into a
+ *           new CM which is allocated here and must be
+ *           freed by the caller. 
+ *           Currently, does not copy the cm->cp9 or cm->stats
+ *           objects.
+ * 
+ * Args:
+ *           src          - the template covariance model
+ */
+CM_t *
+DuplicateCM(CM_t *cm)
+{
+  int       v;	          /* counter over states */
+  int       x;		  /* counter over transitions, residues, nodes */
+  CM_t     *new;
+
+  /* Create the new model and copy everything over except the cp9 and stats */
+  new = CreateCM(cm->nodes, cm->M);
+  new->name = sre_strdup(cm->name, -1);
+  new->acc  = sre_strdup(cm->acc,  -1);
+  new->desc = sre_strdup(cm->desc, -1);
+  new->flags       = cm->flags;
+  new->search_opts = cm->search_opts;
+  new->align_opts  = cm->align_opts;
+  new->config_opts = cm->config_opts;
+  for (x = 0; x < Alphabet_size; x++) new->null[x] = cm->null[x];
+
+  new->nodes      = cm->nodes;
+  for(x = 0; x < cm->nodes; x++)
+    {
+      new->nodemap[x]   = cm->nodemap[x];
+      new->ndtype[x]    = cm->ndtype[x];
+    }
+  for(v = 0; v < cm->M; v++)
+    {
+      new->sttype[v]  = cm->sttype[v];
+      new->ndidx[v]   = cm->ndidx[v];
+      new->stid[v]    = cm->stid[v];
+
+      new->cfirst[v]  = cm->cfirst[v];
+      new->cnum[v]    = cm->cnum[v];
+
+      new->pnum[v]    = cm->pnum[v];
+      new->plast[v]   = cm->plast[v];
+
+      new->begin[v]   = cm->begin[v];
+      new->beginsc[v] = cm->beginsc[v];
+      new->ibeginsc[v]= cm->ibeginsc[v];
+      new->end[v]     = cm->end[v];
+      new->endsc[v]   = cm->endsc[v];
+      new->iendsc[v]  = cm->iendsc[v];
+
+      /* copy transitions and emissions*/
+      for (x = 0; x < MAXCONNECT; x++)
+	{
+	  new->t[v][x]     = cm->t[v][x];
+	  new->tsc[v][x]   = cm->tsc[v][x];
+	  new->itsc[v][x]  = cm->itsc[v][x];
+	}
+      for (x = 0; x < Alphabet_size * Alphabet_size; x++)
+	{
+	  new->e[v][x]     = cm->e[v][x];
+	  new->esc[v][x]   = cm->esc[v][x];
+	  new->iesc[v][x]  = cm->iesc[v][x];
+	}
+    }      
+  if(cm->dmin != NULL && cm->dmax != NULL)
+    {
+      new->dmin = MallocOrDie(sizeof(int) * cm->M);
+      new->dmax = MallocOrDie(sizeof(int) * cm->M);
+      for(v = 0; v < cm->M; v++)
+	{
+	  new->dmin[v] = cm->dmin[v];
+	  new->dmax[v] = cm->dmax[v];
+	}
+    }
+  else 
+    {
+      new->dmin = new->dmax = NULL;
+      new->flags &= ~CM_QDB;
+    }
+  new->W      = cm->W;
+  new->el_selfsc  = cm->el_selfsc;
+  new->iel_selfsc = cm->iel_selfsc;
+  new->beta  = cm->beta;
+  new->tau   = cm->tau;
+  new->enf_start = cm->enf_start;
+  if(cm->enf_seq != NULL)
+    new->enf_seq = sre_strdup(cm->enf_seq, -1);
+  else new->enf_seq = NULL;
+  new->enf_scdiff = cm->enf_scdiff;
+  new->sc_boost   = cm->sc_boost;
+  new->ffract     = cm->ffract;
+  new->cutoff_type= cm->cutoff_type;
+  new->cutoff     = cm->cutoff;
+  new->cp9_cutoff_type = cm->cp9_cutoff_type;
+  new->cp9_cutoff = cm->cp9_cutoff;
+  new->cp9_sc_boost = cm->cp9_sc_boost;
+  if(cm->root_trans == NULL)
+    new->root_trans = NULL;
+  else
+    {
+      new->root_trans = MallocOrDie(sizeof(float) * cm->cnum[0]);
+      for (v = 0; v < cm->cnum[0]; v++)
+	new->root_trans[v] = cm->root_trans[v];
+    }
+  new->hmmpad = cm->hmmpad;
+
+  new->cp9  = NULL;      /* WE DON'T COPY THE CP9   CURRENTLY */
+  new->stats= NULL;  /* WE DON'T COPY THE STATS CURRENTLY */
+  new->flags &= ~CM_CP9;
+  new->flags &= ~CM_EVD_STATS;
+  new->flags &= ~CM_FTHR_STATS;
+
+  return new;
+}
+

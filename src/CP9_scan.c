@@ -1151,7 +1151,6 @@ RescanFilterSurvivors(CM_t *cm, char *dsq, scan_results_t *hmm_results, int i0, 
   float best_cm_sc;
   float cm_sc;
   int   flen;
-  float ffrac;
   int   prev_j;
   int   next_j;
   int   nhits;
@@ -1430,7 +1429,6 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   char            **dsq;        /* digitized sequences                   */
   char            **seq;        /* alphabetic sequences                  */
   float             sc;
-  float            *tr_sc = NULL; /* scores of the parsetrees, remains NULL if !do_fastfil */
   float            *hmm_eval;
   float            *hmm_sc;
   int               nattempts = 0;
@@ -1443,8 +1441,6 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   double *cm_mu;
   double *hmm_mu;
   int p;                    /* counter over partitions */
-  double pval;
-  double x;     
   float *cm_minbitsc = NULL;/* minimum CM bit score to allow to pass for each partition */
   float return_eval;
   double tmp_K;
@@ -1481,8 +1477,6 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   default:
     Die("ERROR in FindCP9FilterThreshold() fthr_mode not CM_LC, CM_LI, CM_GC, or CM_GI\n");
   }
-  if(do_fastfil && emit_mode != fthr_mode)
-    Die("ERROR in FindCP9FilterThreshold() do_fastfil but emit_mode not equal to fthr_mode.\n");
 
   if(cm->search_opts & CM_SEARCH_HMMONLY) was_hmmonly = TRUE;
   else was_hmmonly = FALSE;
@@ -1521,8 +1515,6 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   seq         = MallocOrDie(sizeof(char *) * nbatch);
   dsq         = MallocOrDie(sizeof(char *) * nbatch);
   L           = MallocOrDie(sizeof(int) * nbatch);
-  if(do_fastfil) 
-    tr_sc       = MallocOrDie(sizeof(float) * nbatch);
 
   for (p = 0; p < cmstats->np; p++)
     {
@@ -1552,7 +1544,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
    */
 
   /* Emit seqs until we have N that meet score cutoff */
-  SQINFO            sqinfo;     /* info about sequence (name/len)         */
+  /*SQINFO            sqinfo; */    /* info about sequence (name/len)         */
 
   npassed = 0;
   while(npassed < N)
@@ -1563,14 +1555,14 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
       for(j = 0; j < nbatch; j++)
 	{
 	  EmitParsetree(cm, r, &(tr[j]), &(seq[j]), &(dsq[j]), &(L[j])); 
-	  if(do_fastfil) tr_sc[j] = ParsetreeScore(cm, tr[j], dsq[j], FALSE); 
-	  /*	  printf("nattempts: %d\n", nattempts+j+1);
+
+	  /*printf("nattempts: %d\n", nattempts+j+1);
 	    sqinfo.len   = L[j];
 	    sprintf(sqinfo.name, "seq%d", i+1);
 	    sqinfo.flags = SQINFO_NAME | SQINFO_LEN;
 	    WriteSeq(stdout, SQFILE_FASTA, seq[j], &sqinfo);
 	    ParsetreeDump(stdout, tr[j], cm, dsq[j]);
-	    printf("%d Parsetree Score: %f\n\n", (nattempts+j), ParsetreeScore(cm, tr[j], dsq[j], FALSE)); */
+	    printf("%d Parsetree Score: %f\n\n", (nattempts+j), ParsetreeScore(cm, tr[j], dsq[j], FALSE));*/
 	}
       /*printf("\nDone emitting nbatch: %d seqs, nattempts: %d npassed: %d\n", nbatch, nattempts, npassed);*/
 
@@ -1581,7 +1573,12 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	  if(npassed < N) /* else we still need to free tr[j], dsq[j], seq[j] at bottom */
 	    {
 	      if(do_fastfil) 
-		sc = tr_sc[j];
+		{
+		  if(emit_global && (fthr_mode == CM_LC || fthr_mode == CM_LI))
+		    sc = ParsetreeScore_Global2Local(cm, tr[j], dsq[j]); 
+		  else
+		    sc = ParsetreeScore(cm, tr[j], dsq[j], FALSE); 
+		}
 	      else
 		sc = actually_search_target(cm, dsq[j], 1, L[j],
 					    0.,    /* cutoff is 0 bits (actually we'll find highest
@@ -1666,7 +1663,6 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   free(dsq);
   free(seq);
   free(L);
-  if(do_fastfil) free(tr_sc);
   /* Return threshold */
   printf("05.21.07 %d %d %f %f\n", fthr_mode, hmm_evd_mode,  hmm_sc[(int) ((fraction) * (float) N) - 1], return_eval);
 
@@ -1723,59 +1719,33 @@ float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r
 
   if(my_rank > 0)
     {
-      /* Configure the CM based on the fthr  mode DIFFERENT FROM MASTER! */
+      /* Configure the CM based on the fthr mode COULD BE DIFFERENT FROM MASTER! */
       ConfigForEVDMode(cm, fthr_mode);
-    }
-  else
-    {
-      /* Master contract check, source of randomness, r, must be non-NULL */
-      if (r == NULL)
-	Die("ERROR in mpi_FindCP9FilterThreshold(), source of randomness NULL for master.\n");
-      switch(fthr_mode) {
-      case CM_LC:
-      case CM_LI:
-	if(emit_global) emit_mode = CM_GC;
-	else            emit_mode = CM_LC;
-	break;
-      case CM_GC:
-      case CM_GI:
-	if(emit_global) emit_mode = CM_GC;
-	else            emit_mode = CM_LC;
-	break;
-      default:
-	Die("ERROR in FindCP9FilterThreshold() fthr_mode not CM_LC, CM_LI, CM_GC, or CM_GI\n");
-      }
-      /*printf("in mpi_FindCP9FilterThreshold fthr_mode: %d hmm_evd_mode: %d emit_global: %d \n", fthr_mode, 
-	hmm_evd_mode, emit_global); */
-      if(do_fastfil && emit_mode != fthr_mode)
-	Die("ERROR in FindCP9FilterThreshold() do_fastfil but emit_mode not equal to fthr_mode.\n");
-      /* Configure the CM based on the emit mode DIFFERENT FROM WORKERS! */
-      ConfigForEVDMode(cm, emit_mode);
-    }
+      /* Configure the HMM based on the hmm_evd_mode */
+      if(hmm_evd_mode == CP9_L)
+	CPlan9SWConfig(cm->cp9, 0.5, 0.5);
+      else /* hmm_evd_mode == CP9_G (it's in the contract) */
+	CPlan9GlobalConfig(cm->cp9);
+      CP9Logoddsify(cm->cp9);
 
-  /* Configure the HMM based on the hmm_evd_mode */
-  if(hmm_evd_mode == CP9_L)
-    CPlan9SWConfig(cm->cp9, 0.5, 0.5);
-    /* EPN, Mon May 21 17:00:05 2007 OLD WAY: all start/ends equiprobable, doesn't match CM */
-    /*CPlan9SWConfig(cm->cp9, ((cm->cp9->M)-1.)/cm->cp9->M, */ /* all start pts equiprobable, including 1 */
-  /*((cm->cp9->M)-1.)/cm->cp9->M);*/         /* all end pts equiprobable, including M */
-
-  else /* hmm_evd_mode == CP9_G (it's in the contract) */
-    CPlan9GlobalConfig(cm->cp9);
-  CP9Logoddsify(cm->cp9);
-      
-  if(my_rank > 0)
-    {
       mpi_worker_cm_and_cp9_search(cm, do_fastfil, my_rank);
       return eslOK;
     }
   else /* my_rank == 0, master */
     {
+      /* Master contract check, source of randomness, r, must be non-NULL */
+      if (r == NULL)
+	Die("ERROR in mpi_FindCP9FilterThreshold(), source of randomness NULL for master.\n");
+
+      /* cm_for_scoring will point to 'cm' unless (do_fastfil & emit_global & fthr_mode = 
+       * CM_LC | CM_LI). In which case we duplicate CM and reconfigure it, its used to locally 
+       * score globally emitted parstrees in fastfil mode */
+      CM_t *cm_for_scoring;
+
       int status;
       Parsetree_t      *tr;         /* parsetree */
       char             *dsq;        /* digitized sequence                     */
       char             *seq;        /* alphabetic sequence                    */
-      float             sc;
       float            *hmm_eval;
       float            *hmm_sc;
       int               nattempts = 0;
@@ -1788,10 +1758,7 @@ float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r
       double *cm_mu;
       double *hmm_mu;
       double  tmp_K;
-      int passed;
       int p;                    /* counter over partitions */
-      double pval;
-      double x;     
       float *cm_minbitsc = NULL;/* minimum CM bit score to allow to pass for each partition */
       float return_eval;
       int              have_work;
@@ -1805,6 +1772,21 @@ float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r
       float cur_hmm_sc;
 
       MPI_Status       mstatus;
+      
+      switch(fthr_mode) {
+      case CM_LC:
+      case CM_LI:
+	if(emit_global) emit_mode = CM_GC;
+	else            emit_mode = CM_LC;
+	break;
+      case CM_GC:
+      case CM_GI:
+	if(emit_global) emit_mode = CM_GC;
+	else            esl_fatal("fthr_mode: %d but emit_mode global!?\n", fthr_mode);
+	break;
+      default:
+	Die("ERROR in FindCP9FilterThreshold() fthr_mode not CM_LC, CM_LI, CM_GC, or CM_GI\n");
+      }
 
       cm_evd   = cmstats->evdAA[fthr_mode];
       hmm_evd  = cmstats->evdAA[hmm_evd_mode];
@@ -1827,6 +1809,17 @@ float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r
       if(use_cm_cutoff) printf("CM E cutoff: %f\n", cm_ecutoff);
       else              printf("Not using CM cutoff\n");
       
+      /* Configure the CM based on the emit mode COULD DIFFERENT FROM WORKERS! */
+      ConfigForEVDMode(cm, emit_mode);
+      /* Copy the CM into cm_for_scoring if nec., and reconfigure that */
+      if(do_fastfil && (emit_global && (fthr_mode == CM_LC || fthr_mode == CM_LI)))
+	{
+	  cm_for_scoring = DuplicateCM(cm); /* cm->cp9 and cm->stats NOT COPIED */
+	  ConfigForEVDMode(cm_for_scoring, fthr_mode);
+	}
+      else
+	cm_for_scoring = cm;
+
       /* Determine bit cutoff for each partition, calc'ed from cm_ecutoff */
       for (p = 0; p < cmstats->np; p++)
 	{
@@ -1893,7 +1886,10 @@ float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r
 	      /* could change this to keep ALL CP9 and CM bit scores */
 	      if(do_fastfil)
 		{
-		  cur_cm_sc = ParsetreeScore(cm, trlist[wi], dsqlist[wi], FALSE); 
+		  if(emit_global && (fthr_mode == CM_LC || fthr_mode == CM_LI))
+		    cur_cm_sc = ParsetreeScore_Global2Local(cm_for_scoring, trlist[wi], dsqlist[wi]);
+		  else
+		    cur_cm_sc = ParsetreeScore(cm_for_scoring, trlist[wi], dsqlist[wi], FALSE); 
 		  FreeParsetree(trlist[wi]);
 		  trlist[wi] = NULL;
 		}
@@ -1953,11 +1949,13 @@ float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r
       free(cm_mu);
       free(hmm_mu);
       fflush(stdout);
+      if(do_fastfil && (emit_global && (fthr_mode == CM_LC || fthr_mode == CM_LI)))
+	FreeCM(cm_for_scoring);
       /* Return threshold */
       return return_eval;
     }    
 
  ERROR:
-  return;
+  return -1.;
 }
 #endif
