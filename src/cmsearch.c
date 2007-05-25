@@ -647,20 +647,20 @@ main(int argc, char **argv)
       GetDBInfo(dbfp, &N, NULL);
       if (do_revcomp) N*=2;
 
-      /**************************************************************
-       * Set mu for EVD stats based on DB size, if EVD stats exist  *
-       **************************************************************/
-      if (cm->flags & CM_EVD_STATS)
+      /*****************************************************************
+       * Set mu for Gumbel stats based on DB size, if Gumbel stats exist  *
+       *****************************************************************/
+      if (cm->flags & CM_GUMBEL_STATS)
 	{
 	  /* Determine K from mu, lambda, L, then set CM mu for N */
-	  for(i = 0; i < NEVDMODES; i++)
+	  for(i = 0; i < NGUMBELMODES; i++)
 	    for(p = 0; p < cm->stats->np; p++)
 	      {
-		tmp_K = exp(cm->stats->evdAA[i][p]->mu * cm->stats->evdAA[i][p]->lambda) / 
-		  cm->stats->evdAA[i][p]->L;
-		cm->stats->evdAA[i][p]->mu = log(tmp_K * ((double) N)) /
-		  cm->stats->evdAA[i][p]->lambda;
-		cm->stats->evdAA[i][p]->L = N; /* update L, the seq size stats correspond to */
+		tmp_K = exp(cm->stats->gumAA[i][p]->mu * cm->stats->gumAA[i][p]->lambda) / 
+		  cm->stats->gumAA[i][p]->L;
+		cm->stats->gumAA[i][p]->mu = log(tmp_K * ((double) N)) /
+		  cm->stats->gumAA[i][p]->lambda;
+		cm->stats->gumAA[i][p]->L = N; /* update L, the seq size stats correspond to */
 	      }
 	  printf ("CM/CP9 statistics read from CM file\n");
 	  if (cm->stats->np == 1) 
@@ -676,7 +676,7 @@ main(int argc, char **argv)
        * Set score cutoffs block
        ***************************************************************/
       /* Determine cm_mode and cp9_mode BEFORE we configure CM (if
-       * we did it after we could use CM2EVD_mode(), which we do below for
+       * we did it after we could use CM2Gumbel_mode(), which we do below for
        * MPI workers. This is sloppy; a result of keeping serial and MPI 
        * main's in one .c file */
       if(do_local  && !do_inside) cm_mode = CM_LC;
@@ -690,8 +690,8 @@ main(int argc, char **argv)
 	  /* Default behavior: use HMM filter threshold stats from CM file.
 	   * We overwrite these after recalc'ing HMM threshold (if --hmmcalcthr) 
 	   */
-	  if(!(cm->flags & CM_EVD_STATS)) 
-	    Die("ERROR trying to use HMM filter thresholds but no EVD stats in CM file.\nUse cmcalibrate or use --hmmT or --hmmE.\n");
+	  if(!(cm->flags & CM_GUMBEL_STATS)) 
+	    Die("ERROR trying to use HMM filter thresholds but no Gumbel stats in CM file.\nUse cmcalibrate or use --hmmT or --hmmE.\n");
 	  if(!(cm->flags & CM_FTHR_STATS)) 
 	    Die("ERROR trying to use HMM filter thresholds but none in CM file.\nUse cmcalibrate or use --hmmT or --hmmE.\n");
 	  /* Convert E-value from CM file to E-value for current DB size */
@@ -721,7 +721,7 @@ main(int argc, char **argv)
 	}
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	}   /* End of second block that is only done by master process */
-      /* Broadcast the CM, complete with EVD stats if they were in cmfile */
+      /* Broadcast the CM, complete with Gumbel stats if they were in cmfile */
       MPI_Barrier(MPI_COMM_WORLD);
       broadcast_cm(&cm, my_rank, mpi_master_rank);
       MPI_Barrier(MPI_COMM_WORLD);
@@ -737,7 +737,7 @@ main(int argc, char **argv)
       if(cm->config_opts & CM_CONFIG_ENFORCE)
 	ConfigCMEnforce(cm);
       cons = CreateCMConsensus(cm, 3.0, 1.0); 
-      CM2EVD_mode(cm, &cm_mode, &cp9_mode); /* MPI workers need to know this */
+      CM2Gumbel_mode(cm, &cm_mode, &cp9_mode); /* MPI workers need to know this */
 
       /*#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	printf("my_rank: %d cm_mode: %d cp9_mode: %d\n", my_rank, cm_mode, cp9_mode);
@@ -755,8 +755,8 @@ main(int argc, char **argv)
 	      MPI_Barrier(MPI_COMM_WORLD);
 	      if(my_rank == 0) /* master */
 		{
-		  if(!(cm->flags & CM_EVD_STATS))
-		    Die("ERROR trying to use HMM filter thresholds but no EVD stats in CM file.\nUse cmcalibrate or use --hmmT or --hmmE.\n");
+		  if(!(cm->flags & CM_GUMBEL_STATS))
+		    Die("ERROR trying to use HMM filter thresholds but no Gumbel stats in CM file.\nUse cmcalibrate or use --hmmT or --hmmE.\n");
 		  if(cm->cutoff_type == SCORE_CUTOFF)
 		    Die("ERROR can't use --hmmcalcthr with -T, currently you must use CM E-values with --hmmcalcthr.\n");
 		  cp9_e_cutoff = 
@@ -775,8 +775,8 @@ main(int argc, char **argv)
 	  else /* never get here in MPI */
 	    {
 #endif
-	    cp9_e_cutoff = FindCP9FilterThreshold(cm, cm->stats, r, filt_fract, filN, use_cm_cutoff,
-						  cm->cutoff, N, emit_global, cm_mode, cp9_mode, do_fastfil);
+           cp9_e_cutoff = serial_FindCP9FilterThreshold(cm, cm->stats, r, filt_fract, filN, use_cm_cutoff,
+							cm->cutoff, N, emit_global, cm_mode, cp9_mode, do_fastfil);
 
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	    }
@@ -788,7 +788,7 @@ main(int argc, char **argv)
 	    cp9_eval   = cm->stats->fthrA[cm_mode]->l_eval;
 	  else if(cp9_mode == CP9_G) 
 	    cp9_eval   = cm->stats->fthrA[cm_mode]->g_eval;
-	  cp9_bit_sc   = cm->stats->evdAA[cp9_mode][0]->mu - (log(cp9_e_cutoff) / cm->stats->evdAA[cp9_mode][0]->lambda);
+	  cp9_bit_sc   = cm->stats->gumAA[cp9_mode][0]->mu - (log(cp9_e_cutoff) / cm->stats->gumAA[cp9_mode][0]->lambda);
 	  printf("Calc'ed CP9 bit score cutoff: %f\ncmcalibrate e-val cutoff: %f\nnew e-val cutoff: %f\n", cp9_bit_sc, cp9_eval, cp9_e_cutoff);
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	    }

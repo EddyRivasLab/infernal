@@ -935,10 +935,10 @@ EnforceFindEnfStart(CM_t *cm, int enf_cc_start)
 }
 
 /*
- * Function: ConfigForEVDMode
+ * Function: ConfigForGumbelMode
  * Date:     EPN, Thu May  3 09:05:48 2007
  * Purpose:  Configure a CM and it's CP9 for determining statistics for 
- *           a specific 'evd_mode'.
+ *           a specific 'gum_mode'.
  *
  *           0. CM_LC: !cm->search_opts & CM_SEARCH_INSIDE  w/  local CM
  *           1. CM_GC: !cm->search_opts & CM_SEARCH_INSIDE  w/ glocal CM
@@ -949,17 +949,17 @@ EnforceFindEnfStart(CM_t *cm, int enf_cc_start)
  * 
  * Args:
  *           CM           - the covariance model
- *           evd_mode     - the mode 0..5
+ *           gum_mode     - the mode 0..5
  */
 int
-ConfigForEVDMode(CM_t *cm, int evd_mode)
+ConfigForGumbelMode(CM_t *cm, int gum_mode)
 {
   int do_cm_local  = FALSE;
   int do_cp9_local = FALSE;
 
-  /*printf("in ConfigForEVDMode\n");*/
-  /* First set search opts and flags based on evd_mode */
-  switch (evd_mode) {
+  /*printf("in ConfigForGumbelMode\n");*/
+  /* First set search opts and flags based on gum_mode */
+  switch (gum_mode) {
   case CM_LC: /* local CYK */
     /*printf("CM_LC\n");*/
     cm->search_opts &= ~CM_SEARCH_INSIDE;
@@ -997,7 +997,7 @@ ConfigForEVDMode(CM_t *cm, int evd_mode)
     do_cp9_local  = FALSE;
     break;
   default: 
-    Die("ERROR unrecognized evd_mode: %d in ConfigForEVDMode");
+    Die("ERROR unrecognized gum_mode: %d in ConfigForGumbelMode");
   }
   /* configure CM and, if needed, CP9 */
   if(cm->search_opts & CM_SEARCH_HMMONLY)

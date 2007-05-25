@@ -1369,7 +1369,7 @@ CP9ScanPosterior(char *dsq, int i0, int j0,
 }
 
 /*
- * Function: FindCP9FilterThreshold()
+ * Function: serial_FindCP9FilterThreshold()
  * Incept:   EPN, Wed May  2 10:00:45 2007
  *
  * Purpose:  Sample sequences from a CM and determine the CP9 HMM E-value
@@ -1377,7 +1377,7 @@ CP9ScanPosterior(char *dsq, int i0, int j0,
  *           hits. Sequences are sampled from the CM until N with a E-value
  *           better than cm_ecutoff are sampled (those with worse E-values
  *           are rejected). CP9 scans are carried out in either local or
- *           glocal mode depending on hmm_evd_mode. CM is configured in 
+ *           glocal mode depending on hmm_gum_mode. CM is configured in 
  *           local/glocal and sampled seqs are scored in CYK/inside depending
  *           on fthr_mode (4 possibilities). E-values are determined using
  *           lambda from cm->stats, and a recalc'ed mu using database size
@@ -1401,7 +1401,7 @@ CP9ScanPosterior(char *dsq, int i0, int j0,
  *
  * Args:
  *           cm           - the CM
- *           cmstats      - CM stats object we'll get EVD stats from
+ *           cmstats      - CM stats object we'll get Gumbel stats from
  *           r            - source of randomness for EmitParsetree()
  *           fraction     - target fraction of CM hits to detect with CP9
  *           N            - number of sequences to sample from CM better than cm_minsc
@@ -1409,8 +1409,8 @@ CP9ScanPosterior(char *dsq, int i0, int j0,
  *           cm_ecutoff   - minimum CM E-value to accept 
  *           db_size      - DB size (nt) to use w/cm_ecutoff to calc CM bit score cutoff 
  *           emit_global  - TRUE to emit from CM in glocal mode, FALSE emit in local mode
- *           fthr_mode    - gives CM search strategy to use, and EVD to use
- *           hmm_evd_mode - CP9_L to search with  local HMM (we're filling a fthr->l_eval)
+ *           fthr_mode    - gives CM search strategy to use, and Gumbel to use
+ *           hmm_gum_mode - CP9_L to search with  local HMM (we're filling a fthr->l_eval)
  *                          CP9_G to search with glocal HMM (we're filling a fthr->g_eval)
  *           do_fastfil   - TRUE to use fast method: assume parsetree score
  *                          is optimal CYK score
@@ -1419,11 +1419,11 @@ CP9ScanPosterior(char *dsq, int i0, int j0,
  *          hits with CM E-values better than cm_ecutoff 
  * 
  */
-float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
-			     float fraction, int N, 
-			     int use_cm_cutoff, float cm_ecutoff, int db_size, 
-			     int emit_global, int fthr_mode, int hmm_evd_mode, 
-			     int do_fastfil)
+float serial_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
+				    float fraction, int N, 
+				    int use_cm_cutoff, float cm_ecutoff, int db_size, 
+				    int emit_global, int fthr_mode, int hmm_gum_mode, 
+				    int do_fastfil)
 {
   Parsetree_t     **tr;         /* parsetrees */
   char            **dsq;        /* digitized sequences                   */
@@ -1436,8 +1436,8 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   int              *L;         
   int               i;
   int               gc_comp;
-  EVDInfo_t **cm_evd; 
-  EVDInfo_t **hmm_evd; 
+  GumbelInfo_t **cm_gum; 
+  GumbelInfo_t **hmm_gum; 
   double *cm_mu;
   double *hmm_mu;
   int p;                    /* counter over partitions */
@@ -1450,16 +1450,16 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   int j;
   int npassed;
 
-  /*printf("in FindCP9FilterThreshold fthr_mode: %d hmm_evd_mode: %d emit_global: %d \n", fthr_mode, 
-    hmm_evd_mode, emit_global);*/
+  /*printf("in FindCP9FilterThreshold fthr_mode: %d hmm_gum_mode: %d emit_global: %d \n", fthr_mode, 
+    hmm_gum_mode, emit_global);*/
 
   /* Contract check */
   if (!(cm->flags & CM_CP9) || cm->cp9 == NULL) 
     Die("ERROR in FindCP9FilterThreshold() CP9 does not exist\n");
   if (fraction < 0. || fraction > 1.)  
     Die("ERROR in FindCP9FilterThreshold() fraction is %f, should be [0.0..1.0]\n", fraction);
-  if(hmm_evd_mode != CP9_L && hmm_evd_mode != CP9_G)
-    Die("ERROR in FindCP9FilterThreshold() hmm_evd_mode not CP9_L or CP9_G\n");
+  if(hmm_gum_mode != CP9_L && hmm_gum_mode != CP9_G)
+    Die("ERROR in FindCP9FilterThreshold() hmm_gum_mode not CP9_L or CP9_G\n");
   if(do_fastfil && (fthr_mode == CM_LI || fthr_mode == CM_GI))
     Die("ERROR in FindCP9FilterThreshold() do_fastfil TRUE, but fthr_mode CM_GI or CM_LI\n");
 
@@ -1482,8 +1482,8 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   else was_hmmonly = FALSE;
   cm->search_opts &= ~CM_SEARCH_HMMONLY;
 
-  cm_evd   = cmstats->evdAA[fthr_mode];
-  hmm_evd  = cmstats->evdAA[hmm_evd_mode];
+  cm_gum   = cmstats->gumAA[fthr_mode];
+  hmm_gum  = cmstats->gumAA[hmm_gum_mode];
 
   hmm_eval  = MallocOrDie(sizeof(float) * N);
   hmm_sc    = MallocOrDie(sizeof(float) * N);
@@ -1492,14 +1492,14 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   dsq    = NULL;
   tr     = NULL;
 
-  /* Configure the HMM based on the hmm_evd_mode */
-  if(hmm_evd_mode == CP9_L)
+  /* Configure the HMM based on the hmm_gum_mode */
+  if(hmm_gum_mode == CP9_L)
     CPlan9SWConfig(cm->cp9, 0.5, 0.5);
     /* EPN, Mon May 21 17:00:05 2007 OLD WAY: all start/ends equiprobable, doesn't match CM */
     /*CPlan9SWConfig(cm->cp9, ((cm->cp9->M)-1.)/cm->cp9->M, */ /* all start pts equiprobable, including 1 */
   /*((cm->cp9->M)-1.)/cm->cp9->M);*/         /* all end pts equiprobable, including M */
 
-  else /* hmm_evd_mode == CP9_G (it's in the contract) */
+  else /* hmm_gum_mode == CP9_G (it's in the contract) */
     CPlan9GlobalConfig(cm->cp9);
   CP9Logoddsify(cm->cp9);
 
@@ -1519,16 +1519,16 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   for (p = 0; p < cmstats->np; p++)
     {
       /* First determine mu based on db_size */
-      tmp_K      = exp(hmm_evd[p]->mu * hmm_evd[p]->lambda) / hmm_evd[p]->L;
-      printf("HMM mu: %f lambda: %f K: %f\n", hmm_evd[p]->mu, hmm_evd[p]->lambda, tmp_K);
-      hmm_mu[p]  = log(tmp_K * ((double) db_size)) / hmm_evd[p]->lambda;
+      tmp_K      = exp(hmm_gum[p]->mu * hmm_gum[p]->lambda) / hmm_gum[p]->L;
+      printf("HMM mu: %f lambda: %f K: %f\n", hmm_gum[p]->mu, hmm_gum[p]->lambda, tmp_K);
+      hmm_mu[p]  = log(tmp_K * ((double) db_size)) / hmm_gum[p]->lambda;
       printf("HMM new mu: %f\n", hmm_mu[p]);
-      tmp_K      = exp(cm_evd[p]->mu * cm_evd[p]->lambda) / cm_evd[p]->L;
-      printf("CM mu: %f lambda: %f K: %f\n", cm_evd[p]->mu, cm_evd[p]->lambda, tmp_K);
-      cm_mu[p]   = log(tmp_K  * ((double) db_size)) / cm_evd[p]->lambda;
+      tmp_K      = exp(cm_gum[p]->mu * cm_gum[p]->lambda) / cm_gum[p]->L;
+      printf("CM mu: %f lambda: %f K: %f\n", cm_gum[p]->mu, cm_gum[p]->lambda, tmp_K);
+      cm_mu[p]   = log(tmp_K  * ((double) db_size)) / cm_gum[p]->lambda;
       printf("CM new mu: %f\n", cm_mu[p]);
       /* Now determine bit score */
-      cm_minbitsc[p] = cm_mu[p] - (log(cm_ecutoff) / cm_evd[p]->lambda);
+      cm_minbitsc[p] = cm_mu[p] - (log(cm_ecutoff) / cm_gum[p]->lambda);
       if(use_cm_cutoff)
 	printf("E: %f p: %d %d--%d bit score: %f\n", cm_ecutoff, p, 
 	       cmstats->ps[p], cmstats->pe[p], cm_minbitsc[p]);
@@ -1539,7 +1539,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
    * dependent on 'emit_global'. Then scan each seq in this batch with CM  
    * (local or glocal, CYK or Inside as specified by fthr_mode). If best scan
    * score meets cm_ecutoff threshold search it with the CP9 in local 
-   * or glocal mode (specified by hmm_evd_mode) and save top CP9 score.
+   * or glocal mode (specified by hmm_gum_mode) and save top CP9 score.
    * Repeat until N seqs have been searched and scored with the CP9.
    */
 
@@ -1550,7 +1550,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   while(npassed < N)
     {
       /* Emit nbatch seqs in with CM in emit_mode (local or glocal) */
-      ConfigForEVDMode(cm, emit_mode);
+      ConfigForGumbelMode(cm, emit_mode);
       nbatch = 5; /* TEMPORARY */
       for(j = 0; j < nbatch; j++)
 	{
@@ -1567,7 +1567,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
       /*printf("\nDone emitting nbatch: %d seqs, nattempts: %d npassed: %d\n", nbatch, nattempts, npassed);*/
 
       /* configure CM for searching, which may be different from emitting mode */
-      ConfigForEVDMode(cm, fthr_mode);
+      ConfigForGumbelMode(cm, fthr_mode);
       for(j = 0; j < nbatch; j++)
 	{
 	  if(npassed < N) /* else we still need to free tr[j], dsq[j], seq[j] at bottom */
@@ -1590,9 +1590,9 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 					    FALSE, /* we're not calcing CP9 stats */
 					    NULL); /* filter fraction N/A */
 	      /* Only accept if E-value of best hit in this seq is better than our cutoff.
-	       * To do that we first determine which partition to use EVD from */
+	       * To do that we first determine which partition to use Gumbel from */
 	      gc_comp = get_gc_comp(seq[j], 1, L[j]); /* should be i and j of best hit, but
-						       * EVD construction is wrong too, it uses 
+						       * Gumbel construction is wrong too, it uses 
 						       * GC_COMP of full sample seq, not of best hit
 						       * within it. */
 	      p    = cmstats->gc2p[gc_comp];
@@ -1620,10 +1620,10 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 		  printf("HMM SC %d: %f\n", npassed, hmm_sc[npassed]);
 		  /*WriteSeq(stdout, SQFILE_FASTA, seq[j], &sqinfo);*/
 
-		  hmm_eval[npassed] = RJK_ExtremeValueE(hmm_sc[npassed], hmm_mu[p], hmm_evd[p]->lambda);
+		  hmm_eval[npassed] = RJK_ExtremeValueE(hmm_sc[npassed], hmm_mu[p], hmm_gum[p]->lambda);
 		  /*printf("npassed: %d sc: %f hmm_eval: %f orig eval: %f ", npassed, hmm_sc[npassed], hmm_eval[npassed], 
-		    RJK_ExtremeValueE(hmm_sc[npassed], hmm_evd[p]->mu, hmm_evd[p]->lambda));*/
-		  /*printf("hmm P: %f\n", esl_gumbel_surv((double) hmm_sc[npassed], hmm_mu[p], hmm_evd[p]->lambda));*/
+		    RJK_ExtremeValueE(hmm_sc[npassed], hmm_gum[p]->mu, hmm_gum[p]->lambda));*/
+		  /*printf("hmm P: %f\n", esl_gumbel_surv((double) hmm_sc[npassed], hmm_mu[p], hmm_gum[p]->lambda));*/
 		  npassed++;
 		  /*printf("j: %d npassed: %d\n", j, npassed);*/
 		}
@@ -1640,9 +1640,9 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   esl_vec_FSortDecreasing(hmm_sc, N);
 
   for (i = 0; i < N; i++)
-    printf("%d i: %4d hmm sc: %10.4f hmm E: %10.4f\n", hmm_evd_mode, i, hmm_sc[i], hmm_eval[i]);
+    printf("%d i: %4d hmm sc: %10.4f hmm E: %10.4f\n", hmm_gum_mode, i, hmm_sc[i], hmm_eval[i]);
   printf("\n\nnattempts: %d\n", nattempts);
-  printf("\nSummary: %d %d %d %d %f %f\n", fthr_mode, hmm_evd_mode, do_fastfil, emit_global,
+  printf("\nSummary: %d %d %d %d %f %f\n", fthr_mode, hmm_gum_mode, do_fastfil, emit_global,
 	 (hmm_sc[(int) ((fraction) * (float) N) - 1]), (hmm_eval[(int) ((fraction) * (float) N) - 1]));
 
   /* Reset CM_SEARCH_HMMONLY search option as it was when function was entered */
@@ -1664,7 +1664,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   free(seq);
   free(L);
   /* Return threshold */
-  printf("05.21.07 %d %d %f %f\n", fthr_mode, hmm_evd_mode,  hmm_sc[(int) ((fraction) * (float) N) - 1], return_eval);
+  printf("05.21.07 %d %d %f %f\n", fthr_mode, hmm_gum_mode,  hmm_sc[(int) ((fraction) * (float) N) - 1], return_eval);
 
   return return_eval;
 }
@@ -1678,7 +1678,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
  *
  * Args:
  *           cm           - the CM
- *           cmstats      - CM stats object we'll get EVD stats from
+ *           cmstats      - CM stats object we'll get Gumbel stats from
  *           r            - source of randomness (NULL for non-master, worker)
  *           fraction     - target fraction of CM hits to detect with CP9
  *           N            - number of sequences to sample from CM better than cm_minsc
@@ -1686,8 +1686,8 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
  *           cm_ecutoff   - minimum CM E-value to accept 
  *           db_size      - DB size (nt) to use w/cm_ecutoff to calc CM bit score cutoff 
  *           emit_global  - TRUE to emit from CM in global mode, FALSE in local mode
- *           fthr_mode    - gives CM search strategy to use, and EVD to use
- *           hmm_evd_mode - CP9_L to search with  local HMM (we're filling a fthr->l_eval)
+ *           fthr_mode    - gives CM search strategy to use, and Gumbel to use
+ *           hmm_gum_mode - CP9_L to search with  local HMM (we're filling a fthr->l_eval)
  *                          CP9_G to search with glocal HMM (we're filling a fthr->g_eval)
  *           do_fastfil   - TRUE to use fast method: assume parsetree score
  *                          is optimal CYK score
@@ -1701,7 +1701,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 				 float fraction, int N, 
 				 int use_cm_cutoff, float cm_ecutoff, int db_size, 
-				 int emit_global, int fthr_mode, int hmm_evd_mode, 
+				 int emit_global, int fthr_mode, int hmm_gum_mode, 
 				 int do_fastfil, int my_rank, int nproc)
 {
   int   emit_mode;
@@ -1712,19 +1712,19 @@ float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r
     Die("ERROR in mpi_FindCP9FilterThreshold() fraction is %f, should be [0.0..1.0]\n", fraction);
   if((fthr_mode != CM_LI) && (fthr_mode != CM_GI) && (fthr_mode != CM_LC) && (fthr_mode != CM_GC))
     Die("ERROR in mpi_FindCP9FilterThreshold() fthr_mode not CM_LI, CM_GI, CM_LC, or CM_GC\n");
-  if(hmm_evd_mode != CP9_L && hmm_evd_mode != CP9_G)
-    Die("ERROR in mpi_FindCP9FilterThreshold() hmm_evd_mode not CP9_L or CP9_G\n");
+  if(hmm_gum_mode != CP9_L && hmm_gum_mode != CP9_G)
+    Die("ERROR in mpi_FindCP9FilterThreshold() hmm_gum_mode not CP9_L or CP9_G\n");
   if(do_fastfil && (fthr_mode == CM_LI || fthr_mode == CM_GI))
     Die("ERROR in mpi_FindCP9FilterThreshold() do_fastfil TRUE, but fthr_mode CM_GI or CM_LI\n");
 
   if(my_rank > 0)
     {
       /* Configure the CM based on the fthr mode COULD BE DIFFERENT FROM MASTER! */
-      ConfigForEVDMode(cm, fthr_mode);
-      /* Configure the HMM based on the hmm_evd_mode */
-      if(hmm_evd_mode == CP9_L)
+      ConfigForGumbelMode(cm, fthr_mode);
+      /* Configure the HMM based on the hmm_gum_mode */
+      if(hmm_gum_mode == CP9_L)
 	CPlan9SWConfig(cm->cp9, 0.5, 0.5);
-      else /* hmm_evd_mode == CP9_G (it's in the contract) */
+      else /* hmm_gum_mode == CP9_G (it's in the contract) */
 	CPlan9GlobalConfig(cm->cp9);
       CP9Logoddsify(cm->cp9);
 
@@ -1753,8 +1753,8 @@ float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r
       int               L;
       int               i;
       int               gc_comp;
-      EVDInfo_t **cm_evd; 
-      EVDInfo_t **hmm_evd; 
+      GumbelInfo_t **cm_gum; 
+      GumbelInfo_t **hmm_gum; 
       double *cm_mu;
       double *hmm_mu;
       double  tmp_K;
@@ -1788,8 +1788,8 @@ float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r
 	Die("ERROR in FindCP9FilterThreshold() fthr_mode not CM_LC, CM_LI, CM_GC, or CM_GI\n");
       }
 
-      cm_evd   = cmstats->evdAA[fthr_mode];
-      hmm_evd  = cmstats->evdAA[hmm_evd_mode];
+      cm_gum   = cmstats->gumAA[fthr_mode];
+      hmm_gum  = cmstats->gumAA[hmm_gum_mode];
 
       ESL_ALLOC(scores,      sizeof(float)         * 2);
       ESL_ALLOC(dsqlist,     sizeof(char *)        * nproc);
@@ -1810,12 +1810,12 @@ float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r
       else              printf("Not using CM cutoff\n");
       
       /* Configure the CM based on the emit mode COULD DIFFERENT FROM WORKERS! */
-      ConfigForEVDMode(cm, emit_mode);
+      ConfigForGumbelMode(cm, emit_mode);
       /* Copy the CM into cm_for_scoring if nec., and reconfigure that */
       if(do_fastfil && (emit_global && (fthr_mode == CM_LC || fthr_mode == CM_LI)))
 	{
 	  cm_for_scoring = DuplicateCM(cm); /* cm->cp9 and cm->stats NOT COPIED */
-	  ConfigForEVDMode(cm_for_scoring, fthr_mode);
+	  ConfigForGumbelMode(cm_for_scoring, fthr_mode);
 	}
       else
 	cm_for_scoring = cm;
@@ -1824,12 +1824,12 @@ float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r
       for (p = 0; p < cmstats->np; p++)
 	{
 	  /* First determine mu based on db_size */
-	  tmp_K      = exp(hmm_evd[p]->mu * hmm_evd[p]->lambda) / hmm_evd[p]->L;
-	  hmm_mu[p]  = log(tmp_K * ((double) db_size)) / hmm_evd[p]->lambda;
-	  tmp_K      = exp(cm_evd[p]->mu * cm_evd[p]->lambda) / cm_evd[p]->L;
-	  cm_mu[p]   = log(tmp_K  * ((double) db_size)) / cm_evd[p]->lambda;
+	  tmp_K      = exp(hmm_gum[p]->mu * hmm_gum[p]->lambda) / hmm_gum[p]->L;
+	  hmm_mu[p]  = log(tmp_K * ((double) db_size)) / hmm_gum[p]->lambda;
+	  tmp_K      = exp(cm_gum[p]->mu * cm_gum[p]->lambda) / cm_gum[p]->L;
+	  cm_mu[p]   = log(tmp_K  * ((double) db_size)) / cm_gum[p]->lambda;
 	  /* Now determine bit score */
-	  cm_minbitsc[p] = cm_mu[p] - (log(cm_ecutoff) / cm_evd[p]->lambda);
+	  cm_minbitsc[p] = cm_mu[p] - (log(cm_ecutoff) / cm_gum[p]->lambda);
 	  if(use_cm_cutoff)
 	    printf("E: %f p: %d %d--%d bit score: %f\n", cm_ecutoff, p, 
 		   cmstats->ps[p], cmstats->pe[p], cm_minbitsc[p]);
@@ -1865,7 +1865,7 @@ float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r
 	      /*ParsetreeDump(stdout, tr, cm, dsq);
 		printf("%d Parsetree Score: %f\n\n", (nattempts), ParsetreeScore(cm, tr, dsq, FALSE)); */
 	      gc_comp = get_gc_comp(seq, 1, L); /* should be i and j of best hit, but
-						 * EVD construction is wrong too, it uses 
+						 * Gumbel construction is wrong too, it uses 
 						 * GC_COMP of full sample seq, not of best hit
 						 * within it. */
 	      p    = cmstats->gc2p[gc_comp];
@@ -1896,9 +1896,9 @@ float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r
 	      /* careful not go let i get bigger than N, which can happen due to send/recv lag */
 	      if(cur_cm_sc >= cm_minbitsc[plist[wi]] && i < N)
 		{
-		  hmm_eval[i] = RJK_ExtremeValueE(cur_hmm_sc, hmm_mu[plist[wi]], hmm_evd[plist[wi]]->lambda);
+		  hmm_eval[i] = RJK_ExtremeValueE(cur_hmm_sc, hmm_mu[plist[wi]], hmm_gum[plist[wi]]->lambda);
 		  hmm_sc[i]   = cur_hmm_sc;
-		  /*printf("i: %4d sc: %f E: %f P: %f\n", i, hmm_sc[i], hmm_eval[i], esl_gumbel_surv((double) hmm_sc[i], hmm_mu[plist[wi]], hmm_evd[plist[wi]]->lambda));
+		  /*printf("i: %4d sc: %f E: %f P: %f\n", i, hmm_sc[i], hmm_eval[i], esl_gumbel_surv((double) hmm_sc[i], hmm_mu[plist[wi]], hmm_gum[plist[wi]]->lambda));
 		    fflush(stdout);*/
 		  i++;
 		}		  
@@ -1927,11 +1927,11 @@ float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r
       esl_vec_FSortIncreasing(hmm_eval, N);
       esl_vec_FSortDecreasing(hmm_sc, N);
       
-      printf("Dumping HMM scores fthr_mode: %d hmm_mode: %d\n", fthr_mode, hmm_evd_mode);
+      printf("Dumping HMM scores fthr_mode: %d hmm_mode: %d\n", fthr_mode, hmm_gum_mode);
       for (i = 0; i < N; i++)
 	printf("i: %4d hmm sc: %10.4f hmm E: %10.4f\n", i, hmm_sc[i], hmm_eval[i]);
       printf("\n\nnattempts: %d\n", nattempts);
-      printf("\nSummary: %d %d %d %d %f %f\n", fthr_mode, hmm_evd_mode, do_fastfil, emit_global,
+      printf("\nSummary: %d %d %d %d %f %f\n", fthr_mode, hmm_gum_mode, do_fastfil, emit_global,
 	     (hmm_sc[(int) ((fraction) * (float) N) - 1]), (hmm_eval[(int) ((fraction) * (float) N) - 1]));
       fflush(stdout);
 

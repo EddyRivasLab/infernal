@@ -191,14 +191,14 @@ typedef struct cp9map_s {
   int    cm_nodes;  /* number of nodes in the CM this HMM maps to */
 } CP9Map_t;
 
-/* Structure EVDInfo_t
+/* Structure GumbelInfo_t
  */
-typedef struct evdinfo_s {
+typedef struct gumbelinfo_s {
   int    N;             /* number of samples stats calc'ed from        */
   int    L;             /* length of samples stats calc'ed from        */
   double mu;		/* location param for gumbel, calced w/K,lambda*/
   double lambda;	/* scale param gumbel                          */
-} EVDInfo_t;
+} GumbelInfo_t;
 
 /* Structure CP9FThresh_t: CP9 HMM filter thresholds, determined empirically
  * by sampling from the CM
@@ -209,7 +209,7 @@ typedef struct cp9filterthr_s {
   float cm_eval;       /* CM E-value threshold, we rejected worse than   */
   float l_eval;        /*  local CP9 scanning E-value threshold    */
   float g_eval;        /* glocal CP9 scanning E-value threshold    */
-  int   db_size;       /* db size used to calculate EVD mu for *_eval calculations */
+  int   db_size;       /* db size used to calculate Gum mu for *_eval calculations */
   int   was_fast;      /* TRUE if hacky fast method for calcing thresholds was used */
 } CP9FilterThr_t;
 
@@ -220,12 +220,12 @@ typedef struct cmstats_s {
   int *ps;                   /* start GC content [0..100] of each partition */
   int *pe;                   /* end   GC content [0..100] of each partition */
   int gc2p[GC_SEGMENTS];     /* map from GC content to partition number     */
-  EVDInfo_t ***evdAA;        /* [0..NSTATMODES-1][0..np-1] */
-  CP9FilterThr_t **fthrA;   /* [0..NFTHRMODES-1] */
+  GumbelInfo_t ***gumAA;     /* [0..NSTATMODES-1][0..np-1] */
+  CP9FilterThr_t **fthrA;    /* [0..NFTHRMODES-1] */
 } CMStats_t;
 
 /* Stat modes, 
- * 0..NSTATMODES-1 are first dimension of cmstats->evdAA 
+ * 0..NSTATMODES-1 are first dimension of cmstats->gumAA 
  * 0..NFTHRMODES-1 are only dimension cmstats->fthrA 
  */
 #define CM_LC 0  
@@ -234,8 +234,8 @@ typedef struct cmstats_s {
 #define CM_GI 3
 #define CP9_L 4
 #define CP9_G 5
-#define NEVDMODES 6
-#define NFTHRMODES 4
+#define NGUMBELMODES 6
+#define NFTHRMODES   4
 
 /* Structure: CM_t
  * Incept:    SRE, 9 Mar 2000 [San Carlos CA]
@@ -332,19 +332,18 @@ typedef struct cm_s {
 			 * the EL state emits only on self transition (EPN 11.15.05)*/
   int   iel_selfsc;     /* scaled int version of el_selfsc         */
 
-  CMStats_t *stats;     /* holds EVD stats and HMM filtering thresholds, will
-			 * eventually be filled ONLY by cmcalibrate. */
+  CMStats_t *stats;     /* holds Gumbel stats and HMM filtering thresholds */
 } CM_t;
 
 /* status flags, cm->flags */
 #define CM_HASBITS             (1<<0)  /* CM has valid log odds scores             */
 #define CM_LOCAL_BEGIN         (1<<1)  /* Begin distribution is active (local ali) */
 #define CM_LOCAL_END           (1<<2)  /* End distribution is active (local ali)   */
-#define CM_EVD_STATS           (1<<3)  /* EVD stats for local/glocal CYK/Ins set   */
+#define CM_GUMBEL_STATS        (1<<3)  /* Gumbel stats for local/glocal CYK/Ins set*/
 #define CM_FTHR_STATS          (1<<4)  /* CP9 HMM filter threshold stats are set   */
 #define CM_QDB                 (1<<5)  /* query-dependent bands, QDB valid         */
 #define CM_CP9                 (1<<6)  /* CP9 HMM is valid in cm->cp9              */
-#define CM_CP9STATS            (1<<7)  /* CP9 HMM has EVD stats                    */
+#define CM_CP9STATS            (1<<7)  /* CP9 HMM has Gumbel stats                 */
 #define CM_IS_SUB              (1<<8)  /* the CM is a sub CM                       */
 #define CM_ENFORCED            (1<<9)  /* CM is reparam'ized to enforce a subseq   */
 #define CM_IS_RSEARCH          (1<<10) /* the CM was parameterized a la RSEARCH    */

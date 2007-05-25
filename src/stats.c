@@ -49,13 +49,13 @@ AllocCMStats(int np)
   cmstats->np = np;
   cmstats->ps = MallocOrDie(sizeof(int) * cmstats->np);
   cmstats->pe = MallocOrDie(sizeof(int) * cmstats->np);
-  cmstats->evdAA = MallocOrDie(sizeof(struct evdinfo_s **) * NEVDMODES);
+  cmstats->gumAA = MallocOrDie(sizeof(struct gumbelinfo_s **) * NGUMBELMODES);
   cmstats->fthrA = MallocOrDie(sizeof(struct cp9filterthr_s *) * NFTHRMODES);
-  for(i = 0; i < NEVDMODES; i++)
+  for(i = 0; i < NGUMBELMODES; i++)
     {
-      cmstats->evdAA[i] = MallocOrDie(sizeof(struct evdinfo_s *));
+      cmstats->gumAA[i] = MallocOrDie(sizeof(struct gumbelinfo_s *));
       for(p = 0; p < cmstats->np; p++)
-	cmstats->evdAA[i][p] = MallocOrDie(sizeof(struct evdinfo_s));
+	cmstats->gumAA[i][p] = MallocOrDie(sizeof(struct gumbelinfo_s));
     }
   for(i = 0; i < NFTHRMODES; i++)
     cmstats->fthrA[i]  = MallocOrDie(sizeof(struct cp9filterthr_s));
@@ -69,13 +69,13 @@ void
 FreeCMStats(CMStats_t *cmstats)
 {
   int i, p;
-  for(i = 0; i < NEVDMODES; i++)
+  for(i = 0; i < NGUMBELMODES; i++)
     {
       for(p = 0; p < cmstats->np; p++)
-	free(cmstats->evdAA[i][p]);
-      free(cmstats->evdAA[i]);
+	free(cmstats->gumAA[i][p]);
+      free(cmstats->gumAA[i]);
     }
-  free(cmstats->evdAA);
+  free(cmstats->gumAA);
   for(i = 0; i < NFTHRMODES; i++)
     free(cmstats->fthrA[i]);
   free(cmstats->fthrA);
@@ -105,7 +105,7 @@ int SetCMCutoff(CM_t *cm, int cm_cutoff_type, float cm_sc_cutoff, float cm_e_cut
       else 
 	{
 	  cm->cutoff = cm_e_cutoff;
-	  if(!(cm->flags & CM_EVD_STATS) && (!(cm->search_opts & CM_SEARCH_HMMONLY)))
+	  if(!(cm->flags & CM_GUMBEL_STATS) && (!(cm->search_opts & CM_SEARCH_HMMONLY)))
 	    Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T.\n");
 	}
     }
@@ -129,7 +129,7 @@ int SetCP9Cutoff(CM_t *cm, int cp9_cutoff_type, float cp9_sc_cutoff, float cp9_e
       else 
 	{
 
-	  if(!(cm->flags & CM_EVD_STATS))
+	  if(!(cm->flags & CM_GUMBEL_STATS))
 	    Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try --hmmT.\n");
 	  if(cp9_e_cutoff < DEFAULT_MIN_CP9_E_CUTOFF) cp9_e_cutoff = DEFAULT_MIN_CP9_E_CUTOFF;
 	  if(cm->cutoff_type == E_CUTOFF && cp9_e_cutoff < cm_e_cutoff) cp9_e_cutoff = cm_e_cutoff;
@@ -168,9 +168,9 @@ int PrintSearchInfo(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N)
 	  fprintf(fp, "CM cutoff (E value):  %.2f\n", cm->cutoff);
 	  for(p = 0; p < cm->stats->np; p++)
 	    fprintf(fp, "   GC %2d-%3d bit sc:  %.2f mu: %.5f lambda: %.5f\n", cm->stats->ps[p], cm->stats->pe[p], 
-		    (cm->stats->evdAA[cm_mode][p]->mu - 
-		     (log(cm->cutoff) / cm->stats->evdAA[cm_mode][p]->lambda)), 
-		    cm->stats->evdAA[cm_mode][p]->mu, cm->stats->evdAA[cm_mode][p]->lambda);
+		    (cm->stats->gumAA[cm_mode][p]->mu - 
+		     (log(cm->cutoff) / cm->stats->gumAA[cm_mode][p]->lambda)), 
+		    cm->stats->gumAA[cm_mode][p]->mu, cm->stats->gumAA[cm_mode][p]->lambda);
 	}		       
       else if (cm->cutoff_type == SCORE_CUTOFF) 
 	fprintf(fp, "CM cutoff (bit sc):   %.2f\n", cm->cutoff);
@@ -191,7 +191,7 @@ int PrintSearchInfo(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N)
     {
       if(cm->cp9_cutoff_type == E_CUTOFF)
 	{
-	  if(!(cm->flags & CM_EVD_STATS))
+	  if(!(cm->flags & CM_GUMBEL_STATS))
 	    Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T and/or --hmmT.\n");
 
 	  /* Predict survival fraction from filter based on E-value, consensus length, W and N */
@@ -203,9 +203,9 @@ int PrintSearchInfo(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N)
 	  fprintf(fp, "   Predicted survival fraction: %.5f (1/%.3f)\n", surv_fract, (1./surv_fract));
 	  for(p = 0; p < cm->stats->np; p++)
 	    fprintf(fp, "   GC %2d-%3d bit sc:  %.2f mu: %.5f lambda: %.5f\n", cm->stats->ps[p], cm->stats->pe[p], 
-		    (cm->stats->evdAA[cp9_mode][p]->mu - 
-		     (log(cm->cp9_cutoff) / cm->stats->evdAA[cp9_mode][p]->lambda)), 
-		    cm->stats->evdAA[cp9_mode][p]->mu, cm->stats->evdAA[cp9_mode][p]->lambda);
+		    (cm->stats->gumAA[cp9_mode][p]->mu - 
+		     (log(cm->cp9_cutoff) / cm->stats->gumAA[cp9_mode][p]->lambda)), 
+		    cm->stats->gumAA[cp9_mode][p]->mu, cm->stats->gumAA[cp9_mode][p]->lambda);
 	}
       else if (cm->cp9_cutoff_type == SCORE_CUTOFF) 
 	fprintf(fp, "CP9 cutoff (bit sc):  %.2f\n", cm->cp9_cutoff);
@@ -228,18 +228,18 @@ int debug_print_cmstats(CMStats_t *cmstats, int has_fthr)
   for (p = 0; p < cmstats->np; p++)
     {
       printf("Partition %d: start: %d end: %d\n", p, cmstats->ps[p], cmstats->pe[p]);
-      printf("cm_lc EVD:\t");
-      debug_print_evdinfo(cmstats->evdAA[CM_LC][p]);
-      printf("cm_gc EVD:\t");
-      debug_print_evdinfo(cmstats->evdAA[CM_GC][p]);
-      printf("cm_li EVD:\t");
-      debug_print_evdinfo(cmstats->evdAA[CM_LI][p]);
-      printf("cm_gi EVD:\t");
-      debug_print_evdinfo(cmstats->evdAA[CM_GI][p]);
-      printf("cp9_l EVD:\t");
-      debug_print_evdinfo(cmstats->evdAA[CP9_L][p]);
-      printf("cp9_g EVD:\t");
-      debug_print_evdinfo(cmstats->evdAA[CP9_G][p]);
+      printf("cm_lc Gumbel:\t");
+      debug_print_gumbelinfo(cmstats->gumAA[CM_LC][p]);
+      printf("cm_gc Gumbel:\t");
+      debug_print_gumbelinfo(cmstats->gumAA[CM_GC][p]);
+      printf("cm_li Gumbel:\t");
+      debug_print_gumbelinfo(cmstats->gumAA[CM_LI][p]);
+      printf("cm_gi Gumbel:\t");
+      debug_print_gumbelinfo(cmstats->gumAA[CM_GI][p]);
+      printf("cp9_l Gumbel:\t");
+      debug_print_gumbelinfo(cmstats->gumAA[CP9_L][p]);
+      printf("cp9_g Gumbel:\t");
+      debug_print_gumbelinfo(cmstats->gumAA[CP9_G][p]);
       printf("\n\n");
     }
 
@@ -258,11 +258,11 @@ int debug_print_cmstats(CMStats_t *cmstats, int has_fthr)
   return eslOK;
 }
 
-/* Function: debug_print_evdinfo
+/* Function: debug_print_gumbelinfo
  */
-int debug_print_evdinfo(EVDInfo_t *evd)
+int debug_print_gumbelinfo(GumbelInfo_t *gum)
 {
-  printf("N: %d L: %d lambda: %.5f mu: %.5f\n", evd->N, evd->L, evd->lambda, evd->mu);
+  printf("N: %d L: %d lambda: %.5f mu: %.5f\n", gum->N, gum->L, gum->lambda, gum->mu);
   return eslOK;
 }
 
@@ -273,15 +273,15 @@ int debug_print_filterthrinfo(CMStats_t *cmstats, CP9FilterThr_t *fthr)
   double l_x;
   double g_x;
   double tmp_K, tmp_mu;
-  tmp_K = exp(cmstats->evdAA[CP9_G][0]->mu * cmstats->evdAA[CP9_G][0]->lambda) / 
-    cmstats->evdAA[CP9_G][0]->L;
-  tmp_mu = log(tmp_K * ((double) fthr->db_size)) / cmstats->evdAA[CP9_G][0]->lambda;
-  g_x = tmp_mu - (log(fthr->g_eval) / cmstats->evdAA[CP9_G][0]->lambda);
+  tmp_K = exp(cmstats->gumAA[CP9_G][0]->mu * cmstats->gumAA[CP9_G][0]->lambda) / 
+    cmstats->gumAA[CP9_G][0]->L;
+  tmp_mu = log(tmp_K * ((double) fthr->db_size)) / cmstats->gumAA[CP9_G][0]->lambda;
+  g_x = tmp_mu - (log(fthr->g_eval) / cmstats->gumAA[CP9_G][0]->lambda);
 
-  tmp_K = exp(cmstats->evdAA[CP9_L][0]->mu * cmstats->evdAA[CP9_L][0]->lambda) / 
-    cmstats->evdAA[CP9_L][0]->L;
-  tmp_mu = log(tmp_K * ((double) fthr->db_size)) / cmstats->evdAA[CP9_L][0]->lambda;
-  l_x = tmp_mu - (log(fthr->l_eval) / cmstats->evdAA[CP9_L][0]->lambda);
+  tmp_K = exp(cmstats->gumAA[CP9_L][0]->mu * cmstats->gumAA[CP9_L][0]->lambda) / 
+    cmstats->gumAA[CP9_L][0]->L;
+  tmp_mu = log(tmp_K * ((double) fthr->db_size)) / cmstats->gumAA[CP9_L][0]->lambda;
+  l_x = tmp_mu - (log(fthr->l_eval) / cmstats->gumAA[CP9_L][0]->lambda);
   printf("\tN: %d gsc: %.5f (%.5f bits) lsc: %.5f (%.5f bits)\n\tcmsc: %.5f fraction: %.3f db_size: %d was_fast: %d\n",
 	 fthr->N, fthr->g_eval, g_x, fthr->l_eval, l_x, fthr->cm_eval, fthr->fraction, fthr->db_size, fthr->was_fast);
   return eslOK;
@@ -519,28 +519,28 @@ double RJK_ExtremeValueE (float x, double mu, double lambda) {
 float MinCMScCutoff (CM_t *cm)
 {
   float E, low_sc, sc;
-  int evd_mode;
+  int gum_mode;
   int p; 
 
   if(cm->cutoff_type == SCORE_CUTOFF)
     return cm->cutoff;
   
   /* we better have stats */
-  if(!(cm->flags & CM_EVD_STATS))
+  if(!(cm->flags & CM_GUMBEL_STATS))
     Die("ERROR in MinCMScCutoff, cutoff type E value, but no stats.\n");
 
-  /* Determine appropriate EVD mode */
-  CM2EVD_mode(cm, &evd_mode, 
-	      NULL); /* don't care about CP9 EVD mode */
-  /*printf("in MinCMScCutoff, evd_mode: %d\n", evd_mode);*/
+  /* Determine appropriate Gumbel mode */
+  CM2Gumbel_mode(cm, &gum_mode, 
+	      NULL); /* don't care about CP9 Gumbel mode */
+  /*printf("in MinCMScCutoff, gum_mode: %d\n", gum_mode);*/
   E = cm->cutoff;
 
-  low_sc = cm->stats->evdAA[evd_mode][0]->mu - 
-    (log(E) / cm->stats->evdAA[evd_mode][0]->lambda);
+  low_sc = cm->stats->gumAA[gum_mode][0]->mu - 
+    (log(E) / cm->stats->gumAA[gum_mode][0]->lambda);
   for (p = 1; p < cm->stats->np; p++) 
     {
-      sc = cm->stats->evdAA[evd_mode][p]->mu - 
-	(log(E) / cm->stats->evdAA[evd_mode][p]->lambda);
+      sc = cm->stats->gumAA[gum_mode][p]->mu - 
+	(log(E) / cm->stats->gumAA[gum_mode][p]->lambda);
       if (sc < low_sc)
 	low_sc = sc;
   }
@@ -559,27 +559,27 @@ float MinCMScCutoff (CM_t *cm)
 float MinCP9ScCutoff (CM_t *cm)
 {
   float E, low_sc, sc;
-  int evd_mode;
+  int gum_mode;
   int p;
 
   if(cm->cp9_cutoff_type == SCORE_CUTOFF)
     return cm->cp9_cutoff;
   
   /* we better have stats */
-  if(!(cm->flags & CM_EVD_STATS))
+  if(!(cm->flags & CM_GUMBEL_STATS))
     Die("ERROR in MinCMScCutoff, cutoff type E value, but no stats.\n");
 
-  /* Determine appropriate EVD mode */
-  CM2EVD_mode(cm, NULL,  /* don't care about CM EVD mode */
-	      &evd_mode);
+  /* Determine appropriate Gumbel mode */
+  CM2Gumbel_mode(cm, NULL,  /* don't care about CM Gumbel mode */
+	      &gum_mode);
   E = cm->cp9_cutoff;
 
-  low_sc = cm->stats->evdAA[evd_mode][0]->mu - 
-    (log(E) / cm->stats->evdAA[evd_mode][0]->lambda);
+  low_sc = cm->stats->gumAA[gum_mode][0]->mu - 
+    (log(E) / cm->stats->gumAA[gum_mode][0]->lambda);
   for (p=1; p < cm->stats->np; p++) 
     {
-      sc = cm->stats->evdAA[evd_mode][p]->mu - 
-	(log(E) / cm->stats->evdAA[evd_mode][p]->lambda);
+      sc = cm->stats->gumAA[gum_mode][p]->mu - 
+	(log(E) / cm->stats->gumAA[gum_mode][p]->lambda);
       if (sc < low_sc)
 	low_sc = sc;
   }
@@ -588,433 +588,45 @@ float MinCP9ScCutoff (CM_t *cm)
 
 
 /*
- * Function: CM2EVD_mode
+ * Function: CM2Gumbel_mode
  * Date:     EPN, Mon May  7 17:43:28 2007
- * Purpose:  Return the EVD_mode for the CM and HMM
+ * Purpose:  Return the gum_mode for the CM and HMM
  *           given the flags and search options in the
  *           CM data structure.
  */
-int CM2EVD_mode(CM_t *cm, int *ret_cm_evd_mode, 
-		int *ret_cp9_evd_mode)
+int CM2Gumbel_mode(CM_t *cm, int *ret_cm_gum_mode, 
+		   int *ret_cp9_gum_mode)
 {
-  int cm_evd_mode;
-  int cp9_evd_mode;
+  int cm_gum_mode;
+  int cp9_gum_mode;
 
   /* check contract */
   if(!(cm->flags & CM_CP9) || cm->cp9 == NULL)
-    Die("ERROR no CP9 in CM2EVD_mode()\n");
+    Die("ERROR no CP9 in CM2Gumbel_mode()\n");
 
   if(cm->flags & CM_LOCAL_BEGIN)
     {
       if(cm->search_opts & CM_SEARCH_INSIDE)
-	cm_evd_mode = CM_LI;
+	cm_gum_mode = CM_LI;
       else
-	cm_evd_mode = CM_LC;
+	cm_gum_mode = CM_LC;
     }
   else
     {
       if(cm->search_opts & CM_SEARCH_INSIDE)
-	cm_evd_mode = CM_GI;
+	cm_gum_mode = CM_GI;
       else
-	cm_evd_mode = CM_GC;
+	cm_gum_mode = CM_GC;
     }
 
   if(cm->cp9->flags & CPLAN9_LOCAL_BEGIN)
-    cp9_evd_mode = CP9_L;
+    cp9_gum_mode = CP9_L;
   else
-    cp9_evd_mode = CP9_G;
+    cp9_gum_mode = CP9_G;
 
-  if(ret_cm_evd_mode  != NULL) *ret_cm_evd_mode  = cm_evd_mode;
-  if(ret_cp9_evd_mode != NULL) *ret_cp9_evd_mode = cp9_evd_mode;
+  if(ret_cm_gum_mode  != NULL) *ret_cm_gum_mode  = cm_gum_mode;
+  if(ret_cp9_gum_mode != NULL) *ret_cp9_gum_mode = cp9_gum_mode;
   return eslOK;
 }
 
 
-#if 0
-/*
- * Function: serial_make_histogram()
- * Date:     Mon Apr 1 2002 [St. Louis]
- * Purpose:  Makes a histogram using random sequences.  Returns mu and lambda.
- *           Makes random sequences of length dblen, finds best hit at 
- *           arbitrary j's every D nucleotides along database.
- *           Also returns K (how much to scale N in calculating E-value)
- *
- * Inputs:   gc_comp     %GC of random seq
- *           cm          the model
- *           num_samples number of samples to take
- *           sample_length  length of each sample
- *           use_easel - TRUE to use Easel's histogram and EVD fitters, false to
- *                       use RSEARCH versions.
- *
- */  
-void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
-			    CM_t *cm, int num_samples, int sample_length, 
-			    int doing_cp9_stats, int use_easel)
-{
-  int i;
-  char *randseq;
-  char *dsq;
-  /*struct histogram_s *h_old;*/
-  ESL_HISTOGRAM *h;
-  float *nt_p;                /* Distribution for random sequences */
-  float score;
-  int cur_partition;
-  float cur_gc_freq[GC_SEGMENTS];
-  float gc_comp;
-  double curr_lambda;         /* lambda for current partition */
-  double curr_mu;             /* mu for current partition */
-  double *xv;
-  int z;
-  int n;
-
-  /*printf("in serial_make_histogram, nparts: %d sample_len: %d cp9_stats: %d do_ins: %d do_enf: %d\n", num_partitions, sample_length, doing_cp9_stats, (cm->search_opts & CM_SEARCH_INSIDE), (cm->config_opts & CM_CONFIG_ENFORCE));*/
-
-  /* Allocate for random distribution */
-  nt_p = MallocOrDie(sizeof(float)*Alphabet_size); 
-
-  /* For each partition */
-  for (cur_partition = 0; cur_partition < num_partitions; cur_partition++) 
-    {
-      /*printf("cur_partition: %d\n", cur_partition);*/
-      
-      /* Initialize histogram; these numbers are guesses */
-      /*if(!use_easel) h_old = AllocHistogram (0, 100, 100);*/
-      h     = esl_histogram_CreateFull(0., 100., 1.);    
-      
-      /* Set up cur_gc_freq */
-      for (i=0; i<GC_SEGMENTS; i++) 
-	{
-	  if (partitions[i] == cur_partition) 
-	    {
-	      cur_gc_freq[i] = (float)gc_count[i];
-	      /*printf("cur_gc_freq(cur_partition:%d)[i:%d]: %f\n", cur_partition, i, cur_gc_freq[i]);*/
-	    } 
-	  else
-	    cur_gc_freq[i] = 0.;
-	}
-
-      FNorm(cur_gc_freq, GC_SEGMENTS);
-
-      /* Take num_samples samples */
-      for (i=0; i<num_samples; i++) 
-	{
-	  /* Get random GC content */
-	  gc_comp = 0.01*FChoose (cur_gc_freq, GC_SEGMENTS);
-	  /*printf("SH GC: %f part: %d randseq%d\n", gc_comp, cur_partition, i);*/
-
-	  nt_p[1] = nt_p[2] = 0.5*gc_comp;
-	  nt_p[0] = nt_p[3] = 0.5*(1. - gc_comp);
-	  
-	  /* Get random sequence */
-	  randseq = RandomSequence (Alphabet, nt_p, Alphabet_size, sample_length);
-
-	  /* Digitize the sequence, parse it, and add to histogram */
-	  dsq = DigitizeSequence (randseq, sample_length);
-	  
-	  /* Do the scan */
-	  score = 
-	    actually_search_target(cm, dsq, 1, sample_length, 
-				   0.,    /* cutoff is 0 bits (actually we'll find highest
-					   * negative score if it's < 0.0) */
-				   0.,    /* CP9 cutoff is 0 bits */
-				   NULL,  /* don't keep results */
-				   FALSE, /* don't filter with a CP9 HMM */
-				   (!doing_cp9_stats), /* TRUE if we're calc'ing CM stats */
-				   doing_cp9_stats,    /* TRUE if we're calc'ing CP9 stats */
-				   NULL);          /* filter fraction N/A */
-	  /*if(i % 100 == 0)
-	    printf("(%4d) SCORE: %f\n", i, score);*/
-	  /* Add best score to histogram */
-	  /*if(!use_easel) AddToHistogram (h_old, score); */
-	  esl_histogram_Add(h, score);
-	  /*printf("\n\nSH RANDOMSEQ BIT SC: %f\n", score);
-	    printf(">randseq\n");
-	    printf("%s\n", randseq);*/
-
-	}
-
-      /* Fit the histogram.  */
-      /*if(!use_easel)
-	ExtremeValueFitHistogram (h_old, TRUE, 9999);*/
-
-      /* Fit the scores to a Gumbel */
-      
-      /* If the esl_histogram example for 'complete data, high scores fit as
-       *  censored Gumbel' is the correct approach we do this: */
-      esl_histogram_GetTailByMass(h, 0.5, &xv, &n, &z); /* fit to right 50% */
-      
-      /* If the esl_histogram example for 'censored data, fit as censored Gumbel
-       *  is the correct approach, we would do this (BUT IT'S NOT!): */
-      /*esl_histogram_GetData(h, &xv, &n);*/
-      
-      esl_gumbel_FitCensored(xv, n, z, xv[0], &curr_mu, &curr_lambda);
-      
-    for (i=0; i<GC_SEGMENTS; i++) 
-      {
-	if (partitions[i] == cur_partition) 
-	{
-	  if(use_easel)
-	    {
-	      if(doing_cp9_stats)
-		{
-		  cm->cp9_lambda[i] = curr_lambda;
-		  cm->cp9_K[i] = exp(curr_mu * curr_lambda)/sample_length;
-		}
-	      else /* we're calc'ing stats for the CM */
-		{
-		  cm->lambda[i] = curr_lambda;
-		  cm->K[i] = exp(curr_mu * curr_lambda)/sample_length;
-		}
-	      /*printf("ESL i: %d lambda: %f K: %f\n", i, lambda[i], K[i]);*/
-	      /*printf("OLD i: %d lambda: %f K: %f\n\n", i, ((double) h_old->param[EVD_LAMBDA]),
-		((double) exp(h_old->param[EVD_MU]*h_old->param[EVD_LAMBDA])/sample_length));*/
-	    }
-	  else /* use RSEARCH's histogram code */
-	    {
-	      ;/*lambda[i] = (double) h_old->param[EVD_LAMBDA];
-		K[i] = (double) exp(h_old->param[EVD_MU]*h_old->param[EVD_LAMBDA])/sample_length;*/
-	      /*printf("OLD i: %d lambda: %f K: %f\n", i, lambda[i], K[i]);
-		printf("ESL i: %d lambda: %f K: %f\n\n", i, curr_lambda, exp(curr_mu * curr_lambda)/sample_length);*/
-	    }
-	}
-      }
-    /*if(!use_easel) FreeHistogram(h_old);*/
-    esl_histogram_Destroy(h);
-  }
-  free(nt_p);
-}
-
-#ifdef USE_MPI
-void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions, 
-			      CM_t *cm, int num_samples, int sample_length,
-			      int doing_cp9_stats,
-			      int mpi_my_rank, int mpi_num_procs, 
-			      int mpi_master_rank) 
-{
-  /*struct histogram_s **h;*/
-  ESL_HISTOGRAM **h;
-  int z;
-  int n;
-  double *xv;
-  double curr_lambda;         /* lambda for current partition */
-  double curr_mu;             /* mu for current partition */
-
-  db_seq_t **randseqs;          /* The random sequences */
-  int randseq_index;
-  int num_seqs_made;
-  float *nt_p;                  /* Distribution for random sequences */
-  int proc_index;
-  job_t **process_status;
-  job_t *job_queue = NULL;
-  char *dsq;
-  int seqlen;
-  char job_type;
-  float score;
-  int dummy;              /* To hold bestr, which isn't used in these jobs */
-  int i = 0;
-  int cur_partition;
-  float **cur_gc_freqs;
-  float gc_comp;
-  char *tmp_name;
-  float *enf_vec;             /* vector for FChoose to pick starting point for enf_seq */
-  int enf_start;           /* starting point for enf_seq */
-  int x;
-
-  /* Infernal specific variables (not in RSEARCH's stats.c) */
-  int    nhits;			/* number of hits in a seq */
-  int   *hitr;			/* initial states for hits */
-  int   *hiti;                  /* start positions of hits */
-  int   *hitj;                  /* end positions of hits */
-  float *hitsc;			/* scores of hits */
-
-  /*printf("in parallel_make_histogram, nparts: %d sample_len: %d cp9_stats: %d do_ins: %d do_enf: %d\n", num_partitions, sample_length, doing_cp9_stats, (cm->search_opts & CM_SEARCH_INSIDE), (cm->config_opts & CM_CONFIG_ENFORCE));*/
-
-  tmp_name = sre_strdup("random", -1);
-
-  if (mpi_my_rank == mpi_master_rank) 
-    {
-      /* Allocate random distribution */
-      nt_p = MallocOrDie(sizeof(float)*Alphabet_size); 
-      
-      /* Allocate histograms and set up cur_gc_freq */
-      h = MallocOrDie(sizeof (ESL_HISTOGRAM *)*num_partitions);
-      cur_gc_freqs = MallocOrDie(sizeof(float *)*num_partitions);
-      for (cur_partition = 0; cur_partition<num_partitions; cur_partition++) {
-	/* Initialize histogram; these numbers are guesses */
-	h[cur_partition] = esl_histogram_CreateFull(0., 100., 1.);    
-	/*h[cur_partition] = AllocHistogram (0, 100, 100);*/
-	
-	/* Set up cur_gc_freq */
-	cur_gc_freqs[cur_partition] = MallocOrDie(sizeof(float)*GC_SEGMENTS);
-	for (i=0; i<GC_SEGMENTS; i++) {
-	  if (partitions[i] == cur_partition) {
-	    cur_gc_freqs[cur_partition][i] = (float)gc_count[i];
-	    /*printf("cur_gc_freqs[cur_partition:%d][i:%d]: %f\n", cur_partition, i, cur_gc_freqs[cur_partition][i]);*/
-	  } else {
-	    cur_gc_freqs[cur_partition][i] = 0.;
-	  }
-	}
-	FNorm (cur_gc_freqs[cur_partition], GC_SEGMENTS);
-	/*printf("\n\n");*/
-      }
-      /* Set up arrays to hold pointers to active seqs and jobs on
-	 processes */
-      randseqs = MallocOrDie(sizeof(db_seq_t *) * mpi_num_procs);
-      process_status = MallocOrDie(sizeof(job_t *)*mpi_num_procs);
-      for (randseq_index=0; randseq_index<mpi_num_procs; randseq_index++)
-	randseqs[randseq_index] = NULL;
-      for (proc_index = 0; proc_index < mpi_num_procs; proc_index++)
-	process_status[proc_index] = NULL;
-      
-      num_seqs_made = 0;
-      cur_partition = 0;
-      
-      do {
-	/* Check for idle processes.  Send jobs */
-	for (proc_index=0; proc_index<mpi_num_procs; proc_index++) 
-	  {
-	    if (proc_index == mpi_master_rank) continue; /* Skip master process */
-	    if (process_status[proc_index] == NULL) 
-	      {         
-		/* I'm idle -- need a job */
-		if (job_queue == NULL) {
-		  for (randseq_index = 0; randseq_index <mpi_num_procs; 
-		       randseq_index++) {
-		    if (randseqs[randseq_index] == NULL) break;
-		  }
-		  if (randseq_index == mpi_num_procs)
-		    Die ("Tried to read more than %d seqs at once\n", mpi_num_procs);
-		  /* Get random sequence, digitize it */
-		  if (num_seqs_made == num_samples * num_partitions)
-		    /* We've got all we need.  Stop */
-		    break;
-		  
-		  cur_partition = num_seqs_made / num_samples;
-		  randseqs[randseq_index] = MallocOrDie(sizeof(db_seq_t));
-		  
-		  /* Get random GC content */
-		  gc_comp = 0.01*FChoose(cur_gc_freqs[cur_partition], GC_SEGMENTS);
-		  nt_p[1] = nt_p[2] = 0.5*gc_comp;
-		  nt_p[0] = nt_p[3] = 0.5*(1. - gc_comp);
-		  /*printf("PH GC: %f part: %d %s\n", gc_comp, cur_partition, tmp_name);*/
-		  randseqs[randseq_index]->sq[0] = 
-		    esl_sq_CreateFrom(tmp_name, 
-				      RandomSequence (Alphabet, nt_p, Alphabet_size, sample_length),
-				      NULL, NULL, NULL);
-		  
-		  randseqs[randseq_index]->sq[0]->dsq = 
-		    DigitizeSequence(randseqs[randseq_index]->sq[0]->seq, 
-				     randseqs[randseq_index]->sq[0]->n);
-
-		  randseqs[randseq_index]->best_score = IMPOSSIBLE;
-		  
-		  randseqs[randseq_index]->partition = cur_partition;
-		  
-		  job_queue = search_enqueue(randseqs[randseq_index], randseq_index, cm->W,
-					     FALSE, SEARCH_HIST_SCAN_WORK);
-		  num_seqs_made++;
-		  
-		}
-		if (job_queue != NULL)
-		  {
-		    fflush(stdout);
-		    search_send_next_job (&job_queue, process_status + proc_index, 
-					  proc_index);
-		  }
-	      }
-	  }
-	/* Wait for next reply */
-	if (search_procs_working(process_status, mpi_num_procs, mpi_master_rank)) {
-	  randseq_index = search_check_hist_results (randseqs, process_status, cm->W);
-	  /* If the sequence is done */
-	  if (randseqs[randseq_index]->chunks_sent == 0) {
-	    /* Get best score at cm->W and add */
-	    /*AddToHistogram (h[randseqs[randseq_index]->partition], 
-	      randseqs[randseq_index]->best_score);*/
-	    esl_histogram_Add(h[randseqs[randseq_index]->partition], randseqs[randseq_index]->best_score);
-
-	    /*printf("\n\nPH RANDOMSEQ BIT SC: %f\n", randseqs[randseq_index]->best_score);
-	      printf(">randseq\n");
-	      printf("%s\n", randseqs[randseq_index]->sq[0]->seq);*/
-	    esl_sq_Destroy(randseqs[randseq_index]->sq[0]);
-	    free(randseqs[randseq_index]);
-	    randseqs[randseq_index] = NULL;
-	  }
-	}
-      } while (num_seqs_made < num_samples*num_partitions || job_queue != NULL ||
-	       search_procs_working(process_status, mpi_num_procs, mpi_master_rank));
-      
-      /* Terminate the processes */
-      for (proc_index=0; proc_index<mpi_num_procs; proc_index++) {
-	if (proc_index != mpi_master_rank) {
-	  search_send_terminate (proc_index);
-	}
-      }
-      
-      /* Fit the histogram.  */
-      for (cur_partition=0; cur_partition<num_partitions; cur_partition++) {
-	/*ExtremeValueFitHistogram (h[cur_partition], TRUE, 9999);*/
-	
-	esl_histogram_GetTailByMass(h[cur_partition], 0.5, &xv, &n, &z); /* fit to right 50% */
-	esl_gumbel_FitCensored(xv, n, z, xv[0], &curr_mu, &curr_lambda);
-	
-	for (i=0; i<GC_SEGMENTS; i++) 
-	  {
-	    if (partitions[i] == cur_partition) 
-	      {
-		if(doing_cp9_stats) 
-		  {
-		    cm->cp9_lambda[i] = curr_lambda;
-		    cm->cp9_K[i] = exp(curr_mu * curr_lambda)/sample_length;
-		    /*printf("P ESL i: %d lambda: %f K: %f\n", i, lambda[i], K[i]);*/
-		  }
-		else /* we're calcing stats for the CM */
-		  {
-		    cm->lambda[i] = curr_lambda;
-		    cm->K[i] = exp(curr_mu * curr_lambda)/sample_length;
-		    /*printf("P ESL i: %d lambda: %f K: %f\n", i, lambda[i], K[i]);*/
-		  }
-	      }
-	  }
-      }
-      free(randseqs);
-      free(process_status);
-      free(nt_p);
-      for (i=0; i<cur_partition; i++) {
-	esl_histogram_Destroy(h[i]);
-	free(cur_gc_freqs[i]);
-      }
-      free(cur_gc_freqs);
-      free(h);
-    }
-  else 
-    {
-      dsq = NULL;
-      do 
-	{
-	  job_type = search_receive_job(&seqlen, &dsq, &dummy, mpi_master_rank);
-	  if (job_type == SEARCH_HIST_SCAN_WORK) 
-	    {
-	      score = 
-		actually_search_target(cm, dsq, 1, sample_length, 
-				       0.,    /* CM cutoff is 0 bits (actually we'll find highest
-					       * negative score if it's < 0.0) */
-				       0.,    /* CP9 cutoff is 0 bits */
-				       NULL,  /* don't keep results */
-				       FALSE, /* don't filter with a CP9 HMM */
-				       (!doing_cp9_stats), /* TRUE if we're calc'ing CM stats */
-				       doing_cp9_stats,    /* TRUE if we're calc'ing CP9 stats */
-				       NULL);          /* filter fraction N/A */
-	      /*printf("score: %f\n", score);*/
-	      search_send_hist_scan_results (score, mpi_master_rank);
-	    }
-	  if (dsq != NULL)
-	    free(dsq);
-	  dsq = NULL;
-	} while (job_type != TERMINATE_WORK);
-    }
-  MPI_Barrier(MPI_COMM_WORLD);
-}
-
-#endif
-#endif

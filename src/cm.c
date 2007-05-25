@@ -23,7 +23,8 @@
 #include "easel.h"
 #include "esl_vectorops.h"
 #include "stats.h"
-
+#include "config.h"
+#include "easel.h"
 
 /* Function: CreateCM(); CreateCMShell(); CreateCMBody()
  * Date:     SRE, Sat Jul 29 09:02:16 2000 [St. Louis]
@@ -1682,9 +1683,48 @@ DuplicateCM(CM_t *cm)
   new->cp9  = NULL;      /* WE DON'T COPY THE CP9   CURRENTLY */
   new->stats= NULL;  /* WE DON'T COPY THE STATS CURRENTLY */
   new->flags &= ~CM_CP9;
-  new->flags &= ~CM_EVD_STATS;
+  new->flags &= ~CM_GUMBEL_STATS;
   new->flags &= ~CM_FTHR_STATS;
 
   return new;
+}
+
+/* Function:  cm_banner()
+ * Synopsis:  print standard INFERNAL application output header
+ *            Based on p7_banner from HMMER3 dev code.
+ * Incept:    EPN, Fri May 25 15:05:42 2007
+ *
+ * Purpose:   Print the standard INFERNAL command line application banner
+ *            to <fp>, constructing it from <progname> (the name of the
+ *            program) and a short one-line description <banner>.
+ *              
+ *            <progname> would typically be an application's
+ *            <argv[0]>, rather than a fixed string. This allows the
+ *            program to be renamed, or called under different names
+ *            via symlinks. Any path in the <progname> is discarded;
+ *            for instance, if <progname> is "/usr/local/bin/cmcalibrate",
+ *            "cmcalibrate" is used as the program name.
+ *            
+ * Note:    
+ *    Needs to pick up preprocessor #define's from config.h,
+ *    as set by ./configure.
+ *
+ * Returns:   (void)
+ */
+void
+cm_banner(FILE *fp, char *progname, char *banner)
+{
+  char *appname = NULL;
+
+  if (esl_FileTail(progname, FALSE, &appname) != eslOK) appname = progname;
+
+  fprintf(fp, "# %s :: %s\n", appname, banner);
+  fprintf(fp, "# INFERNAL %s (%s)\n", PACKAGE_VERSION, PACKAGE_DATE);
+  fprintf(fp, "# %s\n", PACKAGE_COPYRIGHT);
+  fprintf(fp, "# %s\n", PACKAGE_LICENSE);
+  fprintf(fp, "# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n");
+
+  if (appname != NULL) free(appname);
+  return;
 }
 

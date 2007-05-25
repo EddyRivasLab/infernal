@@ -612,7 +612,7 @@ main(int argc, char **argv)
 
       SetCMCutoff(cm, cm_cutoff_type, cm_sc_cutoff, cm_e_cutoff);
       SetCP9Cutoff(cm, SCORE_CUTOFF, 0., 0., cm->cutoff);
-      CM2EVD_mode(cm, &cm_mode, &cp9_mode); 
+      CM2Gumbel_mode(cm, &cm_mode, &cp9_mode); 
 
       if(cm->cutoff_type == E_CUTOFF)
 	{
@@ -620,19 +620,19 @@ main(int argc, char **argv)
 	  if(cm->stats->np > 1)
 	    Die("ERROR CM EVD stats for > 1 partition, not yet implemented.\n");
 	  /* First update mu based on --cmN argument */
-	  tmp_K = exp(cm->stats->evdAA[cm_mode][0]->mu * cm->stats->evdAA[cm_mode][0]->lambda) / 
-	    cm->stats->evdAA[cm_mode][0]->L;
-	  cm->stats->evdAA[cm_mode][0]->mu = log(tmp_K * ((double) cmN)) /
-	    cm->stats->evdAA[cm_mode][0]->lambda;
-	  cm->stats->evdAA[cm_mode][0]->L = cmN; /* update L, the seq size stats correspond to */
-	  cm_sc_cutoff = (cm->stats->evdAA[cm_mode][0]->mu - 
-			  (log(cm->cutoff) / cm->stats->evdAA[cm_mode][0]->lambda));
+	  tmp_K = exp(cm->stats->gumAA[cm_mode][0]->mu * cm->stats->gumAA[cm_mode][0]->lambda) / 
+	    cm->stats->gumAA[cm_mode][0]->L;
+	  cm->stats->gumAA[cm_mode][0]->mu = log(tmp_K * ((double) cmN)) /
+	    cm->stats->gumAA[cm_mode][0]->lambda;
+	  cm->stats->gumAA[cm_mode][0]->L = cmN; /* update L, the seq size stats correspond to */
+	  cm_sc_cutoff = (cm->stats->gumAA[cm_mode][0]->mu - 
+			  (log(cm->cutoff) / cm->stats->gumAA[cm_mode][0]->lambda));
 
-	  tmp_K = exp(cm->stats->evdAA[cp9_mode][0]->mu * cm->stats->evdAA[cp9_mode][0]->lambda) / 
-	    cm->stats->evdAA[cp9_mode][0]->L;
-	  cm->stats->evdAA[cp9_mode][0]->mu = log(tmp_K * ((double) cmN)) /
-	    cm->stats->evdAA[cp9_mode][0]->lambda;
-	  cm->stats->evdAA[cp9_mode][0]->L = cmN; /* update L, the seq size stats correspond to */
+	  tmp_K = exp(cm->stats->gumAA[cp9_mode][0]->mu * cm->stats->gumAA[cp9_mode][0]->lambda) / 
+	    cm->stats->gumAA[cp9_mode][0]->L;
+	  cm->stats->gumAA[cp9_mode][0]->mu = log(tmp_K * ((double) cmN)) /
+	    cm->stats->gumAA[cp9_mode][0]->lambda;
+	  cm->stats->gumAA[cp9_mode][0]->L = cmN; /* update L, the seq size stats correspond to */
 
 	  PrintSearchInfo(stdout, cm, cm_mode, cp9_mode, cmN);
 
@@ -745,8 +745,8 @@ main(int argc, char **argv)
       printf("\n\nnattempts: %d\n", nattempts);
 
       float eval = RJK_ExtremeValueE(hmm_cutoff, 
-				     cm->stats->evdAA[cp9_mode][0]->mu,
-				     cm->stats->evdAA[cp9_mode][0]->lambda);
+				     cm->stats->gumAA[cp9_mode][0]->mu,
+				     cm->stats->gumAA[cp9_mode][0]->lambda);
       printf("05.21.07 %d %d %f %f\n", cm_mode, cp9_mode, hmm_cutoff, eval);
       free(hmm_sc);
     }

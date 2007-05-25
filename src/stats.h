@@ -16,15 +16,15 @@ extern int SetCP9Cutoff(CM_t *cm, int cp9_cutoff_type, float cp9_sc_cutoff, floa
 			float cm_e_cutoff);
 extern int PrintSearchInfo(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N);
 extern int debug_print_cmstats(CMStats_t *cmstats, int has_fthr);
-extern int debug_print_evdinfo(EVDInfo_t *evd);
+extern int debug_print_gumbelinfo(GumbelInfo_t *evd);
 extern int debug_print_filterthrinfo(CMStats_t *cmstats, CP9FilterThr_t *fthr);
 
 extern int  get_gc_comp(char *seq, int start, int stop);
 
-extern void serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
-				   CM_t *cm, int num_samples, 
-				   int sample_length, int doing_cp9_stats,
-				   int use_easel);
+extern void OLD_serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
+				       CM_t *cm, int num_samples, 
+				       int sample_length, int doing_cp9_stats,
+				       int use_easel);
 
 #ifdef USE_MPI
 void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions, 
@@ -44,6 +44,6 @@ extern char resolve_degenerate (char c);
 
 extern float MinCMScCutoff (CM_t *cm);
 extern float MinCP9ScCutoff (CM_t *cm);
-extern int   CM2EVD_mode(CM_t *cm, int *ret_cm_evd_mode, int *ret_cp9_evd_mode);
+extern int   CM2Gumbel_mode(CM_t *cm, int *ret_cm_gum_mode, int *ret_cp9_gum_mode);
 
 #endif

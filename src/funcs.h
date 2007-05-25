@@ -92,6 +92,7 @@ extern float rsearch_calculate_gap_penalty (char from_state, char to_state,
 					    float input_alphap, float input_betap);
 extern int   ExponentiateCM(CM_t *cm, double z);
 extern CM_t *DuplicateCM(CM_t *cm);
+extern void  cm_banner(FILE *fp, char *progname, char *banner);
 
 /*EPN 10.19.05*/
 extern void  CMDefaultNullModel(float *null);
@@ -148,7 +149,7 @@ extern void  ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_intern
 extern int   EnforceSubsequence(CM_t *cm);
 extern float EnforceScore(CM_t *cm);
 extern int   EnforceFindEnfStart(CM_t *cm, int enf_cc_start);
-extern int   ConfigForEVDMode(CM_t *cm, int statmode);
+extern int   ConfigForGumbelMode(CM_t *cm, int statmode);
 extern int   ConfigQDB(CM_t *cm);
 
 /* from modelmaker.c
@@ -342,16 +343,16 @@ extern float RescanFilterSurvivors(CM_t *cm, char *dsq, scan_results_t *hmm_resu
 				   int *ret_flen);
 extern void CP9ScanPosterior(char *dsq, int i0, int j0, CP9_t *hmm, CP9_dpmatrix_t *fmx, 
 			     CP9_dpmatrix_t *bmx, CP9_dpmatrix_t *mx);
-extern float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
-				    float fraction, int N, 
-				    int use_cm_cutoff, float cm_ecutoff, int db_size,
-				    int emit_global, int cm_evd_mode, int hmm_evd_mode, 
-				    int do_fastfil);
+extern float serial_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
+					   float fraction, int N, 
+					   int use_cm_cutoff, float cm_ecutoff, int db_size,
+					   int emit_global, int cm_gum_mode, int hmm_gum_mode, 
+					   int do_fastfil);
 #ifdef USE_MPI 
 extern float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
 					float fraction, int N, 
 					int use_cm_cutoff, float cm_ecutoff, int db_size,
-					int emit_global, int cm_evd_mode, int hmm_evd_mode, int do_fastfil,
+					int emit_global, int cm_gum_mode, int hmm_gum_mode, int do_fastfil,
 					int my_rank, int nproc);
 #endif
 

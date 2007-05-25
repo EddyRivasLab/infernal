@@ -442,7 +442,7 @@ db_seq_t *read_next_seq (ESL_SQFILE *dbfp, int do_revcomp)
  *           results    - scan_results_t to add to; if NULL, don't add to it
  *           do_filter  - TRUE if we should filter, but only if cm->search_opts tells us to 
  *           doing_cm_stats - TRUE if the reason we're scanning this seq is to build
- *                            a histogram to calculate EVDs for the CM, in this
+ *                            a histogram to calculate Gumbels for the CM, in this
  *                            case we don't filter regardless of what cm->search_opts says.
  *           doing_cp9_stats- TRUE if we're calc'ing stats for the CP9, in this 
  *                            case we always run CP9Forward()
@@ -471,13 +471,13 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
 
   /* Check if we need the CP9 */
   use_cp9 = FALSE;
-  /* use the CP9 b/c we're calcing CP9 EVD stats */
+  /* use the CP9 b/c we're calcing CP9 Gumbel stats */
   if(doing_cp9_stats) use_cp9 = TRUE;                     
   /* use the CP9 b/c we're searching only with the CP9 HMM */
   if(cm->search_opts & CM_SEARCH_HMMONLY) use_cp9 = TRUE; 
   /* The third way we use the CP9 is if we're filtering, AND we haven't 
    * called this function recursively from AFTER filtering (the do_filter flag)
-   * AND we're not determinig CM EVD stats. */
+   * AND we're not determinig CM Gumbel stats. */
   if((cm->search_opts & CM_SEARCH_HMMFILTER) &&
      (do_filter && !doing_cm_stats)) 
     use_cp9 = TRUE;
@@ -556,9 +556,9 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 			 * in which case we subtract cm->enf_scdiff first. */
   CMEmitMap_t *emap;    /* consensus emit map for the CM */
   int do_stats;        
-  EVDInfo_t **evd;      /* pointer to evd to use */
-  int cm_evd_mode;      /* EVD mode if we're using CM hits */
-  int cp9_evd_mode;     /* EVD mode if we're using HMM hits */
+  GumbelInfo_t **gum;      /* pointer to gum to use */
+  int cm_gum_mode;      /* Gumbel mode if we're using CM hits */
+  int cp9_gum_mode;     /* Gumbel mode if we're using HMM hits */
   int p;                /* relevant partition */
 
   if(used_HMM)
@@ -571,15 +571,15 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
     if(cm->cutoff_type == E_CUTOFF) do_stats = TRUE;
     else do_stats = FALSE;
   }
-  if(do_stats  && !(cm->flags & CM_EVD_STATS))
-    Die("ERROR in print_results, stats wanted but CM has no EVD stats\n");
+  if(do_stats  && !(cm->flags & CM_GUMBEL_STATS))
+    Die("ERROR in print_results, stats wanted but CM has no Gumbel stats\n");
 
   if(do_stats)
     {
-      /* Determine EVD mode to use */
-      CM2EVD_mode(cm, &cm_evd_mode, &cp9_evd_mode);
-      if(used_HMM) evd = cm->stats->evdAA[cp9_evd_mode];
-      else evd = cm->stats->evdAA[cm_evd_mode];
+      /* Determine Gumbel mode to use */
+      CM2Gumbel_mode(cm, &cm_gum_mode, &cp9_gum_mode);
+      if(used_HMM) gum = cm->stats->gumAA[cp9_gum_mode];
+      else gum = cm->stats->gumAA[cm_gum_mode];
     }
   emap = CreateEmitMap(cm);
   name = dbseq->sq[0]->name;
@@ -619,10 +619,10 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 		  printf(" new sc: %.3f (diff: %.3f\n\n", score_for_Eval, cm->enf_scdiff);
 		}
 	      printf (" Score = %.2f, E = %.4g, P = %.4g, GC = %3d\n", results->data[i].score,
-		      RJK_ExtremeValueE(score_for_Eval, evd[p]->mu, 
-					evd[p]->lambda),
-		      esl_gumbel_surv((double) score_for_Eval, evd[p]->mu, 
-				      evd[p]->lambda), gc_comp);
+		      RJK_ExtremeValueE(score_for_Eval, gum[p]->mu, 
+					gum[p]->lambda),
+		      esl_gumbel_surv((double) score_for_Eval, gum[p]->mu, 
+				      gum[p]->lambda), gc_comp);
 	      /*printf("  Mu[gc=%d]: %f, Lambda[gc=%d]: %f\n", gc_comp, mu[gc_comp], gc_comp,
 		lambda[gc_comp]);*/
 	      /*ExtremeValueP(results->data[i].score, mu[gc_comp], 
@@ -673,23 +673,23 @@ void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, char *seq,
 			 * of. This will be the bit score stored in
 			 * dbseq unless (cm->flags & CM_ENFORCED)
 			 * in which case we subtract cm->enf_scdiff first. */
-  int cm_evd_mode;      /* EVD mode if we're using CM hits */
-  int cp9_evd_mode;     /* EVD mode if we're using HMM hits */
+  int cm_gum_mode;      /* Gumbel mode if we're using CM hits */
+  int cp9_gum_mode;     /* Gumbel mode if we're using HMM hits */
   int p;                /* relevant partition */
-  EVDInfo_t **evd;      /* pointer to evd to use */
+  GumbelInfo_t **gum;      /* pointer to gum to use */
   float cutoff;         /* the max E-value we want to keep */
 
   /* Check contract */
-  if(!(cm->flags & CM_EVD_STATS))
-    Die("ERROR in remove_hits_over_e_cutoff, but CM has no EVD stats\n");
+  if(!(cm->flags & CM_GUMBEL_STATS))
+    Die("ERROR in remove_hits_over_e_cutoff, but CM has no GUM stats\n");
 
   if (results == NULL)
     return;
 
-  /* Determine EVD mode to use */
-  CM2EVD_mode(cm, &cm_evd_mode, &cp9_evd_mode);
-  if(used_HMM) evd = cm->stats->evdAA[cp9_evd_mode];
-  else evd = cm->stats->evdAA[cm_evd_mode];
+  /* Determine Gumbel mode to use */
+  CM2Gumbel_mode(cm, &cm_gum_mode, &cp9_gum_mode);
+  if(used_HMM) gum = cm->stats->gumAA[cp9_gum_mode];
+  else gum = cm->stats->gumAA[cm_gum_mode];
 
   if(used_HMM) cutoff = cm->cp9_cutoff;
   else         cutoff = cm->cutoff;
@@ -707,7 +707,7 @@ void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, char *seq,
 	}
       /*printf("score_for_Eval: %f \n", score_for_Eval);*/
       if (RJK_ExtremeValueE(score_for_Eval,
-			    evd[p]->mu, evd[p]->lambda) > cutoff) 
+			    gum[p]->mu, gum[p]->lambda) > cutoff) 
 	{
 	  results->data[i].start = -1;
 	}
