@@ -151,7 +151,7 @@ main(int argc, char **argv)
   /* Initialize configuration shared across all kinds of masters
    * and workers in this .c file.
    */
-  cfg.cmfile    = esl_opt_GetArg(go, eslARG_INFILE, NULL);
+  cfg.cmfile    = esl_opt_GetArg(go, 1);
   if (cfg.cmfile == NULL) esl_fatal("Failed to read <cmfile> argument from command line.");
   cfg.cmfp     = NULL;
   cfg.gc_freq  = NULL; 
