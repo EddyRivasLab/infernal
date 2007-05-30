@@ -348,6 +348,12 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                   }
                }
 
+               if ( d == 0 )
+               {
+                  L_alpha[v][j][d] = IMPOSSIBLE;
+                  R_alpha[v][j][d] = IMPOSSIBLE;
+               }
+
                if (   alpha[v][j][d] < IMPOSSIBLE ) {   alpha[v][j][d] = IMPOSSIBLE; }
                if ( L_alpha[v][j][d] < IMPOSSIBLE ) { L_alpha[v][j][d] = IMPOSSIBLE; }
                if ( R_alpha[v][j][d] < IMPOSSIBLE ) { R_alpha[v][j][d] = IMPOSSIBLE; }
@@ -410,6 +416,11 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                   if ( ret_Rmode_shadow != NULL ) { Rmode_shadow[v][j][d] = 3; }
                }
 
+               if (d == 0) {
+                  L_alpha[v][j][d] = IMPOSSIBLE;
+                  R_alpha[v][j][d] = IMPOSSIBLE;
+               }
+
                if (d >= 2) {
                  T_alpha[v][j][d] = R_alpha[y][j-1][d-1] + L_alpha[z][j][1];
                  if ( ret_T_shadow != NULL ) { ((int **)T_shadow[v])[j][d] = 1; }
@@ -430,6 +441,8 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                if ( L_alpha[v][j][d] < IMPOSSIBLE ) { L_alpha[v][j][d] = IMPOSSIBLE; }
                if ( R_alpha[v][j][d] < IMPOSSIBLE ) { R_alpha[v][j][d] = IMPOSSIBLE; }
 
+/* This isn't right!  shouldn't allow exit from marginal B if one of the children is NULL, sinee that is covered by the 
+   root of the other child, and we haven't added anything above the bifurcation */
                if (   alpha[v][j][d] + bsc > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc +   alpha[v][j][d]; }
                if ( L_alpha[v][j][d] + bsc > r_sc ) { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc + L_alpha[v][j][d]; }
                if ( R_alpha[v][j][d] + bsc > r_sc ) { r_mode = 1; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc + R_alpha[v][j][d]; }
@@ -451,6 +464,8 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
             else { Die("Still can't deal with marginalizing degenerate residues!"); }
             if ( dsq[j] < Alphabet_size ) { R_alpha[v][j][1] = RightMarginalScore(cm->esc[v],dsq[j]); }
             else { Die("Still can't deal with marginalizing degenerate residues!"); }
+            if ( ret_L_shadow != NULL ) { ((char **)L_shadow[v])[j][d] = USED_EL; }
+            if ( ret_R_shadow != NULL ) { ((char **)R_shadow[v])[j][d] = USED_EL; }
             for ( d=2; d<=jp; d++)
             {
                alpha[v][j][d] = cm->endsc[v] + (cm->el_selfsc * (d-2));
@@ -512,7 +527,7 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                if ( R_alpha[v][j][d] < IMPOSSIBLE ) { R_alpha[v][j][d] = IMPOSSIBLE; }
             }
 
-            for ( d = 0; d <= jp; d++ )
+            for ( d = 1; d <= jp; d++ )
             {
                if (   alpha[v][j][d] + bsc > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc +   alpha[v][j][d]; }
                if ( L_alpha[v][j][d] + bsc > r_sc ) { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc + L_alpha[v][j][d]; }
@@ -549,6 +564,7 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                      if ( ret_shadow != NULL ) { ((char **)shadow[v])[j][d] = yoffset; }
                   }
 
+                  if  ( d > 1 )
                   if  ( (sc = L_alpha[y+yoffset][j][d-1] + cm->tsc[v][yoffset]) > L_alpha[v][j][d] )
                   {
                      L_alpha[v][j][d] = sc;
@@ -588,7 +604,7 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                if ( R_alpha[v][j][d] < IMPOSSIBLE ) { R_alpha[v][j][d] = IMPOSSIBLE; }
             }
 
-            for ( d = 0; d <= jp; d++ )
+            for ( d = 1; d <= jp; d++ )
             {
                if (   alpha[v][j][d] + bsc > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc +   alpha[v][j][d]; }
                if ( L_alpha[v][j][d] + bsc > r_sc ) { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc + L_alpha[v][j][d]; }
@@ -638,6 +654,7 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                      if ( ret_Lmode_shadow != NULL ) { Lmode_shadow[v][j][d] = 3; }
                   }
 
+                  if  ( d > 1 )
                   if  ( (sc = R_alpha[y+yoffset][j-1][d-1] + cm->tsc[v][yoffset]) > R_alpha[v][j][d] )
                   {
                      R_alpha[v][j][d] = sc;
@@ -662,7 +679,7 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                if ( R_alpha[v][j][d] < IMPOSSIBLE ) { R_alpha[v][j][d] = IMPOSSIBLE; }
             }
 
-            for ( d = 0; d <= jp; d++ )
+            for ( d = 1; d <= jp; d++ )
             {
                if (   alpha[v][j][d] + bsc > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc +   alpha[v][j][d]; }
                if ( R_alpha[v][j][d] + bsc > r_sc ) { r_mode = 1; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc + R_alpha[v][j][d]; }
