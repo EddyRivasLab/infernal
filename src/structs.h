@@ -19,7 +19,7 @@
 #include "cplan9.h"
 
 /* various default parameters for CMs and CP9 HMMs */ 
-#define DEFAULT_CM_CUTOFF 50.0
+#define DEFAULT_CM_CUTOFF 10.0
 #define DEFAULT_CM_CUTOFF_TYPE E_CUTOFF
 #define DEFAULT_CP9_CUTOFF 0.0
 #define DEFAULT_CP9_CUTOFF_TYPE SCORE_CUTOFF
@@ -205,10 +205,11 @@ typedef struct gumbelinfo_s {
  */
 typedef struct cp9filterthr_s {
   int   N;             /* number of CM hits used to get threshold ((N*fraction) passed)*/
-  float fraction;      /* fraction of empirical CM hits survive filter */
   float cm_eval;       /* CM E-value threshold, we rejected worse than   */
   float l_eval;        /*  local CP9 scanning E-value threshold    */
   float g_eval;        /* glocal CP9 scanning E-value threshold    */
+  float l_F;           /* fraction of empirical CM hits survive filter for l_eval cutoff */
+  float g_F;           /* fraction of empirical CM hits survive filter for g_eval cutoff */
   int   db_size;       /* db size used to calculate Gum mu for *_eval calculations */
   int   was_fast;      /* TRUE if hacky fast method for calcing thresholds was used */
 } CP9FilterThr_t;

@@ -343,6 +343,13 @@ extern float RescanFilterSurvivors(CM_t *cm, char *dsq, scan_results_t *hmm_resu
 				   int *ret_flen);
 extern void CP9ScanPosterior(char *dsq, int i0, int j0, CP9_t *hmm, CP9_dpmatrix_t *fmx, 
 			     CP9_dpmatrix_t *bmx, CP9_dpmatrix_t *mx);
+extern float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
+				    float Fmin, float min_surv, int N, int use_cm_cutoff, 
+				    float cm_ecutoff, int db_size, 
+				    int emit_global, int fthr_mode, int hmm_gum_mode, 
+				    int do_fastfil, int my_rank, int nproc, int do_mpi, 
+				    float *ret_F);
+     
 extern float serial_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
 					   float fraction, int N, 
 					   int use_cm_cutoff, float cm_ecutoff, int db_size,

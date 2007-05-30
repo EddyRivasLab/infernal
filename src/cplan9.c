@@ -647,6 +647,8 @@ CPlan9SWConfig(struct cplan9_s *hmm, float pentry, float pexit)
   hmm->flags       &= ~CPLAN9_HASBITS; /* reconfig invalidates log-odds scores */
   hmm->flags       |= CPLAN9_LOCAL_BEGIN; /* local begins now on */
   hmm->flags       |= CPLAN9_LOCAL_END;   /* local ends now on */
+
+  CP9Logoddsify(hmm);
 }
 
 /* Function: CPlan9GlobalConfig()
@@ -674,7 +676,9 @@ CPlan9GlobalConfig(struct cplan9_s *hmm)
    * Exactly 3 ways to start, B->M_1 (hmm->begin[1]), B->I_0 (hmm->t[0][CTMI]),
    *                      and B->D_1 (hmm->t[0][CTMD])
    */
-  hmm->begin[1] = 1. - (hmm->t[0][CTMI] + hmm->t[0][CTMD]);
+  hmm->begin[1] = 1. - (hmm->t[0][CTMI] + hmm->t[0][CTMD]); /* this is okay, hmm->t[0] never
+							     * get changed, even during local
+							     * configuration */
   FSet(hmm->begin+2, hmm->M-1, 0.);
   
   hmm->end[hmm->M] = 1. - hmm->t[hmm->M][CTMI];
@@ -684,6 +688,8 @@ CPlan9GlobalConfig(struct cplan9_s *hmm)
   hmm->flags       &= ~CPLAN9_HASBITS; /* reconfig invalidates log-odds scores */
   hmm->flags       &= ~CPLAN9_LOCAL_BEGIN; /* local begins now off */
   hmm->flags       &= ~CPLAN9_LOCAL_END;   /* local ends now off */
+
+  CP9Logoddsify(hmm);
 }
 
 /* Function: CPlan9SWConfigEnforce()

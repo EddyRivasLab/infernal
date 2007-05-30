@@ -132,7 +132,7 @@ int SetCP9Cutoff(CM_t *cm, int cp9_cutoff_type, float cp9_sc_cutoff, float cp9_e
 	  if(!(cm->flags & CM_GUMBEL_STATS))
 	    Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try --hmmT.\n");
 	  if(cp9_e_cutoff < DEFAULT_MIN_CP9_E_CUTOFF) cp9_e_cutoff = DEFAULT_MIN_CP9_E_CUTOFF;
-	  if(cm->cutoff_type == E_CUTOFF && cp9_e_cutoff < cm_e_cutoff) cp9_e_cutoff = cm_e_cutoff;
+	  /*if(cm->cutoff_type == E_CUTOFF && cp9_e_cutoff < cm_e_cutoff) cp9_e_cutoff = cm_e_cutoff;*/
 	  cm->cp9_cutoff = cp9_e_cutoff;
 	}
     }
@@ -282,8 +282,8 @@ int debug_print_filterthrinfo(CMStats_t *cmstats, CP9FilterThr_t *fthr)
     cmstats->gumAA[CP9_L][0]->L;
   tmp_mu = log(tmp_K * ((double) fthr->db_size)) / cmstats->gumAA[CP9_L][0]->lambda;
   l_x = tmp_mu - (log(fthr->l_eval) / cmstats->gumAA[CP9_L][0]->lambda);
-  printf("\tN: %d gsc: %.5f (%.5f bits) lsc: %.5f (%.5f bits)\n\tcmsc: %.5f fraction: %.3f db_size: %d was_fast: %d\n",
-	 fthr->N, fthr->g_eval, g_x, fthr->l_eval, l_x, fthr->cm_eval, fthr->fraction, fthr->db_size, fthr->was_fast);
+  printf("\tN: %d gsc: %.5f F: %.5f (%.5f bits) lsc: %.5f F: %.5f (%.5f bits)\n\tcmsc: %.5f db_size: %d was_fast: %d\n",
+	 fthr->N, fthr->g_eval, fthr->g_F, g_x, fthr->l_eval, fthr->l_F, l_x, fthr->cm_eval, fthr->db_size, fthr->was_fast);
   return eslOK;
 }
 
@@ -629,4 +629,81 @@ int CM2Gumbel_mode(CM_t *cm, int *ret_cm_gum_mode,
   return eslOK;
 }
 
+
+
+
+/* Function: CopyFThrInfo()
+ * Incept:   EPN, Fri May  4 15:54:51 2007
+ */
+int CopyFThrInfo(CP9FilterThr_t *src, CP9FilterThr_t *dest)
+{
+  dest->N           = src->N;
+  dest->cm_eval     = src->cm_eval;
+  dest->l_eval      = src->l_eval;
+  dest->l_F         = src->l_F;
+  dest->g_eval      = src->g_eval;
+  dest->g_F         = src->g_F;
+  dest->db_size     = src->db_size;
+  dest->was_fast    = src->was_fast;
+  return eslOK;
+}
+
+/* Function: CopyCMStatsGumbel()
+ * Incept:   EPN, Mon May  7 06:04:58 2007
+ * 
+ * Purpose:  Copy the Gumbel stats in a source CMStats_t object into
+ *           a pre-alloc'ed destination CMStats_t object.
+ */
+int CopyCMStatsGumbel(CMStats_t *src, CMStats_t *dest)
+{
+  int i, p;
+
+  /* Check contract */
+  /* Check contract */
+  if(src->np != dest->np)
+    Die("ERROR in CopyCMStatsGumbel() src->np: %d not equal to alloc'ed dest->np: %d\n", src->np, dest->np);
+
+  for(p = 0; p < src->np; p++)
+    {
+      dest->ps[p] = src->ps[p];
+      dest->pe[p] = src->pe[p];
+    }
+  for(i = 0; i < GC_SEGMENTS; i++)
+    dest->gc2p[i] = src->gc2p[i]; 
+
+  for(i = 0; i < NGUMBELMODES; i++)
+    {
+      for(p = 0; p < src->np; p++)
+	{
+	  dest->gumAA[i][p]->N      = src->gumAA[i][p]->N;
+	  dest->gumAA[i][p]->L      = src->gumAA[i][p]->L;
+	  dest->gumAA[i][p]->mu     = src->gumAA[i][p]->mu;
+	  dest->gumAA[i][p]->lambda = src->gumAA[i][p]->lambda;
+	}
+    }
+  return eslOK;
+}
+
+/* Function: CopyCMStats()
+ * Incept:   EPN, Tue May 29 06:00:41 2007
+ * 
+ * Purpose:  Copy the Gumbel and possibly CP9 Filter
+ *           stats in a source CMStats_t object into
+ *           a pre-alloc'ed destination CMStats_t object.
+ */
+int CopyCMStats(CMStats_t *src, CMStats_t *dest)
+{
+  int i, p;
+
+  /* Check contract */
+  if(src->np != dest->np)
+    Die("ERROR in CopyCMStats() src->np: %d not equal to alloc'ed dest->np: %d\n", src->np, dest->np);
+
+  CopyCMStatsGumbel(src, dest);
+  CopyFThrInfo(src->fthrA[CM_LC], dest->fthrA[CM_LC]);
+  CopyFThrInfo(src->fthrA[CM_GC], dest->fthrA[CM_GC]);
+  CopyFThrInfo(src->fthrA[CM_LI], dest->fthrA[CM_LI]);
+  CopyFThrInfo(src->fthrA[CM_GI], dest->fthrA[CM_GI]);
+  return eslOK;
+}
 

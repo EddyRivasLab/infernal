@@ -286,17 +286,21 @@ main(int argc, char **argv)
   /* variables used to calculate HMM filter threshold by sampling from CM */
   int   do_hmmcalcthr = FALSE; /* TRUE to sample from CM, score with HMM to get HMM cutoff */
   int   do_fastfil    = FALSE; /* TRUE: use fast hacky filter thr calc method */
-  float filt_fract = 0.95;    /* fraction of CM hits req'd to find with HMM  */
+  float filt_fract = 0.95;    /* min fraction of CM hits req'd to find with HMM  */
+  float F;                     /* min fraction of CM hits req'd to find with HMM  */
+  float min_surv = 0.01;      /* minimum survival fraction for FindCP9FilterThr() */
   int   use_cm_cutoff = TRUE; /* TRUE to use cm_ecutoff, FALSE not to      */
   int   filN = 100;          /* Number of sequences to sample from the CM */
   int   do_hmmgemit = FALSE;    /* always emit globally from CM in FindCP9Fthr */
-  int   emit_global;         /* in FindCP9FilterThreshold(), emit globally  */
+  int   emit_mode;           /* CM_GC or CM_LC for emitting globally or locally */
+
+  int do_mpi = FALSE;       
+  int my_rank = 0;          /* My rank in MPI, 0 if in serial mode */
+  int nproc = 1;            /* Total number of processes, 1 if serial mode */
 
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-  int my_rank;              /* My rank in MPI */
-  int nproc;            /* Total number of processes */
-  int mpi_master_rank;          /* Rank of master process */
-  Stopwatch_t  *mpi_watch;      /* for timings in MPI mode                  */
+  int mpi_master_rank;      /* Rank of master process */
+  Stopwatch_t  *mpi_watch;  /* for timings in MPI mode                  */
   
   /* Initailize MPI, get values for rank and naum procs */
   MPI_Init (&argc, &argv);
@@ -307,10 +311,13 @@ main(int argc, char **argv)
   MPI_Comm_rank (MPI_COMM_WORLD, &my_rank);
   MPI_Comm_size (MPI_COMM_WORLD, &nproc);
 
+  do_mpi = TRUE;
+  if(nproc == 1) esl_fatal("MPI mode but only 1 processor.\n");
   /*
    * Determine master process.  This is the lowest ranking one that can do I/O
    */
-  mpi_master_rank = get_master_rank (MPI_COMM_WORLD, my_rank);
+  mpi_master_rank = 0;
+  /*mpi_master_rank = get_master_rank (MPI_COMM_WORLD, my_rank);*/
 
   /*printf("B CS rank: %4d master: %4d num: %4d\n", my_rank, mpi_master_rank, nproc);*/
 
@@ -747,52 +754,53 @@ main(int argc, char **argv)
       if(do_hmmcalcthr) /* this was broadcasted to workers in MPI mode */
 	{
 	  /* Will we sample from the CM in global mode? */
-	  if     (cm_mode == CM_GC || cm_mode == CM_GI) emit_global = TRUE;
-	  else if(cm_mode == CM_LC || cm_mode == CM_LI) emit_global = do_hmmgemit; /* emit_global irrelevant for MPI workers */
-#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-	  if(TRUE) 
-	    {
-	      MPI_Barrier(MPI_COMM_WORLD);
-	      if(my_rank == 0) /* master */
-		{
-		  if(!(cm->flags & CM_GUMBEL_STATS))
-		    Die("ERROR trying to use HMM filter thresholds but no Gumbel stats in CM file.\nUse cmcalibrate or use --hmmT or --hmmE.\n");
-		  if(cm->cutoff_type == SCORE_CUTOFF)
-		    Die("ERROR can't use --hmmcalcthr with -T, currently you must use CM E-values with --hmmcalcthr.\n");
-		  cp9_e_cutoff = 
-		    mpi_FindCP9FilterThreshold(cm, cm->stats, r, filt_fract, filN, use_cm_cutoff, 
-					       cm->cutoff, N, emit_global, cm_mode, cp9_mode, do_fastfil,
-					       my_rank, nproc);
-		}
-	      else /* worker */
-		mpi_FindCP9FilterThreshold(cm, NULL, NULL, 0., 0, FALSE, 0, 0, 0, cm_mode, cp9_mode, FALSE,
-					   my_rank, nproc); /* all params but cm_mode, cp9_mode, my_rank
-							     * and cm are irrelevant for worker */
-	      /* broadcast cp9_e_cutoff */
-	      MPI_Barrier(MPI_COMM_WORLD);
-	      MPI_Bcast (&cp9_e_cutoff,    1, MPI_FLOAT, 0, MPI_COMM_WORLD);
-	    }
-	  else /* never get here in MPI */
-	    {
-#endif
-           cp9_e_cutoff = serial_FindCP9FilterThreshold(cm, cm->stats, r, filt_fract, filN, use_cm_cutoff,
-							cm->cutoff, N, emit_global, cm_mode, cp9_mode, do_fastfil);
+	  if((cm_mode == CM_GC || cm_mode == CM_GI) ||
+	     do_hmmgemit)
+	    emit_mode = CM_GC;
+	  else
+	    emit_mode = CM_LC;
+
+	  if(!(cm->flags & CM_GUMBEL_STATS))
+	    Die("ERROR trying to use HMM filter thresholds but no Gumbel stats in CM file.\nUse cmcalibrate or use --hmmT or --hmmE.\n");
+	  if(cm->cutoff_type == SCORE_CUTOFF)
+	    Die("ERROR can't use --hmmcalcthr with -T, currently you must use CM E-values with --hmmcalcthr.\n");
 
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-	    }
-          if(my_rank == 0) /* master */
+	  MPI_Barrier(MPI_COMM_WORLD);
+#endif
+	  if(my_rank == 0) /* Master, mpi or serial */
 	    {
-#endif
-	  /* following lines are printfs just for curiousity */
-	  if(cp9_mode == CP9_L) 
-	    cp9_eval   = cm->stats->fthrA[cm_mode]->l_eval;
-	  else if(cp9_mode == CP9_G) 
-	    cp9_eval   = cm->stats->fthrA[cm_mode]->g_eval;
-	  cp9_bit_sc   = cm->stats->gumAA[cp9_mode][0]->mu - (log(cp9_e_cutoff) / cm->stats->gumAA[cp9_mode][0]->lambda);
-	  printf("Calc'ed CP9 bit score cutoff: %f\ncmcalibrate e-val cutoff: %f\nnew e-val cutoff: %f\n", cp9_bit_sc, cp9_eval, cp9_e_cutoff);
-#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+	      cp9_e_cutoff = 
+		FindCP9FilterThreshold(cm, cm->stats, r, filt_fract, min_surv, 
+				       filN, use_cm_cutoff, cm->cutoff, 
+				       N, emit_mode, cm_mode, cp9_mode, do_fastfil,
+				       my_rank, nproc, do_mpi, &F); /* F is not important, we're not
+								     * storing the new stats info */
+	      /* we may have reconfigured the CM in FindCP9FilterThreshold(), change it back */
+	      if(emit_mode != cm_mode)
+		ConfigForGumbelMode(cm, cm_mode);
 	    }
+	  else /* MPI worker (this will be overhauled when cmsearch get's easelfied with getops) */
+	    FindCP9FilterThreshold(cm, NULL, NULL, 0., 0., 0, FALSE, 0, 0, emit_mode, cm_mode, cp9_mode, FALSE,
+				   my_rank, nproc, do_mpi, &F); /* all params but cm_mode, cp9_mode, my_rank */
+
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+	  /* broadcast cp9_e_cutoff */
+	  MPI_Barrier(MPI_COMM_WORLD);
+	  MPI_Bcast (&cp9_e_cutoff,    1, MPI_FLOAT, 0, MPI_COMM_WORLD);
 #endif
+          if(my_rank == 0) /* master, MPI or serial  */
+	    {
+	      printf("F returned from FindCP9FilterThreshold(): %f\n", F);
+	      /* following lines are printfs just for curiousity */
+	      if(cp9_mode == CP9_L) 
+		cp9_eval   = cm->stats->fthrA[cm_mode]->l_eval;
+	      else if(cp9_mode == CP9_G) 
+		cp9_eval   = cm->stats->fthrA[cm_mode]->g_eval;
+	      cp9_bit_sc   = cm->stats->gumAA[cp9_mode][0]->mu - (log(cp9_e_cutoff) / cm->stats->gumAA[cp9_mode][0]->lambda);
+	      printf("Calc'ed CP9 bit score cutoff: %f\ncmcalibrate e-val cutoff: %f\nnew e-val cutoff: %f\n", cp9_bit_sc, cp9_eval, cp9_e_cutoff);
+	    }
+
 	  /* Overwrite CP9 cutoff info */
 	  cm->cp9_cutoff_type = E_CUTOFF;
 	  if(cp9_e_cutoff < DEFAULT_MIN_CP9_E_CUTOFF) cp9_e_cutoff = DEFAULT_MIN_CP9_E_CUTOFF;

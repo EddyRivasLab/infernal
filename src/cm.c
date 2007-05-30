@@ -1575,8 +1575,6 @@ ExponentiateCM(CM_t *cm, double z)
  * Purpose:  Given a template CM 'cm', copy it's params into a
  *           new CM which is allocated here and must be
  *           freed by the caller. 
- *           Currently, does not copy the cm->cp9 or cm->stats
- *           objects.
  * 
  * Args:
  *           src          - the template covariance model
@@ -1681,10 +1679,26 @@ DuplicateCM(CM_t *cm)
   new->hmmpad = cm->hmmpad;
 
   new->cp9  = NULL;      /* WE DON'T COPY THE CP9   CURRENTLY */
-  new->stats= NULL;  /* WE DON'T COPY THE STATS CURRENTLY */
-  new->flags &= ~CM_CP9;
-  new->flags &= ~CM_GUMBEL_STATS;
-  new->flags &= ~CM_FTHR_STATS;
+
+  /* Copy the CM stats if they exist */
+  if(cm->flags &= CM_GUMBEL_STATS)
+    {
+      new->stats = AllocCMStats(cm->stats->np);
+      CopyCMStats(new->stats, cm->stats);
+    }
+
+  /* Don't copy but build the CP9 if it exists in new */
+  if(cm->flags & CM_CP9)
+    {
+      if(!build_cp9_hmm(new, &(new->cp9), &(new->cp9map), FALSE, 0.0001, 0))
+	Die("Couldn't build a CP9 HMM from the new CM\n");
+      new->flags |= CM_CP9; /* raise the CP9 flag */
+      /* Configure the CP9 the way as it was for the source CM */
+      if(cm->cp9->flags & CPLAN9_LOCAL_BEGIN && cm->cp9->flags & CPLAN9_LOCAL_END)
+	CPlan9SWConfig(cm->cp9, 0.5, 0.5);
+      else
+	CPlan9GlobalConfig(cm->cp9);
+    }
 
   return new;
 }

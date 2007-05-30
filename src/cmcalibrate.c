@@ -58,6 +58,7 @@ static ESL_OPTIONS options[] = {
   { "--cmeval",  eslARG_REAL,    "10", NULL, "x>0",     NULL,      NULL, "--gumonly", "min CM E-val (for a 1MB db) to consider for filter thr calc", 3}, 
   { "--nocmeval",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  "--cmeval", "accept all CM hits for filter calc, DO NOT use E-val cutoff", 3}, 
   { "--fract",   eslARG_REAL,  "0.95", NULL, "0<x<=1",  NULL,      NULL, "--gumonly",  "required fraction of CM hits that survive HMM filter", 3},
+  { "--minsurv", eslARG_REAL,  "0.01", NULL, "0<x<=1",  NULL,      NULL, "--gumonly",  "minimum filter survivor fraction for HMM filter calculation", 3},
   { "--filonly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly", "only calculate filter thresholds, don't estimate GUMs", 3},
   { "--fastfil", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly", "calc filter thr quickly, assume parsetree sc is optimal", 3},
   { "--exp",     eslARG_REAL,  "1.0",   NULL, "x>0.",   NULL,      NULL,        NULL, "exponentiate CM prior to filter threshold calculation", 3},
@@ -83,9 +84,6 @@ static char usage[]  = "[-options] <cmfile>";
 static char banner[] = "fit Gumbels for E-value stats and calculate HMM filter threshold stats";
 
 static int cm_fit_gumbel(CM_t *cm, ESL_GETOPTS *go, struct cfg_s *cfg, CMStats_t *cmstats, int gum_mode);
-
-static int CopyFThrInfo(CP9FilterThr_t *src, CP9FilterThr_t *dest);
-static int CopyCMStatsGumbel(CMStats_t *src, CMStats_t *dest);
 
 int
 main(int argc, char **argv)
@@ -115,8 +113,13 @@ main(int argc, char **argv)
 
   /* CP9 HMM filtering threshold related variables */
   int              fthr_mode;          /* counter over fthr modes                     */
-  int              db_size = 1000000;  /* we assume a 1MB database, for use w/cm_ecutoff     */
-
+  int              db_size = 1000000;  /* we assume a 1MB db for filter thr calcs     */
+  float            l_eval;             /*  local HMM E-value cutoff                   */
+  float            l_F;                /* fraction of CM hits that are found w/l_eval */
+  float            g_eval;             /* global HMM E-value cutoff                   */
+  float            g_F;                /* fraction of CM hits that are found w/g_eval */
+  int              emit_mode;          /* CM_LC or CM_GC, CM mode to emit with        */
+  float            exp_factor;
   /* Process command line options.
    */
   go = esl_getopts_Create(options);
@@ -167,6 +170,7 @@ main(int argc, char **argv)
   /* Initialize MPI, figure out who we are, and whether we're running
    * this show (proc 0) or working in it (procs >0)
    */
+  cfg.do_mpi = TRUE;
   MPI_Init(&argc, &argv);
   MPI_Comm_rank(MPI_COMM_WORLD, &cfg.my_rank);
   MPI_Comm_size(MPI_COMM_WORLD, &cfg.nproc);
@@ -338,14 +342,6 @@ main(int argc, char **argv)
        *****************************************************************/
       if(!(esl_opt_GetBoolean(go, "--gumonly")))
 	{
-	  float fraction;
-	  int   filN;
-	  int   use_cm_cutoff;
-	  float cm_ecutoff;
-	  int   do_fastfil;
-	  int   emit_global;
-	  float exp_factor;
-
 	  if(cfg.my_rank == 0) /* master, MPI or serial */
 	    {
 	      if(esl_opt_GetBoolean(go, "--filonly")) /* we can only calc filter thr if we had Gumbel stats in input CM file */
@@ -358,66 +354,57 @@ main(int argc, char **argv)
 	    }
 	  for(fthr_mode = 0; fthr_mode < NFTHRMODES; fthr_mode++)
 	    {
-/* 	      /\* Skip Inside calculations for  */
 	      if(esl_opt_GetBoolean(go, "--fastfil") && (fthr_mode == CM_LI || fthr_mode == CM_GI)) continue;
 	      if((fthr_mode == CM_GC || fthr_mode == CM_GI) ||
 		 (esl_opt_GetBoolean(go, "--gemit")))
-		emit_global = TRUE;
+		emit_mode = CM_GC;
 	      else
-		emit_global = FALSE;
-	      
-	      if(fthr_mode == CM_GC || fthr_mode == CM_GI) 
-		emit_global = TRUE;
-	      else if(fthr_mode == CM_LC || fthr_mode == CM_LI)
-		{
-		  if(esl_opt_GetBoolean(go, "--gemit")) emit_global = TRUE;
-		  else emit_global = FALSE;
-		}
-	      fraction      =   esl_opt_GetReal   (go, "--fract");
-	      filN          =   esl_opt_GetInteger(go, "--filN");
-	      use_cm_cutoff = !(esl_opt_GetBoolean(go, "--nocmeval"));
-	      cm_ecutoff    =   esl_opt_GetReal   (go, "--cmeval");
-	      do_fastfil    =   esl_opt_GetBoolean(go, "--fastfil");
-	      emit_global   =   esl_opt_GetBoolean(go, "--gemit");
-	      exp_factor    =   esl_opt_GetReal   (go, "--exp");
-
+		emit_mode = CM_LC;
+	      /* CP9_L, HMM in global mode */
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-	      if(TRUE)
-		{
-		  /* Two rounds, calc l_eval then g_eval (one for LOCAL CP9 search, one for GLOBAL) */
-		  cmstats[ncm]->fthrA[fthr_mode]->l_eval =  
-		    mpi_FindCP9FilterThreshold(cm, cmstats[ncm], cfg.r, fraction, filN, use_cm_cutoff, 
-					       cm_ecutoff, db_size, emit_global, fthr_mode, 
-					       CP9_L, do_fastfil, cfg.my_rank, cfg.nproc);
-		  MPI_Barrier(MPI_COMM_WORLD);
-		  cmstats[ncm]->fthrA[fthr_mode]->g_eval =  
-		    mpi_FindCP9FilterThreshold(cm, cmstats[ncm], cfg.r, fraction, filN, use_cm_cutoff, 
-					       cm_ecutoff, db_size, emit_global, fthr_mode, CP9_G, do_fastfil,
-					       cfg.my_rank, cfg.nproc);
-		}
-	      else /* if MPI we want to skip serial calls below */
+	      MPI_Barrier(MPI_COMM_WORLD);
 #endif
-		{
-		  cmstats[ncm]->fthrA[fthr_mode]->l_eval =  /*  local */
-		    serial_FindCP9FilterThreshold(cm, cmstats[ncm], cfg.r, fraction, filN, use_cm_cutoff,
-						  cm_ecutoff, db_size, emit_global, fthr_mode, CP9_L, do_fastfil);
-		  cmstats[ncm]->fthrA[fthr_mode]->g_eval =  /* glocal */
-		    serial_FindCP9FilterThreshold(cm, cmstats[ncm], cfg.r, fraction, filN, use_cm_cutoff,
-						  cm_ecutoff, db_size, emit_global, fthr_mode, CP9_G, do_fastfil);
-		}
+	      l_eval = 
+		FindCP9FilterThreshold(cm, cmstats[ncm], cfg.r, 
+				       esl_opt_GetReal     (go, "--fract"),
+				       esl_opt_GetReal     (go, "--minsurv"),
+				       esl_opt_GetInteger  (go, "--filN"),
+				       !(esl_opt_GetBoolean(go, "--nocmeval")),
+				       esl_opt_GetReal     (go, "--cmeval"),
+				       db_size, emit_mode, fthr_mode, CP9_L, 
+				       esl_opt_GetBoolean  (go, "--fastfil"), 
+				       cfg.my_rank, cfg.nproc, cfg.do_mpi, &l_F);
+	      /* CP9_G, HMM in global mode */
+#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
+	      MPI_Barrier(MPI_COMM_WORLD);
+#endif
+	      g_eval = 
+		FindCP9FilterThreshold(cm, cmstats[ncm], cfg.r, 
+				       esl_opt_GetReal     (go, "--fract"),
+				       esl_opt_GetReal     (go, "--minsurv"),
+				       esl_opt_GetInteger  (go, "--filN"),
+				       !(esl_opt_GetBoolean(go, "--nocmeval")),
+				       esl_opt_GetReal     (go, "--cmeval"),
+				       db_size, emit_mode, fthr_mode, CP9_G, 
+				       esl_opt_GetBoolean  (go, "--fastfil"), 
+				       cfg.my_rank, cfg.nproc, cfg.do_mpi, &g_F);
 	      if(cfg.my_rank == 0)
 		{
-		  /* If master (MPI or serial), fill in the rest of the stats */
-		  cmstats[ncm]->fthrA[fthr_mode]->N        = filN;
-		  cmstats[ncm]->fthrA[fthr_mode]->fraction = fraction;
-		  cmstats[ncm]->fthrA[fthr_mode]->cm_eval  = cm_ecutoff;
+		  /* If master (MPI or serial), fill in the filter thr stats */
+		  printf("fthr_mode; %d l_eval: %f l_F: %f g_eval: %f g_F: %f\n\n\n", fthr_mode, l_eval, l_F, g_eval, g_F);
+		  cmstats[ncm]->fthrA[fthr_mode]->l_eval   = l_eval;
+		  cmstats[ncm]->fthrA[fthr_mode]->l_F      = l_F;
+		  cmstats[ncm]->fthrA[fthr_mode]->g_eval   = g_eval;
+		  cmstats[ncm]->fthrA[fthr_mode]->g_F      = g_F;
+		  cmstats[ncm]->fthrA[fthr_mode]->N        = esl_opt_GetInteger  (go, "--filN");
+		  cmstats[ncm]->fthrA[fthr_mode]->cm_eval  = esl_opt_GetReal     (go, "--cmeval");
 		  cmstats[ncm]->fthrA[fthr_mode]->db_size  = db_size;
-		  cmstats[ncm]->fthrA[fthr_mode]->was_fast = FALSE;
+		  cmstats[ncm]->fthrA[fthr_mode]->was_fast = esl_opt_GetBoolean  (go, "--fastfil");
 		}
 	    }
 	  if(cfg.my_rank == 0) /* master, MPI or serial */
 	    {
-	      if(do_fastfil) 
+	      if(esl_opt_GetBoolean  (go, "--fastfil"))
 		{
 		  /* we skipped CM_LI and CM_GI, copy CM_LC to CM_LI and CM_GC to CM_GI */
 		  CopyFThrInfo(cmstats[ncm]->fthrA[CM_LC], cmstats[ncm]->fthrA[CM_LI]);
@@ -426,12 +413,12 @@ main(int argc, char **argv)
 	      if(esl_opt_GetBoolean(go, "--time"))
 		{ 
 		  esl_stopwatch_Stop(w);  
-		  if(do_fastfil)
+		  if(esl_opt_GetBoolean  (go, "--fastfil"))
 		    esl_stopwatch_Display(stdout, w, "Fast HMM threshold calculation time:");
 		  else
 		    esl_stopwatch_Display(stdout, w, "Slow HMM threshold calculation time:");
 		}
-	      cm->flags &= CM_FTHR_STATS;
+	      cm->flags |= CM_FTHR_STATS; /* raise flag saying we have filter threshold stats */
 	    }
 	}
       FreeCM(cm);
@@ -551,7 +538,7 @@ static int cm_fit_gumbel(CM_t *cm, ESL_GETOPTS *go, struct cfg_s *cfg,
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
   if(cfg->my_rank > 0)
     {
-      mpi_worker_search_target(cm, my_rank);
+      mpi_worker_search_target(cm, cfg->my_rank);
       return eslOK;
     }
   else /* my_rank == 0, master */
@@ -679,7 +666,7 @@ static int cm_fit_gumbel(CM_t *cm, ESL_GETOPTS *go, struct cfg_s *cfg,
 		       * version esl_rnd_xIID() generates a ESL_DSQ seq, which actually_search_target()
 		       * can't handle. */
 		      
-		      if (esl_rnd_IID(r, Alphabet, nt_p, Alphabet_size, L, randseq)  != eslOK) 
+		      if (esl_rnd_IID(cfg->r, Alphabet, nt_p, Alphabet_size, L, randseq)  != eslOK) 
 			esl_fatal("Failure creating random seq for GC content distro");
 		      /* Digitize the sequence, send it off to be searched, receive score and add to histogram */
 		      dsq = DigitizeSequence (randseq, L);
@@ -689,7 +676,7 @@ static int cm_fit_gumbel(CM_t *cm, ESL_GETOPTS *go, struct cfg_s *cfg,
 		  /* If we have work but no free workers, or we have no work but workers
 		   * are still working, then wait for a result to return from any worker.
 		   */
-		  if ( (have_work && nproc_working == nproc-1) || (! have_work && nproc_working > 0))
+		  if ( (have_work && nproc_working == cfg->nproc-1) || (! have_work && nproc_working > 0))
 		    {
 		      MPI_Recv(&sc, 1, MPI_FLOAT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &mstatus);
 		      wi = mstatus.MPI_SOURCE;
@@ -741,56 +728,4 @@ static int cm_fit_gumbel(CM_t *cm, ESL_GETOPTS *go, struct cfg_s *cfg,
  ERROR:
   return status;
 }
-
-
-/* Function: CopyFThrInfo()
- * Incept:   EPN, Fri May  4 15:54:51 2007
- */
-int CopyFThrInfo(CP9FilterThr_t *src, CP9FilterThr_t *dest)
-{
-  dest->N           = src->N;
-  dest->fraction    = src->fraction;
-  dest->cm_eval     = src->cm_eval;
-  dest->l_eval      = src->l_eval;
-  dest->g_eval      = src->g_eval;
-  dest->db_size     = src->db_size;
-  dest->was_fast    = src->was_fast;
-  return eslOK;
-}
-
-/* Function: CopyCMStatsGumbel()
- * Incept:   EPN, Mon May  7 06:04:58 2007
- * 
- * Purpose:  Copy the GUM stats in a source CMStats_t object into
- *           a pre-alloc'ed destination CMStats_t object.
- */
-int CopyCMStatsGumbel(CMStats_t *src, CMStats_t *dest)
-{
-  int i, p;
-
-  /* Check contract */
-  if(src->np != dest->np)
-    Die("ERROR in CopyCMStatsGUM() src->np: %d not equal to alloc'ed dest->np: %d\n", src->np, dest->np);
-
-  for(p = 0; p < src->np; p++)
-    {
-      dest->ps[p] = src->ps[p];
-      dest->pe[p] = src->pe[p];
-    }
-  for(i = 0; i < GC_SEGMENTS; i++)
-    dest->gc2p[i] = src->gc2p[i]; 
-
-  for(i = 0; i < NGUMBELMODES; i++)
-    {
-      for(p = 0; p < src->np; p++)
-	{
-	  dest->gumAA[i][p]->N      = src->gumAA[i][p]->N;
-	  dest->gumAA[i][p]->L      = src->gumAA[i][p]->L;
-	  dest->gumAA[i][p]->mu     = src->gumAA[i][p]->mu;
-	  dest->gumAA[i][p]->lambda = src->gumAA[i][p]->lambda;
-	}
-    }
-  return eslOK;
-}
-
 

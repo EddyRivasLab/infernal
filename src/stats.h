@@ -26,6 +26,7 @@ extern void OLD_serial_make_histogram (int *gc_count, int *partitions, int num_p
 				       int sample_length, int doing_cp9_stats,
 				       int use_easel);
 
+
 #ifdef USE_MPI
 void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions, 
 			      CM_t *cm, int num_samples, int sample_length,
@@ -45,5 +46,8 @@ extern char resolve_degenerate (char c);
 extern float MinCMScCutoff (CM_t *cm);
 extern float MinCP9ScCutoff (CM_t *cm);
 extern int   CM2Gumbel_mode(CM_t *cm, int *ret_cm_gum_mode, int *ret_cp9_gum_mode);
+extern int   CopyFThrInfo(CP9FilterThr_t *src, CP9FilterThr_t *dest);
+extern int   CopyCMStatsGumbel(CMStats_t *src, CMStats_t *dest);
+extern int   CopyCMStats(CMStats_t *src, CMStats_t *dest);
 
 #endif

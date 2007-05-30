@@ -57,14 +57,15 @@ static unsigned int v01swap  = 0xb1b0ede3; /* v0.1 binary, byteswapped         *
 #define CMIO_EVDMU        27
 #define CMIO_EVDLAMBDA    28
 #define CMIO_FTHRN        29
-#define CMIO_FTHRFR       30
-#define CMIO_FTHRCMP      31
-#define CMIO_FTHRLE       32
+#define CMIO_FTHRCMP      30
+#define CMIO_FTHRLE       31
+#define CMIO_FTHRLF       32
 #define CMIO_FTHRGE       33
-#define CMIO_FTHRDB       34
-#define CMIO_FTHRFAST     35
-#define CMIO_HASEVD       36
-#define CMIO_HASFTHR      37
+#define CMIO_FTHRGF       34
+#define CMIO_FTHRDB       35
+#define CMIO_FTHRFAST     36
+#define CMIO_HASEVD       37
+#define CMIO_HASFTHR      38
 
 static void write_ascii_cm(FILE *fp, CM_t *cm);
 static int  read_ascii_cm(CMFILE *cmf, CM_t **ret_cm);
@@ -363,26 +364,27 @@ write_ascii_cm(FILE *fp, CM_t *cm)
 
       if (cm->flags & CM_FTHR_STATS) /* FTHR stats are only possibly valid IF EVD stats valid */
 	{
-	  fprintf(fp, "FT-LC  %5d  %.3f  %.3f  %15.5f  %15.5f  %d  %d\n", 
-		  cm->stats->fthrA[CM_LC]->N, cm->stats->fthrA[CM_LC]->fraction, 
-		  cm->stats->fthrA[CM_LC]->cm_eval, cm->stats->fthrA[CM_LC]->l_eval,
-		  cm->stats->fthrA[CM_LC]->g_eval, cm->stats->fthrA[CM_LC]->db_size,
-		  cm->stats->fthrA[CM_LC]->was_fast);
-	  fprintf(fp, "FT-GC  %5d  %.3f  %.3f  %15.5f  %15.5f  %d  %d\n", 
-		  cm->stats->fthrA[CM_GC]->N, cm->stats->fthrA[CM_GC]->fraction, 
-		  cm->stats->fthrA[CM_GC]->cm_eval, cm->stats->fthrA[CM_GC]->l_eval,
-		  cm->stats->fthrA[CM_GC]->g_eval, cm->stats->fthrA[CM_GC]->db_size,
-		  cm->stats->fthrA[CM_GC]->was_fast);
-	  fprintf(fp, "FT-LI  %5d  %.3f  %.3f  %15.5f  %15.5f  %d  %d\n", 
-		  cm->stats->fthrA[CM_LI]->N, cm->stats->fthrA[CM_LI]->fraction, 
-		  cm->stats->fthrA[CM_LI]->cm_eval, cm->stats->fthrA[CM_LI]->l_eval,
-		  cm->stats->fthrA[CM_LI]->g_eval, cm->stats->fthrA[CM_LI]->db_size,
-		  cm->stats->fthrA[CM_LI]->was_fast);
-	  fprintf(fp, "FT-GI  %5d  %.3f  %.3f  %15.5f  %15.5f  %d  %d\n", 
-	      cm->stats->fthrA[CM_GI]->N, cm->stats->fthrA[CM_GI]->fraction, 
-		  cm->stats->fthrA[CM_GI]->cm_eval, cm->stats->fthrA[CM_GI]->l_eval,
-		  cm->stats->fthrA[CM_GI]->g_eval, cm->stats->fthrA[CM_GI]->db_size,
-		  cm->stats->fthrA[CM_GI]->was_fast);
+	  fprintf(fp, "FT-LC  %5d  %.3f  %15.5f  %.5f  %15.5f  %.5f  %d  %d\n", 
+		  cm->stats->fthrA[CM_LC]->N, cm->stats->fthrA[CM_LC]->cm_eval, 
+		  cm->stats->fthrA[CM_LC]->l_eval, cm->stats->fthrA[CM_LC]->l_F,
+		  cm->stats->fthrA[CM_LC]->g_eval, cm->stats->fthrA[CM_LC]->g_F, 
+		  cm->stats->fthrA[CM_LC]->db_size, cm->stats->fthrA[CM_LC]->was_fast);
+	  fprintf(fp, "FT-GC  %5d  %.3f  %15.5f  %.5f  %15.5f  %.5f  %d  %d\n", 
+		  cm->stats->fthrA[CM_GC]->N, cm->stats->fthrA[CM_GC]->cm_eval, 
+		  cm->stats->fthrA[CM_GC]->l_eval, cm->stats->fthrA[CM_GC]->l_F,
+		  cm->stats->fthrA[CM_GC]->g_eval, cm->stats->fthrA[CM_GC]->g_F, 
+		  cm->stats->fthrA[CM_GC]->db_size, cm->stats->fthrA[CM_GC]->was_fast);
+	  fprintf(fp, "FT-LI  %5d  %.3f  %15.5f  %.5f  %15.5f  %.5f  %d  %d\n", 
+		  cm->stats->fthrA[CM_LI]->N, cm->stats->fthrA[CM_LI]->cm_eval, 
+		  cm->stats->fthrA[CM_LI]->l_eval, cm->stats->fthrA[CM_LI]->l_F,
+		  cm->stats->fthrA[CM_LI]->g_eval, cm->stats->fthrA[CM_LI]->g_F, 
+		  cm->stats->fthrA[CM_LI]->db_size, cm->stats->fthrA[CM_LI]->was_fast);
+	  fprintf(fp, "FT-GI  %5d  %.3f  %15.5f  %.5f  %15.5f  %.5f  %d  %d\n", 
+		  cm->stats->fthrA[CM_GI]->N, cm->stats->fthrA[CM_GI]->cm_eval, 
+		  cm->stats->fthrA[CM_GI]->l_eval, cm->stats->fthrA[CM_GI]->l_F,
+		  cm->stats->fthrA[CM_GI]->g_eval, cm->stats->fthrA[CM_GI]->g_F, 
+		  cm->stats->fthrA[CM_GI]->db_size, cm->stats->fthrA[CM_GI]->was_fast);
+
 	} /* currently either all filter threshold stats are calc'ed or none */
     }
 
@@ -604,16 +606,19 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
 	cm->stats->fthrA[fthr_mode]->N = atoi(tok);
 	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
 	if (! IsReal(tok))                                    goto FAILURE;
-	cm->stats->fthrA[fthr_mode]->fraction = atof(tok);
-	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	if (! IsReal(tok))                                    goto FAILURE;
 	cm->stats->fthrA[fthr_mode]->cm_eval = atof(tok);
 	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
 	if (! IsReal(tok))                                    goto FAILURE;
 	cm->stats->fthrA[fthr_mode]->l_eval = atof(tok);
 	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
 	if (! IsReal(tok))                                    goto FAILURE;
+	cm->stats->fthrA[fthr_mode]->l_F = atof(tok);
+	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+	if (! IsReal(tok))                                    goto FAILURE;
 	cm->stats->fthrA[fthr_mode]->g_eval = atof(tok);
+	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+	if (! IsReal(tok))                                    goto FAILURE;
+	cm->stats->fthrA[fthr_mode]->g_F = atof(tok);
 	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
 	if (! IsInt(tok))                                     goto FAILURE;
 	cm->stats->fthrA[fthr_mode]->db_size = atoi(tok);
@@ -649,7 +654,6 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
        ((!have_fthrs) && (fthr_flags[i])))
       goto FAILURE;
 
-  if(have_gums && have_fthrs) debug_print_cmstats(cm->stats, have_fthrs);
   /* Main model section. 
    */
   CreateCMBody(cm, N, M);
@@ -842,10 +846,11 @@ write_binary_cm(FILE *fp, CM_t *cm)
 	  for(i = 0; i < NFTHRMODES; i++)
 	    {
 	      tagged_fwrite(CMIO_FTHRN,    &cm->stats->fthrA[i]->N,        sizeof(int),   1, fp);      
-	      tagged_fwrite(CMIO_FTHRFR,   &cm->stats->fthrA[i]->fraction, sizeof(float), 1, fp);      
 	      tagged_fwrite(CMIO_FTHRCMP,  &cm->stats->fthrA[i]->cm_eval,  sizeof(float), 1, fp);      
 	      tagged_fwrite(CMIO_FTHRLE,   &cm->stats->fthrA[i]->l_eval,   sizeof(float), 1, fp);      
+	      tagged_fwrite(CMIO_FTHRLF,   &cm->stats->fthrA[i]->l_F,      sizeof(float), 1, fp);      
 	      tagged_fwrite(CMIO_FTHRGE,   &cm->stats->fthrA[i]->g_eval,   sizeof(float), 1, fp);      
+	      tagged_fwrite(CMIO_FTHRGF,   &cm->stats->fthrA[i]->g_F,      sizeof(float), 1, fp);      
 	      tagged_fwrite(CMIO_FTHRDB,   &cm->stats->fthrA[i]->db_size,  sizeof(int),   1, fp);      
 	      tagged_fwrite(CMIO_FTHRFAST, &cm->stats->fthrA[i]->was_fast, sizeof(int),   1, fp);      
 	    }
@@ -942,10 +947,11 @@ read_binary_cm(CMFILE *cmf, CM_t **ret_cm)
       for(i = 0; i < NFTHRMODES; i++)
 	{
 	  if (! tagged_fread(CMIO_FTHRN,    (void *) &(cm->stats->fthrA[i]->N),          sizeof(int),   1, fp)) goto FAILURE;
-	  if (! tagged_fread(CMIO_FTHRFR,   (void *) &(cm->stats->fthrA[i]->fraction),   sizeof(float), 1, fp)) goto FAILURE;
 	  if (! tagged_fread(CMIO_FTHRCMP,  (void *) &(cm->stats->fthrA[i]->cm_eval),    sizeof(float), 1, fp)) goto FAILURE;
 	  if (! tagged_fread(CMIO_FTHRLE,   (void *) &(cm->stats->fthrA[i]->l_eval),     sizeof(float), 1, fp)) goto FAILURE;
+	  if (! tagged_fread(CMIO_FTHRLF,   (void *) &(cm->stats->fthrA[i]->l_F),        sizeof(float), 1, fp)) goto FAILURE;
 	  if (! tagged_fread(CMIO_FTHRGE,   (void *) &(cm->stats->fthrA[i]->g_eval),     sizeof(float), 1, fp)) goto FAILURE;
+	  if (! tagged_fread(CMIO_FTHRGF,   (void *) &(cm->stats->fthrA[i]->g_F),        sizeof(float), 1, fp)) goto FAILURE;
 	  if (! tagged_fread(CMIO_FTHRDB,   (void *) &(cm->stats->fthrA[i]->db_size),    sizeof(int),   1, fp)) goto FAILURE;
 	  if (! tagged_fread(CMIO_FTHRFAST, (void *) &(cm->stats->fthrA[i]->was_fast),   sizeof(int),   1, fp)) goto FAILURE;
 	}

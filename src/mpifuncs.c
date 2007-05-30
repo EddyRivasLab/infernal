@@ -97,9 +97,9 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
   position = 0;
   if (mpi_my_rank == mpi_master_rank) 
     {   /* I'm in charge */
-      /* contract check, if we claim to have EVD stats, we better have them */
-      if((*cm)->flags & CM_EVD_STATS && (*cm)->stats == NULL)
-	Die("ERROR in broadcast_cm() master node claims to have EVD stats but cm->stats is NULL!\n");
+      /* contract check, if we claim to have Gumbel stats, we better have them */
+      if((*cm)->flags & CM_GUMBEL_STATS && (*cm)->stats == NULL)
+	Die("ERROR in broadcast_cm() master node claims to have Gumbel stats but cm->stats is NULL!\n");
       nstates = (*cm)->M;
       nnodes = (*cm)->nodes;
       
@@ -132,7 +132,7 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
       MPI_Pack (&enf_len,                  1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
 
       /* Take special care with number of partitions, used later to get cm->stats if nec */
-      if((*cm)->flags & CM_EVD_STATS) nparts = (*cm)->stats->np;
+      if((*cm)->flags & CM_GUMBEL_STATS) nparts = (*cm)->stats->np;
       else nparts = 0;
       MPI_Pack (&nparts,                  1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
 
@@ -212,22 +212,22 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
 	(*cm)->enf_seq[enf_len] = '\0';
     }
 
-  /* Broadcast the EVD stats if they exist 
+  /* Broadcast the Gumbel stats if they exist 
    * IMPT: currently filter threshold stats are NOT broadcasted as they're only
    * used to get cm->cp9_cutoff, which is broadcasted separately. We could get 
    * away with not broadcasting these stats too - though we'd have to modify 
-   * parallel_search_database() to be independent on EVD params */
-  if((*cm)->flags & CM_EVD_STATS) /* flags were already sent/received */
+   * parallel_search_database() to be independent on Gumbel params */
+  if((*cm)->flags & CM_GUMBEL_STATS) /* flags were already sent/received */
     {
       if (mpi_my_rank != mpi_master_rank) 
 	(*cm)->stats = AllocCMStats(nparts); /* nparts was already sent/recd */
-      for(i = 0; i < NEVDMODES; i++)
+      for(i = 0; i < NGUMBELMODES; i++)
 	for(p = 0; p < nparts; p++)
 	  {	    
-	    MPI_Bcast(&((*cm)->stats->evdAA[i][p]->N),      1, MPI_INT,    mpi_master_rank, MPI_COMM_WORLD);
-	    MPI_Bcast(&((*cm)->stats->evdAA[i][p]->L),      1, MPI_INT,    mpi_master_rank, MPI_COMM_WORLD);
-	    MPI_Bcast(&((*cm)->stats->evdAA[i][p]->mu),     1, MPI_DOUBLE, mpi_master_rank, MPI_COMM_WORLD);
-	    MPI_Bcast(&((*cm)->stats->evdAA[i][p]->lambda), 1, MPI_DOUBLE, mpi_master_rank, MPI_COMM_WORLD);
+	    MPI_Bcast(&((*cm)->stats->gumAA[i][p]->N),      1, MPI_INT,    mpi_master_rank, MPI_COMM_WORLD);
+	    MPI_Bcast(&((*cm)->stats->gumAA[i][p]->L),      1, MPI_INT,    mpi_master_rank, MPI_COMM_WORLD);
+	    MPI_Bcast(&((*cm)->stats->gumAA[i][p]->mu),     1, MPI_DOUBLE, mpi_master_rank, MPI_COMM_WORLD);
+	    MPI_Bcast(&((*cm)->stats->gumAA[i][p]->lambda), 1, MPI_DOUBLE, mpi_master_rank, MPI_COMM_WORLD);
 	  }
     }
   return;
@@ -293,13 +293,13 @@ void search_second_broadcast (CM_t **cm, long *N, int mpi_my_rank, int mpi_maste
     { 
       /* we always send N */
       MPI_Pack (&N, 1, MPI_LONG, buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      if((*cm)->search_opts & CM_SEARCH_CMSTATS) /* pack the CM EVD parameters */
+      if((*cm)->search_opts & CM_SEARCH_CMSTATS) /* pack the CM Gumbel parameters */
 	{
 	  //MPI_Pack ((*cm)->lambda,GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
 	  //MPI_Pack ((*cm)->K,     GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
 	  //MPI_Pack ((*cm)->mu,    GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
 	}
-      if((*cm)->search_opts & CM_SEARCH_CP9STATS) /* pack the CP9 EVD parameters */
+      if((*cm)->search_opts & CM_SEARCH_CP9STATS) /* pack the CP9 Gumbel parameters */
 	{
 	  //MPI_Pack ((*cm)->cp9_lambda, GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
 	  //MPI_Pack ((*cm)->cp9_mu,     GC_SEGMENTS, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
@@ -316,7 +316,7 @@ void search_second_broadcast (CM_t **cm, long *N, int mpi_my_rank, int mpi_maste
       /* this is fragile, we rely on the fact that we broadcasted the CM
        * in broadcast_cm() earlier, so it will have the same cm->*opts as
        * the one we're sending from the master node. */
-      if((*cm)->search_opts & CM_SEARCH_CMSTATS) /* unpack the CM EVD parameters */
+      if((*cm)->search_opts & CM_SEARCH_CMSTATS) /* unpack the CM Gumbel parameters */
 	{
 	  //MPI_Unpack (buf, BUFSIZE, &position, ((*cm)->lambda), GC_SEGMENTS, MPI_DOUBLE, MPI_COMM_WORLD);
 	  //MPI_Unpack (buf, BUFSIZE, &position, ((*cm)->mu),     GC_SEGMENTS, MPI_DOUBLE, MPI_COMM_WORLD);
@@ -328,7 +328,7 @@ void search_second_broadcast (CM_t **cm, long *N, int mpi_my_rank, int mpi_maste
 	      //(*cm)->K[i]      = K[i];
 	    }
 	}
-      if((*cm)->search_opts & CM_SEARCH_CP9STATS) /* unpack the CP9 EVD parameters */
+      if((*cm)->search_opts & CM_SEARCH_CP9STATS) /* unpack the CP9 Gumbel parameters */
 	{
 	  //MPI_Unpack (buf, BUFSIZE, &position, cp9_lambda, GC_SEGMENTS, MPI_DOUBLE, MPI_COMM_WORLD);
 	  //MPI_Unpack (buf, BUFSIZE, &position, cp9_mu,     GC_SEGMENTS, MPI_DOUBLE, MPI_COMM_WORLD);
@@ -1239,7 +1239,7 @@ mpi_worker_cm_and_cp9_search(CM_t *cm, int do_fast, int my_rank)
 					   0.,    /* minimum CP9 bit cutoff, irrelevant (?) */
 					   NULL,  /* do not keep results */
 					   FALSE, /* do not filter with a CP9 HMM */
-					   FALSE, FALSE, /* not doing CM or CP9 evd calcs */
+					   FALSE, FALSE, /* not doing CM or CP9 Gumbel calcs */
 					   NULL); /* filter fraction, nobody cares */
       /* DO NOT CALL actually_search_target b/c that will run Forward then 
        * Backward to get score of best hit, but we'll be detecting by a
