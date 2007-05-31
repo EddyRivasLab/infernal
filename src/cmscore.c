@@ -441,7 +441,7 @@ main(int argc, char **argv)
   printf("Stage 1 alignment:\n");
   SummarizeAlignOptions(cm);
   printf("\n");
-  serial_align_targets(seqfp, cm, &s1_sq, &s1_tr, NULL, &s1_nseq, 0, 0, 
+  serial_align_targets(seqfp, cm, &s1_sq, &s1_tr, NULL, NULL, &s1_nseq, 0, 0, 
 		       (!do_individuals));
   StopwatchStop(watch1);
   esl_sqfile_Close(seqfp);
@@ -510,7 +510,7 @@ main(int argc, char **argv)
       ConfigCM(cm, NULL, NULL);
       printf("Stage %d alignment:\n", s);
       SummarizeAlignOptions(cm);
-      serial_align_targets(seqfp, cm, &s2_sq, &s2_tr, NULL, &s2_nseq, 0, 0, 
+      serial_align_targets(seqfp, cm, &s2_sq, &s2_tr, NULL, NULL, &s2_nseq, 0, 0, 
 			   (!do_individuals));
       StopwatchStop(watch2);
       esl_sqfile_Close(seqfp);

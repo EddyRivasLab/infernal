@@ -51,7 +51,8 @@ static char experts[] = "\
    --hmmbuild     : build a ML CM Plan 9 HMM from the samples\n\
    --hmmscore     : score samples with a CM Plan 9 HMM\n\
    --hmmlocal     : w/hmmscore, search with CP9 HMM in local mode\n\
-   --hmmfast      : w/hmmscore, assume parse tree scores are optimal\n\
+   --hmmfast      : w/hmmscore, assume CM parse tree scores are optimal\n\
+   --hmmrealfast  : w/hmmscore, assume CM&HMM parse tree scores are optimal\n\
    --cmeval       : w/hmmscore, min CM E-value to consider\n\
    --cmN <n>      : w/hmmscore & cmeval, db size E-val corresponds with\n\
    --inside       : w/hmmscore, score CM seqs with inside\n\
@@ -75,6 +76,7 @@ static struct opt_s OPTIONS[] = {
   { "--hmmscore",FALSE, sqdARG_NONE },
   { "--hmmlocal",FALSE, sqdARG_NONE },
   { "--hmmfast", FALSE, sqdARG_NONE },
+  { "--hmmrealfast", FALSE, sqdARG_NONE },
   { "--cmeval",  FALSE, sqdARG_FLOAT },
   { "--cmN",     FALSE, sqdARG_FLOAT },
   { "--ptest",   FALSE, sqdARG_NONE },
@@ -118,8 +120,9 @@ main(int argc, char **argv)
   int   build_cp9;              /* TRUE to build a ML CP9 HMM from the 
 				 * sampled parses of the CM                */
   int   do_score_cp9;           /* TRUE to score each seq against CP9 HMM  */
-  int   do_hmmlocal;           /* if score_cp9, put CP9 in local mode     */
-  int   do_fastfil;             /* TRUE to assume parse tree score is opt  */
+  int   do_hmmlocal;            /* if score_cp9, put CP9 in local mode     */
+  int   do_fastfil;             /* TRUE to assume CM parse score is opt    */
+  int   do_hmmfastfil;          /* TRUE to assume CM/HMMparse score is opt */
   float cm_sc_cutoff = IMPOSSIBLE;  
   float cm_e_cutoff  = 10.;
   int   cm_cutoff_type = SCORE_CUTOFF; 
@@ -147,7 +150,8 @@ main(int argc, char **argv)
   build_cp9    = FALSE;
   do_score_cp9 = FALSE;
   do_fastfil   = FALSE;
-  do_hmmlocal = FALSE;
+  do_hmmfastfil= FALSE;
+  do_hmmlocal  = FALSE;
   do_ptest     = FALSE;
   do_exp       = FALSE;
   do_inside    = FALSE;
@@ -170,6 +174,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--hmmscore") == 0) do_score_cp9 = TRUE;
     else if (strcmp(optname, "--hmmlocal") == 0) do_hmmlocal = TRUE;
     else if (strcmp(optname, "--hmmfast")  == 0) do_fastfil   = TRUE;
+    else if (strcmp(optname, "--hmmrealfast")  == 0) { do_fastfil = TRUE; do_hmmfastfil   = TRUE; }
     else if (strcmp(optname, "--cmeval")   == 0) { cm_cutoff_type = E_CUTOFF; cm_e_cutoff = atof(optarg); } 
     else if (strcmp(optname, "--cmN")      == 0) { cmN_set = TRUE; cmN = (long) atoi(optarg); } 
     else if (strcmp(optname, "--ptest")    == 0) do_ptest = TRUE; 
@@ -205,6 +210,8 @@ main(int argc, char **argv)
     Die("ERROR --hmmscore does not work in combination with -a or -c.\n");
   if(do_fastfil && do_ptest)
     Die("ERROR --hmmfast does not work in combination with --ptest.\n");
+  if(do_hmmfastfil && do_ptest)
+    Die("ERROR --hmmrealfast does not work in combination with --ptest.\n");
   if((!cmN_set) && (cm_cutoff_type == E_CUTOFF))
     Die("ERROR --cmN and --cmeval must both be used if one is used.\n");
   
@@ -591,6 +598,7 @@ main(int argc, char **argv)
 						 * each with a CP9 HMM */
     {
       Parsetree_t      *tr;         /* generated trace                        */
+      CP9trace_t       *cp9_tr;     /* CP9 traceback (used if --hmmrealfast)  */      
       char             *dsq;        /* digitized sequence                     */
       char             *seq;        /* alphabetic sequence                    */
       float             cm_sc;
@@ -606,9 +614,10 @@ main(int argc, char **argv)
       int               ndiff = 0;
       float             esc;        /* emitted parse tree score               */
       SQINFO            sqinfo;     /* info about sequence (name/len)         */
-      int               cm_mode;    /* EVD mode to use for CM */
-      int               cp9_mode;   /* EVD mode to use for CP9 */
+      int               cm_mode;    /* Gumbel mode to use for CM */
+      int               cp9_mode;   /* Gumbel mode to use for CP9 */
       float             tmp_K;
+      float             eval;
 
       SetCMCutoff(cm, cm_cutoff_type, cm_sc_cutoff, cm_e_cutoff);
       SetCP9Cutoff(cm, SCORE_CUTOFF, 0., 0., cm->cutoff);
@@ -618,7 +627,7 @@ main(int argc, char **argv)
 	{
 	  /* Working with first partition */
 	  if(cm->stats->np > 1)
-	    Die("ERROR CM EVD stats for > 1 partition, not yet implemented.\n");
+	    Die("ERROR CM Gumbel stats for > 1 partition, not yet implemented.\n");
 	  /* First update mu based on --cmN argument */
 	  tmp_K = exp(cm->stats->gumAA[cm_mode][0]->mu * cm->stats->gumAA[cm_mode][0]->lambda) / 
 	    cm->stats->gumAA[cm_mode][0]->L;
@@ -657,7 +666,8 @@ main(int argc, char **argv)
 	    sqinfo.len   = L;
 	    sqinfo.flags = SQINFO_NAME | SQINFO_LEN;
 	    printf("nattempts: %d\n", nattempts);
-	    WriteSeq(stdout, SQFILE_FASTA, seq, &sqinfo);*/
+	    WriteSeq(stdout, SQFILE_FASTA, seq, &sqinfo);
+	    ParsetreeDump(stdout, tr, cm, dsq);*/
 
 	  cm->search_opts &= ~CM_SEARCH_HMMONLY;
 	  if(do_fastfil) 
@@ -685,7 +695,7 @@ main(int argc, char **argv)
 		printf("nattempts: %d\n", nattempts);
 		WriteSeq(stdout, SQFILE_FASTA, seq, &sqinfo);
 		ParsetreeDump(stdout, tr, cm, dsq);*/
-
+	      
 	      if(do_fastfil) 
 		cm_sc = ParsetreeScore(cm, tr, dsq, FALSE);
 	      else
@@ -708,28 +718,41 @@ main(int argc, char **argv)
 	      diff += fabs(cm_sc - esc);
 	    }
 	  cm->search_opts |= CM_SEARCH_HMMONLY;
-	  hmm_sc[i] = CP9Forward(cm, dsq, 1, L, cm->W, 0., 
-				 NULL,   /* don't return scores of hits */
-				 NULL,   /* don't return posns of hits */
-				 NULL,   /* don't keep track of hits */
-				 TRUE,   /* we're scanning */
-				 FALSE,  /* we're not ultimately aligning */
-				 FALSE,  /* we're not rescanning */
-				 TRUE,   /* be memory efficient */
-				 NULL);  /* don't want the DP matrix back */
+	  if(do_hmmfastfil) /* don't search with the HMM, convert the CM
+			     * parsetree to an alignment, than an implicit CP9 trace */
+	    {
+	      Parsetree2CP9trace(cm, tr, &cp9_tr);
+	      /*CP9PrintTrace(stdout, cp9_tr, cm->cp9, dsq);*/
+	      hmm_sc[i] = CP9TraceScore(cm->cp9, dsq, cp9_tr);
+	      CP9FreeTrace(cp9_tr);
+	    }
+	  else
+	    hmm_sc[i] = CP9Forward(cm, dsq, 1, L, cm->W, 0., 
+				   NULL,   /* don't return scores of hits */
+				   NULL,   /* don't return posns of hits */
+				   NULL,   /* don't keep track of hits */
+				   TRUE,   /* we're scanning */
+				   FALSE,  /* we're not ultimately aligning */
+				   FALSE,  /* we're not rescanning */
+				   TRUE,   /* be memory efficient */
+				   NULL);  /* don't want the DP matrix back */
 	  FreeParsetree(tr);
 	  free(dsq);
 	  free(seq);
 
 
-	  printf("i: %4d cm sc: %10.4f hmm sc: %10.4f ", i, cm_sc, hmm_sc[i]);
-	  if(do_ptest) printf("D: %10.3f (E: %10.3f)\n", (cm_sc - esc), esc);
-	  if(fabs(cm_sc-esc) > 0.0001) ndiff++;
-	  else printf("\n");
+	  if(do_ptest) 
+	    {
+	      printf("i: %4d cm sc: %10.4f hmm sc: %10.4f ", i, cm_sc, hmm_sc[i]);
+	      printf("D: %10.3f (E: %10.3f)\n", (cm_sc - esc), esc);
+	      if(fabs(cm_sc-esc) > 0.0001) ndiff++;
+	    }
 	}
       if(do_ptest) printf("Summary: Num diff: %d Bit diff: %.3f Avg per seq: %.3f\n", ndiff, diff, (diff/nseq));
       /* Sort the HMM scores with quicksort */
-      esl_vec_FSortIncreasing(hmm_sc, nseq);
+      esl_vec_FSortDecreasing(hmm_sc, nseq);
+      for(i = 0; i < nseq; i++)
+	printf("i: %4d hmm sc: %10.4f\n", i, hmm_sc[i]);
 
       /*esl_histogram_Print(stdout, h);*/
 
@@ -740,14 +763,17 @@ main(int argc, char **argv)
       esl_histogram_Destroy(h);
       
       f = 0.95;
-      hmm_cutoff = hmm_sc[(int) ((1. - f) * (float) nseq)];
+      hmm_cutoff = hmm_sc[(int) ((f) * (float) nseq) - 1];
       printf("HMM glocal filter bit score threshold for finding %.2f CM hits > %.2f bits: %.4f\n", f, cm_sc_cutoff, hmm_cutoff);
       printf("\n\nnattempts: %d\n", nattempts);
 
-      float eval = RJK_ExtremeValueE(hmm_cutoff, 
-				     cm->stats->gumAA[cp9_mode][0]->mu,
-				     cm->stats->gumAA[cp9_mode][0]->lambda);
-      printf("05.21.07 %d %d %f %f\n", cm_mode, cp9_mode, hmm_cutoff, eval);
+      if(cm->flags & CM_GUMBEL_STATS)
+	{
+	  eval = RJK_ExtremeValueE(hmm_cutoff, 
+				   cm->stats->gumAA[cp9_mode][0]->mu,
+				   cm->stats->gumAA[cp9_mode][0]->lambda);
+	  printf("05.21.07 %d %d %f %f\n", cm_mode, cp9_mode, hmm_cutoff, eval);
+	}
       free(hmm_sc);
     }
   else				/* unaligned sequence output */

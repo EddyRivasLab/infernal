@@ -187,6 +187,7 @@ extern MSA         *Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, f
 extern MSA         *ESL_Parsetrees2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, 
 					     Parsetree_t **tr, int nseq, int do_full);
 extern float        ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, char *dsq);
+extern int          Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, CP9trace_t **ret_cp9_tr);
 
 /* from scancyk.c
  */
@@ -296,14 +297,27 @@ extern void CPlan9GlobalConfig(CP9_t *hmm);
 extern void sub_CPlan9GlobalConfig(CP9_t *hmm, int spos, int epos, double **phi);
 
 extern void CPlan9RenormalizeExits(CP9_t *hmm, int spos);
-extern void CP9AllocTrace(int tlen, struct cp9trace_s **ret_tr);
-extern void CP9ReallocTrace(struct cp9trace_s *tr, int tlen);
-extern void CP9FreeTrace(struct cp9trace_s *tr);
+extern void CP9AllocTrace(int tlen, CP9trace_t **ret_tr);
+extern void CP9ReallocTrace(CP9trace_t *tr, int tlen);
+extern void CP9FreeTrace(CP9trace_t *tr);
 
 extern void CP9_2sub_cp9(CP9_t *orig_hmm, CP9_t **ret_sub_hmm, int spos, int epos, double **orig_phi);
 extern void CP9_reconfig2sub(CP9_t *hmm, int spos, int epos, int spos_nd, int epos_nd, double **orig_phi);
 extern void CP9HackInsertScores(CP9_t *cp9);
 extern void CP9EnforceHackMatchScores(CP9_t *cp9, int enf_start_pos, int enf_end_pos);
+extern void CP9_fake_tracebacks(char **aseq, int nseq, int alen, int *matassign, CP9trace_t ***ret_tr);
+extern void  CP9TraceCount(CP9_t *hmm, char *dsq, float wt, CP9trace_t *tr);
+extern float CP9TraceScore(CP9_t *hmm, char *dsq, CP9trace_t *tr);
+extern void  CP9PrintTrace(FILE *fp, CP9trace_t *tr, CP9_t *hmm, char *dsq);
+extern char *CP9Statetype(char st);
+extern int   CP9TransitionScoreLookup(struct cplan9_s *hmm, char st1, int k1, 
+				    char st2, int k2);
+extern void  CP9ViterbiTrace(struct cplan9_s *hmm, char *dsq, int i0, int j0,
+			     struct cp9_dpmatrix_s *mx, CP9trace_t **ret_tr);
+extern void  CP9ReverseTrace(CP9trace_t *tr);
+extern MSA  *CP9Traces2Alignment(ESL_SQ **sq, float *wgt, int nseq, int mlen, 
+				 CP9trace_t **tr, int matchonly, char *rf, char *cs);
+
 
 /* from hbandcyk.c
  */
@@ -375,9 +389,6 @@ extern void make_tmap(char ****ret_tmap);
 
 extern int  CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, CMSubInfo_t *subinfo, int spos, int epos, 
 				  float chi_thresh, int nsamples, int print_flag);
-extern void CP9_fake_tracebacks(char **aseq, int nseq, int alen, int *matassign, struct cp9trace_s ***ret_tr);
-
-extern void CP9TraceCount(CP9_t *hmm, char *dsq, float wt, struct cp9trace_s *tr);
 extern void debug_print_cp9_params(CP9_t *hmm);
 extern void debug_print_phi_cp9(CP9_t *hmm, double **phi);
 extern CP9Map_t *AllocCP9Map(CM_t *cm);

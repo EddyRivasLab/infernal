@@ -286,13 +286,13 @@ main(int argc, char **argv)
   /* variables used to calculate HMM filter threshold by sampling from CM */
   int   do_hmmcalcthr = FALSE; /* TRUE to sample from CM, score with HMM to get HMM cutoff */
   int   do_fastfil    = FALSE; /* TRUE: use fast hacky filter thr calc method */
-  float filt_fract = 0.95;    /* min fraction of CM hits req'd to find with HMM  */
+  float filt_fract = 0.95;     /* min fraction of CM hits req'd to find with HMM  */
   float F;                     /* min fraction of CM hits req'd to find with HMM  */
-  float min_surv = 0.01;      /* minimum survival fraction for FindCP9FilterThr() */
-  int   use_cm_cutoff = TRUE; /* TRUE to use cm_ecutoff, FALSE not to      */
-  int   filN = 100;          /* Number of sequences to sample from the CM */
-  int   do_hmmgemit = FALSE;    /* always emit globally from CM in FindCP9Fthr */
-  int   emit_mode;           /* CM_GC or CM_LC for emitting globally or locally */
+  float min_surv = 0.01;       /* minimum survival fraction for FindCP9FilterThr() */
+  int   use_cm_cutoff = TRUE ; /* TRUE to use cm_ecutoff, FALSE not to      */
+  int   filN = 1000;           /* Number of sequences to sample from the CM */
+  int   do_hmmgemit = FALSE;   /* always emit globally from CM in FindCP9Fthr */
+  int   emit_mode;             /* CM_GC or CM_LC for emitting globally or locally */
 
   int do_mpi = FALSE;       
   int my_rank = 0;          /* My rank in MPI, 0 if in serial mode */
@@ -692,15 +692,27 @@ main(int argc, char **argv)
       if(!do_local &&  do_inside) cm_mode = CM_GI;
       if(do_hmmlocal) cp9_mode = CP9_L;
       else            cp9_mode = CP9_G;
-      if(!cp9_cutoff_set) /* cp9_cutoff_set is TRUE if --hmmT or --hmmE invoked at command line */
+      if(do_hmmonly)
+	{
+	  /* these are irrelevant, but need to be set */
+	  cm_cutoff_type = SCORE_CUTOFF;
+	  cm_sc_cutoff  = 0.; 
+	}
+      if(!do_hmmfilter && !do_hmmonly)
+	{
+	  /* these are irrelevant, but need to be set */
+	  cp9_cutoff_type = SCORE_CUTOFF;
+	  cp9_sc_cutoff   = 0.;
+	}
+      else if(!cp9_cutoff_set) /* cp9_cutoff_set is TRUE if --hmmT or --hmmE invoked at command line */
 	{
 	  /* Default behavior: use HMM filter threshold stats from CM file.
 	   * We overwrite these after recalc'ing HMM threshold (if --hmmcalcthr) 
 	   */
 	  if(!(cm->flags & CM_GUMBEL_STATS)) 
-	    Die("ERROR trying to use HMM filter thresholds but no Gumbel stats in CM file.\nUse cmcalibrate or use --hmmT or --hmmE.\n");
+	    Die("ERROR trying to use HMM E-value cutoff but no Gumbel stats in CM file.\nUse cmcalibrate or use --hmmT or --hmmE.\n");
 	  if(!(cm->flags & CM_FTHR_STATS)) 
-	    Die("ERROR trying to use HMM filter thresholds but none in CM file.\nUse cmcalibrate or use --hmmT or --hmmE.\n");
+	    Die("ERROR trying to use HMM E-value cutoff but none in CM file.\nUse cmcalibrate or use --hmmT or --hmmE.\n");
 	  /* Convert E-value from CM file to E-value for current DB size */
 	  cp9_cutoff_type = E_CUTOFF;
 	  if(cp9_mode == CP9_L)      cp9_e_cutoff   = cm->stats->fthrA[cm_mode]->l_eval;
@@ -901,7 +913,7 @@ main(int argc, char **argv)
 } /* end of while(continue_flag) (continue_flag remains TRUE as long as we are
        * reading CMs from the CM file. */
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-MPI_Barrier(MPI_COMM_WORLD);
+  MPI_Barrier(MPI_COMM_WORLD);
   MPI_Finalize();
 in_mpi = 0;
   if (my_rank == mpi_master_rank) 

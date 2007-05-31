@@ -140,8 +140,10 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
   if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
     CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
 				     * makes all CP9 (if non-null) inserts equiprobable */
+
   /*printf("leaving ConfigCM()\n");
-    debug_print_cm_params(cm);*/
+    debug_print_cm_params(cm);
+    debug_print_cp9_params(cm->cp9);*/
   return;
 
   /* TO DO, set up a SUB CM */

@@ -31,6 +31,7 @@
 #include "hmmband.h"         
 #include "cm_postprob.h"
 #include "stats.h"
+#include "cplan9.h"
 #include "esl_gumbel.h"
 #include "mpifuncs.h"
 #include "cm_dispatch.h"
@@ -747,6 +748,7 @@ void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, char *seq,
  *           ret_sq       - RETURN: the sequences (EASEL)
  *           ret_tr       - RETURN: the parsetrees for seqs in seqfp
  *           ret_postcode - RETURN: the postal codes (NULL if not doing posteriors)
+ *           ret_cp9_tr   - RETURN: the CP9 traces for seqs in seqfp (only if hmmonly)
  *           ret_nseq     - RETURN: the number of seqs in seqfp
  *           bdump_level  - verbosity level for band related print statements
  *           debug_level  - verbosity level for debugging print statements
@@ -755,10 +757,11 @@ void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, char *seq,
  */
 void
 serial_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr, 
-		     char ***ret_postcode, int *ret_nseq, int bdump_level, int debug_level, 
-		     int silent_mode)
+		     char ***ret_postcode, CP9trace_t ***ret_cp9_tr, int *ret_nseq, 
+		     int bdump_level, int debug_level, int silent_mode)
 {
   Parsetree_t    **tr;          /* parse trees for the sequences */
+  CP9trace_t **cp9_tr;          /* CP9 traces for the sequences */
   ESL_SQ         **sq;          /* the sequences */
   int              nalloc;      /* seqs allocated thus far */
   int              i;           /* seq index */
@@ -800,10 +803,14 @@ serial_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t 
    * Align all the sequences and collect parsetrees with 1 call
    * to align_target_seqs()
    ****************************************************************/
-  actually_align_targets(cm, sq, nseq, &tr, &postcode, bdump_level, debug_level, silent_mode);
+  if(ret_cp9_tr == NULL)
+    actually_align_targets(cm, sq, nseq, &tr, &postcode, NULL, bdump_level, debug_level, silent_mode);
+  else
+    actually_align_targets(cm, sq, nseq, &tr, &postcode, &cp9_tr, bdump_level, debug_level, silent_mode);
 
   /* Clean up and return */
   *ret_tr = tr;
+  if(ret_cp9_tr != NULL) *ret_cp9_tr = cp9_tr;
   if((cm->align_opts & CM_ALIGN_POST) && ret_postcode != NULL) *ret_postcode = postcode;
   *ret_nseq = nseq;
   *ret_sq   = sq;
@@ -825,6 +832,7 @@ serial_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t 
  *           ret_sq       - RETURN: the sequences (EASEL)
  *           ret_tr       - RETURN: the parsetrees for seqs in seqfp
  *           ret_postcode - RETURN: the postal codes (NULL if not doing posteriors)
+ *           ret_cp9_tr   - RETURN: the CP9 traces for seqs in seqfp (NOT YET IMPLEMENTED)
  *           ret_nseq     - RETURN: the number of seqs in seqfp
  *           bdump_level  - verbosity level for band related print statements
  *           debug_level  - verbosity level for debugging print statements
@@ -836,7 +844,8 @@ serial_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t 
  */
 void
 parallel_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr,
-		       char ***ret_postcode, int *ret_nseq, int bdump_level, int debug_level,
+		       char ***ret_postcode, CP9trace_t ***ret_cp9_tr, int *ret_nseq, 
+		       int bdump_level, int debug_level,
 		       int silent_mode, int mpi_my_rank, int mpi_master_rank, int mpi_num_procs)
 {
   char job_type;
@@ -860,6 +869,8 @@ parallel_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_
   else
     do_post = FALSE;
 
+  if(ret_cp9_tr != NULL)
+    Die("ERROR in parallel_align_targets, ret_cp9_tr non-null, this is not implemented yet.\n");
   /*printf("in parallel_align_targets rank: %d master: %d nprocs: %d do_post: %d\n", mpi_my_rank, mpi_master_rank, mpi_num_procs, do_post);*/
   if (mpi_my_rank == mpi_master_rank) 
     {
@@ -949,7 +960,7 @@ parallel_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_
 	      bdump_level = 0;
 	      /* align the targets */
 	      actually_align_targets(cm, seqs_to_aln->sq, seqs_to_aln->nseq, &(seqs_to_aln->tr), 
-				     &(seqs_to_aln->postcode), bdump_level, debug_level, silent_mode);
+				     &(seqs_to_aln->postcode), NULL, bdump_level, debug_level, silent_mode);
 
 	      /*printf("done actually_align_targets\n");*/
 	      aln_send_results(seqs_to_aln, do_post, mpi_master_rank);
@@ -1026,19 +1037,21 @@ seqs_to_aln_t * read_next_aln_seqs(ESL_SQFILE *seqfp, int nseq, int index)
  *           nseq         - number of seqs we're aligning
  *           ret_tr       - RETURN: parsetrees (pass NULL if trace isn't wanted)
  *           ret_postcode - RETURN: postal code string
+ *           ret_cp9_tr   - RETURN: CP9 traces only filled if cm->align_opts & CM_ALIGN_HMMONLY
  *           bdump_level  - verbosity level for band related print statements
  *           debug_level  - verbosity level for debugging print statements
  *           silent_mode  - TRUE to not print anything, FALSE to print scores 
  */
 void
 actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, char ***ret_postcode,
-		       int bdump_level, int debug_level, int silent_mode)
+		       CP9trace_t ***ret_cp9_tr, int bdump_level, int debug_level, int silent_mode)
 {
   Stopwatch_t      *watch;      /* for timings */
   int i;                        /* counter over sequences */
   int v;                        /* state counter */
   char           **postcode;    /* posterior decode array of strings        */
   Parsetree_t    **tr;          /* parse trees for the sequences */
+  CP9trace_t     **cp9_tr;   /* CP9 traces for the sequences */
   float            sc;		/* score for one sequence alignment */
   float            maxsc;	/* max score in all seqs */
   float            minsc;	/* min score in all seqs */
@@ -1144,7 +1157,13 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
     printf("do_post   : %d\n", do_post);
     printf("do_timings: %d\n", do_timings);*/
     
-  tr    = MallocOrDie(sizeof(Parsetree_t) * nseq);
+  if((!(ret_cp9_tr == NULL)) && !do_hmmonly)
+    Die("ERROR in actually_align_targets, want CP9 traces, but not hmmonly mode.\n");
+  tr    = MallocOrDie(sizeof(Parsetree_t *) * nseq);
+  if(do_hmmonly)
+    cp9_tr = MallocOrDie(sizeof(CP9trace_t *) * nseq);
+  else
+    cp9_tr = NULL;
   minsc = FLT_MAX;
   maxsc = -FLT_MAX;
   avgsc = 0;
@@ -1217,7 +1236,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	{
 	  cp9_mx  = CreateCPlan9Matrix(1, cm->cp9->M, 25, 0);
 	  if(!silent_mode) printf("Aligning (to a CP9 HMM w/viterbi) %-20s", sq[i]->name);
-	  sc = CP9Viterbi(sq[i]->dsq, 1, sq[i]->n, cm->cp9, cp9_mx);
+	  sc = CP9Viterbi(sq[i]->dsq, 1, sq[i]->n, cm->cp9, cp9_mx, &(cp9_tr[i]));
 	  if(!silent_mode) printf(" score: %10.2f bits\n", sc);
 	  FreeCPlan9Matrix(cp9_mx);
 	  continue;
@@ -1656,6 +1675,13 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
   if (do_post) *ret_postcode = postcode; 
   else ret_postcode = NULL;
   
+  if(ret_cp9_tr != NULL) *ret_cp9_tr = cp9_tr;
+  else if(do_hmmonly)
+    {
+      for(i = 0; i < nseq; i++)
+	CP9FreeTrace(cp9_tr[i]);
+      free(cp9_tr);
+    }
   /*  if(ret_post_spos != NULL)
    *ret_post_spos = post_spos;
    if(ret_post_epos != NULL)

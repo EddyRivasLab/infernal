@@ -26,6 +26,7 @@
 #include "funcs.h"		/* external functions                   */
 #include "sre_stack.h"
 #include "hmmband.h"         
+#include "cplan9.h"
 #include "cm_postprob.h"
 #include "mpifuncs.h"
 #include "cm_dispatch.h"
@@ -162,12 +163,14 @@ main(int argc, char **argv)
   int              nseq;	/* number of seqs                           */
   CM_t            *cm;          /* a covariance model                       */
   Parsetree_t    **tr;          /* parse trees for the sequences            */
+  CP9trace_t     **cp9_tr;      /* CP9 traces for the sequences             */
   MSA             *msa;         /* alignment that's created                 */
   char            *outfile;	/* optional output file name                */
   FILE            *ofp;         /* an open output file                      */
   int              i;		/* counter over sequences/parsetrees        */
   char            *regressfile; /* regression test data file                */
   char            *tracefile;	/* file to dump debugging traces to         */
+  CMConsensus_t   *con;         /* consensus information for the CM         */
 
   /* Options, modifiable via the command line */
   int              be_quiet;	/* TRUE to suppress verbose output & banner */
@@ -463,7 +466,7 @@ main(int argc, char **argv)
       ConfigCM(cm, NULL, NULL);
       if(cm->config_opts & CM_CONFIG_ENFORCE) ConfigCMEnforce(cm);
 
-      parallel_align_targets(seqfp, cm, &sq, &tr, &postcode, &nseq,
+      parallel_align_targets(seqfp, cm, &sq, &tr, &postcode, NULL, &nseq,
 			     bdump_level, debug_level, 
 			     TRUE, /* be_quiet=TRUE we don't print scores in MPI
 				    * mode yet, b/c they get jumbled due to potentially
@@ -477,8 +480,12 @@ main(int argc, char **argv)
        * set local mode, make cp9 HMM, calculate QD bands etc. */
       ConfigCM(cm, NULL, NULL);
       if(cm->config_opts & CM_CONFIG_ENFORCE) ConfigCMEnforce(cm);
-      serial_align_targets(seqfp, cm, &sq, &tr, &postcode, &nseq, bdump_level, debug_level, 
-			   be_quiet);
+      if(do_hmmonly)
+	serial_align_targets(seqfp, cm, &sq, &tr, &postcode, &cp9_tr, &nseq, bdump_level, debug_level, 
+			     be_quiet);
+      else
+	serial_align_targets(seqfp, cm, &sq, &tr, &postcode, NULL, &nseq, bdump_level, debug_level, 
+			     be_quiet);
     }
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
   if (mpi_my_rank == mpi_master_rank) {
@@ -487,15 +494,22 @@ main(int argc, char **argv)
      * Create the MSA.                                                                   
      ****************************************************************/                   
     msa = NULL;                                                                          
-    if((!((cm->align_opts & CM_ALIGN_INSIDE) || (cm->align_opts & CM_ALIGN_OUTSIDE))) &&
-       (!(cm->align_opts & CM_ALIGN_HMMONLY)))   
+    if(!((cm->align_opts & CM_ALIGN_INSIDE) || (cm->align_opts & CM_ALIGN_OUTSIDE)))
       {                                                                                  
 	/* optionally include a fixed alignment provided with --withali */
 	withali_nseq = 0;
 	if(withali != NULL)
 	  include_alignment(withali, use_rf, gapthresh, cm, &sq, &tr, &nseq, &withali_nseq);
 
-	msa = ESL_Parsetrees2Alignment(cm, sq, NULL, tr, nseq, do_full);                 
+	if(!do_hmmonly)
+	  msa = ESL_Parsetrees2Alignment(cm, sq, NULL, tr, nseq, do_full);                 
+	else
+	  {
+	    con = CreateCMConsensus(cm, 3.0, 1.0);
+	    msa = CP9Traces2Alignment(sq, NULL, nseq, cm->cp9->M, cp9_tr, FALSE, con->cseq, con->cstr);
+	    FreeCMConsensus(con);
+	  }
+
 	if(cm->align_opts & CM_ALIGN_POST)                                              
         {                                                                              
 	  if(postcode == NULL)
@@ -528,14 +542,25 @@ main(int argc, char **argv)
 	/* Detailed traces for debugging training set. */
 	if (tracefile != NULL)       
 	  {
-	    printf("%-40s ... ", "Saving parsetrees"); fflush(stdout);
+	    if(do_hmmonly)
+	      { printf("%-40s ... ", "Saving CP9 HMM traces"); fflush(stdout); }
+	    else
+	      { printf("%-40s ... ", "Saving CM parsetrees"); fflush(stdout); }
 	    if ((ofp = fopen(tracefile,"w")) == NULL)
 	      Die("failed to open trace file %s", tracefile);
 	    for (i = 0; i < msa->nseq; i++) 
 	      {
 		fprintf(ofp, "> %s\n", msa->sqname[i]);
-		fprintf(ofp, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr[i], sq[i]->dsq, FALSE));;
-		ParsetreeDump(ofp, tr[i], cm, sq[i]->dsq);
+		if(do_hmmonly)
+		  {
+		    fprintf(ofp, "  SCORE : %.2f bits\n", CP9TraceScore(cm->cp9, sq[i]->dsq, cp9_tr[i]));
+		    CP9PrintTrace(ofp, cp9_tr[i], cm->cp9, sq[i]->dsq);
+		  }
+		else
+		  {
+		    fprintf(ofp, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr[i], sq[i]->dsq, FALSE));;
+		    ParsetreeDump(ofp, tr[i], cm, sq[i]->dsq);
+		  }
 		fprintf(ofp, "//\n");
 	      }
 	    fclose(ofp);
@@ -559,13 +584,15 @@ main(int argc, char **argv)
     for (i = 0; i < nseq; i++) 
       {
 	if((!(do_inside || do_outside)) && !do_hmmonly) FreeParsetree(tr[i]);
+	if(do_hmmonly) CP9FreeTrace(cp9_tr[i]);
 	esl_sq_Destroy(sq[i]);
       }
     esl_sqfile_Close(seqfp);
 
-    if((!(do_inside || do_outside)) && !do_hmmonly) MSAFree(msa);
+    if(!(do_inside || do_outside)) MSAFree(msa);
     free(sq);
     free(tr);
+    if(do_hmmonly) free(cp9_tr);
     SqdClean();
 
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)

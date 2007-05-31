@@ -27,6 +27,7 @@
 
 #include "structs.h"
 #include "funcs.h"
+#include "cplan9.h"
 
 #include "easel.h"
 #include "esl_vectorops.h"
@@ -1339,3 +1340,146 @@ ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, char *dsq)
   return -1.;
 }
 
+/*
+ * Function: Parsetree2CP9trace()
+ * Incept:   EPN, Wed May 30 09:33:01 2007
+ *
+ * Purpose: Convert a CM parsetree into it's implicit CP9 trace.
+ * Returns: eslOK on success
+ *
+ * Args:    
+ * CM_t  *cm                - the CM, must have a valid cm->cp9
+ * Parsetree_t *cm_tr       - valid parsetree to convert
+ * cp9trace_s *ret_cp9_tr   - the CP9 trace to return, alloc'ed here
+ */
+int
+Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, struct cp9trace_s **ret_cp9_tr)
+{
+  /* Check the contract */
+  if(cm->cp9 == NULL || (!(cm->flags & CM_CP9)))
+    esl_fatal("In Parsetree2CP9trace, cm->cp9 is not valid.\n");
+  if(cm->cp9map == NULL)
+    esl_fatal("In Parsetree2CP9trace, cm->cp9map is NULL.\n");
+
+  int status;                /* Easel status                            */
+  struct cp9trace_s *cp9_tr; /* the CP9 trace we're creating            */
+  int **ks_ct = NULL; /* [0..2][0..cp9->M] number of times each state was used
+		       * 1st D: 0 = MATCH, 1 = INSERT, 2 = DELETE */
+  int  tidx;                 /* counter over parsetree nodes */
+  int  v;                    /* CM state index */
+  int  k, ks;                /* HMM nodes and state indices */
+  int  i;                    /* generic counter */
+  int  cp9_tr_size;          /* number of nodes we'll need for cp9_tr */
+  int  lmost_k = cm->cp9->M + 1; /* left most HMM node visited in parse (often 1) */
+  int  rmost_k = 0;          /* right most HMM node visited in parse (often M) */
+  int  ip;
+  int  ins_ct = 0;               /* total number of inserts */
+  ESL_ALLOC(ks_ct,           sizeof(int *) * 3);
+  for(ks = 0; ks < 3; ks++)
+    {
+      ESL_ALLOC(ks_ct[ks], sizeof(int) * (cm->cp9->M+1));
+      esl_vec_ISet(ks_ct[ks], cm->cp9->M+1, 0);
+    }
+
+  /* Traverse parsetree, keeping track of implied HMM states used by each HMM node. */
+  v = tr->state[0]; 
+  if(v != 0) esl_fatal("ERROR in Parsetree2CP9Trace(), first Parsetree node not root.\n");
+  /* we leave ks_ct[HMMMATCH][0] as 0 for convenience later, we know it was used. */
+
+  for (tidx = 1; tidx < tr->n; tidx++) 
+    {
+      v  = tr->state[tidx];        	/* index of parent state in CM */
+      for(i = 0; i < 2; i++) /* each CM state maps to 0, 1 or 2 HMM states */
+	{ 
+	  k  = cm->cp9map->cs2hn[v][i];
+	  ks = cm->cp9map->cs2hs[v][i];
+	  if(k == -1) continue; /* when HMM EL's are implemented, we'll have to have a special
+				 * case for them, but for now we visit deletes in between. */
+	  ks_ct[ks][k]++;
+	  if(ks == HMMINSERT) ins_ct++;
+	}
+    }
+  /* Determine the first (leftmost) node used and last (rightmost) node used, 
+   * anything else was skipped by a smith-waterman local begin or end. */
+  lmost_k = 1; 
+  rmost_k = cm->cp9->M; 
+  if(cm->cp9->flags & CPLAN9_LOCAL_BEGIN)
+    {
+      while((ks_ct[HMMMATCH][lmost_k] + ks_ct[HMMINSERT][lmost_k] + ks_ct[HMMDELETE][lmost_k]) == 0)
+	lmost_k++;
+    }
+  if(cm->cp9->flags & CPLAN9_LOCAL_END)
+    {
+      while((ks_ct[HMMMATCH][rmost_k] + ks_ct[HMMINSERT][rmost_k] + ks_ct[HMMDELETE][rmost_k]) == 0)
+	rmost_k--;
+    }
+  /* Now build the CP9 trace */
+  cp9_tr_size = (rmost_k - lmost_k + 1) + ins_ct + 2; /* number of match/deletes we'll visit plus
+						       * number of inserts + begin/end */
+  CP9AllocTrace(cp9_tr_size, &cp9_tr);  /* allow room for B & E */
+  /* start at node 0 with the begin */
+  cp9_tr->statetype[0] = CSTB;
+  cp9_tr->nodeidx[0]   = 0;
+  cp9_tr->pos[0]       = 0;
+  tidx = 1;
+  i    = 1;
+  /* are there inserts from node 0? */
+  for(ip = 0; ip < ks_ct[HMMINSERT][0]; ip++)
+    {
+      cp9_tr->statetype[tidx] = CSTI;
+      cp9_tr->nodeidx[tidx]   = 0;
+      cp9_tr->pos[tidx]       = i++;
+      tidx++;
+    }
+  /* now go through nodes 1..M */
+  for(k = lmost_k; k <= rmost_k; k++)
+    {
+      if(ks_ct[HMMMATCH][k])
+	{
+	  cp9_tr->statetype[tidx] = CSTM;
+	  cp9_tr->nodeidx[tidx]   = k;
+	  cp9_tr->pos[tidx]       = i++;
+	  tidx++;
+	}
+      else if(ks_ct[HMMDELETE][k]) 
+	{
+	  cp9_tr->statetype[tidx] = CSTD;
+	  cp9_tr->nodeidx[tidx]   = k;
+	  cp9_tr->pos[tidx]       = 0;
+	  tidx++;
+	}
+      else /* skipped due to local end, treat as delete for now */
+	{
+	  cp9_tr->statetype[tidx] = CSTD;
+	  cp9_tr->nodeidx[tidx]   = k;
+	  cp9_tr->pos[tidx]       = 0;
+	  tidx++;
+	}
+      for(ip = 0; ip < ks_ct[HMMINSERT][k]; ip++)
+	{
+	  cp9_tr->statetype[tidx] = CSTI;
+	  cp9_tr->nodeidx[tidx]   = k;
+	  cp9_tr->pos[tidx]       = i++;
+	  tidx++;
+	}
+    }
+  /* all traces end with E state */
+  cp9_tr->statetype[tidx]  = CSTE;
+  cp9_tr->nodeidx[tidx]    = 0;
+  cp9_tr->pos[tidx]        = 0;
+  tidx++;
+  cp9_tr->tlen = tidx;
+
+  *ret_cp9_tr = cp9_tr;
+
+  for(ks = 0; ks < 3; ks++)
+    if(ks_ct[ks] != NULL) free(ks_ct[ks]);
+  if(ks_ct != NULL) free(ks_ct);
+  return eslOK;
+
+ ERROR:
+  for(ks = 0; ks < 3; ks++)
+    if(ks_ct[ks] != NULL) free(ks_ct[ks]);
+  if(ks_ct != NULL) free(ks_ct);
+  return -1;
+}

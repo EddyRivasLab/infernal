@@ -94,8 +94,8 @@ int SetCMCutoff(CM_t *cm, int cm_cutoff_type, float cm_sc_cutoff, float cm_e_cut
 {
   if(cm->search_opts & CM_SEARCH_HMMONLY) /* CM score cutoff won't be used */
     {
-      cm_cutoff_type = SCORE_CUTOFF;
-      cm_sc_cutoff   = 0.;
+      cm->cutoff_type = SCORE_CUTOFF;
+      cm->cutoff   = 0.;
     }
   else
     {
@@ -132,7 +132,7 @@ int SetCP9Cutoff(CM_t *cm, int cp9_cutoff_type, float cp9_sc_cutoff, float cp9_e
 	  if(!(cm->flags & CM_GUMBEL_STATS))
 	    Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try --hmmT.\n");
 	  if(cp9_e_cutoff < DEFAULT_MIN_CP9_E_CUTOFF) cp9_e_cutoff = DEFAULT_MIN_CP9_E_CUTOFF;
-	  /*if(cm->cutoff_type == E_CUTOFF && cp9_e_cutoff < cm_e_cutoff) cp9_e_cutoff = cm_e_cutoff;*/
+	  if(cm->cutoff_type == E_CUTOFF && cp9_e_cutoff < cm_e_cutoff) cp9_e_cutoff = cm_e_cutoff;
 	  cm->cp9_cutoff = cp9_e_cutoff;
 	}
     }
@@ -567,7 +567,7 @@ float MinCP9ScCutoff (CM_t *cm)
   
   /* we better have stats */
   if(!(cm->flags & CM_GUMBEL_STATS))
-    Die("ERROR in MinCMScCutoff, cutoff type E value, but no stats.\n");
+    Die("ERROR in MinCP9ScCutoff, cutoff type E value, but no stats.\n");
 
   /* Determine appropriate Gumbel mode */
   CM2Gumbel_mode(cm, NULL,  /* don't care about CM Gumbel mode */
@@ -693,8 +693,6 @@ int CopyCMStatsGumbel(CMStats_t *src, CMStats_t *dest)
  */
 int CopyCMStats(CMStats_t *src, CMStats_t *dest)
 {
-  int i, p;
-
   /* Check contract */
   if(src->np != dest->np)
     Die("ERROR in CopyCMStats() src->np: %d not equal to alloc'ed dest->np: %d\n", src->np, dest->np);

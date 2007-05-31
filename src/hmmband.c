@@ -31,6 +31,7 @@
 #include "funcs.h"		/* external functions                   */
 #include "sre_stack.h"
 #include "hmmband.h"
+#include "cplan9.h"
 
 /**************************************************************************
  * EPN 10.28.06
@@ -477,10 +478,10 @@ CP9ForwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm,
  * Return:   log P(S|M)/P(S|R), as a bit score
  */
 float
-CP9Viterbi(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s *mx)
-     //struct cp9trace_s **ret_tr)
+CP9Viterbi(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s *mx,
+	   CP9trace_t **ret_tr)
 {
-  /*struct cp9trace_s  *tr;*/
+  CP9trace_t  *tr;
   int **mmx;
   int **imx;
   int **dmx;
@@ -522,9 +523,8 @@ CP9Viterbi(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_
   for (ip = 1; ip <= W; ip++) /* ip is the relative position in the seq */
     {
       i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from i0 to j0 */
-      mmx[ip][0] = dmx[ip][0] = -INFTY;  /*M_0 (B) and D_0 (non-existent)
-					 don't emit.
-				       */
+      mmx[ip][0] = dmx[ip][0] = -INFTY;  /* M_0 (B) and D_0 (non-existent)
+					  * don't emit. */
       imx[ip][0] = -INFTY;
       if((sc = mmx[ip-1][0] + hmm->tsc[CTMI][0]) > imx[ip][0])
 	imx[ip][0] = sc;
@@ -587,9 +587,11 @@ CP9Viterbi(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_
   sc = emx[0][W];
   /*printf("returing sc: %d from CPViterbi()\n", sc);*/
   
-  /*if (ret_tr != NULL) {
-    P7ViterbiTrace(hmm, dsq, L, mx, &tr);*/
-
+  if (ret_tr != NULL) {
+    CP9ViterbiTrace(hmm, dsq, i0, j0, mx, &tr);
+    /* CP9PrintTrace(stdout, tr, hmm, dsq); */
+    *ret_tr = tr;
+  }
   return Scorify(sc);		/* the total Viterbi score. */
 }
 

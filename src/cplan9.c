@@ -31,6 +31,8 @@
 #include "funcs.h"
 #include "structs.h"
 
+static void rightjustify(char *s, int n);
+
 /* Functions: AllocCPlan9(), AllocCPlan9Shell(), AllocCPlan9Body(), FreeCPlan9()
  * 
  * Purpose:   Allocate or free a CPlan9 HMM structure.
@@ -788,25 +790,25 @@ CPlan9RenormalizeExits(struct cplan9_s *hmm, int spos)
  * Purpose:  allocation and freeing of traceback structures
  */
 void
-CP9AllocTrace(int tlen, struct cp9trace_s **ret_tr)
+CP9AllocTrace(int tlen, CP9trace_t **ret_tr)
 {
-  struct cp9trace_s *tr;
+  CP9trace_t *tr;
   
-  tr =            MallocOrDie (sizeof(struct cp9trace_s));
+  tr =            MallocOrDie (sizeof(CP9trace_t));
   tr->statetype = MallocOrDie (sizeof(char) * tlen);
   tr->nodeidx   = MallocOrDie (sizeof(int)  * tlen);
   tr->pos       = MallocOrDie (sizeof(int)  * tlen);
   *ret_tr = tr;
 }
 void
-CP9ReallocTrace(struct cp9trace_s *tr, int tlen)
+CP9ReallocTrace(CP9trace_t *tr, int tlen)
 {
   tr->statetype = ReallocOrDie (tr->statetype, tlen * sizeof(char));
   tr->nodeidx   = ReallocOrDie (tr->nodeidx,   tlen * sizeof(int));
   tr->pos       = ReallocOrDie (tr->pos,       tlen * sizeof(int));
 }
 void 
-CP9FreeTrace(struct cp9trace_s *tr)
+CP9FreeTrace(CP9trace_t *tr)
 {
   if (tr == NULL) return;
   free(tr->pos);
@@ -1281,6 +1283,961 @@ CP9EnforceHackMatchScores(CP9_t *cp9, int enf_start_pos, int enf_end_pos)
   for (k = enf_end_pos+1; k <= cp9->M; k++)
     for (x = 0; x < MAXDEGEN; x++)
       cp9->msc[x][k] = 0.;
+}
+
+/* Function: CP9_fake_tracebacks()
+ * 
+ * Purpose:  From a consensus assignment of columns to MAT/INS, construct fake
+ *           tracebacks for each individual sequence.
+ *           
+ * Args:     aseqs     - alignment [0..nseq-1][0..alen-1]
+ *           nseq      - number of seqs in alignment
+ *           alen      - length of alignment in columns
+ *           matassign - assignment of column 1 if MAT, 0 if INS; 
+ *                       [1..alen] (off one from aseqs)
+ *           ret_tr    - RETURN: array of tracebacks
+ *           
+ * Return:   (void)
+ *           ret_tr is alloc'ed here. Caller must free.
+ */          
+void
+CP9_fake_tracebacks(char **aseq, int nseq, int alen, int *matassign,
+		CP9trace_t ***ret_tr)
+{
+  CP9trace_t **tr;
+  int  idx;                     /* counter over sequences          */
+  int  i;                       /* position in raw sequence (1..L) */
+  int  k;                       /* position in HMM                 */
+  int  apos;                    /* position in alignment columns   */
+  int  tpos;			/* position in traceback           */
+  int  first_match;             /* first match column */
+  int  last_match;              /* last match column */
+
+  tr = (CP9trace_t **) MallocOrDie (sizeof(CP9trace_t *) * nseq);
+  
+  first_match = -1;
+  last_match  = -1;
+  for (apos = 0; apos < alen; apos++)
+    {
+      if(matassign[apos+1] && first_match == -1) first_match = apos;
+      if(matassign[apos+1]) last_match = apos;
+    }
+
+  for (idx = 0; idx < nseq; idx++)
+    {
+      CP9AllocTrace(alen+2, &tr[idx]);  /* allow room for B & E */
+      
+				/* all traces start with M_0 state (the B state)... */
+      tr[idx]->statetype[0] = CSTB;
+      tr[idx]->nodeidx[0]   = 0;
+      tr[idx]->pos[0]       = 0;
+
+      i = 1;
+      k = 0;
+      tpos = 1;
+
+      for (apos = 0; apos < alen; apos++)
+        {
+	  tr[idx]->statetype[tpos] = CSTBOGUS; /* bogus, deliberately, to debug */
+
+	  if (matassign[apos+1] && ! isgap(aseq[idx][apos]))
+	    {			/* MATCH */
+	      k++;		/* move to next model pos */
+	      tr[idx]->statetype[tpos] = CSTM;
+	      tr[idx]->nodeidx[tpos]   = k;
+	      tr[idx]->pos[tpos]       = i;
+	      i++;
+	      tpos++;
+	    }	      
+          else if (matassign[apos+1])
+            {                   /* DELETE */
+	      /* We should be careful about S/W transitions; but we have 
+	       * an ambiguity, based on the MSA, we can't tell if we
+	       * did a local begin (some M->E transition) or if we
+	       * went through a bunch of D state's before the first match 
+	       * B->D_1 -> D_2 .... -> M_x. For now, we assume we're not in
+	       * S/W mode, and treat it as the latter case, see
+	       * HMMER's modelmaker.c:fake_tracebacks() for code
+	       * on one *would* implement the S/W consideration IF
+	       * there wasn't a B->D_1 transition allowed.
+	       */
+	      k++;		/* *always* move on model when match column seen */
+	      tr[idx]->statetype[tpos] = CSTD;
+	      tr[idx]->nodeidx[tpos]   = k;
+	      tr[idx]->pos[tpos]       = 0;
+	      tpos++;
+            }
+	  else if (! isgap(aseq[idx][apos]))
+	    {			/* INSERT */
+	      tr[idx]->statetype[tpos] = CSTI;
+              tr[idx]->nodeidx[tpos]   = k;
+              tr[idx]->pos[tpos]       = i;
+	      i++;
+	      tpos++;
+	    }
+	}
+       /* all traces end with E state */
+      /* We should be careful about S/W transitions; but we have 
+       * an ambiguity, based on the MSA, we can't tell if we
+       * did a local end (some M->E transition) or if we
+       * went through a bunch of D state's before the final 
+       * D_M -> E transition. For now, we assume we're not in
+       * S/W mode, and treat it as the latter case, see
+       * HMMER's modelmaker.c:fake_tracebacks() for code
+       * on one *would* implement the S/W consideration IF
+       * there wasn't a D_M -> E transition allowed.
+       */
+      tr[idx]->statetype[tpos] = CSTE;
+      tr[idx]->nodeidx[tpos]   = 0;
+      tr[idx]->pos[tpos]       = 0;
+      tpos++;
+      tr[idx]->tlen = tpos;
+    }    /* end for sequence # idx */
+
+  *ret_tr = tr;
+  return;
+}
+
+/* Function: CP9TraceCount() 
+ * EPN 09.04.06 based on Eddy's P7TraceCount() from HMMER's trace.c
+ * 
+ * Purpose:  Count a traceback into a count-based HMM structure.
+ *           (Usually as part of a model parameter re-estimation.)
+ *           
+ * Args:     hmm   - counts-based CM Plan 9 HMM
+ *           dsq   - digitized sequence that traceback aligns to the HMM (1..L)
+ *           wt    - weight on the sequence
+ *           tr    - alignment of seq to HMM
+ *           
+ * Return:   (void)
+ */
+void
+CP9TraceCount(struct cplan9_s *hmm, char *dsq, float wt, CP9trace_t *tr)
+{
+  int tpos;                     /* position in tr */
+  int i;			/* symbol position in seq */
+  
+  for (tpos = 0; tpos < tr->tlen; tpos++)
+    {
+      i = tr->pos[tpos];
+
+      /* Emission counts. 
+       */
+      if (tr->statetype[tpos] == CSTM) 
+	SingletCount(hmm->mat[tr->nodeidx[tpos]], dsq[i], wt);
+      else if (tr->statetype[tpos] == CSTI) 
+	SingletCount(hmm->ins[tr->nodeidx[tpos]], dsq[i], wt);
+
+      /* State transition counts
+       */
+      switch (tr->statetype[tpos]) {
+      case CSTB:
+	switch (tr->statetype[tpos+1]) {
+	case CSTM: hmm->begin[tr->nodeidx[tpos+1]] += wt; break;
+	case CSTI: hmm->t[0][CTMI]                 += wt; break;
+	case CSTD: hmm->t[0][CTMD]                 += wt; break;
+	default:      
+	  Die("illegal state transition %s->%s in traceback", 
+	      CP9Statetype(tr->statetype[tpos]), 
+	      CP9Statetype(tr->statetype[tpos+1]));
+	}
+	break;
+      case CSTM:
+	switch (tr->statetype[tpos+1]) {
+	case CSTM: hmm->t[tr->nodeidx[tpos]][CTMM] += wt; break;
+	case CSTI: hmm->t[tr->nodeidx[tpos]][CTMI] += wt; break;
+	case CSTD: hmm->t[tr->nodeidx[tpos]][CTMD] += wt; break;
+	case CSTE: hmm->end[tr->nodeidx[tpos]]     += wt; break;
+	default:    
+	  Die("illegal state transition %s->%s in traceback", 
+	      CP9Statetype(tr->statetype[tpos]), 
+	      CP9Statetype(tr->statetype[tpos+1]));
+	}
+	break;
+      case CSTI:
+	switch (tr->statetype[tpos+1]) {
+	case CSTM: hmm->t[tr->nodeidx[tpos]][CTIM] += wt; break;
+	case CSTI: hmm->t[tr->nodeidx[tpos]][CTII] += wt; break;
+	case CSTD: hmm->t[tr->nodeidx[tpos]][CTID] += wt; break;
+	case CSTE: 
+	  /* This should only happen from the final insert (I_M) state */
+	  if((tpos+1) != (tr->tlen-1))
+	    Die("illegal state transition %s->%s (I is not final insert) in traceback", 
+		CP9Statetype(tr->statetype[tpos]), 
+		CP9Statetype(tr->statetype[tpos+1]));
+	  hmm->t[tr->nodeidx[tpos]][CTIM] += wt; break;
+	  break;
+	default:    
+	  Die("illegal state transition %s->%s in traceback", 
+	      CP9Statetype(tr->statetype[tpos]), 
+	      CP9Statetype(tr->statetype[tpos+1]));
+	}
+	break;
+      case CSTD:
+	switch (tr->statetype[tpos+1]) {
+	case CSTM: hmm->t[tr->nodeidx[tpos]][CTDM] += wt; break;
+	case CSTI: hmm->t[tr->nodeidx[tpos]][CTDI] += wt; break;
+	case CSTD: hmm->t[tr->nodeidx[tpos]][CTDD] += wt; break;
+	case CSTE: 
+	  /* This should only happen from the final delete (D_M) state */
+	  if((tpos+1) != (tr->tlen-1))
+	    Die("illegal state transition %s->%s (D is not final delete) in traceback", 
+		CP9Statetype(tr->statetype[tpos]), 
+		CP9Statetype(tr->statetype[tpos+1]));
+	  hmm->t[tr->nodeidx[tpos]][CTDM] += wt; break;
+	  break;
+	default:    
+	  Die("illegal state transition %s->%s in traceback", 
+	      CP9Statetype(tr->statetype[tpos]), 
+	      CP9Statetype(tr->statetype[tpos+1]));
+	}
+	break;
+      case CSTE:
+	break; /* E is the last. It makes no transitions. */
+
+      default:
+	Die("illegal state %s in traceback", 
+	    CP9Statetype(tr->statetype[tpos]));
+      }
+    }
+}
+
+
+/* Function: CP9Statetype()
+ * 
+ * Purpose:  Returns the state type in text.
+ * Example:  CP9Statetype(M) = "M"
+ */
+char *
+CP9Statetype(char st)
+{
+  switch (st) {
+  case CSTM: return "M";
+  case CSTD: return "D";
+  case CSTI: return "I";
+  case CSTB: return "B";
+  case CSTE: return "E";
+  default: return "BOGUS";
+  }
+}
+
+/* Function: CP9TraceScore()
+ *           based on HMMER 2.3.2's P7TraceScore by SRE
+ *
+ * Purpose:  Score a traceback and return the score in scaled bits.
+ * Incept:   EPN, Wed May 30 06:07:14 2007
+ *           
+ * Args:     hmm   - HMM with valid log odds scores.
+ *           dsq   - digitized sequence that traceback aligns to the HMM (1..L)
+ *           tr    - alignment of seq to HMM
+ *           
+ * Return:   (void)
+ */
+float
+CP9TraceScore(CP9_t *hmm, char *dsq, CP9trace_t *tr)
+{
+  int score;			/* total score as a scaled integer */
+  int tpos;                     /* position in tr */
+  char sym;		        /* digitized symbol in dsq */
+  
+  /*CP9PrintTrace(stdout, tr, hmm, dsq); */
+  score = 0;
+  for (tpos = 0; tpos < tr->tlen-1; tpos++)
+    {
+      sym = dsq[tr->pos[tpos]];
+
+      /* Emissions.
+       */
+      if (tr->statetype[tpos] == CSTM) 
+	score += hmm->msc[(int) sym][tr->nodeidx[tpos]];
+      else if (tr->statetype[tpos] == CSTI) 
+	score += hmm->isc[(int) sym][tr->nodeidx[tpos]];
+
+      /* State transitions.
+       */
+      score += CP9TransitionScoreLookup(hmm, 
+				     tr->statetype[tpos], tr->nodeidx[tpos],
+				     tr->statetype[tpos+1], tr->nodeidx[tpos+1]);
+    }
+  return Scorify(score);
+}
+
+/* Function: CP9PrintTrace()
+ *           based on HMMER's 2.3.2 P7PrintTrace()
+ *
+ * Purpose:  Print out a traceback structure.
+ *           If hmm is non-NULL, also print transition and emission scores.
+ * Incept:   EPN, Wed May 30 06:07:57 2007
+ *           
+ * Args:     fp  - stderr or stdout, often
+ *           tr  - trace structure to print
+ *           hmm - NULL or hmm containing scores to print
+ *           dsq - NULL or digitized sequence trace refers to.                
+ */
+void
+CP9PrintTrace(FILE *fp, CP9trace_t *tr, CP9_t *hmm, char *dsq)
+{
+  int          tpos;		/* counter for trace position */
+  unsigned int sym;
+  int          sc; 
+
+  if (tr == NULL) {
+    fprintf(fp, " [ trace is NULL ]\n");
+    return;
+  }
+
+  if (hmm == NULL) {
+    fprintf(fp, "st  node   rpos  - traceback len %d\n", tr->tlen);
+    fprintf(fp, "--  ---- ------\n");
+    for (tpos = 0; tpos < tr->tlen; tpos++) {
+      fprintf(fp, "%1s  %4d %6d\n", 
+	      CP9Statetype(tr->statetype[tpos]),
+	      tr->nodeidx[tpos],
+	      tr->pos[tpos]);
+    } 
+  } else {
+    if (!(hmm->flags & CPLAN9_HASBITS))
+      Die("oi, you can't print scores from that hmm, it's not ready.");
+
+    sc = 0;
+    fprintf(fp, "st  node   rpos  transit emission - traceback len %d\n", tr->tlen);
+    fprintf(fp, "--  ---- ------  ------- --------\n");
+    for (tpos = 0; tpos < tr->tlen; tpos++) {
+      if (dsq != NULL) sym = dsq[tr->pos[tpos]];
+
+      fprintf(fp, "%1s  %4d %6d  %7d", 
+	      CP9Statetype(tr->statetype[tpos]),
+	      tr->nodeidx[tpos],
+	      tr->pos[tpos],
+	      (tpos < tr->tlen-1) ? 
+	      CP9TransitionScoreLookup(hmm, tr->statetype[tpos], tr->nodeidx[tpos],
+				    tr->statetype[tpos+1], tr->nodeidx[tpos+1]) : 0);
+
+      if (tpos < tr->tlen-1)
+	sc += CP9TransitionScoreLookup(hmm, tr->statetype[tpos], tr->nodeidx[tpos],
+				    tr->statetype[tpos+1], tr->nodeidx[tpos+1]);
+
+      if (dsq != NULL) {
+	if (tr->statetype[tpos] == CSTM)  
+	  {
+	    fprintf(fp, " %8d %c", hmm->msc[(int) sym][tr->nodeidx[tpos]], 
+		    Alphabet[(int) sym]);
+	    sc += hmm->msc[(int) sym][tr->nodeidx[tpos]];
+	  }
+	else if (tr->statetype[tpos] == CSTI) 
+	  {
+	    fprintf(fp, " %8d %c", hmm->isc[(int) sym][tr->nodeidx[tpos]], 
+		    (char) tolower((int) Alphabet[(int) sym]));
+	    sc += hmm->isc[(int) sym][tr->nodeidx[tpos]];
+	  }
+	/*	else if ((tr->statetype[tpos] == STN && tr->statetype[tpos-1] == STN) ||
+		 (tr->statetype[tpos] == STC && tr->statetype[tpos-1] == STC) ||
+		 (tr->statetype[tpos] == STJ && tr->statetype[tpos-1] == STJ))
+	  {
+	    fprintf(fp, " %8d %c", 0, (char) tolower((int) hmmer_Alphabet[(int) sym]));
+	    }*/
+      } else {
+	fprintf(fp, " %8s %c", "-", '-');
+      }
+
+
+      fputs("\n", fp);
+    }
+    fprintf(fp, "                 ------- --------\n");
+    fprintf(fp, "           total: %6d\n\n", sc);
+  }
+}
+
+/* Function: CP9TransitionScoreLookup()
+ *           based on HMMER's 2.3.2 function of same name
+ *
+ * Incept:   EPN, Wed May 30 06:09:04 2007
+ * Purpose:  Convenience function used in CP9PrintTrace() and CP9TraceScore();
+ *           given state types and node indices for a transition,
+ *           return the integer score for that transition. 
+ */
+int
+CP9TransitionScoreLookup(struct cplan9_s *hmm, char st1, int k1, 
+			 char st2, int k2)
+{
+  switch (st1) {
+  case CSTB:
+    switch (st2) {
+    case CSTM: return hmm->bsc[k2]; 
+    case CSTI: return hmm->tsc[CTMI][0];
+    case CSTD: return hmm->tsc[CTMD][0];
+    default:      Die("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
+    }
+    break;
+  case CSTM:
+    switch (st2) {
+    case CSTM: return hmm->tsc[CTMM][k1];
+    case CSTI: return hmm->tsc[CTMI][k1];
+    case CSTD: return hmm->tsc[CTMD][k1];
+    case CSTE: return hmm->esc[k1];
+    default:      Die("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
+    }
+    break;
+  case CSTI:
+    switch (st2) {
+    case CSTM: return hmm->tsc[CTIM][k1];
+    case CSTI: return hmm->tsc[CTII][k1];
+    case CSTD: return hmm->tsc[CTID][k1];
+    case CSTE: return hmm->tsc[CTIM][k1]; /* This should only happen from the final insert (I_M) state */
+    default:      Die("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
+    }
+    break;
+  case CSTD:
+    switch (st2) {
+    case CSTM: return hmm->tsc[CTDM][k1]; 
+    case CSTI: return hmm->tsc[CTDI][k1];
+    case CSTD: return hmm->tsc[CTDD][k1];
+    case CSTE: return hmm->tsc[CTDM][k1]; /* This should only happen from the final delete (D_M) state */
+    default:      Die("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
+    }
+    break;
+  case CSTE: /* this should never happen, it means we transitioned from E, which is not
+	      * allowed. */
+    Die("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
+    break;
+  default:        Die("illegal state %s in traceback", CP9Statetype(st1));
+  }
+  /*NOTREACHED*/
+  return 0;
+}
+
+
+/* Function: CP9ViterbiTrace()
+ * Date:     EPN, Wed May 30 17:32:05 2007
+ *           based on HMMER 2.3.2's P7ViterbiTrace()
+ *
+ * Purpose:  Traceback of a Viterbi matrix: i.e. retrieval 
+ *           of optimum alignment.
+ *           
+ * Args:     hmm    - hmm, log odds form, used to make mx
+ *           dsq    - sequence aligned to (digital form) 1..N  
+ *           i0     - first residue of sequence, often 1
+ *           j0     - last residue of sequence, often L
+ *           mx     - the matrix to trace back in, N x hmm->M
+ *           ret_tr - RETURN: traceback.
+ *           
+ * Return:   (void)
+ *           ret_tr is allocated here. Free using CP9FreeTrace().
+ */
+void
+CP9ViterbiTrace(struct cplan9_s *hmm, char *dsq, int i0, int j0,
+		struct cp9_dpmatrix_s *mx, CP9trace_t **ret_tr)
+{
+  CP9trace_t *tr;
+  int curralloc;		/* current allocated length of trace */
+  int tpos;			/* position in trace */
+  int i;			/* position in seq (1..N) */
+  int k;			/* position in model (1..M) */
+  int **emx, **mmx, **imx, **dmx;
+  int sc;			/* temp var for pre-emission score */
+
+  /* Overallocate for the trace.
+   * B- ... - E  : 2 states + N is minimum trace;
+   * add N more as buffer.             
+   */
+  curralloc = (j0-i0+1) * 2 + 2; 
+  CP9AllocTrace(curralloc, &tr);
+
+  mmx = mx->mmx;
+  imx = mx->imx;
+  dmx = mx->dmx;
+  emx = mx->emx;
+
+  /* Initialization of trace
+   * We do it back to front; ReverseTrace() is called later.
+   */
+  tr->statetype[0] = CSTE;
+  tr->nodeidx[0]   = 0;
+  tr->pos[0]       = 0;
+  tpos = 1;
+  i    = j0;			/* current i (seq pos) we're trying to assign */
+
+  /* Traceback
+   */
+  while (tr->statetype[tpos-1] != CSTB) {
+    switch (tr->statetype[tpos-1]) {
+    case CSTM:			/* M connects from i-1,k-1, or B */
+      /*printf("CSTM k: %d i:%d \n", k, i);*/
+      sc = mmx[i+1][k+1] - hmm->msc[(int) dsq[i+1]][k+1];
+      if (sc <= -INFTY) { CP9FreeTrace(tr); *ret_tr = NULL; return; }
+      else if (sc == hmm->bsc[k+1])
+	{
+	  tr->statetype[tpos] = CSTB;
+	  tr->nodeidx[tpos]   = 0;
+	  tr->pos[tpos]       = 0;
+	}
+      else if (sc == mmx[i][k] + hmm->tsc[CTMM][k])
+	{
+	  tr->statetype[tpos] = CSTM;
+	  tr->nodeidx[tpos]   = k--;
+	  tr->pos[tpos]       = i--;
+	}
+      else if (sc == imx[i][k] + hmm->tsc[CTIM][k])
+	{
+	  tr->statetype[tpos] = CSTI;
+	  tr->nodeidx[tpos]   = k;
+	  tr->pos[tpos]       = i--;
+	}
+      else if (sc == dmx[i][k] + hmm->tsc[CTDM][k])
+	{
+	  tr->statetype[tpos] = CSTD;
+	  tr->nodeidx[tpos]   = k--;
+	  tr->pos[tpos]       = 0;
+	}
+      else
+	Die("traceback failed");
+      break;
+
+    case CSTD:			/* D connects from M,D,I, (D_1 also connects from B (M_0) */
+      /*printf("CSTD k: %d i:%d \n", k, i);*/
+      if (dmx[i][k+1] <= -INFTY) { CP9FreeTrace(tr); *ret_tr = NULL; return; }
+      else if(k == 0) /* D_0 connects from B(M_0), and I_0 */
+	{
+	  if(dmx[i][k+1] == mmx[i][k] + hmm->tsc[CTMD][k])
+	    {
+	      tr->statetype[tpos] = CSTB;
+	      tr->nodeidx[tpos]   = 0;
+	      tr->pos[tpos]       = 0;
+	    }
+	  if (dmx[i][k+1] == imx[i][k] + hmm->tsc[CTID][k])
+	    {
+	      tr->statetype[tpos] = CSTI;
+	      tr->nodeidx[tpos]   = k--;
+	      tr->pos[tpos]       = i--;
+	    }
+	} /* else k != 0 */
+      else if (dmx[i][k+1] == mmx[i][k] + hmm->tsc[CTMD][k])
+	{
+	  tr->statetype[tpos] = CSTM;
+	  tr->nodeidx[tpos]   = k--;
+	  tr->pos[tpos]       = i--;
+	}
+      else if (dmx[i][k+1] == imx[i][k] + hmm->tsc[CTID][k]) 
+	{
+	  tr->statetype[tpos] = CSTI;
+	  tr->nodeidx[tpos]   = k--;
+	  tr->pos[tpos]       = i--;
+	}
+      else if (dmx[i][k+1] == dmx[i][k] + hmm->tsc[CTDD][k]) 
+	{
+	  tr->statetype[tpos] = CSTD;
+	  tr->nodeidx[tpos]   = k--;
+	  tr->pos[tpos]       = 0;
+	}
+      else Die("traceback failed");
+      break;
+
+    case CSTI:			/* I connects from M,I,D, (I_0 connects from B also(*/
+      /*printf("CSTI k: %d i:%d \n", k, i);*/
+      sc = imx[i+1][k] - hmm->isc[(int) dsq[i+1]][k];
+      if (sc <= -INFTY) { CP9FreeTrace(tr); *ret_tr = NULL; return; }
+      else if(k == 0) /* I_0 connects from B(M_0), and I_0 */
+	{
+	  if(sc == mmx[i][k] + hmm->tsc[CTMI][k])
+	    {
+	      tr->statetype[tpos] = CSTB;
+	      tr->nodeidx[tpos]   = 0;
+	      tr->pos[tpos]       = 0;
+	    }
+	  if (sc == imx[i][k] + hmm->tsc[CTII][k])
+	    {
+	      tr->statetype[tpos] = CSTI;
+	      tr->nodeidx[tpos]   = k;
+	      tr->pos[tpos]       = i--;
+	    }
+	}
+      /* else k != 0 */
+      else if (sc == mmx[i][k] + hmm->tsc[CTMI][k])
+	{
+	  tr->statetype[tpos] = CSTM;
+	  tr->nodeidx[tpos]   = k--;
+	  tr->pos[tpos]       = i--;
+	}
+      else if (sc == imx[i][k] + hmm->tsc[CTII][k])
+	{
+	  tr->statetype[tpos] = CSTI;
+	  tr->nodeidx[tpos]   = k;
+	  tr->pos[tpos]       = i--;
+	}
+      else if (sc == dmx[i][k] + hmm->tsc[CTDI][k])
+	{
+	  tr->statetype[tpos] = CSTD;
+	  tr->nodeidx[tpos]   = k--;
+	  tr->pos[tpos]       = 0;
+	}
+      else Die("traceback failed");
+      break;
+
+    case CSTE:			/* E connects from any M state. k set here 
+				 * also can connect from I_M or D_M (diff from p7) */
+      /*printf("CSTE k: %d i: %d\n", k, i);*/
+      if (emx[0][i] <= -INFTY) { CP9FreeTrace(tr); *ret_tr = NULL; return; }
+      if (emx[0][i] == imx[i][hmm->M] + hmm->tsc[CTIM][hmm->M])
+	{
+	  k = hmm->M;
+	  tr->statetype[tpos] = CSTI;
+	  tr->nodeidx[tpos]   = k;
+	  tr->pos[tpos]       = i--;
+	}
+      else if (emx[0][i] == dmx[i][hmm->M] + hmm->tsc[CTDM][hmm->M])
+	{
+	  k = hmm->M;
+	  tr->statetype[tpos] = CSTD;
+	  tr->nodeidx[tpos]   = k--;
+	  tr->pos[tpos]       = 0;
+	}
+      else
+	{
+	  for (k = hmm->M; k >= 1; k--)
+	    if (emx[0][i] == mmx[i][k] + hmm->esc[k])
+	      {
+		tr->statetype[tpos] = CSTM;
+		tr->nodeidx[tpos]   = k--;
+		tr->pos[tpos]       = i--;
+		break;
+	      }
+	}
+      if (k < 0) Die("traceback failed");
+      break;
+
+    default:
+      Die("traceback failed");
+
+    } /* end switch over statetype[tpos-1] */
+    
+    tpos++;
+    if (tpos == curralloc) 
+      {				/* grow trace if necessary  */
+	curralloc += (j0-i0+1);
+	CP9ReallocTrace(tr, curralloc);
+      }
+
+  } /* end traceback, at S state; tpos == tlen now */
+  tr->tlen = tpos;
+  CP9ReverseTrace(tr);
+
+  /*printf("NEW TRACE SC: %f\n", CP9TraceScore(hmm, dsq, tr));*/
+
+  *ret_tr = tr;
+}
+
+/* Function: CP9ReverseTrace()
+ * Date:     EPN, Wed May 30 17:52:18 2007
+ *           identical to SRE's P7ReverseTrace() from HMMER 2.3.2
+ *
+ * Purpose:  Reverse the arrays in a traceback structure.
+ *           Tracebacks from Forward() and Viterbi() are
+ *           collected backwards, and call this function
+ *           when they're done.
+ *           
+ *           It's possible to reverse the arrays in place
+ *           more efficiently; but the realloc/copy strategy
+ *           has the advantage of reallocating the trace
+ *           into the right size of memory. (Tracebacks
+ *           overallocate.)
+ *           
+ * Args:     tr - the traceback to reverse. tr->tlen must be set.
+ *                
+ * Return:   (void)
+ *           tr is modified.
+ */                
+void
+CP9ReverseTrace(CP9trace_t *tr)
+{
+  char  *statetype;
+  int   *nodeidx;
+  int   *pos;
+  int    opos, npos;
+
+  /* Allocate
+   */
+  statetype = MallocOrDie (sizeof(char)* tr->tlen);
+  nodeidx   = MallocOrDie (sizeof(int) * tr->tlen);
+  pos       = MallocOrDie (sizeof(int) * tr->tlen);
+  
+  /* Reverse the trace.
+   */
+  for (opos = tr->tlen-1, npos = 0; npos < tr->tlen; npos++, opos--)
+    {
+      statetype[npos] = tr->statetype[opos];
+      nodeidx[npos]   = tr->nodeidx[opos];
+      pos[npos]       = tr->pos[opos];
+    }
+
+  /* Swap old, new arrays.
+   */
+  free(tr->statetype);
+  free(tr->nodeidx);
+  free(tr->pos);
+  tr->statetype = statetype;
+  tr->nodeidx   = nodeidx;
+  tr->pos       = pos;
+}
+
+
+
+/* Function: CP9Traces2Alignment()
+ *           based on SRE's P7Traces2Alignment() from HMMER 2.3.2
+ *
+ * Purpose:  Convert an array of traceback structures for a set
+ *           of sequences into a new multiple alignment. 
+ *           
+ *           Insertions are put into lower case and 
+ *           are not aligned; instead, Nterm is right-justified,
+ *           Cterm is left-justified, and internal insertions
+ *           are split in half and the halves are justified in
+ *           each direction (the objective being to increase
+ *           the chances of getting insertions aligned well enough
+ *           for them to become a match). SAM gap char conventions
+ *           are used: - in match columns, . in insert columns
+ * 
+ * Args:     sq        - digitized unaligned sequences 
+ *           sqinfo     - array of info about the sequences
+ *           nseq       - number of sequences
+ *           mlen       - length of model (number of match states)
+ *           tr         - array of tracebacks
+ *           matchonly  - TRUE if we don't print insert-generated symbols at all
+ *           cs         - cp9struct_s->cs with SS cons 0..M for each node 
+ *
+ * Return:   MSA structure; NULL on failure.
+ *           Caller responsible for freeing msa with MSAFree(msa);
+ */          
+MSA *
+CP9Traces2Alignment(ESL_SQ **sq, float *wgt, int nseq, int mlen, 
+		    CP9trace_t **tr, int matchonly, char *rf, char *cs) 
+{
+  MSA   *msa;                   /* RETURN: new alignment */
+  int    idx;                   /* counter for sequences */
+  int    alen;                  /* width of alignment */
+  int   *inserts;               /* array of max gaps between aligned columns */
+  int   *matmap;                /* matmap[k] = apos of match k [1..M] */
+  int    nins;                  /* counter for inserts */
+  int    apos;                  /* position in aligned sequence (0..alen-1)*/
+  int    rpos;                  /* position in raw digital sequence (1..L)*/
+  int    tpos;                  /* position counter in traceback */
+  int    statetype;		/* type of current state, e.g. STM */
+  int    k;                     /* counter over states in model */
+
+  /* Here's the problem. We want to align the match states in columns,
+   * but some sequences have inserted symbols in them; we need some
+   * sort of overall knowledge of where the inserts are and how long
+   * they are in order to create the alignment.
+   * 
+   * Here's our trick. inserts[] is a 0..hmm->M array; inserts[i] stores
+   * the maximum number of times insert substate i was used. This
+   * is the maximum number of gaps to insert between canonical 
+   * column i and i+1.  inserts[0] is the N-term tail; inserts[M] is
+   * the C-term tail.
+   * 
+   */
+  inserts = (int *) MallocOrDie (sizeof(int) * (mlen+1));
+  for (k = 0; k <= mlen; k++)
+    inserts[k] = 0;
+  for (idx = 0; idx < nseq; idx++) {
+    nins = 0;
+    for (tpos = 0; tpos < tr[idx]->tlen; tpos++) {
+      switch (tr[idx]->statetype[tpos]) { 
+      case CSTI: nins++; break;
+      case CSTM:
+      case CSTD:		/* M,D: record max. reset ctr. */
+	if (nins > inserts[tr[idx]->nodeidx[tpos]-1])
+	  inserts[tr[idx]->nodeidx[tpos]-1] = nins;
+	nins = 0;
+	break;
+      case CSTB:		/* B; record N-tail max, reset ctr */
+	if (nins > inserts[0])
+	  inserts[0] = nins;
+	nins = 0;
+	break;
+      case CSTE:		/* E: record C-tail max */
+	if (nins > inserts[mlen])
+	  inserts[mlen] = nins;
+	break;
+      default:
+	Die("Traces2Alignment reports unrecognized statetype %c", 
+	    CP9Statetype(tr[idx]->statetype[tpos]));
+      }
+    }
+  }
+
+				/* Insert compression option. */
+  if (matchonly) 
+    for (k = 0; k <= mlen; k++)
+      if (inserts[k] > 1) 
+	inserts[k] = 1;
+
+  /***********************************************
+   * Construct the alignment
+   ***********************************************/
+				/* calculate alignment length and matmap */
+  matmap= (int *)   MallocOrDie (sizeof(int) * (mlen+1));
+  matmap[0] = -1;
+  alen = inserts[0];
+  for (k = 1; k <= mlen ; k++) {
+    matmap[k] = alen;
+    alen += inserts[k] + 1;
+  }
+                                /* allocation for new alignment */
+  msa = MSAAlloc(nseq, alen);
+
+  for (idx = 0; idx < nseq; idx++) {
+				/* blank an aseq */
+    for (apos = 0; apos < alen; apos++)
+      msa->aseq[idx][apos] = '.';
+    for (k = 1; k <= mlen; k++)
+      msa->aseq[idx][matmap[k]] = '-';
+    msa->aseq[idx][alen] = '\0';
+				/* align the sequence */
+    apos = 0;
+    for (tpos = 0; tpos < tr[idx]->tlen; tpos++) {
+      statetype = tr[idx]->statetype[tpos]; /* just for clarity */
+      rpos      = tr[idx]->pos[tpos]; 
+      k         = tr[idx]->nodeidx[tpos];
+
+      if (statetype == CSTM) {
+	apos = matmap[k];
+	msa->aseq[idx][apos] = Alphabet[(int) sq[idx]->dsq[rpos]];
+	apos++;
+      }
+      else if (statetype == CSTD) {
+	apos = matmap[k]+1;	/* need for handling D->I; xref STL6/p.117 */
+      }
+      else if (statetype == CSTI) {
+	if (matchonly) 
+	  msa->aseq[idx][apos] = '*'; /* insert compression option */
+	else {
+	  msa->aseq[idx][apos] = (char) tolower((int) Alphabet[(int) sq[idx]->dsq[rpos]]);
+	  apos++;
+	}
+      }
+      else if (statetype == CSTE)
+	apos = matmap[mlen]+1;	/* set position for C-term tail */
+    }
+
+  /* N-terminal extension is right-justified.
+   * Internal inserts are split in half, and C-term is right-justified.
+   * C-terminal extension remains left-justified.
+   */
+    if (! matchonly) {
+      rightjustify(msa->aseq[idx], inserts[0]);
+
+      for (k = 1; k < mlen; k++) 
+	if (inserts[k] > 1) {
+	  for (nins = 0, apos = matmap[k]+1; islower((int) (msa->aseq[idx][apos])); apos++)
+	    nins++;
+	  nins /= 2;		/* split the insertion in half */
+	  rightjustify(msa->aseq[idx]+matmap[k]+1+nins, inserts[k]-nins);
+	}
+    }
+
+  }
+    
+  /***********************************************
+   * Build the rest of the MSA annotation.
+   ***********************************************/
+        
+  msa->nseq = nseq;
+  msa->alen = alen;
+  msa->au   = MallocOrDie(sizeof(char) * (strlen(PACKAGE_VERSION)+10));
+  sprintf(msa->au, "Infernal %s", PACKAGE_VERSION);
+				/* copy sqinfo array and weights */
+  for (idx = 0; idx < nseq; idx++)
+    {
+      msa->sqname[idx] = sre_strdup(sq[idx]->name, -1);
+      msa->sqlen[idx]  = sq[idx]->n;
+      /*if (sqinfo[idx].flags & SQINFO_ACC)
+	MSASetSeqAccession(msa, idx, sqinfo[idx].acc);
+	if (sqinfo[idx].flags & SQINFO_DESC)
+	MSASetSeqDescription(msa, idx, sqinfo[idx].desc);
+
+      if (sqinfo[idx].flags & SQINFO_SS) {
+	if (msa->ss == NULL) msa->ss = MallocOrDie(sizeof(char *) * nseq);
+	MakeAlignedString(msa->aseq[idx], alen, 
+			  sqinfo[idx].ss, &(msa->ss[idx]));
+      }
+      if (sqinfo[idx].flags & SQINFO_SA) {
+	if (msa->sa == NULL) msa->sa = MallocOrDie(sizeof(char *) * nseq);
+	MakeAlignedString(msa->aseq[idx], alen, 
+			  sqinfo[idx].sa, &(msa->sa[idx]));
+			  }*/
+      if (wgt == NULL) msa->wgt[idx] = 1.0;
+      else             msa->wgt[idx] = wgt[idx];
+    }
+
+  /* #=GC RF annotation: same as for a CM, passed in as string 'rf'
+   * usually as a CMConsensus_t con->cseq line index 0..clen-1,
+   * if NULL, see below.
+   */
+  msa->rf = (char *) MallocOrDie (sizeof(char) * (alen+1));
+  if(rf != NULL)
+    {
+      if(rf[0] != '\0')
+	{
+	  for (apos = 0; apos < alen; apos++)
+	    msa->rf[apos] = '.';
+	  for (k = 1; k <= mlen; k++)
+	    msa->rf[matmap[k]] = rf[k-1]; /* rf is 0..clen-1, off-by-one */
+	  msa->rf[alen] = '\0';
+	}
+      else esl_fatal("ERROR in CP9Traces2Alignment, rf line passed in is invalid.\n");
+    }
+  else /* if rf == NULL, default to: x for match column, . for insert column */
+    {
+      for (apos = 0; apos < alen; apos++)
+	msa->rf[apos] = '.';
+      for (k = 1; k <= mlen; k++)
+	msa->rf[matmap[k]] = 'x';
+      msa->rf[alen] = '\0';
+    }
+  /* #=GC SS_cons annotation: same as for a CM, passed in as string 'cs'
+   * usually as a CMConsensus_t con->cstr line index 0..clen-1,
+   * if NULL, msa->ss_cons remains NULL. 
+   */
+  if(cs != NULL)
+    {
+      if(cs[0] != '\0')
+	{
+	  msa->ss_cons = (char *) MallocOrDie (sizeof(char) * (alen+1));
+	  for (apos = 0; apos < alen; apos++)
+	    msa->ss_cons[apos] = '.';
+	  for (k = 1; k <= mlen; k++)
+	    msa->ss_cons[matmap[k]] = cs[k-1]; /* cs is 0..clen-1, off-by-one */
+	  msa->ss_cons[alen] = '\0';
+	}
+      else esl_fatal("ERROR in CP9Traces2Alignment, cs line passed in is invalid.\n");
+    }
+
+  free(inserts);
+  free(matmap);
+  return msa;
+}
+/* Function: rightjustify()
+ * 
+ * Purpose:  Given a gap-containing string of length n,
+ *           pull all the non-gap characters as far as
+ *           possible to the right, leaving gaps on the
+ *           left side. Used to rearrange the positions
+ *           of insertions in HMMER alignments.
+ */
+static void
+rightjustify(char *s, int n)
+{
+  int npos;
+  int opos;
+
+  npos = n-1;
+  opos = n-1;
+  while (opos >= 0) {
+    if (isgap(s[opos])) opos--;
+    else                s[npos--]=s[opos--];  
+  }
+  while (npos >= 0) 
+    s[npos--] = '.';
 }
 
 /* Following functions for CPlan9 HMMs were deprecated 01.04.07,
