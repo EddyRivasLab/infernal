@@ -367,6 +367,8 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
             j = i0-1+jp;
             for ( d=0; d<=jp; d++ )
             {
+               int allow_L_exit = 0;
+               int allow_R_exit = 0;
                y = cm->cfirst[v];
                z = cm->cnum[v];
 
@@ -398,7 +400,14 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                      L_alpha[v][j][d] = sc;
                      if ( ret_L_shadow != NULL ) { ((int **)L_shadow[v])[j][d] = k; }
                      if ( ret_Lmode_shadow != NULL ) { Lmode_shadow[v][j][d] = 3; }
+                     allow_L_exit = 1;
                   }
+               }
+               if ( (sc =                        alpha[z][j][d]) > R_alpha[v][j][d] )
+               {
+                  R_alpha[v][j][d] = sc;
+                  if ( ret_R_shadow != NULL ) { ((int **)R_shadow[v])[j][d] = d; }
+                  if ( ret_Rmode_shadow != NULL ) { Rmode_shadow[v][j][d] = 3; }
                }
                for ( k=0; k< d; k++ )
                {
@@ -407,13 +416,8 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                      R_alpha[v][j][d] = sc;
                      if ( ret_R_shadow != NULL ) { ((int **)R_shadow[v])[j][d] = k; }
                      if ( ret_Rmode_shadow != NULL ) { Rmode_shadow[v][j][d] = 3; }
+                     allow_R_exit = 1;
                   }
-               }
-               if ( (sc =                        alpha[z][j][d]) > R_alpha[v][j][d] )
-               {
-                  R_alpha[v][j][d] = sc;
-                  if ( ret_R_shadow != NULL ) { ((int **)R_shadow[v])[j][d] = d; }
-                  if ( ret_Rmode_shadow != NULL ) { Rmode_shadow[v][j][d] = 3; }
                }
 
                if (d == 0) {
@@ -441,12 +445,16 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                if ( L_alpha[v][j][d] < IMPOSSIBLE ) { L_alpha[v][j][d] = IMPOSSIBLE; }
                if ( R_alpha[v][j][d] < IMPOSSIBLE ) { R_alpha[v][j][d] = IMPOSSIBLE; }
 
-/* This isn't right!  shouldn't allow exit from marginal B if one of the children is NULL, sinee that is covered by the 
-   root of the other child, and we haven't added anything above the bifurcation */
-               if (   alpha[v][j][d] + bsc > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc +   alpha[v][j][d]; }
-               if ( L_alpha[v][j][d] + bsc > r_sc ) { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc + L_alpha[v][j][d]; }
-               if ( R_alpha[v][j][d] + bsc > r_sc ) { r_mode = 1; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc + R_alpha[v][j][d]; }
-               if ( T_alpha[v][j][d] + bsc > r_sc ) { r_mode = 0; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc + T_alpha[v][j][d]; }
+               /* Shouldn't allow exit from marginal B if one of the children is NULL, sinee that is covered by the */
+               /* root of the other child, and we haven't added anything above the bifurcation */
+               if (   alpha[v][j][d] + bsc > r_sc )
+               { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc +   alpha[v][j][d]; }
+               if ((L_alpha[v][j][d] + bsc > r_sc) && (allow_L_exit) )
+               { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc + L_alpha[v][j][d]; }
+               if ((R_alpha[v][j][d] + bsc > r_sc) && (allow_R_exit) )
+               { r_mode = 1; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc + R_alpha[v][j][d]; }
+               if ( T_alpha[v][j][d] + bsc > r_sc )
+               { r_mode = 0; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc + T_alpha[v][j][d]; }
             }
          }
       }
