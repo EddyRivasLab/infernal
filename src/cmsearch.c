@@ -812,11 +812,10 @@ main(int argc, char **argv)
 	      cp9_bit_sc   = cm->stats->gumAA[cp9_mode][0]->mu - (log(cp9_e_cutoff) / cm->stats->gumAA[cp9_mode][0]->lambda);
 	      printf("Calc'ed CP9 bit score cutoff: %f\ncmcalibrate e-val cutoff: %f\nnew e-val cutoff: %f\n", cp9_bit_sc, cp9_eval, cp9_e_cutoff);
 	    }
-
 	  /* Overwrite CP9 cutoff info */
 	  cm->cp9_cutoff_type = E_CUTOFF;
-	  if(cp9_e_cutoff < DEFAULT_MIN_CP9_E_CUTOFF) cp9_e_cutoff = DEFAULT_MIN_CP9_E_CUTOFF;
-	  if(cm->cutoff_type == E_CUTOFF && cp9_e_cutoff < cm_e_cutoff) cp9_e_cutoff = cm_e_cutoff;
+	  /*if(cp9_e_cutoff < DEFAULT_MIN_CP9_E_CUTOFF) cp9_e_cutoff = DEFAULT_MIN_CP9_E_CUTOFF;
+	    if(cm->cutoff_type == E_CUTOFF && cp9_e_cutoff < cm_e_cutoff) cp9_e_cutoff = cm_e_cutoff;*/
 	  cm->cp9_cutoff = cp9_e_cutoff; /* cp9_e_cutoff was broadcasted to workers in MPI */
 	}
       if(cm->search_opts & CM_SEARCH_HMMFILTER)

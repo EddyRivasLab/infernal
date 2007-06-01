@@ -131,8 +131,8 @@ int SetCP9Cutoff(CM_t *cm, int cp9_cutoff_type, float cp9_sc_cutoff, float cp9_e
 
 	  if(!(cm->flags & CM_GUMBEL_STATS))
 	    Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try --hmmT.\n");
-	  if(cp9_e_cutoff < DEFAULT_MIN_CP9_E_CUTOFF) cp9_e_cutoff = DEFAULT_MIN_CP9_E_CUTOFF;
-	  if(cm->cutoff_type == E_CUTOFF && cp9_e_cutoff < cm_e_cutoff) cp9_e_cutoff = cm_e_cutoff;
+	  /*if(cp9_e_cutoff < DEFAULT_MIN_CP9_E_CUTOFF) cp9_e_cutoff = DEFAULT_MIN_CP9_E_CUTOFF;
+	    if(cm->cutoff_type == E_CUTOFF && cp9_e_cutoff < cm_e_cutoff) cp9_e_cutoff = cm_e_cutoff;*/
 	  cm->cp9_cutoff = cp9_e_cutoff;
 	}
     }
@@ -658,7 +658,6 @@ int CopyCMStatsGumbel(CMStats_t *src, CMStats_t *dest)
 {
   int i, p;
 
-  /* Check contract */
   /* Check contract */
   if(src->np != dest->np)
     Die("ERROR in CopyCMStatsGumbel() src->np: %d not equal to alloc'ed dest->np: %d\n", src->np, dest->np);

@@ -1681,10 +1681,10 @@ DuplicateCM(CM_t *cm)
   new->cp9  = NULL;      /* WE DON'T COPY THE CP9   CURRENTLY */
 
   /* Copy the CM stats if they exist */
-  if(cm->flags &= CM_GUMBEL_STATS)
+  if(cm->flags & CM_GUMBEL_STATS)
     {
       new->stats = AllocCMStats(cm->stats->np);
-      CopyCMStats(new->stats, cm->stats);
+      CopyCMStats(cm->stats, new->stats);
     }
 
   /* Don't copy but build the CP9 if it exists in new */

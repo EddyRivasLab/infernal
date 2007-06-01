@@ -1789,9 +1789,9 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   if(ret_hmm_eval > ((float) db_size)) /* E-val > db_size is useless */
     ret_hmm_eval = (float) db_size;
 
-  for (i = 0; i < N; i++)
+  for (i = ((int) (Fmin  * (float) N) -1); i < N; i++)
     printf("%d i: %4d hmm sc: %10.4f hmm E: %10.4f\n", hmm_gum_mode, i, hmm_sc_p[i], hmm_eval_p[i]);
-  printf("\n\ni: %d\n", i);
+
   printf("\nSummary: %d %d %d %d %f %f\n", fthr_mode, hmm_gum_mode, do_fastfil, emit_mode,
 	 (hmm_sc_p[F_idx]), (hmm_eval_p[F_idx]));
   /* Reset CM_SEARCH_HMMONLY search option as it was when function was entered */

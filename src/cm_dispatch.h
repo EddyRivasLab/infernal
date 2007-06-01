@@ -33,7 +33,7 @@ serial_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t 
 		     int bdump_level, int debug_level, int silent_mode);
 extern void
 parallel_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr,
-		       char ***ret_postcode, int *ret_nseq, CP9trace_t ***ret_cp9_tr, 
+		       char ***ret_postcode, CP9trace_t ***ret_cp9_tr, int *ret_nseq,
 		       int bdump_level, int debug_level,
 		       int silent_mode, int mpi_my_rank, int mpi_master_rank, int mpi_num_procs);
 extern void

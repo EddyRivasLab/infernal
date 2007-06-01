@@ -1332,7 +1332,7 @@ ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, char *dsq)
   free(lsc);
   free(tr_esc);
   free(tr_tsc);
-  printf("in ParsetreeScore_Global2Local() returning sc: %f\n", max_local_sc);
+  /*printf("in ParsetreeScore_Global2Local() returning sc: %f\n", max_local_sc);*/
   return max_local_sc;
 
  ERROR: 

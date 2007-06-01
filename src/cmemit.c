@@ -751,7 +751,8 @@ main(int argc, char **argv)
       if(do_ptest) printf("Summary: Num diff: %d Bit diff: %.3f Avg per seq: %.3f\n", ndiff, diff, (diff/nseq));
       /* Sort the HMM scores with quicksort */
       esl_vec_FSortDecreasing(hmm_sc, nseq);
-      for(i = 0; i < nseq; i++)
+      f = 0.95;
+      for(i = ((int) (f * (float) nseq) - 1); i < nseq; i++)
 	printf("i: %4d hmm sc: %10.4f\n", i, hmm_sc[i]);
 
       /*esl_histogram_Print(stdout, h);*/
@@ -762,9 +763,8 @@ main(int argc, char **argv)
 
       esl_histogram_Destroy(h);
       
-      f = 0.95;
       hmm_cutoff = hmm_sc[(int) ((f) * (float) nseq) - 1];
-      printf("HMM glocal filter bit score threshold for finding %.2f CM hits > %.2f bits: %.4f\n", f, cm_sc_cutoff, hmm_cutoff);
+      printf("HMM filter bit score threshold for finding %.2f CM hits > %.2f bits: %.4f\n", f, cm_sc_cutoff, hmm_cutoff);
       printf("\n\nnattempts: %d\n", nattempts);
 
       if(cm->flags & CM_GUMBEL_STATS)
