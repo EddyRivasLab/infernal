@@ -322,7 +322,8 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
             for ( d=0; d<=jp; d++ )
             {
                y = cm->cfirst[v];
-               alpha[v][j][d]   = cm->endsc[v] + (cm->el_selfsc * (d));
+               if (cm->sttype[v] == S_st) alpha[v][j][d]   = cm->endsc[v] + (cm->el_selfsc * (d));
+               else                       alpha[v][j][d]   = IMPOSSIBLE;
                L_alpha[v][j][d] = IMPOSSIBLE;
                R_alpha[v][j][d] = IMPOSSIBLE;
                if ( ret_shadow   != NULL ) { ((char **)  shadow[v])[j][d] = USED_EL; }
@@ -369,6 +370,7 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
             {
                int allow_L_exit = 0;
                int allow_R_exit = 0;
+               int allow_J_exit = 0;
                y = cm->cfirst[v];
                z = cm->cnum[v];
 
@@ -394,6 +396,8 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                   {
                      alpha[v][j][d] = sc;
                      if (ret_shadow != NULL ) { ((int **)shadow[v])[j][d] = k; }
+                     if (k == d) allow_J_exit = 0;
+                     else        allow_J_exit = 1;
                   }
                   if ( (sc = alpha[y][j-k][d-k] + L_alpha[z][j][k]) > L_alpha[v][j][d] )
                   {
@@ -447,7 +451,7 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
 
                /* Shouldn't allow exit from marginal B if one of the children is NULL, sinee that is covered by the */
                /* root of the other child, and we haven't added anything above the bifurcation */
-               if (   alpha[v][j][d] + bsc > r_sc )
+               if ((  alpha[v][j][d] + bsc > r_sc) && (allow_J_exit) )
                { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc +   alpha[v][j][d]; }
                if ((L_alpha[v][j][d] + bsc > r_sc) && (allow_L_exit) )
                { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc + L_alpha[v][j][d]; }
