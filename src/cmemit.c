@@ -52,7 +52,7 @@ static char experts[] = "\
    --hmmscore     : score samples with a CM Plan 9 HMM\n\
    --hmmlocal     : w/hmmscore, search with CP9 HMM in local mode\n\
    --hmmfast      : w/hmmscore, assume CM parse tree scores are optimal\n\
-   --hmmrealfast  : w/hmmscore, assume CM&HMM parse tree scores are optimal\n\
+   --hmmrealfast  : w/hmmscore, assume CM & HMM parse scores are optimal\n\
    --cmeval       : w/hmmscore, min CM E-value to consider\n\
    --cmN <n>      : w/hmmscore & cmeval, db size E-val corresponds with\n\
    --inside       : w/hmmscore, score CM seqs with inside\n\

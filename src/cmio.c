@@ -658,7 +658,7 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
    */
   CreateCMBody(cm, N, M);
   CMZero(cm);
-  if(have_gums) cm->flags  |= CM_GUMBEL_STATS;
+  if(have_gums)  cm->flags |= CM_GUMBEL_STATS;
   if(have_fthrs) cm->flags |= CM_FTHR_STATS;
   nd = -1;
   for (v = 0; v < cm->M; v++)

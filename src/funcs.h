@@ -357,26 +357,24 @@ extern float RescanFilterSurvivors(CM_t *cm, char *dsq, scan_results_t *hmm_resu
 				   int *ret_flen);
 extern void CP9ScanPosterior(char *dsq, int i0, int j0, CP9_t *hmm, CP9_dpmatrix_t *fmx, 
 			     CP9_dpmatrix_t *bmx, CP9_dpmatrix_t *mx);
-extern float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
+extern float OLD_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
 				    float Fmin, float min_surv, int N, int use_cm_cutoff, 
 				    float cm_ecutoff, int db_size, 
 				    int emit_global, int fthr_mode, int hmm_gum_mode, 
 				    int do_fastfil, int my_rank, int nproc, int do_mpi, 
 				    float *ret_F);
+extern float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
+				    float Fmin, float min_surv, int N, int use_cm_cutoff, 
+				    float cm_ecutoff, int db_size, 
+				    int emit_mode, int fthr_mode, int hmm_gum_mode, 
+				    int do_fastfil, int my_rank, int nproc, int do_mpi, 
+				    float X, int do_lookup, char *histfile, float *ret_F);
+extern float FindExpFactor(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
+			   int use_cm_cutoff, float cm_ecutoff, int db_size, 
+			   int emit_mode, int fthr_mode, int do_fastfil,
+			   int ntrials, float fp_min, float fp_max);
+extern float Filter_XFTableLookup(float X, float F, int emit_mode, int fthr_mode);
      
-extern float serial_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
-					   float fraction, int N, 
-					   int use_cm_cutoff, float cm_ecutoff, int db_size,
-					   int emit_global, int cm_gum_mode, int hmm_gum_mode, 
-					   int do_fastfil);
-#ifdef USE_MPI 
-extern float mpi_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
-					float fraction, int N, 
-					int use_cm_cutoff, float cm_ecutoff, int db_size,
-					int emit_global, int cm_gum_mode, int hmm_gum_mode, int do_fastfil,
-					int my_rank, int nproc);
-#endif
-
 /* from CP9_cm2wrhmm.c */
 extern int build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
 			 float psi_vs_phi_threshold, int debug_level);

@@ -1531,8 +1531,11 @@ float rsearch_calculate_gap_penalty (char from_state, char to_state,
 /*
  * Function: ExponentiateCM
  * Date:     EPN, Sun May 20 13:10:06 2007
- * Purpose:  Exponentiate the emission and transition probabilities of a CM
- *           by z. Local Begin and End probabilities untouched.
+ * Purpose:  Exponentiate the emission and transition probabilities 
+ *           of a CM by z. If CM is in local mode, put it in global mode,
+ *           exponentiate it and put it back in local mode, otherwise
+ *           the cm->end probabilities would change, and we don't want
+ *           that.
  * 
  * Args:
  *           CM           - the covariance model
@@ -1541,9 +1544,18 @@ float rsearch_calculate_gap_penalty (char from_state, char to_state,
 int
 ExponentiateCM(CM_t *cm, double z)
 {
-  printf("in ExponentiateCM, z: %f\n", z);
+  /*printf("in ExponentiateCM, z: %f\n", z);*/
   int v;
   int x,y;
+  int local_flag = FALSE;
+
+  /* If in local mode, configure to global first. */
+  if(cm->flags & CM_LOCAL_BEGIN || cm->flags & CM_LOCAL_END) 
+    {
+      ConfigGlobal(cm);
+      local_flag = TRUE;
+    }
+
   for(v = 0; v < cm->M; v++)
     {
       if (cm->sttype[v] != B_st && cm->sttype[v] != E_st)
@@ -1562,7 +1574,10 @@ ExponentiateCM(CM_t *cm, double z)
 	    cm->e[v][x]  = pow(cm->e[v][x], z);
 	}
     }
+
   CMRenormalize(cm);
+
+  if(local_flag) ConfigLocal(cm, 0.5, 0.5);
   /* new probs invalidate log odds scores */
   cm->flags &= ~CM_HASBITS;
   return eslOK;

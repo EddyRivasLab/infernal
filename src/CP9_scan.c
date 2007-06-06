@@ -42,6 +42,15 @@
 #include "easel.h"
 #include "esl_gumbel.h"
 #include "esl_vectorops.h"
+#include "esl_histogram.h"
+#include "esl_normal.h"
+#include "esl_stats.h"
+#include "esl_gev.h"
+#include "esl_weibull.h"
+#include "esl_stretchexp.h"
+#include "esl_gamma.h"
+#include "esl_exponential.h"
+#include "esl_gumbel.h"
   
 /***********************************************************************
  * Function: CP9Forward()
@@ -1368,8 +1377,9 @@ CP9ScanPosterior(char *dsq, int i0, int j0,
   */
 }
 
+
 /*
- * Function: FindCP9FilterThreshold()
+ * Function: OLD_FindCP9FilterThreshold()
  * Incept:   EPN, Wed May  2 10:00:45 2007
  *
  * Purpose:  Sample sequences from a CM and determine the CP9 HMM E-value
@@ -1421,7 +1431,7 @@ CP9ScanPosterior(char *dsq, int i0, int j0,
  *          hits with CM E-values better than cm_ecutoff 
  * 
  */
-float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
+float OLD_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
 			     float Fmin, float min_surv, int N, int use_cm_cutoff, 
 			     float cm_ecutoff, int db_size, 
 			     int emit_mode, int fthr_mode, int hmm_gum_mode, 
@@ -1819,3 +1829,1023 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   esl_fatal("Reached ERROR in FindCP9FilterThreshold()\n");
   return 0.;
 }
+
+/*
+ * Function: FindCP9FilterThreshold()
+ * Incept:   EPN, Wed May  2 10:00:45 2007
+ *
+ * Purpose:  Sample sequences from a CM and determine the CP9 HMM E-value
+ *           threshold necessary to recognize a specified fraction of those
+ *           hits. Sequences are sampled from the CM until N with a E-value
+ *           better than cm_ecutoff are sampled (those with worse E-values
+ *           are rejected). CP9 scans are carried out in either local or
+ *           glocal mode depending on hmm_gum_mode. CM is configured in 
+ *           local/glocal and sampled seqs are scored in CYK/inside depending
+ *           on fthr_mode (4 possibilities). E-values are determined using
+ *           lambda from cm->stats, and a recalc'ed mu using database size
+ *           of 'db_size'.
+ *
+ *           If do_fastfil and fthr_mode is local or glocal CYK, parsetree 
+ *           scores of emitted sequences are assumed to an optimal CYK scores 
+ *           (not nec true). This saves a lot of time b/c no need to
+ *           scan emitted seqs, but it's statistically wrong. 
+ *           If do_fastfil and fthr_mode is local or glocal inside, 
+ *           contract is violated and we Die. Current strategy *outside*
+ *           of this function is to copy HMM filtering thresholds from
+ *           CYK for Inside cases.
+ *
+ *           If !do_fastfil this function takes much longer b/c emitted 
+ *           parsetree score is not necessarily (a) optimal nor (b) highest 
+ *           score returned from a CYK scan (a subseq of the full seq could
+ *           score higher even if parsetree was optimal). For Inside, Inside
+ *           scan will always be higher than parstree score. This means we have
+ *           to scan each emitted seq with CYK or Inside.
+ *
+ * Args:
+ *           cm           - the CM
+ *           cmstats      - CM stats object we'll get Gumbel stats from
+ *           r            - source of randomness for EmitParsetree()
+ *           Fmin         - minimum target fraction of CM hits to detect with CP9
+ *           min_surv     - minimum filter survival fraction, for lower fractions, we'll
+ *                          increase F. 
+ *           N            - number of sequences to sample from CM better than cm_minsc
+ *           use_cm_cutoff- TRUE to only accept CM parses w/E-values above cm_ecutoff
+ *           cm_ecutoff   - minimum CM E-value to accept 
+ *           db_size      - DB size (nt) to use w/cm_ecutoff to calc CM bit score cutoff 
+ *           emit_mode    - CM_LC or CM_GC, CM mode to emit with
+ *           fthr_mode    - gives CM search strategy to use, and Gumbel to use
+ *           hmm_gum_mode - CP9_L to search with  local HMM (we're filling a fthr->l_eval)
+ *                          CP9_G to search with glocal HMM (we're filling a fthr->g_eval)
+ *           do_fastfil   - TRUE to use fast method: assume parsetree score
+ *                          is optimal CYK score
+ *           my_rank      - MPI rank, 0 if serial
+ *           nproc        - number of processors in MPI rank, 1 if serial
+ *           do_mpi       - TRUE if we're doing MPI, FALSE if not
+ *           X            - factor by which to exponentiate model prior to emitting (1.0 for none)
+ *           do_lookup    - TRUE to use lookup table to correct for F based on X
+ *           histfile     - root string for histogram files, we'll make nexps * 4 of them
+ *           ret_F        - the fraction of observed CM hits we've scored with the HMM better
+ *                          than return value
+ * 
+ * Returns: HMM E-value cutoff above which the HMM scores (ret_F * N) CM 
+ *          hits with CM E-values better than cm_ecutoff 
+ * 
+ */
+float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
+			     float Fmin, float min_surv, int N, int use_cm_cutoff, 
+			     float cm_ecutoff, int db_size, 
+			     int emit_mode, int fthr_mode, int hmm_gum_mode, 
+			     int do_fastfil, int my_rank, int nproc, int do_mpi, 
+			     float X, int do_lookup, char *histfile, float *ret_F)
+{
+
+  /* Contract checks */
+  if (!(cm->flags & CM_CP9) || cm->cp9 == NULL) 
+    Die("ERROR in FindCP9FilterThreshold() CP9 does not exist\n");
+  if (Fmin < 0. || Fmin > 1.)  
+    Die("ERROR in FindCP9FilterThreshold() Fmin is %f, should be [0.0..1.0]\n", Fmin);
+  if (min_surv < 0. || min_surv > 1.)  
+    Die("ERROR in FindCP9FilterThreshold() min_surv is %f, should be [0.0..1.0]\n", min_surv);
+  if((fthr_mode != CM_LI) && (fthr_mode != CM_GI) && (fthr_mode != CM_LC) && (fthr_mode != CM_GC))
+    Die("ERROR in FindCP9FilterThreshold() fthr_mode not CM_LI, CM_GI, CM_LC, or CM_GC\n");
+  if(hmm_gum_mode != CP9_L && hmm_gum_mode != CP9_G)
+    Die("ERROR in FindCP9FilterThreshold() hmm_gum_mode not CP9_L or CP9_G\n");
+  if(do_fastfil && (fthr_mode == CM_LI || fthr_mode == CM_GI))
+    Die("ERROR in FindCP9FilterThreshold() do_fastfil TRUE, but fthr_mode CM_GI or CM_LI\n");
+  if(my_rank > 0 && !do_mpi)
+    Die("ERROR in FindCP9FilterThreshold() my_rank is not 0, but do_mpi is FALSE\n");
+  if(emit_mode != CM_GC && emit_mode != CM_LC)
+    Die("ERROR in FindCP9FilterThreshold() emit_mode not CM_LC or CM_GC\n");
+  if(emit_mode == CM_LC && (fthr_mode == CM_GC || fthr_mode == CM_GI))
+    Die("ERROR in FindCP9FilterThreshold() emit_mode CM_LC but score mode CM_GC or CM_GI.\n");
+
+#if defined(USE_MPI)
+  /* If a worker in MPI mode, we go to worker function mpi_worker_cm_and_cp9_search */
+  if(my_rank > 0) 
+    {
+      /* Configure the CM based on the fthr mode COULD BE DIFFERENT FROM MASTER! */
+      ConfigForGumbelMode(cm, fthr_mode);
+      /* Configure the HMM based on the hmm_gum_mode */
+      if(hmm_gum_mode == CP9_L)
+	CPlan9SWConfig(cm->cp9, 0.5, 0.5);
+      else /* hmm_gum_mode == CP9_G (it's in the contract) */
+	CPlan9GlobalConfig(cm->cp9);
+      CP9Logoddsify(cm->cp9);
+
+      mpi_worker_cm_and_cp9_search(cm, do_fastfil, my_rank);
+      *ret_F = 0.0; /* this return value is irrelevant */
+      return 0.0;   /* this return value is irrelevant */
+    }
+#endif 
+  int            status;         /* Easel status */
+  CM_t          *cm_for_scoring; /* used to score parsetrees, nec b/c  *
+				  * emitting mode may != scoring mode   */
+  Parsetree_t   *tr = NULL;      /* parsetree                           */
+  char          *dsq = NULL;     /* digitized sequence                  */
+  char          *seq = NULL;     /* alphabetic sequence                 */
+  float         *cm_sc;          /* CM scores of all samples            */
+  float         *hmm_sc;         /* HMM scores of all samples           */
+  float         *hmm_eval;       /* HMM E-values of all samples         */
+  float         *cm_sc_p;        /* CM scores of samples above thresh   */
+  float         *hmm_sc_p;       /* HMM scores of samples above thresh  */
+  float         *hmm_eval_p;     /* HMM E-values of samples above thresh*/  
+  int            i  = 0;         /* counter over samples                */
+  int            ip = 0;         /* counter over samples above thresh   */
+  int            imax = 500 * N; /* max num samples                     */
+  int            p;              /* counter over partitions             */
+  int            L;              /* length of a sample                  */
+  double        *cm_mu;          /* mu for each partition's CM Gumbel   */
+  double        *hmm_mu;         /* mu for each partition's HMM Gumbel  */
+  float         *cm_minbitsc = NULL; /* minimum CM bit score to allow to pass for each partition */
+  float          ret_hmm_eval;   /* HMM CP9 E-value cutoff to return    */
+  double         tmp_K;          /* used for recalc'ing Gumbel stats for DB size */
+  int            was_hmmonly;    /* flag for if HMM only search was set */
+  int            nalloc;         /* for cm_sc, hmm_sc, hmm_eval, num alloc'ed */
+  int            chunksize;      /* allocation chunk size               */
+  float         *scores;         /* CM and HMM score returned from worker*/
+  void          *tmp;            /* temp void pointer for ESL_RALLOC() */
+  int            clen;           /* consensus length of CM             */
+  float          avg_hit_len;    /* crude estimate of average hit len  */
+  int            F_idx;          /* index within hmm_eval              */
+  float          surv_fract;     /* predicted survival fraction        */
+  int            init_flag;      /* used for finding F                 */ 
+
+#if defined(USE_MPI)
+  int            have_work;      /* MPI: do we still have work to send out?*/
+  int            nproc_working;  /* MPI: number procs currently doing work */
+  int            wi;             /* MPI: worker index                      */
+  char         **dsqlist = NULL; /* MPI: queue of digitized seqs being worked on, 1..nproc-1 */
+  int           *plist = NULL;   /* MPI: queue of partition indices of seqs being worked on, 1..nproc-1 */
+  Parsetree_t  **trlist = NULL;  /* MPI: queue of traces of seqs being worked on, 1..nproc-1 */
+  MPI_Status     mstatus;        /* useful info from MPI Gods         */
+#endif
+
+  printf("in FindCP9FilterThreshold fthr_mode: %d hmm_gum_mode: %d emit_mode: %d X: %.5f\n", fthr_mode, 
+	 hmm_gum_mode, emit_mode, X);
+
+  if(cm->search_opts & CM_SEARCH_HMMONLY) was_hmmonly = TRUE;
+  else was_hmmonly = FALSE;
+  cm->search_opts &= ~CM_SEARCH_HMMONLY;
+
+  chunksize = 5 * N;
+  nalloc    = chunksize;
+  ESL_ALLOC(hmm_eval,    sizeof(float) * nalloc);
+  ESL_ALLOC(hmm_sc,      sizeof(float) * nalloc);
+  ESL_ALLOC(cm_sc,       sizeof(float) * nalloc);
+  ESL_ALLOC(hmm_eval_p,  sizeof(float) * N);
+  ESL_ALLOC(hmm_sc_p,    sizeof(float) * N);
+  ESL_ALLOC(cm_sc_p,     sizeof(float) * N);
+  ESL_ALLOC(cm_minbitsc, sizeof(float) * cmstats->np);
+  ESL_ALLOC(cm_mu,       sizeof(double)* cmstats->np);
+  ESL_ALLOC(hmm_mu,      sizeof(double)* cmstats->np);
+  ESL_ALLOC(scores,      sizeof(float) * 2);
+  
+#if defined(USE_MPI)
+  if(do_mpi)
+    {
+      ESL_ALLOC(dsqlist,     sizeof(char *)        * nproc);
+      ESL_ALLOC(plist,       sizeof(int)           * nproc);
+      ESL_ALLOC(trlist,      sizeof(Parsetree_t *) * nproc);
+    }
+#endif
+
+  if(use_cm_cutoff) printf("CM E cutoff: %f\n", cm_ecutoff);
+  else              printf("Not using CM cutoff\n");
+
+  /* Configure the CM based on the emit mode COULD DIFFERENT FROM WORKERS! */
+  ConfigForGumbelMode(cm, emit_mode);
+  /* Copy the CM into cm_for_scoring if nec., and reconfigure that */
+  if(do_fastfil && (emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI)))
+    {
+      cm_for_scoring = DuplicateCM(cm); 
+      ConfigForGumbelMode(cm_for_scoring, fthr_mode);
+    }
+  else
+    cm_for_scoring = cm;
+
+  /* Configure the HMM based on the hmm_gum_mode */
+  if(hmm_gum_mode == CP9_L)
+    CPlan9SWConfig(cm->cp9, 0.5, 0.5);
+  else /* hmm_gum_mode == CP9_G (it's in the contract) */
+    CPlan9GlobalConfig(cm->cp9);
+  CP9Logoddsify(cm->cp9);
+
+  /* Determine bit cutoff for each partition, calc'ed from cm_ecutoff */
+  for (p = 0; p < cmstats->np; p++)
+    {
+      /* First determine mu based on db_size */
+      tmp_K      = exp(cmstats->gumAA[hmm_gum_mode][p]->mu * cmstats->gumAA[hmm_gum_mode][p]->lambda) / 
+	cmstats->gumAA[hmm_gum_mode][p]->L;
+      hmm_mu[p]  = log(tmp_K * ((double) db_size)) / cmstats->gumAA[hmm_gum_mode][p]->lambda;
+      tmp_K      = exp(cmstats->gumAA[fthr_mode][p]->mu * cmstats->gumAA[fthr_mode][p]->lambda) / 
+	cmstats->gumAA[fthr_mode][p]->L;
+      cm_mu[p]   = log(tmp_K  * ((double) db_size)) / cmstats->gumAA[fthr_mode][p]->lambda;
+      /* Now determine bit score */
+      cm_minbitsc[p] = cm_mu[p] - (log(cm_ecutoff) / cmstats->gumAA[fthr_mode][p]->lambda);
+      if(use_cm_cutoff)
+	printf("E: %f p: %d %d--%d bit score: %f\n", cm_ecutoff, p, 
+	       cmstats->ps[p], cmstats->pe[p], cm_minbitsc[p]);
+    }
+  
+  /* Do the work, emit parsetrees and collect the scores 
+   * either in serial or MPI depending on do_mpi flag.
+   */
+  /*********************SERIAL BLOCK*************************************/
+  if(!(do_mpi))
+    {
+      /* Exponentiate the CM, if X != 1.0 */
+      if(fabs(X-1.0) > 0.00001) ExponentiateCM(cm, X);
+
+      /* Serial strategy: 
+       * Emit sequences one at a time and search them with the CM and HMM,
+       * keeping track of scores. If do_fastfil we don't have to search 
+       * with the CM we just keep track of the parsetree score. 
+       *
+       * If do_fastfil && emit_mode is different than scoring mode we 
+       * score with 'cm_for_scoring', instead of with 'cm'.
+       */
+
+      while(ip < N) /* while number seqs passed CM score threshold (ip) < N */
+	{
+	  EmitParsetree(cm, r, &tr, &seq, &dsq, &L);
+	  /*ParsetreeDump(stdout, tr, cm, dsq);
+	    printf("%d Parsetree Score: %f\n\n", (nattempts), ParsetreeScore(cm, tr, dsq, FALSE)); */
+	  while(L == 0) { FreeParsetree(tr); free(seq); free(dsq); EmitParsetree(cm, r, &tr, &seq, &dsq, &L); }
+
+	  p = cmstats->gc2p[(get_gc_comp(seq, 1, L))]; /* in get_gc_comp() should be i and j of best hit */
+	  free(seq);
+	  if(do_fastfil)
+	    {
+	      if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))
+		cm_sc[i] = ParsetreeScore_Global2Local(cm_for_scoring, tr, dsq);
+	      /* Note, we don't have to exponentiate the scoring CM, it won't be emitting */
+	      else
+		cm_sc[i] = ParsetreeScore(cm_for_scoring, tr, dsq, FALSE); 
+	      FreeParsetree(tr);
+	    }
+	  else
+	    {
+	      FreeParsetree(tr);
+	      cm_sc[i] = actually_search_target(cm, dsq, 1, L,
+						0.,    /* cutoff is 0 bits (actually we'll find highest
+							* negative score if it's < 0.0) */
+						0.,    /* CP9 cutoff is 0 bits */
+						NULL,  /* don't keep results */
+						FALSE, /* don't filter with a CP9 HMM */
+						FALSE, /* we're not calcing CM  stats */
+						FALSE, /* we're not calcing CP9 stats */
+						NULL); /* filter fraction N/A */
+	    }
+	  /* Scan seq with HMM */
+	  /* DO NOT CALL actually_search_target b/c that will run Forward then 
+	   * Backward to get score of best hit, but we'll be detecting by a
+	   * Forward scan (then running Backward only on hits above our threshold).
+	   */
+	  hmm_sc[i] = CP9Forward(cm, dsq, 1, L, cm->W, 0., 
+				 NULL,   /* don't return scores of hits */
+				 NULL,   /* don't return posns of hits */
+				 NULL,   /* don't keep track of hits */
+				 TRUE,   /* we're scanning */
+				 FALSE,  /* we're not ultimately aligning */
+				 FALSE,  /* we're not rescanning */
+				 TRUE,   /* be memory efficient */
+				 NULL);  /* don't want the DP matrix back */
+	  hmm_eval[i] = RJK_ExtremeValueE(hmm_sc[i], hmm_mu[p], cmstats->gumAA[hmm_gum_mode][p]->lambda);
+	  if(cm_sc[i] >= cm_minbitsc[p]) 
+	    {
+	      cm_sc_p[ip]    = cm_sc[i];
+	      hmm_sc_p[ip]   = hmm_sc[i];
+	      hmm_eval_p[ip] = hmm_eval[i];
+	      ip++; /* increase counter of seqs passing threshold */
+	    }
+	  
+	  /* Check if we need to reallocate */
+	  i++;
+	  if(i > imax) esl_fatal("ERROR number of attempts exceeded 500 times number of seqs.\n");
+	  if (i == nalloc) 
+	    {
+	      nalloc += chunksize;
+	      ESL_RALLOC(cm_sc,    tmp, nalloc * sizeof(float));
+	      ESL_RALLOC(hmm_sc,   tmp, nalloc * sizeof(float));
+	      ESL_RALLOC(hmm_eval, tmp, nalloc * sizeof(float));
+	    }
+	}
+      /* Un-Exponentiate the CM, if X != 1.0 */
+      if(fabs(X-1.0) > 0.00001) ExponentiateCM(cm, 1./X);
+    }
+  /*************************END OF SERIAL BLOCK****************************/
+#if defined(USE_MPI)
+  /*************************MPI BLOCK****************************/
+  if(do_mpi)
+    {
+      /* Exponentiate the CM, if X != 1.0 */
+      if(fabs(X-1.0) > 0.00001) ExponentiateCM(cm, X);
+
+      /* MPI Strategy: 
+       * Emit seqs one at a time from the CM and send them to workers to 
+       * search with CM and with CP9 HMM and return scores of both searches.
+       * Master collects these scores until it's received N with scores better 
+       * than cutoff.
+       *
+       * If do_fastfil, the worker skips the CM search and returns 0. bits
+       * as CM score, which master replaces with parsetree score.
+       *
+       * Sean's design pattern for data parallelization in a master/worker model:
+       * three phases: 
+       *  1. load workers;
+       *  2. recv result/send work loop;
+       *  3. collect remaining results
+       * but implemented in a single while loop to avoid redundancy.
+       */
+      have_work     = TRUE;
+      nproc_working = 0;
+      wi            = 1;
+      i             = 0;
+      while (have_work || nproc_working)
+	{
+	  /* Get next work unit. */
+	  if(ip < N) /* if number seqs passed CM score threshold (ip) < N */
+	    {
+	      EmitParsetree(cm, r, &tr, &seq, &dsq, &L);
+	      /*ParsetreeDump(stdout, tr, cm, dsq);
+		printf("%d Parsetree Score: %f\n\n", (nattempts), ParsetreeScore(cm, tr, dsq, FALSE)); */
+	      p = cmstats->gc2p[(get_gc_comp(seq, 1, L))]; /* in get_gc_comp() should be i and j of best hit */
+	      free(seq);
+	      if(!do_fastfil)
+		FreeParsetree(tr);
+	    }
+	  else have_work = FALSE;
+	  /* If we have work but no free workers, or we have no work but workers
+	   * Are still working, then wait for a result to return from any worker.
+	   */
+	  if ( (have_work && nproc_working == nproc-1) || (! have_work && nproc_working > 0))
+	    {
+	      MPI_Recv(scores,  2, MPI_FLOAT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &mstatus);
+	      cm_sc[i]    = scores[0];
+	      hmm_sc[i]   = scores[1];
+	      wi = mstatus.MPI_SOURCE;
+	      hmm_eval[i] = RJK_ExtremeValueE(hmm_sc[i], hmm_mu[plist[wi]], cmstats->gumAA[hmm_gum_mode][plist[wi]]->lambda);
+	      /* could change this to keep ALL CP9 and CM bit scores */
+	      if(do_fastfil)
+		{
+		  if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))
+		    cm_sc[i] = ParsetreeScore_Global2Local(cm_for_scoring, trlist[wi], dsqlist[wi]);
+		  else
+		    cm_sc[i] = ParsetreeScore(cm_for_scoring, trlist[wi], dsqlist[wi], FALSE); 
+		  FreeParsetree(trlist[wi]);
+		  trlist[wi] = NULL;
+		}
+	      if(cm_sc[i] >= cm_minbitsc[plist[wi]] && ip < N) 
+		/* careful, we don't want to save more than N seqs, which could happen due to send/recv lag */
+		{
+		  cm_sc_p[ip]    = cm_sc[i];
+		  hmm_sc_p[ip]   = hmm_sc[i];
+		  hmm_eval_p[ip] = hmm_eval[i];
+		  ip++; /* increase counter of seqs passing threshold */
+		}
+	      nproc_working--;
+	      free(dsqlist[wi]);
+	      dsqlist[wi] = NULL;
+	      
+	      /* Check if we need to reallocate */
+	      i++;
+	      if(i > imax) esl_fatal("ERROR number of attempts exceeded 500 times number of seqs.\n");
+	      if (i == nalloc) 
+		{
+		  nalloc += chunksize;
+		  ESL_RALLOC(cm_sc,    tmp, nalloc * sizeof(float));
+		  ESL_RALLOC(hmm_sc,   tmp, nalloc * sizeof(float));
+		  ESL_RALLOC(hmm_eval, tmp, nalloc * sizeof(float));
+		}
+	    }
+	  /* If we have work, assign it to a free worker;
+	   * else, terminate the free worker.
+	   */
+	  if (have_work) 
+	    {
+	      dsq_MPISend(dsq, L, wi);
+	      dsqlist[wi] = dsq;
+	      plist[wi]   = p;
+	      if(do_fastfil)
+		trlist[wi] = tr;
+	      wi++;
+	      nproc_working++;
+	    }
+	  else 
+	    dsq_MPISend(NULL, -1, wi);	
+	}
+
+      /* Un-Exponentiate the CM, if X != 1.0 */
+      if(fabs(X-1.0) > 0.00001) ExponentiateCM(cm, 1./X);
+    }
+  /*********************END OF MPI BLOCK*****************************/
+#endif /* if defined(USE_MPI) */
+  /* Sort the HMM E-values with quicksort */
+  esl_vec_FSortIncreasing(hmm_eval_p, N);
+  esl_vec_FSortDecreasing(hmm_sc_p, N); /* TEMPORARY FOR PRINTING */
+
+  /* Determine E-value to return based on predicted filter survival fraction */
+  clen = (2*CMCountStatetype(cm, MATP_MP) + 
+	  CMCountStatetype(cm, MATL_ML) + 
+	  CMCountStatetype(cm, MATR_MR));
+  if(hmm_gum_mode == CP9_G) avg_hit_len = clen;       /* should be weighted sum of gamma[0] from QDB calc */
+  if(hmm_gum_mode == CP9_L) avg_hit_len = clen * 0.5; /* should be weighted sum of gamma[0] from QDB calc */
+
+  /* 06.03.07 expt, want exp, F e_cutoff triplets */
+  /*float F_tmp = 0.005;
+  F_idx = (int) (F_tmp * (float) N) - 1;
+  while(F_tmp < 1.0)
+    {
+      printf("06.03.07 triple (%f, %.4f, %f)\n", X, F_tmp, hmm_eval_p[F_idx]);
+      F_tmp += 0.001;
+      F_idx = (int) (F_tmp * (float) N) - 1;
+      }*/
+  /* done 06.03.07 expt */
+  
+  F_idx  = (int) (Fmin * (float) N) - 1; /* off by one, 95% cutoff in 100 len array is index 94 */
+
+  if(FALSE) /* this strategy is no longer used */
+    {
+      /* Strategy 1, enforce minimum F, but look for highest that gives survival fraction of at least
+       * min_surv */
+      init_flag  = TRUE;
+      surv_fract = IMPOSSIBLE;
+      printf("Min surv: %f\n", min_surv);
+      while(surv_fract < min_surv && F_idx < N)
+	{
+	  ret_hmm_eval = hmm_eval_p[F_idx];
+	  surv_fract = (ret_hmm_eval * ((2. * cm_for_scoring->W) - avg_hit_len)) / ((double) db_size); 
+	  if     (surv_fract < min_surv) F_idx++; 
+	  else if(!init_flag)            F_idx--; /* we overshot it, but only if we're not in 1st iteration */
+	  init_flag = FALSE;
+	}
+      if(F_idx == N) F_idx--; /* we went off the end of the array, back up one */
+      ret_hmm_eval = hmm_eval_p[F_idx];
+
+      surv_fract = (ret_hmm_eval * ((2. * cm_for_scoring->W) - avg_hit_len)) / ((double) db_size); 
+      printf("F S1 Predicted survival fraction: %f (E: %f)\n", surv_fract, ret_hmm_eval);
+    }
+
+  if(do_lookup)
+    {
+      /* Strategy 2 Lookup what F should be based on X, Fmin */
+      Fmin = Filter_XFTableLookup(X, Fmin, emit_mode, fthr_mode);
+    }
+  F_idx = (int) (Fmin * (float) N) - 1; /* off by one, 95% cutoff in 100 len array is index 94 */
+  ret_hmm_eval = hmm_eval_p[F_idx];
+  
+  surv_fract = (ret_hmm_eval * ((2. * cm_for_scoring->W) - avg_hit_len)) / ((double) db_size); 
+  if(do_lookup)
+    printf("F S2 Predicted survival fraction: %f (E: %f)\n", surv_fract, ret_hmm_eval);
+  else
+    printf("F S3 Predicted survival fraction: %f (E: %f)\n", surv_fract, ret_hmm_eval);
+
+  if(ret_hmm_eval > ((float) db_size)) /* E-val > db_size is useless */
+    ret_hmm_eval = (float) db_size;
+  
+  for (i = ((int) (Fmin  * (float) N) -1); i < N; i++)
+    printf("%d i: %4d hmm sc: %10.4f hmm E: %10.4f\n", hmm_gum_mode, i, hmm_sc_p[i], hmm_eval_p[i]);
+
+  printf("\nSummary: %d %d %d %d %f %f\n", fthr_mode, hmm_gum_mode, do_fastfil, emit_mode,
+	 (hmm_sc_p[F_idx]), (hmm_eval_p[F_idx]));
+  /* Reset CM_SEARCH_HMMONLY search option as it was when function was entered */
+  if(was_hmmonly) cm->search_opts |= CM_SEARCH_HMMONLY;
+  else cm->search_opts &= ~CM_SEARCH_HMMONLY;
+
+  printf("05.21.07 %d %d %f %f\n", fthr_mode, hmm_gum_mode, hmm_sc_p[F_idx], ret_hmm_eval);
+
+  /* Clean up and exit */
+  free(hmm_eval);
+  free(hmm_sc);
+  free(cm_sc);
+  free(hmm_eval_p);
+  free(hmm_sc_p);
+  free(cm_sc_p);
+  free(hmm_mu);
+  free(cm_mu);
+  free(cm_minbitsc);
+  /* Return threshold */
+  *ret_F = ((float) (F_idx + 1.)) / (float) N;
+  printf("F: %f\n", *ret_F);
+  return ret_hmm_eval;
+
+ ERROR:
+  esl_fatal("Reached ERROR in FindCP9FilterThreshold()\n");
+  return 0.;
+}
+
+/*
+ * Function: FindExpFactor()
+ * Incept:   EPN, Mon Jun  4 08:14:49 2007
+ *
+ * Purpose:  Find the exponentiation factor 'X', that when a CM's emission
+ *           and transition probabilities are exponentiated by it a specified
+ *           fraction range of sample parsetrees have scores greater than
+ *           a specified minimum E-value. Often used prior to calling 
+ *           FindCP9FilterThreshold().
+ *
+ * Args:
+ *           cm           - the CM
+ *           cmstats      - CM stats object we'll get Gumbel stats from
+ *           r            - source of randomness for EmitParsetree()
+ *           use_cm_cutoff- TRUE to only accept CM parses w/E-values above cm_ecutoff
+ *           cm_ecutoff   - minimum CM E-value to accept 
+ *           db_size      - DB size (nt) to use w/cm_ecutoff to calc CM bit score cutoff 
+ *           emit_mode    - CM_LC or CM_GC, CM mode to emit with
+ *           fthr_mode    - gives CM search strategy to use, and Gumbel to use
+ *           do_fastfil   - TRUE to use fast method: assume parsetree score
+ *                          is optimal CYK score
+ *           ntrials      - number of parsetrees to sample 
+ *           fp_min       - min fraction of ntrials we require > cm_ecutoff
+ *           fp_max       - max fraction of ntrials we require > cm_ecutoff
+ *           
+ * Returns: Exponentiation factor 'X' for which CM^X emits between (ntrails * fp_min) 
+ *          and (ntrials * fp_max) parsetrees with scores better than cm_ecutoff.
+ *          Dies if no such 'X' can be found.
+ */
+float FindExpFactor(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
+		    int use_cm_cutoff, float cm_ecutoff, int db_size, 
+		    int emit_mode, int fthr_mode, int do_fastfil,
+		    int ntrials, float fp_min, float fp_max)
+{
+  /* Contract checks */
+  if((fthr_mode != CM_LI) && (fthr_mode != CM_GI) && (fthr_mode != CM_LC) && (fthr_mode != CM_GC))
+    Die("ERROR in FindExpFactor() fthr_mode not CM_LI, CM_GI, CM_LC, or CM_GC\n");
+  if(do_fastfil && (fthr_mode == CM_LI || fthr_mode == CM_GI))
+    Die("ERROR in FindExpFactor() do_fastfil TRUE, but fthr_mode CM_GI or CM_LI\n");
+  if(emit_mode != CM_GC && emit_mode != CM_LC)
+    Die("ERROR in FindExpFactor() emit_mode not CM_LC or CM_GC\n");
+  if(emit_mode == CM_LC && (fthr_mode == CM_GC || fthr_mode == CM_GI))
+    Die("ERROR in FindExpFactor() emit_mode CM_LC but score mode CM_GC or CM_GI.\n");
+  if(fp_min > fp_max)
+    Die("ERROR in FindExpFactor() fp_min > fp_max\n");
+  if(fp_min < 0. || fp_min > 1.)
+    Die("ERROR in FindExpFactor() fp_min not between and 0. and 1.\n");
+  if(fp_max < 0. || fp_max > 1.)
+    Die("ERROR in FindExpFactor() fp_max not between and 0. and 1.\n");
+
+  int          keep_going = TRUE;
+  float        X = 1.0;
+  float        init_high = 2.0;
+  float        init_low  = 0.5;
+  float        high;
+  float        low;
+  int          X_ctr = 0;
+  int          np_min = ntrials * fp_min;
+  int          np_max = ntrials * fp_max;
+  float        sc;
+  int          np = 0;
+  float        old_X;
+  float       *cm_minbitsc;
+  double        *cm_mu;          /* mu for each partition's CM Gumbel   */
+  CM_t        *cm_for_scoring;
+  Parsetree_t *tr = NULL;      /* parsetree                           */
+  char        *dsq = NULL;     /* digitized sequence                  */
+  char        *seq = NULL;     /* alphabetic sequence                 */
+  int          status;
+  int          p;
+  float        tmp_K;
+  int            i  = 0;         /* counter over samples                */
+  int            L;              /* length of a sample                  */
+
+  high = init_high;
+  low  = init_low;
+  if(!do_fastfil) esl_fatal("ERROR in FindExpFactor(), do_fastfil not TRUE, this is not yet implemented, should it be?\n");
+
+  ESL_ALLOC(cm_minbitsc, sizeof(float) * cmstats->np);
+  ESL_ALLOC(cm_mu,       sizeof(double)* cmstats->np);
+  /* Configure the CM based on the emit mode COULD DIFFERENT FROM WORKERS! */
+  ConfigForGumbelMode(cm, emit_mode);
+  /* Copy the CM into cm_for_scoring if nec., and reconfigure that */
+  if(do_fastfil && (emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI)))
+    {
+      cm_for_scoring = DuplicateCM(cm); 
+      ConfigForGumbelMode(cm_for_scoring, fthr_mode);
+    }
+  else
+    cm_for_scoring = cm;
+
+  /* Determine bit cutoff for each partition, calc'ed from cm_ecutoff */
+  for (p = 0; p < cmstats->np; p++)
+    {
+      /* First determine mu based on db_size */
+      tmp_K      = exp(cmstats->gumAA[fthr_mode][p]->mu * cmstats->gumAA[fthr_mode][p]->lambda) / 
+	cmstats->gumAA[fthr_mode][p]->L;
+      cm_mu[p]   = log(tmp_K  * ((double) db_size)) / cmstats->gumAA[fthr_mode][p]->lambda;
+      /* Now determine bit score */
+      cm_minbitsc[p] = cm_mu[p] - (log(cm_ecutoff) / cmstats->gumAA[fthr_mode][p]->lambda);
+      if(use_cm_cutoff)
+	printf("FindExpFactor() E: %f p: %d %d--%d bit score: %f\n", cm_ecutoff, p, 
+	       cmstats->ps[p], cmstats->pe[p], cm_minbitsc[p]);
+    }
+
+  /* Do a binary search for 'X' that gives between np_min and np_max parsetrees with sc better
+   * than cm_minsc */
+  while(keep_going)
+    {
+      ExponentiateCM(cm, X);
+      old_X = X;
+      np = 0;
+      for(i = 0; i < ntrials; i++)
+	{
+	  EmitParsetree(cm, r, &tr, &seq, &dsq, &L);
+	  if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))
+	    sc = ParsetreeScore_Global2Local(cm_for_scoring, tr, dsq);
+	  else
+	    sc = ParsetreeScore(cm_for_scoring, tr, dsq, FALSE); 
+	  FreeParsetree(tr);
+	  free(dsq);
+	  p = cmstats->gc2p[(get_gc_comp(seq, 1, L))]; /* in get_gc_comp() should be i and j of best hit */
+	  free(seq);
+	  if(sc > cm_minbitsc[p]) np++;
+	}
+      printf("06.03.07 %4d X: %.5f np: %d high: %.5f low: %.5f\n", X_ctr, X, np, high, low);
+      X_ctr++;
+      if(np > np_min && np < np_max)
+	{
+	  keep_going = FALSE;
+	  printf("06.03.07 success! X: %f\n", X);
+	}
+      else
+	{
+	  if      (np < np_min) { low  = X;  X += (high - X)/2.; }
+	  else if (np > np_max) { high = X;  X -= (X  - low)/2.;  }
+	  if(fabs(high-low) < 0.0001) 
+	    if(fabs(high - init_high) < 0.00001) /* init_high (2.0) not high enough, return init_high (2.0) */
+	      return init_high;
+	    else if (fabs(low - init_low) < 0.00001) /* init_low (0.5) not low enough, return init_low (0.5) */
+	      return init_low;
+	}
+      /* Put the CM back the way it was */
+      ExponentiateCM(cm, (1./old_X));
+    }
+  if(do_fastfil && (emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI)))
+    FreeCM(cm_for_scoring);
+  free(cm_minbitsc);
+
+  printf("06.03.07 done expt returning %f\n", X);
+  return X;
+
+ ERROR:
+  esl_fatal("ERROR in FindExpFactor(), death imminent.\n");
+  return 1.0;
+}
+
+/*
+ * Function: Filter_XFTableLookup()
+ * Incept:   EPN, Tue Jun  5 07:07:39 2007
+ *
+ * Purpose:  Given a fraction 'F' of CM hits the HMM filter should find and
+ *           the exponentiation factor 'X' used to make the CM emit parsetrees
+ *           with suitable scores, lookup and return the corrected 'F' using
+ *           a hardcoded map of empirically determined values, and extrapolating
+ *           where necessary.      
+ *
+ * Args:
+ *           X            - the exponentiation factor
+ *           F            - desired fraction of CM hits HMM should find (0.95<=x<=0.99)
+ *           emit_mode    - CM_LC or CM_GC, CM mode to emit with
+ *           fthr_mode    - gives CM search strategy to use, and Gumbel to use
+ *           
+ * Returns: Corrected 'F' from table after extrapolation as explained above.
+ */
+float Filter_XFTableLookup(float X, float F, int emit_mode, int fthr_mode)
+{
+  printf("in Filter_XFTableLookup() X: %f F: %f emit_mode: %d fthr_mode: %d\n", X, F, emit_mode, fthr_mode);
+  /* Contract checks (some are temporary) */
+  if(emit_mode != CM_GC) 
+    esl_fatal("ERROR in Filter_XFTableLookup(), emit mode not CM_GC.\n");
+  if(fthr_mode != CM_LC && fthr_mode != CM_LI) 
+    esl_fatal("ERROR in Filter_XFTableLookup(), fthr mode not CM_LC or CM_LI.\n");
+  if(F > 0.990001 || F < 0.94999)
+    esl_fatal("ERROR in Filter_XFTableLookup(), F must be in range [0.95..0.99]\n");
+  if(X < 0.75)
+    esl_fatal("in Filter_XTableLookup(), X is below 0.75\n");
+
+  if(X > 1.249) 
+    { 
+      printf("in Filter_XTableLookup(), exceeds 1.249, returning 1.0.\n");
+      return 1.0;
+    }
+
+  int status;
+  double **XF_AA;
+  int i;
+  ESL_ALLOC(XF_AA, sizeof(double *) * 5);
+  for(i = 0; i < 5; i++)
+    {
+      ESL_ALLOC(XF_AA[i], sizeof(double) * 50);
+    }
+
+  /* from ~/notebook/7_0520_inf_tail_emit/expts_0603/rmark-1/X_close_to_1/rmark_close21.table.code */
+  XF_AA[0][0] = 0.604515423192598;
+  XF_AA[0][1] = 0.614831485532718;
+  XF_AA[0][2] = 0.640483722291663;
+  XF_AA[0][3] = 0.653194799326666;
+  XF_AA[0][4] = 0.664721613516714;
+  XF_AA[0][5] = 0.684792103312101;
+  XF_AA[0][6] = 0.696334432588007;
+  XF_AA[0][7] = 0.717301102410688;
+  XF_AA[0][8] = 0.738809779743004;
+  XF_AA[0][9] = 0.748424707090713;
+  XF_AA[0][10] = 0.764510665501093;
+  XF_AA[0][11] = 0.776107759845839;
+  XF_AA[0][12] = 0.793102525868823;
+  XF_AA[0][13] = 0.802242539634606;
+  XF_AA[0][14] = 0.817396549001533;
+  XF_AA[0][15] = 0.833510018143928;
+  XF_AA[0][16] = 0.845054834049552;
+  XF_AA[0][17] = 0.859990635768138;
+  XF_AA[0][18] = 0.873048725966369;
+  XF_AA[0][19] = 0.88312357348995;
+  XF_AA[0][20] = 0.893851543442886;
+  XF_AA[0][21] = 0.899095896617135;
+  XF_AA[0][22] = 0.91290439255526;
+  XF_AA[0][23] = 0.919998809374404;
+  XF_AA[0][24] = 0.929454784999846;
+  XF_AA[0][25] = 0.939837938984853;
+  XF_AA[0][26] = 0.945430601430853;
+  XF_AA[0][27] = 0.952149230210086;
+  XF_AA[0][28] = 0.961300521748108;
+  XF_AA[0][29] = 0.966066709815535;
+  XF_AA[0][30] = 0.970570392014799;
+  XF_AA[0][31] = 0.975461211728663;
+  XF_AA[0][32] = 0.977603094876106;
+  XF_AA[0][33] = 0.981002374018307;
+  XF_AA[0][34] = 0.984292259859661;
+  XF_AA[0][35] = 0.985812772516189;
+  XF_AA[0][36] = 0.988604697815925;
+  XF_AA[0][37] = 0.991247813621203;
+  XF_AA[0][38] = 0.993506975192497;
+  XF_AA[0][39] = 0.994064191924624;
+  XF_AA[0][40] = 0.995988455979326;
+  XF_AA[0][41] = 0.996120992797291;
+  XF_AA[0][42] = 0.996524405956255;
+  XF_AA[0][43] = 0.997289275412066;
+  XF_AA[0][44] = 0.998140930863923;
+  XF_AA[0][45] = 0.99811346203176;
+  XF_AA[0][46] = 0.999321588371466;
+  XF_AA[0][47] = 0.998690299422014;
+  XF_AA[0][48] = 0.998872079106245;
+  XF_AA[0][49] = 0.99928186466236;
+
+  XF_AA[1][0] = 0.651507805191574;
+  XF_AA[1][1] = 0.660560549957533;
+  XF_AA[1][2] = 0.686186803189465;
+  XF_AA[1][3] = 0.696858774402236;
+  XF_AA[1][4] = 0.706405154190228;
+  XF_AA[1][5] = 0.725072729101922;
+  XF_AA[1][6] = 0.735330802994684;
+  XF_AA[1][7] = 0.75508335639012;
+  XF_AA[1][8] = 0.775144236530571;
+  XF_AA[1][9] = 0.784491364559886;
+  XF_AA[1][10] = 0.79852241987608;
+  XF_AA[1][11] = 0.807965324841711;
+  XF_AA[1][12] = 0.824217530792584;
+  XF_AA[1][13] = 0.832024779137886;
+  XF_AA[1][14] = 0.844790310291407;
+  XF_AA[1][15] = 0.859582957980509;
+  XF_AA[1][16] = 0.86894693564019;
+  XF_AA[1][17] = 0.882236426601724;
+  XF_AA[1][18] = 0.893328487923062;
+  XF_AA[1][19] = 0.901919407618695;
+  XF_AA[1][20] = 0.912516845647004;
+  XF_AA[1][21] = 0.915903778251477;
+  XF_AA[1][22] = 0.928925101621968;
+  XF_AA[1][23] = 0.933522379705056;
+  XF_AA[1][24] = 0.941902240181435;
+  XF_AA[1][25] = 0.950084243608121;
+  XF_AA[1][26] = 0.955767251863576;
+  XF_AA[1][27] = 0.961124663003683;
+  XF_AA[1][28] = 0.968520148816714;
+  XF_AA[1][29] = 0.97275666968008;
+  XF_AA[1][30] = 0.976555605591042;
+  XF_AA[1][31] = 0.980210559693913;
+  XF_AA[1][32] = 0.982099840185598;
+  XF_AA[1][33] = 0.984546921628583;
+  XF_AA[1][34] = 0.987191158213102;
+  XF_AA[1][35] = 0.988905332488261;
+  XF_AA[1][36] = 0.991035950680023;
+  XF_AA[1][37] = 0.993250800528251;
+  XF_AA[1][38] = 0.995293396435803;
+  XF_AA[1][39] = 0.995605041935139;
+  XF_AA[1][40] = 0.996507055729084;
+  XF_AA[1][41] = 0.996684719302554;
+  XF_AA[1][42] = 0.997785194884525;
+  XF_AA[1][43] = 0.997813869807061;
+  XF_AA[1][44] = 0.998851091704242;
+  XF_AA[1][45] = 0.998786788290816;
+  XF_AA[1][46] = 0.999631834629549;
+  XF_AA[1][47] = 0.99782431444757;
+  XF_AA[1][48] = 0.999083449547723;
+  XF_AA[1][49] = 0.998939543116936;
+
+  XF_AA[2][0] = 0.698068831381895;
+  XF_AA[2][1] = 0.706196770587634;
+  XF_AA[2][2] = 0.730030559690639;
+  XF_AA[2][3] = 0.740250612982444;
+  XF_AA[2][4] = 0.749767542725801;
+  XF_AA[2][5] = 0.766840329536004;
+  XF_AA[2][6] = 0.775252201727982;
+  XF_AA[2][7] = 0.791592319198176;
+  XF_AA[2][8] = 0.81069967397328;
+  XF_AA[2][9] = 0.819699794556972;
+  XF_AA[2][10] = 0.831920771972702;
+  XF_AA[2][11] = 0.839637857470845;
+  XF_AA[2][12] = 0.853415720626429;
+  XF_AA[2][13] = 0.858613091377097;
+  XF_AA[2][14] = 0.87233921186971;
+  XF_AA[2][15] = 0.884409633343452;
+  XF_AA[2][16] = 0.893122940535288;
+  XF_AA[2][17] = 0.90361957928424;
+  XF_AA[2][18] = 0.912921961208646;
+  XF_AA[2][19] = 0.920095554050192;
+  XF_AA[2][20] = 0.929290051807059;
+  XF_AA[2][21] = 0.931576686768534;
+  XF_AA[2][22] = 0.942707955664224;
+  XF_AA[2][23] = 0.946248893484383;
+  XF_AA[2][24] = 0.952945812285395;
+  XF_AA[2][25] = 0.960442605946639;
+  XF_AA[2][26] = 0.965279267778482;
+  XF_AA[2][27] = 0.96882712601592;
+  XF_AA[2][28] = 0.97614984985738;
+  XF_AA[2][29] = 0.97952055184705;
+  XF_AA[2][30] = 0.981374975272281;
+  XF_AA[2][31] = 0.984755218232072;
+  XF_AA[2][32] = 0.986447558547585;
+  XF_AA[2][33] = 0.988059530318827;
+  XF_AA[2][34] = 0.989895930683065;
+  XF_AA[2][35] = 0.99173856432554;
+  XF_AA[2][36] = 0.992792458352072;
+  XF_AA[2][37] = 0.994776057675342;
+  XF_AA[2][38] = 0.996653380435322;
+  XF_AA[2][39] = 0.996358177774394;
+  XF_AA[2][40] = 0.99767166216276;
+  XF_AA[2][41] = 0.99807797054367;
+  XF_AA[2][42] = 0.998490407655929;
+  XF_AA[2][43] = 0.998625900055842;
+  XF_AA[2][44] = 0.999032032449554;
+  XF_AA[2][45] = 0.998368634332335;
+  XF_AA[2][46] = 0.999493938736146;
+  XF_AA[2][47] = 0.997961464856902;
+  XF_AA[2][48] = 0.99926757254451;
+  XF_AA[2][49] = 0.99919760044068;
+
+  XF_AA[3][0] = 0.757724305104733;
+  XF_AA[3][1] = 0.766461466775073;
+  XF_AA[3][2] = 0.784979752178282;
+  XF_AA[3][3] = 0.79434397402588;
+  XF_AA[3][4] = 0.802017008556587;
+  XF_AA[3][5] = 0.817887452755621;
+  XF_AA[3][6] = 0.824458070452807;
+  XF_AA[3][7] = 0.837354545237931;
+  XF_AA[3][8] = 0.854769767428774;
+  XF_AA[3][9] = 0.862213006604172;
+  XF_AA[3][10] = 0.873201595298575;
+  XF_AA[3][11] = 0.877962153736902;
+  XF_AA[3][12] = 0.888494760978758;
+  XF_AA[3][13] = 0.8929426934511;
+  XF_AA[3][14] = 0.904267090291344;
+  XF_AA[3][15] = 0.913804159254234;
+  XF_AA[3][16] = 0.919535282202327;
+  XF_AA[3][17] = 0.928230503690814;
+  XF_AA[3][18] = 0.935307335667513;
+  XF_AA[3][19] = 0.941256475828225;
+  XF_AA[3][20] = 0.949030568488772;
+  XF_AA[3][21] = 0.949945934709077;
+  XF_AA[3][22] = 0.957970528251316;
+  XF_AA[3][23] = 0.961090198134555;
+  XF_AA[3][24] = 0.966164195654882;
+  XF_AA[3][25] = 0.971684199746855;
+  XF_AA[3][26] = 0.976030330408388;
+  XF_AA[3][27] = 0.977793072539259;
+  XF_AA[3][28] = 0.98379319029689;
+  XF_AA[3][29] = 0.985342821244426;
+  XF_AA[3][30] = 0.988342683165911;
+  XF_AA[3][31] = 0.989854392548513;
+  XF_AA[3][32] = 0.990699980929024;
+  XF_AA[3][33] = 0.99195007325228;
+  XF_AA[3][34] = 0.993298367742526;
+  XF_AA[3][35] = 0.994398012140472;
+  XF_AA[3][36] = 0.995394140596778;
+  XF_AA[3][37] = 0.996807787452819;
+  XF_AA[3][38] = 0.99797568427179;
+  XF_AA[3][39] = 0.997979619235294;
+  XF_AA[3][40] = 0.998438792467191;
+  XF_AA[3][41] = 0.998581294266464;
+  XF_AA[3][42] = 0.998972976932633;
+  XF_AA[3][43] = 0.99912961663165;
+  XF_AA[3][44] = 0.999416928771567;
+  XF_AA[3][45] = 0.998799776518357;
+  XF_AA[3][46] = 0.999490598632985;
+  XF_AA[3][47] = 0.998556001944389;
+  XF_AA[3][48] = 0.999248894097374;
+  XF_AA[3][49] = 0.999438980162221;
+
+  XF_AA[4][0] = 0.835926947200063;
+  XF_AA[4][1] = 0.840096285366306;
+  XF_AA[4][2] = 0.854913111501865;
+  XF_AA[4][3] = 0.861427817213593;
+  XF_AA[4][4] = 0.868913860855596;
+  XF_AA[4][5] = 0.880673045371533;
+  XF_AA[4][6] = 0.885221733032393;
+  XF_AA[4][7] = 0.892556750391326;
+  XF_AA[4][8] = 0.906645038425893;
+  XF_AA[4][9] = 0.912782761250072;
+  XF_AA[4][10] = 0.920695351777993;
+  XF_AA[4][11] = 0.923606158847454;
+  XF_AA[4][12] = 0.929654991028677;
+  XF_AA[4][13] = 0.931456550407444;
+  XF_AA[4][14] = 0.941009532409196;
+  XF_AA[4][15] = 0.947452390809934;
+  XF_AA[4][16] = 0.951219782862265;
+  XF_AA[4][17] = 0.955998843984201;
+  XF_AA[4][18] = 0.960581845202378;
+  XF_AA[4][19] = 0.964765994127025;
+  XF_AA[4][20] = 0.969891036795612;
+  XF_AA[4][21] = 0.969916152140906;
+  XF_AA[4][22] = 0.976101734678514;
+  XF_AA[4][23] = 0.976799430520982;
+  XF_AA[4][24] = 0.979214706351899;
+  XF_AA[4][25] = 0.982674464196227;
+  XF_AA[4][26] = 0.986092249453835;
+  XF_AA[4][27] = 0.986582538247042;
+  XF_AA[4][28] = 0.991199061348433;
+  XF_AA[4][29] = 0.992459929940093;
+  XF_AA[4][30] = 0.993635344813326;
+  XF_AA[4][31] = 0.994438724023198;
+  XF_AA[4][32] = 0.994970564163626;
+  XF_AA[4][33] = 0.995279388113399;
+  XF_AA[4][34] = 0.996209951784272;
+  XF_AA[4][35] = 0.996779356160901;
+  XF_AA[4][36] = 0.997499207959605;
+  XF_AA[4][37] = 0.998394104286069;
+  XF_AA[4][38] = 0.999293502799076;
+  XF_AA[4][39] = 0.998760821386919;
+  XF_AA[4][40] = 0.999366130969548;
+  XF_AA[4][41] = 0.999565664979706;
+  XF_AA[4][42] = 0.999219295380022;
+  XF_AA[4][43] = 0.999533070445127;
+  XF_AA[4][44] = 0.999348779659682;
+  XF_AA[4][45] = 0.998307864255877;
+  XF_AA[4][46] = 0.999540316530718;
+  XF_AA[4][47] = 0.999045950019794;
+  XF_AA[4][48] = 0.998854972879331;
+  XF_AA[4][49] = 0.999457304554798;
+
+  /* Find appropriate values that bracket X above and below and smallest F
+   * above F, and extrapolate  */
+  float F_below = 0.95;
+  float F_above;
+  int i_x = 0;
+  int i_f = 0;
+  int keep_going = TRUE;
+  int i_f_below, i_f_above;
+  float X_below;
+  float return_F;
+
+  while(keep_going && i_f < 5)
+    {
+      if(fabs(F-F_below) > 0.0001) { i_f++; F_below += 0.01; }
+      else 
+	{ 
+	  keep_going = FALSE;
+	  i_f_below = i_f-1;
+	  if(i_x == 0) i_f_below = i_f;
+	  i_f_above = i_f;
+	  F_above = F_below;
+	  F_below -= 0.01;
+	}
+    }
+  if(keep_going) 
+    {
+      printf("couldn't determine F_below F_above for F: %f\n", F);
+      esl_fatal("done.\n");
+    }
+  printf("i_f: %d F_above: %f F_below: %f\n", i_f, F_above, F_below);
+
+  i_x = 0;
+  X_below = 0.75;
+  keep_going = TRUE;
+  while(keep_going && i_x < 50)
+    {
+      if(X > X_below) { i_x++; X_below += 0.01; }
+      else keep_going = FALSE;
+    }
+  if(keep_going) 
+    {
+      printf("couldn't determine X_below for X: %f\n", X);
+      esl_fatal("done.\n");
+    }
+  printf("i_x: %d X_below: %f\n", i_x, X_below);
+
+  return_F = XF_AA[i_f_below][i_x] + (((F - F_below) / (F_above-F_below)) * 
+				      (XF_AA[i_f_above] - XF_AA[i_f_below]));
+  printf("in Filter_XFTableLookup() F: %f X: %f returning: %f\n", F, X, return_F);
+  return return_F;
+
+ ERROR:
+  esl_fatal("EASEL ERROR\n");
+  return 0.;
+}
+  

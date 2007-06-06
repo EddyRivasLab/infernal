@@ -27,7 +27,7 @@
 
 #include "structs.h"
 #include "funcs.h"		/* external functions                   */
-#include "stats.h"              /* GUM functions */
+#include "stats.h"              /* gumbel functions */
 #include "cm_dispatch.h"	
 #include "mpifuncs.h"	
 #include "easel.h"
@@ -50,8 +50,8 @@ static ESL_OPTIONS options[] = {
   { "--dbfile",  eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL, "--filonly", "use GC content distribution from file <s>",  1},
   { "--time",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "print timings for Gumbel fitting and CP9 filter calculation",  1},
   { "--gumonly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--filonly", "only estimate GUMs, don't calculate filter thresholds", 2},
-  { "--cmN",     eslARG_INT,   "1000", NULL, "n>0",     NULL,      NULL, "--filonly", "number of random sequences for CM GUM estimation",    2 },
-  { "--hmmN",    eslARG_INT,   "5000", NULL, "n>0",     NULL,      NULL, "--filonly", "number of random sequences for CP9 HMM GUM estimation",    2 },
+  { "--cmN",     eslARG_INT,   "1000", NULL, "n>0",     NULL,      NULL, "--filonly", "number of random sequences for CM gumbel estimation",    2 },
+  { "--hmmN",    eslARG_INT,   "5000", NULL, "n>0",     NULL,      NULL, "--filonly", "number of random sequences for CP9 HMM gumbel estimation",    2 },
   { "--gumhfile",eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL, "--filonly", "save fitted Gumbel histogram(s) to file <s>", 2 },
   { "--gumqqfile",eslARG_STRING, NULL, NULL, NULL,      NULL,      NULL, "--filonly", "save Q-Q plot for Gumbel histogram(s) to file <s>", 2 },
   { "--filN",    eslARG_INT,   "1000", NULL, "n>0",     NULL,      NULL, "--gumonly", "number of emitted sequences for HMM filter threshold calc",    3 },
@@ -63,7 +63,8 @@ static ESL_OPTIONS options[] = {
   { "--fastfil", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly", "calc filter thr quickly, assume parsetree sc is optimal", 3},
   { "--exp",     eslARG_REAL,  "1.0",   NULL, "x>0.",   NULL,      NULL,        NULL, "exponentiate CM prior to filter threshold calculation", 3},
   { "--gemit",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly", "when calc'ing filter thresholds, always emit globally from CM",  3},
-  { "--filhfile",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL, "--filonly", "save CP9 filter threshold histogram(s) to file <s>", 3},
+  { "--filhfile",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL, "--gumonly", "save CP9 filter threshold histogram(s) to file <s>", 3},
+  { "--lookup"  ,eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly", "correct CM hit fraction F based on exponentiation factor X", 3},
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -119,7 +120,8 @@ main(int argc, char **argv)
   float            g_eval;             /* global HMM E-value cutoff                   */
   float            g_F;                /* fraction of CM hits that are found w/g_eval */
   int              emit_mode;          /* CM_LC or CM_GC, CM mode to emit with        */
-  float            exp_factor;
+  float            X;                  /* exponentiation factor                       */
+
   /* Process command line options.
    */
   go = esl_getopts_Create(options);
@@ -273,12 +275,12 @@ main(int argc, char **argv)
   if (esl_opt_GetString(go, "--gumhfile") != NULL) 
     {
       if ((cfg.gum_hfp = fopen(esl_opt_GetString(go, "--gumhfile"), "w")) == NULL)
-	Die("Failed to open GUM histogram save file for writing\n");
+	Die("Failed to open gumbel histogram save file for writing\n");
     }
   if (esl_opt_GetString(go, "--gumqqfile") != NULL) 
     {
       if ((cfg.gum_qfp = fopen(esl_opt_GetString(go, "--gumqqfile"), "w")) == NULL)
-	Die("Failed to open GUM histogram save file for writing\n");
+	Die("Failed to open gumbel histogram save file for writing\n");
     }
   if (esl_opt_GetString(go, "--filhfile") != NULL) 
     {
@@ -347,7 +349,7 @@ main(int argc, char **argv)
 	      if(esl_opt_GetBoolean(go, "--filonly")) /* we can only calc filter thr if we had Gumbel stats in input CM file */
 		{
 		  if(!(cm->flags & CM_GUMBEL_STATS))
-		    esl_fatal("ERROR no GUM stats for CM %d in cmfile: %s, rerun without --filonly.\n", (ncm+1), cfg.cmfile);
+		    esl_fatal("ERROR no gumbel stats for CM %d in cmfile: %s, rerun without --filonly.\n", (ncm+1), cfg.cmfile);
 		  CopyCMStatsGumbel(cm->stats, cmstats[ncm]);
 		}
 	      if(esl_opt_GetBoolean(go, "--time")) esl_stopwatch_Start(w);
@@ -373,7 +375,8 @@ main(int argc, char **argv)
 				       esl_opt_GetReal     (go, "--cmeval"),
 				       db_size, emit_mode, fthr_mode, CP9_L, 
 				       esl_opt_GetBoolean  (go, "--fastfil"), 
-				       cfg.my_rank, cfg.nproc, cfg.do_mpi, &l_F);
+				       cfg.my_rank, cfg.nproc, cfg.do_mpi, X, 
+				       esl_opt_GetBoolean(go, "--lookup"), NULL, &l_F);
 	      /* CP9_G, HMM in global mode */
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	      MPI_Barrier(MPI_COMM_WORLD);
@@ -387,7 +390,8 @@ main(int argc, char **argv)
 				       esl_opt_GetReal     (go, "--cmeval"),
 				       db_size, emit_mode, fthr_mode, CP9_G, 
 				       esl_opt_GetBoolean  (go, "--fastfil"), 
-				       cfg.my_rank, cfg.nproc, cfg.do_mpi, &g_F);
+				       cfg.my_rank, cfg.nproc, cfg.do_mpi, X, 
+				       esl_opt_GetBoolean(go, "--lookup"), NULL, &g_F);
 	      if(cfg.my_rank == 0)
 		{
 		  /* If master (MPI or serial), fill in the filter thr stats */
@@ -501,13 +505,13 @@ main(int argc, char **argv)
  * Function: cm_fit_gumbel()
  * Date:     EPN, Wed May  9 13:23:37 2007
  * Purpose:  Fits a gumbel distribution from a histogram of scores against 
- *           random sequences.  Fills the relevant GUM information in the 
+ *           random sequences.  Fills the relevant Gumbel information in the 
  *           CMStats_t data structure (cmstats) w/mu, and lambda. Determines 
  *           desired search strategy and local/glocal CM/CP9 configuration 
  *           from gum_mode. One histogram is made for each partition of GC frequency. 
  *
  *           This function should be called 6 times, once with each gum_mode
- *           below, to fill all the GUM stats in the cmstats data structure:
+ *           below, to fill all the Gumbel stats in the cmstats data structure:
  *
  *           This function can be called in MPI mode or not, the flag
  *           is cfg->do_mpi.
@@ -523,7 +527,7 @@ main(int argc, char **argv)
  *           cm       - the model
  *           go       - ESL_GETOPTS structure from main
  *           cfg      - the configuration sent from main
- *           cmstats  - data structure that will hold GUM stats (NULL if my_rank > 0)
+ *           cmstats  - data structure that will hold Gumbel stats (NULL if my_rank > 0)
  *           gum_mode - gives search strategy to use for CM or CP9
  *
  */  
@@ -591,7 +595,7 @@ static int cm_fit_gumbel(CM_t *cm, ESL_GETOPTS *go, struct cfg_s *cfg,
       for (p = 0; p < cmstats->np; p++)
 	{
 	  /* Initialize histogram; these numbers are guesses */
-	  h = esl_histogram_CreateFull(-100., 100., .1);    
+	  h = esl_histogram_CreateFull(-100., 100., .25);    
 	      
 	  /* Set up part_gc_freq for this partition */
 	  esl_vec_DSet(part_gc_freq, GC_SEGMENTS, 0.);

@@ -19,7 +19,7 @@
 #include "cplan9.h"
 
 /* various default parameters for CMs and CP9 HMMs */ 
-#define DEFAULT_CM_CUTOFF 10.0
+#define DEFAULT_CM_CUTOFF 0.1
 #define DEFAULT_CM_CUTOFF_TYPE E_CUTOFF
 #define DEFAULT_CP9_CUTOFF 0.0
 #define DEFAULT_CP9_CUTOFF_TYPE SCORE_CUTOFF
