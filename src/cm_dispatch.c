@@ -1117,7 +1117,6 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
   int do_check   = FALSE;
 
   /* Contract checks */
-  /* Contract checks */
   if(!(cm->flags & CM_HASBITS)) 
     Die("ERROR in actually_align_targets, CM_HASBITS flag down.\n");
 

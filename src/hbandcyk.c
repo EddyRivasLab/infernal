@@ -185,10 +185,10 @@ CYKInside_b_jd(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **
   StopwatchZero(watch);
   StopwatchStart(watch);
 
-  /*PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, (j0-i0+1));*/
-  /*printf("alignment strategy:CYKInside_b_jd:b:nosmall\n"); */
-  /*  printf("L: %d\n", L);*/
-  
+  /*PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, (j0-i0+1));
+    printf("alignment strategy:CYKInside_b_jd:b:nosmall\n"); 
+    printf("L: %d\n", L);*/
+
   /* Trust, but verify.
    * Check out input parameters.
    */
@@ -1929,16 +1929,19 @@ for (v = 0; v < cm->M; v++)
     {
       if (cm->stid[v] == BEGL_S) {                     /* big BEGL_S decks */
 	for (j = 0; j <= W; j++) 
-	  if(alpha[v][j] != imp_row) free(alpha[v][j]); 
+	  if(alpha_mem[v][j] != imp_row) free(alpha_mem[v][j]); 
 	free(alpha[v]);
+	free(alpha_mem[v]);
       } else {
-	if(alpha[v][0] != imp_row) free(alpha[v][0]);
-	if(alpha[v][1] != imp_row) free(alpha[v][1]); 
+	if(alpha_mem[v][0] != imp_row) free(alpha_mem[v][0]);
+	if(alpha_mem[v][1] != imp_row) free(alpha_mem[v][1]); 
 	free(alpha[v]);
+	free(alpha_mem[v]);
       }
     }
   free(imp_row);
   free(alpha);
+  free(alpha_mem);
   free(bestr);
 
   /*****************************************************************

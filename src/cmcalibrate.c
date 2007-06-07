@@ -376,7 +376,8 @@ main(int argc, char **argv)
 				       db_size, emit_mode, fthr_mode, CP9_L, 
 				       esl_opt_GetBoolean  (go, "--fastfil"), 
 				       cfg.my_rank, cfg.nproc, cfg.do_mpi, X, 
-				       esl_opt_GetBoolean(go, "--lookup"), NULL, &l_F);
+				       esl_opt_GetBoolean(go, "--lookup"), NULL, &l_F,
+				       FALSE, 0.);
 	      /* CP9_G, HMM in global mode */
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	      MPI_Barrier(MPI_COMM_WORLD);
@@ -391,7 +392,8 @@ main(int argc, char **argv)
 				       db_size, emit_mode, fthr_mode, CP9_G, 
 				       esl_opt_GetBoolean  (go, "--fastfil"), 
 				       cfg.my_rank, cfg.nproc, cfg.do_mpi, X, 
-				       esl_opt_GetBoolean(go, "--lookup"), NULL, &g_F);
+				       esl_opt_GetBoolean(go, "--lookup"), NULL, &g_F,
+				       FALSE, 0.);
 	      if(cfg.my_rank == 0)
 		{
 		  /* If master (MPI or serial), fill in the filter thr stats */

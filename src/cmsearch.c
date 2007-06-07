@@ -115,6 +115,7 @@ static char experts[] = "\
    --hmmfast      : w/hmmcalcthr, for speed assume parse tree scores are optimal\n\
    --hmmF <x>     : w/hmmcalcthr, set fraction of CM parses to pass HMM filter as <x>\n\
    --hmmlookup    : w/hmmcalcthr, correct F for exponent factor using lookup table\n\
+   --hmmemax <x>  : w/hmmcalcthr, set max CM E-value to 10^-<x> * min E-value\n\
    --hmmfilN      : w/hmmcalcthr, num emitted seqs to use for filter threshold calc\n\
    --hmmgemit     : w/hmmcalcthr, always emit from CM in global mode\n\
    --hmmgreedy    : resolve HMM overlapping hits with greedy algorithm a la RSEARCH\n\
@@ -154,6 +155,7 @@ static struct opt_s OPTIONS[] = {
   { "--hmmgemit",   FALSE, sqdARG_NONE},
   { "--hmmF",       FALSE, sqdARG_FLOAT},
   { "--hmmlookup",  FALSE, sqdARG_NONE},
+  { "--hmmemax",    FALSE, sqdARG_FLOAT},
   { "--hmmnegsc",   FALSE, sqdARG_FLOAT},
   /*{ "--hmmrescan",  FALSE, sqdARG_NONE},*/
   { "--noqdb",      FALSE, sqdARG_NONE },
@@ -305,11 +307,19 @@ main(int argc, char **argv)
   FILE *fil_hfp = NULL;            
   char *fil_histfile = NULL;         
   float X;                    /* CM exponentiation factor for calc'ing the filter thr */
-  int   X_ntrials = 10000;   /* number of parsetrees to sample during search for X */
-  float X_fp_min = 0.945;     /* min parsetree fraction > CM cutoff during search for X */
-  float X_fp_max = 0.955;     /* max parsetree fraction > CM cutoff during search for X */
-  int   do_hmmlookup = FALSE; /* TRUE to use lookup table to correct for F based on X */
+  int   X_ntrials = 1000;   /* number of parsetrees to sample during search for X */
+  /* IF calling FindExpFactor() */
+  /*float X_fp_min = 0.945;*/     /* min parsetree fraction > CM cutoff during search for X */
+  /*float X_fp_max = 0.955;*/     /* max parsetree fraction > CM cutoff during search for X */
+  /* IF calling FindExpFactor_minmax() */
+  float X_fp_min = 0.05;     /* min parsetree fraction > CM cutoff during search for X */
+  float X_fp_max = 0.2;     /* max parsetree fraction > CM cutoff during search for X */
 
+  int   do_hmmlookup = FALSE; /* TRUE to use lookup table to correct for F based on X */
+  int   do_hmm_minmax = FALSE; /* TRUE to enforce all CM parses between Evalue min and max */
+  float cm_emax_exp = 0;          /* multiply CM E cutoff by 10^(-1 * cm_emax_exp) to get cm_emax */
+  float cm_emax = 0.;            /* maximum E-value to accept from CP if do_hmm_minmax */
+  
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
   int mpi_master_rank;      /* Rank of master process */
   Stopwatch_t  *mpi_watch;  /* for timings in MPI mode                  */
@@ -459,6 +469,7 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--hmmgemit")    == 0) do_hmmgemit = TRUE;
     else if  (strcmp(optname, "--hmmF")        == 0) F = atof(optarg);
     else if  (strcmp(optname, "--hmmlookup")   == 0) do_hmmlookup = TRUE;
+    else if  (strcmp(optname, "--hmmemax")     == 0) { cm_emax_exp = atoi(optarg); do_hmm_minmax = TRUE; }
     else if  (strcmp(optname, "--beta")   == 0) beta      = atof(optarg);
     else if  (strcmp(optname, "--noqdb")  == 0) do_qdb    = FALSE;
     else if  (strcmp(optname, "--qdbfile")== 0) { read_qdb  = TRUE; qdb_file = optarg; }
@@ -728,7 +739,7 @@ main(int argc, char **argv)
 	   */
 	  if(!(cm->flags & CM_GUMBEL_STATS)) 
 	    Die("ERROR trying to use HMM E-value cutoff but no Gumbel stats in CM file.\nUse cmcalibrate or use --hmmT or --hmmE.\n");
-	  if(!(cm->flags & CM_FTHR_STATS)) 
+	  if((!(cm->flags & CM_FTHR_STATS) && !do_hmmcalcthr)) 
 	    Die("ERROR trying to use HMM E-value cutoff but none in CM file.\nUse cmcalibrate or use --hmmT or --hmmE.\n");
 	  /* Convert E-value from CM file to E-value for current DB size */
 	  cp9_cutoff_type = E_CUTOFF;
@@ -811,7 +822,16 @@ main(int argc, char **argv)
 		    }*/
 
 	      printf("\n\n06.03.07 SEARCHING FOR REAL X NOW\n\n\n");
-	      X = FindExpFactor(cm, cm->stats, r, use_cm_cutoff, cm->cutoff, N, emit_mode, cm_mode, TRUE,
+		
+	      if(do_hmm_minmax) 
+		{
+		  cm_emax = epnEXP10(-1. * cm_emax_exp) * cm->cutoff;
+		  printf("cm_emax: %g\n", cm_emax);
+		  X = FindExpFactor_minmax(cm, cm->stats, r, cm->cutoff, cm_emax, N, emit_mode, cm_mode, do_fastfil,
+					   X_ntrials, X_fp_min, X_fp_max);
+		}
+	      else
+		X = FindExpFactor(cm, cm->stats, r, use_cm_cutoff, cm->cutoff, N, emit_mode, cm_mode, TRUE,
 				  X_ntrials, X_fp_min, X_fp_max);
 
 	      /* we may have reconfigured the CM in FindExpFactor(), change it back */
@@ -822,7 +842,7 @@ main(int argc, char **argv)
 		FindCP9FilterThreshold(cm, cm->stats, r, F, min_surv, 
 				       filN, use_cm_cutoff, cm->cutoff, 
 				       N, emit_mode, cm_mode, cp9_mode, do_fastfil,
-				       my_rank, nproc, do_mpi, X, do_hmmlookup, fil_histfile, &Fset); /* Fset is not important, we're not
+				       my_rank, nproc, do_mpi, X, do_hmmlookup, fil_histfile, &Fset, do_hmm_minmax, cm_emax); /* Fset is not important, we're not
 											 * storing the new stats info */
 
 	      /* we may have reconfigured the CM in FindCP9FilterThreshold(), change it back */
@@ -831,7 +851,7 @@ main(int argc, char **argv)
 	    }
 	  else /* MPI worker (this will be overhauled when cmsearch get's easelfied with getops) */
 	    FindCP9FilterThreshold(cm, NULL, NULL, 0., 0., 0, FALSE, 0, 0, emit_mode, cm_mode, cp9_mode, FALSE,
-				   my_rank, nproc, do_mpi, 1.0, do_hmmlookup, NULL, &F); /* all params but cm_mode, cp9_mode, my_rank */
+				   my_rank, nproc, do_mpi, 1.0, do_hmmlookup, NULL, &F, do_hmm_minmax, cm_emax); /* all params but cm_mode, cp9_mode, my_rank */
 
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	  /* broadcast cp9_e_cutoff */
@@ -842,10 +862,16 @@ main(int argc, char **argv)
 	    {
 	      printf("F returned from FindCP9FilterThreshold(): %f\n", F);
 	      /* following lines are printfs just for curiousity */
-	      if(cp9_mode == CP9_L) 
-		cp9_eval   = cm->stats->fthrA[cm_mode]->l_eval;
-	      else if(cp9_mode == CP9_G) 
-		cp9_eval   = cm->stats->fthrA[cm_mode]->g_eval;
+	      if(cm->flags & CM_FTHR_STATS)
+		{
+		  if(cp9_mode == CP9_L) 
+		    cp9_eval   = cm->stats->fthrA[cm_mode]->l_eval;
+		  else if(cp9_mode == CP9_G) 
+		    cp9_eval   = cm->stats->fthrA[cm_mode]->g_eval;
+		  else esl_fatal("cp9_mode unrecognizable\n");
+		}
+	      else
+		cp9_eval = -1.;
 	      cp9_bit_sc   = cm->stats->gumAA[cp9_mode][0]->mu - (log(cp9_e_cutoff) / cm->stats->gumAA[cp9_mode][0]->lambda);
 	      printf("Calc'ed CP9 bit score cutoff: %f\ncmcalibrate e-val cutoff: %f\nnew e-val cutoff: %f\n", cp9_bit_sc, cp9_eval, cp9_e_cutoff);
 	    }
@@ -958,6 +984,8 @@ in_mpi = 0;
 #endif
  printf ("Fin\n");
  fflush(stdout); 
+ CMFileClose(cmfp);
+ esl_randomness_Destroy(r);
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
     }
 #endif
@@ -1128,3 +1156,4 @@ int debug_print_stats(int *partitions, int num_partitions, double *lambda, doubl
   printf("end of debug_print_stats\n");
   return 1;
 }
+

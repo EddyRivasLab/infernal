@@ -462,6 +462,7 @@ void GetDBInfo (ESL_SQFILE *sqfp, long *ret_N, double **ret_gc_ct)
 
   if(ret_N != NULL)      *ret_N     = N;
   if(ret_gc_ct != NULL)  *ret_gc_ct = gc_ct;
+  else free(gc_ct);
 #ifdef PRINT_GC_COUNTS
   for (i=0; i<GC_SEGMENTS; i++) 
     printf ("%d\t%d\n", i, gc_ct[i]);

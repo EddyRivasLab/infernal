@@ -368,11 +368,16 @@ extern float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS
 				    float cm_ecutoff, int db_size, 
 				    int emit_mode, int fthr_mode, int hmm_gum_mode, 
 				    int do_fastfil, int my_rank, int nproc, int do_mpi, 
-				    float X, int do_lookup, char *histfile, float *ret_F);
+				    float X, int do_lookup, char *histfile, float *ret_F,
+				    int do_minmax, float cm_emax);
 extern float FindExpFactor(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
 			   int use_cm_cutoff, float cm_ecutoff, int db_size, 
 			   int emit_mode, int fthr_mode, int do_fastfil,
 			   int ntrials, float fp_min, float fp_max);
+extern float FindExpFactor_minmax(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
+				  float cm_min_ecutoff, float cm_max_ecutoff, int db_size, 
+				  int emit_mode, int fthr_mode, int do_fastfil,
+				  int ntrials, float fp_min, float fp_max);
 extern float Filter_XFTableLookup(float X, float F, int emit_mode, int fthr_mode);
      
 /* from CP9_cm2wrhmm.c */

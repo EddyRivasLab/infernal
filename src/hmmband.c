@@ -79,9 +79,9 @@ AllocCP9Bands(CM_t *cm, struct cplan9_s *hmm)
   /* NOTE: cp9bands->hdmin and hdmax are 2D arrays, that are alloc'ed
    * inside hmmband.c::CP9_seq2bands() dependent on size of j bands
    * for each state. They are the only part of the CP9Bands_t data
-   * structure that is allocated in seq-dependent fashion, so they
-   * must be freed after bands are used for each seq (this is done
-   * in cm_dispatch::actually_align_targets()) 
+   * structure that is allocated in seq-dependent fashion, so it
+   * they are freed after bands are used for each seq (this is done
+   * in cm_dispatch::actually_align_targets()).
    */
   return cp9bands;
 }
@@ -125,7 +125,7 @@ FreeCP9Bands(CP9Bands_t *cp9bands)
   free(cp9bands->isum_pn_m);
   free(cp9bands->isum_pn_i);
   free(cp9bands->isum_pn_d);
-
+  free(cp9bands);
 }
 
 /* Function: dbl_Score2Prob()
