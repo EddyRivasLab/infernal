@@ -139,8 +139,11 @@ extern void aln_send_terminate  (int rank_to_send_to);
  *********************** **************************************************************/
 extern void mpi_worker_search_target(CM_t *cm, int my_rank);
 extern void mpi_worker_cm_and_cp9_search(CM_t *cm, int do_fast, int my_rank);
+extern void mpi_worker_cm_and_cp9_search_maxsc(CM_t *cm, int do_fast, int do_minmax, int my_rank);
 extern int dsq_MPISend(char *dsq, int L, int dest);
 extern int dsq_MPIRecv(char **ret_dsq, int *ret_L);
+extern int dsq_maxsc_MPISend(char *dsq, int L, float maxsc, int dest);
+extern int dsq_maxsc_MPIRecv(char **ret_dsq, int *ret_L, float *ret_maxsc);
 extern int cm_MPIBroadcast(CM_t *cm);
 
 #endif

@@ -1473,6 +1473,7 @@ float OLD_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r
       CP9Logoddsify(cm->cp9);
 
       mpi_worker_cm_and_cp9_search(cm, do_fastfil, my_rank);
+
       *ret_F = 0.0; /* this return value is irrelevant */
       return 0.0;   /* this return value is irrelevant */
     }
@@ -1612,7 +1613,7 @@ float OLD_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r
 	  if(do_fastfil)
 	    {
 	      if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))
-		cm_sc[i] = ParsetreeScore_Global2Local(cm_for_scoring, tr, dsq);
+		cm_sc[i] = ParsetreeScore_Global2Local(cm_for_scoring, tr, dsq, FALSE);
 	      else
 		cm_sc[i] = ParsetreeScore(cm_for_scoring, tr, dsq, FALSE); 
 	      FreeParsetree(tr);
@@ -1718,7 +1719,7 @@ float OLD_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r
 	      if(do_fastfil)
 		{
 		  if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))
-		    cm_sc[i] = ParsetreeScore_Global2Local(cm_for_scoring, trlist[wi], dsqlist[wi]);
+		    cm_sc[i] = ParsetreeScore_Global2Local(cm_for_scoring, trlist[wi], dsqlist[wi], FALSE);
 		  else
 		    cm_sc[i] = ParsetreeScore(cm_for_scoring, trlist[wi], dsqlist[wi], FALSE); 
 		  FreeParsetree(trlist[wi]);
@@ -1922,6 +1923,9 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   if(emit_mode == CM_LC && (fthr_mode == CM_GC || fthr_mode == CM_GI))
     Die("ERROR in FindCP9FilterThreshold() emit_mode CM_LC but score mode CM_GC or CM_GI.\n");
 
+  if(do_minmax)
+    Die("ERROR in FindCP9FilterThreshold() do_minmax deprecated.\n");
+
 #if defined(USE_MPI)
   /* If a worker in MPI mode, we go to worker function mpi_worker_cm_and_cp9_search */
   if(my_rank > 0) 
@@ -1935,7 +1939,9 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	CPlan9GlobalConfig(cm->cp9);
       CP9Logoddsify(cm->cp9);
 
-      mpi_worker_cm_and_cp9_search(cm, do_fastfil, my_rank);
+      //mpi_worker_cm_and_cp9_search(cm, do_fastfil, my_rank);
+      mpi_worker_cm_and_cp9_search_maxsc(cm, do_fastfil, do_minmax, my_rank);
+
       *ret_F = 0.0; /* this return value is irrelevant */
       return 0.0;   /* this return value is irrelevant */
     }
@@ -1974,7 +1980,9 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   int            tr_npassed = 0; /* number of traces that passed cutoffs
 				  * we had to search before getting N  */
   int            passed_flag = FALSE;
+  int            tr_passed_flag = FALSE;
   float          cm_sc;
+  float          hmm_sc;
   float          orig_tau;
   float          hb_sc= 0.; 
 
@@ -2002,7 +2010,6 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   ESL_ALLOC(hmm_sc_p,    sizeof(float) * N);
   ESL_ALLOC(cm_sc_p,     sizeof(float) * N);
   ESL_ALLOC(cm_minbitsc, sizeof(float) * cmstats->np);
-  ESL_ALLOC(cm_maxbitsc, sizeof(float) * cmstats->np);
   ESL_ALLOC(cm_mu,       sizeof(double)* cmstats->np);
   ESL_ALLOC(hmm_mu,      sizeof(double)* cmstats->np);
   ESL_ALLOC(scores,      sizeof(float) * 2);
@@ -2047,8 +2054,6 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
       cm_mu[p]   = log(tmp_K  * ((double) db_size)) / cmstats->gumAA[fthr_mode][p]->lambda;
       /* Now determine bit score */
       cm_minbitsc[p] = cm_mu[p] - (log(cm_ecutoff) / cmstats->gumAA[fthr_mode][p]->lambda);
-      if(do_minmax) cm_maxbitsc[p] = cm_mu[p] - (log(cm_emax)    / cmstats->gumAA[fthr_mode][p]->lambda);
-      else          cm_maxbitsc[p] = 0.;
       if(use_cm_cutoff)
 	printf("E: %f p: %d %d--%d bit score: %f\n", cm_ecutoff, p, 
 	       cmstats->ps[p], cmstats->pe[p], cm_minbitsc[p]);
@@ -2058,6 +2063,10 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
    * either in serial or MPI depending on do_mpi flag.
    */
   /*********************SERIAL BLOCK*************************************/
+  int nleft = 0; /* number of seqs with scores < min CM score */
+  int tr_np, tr_na, s1_np, s1_na, s2_np, s2_na, s3_np, s3_na;
+  tr_np = tr_na = s1_np = s1_na = s2_np = s2_na = s3_np = s3_na = 0;
+  printf("06.11.07 Min np: %5d Min nleft: %5d\n", N, ((int) (0.05*N)));
   if(!(do_mpi))
     {
       /* Exponentiate the CM, if X != 1.0 */
@@ -2074,14 +2083,17 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
        */
 
       SQINFO            sqinfo;     /* info about sequence (name/len)         */
-      while(ip < N) /* while number seqs passed CM score threshold (ip) < N */
+      while(ip < N || nleft < (0.05 * N)) /* while number seqs passed CM score threshold (ip) < N */
 	{
 	  EmitParsetree(cm, r, &tr, &seq, &dsq, &L);
 	  while(L == 0) { FreeParsetree(tr); free(seq); free(dsq); EmitParsetree(cm, r, &tr, &seq, &dsq, &L); }
 
+	  tr_na++;
+	  passed_flag = FALSE;
+
 	  p = cmstats->gc2p[(get_gc_comp(seq, 1, L))]; /* in get_gc_comp() should be i and j of best hit */
 	  if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))
-	    tr_sc[i] = ParsetreeScore_Global2Local(cm_for_scoring, tr, dsq);
+	    tr_sc[i] = ParsetreeScore_Global2Local(cm_for_scoring, tr, dsq, FALSE);
 	  /* Note, we don't have to exponentiate the scoring CM, it won't be emitting */
 	  else
 	    tr_sc[i] = ParsetreeScore(cm_for_scoring, tr, dsq, FALSE); 
@@ -2091,27 +2103,53 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	  WriteSeq(stdout, SQFILE_FASTA, seq, &sqinfo);
 	  ParsetreeDump(stdout, tr, cm, dsq);
 	  printf("%d Parsetree Score: %f\n\n", i, tr_sc[i]);*/
-	  FreeParsetree(tr);
-	  free(seq);
+	  //FreeParsetree(tr);
+	  //free(seq);
 
 	  /* If do_minmax, check if the parsetree score less than maximum allowed */
-	  if((!do_minmax || (do_minmax && (tr_sc[i] <= cm_maxbitsc[p]))))
+	  if(tr_sc[i] > cm_minbitsc[p]) /* we know we've passed */
 	    {
-	      tr_npassed++;
-	      if(do_fastfil)
+	      tr_np++;
+	      passed_flag = TRUE;
+	      cm_sc_p[ip] = tr_sc[i];
+	      //printf("TR P (P: %5d L: %5d)\n", ip, nleft);
+	    }
+	  else
+	    {
+	      /* we're not sure if our optimal score exceeds cm_minbitsc */
+	      /* STAGE 1 */
+	      
+	      /* For speed first see if a strict (high tau) HMM banded search finds a 
+	       * conditional optimal parse with score > min score */
+	      s1_na++;
+	      cm_for_scoring->search_opts |= CM_SEARCH_HBANDED;
+	      //cm_for_scoring->tau = 0.1;
+	      cm_for_scoring->tau = 0.01;
+	      //cm_for_scoring->tau = 0.001;
+	      
+	      hb_sc = actually_search_target(cm_for_scoring, dsq, 1, L,
+					     0.,    /* cutoff is 0 bits (actually we'll find highest
+						     * negative score if it's < 0.0) */
+					     0.,    /* CP9 cutoff is 0 bits */
+					     NULL,  /* don't keep results */
+					     FALSE, /* don't filter with a CP9 HMM */
+					     FALSE, /* we're not calcing CM  stats */
+					     FALSE, /* we're not calcing CP9 stats */
+					     NULL); /* filter fraction N/A */
+	      //if(!do_fastfil) printf("%4d %5d %d T: %10.4f BC: %10.4f ", ip, i, passed_flag, tr_sc[i], hb_sc);
+	      if(hb_sc > cm_minbitsc[p])
 		{
+		  s1_np++;
 		  passed_flag = TRUE;
-		  cm_sc_p[ip] = tr_sc[i];
+		  cm_sc_p[ip] = hb_sc;
+		  //printf("S1 P (P: %5d L: %5d)\n", ip, nleft);
 		}
-	      else
+	      else /* Stage 2, search with another, less strict (lower tau)  HMM banded parse */
 		{
-		  /* if we're not in fastfil mode, ensure the optimal parse passes the thresholds */
-
-		  /* If do_minmax, for speed first see if a strict (high tau) HMM banded search finds a 
-		   * conditional optimal parse with score > max score */
-		  cm_for_scoring->search_opts |= CM_SEARCH_HBANDED;
-		  cm_for_scoring->tau = 0.1;
-		  hb_sc = actually_search_target(cm_for_scoring, dsq, 1, L,
+		  s2_na++;
+		  cm_for_scoring->search_opts |= CM_SEARCH_HMMSCANBANDS;
+		  cm_for_scoring->tau = 1e-15;
+		  cm_sc = actually_search_target(cm_for_scoring, dsq, 1, L,
 						 0.,    /* cutoff is 0 bits (actually we'll find highest
 							 * negative score if it's < 0.0) */
 						 0.,    /* CP9 cutoff is 0 bits */
@@ -2120,14 +2158,19 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 						 FALSE, /* we're not calcing CM  stats */
 						 FALSE, /* we're not calcing CP9 stats */
 						 NULL); /* filter fraction N/A */
-		  cm_for_scoring->search_opts &= ~CM_SEARCH_HBANDED;
-		  if(!do_fastfil) printf("%4d %5d %d T: %10.4f BC: %10.4f ", ip, i, passed_flag, tr_sc[i], hb_sc);
-		  if(hb_sc > cm_maxbitsc[p])
-		    passed_flag = FALSE;
+		  if(cm_sc > cm_minbitsc[p])
+		    {
+		      s2_np++;
+		      passed_flag = TRUE;
+		      cm_sc_p[ip] = cm_sc;
+		      //printf("S2 P (P: %5d L: %5d)\n", ip, nleft);
+		    }
 		  else /* search with another, less strict (lower tau)  HMM banded parse */
 		    {
-		      cm_for_scoring->tau = 1e-10;
-		      cm_for_scoring->search_opts |= CM_SEARCH_HBANDED;
+		      s3_na++;
+		      /* Stage 3 do QDB CYK */
+		      cm_for_scoring->search_opts &= ~CM_SEARCH_HBANDED;
+		      cm_for_scoring->search_opts &= ~CM_SEARCH_HMMSCANBANDS;
 		      cm_sc = actually_search_target(cm_for_scoring, dsq, 1, L,
 						     0.,    /* cutoff is 0 bits (actually we'll find highest
 							     * negative score if it's < 0.0) */
@@ -2137,25 +2180,23 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 						     FALSE, /* we're not calcing CM  stats */
 						     FALSE, /* we're not calcing CP9 stats */
 						     NULL); /* filter fraction N/A */
-		      cm_for_scoring->search_opts &= ~CM_SEARCH_HBANDED;
-		      if(( do_minmax && (cm_sc >= cm_minbitsc[p] && cm_sc <= cm_maxbitsc[p])) ||
-			 (!do_minmax && (cm_sc >= cm_minbitsc[p])))
+		      if(cm_sc > cm_minbitsc[p])
 			{
+			  s3_np++;
 			  passed_flag = TRUE;
 			  cm_sc_p[ip] = cm_sc;
+			  //printf("S3 P (P: %5d L: %5d)\n", ip, nleft);
 			}
-		      else
-			passed_flag = FALSE;
-		      printf("C: %10.4f", cm_sc);
 		    }
-		  printf("\n");
 		}
 	    }
-	  else
-	    passed_flag = FALSE;
 
-
-	  if(passed_flag)
+	  if(!passed_flag) 
+	    {
+	      nleft++;
+	      //printf("LEFT (P: %5d L: %5d)\n", ip, nleft);
+	    }
+	  else if(passed_flag)
 	    {
 	      /* Scan seq with HMM */
 	      /* DO NOT CALL actually_search_target b/c that will run Forward then 
@@ -2163,7 +2204,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	       * Forward scan (then running Backward only on hits above our threshold).
 	       */
 	      hmm_sc_p[ip] = CP9Forward(cm, dsq, 1, L, cm->W, 0., 
-				       NULL,   /* don't return scores of hits */
+					NULL,   /* don't return scores of hits */
 				       NULL,   /* don't return posns of hits */
 				       NULL,   /* don't keep track of hits */
 				       TRUE,   /* we're scanning */
@@ -2184,10 +2225,20 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	      nalloc += chunksize;
 	      ESL_RALLOC(tr_sc,    tmp, nalloc * sizeof(float));
 	    }
+	  if(ip % N == 0)
+	    {
+	      ESL_RALLOC(hmm_eval_p, tmp, (ip + N) * sizeof(float));
+	      ESL_RALLOC(hmm_sc_p,   tmp, (ip + N) * sizeof(float));
+	      ESL_RALLOC(cm_sc_p,    tmp, (ip + N) * sizeof(float));
+	    }
 	}
       /* Un-Exponentiate the CM, if X != 1.0 */
       if(fabs(X-1.0) > 0.00001) ExponentiateCM(cm, 1./X);
     }
+  N = ip; /* update N based on number of seqs sampled */
+  printf("06.11.07 np: %5d nleft: %5d\n", ip, nleft);
+  printf("06.11.07 tr_a: %5d tr_p: %5d\n06.11.07 s1_a: %5d s1_p: %5d\n06.11.07 s2_a: %5d s2_p: %5d\n06.11.07 s3_a: %5d s3_p: %5d\n", tr_na, tr_np, s1_na, s1_np, s2_na, s2_np, s3_na, s3_np);
+  
   /*************************END OF SERIAL BLOCK****************************/
 #if defined(USE_MPI)
   /*************************MPI BLOCK****************************/
@@ -2197,13 +2248,18 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
       if(fabs(X-1.0) > 0.00001) ExponentiateCM(cm, X);
 
       /* MPI Strategy: 
-       * Emit seqs one at a time from the CM and send them to workers to 
-       * search with CM and with CP9 HMM and return scores of both searches.
-       * Master collects these scores until it's received N with scores better 
-       * than cutoff.
+       * Emit seqs one at a time from the CM, if the CM parse tree score is greater
+       * than our max E-value (if do_minmax, otherwise there is no maximum),
+       * send it to a worker. The worker then tries to quickly determine if
+       * the sequence is within the acceptable E-value range by doing HMM
+       * banded searches. If the sequence is within the E-value range,
+       * it is searched with an HMM. Both the optimal CM parse scores and HMM
+       * scores are passed back to the master, whose keeping track of how
+       * many seqs have been sampled within the E-value range.
        *
        * If do_fastfil, the worker skips the CM search and returns 0. bits
-       * as CM score, which master replaces with parsetree score.
+       * as CM score, which master replaces with parsetree score. (This is 
+       * an old strategy I'm probably about to deprecate (06.07.07))
        *
        * Sean's design pattern for data parallelization in a master/worker model:
        * three phases: 
@@ -2221,11 +2277,25 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	  /* Get next work unit. */
 	  if(ip < N) /* if number seqs passed CM score threshold (ip) < N */
 	    {
-	      EmitParsetree(cm, r, &tr, &seq, &dsq, &L);
-	      /*ParsetreeDump(stdout, tr, cm, dsq);
-		printf("%d Parsetree Score: %f\n\n", (nattempts), ParsetreeScore(cm, tr, dsq, FALSE)); */
-	      p = cmstats->gc2p[(get_gc_comp(seq, 1, L))]; /* in get_gc_comp() should be i and j of best hit */
-	      free(seq);
+	      tr_passed_flag = FALSE;
+	      while(!tr_passed_flag)
+		{
+		  EmitParsetree(cm, r, &tr, &seq, &dsq, &L);
+		  while(L == 0) { FreeParsetree(tr); free(seq); free(dsq); EmitParsetree(cm, r, &tr, &seq, &dsq, &L); }
+
+		  p = cmstats->gc2p[(get_gc_comp(seq, 1, L))]; /* in get_gc_comp() should be i and j of best hit */
+		  free(seq);
+		  /*ParsetreeDump(stdout, tr, cm, dsq);
+		    printf("%d Parsetree Score: %f\n\n", (nattempts), ParsetreeScore(cm, tr, dsq, FALSE)); */
+		  if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))
+		    tr_sc[i] = ParsetreeScore_Global2Local(cm_for_scoring, trlist[wi], dsqlist[wi], FALSE);
+		  else
+		    tr_sc[i] = ParsetreeScore(cm_for_scoring, tr, dsq, FALSE); 
+		  FreeParsetree(tr);
+		  /* If do_minmax, check if the parsetree score less than maximum allowed */
+		  if((!do_minmax || (do_minmax && (tr_sc[i] <= cm_maxbitsc[p]))))
+		    tr_passed_flag = TRUE;
+		}		    
 	      if(!do_fastfil)
 		FreeParsetree(tr);
 	    }
@@ -2236,29 +2306,26 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	  if ( (have_work && nproc_working == nproc-1) || (! have_work && nproc_working > 0))
 	    {
 	      MPI_Recv(scores,  2, MPI_FLOAT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &mstatus);
-	      cm_sc[i]    = scores[0];
-	      hmm_sc[i]   = scores[1];
+	      cm_sc    = scores[0];
+	      hmm_sc   = scores[1];
 	      wi = mstatus.MPI_SOURCE;
-	      hmm_eval[i] = RJK_ExtremeValueE(hmm_sc[i], hmm_mu[plist[wi]], cmstats->gumAA[hmm_gum_mode][plist[wi]]->lambda);
-	      /* could change this to keep ALL CP9 and CM bit scores */
+
 	      if(do_fastfil)
 		{
 		  if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))
-		    cm_sc[i] = ParsetreeScore_Global2Local(cm_for_scoring, trlist[wi], dsqlist[wi]);
+		    cm_sc = ParsetreeScore_Global2Local(cm_for_scoring, trlist[wi], dsqlist[wi], FALSE);
 		  else
-		    cm_sc[i] = ParsetreeScore(cm_for_scoring, trlist[wi], dsqlist[wi], FALSE); 
+		    cm_sc = ParsetreeScore(cm_for_scoring, trlist[wi], dsqlist[wi], FALSE); 
 		  FreeParsetree(trlist[wi]);
 		  trlist[wi] = NULL;
 		}
 	      if(ip < N && 
-		 ( do_minmax && (cm_sc[i] >= cm_minbitsc[plist[wi]] && cm_sc[i] <= cm_maxbitsc[plist[wi]])) ||
-		 (!do_minmax && (cm_sc[i] >= cm_minbitsc[plist[wi]])))
-	      if(cm_sc[i] >= cm_minbitsc[plist[wi]] && ip < N) 
-		/* careful, we don't want to save more than N seqs, which could happen due to send/recv lag */
+		 ( do_minmax && (cm_sc >= cm_minbitsc[plist[wi]] && cm_sc <= cm_maxbitsc[plist[wi]])) ||
+		 (!do_minmax && (cm_sc >= cm_minbitsc[plist[wi]])))
 		{
-		  cm_sc_p[ip]    = cm_sc[i];
-		  hmm_sc_p[ip]   = hmm_sc[i];
-		  hmm_eval_p[ip] = hmm_eval[i];
+		  cm_sc_p[ip]    = cm_sc;
+		  hmm_sc_p[ip]   = hmm_sc;
+		  hmm_eval_p[ip] = RJK_ExtremeValueE(hmm_sc, hmm_mu[plist[wi]], cmstats->gumAA[hmm_gum_mode][plist[wi]]->lambda);
 		  ip++; /* increase counter of seqs passing threshold */
 		}
 	      nproc_working--;
@@ -2271,9 +2338,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	      if (i == nalloc) 
 		{
 		  nalloc += chunksize;
-		  ESL_RALLOC(cm_sc,    tmp, nalloc * sizeof(float));
-		  ESL_RALLOC(hmm_sc,   tmp, nalloc * sizeof(float));
-		  ESL_RALLOC(hmm_eval, tmp, nalloc * sizeof(float));
+		  ESL_RALLOC(tr_sc,    tmp, nalloc * sizeof(float));
 		}
 	    }
 	  /* If we have work, assign it to a free worker;
@@ -2281,7 +2346,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	   */
 	  if (have_work) 
 	    {
-	      dsq_MPISend(dsq, L, wi);
+	      dsq_maxsc_MPISend(dsq, L, cm_maxbitsc[p], wi);
 	      dsqlist[wi] = dsq;
 	      plist[wi]   = p;
 	      if(do_fastfil)
@@ -2290,7 +2355,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	      nproc_working++;
 	    }
 	  else 
-	    dsq_MPISend(NULL, -1, wi);	
+	    dsq_maxsc_MPISend(NULL, -1, -1, wi);	
 	}
 
       /* Un-Exponentiate the CM, if X != 1.0 */
@@ -2508,7 +2573,7 @@ float FindExpFactor(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	{
 	  EmitParsetree(cm, r, &tr, &seq, &dsq, &L);
 	  if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))
-	    sc = ParsetreeScore_Global2Local(cm_for_scoring, tr, dsq);
+	    sc = ParsetreeScore_Global2Local(cm_for_scoring, tr, dsq, FALSE);
 	  else
 	    sc = ParsetreeScore(cm_for_scoring, tr, dsq, FALSE); 
 	  FreeParsetree(tr);
@@ -2675,7 +2740,7 @@ float FindExpFactor_minmax(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	{
 	  EmitParsetree(cm, r, &tr, &seq, &dsq, &L);
 	  if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))
-	    sc = ParsetreeScore_Global2Local(cm_for_scoring, tr, dsq);
+	    sc = ParsetreeScore_Global2Local(cm_for_scoring, tr, dsq, FALSE);
 	  else
 	    sc = ParsetreeScore(cm_for_scoring, tr, dsq, FALSE); 
 	  p = cmstats->gc2p[(get_gc_comp(seq, 1, L))]; /* in get_gc_comp() should be i and j of best hit */
@@ -2686,8 +2751,13 @@ float FindExpFactor_minmax(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 
 	      /* Accelerate via HMM banded SEARCH */
 	      /* For speed, first see if a HMM banded search with big tau gives a bit score above our max */
-	      cm_for_scoring->tau = 0.1;
+
+	      /* STAGE 1 */
+
 	      cm_for_scoring->search_opts |= CM_SEARCH_HBANDED;
+	      //cm_for_scoring->tau = 0.1;
+	      cm_for_scoring->tau = 0.01;
+	      //cm_for_scoring->tau = 0.001;
 	      sc = actually_search_target(cm_for_scoring, dsq, 1, L,
 					  0.,    /* cutoff is 0 bits (actually we'll find highest
 						  * negative score if it's < 0.0) */
@@ -2698,7 +2768,6 @@ float FindExpFactor_minmax(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 					  FALSE, /* we're not calcing CP9 stats */
 					  NULL); /* filter fraction N/A */
 	      printf("SBC: %10.4f %d ", sc, i, np);
-	      cm_for_scoring->search_opts &= ~CM_SEARCH_HBANDED;
 
 	      /* Accelerate via HMM banded ALIGNMENT */
 	      /* For speed, first see if an HMM banded alignment gives a bit score above our max */
@@ -2715,20 +2784,41 @@ float FindExpFactor_minmax(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	      //cm_for_scoring->align_opts &= ~CM_ALIGN_NOSMALL;
 
 	      if(sc < cm_maxbitsc[p])
-	      {
-		/* do HMM banded search with really small tau */
-		cm_for_scoring->tau = 1e-10;
-		cm_for_scoring->search_opts |= CM_SEARCH_HBANDED;
-		sc = actually_search_target(cm_for_scoring, dsq, 1, L,
-					    0.,    /* cutoff is 0 bits (actually we'll find highest
-						    * negative score if it's < 0.0) */
-					    0.,    /* CP9 cutoff is 0 bits */
-					    NULL,  /* don't keep results */
-					    FALSE, /* don't filter with a CP9 HMM */
-					    FALSE, /* we're not calcing CM  stats */
-					    FALSE, /* we're not calcing CP9 stats */
-					    NULL); /* filter fraction N/A */
-		printf("C: %10.4f i: %d np: %d\n", sc, i, np);
+		{
+		  /* do HMM banded search with really small tau */
+		  
+		  /* Stage 2 */
+		  
+		  cm_for_scoring->search_opts |= CM_SEARCH_HMMSCANBANDS;
+		  cm_for_scoring->tau = 1e-15;
+		  //if(FALSE)
+		    sc = actually_search_target(cm_for_scoring, dsq, 1, L,
+						0.,    /* cutoff is 0 bits (actually we'll find highest
+							* negative score if it's < 0.0) */
+						0.,    /* CP9 cutoff is 0 bits */
+						NULL,  /* don't keep results */
+						FALSE, /* don't filter with a CP9 HMM */
+						FALSE, /* we're not calcing CM  stats */
+						FALSE, /* we're not calcing CP9 stats */
+						NULL); /* filter fraction N/A */
+		  printf("C: %10.4f i: %d np: %d\n", sc, i, np);
+		  
+		  if(sc < cm_maxbitsc[p])
+		    {
+		      /* Stage 3 do QDB CYK */
+		      cm_for_scoring->search_opts &= ~CM_SEARCH_HBANDED;
+		      cm_for_scoring->search_opts &= ~CM_SEARCH_HMMSCANBANDS;
+		      //if(FALSE)
+			sc = actually_search_target(cm_for_scoring, dsq, 1, L,
+						    0.,    /* cutoff is 0 bits (actually we'll find highest
+							    * negative score if it's < 0.0) */
+						    0.,    /* CP9 cutoff is 0 bits */
+						    NULL,  /* don't keep results */
+						    FALSE, /* don't filter with a CP9 HMM */
+						    FALSE, /* we're not calcing CM  stats */
+						    FALSE, /* we're not calcing CP9 stats */
+						    NULL); /* filter fraction N/A */
+		    }
 	      }
 	      else printf("\n");
 	    }
@@ -2739,6 +2829,11 @@ float FindExpFactor_minmax(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	  if(sc > cm_minbitsc[p] && sc < cm_maxbitsc[p]) np++;
 	  if(sc < cm_minbitsc[p]) nlow++;
 	  if(sc > cm_maxbitsc[p]) nhigh++;
+
+	  /* If the # passed is at our minimum number and we've seen some high or low, 
+	     break loop to save time. */
+	  if(np >= np_min && (nlow > 10 || nhigh > 10))
+	    i = ntrials;
 	}
       printf("06.03.07 %4d X: %.5f nl: %5d np: %5d nh: %5d high: %.5f low: %.5f\n", X_ctr, X, nlow, np, nhigh, high, low);
       X_ctr++;
@@ -2792,6 +2887,264 @@ float FindExpFactor_minmax(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 
  ERROR:
   esl_fatal("ERROR in FindExpFactor_minmax(), death imminent.\n");
+  return 1.0;
+}
+
+/*
+ * Function: FindExpFactor_min()
+ * Incept:   EPN, Mon Jun 11 16:26:47 2007
+ *
+ * Purpose:  Find the largest exponentiation factor 'X' <= 1.0 that when a CM's 
+ *           emission and transition probabilities are exponentiated by it a 
+ *           specified fraction range of sample parsetrees have scores WORSE than
+ *           a specified minimum E-value. 
+ *           Often used prior to calling FindCP9FilterThreshold().
+ *
+ * Args:
+ *           cm           - the CM
+ *           cmstats      - CM stats object we'll get Gumbel stats from
+ *           r            - source of randomness for EmitParsetree()
+ *           cm_min_ecutoff - minimum CM E-value to accept 
+ *           db_size      - DB size (nt) to use w/cm_ecutoff to calc CM bit score cutoff 
+ *           emit_mode    - CM_LC or CM_GC, CM mode to emit with
+ *           fthr_mode    - gives CM search strategy to use, and Gumbel to use
+ *           do_fastfil   - TRUE to use fast method: assume parsetree score
+ *                          is optimal CYK score (DANGEROUS! DO NOT USE!)
+ *           ntrials      - number of parsetrees to sample 
+ *           fp_min       - min fraction of ntrials we require b/t cm_min_ecutoff and cm_max_ecutoff
+ *           
+ * Returns: Exponentiation factor 'X' we're looking for (see Purpose).
+ *          Dies if no such 'X' can be found.
+ */
+float FindExpFactor_min(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
+			float cm_min_ecutoff, int db_size, int emit_mode, 
+			int fthr_mode, int do_fastfil, int ntrials, float fp_min)
+{
+  /* Contract checks */
+  if((fthr_mode != CM_LI) && (fthr_mode != CM_GI) && (fthr_mode != CM_LC) && (fthr_mode != CM_GC))
+    Die("ERROR in FindExpFactor_min() fthr_mode not CM_LI, CM_GI, CM_LC, or CM_GC\n");
+  if(do_fastfil && (fthr_mode == CM_LI || fthr_mode == CM_GI))
+    Die("ERROR in FindExpFactor_min() do_fastfil TRUE, but fthr_mode CM_GI or CM_LI\n");
+  if(emit_mode != CM_GC && emit_mode != CM_LC)
+    Die("ERROR in FindExpFactor_min() emit_mode not CM_LC or CM_GC\n");
+  if(emit_mode == CM_LC && (fthr_mode == CM_GC || fthr_mode == CM_GI))
+    Die("ERROR in FindExpFactor_min() emit_mode CM_LC but score mode CM_GC or CM_GI.\n");
+  if(fp_min < 0. || fp_min > 1.)
+    Die("ERROR in FindExpFactor_min() fp_min not between and 0. and 1.\n");
+
+  if(do_fastfil)
+    Die("ERROR in FindExpFactor_min() do_fastfil TRUE (is this restriction temporary?)\n");
+
+  int          keep_going = TRUE;
+  float        X = 1.0;
+  float        init_high = 1.0;
+  float        init_low  = 0.5;
+  float        high;
+  float        low;
+  int          X_ctr = 0;
+  int          np_min = ntrials * fp_min;
+  float        sc;
+  int          np = 0;
+  int          na = 0;
+  float        old_X;
+  float       *cm_minbitsc;
+  float       *cm_maxbitsc;
+  double        *cm_mu;          /* mu for each partition's CM Gumbel   */
+  CM_t        *cm_for_scoring;
+  Parsetree_t *tr = NULL;      /* parsetree                           */
+  Parsetree_t **hb_trA = NULL;      /* HMM banded parsetrees          */
+  char        *dsq = NULL;     /* digitized sequence                  */
+  char        *seq = NULL;     /* alphabetic sequence                 */
+  int          status;
+  int          p;
+  float        tmp_K;
+  int            i  = 0;         /* counter over samples                */
+  int            L;              /* length of a sample                  */
+  float          orig_tau;
+  int          seen_passed = FALSE;
+  float low_X_that_passes = 0.;
+  float step_down_size = 0.05;
+  
+  high = init_high;
+  low  = init_low;
+  ESL_ALLOC(cm_minbitsc, sizeof(float) * cmstats->np);
+  ESL_ALLOC(cm_mu,       sizeof(double)* cmstats->np);
+  /* Configure the CM based on the emit mode COULD DIFFERENT FROM WORKERS! */
+  ConfigForGumbelMode(cm, emit_mode);
+  /* Copy the CM into cm_for_scoring, and reconfigure it if nec.,
+   * We do this, so we can exponentiate or change emission modes of
+   * the original CM */
+  cm_for_scoring = DuplicateCM(cm); 
+  if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))
+    ConfigForGumbelMode(cm_for_scoring, fthr_mode);
+
+  /* Determine bit cutoff for each partition, calc'ed from cm_min_ecutoff */
+  for (p = 0; p < cmstats->np; p++)
+    {
+      /* First determine mu based on db_size */
+      tmp_K      = exp(cmstats->gumAA[fthr_mode][p]->mu * cmstats->gumAA[fthr_mode][p]->lambda) / 
+	cmstats->gumAA[fthr_mode][p]->L;
+      cm_mu[p]   = log(tmp_K  * ((double) db_size)) / cmstats->gumAA[fthr_mode][p]->lambda;
+      /* Now determine bit score */
+      cm_minbitsc[p] = cm_mu[p] - (log(cm_min_ecutoff) / cmstats->gumAA[fthr_mode][p]->lambda);
+      printf("06.03.07 FindExpFactor_min() min E: %f p: %d %d--%d bit score: %f", cm_min_ecutoff, p, 
+	     cmstats->ps[p], cmstats->pe[p], cm_minbitsc[p]);
+      printf("\t ntrials: %d min to pass: %d\n", ntrials, np_min);
+    }
+  
+  /* Do a binary search for maximum 'X' <= 1.0 that gives at least np_min optimal parses with sc WORSE
+   * than cm_minsc. If (do_fastfil), assume parsetree score is optimal (WHICH IS DANGEROUS!). */
+  orig_tau = cm_for_scoring->tau;
+  while(keep_going)
+    {
+      printf("06.03.07 Search loop (%d): X: %f\n", X_ctr, X);
+      ExponentiateCM(cm, X);
+      old_X = X;
+      np = na = 0;
+      for(i = 0; i < ntrials; i++)
+	{
+	  EmitParsetree(cm, r, &tr, &seq, &dsq, &L);
+	  if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))
+	    sc = ParsetreeScore_Global2Local(cm_for_scoring, tr, dsq, FALSE);
+	  else
+	    sc = ParsetreeScore(cm_for_scoring, tr, dsq, FALSE); 
+	  p = cmstats->gc2p[(get_gc_comp(seq, 1, L))]; /* in get_gc_comp() should be i and j of best hit */
+
+ 	  if(!do_fastfil && (sc < cm_minbitsc[p]))
+	    {
+	      printf("T: %10.4f ", sc);
+
+	      /* Accelerate via HMM banded SEARCH */
+	      /* For speed, first see if a HMM banded search with big tau gives a bit score above our max */
+
+	      /* STAGE 1 */
+
+	      cm_for_scoring->search_opts |= CM_SEARCH_HBANDED;
+	      //cm_for_scoring->tau = 0.1;
+	      cm_for_scoring->tau = 0.01;
+	      //cm_for_scoring->tau = 0.001;
+	      sc = actually_search_target(cm_for_scoring, dsq, 1, L,
+					  0.,    /* cutoff is 0 bits (actually we'll find highest
+						  * negative score if it's < 0.0) */
+					  0.,    /* CP9 cutoff is 0 bits */
+					  NULL,  /* don't keep results */
+					  FALSE, /* don't filter with a CP9 HMM */
+					  FALSE, /* we're not calcing CM  stats */
+					  FALSE, /* we're not calcing CP9 stats */
+					  NULL); /* filter fraction N/A */
+	      printf("SBC: %10.4f %d ", sc, i, np);
+
+	      /* Accelerate via HMM banded ALIGNMENT */
+	      /* For speed, first see if an HMM banded alignment gives a bit score above our max */
+	      //cm_for_scoring->align_opts |= CM_ALIGN_HBANDED;
+	      //cm_for_scoring->align_opts |= CM_ALIGN_NOSMALL;
+	      /* Abusing the ESL_SQ structure */
+	      //sq[0] = esl_sq_CreateFrom("seq", seq, NULL, NULL, NULL);
+	      //asq[0]->dsq = DigitizeSequence (sq[0]->seq, L);
+	      //actually_align_targets(cm_for_scoring, sq, 1, &hb_trA, 
+	      //NULL, NULL, 0, 0, FALSE);
+	      //sc = ParsetreeScore(cm_for_scoring, hb_trA[0], dsq, FALSE);
+	      //printf("ABC: %10.4f %d ", sc, i, np);
+	      //cm_for_scoring->align_opts &= ~CM_ALIGN_HBANDED;
+	      //cm_for_scoring->align_opts &= ~CM_ALIGN_NOSMALL;
+
+	      if(sc < cm_minbitsc[p])
+		{
+		  /* do HMM banded search with really small tau */
+		  
+		  /* Stage 2 */
+		  
+		  cm_for_scoring->search_opts |= CM_SEARCH_HMMSCANBANDS;
+		  cm_for_scoring->tau = 1e-15;
+		  //if(FALSE)
+		    sc = actually_search_target(cm_for_scoring, dsq, 1, L,
+						0.,    /* cutoff is 0 bits (actually we'll find highest
+							* negative score if it's < 0.0) */
+						0.,    /* CP9 cutoff is 0 bits */
+						NULL,  /* don't keep results */
+						FALSE, /* don't filter with a CP9 HMM */
+						FALSE, /* we're not calcing CM  stats */
+						FALSE, /* we're not calcing CP9 stats */
+						NULL); /* filter fraction N/A */
+		    printf("C: %10.4f i: %d np: %d\n", sc, i, np);
+		  
+		  if(sc < cm_minbitsc[p])
+		    {
+		      /* Stage 3 do QDB CYK */
+		      cm_for_scoring->search_opts &= ~CM_SEARCH_HBANDED;
+		      cm_for_scoring->search_opts &= ~CM_SEARCH_HMMSCANBANDS;
+		      //if(FALSE)
+			sc = actually_search_target(cm_for_scoring, dsq, 1, L,
+						    0.,    /* cutoff is 0 bits (actually we'll find highest
+							    * negative score if it's < 0.0) */
+						    0.,    /* CP9 cutoff is 0 bits */
+						    NULL,  /* don't keep results */
+						    FALSE, /* don't filter with a CP9 HMM */
+						    FALSE, /* we're not calcing CM  stats */
+						    FALSE, /* we're not calcing CP9 stats */
+						    NULL); /* filter fraction N/A */
+		    }
+	      }
+	      printf("\n");
+	    }
+	  FreeParsetree(tr);
+	  free(seq);
+	  free(dsq);
+	  if(sc < cm_minbitsc[p]) np++;
+	  na++;
+
+
+	  /* If we've reached our minimum number, break loop to save time. */
+	  if(np == np_min)
+	    i = ntrials;
+	}
+      printf("06.03.07 %4d X: %.5f np: %5d na: %5d high: %.5f low: %.5f\n", X_ctr, X, np, na, high, low);
+      X_ctr++;
+      if(np >= np_min)
+	{
+	  seen_passed = TRUE;
+	  low_X_that_passes = X;
+	  low  = X;  
+	  X += (high - X)/2.;  
+	  printf("high: %f low: %f (%f)\n", high, low, fabs(high-low));
+	}
+      else
+	{ 
+	  high = X;  
+	  if(seen_passed) X -= (X  - low)/2.;  
+	  else { X -= step_down_size; }
+	}
+      if(fabs(high-low) < 0.005) 
+	{
+	  if(seen_passed) /* we've seen an X that passes, set X to that */
+	    {
+	      X = low_X_that_passes;
+	      keep_going = FALSE;
+	      printf("06.03.07 success! X: %f\n", X);
+	    }
+	  else if(fabs(high - init_high) < 0.001) /* init_high (1.0) not high enough, return init_high (1.0) */
+	    return init_high;
+	  else if (fabs(low - init_low) < 0.001) /* init_low (0.5) not low enough, return init_low (0.8) */
+	    return init_low;
+	  else
+	    {
+	      printf("ERROR in FindExpFactor_min(), convergence at high: %f low: %f\n", high, low);
+	      esl_fatal("done.\n");
+	    }
+	}
+      /* Put the CM back the way it was */
+      ExponentiateCM(cm, (1./old_X));
+    }
+  cm_for_scoring->tau = orig_tau;
+  FreeCM(cm_for_scoring);
+  free(cm_minbitsc);
+  free(cm_mu);
+
+  printf("06.03.07 done expt returning %f\n", X);
+  return X;
+
+ ERROR:
+  esl_fatal("ERROR in FindExpFactor_min(), death imminent.\n");
   return 1.0;
 }
 

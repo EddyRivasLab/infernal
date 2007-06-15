@@ -186,7 +186,7 @@ extern MSA         *Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, f
 					 Parsetree_t **tr, int nseq, int do_full);
 extern MSA         *ESL_Parsetrees2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, 
 					     Parsetree_t **tr, int nseq, int do_full);
-extern float        ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, char *dsq);
+extern float        ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, char *dsq, int print_flag);
 extern int          Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, CP9trace_t **ret_cp9_tr);
 
 /* from scancyk.c
@@ -378,6 +378,10 @@ extern float FindExpFactor_minmax(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *
 				  float cm_min_ecutoff, float cm_max_ecutoff, int db_size, 
 				  int emit_mode, int fthr_mode, int do_fastfil,
 				  int ntrials, float fp_min, float fp_max);
+extern float FindExpFactor_min(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
+			       float cm_min_ecutoff, int db_size, 
+			       int emit_mode, int fthr_mode, int do_fastfil,
+			       int ntrials, float fp_min);
 extern float Filter_XFTableLookup(float X, float F, int emit_mode, int fthr_mode);
      
 /* from CP9_cm2wrhmm.c */

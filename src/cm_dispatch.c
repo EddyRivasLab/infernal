@@ -478,7 +478,7 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
   if(cm->search_opts & CM_SEARCH_HMMONLY) use_cp9 = TRUE; 
   /* The third way we use the CP9 is if we're filtering, AND we haven't 
    * called this function recursively from AFTER filtering (the do_filter flag)
-   * AND we're not determinig CM Gumbel stats. */
+   * AND we're not determining CM Gumbel stats. */
   if((cm->search_opts & CM_SEARCH_HMMFILTER) &&
      (do_filter && !doing_cm_stats)) 
     use_cp9 = TRUE;

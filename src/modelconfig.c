@@ -1049,7 +1049,7 @@ ConfigForGumbelMode(CM_t *cm, int gum_mode)
 /*
  * Function: ConfigQDB
  * Date:     EPN, Thu May  3 14:37:09 2007
- * Purpose:  Configure a CM's QDBs.
+ * Purpose:  Configure a CM's query dependent bands (QDBs).
  * Args:
  *           CM           - the covariance model
  */

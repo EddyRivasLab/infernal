@@ -60,7 +60,8 @@ static char experts[] = "\
 \n\
  * effective sequence number related options:\n\
    --effent       : entropy loss target [default]\n\
-   --etarget <x>  : for --effent: set target entropy to <x> [default: 1.46]\n\
+   --etarget <x>  : set target entropy to <x> [default: 1.46]\n\
+   --emin <x>     : set minimum eff seq # to <x> [default: no minimum]\n\
    --effnone      : effective sequence number is just # of seqs\n\
 \n\
  * verbose output files, useful for detailed information about the CM:\n\
@@ -129,6 +130,7 @@ static struct opt_s OPTIONS[] = {
   { "--effent",    FALSE, sqdARG_NONE },
   /*{ "--effrelent",  FALSE, sqdARG_NONE },*/
   { "--etarget",   FALSE, sqdARG_FLOAT },
+  { "--emin",      FALSE, sqdARG_FLOAT },
   { "--elself",    FALSE, sqdARG_FLOAT},
   { "--nodetach",  FALSE, sqdARG_NONE},
   { "--noprior",   FALSE, sqdARG_NONE},
@@ -224,6 +226,8 @@ main(int argc, char **argv)
   int        etarget_set;       /* TRUE if etarget was set on commandline  */
   float      eff_nseq;		/* effective sequence number               */
   int        eff_nseq_set;	/* TRUE if eff_nseq has been calculated    */
+  float      eff_nseq_min;	/* minimum effective sequence number       */
+  float      eff_nseq_min_set;	/* TRUE if --emin enabled                  */
   float      randomseq[MAXABET];/* null sequence model                     */
   int        save_gamma;	/* TRUE to save the gamma matrix in
 				 * BandCalculationEngine().*/
@@ -307,6 +311,8 @@ main(int argc, char **argv)
   eff_strategy      = EFF_ENTROPY; /* 11.28.05 EPN entropy weighting is default. */
   etarget_set       = FALSE;
   eff_nseq_set      = FALSE;
+  eff_nseq_min      = 0.;
+  eff_nseq_min_set  = FALSE;
   save_gamma        = FALSE;
   etarget           = 1.46;  /* EPN: empirically determined optimal etarget (2.0-0.54)
 			      * using RMARK benchmark*/ 
@@ -370,6 +376,7 @@ main(int argc, char **argv)
     /*else if (strcmp(optname, "--effrelent")  == 0) eff_strategy   = EFF_RELENTROPY;*/
     else if (strcmp(optname, "--effnone")   == 0) eff_strategy      = EFF_NONE;
     else if (strcmp(optname, "--etarget")   == 0) { etarget = atof(optarg); etarget_set  = TRUE; }
+    else if (strcmp(optname, "--emin")      == 0) { eff_nseq_min = atof(optarg); eff_nseq_min_set = TRUE; } 
     else if (strcmp(optname, "--ctarget")   == 0) { do_cluster = TRUE; do_ctarget  = TRUE; target_nc = atoi(optarg); }
     else if (strcmp(optname, "--cmindiff")  == 0) { do_cluster = TRUE; do_cmindiff = TRUE; mindiff   = atof(optarg); }
     else if (strcmp(optname, "--call")      == 0) { do_cluster = TRUE; do_all = TRUE; }
@@ -714,6 +721,11 @@ main(int argc, char **argv)
 	      printf("%-40s ... ", "Determining eff seq # by entropy target");
 	      fflush(stdout);
 	      eff_nseq = CM_Eweight(cm, pri, (float) msa->nseq, etarget);
+	      if(eff_nseq_min_set && eff_nseq < eff_nseq_min)
+		{
+		  printf("enforcing minimum of %f (calc'ed eff seq num: %f)\n", eff_nseq_min, eff_nseq);
+		  eff_nseq = eff_nseq_min;
+		}
 	    }
 	    /*EPN 11.28.05
 	     * Uncomment this block for relative entropy weighting.
@@ -802,7 +814,8 @@ main(int argc, char **argv)
 	  printf("%-40s ... ", "Calculating CM/HMM entropy fraction"); fflush(stdout);
 	  if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))
 	    Die("Couldn't build a CP9 HMM from the CM\n");
-	  printf("done. [%.4f]\n", (CMAverageMatchEntropy(cm) / (CP9AverageMatchEntropy(cm->cp9))));
+	  printf("done. [%.4f (%.4f/%.4f)]\n", (CMAverageMatchEntropy(cm) / (CP9AverageMatchEntropy(cm->cp9))), CMAverageMatchEntropy(cm),
+		 CP9AverageMatchEntropy(cm->cp9));
 	  
 	  /* Give the model a name (mandatory in the CM file).
 	   * Order of precedence:

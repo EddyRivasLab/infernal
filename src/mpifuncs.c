@@ -1162,6 +1162,30 @@ dsq_MPISend(char *dsq, int L, int dest)
   return eslOK;
 }
 
+/* Function:  dsq_MPISend()
+ * Incept:    EPN, Thu Jun  7 15:02:34 2007
+ *
+ * Purpose:   Send sequence <dsq> and max bit sc <maxsc> to processor <dest>.
+ *            
+ *            If <dsq> is NULL, sends a end-of-data signal to <dest>, to
+ *            tell it to shut down.
+ */
+int
+dsq_maxsc_MPISend(char *dsq, int L, float maxsc, int dest)
+{
+  if(dsq == NULL) 
+    {
+      int eod = -1;
+      MPI_Send(&eod, 1, MPI_INT, dest, 0, MPI_COMM_WORLD);
+      return eslOK;
+    }
+  MPI_Send(&(L), 1, MPI_INT, dest, 0, MPI_COMM_WORLD);
+  /* receiver will now allocate storage, before reading on...*/
+  MPI_Send(dsq, (L+2), MPI_CHAR, dest, 0, MPI_COMM_WORLD);
+  MPI_Send(&(maxsc), 1, MPI_FLOAT, dest, 0, MPI_COMM_WORLD);
+  return eslOK;
+}
+
 /* Function:  dsq_MPIRecv()
  * Incept:    EPN, Wed May  9 17:34:43 2007
  *
@@ -1184,6 +1208,38 @@ dsq_MPIRecv(char **ret_dsq, int *ret_L)
   MPI_Recv(dsq, (L+2), MPI_CHAR, 0, 0, MPI_COMM_WORLD, &mpistatus);
   *ret_L   = L;
   *ret_dsq = dsq;
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
+/* Function:  dsq_maxsc_MPIRecv()
+ * Incept:    EPN, Thu Jun  7 15:00:29 2007    
+ *
+ * Purpose:   Receive a sequence and maximum score 
+ *            sent from the master MPI process (src=0)
+ *            on a worker MPI process. 
+ *            
+ *            If it receives an end-of-data signal, returns <eslEOD>.
+ */
+int
+dsq_maxsc_MPIRecv(char **ret_dsq, int *ret_L, float *ret_maxsc)
+{
+  int status;
+  char *dsq = NULL;
+  MPI_Status mpistatus;
+  int L;
+  float maxsc;
+  
+  MPI_Recv(&L, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &mpistatus);
+  if (L == -1) return eslEOD;
+  ESL_ALLOC(dsq, sizeof(char) * (L+2));
+  MPI_Recv(dsq, (L+2), MPI_CHAR, 0, 0, MPI_COMM_WORLD, &mpistatus);
+  MPI_Recv(&maxsc, 1, MPI_FLOAT, 0, 0, MPI_COMM_WORLD, &mpistatus);
+  *ret_L   = L;
+  *ret_dsq = dsq;
+  *ret_maxsc = maxsc;
   return eslOK;
 
  ERROR:
@@ -1261,6 +1317,118 @@ mpi_worker_cm_and_cp9_search(CM_t *cm, int do_fast, int my_rank)
     }
   if(was_hmmonly) cm->search_opts |= CM_SEARCH_HMMONLY;
   else cm->search_opts &= ~CM_SEARCH_HMMONLY;
+  if(scores != NULL) free(scores);
+  /*printf("\trank: %d RETURNING!\n", my_rank);*/
+  return;
+
+ ERROR:
+  if (dsq != NULL) free(dsq);
+  if (scores != NULL) free(scores);
+  return;
+}
+
+/* Function: mpi_worker_cm_and_cp9_search_maxsc()
+ * Incept:   EPN, Thu Jun  7 15:02:54 2007   
+ * Purpose:  The main control for an MPI worker process for searching sequences
+ *           with decreasingly fast techniques, quitting if any technique 
+ *           returns a score greater than some specified maximum bit score. 
+ *           The goal is to determine if the optimal parse is within a 
+ *           given range during a empirical HMM filter threshold calculation. 
+ *           Called in mpi_FindCP9FilterThreshold().
+ * Args:
+ *           cm       - the covariance model
+ *           do_fast  - don't search with CM, only do CP9 search
+ *           my_rank  - my MPI rank
+ */
+void
+mpi_worker_cm_and_cp9_search_maxsc(CM_t *cm, int do_fast, int do_minmax, int my_rank)
+{
+  int status;
+  char *dsq = NULL;
+  int   L;
+  float maxsc;
+  float *scores = NULL;
+  ESL_ALLOC(scores, sizeof(float) * 2);
+  int was_hmmonly;
+  int was_hbanded;
+  float orig_tau;
+  int passed_flag = FALSE;
+  orig_tau = cm->tau;
+
+  if(cm->search_opts & CM_SEARCH_HMMONLY) was_hmmonly = TRUE;
+  else was_hmmonly = FALSE;
+  if(cm->search_opts & CM_SEARCH_HBANDED) was_hbanded = TRUE;
+  else was_hbanded = FALSE;
+  /* Main loop */
+  while (dsq_maxsc_MPIRecv(&dsq, &L, &maxsc) == eslOK)
+    {
+      /* Do the CM search first */
+      cm->search_opts &= ~CM_SEARCH_HMMONLY;
+      if(do_fast)
+	scores[0] = 0.;
+      else if(do_minmax)
+	{
+	  cm->search_opts |= CM_SEARCH_HBANDED;
+	  cm->tau = 0.1;
+	  scores[0] = actually_search_target(cm, dsq, 1, L,
+					 0.,    /* cutoff is 0 bits (actually we'll find highest
+						 * negative score if it's < 0.0) */
+					 0.,    /* CP9 cutoff is 0 bits */
+					 NULL,  /* don't keep results */
+					 FALSE, /* don't filter with a CP9 HMM */
+					 FALSE, /* we're not calcing CM  stats */
+					 FALSE, /* we're not calcing CP9 stats */
+					 NULL); /* filter fraction N/A */
+	  if(scores[0] < maxsc) /* search with another, less strict (lower tau)  HMM banded parse */
+	    {
+	      cm->tau = 1e-10;
+	      scores[0] = actually_search_target(cm, dsq, 1, L,
+					     0.,    /* cutoff is 0 bits (actually we'll find highest
+						     * negative score if it's < 0.0) */
+					     0.,    /* CP9 cutoff is 0 bits */
+					     NULL,  /* don't keep results */
+					     FALSE, /* don't filter with a CP9 HMM */
+					     FALSE, /* we're not calcing CM  stats */
+					     FALSE, /* we're not calcing CP9 stats */
+					     NULL); /* filter fraction N/A */
+	    }
+	}
+      else
+	scores[0] = actually_search_target(cm, dsq, 1, L, 
+					   0.,    /* minimum CM bit cutoff, irrelevant (?) */
+					   0.,    /* minimum CP9 bit cutoff, irrelevant (?) */
+					   NULL,  /* do not keep results */
+					   FALSE, /* do not filter with a CP9 HMM */
+					   FALSE, FALSE, /* not doing CM or CP9 Gumbel calcs */
+					   NULL); /* filter fraction, nobody cares */
+
+      /* Now do HMM search, but if do_minmax, only do HMM search 
+       * if our CM score hasn't exceeded the max */
+      if(do_minmax && scores[0] > maxsc)
+	scores[1] = 0.;
+      else
+	/* DO NOT CALL actually_search_target b/c that will run Forward then 
+	 * Backward to get score of best hit, but we'll be detecting by a
+	 * Forward scan (then running Backward only on hits above our threshold),
+	 * since we're calc'ing the threshold here it's impt we only do Forward.
+	 */
+	scores[1] =  CP9Forward(cm, dsq, 1, L, cm->W, 0., 
+				NULL,   /* don't return scores of hits */
+				NULL,   /* don't return posns of hits */
+				NULL,   /* don't keep track of hits */
+				TRUE,   /* we're scanning */
+				FALSE,  /* we're not ultimately aligning */
+				FALSE,  /* we're not rescanning */
+				TRUE,   /* be memory efficient */
+				NULL);  /* don't want the DP matrix back */
+      MPI_Send(scores, 2, MPI_FLOAT, 0, 0, MPI_COMM_WORLD); /* send together so results don't interleave */
+      free(dsq);
+    }
+  if(was_hmmonly) cm->search_opts |= CM_SEARCH_HMMONLY;
+  else cm->search_opts &= ~CM_SEARCH_HMMONLY;
+  if(was_hbanded) cm->search_opts |= CM_SEARCH_HBANDED;
+  else cm->search_opts &= ~CM_SEARCH_HBANDED;
+
   if(scores != NULL) free(scores);
   /*printf("\trank: %d RETURNING!\n", my_rank);*/
   return;

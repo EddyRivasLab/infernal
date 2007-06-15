@@ -116,6 +116,7 @@ static char experts[] = "\
    --hmmF <x>     : w/hmmcalcthr, set fraction of CM parses to pass HMM filter as <x>\n\
    --hmmlookup    : w/hmmcalcthr, correct F for exponent factor using lookup table\n\
    --hmmemax <x>  : w/hmmcalcthr, set max CM E-value to 10^-<x> * min E-value\n\
+   --hmmfpmin <x> : w/hmmcalcthr and --hmmemax, min fraction of seqs within window [0.05]\n\
    --hmmfilN      : w/hmmcalcthr, num emitted seqs to use for filter threshold calc\n\
    --hmmgemit     : w/hmmcalcthr, always emit from CM in global mode\n\
    --hmmgreedy    : resolve HMM overlapping hits with greedy algorithm a la RSEARCH\n\
@@ -156,6 +157,8 @@ static struct opt_s OPTIONS[] = {
   { "--hmmF",       FALSE, sqdARG_FLOAT},
   { "--hmmlookup",  FALSE, sqdARG_NONE},
   { "--hmmemax",    FALSE, sqdARG_FLOAT},
+  { "--hmmefind",   FALSE, sqdARG_NONE},
+  { "--hmmfpmin",   FALSE, sqdARG_FLOAT},
   { "--hmmnegsc",   FALSE, sqdARG_FLOAT},
   /*{ "--hmmrescan",  FALSE, sqdARG_NONE},*/
   { "--noqdb",      FALSE, sqdARG_NONE },
@@ -307,7 +310,7 @@ main(int argc, char **argv)
   FILE *fil_hfp = NULL;            
   char *fil_histfile = NULL;         
   float X;                    /* CM exponentiation factor for calc'ing the filter thr */
-  int   X_ntrials = 1000;   /* number of parsetrees to sample during search for X */
+  int   X_ntrials = 5000;   /* number of parsetrees to sample during search for X */
   /* IF calling FindExpFactor() */
   /*float X_fp_min = 0.945;*/     /* min parsetree fraction > CM cutoff during search for X */
   /*float X_fp_max = 0.955;*/     /* max parsetree fraction > CM cutoff during search for X */
@@ -320,6 +323,8 @@ main(int argc, char **argv)
   float cm_emax_exp = 0;          /* multiply CM E cutoff by 10^(-1 * cm_emax_exp) to get cm_emax */
   float cm_emax = 0.;            /* maximum E-value to accept from CP if do_hmm_minmax */
   
+  int   do_hmm_min = FALSE; /* TRUE to enforce X_fp_min fraction of parses > (worse than) Evalue cutoff */
+
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
   int mpi_master_rank;      /* Rank of master process */
   Stopwatch_t  *mpi_watch;  /* for timings in MPI mode                  */
@@ -470,6 +475,8 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--hmmF")        == 0) F = atof(optarg);
     else if  (strcmp(optname, "--hmmlookup")   == 0) do_hmmlookup = TRUE;
     else if  (strcmp(optname, "--hmmemax")     == 0) { cm_emax_exp = atoi(optarg); do_hmm_minmax = TRUE; }
+    else if  (strcmp(optname, "--hmmefind")    == 0) { do_hmm_min = TRUE; }
+    else if  (strcmp(optname, "--hmmfpmin")    == 0) { X_fp_min = atof(optarg); }
     else if  (strcmp(optname, "--beta")   == 0) beta      = atof(optarg);
     else if  (strcmp(optname, "--noqdb")  == 0) do_qdb    = FALSE;
     else if  (strcmp(optname, "--qdbfile")== 0) { read_qdb  = TRUE; qdb_file = optarg; }
@@ -572,7 +579,7 @@ main(int argc, char **argv)
    * Preliminaries: open our files for i/o; get a CM.
    * We configure the CM with ConfigCM() later.
    ************************************************/
-  if(do_timings)
+  if(do_timings || TRUE )
     watch = StopwatchCreate();
   if(!do_enforce || do_hmmonly) 
     do_enforce_hmm = FALSE;
@@ -803,8 +810,14 @@ main(int argc, char **argv)
 	  if(!(cm->flags & CM_GUMBEL_STATS))
 	    Die("ERROR trying to use HMM filter thresholds but no Gumbel stats in CM file.\nUse cmcalibrate or use --hmmT or --hmmE.\n");
 	  if(cm->cutoff_type == SCORE_CUTOFF)
-	    Die("ERROR can't use --hmmcalcthr with -T, currently you must use CM E-values with --hmmcalcthr.\n");
-
+	    {
+	      /* Determine what the E-value cutoff is that corresponds with the CM score cutoff 
+	       * Set partition as partition for 50% GC, might be good to change this */
+	      p = cm->stats->gc2p[50];
+	      cm_e_cutoff = RJK_ExtremeValueE(cm_sc_cutoff, cm->stats->gumAA[cm_mode][p]->mu, 
+					      cm->stats->gumAA[cm_mode][p]->lambda);
+	      printf("!!!CM_E_CUTOFF: %f\n", cm_e_cutoff);
+	    }	      
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	  MPI_Barrier(MPI_COMM_WORLD);
 #endif
@@ -823,16 +836,32 @@ main(int argc, char **argv)
 
 	      printf("\n\n06.03.07 SEARCHING FOR REAL X NOW\n\n\n");
 		
-	      if(do_hmm_minmax) 
+	      StopwatchZero(watch);
+	      StopwatchStart(watch);
+
+	      if(do_hmm_min)
+		{
+		  printf("X_fp_min: %f\n", X_fp_min);
+		  X = FindExpFactor_min(cm, cm->stats, r, cm_e_cutoff, N, emit_mode, cm_mode, do_fastfil,
+					X_ntrials, (X_fp_min * 0.2));
+		}
+	      else if(do_hmm_minmax) 
 		{
 		  cm_emax = epnEXP10(-1. * cm_emax_exp) * cm->cutoff;
 		  printf("cm_emax: %g\n", cm_emax);
-		  X = FindExpFactor_minmax(cm, cm->stats, r, cm->cutoff, cm_emax, N, emit_mode, cm_mode, do_fastfil,
+		  X = FindExpFactor_minmax(cm, cm->stats, r, cm_e_cutoff, cm_emax, N, emit_mode, cm_mode, do_fastfil,
 					   X_ntrials, X_fp_min, X_fp_max);
 		}
 	      else
-		X = FindExpFactor(cm, cm->stats, r, use_cm_cutoff, cm->cutoff, N, emit_mode, cm_mode, TRUE,
+		X = FindExpFactor(cm, cm->stats, r, use_cm_cutoff, cm_e_cutoff, N, emit_mode, cm_mode, do_fastfil,
 				  X_ntrials, X_fp_min, X_fp_max);
+
+	      StopwatchStop(watch);
+	      StopwatchDisplay(stdout, "06.03.07 Find X time:", watch);
+	      //esl_fatal("Done 06.14.07 expt.\n");
+
+	      StopwatchZero(watch);
+	      StopwatchStart(watch);
 
 	      /* we may have reconfigured the CM in FindExpFactor(), change it back */
 	      if(emit_mode != cm_mode)
@@ -840,10 +869,14 @@ main(int argc, char **argv)
 
 	      cp9_e_cutoff = 
 		FindCP9FilterThreshold(cm, cm->stats, r, F, min_surv, 
-				       filN, use_cm_cutoff, cm->cutoff, 
+				       filN, use_cm_cutoff, cm_e_cutoff, 
 				       N, emit_mode, cm_mode, cp9_mode, do_fastfil,
-				       my_rank, nproc, do_mpi, X, do_hmmlookup, fil_histfile, &Fset, do_hmm_minmax, cm_emax); /* Fset is not important, we're not
-											 * storing the new stats info */
+				       my_rank, nproc, do_mpi, X, do_hmmlookup, fil_histfile, &Fset, 
+				       do_hmm_minmax, cm_emax); /* Fset is not important, we're not
+								 * storing the new stats info */
+
+	      StopwatchStop(watch);
+	      StopwatchDisplay(stdout, "06.03.07 CP9 filter thr time:", watch);
 
 	      /* we may have reconfigured the CM in FindCP9FilterThreshold(), change it back */
 	      if(emit_mode != cm_mode)
@@ -901,6 +934,7 @@ main(int argc, char **argv)
 #endif
       printf("CM mode: %d\nCP9 mode; %d\n", cm_mode, cp9_mode);
       PrintSearchInfo(stdout, cm, cm_mode, cp9_mode, N);
+      //esl_fatal("Done 06.11.07 expt.\n");
 
       if(do_bdump && (!(cm->search_opts & CM_SEARCH_NOQDB))) 
 	{

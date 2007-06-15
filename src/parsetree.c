@@ -1207,17 +1207,19 @@ ESL_Parsetrees2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt,
  *           
  */
 float
-ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, char *dsq)
+ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, char *dsq, int print_flag)
 {
   int   status;
   int tidx;			/* counter through positions in the parsetree        */
   int v,y;			/* parent, child state index in CM                   */
   char symi, symj;		/* symbol indices for emissions, 0..Alphabet_iupac-1 */
   int mode;
+  int    tp;                    /* trace index offset, for v's with > tidx (IL or IR)*/
   float *tr_esc;                /* [0..tr->n-1] score of emissions from each trace node */
   float *tr_tsc;                /* [0..tr->n-1] score of transitions from each trace node */
-  float *v2n_map;               /* [0..cm->M-1], the trace node each state v corresponds to 
+  int   *v2n_map;               /* [0..cm->M-1], the trace node each state v corresponds to 
 				 * -1 if none */
+  int   *v2n_ct;                /* [0..cm->M-1], # of trace nodes state v corresponds to */
   float *lsc;                   /* [0..tr->n-1], the score of the best local parse *
 				 * rooted at v = v2n_map[tidx] for trace node tidx *
 				 * -1 if none */
@@ -1232,64 +1234,71 @@ ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, char *dsq)
 
   /* Allocate and initialize */
   ESL_ALLOC(v2n_map, sizeof(int)   * cm->M); 
+  ESL_ALLOC(v2n_ct,  sizeof(int)   * cm->M); 
   ESL_ALLOC(lsc,     sizeof(float) * tr->n);
   ESL_ALLOC(tr_esc,  sizeof(float) * tr->n); 
   ESL_ALLOC(tr_tsc,  sizeof(float) * tr->n); 
-  esl_vec_FSet(v2n_map, cm->M, -1);
+  esl_vec_ISet(v2n_map, cm->M, -1);
+  esl_vec_ISet(v2n_ct,  cm->M, 0);
   esl_vec_FSet(lsc, tr->n, 0.);
   esl_vec_FSet(tr_tsc, tr->n, 0.);
   esl_vec_FSet(tr_esc, tr->n, 0.);
 
   /* Determine the score that each trace node contributes to the overall parsetree score */
 
-  for (tidx = 0; tidx < tr->n; tidx++) {
-    v = tr->state[tidx];        	/* index of parent state in CM */
-    v2n_map[v] = tidx;
-    mode = tr->mode[tidx];
-    if (v == cm->M) 
-      esl_fatal("ERROR in ParsetreeScore_Global2Local(), EL in parse, but it should be global!\n");
-    if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) /* no scores in B,E */
-      {
-	y = tr->state[tr->nxtl[tidx]];      /* index of child state in CM  */
+  for (tidx = 0; tidx < tr->n; tidx++) 
+    {
+      v = tr->state[tidx];        	/* index of parent state in CM */
+      v2n_map[v] = tidx;
+      v2n_ct[v]++; /* insert states could be visited > once */
+      mode = tr->mode[tidx];
+      if (v == cm->M) 
+	esl_fatal("ERROR in ParsetreeScore_Global2Local(), EL in parse, but it should be global!\n");
+      if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) /* no scores in B,E */
+	{
+	  y = tr->state[tr->nxtl[tidx]];      /* index of child state in CM  */
 
-	if (y == cm->M) 
-	  esl_fatal("ERROR in ParsetreeScore_Global2Local(), EL in parse, but it should be global!\n");
-	if (v == 0 && y > cm->cnum[0])
-	  esl_fatal("ERROR in ParsetreeScore_Global2Local(), we did a local begin in the parse, but it should be global!\n");
+	  if (y == cm->M) 
+	    esl_fatal("ERROR in ParsetreeScore_Global2Local(), EL in parse, but it should be global!\n");
+	  if (v == 0 && y > cm->cnum[0])
+	    esl_fatal("ERROR in ParsetreeScore_Global2Local(), we did a local begin in the parse, but it should be global!\n");
+	  /* for v == 0, we don't care that transition score has changed from global CM that
+	   * was used to generate the parsetree, because the transition from root is not
+	   * considered when we look for best local parse below. */
 
-	/* y - cm->first[v] gives us the offset in the transition vector */
-	tr_tsc[tidx] = cm->tsc[v][y - cm->cfirst[v]];
+	  /* y - cm->first[v] gives us the offset in the transition vector */
+	  tr_tsc[tidx] = cm->tsc[v][y - cm->cfirst[v]];
 	
-	if (cm->sttype[v] == MP_st) 
-	  {
-	    symi = dsq[tr->emitl[tidx]];
-	    symj = dsq[tr->emitr[tidx]];
-            if (mode == 3)
-              {
-  	        if (symi < Alphabet_size && symj < Alphabet_size)
-	          tr_esc[tidx] = cm->esc[v][(int) (symi*Alphabet_size+symj)];
-	        else
-	          tr_esc[tidx] = DegeneratePairScore(cm->esc[v], symi, symj);
-              }
-            else if (mode == 2)
-              tr_esc[tidx] = LeftMarginalScore(cm->esc[v], symi);
-            else if (mode == 1)
-              tr_esc[tidx] = RightMarginalScore(cm->esc[v], symj);
-	  } 
-	else if ( (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) && (mode == 3 || mode == 2) )
-	  {
-	    symi = dsq[tr->emitl[tidx]];
-	    if (symi < Alphabet_size) tr_esc[tidx] = cm->esc[v][(int) symi];
-	    else                      tr_esc[tidx] = DegenerateSingletScore(cm->esc[v], symi);
-	  } 
-	else if ( (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && (mode == 3 || mode == 2) )
-	  {
-	    symj = dsq[tr->emitr[tidx]];
-	    if (symj < Alphabet_size) tr_esc[tidx] = cm->esc[v][(int) symj];
-	    else                      tr_esc[tidx] = DegenerateSingletScore(cm->esc[v], symj);
-	  }
-      }
-  }
+	  if (cm->sttype[v] == MP_st) 
+	    {
+	      symi = dsq[tr->emitl[tidx]];
+	      symj = dsq[tr->emitr[tidx]];
+	      if (mode == 3)
+		{
+		  if (symi < Alphabet_size && symj < Alphabet_size)
+		    tr_esc[tidx] = cm->esc[v][(int) (symi*Alphabet_size+symj)];
+		  else
+		    tr_esc[tidx] = DegeneratePairScore(cm->esc[v], symi, symj);
+		}
+	      else if (mode == 2)
+		tr_esc[tidx] = LeftMarginalScore(cm->esc[v], symi);
+	      else if (mode == 1)
+		tr_esc[tidx] = RightMarginalScore(cm->esc[v], symj);
+	    } 
+	  else if ( (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) && (mode == 3 || mode == 2) )
+	    {
+	      symi = dsq[tr->emitl[tidx]];
+	      if (symi < Alphabet_size) tr_esc[tidx] = cm->esc[v][(int) symi];
+	      else                      tr_esc[tidx] = DegenerateSingletScore(cm->esc[v], symi);
+	    } 
+	  else if ( (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && (mode == 3 || mode == 2) )
+	    {
+	      symj = dsq[tr->emitr[tidx]];
+	      if (symj < Alphabet_size) tr_esc[tidx] = cm->esc[v][(int) symj];
+	      else                      tr_esc[tidx] = DegenerateSingletScore(cm->esc[v], symj);
+	    }
+	}
+    }
 
   /* Now traverse CM from inside-out, for each v in the parse, 
    * keep track of the best local CM score of the parse rooted 
@@ -1298,37 +1307,63 @@ ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, char *dsq)
   max_local_sc = IMPOSSIBLE;
   for(v = cm->M-1; v > 0; v--)
     {
-      tidx = v2n_map[v];
-      if(tidx == -1) continue; /* v's not in the parse */
+      for(tp = 0; tp < v2n_ct[v]; tp++) 
+	{
+	  tidx = v2n_map[v] - tp; 
+	  if(print_flag) 
+	    printf("loop start tidx: %d esc: %f tsc: %f\n", tidx, tr_esc[tidx], tr_tsc[tidx]);
 
-      if(cm->sttype[v] == B_st)
-	below_me_sc = lsc[tr->nxtl[tidx]] + lsc[tr->nxtr[tidx]];
-      else if(cm->sttype[v] == E_st)
-	below_me_sc = 0.;
-      else
-	below_me_sc = lsc[tr->nxtl[tidx]];
-
-      /* Check if we could've jumped to an EL instead of traversing the 
-       * subparse rooted here at v, would it have been worth it? */
-      tmp_endsc = cm->endsc[v] + 
-	cm->el_selfsc *  /* score of emitting 1 residue */
-	((tr->emitr[tidx] - StateRightDelta(cm->sttype[v])) - 
-	 (tr->emitl[tidx] + StateLeftDelta(cm->sttype[v])) + 1); /* number of residues EL must emit */
-      if(below_me_sc < tmp_endsc -tr_tsc[tidx]) /* careful to consider sc of transition out of v */
-	below_me_sc = tmp_endsc - tr_tsc[tidx]; /* we'll add tr_tsc[idx] back in next */
-	
-      lsc[tidx] = tr_esc[tidx] + tr_tsc[tidx] + below_me_sc; /* note we add in tsc even if local end taken */
-
-      /*printf("tidx: %d\nv: %d\nlsc[tidx]: %f\nbegin_sc: %f\nmax_local_sc: %f\ntmp_endsc: %f\n\n", tidx, v, lsc[tidx], cm->beginsc[v], max_local_sc, tmp_endsc);
-	printf("tr_esc[tidx]: %f\ntr_tsc[tidx]: %f\nbelow_me_sc: %f\n", tr_esc[tidx], tr_tsc[tidx], below_me_sc);*/
-
-      /* Could we have jumped into this state from ROOT_S? Would it have
-       * been worth it (based on what I've seen so far) */
-      if((cm->beginsc[v] + lsc[tidx]) > max_local_sc)
-	max_local_sc = cm->beginsc[v] + lsc[tidx];
+	  if(cm->sttype[v] == B_st)
+	    {
+	      below_me_sc = lsc[tr->nxtl[tidx]] + lsc[tr->nxtr[tidx]];
+	      if(print_flag) 
+		{
+		  printf("B state L %d: %f R %d: %f\n", tr->nxtl[tidx], lsc[tr->nxtl[tidx]], tr->nxtr[tidx], lsc[tr->nxtr[tidx]]); 
+		}
+	    }
+	  else if(cm->sttype[v] == E_st)
+	    below_me_sc = 0.;
+	  else
+	    {
+	      below_me_sc = lsc[tr->nxtl[tidx]];
+	      if(print_flag) printf("non B: below_me_sc %d: %f\n", tr->nxtl[tidx], lsc[tr->nxtl[tidx]]);
+	    }
+	  /* Check if we could've jumped to an EL instead of traversing the 
+	   * subparse rooted here at v, would it have been worth it? */
+	  tmp_endsc = cm->endsc[v] + /* score of transition to EL */
+	    cm->el_selfsc *  /* score of emitting 1 residue */
+	    ((tr->emitr[tidx] - StateRightDelta(cm->sttype[v])) - 
+	     (tr->emitl[tidx] + StateLeftDelta(cm->sttype[v])) + 1); /* number of residues EL must emit */
+	  if(below_me_sc < (tmp_endsc - tr_tsc[tidx])) /* careful to consider sc of transition out of v */
+	    {
+	      below_me_sc = tmp_endsc - tr_tsc[tidx]; /* we'll add tr_tsc[idx] back in next */
+	      if(print_flag) 
+		{
+		  printf("\nTOOK LOCAL END!\n");
+		  printf("tmp_endsc: %f cm->endsc: %f + %d emits\n", tmp_endsc, cm->endsc[v], ((tr->emitr[tidx] - StateRightDelta(cm->sttype[v])) - (tr->emitl[tidx] + StateLeftDelta(cm->sttype[v])) + 1)); 
+		}
+	    }
+	  lsc[tidx] = tr_esc[tidx] + tr_tsc[tidx] + below_me_sc; /* note we add in tsc even if local end taken */
+	  
+	  if(print_flag) 
+	    {
+	      printf("tidx: %d\nv: %d\nlsc[tidx]: %f\nbegin_sc: %f\nmax_local_sc: %f\ntmp_endsc: %f\n\n", tidx, v, lsc[tidx], cm->beginsc[v], max_local_sc, tmp_endsc);
+	      printf("tr_esc[tidx]: %f\ntr_tsc[tidx]: %f\nbelow_me_sc: %f\n", tr_esc[tidx], tr_tsc[tidx], below_me_sc);
+	    }
+	  /* Could we have jumped into this state from ROOT_S? Would it have
+	   * been worth it (based on what I've seen so far) */
+	  if(print_flag) 
+	    printf("cur max_local_sc: %f\n\n", max_local_sc);
+	  if(max_local_sc < (cm->beginsc[v] + lsc[tidx]))
+	    {
+	      max_local_sc = cm->beginsc[v] + lsc[tidx];
+	      if(print_flag) 
+		printf("\nNEW max_local_sc: %f\n\n", max_local_sc);
+	    }	  
+	}
     }
-
   free(v2n_map);
+  free(v2n_ct);
   free(lsc);
   free(tr_esc);
   free(tr_tsc);

@@ -49,7 +49,7 @@ static ESL_OPTIONS options[] = {
   { "--learninserts",eslARG_NONE,FALSE,NULL, NULL,      NULL,      NULL,        NULL, "DO NOT zero insert emission scores",  1},
   { "--dbfile",  eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL, "--filonly", "use GC content distribution from file <s>",  1},
   { "--time",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "print timings for Gumbel fitting and CP9 filter calculation",  1},
-  { "--gumonly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--filonly", "only estimate GUMs, don't calculate filter thresholds", 2},
+  { "--gumonly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--filonly", "only estimate Gumbels, don't calculate filter thresholds", 2},
   { "--cmN",     eslARG_INT,   "1000", NULL, "n>0",     NULL,      NULL, "--filonly", "number of random sequences for CM gumbel estimation",    2 },
   { "--hmmN",    eslARG_INT,   "5000", NULL, "n>0",     NULL,      NULL, "--filonly", "number of random sequences for CP9 HMM gumbel estimation",    2 },
   { "--gumhfile",eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL, "--filonly", "save fitted Gumbel histogram(s) to file <s>", 2 },
@@ -59,7 +59,7 @@ static ESL_OPTIONS options[] = {
   { "--nocmeval",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  "--cmeval", "accept all CM hits for filter calc, DO NOT use E-val cutoff", 3}, 
   { "--fract",   eslARG_REAL,  "0.95", NULL, "0<x<=1",  NULL,      NULL, "--gumonly",  "required fraction of CM hits that survive HMM filter", 3},
   { "--minsurv", eslARG_REAL,  "0.01", NULL, "0<x<=1",  NULL,      NULL, "--gumonly",  "minimum filter survivor fraction for HMM filter calculation", 3},
-  { "--filonly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly", "only calculate filter thresholds, don't estimate GUMs", 3},
+  { "--filonly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly", "only calculate filter thresholds, don't estimate Gumbels", 3},
   { "--fastfil", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly", "calc filter thr quickly, assume parsetree sc is optimal", 3},
   { "--exp",     eslARG_REAL,  "1.0",   NULL, "x>0.",   NULL,      NULL,        NULL, "exponentiate CM prior to filter threshold calculation", 3},
   { "--gemit",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly", "when calc'ing filter thresholds, always emit globally from CM",  3},
@@ -357,12 +357,11 @@ main(int argc, char **argv)
 	  for(fthr_mode = 0; fthr_mode < NFTHRMODES; fthr_mode++)
 	    {
 	      if(esl_opt_GetBoolean(go, "--fastfil") && (fthr_mode == CM_LI || fthr_mode == CM_GI)) continue;
-	      if((fthr_mode == CM_GC || fthr_mode == CM_GI) ||
-		 (esl_opt_GetBoolean(go, "--gemit")))
+	      if((fthr_mode == CM_GC || fthr_mode == CM_GI) || (esl_opt_GetBoolean(go, "--gemit")))
 		emit_mode = CM_GC;
 	      else
 		emit_mode = CM_LC;
-	      /* CP9_L, HMM in global mode */
+	      /* CP9_L, HMM in local mode */
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	      MPI_Barrier(MPI_COMM_WORLD);
 #endif
@@ -376,8 +375,8 @@ main(int argc, char **argv)
 				       db_size, emit_mode, fthr_mode, CP9_L, 
 				       esl_opt_GetBoolean  (go, "--fastfil"), 
 				       cfg.my_rank, cfg.nproc, cfg.do_mpi, X, 
-				       esl_opt_GetBoolean(go, "--lookup"), NULL, &l_F,
-				       FALSE, 0.);
+				       esl_opt_GetBoolean  (go, "--lookup"), 
+				       NULL, &l_F, FALSE, 0.);
 	      /* CP9_G, HMM in global mode */
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	      MPI_Barrier(MPI_COMM_WORLD);
@@ -392,8 +391,8 @@ main(int argc, char **argv)
 				       db_size, emit_mode, fthr_mode, CP9_G, 
 				       esl_opt_GetBoolean  (go, "--fastfil"), 
 				       cfg.my_rank, cfg.nproc, cfg.do_mpi, X, 
-				       esl_opt_GetBoolean(go, "--lookup"), NULL, &g_F,
-				       FALSE, 0.);
+				       esl_opt_GetBoolean  (go, "--lookup"), 
+				       NULL, &g_F, FALSE, 0.);
 	      if(cfg.my_rank == 0)
 		{
 		  /* If master (MPI or serial), fill in the filter thr stats */
@@ -515,15 +514,15 @@ main(int argc, char **argv)
  *           This function should be called 6 times, once with each gum_mode
  *           below, to fill all the Gumbel stats in the cmstats data structure:
  *
+ *           0. CM_LC: !(cm->search_opts & CM_SEARCH_INSIDE)  w/  local CM
+ *           1. CM_GC: !(cm->search_opts & CM_SEARCH_INSIDE)  w/ glocal CM
+ *           2. CM_LI:   cm->search_opts & CM_SEARCH_INSIDE   w/  local CM
+ *           3. CM_GI:   cm->search_opts & CM_SEARCH_INSIDE   w/ glocal CM
+ *           4. CP9_L:   cm->search_opts & CM_SEARCH_HMMONLY  w/  local CP9 HMM
+ *           5. CP9_G:   cm->search_opts & CM_SEARCH_HMMONLY  w/ glocal CP9 HMM
+ *
  *           This function can be called in MPI mode or not, the flag
  *           is cfg->do_mpi.
- *
- *           0. CM_LC: !cm->search_opts & CM_SEARCH_INSIDE  w/  local CM
- *           1. CM_GC: !cm->search_opts & CM_SEARCH_INSIDE  w/ glocal CM
- *           2. CM_LI:  cm->search_opts & CM_SEARCH_INSIDE  w/  local CM
- *           3. CM_GI:  cm->search_opts & CM_SEARCH_INSIDE  w/ glocal CM
- *           4. CP9_L:  cm->search_opts & CM_SEARCH_HMMONLY w/  local CP9 HMM
- *           5. CP9_G:  cm->search_opts & CM_SEARCH_HMMONLY w/ glocal CP9 HMM
  *
  * Args:
  *           cm       - the model
@@ -547,7 +546,7 @@ static int cm_fit_gumbel(CM_t *cm, ESL_GETOPTS *go, struct cfg_s *cfg,
       mpi_worker_search_target(cm, cfg->my_rank);
       return eslOK;
     }
-  else /* my_rank == 0, master */
+  else /* my_rank == 0, master (MPI or serial) */
 #endif
     {
       int N;                  /* number of random seq samples to use                */
@@ -577,15 +576,14 @@ static int cm_fit_gumbel(CM_t *cm, ESL_GETOPTS *go, struct cfg_s *cfg,
 #endif
 
       if(gum_mode == CP9_G || gum_mode == CP9_L) N = esl_opt_GetInteger(go, "--hmmN");
-      else N = esl_opt_GetInteger(go, "--cmN");
+      else                                       N = esl_opt_GetInteger(go, "--cmN");
 
       printf("in cm_fit_gumbel, cfg.my_rank: %d gum_mode: %d\n", cfg->my_rank, gum_mode);
       fflush(stdout);
 
       /* Check contract */
-      if(cmstats == NULL) esl_fatal("ERROR in cm_fit_gumbel(), master's cmstats is NULL\n");
+      if(cmstats == NULL)  esl_fatal("ERROR in cm_fit_gumbel(), master's cmstats is NULL\n");
       if(cfg->r == NULL)   esl_fatal("ERROR in cm_fit_gumbel(), master's source of randomness is NULL\n");
-
       /* Allocate for random distribution */
       L   = cm->W * 2.;
       ESL_ALLOC(nt_p,         sizeof(double) * Alphabet_size);
@@ -644,7 +642,6 @@ static int cm_fit_gumbel(CM_t *cm, ESL_GETOPTS *go, struct cfg_s *cfg,
 	  /*************MPI BLOCK***********************/
 	  else 
 	    {
-	      /* From Sean's design pattern in hmmsim.c */
 	      /* Sean's design pattern for data parallelization in a master/worker model:
 	       * three phases: 
 	       *  1. load workers;
