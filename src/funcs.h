@@ -210,7 +210,7 @@ extern float CYKInside(CM_t *cm, char *dsq, int L, int r, int i0, int j0,
 		       Parsetree_t **ret_tr, int *dmin, int *dmax);
 extern float CYKInsideScore(CM_t *cm, char *dsq, int L, int r, int i0, 
 			    int j0, int *dmin, int *dmax);
-extern void  CYKDemands(CM_t *cm, int L, int *dmin, int *dmax);
+extern float CYKDemands(CM_t *cm, int L, int *dmin, int *dmax, int be_quiet);
 extern void  debug_print_bands(CM_t *cm, int *dmin, int *dmax);
 
 /* The memory management routines.
@@ -357,19 +357,13 @@ extern float RescanFilterSurvivors(CM_t *cm, char *dsq, scan_results_t *hmm_resu
 				   int *ret_flen);
 extern void CP9ScanPosterior(char *dsq, int i0, int j0, CP9_t *hmm, CP9_dpmatrix_t *fmx, 
 			     CP9_dpmatrix_t *bmx, CP9_dpmatrix_t *mx);
-extern float OLD_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
-				    float Fmin, float min_surv, int N, int use_cm_cutoff, 
-				    float cm_ecutoff, int db_size, 
-				    int emit_global, int fthr_mode, int hmm_gum_mode, 
-				    int do_fastfil, int my_rank, int nproc, int do_mpi, 
-				    float *ret_F);
+extern float CP9ForwardScanDemands(CP9_t *cp9, int L);
 extern float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
-				    float Fmin, float min_surv, int N, int use_cm_cutoff, 
-				    float cm_ecutoff, int db_size, 
+				    float Fmin, float Smin, float Starget, float Spad, int N, 
+				    int use_cm_cutoff, float cm_ecutoff, int db_size, 
 				    int emit_mode, int fthr_mode, int hmm_gum_mode, 
-				    int do_fastfil, int my_rank, int nproc, int do_mpi, 
-				    float X, int do_lookup, char *histfile, float *ret_F,
-				    int do_minmax, float cm_emax);
+				    int do_fastfil, int do_Fstep, int my_rank, int nproc, 
+				    int do_mpi, char *histfile, float *ret_F);
 extern float FindExpFactor(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
 			   int use_cm_cutoff, float cm_ecutoff, int db_size, 
 			   int emit_mode, int fthr_mode, int do_fastfil,

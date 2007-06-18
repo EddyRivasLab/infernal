@@ -518,9 +518,13 @@ CYKInsideScore(CM_t *cm, char *dsq, int r, int i0, int j0, int L, int *dmin, int
  *           L      - length of sequence.
  *           dmin   - minimum d bound for each state v; [0..v..M-1] (NULL if non-banded)
  *           dmax   - maximum d bound for each state v; [0..v..M-1] (NULL if non-banded)
+ *           be_quiet - TRUE to not print info, just return number of DP calcs
+ * 
+ * Returns: (float) the total number of DP calculations, either using QDB (if
+ *                  dmin & dmax are non-NULL.
  */
-void
-CYKDemands(CM_t *cm, int L, int *dmin, int *dmax)
+float
+CYKDemands(CM_t *cm, int L, int *dmin, int *dmax, int be_quiet)
 {
   float Mb_per_deck;    /* megabytes per deck */
   int   bif_decks;	/* bifurcation decks  */
@@ -605,35 +609,43 @@ CYKDemands(CM_t *cm, int L, int *dmin, int *dmax)
 
   if(dmin == NULL && dmax == NULL)
     {
-      printf("CYK cpu/memory demand estimates:\n");
-      printf("Mb per cyk deck:                  %.4f\n", Mb_per_deck);
-      printf("# of decks (M):                   %d\n",   cm->M);
-      printf("# of decks needed in small CYK:   %d\n",   maxdecks);
-      printf("# of extra decks needed:          %d\n",   extradecks);
-      printf("RAM needed for full CYK, Mb:      %.2f\n", bigmemory);
-      printf("RAM needed for small CYK, Mb:     %.2f\n", smallmemory);
-      printf("# of dp cells, total:             %.3g\n", dpcells);
-      printf("# of non-bifurc dp cells:         %.3g\n", dpcalcs);
-      printf("# of bifurcations:                %d\n",   bif_decks);
-      printf("# of bifurc dp inner loop calcs:  %.3g\n", bifcalcs);
-      printf("# of dp inner loops:              %.3g\n", dpcalcs+bifcalcs);
+      if(!be_quiet)
+	{
+	  printf("CYK cpu/memory demand estimates:\n");
+	  printf("Mb per cyk deck:                  %.4f\n", Mb_per_deck);
+	  printf("# of decks (M):                   %d\n",   cm->M);
+	  printf("# of decks needed in small CYK:   %d\n",   maxdecks);
+	  printf("# of extra decks needed:          %d\n",   extradecks);
+	  printf("RAM needed for full CYK, Mb:      %.2f\n", bigmemory);
+	  printf("RAM needed for small CYK, Mb:     %.2f\n", smallmemory);
+	  printf("# of dp cells, total:             %.3g\n", dpcells);
+	  printf("# of non-bifurc dp cells:         %.3g\n", dpcalcs);
+	  printf("# of bifurcations:                %d\n",   bif_decks);
+	  printf("# of bifurc dp inner loop calcs:  %.3g\n", bifcalcs);
+	  printf("# of dp inner loops:              %.3g\n", dpcalcs+bifcalcs);
+	}
+      return (dpcalcs + bifcalcs);
     }
   else /* QDB */
     {
-      printf("QDB CYK cpu/memory demand estimates:\n");
-      printf("Mb per cyk deck:                     %.4f\n", Mb_per_deck);
-      printf("Avg Mb per QDB cyk deck:             %.4f\n", avg_Mb_per_banded_deck);
-      printf("# of decks (M):                      %d\n",   cm->M);
-      printf("# of decks needed in small QDB CYK:  %d\n",   maxdecks);
-      printf("# of extra decks needed:             %d\n",   extradecks);
-      printf("RAM needed for full QDB CYK, Mb:     %.2f\n", bigmemory);
-      printf("RAM needed for small QDB CYK, Mb:    %.2f\n", smallmemory);
-      printf("# of QDB dp cells, total:            %.3g\n", dpcells);
-      printf("# of QDB non-bifurc dp cells:        %.3g\n", dpcalcs_b);
-      printf("# of bifurcations:                   %d\n",   bif_decks);
-      printf("# of QDB bifurc dp inner loop calcs: %.3g\n", bifcalcs_b);
-      printf("# of QDB dp inner loops:             %.3g\n", dpcalcs_b+bifcalcs_b);
-      printf("Estimated small CYK QDB aln speedup: %.4f\n", ((dpcalcs+bifcalcs)/(dpcalcs_b+bifcalcs_b)));
+      if(!be_quiet)
+	{
+	  printf("QDB CYK cpu/memory demand estimates:\n");
+	  printf("Mb per cyk deck:                     %.4f\n", Mb_per_deck);
+	  printf("Avg Mb per QDB cyk deck:             %.4f\n", avg_Mb_per_banded_deck);
+	  printf("# of decks (M):                      %d\n",   cm->M);
+	  printf("# of decks needed in small QDB CYK:  %d\n",   maxdecks);
+	  printf("# of extra decks needed:             %d\n",   extradecks);
+	  printf("RAM needed for full QDB CYK, Mb:     %.2f\n", bigmemory);
+	  printf("RAM needed for small QDB CYK, Mb:    %.2f\n", smallmemory);
+	  printf("# of QDB dp cells, total:            %.3g\n", dpcells);
+	  printf("# of QDB non-bifurc dp cells:        %.3g\n", dpcalcs_b);
+	  printf("# of bifurcations:                   %d\n",   bif_decks);
+	  printf("# of QDB bifurc dp inner loop calcs: %.3g\n", bifcalcs_b);
+	  printf("# of QDB dp inner loops:             %.3g\n", dpcalcs_b+bifcalcs_b);
+	  printf("Estimated small CYK QDB aln speedup: %.4f\n", ((dpcalcs+bifcalcs)/(dpcalcs_b+bifcalcs_b)));
+	}
+      return (dpcalcs_b + bifcalcs_b);
     }
 }
 

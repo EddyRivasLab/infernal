@@ -1004,7 +1004,7 @@ main(int argc, char **argv)
 	  puts("");
 	  SummarizeCM(stdout, cm);  
 	  puts("");
-	  CYKDemands(cm, avlen, NULL, NULL);     
+	  CYKDemands(cm, avlen, NULL, NULL, FALSE);     
 	  /*
 	    puts("\n");
 	    CYKDemands(cm, avlen, cm->dmin, cm->dmax);

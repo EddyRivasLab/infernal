@@ -198,9 +198,9 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
   mx = AllocCPlan9Matrix(nrows, cm->cp9->M, &mmx, &imx, &dmx, 
 			 NULL); /* we don't use emx any more, isc replaces it,
 				 * 1. b/c we want isc for each position, but
-				 * we may only be alloc'ing 2 rows of mx,
+				 *    we may only be alloc'ing 2 rows of mx,
 				 * 2. b/c emx is 2D for dumb memory error reasons,
-				 * which needs to be fixed. */
+				 *    which needs to be fixed. */
   /* sc will hold P(seq up to j | Model) in int log odds form */
   sc   = MallocOrDie(sizeof(int) * (j0-i0+2));
 			
@@ -1377,458 +1377,24 @@ CP9ScanPosterior(char *dsq, int i0, int j0,
   */
 }
 
-
-/*
- * Function: OLD_FindCP9FilterThreshold()
- * Incept:   EPN, Wed May  2 10:00:45 2007
+/* Function: CP9ForwardScanDemands()
+ * Date:     EPN, Fri Jun 15 10:08:40 2007
  *
- * Purpose:  Sample sequences from a CM and determine the CP9 HMM E-value
- *           threshold necessary to recognize a specified fraction of those
- *           hits. Sequences are sampled from the CM until N with a E-value
- *           better than cm_ecutoff are sampled (those with worse E-values
- *           are rejected). CP9 scans are carried out in either local or
- *           glocal mode depending on hmm_gum_mode. CM is configured in 
- *           local/glocal and sampled seqs are scored in CYK/inside depending
- *           on fthr_mode (4 possibilities). E-values are determined using
- *           lambda from cm->stats, and a recalc'ed mu using database size
- *           of 'db_size'.
+ * Purpose:  Determine the number of calculations for 
+ *           a CP9 Forward scanner and return it.
  *
- *           If do_fastfil and fthr_mode is local or glocal CYK, parsetree 
- *           scores of emitted sequences are assumed to an optimal CYK scores 
- *           (not nec true). This saves a lot of time b/c no need to
- *           scan emitted seqs, but it's statistically wrong. 
- *           If do_fastfil and fthr_mode is local or glocal inside, 
- *           contract is violated and we Die. Current strategy *outside*
- *           of this function is to copy HMM filtering thresholds from
- *           CYK for Inside cases.
- *
- *           If !do_fastfil this function takes much longer b/c emitted 
- *           parsetree score is not necessarily (a) optimal nor (b) highest 
- *           score returned from a CYK scan (a subseq of the full seq could
- *           score higher even if parsetree was optimal). For Inside, Inside
- *           scan will always be higher than parstree score. This means we have
- *           to scan each emitted seq with CYK or Inside.
- *
- * Args:
- *           cm           - the CM
- *           cmstats      - CM stats object we'll get Gumbel stats from
- *           r            - source of randomness for EmitParsetree()
- *           Fmin         - minimum target fraction of CM hits to detect with CP9
- *           min_surv     - minimum filter survival fraction, for lower fractions, we'll
- *                          increase F. 
- *           N            - number of sequences to sample from CM better than cm_minsc
- *           use_cm_cutoff- TRUE to only accept CM parses w/E-values above cm_ecutoff
- *           cm_ecutoff   - minimum CM E-value to accept 
- *           db_size      - DB size (nt) to use w/cm_ecutoff to calc CM bit score cutoff 
- *           emit_mode    - CM_LC or CM_GC, CM mode to emit with
- *           fthr_mode    - gives CM search strategy to use, and Gumbel to use
- *           hmm_gum_mode - CP9_L to search with  local HMM (we're filling a fthr->l_eval)
- *                          CP9_G to search with glocal HMM (we're filling a fthr->g_eval)
- *           do_fastfil   - TRUE to use fast method: assume parsetree score
- *                          is optimal CYK score
+ * Args:     cp9    - the CP9 HMM
+ *           L      - length of sequence.
  * 
- * Returns: HMM E-value cutoff above which the HMM scores (F * N) CM 
- *          hits with CM E-values better than cm_ecutoff 
- * 
+ * Returns: (float) the total number of DP calculations
  */
-float OLD_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
-			     float Fmin, float min_surv, int N, int use_cm_cutoff, 
-			     float cm_ecutoff, int db_size, 
-			     int emit_mode, int fthr_mode, int hmm_gum_mode, 
-			     int do_fastfil, int my_rank, int nproc, int do_mpi, 
-			     float *ret_F)
+float
+CP9ForwardScanDemands(CP9_t *cp9, int L)
 {
+  float dpcalcs;	/* # of inner loops executed for non-bif calculations */
 
-  /* Contract checks */
-  if (!(cm->flags & CM_CP9) || cm->cp9 == NULL) 
-    Die("ERROR in FindCP9FilterThreshold() CP9 does not exist\n");
-  if (Fmin < 0. || Fmin > 1.)  
-    Die("ERROR in FindCP9FilterThreshold() Fmin is %f, should be [0.0..1.0]\n", Fmin);
-  if (min_surv < 0. || min_surv > 1.)  
-    Die("ERROR in FindCP9FilterThreshold() min_surv is %f, should be [0.0..1.0]\n", min_surv);
-  if((fthr_mode != CM_LI) && (fthr_mode != CM_GI) && (fthr_mode != CM_LC) && (fthr_mode != CM_GC))
-    Die("ERROR in FindCP9FilterThreshold() fthr_mode not CM_LI, CM_GI, CM_LC, or CM_GC\n");
-  if(hmm_gum_mode != CP9_L && hmm_gum_mode != CP9_G)
-    Die("ERROR in FindCP9FilterThreshold() hmm_gum_mode not CP9_L or CP9_G\n");
-  if(do_fastfil && (fthr_mode == CM_LI || fthr_mode == CM_GI))
-    Die("ERROR in FindCP9FilterThreshold() do_fastfil TRUE, but fthr_mode CM_GI or CM_LI\n");
-  if(my_rank > 0 && !do_mpi)
-    Die("ERROR in FindCP9FilterThreshold() my_rank is not 0, but do_mpi is FALSE\n");
-  if(emit_mode != CM_GC && emit_mode != CM_LC)
-    Die("ERROR in FindCP9FilterThreshold() emit_mode not CM_LC or CM_GC\n");
-  if(emit_mode == CM_LC && (fthr_mode == CM_GC || fthr_mode == CM_GI))
-    Die("ERROR in FindCP9FilterThreshold() emit_mode CM_LC but score mode CM_GC or CM_GI.\n");
-
-#if defined(USE_MPI)
-  /* If a worker in MPI mode, we go to worker function mpi_worker_cm_and_cp9_search */
-  if(my_rank > 0) 
-    {
-      /* Configure the CM based on the fthr mode COULD BE DIFFERENT FROM MASTER! */
-      ConfigForGumbelMode(cm, fthr_mode);
-      /* Configure the HMM based on the hmm_gum_mode */
-      if(hmm_gum_mode == CP9_L)
-	CPlan9SWConfig(cm->cp9, 0.5, 0.5);
-      else /* hmm_gum_mode == CP9_G (it's in the contract) */
-	CPlan9GlobalConfig(cm->cp9);
-      CP9Logoddsify(cm->cp9);
-
-      mpi_worker_cm_and_cp9_search(cm, do_fastfil, my_rank);
-
-      *ret_F = 0.0; /* this return value is irrelevant */
-      return 0.0;   /* this return value is irrelevant */
-    }
-#endif 
-  int            status;         /* Easel status */
-  CM_t          *cm_for_scoring; /* used to score parsetrees, nec b/c  *
-				  * emitting mode may != scoring mode   */
-  Parsetree_t   *tr = NULL;      /* parsetree                           */
-  char          *dsq = NULL;     /* digitized sequence                  */
-  char          *seq = NULL;     /* alphabetic sequence                 */
-  float         *cm_sc;          /* CM scores of all samples            */
-  float         *hmm_sc;         /* HMM scores of all samples           */
-  float         *hmm_eval;       /* HMM E-values of all samples         */
-  float         *cm_sc_p;        /* CM scores of samples above thresh   */
-  float         *hmm_sc_p;       /* HMM scores of samples above thresh  */
-  float         *hmm_eval_p;     /* HMM E-values of samples above thresh*/  
-  int            i  = 0;         /* counter over samples                */
-  int            ip = 0;         /* counter over samples above thresh   */
-  int            imax = 500 * N; /* max num samples                     */
-  int            p;              /* counter over partitions             */
-  int            L;              /* length of a sample                  */
-  double        *cm_mu;          /* mu for each partition's CM Gumbel   */
-  double        *hmm_mu;         /* mu for each partition's HMM Gumbel  */
-  float         *cm_minbitsc = NULL; /* minimum CM bit score to allow to pass for each partition */
-  float          ret_hmm_eval;   /* HMM CP9 E-value cutoff to return    */
-  double         tmp_K;          /* used for recalc'ing Gumbel stats for DB size */
-  int            was_hmmonly;    /* flag for if HMM only search was set */
-  int            nalloc;         /* for cm_sc, hmm_sc, hmm_eval, num alloc'ed */
-  int            chunksize;      /* allocation chunk size               */
-  float         *scores;         /* CM and HMM score returned from worker*/
-  void          *tmp;            /* temp void pointer for ESL_RALLOC() */
-  int            clen;           /* consensus length of CM             */
-  float          avg_hit_len;    /* crude estimate of average hit len  */
-  int            F_idx;          /* index within hmm_eval              */
-  float          surv_fract;     /* predicted survival fraction        */
-  int            init_flag;      /* used for finding F                 */ 
-#if defined(USE_MPI)
-  int            have_work;      /* MPI: do we still have work to send out?*/
-  int            nproc_working;  /* MPI: number procs currently doing work */
-  int            wi;             /* MPI: worker index                      */
-  char         **dsqlist = NULL; /* MPI: queue of digitized seqs being worked on, 1..nproc-1 */
-  int           *plist = NULL;   /* MPI: queue of partition indices of seqs being worked on, 1..nproc-1 */
-  Parsetree_t  **trlist = NULL;  /* MPI: queue of traces of seqs being worked on, 1..nproc-1 */
-  MPI_Status     mstatus;        /* useful info from MPI Gods         */
-#endif
-
-  printf("in FindCP9FilterThreshold fthr_mode: %d hmm_gum_mode: %d emit_mode: %d \n", fthr_mode, 
-	 hmm_gum_mode, emit_mode);
-
-  if(cm->search_opts & CM_SEARCH_HMMONLY) was_hmmonly = TRUE;
-  else was_hmmonly = FALSE;
-  cm->search_opts &= ~CM_SEARCH_HMMONLY;
-
-  chunksize = 5 * N;
-  nalloc    = chunksize;
-  ESL_ALLOC(hmm_eval,    sizeof(float) * nalloc);
-  ESL_ALLOC(hmm_sc,      sizeof(float) * nalloc);
-  ESL_ALLOC(cm_sc,       sizeof(float) * nalloc);
-  ESL_ALLOC(hmm_eval_p,  sizeof(float) * N);
-  ESL_ALLOC(hmm_sc_p,    sizeof(float) * N);
-  ESL_ALLOC(cm_sc_p,     sizeof(float) * N);
-  ESL_ALLOC(cm_minbitsc, sizeof(float) * cmstats->np);
-  ESL_ALLOC(cm_mu,       sizeof(double)* cmstats->np);
-  ESL_ALLOC(hmm_mu,      sizeof(double)* cmstats->np);
-  ESL_ALLOC(scores,      sizeof(float) * 2);
-  
-#if defined(USE_MPI)
-  if(do_mpi)
-    {
-      ESL_ALLOC(dsqlist,     sizeof(char *)        * nproc);
-      ESL_ALLOC(plist,       sizeof(int)           * nproc);
-      ESL_ALLOC(trlist,      sizeof(Parsetree_t *) * nproc);
-    }
-#endif
-
-  if(use_cm_cutoff) printf("CM E cutoff: %f\n", cm_ecutoff);
-  else              printf("Not using CM cutoff\n");
-
-  /* Configure the CM based on the emit mode COULD DIFFERENT FROM WORKERS! */
-  ConfigForGumbelMode(cm, emit_mode);
-  /* Copy the CM into cm_for_scoring if nec., and reconfigure that */
-  if(do_fastfil && (emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI)))
-    {
-      cm_for_scoring = DuplicateCM(cm); 
-      ConfigForGumbelMode(cm_for_scoring, fthr_mode);
-    }
-  else
-    cm_for_scoring = cm;
-
-  /* Configure the HMM based on the hmm_gum_mode */
-  if(hmm_gum_mode == CP9_L)
-    CPlan9SWConfig(cm->cp9, 0.5, 0.5);
-  else /* hmm_gum_mode == CP9_G (it's in the contract) */
-    CPlan9GlobalConfig(cm->cp9);
-  CP9Logoddsify(cm->cp9);
-
-  /* Determine bit cutoff for each partition, calc'ed from cm_ecutoff */
-  for (p = 0; p < cmstats->np; p++)
-    {
-      /* First determine mu based on db_size */
-      tmp_K      = exp(cmstats->gumAA[hmm_gum_mode][p]->mu * cmstats->gumAA[hmm_gum_mode][p]->lambda) / 
-	cmstats->gumAA[hmm_gum_mode][p]->L;
-      hmm_mu[p]  = log(tmp_K * ((double) db_size)) / cmstats->gumAA[hmm_gum_mode][p]->lambda;
-      tmp_K      = exp(cmstats->gumAA[fthr_mode][p]->mu * cmstats->gumAA[fthr_mode][p]->lambda) / 
-	cmstats->gumAA[fthr_mode][p]->L;
-      cm_mu[p]   = log(tmp_K  * ((double) db_size)) / cmstats->gumAA[fthr_mode][p]->lambda;
-      /* Now determine bit score */
-      cm_minbitsc[p] = cm_mu[p] - (log(cm_ecutoff) / cmstats->gumAA[fthr_mode][p]->lambda);
-      if(use_cm_cutoff)
-	printf("E: %f p: %d %d--%d bit score: %f\n", cm_ecutoff, p, 
-	       cmstats->ps[p], cmstats->pe[p], cm_minbitsc[p]);
-    }
-  
-  /* Do the work, emit parsetrees and collect the scores 
-   * either in serial or MPI depending on do_mpi flag.
-   */
-  /*********************SERIAL BLOCK*************************************/
-  if(!(do_mpi))
-    {
-      /* Serial strategy: 
-       * Emit sequences one at a time and search them with the CM and HMM,
-       * keeping track of scores. If do_fastfil we don't have to search 
-       * with the CM we just keep track of the parsetree score. 
-       *
-       * If do_fastfil && emit_mode is different than scoring mode we 
-       * score with 'cm_for_scoring', instead of with 'cm'.
-       */
-      while(ip < N) /* while number seqs passed CM score threshold (ip) < N */
-	{
-	  EmitParsetree(cm, r, &tr, &seq, &dsq, &L);
-	  /*ParsetreeDump(stdout, tr, cm, dsq);
-	    printf("%d Parsetree Score: %f\n\n", (nattempts), ParsetreeScore(cm, tr, dsq, FALSE)); */
-	  while(L == 0) { FreeParsetree(tr); free(seq); free(dsq); EmitParsetree(cm, r, &tr, &seq, &dsq, &L); }
-
-	  p = cmstats->gc2p[(get_gc_comp(seq, 1, L))]; /* in get_gc_comp() should be i and j of best hit */
-	  free(seq);
-	  if(do_fastfil)
-	    {
-	      if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))
-		cm_sc[i] = ParsetreeScore_Global2Local(cm_for_scoring, tr, dsq, FALSE);
-	      else
-		cm_sc[i] = ParsetreeScore(cm_for_scoring, tr, dsq, FALSE); 
-	      FreeParsetree(tr);
-	    }
-	  else
-	    {
-	      FreeParsetree(tr);
-	      cm_sc[i] = actually_search_target(cm, dsq, 1, L,
-						0.,    /* cutoff is 0 bits (actually we'll find highest
-							* negative score if it's < 0.0) */
-						0.,    /* CP9 cutoff is 0 bits */
-						NULL,  /* don't keep results */
-						FALSE, /* don't filter with a CP9 HMM */
-						FALSE, /* we're not calcing CM  stats */
-						FALSE, /* we're not calcing CP9 stats */
-						NULL); /* filter fraction N/A */
-	    }
-	  /* Scan seq with HMM */
-	  /* DO NOT CALL actually_search_target b/c that will run Forward then 
-	   * Backward to get score of best hit, but we'll be detecting by a
-	   * Forward scan (then running Backward only on hits above our threshold).
-	   */
-	  hmm_sc[i] = CP9Forward(cm, dsq, 1, L, cm->W, 0., 
-				 NULL,   /* don't return scores of hits */
-				 NULL,   /* don't return posns of hits */
-				 NULL,   /* don't keep track of hits */
-				 TRUE,   /* we're scanning */
-				 FALSE,  /* we're not ultimately aligning */
-				 FALSE,  /* we're not rescanning */
-				 TRUE,   /* be memory efficient */
-				 NULL);  /* don't want the DP matrix back */
-	  hmm_eval[i] = RJK_ExtremeValueE(hmm_sc[i], hmm_mu[p], cmstats->gumAA[hmm_gum_mode][p]->lambda);
-	  if(cm_sc[i] >= cm_minbitsc[p]) 
-	    {
-	      cm_sc_p[ip]    = cm_sc[i];
-	      hmm_sc_p[ip]   = hmm_sc[i];
-	      hmm_eval_p[ip] = hmm_eval[i];
-	      ip++; /* increase counter of seqs passing threshold */
-	    }
-	  
-	  /* Check if we need to reallocate */
-	  i++;
-	  if(i > imax) esl_fatal("ERROR number of attempts exceeded 500 times number of seqs.\n");
-	  if (i == nalloc) 
-	    {
-	      nalloc += chunksize;
-	      ESL_RALLOC(cm_sc,    tmp, nalloc * sizeof(float));
-	      ESL_RALLOC(hmm_sc,   tmp, nalloc * sizeof(float));
-	      ESL_RALLOC(hmm_eval, tmp, nalloc * sizeof(float));
-	    }
-	}
-    }
-  /*************************END OF SERIAL BLOCK****************************/
-#if defined(USE_MPI)
-  /*************************MPI BLOCK****************************/
-  if(do_mpi)
-    {
-      /* MPI Strategy: 
-       * Emit seqs one at a time from the CM and send them to workers to 
-       * search with CM and with CP9 HMM and return scores of both searches.
-       * Master collects these scores until it's received N with scores better 
-       * than cutoff.
-       *
-       * If do_fastfil, the worker skips the CM search and returns 0. bits
-       * as CM score, which master replaces with parsetree score.
-       *
-       * Sean's design pattern for data parallelization in a master/worker model:
-       * three phases: 
-       *  1. load workers;
-       *  2. recv result/send work loop;
-       *  3. collect remaining results
-       * but implemented in a single while loop to avoid redundancy.
-       */
-      have_work     = TRUE;
-      nproc_working = 0;
-      wi            = 1;
-      i             = 0;
-      while (have_work || nproc_working)
-	{
-	  /* Get next work unit. */
-	  if(ip < N) /* if number seqs passed CM score threshold (ip) < N */
-	    {
-	      EmitParsetree(cm, r, &tr, &seq, &dsq, &L);
-	      /*ParsetreeDump(stdout, tr, cm, dsq);
-		printf("%d Parsetree Score: %f\n\n", (nattempts), ParsetreeScore(cm, tr, dsq, FALSE)); */
-	      p = cmstats->gc2p[(get_gc_comp(seq, 1, L))]; /* in get_gc_comp() should be i and j of best hit */
-	      free(seq);
-	      if(!do_fastfil)
-		FreeParsetree(tr);
-	    }
-	  else have_work = FALSE;
-	  /* If we have work but no free workers, or we have no work but workers
-	   * Are still working, then wait for a result to return from any worker.
-	   */
-	  if ( (have_work && nproc_working == nproc-1) || (! have_work && nproc_working > 0))
-	    {
-	      MPI_Recv(scores,  2, MPI_FLOAT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &mstatus);
-	      cm_sc[i]    = scores[0];
-	      hmm_sc[i]   = scores[1];
-	      wi = mstatus.MPI_SOURCE;
-	      hmm_eval[i] = RJK_ExtremeValueE(hmm_sc[i], hmm_mu[plist[wi]], cmstats->gumAA[hmm_gum_mode][plist[wi]]->lambda);
-	      /* could change this to keep ALL CP9 and CM bit scores */
-	      if(do_fastfil)
-		{
-		  if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))
-		    cm_sc[i] = ParsetreeScore_Global2Local(cm_for_scoring, trlist[wi], dsqlist[wi], FALSE);
-		  else
-		    cm_sc[i] = ParsetreeScore(cm_for_scoring, trlist[wi], dsqlist[wi], FALSE); 
-		  FreeParsetree(trlist[wi]);
-		  trlist[wi] = NULL;
-		}
-	      if(cm_sc[i] >= cm_minbitsc[plist[wi]] && ip < N) 
-		/* careful, we don't want to save more than N seqs, which could happen due to send/recv lag */
-		{
-		  cm_sc_p[ip]    = cm_sc[i];
-		  hmm_sc_p[ip]   = hmm_sc[i];
-		  hmm_eval_p[ip] = hmm_eval[i];
-		  ip++; /* increase counter of seqs passing threshold */
-		}
-	      nproc_working--;
-	      free(dsqlist[wi]);
-	      dsqlist[wi] = NULL;
-	      
-	      /* Check if we need to reallocate */
-	      i++;
-	      if(i > imax) esl_fatal("ERROR number of attempts exceeded 500 times number of seqs.\n");
-	      if (i == nalloc) 
-		{
-		  nalloc += chunksize;
-		  ESL_RALLOC(cm_sc,    tmp, nalloc * sizeof(float));
-		  ESL_RALLOC(hmm_sc,   tmp, nalloc * sizeof(float));
-		  ESL_RALLOC(hmm_eval, tmp, nalloc * sizeof(float));
-		}
-	    }
-	  /* If we have work, assign it to a free worker;
-	   * else, terminate the free worker.
-	   */
-	  if (have_work) 
-	    {
-	      dsq_MPISend(dsq, L, wi);
-	      dsqlist[wi] = dsq;
-	      plist[wi]   = p;
-	      if(do_fastfil)
-		trlist[wi] = tr;
-	      wi++;
-	      nproc_working++;
-	    }
-	  else 
-	    dsq_MPISend(NULL, -1, wi);	
-	}
-    }
-  /*********************END OF MPI BLOCK*****************************/
-#endif /* if defined(USE_MPI) */
-  /* Sort the HMM E-values with quicksort */
-  esl_vec_FSortIncreasing(hmm_eval_p, N);
-  esl_vec_FSortDecreasing(hmm_sc_p, N); /* TEMPORARY FOR PRINTING */
-
-  /* Determine E-value to return based on predicted filter survival fraction */
-  clen = (2*CMCountStatetype(cm, MATP_MP) + 
-	  CMCountStatetype(cm, MATL_ML) + 
-	  CMCountStatetype(cm, MATR_MR));
-  if(hmm_gum_mode == CP9_G) avg_hit_len = clen;       /* should be weighted sum of gamma[0] from QDB calc */
-  if(hmm_gum_mode == CP9_L) avg_hit_len = clen * 0.5; /* should be weighted sum of gamma[0] from QDB calc */
-
-  F_idx  = (int) (Fmin * (float) N) - 1; /* off by one, 95% cutoff in 100 len array is index 94 */
-
-  init_flag  = TRUE;
-  surv_fract = IMPOSSIBLE;
-  printf("Min surv: %f\n", min_surv);
-  while(surv_fract < min_surv && F_idx < N)
-    {
-      ret_hmm_eval = hmm_eval_p[F_idx];
-      surv_fract = (ret_hmm_eval * ((2. * cm_for_scoring->W) - avg_hit_len)) / ((double) db_size); 
-      if     (surv_fract < min_surv) F_idx++; 
-      else if(!init_flag)            F_idx--; /* we overshot it, but only if we're not in 1st iteration */
-      init_flag = FALSE;
-    }
-  if(F_idx == N) F_idx--; /* we went off the end of the array, back up one */
-  ret_hmm_eval = hmm_eval_p[F_idx];
-
-  surv_fract = (ret_hmm_eval * ((2. * cm_for_scoring->W) - avg_hit_len)) / ((double) db_size); 
-  printf("Predicted survival fraction: %f (E: %f)\n", surv_fract, ret_hmm_eval);
-
-  if(ret_hmm_eval > ((float) db_size)) /* E-val > db_size is useless */
-    ret_hmm_eval = (float) db_size;
-
-  for (i = ((int) (Fmin  * (float) N) -1); i < N; i++)
-    printf("%d i: %4d hmm sc: %10.4f hmm E: %10.4f\n", hmm_gum_mode, i, hmm_sc_p[i], hmm_eval_p[i]);
-
-  printf("\nSummary: %d %d %d %d %f %f\n", fthr_mode, hmm_gum_mode, do_fastfil, emit_mode,
-	 (hmm_sc_p[F_idx]), (hmm_eval_p[F_idx]));
-  /* Reset CM_SEARCH_HMMONLY search option as it was when function was entered */
-  if(was_hmmonly) cm->search_opts |= CM_SEARCH_HMMONLY;
-  else cm->search_opts &= ~CM_SEARCH_HMMONLY;
-
-  printf("05.21.07 %d %d %f %f\n", fthr_mode, hmm_gum_mode, hmm_sc_p[F_idx], ret_hmm_eval);
-
-  /* Clean up and exit */
-  free(hmm_eval);
-  free(hmm_sc);
-  free(cm_sc);
-  free(hmm_eval_p);
-  free(hmm_sc_p);
-  free(cm_sc_p);
-  free(hmm_mu);
-  free(cm_mu);
-  free(cm_minbitsc);
-  /* Return threshold */
-  *ret_F = ((float) (F_idx + 1.)) / (float) N;
-  printf("F: %f\n", *ret_F);
-  return ret_hmm_eval;
-
- ERROR:
-  esl_fatal("Reached ERROR in FindCP9FilterThreshold()\n");
-  return 0.;
+  dpcalcs = L * cp9->M * 3.; /* 3 states per node, M nodes in the model */
+  return dpcalcs;
 }
 
 /*
@@ -1867,8 +1433,12 @@ float OLD_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r
  *           cmstats      - CM stats object we'll get Gumbel stats from
  *           r            - source of randomness for EmitParsetree()
  *           Fmin         - minimum target fraction of CM hits to detect with CP9
- *           min_surv     - minimum filter survival fraction, for lower fractions, we'll
+ *           Smin         - minimum filter survival fraction, for lower fractions, we'll
  *                          increase F. 
+ *           Starget      - target filter survival fraction, for lower fractions that 
+ *                          satisfy Fmin, we'll increase F until Starget is reached
+ *           Spad         - fraction of (sc(S) - sc(max(Starget, Smin))) to subtract from sc(S)
+ *                          in case 2. 0.0 = fast, 1.0 = safe.
  *           N            - number of sequences to sample from CM better than cm_minsc
  *           use_cm_cutoff- TRUE to only accept CM parses w/E-values above cm_ecutoff
  *           cm_ecutoff   - minimum CM E-value to accept 
@@ -1879,54 +1449,51 @@ float OLD_FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r
  *                          CP9_G to search with glocal HMM (we're filling a fthr->g_eval)
  *           do_fastfil   - TRUE to use fast method: assume parsetree score
  *                          is optimal CYK score
+ *           do_Fstep     - TRUE to step from F towards 1.0 while S < Starget in case 2.
  *           my_rank      - MPI rank, 0 if serial
  *           nproc        - number of processors in MPI rank, 1 if serial
  *           do_mpi       - TRUE if we're doing MPI, FALSE if not
- *           X            - factor by which to exponentiate model prior to emitting (1.0 for none)
- *           do_lookup    - TRUE to use lookup table to correct for F based on X
  *           histfile     - root string for histogram files, we'll make nexps * 4 of them
  *           ret_F        - the fraction of observed CM hits we've scored with the HMM better
  *                          than return value
- *           do_minmax    - TRUE to enforce all E-values between cm_ecutoff and cm_emax
- *           cm_emax      - maximum E-value to accept (only if do_minmax == TRUE) 
  * 
  * Returns: HMM E-value cutoff above which the HMM scores (ret_F * N) CM 
  *          hits with CM E-values better than cm_ecutoff 
  * 
  */
 float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
-			     float Fmin, float min_surv, int N, int use_cm_cutoff, 
-			     float cm_ecutoff, int db_size, 
+			     float Fmin, float Smin, float Starget, float Spad, int N, 
+			     int use_cm_cutoff, float cm_ecutoff, int db_size, 
 			     int emit_mode, int fthr_mode, int hmm_gum_mode, 
-			     int do_fastfil, int my_rank, int nproc, int do_mpi, 
-			     float X, int do_lookup, char *histfile, float *ret_F,
-			     int do_minmax, float cm_emax)
+			     int do_fastfil, int do_Fstep, int my_rank, int nproc, int do_mpi, 
+			     char *histfile, float *ret_F)
 {
 
   /* Contract checks */
   if (!(cm->flags & CM_CP9) || cm->cp9 == NULL) 
-    Die("ERROR in FindCP9FilterThreshold() CP9 does not exist\n");
+    esl_fatal("ERROR in FindCP9FilterThreshold() CP9 does not exist\n");
   if (Fmin < 0. || Fmin > 1.)  
-    Die("ERROR in FindCP9FilterThreshold() Fmin is %f, should be [0.0..1.0]\n", Fmin);
-  if (min_surv < 0. || min_surv > 1.)  
-    Die("ERROR in FindCP9FilterThreshold() min_surv is %f, should be [0.0..1.0]\n", min_surv);
+    esl_fatal("ERROR in FindCP9FilterThreshold() Fmin is %f, should be [0.0..1.0]\n", Fmin);
+  if (Smin < 0. || Smin > 1.)  
+    esl_fatal("ERROR in FindCP9FilterThreshold() Smin is %f, should be [0.0..1.0]\n", Smin);
+  if (Starget < 0. || Starget > 1.)  
+    esl_fatal("ERROR in FindCP9FilterThreshold() Starget is %f, should be [0.0..1.0]\n", Starget);
   if((fthr_mode != CM_LI) && (fthr_mode != CM_GI) && (fthr_mode != CM_LC) && (fthr_mode != CM_GC))
-    Die("ERROR in FindCP9FilterThreshold() fthr_mode not CM_LI, CM_GI, CM_LC, or CM_GC\n");
+    esl_fatal("ERROR in FindCP9FilterThreshold() fthr_mode not CM_LI, CM_GI, CM_LC, or CM_GC\n");
   if(hmm_gum_mode != CP9_L && hmm_gum_mode != CP9_G)
-    Die("ERROR in FindCP9FilterThreshold() hmm_gum_mode not CP9_L or CP9_G\n");
+    esl_fatal("ERROR in FindCP9FilterThreshold() hmm_gum_mode not CP9_L or CP9_G\n");
   if(do_fastfil && (fthr_mode == CM_LI || fthr_mode == CM_GI))
-    Die("ERROR in FindCP9FilterThreshold() do_fastfil TRUE, but fthr_mode CM_GI or CM_LI\n");
+    esl_fatal("ERROR in FindCP9FilterThreshold() do_fastfil TRUE, but fthr_mode CM_GI or CM_LI\n");
   if(my_rank > 0 && !do_mpi)
-    Die("ERROR in FindCP9FilterThreshold() my_rank is not 0, but do_mpi is FALSE\n");
+    esl_fatal("ERROR in FindCP9FilterThreshold() my_rank is not 0, but do_mpi is FALSE\n");
   if(emit_mode != CM_GC && emit_mode != CM_LC)
-    Die("ERROR in FindCP9FilterThreshold() emit_mode not CM_LC or CM_GC\n");
+    esl_fatal("ERROR in FindCP9FilterThreshold() emit_mode not CM_LC or CM_GC\n");
   if(emit_mode == CM_LC && (fthr_mode == CM_GC || fthr_mode == CM_GI))
-    Die("ERROR in FindCP9FilterThreshold() emit_mode CM_LC but score mode CM_GC or CM_GI.\n");
+    esl_fatal("ERROR in FindCP9FilterThreshold() emit_mode CM_LC but score mode CM_GC or CM_GI.\n");
+  if(Spad < 0 || Spad > 1.0)
+    esl_fatal("ERROR in FindCP9FilterThreshold() Spad %f not between 0.0 and 1.0\n");
 
-  if(do_minmax)
-    Die("ERROR in FindCP9FilterThreshold() do_minmax deprecated.\n");
-
-#if defined(USE_MPI)
+#if defined(USE_MPI)  && defined(NOTDEFINED)
   /* If a worker in MPI mode, we go to worker function mpi_worker_cm_and_cp9_search */
   if(my_rank > 0) 
     {
@@ -1961,11 +1528,14 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   int            imax = 500 * N; /* max num samples                     */
   int            p;              /* counter over partitions             */
   int            L;              /* length of a sample                  */
+  float          F;              /* fraction of hits found by HMM >= Fmin*/
+  float          E;              /* HMM CP9 E-value cutoff to return    */
+  float          Emin;           /* E-value that corresponds to Smin */
+  float          Etarget;        /* E-value that corresponds to Starget */
   double        *cm_mu;          /* mu for each partition's CM Gumbel   */
   double        *hmm_mu;         /* mu for each partition's HMM Gumbel  */
   float         *cm_minbitsc = NULL; /* minimum CM bit score to allow to pass for each partition */
   float         *cm_maxbitsc = NULL; /* maximum CM bit score to allow to pass for each partition */
-  float          ret_hmm_eval;   /* HMM CP9 E-value cutoff to return    */
   double         tmp_K;          /* used for recalc'ing Gumbel stats for DB size */
   int            was_hmmonly;    /* flag for if HMM only search was set */
   int            nalloc;         /* for cm_sc, hmm_sc, hmm_eval, num alloc'ed */
@@ -1974,8 +1544,8 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   void          *tmp;            /* temp void pointer for ESL_RALLOC() */
   int            clen;           /* consensus length of CM             */
   float          avg_hit_len;    /* crude estimate of average hit len  */
-  int            F_idx;          /* index within hmm_eval              */
-  float          surv_fract;     /* predicted survival fraction        */
+  int            Fidx;           /* index within hmm_eval              */
+  float          S;              /* predicted survival fraction        */
   int            init_flag;      /* used for finding F                 */ 
   int            tr_npassed = 0; /* number of traces that passed cutoffs
 				  * we had to search before getting N  */
@@ -1985,8 +1555,10 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   float          hmm_sc;
   float          orig_tau;
   float          hb_sc= 0.; 
+  float          S_sc = 0.;
+  float          Starget_sc = 0.;
 
-#if defined(USE_MPI)
+#if defined(USE_MPI)  && defined(NOTDEFINED)
   int            have_work;      /* MPI: do we still have work to send out?*/
   int            nproc_working;  /* MPI: number procs currently doing work */
   int            wi;             /* MPI: worker index                      */
@@ -1996,8 +1568,10 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   MPI_Status     mstatus;        /* useful info from MPI Gods         */
 #endif
 
-  printf("in FindCP9FilterThreshold fthr_mode: %d hmm_gum_mode: %d emit_mode: %d X: %.5f\n", fthr_mode, 
-	 hmm_gum_mode, emit_mode, X);
+  /* TEMPORARY! */
+  do_mpi = FALSE;
+  printf("in FindCP9FilterThreshold fthr_mode: %d hmm_gum_mode: %d emit_mode: %d\n", fthr_mode, 
+	 hmm_gum_mode, emit_mode);
 
   if(cm->search_opts & CM_SEARCH_HMMONLY) was_hmmonly = TRUE;
   else was_hmmonly = FALSE;
@@ -2014,7 +1588,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   ESL_ALLOC(hmm_mu,      sizeof(double)* cmstats->np);
   ESL_ALLOC(scores,      sizeof(float) * 2);
   
-#if defined(USE_MPI)
+#if defined(USE_MPI) && defined(NOTDEFINED)
   if(do_mpi)
     {
       ESL_ALLOC(dsqlist,     sizeof(char *)        * nproc);
@@ -2066,11 +1640,9 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   int nleft = 0; /* number of seqs with scores < min CM score */
   int tr_np, tr_na, s1_np, s1_na, s2_np, s2_na, s3_np, s3_na;
   tr_np = tr_na = s1_np = s1_na = s2_np = s2_na = s3_np = s3_na = 0;
-  printf("06.11.07 Min np: %5d Min nleft: %5d\n", N, ((int) (0.05*N)));
+  printf("06.11.07 Min np: %5d Smin: %12f Starget: %f Spad: %.3f do_Fstep: %d\n", N, Smin, Starget, Spad, do_Fstep);
   if(!(do_mpi))
     {
-      /* Exponentiate the CM, if X != 1.0 */
-      if(fabs(X-1.0) > 0.00001) ExponentiateCM(cm, X);
       orig_tau = cm_for_scoring->tau;
 
       /* Serial strategy: 
@@ -2083,7 +1655,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
        */
 
       SQINFO            sqinfo;     /* info about sequence (name/len)         */
-      while(ip < N || nleft < (0.05 * N)) /* while number seqs passed CM score threshold (ip) < N */
+      while(ip < N) /* while number seqs passed CM score threshold (ip) < N */
 	{
 	  EmitParsetree(cm, r, &tr, &seq, &dsq, &L);
 	  while(L == 0) { FreeParsetree(tr); free(seq); free(dsq); EmitParsetree(cm, r, &tr, &seq, &dsq, &L); }
@@ -2094,7 +1666,6 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	  p = cmstats->gc2p[(get_gc_comp(seq, 1, L))]; /* in get_gc_comp() should be i and j of best hit */
 	  if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))
 	    tr_sc[i] = ParsetreeScore_Global2Local(cm_for_scoring, tr, dsq, FALSE);
-	  /* Note, we don't have to exponentiate the scoring CM, it won't be emitting */
 	  else
 	    tr_sc[i] = ParsetreeScore(cm_for_scoring, tr, dsq, FALSE); 
 	  /*sprintf(sqinfo.name, "seq%d", i+1);
@@ -2165,7 +1736,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 		      cm_sc_p[ip] = cm_sc;
 		      //printf("S2 P (P: %5d L: %5d)\n", ip, nleft);
 		    }
-		  else /* search with another, less strict (lower tau)  HMM banded parse */
+		  else /* search for the optimal parse */
 		    {
 		      s3_na++;
 		      /* Stage 3 do QDB CYK */
@@ -2232,21 +1803,16 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	      ESL_RALLOC(cm_sc_p,    tmp, (ip + N) * sizeof(float));
 	    }
 	}
-      /* Un-Exponentiate the CM, if X != 1.0 */
-      if(fabs(X-1.0) > 0.00001) ExponentiateCM(cm, 1./X);
     }
   N = ip; /* update N based on number of seqs sampled */
   printf("06.11.07 np: %5d nleft: %5d\n", ip, nleft);
   printf("06.11.07 tr_a: %5d tr_p: %5d\n06.11.07 s1_a: %5d s1_p: %5d\n06.11.07 s2_a: %5d s2_p: %5d\n06.11.07 s3_a: %5d s3_p: %5d\n", tr_na, tr_np, s1_na, s1_np, s2_na, s2_np, s3_na, s3_np);
   
   /*************************END OF SERIAL BLOCK****************************/
-#if defined(USE_MPI)
+#if defined(USE_MPI)  && defined(NOTDEFINED)
   /*************************MPI BLOCK****************************/
   if(do_mpi)
     {
-      /* Exponentiate the CM, if X != 1.0 */
-      if(fabs(X-1.0) > 0.00001) ExponentiateCM(cm, X);
-
       /* MPI Strategy: 
        * Emit seqs one at a time from the CM, if the CM parse tree score is greater
        * than our max E-value (if do_minmax, otherwise there is no maximum),
@@ -2357,9 +1923,6 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	  else 
 	    dsq_maxsc_MPISend(NULL, -1, -1, wi);	
 	}
-
-      /* Un-Exponentiate the CM, if X != 1.0 */
-      if(fabs(X-1.0) > 0.00001) ExponentiateCM(cm, 1./X);
     }
   /*********************END OF MPI BLOCK*****************************/
 #endif /* if defined(USE_MPI) */
@@ -2371,71 +1934,93 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   clen = (2*CMCountStatetype(cm, MATP_MP) + 
 	  CMCountStatetype(cm, MATL_ML) + 
 	  CMCountStatetype(cm, MATR_MR));
-  if(hmm_gum_mode == CP9_G) avg_hit_len = clen;       /* should be weighted sum of gamma[0] from QDB calc */
-  if(hmm_gum_mode == CP9_L) avg_hit_len = clen * 0.5; /* should be weighted sum of gamma[0] from QDB calc */
+  avg_hit_len = clen; /* currently, we don't correct for local hits probably being shorter */
 
-  /* 06.03.07 expt, want exp, F e_cutoff triplets */
-  /*float F_tmp = 0.005;
-  F_idx = (int) (F_tmp * (float) N) - 1;
-  while(F_tmp < 1.0)
+  /* Strategy 1, enforce minimum F, but look for highest that gives survival fraction of at least
+   * Starget */
+  init_flag  = TRUE;
+  S          = IMPOSSIBLE;
+  Emin    = ((double) db_size * Smin)    / ((2. * cm_for_scoring->W) - avg_hit_len);
+  Etarget = ((double) db_size * Starget) / ((2. * cm_for_scoring->W) - avg_hit_len);
+  printf("Smin: %12f\nStarget: %f\n", Smin, Starget);
+  printf("Emin: %12f\nEtarget: %f\n", Emin, Etarget);
+
+  Fidx  = (int) (Fmin * (float) N) - 1; /* off by one, ex: 95% cutoff in 100 len array is index 94 */
+  E     = hmm_eval_p[Fidx];
+
+  /* Are we case 1 or case 2? 
+   * Case 1: our E is greater than our Etarget, so we cannot satisfy Starget AND capture F fraction of
+   *         the true CM hits, it's more impt we capture F fraction, so return S > Starget.
+   * Case 2: our E is less than our Etarget so we can satisfy both criteria, we have to choose an S
+   *         now. One option is If (do_Fstep) increase F toward 1.0 while E < Etarget. Then add
+   *         Spad fraction of (bitscore(S) - bitscore(max(Starget, Smin))) to bitscore(S), and calculate
+   *         the new S. If Spad == 0., speed trumps filter safety, if S == 1.0, we want the filter
+   *         as safe as possible, we're returning S = Starget. 
+   */
+  if(E > Etarget) 
     {
-      printf("06.03.07 triple (%f, %.4f, %f)\n", X, F_tmp, hmm_eval_p[F_idx]);
-      F_tmp += 0.001;
-      F_idx = (int) (F_tmp * (float) N) - 1;
-      }*/
-  /* done 06.03.07 expt */
-  
-  F_idx  = (int) (Fmin * (float) N) - 1; /* off by one, 95% cutoff in 100 len array is index 94 */
-
-  if(FALSE) /* this strategy is no longer used */
-    {
-      /* Strategy 1, enforce minimum F, but look for highest that gives survival fraction of at least
-       * min_surv */
-      init_flag  = TRUE;
-      surv_fract = IMPOSSIBLE;
-      printf("Min surv: %f\n", min_surv);
-      while(surv_fract < min_surv && F_idx < N)
-	{
-	  ret_hmm_eval = hmm_eval_p[F_idx];
-	  surv_fract = (ret_hmm_eval * ((2. * cm_for_scoring->W) - avg_hit_len)) / ((double) db_size); 
-	  if     (surv_fract < min_surv) F_idx++; 
-	  else if(!init_flag)            F_idx--; /* we overshot it, but only if we're not in 1st iteration */
-	  init_flag = FALSE;
-	}
-      if(F_idx == N) F_idx--; /* we went off the end of the array, back up one */
-      ret_hmm_eval = hmm_eval_p[F_idx];
-
-      surv_fract = (ret_hmm_eval * ((2. * cm_for_scoring->W) - avg_hit_len)) / ((double) db_size); 
-      printf("F S1 Predicted survival fraction: %f (E: %f)\n", surv_fract, ret_hmm_eval);
+      F = ((float) (Fidx + 1.)) / (float) N;
+      S = (E * ((2. * cm_for_scoring->W) - avg_hit_len)) / ((double) db_size); 
+      if(E < Emin)  /* no need for E < Emin */
+	  printf("Case 1A rare case: init Emin %12f > E %f > Etarget %f F: %f S: %.12f Spad: %.3f\n", Emin, E, Etarget, F, S, Spad);
+      else
+	  printf("Case 1B bad  case: init E %f > Etarget %f && E > Emin %12f F: %f S: %.12f Spad: %.3f\n", E, Etarget, Emin, F, S, Spad);
     }
-
-  if(do_lookup)
-    {
-      /* Strategy 2 Lookup what F should be based on X, Fmin */
-      Fmin = Filter_XFTableLookup(X, Fmin, emit_mode, fthr_mode);
-    }
-  F_idx = (int) (Fmin * (float) N) - 1; /* off by one, 95% cutoff in 100 len array is index 94 */
-  ret_hmm_eval = hmm_eval_p[F_idx];
-  
-  surv_fract = (ret_hmm_eval * ((2. * cm_for_scoring->W) - avg_hit_len)) / ((double) db_size); 
-  if(do_lookup)
-    printf("F S2 Predicted survival fraction: %f (E: %f)\n", surv_fract, ret_hmm_eval);
   else
-    printf("F S3 Predicted survival fraction: %f (E: %f)\n", surv_fract, ret_hmm_eval);
+    {
+      /* If(do_Fstep): increase F until we're about to go over Etarget (which gives our target 
+	 survival fraction Starget). */
+      if(do_Fstep)
+	while(((Fidx+1) < N) && hmm_eval_p[(Fidx+1)] < Etarget)
+	  Fidx++;
+      F = ((float) (Fidx + 1.)) / (float) N;
 
-  if(ret_hmm_eval > ((float) db_size)) /* E-val > db_size is useless */
-    ret_hmm_eval = (float) db_size;
+      /* Subtract Spad * (score(S) - score(max(Starget, Smin))) from score(S) and recalculate E&S */
+      /* Use partition that covers GC = 50 */
+      p = cm->stats->gc2p[50];
+      E = hmm_eval_p[Fidx];
+      printf("Before Spad E: %f\n", E);
+      S_sc =    (cm->stats->gumAA[hmm_gum_mode][p]->mu - 
+		 (log(E) / cm->stats->gumAA[hmm_gum_mode][p]->lambda)); 
+      if(Starget > Smin)
+	Starget_sc = (cm->stats->gumAA[hmm_gum_mode][p]->mu - 
+		   (log(Etarget) / cm->stats->gumAA[hmm_gum_mode][p]->lambda));
+      else
+	Starget_sc = (cm->stats->gumAA[hmm_gum_mode][p]->mu - 
+		      (log(Emin) / cm->stats->gumAA[hmm_gum_mode][p]->lambda));
+
+      printf("S_sc 0: %.3f - %.3f * %.3f = ", S_sc, Spad, S_sc - Starget_sc);
+      S_sc -= Spad * (S_sc - Starget_sc); /* Spad may be 0. */
+      printf(" S1: %.3f\n", S_sc);
+      /* now recalculate what E and S should be based on S_sc */
+      E = RJK_ExtremeValueE(S_sc, cm->stats->gumAA[hmm_gum_mode][p]->mu, 
+			    cmstats->gumAA[hmm_gum_mode][p]->lambda);
+      S = (E * ((2. * cm_for_scoring->W) - avg_hit_len)) / ((double) db_size); 
+
+      if(fabs(E - Emin) < 0.01 || E < Emin)  /* no need for E < Emin */
+	printf("Case 2A: best case Emin %12f > E %f < Etarget %f F: %f S: %.12f Spad: %.3f\n", Emin, E, Etarget, F, S, Spad);
+       else
+	printf("Case 2B: good case Emin %12f < E %f < Etarget %f F: %f S: %.12f\n Spad: %.3f", Emin, E, Etarget, F, S, Spad);
+      
+     }
+  /* Make sure our E is less than the DB size and greater than Emin */
+  if(E > ((float) db_size)) /* E-val > db_size is useless */
+    {
+      printf("Case 3 : worst case E > db_size\n", E, db_size);
+      E = (float) db_size;
+    }  
+  if(E < Emin) E = Emin; /* No reason to have an E below Emin */
   
+  /* Informative, temporary print statements */
   for (i = ((int) (Fmin  * (float) N) -1); i < N; i++)
     printf("%d i: %4d hmm sc: %10.4f hmm E: %10.4f\n", hmm_gum_mode, i, hmm_sc_p[i], hmm_eval_p[i]);
-
   printf("\nSummary: %d %d %d %d %f %f\n", fthr_mode, hmm_gum_mode, do_fastfil, emit_mode,
-	 (hmm_sc_p[F_idx]), (hmm_eval_p[F_idx]));
+	 (hmm_sc_p[Fidx]), (hmm_eval_p[Fidx]));
+  printf("05.21.07 %d %d %f %f\n", fthr_mode, hmm_gum_mode, hmm_sc_p[Fidx], E);
+
   /* Reset CM_SEARCH_HMMONLY search option as it was when function was entered */
   if(was_hmmonly) cm->search_opts |= CM_SEARCH_HMMONLY;
   else cm->search_opts &= ~CM_SEARCH_HMMONLY;
-
-  printf("05.21.07 %d %d %f %f\n", fthr_mode, hmm_gum_mode, hmm_sc_p[F_idx], ret_hmm_eval);
 
   /* Clean up and exit */
   free(tr_sc);
@@ -2450,9 +2035,9 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   cm_for_scoring->tau = orig_tau;
   FreeCM(cm_for_scoring);
   /* Return threshold */
-  *ret_F = ((float) (F_idx + 1.)) / (float) N;
+  *ret_F = F;
   printf("F: %f\n", *ret_F);
-  return ret_hmm_eval;
+  return E;
 
  ERROR:
   esl_fatal("Reached ERROR in FindCP9FilterThreshold()\n");
