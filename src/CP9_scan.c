@@ -9,6 +9,9 @@
  * experimental. No guarantees here.
  *
  *################################################################
+ * CP9Viterbi()     - Viterbi algorithm, in scan mode: scan input 
+ *                    sequence for high scoring Viterbi hits to 
+ *                    the model.
  * CP9Forward()     - Forward algorithm, in scan mode: scan input 
  *                    sequence for high scoring Forward hits to 
  *                    the model.
@@ -52,6 +55,379 @@
 #include "esl_exponential.h"
 #include "esl_gumbel.h"
   
+/* Function: CP9Viterbi()
+ * based on  P7Viterbi() <-- this function's comments below  
+ *           from HMMER 2.4devl core_algorithms.c
+ *
+ * Purpose:  Runs the Viterbi dynamic programming algorithm on an
+ *           input subsequence (i0-j0). 
+ *           Somewhat flexible based on input options as follows:
+ *
+ *           if(be_efficient): only allocates 2 rows of the Viterbi
+ *           matrix, else allocates full L+1 matrix.
+ *
+ *           if(do_scan): allows parses to start at any position i
+ *           i0..j0, changing meaning of DP matrix cells as discussed
+ *           below.
+ *
+ *           Reference for algorithm (when do_scan is FALSE): 
+ *           Durbin et. al. Biological Sequence Analysis; p. 58.
+ *
+ *           The meaning of the Viterbi (V) matrix DP cells for
+ *           matches (M) inserts (I) and deletes (D):
+ *
+ *           For relative subsequence positions ip = 0..L:
+ *           For HMM nodes 1..M: 
+ *           V->M[ip][k] : score of most likely parse emitting seq
+ *                         from i0..ip that visit node k's match 
+ *                         state, which emits posn ip
+ *           F->I[ip][k] : score of most likely parse emitting seq from 
+ *                         i0..ip that visit node k's insert
+ *                         state, which emits posn ip 
+ *           F->D[ip][k] : score of most likely parse emitting seq from 
+ *                         i0..ip that visit node k's delete
+ *                         delete state, last emitted (leftmost)
+ *                         posn was ip
+ *
+ *           For *special* HMM node 0:
+ *           F->M[ip][0] : M_0 is the Begin state, which does not 
+ *                         emit, so this is the score of the most likely
+ *                         parse emitting seq from i0..ip that starts
+ *                         in the begin state, the last emitted 
+ *                         (leftmost) posn was ip.
+ *
+ *           Note: if ip=0, only D_k and M_0 states can have 
+ *                 non-IMPOSSIBLE values. 
+ *
+ *           if(do_scan) the 'i0..ip' in the above definitions is
+ *           changed to iE..ip such that i0 <= iE <= ip. Meaning
+ *           any residue can be the first residue emitted in the
+ *           parse. This means F->M[ip][0] is the score of the best
+ *           parse emitting a subseq starting anywhere from i0..ip and 
+ *           ending at ip. 
+ *
+ *
+ * Args
+ *           cm        - the covariance model, includes cm->cp9: a CP9 HMM
+ *           dsq       - sequence in digitized form
+ *           i0        - start of target subsequence (1 for beginning of dsq)
+ *           j0        - end of target subsequence (L for end of dsq)
+ *           W         - the maximum size of a hit (often cm->W)
+ *           cutoff    - minimum score to report
+ *           ret_sc    - RETURN: int log odds Viterbi score for each end point [0..(j0-i0+1)]
+ *           ret_maxres- RETURN: start position that gives maximum score max argmax_i sc[i]
+ *           results   - scan_results_t to add to; if NULL, don't keep results
+ *           do_scan   - TRUE if we're scanning, HMM can start to emit anywhere i0..j0,
+ *                       FALSE if we're not, HMM must start emitting at i0, end emitting at j0
+ *           be_efficient- TRUE to keep only 2 rows of DP matrix in memory, FALSE keep whole thing
+ *           ret_mx    - RETURN: CP9 Viterbi DP matrix, NULL if not wanted
+ *           ret_tr    - RETURN: CP9 traces, NULL if not wanted
+ *
+ * Returns:  if(!do_scan) log P(S|M)/P(S|R), as a bit score
+ *           else         max log P(S|M)/P(S|R), for argmax subseq S of input seq i0..j0,
+ */
+float
+CP9Viterbi(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
+	   int *ret_bestpos, scan_results_t *results, int do_scan,
+	   int be_efficient, CP9_dpmatrix_t **ret_mx, CP9trace_t **ret_tr)
+{
+  CP9trace_t  *tr;
+  CP9_dpmatrix_t *mx;       /* the CP9 DP matrix                                            */
+  int **mmx;
+  int **imx;
+  int **dmx;
+  int **emx;
+  int          j;           /*     actual   position in the subsequence                     */
+  int          jp;          /* j': relative position in the subsequence                     */
+  int          cur, prv;    /* rows in DP matrix 0 or 1                                     */
+  int   i,k;
+  int         sc;
+  int   ip;		/* i': relative position in the subsequence  */
+  int          L;           /* j0-i0+1: subsequence length                                  */
+  float        fsc;         /* float log odds score                                         */
+  float        curr_sc;     /* temporary score used for filling in gamma                    */
+  float       *gamma;       /* SHMM DP matrix for optimum nonoverlap resolution [0..j0-i0+1]*/
+  int         *gback;       /* traceback pointers for SHMM                      [0..j0-i0+1]*/ 
+  float       *savesc;      /* saves score of hit added to best parse at j      [0..j0-i0+1]*/ 
+  float        best_hmm_sc; /* Best overall score from semi-HMM to return if do_scan        */
+  float        best_hmm_pos;/* residue giving best_hmm_sc                                   */
+  float        best_sc;     /* Best score overall, returned if 0 hits found by HMM & do_scan*/
+  float        best_pos;    /* residue giving best_sc                                       */
+  float        return_sc;   /* score to return, if (!do_scan) return overall Forward sc,    *
+			     * else return best_hmm_sc if # HMM hits>0, else return best_sc */
+  float        temp_sc;     /* temporary score                                              */
+  int          nrows;       /* num rows for DP matrix, 2 or L+1 depending on be_efficient   */
+
+  W  = j0-i0+1;		/* the length of the subsequence */
+
+  /*printf("in CP9Forward() i0: %d j0: %d\n", i0, j0);  */
+  /* Contract checks */
+  if(cm->cp9 == NULL)
+    Die("ERROR in CP9Forward, cm->cp9 is NULL.\n");
+  if(be_efficient && (ret_mx != NULL))
+    Die("ERROR in CP9Forward, be_efficient is TRUE, but ret_mx is non-NULL\n");
+  if(results != NULL && !do_scan)
+    Die("ERROR in CP9Forward, passing in results data structure, but not in scanning mode.\n");
+  if((cm->search_opts & CM_SEARCH_HMMGREEDY) && 
+     (cm->search_opts & CM_SEARCH_HMMRESCAN))
+    Die("ERROR in CP9Forward, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
+    
+  best_sc     = IMPOSSIBLE;
+  best_pos    = -1;
+  best_hmm_sc = IMPOSSIBLE;
+  best_hmm_pos= -1;
+  L = j0-i0+1;
+  if (W > L) W = L; 
+
+  /*****************************************************************
+   * gamma allocation and initialization.
+   * This is a little SHMM that finds an optimal scoring parse
+   * of multiple nonoverlapping hits.
+   *****************************************************************/ 
+  gamma    = MallocOrDie(sizeof(float) * (L+1));
+  gamma[0] = 0.;
+  gback    = MallocOrDie(sizeof(int)   * (L+1));
+  gback[0] = -1;
+  savesc   = MallocOrDie(sizeof(float) * (L+1));
+
+  /* Allocate DP matrix, either 2 rows or L+1 rows (depending on be_efficient),
+   * M+1 columns */ 
+  if(be_efficient) nrows = 2;
+  else             nrows = L+1;
+  mx = AllocCPlan9Matrix(nrows, cm->cp9->M, &mmx, &imx, &dmx, NULL,
+			 NULL);
+  /* sc will hold P(seq up to j | Model) in int log odds form */
+  /*sc   = MallocOrDie(sizeof(int) * (j0-i0+2));*/
+
+  /* ResizeCPlan9Matrix(mx, W, hmm->M, &mmx, &imx, &dmx, &emx);*/
+  /* Initialization of the zero row.
+   */
+  mmx[0][0] = 0;      /* M_0 is state B, and everything starts in B */
+  imx[0][0] = -INFTY; /* I_0 is state N, can't get here without emitting*/
+  dmx[0][0] = -INFTY; /* D_0 doesn't exist. */
+
+  /* Because there's a D state for every node 1..M, 
+     dmx[0][k] is possible for all k 1..M */
+  for (k = 1; k <= cm->cp9->M; k++)
+    mmx[0][k] = imx[0][k] = -INFTY;      /* need seq to get here */
+  for (k = 1; k <= cm->cp9->M; k++)
+    {
+      dmx[0][k]  = -INFTY;
+      if((sc = mmx[0][k-1] + cm->cp9->tsc[CTMD][k-1]) > dmx[0][k])
+	dmx[0][k] = sc;
+      if((sc = dmx[0][k-1] + cm->cp9->tsc[CTDD][k-1]) > dmx[0][k])
+	dmx[0][k] = sc;
+    }
+
+  /* We can do a full parse through all delete states. */
+  emx[0][0] = dmx[0][cm->cp9->M] + cm->cp9->tsc[CTDM][cm->cp9->M]; 
+  fsc = Scorify(emx[0][0]);
+  /*printf("jp: %d j: %d fsc: %f isc: %d\n", jp, j, fsc, isc[jp]);*/
+  if(fsc > best_sc) 
+    {
+      best_sc = fsc;
+      best_pos= i0-1;
+    }
+  
+  /*****************************************************************
+   * The main loop: scan the sequence from position i0 to j0.
+   *****************************************************************/
+
+  /* Recursion. Done as a pull.
+   * Note some slightly wasteful boundary conditions:  
+   */
+  for (j = i0; j <= j0; j++)
+    {
+      jp = j-i0+1;     /* jp is relative position in the sequence 1..L */
+      cur = (j-i0+1);
+      prv = (j-i0);
+      if(be_efficient)
+	{
+	  cur %= 2;
+	  prv %= 2;
+	}	  
+      /* The 1 difference between a Viterbi scanner and the 
+       * regular Viterbi. In non-scanner parse must begin in B at
+       * position 0 (i0-1), in scanner we can start at any position 
+       * in the seq. */
+      if(do_scan)
+	mmx[cur][0] = 0;
+      else
+	mmx[cur][0] = -INFTY;
+
+      dmx[cur][0] = -INFTY;  /*D_0 is non-existent*/
+      imx[cur][0] = -INFTY;
+      if((sc = mmx[prv][0] + cm->cp9->tsc[CTMI][0]) > imx[cur][0])
+	imx[cur][0] = sc;
+      if((sc = imx[prv][0] + cm->cp9->tsc[CTII][0]) > imx[cur][0])
+	imx[cur][0] = sc;
+      if((sc = dmx[prv][0] + cm->cp9->tsc[CTDI][0]) > imx[cur][0])
+	imx[cur][0] = sc;
+      if(imx[cur][0] != -INFTY)
+	imx[cur][0] += cm->cp9->isc[(int) dsq[j]][0];
+      else 
+	imx[cur][0] = -INFTY;
+
+      for (k = 1; k <= cm->cp9->M; k++)
+	{
+	  /*match state*/
+	  mmx[cur][k] = -INFTY;
+	  if((sc = mmx[prv][k-1] + cm->cp9->tsc[CTMM][k-1]) > mmx[cur][k])
+	    mmx[cur][k] = sc;
+	  if((sc = imx[prv][k-1] + cm->cp9->tsc[CTIM][k-1]) > mmx[cur][k])
+	    mmx[cur][k] = sc;
+	  if((sc = mmx[prv][0] + cm->cp9->bsc[k]) > mmx[cur][k])
+	    mmx[cur][k] = sc;
+	  if((sc = dmx[prv][k-1] + cm->cp9->tsc[CTDM][k-1]) > mmx[cur][k])
+	    mmx[cur][k] = sc;
+	  if(mmx[cur][k] != -INFTY)
+	    mmx[cur][k] += cm->cp9->msc[(int) dsq[j]][k];
+	  else 
+	    mmx[cur][k] = -INFTY;
+
+	  /*insert state*/
+	  imx[cur][k] = -INFTY;
+	  if((sc = mmx[prv][k] + cm->cp9->tsc[CTMI][k]) > imx[cur][k])
+	    imx[cur][k] = sc;
+	  if((sc = imx[prv][k] + cm->cp9->tsc[CTII][k]) > imx[cur][k])
+	    imx[cur][k] = sc;
+	  if((sc = dmx[prv][k] + cm->cp9->tsc[CTDI][k]) > imx[cur][k])
+	    imx[cur][k] = sc;
+	  if(imx[cur][k] != -INFTY)
+	    imx[cur][k] += cm->cp9->isc[(int) dsq[j]][k];
+	  else 
+	    imx[cur][k] = -INFTY;
+
+	  /*delete state*/
+	  dmx[cur][k] = -INFTY;
+	  if((sc = mmx[cur][k-1] + cm->cp9->tsc[CTMD][k-1]) > dmx[cur][k])
+	    dmx[cur][k] = sc;
+	  if((sc = imx[cur][k-1] + cm->cp9->tsc[CTID][k-1]) > dmx[cur][k])
+	    dmx[cur][k] = sc;
+	  if((sc = dmx[cur][k-1] + cm->cp9->tsc[CTDD][k-1]) > dmx[cur][k])
+	    dmx[cur][k] = sc;
+	}
+      emx[0][cur] = -INFTY;
+      for (k = 1; k <= cm->cp9->M; k++)
+	if ((sc = mmx[cur][k] + cm->cp9->esc[k]) > emx[0][cur])
+	  emx[0][cur] = sc;
+      if ((sc =  dmx[cur][cm->cp9->M] + cm->cp9->tsc[CTDM][cm->cp9->M]) > emx[0][cur])
+	emx[0][cur] = sc;
+      /* transition from D_M -> end */
+      fsc = Scorify(emx[0][cur]);
+      if(fsc > best_sc)
+	{
+	  best_sc = fsc;
+	  best_pos= j;
+	}
+      if (fsc > best_hmm_sc)
+	{
+	  best_hmm_sc = fsc;
+	  best_hmm_pos= j;
+	}
+      if(!(cm->search_opts & CM_SEARCH_HMMGREEDY)) /* resolve overlaps optimally */
+	{
+	  /* The little semi-Markov model that deals with multihit parsing:
+	   */
+	  gamma[jp]  = gamma[jp-1] + 0; /* extend without adding a new hit */
+	  gback[jp]  = -1;
+	  savesc[jp] = IMPOSSIBLE;
+	  i = ((j-W+1)> i0) ? (j-W+1) : i0;
+	  ip = i-i0+1;
+	  curr_sc = gamma[prv] + fsc + cm->cp9_sc_boost;
+	  /* cp9_sc_boost is experimental technique for finding hits < 0 bits. 
+	   * value is 0.0 if technique not used. */
+	  if (curr_sc > gamma[jp])
+	    {
+	      gamma[jp]  = curr_sc;
+	      gback[jp]  = i;
+	      savesc[jp] = fsc;
+	    }
+	}
+      else
+	{
+	  /* Resolving overlaps greedily (RSEARCH style),  
+	   * Return best hit for each j, IFF it's above threshold */
+	  if (fsc >= cutoff) 
+	    {
+	      if(results != NULL) 
+		{
+		  i = ((j-W+1)> i0) ? (j-W+1) : i0;
+		  /*printf("FWD greedy REPORTING HIT: i: %d j: %d fsc: %f\n", i, j, fsc);*/
+		  report_hit (i, j, 0, fsc, results);
+		  /* 0 is for saver, which is irrelevant for HMM hits */
+		}
+	    }
+	}
+    } /* end loop over end positions j */
+  sc = emx[0][W];
+  /*printf("returing sc: %d from CPViterbi()\n", sc);*/
+  if((!(cm->search_opts & CM_SEARCH_HMMGREEDY)) && /* resolve overlaps optimally */
+     do_scan) /* else we can save time by skipping traceback */
+    {
+      /*****************************************************************
+       * Traceback stage.
+       * Recover all hits: an (i,j,sc) triple for each one and report them.
+       *****************************************************************/ 
+      j           = j0;
+      while (j >= i0) {
+	jp = j-i0+1;
+	if (gback[jp] == -1) /* no hit */
+	  j--; 
+	else                /* a hit, a palpable hit */
+	  {
+	    if(savesc[jp] > best_hmm_sc) 
+	      {
+		best_hmm_sc = savesc[jp];
+		best_hmm_pos= j;
+	      }
+	    if(savesc[jp] >= cutoff)
+	      {
+		if(results != NULL) /* report the hit */
+		  {
+		    printf("VITERBI reporting hit: i: %d j: %d sc: %f\n", gback[jp], j, savesc[jp]);
+		    report_hit(gback[jp], j, 0, savesc[jp], results); 
+		    /* 0 is for saver, which is irrelevant for HMM hits */
+		  }
+	      }
+	    j = gback[jp]-1;
+	  }
+      }
+    }
+  /* clean up and exit */
+  free(gback);
+  free(gamma);
+  free(savesc);
+
+  /* determine score to return: (I know, too complex) */
+  if(!do_scan)
+    {
+      return_sc = Scorify(emx[0][cur]); /* probably wrong */
+      if(ret_bestpos != NULL) *ret_bestpos = i0;
+    }
+  
+  if (!do_scan && ret_tr != NULL) {
+    CP9ViterbiTrace(cm->cp9, dsq, i0, j0, mx, &tr);
+    /* CP9PrintTrace(stdout, tr, cm->cp9, dsq); */
+    *ret_tr = tr;
+  }
+  else if(best_hmm_sc <= 0.) /* scanning and there were no hits found by the 
+			      * semi-HMM above 0.0 bits */
+    {
+      return_sc = best_sc;
+      if(ret_bestpos != NULL) *ret_bestpos = best_pos;
+    }
+  else
+    {
+      return_sc = best_hmm_sc;
+      if(ret_bestpos != NULL) *ret_bestpos = best_hmm_pos;
+    }
+  if (ret_mx != NULL) *ret_mx = mx;
+  else                FreeCPlan9Matrix(mx);
+  /*printf("Forward return_sc: %f\n", return_sc);*/
+  return return_sc;
+}
+
 /***********************************************************************
  * Function: CP9Forward()
  * 
@@ -195,7 +571,7 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
    * M+1 columns */ 
   if(be_efficient) nrows = 2;
   else             nrows = L+1;
-  mx = AllocCPlan9Matrix(nrows, cm->cp9->M, &mmx, &imx, &dmx, 
+  mx = AllocCPlan9Matrix(nrows, cm->cp9->M, &mmx, &imx, &dmx, NULL, /*FIX ME! */
 			 NULL); /* we don't use emx any more, isc replaces it,
 				 * 1. b/c we want isc for each position, but
 				 *    we may only be alloc'ing 2 rows of mx,
@@ -302,6 +678,11 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
 	  best_sc = fsc;
 	  best_pos= j;
 	}
+      if (fsc > best_hmm_sc)
+	{
+	  best_hmm_sc = fsc;
+	  best_hmm_pos= j;
+	}
       if(!(cm->search_opts & CM_SEARCH_HMMGREEDY)) /* resolve overlaps optimally */
 	{
 	  /* The little semi-Markov model that deals with multihit parsing:
@@ -311,7 +692,7 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
 	  savesc[jp] = IMPOSSIBLE;
 	  i = ((j-W+1)> i0) ? (j-W+1) : i0;
 	  ip = i-i0+1;
-	  curr_sc = gamma[ip-1] + fsc + cm->cp9_sc_boost;
+	  curr_sc = gamma[prv] + fsc + cm->cp9_sc_boost;
 	  /* cp9_sc_boost is experimental technique for finding hits < 0 bits. 
 	   * value is 0.0 if technique not used. */
 	  if (curr_sc > gamma[jp])
@@ -335,11 +716,6 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
 		  /* 0 is for saver, which is irrelevant for HMM hits */
 		}
 	    }
-	}
-      if (fsc > best_hmm_sc)
-	{
-	  best_hmm_sc = fsc;
-	  best_hmm_pos= j;
 	}
     } /* end loop over end positions j */
       
@@ -415,7 +791,7 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
   /* determine score to return: (I know, too complex) */
   if(doing_align)
     {
-      return_sc = Scorify(sc[(j0-i0+1)]); /* L = i0-j0+1 */
+      return_sc = Scorify(sc[(j0-i0+1)]); /* L = j0-i0+1 */
       if(ret_bestpos != NULL) *ret_bestpos = i0;
     }
   else if(best_hmm_sc <= 0.) /* scanning and there were no hits found by the 
@@ -611,7 +987,7 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
    * M+1 columns */ 
   if(be_efficient) nrows = 2;
   else             nrows = L+1; 
-  mx = AllocCPlan9Matrix(nrows, cm->cp9->M, &mmx, &imx, &dmx, 
+  mx = AllocCPlan9Matrix(nrows, cm->cp9->M, &mmx, &imx, &dmx, NULL, /*FIX ME!*/
 			 NULL); /* we don't use emx any more, sc replaces it,
 				 * 1. b/c we want isc for each position, but
 				 * we may only be alloc'ing 2 rows of mx,

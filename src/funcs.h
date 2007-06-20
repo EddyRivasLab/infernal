@@ -284,15 +284,17 @@ extern void CP9Logoddsify(CP9_t *hmm);
 extern void CPlan9Rescale(CP9_t *hmm, float scale);
 extern void CPlan9Renormalize(CP9_t *hmm);
 extern struct cp9_dpmatrix_s *AllocCPlan9Matrix(int rows, int M, int ***mmx, 
-						int ***imx, int ***dmx, int ***emx);
+						int ***imx, int ***dmx, int ***elmx, int ***emx);
 extern float SizeCPlan9Matrix(int rows, int M);
 extern void  FreeCPlan9Matrix(struct cp9_dpmatrix_s *mx);
 extern struct cp9_dpmatrix_s *CreateCPlan9Matrix(int N, int M, int padN, int padM);
 extern void  ResizeCPlan9Matrix(struct cp9_dpmatrix_s *mx, int N, int M, 
-			       int ***mmx, int ***imx, int ***dmx, int ***emx);
+			       int ***mmx, int ***imx, int ***dmx, int ***elmx, int ***emx);
 extern void CPlan9SWConfig(CP9_t *hmm, float pentry, float pexit);
 extern void CPlan9SWConfigEnforce(CP9_t *hmm, float pentry, float pexit, 
 				  int enf_start_pos, int enf_end_pos);
+extern void CPlan9ELConfig(CM_t *cm);
+extern void CPlan9InitEL(CM_t *cm, CP9_t *cp9);
 extern void CPlan9GlobalConfig(CP9_t *hmm);
 extern void sub_CPlan9GlobalConfig(CP9_t *hmm, int spos, int epos, double **phi);
 
@@ -315,8 +317,8 @@ extern int   CP9TransitionScoreLookup(struct cplan9_s *hmm, char st1, int k1,
 extern void  CP9ViterbiTrace(struct cplan9_s *hmm, char *dsq, int i0, int j0,
 			     struct cp9_dpmatrix_s *mx, CP9trace_t **ret_tr);
 extern void  CP9ReverseTrace(CP9trace_t *tr);
-extern MSA  *CP9Traces2Alignment(ESL_SQ **sq, float *wgt, int nseq, int mlen, 
-				 CP9trace_t **tr, int matchonly, char *rf, char *cs);
+extern MSA  *CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq, CP9trace_t **tr, 
+				 int do_full);
 
 
 /* from hbandcyk.c

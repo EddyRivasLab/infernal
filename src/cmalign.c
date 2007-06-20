@@ -506,7 +506,7 @@ main(int argc, char **argv)
 	else
 	  {
 	    con = CreateCMConsensus(cm, 3.0, 1.0);
-	    msa = CP9Traces2Alignment(sq, NULL, nseq, cm->cp9->M, cp9_tr, FALSE, con->cseq, con->cstr);
+	    msa = CP9Traces2Alignment(cm, sq, NULL, nseq, cp9_tr, do_full);
 	    FreeCMConsensus(con);
 	  }
 

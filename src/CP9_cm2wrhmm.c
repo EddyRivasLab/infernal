@@ -198,6 +198,8 @@ build_cp9_hmm(CM_t *cm, struct cplan9_s **ret_hmm, CP9Map_t **ret_cp9map, int do
   hmm    = AllocCPlan9(cp9map->hmm_M);
   ZeroCPlan9(hmm);
   CPlan9SetNullModel(hmm, cm->null, 1.0); /* set p1 = 1.0 which corresponds to the CM */
+  CPlan9InitEL(cm, hmm); /* set up hmm->el_from_ct and hmm->el_from_idx data, which
+			  * explains how the EL states are connected in the HMM. */
 
   ap = MallocOrDie(sizeof(int) * 2);
   if(debug_level > 1)
@@ -210,8 +212,6 @@ build_cp9_hmm(CM_t *cm, struct cplan9_s **ret_hmm, CP9Map_t **ret_cp9map, int do
   make_tmap(&tmap);
   fill_psi(cm, psi, tmap);
   
-  ZeroCPlan9(hmm);
-  CPlan9SetNullModel(hmm, cm->null, 1.0); /* set p1 = 1.0 which corresponds to the CM */
   /* Special case 1st insert state maps to state 1 in the CM */
   for(i = 0; i < MAXABET; i++)
     {
@@ -273,6 +273,8 @@ build_cp9_hmm(CM_t *cm, struct cplan9_s **ret_hmm, CP9Map_t **ret_cp9map, int do
 
   CPlan9Renormalize(hmm);
   CP9Logoddsify(hmm);
+
+
   /* Fill phi to check to make sure our HMM is "close enough" to our CM.
    * phi[k][0..2] is the expected number of times HMM node k state 0 (match), 1(insert),
    * or 2(delete) is entered. These should be *very close* (within 0.00001) to the psi 
@@ -2392,6 +2394,7 @@ debug_print_cp9_params(struct cplan9_s *hmm)
   printf("\tCTMM[%d] = %f | %d\n", k, hmm->t[0][CTMM], hmm->tsc[CTMM][0]);
   printf("\tCTMI[%d] = %f | %d\n", k, hmm->t[0][CTMI], hmm->tsc[CTMI][0]);
   printf("\tCTMD[%d] = %f | %d\n", k, hmm->t[0][CTMD], hmm->tsc[CTMD][0]);
+  printf("\tCTME[%d] = %f | %d\n", k, hmm->t[0][CTME], hmm->tsc[CTME][0]);
   printf("\tCTIM[%d] = %f | %d\n", k, hmm->t[0][CTIM], hmm->tsc[CTIM][0]);
   printf("\tCTII[%d] = %f | %d\n", k, hmm->t[0][CTII], hmm->tsc[CTII][0]);
   printf("\tCTID[%d] = %f | %d\n", k, hmm->t[0][CTID], hmm->tsc[CTID][0]);
@@ -2412,6 +2415,7 @@ debug_print_cp9_params(struct cplan9_s *hmm)
       printf("\tCTMM[%d] = %f | %d\n", k, hmm->t[k][CTMM], hmm->tsc[CTMM][k]);
       printf("\tCTMI[%d] = %f | %d\n", k, hmm->t[k][CTMI], hmm->tsc[CTMI][k]);
       printf("\tCTMD[%d] = %f | %d\n", k, hmm->t[k][CTMD], hmm->tsc[CTMD][k]);
+      printf("\tCTME[%d] = %f | %d\n", k, hmm->t[k][CTME], hmm->tsc[CTME][k]);
       printf("\tCTIM[%d] = %f | %d\n", k, hmm->t[k][CTIM], hmm->tsc[CTIM][k]);
       printf("\tCTII[%d] = %f | %d\n", k, hmm->t[k][CTII], hmm->tsc[CTII][k]);
       printf("\tCTID[%d] = %f | %d\n", k, hmm->t[k][CTID], hmm->tsc[CTID][k]);

@@ -294,7 +294,7 @@ CP9_seq2posteriors(CM_t *cm, char *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9
     do_scan2bands = FALSE;
 
   /* Step 1: Get HMM posteriors.*/
-  /*sc = CP9Viterbi(dsq, i0, j0, cm->cp9, cp9_mx);*/
+  /*sc = CP9ViterbiOLD(dsq, i0, j0, cm->cp9, cp9_mx);*/
   if(OLDHMMALGS)
     sc = CP9ForwardOLD(dsq, i0, j0, cm->cp9, &cp9_fwd);
   else if(NEWHMMALGS)
@@ -344,7 +344,7 @@ CP9_seq2posteriors(CM_t *cm, char *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9
 /* Functions for getting posterior probabilities from the HMMs 
  * based on Ian Holmes' hmmer/src/postprob.c functions 
  * CP9ForwardOLD()
- * CP9Viterbi()
+ * CP9ViterbiOLD()
  * CP9BackwardOLD()
  * CP9Posterior()
  * CP9_ifill_post_sums()
@@ -375,6 +375,7 @@ CP9ForwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm,
   int **mmx;
   int **imx;
   int **dmx;
+  int **elmx;
   int **emx;
   int   i,k;
   int   sc;
@@ -386,7 +387,7 @@ CP9ForwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm,
 
   /* Allocate a DP matrix with 0..L rows, 0..M-1 
    */ 
-  mx = AllocCPlan9Matrix(L+1, hmm->M, &mmx, &imx, &dmx, &emx);
+  mx = AllocCPlan9Matrix(L+1, hmm->M, &mmx, &imx, &dmx, &elmx, &emx);
 
   /* Initialization of the zero row.
    */
@@ -451,7 +452,7 @@ CP9ForwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm,
   return Scorify(sc);		/* the total Forward score. */
 }
 
-/* Function: CP9Viterbi()
+/* Function: CP9ViterbiOLD()
  * based on  P7Viterbi() <-- this function's comments below  
  *           from HMMER 2.4devl core_algorithms.c
  *
@@ -478,15 +479,16 @@ CP9ForwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm,
  * Return:   log P(S|M)/P(S|R), as a bit score
  */
 float
-CP9Viterbi(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s *mx,
+CP9ViterbiOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s *mx,
 	   CP9trace_t **ret_tr)
 {
   CP9trace_t  *tr;
   int **mmx;
   int **imx;
   int **dmx;
+  int **elmx;
   int **emx;
-  int   i,k;
+  int   i,k,c;
   int   sc;
   int   W;		/* subsequence length */
   int   ip;		/* i': relative position in the subsequence  */
@@ -495,19 +497,20 @@ CP9Viterbi(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_
 
   /* Allocate a DP matrix with 0..W rows, 0..M-1 columns.
    */ 
-  ResizeCPlan9Matrix(mx, W, hmm->M, &mmx, &imx, &dmx, &emx);
+  ResizeCPlan9Matrix(mx, W, hmm->M, &mmx, &imx, &dmx, &elmx, &emx);
   /* Initialization of the zero row.
    */
   mmx[0][0] = 0;      /* M_0 is state B, and everything starts in B */
   imx[0][0] = -INFTY; /* I_0 is state N, can't get here without emitting*/
   dmx[0][0] = -INFTY; /* D_0 doesn't exist. */
+  elmx[0][0]= -INFTY; /* can't go from B to EL state */
 
   emx[0][0] = -INFTY; /* can't end without going through at least 1 match state*/
 
   /* Because there's a D state for every node 1..M, 
      dmx[0][k] is possible for all k 1..M */
   for (k = 1; k <= hmm->M; k++)
-    mmx[0][k] = imx[0][k] = -INFTY;      /* need seq to get here */
+    mmx[0][k] = imx[0][k] = elmx[0][k] = -INFTY;      /* need seq to get here */
   for (k = 1; k <= hmm->M; k++)
     {
       dmx[0][k]  = -INFTY;
@@ -516,7 +519,7 @@ CP9Viterbi(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_
       if((sc = dmx[0][k-1] + hmm->tsc[CTDD][k-1]) > dmx[0][k])
 	dmx[0][k] = sc;
     }
-  
+
   /* Recursion. Done as a pull.
    * Note some slightly wasteful boundary conditions:  
    */
@@ -525,6 +528,7 @@ CP9Viterbi(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_
       i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from i0 to j0 */
       mmx[ip][0] = dmx[ip][0] = -INFTY;  /* M_0 (B) and D_0 (non-existent)
 					  * don't emit. */
+      elmx[ip][0] = -INFTY; /* there is no EL state for node 0 */
       imx[ip][0] = -INFTY;
       if((sc = mmx[ip-1][0] + hmm->tsc[CTMI][0]) > imx[ip][0])
 	imx[ip][0] = sc;
@@ -549,6 +553,13 @@ CP9Viterbi(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_
 	    mmx[ip][k] = sc;
 	  if((sc = dmx[ip-1][k-1] + hmm->tsc[CTDM][k-1]) > mmx[ip][k])
 	    mmx[ip][k] = sc;
+	  /* Check if we came from an EL state */
+	  for(c = 0; c < hmm->el_from_ct[k]; c++) /* el_from_ct[k] is >= 0 */
+	    {
+	      /* transition penalty to EL incurred when EL was entered */
+	      if((sc = elmx[ip-1][hmm->el_from_idx[k][c]]) > mmx[ip][k])
+		mmx[ip][k] = sc;
+	    }
 	  if(mmx[ip][k] != -INFTY)
 	    mmx[ip][k] += hmm->msc[(int) dsq[i]][k];
 	  else 
@@ -575,6 +586,17 @@ CP9Viterbi(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_
 	    dmx[ip][k] = sc;
 	  if((sc = dmx[ip][k-1] + hmm->tsc[CTDD][k-1]) > dmx[ip][k])
 	    dmx[ip][k] = sc;
+
+	  /*EL (end-local) state*/
+	  elmx[ip][k] = -INFTY;
+	  if(hmm->has_el[k]) /* not all HMM nodes have an EL state (for ex: 
+				HMM nodes that map to right half of a MATP_MP) */
+	    {
+	      if((sc = mmx[ip][k] + hmm->tsc[CTME][k]) > elmx[ip][k])
+		elmx[ip][k] = sc; /* transitioned from cur node's match state */
+	      if((sc = elmx[ip-1][k] + hmm->el_selfsc) > elmx[ip][k])
+		elmx[ip][k] = sc; /* transitioned from cur node's EL state emitted ip on transition */
+	    }
 	}
       emx[0][ip] = -INFTY;
       for (k = 1; k <= hmm->M; k++)
@@ -585,7 +607,7 @@ CP9Viterbi(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_
       /* transition from D_M -> end */
     } 
   sc = emx[0][W];
-  /*printf("returing sc: %d from CPViterbi()\n", sc);*/
+  printf("returing sc: %d from CPViterbi()\n", sc);
   
   if (ret_tr != NULL) {
     CP9ViterbiTrace(hmm, dsq, i0, j0, mx, &tr);
@@ -620,6 +642,7 @@ CP9BackwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmat
   int **mmx;
   int **imx;
   int **dmx;
+  int **elmx;
   int   i,k;
   int   sc;
 
@@ -630,7 +653,7 @@ CP9BackwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmat
 
   /* Allocate a DP matrix with 0..W rows, 0..M-1 columns.
    */ 
-  mx = AllocCPlan9Matrix(W+1, hmm->M, &mmx, &imx, &dmx, &emx);
+  mx = AllocCPlan9Matrix(W+1, hmm->M, &mmx, &imx, &dmx, &elmx, &emx);
 
   /* Initialization of the W row.
    */

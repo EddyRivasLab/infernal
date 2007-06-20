@@ -1172,6 +1172,9 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
     {
       if(cm->cp9 == NULL)
 	Die("ERROR in actually_align_targets, trying to use CP9 HMM that is NULL\n");
+
+      printf("CP9 has bits flag should be up: %d\n", (cm->cp9->flags & CPLAN9_HASBITS));
+
       if(!(cm->cp9->flags & CPLAN9_HASBITS))
 	Die("ERROR in actually_align_targets, trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
 
@@ -1235,7 +1238,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	{
 	  cp9_mx  = CreateCPlan9Matrix(1, cm->cp9->M, 25, 0);
 	  if(!silent_mode) printf("Aligning (to a CP9 HMM w/viterbi) %-20s", sq[i]->name);
-	  sc = CP9Viterbi(sq[i]->dsq, 1, sq[i]->n, cm->cp9, cp9_mx, &(cp9_tr[i]));
+	  sc = CP9ViterbiOLD(sq[i]->dsq, 1, sq[i]->n, cm->cp9, cp9_mx, &(cp9_tr[i]));
 	  if(!silent_mode) printf(" score: %10.2f bits\n", sc);
 	  FreeCPlan9Matrix(cp9_mx);
 	  continue;

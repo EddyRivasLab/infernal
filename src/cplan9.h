@@ -52,6 +52,7 @@ extern int   DegenerateSymbolScore(float *p, float *null, int ambig);
  *    hmm->t[0][CTMM]: 0. (B->M_1 transition is hmm->begin[1])
  *    hmm->t[0][CTMI]: transition from B to N (I_0); 
  *    hmm->t[0][CTMD]: transition from B to D_1;
+ *    hmm->t[0][CTME]: null (transition from B to an EL state is impossible)
  *    hmm->t[0][CTIM]: transition from N to M_1;
  *    hmm->t[0][CTII]: N self transition; 
  *    hmm->t[0][CTID]: N -> D_1
@@ -59,12 +60,17 @@ extern int   DegenerateSymbolScore(float *p, float *null, int ambig);
  *    hmm->t[0][CTDI]: null
  *    hmm->t[0][CTDD]: null
  *    
- *    t[0..M] are the state transition probs. t[M] are special,
- *    because this node transits to the end (E state). The E state is (sort-of) treated
- *    as match state M+1, as t[M][CTIM] is the transition from I_M to E,
- *    t[M][CTDM] is the transition from D_M to E. However, t[M][CTMM] is always 0.0,
- *    the transition from M_M to E is end[hmm->M];
- *    t[M][CTMD], t[M][CTDD], t[M][CTDI] are set as 0.0.
+ *    t[0..M] are the state transition probs. t[k][CTME] is an
+ *    end-local probability, the EL states can only be reached by a
+ *    subset of match states, this probability is -INFTY for states
+ *    that can't reach the EL. 
+ *
+ *    t[M] are special, because this node transits to the end (E
+ *    state). The E state is (sort-of) treated as match state M+1, as
+ *    t[M][CTIM] is the transition from I_M to E, t[M][CTDM] is the
+ *    transition from D_M to E. However, t[M][CTMM] is always 0.0,
+ *    the transition from M_M to E is end[hmm->M]; t[M][CTMD],
+ *    t[M][CTDD], t[M][CTDI] are set as 0.0.
  *    
  *    mat[1..M] are match emission probs.
  *    ins[0..M] are insert emission probs.  (ins[0] is state N emission probs)
@@ -89,7 +95,7 @@ typedef struct cplan9_s {
    * CPLAN9_HASPROBS flag is raised when these probs are all valid.
    */
   int     M;                    /* length of the model (# nodes)        +*/
-  float **t;                    /* transition prob's. t[0..M][0..8]   +*/
+  float **t;                    /* transition prob's. t[0..M][0..9]   +*/
   float **mat;                  /* match emissions.  mat[1..M][0..3]   +*/ 
   float **ins;                  /* insert emissions. ins[0..M][0..3] +*/
 
@@ -134,9 +140,23 @@ typedef struct cplan9_s {
   /* The null model probabilities.
    */
   float  null[CP9MAXABET];         /* "random sequence" emission prob's     +*/
-  float  p1;                        /* null model loop probability           +*/
-
-  int flags;                    /* bit flags indicating state of HMM, valid data +*/
+  float  p1;                       /* null model loop probability           +*/
+  float  el_self;                  /* EL transition self loop probability    */
+  int    el_selfsc;                /* EL transition self loop score          */
+  int   *has_el;                   /* has_el[k] is TRUE if node k has an EL state */
+  int   *el_from_ct;               /* el_from_ct[k] is the number of HMM nodes kp
+				    * where a transition from kp's EL state to k's
+				    * match state is valid. */
+  int  **el_from_idx;              /* [0..M+1][] el_from_idx[k] is an array of 
+				    * size el_from_idx[k] each element is a node 
+				    * kp where a transition from kp's EL state 
+				    * to k's match state is allowed */
+  int  **el_from_cmnd;             /* [0..M+1][] el_from_cmnd[k] is an array of 
+				    * size el_from_idx[k] element i is the CM
+				    * node that the EL transition to k to 
+				    * el_from_idx[k][i] corresponds with, used
+				    * only for building alignments from traces. */
+  int flags;                       /* bit flags indicating state of HMM, valid data +*/
 } CP9_t;
 
 /* Flag codes for cplan9->flags.
@@ -144,7 +164,8 @@ typedef struct cplan9_s {
 #define CPLAN9_HASBITS     (1<<0)    /* raised if model has log-odds scores      */
 #define CPLAN9_HASPROB     (1<<1)    /* raised if model has probabilities        */
 #define CPLAN9_LOCAL_BEGIN (1<<2)    /* raised if model has local begins turned on */
-#define CPLAN9_LOCAL_END   (1<<3)    /* raised if model has local ends turned on */
+#define CPLAN9_LOCAL_END   (1<<3)    /* raised if model has S/W local ends turned on */
+#define CPLAN9_EL          (1<<4)    /* raised if model has EL local ends turned on */
 
 /* Indices for CM Plan9 main model state transitions.
  * Used for indexing hmm->t[k][]
@@ -153,12 +174,13 @@ typedef struct cplan9_s {
 #define CTMM  0
 #define CTMI  1
 #define CTMD  2
-#define CTIM  3
-#define CTII  4
-#define CTID  5
-#define CTDM  6
-#define CTDI  7
-#define CTDD  8
+#define CTME  3
+#define CTIM  4
+#define CTII  5
+#define CTID  6
+#define CTDM  7
+#define CTDI  8
+#define CTDD  9
 
 /* Declaration of CM Plan9 dynamic programming matrix structure.
  */
@@ -166,12 +188,13 @@ typedef struct cp9_dpmatrix_s {
   int **mmx;			/* match scores  [0.1..N][0..M] */
   int **imx;			/* insert scores [0.1..N][0..M] */
   int **dmx;			/* delete scores [0.1..N][0..M] */
+  int **elmx;			/* end local scores [0.1..N][0..M] */
   int **emx;                    /* score for E state [0][0.1..N] */
   /* Hidden ptrs where the real memory is kept; this trick was
    * introduced by Erik Lindahl with the Altivec port; it's used to
    * align xmx, etc. on 16-byte boundaries for cache optimization.
    */
-  void *mmx_mem, *imx_mem, *dmx_mem, *emx_mem;
+  void *mmx_mem, *imx_mem, *dmx_mem, *elmx_mem, *emx_mem;
 
   int *  workspace;      /* Workspace for altivec (aligned ptr)    */
   int *  workspace_mem;  /* Actual allocated pointer for workspace */
@@ -216,6 +239,7 @@ typedef struct CP9_hmmfile_s CP9HMMFILE;
 #define CSTI     3
 #define CSTB     4  /* M_0 the B state */
 #define CSTE     5  /* the end state, M_(k+1) */
+#define CSTEL    6  /* an EL (end local) state */
 /* Structure: cp9trace_s
  * 
  * Traceback structure for alignments of model to sequence.

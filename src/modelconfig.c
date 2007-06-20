@@ -16,6 +16,7 @@
 #include "structs.h"
 #include "easel.h"
 #include "funcs.h"
+#include "cplan9.h"
 
 /*
  * Function: ConfigCM
@@ -537,7 +538,13 @@ ConfigLocalEnds(CM_t *cm, float p_internal_exit)
 	FScale(cm->t[v], cm->cnum[v], 1./denom);
       }
   }
+
   cm->flags |= CM_LOCAL_END;
+
+  /* Copy the local end probs to the CP9 */
+  if(cm->flags |= CM_CP9)
+    CPlan9ELConfig(cm);
+
   /* new probs invalidate log odds scores */
   cm->flags &= ~CM_HASBITS;
   /* local end changes don't invalidate QDBs */
