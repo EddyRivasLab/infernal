@@ -136,7 +136,7 @@ CP9Viterbi(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
   int **mmx;
   int **imx;
   int **dmx;
-  int **emx;
+  int  *erow;
   int          j;           /*     actual   position in the subsequence                     */
   int          jp;          /* j': relative position in the subsequence                     */
   int          cur, prv;    /* rows in DP matrix 0 or 1                                     */
@@ -160,17 +160,17 @@ CP9Viterbi(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
 
   W  = j0-i0+1;		/* the length of the subsequence */
 
-  /*printf("in CP9Forward() i0: %d j0: %d\n", i0, j0);  */
+  /*printf("in CP9Viterbi() i0: %d j0: %d\n", i0, j0);  */
   /* Contract checks */
   if(cm->cp9 == NULL)
-    Die("ERROR in CP9Forward, cm->cp9 is NULL.\n");
+    Die("ERROR in CP9Viterbi, cm->cp9 is NULL.\n");
   if(be_efficient && (ret_mx != NULL))
-    Die("ERROR in CP9Forward, be_efficient is TRUE, but ret_mx is non-NULL\n");
+    Die("ERROR in CP9Viterbi, be_efficient is TRUE, but ret_mx is non-NULL\n");
   if(results != NULL && !do_scan)
-    Die("ERROR in CP9Forward, passing in results data structure, but not in scanning mode.\n");
+    Die("ERROR in CP9Viterbi, passing in results data structure, but not in scanning mode.\n");
   if((cm->search_opts & CM_SEARCH_HMMGREEDY) && 
      (cm->search_opts & CM_SEARCH_HMMRESCAN))
-    Die("ERROR in CP9Forward, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
+    Die("ERROR in CP9Viterbi, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
     
   best_sc     = IMPOSSIBLE;
   best_pos    = -1;
@@ -199,7 +199,7 @@ CP9Viterbi(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
   /* sc will hold P(seq up to j | Model) in int log odds form */
   /*sc   = MallocOrDie(sizeof(int) * (j0-i0+2));*/
 
-  /* ResizeCPlan9Matrix(mx, W, hmm->M, &mmx, &imx, &dmx, &emx);*/
+  /* ResizeCPlan9Matrix(mx, W, hmm->M, &mmx, &imx, &dmx, &erow);*/
   /* Initialization of the zero row.
    */
   mmx[0][0] = 0;      /* M_0 is state B, and everything starts in B */
@@ -220,8 +220,8 @@ CP9Viterbi(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
     }
 
   /* We can do a full parse through all delete states. */
-  emx[0][0] = dmx[0][cm->cp9->M] + cm->cp9->tsc[CTDM][cm->cp9->M]; 
-  fsc = Scorify(emx[0][0]);
+  erow[0] = dmx[0][cm->cp9->M] + cm->cp9->tsc[CTDM][cm->cp9->M]; 
+  fsc = Scorify(erow[0]);
   /*printf("jp: %d j: %d fsc: %f isc: %d\n", jp, j, fsc, isc[jp]);*/
   if(fsc > best_sc) 
     {
@@ -307,14 +307,14 @@ CP9Viterbi(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
 	  if((sc = dmx[cur][k-1] + cm->cp9->tsc[CTDD][k-1]) > dmx[cur][k])
 	    dmx[cur][k] = sc;
 	}
-      emx[0][cur] = -INFTY;
+      erow[cur] = -INFTY;
       for (k = 1; k <= cm->cp9->M; k++)
-	if ((sc = mmx[cur][k] + cm->cp9->esc[k]) > emx[0][cur])
-	  emx[0][cur] = sc;
-      if ((sc =  dmx[cur][cm->cp9->M] + cm->cp9->tsc[CTDM][cm->cp9->M]) > emx[0][cur])
-	emx[0][cur] = sc;
+	if ((sc = mmx[cur][k] + cm->cp9->esc[k]) > erow[cur])
+	  erow[cur] = sc;
+      if ((sc =  dmx[cur][cm->cp9->M] + cm->cp9->tsc[CTDM][cm->cp9->M]) > erow[cur])
+	erow[cur] = sc;
       /* transition from D_M -> end */
-      fsc = Scorify(emx[0][cur]);
+      fsc = Scorify(erow[cur]);
       if(fsc > best_sc)
 	{
 	  best_sc = fsc;
@@ -334,7 +334,7 @@ CP9Viterbi(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
 	  savesc[jp] = IMPOSSIBLE;
 	  i = ((j-W+1)> i0) ? (j-W+1) : i0;
 	  ip = i-i0+1;
-	  curr_sc = gamma[prv] + fsc + cm->cp9_sc_boost;
+	  curr_sc = gamma[ip-1] + fsc + cm->cp9_sc_boost;
 	  /* cp9_sc_boost is experimental technique for finding hits < 0 bits. 
 	   * value is 0.0 if technique not used. */
 	  if (curr_sc > gamma[jp])
@@ -360,7 +360,7 @@ CP9Viterbi(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
 	    }
 	}
     } /* end loop over end positions j */
-  sc = emx[0][W];
+  sc = erow[W];
   /*printf("returing sc: %d from CPViterbi()\n", sc);*/
   if((!(cm->search_opts & CM_SEARCH_HMMGREEDY)) && /* resolve overlaps optimally */
      do_scan) /* else we can save time by skipping traceback */
@@ -402,7 +402,7 @@ CP9Viterbi(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
   /* determine score to return: (I know, too complex) */
   if(!do_scan)
     {
-      return_sc = Scorify(emx[0][cur]); /* probably wrong */
+      return_sc = Scorify(erow[cur]); /* probably wrong */
       if(ret_bestpos != NULL) *ret_bestpos = i0;
     }
   
@@ -517,6 +517,8 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
   int        **mmx;         /* DP matrix for match  state scores [0..1][0..cm->cp9->M]      */
   int        **imx;         /* DP matrix for insert state scores [0..1][0..cm->cp9->M]      */
   int        **dmx;         /* DP matrix for delete state scores [0..1][0..cm->cp9->M]      */
+  int        **elmx;        /* DP matrix for EL state scores [0..1][0..cm->cp9->M]          */
+  int         *erow;        /* end score for each position [0..1]                           */
   int         *sc;          /* prob (seq from j0..jp | HMM) [0..jp..cm->cp9->M]             */
   float        fsc;         /* float log odds score                                         */
   float        curr_sc;     /* temporary score used for filling in gamma                    */
@@ -532,7 +534,7 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
   int          accept;      /* Flag used if cm->search_opts & CM_SEARCH_HMMRESCAN           */
   float        temp_sc;     /* temporary score                                              */
   int          nrows;       /* num rows for DP matrix, 2 or L+1 depending on be_efficient   */
-
+  int          c;           /* counter for EL states */
   /*debug_print_cp9_params(cm->cp9);*/
 
   /*printf("in CP9Forward() i0: %d j0: %d\n", i0, j0);  */
@@ -571,12 +573,8 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
    * M+1 columns */ 
   if(be_efficient) nrows = 2;
   else             nrows = L+1;
-  mx = AllocCPlan9Matrix(nrows, cm->cp9->M, &mmx, &imx, &dmx, NULL, /*FIX ME! */
-			 NULL); /* we don't use emx any more, isc replaces it,
-				 * 1. b/c we want isc for each position, but
-				 *    we may only be alloc'ing 2 rows of mx,
-				 * 2. b/c emx is 2D for dumb memory error reasons,
-				 *    which needs to be fixed. */
+  mx = AllocCPlan9Matrix(nrows, cm->cp9->M, &mmx, &imx, &dmx, &elmx, &erow); 
+
   /* sc will hold P(seq up to j | Model) in int log odds form */
   sc   = MallocOrDie(sizeof(int) * (j0-i0+2));
 			
@@ -584,24 +582,29 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
   mmx[0][0] = 0;      /* M_0 is state B, and everything starts in B */
   imx[0][0] = -INFTY; /* I_0 is state N, can't get here without emitting*/
   dmx[0][0] = -INFTY; /* D_0 doesn't exist. */
+  elmx[0][0]= -INFTY; /* can't go from B to EL state */
+  erow[0]   = -INFTY;   
   /*printf("mmx[jp:%d][%d]: %d %f\n", 0, 0, mmx[0][0], Score2Prob(mmx[0][0], 1.));
     printf("imx[jp:%d][%d]: %d %f\n", 0, 0, imx[0][0], Score2Prob(imx[0][0], 1.));
-    printf("dmx[jp:%d][%d]: %d %f\n", 0, 0, dmx[0][0], Score2Prob(dmx[0][0], 1.));*/
+    printf("dmx[jp:%d][%d]: %d %f\n", 0, 0, dmx[0][0], Score2Prob(dmx[0][0], 1.));
+    printf("elmx[jp:%d][%d]: %d %f\n", 0, 0, elmx[0][0], Score2Prob(elmx[0][0], 1.));*/
 
   /* Because there's a D state for every node 1..M, 
      dmx[0][k] is possible for all k 1..M */
   for (k = 1; k <= cm->cp9->M; k++)
     {
-      mmx[0][k] = imx[0][k] = -INFTY;      /* need seq to get here */
+      mmx[0][k] = imx[0][k] = elmx[0][k] = -INFTY;      /* need seq to get here */
       dmx[0][k] = ILogsum(ILogsum(mmx[0][k-1] + cm->cp9->tsc[CTMD][k-1],
 				  imx[0][k-1] + cm->cp9->tsc[CTID][k-1]),
 			  dmx[0][k-1] + cm->cp9->tsc[CTDD][k-1]);
       /*printf("mmx[jp:%d][%d]: %d %f\n", 0, k, mmx[0][k], Score2Prob(mmx[0][k], 1.));
 	printf("imx[jp:%d][%d]: %d %f\n", 0, k, imx[0][k], Score2Prob(imx[0][k], 1.));
-	printf("dmx[jp:%d][%d]: %d %f\n", 0, k, dmx[0][k], Score2Prob(dmx[0][k], 1.));*/
+	printf("dmx[jp:%d][%d]: %d %f\n", 0, k, dmx[0][k], Score2Prob(dmx[0][k], 1.));
+	printf("elmx[jp:%d][%d]: %d %f\n", 0, k, dmx[0][k], Score2Prob(dmx[0][k], 1.));*/
     }
   /* We can do a full parse through all delete states. */
-  sc[0] = dmx[0][cm->cp9->M] + cm->cp9->tsc[CTDM][cm->cp9->M]; 
+  erow[0] = dmx[0][cm->cp9->M] + cm->cp9->tsc[CTDM][cm->cp9->M]; 
+  sc[0] = erow[0];
   fsc = Scorify(sc[0]);
   /*printf("jp: %d j: %d fsc: %f isc: %d\n", jp, j, fsc, isc[jp]);*/
   if(fsc > best_sc) 
@@ -635,6 +638,7 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
 	mmx[cur][0] = -INFTY;
 
       dmx[cur][0] = -INFTY;  /*D_0 is non-existent*/
+      elmx[cur][0]= -INFTY;  /*no EL state for node 0 */
       imx[cur][0]  = ILogsum(ILogsum(mmx[prv][0] + cm->cp9->tsc[CTMI][0],
 				     imx[prv][0] + cm->cp9->tsc[CTII][0]),
 			     dmx[prv][0] + cm->cp9->tsc[CTDI][0]);
@@ -649,7 +653,13 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
 				       imx[prv][k-1] + cm->cp9->tsc[CTIM][k-1]),
 				 ILogsum(mmx[prv][0] + cm->cp9->bsc[k],
 					 dmx[prv][k-1] + cm->cp9->tsc[CTDM][k-1]));
+	  /* Add contribution of ELs if they're valid */
+	  if(cm->cp9->flags & CPLAN9_EL) /* no need to waste time */
+	    for(c = 0; c < cm->cp9->el_from_ct[k]; c++) /* el_from_ct[k] is >= 0 */
+	      /* transition penalty to EL incurred when EL was entered */
+	      mmx[cur][k] = ILogsum(mmx[cur][k], (elmx[prv][cm->cp9->el_from_idx[k][c]]));
 	  mmx[cur][k] += cm->cp9->msc[(int) dsq[j]][k];
+
 	  dmx[cur][k]  = ILogsum(ILogsum(mmx[cur][k-1] + cm->cp9->tsc[CTMD][k-1],
 					imx[cur][k-1] + cm->cp9->tsc[CTID][k-1]),
 				dmx[cur][k-1] + cm->cp9->tsc[CTDD][k-1]);
@@ -658,18 +668,36 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
 				       imx[prv][k] + cm->cp9->tsc[CTII][k]),
 			       dmx[prv][k] + cm->cp9->tsc[CTDI][k]);
 	  imx[cur][k] += cm->cp9->isc[(int) dsq[j]][k];
+
+	  if((cm->cp9->flags & CPLAN9_EL) && cm->cp9->has_el[k]) /* not all HMM nodes have an EL state (for ex: 
+							    HMM nodes that map to right half of a MATP_MP) */
+	    {
+	      elmx[cur][k] = ILogsum(mmx[cur][k] + cm->cp9->tsc[CTME][k], 
+				     /* transitioned from cur node's match state */
+				     elmx[prv][k] + cm->cp9->el_selfsc);
+	      /* transitioned from cur node's EL state emitted ip on transition */
+	    }
+	  else elmx[cur][k] = -INFTY;
 	  /*printf("mmx[jp:%d][%d]: %d %f\n", jp, k, mmx[cur][k], Score2Prob(mmx[cur][k], 1.));
 	    printf("imx[jp:%d][%d]: %d %f\n", jp, k, imx[cur][k], Score2Prob(imx[cur][k], 1.));
 	    printf("dmx[jp:%d][%d]: %d %f\n", jp, k, dmx[cur][k], Score2Prob(dmx[cur][k], 1.));*/
 	}
-      /* determine sc[jp], the int score of all possible parses ending at the current
+      /* determine erow[cur] == sc[jp], the int score of all possible parses ending at the current
        * position (j) of the target sequence. */
-      sc[jp] = -INFTY;
+      erow[cur] = -INFTY;
       for (k = 1; k <= cm->cp9->M; k++)
-	sc[jp] = ILogsum(sc[jp], mmx[cur][k] + cm->cp9->esc[k]);
+	erow[cur] = ILogsum(erow[cur], mmx[cur][k] + cm->cp9->esc[k]);
       /* 04.17.07 Arent' I double counting here! (at least for scanner?) */
-      sc[jp] = ILogsum(sc[jp], dmx[cur][cm->cp9->M] + cm->cp9->tsc[CTDM][cm->cp9->M]); 
-      sc[jp] = ILogsum(sc[jp], imx[cur][cm->cp9->M] + cm->cp9->tsc[CTIM][cm->cp9->M]); 
+      erow[cur] = ILogsum(erow[cur], dmx[cur][cm->cp9->M] + cm->cp9->tsc[CTDM][cm->cp9->M]); 
+      erow[cur] = ILogsum(erow[cur], imx[cur][cm->cp9->M] + cm->cp9->tsc[CTIM][cm->cp9->M]); 
+      if(cm->cp9->flags & CPLAN9_EL) /* no need to waste time otherwise */
+	{
+	  /* check if we came from an EL */
+	  for(c = 0; c < cm->cp9->el_from_ct[cm->cp9->M+1]; c++) /* el_from_ct[cm->cp9->M+1] holds # ELs that can go to END */
+	    erow[cur] = ILogsum(erow[cur], elmx[cur][cm->cp9->el_from_idx[cm->cp9->M+1][c]]);
+	    /* transition penalty to EL incurred when EL was entered */
+	}
+      sc[jp] = erow[cur];
       /* transition from D_M -> end */
       fsc = Scorify(sc[jp]);
       /*printf("jp: %d j: %d fsc: %f sc: %d\n", jp, j, fsc, sc[jp]);*/
@@ -692,7 +720,7 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
 	  savesc[jp] = IMPOSSIBLE;
 	  i = ((j-W+1)> i0) ? (j-W+1) : i0;
 	  ip = i-i0+1;
-	  curr_sc = gamma[prv] + fsc + cm->cp9_sc_boost;
+	  curr_sc = gamma[ip-1] + fsc + cm->cp9_sc_boost;
 	  /* cp9_sc_boost is experimental technique for finding hits < 0 bits. 
 	   * value is 0.0 if technique not used. */
 	  if (curr_sc > gamma[jp])
@@ -810,6 +838,7 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
   if (ret_mx != NULL) *ret_mx = mx;
   else                FreeCPlan9Matrix(mx);
   /*printf("Forward return_sc: %f\n", return_sc);*/
+
   return return_sc;
 }
 
@@ -864,7 +893,20 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
  *                         jp+1..j0 that visit node k's delete
  *                         delete state, last emitted (rightmost)
  *                         posn was jp+1
- *
+ *           B->EL[jp][k]: sum of all parses emitting seq from 
+ *                         jp+1..j0 that visit node k's EL
+ *                         state, which MAY OR MAY NOT have
+ *                         emitted any posns >= jp+1, last
+ *                         emitted (rightmost) posn was jp+1.
+ *                         Some nodes k do not have an EL state 
+ *                         (if cp9->has_el[k] == FALSE)
+ *                         NOTE: EL can act as non-emitter if 0
+ *                         self loops taken or emitter if >= 1
+ *                         self loops taken, this is why we
+ *                         treat jp as having NOT YET BEEN EMITTED
+ *                         which is different than the M and I 
+ *                         convention.
+ *                          
  *           For *special* HMM node 0:
  *           B->M[jp][0] : M_0 is the Begin state, which does not 
  *                         emit, so this is the sum of all parses 
@@ -930,6 +972,8 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
   int        **mmx;         /* DP matrix for match  state scores [0..1][0..cm->cp9->M]      */
   int        **imx;         /* DP matrix for insert state scores [0..1][0..cm->cp9->M]      */
   int        **dmx;         /* DP matrix for delete state scores [0..1][0..cm->cp9->M]      */
+  int        **elmx;        /* DP matrix for EL state scores [0..1][0..cm->cp9->M]          */
+  int         *erow;        /* end score for each position [0..1]                           */
   int         *sc;          /* prob (seq from j0..jp | HMM) [0..jp..cm->cp9->M]             */
   float        fsc;         /* float log odds score                                         */
   float        curr_sc;     /* temporary score used for filling in gamma                    */
@@ -945,6 +989,7 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
   int          accept;      /* Flag used if cm->search_opts & CM_SEARCH_HMMRESCAN           */
   float        temp_sc;     /* temporary score                                              */
   int          nrows;       /* num rows for DP matrix, 2 or L+1 depending on be_efficient   */
+  int          c;           /* counter for EL states */
 
   /*printf("in CP9Backward() i0: %d j0: %d do_scan: %d \n", i0, j0, do_scan);  */
   /* Contract checks */
@@ -987,12 +1032,8 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
    * M+1 columns */ 
   if(be_efficient) nrows = 2;
   else             nrows = L+1; 
-  mx = AllocCPlan9Matrix(nrows, cm->cp9->M, &mmx, &imx, &dmx, NULL, /*FIX ME!*/
-			 NULL); /* we don't use emx any more, sc replaces it,
-				 * 1. b/c we want isc for each position, but
-				 * we may only be alloc'ing 2 rows of mx,
-				 * 2. b/c emx is 2D for dumb memory error reasons,
-				 * which needs to be fixed. */
+  mx = AllocCPlan9Matrix(nrows, cm->cp9->M, &mmx, &imx, &dmx, &elmx, &erow);
+
   /* sc will hold P(seq from i..j0 | Model) for each i in int log odds form */
   sc   = MallocOrDie(sizeof(int) * (j0-i0+3));
 
@@ -1002,21 +1043,57 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
   ip = j0-i0+1;  /*L */
   i  = j0;
 
-  mmx[cur][cm->cp9->M]  = 0. + cm->cp9->esc[cm->cp9->M]; /* M_M<-E ... everything ends in E (the 0; 2^0=1.0) */
-  mmx[cur][cm->cp9->M] += cm->cp9->msc[(int) dsq[i]][cm->cp9->M]; /* ... + emitted match symbol */
-  imx[cur][cm->cp9->M]  = 0. + cm->cp9->tsc[CTIM][cm->cp9->M]; /* I_M<-E ... everything ends in E (the 0; 2^0=1.0) */
-  imx[cur][cm->cp9->M] += cm->cp9->isc[(int) dsq[i]][cm->cp9->M]; /* ... + emitted insert symbol */
-  dmx[cur][cm->cp9->M]  = cm->cp9->tsc[CTDM][cm->cp9->M];    /* D_M<-E everything ends in E (the 0; 2^0=1.0) */
+  /*******************************************************************
+   * 0 Handle EL, looking at EL_k->E for all valid k.
+   * we're going backwards so we have to work out of order, we could get 
+   * around this by storing the nodes each EL goes TO in an el_to_ct[] vec. */
+  /* init to -INFTY */
+  for (k = 1; k <= cm->cp9->M; k++)
+    elmx[cur][k] = -INFTY;
+  if(cm->cp9->flags & CPLAN9_EL)
+    {
+      for(c = 0; c < cm->cp9->el_from_ct[cm->cp9->M+1]; c++) /* el_from_ct[cm->cp9->M+1] holds # ELs that can go to END */
+	elmx[cur][cm->cp9->el_from_idx[cm->cp9->M+1][c]] = 0.; /* EL<-E, penalty incurred when we enter EL (i.e. leave going backwards) */
+    }
+  /*******************************************************************/
+
+  /* elmx[cur][cm->cp9->M] is either 0 (if EL_M exists (it would nec be in el_from_idx[cm->cp9->M+1] array if it does, so
+   * it would be filled with 0 in above loop), or -INFTY if it doesn't exist. We don't add possibility of EL_M -> EL_M
+   * self loop b/c it's impossible to do that without emitting, and we've already seen our last res emitted. 
+   * either way we don't have to modify it */
+
+  mmx[cur][cm->cp9->M]  = 0. + 
+    ILogsum(elmx[cur][cm->cp9->M] + cm->cp9->tsc[CTME][cm->cp9->M],/* M_M<-EL_M<-E, with 0 self loops in EL_M */
+	    cm->cp9->esc[cm->cp9->M]);                             /* M_M<-E ... everything ends in E (the 0; 2^0=1.0) */
+  mmx[cur][cm->cp9->M] += cm->cp9->msc[(int) dsq[i]][cm->cp9->M];  /* ... + emitted match symbol */
+  imx[cur][cm->cp9->M]  = 0. + cm->cp9->tsc[CTIM][cm->cp9->M];     /* I_M<-E ... everything ends in E (the 0; 2^0=1.0) */
+  imx[cur][cm->cp9->M] += cm->cp9->isc[(int) dsq[i]][cm->cp9->M];  /* ... + emitted insert symbol */
+  dmx[cur][cm->cp9->M]  = cm->cp9->tsc[CTDM][cm->cp9->M];          /* D_M<-E */
+
+  /*******************************************************************
+   * No need to look at EL_k->M_M b/c elmx[cur] with cur == L means last emitted residue was L+1 
+   * and this is impossible if we've come from M_M (only would be valid if we were coming from
+   * E which is handled above with the EL_k->E code). 
+   *******************************************************************/
+
   for (k = cm->cp9->M-1; k >= 1; k--)
     {
       mmx[cur][k]  = 0 + cm->cp9->esc[k];  /*M_k<- E */
       mmx[cur][k]  = ILogsum(mmx[cur][k], dmx[cur][k+1] + cm->cp9->tsc[CTMD][k]);
+      if(cm->cp9->flags & CPLAN9_EL)
+	mmx[cur][k]  = ILogsum(mmx[cur][k], elmx[cur][k] + cm->cp9->tsc[CTME][k]);
       mmx[cur][k] += cm->cp9->msc[(int) dsq[i]][k];
 
+      /*******************************************************************
+       * No need to look at EL_k->M_M b/c elmx[cur] with cur == L means last emitted residue was L+1 
+       * and this is impossible if we've come from M_M (only would be valid if we were coming from
+       * E which is handled above with the EL_k->E code). 
+       *******************************************************************/
       imx[cur][k]  = dmx[cur][k+1] + cm->cp9->tsc[CTID][k];
       imx[cur][k] += cm->cp9->isc[(int) dsq[i]][k];
 
       dmx[cur][k]  = dmx[cur][k+1] + cm->cp9->tsc[CTDD][k];
+      /* elmx[cur][k] was set above, out of order */
     }
   
   /* remember M_0 is special, the B state, a non-emitter */
@@ -1025,7 +1102,8 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
   imx[cur][0]  = dmx[cur][1] + cm->cp9->tsc[CTID][0];
   imx[cur][0] += cm->cp9->isc[(int) dsq[i]][0];
 
-  dmx[cur][0]  = -INFTY; /*D_0 doesn't exist*/
+  dmx[cur][0]   = -INFTY; /*D_0 doesn't exist*/
+  elmx[cur][0]  = -INFTY; /*EL_0 doesn't exist*/
 
   sc[ip] = mmx[cur][0]; /* all parses must start in M_0, the B state */
   fsc = Scorify(sc[ip]);
@@ -1056,41 +1134,81 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
 	  cur = ip;
 	  prv = ip+1;
 	}
-
-      /* Now the main states. Note the boundary conditions at M. */
+      /* init EL mx to -INFTY */
+      for (k = 1; k <= cm->cp9->M; k++)
+	elmx[cur][k] = -INFTY;
+      
       if(ip > 0)
 	{
+	  /* elmx[cur][k] is possibly of coming from self (EL_k), we 
+	   * can't have come from END b/c we haven't emitted the last res of the seq yet.
+	   */
+	  if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[cm->cp9->M]))
+	    elmx[cur][cm->cp9->M] = elmx[cur][cm->cp9->M] + cm->cp9->el_selfsc;
+
 	  mmx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + cm->cp9->tsc[CTMI][cm->cp9->M];
 	  mmx[cur][cm->cp9->M] += cm->cp9->msc[(int) dsq[i]][cm->cp9->M];
+
+	  if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[cm->cp9->M]))
+	    mmx[cur][cm->cp9->M] = ILogsum(mmx[cur][cm->cp9->M], 
+					   elmx[cur][cm->cp9->M] + cm->cp9->tsc[CTME][cm->cp9->M]);
+
 	  imx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + cm->cp9->tsc[CTII][cm->cp9->M];
 	  imx[cur][cm->cp9->M] += cm->cp9->isc[(int) dsq[i]][cm->cp9->M];
 	}
       else /* ip == 0 */
 	{
-	  mmx[cur][cm->cp9->M] = -INFTY; /* need seq to get here */
-	  imx[cur][cm->cp9->M] = -INFTY; /* need seq to get here */
+	  mmx[cur][cm->cp9->M] = -INFTY;  /* need seq to get here */
+	  imx[cur][cm->cp9->M] = -INFTY;  /* need seq to get here */
+	  elmx[cur][cm->cp9->M]= -INFTY;  /* first emitted res can't be from an EL, need to see >= 1 matches */
 	}
       dmx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + cm->cp9->tsc[CTDI][cm->cp9->M]; 
-	      
+
+      /*******************************************************************
+       * 1b Handle EL, looking at EL_k->M_M for all valid k.
+       * EL_k->M_M transition, which has no transition penalty */
+      if(cm->cp9->flags & CPLAN9_EL)
+	{
+	  for(c = 0; c < cm->cp9->el_from_ct[cm->cp9->M]; c++) /* el_from_ct[cm->cp9->M] holds # ELs that can go to M_M */
+	    elmx[cur][cm->cp9->el_from_idx[cm->cp9->M][c]] = ILogsum(elmx[cur][cm->cp9->el_from_idx[cm->cp9->M][c]], mmx[prv][cm->cp9->M]);
+	}
+
+      
       /* A main difference between a Backward scanner and 
        * regular Backward: a scanner can end at the END 
        * state at any position, regular can only end at
        * the final position j0. */
-      if(do_scan) 
+      if(do_scan)
 	{	
 	  if(ip > 0)
 	    {
+	      /*******************************************************************
+	       * 2 Handle EL, looking at EL_k->E for all valid k.
+	       * EL_k->M_M transition, which has no transition penalty */
+	      if(cm->cp9->flags & CPLAN9_EL)
+		{
+		  for(c = 0; c < cm->cp9->el_from_ct[cm->cp9->M+1]; c++) /* el_from_ct[cm->cp9->M] holds # ELs that can go to END */
+		    elmx[cur][cm->cp9->el_from_idx[cm->cp9->M+1][c]] = 0.; /* EL<-E, penalty incurred when we enter EL (i.e. leave going backwards) */
+		}
+	      /*******************************************************************/
+	      /* elmx[cur][cm->cp9->M] is either 0 (if EL_M exists (it would nec be in el_from_idx[cm->cp9->M+1] array if it does, so
+	       * it would be filled with 0 in above loop), or -INFTY if it doesn't exist. We don't add possibility of EL_M -> EL_M
+	       * self loop b/c it's impossible to do that without emitting, and we've already seen our last res emitted,
+	       * either way we don't have to modify it */
+	      
 	      mmx[cur][cm->cp9->M]  =  
-		ILogsum(mmx[cur][cm->cp9->M],
-			(cm->cp9->esc[cm->cp9->M] +                  /* M_M<-E + (only in scanner)     */ 
-			 0));                                        /* all parses end in E, 2^0 = 1.0;*/
-	      mmx[cur][cm->cp9->M] += cm->cp9->msc[(int) dsq[i]][cm->cp9->M]; /* ... + emitted match symbol */
+		ILogsum(mmx[cur][cm->cp9->M], 
+			ILogsum(elmx[cur][cm->cp9->M] + cm->cp9->tsc[CTME][cm->cp9->M],/* M_M<-EL_M<-E, with 0 selfs in EL_M */
+				cm->cp9->esc[cm->cp9->M]));                             /* M_M<-E ... */
+	      ///mmx[cur][cm->cp9->M] += cm->cp9->msc[(int) dsq[i]][cm->cp9->M]; /* ... + emitted match symbol */
+	      /* DO NOT add contribution of emitting i from M, it's been added above */
 	      
 	      imx[cur][cm->cp9->M]  =
 		ILogsum(imx[cur][cm->cp9->M],
 			(cm->cp9->tsc[CTIM][cm->cp9->M] +            /* I_M<-E + (only in scanner)     */
 			 0));                                        /* all parses end in E, 2^0 = 1.0;*/
-	      imx[cur][cm->cp9->M] += cm->cp9->isc[(int) dsq[i]][cm->cp9->M]; /* ... + emitted insert symbol */  
+	      ///imx[cur][cm->cp9->M] += cm->cp9->isc[(int) dsq[i]][cm->cp9->M]; /* ... + emitted insert symbol */  
+	      /* DO NOT add contribution of emitting i from M, it's been added above */
 	    }
 	  dmx[cur][cm->cp9->M] =  
 	    ILogsum(dmx[cur][cm->cp9->M],
@@ -1105,28 +1223,54 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
 	{
 	  if(ip > 0) 
 	    {
+	      /*******************************************************************
+	       * 3 Handle EL, looking at EL_k->M_k for all valid k and EL_k->EL_k
+	       * we're going backwards so we have to work out of order
+	       * we could get around this by storing the nodes each EL goes TO
+	       * in an el_to_ct[] vector. */
+	      if(cm->cp9->flags & CPLAN9_EL)
+		{
+		  for(c = 0; c < cm->cp9->el_from_ct[k]; c++) /* el_from_ct[k] holds # ELs that can go to M_k */
+		    elmx[cur][cm->cp9->el_from_idx[k][c]] = ILogsum(elmx[cur][cm->cp9->el_from_idx[k][c]], mmx[prv][k]);
+		  /* EL<-M, penalty incurred when we enter EL (i.e. leave going backwards) */
+		}
+	      /*******************************************************************/
+
+	      /* Finish off elmx[cur][k] with possibility of coming from self (EL_k), 
+	       * elmx[cur][k] will have been filled by block above for ks > current k,
+	       * no M_k -> EL_k' with k' > k */
+	      if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[k]))
+		elmx[cur][k] = ILogsum(elmx[cur][k], elmx[prv][k] + cm->cp9->el_selfsc);
+
 	      mmx[cur][k]  = ILogsum(ILogsum((mmx[prv][k+1] + cm->cp9->tsc[CTMM][k]),  
 					     (imx[prv][k]   + cm->cp9->tsc[CTMI][k])),
 				     (dmx[cur][k+1] + cm->cp9->tsc[CTMD][k]));
+	      if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[k]))
+		mmx[cur][k] = ILogsum(mmx[cur][k], elmx[cur][k] + cm->cp9->tsc[CTME][k]); /* penalty for entering EL */
 	      mmx[cur][k] += cm->cp9->msc[(int) dsq[i]][k];
 
 	      imx[cur][k]  = ILogsum(ILogsum((mmx[prv][k+1] + cm->cp9->tsc[CTIM][k]),
 					     (imx[prv][k]   + cm->cp9->tsc[CTII][k])),
 				     (dmx[cur][k+1] + cm->cp9->tsc[CTID][k]));
 	      imx[cur][k] += cm->cp9->isc[(int) dsq[i]][k];
+
 	    }
 	  else
 	    {
 	      mmx[cur][k] = -INFTY; /* need seq to get here, unless we come from E in a scanner (below) */
 	      imx[cur][k] = -INFTY; /* need seq to get here */
+	      elmx[cur][k]= -INFTY;  /* first emitted res can't be from an EL, need to see >= 1 matches */
 	    }
-	  if(do_scan && ip > 0) /* add possibility of ending at his position from this state */
+	  if(do_scan && ip > 0) /* add possibility of ending at this position from this state */
 	    {
 	      mmx[cur][k] = 
 		ILogsum(mmx[cur][k], 
 			(cm->cp9->esc[k] +                    /* M_k<-E + (only in scanner)     */ 
 			 0));                                 /* all parses end in E, 2^0 = 1.0;*/
 	      /* DO NOT add contribution of emitting i from M, it's been added above */
+	      /* No EL contribution here b/c we'd be looking for M_k<-EL_k<-E, but EL_k<-E is impossible 
+	       * for k != cm->cp9->M; */
+	      /* HERE */
 	    }	      
 	  dmx[cur][k]  = ILogsum(ILogsum((mmx[prv][k+1] + cm->cp9->tsc[CTDM][k]),
 					 (imx[prv][k]   + cm->cp9->tsc[CTDI][k])),
@@ -1144,14 +1288,16 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
 	}
       else /* ip == 0 */
 	imx[cur][0] = -INFTY; /* need seq to get here */
-      dmx[cur][0] = -INFTY; /* D_0 does not exist */
-	  
+      dmx[cur][0]   = -INFTY; /* D_0 does not exist */
+      elmx[cur][0]  = -INFTY; /* EL_0 does not exist */
+
       /*M_0 is the B state, it doesn't emit, and can be reached from any match via a begin transition */
       mmx[cur][0] = -INFTY;
       for (k = cm->cp9->M; k >= 1; k--) 
 	mmx[cur][0] = ILogsum(mmx[cur][0], (mmx[prv][k] + cm->cp9->bsc[k]));
       mmx[cur][0] = ILogsum(mmx[cur][0], (imx[prv][0] + cm->cp9->tsc[CTMI][0]));
       mmx[cur][0] = ILogsum(mmx[cur][0], (dmx[cur][1] + cm->cp9->tsc[CTMD][0]));     /* B->D_1 */
+      /* No EL contribution here, can't go B->EL_* */
       
       /* determine isc, the int score of all possible parses starting at the current
        * position (i) of the target sequence. */
@@ -1289,7 +1435,6 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
   free(gback);
   free(gamma);
   free(savesc);
-
   /*printf("returning from CP9Backward()\n");*/
   if(ret_sc != NULL) *ret_sc = sc;
   else free(sc);
@@ -1536,7 +1681,7 @@ RescanFilterSurvivors(CM_t *cm, char *dsq, scan_results_t *hmm_results, int i0, 
   float best_cm_sc;
   float cm_sc;
   int   flen;
-  int   prev_j;
+  int   prev_j = j0;
   int   next_j;
   int   nhits;
 
@@ -1559,8 +1704,9 @@ RescanFilterSurvivors(CM_t *cm, char *dsq, scan_results_t *hmm_results, int i0, 
   nhits = hmm_results->num_results;
   for(h = 0; h < nhits; h++) 
     {
-      if(h != 0 && hmm_results->data[h].stop > prev_j) 
+      if(hmm_results->data[h].stop > prev_j) 
 	ESL_EXCEPTION(eslEINCOMPAT, "j's not in descending order");
+
       prev_j = hmm_results->data[h].stop;
 
       /* add pad */
@@ -1829,7 +1975,8 @@ CP9ForwardScanDemands(CP9_t *cp9, int L)
  *           my_rank      - MPI rank, 0 if serial
  *           nproc        - number of processors in MPI rank, 1 if serial
  *           do_mpi       - TRUE if we're doing MPI, FALSE if not
- *           histfile     - root string for histogram files, we'll make nexps * 4 of them
+ *           histfile     - root string for histogram files, we'll 4 of them
+ *           Rpts_fp      - open file ptr for optimal HMM/CM score pts
  *           ret_F        - the fraction of observed CM hits we've scored with the HMM better
  *                          than return value
  * 
@@ -1842,7 +1989,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 			     int use_cm_cutoff, float cm_ecutoff, int db_size, 
 			     int emit_mode, int fthr_mode, int hmm_gum_mode, 
 			     int do_fastfil, int do_Fstep, int my_rank, int nproc, int do_mpi, 
-			     char *histfile, float *ret_F)
+			     char *histfile, FILE *Rpts_fp, float *ret_F)
 {
 
   /* Contract checks */
@@ -1877,7 +2024,10 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
       ConfigForGumbelMode(cm, fthr_mode);
       /* Configure the HMM based on the hmm_gum_mode */
       if(hmm_gum_mode == CP9_L)
-	CPlan9SWConfig(cm->cp9, 0.5, 0.5);
+	{
+	  CPlan9SWConfig(cm->cp9, 0.5, 0.5);
+	  CPlan9ELConfig(cm);
+	}
       else /* hmm_gum_mode == CP9_G (it's in the contract) */
 	CPlan9GlobalConfig(cm->cp9);
       CP9Logoddsify(cm->cp9);
@@ -1987,10 +2137,15 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 
   /* Configure the HMM based on the hmm_gum_mode */
   if(hmm_gum_mode == CP9_L)
-    CPlan9SWConfig(cm->cp9, 0.5, 0.5);
+    {
+      CPlan9SWConfig(cm_for_scoring->cp9, 0.5, 0.5);
+      CPlan9ELConfig(cm_for_scoring);
+    }
   else /* hmm_gum_mode == CP9_G (it's in the contract) */
-    CPlan9GlobalConfig(cm->cp9);
-  CP9Logoddsify(cm->cp9);
+    CPlan9GlobalConfig(cm_for_scoring->cp9);
+  CP9Logoddsify(cm_for_scoring->cp9);
+  if(cm_for_scoring->config_opts & CM_CONFIG_ZEROINSERTS)
+    CP9HackInsertScores(cm_for_scoring->cp9);
 
   /* Determine bit cutoff for each partition, calc'ed from cm_ecutoff */
   for (p = 0; p < cmstats->np; p++)
@@ -2015,10 +2170,14 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   /*********************SERIAL BLOCK*************************************/
   int nleft = 0; /* number of seqs with scores < min CM score */
   int tr_np, tr_na, s1_np, s1_na, s2_np, s2_na, s3_np, s3_na;
+  int do_slow = FALSE;
+  if(Rpts_fp != NULL) do_slow = TRUE; /* we'll always find optimal CM parse to use as point for R 2D plot */
+
   tr_np = tr_na = s1_np = s1_na = s2_np = s2_na = s3_np = s3_na = 0;
   printf("06.11.07 Min np: %5d Smin: %12f Starget: %f Spad: %.3f do_Fstep: %d\n", N, Smin, Starget, Spad, do_Fstep);
   if(!(do_mpi))
     {
+      
       orig_tau = cm_for_scoring->tau;
 
       /* Serial strategy: 
@@ -2054,7 +2213,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	  //free(seq);
 
 	  /* If do_minmax, check if the parsetree score less than maximum allowed */
-	  if(tr_sc[i] > cm_minbitsc[p]) /* we know we've passed */
+	  if(tr_sc[i] > cm_minbitsc[p] && !do_slow) /* we know we've passed */
 	    {
 	      tr_np++;
 	      passed_flag = TRUE;
@@ -2084,7 +2243,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 					     FALSE, /* we're not calcing CP9 stats */
 					     NULL); /* filter fraction N/A */
 	      //if(!do_fastfil) printf("%4d %5d %d T: %10.4f BC: %10.4f ", ip, i, passed_flag, tr_sc[i], hb_sc);
-	      if(hb_sc > cm_minbitsc[p])
+	      if(hb_sc > cm_minbitsc[p] && !do_slow)
 		{
 		  s1_np++;
 		  passed_flag = TRUE;
@@ -2105,7 +2264,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 						 FALSE, /* we're not calcing CM  stats */
 						 FALSE, /* we're not calcing CP9 stats */
 						 NULL); /* filter fraction N/A */
-		  if(cm_sc > cm_minbitsc[p])
+		  if(cm_sc > cm_minbitsc[p] && !do_slow)
 		    {
 		      s2_np++;
 		      passed_flag = TRUE;
@@ -2137,7 +2296,6 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 		    }
 		}
 	    }
-
 	  if(!passed_flag) 
 	    {
 	      nleft++;
@@ -2150,7 +2308,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	       * Backward to get score of best hit, but we'll be detecting by a
 	       * Forward scan (then running Backward only on hits above our threshold).
 	       */
-	      hmm_sc_p[ip] = CP9Forward(cm, dsq, 1, L, cm->W, 0., 
+	      hmm_sc_p[ip] = CP9Forward(cm_for_scoring, dsq, 1, L, cm_for_scoring->W, 0., 
 					NULL,   /* don't return scores of hits */
 				       NULL,   /* don't return posns of hits */
 				       NULL,   /* don't keep track of hits */
@@ -2160,6 +2318,8 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 				       TRUE,   /* be memory efficient */
 				       NULL);  /* don't want the DP matrix back */
 	      hmm_eval_p[ip] = RJK_ExtremeValueE(hmm_sc_p[ip], hmm_mu[p], cmstats->gumAA[hmm_gum_mode][p]->lambda);
+	      if(Rpts_fp != NULL)
+		fprintf(Rpts_fp, "%.15f %.15f\n", hmm_sc_p[ip], cm_sc);
 	      ip++; /* increase counter of seqs passing threshold */
 	    }
 	  free(dsq);
@@ -2323,7 +2483,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 
   Fidx  = (int) (Fmin * (float) N) - 1; /* off by one, ex: 95% cutoff in 100 len array is index 94 */
   E     = hmm_eval_p[Fidx];
-
+  F     = Fmin;
   /* Are we case 1 or case 2? 
    * Case 1: our E is greater than our Etarget, so we cannot satisfy Starget AND capture F fraction of
    *         the true CM hits, it's more impt we capture F fraction, so return S > Starget.
@@ -2377,8 +2537,30 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	printf("Case 2A: best case Emin %12f > E %f < Etarget %f F: %f S: %.12f Spad: %.3f\n", Emin, E, Etarget, F, S, Spad);
        else
 	printf("Case 2B: good case Emin %12f < E %f < Etarget %f F: %f S: %.12f\n Spad: %.3f", Emin, E, Etarget, F, S, Spad);
-      
-     }
+    }
+  /* Print cutoff info to Rpts file for 2D plot if nec */
+  if(Rpts_fp != NULL)
+    {
+      fprintf(Rpts_fp, "TSC %.15f\n", (cm->stats->gumAA[hmm_gum_mode][p]->mu - 
+				       (log(Etarget) / cm->stats->gumAA[hmm_gum_mode][p]->lambda)));
+      fprintf(Rpts_fp, "MSC %.15f\n", (cm->stats->gumAA[hmm_gum_mode][p]->mu - 
+				       (log(Emin) / cm->stats->gumAA[hmm_gum_mode][p]->lambda)));
+      fprintf(Rpts_fp, "FSC %.15f\n", (cm->stats->gumAA[hmm_gum_mode][p]->mu - 
+					(log(E) / cm->stats->gumAA[hmm_gum_mode][p]->lambda)));
+      fprintf(Rpts_fp, "FSC %.15f\n", (cm->stats->gumAA[hmm_gum_mode][p]->mu - 
+					(log(E) / cm->stats->gumAA[hmm_gum_mode][p]->lambda)));
+      fprintf(Rpts_fp, "F   %.15f\n", F);
+      fprintf(Rpts_fp, "CMGUM %.15f %15f\n", (cm->stats->gumAA[emit_mode][p]->lambda, cm->stats->gumAA[emit_mode][p]->mu));
+      fprintf(Rpts_fp, "HMMGUM %.15f %15f\n", (cm->stats->gumAA[hmm_gum_mode][p]->lambda, cm->stats->gumAA[hmm_gum_mode][p]->mu));
+      fprintf(Rpts_fp, "STARGET %.15f\n", Starget);
+      fprintf(Rpts_fp, "SMIN %.15f\n", Smin);
+      fprintf(Rpts_fp, "SPAD %.15f\n", Spad);
+      fprintf(Rpts_fp, "FMIN %.15f\n", Fmin);
+      fprintf(Rpts_fp, "FSTEP %d\n", do_Fstep);
+      fprintf(Rpts_fp, "ECUTOFF %.15f\n", cm_ecutoff);
+      fclose(Rpts_fp);
+    }	  
+
   /* Make sure our E is less than the DB size and greater than Emin */
   if(E > ((float) db_size)) /* E-val > db_size is useless */
     {

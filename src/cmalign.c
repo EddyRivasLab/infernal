@@ -395,6 +395,7 @@ main(int argc, char **argv)
     {
       cm->config_opts |= CM_CONFIG_LOCAL;
       cm->config_opts |= CM_CONFIG_HMMLOCAL;
+      cm->config_opts |= CM_CONFIG_HMMEL;
     }
   if(do_elsilent)     cm->config_opts |= CM_CONFIG_ELSILENT;
   if(do_zero_inserts) cm->config_opts |= CM_CONFIG_ZEROINSERTS;

@@ -19,7 +19,7 @@
 #include "cplan9.h"
 
 /*
- * Function: ConfigCM
+ * Function: ConfigCM()
  * Date:     EPN, Thu Jan  4 06:36:09 2007
  * Purpose:  Configure a CM for alignment or search based on cm->config_opts,
  *           cm->align_opts and cm->search_opts. 
@@ -60,11 +60,12 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
   /* Build the CP9 HMM */
   /* IMPORTANT: do this before setting up CM for local mode
    *            eventually, we'll do it after, but we can't build local CP9s yet. */
-  if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))
+  if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), TRUE, 0.0001, 0))
     Die("Couldn't build a CP9 HMM from the CM\n");
   cm->flags |= CM_CP9; /* raise the CP9 flag */
   
   /* Possibly configure the CM for local alignment. */
+
   if (cm->config_opts & CM_CONFIG_LOCAL)
     { 
       ConfigLocal(cm, 0.5, 0.5);
@@ -95,11 +96,27 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
 	  /*swexit = ((cm->cp9->M)-1.)/cm->cp9->M;*/ /* all end   pts equiprobable, including M */
 	}
       CPlan9SWConfig(cm->cp9, swentry, swexit);
+      if(cm->config_opts & CM_CONFIG_HMMEL)
+	CPlan9ELConfig(cm);
       CP9Logoddsify(cm->cp9);
     }
-  
+
+  /*
+    FILE *fp;
+    fp = fopen("temphmm1" ,"w");
+    debug_print_cp9_params(fp, cm->cp9);
+    fclose(fp);
+    
+    fp = fopen("tempcm1" ,"w");
+    debug_print_cm_params(fp, cm);
+    fclose(fp);
+  */
+
   /* If nec, set up the query dependent bands, this has to be done after 
-   * local is set up */
+   * local is set up because we want to consider local begins, but NOT local
+   * ends. This is inefficient, local ends are set up twice currently, once
+   * before QDB calc, then turned off in BandCalculationEngine() then 
+   * back on. This should be fixed. */
   if (do_calc_qdb)
     {
       if(cm->flags & CM_QDB) Die("ERROR in ConfigCM() CM already has QDBs\n");
@@ -121,6 +138,17 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
       cm->flags |= CM_QDB; /* raise the QDB flag */
     }
 
+  /*
+  fp = fopen("temphmm2" ,"w");
+  debug_print_cp9_params(fp, cm->cp9);
+  fclose(fp);
+
+  fp = fopen("tempcm2" ,"w");
+  debug_print_cm_params(fp, cm);
+  fclose(fp);
+  */
+
+  /*esl_fatal("done.\n");*/
   /* We need to ensure that cm->el_selfsc * W >= IMPOSSIBLE
    * (cm->el_selfsc is the score for an EL self transition) This is
    * done because we potentially multiply cm->el_selfsc * W, and add
@@ -143,8 +171,9 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
 				     * makes all CP9 (if non-null) inserts equiprobable */
 
   /*printf("leaving ConfigCM()\n");
-    debug_print_cm_params(cm);
-    debug_print_cp9_params(cm->cp9);*/
+    debug_print_cm_params(stdout, cm);
+    debug_print_cp9_params(stdout, cm->cp9);*/
+
   return;
 
   /* TO DO, set up a SUB CM */
@@ -479,6 +508,10 @@ ConfigNoLocalEnds(CM_t *cm)
 	FNorm(cm->t[v], cm->cnum[v]);
       }
   }
+  /* Disable the local end probs in the CP9 */
+  if((cm->flags |= CM_CP9) && (cm->cp9->flags |= CPLAN9_EL))
+    CPlan9NoEL(cm);
+
   cm->flags &= ~CM_LOCAL_END; /* turn off local ends flag */
   /* new probs invalidate log odds scores */
   cm->flags &= ~CM_HASBITS;
@@ -540,10 +573,6 @@ ConfigLocalEnds(CM_t *cm, float p_internal_exit)
   }
 
   cm->flags |= CM_LOCAL_END;
-
-  /* Copy the local end probs to the CP9 */
-  if(cm->flags |= CM_CP9)
-    CPlan9ELConfig(cm);
 
   /* new probs invalidate log odds scores */
   cm->flags &= ~CM_HASBITS;
@@ -997,6 +1026,7 @@ ConfigForGumbelMode(CM_t *cm, int gum_mode)
     /*printf("CP9_L\n");*/
     cm->search_opts &= ~CM_SEARCH_INSIDE;
     cm->search_opts |= CM_SEARCH_HMMONLY;
+    do_cm_local   = TRUE; /* need CM local ends to make CP9 local ends */
     do_cp9_local  = TRUE;
     break;
   case CP9_G: /* glocal CP9 Forward */
@@ -1009,45 +1039,42 @@ ConfigForGumbelMode(CM_t *cm, int gum_mode)
     Die("ERROR unrecognized gum_mode: %d in ConfigForGumbelMode");
   }
   /* configure CM and, if needed, CP9 */
+  if(do_cm_local) 
+    {
+      /* If we're in local, wastefully convert to global, 
+       * then back to local, so we follow our rule that ConfigLocal()
+       * cannot be called with a model already locally configured.
+       * That rule was put in place to force caller to understand what
+       * it's doing. */
+      if(cm->flags & CM_LOCAL_BEGIN || cm->flags & CM_LOCAL_END) 
+	ConfigGlobal(cm);
+      ConfigLocal(cm, 0.5, 0.5);
+    }
+  else if(cm->flags & CM_LOCAL_BEGIN || cm->flags & CM_LOCAL_END) /* these *should* both either be up or down */
+    ConfigGlobal(cm);
+  CMLogoddsify(cm);
+  if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
+    CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
+				     * makes all CP9 (if non-null) inserts equiprobable*/
   if(cm->search_opts & CM_SEARCH_HMMONLY)
     {
-      if(!(cm->flags & CM_CP9) || cm->cp9 == NULL) /* build it */
-	{
-	  if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))
-	    Die("Couldn't build a CP9 HMM from the CM\n");
-	  cm->flags |= CM_CP9; /* raise the CP9 flag */
-	}
+      if(!(cm->flags & CM_CP9) || cm->cp9 == NULL) /* error, we should have one */
+	Die("CP9 must already be built in ConfigForGumbelMode()\n");
       if(do_cp9_local)
-	CPlan9SWConfig(cm->cp9, 0.5, 0.5);
-	/* EPN, Mon May 21 17:01:43 2007 OLD WAY: all starts/ends equiprobable, doesn't match CM */
-	/*CPlan9SWConfig(cm->cp9, ((cm->cp9->M)-1.)/cm->cp9->M,*/  /* all start pts equiprobable, including 1 */
-	/*((cm->cp9->M)-1.)/cm->cp9->M);*/          /* all end pts equiprobable, including M */
+	{
+	  /* To do: Make the CP9 local to match the CM, as close as we can */
+	  /*CPlan9CMLocalBeginConfig(cm); <-- Finish this function */
+	  CPlan9SWConfig(cm->cp9, 0.5, 0.5); 
+	  CPlan9ELConfig(cm);
+
+	  /* CPlan9SWConfig(cm->cp9, ((cm->cp9->M)-1.)/cm->cp9->M,*/  /* all start pts equiprobable, including 1 */
+	  /*                  ((cm->cp9->M)-1.)/cm->cp9->M);*/          /* all end pts equiprobable, including M */
+	}
       else
 	CPlan9GlobalConfig(cm->cp9);
       CP9Logoddsify(cm->cp9);
       if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
 	CP9HackInsertScores(cm->cp9);
-    }
-  else /* we're using the CM, make sure it's configured properly */
-    {
-      if(do_cm_local) 
-	{
-	  /* If we're in local, wastefully convert to global, 
-	   * then back to local, so we follow our rule that ConfigLocal()
-	   * cannot be called with a model already locally configured.
-	   * That rule was put in place to force caller to understand what
-	   * it's doing. */
-	  if(cm->flags & CM_LOCAL_BEGIN || cm->flags & CM_LOCAL_END) 
-	    ConfigGlobal(cm);
-	  ConfigLocal(cm, 0.5, 0.5);
-	}
-      else if(cm->flags & CM_LOCAL_BEGIN || cm->flags & CM_LOCAL_END) /* these *should* both either be up or down */
-	ConfigGlobal(cm);
-      CMLogoddsify(cm);
-      if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
-	CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
-				     * makes all CP9 (if non-null) inserts equiprobable*/
-
     }
   return eslOK;
 }

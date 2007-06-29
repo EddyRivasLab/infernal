@@ -105,6 +105,7 @@ static char experts[] = "\
 \n\
   * Filtering options using a CM plan 9 HMM (*in development*):\n\
    --hmmlocal     : configure HMM for local alignment [default: glocal alignment]\n\
+   --hmmnoel      : w/--hmmlocal DO NOT enable HMM EL local ends\n\
    --hmmfilter    : subseqs j-W+1..i+W-1 survive (j=end from Fwd, i=start from Bwd)\n\
    --hmmpad <n>   : w/--hmmfilter: subseqs i-<n>..j+<n> survive\n\
    --hmmonly      : don't use CM at all, just scan with HMM (Forward + Backward)\n\
@@ -122,6 +123,7 @@ static char experts[] = "\
    --hmmSpad <x>  : w/hmmcalcthr, fract of (sc(S) - sc(Starg)) to add to sc(S) [1.0]\n\
    --hmmfilN      : w/hmmcalcthr, num emitted seqs to use for filter threshold calc\n\
    --hmmgemit     : w/hmmcalcthr, always emit from CM in global mode\n\
+   --hmmrplot <s> : w/hmmcalcthr, find optimal HMM/CM scores and print them to <s> for R\n\
 \n\
 ";
 
@@ -144,6 +146,7 @@ static struct opt_s OPTIONS[] = {
   { "--learninserts",FALSE, sqdARG_NONE},
   { "--negsc",      FALSE, sqdARG_FLOAT},
   { "--hmmlocal",   FALSE, sqdARG_NONE },
+  { "--hmmnoel",    FALSE, sqdARG_NONE },
   { "--hmmfilter",  FALSE, sqdARG_NONE },
   { "--hmmpad",     FALSE, sqdARG_INT },
   { "--hmmonly",    FALSE, sqdARG_NONE },
@@ -158,6 +161,7 @@ static struct opt_s OPTIONS[] = {
   { "--hmmFstep",   FALSE, sqdARG_NONE},
   { "--hmmStarg",   FALSE, sqdARG_FLOAT},
   { "--hmmSpad",    FALSE, sqdARG_FLOAT},
+  { "--hmmrplot",   FALSE, sqdARG_STRING},
   { "--hmmfpmin",   FALSE, sqdARG_FLOAT},
   { "--hmmnegsc",   FALSE, sqdARG_FLOAT},
   /*{ "--hmmrescan",  FALSE, sqdARG_NONE},*/
@@ -267,6 +271,7 @@ main(int argc, char **argv)
 			    * of traditional FB algs to get bands on seqs surviving 
 			    * the filter */
   int   do_hmmlocal;       /* TRUE to do HMM local alignment, default is glocal */
+  int   do_hmm_noel;       /* TRUE to do NOT set up HMM for local EL alignment if do_hmmlocal */
   int   do_hmmfilter;          /* TRUE to use Forward to get start points and Backward
 			    * to get end points of promising subsequences*/
   int   do_hmmonly;        /* TRUE to scan with a CM Plan 9 HMM ONLY!*/
@@ -315,6 +320,8 @@ main(int argc, char **argv)
   int nproc = 1;              /* Total number of processes, 1 if serial mode */
   FILE *fil_hfp = NULL;            
   char *fil_histfile = NULL;         
+  FILE *fil_Rpts_fp = NULL;
+  char *fil_Rpts_file = NULL;         
 
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
   int mpi_master_rank;      /* Rank of master process */
@@ -363,6 +370,7 @@ main(int argc, char **argv)
   do_hmmonly        = FALSE;
   set_window        = FALSE;
   do_hmmlocal       = FALSE;     /* OPPOSITE of default CM mode! */
+  do_hmm_noel       = FALSE;     
   do_hmmfilter      = FALSE;
   do_hmmpad         = FALSE;
   hmmpad            = 0;
@@ -434,6 +442,7 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--rtrans")      == 0) do_rtrans = TRUE;
     else if  (strcmp(optname, "--hmmfilter")   == 0) do_hmmfilter = TRUE;
     else if  (strcmp(optname, "--hmmlocal")    == 0) do_hmmlocal  = TRUE;
+    else if  (strcmp(optname, "--hmmnoel")     == 0) do_hmm_noel  = TRUE;
     else if  (strcmp(optname, "--hmmpad")      == 0) { do_hmmpad = TRUE; hmmpad = atoi(optarg); }
     else if  (strcmp(optname, "--hmmnegsc")    == 0) 
       { cp9_sc_boost_set = TRUE; cp9_sc_boost = -1. * atof(optarg); }
@@ -467,6 +476,7 @@ main(int argc, char **argv)
     else if  (strcmp(optname, "--hmmFstep")    == 0) do_Fstep = TRUE;
     else if  (strcmp(optname, "--hmmStarg")    == 0) Starget = atof(optarg);
     else if  (strcmp(optname, "--hmmSpad")     == 0) Spad = atof(optarg);
+    else if  (strcmp(optname, "--hmmrplot")     == 0) fil_Rpts_file = optarg;
     else if  (strcmp(optname, "--beta")   == 0) beta      = atof(optarg);
     else if  (strcmp(optname, "--noqdb")  == 0) do_qdb    = FALSE;
     else if  (strcmp(optname, "--qdbfile")== 0) { read_qdb  = TRUE; qdb_file = optarg; }
@@ -533,6 +543,8 @@ main(int argc, char **argv)
     Die("--greedy option not yet implemented for inside scans (implement it!)\n");
   if(fil_histfile != NULL && !do_hmmcalcthr)
     Die("--hmmhfile only makes sense with --hmmcalcthr\n");
+  if(fil_Rpts_file != NULL && !do_hmmcalcthr)
+    Die("--hmmrplot only makes sense with --hmmcalcthr\n");
   if(do_cmgreedy && do_hmmonly)
     Die("--greedy option doesn't make sense with --hmmonly scans, did you mean --hmmgreedy?\n");
   if(do_hmmpad && !do_hmmfilter)
@@ -543,6 +555,10 @@ main(int argc, char **argv)
     Die("--hmmfast option only makes sense in combination with --hmmcalcthr.\n");
   if(do_hmmpad && hmmpad < 0)
     Die("with --hmmpad <n>, <n> must be >= 0\n");
+  if(do_hmm_noel && (!do_hmmlocal))
+    Die("--hmmnoel only makes sense with --hmmlocal\n");
+  if(do_hmmcalcthr && (!do_hmmfilter))
+    Die("--hmmcalcthr only makes sense with --hmmfilter\n");
   if(beta >= 1.)
     Die("when using --beta <x>, <x> must be greater than 0 and less than 1.\n");
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
@@ -615,6 +631,7 @@ main(int argc, char **argv)
       /* Update cm->config_opts and cm->search_opts based on command line options */
       if(do_local)        cm->config_opts |= CM_CONFIG_LOCAL;
       if(do_hmmlocal)     cm->config_opts |= CM_CONFIG_HMMLOCAL;
+      if(!do_hmm_noel)    cm->config_opts |= CM_CONFIG_HMMEL;
       if(!do_learn_inserts) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
       if(!(do_qdb))       cm->search_opts |= CM_SEARCH_NOQDB;
       if(do_hmmonly)      cm->search_opts |= CM_SEARCH_HMMONLY;
@@ -843,13 +860,16 @@ main(int argc, char **argv)
 	      if(emit_mode != cm_mode)
 		ConfigForGumbelMode(cm, cm_mode);
 
+	      if(fil_Rpts_file != NULL)
+		if ((fil_Rpts_fp = fopen(fil_Rpts_file, "w")) == NULL)
+		  Die("Failed to open R pts save file for writing\n");
 	      cp9_e_cutoff = 
 		FindCP9FilterThreshold(cm, cm->stats, r, F, Smin, Starget,
 				       Spad, filN, use_cm_cutoff, cm_e_cutoff, 
 				       N, emit_mode, cm_mode, cp9_mode, do_fastfil,
 				       do_Fstep, my_rank, nproc, do_mpi, fil_histfile, 
-				       &Fset); /* Fset is not important, we're not
-						* storing the new stats info */
+				       fil_Rpts_fp, &Fset); /* Fset is not important, we're not
+							       * storing the new stats info */
 
 	      StopwatchStop(watch);
 	      StopwatchDisplay(stdout, "06.03.07 CP9 filter thr time:", watch);
@@ -910,7 +930,7 @@ main(int argc, char **argv)
 #endif
       printf("CM mode: %d\nCP9 mode; %d\n", cm_mode, cp9_mode);
       PrintSearchInfo(stdout, cm, cm_mode, cp9_mode, N);
-      /*esl_fatal("Done 06.15.07 expt\n");*/
+      /*esl_fatal("Done 06.26.07 expt\n");*/
 
       if(do_bdump && (!(cm->search_opts & CM_SEARCH_NOQDB))) 
 	{

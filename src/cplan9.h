@@ -189,12 +189,12 @@ typedef struct cp9_dpmatrix_s {
   int **imx;			/* insert scores [0.1..N][0..M] */
   int **dmx;			/* delete scores [0.1..N][0..M] */
   int **elmx;			/* end local scores [0.1..N][0..M] */
-  int **emx;                    /* score for E state [0][0.1..N] */
+  int  *erow;                   /* score for E state [0.1..N] */
   /* Hidden ptrs where the real memory is kept; this trick was
    * introduced by Erik Lindahl with the Altivec port; it's used to
    * align xmx, etc. on 16-byte boundaries for cache optimization.
    */
-  void *mmx_mem, *imx_mem, *dmx_mem, *elmx_mem, *emx_mem;
+  void *mmx_mem, *imx_mem, *dmx_mem, *elmx_mem;
 
   int *  workspace;      /* Workspace for altivec (aligned ptr)    */
   int *  workspace_mem;  /* Actual allocated pointer for workspace */

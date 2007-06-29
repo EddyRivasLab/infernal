@@ -324,7 +324,10 @@ main(int argc, char **argv)
       if(!(esl_opt_GetBoolean(go, "--filonly")))
 	{
 	  for(gum_mode = 0; gum_mode < NGUMBELMODES; gum_mode++)
-	    cm_fit_gumbel(cm, go, &cfg, cmstats[ncm], gum_mode); /* works in MPI and serial mode */
+	    cm_fit_gumbel(cm, go, &cfg, cmstats[ncm], gum_mode);
+	    /*06.25.07 only CP9-L code: if(cfg.my_rank == 0) 
+	      CopyCMStatsGumbel(cm->stats, cmstats[ncm]);
+	      cm_fit_gumbel(cm, go, &cfg, cmstats[ncm], CP9_L); */
 	  cm->flags |= CM_GUMBEL_STATS;
 	}
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
@@ -378,7 +381,7 @@ main(int argc, char **argv)
 				       esl_opt_GetBoolean  (go, "--fastfil"), 
 				       FALSE, /* FIX ME! */
 				       cfg.my_rank, cfg.nproc, cfg.do_mpi, 
-				       NULL, &l_F);
+				       NULL, NULL, &l_F);
 	      /* CP9_G, HMM in global mode */
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	      MPI_Barrier(MPI_COMM_WORLD);
@@ -396,7 +399,7 @@ main(int argc, char **argv)
 				       esl_opt_GetBoolean  (go, "--fastfil"), 
 				       FALSE, /* FIX ME! */
 				       cfg.my_rank, cfg.nproc, cfg.do_mpi, 
-				       NULL, &g_F);
+				       NULL, NULL, &g_F);
 	      if(cfg.my_rank == 0)
 		{
 		  /* If master (MPI or serial), fill in the filter thr stats */
@@ -710,8 +713,11 @@ static int cm_fit_gumbel(CM_t *cm, ESL_GETOPTS *go, struct cfg_s *cfg,
 #endif /* if defined(USE_MPI) && defined(MPI_EXECUTABLE) */
 
 	  /* We have all the scores for this partition, fit them to a Gumbel */
+	  printf("0 mu: %f lambda: %f\n", gum[p]->mu, gum[p]->lambda);
 	  esl_histogram_GetTailByMass(h, 0.5, &xv, &n, &z); /* fit to right 50% */
 	  esl_gumbel_FitCensored(xv, n, z, xv[0], &(gum[p]->mu), &(gum[p]->lambda));
+	  printf("1 mu: %f lambda: %f\n", gum[p]->mu, gum[p]->lambda);
+	  fflush(stdout);
 	  gum[p]->N = N;
 	  gum[p]->L = L;
 	  if(cfg->gum_hfp != NULL)

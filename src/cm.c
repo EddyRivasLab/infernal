@@ -1693,7 +1693,7 @@ DuplicateCM(CM_t *cm)
     }
   new->hmmpad = cm->hmmpad;
 
-  new->cp9  = NULL;      /* WE DON'T COPY THE CP9   CURRENTLY */
+  new->cp9  = NULL;
 
   /* Copy the CM stats if they exist */
   if(cm->flags & CM_GUMBEL_STATS)
@@ -1702,17 +1702,11 @@ DuplicateCM(CM_t *cm)
       CopyCMStats(cm->stats, new->stats);
     }
 
-  /* Don't copy but build the CP9 if it exists in new */
+  /* Copy the CP9 if it exists */
   if(cm->flags & CM_CP9)
     {
-      if(!build_cp9_hmm(new, &(new->cp9), &(new->cp9map), FALSE, 0.0001, 0))
-	Die("Couldn't build a CP9 HMM from the new CM\n");
+      DuplicateCP9(cm, new);
       new->flags |= CM_CP9; /* raise the CP9 flag */
-      /* Configure the CP9 the way as it was for the source CM */
-      if(cm->cp9->flags & CPLAN9_LOCAL_BEGIN && cm->cp9->flags & CPLAN9_LOCAL_END)
-	CPlan9SWConfig(cm->cp9, 0.5, 0.5);
-      else
-	CPlan9GlobalConfig(cm->cp9);
     }
 
   return new;

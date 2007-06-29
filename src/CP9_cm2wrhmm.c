@@ -190,6 +190,12 @@ build_cp9_hmm(CM_t *cm, struct cplan9_s **ret_hmm, CP9Map_t **ret_cp9map, int do
   CP9Map_t *cp9map;         
   struct cplan9_s  *hmm;       /* CM plan 9 HMM we're going to construct from the sub_cm */
 
+  /* Contract check, we can't be in local mode in the CM */
+  if(cm->flags & CM_LOCAL_BEGIN)
+    esl_fatal("ERROR in build_cp9_hmm(), CM_LOCAL_BEGIN flag is up.\n");
+  if(cm->flags & CM_LOCAL_END)
+    esl_fatal("ERROR in build_cp9_hmm(), CM_LOCAL_END flag is up.\n");
+
   /* Allocate and initialize the cp9map */
   cp9map = AllocCP9Map(cm);
   /* Map the CM states to CP9 states and nodes and vice versa */
@@ -284,7 +290,7 @@ build_cp9_hmm(CM_t *cm, struct cplan9_s **ret_hmm, CP9Map_t **ret_cp9map, int do
   fill_phi_cp9(hmm, &phi, 1);
 
   if(debug_level > 1) 
-    debug_print_cp9_params(hmm);
+    debug_print_cp9_params(stdout, hmm);
   if(do_psi_test)
     ret_val = check_psi_vs_phi_cp9(cm, cp9map, psi, phi, (double) psi_vs_phi_threshold, debug_level);
   else
@@ -1489,7 +1495,7 @@ cm2hmm_special_trans_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, doubl
   hmm->t[0][CTMI] /= d;
   hmm->t[0][CTMD] /= d;
 
-  FNorm(hmm->t[0]+3, 3);	/* transitions out of insert for node 0 (state N)*/
+  FNorm(hmm->t[0]+4, 3);	/* transitions out of insert for node 0 (state N)*/
 
   k = 0;
   /*
@@ -1638,11 +1644,11 @@ cm2hmm_special_trans_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, doubl
   /* Finally, normalize the transition probabilities
    * Not strictly necessary, a CPlan9Renormalize() call will do this*/
   k = hmm->M;
-  d = FSum(hmm->t[k], 3) + hmm->end[k]; 
-  FScale(hmm->t[k], 3, 1./d);
+  d = FSum(hmm->t[k], 4) + hmm->end[k]; 
+  FScale(hmm->t[k], 4, 1./d);
   hmm->end[k] /= d;
-  FNorm(hmm->t[k]+3, 3);
-  FNorm(hmm->t[k]+6, 3);
+  FNorm(hmm->t[k]+4, 3);
+  FNorm(hmm->t[k]+7, 3);
 
   /*
   printf("S hmm->t[%d][CTMM]: %f\n", k, hmm->t[k][CTMM]);
@@ -1897,17 +1903,18 @@ cm2hmm_trans_probs_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, int k, 
 
   /* Finally, normalize the transition probabilities
    * Not strictly necessary, a CPlan9Renormalize() call will do this*/
-  d = FSum(hmm->t[k], 3) + hmm->end[k]; 
-  FScale(hmm->t[k], 3, 1./d);
+  d = FSum(hmm->t[k], 4) + hmm->end[k]; 
+  FScale(hmm->t[k], 4, 1./d);
   hmm->end[k] /= d;
 
-  FNorm(hmm->t[k]+3, 3);
-  FNorm(hmm->t[k]+6, 3);
+  FNorm(hmm->t[k]+4, 3);
+  FNorm(hmm->t[k]+7, 3);
   /* print transition probs for HMM */
   /*
     printf("hmm->t[%d][CTMM]: %f\n", k, hmm->t[k][CTMM]);
     printf("hmm->t[%d][CTMI]: %f\n", k, hmm->t[k][CTMI]);
     printf("hmm->t[%d][CTMD]: %f\n", k, hmm->t[k][CTMD]);
+    printf("hmm->t[%d][CTME]: %f\n", k, hmm->t[k][CTMD]);
     printf("hmm->t[%d][CTIM]: %f\n", k, hmm->t[k][CTIM]);
     printf("hmm->t[%d][CTII]: %f\n", k, hmm->t[k][CTII]);
     printf("hmm->t[%d][CTID]: %f\n", k, hmm->t[k][CTID]);
@@ -2374,57 +2381,59 @@ check_psi_vs_phi_cp9(CM_t *cm, CP9Map_t *cp9map, double *psi, double **phi, doub
  *           for a CM plan 9 HMM.
  *
  * Args:    
+ * fp                - often stdout
  * cplan9_s *hmm     - counts form CM plan 9 HMm
  * Returns: (void) 
  */
 void
-debug_print_cp9_params(struct cplan9_s *hmm)
+debug_print_cp9_params(FILE *fp, struct cplan9_s *hmm)
 {
   int k, i;
 
   printf("Printing CP9 HMM parameters in debug_print_cp9_params:\n\n");
+  fprintf(fp, "Printing CP9 HMM parameters in debug_print_cp9_params:\n\n");
 
   for(i = 0; i < MAXABET; i++)
     {
-      printf("\tins[%d][%d] = %f | %d\n", 0, i, hmm->ins[0][i], hmm->isc[i][0]);
+      fprintf(fp, "\tins[%d][%d] = %f | %d\n", 0, i, hmm->ins[0][i], hmm->isc[i][0]);
     }  
-  printf("\n");
+  fprintf(fp, "\n");
 
   k=0;
-  printf("\tCTMM[%d] = %f | %d\n", k, hmm->t[0][CTMM], hmm->tsc[CTMM][0]);
-  printf("\tCTMI[%d] = %f | %d\n", k, hmm->t[0][CTMI], hmm->tsc[CTMI][0]);
-  printf("\tCTMD[%d] = %f | %d\n", k, hmm->t[0][CTMD], hmm->tsc[CTMD][0]);
-  printf("\tCTME[%d] = %f | %d\n", k, hmm->t[0][CTME], hmm->tsc[CTME][0]);
-  printf("\tCTIM[%d] = %f | %d\n", k, hmm->t[0][CTIM], hmm->tsc[CTIM][0]);
-  printf("\tCTII[%d] = %f | %d\n", k, hmm->t[0][CTII], hmm->tsc[CTII][0]);
-  printf("\tCTID[%d] = %f | %d\n", k, hmm->t[0][CTID], hmm->tsc[CTID][0]);
-  printf("\tCTDM[%d] = %f | %d\n", k, hmm->t[0][CTDM], hmm->tsc[CTDM][0]);
-  printf("\tCTDI[%d] = %f | %d\n", k, hmm->t[0][CTDI], hmm->tsc[CTDI][0]);
-  printf("\tCTDD[%d] = %f | %d\n", k, hmm->t[0][CTDD], hmm->tsc[CTDD][0]);
+  fprintf(fp, "\tCTMM[%d] = %f | %d\n", k, hmm->t[0][CTMM], hmm->tsc[CTMM][0]);
+  fprintf(fp, "\tCTMI[%d] = %f | %d\n", k, hmm->t[0][CTMI], hmm->tsc[CTMI][0]);
+  fprintf(fp, "\tCTMD[%d] = %f | %d\n", k, hmm->t[0][CTMD], hmm->tsc[CTMD][0]);
+  fprintf(fp, "\tCTME[%d] = %f | %d\n", k, hmm->t[0][CTME], hmm->tsc[CTME][0]);
+  fprintf(fp, "\tCTIM[%d] = %f | %d\n", k, hmm->t[0][CTIM], hmm->tsc[CTIM][0]);
+  fprintf(fp, "\tCTII[%d] = %f | %d\n", k, hmm->t[0][CTII], hmm->tsc[CTII][0]);
+  fprintf(fp, "\tCTID[%d] = %f | %d\n", k, hmm->t[0][CTID], hmm->tsc[CTID][0]);
+  fprintf(fp, "\tCTDM[%d] = %f | %d\n", k, hmm->t[0][CTDM], hmm->tsc[CTDM][0]);
+  fprintf(fp, "\tCTDI[%d] = %f | %d\n", k, hmm->t[0][CTDI], hmm->tsc[CTDI][0]);
+  fprintf(fp, "\tCTDD[%d] = %f | %d\n", k, hmm->t[0][CTDD], hmm->tsc[CTDD][0]);
   
   for(k = 1; k <= hmm->M; k++)
     {      
-      printf("Node: %d\n", k);
+      fprintf(fp, "Node: %d\n", k);
       for(i = 0; i < MAXABET; i++)
-	printf("mat[%3d][%3d] = %.3f | %d\n", k, i, hmm->mat[k][i], hmm->msc[i][k]);
+	fprintf(fp, "mat[%3d][%3d] = %.3f | %d\n", k, i, hmm->mat[k][i], hmm->msc[i][k]);
 
       for(i = 0; i < MAXABET; i++)
-	printf("ins[%3d][%3d] = %.3f | %d\n", k, i, hmm->ins[k][i], hmm->isc[i][k]);
+	fprintf(fp, "ins[%3d][%3d] = %.3f | %d\n", k, i, hmm->ins[k][i], hmm->isc[i][k]);
 
-      printf("\n");
-      printf("\tCTMM[%d] = %f | %d\n", k, hmm->t[k][CTMM], hmm->tsc[CTMM][k]);
-      printf("\tCTMI[%d] = %f | %d\n", k, hmm->t[k][CTMI], hmm->tsc[CTMI][k]);
-      printf("\tCTMD[%d] = %f | %d\n", k, hmm->t[k][CTMD], hmm->tsc[CTMD][k]);
-      printf("\tCTME[%d] = %f | %d\n", k, hmm->t[k][CTME], hmm->tsc[CTME][k]);
-      printf("\tCTIM[%d] = %f | %d\n", k, hmm->t[k][CTIM], hmm->tsc[CTIM][k]);
-      printf("\tCTII[%d] = %f | %d\n", k, hmm->t[k][CTII], hmm->tsc[CTII][k]);
-      printf("\tCTID[%d] = %f | %d\n", k, hmm->t[k][CTID], hmm->tsc[CTID][k]);
-      printf("\tCTDM[%d] = %f | %d\n", k, hmm->t[k][CTDM], hmm->tsc[CTDM][k]);
-      printf("\tCTDI[%d] = %f | %d\n", k, hmm->t[k][CTDI], hmm->tsc[CTDI][k]);
-      printf("\tCTDD[%d] = %f | %d\n", k, hmm->t[k][CTDD], hmm->tsc[CTDD][k]);
-      printf("\t beg[%d] = %f | %d\n", k, hmm->begin[k], hmm->bsc[k]);
-      printf("\t end[%d] = %f | %d\n", k, hmm->end[k], hmm->esc[k]);
-      printf("\n");
+      fprintf(fp, "\n");
+      fprintf(fp, "\tCTMM[%d] = %f | %d\n", k, hmm->t[k][CTMM], hmm->tsc[CTMM][k]);
+      fprintf(fp, "\tCTMI[%d] = %f | %d\n", k, hmm->t[k][CTMI], hmm->tsc[CTMI][k]);
+      fprintf(fp, "\tCTMD[%d] = %f | %d\n", k, hmm->t[k][CTMD], hmm->tsc[CTMD][k]);
+      fprintf(fp, "\tCTME[%d] = %f | %d\n", k, hmm->t[k][CTME], hmm->tsc[CTME][k]);
+      fprintf(fp, "\tCTIM[%d] = %f | %d\n", k, hmm->t[k][CTIM], hmm->tsc[CTIM][k]);
+      fprintf(fp, "\tCTII[%d] = %f | %d\n", k, hmm->t[k][CTII], hmm->tsc[CTII][k]);
+      fprintf(fp, "\tCTID[%d] = %f | %d\n", k, hmm->t[k][CTID], hmm->tsc[CTID][k]);
+      fprintf(fp, "\tCTDM[%d] = %f | %d\n", k, hmm->t[k][CTDM], hmm->tsc[CTDM][k]);
+      fprintf(fp, "\tCTDI[%d] = %f | %d\n", k, hmm->t[k][CTDI], hmm->tsc[CTDI][k]);
+      fprintf(fp, "\tCTDD[%d] = %f | %d\n", k, hmm->t[k][CTDD], hmm->tsc[CTDD][k]);
+      fprintf(fp, "\t beg[%d] = %f | %d\n", k, hmm->begin[k], hmm->bsc[k]);
+      fprintf(fp, "\t end[%d] = %f | %d\n", k, hmm->end[k], hmm->esc[k]);
+      fprintf(fp, "\n");
     }
 }
 
@@ -2623,11 +2632,11 @@ CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo,
   if(print_flag)
     {
       printf("PRINTING BUILT HMM PARAMS:\n");
-      debug_print_cp9_params(hmm);
+      debug_print_cp9_params(stdout, hmm);
       printf("DONE PRINTING BUILT HMM PARAMS:\n");
       
       printf("PRINTING SAMPLED HMM PARAMS:\n");
-      debug_print_cp9_params(shmm);
+      debug_print_cp9_params(stdout, shmm);
       printf("DONE PRINTING SAMPLED HMM PARAMS:\n");
     }
   for(nd = 0; nd <= shmm->M; nd++)
@@ -2673,12 +2682,12 @@ CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo,
   if(print_flag)
     {
       printf("PRINTING BUILT HMM PARAMS:\n");
-      debug_print_cp9_params(hmm);
+      debug_print_cp9_params(stdout, hmm);
       printf("DONE PRINTING BUILT HMM PARAMS:\n");
       
       
       printf("PRINTING SAMPLED HMM PARAMS:\n");
-      debug_print_cp9_params(shmm);
+      debug_print_cp9_params(stdout, shmm);
       printf("DONE PRINTING SAMPLED HMM PARAMS:\n");
       
       /* Output the alignment */

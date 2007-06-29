@@ -580,14 +580,14 @@ main(int argc, char **argv)
       free(cp9_tr);
 
       printf("PRINTING NON-NORM SAMPLED HMM PARAMS:\n");
-      debug_print_cp9_params(shmm);
+      debug_print_cp9_params(stdout, shmm);
       printf("DONE PRINTING NON-NORM SAMPLED HMM PARAMS:\n");
 
       CPlan9Renormalize(shmm);
       CP9Logoddsify(shmm);
 
       printf("PRINTING NORM SAMPLED HMM PARAMS:\n");
-      debug_print_cp9_params(shmm);
+      debug_print_cp9_params(stdout, shmm);
       printf("DONE PRINTING NORM SAMPLED HMM PARAMS:\n");
       
       FreeCPlan9(shmm);

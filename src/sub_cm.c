@@ -791,9 +791,9 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
    if(print_flag)
    {
      printf("\nDEBUG PRINT OF ORIG_CM PARAMETERS:\n");
-     debug_print_cm_params(orig_cm);
+     debug_print_cm_params(stdout, orig_cm);
      printf("\nDEBUG PRINT OF SUB_CM PARAMETERS:\n");
-     debug_print_cm_params(sub_cm);
+     debug_print_cm_params(stdout, sub_cm);
    }    
 
    /* Cleanup and exit. */
@@ -1963,11 +1963,12 @@ cm2sub_cm_sum_subpaths(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, int orig
  *           for a CM.
  *
  * Args:    
+ * fp        stdout often
  * CM_t *cm     
  * Returns: (void) 
  */
 void
-debug_print_cm_params(CM_t *cm)
+debug_print_cm_params(FILE *fp, CM_t *cm)
 {
   int v, i;
    int yoffset;
@@ -1997,46 +1998,46 @@ debug_print_cm_params(CM_t *cm)
    sttypes[8] = "B";
    sttypes[9] = "EL";
 
-   printf("cm->nodes: %d\n", cm->nodes);
-   printf("cm->M:     %d\n", cm->M);
+   fprintf(fp, "cm->nodes: %d\n", cm->nodes);
+   fprintf(fp, "cm->M:     %d\n", cm->M);
    for(v = 0; v < cm->M; v++)
      {
-       printf("v:%4d:%4d %4s %2s\n", v, cm->ndidx[v], nodetypes[(int) cm->ndtype[cm->ndidx[v]]], sttypes[(int) cm->sttype[v]]);
+       fprintf(fp, "v:%4d:%4d %4s %2s\n", v, cm->ndidx[v], nodetypes[(int) cm->ndtype[cm->ndidx[v]]], sttypes[(int) cm->sttype[v]]);
        if(cm->nodemap[cm->ndidx[v]] == v)
-	 printf("beg: %0.3f (%.3f %10d)| end %0.3f (%.3f %10d)\n", cm->begin[v], cm->beginsc[v], cm->ibeginsc[v],
+	 fprintf(fp, "beg: %0.3f (%.3f %10d)| end %0.3f (%.3f %10d)\n", cm->begin[v], cm->beginsc[v], cm->ibeginsc[v],
 		cm->end[v], cm->endsc[v], cm->iendsc[v]);
        if(cm->sttype[v] == MP_st)
 	 {
-	   printf("\tE: ");
+	   fprintf(fp, "\tE: ");
 	   for(i = 0; i < MAXABET*MAXABET; i++)
-	     printf("%0.3f (%.3f %6d) ", cm->e[v][i], cm->esc[v][i], cm->iesc[v][i]);
-	   printf("\n");
+	     fprintf(fp, "%0.3f (%.3f %6d) ", cm->e[v][i], cm->esc[v][i], cm->iesc[v][i]);
+	   fprintf(fp, "\n");
 	 }
        else if(cm->sttype[v] == ML_st ||
 	       cm->sttype[v] == MR_st ||
 	       cm->sttype[v] == IL_st ||
 	       cm->sttype[v] == IR_st)
 	 {	   
-	   printf("\tE: ");
+	   fprintf(fp, "\tE: ");
 	   for(i = 0; i < MAXABET; i++)
-	     printf("%0.3f (%0.3f %10d) ", cm->e[v][i], cm->esc[v][i], cm->iesc[v][i]);
-	   printf("\n");
+	     fprintf(fp, "%0.3f (%0.3f %10d) ", cm->e[v][i], cm->esc[v][i], cm->iesc[v][i]);
+	   fprintf(fp, "\n");
 	 }
        if(cm->sttype[v] != B_st && cm->sttype[v] != E_st)
 	 {
-	   printf("\tT: ");
+	   fprintf(fp, "\tT: ");
 	   for(yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-	     printf("%0.3f (%0.3f %10d) ", cm->t[v][yoffset], cm->tsc[v][yoffset], cm->itsc[v][yoffset]);
-	   printf("\n");
+	     fprintf(fp, "%0.3f (%0.3f %10d) ", cm->t[v][yoffset], cm->tsc[v][yoffset], cm->itsc[v][yoffset]);
+	   fprintf(fp, "\n");
 	 }	    
        else if(cm->sttype[v] == B_st)
 	 {
-	   printf("\tL: %d | R: %d\n", cm->cfirst[v], cm->cnum[v]);
+	   fprintf(fp, "\tL: %d | R: %d\n", cm->cfirst[v], cm->cnum[v]);
 	 }
        else if(cm->sttype[v] == E_st)
-	 printf("\n\n");
+	 fprintf(fp, "\n\n");
      }
-   printf("\n\n");
+   fprintf(fp, "\n\n");
    free(nodetypes);
    free(sttypes);
    return;
@@ -2358,12 +2359,12 @@ check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int n
   /**************************************************/
   
   printf("PRINTING SAMPLED ORIG HMM PARAMS:\n");
-  debug_print_cp9_params(orig_hmm);
+  debug_print_cp9_params(stdout, orig_hmm);
   printf("DONE PRINTING SAMPLED ORIG HMM PARAMS:\n");
   
 
   printf("PRINTING SAMPLED SUB HMM PARAMS:\n");
-  debug_print_cp9_params(sub_hmm);
+  debug_print_cp9_params(stdout, sub_hmm);
   printf("DONE PRINTING SAMPLED SUB HMM PARAMS:\n");
   
   FreeCPlan9(orig_hmm);
@@ -3446,11 +3447,11 @@ check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subin
   if(print_flag)
     {
       printf("PRINTING BUILT SUB HMM PARAMS:\n");
-      debug_print_cp9_params(sub_hmm);
+      debug_print_cp9_params(stdout, sub_hmm);
       printf("DONE PRINTING BUILT SUB HMM PARAMS:\n");
       
       printf("PRINTING BUILT & RECONFIGED ORIG HMM PARAMS:\n");
-      debug_print_cp9_params(orig_hmm);
+      debug_print_cp9_params(stdout, orig_hmm);
       printf("DONE PRINTING BUILT & RECONFIGED SAMPLED HMM PARAMS:\n");
     }
 

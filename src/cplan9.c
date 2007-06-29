@@ -90,7 +90,7 @@ AllocCPlan9Body(struct cplan9_s *hmm, int M)
 
   hmm->t      = MallocOrDie ((M+1) *           sizeof(float *));
   hmm->mat    = MallocOrDie ((M+1) *           sizeof(float *));
-  hmm->ins    = MallocOrDie ((M+2) *           sizeof(float *));
+  hmm->ins    = MallocOrDie ((M+1) *           sizeof(float *));
   hmm->t[0]   = MallocOrDie ((10*(M+1))     *  sizeof(float));
   hmm->mat[0] = MallocOrDie ((MAXABET*(M+1)) * sizeof(float));
   hmm->ins[0] = MallocOrDie ((MAXABET*(M+1)) *     sizeof(float));
@@ -98,9 +98,9 @@ AllocCPlan9Body(struct cplan9_s *hmm, int M)
   hmm->tsc     = MallocOrDie (10     *           sizeof(int *));
   hmm->msc     = MallocOrDie (MAXDEGEN   *       sizeof(int *));
   hmm->isc     = MallocOrDie (MAXDEGEN   *       sizeof(int *)); 
-  hmm->tsc_mem = MallocOrDie ((10*(M+2))     *       sizeof(int));
+  hmm->tsc_mem = MallocOrDie ((10*(M+1))     *       sizeof(int));
   hmm->msc_mem = MallocOrDie ((MAXDEGEN*(M+1)) * sizeof(int));
-  hmm->isc_mem = MallocOrDie ((MAXDEGEN*(M+2)) *     sizeof(int));
+  hmm->isc_mem = MallocOrDie ((MAXDEGEN*(M+1)) *     sizeof(int));
 
   hmm->tsc[0] = hmm->tsc_mem;
   hmm->msc[0] = hmm->msc_mem;
@@ -437,7 +437,7 @@ CPlan9Renormalize(struct cplan9_s *hmm)
  *           Caller free's w/ FreeCPlan9Matrix()
  */
 struct cp9_dpmatrix_s *
-AllocCPlan9Matrix(int rows, int M, int ***mmx, int ***imx, int ***dmx, int ***elmx, int ***emx)
+AllocCPlan9Matrix(int rows, int M, int ***mmx, int ***imx, int ***dmx, int ***elmx, int **erow)
 {
   struct cp9_dpmatrix_s *mx;
   mx = CreateCPlan9Matrix(rows-1, M, 0, 0);
@@ -445,7 +445,8 @@ AllocCPlan9Matrix(int rows, int M, int ***mmx, int ***imx, int ***dmx, int ***el
   if (imx != NULL) *imx = mx->imx;
   if (dmx != NULL) *dmx = mx->dmx;
   if (elmx!= NULL) *elmx= mx->elmx;
-  if (emx != NULL) *emx = mx->emx;
+  if (erow!= NULL) *erow= mx->erow;
+  
   return mx;
 }
 
@@ -467,8 +468,8 @@ SizeCPlan9Matrix(int rows, int M)
 
   ram  = (float) (sizeof(struct cp9_dpmatrix_s));
   ram += (float) (sizeof(int *) * (rows+1) * 5);         /* mx->*mx */
-  ram += (float) (sizeof(int)   * (rows+1) * (M+2) * 4); /* mx->*mx_mem */
-  ram += (float) (sizeof(int)   * (rows+1));             /* mx->emx_mem */
+  ram += (float) (sizeof(int)   * (rows+1) * (M+1) * 4); /* mx->*mx_mem */
+  ram += (float) (sizeof(int)   * (rows+1));             /* mx->erow */
   return (ram / 1000000.);
 }
 
@@ -486,12 +487,11 @@ FreeCPlan9Matrix(struct cp9_dpmatrix_s *mx)
   free (mx->imx_mem);
   free (mx->dmx_mem);
   free (mx->elmx_mem);
-  free (mx->emx_mem);
   free (mx->mmx);
   free (mx->imx);
   free (mx->dmx);
   free (mx->elmx);
-  free (mx->emx);
+  free (mx->erow);
   free (mx);
 }
 
@@ -530,12 +530,11 @@ CreateCPlan9Matrix(int N, int M, int padN, int padM)
   mx->dmx     = (int **) MallocOrDie (sizeof(int *) * (N+1));
   mx->elmx    = (int **) MallocOrDie (sizeof(int *) * (N+1)); 
   /* slightly wasteful, some nodes can't go to EL (ex: right half of MATPs) */
-  mx->emx     = (int **) MallocOrDie (sizeof(int *) * (N+1)); /* FIX ME */
-  mx->mmx_mem = (void *) MallocOrDie (sizeof(int) * ((N+1)*(M+2)));
-  mx->imx_mem = (void *) MallocOrDie (sizeof(int) * ((N+1)*(M+2)));
-  mx->dmx_mem = (void *) MallocOrDie (sizeof(int) * ((N+1)*(M+2)));
-  mx->elmx_mem= (void *) MallocOrDie (sizeof(int) * ((N+1)*(M+2)));
-  mx->emx_mem = (void *) MallocOrDie (sizeof(int) * (N+1) * (1));
+  mx->erow    = (int *) MallocOrDie (sizeof(int) * (N+1));
+  mx->mmx_mem = (void *) MallocOrDie (sizeof(int) * ((N+1)*(M+1)));
+  mx->imx_mem = (void *) MallocOrDie (sizeof(int) * ((N+1)*(M+1)));
+  mx->dmx_mem = (void *) MallocOrDie (sizeof(int) * ((N+1)*(M+1)));
+  mx->elmx_mem= (void *) MallocOrDie (sizeof(int) * ((N+1)*(M+1)));
 
   /* The indirect assignment below looks wasteful; it's actually
    * used for aligning data on 16-byte boundaries as a cache 
@@ -545,14 +544,12 @@ CreateCPlan9Matrix(int N, int M, int padN, int padM)
   mx->imx[0] = (int *) mx->imx_mem;
   mx->dmx[0] = (int *) mx->dmx_mem;
   mx->elmx[0]= (int *) mx->elmx_mem;
-  mx->emx[0] = (int *) mx->emx_mem;
   for (i = 1; i <= N; i++)
     {
-      mx->mmx[i] = mx->mmx[0] + (i*(M+2));
-      mx->imx[i] = mx->imx[0] + (i*(M+2));
-      mx->dmx[i] = mx->dmx[0] + (i*(M+2));
-      mx->elmx[i]= mx->elmx[0]+ (i*(M+2));
-      mx->emx[i] = mx->emx[0] + (i*1);
+      mx->mmx[i] = mx->mmx[0] + (i*(M+1));
+      mx->imx[i] = mx->imx[0] + (i*(M+1));
+      mx->dmx[i] = mx->dmx[0] + (i*(M+1));
+      mx->elmx[i]= mx->elmx[0]+ (i*(M+1));
     }
 
   mx->maxN = N;
@@ -589,7 +586,7 @@ CreateCPlan9Matrix(int N, int M, int padN, int padM)
  * Args:     mx    - an already allocated model to grow.
  *           N     - seq length to allocate for; N+1 rows
  *           M     - size of model
- *           xmx, mmx, imx, dmx 
+ *           xmx, mmx, imx, dmx, elmx, erow 
  *                 - RETURN: ptrs to four mx components as a convenience
  *                   
  * Return:   (void)
@@ -597,7 +594,7 @@ CreateCPlan9Matrix(int N, int M, int padN, int padM)
  */
 void
 ResizeCPlan9Matrix(struct cp9_dpmatrix_s *mx, int N, int M, 
-		   int ***mmx, int ***imx, int ***dmx, int ***elmx, int ***emx)
+		   int ***mmx, int ***imx, int ***dmx, int ***elmx, int **erow)
 {
   int i;
   /*printf("N: %d | maxN: %d | M: %d | maxM: %d\n", N, mx->maxN, M, mx->maxM);*/
@@ -611,7 +608,7 @@ ResizeCPlan9Matrix(struct cp9_dpmatrix_s *mx, int N, int M,
     mx->imx     = (int **) ReallocOrDie (mx->imx, sizeof(int *) * (mx->maxN+1));
     mx->dmx     = (int **) ReallocOrDie (mx->dmx, sizeof(int *) * (mx->maxN+1));
     mx->elmx    = (int **) ReallocOrDie (mx->elmx,sizeof(int *) * (mx->maxN+1));
-    mx->emx     = (int **) ReallocOrDie (mx->emx, sizeof(int *) * (mx->maxN+1));
+    mx->erow    = (void *) ReallocOrDie (mx->erow,sizeof(int)   * (mx->maxN+1));
   }
 
   if (M > mx->maxM) {
@@ -619,25 +616,22 @@ ResizeCPlan9Matrix(struct cp9_dpmatrix_s *mx, int N, int M,
     mx->maxM = M; 
   }
 
-  mx->mmx_mem = (void *) ReallocOrDie (mx->mmx_mem, sizeof(int) * ((mx->maxN+1)*(mx->maxM+2)));
-  mx->imx_mem = (void *) ReallocOrDie (mx->imx_mem, sizeof(int) * ((mx->maxN+1)*(mx->maxM+2)));
-  mx->dmx_mem = (void *) ReallocOrDie (mx->dmx_mem, sizeof(int) * ((mx->maxN+1)*(mx->maxM+2)));
-  mx->elmx_mem= (void *) ReallocOrDie (mx->elmx_mem,sizeof(int) * ((mx->maxN+1)*(mx->maxM+2)));
-  mx->emx_mem = (void *) ReallocOrDie (mx->emx_mem, sizeof(int) * ((mx->maxN+1)*(1)));
+  mx->mmx_mem = (void *) ReallocOrDie (mx->mmx_mem, sizeof(int) * ((mx->maxN+1)*(mx->maxM+1)));
+  mx->imx_mem = (void *) ReallocOrDie (mx->imx_mem, sizeof(int) * ((mx->maxN+1)*(mx->maxM+1)));
+  mx->dmx_mem = (void *) ReallocOrDie (mx->dmx_mem, sizeof(int) * ((mx->maxN+1)*(mx->maxM+1)));
+  mx->elmx_mem= (void *) ReallocOrDie (mx->elmx_mem,sizeof(int) * ((mx->maxN+1)*(mx->maxM+1)));
 
   mx->mmx[0] = (int *) mx->mmx_mem;
   mx->imx[0] = (int *) mx->imx_mem;
   mx->dmx[0] = (int *) mx->dmx_mem;
   mx->elmx[0]= (int *) mx->elmx_mem;
-  mx->emx[0] = (int *) mx->emx_mem;
 
   for (i = 1; i <= mx->maxN; i++)
     {
-      mx->mmx[i] = mx->mmx[0] + (i*(mx->maxM+2));
-      mx->imx[i] = mx->imx[0] + (i*(mx->maxM+2));
-      mx->dmx[i] = mx->dmx[0] + (i*(mx->maxM+2));
-      mx->elmx[i]= mx->elmx[0]+ (i*(mx->maxM+2));
-      mx->emx[i] = mx->emx[0] + (i*(1));
+      mx->mmx[i] = mx->mmx[0] + (i*(mx->maxM+1));
+      mx->imx[i] = mx->imx[0] + (i*(mx->maxM+1));
+      mx->dmx[i] = mx->dmx[0] + (i*(mx->maxM+1));
+      mx->elmx[i]= mx->elmx[0]+ (i*(mx->maxM+1));
     }
 
  DONE:
@@ -645,7 +639,7 @@ ResizeCPlan9Matrix(struct cp9_dpmatrix_s *mx, int N, int M,
   if (imx != NULL) *imx = mx->imx;
   if (dmx != NULL) *dmx = mx->dmx;
   if (elmx!= NULL) *elmx= mx->elmx;
-  if (emx != NULL) *emx = mx->emx;
+  if (erow != NULL) *erow = mx->erow;
 }
 
 /* Function: CPlan9SWConfig()
@@ -717,6 +711,83 @@ CPlan9SWConfig(struct cplan9_s *hmm, float pentry, float pexit)
   CP9Logoddsify(hmm);
 }
 
+/* Function: CPlan9CMLocalBeginConfig()
+ * Incept:   EPN, Thu Jun 21 15:43:29 2007
+ * based on SRE's Plan7SWConfig() from HMMER's plan7.c
+ * 
+ * Purpose:  Set up a CM Plan 9 HMM to mimic CM local begins as closely
+ *           as it can. We can't enforce that a begin/end point are chosen
+ *           the same way a CM's are, as the choice of a CM local begin
+ *           (in non-truncated CYK mode) defines both a start and end point,
+ *           and some start/end combinations are impossible. For the CP9
+ *           we allow all possible start/end combos.
+ *           
+ * Args:     cm    - the CM, must have valid cm->cp9, we'll use
+ *                   the CM local begin probs to set the cm->cp9s
+ *                   begin/end probs.
+ *                    
+ * Return:   (void)
+ *           HMM probabilities are modified.
+ */
+void
+CPlan9CMLocalBeginConfig(CM_t *cm)
+{
+  /* Contract checks */
+  if(cm->cp9 == NULL)
+    esl_fatal("ERROR in CPlan9CMLocalBeginConfig, cm->cp9 is NULL.\n");
+  if(cm->cp9map == NULL)
+    esl_fatal("ERROR in CPlan9CMLocalBeginConfig, cm->cp9map is NULL.\n");
+  if(!(cm->flags & CM_CP9))
+     esl_fatal("ERROR in CPlan9CMLocalBeginConfig, CM_CP9 flag is down.");
+  if(!(cm->flags & CM_LOCAL_BEGIN))
+     esl_fatal("ERROR in CPlan9CMLocalBeginConfig, CM_LOCAL_BEGIN flag is down.");
+  if(!(cm->flags & CM_LOCAL_END))
+     esl_fatal("ERROR in CPlan9CMLocalBeginConfig, CP9_LOCAL_BEGIN flag is already up.");
+  if(cm->cp9->flags & CPLAN9_LOCAL_END)
+     esl_fatal("ERROR in CPlan9CMLocalBeginConfig, CP9_LOCAL_END flag is already up.");
+
+  /* Configure entry.
+   * To match CM, we enforce the only way out of the B state (M_0)
+   * is through a local begin into a match state 
+   */
+  esl_fatal("In CPlan9CMLocalBeginConfig(), function not yet finished.\n");
+
+  /* To do: determine which nodes we can begin into (for example can't begin
+   * into a node modeled by right half of a MATP). And those nodes we can
+   * end out of (ex: can't end out of left half of MATP). I think we can't
+   * get the local begin/end scores match the cm->begin scores exactly 
+   * though b/c hmm->begin[1] should match cm->begin[cm->nodemap[1]], but
+   * then the begin[2]-->[M] should only be half what they are in the 
+   * CM (because the end[2]->end[M] will incur a penalty also.
+   */
+
+  float hmm_begin_end_prob = cm->begin[cm->nodemap[1]];
+  /***************************************************/
+  /* BELOW IS INCOMPLETE! */
+  /*cm->cp9->t[0][CTMI] = cm->cp9->t[0][CTMD] = cm->cp9->t[0][CTME] = 0.;
+  cm->cp9->begin[1] = hmm_begin_end_prob;
+  FSet(cm->cp9->begin+2, cm->cp9->M-1, ((hmm_begin_end_prob/2.) / (float)(cm->cp9->M-1)));*/
+
+  /* Configure hmm->ends, there is no equivalent in the CM, as cm->end's are local
+   * ends (these correspond to EL states in the HMM see CPlan9ELConfig). A 
+   * CM local begin defines a start and end, we can't enforce that here, what
+   * we do is set end probabilities as 
+   * 
+   * Don't touch cm->cp9->end[cm->cp9->M]
+   */
+
+  /*basep = pexit / (float) (cm->cp9->M-1);
+  for (k = 1; k < cm->cp9->M; k++)
+    cm->cp9->end[k] = basep / (1. - basep * (float) (k-1));
+    CPlan9RenormalizeExits(cm->cp9, 1);*/
+
+  cm->cp9->flags       &= ~CPLAN9_HASBITS; /* reconfig invalidates log-odds scores */
+  cm->cp9->flags       |= CPLAN9_LOCAL_BEGIN; /* local begins now on */
+  cm->cp9->flags       |= CPLAN9_LOCAL_END;   /* local ends now on */
+
+  CP9Logoddsify(cm->cp9);
+}
+
 /* Function: CPlan9ELConfig()
  * Incept:   EPN, Tue Jun 19 09:50:52 2007
  * 
@@ -731,6 +802,12 @@ CPlan9SWConfig(struct cplan9_s *hmm, float pentry, float pexit)
 void
 CPlan9ELConfig(CM_t *cm)
 {
+  /* EPN, Mon Jun 25 13:08:51 2007 
+   * TEMPORARY: don't want ELs in CP9 (for 06.26.07 lab meeting data)
+   */
+  ///return;
+
+  /*printf("IN CPlan9ELConfig\n");*/
   /* Contract checks */
   if(cm->cp9 == NULL)
     esl_fatal("ERROR in CPlan9ELConfig, cm->cp9 is NULL.\n");
@@ -739,7 +816,7 @@ CPlan9ELConfig(CM_t *cm)
   if(!(cm->flags & CM_CP9))
      esl_fatal("ERROR in CPlan9ELConfig, CM_CP9 flag is down.");
   if(!(cm->flags & CM_LOCAL_END))
-     esl_fatal("ERROR in CPlan9ELConfig, CM_LOCAL_END lag is down.");
+     esl_fatal("ERROR in CPlan9ELConfig, CM_LOCAL_END flag is down.");
   if(cm->cp9->flags & CPLAN9_EL)
      esl_fatal("ERROR in CPlan9ELConfig, CP9_EL flag is already up.");
   
@@ -748,6 +825,7 @@ CPlan9ELConfig(CM_t *cm)
   int nd;
   int seen_exit;
   float to_el_prob;
+  float norm_factor;
 
   /* Check to make sure all non-zero local end probabilities 
    * in the CM are identical (within reasonable precision), 
@@ -776,21 +854,62 @@ CPlan9ELConfig(CM_t *cm)
 	}
     } 
 
-  /* transitions from HMM nodes, 0, M to EL are impossible */
+  /* transitions from HMM node 0 to EL is impossible */
   cm->cp9->t[0][CTME] = 0.;
-  cm->cp9->t[cm->cp9->M][CTME] = 0.;
   for(k = 1; k <= cm->cp9->M; k++) 
     {
-      cm->cp9->t[k][CTME] = to_el_prob;
-      cm->cp9->t[k][CTMM] *= (1. - cm->cp9->t[k][CTME]);
-      cm->cp9->t[k][CTMI] *= (1. - cm->cp9->t[k][CTME]);
-      cm->cp9->t[k][CTMD] *= (1. - cm->cp9->t[k][CTME]);
-      cm->cp9->end[k]     *= (1. - cm->cp9->t[k][CTME]);
+      if(cm->cp9->has_el[k])
+	{
+	  cm->cp9->t[k][CTME] = to_el_prob;
+	  norm_factor = 1. - (cm->cp9->t[k][CTME] / (1. - cm->cp9->end[k]));
+	  cm->cp9->t[k][CTMM] *= norm_factor;
+	  cm->cp9->t[k][CTMI] *= norm_factor;
+	  cm->cp9->t[k][CTMD] *= norm_factor;
+	  /* cm->cp9->end[k] untouched */
+	}
     }
+  cm->cp9->flags &= ~CPLAN9_HASBITS;	/* clear the log-odds ready flag */
+
+  CP9Logoddsify(cm->cp9);
+
+  cm->cp9->flags |= CPLAN9_EL;          /* EL end locals now on */
+  /*debug_print_cp9_params(cm->cp9);*/
+  return;
+}
+
+/* Function: CPlan9NoEL()
+ * Incept:   EPN, Tue Jun 19 09:50:52 2007
+ * 
+ * Purpose:  Turn EL local ends off in a CM Plan 9 HMM
+ *           
+ * Args:     cm     - the CM, must have valid CP9 HMM
+ *                    
+ * Return:   (void)
+ *           HMM probabilities are modified.
+ */
+void
+CPlan9NoEL(CM_t *cm)
+{
+  /* Contract checks */
+  if(cm->cp9 == NULL)
+    esl_fatal("ERROR in CPlan9ELConfig, cm->cp9 is NULL.\n");
+  if(cm->cp9map == NULL)
+    esl_fatal("ERROR in CPlan9ELConfig, cm->cp9map is NULL.\n");
+  if(!(cm->flags & CM_CP9))
+     esl_fatal("ERROR in CPlan9ELConfig, CM_CP9 flag is down.");
+  if(!(cm->cp9->flags & CPLAN9_EL))
+     esl_fatal("ERROR in CPlan9ELConfig, CP9_EL flag is already down.");
+  
+  int k;                     /* counter over HMM nodes */
+
+  for(k = 0; k <= cm->cp9->M; k++) 
+    cm->cp9->t[k][CTME] = 0.;
+  CPlan9RenormalizeExits(cm->cp9, 1);
+
   cm->cp9->flags &= ~CPLAN9_HASBITS;	/* clear the log-odds ready flag */
   CP9Logoddsify(cm->cp9);
 
-  /*debug_print_cp9_params(cm->cp9);*/
+  cm->cp9->flags &= ~CPLAN9_EL;          /* EL end locals now off */
 
   return;
 }
@@ -947,7 +1066,8 @@ CPlan9GlobalConfig(struct cplan9_s *hmm)
   CP9Logoddsify(hmm);
 }
 
-/* Function: CPlan9SWConfigEnforce()
+
+/* Function: CPlan9ConfigEnforce()
  * EPN, Fri Feb  9 05:47:37 2007
  * based on SRE's Plan7SWConfig() from HMMER's plan7.c
  * 
@@ -979,12 +1099,22 @@ CPlan9SWConfigEnforce(struct cplan9_s *hmm, float pentry, float pexit,
   /* No special (*x* states in Plan 7) states in CM Plan 9 */
 
   /* Configure entry.
+   * To match CM, we enforce the only way out of the B state (M_0)
+   * is through a local begin into a match state 
    */
-  hmm->begin[1] = (1. - pentry) * (1. - (hmm->t[0][CTMI] + hmm->t[0][CTMD]));
+  hmm->t[0][CTMI] = hmm->t[0][CTMD] = hmm->t[0][CTME] = 0.;
+  hmm->begin[1] = 1. - pentry;
+  for (k = 2; k <= enf_start_pos; k++)
+    hmm->begin[k] = pentry / (float)(enf_start_pos-1);
+
+
+  /* OLD WAY (more smith-waterman-like, less CM-like) EPN, Thu Jun 21 15:30:46 2007
+     hmm->begin[1] = (1. - pentry) * (1. - (hmm->t[0][CTMI] + hmm->t[0][CTMD])); 
   for (k = 2; k <= enf_start_pos; k++)
     hmm->begin[k] = (pentry * (1.- (hmm->t[0][CTMI] + hmm->t[0][CTMD]))) / (float)(enf_start_pos-1);
   for (k = (enf_start_pos+1); k <= hmm->M; k++)
     hmm->begin[k] = 0.;
+  */
     
   /* Configure exit.
    * Don't touch hmm->end[hmm->M]
@@ -1035,6 +1165,10 @@ CPlan9RenormalizeExits(struct cplan9_s *hmm, int spos)
 	  FScale(hmm->t[k], 4, (1.-hmm->end[k])/d);
 	}
     }
+  /* Take care of hmm->M node, which is special */
+  d = hmm->t[hmm->M][CTMI] + hmm->t[hmm->M][CTME]; /* CTMD is IMPOSSIBLE, CTMM is hmm->end[hmm-M] */
+  hmm->t[hmm->M][CTMI] *= (1.-hmm->end[hmm->M])/d;
+  hmm->t[hmm->M][CTME] *= (1.-hmm->end[hmm->M])/d;
   return;
 }
 
@@ -1893,9 +2027,9 @@ CP9PrintTrace(FILE *fp, CP9trace_t *tr, CP9_t *hmm, char *dsq)
 	  }
 	else if (tr->statetype[tpos] == CSTEL) 
 	  {
-	    if(tr->statetype[tpos+1] == CSTEL) /* we will emit on self transit */
+	    if(tr->statetype[tpos-1] == CSTEL) /* we will emit on self transit */
 	      {
-		fprintf(fp, " %8d %c", hmm->el_selfsc, 
+		fprintf(fp, " %8d %c", 0,
 			(char) tolower((int) Alphabet[(int) sym]));
 	      }
 	    else /* we just entered EL, no emission */
@@ -1973,6 +2107,7 @@ CP9TransitionScoreLookup(struct cplan9_s *hmm, char st1, int k1,
   case CSTEL:
     switch (st2) {
     case CSTM: return 0; /* transition to EL penalty incurred when M->EL transition takes place */
+    case CSTE: return 0; /* transition to EL penalty incurred when M->EL transition takes place */
     case CSTEL: return hmm->el_selfsc; /* penalty for EL->EL self transition loop */
     default:      Die("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
     }
@@ -2014,7 +2149,7 @@ CP9ViterbiTrace(struct cplan9_s *hmm, char *dsq, int i0, int j0,
   int tpos;			/* position in trace */
   int i;			/* position in seq (1..N) */
   int k;			/* position in model (1..M) */
-  int **emx, **mmx, **imx, **dmx, **elmx;
+  int *erow, **mmx, **imx, **dmx, **elmx;
   int sc;			/* temp var for pre-emission score */
   int error_flag; 
   int c;                        /* counter over possible EL states */
@@ -2029,8 +2164,8 @@ CP9ViterbiTrace(struct cplan9_s *hmm, char *dsq, int i0, int j0,
   mmx = mx->mmx;
   imx = mx->imx;
   dmx = mx->dmx;
-  emx = mx->emx;
   elmx= mx->elmx;
+  erow= mx->erow;
 
   /* Initialization of trace
    * We do it back to front; ReverseTrace() is called later.
@@ -2044,18 +2179,12 @@ CP9ViterbiTrace(struct cplan9_s *hmm, char *dsq, int i0, int j0,
   /* Traceback
    */
   while (tr->statetype[tpos-1] != CSTB) {
+    error_flag = FALSE;
     switch (tr->statetype[tpos-1]) {
-    case CSTM:			/* M connects from i-1,k-1, or B */
+    case CSTM:			/* M connects from i-1,k-1, B or an EL*/
       /*printf("CSTM k: %d i:%d \n", k, i);*/
-      error_flag = FALSE;
       sc = mmx[i+1][k+1] - hmm->msc[(int) dsq[i+1]][k+1];
       if (sc <= -INFTY) { CP9FreeTrace(tr); *ret_tr = NULL; return; }
-      else if (sc == hmm->bsc[k+1])
-	{
-	  tr->statetype[tpos] = CSTB;
-	  tr->nodeidx[tpos]   = 0;
-	  tr->pos[tpos]       = 0;
-	}
       else if (sc == mmx[i][k] + hmm->tsc[CTMM][k])
 	{
 	  tr->statetype[tpos] = CSTM;
@@ -2087,9 +2216,26 @@ CP9ViterbiTrace(struct cplan9_s *hmm, char *dsq, int i0, int j0,
 		  tr->statetype[tpos] = CSTEL;
 		  k = hmm->el_from_idx[(k+1)][c];
 		  tr->nodeidx[tpos]   = k;
-		  tr->pos[tpos]       = i;
+		  tr->pos[tpos]       = i--; 
 		  error_flag = FALSE;
+		  break;
 		}
+	    }
+	}
+      if(error_flag)
+	{
+	  /* one last possibility, we came from B, check this last, in
+	   * case hmm->bsc[k+1] happens to be identical to sc but
+	   * we're not done the parse yet (i.e. one of the cases
+	   * above equaled sc). */
+	  if (sc == hmm->bsc[k+1])
+	    {
+	      tr->statetype[tpos] = CSTB;
+	      tr->nodeidx[tpos]   = 0;
+	      tr->pos[tpos]       = 0;
+	      if(tr->pos[tpos-1] != 1)
+		Die("traceback failed: premature begin");
+	      error_flag = FALSE;
 	    }
 	}
       if(error_flag)
@@ -2178,16 +2324,17 @@ CP9ViterbiTrace(struct cplan9_s *hmm, char *dsq, int i0, int j0,
       break;
 
     case CSTE:			/* E connects from any M state. k set here 
-				 * also can connect from I_M or D_M (diff from p7) */
-      if (emx[0][i] <= -INFTY) { CP9FreeTrace(tr); *ret_tr = NULL; return; }
-      if (emx[0][i] == imx[i][hmm->M] + hmm->tsc[CTIM][hmm->M])
+				 * also can connect from I_M or D_M (diff from p7) 
+				 * or even EL_M if it exists */
+      if (erow[i] <= -INFTY) { CP9FreeTrace(tr); *ret_tr = NULL; return; }
+      if (erow[i] == imx[i][hmm->M] + hmm->tsc[CTIM][hmm->M])
 	{
 	  k = hmm->M;
 	  tr->statetype[tpos] = CSTI;
 	  tr->nodeidx[tpos]   = k;
 	  tr->pos[tpos]       = i--;
 	}
-      else if (emx[0][i] == dmx[i][hmm->M] + hmm->tsc[CTDM][hmm->M])
+      else if (erow[i] == dmx[i][hmm->M] + hmm->tsc[CTDM][hmm->M])
 	{
 	  k = hmm->M;
 	  tr->statetype[tpos] = CSTD;
@@ -2196,33 +2343,57 @@ CP9ViterbiTrace(struct cplan9_s *hmm, char *dsq, int i0, int j0,
 	}
       else
 	{
+	  error_flag = TRUE;
 	  for (k = hmm->M; k >= 1; k--)
-	    if (emx[0][i] == mmx[i][k] + hmm->esc[k])
+	    if (erow[i] == mmx[i][k] + hmm->esc[k])
 	      {
 		tr->statetype[tpos] = CSTM;
 		tr->nodeidx[tpos]   = k--;
 		tr->pos[tpos]       = i--;
+		error_flag = FALSE;
 		break;
 	      }
+	  if(error_flag)
+	    {
+	      /* Check if we came from an EL state (could be more than 1 choice) */ 
+	      /* hmm->el_from-ct[hmm->M+1] is # of ELs that can transit to E (END) */
+	      for(c = hmm->el_from_ct[hmm->M+1]-1; c >= 0; c--) /* el_from_ct[] is >= 0 */
+		{
+		  /* transition penalty to EL incurred when EL was entered */
+		  if(erow[i] == elmx[i][hmm->el_from_idx[hmm->M+1][c]])
+		    {
+		      tr->statetype[tpos] = CSTEL;
+		      k = hmm->el_from_idx[(hmm->M+1)][c];
+		      tr->nodeidx[tpos]   = k;
+		      tr->pos[tpos]       = i;
+		      error_flag = FALSE;
+		      break;
+		    }
+		}
+	    }
 	}
-      if (k < 0) Die("traceback failed");
+      if (k < 0 || error_flag) Die("traceback failed");
       break;
 
     case CSTEL:			/* EL connects from certain M states and itself */
       /*printf("CSTEL k: %d i:%d \n", k, i);*/
-      if(elmx[i][k] == mmx[i][k] + hmm->tsc[CTME][k] ||        /* M->EL->M with 0 self loops in EL */
-	 elmx[i+1][k] == mmx[i+1][k] + hmm->tsc[CTME][k])      /* M->EL->EL->...->M with >=1 self loop in EL */
-	{
-	  tr->statetype[tpos] = CSTM;
-	  tr->nodeidx[tpos]   = k--;
-	  tr->pos[tpos]       = i--;
-	}
       /* check if we are staying in the EL */
-      else if (elmx[i][k] == elmx[i+1][k] - hmm->el_selfsc)
+      sc = elmx[i+1][k];
+      if (sc == elmx[i][k] + hmm->el_selfsc) /* i >= 2, first residue must be emitted by a match, not an EL */
 	{
 	  tr->statetype[tpos] = CSTEL;
 	  tr->nodeidx[tpos]   = k;
 	  tr->pos[tpos]       = i--;
+	}
+      else if(sc  == mmx[i+1][k]   + hmm->tsc[CTME][k])    /* M->EL->M with 0 self loops in EL */
+	{
+	  tr->statetype[tpos] = CSTM;
+	  tr->nodeidx[tpos]   = k--;
+	  tr->pos[tpos]       = i+1; /* special case, we decremented i prematurely b/c we 
+				      * had no way of knowing it was our last visit to EL, before
+				      * we went to M (since we're working backwards this is actually
+				      * the first visit to EL). 
+				      */
 	}
       else Die("traceback failed");
       break;
@@ -2383,8 +2554,8 @@ CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq,
   matuse  = (int *) MallocOrDie(sizeof(int)  * (emap->clen+1));   
   eluse   = (int *) MallocOrDie(sizeof(int)  * (emap->clen+1));   
   iuse    = (int *) MallocOrDie(sizeof(int)  * (emap->clen+1));   
-  maxins  = (int *) MallocOrDie (sizeof(int) * (emap->clen+1));
-  maxels  = (int *) MallocOrDie (sizeof(int) * (emap->clen+1));
+  maxins  = (int *) MallocOrDie(sizeof(int) * (emap->clen+1));
+  maxels  = (int *) MallocOrDie(sizeof(int) * (emap->clen+1));
   matmap  = (int *) MallocOrDie(sizeof(int) * (emap->clen+1));
   imap    = (int *) MallocOrDie(sizeof(int) * (emap->clen+1));   
   elmap   = (int *) MallocOrDie(sizeof(int) * (emap->clen+1));   
@@ -2430,6 +2601,7 @@ CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq,
 	  statetype = tr[idx]->statetype[tpos]; /* just for clarity */
 	  cpos      = tr[idx]->nodeidx[tpos];      
 	  if(statetype == CSTM) next_match = cpos;
+	  if(statetype == CSTE) next_match = cm->cp9->M+1;
 	  if(statetype == CSTEL) eposmap[idx][cpos] = next_match; /* this will be overwritten below */
 	}
       for (cpos = 0; cpos <= emap->clen; cpos++) 
@@ -2544,9 +2716,9 @@ CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq,
 	    {
 	      /*printf("CSTEL cpos: %d rpos: %d epos: %d\n", cpos, rpos);*/
 	      epos = eposmap[idx][cpos];
-	      if(tpos+1 < tr[idx]->tlen && tr[idx]->statetype[tpos+1] == CSTEL)
+	      if(tr[idx]->statetype[tpos-1] == CSTEL) /* we don't emit on first EL visit */
 		{
-		  apos = elmap[epos] + eluse[epos]; 
+		  apos = elmap[epos] + eluse[epos];
 		  msa->aseq[idx][apos] = (char) tolower((int) Alphabet[(int) sq[idx]->dsq[rpos]]);
 		  eluse[epos]++;
 		}
@@ -2683,6 +2855,97 @@ rightjustify(char *s, int n)
   while (npos >= 0) 
     s[npos--] = '.';
 }
+
+
+/*
+ * Function: DuplicateCP9
+ * Date:     EPN, Thu Jun 28 13:37:22 2007
+ * Purpose:  Given a template cm 'src_cm' copy it's CP9 
+ *           to the cm 'dest_cm'. dest_cm->cp9 and dest_cm->cp9map
+ *           are alloc'ed here.
+ *
+ * Args:
+ *           src_cm         the source CM, must have valid cp9
+ *           dest_cm        the destination CM we're copying src_cm->cp9
+ *                          to
+ */
+void
+DuplicateCP9(CM_t *src_cm, CM_t *dest_cm)
+{
+  int       k,x;	          /* counter over nodes */
+  CP9_t     *new;
+
+  /* Contract checks */
+  if(!(src_cm->flags & CM_CP9))
+    esl_fatal("ERROR in DuplicateCP9() src_cm CM_CP9 flag down.\n");
+
+  CPlan9Renormalize(src_cm->cp9);
+  CP9Logoddsify(src_cm->cp9);
+  
+  /* We can fill the map before we copy the CP9 */
+  /* Allocate and initialize the cp9map */
+  dest_cm->cp9map = AllocCP9Map(dest_cm);
+  /* Map the CM states to CP9 states and nodes and vice versa */
+  CP9_map_cm2hmm(dest_cm, dest_cm->cp9map, 0);
+
+  /* Create the new model and copy everything over */
+  dest_cm->cp9 = AllocCPlan9(dest_cm->cp9map->hmm_M);
+  ZeroCPlan9(dest_cm->cp9);
+  CPlan9SetNullModel(dest_cm->cp9, dest_cm->null, 1.0); /* set p1 = 1.0 which corresponds to the CM */
+  CPlan9InitEL(dest_cm, dest_cm->cp9); /* set up hmm->el_from_ct and hmm->el_from_idx data, which
+					* explains how the EL states are connected in the HMM. */
+
+  /* Copy the transitions and emission probs and scores */
+  for(k = 0; k <= dest_cm->cp9->M; k++)
+    {
+      dest_cm->cp9->t[k][CTMM] = src_cm->cp9->t[k][CTMM];
+      dest_cm->cp9->t[k][CTMI] = src_cm->cp9->t[k][CTMI];
+      dest_cm->cp9->t[k][CTMD] = src_cm->cp9->t[k][CTMD];
+      dest_cm->cp9->t[k][CTME] = src_cm->cp9->t[k][CTME];
+
+
+      dest_cm->cp9->t[k][CTIM] = src_cm->cp9->t[k][CTIM];
+      dest_cm->cp9->t[k][CTII] = src_cm->cp9->t[k][CTII];
+      dest_cm->cp9->t[k][CTID] = src_cm->cp9->t[k][CTID];
+
+      dest_cm->cp9->t[k][CTDM] = src_cm->cp9->t[k][CTDM];
+      dest_cm->cp9->t[k][CTDI] = src_cm->cp9->t[k][CTDI];
+      dest_cm->cp9->t[k][CTDD] = src_cm->cp9->t[k][CTDD];
+
+      dest_cm->cp9->begin[k] = src_cm->cp9->begin[k];
+      dest_cm->cp9->end[k] = src_cm->cp9->end[k];
+
+      for(x = 0; x < Alphabet_size; x++)
+	{
+	  dest_cm->cp9->mat[k][x] = src_cm->cp9->mat[k][x];
+	  dest_cm->cp9->ins[k][x] = src_cm->cp9->ins[k][x];
+	}
+    }
+
+  dest_cm->cp9->p1        = src_cm->cp9->p1;
+  dest_cm->cp9->el_self   = src_cm->cp9->el_self;
+  dest_cm->cp9->el_selfsc = src_cm->cp9->el_selfsc;
+
+  CPlan9Renormalize(dest_cm->cp9);/* shouldn't be nec */
+  CP9Logoddsify(dest_cm->cp9); /* fill in all the integer log odds scores:
+				* msc, isc, bsc, esc, tsc, the *sc_mem
+				* pointers were set up in AllocCPlan9() */
+  if(src_cm->config_opts & CM_CONFIG_ZEROINSERTS)
+    CP9HackInsertScores(dest_cm->cp9);
+    
+  /*
+    FILE *fp;
+    fp = fopen("destcp9" ,"w");
+    debug_print_cp9_params(fp, dest_cm->cp9);
+    fclose(fp);
+    fp = fopen("srccp9" ,"w");
+    debug_print_cp9_params(fp, src_cm->cp9);
+    fclose(fp);
+  */
+
+  dest_cm->cp9->flags = src_cm->cp9->flags;
+}
+
 
 /* Following functions for CPlan9 HMMs were deprecated 01.04.07,
  * we never use these aspects of a CP9 HMM.

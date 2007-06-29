@@ -376,7 +376,7 @@ CP9ForwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm,
   int **imx;
   int **dmx;
   int **elmx;
-  int **emx;
+  int  *erow;
   int   i,k;
   int   sc;
   int   L;		/* subsequence length */
@@ -387,7 +387,7 @@ CP9ForwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm,
 
   /* Allocate a DP matrix with 0..L rows, 0..M-1 
    */ 
-  mx = AllocCPlan9Matrix(L+1, hmm->M, &mmx, &imx, &dmx, &elmx, &emx);
+  mx = AllocCPlan9Matrix(L+1, hmm->M, &mmx, &imx, &dmx, &elmx, &erow);
 
   /* Initialization of the zero row.
    */
@@ -404,8 +404,8 @@ CP9ForwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm,
 				imx[0][k-1] + hmm->tsc[CTID][k-1]),
 			dmx[0][k-1] + hmm->tsc[CTDD][k-1]);
   
-  emx[0][0] = dmx[0][hmm->M] + hmm->tsc[CTDM][hmm->M]; 
-  /*printf("i: %d score(emx[0][ip]): %f emx[0][ip]: %d\n", 0, Scorify(emx[0][0]), emx[0][0]);*/
+  erow[0] = dmx[0][hmm->M] + hmm->tsc[CTDM][hmm->M]; 
+  /*printf("i: %d score(erow[ip]): %f erow[ip]: %d\n", 0, Scorify(erow[0]), erow[0]);*/
   /* Recursion. Done as a pull.
    */
   for (ip = 1; ip <= L; ip++) /* ip is the relative position in the seq */
@@ -436,16 +436,16 @@ CP9ForwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm,
 			       dmx[ip-1][k] + hmm->tsc[CTDI][k]);
 	  imx[ip][k] += hmm->isc[(int) dsq[i]][k];
 	}
-      emx[0][ip] = -INFTY;
+      erow[ip] = -INFTY;
       for (k = 1; k <= hmm->M; k++)
-	emx[0][ip] = ILogsum(emx[0][ip], mmx[ip][k] + hmm->esc[k]);
-      emx[0][ip] = ILogsum(emx[0][ip], dmx[ip][hmm->M] + hmm->tsc[CTDM][hmm->M]); 
-      emx[0][ip] = ILogsum(emx[0][ip], imx[ip][hmm->M] + hmm->tsc[CTIM][hmm->M]); 
+	erow[ip] = ILogsum(erow[ip], mmx[ip][k] + hmm->esc[k]);
+      erow[ip] = ILogsum(erow[ip], dmx[ip][hmm->M] + hmm->tsc[CTDM][hmm->M]); 
+      erow[ip] = ILogsum(erow[ip], imx[ip][hmm->M] + hmm->tsc[CTIM][hmm->M]); 
 		       /* transition from D_M -> end */
-      /*printf("i: %d score(emx[0][ip]): %f emx[0][ip]: %d\n", i, Scorify(emx[0][ip]), emx[0][ip]);*/
+      /*printf("i: %d score(erow[ip]): %f erow[ip]: %d\n", i, Scorify(erow[ip]), erow[ip]);*/
     }		
-  sc = emx[0][L];
-  /*printf("F emx[%d]: %d\n", i, emx[0][L]);*/
+  sc = erow[L];
+  /*printf("F erow[%d]: %d\n", i, erow[L]);*/
   if (ret_mx != NULL) *ret_mx = mx;
   else                FreeCPlan9Matrix(mx);
 
@@ -487,7 +487,7 @@ CP9ViterbiOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatr
   int **imx;
   int **dmx;
   int **elmx;
-  int **emx;
+  int  *erow;
   int   i,k,c;
   int   sc;
   int   W;		/* subsequence length */
@@ -497,15 +497,14 @@ CP9ViterbiOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatr
 
   /* Allocate a DP matrix with 0..W rows, 0..M-1 columns.
    */ 
-  ResizeCPlan9Matrix(mx, W, hmm->M, &mmx, &imx, &dmx, &elmx, &emx);
+  ResizeCPlan9Matrix(mx, W, hmm->M, &mmx, &imx, &dmx, &elmx, &erow);
   /* Initialization of the zero row.
    */
   mmx[0][0] = 0;      /* M_0 is state B, and everything starts in B */
   imx[0][0] = -INFTY; /* I_0 is state N, can't get here without emitting*/
   dmx[0][0] = -INFTY; /* D_0 doesn't exist. */
   elmx[0][0]= -INFTY; /* can't go from B to EL state */
-
-  emx[0][0] = -INFTY; /* can't end without going through at least 1 match state*/
+  erow[0]   = -INFTY; 
 
   /* Because there's a D state for every node 1..M, 
      dmx[0][k] is possible for all k 1..M */
@@ -554,11 +553,14 @@ CP9ViterbiOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatr
 	  if((sc = dmx[ip-1][k-1] + hmm->tsc[CTDM][k-1]) > mmx[ip][k])
 	    mmx[ip][k] = sc;
 	  /* Check if we came from an EL state */
-	  for(c = 0; c < hmm->el_from_ct[k]; c++) /* el_from_ct[k] is >= 0 */
+	  if(hmm->flags & CPLAN9_EL) /* no need to waste time */
 	    {
-	      /* transition penalty to EL incurred when EL was entered */
-	      if((sc = elmx[ip-1][hmm->el_from_idx[k][c]]) > mmx[ip][k])
-		mmx[ip][k] = sc;
+	      for(c = 0; c < hmm->el_from_ct[k]; c++) /* el_from_ct[k] is >= 0 */
+		{
+		  /* transition penalty to EL incurred when EL was entered */
+		  if((sc = elmx[ip-1][hmm->el_from_idx[k][c]]) > mmx[ip][k])
+		    mmx[ip][k] = sc;
+		}
 	    }
 	  if(mmx[ip][k] != -INFTY)
 	    mmx[ip][k] += hmm->msc[(int) dsq[i]][k];
@@ -589,8 +591,8 @@ CP9ViterbiOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatr
 
 	  /*EL (end-local) state*/
 	  elmx[ip][k] = -INFTY;
-	  if(hmm->has_el[k]) /* not all HMM nodes have an EL state (for ex: 
-				HMM nodes that map to right half of a MATP_MP) */
+	  if((hmm->flags & CPLAN9_EL) && hmm->has_el[k]) /* not all HMM nodes have an EL state (for ex: 
+							    HMM nodes that map to right half of a MATP_MP) */
 	    {
 	      if((sc = mmx[ip][k] + hmm->tsc[CTME][k]) > elmx[ip][k])
 		elmx[ip][k] = sc; /* transitioned from cur node's match state */
@@ -598,15 +600,24 @@ CP9ViterbiOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatr
 		elmx[ip][k] = sc; /* transitioned from cur node's EL state emitted ip on transition */
 	    }
 	}
-      emx[0][ip] = -INFTY;
+      erow[ip] = -INFTY;
       for (k = 1; k <= hmm->M; k++)
-	if ((sc = mmx[ip][k] + hmm->esc[k]) > emx[0][ip])
-	  emx[0][ip] = sc;
-      if ((sc =  dmx[ip][hmm->M] + hmm->tsc[CTDM][hmm->M]) > emx[0][ip])
-	emx[0][ip] = sc;
-      /* transition from D_M -> end */
+	if ((sc = mmx[ip][k] + hmm->esc[k]) > erow[ip])
+	  erow[ip] = sc;
+      if ((sc =  dmx[ip][hmm->M] + hmm->tsc[CTDM][hmm->M]) > erow[ip]) /* transition from D_M -> end */
+	erow[ip] = sc;
+      /* check if we came from an EL */
+      if(hmm->flags & CPLAN9_EL) /* no need to waste time */
+	{
+	  for(c = 0; c < hmm->el_from_ct[hmm->M+1]; c++) /* el_from_ct[hmm->M+1] holds # ELs that can go to END */
+	    {
+	      /* transition penalty to EL incurred when EL was entered */
+	      if((sc = elmx[ip][hmm->el_from_idx[hmm->M+1][c]]) > erow[ip])
+		erow[ip] = sc;
+	    }
+	}
     } 
-  sc = emx[0][W];
+  sc = erow[W];
   printf("returing sc: %d from CPViterbi()\n", sc);
   
   if (ret_tr != NULL) {
@@ -638,11 +649,11 @@ float
 CP9BackwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s **ret_mx)
 {
   struct cp9_dpmatrix_s *mx;
-  int **emx;
   int **mmx;
   int **imx;
   int **dmx;
   int **elmx;
+  int  *erow;
   int   i,k;
   int   sc;
 
@@ -653,23 +664,23 @@ CP9BackwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmat
 
   /* Allocate a DP matrix with 0..W rows, 0..M-1 columns.
    */ 
-  mx = AllocCPlan9Matrix(W+1, hmm->M, &mmx, &imx, &dmx, &elmx, &emx);
+  mx = AllocCPlan9Matrix(W+1, hmm->M, &mmx, &imx, &dmx, &elmx, &erow);
 
   /* Initialization of the W row.
    */
   i = j0;
 
-  emx[0][W] = 0; /*have to end in E*/
+  erow[W] = 0; /*have to end in E*/
 
-  mmx[W][hmm->M] = emx[0][W] + hmm->esc[hmm->M]; /* M<-E ...                   */
+  mmx[W][hmm->M] = erow[W] + hmm->esc[hmm->M]; /* M<-E ...                   */
   mmx[W][hmm->M] += hmm->msc[(int) dsq[i]][hmm->M]; /* ... + emitted match symbol */
   /* can't come from I_M b/c we've emitted a single residue, L from M_M */
-  imx[W][hmm->M] = emx[0][W] + hmm->tsc[CTIM][hmm->M];   /* I_M(C)<-E ... */
+  imx[W][hmm->M] = erow[W] + hmm->tsc[CTIM][hmm->M];   /* I_M(C)<-E ... */
   imx[W][hmm->M] += hmm->isc[(int) dsq[i]][hmm->M];           /* ... + emitted match symbol */
-  dmx[W][hmm->M] = emx[0][W] + hmm->tsc[CTDM][hmm->M];    /* D_M<-E */
+  dmx[W][hmm->M] = erow[W] + hmm->tsc[CTDM][hmm->M];    /* D_M<-E */
   for (k = hmm->M-1; k >= 1; k--)
     {
-      mmx[W][k]  = hmm->esc[k] + emx[0][W];
+      mmx[W][k]  = hmm->esc[k] + erow[W];
       mmx[W][k]  = ILogsum(mmx[W][k], dmx[W][k+1] + hmm->tsc[CTMD][k]);
       mmx[W][k] += hmm->msc[(int) dsq[i]][k];
 
@@ -690,7 +701,7 @@ CP9BackwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmat
   for (ip = W-1; ip >= 1; ip--) /* ip is the relative position in the seq */
     {
       i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from j0 down to i0 */
-      emx[0][ip] = -INFTY;
+      erow[ip] = -INFTY;
       
       /* Now the main states. Note the boundary conditions at M.
        */
@@ -732,7 +743,7 @@ CP9BackwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmat
       dmx[ip][0] = -INFTY; /* D_0 does not exist */
     }
   /* case when ip = 0 */
-  emx[0][0] = -INFTY;
+  erow[0] = -INFTY;
   mmx[0][hmm->M] = -INFTY; /* need seq to get here */
   imx[0][hmm->M] = -INFTY; /* need seq to get here */
   dmx[0][hmm->M] = imx[1][hmm->M] + hmm->tsc[CTDI][hmm->M];  /* * */

@@ -132,16 +132,19 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
   int      nd;                  /* counter over nodes */
   int      yoffset;             /* counter over children */
   int      reset_local_ends;    /* TRUE if we erased them and need to reset */
+  int      reset_cp9_local_ends;/* TRUE if we erased them and need to reset */
   /* If we're in local to avoid extremely wide bands due to 
    * the permissive nature of local ends, we make local ends
    * impossible for the band calculation than make them
    * possible again before exiting this function.
    */
-  reset_local_ends = FALSE;
+  reset_local_ends = reset_cp9_local_ends = FALSE;
   if(cm->flags & CM_LOCAL_END)
     {
-      ConfigNoLocalEnds(cm);
       reset_local_ends = TRUE;
+      if((cm->flags & CM_CP9) && cm->cp9->flags & CPLAN9_EL)
+	reset_cp9_local_ends = TRUE;
+      ConfigNoLocalEnds(cm);
     }
   /* gamma[v][n] is Prob(state v generates subseq of length n)
    */
@@ -347,6 +350,11 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
     {
       ConfigLocalEnds(cm, 0.5);
       reset_local_ends = FALSE;
+      if(reset_cp9_local_ends)
+	{
+	  CPlan9ELConfig(cm);
+	  reset_cp9_local_ends = FALSE;
+	}
     }
   if (! BandTruncationNegligible(gamma[0], dmax[0], W, NULL)) 
     { status = 0; goto CLEANUP; }
@@ -362,6 +370,11 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
     {
       ConfigLocalEnds(cm, 0.5);
       reset_local_ends = FALSE;
+      if(reset_cp9_local_ends)
+	{
+	  CPlan9ELConfig(cm);
+	  reset_cp9_local_ends = FALSE;
+	}
     }
   if (ret_dmin  != NULL) *ret_dmin = dmin;   else free(dmin);
   if (ret_dmax  != NULL) *ret_dmax = dmax;   else free(dmax);

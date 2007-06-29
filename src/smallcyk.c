@@ -521,7 +521,7 @@ CYKInsideScore(CM_t *cm, char *dsq, int r, int i0, int j0, int L, int *dmin, int
  *           be_quiet - TRUE to not print info, just return number of DP calcs
  * 
  * Returns: (float) the total number of DP calculations, either using QDB (if
- *                  dmin & dmax are non-NULL.
+ *                  dmin & dmax are non-NULL) or not using QDB.
  */
 float
 CYKDemands(CM_t *cm, int L, int *dmin, int *dmax, int be_quiet)
