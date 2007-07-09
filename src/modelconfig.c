@@ -90,8 +90,8 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
 	}
       else
 	{
-	  swentry = 0.5;
-	  swexit  = 0.5;
+	  swentry = cm->pbegin;
+	  swexit  = cm->pbegin;
 	  /*swentry= ((cm->cp9->M)-1.)/cm->cp9->M;*/ /* all start pts equiprobable, including 1 */
 	  /*swexit = ((cm->cp9->M)-1.)/cm->cp9->M;*/ /* all end   pts equiprobable, including M */
 	}
@@ -272,7 +272,7 @@ ConfigCMEnforce(CM_t *cm)
       enf_start_pos = emap->lpos[cm->enf_start];
       enf_end_pos   = emap->lpos[enf_end];
       FreeEmitMap(emap);
-      CPlan9SWConfigEnforce(cm->cp9, 0.5, 0.5, enf_start_pos, enf_end_pos);
+      CPlan9SWConfigEnforce(cm->cp9, cm->pbegin, cm->pbegin, enf_start_pos, enf_end_pos);
       CP9Logoddsify(cm->cp9);
     }
      
@@ -1064,7 +1064,7 @@ ConfigForGumbelMode(CM_t *cm, int gum_mode)
 	{
 	  /* To do: Make the CP9 local to match the CM, as close as we can */
 	  /*CPlan9CMLocalBeginConfig(cm); <-- Finish this function */
-	  CPlan9SWConfig(cm->cp9, 0.5, 0.5); 
+	  CPlan9SWConfig(cm->cp9, cm->pbegin, cm->pbegin); 
 	  CPlan9ELConfig(cm);
 
 	  /* CPlan9SWConfig(cm->cp9, ((cm->cp9->M)-1.)/cm->cp9->M,*/  /* all start pts equiprobable, including 1 */

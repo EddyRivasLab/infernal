@@ -2025,7 +2025,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
       /* Configure the HMM based on the hmm_gum_mode */
       if(hmm_gum_mode == CP9_L)
 	{
-	  CPlan9SWConfig(cm->cp9, 0.5, 0.5);
+	  CPlan9SWConfig(cm->cp9, cm->pbegin, cm->pbegin);
 	  CPlan9ELConfig(cm);
 	}
       else /* hmm_gum_mode == CP9_G (it's in the contract) */
@@ -2138,7 +2138,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   /* Configure the HMM based on the hmm_gum_mode */
   if(hmm_gum_mode == CP9_L)
     {
-      CPlan9SWConfig(cm_for_scoring->cp9, 0.5, 0.5);
+      CPlan9SWConfig(cm_for_scoring->cp9, cm_for_scoring->pbegin, cm_for_scoring->pbegin);
       CPlan9ELConfig(cm_for_scoring);
     }
   else /* hmm_gum_mode == CP9_G (it's in the contract) */

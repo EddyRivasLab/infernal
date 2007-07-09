@@ -323,13 +323,13 @@ main(int argc, char **argv)
        *****************************************************************/
       if(!(esl_opt_GetBoolean(go, "--filonly")))
 	{
-	  for(gum_mode = 0; gum_mode < NGUMBELMODES; gum_mode++)
-	    cm_fit_gumbel(cm, go, &cfg, cmstats[ncm], gum_mode);
-	  /*06.29.07 only CM-LC and CP9-L code: 
+	  /*for(gum_mode = 0; gum_mode < NGUMBELMODES; gum_mode++)
+	    cm_fit_gumbel(cm, go, &cfg, cmstats[ncm], gum_mode);*/
+	  /*06.29.07 only CM-LC and CP9-L code: */
 	  if(cfg.my_rank == 0) 
-	  CopyCMStatsGumbel(cm->stats, cmstats[ncm]);
+	    CopyCMStatsGumbel(cm->stats, cmstats[ncm]);
 	  cm_fit_gumbel(cm, go, &cfg, cmstats[ncm], CM_LC); 
-	  cm_fit_gumbel(cm, go, &cfg, cmstats[ncm], CP9_L);*/
+	  cm_fit_gumbel(cm, go, &cfg, cmstats[ncm], CP9_L);
 	  /* end of 06.29.07 block */
 	  cm->flags |= CM_GUMBEL_STATS;
 	}
