@@ -478,7 +478,7 @@ main(int argc, char **argv)
       /* Configure the CM and potentially HMM for local alignment. */
       if (cm->config_opts & CM_CONFIG_LOCAL)
 	{ 
-	  ConfigLocal(cm, 0.5, 0.5);
+	  ConfigLocal(cm, cm->pbegin, cm->pend);
 	  ConfigLocal_DisallowELEmissions(cm);
 	  CMLogoddsify(cm);
 	  if(cm->flags & CM_CP9)

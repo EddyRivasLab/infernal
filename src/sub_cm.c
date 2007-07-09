@@ -3997,6 +3997,14 @@ sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Pars
     }      
   *ret_orig_tr = orig_tr;
 
+  free(ss_used);
+  free(ss_emitl);
+  free(ss_emitr);
+  free(il_used);
+  free(ir_used);
+  free(il_ct);
+  free(ir_ct);
+  free(tr_nd_for_bifs);
   free(nodetypes);
   free(sttypes);
   FreeNstack(pda);

@@ -27,6 +27,8 @@
 #define DEFAULT_BETA   0.0000001
 #define DEFAULT_TAU    0.0000001
 #define DEFAULT_HMMPAD 0
+#define DEFAULT_PBEGIN 0.05 /* EPN 06.29.07 (formerly 0.5) */
+#define DEFAULT_PEND   0.05 /* EPN 06.29.07 (formerly 0.5) */
 
 /* default num samples for CM and CP9 E-values */
 #define DEFAULT_NUM_SAMPLES 1000
@@ -321,6 +323,8 @@ typedef struct cm_s {
   float     ffract;     /* desired filter fraction (0.99 -> filter out 99% of db), default: 0.*/
   float    *root_trans; /* transition probs from state 0, saved IFF zeroed in ConfigLocal()   */
   int       hmmpad;     /* if(cm->search_opts & CM_SEARCH_HMMPAD) # of res to -/+ from i/j    */
+  float     pbegin;     /* local begin prob to spread across internal nodes for local mode    */
+  float     pend;       /* local end prob to spread across internal nodes for local mode      */
   
   /* search cutoffs */
   int       cutoff_type;/* either SC_CUTOFF or E_CUTOFF                                       */

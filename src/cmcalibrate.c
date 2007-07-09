@@ -325,9 +325,12 @@ main(int argc, char **argv)
 	{
 	  for(gum_mode = 0; gum_mode < NGUMBELMODES; gum_mode++)
 	    cm_fit_gumbel(cm, go, &cfg, cmstats[ncm], gum_mode);
-	    /*06.25.07 only CP9-L code: if(cfg.my_rank == 0) 
-	      CopyCMStatsGumbel(cm->stats, cmstats[ncm]);
-	      cm_fit_gumbel(cm, go, &cfg, cmstats[ncm], CP9_L); */
+	  /*06.29.07 only CM-LC and CP9-L code: 
+	  if(cfg.my_rank == 0) 
+	  CopyCMStatsGumbel(cm->stats, cmstats[ncm]);
+	  cm_fit_gumbel(cm, go, &cfg, cmstats[ncm], CM_LC); 
+	  cm_fit_gumbel(cm, go, &cfg, cmstats[ncm], CP9_L);*/
+	  /* end of 06.29.07 block */
 	  cm->flags |= CM_GUMBEL_STATS;
 	}
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)

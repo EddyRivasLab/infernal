@@ -348,7 +348,7 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
    * Careful we can only call this once */
   if(reset_local_ends)
     {
-      ConfigLocalEnds(cm, 0.5);
+      ConfigLocalEnds(cm, cm->pend);
       reset_local_ends = FALSE;
       if(reset_cp9_local_ends)
 	{
@@ -368,7 +368,7 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
    * Careful we can only call this once */
   if(reset_local_ends)
     {
-      ConfigLocalEnds(cm, 0.5);
+      ConfigLocalEnds(cm, cm->pend);
       reset_local_ends = FALSE;
       if(reset_cp9_local_ends)
 	{

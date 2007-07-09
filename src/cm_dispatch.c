@@ -1630,7 +1630,19 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	      cp9b->hdmin[v] = NULL;
 	      cp9b->hdmax[v] = NULL;
 	    }
+	  if(do_sub)
+	    {
+	      for(v = 0; v < orig_cm->M; v++)
+		{ 
+		  free(orig_cp9b->hdmin[v]); 
+		  free(orig_cp9b->hdmax[v]);
+		  orig_cp9b->hdmin[v] = NULL;
+		  orig_cp9b->hdmax[v] = NULL;
+		}
+	    }
 	}
+      if(do_sub)
+	FreeCPlan9Matrix(cp9_post);
       if(do_sub && !(do_inside || do_outside))
 	{
 	  /* Convert the sub_cm parsetree to a full CM parsetree */

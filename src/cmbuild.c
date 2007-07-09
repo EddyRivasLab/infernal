@@ -945,7 +945,7 @@ main(int argc, char **argv)
 	   */
 	  if (treeforce) 
 	    {
-	      ConfigLocal(cm, 0.5, 0.5);	  
+	      ConfigLocal(cm, cm->pbegin, cm->pend);	  
 	      CMLogoddsify(cm);
 	      for (idx = 0; idx < treeforce; idx++) 
 		{

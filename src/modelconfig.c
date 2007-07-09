@@ -68,7 +68,7 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
 
   if (cm->config_opts & CM_CONFIG_LOCAL)
     { 
-      ConfigLocal(cm, 0.5, 0.5);
+      ConfigLocal(cm, cm->pbegin, cm->pend);
       CMLogoddsify(cm);
       
       if(cm->config_opts & CM_CONFIG_ELSILENT)
@@ -252,8 +252,8 @@ ConfigCMEnforce(CM_t *cm)
   /* Configure the CM for local alignment . */
   if (cm->config_opts & CM_CONFIG_LOCAL)
     { 
-      ConfigLocalEnforce(cm, 0.5, 0.5); /* even in local we require each parse 
-					 * go through the enforced subseq */
+      ConfigLocalEnforce(cm, cm->pbegin, cm->pend); /* even in local we require each parse 
+						     * go through the enforced subseq */
       CMLogoddsify(cm);
       if(cm->config_opts & CM_CONFIG_ELSILENT)
 	ConfigLocal_DisallowELEmissions(cm);
@@ -1048,7 +1048,7 @@ ConfigForGumbelMode(CM_t *cm, int gum_mode)
        * it's doing. */
       if(cm->flags & CM_LOCAL_BEGIN || cm->flags & CM_LOCAL_END) 
 	ConfigGlobal(cm);
-      ConfigLocal(cm, 0.5, 0.5);
+      ConfigLocal(cm, cm->pbegin, cm->pend);
     }
   else if(cm->flags & CM_LOCAL_BEGIN || cm->flags & CM_LOCAL_END) /* these *should* both either be up or down */
     ConfigGlobal(cm);

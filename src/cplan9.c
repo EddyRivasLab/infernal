@@ -802,11 +802,6 @@ CPlan9CMLocalBeginConfig(CM_t *cm)
 void
 CPlan9ELConfig(CM_t *cm)
 {
-  /* EPN, Mon Jun 25 13:08:51 2007 
-   * TEMPORARY: don't want ELs in CP9 (for 06.26.07 lab meeting data)
-   */
-  ///return;
-
   /*printf("IN CPlan9ELConfig\n");*/
   /* Contract checks */
   if(cm->cp9 == NULL)
@@ -843,7 +838,7 @@ CPlan9ELConfig(CM_t *cm)
 	{
 	  /* this should have a non-zero local end probability */
 	  if(fabs(cm->end[v] - 0.) < 0.00001) /* non-zero */
-	    esl_fatal("In CPlan9ELConfig(), CM state %d should have non-zero local end prob, but it doesn't\n", v);
+	    esl_fatal("In CPlan9ELConfig(), CM state %d should have non-zero local end prob, but it doesn't.\n", v);
 	  if(!seen_exit)	  
 	    {
 	      to_el_prob = cm->end[v];

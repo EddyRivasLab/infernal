@@ -424,7 +424,7 @@ CP9Viterbi(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
     }
   if (ret_mx != NULL) *ret_mx = mx;
   else                FreeCPlan9Matrix(mx);
-  /*printf("Forward return_sc: %f\n", return_sc);*/
+  printf("Forward return_sc: %f\n", return_sc);
   return return_sc;
 }
 
@@ -2501,6 +2501,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	  printf("Case 1A rare case: init Emin %12f > E %f > Etarget %f F: %f S: %.12f Spad: %.3f\n", Emin, E, Etarget, F, S, Spad);
       else
 	  printf("Case 1B bad  case: init E %f > Etarget %f && E > Emin %12f F: %f S: %.12f Spad: %.3f\n", E, Etarget, Emin, F, S, Spad);
+      if(E < Emin) E = Emin; /* No reason to have an E below Emin */
     }
   else
     {
@@ -2518,15 +2519,12 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
       printf("Before Spad E: %f\n", E);
       S_sc =    (cm->stats->gumAA[hmm_gum_mode][p]->mu - 
 		 (log(E) / cm->stats->gumAA[hmm_gum_mode][p]->lambda)); 
-      if(Starget > Smin)
-	Starget_sc = (cm->stats->gumAA[hmm_gum_mode][p]->mu - 
-		   (log(Etarget) / cm->stats->gumAA[hmm_gum_mode][p]->lambda));
-      else
-	Starget_sc = (cm->stats->gumAA[hmm_gum_mode][p]->mu - 
-		      (log(Emin) / cm->stats->gumAA[hmm_gum_mode][p]->lambda));
+      Starget_sc = (cm->stats->gumAA[hmm_gum_mode][p]->mu - 
+		    (log(Etarget) / cm->stats->gumAA[hmm_gum_mode][p]->lambda));
 
       printf("S_sc 0: %.3f - %.3f * %.3f = ", S_sc, Spad, S_sc - Starget_sc);
       S_sc -= Spad * (S_sc - Starget_sc); /* Spad may be 0. */
+
       printf(" S1: %.3f\n", S_sc);
       /* now recalculate what E and S should be based on S_sc */
       E = RJK_ExtremeValueE(S_sc, cm->stats->gumAA[hmm_gum_mode][p]->mu, 
@@ -2537,6 +2535,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	printf("Case 2A: best case Emin %12f > E %f < Etarget %f F: %f S: %.12f Spad: %.3f\n", Emin, E, Etarget, F, S, Spad);
        else
 	printf("Case 2B: good case Emin %12f < E %f < Etarget %f F: %f S: %.12f\n Spad: %.3f", Emin, E, Etarget, F, S, Spad);
+      if(E < Emin) E = Emin; /* No reason to have an E below Emin */
     }
   /* Print cutoff info to Rpts file for 2D plot if nec */
   if(Rpts_fp != NULL)
@@ -2547,8 +2546,8 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 				       (log(Emin) / cm->stats->gumAA[hmm_gum_mode][p]->lambda)));
       fprintf(Rpts_fp, "FSC %.15f\n", (cm->stats->gumAA[hmm_gum_mode][p]->mu - 
 					(log(E) / cm->stats->gumAA[hmm_gum_mode][p]->lambda)));
-      fprintf(Rpts_fp, "FSC %.15f\n", (cm->stats->gumAA[hmm_gum_mode][p]->mu - 
-					(log(E) / cm->stats->gumAA[hmm_gum_mode][p]->lambda)));
+      fprintf(Rpts_fp, "FMINSC %.15f\n", (cm->stats->gumAA[hmm_gum_mode][p]->mu - 
+					(log(hmm_eval_p[(int) (Fmin * (float) N)-1]) / cm->stats->gumAA[hmm_gum_mode][p]->lambda)));
       fprintf(Rpts_fp, "F   %.15f\n", F);
       fprintf(Rpts_fp, "CMGUM %.15f %15f\n", (cm->stats->gumAA[emit_mode][p]->lambda, cm->stats->gumAA[emit_mode][p]->mu));
       fprintf(Rpts_fp, "HMMGUM %.15f %15f\n", (cm->stats->gumAA[hmm_gum_mode][p]->lambda, cm->stats->gumAA[hmm_gum_mode][p]->mu));
@@ -2558,6 +2557,8 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
       fprintf(Rpts_fp, "FMIN %.15f\n", Fmin);
       fprintf(Rpts_fp, "FSTEP %d\n", do_Fstep);
       fprintf(Rpts_fp, "ECUTOFF %.15f\n", cm_ecutoff);
+      for (p = 0; p < cmstats->np; p++)
+	fprintf(Rpts_fp, "SCCUTOFF %d %.15f\n", p, cm_minbitsc[p]);
       fclose(Rpts_fp);
     }	  
 
@@ -2567,7 +2568,6 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
       printf("Case 3 : worst case E > db_size\n", E, db_size);
       E = (float) db_size;
     }  
-  if(E < Emin) E = Emin; /* No reason to have an E below Emin */
   
   /* Informative, temporary print statements */
   for (i = ((int) (Fmin  * (float) N) -1); i < N; i++)

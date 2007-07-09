@@ -256,6 +256,10 @@ CYKInside_b_jd(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **
  *           matrix corresponding to alpha[end][jp+jmin[end]][dp+hdmin[v][jp_v]]
  *           in the platonic matrix.
  *           
+ *           The deck re-use strategy in general does not work with
+ *           this implementation b/c each state has it's own j-specific
+ *           bands. 
+ *
  *           Notes from inside():
  *           A note on the loop conventions. We're going to keep the
  *           sequence (dsq) and the matrix (alpha) in the full coordinate
@@ -268,7 +272,9 @@ CYKInside_b_jd(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **
  *           and jp (read: j'), which is the *relative* j w.r.t. the
  *           subsequence, ranging from 0..W, and then d ranges from 
  *           0 to jp, and j is calculated from jp (i0-1+jp).
- *           
+ *           In this banded version, there are more offset issues,
+ *           these are detailed with comments in the code.
+ *
  *           The caller is allowed to provide us with a preexisting
  *           matrix and/or deckpool (thru "alpha" and "dpool"), or
  *           have them newly created by passing NULL. If we pass in an
@@ -350,7 +356,6 @@ inside_b_jd_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, 
 	       int *jmin, int *jmax, int **hdmin, int **hdmax,
 	       int *safe_hdmin, int *safe_hdmax)
 {
-  int      nends;       /* counter that tracks when we can release end deck to the pool */
   int     *touch;       /* keeps track of how many higher decks still need this deck */
   int      v,y,z;	/* indices for states  */
   int      j,d,i,k;	/* indices in sequence dimensions */
@@ -380,7 +385,6 @@ inside_b_jd_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, 
   W   = j0-i0+1;		/* the length of the sequence -- used in many loops */
 				/* if caller didn't give us a deck pool, make one */
   if (dpool == NULL) dpool = deckpool_create();
-  nends = CMSubtreeCountStatetype(cm, vroot, E_st);
 
   /* if caller didn't give us a matrix, make one.
    * It's important to allocate for M+1 decks (deck M is for EL, local
@@ -419,25 +423,18 @@ inside_b_jd_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, 
    */
   for (v = vend; v >= vroot; v--) 
     {
-      /*printf("v: %d\n", v);*/
-      /* First we need a deck to fill in.
-       * 1. see if we can take something from the pool
-       *    if we're an end state, fill it
-       * 2. else, allocate a new deck.
+      /* First we need a deck to fill in. With memory efficient bands 
+       * we don't reuse decks b/c each state has different bands and therefore
+       * different deck sizes, so we ALWAYS allocate a deck here.
        */
-      if (! deckpool_pop(dpool, &(alpha[v]))) 
-	alpha[v] = alloc_jdbanded_vjd_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
+      alpha[v] = alloc_jdbanded_vjd_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
 
       if (cm->sttype[v] != E_st) {
 	if (ret_shadow != NULL) {
 	  if (cm->sttype[v] == B_st) {
-	    /* CYK Full ME Bands used 2 */
-	    /* original line : kshad     = alloc_vjd_kshadow_deck(L, i0, j0); */
 	    kshad     = alloc_jdbanded_vjd_kshadow_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
 	    shadow[v] = (void **) kshad;
 	  } else {
-	    /* CYK Full ME Bands used 3 */
-	    /* original line : yshad     = alloc_vjd_yshadow_deck(L, i0, j0); */
 	    yshad     = alloc_jdbanded_vjd_yshadow_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
 	    shadow[v] = (void **) yshad;
 	  }
@@ -457,7 +454,7 @@ inside_b_jd_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, 
 	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++)
 		{
 		  if(d != 0)
-		    Die("band on E state %d has a non-zero d value within its j band for j:%d\n", v, j);
+		    esl_fatal("band on E state %d has a non-zero d value within its j band for j:%d\n", v, j);
 		  dp_v = d - hdmin[v][jp_v];  /* d index for state v
 						 in alpha w/mem eff bands */
 		  alpha[v][jp_v][dp_v] = 0.; /* for End states, d must be 0 */
@@ -598,7 +595,6 @@ inside_b_jd_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, 
 			}
 		    }
 		  if (alpha[v][jp_v][dp_v] < IMPOSSIBLE) alpha[v][jp_v][dp_v] = IMPOSSIBLE;
-		  /* CYK Full ME Bands used 5 end block */
 		}
 	    }
 	}
@@ -772,18 +768,13 @@ inside_b_jd_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, 
 	    }
 	}
       /* Now, if we're trying to reuse memory in our normal mode (e.g. ! do_full):
-       * Look at our children; if they're fully released, take their deck
-       * into the pool for reuse.
+       * Look at our children; if they're fully released, free them, we don't 
+       * reuse decks with bands b/c each state has different deck size.
        */
       if (! do_full) {
 	if (cm->sttype[v] == B_st) 
 	  { 
-	    /* Original code block : */
-	    /* we can definitely release the S children of a bifurc. 
-	       y = cm->cfirst[v]; deckpool_push(dpool, alpha[y]); alpha[y] = NULL;
-	       z = cm->cnum[v];   deckpool_push(dpool, alpha[z]); alpha[z] = NULL;
-	     End of original code block */
-	    /* New ME code : */
+	    /* we can definitely release the S children of a bifurc. */
 	    y = cm->cfirst[v];
 	    z = cm->cnum[v];  
 	    free_vjd_deck(alpha[y], i0, j0);
@@ -798,18 +789,8 @@ inside_b_jd_me(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, 
 		touch[y]--;
 		if (touch[y] == 0) 
 		  {
-		    if (cm->sttype[y] == E_st) { 
-		      nends--; 
-		      /* Original code : if (nends == 0) { deckpool_push(dpool, end); end = NULL;} */
-		      /* ME code deletes the previous line, we don't mess with end, because
-			 it is used later */
-		    } else 
-		      /* original code (deck reuse) deckpool_push(dpool, alpha[y]);*/
-		      /* new ME code : */
-		      {
-			free_vjd_deck(alpha[y], i0, j0);
-		      }
-		      alpha[y] = NULL;
+		    free_vjd_deck(alpha[y], i0, j0);
+		    alpha[y] = NULL;
 		  }
 	      }
 	  }

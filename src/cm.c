@@ -117,6 +117,8 @@ CreateCMShell(void)
   cm->root_trans = NULL;
   cm->hmmpad = DEFAULT_HMMPAD; /* 0 residues */
   cm->stats = NULL;
+  cm->pbegin = DEFAULT_PBEGIN; /* summed probability of internal local begin */
+  cm->pend = DEFAULT_PEND;   /* summed probability of internal local end */
   return cm;
 }
 void
@@ -1577,7 +1579,7 @@ ExponentiateCM(CM_t *cm, double z)
 
   CMRenormalize(cm);
 
-  if(local_flag) ConfigLocal(cm, 0.5, 0.5);
+  if(local_flag) ConfigLocal(cm, cm->pbegin, cm->pend);
   /* new probs invalidate log odds scores */
   cm->flags &= ~CM_HASBITS;
   return eslOK;
