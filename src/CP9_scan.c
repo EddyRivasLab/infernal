@@ -2132,8 +2132,8 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
    * We do this, so we can exponentiate or change emission modes of
    * the original CM */
   cm_for_scoring = DuplicateCM(cm); 
-  if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))
-    ConfigForGumbelMode(cm_for_scoring, fthr_mode);
+  /*if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))*/
+  ConfigForGumbelMode(cm_for_scoring, fthr_mode);
 
   /* Configure the HMM based on the hmm_gum_mode */
   if(hmm_gum_mode == CP9_L)

@@ -27,9 +27,9 @@
 #define DEFAULT_BETA   0.0000001
 #define DEFAULT_TAU    0.0000001
 #define DEFAULT_HMMPAD 0
-#define DEFAULT_PBEGIN 0.05 /* EPN 06.29.07 (formerly 0.5) */
-#define DEFAULT_PEND   0.05 /* EPN 06.29.07 (formerly 0.5) */
-#define DEFAULT_ETARGET 1.46
+#define DEFAULT_PBEGIN 0.05  /* EPN 06.29.07 (formerly 0.5) */
+#define DEFAULT_PEND   0.05  /* EPN 06.29.07 (formerly 0.5) */
+#define DEFAULT_ETARGET 1.46 /* EPN 07.10.07 (formerly (v0.7->v0.8) 1.46
 
 /* default num samples for CM and CP9 E-values */
 #define DEFAULT_NUM_SAMPLES 1000
