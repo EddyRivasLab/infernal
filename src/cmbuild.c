@@ -152,6 +152,7 @@ static void PrintBandDensity(FILE *fp, double **gamma, int v, int W,
 			     int min, int max);
 static void PrintBands2BandFile(FILE *fp, CM_t *cm, int *dmin, int *dmax);
 static void StripWUSS(char *ss);
+static double default_target_ent(int clen, double eX);
 
 int
 main(int argc, char **argv)
@@ -314,8 +315,6 @@ main(int argc, char **argv)
   eff_nseq_min      = 0.;
   eff_nseq_min_set  = FALSE;
   save_gamma        = FALSE;
-  etarget           = 1.46;  /* EPN: empirically determined optimal etarget (2.0-0.54)
-			      * using RMARK benchmark*/ 
 
   beta              = DEFAULT_BETA;
   safe_windowlen    = 0;
@@ -508,10 +507,6 @@ main(int argc, char **argv)
   if (eff_strategy == EFF_NONE)      puts("none; use actual seq #");
   else if (eff_strategy == EFF_ENTROPY) {
     puts("entropy targeting");
-    if (etarget_set)
-      printf("  mean target entropy:             %.2f bits\n", etarget);
-    else
-      printf("  mean target entropy:             %.2f bits [default]\n", etarget);
   }
   
   printf("Sequence weighting strategy:       ");
@@ -718,6 +713,22 @@ main(int argc, char **argv)
 	   */
 	  if (! eff_nseq_set) {
 	    if (eff_strategy == EFF_ENTROPY) {
+	      if(!etarget_set)
+		{
+		  int clen = 0;
+		  int nd;
+		  for(nd = 0; nd < cm->nodes; nd++)
+		    {
+		      if(cm->ndtype[nd] == MATP_nd) clen += 2;
+		      else if(cm->ndtype[nd] == MATL_nd) clen += 1;
+		      else if(cm->ndtype[nd] == MATR_nd) clen += 1;
+		    }
+		  etarget = default_target_ent(clen, 6.); /* 6. is HMMER 3 default min relative entropy, 
+							      * let it be. */
+		}
+	      printf("%-40s ... ", "Setting mean entropy target (bits)");
+	      printf("done. [%.2f]\n", etarget);
+
 	      printf("%-40s ... ", "Determining eff seq # by entropy target");
 	      fflush(stdout);
 	      eff_nseq = CM_Eweight(cm, pri, (float) msa->nseq, etarget);
@@ -1267,3 +1278,30 @@ StripWUSS(char *ss)
   return;
 }
 
+/* default_target_ent()
+ * Incept:    EPN, Tue Jul 10 10:13:43 2007
+ *            based on HMMER3's hmmbuild.c:default_target_relent()
+ *            SRE, Fri May 25 15:14:16 2007 [Janelia]
+ *
+ * Purpose:   Implements a length-dependent calculation of the target entropy
+ *            per position, attempting to ensure that the information content of
+ *            the model is high enough to find local alignments; but don't set it
+ *            below a hard alphabet-dependent limit (CM_ETARGET).
+ *            notes.
+ *            
+ * Args:      clen - consensus length (2*MATP + MATL + MATR)
+ *            eX - X parameter: minimum total rel entropy target
+ *
+ */
+static double
+default_target_ent(int clen, double eX)
+{
+  double etarget;
+  /* HMMER3 default eX = 6.0 as of Tue Jul 10 2007, HMMER3 uses relative
+   * entropy, Infernal uses entropy (currently), so we have to be careful to
+   * subtract relative entropy from 2.0 (THIS ASSUMES EQUIPROBABLE NULL MODEL)
+   */
+  etarget = 2. - (6.* (eX + log((double) ((clen * (clen+1)) / 2)) / log(2.))    / (double)(2*clen + 4));
+  if(etarget > DEFAULT_ETARGET) etarget = DEFAULT_ETARGET;
+  return etarget;
+}

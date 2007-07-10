@@ -29,6 +29,7 @@
 #define DEFAULT_HMMPAD 0
 #define DEFAULT_PBEGIN 0.05 /* EPN 06.29.07 (formerly 0.5) */
 #define DEFAULT_PEND   0.05 /* EPN 06.29.07 (formerly 0.5) */
+#define DEFAULT_ETARGET 1.46
 
 /* default num samples for CM and CP9 E-values */
 #define DEFAULT_NUM_SAMPLES 1000

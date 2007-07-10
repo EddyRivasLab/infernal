@@ -188,12 +188,14 @@ main(int argc, char **argv)
       GetDBInfo(dbfp, &N, &cfg.gc_freq);
       printf("Read DB file: %s of length %ld residues (both strands) for GC distro.\n", 
 	     esl_opt_GetString(go, "--dbfile"), (2*N));
+      esl_vec_DNorm(cfg.gc_freq, GC_SEGMENTS);
     }
-  else /* use default GC distro */
-    {
-      /* rmark-1.gc.code from ~/notebook/7_0502_inf_cmcalibrate/gc_distros/
+  else /* use 0.25 A,C,G,U to generate random sequences */
+    cfg.gc_freq = NULL;
+  /* OLD CODE as of Mon Jul  9 16:03:20 2007: */
+  /* rmark-1.gc.code from ~/notebook/7_0502_inf_cmcalibrate/gc_distros/
        * Replace with RFAMSEQ derived one */
-      cfg.gc_freq = MallocOrDie(sizeof(double) * GC_SEGMENTS);
+      /*cfg.gc_freq = MallocOrDie(sizeof(double) * GC_SEGMENTS);
       cfg.gc_freq[ 0] = 0.; 
       cfg.gc_freq[ 1] = 0.; cfg.gc_freq[ 2] = 0.; cfg.gc_freq[ 3] = 0.; cfg.gc_freq[ 4] = 0.; cfg.gc_freq[ 5] = 0.;
       cfg.gc_freq[ 6] = 1.; cfg.gc_freq[ 7] = 0.; cfg.gc_freq[ 8] = 0.; cfg.gc_freq[ 9] = 0.; cfg.gc_freq[10] = 0.;
@@ -214,10 +216,8 @@ main(int argc, char **argv)
       cfg.gc_freq[81] = 2.; cfg.gc_freq[82] = 0.; cfg.gc_freq[83] = 1.; cfg.gc_freq[84] = 0.; cfg.gc_freq[85] = 1.;
       cfg.gc_freq[86] = 0.; cfg.gc_freq[87] = 0.; cfg.gc_freq[88] = 0.; cfg.gc_freq[89] = 0.; cfg.gc_freq[90] = 0.;
       cfg.gc_freq[91] = 0.; cfg.gc_freq[92] = 0.; cfg.gc_freq[93] = 0.; cfg.gc_freq[94] = 0.; cfg.gc_freq[95] = 0.;
-      cfg.gc_freq[96] = 0.; cfg.gc_freq[97] = 0.; cfg.gc_freq[98] = 0.; cfg.gc_freq[99] = 0.; cfg.gc_freq[100] = 0.;
+      cfg.gc_freq[96] = 0.; cfg.gc_freq[97] = 0.; cfg.gc_freq[98] = 0.; cfg.gc_freq[99] = 0.; cfg.gc_freq[100] = 0.;*/
       /* distro is centered at just about 50, you can see it, thanks to fixed width font */
-    }
-  esl_vec_DNorm(cfg.gc_freq, GC_SEGMENTS);
 
   /* Initial allocations for results per CM;
    * we'll resize these arrays dynamically as we read more CMs.
@@ -323,13 +323,13 @@ main(int argc, char **argv)
        *****************************************************************/
       if(!(esl_opt_GetBoolean(go, "--filonly")))
 	{
-	  /*for(gum_mode = 0; gum_mode < NGUMBELMODES; gum_mode++)
-	    cm_fit_gumbel(cm, go, &cfg, cmstats[ncm], gum_mode);*/
+	  for(gum_mode = 0; gum_mode < NGUMBELMODES; gum_mode++)
+	    cm_fit_gumbel(cm, go, &cfg, cmstats[ncm], gum_mode);
 	  /*06.29.07 only CM-LC and CP9-L code: */
-	  if(cfg.my_rank == 0) 
+	  /*if(cfg.my_rank == 0) 
 	    CopyCMStatsGumbel(cm->stats, cmstats[ncm]);
-	  cm_fit_gumbel(cm, go, &cfg, cmstats[ncm], CM_LC); 
-	  cm_fit_gumbel(cm, go, &cfg, cmstats[ncm], CP9_L);
+	    cm_fit_gumbel(cm, go, &cfg, cmstats[ncm], CM_LC); 
+	    cm_fit_gumbel(cm, go, &cfg, cmstats[ncm], CP9_L);*/
 	  /* end of 06.29.07 block */
 	  cm->flags |= CM_GUMBEL_STATS;
 	}
@@ -607,23 +607,37 @@ static int cm_fit_gumbel(CM_t *cm, ESL_GETOPTS *go, struct cfg_s *cfg,
 	  /* Initialize histogram; these numbers are guesses */
 	  h = esl_histogram_CreateFull(-100., 100., .25);    
 	      
-	  /* Set up part_gc_freq for this partition */
+	  /* If we read in a GC content distro for a file (in this case cfg->gc_freq will not be NULL),
+	   * then set up part_gc_freq for this partition */
 	  esl_vec_DSet(part_gc_freq, GC_SEGMENTS, 0.);
-	  for (i = cmstats->ps[p]; i < cmstats->pe[p]; i++) 
-	    part_gc_freq[i] = cfg->gc_freq[i];
+	  if(cfg->gc_freq != NULL)
+	    {
+	      for (i = cmstats->ps[p]; i < cmstats->pe[p]; i++) 
+		part_gc_freq[i] = cfg->gc_freq[i];
+	    }
 	  esl_vec_DNorm(part_gc_freq, GC_SEGMENTS);
-	  
 	  /****************SERIAL BLOCK******************************/
 	  if(!(cfg->do_mpi))
 	    {
 	      /* Take N samples */
 	      for (i = 0; i < N; i++) 
 		{
-		  /* Get random GC content */
-		  gc_comp = 0.01 * esl_rnd_DChoose(cfg->r, part_gc_freq, GC_SEGMENTS);
-		  nt_p[1] = nt_p[2] = 0.5 * gc_comp;
-		  nt_p[0] = nt_p[3] = 0.5 * (1. - gc_comp);
-		  
+		  /* Get random GC content from GC distro (if --dbfile enabled) or 
+		  * from CM null model. */
+		  if(cfg->gc_freq != NULL)
+		    {
+		      gc_comp = 0.01 * esl_rnd_DChoose(cfg->r, part_gc_freq, GC_SEGMENTS);
+		      nt_p[1] = nt_p[2] = 0.5 * gc_comp;
+		      nt_p[0] = nt_p[3] = 0.5 * (1. - gc_comp);
+		    }
+		  else
+		    {
+		      nt_p[0] = cm->null[0];
+		      nt_p[1] = cm->null[1];
+		      nt_p[2] = cm->null[2];
+		      nt_p[3] = cm->null[3];
+		    }
+		  esl_vec_DNorm(nt_p, Alphabet_size);
 		  /* Get random sequence */
 		  /* We have to generate a text sequence for now, b/c the digitized
 		   * version els_rnd_xIID() generates a ESL_DSQ seq, which actually_search_target()
@@ -668,10 +682,21 @@ static int cm_fit_gumbel(CM_t *cm, ESL_GETOPTS *go, struct cfg_s *cfg,
 		  /* Get next work unit. */
 		  if (i < N)
 		    {
-		      /* Get random GC content */
-		      gc_comp = 0.01 * esl_rnd_DChoose(cfg->r, part_gc_freq, GC_SEGMENTS);
-		      nt_p[1] = nt_p[2] = 0.5 * gc_comp;
-		      nt_p[0] = nt_p[3] = 0.5 * (1. - gc_comp);
+		      /* Get random GC content from GC distro (if --dbfile enabled) or 
+		       * from CM null model. */
+		      if(cfg->gc_freq != NULL)
+			{
+			  gc_comp = 0.01 * esl_rnd_DChoose(cfg->r, part_gc_freq, GC_SEGMENTS);
+			  nt_p[1] = nt_p[2] = 0.5 * gc_comp;
+			  nt_p[0] = nt_p[3] = 0.5 * (1. - gc_comp);
+			}
+		      else
+			{
+			  nt_p[0] = cm->null[0];
+			  nt_p[1] = cm->null[1];
+			  nt_p[2] = cm->null[2];
+			  nt_p[3] = cm->null[3];
+			}
 		      esl_vec_DNorm(nt_p, Alphabet_size);
 		      
 		      /* Get random sequence */
