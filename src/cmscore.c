@@ -371,7 +371,7 @@ main(int argc, char **argv)
 
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
     Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
-  if (! CMFileRead(cmfp, &cm))
+  if (! CMFileRead(cmfp, NULL, &cm))
     Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
   if (cm == NULL) 
     Die("%s empty?\n", cmfile);
@@ -461,7 +461,7 @@ main(int argc, char **argv)
       
       if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
 	Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
-      if (! CMFileRead(cmfp, &cm))
+      if (! CMFileRead(cmfp, NULL, &cm))
 	Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
       if (cm == NULL) 
 	Die("%s empty?\n", cmfile);

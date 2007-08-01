@@ -315,7 +315,7 @@ ConfigCMEnforce(CM_t *cm)
  *           p_internal_exit local exit probability evenly
  *           across all internal nodes.
  * 
- * Args:     CM               - the covariance model
+ * Args:     cm               - the covariance model
  *           p_internal_start - prob mass to spread for local begins
  *           p_internal_exit  - prob mass to spread for local ends
  */        
@@ -401,7 +401,7 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
       cm->flags &= ~CM_QDB;
       ConfigQDB(cm);
     }      
-
+  
   CMLogoddsify(cm);
   if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
     CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,

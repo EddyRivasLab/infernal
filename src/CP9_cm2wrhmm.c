@@ -203,7 +203,7 @@ build_cp9_hmm(CM_t *cm, struct cplan9_s **ret_hmm, CP9Map_t **ret_cp9map, int do
 
   hmm    = AllocCPlan9(cp9map->hmm_M);
   ZeroCPlan9(hmm);
-  CPlan9SetNullModel(hmm, cm->null, 1.0); /* set p1 = 1.0 which corresponds to the CM */
+  CPlan9SetNullModel(hmm, cm->bg->f, 1.0); /* set p1 = 1.0 which corresponds to the CM */
   CPlan9InitEL(cm, hmm); /* set up hmm->el_from_ct and hmm->el_from_idx data, which
 			  * explains how the EL states are connected in the HMM. */
 

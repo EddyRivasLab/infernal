@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <time.h>
 
 #include "squid.h"
 #include "vectorops.h"
@@ -22,6 +23,7 @@
 #include "funcs.h"
 #include "easel.h"
 #include "esl_vectorops.h"
+#include "esl_alphabet.h"
 #include "stats.h"
 #include "config.h"
 #include "easel.h"
@@ -47,12 +49,12 @@
  *           Caller is responsible for free'ing the cm.
  */
 CM_t *
-CreateCM(int nnodes, int nstates)
+CreateCM(int nnodes, int nstates, const ESL_ALPHABET *abc, CM_BG *bg)
 {
   CM_t *cm;
 
   cm = CreateCMShell();
-  if (cm != NULL) CreateCMBody(cm, nnodes, nstates);
+  if (cm != NULL) CreateCMBody(cm, nnodes, nstates, abc, bg);
   return cm;
 }
 CM_t *
@@ -63,15 +65,17 @@ CreateCMShell(void)
   cm = MallocOrDie(sizeof(CM_t));
 
 				/* general information: added later */
+  cm->abc    = NULL;
+  cm->bg     = NULL;
+
   cm->name   = NULL;
   cm->acc    = NULL;
   cm->desc   = NULL;
   cm->annote = NULL;
 
-				/* null model information */
-  cm->null   = MallocOrDie(Alphabet_size * sizeof(float));
 				/* structural information */
   cm->M      = 0;
+  cm->clen   = 0;
   cm->sttype = NULL;
   cm->ndidx  = NULL;
   cm->stid   = NULL;
@@ -122,8 +126,12 @@ CreateCMShell(void)
   return cm;
 }
 void
-CreateCMBody(CM_t *cm, int nnodes, int nstates)
+CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc, CM_BG *bg)
 {
+				/* alphabet, only a reference */
+  cm->abc    = abc; 
+				/* null model, only a reference */
+  cm->bg     = bg;
 				/* structural information */
   cm->M      = nstates;
   cm->sttype = MallocOrDie((nstates+1) * sizeof(char));
@@ -139,16 +147,16 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates)
   cm->ndtype = MallocOrDie(nnodes  * sizeof(char));
 				/* parameter information */
   cm->t      = FMX2Alloc(nstates, MAXCONNECT);
-  cm->e      = FMX2Alloc(nstates, Alphabet_size*Alphabet_size);
+  cm->e      = FMX2Alloc(nstates, abc->K*abc->K);
   cm->begin  = MallocOrDie(nstates * sizeof(float));
   cm->end    = MallocOrDie(nstates * sizeof(float));
   cm->tsc    = FMX2Alloc(nstates, MAXCONNECT);
-  cm->esc    = FMX2Alloc(nstates, Alphabet_size*Alphabet_size);
+  cm->esc    = FMX2Alloc(nstates, abc->K*abc->K);
   cm->beginsc= MallocOrDie(nstates * sizeof(float));
   cm->endsc  = MallocOrDie(nstates * sizeof(float));
 
   cm->itsc   = IMX2Alloc(nstates, MAXCONNECT);
-  cm->iesc   = IMX2Alloc(nstates, Alphabet_size*Alphabet_size);
+  cm->iesc   = IMX2Alloc(nstates, abc->K*abc->K);
   cm->ibeginsc= MallocOrDie(nstates * sizeof(int));
   cm->iendsc  = MallocOrDie(nstates * sizeof(int));
 
@@ -185,11 +193,11 @@ CMZero(CM_t *cm)
   int x;			/* counter over symbols or transitions */
 
   for (v = 0; v < cm->M; v++) {
-    for (x = 0; x < Alphabet_size * Alphabet_size; x++) cm->e[v][x]   = 0.0;
+    for (x = 0; x < cm->abc->K * cm->abc->K; x++) cm->e[v][x]   = 0.0;
     for (x = 0; x < MAXCONNECT; x++)                    cm->t[v][x]   = 0.0;
-    for (x = 0; x < Alphabet_size * Alphabet_size; x++) cm->esc[v][x] = 0.0;
+    for (x = 0; x < cm->abc->K * cm->abc->K; x++) cm->esc[v][x] = 0.0;
     for (x = 0; x < MAXCONNECT; x++)                    cm->tsc[v][x] = 0.0;
-    for (x = 0; x < Alphabet_size * Alphabet_size; x++) cm->iesc[v][x] = 0.0;
+    for (x = 0; x < cm->abc->K * cm->abc->K; x++) cm->iesc[v][x] = 0.0;
     for (x = 0; x < MAXCONNECT; x++)                    cm->itsc[v][x] = 0.0;
     cm->begin[v] = cm->end[v] = 0.;
     cm->beginsc[v] = cm->endsc[v] = 0.;
@@ -210,16 +218,15 @@ CMRenormalize(CM_t *cm)
 {
   int v;
 
-  FNorm(cm->null, Alphabet_size);
   for (v = 0; v < cm->M; v++)
     {
       if (cm->cnum[v] > 0 && cm->sttype[v] != B_st)
 	FNorm(cm->t[v], cm->cnum[v]);
       
       if (cm->sttype[v] == ML_st || cm->sttype[v] == MR_st || cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
-	FNorm(cm->e[v], Alphabet_size);
+	FNorm(cm->e[v], cm->abc->K);
       if (cm->sttype[v] == MP_st)
-	FNorm(cm->e[v], Alphabet_size * Alphabet_size);
+	FNorm(cm->e[v], cm->abc->K * cm->abc->K);
     }
   if (cm->flags & CM_LOCAL_BEGIN) FNorm(cm->begin, cm->M);
   if (cm->flags & CM_LOCAL_END)   Die("Renormalization of models in local end mode not supported yet");
@@ -232,6 +239,9 @@ CMRenormalize(CM_t *cm)
  * Purpose:  Free a CM data structure.
  *
  * Args:     cm - the model to free. (duh).
+ *
+ * Note:      Remember, leave reference pointers like abc, and
+ *            bg alone. These are under the application's control not ours.
  *
  * Returns:  (void)
  */
@@ -247,7 +257,6 @@ FreeCM(CM_t *cm)
    * worst case scenario: small memory leak here */
   /*if (cm->enf_seq != NULL) free(cm->enf_seq);*/
 
-  free(cm->null);
   free(cm->sttype);
   free(cm->ndidx);
   free(cm->stid);
@@ -271,50 +280,78 @@ FreeCM(CM_t *cm)
   free(cm->iendsc);
   free(cm->dmin);
   free(cm->dmax);
-  if(cm->cp9map != NULL) FreeCP9Map(cm->cp9map);
-  if(cm->cp9    != NULL) FreeCPlan9(cm->cp9);
+  if(cm->cp9map     != NULL) FreeCP9Map(cm->cp9map);
+  if(cm->cp9        != NULL) FreeCPlan9(cm->cp9);
   if(cm->root_trans != NULL) free(cm->root_trans);
-  if(cm->stats != NULL) FreeCMStats(cm->stats);
+  if(cm->stats      != NULL) FreeCMStats(cm->stats);
   free(cm);
 }
 
-
-/* Function: CMSetDefaultNullModel()
- * Date:     SRE, Tue Aug  1 15:31:52 2000 [St. Louis]
+/*****************************************************************
+ * The CM_BG object: allocation, initialization, destruction.
+ *                   these objects are based on HMMER3's p7_BG.
+ *****************************************************************/
+/* Function:  cm_bg_Create()
+ * Incept:    EPN, Mon Jul 30 17:03:11 2007
  *
- * Purpose:  Initialize the null model to equiprobable (e.g. 0.25)
+ * Purpose:   Allocate a <CM_BG> object for digital alphabet <abc>,
+ *            initializes it to appropriate default values, and
+ *            returns a pointer to it.
+ *
+ * Throws:    <NULL> on allocation failure.
+ *
  */
-void
-CMDefaultNullModel(float *null)
+CM_BG *
+cm_bg_Create(const ESL_ALPHABET *abc)
 {
-  int x;
-  for (x = 0; x < Alphabet_size; x++)
-    null[x] = 1./(float)Alphabet_size;
+  CM_BG *bg = NULL;
+  int    status;
+
+  ESL_ALLOC(bg, sizeof(CM_BG));
+  bg->f = NULL;
+
+  ESL_ALLOC(bg->f, sizeof(float) * abc->K);
+  esl_vec_FSet(bg->f, abc->K, 1. / (float) abc->K);
+
+  /*bg->p1  = 350./351.; */
+  bg->abc = (ESL_ALPHABET *) abc; /* safe: we're just keeping a reference */
+  return bg;
+
+ ERROR:
+  cm_bg_Destroy(bg);
+  return NULL;
 }
 
-
-/* Function: CMSetNullModel()
+/* Function:  cm_bg_Set()
+ * Incept:    EPN, Tue Jul 31 08:32:20 2007
  *
- * Purpose:  Set the null model section of a CM.
+ * Purpose:   Given an allocated CM_BG and frequencies to
+ *            copy, copy them.
  */
 void
-CMSetNullModel(CM_t *cm, float null[MAXABET])
+cm_bg_Set(CM_BG *bg, float *f)
 {
   int x;
-  for (x = 0; x < Alphabet_size; x++)
-    cm->null[x] = null[x];
+  for (x = 0; x < bg->abc->K; x++)
+    bg->f[x] = f[x];
+  esl_vec_FNorm(bg->f, bg->abc->K);
+  return;
 }
 
-
-/* Function: CMReadNullModel()
- * EPN 10.19.05
- * based on SRE's HMMER's cm.c's P7ReadNullModel() 
+/* Function:  cm_bg_Read()
+ * Incept:    EPN, Mon Jul 30 17:07:04 2007
  *
- * Purpose:  Read the CM null model from a file.
+ * Purpose:   Overwrite an already allocated <CM_BG> object 
+ *            with frequencies read from a file.
+ *
+ * Throws:    <NULL> on failure.
+ *
  */
 void
-CMReadNullModel(char *rndfile, float *null)
+cm_bg_Read(char *bgfile, CM_BG *bg)
 {
+  if(bg->f == NULL) goto ERROR;
+
   FILE *fp;
   char *buf;
   char *s;
@@ -334,32 +371,65 @@ CMReadNullModel(char *rndfile, float *null)
    * sum to 1.0 exactly.
    */
 
-  if ((fp = fopen(rndfile, "r")) == NULL)
-    Die("Failed to open null model file %s\n", rndfile);
-
+  if ((fp = fopen(bgfile, "r")) == NULL)
+    esl_fatal("Failed to open null model file %s\n", bgfile);
 				/* parse the file */
   x = 0;
-  while(x < Alphabet_size) {
-    if(sre_fgets(&buf, &n, fp) == NULL) goto FAILURE;
+  while(x < bg->abc->K) {
+    if(sre_fgets(&buf, &n, fp) == NULL) goto ERROR;
     s   = buf;
-    if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+    if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto ERROR;
     if(strcmp(tok, "#") != 0)
       {      
-	null[x] = atof(tok);
-	sum += null[x];
+	bg->f[x] = atof(tok);
+	sum += bg->f[x];
 	x++;
       }
   }
   /*fragile*/
   if(sum > 1.00001 || sum < 0.99999)
-    Die ("%s is not in CM null model file format.\nThere are not 4 background probabilities that sum to exactly 1.0", rndfile);
-  FNorm(null, Alphabet_size);
+    esl_fatal ("%s is not in CM null model file format.\nThere are not 4 background probabilities that sum to exactly 1.0", bgfile);
+  FNorm(bg->f, bg->abc->K);
   fclose(fp);
   return;
 
-FAILURE:
+ ERROR:
   fclose(fp);
-  Die("%s is not in CM null model file format", rndfile);
+  cm_bg_Destroy(bg);
+  return;
+}
+
+
+/* Function:  cm_bg_Dump()
+ * Synopsis:  Outputs <CM_BG> object as text, for diagnostics.
+ * Incept:    EPN, Mon Jul 30 17:05:51 2007
+ *
+ * Purpose:   Given a null model <bg>, dump it as text to stream <fp>.
+ */
+int
+cm_bg_Dump(FILE *ofp, CM_BG *bg)
+{
+  esl_vec_FDump(ofp, bg->f, bg->abc->K, bg->abc->sym);
+  return eslOK;
+}
+
+/* Function:  cm_bg_Destroy()
+ * Incept:    EPN, Mon Jul 30 17:06:16 2007
+ *
+ * Purpose:   Frees a <CM_BG> object.
+ *
+ * Returns:   (void)
+ *
+ * Xref:      STL11/125.
+ */
+void
+cm_bg_Destroy(CM_BG *bg)
+{
+  if (bg != NULL) {
+    if (bg->f != NULL) free(bg->f);
+    free(bg);
+  }
+  return;
 }
 
 
@@ -388,14 +458,14 @@ CMSimpleProbify(CM_t *cm)
        */
       if (cm->sttype[v] == MP_st) 
 	{
-	  for (x = 0; x < Alphabet_size*Alphabet_size; x++) cm->e[v][x] += 1.0;
-	  FNorm(cm->e[v], Alphabet_size*Alphabet_size);
+	  for (x = 0; x < cm->abc->K*cm->abc->K; x++) cm->e[v][x] += 1.0;
+	  FNorm(cm->e[v], cm->abc->K*cm->abc->K);
 	}
       else if (cm->sttype[v] == ML_st || cm->sttype[v] == MR_st || 
 	       cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) 
 	{
-	  for (x = 0; x < Alphabet_size; x++) cm->e[v][x] += 1.0;
-	  FNorm(cm->e[v], Alphabet_size);
+	  for (x = 0; x < cm->abc->K; x++) cm->e[v][x] += 1.0;
+	  FNorm(cm->e[v], cm->abc->K);
 	}
     }
 }
@@ -439,24 +509,24 @@ rsearch_CMProbifyEmissions(CM_t *cm, fullmat_t *fullmat)
 	{
 	  /* First, figure out which letter was in the query */
 	  
-	  for (x=0; x<Alphabet_size; x++) 
-	    for (y=0; y<Alphabet_size; y++) 
-	      if (fabs(cm->e[v][x*Alphabet_size+y] - 0.) > thresh) 
+	  for (x=0; x<cm->abc->K; x++) 
+	    for (y=0; y<cm->abc->K; y++) 
+	      if (fabs(cm->e[v][x*cm->abc->K+y] - 0.) > thresh) 
 		{
 		  if(found_ct_flag)
 		    {
-		      for (x=0; x<Alphabet_size; x++) 
-			for (y=0; y<Alphabet_size; y++) 
-			  printf("cm->e[v:%d][%d]: %f\n", v, (x*Alphabet_size+y), cm->e[v][(x*Alphabet_size+y)]);
+		      for (x=0; x<cm->abc->K; x++) 
+			for (y=0; y<cm->abc->K; y++) 
+			  printf("cm->e[v:%d][%d]: %f\n", v, (x*cm->abc->K+y), cm->e[v][(x*cm->abc->K+y)]);
 		      ESL_EXCEPTION(eslEINVAL, "cm->e[v:%d] a MATP_MP has > 1 non-zero count"); 
 		    }
 		  cur_emission = numbered_basepair(Alphabet[x], Alphabet[y]);
 		  found_ct_flag = TRUE;
 		}
 	  /* Now, set emission probs as target probs in correct cells of score matrix */
-	  for (x=0; x<Alphabet_size*Alphabet_size; x++) 
+	  for (x=0; x<cm->abc->K*cm->abc->K; x++) 
 	    cm->e[v][x] = fullmat->paired->matrix[matrix_index(cur_emission, x)];
-	  esl_vec_FNorm(cm->e[v], Alphabet_size*Alphabet_size);
+	  esl_vec_FNorm(cm->e[v], cm->abc->K*cm->abc->K);
 	}
       else if (cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR)
 	{
@@ -530,18 +600,18 @@ CMLogoddsify(CM_t *cm)
 	for (x = 0; x < Alphabet_size; x++)
 	  for (y = 0; y < Alphabet_size; y++)
 	    {
-	      cm->esc[v][x*Alphabet_size+y]  = sreLOG2(cm->e[v][x*Alphabet_size+y] / (cm->null[x]*cm->null[y]));
-	      cm->iesc[v][x*Alphabet_size+y] = Prob2Score(cm->e[v][x*Alphabet_size+y], (cm->null[x]*cm->null[y]));
-	      /*printf("cm->e[%4d][%2d]: %f iesc->e: %f iesc: %d\n", v, (x*Alphabet_size+y), cm->e[v][(x*Alphabet_size+y)], Score2Prob(cm->iesc[v][x*Alphabet_size+y], (cm->null[x]*cm->null[y])), cm->iesc[v][(x*Alphabet_size+y)]);*/
+	      cm->esc[v][x*Alphabet_size+y]  = sreLOG2(cm->e[v][x*Alphabet_size+y] / (cm->bg->f[x]*cm->bg->f[y]));
+	      cm->iesc[v][x*Alphabet_size+y] = Prob2Score(cm->e[v][x*Alphabet_size+y], (cm->bg->f[x]*cm->bg->f[y]));
+	      /*printf("cm->e[%4d][%2d]: %f iesc->e: %f iesc: %d\n", v, (x*Alphabet_size+y), cm->e[v][(x*Alphabet_size+y)], Score2Prob(cm->iesc[v][x*Alphabet_size+y], (cm->bg->f[x]*cm->bg->f[y])), cm->iesc[v][(x*Alphabet_size+y)]);*/
 	    }
       if (cm->sttype[v] == ML_st || cm->sttype[v] == MR_st ||
 	  cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
 	for (x = 0; x < Alphabet_size; x++)
 	  {
-	    cm->esc[v][x]  = sreLOG2(cm->e[v][x] / cm->null[x]);
-	    cm->iesc[v][x] = Prob2Score(cm->e[v][x], cm->null[x]);
-	    /*printf("cm->e[%4d][%2d]: %f esc: %f null[%d]: %f\n", v, x, cm->e[v][x], cm->esc[v][x], x, cm->null[x]);*/
-	    /*printf("cm->e[%4d][%2d]: %f iesc->e: %f iesc: %d\n", v, x, cm->e[v][x], Score2Prob(cm->iesc[v][x], (cm->null[x])), cm->iesc[v][x]);*/
+	    cm->esc[v][x]  = sreLOG2(cm->e[v][x] / cm->bg->f[x]);
+	    cm->iesc[v][x] = Prob2Score(cm->e[v][x], cm->bg->f[x]);
+	    /*printf("cm->e[%4d][%2d]: %f esc: %f null[%d]: %f\n", v, x, cm->e[v][x], cm->esc[v][x], x, cm->bg->f[x]);*/
+	    /*printf("cm->e[%4d][%2d]: %f iesc->e: %f iesc: %d\n", v, x, cm->e[v][x], Score2Prob(cm->iesc[v][x], (cm->bg->f[x])), cm->iesc[v][x]);*/
 	  }
       /* These work even if begin/end distributions are inactive 0's,
        * sreLOG2 will set beginsc, endsc to -infinity.
@@ -665,7 +735,7 @@ CMHackInsertScores(CM_t *cm)
 }
 
 
-/* Function: CMCountStatetype(), CMSubtreeCountStatetype(), CMSegmentCountStatetype
+/* Function: CountStatetype(), CMSubtreeCountStatetype(), CMSegmentCountStatetype
  * Date:     SRE, Wed Aug  2 09:15:00 2000 [St. Louis]
  *
  * Purpose:  Conveniences for counting the # of occurrences
@@ -907,12 +977,6 @@ StateRightDelta(int sttype)
   /*NOTREACHED*/
   return 0;
 }
-
-
-
-
-
-
 
 /* Function: PrintCM()
  * Date:     SRE, Sat Jul 29 10:55:16 2000 [St. Louis]
@@ -1211,12 +1275,11 @@ CMRebalance(CM_t *cm)
   /* Create the new model. Copy information that's unchanged by
    * renumbering the CM.
    */
-  new = CreateCM(cm->nodes, cm->M);
+  new = CreateCM(cm->nodes, cm->M, cm->abc, cm->bg);
   new->name = sre_strdup(cm->name, -1);
   new->acc  = sre_strdup(cm->acc,  -1);
   new->desc = sre_strdup(cm->desc, -1);
   new->flags = cm->flags;
-  for (x = 0; x < Alphabet_size; x++) new->null[x] = cm->null[x];
 
   /* Calculate "weights" (# of required extra decks) on every B and S state.
    * Recursive rule here is: 1 + min(wgt[left], wgt[right]).
@@ -1602,9 +1665,11 @@ DuplicateCM(CM_t *cm)
   int       v;	          /* counter over states */
   int       x;		  /* counter over transitions, residues, nodes */
   CM_t     *new;
+  ESL_ALPHABET *abc;
+  abc = esl_alphabet_Create(cm->abc->type);
 
   /* Create the new model and copy everything over except the cp9 and stats */
-  new = CreateCM(cm->nodes, cm->M);
+  new = CreateCM(cm->nodes, cm->M, cm->abc, cm->bg);
   new->name = sre_strdup(cm->name, -1);
   new->acc  = sre_strdup(cm->acc,  -1);
   new->desc = sre_strdup(cm->desc, -1);
@@ -1612,7 +1677,6 @@ DuplicateCM(CM_t *cm)
   new->search_opts = cm->search_opts;
   new->align_opts  = cm->align_opts;
   new->config_opts = cm->config_opts;
-  for (x = 0; x < Alphabet_size; x++) new->null[x] = cm->null[x];
 
   new->nodes      = cm->nodes;
   for(x = 0; x < cm->nodes; x++)
@@ -1753,3 +1817,237 @@ cm_banner(FILE *fp, char *progname, char *banner)
   return;
 }
 
+/* Function:  cm_Validate()
+ * Incept:    EPN, Fri Jul 27 14:59:55 2007 [Janelia]
+ *
+ * Purpose:   Validates some internals of the CM structure <cm>.
+ * 
+ *            Probability vectors are validated to sum up to
+ *            within a fractional tolerance <tol> of 1.0.
+ *
+ *            Probably only useful for debugging and development,
+ *            not production code.
+ *
+ * Returns:   <eslOK> if <cm> internals look fine.
+ *            Returns <eslFAIL> if something is wrong.
+ */
+int
+cm_Validate(CM_t *cm, float tol, char *errbuf)
+{
+  int status;
+  int v;
+
+  if (cm             == NULL)       ESL_XFAIL(eslFAIL, errbuf, "CM is a null pointer");
+  if (cm->M          <  1)          ESL_XFAIL(eslFAIL, errbuf, "CM has M < 1");
+  if (cm->abc        == NULL)       ESL_XFAIL(eslFAIL, errbuf, "CM has no alphabet reference");
+  if (cm->abc->type  == eslUNKNOWN) ESL_XFAIL(eslFAIL, errbuf, "CM's alphabet is set to unknown");
+  
+  for (v = 0; v < cm->M; v++)
+    {
+      if(StateDelta(cm->sttype[v]) == 2)
+	{
+	  if (esl_vec_FValidate(cm->e[v], (cm->abc->K * cm->abc->K), tol, NULL) != eslOK)
+	    ESL_XFAIL(eslFAIL, errbuf, "e[%d] fails pvector validation", v); 
+	}
+      else if(StateDelta(cm->sttype[v]) > 0)
+	{ 
+	  if (esl_vec_FValidate(cm->e[v], cm->abc->K, tol, NULL) != eslOK) 
+	    ESL_XFAIL(eslFAIL, errbuf, "e[%d] fails pvector validation", v); 
+	}
+      if (cm->sttype[v] != B_st && cm->sttype[v] != E_st)
+	if(esl_vec_FValidate(cm->t[v], cm->cnum[v], tol, NULL) != eslOK) 
+	  ESL_XFAIL(eslFAIL, errbuf, "t[%d] fails pvector validation", v);
+    }
+
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
+/*****************************************************************
+ * Convenience routines for setting fields in an CM. (from p7_cm.c)
+ *****************************************************************/ 
+/* Function: cm_SetName()
+ * Incept:   EPN, Fri Jul 27 16:49:49 2007 [Janelia]
+ * 
+ * Purpose:  Set or change the name of a CM to <name>.
+ *           Any trailing whitespace (including newline) is chopped off.     
+ *      
+ * Returns:  <eslOK> on success.
+ *
+ * Throws:   <eslEMEM> on allocation error, and original name (if any) 
+ *           remains.
+ */
+int
+cm_SetName(CM_t *cm, char *name)
+{
+  int   status;
+  void *tmp;
+  int   n;
+
+  if (name == NULL) {
+    if (cm->name != NULL) free(cm->name); 
+    cm->name = NULL;
+  } else {
+    n = strlen(name);
+    ESL_RALLOC(cm->name, tmp, sizeof(char)*(n+1));
+    strcpy(cm->name, name);
+    if ((status = esl_strchop(cm->name, n)) != eslOK) goto ERROR;
+  }
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
+/* Function: cm_SetAccession()
+ * Incept:   SRE, Mon Jan  1 16:53:53 2007 [Casa de Gatos]
+ * 
+ * Purpose:  Set or change the accession number of a Plan7 CM to <acc>,
+ *           and raise the <ACC> flag. Trailing whitespace (including newline) 
+ *           is chopped.  
+ *           
+ *           If <acc> is <NULL>, unset the CM's accession (if any) and drop 
+ *           the <ACC> flag.
+ *
+ * Returns:  <eslOK> on success.
+ *
+ * Throws:   <eslEMEM> on allocation error, and original name (if any) 
+ *           remains.
+ */
+int
+cm_SetAccession(CM_t *cm, char *acc)
+{
+  int   status;
+  void *tmp;
+  int   n;
+
+  if (acc == NULL) {
+    if (cm->acc != NULL) free(cm->acc); 
+    cm->acc = NULL;
+    cm->flags &= ~CM_ACC;
+  } else {
+    n = strlen(acc);
+    ESL_RALLOC(cm->acc, tmp, sizeof(char)*(n+1));
+    strcpy(cm->acc, acc);
+    if ((status = esl_strchop(cm->acc, n)) != eslOK) goto ERROR;
+    cm->flags |= CM_ACC;
+  }
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
+/* Function: cm_SetDescription()
+ * Incept:   SRE, Mon Jan  1 16:59:28 2007 [Casa de Gatos]
+ * 
+ * Purpose:  Set or change the description line of a Plan7 CM. 
+ *           Trailing whitespace (including newline) is chopped.
+ */
+int
+cm_SetDescription(CM_t *cm, char *desc)
+{
+  int   status;
+  void *tmp;
+  int   n;
+
+  if (desc == NULL) 
+    {
+      if (cm->desc != NULL) free(cm->desc); 
+      cm->desc   = NULL;
+      cm->flags &= ~CM_DESC;
+    }
+  else
+    {
+      n = strlen(desc);
+      ESL_RALLOC(cm->desc, tmp, sizeof(char)*(n+1));
+      strcpy(cm->desc, desc);
+      if ((status = esl_strchop(cm->desc, n)) != eslOK) goto ERROR;
+      cm->flags |= CM_DESC;
+    }
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
+/* Function: cm_AppendComlog()
+ * Incept:   SRE, Mon Jan  1 18:23:42 2007 [Casa de Gatos]
+ * 
+ * Purpose:  Concatenate command line options and append as a new line in the
+ *           command line log. Command line log is multiline, with each line
+ *           ending in newline char, except for last line.
+ *           
+ * Returns:  <eslOK> on success.
+ * 
+ * Throws:   <eslEMEM> on allocation failure.          
+ */
+int
+cm_AppendComlog(CM_t *cm, int argc, char **argv)
+{
+  int   status;
+  void *tmp;
+  int   n;
+  int   i;
+
+  /* figure out length of added command line, and (re)allocate comlog */
+  n = argc-1;	/* account for 1 space per arg, except last one */
+  for (i = 0; i < argc; i++)
+    n += strlen(argv[i]);
+
+  if (cm->comlog != NULL) {
+    n += strlen(cm->comlog) + 1; /* +1 for the \n we're going to add to the old comlog */
+    ESL_RALLOC(cm->comlog, tmp, sizeof(char)* (n+1));
+    strcat(cm->comlog, "\n");
+  } else {
+    ESL_ALLOC(cm->comlog, sizeof(char)* (n+1));
+    *(cm->comlog) = '\0'; /* need this to make strcat work */
+  }
+
+  for (i = 0; i < argc-1; i++)
+    {
+      strcat(cm->comlog, argv[i]);
+      strcat(cm->comlog, " ");
+    }
+  strcat(cm->comlog, argv[argc-1]);
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
+/* Function: cm_SetCtime()
+ * Date:     SRE, Wed Oct 29 11:53:19 1997 [TWA 721 over the Atlantic]
+ * 
+ * Purpose:  Set the <ctime> field in a new CM to the current time.
+ *
+ *           This function is not reentrant and not threadsafe, because
+ *           it calls the nonreentrant ANSI C ctime() function.
+ * 
+ * Returns:  <eslOK> on success.
+ * 
+ * Throws:   <eslEMEM> on allocation failure. <eslESYS> if the <time()>
+ *           system call fails to obtain the calendar time.
+ */
+int
+cm_SetCtime(CM_t *cm)
+{
+  int    status;
+  char  *s = NULL;
+  time_t date;
+
+  if ((date   = time(NULL))                       == -1) { status = eslESYS; goto ERROR; }
+  if ((status = esl_strdup(ctime(&date), -1, &s)) != eslOK) goto ERROR;
+  if ((status = esl_strchop(s, -1))               != eslOK) goto ERROR;
+  
+  if (cm->ctime != NULL) free(cm->ctime);
+  cm->ctime = s;
+  return eslOK;
+
+ ERROR:
+  if (s != NULL) free(s);
+  return status;
+}
+/*---------------- end, internal-setting routines ---------------*/

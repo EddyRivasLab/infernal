@@ -81,7 +81,7 @@ CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, char *dsq)
   FNorm(p, MAXABET);
 
   for (a = 0; a < MAXABET; a++)
-    sc[a] = sreLOG2(p[a] / cm->null[a]);
+    sc[a] = sreLOG2(p[a] / cm->bg->f[a]);
 				/* could avoid this chunk if we knew
 				   we didn't need any degenerate char scores */
   for (a = MAXABET; a < MAXDEGEN; a++)

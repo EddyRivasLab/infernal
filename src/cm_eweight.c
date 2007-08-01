@@ -43,7 +43,7 @@
  * Return: eff_no        - New effective sequence number.                         
  */
 double
-CM_Eweight(CM_t *cm, Prior_t *pri, float numb_seqs, 
+CM_Eweight(CM_t *cm, const Prior_t *pri, float numb_seqs, 
 	float targetent)
 {
   int i;

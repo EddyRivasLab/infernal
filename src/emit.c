@@ -54,6 +54,7 @@
  *            Added capacity for local begins/ends. [EPN, Wed May  2 05:59:19 2007]
  *
  * Args:      cm      - covariance model to generate from
+ *            bg      - background distribution, EL emits from this
  *            r       - source of randomness
  *            ret_tr  - RETURN: generated parse tree. Pass NULL if unwanted.
  *            ret_seq - RETURN: generated sequence (alphabetic). Pass NULL if unwanted.
@@ -235,7 +236,7 @@ EmitParsetree(CM_t *cm, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, char **ret_seq,
 		  y = esl_rnd_FChoose(r, tmp_tvec, 2); /* choose next state, either EL or implicit END */
 		  while(y == 0) /* we've self-transitioned, emit 1 res from NULL distro */
 		    {
-		      lchar = esl_rnd_FChoose(r, cm->null, Alphabet_size);
+		      lchar = esl_rnd_FChoose(r, cm->bg->f, Alphabet_size);
 		      PushCstack(gsq, Alphabet[lchar]);
 		      N++;
 		      y = esl_rnd_FChoose(r, tmp_tvec, 2); /* choose next state, either EL or implicit END */

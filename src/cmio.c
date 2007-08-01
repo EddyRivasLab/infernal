@@ -66,12 +66,13 @@ static unsigned int v01swap  = 0xb1b0ede3; /* v0.1 binary, byteswapped         *
 #define CMIO_FTHRFAST     36
 #define CMIO_HASEVD       37
 #define CMIO_HASFTHR      38
+#define CMIO_ABCTYPE      39
 
-static void write_ascii_cm(FILE *fp, CM_t *cm);
-static int  read_ascii_cm(CMFILE *cmf, CM_t **ret_cm);
+static int  write_ascii_cm(FILE *fp, CM_t *cm);
+static int  read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm);
 
-static void write_binary_cm(FILE *fp, CM_t *cm);
-static int  read_binary_cm(CMFILE *cmf, CM_t **ret_cm);
+static int  write_binary_cm(FILE *fp, CM_t *cm);
+static int  read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm);
 static void tagged_fwrite(int tag, void *ptr, size_t size, size_t nmemb, FILE *fp);
 static int  tagged_fread(int expected_tag, char *s, size_t size, size_t nmemb, FILE *fp);
 static void tagged_bin_string_write(int tag, char *s, FILE *fp);
@@ -216,7 +217,22 @@ or may be a different kind of binary altogether.\n", cmfile);
  *            Sets the offset in the CMFILE structure to
  *            the offset to the start of this CM.
  *
+ *            From HMMER3:
+ *            Caller may or may not already know what alphabet the HMM
+ *            is expected to be in.  A reference to the pointer to the
+ *            current alphabet is passed in <*ret_abc>. If the alphabet
+ *            is unknown, pass <*ret_abc = NULL>, and when the
+ *            new HMM is read, an appropriate new alphabet object is
+ *            allocated and passed back to the caller in <*ret_abc>.
+ *            If the alphabet is already known, <ret_abc> points to
+ *            that object ptr, and the new HMM's alphabet type is
+ *            verified to agree with it. This mechanism allows an
+ *            application to let the first HMM determine the alphabet
+ *            type for the application, while still keeping the
+ *            alphabet under the application's scope of control.
+ *
  * Args:      cmf    - open CMFILE, positioned at start of a CM
+ *            ret_abc- alphabet (see above)
  *            ret_cm - RETURN: cm, or NULL on any parsing failure
  *
  * Returns:   1 on success; 0 at EOF.
@@ -224,13 +240,13 @@ or may be a different kind of binary altogether.\n", cmfile);
  * Xref:      STL6 p.108.
  */
 int
-CMFileRead(CMFILE *cmf, CM_t **ret_cm)
+CMFileRead(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 {
   if (SSIGetFilePosition(cmf->f, cmf->mode, &(cmf->offset)) != 0)
     Die("SSIGetFilePosition() failed unexpectedly");
   
-  if (cmf->is_binary) return read_binary_cm(cmf, ret_cm);
-  else                return read_ascii_cm(cmf, ret_cm);
+  if (cmf->is_binary) return read_binary_cm(cmf, ret_abc, ret_cm);
+  else                return read_ascii_cm(cmf, ret_abc, ret_cm);
 }
 
 /* Function:  CMFileClose()
@@ -294,11 +310,11 @@ CMFilePositionByIndex(CMFILE *cmf, int idx)
  *            If do_binary is TRUE, use binary format; else flatfile.
  * Xref:      STL6 p.108.
  */
-void
+int 
 CMFileWrite(FILE *fp, CM_t *cm, int do_binary)
 {
-  if (do_binary) write_binary_cm(fp, cm);
-  else           write_ascii_cm(fp, cm);
+  if (do_binary) return write_binary_cm(fp, cm);
+  else           return write_ascii_cm(fp, cm);
 }
 		   
 
@@ -308,7 +324,7 @@ CMFileWrite(FILE *fp, CM_t *cm, int do_binary)
  * Purpose:   Write a CM in flatfile format.
  * Xref:      STL6 p.108
  */
-static void
+static int
 write_ascii_cm(FILE *fp, CM_t *cm)
 {
   int v,x,y,nd;
@@ -324,10 +340,12 @@ write_ascii_cm(FILE *fp, CM_t *cm)
   fprintf(fp, "W      %d\n", cm->W);
   /* EPN 11.15.05 */
   fprintf(fp, "el_selfsc %f\n", cm->el_selfsc);
-
+  /* EPN, Mon Jul 30 10:03:03 2007 */
+  fprintf(fp, "ALPHABET %d", cm->abc->type);
+  fputs("\n", fp);
   fputs("NULL  ", fp);
-  for (x = 0; x < Alphabet_size; x++)
-    fprintf(fp, "%6s ", prob2ascii(cm->null[x], 1/(float)(Alphabet_size)));
+  for (x = 0; x < cm->abc->K; x++)
+    fprintf(fp, "%6s ", prob2ascii(cm->bg->f[x], 1/(float)(Alphabet_size)));
   fputs("\n", fp);
 
   /* E-value statistics
@@ -416,23 +434,25 @@ write_ascii_cm(FILE *fp, CM_t *cm)
        */
       if (cm->sttype[v] == MP_st) 
 	{
-	  for (x = 0; x < Alphabet_size; x++)
-	    for (y = 0; y < Alphabet_size; y++)
-	      fprintf(fp, "%6s ", prob2ascii(cm->e[v][x*Alphabet_size+y], cm->null[x]*cm->null[y]));
+	  for (x = 0; x < cm->abc->K; x++)
+	    for (y = 0; y < cm->abc->K; y++)
+	      fprintf(fp, "%6s ", prob2ascii(cm->e[v][x*cm->abc->K+y], cm->bg->f[x]*cm->bg->f[y]));
 	}
       else if (cm->sttype[v] == ML_st || cm->sttype[v] == MR_st || cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
 	{
-	  for (x = 0; x < Alphabet_size; x++)
-	    fprintf(fp, "%6s ", prob2ascii(cm->e[v][x], cm->null[x]));
+	  for (x = 0; x < cm->abc->K; x++)
+	    fprintf(fp, "%6s ", prob2ascii(cm->e[v][x], cm->bg->f[x]));
 	}
       fputs("\n", fp);
     }
   fputs("//\n", fp);
+  return eslOK;
 } 
 
 static int  
-read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
+read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 {
+  int     status;
   CM_t   *cm;
   char   *buf;
   int     n;			/* length of buf */
@@ -450,6 +470,9 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
   int     p;                    /* counter for partitions          */
   int     gc;                   /* counter over gc contents        */
   int     i;                    /* counter over gum_modes for EVDs */
+  int     alphabet_type;        /* type of ESL_ALPHABET */
+  CM_BG  *bg;                   /* the background (null) model */
+  ESL_ALPHABET *abc = NULL;
 
   cm  = NULL;
   buf = NULL;
@@ -470,7 +493,7 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
     {
       s   = buf;
       if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-      if (strcmp(tok, "NAME") == 0) 
+      else if (strcmp(tok, "NAME") == 0) 
 	{
 	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
 	  cm->name = sre_strdup(tok, toklen);
@@ -495,12 +518,25 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
 	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
 	  N = atoi(tok);
 	}
+      else if (strcmp(tok, "ALPHABET") == 0) 
+	{
+	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+	  alphabet_type = atoi(tok);
+	  /* Set or verify alphabet. */
+	  if (*ret_abc == NULL)	{	/* still unknown: set it, pass control of it back to caller */
+	    if ((abc = esl_alphabet_Create(alphabet_type)) == NULL)       { status = eslEMEM;      goto FAILURE; }
+	  } else {			/* already known: check it */
+	    abc = *ret_abc;
+	    if ((*ret_abc)->type != alphabet_type)                        { status = eslEINCOMPAT; goto FAILURE; }
+	  }
+	}
       else if (strcmp(tok, "NULL") == 0) 
 	{
-	  for (x = 0; x < Alphabet_size; x++)
+	  bg = cm_bg_Create(abc);
+	  for (x = 0; x < abc->K; x++)
 	    {
 	      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	      cm->null[x] = ascii2prob(tok, (1./(float)Alphabet_size));
+	      bg->f[x] = ascii2prob(tok, (1./(float) abc->K));
 	    }
 	}
       /* EPN 08.18.05 */
@@ -646,7 +682,7 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
     if(((have_gums && (!gum_flags[gum_mode]))) ||
        ((!have_gums) && (gum_flags[gum_mode])))
       goto FAILURE;
-
+  
   /* if we have any HMM filter stats, we (currently) require all of them */
   have_fthrs = fthr_flags[0];
   for(i = 0; i < NFTHRMODES; i++)
@@ -656,7 +692,7 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
 
   /* Main model section. 
    */
-  CreateCMBody(cm, N, M);
+  CreateCMBody(cm, N, M, abc, bg);
   CMZero(cm);
   if(have_gums)  cm->flags |= CM_GUMBEL_STATS;
   if(have_fthrs) cm->flags |= CM_FTHR_STATS;
@@ -716,21 +752,21 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
       if (cm->sttype[v] == ML_st || cm->sttype[v] == MR_st ||
 	  cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
 	{
-	  for (x = 0; x < Alphabet_size; x++)
+	  for (x = 0; x < cm->abc->K; x++)
 	    {
 	      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
 	      if (! IsReal(tok) && *tok != '*')                     goto FAILURE;
-	      cm->e[v][x] = ascii2prob(tok, cm->null[x]);
+	      cm->e[v][x] = ascii2prob(tok, cm->bg->f[x]);
 	    }
 	}
       else if (cm->sttype[v] == MP_st) 
 	{
-	  for (x = 0; x < Alphabet_size; x++)
-	    for (y = 0; y < Alphabet_size; y++)
+	  for (x = 0; x < cm->abc->K; x++)
+	    for (y = 0; y < cm->abc->K; y++)
 	      {
 		if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
 		if (! IsReal(tok) && *tok != '*')                     goto FAILURE;
-		cm->e[v][x*Alphabet_size+y] = ascii2prob(tok, cm->null[x]*cm->null[y]);
+		cm->e[v][x*cm->abc->K+y] = ascii2prob(tok, cm->bg->f[x]*cm->bg->f[y]);
 	      }
 	} 
 
@@ -774,7 +810,7 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
  * Purpose:  Write a CM in binary format.
  *
  */
-static void
+static int
 write_binary_cm(FILE *fp, CM_t *cm)
 {
   int v, i ,p;
@@ -787,14 +823,13 @@ write_binary_cm(FILE *fp, CM_t *cm)
    */
   tagged_fwrite(CMIO_M,            &cm->M,          sizeof(int),   1, fp);
   tagged_fwrite(CMIO_NODES,        &cm->nodes,      sizeof(int),   1, fp);  
+  tagged_fwrite(CMIO_ALPHABETTYPE, &cm->abc->type,  sizeof(int),   1, fp);
+  tagged_fwrite(CMIO_NULL,         cm->bg->f,       sizeof(float), cm->bg->abc->K, fp);
 
   tagged_bin_string_write(CMIO_NAME, cm->name,  fp);
   tagged_bin_string_write(CMIO_ACC,  cm->acc,   fp);
   tagged_bin_string_write(CMIO_DESC, cm->desc,  fp);
 
-  tagged_fwrite(CMIO_ALPHABETTYPE, &Alphabet_type, sizeof(int),   1, fp);
-  tagged_fwrite(CMIO_ALPHABETSIZE, &Alphabet_size, sizeof(int),   1, fp);
-  tagged_fwrite(CMIO_NULL,         cm->null,       sizeof(float), Alphabet_size, fp);
   tagged_fwrite(CMIO_STTYPE,       cm->sttype,     sizeof(char),  cm->M, fp);
   tagged_fwrite(CMIO_NDIDX,        cm->ndidx,      sizeof(int),   cm->M, fp);  
   tagged_fwrite(CMIO_STID,         cm->stid,       sizeof(char),  cm->M, fp);  
@@ -858,7 +893,7 @@ write_binary_cm(FILE *fp, CM_t *cm)
     }
   for (v = 0; v < cm->M; v++) {
     tagged_fwrite(CMIO_T, cm->t[v], sizeof(float), MAXCONNECT, fp);
-    tagged_fwrite(CMIO_E, cm->e[v], sizeof(float), Alphabet_size*Alphabet_size, fp);
+    tagged_fwrite(CMIO_E, cm->e[v], sizeof(float), cm->abc->K*cm->abc->K, fp);
   }
 
   tagged_fwrite(CMIO_END_DATA, NULL, 0, 0, fp);
@@ -866,6 +901,7 @@ write_binary_cm(FILE *fp, CM_t *cm)
   /* Note: begin, end, and flags not written out. Local alignment is
    * run-time configuration right now.
    */
+  return eslOK;
 }
 
 
@@ -875,20 +911,22 @@ write_binary_cm(FILE *fp, CM_t *cm)
  * Purpose:  Read a CM from disk.
  */
 static int
-read_binary_cm(CMFILE *cmf, CM_t **ret_cm)
+read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 {
   FILE         *fp;
   CM_t         *cm;
   unsigned int  magic;
   int           M;
   int           nodes;
-  int           atype;
-  int           asize;
+  int           alphabet_type;
   int           v;
   int           has_gum;
   int           has_fthr;
   int           np;
   int           i, p;
+  ESL_ALPHABET *abc = NULL;
+  CM_BG        *bg;
+  int           status;
 
   cm = NULL;
   fp = cmf->f;
@@ -898,15 +936,24 @@ read_binary_cm(CMFILE *cmf, CM_t **ret_cm)
   
   if (! tagged_fread(CMIO_M,     (void *) &M,     sizeof(int), 1, fp)) goto FAILURE;
   if (! tagged_fread(CMIO_NODES, (void *) &nodes, sizeof(int), 1, fp)) goto FAILURE;
-  cm = CreateCM(nodes, M);
+  if (! tagged_fread(CMIO_ALPHABETTYPE,(void *) &alphabet_type, sizeof(int), 1, fp)) goto FAILURE;
+
+  /* Set or verify alphabet. */
+  if (*ret_abc == NULL)	{	/* still unknown: set it, pass control of it back to caller */
+    if ((abc = esl_alphabet_Create(alphabet_type)) == NULL)       { status = eslEMEM;      goto FAILURE; }
+  } else {			/* already known: check it */
+    abc = *ret_abc;
+    if ((*ret_abc)->type != alphabet_type)                        { status = eslEINCOMPAT; goto FAILURE; }
+  }
+
+  bg = cm_bg_Create(abc);
+  if (! tagged_fread(CMIO_NULL,         (void *) &(bg->f),   sizeof(float), cm->abc->K, fp)) goto FAILURE;
+  cm = CreateCM(nodes, M, abc, bg);
 
   if (! tagged_bin_string_read(CMIO_NAME, &(cm->name),  fp)) goto FAILURE;
   if (! tagged_bin_string_read(CMIO_ACC,  &(cm->acc),   fp)) goto FAILURE;
   if (! tagged_bin_string_read(CMIO_DESC, &(cm->desc),  fp)) goto FAILURE;
   
-  if (! tagged_fread(CMIO_ALPHABETTYPE, (void *) &atype,         sizeof(int),   1, fp))             goto FAILURE;
-  if (! tagged_fread(CMIO_ALPHABETSIZE, (void *) &asize,         sizeof(int),   1, fp))             goto FAILURE;
-  if (! tagged_fread(CMIO_NULL,         (void *) cm->null,       sizeof(float), Alphabet_size, fp)) goto FAILURE;
   if (! tagged_fread(CMIO_STTYPE,       (void *) cm->sttype,     sizeof(char),  cm->M, fp))         goto FAILURE;
   if (! tagged_fread(CMIO_NDIDX,        (void *) cm->ndidx,      sizeof(int),   cm->M, fp))         goto FAILURE;  
   if (! tagged_fread(CMIO_STID,         (void *) cm->stid,       sizeof(char),  cm->M, fp))         goto FAILURE;  
@@ -959,7 +1006,7 @@ read_binary_cm(CMFILE *cmf, CM_t **ret_cm)
     }
   for (v = 0; v < cm->M; v++) {
     if (! tagged_fread(CMIO_T, (void *) cm->t[v], sizeof(float), MAXCONNECT, fp)) goto FAILURE;
-    if (! tagged_fread(CMIO_E, (void *) cm->e[v], sizeof(float), Alphabet_size*Alphabet_size, fp)) goto FAILURE;
+    if (! tagged_fread(CMIO_E, (void *) cm->e[v], sizeof(float), cm->abc->K*cm->abc->K, fp)) goto FAILURE;
   }
   if (! tagged_fread(CMIO_END_DATA, (void *) NULL, 0, 0, fp)) goto FAILURE;
 

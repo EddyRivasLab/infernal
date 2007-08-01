@@ -16,10 +16,12 @@
 
 #include <stdio.h>
 #include <math.h>
+#include <string.h>
 #include <float.h>
 
 #include "easel.h"		
 #include "esl_tree.h"
+#include "esl_msa.h"
 #include "esl_dmatrix.h"
 #include "esl_stack.h"
 #include "esl_distance.h"
@@ -66,50 +68,48 @@ static float find_mindiff(ESL_TREE *T, double *diff, int target_nc,
  *           (NOT YET IMPLEMENTED)
  *
  * Args:    
- * MSA    *mmsa         - the master MSA, we cluster the seqs in this guy
+ * ESL_MSA *mmsa         - the master MSA, we cluster the seqs in this guy
  *                        and build a new MSA from each cluster
  * int     do_all       - TRUE (mode 1): each seq is its own cluster
  * int     target_nc    - number of clusters to define (0 indicates mode 2)
  * float   mindiff      - the minimum fractional difference allowed
  *                        between 2 seqs of different clusters
  *                        (0. indicates mode 3) 
- * int     do_pickone   - TRUE to pick a single seq representative
- *                        from each cluster (see * above) NOT YET IMPLEMENTED
  * int     do_orig      - TRUE to include the master MSA as one of the new MSAs
  * int    *ret_num_msa  - number of MSAs in ret_MSA
- * MSA  ***ret_cmsa     - new MSAs, one for each cluster
+ * ESL_MSA  ***ret_cmsa - new MSAs, one for each cluster
  *           
  * Return: ret_cmsa (alloc'ed here) and ret_num_msa
  */
 int 
-MSADivide(MSA *mmsa, int do_all, int target_nc, float mindiff, int do_pickone,
-	  int do_orig, int *ret_num_msa, MSA ***ret_cmsa)
+MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff, 
+	  int do_orig, int *ret_num_msa, ESL_MSA ***ret_cmsa)
 {
   int   status;        /* Easel status code */
-  MSA **cmsa;          /* the new MSAs we're creating from clusters of seqs in mmsa */
+  ESL_MSA **cmsa = NULL;/* the new MSAs we're creating from clusters of seqs in mmsa */
   int   i;             /* counter over sequences */
   int   m;             /* counter over new MSAs */
   int   n;             /* counter over tree nodes */
-  char  buffer[50];    /* for naming the new MSAs */
-  ESL_TREE    *T;      /* the tree, created by Single-Linkage Clustering */
-  ESL_DMATRIX *D;      /* the distance matrix */
-  double *diff;        /* [0..T->N-2], diff[n]= min distance between any leaf in right and
+  ESL_TREE    *T = NULL;/* the tree, created by Single-Linkage Clustering */
+  ESL_DMATRIX *D = NULL;/* the distance matrix */
+  double *diff = NULL; /* [0..T->N-2], diff[n]= min distance between any leaf in right and
 		        * left subtree of node n of tree T */
-  double *minld;       /* [0..T->N-2], min dist from node to any taxa in left  subtree */
-  double *minrd;       /* [0..T->N-2], min dist from node to any taxa in right subtree */
+  double *minld = NULL;/* [0..T->N-2], min dist from node to any taxa in left  subtree */
+  double *minrd = NULL;/* [0..T->N-2], min dist from node to any taxa in right subtree */
   int     nc;          /* number of clusters/MSAs  */
-  int    *clust;       /* [0..T->N-1], cluster number (0..nc-1) this seq is in */
-  int    *c_nseq;      /* [0..nc-1], current number of seqs in the MSA for this cluster */
-  int    *csize;       /* [0..nc-1], size of each cluster */
+  int    *clust = NULL;/* [0..T->N-1], cluster number (0..nc-1) this seq is in */
+  int    *csize = NULL;/* [0..nc-1], size of each cluster */
+  int   **useme = NULL;/* [0.m.nc-1][0.i.N] TRUE to use seq i in new MSA m, FALSE not to */
+  void   *tmp;
 
   /* Contract check */
   if((!do_all) && (target_nc == 0 && mindiff == 0.)) 
     ESL_EXCEPTION(eslEINCOMPAT, "target_nc is 0 and mindiff is 0.0, exactly one must be non-zero");
   if((!do_all) && (target_nc != 0 && mindiff != 0.)) 
     ESL_EXCEPTION(eslEINCOMPAT, "target_nc is not 0 and mindiff is not 0.0, exactly one must be non-zero");
-
-  if(do_pickone) 
-    ESL_EXCEPTION(eslEINCOMPAT, "do_pickone behavior not yet implemented.");
+  /* mmsa must be digital */
+  if(!(mmsa->flags & eslMSA_DIGITAL))
+    ESL_EXCEPTION(eslEINCOMPAT, "MSA is not digital.");
 
   /* Mode 1: Each seq becomes own MSA. Easy. */
   if(do_all)
@@ -127,13 +127,12 @@ MSADivide(MSA *mmsa, int do_all, int target_nc, float mindiff, int do_pickone,
   else /* Mode 2 or Mode 3 */ 
     {
       /* Create distance matrix and infer tree by single linkage clustering */
-      esl_dst_CDiffMx(mmsa->aseq, mmsa->nseq, &D);
+      esl_dst_XDiffMx(mmsa->abc, mmsa->ax, mmsa->nseq, &D);
       esl_tree_SingleLinkage(D, &T);
       esl_tree_SetTaxaParents(T);
       /*esl_tree_WriteNewick(stdout, T);*/
       esl_tree_Validate(T, NULL);
 
-      /* HEREHEREHERE */
       /* determine the diff values: 
        * (use: n_child > n, unless n's children are taxa)
        * diff[n] is minimum distance between any taxa (leaf) in left subtree of 
@@ -146,14 +145,14 @@ MSADivide(MSA *mmsa, int do_all, int target_nc, float mindiff, int do_pickone,
 	{
 	  minld[n] = T->ld[n] + ((T->left[n]  > 0) ? (minld[T->left[n]])  : 0);
 	  minrd[n] = T->rd[n] + ((T->right[n] > 0) ? (minrd[T->right[n]]) : 0);
-	  diff[n] = minld[n] + minrd[n];
+	  diff[n]  = minld[n] + minrd[n];
 	  diff[n] *= 1000.; 
-	  diff[n] = (float) ((int) diff[n]);
+	  diff[n]  = (float) ((int) diff[n]);
 	  diff[n] /= 1000.; 
-	  printf("diff[n:%d]: %f\n", n, diff[n]);
+	  /*printf("diff[n:%d]: %f\n", n, diff[n]);*/
 	}
-      free(minld);
-      free(minrd);
+      free(minld); minld = NULL;
+      free(minrd); minrd = NULL;
       /*for (n = 0; n < (T->N-1); n++)
 	printf("diff[n:%d]: %f\n", n, diff[n]);
 	for (n = 0; n < (T->N-1); n++)
@@ -191,38 +190,48 @@ MSADivide(MSA *mmsa, int do_all, int target_nc, float mindiff, int do_pickone,
    * if(do_orig): keep the original MSA as cmsa[nc] */
   if(do_orig) 
     {
-      ESL_ALLOC(cmsa, (sizeof(MSA *) * (nc+1)));
-      cmsa[nc] = mmsa;
+      ESL_ALLOC(cmsa, (sizeof(ESL_MSA *) * (nc+1))); 
+      for(m = 0; m < nc; m++) cmsa[m] = NULL;
     }
   else
-    ESL_ALLOC(cmsa, (sizeof(MSA *) * (nc)));
-
-   for(m = 0; m < nc; m++)
     {
-      cmsa[m]             = MSAAlloc(csize[m], mmsa->alen);
-      if(mmsa->desc != NULL) cmsa[m]->desc = sre_strdup(mmsa->desc, -1);
-      cmsa[m]->ss_cons    = sre_strdup(mmsa->ss_cons, -1);
-      cmsa[m]->nseq       = csize[m];
-      n = sprintf (buffer, ".%d", (m+1));
-      cmsa[m]->name       = sre_strdup(mmsa->name, -1);
-      sre_strcat(&cmsa[m]->name, -1, buffer, (n+1));
-      printf("cmsa[m:%d]->name: %s\n", m, cmsa[m]->name);
-      printf("mmsa->name: %s\n", mmsa->name);
+      ESL_ALLOC(cmsa, (sizeof(ESL_MSA *) * (nc)));
+      for(m = 0; m <= nc; m++) cmsa[m] = NULL;
     }
-
-
-  /* add each seq to the appropriate MSA */
-  ESL_ALLOC(c_nseq, (sizeof(int) * (nc)));
-  esl_vec_ISet(c_nseq, nc, 0);
+  ESL_ALLOC(useme, (sizeof(int *) * (nc+1)));
+  for(m = 0; m <= nc; m++)
+    {
+      ESL_ALLOC(useme[m], (sizeof(int)) * mmsa->nseq);
+      if(m < nc) esl_vec_ISet(useme[m], mmsa->nseq, FALSE);
+      else       esl_vec_ISet(useme[m], mmsa->nseq, TRUE); /* keep all seqs in cmsa[nc]*/
+    }
+  
   for(i = 0; i < mmsa->nseq; i++)
+    if(clust[i] != -1) 
+      useme[clust[i]][i] = TRUE;
+  char buffer[50];
+  int ndigits;
+  for(m = 0; m < nc; m++)
     {
-      m = clust[i];
-      if(m != -1) 
-	{
-	  cmsa[m]->aseq[c_nseq[m]]     = sre_strdup(mmsa->aseq[i], -1);
-	  cmsa[m]->sqname[c_nseq[m]++] = sre_strdup(mmsa->sqname[i], -1);
-	}
+      esl_msa_SequenceSubset(mmsa, useme[m], &(cmsa[m]));
+      /* rename the MSA it by adding ".<m+1>" */
+      if(cmsa[m]->name == NULL) {
+	printf("What the fuck!\n");
+	goto ERROR;
+      }
+      ndigits  = strlen(cmsa[m]->name);
+      ndigits += sprintf(buffer, ".%d", (m+1));
+      ESL_RALLOC(cmsa[m]->name, tmp, sizeof(char)*(ndigits+1));
+      esl_strcat(&cmsa[m]->name, -1, buffer, (ndigits+1));
+      if ((status = esl_strchop(cmsa[m]->name, ndigits)) != eslOK) goto ERROR;
+      free(useme[m]);
     }
+  if(do_orig)
+    {
+      esl_msa_SequenceSubset(mmsa, useme[nc], &(cmsa[nc]));
+      free(useme[nc]);
+    }
+  free(useme);
 
   if(do_orig) *ret_num_msa = nc+1;
   else        *ret_num_msa = nc;
@@ -233,7 +242,7 @@ MSADivide(MSA *mmsa, int do_all, int target_nc, float mindiff, int do_pickone,
       esl_tree_Destroy(T);
       esl_dmatrix_Destroy(D);
       free(diff);
-      free(c_nseq);
+      diff = NULL;
     }
   if(clust != NULL)  free(clust);
   if(csize != NULL)  free(csize);
@@ -244,15 +253,14 @@ MSADivide(MSA *mmsa, int do_all, int target_nc, float mindiff, int do_pickone,
   if(minld != NULL) free(minld);
   if(minrd != NULL) free(minrd);
   if(clust != NULL) free(clust);
-  if(c_nseq!= NULL) free(c_nseq);
   if(csize != NULL) free(csize);
   if(cmsa  != NULL) 
     {
       for(m = 0; m < nc; m++)
-	if(cmsa[m] != NULL) MSAFree(cmsa[m]);
+	if(cmsa[m] != NULL) esl_msa_Destroy(cmsa[m]);
       free(cmsa);
     }
-  return status;
+  return eslFAIL;
 }
 
 /* Function: select_node()
@@ -343,11 +351,10 @@ select_node(ESL_TREE *T, double *diff, double mindiff, int **ret_clust,
   esl_stack_Destroy(ns2);
   *ret_nc = c;
   *ret_clust = clust;
-  printf("nc: %d(%d) best: %d maxsize: %d nc: %d\n\n", *ret_nc, c, best, maxsize, c);
-  for(n = 0; n < T->N; n++)
-    {
-      printf("clust[%d]: %d\n", n, clust[n]);
-    }
+  /*printf("nc: %d(%d) best: %d maxsize: %d nc: %d\n\n", *ret_nc, c, best, maxsize, c);
+    for(n = 0; n < T->N; n++)
+    printf("clust[%d]: %d\n", n, clust[n]);*/
+
   return best;
  ERROR: 
   if(clust != NULL) free(clust);
@@ -403,7 +410,7 @@ find_mindiff(ESL_TREE *T, double *diff, int target_nc, int **ret_clust, int *ret
 	  mindiff   -= (mindiff - low) / 2.;
 	  if((fabs(high-0.) < thresh) && (fabs(low-0.) < thresh))  keep_going = FALSE; 
 	  /* stop, high and low have converged at 0. */
-	  printf("LOWER   nc: %d mindiff: %f low: %f high: %f\n", curr_nc, mindiff, low, high);
+	  /*printf("LOWER   nc: %d mindiff: %f low: %f high: %f\n", curr_nc, mindiff, low, high);*/
 	}
       else /* curr_nc >= target_nc */
 	{
@@ -411,14 +418,14 @@ find_mindiff(ESL_TREE *T, double *diff, int target_nc, int **ret_clust, int *ret
 	  low_nc     = curr_nc;
 	  mindiff   += (high - mindiff) / 2.;
 	  if(fabs(high-low) < thresh)  keep_going = FALSE; /* stop, high and low have converged */
-	  printf("GREATER nc: %d mindiff: %f low: %f high: %f\n", curr_nc, mindiff, low, high);
+	  /*printf("GREATER nc: %d mindiff: %f low: %f high: %f\n", curr_nc, mindiff, low, high);*/
 	}
     }
   /* it's possible we can't reach our target, if so, set mindiff as minimum value that gives 
    * less than target_nc clusters. */
   if(curr_nc != target_nc)
     {
-      printf("targ: %d curr: %d low: %d (%f) high: %d (%f)\n", target_nc, curr_nc, low_nc, low, high_nc, high);
+      /*printf("targ: %d curr: %d low: %d (%f) high: %d (%f)\n", target_nc, curr_nc, low_nc, low, high_nc, high);*/
       if(high_nc < target_nc)
 	{
 	  mindiff = high;
@@ -434,7 +441,7 @@ find_mindiff(ESL_TREE *T, double *diff, int target_nc, int **ret_clust, int *ret
 	    high_nc = curr_nc;
 	  }
     }
-  printf("FINAL mindiff: %f\n", mindiff);  
+  /*printf("FINAL mindiff: %f\n", mindiff);  */
   *ret_nc    = curr_nc;
   *ret_clust = clust;
 

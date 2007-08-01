@@ -29,6 +29,7 @@
 
 #include "easel.h"
 #include "esl_random.h"
+#include "esl_alphabet.h"
 
 static void  map_orig2sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, int print_flag);
 static int   map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, int orig_v, int sub_v);
@@ -583,6 +584,7 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
 				 * model with the sub_cm (if do_fullsub, this is  
 				 * total number of columns modelled by the orig_cm  */
    CMSubMap_t *submap;
+   ESL_ALPHABET *sub_abc = NULL;
 
    /* check to make sure that we can actually build a sub CM of this model */
    if((orig_cm->flags & CM_LOCAL_BEGIN) ||
@@ -669,7 +671,7 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
       /* Build the new sub_cm given the new consensus structure. But don't
        * parameterize it yet.
     */
-   ConsensusModelmaker(sub_cstr, (epos-spos+1), &sub_cm, &mtr);
+   ConsensusModelmaker(orig_cm->abc, orig_cm->bg, sub_cstr, (epos-spos+1), &sub_cm, &mtr);
    /* Rebalance the CM for optimization of D&C */
    CM_t *new;
    new = CMRebalance(sub_cm);
@@ -692,7 +694,7 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
    fill_psi(orig_cm, orig_psi, tmap);
    
    CMZero(sub_cm);
-   CMSetNullModel(sub_cm, orig_cm->null);
+   cm_bg_Set(sub_cm->bg, orig_cm->bg->f);
    sub_cm->el_selfsc = orig_cm->el_selfsc;
    sub_cm->beta      = orig_cm->beta;
    sub_cm->tau       = orig_cm->tau;
@@ -2176,11 +2178,11 @@ check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int n
   /* the orig_hmm only models consensus positions spos to epos of the orig_cm */
   orig_hmm = AllocCPlan9((epos-spos+1));
   ZeroCPlan9(orig_hmm);
-  CPlan9SetNullModel(orig_hmm, orig_cm->null, 1.0); /* set p1 = 1.0 which corresponds to the CM */
+  CPlan9SetNullModel(orig_hmm, orig_cm->bg->f, 1.0); /* set p1 = 1.0 which corresponds to the CM */
   
   sub_hmm = AllocCPlan9((epos-spos+1));
   ZeroCPlan9(sub_hmm);
-  CPlan9SetNullModel(sub_hmm, sub_cm->null, 1.0); /* set p1 = 1.0 which corresponds to the CM */
+  CPlan9SetNullModel(sub_hmm, sub_cm->bg->f, 1.0); /* set p1 = 1.0 which corresponds to the CM */
   
   /* First sample from the orig_cm and use the samples to fill in orig_hmm
    * sample MSA(s) from the CM 

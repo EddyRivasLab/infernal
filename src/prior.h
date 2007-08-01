@@ -35,7 +35,7 @@ typedef struct {
 extern Prior_t *Prior_Create(void);
 extern void     Prior_Destroy(Prior_t *pri);
 extern Prior_t *Prior_Read(FILE *fp);
-extern void     PriorifyCM(CM_t *cm, Prior_t *pri);
+extern void     PriorifyCM(CM_t *cm, const Prior_t *pri);
 extern Prior_t *Prior_Default(void);
 
 extern struct p7prior_s *P7DefaultInfernalPrior(void);

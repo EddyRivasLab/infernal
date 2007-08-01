@@ -592,7 +592,7 @@ main(int argc, char **argv)
 
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
     Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
-  CMFileRead(cmfp, &cm);
+  CMFileRead(cmfp, NULL, &cm);
   if(cm == NULL) Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
   }   /* End of first block that is only done by master process */
@@ -995,7 +995,7 @@ main(int argc, char **argv)
 #endif
 	  esl_sqfile_Close(dbfp);
 	  FreeCMConsensus(cons);
-	  if(!(CMFileRead(cmfp, &cm))) continue_flag = 0;
+	  if(!(CMFileRead(cmfp, NULL, &cm))) continue_flag = 0;
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
 	}
       MPI_Barrier(MPI_COMM_WORLD);

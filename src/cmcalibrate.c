@@ -267,7 +267,7 @@ main(int argc, char **argv)
 
   if(esl_opt_GetBoolean(go, "--time"))
     w = esl_stopwatch_Create(); 
-  CMFileRead(cfg.cmfp, &cm);
+  CMFileRead(cfg.cmfp, NULL, &cm);
   if(cm == NULL) Die("Failed to read a CM from %s -- file corrupt?\n", cfg.cmfile);
 
   /* Open output files if nec */
@@ -447,7 +447,7 @@ main(int argc, char **argv)
 	      cmalloc *= 2;		/* realloc by doubling */
 	      cmstats = ReallocOrDie(cmstats, sizeof(CMStats_t *) * cmalloc);
 	    }
-	  if(!(CMFileRead(cfg.cmfp, &cm))) continue_flag = 0;
+	  if(!(CMFileRead(cfg.cmfp, NULL, &cm))) continue_flag = 0;
 	}
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
       MPI_Barrier(MPI_COMM_WORLD);
@@ -471,7 +471,7 @@ main(int argc, char **argv)
 	{
 	  /* Sanity checks 
 	   */
-	  if (!CMFileRead(cfg.cmfp, &cm))
+	  if (!CMFileRead(cfg.cmfp, NULL, &cm))
 	    esl_fatal("Ran out of CMs too early in pass 2");
 	  if (cm == NULL) 
 	    esl_fatal("CM file %s was corrupted? Parse failed in pass 2", cfg.cmfile);
@@ -632,10 +632,10 @@ static int cm_fit_gumbel(CM_t *cm, ESL_GETOPTS *go, struct cfg_s *cfg,
 		    }
 		  else
 		    {
-		      nt_p[0] = cm->null[0];
-		      nt_p[1] = cm->null[1];
-		      nt_p[2] = cm->null[2];
-		      nt_p[3] = cm->null[3];
+		      nt_p[0] = cm->bg->f[0];
+		      nt_p[1] = cm->bg->f[1];
+		      nt_p[2] = cm->bg->f[2];
+		      nt_p[3] = cm->bg->f[3];
 		    }
 		  esl_vec_DNorm(nt_p, Alphabet_size);
 		  /* Get random sequence */
@@ -692,10 +692,10 @@ static int cm_fit_gumbel(CM_t *cm, ESL_GETOPTS *go, struct cfg_s *cfg,
 			}
 		      else
 			{
-			  nt_p[0] = cm->null[0];
-			  nt_p[1] = cm->null[1];
-			  nt_p[2] = cm->null[2];
-			  nt_p[3] = cm->null[3];
+			  nt_p[0] = cm->bg->f[0];
+			  nt_p[1] = cm->bg->f[1];
+			  nt_p[2] = cm->bg->f[2];
+			  nt_p[3] = cm->bg->f[3];
 			}
 		      esl_vec_DNorm(nt_p, Alphabet_size);
 		      

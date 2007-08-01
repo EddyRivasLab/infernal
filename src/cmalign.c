@@ -34,9 +34,9 @@
 
 static int in_mpi;
 
-static void include_alignment(char *seqfile, int use_rf, float gapthresh, CM_t *cm, 
-			      ESL_SQ ***ret_sq, Parsetree_t ***ret_tr,
-			      int *ret_nseq, int *ret_nnewseq);
+static int include_alignment(char *seqfile, int use_rf, float gapthresh, CM_t *cm, 
+			     ESL_SQ ***ret_sq, Parsetree_t ***ret_tr, int *ret_nseq, 
+			     int *ret_nnewseq, char *errmsg);
 static int compare_cms(CM_t *cm1, CM_t *cm2);
 
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
@@ -157,6 +157,7 @@ main(int argc, char **argv)
   char            *optname;     /* name of option found by Getopt()         */
   char            *optarg;      /* argument found by Getopt()               */
   int              optind;      /* index in argv[]                          */
+  char             errmsg[eslERRBUFSIZE];
 
   int              status;
   int              format;      /* format of sequence file                  */
@@ -381,7 +382,7 @@ main(int argc, char **argv)
 
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
     Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
-  if (! CMFileRead(cmfp, &cm))
+  if (! CMFileRead(cmfp, NULL, &cm))
     Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
   if (cm == NULL) 
     Die("%s empty?\n", cmfile);
@@ -500,8 +501,7 @@ main(int argc, char **argv)
 	/* optionally include a fixed alignment provided with --withali */
 	withali_nseq = 0;
 	if(withali != NULL)
-	  include_alignment(withali, use_rf, gapthresh, cm, &sq, &tr, &nseq, &withali_nseq);
-
+	  include_alignment(withali, use_rf, gapthresh, cm, &sq, &tr, &nseq, &withali_nseq, errmsg);
 	if(!do_hmmonly)
 	  msa = ESL_Parsetrees2Alignment(cm, sq, NULL, tr, nseq, do_full);                 
 	else
@@ -624,7 +624,7 @@ main(int argc, char **argv)
  *           to an existing array of parsetrees. 
  *           Based on HMMER 2.4devl's hmmalign.c::include_alignment.
  *
- * Args:     seqfile      - the alignment file name to include
+ * Args:     alifile      - the alignment file name to include
  *           use_rf       - TRUE to use #=GC RF line for consensus
  *           gapthresh    - gap threshold for consensus columns
  *           CM           - the covariance model
@@ -633,18 +633,20 @@ main(int argc, char **argv)
  *           ret_tr       - RETURN: the parsetrees for seqs in seqfp
  *           ret_nseq     - RETURN: the new total number of seqs 
  *           ret_nnewseq  - RETURN: number of new seqs added
+ *           errmsg       - easel error message
  * 
  * Returns:  new, realloc'ed arrays for sq, tr; nseq is
  *           increased by number of seqs in seqfp.a
  */
-static void include_alignment(char *seqfile, int use_rf, float gapthresh, CM_t *cm, 
+static int include_alignment(char *alifile, int use_rf, float gapthresh, CM_t *cm, 
 			      ESL_SQ ***ret_sq, Parsetree_t ***ret_tr,
-			      int *ret_nseq, int *ret_nnewseq)
+			      int *ret_nseq, int *ret_nnewseq, char *errmsg)
 {
   /* TODO: Easelfy! */
-  int           format;	  /* format of alignment file */
-  MSA          *msa;      /* alignment we're including  */
-  MSAFILE      *afp;      /* open alignment file      */
+  int           status;
+  int           fmt = eslMSAFILE_UNKNOWN; /* format of alignment file */
+  ESL_MSA      *msa;      /* alignment we're including  */
+  ESL_MSAFILE  *afp;      /* open alignment file      */
   int           i;	  /* counter over aseqs       */
   int           ip;	  /* offset counter over aseqs */
   CM_t         *new_cm;   /* CM built from MSA, we check it has same guide tree as 'cm' */
@@ -658,20 +660,22 @@ static void include_alignment(char *seqfile, int use_rf, float gapthresh, CM_t *
   int         **map;      /* [0..msa->nseq-1][0..msa->alen] map from aligned
 			   * positions to unaligned (non-gap) positions */
 
-  format = MSAFILE_UNKNOWN;	/* invoke Babelfish */
-  if ((afp = MSAFileOpen(seqfile, format, NULL)) == NULL)
-    Die("Alignment file %s could not be opened for reading", seqfile);
-  if ((msa = MSAFileRead(afp)) == NULL)
-    Die("Failed to read an alignment from %s\n", seqfile);
-  MSAFileClose(afp);
+  status = esl_msafile_Open(alifile, fmt, NULL, &afp);
+  if (status == eslENOTFOUND)    ESL_FAIL(status, errmsg, "Alignment file %s doesn't exist or is not readable\n", alifile);
+  else if (status == eslEFORMAT) ESL_FAIL(status, errmsg, "Couldn't determine format of alignment %s\n", alifile);
+  else if (status != eslOK)      ESL_FAIL(status, errmsg, "Alignment file open failed with error %d\n", status);
 
-  dsq = DigitizeAlignment(msa->aseq, msa->nseq, msa->alen);
+  esl_msafile_SetDigital(afp, cm->abc);
+
+  status = esl_msa_Read(afp, &msa);
+  if      (status == eslEFORMAT)  cm_Fail("Alignment file parse error, line %d of file %s:\n%s\nOffending line is:\n%s\n", afp->linenumber, afp->fname, afp->errbuf, afp->buf);
+  else if (status != eslOK)       cm_Fail("Alignment file read unexpectedly failed with code %d\n", status);
 
   /* Some input data cleaning. */
   if (msa->ss_cons == NULL) 
-    Die("failed... Alignment has no consensus structure annotation.");
+    ESL_FAIL(eslFAIL, errmsg, "Alignment did not contain consensus structure annotation.\n");
   if (! clean_cs(msa->ss_cons, msa->alen))
-    Die("failed... Failed to parse consensus structure annotation.");
+    ESL_FAIL(eslFAIL, errmsg, "Failed to parse consensus structure annotation\n");
 
   /* Build a CM from a master guide tree built from the msa, 
    * then check to make sure this CM has same emit map as the CM
@@ -679,16 +683,16 @@ static void include_alignment(char *seqfile, int use_rf, float gapthresh, CM_t *
    * Another solution would be to use a checksum, but CM files don't 
    * have checksums yet.
    */
-  HandModelmaker(msa, dsq, use_rf, gapthresh, &new_cm, &mtr);
+  HandModelmaker(msa, cm->bg, use_rf, gapthresh, &new_cm, &mtr);
   if(!(compare_cms(cm, new_cm)))
     {
       newer_cm = CMRebalance(new_cm);
       FreeCM(new_cm);
       new_cm = newer_cm;
       if(!(compare_cms(cm, new_cm)))
-	Die("ERROR, in include_alignment(), CMs differ (even after rebalancing).\nAre you sure you used %s to build this CM?\nDid you use --rf or --gapthresh <x> options with cmbuild?\nIf so, use them again them with cmalign.", seqfile);
+	Die("ERROR, in include_alignment(), CMs differ (even after rebalancing).\nAre you sure you used %s to build this CM?\nDid you use --rf or --gapthresh <x> options with cmbuild?\nIf so, use them again them with cmalign.", alifile);
     }
-  /* If we get here, a CM built from the seqfile MSA has same node 
+  /* If we get here, a CM built from the alifile MSA has same node 
    * architecture as the CM that was passed in, now we don't care
    * about the new_cm anymore, free it. 
    */
@@ -700,6 +704,7 @@ static void include_alignment(char *seqfile, int use_rf, float gapthresh, CM_t *
    * have emitl and emitr in aligned coords to unaligned coords, so 
    * we can call Parsetrees2Alignment() with them. */
   map = MallocOrDie(sizeof(int *) * msa->nseq);
+  uaseq = MallocOrDie(sizeof(char *) * msa->nseq);
   for (i = 0; i < msa->nseq; i++)
     {
       map[i] = MallocOrDie(sizeof(int) * (msa->alen+1));
@@ -707,14 +712,17 @@ static void include_alignment(char *seqfile, int use_rf, float gapthresh, CM_t *
       uapos = 1;
       for(apos = 0; apos < msa->alen; apos++)
 	{
-	  if (!isgap(msa->aseq[i][apos]))
+	  if(!esl_abc_XIsGap(msa->abc, msa->ax[i][apos]))
 	    map[i][(apos+1)] = uapos++;
 	  else
 	    map[i][(apos+1)] = -1;
 	}
+      /* Textize ax and dealign it */
+      esl_abc_Textize(msa->abc, msa->ax[i], msa->alen, uaseq[i]);
+      esl_sq_Dealign(uaseq[i], uaseq[i], "-_.", msa->alen);
     }
 
-  DealignAseqs(msa->aseq, msa->nseq, &uaseq);
+
   *ret_tr  = ReallocOrDie((*ret_tr), (sizeof(Parsetree_t *) * (*ret_nseq + msa->nseq)));
   *ret_sq  = ReallocOrDie((*ret_sq), (sizeof (ESL_SQ *)     * (*ret_nseq + msa->nseq)));
 
@@ -757,8 +765,8 @@ static void include_alignment(char *seqfile, int use_rf, float gapthresh, CM_t *
   free(uaseq);
   FreeParsetree(mtr);
   Free2DArray((void**)dsq, msa->nseq);
-  MSAFree(msa);
-  return;
+  esl_msa_Destroy(msa);
+  return eslOK;
 }
 
 

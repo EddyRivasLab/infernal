@@ -65,7 +65,7 @@
  *           Both rf and cs are provided in the msa structure.
  *           
  * Args:     msa       - multiple alignment to build model from
- *           dsq       - digitized aligned sequences            
+ *           bg        - the background (null) model 
  *           use_rf    - TRUE to use RF annotation to determine match/insert
  *           gapthresh - fraction of gaps to allow in a match column (if use_rf=FALSE)
  *           ret_cm    - RETURN: new model                      (maybe NULL)
@@ -76,7 +76,7 @@
  *           gtr is allocated here. FreeTrace().
  */
 void
-HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh, 
+HandModelmaker(ESL_MSA *msa, CM_BG *bg, int use_rf, float gapthresh, 
 	       CM_t **ret_cm, Parsetree_t **ret_gtr)
 {
   CM_t           *cm;		/* new covariance model                       */
@@ -102,10 +102,12 @@ HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh,
    *    matassign is 1..alen. Values are 1 if a match column, 0 if insert column.
    */
   matassign = MallocOrDie(sizeof(int) * (msa->alen+1));
+
+  /* Watch for off-by-one. rf is [0..alen-1]; matassign is [1..alen] */
   if (use_rf)
     {
       for (apos = 1; apos <= msa->alen; apos++)
-	matassign[apos] = (isgap(msa->rf[apos-1]) ? 0 : 1);
+	matassign[apos] = (esl_abc_CIsGap(msa->abc, msa->rf[apos-1])? FALSE : TRUE);
     }
   else
     {
@@ -113,7 +115,7 @@ HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh,
       for (apos = 1; apos <= msa->alen; apos++)
 	{
 	  for (gaps = 0, idx = 0; idx < msa->nseq; idx++)
-	    if (dsq[idx][apos] == DIGITAL_GAP) gaps++;
+	    if (esl_abc_XIsGap(msa->abc, msa->ax[idx][apos])) gaps++;
 	  matassign[apos] = ((double) gaps / (double) msa->nseq > gapthresh) ? 0 : 1;
 	}
     }
@@ -320,7 +322,7 @@ HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh,
    * arrangement of consensus nodes. Now do the drill for constructing a full model 
    * using this guide tree.
    */
-  cm = CreateCM(nnodes, nstates);
+  cm = CreateCM(nnodes, nstates, msa->abc, bg);
   cm_from_guide(cm, gtr);
   CMZero(cm);
 
@@ -349,6 +351,7 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
   int         v;		/* what node we're working on (in gtr index system)*/
   int         node;		/* what node (preorder traversal numbering of CM) */
   int         state;		/* what state (preorder traversal numbering of CM) */
+  int         clen;		/* current count of consensus length   */
   int  nxtnodetype;		/* type of a child node (e.g. MATP_nd) */
   int  prvnodetype;		/* type of a parent node (e.g. MATP_nd) */
 
@@ -360,7 +363,7 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
   int child_count[] =             {  1,    4,    2,    2,    1,    1,    0,   1};
   int parent_count[] =            {  1,    6,    3,    3,    1,    2,    3,   0};
 
-  node = state = 0;
+  node = state = clen = 0;
   pda = CreateNstack();
   PushNstack(pda, 0);		/* push ROOT_nd onto the stack */
   while (PopNstack(pda, &v))
@@ -392,6 +395,7 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
 
 	cm->nodemap[node] = state;
 	cm->ndtype[node ] = MATP_nd;
+	clen             += 2;
 
 	cm->sttype[state] = MP_st;
 	cm->ndidx[state]  = node;
@@ -457,6 +461,7 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
 
 	cm->nodemap[node] = state;
 	cm->ndtype[node ] = MATL_nd;
+	clen             += 1;
 
 	cm->sttype[state] = ML_st;
 	cm->ndidx[state]  = node;
@@ -495,6 +500,7 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
 
 	cm->nodemap[node] = state;
 	cm->ndtype[node ] = MATR_nd;
+	clen             += 1;
 
 	cm->sttype[state] = MR_st;
 	cm->ndidx[state]  = node;
@@ -641,6 +647,7 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
   FreeNstack(pda);
   cm->M     = state;
   cm->nodes = node;
+  cm->clen  = clen;
 }
 
 
@@ -673,7 +680,7 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
  * 
  * Args:     cm    - the newly built covariance model, corresponding to gtr
  *           gtr   - guide tree
- *           dsq   - a digitized aligned sequence [1..alen]
+ *           ax    - a digitized aligned sequence [1..alen]
  *           aseq  - aligned sequence itself [0..alen-1]
  *           alen  - length of alignment
  *
@@ -681,7 +688,7 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
  *           Caller is responsible for free'ing this w/ FreeParsetree().
  */
 Parsetree_t *
-Transmogrify(CM_t *cm, Parsetree_t *gtr, char *dsq, char *aseq, int alen)
+Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
 {
   Parsetree_t *tr;
   int          node;		/* index of node in *gtr* we're working on */
@@ -735,13 +742,13 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, char *dsq, char *aseq, int alen)
 	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, 
 			       gtr->emitl[node], gtr->emitr[node], 0);
 	for (i = gtr->emitl[node]; i < gtr->emitl[gtr->nxtl[node]]; i++)
-	  if (dsq[i] != DIGITAL_GAP) {
+	  if (!esl_abc_XIsGap(cm->abc, ax[i])) {
 	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, 
 				   i, gtr->emitr[node], 1);
 	    if (! started) { started = TRUE; nstarts++; }
 	  }
 	for (j = gtr->emitr[node]; j > gtr->emitr[gtr->nxtl[node]]; j--)
-	  if (dsq[j] != DIGITAL_GAP) {
+	  if (!esl_abc_XIsGap(cm->abc, ax[j])) {
 	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, 2);	
 	    if (! started) { started = TRUE; nstarts++; }
 	  }
@@ -793,12 +800,12 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, char *dsq, char *aseq, int alen)
          *      on valid input. 
 	 */
       case MATP_nd:
-	if (dsq[gtr->emitl[node]] == DIGITAL_GAP) {
-	  if (dsq[gtr->emitr[node]] == DIGITAL_GAP) type = MATP_D;
-	  else                                      type = MATP_MR;
+	if (esl_abc_XIsGap(cm->abc, ax[gtr->emitl[node]])) {
+	  if (esl_abc_XIsGap(cm->abc, ax[gtr->emitr[node]])) type = MATP_D;
+	  else                                               type = MATP_MR;
 	} else {
-	  if (dsq[gtr->emitr[node]] == DIGITAL_GAP) type = MATP_ML;
-	  else                                      type = MATP_MP;
+	  if (esl_abc_XIsGap(cm->abc, ax[gtr->emitr[node]])) type = MATP_ML;
+	  else                                               type = MATP_MP;
 	}
 
 	if (type == MATP_D 
@@ -822,7 +829,7 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, char *dsq, char *aseq, int alen)
 
 	state = CalculateStateIndex(cm, node, MATP_IL);
 	for (i = gtr->emitl[node]+1; i < gtr->emitl[gtr->nxtl[node]]; i++)
-	  if (dsq[i] != DIGITAL_GAP) {
+	  if (!esl_abc_XIsGap(cm->abc, ax[i])) {
 	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, 
 				   i, gtr->emitr[node]-1, state);
 	    if (! started) goto FAILURE;
@@ -830,7 +837,7 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, char *dsq, char *aseq, int alen)
 
 	state = CalculateStateIndex(cm, node, MATP_IR);
 	for (j = gtr->emitr[node]-1; j > gtr->emitr[gtr->nxtl[node]]; j--)
-	  if (dsq[j] != DIGITAL_GAP) {
+	  if (!esl_abc_XIsGap(cm->abc, ax[j])) {
 	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state);	
 	    if (! started) goto FAILURE;
 	  }
@@ -847,8 +854,8 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, char *dsq, char *aseq, int alen)
 	 *   attached to root (tidx == -1), and we bump nstarts.
 	 */
       case MATL_nd:
-	if (dsq[gtr->emitl[node]] == DIGITAL_GAP) type = MATL_D;
-	else                                      type = MATL_ML;
+	if (esl_abc_XIsGap(cm->abc, ax[gtr->emitl[node]])) type = MATL_D;
+	else                                               type = MATL_ML;
 
 	if (type == MATL_D && aseq[gtr->emitl[node]-1] == '~')
 	  {
@@ -867,7 +874,7 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, char *dsq, char *aseq, int alen)
 
 	state = CalculateStateIndex(cm, node, MATL_IL);
 	for (i = gtr->emitl[node]+1; i < gtr->emitl[gtr->nxtl[node]]; i++)
-	  if (dsq[i] != DIGITAL_GAP) {
+	  if (!esl_abc_XIsGap(cm->abc, ax[i])) {
 	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, 
 				   i, gtr->emitr[node], state);
 	    if (! started) goto FAILURE;
@@ -878,8 +885,8 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, char *dsq, char *aseq, int alen)
 	 * Similar logic as MATL above.
 	 */
       case MATR_nd:
-	if (dsq[gtr->emitr[node]] == DIGITAL_GAP) type = MATR_D;
-	else                                      type = MATR_MR;
+	if (esl_abc_XIsGap(cm->abc, ax[gtr->emitr[node]])) type = MATR_D;
+	else                                               type = MATR_MR;
 
 	if (type == MATR_D && aseq[gtr->emitl[node]-1] == '~')
 	  {
@@ -898,7 +905,7 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, char *dsq, char *aseq, int alen)
 
 	state = CalculateStateIndex(cm, node, MATR_IR);
 	for (j = gtr->emitr[node]-1; j > gtr->emitr[gtr->nxtl[node]]; j--)
-	  if (dsq[j] != DIGITAL_GAP) {
+	  if (!esl_abc_XIsGap(cm->abc, ax[j])) {
 	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, 
 				   gtr->emitl[node], j, state);
 	    if (! started) goto FAILURE;
@@ -937,7 +944,7 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, char *dsq, char *aseq, int alen)
 	  }
 	state = CalculateStateIndex(cm, node, BEGR_IL);
 	for (i = gtr->emitl[node]; i < gtr->emitl[gtr->nxtl[node]]; i++)
-	  if (dsq[i] != DIGITAL_GAP) {
+	  if (!esl_abc_XIsGap(cm->abc, ax[i])) {
 	    if (ended) goto FAILURE;
 	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, 
 				   gtr->emitr[node], state);
@@ -988,7 +995,9 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, char *dsq, char *aseq, int alen)
  *           data structure. It was originally written for building a 
  *           new CM with less structure (MATPs) than a template CM.
  *           
- * Args:     ss_cons   - input consensus structure string 
+ * Args:     abc       - the alphabet
+ *           bg        - the background (null) model 
+ *           ss_cons   - input consensus structure string 
  *           len       - length of ss_cons, number of consensus columns
  *           ret_cm    - RETURN: new model                      (maybe NULL)
  *           ret_gtr   - RETURN: guide tree for alignment (maybe NULL)
@@ -998,7 +1007,8 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, char *dsq, char *aseq, int alen)
  *           gtr is allocated here. FreeTrace().
  */
 void
-ConsensusModelmaker(char *ss_cons, int clen, CM_t **ret_cm, Parsetree_t **ret_gtr)
+ConsensusModelmaker(ESL_ALPHABET *abc, CM_BG *bg, char *ss_cons, int clen, 
+		    CM_t **ret_cm, Parsetree_t **ret_gtr)
 {
   CM_t           *cm;		/* new covariance model                       */
   Parsetree_t    *gtr;		/* guide tree for alignment                   */
@@ -1203,7 +1213,7 @@ ConsensusModelmaker(char *ss_cons, int clen, CM_t **ret_cm, Parsetree_t **ret_gt
    * arrangement of consensus nodes. Now do the drill for constructing a full model 
    * using this guide tree.
    */
-  cm = CreateCM(nnodes, nstates);
+  cm = CreateCM(nnodes, nstates, abc, bg);
   cm_from_guide(cm, gtr);
   CMZero(cm);
 

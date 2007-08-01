@@ -173,7 +173,7 @@ Prior_Read(FILE *fp)
  *           CM is changed from counts to probability form.
  */          
 void
-PriorifyCM(CM_t *cm, Prior_t *pri)
+PriorifyCM(CM_t *cm, const Prior_t *pri)
 {
   int v;		/* counter for model position   */
   int setnum;           /* number of set to use */

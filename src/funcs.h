@@ -53,9 +53,9 @@ extern void     qdb_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *dmin,
 
 /* from cm.c
  */
-extern CM_t *CreateCM(int nnodes, int nstates);
+extern CM_t *CreateCM(int nnodes, int nstates, const ESL_ALPHABET *abc, CM_BG *bg);
 extern CM_t *CreateCMShell(void);
-extern void  CreateCMBody(CM_t *cm, int nnodes, int nstates);
+extern void  CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc, CM_BG *bg);
 extern void  CMZero(CM_t *cm);
 extern void  CMRenormalize(CM_t *cm);
 extern void  FreeCM(CM_t *cm);
@@ -93,21 +93,31 @@ extern float rsearch_calculate_gap_penalty (char from_state, char to_state,
 extern int   ExponentiateCM(CM_t *cm, double z);
 extern CM_t *DuplicateCM(CM_t *cm);
 extern void  cm_banner(FILE *fp, char *progname, char *banner);
+extern int   cm_Validate(CM_t *cm, float tol, char *errbuf);
+extern int   cm_SetName(CM_t *cm, char *name);
+extern int   cm_SetAccession(CM_t *cm, char *acc);
+extern int   cm_SetDescription(CM_t *cm, char *desc);
+extern int   cm_AppendComlog(CM_t *cm, int argc, char **argv);
+extern int   cm_SetCtime(CM_t *cm);
+
 
 /*EPN 10.19.05*/
-extern void  CMDefaultNullModel(float *null);
-extern void  CMSetNullModel(CM_t *cm, float null[MAXABET]);
-extern void  CMReadNullModel(char *rndfile, float *null);
+extern CM_BG *cm_bg_Create(const ESL_ALPHABET *abc);
+extern void cm_bg_Set(CM_BG *bg, float *f);
+extern void cm_bg_Read(char *bgfile, CM_BG *bg);
+extern int  cm_bg_Dump(FILE *ofp, CM_BG *bg);
+extern void cm_bg_Destroy(CM_BG *bg);
+     
 
 /* from cmio.c
  */
 extern CMFILE *CMFileOpen(char *cmfile, char *env);
-extern int     CMFileRead(CMFILE *cmf, CM_t **ret_cm);
+extern int     CMFileRead(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm);
 extern void    CMFileClose(CMFILE *cmf);
 extern void    CMFileRewind(CMFILE *cmf);
 extern int     CMFilePositionByIndex(CMFILE *cmf, int idx);
 extern int     CMFilePositionByKey(CMFILE *cmf, char *key);
-extern void    CMFileWrite(FILE *fp, CM_t *cm, int do_binary);
+extern int     CMFileWrite(FILE *fp, CM_t *cm, int do_binary);
 
 
 /* from display.c
@@ -154,12 +164,12 @@ extern int   ConfigQDB(CM_t *cm);
 
 /* from modelmaker.c
  */
-extern void HandModelmaker(MSA *msa, char **dsq, int use_rf, float gapthresh, 
+extern void HandModelmaker(ESL_MSA *msa, CM_BG *bg, int use_rf, float gapthresh, 
 			   CM_t **ret_cm, Parsetree_t **ret_mtr);
-extern void ConsensusModelmaker(char *ss_cons, int clen, CM_t **ret_cm, 
+extern void ConsensusModelmaker(ESL_ALPHABET *abc, CM_BG *bg, char *ss_cons, int clen, CM_t **ret_cm, 
 				Parsetree_t **ret_gtr);
 extern Parsetree_t *Transmogrify(CM_t *cm, Parsetree_t *gtr, 
-				 char *dsq, char *aseq, int alen);
+				 ESL_DSQ *dsq, char *aseq, int alen);
 extern void cm_from_guide(CM_t *cm, Parsetree_t *gtr);
 extern int  cm_find_and_detach_dual_inserts(CM_t *cm, int do_check, int do_detach);
 extern int  cm_check_before_detaching(CM_t *cm, int insert1, int insert2);
@@ -256,7 +266,7 @@ float TrCYKInside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t
 
 /* from cm_eweight.c
  * Entropy-based sequence weighting */
-extern double CM_Eweight(CM_t *cm,  Prior_t *pri, 
+extern double CM_Eweight(CM_t *cm,  const Prior_t *pri, 
 			 float numb_seqs, float targetent);
 extern void ModelContent(float *ent1, float *ent2, int M);
 extern void CMRescale(CM_t *hmm, float scale);
@@ -466,6 +476,9 @@ extern CM_t *read_cm (char *queryfile);
 
 /* from cm_cluster.c
  */
-int MSADivide(MSA *mmsa, int do_all, int target_nc, float mindiff, int do_pickone,
-	      int do_corig, int *ret_num_msa, MSA ***ret_cmsa);
+int MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff, int do_corig, 
+	      int *ret_num_msa, ESL_MSA ***ret_cmsa);
 
+/* cm_errors.c */
+extern void cm_Die (char *format, ...);
+extern void cm_Fail(char *format, ...);

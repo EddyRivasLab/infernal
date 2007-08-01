@@ -761,7 +761,8 @@ CPlan9CMLocalBeginConfig(CM_t *cm)
    * CM (because the end[2]->end[M] will incur a penalty also.
    */
 
-  float hmm_begin_end_prob = cm->begin[cm->nodemap[1]];
+  float hmm_begin_end_prob;
+  hmm_begin_end_prob = cm->begin[cm->nodemap[1]];
   /***************************************************/
   /* BELOW IS INCOMPLETE! */
   /*cm->cp9->t[0][CTMI] = cm->cp9->t[0][CTMD] = cm->cp9->t[0][CTME] = 0.;
@@ -928,7 +929,6 @@ CPlan9InitEL(CM_t *cm, CP9_t *cp9)
   int k;                     /* counter over HMM nodes */
   int nd;
   int *tmp_el_from_ct;
-  int c;
 
   /* First copy the CM el self transition score/probability: */
   cp9->el_self   = sreEXP2(cm->el_selfsc);
@@ -2514,7 +2514,6 @@ CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq,
   int   *maxels;                /* array of max ELs emissions between aligned columns */
   int   *matmap;                /* matmap[k] = apos of match k [1..M] */
   int    nins;                  /* counter for inserts */
-  int    nels;                  /* counter for ELs */
   int    cpos;                  /* HMM node, consensus position */
   int    apos;                  /* position in aligned sequence (0..alen-1)*/
   int    rpos;                  /* position in raw digital sequence (1..L)*/
@@ -2868,7 +2867,6 @@ void
 DuplicateCP9(CM_t *src_cm, CM_t *dest_cm)
 {
   int       k,x;	          /* counter over nodes */
-  CP9_t     *new;
 
   /* Contract checks */
   if(!(src_cm->flags & CM_CP9))
@@ -2886,7 +2884,7 @@ DuplicateCP9(CM_t *src_cm, CM_t *dest_cm)
   /* Create the new model and copy everything over */
   dest_cm->cp9 = AllocCPlan9(dest_cm->cp9map->hmm_M);
   ZeroCPlan9(dest_cm->cp9);
-  CPlan9SetNullModel(dest_cm->cp9, dest_cm->null, 1.0); /* set p1 = 1.0 which corresponds to the CM */
+  CPlan9SetNullModel(dest_cm->cp9, dest_cm->bg->f, 1.0); /* set p1 = 1.0 which corresponds to the CM */
   CPlan9InitEL(dest_cm, dest_cm->cp9); /* set up hmm->el_from_ct and hmm->el_from_idx data, which
 					* explains how the EL states are connected in the HMM. */
 

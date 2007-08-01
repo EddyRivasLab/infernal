@@ -71,7 +71,8 @@ OBJS  = alphabet.o\
 	mpifuncs.o\
 	cm_dispatch.o\
 	rnamat.o\
-	cm_cluster.o
+	cm_cluster.o\
+	cm_errors.o
 
 HDRS  = funcs.h\
 	prior.h\
