@@ -45,19 +45,11 @@
 
 /* Alphabet information is declared here, and defined in globals.c.
  */
-#define MAXABET           4	/* max for Alphabet_size             */
-#define MAXDEGEN         17     /* maximum for Alphabet_iupac        */
-#define DIGITAL_GAP      126	/* see alphabet.c:DigitizeSequence() */
-#define DIGITAL_SENTINEL 127    
+#define MAXABET     4
+#define MAXDEGEN   17
+
 #define INTSCALE    1000.0      /* scaling constant for floats to integer scores */
 #define LOGSUM_TBL  20000       /* controls precision of ILogsum()            */
-
-extern int   Alphabet_type;
-extern int   Alphabet_size;
-extern int   Alphabet_iupac;
-extern char *Alphabet;
-extern char  Degenerate[MAXDEGEN][MAXABET];
-extern int   DegenCount[MAXDEGEN];
 
 /* We're moderately paranoid about underflow and overflow errors, so
  * we do some checking on the magnitude of the scores.

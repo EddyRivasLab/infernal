@@ -46,7 +46,7 @@ static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
   { "-n",        eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "name the CM(s) <s>",                     1 },
-  { "-o",        eslARG_OUTFILE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "direct summary output to file <f>, not stdout", 1 },
+  { "-o",        eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "direct summary output to file <f>, not stdout", 1 },
   { "-A",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "append this CM to <cmfile>",             1 },
   { "-F",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "force; allow overwriting of <cmfile>",   1 },
   { "-1",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "use tabular output summary format, 1 line per CM", 1 },
@@ -274,7 +274,7 @@ main(int argc, char **argv)
    */
   if (cfg.my_rank == 0) {
     if (! esl_opt_IsDefault(go, "-o")) { fclose(cfg.ofp); }
-    if (cfg.afp   != NULL) esl_msafile_Close(cfg.afp);
+    if (cfg.ofp   != NULL) esl_msafile_Close(cfg.afp);
     if (cfg.abc   != NULL) esl_alphabet_Destroy(cfg.abc);
     if (cfg.cmfp  != NULL) fclose(cfg.cmfp);
     if (cfg.pri   != NULL) Prior_Destroy(cfg.pri);
@@ -626,8 +626,8 @@ static int
 build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t ***opt_tr)
 {
   int status;
-  Parsetree_t     *mtr;         /* master structure tree from the alignment*/
   Parsetree_t     *tr;
+  Parsetree_t     *mtr;
   int idx;
   CM_t *cm;
   char *aseq;                   

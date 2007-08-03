@@ -9,24 +9,23 @@
  *****************************************************************  
  */
 
+#include "esl_config.h"
+#include "config.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include <time.h>
 
-#include "squid.h"
-#include "vectorops.h"
-#include "sre_stack.h"
-
 #include "structs.h"
 #include "funcs.h"
+#include "stats.h"
+
 #include "easel.h"
 #include "esl_vectorops.h"
 #include "esl_alphabet.h"
-#include "stats.h"
-#include "config.h"
-#include "easel.h"
+#include "esl_stack.h"
 
 /* Function: CreateCM(); CreateCMShell(); CreateCMBody()
  * Date:     SRE, Sat Jul 29 09:02:16 2000 [St. Louis]
@@ -60,10 +59,10 @@ CreateCM(int nnodes, int nstates, const ESL_ALPHABET *abc, CM_BG *bg)
 CM_t *
 CreateCMShell(void)
 {
+  int status;
   CM_t *cm;
 
-  cm = MallocOrDie(sizeof(CM_t));
-
+  ESL_ALLOC(cm, sizeof(CM_t));
 				/* general information: added later */
   cm->abc    = NULL;
   cm->bg     = NULL;
@@ -118,47 +117,78 @@ CreateCMShell(void)
   cm->cp9_cutoff_type = DEFAULT_CP9_CUTOFF_TYPE; /* score cutoff */
   cm->cp9_cutoff      = DEFAULT_CP9_CUTOFF;      /* 0.0 bits */
   cm->cp9_sc_boost = 0.;
-  cm->root_trans = NULL;
-  cm->hmmpad = DEFAULT_HMMPAD; /* 0 residues */
-  cm->stats = NULL;
-  cm->pbegin = DEFAULT_PBEGIN; /* summed probability of internal local begin */
-  cm->pend = DEFAULT_PEND;   /* summed probability of internal local end */
+  cm->root_trans   = NULL;
+  cm->hmmpad       = DEFAULT_HMMPAD; /* 0 residues */
+  cm->stats        = NULL;
+  cm->pbegin       = DEFAULT_PBEGIN; /* summed probability of internal local begin */
+  cm->pend         = DEFAULT_PEND;   /* summed probability of internal local end */
   return cm;
+
+ ERROR:
+  esl_fatal("Memory allocation error.\n");
+  return NULL; /* never reached */
 }
 void
 CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc, CM_BG *bg)
 {
-				/* alphabet, only a reference */
+  int status;
+  int v;
+                                /* alphabet, only a reference */
   cm->abc    = abc; 
 				/* null model, only a reference */
   cm->bg     = bg;
 				/* structural information */
   cm->M      = nstates;
-  cm->sttype = MallocOrDie((nstates+1) * sizeof(char));
-  cm->ndidx  = MallocOrDie(nstates * sizeof(int));
-  cm->stid   = MallocOrDie((nstates+1) * sizeof(char));
-  cm->cfirst = MallocOrDie(nstates * sizeof(int));
-  cm->cnum   = MallocOrDie(nstates * sizeof(int));
-  cm->plast  = MallocOrDie(nstates * sizeof(int));
-  cm->pnum   = MallocOrDie(nstates * sizeof(int));
+
+  ESL_ALLOC(cm->sttype, (nstates+1) * sizeof(char));
+  ESL_ALLOC(cm->ndidx,   nstates    * sizeof(int));
+  ESL_ALLOC(cm->stid,   (nstates+1) * sizeof(char));
+  ESL_ALLOC(cm->cfirst,  nstates    * sizeof(int));
+  ESL_ALLOC(cm->cnum,    nstates    * sizeof(int));
+  ESL_ALLOC(cm->plast,   nstates    * sizeof(int));
+  ESL_ALLOC(cm->pnum,    nstates    * sizeof(int));
 				/* node->state map information */
   cm->nodes  = nnodes;
-  cm->nodemap= MallocOrDie(nnodes  * sizeof(int));
-  cm->ndtype = MallocOrDie(nnodes  * sizeof(char));
-				/* parameter information */
-  cm->t      = FMX2Alloc(nstates, MAXCONNECT);
-  cm->e      = FMX2Alloc(nstates, abc->K*abc->K);
-  cm->begin  = MallocOrDie(nstates * sizeof(float));
-  cm->end    = MallocOrDie(nstates * sizeof(float));
-  cm->tsc    = FMX2Alloc(nstates, MAXCONNECT);
-  cm->esc    = FMX2Alloc(nstates, abc->K*abc->K);
-  cm->beginsc= MallocOrDie(nstates * sizeof(float));
-  cm->endsc  = MallocOrDie(nstates * sizeof(float));
-
-  cm->itsc   = IMX2Alloc(nstates, MAXCONNECT);
-  cm->iesc   = IMX2Alloc(nstates, abc->K*abc->K);
-  cm->ibeginsc= MallocOrDie(nstates * sizeof(int));
-  cm->iendsc  = MallocOrDie(nstates * sizeof(int));
+  ESL_ALLOC(cm->nodemap, nnodes  * sizeof(int));
+  ESL_ALLOC(cm->ndtype,  nnodes  * sizeof(char));
+  
+  /* parameter information */
+  /* level 1 */
+  ESL_ALLOC(cm->t,    (nstates) * sizeof(float *));
+  ESL_ALLOC(cm->e,    (nstates) * sizeof(float *));
+  ESL_ALLOC(cm->tsc,  (nstates) * sizeof(float *));
+  ESL_ALLOC(cm->esc,  (nstates) * sizeof(float *));
+  ESL_ALLOC(cm->itsc, (nstates) * sizeof(int *));
+  ESL_ALLOC(cm->iesc, (nstates) * sizeof(int *));
+  cm->t[0]   = NULL;
+  cm->e[0]   = NULL;
+  cm->tsc[0] = NULL;
+  cm->esc[0] = NULL;
+  cm->itsc[0]= NULL;
+  cm->iesc[0]= NULL;
+  ESL_ALLOC(cm->begin,   (nstates) * sizeof(float));
+  ESL_ALLOC(cm->end,     (nstates) * sizeof(float));
+  ESL_ALLOC(cm->beginsc, (nstates) * sizeof(float));
+  ESL_ALLOC(cm->endsc,   (nstates) * sizeof(float));
+  ESL_ALLOC(cm->ibeginsc,(nstates) * sizeof(int));
+  ESL_ALLOC(cm->iendsc,  (nstates) * sizeof(int));
+  
+  /* level 2 */
+  ESL_ALLOC(cm->t[0],    MAXCONNECT * nstates * sizeof(float));
+  ESL_ALLOC(cm->e[0],    cm->abc->K * cm->abc->K * nstates * sizeof(float));
+  ESL_ALLOC(cm->tsc[0],  MAXCONNECT * nstates * sizeof(float));
+  ESL_ALLOC(cm->esc[0],  cm->abc->K * cm->abc->K * nstates * sizeof(float));
+  ESL_ALLOC(cm->itsc[0], MAXCONNECT * nstates * sizeof(int));
+  ESL_ALLOC(cm->iesc[0], cm->abc->K * cm->abc->K * nstates * sizeof(int));
+  for (v = 0; v < nstates; v++) 
+    {
+      cm->e[v]    = cm->e[0]    + v * (cm->abc->K * cm->abc->K);
+      cm->t[v]    = cm->t[0]    + v * MAXCONNECT;
+      cm->esc[v]  = cm->esc[0]  + v * (cm->abc->K * cm->abc->K);
+      cm->tsc[v]  = cm->tsc[0]  + v * MAXCONNECT;
+      cm->iesc[v] = cm->iesc[0] + v * (cm->abc->K * cm->abc->K);
+      cm->itsc[v] = cm->itsc[0] + v * MAXCONNECT;
+    }
 
   /* the EL state at M is special: we only need state
    * type info recorded, so functions looking at parsetrees  
@@ -176,6 +206,10 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc, CM_BG *
   cm->cp9           = NULL;
   cm->cp9map        = NULL;
   /* we'll allocate the cp9 and cp9map only if nec inside ConfigCM() */
+
+ ERROR:
+  esl_fatal("Memory allocation error.\n");
+  return; /* never reached */
 }
 
 
@@ -190,19 +224,21 @@ void
 CMZero(CM_t *cm)
 {
   int v;			/* counter over states                 */
-  int x;			/* counter over symbols or transitions */
 
   for (v = 0; v < cm->M; v++) {
-    for (x = 0; x < cm->abc->K * cm->abc->K; x++) cm->e[v][x]   = 0.0;
-    for (x = 0; x < MAXCONNECT; x++)                    cm->t[v][x]   = 0.0;
-    for (x = 0; x < cm->abc->K * cm->abc->K; x++) cm->esc[v][x] = 0.0;
-    for (x = 0; x < MAXCONNECT; x++)                    cm->tsc[v][x] = 0.0;
-    for (x = 0; x < cm->abc->K * cm->abc->K; x++) cm->iesc[v][x] = 0.0;
-    for (x = 0; x < MAXCONNECT; x++)                    cm->itsc[v][x] = 0.0;
-    cm->begin[v] = cm->end[v] = 0.;
-    cm->beginsc[v] = cm->endsc[v] = 0.;
-    cm->ibeginsc[v] = cm->iendsc[v] = 0.;
+    esl_vec_FSet(cm->e[v],    (cm->abc->K * cm->abc->K), 0.);
+    esl_vec_FSet(cm->t[v],    MAXCONNECT,                0.);
+    esl_vec_FSet(cm->esc[v],  (cm->abc->K * cm->abc->K), 0.);
+    esl_vec_FSet(cm->tsc[v],  MAXCONNECT,                0.);
+    esl_vec_ISet(cm->iesc[v], (cm->abc->K * cm->abc->K), 0);
+    esl_vec_ISet(cm->itsc[v], MAXCONNECT,                0);
   }
+  esl_vec_FSet(cm->begin,    cm->M, 0.);
+  esl_vec_FSet(cm->end,      cm->M, 0.);
+  esl_vec_FSet(cm->beginsc,  cm->M, 0.);
+  esl_vec_FSet(cm->endsc,    cm->M, 0.);
+  esl_vec_ISet(cm->ibeginsc, cm->M, 0);
+  esl_vec_ISet(cm->iendsc,   cm->M, 0);
 }
 
 /* Function:  CMRenormalize()
@@ -221,14 +257,14 @@ CMRenormalize(CM_t *cm)
   for (v = 0; v < cm->M; v++)
     {
       if (cm->cnum[v] > 0 && cm->sttype[v] != B_st)
-	FNorm(cm->t[v], cm->cnum[v]);
+	esl_vec_esl_vec_FNorm(cm->t[v], cm->cnum[v]);
       
       if (cm->sttype[v] == ML_st || cm->sttype[v] == MR_st || cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
-	FNorm(cm->e[v], cm->abc->K);
+	esl_vec_esl_vec_FNorm(cm->e[v], cm->abc->K);
       if (cm->sttype[v] == MP_st)
-	FNorm(cm->e[v], cm->abc->K * cm->abc->K);
+	esl_vec_esl_vec_FNorm(cm->e[v], cm->abc->K * cm->abc->K);
     }
-  if (cm->flags & CM_LOCAL_BEGIN) FNorm(cm->begin, cm->M);
+  if (cm->flags & CM_LOCAL_BEGIN) esl_vec_esl_vec_FNorm(cm->begin, cm->M);
   if (cm->flags & CM_LOCAL_END)   Die("Renormalization of models in local end mode not supported yet");
 }
 
@@ -253,7 +289,7 @@ FreeCM(CM_t *cm)
   if (cm->desc   != NULL) free(cm->desc);
   if (cm->annote != NULL) free(cm->annote);
   /* This gives a memory error, b/c it's copied from optarg
-   * in cmsearch.c (I can't find where optarg is Malloc'ed,
+   * in cmsearch.c (I can't find where optarg is alloc'ed,
    * worst case scenario: small memory leak here */
   /*if (cm->enf_seq != NULL) free(cm->enf_seq);*/
 
@@ -266,16 +302,23 @@ FreeCM(CM_t *cm)
   free(cm->pnum);
   free(cm->nodemap);
   free(cm->ndtype);
-  FMX2Free(cm->t);
-  FMX2Free(cm->e);
+
+  free(cm->t[0]);
+  free(cm->t);
+  free(cm->e[0]);
+  free(cm->e);
+  free(cm->tsc[0]);
+  free(cm->tsc);
+  free(cm->esc[0]);
+  free(cm->esc);
+  free(cm->itsc[0]);
+  free(cm->itsc);
+  free(cm->iesc[0]);
+  free(cm->iesc);
   free(cm->begin);
   free(cm->end);
-  FMX2Free(cm->tsc);
-  FMX2Free(cm->esc);
   free(cm->beginsc);
   free(cm->endsc);
-  IMX2Free(cm->itsc);
-  IMX2Free(cm->iesc);
   free(cm->ibeginsc);
   free(cm->iendsc);
   free(cm->dmin);
@@ -334,7 +377,7 @@ cm_bg_Set(CM_BG *bg, float *f)
   int x;
   for (x = 0; x < bg->abc->K; x++)
     bg->f[x] = f[x];
-  esl_vec_FNorm(bg->f, bg->abc->K);
+  esl_vec_esl_vec_FNorm(bg->f, bg->abc->K);
   return;
 }
 
@@ -389,7 +432,7 @@ cm_bg_Read(char *bgfile, CM_BG *bg)
   /*fragile*/
   if(sum > 1.00001 || sum < 0.99999)
     esl_fatal ("%s is not in CM null model file format.\nThere are not 4 background probabilities that sum to exactly 1.0", bgfile);
-  FNorm(bg->f, bg->abc->K);
+  esl_vec_FNorm(bg->f, bg->abc->K);
   fclose(fp);
   return;
 
@@ -398,7 +441,6 @@ cm_bg_Read(char *bgfile, CM_BG *bg)
   cm_bg_Destroy(bg);
   return;
 }
-
 
 /* Function:  cm_bg_Dump()
  * Synopsis:  Outputs <CM_BG> object as text, for diagnostics.
@@ -432,7 +474,7 @@ cm_bg_Destroy(CM_BG *bg)
   return;
 }
 
-
+/*HEREHEREHEREHEREHEREHERHERE*/
 /* Function: CMSimpleProbify()
  * Date:     SRE, Tue Aug  1 11:07:17 2000 [St. Louis]
  *
@@ -451,7 +493,7 @@ CMSimpleProbify(CM_t *cm)
       if (cm->sttype[v] != B_st && cm->sttype[v] != E_st) 
 	{
 	  for (x = 0; x < cm->cnum[v]; x++) cm->t[v][x] += 1.0; /* Laplace prior */
-	  FNorm(cm->t[v], cm->cnum[v]);	                        /* normalize to a probability */
+	  esl_vec_FNorm(cm->t[v], cm->cnum[v]);	                        /* normalize to a probability */
 	}
 
       /* Emissions.
@@ -459,13 +501,13 @@ CMSimpleProbify(CM_t *cm)
       if (cm->sttype[v] == MP_st) 
 	{
 	  for (x = 0; x < cm->abc->K*cm->abc->K; x++) cm->e[v][x] += 1.0;
-	  FNorm(cm->e[v], cm->abc->K*cm->abc->K);
+	  esl_vec_FNorm(cm->e[v], cm->abc->K*cm->abc->K);
 	}
       else if (cm->sttype[v] == ML_st || cm->sttype[v] == MR_st || 
 	       cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) 
 	{
 	  for (x = 0; x < cm->abc->K; x++) cm->e[v][x] += 1.0;
-	  FNorm(cm->e[v], cm->abc->K);
+	  esl_vec_FNorm(cm->e[v], cm->abc->K);
 	}
     }
 }
@@ -520,27 +562,27 @@ rsearch_CMProbifyEmissions(CM_t *cm, fullmat_t *fullmat)
 			  printf("cm->e[v:%d][%d]: %f\n", v, (x*cm->abc->K+y), cm->e[v][(x*cm->abc->K+y)]);
 		      ESL_EXCEPTION(eslEINVAL, "cm->e[v:%d] a MATP_MP has > 1 non-zero count"); 
 		    }
-		  cur_emission = numbered_basepair(Alphabet[x], Alphabet[y]);
+		  cur_emission = numbered_basepair(cm->abc->sym[x], cm->abc->sym[y]);
 		  found_ct_flag = TRUE;
 		}
 	  /* Now, set emission probs as target probs in correct cells of score matrix */
 	  for (x=0; x<cm->abc->K*cm->abc->K; x++) 
 	    cm->e[v][x] = fullmat->paired->matrix[matrix_index(cur_emission, x)];
-	  esl_vec_FNorm(cm->e[v], cm->abc->K*cm->abc->K);
+	  esl_vec_esl_vec_FNorm(cm->e[v], cm->abc->K*cm->abc->K);
 	}
       else if (cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR)
 	{
-	  for (x=0; x<Alphabet_size; x++) 
+	  for (x=0; x<cm->abc->K; x++) 
 	    if (fabs(cm->e[v][x] - 0.) > thresh) 
 		{
 		  if(found_ct_flag) ESL_EXCEPTION(eslEINVAL, "cm->e[v:%d] a MAT{L,R}_M{L,R} has > 1 non-zero count"); 
-		  cur_emission = numbered_nucleotide(Alphabet[x]);
+		  cur_emission = numbered_nucleotide(cm->abc->sym[x]);
 		  found_ct_flag = TRUE;
 		}
 	  /* Now, set emission probs as target probs in correct cells of score matrix */
-	  for (x=0; x<Alphabet_size; x++) 
+	  for (x=0; x<cm->abc->K; x++) 
 	    cm->e[v][x] = fullmat->unpaired->matrix[matrix_index(cur_emission, x)];
-	  esl_vec_FNorm(cm->e[v], Alphabet_size);
+	  esl_vec_esl_vec_FNorm(cm->e[v], cm->abc->K);
 	}
       else if (cm->stid[v] == MATP_ML || cm->stid[v] == MATP_MR)
 	{
@@ -549,28 +591,28 @@ rsearch_CMProbifyEmissions(CM_t *cm, fullmat_t *fullmat)
 	   * Alternative technique: determine residue emitted to left and right, 
 	   * marginalize target freqs from paired matrix for this residue. 
 	   * RSEARCH technique currently implemented */
-	  for (x=0; x<Alphabet_size; x++) 
-	    for (y=0; y<Alphabet_size; y++) 
+	  for (x=0; x<cm->abc->K; x++) 
+	    for (y=0; y<cm->abc->K; y++) 
 	      {
-		if (cm->stid[v] == MATP_ML && (fabs(cm->e[(v-1)][x*Alphabet_size + y] - 0.) > thresh))
-		  cur_emission = numbered_nucleotide(Alphabet[x]);
-		else if (cm->stid[v] == MATP_MR && (fabs(cm->e[(v-2)][x*Alphabet_size + y] - 0.) > thresh))
-		  cur_emission = numbered_nucleotide(Alphabet[y]);
+		if (cm->stid[v] == MATP_ML && (fabs(cm->e[(v-1)][x*cm->abc->K + y] - 0.) > thresh))
+		  cur_emission = numbered_nucleotide(cm->abc->sym[x]);
+		else if (cm->stid[v] == MATP_MR && (fabs(cm->e[(v-2)][x*cm->abc->K + y] - 0.) > thresh))
+		  cur_emission = numbered_nucleotide(cm->abc->sym[y]);
 		/* We don't have to check we have only 1 non-zero count, we've already
 		 * done so when we filled e for the MATP_MP in the same node as v */
 	      }		
 	  /* fill emission probs */
-	  for (x=0; x<Alphabet_size; x++) 
+	  for (x=0; x<cm->abc->K; x++) 
 	    cm->e[v][x] = fullmat->unpaired->matrix[matrix_index(cur_emission, x)];
-	  esl_vec_FNorm(cm->e[v], Alphabet_size);
+	  esl_vec_esl_vec_FNorm(cm->e[v], cm->abc->K);
 	}
       else if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) 
 	{
 	  /* Don't give any score for emissions matching to an Insert state,
 	   * but make sure we don't have any counts in any of these guys */
-	  for (x = 0; x < Alphabet_size; x++) 
+	  for (x = 0; x < cm->abc->K; x++) 
 	    if(fabs(cm->e[v][x] - 0.) > thresh) ESL_EXCEPTION(eslEINVAL, "cm->e[v:%d] an I{L,R} has > 0 non-zero count", v); 
-	  esl_vec_FNorm(cm->e[v], Alphabet_size); /* these will have all been zero */
+	  esl_vec_esl_vec_FNorm(cm->e[v], cm->abc->K); /* these will have all been zero */
 	}
     }
   return eslOK;
@@ -597,16 +639,16 @@ CMLogoddsify(CM_t *cm)
 	    /*printf("cm->t[%4d][%2d]: %f itsc->e: %f itsc: %d\n", v, x, cm->t[v][x], Score2Prob(cm->itsc[v][x], 1.0), cm->itsc[v][x]);*/
 	  }	    
       if (cm->sttype[v] == MP_st)
-	for (x = 0; x < Alphabet_size; x++)
-	  for (y = 0; y < Alphabet_size; y++)
+	for (x = 0; x < cm->abc->K; x++)
+	  for (y = 0; y < cm->abc->K; y++)
 	    {
-	      cm->esc[v][x*Alphabet_size+y]  = sreLOG2(cm->e[v][x*Alphabet_size+y] / (cm->bg->f[x]*cm->bg->f[y]));
-	      cm->iesc[v][x*Alphabet_size+y] = Prob2Score(cm->e[v][x*Alphabet_size+y], (cm->bg->f[x]*cm->bg->f[y]));
-	      /*printf("cm->e[%4d][%2d]: %f iesc->e: %f iesc: %d\n", v, (x*Alphabet_size+y), cm->e[v][(x*Alphabet_size+y)], Score2Prob(cm->iesc[v][x*Alphabet_size+y], (cm->bg->f[x]*cm->bg->f[y])), cm->iesc[v][(x*Alphabet_size+y)]);*/
+	      cm->esc[v][x*cm->abc->K+y]  = sreLOG2(cm->e[v][x*cm->abc->K+y] / (cm->bg->f[x]*cm->bg->f[y]));
+	      cm->iesc[v][x*cm->abc->K+y] = Prob2Score(cm->e[v][x*cm->abc->K+y], (cm->bg->f[x]*cm->bg->f[y]));
+	      /*printf("cm->e[%4d][%2d]: %f iesc->e: %f iesc: %d\n", v, (x*cm->abc->K+y), cm->e[v][(x*cm->abc->K+y)], Score2Prob(cm->iesc[v][x*cm->abc->K+y], (cm->bg->f[x]*cm->bg->f[y])), cm->iesc[v][(x*cm->abc->K+y)]);*/
 	    }
       if (cm->sttype[v] == ML_st || cm->sttype[v] == MR_st ||
 	  cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
-	for (x = 0; x < Alphabet_size; x++)
+	for (x = 0; x < cm->abc->K; x++)
 	  {
 	    cm->esc[v][x]  = sreLOG2(cm->e[v][x] / cm->bg->f[x]);
 	    cm->iesc[v][x] = Prob2Score(cm->e[v][x], cm->bg->f[x]);
@@ -724,7 +766,7 @@ CMHackInsertScores(CM_t *cm)
   for (v = 0; v < cm->M; v++)
     {
       if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
-	for (x = 0; x < Alphabet_size; x++)
+	for (x = 0; x < cm->abc->K; x++)
 	  {
 	    cm->esc[v][x]  = 0.;
 	    cm->iesc[v][x] = 0.;
@@ -1264,7 +1306,8 @@ DeriveUniqueStateCode(int ndtype, int sttype)
 CM_t *
 CMRebalance(CM_t *cm)
 {
-  Nstack_t *pda;          /* stack used for traversing old CM */
+  int       status;
+  ESL_STACK *pda = NULL;  /* stack used for traversing old CM */
   CM_t     *new;          /* new CM we're creating */
   int      *wgt;          /* # of extra CYK decks required to calc subgraphs */
   int      *newidx;       /* newidx[v] = old CM state v's new index in new CM */
@@ -1284,7 +1327,7 @@ CMRebalance(CM_t *cm)
   /* Calculate "weights" (# of required extra decks) on every B and S state.
    * Recursive rule here is: 1 + min(wgt[left], wgt[right]).
    */
-  wgt = MallocOrDie(sizeof(int) * cm->M);
+  ESL_ALLOC(wgt, sizeof(int) * cm->M);
   for (v = cm->M-1; v >= 0; v--) 
     {
       if      (cm->sttype[v] == E_st) /* initialize unbifurcated segments with 1 */
@@ -1304,8 +1347,8 @@ CMRebalance(CM_t *cm)
    */
   v = 0;
   z = cm->M-1;
-  pda = CreateNstack();
-  newidx = MallocOrDie(sizeof(int) * cm->M);
+  pda = esl_stack_ICreate();
+  ESL_ALLOC(newidx, sizeof(int) * cm->M);
   for (nv = 0; nv < cm->M; nv++)
     {    
       /* Keep a map of where the old states are going in new CM 
@@ -1325,7 +1368,7 @@ CMRebalance(CM_t *cm)
 	new->t[nv][x]   = cm->t[v][x];
 	new->tsc[nv][x] = cm->t[v][x];
       }
-      for (x = 0; x < Alphabet_size*Alphabet_size; x++) {
+      for (x = 0; x < cm->abc->K*cm->abc->K; x++) {
 	new->e[nv][x] = cm->e[v][x];
 	new->esc[nv][x] = cm->esc[v][x];
       }
@@ -1413,31 +1456,11 @@ CMRebalance(CM_t *cm)
   free(newidx);
   FreeNstack(pda);
   return new;
-}
 
-/* EPN 12.19.06 
- * 2D integer matrix operations, based on Squid's sre_math::{F,D}MX2Alloc() 
- * and sre_math::{F,D}MX2Free(). Created for integer log odds score support.
- */
-int **
-IMX2Alloc(int rows, int cols)
-{
-  int  **mx;
-  int     r;
-  
-  mx    = (int **) MallocOrDie(sizeof(int *) * rows);
-  mx[0] = (int *)  MallocOrDie(sizeof(int)   * rows * cols);
-  for (r = 1; r < rows; r++)
-    mx[r] = mx[0] + r*cols;
-  return mx;
+ ERROR:
+  esl_fatal("Memory allocation error.\n");
+  return NULL; /* never reached */
 }
-void
-IMX2Free(int **mx)
-{
-  free(mx[0]);
-  free(mx);
-}
-
 
 /*
  * EPN, Wed Mar 21 09:29:55 2007
@@ -1628,14 +1651,14 @@ ExponentiateCM(CM_t *cm, double z)
 	  cm->t[v][x]  = pow(cm->t[v][x], z);
       if (cm->sttype[v] == MP_st)
 	{
-	  for (x = 0; x < Alphabet_size; x++)
-	    for (y = 0; y < Alphabet_size; y++)
-	      cm->e[v][x*Alphabet_size+y]  = pow(cm->e[v][x*Alphabet_size+y], z);
+	  for (x = 0; x < cm->abc->K; x++)
+	    for (y = 0; y < cm->abc->K; y++)
+	      cm->e[v][x*cm->abc->K+y]  = pow(cm->e[v][x*cm->abc->K+y], z);
 	}
       if (cm->sttype[v] == ML_st || cm->sttype[v] == MR_st ||
 	  cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
 	{
-	  for (x = 0; x < Alphabet_size; x++)
+	  for (x = 0; x < cm->abc->K; x++)
 	    cm->e[v][x]  = pow(cm->e[v][x], z);
 	}
     }
@@ -1662,6 +1685,7 @@ ExponentiateCM(CM_t *cm, double z)
 CM_t *
 DuplicateCM(CM_t *cm)
 {
+  int       status;
   int       v;	          /* counter over states */
   int       x;		  /* counter over transitions, residues, nodes */
   CM_t     *new;
@@ -1710,7 +1734,7 @@ DuplicateCM(CM_t *cm)
 	  new->tsc[v][x]   = cm->tsc[v][x];
 	  new->itsc[v][x]  = cm->itsc[v][x];
 	}
-      for (x = 0; x < Alphabet_size * Alphabet_size; x++)
+      for (x = 0; x < cm->abc->K * cm->abc->K; x++)
 	{
 	  new->e[v][x]     = cm->e[v][x];
 	  new->esc[v][x]   = cm->esc[v][x];
@@ -1719,8 +1743,8 @@ DuplicateCM(CM_t *cm)
     }      
   if(cm->dmin != NULL && cm->dmax != NULL)
     {
-      new->dmin = MallocOrDie(sizeof(int) * cm->M);
-      new->dmax = MallocOrDie(sizeof(int) * cm->M);
+      ESL_ALLOC(new->dmin, sizeof(int) * cm->M);
+      ESL_ALLOC(new->dmax, sizeof(int) * cm->M);
       for(v = 0; v < cm->M; v++)
 	{
 	  new->dmin[v] = cm->dmin[v];
@@ -1753,7 +1777,7 @@ DuplicateCM(CM_t *cm)
     new->root_trans = NULL;
   else
     {
-      new->root_trans = MallocOrDie(sizeof(float) * cm->cnum[0]);
+      ESL_ALLOC(new->root_trans, sizeof(float) * cm->cnum[0]);
       for (v = 0; v < cm->cnum[0]; v++)
 	new->root_trans[v] = cm->root_trans[v];
     }
@@ -1776,6 +1800,10 @@ DuplicateCM(CM_t *cm)
     }
 
   return new;
+
+ ERROR:
+  esl_fatal("Memory allocation error.\n");
+  return NULL; /* never reached */
 }
 
 /* Function:  cm_banner()

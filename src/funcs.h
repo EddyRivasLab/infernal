@@ -13,17 +13,11 @@
 
 /* from alphabet.c
  */
-extern char   SymbolIndex(char sym);
-extern void   SingletCount(float *counters, char symidx, float wt);
-extern void   PairCount(float *counters, char syml, char symr, float wt);
-extern float  DegeneratePairScore(float *esc, char syml, char symr);
-extern float  DegenerateSingletScore(float *esc, char sym);
-extern char  *DigitizeSequence(char *seq, int L);
-extern char **DigitizeAlignment(char **aseq, int nseq, int alen);
-extern int    iDegeneratePairScore(int *esc, char syml, char symr);
-extern int    iDegenerateSingletScore(int *esc, char sym);
-float         LeftMarginalScore(float *esc, int dres);
-float         RightMarginalScore(float *esc, int dres);
+extern void   PairCount(const ESL_ALPHABET *abc, float *counters, char syml, char symr, float wt);
+extern float  DegeneratePairScore(const ESL_ALPHABET *abc, float *esc, char syml, char symr);
+extern int    iDegeneratePairScore(const ESL_ALPHABET *abc, int *esc, char syml, char symr);
+float         LeftMarginalScore(const ESL_ALPHABET *abc, float *esc, int dres);
+float         RightMarginalScore(const ESL_ALPHABET *abc, float *esc, int dres);
 
 /* from bandcyk.c
  */
@@ -43,10 +37,8 @@ extern void     BandBounds(double **gamma, int M, int W, double p,
 extern void     PrintBandGraph(FILE *fp, double **gamma, int *min, int *max, int v, int W);
 
 extern void     PrintDPCellsSaved(CM_t *cm, int *min, int *max, int W);
-extern float    CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
+extern float    CYKBandedScan(CM_t *cm, ESL_SQ *sq, int *dmin, int *dmax, int i0, int j0, int W, 
 			      float cutoff, scan_results_t *results);
-extern void     BandedParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq, 
-				    double **gamma, int W, int *dmin, int *dmax);
 extern void     ExpandBands(CM_t *cm, int qlen, int *dmin, int *dmax);
 extern void     qdb_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *dmin, 
 				    int *dmax, int bdump_level);
@@ -132,8 +124,7 @@ extern int            IsCompensatory(float *pij, int symi, int symj);
 
 /* in emit.c
  */
-extern void EmitParsetree(CM_t *cm, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, 
-			  char **ret_seq, char **ret_dsq, int *ret_N);
+extern int EmitParsetree(CM_t *cm, ESL_RANDOMNESS *r, char *name, int do_digital, Parsetree_t **ret_tr, ESL_SQ **ret_sq, int *ret_N);
 
 /* in emitmap.c
  */
@@ -192,10 +183,8 @@ extern void         ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq
 extern int          ParsetreeCompare(Parsetree_t *t1, Parsetree_t *t2);
 extern void         SummarizeMasterTrace(FILE *fp, Parsetree_t *tr);
 extern void         MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm);
-extern MSA         *Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt, 
-					 Parsetree_t **tr, int nseq, int do_full);
-extern MSA         *ESL_Parsetrees2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, 
-					     Parsetree_t **tr, int nseq, int do_full);
+extern int          Parsetrees2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, 
+					 Parsetree_t **tr, int nseq, int do_full, ESL_MSA **ret_msa);
 extern float        ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, char *dsq, int print_flag);
 extern int          Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, CP9trace_t **ret_cp9_tr);
 
@@ -328,8 +317,8 @@ extern int   CP9TransitionScoreLookup(struct cplan9_s *hmm, char st1, int k1,
 extern void  CP9ViterbiTrace(struct cplan9_s *hmm, char *dsq, int i0, int j0,
 			     struct cp9_dpmatrix_s *mx, CP9trace_t **ret_tr);
 extern void  CP9ReverseTrace(CP9trace_t *tr);
-extern MSA  *CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq, CP9trace_t **tr, 
-				 int do_full);
+extern int   CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq, CP9trace_t **tr, 
+				     int do_full, ESL_MSA **ret_msa);
 extern void  DuplicateCP9(CM_t *src_cm, CM_t *dest_cm);
 
 /* from hbandcyk.c

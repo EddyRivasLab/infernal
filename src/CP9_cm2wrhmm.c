@@ -2473,21 +2473,21 @@ debug_print_cp9_params(FILE *fp, struct cplan9_s *hmm)
  */
 int 
 CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo, 
-			  int spos, int epos, float chi_thresh, int nsamples, int print_flag)
+		      int spos, int epos, float chi_thresh, int nsamples, int print_flag)
 {
+  int status;
   Parsetree_t **tr;             /* Parsetrees of emitted aligned sequences */
-  char    **dsq;                /* digitized sequences                     */
-  char    **seq;                /* actual sequences (real letters)         */
-  SQINFO            *sqinfo;    /* info about sequences (name/desc)        */
-  MSA               *msa;       /* alignment */
+  ESL_SQ  **sq;                 /* sequences */
+  ESL_MSA           *msa;       /* alignment */
   float             *wgt;
+  char *name;                   /* name for emitted seqs */
   int i, idx, nd;
   int L;
   int apos;
   int *matassign;
   int *useme;
-  struct cp9trace_s **cp9_tr;   /* fake tracebacks for each seq            */
-  struct cplan9_s  *shmm;       /* the new, CM plan9 HMM; built by sampling*/
+  CP9trace_t **cp9_tr;          /* fake tracebacks for each seq            */
+  CP9_t  *shmm;                 /* the new, CM plan9 HMM; built by sampling*/
   int msa_nseq;                 /* this is the number of sequences per MSA,
 				 * current strategy is to sample (nseq/nseq_per_msa)
 				 * alignments from the CM, and add counts from
@@ -2521,27 +2521,24 @@ CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo,
 
   /* sample MSA(s) from the CM */
   nsampled = 0;
-  dsq    = MallocOrDie(sizeof(char *)             * msa_nseq);
-  seq    = MallocOrDie(sizeof(char *)             * msa_nseq);
-  tr     = MallocOrDie(sizeof(Parsetree_t)        * msa_nseq);
-  sqinfo = MallocOrDie(sizeof(SQINFO)             * msa_nseq);
-  wgt    = MallocOrDie(sizeof(float)              * msa_nseq);
-  FSet(wgt, msa_nseq, 1.0);
+  ESL_ALLOC(sq, sizeof(ESL_SQ) * msa_nseq);
+  ESL_ALLOC(sq, (sizeof(Parsetree_t) * msa_nseq));
+  ESL_ALLOC(wgt,(sizeof(float)       * msa_nseq));
+  esl_vec_FSet(wgt, msa_nseq, 1.0);
 
   while(nsampled < nsamples)
     {
       if(nsampled != 0)
 	{
 	  /* clean up from previous MSA */
-	  MSAFree(msa);
+	  esl_msa_Free(msa);
 	  free(matassign);
 	  free(useme);
 	  for (i = 0; i < msa_nseq; i++)
 	    {
 	      CP9FreeTrace(cp9_tr[i]);
 	      FreeParsetree(tr[i]);
-	      free(dsq[i]);
-	      free(seq[i]);
+	      esl_sq_Reuse(sq[i]);
 	    }
 	  free(cp9_tr);
 	}
@@ -2550,13 +2547,12 @@ CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo,
 	msa_nseq = nsamples - nsampled;
       for (i = 0; i < msa_nseq; i++)
 	{
-	  EmitParsetree(cm, r, &(tr[i]), NULL, &(dsq[i]), &L);
-	  sprintf(sqinfo[i].name, "seq%d", i+1);
-	  sqinfo[i].len   = L;
-	  sqinfo[i].flags = SQINFO_NAME | SQINFO_LEN;
+	  sprintf(name, "seq%d", i+1);
+	  EmitParsetree(cm, r, name, FALSE, &(tr[i]), &(sq[i]), &L);
+	  free(name);
 	}
       /* Build a new MSA from these parsetrees */
-      msa = Parsetrees2Alignment(cm, dsq, sqinfo, NULL, tr, msa_nseq, TRUE);
+      Parsetrees2Alignment(cm, sq, NULL, tr, msa_nseq, TRUE, &msa);
       
       /* Truncate the alignment prior to consensus column spos and after 
 	 consensus column epos */
@@ -2579,7 +2575,7 @@ CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo,
 		 /* we misassigned this guy, overwrite */ 
 	    }
 	}
-      MSAShorterAlignment(msa, useme);
+      esl_msa_ColumnSubset(msa, useme);
 
       /* Shorten the dsq's */
       for (i = 0; i < msa_nseq; i++)
@@ -2604,7 +2600,7 @@ CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo,
       
       /* build model from tracebacks (code from HMMER's modelmakers.c::matassign2hmm() */
       for (idx = 0; idx < msa->nseq; idx++) {
-	CP9TraceCount(shmm, dsq[idx], msa->wgt[idx], cp9_tr[idx]);
+	CP9TraceCount(shmm, dsq[idx], wgt[idx], cp9_tr[idx]);
       }
       nsampled += msa_nseq;
     }
@@ -2700,6 +2696,9 @@ CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo,
     return FALSE;
   else
     return TRUE;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
 }
 
 /* Function: CP9_node_chi_squared()

@@ -17,758 +17,548 @@
 #include <ctype.h>
 #include <float.h>
 
-#include "squid.h"		/* general sequence analysis library    */
-#include "easel.h"		/* newer general seq analysis library   */
-#include "msa.h"                /* squid's multiple alignment i/o       */
-#include "stopwatch.h"          /* squid's process timing module        */
+#include "easel.h"		/* general seq analysis library   */
+#include "esl_alphabet.h"
+#include "esl_getopts.h"		
+#include "esl_msa.h"
+#include "esl_sqio.h"		
+#include "esl_stopwatch.h"
 
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
-#include "sre_stack.h"
 #include "hmmband.h"         
 #include "cplan9.h"
 #include "cm_postprob.h"
 #include "mpifuncs.h"
 #include "cm_dispatch.h"
-#include "esl_sqio.h"		
 
-static int in_mpi;
+#define ALGOPTS  "--cyk,--inside,--outside,--hmmonly"        /* Exclusive choice for scoring algorithms */
+#define MEMOPTS  "--small,--nosmall"                         /* Exclusive choice for memory choice */
+#define ACCOPTS  "--nonbanded,--hbanded,--qdb"               /* Exclusive choice for acceleration strategies */
+#define ALPHOPTS "--rna,--dna"                               /* Exclusive choice for output alphabet */
 
-static int include_alignment(char *seqfile, int use_rf, float gapthresh, CM_t *cm, 
-			     ESL_SQ ***ret_sq, Parsetree_t ***ret_tr, int *ret_nseq, 
-			     int *ret_nnewseq, char *errmsg);
-static int compare_cms(CM_t *cm1, CM_t *cm2);
-
-#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-/*
- * Function: exit_from_mpi
- * Date:     RJK, Thu Jun 6, 2002 [St. Louis]
- * Purpose:  Calls MPI_Abort on exit if in_mpi flag is 1, otherwise
- *           returns
- */
-void exit_from_mpi () {
-  if (in_mpi)
-    MPI_Abort (MPI_COMM_WORLD, -1);
-}
+static ESL_OPTIONS options[] = {
+  /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
+  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
+  { "-l",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "align locally w.r.t. the model",         1 },
+  { "-o",        eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "output the alignment to file <f>, not stdout", 1 },
+  { "-q",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "quiet; suppress verbose banner",         1 },
+  { "-1",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "use tabular output summary format, 1 line per sequence", 1 },
+#ifdef HAVE_MPI
+  { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "run as an MPI parallel program",                    1 },  
 #endif
-
-#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-static char banner[] = "mpicmalign - align sequences to an RNA CM";
-static char usage[]  = "\
-Usage: mpicmalign [-options] <cmfile> <sequence file>\n\
-  Most commonly used options are:\n\
-   -h     : help; print brief help on version and usage\n\
-   -l     : local; align locally w.r.t. the model\n\
-   -o <f> : output the alignment file to file <f>\n\
-   -q     : quiet; suppress verbose banner\n\
-";
-#else
-static char banner[] = "cmalign - align sequences to an RNA CM";
-static char usage[]  = "\
-Usage: cmalign [-options] <cmfile> <sequence file>\n\
-  Most commonly used options are:\n\
-   -h     : help; print brief help on version and usage\n\
-   -l     : local; align locally w.r.t. the model\n\
-   -o <f> : output the alignment file to file <f>\n\
-   -q     : quiet; suppress verbose banner\n\
-";
-#endif
-
-static char experts[] = "\
-  Expert, in development, or infrequently used options are:\n\
-   --informat <s>: specify that input alignment is in format <s>\n\
-   --nosmall     : use normal alignment algorithm, not d&c\n\
-   --regress <f> : save regression test data to file <f>\n\
-   --full        : include all match columns in output alignment\n\
-   --tfile <f>   : dump individual sequence tracebacks to file <f>\n\
-   --banddump <n>: set verbosity of band info print statements to <n> [1..3]\n\
-   --dlev <n>    : set verbosity of debugging print statements to <n> [1..3]\n\
-   --time        : print timings for alignment, band calculation, etc.\n\
-   --inside      : don't align; return scores from the Inside algorithm \n\
-   --outside     : don't align; return scores from the Outside algorithm\n\
-   --post        : align with CYK and append posterior probabilities\n\
-   --checkpost   : check that posteriors are correctly calc'ed\n\
-   --zeroinserts : set insert emission scores to 0\n\
-   --sub         : build sub CM for columns b/t HMM predicted start/end points\n\
-   --elsilent    : disallow local end (EL) emissions\n\
-   --enfstart <n>: enforce MATL stretch starting at consensus position <n>\n\
-   --enfseq   <s>: enforce MATL stretch starting at --enfstart <n> emits seq <s>\n\
-\n\
-  * HMM banded alignment related options (*in development*):\n\
-   --hbanded     : accelerate using CM plan 9 HMM banded CYK aln algorithm\n\
-   --tau <x>     : set tail loss prob for --hbanded to <x> [default: 1E-7]\n\
-   --hsafe       : realign (non-banded) seqs with HMM banded CYK score < 0 bits\n\
-   --sums        : use posterior sums during HMM band calculation (widens bands)\n\
-   --hmmonly     : align with the CM Plan 9 HMM (no alignment given, just score)\n\
-\n\
-  * Query dependent banded (qdb) alignment related options:\n\
-   --qdb         : use query dependent banded CYK alignment algorithm\n\
-   --beta <x>    : set tail loss prob for QDB to <x> [default:1E-7]\n\
-\n\
-  * Options for including the alignment used to build the CM in the output:\n\
-   --withali <f> : incl. alignment in <f> (must be aln <cm file> was built from)\n\
-   --rf          : (only with --withali) cmbuild --rf was used\n\
-   --gapthresh <x>:(only with --withali) cmbuild --gapthresh <x> was used\n\
-";
-
-static struct opt_s OPTIONS[] = {
-  { "-h", TRUE, sqdARG_NONE }, 
-  { "-l", TRUE, sqdARG_NONE },
-  { "-o", TRUE, sqdARG_STRING },
-  { "-q", TRUE, sqdARG_NONE },
-  { "--informat",   FALSE, sqdARG_STRING },
-  { "--nosmall",    FALSE, sqdARG_NONE },
-  { "--regress",    FALSE, sqdARG_STRING },
-  { "--qdb",        FALSE, sqdARG_NONE },
-  { "--beta",       FALSE, sqdARG_FLOAT},
-  { "--tfile",      FALSE, sqdARG_STRING },
-  { "--banddump"  , FALSE, sqdARG_INT},
-  { "--full",       FALSE, sqdARG_NONE },
-  { "--dlev",       FALSE, sqdARG_INT },
-  { "--hbanded",    FALSE, sqdARG_NONE },
-  { "--tau",       FALSE, sqdARG_FLOAT},
-  { "--hsafe",      FALSE, sqdARG_NONE},
-  { "--hmmonly",    FALSE, sqdARG_NONE },
-  /*  { "--sums",       FALSE, sqdARG_NONE},*/ 
-  { "--time",       FALSE, sqdARG_NONE},
-  { "--inside",     FALSE, sqdARG_NONE},
-  { "--outside",    FALSE, sqdARG_NONE},
-  { "--post",       FALSE, sqdARG_NONE},
-  { "--checkpost",  FALSE, sqdARG_NONE},
-  { "--sub",        FALSE, sqdARG_NONE},
-  { "--elsilent",   FALSE, sqdARG_NONE},
-  { "--enfstart",   FALSE, sqdARG_INT},
-  { "--enfseq",     FALSE, sqdARG_STRING},
-  { "--zeroinserts",FALSE, sqdARG_NONE},
-  { "--withali",    FALSE, sqdARG_STRING },
-  { "--gapthresh",  FALSE, sqdARG_FLOAT},
-  { "--rf",         FALSE, sqdARG_NONE }
+  /* Miscellaneous expert options */
+  { "--informat",eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "specify input alignment is in format <s>, not Stockholm",  2 },
+  { "--time",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "print timings for alignment, band calculation, etc.", 2 },
+  { "--regress", eslARG_OUTFILE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "save regresion test data to file <f>", 2 },
+  { "--full",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "include all match columns in output alignment", 2 },
+  { "--zeroinserts",eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "set insert emission scores to 0", 2 },
+  { "--elsilent",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      "-l",        NULL, "disallow local end (EL) emissions", 2 },
+  /* Algorithm options */
+  { "--cyk",     eslARG_NONE,"default",NULL, NULL,   ALGOPTS,      NULL,        NULL, "don't align; return scores from the Inside algorithm", 3 },
+  { "--hmmonly", eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,"--hbanded,--qdb", "align using Viterbi to CM plan 9 HMM only",3 },
+  { "--inside",  eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,   "--cyk",        NULL, "don't align; return scores from the Inside algorithm", 3 },
+  { "--outside", eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "don't align; return scores from the Outside algorithm", 3 },
+  { "--post",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "align with CYK and append posterior probabilities", 3 },
+  { "--checkpost",eslARG_NONE,  FALSE, NULL, NULL,      NULL,  "--post",        NULL, "check that posteriors are correctly calc'ed", 3 },
+  { "--sub",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "build sub CM for columns b/t HMM predicted start/end points", 3 },
+  /* Memory options */
+  { "--small",   eslARG_NONE,"default",  NULL, NULL,      NULL,      NULL, "--nosmall", "use divide and conquer (d&c) alignment algorithm", 4 },
+  { "--nosmall", eslARG_NONE,   FALSE,  NULL, NULL,      NULL,      NULL,   "--small", "use normal alignment algorithm, not d&c", 4 },
+  /* Banded alignment */
+  { "--nonbanded",eslARG_NONE,"default",NULL, NULL,   ACCOPTS,      NULL,      NULL,   "accelerate using CM plan 9 HMM banded CYK aln algorithm", 5 },
+  { "--hbanded", eslARG_NONE,   FALSE, NULL, NULL,"--nonbanded,--qdb,--small",NULL,NULL, "accelerate using CM plan 9 HMM banded CYK aln algorithm", 5 },
+  { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 5 },
+  { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "realign (non-banded) seqs with HMM banded CYK score < 0 bits", 5 },
+  { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use posterior sums during HMM band calculation (widens bands)", 5 },
+  { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,   ACCOPTS,      NULL,        NULL, "use query dependent banded CYK alignment algorithm", 5 },
+  { "--beta",    eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,   "--qdb",        NULL, "set tail loss prob for --qdb to <x>", 5 },
+  /* Including a preset alignment */
+  { "--withali", eslARG_STRING, NULL,  NULL, NULL,      NULL,    "--cyk",        NULL, "enforce MATL stretch starting at --enfstart <n> emits seq <s>", 6 },
+  { "--rf",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--withali",       NULL, "--rf was originally used with cmbuild", 6 },
+  { "--gapthresh",eslARG_REAL,  "0.5", NULL, "0<=x<=1", NULL,"--withali",       NULL, "--gapthresh <x> was originally used with cmbuild", 6 },
+  /* Verbose output files/debugging */
+  { "--tfile",   eslARG_OUTFILE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "dump individual sequence tracebacks to file <f>", 7 },
+  { "--banddump",eslARG_NONE,   FALSE, NULL, "1<=n<=3", NULL,      NULL,        NULL, "set verbosity of band info print statements to <n> [1..3]", 7 },
+  { "--dlev",    eslARG_NONE,   FALSE, NULL, "1<=n<=3", NULL,      NULL,        NULL, "set verbosity of debugging print statements to <n> [1..3]", 7 },
+  /* Enforcing a subsequence */
+  { "--enfstart",eslARG_INT,    FALSE, NULL, "n>0",     NULL,"--enfseq",        NULL, "enforce MATL stretch starting at consensus position <n>", 8 },
+  { "--enfseq",  eslARG_STRING, NULL,  NULL, NULL,      NULL,"--enfstart",      NULL, "enforce MATL stretch starting at --enfstart <n> emits seq <s>", 8 },
+/* Setting output alphabet */
+  { "--rna",     eslARG_NONE,"default",NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as RNA sequence data [default]", 9},
+  { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 9},
+  {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
-#define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
+
+/* struct cfg_s : "Global" application configuration shared by all threads/processes
+ * 
+ * This structure is passed to routines within main.c, as a means of semi-encapsulation
+ * of shared data amongst different parallel processes (threads or MPI processes).
+ * NOTE: MPI not yet implemented.
+ */
+struct cfg_s {
+  char         *cmfile;	        /* name of input CM file  */ 
+  char         *sqfile;	        /* name of sequence file  */ 
+  ESL_SQFILE   *sqfp;           /* open sequence input file stream */
+  int           fmt;		/* format code for seqfile */
+  ESL_ALPHABET *abc;		/* digital alphabet for input */
+  int           be_verbose;	/* one-line-per-seq summary */
+  int           nseq;           /* which number sequence this is in file (only valid in serial mode) */
+  CM_t         *cm;             /* the CM to align to */
+
+  int           do_mpi;		/* TRUE if we're doing MPI parallelization */
+  int           nproc;		/* how many MPI processes, total */
+  int           my_rank;	/* who am I, in 0..nproc-1 */
+  int           do_stall;	/* TRUE to stall the program until gdb attaches */
+
+  /* Masters only (i/o streams) */
+  CMFILE       *cmfp;		/* open input CM file stream       */
+  FILE         *ofp;		/* output file (default is stdout) */
+  FILE         *tracefp;	/* optional output for parsetrees  */
+  FILE         *regressfp;	/* optional output for regression test  */
+  ESL_MSAFILE  *withalifp;	/* optional input alignment to include */
+  ESL_MSA      *withmsa;	/* MSA from withalifp to include */
+  ESL_ALPHABET *abc_out; 	/* digital alphabet for writing */
+};
+
+static char usage[]  = "[-options] <cmfile> <sequence file>";
+static char banner[] = "align sequences to an RNA CM";
+
+static int  init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
+static int  init_shared_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
+
+static void  serial_master (const ESL_GETOPTS *go, struct cfg_s *cfg);
+#ifdef HAVE_MPI
+static void  mpi_master    (const ESL_GETOPTS *go, struct cfg_s *cfg);
+static void  mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
+#endif
+
+static int    process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t ***opt_tr);
+static int output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQ **sq, Parsetree_t **tr, CP9trace_t **cp9_tr, char **postcode);
+
+static int initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
+static int check_withali(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA **ret_msa);
+static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr, char *errbuf);
+static int compare_cms(CM_t *cm1, CM_t *cm2);
+static int make_aligned_string(char *aseq, char *gapstring, int alen, char *ss, char **ret_s);
 
 int
 main(int argc, char **argv)
 {
-  char            *cmfile;      /* file to read CM from                     */	
-  CMFILE          *cmfp;	/* open CM file                             */
-  char            *seqfile;     /* file to read sequences from              */
-  ESL_SQFILE	  *seqfp;       /* open seqfile for reading                 */
-  ESL_SQ	 **sq;          /* the target sequences to align            */
-  char            *optname;     /* name of option found by Getopt()         */
-  char            *optarg;      /* argument found by Getopt()               */
-  int              optind;      /* index in argv[]                          */
-  char             errmsg[eslERRBUFSIZE];
-
-  int              status;
-  int              format;      /* format of sequence file                  */
-  int              nseq;	/* number of seqs                           */
-  CM_t            *cm;          /* a covariance model                       */
-  Parsetree_t    **tr;          /* parse trees for the sequences            */
-  CP9trace_t     **cp9_tr;      /* CP9 traces for the sequences             */
-  MSA             *msa;         /* alignment that's created                 */
-  char            *outfile;	/* optional output file name                */
-  FILE            *ofp;         /* an open output file                      */
-  int              i;		/* counter over sequences/parsetrees        */
-  char            *regressfile; /* regression test data file                */
-  char            *tracefile;	/* file to dump debugging traces to         */
-  CMConsensus_t   *con;         /* consensus information for the CM         */
-
-  /* Options, modifiable via the command line */
-  int              be_quiet;	/* TRUE to suppress verbose output & banner */
-  int              do_local;	/* TRUE to config the model in local mode   */
-  int              do_small;	/* TRUE to do divide and conquer alignments */
-  int              do_full;     /* TRUE to include all match cols in aln    */
-  int              do_qdb;      /* TRUE to do qdb CYK (either d&c or full)  */
-  int              bdump_level; /* verbosity level for --banddump, 0 is OFF */
-  int              debug_level; /* verbosity level for debugging printf's s */
-  int              do_timings;  /* TRUE to print timings, FALSE not to      */
-  double           qdb_beta;	/* tail loss prob for query dependent bands */
-
-  /* HMM banded alignment */
-  int              do_hbanded;  /* TRUE to use CP9 HMM to band CYK          */
-  double           tau;         /* tail loss probability for hmm bands      */
-  int              use_sums;    /* TRUE: use the posterior sums w/HMM bands */
-  int              do_hmmonly;  /* TRUE: align with the HMM, not the CM     */
-  int              do_hsafe;    /* TRUE: realign seqs with banded sc < 0    */
-  /* Alternatives to CYK */
-  int              do_inside;   /* TRUE to use Inside algorithm, not CYK    */
-  int              do_outside;  /* TRUE to use Outside algorithm, not CYK   */
-  int              do_check;    /* TRUE to check Inside & Outside probs     */
-  int              do_post;     /* TRUE to do Inside/Outside, not CYK       */
-  char           **postcode;    /* posterior decode array of strings        */
-  char            *apostcode;   /* aligned posterior decode array           */
-
-  /* the --sub option */
-  int              do_sub;      /* TRUE to use HMM to infer start and end   *
-				 * point of each seq and build a separate   *
-				 * sub CM for alignment of that seq         */
-  int              do_fullsub;  /* TRUE to only remove structure outside HMM*
-				 * predicted start (spos) and end points    *
-				 * (epos) (STILL IN DEVELOPMENT!)           */
-  int              do_elsilent; /* TRUE to disallow EL emissions            */
-  int              do_zero_inserts; /* TRUE to zero insert emission scores */
-
-  /* The enforce option (--enfstart and --enfseq), added specifically for   *
-   * enforcing the template region for telomerase RNA searches              */
-  int   do_enforce;             /* TRUE to enforce a MATL stretch is used   */
-  int   enf_cc_start;           /* first consensus position to enforce      */
-  char *enf_seq;                /* the subsequence to enforce emitted by    *
-                                 * MATL nodes starting at cm->enf_start     */
-
-  /* variables for appending query aln CM was built from to output aln      */
-  int    do_withali;            /* TRUE to incl. original query aln         */
-  char  *withali;               /* name of additional aln file to align     */
-  int    withali_nseq;          /* num seqs in withali ali file, 0 if none  */
-  int    ip;                    /* used to  assign post codes w/--withali   */
-  int    use_rf;		/* TRUE was used #=RF to define consensus   */
-  float  gapthresh;		/* 0=all cols inserts; 1=all cols consensus */
-
-  in_mpi = 0;			/* to silence overzealous compiler warnings */
-#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-  int mpi_my_rank;              /* My rank in MPI                           */
-  int mpi_num_procs;            /* Total number of processes                */
-  int mpi_master_rank;          /* Rank of master process                   */
-  Stopwatch_t  *mpi_watch;      /* for timings in MPI mode                  */
-
-  /* Initialize MPI, get values for rank and num procs */
-  MPI_Init (&argc, &argv);
-  
-  atexit (exit_from_mpi);
-  in_mpi = 1;                /* Flag for exit_from_mpi() */
-
-  MPI_Comm_rank (MPI_COMM_WORLD, &mpi_my_rank);
-  MPI_Comm_size (MPI_COMM_WORLD, &mpi_num_procs);
-
-  /* Determine master process.  This is the lowest ranking one that can do I/O */
-  mpi_master_rank = get_master_rank (MPI_COMM_WORLD, mpi_my_rank);
-
-  /*printf("B CS rank: %4d master: %4d num: %4d\n", mpi_my_rank, mpi_master_rank, mpi_num_procs);*/
-
-  /* If I'm the master, do the following set up code -- parse arguments, read
-     in matrix and query, build model */
-  if (mpi_my_rank == mpi_master_rank) {
-    mpi_watch = StopwatchCreate(); 
-    StopwatchZero(mpi_watch);
-    StopwatchStart(mpi_watch);
-#endif
+  ESL_GETOPTS     *go = NULL;   /* command line processing                     */
+  ESL_STOPWATCH   *w  = esl_stopwatch_Create();
+  struct cfg_s     cfg;
 
   /*********************************************** 
    * Parse command line
    ***********************************************/
-  format      = SQFILE_UNKNOWN;
-  be_quiet    = FALSE;
-  do_local    = FALSE;
-  do_small    = TRUE;
-  outfile     = NULL;
-  regressfile = NULL;
-  tracefile   = NULL;
-  do_qdb      = FALSE;
-  qdb_beta    = DEFAULT_BETA;
-  do_full     = FALSE;
-  bdump_level = 0;
-  debug_level = 0;
-  do_hbanded  = FALSE;
-  do_hmmonly  = FALSE;
-  do_hsafe    = FALSE;
-  tau         = DEFAULT_TAU;
-  use_sums    = FALSE;
-  do_timings  = FALSE;
-  do_inside   = FALSE;
-  do_outside  = FALSE;
-  do_post     = FALSE;
-  do_check    = FALSE;
-  do_sub      = FALSE;
-  do_fullsub  = FALSE;
-  do_elsilent = FALSE;
-  do_zero_inserts=FALSE;
-  do_enforce  = FALSE;
-  enf_cc_start= 0;
-  enf_seq     = NULL;
-  do_withali  = FALSE;
-  withali     = NULL;
-  use_rf      = FALSE;
-  gapthresh   = 0.5;
 
-  while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
-                &optind, &optname, &optarg))  {
-    if      (strcmp(optname, "-l")          == 0) do_local    = TRUE;
-    else if (strcmp(optname, "-o")          == 0) outfile     = optarg;
-    else if (strcmp(optname, "-q")          == 0) be_quiet    = TRUE;
-    else if (strcmp(optname, "--nosmall")   == 0) do_small    = FALSE;
-    else if (strcmp(optname, "--regress")   == 0) regressfile = optarg;
-    else if (strcmp(optname, "--qdb")       == 0) do_qdb       = TRUE;
-    else if (strcmp(optname, "--beta")      == 0) qdb_beta     = atof(optarg);
-    else if (strcmp(optname, "--full")      == 0) do_full      = TRUE;
-    else if (strcmp(optname, "--banddump")  == 0) bdump_level  = atoi(optarg);
-    else if (strcmp(optname, "--tfile")     == 0) tracefile    = optarg;
-    else if (strcmp(optname, "--dlev")      == 0) debug_level  = atoi(optarg);
-    else if (strcmp(optname, "--time")      == 0) do_timings   = TRUE;
-    else if (strcmp(optname, "--inside")    == 0) do_inside    = TRUE;
-    else if (strcmp(optname, "--outside")   == 0) do_outside   = TRUE; 
-    else if (strcmp(optname, "--post")      == 0) do_post      = TRUE;
-    else if (strcmp(optname, "--checkpost") == 0) do_check     = TRUE;
-    else if (strcmp(optname, "--sub")       == 0) do_sub       = TRUE; 
-    else if (strcmp(optname, "--elsilent")  == 0) do_elsilent  = TRUE;
-    else if (strcmp(optname, "--hbanded")   == 0) { do_hbanded = TRUE; do_small = FALSE; }
-    else if (strcmp(optname, "--tau")       == 0) tau          = atof(optarg);
-    else if (strcmp(optname, "--hsafe")     == 0) do_hsafe     = TRUE;
-    else if (strcmp(optname, "--sums")      == 0) use_sums     = TRUE;
-    else if (strcmp(optname, "--hmmonly")   == 0) { do_hmmonly   = TRUE; do_timings = TRUE; } 
-    else if (strcmp(optname, "--enfstart")  == 0) { do_enforce = TRUE; enf_cc_start = atoi(optarg); }
-    else if (strcmp(optname, "--enfseq")    == 0) { do_enforce = TRUE; enf_seq = optarg; } 
-    else if (strcmp(optname, "--zeroinserts")== 0) do_zero_inserts = TRUE;
-    else if (strcmp(optname, "--withali")   == 0) { do_withali = TRUE; withali = optarg; } 
-    else if (strcmp(optname, "--rf")        == 0) { do_withali = TRUE; use_rf  = TRUE;   } 
-    else if (strcmp(optname, "--gapthresh") == 0) { do_withali = TRUE; gapthresh = atof(optarg);} 
-    else if (strcmp(optname, "--informat")  == 0) { 
-      format = String2SeqfileFormat(optarg);
-      if (format == SQFILE_UNKNOWN) 
-	Die("unrecognized sequence file format \"%s\"", optarg);
-    }
-    else if (strcmp(optname, "-h") == 0) {
-      MainBanner(stdout, banner);
-      puts(usage);
-      puts(experts);
-      exit(EXIT_SUCCESS);
-    }
-  }
-
-  /* Check for incompatible or misused options */
-  if(do_inside && do_outside)
-    Die("Please pick either --inside or --outside (--outside will run Inside()\nalso and check to make sure Inside() and Outside() scores agree).\n");
-  if((do_inside || do_outside) && (outfile != NULL))
-    Die("-o <f> cannot be used in combination with --inside or --outside, as no alignment is created.\n");
-  if(do_sub && do_local)
-    Die("--sub and -l combination not supported.\n");
-  if(do_sub && do_qdb)
-    Die("Please pick either --sub or --qdb.\n");
-  /*if(do_hmmonly)
-    Die("--hmmonly not yet implemented.\n");*/
-  if(do_enforce && enf_seq == NULL)
-    Die("--enfstart only makes sense with --enfseq also.\n");
-  if(do_enforce && enf_cc_start == 0)
-    Die("--enfseq only makes sense with --enfstart (which can't be 0) also.\n");
-  if(bdump_level > 0 && (!do_qdb))
-    Die("--bdump option does not work with --noqdb.\n");
-  if(do_qdb && do_hbanded)
-    Die("--qdb and --hbanded combo not supported, pick one.\n");
-  if (bdump_level > 3) 
-    Die("Highest available --banddump verbosity level is 3\n%s", usage);
-  if (do_hsafe && !do_hbanded)
-    Die("--hsafe only makes sense with --hbanded\n%s", usage);
-  if(withali != NULL && (do_inside || do_outside || do_hmmonly))
-    Die("--withali does not work with --hmmonly, --inside or --outside\n%s", usage);
-  if(do_withali && withali == NULL)
-    Die("--rf and --gapthresh only make sense with --withali\n%s", usage);
-  if (do_local && do_hbanded)
-    {
-      printf("Warning: banding with an HMM (--hbanded) and allowing\nlocal alignment (-l). This may not work very well.\n");
-    } 
-
-  if (argc - optind != 2) Die("Incorrect number of arguments.\n%s\n", usage);
-  cmfile = argv[optind++];
-  seqfile = argv[optind++]; 
-
-  /* Try to work around inability to autodetect from a pipe or .gz:
-   * assume FASTA format
+  /* Process command line options.
    */
-  if (format == SQFILE_UNKNOWN &&
-      (Strparse("^.*\\.gz$", seqfile, 0) || strcmp(seqfile, "-") == 0))
-    format = SQFILE_FASTA;
-  
-  /*****************************************************************
-   * Input the CM  (we configure it with ConfigCM() later).
-   *****************************************************************/
-
-  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
-    Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
-  if (! CMFileRead(cmfp, NULL, &cm))
-    Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
-  if (cm == NULL) 
-    Die("%s empty?\n", cmfile);
-  CMFileClose(cmfp);
-
-  cm->beta   = qdb_beta; /* this will be DEFAULT_BETA unless changed at command line */
-  cm->tau    = tau;      /* this will be DEFAULT_TAU unless changed at command line */
-
-  /* Update cm->config_opts and cm->align_opts based on command line options */
-  if(do_local)        
+  go = esl_getopts_Create(options);
+  if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK || 
+      esl_opt_VerifyConfig(go)               != eslOK)
     {
-      cm->config_opts |= CM_CONFIG_LOCAL;
-      cm->config_opts |= CM_CONFIG_HMMLOCAL;
-      cm->config_opts |= CM_CONFIG_HMMEL;
+      printf("Failed to parse command line: %s\n", go->errbuf);
+      esl_usage(stdout, argv[0], usage);
+      printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
+      exit(1);
     }
-  if(do_elsilent)     cm->config_opts |= CM_CONFIG_ELSILENT;
-  if(do_zero_inserts) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
-  if(do_hbanded)      cm->align_opts  |= CM_ALIGN_HBANDED;
-  if(use_sums)        cm->align_opts  |= CM_ALIGN_SUMS;
-  if(do_sub)          cm->align_opts  |= CM_ALIGN_SUB;
-  if(do_fullsub)      cm->align_opts  |= CM_ALIGN_FSUB;
-  if(do_hmmonly)      cm->align_opts  |= CM_ALIGN_HMMONLY;
-  if(do_inside)       cm->align_opts  |= CM_ALIGN_INSIDE;
-  if(do_outside)      cm->align_opts  |= CM_ALIGN_OUTSIDE;
-  if(!do_small)       cm->align_opts  |= CM_ALIGN_NOSMALL;
-  if(do_post)         cm->align_opts  |= CM_ALIGN_POST;
-  if(do_timings)      cm->align_opts  |= CM_ALIGN_TIME;
-  if(do_check)        cm->align_opts  |= CM_ALIGN_CHECKINOUT;
-  if(do_hsafe)        cm->align_opts  |= CM_ALIGN_HMMSAFE;
-  if(do_enforce)
+  if (esl_opt_GetBoolean(go, "-h") == TRUE) 
     {
-      cm->config_opts |= CM_CONFIG_ENFORCE;
-      cm->enf_start    = EnforceFindEnfStart(cm, enf_cc_start); 
-      cm->enf_seq      = enf_seq;
+      cm_banner(stdout, argv[0], banner);
+      esl_usage(stdout, argv[0], usage);
+      puts("\nwhere general options are:");
+      esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
+      puts("\nexpert miscellaneous options:");
+      esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
+      puts("\noptions specifying alignment algorithm:");
+      esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
+      puts("\nmemory related options:");
+      esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
+      puts("\nbanded dynamic programming acceleration options:");
+      esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
+      puts("\noptions for including a fixed alignment within output alignment:");
+      esl_opt_DisplayHelp(stdout, go, 6, 2, 80);
+      puts("\nverbose output files and debugging:");
+      esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
+      puts("\noptions for enforcing alignment of a single-stranded subsequence:");
+      esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
+      puts("\noptions for selecting output alphabet::");
+      esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
+      exit(0);
     }
-  if(do_qdb)          
-    { 
-      cm->align_opts  |= CM_ALIGN_QDB;
-      cm->config_opts |= CM_CONFIG_QDB;
-    }
-  /*****************************************************************
-   * Open the target sequence file
-   *****************************************************************/
-  status = esl_sqfile_Open(seqfile, format, NULL, &seqfp);
-  if (status == eslENOTFOUND) esl_fatal("No such file."); 
-  else if (status == eslEFORMAT) esl_fatal("Format unrecognized."); 
-  else if (status == eslEINVAL) esl_fatal("Can’t autodetect stdin or .gz."); 
-  else if (status != eslOK) esl_fatal("Failed to open sequence database file, code %d.", status); 
-
-  /*********************************************** 
-   * Show the banner
-   ***********************************************/
-
-  if (! be_quiet) 
+  if (esl_opt_ArgNumber(go) != 2) 
     {
-      MainBanner(stdout, banner);
-      printf(   "CM file:              %s\n", cmfile);
-      printf(   "Sequence file:        %s\n", seqfile);
-      printf("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n\n");
+      puts("Incorrect number of command line arguments.");
+      esl_usage(stdout, argv[0], usage);
+      puts("\n  where basic options are:");
+      esl_opt_DisplayHelp(stdout, go, 1, 2, 80);
+      printf("\nTo see more help on other available options, do %s -h\n\n", argv[0]);
+      exit(1);
     }
+  /* Initialize what we can in the config structure (without knowing the input alphabet yet).
+   */
+  cfg.cmfile     = esl_opt_GetArg(go, 1); 
+  cfg.sqfile     = esl_opt_GetArg(go, 2); 
+  cfg.sqfp       = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
+  cfg.fmt        = eslSQFILE_UNKNOWN;      /* autodetect sequence file format by default. */ 
+  cfg.abc        = NULL;	           /* created in init_master_cfg() in masters, or in mpi_worker() in workers */
+  if (esl_opt_GetBoolean(go, "-1")) cfg.be_verbose = FALSE;        
+  else                              cfg.be_verbose = TRUE;        
+  if      (esl_opt_GetBoolean(go, "--rna")) cfg.abc_out = esl_alphabet_Create(eslRNA);
+  else if (esl_opt_GetBoolean(go, "--dna")) cfg.abc_out = esl_alphabet_Create(eslDNA);
+  else    esl_fail("Can't determine output alphabet");
+  cfg.cmfp       = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
+  cfg.ofp        = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
+  cfg.tracefp    = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
+  cfg.regressfp  = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
+  cfg.withalifp  = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
+  cfg.withmsa    = NULL;	           /* filled in init_master_cfg() in masters, stays NULL for workers */
+  cfg.nseq       = 0;		           /* this counter is incremented in masters */
 
-  /****************************************************************************
-   * Do the work: read in seqs and align them either serially or in parallel. 
-   *
-   * This is done within {serial, parallel}_align_targets(). The function
-   * that actually aligns the targets is actually_align_targets(), The code 
-   * was organized in this way to make implementing MPI parallelization easier
-   * (EPN 01.04.07).
-   ****************************************************************************/
+  cfg.do_mpi     = FALSE;	           /* this gets reset below, if we init MPI */
+  cfg.nproc      = 0;		           /* this gets reset below, if we init MPI */
+  cfg.my_rank    = 0;		           /* this gets reset below, if we init MPI */
+  cfg.do_stall   = esl_opt_GetBoolean(go, "--stall");
 
-#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-  }   /* End of first block that is only done by master process */
-  /* Barrier for debugging */
-  MPI_Barrier(MPI_COMM_WORLD);
+  /* This is our stall point, if we need to wait until we get a
+   * debugger attached to this process for debugging (especially
+   * useful for MPI):
+   */
+  while (cfg.do_stall); 
 
-  /* Broadcast the CM, before we configure it. */
-  broadcast_cm(&cm, mpi_my_rank, mpi_master_rank);
+  /* Start timing. */
+  esl_stopwatch_Start(w);
 
-  if (mpi_num_procs > 1)
+  /* Figure out who we are, and send control there: 
+   * we might be an MPI master, an MPI worker, or a serial program.
+   */
+#ifdef HAVE_MPI
+  if (esl_opt_GetBoolean(go, "--mpi")) 
     {
-      /* Configure the CM for alignment based on cm->config_opts and cm->align_opts.
-       * set local mode, make cp9 HMM, calculate QD bands etc. */
-      ConfigCM(cm, NULL, NULL);
-      if(cm->config_opts & CM_CONFIG_ENFORCE) ConfigCMEnforce(cm);
+      cfg.do_mpi     = TRUE;
+      cfg.be_verbose = FALSE;
+      MPI_Init(&argc, &argv);
+      MPI_Comm_rank(MPI_COMM_WORLD, &(cfg.my_rank));
+      MPI_Comm_size(MPI_COMM_WORLD, &(cfg.nproc));
 
-      parallel_align_targets(seqfp, cm, &sq, &tr, &postcode, NULL, &nseq,
-			     bdump_level, debug_level, 
-			     TRUE, /* be_quiet=TRUE we don't print scores in MPI
-				    * mode yet, b/c they get jumbled due to potentially
-				    * multiple simultaneous writes to stdout */
-			     mpi_my_rank, mpi_master_rank, mpi_num_procs);
+      if (cfg.my_rank > 0)  mpi_worker(go, &cfg);
+      else 		    mpi_master(go, &cfg);
+
+      esl_stopwatch_Stop(w);
+      esl_stopwatch_MPIReduce(w, 0, MPI_COMM_WORLD);
+      MPI_Finalize();
     }
   else
-#endif /* (end of if USE_MPI) */
+#endif /*HAVE_MPI*/
     {
-      /* Configure the CM for alignment based on cm->config_opts and cm->align_opts.
-       * set local mode, make cp9 HMM, calculate QD bands etc. */
-      ConfigCM(cm, NULL, NULL);
-      if(cm->config_opts & CM_CONFIG_ENFORCE) ConfigCMEnforce(cm);
-      if(do_hmmonly)
-	serial_align_targets(seqfp, cm, &sq, &tr, &postcode, &cp9_tr, &nseq, bdump_level, debug_level, 
-			     be_quiet);
-      else
-	serial_align_targets(seqfp, cm, &sq, &tr, &postcode, NULL, &nseq, bdump_level, debug_level, 
-			     be_quiet);
+      serial_master(go, &cfg);
+      esl_stopwatch_Stop(w);
     }
-#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-  if (mpi_my_rank == mpi_master_rank) {
-#endif  
-    /***************************************************************                     
-     * Create the MSA.                                                                   
-     ****************************************************************/                   
-    msa = NULL;                                                                          
-    if(!((cm->align_opts & CM_ALIGN_INSIDE) || (cm->align_opts & CM_ALIGN_OUTSIDE)))
-      {                                                                                  
-	/* optionally include a fixed alignment provided with --withali */
-	withali_nseq = 0;
-	if(withali != NULL)
-	  include_alignment(withali, use_rf, gapthresh, cm, &sq, &tr, &nseq, &withali_nseq, errmsg);
-	if(!do_hmmonly)
-	  msa = ESL_Parsetrees2Alignment(cm, sq, NULL, tr, nseq, do_full);                 
-	else
-	  {
-	    con = CreateCMConsensus(cm, 3.0, 1.0);
-	    msa = CP9Traces2Alignment(cm, sq, NULL, nseq, cp9_tr, do_full);
-	    FreeCMConsensus(con);
-	  }
+  if (cfg.my_rank == 0) esl_stopwatch_Display(cfg.ofp, w, "# CPU time: ");
 
-	if(cm->align_opts & CM_ALIGN_POST)                                              
-        {                                                                              
-	  if(postcode == NULL)
-	    Die("ERROR CM_ALIGN_POST flag is up, but {serial,parallel}_align_targets() did not return post codes.\n");
-          for (i = withali_nseq; i < nseq; i++)                                                   
-            {                                                                          
-	      ip = i - withali_nseq;
-	      MakeAlignedString(msa->aseq[i], msa->alen, postcode[ip], &apostcode);     
-              MSAAppendGR(msa, "POST", i, apostcode);                                  
-              free(apostcode);                                                         
-              free(postcode[ip]);                                                       
-            }                                                                          
-          free(postcode);                                                              
-        }                                                                              
-
-	/*****************************************************************
-	 * Output the alignment.
-	 *****************************************************************/
-	
-	printf("\n");
-	if (outfile != NULL && (ofp = fopen(outfile, "w")) != NULL) 
-	  {
-	    WriteStockholm(ofp, msa);
-	    printf("Alignment saved in file %s\n", outfile);
-	    fclose(ofp);
-	  }
-	else
-	  WriteStockholm(stdout, msa);
-	
-	/* Detailed traces for debugging training set. */
-	if (tracefile != NULL)       
-	  {
-	    if(do_hmmonly)
-	      { printf("%-40s ... ", "Saving CP9 HMM traces"); fflush(stdout); }
-	    else
-	      { printf("%-40s ... ", "Saving CM parsetrees"); fflush(stdout); }
-	    if ((ofp = fopen(tracefile,"w")) == NULL)
-	      Die("failed to open trace file %s", tracefile);
-	    for (i = 0; i < msa->nseq; i++) 
-	      {
-		fprintf(ofp, "> %s\n", msa->sqname[i]);
-		if(do_hmmonly)
-		  {
-		    fprintf(ofp, "  SCORE : %.2f bits\n", CP9TraceScore(cm->cp9, sq[i]->dsq, cp9_tr[i]));
-		    CP9PrintTrace(ofp, cp9_tr[i], cm->cp9, sq[i]->dsq);
-		  }
-		else
-		  {
-		    fprintf(ofp, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr[i], sq[i]->dsq, FALSE));;
-		    ParsetreeDump(ofp, tr[i], cm, sq[i]->dsq);
-		  }
-		fprintf(ofp, "//\n");
-	      }
-	    fclose(ofp);
-	    printf("done. [%s]\n", tracefile);
-	  }
-	
-	if (regressfile != NULL && (ofp = fopen(regressfile, "w")) != NULL) 
-	  {
-	    /* Must delete author info from msa, because it contains version
-	     * and won't diff clean in regression tests. */
-	    free(msa->au); msa->au = NULL;
-	    WriteStockholm(ofp, msa);
-	    fclose(ofp);
-	  }
-      }
-
-    /*****************************************************************
-     * Clean up and exit.
-     *****************************************************************/
-    
-    for (i = 0; i < nseq; i++) 
-      {
-	if((!(do_inside || do_outside)) && !do_hmmonly) FreeParsetree(tr[i]);
-	if(do_hmmonly) CP9FreeTrace(cp9_tr[i]);
-	esl_sq_Destroy(sq[i]);
-      }
-    esl_sqfile_Close(seqfp);
-
-    if(!(do_inside || do_outside)) MSAFree(msa);
-    free(sq);
-    free(tr);
-    if(do_hmmonly) free(cp9_tr);
-    SqdClean();
-
-#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-  } /* end  of block to convert traces to alignment and clean up */
-  if(mpi_my_rank == mpi_master_rank)
-    {
-      StopwatchStop(mpi_watch);
-      StopwatchDisplay(stdout, "MPI Master node time: ", mpi_watch);
-      StopwatchFree(mpi_watch);
-    }
-  MPI_Barrier(MPI_COMM_WORLD);
-  MPI_Finalize();
-  in_mpi = 0;
-#endif
-  FreeCM(cm);
-#if defined(USE_MPI) && defined(MPI_EXECUTABLE)
-  /*printf("EXITING rank:%d\n", mpi_my_rank);*/
-#endif
-  return EXIT_SUCCESS;
+  /* Clean up the shared cfg. 
+   */
+  if (cfg.my_rank == 0) {
+    if (! esl_opt_IsDefault(go, "-o")) { fclose(cfg.ofp); }
+    if (cfg.sqfp      != NULL) esl_sqfile_Close(cfg.sqfp);
+    if (cfg.abc       != NULL) esl_alphabet_Destroy(cfg.abc);
+    if (cfg.tracefp   != NULL) fclose(cfg.tracefp);
+    if (cfg.regressfp != NULL) fclose(cfg.regressfp);
+    if (cfg.withalifp != NULL) esl_msafile_Close(cfg.withalifp);
+    if (cfg.withmsa   != NULL) esl_msa_Destroy(cfg.withmsa);
+  }
+  esl_getopts_Destroy(go);
+  esl_stopwatch_Destroy(w);
+  return 0;
 }
 
-
-/* Function: include_alignment()
- * EPN, Tue Mar  6 06:25:02 2007
- *
- * Purpose:  Given the name of a multiple alignment file,
- *           align that alignment to the CM, and add parsetrees
- *           to an existing array of parsetrees. 
- *           Based on HMMER 2.4devl's hmmalign.c::include_alignment.
- *
- * Args:     alifile      - the alignment file name to include
- *           use_rf       - TRUE to use #=GC RF line for consensus
- *           gapthresh    - gap threshold for consensus columns
- *           CM           - the covariance model
- *           seqfp        - the alignment file with ali to include
- *           ret_sq       - RETURN: the sequences (EASEL)
- *           ret_tr       - RETURN: the parsetrees for seqs in seqfp
- *           ret_nseq     - RETURN: the new total number of seqs 
- *           ret_nnewseq  - RETURN: number of new seqs added
- *           errmsg       - easel error message
- * 
- * Returns:  new, realloc'ed arrays for sq, tr; nseq is
- *           increased by number of seqs in seqfp.a
+/* init_master_cfg()
+ * Called by masters, mpi or serial.
+ * Already set:
+ *    cfg->cmfile  - command line arg 1
+ *    cfg->sqfile  - command line arg 2
+ *    cfg->fmt     - format of output file
+ * Sets: 
+ *    cfg->sqfp      - open sequence file                
+ *    cfg->ofp       - output file (stdout by default)
+ *    cfg->cmfp      - open CM file                
+ *    cfg->abc       - digital input alphabet
+ *    cfg->tracefp   - optional output file
+ *    cfg->regressfp - optional output file
+ *    cfg->withalifp - optional input alignment file to include
+ *    cfg->withmsa   - MSA from --withali file 
+ *                   
+ * Errors in the MPI master here are considered to be "recoverable",
+ * in the sense that we'll try to delay output of the error message
+ * until we've cleanly shut down the worker processes. Therefore
+ * errors return (code, errbuf) by the ESL_FAIL mech.
  */
-static int include_alignment(char *alifile, int use_rf, float gapthresh, CM_t *cm, 
-			      ESL_SQ ***ret_sq, Parsetree_t ***ret_tr,
-			      int *ret_nseq, int *ret_nnewseq, char *errmsg)
+static int
+init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 {
-  /* TODO: Easelfy! */
-  int           status;
-  int           fmt = eslMSAFILE_UNKNOWN; /* format of alignment file */
-  ESL_MSA      *msa;      /* alignment we're including  */
-  ESL_MSAFILE  *afp;      /* open alignment file      */
-  int           i;	  /* counter over aseqs       */
-  int           ip;	  /* offset counter over aseqs */
-  CM_t         *new_cm;   /* CM built from MSA, we check it has same guide tree as 'cm' */
-  CM_t         *newer_cm; /* used briefly if we rebalance new_cm */
-  char        **dsq;	  /* digitized aligned sequences             */
-  Parsetree_t  *mtr;      /* master structure tree from the MSA */
-  char        **uaseq;    /* unaligned seqs, dealigned from the MSA */
-  int           apos;     /*   aligned position index */
-  int           uapos;    /* unaligned position index */
-  int           x;        /* counter of parsetree nodes */
-  int         **map;      /* [0..msa->nseq-1][0..msa->alen] map from aligned
-			   * positions to unaligned (non-gap) positions */
+  int status;
+  CMFILE *cmfp; 
+  char *cmfile;
 
-  status = esl_msafile_Open(alifile, fmt, NULL, &afp);
-  if (status == eslENOTFOUND)    ESL_FAIL(status, errmsg, "Alignment file %s doesn't exist or is not readable\n", alifile);
-  else if (status == eslEFORMAT) ESL_FAIL(status, errmsg, "Couldn't determine format of alignment %s\n", alifile);
-  else if (status != eslOK)      ESL_FAIL(status, errmsg, "Alignment file open failed with error %d\n", status);
+  cmfile = esl_opt_GetArg(go, 1);
 
-  esl_msafile_SetDigital(afp, cm->abc);
+  /* open input sequence file */
+  status = esl_sqfile_Open(cfg->sqfile, cfg->fmt, NULL, &(cfg->sqfp));
+  if (status == eslENOTFOUND)    ESL_FAIL(status, errbuf, "File %s doesn't exist or is not readable\n", cfg->sqfile);
+  else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "Couldn't determine format of sequence file %s\n", cfg->sqfile);
+  else if (status == eslEINVAL)  ESL_FAIL(status, errbuf, "Can’t autodetect stdin or .gz."); 
+  else if (status != eslOK)      ESL_FAIL(status, errbuf, "Sequence file open failed with error %d\n", status);
+  cfg->fmt = cfg->sqfp->format;
 
-  status = esl_msa_Read(afp, &msa);
-  if      (status == eslEFORMAT)  cm_Fail("Alignment file parse error, line %d of file %s:\n%s\nOffending line is:\n%s\n", afp->linenumber, afp->fname, afp->errbuf, afp->buf);
-  else if (status != eslOK)       cm_Fail("Alignment file read unexpectedly failed with code %d\n", status);
+  /* open output file */
+  if (esl_opt_GetString(go, "-o") != NULL) {
+    if ((cfg->ofp = fopen(esl_opt_GetString(go, "-o"), "w")) == NULL) 
+	ESL_FAIL(eslFAIL, errbuf, "Failed to open -o output file %s\n", esl_opt_GetString(go, "-o"));
+    } else cfg->ofp = stdout;
 
-  /* Some input data cleaning. */
-  if (msa->ss_cons == NULL) 
-    ESL_FAIL(eslFAIL, errmsg, "Alignment did not contain consensus structure annotation.\n");
-  if (! clean_cs(msa->ss_cons, msa->alen))
-    ESL_FAIL(eslFAIL, errmsg, "Failed to parse consensus structure annotation\n");
+  /* open CM file and read (only) the first CM in it. */
+  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
+    ESL_FAIL(eslFAIL, NULL, "Failed to open covariance model save file %s\n", cmfile);
+  if(!CMFileRead(cmfp, NULL, &(cfg->cm))) cm_Fail(errbuf);
+  ESL_FAIL(eslFAIL, NULL, "Failed to read a CM from %s -- file corrupt?\n", cmfile);
+  if (cfg->cm == NULL) ESL_FAIL(eslFAIL, NULL, "Failed to read a CM from %s -- file empty?\n", cmfile);
+  CMFileClose(cmfp);
 
-  /* Build a CM from a master guide tree built from the msa, 
-   * then check to make sure this CM has same emit map as the CM
-   * we've had passed in. This is fragile and hopefully temporary. 
-   * Another solution would be to use a checksum, but CM files don't 
-   * have checksums yet.
-   */
-  HandModelmaker(msa, cm->bg, use_rf, gapthresh, &new_cm, &mtr);
-  if(!(compare_cms(cm, new_cm)))
-    {
-      newer_cm = CMRebalance(new_cm);
-      FreeCM(new_cm);
-      new_cm = newer_cm;
-      if(!(compare_cms(cm, new_cm)))
-	Die("ERROR, in include_alignment(), CMs differ (even after rebalancing).\nAre you sure you used %s to build this CM?\nDid you use --rf or --gapthresh <x> options with cmbuild?\nIf so, use them again them with cmalign.", alifile);
-    }
-  /* If we get here, a CM built from the alifile MSA has same node 
-   * architecture as the CM that was passed in, now we don't care
-   * about the new_cm anymore, free it. 
-   */
-  FreeCM(new_cm);
-
-  /* For each seq in the MSA, map the aligned sequences coords to 
-   * the unaligned coords, we stay in digitized seq coords (1..alen),
-   * we need this for converting parsetrees from Transmogrify, which
-   * have emitl and emitr in aligned coords to unaligned coords, so 
-   * we can call Parsetrees2Alignment() with them. */
-  map = MallocOrDie(sizeof(int *) * msa->nseq);
-  uaseq = MallocOrDie(sizeof(char *) * msa->nseq);
-  for (i = 0; i < msa->nseq; i++)
-    {
-      map[i] = MallocOrDie(sizeof(int) * (msa->alen+1));
-      map[i][0] = -1; /* invalid */
-      uapos = 1;
-      for(apos = 0; apos < msa->alen; apos++)
-	{
-	  if(!esl_abc_XIsGap(msa->abc, msa->ax[i][apos]))
-	    map[i][(apos+1)] = uapos++;
-	  else
-	    map[i][(apos+1)] = -1;
-	}
-      /* Textize ax and dealign it */
-      esl_abc_Textize(msa->abc, msa->ax[i], msa->alen, uaseq[i]);
-      esl_sq_Dealign(uaseq[i], uaseq[i], "-_.", msa->alen);
+  /* optionally, open trace file */
+  if (esl_opt_GetString(go, "--tfile") != NULL) {
+    if ((cfg->tracefp = fopen(esl_opt_GetString(go, "--tfile"), "w")) == NULL) 
+	ESL_FAIL(eslFAIL, errbuf, "Failed to open --tfile output file %s\n", esl_opt_GetString(go, "--tfile"));
     }
 
-
-  *ret_tr  = ReallocOrDie((*ret_tr), (sizeof(Parsetree_t *) * (*ret_nseq + msa->nseq)));
-  *ret_sq  = ReallocOrDie((*ret_sq), (sizeof (ESL_SQ *)     * (*ret_nseq + msa->nseq)));
-
-  /* Swap some pointers so the included alignment appears at the top of the output 
-   * alignment instead of the bottom. */
-  for(i = 0; i < *ret_nseq; i++)
-    {
-      ip = i + msa->nseq;
-      (*ret_tr)[ip] = (*ret_tr)[i];
-      (*ret_sq)[ip] = (*ret_sq)[i];
+  /* optionally, open regression file */
+  if (esl_opt_GetString(go, "--regress") != NULL) {
+    if ((cfg->regressfp = fopen(esl_opt_GetString(go, "-o"), "w")) == NULL) 
+	ESL_FAIL(eslFAIL, errbuf, "Failed to open --regress output file %s\n", esl_opt_GetString(go, "--regress"));
     }
 
-  /* Transmogrify each aligned seq to get a parsetree */
-  for (i = 0; i < msa->nseq; i++)
+  /* optionally, open withali file for reading */
+  if(esl_opt_GetString(go, "--withali") != NULL)
     {
-      /*ip = i + *ret_nseq;*/
-      (*ret_tr)[i] = Transmogrify(cm, mtr, dsq[i], msa->aseq[i], msa->alen);
+      status = esl_msafile_Open(esl_opt_GetString(go, "--withali"), eslMSAFILE_UNKNOWN, NULL, &(cfg->withalifp));
+      if (status == eslENOTFOUND)    ESL_FAIL(status, errbuf, "--withali alignment file %s doesn't exist or is not readable\n", 
+					      esl_opt_GetString(go, "--withali"));
+      else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "Couldn't determine format of --withali alignment %s\n", 
+					      esl_opt_GetString(go, "--withali"));
+      else if (status != eslOK)      ESL_FAIL(status, errbuf, "Alignment file open failed with error %d\n", status);
 
-      /* ret_tr[i] is in alignment coords, convert it to unaligned coords, */
-      for(x = 0; x < (*ret_tr)[i]->n; x++)
-	{
-	  if((*ret_tr)[i]->emitl[x] != -1)
-	    (*ret_tr)[i]->emitl[x] = map[i][(*ret_tr)[i]->emitl[x]];
-	  if((*ret_tr)[i]->emitr[x] != -1)
-	    (*ret_tr)[i]->emitr[x] = map[i][(*ret_tr)[i]->emitr[x]];
-	}
-      (*ret_sq)[i]      = esl_sq_CreateFrom(msa->sqname[i], uaseq[i], NULL, NULL, NULL);
-      (*ret_sq)[i]->dsq = DigitizeSequence ((*ret_sq)[i]->seq, ((*ret_sq)[i]->n));
+      if((status = check_withali(go, cfg, &(cfg->withmsa))) != eslOK)
+	ESL_FAIL(status, errbuf, "--withali alignment file %s doesn't have a SS_cons compatible with the CM\n", status);
     }
-  *ret_nseq    += msa->nseq;
-  *ret_nnewseq  = msa->nseq;
-
-  /* Clean up and exit. */
-  for(i = 0; i < msa->nseq; i++)
-    {
-      free(map[i]);
-      free(uaseq[i]);
-    }
-  free(map);
-  free(uaseq);
-  FreeParsetree(mtr);
-  Free2DArray((void**)dsq, msa->nseq);
-  esl_msa_Destroy(msa);
   return eslOK;
 }
 
+/* serial_master()
+ * The serial version of cmbuild.
+ * For each MSA, build a CM and save it.
+ * 
+ * A master can only return if it's successful. All errors are handled immediately and fatally with cm_Fail().
+ */
+static void
+serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
+{
+  int      status;
+  char     errbuf[eslERRBUFSIZE];
+  ESL_SQ **sq;
+  CM_t    *cm;
+  int       i;
+  Parsetree_t    **tr;          /* parse trees for the sequences            */
+  CP9trace_t     **cp9_tr;      /* CP9 traces for the sequences             */
+  char           **postcode;    /* posterior decode array of strings        */
+
+  
+  if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
+  /* init_shared_cfg UNNEC? */
+  /*if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);*/
+
+  /* initialize the flags/options/params of the CM*/
+  initialize_cm(go, cfg, errbuf);
+  /* Configure the CM for alignment based on cm->config_opts and cm->align_opts.
+   * set local mode, make cp9 HMM, calculate QD bands etc. */
+  ConfigCM(cfg->cm, NULL, NULL);
+  if(cm->config_opts & CM_CONFIG_ENFORCE) ConfigCMEnforce(cm);
+
+  /* Align the sequences, there's no 'process_workunit() function' but rather different functions for serial/mpi */ 
+  if(esl_opt_GetBoolean(go, "--hmmonly"))
+    {
+      serial_align_targets(cfg->sqfp, cm, &sq, NULL,  &postcode, &cp9_tr, &cfg->nseq, 
+			   esl_opt_GetInteger(go, "--banddump"), esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"));
+      if ((status = output_result(go, cfg, errbuf, sq, tr,     NULL, postcode))        != eslOK) cm_Fail(errbuf);
+    }
+  else
+    {
+      serial_align_targets(cfg->sqfp, cm, &sq, &tr,   &postcode, NULL,    &cfg->nseq,
+			   esl_opt_GetInteger(go, "--banddump"), esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"));
+      if ((status = output_result(go, cfg, errbuf, sq, NULL, cp9_tr, postcode))        != eslOK) cm_Fail(errbuf);
+    }
+
+  /* clean up */
+  if(esl_opt_GetBoolean(go, "--cyk")) {
+    for (i = 0; i < cfg->nseq; i++) FreeParsetree(tr[i]);
+    free(tr);
+  }
+  if(esl_opt_GetBoolean(go, "--hmmonly")) {
+    for (i = 0; i < cfg->nseq; i++) CP9FreeTrace(cp9_tr[i]);
+    free(cp9_tr);
+  }
+  for (i = 0; i < cfg->nseq; i++) esl_sq_Destroy(sq[i]);
+  free(sq);
+  return;
+
+ ERROR:
+  cm_Fail("Reallocation error.\n");
+}
+
+static int
+output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQ **sq, Parsetree_t **tr, CP9trace_t **cp9_tr, char **postcode)
+{
+  int status;
+  ESL_MSA *msa = NULL;
+  int i, ip;
+
+  /* Open the output file set up ofp
+  /* Output the tabular results header. 
+   */
+  if (esl_opt_GetBoolean(go, "-1"))
+    {
+      printf("# %3s %-20s %5s %5s %5s\n", "idx", "name",                 "bitsc",  "len",  "time?");
+      printf("#%4s %-20s %5s %5s %5s\n", "----", "--------------------", "-----", "-----", "-----");
+    }
+
+  /* create a new MSA, if we didn't do either --inside or --outside */
+  if(esl_opt_GetBoolean(go, "--cyk") || esl_opt_GetBoolean(go, "--hmmonly"))
+  {
+    /* optionally include a fixed alignment provided with --withali,
+     * this has already been checked to see it matches the CM structure */
+    if(esl_opt_GetString(go, "--withali") != NULL)
+      {
+	if((status = include_withali(go, cfg, &sq, &tr, errbuf)) != eslOK)
+	  ESL_FAIL(status, errbuf, "--withali alignment file %s doesn't have a SS_cons compatible with the CM\n", status);
+      }
+
+    if(esl_opt_GetBoolean(go, "--hmmonly"))
+      if((status = CP9Traces2Alignment(cfg->cm, sq, NULL, cfg->nseq, cp9_tr, esl_opt_GetBoolean(go, "--full"), &msa)) != eslOK)
+	goto ERROR;
+    else
+      if((status = Parsetrees2Alignment(cfg->cm, sq, NULL, tr, cfg->nseq, esl_opt_GetBoolean(go, "--full"), &msa)) != eslOK)
+	goto ERROR;
+    
+    if(esl_opt_GetBoolean(go, "--post")) 
+      {                                                                              
+	char *apostcode;   /* aligned posterior decode array */
+	if(postcode == NULL) 
+	  cm_Fail("ERROR --post enabled, but {serial,parallel}_align_targets() did not return post codes.\n");
+	for (i = cfg->withmsa->nseq; i < cfg->nseq; i++)                                                   
+	  {                                                                          
+	    ip = i - cfg->withmsa->nseq;
+	    if((status =make_aligned_string(msa->aseq[i], "-_.", msa->alen, postcode[ip], &apostcode)) != eslOK)
+	      ESL_FAIL(status, errbuf, "error creating posterior string\n", status);
+	    esl_msa_AppendGR(msa, "POST", i, apostcode);                                  
+	    free(apostcode);                                                         
+	    free(postcode[ip]);                                                       
+	  }                                                                          
+	free(postcode);                                                              
+      }                                                                              
+    status = esl_msa_Write(cfg->ofp, msa, eslMSAFILE_STOCKHOLM);
+    if      (status == eslEMEM) ESL_FAIL(status, errbuf, "Memory error when outputting alignment\n");
+    else if (status != eslOK)   ESL_FAIL(status, errbuf, "Writing alignment file failed with error %d\n", status);
+
+    /* Detailed traces for debugging training set. */
+    if(cfg->tracefp != NULL)
+      {
+	if(esl_opt_GetBoolean(go,"--hmmonly")) { printf("%-40s ... ", "Saving CP9 HMM traces"); fflush(stdout); }
+	else                                   { printf("%-40s ... ", "Saving CM parsetrees");  fflush(stdout); }
+	for (i = 0; i < msa->nseq; i++) 
+	  {
+	    fprintf(cfg->tracefp, "> %s\n", sq[i]->name);
+	    if(esl_opt_GetBoolean(go,"--hmmonly")) 
+	      {
+		fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", CP9TraceScore(cfg->cm->cp9, sq[i]->dsq, cp9_tr[i]));
+		CP9PrintTrace(cfg->tracefp, cp9_tr[i], cfg->cm->cp9, sq[i]->dsq);
+	      }
+	    else
+	      {
+		fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", ParsetreeScore(cfg->cm, tr[i], sq[i]->dsq, FALSE));
+		ParsetreeDump(cfg->tracefp, tr[i], cfg->cm, sq[i]->dsq);
+	      }
+	    fprintf(cfg->tracefp, "//\n");
+	  }
+	printf("done. [%s]\n", esl_opt_GetString(go, "--tfile"));
+      }
+    if (cfg->regressfp != NULL)
+      {
+	/* Must delete author info from msa, because it contains version
+	 * and won't diff clean in regression tests. */
+	if(msa->au != NULL) free(msa->au); msa->au = NULL;
+	status = esl_msa_Write(cfg->ofp, msa, eslMSAFILE_STOCKHOLM);
+	if (status == eslEMEM)    ESL_FAIL(status, errbuf, "Memory error when outputting regression file\n");
+	else if (status != eslOK) ESL_FAIL(status, errbuf, "Writing regression file failed with error %d\n", status);
+      }
+    }
+  return eslOK;
+
+ ERROR:
+  if(msa != NULL) esl_msa_Destroy(msa);
+  return status;
+}
+
+/* initialize_cm()
+ * Setup the CM based on the command-line options/defaults;
+ * only set flags and a few parameters. ConfigCM() configures
+ * the CM.
+ */
+static int
+initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
+{
+  if (cfg->be_verbose) {
+    fprintf(cfg->ofp, "%-40s ... ", "Initializing CM ");  
+    fflush(cfg->ofp); 
+  }
+
+  /* set up params/flags/options of the CM */
+  cfg->cm->beta   = esl_opt_GetReal(go, "--beta"); /* this will be DEFAULT_BETA unless changed at command line */
+  cfg->cm->tau    = esl_opt_GetReal(go, "--tau");  /* this will be DEFAULT_TAU unless changed at command line */
+
+  /* Update cfg->cm->config_opts and cfg->cm->align_opts based on command line options */
+  if(esl_opt_GetBoolean(go, "-l"))
+    {
+      cfg->cm->config_opts |= CM_CONFIG_LOCAL;
+      cfg->cm->config_opts |= CM_CONFIG_HMMLOCAL;
+      cfg->cm->config_opts |= CM_CONFIG_HMMEL;
+    }
+  if(esl_opt_GetBoolean(go, "--elsilent"))    cfg->cm->config_opts |= CM_CONFIG_ELSILENT;
+  if(esl_opt_GetBoolean(go, "--zeroinserts")) cfg->cm->config_opts |= CM_CONFIG_ZEROINSERTS;
+  if(esl_opt_GetBoolean(go, "--hbanded"))     cfg->cm->align_opts  |= CM_ALIGN_HBANDED;
+  if(esl_opt_GetBoolean(go, "--sums"))        cfg->cm->align_opts  |= CM_ALIGN_SUMS;
+  if(esl_opt_GetBoolean(go, "--sub"))         cfg->cm->align_opts  |= CM_ALIGN_SUB;
+  if(esl_opt_GetBoolean(go, "--hmmonly"))     cfg->cm->align_opts  |= CM_ALIGN_HMMONLY;
+  if(esl_opt_GetBoolean(go, "--inside"))      cfg->cm->align_opts  |= CM_ALIGN_INSIDE;
+  if(esl_opt_GetBoolean(go, "--outside"))     cfg->cm->align_opts  |= CM_ALIGN_OUTSIDE;
+  if(esl_opt_GetBoolean(go, "--nosmall"))     cfg->cm->align_opts  |= CM_ALIGN_NOSMALL;
+  if(esl_opt_GetBoolean(go, "--post"))        cfg->cm->align_opts  |= CM_ALIGN_POST;
+  if(esl_opt_GetBoolean(go, "--time"))        cfg->cm->align_opts  |= CM_ALIGN_TIME;
+  if(esl_opt_GetBoolean(go, "--checkpost"))   cfg->cm->align_opts  |= CM_ALIGN_CHECKINOUT;
+  if(esl_opt_GetBoolean(go, "--hsafe"))       cfg->cm->align_opts  |= CM_ALIGN_HMMSAFE;
+  if(esl_opt_GetBoolean(go, "--enfseq"))
+    {
+      cfg->cm->config_opts |= CM_CONFIG_ENFORCE;
+      cfg->cm->enf_start    = EnforceFindEnfStart(cfg->cm, esl_opt_GetInteger(go, "--enfstart"));
+      cfg->cm->enf_seq      = esl_opt_GetString(go, "--enfseq");
+    }
+  if(esl_opt_GetBoolean(go, "--qdb"))          
+    { 
+      cfg->cm->align_opts  |= CM_ALIGN_QDB;
+      cfg->cm->config_opts |= CM_CONFIG_QDB;
+    }
+  if (cfg->be_verbose) fprintf(cfg->ofp, "done.\n");
+  return eslOK;
+}
 
 /* Function: compare_cms()
  * EPN, Tue Mar  6 08:32:12 2007
@@ -788,4 +578,224 @@ static int compare_cms(CM_t *cm1, CM_t *cm2)
   for(nd = 0; nd < cm1->nodes; nd++)
     if(cm1->ndtype[nd] != cm2->ndtype[nd]) return FALSE;
   return TRUE;
+}
+
+/* Function: check_withali()
+ * EPN, Tue Mar  6 06:25:02 2007
+ *
+ * Purpose:  Ensure that the alignment to include has a secondary
+ *           structure that matches our CM. Pass the alignment back
+ *           as *ret_msa.
+ *
+ * Returns:  <eslOK> on success.
+ *           <eslEINCOMPAT> if alignment doesn't match the CM 
+ */
+static int check_withali(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA **ret_msa)
+{
+  int           status;
+  ESL_MSA      *msa      = NULL; /* alignment we're including  */
+  CM_t         *new_cm   = NULL; /* CM built from MSA, we check it has same guide tree as 'cm' */
+  CM_t         *newer_cm = NULL; /* used briefly if we rebalance new_cm */
+  Parsetree_t  *mtr      = NULL; /* master structure tree from the alignment*/
+  char          errbuf[eslERRBUFSIZE];
+  CM_BG *bg              = NULL;
+
+  /* cfg->withalifp is open */
+  status = esl_msa_Read(cfg->withalifp, &msa);
+  if (status == eslEFORMAT)  cm_Fail("--withali alignment file parse error, line %d of file %s:\n%s\nOffending line is:\n%s\n", cfg->withalifp->linenumber, cfg->withalifp->fname, cfg->withalifp->errbuf, cfg->withalifp->buf);
+  else if (status != eslOK)       cm_Fail("--withali alignment file read unexpectedly failed with code %d\n", status);
+
+  /* Some input data cleaning. */
+  if (esl_opt_GetBoolean(go, "--rf") && msa->rf == NULL) 
+    ESL_FAIL(eslFAIL, errbuf, "--rf invoked but --withali alignment has no reference coord annotation.\n");
+  if (msa->ss_cons == NULL) 
+    ESL_FAIL(eslFAIL, errbuf, "--withali alignment did not contain consensus structure annotation.\n");
+  if (! clean_cs(msa->ss_cons, msa->alen))
+    ESL_FAIL(eslFAIL, errbuf, "Failed to parse consensus structure annotation for --withali alignment\n");
+
+  /* Build a CM from a master guide tree built from the msa, 
+   * then check to make sure this CM has same emit map as the CM
+   * we've had passed in. This is fragile and hopefully temporary. 
+   * Another solution would be to use a checksum, but CM files don't 
+   * have checksums yet.
+   */
+  bg = cm_bg_Create(msa->abc); /* default values, A,C,G,U = 0.25  */
+  HandModelmaker(msa, bg, esl_opt_GetBoolean(go, "--rf"), esl_opt_GetReal(go, "--gapthresh"), &new_cm, &mtr);
+  if(!(compare_cm_guide_trees(cfg->cm, new_cm)))
+    {
+      CM_t *newer_cm;
+      newer_cm = CMRebalance(new_cm);
+      FreeCM(new_cm);
+      new_cm = NULL;
+      if(!(compare_cm_guide_trees(cfg->cm, newer_cm)))
+	{
+	  status = eslEINCOMPAT;
+	  goto ERROR;
+	}
+    }
+
+  /* if we get here, the CM guide trees match */
+  if(new_cm   != NULL) FreeCM(new_cm);
+  if(newer_cm != NULL) FreeCM(newer_cm);
+  if(bg       != NULL) cm_bg_Destroy(bg);
+  FreeParsetree(mtr);
+  *ret_msa = msa;
+  return eslOK;
+
+ ERROR:
+  if(msa != NULL)      esl_msa_Destroy(msa);
+  if(new_cm   != NULL) FreeCM(new_cm);
+  if(newer_cm != NULL) FreeCM(newer_cm);
+  if(mtr != NULL)      FreeParsetree(mtr);
+  if(bg  != NULL)      cm_bg_Destroy(bg);
+  return eslEINCOMPAT;
+}
+
+/* Function: include_withali()
+ * EPN, Tue Mar  6 06:25:02 2007
+ *
+ * Purpose:  Infer the implicit parses of sequences in an
+ *           MSA to a CM and append to passed in data structures
+ *           We've already checked to make sure the MSA's consensus
+ *           structure matches the CM.
+ *
+ * Args:     go           - command line options
+ *           cfg          - cmalign configuration, includes msa to add
+ *           ret_sq       - pre-existing sequences, to append msa seqs to
+ *           ret_tr       - pre-existing parsetrees, to append to
+ *           errbuf       - easel error message
+ * 
+ * Returns:  eslOK on success, eslEMEM on memory error
+ *           Also new, realloc'ed arrays for sq, tr in ret_seq, ret_tr; 
+ *           cfg->nseq is increased by number of seqs in cfg->withmsa.
+*/
+static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr, char *errbuf)
+{
+  int           status;
+  void         *tmp;      /* for ESL_RALLOC() */
+  int           i;	  /* counter over aseqs       */
+  int           ip;	  /* offset counter over aseqs */
+  char        **uaseq;    /* unaligned seqs, dealigned from the MSA */
+  int           apos;     /*   aligned position index */
+  int           uapos;    /* unaligned position index */
+  int           x;        /* counter of parsetree nodes */
+  int         **map;      /* [0..msa->nseq-1][0..msa->alen] map from aligned
+			   * positions to unaligned (non-gap) positions */
+  char *aseq;                   
+  Parsetree_t *mtr;
+
+  /* Contract check */
+  if(cfg->withmsa == NULL) esl_fatal("ERROR in include_withali() withmsa is NULL.\n");
+
+  /* For each seq in the MSA, map the aligned sequences coords to 
+   * the unaligned coords, we stay in digitized seq coords (1..alen),
+   * we need this for converting parsetrees from Transmogrify, which
+   * have emitl and emitr in aligned coords to unaligned coords, so 
+   * we can call Parsetrees2Alignment() with them. */
+  ESL_ALLOC(map,   sizeof(int *)  * cfg->withmsa->nseq);
+  ESL_ALLOC(uaseq, sizeof(char *) * cfg->withmsa->nseq);
+  for (i = 0; i < cfg->withmsa->nseq; i++)
+    {
+      ESL_ALLOC(map[i],   sizeof(int)  * (cfg->withmsa->alen+1));
+      ESL_ALLOC(uaseq[i], sizeof(char) * (cfg->withmsa->alen+1));
+      map[i][0] = -1; /* invalid */
+      uapos = 1;
+      for(apos = 0; apos < cfg->withmsa->alen; apos++)
+	{
+	  if (!esl_abc_CIsGap(cfg->withmsa->abc, cfg->withmsa->aseq[i][(apos+1)]))
+	    map[i][(apos+1)] = uapos++;
+	  else
+	    map[i][(apos+1)] = -1;
+	}
+      esl_strdup(cfg->withmsa->aseq[i], -1, &(uaseq[i]));
+      esl_sq_Dealign(uaseq[i], uaseq[i], "-_.", cfg->withmsa->alen);
+    }
+  ESL_RALLOC((*ret_tr), tmp, (sizeof(Parsetree_t *) * (cfg->nseq + cfg->withmsa->nseq)));
+  ESL_RALLOC((*ret_sq), tmp, (sizeof(ESL_SQ *)      * (cfg->nseq + cfg->withmsa->nseq)));
+
+  /* Swap some pointers so the included alignment appears at the top of the output 
+   * alignment instead of the bottom. */
+  for(i = 0; i < cfg->nseq; i++)
+    {
+      ip = i + cfg->withmsa->nseq;
+      (*ret_tr)[ip] = (*ret_tr)[i];
+      (*ret_sq)[ip] = (*ret_sq)[i];
+    }
+
+  /* Transmogrify each aligned seq to get a parsetree */
+  for (i = 0; i < cfg->withmsa->nseq; i++)
+    {
+      esl_abc_Textize(cfg->withmsa->abc, cfg->withmsa->ax[i], cfg->withmsa->alen, aseq);
+      (*ret_tr)[i] = Transmogrify(cfg->cm, mtr, cfg->withmsa->ax[i], cfg->withmsa->aseq[i], cfg->withmsa->alen);
+      free(aseq);
+      /* ret_tr[i] is in alignment coords, convert it to unaligned coords, */
+      for(x = 0; x < (*ret_tr)[i]->n; x++)
+	{
+	  if((*ret_tr)[i]->emitl[x] != -1)
+	    (*ret_tr)[i]->emitl[x] = map[i][(*ret_tr)[i]->emitl[x]];
+	  if((*ret_tr)[i]->emitr[x] != -1)
+	    (*ret_tr)[i]->emitr[x] = map[i][(*ret_tr)[i]->emitr[x]];
+	}
+      (*ret_sq)[i]      = esl_sq_CreateFrom(cfg->withmsa->sqname[i], uaseq[i], NULL, NULL, NULL);
+      esl_sq_Digitize(cfg->cm->abc, (*ret_sq)[i]);
+    }
+  cfg->nseq += cfg->withmsa->nseq; /* we added these seqs to sq, tr */
+  /* Clean up and exit. */
+  esl_Free2D((void **) map,   cfg->withmsa->nseq);
+  esl_Free2D((void **) uaseq, cfg->withmsa->nseq);
+  return eslOK;
+
+ ERROR:
+  esl_Free2D((void **) map,   cfg->withmsa->nseq);
+  esl_Free2D((void **) uaseq, cfg->withmsa->nseq);
+  return status;
+}
+
+
+/* Function: make_aligned_string() 
+ * Incept:   EPN, Thu Aug  2 18:24:49 2007
+ *           stolen from Squid:alignio.c:MakeAlignedString()
+ * 
+ * Purpose:  Given a raw string of some type (secondary structure, say),
+ *           align it to a given aseq by putting gaps wherever the
+ *           aseq has gaps. 
+ *           
+ * Args:     aseq:  template for alignment
+ *           gapstring: defines all gap chars ex: "-_."
+ *           alen:  length of aseq
+ *           ss:    raw string to align to aseq
+ *           ret_s: RETURN: aligned ss
+ *           
+ * Return:   eslOK on success, eslEMEM on memory allocation error,
+ *           eslEINCONCEIVABLE on strange error,
+ *           ret_ss is alloc'ed here and must be free'd by caller.
+ */
+int
+make_aligned_string(char *aseq, char *gapstring, int alen, char *ss, char **ret_s)
+{
+  int status;
+  char *new; 
+  int   apos, rpos;
+
+  ESL_ALLOC(new, (sizeof(char) * (alen+1)));
+  for (apos = rpos = 0; apos < alen; apos++)
+    {
+      if (strchr(gapstring, aseq[apos]) != NULL)
+	new[apos] = aseq[apos];
+      else
+	new[apos] = ss[rpos++];
+    }
+  new[apos] = '\0';
+
+  if (rpos != strlen(ss))
+    {
+      if(new != NULL) free(new);
+      return eslEINCONCEIVABLE;
+    }
+  *ret_s = new;
+  return eslOK;
+
+ ERROR:
+  if(new != NULL) free(new);
+  return status;
 }

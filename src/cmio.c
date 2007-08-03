@@ -222,7 +222,7 @@ or may be a different kind of binary altogether.\n", cmfile);
  *            is expected to be in.  A reference to the pointer to the
  *            current alphabet is passed in <*ret_abc>. If the alphabet
  *            is unknown, pass <*ret_abc = NULL>, and when the
- *            new HMM is read, an appropriate new alphabet object is
+ *            new CM is read, an appropriate new alphabet object is
  *            allocated and passed back to the caller in <*ret_abc>.
  *            If the alphabet is already known, <ret_abc> points to
  *            that object ptr, and the new HMM's alphabet type is
@@ -345,7 +345,7 @@ write_ascii_cm(FILE *fp, CM_t *cm)
   fputs("\n", fp);
   fputs("NULL  ", fp);
   for (x = 0; x < cm->abc->K; x++)
-    fprintf(fp, "%6s ", prob2ascii(cm->bg->f[x], 1/(float)(Alphabet_size)));
+    fprintf(fp, "%6s ", prob2ascii(cm->bg->f[x], 1/(float)(cm->abc->K)));
   fputs("\n", fp);
 
   /* E-value statistics

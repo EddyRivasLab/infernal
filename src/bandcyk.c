@@ -9,21 +9,23 @@
  *****************************************************************  
  */
 
+#include "esl_config.h"
 #include "config.h"
-#include "easel.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 #include <float.h>
 
-#include "squid.h"
-#include "vectorops.h"
-#include "sre_stack.h"
-
 #include "structs.h"
 #include "funcs.h"
+
+#include "easel.h"
+#include "esl_alphabet.h"
 #include "esl_random.h"
+#include "esl_vectorops.h"
+#include "esl_stack.h"
+#include "esl_sqio.h"
 
 
 void
@@ -127,7 +129,7 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
   int      leftn;		/* length of left subsequence under a bifurc */
   double   pdf; 		/* P(<=n) or P(>=n) for this state v         */
   int     *touch;               /* touch[y] = # higher states depending on y */
-  Mstack_t *beamstack;          /* pool of beams we can reuse  */
+  ESL_STACK *beamstack;         /* pool of beams we can reuse  */
   int      status;		/* return status. */
   int      nd;                  /* counter over nodes */
   int      yoffset;             /* counter over children */
@@ -161,7 +163,7 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
   /* beamstack is a trick for reusing memory: a pushdown stack of 
    * "beams" (gamma[v] rows) we can reuse.
    */
-  beamstack = CreateMstack();
+  beamstack = esl_stack_PCreate();
 
   /* The second component of memory saving is the "touch" array.
    * touch[y] is the number of states above state [y] that will
@@ -170,13 +172,13 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
    * y \in C_v. Any time touch[y] reaches 0, we put that beam
    * back into the pool for reuse.
    */
-  touch  = MallocOrDie(sizeof(int) * cm->M);
+  ESL_ALLOC(touch, sizeof(int) * cm->M);
   for (v = 0; v < cm->M; v++) touch[v] = cm->pnum[v];
 
   /* Allocate and initialize the shared end beam.
    */
-  gamma[cm->M-1] = MallocOrDie(sizeof(double) * (W+1));
-  DSet(gamma[cm->M-1], W+1, 0.);
+  ESL_ALLOC(gamma[cm->M-1], (sizeof(double) * (W+1)));
+  esl_vec_DSet(gamma[cm->M-1], W+1, 0.);
   gamma[cm->M-1][0] = 1.0;
 
   for (v = cm->M-1; v >= 0; v--)
@@ -195,9 +197,9 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
 	continue;
       }
 
-      if ((gamma[v] = PopMstack(beamstack)) == NULL)
-	gamma[v] = MallocOrDie(sizeof(double) * (W+1));		    
-      DSet(gamma[v], W+1, 0.);
+      if (esl_stack_PPop(beamstack, (void **) &gamma[v]) == eslEOD)
+	ESL_ALLOC(gamma[v], sizeof(double) * (W+1));		    
+      esl_vec_DSet(gamma[v], W+1, 0.);
 
       /* Recursively calculate prob density P(length=n) for this state v.
        * (The heart of the algorithm is right here.)
@@ -275,7 +277,7 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
       
       /* Renormalize this beam. (Should we really be doing this?)
        */
-      if (pdf > 1.0) DNorm(gamma[v], W+1);
+      if (pdf > 1.0) esl_vec_DNorm(gamma[v], W+1);
 
       /* Determine our left bound, dmin.
        */
@@ -314,8 +316,8 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
       if ((! save_densities) && (! (cm->flags & CM_LOCAL_BEGIN))) {
 	if (cm->sttype[v] == B_st)
 	  {  /* connected children of a B st are handled specially, remember */
-	    y = cm->cfirst[v]; PushMstack(beamstack, gamma[y]); gamma[y] = NULL;
-	    y = cm->cnum[v];   PushMstack(beamstack, gamma[y]); gamma[y] = NULL;
+	    y = cm->cfirst[v]; esl_stack_PPush(beamstack, gamma[y]); gamma[y] = NULL;
+	    y = cm->cnum[v];   esl_stack_PPush(beamstack, gamma[y]); gamma[y] = NULL;
 	  }
 	else
 	  {
@@ -323,7 +325,7 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
 	      {
 		touch[y]--;
 		if (touch[y] == 0 && cm->sttype[y] != E_st) {
-		  PushMstack(beamstack, gamma[y]); 
+		  esl_stack_PPush(beamstack, gamma[y]); 
 		  gamma[y] = NULL;
 		}
 	      }
@@ -382,9 +384,13 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
   
   /* Free the reused stack of beams.
    */
-  while ((tmp = PopMstack(beamstack)) != NULL) free(tmp);
-  FreeMstack(beamstack);
+  while (esl_stack_PPop(beamstack, (void **) &tmp) != eslEOD) free(tmp);
+  esl_stack_Destroy(beamstack);
   return status;
+
+ ERROR:
+  esl_fatal("Memory allocation error.\n");
+  return eslFAIL; /* never reached */
 }
 
 /* Function:  BandTruncationNegligible()
@@ -506,6 +512,9 @@ BandTruncationNegligible(double *density, int b, int W, double *ret_beta)
  *              captured by W.
  *
  *            Caller frees the returned gamma with FreeBandDensities().
+ *
+ * Note:     Dies (esl_fatal()) from memory allocation error, without
+ *           cleanup.
  */
 int
 BandMonteCarlo(CM_t *cm, int nsample, int W, double ***ret_gamma)
@@ -518,6 +527,7 @@ BandMonteCarlo(CM_t *cm, int nsample, int W, double ***ret_gamma)
   int           v;		/* state used at a parsetree node */
   int           n;		/* subseq length at a parsetree node */
   int           status;		/* return status. */
+  char         *name;           /* name for the seq we've emitted */
   ESL_RANDOMNESS  *r = NULL;    /* source of randomness */
 
   /* Create and seed RNG */
@@ -531,15 +541,15 @@ BandMonteCarlo(CM_t *cm, int nsample, int W, double ***ret_gamma)
    * really need to calculate it. Then we can use FreeBandDensities()
    * for gamma matrices alloc'ed in either function.
    */                                                     
-  gamma          = MallocOrDie(sizeof(double *) * cm->M);
-  gamma[cm->M-1] = MallocOrDie(sizeof(double) * (W+1)); 
-  DSet(gamma[cm->M-1], W+1, 0.0);
+  ESL_ALLOC(gamma, (sizeof(double *) * cm->M));
+  ESL_ALLOC(gamma[cm->M-1], (sizeof(double) * (W+1))); 
+  esl_vec_DSet(gamma[cm->M-1], W+1, 0.0);
   for (v = 0; v < cm->M-1; v++)
     {
       if (cm->sttype[v] != E_st)
 	{
-	  gamma[v] = MallocOrDie(sizeof(double) * (W+1));
-	  DSet(gamma[v], W+1, 0.0);
+	  ESL_ALLOC(gamma[v], sizeof(double) * (W+1));
+	  esl_vec_DSet(gamma[v], W+1, 0.0);
 	}
       else
 	gamma[v] = gamma[cm->M-1];
@@ -551,7 +561,9 @@ BandMonteCarlo(CM_t *cm, int nsample, int W, double ***ret_gamma)
   status = 1;			
   for (i = 0; i < nsample; i++)
     {
-      EmitParsetree(cm, r, &tr, NULL, NULL, &seqlen);
+      sprintf(name, "seq%d", i+1);
+      EmitParsetree(cm, r, NULL, FALSE, &tr, NULL, &seqlen);
+      free(name);
       if (seqlen > W) {
 	FreeParsetree(tr);
 	status = 0;		/* set status to FAILED */
@@ -576,6 +588,10 @@ BandMonteCarlo(CM_t *cm, int nsample, int W, double ***ret_gamma)
   *ret_gamma = gamma;
   esl_randomness_Destroy(r);
   return status;
+
+ ERROR:
+  esl_fatal("Memory allocation error.\n");
+  return eslFAIL; /* never reached */
 }
 
 
@@ -608,241 +624,6 @@ FreeBandDensities(CM_t *cm, double **gamma)
   free(gamma);
 }  
 
-
-/* Function: BandDistribution()
- * Date:     SRE, Wed Nov 20 07:15:31 2002 [flight home from Washington DC]
- *
- * Purpose:  Given a model, and a DP maximum window size W; calculate
- *           cumulative distribution g_v(n) = P(len <= n | subgraph rooted at v).
- *           Return as matrix g[v][n].
- *
- * Args:     cm   - CM to calculate length distribution for.
- *           W    - maximum DP window size.       
- *           do_local - TRUE to factor in possibility of jumping from root
- *                      to any consensus state (see EPN for changes)
- *
- * Returns:  gamma[v][n] (0..M-1, 0..W).
- *           Caller free's w/ DMX2Free(gamma).
- *
- * Deprecated 11.11.05 EPN
- * Use BandCalculationEngine() instead. 
- * This function does not properly handle potential truncation error
- * problems. No longer supported.
- * 
- */
-double **
-BandDistribution(CM_t *cm, int W, int do_local)
-{
-  double **gamma;            /* gamma[v][n] = log P(length n | state v); [0..W][0..M-1] */
-  int      n,x;
-  int      v,y;
-
-  n     = MAX(MAXCONNECT, W+1);
-  gamma = DMX2Alloc(cm->M, W+1);
-  
-  printf("BandDistribution() is deprecated.\nUse BandCalculationEngine() instead (it's better).\n");
-  exit(1);
-
-  for (n = 0; n <= W; n++)
-    for (v = cm->M-1; v >= 0; v--)
-      {
-	gamma[v][n] = 0.;
-
-	switch (cm->sttype[v]) {
-	case S_st:
-	  /*EPN Handle local begins.*/
-	  if(do_local && v == 0) 
-	    {
-	      for (y = 0; y < cm->M; y++) {
-		if(cm->sttype[y] == MP_st ||
-		   cm->sttype[y] == ML_st ||
-		   cm->sttype[y] == MR_st ||
-		   cm->sttype[y] == B_st) {
-		  gamma[v][n] += cm->begin[y] * gamma[y][n];
-		  /* cm->begin[y] is probability we transition to state y from root */
-		}
-	      }
-	    }
-	  else
-	    {
-	      for (y = 0; y < cm->cnum[v]; y++)
-		{
-		  gamma[v][n] += cm->t[v][y] * gamma[cm->cfirst[v] + y][n];
-		  /* EPN 11.11.05 - factor in local exit transition probability*/
-		  if((do_local) && (y == 0))
-		    {
-		      /* That if() is survived if
-		       * (1) do_local is TRUE
-		       * (2) state y is the first state of it's node
-		       *     (this means its node is a MATL or MATR node)
-		       * (3) state v isn't the ROOT_S state (would have entered
-		       *     earlier if(do_local && v==0) if that were true)
-		       *     This means v is either a BEGL_S or BEGR_S
-		       * For such states, we want to factor in the local
-		       * exit transition probability.
-		       */
-		      gamma[v][n] += cm->end[v] * gamma[cm->cfirst[v] + y][n];
-		    }
-		}
-	      /*end EPN block*/	  
-	    }
-	  break;
-	  
-	case D_st:
-	  for (y = 0; y < cm->cnum[v]; y++)
-	    gamma[v][n] += cm->t[v][y] * gamma[cm->cfirst[v] + y][n];
-	  break;
-	  
-	case ML_st:
-	case MR_st:
-	  if (n >= 1) 
-	    {
-	      for (y = 0; y < cm->cnum[v]; y++)
-		{
-		  gamma[v][n] += cm->t[v][y] * gamma[cm->cfirst[v] + y][n-1];
-		  /* EPN 11.11.05 - factor in local exit transition probability*/
-		  if((do_local) && (y == 0))
-		    {
-		      /* That if() is survived if
-		       * (1) do_local is TRUE
-		       * (2) state y is the first state of it's node
-		       *     (this means its node is a MATL or MATR node)
-		       * For such states, we want to factor in the local
-		       * exit transition probability.
-		       */
-		      gamma[v][n] += cm->end[v] * gamma[cm->cfirst[v] + y][n-1];
-		    }
-		}
-	    }
-	    /*end EPN block*/	  
-	  break;
-
-	case IL_st:
-	case IR_st:
-	  if (n >= 1) {
-	    for (y = 0; y < cm->cnum[v]; y++)
-	      gamma[v][n] += cm->t[v][y] * gamma[cm->cfirst[v] + y][n-1];
-	  }
-	  break;
-
-	case MP_st:
-	  if (n >= 2) 
-	    {
-	      for (y = 0; y < cm->cnum[v]; y++)
-		gamma[v][n] += cm->t[v][y] * gamma[cm->cfirst[v] + y][n-2];
-	      /* EPN 11.11.05 - factor in local exit transition probability*/
-	      if(do_local)
-		{
-		  /* If we get here, state v is a MATP_MP state,
-		   * so y = 0. 
-		   * For such states, we want to factor in the local
-		   * exit transition probability.
-		   */
-		  gamma[v][n] += cm->end[v] * gamma[cm->cfirst[v] + y][n-2];
-		}
-	    }
-	  break;
-  
-	case B_st:
-	  for (x = 0; x <= n; x++) /* x = length of left child */
-	    gamma[v][n] += gamma[cm->cfirst[v]][x] * gamma[cm->cnum[v]][n-x];
-	  break;
-
-	case E_st:
-	  if (n == 0) gamma[v][n] = 1.;
-	  break;
-	
-	default: 
-	  Die("gamma on fire");
-	}
-      }
-
-  /* Reduce numerical imprecision issues: renormalize the distributions.
-   * Don't do this if you're debugging; it makes all other problems go away too.
-   */
-  for (v = 0; v < cm->M; v++)
-    DNorm(gamma[v], W+1);
-
-  /* Convert to cumulative distribution, P(len <= n) 
-   * Squash any numerical imprecision that overflows past 1.0.
-   */
-  for (v = 0; v < cm->M; v++)
-    for (n = 1; n <= W; n++)
-      {
-	gamma[v][n] = gamma[v][n] + gamma[v][n-1];
-	if (gamma[v][n] > 1.) gamma[v][n] = 1.;
-      }
-				
-  return gamma;
-}
-
-/* Function: BandBounds()
- * Date:     SRE, Fri Sep 26 10:01:41 2003 [AA 886 from Salk]
- *
- * Purpose: Given a cumulative probability distribution gamma[n] =
- *          P(length <= n) for each state v and a tail
- *          cutoff probability p.
- * 
- *          Find dmin and dmax for each v, such that the probability
- *          of missing a hit is <= p on either the low side or high side:
- *             gamma[dmin-1]   <= p
- *             1 - gamma[dmax] <= p
- * 
- *          The total probability mass these bounds encompass is:
- *             gamma[dmax] - gamma[dmin-1] >= 1-2p   
- *
- * Args:    gamma    - cumulative probability distribution P(length <= n) for state v;
- *                     [0..v..M-1][0..W] 
- *          M        - # of states in CM
- *          W        - maximum subsequence length in DP         
- *          p        - tail cutoff probability
- *          ret_dmin - RETURN: minimum d bound for each state v; [0..v..M-1]
- *          ret_dmax - RETURN: maximum d bound for each state v; [0..v..M-1]
- *
- * Returns: (void) 
- *          dmin, dmax are allocated here. Caller must free.
- */
-void
-BandBounds(double **gamma, int M, int W, double p, int **ret_dmin, int **ret_dmax)
-{
-  int     *dmin, *dmax;
-  int      v;
-
-#if (SRE_CONLEVEL >= 1)
-  for (v = 0; v < M; v++) 
-    {
-      assert(gamma[v][W] <= 1.0 && gamma[v][0] >= 0.0);
-      assert(gamma[v][W] >= gamma[v][0]);
-      assert(p >= 0. && p <= 0.5);
-    }
-#endif
-
-  dmin = MallocOrDie(sizeof(int) * M);
-  dmax = MallocOrDie(sizeof(int) * M);
-
-  for (v = 0; v < M; v++)
-    {
-      dmin[v] = 0; while (dmin[v] <= W && gamma[v][dmin[v]]   <= p)    dmin[v]++;
-      dmax[v] = W; while (dmax[v] > 0  && gamma[v][dmax[v]-1] >= 1.-p) dmax[v]--;
-    }
-
-#if (SRE_CONLEVEL >= 1)
-  for (v = 0; v < M; v++)
-    {
-      if (dmin[v] > 0) 
-	assert(gamma[v][dmax[v]] - gamma[v][dmin[v]-1] >= 1.-2*p);
-      else
-	assert(gamma[v][dmax[v]] >= 1.-2*p);
-      assert(dmin[v] >= 0 && dmin[v] <= W);
-      assert(dmax[v] >= 0 && dmax[v] <= W);
-      assert(dmax[v] >= dmin[v]);
-    }
-#endif  
-  
-  *ret_dmin = dmin;
-  *ret_dmax = dmax;
-}
-      
 
 /* A couple of quick hacks. ...
  * Print an XMGRACE xy file for a specified v, showing the
@@ -901,7 +682,7 @@ PrintDPCellsSaved(CM_t *cm, int *min, int *max, int W)
  *           subsequences of length >= dmin[v] and <= dmax[v].
  *
  * Args:     cm        - the covariance model
- *           dsq       - digitized sequence to search; 1..L
+ *           sq        - the sequence, in digital mode
  *           dmin      - minimum bound on d for state v; 0..M
  *           dmax      - maximum bound on d for state v; 0..M          
  *           i0        - start of target subsequence (1 for full seq)
@@ -911,11 +692,15 @@ PrintDPCellsSaved(CM_t *cm, int *min, int *max, int W)
  *           results   - scan_results_t to add to; if NULL, don't add to it
  *
  * Returns:  score of best overall hit
+ *
+ * Note:     Dies (esl_fatal()) from memory allocation error, without
+ *           cleanup.
  */
 float
-CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
+CYKBandedScan(CM_t *cm, ESL_SQ *sq, int *dmin, int *dmax, int i0, int j0, int W, 
 	      float cutoff, scan_results_t *results)
 {
+  int       status;
   float  ***alpha;              /* CYK DP score matrix, [v][j][d] */
   int      *bestr;              /* auxil info: best root state at alpha[0][cur][d] */
   float    *gamma;              /* SHMM DP matrix for optimum nonoverlap resolution */
@@ -944,14 +729,15 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 
   /* Contract check */
   if(j0 < i0)
-    Die("in CYKBandedScan, i0: %d j0: %d\n", i0, j0);
-  if(dsq == NULL)
-    Die("in CYKBandedScan, dsq is NULL\n");
+    esl_fatal("ERROR in CYKBandedScan, i0: %d j0: %d\n", i0, j0);
+  if(sq == NULL)
+    esl_fatal("ERROR in CYKBandedScan, sq is NULL\n");
   if(!(cm->flags & CM_QDB))
-    Die("in CYKBandedScan, QDBs invalid\n");
+    esl_fatal("ERROR in CYKBandedScan, QDBs invalid\n");
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in CP9TraceCount, sq should be digitized.\n");
 
   /*PrintDPCellsSaved(cm, dmin, dmax, W);*/
-
   best_score     = IMPOSSIBLE;
   best_neg_score = IMPOSSIBLE;
   L = j0-i0+1;
@@ -970,13 +756,13 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
    *    d ranges from 0..W over subsequence lengths.
    * Note that E memory is shared: all E decks point at M-1 deck.
    *****************************************************************/
-  alpha = MallocOrDie (sizeof(float **) * cm->M);
+  ESL_ALLOC(alpha, (sizeof(float **) * cm->M));
   for (v = cm->M-1; v >= 0; v--) {	/* reverse, because we allocate E_M-1 first */
     if (cm->stid[v] == BEGL_S)
       {
-	alpha[v] = MallocOrDie(sizeof(float *) * (W+1));
+	ESL_ALLOC(alpha[v], (sizeof(float *) * (W+1)));
 	for (j = 0; j <= W; j++)
-	  alpha[v][j] = MallocOrDie(sizeof(float) * (W+1));
+	  ESL_ALLOC(alpha[v][j], (sizeof(float) * (W+1)));
       }
     else if (cm->sttype[v] == E_st && v < cm->M-1) 
       alpha[v] = alpha[cm->M-1];
@@ -984,10 +770,10 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
       {
 	alpha[v] = MallocOrDie(sizeof(float *) * 2);
 	for (j = 0; j < 2; j++) 
-	  alpha[v][j] = MallocOrDie(sizeof(float) * (W+1));
+	  ESL_ALLOC(alpha[v][j], (sizeof(float) * (W+1)));
       }
   }
-  bestr = MallocOrDie(sizeof(int) * (W+1));
+  ESL_ALLOC(bestr, (sizeof(int) * (W+1)));
 
   /*****************************************************************
    * alpha initializations.
@@ -1054,12 +840,12 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
    * This is a little SHMM that finds an optimal scoring parse
    * of multiple nonoverlapping hits.
    *****************************************************************/ 
-  gamma    = MallocOrDie(sizeof(float) * (L+1));
+  ESL_ALLOC(gamma,  sizeof(float) * (L+1));
   gamma[0] = 0;
-  gback    = MallocOrDie(sizeof(int)   * (L+1));
+  ESL_ALLOC(gback,  sizeof(int)   * (L+1));
   gback[0] = -1;
-  savesc   = MallocOrDie(sizeof(float) * (L+1));
-  saver    = MallocOrDie(sizeof(int)   * (L+1));
+  ESL_ALLOC(savesc, sizeof(float) * (L+1));
+  ESL_ALLOC(saver,  sizeof(int)   * (L+1));
 
   /*****************************************************************
    * The main loop: scan the sequence from position 1 to L.
@@ -1099,10 +885,10 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 		      alpha[v][cur][d] = sc;
 		  
 		  i = j-d+1;
-		  if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
-		    alpha[v][cur][d] += cm->esc[v][(int) (dsq[i]*Alphabet_size+dsq[j])];
+		  if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][(int) (sq->dsq[i]*cm->abc->K+sq->dsq[j])];
 		  else
-		    alpha[v][cur][d] += DegeneratePairScore(cm->esc[v], dsq[i], dsq[j]);
+		    alpha[v][cur][d] += DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i], sq->dsq[j]);
 		  
 		  if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -1118,10 +904,10 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 		      alpha[v][cur][d] = sc;
 		  
 		  i = j-d+1;
-		  if (dsq[i] < Alphabet_size)
-		    alpha[v][cur][d] += cm->esc[v][(int) dsq[i]];
+		  if (sq->dsq[i] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][(int) sq->dsq[i]];
 		  else
-		    alpha[v][cur][d] += DegenerateSingletScore(cm->esc[v], dsq[i]);
+		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[i], cm->esc[v]);
 		  
 		  if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -1136,10 +922,10 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 		    if ((sc = alpha[y+yoffset][prv][d-1] + cm->tsc[v][yoffset]) > alpha[v][cur][d])
 		      alpha[v][cur][d] = sc;
 		  
-		  if (dsq[j] < Alphabet_size)
-		    alpha[v][cur][d] += cm->esc[v][(int) dsq[j]];
+		  if (sq->dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][(int) sq->dsq[j]];
 		  else
-		    alpha[v][cur][d] += DegenerateSingletScore(cm->esc[v], dsq[j]);
+		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[j], cm->esc[v]);
 		  
 		  if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -1330,102 +1116,11 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
     best_score = best_neg_score;
 
   return best_score;
+
+ ERROR:
+  esl_fatal("Memory allocation error.\n");
+  return 0.; /* never reached */
 }
-
-
-/* Function: BandedParsetreeDump()
- * Date:     SRE, Sat Sep 27 15:44:22 2003 [St. Louis]
- * Xref:     STL7 pg. 119
- *
- * Purpose:  Generate a detailed picture of a parsetree data structure,
- *           annotated with relevant information from the sequence
- *           and the model -- and show agreement (or disagreement)
- *           with calculated bands.
- *           
- *           Modified from ParsetreeDump().
- *
- * Args:    fp    - FILE to write output to.
- *          tr    - parsetree to examine.
- *          cm    - model that was aligned to dsq to generate the parsetree
- *          dsq   - sequence that was aligned to cm to generate the parsetree
- *          gamma - cumulative subsequence length probability distributions
- *                  used to generate the bands; from BandDistribution(); [0..v..M-1][0..W]
- *          W     - maximum window length W (gamma distributions range up to this)        
- *          dmin  - minimum subseq length for each state; from BandBounds(); [0..v..M-1]
- *          dmax  - maximum ""
- *
- * Returns:  (void)
- */
-void
-BandedParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq, 
-		    double **gamma, int W, int *dmin, int *dmax)
-{
-  int   x;
-  char  syml, symr;
-  float tsc;
-  float esc;
-  int   v,y;
-  int   L;
-
-  fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s %5s %5s\n",
-	  " idx ", "emitl", "emitr", "state", " nxtl", " nxtr", " prv ", " tsc ", " esc ", 
-	  " L   ", " dmin", " dmax");
-  fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s %5s %5s\n",
-	  "-----", "------", "------", "-------", "-----","-----", "-----","-----", "-----",
-	  "-----", "-----", "-----");
-  for (x = 0; x < tr->n; x++)
-    {
-      v = tr->state[x];
-
-      /* Set syml, symr: one char representation of what we emit, or ' '.
-       * Set esc:        emission score, or 0.
-       * Only P, L, R states have emissions.
-       */
-      syml = symr = ' ';
-      esc = 0.;
-      if (cm->sttype[v] == MP_st) {
-	syml = Alphabet[(int)dsq[tr->emitl[x]]]; 
-	symr = Alphabet[(int)dsq[tr->emitr[x]]];
-	esc  = DegeneratePairScore(cm->esc[v], dsq[tr->emitl[x]], dsq[tr->emitr[x]]);
-      } else if (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) {
-	syml = Alphabet[(int)dsq[tr->emitl[x]]];
-	esc  = DegenerateSingletScore(cm->esc[v], dsq[tr->emitl[x]]);
-      } else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) {
-	symr = Alphabet[(int)dsq[tr->emitr[x]]];
-	esc  = DegenerateSingletScore(cm->esc[v], dsq[tr->emitr[x]]);
-      }
-
-      /* Set tsc: transition score, or 0.
-       * B, E, and the special EL state (M, local end) have no transitions.
-       */
-      tsc = 0.;
-      if (v != cm->M && cm->sttype[v] != B_st && cm->sttype[v] != E_st) {
-	y = tr->state[tr->nxtl[x]];
-
-	if (v == 0 && (cm->flags & CM_LOCAL_BEGIN))
-	  tsc = cm->beginsc[y];
-	else if (y == cm->M) /* CM_LOCAL_END is presumably set, else this wouldn't happen */
-	  tsc = cm->endsc[v] + (cm->el_selfsc * (tr->emitr[x] - tr->emitl[x] + 1 - StateDelta(cm->sttype[v])));
-	else 		/* y - cm->first[v] gives us the offset in the transition vector */
-	  tsc = cm->tsc[v][y - cm->cfirst[v]];
-      }
-
-      /* Print the info line for this state
-       */
-      L = tr->emitr[x]-tr->emitl[x]+1;
-      fprintf(fp, "%5d %5d%c %5d%c %5d%-2s %5d %5d %5d %5.2f %5.2f %5d %5d %5d %2s\n",
-	      x, tr->emitl[x], syml, tr->emitr[x], symr, tr->state[x], 
-	      Statetype(cm->sttype[v]), tr->nxtl[x], tr->nxtr[x], tr->prv[x], tsc, esc,
-	      L, dmin[v], dmax[v],
-	      (L >= dmin[v] && L <= dmax[v]) ? "" : "!!");
-    }
-  fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s %5s %5s\n",
-	  "-----", "------", "------", "-------", "-----","-----", "-----","-----", "-----",
-	  "-----", "-----", "-----");
-  fflush(fp);
-} 
-
-
 
 /* EPN 07.22.05
  * ExpandBands()

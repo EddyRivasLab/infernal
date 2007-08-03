@@ -1794,15 +1794,19 @@ CP9_fake_tracebacks(char **aseq, int nseq, int alen, int *matassign,
  *           (Usually as part of a model parameter re-estimation.)
  *           
  * Args:     hmm   - counts-based CM Plan 9 HMM
- *           dsq   - digitized sequence that traceback aligns to the HMM (1..L)
+ *           sq    - sequence that traceback aligns to the HMM (1..L)
  *           wt    - weight on the sequence
  *           tr    - alignment of seq to HMM
  *           
  * Return:   (void)
  */
 void
-CP9TraceCount(struct cplan9_s *hmm, char *dsq, float wt, CP9trace_t *tr)
+CP9TraceCount(struct cplan9_s *hmm, ESL_SQ *sq, float wt, CP9trace_t *tr)
 {
+  /* contract check */
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in CP9TraceCount(), sq should be digitized.\n");
+  
   int tpos;                     /* position in tr */
   int i;			/* symbol position in seq */
   
@@ -1813,9 +1817,9 @@ CP9TraceCount(struct cplan9_s *hmm, char *dsq, float wt, CP9trace_t *tr)
       /* Emission counts. 
        */
       if (tr->statetype[tpos] == CSTM) 
-	SingletCount(hmm->mat[tr->nodeidx[tpos]], dsq[i], wt);
+	esl_abc_FCount(hmm->mat[tr->nodeidx[tpos]], sq->dsq[i], wt);
       else if (tr->statetype[tpos] == CSTI) 
-	SingletCount(hmm->ins[tr->nodeidx[tpos]], dsq[i], wt);
+	esl_abc_FCount(hmm->ins[tr->nodeidx[tpos]], sq->dsq[i], wt);
 
       /* State transition counts
        */
@@ -2491,13 +2495,14 @@ CP9ReverseTrace(CP9trace_t *tr)
  *           nseq       - number of sequences
  *           tr         - array of tracebacks
  *           do_full    - TRUE to always include all match columns in alignment
+ *           ret_msa    - MSA, alloc'ed created here
  *
- * Return:   MSA structure; NULL on failure.
- *           Caller responsible for freeing msa with MSAFree(msa);
+ * Return:   eslOK on succes, eslEMEM on memory error.
+ *           MSA structure in ret_msa, caller responsible for freeing.
  */          
-MSA *
+int
 CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq, 
-		    CP9trace_t **tr, int do_full)
+		    CP9trace_t **tr, int do_full, ESL_MSA **ret_msa)
 {
   /* Contract checks */
   if(cm->cp9 == NULL)
@@ -2507,12 +2512,13 @@ CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq,
   if(!(cm->flags & CM_CP9))
      esl_fatal("ERROR in CP9Traces2Alignment, CM_CP9 flag is down.");
 
-  MSA   *msa;                   /* RETURN: new alignment */
+  int status;                   /* easel status flag */
+  ESL_MSA   *msa;               /* RETURN: new alignment */
   int    idx;                   /* counter for sequences */
   int    alen;                  /* width of alignment */
-  int   *maxins;                /* array of max inserts between aligned columns */
-  int   *maxels;                /* array of max ELs emissions between aligned columns */
-  int   *matmap;                /* matmap[k] = apos of match k [1..M] */
+  int   *maxins = NULL;         /* array of max inserts between aligned columns */
+  int   *maxels = NULL;         /* array of max ELs emissions between aligned columns */
+  int   *matmap = NULL;         /* matmap[k] = apos of match k [1..M] */
   int    nins;                  /* counter for inserts */
   int    cpos;                  /* HMM node, consensus position */
   int    apos;                  /* position in aligned sequence (0..alen-1)*/
@@ -2520,14 +2526,14 @@ CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq,
   int    tpos;                  /* position counter in traceback */
   int    epos;                  /* position ctr for EL insertions */
   int    statetype;		/* type of current state, e.g. STM */
-  CMEmitMap_t *emap;            /* consensus emit map for the CM */
-  int         *imap;            /* first apos for an insert following a cpos */
-  int         *elmap;           /* first apos for an EL following a cpos */
-  int         *matuse;          /* TRUE if we need a cpos in mult alignment */
-  int         *eluse;           /* TRUE if we have an EL after cpos in alignment */
-  int        **eposmap;         /* [seq idx][CP9 node idx] where each EL should emit to */
-  int         *iuse;            /* TRUE if we have an I after cpos in alignment */
-  CMConsensus_t *con;           /* consensus information for the CM */
+  CMEmitMap_t *emap = NULL;     /* consensus emit map for the CM */
+  int         *imap = NULL;     /* first apos for an insert following a cpos */
+  int         *elmap = NULL;    /* first apos for an EL following a cpos */
+  int         *matuse = NULL;   /* TRUE if we need a cpos in mult alignment */
+  int         *eluse = NULL;    /* TRUE if we have an EL after cpos in alignment */
+  int        **eposmap = NULL;  /* [seq idx][CP9 node idx] where each EL should emit to */
+  int         *iuse = NULL;     /* TRUE if we have an I after cpos in alignment */
+  CMConsensus_t *con = NULL;    /* consensus information for the CM */
   int          next_match;      /* used for filling eposmap */
   int          c;               /* counter over possible EL froms */
   emap = CreateEmitMap(cm);
@@ -2545,15 +2551,15 @@ CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq,
    * column i and i+1.  maxins[0], maxels[0] is the N-term tail; 
    * maxins[M], maxels[0] is the C-term tail.
    */
-  matuse  = (int *) MallocOrDie(sizeof(int)  * (emap->clen+1));   
-  eluse   = (int *) MallocOrDie(sizeof(int)  * (emap->clen+1));   
-  iuse    = (int *) MallocOrDie(sizeof(int)  * (emap->clen+1));   
-  maxins  = (int *) MallocOrDie(sizeof(int) * (emap->clen+1));
-  maxels  = (int *) MallocOrDie(sizeof(int) * (emap->clen+1));
-  matmap  = (int *) MallocOrDie(sizeof(int) * (emap->clen+1));
-  imap    = (int *) MallocOrDie(sizeof(int) * (emap->clen+1));   
-  elmap   = (int *) MallocOrDie(sizeof(int) * (emap->clen+1));   
-  eposmap   = (int **) MallocOrDie(sizeof(int *) * nseq); 
+  ESL_ALLOC(matuse, sizeof(int) * (emap->clen+1));
+  ESL_ALLOC(eluse,  sizeof(int) * (emap->clen+1));
+  ESL_ALLOC(iuse,   sizeof(int) * (emap->clen+1));
+  ESL_ALLOC(maxins, sizeof(int) * (emap->clen+1));
+  ESL_ALLOC(maxels, sizeof(int) * (emap->clen+1));
+  ESL_ALLOC(matmap, sizeof(int) * (emap->clen+1));
+  ESL_ALLOC(imap,   sizeof(int) * (emap->clen+1));
+  ESL_ALLOC(elmap,  sizeof(int) * (emap->clen+1));
+  ESL_ALLOC(eposmap,sizeof(int *) * (emap->clen+1));
   /* eposmap is 2D b/c different traces can have different epos
    * (position where EL inserts) for the same EL state, for example:
    * an EL state for node 9 may reconnect at node 25 in one parse
@@ -2561,7 +2567,6 @@ CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq,
    * lpos=9 rpos=50, and a CM BEGL node with subtree lpos=9 rpos=25,
    * i.e. there are 2 CM EL states being mirrored by 1 HMM EL state. 
    */
-
   for (cpos = 0; cpos <= emap->clen; cpos++)
     {
       if(!do_full || cpos == 0)
@@ -2580,7 +2585,7 @@ CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq,
    */
   for (idx = 0; idx < nseq; idx++) 
     {
-      eposmap[idx] = (int *) MallocOrDie(sizeof(int) * (emap->clen+1));   
+      ESL_ALLOC(eposmap[idx], sizeof(int) * (emap->clen+1));   
       for (cpos = 0; cpos <= emap->clen; cpos++) 
 	{
 	  iuse[cpos] = eluse[cpos] = 0;
@@ -2631,7 +2636,7 @@ CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq,
 	  case CSTB:
 	    break;
 	  default:
-	    Die("Traces2Alignment reports unrecognized statetype %c", 
+	    esl_fatal("CP9Traces2Alignment reports unrecognized statetype %c", 
 		CP9Statetype(tr[idx]->statetype[tpos]));
 	  }
 	} /* end looking at trace i */
@@ -2670,14 +2675,14 @@ CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq,
       alen += maxels[cpos];
     }
                                 /* allocation for new alignment */
-  msa = MSAAlloc(nseq, alen);
-
+  msa = esl_msa_Create(nseq, alen);
   for (idx = 0; idx < nseq; idx++) 
     {
+      /* Textize the sequence, is this wasteful? */
+      esl_sq_Textize(sq[idx]);
+
       for (cpos = 0; cpos <= emap->clen; cpos++)
-	{
-	  iuse[cpos] = eluse[cpos] = 0;
-	}
+	iuse[cpos] = eluse[cpos] = 0;
       /* blank an aseq */
       for (apos = 0; apos < alen; apos++)
 	msa->aseq[idx][apos] = '.';
@@ -2696,14 +2701,14 @@ CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq,
 	  if (statetype == CSTM) 
 	    {
 	      apos = matmap[cpos];
-	      msa->aseq[idx][apos] = Alphabet[(int) sq[idx]->dsq[rpos]];
+	      msa->aseq[idx][apos] = sq[idx]->seq[rpos];
 	    }
 	  else if (statetype == CSTD) 
 	    apos = matmap[cpos]+1;	/* need for handling D->I; xref STL6/p.117 */
 	  else if (statetype == CSTI) 
 	    {
 	      apos = imap[cpos] + iuse[cpos];
-	      msa->aseq[idx][apos] = (char) tolower((int) Alphabet[(int) sq[idx]->dsq[rpos]]);
+	      msa->aseq[idx][apos] = (char) tolower((int) sq[idx]->seq[rpos]);
 	      iuse[cpos]++;
 	    }
 	  else if (statetype == CSTEL) 
@@ -2713,7 +2718,7 @@ CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq,
 	      if(tr[idx]->statetype[tpos-1] == CSTEL) /* we don't emit on first EL visit */
 		{
 		  apos = elmap[epos] + eluse[epos];
-		  msa->aseq[idx][apos] = (char) tolower((int) Alphabet[(int) sq[idx]->dsq[rpos]]);
+		  msa->aseq[idx][apos] = (char) tolower((int) sq[idx]->seq[rpos]);
 		  eluse[epos]++;
 		}
 	    }
@@ -2743,28 +2748,13 @@ CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq,
         
   msa->nseq = nseq;
   msa->alen = alen;
-  msa->au   = MallocOrDie(sizeof(char) * (strlen(PACKAGE_VERSION)+10));
+  ESL_ALLOC(msa->au, sizeof(char) * (strlen(PACKAGE_VERSION)+10));
   sprintf(msa->au, "Infernal %s", PACKAGE_VERSION);
-  /* copy sqinfo array and weights */
+
+  /* copy names and weights */
   for (idx = 0; idx < nseq; idx++)
     {
-      msa->sqname[idx] = sre_strdup(sq[idx]->name, -1);
-      msa->sqlen[idx]  = sq[idx]->n;
-      /*if (sqinfo[idx].flags & SQINFO_ACC)
-	MSASetSeqAccession(msa, idx, sqinfo[idx].acc);
-	if (sqinfo[idx].flags & SQINFO_DESC)
-	MSASetSeqDescription(msa, idx, sqinfo[idx].desc);
-
-      if (sqinfo[idx].flags & SQINFO_SS) {
-	if (msa->ss == NULL) msa->ss = MallocOrDie(sizeof(char *) * nseq);
-	MakeAlignedString(msa->aseq[idx], alen, 
-			  sqinfo[idx].ss, &(msa->ss[idx]));
-      }
-      if (sqinfo[idx].flags & SQINFO_SA) {
-	if (msa->sa == NULL) msa->sa = MallocOrDie(sizeof(char *) * nseq);
-	MakeAlignedString(msa->aseq[idx], alen, 
-			  sqinfo[idx].sa, &(msa->sa[idx]));
-			  }*/
+      esl_strdup(sq[idx]->name, -1, &(msa->sqname[idx]));
       if (wgt == NULL) msa->wgt[idx] = 1.0;
       else             msa->wgt[idx] = wgt[idx];
     }
@@ -2776,8 +2766,8 @@ CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq,
    * Also the primary sequence consensus/reference coordinate system line,
    * msa->rf.
    */
-  msa->ss_cons = MallocOrDie(sizeof(char) * (alen+1));
-  msa->rf = MallocOrDie(sizeof(char) * (alen+1));
+  ESL_ALLOC(msa->ss_cons, (sizeof(char) * (alen+1)));
+  ESL_ALLOC(msa->rf,      (sizeof(char) * (alen+1)));
   con = CreateCMConsensus(cm, 3.0, 1.0);
 
   for (cpos = 0; cpos <= emap->clen; cpos++) 
@@ -2813,7 +2803,6 @@ CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq,
   /* Free and return */
   FreeCMConsensus(con);
   FreeEmitMap(emap);
-  free(matuse);
   free(eluse);
   free(iuse);
   free(maxins);
@@ -2821,10 +2810,22 @@ CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq,
   free(matmap);
   free(imap);
   free(elmap);
-  for(idx = 0; idx < nseq; idx++)
-    free(eposmap[idx]);
-  free(eposmap);
-  return msa;
+  esl_free_2D((void **) eposmap, nseq);
+  *ret_msa = msa;
+  return eslOK;
+
+ ERROR:
+  if(con   != NULL)  FreeCMConsensus(con);
+  if(emap  != NULL)  FreeEmitMap(emap);
+  if(matuse!= NULL)  free(matuse);
+  if(iuse != NULL)   free(iuse);
+  if(elmap != NULL)  free(elmap);
+  if(maxels!= NULL)  free(maxels);
+  if(matmap!= NULL)  free(matmap);
+  if(elmap != NULL)  free(elmap);
+  esl_free_2D((void **) eposmap, nseq);
+  if(msa   != NULL)  esl_msa_Destroy(msa);
+  return status;
 }
 /* Function: rightjustify()
  * 
