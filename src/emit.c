@@ -9,19 +9,20 @@
  * SVN $Id$
  */
 
+#include "esl_config.h"
 #include "config.h"
 
 #include <stdio.h>
 #include <stdlib.h>
-
-#include "structs.h"
-#include "funcs.h"
 
 #include "easel.h"
 #include "esl_vectorops.h"
 #include "esl_random.h"
 #include "esl_stack.h"
 #include "esl_sqio.h"
+
+#include "structs.h"
+#include "funcs.h"
 
 /* Function:  EmitParsetree()
  * Incept:    SRE, Mon Oct 13 22:35:46 2003 [Rams whupping Falcons, Monday Night Football]
@@ -242,7 +243,7 @@ EmitParsetree(CM_t *cm, ESL_RANDOMNESS *r, char *name, int do_digital, Parsetree
 		  y = esl_rnd_FChoose(r, tmp_tvec, 2); /* choose next state, either EL or implicit END */
 		  while(y == 0) /* we've self-transitioned, emit 1 res from NULL distro */
 		    {
-		      lchar = esl_rnd_FChoose(r, cm->bg->f, cm->abc->K);
+		      lchar = esl_rnd_FChoose(r, cm->null, cm->abc->K);
 		      esl_stack_CPush(gsq, cm->abc->sym[lchar]);
 		      N++;
 		      y = esl_rnd_FChoose(r, tmp_tvec, 2); /* choose next state, either EL or implicit END */

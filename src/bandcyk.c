@@ -17,9 +17,6 @@
 #include <math.h>
 #include <float.h>
 
-#include "structs.h"
-#include "funcs.h"
-
 #include "easel.h"
 #include "esl_alphabet.h"
 #include "esl_random.h"
@@ -27,6 +24,8 @@
 #include "esl_stack.h"
 #include "esl_sqio.h"
 
+#include "structs.h"
+#include "funcs.h"
 
 void
 BandExperiment(CM_t *cm)
@@ -700,6 +699,16 @@ float
 CYKBandedScan(CM_t *cm, ESL_SQ *sq, int *dmin, int *dmax, int i0, int j0, int W, 
 	      float cutoff, scan_results_t *results)
 {
+  /* Contract check */
+  if(j0 < i0)
+    esl_fatal("ERROR in CYKBandedScan, i0: %d j0: %d\n", i0, j0);
+  if(sq == NULL)
+    esl_fatal("ERROR in CYKBandedScan, sq is NULL\n");
+  if(!(cm->flags & CM_QDB))
+    esl_fatal("ERROR in CYKBandedScan, QDBs invalid\n");
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in CYKBandedScan, sq is not digitized.\n");
+
   int       status;
   float  ***alpha;              /* CYK DP score matrix, [v][j][d] */
   int      *bestr;              /* auxil info: best root state at alpha[0][cur][d] */
@@ -727,23 +736,13 @@ CYKBandedScan(CM_t *cm, ESL_SQ *sq, int *dmin, int *dmax, int i0, int j0, int W,
   float     best_neg_score;     /* Best score overall score to return, used if all scores < 0 */
   int       bestd;              /* d value of best hit thus far seen for j (used if greedy strategy) */
 
-  /* Contract check */
-  if(j0 < i0)
-    esl_fatal("ERROR in CYKBandedScan, i0: %d j0: %d\n", i0, j0);
-  if(sq == NULL)
-    esl_fatal("ERROR in CYKBandedScan, sq is NULL\n");
-  if(!(cm->flags & CM_QDB))
-    esl_fatal("ERROR in CYKBandedScan, QDBs invalid\n");
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in CP9TraceCount, sq should be digitized.\n");
-
   /*PrintDPCellsSaved(cm, dmin, dmax, W);*/
   best_score     = IMPOSSIBLE;
   best_neg_score = IMPOSSIBLE;
   L = j0-i0+1;
   if (W > L) W = L; 
 
-  /*printf("in BandedCYKScan i0: %d j0: %d\n", i0, j0);*/
+  /*printf("in CYKBandedScan i0: %d j0: %d\n", i0, j0);*/
 
   /*****************************************************************
    * alpha allocations.

@@ -598,7 +598,6 @@ static int check_withali(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA
   CM_t         *newer_cm = NULL; /* used briefly if we rebalance new_cm */
   Parsetree_t  *mtr      = NULL; /* master structure tree from the alignment*/
   char          errbuf[eslERRBUFSIZE];
-  CM_BG *bg              = NULL;
 
   /* cfg->withalifp is open */
   status = esl_msa_Read(cfg->withalifp, &msa);
@@ -619,8 +618,7 @@ static int check_withali(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA
    * Another solution would be to use a checksum, but CM files don't 
    * have checksums yet.
    */
-  bg = cm_bg_Create(msa->abc); /* default values, A,C,G,U = 0.25  */
-  HandModelmaker(msa, bg, esl_opt_GetBoolean(go, "--rf"), esl_opt_GetReal(go, "--gapthresh"), &new_cm, &mtr);
+  HandModelmaker(msa, esl_opt_GetBoolean(go, "--rf"), esl_opt_GetReal(go, "--gapthresh"), &new_cm, &mtr);
   if(!(compare_cm_guide_trees(cfg->cm, new_cm)))
     {
       CM_t *newer_cm;
@@ -637,7 +635,6 @@ static int check_withali(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA
   /* if we get here, the CM guide trees match */
   if(new_cm   != NULL) FreeCM(new_cm);
   if(newer_cm != NULL) FreeCM(newer_cm);
-  if(bg       != NULL) cm_bg_Destroy(bg);
   FreeParsetree(mtr);
   *ret_msa = msa;
   return eslOK;
@@ -647,7 +644,6 @@ static int check_withali(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA
   if(new_cm   != NULL) FreeCM(new_cm);
   if(newer_cm != NULL) FreeCM(newer_cm);
   if(mtr != NULL)      FreeParsetree(mtr);
-  if(bg  != NULL)      cm_bg_Destroy(bg);
   return eslEINCOMPAT;
 }
 

@@ -65,7 +65,6 @@
  *           Both rf and cs are provided in the msa structure.
  *           
  * Args:     msa       - multiple alignment to build model from
- *           bg        - the background (null) model 
  *           use_rf    - TRUE to use RF annotation to determine match/insert
  *           gapthresh - fraction of gaps to allow in a match column (if use_rf=FALSE)
  *           ret_cm    - RETURN: new model                      (maybe NULL)
@@ -76,7 +75,7 @@
  *           gtr is allocated here. FreeTrace().
  */
 void
-HandModelmaker(ESL_MSA *msa, CM_BG *bg, int use_rf, float gapthresh, 
+HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh, 
 	       CM_t **ret_cm, Parsetree_t **ret_gtr)
 {
   CM_t           *cm;		/* new covariance model                       */
@@ -322,7 +321,7 @@ HandModelmaker(ESL_MSA *msa, CM_BG *bg, int use_rf, float gapthresh,
    * arrangement of consensus nodes. Now do the drill for constructing a full model 
    * using this guide tree.
    */
-  cm = CreateCM(nnodes, nstates, msa->abc, bg);
+  cm = CreateCM(nnodes, nstates, msa->abc);
   cm_from_guide(cm, gtr);
   CMZero(cm);
 
@@ -996,7 +995,6 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
  *           new CM with less structure (MATPs) than a template CM.
  *           
  * Args:     abc       - the alphabet
- *           bg        - the background (null) model 
  *           ss_cons   - input consensus structure string 
  *           len       - length of ss_cons, number of consensus columns
  *           ret_cm    - RETURN: new model                      (maybe NULL)
@@ -1007,7 +1005,7 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
  *           gtr is allocated here. FreeTrace().
  */
 void
-ConsensusModelmaker(ESL_ALPHABET *abc, CM_BG *bg, char *ss_cons, int clen, 
+ConsensusModelmaker(ESL_ALPHABET *abc, char *ss_cons, int clen, 
 		    CM_t **ret_cm, Parsetree_t **ret_gtr)
 {
   CM_t           *cm;		/* new covariance model                       */
@@ -1213,7 +1211,7 @@ ConsensusModelmaker(ESL_ALPHABET *abc, CM_BG *bg, char *ss_cons, int clen,
    * arrangement of consensus nodes. Now do the drill for constructing a full model 
    * using this guide tree.
    */
-  cm = CreateCM(nnodes, nstates, abc, bg);
+  cm = CreateCM(nnodes, nstates, abc);
   cm_from_guide(cm, gtr);
   CMZero(cm);
 

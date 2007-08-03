@@ -9,12 +9,16 @@
  ******************************************************************
  */
 
-#include "squid.h"
-#include "vectorops.h"
+#include "esl_config.h"
+#include "config.h"
+
 #include <string.h>
 
-#include "structs.h"
 #include "easel.h"
+#include "esl_alphabet.h"
+#include "esl_vectorops.h"
+
+#include "structs.h"
 #include "funcs.h"
 #include "cplan9.h"
 
@@ -766,6 +770,7 @@ ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_internal_exit)
 int  
 EnforceSubsequence(CM_t *cm)
 {
+  int status;
   int nd;
   float small_chance = 1e-15; /* any parse not including the enforced path includes
 			       * an emission or transition with a -45 bit score */
@@ -773,7 +778,10 @@ EnforceSubsequence(CM_t *cm)
   int   enf_end;
   int v;
   int a;
-  float nt[MAXABET];		
+  float *nt;
+  ESL_SQ *enf_sq = NULL;     /* We'll fill this with enf_seq and digitize it */
+
+  ESL_ALLOC(nt, sizeof(float) * cm->abc->K);
 
   enf_end = cm->enf_start + strlen(cm->enf_seq) - 1;
   /*printf("in EnforceSubsequence, start posn: %d cm->enf_seq: %s\n", cm->enf_start, cm->enf_seq);*/
@@ -797,7 +805,8 @@ EnforceSubsequence(CM_t *cm)
   cm->t[v][2] = small_chance; /*  IL->D */
 
   /* Now move on to the MATL nodes we're enforcing emits the cm->enf_seq */
-  enf_dsq = DigitizeSequence(cm->enf_seq, (strlen(cm->enf_seq)));
+  enf_sq  = esl_sq_CreateFrom("enforced", cm->enf_seq, NULL, NULL, NULL);
+  esl_sq_Digitize(cm->abc, enf_sq);
 
   for(nd = cm->enf_start; nd <= enf_end; nd++) 
     {
@@ -810,21 +819,24 @@ EnforceSubsequence(CM_t *cm)
 	  cm->t[v][2] = small_chance; /* ML->D  */
 	}
       /* Enforce the emission. Taking into account ambiguities. */
-      FSet(nt, MAXABET, 0.);
+      esl_vec_FSet(nt, cm->abc->K, 0.);
       /*printf("enf_dsq[%d]: %d\n", (nd-cm->enf_start+1), (int) (enf_dsq[(nd-cm->enf_start+1)]));*/
-      SingletCount(nt, enf_dsq[(nd-cm->enf_start+1)], 1.);
+      esl_abc_FCount(cm->abc, nt, enf_sq->dsq[(nd - cm->enf_start + 1)], 1.);
       /* nt is now a count vector norm'ed to 1.0 with relative contributions 
        * of each (A,C,G,U) nucleotides towards the (potentially ambiguous)
        * residue in enf_dsq[(nd-cm->enf_start+1)]) 
        */
 
-      for(a = 0; a < MAXABET; a++)
+      for(a = 0; a < cm->abc->K; a++)
 	{
 	  /* start out by setting each residue to 'small_chance' */
 	  cm->e[v][a] =  small_chance;
 	  cm->e[v][a] += nt[a];
 	}
     }
+  free(nt);
+  esl_sq_Destroy(enf_sq);
+
   CMRenormalize(cm);
   /* new probs invalidate log odds scores */
   cm->flags &= ~CM_HASBITS;
@@ -847,11 +859,14 @@ EnforceSubsequence(CM_t *cm)
   /*for(nd = cm->enf_start; nd <= enf_end; nd++) 
     {
       v  = cm->nodemap[nd];      
-      for(a = 0; a < MAXABET; a++)
+      for(a = 0; a < cm->abc->K; a++)
 	printf("cm->e[v:%d][a:%d]: %f sc: %f\n", v, a, cm->e[v][a], cm->esc[v][a]);
     }
   printf("\n");*/
-  return 1;
+  return eslOK;
+
+ ERROR: 
+  esl_fatal("Memory allocation error.\n");
 }
 
 /*******************************************************************************
@@ -867,7 +882,7 @@ EnforceSubsequence(CM_t *cm)
 float
 EnforceScore(CM_t *cm)
 {
-  char *enf_dsq; /* the digitized version of cm->enf_seq */
+  ESL_SQ *enf_sq;/* a digitized version of cm->enf_seq */
   int   enf_end; /* last node to be enforced */
   int   nd;      /* node index  */
   int   v;       /* state index */
@@ -902,7 +917,8 @@ EnforceScore(CM_t *cm)
   /*printf("init v: %d ML->ML: %f IL->ML: %f avg: %f\n", v, cm->tsc[v][1], cm->tsc[(v+2)][1], score);*/
 
   /* Now move on to the MATL nodes we're enforcing emits the cm->enf_seq */
-  enf_dsq = DigitizeSequence(cm->enf_seq, (strlen(cm->enf_seq)));
+  enf_sq  = esl_sq_CreateFrom("enforced", cm->enf_seq, NULL, NULL, NULL);
+  esl_sq_Digitize(cm->abc, enf_sq);
 
   for(nd = cm->enf_start; nd <= enf_end; nd++) 
     {
@@ -915,13 +931,14 @@ EnforceScore(CM_t *cm)
 	score += cm->tsc[v][1]; /* ML->ML */
 
       /* Add score for the emission. Taking into account ambiguities. */
-      if (enf_dsq[i] < Alphabet_size)
-	score += cm->esc[v][(int) enf_dsq[i]];
+      if (enf_sq->dsq[i] < cm->abc->K)
+	score += cm->esc[v][enf_sq->dsq[i]];
       else
-	score += DegenerateSingletScore(cm->esc[v], enf_dsq[i]);
+	score += esl_abc_FAvgScore(cm->abc, enf_sq->dsq[i], cm->esc[v]);
+
     }
   /*printf("in EnforceScore() returning sc: %f\n", score);*/
-
+  esl_sq_Destroy(enf_sq);
   return score;
 }
 

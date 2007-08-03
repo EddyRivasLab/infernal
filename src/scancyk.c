@@ -10,11 +10,14 @@
  ***************************************************************** 
  */
 
+#include "esl_config.h"
 #include "config.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "squid.h"
+#include "easel.h"
+#include "esl_sqio.h"
 
 #include "structs.h"
 #include "funcs.h"
@@ -25,12 +28,15 @@
  * Purpose:  Creates a results type of specified size
  */
 scan_results_t *CreateResults (int size) {
+  int status;
   scan_results_t *results;
-  results = MallocOrDie (sizeof(scan_results_t));
+  ESL_ALLOC(results, sizeof(scan_results_t));
   results->num_results = 0;
   results->num_allocated = size;
-  results->data = MallocOrDie(sizeof(scan_result_node_t)*size);
+  ESL_ALLOC(results->data, sizeof(scan_result_node_t)*size);
   return (results);
+ ERROR:
+  esl_fatal("Memory allocation error.");
 }
 
 /* Function: ExpandResults ()
@@ -38,10 +44,12 @@ scan_results_t *CreateResults (int size) {
  * Purpose:  Expans a results structure by specified amount
  */
 void ExpandResults (scan_results_t *results, int additional) {
-  results->data = ReallocOrDie (results->data, 
-				sizeof(scan_result_node_t)*
-				(results->num_allocated+additional));
+  int status;
+  void *tmp;
+  ESL_RALLOC(results->data, tmp, sizeof(scan_result_node_t)* (results->num_allocated+additional));
   results->num_allocated+=additional;
+ ERROR:
+  esl_fatal("Memory reallocation error.");
 }
 
 /*
@@ -223,9 +231,18 @@ void report_hit (int i, int j, int bestr, float score, scan_results_t *results)
  * Returns:  score of best overall hit
  */
 float 
-CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
+CYKScan(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, 
 	float cutoff, scan_results_t *results)
 {
+  /* Contract check */
+  if(j0 < i0)
+    esl_fatal("ERROR in CYKScan, i0: %d j0: %d\n", i0, j0);
+  if(sq == NULL)
+    esl_fatal("ERROR in CYKScan, sq is NULL\n");
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in CYKScan, sq is not digitized.\n");
+
+  int       status;
   float  ***alpha;              /* CYK DP score matrix, [v][j][d] */
   int      *bestr;              /* auxil info: best root state at alpha[0][cur][d] */
   float    *gamma;              /* SHMM DP matrix for optimum nonoverlap resolution */
@@ -249,6 +266,11 @@ CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W,
   float     best_neg_score;     /* Best score overall score to return, used if all scores < 0 */
   int       bestd;              /* d value of best hit thus far seen for j (used if greedy strategy) */
 
+  best_score     = IMPOSSIBLE;
+  best_neg_score = IMPOSSIBLE;
+  L = j0-i0+1;
+  if (W > L) W = L; 
+
   /*****************************************************************
    * alpha allocations.
    * The scanning matrix is indexed [v][j][d]. 
@@ -261,21 +283,13 @@ CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W,
    * Note that E memory is shared: all E decks point at M-1 deck.
    *****************************************************************/
 
-  best_score     = IMPOSSIBLE;
-  best_neg_score = IMPOSSIBLE;
-  L = j0-i0+1;
-  if (W > L) W = L; 
-
-  if(dsq == NULL)
-    Die("in CYKScan, dsq is NULL\n");
-
-  alpha = MallocOrDie (sizeof(float **) * cm->M);
+  ESL_ALLOC(alpha, (sizeof(float **) * cm->M));
   for (v = cm->M-1; v >= 0; v--) {	/* reverse, because we allocate E_M-1 first */
     if (cm->stid[v] == BEGL_S)
       {
-	alpha[v] = MallocOrDie(sizeof(float *) * (W+1));
+	ESL_ALLOC(alpha[v], (sizeof(float *) * (W+1)));
 	for (j = 0; j <= W; j++)
-	  alpha[v][j] = MallocOrDie(sizeof(float) * (W+1));
+	  ESL_ALLOC(alpha[v][j], (sizeof(float) * (W+1)));
       }
     else if (cm->sttype[v] == E_st && v < cm->M-1) 
       alpha[v] = alpha[cm->M-1];
@@ -283,10 +297,10 @@ CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W,
       {
 	alpha[v] = MallocOrDie(sizeof(float *) * 2);
 	for (j = 0; j < 2; j++) 
-	  alpha[v][j] = MallocOrDie(sizeof(float) * (W+1));
+	  ESL_ALLOC(alpha[v][j], (sizeof(float) * (W+1)));
       }
   }
-  bestr = MallocOrDie(sizeof(int) * (W+1));
+  ESL_ALLOC(bestr, (sizeof(int) * (W+1)));
 
   /*****************************************************************
    * alpha initializations.
@@ -333,12 +347,12 @@ CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W,
    * This is a little SHMM that finds an optimal scoring parse
    * of multiple nonoverlapping hits.
    *****************************************************************/ 
-  gamma    = MallocOrDie(sizeof(float) * (L+1));
-  gamma[0] = 0; 
-  gback    = MallocOrDie(sizeof(int)   * (L+1));
+  ESL_ALLOC(gamma,  sizeof(float) * (L+1));
+  gamma[0] = 0;
+  ESL_ALLOC(gback,  sizeof(int)   * (L+1));
   gback[0] = -1;
-  savesc   = MallocOrDie(sizeof(float) * (L+1));
-  saver    = MallocOrDie(sizeof(int)   * (L+1));
+  ESL_ALLOC(savesc, sizeof(float) * (L+1));
+  ESL_ALLOC(saver,  sizeof(int)   * (L+1));
 
   /*****************************************************************
    * The main loop: scan the sequence from position 1 to L.
@@ -374,10 +388,10 @@ CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 		      alpha[v][cur][d] = sc;
 		  
 		  i = j-d+1;
-		  if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
-		    alpha[v][cur][d] += cm->esc[v][(int) (dsq[i]*Alphabet_size+dsq[j])];
+		  if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][(int) (sq->dsq[i]*cm->abc->K+sq->dsq[j])];
 		  else
-		    alpha[v][cur][d] += DegeneratePairScore(cm->esc[v], dsq[i], dsq[j]);
+		    alpha[v][cur][d] += DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i], sq->dsq[j]);
 		  
 		  if (alpha[v][cur][d] < IMPOSSIBLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -393,10 +407,10 @@ CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 		      alpha[v][cur][d] = sc;
 		  
 		  i = j-d+1;
-		  if (dsq[i] < Alphabet_size)
-		    alpha[v][cur][d] += cm->esc[v][(int) dsq[i]];
+		  if (sq->dsq[i] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][(int) sq->dsq[i]];
 		  else
-		    alpha[v][cur][d] += DegenerateSingletScore(cm->esc[v], dsq[i]);
+		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[i], cm->esc[v]);
 		  
 		  if (alpha[v][cur][d] < IMPOSSIBLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -411,10 +425,10 @@ CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 		    if ((sc = alpha[y+yoffset][prv][d-1] + cm->tsc[v][yoffset]) > alpha[v][cur][d])
 		      alpha[v][cur][d] = sc;
 		  
-		  if (dsq[j] < Alphabet_size)
-		    alpha[v][cur][d] += cm->esc[v][(int) dsq[j]];
+		  if (sq->dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][(int) sq->dsq[j]];
 		  else
-		    alpha[v][cur][d] += DegenerateSingletScore(cm->esc[v], dsq[j]);
+		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[j], cm->esc[v]);
 		  
 		  if (alpha[v][cur][d] < IMPOSSIBLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -580,6 +594,10 @@ CYKScan(CM_t *cm, char *dsq, int i0, int j0, int W,
     best_score = best_neg_score;
 
   return best_score;
+
+ ERROR:
+  esl_fatal("Memory allocation error.\n");
+  return 0.; /* never reached */
 }
 
 /* Function: CYKScanRequires()

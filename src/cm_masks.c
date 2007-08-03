@@ -38,8 +38,12 @@
  * Return:   the log_2-odds score correction.          
  */
 float
-CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, char *dsq)
+CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, ESL_SQ *sq)
 {
+  /* contract check */
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in ParsetreeScore(), sq should be digitized.\n");
+
   float p[MAXABET];		/* null2 model distribution */
   float sc[MAXDEGEN];		/* null model scores       */
   int   a,b;
@@ -97,10 +101,10 @@ CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, char *dsq)
     j = tr->emitr[tidx];
     if (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || 
 	cm->sttype[v] == IL_st)
-      score += sc[(int) dsq[i]];
+      score += sc[sq->dsq[i]];
     if (cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || 
 	cm->sttype[v] == IR_st)
-      score += sc[(int) dsq[j]];
+      score += sc[sq->dsq[j]];
   }
    /* Apply an ad hoc 8 bit fudge factor penalty;
     * interpreted as a prior, saying that the second null model is 

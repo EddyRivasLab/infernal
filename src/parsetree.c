@@ -16,6 +16,7 @@
  */
 
 
+#include "esl_config.h"
 #include "config.h"
 
 #include <stdio.h>
@@ -23,14 +24,14 @@
 #include <stdlib.h>
 #include <ctype.h>
 
-#include "structs.h"
-#include "funcs.h"
-#include "cplan9.h"
-
 #include "easel.h"
 #include "esl_alphabet.h"
 #include "esl_vectorops.h"
 #include "esl_sqio.h"
+
+#include "structs.h"
+#include "funcs.h"
+#include "cplan9.h"
 
 /* Function: CreateParsetree()
  * Incept:   SRE 29 Feb 2000 [Seattle] from cove2.0 code.
@@ -45,6 +46,7 @@
 Parsetree_t * 
 CreateParsetree(void)
 {
+  int status;
   Parsetree_t *new;
 
   ESL_ALLOC(new, sizeof(Parsetree_t));
@@ -71,6 +73,7 @@ CreateParsetree(void)
 void
 GrowParsetree(Parsetree_t *tr)
 {
+  int   status;
   void *tmp;
   tr->nalloc += tr->memblock;
   ESL_RALLOC(tr->emitl, tmp, sizeof(int) * tr->nalloc);
@@ -226,11 +229,11 @@ ParsetreeCount(CM_t *cm, Parsetree_t *tr, ESL_SQ *sq, float wgt)
 	  cm->t[v][z - cm->cfirst[v]] += wgt; 
 
 	if (cm->sttype[v] == MP_st) 
-	  PairCount(cm->e[v], sq->dsq[tr->emitl[tidx]], sq->dsq[tr->emitr[tidx]], wgt);
+	  PairCount(cm->abc, cm->e[v], sq->dsq[tr->emitl[tidx]], sq->dsq[tr->emitr[tidx]], wgt);
 	else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) 
-	  esl_abc_FCount(cm->e[v], sq->dsq[tr->emitl[tidx]], wgt);
+	  esl_abc_FCount(cm->abc, cm->e[v], sq->dsq[tr->emitl[tidx]], wgt);
 	else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) 
-	  esl_abc_FCount(cm->e[v], sq->dsq[tr->emitr[tidx]], wgt);
+	  esl_abc_FCount(cm->abc, cm->e[v], sq->dsq[tr->emitr[tidx]], wgt);
       }
   }
 }    
@@ -280,30 +283,30 @@ ParsetreeScore(CM_t *cm, Parsetree_t *tr, ESL_SQ *sq, int do_null2)
   	        if (symi < cm->abc->K && symj < cm->abc->K)
 	          sc += cm->esc[v][(int) (symi*cm->abc->K+symj)];
 	        else
-	          sc += DegeneratePairScore(cm->esc[v], symi, symj);
+	          sc += DegeneratePairScore(cm->abc, cm->esc[v], symi, symj);
               }
             else if (mode == 2)
-              sc += LeftMarginalScore(cm->esc[v], symi);
+              sc += LeftMarginalScore(cm->abc, cm->esc[v], symi);
             else if (mode == 1)
-              sc += RightMarginalScore(cm->esc[v], symj);
+              sc += RightMarginalScore(cm->abc, cm->esc[v], symj);
 	  } 
 	else if ( (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) && (mode == 3 || mode == 2) )
 	  {
-	    symi = dsq[tr->emitl[tidx]];
+	    symi = sq->dsq[tr->emitl[tidx]];
 	    if (symi < cm->abc->K) sc += cm->esc[v][(int) symi];
-	    else                      sc += DegenerateSingletScore(cm->esc[v], symi);
+	    else                   sc += esl_abc_FAvgScore(cm->abc, symi, cm->esc[v]);
 	  } 
 	else if ( (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && (mode == 3 || mode == 2) )
 	  {
-	    symj = dsq[tr->emitr[tidx]];
+	    symj = sq->dsq[tr->emitr[tidx]];
 	    if (symj < cm->abc->K) sc += cm->esc[v][(int) symj];
-	    else                      sc += DegenerateSingletScore(cm->esc[v], symj);
+	    else                   sc += esl_abc_FAvgScore(cm->abc, symj, cm->esc[v]);
 	  }
       }
   }
 
   if(do_null2)
-    sc -= CM_TraceScoreCorrection(cm, tr, dsq);
+    sc -= CM_TraceScoreCorrection(cm, tr, sq);
 
   return sc;
 }
@@ -371,7 +374,7 @@ PrintParsetree(FILE *fp, Parsetree_t *tr)
  * Returns:  (void)
  */
 void
-ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq, int *dmin, int *dmax)
+ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_SQ *sq, int *dmin, int *dmax)
 {
   int   x;
   char  syml, symr;
@@ -380,6 +383,7 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq, int *dmin, int *dm
   int   v,y;
   int   mode;
   int   do_banded;
+  int   L;
 
   /* Contract check */
   if(dmin == NULL && dmax != NULL)
@@ -425,10 +429,10 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq, int *dmin, int *dm
         else if (mode == 1) esc =  RightMarginalScore(cm->abc, cm->esc[v],                        sq->dsq[tr->emitr[x]]);
       } else if ( (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) && (mode == 3 || mode == 2) ) {
 	syml = cm->abc->sym[sq->dsq[tr->emitl[x]]];
-	esc  = DegenerateSingletScore(cm->esc[v], sq->dsq[tr->emitl[x]]);
+	esc  = esl_abc_FAvgScore(cm->abc, sq->dsq[tr->emitl[x]], cm->esc[v]);
       } else if ( (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) && (mode == 3 || mode == 1) ) {
 	symr = cm->abc->sym[sq->dsq[tr->emitr[x]]];
-	esc  = DegenerateSingletScore(cm->esc[v], sq->dsq[tr->emitr[x]]);
+	esc  = esl_abc_FAvgScore(cm->abc, sq->dsq[tr->emitr[x]], cm->esc[v]);
       }
 
       /* Set tsc: transition score, or 0.
@@ -1014,24 +1018,24 @@ ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, ESL_SQ *sq, int print_fla
 		  if (symi < cm->abc->K && symj < cm->abc->K)
 		    tr_esc[tidx] = cm->esc[v][(int) (symi*cm->abc->K+symj)];
 		  else
-		    tr_esc[tidx] = DegeneratePairScore(cm->esc[v], symi, symj);
+		    tr_esc[tidx] = DegeneratePairScore(cm->abc, cm->esc[v], symi, symj);
 		}
 	      else if (mode == 2)
-		tr_esc[tidx] = LeftMarginalScore(cm->esc[v], symi);
+		tr_esc[tidx] = LeftMarginalScore(cm->abc, cm->esc[v], symi);
 	      else if (mode == 1)
-		tr_esc[tidx] = RightMarginalScore(cm->esc[v], symj);
+		tr_esc[tidx] = RightMarginalScore(cm->abc, cm->esc[v], symj);
 	    } 
 	  else if ( (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) && (mode == 3 || mode == 2) )
 	    {
 	      symi = sq->dsq[tr->emitl[tidx]];
 	      if (symi < cm->abc->K) tr_esc[tidx] = cm->esc[v][(int) symi];
-	      else                      tr_esc[tidx] = DegenerateSingletScore(cm->esc[v], symi);
+	      else                   tr_esc[tidx] = esl_abc_FAvgScore(cm->abc, symi, cm->esc[v]);
 	    } 
 	  else if ( (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && (mode == 3 || mode == 2) )
 	    {
 	      symj = sq->dsq[tr->emitr[tidx]];
 	      if (symj < cm->abc->K) tr_esc[tidx] = cm->esc[v][(int) symj];
-	      else                      tr_esc[tidx] = DegenerateSingletScore(cm->esc[v], symj);
+	      else                   tr_esc[tidx] = esl_abc_FAvgScore(cm->abc, symj, cm->esc[v]);
 	    }
 	}
     }

@@ -9,6 +9,9 @@
  *****************************************************************  
  */
 
+#include "esl_config.h"
+#include "config.h"
+
 #include <string.h>
 #include <ctype.h>
 

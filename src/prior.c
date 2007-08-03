@@ -5,6 +5,10 @@
  * SRE, Thu Apr  7 10:44:13 2005
  * SVN $Id$
  */
+
+#include "esl_config.h"
+#include "config.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

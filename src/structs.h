@@ -220,15 +220,6 @@ typedef struct cmstats_s {
   CP9FilterThr_t **fthrA;    /* [0..NFTHRMODES-1] */
 } CMStats_t;
 
-/*****************************************************************
- * CM_BG: a null (background) model. (based on HMMER3's p7_BG)
- *****************************************************************/
-typedef struct cm_bg_s {
-  ESL_ALPHABET *abc;		/* reference to alphabet in use       */
-  /*float  p1;*/		/* null model's self-loop probability */
-  float *f;			/* residue frequencies [0..K-1] */
-} CM_BG;
-
 
 /* Stat modes, 
  * 0..NSTATMODES-1 are first dimension of cmstats->gumAA 
@@ -262,7 +253,8 @@ typedef struct cm_s {
   char *desc;		/*   optional description of the model, or NULL    */
   char *annote;         /*   consensus column annotation line, or NULL     */ /* ONLY PARTIALLY IMPLEMENTED, BEWARE */
 
-  CM_BG *bg;            /* the background (null) model                     */
+			/* Information about the null model:               */
+  float *null;          /*   residue probabilities [0..3]                  */
 
 			/* Information about the state type:               */
   int   M;		/*   number of states in the model                 */
@@ -347,7 +339,7 @@ typedef struct cm_s {
   int    nseq;			/* number of training sequences          (mandatory) */
   float  eff_nseq;		/* effective number of seqs (<= nseq)    (mandatory) */
   char  *ctime;			/* creation date                         (mandatory) */
-  const ESL_ALPHABET *abc; /* ptr to alphabet info (cm->abc->K is alphabet size) */
+  const  ESL_ALPHABET *abc;     /* ptr to alphabet info (cm->abc->K is alphabet size)*/
 } CM_t;
 
 /* status flags, cm->flags */

@@ -48,7 +48,6 @@ OBJS  = alphabet.o\
 	display.o\
 	emit.o\
 	emitmap.o\
-	globals.o\
 	modelconfig.o\
 	modelmaker.o\
 	parsetree.o\
