@@ -17,6 +17,7 @@
  *****************************************************************
  */
 
+#include "esl_config.h"
 #include "config.h"
 
 #include <stdio.h>
@@ -24,12 +25,12 @@
 #include <string.h>
 #include <ctype.h>
 #include <float.h>
-#include "squid.h"		/* general sequence analysis library    */
-#include "msa.h"                /* squid's multiple alignment i/o       */
-#include "stopwatch.h"          /* squid's process timing module        */
+
+#include "easel.h"
+#include "esl_stopwatch.c"
+
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
-#include "sre_stack.h"
 #include "hmmband.h"
 #include "cplan9.h"
 
@@ -51,31 +52,32 @@
 CP9Bands_t *
 AllocCP9Bands(CM_t *cm, struct cplan9_s *hmm)
 {
+  int status;
   CP9Bands_t  *cp9bands;
 
-  cp9bands = (struct cp9bands_s *) MallocOrDie (sizeof(struct cp9bands_s));
+  ESL_ALLOC(cp9bands, sizeof(CP9Bands_t));
 
   cp9bands->cm_M  = cm->M;
   cp9bands->hmm_M = hmm->M;
   
-  cp9bands->pn_min_m    = MallocOrDie(sizeof(int) * (cp9bands->hmm_M+1));
-  cp9bands->pn_max_m    = MallocOrDie(sizeof(int) * (cp9bands->hmm_M+1));
-  cp9bands->pn_min_i    = MallocOrDie(sizeof(int) * (cp9bands->hmm_M+1));
-  cp9bands->pn_max_i    = MallocOrDie(sizeof(int) * (cp9bands->hmm_M+1));
-  cp9bands->pn_min_d    = MallocOrDie(sizeof(int) * (cp9bands->hmm_M+1));
-  cp9bands->pn_max_d    = MallocOrDie(sizeof(int) * (cp9bands->hmm_M+1));
-  cp9bands->isum_pn_m   = MallocOrDie(sizeof(int) * (cp9bands->hmm_M+1));
-  cp9bands->isum_pn_i   = MallocOrDie(sizeof(int) * (cp9bands->hmm_M+1));
-  cp9bands->isum_pn_d   = MallocOrDie(sizeof(int) * (cp9bands->hmm_M+1));
+  ESL_ALLOC(cp9bands->pn_min_m, sizeof(int) * (cp9bands->hmm_M+1));
+  ESL_ALLOC(cp9bands->pn_max_m, sizeof(int) * (cp9bands->hmm_M+1));
+  ESL_ALLOC(cp9bands->pn_min_i, sizeof(int) * (cp9bands->hmm_M+1));
+  ESL_ALLOC(cp9bands->pn_max_i, sizeof(int) * (cp9bands->hmm_M+1));
+  ESL_ALLOC(cp9bands->pn_min_d, sizeof(int) * (cp9bands->hmm_M+1));
+  ESL_ALLOC(cp9bands->pn_max_d, sizeof(int) * (cp9bands->hmm_M+1));
+  ESL_ALLOC(cp9bands->isum_pn_m,sizeof(int) * (cp9bands->hmm_M+1));
+  ESL_ALLOC(cp9bands->isum_pn_i,sizeof(int) * (cp9bands->hmm_M+1));
+  ESL_ALLOC(cp9bands->isum_pn_d, sizeof(int) * (cp9bands->hmm_M+1));
 
-  cp9bands->imin        = MallocOrDie(sizeof(int)   * cp9bands->cm_M);
-  cp9bands->imax        = MallocOrDie(sizeof(int)   * cp9bands->cm_M);
-  cp9bands->jmin        = MallocOrDie(sizeof(int)   * cp9bands->cm_M);
-  cp9bands->jmax        = MallocOrDie(sizeof(int)   * cp9bands->cm_M);
-  cp9bands->safe_hdmin  = MallocOrDie(sizeof(int)   * cp9bands->cm_M);
-  cp9bands->safe_hdmax  = MallocOrDie(sizeof(int)   * cp9bands->cm_M);
-  cp9bands->hdmin       = MallocOrDie(sizeof(int *) * cp9bands->cm_M);
-  cp9bands->hdmax       = MallocOrDie(sizeof(int *) * cp9bands->cm_M);
+  ESL_ALLOC(cp9bands->imin,       sizeof(int)   * cp9bands->cm_M);
+  ESL_ALLOC(cp9bands->imax,       sizeof(int)   * cp9bands->cm_M);
+  ESL_ALLOC(cp9bands->jmin,       sizeof(int)   * cp9bands->cm_M);
+  ESL_ALLOC(cp9bands->jmax,       sizeof(int)   * cp9bands->cm_M);
+  ESL_ALLOC(cp9bands->safe_hdmin, sizeof(int)   * cp9bands->cm_M);
+  ESL_ALLOC(cp9bands->safe_hdmax, sizeof(int)   * cp9bands->cm_M);
+  ESL_ALLOC(cp9bands->hdmin,      sizeof(int *) * cp9bands->cm_M);
+  ESL_ALLOC(cp9bands->hdmax,      sizeof(int *) * cp9bands->cm_M);
   /* NOTE: cp9bands->hdmin and hdmax are 2D arrays, that are alloc'ed
    * inside hmmband.c::CP9_seq2bands() dependent on size of j bands
    * for each state. They are the only part of the CP9Bands_t data
@@ -84,6 +86,10 @@ AllocCP9Bands(CM_t *cm, struct cplan9_s *hmm)
    * in cm_dispatch::actually_align_targets()).
    */
   return cp9bands;
+
+ ERROR:
+  esl_fatal("Memory allocation error.\n");
+  return NULL; /* never reached */
 }
 
 /* Function: FreeCP9Bands() 
@@ -149,18 +155,19 @@ dbl_Score2Prob(int sc, float null)
  *           in the CP9Bands_t structure.
  *           
  * Args:     cm          - the covariance model
- *           dsq         - sequence in digitized form
- *           i0          - start of target subsequence (often 1, beginning of dsq)
- *           j0          - end of target subsequence (often L, end of dsq)
+ *           sq          - sequence in digitized form
+ *           i0          - start of target subsequence (often 1, beginning of sq)
+ *           j0          - end of target subsequence (often sq->n, end of sq)
  *           cp9b        - PRE-ALLOCATED, the HMM bands for this sequence, filled here.
  *           ret_cp9_post - RETURN: the HMM posterior matrix (NULL if not wanted)
  *           debug_level - verbosity level for debugging printf()s
  * Return:  void
  */
 void 
-CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t *cp9b, 
+CP9_seq2bands(CM_t *cm, ESL_SQ *sq, int i0, int j0, CP9Bands_t *cp9b, 
 	      CP9_dpmatrix_t **ret_cp9_post, int debug_level)
 {
+  int             status;
   Stopwatch_t    *watch;    /* for timings if cm->align_opts & CM_ALIGN_TIME             */
   int             use_sums; /* TRUE to fill and use posterior sums during HMM band calc  *
 			     * leads to wider bands                                      */
@@ -169,15 +176,17 @@ CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t *cp9b,
 
   /* Contract checks */
   if(cm->cp9 == NULL)
-    Die("ERROR in CP9_seq2bands, but cm->cp9 is NULL.\n");
+    esl_fatal("ERROR in CP9_seq2bands, but cm->cp9 is NULL.\n");
   if(cm->cp9map == NULL)
-    Die("ERROR in CP9_seq2bands, but cm->cp9map is NULL.\n");
+    esl_fatal("ERROR in CP9_seq2bands, but cm->cp9map is NULL.\n");
   if((cm->align_opts & CM_ALIGN_HBANDED) && (cm->search_opts & CM_SEARCH_HBANDED)) 
-    Die("ERROR in CP9_seq2bands, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
+    esl_fatal("ERROR in CP9_seq2bands, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
   if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED))) 
-    Die("ERROR in CP9_seq2bands, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
+    esl_fatal("ERROR in CP9_seq2bands, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
   if((cm->search_opts & CM_SEARCH_HMMSCANBANDS) && (!(cm->search_opts & CM_SEARCH_HBANDED))) 
-    Die("ERROR in CP9_seq2bands, CM_SEARCH_HMMSCANBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
+    esl_fatal("ERROR in CP9_seq2bands, CM_SEARCH_HMMSCANBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in CP9_seq2bands(), sq is not digitized.\n");
   
   use_sums = FALSE;
   if((cm->align_opts & CM_ALIGN_SUMS) || (cm->search_opts & CM_SEARCH_SUMS))
@@ -196,7 +205,7 @@ CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t *cp9b,
    */
 
   /* Step 1: Get HMM posteriors.*/
-  CP9_seq2posteriors(cm, dsq, i0, j0, &cp9_post, debug_level);
+  CP9_seq2posteriors(cm, sq, i0, j0, &cp9_post, debug_level);
 
   /* Step 2: posteriors -> HMM bands.*/
   if(use_sums) CP9_ifill_post_sums(cp9_post, cp9b, i0, j0);
@@ -229,8 +238,8 @@ CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t *cp9b,
   /* Use the CM bands on i and j to get bands on d, specific to j. */
   for(v = 0; v < cm->M; v++)
     {
-      cp9b->hdmin[v] = malloc(sizeof(int) * (cp9b->jmax[v] - cp9b->jmin[v] + 1));
-      cp9b->hdmax[v] = malloc(sizeof(int) * (cp9b->jmax[v] - cp9b->jmin[v] + 1));
+      ESL_ALLOC(cp9b->hdmin[v], sizeof(int) * (cp9b->jmax[v] - cp9b->jmin[v] + 1));
+      ESL_ALLOC(cp9b->hdmax[v], sizeof(int) * (cp9b->jmax[v] - cp9b->jmin[v] + 1));
     }
   ij2d_bands(cm, (j0-i0+1), cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax,
 	     cp9b->hdmin, cp9b->hdmax, debug_level);
@@ -244,6 +253,9 @@ CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t *cp9b,
   else
     FreeCPlan9Matrix(cp9_post);
   return;
+
+ ERROR:
+  esl_fatal("Memory allocation error.\n");
 }
 
 /*
@@ -255,9 +267,9 @@ CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t *cp9b,
  *           matrix.
  *           
  * Args:     cm           - the covariance model
- *           dsq          - sequence in digitized form
- *           i0           - start of target subsequence (often 1, beginning of dsq)
- *           j0           - end of target subsequence (often L, end of dsq)
+ *           sq           - sequence in digitized form
+ *           i0           - start of target subsequence (often 1, beginning of sq)
+ *           j0           - end of target subsequence (often sq->n, end of sq)
  *           ret_cp9_post - RETURN: the HMM posterior matrix for this sequence
  *           debug_level  - verbosity level for debugging printf()s
  *           
@@ -266,9 +278,12 @@ CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t *cp9b,
 #define OLDHMMALGS 0 /* use CP9ForwardOLD() and CP9BackwardOLD() */
 #define NEWHMMALGS 1 /* use CP9Forward() and CP9Backward() */
 void 
-CP9_seq2posteriors(CM_t *cm, char *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9_post,
+CP9_seq2posteriors(CM_t *cm, ESL_SQ *sq, int i0, int j0, CP9_dpmatrix_t **ret_cp9_post,
 		   int debug_level)
 {
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in CP9seq2posteriors(), sq is not digitized.\n");
+
   /*CP9_dpmatrix_t *cp9_mx;*/    /* growable DP matrix for viterbi                       */
   CP9_dpmatrix_t *cp9_fwd;       /* growable DP matrix for forward                       */
   CP9_dpmatrix_t *cp9_bck;       /* growable DP matrix for backward                      */
@@ -278,15 +293,15 @@ CP9_seq2posteriors(CM_t *cm, char *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9
 				  * that we'll use for a CM scan */
   /* Contract checks */
   if(cm->cp9 == NULL)
-    Die("ERROR in CP9_seq2posteriors, but cm->cp9 is NULL.\n");
+    esl_fatal("ERROR in CP9_seq2posteriors, but cm->cp9 is NULL.\n");
   if(cm->cp9map == NULL)
-    Die("ERROR in CP9_seq2posteriors, but cm->cp9map is NULL.\n");
+    esl_fatal("ERROR in CP9_seq2posteriors, but cm->cp9map is NULL.\n");
   if((cm->align_opts & CM_ALIGN_HBANDED) && (cm->search_opts & CM_SEARCH_HBANDED)) 
-    Die("ERROR in CP9_seq2posteriors, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
+    esl_fatal("ERROR in CP9_seq2posteriors, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
   if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED))) 
-    Die("ERROR in CP9_seq2posteriors, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
+    esl_fatal("ERROR in CP9_seq2posteriors, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
   if((cm->search_opts & CM_SEARCH_HMMSCANBANDS) && (!(cm->search_opts & CM_SEARCH_HBANDED))) 
-    Die("ERROR in CP9_seq2bands, CM_SEARCH_HMMSCANBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
+    esl_fatal("ERROR in CP9_seq2bands, CM_SEARCH_HMMSCANBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
 
   if(cm->search_opts & CM_SEARCH_HMMSCANBANDS)
     do_scan2bands = TRUE;
@@ -294,11 +309,11 @@ CP9_seq2posteriors(CM_t *cm, char *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9
     do_scan2bands = FALSE;
 
   /* Step 1: Get HMM posteriors.*/
-  /*sc = CP9ViterbiOLD(dsq, i0, j0, cm->cp9, cp9_mx);*/
+  /*sc = CP9ViterbiOLD(sq, i0, j0, cm->cp9, cp9_mx);*/
   if(OLDHMMALGS)
-    sc = CP9ForwardOLD(dsq, i0, j0, cm->cp9, &cp9_fwd);
+    sc = CP9ForwardOLD(sq, i0, j0, cm->cp9, &cp9_fwd);
   else if(NEWHMMALGS)
-    sc = CP9Forward(cm, dsq, i0, j0, (j0-i0+1), 
+    sc = CP9Forward(cm, sq, i0, j0, (j0-i0+1), 
 		    0,    /* cp9_cutoff score, irrelevant */
 		    NULL,  /* don't care about score of each posn */
 		    NULL,  /* don't care about best scoring start point */
@@ -311,9 +326,9 @@ CP9_seq2posteriors(CM_t *cm, char *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9
 
   if(debug_level > 0) printf("CP9 Forward  score : %.4f\n", sc);
   if(OLDHMMALGS)
-    sc = CP9BackwardOLD(dsq, i0, j0, cm->cp9, &cp9_bck);
+    sc = CP9BackwardOLD(sq, i0, j0, cm->cp9, &cp9_bck);
   else if(NEWHMMALGS)
-    sc = CP9Backward(cm, dsq, i0, j0, (j0-i0+1), 
+    sc = CP9Backward(cm, sq, i0, j0, (j0-i0+1), 
 		     0,    /* cp9_cutoff score, irrelevant */
 		     NULL,  /* don't care about score of each posn */
 		     NULL,  /* don't care about best scoring start point */
@@ -326,12 +341,12 @@ CP9_seq2posteriors(CM_t *cm, char *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9
 
   if(debug_level > 0) printf("CP9 Backward score : %.4f\n", sc);
   
-  /*debug_check_CP9_FB(cp9_fwd, cp9_bck, cm->cp9, sc, i0, j0, dsq);*/
+  /*debug_check_CP9_FB(cp9_fwd, cp9_bck, cm->cp9, sc, i0, j0, sq);*/
   cp9_post = cp9_bck;
   if(do_scan2bands)
-    CP9ScanPosterior(dsq, i0, j0, cm->cp9, cp9_fwd, cp9_bck, cp9_post);
+    CP9ScanPosterior(sq, i0, j0, cm->cp9, cp9_fwd, cp9_bck, cp9_post);
   else /* !doing_search */
-    CP9Posterior(dsq, i0, j0, cm->cp9, cp9_fwd, cp9_bck, cp9_post);
+    CP9Posterior(sq, i0, j0, cm->cp9, cp9_fwd, cp9_bck, cp9_post);
 
   FreeCPlan9Matrix(cp9_fwd);
   if(ret_cp9_post != NULL)
@@ -359,7 +374,7 @@ CP9_seq2posteriors(CM_t *cm, char *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9
  *           The scaling issue is dealt with by working in log space
  *           and calling ILogsum(); this is a slow but robust approach.
  *           
- * Args:     dsq    - sequence in digitized form
+ * Args:     sq     - sequence in digitized form
  *           i0     - start of target subsequence (often 1, beginning of dsq)
  *           j0     - end of target subsequence (often L, end of dsq)
  *           hmm    - the model
@@ -368,9 +383,12 @@ CP9_seq2posteriors(CM_t *cm, char *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9
  * Return:   log P(S|M)/P(S|R), as a bit score.
  */
 float
-CP9ForwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, 
+CP9ForwardOLD(ESL_SQ *sq, int i0, int j0, struct cplan9_s *hmm, 
 	      struct cp9_dpmatrix_s **ret_mx)
 {
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in CP9ForwardOLD(), sq is not digitized.\n");
+
   struct cp9_dpmatrix_s *mx;
   int **mmx;
   int **imx;
@@ -410,7 +428,7 @@ CP9ForwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm,
    */
   for (ip = 1; ip <= L; ip++) /* ip is the relative position in the seq */
     {
-      i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from i0 to j0 */
+      i = i0+ip-1;		/* e.g. i is actual index in sq, runs from i0 to j0 */
 
       mmx[ip][0] = dmx[ip][0] = -INFTY;  /*M_0 (B) and D_0 (non-existent)
 					 don't emit.
@@ -418,14 +436,14 @@ CP9ForwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm,
       imx[ip][0]  = ILogsum(ILogsum(mmx[ip-1][0] + hmm->tsc[CTMI][0],
 				    imx[ip-1][0] + hmm->tsc[CTII][0]),
 			    dmx[ip-1][0] + hmm->tsc[CTDI][0]);
-      imx[ip][0] += hmm->isc[(int) dsq[i]][0];
+      imx[ip][0] += hmm->isc[sq->dsq[i]][0];
       for (k = 1; k <= hmm->M; k++)
 	{
 	  mmx[ip][k]  = ILogsum(ILogsum(mmx[ip-1][k-1] + hmm->tsc[CTMM][k-1],
 				       imx[ip-1][k-1] + hmm->tsc[CTIM][k-1]),
 			       ILogsum(mmx[ip-1][0] + hmm->bsc[k],
 				       dmx[ip-1][k-1] + hmm->tsc[CTDM][k-1]));
-	  mmx[ip][k] += hmm->msc[(int) dsq[i]][k];
+	  mmx[ip][k] += hmm->msc[sq->dsq[i]][k];
 
 	  dmx[ip][k]  = ILogsum(ILogsum(mmx[ip][k-1] + hmm->tsc[CTMD][k-1],
 				       imx[ip][k-1] + hmm->tsc[CTID][k-1]),
@@ -434,7 +452,7 @@ CP9ForwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm,
 	  imx[ip][k]  = ILogsum(ILogsum(mmx[ip-1][k] + hmm->tsc[CTMI][k],
 				       imx[ip-1][k] + hmm->tsc[CTII][k]),
 			       dmx[ip-1][k] + hmm->tsc[CTDI][k]);
-	  imx[ip][k] += hmm->isc[(int) dsq[i]][k];
+	  imx[ip][k] += hmm->isc[sq->dsq[i]][k];
 	}
       erow[ip] = -INFTY;
       for (k = 1; k <= hmm->M; k++)
@@ -469,7 +487,7 @@ CP9ForwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm,
  *           This function is not enabled by default; it is only
  *           activated by -DSLOW at compile time.
  *           
- * Args:     dsq    - sequence in digitized form
+ * Args:     sq    - sequence in digitized form
  *           i0     - start of target subsequence (often 1, beginning of dsq)
  *           j0     - end of target subsequence (often L, end of dsq)
  *           hmm    - the model
@@ -479,9 +497,12 @@ CP9ForwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm,
  * Return:   log P(S|M)/P(S|R), as a bit score
  */
 float
-CP9ViterbiOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s *mx,
+CP9ViterbiOLD(ESL_SQ *sq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s *mx,
 	   CP9trace_t **ret_tr)
 {
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in CP9ViterbiOLD(), sq is not digitized.\n");
+
   CP9trace_t  *tr;
   int **mmx;
   int **imx;
@@ -536,7 +557,7 @@ CP9ViterbiOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatr
       if((sc = dmx[ip-1][0] + hmm->tsc[CTDI][0]) > imx[ip][0])
 	imx[ip][0] = sc;
       if(imx[ip][0] != -INFTY)
-	imx[ip][0] += hmm->isc[(int) dsq[i]][0];
+	imx[ip][0] += hmm->isc[sq->dsq[i]][0];
       else 
 	imx[ip][0] = -INFTY;
 
@@ -563,7 +584,7 @@ CP9ViterbiOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatr
 		}
 	    }
 	  if(mmx[ip][k] != -INFTY)
-	    mmx[ip][k] += hmm->msc[(int) dsq[i]][k];
+	    mmx[ip][k] += hmm->msc[sq->dsq[i]][k];
 	  else 
 	    mmx[ip][k] = -INFTY;
 
@@ -576,7 +597,7 @@ CP9ViterbiOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatr
 	  if((sc = dmx[ip-1][k] + hmm->tsc[CTDI][k]) > imx[ip][k])
 	    imx[ip][k] = sc;
 	  if(imx[ip][k] != -INFTY)
-	    imx[ip][k] += hmm->isc[(int) dsq[i]][k];
+	    imx[ip][k] += hmm->isc[sq->dsq[i]][k];
 	  else 
 	    imx[ip][k] = -INFTY;
 
@@ -621,7 +642,7 @@ CP9ViterbiOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatr
   printf("returing sc: %d from CPViterbi()\n", sc);
   
   if (ret_tr != NULL) {
-    CP9ViterbiTrace(hmm, dsq, i0, j0, mx, &tr);
+    CP9ViterbiTrace(hmm, sq, i0, j0, mx, &tr);
     /* CP9PrintTrace(stdout, tr, hmm, dsq); */
     *ret_tr = tr;
   }
@@ -637,7 +658,7 @@ CP9ViterbiOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatr
  *           The scaling issue is dealt with by working in log space
  *           and calling ILogsum(); this is a slow but robust approach.
  *           
- * Args:     dsq    - sequence in digitized form
+ * Args:     sq     - sequence in digitized form
  *           i0     - start of target subsequence (often 1, beginning of dsq)
  *           j0     - end of target subsequence (often L, end of dsq)
  *           hmm    - the model
@@ -646,8 +667,11 @@ CP9ViterbiOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatr
  * Return:   log P(S|M)/P(S|R), as a bit score.
  */
 float
-CP9BackwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s **ret_mx)
+CP9BackwardOLD(ESL_SQ *sq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s **ret_mx)
 {
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in CP9BackwardOLD(), sq is not digitized.\n");
+
   struct cp9_dpmatrix_s *mx;
   int **mmx;
   int **imx;
@@ -673,26 +697,26 @@ CP9BackwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmat
   erow[W] = 0; /*have to end in E*/
 
   mmx[W][hmm->M] = erow[W] + hmm->esc[hmm->M]; /* M<-E ...                   */
-  mmx[W][hmm->M] += hmm->msc[(int) dsq[i]][hmm->M]; /* ... + emitted match symbol */
+  mmx[W][hmm->M] += hmm->msc[sq->dsq[i]][hmm->M]; /* ... + emitted match symbol */
   /* can't come from I_M b/c we've emitted a single residue, L from M_M */
   imx[W][hmm->M] = erow[W] + hmm->tsc[CTIM][hmm->M];   /* I_M(C)<-E ... */
-  imx[W][hmm->M] += hmm->isc[(int) dsq[i]][hmm->M];           /* ... + emitted match symbol */
+  imx[W][hmm->M] += hmm->isc[sq->dsq[i]][hmm->M];           /* ... + emitted match symbol */
   dmx[W][hmm->M] = erow[W] + hmm->tsc[CTDM][hmm->M];    /* D_M<-E */
   for (k = hmm->M-1; k >= 1; k--)
     {
       mmx[W][k]  = hmm->esc[k] + erow[W];
       mmx[W][k]  = ILogsum(mmx[W][k], dmx[W][k+1] + hmm->tsc[CTMD][k]);
-      mmx[W][k] += hmm->msc[(int) dsq[i]][k];
+      mmx[W][k] += hmm->msc[sq->dsq[i]][k];
 
       imx[W][k] = dmx[W][k+1] + hmm->tsc[CTID][k];
-      imx[W][k] += hmm->isc[(int) dsq[i]][k];
+      imx[W][k] += hmm->isc[sq->dsq[i]][k];
 
       dmx[W][k] = dmx[W][k+1] + hmm->tsc[CTDD][k];
     }
   
   mmx[W][0] = -INFTY; /*M_0 doesn't emit*/
   imx[W][0] = dmx[W][1] + hmm->tsc[CTID][0];
-  imx[W][0] += hmm->isc[(int) dsq[i]][hmm->M];    
+  imx[W][0] += hmm->isc[sq->dsq[i]][hmm->M];    
   dmx[W][0] = -INFTY; /*D_0 doesn't exist*/
 
   /* Recursion. Done as a pull.
@@ -706,21 +730,21 @@ CP9BackwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmat
       /* Now the main states. Note the boundary conditions at M.
        */
       mmx[ip][hmm->M] = imx[ip+1][hmm->M] + hmm->tsc[CTMI][hmm->M];
-      mmx[ip][hmm->M] += hmm->msc[(int) dsq[i]][hmm->M];
+      mmx[ip][hmm->M] += hmm->msc[sq->dsq[i]][hmm->M];
       imx[ip][hmm->M] = imx[ip+1][hmm->M] + hmm->tsc[CTII][hmm->M];
-      imx[ip][hmm->M] += hmm->isc[(int) dsq[i]][hmm->M];
+      imx[ip][hmm->M] += hmm->isc[sq->dsq[i]][hmm->M];
       dmx[ip][hmm->M] = imx[ip+1][hmm->M] + hmm->tsc[CTDI][hmm->M];  /* * */
       for (k = hmm->M-1; k >= 1; k--)
 	{
 	  mmx[ip][k]  = ILogsum(ILogsum(mmx[ip+1][k+1] + hmm->tsc[CTMM][k],
 				       imx[ip+1][k] + hmm->tsc[CTMI][k]),
 				dmx[ip][k+1] + hmm->tsc[CTMD][k]);
-	  mmx[ip][k] += hmm->msc[(int) dsq[i]][k];
+	  mmx[ip][k] += hmm->msc[sq->dsq[i]][k];
 	  
 	  imx[ip][k]  = ILogsum(ILogsum(mmx[ip+1][k+1] + hmm->tsc[CTIM][k],
 				       imx[ip+1][k] + hmm->tsc[CTII][k]),
 			       dmx[ip][k+1] + hmm->tsc[CTID][k]);
-	  imx[ip][k] += hmm->isc[(int) dsq[i]][k];
+	  imx[ip][k] += hmm->isc[sq->dsq[i]][k];
 	  
 	  dmx[ip][k]  = ILogsum(ILogsum(mmx[ip+1][k+1] + hmm->tsc[CTDM][k],
 				       imx[ip+1][k] + hmm->tsc[CTDI][k]),
@@ -730,7 +754,7 @@ CP9BackwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmat
       imx[ip][0]  = ILogsum(ILogsum(mmx[ip+1][1] + hmm->tsc[CTIM][0],
 				    imx[ip+1][0] + hmm->tsc[CTII][0]),
 			    dmx[ip][1] + hmm->tsc[CTID][0]);
-      imx[ip][0] += hmm->isc[(int) dsq[i]][0];
+      imx[ip][0] += hmm->isc[sq->dsq[i]][0];
       mmx[ip][0] = -INFTY;
       /*for (k = hmm->M-1; k >= 1; k--)*/ /*M_0 is the B state, it doesn't emit*/
       for (k = hmm->M; k >= 1; k--) /*M_0 is the B state, it doesn't emit*/
@@ -792,7 +816,7 @@ CP9BackwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmat
  *           backward matrix can be used instead (overwriting it will not
  *           compromise the algorithm).
  *           
- * Args:     dsq      - sequence in digitized form
+ * Args:     sq       - sequence in digitized form
  *           i0       - start of target subsequence (often 1, beginning of dsq)
  *           j0       - end of target subsequence (often L, end of dsq)
  *           hmm      - the model
@@ -803,12 +827,15 @@ CP9BackwardOLD(char *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmat
  * Return:   void
  */
 void
-CP9Posterior(char *dsq, int i0, int j0,
+CP9Posterior(ESL_SQ *sq, int i0, int j0,
 	     struct cplan9_s *hmm,
 	     struct cp9_dpmatrix_s *fmx,
 	     struct cp9_dpmatrix_s *bmx,
 	     struct cp9_dpmatrix_s *mx)
 {
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in CP9Posterior(), sq is not digitized.\n");
+
   int i;
   int k;
   int sc;
@@ -835,8 +862,8 @@ CP9Posterior(char *dsq, int i0, int j0,
     {
       i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from i0 to j0 */
       mx->mmx[ip][0] = -INFTY; /*M_0 does not emit*/
-      mx->imx[ip][0] = fmx->imx[ip][0] + bmx->imx[ip][0] - hmm->isc[(int) dsq[i]][0] - sc;
-      /*hmm->isc[(int) dsq[i]][0] will have been counted in both fmx->imx and bmx->imx*/
+      mx->imx[ip][0] = fmx->imx[ip][0] + bmx->imx[ip][0] - hmm->isc[sq->dsq[i]][0] - sc;
+      /*hmm->isc[sq->dsq[i]][0] will have been counted in both fmx->imx and bmx->imx*/
       mx->dmx[ip][0] = -INFTY; /*D_0 does not exist*/
 
       /*printf("fmx->mmx[ip:%d][0]: %d\n bmx->mmx[ip:%d][0]: %d\n", ip, fmx->mmx[ip][0], ip, bmx->mmx[ip][0]);
@@ -844,10 +871,10 @@ CP9Posterior(char *dsq, int i0, int j0,
 	printf("fmx->dmx[ip:%d][0]: %d\n bmx->dmx[ip:%d][0]: %d\n", ip, fmx->dmx[ip][0], ip, bmx->dmx[ip][0]);*/
       for (k = 1; k <= hmm->M; k++) 
 	{
-	  mx->mmx[ip][k] = fmx->mmx[ip][k] + bmx->mmx[ip][k] - hmm->msc[(int) dsq[i]][k] - sc;
-	  /*hmm->msc[(int) dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
-	  mx->imx[ip][k] = fmx->imx[ip][k] + bmx->imx[ip][k] - hmm->isc[(int) dsq[i]][k] - sc;
-	  /*hmm->isc[(int) dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
+	  mx->mmx[ip][k] = fmx->mmx[ip][k] + bmx->mmx[ip][k] - hmm->msc[sq->dsq[i]][k] - sc;
+	  /*hmm->msc[sq->dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
+	  mx->imx[ip][k] = fmx->imx[ip][k] + bmx->imx[ip][k] - hmm->isc[sq->dsq[i]][k] - sc;
+	  /*hmm->isc[sq->dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
 	  mx->dmx[ip][k] = fmx->dmx[ip][k] + bmx->dmx[ip][k] - sc;
 	  /*printf("fmx->mmx[ip:%d][%d]: %d\n bmx->mmx[ip:%d][%d]: %d\n", ip, k, fmx->mmx[ip][k], ip, k, bmx->mmx[ip][k]);
 	  printf("fmx->imx[ip:%d][%d]: %d\n bmx->imx[ip:%d][%d]: %d\n", ip, k, fmx->imx[ip][k], ip, k, bmx->imx[ip][k]);
@@ -1138,6 +1165,7 @@ hmm2ij_bands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
 	     int *pn_max_d, int *imin, int *imax, int *jmin, int *jmax, 
 	     int debug_level)
 {
+  int status;
   int v;            /* counter over states of the CM */
   int die_flag;
   char **sttypes;
@@ -1168,29 +1196,29 @@ hmm2ij_bands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
   int doing_search; /* TRUE if bands will be used to accelerate search, FALSE for alignment */
   /* Contract checks */
   if((cm->align_opts & CM_ALIGN_HBANDED) && (cm->search_opts & CM_SEARCH_HBANDED)) 
-    Die("ERROR in hmm2ij_bands(), CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
+    esl_fatal("ERROR in hmm2ij_bands(), CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
   if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED))) 
-    Die("ERROR in hmm2ij_bands(), CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
+    esl_fatal("ERROR in hmm2ij_bands(), CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
 
   if(cm->search_opts & CM_SEARCH_HBANDED)
     doing_search = TRUE;
   else
     doing_search = FALSE;
 
-  nss_imin = malloc(sizeof(int) * cm->nodes);
-  nss_imax = malloc(sizeof(int) * cm->nodes);
-  nss_jmin = malloc(sizeof(int) * cm->nodes);
-  nss_jmax = malloc(sizeof(int) * cm->nodes);
+  ESL_ALLOC(nss_imin, sizeof(int) * cm->nodes);
+  ESL_ALLOC(nss_imax, sizeof(int) * cm->nodes);
+  ESL_ALLOC(nss_jmin, sizeof(int) * cm->nodes);
+  ESL_ALLOC(nss_jmax, sizeof(int) * cm->nodes);
 
-  nis_imin = malloc(sizeof(int) * cm->nodes);
-  nis_imax = malloc(sizeof(int) * cm->nodes);
-  nis_jmin = malloc(sizeof(int) * cm->nodes);
-  nis_jmax = malloc(sizeof(int) * cm->nodes);
+  ESL_ALLOC(nis_imin, sizeof(int) * cm->nodes);
+  ESL_ALLOC(nis_imax, sizeof(int) * cm->nodes);
+  ESL_ALLOC(nis_jmin, sizeof(int) * cm->nodes);
+  ESL_ALLOC(nis_jmax, sizeof(int) * cm->nodes);
 
-  nss_max_imin = malloc(sizeof(int) * cm->nodes);
-  nss_min_jmax = malloc(sizeof(int) * cm->nodes);
+  ESL_ALLOC(nss_max_imin, sizeof(int) * cm->nodes);
+  ESL_ALLOC(nss_min_jmax, sizeof(int) * cm->nodes);
 
-  sttypes = malloc(sizeof(char *) * 10);
+  ESL_ALLOC(sttypes, sizeof(char *) * 10);
   sttypes[0] = "D";
   sttypes[1] = "MP";
   sttypes[2] = "ML";
@@ -1202,7 +1230,7 @@ hmm2ij_bands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
   sttypes[8] = "B";
   sttypes[9] = "EL";
 
-  nodetypes = malloc(sizeof(char *) * 8);
+  ESL_ALLOC(nodetypes, sizeof(char *) * 8);
   nodetypes[0] = "BIF";
   nodetypes[1] = "MATP";
   nodetypes[2] = "MATL";
@@ -1977,6 +2005,9 @@ hmm2ij_bands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
 
   free(sttypes);
   free(nodetypes);
+
+ ERROR:
+  esl_fatal("Memory allocation error.\n");
 }
 
 /**************************************************************************
@@ -2373,6 +2404,7 @@ void
 ij_banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax, 
 			  int *jmin, int *jmax, int debug_level)
 {
+  int status;
   int v, i, j, d, tpos;
   int imindiff;            /* i - imin[v] */
   int imaxdiff;            /* imax[v] - i */
@@ -2385,7 +2417,7 @@ ij_banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax,
   char **sttypes;
   char **nodetypes;
 
-  sttypes = malloc(sizeof(char *) * 10);
+  ESL_ALLOC(sttypes, sizeof(char *) * 10);
   sttypes[0] = "D";
   sttypes[1] = "MP";
   sttypes[2] = "ML";
@@ -2397,7 +2429,7 @@ ij_banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax,
   sttypes[8] = "B";
   sttypes[9] = "EL";
 
-  nodetypes = malloc(sizeof(char *) * 8);
+  ESL_ALLOC(nodetypes, sizeof(char *) * 8);
   nodetypes[0] = "BIF";
   nodetypes[1] = "MATP";
   nodetypes[2] = "MATL";
@@ -2463,6 +2495,9 @@ ij_banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax,
 
   free(sttypes);
   free(nodetypes);
+
+ ERROR:
+  esl_fatal("Memory allocation error.\n");
 }
 
 
@@ -2495,6 +2530,7 @@ void
 ijd_banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax, 
 			   int *jmin, int *jmax, int **hdmin, int **hdmax, int debug_level)
 {
+  int status;
   int v, i, j, d, tpos;
   int imindiff;            /* i - imin[v] */
   int imaxdiff;            /* imax[v] - i */
@@ -2514,7 +2550,7 @@ ijd_banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax,
   char **sttypes;
   char **nodetypes;
 
-  sttypes = malloc(sizeof(char *) * 10);
+  ESL_ALLOC(sttypes, sizeof(char *) * 10);
   sttypes[0] = "D";
   sttypes[1] = "MP";
   sttypes[2] = "ML";
@@ -2526,7 +2562,7 @@ ijd_banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax,
   sttypes[8] = "B";
   sttypes[9] = "EL";
 
-  nodetypes = malloc(sizeof(char *) * 8);
+  ESL_ALLOC(nodetypes, sizeof(char *) * 8);
   nodetypes[0] = "BIF";
   nodetypes[1] = "MATP";
   nodetypes[2] = "MATL";
@@ -2623,6 +2659,9 @@ ijd_banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax,
 
   free(sttypes);
   free(nodetypes);
+
+ ERROR:
+  esl_fatal("Memory allocation error.\n");
 }
 
 
@@ -2649,8 +2688,11 @@ ijd_banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax,
  */
 void
 debug_check_CP9_FB(struct cp9_dpmatrix_s *fmx, struct cp9_dpmatrix_s *bmx, 
-		   struct cplan9_s *hmm, float sc, int i0, int j0, char *dsq)
+		   struct cplan9_s *hmm, float sc, int i0, int j0, ESL_SQ *sq)
 {
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in debug_check_CP9_FB(), sq is not digitized.\n");
+
   int k, i;
   float max_diff;  /* maximum allowed difference between sc and 
 		    * sum_k f[i][k] * b[i][k] for any i
@@ -2682,24 +2724,24 @@ debug_check_CP9_FB(struct cp9_dpmatrix_s *fmx, struct cp9_dpmatrix_s *bmx,
 	  else 
 	    {
 	      to_add = fmx->mmx[ip][k] + bmx->mmx[ip][k];
-	      if(k > 0) to_add -= hmm->msc[(int) dsq[i]][k];
+	      if(k > 0) to_add -= hmm->msc[sq->dsq[i]][k];
 	    }
-	  /* hmm->msc[(int) dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx
+	  /* hmm->msc[sq->dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx
 	   * unless, we're talking about M_0, the B state, it doesn't emit */
 	  fb_sum = ILogsum(fb_sum, to_add);
 	  printf("fmx->mmx[ip:%d][k:%d]: %d\n", ip, k, fmx->mmx[ip][k]);
-	  printf("bmx->mmx[ip:%d][k:%d]: %d sum: %d\n", ip, k, (bmx->mmx[ip][k]-hmm->msc[(int) dsq[i]][k]), fb_sum);
+	  printf("bmx->mmx[ip:%d][k:%d]: %d sum: %d\n", ip, k, (bmx->mmx[ip][k]-hmm->msc[sq->dsq[i]][k]), fb_sum);
 	  if(fmx->imx[ip][k] == -INFTY) to_add = -INFTY;
 	  else if(bmx->imx[ip][k] == -INFTY) to_add = -INFTY;
 	  else 
 	    {
 	      to_add = fmx->imx[ip][k] + bmx->imx[ip][k]; 
-	      to_add -= hmm->isc[(int) dsq[i]][k];
+	      to_add -= hmm->isc[sq->dsq[i]][k];
 	    }
-	  /*hmm->isc[(int) dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
+	  /*hmm->isc[sq->dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
 	  fb_sum = ILogsum(fb_sum, to_add);
 	  printf("fmx->imx[ip:%d][k:%d]: %d\n", ip, k, fmx->imx[ip][k]);
-	  printf("bmx->imx[ip:%d][k:%d]: %d sum: %d\n", ip, k, (bmx->imx[ip][k]-hmm->isc[(int) dsq[i]][k]), fb_sum);
+	  printf("bmx->imx[ip:%d][k:%d]: %d sum: %d\n", ip, k, (bmx->imx[ip][k]-hmm->isc[sq->dsq[i]][k]), fb_sum);
 	  /*fb_sum = ILogsum(fb_sum, fmx->dmx[ip][k] + bmx->dmx[ip][k]);*/
 	  printf("fmx->dmx[ip:%d][k:%d]: %d\n",   ip, k, fmx->dmx[ip][k]);
 	  printf("bmx->dmx[ip:%d][k:%d]: %d\n\n", ip, k, bmx->dmx[ip][k]);
@@ -2913,6 +2955,7 @@ void
 P7_map_cm2hmm_and_hmm2cm(CM_t *cm, struct plan7_s *hmm, int *node_cc_left, int *node_cc_right, int *cc_node_map, int ***ret_cs2hn_map, int ***ret_cs2hs_map, int ****ret_hns2cs_map, int debug_level)
 {
 
+  int status;
   int k; /* HMM node counter */
   int ks; /* HMM state counter (0(Match) 1(insert) or 2(delete)*/
   int n; /* CM node that maps to HMM node k */
@@ -2927,22 +2970,23 @@ P7_map_cm2hmm_and_hmm2cm(CM_t *cm, struct plan7_s *hmm, int *node_cc_left, int *
   int ***hns2cs_map;
 
   /* Allocate the maps */
-  cs2hn_map     = malloc(sizeof(int *) * (cm->M+1));
-  for(v = 0; v <= cm->M; v++)
-    cs2hn_map[v]     = malloc(sizeof(int) * 2);
+  ESL_ALLOC(cs2hn_map, sizeof(int *) * (cm->M+1));
+  ESL_ALLOC(cs2hn_map[0], sizeof(int) * 2 * (cm->M+1));
+  for(v = 0; v <= cm->M; v++) cs2hn_map[v]     = cs2hn_map[0] + v * 2; 
   
-  cs2hs_map     = malloc(sizeof(int *) * (cm->M+1));
-  for(v = 0; v <= cm->M; v++)
-    cs2hs_map[v]     = malloc(sizeof(int) * 2);
-  
-  hns2cs_map    = malloc(sizeof(int **) * (hmm->M+1));
-  for(k = 0; k <= hmm->M; k++)
-    {
-      hns2cs_map[k]    = malloc(sizeof(int *) * 3);
-      for(ks = 0; ks < 3; ks++)
-	hns2cs_map[k][ks]= malloc(sizeof(int) * 2);
-    }
+  ESL_ALLOC(cs2hs_map, sizeof(int *) * (cm->M+1));
+  ESL_ALLOC(cs2hs_map[0], sizeof(int) * 2 * (cm->M+1));
+  for(v = 0; v <= cm->M; v++) cs2hs_map[v]     = cs2hs_map[0] + v * 2; 
 
+  ESL_ALLOC(hns2cs_map, sizeof(int *) * (hmm->M+1));
+  ESL_ALLOC(hns2cs_map[0], sizeof(int) * 3 * 2 * (cm->M+1));
+  for(k = 0; k <= hmm->M; k++) 
+    {
+      hns2cs_map[k] = hns2cs_map[0] + k * 3 * 2; 
+      for(ks = 0; ks < 3; ks++) 
+	hns2cs_map[k][ks]    = hns2cs_map[k] + ks; 
+    }	
+      
   /* Initialize the maps */
   for(v = 0; v <= cm->M; v++)
     {
@@ -3253,6 +3297,8 @@ P7_map_cm2hmm_and_hmm2cm(CM_t *cm, struct plan7_s *hmm, int *node_cc_left, int *
   *ret_cs2hs_map = cs2hs_map;
   *ret_hns2cs_map = hns2cs_map;
   return;
+ ERROR:
+  esl_fatal("Memory allocation error.\n");
 }
 
 /*****************************************************************************

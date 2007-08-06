@@ -46,7 +46,7 @@ static void createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface);
  * Xref:      STL6 p.58
  */
 Fancyali_t *
-CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
+CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_SQ *sq)
 {
   int         status;
   Fancyali_t *ali;              /* alignment structure we're building        */
@@ -178,8 +178,8 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
       nd = cm->ndidx[v];	  /* what CM node we're in */
       lc   = cons->lpos[nd];	  /* where CM node aligns to in consensus */
       rc   = cons->rpos[nd];
-      symi = dsq[tr->emitl[ti]];  /* residue indices that node is aligned to */
-      symj = dsq[tr->emitr[ti]];
+      symi = sq->dsq[tr->emitl[ti]];  /* residue indices that node is aligned to */
+      symj = sq->dsq[tr->emitr[ti]];
       d = tr->emitr[ti] - tr->emitl[ti] + 1;
       mode = tr->mode[ti];
 
@@ -262,7 +262,7 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
         else if ( (mode != 3) && (mode != 2) )
           ;
 	else if(esl_abc_FAvgScore(cm->abc, symi, cm->esc[v]) > 0)
-
+	  lmid = '+';
       } else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) {
 	if (rseq == toupper(rcons)) 
 	  rmid = rseq;

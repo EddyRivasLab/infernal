@@ -17,14 +17,14 @@
 #define USED_EL          102
 
 /* Alignment engine */
-float trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
+float trinside (CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_full,
                 void ****ret_shadow, void ****ret_L_shadow, void ****ret_R_shadow,
                 void ****ret_T_shadow, void ****ret_Lmode_shadow, void ****ret_Rmode_shadow,
                 int *ret_mode, int *ret_v, int *ret_i, int *ret_j);
 
 
 /* Traceback routine */
-float trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
+float trinsideT(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, int r, int z,
                 int i0, int j0, int allow_begin, int *dmin, int *dmax);
 
 /* Function: TrCYKInside()
@@ -37,7 +37,6 @@ float trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
  *
  * Args:     cm      - the covariance model
  *           dsq     - the sequence, 1..L
- *           L       - length of the sequence
  *           r       - root of subgraph to align to target subseq (usually 0, the model's root)
  *           i0      - start of target subsequence (usually 1, beginning of dsq)
  *           j0      - end of target subsequence (usually L, end of dsq)
@@ -48,21 +47,24 @@ float trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
  * Returns;  score of the alignment in bits
  */
 float
-TrCYKInside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr,
+TrCYKInside(CM_t *cm, ESL_SQ *sq, int r, int i0, int j0, Parsetree_t **ret_tr,
             int *dmin, int *dmax)
 {
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in TrCYKInside(), sq is not digitized.\n");
+
    Parsetree_t *tr;
    int          z;
    float        sc;
-
+  
    /* Check input parameters */
    if ( cm->stid[r] != ROOT_S )
    {
-      if (! (cm->flags & CM_LOCAL_BEGIN)) Die("internal error: we're not in local mode, but r is not root");
+      if (! (cm->flags & CM_LOCAL_BEGIN)) esl_fatal("internal error: we're not in local mode, but r is not root");
       if ( (cm->stid[r] != MATP_MP) &&
            (cm->stid[r] != MATL_ML) &&
            (cm->stid[r] != MATR_MR) &&
-           (cm->stid[r] != BIF_B  )    )  Die("internal error: trying to do a local begin at a non-mainline start");
+           (cm->stid[r] != BIF_B  )    )  esl_fatal("internal error: trying to do a local begin at a non-mainline start");
    }
 
    /* Create parse tree and initialize */
@@ -80,7 +82,7 @@ TrCYKInside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret
    }
 
    /* Solve by calling trinsideT() */
-   sc += trinsideT(cm, dsq, L, tr, r, z, i0, j0, (r==0), dmin, dmax);
+   sc += trinsideT(cm, sq, tr, r, z, i0, j0, (r==0), dmin, dmax);
 
    if ( ret_tr != NULL ) *ret_tr = tr; else FreeParsetree(tr);
 
@@ -97,12 +99,11 @@ TrCYKInside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret
  *           within this func, not available to caller
  *
  * Args:     cm      - the covariance model
- *           dsq     - the sequence, 1..L
- *           L       - length of the sequence
+ *           sq      - the sequence, 1..sq->n
  *           r       - root of subgraph to align to target subseq (usually 0, the model's root)
  *           z       - last state of the subgraph
- *           i0      - start of target subsequence (usually 1, beginning of dsq)
- *           j0      - end of target subsequence (usually L, end of dsq)
+ *           i0      - start of target subsequence (usually 1, beginning of sq)
+ *           j0      - end of target subsequence (usually L, end of sq)
  *           do_full - if TRUE, save all decks rather than re-using
  * 
  *           allow_begin - TRUE to allow 0->b local alignment begin transitions
@@ -113,7 +114,7 @@ TrCYKInside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret
  * Returns:  Score of the optimal alignment
  */
 float
-trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
+trinside (CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_full,
           void ****ret_shadow, void ****ret_L_shadow, void ****ret_R_shadow,
           void ****ret_T_shadow, void ****ret_Lmode_shadow, void ****ret_Rmode_shadow,
           int *ret_mode, int *ret_v, int *ret_i, int *ret_j)
@@ -167,7 +168,7 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
    /* Make a deckpool */
    if ( dpool == NULL ) dpool = deckpool_create();
    if (! deckpool_pop(dpool, &end) )
-   {  end = alloc_vjd_deck(L, i0, j0); }
+   {  end = alloc_vjd_deck(sq->n, i0, j0); }
    nends = CMSubtreeCountStatetype(cm, vroot, E_st);
    for ( jp=0; jp<=W; jp++ )
    {
@@ -247,25 +248,25 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
       }
       /* Assign alpha decks */
       if (! deckpool_pop(dpool, &(alpha[v])) )
-      {  alpha[v] = alloc_vjd_deck(L, i0, j0); }
+      {  alpha[v] = alloc_vjd_deck(sq->n, i0, j0); }
       if (! deckpool_pop(dpool, &(L_alpha[v])) )
-      {  L_alpha[v] = alloc_vjd_deck(L, i0, j0); }
+      {  L_alpha[v] = alloc_vjd_deck(sq->n, i0, j0); }
       if (! deckpool_pop(dpool, &(R_alpha[v])) )
-      {  R_alpha[v] = alloc_vjd_deck(L, i0, j0); }
+      {  R_alpha[v] = alloc_vjd_deck(sq->n, i0, j0); }
       if ( (cm->sttype[v] == B_st) && (! deckpool_pop(dpool, &(T_alpha[v])) ) )
-      {  T_alpha[v] = alloc_vjd_deck(L, i0, j0); }
+      {  T_alpha[v] = alloc_vjd_deck(sq->n, i0, j0); }
 
       /* Assign shadow decks */
       if ( ret_shadow != NULL )
       {
          if ( cm->sttype[v] == B_st )
          {
-            kshad = alloc_vjd_kshadow_deck(L, i0, j0);
+            kshad = alloc_vjd_kshadow_deck(sq->n, i0, j0);
             shadow[v] = (void **) kshad;
          }
          else
          {
-            yshad = alloc_vjd_yshadow_deck(L, i0, j0);
+            yshad = alloc_vjd_yshadow_deck(sq->n, i0, j0);
             shadow[v] = (void **) yshad;
          }
       }
@@ -273,12 +274,12 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
       {
          if ( cm->sttype[v] == B_st )
          {
-            kshad = alloc_vjd_kshadow_deck(L, i0, j0);
+            kshad = alloc_vjd_kshadow_deck(sq->n, i0, j0);
             L_shadow[v] = (void **) kshad;
          }
          else
          {
-            yshad = alloc_vjd_yshadow_deck(L, i0, j0);
+            yshad = alloc_vjd_yshadow_deck(sq->n, i0, j0);
             L_shadow[v] = (void **) yshad;
          }
       }
@@ -286,12 +287,12 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
       {
          if ( cm->sttype[v] == B_st )
          {
-            kshad = alloc_vjd_kshadow_deck(L, i0, j0);
+            kshad = alloc_vjd_kshadow_deck(sq->n, i0, j0);
             R_shadow[v] = (void **) kshad;
          }
          else
          {
-            yshad = alloc_vjd_yshadow_deck(L, i0, j0);
+            yshad = alloc_vjd_yshadow_deck(sq->n, i0, j0);
             R_shadow[v] = (void **) yshad;
          }
       }
@@ -299,18 +300,18 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
       {
          if ( cm->sttype[v] == B_st )
          {
-            kshad = alloc_vjd_kshadow_deck(L, i0, j0);
+            kshad = alloc_vjd_kshadow_deck(sq->n, i0, j0);
             T_shadow[v] = (void **) kshad;
          }
       }
       if ( ret_Lmode_shadow != NULL )
       {
-         kshad = alloc_vjd_kshadow_deck(L, i0, j0);
+         kshad = alloc_vjd_kshadow_deck(sq->n, i0, j0);
          Lmode_shadow[v] = (int **) kshad;
       }
       if ( ret_Rmode_shadow != NULL )
       {
-         kshad = alloc_vjd_kshadow_deck(L, i0, j0);
+         kshad = alloc_vjd_kshadow_deck(sq->n, i0, j0);
          Rmode_shadow[v] = (int **) kshad;
       }
 
@@ -472,10 +473,10 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
             L_alpha[v][j][0] = IMPOSSIBLE;
             R_alpha[v][j][0] = IMPOSSIBLE;;
             if ( jp > 0 ) { alpha[v][j][1] = IMPOSSIBLE; }
-            if ( dsq[j] < Alphabet_size ) { L_alpha[v][j][1] =  LeftMarginalScore(cm->esc[v],dsq[j]); }
-            else { Die("Still can't deal with marginalizing degenerate residues!"); }
-            if ( dsq[j] < Alphabet_size ) { R_alpha[v][j][1] = RightMarginalScore(cm->esc[v],dsq[j]); }
-            else { Die("Still can't deal with marginalizing degenerate residues!"); }
+            if ( sq->dsq[j] < cm->abc->K ) { L_alpha[v][j][1] =  LeftMarginalScore(cm->abc, cm->esc[v],sq->dsq[j]); }
+            else { esl_fatal("Still can't deal with marginalizing degenerate residues!"); }
+            if ( sq->dsq[j] < cm->abc->K ) { R_alpha[v][j][1] = RightMarginalScore(cm->abc, cm->esc[v],sq->dsq[j]); }
+            else { esl_fatal("Still can't deal with marginalizing degenerate residues!"); }
             if ( ret_L_shadow != NULL ) { ((char **)L_shadow[v])[j][d] = USED_EL; }
             if ( ret_R_shadow != NULL ) { ((char **)R_shadow[v])[j][d] = USED_EL; }
             for ( d=2; d<=jp; d++)
@@ -521,18 +522,18 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                }
 
                i = j-d+1;
-               if ( dsq[i] < Alphabet_size && dsq[j] < Alphabet_size )
-               {  alpha[v][j][d] += cm->esc[v][(int) (dsq[i]*Alphabet_size+dsq[j])]; }
+               if ( sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K )
+               {  alpha[v][j][d] += cm->esc[v][(int) (sq->dsq[i]*cm->abc->K+sq->dsq[j])]; }
                else
-               {  alpha[v][j][d] += DegeneratePairScore(cm->esc[v], dsq[i], dsq[j]); }
-               if ( dsq[i] < Alphabet_size )
-               { L_alpha[v][j][d] +=  LeftMarginalScore(cm->esc[v],dsq[i]); }
+               {  alpha[v][j][d] += DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i], sq->dsq[j]); }
+               if ( sq->dsq[i] < cm->abc->K )
+               { L_alpha[v][j][d] +=  LeftMarginalScore(cm->abc, cm->esc[v],sq->dsq[i]); }
                else
-               { Die("Still can't deal with marginalizing degenerate residues!"); }
-               if ( dsq[j] < Alphabet_size )
-               { R_alpha[v][j][d] += RightMarginalScore(cm->esc[v],dsq[j]); }
+               { esl_fatal("Still can't deal with marginalizing degenerate residues!"); }
+               if ( sq->dsq[j] < cm->abc->K )
+               { R_alpha[v][j][d] += RightMarginalScore(cm->abc, cm->esc[v],sq->dsq[j]); }
                else
-               { Die("Still can't deal with marginalizing degenerate residues!"); }
+               { esl_fatal("Still can't deal with marginalizing degenerate residues!"); }
 
                if (   alpha[v][j][d] < IMPOSSIBLE ) {   alpha[v][j][d] = IMPOSSIBLE; }
                if ( L_alpha[v][j][d] < IMPOSSIBLE ) { L_alpha[v][j][d] = IMPOSSIBLE; }
@@ -600,15 +601,16 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                }
 
                i = j-d+1;
-               if ( dsq[i] < Alphabet_size ) 
+               if ( sq->dsq[i] < cm->abc->K ) 
                {
-                    alpha[v][j][d] += cm->esc[v][(int) dsq[i]];
-                  L_alpha[v][j][d] += cm->esc[v][(int) dsq[i]];
+                    alpha[v][j][d] += cm->esc[v][(int) sq->dsq[i]];
+                  L_alpha[v][j][d] += cm->esc[v][(int) sq->dsq[i]];
                }
                else
                {
-                    alpha[v][j][d] += DegenerateSingletScore(cm->esc[v], dsq[i]);
-                  L_alpha[v][j][d] += DegenerateSingletScore(cm->esc[v], dsq[i]);
+                    alpha[v][j][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[i], cm->esc[v]);
+                  L_alpha[v][j][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[i], cm->esc[v]);
+		  
                }
 
                if (   alpha[v][j][d] < IMPOSSIBLE ) {   alpha[v][j][d] = IMPOSSIBLE; }
@@ -675,15 +677,15 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                   }
                }
 
-               if ( dsq[j] < Alphabet_size ) 
+               if ( sq->dsq[j] < cm->abc->K ) 
                {
-                    alpha[v][j][d] += cm->esc[v][(int) dsq[j]];
-                  R_alpha[v][j][d] += cm->esc[v][(int) dsq[j]];
+                    alpha[v][j][d] += cm->esc[v][(int) sq->dsq[j]];
+                  R_alpha[v][j][d] += cm->esc[v][(int) sq->dsq[j]];
                }
                else
                {
-                    alpha[v][j][d] += DegenerateSingletScore(cm->esc[v], dsq[j]);
-                  R_alpha[v][j][d] += DegenerateSingletScore(cm->esc[v], dsq[j]);
+                    alpha[v][j][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[j], cm->esc[v]);
+                  R_alpha[v][j][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[j], cm->esc[v]);
                }
 
                if (   alpha[v][j][d] < IMPOSSIBLE ) {   alpha[v][j][d] = IMPOSSIBLE; }
@@ -700,7 +702,7 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
       }
       else
       {
-         Die("'Inconceivable!'\n'You keep using that word...'");
+         esl_fatal("'Inconceivable!'\n'You keep using that word...'");
       }
 
       if ( v==0 )
@@ -808,8 +810,7 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
  *           based on insideT()
  *
  * Args:     cm      - the covariance model
- *           dsq     - the sequence, 1..L
- *           L       - length of the sequence
+ *           sq      - the sequence, 1..sq->n
  *           tr      - Parsetree for traceback
  *           r       - root of subgraph to align to target subseq (usually 0, the model's root)
  *           z       - last state of the subgraph
@@ -824,7 +825,7 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
  * Returns:  score of optimal alignment (float)
  */
 float
-trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
+trinsideT(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, int r, int z,
           int i0, int j0, int allow_begin, int *dmin, int *dmax)
 {
    void    ***shadow;		/* standard shadow matrix with state information */
@@ -841,7 +842,7 @@ trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
    int        y, yoffset;
    int        bifparent;
 
-   sc = trinside(cm, dsq, L, r, z, i0, j0,
+   sc = trinside(cm, sq, r, z, i0, j0,
                  BE_EFFICIENT,
                  &shadow,
                  &L_shadow, &R_shadow, &T_shadow,
@@ -902,7 +903,7 @@ trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
 
              mode = 1;
          }
-         else { Die("Unknown mode in traceback!"); }
+         else { esl_fatal("Unknown mode in traceback!"); }
 
          j = j-k;
          d = d-k;
@@ -940,7 +941,7 @@ trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
             yoffset = ((char **) R_shadow[v])[j][d];
             nxtmode = ((int **)Rmode_shadow[v])[j][d];
          }
-         else { Die("Unknown mode in traceback!"); }
+         else { esl_fatal("Unknown mode in traceback!"); }
 
          switch (cm->sttype[v])
          {
@@ -971,7 +972,7 @@ trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
             case  S_st:
                break;
             default:
-               Die("'Inconceivable!'\n'You keep using that word...'");
+               esl_fatal("'Inconceivable!'\n'You keep using that word...'");
          }
          d = j-i+1;
          mode = nxtmode;
@@ -986,7 +987,7 @@ trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
             /* However, all hits from truncyk() are local hits, and this should have
                been dealt with immediately after return from the DP function.
                If we've reached this point, there's a major problem */
-            Die("Impossible local begin in traceback\n");
+            esl_fatal("Impossible local begin in traceback\n");
          }
          else
          {

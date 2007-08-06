@@ -213,22 +213,6 @@ typedef struct cp9_dpmatrix_s {
   int padM;			/* extra pad in HMM length/columns   */
 } CP9_dpmatrix_t;
 
-/* Structure: CP9HMMFILE
- * 
- * Purpose:   An open HMM file or HMM library. See CP9_hmmio.c
- */
-struct CP9_hmmfile_s {
-  FILE    *f;			/* pointer to file opened for reading           */
-  SSIFILE *ssi;			/* pointer to open SSI index, or NULL           */
-  int (*parser)(struct CP9_hmmfile_s *, struct cplan9_s **);  /* parsing function    */
-  int   is_binary;		/* TRUE if format is a binary one               */
-  int   byteswap;               /* TRUE if binary and byteswapped               */
-
-  int       is_seekable;	/* TRUE if we use offsets in this HMM file  */
-  int       mode;		/* type of offset                           */
-  SSIOFFSET offset;		/* Disk offset for beginning of current HMM */
-};
-typedef struct CP9_hmmfile_s CP9HMMFILE; 
 
 /* CM Plan 9 model state types
  * used in traceback structure

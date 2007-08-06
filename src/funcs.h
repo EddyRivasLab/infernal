@@ -1,6 +1,10 @@
-#include "squid.h"
+#include "esl_config.h"
+#include "config.h"
+
 #include "easel.h"
-#include "msa.h"
+#include "esl_alphabet.h"
+#include "esl_msa.h"
+
 #include "structs.h"
 #include "cplan9.h"
 #include "prior.h"

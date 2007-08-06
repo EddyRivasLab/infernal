@@ -479,13 +479,13 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQ **s
 	    fprintf(cfg->tracefp, "> %s\n", sq[i]->name);
 	    if(esl_opt_GetBoolean(go,"--hmmonly")) 
 	      {
-		fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", CP9TraceScore(cfg->cm->cp9, sq[i]->dsq, cp9_tr[i]));
-		CP9PrintTrace(cfg->tracefp, cp9_tr[i], cfg->cm->cp9, sq[i]->dsq);
+		fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", CP9TraceScore(cfg->cm->cp9, sq[i], cp9_tr[i]));
+		CP9PrintTrace(cfg->tracefp, cp9_tr[i], cfg->cm->cp9, sq[i]);
 	      }
 	    else
 	      {
-		fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", ParsetreeScore(cfg->cm, tr[i], sq[i]->dsq, FALSE));
-		ParsetreeDump(cfg->tracefp, tr[i], cfg->cm, sq[i]->dsq);
+		fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", ParsetreeScore(cfg->cm, tr[i], sq[i], FALSE));
+		ParsetreeDump(cfg->tracefp, tr[i], cfg->cm, sq[i], NULL, NULL); /* NULLs are dmin, dmax */
 	      }
 	    fprintf(cfg->tracefp, "//\n");
 	  }

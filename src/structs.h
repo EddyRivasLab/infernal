@@ -12,10 +12,12 @@
  ***************************************************************** 
  */
 
-#include "squid.h"
-#include "ssi.h"               /* CMFILE supports SSI indexes */
+#include "esl_config.h"
+#include "config.h"
+
 #include "easel.h"
 #include "esl_sqio.h"
+
 #include "cplan9.h"
 
 /* various default parameters for CMs and CP9 HMMs */ 
@@ -416,10 +418,10 @@ typedef struct cm_s {
  */
 typedef struct cmfile_s {
   FILE     *f;                  /* open file for reading */
-  SSIFILE  *ssi;                /* ptr to open SSI index, or NULL if unavailable */
+  char     *fname;              /* name of the CM file; [STDIN] if -           */
+  ESL_SSI  *ssi;                /* ptr to open SSI index, or NULL if unavailable */
   int       is_binary;		/* TRUE if file is in binary format */
   int       byteswap;		/* TRUE if binary and we need to swap byte order */
-  SSIOFFSET offset;		/* disk offset of the CM that was read last */
   int       mode;		/* type of SSI offset (part of SSI API) */
 } CMFILE;
 

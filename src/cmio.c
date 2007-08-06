@@ -22,6 +22,7 @@
 
 #include "easel.h"
 #include "esl_alphabet.h"
+#include "esl_ssi.h"
 
 /* Magic numbers identifying binary formats.
 */
@@ -108,16 +109,18 @@ static float ascii2prob(char *s, float null);
 CMFILE *
 CMFileOpen(char *cmfile, char *env)
 {
+  int           status;
   CMFILE       *cmf;
   unsigned int  magic;
-  char         *ssifile;
-  char         *dir;
+  char         *ssifile = NULL;	/* constructed name of SSI index file             */
+  char         *envfile = NULL;	/* full path to filename after using environment  */
   char          buf[512];
 
   /* Allocate the CMFILE, and initialize.
    */
-  cmf            = MallocOrDie(sizeof(CMFILE));
+  ESL_ALLOC(cmf, sizeof(CMFILE));
   cmf->f         = NULL;
+  cmf->fname     = NULL;
   cmf->ssi       = NULL;
   cmf->is_binary = FALSE;
   cmf->byteswap  = FALSE;
@@ -128,46 +131,24 @@ CMFileOpen(char *cmfile, char *env)
    * Open in mode "r" even if it's binary, not "rb", because we only 
    * guarantee POSIX compatibility, not general ANSI C.
    */
-  if ((cmf->f = fopen(cmfile, "r")) != NULL)
+  if ((cmf->f = fopen(cmfile, "r")) != NULL) 
     {
-      ssifile = MallocOrDie(sizeof(char) * (strlen(cmfile) + 5));
-      sprintf(ssifile, "%s.ssi", cmfile);
-      
-      if ((cmf->mode = SSIRecommendMode(cmfile)) == -1)
-	Die("SSIRecommendMode() failed");
+      if ((status = esl_FileNewSuffix(cmfile, "ssi", &ssifile)) != eslOK) goto ERROR;
+      if ((status = esl_strdup(cmfile, n, &(cmf->fname)))       != eslOK) goto ERROR;
     }
-  else if ((cmf->f = EnvFileOpen(cmfile, env, &dir)) != NULL)
+  else if (esl_FileEnvOpen(cmfile, env, &(cmf->f), &envfile) == eslOK)
     {
-      char *full;
-      full    = FileConcat(dir, cmfile);
-
-      ssifile = MallocOrDie(sizeof(char) * (strlen(full) + strlen(cmfile) + 5));
-      sprintf(ssifile, "%s.ssi", full);
-
-      if ((cmf->mode = SSIRecommendMode(full)) == -1)
-	Die("SSIRecommendMode() failed unexpectedly");
-
-      free(full);
-      free(dir);
+      if ((status = esl_FileNewSuffix(envfile, "ssi", &ssifile)) != eslOK) goto ERROR;
+	  if ((status = esl_strdup(envfile, -1, &(hfp->fname)))      != eslOK) goto ERROR;
     }
-  else return NULL;
-  
-  /* Open the SSI index file, if it exists; if it doesn't,
-   * cmf->ssi stays NULL.
-   */
-  SSIOpen(ssifile, &(cmf->ssi));
-  free(ssifile);
+  else
+    { status = eslENOTFOUND; goto ERROR; }
 
-  /* Now initialize the disk offset; though it's technically
-   * undefined... cmf->offset is the offset of the *last*
-   * CM read, so the API only guarantees it's valid after a
-   * call to CMFileRead() ... but make it a valid offset 0 
-   * anyway. Since the offset is an opaque type, you can't
-   * just set it to a number.
-   */
-  if (SSIGetFilePosition(cmf->f, cmf->mode, &(cmf->offset)) != 0)
-    Die("SSIGetFilePosition() failed unexpectedly");
- 
+  /* Attempt to open the ssi index file. hfp->ssi silently stays NULL if the ssifile isn't found. */
+  if (ssifile != NULL) esl_ssi_Open(ssifile, &(cmf->ssi));
+  if (envfile != NULL) free(envfile);
+  if (ssifile != NULL) free(ssifile);
+
   /* Peek at the first 4 bytes to see if it's a binary file.
    */
   if (! fread((char *) &magic, sizeof(unsigned int), 1, cmf->f)) {
@@ -211,6 +192,10 @@ or may be a different kind of binary altogether.\n", cmfile);
    */
   CMFileClose(cmf);
   return NULL;
+
+ ERROR:
+  esl_fatal("Unexpected error.\n");
+  return NULL; /* not reached */
 }
 
 /* Function:  CMFileRead()
