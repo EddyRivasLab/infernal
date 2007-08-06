@@ -94,6 +94,7 @@ typedef struct cplan9_s {
    *   manipulations, for efficiency in DP algorithms.
    * CPLAN9_HASPROBS flag is raised when these probs are all valid.
    */
+  const ESL_ALPHABET *abc;      /* pointer to the alphabet, usually points to cm->abc */
   int     M;                    /* length of the model (# nodes)        +*/
   float **t;                    /* transition prob's. t[0..M][0..9]   +*/
   float **mat;                  /* match emissions.  mat[1..M][0..3]   +*/ 

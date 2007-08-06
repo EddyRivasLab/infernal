@@ -258,15 +258,15 @@ CMRenormalize(CM_t *cm)
   for (v = 0; v < cm->M; v++)
     {
       if (cm->cnum[v] > 0 && cm->sttype[v] != B_st)
-	esl_vec_esl_vec_FNorm(cm->t[v], cm->cnum[v]);
+	esl_vec_FNorm(cm->t[v], cm->cnum[v]);
       
       if (cm->sttype[v] == ML_st || cm->sttype[v] == MR_st || cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
-	esl_vec_esl_vec_FNorm(cm->e[v], cm->abc->K);
+	esl_vec_FNorm(cm->e[v], cm->abc->K);
       if (cm->sttype[v] == MP_st)
-	esl_vec_esl_vec_FNorm(cm->e[v], cm->abc->K * cm->abc->K);
+	esl_vec_FNorm(cm->e[v], cm->abc->K * cm->abc->K);
     }
-  if (cm->flags & CM_LOCAL_BEGIN) esl_vec_esl_vec_FNorm(cm->begin, cm->M);
-  if (cm->flags & CM_LOCAL_END)   Die("Renormalization of models in local end mode not supported yet");
+  if (cm->flags & CM_LOCAL_BEGIN) esl_vec_FNorm(cm->begin, cm->M);
+  if (cm->flags & CM_LOCAL_END)   esl_fatal("Renormalization of models in local end mode not supported yet");
 }
 
 
@@ -406,14 +406,14 @@ CMReadNullModel(CM_t *cm, char *rndfile)
    * sum to 1.0 exactly.
    */
   if ((fp = fopen(rndfile, "r")) == NULL)
-    Die("Failed to open null model file %s\n", rndfile);
+    esl_fatal("Failed to open null model file %s\n", rndfile);
 
 				/* parse the file */
   x = 0;
   while(x < cm->abc->K) {
-    if(sre_fgets(&buf, &n, fp) == NULL) goto FAILURE;
+    if(esl_fgets(&buf, &n, fp) != eslOK) goto FAILURE;
     s   = buf;
-    if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+    if(esl_strtok(&s, " \t\n", &tok, &toklen) != eslOK) goto FAILURE;
     if(strcmp(tok, "#") != 0)
       {      
 	null[x] = atof(tok);
@@ -424,7 +424,7 @@ CMReadNullModel(CM_t *cm, char *rndfile)
   /*fragile*/
   if(sum > 1.00001 || sum < 0.99999)
     esl_fatal("%s is not in CM null model file format.\nThere are not %d background probabilities that sum to exactly 1.0", rndfile, cm->abc->K);
-  FNorm(null, cm->abc->K);
+  esl_vec_FNorm(null, cm->abc->K);
   CMSetNullModel(cm, null);
   free(null);
   fclose(fp);
@@ -530,7 +530,7 @@ rsearch_CMProbifyEmissions(CM_t *cm, fullmat_t *fullmat)
 	  /* Now, set emission probs as target probs in correct cells of score matrix */
 	  for (x=0; x<cm->abc->K*cm->abc->K; x++) 
 	    cm->e[v][x] = fullmat->paired->matrix[matrix_index(cur_emission, x)];
-	  esl_vec_esl_vec_FNorm(cm->e[v], cm->abc->K*cm->abc->K);
+	  esl_vec_FNorm(cm->e[v], cm->abc->K*cm->abc->K);
 	}
       else if (cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR)
 	{
@@ -544,7 +544,7 @@ rsearch_CMProbifyEmissions(CM_t *cm, fullmat_t *fullmat)
 	  /* Now, set emission probs as target probs in correct cells of score matrix */
 	  for (x=0; x<cm->abc->K; x++) 
 	    cm->e[v][x] = fullmat->unpaired->matrix[matrix_index(cur_emission, x)];
-	  esl_vec_esl_vec_FNorm(cm->e[v], cm->abc->K);
+	  esl_vec_FNorm(cm->e[v], cm->abc->K);
 	}
       else if (cm->stid[v] == MATP_ML || cm->stid[v] == MATP_MR)
 	{
@@ -566,7 +566,7 @@ rsearch_CMProbifyEmissions(CM_t *cm, fullmat_t *fullmat)
 	  /* fill emission probs */
 	  for (x=0; x<cm->abc->K; x++) 
 	    cm->e[v][x] = fullmat->unpaired->matrix[matrix_index(cur_emission, x)];
-	  esl_vec_esl_vec_FNorm(cm->e[v], cm->abc->K);
+	  esl_vec_FNorm(cm->e[v], cm->abc->K);
 	}
       else if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) 
 	{
@@ -574,7 +574,7 @@ rsearch_CMProbifyEmissions(CM_t *cm, fullmat_t *fullmat)
 	   * but make sure we don't have any counts in any of these guys */
 	  for (x = 0; x < cm->abc->K; x++) 
 	    if(fabs(cm->e[v][x] - 0.) > thresh) ESL_EXCEPTION(eslEINVAL, "cm->e[v:%d] an I{L,R} has > 0 non-zero count", v); 
-	  esl_vec_esl_vec_FNorm(cm->e[v], cm->abc->K); /* these will have all been zero */
+	  esl_vec_FNorm(cm->e[v], cm->abc->K); /* these will have all been zero */
 	}
     }
   return eslOK;
@@ -842,7 +842,7 @@ CalculateStateIndex(CM_t *cm, int node, char utype)
   case MATR_IR: return base+2;
   case END_E:   return base;
   case BIF_B:   return base;
-  default: Die("bogus utype %d in CalculateStateIndex()", utype);
+  default: esl_fatal("bogus utype %d in CalculateStateIndex()", utype);
   }
   return base;			/* not used */
 }
@@ -866,7 +866,7 @@ TotalStatesInNode(int ndtype)
   case BEGR_nd:  return 2;
   case ROOT_nd:  return 3;
   case END_nd:   return 1;
-  default:       Die("Bogus node type %d", ndtype);
+  default:       esl_fatal("Bogus node type %d", ndtype);
   }
   return 0;/*NOTREACHED*/
 }
@@ -882,7 +882,7 @@ SplitStatesInNode(int ndtype)
   case BEGR_nd:  return 1;
   case ROOT_nd:  return 1;
   case END_nd:   return 1;
-  default:       Die("Bogus node type %d", ndtype);
+  default:       esl_fatal("Bogus node type %d", ndtype);
   }
   return 0;/*NOTREACHED*/
 }
@@ -898,7 +898,7 @@ InsertStatesInNode(int ndtype)
   case BEGR_nd:  return 1;
   case ROOT_nd:  return 2;
   case END_nd:   return 0;
-  default:       Die("Bogus node type %d", ndtype);
+  default:       esl_fatal("Bogus node type %d", ndtype);
   }
   return 0;/*NOTREACHED*/
 }
@@ -938,7 +938,7 @@ StateDelta(int sttype)
   case E_st:  return 0;
   case B_st:  return 0;
   case EL_st: return 0;
-  default: Die("bogus state type %d\n", sttype);
+  default: esl_fatal("bogus state type %d\n", sttype);
   }
   /*NOTREACHED*/
   return 0;
@@ -957,7 +957,7 @@ StateLeftDelta(int sttype)
   case E_st:  return 0;
   case B_st:  return 0;
   case EL_st: return 0;
-  default: Die("bogus state type %d\n", sttype);
+  default: esl_fatal("bogus state type %d\n", sttype);
   }
   /*NOTREACHED*/
   return 0;
@@ -976,7 +976,7 @@ StateRightDelta(int sttype)
   case E_st:  return 0;
   case B_st:  return 0;
   case EL_st: return 0;
-  default: Die("bogus state type %d\n", sttype);
+  default: esl_fatal("bogus state type %d\n", sttype);
   }
   /*NOTREACHED*/
   return 0;
@@ -1077,7 +1077,7 @@ Statetype(int type)
   case E_st:  return "E";
   case B_st:  return "B";
   case EL_st: return "EL";
-  default: Die("bogus state type %d\n", type);
+  default: esl_fatal("bogus state type %d\n", type);
   }
   return ""; /*NOTREACHED*/
 }
@@ -1109,7 +1109,7 @@ Nodetype(int type)
   case BEGR_nd:  return "BEGR";
   case ROOT_nd:  return "ROOT";
   case END_nd:   return "END";
-  default: Die("bogus node type %d\n", type);
+  default: esl_fatal("bogus node type %d\n", type);
   }
   return "";
 }
@@ -1152,7 +1152,7 @@ UniqueStatetype(int type)
   case END_E  : return "END_E";
   case BIF_B  : return "BIF_B";
   case END_EL : return "END_EL";
-  default: Die("bogus unique state type %d\n", type);
+  default: esl_fatal("bogus unique state type %d\n", type);
   }
   return "";
 }
@@ -1180,7 +1180,7 @@ UniqueStateCode(char *s)
   else if (strcmp(s, "BIF_B")   == 0) return BIF_B;
   else if (strcmp(s, "END_E")   == 0) return END_E;
   else if (strcmp(s, "END_EL")  == 0) return END_EL;
-  else Die("bogus unique statetype %s\n", s);
+  else esl_fatal("bogus unique statetype %s\n", s);
   return 0; /*NOTREACHED*/
 }
 int
@@ -1281,9 +1281,9 @@ CMRebalance(CM_t *cm)
    * renumbering the CM.
    */
   new = CreateCM(cm->nodes, cm->M, cm->abc);
-  new->name = sre_strdup(cm->name, -1);
-  new->acc  = sre_strdup(cm->acc,  -1);
-  new->desc = sre_strdup(cm->desc, -1);
+  esl_strdup(cm->name, -1, &(new->name));
+  esl_strdup(cm->acc,  -1, &(new->acc));
+  esl_strdup(cm->desc, -1, &(new->desc));
   new->flags = cm->flags;
 
   /* Calculate "weights" (# of required extra decks) on every B and S state.
@@ -1295,7 +1295,7 @@ CMRebalance(CM_t *cm)
       if      (cm->sttype[v] == E_st) /* initialize unbifurcated segments with 1 */
 	wgt[v] = 1; 
       else if (cm->sttype[v] == B_st) /* "cfirst"=left S child. "cnum"=right S child. */
-	wgt[v] = 1 + MIN(wgt[cm->cfirst[v]], wgt[cm->cnum[v]]);
+	wgt[v] = 1 + ESL_MIN(wgt[cm->cfirst[v]], wgt[cm->cnum[v]]);
       else 
 	wgt[v] = wgt[v+1];            /* all other states propagate up to S */
     }
@@ -1365,8 +1365,8 @@ CMRebalance(CM_t *cm)
 
 	  if (wgt[w] <= wgt[y])	/* left (w) lighter or same weight? visit w first, defer y */
 	    { 
-	      PushNstack(pda, y); 
-	      PushNstack(pda, z);
+	      esl_stack_IPush(pda, y); 
+	      esl_stack_IPush(pda, z);
 	      v = w; 
 	      z = y-1;
 	      new->cfirst[nv] = nv+1;     /* left child is nv+1 */
@@ -1374,8 +1374,8 @@ CMRebalance(CM_t *cm)
 	    }  
 	  else			/* right (y) lighter? visit y first, defer w */
 	    { 
-	      PushNstack(pda, w); 
-	      PushNstack(pda, y-1);
+	      esl_stack_IPush(pda, w); 
+	      esl_stack_IPush(pda, y-1);
 	      v = y;		/* z unchanged. */
 	      new->cfirst[nv] = nv+z-y+2; 
 	      new->cnum[nv]   = nv+1;     /* right child is nv+1 */
@@ -1385,8 +1385,8 @@ CMRebalance(CM_t *cm)
 	{
 	  new->cfirst[nv] = -1;
 	  new->cnum[nv]   = 0;
-	  PopNstack(pda, &z);
-	  PopNstack(pda, &v);
+	  esl_stack_IPop(pda, &z);
+	  esl_stack_IPop(pda, &v);
 	}
       else	
 	{
@@ -1416,7 +1416,7 @@ CMRebalance(CM_t *cm)
 
   free(wgt);
   free(newidx);
-  FreeNstack(pda);
+  esl_stack_Destroy(pda);
   return new;
 
  ERROR:
@@ -1656,9 +1656,9 @@ DuplicateCM(CM_t *cm)
 
   /* Create the new model and copy everything over except the cp9 and stats */
   new = CreateCM(cm->nodes, cm->M, cm->abc);
-  new->name = sre_strdup(cm->name, -1);
-  new->acc  = sre_strdup(cm->acc,  -1);
-  new->desc = sre_strdup(cm->desc, -1);
+  esl_strdup(cm->name, -1, &(new->name));
+  esl_strdup(cm->acc,  -1, &(new->acc));
+  esl_strdup(cm->desc, -1, &(new->desc));
   new->flags       = cm->flags;
   new->search_opts = cm->search_opts;
   new->align_opts  = cm->align_opts;
@@ -1725,7 +1725,7 @@ DuplicateCM(CM_t *cm)
   new->tau   = cm->tau;
   new->enf_start = cm->enf_start;
   if(cm->enf_seq != NULL)
-    new->enf_seq = sre_strdup(cm->enf_seq, -1);
+    esl_strdup(cm->enf_seq, -1, &(new->enf_seq));
   else new->enf_seq = NULL;
   new->enf_scdiff = cm->enf_scdiff;
   new->sc_boost   = cm->sc_boost;
@@ -1854,6 +1854,87 @@ cm_Validate(CM_t *cm, float tol, char *errbuf)
  ERROR:
   return status;
 }
+
+/* Function: CMStatetype()
+ * 
+ * Purpose:  Returns the CM state type in text.
+ * Example:  CP9Statetype(MP_st) = "MP"
+ */
+char *
+CMStatetype(char st)
+{
+  switch (st) {
+  case D_st:  return "D";
+  case MP_st: return "MP";
+  case ML_st: return "ML";
+  case MR_st: return "MR";
+  case IL_st: return "IL";
+  case IR_st: return "IR";
+  case S_st:  return "S";
+  case E_st:  return "E";
+  case B_st:  return "B";
+  case EL_st: return "EL";
+  default: return "BOGUS";
+  }
+}
+
+/* Function: CMNodetype()
+ * 
+ * Purpose:  Returns the CM state type in text.
+ * Example:  CP9Statetype(MATP_nd) = "MATP"
+ */
+char *
+CMNodetype(char nd)
+{
+  switch (nd) {
+  case DUMMY_nd:  return "DUMMY";
+  case BIF_nd:    return "BIF";
+  case MATP_nd:   return "MATP";
+  case MATL_nd:   return "MATL";
+  case MATR_nd:   return "MATR";
+  case BEGL_nd:   return "BEGL";
+  case BEGR_nd:   return "BEGR";
+  case ROOT_nd:   return "ROOT";
+  case END_nd:    return "END";
+  default: return "BOGUS";
+  }
+}
+
+/* Function: CMStateid()
+ * 
+ * Purpose:  Returns the CM state id in text.
+ * Example:  CP9Statetype(MATP_MP) = "MATP_MP"
+ */
+char *
+CMStateid(char st)
+{
+  switch (st) {
+  case DUMMY:   return "DUMMY";
+  case ROOT_S:  return "ROOT_S";
+  case ROOT_IL: return "ROOT_IL";
+  case ROOT_IR: return "ROOT_IR";
+  case BEGL_S:  return "BEGL_S";
+  case BEGR_S:  return "BEGR_S";
+  case BEGR_IL: return "BEGR_IL";
+  case MATP_MP: return "MATP_MP";
+  case MATP_ML: return "MATP_ML";
+  case MATP_MR: return "MATP_MR";
+  case MATP_D:  return "MATP_D";
+  case MATP_IL: return "MATP_IL";
+  case MATP_IR: return "MATP_IR";
+  case MATL_ML: return "MATL_ML";
+  case MATL_D:  return "MATL_D";
+  case MATL_IL: return "MATL_IL";
+  case MATR_MR: return "MATR_MR";
+  case MATR_D:  return "MATR_D";
+  case MATR_IR: return "MATR_IR";
+  case END_E:   return "END_E";
+  case BIF_B:   return "BIF_B";
+  case END_EL:  return "END_EL";
+  default: return "BOGUS";
+  }
+}
+
 
 /*****************************************************************
  * Convenience routines for setting fields in an CM. (from p7_cm.c)

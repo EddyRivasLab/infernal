@@ -26,12 +26,17 @@
 #include <string.h>
 #include <ctype.h>
 #include <time.h>
+#include <math.h>
+
+#include "easel.h"
+#include "esl_msa.h"
+#include "esl_vectorops.h"
 
 #include "funcs.h"
 #include "structs.h"
 #include "cplan9.h"
 
-static void rightjustify(char *s, int n);
+static void rightjustify(const ESL_ALPHABET *abc, char *s, int n);
 
 /* Functions: AllocCPlan9(), AllocCPlan9Shell(), AllocCPlan9Body(), FreeCPlan9()
  * 
@@ -43,7 +48,7 @@ static void rightjustify(char *s, int n);
  *            see the size of the model 'til partway thru the header.
  */
 CP9_t *
-AllocCPlan9(int M) 
+AllocCPlan9(int M, const ESL_ALPHABET *abc) 
 {
   CP9_t *hmm;
 
@@ -91,6 +96,7 @@ AllocCPlan9Shell(void)
 void
 AllocCPlan9Body(struct cplan9_s *hmm, int M, const ESL_ALPHABET *abc) 
 {
+  int status;
   int k, x;
 
   hmm->abc = abc;
@@ -148,7 +154,7 @@ AllocCPlan9Body(struct cplan9_s *hmm, int M, const ESL_ALPHABET *abc)
   ESL_ALLOC(hmm->has_el,     (M+1) * sizeof(int));
   ESL_ALLOC(hmm->el_from_ct, (M+2) * sizeof(int));
   ESL_ALLOC(hmm->el_from_idx,(M+2) * sizeof(int *));
-  ESL_ALLOC(hmm->el_from_cmnd(M+2) * sizeof(int *));
+  ESL_ALLOC(hmm->el_from_cmnd,(M+2) * sizeof(int *));
 
   return;
  ERROR:
@@ -274,6 +280,7 @@ CP9Logoddsify(CP9_t *hmm)
 {
   int k;			/* counter for model position */
   int x;			/* counter for symbols        */
+  float  sc[MAXDEGEN];          /* 17, NEED TO INCREASE FOR BIGGER ALPHABETS! */
 
   /*float accum;
     float tbm, tme;
@@ -283,27 +290,31 @@ CP9Logoddsify(CP9_t *hmm)
   /* Symbol emission scores
    */
 
-  /* emission scores from state N, ins[0] */
-  for (x = 0; x < hmm->abc->K; x++) 
-    hmm->isc[x][0] =  Prob2Score(hmm->ins[0][x], hmm->null[x]); 
-  for (x = hmm->abc->K; x < Alphabet_iupac; x++) 
-    hmm->isc[x][0] = DegenerateSymbolScore(hmm->ins[0], hmm->null, x);
+  sc[hmm->abc->K]     = -eslINFINITY; /* gap character */
+  sc[hmm->abc->Kp-1]  = -eslINFINITY; /* missing data character */
 
-  for (k = 1; k <= hmm->M; k++) 
-    {
-      for (x = 0; x < hmm->abc->K; x++) 
-	{
-	  hmm->msc[x][k] =  Prob2Score(hmm->mat[k][x], hmm->null[x]);
-	  hmm->isc[x][k] =  Prob2Score(hmm->ins[k][x], hmm->null[x]); 
-	}
-      /* degenerate match/insert emissions */
-      for (x = hmm->abc->K; x < Alphabet_iupac; x++) 
-	{
-	  hmm->msc[x][k] = DegenerateSymbolScore(hmm->mat[k], hmm->null, x);
-	  hmm->isc[x][k] = DegenerateSymbolScore(hmm->ins[k], hmm->null, x);
-	}
+  /* Insert emission scores, relies on sc[K, Kp-1] initialization to -inf above */
+  for (k = 0; k <= hmm->M; k++) {
+    for (x = 0; x < hmm->abc->K; x++) 
+      sc[x] = Prob2Score(hmm->ins[k][x], hmm->null[x]);
+    esl_abc_FExpectScVec(hmm->abc, sc, hmm->null); 
+    for (x = 0; x < hmm->abc->Kp; x++) {
+      hmm->isc[x][k] = sc[x];
     }
+  }
 
+  /* Match emission scores, relies on sc[K, Kp-1] initialization to -inf above */
+  sc[hmm->abc->K]     = -eslINFINITY; /* gap character */
+  sc[hmm->abc->Kp-1]  = -eslINFINITY; /* missing data character */
+  for (k = 1; k <= hmm->M; k++) {
+    for (x = 0; x < hmm->abc->K; x++) 
+      sc[x] = Prob2Score(hmm->mat[k][x], hmm->null[x]);
+    esl_abc_FExpectScVec(hmm->abc, sc, hmm->null); 
+    for (x = 0; x < hmm->abc->Kp; x++) {
+      hmm->msc[x][k] = sc[x];
+    }
+  }
+  
   for (k = 0; k <= hmm->M; k++)
     {
       hmm->tsc[CTMM][k] = Prob2Score(hmm->t[k][CTMM], 1.0);
@@ -357,15 +368,15 @@ CPlan9Rescale(struct cplan9_s *hmm, float scale)
    * and only nodes 1..M-1 have a valid array of transitions.
    */
   for(k = 1; k <= hmm->M; k++) 
-    FScale(hmm->mat[k], hmm->abc->K, scale);
+    esl_vec_FScale(hmm->mat[k], hmm->abc->K, scale);
   for(k = 0; k <=  hmm->M; k++) 
-    FScale(hmm->ins[k], hmm->abc->K, scale);
+    esl_vec_FScale(hmm->ins[k], hmm->abc->K, scale);
   for(k = 0; k <  hmm->M; k++) 
-    FScale(hmm->t[k],   10,             scale);
+    esl_vec_FScale(hmm->t[k],   10,             scale);
 
   /* begin, end transitions; only valid [1..M] */
-  FScale(hmm->begin+1, hmm->M, scale);
-  FScale(hmm->end+1,   hmm->M, scale);
+  esl_vec_FScale(hmm->begin+1, hmm->M, scale);
+  esl_vec_FScale(hmm->end+1,   hmm->M, scale);
   
   return;
 }
@@ -389,35 +400,35 @@ CPlan9Renormalize(struct cplan9_s *hmm)
   float d;			/* denominator */
 
 				/* match emissions */
-  FSet(hmm->mat[0], hmm->abc->K, 0.);   /*M_0 is B state, non-emitter*/
+  esl_vec_FSet(hmm->mat[0], hmm->abc->K, 0.);   /*M_0 is B state, non-emitter*/
   for (k = 1; k <= hmm->M; k++) 
-    FNorm(hmm->mat[k], hmm->abc->K);
+    esl_vec_FNorm(hmm->mat[k], hmm->abc->K);
 				/* insert emissions */
   for (k = 0; k <= hmm->M; k++)
-    FNorm(hmm->ins[k], hmm->abc->K);
+    esl_vec_FNorm(hmm->ins[k], hmm->abc->K);
 
 				/* begin transitions */
-  d = FSum(hmm->begin+1, hmm->M) + hmm->t[0][CTMI] + hmm->t[0][CTMD] + hmm->t[0][CTME]; 
+  d = esl_vec_FSum(hmm->begin+1, hmm->M) + hmm->t[0][CTMI] + hmm->t[0][CTMD] + hmm->t[0][CTME]; 
   /* hmm->t[0][CTME] should always be 0., can't local end from the M_0 == B state */
-  FScale(hmm->begin+1, hmm->M, 1./d);
+  esl_vec_FScale(hmm->begin+1, hmm->M, 1./d);
   hmm->t[0][CTMI] /= d;
   hmm->t[0][CTMD] /= d;
   hmm->t[0][CTME] /= d;
 
-  FNorm(hmm->t[0]+4, 3);	        /* transitions out of insert for node 0 (state N)*/
-  FSet( hmm->t[0]+7, 3, 0.);    
+  esl_vec_FNorm(hmm->t[0]+4, 3);	        /* transitions out of insert for node 0 (state N)*/
+  esl_vec_FSet( hmm->t[0]+7, 3, 0.);    
 				/* main model transitions */
   for (k = 1; k <= hmm->M; k++) /* safe for node M too, hmm->t[hmm->M][CTMM] should be 0.*/
     {
-      d = FSum(hmm->t[k], 4) + hmm->end[k]; 
-      FScale(hmm->t[k], 4, 1./d);
+      d = esl_vec_FSum(hmm->t[k], 4) + hmm->end[k]; 
+      esl_vec_FScale(hmm->t[k], 4, 1./d);
       hmm->end[k] /= d;
 
-      FNorm(hmm->t[k]+4, 3);	/* insert */
-      FNorm(hmm->t[k]+7, 3);	/* delete */
+      esl_vec_FNorm(hmm->t[k]+4, 3);	/* insert */
+      esl_vec_FNorm(hmm->t[k]+7, 3);	/* delete */
     }
 				/* null model emissions */
-  FNorm(hmm->null, hmm->abc->K);
+  esl_vec_FNorm(hmm->null, hmm->abc->K);
 
 				/* special transitions, none?*/
 
@@ -532,20 +543,21 @@ FreeCPlan9Matrix(struct cp9_dpmatrix_s *mx)
 struct cp9_dpmatrix_s *
 CreateCPlan9Matrix(int N, int M, int padN, int padM)
 {
+  int status;
   struct cp9_dpmatrix_s *mx;
   int i;
 
-  mx          = (struct cp9_dpmatrix_s *) MallocOrDie (sizeof(struct cp9_dpmatrix_s));
-  mx->mmx     = (int **) MallocOrDie (sizeof(int *) * (N+1));
-  mx->imx     = (int **) MallocOrDie (sizeof(int *) * (N+1));
-  mx->dmx     = (int **) MallocOrDie (sizeof(int *) * (N+1));
-  mx->elmx    = (int **) MallocOrDie (sizeof(int *) * (N+1)); 
-  /* slightly wasteful, some nodes can't go to EL (ex: right half of MATPs) */
-  mx->erow    = (int *) MallocOrDie (sizeof(int) * (N+1));
-  mx->mmx_mem = (void *) MallocOrDie (sizeof(int) * ((N+1)*(M+1)));
-  mx->imx_mem = (void *) MallocOrDie (sizeof(int) * ((N+1)*(M+1)));
-  mx->dmx_mem = (void *) MallocOrDie (sizeof(int) * ((N+1)*(M+1)));
-  mx->elmx_mem= (void *) MallocOrDie (sizeof(int) * ((N+1)*(M+1)));
+  ESL_ALLOC(mx,      sizeof(struct cp9_dpmatrix_s));
+  ESL_ALLOC(mx->mmx, sizeof(int *) * (N+1));
+  ESL_ALLOC(mx->imx, sizeof(int *) * (N+1));
+  ESL_ALLOC(mx->dmx, sizeof(int *) * (N+1));
+  ESL_ALLOC(mx->elmx,sizeof(int *) * (N+1)); 
+  /* slightly wasteful, some nodes can't go to EL (for ex: right half of MATPs) */
+  ESL_ALLOC(mx->erow,    sizeof(int) * (N+1));
+  ESL_ALLOC(mx->mmx_mem, sizeof(int) * ((N+1)*(M+1)));
+  ESL_ALLOC(mx->imx_mem, sizeof(int) * ((N+1)*(M+1)));
+  ESL_ALLOC(mx->dmx_mem, sizeof(int) * ((N+1)*(M+1)));
+  ESL_ALLOC(mx->elmx_mem,sizeof(int) * ((N+1)*(M+1)));
 
   /* The indirect assignment below looks wasteful; it's actually
    * used for aligning data on 16-byte boundaries as a cache 
@@ -569,6 +581,10 @@ CreateCPlan9Matrix(int N, int M, int padN, int padM)
   mx->padM = padM;
 
   return mx;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return NULL; /* never reached */
 }
 
 /* Function: ResizeCPlan9Matrix()
@@ -607,6 +623,8 @@ void
 ResizeCPlan9Matrix(struct cp9_dpmatrix_s *mx, int N, int M, 
 		   int ***mmx, int ***imx, int ***dmx, int ***elmx, int **erow)
 {
+  int status;
+  void *tmp;
   int i;
   /*printf("N: %d | maxN: %d | M: %d | maxM: %d\n", N, mx->maxN, M, mx->maxM);*/
 
@@ -615,23 +633,23 @@ ResizeCPlan9Matrix(struct cp9_dpmatrix_s *mx, int N, int M,
   if (N > mx->maxN) {
     N          += mx->padN; 
     mx->maxN    = N; 
-    mx->mmx     = (int **) ReallocOrDie (mx->mmx, sizeof(int *) * (mx->maxN+1));
-    mx->imx     = (int **) ReallocOrDie (mx->imx, sizeof(int *) * (mx->maxN+1));
-    mx->dmx     = (int **) ReallocOrDie (mx->dmx, sizeof(int *) * (mx->maxN+1));
-    mx->elmx    = (int **) ReallocOrDie (mx->elmx,sizeof(int *) * (mx->maxN+1));
-    mx->erow    = (void *) ReallocOrDie (mx->erow,sizeof(int)   * (mx->maxN+1));
+    ESL_RALLOC(mx->mmx, tmp, sizeof(int *) * (mx->maxN+1));
+    ESL_RALLOC(mx->imx, tmp, sizeof(int *) * (mx->maxN+1));
+    ESL_RALLOC(mx->dmx, tmp, sizeof(int *) * (mx->maxN+1));
+    ESL_RALLOC(mx->elmx,tmp, sizeof(int *) * (mx->maxN+1));
+    ESL_RALLOC(mx->erow,tmp, sizeof(int)   * (mx->maxN+1));
   }
 
   if (M > mx->maxM) {
     M += mx->padM; 
     mx->maxM = M; 
   }
-
-  mx->mmx_mem = (void *) ReallocOrDie (mx->mmx_mem, sizeof(int) * ((mx->maxN+1)*(mx->maxM+1)));
-  mx->imx_mem = (void *) ReallocOrDie (mx->imx_mem, sizeof(int) * ((mx->maxN+1)*(mx->maxM+1)));
-  mx->dmx_mem = (void *) ReallocOrDie (mx->dmx_mem, sizeof(int) * ((mx->maxN+1)*(mx->maxM+1)));
-  mx->elmx_mem= (void *) ReallocOrDie (mx->elmx_mem,sizeof(int) * ((mx->maxN+1)*(mx->maxM+1)));
-
+  
+  ESL_RALLOC(mx->mmx_mem, tmp, sizeof(int) * ((mx->maxN+1)*(mx->maxM+1)));
+  ESL_RALLOC(mx->imx_mem, tmp, sizeof(int) * ((mx->maxN+1)*(mx->maxM+1)));
+  ESL_RALLOC(mx->dmx_mem, tmp, sizeof(int) * ((mx->maxN+1)*(mx->maxM+1)));
+  ESL_RALLOC(mx->elmx_mem,tmp, sizeof(int) * ((mx->maxN+1)*(mx->maxM+1)));
+  
   mx->mmx[0] = (int *) mx->mmx_mem;
   mx->imx[0] = (int *) mx->imx_mem;
   mx->dmx[0] = (int *) mx->dmx_mem;
@@ -651,6 +669,9 @@ ResizeCPlan9Matrix(struct cp9_dpmatrix_s *mx, int N, int M,
   if (dmx != NULL) *dmx = mx->dmx;
   if (elmx!= NULL) *elmx= mx->elmx;
   if (erow != NULL) *erow = mx->erow;
+
+ ERROR:
+  esl_fatal("Memory reallocation error.");
 }
 
 /* Function: CPlan9SWConfig()
@@ -701,7 +722,7 @@ CPlan9SWConfig(struct cplan9_s *hmm, float pentry, float pexit)
   /* Configure entry.
    */
   hmm->begin[1] = (1. - pentry) * (1. - (hmm->t[0][CTMI] + hmm->t[0][CTMD] + hmm->t[0][CTME]));
-  FSet(hmm->begin+2, hmm->M-1, (pentry * (1.- (hmm->t[0][CTMI] + hmm->t[0][CTMD] + hmm->t[0][CTME]))) 
+  esl_vec_FSet(hmm->begin+2, hmm->M-1, (pentry * (1.- (hmm->t[0][CTMI] + hmm->t[0][CTMD] + hmm->t[0][CTME]))) 
        / (float)(hmm->M-1));
   
   /* Configure exit.
@@ -778,7 +799,7 @@ CPlan9CMLocalBeginConfig(CM_t *cm)
   /* BELOW IS INCOMPLETE! */
   /*cm->cp9->t[0][CTMI] = cm->cp9->t[0][CTMD] = cm->cp9->t[0][CTME] = 0.;
   cm->cp9->begin[1] = hmm_begin_end_prob;
-  FSet(cm->cp9->begin+2, cm->cp9->M-1, ((hmm_begin_end_prob/2.) / (float)(cm->cp9->M-1)));*/
+  esl_vec_FSet(cm->cp9->begin+2, cm->cp9->M-1, ((hmm_begin_end_prob/2.) / (float)(cm->cp9->M-1)));*/
 
   /* Configure hmm->ends, there is no equivalent in the CM, as cm->end's are local
    * ends (these correspond to EL states in the HMM see CPlan9ELConfig). A 
@@ -936,6 +957,7 @@ CPlan9NoEL(CM_t *cm)
 void
 CPlan9InitEL(CM_t *cm, CP9_t *cp9)
 {
+  int status;
   CMEmitMap_t *emap;         /* consensus emit map for the CM */
   int k;                     /* counter over HMM nodes */
   int nd;
@@ -983,14 +1005,14 @@ CPlan9InitEL(CM_t *cm, CP9_t *cp9)
 	esl_fatal("ERROR in CPlan9InitEL() el_from_idx has already been initialized\n");
       if(cp9->el_from_ct[k] > 0)
 	{
-	  cp9->el_from_idx[k] = MallocOrDie(sizeof(int) * cp9->el_from_ct[k]);
-	  cp9->el_from_cmnd[k] = MallocOrDie(sizeof(int) * cp9->el_from_ct[k]);
+	  ESL_ALLOC(cp9->el_from_idx[k], sizeof(int) * cp9->el_from_ct[k]);
+	  ESL_ALLOC(cp9->el_from_cmnd[k],sizeof(int) * cp9->el_from_ct[k]);
 	}
       /* else it remains NULL */
     }
 
   /* now fill in cp9->el_from_idx, we need a new counter array */
-  tmp_el_from_ct = MallocOrDie(sizeof(int) * (cp9->M+2));
+  ESL_ALLOC(tmp_el_from_ct, sizeof(int) * (cp9->M+2));
   for(k = 0; k <= (cp9->M+1); k++) 
     tmp_el_from_ct[k] = 0;
   for(nd = 0; nd < cm->nodes; nd++)
@@ -1019,6 +1041,9 @@ CPlan9InitEL(CM_t *cm, CP9_t *cp9)
   /* Free memory and exit */
   free(tmp_el_from_ct);
   FreeEmitMap(emap);
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
 }
 
 /* Function: CPlan9GlobalConfig()
@@ -1051,10 +1076,10 @@ CPlan9GlobalConfig(struct cplan9_s *hmm)
   hmm->begin[1] = 1. - (hmm->t[0][CTMI] + hmm->t[0][CTMD] + hmm->t[0][CTME]); 
   /* this is okay, hmm->t[0] is never changed, even during local
    * configuration */
-  FSet(hmm->begin+2, hmm->M-1, 0.);
+  esl_vec_FSet(hmm->begin+2, hmm->M-1, 0.);
   
   hmm->end[hmm->M] = 1. - hmm->t[hmm->M][CTMI];
-  FSet(hmm->end+1, hmm->M-1, 0.);
+  esl_vec_FSet(hmm->end+1, hmm->M-1, 0.);
   CPlan9RenormalizeExits(hmm, 1);
 
   /* Make all transitions to EL impossible, node 0, M special and should 
@@ -1062,7 +1087,7 @@ CPlan9GlobalConfig(struct cplan9_s *hmm)
   for(k = 1; k < hmm->M; k++)
     {
       hmm->t[k][CTME] = 0.;
-      FNorm(hmm->t[k], 4); /* renormalize transitions out of node k */
+      esl_vec_FNorm(hmm->t[k], 4); /* renormalize transitions out of node k */
     }
   hmm->flags       &= ~CPLAN9_HASBITS; /* reconfig invalidates log-odds scores */
   hmm->flags       &= ~CPLAN9_LOCAL_BEGIN; /* local begins now off */
@@ -1073,7 +1098,7 @@ CPlan9GlobalConfig(struct cplan9_s *hmm)
 }
 
 
-/* Function: CPlan9ConfigEnforce()
+/* Function: CPlan9SWConfigEnforce()
  * EPN, Fri Feb  9 05:47:37 2007
  * based on SRE's Plan7SWConfig() from HMMER's plan7.c
  * 
@@ -1112,7 +1137,6 @@ CPlan9SWConfigEnforce(struct cplan9_s *hmm, float pentry, float pexit,
   hmm->begin[1] = 1. - pentry;
   for (k = 2; k <= enf_start_pos; k++)
     hmm->begin[k] = pentry / (float)(enf_start_pos-1);
-
 
   /* OLD WAY (more smith-waterman-like, less CM-like) EPN, Thu Jun 21 15:30:46 2007
      hmm->begin[1] = (1. - pentry) * (1. - (hmm->t[0][CTMI] + hmm->t[0][CTMD])); 
@@ -1166,9 +1190,9 @@ CPlan9RenormalizeExits(struct cplan9_s *hmm, int spos)
     {
       if(k != (spos-1)) /* we can't exit from the M_spos-1 */
 	{
-	  d = FSum(hmm->t[k], 4);
-	  /* FScale(hmm->t[k], 4, 1./(d + d*hmm->end[k])); */
-	  FScale(hmm->t[k], 4, (1.-hmm->end[k])/d);
+	  d = esl_vec_FSum(hmm->t[k], 4);
+	  /* esl_vec_FScale(hmm->t[k], 4, 1./(d + d*hmm->end[k])); */
+	  esl_vec_FScale(hmm->t[k], 4, (1.-hmm->end[k])/d);
 	}
     }
   /* Take care of hmm->M node, which is special */
@@ -1185,20 +1209,30 @@ CPlan9RenormalizeExits(struct cplan9_s *hmm, int spos)
 void
 CP9AllocTrace(int tlen, CP9trace_t **ret_tr)
 {
+  int status;
   CP9trace_t *tr;
   
-  tr =            MallocOrDie (sizeof(CP9trace_t));
-  tr->statetype = MallocOrDie (sizeof(char) * tlen);
-  tr->nodeidx   = MallocOrDie (sizeof(int)  * tlen);
-  tr->pos       = MallocOrDie (sizeof(int)  * tlen);
+  ESL_ALLOC(tr, sizeof(CP9trace_t));
+  ESL_ALLOC(tr->statetype, sizeof(char) * tlen);
+  ESL_ALLOC(tr->nodeidx,   sizeof(int)  * tlen);
+  ESL_ALLOC(tr->pos,       sizeof(int)  * tlen);
   *ret_tr = tr;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
 }
 void
 CP9ReallocTrace(CP9trace_t *tr, int tlen)
 {
-  tr->statetype = ReallocOrDie (tr->statetype, tlen * sizeof(char));
-  tr->nodeidx   = ReallocOrDie (tr->nodeidx,   tlen * sizeof(int));
-  tr->pos       = ReallocOrDie (tr->pos,       tlen * sizeof(int));
+  int status;
+  void *tmp;
+
+  ESL_RALLOC(tr->statetype, tmp, tlen * sizeof(char));
+  ESL_RALLOC(tr->nodeidx,   tmp, tlen * sizeof(int));
+  ESL_RALLOC(tr->pos,       tmp, tlen * sizeof(int));
+
+ ERROR:
+  esl_fatal("Memory reallocation error.");
 }
 void 
 CP9FreeTrace(CP9trace_t *tr)
@@ -1248,7 +1282,7 @@ CP9_2sub_cp9(struct cplan9_s *orig_hmm, struct cplan9_s **ret_sub_hmm, int spos,
   int i, x;
   int orig_pos;
 
-  sub_hmm = AllocCPlan9((epos-spos+1));
+  sub_hmm = AllocCPlan9((epos-spos+1), orig_hmm->abc);
 
   for(x = 0; x < MAXABET; x++)
     {
@@ -1278,7 +1312,7 @@ CP9_2sub_cp9(struct cplan9_s *orig_hmm, struct cplan9_s **ret_sub_hmm, int spos,
 	  if((i > 1) && ((0. - sub_hmm->begin[i] > 0.00000001) ||
 			 (sub_hmm->begin[i] - 0. > 0.00000001)))
 	    {
-	      Die("ERROR in cp9_2sub_cp9() is original CP9 HMM not in global (NW) mode? i: %d\n", i);
+	      esl_fatal("ERROR in cp9_2sub_cp9() is original CP9 HMM not in global (NW) mode? i: %d\n", i);
 	    }
 	}
       for(x = 0; x < MAXABET; x++)
@@ -1403,83 +1437,6 @@ CP9_reconfig2sub(struct cplan9_s *hmm, int spos, int epos, int spos_nd,
   return;
 }
 
-/***********************************************************
- * NOTE: INCOMPLETE! DO NOT USE WITHOUT FINISHING!
- *
- * Function: sub_CPlan9GlobalConfig()
- * EPN 09.24.06
- * based on SRE's Plan7GlobalConfig() from HMMER's plan7.c
- * 
- * Purpose:  Set the alignment independent parameters of
- *           a CM Plan 9 model to (Needleman/Wunsch) configuration
- *           for a 'sub' model. Used for sub_cm alignment, in which
- *           the model only aligns to a contiguous subset of 
- *           consensus columns from spos..epos inclusively. The 
- *           local entry is set to 1.0 for spos and exit
- *           is set to 1.0 for epos. Also transitions into 
- *           inserts and deletes that correspond to spos, and
- *           out of inserts and deletes that correspond to 
- *           epos are made impossible (see code).
- *           
- * Args:     hmm    - the CM Plan 9 model w/ data-dep prob's valid
- *           spos   - first consensus column modelled by original
- *                    CP9 HMM the sub CP9 HMM models.
- *           epos   - final consensus column modelled by original
- *                    CP9 HMM the sub CP9 HMM models.
- *           phi    - the 2D phi array for the original CP9 HMM.         
- * Return:   (void)
- *           HMM probabilities are modified.
- */
-void
-sub_CPlan9GlobalConfig(struct cplan9_s *hmm, int spos, int epos, double **phi)
-{
-  int i;
-  Die("ERROR, sub_CPlan9GlobalConfig() was abandoned on 09.27.06 by EPN. It is incomplete.\n");
-  /* No special (*x* states in Plan 7) states in CM Plan 9 */
-
-  /* Configure entry.
-   * Exactly 3 ways to start, B->M_1 (hmm->begin[1]), B->I_0 (hmm->t[0][CTMI]),
-   *                      and B->D_1 (hmm->t[0][CTMD])
-   */
-  if(spos > 1)
-    {
-      /* prob of starting in M_spos is (1. - prob of starting in I_spos-1) as there is no D_spos-1 -> M_spos trans */
-      hmm->begin[spos] = 1. - ((phi[spos-1][HMMINSERT] * (1. - hmm->t[spos-1][CTII])) + 
-			       (phi[spos  ][HMMDELETE] - (phi[spos-1][HMMINSERT] * hmm->t[spos-1][CTID])));
-      hmm->t[spos-1][CTMI] =   (phi[spos-1][HMMINSERT] * (1. - hmm->t[spos-1][CTII]));
-      hmm->t[spos-1][CTMD] =    phi[spos  ][HMMDELETE] - (phi[spos-1][HMMINSERT] * hmm->t[spos-1][CTID]);
-      hmm->t[spos-1][CTMM] = 0.; /* probability of going from B to M_1 is begin[1] */
-
-      /* eliminate the possibility of going from B -> I_0, the only other way to 
-       * start a parse besides B -> M_1 */
-      hmm->t[0][CTMI] = 0.;
-    }
-
-  for(i = 1; i < spos; i++)
-    hmm->begin[i] = 0.;
-  for(i = spos+1; i <= hmm->M; i++)
-    hmm->begin[i] = 0.;
-
-  if(epos < hmm->M)
-    {
-      //      hmm->end[epos]      = hmm->t[epos][CTMM] + (phi[epos] * hmm->t[epos][CTMD]) + (;
-      hmm->end[hmm->M] = hmm->t[epos][CTMM] + hmm->t[epos][CTMD];
-      hmm->t[epos][CTDM] += hmm->t[epos][CTDD];
-      hmm->t[epos][CTIM] += hmm->t[epos][CTID];
-      hmm->t[epos][CTDD]  = 0.; /* no D state in final node M */
-      hmm->t[epos][CTID]  = 0.; /* no D state in final node M */
-    }
-  /* EPN 09.27.06 NEED SOME WAY OF ENSURING THAT NODE epos+1 IS NEVER REACHED. */
-
-  for(i = 1; i < epos; i++)
-    hmm->end[i] = 0.;
-  for(i = epos+1; i <= hmm->M; i++)
-    hmm->end[i] = 0.;
-
-  CPlan9RenormalizeExits(hmm, spos);
-  hmm->flags       &= ~CPLAN9_HASBITS; /* reconfig invalidates log-odds scores */
-}
-
 /************************************************************************
  * Functions stolen from HMMER 2.4 for use with CM plan 9 HMMs.
  * Eventually, these should go away, replaced with Easel funcs. 
@@ -1490,8 +1447,6 @@ sub_CPlan9GlobalConfig(struct cplan9_s *hmm, int spos, int epos, double **phi)
  * Prob2Score()
  * Scorify()
  * 
- * And 1 was stolen from HMMER:plan7.c:
- * DegenerateSymbolScore()
  *                           
  ************************************************************************/
 /* Function: ILogsum()
@@ -1585,63 +1540,6 @@ Scorify(int sc)
   return ((float) sc / INTSCALE);
 }
 
-/* Stolen from HMMER-2.4::cplan9.c()*/
-/* Function: DegenerateSymbolScore()
- * 
- * Purpose:  Given a sequence character x and an hmm emission probability
- *           vector, calculate the log-odds (base 2) score of
- *           the symbol.
- *          
- *           Easy if x is in the emission alphabet, but not so easy
- *           is x is a degenerate symbol. The "correct" Bayesian
- *           philosophy is to calculate score(X) by summing over
- *           p(x) for all x in the degenerate symbol X to get P(X),
- *           doing the same sum over the prior to get F(X), and
- *           doing log_2 (P(X)/F(X)). This gives an X a zero score,
- *           for instance.
- *           
- *           Though this is correct in a formal Bayesian sense --
- *           we have no information on the sequence, so we can't
- *           say if it's random or model, so it scores zero --
- *           it sucks, big time, for scoring biological sequences.
- *           Sequences with lots of X's score near zero, while
- *           real sequences have average scores that are negative --
- *           so the X-laden sequences appear to be lifted out
- *           of the noise of a full histogram of a database search.
- *           Correct or not, this is highly undesirable.
- *           
- *           So therefore we calculated the expected score of
- *           the degenerate symbol by summing over all x in X:
- *                 e_x log_2 (p(x)/f(x))
- *           where the expectation of x, e_x, is calculated from
- *           the random model.
- *
- *           Empirically, this works; it also has a wooly hand-waving
- *           probabilistic justification that I'm happy enough about.
- *           
- * Args:     p      - probabilities of normal symbols
- *           null   - null emission model
- *           ambig  - index of the degenerate character in Alphabet[]
- *                    
- * Return:   the integer log odds score of x given the emission
- *           vector and the null model, scaled up by INTSCALE.              
- */
-int 
-DegenerateSymbolScore(const ESL_ALPHABET *abc, float *p, float *null, int ambig)
-{
-  int x;
-  float numer = 0.;
-  float denom = 0.;
-
-  for (x = 0; x < abc->K; x++) {
-    if (Degenerate[ambig][x]) {
-      numer += null[x] * sreLOG2(p[x] / null[x]);
-      denom += null[x];
-    }
-  }
-  return (int) (INTSCALE * numer / denom);
-}
-
 /* Function:  CP9HackInsertScores()
  * Incept:    EPN, Fri Feb  9 10:59:12 2007
  *
@@ -1690,9 +1588,7 @@ CP9EnforceHackMatchScores(CP9_t *cp9, int enf_start_pos, int enf_end_pos)
  * Purpose:  From a consensus assignment of columns to MAT/INS, construct fake
  *           tracebacks for each individual sequence.
  *           
- * Args:     aseqs     - alignment [0..nseq-1][0..alen-1]
- *           nseq      - number of seqs in alignment
- *           alen      - length of alignment in columns
+ * Args:     msa       - msa alignment 
  *           matassign - assignment of column 1 if MAT, 0 if INS; 
  *                       [1..alen] (off one from aseqs)
  *           ret_tr    - RETURN: array of tracebacks
@@ -1701,9 +1597,12 @@ CP9EnforceHackMatchScores(CP9_t *cp9, int enf_start_pos, int enf_end_pos)
  *           ret_tr is alloc'ed here. Caller must free.
  */          
 void
-CP9_fake_tracebacks(char **aseq, int nseq, int alen, int *matassign,
-		CP9trace_t ***ret_tr)
+CP9_fake_tracebacks(ESL_MSA *msa, int *matassign, CP9trace_t ***ret_tr)
 {
+  if(! (msa->flags & eslMSA_DIGITAL))
+    esl_fatal("ERROR in CP9_fake_tracebacks(), msa should be digitized.\n");
+
+  int  status;
   CP9trace_t **tr;
   int  idx;                     /* counter over sequences          */
   int  i;                       /* position in raw sequence (1..L) */
@@ -1713,19 +1612,19 @@ CP9_fake_tracebacks(char **aseq, int nseq, int alen, int *matassign,
   int  first_match;             /* first match column */
   int  last_match;              /* last match column */
 
-  tr = (CP9trace_t **) MallocOrDie (sizeof(CP9trace_t *) * nseq);
+  ESL_ALLOC(tr, sizeof(CP9trace_t *) * msa->nseq);
   
   first_match = -1;
   last_match  = -1;
-  for (apos = 0; apos < alen; apos++)
+  for (apos = 0; apos < msa->alen; apos++)
     {
       if(matassign[apos+1] && first_match == -1) first_match = apos;
       if(matassign[apos+1]) last_match = apos;
     }
 
-  for (idx = 0; idx < nseq; idx++)
+  for (idx = 0; idx < msa->nseq; idx++)
     {
-      CP9AllocTrace(alen+2, &tr[idx]);  /* allow room for B & E */
+      CP9AllocTrace(msa->alen+2, &tr[idx]);  /* allow room for B & E */
       
 				/* all traces start with M_0 state (the B state)... */
       tr[idx]->statetype[0] = CSTB;
@@ -1736,12 +1635,12 @@ CP9_fake_tracebacks(char **aseq, int nseq, int alen, int *matassign,
       k = 0;
       tpos = 1;
 
-      for (apos = 0; apos < alen; apos++)
+      for (apos = 0; apos < msa->alen; apos++)
         {
 	  tr[idx]->statetype[tpos] = CSTBOGUS; /* bogus, deliberately, to debug */
 
-	  if (matassign[apos+1] && ! isgap(aseq[idx][apos]))
-	    {			/* MATCH */
+	  if (matassign[apos+1] && !(esl_abc_XIsGap(msa->abc, msa->ax[idx][(apos+1)])))
+	  {			/* MATCH */
 	      k++;		/* move to next model pos */
 	      tr[idx]->statetype[tpos] = CSTM;
 	      tr[idx]->nodeidx[tpos]   = k;
@@ -1767,7 +1666,7 @@ CP9_fake_tracebacks(char **aseq, int nseq, int alen, int *matassign,
 	      tr[idx]->pos[tpos]       = 0;
 	      tpos++;
             }
-	  else if (! isgap(aseq[idx][apos]))
+	  else if (! (esl_abc_XIsGap(msa->abc, msa->ax[idx][(apos+1)])))
 	    {			/* INSERT */
 	      tr[idx]->statetype[tpos] = CSTI;
               tr[idx]->nodeidx[tpos]   = k;
@@ -1796,6 +1695,9 @@ CP9_fake_tracebacks(char **aseq, int nseq, int alen, int *matassign,
 
   *ret_tr = tr;
   return;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
 }
 
 /* Function: CP9TraceCount() 
@@ -1812,7 +1714,7 @@ CP9_fake_tracebacks(char **aseq, int nseq, int alen, int *matassign,
  * Return:   (void)
  */
 void
-CP9TraceCount(struct cplan9_s *hmm, ESL_SQ *sq, float wt, CP9trace_t *tr)
+CP9TraceCount(CP9_t *hmm, ESL_SQ *sq, float wt, CP9trace_t *tr)
 {
   /* contract check */
   if(! (sq->flags & eslSQ_DIGITAL))
@@ -1828,9 +1730,9 @@ CP9TraceCount(struct cplan9_s *hmm, ESL_SQ *sq, float wt, CP9trace_t *tr)
       /* Emission counts. 
        */
       if (tr->statetype[tpos] == CSTM) 
-	esl_abc_FCount(hmm->mat[tr->nodeidx[tpos]], sq->dsq[i], wt);
+	esl_abc_FCount(hmm->abc, hmm->mat[tr->nodeidx[tpos]], sq->dsq[i], wt);
       else if (tr->statetype[tpos] == CSTI) 
-	esl_abc_FCount(hmm->ins[tr->nodeidx[tpos]], sq->dsq[i], wt);
+	esl_abc_FCount(hmm->abc, hmm->ins[tr->nodeidx[tpos]], sq->dsq[i], wt);
 
       /* State transition counts
        */
@@ -1841,7 +1743,7 @@ CP9TraceCount(struct cplan9_s *hmm, ESL_SQ *sq, float wt, CP9trace_t *tr)
 	case CSTI: hmm->t[0][CTMI]                 += wt; break;
 	case CSTD: hmm->t[0][CTMD]                 += wt; break;
 	default:      
-	  Die("illegal state transition %s->%s in traceback", 
+	  esl_fatal("illegal state transition %s->%s in traceback", 
 	      CP9Statetype(tr->statetype[tpos]), 
 	      CP9Statetype(tr->statetype[tpos+1]));
 	}
@@ -1853,7 +1755,7 @@ CP9TraceCount(struct cplan9_s *hmm, ESL_SQ *sq, float wt, CP9trace_t *tr)
 	case CSTD: hmm->t[tr->nodeidx[tpos]][CTMD] += wt; break;
 	case CSTE: hmm->end[tr->nodeidx[tpos]]     += wt; break;
 	default:    
-	  Die("illegal state transition %s->%s in traceback", 
+	  esl_fatal("illegal state transition %s->%s in traceback", 
 	      CP9Statetype(tr->statetype[tpos]), 
 	      CP9Statetype(tr->statetype[tpos+1]));
 	}
@@ -1866,13 +1768,13 @@ CP9TraceCount(struct cplan9_s *hmm, ESL_SQ *sq, float wt, CP9trace_t *tr)
 	case CSTE: 
 	  /* This should only happen from the final insert (I_M) state */
 	  if((tpos+1) != (tr->tlen-1))
-	    Die("illegal state transition %s->%s (I is not final insert) in traceback", 
+	    esl_fatal("illegal state transition %s->%s (I is not final insert) in traceback", 
 		CP9Statetype(tr->statetype[tpos]), 
 		CP9Statetype(tr->statetype[tpos+1]));
 	  hmm->t[tr->nodeidx[tpos]][CTIM] += wt; break;
 	  break;
 	default:    
-	  Die("illegal state transition %s->%s in traceback", 
+	  esl_fatal("illegal state transition %s->%s in traceback", 
 	      CP9Statetype(tr->statetype[tpos]), 
 	      CP9Statetype(tr->statetype[tpos+1]));
 	}
@@ -1885,13 +1787,13 @@ CP9TraceCount(struct cplan9_s *hmm, ESL_SQ *sq, float wt, CP9trace_t *tr)
 	case CSTE: 
 	  /* This should only happen from the final delete (D_M) state */
 	  if((tpos+1) != (tr->tlen-1))
-	    Die("illegal state transition %s->%s (D is not final delete) in traceback", 
+	    esl_fatal("illegal state transition %s->%s (D is not final delete) in traceback", 
 		CP9Statetype(tr->statetype[tpos]), 
 		CP9Statetype(tr->statetype[tpos+1]));
 	  hmm->t[tr->nodeidx[tpos]][CTDM] += wt; break;
 	  break;
 	default:    
-	  Die("illegal state transition %s->%s in traceback", 
+	  esl_fatal("illegal state transition %s->%s in traceback", 
 	      CP9Statetype(tr->statetype[tpos]), 
 	      CP9Statetype(tr->statetype[tpos+1]));
 	}
@@ -1900,7 +1802,7 @@ CP9TraceCount(struct cplan9_s *hmm, ESL_SQ *sq, float wt, CP9trace_t *tr)
 	break; /* E is the last. It makes no transitions. */
 
       default:
-	Die("illegal state %s in traceback", 
+	esl_fatal("illegal state %s in traceback", 
 	    CP9Statetype(tr->statetype[tpos]));
       }
     }
@@ -1933,23 +1835,27 @@ CP9Statetype(char st)
  * Incept:   EPN, Wed May 30 06:07:14 2007
  *           
  * Args:     hmm   - HMM with valid log odds scores.
- *           dsq   - digitized sequence that traceback aligns to the HMM (1..L)
+ *           sq    - digitized sequence that traceback aligns to the HMM (1..sq->n)
  *           tr    - alignment of seq to HMM
  *           
  * Return:   (void)
  */
 float
-CP9TraceScore(CP9_t *hmm, char *dsq, CP9trace_t *tr)
+CP9TraceScore(CP9_t *hmm, ESL_SQ *sq, CP9trace_t *tr)
 {
   int score;			/* total score as a scaled integer */
   int tpos;                     /* position in tr */
   char sym;		        /* digitized symbol in dsq */
   
-  /*CP9PrintTrace(stdout, tr, hmm, dsq); */
+  /* Contract check */
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in CP9TraceScore, sq is not digitized.\n");
+
+  /*CP9PrintTrace(stdout, tr, hmm, sq); */
   score = 0;
   for (tpos = 0; tpos < tr->tlen-1; tpos++)
     {
-      sym = dsq[tr->pos[tpos]];
+      sym = sq->dsq[tr->pos[tpos]];
 
       /* Emissions from M and I states.
        */
@@ -1961,8 +1867,8 @@ CP9TraceScore(CP9_t *hmm, char *dsq, CP9trace_t *tr)
       /* State transitions. Including EL emissions, EL emits on transition 
        */
       score += CP9TransitionScoreLookup(hmm, 
-				     tr->statetype[tpos], tr->nodeidx[tpos],
-				     tr->statetype[tpos+1], tr->nodeidx[tpos+1]);
+					tr->statetype[tpos], tr->nodeidx[tpos],
+					tr->statetype[tpos+1], tr->nodeidx[tpos+1]);
     }
   return Scorify(score);
 }
@@ -1980,8 +1886,14 @@ CP9TraceScore(CP9_t *hmm, char *dsq, CP9trace_t *tr)
  *           dsq - NULL or digitized sequence trace refers to.                
  */
 void
-CP9PrintTrace(FILE *fp, CP9trace_t *tr, CP9_t *hmm, char *dsq)
+CP9PrintTrace(FILE *fp, CP9trace_t *tr, CP9_t *hmm, ESL_SQ *sq)
 {
+  /* Contract check */
+  if((sq != NULL) && (! (sq->flags & eslSQ_DIGITAL)))
+    esl_fatal("ERROR in CP9PrintTrace, sq is not digitized.\n");
+  if((sq != NULL) && (hmm == NULL))
+    esl_fatal("ERROR in CP9PrintTrace, sq is non-NULL but HMM is NULL.\n");
+
   int          tpos;		/* counter for trace position */
   unsigned int sym;
   int          sc; 
@@ -2002,13 +1914,13 @@ CP9PrintTrace(FILE *fp, CP9trace_t *tr, CP9_t *hmm, char *dsq)
     } 
   } else {
     if (!(hmm->flags & CPLAN9_HASBITS))
-      Die("oi, you can't print scores from that hmm, it's not ready.");
+      esl_fatal("oi, you can't print scores from that hmm, it's not ready.");
 
     sc = 0;
     fprintf(fp, "st  node   rpos  transit emission - traceback len %d\n", tr->tlen);
     fprintf(fp, "--  ---- ------  ------- --------\n");
     for (tpos = 0; tpos < tr->tlen; tpos++) {
-      if (dsq != NULL) sym = dsq[tr->pos[tpos]];
+      if (sq != NULL) sym = sq->dsq[tr->pos[tpos]];
 
       fprintf(fp, "%1s  %4d %6d  %7d", 
 	      CP9Statetype(tr->statetype[tpos]),
@@ -2021,18 +1933,18 @@ CP9PrintTrace(FILE *fp, CP9trace_t *tr, CP9_t *hmm, char *dsq)
       if (tpos < tr->tlen-1)
 	sc += CP9TransitionScoreLookup(hmm, tr->statetype[tpos], tr->nodeidx[tpos],
 				       tr->statetype[tpos+1], tr->nodeidx[tpos+1]);
-
-      if (dsq != NULL) {
+      
+      if (sq != NULL) {
 	if (tr->statetype[tpos] == CSTM)  
 	  {
 	    fprintf(fp, " %8d %c", hmm->msc[(int) sym][tr->nodeidx[tpos]], 
-		    Alphabet[(int) sym]);
+		    hmm->abc->sym[(int) sym]);
 	    sc += hmm->msc[(int) sym][tr->nodeidx[tpos]];
 	  }
 	else if (tr->statetype[tpos] == CSTI) 
 	  {
 	    fprintf(fp, " %8d %c", hmm->isc[(int) sym][tr->nodeidx[tpos]], 
-		    (char) tolower((int) Alphabet[(int) sym]));
+		    (char) tolower((int) hmm->abc->sym[(int) sym]));
 	    sc += hmm->isc[(int) sym][tr->nodeidx[tpos]];
 	  }
 	else if (tr->statetype[tpos] == CSTEL) 
@@ -2040,19 +1952,13 @@ CP9PrintTrace(FILE *fp, CP9trace_t *tr, CP9_t *hmm, char *dsq)
 	    if(tr->statetype[tpos-1] == CSTEL) /* we will emit on self transit */
 	      {
 		fprintf(fp, " %8d %c", 0,
-			(char) tolower((int) Alphabet[(int) sym]));
+			(char) tolower((int) hmm->abc->sym[(int) sym]));
 	      }
 	    else /* we just entered EL, no emission */
 	      {
 		fprintf(fp, " %8s %c", "-", '-');
 	      }
 	  }
-	/*	else if ((tr->statetype[tpos] == STN && tr->statetype[tpos-1] == STN) ||
-		 (tr->statetype[tpos] == STC && tr->statetype[tpos-1] == STC) ||
-		 (tr->statetype[tpos] == STJ && tr->statetype[tpos-1] == STJ))
-	  {
-	    fprintf(fp, " %8d %c", 0, (char) tolower((int) hmmer_Alphabet[(int) sym]));
-	    }*/
       } else {
 	fprintf(fp, " %8s %c", "-", '-');
       }
@@ -2083,7 +1989,7 @@ CP9TransitionScoreLookup(struct cplan9_s *hmm, char st1, int k1,
     case CSTM: return hmm->bsc[k2]; 
     case CSTI: return hmm->tsc[CTMI][0];
     case CSTD: return hmm->tsc[CTMD][0];
-    default:      Die("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
+    default:      esl_fatal("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
     }
     break;
   case CSTM:
@@ -2093,7 +1999,7 @@ CP9TransitionScoreLookup(struct cplan9_s *hmm, char st1, int k1,
     case CSTD: return hmm->tsc[CTMD][k1];
     case CSTE: return hmm->esc[k1];
     case CSTEL: return hmm->tsc[CTME][k1];
-    default:      Die("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
+    default:      esl_fatal("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
     }
     break;
   case CSTI:
@@ -2102,7 +2008,7 @@ CP9TransitionScoreLookup(struct cplan9_s *hmm, char st1, int k1,
     case CSTI: return hmm->tsc[CTII][k1];
     case CSTD: return hmm->tsc[CTID][k1];
     case CSTE: return hmm->tsc[CTIM][k1]; /* This should only happen from the final insert (I_M) state */
-    default:      Die("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
+    default:      esl_fatal("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
     }
     break;
   case CSTD:
@@ -2111,7 +2017,7 @@ CP9TransitionScoreLookup(struct cplan9_s *hmm, char st1, int k1,
     case CSTI: return hmm->tsc[CTDI][k1];
     case CSTD: return hmm->tsc[CTDD][k1];
     case CSTE: return hmm->tsc[CTDM][k1]; /* This should only happen from the final delete (D_M) state */
-    default:      Die("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
+    default:      esl_fatal("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
     }
     break;
   case CSTEL:
@@ -2119,14 +2025,14 @@ CP9TransitionScoreLookup(struct cplan9_s *hmm, char st1, int k1,
     case CSTM: return 0; /* transition to EL penalty incurred when M->EL transition takes place */
     case CSTE: return 0; /* transition to EL penalty incurred when M->EL transition takes place */
     case CSTEL: return hmm->el_selfsc; /* penalty for EL->EL self transition loop */
-    default:      Die("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
+    default:      esl_fatal("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
     }
     break;
   case CSTE: /* this should never happen, it means we transitioned from E, which is not
 	      * allowed. */
-    Die("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
+    esl_fatal("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
     break;
-  default:        Die("illegal state %s in traceback", CP9Statetype(st1));
+  default:        esl_fatal("illegal state %s in traceback", CP9Statetype(st1));
   }
   /*NOTREACHED*/
   return 0;
@@ -2141,7 +2047,7 @@ CP9TransitionScoreLookup(struct cplan9_s *hmm, char st1, int k1,
  *           of optimum alignment.
  *           
  * Args:     hmm    - hmm, log odds form, used to make mx
- *           dsq    - sequence aligned to (digital form) 1..N  
+ *           sq     - sequence aligned to (digital form) 1..sq->n  
  *           i0     - first residue of sequence, often 1
  *           j0     - last residue of sequence, often L
  *           mx     - the matrix to trace back in, N x hmm->M
@@ -2151,9 +2057,13 @@ CP9TransitionScoreLookup(struct cplan9_s *hmm, char st1, int k1,
  *           ret_tr is allocated here. Free using CP9FreeTrace().
  */
 void
-CP9ViterbiTrace(struct cplan9_s *hmm, char *dsq, int i0, int j0,
+CP9ViterbiTrace(struct cplan9_s *hmm, ESL_SQ *sq, int i0, int j0,
 		struct cp9_dpmatrix_s *mx, CP9trace_t **ret_tr)
 {
+  /* contract check */
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in CP9ViterbiTrace(), sq should be digitized.\n");
+
   CP9trace_t *tr;
   int curralloc;		/* current allocated length of trace */
   int tpos;			/* position in trace */
@@ -2193,7 +2103,7 @@ CP9ViterbiTrace(struct cplan9_s *hmm, char *dsq, int i0, int j0,
     switch (tr->statetype[tpos-1]) {
     case CSTM:			/* M connects from i-1,k-1, B or an EL*/
       /*printf("CSTM k: %d i:%d \n", k, i);*/
-      sc = mmx[i+1][k+1] - hmm->msc[(int) dsq[i+1]][k+1];
+      sc = mmx[i+1][k+1] - hmm->msc[sq->dsq[i+1]][k+1];
       if (sc <= -INFTY) { CP9FreeTrace(tr); *ret_tr = NULL; return; }
       else if (sc == mmx[i][k] + hmm->tsc[CTMM][k])
 	{
@@ -2244,12 +2154,12 @@ CP9ViterbiTrace(struct cplan9_s *hmm, char *dsq, int i0, int j0,
 	      tr->nodeidx[tpos]   = 0;
 	      tr->pos[tpos]       = 0;
 	      if(tr->pos[tpos-1] != 1)
-		Die("traceback failed: premature begin");
+		esl_fatal("traceback failed: premature begin");
 	      error_flag = FALSE;
 	    }
 	}
       if(error_flag)
-	Die("traceback failed");
+	esl_fatal("traceback failed");
       break;
 
     case CSTD:			/* D connects from M,D,I, (D_1 also connects from B (M_0) */
@@ -2288,12 +2198,12 @@ CP9ViterbiTrace(struct cplan9_s *hmm, char *dsq, int i0, int j0,
 	  tr->nodeidx[tpos]   = k--;
 	  tr->pos[tpos]       = 0;
 	}
-      else Die("traceback failed");
+      else esl_fatal("traceback failed");
       break;
 
     case CSTI:			/* I connects from M,I,D, (I_0 connects from B also(*/
       /*printf("CSTI k: %d i:%d \n", k, i);*/
-      sc = imx[i+1][k] - hmm->isc[(int) dsq[i+1]][k];
+      sc = imx[i+1][k] - hmm->isc[sq->dsq[i+1]][k];
       if (sc <= -INFTY) { CP9FreeTrace(tr); *ret_tr = NULL; return; }
       else if(k == 0) /* I_0 connects from B(M_0), and I_0 */
 	{
@@ -2330,7 +2240,7 @@ CP9ViterbiTrace(struct cplan9_s *hmm, char *dsq, int i0, int j0,
 	  tr->nodeidx[tpos]   = k--;
 	  tr->pos[tpos]       = 0;
 	}
-      else Die("traceback failed");
+      else esl_fatal("traceback failed");
       break;
 
     case CSTE:			/* E connects from any M state. k set here 
@@ -2382,7 +2292,7 @@ CP9ViterbiTrace(struct cplan9_s *hmm, char *dsq, int i0, int j0,
 		}
 	    }
 	}
-      if (k < 0 || error_flag) Die("traceback failed");
+      if (k < 0 || error_flag) esl_fatal("traceback failed");
       break;
 
     case CSTEL:			/* EL connects from certain M states and itself */
@@ -2405,11 +2315,11 @@ CP9ViterbiTrace(struct cplan9_s *hmm, char *dsq, int i0, int j0,
 				      * the first visit to EL). 
 				      */
 	}
-      else Die("traceback failed");
+      else esl_fatal("traceback failed");
       break;
 
     default:
-      Die("traceback failed");
+      esl_fatal("traceback failed");
 
     } /* end switch over statetype[tpos-1] */
     
@@ -2450,6 +2360,7 @@ CP9ViterbiTrace(struct cplan9_s *hmm, char *dsq, int i0, int j0,
 void
 CP9ReverseTrace(CP9trace_t *tr)
 {
+  int    status;
   char  *statetype;
   int   *nodeidx;
   int   *pos;
@@ -2457,9 +2368,9 @@ CP9ReverseTrace(CP9trace_t *tr)
 
   /* Allocate
    */
-  statetype = MallocOrDie (sizeof(char)* tr->tlen);
-  nodeidx   = MallocOrDie (sizeof(int) * tr->tlen);
-  pos       = MallocOrDie (sizeof(int) * tr->tlen);
+  ESL_ALLOC(statetype, sizeof(char)* tr->tlen);
+  ESL_ALLOC(nodeidx,   sizeof(int) * tr->tlen);
+  ESL_ALLOC(pos,       sizeof(int) * tr->tlen);
   
   /* Reverse the trace.
    */
@@ -2478,6 +2389,9 @@ CP9ReverseTrace(CP9trace_t *tr)
   tr->statetype = statetype;
   tr->nodeidx   = nodeidx;
   tr->pos       = pos;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
 }
 
 
@@ -2689,7 +2603,9 @@ CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq,
   msa = esl_msa_Create(nseq, alen);
   for (idx = 0; idx < nseq; idx++) 
     {
-      /* Textize the sequence, is this wasteful? */
+      if(! (sq[idx]->flags & eslSQ_DIGITAL))
+	esl_fatal("ERROR in CP9Traces2Alignment(), sq's should be digitized.\n");
+      /* Textize the sequence, we just checked it was digitized */
       esl_sq_Textize(sq[idx]);
 
       for (cpos = 0; cpos <= emap->clen; cpos++)
@@ -2740,7 +2656,7 @@ CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq,
        * Internal inserts are split in half, and C-term is right-justified.
        * C-terminal extension remains left-justified.
        */
-      rightjustify(msa->aseq[idx], maxins[0]);
+      rightjustify(msa->abc, msa->aseq[idx], maxins[0]);
       
       for (cpos = 1; cpos < emap->clen; cpos++) 
 	{
@@ -2749,7 +2665,7 @@ CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq,
 	      for (nins = 0, apos = matmap[cpos]+1; islower((int) (msa->aseq[idx][apos])); apos++)
 		nins++;
 	      nins /= 2;		/* split the insertion in half */
-	      rightjustify(msa->aseq[idx]+matmap[cpos]+1+nins, maxins[cpos]-nins);
+	      rightjustify(msa->abc, msa->aseq[idx]+matmap[cpos]+1+nins, maxins[cpos]-nins);
 	    }
 	}
     }
@@ -2821,7 +2737,7 @@ CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq,
   free(matmap);
   free(imap);
   free(elmap);
-  esl_free_2D((void **) eposmap, nseq);
+  esl_Free2D((void **) eposmap, nseq);
   *ret_msa = msa;
   return eslOK;
 
@@ -2834,7 +2750,7 @@ CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq,
   if(maxels!= NULL)  free(maxels);
   if(matmap!= NULL)  free(matmap);
   if(elmap != NULL)  free(elmap);
-  esl_free_2D((void **) eposmap, nseq);
+  esl_Free2D((void **) eposmap, nseq);
   if(msa   != NULL)  esl_msa_Destroy(msa);
   return status;
 }
@@ -2847,7 +2763,7 @@ CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq,
  *           of insertions in HMMER alignments.
  */
 static void
-rightjustify(char *s, int n)
+rightjustify(const ESL_ALPHABET *abc, char *s, int n)
 {
   int npos;
   int opos;
@@ -2855,8 +2771,10 @@ rightjustify(char *s, int n)
   npos = n-1;
   opos = n-1;
   while (opos >= 0) {
-    if (isgap(s[opos])) opos--;
-    else                s[npos--]=s[opos--];  
+    if (esl_abc_CIsGap(abc, s[opos]))
+      opos--;
+    else
+      s[npos--]=s[opos--];  
   }
   while (npos >= 0) 
     s[npos--] = '.';
@@ -2894,9 +2812,9 @@ DuplicateCP9(CM_t *src_cm, CM_t *dest_cm)
   CP9_map_cm2hmm(dest_cm, dest_cm->cp9map, 0);
 
   /* Create the new model and copy everything over */
-  dest_cm->cp9 = AllocCPlan9(dest_cm->cp9map->hmm_M);
+  dest_cm->cp9 = AllocCPlan9(dest_cm->cp9map->hmm_M, src_cm->abc);
   ZeroCPlan9(dest_cm->cp9);
-  CPlan9SetNullModel(dest_cm->cp9, dest_cm->bg->f, 1.0); /* set p1 = 1.0 which corresponds to the CM */
+  CPlan9SetNullModel(dest_cm->cp9, dest_cm->null, 1.0); /* set p1 = 1.0 which corresponds to the CM */
   CPlan9InitEL(dest_cm, dest_cm->cp9); /* set up hmm->el_from_ct and hmm->el_from_idx data, which
 					* explains how the EL states are connected in the HMM. */
 
@@ -2920,7 +2838,7 @@ DuplicateCP9(CM_t *src_cm, CM_t *dest_cm)
       dest_cm->cp9->begin[k] = src_cm->cp9->begin[k];
       dest_cm->cp9->end[k] = src_cm->cp9->end[k];
 
-      for(x = 0; x < src_cm->cp9->abc; x++)
+      for(x = 0; x < src_cm->cp9->abc->K; x++)
 	{
 	  dest_cm->cp9->mat[k][x] = src_cm->cp9->mat[k][x];
 	  dest_cm->cp9->ins[k][x] = src_cm->cp9->ins[k][x];
@@ -3020,11 +2938,11 @@ CPlan9ComlogAppend(struct cplan9_s *hmm, int argc, char **argv)
   if (hmm->comlog != NULL)
     {
       len += strlen(hmm->comlog);
-      hmm->comlog = ReallocOrDie(hmm->comlog, sizeof(char)* (len+1));
+      ESL_RALLOC(hmm->comlog, tmp, sizeof(char)* (len+1));
     }
   else
     {
-      hmm->comlog = MallocOrDie(sizeof(char)* (len+1));
+      ESL_ALLOC(hmm->comlog, sizeof(char)* (len+1));
       *(hmm->comlog) = '\0'; /* need this to make strcat work */
     }
 

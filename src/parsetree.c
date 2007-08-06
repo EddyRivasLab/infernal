@@ -63,6 +63,7 @@ CreateParsetree(void)
   return new;
  ERROR:
   esl_fatal("ERROR allocated parsetree.\n");
+  return NULL; /* never reached */
 }
 
 /* Function: GrowParsetree()

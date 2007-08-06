@@ -90,6 +90,9 @@ extern int   ExponentiateCM(CM_t *cm, double z);
 extern CM_t *DuplicateCM(CM_t *cm);
 extern void  cm_banner(FILE *fp, char *progname, char *banner);
 extern int   cm_Validate(CM_t *cm, float tol, char *errbuf);
+extern char *CMStatetype(char st);
+extern char *CMNodetype(char nd);
+extern char *CMStateid(char st);
 extern int   cm_SetName(CM_t *cm, char *name);
 extern int   cm_SetAccession(CM_t *cm, char *acc);
 extern int   cm_SetDescription(CM_t *cm, char *desc);
@@ -268,9 +271,9 @@ extern float CP9AverageMatchEntropy(CP9_t *cp9);
 /* from cplan9.c 
  * CM Plan9 HMM structure support
  */
-extern CP9_t *AllocCPlan9(int M);
+extern CP9_t *AllocCPlan9(int M, const ESL_ALPHABET *abc);
 extern CP9_t *AllocCPlan9Shell(void);
-extern void AllocCPlan9Body(CP9_t *hmm, int M);
+extern void AllocCPlan9Body(CP9_t *hmm, int M, const ESL_ALPHABET *abc);
 extern void FreeCPlan9(CP9_t *hmm);
 extern void ZeroCPlan9(CP9_t *hmm);
 extern void CPlan9SetName(CP9_t *hmm, char *name);
@@ -307,7 +310,7 @@ extern void CP9_2sub_cp9(CP9_t *orig_hmm, CP9_t **ret_sub_hmm, int spos, int epo
 extern void CP9_reconfig2sub(CP9_t *hmm, int spos, int epos, int spos_nd, int epos_nd, double **orig_phi);
 extern void CP9HackInsertScores(CP9_t *cp9);
 extern void CP9EnforceHackMatchScores(CP9_t *cp9, int enf_start_pos, int enf_end_pos);
-extern void CP9_fake_tracebacks(char **aseq, int nseq, int alen, int *matassign, CP9trace_t ***ret_tr);
+extern void CP9_fake_tracebacks(ESL_MSA *msa, int *matassign, CP9trace_t ***ret_tr);
 extern void  CP9TraceCount(CP9_t *hmm, ESL_SQ *sq, float wt, CP9trace_t *tr);
 extern float CP9TraceScore(CP9_t *hmm, ESL_SQ *sq, CP9trace_t *tr);
 extern void  CP9PrintTrace(FILE *fp, CP9trace_t *tr, CP9_t *hmm, ESL_SQ *sq);
@@ -424,7 +427,7 @@ extern int  build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct,
 extern void CP9NodeForPosn(CP9_t *hmm, int i0, int j0, int x, 
 			   struct cp9_dpmatrix_s *post, int *ret_node, int *ret_type,
 			   int do_fullsub, float pmass, int is_start, int print_flag);
-extern void StripWUSSGivenCC(MSA *msa, char **dsq, float gapthresh, int first_match, int last_match);
+extern void StripWUSSGivenCC(ESL_MSA *msa, char **dsq, float gapthresh, int first_match, int last_match);
 extern int  check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, double threshold, 
 				       int print_flag);
 extern int  check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subinfo, float pthresh,
@@ -458,7 +461,7 @@ extern void     CP9_WriteBinHMM(FILE *fp, CP9_t *hmm);
 
 /* from rsearch_buildcm.c
  */
-extern CM_t *build_cm (MSA *msa, fullmat_t *fullmat, int *querylen,
+extern CM_t *build_cm (ESL_MSA *msa, fullmat_t *fullmat, int *querylen,
 		       float alpha, float beta, float alphap, float betap,
 		       float beginsc, float endsc);
 extern CM_t *read_cm (char *queryfile);

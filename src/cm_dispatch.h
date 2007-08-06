@@ -13,10 +13,14 @@
 #ifndef CMDISPATCH_INCLUDED
 #define CMDISPATCH_INCLUDED
 
+#include "esl_config.h"
 #include "config.h"
+
+#include "easel.h"
+#include "esl_sqio.h"
+
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
-#include "squid.h"
 
 extern void 
 serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons);

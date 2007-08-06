@@ -1,5 +1,5 @@
 /*
- * rnacomp.h
+ * rnamat.h
  * 
  * Header file for API for RNA matrix routines.  Used in parsing alignment
  * into matrix and later reading in matrix.
@@ -11,9 +11,9 @@
 #ifndef _RNAMAT_H
 #define _RNAMAT_H
 
-#include "squid.h"
-#include "msa.h"
+
 #include "structs.h"
+#include "esl_msa.h"
 
 #define RNA_ALPHABET_SIZE Alphabet_size
 
@@ -102,7 +102,7 @@ matrix_t *setup_matrix (int size);
  * Actually count the basepairs and gaps into the fullmat simply by summing
  * to existing values there.  Also counts nt counts to background_nt
  */
-void count_matrix (MSA *msa, fullmat_t *fullmat, double *background_nt,
+void count_matrix (ESL_MSA *msa, fullmat_t *fullmat, double *background_nt,
 		   int cutoff_perc, int product_weights);
 
 /*
@@ -134,7 +134,7 @@ int ribosum_calc_targets(fullmat_t *fullmat);
 
 /* resolve degeneracies in a single seq MSA by replacing
  * with most likely target residue within degenerate alphabet */
-int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, MSA *msa);
+int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, ESL_MSA *msa);
 
 /*
  * Maps i as follows:

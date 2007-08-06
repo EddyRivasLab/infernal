@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <math.h>
 
 #include "structs.h"
 #include "funcs.h"
@@ -88,7 +89,7 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_SQ *sq)
 	nd = cm->ndidx[tr->state[ti-1]]; /* calculate node that EL replaced */
 	qinset     = cons->rpos[nd] - cons->lpos[nd] + 1;
 	tinset     = tr->emitr[ti]  - tr->emitl[ti]  + 1;
-	ninset     = MAX(qinset,tinset);
+	ninset     = ESL_MAX(qinset,tinset);
 	ali->len += 4;
 	do { ali->len++; ninset/=10; } while (ninset); /* poor man's (int)log_10(ninset)+1 */
 	continue;
@@ -164,7 +165,7 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_SQ *sq)
 	nd = 1 + cm->ndidx[tr->state[ti-1]]; /* calculate node that EL replaced */
 	qinset     = cons->rpos[nd] - cons->lpos[nd] + 1;
 	tinset     = tr->emitr[ti]  - tr->emitl[ti]  + 1;
-	ninset     = MAX(qinset,tinset);
+	ninset     = ESL_MAX(qinset,tinset);
 	numwidth = 0; do { numwidth++; ninset/=10; } while (ninset); /* poor man's (int)log_10(ninset)+1 */
 	memset(ali->cstr+pos,  '~', numwidth+4);
 	sprintf(ali->cseq+pos, "*[%*d]*", numwidth, qinset);
@@ -590,7 +591,7 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
 	    default: lstruc = '{'; rstruc = '}'; break;
 	    }
 	} else if (cm->stid[v] == MATL_ML) {
-	  x = FArgMax(cm->esc[v], cm->abc->K);
+	  x = esl_vec_FArgMax(cm->esc[v], cm->abc->K);
 	  lchar = cm->abc->sym[x];
 	  if (cm->esc[v][x] < sthresh) lchar = tolower((int) lchar);
 	  if      (outface[nd] == 0)                    lstruc = ':'; /* external ss */
@@ -599,7 +600,7 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
 	  else                                          lstruc = ','; /* multiloop */
 	  rstruc = ' ';
 	} else if (cm->stid[v] == MATR_MR) {
-	  x = FArgMax(cm->esc[v], cm->abc->K);
+	  x = esl_vec_FArgMax(cm->esc[v], cm->abc->K);
 	  rchar = cm->abc->sym[x];
 	  if (cm->esc[v][x] < sthresh) rchar = tolower((int) rchar);
 	  if      (outface[nd] == 0)                    rstruc = ':'; /* external ss */
@@ -740,8 +741,8 @@ createMultifurcationOrderChart(CM_t *cm)
 	{
 	  left  = cm->ndidx[cm->cfirst[v]]; 
 	  right = cm->ndidx[cm->cnum[v]];
-	  height[nd] = MAX(height[left] + seg_has_pairs[left],
-			   height[right] + seg_has_pairs[right]);
+	  height[nd] = ESL_MAX(height[left] + seg_has_pairs[left],
+			       height[right] + seg_has_pairs[right]);
 	}
       else
 	height[nd] = height[nd+1]; 

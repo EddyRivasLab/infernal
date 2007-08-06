@@ -125,7 +125,7 @@ static char usage[]  = "[-options] <cmfile> <sequence file>";
 static char banner[] = "align sequences to an RNA CM";
 
 static int  init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
-static int  init_shared_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
+/* static int  init_shared_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf); */
 
 static void  serial_master (const ESL_GETOPTS *go, struct cfg_s *cfg);
 #ifdef HAVE_MPI
@@ -133,13 +133,13 @@ static void  mpi_master    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 static void  mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 #endif
 
-static int    process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t ***opt_tr);
-static int output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQ **sq, Parsetree_t **tr, CP9trace_t **cp9_tr, char **postcode);
+/* static int process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t ***opt_tr); */
+static int output_result   (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQ **sq, Parsetree_t **tr, CP9trace_t **cp9_tr, char **postcode);
 
 static int initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
 static int check_withali(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA **ret_msa);
 static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr, char *errbuf);
-static int compare_cms(CM_t *cm1, CM_t *cm2);
+static int compare_cm_guide_trees(CM_t *cm1, CM_t *cm2);
 static int make_aligned_string(char *aseq, char *gapstring, int alen, char *ss, char **ret_s);
 
 int
@@ -208,7 +208,7 @@ main(int argc, char **argv)
   else                              cfg.be_verbose = TRUE;        
   if      (esl_opt_GetBoolean(go, "--rna")) cfg.abc_out = esl_alphabet_Create(eslRNA);
   else if (esl_opt_GetBoolean(go, "--dna")) cfg.abc_out = esl_alphabet_Create(eslDNA);
-  else    esl_fail("Can't determine output alphabet");
+  else    esl_fatal("Can't determine output alphabet");
   cfg.cmfp       = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.ofp        = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.tracefp    = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
@@ -349,7 +349,7 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       else if (status != eslOK)      ESL_FAIL(status, errbuf, "Alignment file open failed with error %d\n", status);
 
       if((status = check_withali(go, cfg, &(cfg->withmsa))) != eslOK)
-	ESL_FAIL(status, errbuf, "--withali alignment file %s doesn't have a SS_cons compatible with the CM\n", status);
+	ESL_FAIL(status, errbuf, "--withali alignment file %s doesn't have a SS_cons compatible with the CM\n", esl_opt_GetString(go, "--withali"));
     }
   return eslOK;
 }
@@ -410,9 +410,6 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   for (i = 0; i < cfg->nseq; i++) esl_sq_Destroy(sq[i]);
   free(sq);
   return;
-
- ERROR:
-  cm_Fail("Reallocation error.\n");
 }
 
 static int
@@ -423,7 +420,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQ **s
   int i, ip;
 
   /* Open the output file set up ofp
-  /* Output the tabular results header. 
+   * Output the tabular results header. 
    */
   if (esl_opt_GetBoolean(go, "-1"))
     {
@@ -439,16 +436,19 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQ **s
     if(esl_opt_GetString(go, "--withali") != NULL)
       {
 	if((status = include_withali(go, cfg, &sq, &tr, errbuf)) != eslOK)
-	  ESL_FAIL(status, errbuf, "--withali alignment file %s doesn't have a SS_cons compatible with the CM\n", status);
+	  ESL_FAIL(status, errbuf, "--withali alignment file %s doesn't have a SS_cons compatible with the CM\n", esl_opt_GetString(go, "--withali"));
       }
 
     if(esl_opt_GetBoolean(go, "--hmmonly"))
-      if((status = CP9Traces2Alignment(cfg->cm, sq, NULL, cfg->nseq, cp9_tr, esl_opt_GetBoolean(go, "--full"), &msa)) != eslOK)
-	goto ERROR;
+      {
+	if((status = CP9Traces2Alignment(cfg->cm, sq, NULL, cfg->nseq, cp9_tr, esl_opt_GetBoolean(go, "--full"), &msa)) != eslOK)
+	  goto ERROR;
+      }
     else
-      if((status = Parsetrees2Alignment(cfg->cm, sq, NULL, tr, cfg->nseq, esl_opt_GetBoolean(go, "--full"), &msa)) != eslOK)
-	goto ERROR;
-    
+      {
+	if((status = Parsetrees2Alignment(cfg->cm, sq, NULL, tr, cfg->nseq, esl_opt_GetBoolean(go, "--full"), &msa)) != eslOK)
+	  goto ERROR;
+      }
     if(esl_opt_GetBoolean(go, "--post")) 
       {                                                                              
 	char *apostcode;   /* aligned posterior decode array */
@@ -458,7 +458,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQ **s
 	  {                                                                          
 	    ip = i - cfg->withmsa->nseq;
 	    if((status =make_aligned_string(msa->aseq[i], "-_.", msa->alen, postcode[ip], &apostcode)) != eslOK)
-	      ESL_FAIL(status, errbuf, "error creating posterior string\n", status);
+	      ESL_FAIL(status, errbuf, "error creating posterior string\n");
 	    esl_msa_AppendGR(msa, "POST", i, apostcode);                                  
 	    free(apostcode);                                                         
 	    free(postcode[ip]);                                                       
@@ -560,7 +560,7 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
   return eslOK;
 }
 
-/* Function: compare_cms()
+/* Function: compare_cm_guide_trees()
  * EPN, Tue Mar  6 08:32:12 2007
  *
  * Purpose:  Given two CMs, cm1 and cm2, compare them, returning TRUE 
@@ -571,7 +571,7 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
  * 
  * Returns:  TRUE if CMs have same guide tree, FALSE otherwise
  */
-static int compare_cms(CM_t *cm1, CM_t *cm2)
+static int compare_cm_guide_trees(CM_t *cm1, CM_t *cm2)
 {
   int          nd; 
   if(cm1->nodes != cm2->nodes) return FALSE;

@@ -37,7 +37,7 @@ BandExperiment(CM_t *cm)
   while (! BandCalculationEngine(cm, W, 0.00001, FALSE, &dmin, &dmax, NULL))
     {
       W += 1000;
-      SQD_DPRINTF1(("increasing W to %d, redoing band calculation...\n", W));
+      ESL_DPRINTF1(("increasing W to %d, redoing band calculation...\n", W));
     }
 }
 
@@ -149,13 +149,13 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
     }
   /* gamma[v][n] is Prob(state v generates subseq of length n)
    */
-  gamma = MallocOrDie(sizeof(double *) * cm->M);        
+  ESL_ALLOC(gamma, sizeof(double *) * cm->M);        
   for (v = 0; v < cm->M; v++) gamma[v] = NULL;
 
   /* dmin[v] and dmax[v] are the determined bounds that we return.
    */
-  dmin = MallocOrDie(sizeof(int) * cm->M);
-  dmax = MallocOrDie(sizeof(int) * cm->M);  
+  ESL_ALLOC(dmin, sizeof(int) * cm->M);
+  ESL_ALLOC(dmax, sizeof(int) * cm->M);  
   if (ret_dmin != NULL) *ret_dmin = NULL;
   if (ret_dmax != NULL) *ret_dmax = NULL;
 
@@ -767,7 +767,7 @@ CYKBandedScan(CM_t *cm, ESL_SQ *sq, int *dmin, int *dmax, int i0, int j0, int W,
       alpha[v] = alpha[cm->M-1];
     else 
       {
-	alpha[v] = MallocOrDie(sizeof(float *) * 2);
+	ESL_ALLOC(alpha[v], sizeof(float *) * 2);
 	for (j = 0; j < 2; j++) 
 	  ESL_ALLOC(alpha[v][j], (sizeof(float) * (W+1)));
       }
@@ -1224,13 +1224,14 @@ ExpandBands(CM_t *cm, int tlen, int *dmin, int *dmax)
 void
 qdb_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *dmin, int *dmax, int bdump_level)
 {
+  int    status;
   char **sttypes;
   char **nodetypes;
   int v, i, j, d, tpos;
   int mindiff;            /* d - dmin[v] */
   int maxdiff;            /* dmax[v] - d */
 
-  sttypes = malloc(sizeof(char *) * 10);
+  ESL_ALLOC(sttypes, sizeof(char *) * 10);
   sttypes[0] = "D";
   sttypes[1] = "MP";
   sttypes[2] = "ML";
@@ -1242,7 +1243,7 @@ qdb_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *dmin, int *dmax, int bdump_l
   sttypes[8] = "B";
   sttypes[9] = "EL";
 
-  nodetypes = malloc(sizeof(char *) * 8);
+  ESL_ALLOC(nodetypes, sizeof(char *) * 8);
   nodetypes[0] = "BIF";
   nodetypes[1] = "MATP";
   nodetypes[2] = "MATL";
@@ -1274,5 +1275,7 @@ qdb_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *dmin, int *dmax, int bdump_l
     }
   free(sttypes);
   free(nodetypes);
+ ERROR:
+  esl_fatal("Memory allocation error.");
 }
 

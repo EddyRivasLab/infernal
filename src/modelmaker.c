@@ -36,13 +36,16 @@
 #include <stdio.h>
 #include <ctype.h>
 
-#include "squid.h"		
-#include "msa.h"		/* multiple sequence alignments */
-#include "sre_stack.h"
+#include "easel.h"		
+#include "esl_msa.h"		
+#include "esl_stack.h"
+#include "esl_vectorops.h"
+#include "esl_wuss.h"
 
 #include "structs.h"
 #include "funcs.h"
 
+static int check_for_pknots(char *cs, int alen);
 
 /* Function: HandModelmaker()
  * Incept:   SRE 29 Feb 2000 [Seattle]; from COVE 2.0 code
@@ -78,9 +81,10 @@ void
 HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh, 
 	       CM_t **ret_cm, Parsetree_t **ret_gtr)
 {
+  int             status;
   CM_t           *cm;		/* new covariance model                       */
   Parsetree_t    *gtr;		/* guide tree for alignment                   */
-  Nstack_t       *pda;		/* pushdown stack used in building gtr        */
+  ESL_STACK      *pda;		/* pushdown stack used in building gtr        */
   int            *matassign;	/* 0..alen-1 array; 0=insert col, 1=match col */
   int            *ct;		/* 0..alen-1 base pair partners array         */
   int             apos;		/* counter over columns of alignment          */
@@ -93,14 +97,14 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
   int  nstates;			/* number of states in CM                     */
 
   if (msa->ss_cons == NULL)
-    Die("No consensus structure annotation available for that alignment.");
+    esl_fatal("No consensus structure annotation available for that alignment.");
   if (use_rf && msa->rf == NULL) 
-    Die("No reference annotation available for that alignment.");
+    esl_fatal("No reference annotation available for that alignment.");
 
   /* 1. Determine match/insert assignments
    *    matassign is 1..alen. Values are 1 if a match column, 0 if insert column.
    */
-  matassign = MallocOrDie(sizeof(int) * (msa->alen+1));
+  ESL_ALLOC(matassign, sizeof(int) * (msa->alen+1));
 
   /* Watch for off-by-one. rf is [0..alen-1]; matassign is [1..alen] */
   if (use_rf)
@@ -120,13 +124,15 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
     }
 
   /* 2. Determine a "ct" array, base-pairing partners for each position.
-   *    Disallow/ignore pseudoknots. (That's what the FALSE flag does.)
+   *    Disallow/ignore pseudoknots by removing them prior to making the ct array.
    *    ct[] values give the index of a base pairing partner, or 0 for unpaired positions.
    *    Even though msa->ss_cons is in the 0..alen-1 coord system of msa, ct[]
    *    comes back in the 1..alen coord system of dsq.
    */
-  if (! WUSS2ct(msa->ss_cons, msa->alen, FALSE, &ct))  
-    Die("Consensus structure string is inconsistent"); 
+  esl_wuss_nopseudo(msa->ss_cons, msa->ss_cons); /* remove pknots in place */
+  ESL_ALLOC(ct, (msa->alen+1) * sizeof(int));
+  if (esl_wuss2ct(msa->ss_cons, msa->alen, ct) != eslOK)  
+    esl_fatal("Consensus structure string is inconsistent"); 
 
   /* 3. Make sure the consensus structure "ct" is consistent with the match assignments.
    *    Wipe out all structure in insert columns; including the base-paired 
@@ -148,7 +154,7 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
    */
   nstates = nnodes = 0;
   gtr = CreateParsetree();	/* the parse tree we'll grow        */
-  pda = CreateNstack();		/* a pushdown stack for our indices */
+  pda = esl_stack_ICreate();    /* a pushdown stack for our indices */
 
   /* Construction strategy has to make sure we number the nodes in
    * preorder traversal: for bifurcations, we can't attach the right 
@@ -164,16 +170,16 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
    * in both indices and values: e.g. the base pairing partner 
    * j of residue i is ct[i-1]-1. 
    */
-  PushNstack(pda, -1);		/* what node it's attached to */
-  PushNstack(pda, 1);		/* emitl */
-  PushNstack(pda, msa->alen);	/* emitr */
-  PushNstack(pda, ROOT_nd);	/* "state" (e.g. node type) */
+  esl_stack_IPush(pda, -1);		/* what node it's attached to */
+  esl_stack_IPush(pda, 1);		/* emitl */
+  esl_stack_IPush(pda, msa->alen);	/* emitr */
+  esl_stack_IPush(pda, ROOT_nd);	/* "state" (e.g. node type) */
 
-  while (PopNstack(pda, &type))	/* pop a node type to attach */
+  while (esl_stack_IPop(pda, &type))	/* pop a node type to attach */
     {
-      PopNstack(pda, &j);
-      PopNstack(pda, &i);	/* i..j == subseq we're responsible for */
-      PopNstack(pda, &v);	/* v = index of parent node in gtr */
+      esl_stack_IPop(pda, &j);
+      esl_stack_IPop(pda, &i);	/* i..j == subseq we're responsible for */
+      esl_stack_IPop(pda, &v);	/* v = index of parent node in gtr */
 
       /* This node accounts for i..j, but we usually don't know how yet.
        * Six possibilities:
@@ -196,20 +202,20 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
 	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, ROOT_nd);
 	for (; i <= j; i++) if (matassign[i]) break;
 	for (; j >= i; j--) if (matassign[j]) break;
-	PushNstack(pda, v);	/* here v==0 always. */
-	PushNstack(pda, i);
-	PushNstack(pda, j);
-	PushNstack(pda, DUMMY_nd); /* we don't know yet what the next node will be */
+	esl_stack_IPush(pda, v);	/* here v==0 always. */
+	esl_stack_IPush(pda, i);
+	esl_stack_IPush(pda, j);
+	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
 	nstates += 3;		/* ROOT_nd -> S_st, IL_st, IR_st */
 	nnodes++;
       }
 
       else if (type == BEGL_nd) {    /* no inserts */
 	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, BEGL_nd);
-	PushNstack(pda, v);	
-	PushNstack(pda, i);
-	PushNstack(pda, j);
-	PushNstack(pda, DUMMY_nd); /* we don't know yet what the next node will be */
+	esl_stack_IPush(pda, v);	
+	esl_stack_IPush(pda, i);
+	esl_stack_IPush(pda, j);
+	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
 	nstates += 1;		/* BEGL_nd -> S_st */
 	nnodes++;
       }
@@ -217,10 +223,10 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
       else if (type == BEGR_nd)  { /* look for INSL */
 	v = InsertTraceNode(gtr, v, TRACE_RIGHT_CHILD, i, j, BEGR_nd);
 	for (; i <= j; i++) if (matassign[i]) break; 
-	PushNstack(pda, v);	
-	PushNstack(pda, i);
-	PushNstack(pda, j);
-	PushNstack(pda, DUMMY_nd); /* we don't know yet what the next node will be */
+	esl_stack_IPush(pda, v);	
+	esl_stack_IPush(pda, i);
+	esl_stack_IPush(pda, j);
+	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
 	nstates += 2;		/* BEGR_nd -> S_st IL_st */
 	nnodes++;
       }
@@ -229,10 +235,10 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
 	 	/* i unpaired. This is a MATL node; allow INSL */
 	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, MATL_nd);
 	for (i = i+1; i <= j; i++)  if (matassign[i]) break;
-	PushNstack(pda, v);
-	PushNstack(pda, i);
-	PushNstack(pda, j);
-	PushNstack(pda, DUMMY_nd); /* we don't know yet what the next node will be */
+	esl_stack_IPush(pda, v);
+	esl_stack_IPush(pda, i);
+	esl_stack_IPush(pda, j);
+	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
 	nstates += 3;		/* MATL_nd -> ML_st, D_st, IL_st */
 	nnodes++;
       }
@@ -240,10 +246,10 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
       else if (ct[j] == 0) { 	/* j unpaired. MATR node. Deal with INSR */
 	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, MATR_nd);
 	for (j = j-1; j >= i; j--) if (matassign[j]) break;
-	PushNstack(pda, v);
-	PushNstack(pda, i);
-	PushNstack(pda, j);
-	PushNstack(pda, DUMMY_nd); /* we don't know yet what the next node will be */
+	esl_stack_IPush(pda, v);
+	esl_stack_IPush(pda, i);
+	esl_stack_IPush(pda, j);
+	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
 	nstates += 3;		/* MATR_nd -> MR_st, D_st, IL_st */
 	nnodes++;
       }
@@ -252,10 +258,10 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
 	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, MATP_nd);
 	for (i = i+1; i <= j; i++) if (matassign[i]) break;
 	for (j = j-1; j >= i; j--) if (matassign[j]) break;
-	PushNstack(pda, v);
-	PushNstack(pda, i);
-	PushNstack(pda, j);
-	PushNstack(pda, DUMMY_nd); /* we don't know yet what the next node will be */
+	esl_stack_IPush(pda, v);
+	esl_stack_IPush(pda, i);
+	esl_stack_IPush(pda, j);
+	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
 	nstates += 6;		/* MATP_nd -> MP_st, ML_st, MR_st, D_st, IL_st, IR_st */
 	nnodes++;
       }
@@ -300,21 +306,21 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
 	      while (ct[k] == 0) k++;
 	    }
 				/* push the right BEGIN node first */
-	  PushNstack(pda, v);	
-	  PushNstack(pda, bestk);
-	  PushNstack(pda, j);
-	  PushNstack(pda, BEGR_nd);
+	  esl_stack_IPush(pda, v);	
+	  esl_stack_IPush(pda, bestk);
+	  esl_stack_IPush(pda, j);
+	  esl_stack_IPush(pda, BEGR_nd);
 				/* then push the left BEGIN node */
-	  PushNstack(pda, v);	
-	  PushNstack(pda, i);
-	  PushNstack(pda, bestk-1);
-	  PushNstack(pda, BEGL_nd);
+	  esl_stack_IPush(pda, v);	
+	  esl_stack_IPush(pda, i);
+	  esl_stack_IPush(pda, bestk-1);
+	  esl_stack_IPush(pda, BEGL_nd);
 	  nstates += 1;		/* BIF_nd -> B_st */
 	  nnodes++;
 	}
 
     }	/* while something's on the stack */
-  FreeNstack(pda);
+  esl_stack_Destroy(pda);
   free(ct);
 
   /* OK, we've converted ct into gtr -- gtr is a tree structure telling us the
@@ -328,6 +334,9 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
   free(matassign);
   if (ret_cm  != NULL) *ret_cm  = cm;  else FreeCM(cm);
   if (ret_gtr != NULL) *ret_gtr = gtr; else FreeParsetree(gtr);
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
 }
 
 
@@ -346,7 +355,7 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
 void
 cm_from_guide(CM_t *cm, Parsetree_t *gtr)
 {
-  Nstack_t   *pda;              /* pushdown stack used for traversing gtr */
+  ESL_STACK  *pda;              /* pushdown stack used for traversing gtr */
   int         v;		/* what node we're working on (in gtr index system)*/
   int         node;		/* what node (preorder traversal numbering of CM) */
   int         state;		/* what state (preorder traversal numbering of CM) */
@@ -363,9 +372,9 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
   int parent_count[] =            {  1,    6,    3,    3,    1,    2,    3,   0};
 
   node = state = clen = 0;
-  pda = CreateNstack();
-  PushNstack(pda, 0);		/* push ROOT_nd onto the stack */
-  while (PopNstack(pda, &v))
+  pda = esl_stack_ICreate();
+  esl_stack_IPush(pda, 0);		/* push ROOT_nd onto the stack */
+  while (esl_stack_IPop(pda, &v))
     {
       if      (gtr->state[v] == BIF_nd) {
 	prvnodetype = gtr->state[gtr->prv[v]];
@@ -378,14 +387,14 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
 	cm->stid[state]   = BIF_B;
 	cm->cfirst[state] = state+1;
 	cm->cnum[state]   = -1; /* we fill this in later, when we see the BEGR... */
-	PushNstack(pda, state);	/* ... the trick we use to remember the connection */
+	esl_stack_IPush(pda, state);	/* ... the trick we use to remember the connection */
 	cm->plast[state] = state-1;
 	cm->pnum[state]   = parent_count[prvnodetype];
 	state++;
 	
 	node++;
-	PushNstack(pda, gtr->nxtr[v]);
-	PushNstack(pda, gtr->nxtl[v]);
+	esl_stack_IPush(pda, gtr->nxtr[v]);
+	esl_stack_IPush(pda, gtr->nxtl[v]);
       }
 
       else if (gtr->state[v] == MATP_nd) {
@@ -451,7 +460,7 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
 	state++;
 
 	node++;
-	PushNstack(pda, gtr->nxtl[v]);
+	esl_stack_IPush(pda, gtr->nxtl[v]);
       }
 
       else if (gtr->state[v] == MATL_nd) {
@@ -490,7 +499,7 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
 	state++;
 
 	node++;
-	PushNstack(pda, gtr->nxtl[v]);
+	esl_stack_IPush(pda, gtr->nxtl[v]);
       }
       
       else if (gtr->state[v] == MATR_nd) {
@@ -529,7 +538,7 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
 	state++;
 
 	node++;
-	PushNstack(pda, gtr->nxtl[v]);
+	esl_stack_IPush(pda, gtr->nxtl[v]);
       }
 
       else if (gtr->state[v] == BEGL_nd) {
@@ -548,7 +557,7 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
 	state++;
 
 	node++;
-	PushNstack(pda, gtr->nxtl[v]);
+	esl_stack_IPush(pda, gtr->nxtl[v]);
       }
 
       else if (gtr->state[v] == BEGR_nd) {
@@ -563,7 +572,7 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
 	 * bifurcation. We stored the bif state index by pushing it onto
 	 * the pda -- retrieve it now.
 	 */
-	PopNstack(pda, &bifparent);
+	esl_stack_IPop(pda, &bifparent);
 	cm->cnum[bifparent] = state; /* remember, cnum overloaded for bif: idx of right child */
 
 	cm->sttype[state] = S_st;
@@ -585,7 +594,7 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
 	state++;
 
 	node++;
-	PushNstack(pda, gtr->nxtl[v]);
+	esl_stack_IPush(pda, gtr->nxtl[v]);
       }
 
       else if (gtr->state[v] == ROOT_nd) {
@@ -622,7 +631,7 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
 	state++;
 
 	node++;
-	PushNstack(pda, gtr->nxtl[v]);
+	esl_stack_IPush(pda, gtr->nxtl[v]);
       }
 
       else if (gtr->state[v] == END_nd) {
@@ -643,7 +652,7 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
 	node++;
       }
     }
-  FreeNstack(pda);
+  esl_stack_Destroy(pda);
   cm->M     = state;
   cm->nodes = node;
   cm->clen  = clen;
@@ -675,7 +684,7 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
  *           It expects that local alignment transmogrification is only
  *           done in two situations: debugging, and training. Therefore,
  *           users don't provide local alignments to this function, and
- *           it's polite to Die() on any kind of input error.
+ *           it's polite to esl_fatal() on any kind of input error.
  * 
  * Args:     cm    - the newly built covariance model, corresponding to gtr
  *           gtr   - guide tree
@@ -689,11 +698,12 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
 Parsetree_t *
 Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
 {
+  int          status;
   Parsetree_t *tr;
   int          node;		/* index of node in *gtr* we're working on */
   int          state;		/* index of a state in the *CM*            */
   int          type;		/* a unique statetype                      */
-  Nstack_t    *pda;             /* pushdown automaton for positions in tr  */
+  ESL_STACK   *pda;             /* pushdown automaton for positions in tr  */
   int          tidx;		/* index *in parsetree tr* of state        */
   int          i,j;		/* coords in aseq                          */
   int          started;		/* TRUE if we've transited out of ROOT     */
@@ -704,7 +714,7 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
   int          need_rightside;
 
   tr  = CreateParsetree();
-  pda = CreateNstack();
+  pda = esl_stack_ICreate();
   
   started = FALSE;
   ended   = FALSE;
@@ -712,7 +722,7 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
 
   /* We preprocess the aseq to help with local alignment.
    */
-  localrun = MallocOrDie(sizeof(int) * (alen+1));
+  ESL_ALLOC(localrun, sizeof(int) * (alen+1));
   localrun[0] = 0;
   for (i = 0; i <= alen; i++)
     if (i > 0 && aseq[i-1] == '~') localrun[i] = localrun[i-1]+1;
@@ -781,9 +791,9 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
 				  gtr->emitl[node], gtr->emitr[node], state);
 	  if (! started) { started = TRUE; nstarts++; }
 	} 
-	PushNstack(pda, ended);   /* remember our ending status */
-	PushNstack(pda, started); /* remember our start status */
-	PushNstack(pda, tidx);    /* remember index in tr; we pop in BEGR */
+	esl_stack_IPush(pda, ended);   /* remember our ending status */
+	esl_stack_IPush(pda, started); /* remember our start status */
+	esl_stack_IPush(pda, tidx);    /* remember index in tr; we pop in BEGR */
 	break;
 
 	/* A MATP node.
@@ -931,9 +941,9 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
 	 * that's an invalid input.
 	 */
       case BEGR_nd:
-	PopNstack(pda, &tidx);	  /* recover parent bifurcation's index in trace */
-	PopNstack(pda, &started); /* did we start above here? */
-	PopNstack(pda, &ended);   /* did we end above here? */
+	esl_stack_IPop(pda, &tidx);	  /* recover parent bifurcation's index in trace */
+	esl_stack_IPop(pda, &started); /* did we start above here? */
+	esl_stack_IPop(pda, &ended);   /* did we end above here? */
 
 	if (started && !ended) 
 	  {
@@ -962,20 +972,25 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
 	break;
 
       default: 
-	Die("bogus node type %d in transmogrify()", gtr->state[node]);
+	esl_fatal("bogus node type %d in transmogrify()", gtr->state[node]);
       }
     }
   if (nstarts > 1) goto FAILURE;
   free(localrun);
-  FreeNstack(pda);
+  esl_stack_Destroy(pda);
   return tr;
 
  FAILURE:
   free(localrun);
-  FreeNstack(pda);
+  esl_stack_Destroy(pda);
   FreeParsetree(tr);
-  Die("transmogrification failed: bad input sequence.");
+  esl_fatal("transmogrification failed: bad input sequence.");
   return NULL;			/* not reached */
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return NULL;			/* not reached */
+
 }
 
 /* Function: ConsensusModelmaker()
@@ -996,7 +1011,7 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
  *           
  * Args:     abc       - the alphabet
  *           ss_cons   - input consensus structure string 
- *           len       - length of ss_cons, number of consensus columns
+ *           clen       - length of ss_cons, number of consensus columns
  *           ret_cm    - RETURN: new model                      (maybe NULL)
  *           ret_gtr   - RETURN: guide tree for alignment (maybe NULL)
  *           
@@ -1008,9 +1023,10 @@ void
 ConsensusModelmaker(ESL_ALPHABET *abc, char *ss_cons, int clen, 
 		    CM_t **ret_cm, Parsetree_t **ret_gtr)
 {
+  int             status;
   CM_t           *cm;		/* new covariance model                       */
   Parsetree_t    *gtr;		/* guide tree for alignment                   */
-  Nstack_t       *pda;		/* pushdown stack used in building gtr        */
+  ESL_STACK      *pda;		/* pushdown stack used in building gtr        */
   int            *ct;		/* 0..alen-1 base pair partners array         */
   int             v;		/* index of current node                      */
   int             i,j,k;	/* subsequence indices                        */
@@ -1020,17 +1036,18 @@ ConsensusModelmaker(ESL_ALPHABET *abc, char *ss_cons, int clen,
   int  nstates;			/* number of states in CM                     */
 
   if (ss_cons == NULL)
-    Die("No consensus structure annotation available in ConsensusModelmaker().");
+    esl_fatal("No consensus structure annotation available in ConsensusModelmaker().");
 
   /* 1. Determine a "ct" array, base-pairing partners for each position.
-   *    Disallow/ignore pseudoknots. (That's what the FALSE flag does.)
+   *    Disallow/ignore pseudoknots by removing them prior to making the ct array.
    *    ct[] values give the index of a base pairing partner, or 0 for unpaired positions.
    *    Even though ss_cons is in the 0..clen-1 coord system of msa, ct[]
    *    comes back in the 1..alen coord system of the sequence.
    */
-
-  if (! WUSS2ct(ss_cons, clen, FALSE, &ct))  
-    Die("Consensus structure string is inconsistent"); 
+  esl_wuss_nopseudo(ss_cons, ss_cons); /* remove pknots in place */
+  ESL_ALLOC(ct, (clen+1) * sizeof(int));
+  if (esl_wuss2ct(ss_cons, clen, ct) != eslOK)  
+    esl_fatal("Consensus structure string is inconsistent"); 
 
   /* 2. Construct a guide tree. 
    *    This codes is borrowed from HandModelmaker(), where it
@@ -1042,7 +1059,7 @@ ConsensusModelmaker(ESL_ALPHABET *abc, char *ss_cons, int clen,
    */
   nstates = nnodes = 0;
   gtr = CreateParsetree();	/* the parse tree we'll grow        */
-  pda = CreateNstack();		/* a pushdown stack for our indices */
+  pda = esl_stack_ICreate();    /* a pushdown stack for our indices */
 
   /* Construction strategy has to make sure we number the nodes in
    * preorder traversal: for bifurcations, we can't attach the right 
@@ -1058,16 +1075,16 @@ ConsensusModelmaker(ESL_ALPHABET *abc, char *ss_cons, int clen,
    * in both indices and values: e.g. the base pairing partner 
    * j of residue i is ct[i-1]-1. 
    */
-  PushNstack(pda, -1);		/* what node it's attached to */
-  PushNstack(pda, 1);		/* emitl */
-  PushNstack(pda, clen);	/* emitr */
-  PushNstack(pda, ROOT_nd);	/* "state" (e.g. node type) */
+  esl_stack_IPush(pda, -1);		/* what node it's attached to */
+  esl_stack_IPush(pda, 1);		/* emitl */
+  esl_stack_IPush(pda, clen);	/* emitr */
+  esl_stack_IPush(pda, ROOT_nd);	/* "state" (e.g. node type) */
 
-  while (PopNstack(pda, &type))	/* pop a node type to attach */
+  while (esl_stack_IPop(pda, &type))	/* pop a node type to attach */
     {
-      PopNstack(pda, &j);
-      PopNstack(pda, &i);	/* i..j == subseq we're responsible for */
-      PopNstack(pda, &v);	/* v = index of parent node in gtr */
+      esl_stack_IPop(pda, &j);
+      esl_stack_IPop(pda, &i);	/* i..j == subseq we're responsible for */
+      esl_stack_IPop(pda, &v);	/* v = index of parent node in gtr */
 
       /* This node accounts for i..j, but we usually don't know how yet.
        * Six possibilities:
@@ -1088,30 +1105,30 @@ ConsensusModelmaker(ESL_ALPHABET *abc, char *ss_cons, int clen,
 
       else if (type == ROOT_nd) { /* try to push i,j; but deal with INSL and INSR */
 	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, ROOT_nd);
-	PushNstack(pda, v);	/* here v==0 always. */
-	PushNstack(pda, i);
-	PushNstack(pda, j);
-	PushNstack(pda, DUMMY_nd); /* we don't know yet what the next node will be */
+	esl_stack_IPush(pda, v);	/* here v==0 always. */
+	esl_stack_IPush(pda, i);
+	esl_stack_IPush(pda, j);
+	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
 	nstates += 3;		/* ROOT_nd -> S_st, IL_st, IR_st */
 	nnodes++;
       }
 
       else if (type == BEGL_nd) {    /* no inserts */
 	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, BEGL_nd);
-	PushNstack(pda, v);	
-	PushNstack(pda, i);
-	PushNstack(pda, j);
-	PushNstack(pda, DUMMY_nd); /* we don't know yet what the next node will be */
+	esl_stack_IPush(pda, v);	
+	esl_stack_IPush(pda, i);
+	esl_stack_IPush(pda, j);
+	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
 	nstates += 1;		/* BEGL_nd -> S_st */
 	nnodes++;
       }
 
       else if (type == BEGR_nd)  { /* look for INSL */
 	v = InsertTraceNode(gtr, v, TRACE_RIGHT_CHILD, i, j, BEGR_nd);
-	PushNstack(pda, v);	
-	PushNstack(pda, i);
-	PushNstack(pda, j);
-	PushNstack(pda, DUMMY_nd); /* we don't know yet what the next node will be */
+	esl_stack_IPush(pda, v);	
+	esl_stack_IPush(pda, i);
+	esl_stack_IPush(pda, j);
+	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
 	nstates += 2;		/* BEGR_nd -> S_st IL_st */
 	nnodes++;
       }
@@ -1120,10 +1137,10 @@ ConsensusModelmaker(ESL_ALPHABET *abc, char *ss_cons, int clen,
 	 	/* i unpaired. This is a MATL node; allow INSL */
 	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, MATL_nd);
 	i++;
-	PushNstack(pda, v);
-	PushNstack(pda, i);
-	PushNstack(pda, j);
-	PushNstack(pda, DUMMY_nd); /* we don't know yet what the next node will be */
+	esl_stack_IPush(pda, v);
+	esl_stack_IPush(pda, i);
+	esl_stack_IPush(pda, j);
+	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
 	nstates += 3;		/* MATL_nd -> ML_st, D_st, IL_st */
 	nnodes++;
       }
@@ -1131,10 +1148,10 @@ ConsensusModelmaker(ESL_ALPHABET *abc, char *ss_cons, int clen,
       else if (ct[j] == 0) { 	/* j unpaired. MATR node. Deal with INSR */
 	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, MATR_nd);
 	j--;
-	PushNstack(pda, v);
-	PushNstack(pda, i);
-	PushNstack(pda, j);
-	PushNstack(pda, DUMMY_nd); /* we don't know yet what the next node will be */
+	esl_stack_IPush(pda, v);
+	esl_stack_IPush(pda, i);
+	esl_stack_IPush(pda, j);
+	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
 	nstates += 3;		/* MATR_nd -> MR_st, D_st, IL_st */
 	nnodes++;
       }
@@ -1143,10 +1160,10 @@ ConsensusModelmaker(ESL_ALPHABET *abc, char *ss_cons, int clen,
 	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, MATP_nd);
 	i++;
 	j--;
-	PushNstack(pda, v);
-	PushNstack(pda, i);
-	PushNstack(pda, j);
-	PushNstack(pda, DUMMY_nd); /* we don't know yet what the next node will be */
+	esl_stack_IPush(pda, v);
+	esl_stack_IPush(pda, i);
+	esl_stack_IPush(pda, j);
+	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
 	nstates += 6;		/* MATP_nd -> MP_st, ML_st, MR_st, D_st, IL_st, IR_st */
 	nnodes++;
       }
@@ -1191,20 +1208,20 @@ ConsensusModelmaker(ESL_ALPHABET *abc, char *ss_cons, int clen,
 	      while (ct[k] == 0) k++;
 	    }
 				/* push the right BEGIN node first */
-	  PushNstack(pda, v);	
-	  PushNstack(pda, bestk);
-	  PushNstack(pda, j);
-	  PushNstack(pda, BEGR_nd);
+	  esl_stack_IPush(pda, v);	
+	  esl_stack_IPush(pda, bestk);
+	  esl_stack_IPush(pda, j);
+	  esl_stack_IPush(pda, BEGR_nd);
 				/* then push the left BEGIN node */
-	  PushNstack(pda, v);	
-	  PushNstack(pda, i);
-	  PushNstack(pda, bestk-1);
-	  PushNstack(pda, BEGL_nd);
+	  esl_stack_IPush(pda, v);	
+	  esl_stack_IPush(pda, i);
+	  esl_stack_IPush(pda, bestk-1);
+	  esl_stack_IPush(pda, BEGL_nd);
 	  nstates += 1;		/* BIF_nd -> B_st */
 	  nnodes++;
 	}
     }	/* while something's on the stack */
-  FreeNstack(pda);
+  esl_stack_Destroy(pda);
   free(ct);
 
   /* OK, we've converted ct into gtr -- gtr is a tree structure telling us the
@@ -1217,6 +1234,9 @@ ConsensusModelmaker(ESL_ALPHABET *abc, char *ss_cons, int clen,
 
   if (ret_cm  != NULL) *ret_cm  = cm;  else FreeCM(cm);
   if (ret_gtr != NULL) *ret_gtr = gtr; else FreeParsetree(gtr);
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
 }
 
 /**************************************************************************
@@ -1255,6 +1275,7 @@ int
 cm_find_and_detach_dual_inserts(CM_t *cm, int do_check, int do_detach)
 {
 
+  int          status;
   CMEmitMap_t *emap;         /* consensus emit map for the cm */
   int *cc2lins_map;
   int *cc2rins_map;
@@ -1288,8 +1309,8 @@ cm_find_and_detach_dual_inserts(CM_t *cm, int do_check, int do_detach)
    */
 
   /* Allocate and initialize */
-  cc2lins_map = MallocOrDie(sizeof(int) * (emap->clen + 1));
-  cc2rins_map = MallocOrDie(sizeof(int) * (emap->clen + 1));
+  ESL_ALLOC(cc2lins_map, sizeof(int) * (emap->clen + 1));
+  ESL_ALLOC(cc2rins_map, sizeof(int) * (emap->clen + 1));
   for(cc = 0; cc <= emap->clen; cc++)
     {
       cc2lins_map[cc] = -1;
@@ -1332,11 +1353,11 @@ cm_find_and_detach_dual_inserts(CM_t *cm, int do_check, int do_detach)
 	  if(do_check)
 	    {
 	      if(!(cm_check_before_detaching(cm, cc2lins_map[cc], cc2rins_map[cc])))
-		Die("ERROR cm_check_before_detaching() returned false\n");		 
+		esl_fatal("ERROR cm_check_before_detaching() returned false\n");		 
 	    }
 	  if(do_detach)
 	    if(!(cm_detach_state(cm, cc2lins_map[cc], cc2rins_map[cc])))
-	      Die("ERROR cm_detach_state() returned false\n");		 
+	      esl_fatal("ERROR cm_detach_state() returned false\n");		 
 	}
     }
 
@@ -1348,6 +1369,10 @@ cm_find_and_detach_dual_inserts(CM_t *cm, int do_check, int do_detach)
     return FALSE;
   else
     return TRUE;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return FALSE; /* never reached */
 }
 
 /**************************************************************************
@@ -1383,7 +1408,7 @@ cm_detach_state(CM_t *cm, int insert1, int insert2)
   ret_val = FALSE;
 
   if(insert1 == insert2)
-    Die("ERROR in cm_detach_state: insert1==insert2:%d\n", insert1);
+    esl_fatal("ERROR in cm_detach_state: insert1==insert2:%d\n", insert1);
 
   if(cm->sttype[insert1+1] == E_st)
     {
@@ -1393,9 +1418,9 @@ cm_detach_state(CM_t *cm, int insert1, int insert2)
   else
     {
       if(cm->sttype[insert2+1] != E_st)
-	Die("ERROR: in cm_detach_state insert1: %d and insert2: %d neither map to END_E-1 states.\n", insert1, insert2);
+	esl_fatal("ERROR: in cm_detach_state insert1: %d and insert2: %d neither map to END_E-1 states.\n", insert1, insert2);
       if(ret_val)
-	Die("ERROR: in cm_detach_state insert1: %d and insert2: %d both map to END_E-1 states.\n", insert1, insert2);
+	esl_fatal("ERROR: in cm_detach_state insert1: %d and insert2: %d both map to END_E-1 states.\n", insert1, insert2);
       ret_val = TRUE;
       to_detach = insert2;
     }
@@ -1407,7 +1432,7 @@ cm_detach_state(CM_t *cm, int insert1, int insert2)
       else
 	{
 	  if(cm->stid[to_detach] != MATP_IR)
-	    Die("ERROR: in cm_detach_state trying to detach a non-IL, non-MATP_IR state!\n");
+	    esl_fatal("ERROR: in cm_detach_state trying to detach a non-IL, non-MATP_IR state!\n");
 	  x_offset = 1; /* MATP_* -> MATP_IR is second possible transition for MATP_*,
 			 * unless * == MATP_IR, but we don't get there in for loop below. */
 	}
@@ -1421,7 +1446,7 @@ cm_detach_state(CM_t *cm, int insert1, int insert2)
 			      * from x -> to_detach as impossible.
 			      */
 	  /* Renormalize transitions out of x */
-	  FNorm(cm->t[x], cm->cnum[x]);
+	  esl_vec_FNorm(cm->t[x], cm->cnum[x]);
 	  /*printf("****setting transition probabilitity of x: %d to to_detach: %d cm->t[x][%d] as 0.0\n", x, to_detach, x_offset);*/
 	}
     }
@@ -1466,7 +1491,7 @@ cm_check_before_detaching(CM_t *cm, int insert1, int insert2)
   ret_val = FALSE;
 
   if(insert1 == insert2)
-    Die("ERROR in cm_check_before_detaching(), insert1==insert2 (%d)\n", insert1);
+    esl_fatal("ERROR in cm_check_before_detaching(), insert1==insert2 (%d)\n", insert1);
 
   if(cm->sttype[insert1+1] == E_st)
     {
@@ -1477,7 +1502,7 @@ cm_check_before_detaching(CM_t *cm, int insert1, int insert2)
   if(cm->sttype[insert2+1] == E_st)
     {
       if(ret_val)
-	Die("ERROR: in cm_check_before_detaching() insert1: %d and insert2: %d both map to END_E-1 states.\n", insert1, insert2);
+	esl_fatal("ERROR: in cm_check_before_detaching() insert1: %d and insert2: %d both map to END_E-1 states.\n", insert1, insert2);
       ret_val = TRUE;
       to_detach = insert2;
       to_keep   = insert1;
@@ -1493,7 +1518,7 @@ cm_check_before_detaching(CM_t *cm, int insert1, int insert2)
 	  else
 	    diff = 0. - cm->e[to_detach][i];
 	  if(diff > 0.000001)
-	    Die("ERROR, to_detach state: %d e->[%d] is non-zero but rather %f\n", to_detach, i, cm->e[to_detach][i]);
+	    esl_fatal("ERROR, to_detach state: %d e->[%d] is non-zero but rather %f\n", to_detach, i, cm->e[to_detach][i]);
 	}
       for(yoffset = 0; yoffset < cm->cnum[to_detach]; yoffset++)
 	{
@@ -1503,7 +1528,7 @@ cm_check_before_detaching(CM_t *cm, int insert1, int insert2)
 	  else
 	    diff = 0. - cm->t[to_detach][yoffset];
 	  if(diff > 0.000001)
-	    Die("ERROR, to_detach state: %d t->[%d] is non-zero but rather %f\n", to_detach, yoffset, cm->t[to_detach][yoffset]);
+	    esl_fatal("ERROR, to_detach state: %d t->[%d] is non-zero but rather %f\n", to_detach, yoffset, cm->t[to_detach][yoffset]);
 	}
     }
   return ret_val;
@@ -1517,9 +1542,9 @@ cm_check_before_detaching(CM_t *cm, int insert1, int insert2)
 int
 clean_cs(char *cs, int alen)
 {
+  int   status;
   int   i;
   int  *ct;
-  int   status;
   int   nright = 0;
   int   nleft = 0;
   int   nbad = 0;
@@ -1527,21 +1552,23 @@ clean_cs(char *cs, int alen)
   int   first;
   int   has_pseudoknots = FALSE;
 
-  /* 1. Maybe we're ok and don't need any cleaning.
+  /* 1. Check if we have a good CS line with >= 0 pseudoknotted
+   *    base pairs.
    */
-  status = WUSS2ct(cs, alen, FALSE, &ct);
+  ESL_ALLOC(ct, (alen+1) * sizeof(int));
+  if (esl_wuss2ct(cs, alen, ct) != eslOK)  
+    esl_fatal("Consensus structure string is inconsistent"); 
   free(ct);
-  if (status == 1) return 1;
 
-  /* 2. Maybe we have a good CS line but it annotates one or
-   *    or more pseudoknots that have to be deleted.
-   */
-  if ((status = WUSS2ct(cs, alen, TRUE, &ct)) == 1) { 
+  /* 2. CS line is good, check for and remove pseudoknots 
+   *    if necessary. */
+  if (check_for_pknots(cs, alen)) {
     has_pseudoknots = TRUE; 
     printf("    [Consensus structure has annotated pseudoknots that will be ignored.]\n");
     fflush(stdout);
   }
-  free(ct);
+  else return TRUE; /* we're good, no need to clean it, there's no 
+		     * pseudoknots */
 
   /* 3. Delete everything we don't recognize.
    */
@@ -1565,11 +1592,34 @@ clean_cs(char *cs, int alen)
 
   /* Check it again.
    */
-  status = WUSS2ct(cs, alen, FALSE, &ct);
+  status = esl_wuss2ct(cs, alen, ct);  
   free(ct);
-  if (status == 1) return 1;
+  if(status == eslOK) 
+    return TRUE;
+  printf("    [Failed to parse the consensus structure line.]\n"); 
+  return FALSE;
 
-  printf("    [Failed to parse the consensus structure line.]\n");
-  return 0;
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return FALSE; /* never reached */
 }
+
+/* Functions: check_for_pknots()
+ * Date:      EPN, Mon Aug  6 14:46:24 2007
+ *
+ * Purpose:   Simple check for pseudoknots in a consensus structure annotation.
+ *            ASSUMES: CS has already been checked for consistency.
+ */
+static int
+check_for_pknots(char *cs, int alen)
+{
+  int i;
+  for (i = 0; i < alen; i++)
+    {
+      if (isalpha((int) cs[i]))
+	return TRUE; /* assumes we know the CS is consistent */
+    }
+  return FALSE;
+}
+
 

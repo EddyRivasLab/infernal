@@ -41,7 +41,6 @@
 #include "structs.h"
 #include "funcs.h"
 
-#include "stopwatch.h"          /* squid's process timing module        */
 
 /*******************************************************************************
  * 11.04.05
@@ -981,7 +980,7 @@ insideT_b_jd_me(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
 	}
     }
   }
-  FreeNstack(pda);  /* it should be empty; we could check; naaah. */
+  esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
   free_vjd_shadow_matrix(shadow, cm, i0, j0);
   return sc;
 }
@@ -1335,11 +1334,12 @@ hd2safe_hd_bands(int M, int *jmin, int *jmax, int **hdmin, int **hdmax,
 void
 debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax)
 {
+  int status;
   int v, j;
   char **sttypes;
   char **nodetypes;
 
-  sttypes = malloc(sizeof(char *) * 10);
+  ESL_ALLOC(sttypes, sizeof(char *) * 10);
   sttypes[0] = "D";
   sttypes[1] = "MP";
   sttypes[2] = "ML";
@@ -1351,7 +1351,7 @@ debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax)
   sttypes[8] = "B";
   sttypes[9] = "EL";
 
-  nodetypes = malloc(sizeof(char *) * 8);
+  ESL_ALLOC(nodetypes, sizeof(char *) * 8);
   nodetypes[0] = "BIF";
   nodetypes[1] = "MATP";
   nodetypes[2] = "MATL";
@@ -1376,6 +1376,8 @@ debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax)
   free(sttypes);
   free(nodetypes);
 
+ ERROR:
+  esl_fatal("Memory allocation error.");
 }
 
 /* Function: CYKBandedScan_jd() 
@@ -2107,7 +2109,7 @@ iInsideBandedScan_jd(CM_t *cm, ESL_SQ *sq, int *jmin, int *jmax, int **hdmin, in
 
   /* Initialize the impossible deck, which we'll point to for 
    * j positions that are outside of the j band on v */
-  imp_row = MallocOrDie (sizeof(int) * (W+1));
+  ESL_ALLOC(imp_row, sizeof(int) * (W+1));
   for (d = 0; d <= W; d++) imp_row[d] = -INFTY;
     
   /*****************************************************************
@@ -2863,11 +2865,11 @@ inside_b_jd(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_fu
    * and we might reuse this memory in a call to Outside.  
    */
   if (alpha == NULL) {
-    alpha = MallocOrDie(sizeof(float **) * (cm->M+1));
+    ESL_ALLOC(alpha, sizeof(float **) * (cm->M+1));
     for (v = 0; v <= cm->M; v++) alpha[v] = NULL;
   }
 
-  touch = MallocOrDie(sizeof(int) * cm->M);
+  ESL_ALLOC(touch, sizeof(int) * cm->M);
   for (v = 0;     v < vroot; v++) touch[v] = 0;
   for (v = vroot; v <= vend; v++) touch[v] = cm->pnum[v];
   for (v = vend+1;v < cm->M; v++) touch[v] = 0;
@@ -2886,7 +2888,7 @@ inside_b_jd(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_fu
    * need 3 bits, not 8.)
    */
   if (ret_shadow != NULL) {
-    shadow = (void ***) MallocOrDie(sizeof(void **) * cm->M);
+    ESL_ALLOC(shadow, sizeof(void **) * cm->M);
     for (v = 0; v < cm->M; v++) shadow[v] = NULL;
   }
 
@@ -3690,7 +3692,7 @@ insideT_b_jd(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
 	}
     }
   }
-  FreeNstack(pda);  /* it should be empty; we could check; naaah. */
+  esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
   free_vjd_shadow_matrix(shadow, cm, i0, j0);
   return sc;
 }

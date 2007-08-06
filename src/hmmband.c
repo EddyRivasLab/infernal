@@ -25,6 +25,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <float.h>
+#include <math.h>
 
 #include "easel.h"
 #include "esl_stopwatch.c"
@@ -168,7 +169,7 @@ CP9_seq2bands(CM_t *cm, ESL_SQ *sq, int i0, int j0, CP9Bands_t *cp9b,
 	      CP9_dpmatrix_t **ret_cp9_post, int debug_level)
 {
   int             status;
-  Stopwatch_t    *watch;    /* for timings if cm->align_opts & CM_ALIGN_TIME             */
+  ESL_STOPWATCH  *watch;    /* for timings if cm->align_opts & CM_ALIGN_TIME             */
   int             use_sums; /* TRUE to fill and use posterior sums during HMM band calc  *
 			     * leads to wider bands                                      */
   CP9_dpmatrix_t *cp9_post; /* growable DP matrix for CP9 posteriors                     */
@@ -194,9 +195,8 @@ CP9_seq2bands(CM_t *cm, ESL_SQ *sq, int i0, int j0, CP9Bands_t *cp9b,
     
   if(cm->align_opts & CM_ALIGN_TIME) 
     {
-      watch = StopwatchCreate(); 
-      StopwatchZero(watch);
-      StopwatchStart(watch);
+      watch = esl_stopwatch_Create();
+      esl_stopwatch_Start(watch);
     }
 
   /* Step 1: Get HMM posteriors.
@@ -231,9 +231,9 @@ CP9_seq2bands(CM_t *cm, ESL_SQ *sq, int i0, int j0, CP9Bands_t *cp9b,
   
   if(cm->align_opts & CM_ALIGN_TIME) 
     {
-      StopwatchStop(watch);
-      StopwatchDisplay(stdout, "CP9 Band calculation CPU time: ", watch);
-      StopwatchFree(watch);
+      esl_stopwatch_Stop(watch);
+      esl_stopwatch_Display(stdout, watch, "CP9 Band calculation CPU time: ");
+      esl_stopwatch_Destroy(watch);
     }
   /* Use the CM bands on i and j to get bands on d, specific to j. */
   for(v = 0; v < cm->M; v++)

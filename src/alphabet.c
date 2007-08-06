@@ -14,6 +14,7 @@
 
 #include <string.h>
 #include <ctype.h>
+#include <math.h>
 
 #include "easel.h"
 #include "esl_alphabet.h"

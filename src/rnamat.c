@@ -10,13 +10,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include "squid.h"
-#include "msa.h"
+
+#include "easel.h"
+#include "esl_msa.h"
+#include "esl_stack.h"
+#include "esl_vectorops.h"
+
 #include "structs.h"
 #include "rnamat.h"
-#include "sre_stack.h"
-#include "easel.h"
-#include "esl_vectorops.h"
 
 /*
  * Maps c as follows:

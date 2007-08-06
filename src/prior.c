@@ -26,10 +26,11 @@
 Prior_t *
 Prior_Create(void)
 {
+  int      status;
   Prior_t *pri;
   int      a, b;
 
-  pri = MallocOrDie (sizeof(Prior_t));
+  ESL_ALLOC(pri, sizeof(Prior_t));
   pri->tsetnum   = 0;
   pri->t         = NULL;
   pri->mbp       = NULL;
@@ -43,6 +44,10 @@ Prior_Create(void)
       pri->tsetmap[a][b] = -1;
 
   return pri;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return NULL; /* never reached */
 }
 
 
@@ -90,42 +95,42 @@ Prior_Read(FILE *fp)
   pri = Prior_Create();
 
   if ((efp = esl_fileparser_Create(fp)) == NULL)
-    Die("Failed to associate open prior file stream with fileparser");
+    esl_fatal("Failed to associate open prior file stream with fileparser");
   esl_fileparser_SetCommentChar(efp, '#');
 
   /* First entry is the strategy: "Dirichlet" is the only possibility now. */
   if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) 
-    Die("%s\nPrior file parse failed, on first (Dirichlet) field", efp->errbuf);
+    esl_fatal("%s\nPrior file parse failed, on first (Dirichlet) field", efp->errbuf);
   if (strcasecmp(tok, "Dirichlet") != 0)
-    Die("No such prior strategy %s\n", tok);
+    esl_fatal("No such prior strategy %s\n", tok);
  
   /* Second entry is NTRANSSETS, which ought to be 74 */
   if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK)
-    Die("%s\nPrior file parse failed reading NTRANSSETS", efp->errbuf);
+    esl_fatal("%s\nPrior file parse failed reading NTRANSSETS", efp->errbuf);
   pri->tsetnum = atoi(tok);
-  pri->t = MallocOrDie(sizeof(ESL_MIXDCHLET *) * pri->tsetnum);
+  ESL_ALLOC(pri->t, sizeof(ESL_MIXDCHLET *) * pri->tsetnum);
   
   /* Transition section: a whole bunch of mixture Dirichlets.
    */
   for (i = 0; i < pri->tsetnum; i++)
     {
       if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK)
-	Die("%s\nPrior file parse failed at line %d reading unique statetype", 
+	esl_fatal("%s\nPrior file parse failed at line %d reading unique statetype", 
 	    efp->errbuf, efp->linenumber);
       if ((curr_state_id = UniqueStateCode(tok)) == -1)
-	Die("%s is not a uniq state;\nPrior file parse failed, line %d\n",
+	esl_fatal("%s is not a uniq state;\nPrior file parse failed, line %d\n",
 	    tok, efp->linenumber);
 
       if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK)
-	Die("%s\nPrior file parse failed reading node code", efp->errbuf);
+	esl_fatal("%s\nPrior file parse failed reading node code", efp->errbuf);
       if ((curr_next_node_id = NodeCode(tok)) == -1)
-	Die("%s is not a node code;\nPrior file parse failed, line %d\n",
+	esl_fatal("%s is not a node code;\nPrior file parse failed, line %d\n",
 	    tok, efp->linenumber);
 
       pri->tsetmap[curr_state_id][curr_next_node_id] = i;
 
       if (esl_mixdchlet_Read(efp, &(pri->t[i])) != eslOK)
-	Die("%s\nPrior file parse failed, reading transition prior %d at line %d.",
+	esl_fatal("%s\nPrior file parse failed, reading transition prior %d at line %d.",
 	    efp->errbuf, i, efp->linenumber);
       if (pri->t[i]->N > pri->maxnq)     pri->maxnq     = pri->t[i]->N;
       if (pri->t[i]->K > pri->maxnalpha) pri->maxnalpha = pri->t[i]->K;
@@ -134,7 +139,7 @@ Prior_Read(FILE *fp)
   /* Consensus base pair emission prior section.
    */
   if (esl_mixdchlet_Read(efp, &(pri->mbp)) != eslOK) 
-    Die("%s\nPrior file parse failed in base pair priors at line %d\n", 
+    esl_fatal("%s\nPrior file parse failed in base pair priors at line %d\n", 
 	efp->errbuf, efp->linenumber);
   if (pri->mbp->N > pri->maxnq)     pri->maxnq     = pri->mbp->N;
   if (pri->mbp->K > pri->maxnalpha) pri->maxnalpha = pri->mbp->K;
@@ -142,7 +147,7 @@ Prior_Read(FILE *fp)
   /* Consensus singlet emission prior section.
    */
   if (esl_mixdchlet_Read(efp, &(pri->mnt)) != eslOK) 
-    Die("%s\nPrior file parse failed in consensus singlet priors at line %d\n", 
+    esl_fatal("%s\nPrior file parse failed in consensus singlet priors at line %d\n", 
 	efp->errbuf, efp->linenumber);
   if (pri->mnt->N > pri->maxnq)     pri->maxnq     = pri->mnt->N;
   if (pri->mnt->K > pri->maxnalpha) pri->maxnalpha = pri->mnt->K;
@@ -150,13 +155,17 @@ Prior_Read(FILE *fp)
   /* Nonconsensus singlet emission prior section.
    */
   if (esl_mixdchlet_Read(efp, &(pri->i)) != eslOK)  
-    Die("%s\nPrior file parse failed in nonconsensus singlet priors at line %d\n", 
+    esl_fatal("%s\nPrior file parse failed in nonconsensus singlet priors at line %d\n", 
 	efp->errbuf, efp->linenumber);
   if (pri->i->N > pri->maxnq)     pri->maxnq     = pri->i->N;
   if (pri->i->K > pri->maxnalpha) pri->maxnalpha = pri->i->K;
 
   esl_fileparser_Destroy(efp);
   return pri;
+
+ ERROR: 
+  esl_fatal("Memory allocation error.");
+  return NULL; /* never reached */
 }
 
 
@@ -179,6 +188,7 @@ Prior_Read(FILE *fp)
 void
 PriorifyCM(CM_t *cm, const Prior_t *pri)
 {
+  int status;
   int v;		/* counter for model position   */
   int setnum;           /* number of set to use */
   int nxtndtype;        /* type of next node */
@@ -189,9 +199,9 @@ PriorifyCM(CM_t *cm, const Prior_t *pri)
 
   /* Create our temporary buffers; counts, probs, and mixq.
    */
-  counts = MallocOrDie(sizeof(double) * pri->maxnalpha);
-  probs  = MallocOrDie(sizeof(double) * pri->maxnalpha);
-  mixq   = MallocOrDie(sizeof(double) * pri->maxnq);
+  ESL_ALLOC(counts, sizeof(double) * pri->maxnalpha);
+  ESL_ALLOC(probs,  sizeof(double) * pri->maxnalpha);
+  ESL_ALLOC(mixq,   sizeof(double) * pri->maxnq);
                                  
   for (v = 0; v < cm->M; v++)
     {
@@ -265,6 +275,9 @@ PriorifyCM(CM_t *cm, const Prior_t *pri)
   free(mixq);
   free(counts);
   free(probs);
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
 }
 
 
@@ -284,12 +297,13 @@ PriorifyCM(CM_t *cm, const Prior_t *pri)
 Prior_t *
 Prior_Default(void)
 {
+  int status;
   Prior_t *pri;
 
   pri = Prior_Create();
 
   pri->tsetnum = 74;
-  pri->t = MallocOrDie(sizeof(ESL_MIXDCHLET *) * pri->tsetnum);
+  ESL_ALLOC(pri->t, sizeof(ESL_MIXDCHLET *) * pri->tsetnum);
 
   /*****************************************************************
    * The code block below is autogenerated:
@@ -1120,6 +1134,10 @@ Prior_Default(void)
    pri->maxnq = 9;		/* 9-component bp mixture was the most */
    pri->maxnalpha = 16;		/* bp priors were the most w/ 16 components */
    return pri;
+
+ ERROR:
+   esl_fatal("Memory allocation error.");
+   return NULL;
 }
 
 

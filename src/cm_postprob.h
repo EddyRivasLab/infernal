@@ -11,10 +11,13 @@
 #ifndef CMPOSTPROB_INCLUDED
 #define CMPOSTPROB_INCLUDED
 
+#include "esl_config.h"
 #include "config.h"
+
+#include "easel.h"
+
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
-#include "squid.h"
 
 extern float FInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 		     float ***alpha, float ****ret_alpha, 

@@ -115,6 +115,7 @@ CMFileOpen(char *cmfile, char *env)
   char         *ssifile = NULL;	/* constructed name of SSI index file             */
   char         *envfile = NULL;	/* full path to filename after using environment  */
   char          buf[512];
+  int           n = strlen(cmfile);
 
   /* Allocate the CMFILE, and initialize.
    */
@@ -139,12 +140,12 @@ CMFileOpen(char *cmfile, char *env)
   else if (esl_FileEnvOpen(cmfile, env, &(cmf->f), &envfile) == eslOK)
     {
       if ((status = esl_FileNewSuffix(envfile, "ssi", &ssifile)) != eslOK) goto ERROR;
-	  if ((status = esl_strdup(envfile, -1, &(hfp->fname)))      != eslOK) goto ERROR;
+      if ((status = esl_strdup(envfile, -1, &(cmf->fname)))      != eslOK) goto ERROR;
     }
   else
     { status = eslENOTFOUND; goto ERROR; }
 
-  /* Attempt to open the ssi index file. hfp->ssi silently stays NULL if the ssifile isn't found. */
+  /* Attempt to open the ssi index file. cmf->ssi silently stays NULL if the ssifile isn't found. */
   if (ssifile != NULL) esl_ssi_Open(ssifile, &(cmf->ssi));
   if (envfile != NULL) free(envfile);
   if (ssifile != NULL) free(ssifile);

@@ -44,8 +44,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "squid.h"
-#include "sre_stack.h"
+#include "easel.h"
+#include "esl_stack.h"
 
 #include "structs.h"
 #include "funcs.h"
@@ -53,28 +53,29 @@
 CMEmitMap_t *
 CreateEmitMap(CM_t *cm)
 {
+  int          status;
   CMEmitMap_t *map;
-  Nstack_t    *pda;
+  ESL_STACK   *pda;
   int          cpos;
   int          nd;
   int          on_right;
   
-  map       = MallocOrDie(sizeof(CMEmitMap_t));
-  map->lpos = MallocOrDie(sizeof(int) * cm->nodes);
-  map->rpos = MallocOrDie(sizeof(int) * cm->nodes);
-  map->epos = MallocOrDie(sizeof(int) * cm->nodes);
+  ESL_ALLOC(map,       sizeof(CMEmitMap_t));
+  ESL_ALLOC(map->lpos, sizeof(int) * cm->nodes);
+  ESL_ALLOC(map->rpos, sizeof(int) * cm->nodes);
+  ESL_ALLOC(map->epos, sizeof(int) * cm->nodes);
 
   for (nd = 0; nd < cm->nodes; nd++)
     map->lpos[nd] = map->rpos[nd] = map->epos[nd] = -1;
 
   cpos = 0;
   nd   = 0;
-  pda  = CreateNstack();
-  PushNstack(pda, 0);		/* 0 = left side. 1 would = right side. */
-  PushNstack(pda, nd);
-  while (PopNstack(pda, &nd))
+  pda  = esl_stack_ICreate();
+  esl_stack_IPush(pda, 0);		/* 0 = left side. 1 would = right side. */
+  esl_stack_IPush(pda, nd);
+  while (esl_stack_IPop(pda, &nd))
     {
-      PopNstack(pda, &on_right);
+      esl_stack_IPop(pda, &on_right);
 
       if (on_right) 
 	{
@@ -89,24 +90,24 @@ CreateEmitMap(CM_t *cm)
 	  if (cm->ndtype[nd] == BIF_nd) 
 	    {
 				/* push the BIF back on for its right side  */
-	      PushNstack(pda, 1);
-	      PushNstack(pda, nd);
+	      esl_stack_IPush(pda, 1);
+	      esl_stack_IPush(pda, nd);
                             /* push node index for right child */
-	      PushNstack(pda, 0);
-	      PushNstack(pda, cm->ndidx[cm->cnum[cm->nodemap[nd]]]);   
+	      esl_stack_IPush(pda, 0);
+	      esl_stack_IPush(pda, cm->ndidx[cm->cnum[cm->nodemap[nd]]]);   
                             /* push node index for left child */
-	      PushNstack(pda, 0);
-	      PushNstack(pda, cm->ndidx[cm->cfirst[cm->nodemap[nd]]]); 
+	      esl_stack_IPush(pda, 0);
+	      esl_stack_IPush(pda, cm->ndidx[cm->cfirst[cm->nodemap[nd]]]); 
 	    }
 	  else
 	    {
 				/* push the node back on for right side */
-	      PushNstack(pda, 1);
-	      PushNstack(pda, nd);
+	      esl_stack_IPush(pda, 1);
+	      esl_stack_IPush(pda, nd);
 				/* push child node on */
 	      if (cm->ndtype[nd] != END_nd) {
-		PushNstack(pda, 0);
-		PushNstack(pda, nd+1);
+		esl_stack_IPush(pda, 0);
+		esl_stack_IPush(pda, nd+1);
 	      }
 	    }
 	}
@@ -126,8 +127,12 @@ CreateEmitMap(CM_t *cm)
   }
 
   map->clen = map->rpos[0]-1;
-  FreeNstack(pda);
+  esl_stack_Destroy(pda);
   return map;
+
+ ERROR: 
+  esl_fatal("Memory allocation error.");
+  return NULL; /* never reached */
 }
   
 void

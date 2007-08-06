@@ -16,12 +16,15 @@
  * the end of the hmmband.c file.
  */
 
+#include "esl_config.h"
 #include "config.h"
-#include "squid.h"		/* general sequence analysis library    */
-#include "msa.h"                /* squid's multiple alignment i/o       */
-#include "stopwatch.h"          /* squid's process timing module        */
+
+#include "easel.h"         
+#include "esl_msa.h"       
+#include "esl_stack.h"
+#include "esl_stopwatch.h" 
+
 #include "structs.h"		/* data structures, macros, #define's   */
-#include "sre_stack.h"
 #include "cplan9.h"
 
 extern CP9Bands_t * AllocCP9Bands(CM_t *cm, CP9_t *hmm);
