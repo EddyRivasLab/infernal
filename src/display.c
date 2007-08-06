@@ -336,7 +336,7 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_SQ *sq)
   for (pos = 0; pos < ali->len; pos++)
     if (ali->ccoord[pos] != 0) ali->cto = ali->ccoord[pos];
 
-  FreeNstack(pda);
+  esl_stack_Destroy(pda);
   return ali;
 
  ERROR:

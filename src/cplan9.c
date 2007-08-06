@@ -19,17 +19,17 @@
  * HMMER 2.4 and placed here without modification.
  */
 
-#include "squidconf.h"
-#include "cplan9.h"
+#include "esl_config.h"
+#include "config.h"
 
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
 #include <time.h>
 
-#include "squid.h"
 #include "funcs.h"
 #include "structs.h"
+#include "cplan9.h"
 
 static void rightjustify(char *s, int n);
 
@@ -42,21 +42,24 @@ static void rightjustify(char *s, int n);
  *            parsing the header of an HMM file but don't 
  *            see the size of the model 'til partway thru the header.
  */
-struct cplan9_s *
+CP9_t *
 AllocCPlan9(int M) 
 {
-  struct cplan9_s *hmm;
+  CP9_t *hmm;
 
   hmm = AllocCPlan9Shell();
-  AllocCPlan9Body(hmm, M);
+  AllocCPlan9Body(hmm, M, abc);
   return hmm;
 }  
-struct cplan9_s *
+CP9_t *
 AllocCPlan9Shell(void) 
 {
-  struct cplan9_s *hmm;
+  int    status;
+  CP9_t *hmm;
 
-  hmm    = (struct cplan9_s *) MallocOrDie (sizeof(struct cplan9_s));
+  ESL_ALLOC(hmm, sizeof(CP9_t));
+  hmm->abc = NULL;
+
   hmm->M = 0;
 
   hmm->t      = NULL;
@@ -79,28 +82,34 @@ AllocCPlan9Shell(void)
 
   hmm->flags = 0;
   return hmm;
+
+ ERROR:
+  esl_fatal("Memory allocation error.\n");
+  return NULL; /* never reached */
 }  
 
 void
-AllocCPlan9Body(struct cplan9_s *hmm, int M) 
+AllocCPlan9Body(struct cplan9_s *hmm, int M, const ESL_ALPHABET *abc) 
 {
   int k, x;
 
+  hmm->abc = abc;
+
   hmm->M = M;
 
-  hmm->t      = MallocOrDie ((M+1) *           sizeof(float *));
-  hmm->mat    = MallocOrDie ((M+1) *           sizeof(float *));
-  hmm->ins    = MallocOrDie ((M+1) *           sizeof(float *));
-  hmm->t[0]   = MallocOrDie ((10*(M+1))     *  sizeof(float));
-  hmm->mat[0] = MallocOrDie ((MAXABET*(M+1)) * sizeof(float));
-  hmm->ins[0] = MallocOrDie ((MAXABET*(M+1)) *     sizeof(float));
+  ESL_ALLOC(hmm->t,   (M+1) *           sizeof(float *));
+  ESL_ALLOC(hmm->mat, (M+1) *           sizeof(float *));
+  ESL_ALLOC(hmm->ins, (M+1) *           sizeof(float *));
+  ESL_ALLOC(hmm->t[0],(10*(M+1))     *  sizeof(float));
+  ESL_ALLOC(hmm->mat[0],(MAXABET*(M+1)) * sizeof(float));
+  ESL_ALLOC(hmm->ins[0],(MAXABET*(M+1)) * sizeof(float));
 
-  hmm->tsc     = MallocOrDie (10     *           sizeof(int *));
-  hmm->msc     = MallocOrDie (MAXDEGEN   *       sizeof(int *));
-  hmm->isc     = MallocOrDie (MAXDEGEN   *       sizeof(int *)); 
-  hmm->tsc_mem = MallocOrDie ((10*(M+1))     *       sizeof(int));
-  hmm->msc_mem = MallocOrDie ((MAXDEGEN*(M+1)) * sizeof(int));
-  hmm->isc_mem = MallocOrDie ((MAXDEGEN*(M+1)) *     sizeof(int));
+  ESL_ALLOC(hmm->tsc, 10     *           sizeof(int *));
+  ESL_ALLOC(hmm->msc, MAXDEGEN   *       sizeof(int *));
+  ESL_ALLOC(hmm->isc, MAXDEGEN   *       sizeof(int *)); 
+  ESL_ALLOC(hmm->tsc_mem,(10*(M+1))     *       sizeof(int));
+  ESL_ALLOC(hmm->msc_mem,(MAXDEGEN*(M+1)) * sizeof(int));
+  ESL_ALLOC(hmm->isc_mem,(MAXDEGEN*(M+1)) *     sizeof(int));
 
   hmm->tsc[0] = hmm->tsc_mem;
   hmm->msc[0] = hmm->msc_mem;
@@ -127,21 +136,23 @@ AllocCPlan9Body(struct cplan9_s *hmm, int M)
   for (x = 0; x < 10; x++)
     hmm->tsc[x][0] = -INFTY;
 
-  hmm->begin  = MallocOrDie  ((M+1) * sizeof(float));
-  hmm->end    = MallocOrDie  ((M+1) * sizeof(float));
+  ESL_ALLOC(hmm->begin, (M+1) * sizeof(float));
+  ESL_ALLOC(hmm->end,   (M+1) * sizeof(float));
 
-  hmm->bsc_mem  = MallocOrDie  ((M+1) * sizeof(int));
-  hmm->esc_mem  = MallocOrDie  ((M+1) * sizeof(int));
+  ESL_ALLOC(hmm->bsc_mem, (M+1) * sizeof(int));
+  ESL_ALLOC(hmm->esc_mem, (M+1) * sizeof(int));
 
   hmm->bsc = hmm->bsc_mem;
   hmm->esc = hmm->esc_mem;
 
-  hmm->has_el      = MallocOrDie  ((M+1) * sizeof(int));
-  hmm->el_from_ct  = MallocOrDie  ((M+2) * sizeof(int));
-  hmm->el_from_idx = MallocOrDie  ((M+2) * sizeof(int *));
-  hmm->el_from_cmnd = MallocOrDie  ((M+2) * sizeof(int *));
+  ESL_ALLOC(hmm->has_el,     (M+1) * sizeof(int));
+  ESL_ALLOC(hmm->el_from_ct, (M+2) * sizeof(int));
+  ESL_ALLOC(hmm->el_from_idx,(M+2) * sizeof(int *));
+  ESL_ALLOC(hmm->el_from_cmnd(M+2) * sizeof(int *));
 
   return;
+ ERROR:
+  esl_fatal("Memory allocation error.");
 }  
 
 
@@ -194,16 +205,16 @@ void
 ZeroCPlan9(struct cplan9_s *hmm)
 {
   int k;
-  FSet(hmm->ins[0], Alphabet_size, 0.);
-  FSet(hmm->t[0], 10, 0.);
+  esl_vec_FSet(hmm->ins[0], hmm->abc->K, 0.);
+  esl_vec_FSet(hmm->t[0], 10, 0.);
   for (k = 1; k <= hmm->M; k++)
     {
-      FSet(hmm->t[k], 10, 0.);
-      FSet(hmm->mat[k], Alphabet_size, 0.);
-      FSet(hmm->ins[k], Alphabet_size, 0.);
+      esl_vec_FSet(hmm->t[k], 10, 0.);
+      esl_vec_FSet(hmm->mat[k], hmm->abc->K, 0.);
+      esl_vec_FSet(hmm->ins[k], hmm->abc->K, 0.);
     }
-  FSet(hmm->begin+1, hmm->M, 0.);
-  FSet(hmm->end+1, hmm->M, 0.);
+  esl_vec_FSet(hmm->begin+1, hmm->M, 0.);
+  esl_vec_FSet(hmm->end+1, hmm->M, 0.);
 
   /* initialize the el_* data structures, these
    * depend on the CM guide tree and will be set
@@ -236,7 +247,7 @@ void
 CPlan9SetNullModel(struct cplan9_s *hmm, float null[MAXABET], float p1)
 {
   int x;
-  for (x = 0; x < Alphabet_size; x++)
+  for (x = 0; x < hmm->abc->K; x++)
     hmm->null[x] = null[x];
   hmm->p1 = p1;
 }
@@ -259,7 +270,7 @@ CPlan9SetNullModel(struct cplan9_s *hmm, float null[MAXABET], float p1)
  *            hmm scores are filled in.
  */  
 void
-CP9Logoddsify(struct cplan9_s *hmm)
+CP9Logoddsify(CP9_t *hmm)
 {
   int k;			/* counter for model position */
   int x;			/* counter for symbols        */
@@ -273,20 +284,20 @@ CP9Logoddsify(struct cplan9_s *hmm)
    */
 
   /* emission scores from state N, ins[0] */
-  for (x = 0; x < Alphabet_size; x++) 
+  for (x = 0; x < hmm->abc->K; x++) 
     hmm->isc[x][0] =  Prob2Score(hmm->ins[0][x], hmm->null[x]); 
-  for (x = Alphabet_size; x < Alphabet_iupac; x++) 
+  for (x = hmm->abc->K; x < Alphabet_iupac; x++) 
     hmm->isc[x][0] = DegenerateSymbolScore(hmm->ins[0], hmm->null, x);
 
   for (k = 1; k <= hmm->M; k++) 
     {
-      for (x = 0; x < Alphabet_size; x++) 
+      for (x = 0; x < hmm->abc->K; x++) 
 	{
 	  hmm->msc[x][k] =  Prob2Score(hmm->mat[k][x], hmm->null[x]);
 	  hmm->isc[x][k] =  Prob2Score(hmm->ins[k][x], hmm->null[x]); 
 	}
       /* degenerate match/insert emissions */
-      for (x = Alphabet_size; x < Alphabet_iupac; x++) 
+      for (x = hmm->abc->K; x < Alphabet_iupac; x++) 
 	{
 	  hmm->msc[x][k] = DegenerateSymbolScore(hmm->mat[k], hmm->null, x);
 	  hmm->isc[x][k] = DegenerateSymbolScore(hmm->ins[k], hmm->null, x);
@@ -346,9 +357,9 @@ CPlan9Rescale(struct cplan9_s *hmm, float scale)
    * and only nodes 1..M-1 have a valid array of transitions.
    */
   for(k = 1; k <= hmm->M; k++) 
-    FScale(hmm->mat[k], Alphabet_size, scale);
+    FScale(hmm->mat[k], hmm->abc->K, scale);
   for(k = 0; k <=  hmm->M; k++) 
-    FScale(hmm->ins[k], Alphabet_size, scale);
+    FScale(hmm->ins[k], hmm->abc->K, scale);
   for(k = 0; k <  hmm->M; k++) 
     FScale(hmm->t[k],   10,             scale);
 
@@ -378,12 +389,12 @@ CPlan9Renormalize(struct cplan9_s *hmm)
   float d;			/* denominator */
 
 				/* match emissions */
-  FSet(hmm->mat[0], Alphabet_size, 0.);   /*M_0 is B state, non-emitter*/
+  FSet(hmm->mat[0], hmm->abc->K, 0.);   /*M_0 is B state, non-emitter*/
   for (k = 1; k <= hmm->M; k++) 
-    FNorm(hmm->mat[k], Alphabet_size);
+    FNorm(hmm->mat[k], hmm->abc->K);
 				/* insert emissions */
   for (k = 0; k <= hmm->M; k++)
-    FNorm(hmm->ins[k], Alphabet_size);
+    FNorm(hmm->ins[k], hmm->abc->K);
 
 				/* begin transitions */
   d = FSum(hmm->begin+1, hmm->M) + hmm->t[0][CTMI] + hmm->t[0][CTMD] + hmm->t[0][CTME]; 
@@ -406,7 +417,7 @@ CPlan9Renormalize(struct cplan9_s *hmm)
       FNorm(hmm->t[k]+7, 3);	/* delete */
     }
 				/* null model emissions */
-  FNorm(hmm->null, Alphabet_size);
+  FNorm(hmm->null, hmm->abc->K);
 
 				/* special transitions, none?*/
 
@@ -1616,13 +1627,13 @@ Scorify(int sc)
  *           vector and the null model, scaled up by INTSCALE.              
  */
 int 
-DegenerateSymbolScore(float *p, float *null, int ambig)
+DegenerateSymbolScore(const ESL_ALPHABET *abc, float *p, float *null, int ambig)
 {
   int x;
   float numer = 0.;
   float denom = 0.;
 
-  for (x = 0; x < Alphabet_size; x++) {
+  for (x = 0; x < abc->K; x++) {
     if (Degenerate[ambig][x]) {
       numer += null[x] * sreLOG2(p[x] / null[x]);
       denom += null[x];
@@ -2909,7 +2920,7 @@ DuplicateCP9(CM_t *src_cm, CM_t *dest_cm)
       dest_cm->cp9->begin[k] = src_cm->cp9->begin[k];
       dest_cm->cp9->end[k] = src_cm->cp9->end[k];
 
-      for(x = 0; x < Alphabet_size; x++)
+      for(x = 0; x < src_cm->cp9->abc; x++)
 	{
 	  dest_cm->cp9->mat[k][x] = src_cm->cp9->mat[k][x];
 	  dest_cm->cp9->ins[k][x] = src_cm->cp9->ins[k][x];

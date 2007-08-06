@@ -1764,7 +1764,7 @@ outside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 	if (sq->dsq[i0] < cm->abc->K) 
 	  escore = cm->esc[vroot][(int) sq->dsq[i0]];
 	else
-	  escore = DegenerateSingletScore(cm->esc[vroot], sq->dsq[i0]);
+	  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i0], cm->esc[vroot]);
 	beta[cm->M][j0][W-1] = cm->endsc[vroot] + 
 	  (cm->el_selfsc * (W-1)) + escore;
 
@@ -1776,7 +1776,7 @@ outside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 	if (sq->dsq[j0] < cm->abc->K) 
 	  escore = cm->esc[vroot][(int) sq->dsq[j0]];
 	else
-	  escore = DegenerateSingletScore(cm->esc[vroot], sq->dsq[j0]);
+	  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j0], cm->esc[vroot]);
 	beta[cm->M][j0-1][W-1] = cm->endsc[vroot] + 
 	  (cm->el_selfsc * (W-1)) + escore;
 	
@@ -1861,7 +1861,7 @@ outside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 		if (sq->dsq[i-1] < cm->abc->K) 
 		  escore = cm->esc[y][(int) sq->dsq[i-1]];
 		else
-		  escore = DegenerateSingletScore(cm->esc[y], sq->dsq[i-1]);
+		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i-1], cm->esc[y]);
 		  
 		if ((sc = beta[y][j][d+1] + cm->tsc[y][voffset] + escore) > beta[v][j][d])
 		  beta[v][j][d] = sc;
@@ -1874,7 +1874,7 @@ outside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 		if (sq->dsq[j+1] < cm->abc->K) 
 		  escore = cm->esc[y][(int) sq->dsq[j+1]];
 		else
-		  escore = DegenerateSingletScore(cm->esc[y], sq->dsq[j+1]);
+		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j+1], cm->esc[y]);
 
 		if ((sc = beta[y][j+1][d+1] + cm->tsc[y][voffset] + escore) > beta[v][j][d])
 		  beta[v][j][d] = sc;
@@ -1923,7 +1923,7 @@ outside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 		if (sq->dsq[i-1] < cm->abc->K) 
 		  escore = cm->esc[v][(int) sq->dsq[i-1]];
 		else
-		  escore = DegenerateSingletScore(cm->esc[v], sq->dsq[i-1]);
+		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i-1], cm->esc[v]);
 		if ((sc = beta[v][j][d+1] + cm->endsc[v] + 
 		     (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
 		  /*(cm->el_selfsc * (d+1)) + escore) > beta[cm->M][j][d])*/
@@ -1935,7 +1935,7 @@ outside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 		if (sq->dsq[j+1] < cm->abc->K) 
 		  escore = cm->esc[v][(int) sq->dsq[j+1]];
 		else
-		  escore = DegenerateSingletScore(cm->esc[v], sq->dsq[j+1]);
+		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j+1], cm->esc[v]);
 		if ((sc = beta[v][j+1][d+1] + cm->endsc[v] + 
 		     (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
 		     /*(cm->el_selfsc * (d+1)) + escore) > beta[cm->M][j][d])*/
@@ -2173,7 +2173,7 @@ vinside(CM_t *cm, ESL_SQ *sq,
 	if (sq->dsq[i1-1] < cm->abc->K)
 	  a[z][jp][ip-1] += cm->esc[z][(int) sq->dsq[i1-1]];
 	else
-	  a[z][jp][ip-1] += DegenerateSingletScore(cm->esc[z], sq->dsq[i1-1]);
+	  a[z][jp][ip-1] += esl_abc_FAvgScore(cm->abc, sq->dsq[i1-1], cm->esc[z]);
 	if (ret_shadow != NULL) shadow[z][jp][ip-1] = USED_EL;
 	if (a[z][jp][ip-1] < IMPOSSIBLE) a[z][jp][ip-1] = IMPOSSIBLE;
 	break;
@@ -2185,7 +2185,7 @@ vinside(CM_t *cm, ESL_SQ *sq,
 	if (sq->dsq[j1+1] < cm->abc->K)
 	  a[z][jp+1][ip] += cm->esc[z][(int) sq->dsq[j1+1]];
 	else
-	  a[z][jp+1][ip] += DegenerateSingletScore(cm->esc[z], sq->dsq[j1+1]);
+	  a[z][jp+1][ip] += esl_abc_FAvgScore(cm->abc, sq->dsq[j1+1], cm->esc[z]);
 	if (ret_shadow != NULL) shadow[z][jp+1][ip] = USED_EL;
 	if (a[z][jp+1][ip] < IMPOSSIBLE) a[z][jp+1][ip] = IMPOSSIBLE;
 	break;
@@ -2419,6 +2419,7 @@ vinside(CM_t *cm, ESL_SQ *sq,
 
  ERROR:
   esl_fatal("Memory allocation error.\n");
+  return 0.; /* never reached */
 }
 
 /* Function: voutside()
@@ -2531,7 +2532,7 @@ voutside(CM_t *cm, ESL_SQ *sq,
       if (sq->dsq[i0] < cm->abc->K) 
 	escore = cm->esc[r][(int) sq->dsq[i0]];
       else
-	escore = DegenerateSingletScore(cm->esc[r], sq->dsq[i0]);      
+	escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i0], cm->esc[r]);
       beta[cm->M][j0-j1][1] = cm->endsc[r] + 
 	(cm->el_selfsc * ((j0)-(i0+1)+1)) + escore;
       break;
@@ -2541,7 +2542,7 @@ voutside(CM_t *cm, ESL_SQ *sq,
       if (sq->dsq[j0] < cm->abc->K) 
 	escore = cm->esc[r][(int) sq->dsq[j0]];
       else
-	escore = DegenerateSingletScore(cm->esc[r], sq->dsq[j0]);
+	escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j0], cm->esc[r]);
       beta[cm->M][j0-j1-1][0] = cm->endsc[r] + 
 	(cm->el_selfsc * ((j0-1)-(i0)+1)) + escore;
       break;
@@ -2624,7 +2625,7 @@ voutside(CM_t *cm, ESL_SQ *sq,
 		if (sq->dsq[i-1] < cm->abc->K) 
 		  escore = cm->esc[y][(int) sq->dsq[i-1]];
 		else
-		  escore = DegenerateSingletScore(cm->esc[y], sq->dsq[i-1]);
+		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i-1], cm->esc[y]);
 		  
 		if ((sc = beta[y][jp][ip-1]+cm->tsc[y][voffset]+escore) > beta[v][jp][ip])
 		  beta[v][jp][ip] = sc;
@@ -2637,7 +2638,7 @@ voutside(CM_t *cm, ESL_SQ *sq,
 		if (sq->dsq[j+1] < cm->abc->K) 
 		  escore = cm->esc[y][(int) sq->dsq[j+1]];
 		else
-		  escore = DegenerateSingletScore(cm->esc[y], sq->dsq[j+1]);
+		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j+1], cm->esc[y]);
 
 		if ((sc = beta[y][jp+1][ip]+cm->tsc[y][voffset]+escore) > beta[v][jp][ip])
 		  beta[v][jp][ip] = sc;
@@ -2686,7 +2687,7 @@ voutside(CM_t *cm, ESL_SQ *sq,
 		if (sq->dsq[i-1] < cm->abc->K) 
 		  escore = cm->esc[v][(int) sq->dsq[i-1]];
 		else
-		  escore = DegenerateSingletScore(cm->esc[v], sq->dsq[i-1]);
+		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i-1], cm->esc[v]);
 		if ((sc = beta[v][jp][ip-1] + cm->endsc[v] + 
 		     (cm->el_selfsc * (j-i+1)) + escore) > beta[cm->M][jp][ip])
 		  beta[cm->M][jp][ip] = sc;
@@ -2697,7 +2698,7 @@ voutside(CM_t *cm, ESL_SQ *sq,
 		if (sq->dsq[j+1] < cm->abc->K) 
 		  escore = cm->esc[v][(int) sq->dsq[j+1]];
 		else
-		  escore = DegenerateSingletScore(cm->esc[v], sq->dsq[j+1]);
+		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j+1], cm->esc[v]);
 		if ((sc = beta[v][jp+1][ip] + cm->endsc[v] + 
 		     (cm->el_selfsc * (j-i+1)) + escore) > beta[cm->M][jp][ip])
 		  beta[cm->M][jp][ip] = sc;
@@ -2904,7 +2905,7 @@ insideT(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
 	}
     }
   }
-  FreeNstack(pda);  /* it should be empty; we could check; naaah. */
+  esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
   free_vjd_shadow_matrix(shadow, cm, i0, j0);
   return sc;
 }
@@ -3143,11 +3144,12 @@ cyk_deck_count(CM_t *cm, int r, int z)
       }
     }
   free(touch);
-  FreeNstack(pda);
+  esl_stack_Destroy(pda);
   return ndecks;
 
  ERROR:
   esl_fatal("Memory allocation error.\n");
+  return 0; /* never reached */
 }
 
 /* Function: cyk_extra_decks()
@@ -3212,6 +3214,7 @@ deckpool_create(void)
   return dpool;
  ERROR:
   esl_fatal("Memory allocation error.\n");
+  return NULL; /* never reached */
 }
 void 
 deckpool_push(struct deckpool_s *dpool, float **deck)
@@ -3287,6 +3290,7 @@ alloc_vjd_deck(int L, int i, int j)
   return a;
  ERROR:
   esl_fatal("Memory allocation error.");
+  return NULL; /* never reached */
 }
 float
 size_vjd_deck(int L, int i, int j)
@@ -3327,6 +3331,7 @@ alloc_vjd_yshadow_deck(int L, int i, int j)
   return a;
  ERROR:
   esl_fatal("Memory allocation error.");
+  return NULL; /* never reached */
 }
 float
 size_vjd_yshadow_deck(int L, int i, int j)
@@ -3358,6 +3363,7 @@ alloc_vjd_kshadow_deck(int L, int i, int j)
   return a;
  ERROR:
   esl_fatal("Memory allocation error.");
+  return NULL; /* never reached */
 }
 float
 size_vjd_kshadow_deck(int L, int i, int j)
@@ -3423,6 +3429,7 @@ alloc_vji_deck(int i0, int i1, int j1, int j0)
   return a;
  ERROR:
   esl_fatal("Memory allocation error.");
+  return NULL; /* never reached */
 }
 float
 size_vji_deck(int i0, int i1, int j1, int j0)
@@ -3467,6 +3474,7 @@ alloc_vji_shadow_deck(int i0, int i1, int j1, int j0)
   return a;
  ERROR:
   esl_fatal("Memory allocation error.");
+  return NULL; /* never reached */
 }
 float		        /* allocation of a traceback ptr (shadow matrix) deck */
 size_vji_shadow_deck(int i0, int i1, int j1, int j0)
@@ -3601,7 +3609,7 @@ CYKOutside(CM_t *cm, ESL_SQ *sq, float ***alpha)
 		    if (sq->dsq[i-1] < cm->abc->K) 
 		      escore = cm->esc[y][(int) sq->dsq[i-1]];
 		    else
-		      escore = DegenerateSingletScore(cm->esc[y], sq->dsq[i-1]);
+		      escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i-1], cm->esc[y]);
 		  
 		    if ((sc = beta[y][j][d+1] + cm->tsc[y][v] + escore) > beta[v][j][d])
 		      beta[v][j][d] = sc;
@@ -3614,7 +3622,7 @@ CYKOutside(CM_t *cm, ESL_SQ *sq, float ***alpha)
 		    if (sq->dsq[j+1] < cm->abc->K) 
 		      escore = cm->esc[y][(int) sq->dsq[j+1]];
 		    else
-		      escore = DegenerateSingletScore(cm->esc[y], sq->dsq[j+1]);
+		      escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j+1], cm->esc[y]);
 
 		    if ((sc = beta[y][j+1][d+1] + cm->tsc[y][v] + escore) > beta[v][j][d])
 		      beta[v][j][d] = sc;
@@ -4673,6 +4681,7 @@ inside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_full,
 
  ERROR:
   esl_fatal("Memory allocation error.");
+  return 0.; /* never reached */
 }
 
 
@@ -4797,7 +4806,7 @@ outside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 	if (sq->dsq[i0] < cm->abc->K) 
 	  escore = cm->esc[vroot][(int) sq->dsq[i0]];
 	else
-	  escore = DegenerateSingletScore(cm->esc[vroot], sq->dsq[i0]);
+	  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i0], cm->esc[vroot]);
 	beta[cm->M][j0][W-1] = cm->endsc[vroot] + 
 	  (cm->el_selfsc * (W-1)) + escore;
 	if (beta[cm->M][j0][W-1] < IMPOSSIBLE) beta[cm->M][j0][W-1] = IMPOSSIBLE;
@@ -4808,7 +4817,7 @@ outside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 	if (sq->dsq[j0] < cm->abc->K) 
 	  escore = cm->esc[vroot][(int) sq->dsq[j0]];
 	else
-	  escore = DegenerateSingletScore(cm->esc[vroot], sq->dsq[j0]);
+	  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j0], cm->esc[vroot]);
 	beta[cm->M][j0-1][W-1] = cm->endsc[vroot] + 
 	  (cm->el_selfsc * (W-1)) + escore;
 	if (beta[cm->M][j0-1][W-1] < IMPOSSIBLE) beta[cm->M][j0-1][W-1] = IMPOSSIBLE;
@@ -4892,7 +4901,7 @@ outside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 		if (sq->dsq[i-1] < cm->abc->K) 
 		  escore = cm->esc[y][(int) sq->dsq[i-1]];
 		else
-		  escore = DegenerateSingletScore(cm->esc[y], sq->dsq[i-1]);
+		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i-1], cm->esc[y]);
 		  
 		if ((sc = beta[y][j][d+1] + cm->tsc[y][voffset] + escore) > beta[v][j][d])
 		  beta[v][j][d] = sc;
@@ -4905,7 +4914,7 @@ outside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 		if (sq->dsq[j+1] < cm->abc->K) 
 		  escore = cm->esc[y][(int) sq->dsq[j+1]];
 		else
-		  escore = DegenerateSingletScore(cm->esc[y], sq->dsq[j+1]);
+		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j+1], cm->esc[y]);
 
 		if ((sc = beta[y][j+1][d+1] + cm->tsc[y][voffset] + escore) > beta[v][j][d])
 		  beta[v][j][d] = sc;
@@ -4958,7 +4967,7 @@ outside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 		if (sq->dsq[i-1] < cm->abc->K) 
 		  escore = cm->esc[v][(int) sq->dsq[i-1]];
 		else
-		  escore = DegenerateSingletScore(cm->esc[v], sq->dsq[i-1]);
+		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i-1], cm->esc[v]);
 		if ((sc = beta[v][j][d+1] + cm->endsc[v] + 
 		     (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
 		  beta[cm->M][j][d] = sc;
@@ -4969,7 +4978,7 @@ outside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 		if (sq->dsq[j+1] < cm->abc->K) 
 		  escore = cm->esc[v][(int) sq->dsq[j+1]];
 		else
-		  escore = DegenerateSingletScore(cm->esc[v], sq->dsq[j+1]);
+		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j+1], cm->esc[v]);
 		if ((sc = beta[v][j+1][d+1] + cm->endsc[v] + 
 		     (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
 		  beta[cm->M][j][d] = sc;
@@ -5229,7 +5238,7 @@ vinside_b(CM_t *cm, ESL_SQ *sq,
 	if (sq->dsq[i1-1] < cm->abc->K)
 	  a[z][jp][ip-1] += cm->esc[z][(int) sq->dsq[i1-1]];
 	else
-	  a[z][jp][ip-1] += DegenerateSingletScore(cm->esc[z], sq->dsq[i1-1]);
+	  a[z][jp][ip-1] += esl_abc_FAvgScore(cm->abc, sq->dsq[i1-1], cm->esc[z]);
 	if (ret_shadow != NULL) shadow[z][jp][ip-1] = USED_EL;
 	if (a[z][jp][ip-1] < IMPOSSIBLE) a[z][jp][ip-1] = IMPOSSIBLE;
 	break;
@@ -5242,7 +5251,7 @@ vinside_b(CM_t *cm, ESL_SQ *sq,
 	if (sq->dsq[j1+1] < cm->abc->K)
 	  a[z][jp+1][ip] += cm->esc[z][(int) sq->dsq[j1+1]];
 	else
-	  a[z][jp+1][ip] += DegenerateSingletScore(cm->esc[z], sq->dsq[j1+1]);
+	  a[z][jp+1][ip] += esl_abc_FAvgScore(cm->abc, sq->dsq[j1+1], cm->esc[z]);
 	if (ret_shadow != NULL) shadow[z][jp+1][ip] = USED_EL;
 	if (a[z][jp+1][ip] < IMPOSSIBLE) a[z][jp+1][ip] = IMPOSSIBLE;
 	break;
@@ -5551,6 +5560,7 @@ vinside_b(CM_t *cm, ESL_SQ *sq,
 
  ERROR:
   esl_fatal("Memory allocation error.");
+  return 0.; /* never reached */
 }
 
 
@@ -5711,7 +5721,7 @@ voutside_b(CM_t *cm, ESL_SQ *sq,
       if (sq->dsq[i0] < cm->abc->K) 
 	escore = cm->esc[r][(int) sq->dsq[i0]];
       else
-	escore = DegenerateSingletScore(cm->esc[r], sq->dsq[i0]);      
+	escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i0], cm->esc[r]);
       beta[cm->M][j0-j1][1] = cm->endsc[r] + 
 	(cm->el_selfsc * ((j0)-(i0+1)+1)) + escore;
       break;
@@ -5721,7 +5731,7 @@ voutside_b(CM_t *cm, ESL_SQ *sq,
       if (sq->dsq[j0] < cm->abc->K) 
 	escore = cm->esc[r][(int) sq->dsq[j0]];
       else
-	escore = DegenerateSingletScore(cm->esc[r], sq->dsq[j0]);
+	escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j0], cm->esc[r]);
       beta[cm->M][j0-j1-1][0] = cm->endsc[r] + 
 	(cm->el_selfsc * ((j0-1)-(i0)+1)) + escore;
       break;
@@ -5841,7 +5851,7 @@ voutside_b(CM_t *cm, ESL_SQ *sq,
 		if (sq->dsq[i-1] < cm->abc->K) 
 		  escore = cm->esc[y][(int) sq->dsq[i-1]];
 		else
-		  escore = DegenerateSingletScore(cm->esc[y], sq->dsq[i-1]);
+		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i-1], cm->esc[y]);
 		  
 		if ((sc = beta[y][jp][ip-1]+cm->tsc[y][voffset]+escore) > beta[v][jp][ip])
 		  beta[v][jp][ip] = sc;
@@ -5854,7 +5864,7 @@ voutside_b(CM_t *cm, ESL_SQ *sq,
 		if (sq->dsq[j+1] < cm->abc->K) 
 		  escore = cm->esc[y][(int) sq->dsq[j+1]];
 		else
-		  escore = DegenerateSingletScore(cm->esc[y], sq->dsq[j+1]);
+		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j+1], cm->esc[y]);
 
 		if ((sc = beta[y][jp+1][ip]+cm->tsc[y][voffset]+escore) > beta[v][jp][ip])
 		  beta[v][jp][ip] = sc;
@@ -5911,7 +5921,7 @@ voutside_b(CM_t *cm, ESL_SQ *sq,
 		if (sq->dsq[i-1] < cm->abc->K) 
 		  escore = cm->esc[v][(int) sq->dsq[i-1]];
 		else
-		  escore = DegenerateSingletScore(cm->esc[v], sq->dsq[i-1]);
+		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i-1], cm->esc[v]);
 		if ((sc = beta[v][jp][ip-1] + cm->endsc[v] + 
 		     (cm->el_selfsc * (j-i+1))
 		     + escore) > beta[cm->M][jp][ip])
@@ -5923,7 +5933,7 @@ voutside_b(CM_t *cm, ESL_SQ *sq,
 		if (sq->dsq[j+1] < cm->abc->K) 
 		  escore = cm->esc[v][(int) sq->dsq[j+1]];
 		else
-		  escore = DegenerateSingletScore(cm->esc[v], sq->dsq[j+1]);
+		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j+1], cm->esc[v]);
 		if ((sc = beta[v][jp+1][ip] + cm->endsc[v] + 
 		     (cm->el_selfsc * (j-i+1))
 		     + escore) > beta[cm->M][jp][ip])
@@ -6090,6 +6100,7 @@ alloc_banded_vjd_deck(int L, int i, int j, int min, int max)
 
  ERROR:
   esl_fatal("Memory allocation error.");
+  return NULL; /* never reached */
 }
 
 char **
@@ -6120,6 +6131,7 @@ alloc_banded_vjd_yshadow_deck(int L, int i, int j, int min, int max)
 
  ERROR:
   esl_fatal("Memory allocation error.");
+  return NULL; /* never reached */
 }
 int **
 alloc_banded_vjd_kshadow_deck(int L, int i, int j, int min, int max)
@@ -6148,6 +6160,7 @@ alloc_banded_vjd_kshadow_deck(int L, int i, int j, int min, int max)
 
  ERROR:
   esl_fatal("Memory allocation error.");
+  return NULL; /* never reached */
 }
 
 /******************************************************************/
@@ -6991,6 +7004,7 @@ inside_b_me(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_fu
 
  ERROR:
   esl_fatal("Memory allocation error.");
+  return 0.; /* never reached */
 }
 
 /* Function: insideT_b_me()
@@ -7008,7 +7022,6 @@ insideT_b_me(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
 	     int r, int z, int i0, int j0, 
 	     int allow_begin, int *dmin, int *dmax)
 {
-  int       status;
   void   ***shadow;             /* the traceback shadow matrix */
   float     sc;			/* the score of the CYK alignment */
   ESL_STACK *pda;                /* stack that tracks bifurc parent of a right start */
@@ -7126,11 +7139,8 @@ insideT_b_me(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
 	}
     }
   }
-  FreeNstack(pda);  /* it should be empty; we could check; naaah. */
+  esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
   free_vjd_shadow_matrix(shadow, cm, i0, j0);
   return sc;
-
- ERROR:
-  esl_fatal("Memory allocation error.");
 }
 
