@@ -380,7 +380,7 @@ CMRescale(CM_t *cm, float scale)
  * Return: eff_no        - New effective sequence number.                         
  */
 double
-CM_Eweight_RE(CM_t *cm, Prior_t *pri, float numb_seqs, 
+CM_Eweight_RE(CM_t *cm, const Prior_t *pri, float numb_seqs, 
 	      float target_relent, float *randomseq)
 {
   int status;

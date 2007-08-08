@@ -464,7 +464,9 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   int     i;                    /* counter over gum_modes for EVDs */
   int     alphabet_type;        /* type of ESL_ALPHABET */
   ESL_ALPHABET *abc = NULL;
-
+  int     read_nstates = FALSE; /* TRUE once we've read the number of states */
+  int     read_nnodes  = FALSE; /* TRUE once we've read the number of nodes */
+  
   cm  = NULL;
   buf = NULL;
   n   = 0;
@@ -503,11 +505,13 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	{
 	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	  M = atoi(tok);
+	  read_nstates = TRUE;
 	}
       else if (strcmp(tok, "NODES") == 0) 
 	{
 	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	  N = atoi(tok);
+	  read_nnodes = TRUE;
 	}
       else if (strcmp(tok, "ALPHABET") == 0) 
 	{
@@ -520,12 +524,26 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	    abc = *ret_abc;
 	    if ((*ret_abc)->type != alphabet_type)                        { status = eslEINCOMPAT; goto FAILURE; }
 	  }
-	}
+	  /* Now we have the alphabet and we should have N and M, so we can build the
+	   * full model, and set the alphabet (which we need to do before alloc'ing/setting
+	   * the null model */
+	  if(! (read_nstates && read_nnodes))
+	    {
+	      printf("ERROR, STATES and NODES lines should precede alphabet line");
+	      goto FAILURE;
+	    }
+	  CreateCMBody(cm, N, M, abc);
+	}	    
       else if (strcmp(tok, "NULL") == 0) 
 	{
+	  if(cm->abc == NULL) 
+	    {
+	      printf("ERROR, cm->abc is not yet set but we're trying to allocate the null model.");
+	      goto FAILURE;
+	    }
+	  CMAllocNullModel(cm);
 	  for (x = 0; x < abc->K; x++)
 	    {
-	      CMCreateNullModel(cm);
 	      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	      cm->null[x] = ascii2prob(tok, (1./(float) abc->K));
 	    }
@@ -683,7 +701,6 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 
   /* Main model section. 
    */
-  CreateCMBody(cm, N, M, abc);
   CMZero(cm);
   if(have_gums)  cm->flags |= CM_GUMBEL_STATS;
   if(have_fthrs) cm->flags |= CM_FTHR_STATS;

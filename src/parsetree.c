@@ -23,6 +23,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <math.h>
 
 #include "easel.h"
 #include "esl_alphabet.h"
@@ -206,12 +207,8 @@ InsertTraceNode(Parsetree_t *tr, int y, int whichway, int emitl, int emitr, int 
  * Returns:  (void)
  */
 void
-ParsetreeCount(CM_t *cm, Parsetree_t *tr, ESL_SQ *sq, float wgt)
+ParsetreeCount(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float wgt)
 {
-  /* contract check */
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in ParsetreeCount(), sq should be digitized.\n");
-
   int tidx;			/* counter through positions in the parsetree        */
   int v,z;			/* parent, child state index in CM                   */
 
@@ -230,11 +227,11 @@ ParsetreeCount(CM_t *cm, Parsetree_t *tr, ESL_SQ *sq, float wgt)
 	  cm->t[v][z - cm->cfirst[v]] += wgt; 
 
 	if (cm->sttype[v] == MP_st) 
-	  PairCount(cm->abc, cm->e[v], sq->dsq[tr->emitl[tidx]], sq->dsq[tr->emitr[tidx]], wgt);
+	  PairCount(cm->abc, cm->e[v], dsq[tr->emitl[tidx]], dsq[tr->emitr[tidx]], wgt);
 	else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) 
-	  esl_abc_FCount(cm->abc, cm->e[v], sq->dsq[tr->emitl[tidx]], wgt);
+	  esl_abc_FCount(cm->abc, cm->e[v], dsq[tr->emitl[tidx]], wgt);
 	else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) 
-	  esl_abc_FCount(cm->abc, cm->e[v], sq->dsq[tr->emitr[tidx]], wgt);
+	  esl_abc_FCount(cm->abc, cm->e[v], dsq[tr->emitr[tidx]], wgt);
       }
   }
 }    

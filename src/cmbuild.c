@@ -9,19 +9,14 @@
  *****************************************************************
  */
 
-#include "config.h"
-#include "squidconf.h"
 #include "esl_config.h"
+#include "config.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-
-#include "squid.h"		/* general sequence analysis library    */
-#include "msa.h"                /* squid's multiple alignment i/o       */
-#include "stopwatch.h"          /* squid's process timing module        */
-#include "vectorops.h"
+#include <math.h>
 
 #include "easel.h"
 #include "esl_alphabet.h"
@@ -50,9 +45,6 @@ static ESL_OPTIONS options[] = {
   { "-A",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "append this CM to <cmfile>",             1 },
   { "-F",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "force; allow overwriting of <cmfile>",   1 },
   { "-1",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "use tabular output summary format, 1 line per CM", 1 },
-#ifdef HAVE_MPI
-  { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "run as an MPI parallel program",                    1 },  
-#endif
   { "--binary",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "save the model(s) in binary format",     2 },
   { "--rf",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  "--rsearch", "use reference coordinate annotation to specify consensus", 2 },
   { "--informat",eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "specify input alignment is in format <s>, not Stockholm",  2 },
@@ -60,7 +52,6 @@ static ESL_OPTIONS options[] = {
   { "--rsearch", eslARG_STRING, NULL,  NULL, NULL,      NULL, "--enone",        NULL,  "use RSEARCH parameterization with RIBOSUM matrix file <s>", 2 }, 
   { "--elself",  eslARG_REAL,  "0.94", NULL, "0<=x<=1", NULL,      NULL,        NULL, "set EL self transition prob to <x> [df: 0.94]", 2 },
   { "--nodetach",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "do not 'detach' one of two inserts that model same column", 2 },
-  { "--stall",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb",   6 },  
 /* Alternate relative sequence weighting strategies */
   /* --wme not implemented in Infernal yet (b/c it's not in HMMER3) */
   { "--wgsc",    eslARG_NONE,"default",NULL, NULL,    WGTOPTS,    NULL,      NULL, "Gerstein/Sonnhammer/Chothia tree weights",         3},
@@ -103,7 +94,8 @@ static ESL_OPTIONS options[] = {
  * 
  * This structure is passed to routines within main.c, as a means of semi-encapsulation
  * of shared data amongst different parallel processes (threads or MPI processes).
- * NOTE: MPI not yet implemented.
+ * This strategy is used despite the fact that a MPI version of cmbuild does not
+ * yet exist! 
  */
 struct cfg_s {
   FILE         *ofp;		/* output file (default is stdout) */
@@ -116,31 +108,22 @@ struct cfg_s {
   char         *cmfile;         /* file to write CM to                    */
   FILE         *cmfp;           /* CM output file handle                  */
 
-  CM_BG        *bg;		/* null model                              */
+  float        *null;		/* null model                              */
   Prior_t      *pri;		/* mixture Dirichlet prior for the HMM     */
 
   fullmat_t    *fullmat;        /* if --rsearch, the full RIBOSUM matrix */
+  FILE         *cdfp;           /* if --cdump, output file handle for dumping clustered MSAs */
 
-  int           be_verbose;	/* standard verbose output, as opposed to one-line-per-HMM summary */
+  int           be_verbose;	/* standard verbose output, as opposed to one-line-per-CM summary */
   int           nali;		/* which # alignment this is in file (only valid in serial mode)   */
-
-  int           do_mpi;		/* TRUE if we're doing MPI parallelization */
-  int           nproc;		/* how many MPI processes, total */
-  int           my_rank;	/* who am I, in 0..nproc-1 */
-  int           do_stall;	/* TRUE to stall the program until gdb attaches */
 };
 
 static char usage[]  = "[-options] <cmfile output> <alignment file>";
 static char banner[] = "build RNA covariance model(s) from alignment";
 
-static int  init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
-static int  init_shared_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
+static int  init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 
-static void  serial_master (const ESL_GETOPTS *go, struct cfg_s *cfg);
-#ifdef HAVE_MPI
-static void  mpi_master    (const ESL_GETOPTS *go, struct cfg_s *cfg);
-static void  mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
-#endif
+static void  master (const ESL_GETOPTS *go, struct cfg_s *cfg);
 
 static int    process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t ***opt_tr);
 static int    output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int msaidx, ESL_MSA *msa, CM_t *cm);
@@ -150,6 +133,7 @@ static int    build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *
 static int    set_model_name(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
 static int    set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm, const Prior_t *pri);
 static int    parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, const Prior_t *prior);
+static int    name_msa(const ESL_GETOPTS *go, ESL_MSA *msa, int nali);
 static double default_target_relent(const ESL_ALPHABET *abc, int M, double eX);
 static int    save_countvectors(char *cfile, CM_t *cm);
 static void   model_trace_info_dump(FILE *ofp, CM_t *cm, Parsetree_t *tr, char *aseq);
@@ -215,78 +199,44 @@ main(int argc, char **argv)
   /* Initialize what we can in the config structure (without knowing the alphabet yet).
    * We could assume RNA, but this HMMER3 based approach is more general.
    */
-  cfg.ofp        = NULL;	           /* opened in init_master_cfg() */
+  cfg.ofp        = NULL;	           /* opened in init_cfg() */
   cfg.alifile    = esl_opt_GetArg(go, 2);
   cfg.fmt        = eslMSAFILE_UNKNOWN;     /* autodetect alignment format by default. */ 
-  cfg.afp        = NULL;	           /* created in init_master_cfg() */
-  cfg.abc        = NULL;	           /* created in init_master_cfg() in masters, or in mpi_worker() in workers */
+  cfg.afp        = NULL;	           /* created in init_cfg() */
+  cfg.abc        = NULL;	           /* created in init_cfg() */
   cfg.cmfile     = esl_opt_GetArg(go, 1); 
-  cfg.cmfp       = NULL;	           /* opened in init_master_cfg() */
-  cfg.bg         = NULL;	           /* created in init_shared_cfg() */
-  cfg.pri        = NULL;                   /* created in init_shared_cfg() */
-  cfg.fullmat    = NULL;                   /* read (possibly) in init_master_cfg() */
+  cfg.cmfp       = NULL;	           /* opened in init_cfg() */
+  cfg.null       = NULL;	           /* created in init_cfg() */
+  cfg.pri        = NULL;                   /* created in init_cfg() */
+  cfg.fullmat    = NULL;                   /* read (possibly) in init_cfg() */
+  cfg.cdfp       = NULL;	           /* opened (possibly) in init_cfg() */
 
   if (esl_opt_GetBoolean(go, "-1")) cfg.be_verbose = FALSE;        
   else                              cfg.be_verbose = TRUE;        
-  cfg.nali       = 0;		           /* this counter is incremented in masters */
-  cfg.do_mpi     = FALSE;	           /* this gets reset below, if we init MPI */
-  cfg.nproc      = 0;		           /* this gets reset below, if we init MPI */
-  cfg.my_rank    = 0;		           /* this gets reset below, if we init MPI */
-  cfg.do_stall   = esl_opt_GetBoolean(go, "--stall");
+  cfg.nali       = 0;		           
 
-  /* This is our stall point, if we need to wait until we get a
-   * debugger attached to this process for debugging (especially
-   * useful for MPI):
-   */
-  while (cfg.do_stall); 
-
-  /* Start timing. */
+  /* Start timing; do work; stop timing.*/
   esl_stopwatch_Start(w);
+  master(go, &cfg);
+  esl_stopwatch_Stop(w);
+  esl_stopwatch_Display(cfg.ofp, w, "# CPU time: ");
 
-  /* Figure out who we are, and send control there: 
-   * we might be an MPI master, an MPI worker, or a serial program.
+  /* Clean up the cfg. 
    */
-#ifdef HAVE_MPI
-  if (esl_opt_GetBoolean(go, "--mpi")) 
-    {
-      cfg.do_mpi     = TRUE;
-      cfg.be_verbose = FALSE;
-      MPI_Init(&argc, &argv);
-      MPI_Comm_rank(MPI_COMM_WORLD, &(cfg.my_rank));
-      MPI_Comm_size(MPI_COMM_WORLD, &(cfg.nproc));
+  if (! esl_opt_IsDefault(go, "-o")) { fclose(cfg.ofp); }
+  if (cfg.ofp   != NULL) esl_msafile_Close(cfg.afp);
+  if (cfg.abc   != NULL) esl_alphabet_Destroy(cfg.abc);
+  if (cfg.cmfp  != NULL) fclose(cfg.cmfp);
+  if (cfg.pri   != NULL) Prior_Destroy(cfg.pri);
+  if (cfg.null  != NULL) free(cfg.null);
+  if (cfg.cdfp  != NULL) fclose(cfg.cdfp);
 
-      if (cfg.my_rank > 0)  mpi_worker(go, &cfg);
-      else 		    mpi_master(go, &cfg);
-
-      esl_stopwatch_Stop(w);
-      esl_stopwatch_MPIReduce(w, 0, MPI_COMM_WORLD);
-      MPI_Finalize();
-    }
-  else
-#endif /*HAVE_MPI*/
-    {
-      serial_master(go, &cfg);
-      esl_stopwatch_Stop(w);
-    }
-  if (cfg.my_rank == 0) esl_stopwatch_Display(cfg.ofp, w, "# CPU time: ");
-
-  /* Clean up the shared cfg. 
-   */
-  if (cfg.my_rank == 0) {
-    if (! esl_opt_IsDefault(go, "-o")) { fclose(cfg.ofp); }
-    if (cfg.ofp   != NULL) esl_msafile_Close(cfg.afp);
-    if (cfg.abc   != NULL) esl_alphabet_Destroy(cfg.abc);
-    if (cfg.cmfp  != NULL) fclose(cfg.cmfp);
-    if (cfg.pri   != NULL) Prior_Destroy(cfg.pri);
-    if (cfg.bg    != NULL) cm_bg_Destroy(cfg.bg);
-  }
   esl_getopts_Destroy(go);
   esl_stopwatch_Destroy(w);
   return 0;
 }
 
-/* init_master_cfg()
- * Called by masters, mpi or serial.
+/* init_cfg()
  * Already set:
  *    cfg->cmfile  - command line arg 1
  *    cfg->alifile - command line arg 2
@@ -295,14 +245,13 @@ main(int argc, char **argv)
  *    cfg->afp     - open alignment file                
  *    cfg->abc     - digital alphabet
  *    cfg->cmfp    - open CM file
- *                   
- * Errors in the MPI master here are considered to be "recoverable",
- * in the sense that we'll try to delay output of the error message
- * until we've cleanly shut down the worker processes. Therefore
- * errors return (code, errbuf) by the ESL_FAIL mech.
+ *    cfg->null    - NULL model, used for all models
+ *    cfg->pri     - prior, used for all models
+ *    cfg->fullmat - RIBOSUM matrix used for all models (optional)
+ *    cfg->cdfp    - open file to dump MSAs to (optional)
  */
 static int
-init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
+init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 {
   int status;
 
@@ -317,161 +266,132 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   else if (status != eslOK)      ESL_FAIL(status, errbuf, "Alignment file open failed with error %d\n", status);
   cfg->fmt = cfg->afp->format;
 
-  /* Guess alphabet, then make sure it's RNA */
+  /* Guess alphabet, then make sure it's RNA or DNA */
   int type;
   status = esl_msafile_GuessAlphabet(cfg->afp, &type);
   if (status == eslEAMBIGUOUS)    ESL_FAIL(status, errbuf, "Failed to guess the bio alphabet used in %s.\nUse --rna option to specify it.", cfg->alifile);
   else if (status == eslEFORMAT)  ESL_FAIL(status, errbuf, "Alignment file parse failed: %s\n", cfg->afp->errbuf);
   else if (status == eslENODATA)  ESL_FAIL(status, errbuf, "Alignment file %s is empty\n", cfg->alifile);
   else if (status != eslOK)       ESL_FAIL(status, errbuf, "Failed to read alignment file %s\n", cfg->alifile);
-  if(type != eslRNA)
-    ESL_FAIL(status, errbuf, "Alphabet is not RNA in %s\n", cfg->alifile);
-  cfg->abc = esl_alphabet_Create(type);
+  /* We can read DNA/RNA but internally we treat it as RNA */
+  if(! (type == eslRNA || type == eslDNA))
+    ESL_FAIL(status, errbuf, "Alphabet is not DNA/RNA in %s\n", cfg->alifile);
+  cfg->abc = esl_alphabet_Create(eslRNA);
   esl_msafile_SetDigital(cfg->afp, cfg->abc);
 
+  /* open CM file for writing */
   if ((cfg->cmfp = fopen(cfg->cmfile, "w")) == NULL) ESL_FAIL(status, errbuf, "Failed to open CM file %s for writing", cfg->cmfile);
 
-  /* with msa == NULL, output_result() prints the tabular results header, if needed */
-  if (! cfg->be_verbose) output_result(go, cfg, errbuf, 0, NULL, NULL);
-  return eslOK;
-}
-
-/* init_shared_cfg() 
- * Shared initialization of cfg, after alphabet is known
- * Already set:
- *    cfg->abc
- * Sets:
- *    cfg->bg
- *    cfg->pri
- *    
- * Because this is called from an MPI worker, it cannot print; 
- * it must return error messages, not print them.
- */
-static int
-init_shared_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
-{
   /* Set up the prior */
   if (esl_opt_GetString(go, "--prior") != NULL)
     {
       FILE *pfp;
       if ((pfp = fopen(esl_opt_GetString(go, "--prior"), "r")) == NULL)
-	Die("Failed to open prior file %s\n", esl_opt_GetString(go, "--prior"));
+	esl_fatal("Failed to open prior file %s\n", esl_opt_GetString(go, "--prior"));
       if ((cfg->pri = Prior_Read(pfp)) == NULL)
-	Die("Failed to parse prior file %s\n", esl_opt_GetString(go, "--prior"));
+	esl_fatal("Failed to parse prior file %s\n", esl_opt_GetString(go, "--prior"));
       fclose(pfp);
     }
   else 
     cfg->pri = Prior_Default();
 
   /* Set up the null/random seq model */
-  cfg->bg = cm_bg_Create(cfg->abc); /* default values, A,C,G,U = 0.25  */
   if(esl_opt_GetString(go, "--null") != NULL) /* read freqs from a file and overwrite bg->f */
-    cm_bg_Read(esl_opt_GetString(go, "--null"), cfg->bg);
-
-  if (cfg->pri == NULL) ESL_FAIL(eslEINVAL, errbuf, "alphabet initialization failed");
-  if (cfg->bg  == NULL) ESL_FAIL(eslEINVAL, errbuf, "null model initialization failed");
-  return eslOK;
-}
-
-/* serial_master()
- * The serial version of cmbuild.
- * For each MSA, build a CM and save it.
- * 
- * A master can only return if it's successful. All errors are handled immediately and fatally with cm_Fail().
- */
-static void
-serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
-{
-  int      status;
-  char     errbuf[eslERRBUFSIZE];
-  ESL_MSA *msa = NULL;
-  CM_t    *cm = NULL;
-  int      curr_ncm = 1;
-  int      curr_cm_ctr = 0;
-  int      do_cluster;
-  FILE    *matfp;       /* open matrix file for reading */
-  int      n;
-  void    *tmp;
-
-  /* cluster CM variables */
-  FILE        *cdump_fp;      /* output file handle for cdump_file */
-  ESL_MSA    **cmsa;          /* pointer to cluster MSAs to build CMs from */
-  char *name;
-  
-  if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
-  if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
-
-  cfg->nali = 0;
-
-  if((esl_opt_GetInteger(go, "--ctarget"))  || (esl_opt_GetReal   (go, "--cmindiff")) || 
-     (esl_opt_GetBoolean(go, "--call")))
-    do_cluster = TRUE;
-  else
-    do_cluster = FALSE;
+    {
+      if((status = CMReadNullModel(cfg->abc, esl_opt_GetString(go, "--null"), &(cfg->null))) != eslOK)
+	cm_Fail("Failure reading the null model, code: %d", status);
+    }       
+  else /* set up the default null model */
+    {
+      status = CMCreateNullModel(cfg->abc, &(cfg->null)); /* default values, A,C,G,U = 0.25  */
+      if(status != eslOK) cm_Fail("Failure creating the null model, code: %d", status);
+    }
 
   /* if --rsearch was enabled, set up RIBOSUM matrix */
   if(esl_opt_GetString(go, "--rsearch") != NULL)
     {
+      FILE *matfp;
       if ((matfp = MatFileOpen (esl_opt_GetString(go, "--rsearch"))) == NULL)
-	Die ("Failed to open matrix file %s\n", esl_opt_GetString(go, "--rsearch"), usage);
-      if (! (cfg->fullmat = ReadMatrix(matfp)))
-	Die ("Failed to read matrix file %s\n", esl_opt_GetString(go, "--rsearch"), usage);
+	cm_Fail("Failed to open matrix file %s\n", esl_opt_GetString(go, "--rsearch"));
+      if (! (cfg->fullmat = ReadMatrix(cfg->abc, matfp)))
+	cm_Fail("Failed to read matrix file %s\n", esl_opt_GetString(go, "--rsearch"));
       ribosum_calc_targets(cfg->fullmat); /* overwrite score matrix scores w/target probs */
+      fclose(matfp);
     }
 
   /* if --cdump enabled, open output file for MSAs */
   if (esl_opt_GetString(go, "--cdump") != NULL)
     {
-      if ((cdump_fp = fopen(esl_opt_GetString(go, "--cdump"), "w")) == NULL)
-	Die("Failed to open output file %s for writing MSAs to", esl_opt_GetString(go, "--cdump"));
+      if ((cfg->cdfp = fopen(esl_opt_GetString(go, "--cdump"), "w")) == NULL)
+	cm_Fail("Failed to open output file %s for writing MSAs to", esl_opt_GetString(go, "--cdump"));
     }
+
+  if (cfg->pri   == NULL) ESL_FAIL(eslEINVAL, errbuf, "alphabet initialization failed");
+  if (cfg->null  == NULL) ESL_FAIL(eslEINVAL, errbuf, "null model initialization failed");
+
+  return eslOK;
+}
+
+/* master()
+ * The serial version of cmbuild. (There is no parallel version yet).
+ * For each MSA, build at least one CM and save it.
+ * 
+ * We only return if successful. All errors are handled immediately and fatally with cm_Fail().
+ */
+static void
+master(const ESL_GETOPTS *go, struct cfg_s *cfg)
+{
+  int      status;
+  char     errbuf[eslERRBUFSIZE];
+  ESL_MSA *msa = NULL;
+  CM_t    *cm = NULL;
+
+  /* cluster option related variables */
+  int          do_cluster; /* TRUE if --ctarget || --cmindiff || --call */
+  int          ncm = 1;    /* number of CMs to be built for current MSA */
+  int          c   = 0;    /* counter over CMs built for a single MSA */
+  ESL_MSA    **cmsa;       /* pointer to cluster MSAs to build CMs from */
+  
+  if ((status = init_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
+
+  cfg->nali = 0;
+
+  do_cluster = FALSE;
+  if((esl_opt_GetInteger(go, "--ctarget"))  || (esl_opt_GetReal   (go, "--cmindiff")) || 
+     (esl_opt_GetBoolean(go, "--call")))
+    do_cluster = TRUE;
 
   while ((status = esl_msa_Read(cfg->afp, &msa)) != eslEOF)
     {
-      /* if it's unnamed, name the MSA, we require a name (different from 
-       * HMMER 3), because it will mandatorily be used to name the CM.
-       */
-      if(msa != NULL && msa->name == NULL)  
-	{
-	  esl_FileTail(esl_opt_GetArg(go, 2), TRUE, &name); /* TRUE=nosuffix */
-	  if (name == NULL) cm_Fail("Error getting file tail of the MSA.\n");
-	  else {
-	    n = strlen(name);
-	    ESL_RALLOC(msa->name, tmp, sizeof(char)*(n+1));
-	    strcpy(msa->name, name);
-	    if ((status = esl_strchop(msa->name, n)) != eslOK) cm_Fail("Error naming MSA.\n");
-	    free(name);
-	  }
-	}
       if      (status == eslEFORMAT)  cm_Fail("Alignment file parse error, line %d of file %s:\n%s\nOffending line is:\n%s\n", cfg->afp->linenumber, cfg->afp->fname, cfg->afp->errbuf, cfg->afp->buf);
       else if (status != eslOK)       cm_Fail("Alignment file read unexpectedly failed with code %d\n", status);
       cfg->nali++;  
 
-      curr_ncm          = 1;     /* default: only build 1 CM for each MSA in alignment file */
-      /* If we're making multiple CMs from this single MSA, divide it up */
-      if(do_cluster)
+      /* if it's unnamed, name the MSA, we require a name (different from 
+       * HMMER 3), because it will be used to name the CM. */
+      if(name_msa(go, msa, cfg->nali) != eslOK) cm_Fail("Error (code: %d) naming MSA", status);
+      if(msa->name == NULL)                     cm_Fail("Error naming MSA");
+      ncm = 1;     /* default: only build 1 CM for each MSA in alignment file */
+
+      if(do_cluster) /* divide input MSA into clusters, and build CM from each cluster */
 	{
-	  /* Divide input MSA into clusters, and build CM from each cluster */
 	  if((status = MSADivide(msa, esl_opt_GetBoolean(go, "--call"), esl_opt_GetInteger(go, "--ctarget"), 
-				 esl_opt_GetReal(go, "--cmindiff"), esl_opt_GetBoolean(go, "--corig"), &curr_ncm, &cmsa)) != eslOK)
-	    cm_Fail("MSADivide error\n");
-	  esl_msa_Destroy(msa); /* we've copied the master msa into cmsa[curr_ncm], we can delete this copy */
+				 esl_opt_GetReal(go, "--cmindiff"), esl_opt_GetBoolean(go, "--corig"), &ncm, &cmsa)) != eslOK)
+	    cm_Fail("MSADivide error (code: %d)\n", status);
+	  esl_msa_Destroy(msa); /* we've copied the master msa into cmsa[ncm], we can delete this copy */
 	}
-      for(curr_cm_ctr = 0; curr_cm_ctr < curr_ncm; curr_cm_ctr++)
+      for(c = 0; c < ncm; c++)
 	{
-	  if(do_cluster)
-	    {
-	      msa = cmsa[curr_cm_ctr];
-	      if(esl_opt_GetString(go, "--cdump") != NULL)
-		esl_msa_Write(cdump_fp, msa, cfg->fmt);
-	    }
+	  if(do_cluster) {
+	      msa = cmsa[c];
+	      if(esl_opt_GetString(go, "--cdump") != NULL) esl_msa_Write(cfg->cdfp, msa, cfg->fmt); 
+	  }
 	  /* Print some stuff about what we're about to do.
 	   */
 	  if (cfg->be_verbose) {
-	    if (msa->name != NULL) fprintf(cfg->ofp, "Alignment:           %s\n",  msa->name);
-	    else                   fprintf(cfg->ofp, "Alignment:           #%d\n", cfg->nali);
-	    fprintf                       (cfg->ofp, "Number of sequences: %d\n",  msa->nseq);
-	    fprintf                       (cfg->ofp, "Number of columns:   %d\n",  msa->alen);
+	    fprintf(cfg->ofp, "Alignment:           %s\n",  msa->name);
+	    fprintf(cfg->ofp, "Number of sequences: %d\n",  msa->nseq);
+	    fprintf(cfg->ofp, "Number of columns:   %d\n",  msa->alen);
 	    if(esl_opt_GetString(go, "--rsearch") != NULL)
 	      printf ("RIBOSUM Matrix:      %s\n",  cfg->fullmat->name);
 	    fputs("", cfg->ofp);
@@ -480,7 +400,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  puts("");
 	  
 	  if ((status = process_workunit(go, cfg, errbuf,            msa, &cm, NULL)) != eslOK) cm_Fail(errbuf);
-	  if ((status = output_result(   go, cfg, errbuf, cfg->nali, msa, cm))        != eslOK) cm_Fail(errbuf);
+	  if ((status = output_result(   go, cfg, errbuf, cfg->nali, msa,  cm))       != eslOK) cm_Fail(errbuf);
 	  
 	  if (cfg->be_verbose) {
 	    puts("");
@@ -491,14 +411,11 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  fflush(cfg->cmfp);
 	  puts("//\n");
 	  if(do_cluster && cmsa != NULL)
-	    esl_msa_Destroy(cmsa[curr_cm_ctr]);
+	    esl_msa_Destroy(cmsa[c]);
 	}
     }
   if(do_cluster) free(cmsa);
   return;
-
- ERROR:
-  cm_Fail("Reallocation error.\n");
 }
 
 /* A work unit consists of one multiple alignment, <msa>.
@@ -521,7 +438,6 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, E
   return eslOK;
 
  ERROR:
-  ESL_DPRINTF2(("worker %d: has caught an error in process_workunit\n", cfg->my_rank));
   FreeCM(cm);
   *ret_cm = NULL;
   if (opt_tr != NULL) *opt_tr = NULL;
@@ -566,9 +482,6 @@ static int
 check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa)
 {
   int status;
-  void *tmp;
-  int n;
-
   if (cfg->be_verbose) {
     fprintf(cfg->ofp, "%-40s ... ", "Checking MSA");  
     fflush(cfg->ofp); 
@@ -637,14 +550,13 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MS
     fflush(cfg->ofp);
   }
 
-  HandModelmaker(msa, cfg->bg, esl_opt_GetBoolean(go, "--rf"), esl_opt_GetReal(go, "--gapthresh"), &cm, &mtr);
+  HandModelmaker(msa, esl_opt_GetBoolean(go, "--rf"), esl_opt_GetReal(go, "--gapthresh"), &cm, &mtr);
   printf("done.\n");
   
-  /* set cm->bg null model, if rsearch mode, use bg probs used to calc RIBOSUM */
-  if(esl_opt_GetString(go, "--rsearch") != NULL) 
-    cm_bg_Set(cm->bg, cfg->fullmat->g); 
-  else
-    cm_bg_Set(cm->bg, cfg->bg->f);
+  /* set the CM's null model, if rsearch mode, use the bg probs used to calc RIBOSUM */
+  CMAllocNullModel(cm);
+  if(esl_opt_GetString(go, "--rsearch") != NULL) CMSetNullModel(cm, cfg->fullmat->g); 
+  else CMSetNullModel(cm, cfg->null); 
   
   /* if we're using RSEARCH emissions (--rsearch) set the flag */
   if(esl_opt_GetString(go, "--rsearch") != NULL) cm->flags |= CM_RSEARCHEMIT;
@@ -769,7 +681,7 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
       if (esl_opt_IsDefault(go, "--ere")) etarget = default_target_relent(cm->abc, clen, esl_opt_GetReal(go, "--eX"));
       else                                etarget = esl_opt_GetReal(go, "--ere");
 
-      neff = CM_Eweight_RE(cm, pri, (float) msa->nseq, etarget, cm->bg->f);
+      neff = CM_Eweight_RE(cm, pri, (float) msa->nseq, etarget, cm->null);
       CMRescale(cm, neff / (float) msa->nseq);
       printf("done. [etarget %.2f bits; neff %.2f]\n", etarget, neff);
     }
@@ -850,6 +762,44 @@ strip_wuss(char *ss)
   return;
 }
 
+/* name_msa() 
+ *
+ * Give a MSA a name if it doesn't have one,
+ * Naming rule is the suffixless name of the file it came from,
+ * plus a "-<X>" with <X> = number MSA in the file.
+ *
+ * For example the 3rd MSA in file "alignments.stk" would be
+ * named "alignments-3".
+ */
+int
+name_msa(const ESL_GETOPTS *go, ESL_MSA *msa, int nali)
+{
+  int status;
+  char *name = NULL;
+  void *tmp;
+  int n;
+  char *buffer = NULL;
+  if(msa != NULL && msa->name == NULL)  
+    {
+      esl_FileTail(esl_opt_GetArg(go, 2), TRUE, &name); /* TRUE=nosuffix */
+      if (name == NULL) cm_Fail("Error getting file tail of the MSA.\n");
+      else {
+	n  = strlen(name);
+	sprintf(buffer, "-%d", (nali));
+	n += strlen(buffer);
+	ESL_RALLOC(name, tmp, sizeof(char)*(n+1));
+	esl_strcat(&name, -1, buffer, (n+1));
+	strcpy(msa->name, name);
+	free(name);
+	if ((status = esl_strchop(msa->name, n)) != eslOK) goto ERROR;
+      }
+    }
+  return eslOK;
+ ERROR:
+  if(name != NULL) free(name);
+  return status;
+}
+
 /* Function: save_countvectors()
  * Date:     SRE, Tue May  7 16:21:10 2002 [St. Louis]
  *
@@ -876,10 +826,10 @@ save_countvectors(char *cfile, CM_t *cm)
 	{
 	  fprintf(fp, "E\t%-7s ", UniqueStatetype(cm->stid[v]));
 	  if (cm->sttype[v] == MP_st) {
-	    for (x = 0; x < Alphabet_size*Alphabet_size; x++)
+	    for (x = 0; x < cm->abc->K*cm->abc->K; x++)
 	      fprintf(fp, "%8.3f ", cm->e[v][x]);
 	  } else {
-	    for (x = 0; x < Alphabet_size; x++)
+	    for (x = 0; x < cm->abc->K; x++)
 	      fprintf(fp, "%8.3f ", cm->e[v][x]);
 	  }
 	  fprintf(fp, "\n");
@@ -924,14 +874,15 @@ save_countvectors(char *cfile, CM_t *cm)
 static void
 model_trace_info_dump(FILE *ofp, CM_t *cm, Parsetree_t *tr, char *aseq)
 {
+  int status;
   int a, i, j, tpos, d, l, r;
   int *map;
 
-  map = MallocOrDie (sizeof(int) * strlen(aseq));
+  ESL_ALLOC(map, sizeof(int) * strlen(aseq));
   
   a=0;
   for (i = 0; i < strlen(aseq); i++)
-    if (! isgap(aseq[i])) map[i] = a++;
+    if (! esl_abc_CIsGap(cm->abc, aseq[i])) map[i] = a++;
     else map[i] = -1;
 
   for (tpos = 0; tpos < tr->n; tpos++)
@@ -956,4 +907,7 @@ model_trace_info_dump(FILE *ofp, CM_t *cm, Parsetree_t *tr, char *aseq)
 	/*fprintf(ofp, "state:%d d:%d i:%d j:%d emitl:%d emitr:%d\n", tr->state[tpos], d, i, j, tr->emitl[tpos], tr->emitr[tpos]);*/
       }
   free(map);
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
 }

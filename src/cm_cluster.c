@@ -61,7 +61,8 @@ static float find_mindiff(ESL_TREE *T, double *diff, int target_nc,
  *           by rounding 'diff' fractional difference values b/t
  *           seqs to nearest 0.001). 
  *
- *        *. if(do_pickone): in mode 2 or 3, we select a single
+ *        *. (NOT YET IMPLEMENTED)
+ *           if(do_pickone): in mode 2 or 3, we select a single
  *           sequence from each cluster to represent that cluster. 
  *           The sequence is chosen that has the minimum average
  *           fractional difference with all other seqs in the cluster.
@@ -209,14 +210,14 @@ MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff,
   for(i = 0; i < mmsa->nseq; i++)
     if(clust[i] != -1) 
       useme[clust[i]][i] = TRUE;
-  char buffer[50];
+  char *buffer;
   int ndigits;
   for(m = 0; m < nc; m++)
     {
       esl_msa_SequenceSubset(mmsa, useme[m], &(cmsa[m]));
       /* rename the MSA it by adding ".<m+1>" */
       if(cmsa[m]->name == NULL) {
-	printf("What the fuck!\n");
+	status = eslEINCONCEIVABLE;
 	goto ERROR;
       }
       ndigits  = strlen(cmsa[m]->name);
@@ -260,7 +261,7 @@ MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff,
 	if(cmsa[m] != NULL) esl_msa_Destroy(cmsa[m]);
       free(cmsa);
     }
-  return eslFAIL;
+  return status;
 }
 
 /* Function: select_node()

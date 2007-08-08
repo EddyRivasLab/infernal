@@ -99,9 +99,10 @@ extern int   cm_SetDescription(CM_t *cm, char *desc);
 extern int   cm_AppendComlog(CM_t *cm, int argc, char **argv);
 extern int   cm_SetCtime(CM_t *cm);
 
-extern void  CMCreateNullModel(CM_t *cm);
+extern int   CMCreateNullModel(const ESL_ALPHABET *abc, float **ret_null);
+extern int   CMAllocNullModel(CM_t *cm);
 extern void  CMSetNullModel(CM_t *cm, float *null);
-extern void  CMReadNullModel(CM_t *cm, char *rndfile);
+extern int   CMReadNullModel(const ESL_ALPHABET *abc, char *nullfile, float **ret_null);
 
 
 /* from cmio.c
@@ -179,7 +180,7 @@ extern int          InsertTraceNode(Parsetree_t *tr, int y, int whichway,
 				    int emitl, int emitr, int state);
 extern int          InsertTraceNodewithMode(Parsetree_t *tr, int y, int whichway, 
 				    int emitl, int emitr, int state, int mode);
-extern void         ParsetreeCount(CM_t *cm, Parsetree_t *tr, ESL_SQ *sq, float wgt);
+extern void         ParsetreeCount(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float wgt);
 extern float        ParsetreeScore(CM_t *cm, Parsetree_t *tr, ESL_SQ *sq, int do_null2);
 extern void         PrintParsetree(FILE *fp, Parsetree_t *tr);
 extern void         ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_SQ *sq, int *dmin, int *dmax);
@@ -262,7 +263,7 @@ extern double CM_Eweight(CM_t *cm,  const Prior_t *pri,
 			 float numb_seqs, float targetent);
 extern void ModelContent(float *ent1, float *ent2, int M);
 extern void CMRescale(CM_t *hmm, float scale);
-extern double CM_Eweight_RE(CM_t *cm, Prior_t *pri, float numb_seqs, 
+extern double CM_Eweight_RE(CM_t *cm, const Prior_t *pri, float numb_seqs, 
 			    float target_relent, float *randomseq);
 extern double DRelEntropy(double *p, double *f, int n);
 extern float CMAverageMatchEntropy(CM_t *cm);

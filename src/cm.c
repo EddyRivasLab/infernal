@@ -335,25 +335,49 @@ FreeCM(CM_t *cm)
 /* Function: CMCreateNullModel()
  * Date:     SRE, Tue Aug  1 15:31:52 2000 [St. Louis]
  *
- * Purpose:  Allocate and initialize the null model to 
+ * Purpose:  Allocate and initialize a float vector
+ *           that will be a template null model to 
  *           equiprobable (e.g. 0.25)
  */
-void
-CMCreateNullModel(CM_t *cm)
+int
+CMCreateNullModel(const ESL_ALPHABET *abc, float **ret_null)
 {
   /* Contract check */
-  if(cm->abc  == NULL) esl_fatal("ERROR in CMCreateNullModel, cm->abc is NULL.\n");
-  if(cm->null != NULL) esl_fatal("ERROR in CMCreateNullModel, cm->null is non-NULL.\n");
+  if(abc      == NULL) esl_fatal("ERROR in CMCreateNullModel, cm->abc is NULL.\n");
 
-  int x;
   int status;
-  ESL_ALLOC(cm->null, sizeof(float) * cm->abc->K);
-  for (x = 0; x < cm->abc->K; x++)
-    cm->null[x] = 1./(float)cm->abc->K;
+  float *null = NULL;
+  ESL_ALLOC(null, sizeof(float) * abc->K);
+  int x;
+  for (x = 0; x < abc->K; x++)
+    null[x] = 1./(float) abc->K;
+  *ret_null = null;
+  return eslOK;
+
  ERROR:
-  esl_fatal("ERROR in CMCreateNullModel, memory allocation error.\n");
+  if(null != NULL) free(null);
+  return status;
 }
 
+/* Function: CMAllocNullModel()
+ *
+ * Purpose:  Allocate the null model section of a CM.
+ */
+int
+CMAllocNullModel(CM_t *cm)
+{
+  int status;
+  /* Contract check */
+  if(cm->abc  == NULL) esl_fatal("ERROR in CMAllocNullModel, cm->abc is NULL.\n");
+  if(cm->null != NULL) esl_fatal("ERROR in CMAllocNullModel, cm->null is not NULL.\n");
+
+  ESL_ALLOC(cm->null, sizeof(float) * cm->abc->K);
+  return eslOK;
+
+  ERROR:
+  if(cm->null != NULL) free(cm->null);
+  return status;
+}
 
 /* Function: CMSetNullModel()
  *
@@ -371,21 +395,25 @@ CMSetNullModel(CM_t *cm, float *null)
     cm->null[x] = null[x];
 }
 
+
 /* Function: CMReadNullModel()
  * EPN 10.19.05
  * based on SRE's HMMER's cm.c's P7ReadNullModel() 
  *
- * Purpose:  Read the CM null model from a file.
+ * Purpose:  Read a CM null model from a file.
+ *           ret_null is filled with a newly allocated
+ *           float vector that is the null model.
+ *
+ * Returns:  eslOK on success.
  */
-void
-CMReadNullModel(CM_t *cm, char *rndfile)
+int
+CMReadNullModel(const ESL_ALPHABET *abc, char *nullfile, float **ret_null)
 {
   /* Contract check */
-  if(cm->abc  == NULL) esl_fatal("ERROR in CMCreateNullModel, cm->abc is NULL.\n");
-  if(cm->null != NULL) esl_fatal("ERROR in CMCreateNullModel, cm->null is non-NULL.\n");
+  if(abc  == NULL) esl_fatal("ERROR in CMReadNullModel, abc is NULL.\n");
 
-  int   status;
-  float *null;
+  int status;
+  float *null = NULL;
   FILE *fp;
   char *buf;
   char *s;
@@ -395,7 +423,7 @@ CMReadNullModel(CM_t *cm, char *rndfile)
   int   toklen;
   float sum;
 
-  ESL_ALLOC(null, sizeof(float) * cm->abc->K);
+  ESL_ALLOC(null, sizeof(float) * abc->K);
   buf = NULL;
   n   = 0;
   sum = 0.;
@@ -405,15 +433,15 @@ CMReadNullModel(CM_t *cm, char *rndfile)
    * Then does a check to make sure the 4 read in values
    * sum to 1.0 exactly.
    */
-  if ((fp = fopen(rndfile, "r")) == NULL)
-    esl_fatal("Failed to open null model file %s\n", rndfile);
-
-				/* parse the file */
+  if ((fp = fopen(nullfile, "r")) == NULL)
+    esl_fatal("Failed to open null model file %s\n", nullfile);
+  
+  /* parse the file */
   x = 0;
-  while(x < cm->abc->K) {
-    if(esl_fgets(&buf, &n, fp) != eslOK) goto FAILURE;
+  while(x < abc->K) {
+    if((status = esl_fgets(&buf, &n, fp)) != eslOK) goto ERROR;
     s   = buf;
-    if(esl_strtok(&s, " \t\n", &tok, &toklen) != eslOK) goto FAILURE;
+    if((status = esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto ERROR;
     if(strcmp(tok, "#") != 0)
       {      
 	null[x] = atof(tok);
@@ -423,18 +451,17 @@ CMReadNullModel(CM_t *cm, char *rndfile)
   }
   /*fragile*/
   if(sum > 1.00001 || sum < 0.99999)
-    esl_fatal("%s is not in CM null model file format.\nThere are not %d background probabilities that sum to exactly 1.0", rndfile, cm->abc->K);
-  esl_vec_FNorm(null, cm->abc->K);
-  CMSetNullModel(cm, null);
-  free(null);
+    esl_fatal("%s is not in CM null model file format.\nThere are not %d background probabilities that sum to exactly 1.0", nullfile, abc->K);
+  esl_vec_FNorm(null, abc->K);
+    
+  *ret_null = null;
   fclose(fp);
-  return;
+  return eslOK;
 
-FAILURE:
-  fclose(fp);
-  esl_fatal("%s is not in CM null model file format", rndfile);
  ERROR:
-  esl_fatal("ERROR in CMReadNullModel, memory allocation error.\n");
+  fclose(fp);
+  if(null != NULL) free(null);
+  return status;
 }
 
 /* Function: CMSimpleProbify()
