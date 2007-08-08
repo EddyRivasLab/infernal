@@ -117,7 +117,7 @@ extern int     CMFileWrite(FILE *fp, CM_t *cm, int do_binary);
 
 /* from display.c
  */
-extern Fancyali_t    *CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_SQ *sq);
+extern Fancyali_t    *CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_SQ *sq, int i0);
 extern void           PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp);
 extern void           FreeFancyAli(Fancyali_t *ali);
 extern CMConsensus_t *CreateCMConsensus(CM_t *cm, float pthresh, float sthresh);
@@ -160,7 +160,7 @@ extern int   ConfigQDB(CM_t *cm);
  */
 extern void HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh, 
 			   CM_t **ret_cm, Parsetree_t **ret_mtr);
-extern void ConsensusModelmaker(ESL_ALPHABET *abc, char *ss_cons, int clen, CM_t **ret_cm, 
+extern void ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen, CM_t **ret_cm, 
 				Parsetree_t **ret_gtr);
 extern Parsetree_t *Transmogrify(CM_t *cm, Parsetree_t *gtr, 
 				 ESL_DSQ *dsq, char *aseq, int alen);
@@ -321,7 +321,7 @@ extern void  CP9ViterbiTrace(struct cplan9_s *hmm, ESL_SQ *sq, int i0, int j0,
 			     struct cp9_dpmatrix_s *mx, CP9trace_t **ret_tr);
 extern void  CP9ReverseTrace(CP9trace_t *tr);
 extern int   CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq, CP9trace_t **tr, 
-				     int do_full, ESL_MSA **ret_msa);
+				 int do_full, ESL_MSA **ret_msa);
 extern void  DuplicateCP9(CM_t *src_cm, CM_t *dest_cm);
 
 /* from hbandcyk.c
@@ -399,6 +399,8 @@ extern void debug_print_cp9_params(FILE *fp, CP9_t *hmm);
 extern void debug_print_phi_cp9(CP9_t *hmm, double **phi);
 extern CP9Map_t *AllocCP9Map(CM_t *cm);
 extern void FreeCP9Map(CP9Map_t *cp9map);
+extern int  MakeDealignedString(const ESL_ALPHABET *abc, char *aseq, int alen, char *ss, char **ret_s);
+
 
 
 
@@ -427,7 +429,7 @@ extern int  build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct,
 extern void CP9NodeForPosn(CP9_t *hmm, int i0, int j0, int x, 
 			   struct cp9_dpmatrix_s *post, int *ret_node, int *ret_type,
 			   int do_fullsub, float pmass, int is_start, int print_flag);
-extern void StripWUSSGivenCC(ESL_MSA *msa, char **dsq, float gapthresh, int first_match, int last_match);
+extern void StripWUSSGivenCC(ESL_MSA *msa, float gapthresh, int first_match, int last_match);
 extern int  check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, double threshold, 
 				       int print_flag);
 extern int  check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subinfo, float pthresh,

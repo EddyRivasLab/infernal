@@ -14,15 +14,18 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 #include "structs.h"
 #include "funcs.h"
-#include "stats.h"
 #include "stats.h"
 
 #include "easel.h"
 #include "esl_alphabet.h"
 #include "esl_ssi.h"
+
+static int is_integer(char *s);
+static int is_real(char *s);
 
 /* Magic numbers identifying binary formats.
 */
@@ -170,7 +173,7 @@ CMFileOpen(char *cmfile, char *env)
     cmf->byteswap  = TRUE;
     return cmf;
   } else if (magic & 0x80000000) 
-    Die("\
+    esl_fatal("\
 %s appears to be a binary file but the format is not recognized.\n\
 It may be from an Infernal version more recent than yours,\n\
 or may be a different kind of binary altogether.\n", cmfile);
@@ -231,9 +234,7 @@ or may be a different kind of binary altogether.\n", cmfile);
 int
 CMFileRead(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 {
-  if (SSIGetFilePosition(cmf->f, cmf->mode, &(cmf->offset)) != 0)
-    Die("SSIGetFilePosition() failed unexpectedly");
-  
+  cmf->ssi->foffset = ftello(cmf->f); /* is this right? */
   if (cmf->is_binary) return read_binary_cm(cmf, ret_abc, ret_cm);
   else                return read_ascii_cm(cmf, ret_abc, ret_cm);
 }
@@ -249,7 +250,7 @@ void
 CMFileClose(CMFILE *cmf)
 {
   if (cmf->f   != NULL) { fclose(cmf->f);     cmf->f   = NULL; }
-  if (cmf->ssi != NULL) { SSIClose(cmf->ssi); cmf->ssi = NULL; }
+  if (cmf->ssi != NULL) { esl_ssi_Close(cmf->ssi); cmf->ssi = NULL; }
   free(cmf);
 }
 
@@ -271,24 +272,26 @@ CMFileRewind(CMFILE *cmf)
 int
 CMFilePositionByKey(CMFILE *cmf, char *key)
 {
-  SSIOFFSET  offset;		/* offset in cmfile, from SSI */
-  int        fh;		/* ignored.                   */
+  uint16_t fh;
+  off_t    offset;
+  int      status;
 
-  if (cmf->ssi == NULL) return 0;
-  if (SSIGetOffsetByName(cmf->ssi, key, &fh, &offset) != 0) return 0;
-  if (SSISetFilePosition(cmf->f, &offset) != 0) return 0;
-  return 1;
+  if (cmf->ssi == NULL) ESL_EXCEPTION(eslEINVAL, "Need an open SSI index to call p7_hmmfile_PositionByKey()");
+  if ((status = esl_ssi_FindName(cmf->ssi, key, &fh, &offset)) != eslOK) return status;
+  if (fseeko(cmf->f, offset, SEEK_SET) != 0)    ESL_EXCEPTION(eslESYS, "fseek failed");
+  return eslOK;
 } 
 int 
 CMFilePositionByIndex(CMFILE *cmf, int idx)
 {				/* idx runs from 0..ncm-1 */
-  int        fh;		/* file handle is ignored; only one CM file */
-  SSIOFFSET  offset;		/* file position of CM */
+  uint16_t fh;
+  off_t    offset;
+  int      status;
 
-  if (cmf->ssi == NULL) return 0;
-  if (SSIGetOffsetByNumber(cmf->ssi, idx, &fh, &offset) != 0) return 0;
-  if (SSISetFilePosition(cmf->f, &offset) != 0) return 0;
-  return 1;
+  if (cmf->ssi == NULL) ESL_EXCEPTION(eslEINVAL, "Need an open SSI index to call p7_hmmfile_PositionByKey()");
+  if ((status = esl_ssi_FindNumber(cmf->ssi, idx, &fh, &offset)) != eslOK) return status;
+  if (fseeko(cmf->f, offset, SEEK_SET) != 0)    ESL_EXCEPTION(eslESYS, "fseek failed");
+  return eslOK;
 }
 
 
@@ -468,7 +471,7 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   for(i = 0; i < NGUMBELMODES; i++)  gum_flags[i] = FALSE;
   for(i = 0; i < NFTHRMODES; i++) fthr_flags[i] = FALSE;
 
-  if (feof(cmf->f) || sre_fgets(&buf, &n, cmf->f) == NULL) return 0;
+  if (feof(cmf->f) || esl_fgets(&buf, &n, cmf->f) != eslOK) return 0;
   if (strncmp(buf, "INFERNAL-1", 10) != 0)                 goto FAILURE;
 
   /* Parse the header information
@@ -477,38 +480,38 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
    */
   cm = CreateCMShell();
   M  = N = -1;
-  while (sre_fgets(&buf, &n, cmf->f) != NULL) 
+  while (esl_fgets(&buf, &n, cmf->f) != eslEOF) 
     {
       s   = buf;
-      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
       else if (strcmp(tok, "NAME") == 0) 
 	{
-	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	  cm->name = sre_strdup(tok, toklen);
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  esl_strdup(tok, toklen, &(cm->name));
 	}
       else if (strcmp(tok, "ACC") == 0) 
 	{
-	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	  cm->acc = sre_strdup(tok, toklen);
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  esl_strdup(tok, toklen, &(cm->acc));
 	}
       else if (strcmp(tok, "DESC") == 0) 
 	{
-	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	  cm->desc = sre_strdup(tok, toklen);
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  esl_strdup(tok, toklen, &(cm->desc));
 	}
       else if (strcmp(tok, "STATES") == 0) 
 	{
-	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	  M = atoi(tok);
 	}
       else if (strcmp(tok, "NODES") == 0) 
 	{
-	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	  N = atoi(tok);
 	}
       else if (strcmp(tok, "ALPHABET") == 0) 
 	{
-	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	  alphabet_type = atoi(tok);
 	  /* Set or verify alphabet. */
 	  if (*ret_abc == NULL)	{	/* still unknown: set it, pass control of it back to caller */
@@ -523,38 +526,38 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	  for (x = 0; x < abc->K; x++)
 	    {
 	      CMCreateNullModel(cm);
-	      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+	      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	      cm->null[x] = ascii2prob(tok, (1./(float) abc->K));
 	    }
 	}
       /* EPN 08.18.05 */
       else if (strcmp(tok, "W") == 0) 
 	{
-	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	  cm->W = atoi(tok);
 	}
       /* EPN 11.15.05 */
       else if (strcmp(tok, "el_selfsc") == 0) 
 	{
-	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	  cm->el_selfsc = atof(tok);
 	}
       /* information on partitions for EVDs */
       else if (strcmp(tok, "PART") == 0) 
 	{
-	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	  if (! IsInt(tok))                                     goto FAILURE;
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  if (! is_integer(tok))                                      goto FAILURE;
 	  /* First token is num partitions, allocate cmstats object based on this */
 	  cm->stats = AllocCMStats(atoi(tok));
 	  for(p = 0; p < cm->stats->np; p++)
 	    {
 	      /* there are 2 * cm->stats->np tokens left on this line,
 	       * (ps, pe) pairs for each partition */
-	      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	      if (! IsInt(tok))                                     goto FAILURE;
+	      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	      if (! is_integer(tok))                                      goto FAILURE;
 	      cm->stats->ps[p] = atoi(tok);
-	      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	      if (! IsInt(tok))                                     goto FAILURE;
+	      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	      if (! is_integer(tok))                                      goto FAILURE;
 	      cm->stats->pe[p] = atoi(tok);
 	    }
 	  /* Now set the gc2p GC content to partition map, 
@@ -587,21 +590,21 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	else                                         goto FAILURE;
 
 	/* now we know what EVD we're reading, read it */
-	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	if (! IsInt(tok))                                     goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_integer(tok))                                     goto FAILURE;
 	p = atoi(tok);
 	if (p >= cm->stats->np)                               goto FAILURE;
-	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	if (! IsInt(tok))                                     goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_integer(tok))                                     goto FAILURE;
 	cm->stats->gumAA[gum_mode][p]->N = atoi(tok);
-	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	if (! IsInt(tok))                                     goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_integer(tok))                                     goto FAILURE;
 	cm->stats->gumAA[gum_mode][p]->L = atoi(tok);
-	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	if (! IsReal(tok))                                    goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                                    goto FAILURE;
 	cm->stats->gumAA[gum_mode][p]->mu = atof(tok);
-	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	if (! IsReal(tok))                                    goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                                    goto FAILURE;
 	cm->stats->gumAA[gum_mode][p]->lambda = atof(tok);
 	
 	gum_flags[gum_mode] = TRUE;
@@ -625,29 +628,29 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	else                                         goto FAILURE;
 
 	/* now we know what mode we're reading, read it */
-	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	if (! IsInt(tok))                                     goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_integer(tok))                                     goto FAILURE;
 	cm->stats->fthrA[fthr_mode]->N = atoi(tok);
-	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	if (! IsReal(tok))                                    goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                                    goto FAILURE;
 	cm->stats->fthrA[fthr_mode]->cm_eval = atof(tok);
-	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	if (! IsReal(tok))                                    goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                                    goto FAILURE;
 	cm->stats->fthrA[fthr_mode]->l_eval = atof(tok);
-	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	if (! IsReal(tok))                                    goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                                    goto FAILURE;
 	cm->stats->fthrA[fthr_mode]->l_F = atof(tok);
-	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	if (! IsReal(tok))                                    goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                                    goto FAILURE;
 	cm->stats->fthrA[fthr_mode]->g_eval = atof(tok);
-	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	if (! IsReal(tok))                                    goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                                    goto FAILURE;
 	cm->stats->fthrA[fthr_mode]->g_F = atof(tok);
-	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	if (! IsInt(tok))                                     goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_integer(tok))                                     goto FAILURE;
 	cm->stats->fthrA[fthr_mode]->db_size = atoi(tok);
-	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	if (! IsInt(tok))                                     goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_integer(tok))                                     goto FAILURE;
 	cm->stats->fthrA[fthr_mode]->was_fast = atoi(tok);
 
 	fthr_flags[fthr_mode] = TRUE;
@@ -687,52 +690,52 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   nd = -1;
   for (v = 0; v < cm->M; v++)
     {
-      if (sre_fgets(&buf, &n, cmf->f) == NULL) goto FAILURE;
+      if (esl_fgets(&buf, &n, cmf->f) != eslOK) goto FAILURE;
       s = buf;
-      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
+      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
       
       /* Ah, a node line. Process it and get the following line.
        */
       if (*tok == '[') 
 	{
-	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
 	  if ((x = NodeCode(tok)) == -1)                        goto FAILURE;
-	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
-	  if (!IsInt(tok))                                      goto FAILURE;
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
+	  if (!is_integer(tok))                                      goto FAILURE;
 	  nd = atoi(tok);
 	  cm->ndtype[nd]  = x;
 	  cm->nodemap[nd] = v;
 
-	  if (sre_fgets(&buf, &n, cmf->f) == NULL)              goto FAILURE;
+	  if (esl_fgets(&buf, &n, cmf->f) == eslOK)              goto FAILURE;
 	  s = buf;
-	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
 	}
 
       /* Process state line.
        */
       if ((cm->sttype[v] = StateCode(tok)) == -1)           goto FAILURE;
-      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
-      if (! IsInt(tok))                                     goto FAILURE;
+      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
+      if (! is_integer(tok))                                     goto FAILURE;
       if (atoi(tok) != v)                                   goto FAILURE;
-      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
-      if (! IsInt(tok))                                     goto FAILURE;
+      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
+      if (! is_integer(tok))                                     goto FAILURE;
       cm->plast[v] = atoi(tok);
-      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
-      if (! IsInt(tok))                                     goto FAILURE;
+      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
+      if (! is_integer(tok))                                     goto FAILURE;
       cm->pnum[v] = atoi(tok);
-      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
-      if (! IsInt(tok))                                     goto FAILURE;
+      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
+      if (! is_integer(tok))                                     goto FAILURE;
       cm->cfirst[v] = atoi(tok);
-      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
-      if (! IsInt(tok))                                     goto FAILURE;
+      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
+      if (! is_integer(tok))                                     goto FAILURE;
       cm->cnum[v] = atoi(tok);
 				/* Transition probabilities. */
       if (cm->sttype[v] != B_st) 
 	{
 	  for (x = 0; x < cm->cnum[v]; x++)
 	    {
-	      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
-	      if (! IsReal(tok) && *tok != '*')                      goto FAILURE;
+	      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
+	      if (! is_real(tok) && *tok != '*')                      goto FAILURE;
 	      cm->t[v][x] = ascii2prob(tok, 1.);
 	    }
 	}
@@ -742,8 +745,8 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	{
 	  for (x = 0; x < cm->abc->K; x++)
 	    {
-	      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
-	      if (! IsReal(tok) && *tok != '*')                     goto FAILURE;
+	      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
+	      if (! is_real(tok) && *tok != '*')                     goto FAILURE;
 	      cm->e[v][x] = ascii2prob(tok, cm->null[x]);
 	    }
 	}
@@ -752,8 +755,8 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	  for (x = 0; x < cm->abc->K; x++)
 	    for (y = 0; y < cm->abc->K; y++)
 	      {
-		if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
-		if (! IsReal(tok) && *tok != '*')                     goto FAILURE;
+		if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
+		if (! is_real(tok) && *tok != '*')                     goto FAILURE;
 		cm->e[v][x*cm->abc->K+y] = ascii2prob(tok, cm->null[x]*cm->null[y]);
 	      }
 	} 
@@ -764,7 +767,7 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 
   /* Advance to record separator
    */
-  while (sre_fgets(&buf, &n, cmf->f) != NULL) 
+  while (esl_fgets(&buf, &n, cmf->f) != eslEOF) 
     if (strncmp(buf, "//", 2) == 0) 
       break;
 
@@ -1054,6 +1057,7 @@ tagged_bin_string_write(int tag, char *s, FILE *fp)
 static int
 tagged_bin_string_read(int expected_tag, char **ret_s, FILE *fp)
 {
+  int status;
   int tag;
   int nbytes;
   char *s;
@@ -1062,12 +1066,16 @@ tagged_bin_string_read(int expected_tag, char **ret_s, FILE *fp)
   if (tag != expected_tag) return 0;
   fread(&nbytes, sizeof(int), 1, fp);
   if (nbytes > 0) {
-    s = MallocOrDie(sizeof(char) * (nbytes+1));
+    ESL_ALLOC(s, sizeof(char) * (nbytes+1));
     s[nbytes] = '\0';
     fread(s, sizeof(char), nbytes, fp);
   } else s = NULL; 
   *ret_s = s;
   return 1;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return 0; /* never reached */
 }
 /*****************************************************************
  * Some miscellaneous utility functions
@@ -1100,3 +1108,91 @@ ascii2prob(char *s, float null)
   return (*s == '*') ? 0. : exp(atof(s)/1.44269504)*null;
 }
 
+/* EPN, Tue Aug  7 15:54:15 2007
+ * is_integer() and is_real(), savagely ripped verbatim out
+ * of Easel's esl_getopts.c, where they were private.
+ */
+/* Function: is_integer()
+ * 
+ * Returns TRUE if <s> points to something that atoi() will parse
+ * completely and convert to an integer.
+ */
+static int
+is_integer(char *s)
+{
+  int hex = 0;
+
+  if (s == NULL) return 0;
+  while (isspace((int) (*s))) s++;      /* skip whitespace */
+  if (*s == '-' || *s == '+') s++;      /* skip leading sign */
+				        /* skip leading conversion signals */
+  if ((strncmp(s, "0x", 2) == 0 && (int) strlen(s) > 2) ||
+      (strncmp(s, "0X", 2) == 0 && (int) strlen(s) > 2))
+    {
+      s += 2;
+      hex = 1;
+    }
+  else if (*s == '0' && (int) strlen(s) > 1)
+    s++;
+				/* examine remainder for garbage chars */
+  if (!hex)
+    while (*s != '\0')
+      {
+	if (!isdigit((int) (*s))) return 0;
+	s++;
+      }
+  else
+    while (*s != '\0')
+      {
+	if (!isxdigit((int) (*s))) return 0;
+	s++;
+      }
+  return 1;
+}
+
+
+/* is_real()
+ * 
+ * Returns TRUE if <s> is a string representation
+ * of a valid floating point number, convertable
+ * by atof().
+ */
+static int
+is_real(char *s)
+{
+  int gotdecimal = 0;
+  int gotexp     = 0;
+  int gotreal    = 0;
+
+  if (s == NULL) return 0;
+
+  while (isspace((int) (*s))) s++; /* skip leading whitespace */
+  if (*s == '-' || *s == '+') s++; /* skip leading sign */
+
+  /* Examine remainder for garbage. Allowed one '.' and
+   * one 'e' or 'E'; if both '.' and e/E occur, '.'
+   * must be first.
+   */
+  while (*s != '\0')
+    {
+      if (isdigit((int) (*s))) 	gotreal++;
+      else if (*s == '.')
+	{
+	  if (gotdecimal) return 0; /* can't have two */
+	  if (gotexp) return 0;     /* e/E preceded . */
+	  else gotdecimal++;
+	}
+      else if (*s == 'e' || *s == 'E')
+	{
+	  if (gotexp) return 0;	/* can't have two */
+	  else gotexp++;
+	}
+      else if (isspace((int) (*s)))
+	break;
+      s++;
+    }
+
+  while (isspace((int) (*s))) s++;         /* skip trailing whitespace */
+  if (*s == '\0' && gotreal) return 1;
+  else return 0;
+}

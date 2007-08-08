@@ -17,11 +17,13 @@
  ***************************************************************** 
  */
 
+#include "esl_config.h"
 #include "config.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "squid.h"
+#include "easel.h"
 
 #include "structs.h"
 #include "funcs.h"
@@ -38,9 +40,9 @@
  *           function.
  *
  * Args:     cm        - the covariance model
- *           dsq       - digitized sequence to search; 1..L
+ *           sq        - digitized sequence to search; 1..sq->n
  *           i0        - start of target subsequence (1 for full seq)
- *           j0        - end of target subsequence (L for full seq)
+ *           j0        - end of target subsequence (sq->n for full seq)
  *           W         - max d: max size of a hit
  *           cutoff    - minimum score to report 
  *           results    - scan_results_t to add to; if NULL, don't add to it
@@ -48,10 +50,11 @@
  * Returns:  score of best overall hit
  */
 float 
-InsideScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
+InsideScan(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, 
 	   float cutoff, scan_results_t *results)
 
 {
+  int       status;
   float  ***alpha;              /* CYK DP score matrix, [v][j][d] */
   int      *bestr;              /* auxil info: best root state at alpha[0][cur][d] */
   float    *gamma;              /* SHMM DP matrix for optimum nonoverlap resolution */
@@ -74,6 +77,12 @@ InsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
   float     best_score;         /* Best overall score from semi-HMM to return */
   float     best_neg_score;     /* Best score overall score to return, used if all scores < 0 */
 
+  /* Contract check */
+  if(sq == NULL)
+    esl_fatal("in InsideScan, sq is NULL\n");
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in InsideScan, sq is not digitized.\n");
+
   /*****************************************************************
    * alpha allocations.
    * The scanning matrix is indexed [v][j][d]. 
@@ -92,27 +101,25 @@ InsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
   if (W > L) W = L; 
 
   /*printf("in InsideScan i0: %d j0: %d\n", i0, j0);*/
-  if(dsq == NULL)
-    Die("in InsideScan, dsq is NULL\n");
 
-  alpha = MallocOrDie (sizeof(float **) * cm->M);
+  ESL_ALLOC(alpha, sizeof(float **) * cm->M);
   for (v = cm->M-1; v >= 0; v--) {	/* reverse, because we allocate E_M-1 first */
     if (cm->stid[v] == BEGL_S)
       {
-	alpha[v] = MallocOrDie(sizeof(float *) * (W+1));
+	ESL_ALLOC(alpha[v], sizeof(float *) * (W+1));
 	for (j = 0; j <= W; j++)
-	  alpha[v][j] = MallocOrDie(sizeof(float) * (W+1));
+	  ESL_ALLOC(alpha[v][j], sizeof(float) * (W+1));
       }
     else if (cm->sttype[v] == E_st && v < cm->M-1) 
       alpha[v] = alpha[cm->M-1];
     else 
       {
-	alpha[v] = MallocOrDie(sizeof(float *) * 2);
+	ESL_ALLOC(alpha[v], sizeof(float *) * 2);
 	for (j = 0; j < 2; j++) 
-	  alpha[v][j] = MallocOrDie(sizeof(float) * (W+1));
+	  ESL_ALLOC(alpha[v][j], sizeof(float) * (W+1));
       }
   }
-  bestr = MallocOrDie(sizeof(int) * (W+1));
+  ESL_ALLOC(bestr, sizeof(int) * (W+1));
 
   /*****************************************************************
    * alpha initializations.
@@ -159,12 +166,12 @@ InsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
    * This is a little SHMM that finds an optimal scoring parse
    * of multiple nonoverlapping hits.
    *****************************************************************/ 
-  gamma    = MallocOrDie(sizeof(float) * (L+1));
+  ESL_ALLOC(gamma, sizeof(float) * (L+1));
   gamma[0] = 0; 
-  gback    = MallocOrDie(sizeof(int)   * (L+1));
+  ESL_ALLOC(gback,  sizeof(int)   * (L+1));
   gback[0] = -1;
-  savesc   = MallocOrDie(sizeof(float) * (L+1));
-  saver    = MallocOrDie(sizeof(int)   * (L+1));
+  ESL_ALLOC(savesc, sizeof(float) * (L+1));
+  ESL_ALLOC(saver,  sizeof(int)   * (L+1));
 
   /*****************************************************************
    * The main loop: scan the sequence from position 1 to L.
@@ -199,10 +206,10 @@ InsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 		    alpha[v][cur][d] = LogSum2(alpha[v][cur][d], (alpha[y+yoffset][prv][d-2] 
 								 + cm->tsc[v][yoffset]));
 		  i = j-d+1;
-		  if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
-		    alpha[v][cur][d] += cm->esc[v][(int) (dsq[i]*Alphabet_size+dsq[j])];
+		  if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][(sq->dsq[i]*cm->abc->K+sq->dsq[j])];
 		  else
-		    alpha[v][cur][d] += DegeneratePairScore(cm->esc[v], dsq[i], dsq[j]);
+		    alpha[v][cur][d] += DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i], sq->dsq[j]);
 		  
 		  if (alpha[v][cur][d] < IMPOSSIBLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -217,10 +224,10 @@ InsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 		    alpha[v][cur][d] = LogSum2(alpha[v][cur][d], (alpha[y+yoffset][cur][d-1] 
 								 + cm->tsc[v][yoffset]));
 		  i = j-d+1;
-		  if (dsq[i] < Alphabet_size)
-		    alpha[v][cur][d] += cm->esc[v][(int) dsq[i]];
+		  if (sq->dsq[i] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][sq->dsq[i]];
 		  else
-		    alpha[v][cur][d] += DegenerateSingletScore(cm->esc[v], dsq[i]);
+		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[i], cm->esc[v]);
 		  
 		  if (alpha[v][cur][d] < IMPOSSIBLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -234,10 +241,10 @@ InsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		    alpha[v][cur][d] = LogSum2(alpha[v][cur][d], (alpha[y+yoffset][prv][d-1] 
 								 + cm->tsc[v][yoffset]));
-		  if (dsq[j] < Alphabet_size)
-		    alpha[v][cur][d] += cm->esc[v][(int) dsq[j]];
+		  if (sq->dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][sq->dsq[j]];
 		  else
-		    alpha[v][cur][d] += DegenerateSingletScore(cm->esc[v], dsq[j]);
+		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[j], cm->esc[v]);
 		  
 		  if (alpha[v][cur][d] < IMPOSSIBLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -367,6 +374,10 @@ InsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
     best_score = best_neg_score;
 
   return best_score;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return 0.; /* never reached */
 }
 
 /******************************************************************
@@ -401,9 +412,10 @@ InsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
  * Returns:  score of best overall hit
  */
 float
-InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
+InsideBandedScan(CM_t *cm, ESL_SQ *sq, int *dmin, int *dmax, int i0, int j0, int W, 
 		 float cutoff, scan_results_t *results)
 {
+  int       status;
   float  ***alpha;              /* CYK DP score matrix, [v][j][d] */
   int      *bestr;              /* auxil info: best root state at alpha[0][cur][d] */
   float    *gamma;              /* SHMM DP matrix for optimum nonoverlap resolution */
@@ -431,11 +443,13 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
 
   /* Contract check */
   if(j0 < i0)
-    Die("in InsideBandedScan, i0: %d j0: %d\n", i0, j0);
-  if(dsq == NULL)
-    Die("in InsideBandedScan, dsq is NULL\n");
+    esl_fatal("in InsideBandedScan, i0: %d j0: %d\n", i0, j0);
+  if(sq == NULL)
+    esl_fatal("in InsideBandedScan, sq is NULL\n");
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in InsideBandedScan, sq is not digitized.\n");
   if(!(cm->flags & CM_QDB))
-    Die("in InsideBandedScan, QDBs invalid\n");
+    esl_fatal("in InsideBandedScan, QDBs invalid\n");
 
   /*printf("in InsideBandedScan i0: %d j0: %d\n", i0, j0);*/
   best_score     = IMPOSSIBLE;
@@ -456,24 +470,24 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
    *    d ranges from 0..W over subsequence lengths.
    * Note that E memory is shared: all E decks point at M-1 deck.
    *****************************************************************/
-  alpha = MallocOrDie (sizeof(float **) * cm->M);
+  ESL_ALLOC(alpha, sizeof(float **) * cm->M);
   for (v = cm->M-1; v >= 0; v--) {	/* reverse, because we allocate E_M-1 first */
     if (cm->stid[v] == BEGL_S)
       {
-	alpha[v] = MallocOrDie(sizeof(float *) * (W+1));
+	ESL_ALLOC(alpha[v], sizeof(float *) * (W+1));
 	for (j = 0; j <= W; j++)
-	  alpha[v][j] = MallocOrDie(sizeof(float) * (W+1));
+	  ESL_ALLOC(alpha[v][j], sizeof(float) * (W+1));
       }
     else if (cm->sttype[v] == E_st && v < cm->M-1) 
       alpha[v] = alpha[cm->M-1];
     else 
       {
-	alpha[v] = MallocOrDie(sizeof(float *) * 2);
+	ESL_ALLOC(alpha[v], sizeof(float *) * 2);
 	for (j = 0; j < 2; j++) 
-	  alpha[v][j] = MallocOrDie(sizeof(float) * (W+1));
+	  ESL_ALLOC(alpha[v][j], sizeof(float) * (W+1));
       }
   }
-  bestr = MallocOrDie(sizeof(int) * (W+1));
+  ESL_ALLOC(bestr, sizeof(int) * (W+1));
 
   /*****************************************************************
    * alpha initializations.
@@ -540,12 +554,12 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
    * This is a little SHMM that finds an optimal scoring parse
    * of multiple nonoverlapping hits.
    *****************************************************************/ 
-  gamma    = MallocOrDie(sizeof(float) * (L+1));
+  ESL_ALLOC(gamma, sizeof(float) * (L+1));
   gamma[0] = 0;
-  gback    = MallocOrDie(sizeof(int)   * (L+1));
+  ESL_ALLOC(gback, sizeof(int)   * (L+1));
   gback[0] = -1;
-  savesc   = MallocOrDie(sizeof(float) * (L+1));
-  saver    = MallocOrDie(sizeof(int)   * (L+1));
+  ESL_ALLOC(savesc, sizeof(float) * (L+1));
+  ESL_ALLOC(saver,  sizeof(int)   * (L+1));
 
   /*****************************************************************
    * The main loop: scan the sequence from position 1 to L.
@@ -585,10 +599,10 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
 								 + cm->tsc[v][yoffset]));
 		  
 		  i = j-d+1;
-		  if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
-		    alpha[v][cur][d] += cm->esc[v][(int) (dsq[i]*Alphabet_size+dsq[j])];
+		  if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][(sq->dsq[i]*cm->abc->K+sq->dsq[j])];
 		  else
-		    alpha[v][cur][d] += DegeneratePairScore(cm->esc[v], dsq[i], dsq[j]);
+		    alpha[v][cur][d] += DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i], sq->dsq[j]);
 		  
 		  if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -604,10 +618,10 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
 								 + cm->tsc[v][yoffset]));
 		  
 		  i = j-d+1;
-		  if (dsq[i] < Alphabet_size)
-		    alpha[v][cur][d] += cm->esc[v][(int) dsq[i]];
+		  if (sq->dsq[i] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][sq->dsq[i]];
 		  else
-		    alpha[v][cur][d] += DegenerateSingletScore(cm->esc[v], dsq[i]);
+		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[i], cm->esc[v]);
 		  
 		  if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -622,10 +636,10 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
 		    alpha[v][cur][d] = LogSum2(alpha[v][cur][d], (alpha[y+yoffset][prv][d-1] 
 								 + cm->tsc[v][yoffset]));
 		  
-		  if (dsq[j] < Alphabet_size)
-		    alpha[v][cur][d] += cm->esc[v][(int) dsq[j]];
+		  if (sq->dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][sq->dsq[j]];
 		  else
-		    alpha[v][cur][d] += DegenerateSingletScore(cm->esc[v], dsq[j]);
+		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[j], cm->esc[v]);
 		  
 		  if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -790,6 +804,10 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
     best_score = best_neg_score;
 
   return best_score;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return 0.; /* never reached */
 }
 
 /* Function: InsideBandedScan_jd()
@@ -846,10 +864,11 @@ InsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int 
  *           hiti, hitj, hitsc are allocated here if nec; caller free's w/ free().
  */
 void
-InsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax, int i0, 
+InsideBandedScan_jd(CM_t *cm, ESL_SQ *sq, int *jmin, int *jmax, int **hdmin, int **hdmax, int i0, 
 		 int j0, int W, int *ret_nhits, int **ret_hitr, int **ret_hiti, 
 		 int **ret_hitj, float **ret_hitsc, float min_thresh)
 {
+  int       status;
   float  ***alpha;              /* CYK DP score matrix, [v][j][d] */
   int      *bestr;              /* auxil info: best root state at alpha[0][cur][d] */
   float    *gamma;              /* SHMM DP matrix for optimum nonoverlap resolution */
@@ -883,7 +902,11 @@ InsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int 
   int      *hitj;               /* end positions of hits in optimal parse */
   float    *hitsc;              /* scores of hits in optimal parse */
   int       alloc_nhits;	/* used to grow the hit arrays */
+  void     *tmp;                /* for ESL_RALLOC() */
 
+  /* Contract check */
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in InsideBandedScan_jd, sq is not digitized.\n");
 
   /* EPN 08.11.05 Next line prevents wasteful computations when imposing
    * bands before the main recursion.  There is no need to worry about
@@ -911,34 +934,34 @@ InsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int 
    * due to the j bands. 
    * 
    *****************************************************************/
-  alpha = MallocOrDie (sizeof(float **) * cm->M);
+  ESL_ALLOC(alpha, sizeof(float **) * cm->M);
   for (v = cm->M-1; v >= 0; v--) {	/* reverse, because we allocate E_M-1 first */
     if (cm->stid[v] == BEGL_S)
       {
-	alpha[v] = MallocOrDie(sizeof(float *) * (W+1));
+	ESL_ALLOC(alpha[v], sizeof(float *) * (W+1));
 	for (j = 0; j <= W; j++)
-	  alpha[v][j] = MallocOrDie(sizeof(float) * (W+1));
+	  ESL_ALLOC(alpha[v][j], sizeof(float) * (W+1));
       }
     else 
       {
-	alpha[v] = MallocOrDie(sizeof(float *) * 2);
+	ESL_ALLOC(alpha[v], sizeof(float *) * 2);
 	for (j = 0; j < 2; j++) 
-	  alpha[v][j] = MallocOrDie(sizeof(float) * (W+1));
+	  ESL_ALLOC(alpha[v][j], sizeof(float) * (W+1));
       }
   }
-  bestr = MallocOrDie(sizeof(int) * (W+1));
+  ESL_ALLOC(bestr, sizeof(int) * (W+1));
 
   /*****************************************************************
    * gamma allocation and initialization.
    * This is a little SHMM that finds an optimal scoring parse
    * of multiple nonoverlapping hits.
    *****************************************************************/ 
-  gamma    = MallocOrDie(sizeof(float) * (L+1));
+  ESL_ALLOC(gamma, sizeof(float) * (L+1));
   gamma[0] = 0;
-  gback    = MallocOrDie(sizeof(int)   * (L+1));
+  ESL_ALLOC(gback, sizeof(int)   * (L+1));
   gback[0] = -1;
-  savesc   = MallocOrDie(sizeof(float) * (L+1));
-  saver    = MallocOrDie(sizeof(int)   * (L+1));
+  ESL_ALLOC(savesc, sizeof(float) * (L+1));
+  ESL_ALLOC(saver,  sizeof(int)   * (L+1));
 
   /*****************************************************************
    * The main loop: scan the sequence from position 1 to L.
@@ -1057,10 +1080,10 @@ InsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int 
 		    alpha[v][cur][d] = LogSum2(alpha[v][cur][d], (alpha[y+yoffset][prv][d-2] 
 								  + cm->tsc[v][yoffset]));
 		  i = j-d+1;
-		  if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
-		    alpha[v][cur][d] += cm->esc[v][(int) (dsq[i]*Alphabet_size+dsq[j])];
+		  if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][(sq->dsq[i]*cm->abc->K+sq->dsq[j])];
 		  else
-		    alpha[v][cur][d] += DegeneratePairScore(cm->esc[v], dsq[i], dsq[j]);
+		    alpha[v][cur][d] += DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i], sq->dsq[j]);
 		  
 		  if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -1075,10 +1098,10 @@ InsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int 
 		    alpha[v][cur][d] = LogSum2(alpha[v][cur][d], (alpha[y+yoffset][cur][d-1] 
 								  + cm->tsc[v][yoffset]));
 		  i = j-d+1;
-		  if (dsq[i] < Alphabet_size)
-		    alpha[v][cur][d] += cm->esc[v][(int) dsq[i]];
+		  if (sq->dsq[i] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][sq->dsq[i]];
 		  else
-		    alpha[v][cur][d] += DegenerateSingletScore(cm->esc[v], dsq[i]);
+		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[i], cm->esc[v]);
 		  
 		  if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -1092,10 +1115,10 @@ InsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int 
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		    alpha[v][cur][d] = LogSum2(alpha[v][cur][d], (alpha[y+yoffset][prv][d-1] 
 								  + cm->tsc[v][yoffset]));
-		  if (dsq[j] < Alphabet_size)
-		    alpha[v][cur][d] += cm->esc[v][(int) dsq[j]];
+		  if (sq->dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][sq->dsq[j]];
 		  else
-		    alpha[v][cur][d] += DegenerateSingletScore(cm->esc[v], dsq[j]);
+		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[j], cm->esc[v]);
 		  
 		  if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -1290,10 +1313,10 @@ InsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int 
    * Recover all hits: an (i,j,sc) triple for each one.
    *****************************************************************/ 
   alloc_nhits = 10;
-  hitr  = MallocOrDie(sizeof(int)   * alloc_nhits);
-  hitj  = MallocOrDie(sizeof(int)   * alloc_nhits);
-  hiti  = MallocOrDie(sizeof(int)   * alloc_nhits);
-  hitsc = MallocOrDie(sizeof(float) * alloc_nhits);
+  ESL_ALLOC(hitr, sizeof(int)   * alloc_nhits);
+  ESL_ALLOC(hitj, sizeof(int)   * alloc_nhits);
+  ESL_ALLOC(hiti, sizeof(int)   * alloc_nhits);
+  ESL_ALLOC(hitsc,sizeof(float) * alloc_nhits);
 
   j     = j0;
   nhits = 0;
@@ -1312,10 +1335,10 @@ InsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int 
 	j = gback[gamma_j]-1;
 	
 	if (nhits == alloc_nhits) {
-	  hitr  = ReallocOrDie(hitr,  sizeof(int)   * (alloc_nhits + 10));
-	  hitj  = ReallocOrDie(hitj,  sizeof(int)   * (alloc_nhits + 10));
-	  hiti  = ReallocOrDie(hiti,  sizeof(int)   * (alloc_nhits + 10));
-	  hitsc = ReallocOrDie(hitsc, sizeof(float) * (alloc_nhits + 10));
+	  ESL_RALLOC(hitr, tmp, sizeof(int)   * (alloc_nhits + 10));
+	  ESL_RALLOC(hitj, tmp, sizeof(int)   * (alloc_nhits + 10));
+	  ESL_RALLOC(hiti, tmp, sizeof(int)   * (alloc_nhits + 10));
+	  ESL_RALLOC(hitsc,tmp, sizeof(float) * (alloc_nhits + 10));
 	  alloc_nhits += 10;
 	}
       }
@@ -1332,15 +1355,18 @@ InsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int 
   *ret_hitj  = hitj;
   *ret_hitsc = hitsc;
 
-  for (i = 0; i < nhits; i++)
+  /*for (i = 0; i < nhits; i++)
     {
-      /*printf("j0: %d end hit %-4d: %6d %6d %8.2f bits\n", j0, i, 
+      printf("j0: %d end hit %-4d: %6d %6d %8.2f bits\n", j0, i, 
 	     hiti[i], 
 	     hitj[i],
 	     hitsc[i]);
-      */
-    }
+      
+    }*/
   return;
+
+ ERROR: 
+  esl_fatal("Memory allocation error.");
 }
 
 /**************************************************************
@@ -1366,10 +1392,11 @@ InsideBandedScan_jd(CM_t *cm, char *dsq, int *jmin, int *jmax, int **hdmin, int 
  * Returns:  score (float - not scaled int) of best overall hit
  */
 float 
-iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W, 
+iInsideScan(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, 
 	    float cutoff, scan_results_t *results)
 
 {
+  int       status;
   int    ***alpha;              /* inside DP score matrix (scaled ints), [v][j][d] */
   int      *bestr;              /* auxil info: best root state at alpha[0][cur][d] */
   float    *gamma;              /* SHMM DP matrix for optimum nonoverlap resolution */
@@ -1392,6 +1419,12 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
   float     best_score;         /* Best overall score from semi-HMM to return */
   float     best_neg_score;     /* Best score overall score to return, used if all scores < 0 */
 
+  /* Contract check */
+  if(sq == NULL)
+    esl_fatal("in iInsideScan, dsq is NULL\n");
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in iInsideScan, sq is not digitized.\n");
+
   /*****************************************************************
    * alpha allocations.
    * The scanning matrix is indexed [v][j][d]. 
@@ -1403,34 +1436,30 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
    *    d ranges from 0..W over subsequence lengths.
    * Note that E memory is shared: all E decks point at M-1 deck.
    *****************************************************************/
-
   best_score     = IMPOSSIBLE;
   best_neg_score = IMPOSSIBLE;
   L = j0-i0+1;
   if (W > L) W = L; 
 
   /*printf("in iInsideScan i0: %d j0: %d\n", i0, j0);*/
-  if(dsq == NULL)
-    Die("in iInsideScan, dsq is NULL\n");
-
-  alpha = MallocOrDie (sizeof(int **) * cm->M);
+  ESL_ALLOC(alpha, sizeof(int **) * cm->M);
   for (v = cm->M-1; v >= 0; v--) {	/* reverse, because we allocate E_M-1 first */
     if (cm->stid[v] == BEGL_S)
       {
-	alpha[v] = MallocOrDie(sizeof(int *) * (W+1));
+	ESL_ALLOC(alpha[v], sizeof(int *) * (W+1));
 	for (j = 0; j <= W; j++)
-	  alpha[v][j] = MallocOrDie(sizeof(int) * (W+1));
+	  ESL_ALLOC(alpha[v][j], sizeof(int) * (W+1));
       }
     else if (cm->sttype[v] == E_st && v < cm->M-1) 
       alpha[v] = alpha[cm->M-1];
     else 
       {
-	alpha[v] = MallocOrDie(sizeof(int *) * 2);
+	ESL_ALLOC(alpha[v], sizeof(int *) * 2);
 	for (j = 0; j < 2; j++) 
-	  alpha[v][j] = MallocOrDie(sizeof(int) * (W+1));
+	  ESL_ALLOC(alpha[v][j], sizeof(int) * (W+1));
       }
   }
-  bestr = MallocOrDie(sizeof(int) * (W+1));
+  ESL_ALLOC(bestr, sizeof(int) * (W+1));
 
   /*****************************************************************
    * alpha initializations.
@@ -1478,12 +1507,12 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
    * This is a little SHMM that finds an optimal scoring parse
    * of multiple nonoverlapping hits.
    *****************************************************************/ 
-  gamma    = MallocOrDie(sizeof(float) * (L+1));
+  ESL_ALLOC(gamma, sizeof(float) * (L+1));
   gamma[0] = 0; 
-  gback    = MallocOrDie(sizeof(int)   * (L+1));
+  ESL_ALLOC(gback, sizeof(int)   * (L+1));
   gback[0] = -1;
-  savesc   = MallocOrDie(sizeof(float) * (L+1));
-  saver    = MallocOrDie(sizeof(int)   * (L+1));
+  ESL_ALLOC(savesc,sizeof(float) * (L+1));
+  ESL_ALLOC(saver, sizeof(int)   * (L+1));
 
   /*****************************************************************
    * The main loop: scan the sequence from position 1 to L.
@@ -1518,10 +1547,10 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 		    alpha[v][cur][d] = ILogsum(alpha[v][cur][d], (alpha[y+yoffset][prv][d-2] 
 								  + cm->itsc[v][yoffset]));
 		  i = j-d+1;
-		  if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
-		    alpha[v][cur][d] += cm->iesc[v][(int) (dsq[i]*Alphabet_size+dsq[j])];
+		  if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->iesc[v][(sq->dsq[i]*cm->abc->K+sq->dsq[j])];
 		  else
-		    alpha[v][cur][d] += iDegeneratePairScore(cm->iesc[v], dsq[i], dsq[j]);
+		    alpha[v][cur][d] += iDegeneratePairScore(cm->abc, cm->iesc[v], sq->dsq[i], sq->dsq[j]);
 		  
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
 		}
@@ -1536,10 +1565,10 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 		    alpha[v][cur][d] = ILogsum(alpha[v][cur][d], (alpha[y+yoffset][cur][d-1] 
 								  + cm->itsc[v][yoffset]));
 		  i = j-d+1;
-		  if (dsq[i] < Alphabet_size)
-		    alpha[v][cur][d] += cm->iesc[v][(int) dsq[i]];
+		  if (sq->dsq[i] < cm->abc->K)
+		    alpha[v][cur][d] += cm->iesc[v][sq->dsq[i]];
 		  else
-		    alpha[v][cur][d] += iDegenerateSingletScore(cm->iesc[v], dsq[i]);
+		    alpha[v][cur][d] += esl_abc_IAvgScore(cm->abc, sq->dsq[i], cm->iesc[v]);
 
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
 		}
@@ -1553,10 +1582,10 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		    alpha[v][cur][d] = ILogsum(alpha[v][cur][d], (alpha[y+yoffset][prv][d-1] 
 								 + cm->itsc[v][yoffset]));
-		  if (dsq[j] < Alphabet_size)
-		    alpha[v][cur][d] += cm->iesc[v][(int) dsq[j]];
+		  if (sq->dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->iesc[v][sq->dsq[j]];
 		  else
-		    alpha[v][cur][d] += iDegenerateSingletScore(cm->iesc[v], dsq[j]);
+		    alpha[v][cur][d] += esl_abc_IAvgScore(cm->abc, sq->dsq[j], cm->iesc[v]);
 
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
 		}
@@ -1688,6 +1717,10 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
 
   /*printf("iInsideScan() returning best_score: %f best_neg_score: %f\n", best_score, best_neg_score);*/
   return best_score;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return 0.; /* never reached */
 }
 
 /******************************************************************
@@ -1723,9 +1756,10 @@ iInsideScan(CM_t *cm, char *dsq, int i0, int j0, int W,
  * Returns:  score (float - not scaled int) of best overall hit
  */
 float
-iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
+iInsideBandedScan(CM_t *cm, ESL_SQ *sq, int *dmin, int *dmax, int i0, int j0, int W, 
 		  float cutoff, scan_results_t *results)
 {
+  int       status;
   int    ***alpha;              /* inside DP score matrix (scaled ints), [v][j][d] */
   int      *bestr;              /* auxil info: best root state at alpha[0][cur][d] */
   float    *gamma;              /* SHMM DP matrix for optimum nonoverlap resolution */
@@ -1753,11 +1787,13 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
 
   /* Contract check */
   if(j0 < i0)
-    Die("in iInsideBandedScan, i0: %d j0: %d\n", i0, j0);
-  if(dsq == NULL)
-    Die("in iInsideBandedScan, dsq is NULL\n");
+    esl_fatal("in iInsideBandedScan, i0: %d j0: %d\n", i0, j0);
+  if(sq == NULL)
+    esl_fatal("in iInsideBandedScan, sq is NULL\n");
   if(!(cm->flags & CM_QDB))
-    Die("in iInsideBandedScan, QDBs invalid\n");
+    esl_fatal("in iInsideBandedScan, QDBs invalid\n");
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in iInsideBandedScan, sq is not digitized.\n");
 
   /*printf("in iInsideBandedScan i0: %d j0: %d\n", i0, j0);*/
 
@@ -1779,24 +1815,24 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
    *    d ranges from 0..W over subsequence lengths.
    * Note that E memory is shared: all E decks point at M-1 deck.
    *****************************************************************/
-  alpha = MallocOrDie (sizeof(int **) * cm->M);
+  ESL_ALLOC(alpha, sizeof(int **) * cm->M);
   for (v = cm->M-1; v >= 0; v--) {	/* reverse, because we allocate E_M-1 first */
     if (cm->stid[v] == BEGL_S)
       {
-	alpha[v] = MallocOrDie(sizeof(int *) * (W+1));
+	ESL_ALLOC(alpha[v], sizeof(int *) * (W+1));
 	for (j = 0; j <= W; j++)
-	  alpha[v][j] = MallocOrDie(sizeof(int) * (W+1));
+	  ESL_ALLOC(alpha[v][j], sizeof(int) * (W+1));
       }
     else if (cm->sttype[v] == E_st && v < cm->M-1) 
       alpha[v] = alpha[cm->M-1];
     else 
       {
-	alpha[v] = MallocOrDie(sizeof(int *) * 2);
+	ESL_ALLOC(alpha[v], sizeof(int *) * 2);
 	for (j = 0; j < 2; j++) 
-	  alpha[v][j] = MallocOrDie(sizeof(int) * (W+1));
+	  ESL_ALLOC(alpha[v][j], sizeof(int) * (W+1));
       }
   }
-  bestr = MallocOrDie(sizeof(int) * (W+1));
+  ESL_ALLOC(bestr, sizeof(int) * (W+1));
 
   /*****************************************************************
    * alpha initializations.
@@ -1865,12 +1901,12 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
    * of multiple nonoverlapping hits.
    * gamma contains real (float) scores, not scaled ints.
    *****************************************************************/ 
-  gamma    = MallocOrDie(sizeof(float) * (L+1));
+  ESL_ALLOC(gamma, sizeof(float) * (L+1));
   gamma[0] = 0;
-  gback    = MallocOrDie(sizeof(int)   * (L+1));
+  ESL_ALLOC(gback, sizeof(int)   * (L+1));
   gback[0] = -1;
-  savesc   = MallocOrDie(sizeof(float) * (L+1));
-  saver    = MallocOrDie(sizeof(int)   * (L+1));
+  ESL_ALLOC(savesc,sizeof(float) * (L+1));
+  ESL_ALLOC(saver, sizeof(int)   * (L+1));
 
   /*****************************************************************
    * The main loop: scan the sequence from position 1 to L.
@@ -1910,10 +1946,10 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
 		      alpha[v][cur][d] = ILogsum(alpha[v][cur][d], (alpha[y+yoffset][prv][d-2] 
 								    + cm->itsc[v][yoffset]));
 		  i = j-d+1;
-		  if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
-		    alpha[v][cur][d] += cm->iesc[v][(int) (dsq[i]*Alphabet_size+dsq[j])];
+		  if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->iesc[v][(sq->dsq[i]*cm->abc->K+sq->dsq[j])];
 		  else
-		    alpha[v][cur][d] += iDegeneratePairScore(cm->iesc[v], dsq[i], dsq[j]);
+		    alpha[v][cur][d] += iDegeneratePairScore(cm->abc, cm->iesc[v], sq->dsq[i], sq->dsq[j]);
 
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
 		}
@@ -1928,10 +1964,10 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
 		    alpha[v][cur][d] = ILogsum(alpha[v][cur][d], (alpha[y+yoffset][cur][d-1] 
 								  + cm->itsc[v][yoffset]));
 		  i = j-d+1;
-		  if (dsq[i] < Alphabet_size)
-		    alpha[v][cur][d] += cm->iesc[v][(int) dsq[i]];
+		  if (sq->dsq[i] < cm->abc->K)
+		    alpha[v][cur][d] += cm->iesc[v][sq->dsq[i]];
 		  else
-		    alpha[v][cur][d] += iDegenerateSingletScore(cm->iesc[v], dsq[i]);
+		    alpha[v][cur][d] += esl_abc_IAvgScore(cm->abc, sq->dsq[i], cm->iesc[v]);
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
 		}
 	    }
@@ -1945,10 +1981,10 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
 		    alpha[v][cur][d] = ILogsum(alpha[v][cur][d], (alpha[y+yoffset][prv][d-1] 
 								  + cm->itsc[v][yoffset]));
 		  
-		  if (dsq[j] < Alphabet_size)
-		    alpha[v][cur][d] += cm->iesc[v][(int) dsq[j]];
+		  if (sq->dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->iesc[v][sq->dsq[j]];
 		  else
-		    alpha[v][cur][d] += iDegenerateSingletScore(cm->iesc[v], dsq[j]);
+		    alpha[v][cur][d] += esl_abc_IAvgScore(cm->abc, sq->dsq[j], cm->iesc[v]);
 
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
 		}
@@ -2113,4 +2149,8 @@ iInsideBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int
 
   /*printf("iInsideBandedScan() returning best_score: %f best_neg_score: %f\n", best_score, best_neg_score);*/
   return best_score;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return 0.; /* never reached */
 }

@@ -54,9 +54,6 @@ check_cm_adj_bp(CM_t *cm, CP9Map_t *cp9map);
 static float
 FChiSquareFit(float *f1, float *f2, int N);
 
-static int 
-MakeDealignedString(const ESL_ALPHABET *abc, char *aseq, int alen, char *ss, char **ret_s);
-
 /**************************************************************************
  * EPN 10.26.06
  * Function: AllocCP9Map()
@@ -2559,7 +2556,7 @@ CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo,
   /* sample MSA(s) from the CM */
   nsampled = 0;
   ESL_ALLOC(sq, sizeof(ESL_SQ) * msa_nseq);
-  ESL_ALLOC(sq, (sizeof(Parsetree_t) * msa_nseq));
+  ESL_ALLOC(tr, (sizeof(Parsetree_t) * msa_nseq));
   ESL_ALLOC(wgt,(sizeof(float)       * msa_nseq));
   esl_vec_FSet(wgt, msa_nseq, 1.0);
 

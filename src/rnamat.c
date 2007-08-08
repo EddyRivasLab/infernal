@@ -10,11 +10,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <math.h>
 
 #include "easel.h"
 #include "esl_msa.h"
 #include "esl_stack.h"
 #include "esl_vectorops.h"
+#include "esl_wuss.h"
 
 #include "structs.h"
 #include "rnamat.h"
@@ -89,29 +91,30 @@ int numbered_basepair (char c, char d) {
  *           Returns pointer to ret_ct, or NULL if ss is somehow inconsistent.
  */
 int *rjk_KHS2ct(char *ss, int len) {
-  Nstack_t *pda;                 
+  ESL_STACK *pda;                 
   int      *ct;
   int       pos, pair;
+  int       status;
 
  /* Initialization: always initialize the main pda (0),
    */
-  pda = CreateNstack();
+  pda = esl_stack_ICreate();
 
-  ct = MallocOrDie (len * sizeof(int));
+  ESL_ALLOC(ct, len * sizeof(int));
   for (pos = 0; pos < len; pos++)
     ct[pos] = -1;
 
   for (pos = 0; pos < len; pos++) {
       if (!isprint(ss[pos])) {   /* armor against garbage strings */
 	free (ct);
-	FreeNstack(pda);
+	esl_stack_Destroy(pda);
 	return (NULL);
       } else if (ss[pos] == '>') {  /* left side of a pair: push onto stack */
-        PushNstack(pda, pos);
+        esl_stack_IPush(pda, pos);
       } else if (ss[pos] == '<') { /* right side of a pair; resolve pair */
-	if (! PopNstack(pda, &pair)) {
+	if (! esl_stack_IPop(pda, &pair)) {
 	  free (ct);
-	  FreeNstack(pda);
+	  esl_stack_Destroy(pda);
 	  return (NULL);
 	} else {
 	  ct[pos]  = pair;
@@ -120,13 +123,17 @@ int *rjk_KHS2ct(char *ss, int len) {
       }
   }
                                 /* nothing should be left on stacks */
-  if (! NstackIsEmpty(pda)) {
+  if (esl_stack_ObjectCount(pda) != 0) {
     free (ct);
-    FreeNstack(pda);
+    esl_stack_Destroy(pda);
     return (NULL);
   }
-  FreeNstack(pda);
+  esl_stack_Destroy(pda);
   return (ct);
+  
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return NULL; /* never reached */
 }
 
 /*
@@ -136,17 +143,22 @@ int *rjk_KHS2ct(char *ss, int len) {
 matrix_t *setup_matrix (int size) {
   int c;
   matrix_t *mat;
+  int status;
 
-  mat = MallocOrDie(sizeof(matrix_t));
+  ESL_ALLOC(mat, sizeof(matrix_t));
   mat->edge_size = size;
   mat->full_size = matrix_index((size-1),(size-1)) + 1;
   mat->E = 0.0;
   mat->H = 0.0;
-  mat->matrix = MallocOrDie (sizeof(double) * mat->full_size);
+  ESL_ALLOC(mat->matrix, sizeof(double) * mat->full_size);
   for (c=0; c<mat->full_size; c++) {
     mat->matrix[c] = 0.0;
   }
   return(mat);
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return NULL; /* never reached */
 }
 
 /*
@@ -161,14 +173,15 @@ matrix_t *setup_matrix (int size) {
  * pos -- the position of the gap in question
  * ct -- array of ct arrays
  */
-int middle_of_stem (MSA *msa, int i, int j, int pos, int **ct) {
+int middle_of_stem (ESL_MSA *msa, int i, int j, int pos, int **ct) {
   int gap_start_pos, gap_stop_pos;
 
-  if (is_rna_gap (msa, i, pos) && is_rna_gap (msa, j, pos)) 
+  if (esl_abc_CIsGap(msa->abc, msa->aseq[i][pos]) &&
+      esl_abc_CIsGap(msa->abc, msa->aseq[j][pos])) 
     /* Double gap -- exit */
     return (0);
-
-  if (is_rna_gap (msa, j, pos)) {
+  
+  if (esl_abc_CIsGap(msa->abc, msa->aseq[j][pos])) {
     /* Swap so gap is in i */
     gap_start_pos = i;
     i = j;
@@ -177,19 +190,17 @@ int middle_of_stem (MSA *msa, int i, int j, int pos, int **ct) {
 
   /* Now, find start and end positions of the gap */
   for (gap_start_pos = pos; gap_start_pos >= 0; gap_start_pos--) {
-    if (!is_rna_gap (msa, i, gap_start_pos)) {
+    if (!esl_abc_CIsGap(msa->abc, msa->aseq[i][gap_start_pos]))
       break;
-    }
   }
   for (gap_stop_pos = pos; gap_stop_pos < msa->alen; gap_stop_pos++) {
-    if (!is_rna_gap (msa, i, gap_stop_pos)) {
+    if (!esl_abc_CIsGap(msa->abc, msa->aseq[i][gap_stop_pos]))
       break;
-    }
   }
   if (gap_start_pos < 0 || gap_start_pos >= msa->alen)
-    /* Gap at end of alignemtn; can't be internal to stem */
+    /* Gap at end of alignment; can't be internal to stem */
     return (0);
-
+  
   if (ct[i][gap_start_pos] == 0 || ct[j][gap_start_pos] == 0 || 
       ct[i][gap_stop_pos] == 0 || ct[j][gap_stop_pos] == 0)
     /* Either of the ends not paired */
@@ -212,21 +223,20 @@ int middle_of_stem (MSA *msa, int i, int j, int pos, int **ct) {
  *           (Gaps don't count toward anything.)
  */
 static float
-simple_identity(char *s1, char *s2)
+simple_identity(const ESL_ALPHABET *abc, char *s1, char *s2)
 {
   int diff  = 0;
   int valid = 0;
 
   for (; *s1 != '\0'; s1++, s2++)
     {
-      if (isgap(*s1) || isgap(*s2)) continue;
+      if (esl_abc_CIsGap(abc, *s1) || esl_abc_CIsGap(abc, *s2)) continue;
       if (*s1 == *s2) diff++;
       valid++;
     }
   return (valid > 0 ? ((float) diff / (float) valid) : 0.0);
 }
     
-  
 /*
  * count_matrix
  *
@@ -252,9 +262,18 @@ simple_identity(char *s1, char *s2)
  *   Otherwise
  *     Add to unpairedmat
  *
+ * Note: Never used in current implementation. Here for reference,
+ *       in case new RIBOSUM matrices are trained someday. 
+ *       EPN, Tue Aug  7 15:10:33 2007
  */
-void count_matrix (MSA *msa, fullmat_t *fullmat, double *background_nt,
+void count_matrix (ESL_MSA *msa, fullmat_t *fullmat, double *background_nt,
 		   int cutoff_perc, int product_weights) {
+
+  /* contract check */
+  if(msa->abc->type != eslRNA) esl_fatal("In count_matrix, MSA's alphabet is not RNA.");
+  if(msa->flags & eslMSA_DIGITAL) esl_fatal("In count_matrix, MSA must be text, not digitized.");
+
+  int status;
   int i, j;            /* Seqs we're checking */
   int pos;             /* Column we're counting */
   int prev_pos;        /* Last column we counted */
@@ -268,7 +287,7 @@ void count_matrix (MSA *msa, fullmat_t *fullmat, double *background_nt,
   /*****************************************
    * 1.  Allocate and fill in ct array
    *****************************************/
-  ct = MallocOrDie (sizeof(int *)*msa->nseq);
+  ESL_ALLOC(ct, sizeof(int *)*msa->nseq);
   if (msa->ss_cons != NULL) {
     ct[0] = rjk_KHS2ct (msa->ss_cons, msa->alen);
   } else {
@@ -283,7 +302,7 @@ void count_matrix (MSA *msa, fullmat_t *fullmat, double *background_nt,
   }
   for (i=0; i<msa->nseq; i++) {
     if (ct[i] == NULL) {
-      Die ("CT string %d is NULL\n", i);
+    esl_fatal("CT string %d is NULL\n", i);
     }
   }
 
@@ -293,7 +312,7 @@ void count_matrix (MSA *msa, fullmat_t *fullmat, double *background_nt,
   for (i=0; i<msa->nseq; i++) {
     for (j=0; j<i; j++) {
       /* First, make sure it's above the cutoff */
-      if (simple_identity(msa->aseq[i], msa->aseq[j]) < 
+      if (simple_identity(msa->abc, msa->aseq[i], msa->aseq[j]) < 
 	  0.01*(float)cutoff_perc)
 	continue;       /* Not above cutoff */
 
@@ -310,7 +329,7 @@ void count_matrix (MSA *msa, fullmat_t *fullmat, double *background_nt,
 
       for (pos=prev_pos; pos<msa->alen; pos++) {
 	if (is_defined_rna_nucleotide(msa, i, pos) &&
-		   is_defined_rna_nucleotide (msa, j, pos)) {
+	    is_defined_rna_nucleotide (msa, j, pos)) {
 	  /* If both positions are defined nucleotides */
 	  /* If both are left bps and match to same right bps, continue 
              If both are right bps and match to same left bps, add to \
@@ -373,8 +392,10 @@ void count_matrix (MSA *msa, fullmat_t *fullmat, double *background_nt,
     }
   }
   free (ct);
-}
 
+ ERROR:
+  esl_fatal("Memory allocation error.");
+}
 
 /*
  * print_matrix
@@ -389,41 +410,39 @@ void print_matrix (FILE *fp, fullmat_t *fullmat)
 
   /* EPN: print background NT frequencies */
   fprintf (fp, "    ");
-  for (i=0; i<sizeof(RNA_ALPHABET)-1; i++) {
-    fprintf (fp, "%c           ", RNA_ALPHABET[i]);
+  for (i=0; i < fullmat->abc->K; i++) {
+    fprintf (fp, "%c           ", fullmat->abc->sym[i]);
   }
   fprintf (fp, "\n");
 
   fprintf (fp, "    ");
-  for (i=0; i<sizeof(RNA_ALPHABET)-1; i++) {
+  for (i=0; i < fullmat->abc->K; i++) {
     fprintf (fp, "%-11f ", fullmat->g[i]);
   }
   fprintf (fp, "\n\n");
 
   fprintf (fp, "    ");
-  for (i=0; i<sizeof(RNA_ALPHABET)-1; i++) {
-    fprintf (fp, "%c           ", RNA_ALPHABET[i]);
+  for (i=0; i < fullmat->abc->K; i++) {
+    fprintf (fp, "%c           ", fullmat->abc->sym[i]);
   }
   fprintf (fp, "\n");
 
-  for (i=0; i<sizeof(RNA_ALPHABET)-1; i++) {
-    fprintf (fp, "%c   ", RNA_ALPHABET[i]);
+  for (i=0; i < fullmat->abc->K; i++) {
+    fprintf (fp, "%c   ", fullmat->abc->sym[i]);
     for (j=0; j<=i; j++) {
-      /* ORIGINAL: fprintf (fp, "%-9.2f ", fullmat->unpaired->matrix[matrix_index(numbered_nucleotide(RNA_ALPHABET[i]), numbered_nucleotide(RNA_ALPHABET[j]))]);*/
-      /* EPN: */
-      fprintf (fp, "%-11f ", fullmat->unpaired->matrix[matrix_index(numbered_nucleotide(RNA_ALPHABET[i]), numbered_nucleotide(RNA_ALPHABET[j]))]);
-	}
+      fprintf (fp, "%-11f ", fullmat->unpaired->matrix[matrix_index(fullmat->abc->inmap[(int) fullmat->abc->sym[i]], fullmat->abc->inmap[(int)fullmat->abc->sym[j]])]);
+    }
     fprintf (fp, "\n");
   }
   if (strstr (fullmat->name, "RIBOPROB") == NULL)    /* Not probability mat */
     fprintf (fp, "H: %.4f\nE: %.4f\n", fullmat->unpaired->H, fullmat->unpaired->E);
 
   fprintf (fp, "\n    ");
-  for (i=0; i<sizeof(RNAPAIR_ALPHABET)-1; i++) {
+  for (i=0; i < (fullmat->abc->K * fullmat->abc->K); i++) {
     fprintf (fp, "%c%c          ", RNAPAIR_ALPHABET[i], RNAPAIR_ALPHABET2[i]);
   }
   fprintf (fp, "\n");
-  for (i=0; i<sizeof(RNAPAIR_ALPHABET)-1; i++) {
+  for (i=0; i < (fullmat->abc->K * fullmat->abc->K); i++) {
     fprintf (fp, "%c%c  ", RNAPAIR_ALPHABET[i], RNAPAIR_ALPHABET2[i]);
     for (j=0; j<=i; j++) {
       /* ORIGINAL: fprintf (fp, "%-9.2f ", fullmat->paired->matrix[matrix_index(numbered_basepair(RNAPAIR_ALPHABET[i], RNAPAIR_ALPHABET2[i]), numbered_basepair (RNAPAIR_ALPHABET[j], RNAPAIR_ALPHABET2[j]))]);*/
@@ -439,159 +458,47 @@ void print_matrix (FILE *fp, fullmat_t *fullmat)
 }
 
 /*
- * Read the matrix from a file. Original RSEARCH version,
- * expects no background freqs in the file.
- */
-fullmat_t *OldReadMatrix(FILE *matfp) {
-  char linebuf[256];
-  char fullbuf[16384];
-  int fullbuf_used = 0;
-  fullmat_t *fullmat;
-  int i;
-  char *cp, *end_mat_pos;
-
-  fullmat = MallocOrDie (sizeof(fullmat_t));
-  fullmat->unpaired = setup_matrix (RNA_ALPHABET_SIZE);
-  fullmat->paired = setup_matrix (RNA_ALPHABET_SIZE*RNA_ALPHABET_SIZE);
-
-  while (fgets (linebuf, 255, matfp)) {
-    strncpy (fullbuf+fullbuf_used, linebuf, 16384-fullbuf_used-1);
-    fullbuf_used += strlen(linebuf);
-    if (fullbuf_used >= 16384) {
-      Die ("ERROR: Matrix file bigger than 16kb\n");
-    }
-  }
-
-  /* First, find RIBO, and copy matrix name to fullmat->name */
-  cp = strstr (fullbuf, "RIBO");
-  for (i = 0; cp[i] && !isspace(cp[i]); i++);   /* Find space after RIBO */
-  fullmat->name = MallocOrDie(sizeof(char)*(i+1));
-  strncpy (fullmat->name, cp, i);
-  fullmat->name[i] = '\0';
-
-  cp = cp + i;
-
-  /* Now, find the first A */
-  cp = strchr (cp, 'A');
-  fullmat->unpaired->edge_size = 0;
-  /* And count how edge size of the matrix */
-  while (*cp != '\n' && cp-fullbuf < fullbuf_used) {
-    if (!isspace (cp[0]) && isspace (cp[1])) {
-      fullmat->unpaired->edge_size++;
-    }
-    cp++;
-  }
-
-  /* Find next A */
-  while (*cp != 'A' && (cp-fullbuf) < fullbuf_used) cp++;
-  
-  /* Take numbers until we hit the H: */
-  end_mat_pos = strstr (cp, "H:");
-  for (i=0; cp - fullbuf < end_mat_pos-fullbuf; i++) {
-    while (!isdigit(*cp) && *cp != '-' && *cp != '.' && \
-	   cp-fullbuf < fullbuf_used && cp != end_mat_pos) { 
-	cp++;
-    }
-    if (cp == end_mat_pos)
-      break;
-    if (cp-fullbuf < fullbuf_used) {
-      fullmat->unpaired->matrix[i] = atof(cp);
-      while ((isdigit (*cp) || *cp == '-' || *cp == '.') &&\
-	     (cp-fullbuf <fullbuf_used)) {
-	cp++;
-      }
-    }
-  }
-  fullmat->unpaired->full_size = i;
-
-  /* Skip the H: */
-  cp += 2;
-  fullmat->unpaired->H = atof(cp);
-
-  /* Now, go past the E: */
-  cp = strstr (cp, "E:") + 2;
-  fullmat->unpaired->E = atof(cp);
-
-  /********* PAIRED MATRIX ************/
-  /* Now, find the first A */
-  cp = strchr (cp, 'A');
-  fullmat->paired->edge_size = 0;
-  /* And count how edge size of the matrix */
-  while (*cp != '\n') {
-    if (!isspace (cp[0]) && isspace (cp[1])) {
-      fullmat->paired->edge_size++;
-    }
-    cp++;
-  }
-
-  /* Find next A */
-  while (*cp != 'A' && (cp-fullbuf) < fullbuf_used) cp++;
-
-  /* Take numbers until we hit the H: */
-  end_mat_pos = strstr (cp, "H:");
-  for (i=0; cp - fullbuf < end_mat_pos-fullbuf; i++) {
-    while (!isdigit(*cp) && *cp != '-' && *cp != '.' && \
-	   cp-fullbuf < fullbuf_used && cp != end_mat_pos) { 
-	cp++;
-    }
-    if (cp == end_mat_pos)
-      break;
-    if (cp-fullbuf < fullbuf_used) {
-      fullmat->paired->matrix[i] = atof(cp);
-      while ((isdigit (*cp) || *cp == '-' || *cp == '.') &&\
-	     (cp-fullbuf <fullbuf_used)) {
-	cp++;
-      }
-    }
-  }
-  fullmat->paired->full_size = i;
-
-  /* Skip the H: */
-  cp += 2;
-  fullmat->paired->H = atof(cp);
-
-  /* Now, go past the E: */
-  cp = strstr (cp, "E:") + 2;
-  fullmat->paired->E = atof(cp);
-
-  return (fullmat);
-}
-
-/*
  * Read the matrix from a file. 
  * New EPN version, expects background freqs in file.
  */
-fullmat_t *ReadMatrix(FILE *matfp) {
+fullmat_t *ReadMatrix(const ESL_ALPHABET *abc, FILE *matfp) {
+
+  /* Contract check */
+  if(abc->type != eslRNA)
+    esl_fatal("Trying to read RIBOSUM matrix from RSEARCH, but alphabet is not eslRNA.");
+
+  int status;
   char linebuf[256];
   char fullbuf[16384];
   int fullbuf_used = 0;
   fullmat_t *fullmat;
   int i;
   char *cp, *end_mat_pos;
-
-  fullmat = MallocOrDie (sizeof(fullmat_t));
-  fullmat->unpaired = setup_matrix (RNA_ALPHABET_SIZE);
-  fullmat->paired = setup_matrix (RNA_ALPHABET_SIZE*RNA_ALPHABET_SIZE);
-  fullmat->g      = MallocOrDie(sizeof(float) * RNA_ALPHABET_SIZE); 
+  
+  ESL_ALLOC(fullmat, (sizeof(fullmat_t)));
+  fullmat->abc      = abc; /* just a pointer */
+  fullmat->unpaired = setup_matrix (fullmat->abc->K);
+  fullmat->paired = setup_matrix (fullmat->abc->K * fullmat->abc->K);
+  ESL_ALLOC(fullmat->g, sizeof(float) * fullmat->abc->K); 
 
   while (fgets (linebuf, 255, matfp)) {
     strncpy (fullbuf+fullbuf_used, linebuf, 16384-fullbuf_used-1);
     fullbuf_used += strlen(linebuf);
     if (fullbuf_used >= 16384) {
-      Die ("ERROR: Matrix file bigger than 16kb\n");
+      esl_fatal ("ERROR: Matrix file bigger than 16kb\n");
     }
   }
 
   /* First, find RIBO, and copy matrix name to fullmat->name */
   cp = strstr (fullbuf, "RIBO");
   for (i = 0; cp[i] && !isspace(cp[i]); i++);   /* Find space after RIBO */
-  fullmat->name = MallocOrDie(sizeof(char)*(i+1));
+  ESL_ALLOC(fullmat->name, sizeof(char)*(i+1));
   strncpy (fullmat->name, cp, i);
   fullmat->name[i] = '\0';
   cp = cp + i;
   if(strstr (fullmat->name, "SUM")) { fullmat->scores_flag = TRUE; fullmat->probs_flag = FALSE; }
   else if(strstr (fullmat->name, "PROB")) { fullmat->scores_flag = FALSE; fullmat->probs_flag = TRUE; }
-  else Die("ERROR reading matrix, name does not include SUM or PROB.\n");
+  else esl_fatal("ERROR reading matrix, name does not include SUM or PROB.\n");
 
   /* Now, find the first A */
   cp = strchr (cp, 'A');
@@ -699,6 +606,10 @@ fullmat_t *ReadMatrix(FILE *matfp) {
 
   /*print_matrix(stdout, fullmat);*/
   return (fullmat);
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return NULL; /* never reached */
 }
 
 /*
@@ -735,12 +646,12 @@ float get_min_alpha_beta_sum (fullmat_t *fullmat) {
   int i,j,k,l;
   int pair_ij, pair_kl;
   
-  for (i=0; i<Alphabet_size; i++)
-    for (j=0; j<Alphabet_size; j++)
-      for (k=0; k<Alphabet_size; k++)
-	for (l=0; l<Alphabet_size; l++) {
-	  pair_ij = numbered_basepair(Alphabet[i],Alphabet[j]);
-	  pair_kl = numbered_basepair(Alphabet[k],Alphabet[l]);
+  for (i=0; i<fullmat->abc->K; i++)
+    for (j=0; j<fullmat->abc->K; j++)
+      for (k=0; k<fullmat->abc->K; k++)
+	for (l=0; l<fullmat->abc->K; l++) {
+	  pair_ij = numbered_basepair(fullmat->abc->sym[i], fullmat->abc->sym[j]);
+	  pair_kl = numbered_basepair(fullmat->abc->sym[k], fullmat->abc->sym[l]);
 	  /* First check for i,k paired */
 	  cur_dif = fullmat->paired->matrix[matrix_index(pair_ij, pair_kl)] -
 	    fullmat->unpaired->matrix[matrix_index(i,k)];
@@ -814,7 +725,7 @@ int ribosum_calc_targets(fullmat_t *fullmat)
   /* first convert the unpaired (singlet) matrix,
   *  remember matrix is set up as a vector */
   idx = 0;
-  for(i = 0; i < sizeof(RNA_ALPHABET)-1; i++)
+  for(i = 0; i < fullmat->abc->K; i++)
     for(j = 0; j <= i; j++)
       {
 	fullmat->unpaired->matrix[idx] = 
@@ -828,10 +739,10 @@ int ribosum_calc_targets(fullmat_t *fullmat)
   for(a = 0; a < sizeof(RNAPAIR_ALPHABET)-1; a++)
     for(b = 0; b <= a; b++)
       {
-	i = a / (sizeof(RNA_ALPHABET) - 1);
-	j = a % (sizeof(RNA_ALPHABET) - 1);
-	k = b / (sizeof(RNA_ALPHABET) - 1);
-	l = b % (sizeof(RNA_ALPHABET) - 1);
+	i = a / fullmat->abc->K;
+	j = a % fullmat->abc->K;
+	k = b / fullmat->abc->K;
+	l = b % fullmat->abc->K;
 
 	fullmat->paired->matrix[idx] = 
 	  fullmat->g[i] * fullmat->g[j] * fullmat->g[k] * fullmat->g[l] * 
@@ -845,7 +756,7 @@ int ribosum_calc_targets(fullmat_t *fullmat)
    * and then halve the f_ij i != j's. */
   /* normalize the unpaired matrix */
   idx = 0;
-  for(i = 0; i < sizeof(RNA_ALPHABET)-1; i++)
+  for(i = 0; i < fullmat->abc->K; i++)
     for(j = 0; j <= i; j++)
       {
 	if(i != j) fullmat->unpaired->matrix[idx] *= 2.;
@@ -853,7 +764,7 @@ int ribosum_calc_targets(fullmat_t *fullmat)
       }
   esl_vec_DNorm(fullmat->unpaired->matrix, fullmat->unpaired->full_size);
   idx = 0;
-  for(i = 0; i < sizeof(RNA_ALPHABET)-1; i++)
+  for(i = 0; i < fullmat->abc->K; i++)
     for(j = 0; j <= i; j++)
       {
 	if(i != j) fullmat->unpaired->matrix[idx] *= 0.5;
@@ -916,42 +827,54 @@ int ribosum_calc_targets(fullmat_t *fullmat)
  *                         D = not C (A or G or T)
  *                         N = A or C or G or T
  */
-int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, MSA *msa)
+int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, ESL_MSA *msa)
 {
   int       idx;
-  int       i,j,l;
+  int       i,j;
   int      *ct;		  /* 0..alen-1 base pair partners array         */
   int       apos;
-  char degen_string[12] = "XRYMKSWHBVDN";
-  char rna_string[4] =    "ACGU";
-  int  degen_mx[12][Alphabet_size];
   char       c;           /* tmp char for current degeneracy, uppercase */
   char      *cp;          /* tmp char pointer for finding c in degen_string */
   char       c_m;         /* tmp char for current bp mate's degeneracy, uppercase */
   char      *cp_m;        /* tmp char pointer for finding c_m in degen_string */
-  float      unpaired_marginals[Alphabet_size]; 
-  float      paired_marginals[Alphabet_size*Alphabet_size]; 
-  float  cur_unpaired_marginals[Alphabet_size]; 
-  float  cur_paired_marginals[Alphabet_size*Alphabet_size]; 
+  char degen_string[12] = "XRYMKSWHBVDN";
+  char rna_string[4] =    "ACGU";
+  int  **degen_mx;
+  float      *unpaired_marginals;
+  float      *paired_marginals;
+  float  *cur_unpaired_marginals;
+  float  *cur_paired_marginals;
+  char      *aseq;
   int        dpos;       /* position of c within degen_string */
   int        dpos_m;     /* position of c_m within degen_string */
   int        argmax;    
   int        mate;       /* used as ct[apos-1] */
   int        status;
-
+  int        msa_entered_digitized;
   /* Check the contract. */
   if(!(fullmat->probs_flag)) ESL_EXCEPTION(eslEINVAL, "in ribosum_MSA_resolve_degeneracies(), matrix is not in probs mode");
   if(fullmat->scores_flag) ESL_EXCEPTION(eslEINVAL, "in ribosum_MSA_resolve_degeneracies(), matrix is in scores mode");
   if(msa->nseq != 1) ESL_EXCEPTION(eslEINVAL, "MSA does not have exactly 1 seq"); 
-  if(Alphabet_size != 4) ESL_EXCEPTION(eslEINVAL, "Alphabet_size not 4");
+  if(fullmat->abc->type != eslRNA) ESL_EXCEPTION(eslEINVAL, " matrix alphabet not RNA");
+  if(msa->abc->type != eslRNA && msa->abc->type != eslDNA) ESL_EXCEPTION(eslEINVAL, " MSA alphabet not DNA or RNA");
+
+  msa_entered_digitized = msa->flags & eslMSA_DIGITAL;
   
-  printf("in ribosum_MSA_resolve_degeneracies()\n");
+  /*printf("in ribosum_MSA_resolve_degeneracies()\n");*/
   
+  ESL_ALLOC(unpaired_marginals, sizeof(float) * fullmat->abc->K);
+  ESL_ALLOC(paired_marginals, sizeof(float) * (fullmat->abc->K * fullmat->abc->K));
+  ESL_ALLOC(cur_unpaired_marginals, sizeof(float) * fullmat->abc->K);
+  ESL_ALLOC(cur_paired_marginals, sizeof(float) * (fullmat->abc->K * fullmat->abc->K));
+
   /* Laboriously fill in degen_mx, NOTE: this will fall over if alphabet is not RNA! */
-  for(l = 0; l < 11; l++)
-    for(i = 0; i < Alphabet_size; i++)
-      degen_mx[l][i] = 0;
-  
+  /* This is somewhat unnec, now that we use esl_alphabet.c, but I didnt' want to redo it, so I left it */
+  ESL_ALLOC(degen_mx, sizeof(int *) * 12);
+  for(i = 0; i < 12; i++)
+    {
+      ESL_ALLOC(degen_mx[i], sizeof(int) * fullmat->abc->K);
+      esl_vec_ISet(degen_mx[i], fullmat->abc->K, 0.);
+    }
   /* 'X' = A|C|G|U */
   degen_mx[0][0] = degen_mx[0][1] = degen_mx[0][2] = degen_mx[0][3] = 1;
   /* 'R' = A|G */
@@ -980,37 +903,43 @@ int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, MSA *msa)
   /* calculate paired_marginals and unpaired_marginals as: 
    * marginal[x] = sum_y P(x,y) 
    */
-  esl_vec_FSet(unpaired_marginals, Alphabet_size, 0.);
-  esl_vec_FSet(paired_marginals, Alphabet_size * Alphabet_size, 0.);
+  esl_vec_FSet(unpaired_marginals, fullmat->abc->K, 0.);
+  esl_vec_FSet(paired_marginals, fullmat->abc->K * fullmat->abc->K, 0.);
 
-  for(i = 0; i < Alphabet_size; i++)
-    for(j = 0; j < Alphabet_size; j++)
+  for(i = 0; i < fullmat->abc->K; i++)
+    for(j = 0; j < fullmat->abc->K; j++)
       unpaired_marginals[i] += fullmat->unpaired->matrix[matrix_index(i,j)];
   idx = 0;
-  for(i = 0; i < (Alphabet_size*Alphabet_size); i++)
-    for(j = 0; j < (Alphabet_size*Alphabet_size); j++)
+  for(i = 0; i < (fullmat->abc->K*fullmat->abc->K); i++)
+    for(j = 0; j < (fullmat->abc->K*fullmat->abc->K); j++)
       paired_marginals[i] += fullmat->paired->matrix[matrix_index(i,j)];
 
-  /*for(i = 0; i < (Alphabet_size); i++)
+  /*for(i = 0; i < (fullmat->abc->K); i++)
     printf("unpaired_marginals[i:%d]: %f\n", i, unpaired_marginals[i]);
-    for(i = 0; i < (Alphabet_size*Alphabet_size); i++)
+    for(i = 0; i < (fullmat->abc->K*fullmat->abc->K); i++)
     printf("paired_marginals[i:%d]: %f\n", i, paired_marginals[i]);*/
 
-  esl_vec_FNorm(unpaired_marginals, Alphabet_size);
-  esl_vec_FNorm(paired_marginals, Alphabet_size*Alphabet_size);
+  esl_vec_FNorm(unpaired_marginals, fullmat->abc->K);
+  esl_vec_FNorm(paired_marginals, fullmat->abc->K*fullmat->abc->K);
 
   /* get ct array, indexed 1..alen while apos is 0..alen-1 */
-  WUSS2ct(msa->ss_cons, msa->alen, FALSE, &ct);  
+  ESL_ALLOC(ct, (msa->alen+1) * sizeof(int));
+  esl_wuss2ct(msa->ss_cons, msa->alen, ct);  
+
+  ESL_ALLOC(aseq, sizeof(char) * (msa->alen+1));
+  if(msa_entered_digitized) esl_msa_Textize(msa);
+  /* remember we only have 1 seq in the MSA */
   for(apos = 0; apos < msa->alen; apos++)
     {
-      if (isgap(msa->aseq[0][apos])) continue; /* we can still gaps in 1 seq MSA, they'll
-						* be dealt with (ignored) in 
-						* modelmaker.c:HandModelMaker() */
-      mate = ct[apos+1];
-      if(mate != 0 && (mate-1) < apos) continue; /* we've already dealt with that guy */ 
-      if(mate != 0 && isgap(msa->aseq[0][(mate-1)])) mate = 0; /* pretend he's SS */
+      if (esl_abc_CIsGap(fullmat->abc, msa->aseq[0][apos])) continue; /* we can still have gaps in 1 seq MSA, they'll
+							 * be dealt with (ignored) in 
+							 * modelmaker.c:HandModelMaker() */
+      mate = ct[apos];
+      if(mate != 0 && (mate) < apos) continue; /* we've already dealt with that guy */ 
+      if(mate != 0 && esl_abc_CIsGap(msa->abc, msa->aseq[0][(mate-1)])) mate = 0; /* pretend he's SS */
+
       c = toupper(msa->aseq[0][apos]);
-      if(c == 'T') c = 'U';
+      if(c == 'T') c = 'U'; 
       cp = strchr(rna_string, c);
       if(cp == NULL)
 	{
@@ -1023,9 +952,9 @@ int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, MSA *msa)
 		printf("apos: %d c: %c\n", apos, c);*/
 	      /* of possible residues, find the one with the highest marginal
 	       * in RIBOSUM: argmax_x sum_Y P(x,y)  */
-	      for(i = 0; i < Alphabet_size; i++)
+	      for(i = 0; i < fullmat->abc->K; i++)
 		cur_unpaired_marginals[i] = degen_mx[dpos][i] * unpaired_marginals[i];
-	      argmax = esl_vec_FArgMax(cur_unpaired_marginals, Alphabet_size);
+	      argmax = esl_vec_FArgMax(cur_unpaired_marginals, fullmat->abc->K);
 	      msa->aseq[0][apos] = rna_string[argmax];
 	      /*printf("c: %c at posn %d argmax: %d msa[apos:%d]: %c\n", c, (int) (cp-degen_string), argmax, apos, msa->aseq[0][apos]);
 		printf("new ss: %c\n", rna_string[argmax]);*/
@@ -1046,8 +975,8 @@ int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, MSA *msa)
 		  dpos_m = cp_m-degen_string;
 		  /* we know that mate-1 > apos, we continued above if that was false */
 		  idx = 0;
-		  for(i = 0; i < (Alphabet_size); i++)
-		    for(j = 0; j < (Alphabet_size); j++)
+		  for(i = 0; i < (fullmat->abc->K); i++)
+		    for(j = 0; j < (fullmat->abc->K); j++)
 		      {
 			cur_paired_marginals[idx] = degen_mx[dpos][i] * degen_mx[dpos_m][j] * 
 			  paired_marginals[idx];
@@ -1056,7 +985,7 @@ int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, MSA *msa)
 			  printf("cur_paired_marginals[idx:%d]: %f\n", idx, cur_paired_marginals[idx]);*/
 			idx++;
 		      }
-		  argmax = esl_vec_FArgMax(cur_paired_marginals, (Alphabet_size*Alphabet_size));
+		  argmax = esl_vec_FArgMax(cur_paired_marginals, (fullmat->abc->K*fullmat->abc->K));
 		  msa->aseq[0][apos]     = RNAPAIR_ALPHABET[argmax];
 		  msa->aseq[0][(mate-1)] = RNAPAIR_ALPHABET2[argmax];
 		  /*printf("new bp: left: %c right: %c\n", RNAPAIR_ALPHABET[argmax], RNAPAIR_ALPHABET2[argmax]);*/
@@ -1070,15 +999,15 @@ int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, MSA *msa)
 		  dpos_m = cp_m - rna_string;
 		  /* cp_m is 0 for A, 1 for C, 2 for G, 3 for U in mate-1 */
 		  idx = 0;
-		  for(i = 0; i < (Alphabet_size); i++)
-		    for(j = 0; j < (Alphabet_size); j++)
+		  for(i = 0; i < (fullmat->abc->K); i++)
+		    for(j = 0; j < (fullmat->abc->K); j++)
 		      {
 			cur_paired_marginals[idx] = degen_mx[dpos][i] * (j == dpos_m) *
 			  paired_marginals[idx];
 			/*printf("cur_paired_marginals[idx:%d]: %f\n", idx, cur_paired_marginals[idx]);*/
 			idx++;
 		      }
-		  argmax = esl_vec_FArgMax(cur_paired_marginals, (Alphabet_size*Alphabet_size));
+		  argmax = esl_vec_FArgMax(cur_paired_marginals, (fullmat->abc->K*fullmat->abc->K));
 		  msa->aseq[0][apos]     = RNAPAIR_ALPHABET[argmax];
 		  msa->aseq[0][(mate-1)] = RNAPAIR_ALPHABET2[argmax];
 		  /*printf("new bp: left: %c right: %c\n", RNAPAIR_ALPHABET[argmax], RNAPAIR_ALPHABET2[argmax]);*/
@@ -1103,21 +1032,24 @@ int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, MSA *msa)
 	      if(cp == NULL) ESL_XEXCEPTION(eslEINVAL, "character is not ACGTU or a recognized ambiguity code");
 	      dpos = cp - rna_string;
 	      idx = 0;
-	      for(i = 0; i < (Alphabet_size); i++)
-		for(j = 0; j < (Alphabet_size); j++)
+	      for(i = 0; i < (fullmat->abc->K); i++)
+		for(j = 0; j < (fullmat->abc->K); j++)
 		  {
 		    cur_paired_marginals[idx] = (i == dpos) * degen_mx[dpos_m][j] * 
 		      paired_marginals[idx];
 		    /*printf("cur_paired_marginals[idx:%d]: %f\n", idx, cur_paired_marginals[idx]);*/
 		    idx++;
 		  }
-	      argmax = esl_vec_FArgMax(cur_paired_marginals, (Alphabet_size*Alphabet_size));
+	      argmax = esl_vec_FArgMax(cur_paired_marginals, (fullmat->abc->K*fullmat->abc->K));
 	      msa->aseq[0][apos]     = RNAPAIR_ALPHABET[argmax];
 	      msa->aseq[0][(mate-1)] = RNAPAIR_ALPHABET2[argmax];
 	      /*printf("new bp: left: %c right: %c\n", RNAPAIR_ALPHABET[argmax], RNAPAIR_ALPHABET2[argmax]);*/
 	    }	      
 	}
     }
+  if(msa_entered_digitized)
+    esl_msa_Digitize(msa->abc, msa);
+
   return eslOK;
  ERROR:
   return eslEINVAL;

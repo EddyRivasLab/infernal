@@ -340,10 +340,10 @@ CYKDivideAndConquer(CM_t *cm, ESL_SQ *sq, int r, int i0, int j0, Parsetree_t **r
    * Check out input parameters.
    */
   if (cm->stid[r] != ROOT_S) {
-    if (! (cm->flags & CM_LOCAL_BEGIN)) Die("internal error: we're not in local mode, but r is not root");
+    if (! (cm->flags & CM_LOCAL_BEGIN)) esl_fatal("internal error: we're not in local mode, but r is not root");
     if (cm->stid[r] != MATP_MP && cm->stid[r] != MATL_ML &&
 	cm->stid[r] != MATR_MR && cm->stid[r] != BIF_B)
-      Die("internal error: trying to do a local begin at a non-mainline start");
+      esl_fatal("internal error: trying to do a local begin at a non-mainline start");
   }
 
   /* Create a parse tree structure.
@@ -414,10 +414,10 @@ CYKInside(CM_t *cm, ESL_SQ *sq, int r, int i0, int j0, Parsetree_t **ret_tr,
    * Check out input parameters.
    */
   if (cm->stid[r] != ROOT_S) {
-    if (! (cm->flags & CM_LOCAL_BEGIN)) Die("internal error: we're not in local mode, but r is not root");
+    if (! (cm->flags & CM_LOCAL_BEGIN)) esl_fatal("internal error: we're not in local mode, but r is not root");
     if (cm->stid[r] != MATP_MP && cm->stid[r] != MATL_ML &&
 	cm->stid[r] != MATR_MR && cm->stid[r] != BIF_B)
-      Die("internal error: trying to do a local begin at a non-mainline start");
+      esl_fatal("internal error: trying to do a local begin at a non-mainline start");
   }
 
   /* Create the parse tree, and initialize.
@@ -473,7 +473,6 @@ CYKInside(CM_t *cm, ESL_SQ *sq, int r, int i0, int j0, Parsetree_t **ret_tr,
  *           
  * Args:     cm     - the covariance model
  *           sq    - the sequence, 1..L
- *           L      - length of sequence
  *           r      - root of subgraph to align to target subseq (usually 0, the model's root)
  *           i0     - start of target subsequence (often 1, beginning of sq)
  *           j0     - end of target subsequence (often sq->n, end of sq)
@@ -733,7 +732,7 @@ generic_splitter(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
    *    with wedge_splitter. 
    */
   if (v > z-5) {		/* no bifurc? it's a wedge problem  */
-    if (cm->sttype[z] != E_st) Die("inconceivable.");
+    if (cm->sttype[z] != E_st) esl_fatal("inconceivable.");
     sc = wedge_splitter(cm, sq, tr, r, z, i0, j0);
     return sc;
   }
@@ -1713,7 +1712,7 @@ outside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
   w1 = cm->nodemap[cm->ndidx[vroot]]; /* first state in split set */
   if (cm->sttype[vroot] == B_st) {    /* special boundary case of Outside on a single B state. */
     w2 = w1;
-    if (vend != vroot) Die("oh no. not again.");
+    if (vend != vroot) esl_fatal("oh no. not again.");
   } else
     w2 = cm->cfirst[w1]-1;	      /* last state in split set w1<=vroot<=w2 */
 
@@ -1789,7 +1788,7 @@ outside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 	if (beta[cm->M][j0][W] < IMPOSSIBLE) beta[cm->M][j0][W] = IMPOSSIBLE;
 	break;
       case B_st:		/* can't start w/ bifurcation at vroot. */
-      default: Die("bogus parent state %d\n", cm->sttype[vroot]);
+      default: esl_fatal("bogus parent state %d\n", cm->sttype[vroot]);
       }
     }
   }
@@ -1887,7 +1886,7 @@ outside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 		  beta[v][j][d] = sc;
 		break;
 
-	      default: Die("bogus child state %d\n", cm->sttype[y]);
+	      default: esl_fatal("bogus child state %d\n", cm->sttype[y]);
 	      }/* end switch over states*/
 	    } /* ends for loop over parent states. we now know beta[v][j][d] for this d */
 	    if (beta[v][j][d] < IMPOSSIBLE) beta[v][j][d] = IMPOSSIBLE;
@@ -1949,7 +1948,7 @@ outside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 		  beta[cm->M][j][d] = sc;
 		break;
 	      case B_st:  
-	      default: Die("bogus parent state %d\n", cm->sttype[v]);
+	      default: esl_fatal("bogus parent state %d\n", cm->sttype[v]);
 		/* note that although B is a valid vend for a segment we'd do
                    outside on, B->EL is set to be impossible, by the local alignment
                    config. There's no point in having a B->EL because B is a nonemitter
@@ -2223,7 +2222,7 @@ vinside(CM_t *cm, ESL_SQ *sq,
 	shadow[v] = alloc_vji_shadow_deck(i0,i1,j1,j0);      
 				/* reassert our definition of a V problem */
       if (cm->sttype[v] == E_st || cm->sttype[v] == B_st || (cm->sttype[v] == S_st && v > r))
-	Die("you told me you wouldn't ever do that again.");
+	esl_fatal("you told me you wouldn't ever do that again.");
       
       if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
 	{
@@ -2551,7 +2550,7 @@ voutside(CM_t *cm, ESL_SQ *sq,
       beta[cm->M][j0-j1][0] = cm->endsc[r] + 
 	(cm->el_selfsc * ((j0)-(i0)+1));
       break;
-    default:  Die("bogus parent state %d\n", cm->sttype[r]);
+    default:  esl_fatal("bogus parent state %d\n", cm->sttype[r]);
     }
   }
       
@@ -2651,7 +2650,7 @@ voutside(CM_t *cm, ESL_SQ *sq,
 		  beta[v][jp][ip] = sc;
 		break;
 
-	      default: Die("bogus parent state %d\n", cm->sttype[y]);
+	      default: esl_fatal("bogus parent state %d\n", cm->sttype[y]);
 	      }/* end switch over states*/
 	    } /* ends for loop over parent states. we now know beta[v][j][d] for this d */
 	    if (beta[v][jp][ip] < IMPOSSIBLE) beta[v][jp][ip] = IMPOSSIBLE;
@@ -2710,7 +2709,7 @@ voutside(CM_t *cm, ESL_SQ *sq,
 		     (cm->el_selfsc * (j-i+1))) > beta[cm->M][jp][ip])
 		    beta[cm->M][jp][ip] = sc;
 		break;
-	      default:  Die("bogus parent state %d\n", cm->sttype[y]);
+	      default:  esl_fatal("bogus parent state %d\n", cm->sttype[y]);
 	      } /* end switch over parent v state type */
 	    } /* end loop over ip */
 	} /* end loop over jp */
@@ -2883,7 +2882,7 @@ insideT(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
       case IL_st: i++;      break;
       case IR_st:      j--; break;
       case S_st:            break;
-      default:    Die("'Inconceivable!'\n'You keep using that word...'");
+      default:    esl_fatal("'Inconceivable!'\n'You keep using that word...'");
       }
       d = j-i+1;
 
@@ -2994,7 +2993,7 @@ vinsideT(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
     case IL_st: i++;      break;
     case IR_st:      j--; break;
     case S_st:            break;
-    default:    Die("'Inconceivable!'\n'You keep using that word...'");
+    default:    esl_fatal("'Inconceivable!'\n'You keep using that word...'");
     }
 
     /* If the traceback pointer (yoffset) is -1, that's a special
@@ -3635,7 +3634,7 @@ CYKOutside(CM_t *cm, ESL_SQ *sq, float ***alpha)
 		      beta[v][j][d] = sc;
 		    break;
 
-		  default: Die("bogus parent state %d\n", cm->sttype[y]);
+		  default: esl_fatal("bogus parent state %d\n", cm->sttype[y]);
 		  }/* end switch over states*/
 		}
 	      }/*ends our handling of beta[v][j][d] */
@@ -3745,7 +3744,7 @@ generic_splitter_b(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
    *    with wedge_splitter. 
    */
   if (v > z-5) {		/* no bifurc? it's a wedge problem  */
-    if (cm->sttype[z] != E_st) Die("inconceivable.");
+    if (cm->sttype[z] != E_st) esl_fatal("inconceivable.");
     sc = wedge_splitter_b(cm, sq, tr, r, z, i0, j0, dmin, dmax);
     return sc;
   }
@@ -4756,7 +4755,7 @@ outside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
   w1 = cm->nodemap[cm->ndidx[vroot]]; /* first state in split set */
   if (cm->sttype[vroot] == B_st) {    /* special boundary case of Outside on a single B state. */
     w2 = w1;
-    if (vend != vroot) Die("oh no. not again.");
+    if (vend != vroot) esl_fatal("oh no. not again.");
   } else
     w2 = cm->cfirst[w1]-1;	      /* last state in split set w1<=vroot<=w2 */
 
@@ -4829,7 +4828,7 @@ outside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 	if (beta[cm->M][j0][W] < IMPOSSIBLE) beta[cm->M][j0][W] = IMPOSSIBLE;
 	break;
       case B_st:		/* can't start w/ bifurcation at vroot. */
-      default: Die("bogus parent state %d\n", cm->sttype[vroot]);
+      default: esl_fatal("bogus parent state %d\n", cm->sttype[vroot]);
       }
     }
   }
@@ -4927,7 +4926,7 @@ outside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 		  beta[v][j][d] = sc;
 		break;
 
-	      default: Die("bogus child state %d\n", cm->sttype[y]);
+	      default: esl_fatal("bogus child state %d\n", cm->sttype[y]);
 	      }/* end switch over states*/
 	    } /* ends for loop over parent states. we now know beta[v][j][d] for this d */
 	    if (beta[v][j][d] < IMPOSSIBLE) beta[v][j][d] = IMPOSSIBLE;
@@ -4991,7 +4990,7 @@ outside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 		  beta[cm->M][j][d] = sc;
 		break;
 	      case B_st:  
-	      default: Die("bogus parent state %d\n", cm->sttype[v]);
+	      default: esl_fatal("bogus parent state %d\n", cm->sttype[v]);
 		/* note that although B is a valid vend for a segment we'd do
                    outside on, B->EL is set to be impossible, by the local alignment
                    config. There's no point in having a B->EL because B is a nonemitter
@@ -5336,7 +5335,7 @@ vinside_b(CM_t *cm, ESL_SQ *sq,
       }      
       /* reassert our definition of a V problem */
       if (cm->sttype[v] == E_st || cm->sttype[v] == B_st || (cm->sttype[v] == S_st && v > r))
-	Die("you told me you wouldn't ever do that again.");
+	esl_fatal("you told me you wouldn't ever do that again.");
       
       if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
 	{
@@ -5740,7 +5739,7 @@ voutside_b(CM_t *cm, ESL_SQ *sq,
       beta[cm->M][j0-j1][0] = cm->endsc[r] + 
 	(cm->el_selfsc * ((j0)-(i0)+1));
       break;
-    default:  Die("bogus parent state %d\n", cm->sttype[r]);
+    default:  esl_fatal("bogus parent state %d\n", cm->sttype[r]);
     }
   }
       
@@ -5877,7 +5876,7 @@ voutside_b(CM_t *cm, ESL_SQ *sq,
 		  beta[v][jp][ip] = sc;
 		break;
 
-	      default: Die("bogus parent state %d\n", cm->sttype[y]);
+	      default: esl_fatal("bogus parent state %d\n", cm->sttype[y]);
 	      }/* end switch over states*/
 	    } /* ends for loop over parent states. we now know beta[v][j][d] for this d */
 	    if (beta[v][jp][ip] < IMPOSSIBLE) beta[v][jp][ip] = IMPOSSIBLE;
@@ -5947,7 +5946,7 @@ voutside_b(CM_t *cm, ESL_SQ *sq,
 		     > beta[cm->M][jp][ip])
 		  beta[cm->M][jp][ip] = sc;
 		break;
-	      default:  Die("bogus parent state %d\n", cm->sttype[y]);
+	      default:  esl_fatal("bogus parent state %d\n", cm->sttype[y]);
 	      } /* end switch over parent v state type */
 	    } /* end loop over ip */
 	} /* end loop over jp */
@@ -6781,7 +6780,7 @@ inside_b_me(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_fu
 		    }
 		}
 		else alpha[v][j][dp_v] = IMPOSSIBLE;
-		/*else Die("cell in alpha matrix was not filled in due to bands.\n");*/
+		/*else esl_fatal("cell in alpha matrix was not filled in due to bands.\n");*/
 		if (alpha[v][j][dp_v] < IMPOSSIBLE) alpha[v][j][dp_v] = IMPOSSIBLE;
 	      }
 	  }
@@ -7117,7 +7116,7 @@ insideT_b_me(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
       case IL_st: i++;      break;
       case IR_st:      j--; break;
       case S_st:            break;
-      default:    Die("'Inconceivable!'\n'You keep using that word...'");
+      default:    esl_fatal("'Inconceivable!'\n'You keep using that word...'");
       }
       d = j-i+1;
 

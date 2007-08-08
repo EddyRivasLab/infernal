@@ -16,6 +16,7 @@
  * uses a faster trick with ints.
  */
 
+#include "esl_config.h"
 #include "config.h"
 
 #include <stdio.h>
@@ -23,9 +24,12 @@
 #include <string.h>
 #include <ctype.h>
 #include <float.h>
-#include "squid.h"		/* general sequence analysis library    */
-#include "msa.h"                /* squid's multiple alignment i/o       */
-#include "stopwatch.h"          /* squid's process timing module        */
+#include <math.h>
+
+#include "easel.h"		/* general sequence analysis library    */
+#include "esl_msa.h"   
+#include "esl_stopwatch.h"
+
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
 #include "cm_postprob.h"
@@ -57,7 +61,7 @@
  *           subsequence from i0..j0, using the entire model.
  * 
  *           A note on the loop conventions. We're going to keep the
- *           sequence (dsq) and the matrix (alpha) in the full coordinate
+ *           sequence (sq) and the matrix (alpha) in the full coordinate
  *           system: [0..v..M-1][0..j..L][0..d..j]. However, we're
  *           only calculating a part of that matrix: i0-1..j in the rows, 
  *           and up to j0-i0+1 in the columns (d dimension). Where this is 
@@ -78,8 +82,7 @@
  *           
  *
  * Args:     cm        - the model    [0..M-1]
- *           dsq       - the sequence [1..L]   
- *           L         - length of the dsq
+ *           sq        - the sequence (digitized) [1..L]   
  *           i0        - first position in subseq to align (1, for whole seq)
  *           j0        - last position in subseq to align (L, for whole seq)
  *           do_full   - if TRUE, we save all the decks in alpha, instead of
@@ -103,11 +106,16 @@
  * Returns: log P(S|M)/P(S|R), as a bit score.
  */
 float 
-FInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
+FInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
        float ***alpha, float ****ret_alpha, 
        struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
        int allow_begin)
 {
+  /* Contract check */
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in FInside(), sq is not digitized.\n");
+
+  int      status;
   float  **end;         /* we re-use the end deck. */
   int      nends;       /* counter that tracks when we can release end deck to the pool */
   int     *touch;       /* keeps track of how many higher decks still need this deck */
@@ -127,7 +135,7 @@ FInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 
   if (dpool == NULL) dpool = deckpool_create();
   if (! deckpool_pop(dpool, &end))
-    end = alloc_vjd_deck(L, i0, j0);
+    end = alloc_vjd_deck(sq->n, i0, j0);
   nends = CMSubtreeCountStatetype(cm, 0, E_st);
   for (jp = 0; jp <= W; jp++) {
     j = i0+jp-1;		/* e.g. j runs from 0..L on whole seq */
@@ -141,11 +149,11 @@ FInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
    * and we might reuse this memory in a call to Outside.  
    */
   if (alpha == NULL) {
-    alpha = MallocOrDie(sizeof(float **) * (cm->M+1));
+    ESL_ALLOC(alpha, sizeof(float **) * (cm->M+1));
     for (v = 0; v <= cm->M; v++) alpha[v] = NULL;
   }
 
-  touch = MallocOrDie(sizeof(int) * cm->M);
+  ESL_ALLOC(touch, sizeof(int) * cm->M);
   for (v = 0; v <= (cm->M-1); v++) touch[v] = cm->pnum[v];
 
   /* EPN: now that the EL self loop has a transition score, its
@@ -154,7 +162,7 @@ FInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
   if(cm->flags & CM_LOCAL_BEGIN)
     {
       if (! deckpool_pop(dpool, &(alpha[cm->M]))) 
-	alpha[cm->M] = alloc_vjd_deck(L, i0, j0);
+	alpha[cm->M] = alloc_vjd_deck(sq->n, i0, j0);
       for (jp = 0; jp <= W; jp++) {
 	j = i0-1+jp;
 	alpha[cm->M][j][0] = 0.;
@@ -179,7 +187,7 @@ FInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 	alpha[v] = end; continue; 
       } 
       if (! deckpool_pop(dpool, &(alpha[v]))) 
-	alpha[v] = alloc_vjd_deck(L, i0, j0);
+	alpha[v] = alloc_vjd_deck(sq->n, i0, j0);
 
       if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
 	{
@@ -235,10 +243,10 @@ FInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 							      + cm->tsc[v][yoffset]));
 		  }
 		i = j-d+1;
-		if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
-		  alpha[v][j][d] += cm->esc[v][(int) (dsq[i]*Alphabet_size+dsq[j])];
+		if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
+		  alpha[v][j][d] += cm->esc[v][(sq->dsq[i]*cm->abc->K+sq->dsq[j])];
 		else
-		  alpha[v][j][d] += DegeneratePairScore(cm->esc[v], dsq[i], dsq[j]);
+		  alpha[v][j][d] += DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i], sq->dsq[j]);
 
 		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 	      }
@@ -260,11 +268,10 @@ FInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 							    + cm->tsc[v][yoffset]));
 		  }
 		i = j-d+1;
-		if (dsq[i] < Alphabet_size)
-		  alpha[v][j][d] += cm->esc[v][(int) dsq[i]];
+		if (sq->dsq[i] < cm->abc->K)
+		  alpha[v][j][d] += cm->esc[v][sq->dsq[i]];
 		else
-		  alpha[v][j][d] += DegenerateSingletScore(cm->esc[v], dsq[i]);
-		
+		  alpha[v][j][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[i], cm->esc[v]);		
 		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 	      }
 	  }
@@ -284,10 +291,10 @@ FInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 		    alpha[v][j][d] = LogSum2(alpha[v][j][d], (alpha[y][j-1][d-1] 
 							      + cm->tsc[v][yoffset]));
 		  }
-		if (dsq[j] < Alphabet_size)
-		  alpha[v][j][d] += cm->esc[v][(int) dsq[j]];
+		if (sq->dsq[j] < cm->abc->K)
+		  alpha[v][j][d] += cm->esc[v][sq->dsq[j]];
 		else
-		  alpha[v][j][d] += DegenerateSingletScore(cm->esc[v], dsq[j]);
+		  alpha[v][j][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[j], cm->esc[v]);		
 		
 		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 	      }
@@ -373,19 +380,28 @@ FInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
   }
 
   free(touch);
-  ;/*printf("\n\tFInside() sc  : %f\n", sc);*/
+  /*printf("\n\tFInside() sc  : %f\n", sc);*/
   return sc;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return 0.; /* never reached */
 }
 
 /* IInside() is the same as FInside, but uses scaled int log odds scores
  * instead of float log odds scores.
  */
 float
-IInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
+IInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
        int   ***alpha, int   ****ret_alpha, 
        Ideckpool_t *dpool, Ideckpool_t **ret_dpool,
        int allow_begin)
 {
+  /* Contract check */
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in IInside(), sq is not digitized.\n");
+
+  int      status;
   int    **end;         /* we re-use the end deck. */
   int      nends;       /* counter that tracks when we can release end deck to the pool */
   int     *touch;       /* keeps track of how many higher decks still need this deck */
@@ -405,7 +421,7 @@ IInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 
   if (dpool == NULL) dpool = Ideckpool_create();
   if (! Ideckpool_pop(dpool, &end))
-    end = Ialloc_vjd_deck(L, i0, j0);
+    end = Ialloc_vjd_deck(sq->n, i0, j0);
   nends = CMSubtreeCountStatetype(cm, 0, E_st);
   for (jp = 0; jp <= W; jp++) {
     j = i0+jp-1;		/* e.g. j runs from 0..L on whole seq */
@@ -419,11 +435,11 @@ IInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
    * and we might reuse this memory in a call to Outside.  
    */
   if (alpha == NULL) {
-    alpha = MallocOrDie(sizeof(int   **) * (cm->M+1));
+    ESL_ALLOC(alpha, sizeof(int   **) * (cm->M+1));
     for (v = 0; v <= cm->M; v++) alpha[v] = NULL;
   }
 
-  touch = MallocOrDie(sizeof(int) * cm->M);
+  ESL_ALLOC(touch, sizeof(int) * cm->M);
   for (v = 0; v <= (cm->M-1); v++) touch[v] = cm->pnum[v];
 
   /* EPN: now that the EL self loop has a transition score, its
@@ -432,7 +448,7 @@ IInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
   if(cm->flags & CM_LOCAL_BEGIN)
     {
       if (! Ideckpool_pop(dpool, &(alpha[cm->M]))) 
-	alpha[cm->M] = Ialloc_vjd_deck(L, i0, j0);
+	alpha[cm->M] = Ialloc_vjd_deck(sq->n, i0, j0);
       for (jp = 0; jp <= W; jp++) {
 	j = i0-1+jp;
 	alpha[cm->M][j][0] = Prob2Score(1.0, 1.0);
@@ -457,7 +473,7 @@ IInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 	alpha[v] = end; continue; 
       } 
       if (! Ideckpool_pop(dpool, &(alpha[v]))) 
-	alpha[v] = Ialloc_vjd_deck(L, i0, j0);
+	alpha[v] = Ialloc_vjd_deck(sq->n, i0, j0);
 
       if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
 	{
@@ -513,10 +529,10 @@ IInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 							      + cm->itsc[v][yoffset]));
 		  }
 		i = j-d+1;
-		if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
-		  alpha[v][j][d] += cm->iesc[v][(int) (dsq[i]*Alphabet_size+dsq[j])];
+		if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
+		  alpha[v][j][d] += cm->iesc[v][(sq->dsq[i]*cm->abc->K+sq->dsq[j])];
 		else
-		  alpha[v][j][d] += iDegeneratePairScore(cm->iesc[v], dsq[i], dsq[j]);
+		  alpha[v][j][d] += iDegeneratePairScore(cm->abc, cm->iesc[v], sq->dsq[i], sq->dsq[j]);
 
 		if (alpha[v][j][d] < -INFTY) alpha[v][j][d] = -INFTY;
 	      }
@@ -538,10 +554,10 @@ IInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 							    + cm->itsc[v][yoffset]));
 		  }
 		i = j-d+1;
-		if (dsq[i] < Alphabet_size)
-		  alpha[v][j][d] += cm->iesc[v][(int) dsq[i]];
+		if (sq->dsq[i] < cm->abc->K)
+		  alpha[v][j][d] += cm->iesc[v][sq->dsq[i]];
 		else
-		  alpha[v][j][d] += iDegenerateSingletScore(cm->iesc[v], dsq[i]);
+		  alpha[v][j][d] += esl_abc_IAvgScore(cm->abc, sq->dsq[i], cm->iesc[v]);		
 		
 		if (alpha[v][j][d] < -INFTY) alpha[v][j][d] = -INFTY;
 	      }
@@ -562,10 +578,10 @@ IInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 		    alpha[v][j][d] = ILogsum(alpha[v][j][d], (alpha[y][j-1][d-1] 
 							      + cm->itsc[v][yoffset]));
 		  }
-		if (dsq[j] < Alphabet_size)
-		  alpha[v][j][d] += cm->iesc[v][(int) dsq[j]];
+		if (sq->dsq[j] < cm->abc->K)
+		  alpha[v][j][d] += cm->iesc[v][sq->dsq[j]];
 		else
-		  alpha[v][j][d] += iDegenerateSingletScore(cm->iesc[v], dsq[j]);
+		  alpha[v][j][d] += esl_abc_IAvgScore(cm->abc, sq->dsq[j], cm->iesc[v]);		
 		
 		if (alpha[v][j][d] < -INFTY) alpha[v][j][d] = -INFTY;
 	      }
@@ -653,6 +669,10 @@ IInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
   free(touch);
   ;/*printf("\tIInside() sc  : %f\n", return_sc);*/
   return return_sc;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return 0.; /* never reached */
 }
 
 /***********************************************************************
@@ -674,7 +694,7 @@ IInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
  *           dsq       - the sequence [1..L]   
  *           L         - length of the dsq
  *           i0        - first position in subseq to align (1, for whole seq)
- *           j0        - last position in subseq to align (L, for whole seq)
+ *           j0        - last position in subseq to align (sq->n, for whole seq)
  *           do_full   - if TRUE, we save all the decks in alpha and beta, instead of
  *                       working in our default memory-efficient mode where 
  *                       we reuse decks and only the uppermost deck (vroot) is valid
@@ -702,12 +722,17 @@ IInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
  * Returns: log P(S|M)/P(S|R), as a bit score.
  ***********************************************************************/
 float 
-FOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
+FOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	 float ***beta, float ****ret_beta, 
 	 struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
 	 int allow_begin, float ***alpha, float ****ret_alpha, 
 	 int do_check)
 {
+  /* Contract check */
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in FOutside(), sq is not digitized.\n");
+
+  int      status;
   int      v,y,z;	/* indices for states */
   int      j,d,i,k;	/* indices in sequence dimensions */
   float    sc;		/* a temporary variable holding a score */
@@ -738,14 +763,14 @@ FOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
    * if we're doing local alignment.
    */
   if (beta == NULL) {
-    beta = MallocOrDie(sizeof(float **) * (cm->M+1));
+    ESL_ALLOC(beta, sizeof(float **) * (cm->M+1));
     for (v = 0; v < cm->M+1; v++) beta[v] = NULL;
   }
 
   /* Initialize the root deck. Root is necessarily the ROOT_S state 0.
    */
   if (! deckpool_pop(dpool, &(beta[0])))
-    beta[0] = alloc_vjd_deck(L, i0, j0);
+    beta[0] = alloc_vjd_deck(sq->n, i0, j0);
   for (jp = 0; jp <= W; jp++) {
     j = i0-1+jp;
     for (d = 0; d <= jp; d++)
@@ -757,7 +782,7 @@ FOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
    */
   if (cm->flags & CM_LOCAL_END) {
     if (! deckpool_pop(dpool, &(beta[cm->M])))
-      beta[cm->M] = alloc_vjd_deck(L, i0, j0);
+      beta[cm->M] = alloc_vjd_deck(sq->n, i0, j0);
     for (jp = 0; jp <= W; jp++) {
       j = i0-1+jp;
       for (d = 0; d <= jp; d++)
@@ -769,7 +794,7 @@ FOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
      */
   }
 
-  touch = MallocOrDie(sizeof(int) * cm->M);
+  ESL_ALLOC(touch, sizeof(int) * cm->M);
   for (v = 0; v < cm->M; v++)
     if (cm->sttype[v] == B_st) touch[v] = 2;
     else                       touch[v] = cm->cnum[v];
@@ -785,7 +810,7 @@ FOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
        * a fresh one.
        */
       if (! deckpool_pop(dpool, &(beta[v])))
-	beta[v] = alloc_vjd_deck(L, i0, j0);
+	beta[v] = alloc_vjd_deck(sq->n, i0, j0);
 
       /* Init the whole deck to IMPOSSIBLE
        */
@@ -798,7 +823,7 @@ FOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
       /* If we can do a local begin into v, also init with that. 
        * By definition, beta[0][j0][W] == 0.
        */ 
-      if (i0 == 1 && j0 == L && (cm->flags & CM_LOCAL_BEGIN))
+      if (i0 == 1 && j0 == sq->n && (cm->flags & CM_LOCAL_BEGIN))
 	beta[v][j0][W] = cm->beginsc[v];
 
       /* main recursion:
@@ -813,7 +838,7 @@ FOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 		z = cm->cnum[y];	/* the other (right) S state */
 
 		beta[v][j][d] = beta[y][j][d] + alpha[z][j][0]; /* init on k=0 */
-		for (k = 1; k <= L-j; k++)
+		for (k = 1; k <= sq->n-j; k++)
 		  beta[v][j][d] = LogSum2(beta[v][j][d], (beta[y][j+k][d+k] + alpha[z][j+k][k]));
 	      }
 	    else if (cm->stid[v] == BEGR_S) 
@@ -834,10 +859,10 @@ FOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 		  case MP_st: 
 		    if (j == j0 || d == jp) continue; /* boundary condition */
 		    
-		    if (dsq[i-1] < Alphabet_size && dsq[j+1] > Alphabet_size)
-		      escore = cm->esc[y][(int) (dsq[i-1]*Alphabet_size+dsq[j+1])];
+		    if (sq->dsq[i-1] < cm->abc->K && sq->dsq[j+1] > cm->abc->K)
+		      escore = cm->esc[y][(sq->dsq[i-1]*cm->abc->K+sq->dsq[j+1])];
 		    else
-		      escore = DegeneratePairScore(cm->esc[y], dsq[i-1], dsq[j+1]);
+		      escore = DegeneratePairScore(cm->abc, cm->esc[y], sq->dsq[i-1], sq->dsq[j+1]);
 		    beta[v][j][d] = LogSum2(beta[v][j][d], (beta[y][j+1][d+2] + cm->tsc[y][voffset]
 							   + escore));
 		    break;
@@ -846,10 +871,10 @@ FOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 		  case IL_st: 
 		    if (d == jp) continue;	/* boundary condition (note when j=0, d=0)*/
 		    
-		    if (dsq[i-1] < Alphabet_size) 
-		      escore = cm->esc[y][(int) dsq[i-1]];
+		    if (sq->dsq[i-1] < cm->abc->K) 
+		      escore = cm->esc[y][sq->dsq[i-1]];
 		    else
-		      escore = DegenerateSingletScore(cm->esc[y], dsq[i-1]);
+		      escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i-1], cm->esc[y]);
 		    beta[v][j][d] = LogSum2(beta[v][j][d], (beta[y][j][d+1] + cm->tsc[y][voffset] 
 							   + escore));
 		    break;
@@ -858,10 +883,10 @@ FOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 		  case IR_st:
 		    if (j == j0) continue;
 		    
-		    if (dsq[j+1] < Alphabet_size) 
-		      escore = cm->esc[y][(int) dsq[j+1]];
+		    if (sq->dsq[j+1] < cm->abc->K) 
+		      escore = cm->esc[y][sq->dsq[j+1]];
 		    else
-		      escore = DegenerateSingletScore(cm->esc[y], dsq[j+1]);
+		      escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j+1], cm->esc[y]);
 		    beta[v][j][d] = LogSum2(beta[v][j][d], (beta[y][j+1][d+1] + cm->tsc[y][voffset] 
 							   + escore));
 		    break;
@@ -872,7 +897,7 @@ FOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 		    beta[v][j][d] = LogSum2(beta[v][j][d], (beta[y][j][d] + cm->tsc[y][voffset])); 
 		      break;
 		    
-		  default: Die("bogus child state %d\n", cm->sttype[y]);
+		  default: esl_fatal("bogus child state %d\n", cm->sttype[y]);
 		  }/* end switch over states*/
 		} /* ends for loop over parent states. we now know beta[v][j][d] for this d */
 		if (beta[v][j][d] < IMPOSSIBLE) beta[v][j][d] = IMPOSSIBLE;
@@ -892,30 +917,30 @@ FOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 	      switch (cm->sttype[v]) {
 	      case MP_st: 
 		if (j == j0 || d == jp) continue; /* boundary condition */
-		if (dsq[i-1] < Alphabet_size && dsq[j+1] > Alphabet_size)
-		  escore = cm->esc[v][(int) (dsq[i-1]*Alphabet_size+dsq[j+1])];
+		if (sq->dsq[i-1] < cm->abc->K && sq->dsq[j+1] > cm->abc->K)
+		  escore = cm->esc[v][(sq->dsq[i-1]*cm->abc->K+sq->dsq[j+1])];
 		else
-		  escore = DegeneratePairScore(cm->esc[v], dsq[i-1], dsq[j+1]);
+		  escore = DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i-1], sq->dsq[j+1]);
 		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][j+1][d+2] + cm->endsc[v] 
 								+ escore));
 		break;
 	      case ML_st:
 	      case IL_st:
 		if (d == jp) continue;	
-		if (dsq[i-1] < Alphabet_size) 
-		  escore = cm->esc[v][(int) dsq[i-1]];
+		if (sq->dsq[i-1] < cm->abc->K) 
+		  escore = cm->esc[v][sq->dsq[i-1]];
 		else
-		  escore = DegenerateSingletScore(cm->esc[v], dsq[i-1]);
+		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i-1], cm->esc[v]);
 		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][j][d+1] + cm->endsc[v] 
 								+ escore));
 		break;
 	      case MR_st:
 	      case IR_st:
 		if (j == j0) continue;
-		if (dsq[j+1] < Alphabet_size) 
-		  escore = cm->esc[v][(int) dsq[j+1]];
+		if (sq->dsq[j+1] < cm->abc->K) 
+		  escore = cm->esc[v][sq->dsq[j+1]];
 		else
-		  escore = DegenerateSingletScore(cm->esc[v], dsq[j+1]);
+		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j+1], cm->esc[v]);
 		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][j+1][d+1] + cm->endsc[v]
 								+ escore));
 		break;
@@ -926,7 +951,7 @@ FOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 		break;
 
 	      case B_st:  
-	      default: Die("bogus parent state %d\n", cm->sttype[v]);
+	      default: esl_fatal("bogus parent state %d\n", cm->sttype[v]);
 		/* note that although B is a valid vend for a segment we'd do
                    outside on, B->EL is set to be impossible, by the local alignment
                    config. There's no point in having a B->EL because B is a nonemitter
@@ -1009,7 +1034,7 @@ FOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 	  diff = alpha[0][j0][W] - sc;
 	  if(diff > 0.001 || diff < -0.001)
 	    {
-	      Die("ERROR: node %d P(S|M): %.5f inconsistent with Inside P(S|M): %.5f (diff: %.5f)\n", 
+	      esl_fatal("ERROR: node %d P(S|M): %.5f inconsistent with Inside P(S|M): %.5f (diff: %.5f)\n", 
 		  n, sc, alpha[0][j0][W], diff);
 	    }
 	}
@@ -1097,18 +1122,27 @@ FOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
     ;/*printf("\tFOutside() sc : %f (LOCAL mode; sc is from Inside)\n", return_sc);*/
 
   return return_sc;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return 0.; /* never reached */
 }
 
 /* IOutside() is the same as FOutside, but uses scaled int log odds scores
  * instead of float log odds scores.
  */
 float
-IOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
+IOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	 int   ***beta, int   ****ret_beta, 
 	 Ideckpool_t *dpool, Ideckpool_t **ret_dpool,
 	 int allow_begin, int   ***alpha, int   ****ret_alpha, 
 	 int do_check)
 {
+  /* Contract check */
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in IOutside(), sq is not digitized.\n");
+
+  int      status;
   int      v,y,z;	/* indices for states */
   int      j,d,i,k;	/* indices in sequence dimensions */
   int      isc;     	/* a temporary variable holding an int score */
@@ -1141,14 +1175,14 @@ IOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
    * if we're doing local alignment.
    */
   if (beta == NULL) {
-    beta = MallocOrDie(sizeof(int   **) * (cm->M+1));
+    ESL_ALLOC(beta, sizeof(int   **) * (cm->M+1));
     for (v = 0; v < cm->M+1; v++) beta[v] = NULL;
   }
 
   /* Initialize the root deck. Root is necessarily the ROOT_S state 0.
    */
   if (! Ideckpool_pop(dpool, &(beta[0])))
-    beta[0] = Ialloc_vjd_deck(L, i0, j0);
+    beta[0] = Ialloc_vjd_deck(sq->n, i0, j0);
   for (jp = 0; jp <= W; jp++) {
     j = i0-1+jp;
     for (d = 0; d <= jp; d++)
@@ -1160,7 +1194,7 @@ IOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
    */
   if (cm->flags & CM_LOCAL_END) {
     if (! Ideckpool_pop(dpool, &(beta[cm->M])))
-      beta[cm->M] = Ialloc_vjd_deck(L, i0, j0);
+      beta[cm->M] = Ialloc_vjd_deck(sq->n, i0, j0);
     for (jp = 0; jp <= W; jp++) {
       j = i0-1+jp;
       for (d = 0; d <= jp; d++)
@@ -1172,7 +1206,7 @@ IOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
      */
   }
 
-  touch = MallocOrDie(sizeof(int) * cm->M);
+  ESL_ALLOC(touch, sizeof(int) * cm->M);
   for (v = 0; v < cm->M; v++)
     if (cm->sttype[v] == B_st) touch[v] = 2;
     else                       touch[v] = cm->cnum[v];
@@ -1188,7 +1222,7 @@ IOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
        * a fresh one.
        */
       if (! Ideckpool_pop(dpool, &(beta[v])))
-	beta[v] = Ialloc_vjd_deck(L, i0, j0);
+	beta[v] = Ialloc_vjd_deck(sq->n, i0, j0);
 
       /* Init the whole deck to -INFTY
        */
@@ -1201,7 +1235,7 @@ IOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
       /* If we can do a local begin into v, also init with that. 
        * By definition, beta[0][j0][W] == 0.
        */ 
-      if (i0 == 1 && j0 == L && (cm->flags & CM_LOCAL_BEGIN))
+      if (i0 == 1 && j0 == sq->n && (cm->flags & CM_LOCAL_BEGIN))
 	beta[v][j0][W] = cm->ibeginsc[v];
 
       /* main recursion:
@@ -1216,7 +1250,7 @@ IOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 		z = cm->cnum[y];	/* the other (right) S state */
 
 		beta[v][j][d] = beta[y][j][d] + alpha[z][j][0]; /* init on k=0 */
-		for (k = 1; k <= L-j; k++)
+		for (k = 1; k <= sq->n-j; k++)
 		  beta[v][j][d] = ILogsum(beta[v][j][d], (beta[y][j+k][d+k] + alpha[z][j+k][k]));
 	      }
 	    else if (cm->stid[v] == BEGR_S) 
@@ -1237,10 +1271,10 @@ IOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 		  case MP_st: 
 		    if (j == j0 || d == jp) continue; /* boundary condition */
 		    
-		    if (dsq[i-1] < Alphabet_size && dsq[j+1] > Alphabet_size)
-		      iescore = cm->iesc[y][(int) (dsq[i-1]*Alphabet_size+dsq[j+1])];
+		    if (sq->dsq[i-1] < cm->abc->K && sq->dsq[j+1] > cm->abc->K)
+		      iescore = cm->iesc[y][(sq->dsq[i-1]*cm->abc->K+sq->dsq[j+1])];
 		    else
-		      iescore = iDegeneratePairScore(cm->iesc[y], dsq[i-1], dsq[j+1]);
+		      iescore = iDegeneratePairScore(cm->abc, cm->iesc[y], sq->dsq[i-1], sq->dsq[j+1]);
 		    beta[v][j][d] = ILogsum(beta[v][j][d], (beta[y][j+1][d+2] + cm->itsc[y][voffset]
 							   + iescore));
 		    break;
@@ -1249,10 +1283,10 @@ IOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 		  case IL_st: 
 		    if (d == jp) continue;	/* boundary condition (note when j=0, d=0)*/
 		    
-		    if (dsq[i-1] < Alphabet_size) 
-		      iescore = cm->iesc[y][(int) dsq[i-1]];
+		    if (sq->dsq[i-1] < cm->abc->K) 
+		      iescore = cm->iesc[y][sq->dsq[i-1]];
 		    else
-		      iescore = iDegenerateSingletScore(cm->iesc[y], dsq[i-1]);
+		      iescore = esl_abc_IAvgScore(cm->abc, sq->dsq[i-1], cm->iesc[y]);
 		    beta[v][j][d] = ILogsum(beta[v][j][d], (beta[y][j][d+1] + cm->itsc[y][voffset] 
 							   + iescore));
 		    break;
@@ -1261,10 +1295,10 @@ IOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 		  case IR_st:
 		    if (j == j0) continue;
 		    
-		    if (dsq[j+1] < Alphabet_size) 
-		      iescore = cm->iesc[y][(int) dsq[j+1]];
+		    if (sq->dsq[j+1] < cm->abc->K) 
+		      iescore = cm->iesc[y][sq->dsq[j+1]];
 		    else
-		      iescore = iDegenerateSingletScore(cm->iesc[y], dsq[j+1]);
+		      iescore = esl_abc_IAvgScore(cm->abc, sq->dsq[j+1], cm->iesc[y]);
 		    beta[v][j][d] = ILogsum(beta[v][j][d], (beta[y][j+1][d+1] + cm->itsc[y][voffset] 
 							   + iescore));
 		    break;
@@ -1275,7 +1309,7 @@ IOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 		    beta[v][j][d] = ILogsum(beta[v][j][d], (beta[y][j][d] + cm->itsc[y][voffset])); 
 		      break;
 		    
-		  default: Die("bogus child state %d\n", cm->sttype[y]);
+		  default: esl_fatal("bogus child state %d\n", cm->sttype[y]);
 		  }/* end switch over states*/
 		} /* ends for loop over parent states. we now know beta[v][j][d] for this d */
 		if (beta[v][j][d] < -INFTY) beta[v][j][d] = -INFTY;
@@ -1295,30 +1329,30 @@ IOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 	      switch (cm->sttype[v]) {
 	      case MP_st: 
 		if (j == j0 || d == jp) continue; /* boundary condition */
-		if (dsq[i-1] < Alphabet_size && dsq[j+1] > Alphabet_size)
-		  iescore = cm->iesc[v][(int) (dsq[i-1]*Alphabet_size+dsq[j+1])];
+		if (sq->dsq[i-1] < cm->abc->K && sq->dsq[j+1] > cm->abc->K)
+		  iescore = cm->iesc[v][(sq->dsq[i-1]*cm->abc->K+sq->dsq[j+1])];
 		else
-		  iescore = iDegeneratePairScore(cm->iesc[v], dsq[i-1], dsq[j+1]);
+		  iescore = iDegeneratePairScore(cm->abc, cm->iesc[v], sq->dsq[i-1], sq->dsq[j+1]);
 		beta[cm->M][j][d] = ILogsum(beta[cm->M][j][d], (beta[v][j+1][d+2] + cm->iendsc[v] 
 								+ iescore));
 		break;
 	      case ML_st:
 	      case IL_st:
 		if (d == jp) continue;	
-		if (dsq[i-1] < Alphabet_size) 
-		  iescore = cm->iesc[v][(int) dsq[i-1]];
+		if (sq->dsq[i-1] < cm->abc->K) 
+		  iescore = cm->iesc[v][sq->dsq[i-1]];
 		else
-		  iescore = iDegenerateSingletScore(cm->iesc[v], dsq[i-1]);
+		  iescore = esl_abc_IAvgScore(cm->abc, sq->dsq[i-1], cm->iesc[v]);
 		beta[cm->M][j][d] = ILogsum(beta[cm->M][j][d], (beta[v][j][d+1] + cm->iendsc[v] 
 								+ iescore));
 		break;
 	      case MR_st:
 	      case IR_st:
 		if (j == j0) continue;
-		if (dsq[j+1] < Alphabet_size) 
-		  iescore = cm->iesc[v][(int) dsq[j+1]];
+		if (sq->dsq[j+1] < cm->abc->K) 
+		  iescore = cm->iesc[v][sq->dsq[j+1]];
 		else
-		  iescore = iDegenerateSingletScore(cm->iesc[v], dsq[j+1]);
+		  iescore = esl_abc_IAvgScore(cm->abc, sq->dsq[j+1], cm->iesc[v]);
 		beta[cm->M][j][d] = ILogsum(beta[cm->M][j][d], (beta[v][j+1][d+1] + cm->iendsc[v]
 								+ iescore));
 		break;
@@ -1329,7 +1363,7 @@ IOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 		break;
 
 	      case B_st:  
-	      default: Die("bogus parent state %d\n", cm->sttype[v]);
+	      default: esl_fatal("bogus parent state %d\n", cm->sttype[v]);
 		/* note that although B is a valid vend for a segment we'd do
                    outside on, B->EL is set to be impossible, by the local alignment
                    config. There's no point in having a B->EL because B is a nonemitter
@@ -1420,7 +1454,7 @@ IOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 	  diff = fsc - (Scorify(alpha[0][j0][W]));
 	  if(diff > 0.01 || diff < -0.01)
 	    {
-	      Die("ERROR: node %d P(S|M): %.5f inconsistent with Inside P(S|M): %.5f (diff: %.5f)\n", 
+	      esl_fatal("ERROR: node %d P(S|M): %.5f inconsistent with Inside P(S|M): %.5f (diff: %.5f)\n", 
 		  n, fsc, Scorify(alpha[0][j0][W]), diff);
 	    }
 	}
@@ -1509,6 +1543,10 @@ IOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
     ;/*printf("\tIOutside() sc : %f (LOCAL mode; sc is from Inside)\n", freturn_sc);*/
 
   return freturn_sc;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return 0.; /* never reached */
 }
 
 /* Function: FScore2Prob()
@@ -1521,7 +1559,7 @@ FScore2Prob(float sc, float null)
 {
   /*printf("in FScore2Prob: %10.2f sreEXP2: %10.2f\n", sc, (sreEXP2(sc)));*/
   if (sc == IMPOSSIBLE) return 0.;
-  else              return (null * sreEXP2(sc));
+  else                  return (null * sreEXP2(sc));
 }
 
 
@@ -1741,10 +1779,11 @@ Iscore2postcode(int sc)
 char *
 CMPostalCode(CM_t *cm, int L, float ***post, Parsetree_t *tr)
 {
+  int status;
   int x, v, i, j, d, r;
   char *postcode;
 
-  postcode = MallocOrDie((L+1) * sizeof(char)); 
+  ESL_ALLOC(postcode, (L+1) * sizeof(char)); 
 
   for (x = 0; x < tr->n; x++)
     {
@@ -1774,6 +1813,10 @@ CMPostalCode(CM_t *cm, int L, float ***post, Parsetree_t *tr)
     }
   postcode[L] = '\0';
   return(postcode);
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return NULL; /* never reached */
 }
 
 /* ICMPostalCode() is the same as CMPostalCode, but uses scaled int log odds scores
@@ -1782,10 +1825,11 @@ CMPostalCode(CM_t *cm, int L, float ***post, Parsetree_t *tr)
 char *
 ICMPostalCode(CM_t *cm, int L, int ***post, Parsetree_t *tr)
 {
+  int status;
   int x, v, i, j, d, r;
   char *postcode;
 
-  postcode = MallocOrDie((L+1) * sizeof(char)); 
+  ESL_ALLOC(postcode, (L+1) * sizeof(char)); 
 
   for (x = 0; x < tr->n; x++)
     {
@@ -1815,10 +1859,14 @@ ICMPostalCode(CM_t *cm, int L, int ***post, Parsetree_t *tr)
     }
   postcode[L] = '\0';
   return(postcode);
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return NULL; /* never reached */
 }
 
-/***************************************************************/
-/* Function: CMCheckPosterior()
+/***************************************************************
+ * Function: CMCheckPosterior()
  *           
  * EPN 05.25.06 
  *
@@ -1882,7 +1930,7 @@ CMCheckPosterior(int L, CM_t *cm, float ***post)
       
       if(((sc - 0.) > 0.0001) || ((sc - 0.) < -0.0001))
 	{
-	  Die("residue position %d has summed prob of %5.4f (2^%5.4f) in posterior cube.\n", k, (sreEXP2(sc)), sc);
+	  esl_fatal("residue position %d has summed prob of %5.4f (2^%5.4f) in posterior cube.\n", k, (sreEXP2(sc)), sc);
 	}
       /*printf("k: %d | total: %10.2f\n", k, (sreEXP2(sc)));*/
     }  
@@ -1939,7 +1987,7 @@ ICMCheckPosterior(int L, CM_t *cm, int ***post)
       sc = Scorify(sc);
       if(((sc - 0.) > 0.0001) || ((sc - 0.) < -0.0001))
 	{
-	  Die("residue position %d has summed prob of %5.4f (2^%5.4f) in posterior cube.\n", k, (sreEXP2(sc)), sc);
+	  esl_fatal("residue position %d has summed prob of %5.4f (2^%5.4f) in posterior cube.\n", k, (sreEXP2(sc)), sc);
 	}
       /*printf("k: %d | total: %10.2f\n", k, (sreEXP2(sc)));*/
     }  
@@ -2000,7 +2048,7 @@ ICMCheckPosterior(int L, CM_t *cm, int ***post)
  *           dsq       - the sequence [1..L]   
  *           L         - length of the dsq
  *           i0        - first position in subseq to align (1, for whole seq)
- *           j0        - last position in subseq to align (L, for whole seq)
+ *           j0        - last position in subseq to align (sq->n, for whole seq)
  *           do_full   - if TRUE, we save all the decks in alpha, instead of
  *                       working in our default memory-efficient mode where 
  *                       we reuse decks and only the uppermost deck (vroot) is valid
@@ -2029,11 +2077,16 @@ ICMCheckPosterior(int L, CM_t *cm, int ***post)
  * Returns: log P(S|M)/P(S|R), as a bit score.
  */
 float 
-FInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
+FInside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 		float ***alpha, float ****ret_alpha, 
 		struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
 		int allow_begin, int *jmin, int *jmax, int **hdmin, int **hdmax)
 {
+  /* Contract check */
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in FInside_b_jd_me(), sq is not digitized.\n");
+
+  int      status;
   float  **end;         /* we re-use the end deck. */
   int      nends;       /* counter that tracks when we can release end deck to the pool */
   int     *touch;       /* keeps track of how many higher decks still need this deck */
@@ -2054,15 +2107,10 @@ FInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
   int      tmp_jmin, tmp_jmax;
 
   if(i0 != 1)
-    {
-      printf("FInside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
-      exit(1);
-    }
-  if(j0 != L)
-    {
-      printf("FInside_b_jd requires that j0 be L. This function is not set up for subsequence alignment.\n");
-      exit(1);
-    }
+    esl_fatal("FInside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
+  if(j0 != sq->n)
+    esl_fatal("FInside_b_jd requires that j0 be sq->n. This function is not set up for subsequence alignment.\n");
+
   /* Allocations and initializations
    */
   bsc = IMPOSSIBLE;
@@ -2071,7 +2119,7 @@ FInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 
   if (dpool == NULL) dpool = deckpool_create();
   if (! deckpool_pop(dpool, &end))
-    end = alloc_vjd_deck(L, i0, j0);
+    end = alloc_vjd_deck(sq->n, i0, j0);
   nends = CMSubtreeCountStatetype(cm, 0, E_st);
   for (jp = 0; jp <= W; jp++) {
     j = i0+jp-1;		/* e.g. j runs from 0..L on whole seq */
@@ -2085,11 +2133,11 @@ FInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
    * and we might reuse this memory in a call to Outside.  
    */
   if (alpha == NULL) {
-    alpha = MallocOrDie(sizeof(float **) * (cm->M+1));
+    ESL_ALLOC(alpha, sizeof(float **) * (cm->M+1));
     for (v = 0; v <= cm->M; v++) alpha[v] = NULL;
   }
 
-  touch = MallocOrDie(sizeof(int) * cm->M);
+  ESL_ALLOC(touch, sizeof(int) * cm->M);
   for (v = 0; v <= (cm->M-1); v++) touch[v] = cm->pnum[v];
 
   /* EPN: now that the EL self loop has a transition score, its
@@ -2099,7 +2147,7 @@ FInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
   if(cm->flags & CM_LOCAL_BEGIN)
     {
       if (! deckpool_pop(dpool, &(alpha[cm->M]))) 
-	alpha[cm->M] = alloc_vjd_deck(L, i0, j0);
+	alpha[cm->M] = alloc_vjd_deck(sq->n, i0, j0);
       for (jp = 0; jp <= W; jp++) {
 	j = i0-1+jp;
 	/*alpha[cm->M][j][0] = IMPOSSIBLE;*/
@@ -2124,7 +2172,7 @@ FInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 	alpha[v] = end; continue; 
       } 
       if (! deckpool_pop(dpool, &(alpha[v]))) 
-	alpha[v] = alloc_jdbanded_vjd_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
+	alpha[v] = alloc_jdbanded_vjd_deck(sq->n, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
 
       /* We've only allocated alpha cells that are within the bands
        * on the j and d dimensions. This means we have to deal
@@ -2289,10 +2337,10 @@ FInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 		      }
 		  }
 		i = j-d+1;
-		if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
-		  alpha[v][jp_v][dp_v] += cm->esc[v][(int) (dsq[i]*Alphabet_size+dsq[j])];
+		if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
+		  alpha[v][jp_v][dp_v] += cm->esc[v][(sq->dsq[i]*cm->abc->K+sq->dsq[j])];
 		else
-		  alpha[v][jp_v][dp_v] += DegeneratePairScore(cm->esc[v], dsq[i], dsq[j]);
+		  alpha[v][jp_v][dp_v] += DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i], sq->dsq[j]);
 		
 		if (alpha[v][jp_v][dp_v] < IMPOSSIBLE) alpha[v][jp_v][dp_v] = IMPOSSIBLE;
 	      }
@@ -2327,10 +2375,10 @@ FInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 		      }
 		  }
 		i = j-d+1;
-		if (dsq[i] < Alphabet_size)
-		  alpha[v][jp_v][dp_v] += cm->esc[v][(int) dsq[i]];
+		if (sq->dsq[i] < cm->abc->K)
+		  alpha[v][jp_v][dp_v] += cm->esc[v][sq->dsq[i]];
 		else
-		  alpha[v][jp_v][dp_v] += DegenerateSingletScore(cm->esc[v], dsq[i]);
+		  alpha[v][jp_v][dp_v] += esl_abc_FAvgScore(cm->abc, sq->dsq[i], cm->esc[v]);
 		if (alpha[v][jp_v][dp_v] < IMPOSSIBLE) alpha[v][jp_v][dp_v] = IMPOSSIBLE;
 	      }
 	    }
@@ -2364,10 +2412,10 @@ FInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 			  }
 		      }
 		  }
-		if (dsq[j] < Alphabet_size)
-		  alpha[v][jp_v][dp_v] += cm->esc[v][(int) dsq[j]];
+		if (sq->dsq[j] < cm->abc->K)
+		  alpha[v][jp_v][dp_v] += cm->esc[v][sq->dsq[j]];
 		else
-		  alpha[v][jp_v][dp_v] += DegenerateSingletScore(cm->esc[v], dsq[j]);
+		  alpha[v][jp_v][dp_v] += esl_abc_FAvgScore(cm->abc, sq->dsq[j], cm->esc[v]);
 		
 		if (alpha[v][jp_v][dp_v] < IMPOSSIBLE) alpha[v][jp_v][dp_v] = IMPOSSIBLE;
 	      }
@@ -2501,14 +2549,23 @@ FInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
   free(touch);
   printf("\n\tFInside_b_jd_me() sc  : %f\n", sc);
   return sc;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return 0.; /* never reached */
 }
 
 float 
-IInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
+IInside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 		int   ***alpha, int   ****ret_alpha, 
 		Ideckpool_t *dpool, Ideckpool_t **ret_dpool,
 		int allow_begin, int *jmin, int *jmax, int **hdmin, int **hdmax)
 {
+  /* Contract check */
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in IInside_b_jd_me(), sq is not digitized.\n");
+
+  int      status;       
   int    **end;         /* we re-use the end deck. */
   int      nends;       /* counter that tracks when we can release end deck to the pool */
   int     *touch;       /* keeps track of how many higher decks still need this deck */
@@ -2529,15 +2586,10 @@ IInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
   int      tmp_jmin, tmp_jmax;
 
   if(i0 != 1)
-    {
-      printf("IInside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
-      exit(1);
-    }
-  if(j0 != L)
-    {
-      printf("IInside_b_jd requires that j0 be L. This function is not set up for subsequence alignment.\n");
-      exit(1);
-    }
+    esl_fatal("IInside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
+  if(j0 != sq->n)
+    esl_fatal("IInside_b_jd requires that j0 be L. This function is not set up for subsequence alignment.\n");
+
   /* Allocations and initializations
    */
   bsc = -INFTY;
@@ -2546,7 +2598,7 @@ IInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 
   if (dpool == NULL) dpool = Ideckpool_create();
   if (! Ideckpool_pop(dpool, &end))
-    end = Ialloc_vjd_deck(L, i0, j0);
+    end = Ialloc_vjd_deck(sq->n, i0, j0);
   nends = CMSubtreeCountStatetype(cm, 0, E_st);
   for (jp = 0; jp <= W; jp++) {
     j = i0+jp-1;		/* e.g. j runs from 0..L on whole seq */
@@ -2560,11 +2612,11 @@ IInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
    * and we might reuse this memory in a call to Outside.  
    */
   if (alpha == NULL) {
-    alpha = MallocOrDie(sizeof(int   **) * (cm->M+1));
+    ESL_ALLOC(alpha, sizeof(int   **) * (cm->M+1));
     for (v = 0; v <= cm->M; v++) alpha[v] = NULL;
   }
 
-  touch = MallocOrDie(sizeof(int) * cm->M);
+  ESL_ALLOC(touch, sizeof(int) * cm->M);
   for (v = 0; v <= (cm->M-1); v++) touch[v] = cm->pnum[v];
 
   /* EPN: now that the EL self loop has a transition score, its
@@ -2574,7 +2626,7 @@ IInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
   if(cm->flags & CM_LOCAL_BEGIN)
     {
       if (! Ideckpool_pop(dpool, &(alpha[cm->M]))) 
-	alpha[cm->M] = Ialloc_vjd_deck(L, i0, j0);
+	alpha[cm->M] = Ialloc_vjd_deck(sq->n, i0, j0);
       for (jp = 0; jp <= W; jp++) {
 	j = i0-1+jp;
 	/*alpha[cm->M][j][0] = -INFTY;*/
@@ -2599,7 +2651,7 @@ IInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 	alpha[v] = end; continue; 
       } 
       if (! Ideckpool_pop(dpool, &(alpha[v]))) 
-	alpha[v] = Ialloc_jdbanded_vjd_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
+	alpha[v] = Ialloc_jdbanded_vjd_deck(sq->n, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
 
       /* We've only allocated alpha cells that are within the bands
        * on the j and d dimensions. This means we have to deal
@@ -2764,10 +2816,10 @@ IInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 		      }
 		  }
 		i = j-d+1;
-		if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
-		  alpha[v][jp_v][dp_v] += cm->iesc[v][(int) (dsq[i]*Alphabet_size+dsq[j])];
+		if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
+		  alpha[v][jp_v][dp_v] += cm->iesc[v][(sq->dsq[i]*cm->abc->K+sq->dsq[j])];
 		else
-		  alpha[v][jp_v][dp_v] += iDegeneratePairScore(cm->iesc[v], dsq[i], dsq[j]);
+		  alpha[v][jp_v][dp_v] += iDegeneratePairScore(cm->abc, cm->iesc[v], sq->dsq[i], sq->dsq[j]);
 		
 		if (alpha[v][jp_v][dp_v] < -INFTY) alpha[v][jp_v][dp_v] = -INFTY;
 	      }
@@ -2802,10 +2854,10 @@ IInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 		      }
 		  }
 		i = j-d+1;
-		if (dsq[i] < Alphabet_size)
-		  alpha[v][jp_v][dp_v] += cm->iesc[v][(int) dsq[i]];
+		if (sq->dsq[i] < cm->abc->K)
+		  alpha[v][jp_v][dp_v] += cm->iesc[v][sq->dsq[i]];
 		else
-		  alpha[v][jp_v][dp_v] += iDegenerateSingletScore(cm->iesc[v], dsq[i]);
+		  alpha[v][jp_v][dp_v] += esl_abc_IAvgScore(cm->abc, sq->dsq[i], cm->iesc[v]);
 		if (alpha[v][jp_v][dp_v] < -INFTY) alpha[v][jp_v][dp_v] = -INFTY;
 	      }
 	    }
@@ -2839,10 +2891,10 @@ IInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 			  }
 		      }
 		  }
-		if (dsq[j] < Alphabet_size)
-		  alpha[v][jp_v][dp_v] += cm->iesc[v][(int) dsq[j]];
+		if (sq->dsq[j] < cm->abc->K)
+		  alpha[v][jp_v][dp_v] += cm->iesc[v][sq->dsq[j]];
 		else
-		  alpha[v][jp_v][dp_v] += iDegenerateSingletScore(cm->iesc[v], dsq[j]);
+		  alpha[v][jp_v][dp_v] += esl_abc_IAvgScore(cm->abc, sq->dsq[j], cm->iesc[v]);
 		
 		if (alpha[v][jp_v][dp_v] < -INFTY) alpha[v][jp_v][dp_v] = -INFTY;
 	      }
@@ -2976,6 +3028,10 @@ IInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
   free(touch);
   printf("\tIInside_b_jd_me() sc  : %f\n", return_sc);
   return return_sc;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return 0.; /* never reached */
 }
 
 /***********************************************************************
@@ -2997,7 +3053,7 @@ IInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
  *           dsq       - the sequence [1..L]   
  *           L         - length of the dsq
  *           i0        - first position in subseq to align (1, for whole seq)
- *           j0        - last position in subseq to align (L, for whole seq)
+ *           j0        - last position in subseq to align (sq->n, for whole seq)
  *           do_full   - if TRUE, we save all the decks in alpha and beta, instead of
  *                       working in our default memory-efficient mode where 
  *                       we reuse decks and only the uppermost deck (vroot) is valid
@@ -3033,12 +3089,17 @@ IInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
  * Returns: log P(S|M)/P(S|R), as a bit score.
  ***********************************************************************/
 float 
-FOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
+FOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 		 float ***beta, float ****ret_beta, 
 		 struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
 		 int allow_begin, float ***alpha, float ****ret_alpha, 
 		 int do_check, int *jmin, int *jmax, int **hdmin, int **hdmax)
 {
+  /* Contract check */
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in FOutside_b_jd_me(), sq is not digitized.\n");
+
+  int      status;
   int      v,y,z;	/* indices for states */
   int      j,d,i,k;	/* indices in sequence dimensions */
   float    sc;		/* a temporary variable holding a score */
@@ -3063,15 +3124,9 @@ FOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
   int      tmp_jmin, tmp_jmax;
 
   if(i0 != 1)
-    {
-      printf("FOutside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
-      exit(1);
-    }
-  if(j0 != L)
-    {
-      printf("FOutside_b_jd requires that j0 be L. This function is not set up for subsequence alignment.\n");
-      exit(1);
-    }
+    esl_fatal("FOutside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
+  if(j0 != sq->n)
+    esl_fatal("FOutside_b_jd requires that j0 be L. This function is not set up for subsequence alignment.\n");
 
   if (cm->flags & CM_LOCAL_END) { do_check = FALSE; } 
   /* Code for checking doesn't apply in local mode. See below. */
@@ -3088,14 +3143,14 @@ FOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
    * if we're doing local alignment.
    */
   if (beta == NULL) {
-    beta = MallocOrDie(sizeof(float **) * (cm->M+1));
+    ESL_ALLOC(beta, sizeof(float **) * (cm->M+1));
     for (v = 0; v < cm->M+1; v++) beta[v] = NULL;
   }
 
   /* Initialize the root deck. Root is necessarily the ROOT_S state 0.
    */
   if (! deckpool_pop(dpool, &(beta[0])))
-    beta[0] = alloc_jdbanded_vjd_deck(L, i0, j0, jmin[0], jmax[0], hdmin[0], hdmax[0]);
+    beta[0] = alloc_jdbanded_vjd_deck(sq->n, i0, j0, jmin[0], jmax[0], hdmin[0], hdmax[0]);
   for (j = jmin[0]; j <= jmax[0]; j++)
     {
       jp_v = j - jmin[0];
@@ -3117,7 +3172,7 @@ FOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
    */
   if (cm->flags & CM_LOCAL_END) {
     if (! deckpool_pop(dpool, &(beta[cm->M])))
-      beta[cm->M] = alloc_vjd_deck(L, i0, j0);
+      beta[cm->M] = alloc_vjd_deck(sq->n, i0, j0);
     for (jp = 0; jp <= W; jp++) {
       j = i0-1+jp;
       for (d = 0; d <= jp; d++)
@@ -3129,7 +3184,7 @@ FOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
      */
   }
 
-  touch = MallocOrDie(sizeof(int) * cm->M);
+  ESL_ALLOC(touch, sizeof(int) * cm->M);
   for (v = 0; v < cm->M; v++)
     if (cm->sttype[v] == B_st) touch[v] = 2;
     else                       touch[v] = cm->cnum[v];
@@ -3145,7 +3200,7 @@ FOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
        * a fresh one.
        */
       if (! deckpool_pop(dpool, &(beta[v])))
-	beta[v] = alloc_jdbanded_vjd_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
+	beta[v] = alloc_jdbanded_vjd_deck(sq->n, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
 
       /* Init the whole deck to IMPOSSIBLE
        */
@@ -3162,7 +3217,7 @@ FOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
       /* If we can do a local begin into v, also init with that. 
        * By definition, beta[0][j0][W] == 0.
        */ 
-      if (i0 == 1 && j0 == L && (cm->flags & CM_LOCAL_BEGIN))
+      if (i0 == 1 && j0 == sq->n && (cm->flags & CM_LOCAL_BEGIN))
 	{
 	  if((j0 >= jmin[v]) && (j0 <= jmax[v]))
 	    {
@@ -3315,10 +3370,10 @@ FOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 			 */
 			dp_y = d - hdmin[y][jp_y+1];  /* d index for state y */
 			
-			if (dsq[i-1] < Alphabet_size && dsq[j+1] > Alphabet_size)
-			  escore = cm->esc[y][(int) (dsq[i-1]*Alphabet_size+dsq[j+1])];
+			if (sq->dsq[i-1] < cm->abc->K && sq->dsq[j+1] > cm->abc->K)
+			  escore = cm->esc[y][(sq->dsq[i-1]*cm->abc->K+sq->dsq[j+1])];
 			else
-			  escore = DegeneratePairScore(cm->esc[y], dsq[i-1], dsq[j+1]);
+			  escore = DegeneratePairScore(cm->abc, cm->esc[y], sq->dsq[i-1], sq->dsq[j+1]);
 			beta[v][jp_v][dp_v] = LogSum2(beta[v][jp_v][dp_v], (beta[y][jp_y+1][dp_y+2] 
 									    + cm->tsc[y][voffset] + escore));
 			break;
@@ -3333,10 +3388,10 @@ FOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 			 * corresponding to alpha[y][j][d+1] in the platonic matrix.
 			 */
 			dp_y = d - hdmin[y][jp_y];  /* d index for state y */
-			if (dsq[i-1] < Alphabet_size) 
-			  escore = cm->esc[y][(int) dsq[i-1]];
+			if (sq->dsq[i-1] < cm->abc->K) 
+			  escore = cm->esc[y][sq->dsq[i-1]];
 			else
-			  escore = DegenerateSingletScore(cm->esc[y], dsq[i-1]);
+			  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i-1], cm->esc[y]);
 			beta[v][jp_v][dp_v] = LogSum2(beta[v][jp_v][dp_v], (beta[y][jp_y][dp_y+1] 
 									    + cm->tsc[y][voffset] + escore));
 			break;
@@ -3351,10 +3406,10 @@ FOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 			 * corresponding to alpha[y][j+1][d+1] in the platonic matrix.
 			 */
 			dp_y = d - hdmin[y][(jp_y+1)];  /* d index for state y */
-			if (dsq[j+1] < Alphabet_size) 
-			  escore = cm->esc[y][(int) dsq[j+1]];
+			if (sq->dsq[j+1] < cm->abc->K) 
+			  escore = cm->esc[y][sq->dsq[j+1]];
 			else
-			  escore = DegenerateSingletScore(cm->esc[y], dsq[j+1]);
+			  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j+1], cm->esc[y]);
 			/*printf("j: %d | jmin[y]: %d | jmax[y]: %d | jp_v: %d | dp_v: %d | jp_y: %d | dp_y: %d\n", j, jmin[y], jmax[y], jp_v, dp_v, jp_y, dp_y);*/
 			beta[v][jp_v][dp_v] = LogSum2(beta[v][jp_v][dp_v], (beta[y][jp_y+1][dp_y+1] 
 									    + cm->tsc[y][voffset] + escore));
@@ -3373,7 +3428,7 @@ FOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 			beta[v][jp_v][dp_v] = LogSum2(beta[v][jp_v][dp_v], (beta[y][jp_y][dp_y] + cm->tsc[y][voffset])); 
 			break;
 
-		      default: Die("bogus child state %d\n", cm->sttype[y]);
+		      default: esl_fatal("bogus child state %d\n", cm->sttype[y]);
 		      }/* end switch over states*/
 		  } /* ends for loop over parent states. we now know beta[v][j][d] for this d */
 		if (beta[v][jp_v][dp_v] < IMPOSSIBLE) beta[v][jp_v][dp_v] = IMPOSSIBLE;
@@ -3395,10 +3450,10 @@ FOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 		case MP_st: 
 		  if (j == j0 || d == j) continue; /* boundary condition */
 		  if (((j+1) > jmax[v]) || ((d+2) > hdmax[v][jp_v])) continue; /*boundary condition*/
-		  if (dsq[i-1] < Alphabet_size && dsq[j+1] > Alphabet_size)
-		    escore = cm->esc[v][(int) (dsq[i-1]*Alphabet_size+dsq[j+1])];
+		  if (sq->dsq[i-1] < cm->abc->K && sq->dsq[j+1] > cm->abc->K)
+		    escore = cm->esc[v][(sq->dsq[i-1]*cm->abc->K+sq->dsq[j+1])];
 		  else
-		    escore = DegeneratePairScore(cm->esc[v], dsq[i-1], dsq[j+1]);
+		    escore = DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i-1], sq->dsq[j+1]);
 		  beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][jp_v+1][dp_v+2] + cm->endsc[v] 
 								  + escore));
 		break;
@@ -3406,10 +3461,10 @@ FOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 	      case IL_st:
 		if (d == j) continue;	
 		if ((d+1) > hdmax[v][jp_v]) continue; /*boundary condition*/
-		if (dsq[i-1] < Alphabet_size) 
-		  escore = cm->esc[v][(int) dsq[i-1]];
+		if (sq->dsq[i-1] < cm->abc->K) 
+		  escore = cm->esc[v][sq->dsq[i-1]];
 		else
-		  escore = DegenerateSingletScore(cm->esc[v], dsq[i-1]);
+		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i-1], cm->esc[v]);
 		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][jp_v][dp_v+1] + cm->endsc[v] 
 								+ escore));
 		break;
@@ -3417,10 +3472,10 @@ FOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 	      case IR_st:
 		if (j == j0) continue;
 		if (((j+1) > jmax[v]) || ((d+1) > hdmax[v][jp_v])) continue; /*boundary condition*/
-		if (dsq[j+1] < Alphabet_size) 
-		  escore = cm->esc[v][(int) dsq[j+1]];
+		if (sq->dsq[j+1] < cm->abc->K) 
+		  escore = cm->esc[v][sq->dsq[j+1]];
 		else
-		  escore = DegenerateSingletScore(cm->esc[v], dsq[j+1]);
+		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j+1], cm->esc[v]);
 		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][jp_v+1][dp_v+1] + cm->endsc[v] 
 								+ escore));
 		break;
@@ -3431,7 +3486,7 @@ FOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 								+ escore));
 		break;
 	      case B_st:  
-	      default: Die("bogus parent state %d\n", cm->sttype[v]);
+	      default: esl_fatal("bogus parent state %d\n", cm->sttype[v]);
 		/* note that although B is a valid vend for a segment we'd do
                    outside on, B->EL is set to be impossible, by the local alignment
                    config. There's no point in having a B->EL because B is a nonemitter
@@ -3518,7 +3573,7 @@ FOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 	  diff = alpha[0][j0-jmin[0]][Wp] - sc;
 	  if(diff > 0.001 || diff < -0.001)
 	    {
-	      Die("ERROR: node %d P(S|M): %.5f inconsistent with Inside P(S|M): %.5f (diff: %.5f)\n", 
+	      esl_fatal("ERROR: node %d P(S|M): %.5f inconsistent with Inside P(S|M): %.5f (diff: %.5f)\n", 
 		  n, sc, alpha[0][(j0-jmin[0])][Wp], diff);
 	    }
 	}
@@ -3608,15 +3663,24 @@ FOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
     printf("\tFOutside_b_jd_me() sc : %f (LOCAL mode; sc is from Inside)\n", return_sc);
 
   return return_sc;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return 0.; /* never reached */
 }
 
 float 
-IOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
+IOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 		 int   ***beta, int   ****ret_beta, 
 		 Ideckpool_t *dpool, Ideckpool_t **ret_dpool,
 		 int allow_begin, int   ***alpha, int   ****ret_alpha, 
 		 int do_check, int *jmin, int *jmax, int **hdmin, int **hdmax)
 {
+  /* Contract check */
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in IOutside_b_jd_me(), sq is not digitized.\n");
+
+  int      status;
   int      v,y,z;	/* indices for states */
   int      j,d,i,k;	/* indices in sequence dimensions */
   int      isc;     	/* a temporary variable holding an int score */
@@ -3643,15 +3707,9 @@ IOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
   int      tmp_jmin, tmp_jmax;
 
   if(i0 != 1)
-    {
-      printf("FOutside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
-      exit(1);
-    }
-  if(j0 != L)
-    {
-      printf("FOutside_b_jd requires that j0 be L. This function is not set up for subsequence alignment.\n");
-      exit(1);
-    }
+    esl_fatal("FOutside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
+  if(j0 != sq->n)
+    esl_fatal("FOutside_b_jd requires that j0 be L. This function is not set up for subsequence alignment.\n");
 
   if (cm->flags & CM_LOCAL_END) { do_check = FALSE; } 
   /* Code for checking doesn't apply in local mode. See below. */
@@ -3668,14 +3726,14 @@ IOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
    * if we're doing local alignment.
    */
   if (beta == NULL) {
-    beta = MallocOrDie(sizeof(int   **) * (cm->M+1));
+    ESL_ALLOC(beta, sizeof(int   **) * (cm->M+1));
     for (v = 0; v < cm->M+1; v++) beta[v] = NULL;
   }
 
   /* Initialize the root deck. Root is necessarily the ROOT_S state 0.
    */
   if (! Ideckpool_pop(dpool, &(beta[0])))
-    beta[0] = Ialloc_jdbanded_vjd_deck(L, i0, j0, jmin[0], jmax[0], hdmin[0], hdmax[0]);
+    beta[0] = Ialloc_jdbanded_vjd_deck(sq->n, i0, j0, jmin[0], jmax[0], hdmin[0], hdmax[0]);
   for (j = jmin[0]; j <= jmax[0]; j++)
     {
       jp_v = j - jmin[0];
@@ -3697,7 +3755,7 @@ IOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
    */
   if (cm->flags & CM_LOCAL_END) {
     if (! Ideckpool_pop(dpool, &(beta[cm->M])))
-      beta[cm->M] = Ialloc_vjd_deck(L, i0, j0);
+      beta[cm->M] = Ialloc_vjd_deck(sq->n, i0, j0);
     for (jp = 0; jp <= W; jp++) {
       j = i0-1+jp;
       for (d = 0; d <= jp; d++)
@@ -3709,7 +3767,7 @@ IOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
      */
   }
 
-  touch = MallocOrDie(sizeof(int) * cm->M);
+  ESL_ALLOC(touch, sizeof(int) * cm->M);
   for (v = 0; v < cm->M; v++)
     if (cm->sttype[v] == B_st) touch[v] = 2;
     else                       touch[v] = cm->cnum[v];
@@ -3725,7 +3783,7 @@ IOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
        * a fresh one.
        */
       if (! Ideckpool_pop(dpool, &(beta[v])))
-	beta[v] = Ialloc_jdbanded_vjd_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
+	beta[v] = Ialloc_jdbanded_vjd_deck(sq->n, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
 
       /* Init the whole deck to -INFTY
        */
@@ -3742,7 +3800,7 @@ IOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
       /* If we can do a local begin into v, also init with that. 
        * By definition, beta[0][j0][W] == 0.
        */ 
-      if (i0 == 1 && j0 == L && (cm->flags & CM_LOCAL_BEGIN))
+      if (i0 == 1 && j0 == sq->n && (cm->flags & CM_LOCAL_BEGIN))
 	{
 	  if((j0 >= jmin[v]) && (j0 <= jmax[v]))
 	    {
@@ -3895,10 +3953,10 @@ IOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 			 */
 			dp_y = d - hdmin[y][jp_y+1];  /* d index for state y */
 			
-			if (dsq[i-1] < Alphabet_size && dsq[j+1] > Alphabet_size)
-			  iescore = cm->iesc[y][(int) (dsq[i-1]*Alphabet_size+dsq[j+1])];
+			if (sq->dsq[i-1] < cm->abc->K && sq->dsq[j+1] > cm->abc->K)
+			  iescore = cm->iesc[y][(sq->dsq[i-1]*cm->abc->K+sq->dsq[j+1])];
 			else
-			  iescore = iDegeneratePairScore(cm->iesc[y], dsq[i-1], dsq[j+1]);
+			  iescore = iDegeneratePairScore(cm->abc, cm->iesc[y], sq->dsq[i-1], sq->dsq[j+1]);
 			beta[v][jp_v][dp_v] = ILogsum(beta[v][jp_v][dp_v], (beta[y][jp_y+1][dp_y+2] 
 									    + cm->itsc[y][voffset] + iescore));
 			break;
@@ -3913,10 +3971,10 @@ IOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 			 * corresponding to alpha[y][j][d+1] in the platonic matrix.
 			 */
 			dp_y = d - hdmin[y][jp_y];  /* d index for state y */
-			if (dsq[i-1] < Alphabet_size) 
-			  iescore = cm->iesc[y][(int) dsq[i-1]];
+			if (sq->dsq[i-1] < cm->abc->K) 
+			  iescore = cm->iesc[y][sq->dsq[i-1]];
 			else
-			  iescore = iDegenerateSingletScore(cm->iesc[y], dsq[i-1]);
+			  iescore = esl_abc_IAvgScore(cm->abc, sq->dsq[i-1], cm->iesc[y]);
 			beta[v][jp_v][dp_v] = ILogsum(beta[v][jp_v][dp_v], (beta[y][jp_y][dp_y+1] 
 									    + cm->itsc[y][voffset] + iescore));
 			break;
@@ -3931,10 +3989,10 @@ IOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 			 * corresponding to alpha[y][j+1][d+1] in the platonic matrix.
 			 */
 			dp_y = d - hdmin[y][(jp_y+1)];  /* d index for state y */
-			if (dsq[j+1] < Alphabet_size) 
-			  iescore = cm->iesc[y][(int) dsq[j+1]];
+			if (sq->dsq[j+1] < cm->abc->K) 
+			  iescore = cm->iesc[y][sq->dsq[j+1]];
 			else
-			  iescore = iDegenerateSingletScore(cm->iesc[y], dsq[j+1]);
+			  iescore = esl_abc_IAvgScore(cm->abc, sq->dsq[j+1], cm->iesc[y]);
 			/*printf("j: %d | jmin[y]: %d | jmax[y]: %d | jp_v: %d | dp_v: %d | jp_y: %d | dp_y: %d\n", j, jmin[y], jmax[y], jp_v, dp_v, jp_y, dp_y);*/
 			beta[v][jp_v][dp_v] = ILogsum(beta[v][jp_v][dp_v], (beta[y][jp_y+1][dp_y+1] 
 									    + cm->itsc[y][voffset] + iescore));
@@ -3953,7 +4011,7 @@ IOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 			beta[v][jp_v][dp_v] = ILogsum(beta[v][jp_v][dp_v], (beta[y][jp_y][dp_y] + cm->itsc[y][voffset])); 
 			break;
 
-		      default: Die("bogus child state %d\n", cm->sttype[y]);
+		      default: esl_fatal("bogus child state %d\n", cm->sttype[y]);
 		      }/* end switch over states*/
 		  } /* ends for loop over parent states. we now know beta[v][j][d] for this d */
 		if (beta[v][jp_v][dp_v] < -INFTY) beta[v][jp_v][dp_v] = -INFTY;
@@ -3975,10 +4033,10 @@ IOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 		case MP_st: 
 		  if (j == j0 || d == j) continue; /* boundary condition */
 		  if (((j+1) > jmax[v]) || ((d+2) > hdmax[v][jp_v])) continue; /*boundary condition*/
-		  if (dsq[i-1] < Alphabet_size && dsq[j+1] > Alphabet_size)
-		    iescore = cm->iesc[v][(int) (dsq[i-1]*Alphabet_size+dsq[j+1])];
+		  if (sq->dsq[i-1] < cm->abc->K && sq->dsq[j+1] > cm->abc->K)
+		    iescore = cm->iesc[v][(sq->dsq[i-1]*cm->abc->K+sq->dsq[j+1])];
 		  else
-		    iescore = iDegeneratePairScore(cm->iesc[v], dsq[i-1], dsq[j+1]);
+		    iescore = iDegeneratePairScore(cm->abc, cm->iesc[v], sq->dsq[i-1], sq->dsq[j+1]);
 		  beta[cm->M][j][d] = ILogsum(beta[cm->M][j][d], (beta[v][jp_v+1][dp_v+2] + cm->iendsc[v] 
 								  + iescore));
 		break;
@@ -3986,10 +4044,10 @@ IOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 	      case IL_st:
 		if (d == j) continue;	
 		if ((d+1) > hdmax[v][jp_v]) continue; /*boundary condition*/
-		if (dsq[i-1] < Alphabet_size) 
-		  iescore = cm->iesc[v][(int) dsq[i-1]];
+		if (sq->dsq[i-1] < cm->abc->K) 
+		  iescore = cm->iesc[v][sq->dsq[i-1]];
 		else
-		  iescore = iDegenerateSingletScore(cm->iesc[v], dsq[i-1]);
+		  iescore = esl_abc_IAvgScore(cm->abc, sq->dsq[i-1], cm->iesc[v]);
 		beta[cm->M][j][d] = ILogsum(beta[cm->M][j][d], (beta[v][jp_v][dp_v+1] + cm->iendsc[v] 
 								+ iescore));
 		break;
@@ -3997,10 +4055,10 @@ IOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 	      case IR_st:
 		if (j == j0) continue;
 		if (((j+1) > jmax[v]) || ((d+1) > hdmax[v][jp_v])) continue; /*boundary condition*/
-		if (dsq[j+1] < Alphabet_size) 
-		  iescore = cm->iesc[v][(int) dsq[j+1]];
+		if (sq->dsq[j+1] < cm->abc->K) 
+		  iescore = cm->iesc[v][sq->dsq[j+1]];
 		else
-		  iescore = iDegenerateSingletScore(cm->iesc[v], dsq[j+1]);
+		  iescore = esl_abc_IAvgScore(cm->abc, sq->dsq[j+1], cm->iesc[v]);
 		beta[cm->M][j][d] = ILogsum(beta[cm->M][j][d], (beta[v][jp_v+1][dp_v+1] + cm->iendsc[v] 
 								+ iescore));
 		break;
@@ -4011,7 +4069,7 @@ IOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 								+ iescore));
 		break;
 	      case B_st:  
-	      default: Die("bogus parent state %d\n", cm->sttype[v]);
+	      default: esl_fatal("bogus parent state %d\n", cm->sttype[v]);
 		/* note that although B is a valid vend for a segment we'd do
                    outside on, B->EL is set to be impossible, by the local alignment
                    config. There's no point in having a B->EL because B is a nonemitter
@@ -4099,7 +4157,7 @@ IOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
 	  diff = fsc - (Scorify(alpha[0][j0-jmin[0]][Wp]));
 	  if(diff > 0.01 || diff < -0.01)
 	    {
-	      Die("ERROR: node %d P(S|M): %.5f inconsistent with Inside P(S|M): %.5f (diff: %.5f)\n", 
+	      esl_fatal("ERROR: node %d P(S|M): %.5f inconsistent with Inside P(S|M): %.5f (diff: %.5f)\n", 
 		  n, fsc, Scorify(alpha[0][(j0-jmin[0])][Wp]), diff);
 	    }
 	}
@@ -4189,6 +4247,10 @@ IOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
     printf("\tIOutside_b_jd_me() sc : %f (LOCAL mode; sc is from Inside)\n", freturn_sc);
 
   return freturn_sc;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return 0.; /* never reached */
 }
 
 /***************************************************************/
@@ -4373,10 +4435,11 @@ char *
 CMPostalCode_b_jd_me(CM_t *cm, int L, float ***post, Parsetree_t *tr,
 		    int *jmin, int *jmax, int **hdmin, int **hdmax)
 {
+  int status;
   int x, v, i, j, d, r;
   char *postcode;
   int jp_v, dp_v;
-  postcode = MallocOrDie((L+1) * sizeof(char)); 
+  ESL_ALLOC(postcode, (L+1) * sizeof(char)); 
 
   for (x = 0; x < tr->n; x++)
     {
@@ -4415,16 +4478,21 @@ CMPostalCode_b_jd_me(CM_t *cm, int L, float ***post, Parsetree_t *tr,
     }
   postcode[L] = '\0';
   return(postcode);
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return NULL; /* never reached */
 }
 
 char *
 ICMPostalCode_b_jd_me(CM_t *cm, int L, int ***post, Parsetree_t *tr,
 		      int *jmin, int *jmax, int **hdmin, int **hdmax)
 {
+  int status;
   int x, v, i, j, d, r;
   char *postcode;
   int jp_v, dp_v;
-  postcode = MallocOrDie((L+1) * sizeof(char)); 
+  ESL_ALLOC(postcode, (L+1) * sizeof(char)); 
 
   for (x = 0; x < tr->n; x++)
     {
@@ -4463,6 +4531,10 @@ ICMPostalCode_b_jd_me(CM_t *cm, int L, int ***post, Parsetree_t *tr,
     }
   postcode[L] = '\0';
   return(postcode);
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return NULL; /* never reached */
 }
 
 /*################################################################*/
@@ -4493,25 +4565,35 @@ ICMPostalCode_b_jd_me(CM_t *cm, int L, int ***post, Parsetree_t *tr,
 Ideckpool_t *
 Ideckpool_create(void)
 {
+  int status;
   Ideckpool_t *dpool;
 
-  dpool = MallocOrDie(sizeof(Ideckpool_t));
+  ESL_ALLOC(dpool, sizeof(Ideckpool_t));
   dpool->block  = 10;		/* configurable if you want */
-  dpool->pool   = MallocOrDie(sizeof(int **) * dpool->block);
+  ESL_ALLOC(dpool->pool, sizeof(int **) * dpool->block);
   dpool->nalloc = dpool->block;
   dpool->n      = 0;
   return dpool;
+  
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return NULL; /* never reached */
 }
 void 
 Ideckpool_push(Ideckpool_t *dpool, int **deck)
 {
+  int status;
+  void *tmp;
   if (dpool->n == dpool->nalloc) {
     dpool->nalloc += dpool->block;
-    dpool->pool = ReallocOrDie(dpool->pool, sizeof(int **) * dpool->nalloc);
+    ESL_RALLOC(dpool->pool, tmp, sizeof(int **) * dpool->nalloc);
   }
   dpool->pool[dpool->n] = deck;
   dpool->n++;
-  SQD_DPRINTF3(("Ideckpool_push\n"));
+  ESL_DPRINTF3(("Ideckpool_push\n"));
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
 }
 int
 Ideckpool_pop(Ideckpool_t *d, int ***ret_deck)
@@ -4519,7 +4601,7 @@ Ideckpool_pop(Ideckpool_t *d, int ***ret_deck)
   if (d->n == 0) { *ret_deck = NULL; return 0;}
   d->n--;
   *ret_deck = d->pool[d->n];
-  SQD_DPRINTF3(("Ideckpool_pop\n"));
+  ESL_DPRINTF3(("Ideckpool_pop\n"));
   return 1;
 }
 void
@@ -4551,15 +4633,20 @@ Ideckpool_free(Ideckpool_t *d)
 int **
 Ialloc_vjd_deck(int L, int i, int j)
 {
+  int status;
   int **a;
   int     jp;
 
-  SQD_DPRINTF3(("alloc_vjd_deck : %.4f\n", size_vjd_deck(L,i,j)));
-  a = MallocOrDie(sizeof(int *) * (L+1)); /* always alloc 0..L rows, some of which are NULL */
+  ESL_DPRINTF3(("alloc_vjd_deck : %.4f\n", size_vjd_deck(L,i,j)));
+  ESL_ALLOC(a, sizeof(int *) * (L+1)); /* always alloc 0..L rows, some of which are NULL */
   for (jp = 0;   jp < i-1;    jp++) a[jp]     = NULL;
   for (jp = j+1; jp <= L;     jp++) a[jp]     = NULL;
-  for (jp = 0;   jp <= j-i+1; jp++) a[jp+i-1] = MallocOrDie(sizeof(int) * (jp+1));
+  for (jp = 0;   jp <= j-i+1; jp++) ESL_ALLOC(a[jp+i-1], sizeof(int) * (jp+1));
   return a;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return NULL; /* never reached */
 }
 int
 Isize_vjd_deck(int L, int i, int j)
@@ -4598,7 +4685,8 @@ Ifree_vjd_matrix(int ***a, int M, int i, int j)
 int **
 Ialloc_jdbanded_vjd_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax)
 {
-  int **a;
+  int     status;
+  int   **a;
   int     jp;
   int     bw; /* width of band, depends on jp, so we need to calculate
 	         this inside the jp loop*/
@@ -4606,12 +4694,9 @@ Ialloc_jdbanded_vjd_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, in
   /*printf("in alloc JD banded vjd deck, L : %d, i : %d, j : %d, jmin : %d, jmax : %d\n", L, i, j, jmin, jmax);*/
 
   if(j < jmin || i > jmax)
-    {
-      printf("ERROR called alloc_jdbanded_vjd_deck for i: %d j: %d which is outside the band on j, jmin: %d | jmax: %d\n", i, j, jmin, jmax);
-      exit(1);
-    }
+    esl_fatal("ERROR called alloc_jdbanded_vjd_deck for i: %d j: %d which is outside the band on j, jmin: %d | jmax: %d\n", i, j, jmin, jmax);
 
-  a = MallocOrDie(sizeof(int *) * (L+1));  /* always alloc 0..L rows, some of which are NULL */
+  ESL_ALLOC(a, sizeof(int *) * (L+1));  /* always alloc 0..L rows, some of which are NULL */
   for (jp = 0; jp <= L;     jp++) a[jp]     = NULL;
 
   jfirst = ((i-1) > jmin) ? (i-1) : jmin;
@@ -4629,15 +4714,18 @@ Ialloc_jdbanded_vjd_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, in
 	   * in the hd band that is invalid because its > j. I check, or ensure, that this
 	   * doesn't happen when I'm constructing the d bands.
 	   */
-	  printf("jd banded error 0.\n");
-	  exit(1);
+	  esl_fatal("jd banded error 0.\n");
 	}
       bw = hdmax[jp-jmin] - hdmin[jp-jmin] +1;
 
       /*a is offset only the first (jlast-jfirst+1) elements will be non-NULL*/
-      a[jp-jfirst] = MallocOrDie(sizeof(int) * bw);
+      ESL_ALLOC(a[jp-jfirst], sizeof(int) * bw);
       /*printf("\tallocated a[%d] | bw: %d\n", (jp-jfirst), bw);*/
     }
   return a;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return NULL; /* never reached */
 }
 

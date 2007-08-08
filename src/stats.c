@@ -10,6 +10,7 @@
  * Separate file started May 17, 2002
  */
 
+#include "esl_config.h"
 #include "config.h"
 
 #include <stdio.h>
@@ -18,18 +19,18 @@
 #include <ctype.h>
 #include <string.h>
 
+#include "easel.h"
+#include "esl_gumbel.h"
+#include "esl_histogram.h"
+#include "esl_random.h"
+#include "esl_sqio.h"
+#include "esl_vectorops.h"
+
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
-#include "squid.h"		/* general sequence analysis library    */
-#include "msa.h"                /* squid's multiple alignment i/o       */
 #include "stats.h"
-#include "mpifuncs.h"
-#include "histogram.h"
-#include "easel.h"
-#include "esl_histogram.h"
-#include "esl_gumbel.h"
-#include "esl_sqio.h"
 #include "cm_dispatch.h"
+#include "mpifuncs.h"
 
 /*
  * Function: AllocCMStats()
@@ -41,25 +42,30 @@
 CMStats_t *
 AllocCMStats(int np)
 {
+  int status;
   CMStats_t  *cmstats;
   int i, p;
 
-  cmstats = (struct cmstats_s *) MallocOrDie(sizeof(struct cmstats_s));
+  ESL_ALLOC(cmstats, sizeof(struct cmstats_s));
 
   cmstats->np = np;
-  cmstats->ps = MallocOrDie(sizeof(int) * cmstats->np);
-  cmstats->pe = MallocOrDie(sizeof(int) * cmstats->np);
-  cmstats->gumAA = MallocOrDie(sizeof(struct gumbelinfo_s **) * NGUMBELMODES);
-  cmstats->fthrA = MallocOrDie(sizeof(struct cp9filterthr_s *) * NFTHRMODES);
+  ESL_ALLOC(cmstats->ps, sizeof(int) * cmstats->np);
+  ESL_ALLOC(cmstats->pe, sizeof(int) * cmstats->np);
+  ESL_ALLOC(cmstats->gumAA, sizeof(struct gumbelinfo_s **) * NGUMBELMODES);
+  ESL_ALLOC(cmstats->fthrA, sizeof(struct cp9filterthr_s *) * NFTHRMODES);
   for(i = 0; i < NGUMBELMODES; i++)
     {
-      cmstats->gumAA[i] = MallocOrDie(sizeof(struct gumbelinfo_s *));
+      ESL_ALLOC(cmstats->gumAA[i], sizeof(struct gumbelinfo_s *));
       for(p = 0; p < cmstats->np; p++)
-	cmstats->gumAA[i][p] = MallocOrDie(sizeof(struct gumbelinfo_s));
+	ESL_ALLOC(cmstats->gumAA[i][p], sizeof(struct gumbelinfo_s));
     }
   for(i = 0; i < NFTHRMODES; i++)
-    cmstats->fthrA[i]  = MallocOrDie(sizeof(struct cp9filterthr_s));
+    ESL_ALLOC(cmstats->fthrA[i], sizeof(struct cp9filterthr_s));
   return cmstats;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return NULL; /* never reached */
 }
 
 /* Function: FreeCMStats()
@@ -106,7 +112,7 @@ int SetCMCutoff(CM_t *cm, int cm_cutoff_type, float cm_sc_cutoff, float cm_e_cut
 	{
 	  cm->cutoff = cm_e_cutoff;
 	  if(!(cm->flags & CM_GUMBEL_STATS) && (!(cm->search_opts & CM_SEARCH_HMMONLY)))
-	    Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T.\n");
+	    esl_fatal("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T.\n");
 	}
     }
   return eslOK;
@@ -130,7 +136,7 @@ int SetCP9Cutoff(CM_t *cm, int cp9_cutoff_type, float cp9_sc_cutoff, float cp9_e
 	{
 
 	  if(!(cm->flags & CM_GUMBEL_STATS))
-	    Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try --hmmT.\n");
+	    esl_fatal("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try --hmmT.\n");
 	  /*if(cp9_e_cutoff < DEFAULT_MIN_CP9_E_CUTOFF) cp9_e_cutoff = DEFAULT_MIN_CP9_E_CUTOFF;
 	    if(cm->cutoff_type == E_CUTOFF && cp9_e_cutoff < cm_e_cutoff) cp9_e_cutoff = cm_e_cutoff;*/
 	  cm->cp9_cutoff = cp9_e_cutoff;
@@ -192,7 +198,7 @@ int PrintSearchInfo(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N)
       if(cm->cp9_cutoff_type == E_CUTOFF)
 	{
 	  if(!(cm->flags & CM_GUMBEL_STATS))
-	    Die("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T and/or --hmmT.\n");
+	    esl_fatal("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T and/or --hmmT.\n");
 
 	  /* Predict survival fraction from filter based on E-value, consensus length, W and N */
 	  if(cp9_mode == CP9_G) avg_hit_len = clen;       /* should be weighted sum of gamma[0] from QDB calc */
@@ -288,33 +294,50 @@ int debug_print_filterthrinfo(CMStats_t *cmstats, CP9FilterThr_t *fthr)
 }
 
 /* Function: get_gc_comp
- * Date:     RJK, Mon Oct 7, 2002 [St. Louis]
+ * Date:     EPN, Tue Aug  7 08:51:06 2007
  * Purpose:  Given a sequence and start and stop coordinates, returns 
- *           integer GC composition of the region 
+ *           integerized GC composition of the region. This Easelfied
+ *           version replaces RSEARCH's version.
  */
-int get_gc_comp(char *seq, int start, int stop) {
+int get_gc_comp(ESL_SQ *sq, int start, int stop) 
+{
+  /* contract check */
+  if(sq->abc == NULL)
+    esl_fatal("get_gc_comp expects sq to have a valid alphabet.");
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("get_gc_comp expects sq to be digitized");
+  if(sq->abc->type != eslRNA && sq->abc->type != eslDNA)
+    esl_fatal("get_gc_comp expects alphabet of RNA or DNA");
+
+  int status;
   int i;
-  int gc_ct;
-  char c;
+  float *ct = NULL;
+  float  gc;
 
   if (start > stop) {
     i = start;
     start = stop;
     stop = i;
   }
-  gc_ct = 0;
-  /* Careful: seq is indexed 0..n-1 so start and
-   * stop are off-by-one. This is a bug in RSEARCH-1.1 */
-  for (i=(start-1); i<=(stop-1); i++) {
-    c = resolve_degenerate(seq[i]);
-    if (c=='G' || c == 'C')
-      gc_ct++;
+
+  ESL_ALLOC(ct, sizeof(float) * sq->abc->K);
+  esl_vec_FSet(ct, sq->abc->K, 0.);
+  for (i = start; i <= stop; i++)
+  {
+    if(esl_abc_XIsGap(sq->abc, sq->dsq[i])) esl_fatal("in get_gc_comp, res %d is a gap!\n", i);
+    esl_abc_FCount(sq->abc, ct, sq->dsq[i], 1.);
   }
-  return ((int)(100.*gc_ct/(stop-start+1)));
+  gc = ct[sq->abc->inmap[(int) 'G']] + ct[sq->abc->inmap[(int) 'C']];
+  gc /= ((float) (stop-start+1));
+  gc *= 100.;
+  free(ct);
+  return ((int) gc);
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return 0; /* never reached */
 }
  
-
-
 /*
  * Function: random_from_string
  * Date:     September, 1998 (approx.) -- from hmmgcc
@@ -322,12 +345,12 @@ int get_gc_comp(char *seq, int start, int stop) {
  * Used in conjunction with the function below that resolves degenerate code
  * nucleotides.
  */
-char random_from_string (char *s) {
+char random_from_string (ESL_RANDOMNESS *r, char *s) {
   int i;
   do 
     {
-      /*i = (int) ((float)(strlen(s)-1)*sre_random()/(RAND_MAX+1.0));*/
-      i = (int) ((float)(strlen(s))*sre_random());
+      /*i = (int) ((float)(strlen(s)-1)*esl_random(r)/(RAND_MAX+1.0));*/
+      i = (int) ((float)(strlen(s)) * esl_random(r));
     } while (i<0 || i>=strlen(s));
   return(s[i]);
 }
@@ -361,20 +384,24 @@ char random_from_string (char *s) {
  * because it will assume that the symbol for all nucleotides will be passed
  * in as "N".
  */
-char resolve_degenerate (char c) {
+char resolve_degenerate (ESL_RANDOMNESS *r, char c) {
   c = toupper(c);
   switch (c) {
-    case 'R' : return(random_from_string("GA"));
-    case 'K' : return(random_from_string("GT"));
-    case 'B' : return(random_from_string("CGT"));
-    case 'V' : return(random_from_string("ACG"));
-    case 'Y' : return(random_from_string("CT"));
-    case 'S' : return(random_from_string("GC"));
-    case 'D' : return(random_from_string("AGT"));
-    case 'N' : return(random_from_string("ACGT"));
-    case 'M' : return(random_from_string("AC"));
-    case 'W' : return(random_from_string("AT"));
-    case 'H' : return(random_from_string("ACT"));
+    case 'A' : return(c);
+    case 'C' : return(c);
+    case 'G' : return(c);
+    case 'T' : return(c);
+    case 'R' : return(random_from_string(r, "GA"));
+    case 'K' : return(random_from_string(r, "GT"));
+    case 'B' : return(random_from_string(r, "CGT"));
+    case 'V' : return(random_from_string(r, "ACG"));
+    case 'Y' : return(random_from_string(r, "CT"));
+    case 'S' : return(random_from_string(r, "GC"));
+    case 'D' : return(random_from_string(r, "AGT"));
+    case 'N' : return(random_from_string(r, "ACGT"));
+    case 'M' : return(random_from_string(r, "AC"));
+    case 'W' : return(random_from_string(r, "AT"));
+    case 'H' : return(random_from_string(r, "ACT"));
   }
   return(c);
 }
@@ -390,58 +417,49 @@ char resolve_degenerate (char c) {
  *           gc_ct    - RETURN: gc_ct[x] observed 100-nt segments with GC% of x [0..100] 
  * seqfile   
  */
-void GetDBInfo (ESL_SQFILE *sqfp, long *ret_N, double **ret_gc_ct) 
+void GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, long *ret_N, double **ret_gc_ct) 
 {
+  int               status;
   ESL_SQ           *sq;
   int               i, j;  
   long              N = 0;
-  double           *gc_ct = MallocOrDie(sizeof(double) * GC_SEGMENTS);
-  int               status;
+  double           *gc_ct;
   int               gc;
-  char              c;
   char              allN[100]; /* used to check if curr DB chunk is all N's, if it is,
 				* we don't count it towards the GC content info */
   int               allN_flag; /* stays up if curr DB chunk is all Ns */
   /*printf("in GetDBInfo\n");*/
 
+  ESL_ALLOC(gc_ct, sizeof(double) * GC_SEGMENTS);
   for (i=0; i<GC_SEGMENTS; i++)
     gc_ct[i] = 0.;
 
   for (j=0; j<100; j++)
     allN[j] = 'N';
   
-  sq = esl_sq_Create(); 
+  sq = esl_sq_CreateDigital(abc); 
   while ((status = esl_sqio_Read(sqfp, sq)) == eslOK) 
     { 
       N += sq->n;
       /*printf("new N: %d\n", N);*/
       for(i = 0; i < sq->n; i += 100)
 	{
-	  gc = 0;
+	  j = (i+99 <= sq->n) ? i+99 : sq->n;
+	  gc = get_gc_comp(sq, i, j);
 	  /*printf(">%d.raw\n", i);*/
 	  allN_flag = TRUE;
 	  for(j = 0; j < 100 && (j+i) < sq->n; j++)
 	    {
-	      if(allN_flag && sq->seq[(j+i)] != 'N')
+	      if(abc->sym[sq->dsq[(i+j)]] != 'N')
+	      {
 		allN_flag = FALSE;
-	      /*printf("%c", sq->seq[(j+i)]);*/
-	      c = resolve_degenerate(sq->seq[(j+i)]);
-	      if (c == 'G' || c == 'C') gc++;
-	    }
-	  /*printf("\n>%d.resolved\n", i);*/
-	  for(j = 0; j < 100 && (j+i) < sq->n; j++)
-	    {
-	      c = resolve_degenerate(sq->seq[(j+i)]);
-	      /*printf("%c", c);*/
+		break;
+	      }
 	    }
 	  /*printf("N: %d i: %d gc: %d\n", N, i, gc);*/
 	  /* scale gc for chunks < 100 nt */
-	  if(j < 100)
-	    {
-	      gc *= 100. / (float) j;
-	    }
-	  /*if(allN_flag)
-	    printf("allN_flag UP!\n");*/
+	  if(j < 100) gc *= 100. / (float) j;
+
 	  /* don't count GC content of chunks < 20 nt, very hacky;
 	   * don't count GC content of chunks that are all N, this
 	   * will be common in RepeatMasked genomes where poly-Ns could
@@ -469,6 +487,9 @@ void GetDBInfo (ESL_SQFILE *sqfp, long *ret_N, double **ret_gc_ct)
 #endif
   
   return; 
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
 }
 
 /*
@@ -528,7 +549,7 @@ float MinCMScCutoff (CM_t *cm)
   
   /* we better have stats */
   if(!(cm->flags & CM_GUMBEL_STATS))
-    Die("ERROR in MinCMScCutoff, cutoff type E value, but no stats.\n");
+    esl_fatal("ERROR in MinCMScCutoff, cutoff type E value, but no stats.\n");
 
   /* Determine appropriate Gumbel mode */
   CM2Gumbel_mode(cm, &gum_mode, 
@@ -568,7 +589,7 @@ float MinCP9ScCutoff (CM_t *cm)
   
   /* we better have stats */
   if(!(cm->flags & CM_GUMBEL_STATS))
-    Die("ERROR in MinCP9ScCutoff, cutoff type E value, but no stats.\n");
+    esl_fatal("ERROR in MinCP9ScCutoff, cutoff type E value, but no stats.\n");
 
   /* Determine appropriate Gumbel mode */
   CM2Gumbel_mode(cm, NULL,  /* don't care about CM Gumbel mode */
@@ -603,7 +624,7 @@ int CM2Gumbel_mode(CM_t *cm, int *ret_cm_gum_mode,
 
   /* check contract */
   if(!(cm->flags & CM_CP9) || cm->cp9 == NULL)
-    Die("ERROR no CP9 in CM2Gumbel_mode()\n");
+    esl_fatal("ERROR no CP9 in CM2Gumbel_mode()\n");
 
   if(cm->flags & CM_LOCAL_BEGIN)
     {
@@ -661,7 +682,7 @@ int CopyCMStatsGumbel(CMStats_t *src, CMStats_t *dest)
 
   /* Check contract */
   if(src->np != dest->np)
-    Die("ERROR in CopyCMStatsGumbel() src->np: %d not equal to alloc'ed dest->np: %d\n", src->np, dest->np);
+    esl_fatal("ERROR in CopyCMStatsGumbel() src->np: %d not equal to alloc'ed dest->np: %d\n", src->np, dest->np);
 
   for(p = 0; p < src->np; p++)
     {
@@ -695,8 +716,8 @@ int CopyCMStats(CMStats_t *src, CMStats_t *dest)
 {
   /* Check contract */
   if(src->np != dest->np)
-    Die("ERROR in CopyCMStats() src->np: %d not equal to alloc'ed dest->np: %d\n", src->np, dest->np);
-
+    esl_fatal("ERROR in CopyCMStats() src->np: %d not equal to alloc'ed dest->np: %d\n", src->np, dest->np);
+  
   CopyCMStatsGumbel(src, dest);
   CopyFThrInfo(src->fthrA[CM_LC], dest->fthrA[CM_LC]);
   CopyFThrInfo(src->fthrA[CM_GC], dest->fthrA[CM_GC]);

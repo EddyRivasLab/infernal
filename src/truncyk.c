@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
 #include "easel.h"
 #include "esl_stack.h"
@@ -119,12 +120,14 @@ trinside (CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_full
           void ****ret_T_shadow, void ****ret_Lmode_shadow, void ****ret_Rmode_shadow,
           int *ret_mode, int *ret_v, int *ret_i, int *ret_j)
 {
+   int      status;
    float  **end;
    int      nends;
    int     *touch;
    int      v,y,z;
    int      j,d,i,k;
-   float    sc,tsc;
+   float    sc;
+   /* float tsc; */
    /* float esc; */  /* removed to silence a compiler warning: it's unused at present (SRE) */
    int      yoffset;
    int      W;
@@ -180,26 +183,26 @@ trinside (CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_full
    /* Create score matrices */
    if ( alpha == NULL )
    {
-      alpha = MallocOrDie(sizeof(float **) * (cm->M+1));
+     ESL_ALLOC(alpha, sizeof(float **) * (cm->M+1));
       for ( v=0; v<=cm->M; v++ ) { alpha[v] = NULL; }
    }
    if ( L_alpha == NULL )
    {
-      L_alpha = MallocOrDie(sizeof(float **) * (cm->M+1));
+     ESL_ALLOC(L_alpha, sizeof(float **) * (cm->M+1));
       for ( v=0; v<=cm->M; v++ ) { L_alpha[v] = NULL; }
    }
    if ( R_alpha == NULL )
    {
-      R_alpha = MallocOrDie(sizeof(float **) * (cm->M+1));
+     ESL_ALLOC(R_alpha, sizeof(float **) * (cm->M+1));
       for ( v=0; v<=cm->M; v++ ) { R_alpha[v] = NULL; }
    }
    if ( T_alpha == NULL )
    {
-      T_alpha = MallocOrDie(sizeof(float **) * (cm->M+1));
+     ESL_ALLOC(T_alpha, sizeof(float **) * (cm->M+1));
       for ( v=0; v<=cm->M; v++ ) { T_alpha[v] = NULL; }
    }
 
-   touch = MallocOrDie(sizeof(int) *cm->M);
+   ESL_ALLOC(touch, sizeof(int) *cm->M);
    for ( v=0;      v<vroot; v++ ) { touch[v] = 0; }
    for ( v=vroot;  v<=vend; v++ ) { touch[v] = cm->pnum[v]; }
    for ( v=vend+1; v<cm->M; v++ ) {touch[v] = 0; }
@@ -207,32 +210,32 @@ trinside (CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_full
    /* Create shadow matrices */
    if ( ret_shadow != NULL ) 
    {
-      shadow = (void ***) MallocOrDie(sizeof(void **) * cm->M);
+     ESL_ALLOC(shadow, sizeof(void **) * cm->M);
       for ( v=0; v<cm->M; v++ ) { shadow[v] = NULL; }
    }
    if ( ret_L_shadow != NULL ) 
    {
-      L_shadow = (void ***) MallocOrDie(sizeof(void **) * cm->M);
+     ESL_ALLOC(L_shadow, sizeof(void **) * cm->M);
       for ( v=0; v<cm->M; v++ ) { L_shadow[v] = NULL; }
    }
    if ( ret_R_shadow != NULL ) 
    {
-      R_shadow = (void ***) MallocOrDie(sizeof(void **) * cm->M);
+     ESL_ALLOC(R_shadow, sizeof(void **) * cm->M);
       for ( v=0; v<cm->M; v++ ) { R_shadow[v] = NULL; }
    }
    if ( ret_T_shadow != NULL ) 
    {
-      T_shadow = (void ***) MallocOrDie(sizeof(void **) * cm->M);
+     ESL_ALLOC(T_shadow, sizeof(void **) * cm->M);
       for ( v=0; v<cm->M; v++ ) { T_shadow[v] = NULL; }
    }
    if ( ret_Lmode_shadow != NULL ) 
    {
-      Lmode_shadow = (int ***) MallocOrDie(sizeof(int **) * cm->M);
+     ESL_ALLOC(Lmode_shadow, sizeof(int **) * cm->M);
       for ( v=0; v<cm->M; v++ ) { Lmode_shadow[v] = NULL; }
    }
    if ( ret_Rmode_shadow != NULL ) 
    {
-      Rmode_shadow = (int ***) MallocOrDie(sizeof(int **) * cm->M);
+     ESL_ALLOC(Rmode_shadow, sizeof(int **) * cm->M);
       for ( v=0; v<cm->M; v++ ) { Rmode_shadow[v] = NULL; }
    }
 
@@ -801,6 +804,10 @@ trinside (CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_full
    if ( ret_Lmode_shadow != NULL ) *ret_Lmode_shadow = (void ***)Lmode_shadow;
    if ( ret_Rmode_shadow != NULL ) *ret_Rmode_shadow = (void ***)Rmode_shadow;
    return sc;
+
+ ERROR:
+   esl_fatal("Memory allocation error.");
+   return 0.; /* never reached */
 }
 
 /* Function: trinsideT()

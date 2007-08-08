@@ -26,34 +26,25 @@
  * 
  */
 
+#include "esl_config.h"
 #include "config.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "squid.h"
-#include "sre_stack.h"
+#include "easel.h"
+#include "esl_histogram.h"
+#include "esl_stopwatch.h"
+#include "esl_vectorops.h"
+#include "esl_stats.h"
 
 #include "structs.h"
 #include "funcs.h"
-
-#include "stopwatch.h"          /* squid's process timing module        */
 #include "hmmband.h"
 #include "cm_dispatch.h"
 #include "mpifuncs.h"
 #include "stats.h"
-#include "easel.h"
-#include "esl_gumbel.h"
-#include "esl_vectorops.h"
-#include "esl_histogram.h"
-#include "esl_normal.h"
-#include "esl_stats.h"
-#include "esl_gev.h"
-#include "esl_weibull.h"
-#include "esl_stretchexp.h"
-#include "esl_gamma.h"
-#include "esl_exponential.h"
-#include "esl_gumbel.h"
+
   
 /* Function: CP9Viterbi()
  * based on  P7Viterbi() <-- this function's comments below  
@@ -109,7 +100,7 @@
  *
  * Args
  *           cm        - the covariance model, includes cm->cp9: a CP9 HMM
- *           dsq       - sequence in digitized form
+ *           sq        - sequence in digitized form
  *           i0        - start of target subsequence (1 for beginning of dsq)
  *           j0        - end of target subsequence (L for end of dsq)
  *           W         - the maximum size of a hit (often cm->W)
@@ -127,10 +118,11 @@
  *           else         max log P(S|M)/P(S|R), for argmax subseq S of input seq i0..j0,
  */
 float
-CP9Viterbi(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
+CP9Viterbi(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret_sc, 
 	   int *ret_bestpos, scan_results_t *results, int do_scan,
 	   int be_efficient, CP9_dpmatrix_t **ret_mx, CP9trace_t **ret_tr)
 {
+  int          status;
   CP9trace_t  *tr;
   CP9_dpmatrix_t *mx;       /* the CP9 DP matrix                                            */
   int **mmx;
@@ -155,7 +147,6 @@ CP9Viterbi(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
   float        best_pos;    /* residue giving best_sc                                       */
   float        return_sc;   /* score to return, if (!do_scan) return overall Forward sc,    *
 			     * else return best_hmm_sc if # HMM hits>0, else return best_sc */
-  float        temp_sc;     /* temporary score                                              */
   int          nrows;       /* num rows for DP matrix, 2 or L+1 depending on be_efficient   */
 
   W  = j0-i0+1;		/* the length of the subsequence */
@@ -163,14 +154,17 @@ CP9Viterbi(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
   /*printf("in CP9Viterbi() i0: %d j0: %d\n", i0, j0);  */
   /* Contract checks */
   if(cm->cp9 == NULL)
-    Die("ERROR in CP9Viterbi, cm->cp9 is NULL.\n");
+    esl_fatal("ERROR in CP9Viterbi, cm->cp9 is NULL.\n");
   if(be_efficient && (ret_mx != NULL))
-    Die("ERROR in CP9Viterbi, be_efficient is TRUE, but ret_mx is non-NULL\n");
+    esl_fatal("ERROR in CP9Viterbi, be_efficient is TRUE, but ret_mx is non-NULL\n");
   if(results != NULL && !do_scan)
-    Die("ERROR in CP9Viterbi, passing in results data structure, but not in scanning mode.\n");
+    esl_fatal("ERROR in CP9Viterbi, passing in results data structure, but not in scanning mode.\n");
   if((cm->search_opts & CM_SEARCH_HMMGREEDY) && 
      (cm->search_opts & CM_SEARCH_HMMRESCAN))
-    Die("ERROR in CP9Viterbi, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
+    esl_fatal("ERROR in CP9Viterbi, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in CP9Viterbi, sq is not digitized.\n");
+
     
   best_sc     = IMPOSSIBLE;
   best_pos    = -1;
@@ -184,11 +178,11 @@ CP9Viterbi(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
    * This is a little SHMM that finds an optimal scoring parse
    * of multiple nonoverlapping hits.
    *****************************************************************/ 
-  gamma    = MallocOrDie(sizeof(float) * (L+1));
+  ESL_ALLOC(gamma, sizeof(float) * (L+1));
   gamma[0] = 0.;
-  gback    = MallocOrDie(sizeof(int)   * (L+1));
+  ESL_ALLOC(gback, sizeof(int)   * (L+1));
   gback[0] = -1;
-  savesc   = MallocOrDie(sizeof(float) * (L+1));
+  ESL_ALLOC(savesc, sizeof(float) * (L+1));
 
   /* Allocate DP matrix, either 2 rows or L+1 rows (depending on be_efficient),
    * M+1 columns */ 
@@ -197,7 +191,7 @@ CP9Viterbi(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
   mx = AllocCPlan9Matrix(nrows, cm->cp9->M, &mmx, &imx, &dmx, NULL,
 			 NULL);
   /* sc will hold P(seq up to j | Model) in int log odds form */
-  /*sc   = MallocOrDie(sizeof(int) * (j0-i0+2));*/
+  /*ESL_ALLOC(sc, sizeof(int) * (j0-i0+2));*/
 
   /* ResizeCPlan9Matrix(mx, W, hmm->M, &mmx, &imx, &dmx, &erow);*/
   /* Initialization of the zero row.
@@ -264,7 +258,7 @@ CP9Viterbi(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
       if((sc = dmx[prv][0] + cm->cp9->tsc[CTDI][0]) > imx[cur][0])
 	imx[cur][0] = sc;
       if(imx[cur][0] != -INFTY)
-	imx[cur][0] += cm->cp9->isc[(int) dsq[j]][0];
+	imx[cur][0] += cm->cp9->isc[sq->dsq[j]][0];
       else 
 	imx[cur][0] = -INFTY;
 
@@ -281,7 +275,7 @@ CP9Viterbi(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
 	  if((sc = dmx[prv][k-1] + cm->cp9->tsc[CTDM][k-1]) > mmx[cur][k])
 	    mmx[cur][k] = sc;
 	  if(mmx[cur][k] != -INFTY)
-	    mmx[cur][k] += cm->cp9->msc[(int) dsq[j]][k];
+	    mmx[cur][k] += cm->cp9->msc[sq->dsq[j]][k];
 	  else 
 	    mmx[cur][k] = -INFTY;
 
@@ -294,7 +288,7 @@ CP9Viterbi(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
 	  if((sc = dmx[prv][k] + cm->cp9->tsc[CTDI][k]) > imx[cur][k])
 	    imx[cur][k] = sc;
 	  if(imx[cur][k] != -INFTY)
-	    imx[cur][k] += cm->cp9->isc[(int) dsq[j]][k];
+	    imx[cur][k] += cm->cp9->isc[sq->dsq[j]][k];
 	  else 
 	    imx[cur][k] = -INFTY;
 
@@ -407,7 +401,7 @@ CP9Viterbi(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
     }
   
   if (!do_scan && ret_tr != NULL) {
-    CP9ViterbiTrace(cm->cp9, dsq, i0, j0, mx, &tr);
+    CP9ViterbiTrace(cm->cp9, sq, i0, j0, mx, &tr);
     /* CP9PrintTrace(stdout, tr, cm->cp9, dsq); */
     *ret_tr = tr;
   }
@@ -426,6 +420,10 @@ CP9Viterbi(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
   else                FreeCPlan9Matrix(mx);
   printf("Forward return_sc: %f\n", return_sc);
   return return_sc;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return 0.; /* never reached */
 }
 
 /***********************************************************************
@@ -502,10 +500,11 @@ CP9Viterbi(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
  *           else         max log P(S|M)/P(S|R), for argmax subseq S of input seq i0..j0,
  */
 float
-CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
+CP9Forward(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret_sc, 
 	   int *ret_bestpos, scan_results_t *results, int do_scan, int doing_align, int doing_rescan, 
 	   int be_efficient, CP9_dpmatrix_t **ret_mx)
 {
+  int          status;
   int          j;           /*     actual   position in the subsequence                     */
   int          jp;          /* j': relative position in the subsequence                     */
   int          i;           /* j-W: position in the subsequence                             */
@@ -540,16 +539,18 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
   /*printf("in CP9Forward() i0: %d j0: %d\n", i0, j0);  */
   /* Contract checks */
   if(cm->cp9 == NULL)
-    Die("ERROR in CP9Forward, cm->cp9 is NULL.\n");
+    esl_fatal("ERROR in CP9Forward, cm->cp9 is NULL.\n");
   if(doing_rescan && !do_scan) 
-    Die("ERROR in CP9Forward, doing_rescan but not do_scan");
+    esl_fatal("ERROR in CP9Forward, doing_rescan but not do_scan");
   if(be_efficient && (ret_mx != NULL))
-    Die("ERROR in CP9Forward, be_efficient is TRUE, but ret_mx is non-NULL\n");
+    esl_fatal("ERROR in CP9Forward, be_efficient is TRUE, but ret_mx is non-NULL\n");
   if(results != NULL && !do_scan)
-    Die("ERROR in CP9Forward, passing in results data structure, but not in scanning mode.\n");
+    esl_fatal("ERROR in CP9Forward, passing in results data structure, but not in scanning mode.\n");
   if((cm->search_opts & CM_SEARCH_HMMGREEDY) && 
      (cm->search_opts & CM_SEARCH_HMMRESCAN))
-    Die("ERROR in CP9Forward, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
+    esl_fatal("ERROR in CP9Forward, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in CP9Forward, sq is not digitized.\n");
     
   best_sc     = IMPOSSIBLE;
   best_pos    = -1;
@@ -563,11 +564,11 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
    * This is a little SHMM that finds an optimal scoring parse
    * of multiple nonoverlapping hits.
    *****************************************************************/ 
-  gamma    = MallocOrDie(sizeof(float) * (L+1));
+  ESL_ALLOC(gamma, sizeof(float) * (L+1));
   gamma[0] = 0.;
-  gback    = MallocOrDie(sizeof(int)   * (L+1));
+  ESL_ALLOC(gback, sizeof(int)   * (L+1));
   gback[0] = -1;
-  savesc   = MallocOrDie(sizeof(float) * (L+1));
+  ESL_ALLOC(savesc, sizeof(float) * (L+1));
 
   /* Allocate DP matrix, either 2 rows or L+1 rows (depending on be_efficient),
    * M+1 columns */ 
@@ -576,7 +577,7 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
   mx = AllocCPlan9Matrix(nrows, cm->cp9->M, &mmx, &imx, &dmx, &elmx, &erow); 
 
   /* sc will hold P(seq up to j | Model) in int log odds form */
-  sc   = MallocOrDie(sizeof(int) * (j0-i0+2));
+  ESL_ALLOC(sc, sizeof(int) * (j0-i0+2));
 			
   /* Initialization of the zero row. */
   mmx[0][0] = 0;      /* M_0 is state B, and everything starts in B */
@@ -642,7 +643,7 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
       imx[cur][0]  = ILogsum(ILogsum(mmx[prv][0] + cm->cp9->tsc[CTMI][0],
 				     imx[prv][0] + cm->cp9->tsc[CTII][0]),
 			     dmx[prv][0] + cm->cp9->tsc[CTDI][0]);
-      imx[cur][0] += cm->cp9->isc[(int) dsq[j]][0];
+      imx[cur][0] += cm->cp9->isc[sq->dsq[j]][0];
       /*printf("mmx[jp:%d][%d]: %d %f\n", jp, 0, mmx[cur][0], Score2Prob(mmx[cur][0], 1.));
 	printf("imx[jp:%d][%d]: %d %f\n", jp, 0, imx[cur][0], Score2Prob(imx[cur][0], 1.));
 	printf("dmx[jp:%d][%d]: %d %f\n", jp, 0, dmx[cur][0], Score2Prob(dmx[cur][0], 1.));*/
@@ -658,7 +659,7 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
 	    for(c = 0; c < cm->cp9->el_from_ct[k]; c++) /* el_from_ct[k] is >= 0 */
 	      /* transition penalty to EL incurred when EL was entered */
 	      mmx[cur][k] = ILogsum(mmx[cur][k], (elmx[prv][cm->cp9->el_from_idx[k][c]]));
-	  mmx[cur][k] += cm->cp9->msc[(int) dsq[j]][k];
+	  mmx[cur][k] += cm->cp9->msc[sq->dsq[j]][k];
 
 	  dmx[cur][k]  = ILogsum(ILogsum(mmx[cur][k-1] + cm->cp9->tsc[CTMD][k-1],
 					imx[cur][k-1] + cm->cp9->tsc[CTID][k-1]),
@@ -667,7 +668,7 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
 	  imx[cur][k]  = ILogsum(ILogsum(mmx[prv][k] + cm->cp9->tsc[CTMI][k],
 				       imx[prv][k] + cm->cp9->tsc[CTII][k]),
 			       dmx[prv][k] + cm->cp9->tsc[CTDI][k]);
-	  imx[cur][k] += cm->cp9->isc[(int) dsq[j]][k];
+	  imx[cur][k] += cm->cp9->isc[sq->dsq[j]][k];
 
 	  if((cm->cp9->flags & CPLAN9_EL) && cm->cp9->has_el[k]) /* not all HMM nodes have an EL state (for ex: 
 							    HMM nodes that map to right half of a MATP_MP) */
@@ -777,7 +778,7 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
 		if(do_scan && cm->search_opts & CM_SEARCH_HMMRESCAN && doing_rescan == FALSE)
 		  {
 		    /*printf("rechecking hit from %d to %d\n", gback[jp], j);*/
-		    temp_sc = CP9Forward(cm, dsq, gback[jp], j, cm->W, cutoff, 
+		    temp_sc = CP9Forward(cm, sq, gback[jp], j, cm->W, cutoff, 
 					 NULL,  /* don't care about scores of each pos */
 					 NULL,  /* don't care about best scoring position */
 					 NULL,  /* don't report hits to results data structure */
@@ -840,6 +841,10 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
   /*printf("Forward return_sc: %f\n", return_sc);*/
 
   return return_sc;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return 0.; /* never reached */
 }
 
 /***********************************************************************
@@ -957,10 +962,11 @@ CP9Forward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_s
  *                            this is max_jp B->M[jp][0]
  */
 float
-CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
+CP9Backward(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret_sc, 
 	    int *ret_bestpos, scan_results_t *results, int do_scan, int doing_align, 
 	    int doing_rescan, int be_efficient, CP9_dpmatrix_t **ret_mx)
 {
+  int          status;
   int          j;           /*     actual   position in the subsequence                     */
   int          jp;          /* j': relative position in the subsequence                     */
   int          i;           /*     j-W: position in the subsequence                         */
@@ -994,16 +1000,18 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
   /*printf("in CP9Backward() i0: %d j0: %d do_scan: %d \n", i0, j0, do_scan);  */
   /* Contract checks */
   if(cm->cp9 == NULL)
-    Die("ERROR in CP9Backward, cm->cp9 is NULL.\n");
+    esl_fatal("ERROR in CP9Backward, cm->cp9 is NULL.\n");
   if(doing_rescan && !do_scan) 
-    Die("ERROR in CP9Backward, doing_rescan but not do_scan");
+    esl_fatal("ERROR in CP9Backward, doing_rescan but not do_scan");
   if(be_efficient && (ret_mx != NULL))
-    Die("ERROR in CP9Backward, be_efficient is TRUE, but ret_mx is non-NULL\n");
+    esl_fatal("ERROR in CP9Backward, be_efficient is TRUE, but ret_mx is non-NULL\n");
   if(results != NULL && !do_scan)
-    Die("ERROR in CP9Backward, passing in results data structure, but not in scanning mode.a\n");
+    esl_fatal("ERROR in CP9Backward, passing in results data structure, but not in scanning mode.a\n");
   if((cm->search_opts & CM_SEARCH_HMMGREEDY) && 
      (cm->search_opts & CM_SEARCH_HMMRESCAN))
-    Die("ERROR in CP9Backward, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
+    esl_fatal("ERROR in CP9Backward, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in CP9Backward, sq is not digitized.\n");
     
   best_sc     = IMPOSSIBLE;
   best_pos    = -1;
@@ -1018,15 +1026,15 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
    * of multiple nonoverlapping hits. We use it first for
    * the Forward scan, and reuse it for the Backward scan.
    *****************************************************************/ 
-  gamma        = MallocOrDie(sizeof(float) * (L+2));
+  ESL_ALLOC(gamma, sizeof(float) * (L+2));
   gamma[0]     = 0.; /* this is impossible, no hit can be rooted at ip=0, 
 		      * we require hits to have at least 1 emission,
 		      * plus, no positive scoring hit can have 0 emissions as 
 		      * all transition scores are negative */
   gamma[L]   = 0.;
-  gback        = MallocOrDie(sizeof(int)   * (L+2));
+  ESL_ALLOC(gback, sizeof(int)   * (L+2));
   gback[L]   = -1;
-  savesc       = MallocOrDie(sizeof(float) * (L+2));
+  ESL_ALLOC(savesc, sizeof(float) * (L+2));
 
   /* Allocate DP matrix, either 2 rows or L+1 rows (depending on be_efficient),
    * M+1 columns */ 
@@ -1035,7 +1043,7 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
   mx = AllocCPlan9Matrix(nrows, cm->cp9->M, &mmx, &imx, &dmx, &elmx, &erow);
 
   /* sc will hold P(seq from i..j0 | Model) for each i in int log odds form */
-  sc   = MallocOrDie(sizeof(int) * (j0-i0+3));
+  ESL_ALLOC(sc, sizeof(int) * (j0-i0+3));
 
   /* Initialization of the L (i = j0, cur = (j0-i) = (j0-j0) %2 = 0) row. */
   if(be_efficient) cur = 0;
@@ -1065,9 +1073,9 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
   mmx[cur][cm->cp9->M]  = 0. + 
     ILogsum(elmx[cur][cm->cp9->M] + cm->cp9->tsc[CTME][cm->cp9->M],/* M_M<-EL_M<-E, with 0 self loops in EL_M */
 	    cm->cp9->esc[cm->cp9->M]);                             /* M_M<-E ... everything ends in E (the 0; 2^0=1.0) */
-  mmx[cur][cm->cp9->M] += cm->cp9->msc[(int) dsq[i]][cm->cp9->M];  /* ... + emitted match symbol */
+  mmx[cur][cm->cp9->M] += cm->cp9->msc[sq->dsq[i]][cm->cp9->M];  /* ... + emitted match symbol */
   imx[cur][cm->cp9->M]  = 0. + cm->cp9->tsc[CTIM][cm->cp9->M];     /* I_M<-E ... everything ends in E (the 0; 2^0=1.0) */
-  imx[cur][cm->cp9->M] += cm->cp9->isc[(int) dsq[i]][cm->cp9->M];  /* ... + emitted insert symbol */
+  imx[cur][cm->cp9->M] += cm->cp9->isc[sq->dsq[i]][cm->cp9->M];  /* ... + emitted insert symbol */
   dmx[cur][cm->cp9->M]  = cm->cp9->tsc[CTDM][cm->cp9->M];          /* D_M<-E */
 
   /*******************************************************************
@@ -1082,7 +1090,7 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
       mmx[cur][k]  = ILogsum(mmx[cur][k], dmx[cur][k+1] + cm->cp9->tsc[CTMD][k]);
       if(cm->cp9->flags & CPLAN9_EL)
 	mmx[cur][k]  = ILogsum(mmx[cur][k], elmx[cur][k] + cm->cp9->tsc[CTME][k]);
-      mmx[cur][k] += cm->cp9->msc[(int) dsq[i]][k];
+      mmx[cur][k] += cm->cp9->msc[sq->dsq[i]][k];
 
       /*******************************************************************
        * No need to look at EL_k->M_M b/c elmx[cur] with cur == L means last emitted residue was L+1 
@@ -1090,7 +1098,7 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
        * E which is handled above with the EL_k->E code). 
        *******************************************************************/
       imx[cur][k]  = dmx[cur][k+1] + cm->cp9->tsc[CTID][k];
-      imx[cur][k] += cm->cp9->isc[(int) dsq[i]][k];
+      imx[cur][k] += cm->cp9->isc[sq->dsq[i]][k];
 
       dmx[cur][k]  = dmx[cur][k+1] + cm->cp9->tsc[CTDD][k];
       /* elmx[cur][k] was set above, out of order */
@@ -1100,7 +1108,7 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
   mmx[cur][0]  = dmx[cur][1] + cm->cp9->tsc[CTMD][0]; /* M_0(B)->D_1, no seq emitted, all deletes */
   /* above line is diff from CPBackwardOLD() which has mmx[cur][0] = -INFTY; */
   imx[cur][0]  = dmx[cur][1] + cm->cp9->tsc[CTID][0];
-  imx[cur][0] += cm->cp9->isc[(int) dsq[i]][0];
+  imx[cur][0] += cm->cp9->isc[sq->dsq[i]][0];
 
   dmx[cur][0]   = -INFTY; /*D_0 doesn't exist*/
   elmx[cur][0]  = -INFTY; /*EL_0 doesn't exist*/
@@ -1147,14 +1155,14 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
 	    elmx[cur][cm->cp9->M] = elmx[cur][cm->cp9->M] + cm->cp9->el_selfsc;
 
 	  mmx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + cm->cp9->tsc[CTMI][cm->cp9->M];
-	  mmx[cur][cm->cp9->M] += cm->cp9->msc[(int) dsq[i]][cm->cp9->M];
+	  mmx[cur][cm->cp9->M] += cm->cp9->msc[sq->dsq[i]][cm->cp9->M];
 
 	  if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[cm->cp9->M]))
 	    mmx[cur][cm->cp9->M] = ILogsum(mmx[cur][cm->cp9->M], 
 					   elmx[cur][cm->cp9->M] + cm->cp9->tsc[CTME][cm->cp9->M]);
 
 	  imx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + cm->cp9->tsc[CTII][cm->cp9->M];
-	  imx[cur][cm->cp9->M] += cm->cp9->isc[(int) dsq[i]][cm->cp9->M];
+	  imx[cur][cm->cp9->M] += cm->cp9->isc[sq->dsq[i]][cm->cp9->M];
 	}
       else /* ip == 0 */
 	{
@@ -1200,14 +1208,14 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
 		ILogsum(mmx[cur][cm->cp9->M], 
 			ILogsum(elmx[cur][cm->cp9->M] + cm->cp9->tsc[CTME][cm->cp9->M],/* M_M<-EL_M<-E, with 0 selfs in EL_M */
 				cm->cp9->esc[cm->cp9->M]));                             /* M_M<-E ... */
-	      ///mmx[cur][cm->cp9->M] += cm->cp9->msc[(int) dsq[i]][cm->cp9->M]; /* ... + emitted match symbol */
+	      ///mmx[cur][cm->cp9->M] += cm->cp9->msc[sq->dsq[i]][cm->cp9->M]; /* ... + emitted match symbol */
 	      /* DO NOT add contribution of emitting i from M, it's been added above */
 	      
 	      imx[cur][cm->cp9->M]  =
 		ILogsum(imx[cur][cm->cp9->M],
 			(cm->cp9->tsc[CTIM][cm->cp9->M] +            /* I_M<-E + (only in scanner)     */
 			 0));                                        /* all parses end in E, 2^0 = 1.0;*/
-	      ///imx[cur][cm->cp9->M] += cm->cp9->isc[(int) dsq[i]][cm->cp9->M]; /* ... + emitted insert symbol */  
+	      ///imx[cur][cm->cp9->M] += cm->cp9->isc[sq->dsq[i]][cm->cp9->M]; /* ... + emitted insert symbol */  
 	      /* DO NOT add contribution of emitting i from M, it's been added above */
 	    }
 	  dmx[cur][cm->cp9->M] =  
@@ -1247,12 +1255,12 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
 				     (dmx[cur][k+1] + cm->cp9->tsc[CTMD][k]));
 	      if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[k]))
 		mmx[cur][k] = ILogsum(mmx[cur][k], elmx[cur][k] + cm->cp9->tsc[CTME][k]); /* penalty for entering EL */
-	      mmx[cur][k] += cm->cp9->msc[(int) dsq[i]][k];
+	      mmx[cur][k] += cm->cp9->msc[sq->dsq[i]][k];
 
 	      imx[cur][k]  = ILogsum(ILogsum((mmx[prv][k+1] + cm->cp9->tsc[CTIM][k]),
 					     (imx[prv][k]   + cm->cp9->tsc[CTII][k])),
 				     (dmx[cur][k+1] + cm->cp9->tsc[CTID][k]));
-	      imx[cur][k] += cm->cp9->isc[(int) dsq[i]][k];
+	      imx[cur][k] += cm->cp9->isc[sq->dsq[i]][k];
 
 	    }
 	  else
@@ -1284,7 +1292,7 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
 	  imx[cur][0] = ILogsum(ILogsum((mmx[prv][1] + cm->cp9->tsc[CTIM][0]),
 					(imx[prv][0] + cm->cp9->tsc[CTII][0])),
 				(dmx[cur][1] + cm->cp9->tsc[CTID][k]));
-	  imx[cur][0] += cm->cp9->isc[(int) dsq[i]][k];
+	  imx[cur][0] += cm->cp9->isc[sq->dsq[i]][k];
 	}
       else /* ip == 0 */
 	imx[cur][0] = -INFTY; /* need seq to get here */
@@ -1398,7 +1406,7 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
 		  if(do_scan && cm->search_opts & CM_SEARCH_HMMRESCAN && doing_rescan == FALSE)
 		    {
 		      /*printf("rechecking hit from %d to %d\n", i, gback[ip]);*/
-		      temp_sc = CP9Backward(cm, dsq, i, gback[ip], cm->W, cutoff,  /* *off-by-one* i+1 */
+		      temp_sc = CP9Backward(cm, sq, i, gback[ip], cm->W, cutoff,  /* *off-by-one* i+1 */
 					    NULL,  /* don't care about scores of each pos */
 					    NULL,  /* don't care about best scoring position */
 					    NULL,  /* don't report hits to results data structure */
@@ -1459,6 +1467,10 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
   else                FreeCPlan9Matrix(mx);
   /*printf("Backward return_sc: %f\n", return_sc);*/
   return return_sc;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return 0.; /* never reached */
 }
 
 /***********************************************************************
@@ -1508,7 +1520,7 @@ CP9Backward(CM_t *cm, char *dsq, int i0, int j0, int W, float cutoff, int **ret_
  * Returns:  best_sc, score of maximally scoring end position j 
  */
 float
-CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff, 
+CP9Scan_dispatch(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cm_cutoff, 
 		 float cp9_cutoff, scan_results_t *results, int doing_cp9_stats,
 		 int *ret_flen)
 {
@@ -1530,13 +1542,15 @@ CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
 
   /* check contract */
   if(cm->cp9 == NULL)
-    Die("ERROR in CP9Scan_dispatch(), cm->cp9 is NULL\n");
+    esl_fatal("ERROR in CP9Scan_dispatch(), cm->cp9 is NULL\n");
   if((cm->search_opts & CM_SEARCH_HMMPAD) &&
      (!(cm->search_opts & CM_SEARCH_HMMFILTER)))
-     Die("ERROR in CP9Scan_dispatch(), CM_SEARCH_HMMPAD flag up, but CM_SEARCH_HMMFILTER flag down.\n");
+     esl_fatal("ERROR in CP9Scan_dispatch(), CM_SEARCH_HMMPAD flag up, but CM_SEARCH_HMMFILTER flag down.\n");
   if(!doing_cp9_stats && (!((cm->search_opts & CM_SEARCH_HMMFILTER) || 
 			    (cm->search_opts & CM_SEARCH_HMMONLY))))
-    Die("ERROR in CP9Scan_dispatch(), not doing CP9 stats and neither CM_SEARCH_HMMFILTER nor CM_SEARCH_HMMONLY flag is up.\n");
+    esl_fatal("ERROR in CP9Scan_dispatch(), not doing CP9 stats and neither CM_SEARCH_HMMFILTER nor CM_SEARCH_HMMONLY flag is up.\n");
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in CP9Scan_dispatch, sq is not digitized.\n");
 
   /*printf("in CP9Scan_dispatch(), i0: %d j0: %d\n", i0, j0);
     printf("cp9_cutoff: %f\n", cp9_cutoff);*/
@@ -1563,7 +1577,7 @@ CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
   
   /* Scan the (sub)seq w/Forward, getting j end points of hits above cutoff */
   fwd_results = CreateResults(INIT_RESULTS);
-  best_hmm_fsc = CP9Forward(cm, dsq, i0, j0, W, cp9_cutoff, NULL, NULL, fwd_results,
+  best_hmm_fsc = CP9Forward(cm, sq, i0, j0, W, cp9_cutoff, NULL, NULL, fwd_results,
 			    TRUE,   /* we're scanning */
 			    FALSE,  /* we're not ultimately aligning */
 			    FALSE,  /* we're not rescanning */
@@ -1584,7 +1598,7 @@ CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
   for(h = 0; h < fwd_results->num_results; h++) 
     {
       min_i = (fwd_results->data[h].stop - W + 1) >= 1 ? (fwd_results->data[h].stop - W + 1) : 1;
-      cur_best_hmm_bsc = CP9Backward(cm, dsq, min_i, fwd_results->data[h].stop, W, cp9_cutoff, 
+      cur_best_hmm_bsc = CP9Backward(cm, sq, min_i, fwd_results->data[h].stop, W, cp9_cutoff, 
 				     NULL, /* don't care about score of each posn */
 				     &i,   /* set i as the best scoring start point from j-W..j */
 				     ((cm->search_opts & CM_SEARCH_HMMONLY) ? results : bwd_results),  
@@ -1612,7 +1626,7 @@ CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
 	  assert(i0 == 1); 
 	  remove_overlapping_hits (bwd_results, i0, j0);
 	}
-      best_cm_sc = RescanFilterSurvivors(cm, dsq, bwd_results, i0, j0, W, 
+      best_cm_sc = RescanFilterSurvivors(cm, sq, bwd_results, i0, j0, W, 
 					 padmode, ipad, jpad, 
 					 do_collapse, cm_cutoff, cp9_cutoff, 
 					 results, &flen);
@@ -1672,7 +1686,7 @@ CP9Scan_dispatch(CM_t *cm, char *dsq, int i0, int j0, int W, float cm_cutoff,
  * Returns:  best_sc found when rescanning with CM 
  */
 float
-RescanFilterSurvivors(CM_t *cm, char *dsq, scan_results_t *hmm_results, int i0, int j0,
+RescanFilterSurvivors(CM_t *cm, ESL_SQ *sq, scan_results_t *hmm_results, int i0, int j0,
 		      int W, int padmode, int ipad, int jpad, int do_collapse,
 		      float cm_cutoff, float cp9_cutoff, scan_results_t *results, int *ret_flen)
 {
@@ -1685,12 +1699,14 @@ RescanFilterSurvivors(CM_t *cm, char *dsq, scan_results_t *hmm_results, int i0, 
   int   next_j;
   int   nhits;
 
-  best_cm_sc = IMPOSSIBLE;
-  flen = 0;
-
   /* check contract */
   if(padmode != PAD_SUBI_ADDJ && padmode != PAD_ADDI_SUBJ)
     ESL_EXCEPTION(eslEINCOMPAT, "can't determine mode.");
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in RescanFilterSurvivors(), sq is not digitized.\n");
+
+  best_cm_sc = IMPOSSIBLE;
+  flen = 0;
 
   /*if(padmode == PAD_SUBI_ADDJ)
     printf("in RescanFilterSurvivors(), mode: PAD_SUBI_ADDJ\n");
@@ -1757,7 +1773,7 @@ RescanFilterSurvivors(CM_t *cm, char *dsq, scan_results_t *hmm_results, int i0, 
 	}
       /*printf("in RescanFilterSurvivors(): calling actually_search_target: %d %d h: %d nhits: %d\n", i, j, h, nhits);*/
       cm_sc =
-	actually_search_target(cm, dsq, i, j, cm_cutoff, cp9_cutoff,
+	actually_search_target(cm, sq, i, j, cm_cutoff, cp9_cutoff,
 			       results, /* keep results                                 */
 			       FALSE,   /* don't filter, we already have                */
 			       FALSE,   /* we're not building a histogram for CM stats  */
@@ -1813,7 +1829,7 @@ RescanFilterSurvivors(CM_t *cm, char *dsq, scan_results_t *hmm_results, int i0, 
  * Return:   void
  */
 void
-CP9ScanPosterior(char *dsq, int i0, int j0,
+CP9ScanPosterior(ESL_SQ *sq, int i0, int j0,
 		     CP9_t *hmm,
 		     CP9_dpmatrix_t *fmx,
 		     CP9_dpmatrix_t *bmx,
@@ -1824,6 +1840,10 @@ CP9ScanPosterior(char *dsq, int i0, int j0,
   int k;
   int fb_sum; /* tmp value, the probability that the current residue (i) was
 	       * visited in any parse */
+  /* contract check */
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in CP9ScanPosterior(), sq is not digitized.\n");
+
   /*printf("\n\nin CP9ScanPosterior() i0: %d, j0: %d\n", i0, j0);*/
   fb_sum = -INFTY;
   for (i = i0-1; i <= j0; i++) 
@@ -1866,14 +1886,14 @@ CP9ScanPosterior(char *dsq, int i0, int j0,
 	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
       /*}*/
       mx->mmx[ip][0] = -INFTY; /*M_0 does not emit*/
-      mx->imx[ip][0] = fmx->imx[ip][0] + bmx->imx[ip][0] - hmm->isc[(int) dsq[i]][0] - fb_sum;
+      mx->imx[ip][0] = fmx->imx[ip][0] + bmx->imx[ip][0] - hmm->isc[sq->dsq[i]][0] - fb_sum;
       /*hmm->isc[dsq[i]][0] will have been counted in both fmx->imx and bmx->imx*/
       mx->dmx[ip][0] = -INFTY; /*D_0 does not exist*/
       for (k = 1; k <= hmm->M; k++) 
 	{
-	  mx->mmx[ip][k] = fmx->mmx[ip][k] + bmx->mmx[ip][k] - hmm->msc[(int) dsq[i]][k] - fb_sum;
+	  mx->mmx[ip][k] = fmx->mmx[ip][k] + bmx->mmx[ip][k] - hmm->msc[sq->dsq[i]][k] - fb_sum;
 	  /*hmm->msc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
-	  mx->imx[ip][k] = fmx->imx[ip][k] + bmx->imx[ip][k] - hmm->isc[(int) dsq[i]][k] - fb_sum;
+	  mx->imx[ip][k] = fmx->imx[ip][k] + bmx->imx[ip][k] - hmm->isc[sq->dsq[i]][k] - fb_sum;
 	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
 	  mx->dmx[ip][k] = fmx->dmx[ip][k] + bmx->dmx[ip][k] - fb_sum;
 	}	  
@@ -2043,8 +2063,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   CM_t          *cm_for_scoring; /* used to score parsetrees, nec b/c  *
 				  * emitting mode may != scoring mode   */
   Parsetree_t   *tr = NULL;      /* parsetree                           */
-  char          *dsq = NULL;     /* digitized sequence                  */
-  char          *seq = NULL;     /* alphabetic sequence                 */
+  ESL_SQ        *sq = NULL;      /* digitized sequence                  */
   float         *tr_sc;          /* scores of all parsetrees sampled    */
   float         *cm_sc_p;        /* CM scores of samples above thresh   */
   float         *hmm_sc_p;       /* HMM scores of samples above thresh  */
@@ -2073,12 +2092,8 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   int            Fidx;           /* index within hmm_eval              */
   float          S;              /* predicted survival fraction        */
   int            init_flag;      /* used for finding F                 */ 
-  int            tr_npassed = 0; /* number of traces that passed cutoffs
-				  * we had to search before getting N  */
   int            passed_flag = FALSE;
-  int            tr_passed_flag = FALSE;
   float          cm_sc;
-  float          hmm_sc;
   float          orig_tau;
   float          hb_sc= 0.; 
   float          S_sc = 0.;
@@ -2088,7 +2103,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   int            have_work;      /* MPI: do we still have work to send out?*/
   int            nproc_working;  /* MPI: number procs currently doing work */
   int            wi;             /* MPI: worker index                      */
-  char         **dsqlist = NULL; /* MPI: queue of digitized seqs being worked on, 1..nproc-1 */
+  ESL_SQ       **sqlist = NULL; /* MPI: queue of digitized seqs being worked on, 1..nproc-1 */
   int           *plist = NULL;   /* MPI: queue of partition indices of seqs being worked on, 1..nproc-1 */
   Parsetree_t  **trlist = NULL;  /* MPI: queue of traces of seqs being worked on, 1..nproc-1 */
   MPI_Status     mstatus;        /* useful info from MPI Gods         */
@@ -2117,7 +2132,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 #if defined(USE_MPI) && defined(NOTDEFINED)
   if(do_mpi)
     {
-      ESL_ALLOC(dsqlist,     sizeof(char *)        * nproc);
+      ESL_ALLOC(sqlist,      sizeof(ESL_SQ *)      * nproc);
       ESL_ALLOC(plist,       sizeof(int)           * nproc);
       ESL_ALLOC(trlist,      sizeof(Parsetree_t *) * nproc);
     }
@@ -2171,6 +2186,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   int nleft = 0; /* number of seqs with scores < min CM score */
   int tr_np, tr_na, s1_np, s1_na, s2_np, s2_na, s3_np, s3_na;
   int do_slow = FALSE;
+  char *name;
   if(Rpts_fp != NULL) do_slow = TRUE; /* we'll always find optimal CM parse to use as point for R 2D plot */
 
   tr_np = tr_na = s1_np = s1_na = s2_np = s2_na = s3_np = s3_na = 0;
@@ -2189,28 +2205,24 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
        * score with 'cm_for_scoring', instead of with 'cm'.
        */
 
-      SQINFO            sqinfo;     /* info about sequence (name/len)         */
       while(ip < N) /* while number seqs passed CM score threshold (ip) < N */
 	{
-	  EmitParsetree(cm, r, &tr, &seq, &dsq, &L);
-	  while(L == 0) { FreeParsetree(tr); free(seq); free(dsq); EmitParsetree(cm, r, &tr, &seq, &dsq, &L); }
-
+	  sprintf(name, "seq%d", ip+1);
+	  EmitParsetree(cm, r, name, TRUE, &tr, &sq, &L); /* TRUE: digitize the seq */
+	  while(L == 0) { FreeParsetree(tr); esl_sq_Destroy(sq); EmitParsetree(cm, r, name, TRUE, &tr, &sq, &L); }
 	  tr_na++;
 	  passed_flag = FALSE;
 
-	  p = cmstats->gc2p[(get_gc_comp(seq, 1, L))]; /* in get_gc_comp() should be i and j of best hit */
+	  p = cmstats->gc2p[(get_gc_comp(sq, 1, L))]; /* in get_gc_comp() should be i and j of best hit */
 	  if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))
-	    tr_sc[i] = ParsetreeScore_Global2Local(cm_for_scoring, tr, dsq, FALSE);
+	    tr_sc[i] = ParsetreeScore_Global2Local(cm_for_scoring, tr, sq, FALSE);
 	  else
-	    tr_sc[i] = ParsetreeScore(cm_for_scoring, tr, dsq, FALSE); 
-	  /*sprintf(sqinfo.name, "seq%d", i+1);
-	  sqinfo.len   = L;
-	  sqinfo.flags = SQINFO_NAME | SQINFO_LEN;
-	  WriteSeq(stdout, SQFILE_FASTA, seq, &sqinfo);
-	  ParsetreeDump(stdout, tr, cm, dsq);
-	  printf("%d Parsetree Score: %f\n\n", i, tr_sc[i]);*/
-	  //FreeParsetree(tr);
-	  //free(seq);
+	    tr_sc[i] = ParsetreeScore(cm_for_scoring, tr, sq, FALSE); 
+	  /*
+	  esl_sqio_Write(stdout, sq, eslSQFILE_FASTA, seq);
+	  ParsetreeDump(stdout, tr, cm, sq);
+	  printf("%d Parsetree Score: %f\n\n", i, tr_sc[i]);
+	  */
 
 	  /* If do_minmax, check if the parsetree score less than maximum allowed */
 	  if(tr_sc[i] > cm_minbitsc[p] && !do_slow) /* we know we've passed */
@@ -2233,7 +2245,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	      cm_for_scoring->tau = 0.01;
 	      //cm_for_scoring->tau = 0.001;
 	      
-	      hb_sc = actually_search_target(cm_for_scoring, dsq, 1, L,
+	      hb_sc = actually_search_target(cm_for_scoring, sq, 1, L,
 					     0.,    /* cutoff is 0 bits (actually we'll find highest
 						     * negative score if it's < 0.0) */
 					     0.,    /* CP9 cutoff is 0 bits */
@@ -2255,7 +2267,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 		  s2_na++;
 		  cm_for_scoring->search_opts |= CM_SEARCH_HMMSCANBANDS;
 		  cm_for_scoring->tau = 1e-15;
-		  cm_sc = actually_search_target(cm_for_scoring, dsq, 1, L,
+		  cm_sc = actually_search_target(cm_for_scoring, sq, 1, L,
 						 0.,    /* cutoff is 0 bits (actually we'll find highest
 							 * negative score if it's < 0.0) */
 						 0.,    /* CP9 cutoff is 0 bits */
@@ -2277,7 +2289,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 		      /* Stage 3 do QDB CYK */
 		      cm_for_scoring->search_opts &= ~CM_SEARCH_HBANDED;
 		      cm_for_scoring->search_opts &= ~CM_SEARCH_HMMSCANBANDS;
-		      cm_sc = actually_search_target(cm_for_scoring, dsq, 1, L,
+		      cm_sc = actually_search_target(cm_for_scoring, sq, 1, L,
 						     0.,    /* cutoff is 0 bits (actually we'll find highest
 							     * negative score if it's < 0.0) */
 						     0.,    /* CP9 cutoff is 0 bits */
@@ -2308,7 +2320,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	       * Backward to get score of best hit, but we'll be detecting by a
 	       * Forward scan (then running Backward only on hits above our threshold).
 	       */
-	      hmm_sc_p[ip] = CP9Forward(cm_for_scoring, dsq, 1, L, cm_for_scoring->W, 0., 
+	      hmm_sc_p[ip] = CP9Forward(cm_for_scoring, sq, 1, L, cm_for_scoring->W, 0., 
 					NULL,   /* don't return scores of hits */
 				       NULL,   /* don't return posns of hits */
 				       NULL,   /* don't keep track of hits */
@@ -2322,7 +2334,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 		fprintf(Rpts_fp, "%.15f %.15f\n", hmm_sc_p[ip], cm_sc);
 	      ip++; /* increase counter of seqs passing threshold */
 	    }
-	  free(dsq);
+	  esl_sq_Destroy(sq);
 	  
 	  /* Check if we need to reallocate */
 	  i++;
@@ -2382,12 +2394,13 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	      tr_passed_flag = FALSE;
 	      while(!tr_passed_flag)
 		{
-		  EmitParsetree(cm, r, &tr, &seq, &dsq, &L);
-		  while(L == 0) { FreeParsetree(tr); free(seq); free(dsq); EmitParsetree(cm, r, &tr, &seq, &dsq, &L); }
+		  sprintf(name, "seq%d", ip+1);
+		  EmitParsetree(cm, r, name, TRUE, &tr, &sq, &L); /* TRUE: digitize the seq */
+		  while(L == 0) { FreeParsetree(tr); esl_sq_Destroy(sq); EmitParsetree(cm, r, name, TRUE, &tr, &sq, &L); }
 
-		  p = cmstats->gc2p[(get_gc_comp(seq, 1, L))]; /* in get_gc_comp() should be i and j of best hit */
+		  p = cmstats->gc2p[(get_gc_comp(sq, 1, L))]; /* in get_gc_comp() should be i and j of best hit */
 		  free(seq);
-		  /*ParsetreeDump(stdout, tr, cm, dsq);
+		  /*ParsetreeDump(stdout, tr, cm, sq);
 		    printf("%d Parsetree Score: %f\n\n", (nattempts), ParsetreeScore(cm, tr, dsq, FALSE)); */
 		  if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))
 		    tr_sc[i] = ParsetreeScore_Global2Local(cm_for_scoring, trlist[wi], dsqlist[wi], FALSE);
@@ -2549,8 +2562,8 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
       fprintf(Rpts_fp, "FMINSC %.15f\n", (cm->stats->gumAA[hmm_gum_mode][p]->mu - 
 					(log(hmm_eval_p[(int) (Fmin * (float) N)-1]) / cm->stats->gumAA[hmm_gum_mode][p]->lambda)));
       fprintf(Rpts_fp, "F   %.15f\n", F);
-      fprintf(Rpts_fp, "CMGUM %.15f %15f\n", (cm->stats->gumAA[emit_mode][p]->lambda, cm->stats->gumAA[emit_mode][p]->mu));
-      fprintf(Rpts_fp, "HMMGUM %.15f %15f\n", (cm->stats->gumAA[hmm_gum_mode][p]->lambda, cm->stats->gumAA[hmm_gum_mode][p]->mu));
+      fprintf(Rpts_fp, "CMGUM %.15f %15f\n", cm->stats->gumAA[emit_mode][p]->lambda, cm->stats->gumAA[emit_mode][p]->mu);
+      fprintf(Rpts_fp, "HMMGUM %.15f %15f\n", cm->stats->gumAA[hmm_gum_mode][p]->lambda, cm->stats->gumAA[hmm_gum_mode][p]->mu);
       fprintf(Rpts_fp, "STARGET %.15f\n", Starget);
       fprintf(Rpts_fp, "SMIN %.15f\n", Smin);
       fprintf(Rpts_fp, "SPAD %.15f\n", Spad);
@@ -2565,7 +2578,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   /* Make sure our E is less than the DB size and greater than Emin */
   if(E > ((float) db_size)) /* E-val > db_size is useless */
     {
-      printf("Case 3 : worst case E > db_size\n", E, db_size);
+      printf("Case 3 : worst case E (%f) > db_size (%f)\n", E, (double) db_size);
       E = (float) db_size;
     }  
   
@@ -2602,1051 +2615,4 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   return 0.;
 }
 
-/*
- * Function: FindExpFactor()
- * Incept:   EPN, Mon Jun  4 08:14:49 2007
- *
- * Purpose:  Find the exponentiation factor 'X', that when a CM's emission
- *           and transition probabilities are exponentiated by it a specified
- *           fraction range of sample parsetrees have scores greater than
- *           a specified minimum E-value. Often used prior to calling 
- *           FindCP9FilterThreshold().
- *
- * Args:
- *           cm           - the CM
- *           cmstats      - CM stats object we'll get Gumbel stats from
- *           r            - source of randomness for EmitParsetree()
- *           use_cm_cutoff- TRUE to only accept CM parses w/E-values above cm_ecutoff
- *           cm_ecutoff   - minimum CM E-value to accept 
- *           db_size      - DB size (nt) to use w/cm_ecutoff to calc CM bit score cutoff 
- *           emit_mode    - CM_LC or CM_GC, CM mode to emit with
- *           fthr_mode    - gives CM search strategy to use, and Gumbel to use
- *           do_fastfil   - TRUE to use fast method: assume parsetree score
- *                          is optimal CYK score
- *           ntrials      - number of parsetrees to sample 
- *           fp_min       - min fraction of ntrials we require > cm_ecutoff
- *           fp_max       - max fraction of ntrials we require > cm_ecutoff
- *           
- * Returns: Exponentiation factor 'X' for which CM^X emits between (ntrails * fp_min) 
- *          and (ntrials * fp_max) parsetrees with scores better than cm_ecutoff.
- *          Dies if no such 'X' can be found.
- */
-float FindExpFactor(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
-		    int use_cm_cutoff, float cm_ecutoff, int db_size, 
-		    int emit_mode, int fthr_mode, int do_fastfil,
-		    int ntrials, float fp_min, float fp_max)
-{
-  /* Contract checks */
-  if((fthr_mode != CM_LI) && (fthr_mode != CM_GI) && (fthr_mode != CM_LC) && (fthr_mode != CM_GC))
-    Die("ERROR in FindExpFactor() fthr_mode not CM_LI, CM_GI, CM_LC, or CM_GC\n");
-  if(do_fastfil && (fthr_mode == CM_LI || fthr_mode == CM_GI))
-    Die("ERROR in FindExpFactor() do_fastfil TRUE, but fthr_mode CM_GI or CM_LI\n");
-  if(emit_mode != CM_GC && emit_mode != CM_LC)
-    Die("ERROR in FindExpFactor() emit_mode not CM_LC or CM_GC\n");
-  if(emit_mode == CM_LC && (fthr_mode == CM_GC || fthr_mode == CM_GI))
-    Die("ERROR in FindExpFactor() emit_mode CM_LC but score mode CM_GC or CM_GI.\n");
-  if(fp_min > fp_max)
-    Die("ERROR in FindExpFactor() fp_min > fp_max\n");
-  if(fp_min < 0. || fp_min > 1.)
-    Die("ERROR in FindExpFactor() fp_min not between and 0. and 1.\n");
-  if(fp_max < 0. || fp_max > 1.)
-    Die("ERROR in FindExpFactor() fp_max not between and 0. and 1.\n");
-
-  int          keep_going = TRUE;
-  float        X = 1.0;
-  float        init_high = 2.0;
-  float        init_low  = 0.5;
-  float        high;
-  float        low;
-  int          X_ctr = 0;
-  int          np_min = ntrials * fp_min;
-  int          np_max = ntrials * fp_max;
-  float        sc;
-  int          np = 0;
-  float        old_X;
-  float       *cm_minbitsc;
-  double        *cm_mu;          /* mu for each partition's CM Gumbel   */
-  CM_t        *cm_for_scoring;
-  Parsetree_t *tr = NULL;      /* parsetree                           */
-  char        *dsq = NULL;     /* digitized sequence                  */
-  char        *seq = NULL;     /* alphabetic sequence                 */
-  int          status;
-  int          p;
-  float        tmp_K;
-  int            i  = 0;         /* counter over samples                */
-  int            L;              /* length of a sample                  */
-
-  high = init_high;
-  low  = init_low;
-  if(!do_fastfil) esl_fatal("ERROR in FindExpFactor(), do_fastfil not TRUE, this is not yet implemented, should it be?\n");
-
-  ESL_ALLOC(cm_minbitsc, sizeof(float) * cmstats->np);
-  ESL_ALLOC(cm_mu,       sizeof(double)* cmstats->np);
-  /* Configure the CM based on the emit mode COULD DIFFERENT FROM WORKERS! */
-  ConfigForGumbelMode(cm, emit_mode);
-  /* Copy the CM into cm_for_scoring, and reconfigure it if nec.,
-   * We do this, so we can exponentiate or change emission modes of
-   * the original CM */
-  cm_for_scoring = DuplicateCM(cm); 
-  if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))
-    ConfigForGumbelMode(cm_for_scoring, fthr_mode);
-
-  /* Determine bit cutoff for each partition, calc'ed from cm_ecutoff */
-  for (p = 0; p < cmstats->np; p++)
-    {
-      /* First determine mu based on db_size */
-      tmp_K      = exp(cmstats->gumAA[fthr_mode][p]->mu * cmstats->gumAA[fthr_mode][p]->lambda) / 
-	cmstats->gumAA[fthr_mode][p]->L;
-      cm_mu[p]   = log(tmp_K  * ((double) db_size)) / cmstats->gumAA[fthr_mode][p]->lambda;
-      /* Now determine bit score */
-      cm_minbitsc[p] = cm_mu[p] - (log(cm_ecutoff) / cmstats->gumAA[fthr_mode][p]->lambda);
-      if(use_cm_cutoff)
-	printf("FindExpFactor() E: %f p: %d %d--%d bit score: %f\n", cm_ecutoff, p, 
-	       cmstats->ps[p], cmstats->pe[p], cm_minbitsc[p]);
-    }
-
-  /* Do a binary search for 'X' that gives between np_min and np_max parsetrees with sc better
-   * than cm_minsc */
-  while(keep_going)
-    {
-      ExponentiateCM(cm, X);
-      old_X = X;
-      np = 0;
-      for(i = 0; i < ntrials; i++)
-	{
-	  EmitParsetree(cm, r, &tr, &seq, &dsq, &L);
-	  if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))
-	    sc = ParsetreeScore_Global2Local(cm_for_scoring, tr, dsq, FALSE);
-	  else
-	    sc = ParsetreeScore(cm_for_scoring, tr, dsq, FALSE); 
-	  FreeParsetree(tr);
-	  free(dsq);
-	  p = cmstats->gc2p[(get_gc_comp(seq, 1, L))]; /* in get_gc_comp() should be i and j of best hit */
-	  free(seq);
-	  if(sc > cm_minbitsc[p]) np++;
-	}
-      printf("06.03.07 %4d X: %.5f np: %d high: %.5f low: %.5f\n", X_ctr, X, np, high, low);
-      X_ctr++;
-      if(np > np_min && np < np_max)
-	{
-	  keep_going = FALSE;
-	  printf("06.03.07 success! X: %f\n", X);
-	}
-      else
-	{
-	  if      (np < np_min) { low  = X;  X += (high - X)/2.; }
-	  else if (np > np_max) { high = X;  X -= (X  - low)/2.;  }
-	  if(fabs(high-low) < 0.0001) 
-	    if(fabs(high - init_high) < 0.00001) /* init_high (2.0) not high enough, return init_high (2.0) */
-	      return init_high;
-	    else if (fabs(low - init_low) < 0.00001) /* init_low (0.5) not low enough, return init_low (0.5) */
-	      return init_low;
-	}
-      /* Put the CM back the way it was */
-      ExponentiateCM(cm, (1./old_X));
-    }
-  FreeCM(cm_for_scoring);
-  free(cm_minbitsc);
-
-  printf("06.03.07 done expt returning %f\n", X);
-  return X;
-
- ERROR:
-  esl_fatal("ERROR in FindExpFactor(), death imminent.\n");
-  return 1.0;
-}
-
-/*
- * Function: FindExpFactor_minmax()
- * Incept:   EPN, Wed Jun  6 10:14:04 2007
- *
- * Purpose:  Find the exponentiation factor 'X', that when a CM's emission
- *           and transition probabilities are exponentiated by it a specified
- *           fraction range of sample parsetrees have scores greater than
- *           a specified minimum E-value AND less than a specified maximum
- *           E-value. This last point distinguishes this function from 
- *           FindExpFactor() which only uses a minimum E-value. 
- *           Often used prior to calling FindCP9FilterThreshold().
- *
- * Args:
- *           cm           - the CM
- *           cmstats      - CM stats object we'll get Gumbel stats from
- *           r            - source of randomness for EmitParsetree()
- *           cm_min_ecutoff - minimum CM E-value to accept 
- *           cm_max_ecutoff - maximum CM E-value to accept 
- *           db_size      - DB size (nt) to use w/cm_ecutoff to calc CM bit score cutoff 
- *           emit_mode    - CM_LC or CM_GC, CM mode to emit with
- *           fthr_mode    - gives CM search strategy to use, and Gumbel to use
- *           do_fastfil   - TRUE to use fast method: assume parsetree score
- *                          is optimal CYK score
- *           ntrials      - number of parsetrees to sample 
- *           fp_min       - min fraction of ntrials we require b/t cm_min_ecutoff and cm_max_ecutoff
- *           fp_max       - max fraction of ntrials we require b/t cm_min_ecutoff and cm_max_ecutoff
- *           
- * Returns: Exponentiation factor 'X' for which CM^X emits between (ntrails * fp_min) 
- *          and (ntrials * fp_max) parsetrees with scores better than cm_min_ecutoff 
- *          and less than cm_max_ecutoff.
- *          Dies if no such 'X' can be found.
- */
-float FindExpFactor_minmax(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
-			   float cm_min_ecutoff, float cm_max_ecutoff, int db_size, int emit_mode, 
-			   int fthr_mode, int do_fastfil, int ntrials, float fp_min, float fp_max)
-{
-  /* Contract checks */
-  if((fthr_mode != CM_LI) && (fthr_mode != CM_GI) && (fthr_mode != CM_LC) && (fthr_mode != CM_GC))
-    Die("ERROR in FindExpFactor_minmax() fthr_mode not CM_LI, CM_GI, CM_LC, or CM_GC\n");
-  if(do_fastfil && (fthr_mode == CM_LI || fthr_mode == CM_GI))
-    Die("ERROR in FindExpFactor_minmax() do_fastfil TRUE, but fthr_mode CM_GI or CM_LI\n");
-  if(emit_mode != CM_GC && emit_mode != CM_LC)
-    Die("ERROR in FindExpFactor_minmax() emit_mode not CM_LC or CM_GC\n");
-  if(emit_mode == CM_LC && (fthr_mode == CM_GC || fthr_mode == CM_GI))
-    Die("ERROR in FindExpFactor_minmax() emit_mode CM_LC but score mode CM_GC or CM_GI.\n");
-  if(fp_min > fp_max)
-    Die("ERROR in FindExpFactor_minmax() fp_min > fp_max\n");
-  if(fp_min < 0. || fp_min > 1.)
-    Die("ERROR in FindExpFactor_minmax() fp_min not between and 0. and 1.\n");
-  if(fp_max < 0. || fp_max > 1.)
-    Die("ERROR in FindExpFactor_minmax() fp_max not between and 0. and 1.\n");
-
-  int          keep_going = TRUE;
-  float        X = 1.0;
-  float        init_high = 1.0;
-  float        init_low  = 0.8;
-  float        high;
-  float        low;
-  int          X_ctr = 0;
-  int          np_min = ntrials * fp_min;
-  int          np_max = ntrials * fp_max;
-  int          out_half = (ntrials - ((np_min + np_max) / 2.)) / 2.;
-  float        sc;
-  int          np = 0;
-  int          nlow = 0;
-  int          nhigh = 0;
-  float        old_X;
-  float       *cm_minbitsc;
-  float       *cm_maxbitsc;
-  double        *cm_mu;          /* mu for each partition's CM Gumbel   */
-  CM_t        *cm_for_scoring;
-  Parsetree_t *tr = NULL;      /* parsetree                           */
-  Parsetree_t **hb_trA = NULL;      /* HMM banded parsetrees          */
-  char        *dsq = NULL;     /* digitized sequence                  */
-  char        *seq = NULL;     /* alphabetic sequence                 */
-  int          status;
-  int          p;
-  float        tmp_K;
-  int            i  = 0;         /* counter over samples                */
-  int            L;              /* length of a sample                  */
-  float          orig_tau;
-  int          seen_passed = FALSE;
-
-  high = init_high;
-  low  = init_low;
-  ESL_ALLOC(cm_minbitsc, sizeof(float) * cmstats->np);
-  ESL_ALLOC(cm_maxbitsc, sizeof(float) * cmstats->np);
-  ESL_ALLOC(cm_mu,       sizeof(double)* cmstats->np);
-  /* Configure the CM based on the emit mode COULD DIFFERENT FROM WORKERS! */
-  ConfigForGumbelMode(cm, emit_mode);
-  /* Copy the CM into cm_for_scoring, and reconfigure it if nec.,
-   * We do this, so we can exponentiate or change emission modes of
-   * the original CM */
-  cm_for_scoring = DuplicateCM(cm); 
-  if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))
-    ConfigForGumbelMode(cm_for_scoring, fthr_mode);
-
-  /* Determine bit cutoff for each partition, calc'ed from cm_min_ecutoff, cm_max_ecutoff */
-  for (p = 0; p < cmstats->np; p++)
-    {
-      /* First determine mu based on db_size */
-      tmp_K      = exp(cmstats->gumAA[fthr_mode][p]->mu * cmstats->gumAA[fthr_mode][p]->lambda) / 
-	cmstats->gumAA[fthr_mode][p]->L;
-      cm_mu[p]   = log(tmp_K  * ((double) db_size)) / cmstats->gumAA[fthr_mode][p]->lambda;
-      /* Now determine bit score */
-      cm_minbitsc[p] = cm_mu[p] - (log(cm_min_ecutoff) / cmstats->gumAA[fthr_mode][p]->lambda);
-      cm_maxbitsc[p] = cm_mu[p] - (log(cm_max_ecutoff) / cmstats->gumAA[fthr_mode][p]->lambda);
-      printf("FindExpFactor() E: %f--%f p: %d %d--%d bit score: %f--%f\n", cm_min_ecutoff, cm_max_ecutoff, p, 
-	     cmstats->ps[p], cmstats->pe[p], cm_minbitsc[p], cm_maxbitsc[p]);
-      printf("\t ntrials: %d min to pass: %d\n", ntrials, np_min);
-    }
-  
-  /* Do a binary search for maximum 'X' <= 1.0 that gives at least np_min optimal parses with sc better
-   * than cm_minsc and less than cm_maxsc. If (do_fastfil), assume parsetree score is optimal. */
-  float low_X_that_passes = 0.;
-  float step_down_size = 0.05;
-  orig_tau = cm_for_scoring->tau;
-  while(keep_going)
-    {
-      printf("06.03.07 Search loop (%d): X: %f\n", X_ctr, X);
-      ExponentiateCM(cm, X);
-      old_X = X;
-      np = nlow = nhigh = 0;
-      for(i = 0; i < ntrials; i++)
-	{
-	  EmitParsetree(cm, r, &tr, &seq, &dsq, &L);
-	  if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))
-	    sc = ParsetreeScore_Global2Local(cm_for_scoring, tr, dsq, FALSE);
-	  else
-	    sc = ParsetreeScore(cm_for_scoring, tr, dsq, FALSE); 
-	  p = cmstats->gc2p[(get_gc_comp(seq, 1, L))]; /* in get_gc_comp() should be i and j of best hit */
-
- 	  if(!do_fastfil && (sc < cm_maxbitsc[p]))
-	    {
-	      printf("T: %10.4f ", sc);
-
-	      /* Accelerate via HMM banded SEARCH */
-	      /* For speed, first see if a HMM banded search with big tau gives a bit score above our max */
-
-	      /* STAGE 1 */
-
-	      cm_for_scoring->search_opts |= CM_SEARCH_HBANDED;
-	      //cm_for_scoring->tau = 0.1;
-	      cm_for_scoring->tau = 0.01;
-	      //cm_for_scoring->tau = 0.001;
-	      sc = actually_search_target(cm_for_scoring, dsq, 1, L,
-					  0.,    /* cutoff is 0 bits (actually we'll find highest
-						  * negative score if it's < 0.0) */
-					  0.,    /* CP9 cutoff is 0 bits */
-					  NULL,  /* don't keep results */
-					  FALSE, /* don't filter with a CP9 HMM */
-					  FALSE, /* we're not calcing CM  stats */
-					  FALSE, /* we're not calcing CP9 stats */
-					  NULL); /* filter fraction N/A */
-	      printf("SBC: %10.4f %d ", sc, i, np);
-
-	      /* Accelerate via HMM banded ALIGNMENT */
-	      /* For speed, first see if an HMM banded alignment gives a bit score above our max */
-	      //cm_for_scoring->align_opts |= CM_ALIGN_HBANDED;
-	      //cm_for_scoring->align_opts |= CM_ALIGN_NOSMALL;
-	      /* Abusing the ESL_SQ structure */
-	      //sq[0] = esl_sq_CreateFrom("seq", seq, NULL, NULL, NULL);
-	      //asq[0]->dsq = DigitizeSequence (sq[0]->seq, L);
-	      //actually_align_targets(cm_for_scoring, sq, 1, &hb_trA, 
-	      //NULL, NULL, 0, 0, FALSE);
-	      //sc = ParsetreeScore(cm_for_scoring, hb_trA[0], dsq, FALSE);
-	      //printf("ABC: %10.4f %d ", sc, i, np);
-	      //cm_for_scoring->align_opts &= ~CM_ALIGN_HBANDED;
-	      //cm_for_scoring->align_opts &= ~CM_ALIGN_NOSMALL;
-
-	      if(sc < cm_maxbitsc[p])
-		{
-		  /* do HMM banded search with really small tau */
-		  
-		  /* Stage 2 */
-		  
-		  cm_for_scoring->search_opts |= CM_SEARCH_HMMSCANBANDS;
-		  cm_for_scoring->tau = 1e-15;
-		  //if(FALSE)
-		    sc = actually_search_target(cm_for_scoring, dsq, 1, L,
-						0.,    /* cutoff is 0 bits (actually we'll find highest
-							* negative score if it's < 0.0) */
-						0.,    /* CP9 cutoff is 0 bits */
-						NULL,  /* don't keep results */
-						FALSE, /* don't filter with a CP9 HMM */
-						FALSE, /* we're not calcing CM  stats */
-						FALSE, /* we're not calcing CP9 stats */
-						NULL); /* filter fraction N/A */
-		  printf("C: %10.4f i: %d np: %d\n", sc, i, np);
-		  
-		  if(sc < cm_maxbitsc[p])
-		    {
-		      /* Stage 3 do QDB CYK */
-		      cm_for_scoring->search_opts &= ~CM_SEARCH_HBANDED;
-		      cm_for_scoring->search_opts &= ~CM_SEARCH_HMMSCANBANDS;
-		      //if(FALSE)
-			sc = actually_search_target(cm_for_scoring, dsq, 1, L,
-						    0.,    /* cutoff is 0 bits (actually we'll find highest
-							    * negative score if it's < 0.0) */
-						    0.,    /* CP9 cutoff is 0 bits */
-						    NULL,  /* don't keep results */
-						    FALSE, /* don't filter with a CP9 HMM */
-						    FALSE, /* we're not calcing CM  stats */
-						    FALSE, /* we're not calcing CP9 stats */
-						    NULL); /* filter fraction N/A */
-		    }
-	      }
-	      else printf("\n");
-	    }
-	  FreeParsetree(tr);
-	  free(seq);
-	  free(dsq);
-
-	  if(sc > cm_minbitsc[p] && sc < cm_maxbitsc[p]) np++;
-	  if(sc < cm_minbitsc[p]) nlow++;
-	  if(sc > cm_maxbitsc[p]) nhigh++;
-
-	  /* If the # passed is at our minimum number and we've seen some high or low, 
-	     break loop to save time. */
-	  if(np >= np_min && (nlow > 10 || nhigh > 10))
-	    i = ntrials;
-	}
-      printf("06.03.07 %4d X: %.5f nl: %5d np: %5d nh: %5d high: %.5f low: %.5f\n", X_ctr, X, nlow, np, nhigh, high, low);
-      X_ctr++;
-      if(np >= np_min)
-	{
-	  seen_passed = TRUE;
-	  low_X_that_passes = X;
-	  low  = X;  
-	  X += (high - X)/2.;  
-	  printf("high: %f low: %f (%f)\n", high, low, fabs(high-low));
-	}
-      else if(nhigh > nlow) 
-	{ 
-	  high = X;  
-	  if(seen_passed) X -= (X  - low)/2.;  
-	  else { X -= step_down_size; }
-	}
-      else
-	{ 
-	  esl_fatal("ERROR in FindExpFactor_minmax(), nhigh less than nlow\n");
-	}
-      if(fabs(high-low) < 0.01) 
-	{
-	  if(seen_passed) /* we've seen an X that passes, set X to that */
-	    {
-	      X = low_X_that_passes;
-	      keep_going = FALSE;
-	      printf("06.03.07 success! X: %f\n", X);
-	    }
-	  else if(fabs(high - init_high) < 0.001) /* init_high (1.0) not high enough, return init_high (2.0) */
-	    return init_high;
-	  else if (fabs(low - init_low) < 0.001) /* init_low (0.5) not low enough, return init_low (0.5) */
-	    return init_low;
-	  else
-	    {
-	      printf("ERROR in FindExpFactor_minmax(), convergence at high: %f low: %f\n", high, low);
-	      esl_fatal("done.\n");
-	    }
-	}
-      /* Put the CM back the way it was */
-      ExponentiateCM(cm, (1./old_X));
-    }
-  cm_for_scoring->tau = orig_tau;
-  FreeCM(cm_for_scoring);
-  free(cm_minbitsc);
-  free(cm_maxbitsc);
-  free(cm_mu);
-
-  printf("06.03.07 done expt returning %f\n", X);
-  return X;
-
- ERROR:
-  esl_fatal("ERROR in FindExpFactor_minmax(), death imminent.\n");
-  return 1.0;
-}
-
-/*
- * Function: FindExpFactor_min()
- * Incept:   EPN, Mon Jun 11 16:26:47 2007
- *
- * Purpose:  Find the largest exponentiation factor 'X' <= 1.0 that when a CM's 
- *           emission and transition probabilities are exponentiated by it a 
- *           specified fraction range of sample parsetrees have scores WORSE than
- *           a specified minimum E-value. 
- *           Often used prior to calling FindCP9FilterThreshold().
- *
- * Args:
- *           cm           - the CM
- *           cmstats      - CM stats object we'll get Gumbel stats from
- *           r            - source of randomness for EmitParsetree()
- *           cm_min_ecutoff - minimum CM E-value to accept 
- *           db_size      - DB size (nt) to use w/cm_ecutoff to calc CM bit score cutoff 
- *           emit_mode    - CM_LC or CM_GC, CM mode to emit with
- *           fthr_mode    - gives CM search strategy to use, and Gumbel to use
- *           do_fastfil   - TRUE to use fast method: assume parsetree score
- *                          is optimal CYK score (DANGEROUS! DO NOT USE!)
- *           ntrials      - number of parsetrees to sample 
- *           fp_min       - min fraction of ntrials we require b/t cm_min_ecutoff and cm_max_ecutoff
- *           
- * Returns: Exponentiation factor 'X' we're looking for (see Purpose).
- *          Dies if no such 'X' can be found.
- */
-float FindExpFactor_min(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
-			float cm_min_ecutoff, int db_size, int emit_mode, 
-			int fthr_mode, int do_fastfil, int ntrials, float fp_min)
-{
-  /* Contract checks */
-  if((fthr_mode != CM_LI) && (fthr_mode != CM_GI) && (fthr_mode != CM_LC) && (fthr_mode != CM_GC))
-    Die("ERROR in FindExpFactor_min() fthr_mode not CM_LI, CM_GI, CM_LC, or CM_GC\n");
-  if(do_fastfil && (fthr_mode == CM_LI || fthr_mode == CM_GI))
-    Die("ERROR in FindExpFactor_min() do_fastfil TRUE, but fthr_mode CM_GI or CM_LI\n");
-  if(emit_mode != CM_GC && emit_mode != CM_LC)
-    Die("ERROR in FindExpFactor_min() emit_mode not CM_LC or CM_GC\n");
-  if(emit_mode == CM_LC && (fthr_mode == CM_GC || fthr_mode == CM_GI))
-    Die("ERROR in FindExpFactor_min() emit_mode CM_LC but score mode CM_GC or CM_GI.\n");
-  if(fp_min < 0. || fp_min > 1.)
-    Die("ERROR in FindExpFactor_min() fp_min not between and 0. and 1.\n");
-
-  if(do_fastfil)
-    Die("ERROR in FindExpFactor_min() do_fastfil TRUE (is this restriction temporary?)\n");
-
-  int          keep_going = TRUE;
-  float        X = 1.0;
-  float        init_high = 1.0;
-  float        init_low  = 0.5;
-  float        high;
-  float        low;
-  int          X_ctr = 0;
-  int          np_min = ntrials * fp_min;
-  float        sc;
-  int          np = 0;
-  int          na = 0;
-  float        old_X;
-  float       *cm_minbitsc;
-  float       *cm_maxbitsc;
-  double        *cm_mu;          /* mu for each partition's CM Gumbel   */
-  CM_t        *cm_for_scoring;
-  Parsetree_t *tr = NULL;      /* parsetree                           */
-  Parsetree_t **hb_trA = NULL;      /* HMM banded parsetrees          */
-  char        *dsq = NULL;     /* digitized sequence                  */
-  char        *seq = NULL;     /* alphabetic sequence                 */
-  int          status;
-  int          p;
-  float        tmp_K;
-  int            i  = 0;         /* counter over samples                */
-  int            L;              /* length of a sample                  */
-  float          orig_tau;
-  int          seen_passed = FALSE;
-  float low_X_that_passes = 0.;
-  float step_down_size = 0.05;
-  
-  high = init_high;
-  low  = init_low;
-  ESL_ALLOC(cm_minbitsc, sizeof(float) * cmstats->np);
-  ESL_ALLOC(cm_mu,       sizeof(double)* cmstats->np);
-  /* Configure the CM based on the emit mode COULD DIFFERENT FROM WORKERS! */
-  ConfigForGumbelMode(cm, emit_mode);
-  /* Copy the CM into cm_for_scoring, and reconfigure it if nec.,
-   * We do this, so we can exponentiate or change emission modes of
-   * the original CM */
-  cm_for_scoring = DuplicateCM(cm); 
-  if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))
-    ConfigForGumbelMode(cm_for_scoring, fthr_mode);
-
-  /* Determine bit cutoff for each partition, calc'ed from cm_min_ecutoff */
-  for (p = 0; p < cmstats->np; p++)
-    {
-      /* First determine mu based on db_size */
-      tmp_K      = exp(cmstats->gumAA[fthr_mode][p]->mu * cmstats->gumAA[fthr_mode][p]->lambda) / 
-	cmstats->gumAA[fthr_mode][p]->L;
-      cm_mu[p]   = log(tmp_K  * ((double) db_size)) / cmstats->gumAA[fthr_mode][p]->lambda;
-      /* Now determine bit score */
-      cm_minbitsc[p] = cm_mu[p] - (log(cm_min_ecutoff) / cmstats->gumAA[fthr_mode][p]->lambda);
-      printf("06.03.07 FindExpFactor_min() min E: %f p: %d %d--%d bit score: %f", cm_min_ecutoff, p, 
-	     cmstats->ps[p], cmstats->pe[p], cm_minbitsc[p]);
-      printf("\t ntrials: %d min to pass: %d\n", ntrials, np_min);
-    }
-  
-  /* Do a binary search for maximum 'X' <= 1.0 that gives at least np_min optimal parses with sc WORSE
-   * than cm_minsc. If (do_fastfil), assume parsetree score is optimal (WHICH IS DANGEROUS!). */
-  orig_tau = cm_for_scoring->tau;
-  while(keep_going)
-    {
-      printf("06.03.07 Search loop (%d): X: %f\n", X_ctr, X);
-      ExponentiateCM(cm, X);
-      old_X = X;
-      np = na = 0;
-      for(i = 0; i < ntrials; i++)
-	{
-	  EmitParsetree(cm, r, &tr, &seq, &dsq, &L);
-	  if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))
-	    sc = ParsetreeScore_Global2Local(cm_for_scoring, tr, dsq, FALSE);
-	  else
-	    sc = ParsetreeScore(cm_for_scoring, tr, dsq, FALSE); 
-	  p = cmstats->gc2p[(get_gc_comp(seq, 1, L))]; /* in get_gc_comp() should be i and j of best hit */
-
- 	  if(!do_fastfil && (sc < cm_minbitsc[p]))
-	    {
-	      printf("T: %10.4f ", sc);
-
-	      /* Accelerate via HMM banded SEARCH */
-	      /* For speed, first see if a HMM banded search with big tau gives a bit score above our max */
-
-	      /* STAGE 1 */
-
-	      cm_for_scoring->search_opts |= CM_SEARCH_HBANDED;
-	      //cm_for_scoring->tau = 0.1;
-	      cm_for_scoring->tau = 0.01;
-	      //cm_for_scoring->tau = 0.001;
-	      sc = actually_search_target(cm_for_scoring, dsq, 1, L,
-					  0.,    /* cutoff is 0 bits (actually we'll find highest
-						  * negative score if it's < 0.0) */
-					  0.,    /* CP9 cutoff is 0 bits */
-					  NULL,  /* don't keep results */
-					  FALSE, /* don't filter with a CP9 HMM */
-					  FALSE, /* we're not calcing CM  stats */
-					  FALSE, /* we're not calcing CP9 stats */
-					  NULL); /* filter fraction N/A */
-	      printf("SBC: %10.4f %d ", sc, i, np);
-
-	      /* Accelerate via HMM banded ALIGNMENT */
-	      /* For speed, first see if an HMM banded alignment gives a bit score above our max */
-	      //cm_for_scoring->align_opts |= CM_ALIGN_HBANDED;
-	      //cm_for_scoring->align_opts |= CM_ALIGN_NOSMALL;
-	      /* Abusing the ESL_SQ structure */
-	      //sq[0] = esl_sq_CreateFrom("seq", seq, NULL, NULL, NULL);
-	      //asq[0]->dsq = DigitizeSequence (sq[0]->seq, L);
-	      //actually_align_targets(cm_for_scoring, sq, 1, &hb_trA, 
-	      //NULL, NULL, 0, 0, FALSE);
-	      //sc = ParsetreeScore(cm_for_scoring, hb_trA[0], dsq, FALSE);
-	      //printf("ABC: %10.4f %d ", sc, i, np);
-	      //cm_for_scoring->align_opts &= ~CM_ALIGN_HBANDED;
-	      //cm_for_scoring->align_opts &= ~CM_ALIGN_NOSMALL;
-
-	      if(sc < cm_minbitsc[p])
-		{
-		  /* do HMM banded search with really small tau */
-		  
-		  /* Stage 2 */
-		  
-		  cm_for_scoring->search_opts |= CM_SEARCH_HMMSCANBANDS;
-		  cm_for_scoring->tau = 1e-15;
-		  //if(FALSE)
-		    sc = actually_search_target(cm_for_scoring, dsq, 1, L,
-						0.,    /* cutoff is 0 bits (actually we'll find highest
-							* negative score if it's < 0.0) */
-						0.,    /* CP9 cutoff is 0 bits */
-						NULL,  /* don't keep results */
-						FALSE, /* don't filter with a CP9 HMM */
-						FALSE, /* we're not calcing CM  stats */
-						FALSE, /* we're not calcing CP9 stats */
-						NULL); /* filter fraction N/A */
-		    printf("C: %10.4f i: %d np: %d\n", sc, i, np);
-		  
-		  if(sc < cm_minbitsc[p])
-		    {
-		      /* Stage 3 do QDB CYK */
-		      cm_for_scoring->search_opts &= ~CM_SEARCH_HBANDED;
-		      cm_for_scoring->search_opts &= ~CM_SEARCH_HMMSCANBANDS;
-		      //if(FALSE)
-			sc = actually_search_target(cm_for_scoring, dsq, 1, L,
-						    0.,    /* cutoff is 0 bits (actually we'll find highest
-							    * negative score if it's < 0.0) */
-						    0.,    /* CP9 cutoff is 0 bits */
-						    NULL,  /* don't keep results */
-						    FALSE, /* don't filter with a CP9 HMM */
-						    FALSE, /* we're not calcing CM  stats */
-						    FALSE, /* we're not calcing CP9 stats */
-						    NULL); /* filter fraction N/A */
-		    }
-	      }
-	      printf("\n");
-	    }
-	  FreeParsetree(tr);
-	  free(seq);
-	  free(dsq);
-	  if(sc < cm_minbitsc[p]) np++;
-	  na++;
-
-
-	  /* If we've reached our minimum number, break loop to save time. */
-	  if(np == np_min)
-	    i = ntrials;
-	}
-      printf("06.03.07 %4d X: %.5f np: %5d na: %5d high: %.5f low: %.5f\n", X_ctr, X, np, na, high, low);
-      X_ctr++;
-      if(np >= np_min)
-	{
-	  seen_passed = TRUE;
-	  low_X_that_passes = X;
-	  low  = X;  
-	  X += (high - X)/2.;  
-	  printf("high: %f low: %f (%f)\n", high, low, fabs(high-low));
-	}
-      else
-	{ 
-	  high = X;  
-	  if(seen_passed) X -= (X  - low)/2.;  
-	  else { X -= step_down_size; }
-	}
-      if(fabs(high-low) < 0.005) 
-	{
-	  if(seen_passed) /* we've seen an X that passes, set X to that */
-	    {
-	      X = low_X_that_passes;
-	      keep_going = FALSE;
-	      printf("06.03.07 success! X: %f\n", X);
-	    }
-	  else if(fabs(high - init_high) < 0.001) /* init_high (1.0) not high enough, return init_high (1.0) */
-	    return init_high;
-	  else if (fabs(low - init_low) < 0.001) /* init_low (0.5) not low enough, return init_low (0.8) */
-	    return init_low;
-	  else
-	    {
-	      printf("ERROR in FindExpFactor_min(), convergence at high: %f low: %f\n", high, low);
-	      esl_fatal("done.\n");
-	    }
-	}
-      /* Put the CM back the way it was */
-      ExponentiateCM(cm, (1./old_X));
-    }
-  cm_for_scoring->tau = orig_tau;
-  FreeCM(cm_for_scoring);
-  free(cm_minbitsc);
-  free(cm_mu);
-
-  printf("06.03.07 done expt returning %f\n", X);
-  return X;
-
- ERROR:
-  esl_fatal("ERROR in FindExpFactor_min(), death imminent.\n");
-  return 1.0;
-}
-
-
-/*
- * Function: Filter_XFTableLookup()
- * Incept:   EPN, Tue Jun  5 07:07:39 2007
- *
- * Purpose:  Given a fraction 'F' of CM hits the HMM filter should find and
- *           the exponentiation factor 'X' used to make the CM emit parsetrees
- *           with suitable scores, lookup and return the corrected 'F' using
- *           a hardcoded map of empirically determined values, and extrapolating
- *           where necessary.      
- *
- * Args:
- *           X            - the exponentiation factor
- *           F            - desired fraction of CM hits HMM should find (0.95<=x<=0.99)
- *           emit_mode    - CM_LC or CM_GC, CM mode to emit with
- *           fthr_mode    - gives CM search strategy to use, and Gumbel to use
- *           
- * Returns: Corrected 'F' from table after extrapolation as explained above.
- */
-float Filter_XFTableLookup(float X, float F, int emit_mode, int fthr_mode)
-{
-  printf("in Filter_XFTableLookup() X: %f F: %f emit_mode: %d fthr_mode: %d\n", X, F, emit_mode, fthr_mode);
-  /* Contract checks (some are temporary) */
-  if(emit_mode != CM_GC) 
-    esl_fatal("ERROR in Filter_XFTableLookup(), emit mode not CM_GC.\n");
-  if(fthr_mode != CM_LC && fthr_mode != CM_LI) 
-    esl_fatal("ERROR in Filter_XFTableLookup(), fthr mode not CM_LC or CM_LI.\n");
-  if(F > 0.990001 || F < 0.94999)
-    esl_fatal("ERROR in Filter_XFTableLookup(), F must be in range [0.95..0.99]\n");
-  if(X < 0.75)
-    esl_fatal("in Filter_XTableLookup(), X is below 0.75\n");
-
-  if(X > 1.249) 
-    { 
-      printf("in Filter_XTableLookup(), exceeds 1.249, returning 1.0.\n");
-      return 1.0;
-    }
-
-  int status;
-  double **XF_AA;
-  int i;
-  ESL_ALLOC(XF_AA, sizeof(double *) * 5);
-  for(i = 0; i < 5; i++)
-    {
-      ESL_ALLOC(XF_AA[i], sizeof(double) * 50);
-    }
-
-  /* from ~/notebook/7_0520_inf_tail_emit/expts_0603/rmark-1/X_close_to_1/rmark_close21.table.code */
-  XF_AA[0][0] = 0.604515423192598;
-  XF_AA[0][1] = 0.614831485532718;
-  XF_AA[0][2] = 0.640483722291663;
-  XF_AA[0][3] = 0.653194799326666;
-  XF_AA[0][4] = 0.664721613516714;
-  XF_AA[0][5] = 0.684792103312101;
-  XF_AA[0][6] = 0.696334432588007;
-  XF_AA[0][7] = 0.717301102410688;
-  XF_AA[0][8] = 0.738809779743004;
-  XF_AA[0][9] = 0.748424707090713;
-  XF_AA[0][10] = 0.764510665501093;
-  XF_AA[0][11] = 0.776107759845839;
-  XF_AA[0][12] = 0.793102525868823;
-  XF_AA[0][13] = 0.802242539634606;
-  XF_AA[0][14] = 0.817396549001533;
-  XF_AA[0][15] = 0.833510018143928;
-  XF_AA[0][16] = 0.845054834049552;
-  XF_AA[0][17] = 0.859990635768138;
-  XF_AA[0][18] = 0.873048725966369;
-  XF_AA[0][19] = 0.88312357348995;
-  XF_AA[0][20] = 0.893851543442886;
-  XF_AA[0][21] = 0.899095896617135;
-  XF_AA[0][22] = 0.91290439255526;
-  XF_AA[0][23] = 0.919998809374404;
-  XF_AA[0][24] = 0.929454784999846;
-  XF_AA[0][25] = 0.939837938984853;
-  XF_AA[0][26] = 0.945430601430853;
-  XF_AA[0][27] = 0.952149230210086;
-  XF_AA[0][28] = 0.961300521748108;
-  XF_AA[0][29] = 0.966066709815535;
-  XF_AA[0][30] = 0.970570392014799;
-  XF_AA[0][31] = 0.975461211728663;
-  XF_AA[0][32] = 0.977603094876106;
-  XF_AA[0][33] = 0.981002374018307;
-  XF_AA[0][34] = 0.984292259859661;
-  XF_AA[0][35] = 0.985812772516189;
-  XF_AA[0][36] = 0.988604697815925;
-  XF_AA[0][37] = 0.991247813621203;
-  XF_AA[0][38] = 0.993506975192497;
-  XF_AA[0][39] = 0.994064191924624;
-  XF_AA[0][40] = 0.995988455979326;
-  XF_AA[0][41] = 0.996120992797291;
-  XF_AA[0][42] = 0.996524405956255;
-  XF_AA[0][43] = 0.997289275412066;
-  XF_AA[0][44] = 0.998140930863923;
-  XF_AA[0][45] = 0.99811346203176;
-  XF_AA[0][46] = 0.999321588371466;
-  XF_AA[0][47] = 0.998690299422014;
-  XF_AA[0][48] = 0.998872079106245;
-  XF_AA[0][49] = 0.99928186466236;
-
-  XF_AA[1][0] = 0.651507805191574;
-  XF_AA[1][1] = 0.660560549957533;
-  XF_AA[1][2] = 0.686186803189465;
-  XF_AA[1][3] = 0.696858774402236;
-  XF_AA[1][4] = 0.706405154190228;
-  XF_AA[1][5] = 0.725072729101922;
-  XF_AA[1][6] = 0.735330802994684;
-  XF_AA[1][7] = 0.75508335639012;
-  XF_AA[1][8] = 0.775144236530571;
-  XF_AA[1][9] = 0.784491364559886;
-  XF_AA[1][10] = 0.79852241987608;
-  XF_AA[1][11] = 0.807965324841711;
-  XF_AA[1][12] = 0.824217530792584;
-  XF_AA[1][13] = 0.832024779137886;
-  XF_AA[1][14] = 0.844790310291407;
-  XF_AA[1][15] = 0.859582957980509;
-  XF_AA[1][16] = 0.86894693564019;
-  XF_AA[1][17] = 0.882236426601724;
-  XF_AA[1][18] = 0.893328487923062;
-  XF_AA[1][19] = 0.901919407618695;
-  XF_AA[1][20] = 0.912516845647004;
-  XF_AA[1][21] = 0.915903778251477;
-  XF_AA[1][22] = 0.928925101621968;
-  XF_AA[1][23] = 0.933522379705056;
-  XF_AA[1][24] = 0.941902240181435;
-  XF_AA[1][25] = 0.950084243608121;
-  XF_AA[1][26] = 0.955767251863576;
-  XF_AA[1][27] = 0.961124663003683;
-  XF_AA[1][28] = 0.968520148816714;
-  XF_AA[1][29] = 0.97275666968008;
-  XF_AA[1][30] = 0.976555605591042;
-  XF_AA[1][31] = 0.980210559693913;
-  XF_AA[1][32] = 0.982099840185598;
-  XF_AA[1][33] = 0.984546921628583;
-  XF_AA[1][34] = 0.987191158213102;
-  XF_AA[1][35] = 0.988905332488261;
-  XF_AA[1][36] = 0.991035950680023;
-  XF_AA[1][37] = 0.993250800528251;
-  XF_AA[1][38] = 0.995293396435803;
-  XF_AA[1][39] = 0.995605041935139;
-  XF_AA[1][40] = 0.996507055729084;
-  XF_AA[1][41] = 0.996684719302554;
-  XF_AA[1][42] = 0.997785194884525;
-  XF_AA[1][43] = 0.997813869807061;
-  XF_AA[1][44] = 0.998851091704242;
-  XF_AA[1][45] = 0.998786788290816;
-  XF_AA[1][46] = 0.999631834629549;
-  XF_AA[1][47] = 0.99782431444757;
-  XF_AA[1][48] = 0.999083449547723;
-  XF_AA[1][49] = 0.998939543116936;
-
-  XF_AA[2][0] = 0.698068831381895;
-  XF_AA[2][1] = 0.706196770587634;
-  XF_AA[2][2] = 0.730030559690639;
-  XF_AA[2][3] = 0.740250612982444;
-  XF_AA[2][4] = 0.749767542725801;
-  XF_AA[2][5] = 0.766840329536004;
-  XF_AA[2][6] = 0.775252201727982;
-  XF_AA[2][7] = 0.791592319198176;
-  XF_AA[2][8] = 0.81069967397328;
-  XF_AA[2][9] = 0.819699794556972;
-  XF_AA[2][10] = 0.831920771972702;
-  XF_AA[2][11] = 0.839637857470845;
-  XF_AA[2][12] = 0.853415720626429;
-  XF_AA[2][13] = 0.858613091377097;
-  XF_AA[2][14] = 0.87233921186971;
-  XF_AA[2][15] = 0.884409633343452;
-  XF_AA[2][16] = 0.893122940535288;
-  XF_AA[2][17] = 0.90361957928424;
-  XF_AA[2][18] = 0.912921961208646;
-  XF_AA[2][19] = 0.920095554050192;
-  XF_AA[2][20] = 0.929290051807059;
-  XF_AA[2][21] = 0.931576686768534;
-  XF_AA[2][22] = 0.942707955664224;
-  XF_AA[2][23] = 0.946248893484383;
-  XF_AA[2][24] = 0.952945812285395;
-  XF_AA[2][25] = 0.960442605946639;
-  XF_AA[2][26] = 0.965279267778482;
-  XF_AA[2][27] = 0.96882712601592;
-  XF_AA[2][28] = 0.97614984985738;
-  XF_AA[2][29] = 0.97952055184705;
-  XF_AA[2][30] = 0.981374975272281;
-  XF_AA[2][31] = 0.984755218232072;
-  XF_AA[2][32] = 0.986447558547585;
-  XF_AA[2][33] = 0.988059530318827;
-  XF_AA[2][34] = 0.989895930683065;
-  XF_AA[2][35] = 0.99173856432554;
-  XF_AA[2][36] = 0.992792458352072;
-  XF_AA[2][37] = 0.994776057675342;
-  XF_AA[2][38] = 0.996653380435322;
-  XF_AA[2][39] = 0.996358177774394;
-  XF_AA[2][40] = 0.99767166216276;
-  XF_AA[2][41] = 0.99807797054367;
-  XF_AA[2][42] = 0.998490407655929;
-  XF_AA[2][43] = 0.998625900055842;
-  XF_AA[2][44] = 0.999032032449554;
-  XF_AA[2][45] = 0.998368634332335;
-  XF_AA[2][46] = 0.999493938736146;
-  XF_AA[2][47] = 0.997961464856902;
-  XF_AA[2][48] = 0.99926757254451;
-  XF_AA[2][49] = 0.99919760044068;
-
-  XF_AA[3][0] = 0.757724305104733;
-  XF_AA[3][1] = 0.766461466775073;
-  XF_AA[3][2] = 0.784979752178282;
-  XF_AA[3][3] = 0.79434397402588;
-  XF_AA[3][4] = 0.802017008556587;
-  XF_AA[3][5] = 0.817887452755621;
-  XF_AA[3][6] = 0.824458070452807;
-  XF_AA[3][7] = 0.837354545237931;
-  XF_AA[3][8] = 0.854769767428774;
-  XF_AA[3][9] = 0.862213006604172;
-  XF_AA[3][10] = 0.873201595298575;
-  XF_AA[3][11] = 0.877962153736902;
-  XF_AA[3][12] = 0.888494760978758;
-  XF_AA[3][13] = 0.8929426934511;
-  XF_AA[3][14] = 0.904267090291344;
-  XF_AA[3][15] = 0.913804159254234;
-  XF_AA[3][16] = 0.919535282202327;
-  XF_AA[3][17] = 0.928230503690814;
-  XF_AA[3][18] = 0.935307335667513;
-  XF_AA[3][19] = 0.941256475828225;
-  XF_AA[3][20] = 0.949030568488772;
-  XF_AA[3][21] = 0.949945934709077;
-  XF_AA[3][22] = 0.957970528251316;
-  XF_AA[3][23] = 0.961090198134555;
-  XF_AA[3][24] = 0.966164195654882;
-  XF_AA[3][25] = 0.971684199746855;
-  XF_AA[3][26] = 0.976030330408388;
-  XF_AA[3][27] = 0.977793072539259;
-  XF_AA[3][28] = 0.98379319029689;
-  XF_AA[3][29] = 0.985342821244426;
-  XF_AA[3][30] = 0.988342683165911;
-  XF_AA[3][31] = 0.989854392548513;
-  XF_AA[3][32] = 0.990699980929024;
-  XF_AA[3][33] = 0.99195007325228;
-  XF_AA[3][34] = 0.993298367742526;
-  XF_AA[3][35] = 0.994398012140472;
-  XF_AA[3][36] = 0.995394140596778;
-  XF_AA[3][37] = 0.996807787452819;
-  XF_AA[3][38] = 0.99797568427179;
-  XF_AA[3][39] = 0.997979619235294;
-  XF_AA[3][40] = 0.998438792467191;
-  XF_AA[3][41] = 0.998581294266464;
-  XF_AA[3][42] = 0.998972976932633;
-  XF_AA[3][43] = 0.99912961663165;
-  XF_AA[3][44] = 0.999416928771567;
-  XF_AA[3][45] = 0.998799776518357;
-  XF_AA[3][46] = 0.999490598632985;
-  XF_AA[3][47] = 0.998556001944389;
-  XF_AA[3][48] = 0.999248894097374;
-  XF_AA[3][49] = 0.999438980162221;
-
-  XF_AA[4][0] = 0.835926947200063;
-  XF_AA[4][1] = 0.840096285366306;
-  XF_AA[4][2] = 0.854913111501865;
-  XF_AA[4][3] = 0.861427817213593;
-  XF_AA[4][4] = 0.868913860855596;
-  XF_AA[4][5] = 0.880673045371533;
-  XF_AA[4][6] = 0.885221733032393;
-  XF_AA[4][7] = 0.892556750391326;
-  XF_AA[4][8] = 0.906645038425893;
-  XF_AA[4][9] = 0.912782761250072;
-  XF_AA[4][10] = 0.920695351777993;
-  XF_AA[4][11] = 0.923606158847454;
-  XF_AA[4][12] = 0.929654991028677;
-  XF_AA[4][13] = 0.931456550407444;
-  XF_AA[4][14] = 0.941009532409196;
-  XF_AA[4][15] = 0.947452390809934;
-  XF_AA[4][16] = 0.951219782862265;
-  XF_AA[4][17] = 0.955998843984201;
-  XF_AA[4][18] = 0.960581845202378;
-  XF_AA[4][19] = 0.964765994127025;
-  XF_AA[4][20] = 0.969891036795612;
-  XF_AA[4][21] = 0.969916152140906;
-  XF_AA[4][22] = 0.976101734678514;
-  XF_AA[4][23] = 0.976799430520982;
-  XF_AA[4][24] = 0.979214706351899;
-  XF_AA[4][25] = 0.982674464196227;
-  XF_AA[4][26] = 0.986092249453835;
-  XF_AA[4][27] = 0.986582538247042;
-  XF_AA[4][28] = 0.991199061348433;
-  XF_AA[4][29] = 0.992459929940093;
-  XF_AA[4][30] = 0.993635344813326;
-  XF_AA[4][31] = 0.994438724023198;
-  XF_AA[4][32] = 0.994970564163626;
-  XF_AA[4][33] = 0.995279388113399;
-  XF_AA[4][34] = 0.996209951784272;
-  XF_AA[4][35] = 0.996779356160901;
-  XF_AA[4][36] = 0.997499207959605;
-  XF_AA[4][37] = 0.998394104286069;
-  XF_AA[4][38] = 0.999293502799076;
-  XF_AA[4][39] = 0.998760821386919;
-  XF_AA[4][40] = 0.999366130969548;
-  XF_AA[4][41] = 0.999565664979706;
-  XF_AA[4][42] = 0.999219295380022;
-  XF_AA[4][43] = 0.999533070445127;
-  XF_AA[4][44] = 0.999348779659682;
-  XF_AA[4][45] = 0.998307864255877;
-  XF_AA[4][46] = 0.999540316530718;
-  XF_AA[4][47] = 0.999045950019794;
-  XF_AA[4][48] = 0.998854972879331;
-  XF_AA[4][49] = 0.999457304554798;
-
-  /* Find appropriate values that bracket X above and below and smallest F
-   * above F, and extrapolate  */
-  float F_below = 0.95;
-  float F_above;
-  int i_x = 0;
-  int i_f = 0;
-  int keep_going = TRUE;
-  int i_f_below, i_f_above;
-  float X_below;
-  float return_F;
-
-  while(keep_going && i_f < 5)
-    {
-      if(fabs(F-F_below) > 0.0001) { i_f++; F_below += 0.01; }
-      else 
-	{ 
-	  keep_going = FALSE;
-	  i_f_below = i_f-1;
-	  if(i_x == 0) i_f_below = i_f;
-	  i_f_above = i_f;
-	  F_above = F_below;
-	  F_below -= 0.01;
-	}
-    }
-  if(keep_going) 
-    {
-      printf("couldn't determine F_below F_above for F: %f\n", F);
-      esl_fatal("done.\n");
-    }
-  printf("i_f: %d F_above: %f F_below: %f\n", i_f, F_above, F_below);
-
-  i_x = 0;
-  X_below = 0.75;
-  keep_going = TRUE;
-  while(keep_going && i_x < 50)
-    {
-      if(X > X_below) { i_x++; X_below += 0.01; }
-      else keep_going = FALSE;
-    }
-  if(keep_going) 
-    {
-      printf("couldn't determine X_below for X: %f\n", X);
-      esl_fatal("done.\n");
-    }
-  printf("i_x: %d X_below: %f\n", i_x, X_below);
-
-  return_F = XF_AA[i_f_below][i_x] + (((F - F_below) / (F_above-F_below)) * 
-				      (XF_AA[i_f_above] - XF_AA[i_f_below]));
-  printf("in Filter_XFTableLookup() F: %f X: %f returning: %f\n", F, X, return_F);
-  return return_F;
-
- ERROR:
-  esl_fatal("EASEL ERROR\n");
-  return 0.;
-}
   

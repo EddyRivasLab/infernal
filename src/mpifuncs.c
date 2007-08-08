@@ -19,7 +19,10 @@
  * EPN, Thu Jan  4 14:17:06 2007
  */
 
+#include "esl_config.h"
 #include "config.h"
+
+#include <string.h>
 
 #ifdef USE_MPI 
 
@@ -34,9 +37,7 @@
 #include "cm_dispatch.h"
 #include "stats.h"
 
-#include <string.h>
-
-#define VERSION_STRING "INFERNAL 0.72"
+#define VERSION_STRING "INFERNAL 1.0"
 #define VERSION_STRING_SIZE 100
 
 /***************************************************************************
@@ -99,7 +100,7 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
     {   /* I'm in charge */
       /* contract check, if we claim to have Gumbel stats, we better have them */
       if((*cm)->flags & CM_GUMBEL_STATS && (*cm)->stats == NULL)
-	Die("ERROR in broadcast_cm() master node claims to have Gumbel stats but cm->stats is NULL!\n");
+	esl_fatal("ERROR in broadcast_cm() master node claims to have Gumbel stats but cm->stats is NULL!\n");
       nstates = (*cm)->M;
       nnodes = (*cm)->nodes;
       
@@ -210,7 +211,7 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
   if((*cm)->enf_start != 0)
     {
       if (mpi_my_rank != mpi_master_rank) 
-	(*cm)->enf_seq = MallocOrDie(sizeof(char) * (enf_len+1));
+	ESL_ALLOC((*cm)->enf_seq, sizeof(char) * (enf_len+1));
       MPI_Bcast((*cm)->enf_seq, enf_len, MPI_CHAR, mpi_master_rank, MPI_COMM_WORLD);
       if (mpi_my_rank != mpi_master_rank) 
 	(*cm)->enf_seq[enf_len] = '\0';
@@ -249,10 +250,11 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
 void search_first_broadcast (int *num_samples, float *W_scale,
 			     int mpi_my_rank, int mpi_master_rank) 
 {
+  int  status;
   int   bufsize = sizeof(int) + sizeof(float);
   char *buf;                /* Buffer for packing */
   int   position = 0;         /* Where I am in the buffer */
-  buf = MallocOrDie(bufsize);
+  ESL_ALLOC(buf, bufsize);
 
   /*printf("entered search_first_broadcast: my: %d master: %d\n", mpi_my_rank, mpi_master_rank);*/
 
@@ -273,6 +275,9 @@ void search_first_broadcast (int *num_samples, float *W_scale,
       MPI_Unpack (buf, BUFSIZE, &position, W_scale, 1, MPI_FLOAT, MPI_COMM_WORLD);
     }
   /*printf("leaving search_first_broadcast: do_qdb: %d do_inside: %d\n", (*do_qdb), (*do_inside));*/
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
 }
 
 /*
@@ -371,7 +376,7 @@ char search_receive_job (int *seqlen_p, char **seq_p, int *bestr_p,
   if (*seqlen_p > 0) {
     /* Receive a partial sequence and convert to digitized sequence format
        by placing sentinels at end */
-    seq = MallocOrDie(sizeof(char)*(*seqlen_p+2));
+    ESL_ALLOC(seq = MallocOrDie(sizeof(char)*(*seqlen_p+2)));
     seq[0] = seq[*seqlen_p+1] = DIGITAL_SENTINEL;
     MPI_Recv (seq+1, *seqlen_p, MPI_CHAR, mpi_master_rank, SEQ_TAG, 
 	      MPI_COMM_WORLD, &status);
@@ -394,7 +399,7 @@ void search_send_scan_results (scan_results_t *results, int mpi_master_node) {
   char results_type = SEARCH_STD_SCAN_RESULTS;
 
   bufsize = sizeof(char)+sizeof(int)+(sizeof(scan_result_node_t)*(results->num_results+1));
-  buf = MallocOrDie(bufsize);
+  ESL_ALLOC(buf, bufsize);
   /* Send the size of the results */
   MPI_Send (&bufsize, 1, MPI_INT, mpi_master_node, SEARCH_STD_SCAN_RESULTS_SIZE_TAG, MPI_COMM_WORLD);
 
@@ -422,7 +427,7 @@ void search_send_align_results (Parsetree_t *tr, int mpi_master_node) {
   char results_type = ALN_RESULTS;
 
   bufsize = sizeof(char)+sizeof(int)+sizeof(int)+7*((tr->n)+1)*sizeof(int);
-  buf = MallocOrDie(bufsize);
+  ESL_ALLOC(buf, bufsize);
   /* Send the size of the results */
   MPI_Send (&bufsize, 1, MPI_INT, mpi_master_node, SEARCH_STD_SCAN_RESULTS_SIZE_TAG, MPI_COMM_WORLD);
 
@@ -503,7 +508,7 @@ job_t *search_enqueue (db_seq_t *active_seq, int db_seq_index,
   active_seq->alignments_sent = -1;     /* None sent yet */
   for (in_revcomp = 0; in_revcomp <= do_revcomp; in_revcomp++) {
     for (curpos = 1; curpos <= active_seq->sq[0]->n; curpos += chunkoffset) {
-      new_entry = MallocOrDie (sizeof(db_seq_t));
+      ESL_ALLOC(new_entry, sizeof(db_seq_t));
       new_entry->next = NULL;
       if (cur_tail != NULL)
 	cur_tail->next = new_entry;
@@ -555,7 +560,7 @@ void search_enqueue_alignments (job_t **queue, db_seq_t *active_seq, int db_seq_
     for (result_index = 0; 
 	 result_index < active_seq->results[in_revcomp]->num_results;
 	 result_index++) {
-      new_entry = MallocOrDie (sizeof(db_seq_t));
+      ESL_ALLOC(new_entry, sizeof(db_seq_t));
       new_entry->next = NULL;
       if (cur_tail != NULL)
 	cur_tail->next = new_entry;
@@ -632,7 +637,7 @@ int search_check_results (db_seq_t **active_seqs, job_t **process_status, int D)
   MPI_Recv (&bufsize, 1, MPI_INT, MPI_ANY_SOURCE, 
 	    SEARCH_STD_SCAN_RESULTS_SIZE_TAG, MPI_COMM_WORLD, &status);
   data_from = status.MPI_SOURCE;
-  buf = MallocOrDie(sizeof(char)*bufsize);
+  ESL_ALLOC(buf, (char)*bufsize);
 
   /* Figure out the sequence it belongs to */
   cur_seq_index = process_status[data_from]->db_seq_index;
@@ -670,19 +675,21 @@ int search_check_results (db_seq_t **active_seqs, job_t **process_status, int D)
     }
     cur_seq->chunks_sent--;
   } else if (results_type == ALN_RESULTS) {
-    tr = MallocOrDie(sizeof(Parsetree_t));
+    ESL_ALLOC(tr, sizeof(Parsetree_t));
     /* Get size of the tree */
     MPI_Unpack (buf, bufsize, &position, &(tr->memblock), 1, MPI_INT, MPI_COMM_WORLD);
     MPI_Unpack (buf, bufsize, &position, &(tr->n), 1, MPI_INT, MPI_COMM_WORLD);
     /* Allocate it */
-    tr->emitl = MallocOrDie(sizeof(int)*tr->n);
-    tr->emitr = MallocOrDie(sizeof(int)*tr->n);
-    tr->state = MallocOrDie(sizeof(int)*tr->n);
-    tr->nxtl = MallocOrDie(sizeof(int)*tr->n);
-    tr->nxtr = MallocOrDie(sizeof(int)*tr->n);
-    tr->prv = MallocOrDie(sizeof(int)*tr->n);
-    tr->mode = MallocOrDie(sizeof(int)*tr->n);
+    ESL_ALLOC(tr->emitl, sizeof(int)*tr->n);
+    ESL_ALLOC(tr->emitr, sizeof(int)*tr->n);
+    ESL_ALLOC(tr->state, sizeof(int)*tr->n);
+    ESL_ALLOC(tr->nxtl,  sizeof(int)*tr->n);
+    ESL_ALLOC(tr->nxtr,  sizeof(int)*tr->n);
+    ESL_ALLOC(tr->prv,   sizeof(int)*tr->n);
+    ESL_ALLOC(tr->mode,  sizeof(int)*tr->n);
+    ESL_ALLOC(tr->nalloc,sizeof(int)*tr->n);
     tr->nalloc = tr->n;
+
     /* Unpack it */
     MPI_Unpack (buf, bufsize, &position, tr->emitl, tr->n, MPI_INT, MPI_COMM_WORLD);
     MPI_Unpack (buf, bufsize, &position, tr->emitr, tr->n, MPI_INT, MPI_COMM_WORLD);
@@ -760,7 +767,7 @@ void search_send_hist_scan_results (float score, int mpi_master_node) {
   char results_type = SEARCH_HIST_SCAN_RESULTS;
 
   bufsize = sizeof(char)+sizeof(float);
-  buf = MallocOrDie(bufsize);
+  ESL_ALLOC(buf, bufsize);
 
   /* Send the results */
   MPI_Pack (&results_type, 1, MPI_CHAR, buf, bufsize, &pos, MPI_COMM_WORLD);
@@ -823,7 +830,7 @@ void aln_send_next_job (seqs_to_aln_t *seqs_to_aln, int rank_to_send_to)
   /*printf("in aln_send_next_job, rank_to_send_to: %d\n", rank_to_send_to);*/
 
   bufsize = sizeof(char) + ((3 + (2 * seqs_to_aln->nseq)) * sizeof(int));
-  buf = MallocOrDie(bufsize);
+  ESL_ALLOC(buf, bufsize);
   
   /* Send the size of the job */
   MPI_Send (&bufsize, 1, MPI_INT, rank_to_send_to, ALN_JOB_SIZE_TAG, MPI_COMM_WORLD);
@@ -831,7 +838,7 @@ void aln_send_next_job (seqs_to_aln_t *seqs_to_aln, int rank_to_send_to)
   MPI_Pack (&job_type, 1, MPI_CHAR, buf, bufsize, &position, MPI_COMM_WORLD);
   MPI_Pack (&(seqs_to_aln->index), 1, MPI_INT, buf, bufsize, &position, MPI_COMM_WORLD);
 
-  namelen = MallocOrDie(sizeof(int) * seqs_to_aln->nseq);
+  ESL_ALLOC(namelen, sizeof(int) * seqs_to_aln->nseq);
 
   /* Send the seqs_to_aln_t data structure, piecewise */
   /* First send the number of sequences */
@@ -875,13 +882,13 @@ char aln_receive_job (seqs_to_aln_t **ret_seqs_to_aln, int mpi_master_rank)
   int position = 0;
   char job_type;
   seqs_to_aln_t *seqs_to_aln;
-  seqs_to_aln = MallocOrDie(sizeof(seqs_to_aln_t));
+  ESL_ALLOC(seqs_to_aln, sizeof(seqs_to_aln_t));
   int i;
   int *namelen;
 
   /* Get the size of the buffer */
   MPI_Recv (&bufsize, 1, MPI_INT, MPI_ANY_SOURCE, ALN_JOB_SIZE_TAG, MPI_COMM_WORLD, &status);
-  buf = MallocOrDie(sizeof(char)*bufsize);
+  ESL_ALLOC(buf, sizeof(char)*bufsize);
 
   /* Get the job */
   MPI_Recv (buf, bufsize, MPI_PACKED, mpi_master_rank, ALN_JOB_PACKET_TAG, 
@@ -892,8 +899,8 @@ char aln_receive_job (seqs_to_aln_t **ret_seqs_to_aln, int mpi_master_rank)
     {
       MPI_Unpack (buf, bufsize, &position, &(seqs_to_aln->index), 1, MPI_INT, MPI_COMM_WORLD);
       MPI_Unpack (buf, bufsize, &position, &(seqs_to_aln->nseq),  1, MPI_INT, MPI_COMM_WORLD);
-      seqs_to_aln->sq = MallocOrDie(sizeof(ESL_SQ *) * seqs_to_aln->nseq);
-      namelen         = MallocOrDie(sizeof(int)      * seqs_to_aln->nseq);
+      ESL_ALLOC(seqs_to_aln->sq, sizeof(ESL_SQ *) * seqs_to_aln->nseq);
+      ESL_ALLOC(namelen,         sizeof(int)      * seqs_to_aln->nseq);
 
       for(i = 0; i < seqs_to_aln->nseq; i++)
 	{
@@ -915,7 +922,7 @@ char aln_receive_job (seqs_to_aln_t **ret_seqs_to_aln, int mpi_master_rank)
 	{
 	  if(seqs_to_aln->sq[i]->n > 0)
 	    {
-	      seqs_to_aln->sq[i]->dsq = MallocOrDie(sizeof(char)*((seqs_to_aln->sq[i]->n)+2));
+	      ESL_ALLOC(seqs_to_aln->sq[i]->dsq, sizeof(char)*((seqs_to_aln->sq[i]->n)+2));
 	      MPI_Recv (seqs_to_aln->sq[i]->dsq, (seqs_to_aln->sq[i]->n+2), MPI_CHAR, 
 			mpi_master_rank, SEQ_TAG, MPI_COMM_WORLD, &status);
 	    }
@@ -923,7 +930,7 @@ char aln_receive_job (seqs_to_aln_t **ret_seqs_to_aln, int mpi_master_rank)
       *ret_seqs_to_aln = seqs_to_aln;
     }
   else if(job_type != TERMINATE_WORK)
-    Die("ERROR in aln_receive_job did not receive ALN_WORK or TERMINATE_WORK signal\n");
+    esl_fatal("ERROR in aln_receive_job did not receive ALN_WORK or TERMINATE_WORK signal\n");
 
   return(job_type);
 }
@@ -949,7 +956,7 @@ void aln_send_results (seqs_to_aln_t *seqs_to_aln, int do_post, int mpi_master_n
     for(i = 0; i < seqs_to_aln->nseq; i++)
       bufsize += (seqs_to_aln->sq[i]->n + 1) * sizeof(char) + sizeof(int);
 
-  buf = MallocOrDie(bufsize);
+  ESL_ALLOC(buf, bufsize);
 
   /* Send the size of the results */
   MPI_Send (&bufsize, 1, MPI_INT, mpi_master_node, ALN_RESULTS_SIZE_TAG, MPI_COMM_WORLD);
@@ -1009,7 +1016,7 @@ int aln_check_results (Parsetree_t **all_parsetrees, char **all_postcodes, int *
   MPI_Recv (&bufsize, 1, MPI_INT, MPI_ANY_SOURCE, 
 	    ALN_RESULTS_SIZE_TAG, MPI_COMM_WORLD, &status);
   data_from = status.MPI_SOURCE;
-  buf = MallocOrDie(sizeof(char)*bufsize);
+  ESL_ALLOC(buf, sizeof(char)*bufsize);
 
   /* Clear this job -- it's done */
   (*process_status)[data_from] = IDLE;
@@ -1029,19 +1036,21 @@ int aln_check_results (Parsetree_t **all_parsetrees, char **all_postcodes, int *
       for (i=0; i < nseq; i++) 
 	{
 	  /* Get a parsetree for each sequence */
-	  tr = MallocOrDie(sizeof(Parsetree_t));
+	  ESL_ALLOC(tr, sizeof(Parsetree_t));
 	  /* Get size of the tree */
 	  MPI_Unpack (buf, bufsize, &position, &(tr->memblock), 1, MPI_INT, MPI_COMM_WORLD);
 	  MPI_Unpack (buf, bufsize, &position, &(tr->n), 1, MPI_INT, MPI_COMM_WORLD);
 	  /* Allocate it */
-	  tr->emitl = MallocOrDie(sizeof(int)*tr->n);
-	  tr->emitr = MallocOrDie(sizeof(int)*tr->n);
-	  tr->state = MallocOrDie(sizeof(int)*tr->n);
-	  tr->nxtl  = MallocOrDie(sizeof(int)*tr->n);
-	  tr->nxtr  = MallocOrDie(sizeof(int)*tr->n);
-	  tr->prv   = MallocOrDie(sizeof(int)*tr->n);
-	  tr->mode  = MallocOrDie(sizeof(int)*tr->n);
+	  ESL_ALLOC(tr->emitl, sizeof(int)*tr->n);
+	  ESL_ALLOC(tr->emitr, sizeof(int)*tr->n);
+	  ESL_ALLOC(tr->state, sizeof(int)*tr->n);
+	  ESL_ALLOC(tr->nxtl,  sizeof(int)*tr->n);
+	  ESL_ALLOC(tr->nxtr,  sizeof(int)*tr->n);
+	  ESL_ALLOC(tr->prv,   sizeof(int)*tr->n);
+	  ESL_ALLOC(tr->mode,  sizeof(int)*tr->n);
+	  ESL_ALLOC(tr->nalloc,sizeof(int)*tr->n);
 	  tr->nalloc = tr->n;
+
 	  /* Unpack it */
 	  MPI_Unpack (buf, bufsize, &position, tr->emitl, tr->n, MPI_INT, MPI_COMM_WORLD);
 	  MPI_Unpack (buf, bufsize, &position, tr->emitr, tr->n, MPI_INT, MPI_COMM_WORLD);
@@ -1063,7 +1072,7 @@ int aln_check_results (Parsetree_t **all_parsetrees, char **all_postcodes, int *
 	    {
 	      /* unpack the postcodes */
 	      MPI_Unpack (buf, bufsize, &position, &postsize,   1       , MPI_INT,  MPI_COMM_WORLD);
-	      postcode = MallocOrDie(sizeof(char) * (postsize+1));
+	      ESL_ALLOC(postcode, sizeof(char) * (postsize+1));
 	      MPI_Unpack (buf, bufsize, &position, postcode, (postsize+1), MPI_CHAR, MPI_COMM_WORLD);
 	      all_postcodes[index++] = postcode;
 	    }
@@ -1089,7 +1098,7 @@ void aln_send_terminate (int rank_to_send_to)
   char job_type = TERMINATE_WORK;
 
   bufsize = sizeof(char);
-  buf = MallocOrDie(bufsize);
+  ESL_ALLOC(buf, bufsize);
   
   /* Send the bufsize (only b/c aln_receive_job expects it) */
   MPI_Send (&bufsize, 1, MPI_INT, rank_to_send_to, ALN_JOB_SIZE_TAG, MPI_COMM_WORLD);

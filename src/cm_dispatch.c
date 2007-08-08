@@ -10,8 +10,8 @@
  * 
  */
 
+#include "esl_config.h"
 #include "config.h"
-#include "squidconf.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,31 +21,30 @@
 #include <math.h>
 
 #include "easel.h"
-#include "squid.h"		/* general sequence analysis library    */
-#include "msa.h"                /* squid's multiple alignment i/o       */
-#include "stopwatch.h"          /* squid's process timing module        */
+#include "esl_gumbel.h"
+#include "esl_msa.h"         
+#include "esl_stack.h"
+#include "esl_stopwatch.h"   
 
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
-#include "sre_stack.h"
 #include "hmmband.h"         
 #include "cm_postprob.h"
 #include "stats.h"
 #include "cplan9.h"
-#include "esl_gumbel.h"
 #include "mpifuncs.h"
 #include "cm_dispatch.h"
 
 /* Helper functions called by the main functions (main functions
  * declared in cm_dispatch.h) 
  */
-static db_seq_t *read_next_seq (ESL_SQFILE *dbfp, int do_revcomp);
+static db_seq_t *read_next_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revcomp);
 static void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 			   int do_complement, int used_HMM);
-static void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, char *seq,
+static void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, ESL_SQ *sq,
 				       int used_HMM);
 #ifdef USE_MPI
-static seqs_to_aln_t *read_next_aln_seqs(ESL_SQFILE *seqfp, int nseq, int index);
+static seqs_to_aln_t *read_next_aln_seqs(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int nseq, int index);
 #endif
 
 /* coordinate -- macro that checks if it's reverse complement and if so 
@@ -88,7 +87,7 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons)
       
   /* Check contract */
   if(!(cm->flags & CM_HASBITS))
-    Die("ERROR in serial_search_database CM_HAS_BITS flag is down\n");
+    esl_fatal("ERROR in serial_search_database CM_HAS_BITS flag is down\n");
   /*printf("in serial_search database do_align: %d do_revcomp: %d\n", do_align, do_revcomp);*/
   
   /* Determine minimum cutoff for CM and for CP9 */
@@ -98,14 +97,14 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons)
   do_revcomp = (!(cm->search_opts & CM_SEARCH_TOPONLY));
   do_align   = (!(cm->search_opts & CM_SEARCH_NOALIGN));
 
-  while ((dbseq = read_next_seq(dbfp, do_revcomp)))
+  while ((dbseq = read_next_seq(cm->abc, dbfp, do_revcomp)))
     {
       for (reversed = 0; reversed <= do_revcomp; reversed++) 
 	{
 	  /*printf("SEARCHING >%s %d\n", dbseq->sq[reversed]->name, reversed);*/
 	  /* Scan */
 	  dbseq->results[reversed] = CreateResults(INIT_RESULTS);
-	  actually_search_target(cm, dbseq->sq[reversed]->dsq, 1, dbseq->sq[reversed]->n, 
+	  actually_search_target(cm, dbseq->sq[reversed], 1, dbseq->sq[reversed]->n, 
 				 min_cm_cutoff, min_cp9_cutoff, 
 				 dbseq->results[reversed], 
 				 TRUE,  /* filter with a CP9 HMM if appropriate */
@@ -117,7 +116,7 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons)
 	  if (((!(cm->search_opts & CM_SEARCH_HMMONLY)) && (cm->cutoff_type == E_CUTOFF)) || 
 	      ((cm->search_opts & CM_SEARCH_HMMONLY) && (cm->cp9_cutoff_type == E_CUTOFF)))
 	    remove_hits_over_e_cutoff (cm, dbseq->results[reversed],
-				       dbseq->sq[reversed]->seq, 
+				       dbseq->sq[reversed], 
 				       (cm->search_opts & CM_SEARCH_HMMONLY)); /* HMM hits? */
 
 	  /* Align results */
@@ -126,7 +125,7 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons)
 	    for (i=0; i<dbseq->results[reversed]->num_results; i++) 
 	      {
 		CYKDivideAndConquer
-		  (cm, dbseq->sq[reversed]->dsq, dbseq->sq[reversed]->n,
+		  (cm, dbseq->sq[reversed], 
 		   dbseq->results[reversed]->data[i].bestr,
 		   dbseq->results[reversed]->data[i].start, 
 		   dbseq->results[reversed]->data[i].stop, 
@@ -195,8 +194,9 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 			       int mpi_my_rank, int mpi_master_rank, 
 			       int mpi_num_procs) 
 {
+  int  status;
   char job_type;
-  int seqlen;
+  int  seqlen;
   char *seq;
   scan_results_t *results;
   db_seq_t **active_seqs;
@@ -214,7 +214,7 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 
   /* Contract check */
   if(!(cm->flags & CM_HASBITS))
-    Die("ERROR in parallel_search_database CM_HAS_BITS flag is down\n");
+    esl_fatal("ERROR in parallel_search_database CM_HAS_BITS flag is down\n");
 
   if(cm->align_opts & CM_ALIGN_QDB)
     {
@@ -236,8 +236,8 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
     {
       /* Set up arrays to hold pointers to active seqs and jobs on
 	 processes */
-      active_seqs = MallocOrDie(sizeof(db_seq_t *) * mpi_num_procs);
-      process_status = MallocOrDie(sizeof(job_t *) * mpi_num_procs);
+      ESL_ALLOC(active_seqs,    sizeof(db_seq_t *) * mpi_num_procs);
+      ESL_ALLOC(process_status, sizeof(job_t *)    * mpi_num_procs);
       for (active_seq_index=0; active_seq_index<mpi_num_procs; active_seq_index++) 
 	active_seqs[active_seq_index] = NULL;
       for (proc_index = 0; proc_index < mpi_num_procs; proc_index++)
@@ -260,7 +260,7 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 			if (active_seqs[active_seq_index] == NULL) break;
 		      if (active_seq_index == mpi_num_procs) 
 			Die ("Tried to read more than %d seqs at once\n", mpi_num_procs);
-		      active_seqs[active_seq_index] = read_next_seq(dbfp, do_revcomp);
+		      active_seqs[active_seq_index] = read_next_seq(cm->abc, dbfp, do_revcomp);
 		      if (active_seqs[active_seq_index] == NULL) 
 			{
 			  eof = TRUE;
@@ -290,7 +290,7 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 		      (  cm->search_opts & CM_SEARCH_HMMONLY) && (cm->cp9_cutoff_type == E_CUTOFF))
 		    remove_hits_over_e_cutoff 
 		      (cm, active_seqs[active_seq_index]->results[0],
-		       active_seqs[active_seq_index]->sq[0]->seq,
+		       active_seqs[active_seq_index]->sq[0],
 		       (cm->search_opts & CM_SEARCH_HMMONLY)); /* HMM hits? */
 		  if (do_revcomp) 
 		    {
@@ -301,7 +301,7 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 			  (  cm->search_opts & CM_SEARCH_HMMONLY) && (cm->cp9_cutoff_type == E_CUTOFF))
 			remove_hits_over_e_cutoff 
 			  (cm, active_seqs[active_seq_index]->results[1],
-			   active_seqs[active_seq_index]->sq[1]->seq,
+			   active_seqs[active_seq_index]->sq[1],
 			   (cm->search_opts & CM_SEARCH_HMMONLY)); /* HMM hits? */
 
 		    }
@@ -373,6 +373,9 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
     }
   MPI_Barrier(MPI_COMM_WORLD);
   /*printf("E PSD rank: %4d mast: %4d\n", mpi_my_rank, mpi_master_rank);*/
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
 }
 #endif
 
@@ -384,15 +387,15 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
  * Purpose:  Given a dbfp and whether or not to take the reverse complement,
  *           reads in the sequence and prepares reverse complement.
  */
-db_seq_t *read_next_seq (ESL_SQFILE *dbfp, int do_revcomp) 
+db_seq_t *read_next_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revcomp) 
 {
   db_seq_t *ret_dbseq;
   int status;
   char *tmp_seq;
 
-  ret_dbseq = MallocOrDie(sizeof(db_seq_t));
+  ESL_ALLOC(ret_dbseq, sizeof(db_seq_t));
 
-  ret_dbseq->sq[0] = esl_sq_Create();
+  ret_dbseq->sq[0] = esl_sq_CreateDigital(abc);
   status = (esl_sqio_Read(dbfp, ret_dbseq->sq[0]) == eslOK);
 
   while(status && ret_dbseq->sq[0]->n == 0) /* skip zero length seqs */
@@ -403,28 +406,26 @@ db_seq_t *read_next_seq (ESL_SQFILE *dbfp, int do_revcomp)
   if(!status)
     return NULL;
 
-  s2upper(ret_dbseq->sq[0]->seq);                      /* Makes uppercase */
-  /* Following line will be unnecessary once ESL_SQ objects have dsq's implemented
-   * (i.e. allocated and filled within a esl_sqio_Read() call */
-  ret_dbseq->sq[0]->dsq = DigitizeSequence (ret_dbseq->sq[0]->seq, ret_dbseq->sq[0]->n);
-
   if (do_revcomp)
     {
       /* make a new SQ object, to store the reverse complement */
-      tmp_seq = MallocOrDie(sizeof(char) * (ret_dbseq->sq[0]->n+1));
-      revcomp(tmp_seq, ret_dbseq->sq[0]->seq);
-      ret_dbseq->sq[1] = esl_sq_CreateFrom(ret_dbseq->sq[0]->name, tmp_seq, 
-					   ret_dbseq->sq[0]->desc, ret_dbseq->sq[0]->acc, 
-					   ret_dbseq->sq[0]->ss);
-      free(tmp_seq);
-      /* Following line will be unnecessary once ESL_SQ objects have dsq's implemented
-       * (i.e. allocated and filled within a esl_sq_CreateFrom() call */
-      ret_dbseq->sq[1]->dsq = DigitizeSequence (ret_dbseq->sq[1]->seq, ret_dbseq->sq[1]->n);
+      ESL_ALLOC(tmp_seq, (ret_dbseq->sq[0]->n+2) * sizeof(char));
+      status = esl_abc_Textize(ret_dbseq->sq[0]->abc, ret_dbseq->sq[0]->dsq, ret_dbseq->sq[0]->n, tmp_seq);
+      if(status != eslOK) goto ERROR;
+      if((ret_dbseq->sq[1] = esl_sq_CreateFrom(ret_dbseq->sq[0]->name, tmp_seq,
+					       ret_dbseq->sq[0]->desc, ret_dbseq->sq[0]->acc, 
+					       ret_dbseq->sq[0]->ss)) == NULL) goto ERROR;
+      ret_dbseq->sq[1]->abc = ret_dbseq->sq[0]->abc;
+      revcomp(ret_dbseq->sq[1]->abc, ret_dbseq->sq[1], ret_dbseq->sq[1]);
     }
   ret_dbseq->results[0] = NULL;
   ret_dbseq->results[1] = NULL;
 
   return(ret_dbseq);
+
+ ERROR:
+  esl_fatal("ERROR code: %d in read_next_seq", status);
+  return NULL; /* never reached */
 }
 
 /* EPN, Mon Jan  8 06:42:59 2007
@@ -434,8 +435,8 @@ db_seq_t *read_next_seq (ESL_SQFILE *dbfp, int do_revcomp)
  * Purpose:  Given a CM and a sequence, call the correct search algorithm
  *           based on cm->search_opts.
  * 
- * Args:     CM         - the covariance model
- *           dsq        - the digitized target sequence
+ * Args:     cm         - the covariance model
+ *           sq         - the target sequence (digitized)
  *           i0         - start of target subsequence (often 1, beginning of dsq)
  *           j0         - end of target subsequence (often L, end of dsq)
  *           cm_cutoff  - minimum CM  score to report 
@@ -450,10 +451,13 @@ db_seq_t *read_next_seq (ESL_SQFILE *dbfp, int do_revcomp)
  *           ret_flen   - RETURN: subseq len that survived filter (NULL if not filtering)
  * Returns: Highest scoring hit from search (even if below cutoff).
  */
-float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutoff, 
+float actually_search_target(CM_t *cm, ESL_SQ *sq, int i0, int j0, float cm_cutoff, 
 			     float cp9_cutoff, scan_results_t *results, int do_filter, 
 			     int doing_cm_stats, int doing_cp9_stats, int *ret_flen)
 {
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in actually_search_target(), sq is not digitized.\n");
+
   float sc;
   int flen;
   CP9Bands_t  *cp9b;                    /* data structure for hmm bands (bands on the hmm states) 
@@ -464,9 +468,9 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
 
   /* Contract checks */
   if(!(cm->flags & CM_HASBITS)) 
-    Die("ERROR in actually_search_target, CM_HASBITS flag down.\n");
+    esl_fatal("ERROR in actually_search_target, CM_HASBITS flag down.\n");
   if(doing_cm_stats && doing_cp9_stats)
-    Die("ERROR in actually_search_target doing_cm_stats and doing_cp9_stats both TRUE.\n");
+    esl_fatal("ERROR in actually_search_target doing_cm_stats and doing_cp9_stats both TRUE.\n");
 
   flen = (j0-i0+1);
 
@@ -487,41 +491,41 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
   if(use_cp9)
     {
       if(cm->cp9 == NULL)
-	Die("ERROR in actually_search_target, trying to use CP9 HMM that is NULL\n");
+	esl_fatal("ERROR in actually_search_target, trying to use CP9 HMM that is NULL\n");
       if(!(cm->cp9->flags & CPLAN9_HASBITS))
-	Die("ERROR in actually_search_target, trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
+	esl_fatal("ERROR in actually_search_target, trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
     }      
 
   if(use_cp9)
-    sc = CP9Scan_dispatch(cm, dsq, i0, j0, cm->W, cm_cutoff, cp9_cutoff, results, doing_cp9_stats, ret_flen);
+    sc = CP9Scan_dispatch(cm, sq, i0, j0, cm->W, cm_cutoff, cp9_cutoff, results, doing_cp9_stats, ret_flen);
   else
     {
       if(cm->search_opts & CM_SEARCH_HBANDED)
 	{
 	  cp9b = AllocCP9Bands(cm, cm->cp9);
-	  CP9_seq2bands(cm, dsq, i0, j0, cp9b, 
+	  CP9_seq2bands(cm, sq, i0, j0, cp9b, 
 			NULL, /* we don't want the posterior matrix back */
 			0);   /* debug level */
 
 	  /*debug_print_hmm_bands(stdout, (j0-i0+1), cp9b, cm->tau, 3);*/
 	  if(cm->search_opts & CM_SEARCH_INSIDE)
-	    sc = iInsideBandedScan_jd(cm, dsq, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
+	    sc = iInsideBandedScan_jd(cm, sq, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
 				      i0, j0, cm->W, cm_cutoff, results);
 	  else /* don't do inside */
-	    sc = CYKBandedScan_jd(cm, dsq, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
+	    sc = CYKBandedScan_jd(cm, sq, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
 				  i0, j0, cm->W, cm_cutoff, results);
 	  FreeCP9Bands(cp9b);
 	}
       else if(cm->search_opts & CM_SEARCH_NOQDB)
 	if(cm->search_opts & CM_SEARCH_INSIDE)
-	  sc = iInsideScan(cm, dsq, i0, j0, cm->W, cm_cutoff, results);
+	  sc = iInsideScan(cm, sq, i0, j0, cm->W, cm_cutoff, results);
 	else /* don't do inside */
-	  sc = CYKScan (cm, dsq, i0, j0, cm->W, cm_cutoff, results);
+	  sc = CYKScan (cm, sq, i0, j0, cm->W, cm_cutoff, results);
       else /* use QDB */
 	if(cm->search_opts & CM_SEARCH_INSIDE)
-	  sc = iInsideBandedScan(cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
+	  sc = iInsideBandedScan(cm, sq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
 	else /* don't do inside */
-	  sc = CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
+	  sc = CYKBandedScan (cm, sq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
     }    
   return sc;
 }  
@@ -573,7 +577,7 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
     else do_stats = FALSE;
   }
   if(do_stats  && !(cm->flags & CM_GUMBEL_STATS))
-    Die("ERROR in print_results, stats wanted but CM has no Gumbel stats\n");
+    esl_fatal("ERROR in print_results, stats wanted but CM has no Gumbel stats\n");
 
   if(do_stats)
     {
@@ -600,7 +604,7 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
       
       for (i=0; i<results->num_results; i++) 
 	{
-	  gc_comp = get_gc_comp (dbseq->sq[in_revcomp]->seq, 
+	  gc_comp = get_gc_comp (dbseq->sq[in_revcomp], 
 				 results->data[i].start, results->data[i].stop);
 	  printf (" Query = %d - %d, Target = %d - %d\n", 
 		  (emap->lpos[cm->ndidx[results->data[i].bestr]] + 1 
@@ -637,8 +641,8 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 	  if (results->data[i].tr != NULL) 
 	    {
 	      ali = CreateFancyAli (results->data[i].tr, cm, cons, 
-				    dbseq->sq[in_revcomp]->dsq +
-				    (results->data[i].start-1));
+				    dbseq->sq[in_revcomp],
+				    (results->data[i].start));
 	      PrintFancyAli(stdout, ali,
 			    (coordinate(in_revcomp, results->data[i].start, len)-1), /* offset in sq index */
 			    in_revcomp);
@@ -664,7 +668,7 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
  *           seq     - seq hits lie within, needed to determine gc content
  *           used_HMM- TRUE if hits are to the CM's CP9 HMM, not the CMa
  */
-void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, char *seq,
+void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, ESL_SQ *sq,
 				int used_HMM)
 {
   int gc_comp;
@@ -682,7 +686,9 @@ void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, char *seq,
 
   /* Check contract */
   if(!(cm->flags & CM_GUMBEL_STATS))
-    Die("ERROR in remove_hits_over_e_cutoff, but CM has no GUM stats\n");
+    esl_fatal("ERROR in remove_hits_over_e_cutoff, but CM has no GUM stats\n");
+  if(!(sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in remove_hits_over_e_cutoff, sequences is not digitized.\n");
 
   if (results == NULL)
     return;
@@ -697,7 +703,7 @@ void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, char *seq,
 
   for (i=0; i<results->num_results; i++) 
     {
-      gc_comp = get_gc_comp (seq, results->data[i].start, results->data[i].stop);
+      gc_comp = get_gc_comp (sq, results->data[i].start, results->data[i].stop);
       p = cm->stats->gc2p[gc_comp];
       score_for_Eval = results->data[i].score;
       if(cm->flags & CM_ENFORCED)
@@ -768,6 +774,7 @@ serial_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t 
   int              status;
   char           **postcode;
   int              nseq;
+  void            *tmp;
 
   /*printf("in serial_align_targets\n");*/
 
@@ -776,21 +783,16 @@ serial_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t 
    *****************************************************************/
   i = 0;
   nalloc = 10;
-  sq = MallocOrDie(sizeof(ESL_SQ *) * nalloc);
-  sq[i] = esl_sq_Create();
+  ESL_ALLOC(sq, sizeof(ESL_SQ *) * nalloc);
+  sq[i] = esl_sq_CreateDigital(cm->abc);
   while ((status = esl_sqio_Read(seqfp, sq[i])) == eslOK)
   {
-    /*printf("Read %12s: length %d\n", sq[i]->name, sq[i]->n);*/
-    /* Following line will be unnecessary once ESL_SQ objects have dsq's implemented
-     * (i.e. allocated and filled within a esl_sqio_Read() call */
-    sq[i]->dsq = DigitizeSequence (sq[i]->seq, sq[i]->n);
-
     if(++i == nalloc)
     {
       nalloc += 10;
-      sq = ReallocOrDie(sq, (sizeof(ESL_SQ *) * nalloc));
+      ESL_RALLOC(sq, tmp, (sizeof(ESL_SQ *) * nalloc));
     }
-    sq[i] = esl_sq_Create();
+    sq[i] = esl_sq_CreateDigital(cm->abc);
   }
   /* destroy the last sequence that was alloc'ed but not filled */
   esl_sq_Destroy(sq[i]);
@@ -816,6 +818,9 @@ serial_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t 
   *ret_sq   = sq;
   /*printf("leaving serial_align_targets\n");*/
   return;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
 }
 
 #ifdef USE_MPI
@@ -870,20 +875,20 @@ parallel_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_
     do_post = FALSE;
 
   if(ret_cp9_tr != NULL)
-    Die("ERROR in parallel_align_targets, ret_cp9_tr non-null, this is not implemented yet.\n");
+    esl_fatal("ERROR in parallel_align_targets, ret_cp9_tr non-null, this is not implemented yet.\n");
   /*printf("in parallel_align_targets rank: %d master: %d nprocs: %d do_post: %d\n", mpi_my_rank, mpi_master_rank, mpi_num_procs, do_post);*/
   if (mpi_my_rank == mpi_master_rank) 
     {
       nalloc = alloc_chunk;
-      all_tr = MallocOrDie(sizeof(Parsetree_t *) * nalloc);
-      all_sq = MallocOrDie(sizeof(ESL_SQ *)      * nalloc);
-      all_postcode = MallocOrDie(sizeof(char *)  * nalloc);
+      ESL_ALLOC(all_tr, sizeof(Parsetree_t *) * nalloc);
+      ESL_ALLOC(all_sq, sizeof(ESL_SQ *)      * nalloc);
+      ESL_ALLOC(all_postcode, sizeof(char *)  * nalloc);
       nseq_read  = 0;
 
       /* Set up arrays to hold pointers to active seqs and jobs on
 	 processes */
-      active_seqs = MallocOrDie(sizeof(seqs_to_aln_t *) * mpi_num_procs);
-      process_status = MallocOrDie(sizeof(int) * mpi_num_procs);
+      ESL_ALLOC(active_seqs,    sizeof(seqs_to_aln_t *) * mpi_num_procs);
+      ESL_ALLOC(process_status, sizeof(int) * mpi_num_procs);
       for (active_seq_index=0; active_seq_index<mpi_num_procs; 
 	   active_seq_index++) 
 	active_seqs[active_seq_index] = NULL;
@@ -919,9 +924,9 @@ parallel_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_
 			  if(i == nalloc)
 			    {
 			      nalloc += alloc_chunk;
-			      all_sq       = ReallocOrDie(all_sq, sizeof(ESL_SQ *) * nalloc);
-			      all_tr       = ReallocOrDie(all_tr, sizeof(Parsetree_t *) * nalloc);
-			      all_postcode = ReallocOrDie(all_postcode, sizeof(char *) * nalloc);
+			      ESL_RALLOC(all_sq, tmp, sizeof(ESL_SQ *) * nalloc);
+			      ESL_RALLOC(all_tr, tmp, sizeof(Parsetree_t *) * nalloc);
+			      ESL_RALLOC(all_postcode, tmp, sizeof(char *) * nalloc);
 			    }
 			  all_sq[i] = active_seqs[proc_index]->sq[(i - nseq_read)];
 			}
@@ -986,19 +991,19 @@ parallel_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_
  * Purpose:  Given a pointer to a seq file we're reading seqs to align
  *           from, read in nseq seqs from the seq file. 
  */
-seqs_to_aln_t * read_next_aln_seqs(ESL_SQFILE *seqfp, int nseq, int index) 
+seqs_to_aln_t * read_next_aln_seqs(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int nseq, int index) 
 {
   seqs_to_aln_t *ret_seqs_to_aln;
   int status;
   int i;
 
-  ret_seqs_to_aln = MallocOrDie(sizeof(seqs_to_aln_t));
-  ret_seqs_to_aln->sq = MallocOrDie(sizeof(ESL_SQ *) * nseq);
+  ESL_ALLOC(ret_seqs_to_aln,     sizeof(seqs_to_aln_t));
+  ESL_ALLOC(ret_seqs_to_aln->sq, sizeof(ESL_SQ *) * nseq);
   /*ret_seqs_to_aln->sq = MallocOrDie(sizeof(ESL_SQ *) * nseq);*/
   
   for(i=0; i < nseq; i++)
   {
-    ret_seqs_to_aln->sq[i] = esl_sq_Create();
+    ret_seqs_to_aln->sq[i] = esl_sq_CreateDigital(abc);
     status = (esl_sqio_Read(seqfp, ret_seqs_to_aln->sq[i]) == eslOK);
     while(status && ret_seqs_to_aln->sq[i]->n == 0) /* skip zero length seqs */
       {
@@ -1010,9 +1015,6 @@ seqs_to_aln_t * read_next_aln_seqs(ESL_SQFILE *seqfp, int nseq, int index)
 	if(i == 0) return NULL; /* we're at the end of the file and we didn't read any sequences. */
 	else break; /* we're at the end of the file, but we read some sequences */
       }
-    /* Following line will be unnecessary once ESL_SQ objects have dsq's implemented
-     * (i.e. allocated and filled within a esl_sqio_Read() call) */
-    ret_seqs_to_aln->sq[i]->dsq = DigitizeSequence (ret_seqs_to_aln->sq[i]->seq, ret_seqs_to_aln->sq[i]->n);
   }
 
   ret_seqs_to_aln->nseq = i; /* however many seqs we read, up to nseq */
@@ -1020,6 +1022,10 @@ seqs_to_aln_t * read_next_aln_seqs(ESL_SQFILE *seqfp, int nseq, int index)
   ret_seqs_to_aln->postcode = NULL;
   ret_seqs_to_aln->index = index;
   return(ret_seqs_to_aln);
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return NULL; /* never reached */
 }
 #endif
 
@@ -1046,7 +1052,8 @@ void
 actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, char ***ret_postcode,
 		       CP9trace_t ***ret_cp9_tr, int bdump_level, int debug_level, int silent_mode)
 {
-  Stopwatch_t      *watch;      /* for timings */
+  int status;
+  ESL_STOPWATCH   *watch;       /* for timings */
   int i;                        /* counter over sequences */
   int v;                        /* state counter */
   char           **postcode;    /* posterior decode array of strings        */
@@ -1106,7 +1113,6 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
   int do_hbanded = FALSE;
   int use_sums   = FALSE;
   int do_sub     = FALSE;
-  int do_fullsub = FALSE;
   int do_hmmonly = FALSE;
   int do_scoreonly = FALSE;
   int do_inside  = FALSE;
@@ -1118,7 +1124,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 
   /* Contract checks */
   if(!(cm->flags & CM_HASBITS)) 
-    Die("ERROR in actually_align_targets, CM_HASBITS flag down.\n");
+    esl_fatal("ERROR in actually_align_targets, CM_HASBITS flag down.\n");
 
   /*printf("in actually_align_targets\n");*/
 
@@ -1128,7 +1134,6 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
   if(cm->align_opts  & CM_ALIGN_HBANDED)    do_hbanded = TRUE;
   if(cm->align_opts  & CM_ALIGN_SUMS)       use_sums   = TRUE;
   if(cm->align_opts  & CM_ALIGN_SUB)        do_sub     = TRUE;
-  if(cm->align_opts  & CM_ALIGN_FSUB)       do_fullsub = TRUE;
   if(cm->align_opts  & CM_ALIGN_HMMONLY)    do_hmmonly = TRUE;
   if(cm->align_opts  & CM_ALIGN_INSIDE)     do_inside  = TRUE;
   if(cm->align_opts  & CM_ALIGN_OUTSIDE)    do_outside = TRUE;
@@ -1138,11 +1143,6 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
   if(cm->align_opts  & CM_ALIGN_CHECKINOUT) do_check   = TRUE;
   if(cm->align_opts  & CM_ALIGN_SCOREONLY)  do_scoreonly = TRUE;
 
-  if(do_fullsub)
-    {
-      do_sub = TRUE;
-      cm->align_opts |= CM_ALIGN_SUB;
-    }
   /*printf("do_local  : %d\n", do_local);
     printf("do_qdb    : %d\n", do_qdb);
     printf("do_hbanded: %d\n", do_hbanded);
@@ -1157,26 +1157,26 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
     printf("do_timings: %d\n", do_timings);*/
     
   if((!(ret_cp9_tr == NULL)) && !do_hmmonly)
-    Die("ERROR in actually_align_targets, want CP9 traces, but not hmmonly mode.\n");
-  tr    = MallocOrDie(sizeof(Parsetree_t *) * nseq);
+    esl_fatal("ERROR in actually_align_targets, want CP9 traces, but not hmmonly mode.\n");
+  ESL_ALLOC(tr, sizeof(Parsetree_t *) * nseq);
   if(do_hmmonly)
-    cp9_tr = MallocOrDie(sizeof(CP9trace_t *) * nseq);
+    ESL_ALLOC(cp9_tr, sizeof(CP9trace_t *) * nseq);
   else
     cp9_tr = NULL;
   minsc = FLT_MAX;
   maxsc = -FLT_MAX;
   avgsc = 0;
-  watch = StopwatchCreate(); 
+  watch = esl_stopwatch_Create();
 
   if(do_hbanded || do_sub) /* We need a CP9 HMM to build sub_cms */
     {
       if(cm->cp9 == NULL)
-	Die("ERROR in actually_align_targets, trying to use CP9 HMM that is NULL\n");
+	esl_fatal("ERROR in actually_align_targets, trying to use CP9 HMM that is NULL\n");
 
       printf("CP9 has bits flag should be up: %d\n", (cm->cp9->flags & CPLAN9_HASBITS));
 
       if(!(cm->cp9->flags & CPLAN9_HASBITS))
-	Die("ERROR in actually_align_targets, trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
+	esl_fatal("ERROR in actually_align_targets, trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
 
       /* Keep this data for the original CM safe; we'll be doing
        * pointer swapping to ease the sub_cm alignment implementation. */
@@ -1195,8 +1195,8 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	  debug_print_bands(cm, cm->dmin, cm->dmax);
       expand_flag = FALSE;
       /* Copy dmin and dmax, so we can replace them after expansion */
-      orig_dmin = MallocOrDie(sizeof(int) * cm->M);
-      orig_dmax = MallocOrDie(sizeof(int) * cm->M);
+      ESL_ALLOC(orig_dmin, sizeof(int) * cm->M);
+      ESL_ALLOC(orig_dmax, sizeof(int) * cm->M);
       for(v = 0; v < cm->M; v++)
 	{
 	  orig_dmin[v] = cm->dmin[v];
@@ -1214,7 +1214,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
       }
 
   if(do_post)
-    postcode = malloc(sizeof(char *) * nseq);
+    ESL_ALLOC(postcode, sizeof(char *) * nseq);
   if(do_hbanded)
     {
       cp9b = AllocCP9Bands(cm, cm->cp9);
@@ -1227,8 +1227,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 
   for (i = 0; i < nseq; i++)
     {
-      StopwatchZero(watch);
-      StopwatchStart(watch);
+      esl_stopwatch_Start(watch);
 
       if (sq[i]->n == 0) continue;
 
@@ -1238,7 +1237,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	{
 	  cp9_mx  = CreateCPlan9Matrix(1, cm->cp9->M, 25, 0);
 	  if(!silent_mode) printf("Aligning (to a CP9 HMM w/viterbi) %-20s", sq[i]->name);
-	  sc = CP9ViterbiOLD(sq[i]->dsq, 1, sq[i]->n, cm->cp9, cp9_mx, &(cp9_tr[i]));
+	  sc = CP9ViterbiOLD(sq[i], 1, sq[i]->n, cm->cp9, cp9_mx, &(cp9_tr[i]));
 	  if(!silent_mode) printf(" score: %10.2f bits\n", sc);
 	  FreeCPlan9Matrix(cp9_mx);
 	  continue;
@@ -1248,7 +1247,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
       if(do_scoreonly)
 	{
 	  if(!silent_mode) printf("Aligning (w/full CYK score only) %-30s", sq[i]->name);
-	  sc = CYKInsideScore(cm, sq[i]->dsq, 0, 1, sq[i]->n, sq[i]->n,
+	  sc = CYKInsideScore(cm, sq[i], 0, 1, sq[i]->n, 
 			      NULL, NULL); /* don't do QDB mode */
 	  if(!silent_mode) printf("    score: %10.2f bits\n", sc);
 	  continue;
@@ -1258,11 +1257,11 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
       if(do_hbanded)
 	{
 	  if(do_sub)
-	    CP9_seq2bands(orig_cm, sq[i]->dsq, 1, sq[i]->n, orig_cp9b, 
+	    CP9_seq2bands(orig_cm, sq[i], 1, sq[i]->n, orig_cp9b, 
 			  &cp9_post, /* we DO want the posterior matrix back */
 			  debug_level);
 	  else
-	    CP9_seq2bands(orig_cm, sq[i]->dsq, 1, sq[i]->n, orig_cp9b, 
+	    CP9_seq2bands(orig_cm, sq[i], 1, sq[i]->n, orig_cp9b, 
 			  NULL, /* we don't want the posterior matrix back */
 			  debug_level);
 	}
@@ -1280,16 +1279,16 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	{
 	  /* (1) Get HMM posteriors (if do_hbanded, we already have them) */
 	  if(!do_hbanded) 
-	    CP9_seq2posteriors(orig_cm, sq[i]->dsq, 1, sq[i]->n, &cp9_post, 
+	    CP9_seq2posteriors(orig_cm, sq[i], 1, sq[i]->n, &cp9_post, 
 			       debug_level); 
 	  
 	  /* (2) infer the start and end HMM nodes (consensus cols) from posterior matrix.
 	   * Remember: we're necessarily in CP9 local mode, the --sub option turns local mode on. 
 	   */
 	  CP9NodeForPosn(orig_hmm, 1, sq[i]->n, 1,             cp9_post, &spos, &spos_state, 
-			 do_fullsub, 0., TRUE, debug_level);
+			 FALSE, 0., TRUE, debug_level);
 	  CP9NodeForPosn(orig_hmm, 1, sq[i]->n, sq[i]->n, cp9_post, &epos, &epos_state, 
-			 do_fullsub, 0., FALSE, debug_level);
+			 FALSE, 0., FALSE, debug_level);
 	  /* If the most likely state to have emitted the first or last residue
 	   * is the insert state in node 0, it only makes sense to start modelling
 	   * at consensus column 1. */
@@ -1304,9 +1303,9 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	  if(!(build_sub_cm(orig_cm, &sub_cm, 
 			    spos, epos,         /* first and last col of structure kept in the sub_cm  */
 			    &submap,            /* maps from the sub_cm to cm and vice versa           */
-			    do_fullsub,         /* build or not build a sub CM that models all columns */
+			    FALSE,              /* DON'T build a fullsub model (deprecated)            */
 			    debug_level)))      /* print or don't print debugging info                 */
-	    Die("Couldn't build a sub CM from the CM\n");
+	    esl_fatal("Couldn't build a sub CM from the CM\n");
 	  /* Configure the sub_cm, the same as the cm, this will build a CP9 HMM if (do_hbanded) */
 	  ConfigCM(sub_cm, NULL, NULL);
 
@@ -1317,7 +1316,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	      sub_hmm    = sub_cm->cp9;
 	      sub_cp9map = sub_cm->cp9map;
 	      sub_cp9b   = AllocCP9Bands(sub_cm, sub_cm->cp9);
-	      CP9_seq2bands(sub_cm, sq[i]->dsq, 1, sq[i]->n, sub_cp9b, 
+	      CP9_seq2bands(sub_cm, sq[i], 1, sq[i]->n, sub_cp9b, 
 			    NULL, /* we don't want posterior matrix back */
 			    debug_level);
 	      hmm           = sub_hmm;    
@@ -1374,7 +1373,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	{
 	  if(do_hbanded)
 	    {
-	      sc = IInside_b_jd_me(cm, sq[i]->dsq, sq[i]->n, 1, sq[i]->n,
+	      sc = IInside_b_jd_me(cm, sq[i], 1, sq[i]->n,
 				   BE_PARANOID,	/* non memory-saving mode */
 				   NULL, NULL,	/* manage your own matrix, I don't want it */
 				   NULL, NULL,	/* manage your own deckpool, I don't want it */
@@ -1383,7 +1382,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	    }
 	  else
 	    {
-	      sc = IInside(cm, sq[i]->dsq, sq[i]->n, 1, sq[i]->n,
+	      sc = IInside(cm, sq[i], 1, sq[i]->n,
 			   BE_EFFICIENT,	/* memory-saving mode */
 			   NULL, NULL,	/* manage your own matrix, I don't want it */
 			   NULL, NULL,	/* manage your own deckpool, I don't want it */
@@ -1396,14 +1395,14 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	  if(do_hbanded)
 	    {
 	      
-	      sc = IInside_b_jd_me(cm, sq[i]->dsq, sq[i]->n, 1, sq[i]->n,
+	      sc = IInside_b_jd_me(cm, sq[i], 1, sq[i]->n,
 				   BE_PARANOID,	/* save full alpha so we can run outside */
 				   NULL, &alpha,	/* fill alpha, and return it, needed for FOutside() */
 				   NULL, NULL,	/* manage your own deckpool, I don't want it */
 				   do_local,        /* TRUE to allow local begins */
 				   cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
 	      /*do_check = TRUE;*/
-	      sc = IOutside_b_jd_me(cm, sq[i]->dsq, sq[i]->n, 1, sq[i]->n,
+	      sc = IOutside_b_jd_me(cm, sq[i], 1, sq[i]->n,
 				    BE_PARANOID,	/* save full beta */
 				    NULL, NULL,	/* manage your own matrix, I don't want it */
 				    NULL, NULL,	/* manage your own deckpool, I don't want it */
@@ -1415,12 +1414,12 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	    }
 	  else
 	    {
-	      sc = IInside(cm, sq[i]->dsq, sq[i]->n, 1, sq[i]->n,
+	      sc = IInside(cm, sq[i], 1, sq[i]->n,
 			   BE_PARANOID,	/* save full alpha so we can run outside */
 			   NULL, &alpha,	/* fill alpha, and return it, needed for FOutside() */
 			   NULL, NULL,	/* manage your own deckpool, I don't want it */
 			   do_local);       /* TRUE to allow local begins */
-	      sc = IOutside(cm, sq[i]->dsq, sq[i]->n, 1, sq[i]->n,
+	      sc = IOutside(cm, sq[i], 1, sq[i]->n,
 			    BE_PARANOID,	/* save full beta */
 			    NULL, NULL,	/* manage your own matrix, I don't want it */
 			    NULL, NULL,	/* manage your own deckpool, I don't want it */
@@ -1434,7 +1433,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	{
 	  if(do_qdb)
 	    {
-	      sc = CYKDivideAndConquer(cm, sq[i]->dsq, sq[i]->n, 0, 1, sq[i]->n, 
+	      sc = CYKDivideAndConquer(cm, sq[i], 0, 1, sq[i]->n, 
 				       &(tr[i]), cm->dmin, cm->dmax);
 	      if(bdump_level > 0)
  		qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
@@ -1452,7 +1451,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 		}
 	      /* Note the following CYK call will not enforce j bands, even
 	       * though user specified --hbanded. */
-	      sc = CYKDivideAndConquer(cm, sq[i]->dsq, sq[i]->n, 0, 1, sq[i]->n, 
+	      sc = CYKDivideAndConquer(cm, sq[i], 0, 1, sq[i]->n, 
 				       &(tr[i]), cp9b->safe_hdmin, cp9b->safe_hdmax);
 	      if(bdump_level > 0)
 		qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
@@ -1463,7 +1462,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 		debug_print_cm_params(cm);
 		printf("DONE DEBUG PRINTING CM PARAMS BEFORE D&C CALL\n");*/
 
-	      sc = CYKDivideAndConquer(cm, sq[i]->dsq, sq[i]->n, 0, 1, sq[i]->n, &(tr[i]),
+	      sc = CYKDivideAndConquer(cm, sq[i], 0, 1, sq[i]->n, &(tr[i]),
 				       NULL, NULL); /* we're not in QDB mode */
 	      if(bdump_level > 0)
 		{
@@ -1477,13 +1476,13 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	}
       else if(do_qdb)
 	{
-	  sc = CYKInside(cm, sq[i]->dsq, sq[i]->n, 0, 1, sq[i]->n, &(tr[i]), cm->dmin, cm->dmax);
+	  sc = CYKInside(cm, sq[i], 0, 1, sq[i]->n, &(tr[i]), cm->dmin, cm->dmax);
 	  if(bdump_level > 0)
 	    qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
 	}
       else if(do_hbanded)
 	{
-	  sc = CYKInside_b_jd(cm, sq[i]->dsq, sq[i]->n, 0, 1, sq[i]->n, &(tr[i]), cp9b->jmin, 
+	  sc = CYKInside_b_jd(cm, sq[i], 0, 1, sq[i]->n, &(tr[i]), cp9b->jmin, 
 			      cp9b->jmax, cp9b->hdmin, cp9b->hdmax, cp9b->safe_hdmin, cp9b->safe_hdmax);
 	  if(bdump_level > 0)
 	    qdb_trace_info_dump(cm, tr[i], cp9b->safe_hdmin, cp9b->safe_hdmax, bdump_level);
@@ -1493,7 +1492,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	      tmpsc = sc;
 	      printf("\n%s HMM banded parse had a negative score, realigning with non-banded CYK.\n", sq[i]->name);
 	      FreeParsetree(tr[i]);
-	      sc = CYKDivideAndConquer(cm, sq[i]->dsq, sq[i]->n, 0, 1, sq[i]->n, &(tr[i]),
+	      sc = CYKDivideAndConquer(cm, sq[i], 0, 1, sq[i]->n, &(tr[i]),
 				       NULL, NULL); /* we're not in QDB mode */
 	      if(fabs(sc-tmpsc) < 0.01)
 		printf("HMM banded parse was the optimal parse.\n\n");
@@ -1503,7 +1502,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	}
       else
 	{
-	  sc = CYKInside(cm, sq[i]->dsq, sq[i]->n, 0, 1, sq[i]->n, &(tr[i]), NULL, NULL);
+	  sc = CYKInside(cm, sq[i], 0, 1, sq[i]->n, &(tr[i]), NULL, NULL);
 	  if(bdump_level > 0)
 	    {
 	      /* We want band info but --hbanded wasn't used.  Useful if you're curious
@@ -1515,14 +1514,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	}
       if(do_post) /* Do Inside() and Outside() runs and use alpha and beta to get posteriors */
 	{	
-	  /*alpha = MallocOrDie(sizeof(float **) * (cm->M));
-	  beta  = MallocOrDie(sizeof(float **) * (cm->M+1));
-	  */
-	  post  = MallocOrDie(sizeof(int **) * (cm->M+1));
-	  /*
-	  for (v = 0; v < cm->M; v++) alpha[v] = NULL;
-	  for (v = 0; v < cm->M+1; v++) beta[v] = NULL;
-	  */
+	  ESL_ALLOC(post, sizeof(int **) * (cm->M+1));
 	  if(do_hbanded)
 	    {
 	      for (v = 0; v < cm->M; v++)
@@ -1533,13 +1525,13 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 		}
 	      post[cm->M] = NULL;
 	      post[cm->M] = Ialloc_vjd_deck(sq[i]->n, 1, sq[i]->n);
-	      sc = IInside_b_jd_me(cm, sq[i]->dsq, sq[i]->n, 1, sq[i]->n,
+	      sc = IInside_b_jd_me(cm, sq[i], 1, sq[i]->n,
 				   BE_PARANOID,	/* save full alpha so we can run outside */
 				   NULL, &alpha,	/* fill alpha, and return it, needed for IOutside() */
 				   NULL, NULL,	/* manage your own deckpool, I don't want it */
 				   do_local,       /* TRUE to allow local begins */
 				   cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
-	      sc = IOutside_b_jd_me(cm, sq[i]->dsq, sq[i]->n, 1, sq[i]->n,
+	      sc = IOutside_b_jd_me(cm, sq[i], 1, sq[i]->n,
 				    BE_PARANOID,	/* save full beta */
 				    NULL, &beta,	/* fill beta, and return it, needed for ICMPosterior() */
 				    NULL, NULL,	/* manage your own deckpool, I don't want it */
@@ -1561,12 +1553,12 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 		  post[v] = NULL;
 		  post[v] = Ialloc_vjd_deck(sq[i]->n, 1, sq[i]->n);
 		}
-	      sc = IInside(cm, sq[i]->dsq, sq[i]->n, 1, sq[i]->n,
+	      sc = IInside(cm, sq[i], 1, sq[i]->n,
 			   BE_PARANOID,	/* save full alpha so we can run outside */
 			   NULL, &alpha,	/* fill alpha, and return it, needed for IOutside() */
 			   NULL, NULL,	/* manage your own deckpool, I don't want it */
 			   do_local);       /* TRUE to allow local begins */
-	      sc = IOutside(cm, sq[i]->dsq, sq[i]->n, 1, sq[i]->n,
+	      sc = IOutside(cm, sq[i], 1, sq[i]->n,
 			    BE_PARANOID,	/* save full beta */
 			    NULL, &beta,	/* fill beta, and return it, needed for CMPosterior() */
 			    NULL, NULL,	/* manage your own deckpool, I don't want it */
@@ -1601,15 +1593,15 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
       if((cm->align_opts & CM_ALIGN_CHECKPARSESC) &&
 	 (!(cm->flags & CM_IS_SUB)))
 	{
-	  if (fabs(sc - ParsetreeScore(cm, tr[i], sq[i]->dsq, FALSE)) >= 0.01)
-	    Die("ERROR in actually_align_target(), alignment score differs from its parse tree's score");
+	  if (fabs(sc - ParsetreeScore(cm, tr[i], sq[i], FALSE)) >= 0.01)
+	    esl_fatal("ERROR in actually_align_target(), alignment score differs from its parse tree's score");
 	}
 
       /* If debug level high enough, print out the parse tree */
       if((cm->align_opts & CM_ALIGN_PRINTTREES) || (debug_level > 2))
 	{
-	  fprintf(stdout, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr[i], sq[i]->dsq, FALSE));;
-	  ParsetreeDump(stdout, tr[i], cm, sq[i]->dsq);
+	  fprintf(stdout, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr[i], sq[i], FALSE));;
+	  ParsetreeDump(stdout, tr[i], cm, sq[i], NULL, NULL);
 	  fprintf(stdout, "//\n");
 	}
       /* Dump the trace with info on i, j and d bands
@@ -1647,17 +1639,17 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	{
 	  /* Convert the sub_cm parsetree to a full CM parsetree */
 	  if(debug_level > 0)
-	    ParsetreeDump(stdout, tr[i], cm, sq[i]->dsq);
-	  if(!(sub_cm2cm_parsetree(orig_cm, sub_cm, &orig_tr, tr[i], submap, do_fullsub, debug_level)))
+	    ParsetreeDump(stdout, tr[i], cm, sq[i], NULL, NULL);
+	  if(!(sub_cm2cm_parsetree(orig_cm, sub_cm, &orig_tr, tr[i], submap, FALSE, debug_level)))
 	    {
 	      printf("\n\nIncorrectly converted original trace:\n");
-	      ParsetreeDump(stdout, orig_tr, orig_cm, sq[i]->dsq);
+	      ParsetreeDump(stdout, orig_tr, orig_cm, sq[i], NULL, NULL);
 	      exit(1);
 	    }
 	  if(debug_level > 0)
 	    {
 	      printf("\n\nConverted original trace:\n");
-	      ParsetreeDump(stdout, orig_tr, orig_cm, sq[i]->dsq);
+	      ParsetreeDump(stdout, orig_tr, orig_cm, sq[i], NULL, NULL);
 	    }
 	  /* Replace the sub_cm trace with the converted orig_cm trace. */
 	  FreeParsetree(tr[i]);
@@ -1668,10 +1660,10 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	  if(do_hbanded)
 	    FreeCP9Bands(sub_cp9b);
 	}
-      StopwatchStop(watch);
+      esl_stopwatch_Stop(watch);
       if(do_timings) 
 	{ 
-	  StopwatchDisplay(stdout, "seq alignment CPU time: ", watch);
+	  esl_stopwatch_Display(stdout, watch, "seq alignment CPU time: ");
 	  printf("\n");
 	}
     }
@@ -1683,7 +1675,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
       free(orig_dmin);
       free(orig_dmax);
     }
-  StopwatchFree(watch);
+  esl_stopwatch_Destroy(watch);
   
   *ret_tr = tr; 
   if (do_post) *ret_postcode = postcode; 
@@ -1696,15 +1688,111 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	CP9FreeTrace(cp9_tr[i]);
       free(cp9_tr);
     }
-  /*  if(ret_post_spos != NULL)
-   *ret_post_spos = post_spos;
-   if(ret_post_epos != NULL)
-   *ret_post_epos = post_epos;
-   if(ret_dist_spos != NULL)
-   *ret_dist_spos = dist_spos;
-   if(ret_dist_epos != NULL)
-   *ret_dist_epos = dist_epos;*/
-  
-  /*printf("leaving actually_align_targets()\n");*/
+ ERROR:
+  esl_fatal("Memory allocation error.");
 }
 
+/* Function: revcomp()
+ * Incept:   EPN, Tue Aug  7 10:05:14 2007
+ *           based on Squid's revcomp()
+ *
+ * Purpose:  Reverse complement ESL_SQ seq; store in comp.
+ *           Can revcomp "in place" (revcomp(seq, seq)).
+ *           sq can be in digital or text form.
+ *
+ * Args:     comp  - destination for reverse complement of sq
+ *           seq   - sequence to reverse complement
+ *
+ * Returns:  Dies immediately without cleanup on failure;
+ */
+void
+revcomp(const ESL_ALPHABET *abc, ESL_SQ *comp, ESL_SQ *sq)
+{
+  int status;
+  int do_digital = FALSE;
+  int i;
+
+  /* contract checks */
+  if (comp == NULL)
+    esl_fatal("ERROR in revcomp, comp is NULL.");
+  if(sq == NULL)
+    esl_fatal("ERROR in revcomp, sq is NULL.");
+  if(    sq->flags & eslSQ_DIGITAL   &&  (! (comp->flags & eslSQ_DIGITAL)))
+    esl_fatal("ERROR in revcomp, sq is digital, comp is not.");
+  if((! (sq->flags & eslSQ_DIGITAL)) &&      comp->flags & eslSQ_DIGITAL)
+    esl_fatal("ERROR in revcomp, comp is digital, sq is not.");
+  if(abc->type != eslRNA && abc->type != eslDNA)
+    esl_fatal("ERROR in revcomp, alphabet type must be RNA or DNA.");
+  if(comp->n < sq->n)
+    esl_fatal("ERROR in revcomp, comp->n is smaller than sq->n.");
+
+  if(sq->flags & eslSQ_DIGITAL) do_digital = TRUE;
+
+  if(do_digital) if(esl_rnd_XReverse(sq->dsq, sq->n, comp->dsq) != eslOK) goto ERROR;
+  if(do_digital) if(esl_rnd_CReverse(sq->seq, comp->seq) != eslOK) goto ERROR;
+
+  if(do_digital)
+    {
+      for(i = 1; i <= sq->n; i++)
+	{
+	  if(sq->dsq[i] >= abc->Kp) { status = eslEINVAL; goto ERROR; }
+	  switch (abc->sym[sq->dsq[i]]) {
+	  case 'A': 
+	    if(abc->type == eslRNA) 
+	      comp->dsq[i] = abc->inmap[(int) 'U']; 
+	    else
+	      comp->dsq[i] = abc->inmap[(int) 'T']; 
+	    break;
+	  case 'C': comp->dsq[i] = abc->inmap[(int) 'G']; break;
+	  case 'G': comp->dsq[i] = abc->inmap[(int) 'C']; break;
+	  case 'T': comp->dsq[i] = abc->inmap[(int) 'A']; break;
+	  case 'U': comp->dsq[i] = abc->inmap[(int) 'A']; break;
+	  case 'R': comp->dsq[i] = abc->inmap[(int) 'Y']; break;
+	  case 'Y': comp->dsq[i] = abc->inmap[(int) 'R']; break;
+	  case 'M': comp->dsq[i] = abc->inmap[(int) 'K']; break;
+	  case 'K': comp->dsq[i] = abc->inmap[(int) 'M']; break;
+	  case 'S': comp->dsq[i] = abc->inmap[(int) 'S']; break;
+	  case 'W': comp->dsq[i] = abc->inmap[(int) 'W']; break;
+	  case 'H': comp->dsq[i] = abc->inmap[(int) 'D']; break;
+	  case 'D': comp->dsq[i] = abc->inmap[(int) 'H']; break;
+	  case 'B': comp->dsq[i] = abc->inmap[(int) 'V']; break;
+	  case 'V': comp->dsq[i] = abc->inmap[(int) 'B']; break;
+	  default:  break;		/* anything else? leave it; it's prob a gap or an X */
+	  }
+	}
+    }
+  else
+    {
+      for(i = 0; i < sq->n; i++)
+	{
+	  if(islower(sq->seq[i])) { status = eslEINVAL; goto ERROR; }
+	     switch (sq->seq[i]) {
+	     case 'A': 
+	       if(abc->type == eslRNA) 
+		 comp->seq[i] = 'U';
+	       else
+		 comp->seq[i] = 'T'; 
+	       break;
+	     case 'C': comp->seq[i] = 'G'; break;
+	     case 'G': comp->seq[i] = 'C'; break;
+	     case 'T': comp->seq[i] = 'A'; break;
+	     case 'U': comp->seq[i] = 'A'; break;
+	     case 'R': comp->seq[i] = 'Y'; break;
+	     case 'Y': comp->seq[i] = 'R'; break;
+	     case 'M': comp->seq[i] = 'K'; break;
+	     case 'K': comp->seq[i] = 'M'; break;
+	     case 'S': comp->seq[i] = 'S'; break;
+	     case 'W': comp->seq[i] = 'W'; break;
+	     case 'H': comp->seq[i] = 'D'; break;
+	     case 'D': comp->seq[i] = 'H'; break;
+	     case 'B': comp->seq[i] = 'V'; break;
+	     case 'V': comp->seq[i] = 'B'; break;
+	     default:  break;		/* anything else? leave it; it's prob a gap or an X */
+	     }
+	}
+      return;
+    }
+ ERROR: 
+  esl_fatal("Unexpected error code: %d in revcomp().", status);
+}
+    

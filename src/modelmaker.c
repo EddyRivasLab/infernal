@@ -98,6 +98,8 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
 
   if (msa->ss_cons == NULL)
     esl_fatal("No consensus structure annotation available for that alignment.");
+  if (! (msa->flags & eslMSA_DIGITAL))
+    esl_fatal("MSA is not digitized in HandModelMaker().");
   if (use_rf && msa->rf == NULL) 
     esl_fatal("No reference annotation available for that alignment.");
 
@@ -1020,7 +1022,7 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
  *           gtr is allocated here. FreeTrace().
  */
 void
-ConsensusModelmaker(ESL_ALPHABET *abc, char *ss_cons, int clen, 
+ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen, 
 		    CM_t **ret_cm, Parsetree_t **ret_gtr)
 {
   int             status;

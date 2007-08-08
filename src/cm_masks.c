@@ -14,14 +14,16 @@
  * 
  */
 
+#include "esl_config.h"
 #include "config.h"
-#include "squidconf.h"
 
 #include <stdio.h>
 #include <math.h>
 #include <float.h>
 
-#include "squid.h"
+#include "easel.h"
+#include "esl_vectorops.h"
+
 #include "structs.h"
 #include "funcs.h"
 
@@ -60,7 +62,7 @@ CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, ESL_SQ *sq)
    * all M, I states that appear in the trace. Ad hoc? Sure, you betcha. 
    */
 		/* trivial preorder traverse, since we're already numbered that way */
-  FSet(p, MAXABET, 0.0);
+  esl_vec_FSet(p, MAXABET, 0.0);
   for (tidx = 0; tidx < tr->n; tidx++) {
     v = tr->state[tidx];        	/* index of parent state in CM */
     if(cm->sttype[v] == MP_st)
@@ -79,18 +81,17 @@ CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, ESL_SQ *sq)
       }
     else if(cm->sttype[v] == ML_st || cm->sttype[v] == IL_st ||
 	    cm->sttype[v] == MR_st || cm->sttype[v] == IR_st)
-      FAdd(p, cm->e[v], MAXABET);
+      esl_vec_FAdd(p, cm->e[v], MAXABET);
   }
 
-  FNorm(p, MAXABET);
+  esl_vec_FNorm(p, MAXABET);
 
   for (a = 0; a < MAXABET; a++)
-    sc[a] = sreLOG2(p[a] / cm->bg->f[a]);
+    sc[a] = sreLOG2(p[a] / cm->null[a]);
 				/* could avoid this chunk if we knew
 				   we didn't need any degenerate char scores */
   for (a = MAXABET; a < MAXDEGEN; a++)
-    sc[a] = DegenerateSingletScore(p, a);  /* not completely sure about this line EPN */
-					       
+    sc[a] = esl_abc_FAvgScore(cm->abc, a, p);  /* not completely sure about this line EPN */
 
   /* Score all the state emissions that appear in the trace.
    */

@@ -28,7 +28,7 @@ extern void
 parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 			  int mpi_my_rank, int mpi_master_rank, int mpi_num_procs) ;
 extern float 
-actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutoff, 
+actually_search_target(CM_t *cm, ESL_SQ *sq, int i0, int j0, float cm_cutoff, 
 		       float cp9_cutoff, scan_results_t *results, int do_filter, 
 		       int doing_cm_stats, int doing_cp9_stats, int *ret_flen);
 extern void
@@ -46,4 +46,5 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 
 extern int PrintSearchInfo(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N);
 
+extern void  revcomp(const ESL_ALPHABET *abc, ESL_SQ *comp, ESL_SQ *sq);
 #endif

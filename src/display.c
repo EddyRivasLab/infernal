@@ -39,7 +39,8 @@ static void createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface);
  * Args:      tr    - parsetree for cm aligned to dsq
  *            cm    - model
  *            cons  - consensus information for cm; see CreateCMConsensus()
- *            dsq   - digitized sequence
+ *            sq    - sequence in digitized form
+ *            i0    - position of first residue in sq to align (1 for first residue)
  *
  * Returns:   fancy alignment structure.
  *            Caller frees, with FreeFancyAli(ali).
@@ -47,7 +48,7 @@ static void createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface);
  * Xref:      STL6 p.58
  */
 Fancyali_t *
-CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_SQ *sq)
+CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_SQ *sq, int i0)
 {
   int         status;
   Fancyali_t *ali;              /* alignment structure we're building        */
@@ -179,8 +180,8 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_SQ *sq)
       nd = cm->ndidx[v];	  /* what CM node we're in */
       lc   = cons->lpos[nd];	  /* where CM node aligns to in consensus */
       rc   = cons->rpos[nd];
-      symi = sq->dsq[tr->emitl[ti]];  /* residue indices that node is aligned to */
-      symj = sq->dsq[tr->emitr[ti]];
+      symi = sq->dsq[tr->emitl[ti] + (i0-1)];  /* residue indices that node is aligned to */
+      symj = sq->dsq[tr->emitr[ti] + (i0-1)];
       d = tr->emitr[ti] - tr->emitl[ti] + 1;
       mode = tr->mode[ti];
 

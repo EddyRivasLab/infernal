@@ -37,6 +37,7 @@ scan_results_t *CreateResults (int size) {
   return (results);
  ERROR:
   esl_fatal("Memory allocation error.");
+  return NULL; /* never reached */
 }
 
 /* Function: ExpandResults ()
@@ -117,6 +118,7 @@ int compare_results (const void *a_void, const void *b_void) {
  */
 void remove_overlapping_hits (scan_results_t *results, int i0, int j0)
 {
+  int status;
   char *covered_yet;
   int x,y;
   int covered;
@@ -131,7 +133,7 @@ void remove_overlapping_hits (scan_results_t *results, int i0, int j0)
     return;
 
   L = j0-i0+1;
-  covered_yet = MallocOrDie (sizeof(char)*(L+1));
+  ESL_ALLOC(covered_yet, sizeof(char)*(L+1));
   for (x=0; x<=L; x++)
     covered_yet[x] = 0;
 
@@ -175,6 +177,9 @@ void remove_overlapping_hits (scan_results_t *results, int i0, int j0)
     results->num_results--;
 
   sort_results(results);
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
 }
 
 /*
@@ -202,7 +207,7 @@ void report_hit (int i, int j, int bestr, float score, scan_results_t *results)
 {
 
   if(results == NULL) 
-    Die("in report_hit, but results is NULL\n");
+    esl_fatal("in report_hit, but results is NULL\n");
   if (results->num_results == results->num_allocated) 
     ExpandResults (results, INIT_RESULTS);
 
@@ -295,7 +300,7 @@ CYKScan(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W,
       alpha[v] = alpha[cm->M-1];
     else 
       {
-	alpha[v] = MallocOrDie(sizeof(float *) * 2);
+	ESL_ALLOC(alpha[v], sizeof(float *) * 2);
 	for (j = 0; j < 2; j++) 
 	  ESL_ALLOC(alpha[v][j], (sizeof(float) * (W+1)));
       }

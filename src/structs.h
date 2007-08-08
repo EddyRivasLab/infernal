@@ -666,7 +666,7 @@ typedef struct _scan_results_t {
 } scan_results_t;
 
 typedef struct _db_seq_t {
-  ESL_SQ  *sq[2];
+  ESL_SQ *sq[2];
   scan_results_t *results[2];
   int chunks_sent;
   int alignments_sent;           /* -1 is flag for none queued yet */

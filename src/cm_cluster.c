@@ -11,8 +11,8 @@
  * 
  */
 
+#include "esl_config.h"
 #include "config.h"
-#include "squidconf.h"
 
 #include <stdio.h>
 #include <math.h>
@@ -20,13 +20,13 @@
 #include <float.h>
 
 #include "easel.h"		
-#include "esl_tree.h"
-#include "esl_msa.h"
-#include "esl_dmatrix.h"
-#include "esl_stack.h"
 #include "esl_distance.h"
+#include "esl_dmatrix.h"
+#include "esl_msa.h"
+#include "esl_stack.h"
+#include "esl_tree.h"
 #include "esl_vectorops.h"
-#include "squid.h"
+
 #include "structs.h"
 #include "funcs.h"
 

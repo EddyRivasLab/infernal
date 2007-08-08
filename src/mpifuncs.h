@@ -22,6 +22,7 @@
 #ifndef _MPIFUNCS_H
 #define _MPIFUNCS_H
 
+#include "esl_config.h"
 #include "config.h"
 
 #ifdef USE_MPI
