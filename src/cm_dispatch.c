@@ -374,6 +374,8 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
   MPI_Barrier(MPI_COMM_WORLD);
   /*printf("E PSD rank: %4d mast: %4d\n", mpi_my_rank, mpi_master_rank);*/
 
+  return;
+
  ERROR:
   esl_fatal("Memory allocation error.");
 }
@@ -1688,6 +1690,8 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	CP9FreeTrace(cp9_tr[i]);
       free(cp9_tr);
     }
+
+  return;
  ERROR:
   esl_fatal("Memory allocation error.");
 }

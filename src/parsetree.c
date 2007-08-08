@@ -85,6 +85,8 @@ GrowParsetree(Parsetree_t *tr)
   ESL_RALLOC(tr->nxtl,  tmp, sizeof(int) * tr->nalloc);
   ESL_RALLOC(tr->nxtr,  tmp, sizeof(int) * tr->nalloc);
   ESL_RALLOC(tr->prv,   tmp, sizeof(int) * tr->nalloc);
+  return;
+  
  ERROR:
   esl_fatal("ERROR growing parsetree.\n");
 }

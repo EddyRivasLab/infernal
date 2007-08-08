@@ -1375,6 +1375,7 @@ debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax)
 
   free(sttypes);
   free(nodetypes);
+  return;
 
  ERROR:
   esl_fatal("Memory allocation error.");

@@ -1275,6 +1275,8 @@ qdb_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *dmin, int *dmax, int bdump_l
     }
   free(sttypes);
   free(nodetypes);
+  return;
+
  ERROR:
   esl_fatal("Memory allocation error.");
 }

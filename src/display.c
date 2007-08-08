@@ -134,7 +134,7 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_SQ *sq, int i
   pda = esl_stack_ICreate();
   esl_stack_IPush(pda, 0);
   esl_stack_IPush(pda, PDA_STATE);
-  while (esl_stack_IPop(pda, &type))
+  while (esl_stack_IPop(pda, &type) != eslEOD)
     {
       if (type == PDA_RESIDUE) {
 	if (cm->annote != NULL) { 
@@ -449,6 +449,7 @@ PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp)
     }
   free(buf);
   fflush(fp);
+  return;
 
  ERROR:
   esl_fatal("Memory allocation error.\n");
@@ -548,7 +549,7 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
   pda = esl_stack_ICreate();
   esl_stack_IPush(pda, 0);
   esl_stack_IPush(pda, PDA_STATE);
-  while (esl_stack_IPop(pda, &type)) {
+  while (esl_stack_IPop(pda, &type) != eslEOD) {
     if (type == PDA_RESIDUE) 
       {
 	esl_stack_IPop(pda, &x); rchar  = (char) x;
@@ -853,6 +854,7 @@ createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface)
   
   *ret_inface  = inface;
   *ret_outface = outface;
+  return;
 
  ERROR:
   esl_fatal("Memory allocation error.\n");

@@ -2005,6 +2005,7 @@ hmm2ij_bands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
 
   free(sttypes);
   free(nodetypes);
+  return;
 
  ERROR:
   esl_fatal("Memory allocation error.\n");
@@ -2495,7 +2496,8 @@ ij_banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax,
 
   free(sttypes);
   free(nodetypes);
-
+  return;
+  
  ERROR:
   esl_fatal("Memory allocation error.\n");
 }
@@ -2659,6 +2661,7 @@ ijd_banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax,
 
   free(sttypes);
   free(nodetypes);
+  return;
 
  ERROR:
   esl_fatal("Memory allocation error.\n");

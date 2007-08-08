@@ -275,6 +275,7 @@ PriorifyCM(CM_t *cm, const Prior_t *pri)
   free(mixq);
   free(counts);
   free(probs);
+  return;
 
  ERROR:
   esl_fatal("Memory allocation error.");

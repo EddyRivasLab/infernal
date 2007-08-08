@@ -3172,6 +3172,7 @@ cm2sub_cm_find_impossible_misc_cases(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *su
   FreeEmitMap(orig_emap);
   FreeEmitMap(sub_emap);
   free(nodetypes);
+  return;
 
  ERROR:
   esl_fatal("Memory allocation error.");
@@ -3380,6 +3381,7 @@ cm2sub_cm_find_impossible_matr_cases(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *su
 	}
     }
   free(nodetypes);
+  return;
 
  ERROR:
   esl_fatal("Memory allocation error.");
@@ -3932,7 +3934,7 @@ sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Pars
   pda = esl_stack_ICreate();
   esl_stack_IPush(pda, 0);		/* 0 = left side. 1 would = right side. */
   esl_stack_IPush(pda, ss);
-  while (esl_stack_IPop(pda, &ss))
+  while (esl_stack_IPop(pda, &ss) != eslEOD)
     {
       esl_stack_IPop(pda, &on_right);
 
@@ -4334,6 +4336,7 @@ debug_print_misc_sub_cm_info(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CP
   for(; v <= vend; v++)
     if(orig_cm->sttype[v] == S_st)
       start_flag = 1;
+  return;
 
  ERROR:
   esl_fatal("Memory allocation error.");

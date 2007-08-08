@@ -669,6 +669,7 @@ ResizeCPlan9Matrix(struct cp9_dpmatrix_s *mx, int N, int M,
   if (dmx != NULL) *dmx = mx->dmx;
   if (elmx!= NULL) *elmx= mx->elmx;
   if (erow != NULL) *erow = mx->erow;
+  return;
 
  ERROR:
   esl_fatal("Memory reallocation error.");
@@ -1041,6 +1042,7 @@ CPlan9InitEL(CM_t *cm, CP9_t *cp9)
   /* Free memory and exit */
   free(tmp_el_from_ct);
   FreeEmitMap(emap);
+  return;
 
  ERROR:
   esl_fatal("Memory allocation error.");
@@ -1217,6 +1219,7 @@ CP9AllocTrace(int tlen, CP9trace_t **ret_tr)
   ESL_ALLOC(tr->nodeidx,   sizeof(int)  * tlen);
   ESL_ALLOC(tr->pos,       sizeof(int)  * tlen);
   *ret_tr = tr;
+  return;
 
  ERROR:
   esl_fatal("Memory allocation error.");
@@ -1230,6 +1233,7 @@ CP9ReallocTrace(CP9trace_t *tr, int tlen)
   ESL_RALLOC(tr->statetype, tmp, tlen * sizeof(char));
   ESL_RALLOC(tr->nodeidx,   tmp, tlen * sizeof(int));
   ESL_RALLOC(tr->pos,       tmp, tlen * sizeof(int));
+  return;
 
  ERROR:
   esl_fatal("Memory reallocation error.");
@@ -2389,6 +2393,7 @@ CP9ReverseTrace(CP9trace_t *tr)
   tr->statetype = statetype;
   tr->nodeidx   = nodeidx;
   tr->pos       = pos;
+  return;
 
  ERROR:
   esl_fatal("Memory allocation error.");

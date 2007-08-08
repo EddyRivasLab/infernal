@@ -60,7 +60,6 @@ OBJS  = alphabet.o\
 	hbandcyk.o\
 	cplan9.o\
 	CP9_cm2wrhmm.o\
-	CP9_hmmio.o\
 	CP9_scan.o\
 	cm_postprob.o\
 	scaninside.o\

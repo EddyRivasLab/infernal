@@ -99,7 +99,7 @@ extern int   cm_SetDescription(CM_t *cm, char *desc);
 extern int   cm_AppendComlog(CM_t *cm, int argc, char **argv);
 extern int   cm_SetCtime(CM_t *cm);
 
-extern int   CMCreateNullModel(const ESL_ALPHABET *abc, float **ret_null);
+extern int   DefaultNullModel(const ESL_ALPHABET *abc, float **ret_null);
 extern int   CMAllocNullModel(CM_t *cm);
 extern void  CMSetNullModel(CM_t *cm, float *null);
 extern int   CMReadNullModel(const ESL_ALPHABET *abc, char *nullfile, float **ret_null);

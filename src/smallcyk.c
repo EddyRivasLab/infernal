@@ -2015,6 +2015,7 @@ outside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
     *ret_dpool = dpool;
   }
   free(touch);
+  return;
 
  ERROR:
   esl_fatal("Memory allocation error.\n");
@@ -2769,6 +2770,7 @@ voutside(CM_t *cm, ESL_SQ *sq,
   } else *ret_dpool = dpool;
 
   free(touch);
+  return;
 
  ERROR:
   esl_fatal("Memory allocation error.\n");
@@ -3227,6 +3229,7 @@ deckpool_push(struct deckpool_s *dpool, float **deck)
   dpool->pool[dpool->n] = deck;
   dpool->n++;
   ESL_DPRINTF3(("deckpool_push\n"));
+  return;
  ERROR:
   esl_fatal("Memory reallocation error.\n");
 }
@@ -3657,6 +3660,7 @@ CYKOutside(CM_t *cm, ESL_SQ *sq, float ***alpha)
   free(touch);
   /*dpool*/
   /*beta*/
+  return;
  ERROR:
   esl_fatal("Memory allocation error.");
 }
@@ -5058,7 +5062,7 @@ outside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
     *ret_dpool = dpool;
   }
   free(touch);
-
+  return;
  ERROR:
   esl_fatal("Memory allocation error.");
 }
@@ -6014,6 +6018,7 @@ voutside_b(CM_t *cm, ESL_SQ *sq,
   free(touch);
   free(imax);
   free(imin);
+  return;
  ERROR:
   esl_fatal("Memory allocation error.");
 }
@@ -6385,6 +6390,7 @@ debug_print_bands(CM_t *cm, int *dmin, int *dmax)
 
   free(sttypes);
   free(nodetypes);
+  return;
 
  ERROR:
   esl_fatal("Memory allocation error.");

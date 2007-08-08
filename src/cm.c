@@ -140,6 +140,9 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc)
 				/* structural information */
   cm->M      = nstates;
 
+				/* null model information */
+  CMAllocNullModel(cm);         
+
   ESL_ALLOC(cm->sttype, (nstates+1) * sizeof(char));
   ESL_ALLOC(cm->ndidx,   nstates    * sizeof(int));
   ESL_ALLOC(cm->stid,   (nstates+1) * sizeof(char));
@@ -206,6 +209,7 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc)
   cm->cp9           = NULL;
   cm->cp9map        = NULL;
   /* we'll allocate the cp9 and cp9map only if nec inside ConfigCM() */
+  return;
 
  ERROR:
   esl_fatal("Memory allocation error.\n");
@@ -332,7 +336,7 @@ FreeCM(CM_t *cm)
   free(cm);
 }
 
-/* Function: CMCreateNullModel()
+/* Function: DefaultNullModel()
  * Date:     SRE, Tue Aug  1 15:31:52 2000 [St. Louis]
  *
  * Purpose:  Allocate and initialize a float vector
@@ -340,7 +344,7 @@ FreeCM(CM_t *cm)
  *           equiprobable (e.g. 0.25)
  */
 int
-CMCreateNullModel(const ESL_ALPHABET *abc, float **ret_null)
+DefaultNullModel(const ESL_ALPHABET *abc, float **ret_null)
 {
   /* Contract check */
   if(abc      == NULL) esl_fatal("ERROR in CMCreateNullModel, cm->abc is NULL.\n");
@@ -361,21 +365,20 @@ CMCreateNullModel(const ESL_ALPHABET *abc, float **ret_null)
 
 /* Function: CMAllocNullModel()
  *
- * Purpose:  Allocate the null model section of a CM.
+ * Purpose:  Allocate the null model section of a CM
+ *           and fill it with default, equiprobable 
+ *           null distro.
  */
 int
 CMAllocNullModel(CM_t *cm)
 {
   int status;
+
   /* Contract check */
   if(cm->abc  == NULL) esl_fatal("ERROR in CMAllocNullModel, cm->abc is NULL.\n");
   if(cm->null != NULL) esl_fatal("ERROR in CMAllocNullModel, cm->null is not NULL.\n");
 
-  ESL_ALLOC(cm->null, sizeof(float) * cm->abc->K);
-  return eslOK;
-
-  ERROR:
-  if(cm->null != NULL) free(cm->null);
+  status = DefaultNullModel(cm->abc, &(cm->null));
   return status;
 }
 
@@ -1312,6 +1315,7 @@ CMRebalance(CM_t *cm)
   esl_strdup(cm->acc,  -1, &(new->acc));
   esl_strdup(cm->desc, -1, &(new->desc));
   new->flags = cm->flags;
+  for (x = 0; x < cm->abc->K; x++) new->null[x] = cm->null[x];
 
   /* Calculate "weights" (# of required extra decks) on every B and S state.
    * Recursive rule here is: 1 + min(wgt[left], wgt[right]).

@@ -49,6 +49,7 @@ void ExpandResults (scan_results_t *results, int additional) {
   void *tmp;
   ESL_RALLOC(results->data, tmp, sizeof(scan_result_node_t)* (results->num_allocated+additional));
   results->num_allocated+=additional;
+  return;
  ERROR:
   esl_fatal("Memory reallocation error.");
 }
@@ -177,7 +178,7 @@ void remove_overlapping_hits (scan_results_t *results, int i0, int j0)
     results->num_results--;
 
   sort_results(results);
-
+  return;
  ERROR:
   esl_fatal("Memory allocation error.");
 }

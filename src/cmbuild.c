@@ -137,7 +137,6 @@ static int    name_msa(const ESL_GETOPTS *go, ESL_MSA *msa, int nali);
 static double default_target_relent(const ESL_ALPHABET *abc, int M, double eX);
 static int    save_countvectors(char *cfile, CM_t *cm);
 static void   model_trace_info_dump(FILE *ofp, CM_t *cm, Parsetree_t *tr, char *aseq);
-static void   print_bands2band_file(FILE *fp, CM_t *cm, int *dmin, int *dmax);
 static void   strip_wuss(char *ss);
 
 
@@ -303,7 +302,7 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     }       
   else /* set up the default null model */
     {
-      status = CMCreateNullModel(cfg->abc, &(cfg->null)); /* default values, A,C,G,U = 0.25  */
+      status = DefaultNullModel(cfg->abc, &(cfg->null)); /* default values, A,C,G,U = 0.25  */
       if(status != eslOK) cm_Fail("Failure creating the null model, code: %d", status);
     }
 
@@ -554,7 +553,6 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MS
   printf("done.\n");
   
   /* set the CM's null model, if rsearch mode, use the bg probs used to calc RIBOSUM */
-  CMAllocNullModel(cm);
   if(esl_opt_GetString(go, "--rsearch") != NULL) CMSetNullModel(cm, cfg->fullmat->g); 
   else CMSetNullModel(cm, cfg->null); 
   
@@ -778,7 +776,7 @@ name_msa(const ESL_GETOPTS *go, ESL_MSA *msa, int nali)
   char *name = NULL;
   void *tmp;
   int n;
-  char *buffer = NULL;
+  char buffer[50];
   if(msa != NULL && msa->name == NULL)  
     {
       esl_FileTail(esl_opt_GetArg(go, 2), TRUE, &name); /* TRUE=nosuffix */
@@ -789,6 +787,7 @@ name_msa(const ESL_GETOPTS *go, ESL_MSA *msa, int nali)
 	n += strlen(buffer);
 	ESL_RALLOC(name, tmp, sizeof(char)*(n+1));
 	esl_strcat(&name, -1, buffer, (n+1));
+	ESL_ALLOC(msa->name, sizeof(char) * (strlen(name)+1));
 	strcpy(msa->name, name);
 	free(name);
 	if ((status = esl_strchop(msa->name, n)) != eslOK) goto ERROR;

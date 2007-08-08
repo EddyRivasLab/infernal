@@ -177,7 +177,7 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
   esl_stack_IPush(pda, msa->alen);	/* emitr */
   esl_stack_IPush(pda, ROOT_nd);	/* "state" (e.g. node type) */
 
-  while (esl_stack_IPop(pda, &type))	/* pop a node type to attach */
+  while (esl_stack_IPop(pda, &type) != eslEOD)	/* pop a node type to attach */
     {
       esl_stack_IPop(pda, &j);
       esl_stack_IPop(pda, &i);	/* i..j == subseq we're responsible for */
@@ -336,9 +336,11 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
   free(matassign);
   if (ret_cm  != NULL) *ret_cm  = cm;  else FreeCM(cm);
   if (ret_gtr != NULL) *ret_gtr = gtr; else FreeParsetree(gtr);
+  return;
 
  ERROR:
   esl_fatal("Memory allocation error.");
+  return;
 }
 
 
@@ -376,7 +378,7 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
   node = state = clen = 0;
   pda = esl_stack_ICreate();
   esl_stack_IPush(pda, 0);		/* push ROOT_nd onto the stack */
-  while (esl_stack_IPop(pda, &v))
+  while (esl_stack_IPop(pda, &v) != eslEOD)
     {
       if      (gtr->state[v] == BIF_nd) {
 	prvnodetype = gtr->state[gtr->prv[v]];
@@ -1082,7 +1084,7 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen,
   esl_stack_IPush(pda, clen);	/* emitr */
   esl_stack_IPush(pda, ROOT_nd);	/* "state" (e.g. node type) */
 
-  while (esl_stack_IPop(pda, &type))	/* pop a node type to attach */
+  while (esl_stack_IPop(pda, &type) != eslEOD)	/* pop a node type to attach */
     {
       esl_stack_IPop(pda, &j);
       esl_stack_IPop(pda, &i);	/* i..j == subseq we're responsible for */
@@ -1236,6 +1238,7 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen,
 
   if (ret_cm  != NULL) *ret_cm  = cm;  else FreeCM(cm);
   if (ret_gtr != NULL) *ret_gtr = gtr; else FreeParsetree(gtr);
+  return;
 
  ERROR:
   esl_fatal("Memory allocation error.");

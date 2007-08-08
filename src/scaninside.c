@@ -1365,7 +1365,7 @@ InsideBandedScan_jd(CM_t *cm, ESL_SQ *sq, int *jmin, int *jmax, int **hdmin, int
     }*/
   return;
 
- ERROR: 
+ ERROR:
   esl_fatal("Memory allocation error.");
 }
 

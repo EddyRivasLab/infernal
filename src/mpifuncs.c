@@ -276,6 +276,7 @@ void search_first_broadcast (int *num_samples, float *W_scale,
     }
   /*printf("leaving search_first_broadcast: do_qdb: %d do_inside: %d\n", (*do_qdb), (*do_inside));*/
 
+  return;
  ERROR:
   esl_fatal("Memory allocation error.");
 }

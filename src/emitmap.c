@@ -73,7 +73,7 @@ CreateEmitMap(CM_t *cm)
   pda  = esl_stack_ICreate();
   esl_stack_IPush(pda, 0);		/* 0 = left side. 1 would = right side. */
   esl_stack_IPush(pda, nd);
-  while (esl_stack_IPop(pda, &nd))
+  while (esl_stack_IPop(pda, &nd) != eslEOD)
     {
       esl_stack_IPop(pda, &on_right);
 

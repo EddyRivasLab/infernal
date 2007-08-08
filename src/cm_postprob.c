@@ -4591,6 +4591,7 @@ Ideckpool_push(Ideckpool_t *dpool, int **deck)
   dpool->pool[dpool->n] = deck;
   dpool->n++;
   ESL_DPRINTF3(("Ideckpool_push\n"));
+  return;
 
  ERROR:
   esl_fatal("Memory allocation error.");

@@ -392,6 +392,7 @@ void count_matrix (ESL_MSA *msa, fullmat_t *fullmat, double *background_nt,
     }
   }
   free (ct);
+  return;
 
  ERROR:
   esl_fatal("Memory allocation error.");
@@ -1049,8 +1050,8 @@ int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, ESL_MSA *msa)
     }
   if(msa_entered_digitized)
     esl_msa_Digitize(msa->abc, msa);
-
   return eslOK;
+
  ERROR:
   return eslEINVAL;
 }
