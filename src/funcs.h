@@ -187,8 +187,8 @@ extern void         ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_SQ *s
 extern int          ParsetreeCompare(Parsetree_t *t1, Parsetree_t *t2);
 extern void         SummarizeMasterTrace(FILE *fp, Parsetree_t *tr);
 extern void         MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm);
-extern int          Parsetrees2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, 
-					 Parsetree_t **tr, int nseq, int do_full, ESL_MSA **ret_msa);
+extern int          Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt, 
+					 Parsetree_t **tr, int nseq, int do_full, int do_matchonly, ESL_MSA **ret_msa);
 extern float        ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, ESL_SQ *sq, int print_flag);
 extern int          Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, CP9trace_t **ret_cp9_tr);
 
@@ -321,8 +321,8 @@ extern int   CP9TransitionScoreLookup(struct cplan9_s *hmm, char st1, int k1,
 extern void  CP9ViterbiTrace(struct cplan9_s *hmm, ESL_SQ *sq, int i0, int j0,
 			     struct cp9_dpmatrix_s *mx, CP9trace_t **ret_tr);
 extern void  CP9ReverseTrace(CP9trace_t *tr);
-extern int   CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq, CP9trace_t **tr, 
-				 int do_full, ESL_MSA **ret_msa);
+extern int   CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt, 
+				 int nseq, CP9trace_t **tr, int do_full, int do_matchonly, ESL_MSA **ret_msa);
 extern void  DuplicateCP9(CM_t *src_cm, CM_t *dest_cm);
 
 /* from hbandcyk.c

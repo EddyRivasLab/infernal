@@ -2421,18 +2421,22 @@ CP9ReverseTrace(CP9trace_t *tr)
  * 
  * Args:     cm         - the CM the CP9 was built from, needed to get emitmap,
  *                        so we know where to put EL transitions
+ *           abc        - alphabet to use to create the return MSA
  *           sq         - sequences 
+ *           wgt        - weights for seqs, NULL for none
  *           nseq       - number of sequences
  *           tr         - array of tracebacks
  *           do_full    - TRUE to always include all match columns in alignment
+ *           do_matchonly - TRUE to ONLY include match columns
  *           ret_msa    - MSA, alloc'ed created here
  *
  * Return:   eslOK on succes, eslEMEM on memory error.
  *           MSA structure in ret_msa, caller responsible for freeing.
  */          
 int
-CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq, 
-		    CP9trace_t **tr, int do_full, ESL_MSA **ret_msa)
+CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt, 
+		    int nseq, CP9trace_t **tr, int do_full, int do_matchonly,
+		    ESL_MSA **ret_msa)
 {
   /* Contract checks */
   if(cm->cp9 == NULL)
@@ -2441,6 +2445,15 @@ CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq,
     esl_fatal("ERROR in CP9Traces2Alignment, cm->cp9map is NULL.\n");
   if(!(cm->flags & CM_CP9))
      esl_fatal("ERROR in CP9Traces2Alignment, CM_CP9 flag is down.");
+  /* We allow the caller to specify the alphabet they want the 
+   * resulting MSA in, but it has to make sense (see next few lines). */
+  if(cm->abc->type == eslRNA)
+    { 
+      if(abc->type != eslRNA && abc->type != eslDNA)
+	esl_fatal("ERROR in Parsetrees2Alignment(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
+    }
+  else if(cm->abc->K != abc->K)
+    esl_fatal("ERROR in Parsetrees2Alignment(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
 
   int status;                   /* easel status flag */
   ESL_MSA   *msa;               /* RETURN: new alignment */
@@ -2610,8 +2623,6 @@ CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq,
     {
       if(! (sq[idx]->flags & eslSQ_DIGITAL))
 	esl_fatal("ERROR in CP9Traces2Alignment(), sq's should be digitized.\n");
-      /* Textize the sequence, we just checked it was digitized */
-      esl_sq_Textize(sq[idx]);
 
       for (cpos = 0; cpos <= emap->clen; cpos++)
 	iuse[cpos] = eluse[cpos] = 0;
@@ -2633,14 +2644,14 @@ CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq,
 	  if (statetype == CSTM) 
 	    {
 	      apos = matmap[cpos];
-	      msa->aseq[idx][apos] = sq[idx]->seq[rpos];
+	      msa->aseq[idx][apos] = abc->sym[sq[idx]->dsq[rpos]];
 	    }
 	  else if (statetype == CSTD) 
 	    apos = matmap[cpos]+1;	/* need for handling D->I; xref STL6/p.117 */
 	  else if (statetype == CSTI) 
 	    {
 	      apos = imap[cpos] + iuse[cpos];
-	      msa->aseq[idx][apos] = (char) tolower((int) sq[idx]->seq[rpos]);
+	      msa->aseq[idx][apos] = (char) tolower((int) abc->sym[sq[idx]->dsq[rpos]]);
 	      iuse[cpos]++;
 	    }
 	  else if (statetype == CSTEL) 
@@ -2650,7 +2661,7 @@ CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq,
 	      if(tr[idx]->statetype[tpos-1] == CSTEL) /* we don't emit on first EL visit */
 		{
 		  apos = elmap[epos] + eluse[epos];
-		  msa->aseq[idx][apos] = (char) tolower((int) sq[idx]->seq[rpos]);
+		  msa->aseq[idx][apos] = (char) tolower((int) abc->sym[sq[idx]->dsq[rpos]]);
 		  eluse[epos]++;
 		}
 	    }
@@ -2731,6 +2742,22 @@ CP9Traces2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, int nseq,
     }
   msa->ss_cons[alen] = '\0';
   msa->rf[alen] = '\0';
+
+  /* If we only want the match columns, shorten the alignment
+   * by getting rid of the inserts. (Alternatively we could probably
+   * simplify the building of the alignment, but all that pretty code
+   * above already existed, so we do this post-msa-building shortening).
+   */
+  if(do_matchonly)
+    {
+      int *useme;
+      ESL_ALLOC(useme, sizeof(int) * (msa->alen));
+      esl_vec_ISet(useme, msa->alen, FALSE);
+      for(cpos = 0; cpos <= emap->clen; cpos++)
+	if(matmap[cpos] != -1) useme[matmap[cpos]] = TRUE;
+      esl_msa_ColumnSubset(msa, useme);
+      free(useme);
+    }
 
   /* Free and return */
   FreeCMConsensus(con);

@@ -423,6 +423,7 @@ typedef struct cmfile_s {
   int       is_binary;		/* TRUE if file is in binary format */
   int       byteswap;		/* TRUE if binary and we need to swap byte order */
   int       mode;		/* type of SSI offset (part of SSI API) */
+  off_t     offset;             /* disk offset of the CM that was read last */
 } CMFILE;
 
 

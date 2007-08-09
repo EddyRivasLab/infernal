@@ -572,16 +572,43 @@ MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm)
 
 /*
  * Function : Parsetrees2Alignment()
+ *
  * Purpose:   Creates a MSA from a set of parsetrees and a CM.
+ *
+ * 
+ * Args:     cm         - the CM the CP9 was built from, needed to get emitmap,
+ *                        so we know where to put EL transitions
+ *           abc        - alphabet to use to create the return MSA
+ *           sq         - sequences, must be digitized (we check for it)
+ *           wgt        - weights for seqs, NULL for none
+ *           nseq       - number of sequences
+ *           tr         - array of tracebacks
+ *           do_full    - TRUE to always include all match columns in alignment
+ *           do_matchonly - TRUE to ONLY include match columns
+ *           ret_msa    - MSA, alloc'ed created here
+ *
+ * Return:   eslOK on succes, eslEMEM on memory error.
+ *           MSA structure in ret_msa, caller responsible for freeing.
  *
  * Returns:   eslOK on success, eslEMEM on memory error, 
  *            Also ret_msa is filled with a new MSA.
  *
  */
 int
-Parsetrees2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, Parsetree_t **tr, 
-		     int nseq, int do_full, ESL_MSA **ret_msa)
+Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt, 
+		     Parsetree_t **tr, int nseq, int do_full, int do_matchonly, 
+		     ESL_MSA **ret_msa)
 {
+  /* Contract check. We allow the caller to specify the alphabet they want the 
+   * resulting MSA in, but it has to make sense (see next few lines). */
+  if(cm->abc->type == eslRNA)
+    { 
+      if(abc->type != eslRNA && abc->type != eslDNA)
+	esl_fatal("ERROR in Parsetrees2Alignment(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
+    }
+  else if(cm->abc->K != abc->K)
+    esl_fatal("ERROR in Parsetrees2Alignment(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
+
   int          status;       /* easel status flag */
   ESL_MSA     *msa   = NULL; /* multiple sequence alignment */
   CMEmitMap_t *emap  = NULL; /* consensus emit map for the CM */
@@ -716,8 +743,9 @@ Parsetrees2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, Parsetree_t **tr,
 
   for (i = 0; i < nseq; i++)
     {
-      /* Textize the sequence, is this wasteful? */
-      esl_sq_Textize(sq[i]);
+      /* Contract check */
+      if(! (sq[i]->flags & eslSQ_DIGITAL))
+	esl_fatal("ERROR in Parsetrees2Alignment(), sq %d is not digitized.\n", i);
 
       /* Initialize the aseq with all pads '.' (in insert cols) 
        * and deletes '-' (in match cols).
@@ -745,33 +773,33 @@ Parsetrees2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, Parsetree_t **tr,
 	    cpos = emap->lpos[nd];
 	    apos = matmap[cpos];
 	    rpos = tr[i]->emitl[tpos];
-	    msa->aseq[i][apos] = sq[i]->seq[rpos];
+	    msa->aseq[i][apos] = abc->sym[sq[i]->dsq[rpos]];
 
 	    cpos = emap->rpos[nd];
 	    apos = matmap[cpos];
 	    rpos = tr[i]->emitr[tpos];
-	    msa->aseq[i][apos] = sq[i]->seq[rpos];
+	    msa->aseq[i][apos] = abc->sym[sq[i]->dsq[rpos]];
 	    break;
 	    
 	  case ML_st:
 	    cpos = emap->lpos[nd];
 	    apos = matmap[cpos];
 	    rpos = tr[i]->emitl[tpos];
-	    msa->aseq[i][apos] = sq[i]->seq[rpos];
+	    msa->aseq[i][apos] = abc->sym[sq[i]->dsq[rpos]];
 	    break;
 
 	  case MR_st:
 	    cpos = emap->rpos[nd];
 	    apos = matmap[cpos];
 	    rpos = tr[i]->emitr[tpos];
-	    msa->aseq[i][apos] = sq[i]->seq[rpos];
+	    msa->aseq[i][apos] = abc->sym[sq[i]->dsq[rpos]];
 	    break;
 
 	  case IL_st:
 	    cpos = emap->lpos[nd];
 	    apos = ilmap[cpos] + iluse[cpos];
 	    rpos = tr[i]->emitl[tpos];
-	    msa->aseq[i][apos] = tolower((int) sq[i]->seq[rpos]);
+	    msa->aseq[i][apos] = tolower((int) abc->sym[sq[i]->dsq[rpos]]);
 	    iluse[cpos]++;
 	    break;
 
@@ -785,7 +813,7 @@ Parsetrees2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, Parsetree_t **tr,
 	    apos = elmap[cpos]; 
 	    for (rpos = tr[i]->emitl[tpos]; rpos <= tr[i]->emitr[tpos]; rpos++)
 	      {
-		msa->aseq[i][apos] = tolower((int) sq[i]->seq[rpos]);
+		msa->aseq[i][apos] = tolower((int) abc->sym[sq[i]->dsq[rpos]]);
 		apos++;
 	      }
 	    break;
@@ -794,7 +822,7 @@ Parsetrees2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, Parsetree_t **tr,
 	    cpos = emap->rpos[nd]-1;  /* -1 converts to "following this one" */
 	    apos = irmap[cpos] - iruse[cpos];  /* writing backwards, 3'->5' */
 	    rpos = tr[i]->emitr[tpos];
-	    msa->aseq[i][apos] = tolower((int) sq[i]->seq[rpos]);
+	    msa->aseq[i][apos] = tolower((int) abc->sym[sq[i]->dsq[rpos]]);
 	    iruse[cpos]++;
 	    break;
 
@@ -889,6 +917,22 @@ Parsetrees2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, Parsetree_t **tr,
     }
   msa->ss_cons[alen] = '\0';
   msa->rf[alen] = '\0';
+
+  /* If we only want the match columns, shorten the alignment
+   * by getting rid of the inserts. (Alternatively we could probably
+   * simplify the building of the alignment, but all that pretty code
+   * above already existed, so we do this post-msa-building shortening).
+   */
+  if(do_matchonly)
+    {
+      int *useme;
+      ESL_ALLOC(useme, sizeof(int) * (msa->alen));
+      esl_vec_ISet(useme, msa->alen, FALSE);
+      for(cpos = 0; cpos <= emap->clen; cpos++)
+	if(matmap[cpos] != -1) useme[matmap[cpos]] = TRUE;
+      esl_msa_ColumnSubset(msa, useme);
+      free(useme);
+    }
 
   FreeCMConsensus(con);
   FreeEmitMap(emap);

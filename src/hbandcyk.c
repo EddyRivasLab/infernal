@@ -931,7 +931,7 @@ insideT_b_jd_me(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
        * traceback altogether. This is the only way to break the
        * while (1) loop.
        */
-      if (! esl_stack_IPop(pda, &bifparent)) break;
+      if (esl_stack_IPop(pda, &bifparent) == eslEOD) break;
       esl_stack_IPop(pda, &d);
       esl_stack_IPop(pda, &j);
       v = tr->state[bifparent];	/* recover state index of B */
@@ -3640,7 +3640,7 @@ insideT_b_jd(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
        * traceback altogether. This is the only way to break the
        * while (1) loop.
        */
-      if (! esl_stack_IPop(pda, &bifparent)) break;
+      if (esl_stack_IPop(pda, &bifparent) == eslEOD) break;
       /* CYK Full ME Bands used 17 */
       /* original line : esl_stack_IPop(pda, &d); */
       esl_stack_IPop(pda, &dp);

@@ -2586,7 +2586,7 @@ CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo,
 	  free(name);
 	}
       /* Build a new MSA from these parsetrees */
-      Parsetrees2Alignment(cm, sq, NULL, tr, msa_nseq, TRUE, &msa);
+      Parsetrees2Alignment(cm, cm->abc, sq, NULL, tr, msa_nseq, TRUE, FALSE, &msa);
       /* MSA should be in text mode, not digitized */
       if(msa->flags & eslMSA_DIGITAL)
       esl_fatal("ERROR in CP9_check_by_sampling(), sampled MSA should NOT be digitized.\n");

@@ -112,7 +112,7 @@ int *rjk_KHS2ct(char *ss, int len) {
       } else if (ss[pos] == '>') {  /* left side of a pair: push onto stack */
         esl_stack_IPush(pda, pos);
       } else if (ss[pos] == '<') { /* right side of a pair; resolve pair */
-	if (! esl_stack_IPop(pda, &pair)) {
+	if (esl_stack_IPop(pda, &pair) == eslEOD) {
 	  free (ct);
 	  esl_stack_Destroy(pda);
 	  return (NULL);

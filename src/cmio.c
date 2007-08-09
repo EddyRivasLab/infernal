@@ -153,6 +153,15 @@ CMFileOpen(char *cmfile, char *env)
   if (envfile != NULL) free(envfile);
   if (ssifile != NULL) free(ssifile);
 
+  /* Now initialize the disk offset; though it's technically
+   * undefined... cmf->offset is the offset of the *last*
+   * CM read, so the API only guarantees it's valid after a
+   * call to CMFileRead() ... but make it a valid offset 0 
+   * anyway. Since the offset is an opaque type, you can't
+   * just set it to a number.
+   */
+  cmf->offset = ftello(cmf->f); 
+
   /* Peek at the first 4 bytes to see if it's a binary file.
    */
   if (! fread((char *) &magic, sizeof(unsigned int), 1, cmf->f)) {
@@ -234,7 +243,7 @@ or may be a different kind of binary altogether.\n", cmfile);
 int
 CMFileRead(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 {
-  cmf->ssi->foffset = ftello(cmf->f); /* is this right? */
+  cmf->offset = ftello(cmf->f); /* is this right? */
   if (cmf->is_binary) return read_binary_cm(cmf, ret_abc, ret_cm);
   else                return read_ascii_cm(cmf, ret_abc, ret_cm);
 }
@@ -249,8 +258,9 @@ CMFileRead(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 void
 CMFileClose(CMFILE *cmf)
 {
-  if (cmf->f   != NULL) { fclose(cmf->f);     cmf->f   = NULL; }
-  if (cmf->ssi != NULL) { esl_ssi_Close(cmf->ssi); cmf->ssi = NULL; }
+  if (cmf->f     != NULL) { fclose(cmf->f);     cmf->f   = NULL; }
+  if (cmf->fname != NULL)   free(cmf->fname); 
+  if (cmf->ssi   != NULL) { esl_ssi_Close(cmf->ssi); cmf->ssi = NULL; }
   free(cmf);
 }
 
@@ -541,7 +551,7 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	      printf("ERROR, cm->abc is not yet set but we're trying to allocate the null model.");
 	      goto FAILURE;
 	    }
-	  CMAllocNullModel(cm);
+	  /* cm-> null already allocated in CreateCMBody() */
 	  for (x = 0; x < abc->K; x++)
 	    {
 	      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
@@ -723,7 +733,7 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	  cm->ndtype[nd]  = x;
 	  cm->nodemap[nd] = v;
 
-	  if (esl_fgets(&buf, &n, cmf->f) == eslOK)              goto FAILURE;
+	  if (esl_fgets(&buf, &n, cmf->f) != eslOK)              goto FAILURE;
 	  s = buf;
 	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
 	}
@@ -802,6 +812,7 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   CMRenormalize(cm);
 
   if (buf != NULL) free(buf);
+  if (*ret_abc == NULL) *ret_abc = abc;	/* pass our new alphabet back to caller, if caller didn't know it already */
   *ret_cm = cm;
   return 1;
 

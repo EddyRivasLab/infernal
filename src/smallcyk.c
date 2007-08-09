@@ -1366,11 +1366,11 @@ inside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_full,
    * and we might reuse this memory in a call to Outside.  
    */
   if (alpha == NULL) {
-    ESL_ALLOC(alpha, (sizeof(float **) * cm->M+1));
+    ESL_ALLOC(alpha, sizeof(float **) * (cm->M+1));
     for (v = 0; v <= cm->M; v++) alpha[v] = NULL;
   }
 
-  ESL_ALLOC(touch, (sizeof(int) * cm->M+1));
+  ESL_ALLOC(touch, sizeof(int) * (cm->M+1));
   for (v = 0;     v < vroot; v++) touch[v] = 0;
   for (v = vroot; v <= vend; v++) touch[v] = cm->pnum[v];
   for (v = vend+1;v < cm->M; v++) touch[v] = 0;
@@ -2862,7 +2862,7 @@ insideT(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
        * traceback altogether. This is the only way to break the
        * while (1) loop.
        */
-      if (! esl_stack_IPop(pda, &bifparent)) break;
+      if (esl_stack_IPop(pda, &bifparent) == eslEOD) break;
       esl_stack_IPop(pda, &d);
       esl_stack_IPop(pda, &j);
       v = tr->state[bifparent];	/* recover state index of B */
@@ -3121,7 +3121,7 @@ cyk_deck_count(CM_t *cm, int r, int z)
   for (v = z; v >= r; v--)
     {
       if (cm->sttype[v] != E_st) {
-	if (! esl_stack_IPop(pda, &y)) ndecks++; /* simulated allocation of a new deck */
+	if (esl_stack_IPop(pda, &y) == eslEOD) ndecks++; /* simulated allocation of a new deck */
       }
       
       if (cm->sttype[v] == B_st) { /* release both S children of a bifurc */
@@ -7090,7 +7090,7 @@ insideT_b_me(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
        * traceback altogether. This is the only way to break the
        * while (1) loop.
        */
-      if (! esl_stack_IPop(pda, &bifparent)) break;
+      if (esl_stack_IPop(pda, &bifparent) == eslEOD) break;
       /* Note: we don't pop dp below, but d, because we're either in an E state
        * in which case d must be 0, or the EL state, which has no
        * dmin and dmax band, so if we pop dp and add dmin[v] to get d,

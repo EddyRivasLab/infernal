@@ -2242,7 +2242,7 @@ check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int n
 	  free(name);
 	}
       /* Build a new MSA from these parsetrees */
-      Parsetrees2Alignment(orig_cm, sq, NULL, tr, msa_nseq, TRUE, &msa);
+      Parsetrees2Alignment(orig_cm, orig_cm->abc, sq, NULL, tr, msa_nseq, TRUE, FALSE, &msa);
       /* MSA should be in text mode, not digitized */
       if(msa->flags & eslMSA_DIGITAL)
 	esl_fatal("ERROR in sub_cm_check_by_sampling(), sampled MSA should NOT be digitized.\n");
@@ -2350,7 +2350,7 @@ check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int n
 	  free(name);
 	}
       /* Build a new MSA from these parsetrees */
-      Parsetrees2Alignment(sub_cm, sq, NULL, tr, msa_nseq, TRUE, &msa);
+      Parsetrees2Alignment(sub_cm, sub_cm->abc, sq, NULL, tr, msa_nseq, TRUE, FALSE, &msa);
       /* MSA should be in text mode, not digitized */
       if(msa->flags & eslMSA_DIGITAL)
 	esl_fatal("ERROR in sub_cm_check_by_sampling(), sampled MSA should NOT be digitized.\n");
