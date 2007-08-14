@@ -40,6 +40,7 @@ static void createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface);
  *            cm    - model
  *            cons  - consensus information for cm; see CreateCMConsensus()
  *            sq    - sequence in digitized form
+ *            abc   - alphabet to create alignment with (often cm->abc)
  *            i0    - position of first residue in sq to align (1 for first residue)
  *
  * Returns:   fancy alignment structure.
@@ -48,8 +49,18 @@ static void createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface);
  * Xref:      STL6 p.58
  */
 Fancyali_t *
-CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_SQ *sq, int i0)
+CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_SQ *sq, const ESL_ALPHABET *abc, int i0)
 {
+  /* Contract check. We allow the caller to specify the alphabet they want the 
+   * resulting MSA in, but it has to make sense (see next few lines). */
+  if(cm->abc->type == eslRNA)
+    { 
+      if(abc->type != eslRNA && abc->type != eslDNA)
+	esl_fatal("ERROR in CreateFancyAli(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
+    }
+  else if(cm->abc->K != abc->K)
+    esl_fatal("ERROR in CreateFancyAli(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
+
   int         status;
   Fancyali_t *ali;              /* alignment structure we're building        */
   ESL_STACK  *pda;              /* pushdown automaton used to traverse trace */
@@ -193,7 +204,7 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_SQ *sq, int i
 	if (cm->annote != NULL) lannote = '.';
 	lstr    = '.';
 	lcons   = '.';
-	if (mode == 3 || mode == 2) lseq = tolower((int) cm->abc->sym[symi]);
+	if (mode == 3 || mode == 2) lseq = tolower((int) abc->sym[symi]);
         else                        lseq = '~';
 	cpos_l  = 0;
 	spos_l  = tr->emitl[ti];
@@ -202,7 +213,7 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_SQ *sq, int i
 	if (cm->annote != NULL) rannote = '.';
 	rstr    = '.';
 	rcons   = '.';
-	if (mode == 3 || mode == 1) rseq = tolower((int) cm->abc->sym[symj]);
+	if (mode == 3 || mode == 1) rseq = tolower((int) abc->sym[symj]);
         else                        rseq = '~';
 	cpos_r  = 0;
 	spos_r  = tr->emitr[ti];
@@ -214,8 +225,8 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_SQ *sq, int i
 	  lcons  = cons->cseq[lc];
 	  cpos_l = lc+1;
 	  if (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st) {
-	    if      (mode == 3)         lseq = cm->abc->sym[symi];
-            else if (mode == 2 && d>0 ) lseq = cm->abc->sym[symi];
+	    if      (mode == 3)         lseq = abc->sym[symi];
+            else if (mode == 2 && d>0 ) lseq = abc->sym[symi];
             else                        lseq = '~';
 	    spos_l = tr->emitl[ti];
 	  } else {
@@ -231,8 +242,8 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_SQ *sq, int i
 	  rcons  = cons->cseq[rc];
 	  cpos_r = rc+1;
 	  if (cm->sttype[v] == MP_st || cm->sttype[v] == MR_st) {
-	    if      (mode == 3)         rseq = cm->abc->sym[symj];
-            else if (mode == 1 && d>0 ) rseq = cm->abc->sym[symj];
+	    if      (mode == 3)         rseq = abc->sym[symj];
+            else if (mode == 1 && d>0 ) rseq = abc->sym[symj];
             else                        rseq = '~';
 	    spos_r = tr->emitr[ti];
 	  } else {
@@ -501,6 +512,7 @@ FreeFancyAli(Fancyali_t *ali)
  *                AAGGGAACCCTTGGGTGGGTTCCACAACCCAA   
  *
  * Args:      cm         - the model
+ *            abc        - alphabet to create con->cseq with (often cm->abc)
  *            pthresh    - bit score threshold for base pairs to be lowercased
  *            sthresh    - bit score threshold for singlets to be lowercased
  *            
@@ -510,8 +522,18 @@ FreeFancyAli(Fancyali_t *ali)
  * Xref:      STL6 p.58.
  */
 CMConsensus_t *
-CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
+CreateCMConsensus(CM_t *cm, const ESL_ALPHABET *abc, float pthresh, float sthresh)
 {
+  /* Contract check. We allow the caller to specify the alphabet they want the 
+   * resulting MSA in, but it has to make sense (see next few lines). */
+  if(cm->abc->type == eslRNA)
+    { 
+      if(abc->type != eslRNA && abc->type != eslDNA)
+	esl_fatal("ERROR in CreateFancyAli(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
+    }
+  else if(cm->abc->K != abc->K)
+    esl_fatal("ERROR in CreateFancyAli(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
+
   int       status;
   CMConsensus_t *con;           /* growing consensus info */
   char     *cseq;               /* growing consensus sequence display string   */
@@ -579,9 +601,9 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
 	 */
 	if (cm->stid[v] == MATP_MP) 
 	  {
-	    x = esl_vec_FArgMax(cm->esc[v], cm->abc->K*cm->abc->K);
-	    lchar = cm->abc->sym[x / cm->abc->K];
-	    rchar = cm->abc->sym[x % cm->abc->K];
+	    x = esl_vec_FArgMax(cm->esc[v], abc->K*abc->K);
+	    lchar = abc->sym[x / abc->K];
+	    rchar = abc->sym[x % abc->K];
 	    if (cm->esc[v][x] < pthresh) {
 	      lchar = tolower((int) lchar);
 	      rchar = tolower((int) rchar);
@@ -594,7 +616,7 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
 	    }
 	} else if (cm->stid[v] == MATL_ML) {
 	  x = esl_vec_FArgMax(cm->esc[v], cm->abc->K);
-	  lchar = cm->abc->sym[x];
+	  lchar = abc->sym[x];
 	  if (cm->esc[v][x] < sthresh) lchar = tolower((int) lchar);
 	  if      (outface[nd] == 0)                    lstruc = ':'; /* external ss */
 	  else if (inface[nd] == 0 && outface[nd] == 1) lstruc = '_'; /* hairpin loop */
@@ -603,7 +625,7 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
 	  rstruc = ' ';
 	} else if (cm->stid[v] == MATR_MR) {
 	  x = esl_vec_FArgMax(cm->esc[v], cm->abc->K);
-	  rchar = cm->abc->sym[x];
+	  rchar = abc->sym[x];
 	  if (cm->esc[v][x] < sthresh) rchar = tolower((int) rchar);
 	  if      (outface[nd] == 0)                    rstruc = ':'; /* external ss */
 	  else if (inface[nd] == 0 && outface[nd] == 1) rstruc = '?'; /* doesn't happen */

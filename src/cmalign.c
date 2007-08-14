@@ -43,8 +43,8 @@ static ESL_OPTIONS options[] = {
   { "-l",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "align locally w.r.t. the model",         1 },
   { "-o",        eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "output the alignment to file <f>, not stdout", 1 },
   { "-q",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "quiet; suppress verbose banner",         1 },
-  { "-f",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "include all match columns in output alignment", 2 },
-  { "-m",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "include only match columns in output alignment", 2 },
+  { "-f",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "include all  match columns in output alignment", 1 },
+  { "-m",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "include only match columns in output alignment", 1 },
   { "-1",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "use tabular output summary format, 1 line per sequence", 1 },
 #ifdef HAVE_MPI
   { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "run as an MPI parallel program",                    1 },  
@@ -64,24 +64,24 @@ static ESL_OPTIONS options[] = {
   { "--checkpost",eslARG_NONE,  FALSE, NULL, NULL,      NULL,  "--post",        NULL, "check that posteriors are correctly calc'ed", 3 },
   { "--sub",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "build sub CM for columns b/t HMM predicted start/end points", 3 },
   /* Memory options */
-  { "--small",   eslARG_NONE,"default",  NULL, NULL,      NULL,      NULL, "--nosmall", "use divide and conquer (d&c) alignment algorithm", 4 },
-  { "--nosmall", eslARG_NONE,   FALSE,  NULL, NULL,      NULL,      NULL,   "--small", "use normal alignment algorithm, not d&c", 4 },
+  { "--small",   eslARG_NONE,"default",  NULL, NULL,  MEMOPTS,      NULL, "--nosmall", "use divide and conquer (d&c) alignment algorithm", 4 },
+  { "--nosmall", eslARG_NONE,   FALSE,  NULL, NULL,   MEMOPTS,      NULL,   "--small", "use normal alignment algorithm, not d&c", 4 },
   /* Banded alignment */
-  { "--nonbanded",eslARG_NONE,"default",NULL, NULL,   ACCOPTS,      NULL,      NULL,   "accelerate using CM plan 9 HMM banded CYK aln algorithm", 5 },
-  { "--hbanded", eslARG_NONE,   FALSE, NULL, NULL,"--nonbanded,--qdb,--small",NULL,NULL, "accelerate using CM plan 9 HMM banded CYK aln algorithm", 5 },
+  { "--nonbanded",eslARG_NONE,"default",NULL, NULL,   ACCOPTS,      NULL,       NULL, "do not use bands to accelerate aln algorithm", 5 },
+  { "--hbanded", eslARG_NONE,   FALSE,  NULL, NULL,"--nonbanded,--qdb,--small","--nosmall",NULL, "accelerate using CM plan 9 HMM banded CYK aln algorithm", 5 },
   { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 5 },
   { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "realign (non-banded) seqs with HMM banded CYK score < 0 bits", 5 },
   { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use posterior sums during HMM band calculation (widens bands)", 5 },
   { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,   ACCOPTS,      NULL,        NULL, "use query dependent banded CYK alignment algorithm", 5 },
   { "--beta",    eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,   "--qdb",        NULL, "set tail loss prob for --qdb to <x>", 5 },
   /* Including a preset alignment */
-  { "--withali", eslARG_STRING, NULL,  NULL, NULL,      NULL,    "--cyk",        NULL, "enforce MATL stretch starting at --enfstart <n> emits seq <s>", 6 },
+  { "--withali", eslARG_STRING, NULL,  NULL, NULL,      NULL,    "--cyk",       NULL, "incl. alignment in <f> (must be aln <cm file> was built from)", 6 },
   { "--rf",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--withali",       NULL, "--rf was originally used with cmbuild", 6 },
   { "--gapthresh",eslARG_REAL,  "0.5", NULL, "0<=x<=1", NULL,"--withali",       NULL, "--gapthresh <x> was originally used with cmbuild", 6 },
   /* Verbose output files/debugging */
   { "--tfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump individual sequence tracebacks to file <f>", 7 },
-  { "--banddump",eslARG_INT,    "0",   NULL, "0<=n<=3", NULL,      NULL,        NULL, "set verbosity of band info print statements to <n> [1..3]", 7 },
-  { "--dlev",    eslARG_INT,    "0",   NULL, "0<=n<=3", NULL,      NULL,        NULL, "set verbosity of debugging print statements to <n> [1..3]", 7 },
+  { "--banddump",eslARG_INT,    "0",   NULL, "0<=n<=3", NULL,      NULL,        NULL, "set verbosity of band info print statements to <n>", 7 },
+  { "--dlev",    eslARG_INT,    "0",   NULL, "0<=n<=3", NULL,      NULL,        NULL, "set verbosity of debugging print statements to <n>", 7 },
   /* Enforcing a subsequence */
   { "--enfstart",eslARG_INT,    FALSE, NULL, "n>0",     NULL,"--enfseq",        NULL, "enforce MATL stretch starting at consensus position <n>", 8 },
   { "--enfseq",  eslARG_STRING, NULL,  NULL, NULL,      NULL,"--enfstart",      NULL, "enforce MATL stretch starting at --enfstart <n> emits seq <s>", 8 },
@@ -121,6 +121,7 @@ struct cfg_s {
   FILE         *regressfp;	/* optional output for regression test  */
   ESL_MSAFILE  *withalifp;	/* optional input alignment to include */
   ESL_MSA      *withmsa;	/* MSA from withalifp to include */
+  Parsetree_t  *withali_mtr;	/* guide tree for MSA from withalifp */
   ESL_ALPHABET *abc_out; 	/* digital alphabet for writing */
 };
 
@@ -140,7 +141,7 @@ static void  mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 static int output_result   (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQ **sq, Parsetree_t **tr, CP9trace_t **cp9_tr, char **postcode);
 
 static int initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
-static int check_withali(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA **ret_msa);
+static int check_withali(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA **ret_msa, Parsetree_t **ret_mtr);
 static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr, char *errbuf);
 static int compare_cm_guide_trees(CM_t *cm1, CM_t *cm2);
 static int make_aligned_string(char *aseq, char *gapstring, int alen, char *ss, char **ret_s);
@@ -220,6 +221,7 @@ main(int argc, char **argv)
   cfg.regressfp  = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.withalifp  = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.withmsa    = NULL;	           /* filled in init_master_cfg() in masters, stays NULL for workers */
+  cfg.withali_mtr= NULL;	           /* filled in init_master_cfg() in masters, stays NULL for workers */
   cfg.nseq       = 0;		           /* this counter is incremented in masters */
 
   cfg.do_mpi     = FALSE;	           /* this gets reset below, if we init MPI */
@@ -272,6 +274,7 @@ main(int argc, char **argv)
     if (cfg.regressfp != NULL) fclose(cfg.regressfp);
     if (cfg.withalifp != NULL) esl_msafile_Close(cfg.withalifp);
     if (cfg.withmsa   != NULL) esl_msa_Destroy(cfg.withmsa);
+    if (cfg.withali_mtr != NULL) FreeParsetree(cfg.withali_mtr);
   }
   if (cfg.cm        != NULL) FreeCM(cfg.cm);
   if (cfg.abc       != NULL) esl_alphabet_Destroy(cfg.abc);
@@ -284,18 +287,19 @@ main(int argc, char **argv)
 /* init_master_cfg()
  * Called by masters, mpi or serial.
  * Already set:
- *    cfg->cmfile  - command line arg 1
- *    cfg->sqfile  - command line arg 2
- *    cfg->fmt     - format of output file
+ *    cfg->cmfile      - command line arg 1
+ *    cfg->sqfile      - command line arg 2
+ *    cfg->fmt         - format of output file
  * Sets: 
- *    cfg->sqfp      - open sequence file                
- *    cfg->ofp       - output file (stdout by default)
- *    cfg->cmfp      - open CM file                
- *    cfg->abc       - digital input alphabet
- *    cfg->tracefp   - optional output file
- *    cfg->regressfp - optional output file
- *    cfg->withalifp - optional input alignment file to include
- *    cfg->withmsa   - MSA from --withali file 
+ *    cfg->sqfp        - open sequence file                
+ *    cfg->ofp         - output file (stdout by default)
+ *    cfg->cmfp        - open CM file                
+ *    cfg->abc         - digital input alphabet
+ *    cfg->tracefp     - optional output file
+ *    cfg->regressfp   - optional output file
+ *    cfg->withalifp   - optional input alignment file to include
+ *    cfg->withmsa     - MSA from --withali file 
+ *    cfg->withali_mtr - guide tree for MSA from --withali file 
  *                   
  * Errors in the MPI master here are considered to be "recoverable",
  * in the sense that we'll try to delay output of the error message
@@ -348,14 +352,14 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   /* optionally, open withali file for reading */
   if(esl_opt_GetString(go, "--withali") != NULL)
     {
-      status = esl_msafile_Open(esl_opt_GetString(go, "--withali"), eslMSAFILE_UNKNOWN, NULL, &(cfg->withalifp));
+      status = esl_msafile_OpenDigital(cfg->abc, esl_opt_GetString(go, "--withali"), eslMSAFILE_UNKNOWN, NULL, &(cfg->withalifp));
       if (status == eslENOTFOUND)    ESL_FAIL(status, errbuf, "--withali alignment file %s doesn't exist or is not readable\n", 
 					      esl_opt_GetString(go, "--withali"));
       else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "Couldn't determine format of --withali alignment %s\n", 
 					      esl_opt_GetString(go, "--withali"));
       else if (status != eslOK)      ESL_FAIL(status, errbuf, "Alignment file open failed with error %d\n", status);
 
-      if((status = check_withali(go, cfg, &(cfg->withmsa))) != eslOK)
+      if((status = check_withali(go, cfg, &(cfg->withmsa), &(cfg->withali_mtr))) != eslOK)
 	ESL_FAIL(status, errbuf, "--withali alignment file %s doesn't have a SS_cons compatible with the CM\n", esl_opt_GetString(go, "--withali"));
     }
   return eslOK;
@@ -405,7 +409,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
     }
 
   /* clean up */
-  if(esl_opt_GetBoolean(go, "--cyk")) {
+  if(esl_opt_GetBoolean(go, "--cyk")) { 
     for (i = 0; i < cfg->nseq; i++) FreeParsetree(tr[i]);
     free(tr);
   }
@@ -422,7 +426,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQ **s
 {
   int status;
   ESL_MSA *msa = NULL;
-  int i, ip;
+  int i, imax;
 
   /* Open the output file set up ofp
    * Output the tabular results header. 
@@ -461,14 +465,16 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQ **s
 	  char *apostcode;   /* aligned posterior decode array */
 	  if(postcode == NULL) 
 	    cm_Fail("ERROR --post enabled, but {serial,parallel}_align_targets() did not return post codes.\n");
-	  for (i = cfg->withmsa->nseq; i < cfg->nseq; i++)                                                   
+
+	  imax = cfg->nseq - 1;
+	  if(cfg->withmsa != NULL) imax -= cfg->withmsa->nseq;
+	  for (i = 0; i <= imax; i++)                                                   
 	    {                                                                          
-	      ip = i - cfg->withmsa->nseq;
-	      if((status =make_aligned_string(msa->aseq[i], "-_.", msa->alen, postcode[ip], &apostcode)) != eslOK)
+	      if((status =make_aligned_string(msa->aseq[i], "-_.", msa->alen, postcode[i], &apostcode)) != eslOK)
 		ESL_FAIL(status, errbuf, "error creating posterior string\n");
 	      esl_msa_AppendGR(msa, "POST", i, apostcode);                                  
 	      free(apostcode);                                                         
-	      free(postcode[ip]);                                                       
+	      free(postcode[i]);                                                       
 	    }                                                                          
 	  free(postcode);                                                              
 	}                                                                              
@@ -553,7 +559,7 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
   if(esl_opt_GetBoolean(go, "--time"))        cfg->cm->align_opts  |= CM_ALIGN_TIME;
   if(esl_opt_GetBoolean(go, "--checkpost"))   cfg->cm->align_opts  |= CM_ALIGN_CHECKINOUT;
   if(esl_opt_GetBoolean(go, "--hsafe"))       cfg->cm->align_opts  |= CM_ALIGN_HMMSAFE;
-  if(esl_opt_GetString(go, "--enfseq") != NULL)
+  if(esl_opt_GetString (go, "--enfseq") != NULL)
     {
       cfg->cm->config_opts |= CM_CONFIG_ENFORCE;
       cfg->cm->enf_start    = EnforceFindEnfStart(cfg->cm, esl_opt_GetInteger(go, "--enfstart"));
@@ -598,7 +604,7 @@ static int compare_cm_guide_trees(CM_t *cm1, CM_t *cm2)
  * Returns:  <eslOK> on success.
  *           <eslEINCOMPAT> if alignment doesn't match the CM 
  */
-static int check_withali(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA **ret_msa)
+static int check_withali(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA **ret_msa, Parsetree_t **ret_mtr)
 {
   int           status;
   ESL_MSA      *msa      = NULL; /* alignment we're including  */
@@ -643,7 +649,7 @@ static int check_withali(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA
   /* if we get here, the CM guide trees match */
   if(new_cm   != NULL) FreeCM(new_cm);
   if(newer_cm != NULL) FreeCM(newer_cm);
-  FreeParsetree(mtr);
+  *ret_mtr = mtr;
   *ret_msa = msa;
   return eslOK;
 
@@ -680,73 +686,69 @@ static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQ ***r
   int           i;	  /* counter over aseqs       */
   int           ip;	  /* offset counter over aseqs */
   char        **uaseq;    /* unaligned seqs, dealigned from the MSA */
+  char         **aseq;    /*   aligned text seqs */
   int           apos;     /*   aligned position index */
   int           uapos;    /* unaligned position index */
   int           x;        /* counter of parsetree nodes */
   int         **map;      /* [0..msa->nseq-1][0..msa->alen] map from aligned
 			   * positions to unaligned (non-gap) positions */
-  char *aseq;                   
-  Parsetree_t *mtr;
 
   /* Contract check */
   if(cfg->withmsa == NULL) esl_fatal("ERROR in include_withali() withmsa is NULL.\n");
+  if(! (cfg->withmsa->flags & eslMSA_DIGITAL)) esl_fatal("ERROR in include_withali() withmsa is not digitized.\n");
 
   /* For each seq in the MSA, map the aligned sequences coords to 
    * the unaligned coords, we stay in digitized seq coords (1..alen),
-   * we need this for converting parsetrees from Transmogrify, which
-   * have emitl and emitr in aligned coords to unaligned coords, so 
+   * we need this for converting parsetrees from Transmogrify (which
+   * have emitl and emitr in aligned coords) to unaligned coords, so 
    * we can call Parsetrees2Alignment() with them. */
   ESL_ALLOC(map,   sizeof(int *)  * cfg->withmsa->nseq);
   ESL_ALLOC(uaseq, sizeof(char *) * cfg->withmsa->nseq);
+  ESL_ALLOC(aseq,  sizeof(char *) * cfg->withmsa->nseq);
   for (i = 0; i < cfg->withmsa->nseq; i++)
     {
       ESL_ALLOC(map[i],   sizeof(int)  * (cfg->withmsa->alen+1));
-      ESL_ALLOC(uaseq[i], sizeof(char) * (cfg->withmsa->alen+1));
+      ESL_ALLOC(aseq[i],  sizeof(char) * (cfg->withmsa->alen+1));
       map[i][0] = -1; /* invalid */
       uapos = 1;
-      for(apos = 0; apos < cfg->withmsa->alen; apos++)
+      for(apos = 1; apos <= cfg->withmsa->alen; apos++)
 	{
-	  if (!esl_abc_CIsGap(cfg->withmsa->abc, cfg->withmsa->aseq[i][(apos+1)]))
-	    map[i][(apos+1)] = uapos++;
+	  if (!esl_abc_XIsGap(cfg->withmsa->abc, cfg->withmsa->ax[i][apos]))
+	    map[i][apos] = uapos++;
 	  else
-	    map[i][(apos+1)] = -1;
+	    map[i][apos] = -1;
 	}
-      esl_strdup(cfg->withmsa->aseq[i], -1, &(uaseq[i]));
+      /* we need digitized AND text seqs for Transmogrify */
+      esl_abc_Textize(cfg->withmsa->abc, cfg->withmsa->ax[i], cfg->withmsa->alen, aseq[i]);
+      esl_strdup(aseq[i], -1, &(uaseq[i]));
       esl_sq_Dealign(uaseq[i], uaseq[i], "-_.", cfg->withmsa->alen);
     }
   ESL_RALLOC((*ret_tr), tmp, (sizeof(Parsetree_t *) * (cfg->nseq + cfg->withmsa->nseq)));
   ESL_RALLOC((*ret_sq), tmp, (sizeof(ESL_SQ *)      * (cfg->nseq + cfg->withmsa->nseq)));
 
-  /* Swap some pointers so the included alignment appears at the top of the output 
-   * alignment instead of the bottom. */
-  for(i = 0; i < cfg->nseq; i++)
-    {
-      ip = i + cfg->withmsa->nseq;
-      (*ret_tr)[ip] = (*ret_tr)[i];
-      (*ret_sq)[ip] = (*ret_sq)[i];
-    }
-
   /* Transmogrify each aligned seq to get a parsetree */
-  for (i = 0; i < cfg->withmsa->nseq; i++)
+  /*for (i = 0; i < cfg->withmsa->nseq; i++)*/
+  for (i = cfg->nseq; i < (cfg->nseq + cfg->withmsa->nseq); i++)
     {
-      esl_abc_Textize(cfg->withmsa->abc, cfg->withmsa->ax[i], cfg->withmsa->alen, aseq);
-      (*ret_tr)[i] = Transmogrify(cfg->cm, mtr, cfg->withmsa->ax[i], cfg->withmsa->aseq[i], cfg->withmsa->alen);
-      free(aseq);
+      ip = i - cfg->nseq;
+      (*ret_tr)[i] = Transmogrify(cfg->cm, cfg->withali_mtr, cfg->withmsa->ax[ip], aseq[ip], cfg->withmsa->alen);
       /* ret_tr[i] is in alignment coords, convert it to unaligned coords, */
       for(x = 0; x < (*ret_tr)[i]->n; x++)
 	{
 	  if((*ret_tr)[i]->emitl[x] != -1)
-	    (*ret_tr)[i]->emitl[x] = map[i][(*ret_tr)[i]->emitl[x]];
+	    (*ret_tr)[i]->emitl[x] = map[ip][(*ret_tr)[i]->emitl[x]];
 	  if((*ret_tr)[i]->emitr[x] != -1)
-	    (*ret_tr)[i]->emitr[x] = map[i][(*ret_tr)[i]->emitr[x]];
+	    (*ret_tr)[i]->emitr[x] = map[ip][(*ret_tr)[i]->emitr[x]];
 	}
-      (*ret_sq)[i]      = esl_sq_CreateFrom(cfg->withmsa->sqname[i], uaseq[i], NULL, NULL, NULL);
+      (*ret_sq)[i]      = esl_sq_CreateFrom(cfg->withmsa->sqname[ip], uaseq[ip], NULL, NULL, NULL);
       esl_sq_Digitize(cfg->cm->abc, (*ret_sq)[i]);
     }
   cfg->nseq += cfg->withmsa->nseq; /* we added these seqs to sq, tr */
+
   /* Clean up and exit. */
   esl_Free2D((void **) map,   cfg->withmsa->nseq);
   esl_Free2D((void **) uaseq, cfg->withmsa->nseq);
+  esl_Free2D((void **) aseq,  cfg->withmsa->nseq);
   return eslOK;
 
  ERROR:

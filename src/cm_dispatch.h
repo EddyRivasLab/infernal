@@ -23,9 +23,9 @@
 #include "funcs.h"		/* external functions                   */
 
 extern void 
-serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons);
+serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons);
 extern void 
-parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
+parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons,
 			  int mpi_my_rank, int mpi_master_rank, int mpi_num_procs) ;
 extern float 
 actually_search_target(CM_t *cm, ESL_SQ *sq, int i0, int j0, float cm_cutoff, 

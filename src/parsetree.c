@@ -856,7 +856,7 @@ Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
   /* Gee, wasn't that easy?
    * Add the rest of the ("optional") information to the MSA.
    */
-  con = CreateCMConsensus(cm, 3.0, 1.0);
+  con = CreateCMConsensus(cm, abc, 3.0, 1.0);
 
   /* "author" info */
   ESL_ALLOC(msa->au, sizeof(char) * (strlen(PACKAGE_VERSION)+10));

@@ -281,9 +281,6 @@ void
 CP9_seq2posteriors(CM_t *cm, ESL_SQ *sq, int i0, int j0, CP9_dpmatrix_t **ret_cp9_post,
 		   int debug_level)
 {
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in CP9seq2posteriors(), sq is not digitized.\n");
-
   /*CP9_dpmatrix_t *cp9_mx;*/    /* growable DP matrix for viterbi                       */
   CP9_dpmatrix_t *cp9_fwd;       /* growable DP matrix for forward                       */
   CP9_dpmatrix_t *cp9_bck;       /* growable DP matrix for backward                      */
@@ -292,16 +289,16 @@ CP9_seq2posteriors(CM_t *cm, ESL_SQ *sq, int i0, int j0, CP9_dpmatrix_t **ret_cp
   int do_scan2bands;             /* TRUE to use scanning Forward/Backward to get posteriors
 				  * that we'll use for a CM scan */
   /* Contract checks */
+  if(! (sq->flags & eslSQ_DIGITAL))
+    esl_fatal("ERROR in CP9_seq2posteriors(), sq is not digitized.\n");
   if(cm->cp9 == NULL)
     esl_fatal("ERROR in CP9_seq2posteriors, but cm->cp9 is NULL.\n");
   if(cm->cp9map == NULL)
     esl_fatal("ERROR in CP9_seq2posteriors, but cm->cp9map is NULL.\n");
   if((cm->align_opts & CM_ALIGN_HBANDED) && (cm->search_opts & CM_SEARCH_HBANDED)) 
     esl_fatal("ERROR in CP9_seq2posteriors, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
-  if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED))) 
-    esl_fatal("ERROR in CP9_seq2posteriors, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
-  if((cm->search_opts & CM_SEARCH_HMMSCANBANDS) && (!(cm->search_opts & CM_SEARCH_HBANDED))) 
-    esl_fatal("ERROR in CP9_seq2bands, CM_SEARCH_HMMSCANBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
+  if((cm->align_opts & CM_SEARCH_HMMSCANBANDS) && (! (cm->search_opts & CM_SEARCH_HBANDED))) 
+    esl_fatal("ERROR in CP9_seq2posteriors, CM_SEARCH_HMMSCANBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
 
   if(cm->search_opts & CM_SEARCH_HMMSCANBANDS)
     do_scan2bands = TRUE;

@@ -616,7 +616,7 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
 				   TRUE); /* DO detach END_E-1 insert states, making them unreachable */
 
    /* Get the consensus sequence and consensus structure information from the original CM */
-   con = CreateCMConsensus(orig_cm, 3.0, 1.0);
+   con = CreateCMConsensus(orig_cm, orig_cm->abc, 3.0, 1.0);
    if(print_flag)
      {
        printf("con->cseq    : %s\n", con->cseq);

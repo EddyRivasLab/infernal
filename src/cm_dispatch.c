@@ -39,7 +39,7 @@
  * declared in cm_dispatch.h) 
  */
 static db_seq_t *read_next_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revcomp);
-static void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
+static void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, db_seq_t *dbseq,
 			   int do_complement, int used_HMM);
 static void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, ESL_SQ *sq,
 				       int used_HMM);
@@ -65,9 +65,10 @@ static seqs_to_aln_t *read_next_aln_seqs(const ESL_ALPHABET *abc, ESL_SQFILE *se
  *
  * Parameters:        dbfp         the database
  *                    cm           the model
+ *                    abc          alphabet for output (can be DNA for ex).
  *                    cons         precalc'ed consensus info for display
  */
-void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons)
+void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons)
 {
   int reversed;                /* Am I currently doing reverse complement? */
   int i,a;
@@ -88,6 +89,16 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons)
   /* Check contract */
   if(!(cm->flags & CM_HASBITS))
     esl_fatal("ERROR in serial_search_database CM_HAS_BITS flag is down\n");
+  /* We allow the caller to specify the alphabet they want the 
+   * resulting MSA in, but it has to make sense (see next few lines). */
+  if(cm->abc->type == eslRNA)
+    { 
+      if(abc->type != eslRNA && abc->type != eslDNA)
+	esl_fatal("ERROR in serial_search_database(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
+    }
+  else if(cm->abc->K != abc->K)
+    esl_fatal("ERROR in serial_search_database(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
+
   /*printf("in serial_search database do_align: %d do_revcomp: %d\n", do_align, do_revcomp);*/
   
   /* Determine minimum cutoff for CM and for CP9 */
@@ -148,7 +159,7 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons)
 	    }
 	}
       /* Print results */
-      print_results (cm, cons, dbseq, do_revcomp, 
+      print_results (cm, abc, cons, dbseq, do_revcomp, 
 		     (cm->search_opts & CM_SEARCH_HMMONLY)); /* use HMM stats? */
 
       fflush (stdout);
@@ -190,7 +201,7 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons)
  *             send the results
  *           }
  */
-void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
+void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons,
 			       int mpi_my_rank, int mpi_master_rank, 
 			       int mpi_num_procs) 
 {
@@ -215,6 +226,18 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
   /* Contract check */
   if(!(cm->flags & CM_HASBITS))
     esl_fatal("ERROR in parallel_search_database CM_HAS_BITS flag is down\n");
+  if(mpi_my_rank == mpi_master_rank)
+    {
+      /* We allow the caller to specify the alphabet they want the 
+       * resulting MSA in, but it has to make sense (see next few lines). */
+      if(cm->abc->type == eslRNA)
+	{ 
+	  if(abc->type != eslRNA && abc->type != eslDNA)
+	    esl_fatal("ERROR in parallel_search_database(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
+	}
+      else if(cm->abc->K != abc->K)
+	esl_fatal("ERROR in parallel_search_database(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
+    }
 
   if(cm->align_opts & CM_ALIGN_QDB)
     {
@@ -317,7 +340,7 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, CMConsensus_t *cons,
 		      active_seqs[active_seq_index]->alignments_sent == 0) 
 		    {
 		      /* Print results */
-		      print_results (cm, cons, active_seqs[active_seq_index], 
+		      print_results (cm, abc, cons, active_seqs[active_seq_index], 
 				     do_revcomp, (cm->search_opts & CM_SEARCH_HMMONLY)); /* use HMM stats? */
 		      if (do_revcomp) 
 		      {
@@ -539,6 +562,7 @@ float actually_search_target(CM_t *cm, ESL_SQ *sq, int i0, int j0, float cm_cuto
  * Purpose:  Given the needed information, prints the results.
  *
  *           cm                  the model
+ *           abc                 alphabet to use for output
  *           cons                consensus seq for model (query seq)
  *           dbseq               the database seq
  *           name                sequence name
@@ -546,9 +570,19 @@ float actually_search_target(CM_t *cm, ESL_SQ *sq, int i0, int j0, float cm_cuto
  *           in_revcomp          are we doing the minus strand
  *           used_HMM            did we use an HMM to get hits?
  */
-void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
+void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, db_seq_t *dbseq,
 		    int do_complement, int used_HMM)
 {
+  /* We allow the caller to specify the alphabet they want the 
+   * resulting MSA in, but it has to make sense (see next few lines). */
+  if(cm->abc->type == eslRNA)
+    { 
+      if(abc->type != eslRNA && abc->type != eslDNA)
+	esl_fatal("ERROR in print_results(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
+    }
+  else if(cm->abc->K != abc->K)
+    esl_fatal("ERROR in print_results(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
+
   int i;
   char *name;
   int len;
@@ -643,7 +677,7 @@ void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 	  if (results->data[i].tr != NULL) 
 	    {
 	      ali = CreateFancyAli (results->data[i].tr, cm, cons, 
-				    dbseq->sq[in_revcomp],
+				    dbseq->sq[in_revcomp], abc,
 				    (results->data[i].start));
 	      PrintFancyAli(stdout, ali,
 			    (coordinate(in_revcomp, results->data[i].start, len)-1), /* offset in sq index */
@@ -1145,18 +1179,17 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
   if(cm->align_opts  & CM_ALIGN_CHECKINOUT) do_check   = TRUE;
   if(cm->align_opts  & CM_ALIGN_SCOREONLY)  do_scoreonly = TRUE;
 
-  /*printf("do_local  : %d\n", do_local);
-    printf("do_qdb    : %d\n", do_qdb);
-    printf("do_hbanded: %d\n", do_hbanded);
-    printf("use_sums  : %d\n", use_sums);
-    printf("do_sub    : %d\n", do_sub);
-    printf("do_fsub   : %d\n", do_fullsub);
-    printf("do_hmmonly: %d\n", do_hmmonly);
-    printf("do_inside : %d\n", do_inside);
-    printf("do_outside: %d\n", do_outside);
-    printf("do_small  : %d\n", do_small);
-    printf("do_post   : %d\n", do_post);
-    printf("do_timings: %d\n", do_timings);*/
+  printf("do_local  : %d\n", do_local);
+  printf("do_qdb    : %d\n", do_qdb);
+  printf("do_hbanded: %d\n", do_hbanded);
+  printf("use_sums  : %d\n", use_sums);
+  printf("do_sub    : %d\n", do_sub);
+  printf("do_hmmonly: %d\n", do_hmmonly);
+  printf("do_inside : %d\n", do_inside);
+  printf("do_outside: %d\n", do_outside);
+  printf("do_small  : %d\n", do_small);
+  printf("do_post   : %d\n", do_post);
+  printf("do_timings: %d\n", do_timings);
     
   if((!(ret_cp9_tr == NULL)) && !do_hmmonly)
     esl_fatal("ERROR in actually_align_targets, want CP9 traces, but not hmmonly mode.\n");
@@ -1174,9 +1207,6 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
     {
       if(cm->cp9 == NULL)
 	esl_fatal("ERROR in actually_align_targets, trying to use CP9 HMM that is NULL\n");
-
-      printf("CP9 has bits flag should be up: %d\n", (cm->cp9->flags & CPLAN9_HASBITS));
-
       if(!(cm->cp9->flags & CPLAN9_HASBITS))
 	esl_fatal("ERROR in actually_align_targets, trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
 
