@@ -20,6 +20,7 @@ main(int argc, char **argv)
    char          *seq;
    SQINFO         sqinfo;
    char          *dsq;
+   char          *rdsq;
    float          sc;
    Parsetree_t   *tr;
    Fancyali_t    *fali;
@@ -64,20 +65,37 @@ main(int argc, char **argv)
       dsq = DigitizeSequence(seq, sqinfo.len);
 
       printf("sequence: %s\n", sqinfo.name);
+fflush(stdout);
 
-int i0 = 1;
-int j0 = sqinfo.len;
+      int i0 = 1;
+      int j0 = sqinfo.len;
       /* Do alignment */
       sc = TrCYKInside(cm, dsq, sqinfo.len, 0, i0, j0, &tr, NULL, NULL);
       /* Print alignment */
 /* ParsetreeDump(stdout,tr,cm,dsq); printf("\n\n"); */
       printf("score:    %.2f\n",sc);
+fflush(stdout);
       fali = CreateFancyAli(tr, cm, cons, dsq);
       PrintFancyAli(stdout, fali, 
 		    0,      /* offset in seq index */
 		    FALSE); /* not on reverse complement strand */
+fflush(stdout);
+      FreeFancyAli(fali);
+
+      revcomp(seq,seq);
+      rdsq = DigitizeSequence(seq, sqinfo.len);
+      printf("sequence: %s (reversed)\n", sqinfo.name);
+fflush(stdout);
+      sc = TrCYKInside(cm,rdsq, sqinfo.len, 0, i0, j0, &tr, NULL, NULL);
+      printf("score:    %.2f\n",sc);
+fflush(stdout);
+      fali = CreateFancyAli(tr, cm, cons,rdsq);
+      PrintFancyAli(stdout, fali, 0, FALSE);
+fflush(stdout);
+
       FreeFancyAli(fali);
       free(dsq);
+      free(rdsq);
       FreeSequence(seq, &sqinfo);
    }
 
