@@ -44,6 +44,8 @@ static void print_results (CM_t *cm, CMConsensus_t *cons, db_seq_t *dbseq,
 			   int do_complement, int used_HMM);
 static void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, char *seq,
 				       int used_HMM);
+static void Free_seqs_to_aln(seqs_to_aln_t *seqs_to_aln, int do_postcode);
+
 #ifdef USE_MPI
 static seqs_to_aln_t *read_next_aln_seqs(ESL_SQFILE *seqfp, int nseq, int index);
 #endif
@@ -521,7 +523,7 @@ float actually_search_target(CM_t *cm, char *dsq, int i0, int j0, float cm_cutof
 	if(cm->search_opts & CM_SEARCH_INSIDE)
 	  sc = iInsideBandedScan(cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
 	else /* don't do inside */
-	  sc = CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
+	  sc = CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results, NULL);
     }    
   return sc;
 }  
@@ -853,7 +855,7 @@ parallel_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_
   int *process_status;
   int eof = FALSE;
   int proc_index, active_seq_index;
-  int nseq_per_job = 1;
+  int nseq_per_job = 5;
   seqs_to_aln_t *seqs_to_aln;
   int i;
   Parsetree_t    **all_tr;          /* parse trees for the all the sequences in order they were read */
@@ -964,7 +966,7 @@ parallel_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_
 
 	      /*printf("done actually_align_targets\n");*/
 	      aln_send_results(seqs_to_aln, do_post, mpi_master_rank);
-	      /*Free_seqs_to_aln(seqs_to_aln); */
+	      Free_seqs_to_aln(seqs_to_aln, do_post);
 	    }		  
 	} while (job_type != TERMINATE_WORK);
       ret_tr = NULL;
@@ -994,7 +996,6 @@ seqs_to_aln_t * read_next_aln_seqs(ESL_SQFILE *seqfp, int nseq, int index)
 
   ret_seqs_to_aln = MallocOrDie(sizeof(seqs_to_aln_t));
   ret_seqs_to_aln->sq = MallocOrDie(sizeof(ESL_SQ *) * nseq);
-  /*ret_seqs_to_aln->sq = MallocOrDie(sizeof(ESL_SQ *) * nseq);*/
   
   for(i=0; i < nseq; i++)
   {
@@ -1173,7 +1174,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
       if(cm->cp9 == NULL)
 	Die("ERROR in actually_align_targets, trying to use CP9 HMM that is NULL\n");
 
-      printf("CP9 has bits flag should be up: %d\n", (cm->cp9->flags & CPLAN9_HASBITS));
+      /*printf("CP9 has bits flag should be up: %d\n", (cm->cp9->flags & CPLAN9_HASBITS));*/
 
       if(!(cm->cp9->flags & CPLAN9_HASBITS))
 	Die("ERROR in actually_align_targets, trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
@@ -1708,3 +1709,30 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
   /*printf("leaving actually_align_targets()\n");*/
 }
 
+/* Function: Free_seqs_to_aln()
+ * Date:     EPN, Wed Aug 15 13:55:43 2007
+ *
+ * Purpose:  Free a seqs_to_aln_t structure.
+ *
+ * Args:     seqs_to_aln
+ *           do_postcode TRUE to free postcode also.
+ *
+ * Returns:  (void)
+ */
+static void
+Free_seqs_to_aln(seqs_to_aln_t *seqs_to_aln, int do_postcode)
+{
+  int i;
+  for(i = 0; i < seqs_to_aln->nseq; i++)
+    {
+      esl_sq_Destroy(seqs_to_aln->sq[i]);
+      FreeParsetree(seqs_to_aln->tr[i]);
+      if(do_postcode)
+	free(seqs_to_aln->postcode[i]);
+    }
+  free(seqs_to_aln->sq);
+  free(seqs_to_aln->tr);
+  if(do_postcode)
+    free(seqs_to_aln->postcode);
+  free(seqs_to_aln);
+}

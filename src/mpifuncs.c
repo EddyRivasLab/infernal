@@ -944,7 +944,7 @@ void aln_send_results (seqs_to_aln_t *seqs_to_aln, int do_post, int mpi_master_n
   bufsize = sizeof(char) + sizeof(int) + sizeof(int) + sizeof(int);
   for(i = 0; i < seqs_to_aln->nseq; i++)
     bufsize += (7 * (seqs_to_aln->tr[i]->n + 1) * sizeof(int));
-
+  
   if(do_post) /* add size of postcodes */
     for(i = 0; i < seqs_to_aln->nseq; i++)
       bufsize += (seqs_to_aln->sq[i]->n + 1) * sizeof(char) + sizeof(int);
@@ -999,7 +999,7 @@ int aln_check_results (Parsetree_t **all_parsetrees, char **all_postcodes, int *
   Parsetree_t *tr;
   int nseq;
   int index;
-  int postsize;
+h  int postsize;
   int do_post;
   char *postcode;
 
@@ -1089,6 +1089,7 @@ void aln_send_terminate (int rank_to_send_to)
   char job_type = TERMINATE_WORK;
 
   bufsize = sizeof(char);
+
   buf = MallocOrDie(bufsize);
   
   /* Send the bufsize (only b/c aln_receive_job expects it) */

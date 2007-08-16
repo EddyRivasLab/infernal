@@ -1753,3 +1753,83 @@ cm_banner(FILE *fp, char *progname, char *banner)
   return;
 }
 
+/* Function:  cm_CalcExpSc()
+ * Incept:    EPN, Wed Aug  1 16:36:52 2007
+ *
+ * Purpose:   Calculate the expected score for each state of a CM.
+ *            For state v, this should be the average score of an 
+ *            emitted parse subtree rooted at v.
+ *              
+ * Args:
+ *           CM_t *cm        - the covariance model
+ *          float *ret_expsc - expected score at each state, alloc'ed here
+ *
+ * Returns:  
+ */
+void
+cm_CalcExpSc(CM_t *cm, float **ret_expsc)
+{
+  int status;
+  float *expsc;
+  int v,x,y,yoffset;
+
+  /* contract check */
+  if(cm->flags & CM_LOCAL_BEGIN) esl_fatal("ERROR in cm_CalcExpSc() CM_LOCAL_BEGIN flag up.\n");
+  if(cm->flags & CM_LOCAL_END)   esl_fatal("ERROR in cm_CalcExpSc() CM_LOCAL_END flag up.\n");
+
+  ESL_ALLOC(expsc, sizeof(float) * cm->M);
+  esl_vec_FSet(expsc, cm->M, 0.);
+
+  for(v = cm->M-1; v >= 0; v--)
+    {
+      switch (cm->sttype[v])
+	{
+	case E_st:
+	  break;
+
+	case B_st:
+	  expsc[v] = expsc[cm->cfirst[v]] + expsc[cm->cnum[v]];
+	  break;
+
+	case MP_st:
+	  for(x = 0; x < MAXABET * MAXABET; x++)
+	    expsc[v] += cm->e[v][x] * cm->esc[v][x];
+	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
+	    {
+	      y = cm->cfirst[v] + yoffset;
+	      expsc[v] += cm->t[v][yoffset] * expsc[y];
+	    }
+	  break;
+
+	case ML_st:
+	case MR_st:
+	case IL_st:
+	case IR_st:
+	  for(x = 0; x < MAXABET; x++)
+	    expsc[v] += cm->e[v][x] * cm->esc[v][x];
+	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
+	    {
+	      y = cm->cfirst[v] + yoffset;
+	      expsc[v] += cm->t[v][yoffset] * expsc[y];
+	    }
+	  break;
+
+	case S_st:
+	case D_st:
+	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
+	    {
+	      y = cm->cfirst[v] + yoffset;
+	      expsc[v] += cm->t[v][yoffset] * expsc[y];
+	    }
+	  break;
+	}
+    }
+  *ret_expsc = expsc;
+
+  for(v = 0; v < cm->M; v++)
+    printf("EXPSC[%4d]: %10.6f\n", v, expsc[v]);
+
+  return;
+ ERROR:
+  esl_fatal("ERROR in cm_CalcExpSc().\n");
+}

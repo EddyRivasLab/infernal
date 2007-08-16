@@ -518,13 +518,15 @@ CYKInsideScore(CM_t *cm, char *dsq, int r, int i0, int j0, int L, int *dmin, int
  *           L      - length of sequence.
  *           dmin   - minimum d bound for each state v; [0..v..M-1] (NULL if non-banded)
  *           dmax   - maximum d bound for each state v; [0..v..M-1] (NULL if non-banded)
+ *           ret_dpc_b - [0..M-1] number of dp inner loops for each subtree w/QDB, NULL if not wanted
  *           be_quiet - TRUE to not print info, just return number of DP calcs
+ *           
  * 
  * Returns: (float) the total number of DP calculations, either using QDB (if
  *                  dmin & dmax are non-NULL) or not using QDB.
  */
 float
-CYKDemands(CM_t *cm, int L, int *dmin, int *dmax, int be_quiet)
+CYKDemands(CM_t *cm, int L, int *dmin, int *dmax, float **ret_dpc_b, int be_quiet)
 {
   float Mb_per_deck;    /* megabytes per deck */
   int   bif_decks;	/* bifurcation decks  */
@@ -537,10 +539,15 @@ CYKDemands(CM_t *cm, int L, int *dmin, int *dmax, int be_quiet)
   float bifcalcs;	/* # of inner loops executed for bifurcation calculations */
   float bifcalcs_b;	/* # of inner loops executed for bifurcation calculations in QDB */
   float dpcalcs;	/* # of inner loops executed for non-bif calculations */
-  float dpcalcs_b;	/* # of inner loops executed for bifurcation calculations in QDB */
+  float dpcalcs_b;	/* # of inner loops executed for non-bif calculations in QDB */
   int   j;
   float avg_Mb_per_banded_deck;    /* average megabytes per deck in mem efficient big mode */
   int   v, y, z, d, kmin, kmax; /* for QDB calculations */
+  float *dpc_b;         /* [0..M-1] number of dp inner loops at each subtree w/QDB */
+
+  /* Check contract */
+  if(ret_dpc_b != NULL && (dmin == NULL || dmax == NULL))
+    esl_fatal("ERROR in CYKDemands, requesting ret_dpc_b returned but dmin/dmax are NULL.\n");
 
   Mb_per_deck = size_vjd_deck(L, 1, L);
   bif_decks   = CMCountStatetype(cm, B_st);
@@ -561,19 +568,21 @@ CYKDemands(CM_t *cm, int L, int *dmin, int *dmax, int be_quiet)
     }
   else
     {
+      dpc_b = MallocOrDie(sizeof(float) * cm->M);
       dpcells = 0.;
       dpcalcs_b = 0.;
       for(v = 0; v < cm->M; v++)
 	{
-	  dpcells   += (float) (L+1) * (float) (dmax[v] - dmin[v] + 1.);
+	  dpcells  += (float) (L+1) * (float) (dmax[v] - dmin[v] + 1.);
 	  if(cm->sttype[v] != B_st)
-	    dpcalcs_b   += (float) (L+1) * (float) (dmax[v] - dmin[v] + 1.);
+	    dpc_b[v] = (float) (L+1) * (float) (dmax[v] - dmin[v] + 1.);
 	  for(d = dmin[v]; d <= dmax[v]; d++)
 	    {
 	      dpcells -= (float) d; /* subtract out cells for which d <= j */
 	      if(cm->sttype[v] != B_st)
-		dpcalcs_b   -= (float) d; 
+		dpc_b[v] -= (float) d; 
 	    }
+	  dpcalcs_b += dpc_b[v];
 	}
       bigmemory   = (sizeof(float) * dpcells) / 1000000.;
       avg_Mb_per_banded_deck = bigmemory / ((float) cm->M -nends + 1);
@@ -588,6 +597,7 @@ CYKDemands(CM_t *cm, int L, int *dmin, int *dmax, int be_quiet)
 	{
 	  if(cm->sttype[v] == B_st)
 	    {
+	      dpc_b[v] = 0.;
 	      y = cm->cfirst[v];
 	      z = cm->cnum[v];
 	      for (j = 0; j <= L; j++)
@@ -600,7 +610,10 @@ CYKDemands(CM_t *cm, int L, int *dmin, int *dmax, int be_quiet)
 		      if(dmax[z] < (d-dmin[y])) kmax = dmax[z];
 		      else kmax = d-dmin[y];
 		      if(kmin <= kmax)
-			bifcalcs_b += (float)(kmax - kmin + 1);
+			{
+			  dpc_b[v] += (float)(kmax - kmin + 1);
+			  bifcalcs_b += (float)(kmax - kmin + 1);
+			}
 		    }
 		}
 	    }
@@ -645,6 +658,10 @@ CYKDemands(CM_t *cm, int L, int *dmin, int *dmax, int be_quiet)
 	  printf("# of QDB dp inner loops:             %.3g\n", dpcalcs_b+bifcalcs_b);
 	  printf("Estimated small CYK QDB aln speedup: %.4f\n", ((dpcalcs+bifcalcs)/(dpcalcs_b+bifcalcs_b)));
 	}
+      if(ret_dpc_b != NULL) 
+	*ret_dpc_b = dpc_b;
+      else
+	free(dpc_b);
       return (dpcalcs_b + bifcalcs_b);
     }
 }

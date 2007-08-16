@@ -44,7 +44,7 @@ extern void     PrintBandGraph(FILE *fp, double **gamma, int *min, int *max, int
 
 extern void     PrintDPCellsSaved(CM_t *cm, int *min, int *max, int W);
 extern float    CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
-			      float cutoff, scan_results_t *results);
+			      float cutoff, scan_results_t *results, float **ret_bsc);
 extern void     BandedParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq, 
 				    double **gamma, int W, int *dmin, int *dmax);
 extern void     ExpandBands(CM_t *cm, int qlen, int *dmin, int *dmax);
@@ -93,6 +93,7 @@ extern float rsearch_calculate_gap_penalty (char from_state, char to_state,
 extern int   ExponentiateCM(CM_t *cm, double z);
 extern CM_t *DuplicateCM(CM_t *cm);
 extern void  cm_banner(FILE *fp, char *progname, char *banner);
+extern void  cm_CalcExpSc(CM_t *cm, float **ret_expsc);
 
 /*EPN 10.19.05*/
 extern void  CMDefaultNullModel(float *null);
@@ -185,7 +186,7 @@ extern void         MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm);
 extern MSA         *Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt, 
 					 Parsetree_t **tr, int nseq, int do_full);
 extern MSA         *ESL_Parsetrees2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, 
-					     Parsetree_t **tr, int nseq, int do_full);
+					     Parsetree_t **tr, int nseq, int do_full, int do_matchonly);
 extern float        ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, char *dsq, int print_flag);
 extern int          Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, CP9trace_t **ret_cp9_tr);
 
@@ -210,7 +211,7 @@ extern float CYKInside(CM_t *cm, char *dsq, int L, int r, int i0, int j0,
 		       Parsetree_t **ret_tr, int *dmin, int *dmax);
 extern float CYKInsideScore(CM_t *cm, char *dsq, int L, int r, int i0, 
 			    int j0, int *dmin, int *dmax);
-extern float CYKDemands(CM_t *cm, int L, int *dmin, int *dmax, int be_quiet);
+extern float CYKDemands(CM_t *cm, int L, int *dmin, int *dmax, float **ret_dpc_b, int be_quiet);
 extern void  debug_print_bands(CM_t *cm, int *dmin, int *dmax);
 
 /* The memory management routines.
@@ -362,6 +363,12 @@ extern void CP9ScanPosterior(char *dsq, int i0, int j0, CP9_t *hmm, CP9_dpmatrix
 			     CP9_dpmatrix_t *bmx, CP9_dpmatrix_t *mx);
 extern float CP9ForwardScanDemands(CP9_t *cp9, int L);
 extern float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
+				    float Fmin, float Smin, float Starget, float Spad, int N, 
+				    int use_cm_cutoff, float cm_ecutoff, int db_size, 
+				    int emit_mode, int fthr_mode, int hmm_gum_mode, 
+				    int do_fastfil, int do_Fstep, int my_rank, int nproc, 
+				    int do_mpi, char *histfile, FILE *Rpts_fp, float *ret_F);
+extern float FindSubFilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
 				    float Fmin, float Smin, float Starget, float Spad, int N, 
 				    int use_cm_cutoff, float cm_ecutoff, int db_size, 
 				    int emit_mode, int fthr_mode, int hmm_gum_mode, 

@@ -856,7 +856,7 @@ Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt,
 
 MSA *
 ESL_Parsetrees2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, 
-			 Parsetree_t **tr, int nseq, int do_full)
+			 Parsetree_t **tr, int nseq, int do_full, int do_matchonly)
 {
   MSA         *msa;          /* multiple sequence alignment */
   CMEmitMap_t *emap;         /* consensus emit map for the CM */
@@ -1169,6 +1169,22 @@ ESL_Parsetrees2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt,
     }
   msa->ss_cons[alen] = '\0';
   msa->rf[alen] = '\0';
+
+  /* If we only want the match columns, shorten the alignment
+   * by getting rid of the inserts. (Alternatively we could probably
+   * simplify the building of the alignment, but all that pretty code
+   * above already existed, so we do this post-msa-building shortening.
+   */
+  if(do_matchonly)
+    {
+      int *useme;
+      useme = MallocOrDie(sizeof(int) * (msa->alen));
+      esl_vec_ISet(useme, msa->alen, FALSE);
+      for(cpos = 0; cpos <= emap->clen; cpos++)
+	if(matmap[cpos] != -1) useme[matmap[cpos]] = TRUE;
+      MSAShorterAlignment(msa, useme);
+      free(useme);
+    }
 
   FreeCMConsensus(con);
   FreeEmitMap(emap);

@@ -80,6 +80,7 @@ static char experts[] = "\
    --nosmall     : use normal alignment algorithm, not d&c\n\
    --regress <f> : save regression test data to file <f>\n\
    --full        : include all match columns in output alignment\n\
+   --matchonly   : include only match columns in output alignment\n\
    --tfile <f>   : dump individual sequence tracebacks to file <f>\n\
    --banddump <n>: set verbosity of band info print statements to <n> [1..3]\n\
    --dlev <n>    : set verbosity of debugging print statements to <n> [1..3]\n\
@@ -124,6 +125,7 @@ static struct opt_s OPTIONS[] = {
   { "--tfile",      FALSE, sqdARG_STRING },
   { "--banddump"  , FALSE, sqdARG_INT},
   { "--full",       FALSE, sqdARG_NONE },
+  { "--matchonly",  FALSE, sqdARG_NONE },
   { "--dlev",       FALSE, sqdARG_INT },
   { "--hbanded",    FALSE, sqdARG_NONE },
   { "--tau",       FALSE, sqdARG_FLOAT},
@@ -177,6 +179,7 @@ main(int argc, char **argv)
   int              do_local;	/* TRUE to config the model in local mode   */
   int              do_small;	/* TRUE to do divide and conquer alignments */
   int              do_full;     /* TRUE to include all match cols in aln    */
+  int              do_matchonly;/* TRUE to include only match cols in aln   */
   int              do_qdb;      /* TRUE to do qdb CYK (either d&c or full)  */
   int              bdump_level; /* verbosity level for --banddump, 0 is OFF */
   int              debug_level; /* verbosity level for debugging printf's s */
@@ -264,6 +267,7 @@ main(int argc, char **argv)
   do_qdb      = FALSE;
   qdb_beta    = DEFAULT_BETA;
   do_full     = FALSE;
+  do_matchonly= FALSE;
   bdump_level = 0;
   debug_level = 0;
   do_hbanded  = FALSE;
@@ -298,6 +302,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--qdb")       == 0) do_qdb       = TRUE;
     else if (strcmp(optname, "--beta")      == 0) qdb_beta     = atof(optarg);
     else if (strcmp(optname, "--full")      == 0) do_full      = TRUE;
+    else if (strcmp(optname, "--matchonly") == 0) do_matchonly = TRUE;
     else if (strcmp(optname, "--banddump")  == 0) bdump_level  = atoi(optarg);
     else if (strcmp(optname, "--tfile")     == 0) tracefile    = optarg;
     else if (strcmp(optname, "--dlev")      == 0) debug_level  = atoi(optarg);
@@ -503,7 +508,7 @@ main(int argc, char **argv)
 	  include_alignment(withali, use_rf, gapthresh, cm, &sq, &tr, &nseq, &withali_nseq);
 
 	if(!do_hmmonly)
-	  msa = ESL_Parsetrees2Alignment(cm, sq, NULL, tr, nseq, do_full);                 
+	  msa = ESL_Parsetrees2Alignment(cm, sq, NULL, tr, nseq, do_full, do_matchonly);                 
 	else
 	  {
 	    con = CreateCMConsensus(cm, 3.0, 1.0);

@@ -800,13 +800,17 @@ main(int argc, char **argv)
       cons = CreateCMConsensus(cm, 3.0, 1.0); 
       CM2Gumbel_mode(cm, &cm_mode, &cp9_mode); /* MPI workers need to know this */
 
+      float *expsc;
+      cm_CalcExpSc(cm, &expsc);
+      free(expsc);
+
       /* Calculate the predicted running time of the first-pass HMM scan and of
        * the CM scan per nt, so we can set a minimum survival fraction for the filter
        * based on the premise that we're willing to spend at least 0.1 * hmm time on
        * the CM scan of the filter survivors. */
       if(do_hmmfilter)
 	{
-	  cm_calcs  = CYKDemands(cm, cm->W, cm->dmin, cm->dmax, TRUE); /* TRUE is to be quiet */
+	  cm_calcs  = CYKDemands(cm, cm->W, cm->dmin, cm->dmax, NULL, TRUE); /* TRUE is to be quiet */
 	  cp9_calcs = CP9ForwardScanDemands(cm->cp9, cm->W);
 	  if(my_rank == 0)
 	    {
@@ -863,6 +867,16 @@ main(int argc, char **argv)
 	      if(fil_Rpts_file != NULL)
 		if ((fil_Rpts_fp = fopen(fil_Rpts_file, "w")) == NULL)
 		  Die("Failed to open R pts save file for writing\n");
+	      /* TEMPORARY EPN, Sun Jul 29 15:00:22 2007 */
+		FindSubFilterThreshold(cm, cm->stats, r, F, Smin, Starget,
+				       Spad, filN, use_cm_cutoff, cm_e_cutoff, 
+				       N, emit_mode, cm_mode, cp9_mode, do_fastfil,
+				       do_Fstep, my_rank, nproc, do_mpi, fil_histfile, 
+				       fil_Rpts_fp, &Fset); /* Fset is not important, we're not
+							     * storing the new stats info */
+		return 0;
+		/* END TEMPORARY */
+
 	      cp9_e_cutoff = 
 		FindCP9FilterThreshold(cm, cm->stats, r, F, Smin, Starget,
 				       Spad, filN, use_cm_cutoff, cm_e_cutoff, 

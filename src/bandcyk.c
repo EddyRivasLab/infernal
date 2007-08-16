@@ -909,12 +909,13 @@ PrintDPCellsSaved(CM_t *cm, int *min, int *max, int W)
  *           W         - max d: max size of a hit
  *           cutoff    - minimum score to report 
  *           results   - scan_results_t to add to; if NULL, don't add to it
+ *           ret_bsc   - [0..M-1] best scoring subtree in 1..L for each state 
  *
  * Returns:  score of best overall hit
  */
 float
 CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
-	      float cutoff, scan_results_t *results)
+	      float cutoff, scan_results_t *results, float **ret_bsc)
 {
   float  ***alpha;              /* CYK DP score matrix, [v][j][d] */
   int      *bestr;              /* auxil info: best root state at alpha[0][cur][d] */
@@ -941,7 +942,8 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
   float     best_score;         /* Best overall score from semi-HMM to return */
   float     best_neg_score;     /* Best score overall score to return, used if all scores < 0 */
   int       bestd;              /* d value of best hit thus far seen for j (used if greedy strategy) */
-
+  float    *bsc;                /* [0..M-1] highest scoring subtree for each state */
+  
   /* Contract check */
   if(j0 < i0)
     Die("in CYKBandedScan, i0: %d j0: %d\n", i0, j0);
@@ -957,7 +959,9 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
   L = j0-i0+1;
   if (W > L) W = L; 
 
-  /*printf("in BandedCYKScan i0: %d j0: %d\n", i0, j0);*/
+  bsc = MallocOrDie(sizeof(float) * cm->M);
+  for(v = 0; v < cm->M; v++) bsc[v] = IMPOSSIBLE;
+  /*printf("in CYKBandedScan i0: %d j0: %d\n", i0, j0);*/
 
   /*****************************************************************
    * alpha allocations.
@@ -1086,6 +1090,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 		    if ((sc = alpha[y+yoffset][cur][d] + cm->tsc[v][yoffset]) > alpha[v][jp][d]) 
 		      alpha[v][jp][d] = sc;
 		  if (alpha[v][jp][d] < IMPROBABLE) alpha[v][jp][d] = IMPOSSIBLE;
+		  if (alpha[v][jp][d] > bsc[v]) bsc[v] = alpha[v][jp][d];
 		}
 	    }
 	  else if (cm->sttype[v] == MP_st) 
@@ -1105,6 +1110,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 		    alpha[v][cur][d] += DegeneratePairScore(cm->esc[v], dsq[i], dsq[j]);
 		  
 		  if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
+		  if (alpha[v][cur][d] > bsc[v]) bsc[v] = alpha[v][cur][d];
 		}
 	    }
 	  else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) 
@@ -1124,6 +1130,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 		    alpha[v][cur][d] += DegenerateSingletScore(cm->esc[v], dsq[i]);
 		  
 		  if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
+		  if (alpha[v][cur][d] > bsc[v]) bsc[v] = alpha[v][cur][d];
 		}
 	    }
 	  else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) 
@@ -1142,6 +1149,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 		    alpha[v][cur][d] += DegenerateSingletScore(cm->esc[v], dsq[j]);
 		  
 		  if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
+		  if (alpha[v][cur][d] > bsc[v]) bsc[v] = alpha[v][cur][d];
 		}
 	    }
 	  else if (cm->sttype[v] == B_st) 
@@ -1168,6 +1176,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 			alpha[v][cur][d] = sc;
 		    }
 		  if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
+		  if (alpha[v][cur][d] > bsc[v]) bsc[v] = alpha[v][cur][d];
 		}
 	    }
 	} /* end loop over decks v>0 */
@@ -1223,6 +1232,7 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 	    }
 	}
       }
+      bsc[0] = best_neg_score;
       
       if(!(cm->search_opts & CM_SEARCH_CMGREEDY)) /* resolve overlaps optimally */
 	{
@@ -1326,6 +1336,9 @@ CYKBandedScan(CM_t *cm, char *dsq, int *dmin, int *dmax, int i0, int j0, int W,
   free(savesc);
   free(saver);
   
+  if(ret_bsc != NULL) *ret_bsc = bsc;
+  else free(bsc);
+
   if(best_score <= 0.) /* there were no hits found by the semi-HMM, no hits above 0 bits */
     best_score = best_neg_score;
 
