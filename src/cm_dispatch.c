@@ -855,7 +855,7 @@ parallel_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_
   int *process_status;
   int eof = FALSE;
   int proc_index, active_seq_index;
-  int nseq_per_job = 5;
+  int nseq_per_job = 1;
   seqs_to_aln_t *seqs_to_aln;
   int i;
   Parsetree_t    **all_tr;          /* parse trees for the all the sequences in order they were read */

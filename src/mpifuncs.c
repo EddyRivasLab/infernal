@@ -999,7 +999,7 @@ int aln_check_results (Parsetree_t **all_parsetrees, char **all_postcodes, int *
   Parsetree_t *tr;
   int nseq;
   int index;
-h  int postsize;
+  int postsize;
   int do_post;
   char *postcode;
 
