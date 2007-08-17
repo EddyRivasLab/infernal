@@ -58,7 +58,7 @@ float trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
                 void ****ret_T_shadow, void ****ret_Lmode_shadow, void ****ret_Rmode_shadow,
                 int *ret_mode, int *ret_v, int *ret_i, int *ret_j);
 float tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
-                AlphaMats_t *alpha, AlphaMats_t *ret_alpha, 
+                AlphaMats_t *arg_alpha, AlphaMats_t *ret_alpha, 
                 struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
                 ShadowMats_t *ret_shadow, int *ret_mode, int *ret_v, int *ret_i, int *ret_j);
 
@@ -764,7 +764,7 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
  */
 float
 tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
-                AlphaMats_t *alpha, AlphaMats_t *ret_alpha, 
+                AlphaMats_t *arg_alpha, AlphaMats_t *ret_alpha, 
                 struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
                 ShadowMats_t *ret_shadow, int *ret_mode, int *ret_v, int *ret_i, int *ret_j)
 {
@@ -774,7 +774,6 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
    int      v,y,z;
    int      j,d,i,k;
    float    sc,tsc;
-   /* float esc; */  /* removed to silence a compiler warning: it's unused at present (SRE) */
    int      yoffset;
    int      W;
    int      jp;
@@ -791,11 +790,25 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
    int      model_len;
    float    bsc;
 
-   struct deckpool_s *dpool = NULL;
-   float ***alpha   = NULL;
-   float ***L_alpha = NULL;
-   float ***R_alpha = NULL;
-   float ***T_alpha = NULL;
+   float ***alpha;
+   float ***L_alpha;
+   float ***R_alpha;
+   float ***T_alpha;
+
+   if ( arg_alpha == NULL )
+   {
+      alpha = NULL;
+      L_alpha = NULL;
+      R_alpha = NULL;
+      T_alpha = NULL;
+   }
+   else
+   {
+        alpha = arg_alpha->J;
+      L_alpha = arg_alpha->L;
+      R_alpha = arg_alpha->R;
+      T_alpha = arg_alpha->T;
+   }
 
    /*Initialization */
    r_v = -1;
@@ -1408,32 +1421,49 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
    if ( ret_j     != NULL ) { *ret_j     = r_j; } 
    if ( ret_mode  != NULL ) { *ret_mode  = r_mode; }
 
-   /* No option for returning score matrices - delete them all */
-   for ( v = vroot; v <= vend; v++ )
+   /* Free or return score matrices */
+   if ( ret_alpha == NULL )
    {
-      if ( alpha[v] != NULL )
+      for ( v = vroot; v <= vend; v++ )
       {
-         if ( cm->sttype[v] != E_st )
+         if ( alpha[v] != NULL )
          {
-            deckpool_push(dpool,   alpha[v]);   alpha[v] = NULL;
-            deckpool_push(dpool, L_alpha[v]); L_alpha[v] = NULL;
-            deckpool_push(dpool, R_alpha[v]); R_alpha[v] = NULL;
-            if ( T_alpha[v] != NULL )
-            {  deckpool_push(dpool, T_alpha[v]); T_alpha[v] = NULL; }
+            if ( cm->sttype[v] != E_st )
+            {
+               deckpool_push(dpool,   alpha[v]);   alpha[v] = NULL;
+               deckpool_push(dpool, L_alpha[v]); L_alpha[v] = NULL;
+               deckpool_push(dpool, R_alpha[v]); R_alpha[v] = NULL;
+               if ( T_alpha[v] != NULL )
+               {  deckpool_push(dpool, T_alpha[v]); T_alpha[v] = NULL; }
+            }
+            else
+            {  end = alpha[v]; }
          }
-         else
-         {  end = alpha[v]; }
       }
+      if ( end != NULL) {deckpool_push(dpool, end); end = NULL; }
+      free(  alpha);
+      free(L_alpha);
+      free(R_alpha);
+      free(T_alpha);
    }
-   if ( end != NULL) {deckpool_push(dpool, end); end = NULL; }
-   free(  alpha);
-   free(L_alpha);
-   free(R_alpha);
-   free(T_alpha);
+   else
+   {
+      ret_alpha->J = alpha;
+      ret_alpha->L = alpha->L;
+      ret_alpha->R = alpha->R;
+      ret_alpha->T = alpha->T;
+   }
 
-   /* No option for returning deckpool - delete it */
-   while ( deckpool_pop(dpool, &end)) free_vjd_deck(end, i0, j0);
-   deckpool_free(dpool);
+   /* Free or return deckpool */
+   if ( ret_dpool == NULL )
+   {
+      while ( deckpool_pop(dpool, &end)) free_vjd_deck(end, i0, j0);
+      deckpool_free(dpool);
+   }
+   else
+   {
+      *ret_dpool = dpool;
+   }
 
    free(touch);
    if ( ret_shadow != NULL ) ret_shadow->J = shadow;
