@@ -56,7 +56,6 @@
  *            Added capacity for local begins/ends. [EPN, Wed May  2 05:59:19 2007]
  *
  * Args:      cm      - covariance model to generate from
- *            bg      - background distribution, EL emits from this
  *            r       - source of randomness
  *            name    - name for the sequence (ESL_SQ name field is mandatory)
  *            do_digital - TRUE to digitize sq before returning, FALSE not to
@@ -267,6 +266,7 @@ EmitParsetree(CM_t *cm, ESL_RANDOMNESS *r, char *name, int do_digital, Parsetree
   seq = esl_stack_Convert2String(gsq); /* this destroys gsq char stack */
   if(name != NULL) sq  = esl_sq_CreateFrom(name, seq, NULL, NULL, NULL);
   else             sq  = esl_sq_CreateFrom("seq", seq, NULL, NULL, NULL); 
+  free(seq); /* we made a copy of this when creating sq */
   /* name can only be NULL if ret_sq == NULL, so we're throwing it away anyway */
 
   /* digitize if nec */
@@ -275,6 +275,7 @@ EmitParsetree(CM_t *cm, ESL_RANDOMNESS *r, char *name, int do_digital, Parsetree
   /*ParsetreeDump(stdout, tr, cm, dsq);*/ 
 
   esl_stack_Destroy(pda);
+
   free(tmp_tvec);
   if (ret_tr  != NULL) *ret_tr  = tr;  else FreeParsetree(tr);
   if (ret_sq  != NULL) *ret_sq  = sq;  else esl_sq_Destroy(sq);

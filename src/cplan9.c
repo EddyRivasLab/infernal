@@ -2891,10 +2891,10 @@ DuplicateCP9(CM_t *src_cm, CM_t *dest_cm)
   /*
     FILE *fp;
     fp = fopen("destcp9" ,"w");
-    debug_print_cp9_params(fp, dest_cm->cp9);
+    debug_print_cp9_params(fp, dest_cm->cp9, TRUE);
     fclose(fp);
     fp = fopen("srccp9" ,"w");
-    debug_print_cp9_params(fp, src_cm->cp9);
+    debug_print_cp9_params(fp, src_cm->cp9, TRUE);
     fclose(fp);
   */
 

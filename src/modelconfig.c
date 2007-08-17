@@ -110,7 +110,7 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
   /*
     FILE *fp;
     fp = fopen("temphmm1" ,"w");
-    debug_print_cp9_params(fp, cm->cp9);
+    debug_print_cp9_params(fp, cm->cp9, TRUE);
     fclose(fp);
     
     fp = fopen("tempcm1" ,"w");
@@ -146,7 +146,7 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
 
   /*
   fp = fopen("temphmm2" ,"w");
-  debug_print_cp9_params(fp, cm->cp9);
+  debug_print_cp9_params(fp, cm->cp9, TRUE);
   fclose(fp);
 
   fp = fopen("tempcm2" ,"w");
@@ -178,7 +178,7 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
 
   /*printf("leaving ConfigCM()\n");
     debug_print_cm_params(stdout, cm);
-    debug_print_cp9_params(stdout, cm->cp9);*/
+    debug_print_cp9_params(stdout, cm->cp9, TRUE);*/
 
   return;
 

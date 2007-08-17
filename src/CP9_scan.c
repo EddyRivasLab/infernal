@@ -534,7 +534,7 @@ CP9Forward(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret_
   float        temp_sc;     /* temporary score                                              */
   int          nrows;       /* num rows for DP matrix, 2 or L+1 depending on be_efficient   */
   int          c;           /* counter for EL states */
-  /*debug_print_cp9_params(cm->cp9);*/
+  /*debug_print_cp9_params(stdout, cm->cp9, TRUE);*/
 
   /*printf("in CP9Forward() i0: %d j0: %d\n", i0, j0);  */
   /* Contract checks */

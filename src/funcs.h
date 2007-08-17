@@ -396,7 +396,7 @@ extern void make_tmap(char ****ret_tmap);
 
 extern int  CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, CMSubInfo_t *subinfo, int spos, int epos, 
 				  float chi_thresh, int nsamples, int print_flag);
-extern void debug_print_cp9_params(FILE *fp, CP9_t *hmm);
+extern void debug_print_cp9_params(FILE *fp, CP9_t *hmm, int print_scores);
 extern void debug_print_phi_cp9(CP9_t *hmm, double **phi);
 extern CP9Map_t *AllocCP9Map(CM_t *cm);
 extern void FreeCP9Map(CP9Map_t *cp9map);

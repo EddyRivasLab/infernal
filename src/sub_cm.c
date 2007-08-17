@@ -2393,12 +2393,12 @@ check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int n
   /**************************************************/
   
   printf("PRINTING SAMPLED ORIG HMM PARAMS:\n");
-  debug_print_cp9_params(stdout, orig_hmm);
+  debug_print_cp9_params(stdout, orig_hmm, TRUE);
   printf("DONE PRINTING SAMPLED ORIG HMM PARAMS:\n");
   
 
   printf("PRINTING SAMPLED SUB HMM PARAMS:\n");
-  debug_print_cp9_params(stdout, sub_hmm);
+  debug_print_cp9_params(stdout, sub_hmm, TRUE);
   printf("DONE PRINTING SAMPLED SUB HMM PARAMS:\n");
   
   FreeCPlan9(orig_hmm);
@@ -3491,11 +3491,11 @@ check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subin
   if(print_flag)
     {
       printf("PRINTING BUILT SUB HMM PARAMS:\n");
-      debug_print_cp9_params(stdout, sub_hmm);
+      debug_print_cp9_params(stdout, sub_hmm, TRUE);
       printf("DONE PRINTING BUILT SUB HMM PARAMS:\n");
       
       printf("PRINTING BUILT & RECONFIGED ORIG HMM PARAMS:\n");
-      debug_print_cp9_params(stdout, orig_hmm);
+      debug_print_cp9_params(stdout, orig_hmm, TRUE);
       printf("DONE PRINTING BUILT & RECONFIGED SAMPLED HMM PARAMS:\n");
     }
 

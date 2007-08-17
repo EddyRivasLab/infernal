@@ -390,8 +390,10 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_SQ *sq, int *dmin, int *d
     esl_fatal("In ParsetreeDump(), dmin is NULL, dmax is not.\n");
   if(dmin != NULL && dmax == NULL)
     esl_fatal("In ParsetreeDump(), dmax is NULL, dmin is not.\n");
+  if(! sq->flags & eslSQ_DIGITAL)
+    esl_fatal("In ParsetreeDump(), sq must be digitized");
 
-  if(dmin == NULL && dmax == NULL) do_banded = TRUE;
+  if(dmin != NULL && dmax != NULL) do_banded = TRUE;
   else                             do_banded = FALSE;
 
   if(do_banded)
@@ -740,6 +742,7 @@ Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
   msa = esl_msa_Create(nseq, alen);
   msa->nseq = nseq;
   msa->alen = alen;
+  msa->abc  = abc;
 
   for (i = 0; i < nseq; i++)
     {

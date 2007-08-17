@@ -484,6 +484,7 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   for(i = 0; i < NFTHRMODES; i++) fthr_flags[i] = FALSE;
 
   if (feof(cmf->f) || esl_fgets(&buf, &n, cmf->f) != eslOK) return 0;
+  
   if (strncmp(buf, "INFERNAL-1", 10) != 0)                 goto FAILURE;
 
   /* Parse the header information
@@ -731,6 +732,9 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	  if (!is_integer(tok))                                      goto FAILURE;
 	  nd = atoi(tok);
 	  cm->ndtype[nd]  = x;
+	  if(cm->ndtype[nd] == MATP_nd) cm->clen+=2;
+	  else if(cm->ndtype[nd] == MATL_nd) cm->clen++;
+	  else if(cm->ndtype[nd] == MATR_nd) cm->clen++;
 	  cm->nodemap[nd] = v;
 
 	  if (esl_fgets(&buf, &n, cmf->f) != eslOK)              goto FAILURE;
@@ -807,7 +811,7 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 				  TRUE); /* Detach the states by setting trans probs into them as 0.0   */
 
   /* Success.
-   * Renormalize the CM, build the CP9 HMM and return.
+   * Renormalize the CM, and return.
    */
   CMRenormalize(cm);
 
