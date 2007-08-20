@@ -57,7 +57,7 @@ static ESL_OPTIONS options[] = {
   { "--elsilent",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      "-l",        NULL, "disallow local end (EL) emissions", 2 },
   /* Algorithm options */
   { "--cyk",     eslARG_NONE,"default",NULL, NULL,   ALGOPTS,      NULL,        NULL, "align with the CYK algorithm", 3 },
-  { "--hmmonly", eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,"--hbanded,--qdb", "align to a CM Plan 9 HMM with the Viterbi algorithm",3 },
+  { "--hmmonly", eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "align to a CM Plan 9 HMM with the Viterbi algorithm",3 },
   { "--inside",  eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,   "--cyk",        NULL, "don't align; return scores from the Inside algorithm", 3 },
   { "--outside", eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "don't align; return scores from the Outside algorithm", 3 },
   { "--post",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "align with CYK and append posterior probabilities", 3 },
@@ -67,8 +67,8 @@ static ESL_OPTIONS options[] = {
   { "--small",   eslARG_NONE,"default",  NULL, NULL,  MEMOPTS,      NULL, "--nosmall", "use divide and conquer (d&c) alignment algorithm", 4 },
   { "--nosmall", eslARG_NONE,   FALSE,  NULL, NULL,   MEMOPTS,      NULL,   "--small", "use normal alignment algorithm, not d&c", 4 },
   /* Banded alignment */
-  { "--nonbanded",eslARG_NONE,"default",NULL, NULL,   ACCOPTS,      NULL,       NULL, "do not use bands to accelerate aln algorithm", 5 },
-  { "--hbanded", eslARG_NONE,   FALSE,  NULL, NULL,"--nonbanded,--qdb,--small","--nosmall",NULL, "accelerate using CM plan 9 HMM banded CYK aln algorithm", 5 },
+  { "--nonbanded",eslARG_NONE,"default",NULL, NULL,  ACCOPTS,      NULL,        NULL, "do not use bands to accelerate aln algorithm", 5 },
+  { "--hbanded", eslARG_NONE,   FALSE,  NULL, NULL,  ACCOPTS,"--nosmall",       NULL, "accelerate using CM plan 9 HMM banded CYK aln algorithm", 5 },
   { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 5 },
   { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "realign (non-banded) seqs with HMM banded CYK score < 0 bits", 5 },
   { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use posterior sums during HMM band calculation (widens bands)", 5 },
@@ -366,8 +366,8 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 }
 
 /* serial_master()
- * The serial version of cmbuild.
- * For each MSA, build a CM and save it.
+ * The serial version of cmalign.
+ * Align each sequence to the CM.
  * 
  * A master can only return if it's successful. All errors are handled immediately and fatally with cm_Fail().
  */

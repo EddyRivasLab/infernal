@@ -742,7 +742,7 @@ Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
   msa = esl_msa_Create(nseq, alen);
   msa->nseq = nseq;
   msa->alen = alen;
-  msa->abc  = abc;
+  msa->abc  = (ESL_ALPHABET *) abc;
 
   for (i = 0; i < nseq; i++)
     {

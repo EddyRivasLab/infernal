@@ -8,6 +8,7 @@
  ***************************************************************** 
  */
 
+#include "esl_config.h"
 #include "config.h"
 
 #include <stdio.h>
@@ -15,599 +16,603 @@
 #include <string.h>
 #include <math.h>
 
-#include "squid.h"		/* general sequence analysis library    */
-#include "msa.h"                /* squid's multiple alignment i/o       */
-#include "stopwatch.h"          /* squid's process timing module        */
+#include "easel.h"
+#include "esl_alphabet.h"
+#include "esl_getopts.h"		
+#include "esl_msa.h"
+#include "esl_sqio.h"		
+#include "esl_stopwatch.h"
 
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
 #include "cm_dispatch.h"	/* alignment functions                   */
 
-void SummarizeAlignOptions(CM_t *cm);
+#define ALGOPTS  "--std,--qdb,--qdbsmall,--qdbboth,--hbanded,--hmmonly"  /* Exclusive choice for scoring algorithms */
 
-static char banner[] = "cmscore - score RNA covariance model against sequences";
-
-static char usage[]  = "\
-Usage: cmscore [-options] <cmfile> <sequence file>\n\
-  Most commonly used options are:\n\
-   -h     : help; print brief help on version and usage\n\
-   -i     : print individual timings & score comparisons, not just summary\n\
-";
-
-static char experts[] = "\
-  Expert options\n\
-   --local       : align locally w.r.t the model\n\
-   --sub         : build sub CM for columns b/t HMM predicted start/end points\n\
-   --regress <f> : save regression test data to file <f>\n\
-   --stringent   : require the two parse trees to be identical\n\
-   --trees       : print parsetrees\n\
-\n\
-  Expert stage 2 alignment options, to compare to stage 1 (D&C non-banded)\n\
-   --std         : compare divide and conquer versus standard CYK [default]\n\
-   --qdb         : compare non-banded d&c versus QDB standard CYK\n\
-   --qdbsmall    : compare non-banded d&c versus QDB d&c\n\
-   --qdbboth     : compare        QDB d&c versus QDB standard CYK\n\
-   --beta <x>    : set tail loss prob for QDB to <x> [default:1E-7]\n\
-   --hbanded     : compare non-banded d&c versus HMM banded CYK\n\
-   --tau <x>     : set tail loss prob for HMM bands to <x> [default: 1E-7]\n\
-   --hsafe       : realign (non-banded) seqs with HMM banded CYK score < 0 bits\n\
-   --hmmonly     : align with the CM Plan 9 HMM (only gives timings)\n\
-   --scoreonly   : for standard CYK stage, do only score, save memory\n\
-\n\
-  Expert stage 2-N alignment options, to compare to stage 1 (D&C non-banded)\n\
-  For --hbanded or --qdb, try multiple tau or beta values, all will = 10^-n\n\
-   --betas <n>   : set initial (stage 2) tail loss prob to 10^-(<x>) for qdb\n\
-   --betae <n>   : set final   (stage N) tail loss prob to 10^-(<x>) for qdb\n\
-   --taus <n>    : set initial (stage 2) tail loss prob to 10^-(<x>) for hmm\n\
-   --taue <n>    : set final   (stage N) tail loss prob to 10^-(<x>) for hmm\n\
-";
-
-static struct opt_s OPTIONS[] = {
-  { "-h", TRUE, sqdARG_NONE }, 
-  { "-i", TRUE, sqdARG_NONE }, 
-  { "--local",      FALSE, sqdARG_NONE },
-  { "--sub",        FALSE, sqdARG_NONE },
-  { "--regress",    FALSE, sqdARG_STRING },
-  { "--stringent",  FALSE, sqdARG_NONE },
-  { "--trees",      FALSE, sqdARG_NONE },
-  { "--std",        FALSE, sqdARG_NONE },
-  { "--qdb",        FALSE, sqdARG_NONE },
-  { "--qdbsmall",   FALSE, sqdARG_NONE },
-  { "--qdbboth",    FALSE, sqdARG_NONE },
-  { "--beta",       FALSE, sqdARG_FLOAT },
-  { "--hbanded",    FALSE, sqdARG_NONE },
-  { "--tau",        FALSE, sqdARG_FLOAT},
-  { "--hsafe",      FALSE, sqdARG_NONE},
-  /*{ "--sums",       FALSE, sqdARG_NONE },*/
-  { "--hmmonly",    FALSE, sqdARG_NONE },
-  { "--scoreonly",  FALSE, sqdARG_NONE },
-  { "--betas",      FALSE, sqdARG_INT },
-  { "--betae",      FALSE, sqdARG_INT },
-  { "--taus",       FALSE, sqdARG_INT },
-  { "--taue",       FALSE, sqdARG_INT }
+static ESL_OPTIONS options[] = {
+  /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
+  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
+  { "-l",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,     "--sub", "align locally w.r.t. the model",         1 },
+  { "-i",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "print individual timings & scores, not just summary", 1 },
+  { "-q",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "quiet; suppress verbose banner",         1 },
+  { "-1",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "use tabular output summary format, 1 line per sequence", 1 },
+#ifdef HAVE_MPI
+  { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "run as an MPI parallel program",                    1 },  
+#endif
+  /* Miscellaneous expert options */
+  { "--stringent",eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        NULL, "require the two parsetrees to be identical", 2 },
+  { "--sub",      eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        "-l", "build sub CM for columns b/t HMM predicted start/end points", 2 },
+  { "--zeroinserts",eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "set insert emission scores to 0", 2 },
+  { "--elsilent",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      "-l",        NULL, "disallow local end (EL) emissions", 2 },
+  /* Output options */
+  { "--regress", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test data to file <f>", 2 },
+  { "--tfile",   eslARG_OUTFILE,NULL,  NULL, NULL,      NULL,      NULL,        NULL, "dump parsetrees to file <f>",  2 },
+  /* Stage 2 algorithm options */
+  { "--std",     eslARG_NONE,"default",NULL, NULL,   ALGOPTS,      NULL,        NULL, "compare divide and conquer versus standard CYK", 3 },
+  { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "compare non-banded d&c versus QDB standard CYK", 3 },
+  { "--qdbsmall",eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "compare non-banded d&c versus QDB d&c", 3 },
+  { "--qdbboth", eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "compare        QDB d&c versus QDB standard CYK", 3},
+  { "--beta",    eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,      NULL,        NULL, "set tail loss prob for QDB to <x>", 5 },
+  { "--hbanded", eslARG_NONE,   FALSE,  NULL, NULL,  ALGOPTS,      NULL,        NULL, "accelerate using CM plan 9 HMM banded CYK aln algorithm", 5 },
+  { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 5 },
+  { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "realign (non-banded) seqs with HMM banded CYK score < 0 bits", 5 },
+  { "--hmmonly", eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "align to a CM Plan 9 HMM with the Viterbi algorithm",3 },
+  { "--scoreonly",eslARG_NONE,  FALSE, NULL, NULL,   ALGOPTS,   "--std",        NULL, "for standard CYK stage, do only score, save memory", 3 },
+  /* Options for testing multiple rounds of banded alignment, stage 2->N alignment */
+  { "--betas",   eslARG_INT,  NULL,    NULL, "0<x<50",   NULL, "--betae",       NULL, "set initial (stage 2) tail loss prob to 10E-<x> for QDB", 4 },
+  { "--betae",   eslARG_INT,  NULL,    NULL, "0<x<50",   NULL, "--betas",       NULL, "set final   (stage N) tail loss prob to 10E-<x> for QDB", 4 },
+  { "--taus",    eslARG_INT,  NULL,    NULL, "0<x<50",   NULL,"--hbanded,--taue",NULL,"set initial (stage 2) tail loss prob to 10E-<x> for HMM banding", 4 },
+  { "--taue",    eslARG_INT,  NULL,    NULL, "0<x<50",   NULL,"--hbanded,--taus",NULL,"set final   (stage N) tail loss prob to 10E-<x> for HMM banding", 4 },
+/* Other options */
+  { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,    NULL, "arrest after start: for debugging MPI under gdb",   10 },  
+  {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
-#define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
+
+/* struct cfg_s : "Global" application configuration shared by all threads/processes
+ * 
+ * This structure is passed to routines within main.c, as a means of semi-encapsulation
+ * of shared data amongst different parallel processes (threads or MPI processes).
+ * NOTE: MPI not yet implemented.
+ */
+struct cfg_s {
+  char         *cmfile;	        /* name of input CM file  */ 
+  char         *sqfile;	        /* name of sequence file  */ 
+  ESL_SQFILE   *sqfp;           /* open sequence input file stream */
+  int           fmt;		/* format code for seqfile */
+  ESL_ALPHABET *abc;		/* digital alphabet for input */
+  int           be_verbose;	/* one-line-per-seq summary */
+  int           nseq;           /* which number sequence this is in file (only valid in serial mode) */
+  CM_t         *cm;             /* the CM to align to */
+  int           nstages;        /* number of stages of alignment we'll do */
+  int           s;              /* which stage we're on [0..nstages-1], 0 = stage 1, 1 = stage 2 etc. */
+  double       *beta;           /* [0..nstages-1] beta for each stage, NULL if not doing QDB */
+  double       *tau;            /* [0..nstages-1] tau  for each stage, NULL if not doing HMM banding */
+  float        *s1_sc;          /* [0..cfg->nseq] scores for stage 1 parses, filled in 1st output_result() call*/
+  ESL_STOPWATCH *s1_w;          /* stopwatch for timing stage 1 */
+  ESL_STOPWATCH *w;             /* stopwatch for timing stages 2+ */
+
+  int           do_mpi;		/* TRUE if we're doing MPI parallelization */
+  int           nproc;		/* how many MPI processes, total */
+  int           my_rank;	/* who am I, in 0..nproc-1 */
+  int           do_stall;	/* TRUE to stall the program until gdb attaches */
+
+  /* Masters only (i/o streams) */
+  CMFILE       *cmfp;		/* open input CM file stream       */
+  FILE         *tracefp;	/* optional output for parsetrees  */
+  FILE         *regressfp;	/* optional output for regression test  */
+};
+
+static char usage[]  = "[-options] <cmfile> <sequence file>";
+static char banner[] = "score RNA covariance model against sequences";
+
+static int  init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
+/* static int  init_shared_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf); */
+
+static void  serial_master (const ESL_GETOPTS *go, struct cfg_s *cfg);
+#ifdef HAVE_MPI
+static void  mpi_master    (const ESL_GETOPTS *go, struct cfg_s *cfg);
+static void  mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
+#endif
+
+/* static int process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t ***opt_tr); */
+static int output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQ **sq, Parsetree_t **tr, CP9trace_t **cp9_tr);
+static int initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
+static int summarize_align_options(CM_t *cm);
 
 int
 main(int argc, char **argv)
 {
-  char          *cmfile;         /* file to read CM from                         */	
-  CMFILE        *cmfp;           /* open CM file for reading                     */
-  CM_t          *cm;             /* a covariance model                           */
-  char          *seqfile;        /* file to read sequences from                  */
-  ESL_SQFILE    *seqfp;          /* open seqfile for reading                     */
-  int            format;         /* format of sequence file                      */
-  int            status;         /* status of seqfp                              */
-  Stopwatch_t   *watch1;         /* for timing of stage 1 alignment              */
-  Stopwatch_t   *watch2;         /* for timing of stage 2 alignment              */
-  char          *regressfile;    /* name of regression data file to save         */
-  FILE          *regressfp;      /* open filehandle for writing regressions      */
-  char          *optname;        /* name of option found by Getopt()             */
-  char          *optarg;         /* argument found by Getopt()                   */
-  int            optind;         /* index in argv[]                              */
-  int            i;              /* counter over seqs                            */  
-
-  /* sequence and parsetree data structures                                      */
-  ESL_SQ       **s1_sq;          /* the target sequences to align                */
-  Parsetree_t  **s1_tr;          /* stage 1 parse trees for the sequences        */
-  int            s1_nseq;        /* number of target sequences                   */
-  float         *s1_sc;          /* scores from stage 1                          */
-  ESL_SQ       **s2_sq;          /* the target sequences to align                */
-  Parsetree_t  **s2_tr;          /* stage 2->N parse trees for the sequences     */
-  int            s2_nseq;        /* number of target sequences                   */
-  float         *s2_sc;          /* scores from stage 2->N                       */
-
-  /* general options */
-  int do_individuals;            /* TRUE to print individual scores/times        */
-  int do_local;		         /* TRUE to align locally w.r.t. model           */
-  int do_sub;		         /* TRUE to align to a sub CM                    */
-  int compare_stringently;	 /* TRUE to demand identical parse trees         */
-  int do_trees;		         /* TRUE to print parse trees to stdout          */
-
-  double         qdb_beta;	 /* tail loss probability for QDB                */
-  double        *qdb_beta_vec; 	 /* [1..nstages] qdb per stage (no stage 0)      */
-
-  /* Stage 1 options: alignment options for first alignment                      */
-  int            s1_do_qdb;      /* TRUE to do qdb CYK in stage 1                */
-  int            s1_do_small;    /* TRUE to do d&c in stage 1                    */
-
-  /* Stage 2->N options: alignment options for second thru Nth alignment         */
-  int            nstages;        /* Number of stages, default: 2                 */
-  int            s;              /* counter over stages                          */
-  int            do_s2;          /* TRUE to do stage 2 alignment at all          */
-  int            s2_set;         /* for finding incompatible options             */
-  int            s2_do_qdb;      /* TRUE to do qdb CYK in stage 2                */
-  int            s2_do_small;    /* TRUE to do qdb CYK in stage 2                */
-  int            s2_do_hbanded;  /* TRUE to do HMM banded CYK in stage 2         */
-  int            s2_do_hmmonly;  /* TRUE: stage 2 align with the HMM, not the CM */
-  int            s2_do_hsafe;    /* TRUE: stage 2 realign seqs with banded sc < 0*/
-  int            s2_do_scoreonly;/* TRUE for score-only (small mem) full CYK     */
-  double         tau;     	 /* tail loss probability for HMM banding        */
-  double        *tau_vec; 	 /* [1..nstages] tau per stage (no stage 0)      */
-  /*int            use_sums;*/       /* TRUE: use the posterior sums w/HMM bands     */
-
-  /* Special 'step-mode' options, allows different taus or betas to be tested 
-   * with a single cmscore call.                                                 */
-  int            do_step_beta;   /* TRUE to step through beta values             */
-  double         init_beta;      /* first beta value to use 10^-x for some x     */
-  int            init_beta_set;  /* TRUE if --betas set on command line          */
-  double         final_beta;     /* final beta value to use 10^-x for some x     */
-  int            final_beta_set; /* TRUE if --betae set on command line          */
-  int            do_step_tau;    /* TRUE to step through tau values              */
-  double         init_tau;       /* first tau value to use 10^-x for some x      */
-  int            init_tau_set;   /* TRUE if --taus set on command line           */
-  double         final_tau;      /* final tau value to use 10^-x for some x      */
-  int            final_tau_set;  /* TRUE if --taue set on command line           */
-
-  /* statistics we'll keep comparing stage 1 and stage 2 alignment               */
-  float          spdup;          /* stage 1 time elapsed / stage 2 time elapsed  */
-  int            diff_ct;        /* number of seqs w/ diff scores b/t stage 1&2  */ 
-  float          diff_sc;        /* total score difference b/t stage 1 and 2     */ 
+  ESL_GETOPTS     *go = NULL;   /* command line processing                     */
+  struct cfg_s     cfg;
 
   /*********************************************** 
    * Parse command line
    ***********************************************/
-  format              = SQFILE_UNKNOWN;
-  regressfile         = NULL;
-  do_individuals      = FALSE;
-  do_local            = FALSE;
-  do_sub              = FALSE;
-  compare_stringently = FALSE;
-  do_trees            = FALSE;
-  qdb_beta            = DEFAULT_BETA;
-  s1_do_qdb           = FALSE;
-  s1_do_small         = TRUE;
-  do_s2               = TRUE;
-  s2_do_qdb           = FALSE;
-  s2_do_small         = FALSE;
-  s2_do_hbanded       = FALSE;
-  s2_do_hmmonly       = FALSE;
-  s2_do_hsafe         = FALSE;
-  s2_set              = FALSE;
-  s2_do_scoreonly     = FALSE;
-  tau                 = DEFAULT_TAU;
-  /*use_sums            = FALSE;*/
-  do_step_beta        = FALSE;
-  init_beta           = 0.;
-  final_beta          = 0.;
-  init_beta_set       = FALSE;
-  final_beta_set      = FALSE;
-  do_step_tau         = FALSE;
-  init_tau_set        = FALSE;
-  final_tau_set       = FALSE;
-  init_tau            = 0.;     
-  final_tau           = 0.;     
-  
-  while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
-                &optind, &optname, &optarg))  {
-    if      (strcmp(optname, "-i")          == 0) do_individuals      = TRUE;
-    else if (strcmp(optname, "--local")     == 0) do_local            = TRUE;
-    else if (strcmp(optname, "--sub")       == 0) do_sub              = TRUE;
-    else if (strcmp(optname, "--regress")   == 0) regressfile         = optarg;
-    else if (strcmp(optname, "--stringent") == 0) compare_stringently = TRUE;
-    else if (strcmp(optname, "--trees")     == 0) do_trees            = TRUE;
-    else if (strcmp(optname, "--std")       == 0) { /* this is default */ }
-    else if (strcmp(optname, "--beta")      == 0) qdb_beta            = atof(optarg);
-    else if (strcmp(optname, "--tau")       == 0) tau                 = atof(optarg);
-    else if (strcmp(optname, "--hsafe")     == 0) s2_do_hsafe         = TRUE;
-    else if (strcmp(optname, "--betas")     == 0) 
-      { 
-	do_step_beta=TRUE; 
-	init_beta = atoi(optarg);
-	init_beta_set = TRUE;
-      }
-    else if (strcmp(optname, "--betae")     == 0) 
-      { 
-	do_step_beta=TRUE; 
-	final_beta = atoi(optarg);
-	final_beta_set = TRUE;
-      }
-    else if (strcmp(optname, "--taus")     == 0) 
-      { 
-	do_step_tau=TRUE; 
-	init_tau = atoi(optarg);
-	init_tau_set = TRUE;
-      }
-    else if (strcmp(optname, "--taue")     == 0) 
-      { 
-	do_step_tau=TRUE; 
-	final_tau = atoi(optarg);
-	final_tau_set = TRUE;
-      }
-    else if (strcmp(optname, "--qdb")       == 0) 
-      {
-	if(s2_set) Die("Please only pick one: --qdb, --qdbsmall, --qdbboth, --hbanded, --hmmonly --scoreonly\n");
-	s2_do_qdb = TRUE;
-	s2_do_small = FALSE;
-	s2_set = TRUE;
-      }
-    else if (strcmp(optname, "--qdbsmall")     == 0) 
-      {
-	if(s2_set) Die("Please only pick one: --qdb, --qdbsmall, --qdbboth, --hbanded, --hmmonly --scoreonly\n");
-	s2_do_qdb = TRUE;
-	s2_do_small = FALSE;
-	s2_set = TRUE;
-      }
-    else if (strcmp(optname, "--qdbboth")     == 0) 
-      {
-	if(s2_set) Die("Please only pick one: --qdb, --qdbsmall, --qdbboth, --hbanded, --hmmonly --scoreonly\n");
-	s1_do_qdb = s2_do_qdb = TRUE;
-	s2_set = TRUE;
-      }
-    else if (strcmp(optname, "--hbanded")     == 0) 
-      {
-	if(s2_set) Die("Please only pick one: --qdb, --qdbsmall, --qdbboth, --hbanded, --hmmonly --scoreonly\n");
-	s2_do_hbanded = TRUE;
-	s2_set = TRUE;
-      }
-    else if (strcmp(optname, "--hmmonly")     == 0) 
-      {
-	if(s2_set) Die("Please only pick one: --qdb, --qdbsmall, --qdbboth, --hbanded, --hmmonly, --scoreonly\n");
-	s2_do_hmmonly = TRUE;
-	s2_set = TRUE;
-      }
-    else if (strcmp(optname, "--scoreonly")     == 0) 
-      {
-	if(s2_set) Die("Please only pick one: --qdb, --qdbsmall, --qdbboth, --hbanded, --hmmonly, --scoreonly\n");
-	s2_do_scoreonly = TRUE;
-	s2_do_small = FALSE;
-	s2_set = TRUE;
-      }
-    else if (strcmp(optname, "-h") == 0) {
-      MainBanner(stdout, banner);
-      puts(usage);
-      puts(experts);
-      exit(EXIT_SUCCESS);
-    }
-  }
-  /* Check for incompatible or misused options */
-  if(do_sub && do_local)
-    Die("--sub and --local combination not supported.\n");
-  if (s2_do_hsafe && !s2_do_hbanded)
-    Die("--hsafe only makes sense with --hbanded\n%s", usage);
-  if(do_step_beta && ( (!init_beta_set) || (!final_beta_set)))
-    Die("--betas and --betae only make sense if they're both enabled\n%s", usage);
-  if(do_step_tau && ( (!init_tau_set) || (!final_tau_set)))
-    Die("--taus and --taue only make sense if they're both enabled\n%s", usage);
-  if(do_step_beta && (init_beta >= final_beta))
-    Die("--betas argument must be LOWER than --betae argument\n%s", usage);
-  if(do_step_tau && (init_tau >= final_tau))
-    Die("--taus argument must be LOWER than --taue argument\n%s", usage);
-  if(do_step_tau && do_step_beta)
-    Die("--betas --betae combo is exclusive of --taus --taue combo\n%s", usage);
-  if(do_step_tau && (!s2_do_hbanded))
-    Die("--taus --taue combo only makes sense with --hbanded\n%s", usage);
-  if(do_step_beta && (!s2_do_qdb))
-    Die("--betas --betae combo only makes sense with --qdb\n%s", usage);
 
-  if(do_step_beta)
-    nstages = final_beta - init_beta + 2;
-  else if(do_step_tau)
-    nstages = final_tau - init_tau + 2;
-  else
-    nstages = 2;
-  /* Set up qdb_beta_vec and tau_vec defaults as:
-   * qdb_beta_vec[0] = -1 (dummy value)
-   * tau_vec[0]   = -1 (dummy value)
-   * qdb_beta_vec[1..nstages] = qdb_beta
-   * tau_vec[1..nstages]   = tau
-   *
-   * If either (--taus & --taue) or (--betas & --betae) were set:
-   *    we have to recalculate one or the other vector based on those 
-   *    arguments, 
+  /* Process command line options.
    */
-  qdb_beta_vec = MallocOrDie(sizeof(double) * (nstages+1));
-  tau_vec      = MallocOrDie(sizeof(double) * (nstages+1));
-  qdb_beta_vec[0] = -1.; /* dummy value no stage 0 */
-  tau_vec[0]   = -1.; /* dummy value no stage 0 */
-  for(s = 1; s <= nstages; s++)
+  go = esl_getopts_Create(options);
+  if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK || 
+      esl_opt_VerifyConfig(go)               != eslOK)
     {
-      qdb_beta_vec[s] = qdb_beta;
-      tau_vec[s]   = tau;
+      printf("Failed to parse command line: %s\n", go->errbuf);
+      esl_usage(stdout, argv[0], usage);
+      printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
+      exit(1);
     }
-  if(do_step_beta)
+  if (esl_opt_GetBoolean(go, "-h") == TRUE) 
     {
-      if(init_beta == 0 || final_beta == 0) /* this shouldn't be, but we check */
-	Die("ERROR do_step_beta, but init_beta and final_beta not both non-zero\n");
-      qdb_beta_vec[0] = -1.; /* dummy value no stage 0 */
-      qdb_beta_vec[1] = 0.; /* this won't matter b/c stage 1 is non-qdb */
-      qdb_beta_vec[2] = epnEXP10(-1. * init_beta);
-      for(s = 3; s <= nstages; s++)
-	qdb_beta_vec[s] = qdb_beta_vec[(s-1)] / 10.;
+      cm_banner(stdout, argv[0], banner);
+      esl_usage(stdout, argv[0], usage);
+      puts("\nwhere general options are:");
+      esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
+      puts("\nexpert miscellaneous options:");
+      esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
+      puts("\noutput options are:");
+      esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
+      puts("\nstage 2 alignment options, to compare to stage 1 (D&C non-banded), are:");
+      esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
+      puts("\noptions for testing multiple tau/beta values for --hbanded/--qdb:");
+      esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
+      exit(0);
     }
-  if(do_step_tau)
-    { 
-      if(init_tau == 0 || final_tau == 0) /* this shouldn't be, but we check */
-	Die("ERROR do_step_tau, but init_tau and final_tau not both non-zero\n");
-      tau_vec[0] = -1.; /* dummy value no stage 0 */
-      tau_vec[1] = 0.; /* this won't matter b/c stage 1 is non-qdb */
-      tau_vec[2] = epnEXP10(-1. * init_tau);
-      for(s = 3; s <= nstages; s++)
-	tau_vec[s] = tau_vec[(s-1)] / 10.;
+  if (esl_opt_ArgNumber(go) != 2) 
+    {
+      puts("Incorrect number of command line arguments.");
+      esl_usage(stdout, argv[0], usage);
+      puts("\n  where basic options are:");
+      esl_opt_DisplayHelp(stdout, go, 1, 2, 80);
+      printf("\nTo see more help on other available options, do %s -h\n\n", argv[0]);
+      exit(1);
+    }
+  /* Check for incompatible option combinations I don't know how to disallow
+   * with esl_getopts */
+  if ((! esl_opt_IsDefault(go, "--betas")) && (! esl_opt_IsDefault(go, "--betae")))
+    if(! ((esl_opt_GetBoolean(go, "--qdb")) || (esl_opt_GetBoolean(go, "--qdbsmall")) || 
+	  (esl_opt_GetBoolean(go, "--qdbboth")))) 
+      {
+	printf("Error parsing options, --betas and --betae combination require either --qdb, --qdbsmall, or --qdbboth.\n");
+	exit(1);
+      }
+
+  /* Initialize what we can in the config structure (without knowing the input alphabet yet).
+   */
+  cfg.cmfile     = esl_opt_GetArg(go, 1); 
+  cfg.sqfile     = esl_opt_GetArg(go, 2); 
+  cfg.sqfp       = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
+  cfg.fmt        = eslSQFILE_UNKNOWN;      /* autodetect sequence file format by default. */ 
+  cfg.abc        = NULL;	           /* created in init_master_cfg() in masters, or in mpi_worker() in workers */
+  if (esl_opt_GetBoolean(go, "-1")) cfg.be_verbose = FALSE;        
+  else                              cfg.be_verbose = TRUE;        
+  cfg.cmfp       = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
+  cfg.tracefp    = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
+  cfg.regressfp  = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
+  cfg.nseq       = 0;		           /* this counter is incremented in masters */
+  cfg.cm         = NULL;                   /* created in init_master_cfg() in masters, or in mpi_worker() in workers */
+  cfg.nstages    = 0;                      /* set in init_master_cfg() in masters, stays 0 for workers */
+  cfg.s          = 0;                      /* initialized to 0 in init_master_cfg() in masters, stays 0 for workers */
+  cfg.beta       = NULL;                   /* alloc'ed and filled in init_master_cfg() in masters, stays NULL in workers */
+  cfg.tau        = NULL;                   /* alloc'ed and filled in init_master_cfg() in masters, stays NULL in workers */
+  cfg.s1_sc      = NULL;                   /* alloc'ed and filled in first call to output_result() in masters, stays NULL in workers */
+  cfg.s1_w       = NULL;                   /* created in init_master_cfg in masters, stays NULL in workers */
+  cfg.w          = NULL;                   /* created in init_master_cfg in masters, stays NULL in workers */
+
+
+  cfg.do_mpi     = FALSE;	           /* this gets reset below, if we init MPI */
+  cfg.nproc      = 0;		           /* this gets reset below, if we init MPI */
+  cfg.my_rank    = 0;		           /* this gets reset below, if we init MPI */
+  cfg.do_stall   = esl_opt_GetBoolean(go, "--stall");
+
+  /* This is our stall point, if we need to wait until we get a
+   * debugger attached to this process for debugging (especially
+   * useful for MPI):
+   */
+  while (cfg.do_stall); 
+
+  /* Figure out who we are, and send control there: 
+   * we might be an MPI master, an MPI worker, or a serial program.
+   */
+#ifdef HAVE_MPI
+  if (esl_opt_GetBoolean(go, "--mpi")) 
+    {
+      cfg.do_mpi     = TRUE;
+      cfg.be_verbose = FALSE;
+      MPI_Init(&argc, &argv);
+      MPI_Comm_rank(MPI_COMM_WORLD, &(cfg.my_rank));
+      MPI_Comm_size(MPI_COMM_WORLD, &(cfg.nproc));
+
+      if (cfg.my_rank > 0)  mpi_worker(go, &cfg);
+      else 		    mpi_master(go, &cfg);
+
+      esl_stopwatch_Stop(w);
+      esl_stopwatch_MPIReduce(w, 0, MPI_COMM_WORLD);
+      MPI_Finalize();
+    }
+  else
+#endif /*HAVE_MPI*/
+    {
+      serial_master(go, &cfg);
     }
 
-  if (argc - optind != 2) Die("Incorrect number of arguments.\n%s\n", usage);
-  cmfile = argv[optind++];
-  seqfile = argv[optind++]; 
-  
-  /*****************************************************************
-   * General strategy:
-   * 1. Stage 1: 
-   *    - Read in CM
-   *    - Align all seqs using stage 1 alignment options
-   *    - Free CM
-   * 2. Stage s=2..N (usually N=2 unless in 'step' mode,
-   *                  in which we step through beta or tau)
-   *    - Read in CM
-   *    - Align all seqs using stage s alignment options
-   *    - Free CM
-   * 3. Compare parsetrees from stage 1 and stage 2->N.
-   * 4. Print statistics comparing stage 1 and stage 2->N.
-   *****************************************************************/
+  /* Clean up the shared cfg. 
+   */
+  if (cfg.my_rank == 0) {
+    if (cfg.sqfp      != NULL) esl_sqfile_Close(cfg.sqfp);
+    if (cfg.tracefp   != NULL) fclose(cfg.tracefp);
+    if (cfg.regressfp != NULL) fclose(cfg.regressfp);
+    if (cfg.s1_sc     != NULL) free(cfg.s1_sc);
+  }
+  if (cfg.cm        != NULL) FreeCM(cfg.cm);
+  if (cfg.abc       != NULL) esl_alphabet_Destroy(cfg.abc);
+  if (cfg.beta      != NULL) free(cfg.beta);
+  if (cfg.tau       != NULL) free(cfg.tau);
+  if (cfg.s1_w      != NULL) esl_stopwatch_Destroy(cfg.s1_w);
+  if (cfg.w         != NULL) esl_stopwatch_Destroy(cfg.w);
+  esl_getopts_Destroy(go);
+  return 0;
+}
 
-  /*****************************************************************
-   * Input the CM for stage 1 alignment (we configure it with ConfigCM() later).
-   *****************************************************************/
+/* init_master_cfg()
+ * Called by masters, mpi or serial.
+ * Already set:
+ *    cfg->cmfile      - command line arg 1
+ *    cfg->sqfile      - command line arg 2
+ *    cfg->fmt         - format of output file
+ * Sets: 
+ *    cfg->sqfp        - open sequence file                
+ *    cfg->cmfp        - open CM file                
+ *    cfg->abc         - digital input alphabet
+ *    cfg->tracefp     - optional output file
+ *    cfg->regressfp   - optional output file
+ *    cfg->nstages     - number of alignment stages
+ *    cfg->beta        - beta values for each stage
+ *    cfg->tau         - tau values for each stage
+ *    cfg->s1_w        - stopwatch for timing stage 1
+ *    cfg->w           - stopwatch for timing stage 2+
+ *                   
+ * Errors in the MPI master here are considered to be "recoverable",
+ * in the sense that we'll try to delay output of the error message
+ * until we've cleanly shut down the worker processes. Therefore
+ * errors return (code, errbuf) by the ESL_FAIL mech.
+ */
+static int
+init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
+{
+  int status;
+  CMFILE *cmfp; 
+  char *cmfile;
 
+  cmfile = esl_opt_GetArg(go, 1);
+
+  /* open input sequence file */
+  status = esl_sqfile_Open(cfg->sqfile, cfg->fmt, NULL, &(cfg->sqfp));
+  if (status == eslENOTFOUND)    ESL_FAIL(status, errbuf, "File %s doesn't exist or is not readable\n", cfg->sqfile);
+  else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "Couldn't determine format of sequence file %s\n", cfg->sqfile);
+  else if (status == eslEINVAL)  ESL_FAIL(status, errbuf, "Can’t autodetect stdin or .gz."); 
+  else if (status != eslOK)      ESL_FAIL(status, errbuf, "Sequence file open failed with error %d\n", status);
+  cfg->fmt = cfg->sqfp->format;
+
+  /* open CM file and read (only) the first CM in it. */
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
-    Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
-  if (! CMFileRead(cmfp, NULL, &cm))
-    Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
-  if (cm == NULL) 
-    Die("%s empty?\n", cmfile);
+    ESL_FAIL(eslFAIL, NULL, "Failed to open covariance model save file %s\n", cmfile);
+  if(!CMFileRead(cmfp, &(cfg->abc), &(cfg->cm)))
+    ESL_FAIL(eslFAIL, NULL, "Failed to read a CM from %s -- file corrupt?\n", cmfile);
+  if (cfg->cm == NULL) ESL_FAIL(eslFAIL, NULL, "Failed to read a CM from %s -- file empty?\n", cmfile);
   CMFileClose(cmfp);
 
-  cm->beta   = qdb_beta_vec[1]; /* this will be DEFAULT_BETA unless changed at command line */
-  cm->tau    = tau_vec[1];      /* this will be DEFAULT_TAU unless changed at command line */
-
-  /*****************************************************************
-   * Open the target sequence file
-   *****************************************************************/
-  status = esl_sqfile_Open(seqfile, format, NULL, &seqfp);
-  if (status == eslENOTFOUND) esl_fatal("No such file."); 
-  else if (status == eslEFORMAT) esl_fatal("Format unrecognized."); 
-  else if (status == eslEINVAL) esl_fatal("Can’t autodetect stdin or .gz."); 
-  else if (status != eslOK) esl_fatal("Failed to open sequence database file, code %d.", status); 
-
-				/* open regression test data file */
-  if (regressfile != NULL) {
-    if ((regressfp = fopen(regressfile, "w")) == NULL)
-      Die("Failed to open regression test file %s", regressfile);
-  }
-
-  /*********************************************** 
-   * Show the banner
-   ***********************************************/
-
-  MainBanner(stdout, banner);
-  printf(   "CM file:              %s\n", cmfile);
-  printf(   "Sequence file:        %s\n", seqfile);
-  printf("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n\n");
-
-
-  /****************************************************************************
-   * Do the work: read in seqs and align them twice. 
-   ****************************************************************************/
-
-  watch1 = StopwatchCreate(); 
-  StopwatchZero(watch1);
-  StopwatchStart(watch1);
-  /* Configure the CM for stage 1 alignment */
-  /* Update cm->config_opts and cm->align_opts based on command line options */
-  /* enable option to check parsetree score against the alignment score */
-  cm->align_opts  |= CM_ALIGN_CHECKPARSESC;
-  if (do_individuals) cm->align_opts  |= CM_ALIGN_TIME;
-  if (do_trees)       cm->align_opts  |= CM_ALIGN_PRINTTREES;
-  if (do_local)    
-    {
-      cm->config_opts |= CM_CONFIG_LOCAL;
-      cm->config_opts |= CM_CONFIG_HMMLOCAL;
-    }
-  if (do_sub)
-    {
-      cm->align_opts |= CM_ALIGN_SUB;
-      cm->align_opts &= ~CM_ALIGN_CHECKPARSESC; /* parsetree sc != aln sc in sub mode */
+  /* optionally, open trace file */
+  if (esl_opt_GetString(go, "--tfile") != NULL) {
+    if ((cfg->tracefp = fopen(esl_opt_GetString(go, "--tfile"), "w")) == NULL) 
+	ESL_FAIL(eslFAIL, errbuf, "Failed to open --tfile output file %s\n", esl_opt_GetString(go, "--tfile"));
     }
 
-  if(s1_do_qdb)          
-    { 
-      cm->align_opts  |= CM_ALIGN_QDB;
-      cm->config_opts |= CM_CONFIG_QDB;
+  /* optionally, open regression file */
+  if (esl_opt_GetString(go, "--regress") != NULL) {
+    if ((cfg->regressfp = fopen(esl_opt_GetString(go, "-o"), "w")) == NULL) 
+	ESL_FAIL(eslFAIL, errbuf, "Failed to open --regress output file %s\n", esl_opt_GetString(go, "--regress"));
     }
-  if(!s1_do_small) cm->align_opts |= CM_ALIGN_NOSMALL;
 
-  ConfigCM(cm, NULL, NULL);
-
-  printf("Stage 1 alignment:\n");
-  SummarizeAlignOptions(cm);
-  printf("\n");
-  serial_align_targets(seqfp, cm, &s1_sq, &s1_tr, NULL, NULL, &s1_nseq, 0, 0, 
-		       (!do_individuals));
-  StopwatchStop(watch1);
-  esl_sqfile_Close(seqfp);
-
-  /* Collect scores */
-  s1_sc = MallocOrDie(sizeof (float) * s1_nseq);
-  for(i = 0; i < s1_nseq; i++)
-    s1_sc[i] = ParsetreeScore(cm, s1_tr[i], s1_sq[i]->dsq, FALSE);
-
-  FreeCM(cm);
-  watch2 = StopwatchCreate(); 
-  for(s = 2; s <= nstages; s++)
+  /* determine the number of stages and beta and tau values for each stage */
+  cfg->beta = NULL;
+  cfg->tau  = NULL;
+  int s;
+  if((! (esl_opt_IsDefault(go, "--betas"))) && (! (esl_opt_IsDefault(go, "--betae"))))
     {
-      /*****************************************************************
-       * Input the CM for stage s alignment (we configure it with ConfigCM() later).
-       *****************************************************************/
-      
-      if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
-	Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
-      if (! CMFileRead(cmfp, NULL, &cm))
-	Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
-      if (cm == NULL) 
-	Die("%s empty?\n", cmfile);
-      CMFileClose(cmfp);
-      
-      StopwatchZero(watch2);
-      StopwatchStart(watch2);
-      
-      cm->beta   = qdb_beta_vec[s]; /* this will be DEFAULT_BETA unless changed at command line */
-      cm->tau    = tau_vec[s];      /* this will be DEFAULT_TAU unless changed at command line */
+      cfg->nstages = esl_opt_GetInteger(go, "--betae") - esl_opt_GetInteger(go, "--betas") + 2;
+      ESL_ALLOC(cfg->beta, sizeof(double) * cfg->nstages);
+      cfg->beta[0] = 0.; /* this won't matter b/c stage 1 is non-QDB */
+      cfg->beta[1] = pow(10., (-1. * esl_opt_GetReal(go, "--betas")));
+      for(s = 2; s < cfg->nstages; s++)
+	cfg->beta[s] = cfg->beta[(s-1)] / 10.;
+    }
+  else if((! (esl_opt_IsDefault(go, "--taus"))) && (! (esl_opt_IsDefault(go, "--taue"))))
+    {
+      cfg->nstages = esl_opt_GetInteger(go, "--taue") - esl_opt_GetInteger(go, "--taus") + 2;
+      ESL_ALLOC(cfg->tau, sizeof(double) * cfg->nstages);
+      cfg->tau[1] = pow(10., (-1. * esl_opt_GetReal(go, "--taus")));
+      for(s = 2; s < cfg->nstages; s++)
+	cfg->tau[s] = cfg->tau[(s-1)] / 10.;
+    }
+  else
+    {
+      cfg->nstages = 2;
+      if(esl_opt_GetBoolean(go, "--qdb") || esl_opt_GetBoolean(go, "--qdbsmall") || esl_opt_GetBoolean(go, "--qdbboth"))
+	{
+	  ESL_ALLOC(cfg->beta, sizeof(double) * cfg->nstages);
+	  if(esl_opt_GetBoolean(go, "--qdbboth")) cfg->beta[0] = esl_opt_GetReal(go, "--beta");
+	  else cfg->beta[0] = 0.; /* this won't matter b/c stage 1 is non-QDB */
+	  cfg->beta[1] = esl_opt_GetReal(go, "--beta");
+	}
+      else if(esl_opt_GetBoolean(go, "--hbanded"))
+	{
+	  ESL_ALLOC(cfg->tau, sizeof(double) * cfg->nstages);
+	  cfg->tau[0] = 0.; /* this won't matter b/c stage 1 is non-banded */
+	  cfg->tau[1] = esl_opt_GetReal(go, "--tau");
+	}
+    }  
+  cfg->s1_sc = NULL; /* alloc'ed and filled in first call of output_result */
+  cfg->s1_w  = esl_stopwatch_Create();
+  cfg->w     = esl_stopwatch_Create();
+  return eslOK;
 
-      /* Reopen the sequence file, we'll wastefully reread the seqs. */
-      status = esl_sqfile_Open(seqfile, format, NULL, &seqfp);
-      if (status == eslENOTFOUND) esl_fatal("No such file."); 
-      else if (status == eslEFORMAT) esl_fatal("Format unrecognized."); 
-      else if (status == eslEINVAL) esl_fatal("Can’t autodetect stdin or .gz."); 
-      else if (status != eslOK) esl_fatal("Failed to open sequence database file, code %d.", status); 
+ ERROR:
+  return status;
+}
+/* serial_master()
+ * The serial version of cmscore.
+ * Score each sequence against the CM with specified
+ * scoring algorithms.
+ * 
+ * A master can only return if it's successful. All errors are handled immediately and fatally with cm_Fail().
+ */
+static void
+serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
+{
+  int      status;
+  char     errbuf[eslERRBUFSIZE];
+  ESL_SQ **sq;
+  int       i;
+  Parsetree_t    **tr;          /* parse trees for the sequences for stage 2 -> nstages */
+  CP9trace_t     **cp9_tr;      /* CP9 traces for the sequences for stage 2 -> nstages */
+
   
-      /* Configure the CM for stage 2 alignment */
-      /* enable option to check parsetree score against the alignment score */
-      cm->align_opts  |= CM_ALIGN_CHECKPARSESC;
-      if (do_individuals) cm->align_opts  |= CM_ALIGN_TIME;
-      if (do_trees)       cm->align_opts  |= CM_ALIGN_PRINTTREES;
-      if (do_local)
-	{
-	  cm->config_opts |= CM_CONFIG_LOCAL;
-	  cm->config_opts |= CM_CONFIG_HMMLOCAL;
-	}
-      if (!s2_do_small)   cm->align_opts  |= CM_ALIGN_NOSMALL;
-      if (s2_do_hbanded)  cm->align_opts  |= CM_ALIGN_HBANDED;
-      /*if (use_sums)       cm->align_opts  |= CM_ALIGN_SUMS;*/
-      if (s2_do_hmmonly)  cm->align_opts  |= CM_ALIGN_HMMONLY;
-      if (s2_do_hsafe)    cm->align_opts  |= CM_ALIGN_HMMSAFE;
-      if (s2_do_scoreonly) cm->align_opts |= CM_ALIGN_SCOREONLY;
-      if (do_sub)
-	{
-	  cm->align_opts |= CM_ALIGN_SUB;
-	  cm->align_opts &= ~CM_ALIGN_CHECKPARSESC; /* parsetree sc != aln sc in sub mode */
-	}
-      if(s2_do_qdb)          
-	{ 
-	  cm->align_opts  |= CM_ALIGN_QDB;
-	  cm->config_opts |= CM_CONFIG_QDB;
-	}
-      
-      ConfigCM(cm, NULL, NULL);
-      printf("Stage %d alignment:\n", s);
-      SummarizeAlignOptions(cm);
-      serial_align_targets(seqfp, cm, &s2_sq, &s2_tr, NULL, NULL, &s2_nseq, 0, 0, 
-			   (!do_individuals));
-      StopwatchStop(watch2);
-      esl_sqfile_Close(seqfp);
-    
-      if(s1_nseq != s2_nseq) Die("ERROR, in stage 1, aligned %d seqs, in stage %d, aligned %d seqs (should be equal).\n", s1_nseq, s2_nseq, s);
+  if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
+  /* init_shared_cfg UNNEC? */
+  /*if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);*/
 
+  /* Align sequences cfg->nstages times */
+  for(cfg->s = 0; cfg->s < cfg->nstages; cfg->s++) 
+    {
+      /* Start timing. */
+      if(cfg->s == 0) esl_stopwatch_Start(cfg->s1_w);
+      else            esl_stopwatch_Start(cfg->w);
+
+      /* initialize the flags/options/params of the CM for the current stage */
+      initialize_cm(go, cfg, errbuf);
+      /* Configure the CM for alignment based on cm->config_opts and cm->align_opts.
+       * set local mode, make cp9 HMM, calculate QD bands etc. */
+      ConfigCM(cfg->cm, NULL, NULL);
+      /* Align the sequences for this stage, there's no 'process_workunit() function' 
+       * but rather different functions for serial/mpi */ 
+      if(cfg->s == 0 || (! (esl_opt_GetBoolean(go, "--hmmonly"))))
+	{
+	  serial_align_targets(cfg->sqfp, cfg->cm, &sq, &tr, NULL, NULL, &cfg->nseq, 
+			       0, 0, esl_opt_GetBoolean(go, "-q"));
+	  /* stop timing */
+	  if(cfg->s == 0) esl_stopwatch_Stop(cfg->s1_w);
+	  else            esl_stopwatch_Stop(cfg->w);
+	  if ((status = output_result(go, cfg, errbuf, sq, tr, NULL))        != eslOK) cm_Fail(errbuf);
+	}
+      else /* hmm alignment */
+	{
+	  serial_align_targets(cfg->sqfp, cfg->cm, &sq, NULL, NULL, &cp9_tr,    &cfg->nseq,
+			       0, 0, esl_opt_GetBoolean(go, "-q"));
+	  /* stop timing */
+	  if(cfg->s == 0) esl_stopwatch_Stop(cfg->s1_w);
+	  else            esl_stopwatch_Stop(cfg->w);
+	  if ((status = output_result(go, cfg, errbuf, sq, NULL, cp9_tr))        != eslOK) cm_Fail(errbuf);
+	}
+
+      /* free sequences, we wastefully read them in separately (within serial_align_targets()) for each stage */
+      for (i = 0; i < cfg->nseq; i++) esl_sq_Destroy(sq[i]);
+      free(sq);
+      /* if not the first stage, clean up parses */
+      if(cfg->s > 0) {
+	if(! (esl_opt_GetBoolean(go, "--hmmonly"))) {
+	  for (i = 0; i < cfg->nseq; i++) FreeParsetree(tr[i]);
+	  free(tr);
+	}
+	else {
+	  for (i = 0; i < cfg->nseq; i++) CP9FreeTrace(cp9_tr[i]);
+	  free(cp9_tr);
+	}
+      }
+    }
+}
+
+
+static int
+output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQ **sq, Parsetree_t **tr, CP9trace_t **cp9_tr)
+{
+  int status;
+  int i;
+
+  /* print the parsetrees to regression file or parse file */
+  for(i = 0; i < cfg->nseq; i++)
+    {
+      for(i = 0; i < cfg->nseq; i++)
+	{
+	  if (cfg->regressfp != NULL) 
+	    {
+	      fprintf(cfg->regressfp, "> %s\n", sq[i]->name);
+	      if(esl_opt_GetBoolean(go,"--hmmonly")) 
+		{
+		  fprintf(cfg->regressfp, "  SCORE : %.2f bits\n", CP9TraceScore(cfg->cm->cp9, sq[i], cp9_tr[i]));
+		  CP9PrintTrace(cfg->regressfp, cp9_tr[i], cfg->cm->cp9, sq[i]);
+		}
+	      else
+		{
+		  fprintf(cfg->regressfp, "  SCORE : %.2f bits\n", ParsetreeScore(cfg->cm, tr[i], sq[i], FALSE));
+		  ParsetreeDump(cfg->regressfp, tr[i], cfg->cm, sq[i], NULL, NULL); /* NULLs are dmin, dmax */
+		}
+	      fprintf(cfg->regressfp, "//\n");
+	    }
+	  if (cfg->tracefp   != NULL) 
+	    {
+	      fprintf(cfg->tracefp, "> %s\n", sq[i]->name);
+	      if(esl_opt_GetBoolean(go,"--hmmonly")) 
+		{
+		  fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", CP9TraceScore(cfg->cm->cp9, sq[i], cp9_tr[i]));
+		  CP9PrintTrace(cfg->tracefp, cp9_tr[i], cfg->cm->cp9, sq[i]);
+		}
+	      else
+		{
+		  fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", ParsetreeScore(cfg->cm, tr[i], sq[i], FALSE));
+		  ParsetreeDump(cfg->tracefp, tr[i], cfg->cm, sq[i], NULL, NULL); /* NULLs are dmin, dmax */
+		}
+	      fprintf(cfg->tracefp, "//\n");
+	    }
+	}
+    }
+
+  /* print info about scores of parsetrees */
+  if(cfg->s == 0) /* store the scores, only */
+    {
+      ESL_ALLOC(cfg->s1_sc, sizeof(float) * cfg->nseq);
+      for(i = 0; i < cfg->nseq; i++)
+	cfg->s1_sc[i] = ParsetreeScore(cfg->cm, tr[i], sq[i], FALSE);
+    }
+  else /* if(cfg->s > 0) we don't do the comparison test for stage 0 */
+    {
       /* Compare parsetrees from stage 1 and stage s (current stage) and collect stats */
-      s2_sc = MallocOrDie(sizeof (float) * s2_nseq);
+      int   *sc;           /* parse scores for current stage of alignment */
+      double diff_sc = 0.; /* difference in summed parse scores for this stage versus stage 1 */
+      int    diff_ct = 0.; /* number of parses different between this stage and stage 1 */
+      double spdup;        /* speed-up versus stage 1 */
 
-      diff_sc = 0.;
-      diff_ct = 0;
-      for(i = 0; i < s1_nseq; i++)
+      ESL_ALLOC(sc, (sizeof (float) * cfg->nseq));
+      for(i = 0; i < cfg->nseq; i++)
 	{
 	  /* TO DO: write function that in actually_align_targets(), takes
 	   * a CP9 parse, and converts it to a CM parsetree */
-	  if(!s2_do_hmmonly && !s2_do_scoreonly)
-	    s2_sc[i] = ParsetreeScore(cm, s2_tr[i], s2_sq[i]->dsq, FALSE);
+	  if((! esl_opt_GetBoolean(go, "--hmmonly")) && (! esl_opt_GetBoolean(go, "--scoreonly")))
+	    sc[i] = ParsetreeScore(cfg->cm, tr[i], sq[i], FALSE);
 	  else
-	    s2_sc[i] = 0.;
-	  if(do_individuals)
-	    printf("%-12s S1: %.3f S2: %.3f diff: %.3f\n", s1_sq[i]->name, s1_sc[i], s2_sc[i], fabs(s1_sc[i]-s2_sc[i]));
-	  if(fabs(s1_sc[i] -  s2_sc[i]) > 0.0001)
+	    sc[i] = 0.;
+	  if(esl_opt_GetBoolean(go, "-i"))
+	    printf("%-12s S1: %.3f S*: %.3f diff: %.3f\n", sq[i]->name, cfg->s1_sc[i], sc[i], (fabs(cfg->s1_sc[i] - sc[i])));
+	  if(fabs(cfg->s1_sc[i] -  sc[i]) > 0.0001)
 	    {
 	      diff_ct++;
-	      diff_sc += fabs(s1_sc[i] - s2_sc[i]);
-	    }
-	  if (regressfile != NULL) 
-	    {
-	      ParsetreeDump(regressfp, s1_tr[i], cm, s1_sq[i]->dsq);
-	      ParsetreeDump(regressfp, s2_tr[i], cm, s2_sq[i]->dsq);
+	      diff_sc += fabs(cfg->s1_sc[i] - sc[i]);
 	    }
 	}
-      /* Print summary for this stage */ 
-
-      printf("Results summary for stage %d:\n", s);
+      /* Print summary for this stage versus stage 1 */ 
+      printf("Results summary for stage %d:\n", cfg->s);
       printf("---------------------------------\n");
-      printf("Number seqs aligned:     %d\n", s1_nseq);
-      StopwatchDisplay(stdout, "Stage 1 time:            ", watch1);
-      if(do_s2)
+      printf("Number seqs aligned:     %d\n", cfg->nseq);
+      esl_stopwatch_Display(stdout, cfg->s1_w, "# Stage  1 time:            ");
+      printf("# Stage %2d time:            ", cfg->s);
+      esl_stopwatch_Display(stdout, cfg->w, "");
+      spdup = cfg->s1_w->user / cfg->w->user;
+      printf("Speedup (user):          %.2f\n", spdup);
+
+      if(! esl_opt_GetBoolean(go, "--scoreonly"))
 	{
-	  printf("Stage %d time:            ",s);
-	  StopwatchDisplay(stdout, "", watch2);
-	  spdup = watch1->user / watch2->user;
-	  printf("2/1 speedup (user):      %.2f\n", spdup);
-	}
-      if(!s2_do_scoreonly)
-	{
-	  printf("Avg bit score diff:      %.2f\n", (diff_sc / ((float) s1_nseq)));
+	  printf("Avg bit score diff:      %.2f\n", (diff_sc / ((float) cfg->nseq)));
 	  if(diff_ct == 0)
 	    printf("Avg sc diff(>1e-4):      %.2f\n", 0.);
 	  else
 	    printf("Avg sc diff(>1e-4):      %.2f\n", (diff_sc / ((float) diff_ct)));
 	  printf("Num   diff (>1e-4):      %d\n", (diff_ct));
-	  printf("Fract diff (>1e-4):      %.5f\n", (((float) diff_ct) / ((float) s1_nseq)));
+	  printf("Fract diff (>1e-4):      %.5f\n", (((float) diff_ct) / ((float) cfg->nseq)));
 	  printf("\n");
 	}
-      FreeCM(cm);
-      for(i = 0; i < s2_nseq; i++)
-	{
-	  esl_sq_Destroy(s2_sq[i]);
-	  if(!s2_do_hmmonly && !s2_do_scoreonly)
-	    FreeParsetree(s2_tr[i]);  
-	}
-      free(s2_sq);
-      free(s2_tr);
-      free(s2_sc);
+      free(sc);
     }
+  return eslOK;
 
-      /* Clean up and exit */
-  StopwatchFree(watch1);
-  StopwatchFree(watch2);
-  for(i = 0; i < s1_nseq; i++)
-    {
-      esl_sq_Destroy(s1_sq[i]);
-      FreeParsetree(s1_tr[i]);  
-    }
-  free(s1_sq);
-  free(s1_tr);
-  free(s1_sc);
-  free(qdb_beta_vec);
-  free(tau_vec);
-
-  SqdClean();
-  return EXIT_SUCCESS;
+ ERROR:
+  return status;
 }
 
-/* Function: SummarizeAlignOptions
+/* initialize_cm()
+ * Setup the CM based on the command-line options/defaults
+ * for the specified stage alignment. We only set flags and 
+ * a few parameters. ConfigCM() configures the CM.
+ */
+static int
+initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
+{
+  /* set up params/flags/options of the CM */
+  if(cfg->beta != NULL) cfg->cm->beta = cfg->beta[cfg->s];
+  if(cfg->tau  != NULL) cfg->cm->tau  = cfg->tau[cfg->s];
+
+  cfg->cm->align_opts = 0;  /* clear alignment options from previous stage */
+  cfg->cm->config_opts = 0; /* clear configure options from previous stage */
+  /* TODO: clear QDBs */ 
+
+  /* enable option to check parsetree score against the alignment score */
+  cfg->cm->align_opts  |= CM_ALIGN_CHECKPARSESC;
+
+  /* Update cfg->cm->config_opts and cfg->cm->align_opts based on command line options */
+  if(esl_opt_GetBoolean(go, "-l"))
+    {
+      cfg->cm->config_opts |= CM_CONFIG_LOCAL;
+      cfg->cm->config_opts |= CM_CONFIG_HMMLOCAL;
+      cfg->cm->config_opts |= CM_CONFIG_HMMEL;
+    }
+  if(esl_opt_GetBoolean(go, "--sub"))         
+    { 
+      cfg->cm->align_opts  |=  CM_ALIGN_SUB;
+      cfg->cm->align_opts  &= ~CM_ALIGN_CHECKPARSESC; /* parsetree score won't match aln score */
+    }
+  if(esl_opt_GetBoolean(go, "-i"))            cfg->cm->config_opts |= CM_ALIGN_TIME;
+  if(esl_opt_GetBoolean(go, "--zeroinserts")) cfg->cm->config_opts |= CM_CONFIG_ZEROINSERTS;
+  if(esl_opt_GetBoolean(go, "--elsilent"))    cfg->cm->config_opts |= CM_CONFIG_ELSILENT;
+
+  if(cfg->s == 0) /* set up stage 1 alignment we'll compare all other stages to */
+    {
+      /* only one option allows cmscore NOT to do standard CYK as first stage aln */
+      if(esl_opt_GetBoolean(go, "--qdbboth")) { 
+	cfg->cm->align_opts  |= CM_ALIGN_QDB;
+	cfg->cm->config_opts |= CM_CONFIG_QDB;
+      }
+    }      
+  else { /* cfg->s > 0, we're at least on stage 2 */
+    if(esl_opt_GetBoolean(go, "--hbanded"))     cfg->cm->align_opts  |= CM_ALIGN_HBANDED;
+    if(esl_opt_GetBoolean(go, "--hmmonly"))     cfg->cm->align_opts  |= CM_ALIGN_HMMONLY;
+    if(esl_opt_GetBoolean(go, "--hsafe"))       cfg->cm->align_opts  |= CM_ALIGN_HMMSAFE;
+    if(esl_opt_GetBoolean(go, "--scoreonly"))   cfg->cm->align_opts  |= CM_ALIGN_SCOREONLY;
+    if(esl_opt_GetBoolean(go, "--qdb") || esl_opt_GetBoolean(go, "--qdbboth") ||  
+       esl_opt_GetBoolean(go, "--qdbsmall"))                    
+      { 
+	cfg->cm->align_opts  |= CM_ALIGN_QDB;
+	cfg->cm->config_opts |= CM_CONFIG_QDB;
+      }
+    /* only 1 way stage 2+ alignment will be D&C, if --qdbsmall was enabled */
+    if(! esl_opt_GetBoolean(go, "--qdbsmall"))
+      cfg->cm->align_opts  |= CM_ALIGN_NOSMALL;
+  }
+  if(! esl_opt_GetBoolean(go, "-q"))
+    {
+      printf("Stage %2d alignment:\n", (cfg->s+1));
+      summarize_align_options(cfg->cm);
+    }      
+  return eslOK;
+}
+
+/* Function: summarize_align_options
  * Date:     EPN, Wed Jan 17 09:08:18 2007
  * Purpose:  Print out alignment options in pretty format. 
  */
-void SummarizeAlignOptions(CM_t *cm)
+int summarize_align_options(CM_t *cm)
 {
   printf("---------------------------------\n");
   /* Algorithm */
   if(cm->align_opts & CM_ALIGN_INSIDE)
     printf("Algorithm:               Inside\n");
-  else if(cm->align_opts & CM_ALIGN_HMMONLY)
+  else if(cm->align_opts & CM_ALIGN_HMMONLY) 
     printf("Algorithm:               CP9 HMM Viterbi\n");
   else if(cm->align_opts & CM_ALIGN_SCOREONLY)
     printf("Algorithm:               CYK Standard (score only)\n");
@@ -635,6 +640,7 @@ void SummarizeAlignOptions(CM_t *cm)
       printf("Bands:                   None\n"); 
       printf("Tail loss:               0.0\n");
     }
+
   /* Locality */
   if(cm->config_opts & CM_CONFIG_LOCAL)
     printf("Local:                   Yes\n");
@@ -648,6 +654,8 @@ void SummarizeAlignOptions(CM_t *cm)
     printf("Full Sub mode.\n");
 
   printf("---------------------------------\n");
-  return;
+  return eslOK;
 }
+
+
 

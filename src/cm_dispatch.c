@@ -787,7 +787,7 @@ void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, ESL_SQ *sq,
  * 
  * Args:     seqfp        - the open sequence file
  *           CM           - the covariance model
- *           ret_sq       - RETURN: the sequences (EASEL)
+ *           ret_sq       - RETURN: the sequences
  *           ret_tr       - RETURN: the parsetrees for seqs in seqfp
  *           ret_postcode - RETURN: the postal codes (NULL if not doing posteriors)
  *           ret_cp9_tr   - RETURN: the CP9 traces for seqs in seqfp (only if hmmonly)
@@ -1179,18 +1179,20 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
   if(cm->align_opts  & CM_ALIGN_CHECKINOUT) do_check   = TRUE;
   if(cm->align_opts  & CM_ALIGN_SCOREONLY)  do_scoreonly = TRUE;
 
-  printf("do_local  : %d\n", do_local);
-  printf("do_qdb    : %d\n", do_qdb);
-  printf("do_hbanded: %d\n", do_hbanded);
-  printf("use_sums  : %d\n", use_sums);
-  printf("do_sub    : %d\n", do_sub);
-  printf("do_hmmonly: %d\n", do_hmmonly);
-  printf("do_inside : %d\n", do_inside);
-  printf("do_outside: %d\n", do_outside);
-  printf("do_small  : %d\n", do_small);
-  printf("do_post   : %d\n", do_post);
-  printf("do_timings: %d\n", do_timings);
-    
+  if(debug_level > 0) {
+    printf("do_local  : %d\n", do_local);
+    printf("do_qdb    : %d\n", do_qdb);
+    printf("do_hbanded: %d\n", do_hbanded);
+    printf("use_sums  : %d\n", use_sums);
+    printf("do_sub    : %d\n", do_sub);
+    printf("do_hmmonly: %d\n", do_hmmonly);
+    printf("do_inside : %d\n", do_inside);
+    printf("do_outside: %d\n", do_outside);
+    printf("do_small  : %d\n", do_small);
+    printf("do_post   : %d\n", do_post);
+    printf("do_timings: %d\n", do_timings);
+  }
+
   if((!(ret_cp9_tr == NULL)) && !do_hmmonly)
     esl_fatal("ERROR in actually_align_targets, want CP9 traces, but not hmmonly mode.\n");
   ESL_ALLOC(tr, sizeof(Parsetree_t *) * nseq);
