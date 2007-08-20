@@ -66,6 +66,10 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
   /* Build the CP9 HMM */
   /* IMPORTANT: do this before setting up CM for local mode
    *            eventually, we'll do it after, but we can't build local CP9s yet. */
+  /* if we already have one, free it (wasteful but safer) */
+  if(cm->cp9map     != NULL) FreeCP9Map(cm->cp9map);
+  if(cm->cp9        != NULL) FreeCPlan9(cm->cp9);
+
   if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))
     esl_fatal("Couldn't build a CP9 HMM from the CM\n");
   cm->flags |= CM_CP9; /* raise the CP9 flag */

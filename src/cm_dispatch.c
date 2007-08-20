@@ -398,7 +398,7 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *a
   /*printf("E PSD rank: %4d mast: %4d\n", mpi_my_rank, mpi_master_rank);*/
 
   return;
-
+  
  ERROR:
   esl_fatal("Memory allocation error.");
 }
@@ -800,7 +800,7 @@ void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, ESL_SQ *sq,
 void
 serial_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr, 
 		     char ***ret_postcode, CP9trace_t ***ret_cp9_tr, int *ret_nseq, 
-		     int bdump_level, int debug_level, int silent_mode)
+		     float **ret_sc, int bdump_level, int debug_level, int silent_mode)
 {
   Parsetree_t    **tr;          /* parse trees for the sequences */
   CP9trace_t **cp9_tr;          /* CP9 traces for the sequences */
@@ -842,12 +842,12 @@ serial_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t 
    * to align_target_seqs()
    ****************************************************************/
   if(ret_cp9_tr == NULL)
-    actually_align_targets(cm, sq, nseq, &tr, &postcode, NULL, bdump_level, debug_level, silent_mode);
+    actually_align_targets(cm, sq, nseq, &tr, &postcode, NULL, ret_sc, bdump_level, debug_level, silent_mode);
   else
-    actually_align_targets(cm, sq, nseq, &tr, &postcode, &cp9_tr, bdump_level, debug_level, silent_mode);
+    actually_align_targets(cm, sq, nseq, &tr, &postcode, &cp9_tr, ret_sc, bdump_level, debug_level, silent_mode);
 
   /* Clean up and return */
-  *ret_tr = tr;
+  if(ret_tr     != NULL) *ret_tr = tr;
   if(ret_cp9_tr != NULL) *ret_cp9_tr = cp9_tr;
   if((cm->align_opts & CM_ALIGN_POST) && ret_postcode != NULL) *ret_postcode = postcode;
   *ret_nseq = nseq;
@@ -1080,13 +1080,14 @@ seqs_to_aln_t * read_next_aln_seqs(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, i
  *           ret_tr       - RETURN: parsetrees (pass NULL if trace isn't wanted)
  *           ret_postcode - RETURN: postal code string
  *           ret_cp9_tr   - RETURN: CP9 traces only filled if cm->align_opts & CM_ALIGN_HMMONLY
+ *           ret_sc       - RETURN: scores of parses, NULL if not wanted
  *           bdump_level  - verbosity level for band related print statements
  *           debug_level  - verbosity level for debugging print statements
  *           silent_mode  - TRUE to not print anything, FALSE to print scores 
  */
 void
 actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, char ***ret_postcode,
-		       CP9trace_t ***ret_cp9_tr, int bdump_level, int debug_level, int silent_mode)
+		       CP9trace_t ***ret_cp9_tr, float **ret_sc, int bdump_level, int debug_level, int silent_mode)
 {
   int status;
   ESL_STOPWATCH   *watch;       /* for timings */
@@ -1144,6 +1145,8 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
   int             ***beta;     /* beta DP matrix for Inside() */
   int             ***post;     /* post DP matrix for Inside() */
 
+  float             *parsesc; /* parsetree scores of each sequence */
+
   int do_local   = FALSE;
   int do_qdb     = FALSE;
   int do_hbanded = FALSE;
@@ -1195,11 +1198,20 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 
   if((!(ret_cp9_tr == NULL)) && !do_hmmonly)
     esl_fatal("ERROR in actually_align_targets, want CP9 traces, but not hmmonly mode.\n");
-  ESL_ALLOC(tr, sizeof(Parsetree_t *) * nseq);
-  if(do_hmmonly)
-    ESL_ALLOC(cp9_tr, sizeof(CP9trace_t *) * nseq);
-  else
-    cp9_tr = NULL;
+  if(!do_hmmonly && !do_scoreonly) 
+    {
+      ESL_ALLOC(tr, sizeof(Parsetree_t *) * nseq);
+      cp9_tr = NULL;
+    }
+  else if(do_hmmonly) /* do_hmmonly */
+    {
+      ESL_ALLOC(cp9_tr, sizeof(CP9trace_t *) * nseq);
+      tr = NULL;
+    }
+  if(ret_sc != NULL)
+    ESL_ALLOC(parsesc, sizeof(float) * nseq);
+  else parsesc = NULL;
+
   minsc = FLT_MAX;
   maxsc = -FLT_MAX;
   avgsc = 0;
@@ -1273,6 +1285,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	  if(!silent_mode) printf("Aligning (to a CP9 HMM w/viterbi) %-20s", sq[i]->name);
 	  sc = CP9ViterbiOLD(sq[i], 1, sq[i]->n, cm->cp9, cp9_mx, &(cp9_tr[i]));
 	  if(!silent_mode) printf(" score: %10.2f bits\n", sc);
+	  if(parsesc != NULL) parsesc[i] = sc;
 	  FreeCPlan9Matrix(cp9_mx);
 	  continue;
 	}
@@ -1284,6 +1297,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	  sc = CYKInsideScore(cm, sq[i], 0, 1, sq[i]->n, 
 			      NULL, NULL); /* don't do QDB mode */
 	  if(!silent_mode) printf("    score: %10.2f bits\n", sc);
+	  if(parsesc != NULL) parsesc[i] = sc;
 	  continue;
 	}
 
@@ -1622,6 +1636,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
       if (sc < minsc) minsc = sc;
       
       if(!silent_mode) printf("    score: %10.2f bits\n", sc);
+      if(parsesc != NULL) parsesc[i] = sc;
       
       /* check parsetree score if cm->align_opts & CM_ALIGN_CHECKPARSESC */
       if((cm->align_opts & CM_ALIGN_CHECKPARSESC) &&
@@ -1711,7 +1726,17 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
     }
   esl_stopwatch_Destroy(watch);
   
-  *ret_tr = tr; 
+  if (ret_sc != NULL) *ret_sc = parsesc; 
+  else if(parsesc != NULL) free(parsesc);
+
+  if (ret_tr != NULL) *ret_tr = tr; 
+  else if(!do_hmmonly && !do_scoreonly)
+    {
+      for(i = 0; i < nseq; i++)
+	FreeParsetree(tr[i]);
+      free(tr);
+    }
+
   if (do_post) *ret_postcode = postcode; 
   else ret_postcode = NULL;
   

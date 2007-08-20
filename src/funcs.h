@@ -349,6 +349,9 @@ extern float iInsideBandedScan_jd(CM_t *cm, ESL_SQ *sq, int *jmin, int *jmax, in
 
 
 /* from CP9_scan.c */
+extern float CP9Viterbi(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret_sc, 
+			int *ret_bestpos, scan_results_t *results, int do_scan,
+			int be_efficient, CP9_dpmatrix_t **ret_mx, CP9trace_t **ret_tr);
 extern float CP9Forward(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret_isc, 
 			int *ret_maxres, scan_results_t *results, int do_scan, int doing_align, 
 			int doing_rescan, int be_efficient, CP9_dpmatrix_t **ret_mx);

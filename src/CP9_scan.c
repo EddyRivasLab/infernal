@@ -72,10 +72,10 @@
  *           V->M[ip][k] : score of most likely parse emitting seq
  *                         from i0..ip that visit node k's match 
  *                         state, which emits posn ip
- *           F->I[ip][k] : score of most likely parse emitting seq from 
+ *           V->I[ip][k] : score of most likely parse emitting seq from 
  *                         i0..ip that visit node k's insert
  *                         state, which emits posn ip 
- *           F->D[ip][k] : score of most likely parse emitting seq from 
+ *           V->D[ip][k] : score of most likely parse emitting seq from 
  *                         i0..ip that visit node k's delete
  *                         delete state, last emitted (leftmost)
  *                         posn was ip

@@ -495,7 +495,7 @@ CP9ForwardOLD(ESL_SQ *sq, int i0, int j0, struct cplan9_s *hmm,
  */
 float
 CP9ViterbiOLD(ESL_SQ *sq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s *mx,
-	   CP9trace_t **ret_tr)
+	      CP9trace_t **ret_tr)
 {
   if(! (sq->flags & eslSQ_DIGITAL))
     esl_fatal("ERROR in CP9ViterbiOLD(), sq is not digitized.\n");
@@ -636,7 +636,7 @@ CP9ViterbiOLD(ESL_SQ *sq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmat
 	}
     } 
   sc = erow[W];
-  printf("returing sc: %d from CPViterbi()\n", sc);
+  /* printf("returning sc: %d from CP9ViterbiOLD()\n", sc); */
   
   if (ret_tr != NULL) {
     CP9ViterbiTrace(hmm, sq, i0, j0, mx, &tr);

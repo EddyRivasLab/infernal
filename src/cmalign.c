@@ -398,13 +398,13 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if(! (esl_opt_GetBoolean(go, "--hmmonly"))) 
     {
       serial_align_targets(cfg->sqfp, cfg->cm, &sq, &tr,  &postcode, NULL, &cfg->nseq, 
-			   esl_opt_GetInteger(go, "--banddump"), esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"));
+			   NULL, esl_opt_GetInteger(go, "--banddump"), esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"));
       if ((status = output_result(go, cfg, errbuf, sq, tr,     NULL, postcode))        != eslOK) cm_Fail(errbuf);
     }
   else /* hmm alignment */
     {
       serial_align_targets(cfg->sqfp, cfg->cm, &sq, NULL,   &postcode, &cp9_tr,    &cfg->nseq,
-			   esl_opt_GetInteger(go, "--banddump"), esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"));
+			   NULL, esl_opt_GetInteger(go, "--banddump"), esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"));
       if ((status = output_result(go, cfg, errbuf, sq, NULL, cp9_tr, postcode))        != eslOK) cm_Fail(errbuf);
     }
 

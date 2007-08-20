@@ -207,7 +207,6 @@ or may be a different kind of binary altogether.\n", cmfile);
   return NULL;
 
  ERROR:
-  esl_fatal("Unexpected error.\n");
   return NULL; /* not reached */
 }
 
