@@ -255,6 +255,16 @@ typedef struct cm_s {
   char *desc;		/*   optional description of the model, or NULL    */
   char *annote;         /*   consensus column annotation line, or NULL     */ /* ONLY PARTIALLY IMPLEMENTED, BEWARE */
 
+  /* new for 1.0 */
+  char  *comlog;	/*   command line(s) that built model      (mandatory) */ /* String, \0-terminated */
+  int    nseq;		/*   number of training sequences          (mandatory) */
+  float  eff_nseq;	/*   effective number of seqs (<= nseq)    (mandatory) */
+  char  *ctime;		/*   creation date                         (mandatory) */
+  float  ga;	        /*   per-seq/per-domain gathering thresholds (bits) (CMH_GA) */
+  float  tc;            /*   per-seq/per-domain trusted cutoff (bits)       (CMH_TC) */
+  float  nc;	        /*   per-seq/per-domain noise cutoff (bits)         (CMH_NC) */
+
+
 			/* Information about the null model:               */
   float *null;          /*   residue probabilities [0..3]                  */
 
@@ -337,29 +347,29 @@ typedef struct cm_s {
   CMStats_t *stats;     /* holds Gumbel stats and HMM filtering thresholds */
 
   /* From 1.0-ification, based on HMMER3 */
-  char  *comlog;		/* command line(s) that built model      (mandatory) */ /* String, \0-terminated */
-  int    nseq;			/* number of training sequences          (mandatory) */
-  float  eff_nseq;		/* effective number of seqs (<= nseq)    (mandatory) */
-  char  *ctime;			/* creation date                         (mandatory) */
   const  ESL_ALPHABET *abc;     /* ptr to alphabet info (cm->abc->K is alphabet size)*/
 } CM_t;
 
 /* status flags, cm->flags */
-#define CM_HASBITS             (1<<0)  /* CM has valid log odds scores             */
-#define CM_ACC                 (1<<1)  /* accession number is available            */
-#define CM_DESC                (1<<2)  /* description exists                       */
-#define CM_LOCAL_BEGIN         (1<<3)  /* Begin distribution is active (local ali) */
-#define CM_LOCAL_END           (1<<4)  /* End distribution is active (local ali)   */
-#define CM_GUMBEL_STATS        (1<<5)  /* Gumbel stats for local/glocal CYK/Ins set*/
-#define CM_FTHR_STATS          (1<<6)  /* CP9 HMM filter threshold stats are set   */
-#define CM_QDB                 (1<<7)  /* query-dependent bands, QDB valid         */
-#define CM_CP9                 (1<<8)  /* CP9 HMM is valid in cm->cp9              */
-#define CM_CP9STATS            (1<<9)  /* CP9 HMM has Gumbel stats                 */
-#define CM_IS_SUB              (1<<10) /* the CM is a sub CM                       */
-#define CM_ENFORCED            (1<<11) /* CM is reparam'ized to enforce a subseq   */
-#define CM_IS_RSEARCH          (1<<12) /* the CM was parameterized a la RSEARCH    */
-#define CM_RSEARCHTRANS        (1<<13) /* CM has/will have RSEARCH transitions     */
-#define CM_RSEARCHEMIT         (1<<14) /* CM has/will have RSEARCH emissions       */
+#define CMH_BITS               (1<<0)  /* CM has valid log odds scores             */
+#define CMH_ACC                (1<<1)  /* accession number is available            */
+#define CMH_DESC               (1<<2)  /* description exists                       */
+#define CMH_GA                 (1<<3)  /* gathering threshold exists               */
+#define CMH_TC                 (1<<4)  /* trusted cutoff exists                    */
+#define CMH_NC                 (1<<5)  /* noise cutoff exists                      */
+
+#define CM_LOCAL_BEGIN         (1<<6)  /* Begin distribution is active (local ali) */
+#define CM_LOCAL_END           (1<<7)  /* End distribution is active (local ali)   */
+#define CM_GUMBEL_STATS        (1<<8)  /* Gumbel stats for local/glocal CYK/Ins set*/
+#define CM_FTHR_STATS          (1<<9)  /* CP9 HMM filter threshold stats are set   */
+#define CM_QDB                 (1<<10) /* query-dependent bands, QDB valid         */
+#define CM_CP9                 (1<<11) /* CP9 HMM is valid in cm->cp9              */
+#define CM_CP9STATS            (1<<12) /* CP9 HMM has Gumbel stats                 */
+#define CM_IS_SUB              (1<<13) /* the CM is a sub CM                       */
+#define CM_ENFORCED            (1<<14) /* CM is reparam'ized to enforce a subseq   */
+#define CM_IS_RSEARCH          (1<<15) /* the CM was parameterized a la RSEARCH    */
+#define CM_RSEARCHTRANS        (1<<16) /* CM has/will have RSEARCH transitions     */
+#define CM_RSEARCHEMIT         (1<<17) /* CM has/will have RSEARCH emissions       */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL        (1<<0)  /* configure the model for local alignment  */

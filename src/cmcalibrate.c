@@ -14,9 +14,8 @@
  * -l forces line buffered output
  *  
  */
-#include "config.h"	
-#include "squidconf.h"
 #include "esl_config.h"
+#include "config.h"	
 
 #include <stdio.h>
 #include <string.h>
@@ -25,11 +24,6 @@
 #include <math.h>
 #include <time.h>
 
-#include "structs.h"
-#include "funcs.h"		/* external functions                   */
-#include "stats.h"              /* gumbel functions */
-#include "cm_dispatch.h"	
-#include "mpifuncs.h"	
 #include "easel.h"
 #include "esl_alphabet.h"
 #include "esl_getopts.h"
@@ -42,43 +36,63 @@
 #include "esl_gumbel.h"
 #include "esl_stopwatch.h"
 
+#include "structs.h"
+#include "funcs.h"		/* external functions                   */
+#include "stats.h"              /* gumbel functions */
+#include "cm_dispatch.h"	
+#include "mpifuncs.h"	
+
+#define CUTOPTS  "--eval,--ga,--nc,--tc,--all"  /* Exclusive choice for filter threshold score cutoff */
+
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
   { "-s",        eslARG_INT,      "0", NULL, "n>=0",    NULL,      NULL,        NULL, "set random number seed to <n>",   1 },
-  { "--learninserts",eslARG_NONE,FALSE,NULL, NULL,      NULL,      NULL,        NULL, "DO NOT zero insert emission scores",  1},
-  { "--dbfile",  eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL, "--filonly", "use GC content distribution from file <s>",  1},
-  { "--time",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "print timings for Gumbel fitting and CP9 filter calculation",  1},
+  { "-t",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "print timings for Gumbel fitting and CP9 filter calculation",  1},
+  { "--lins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "learn insert emission scores, do not zero them",  1},
+
   { "--gumonly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--filonly", "only estimate Gumbels, don't calculate filter thresholds", 2},
   { "--cmN",     eslARG_INT,   "1000", NULL, "n>0",     NULL,      NULL, "--filonly", "number of random sequences for CM gumbel estimation",    2 },
   { "--hmmN",    eslARG_INT,   "5000", NULL, "n>0",     NULL,      NULL, "--filonly", "number of random sequences for CP9 HMM gumbel estimation",    2 },
+  { "--dbfile",  eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL, "--filonly", "use GC content distribution from file <s>",  2},
   { "--gumhfile",eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL, "--filonly", "save fitted Gumbel histogram(s) to file <s>", 2 },
   { "--gumqqfile",eslARG_STRING, NULL, NULL, NULL,      NULL,      NULL, "--filonly", "save Q-Q plot for Gumbel histogram(s) to file <s>", 2 },
-  { "--filN",    eslARG_INT,   "1000", NULL, "n>0",     NULL,      NULL, "--gumonly", "number of emitted sequences for HMM filter threshold calc",    3 },
-  { "--cmeval",  eslARG_REAL,    "10", NULL, "x>0",     NULL,      NULL, "--gumonly", "min CM E-val (for a 1MB db) to consider for filter thr calc", 3}, 
-  { "--nocmeval",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  "--cmeval", "accept all CM hits for filter calc, DO NOT use E-val cutoff", 3}, 
-  { "--fract",   eslARG_REAL,  "0.95", NULL, "0<x<=1",  NULL,      NULL, "--gumonly",  "required fraction of CM hits that survive HMM filter", 3},
-  { "--minsurv", eslARG_REAL,  "0.01", NULL, "0<x<=1",  NULL,      NULL, "--gumonly",  "minimum filter survivor fraction for HMM filter calculation", 3},
+
   { "--filonly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly", "only calculate filter thresholds, don't estimate Gumbels", 3},
-  { "--fastfil", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly", "calc filter thr quickly, assume parsetree sc is optimal", 3},
-  { "--exp",     eslARG_REAL,  "1.0",   NULL, "x>0.",   NULL,      NULL,        NULL, "exponentiate CM prior to filter threshold calculation", 3},
+  { "--filN",    eslARG_INT,   "1000", NULL, "n>0",     NULL,      NULL, "--gumonly", "number of emitted sequences for HMM filter threshold calc",    3 },
+  { "--fract",   eslARG_REAL,  "0.95", NULL, "0<x<=1",  NULL,      NULL, "--gumonly", "required fraction of CM hits that survive HMM filter", 3},
+  { "--targsurv",eslARG_REAL,  "0.01", NULL, "0<x<=1",  NULL,      NULL, "--gumonly", "target filter survival fraction", 3},
+  { "--fast",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly", "calculate filter thr quickly, assume parsetree sc is optimal", 3},
   { "--gemit",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly", "when calc'ing filter thresholds, always emit globally from CM",  3},
   { "--filhfile",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL, "--gumonly", "save CP9 filter threshold histogram(s) to file <s>", 3},
-  { "--lookup"  ,eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly", "correct CM hit fraction F based on exponentiation factor X", 3},
+  { "--filrfile",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL, "--gumonly", "save CP9 filter threshold information in R format to file <s>", 3},
+
+  { "--eval",    eslARG_REAL,    "10", NULL, "x>0",  CUTOPTS,      NULL, "--gumonly", "min CM E-val (for a 1MB db) to consider for filter thr calc", 4}, 
+  { "--ga",      eslARG_NONE,   FALSE, NULL, "x>0",  CUTOPTS,      NULL, "--gumonly", "use CM gathering threshold as minimum sc to consider for filter thr calc", 4}, 
+  { "--nc",      eslARG_NONE,   FALSE, NULL, "x>0",  CUTOPTS,      NULL, "--gumonly", "use CM noise cutoff as minimum sc to consider for filter thr calc", 4}, 
+  { "--tc",      eslARG_NONE,   FALSE, NULL, "x>0",  CUTOPTS,      NULL, "--gumonly", "use CM trusted cutoff as minimum sc to consider for filter thr calc", 4},   
+  { "--all",     eslARG_NONE,   FALSE, NULL, NULL,   CUTOPTS,      NULL, "--gumonly", "accept all CM hits for filter calc, DO NOT use cutoff", 4}, 
+
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
 struct cfg_s {
   char           *cmfile;
-  CMFILE         *cmfp;
   ESL_RANDOMNESS *r;
   double         *gc_freq;
-  FILE           *gum_hfp;
-  FILE           *gum_qfp;
-  FILE           *fil_hfp;
+  int             be_verbose;	
+
+  int             do_mpi;
   int             my_rank;
   int             nproc;
-  int             do_mpi;
+  int             do_stall;	/* TRUE to stall the program until gdb attaches */
+
+  /* Masters only (i/o streams) */
+  CMFILE       *cmfp;		/* open input CM file stream       */
+  FILE         *gum_hfp;        /* optional output for gumbel histograms */
+  FILE         *gum_qfp;        /* optional output for gumbel QQ file */
+  FILE         *fil_hfp;        /* optional output for filter histograms */
+  FILE         *fil_rfp;        /* optional output for filter info for R */
 };
 
 static char usage[]  = "[-options] <cmfile>";
@@ -90,6 +104,7 @@ int
 main(int argc, char **argv)
 {
   int status;			       /* status of a function call                   */
+  void            *tmp;                /* for ESL_RALLOC                              */
   ESL_GETOPTS     *go	   = NULL;     /* command line processing                     */
   struct cfg_s     cfg;
   CM_t            *cm      = NULL;     /* the covariance model                        */
@@ -107,7 +122,6 @@ main(int argc, char **argv)
 
   /* Gumbel related variables */
   int              gum_mode;           /* counter over gum modes                      */
-  double           params[2];          /* used if printing Q-Q file                   */
   ESL_SQFILE      *dbfp;               /* open file pointer for dbfile                */
   int              format;	       /* format of dbfile                            */
   long             N;                  /* database size if --dbfile enabled           */
@@ -120,7 +134,6 @@ main(int argc, char **argv)
   float            g_eval;             /* global HMM E-value cutoff                   */
   float            g_F;                /* fraction of CM hits that are found w/g_eval */
   int              emit_mode;          /* CM_LC or CM_GC, CM mode to emit with        */
-  float            X;                  /* exponentiation factor                       */
 
   /* Process command line options.
    */
@@ -139,10 +152,12 @@ main(int argc, char **argv)
       esl_usage(stdout, argv[0], usage);
       puts("\nwhere general options are:");
       esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
-      puts("\ngumbel distribution fitting options :");
+      puts("\nGumbel distribution fitting options :");
       esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
-      puts("\nCP9 HMM filter threshold calculation options :");
+      puts("\ngeneral CP9 HMM filter threshold calculation options :");
       esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
+      puts("\noptions for CM score cutoff to to use for filter threshold calculation:");
+      esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
       exit(0);
     }
   if (esl_opt_ArgNumber(go) != 1) 
@@ -164,9 +179,11 @@ main(int argc, char **argv)
   cfg.gum_hfp  = NULL; /* ALWAYS remains NULL for mpi workers */
   cfg.gum_qfp  = NULL; /* ALWAYS remains NULL for mpi workers */
   cfg.fil_hfp  = NULL; /* ALWAYS remains NULL for mpi workers */
+
+  cfg.do_mpi   = FALSE;
   cfg.my_rank  = 0;
   cfg.nproc    = 0;
-  cfg.do_mpi   = FALSE;
+
 
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
   /* Initialize MPI, figure out who we are, and whether we're running
@@ -177,53 +194,30 @@ main(int argc, char **argv)
   MPI_Comm_rank(MPI_COMM_WORLD, &cfg.my_rank);
   MPI_Comm_size(MPI_COMM_WORLD, &cfg.nproc);
 #endif
-  /* Get distribution of GC content from a long random sequence */
+  /* Get distribution of GC content from an input database */
   if(esl_opt_GetString(go, "--dbfile") != NULL)
     {
+      ESL_ALPHABET *abc;
+      abc = esl_alphabet_Create(eslRNA);
       status = esl_sqfile_Open(esl_opt_GetString(go, "--dbfile"), format, NULL, &dbfp);
       if (status == eslENOTFOUND)    esl_fatal("No such file."); 
       else if (status == eslEFORMAT) esl_fatal("Format unrecognized."); 
       else if (status == eslEINVAL)  esl_fatal("Can’t autodetect stdin or .gz."); 
       else if (status != eslOK)      esl_fatal("Failed to open sequence database file, code %d.", status); 
-      GetDBInfo(dbfp, &N, &cfg.gc_freq);
+      GetDBInfo(abc, dbfp, &N, &cfg.gc_freq);
       printf("Read DB file: %s of length %ld residues (both strands) for GC distro.\n", 
 	     esl_opt_GetString(go, "--dbfile"), (2*N));
       esl_vec_DNorm(cfg.gc_freq, GC_SEGMENTS);
+      esl_alphabet_Destroy(abc);
     }
   else /* use 0.25 A,C,G,U to generate random sequences */
     cfg.gc_freq = NULL;
-  /* OLD CODE as of Mon Jul  9 16:03:20 2007: */
-  /* rmark-1.gc.code from ~/notebook/7_0502_inf_cmcalibrate/gc_distros/
-       * Replace with RFAMSEQ derived one */
-      /*cfg.gc_freq = MallocOrDie(sizeof(double) * GC_SEGMENTS);
-      cfg.gc_freq[ 0] = 0.; 
-      cfg.gc_freq[ 1] = 0.; cfg.gc_freq[ 2] = 0.; cfg.gc_freq[ 3] = 0.; cfg.gc_freq[ 4] = 0.; cfg.gc_freq[ 5] = 0.;
-      cfg.gc_freq[ 6] = 1.; cfg.gc_freq[ 7] = 0.; cfg.gc_freq[ 8] = 0.; cfg.gc_freq[ 9] = 0.; cfg.gc_freq[10] = 0.;
-      cfg.gc_freq[11] = 1.; cfg.gc_freq[12] = 0.; cfg.gc_freq[13] = 0.; cfg.gc_freq[14] = 0.; cfg.gc_freq[15] = 1.;
-      cfg.gc_freq[16] = 3.; cfg.gc_freq[17] = 1.; cfg.gc_freq[18] = 4.; cfg.gc_freq[19] = 0.; cfg.gc_freq[20] = 2.;
-      cfg.gc_freq[21] = 2.; cfg.gc_freq[22] = 2.; cfg.gc_freq[23] = 3.; cfg.gc_freq[24] = 2.; cfg.gc_freq[25] = 11.;
-      cfg.gc_freq[26] = 6.; cfg.gc_freq[27] = 3.; cfg.gc_freq[28] = 13.; cfg.gc_freq[29] = 9.; cfg.gc_freq[30] = 8.;
-      cfg.gc_freq[31] = 8.; cfg.gc_freq[32] = 7.; cfg.gc_freq[33] = 18.; cfg.gc_freq[34] = 10.; cfg.gc_freq[35] = 18.;
-      cfg.gc_freq[36] = 27.; cfg.gc_freq[37] = 38.; cfg.gc_freq[38] = 71.; cfg.gc_freq[39] = 86.; cfg.gc_freq[40] = 129.;
-      cfg.gc_freq[41] = 198.; cfg.gc_freq[42] = 235.; cfg.gc_freq[43] = 300.; cfg.gc_freq[44] = 362.; cfg.gc_freq[45] = 470.;
-      cfg.gc_freq[46] = 557.; cfg.gc_freq[47] = 631.; cfg.gc_freq[48] = 689.; cfg.gc_freq[49] = 754.; cfg.gc_freq[50] = 696.;
-      cfg.gc_freq[51] = 756.; cfg.gc_freq[52] = 696.; cfg.gc_freq[53] = 633.; cfg.gc_freq[54] = 560.; cfg.gc_freq[55] = 447.;
-      cfg.gc_freq[56] = 403.; cfg.gc_freq[57] = 282.; cfg.gc_freq[58] = 202.; cfg.gc_freq[59] = 182.; cfg.gc_freq[60] = 116.;
-      cfg.gc_freq[61] = 96.; cfg.gc_freq[62] = 56.; cfg.gc_freq[63] = 43.; cfg.gc_freq[64] = 27.; cfg.gc_freq[65] = 13.;
-      cfg.gc_freq[66] = 14.; cfg.gc_freq[67] = 13.; cfg.gc_freq[68] = 14.; cfg.gc_freq[69] = 9.; cfg.gc_freq[70] = 8.;
-      cfg.gc_freq[71] = 12.; cfg.gc_freq[72] = 11.; cfg.gc_freq[73] = 6.; cfg.gc_freq[74] = 4.; cfg.gc_freq[75] = 7.;
-      cfg.gc_freq[76] = 3.; cfg.gc_freq[77] = 2.; cfg.gc_freq[78] = 1.; cfg.gc_freq[79] = 4.; cfg.gc_freq[80] = 0.;
-      cfg.gc_freq[81] = 2.; cfg.gc_freq[82] = 0.; cfg.gc_freq[83] = 1.; cfg.gc_freq[84] = 0.; cfg.gc_freq[85] = 1.;
-      cfg.gc_freq[86] = 0.; cfg.gc_freq[87] = 0.; cfg.gc_freq[88] = 0.; cfg.gc_freq[89] = 0.; cfg.gc_freq[90] = 0.;
-      cfg.gc_freq[91] = 0.; cfg.gc_freq[92] = 0.; cfg.gc_freq[93] = 0.; cfg.gc_freq[94] = 0.; cfg.gc_freq[95] = 0.;
-      cfg.gc_freq[96] = 0.; cfg.gc_freq[97] = 0.; cfg.gc_freq[98] = 0.; cfg.gc_freq[99] = 0.; cfg.gc_freq[100] = 0.;*/
-      /* distro is centered at just about 50, you can see it, thanks to fixed width font */
 
   /* Initial allocations for results per CM;
    * we'll resize these arrays dynamically as we read more CMs.
    */
   cmalloc  = 128;
-  cmstats  = MallocOrDie(sizeof(CMStats_t *) * cmalloc);
+  ESL_ALLOC(cmstats, sizeof(CMStats_t *) * cmalloc);
   ncm      = 0;
   
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
@@ -245,7 +239,7 @@ main(int argc, char **argv)
   fflush(stdout);
 
   if ((cfg.cmfp = CMFileOpen(cfg.cmfile, NULL)) == NULL)
-    Die("Failed to open covariance model save file %s\n%s\n", cfg.cmfile, usage);
+    esl_fatal("Failed to open covariance model save file %s\n", cfg.cmfile);
 
   /* From HMMER 2.4X hmmcalibrate.c:
    * Generate calibrated CM(s) in a tmp file in the current
@@ -257,35 +251,35 @@ main(int argc, char **argv)
    * because it'll put the file in /tmp and we won't
    * necessarily be able to rename() it from there.
    */
-  tmpfile = MallocOrDie(strlen(cfg.cmfile) + 5);
+  ESL_ALLOC(tmpfile, (sizeof(char) * (strlen(cfg.cmfile) + 5)));
   strcpy(tmpfile, cfg.cmfile);
   strcat(tmpfile, ".xxx");	/* could be more inventive here... */
-  if (FileExists(tmpfile))
-    Die("temporary file %s already exists; please delete it first", tmpfile);
+  if (esl_FileExists(tmpfile))
+    esl_fatal("temporary file %s already exists; please delete it first", tmpfile);
   if (cfg.cmfp->is_binary) mode = "wb";
   else                     mode = "w"; 
 
   if(esl_opt_GetBoolean(go, "--time"))
     w = esl_stopwatch_Create(); 
   CMFileRead(cfg.cmfp, NULL, &cm);
-  if(cm == NULL) Die("Failed to read a CM from %s -- file corrupt?\n", cfg.cmfile);
+  if(cm == NULL) esl_fatal("Failed to read a CM from %s -- file corrupt?\n", cfg.cmfile);
 
   /* Open output files if nec */
 				/* histogram files, fitted and predicted */
   if (esl_opt_GetString(go, "--gumhfile") != NULL) 
     {
       if ((cfg.gum_hfp = fopen(esl_opt_GetString(go, "--gumhfile"), "w")) == NULL)
-	Die("Failed to open gumbel histogram save file for writing\n");
+	esl_fatal("Failed to open gumbel histogram save file for writing\n");
     }
   if (esl_opt_GetString(go, "--gumqqfile") != NULL) 
     {
       if ((cfg.gum_qfp = fopen(esl_opt_GetString(go, "--gumqqfile"), "w")) == NULL)
-	Die("Failed to open gumbel histogram save file for writing\n");
+	esl_fatal("Failed to open gumbel histogram save file for writing\n");
     }
   if (esl_opt_GetString(go, "--filhfile") != NULL) 
     {
       if ((cfg.fil_hfp = fopen(esl_opt_GetString(go, "--filhfile"), "w")) == NULL)
-	Die("Failed to open filter histogram save file for writing\n");
+	esl_fatal("Failed to open filter histogram save file for writing\n");
     }
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
     }  /* end of master only block 1 */
@@ -313,7 +307,7 @@ main(int argc, char **argv)
       else /* worker */
 	cmstats[ncm] = NULL;
 #endif
-      if(!(esl_opt_GetBoolean(go, "--learninserts"))) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
+      if(!(esl_opt_GetBoolean(go, "--lins"))) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
       cm->config_opts |= CM_CONFIG_QDB; /* always use qdb (temporary?) */
       /* Configure the CM */
       ConfigCM(cm, NULL, NULL);
@@ -325,12 +319,6 @@ main(int argc, char **argv)
 	{
 	  for(gum_mode = 0; gum_mode < NGUMBELMODES; gum_mode++)
 	    cm_fit_gumbel(cm, go, &cfg, cmstats[ncm], gum_mode);
-	  /*06.29.07 only CM-LC and CP9-L code: */
-	  /*if(cfg.my_rank == 0) 
-	    CopyCMStatsGumbel(cm->stats, cmstats[ncm]);
-	    cm_fit_gumbel(cm, go, &cfg, cmstats[ncm], CM_LC); 
-	    cm_fit_gumbel(cm, go, &cfg, cmstats[ncm], CP9_L);*/
-	  /* end of 06.29.07 block */
 	  cm->flags |= CM_GUMBEL_STATS;
 	}
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
@@ -445,7 +433,7 @@ main(int argc, char **argv)
 	  if (ncm == cmalloc) 
 	    {
 	      cmalloc *= 2;		/* realloc by doubling */
-	      cmstats = ReallocOrDie(cmstats, sizeof(CMStats_t *) * cmalloc);
+	      ESL_RALLOC(cmstats, tmp, sizeof(CMStats_t *) * cmalloc);
 	    }
 	  if(!(CMFileRead(cfg.cmfp, NULL, &cm))) continue_flag = 0;
 	}
@@ -462,7 +450,7 @@ main(int argc, char **argv)
        * Write a temporary CM file with new stats information in it
        *****************************************************************/
       CMFileRewind(cfg.cmfp);
-      if (FileExists(tmpfile))
+      if (esl_FileExists(tmpfile))
 	esl_fatal("Ouch. Temporary file %s appeared during the run.", tmpfile);
       if ((outfp = fopen(tmpfile, mode)) == NULL)
 	esl_fatal("Ouch. Temporary file %s couldn't be opened for writing.", tmpfile); 
@@ -494,14 +482,15 @@ main(int argc, char **argv)
        *****************************************************************/
       
       CMFileClose(cfg.cmfp);
-      if (fclose(outfp)   != 0)                            PANIC;
-      if (sigemptyset(&blocksigs) != 0)                    PANIC;
-      if (sigaddset(&blocksigs, SIGINT) != 0)              PANIC;
-      if (sigprocmask(SIG_BLOCK, &blocksigs, NULL) != 0)   PANIC;
-      if (remove(cfg.cmfile) != 0)                         PANIC;
-      if (rename(tmpfile, cfg.cmfile) != 0)                PANIC;
-      if (sigprocmask(SIG_UNBLOCK, &blocksigs, NULL) != 0) PANIC;
+      if (fclose(outfp)   != 0)                            esl_fatal("Unexpected Std C/POSIX error.");
+      if (sigemptyset(&blocksigs) != 0)                    esl_fatal("Unexpected Std C/POSIX error.");
+      if (sigaddset(&blocksigs, SIGINT) != 0)              esl_fatal("Unexpected Std C/POSIX error.");
+      if (sigprocmask(SIG_BLOCK, &blocksigs, NULL) != 0)   esl_fatal("Unexpected Std C/POSIX error.");
+      if (remove(cfg.cmfile) != 0)                         esl_fatal("Unexpected Std C/POSIX error.");
+      if (rename(tmpfile, cfg.cmfile) != 0)                esl_fatal("Unexpected Std C/POSIX error.");
+      if (sigprocmask(SIG_UNBLOCK, &blocksigs, NULL) != 0) esl_fatal("Unexpected Std C/POSIX error.");
       free(tmpfile);
+
       /***********************************************
        * Exit
        ***********************************************/
@@ -510,6 +499,9 @@ main(int argc, char **argv)
       MPI_Finalize();
 #endif
   return eslOK;
+
+ ERROR:
+  return status;
 }
 
 /*
@@ -564,7 +556,7 @@ static int cm_fit_gumbel(CM_t *cm, ESL_GETOPTS *go, struct cfg_s *cfg,
       float   sc;             /* score returned from worker                         */
       int     i;              /* counter over sampled seqs                          */
       char   *randseq;        /* a random sequence, textized                        */
-      char   *dsq;            /* randseq, digitized                                 */
+      ESL_SQ *sq;             /* random sequence, digitized, to search              */
       int     L;              /* length of random sequences (cm->W*2.)              */
       double *nt_p;	      /* nt distribution for random sequences               */
       double *part_gc_freq;   /* gc content distro to choose from for cur partition */
@@ -574,13 +566,12 @@ static int cm_fit_gumbel(CM_t *cm, ESL_GETOPTS *go, struct cfg_s *cfg,
       int     p;              /* counter over partitions                            */
       int     n,z;            /* for fitting Gumbels                                */
       double  params[2];      /* used if printing Q-Q file                          */
-
 #if defined(USE_MPI) && defined(MPI_EXECUTABLE)
       MPI_Status mstatus;     
       int     have_work;      /* for MPI control, do we have work left?             */
       int     nproc_working;  /* number worker processors currently working         */
       int     wi;             /* worker index                                       */
-      char  **dsqlist = NULL; /* queue of digitized seqs being worked on, 1..nproc-1*/
+      ESL_SQ **dsqlist = NULL; /* queue of digitized seqs being worked on, 1..nproc-1*/
       ESL_ALLOC(dsqlist,      sizeof(char *) * cfg->nproc);
       for (wi = 0; wi < cfg->nproc; wi++) dsqlist[wi] = NULL;
 #endif
@@ -596,7 +587,7 @@ static int cm_fit_gumbel(CM_t *cm, ESL_GETOPTS *go, struct cfg_s *cfg,
       if(cfg->r == NULL)   esl_fatal("ERROR in cm_fit_gumbel(), master's source of randomness is NULL\n");
       /* Allocate for random distribution */
       L   = cm->W * 2.;
-      ESL_ALLOC(nt_p,         sizeof(double) * Alphabet_size);
+      ESL_ALLOC(nt_p,         sizeof(double) * cm->abc->K);
       ESL_ALLOC(randseq,      sizeof(char)   * (L+1));
       ESL_ALLOC(part_gc_freq, sizeof(double) * GC_SEGMENTS);
       
@@ -632,10 +623,10 @@ static int cm_fit_gumbel(CM_t *cm, ESL_GETOPTS *go, struct cfg_s *cfg,
 		    }
 		  else
 		    {
-		      nt_p[0] = cm->bg->f[0];
-		      nt_p[1] = cm->bg->f[1];
-		      nt_p[2] = cm->bg->f[2];
-		      nt_p[3] = cm->bg->f[3];
+		      nt_p[0] = cm->null[0];
+		      nt_p[1] = cm->null[1];
+		      nt_p[2] = cm->null[2];
+		      nt_p[3] = cm->null[3];
 		    }
 		  esl_vec_DNorm(nt_p, Alphabet_size);
 		  /* Get random sequence */
@@ -643,12 +634,12 @@ static int cm_fit_gumbel(CM_t *cm, ESL_GETOPTS *go, struct cfg_s *cfg,
 		   * version els_rnd_xIID() generates a ESL_DSQ seq, which actually_search_target()
 		   * can't handle.
 		   */
-		  if (esl_rnd_IID(cfg->r, Alphabet, nt_p, Alphabet_size, L, randseq)  != eslOK) 
-		    esl_fatal("Failure creating random seq for GC content distro");
-		  /* Digitize the sequence, parse it, and add to histogram */
-		  dsq = DigitizeSequence (randseq, L);
+		  if (esl_rnd_IID(cfg->r, cm->abc->sym, nt_p, cm->abc->K, L, randseq)  != eslOK) 
+		    esl_fatal("Failure creating random sequence.");
+		  sq = esl_sq_CreateFrom("randseq", randseq, NULL, NULL, NULL, NULL);
+		  esl_sq_Digitize(cm->abc, sq);
 		  /* Do the scan */
-		  sc = actually_search_target(cm, dsq, 1, L,
+		  sc = actually_search_target(cm, sq, 1, L,
 					      0.,    /* cutoff is 0 bits (actually we'll find highest
 						      * negative score if it's < 0.0) */
 					      0.,    /* CP9 cutoff is 0 bits */
@@ -657,6 +648,7 @@ static int cm_fit_gumbel(CM_t *cm, ESL_GETOPTS *go, struct cfg_s *cfg,
 					      (!(cm->search_opts & CM_SEARCH_HMMONLY)), /* TRUE if we're calcing CM  stats */
 					      (cm->search_opts & CM_SEARCH_HMMONLY),    /* TRUE if we're calcing CP9 stats */
 					      NULL);          /* filter fraction N/A */
+		  esl_sq_Destroy(sq);
 		  /* Add best score to histogram */
 		  esl_histogram_Add(h, sc);
 		}
@@ -697,17 +689,17 @@ static int cm_fit_gumbel(CM_t *cm, ESL_GETOPTS *go, struct cfg_s *cfg,
 			  nt_p[2] = cm->bg->f[2];
 			  nt_p[3] = cm->bg->f[3];
 			}
-		      esl_vec_DNorm(nt_p, Alphabet_size);
+		      esl_vec_DNorm(nt_p, cm->abc->K);
 		      
 		      /* Get random sequence */
 		      /* We have to generate a text sequence for now, b/c the digitized
 		       * version esl_rnd_xIID() generates a ESL_DSQ seq, which actually_search_target()
 		       * can't handle. */
 		      
-		      if (esl_rnd_IID(cfg->r, Alphabet, nt_p, Alphabet_size, L, randseq)  != eslOK) 
+		      if (esl_rnd_IID(cfg->r, cm->abc->sym, nt_p, cm->abc->K, L, randseq)  != eslOK) 
 			esl_fatal("Failure creating random seq for GC content distro");
-		      /* Digitize the sequence, send it off to be searched, receive score and add to histogram */
-		      dsq = DigitizeSequence (randseq, L);
+		      sq = esl_sq_CreateFrom("randseq", randseq, NULL, NULL, NULL, NULL);
+		      esl_sq_Digitize(cm->abc, sq);
 		      i++;
 		    }
 		  else have_work = FALSE;

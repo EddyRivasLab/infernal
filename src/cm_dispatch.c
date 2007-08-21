@@ -87,8 +87,8 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc
   else dmin = dmax = NULL;
       
   /* Check contract */
-  if(!(cm->flags & CM_HASBITS))
-    esl_fatal("ERROR in serial_search_database CM_HAS_BITS flag is down\n");
+  if(!(cm->flags & CMH_BITS))
+    esl_fatal("ERROR in serial_search_database CMH_BITS flag is down\n");
   /* We allow the caller to specify the alphabet they want the 
    * resulting MSA in, but it has to make sense (see next few lines). */
   if(cm->abc->type == eslRNA)
@@ -224,8 +224,8 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *a
   int *dmin, *dmax;
 
   /* Contract check */
-  if(!(cm->flags & CM_HASBITS))
-    esl_fatal("ERROR in parallel_search_database CM_HAS_BITS flag is down\n");
+  if(!(cm->flags & CMH_BITS))
+    esl_fatal("ERROR in parallel_search_database CMH_BITS flag is down\n");
   if(mpi_my_rank == mpi_master_rank)
     {
       /* We allow the caller to specify the alphabet they want the 
@@ -492,8 +492,8 @@ float actually_search_target(CM_t *cm, ESL_SQ *sq, int i0, int j0, float cm_cuto
     printf("\ti0: %d j0: %d filter: %d\n", i0, j0, do_filter);*/
 
   /* Contract checks */
-  if(!(cm->flags & CM_HASBITS)) 
-    esl_fatal("ERROR in actually_search_target, CM_HASBITS flag down.\n");
+  if(!(cm->flags & CMH_BITS)) 
+    esl_fatal("ERROR in actually_search_target, CMH_BITS flag down.\n");
   if(doing_cm_stats && doing_cp9_stats)
     esl_fatal("ERROR in actually_search_target doing_cm_stats and doing_cp9_stats both TRUE.\n");
 
@@ -1162,8 +1162,8 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
   int do_check   = FALSE;
 
   /* Contract checks */
-  if(!(cm->flags & CM_HASBITS)) 
-    esl_fatal("ERROR in actually_align_targets, CM_HASBITS flag down.\n");
+  if(!(cm->flags & CMH_BITS)) 
+    esl_fatal("ERROR in actually_align_targets, CMH_BITS flag down.\n");
 
   /*printf("in actually_align_targets\n");*/
 

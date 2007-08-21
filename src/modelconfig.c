@@ -399,7 +399,7 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
   ConfigLocalEnds(cm, p_internal_exit);
 
   /* new local probs invalidate log odds scores and QDBs */
-  cm->flags &= ~CM_HASBITS;
+  cm->flags &= ~CMH_BITS;
   /* Recalc QDBs if they exist */
   if(cm->flags & CM_QDB)
     {
@@ -465,7 +465,7 @@ ConfigGlobal(CM_t *cm)
   ConfigNoLocalEnds(cm);
 
   /* new probs invalidate log odds scores and QDB */
-  cm->flags &= ~CM_HASBITS;
+  cm->flags &= ~CMH_BITS;
   /* Recalc QDBs if they exist */
   if(cm->flags & CM_QDB)
     {
@@ -526,7 +526,7 @@ ConfigNoLocalEnds(CM_t *cm)
 
   cm->flags &= ~CM_LOCAL_END; /* turn off local ends flag */
   /* new probs invalidate log odds scores */
-  cm->flags &= ~CM_HASBITS;
+  cm->flags &= ~CMH_BITS;
   /* QDB still valid, local ends don't affect them */
   return;
 }
@@ -587,7 +587,7 @@ ConfigLocalEnds(CM_t *cm, float p_internal_exit)
   cm->flags |= CM_LOCAL_END;
 
   /* new probs invalidate log odds scores */
-  cm->flags &= ~CM_HASBITS;
+  cm->flags &= ~CMH_BITS;
   /* local end changes don't invalidate QDBs */
 
   return;
@@ -846,7 +846,7 @@ EnforceSubsequence(CM_t *cm)
 
   CMRenormalize(cm);
   /* new probs invalidate log odds scores */
-  cm->flags &= ~CM_HASBITS;
+  cm->flags &= ~CMH_BITS;
   /* Recalc QDBs if they exist */
   if(cm->flags & CM_QDB)
     {

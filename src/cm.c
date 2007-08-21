@@ -726,7 +726,7 @@ CMLogoddsify(CM_t *cm)
       cm->flags |= CM_LOCAL_END;
     }
   /* raise flag saying we have valid log odds scores */
-  cm->flags |= CM_HASBITS;
+  cm->flags |= CMH_BITS;
 }
 
 /* Function:  CMHackInsertScores()
@@ -1660,7 +1660,7 @@ ExponentiateCM(CM_t *cm, double z)
 
   if(local_flag) ConfigLocal(cm, cm->pbegin, cm->pend);
   /* new probs invalidate log odds scores */
-  cm->flags &= ~CM_HASBITS;
+  cm->flags &= ~CMH_BITS;
   return eslOK;
 }
 
@@ -2028,13 +2028,13 @@ cm_SetAccession(CM_t *cm, char *acc)
   if (acc == NULL) {
     if (cm->acc != NULL) free(cm->acc); 
     cm->acc = NULL;
-    cm->flags &= ~CM_ACC;
+    cm->flags &= ~CMH_ACC;
   } else {
     n = strlen(acc);
     ESL_RALLOC(cm->acc, tmp, sizeof(char)*(n+1));
     strcpy(cm->acc, acc);
     if ((status = esl_strchop(cm->acc, n)) != eslOK) goto ERROR;
-    cm->flags |= CM_ACC;
+    cm->flags |= CMH_ACC;
   }
   return eslOK;
 
@@ -2059,7 +2059,7 @@ cm_SetDescription(CM_t *cm, char *desc)
     {
       if (cm->desc != NULL) free(cm->desc); 
       cm->desc   = NULL;
-      cm->flags &= ~CM_DESC;
+      cm->flags &= ~CMH_DESC;
     }
   else
     {
@@ -2067,7 +2067,7 @@ cm_SetDescription(CM_t *cm, char *desc)
       ESL_RALLOC(cm->desc, tmp, sizeof(char)*(n+1));
       strcpy(cm->desc, desc);
       if ((status = esl_strchop(cm->desc, n)) != eslOK) goto ERROR;
-      cm->flags |= CM_DESC;
+      cm->flags |= CMH_DESC;
     }
   return eslOK;
 

@@ -35,11 +35,11 @@ MPIPROGS  = @MPIPROGS@
 
 # Where the build arena is (module .h and .o files)
 #
-MYLIBS   = -lsquid -leasel 
-MYLIBDIR = -L../squid -L../easel 
-MYINCDIR = -I../squid -I../easel 
+MYLIBS   = -leasel 
+MYLIBDIR = -L../easel 
+MYINCDIR = -I../easel 
 
-PROGS = cmalign cmbuild cmscore cmsearch cmemit cmcalibrate
+PROGS = cmalign cmbuild cmcalibrate cmemit cmscore cmsearch 
 
 OBJS  = alphabet.o\
 	bandcyk.o\
