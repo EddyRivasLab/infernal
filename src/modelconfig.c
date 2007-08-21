@@ -1064,7 +1064,7 @@ ConfigForGumbelMode(CM_t *cm, int gum_mode)
     esl_fatal("ERROR unrecognized gum_mode: %d in ConfigForGumbelMode");
   }
   /* configure CM and, if needed, CP9 */
-  if(do_cm_local) 
+  if(do_cm_local || do_cp9_local) 
     {
       /* If we're in local, wastefully convert to global, 
        * then back to local, so we follow our rule that ConfigLocal()

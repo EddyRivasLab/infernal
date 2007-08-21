@@ -39,7 +39,7 @@ MYLIBS   = -leasel
 MYLIBDIR = -L../easel 
 MYINCDIR = -I../easel 
 
-PROGS = cmalign cmbuild cmcalibrate cmemit cmscore cmsearch 
+PROGS = cmalign cmbuild cmcalibrate cmemit cmscore cmsearch cmstat
 
 OBJS  = alphabet.o\
 	bandcyk.o\

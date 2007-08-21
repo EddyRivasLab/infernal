@@ -466,13 +466,13 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQ **s
 	      fprintf(cfg->regressfp, "> %s\n", sq[i]->name);
 	      if(esl_opt_GetBoolean(go,"--hmmonly")) 
 		{
-		  fprintf(cfg->regressfp, "  SCORE : %.2f bits\n", CP9TraceScore(cfg->cm->cp9, sq[i], cp9_tr[i]));
-		  CP9PrintTrace(cfg->regressfp, cp9_tr[i], cfg->cm->cp9, sq[i]);
+		  fprintf(cfg->regressfp, "  SCORE : %.2f bits\n", CP9TraceScore(cfg->cm->cp9, sq[i]->dsq, cp9_tr[i]));
+		  CP9PrintTrace(cfg->regressfp, cp9_tr[i], cfg->cm->cp9, sq[i]->dsq);
 		}
 	      else
 		{
-		  fprintf(cfg->regressfp, "  SCORE : %.2f bits\n", ParsetreeScore(cfg->cm, tr[i], sq[i], FALSE));
-		  ParsetreeDump(cfg->regressfp, tr[i], cfg->cm, sq[i], NULL, NULL); /* NULLs are dmin, dmax */
+		  fprintf(cfg->regressfp, "  SCORE : %.2f bits\n", ParsetreeScore(cfg->cm, tr[i], sq[i]->dsq, FALSE));
+		  ParsetreeDump(cfg->regressfp, tr[i], cfg->cm, sq[i]->dsq, NULL, NULL); /* NULLs are dmin, dmax */
 		}
 	      fprintf(cfg->regressfp, "//\n");
 	    }
@@ -481,13 +481,13 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQ **s
 	      fprintf(cfg->tracefp, "> %s\n", sq[i]->name);
 	      if(esl_opt_GetBoolean(go,"--hmmonly")) 
 		{
-		  fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", CP9TraceScore(cfg->cm->cp9, sq[i], cp9_tr[i]));
-		  CP9PrintTrace(cfg->tracefp, cp9_tr[i], cfg->cm->cp9, sq[i]);
+		  fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", CP9TraceScore(cfg->cm->cp9, sq[i]->dsq, cp9_tr[i]));
+		  CP9PrintTrace(cfg->tracefp, cp9_tr[i], cfg->cm->cp9, sq[i]->dsq);
 		}
 	      else
 		{
-		  fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", ParsetreeScore(cfg->cm, tr[i], sq[i], FALSE));
-		  ParsetreeDump(cfg->tracefp, tr[i], cfg->cm, sq[i], NULL, NULL); /* NULLs are dmin, dmax */
+		  fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", ParsetreeScore(cfg->cm, tr[i], sq[i]->dsq, FALSE));
+		  ParsetreeDump(cfg->tracefp, tr[i], cfg->cm, sq[i]->dsq, NULL, NULL); /* NULLs are dmin, dmax */
 		}
 	      fprintf(cfg->tracefp, "//\n");
 	    }
@@ -499,7 +499,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQ **s
     {
       ESL_ALLOC(cfg->s1_sc, sizeof(float) * cfg->nseq);
       for(i = 0; i < cfg->nseq; i++)
-	cfg->s1_sc[i] = ParsetreeScore(cfg->cm, tr[i], sq[i], FALSE);
+	cfg->s1_sc[i] = ParsetreeScore(cfg->cm, tr[i], sq[i]->dsq, FALSE);
     }
   else /* if(cfg->s > 0) we don't do the comparison test for stage 0 */
     {
@@ -515,11 +515,11 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQ **s
 	  /* TO DO: write function that in actually_align_targets(), takes
 	   * a CP9 parse, and converts it to a CM parsetree */
 	  if(esl_opt_GetBoolean(go, "--hmmonly"))
-	    sc[i] = CP9TraceScore(cfg->cm->cp9, sq[i], cp9_tr[i]);
+	    sc[i] = CP9TraceScore(cfg->cm->cp9, sq[i]->dsq, cp9_tr[i]);
 	  else if (esl_opt_GetBoolean(go, "--scoreonly"))
 	    sc[i] = scoreonly_sc[i];
 	  else
-	    sc[i] = ParsetreeScore(cfg->cm, tr[i], sq[i], FALSE);
+	    sc[i] = ParsetreeScore(cfg->cm, tr[i], sq[i]->dsq, FALSE);
 	  if(esl_opt_GetBoolean(go, "-i"))
 	    printf("%-12s S1: %.3f S%d: %.3f diff: %.3f\n", sq[i]->name, cfg->s1_sc[i], (cfg->s+1), sc[i], (fabs(cfg->s1_sc[i] - sc[i])));
 	  if(fabs(cfg->s1_sc[i] -  sc[i]) > 0.0001)

@@ -302,7 +302,7 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
       if(cfg->pfp != NULL)
 	{
 	  fprintf(cfg->pfp, "> %s\n", sq->name);
-	  ParsetreeDump(cfg->pfp, tr, cm, sq, NULL, NULL);
+	  ParsetreeDump(cfg->pfp, tr, cm, sq->dsq, NULL, NULL);
 	  fprintf(cfg->pfp, "//\n");
 	}
       FreeParsetree(tr);
@@ -358,7 +358,7 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
       if(cfg->pfp != NULL)
 	{
 	  fprintf(cfg->pfp, "> %s\n", sq[i]->name);
-	  ParsetreeDump(cfg->pfp, tr[i], cm, sq[i], NULL, NULL);
+	  ParsetreeDump(cfg->pfp, tr[i], cm, sq[i]->dsq, NULL, NULL);
 	  fprintf(cfg->pfp, "//\n");
 	}
     }
@@ -540,7 +540,7 @@ build_cp9(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf
 	  
       /* build model from tracebacks (code from HMMER's modelmakers.c::matassign2hmm() */
       for (i = 0; i < msa->nseq; i++) 
-	CP9TraceCount(shmm, sq[i], 1.0, cp9_tr[i]);
+	CP9TraceCount(shmm, sq[i]->dsq, 1.0, cp9_tr[i]);
       nsampled += msa_nseq;
     }
       

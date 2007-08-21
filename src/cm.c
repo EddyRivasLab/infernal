@@ -1076,7 +1076,7 @@ SummarizeCM(FILE *fp, CM_t *cm)
 	  count[MATP_MP]*2+count[MATL_ML]+count[MATR_MR]);
   fprintf(fp, "Base pairs:         %d    (MATP)\n", count[MATP_MP]);
   fprintf(fp, "Single stranded:    %d    (MATL+MATR)\n", count[MATL_ML]+count[MATR_MR]);
-  fprintf(fp, "W: max hit size:    %d\n", cm->W);
+  /*fprintf(fp, "W: max hit size:    %d\n", cm->W);*/
 
 }
 
@@ -1315,6 +1315,13 @@ CMRebalance(CM_t *cm)
   esl_strdup(cm->acc,  -1, &(new->acc));
   esl_strdup(cm->desc, -1, &(new->desc));
   new->flags = cm->flags;
+  new->clen  = cm->clen;
+  new->nseq     = cm->nseq;
+  new->eff_nseq = cm->eff_nseq;
+  if(cm->flags & CMH_GA) new->ga = cm->ga;
+  if(cm->flags & CMH_TC) new->tc = cm->tc;
+  if(cm->flags & CMH_NC) new->nc = cm->nc;
+
   for (x = 0; x < cm->abc->K; x++) new->null[x] = cm->null[x];
 
   /* Calculate "weights" (# of required extra decks) on every B and S state.
@@ -1857,6 +1864,7 @@ cm_Validate(CM_t *cm, float tol, char *errbuf)
 {
   int status;
   int v;
+  int clen;
 
   if (cm             == NULL)       ESL_XFAIL(eslFAIL, errbuf, "CM is a null pointer");
   if (cm->M          <  1)          ESL_XFAIL(eslFAIL, errbuf, "CM has M < 1");
@@ -1878,8 +1886,12 @@ cm_Validate(CM_t *cm, float tol, char *errbuf)
       if (cm->sttype[v] != B_st && cm->sttype[v] != E_st)
 	if(esl_vec_FValidate(cm->t[v], cm->cnum[v], tol, NULL) != eslOK) 
 	  ESL_XFAIL(eslFAIL, errbuf, "t[%d] fails pvector validation", v);
+      if(cm->stid[v] == MATL_ML) clen++;
+      if(cm->stid[v] == MATR_MR) clen++;
+      if(cm->stid[v] == MATP_MP) clen+=2;
     }
-
+  if(cm->clen != clen) ESL_XFAIL(eslFAIL, errbuf, "consensus length %d not correctly stored in CM, should be %d", cm->clen, clen);
+  
   return eslOK;
 
  ERROR:

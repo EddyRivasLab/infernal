@@ -333,17 +333,19 @@ write_ascii_cm(FILE *fp, CM_t *cm)
   fprintf(fp, "INFERNAL-1 [%s]\n", PACKAGE_VERSION);
 
   fprintf(fp, "NAME   %s\n", cm->name);
-  if (cm->acc  != NULL)  fprintf(fp, "ACC    %s\n", cm->acc);
-  if (cm->desc != NULL)  fprintf(fp, "DESC   %s\n", cm->desc);
-  fprintf(fp, "STATES %d\n", cm->M);
-  fprintf(fp, "NODES  %d\n", cm->nodes);
-  /* EPN 08.18.05 */
-  fprintf(fp, "W      %d\n", cm->W);
-  /* EPN 11.15.05 */
-  fprintf(fp, "el_selfsc %f\n", cm->el_selfsc);
-  /* EPN, Mon Jul 30 10:03:03 2007 */
-  fprintf(fp, "ALPHABET %d", cm->abc->type);
-  fputs("\n", fp);
+  if (cm->acc  != NULL)    fprintf(fp, "ACC    %s\n", cm->acc);
+  if (cm->desc != NULL)    fprintf(fp, "DESC   %s\n", cm->desc);
+  /* Rfam cutoffs */
+  if (cm->flags & CMH_GA)  fprintf(fp, "GA     %.2f\n", cm->ga);
+  if (cm->flags & CMH_TC)  fprintf(fp, "TC     %.2f\n", cm->tc);
+  if (cm->flags & CMH_NC)  fprintf(fp, "NC     %.2f\n", cm->nc);
+  fprintf(fp, "STATES %d\n",   cm->M);
+  fprintf(fp, "NODES  %d\n",   cm->nodes);
+  fprintf(fp, "ALPHABET %d\n", cm->abc->type);
+  fprintf(fp, "ELSELF %.8f\n", cm->el_selfsc);
+  fprintf(fp, "NSEQ   %d\n",   cm->nseq);
+  fprintf(fp, "EFFNSEQ %.8f\n",cm->eff_nseq);
+  fprintf(fp, "CLEN    %d\n",  cm->clen);
   fputs("NULL  ", fp);
   for (x = 0; x < cm->abc->K; x++)
     fprintf(fp, "%6s ", prob2ascii(cm->null[x], 1/(float)(cm->abc->K)));
@@ -475,7 +477,9 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   ESL_ALPHABET *abc = NULL;
   int     read_nstates = FALSE; /* TRUE once we've read the number of states */
   int     read_nnodes  = FALSE; /* TRUE once we've read the number of nodes */
-  
+  int     read_clen = FALSE;
+  int     clen = 0;
+
   cm  = NULL;
   buf = NULL;
   n   = 0;
@@ -511,6 +515,24 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	  esl_strdup(tok, toklen, &(cm->desc));
 	}
+      else if (strcmp(tok, "GA") == 0) 
+	{
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  cm->ga = atof(tok);
+	  cm->flags |= CMH_GA;
+	}
+      else if (strcmp(tok, "TC") == 0) 
+	{
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  cm->tc = atof(tok);
+	  cm->flags |= CMH_TC;
+	}
+      else if (strcmp(tok, "NC") == 0) 
+	{
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  cm->nc = atof(tok);
+	  cm->flags |= CMH_NC;
+	}
       else if (strcmp(tok, "STATES") == 0) 
 	{
 	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
@@ -544,6 +566,27 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	    }
 	  CreateCMBody(cm, N, M, abc);
 	}	    
+      else if (strcmp(tok, "ELSELF") == 0) 
+	{
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  cm->el_selfsc = atof(tok);
+	}
+      else if (strcmp(tok, "NSEQ") == 0) 
+	{
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  cm->nseq = atoi(tok);
+	}
+      else if (strcmp(tok, "EFFNSEQ") == 0) 
+	{
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  cm->eff_nseq = atof(tok);
+	}
+      else if (strcmp(tok, "CLEN") == 0) 
+	{
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  clen = atoi(tok); /* we'll compare this to what we calculate at end of func */
+	  read_clen = TRUE;
+	}
       else if (strcmp(tok, "NULL") == 0) 
 	{
 	  if(cm->abc == NULL) 
@@ -557,18 +600,6 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	      cm->null[x] = ascii2prob(tok, (1./(float) abc->K));
 	    }
-	}
-      /* EPN 08.18.05 */
-      else if (strcmp(tok, "W") == 0) 
-	{
-	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	  cm->W = atoi(tok);
-	}
-      /* EPN 11.15.05 */
-      else if (strcmp(tok, "el_selfsc") == 0) 
-	{
-	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	  cm->el_selfsc = atof(tok);
 	}
       /* information on partitions for EVDs */
       else if (strcmp(tok, "PART") == 0) 
@@ -715,6 +746,7 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   if(have_gums)  cm->flags |= CM_GUMBEL_STATS;
   if(have_fthrs) cm->flags |= CM_FTHR_STATS;
   nd = -1;
+  cm->clen = 0;
   for (v = 0; v < cm->M; v++)
     {
       if (esl_fgets(&buf, &n, cmf->f) != eslOK) goto FAILURE;
@@ -808,6 +840,13 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 					  * an old version (0.7 or earlier) of cmbuild was used, or  
 					  * cmbuild --nodetach  was used to build the CM  */
 				  TRUE); /* Detach the states by setting trans probs into them as 0.0   */
+
+  /* check that the clen we calc'ed is the same as the CLEN line said */
+  if (read_clen && clen != cm->clen) 
+    {
+      printf("ERROR, calculated consensus length %d does not equal read CLEN: %d.\n", cm->clen, clen);
+      goto FAILURE;
+    }
 
   /* Success.
    * Renormalize the CM, and return.

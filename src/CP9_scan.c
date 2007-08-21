@@ -2144,8 +2144,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   /* Configure the CM based on the emit mode COULD DIFFERENT FROM WORKERS! */
   ConfigForGumbelMode(cm, emit_mode);
   /* Copy the CM into cm_for_scoring, and reconfigure it if nec.,
-   * We do this, so we can exponentiate or change emission modes of
-   * the original CM */
+   * We do this, so we change emission modes of the original CM */
   cm_for_scoring = DuplicateCM(cm); 
   /*if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))*/
   ConfigForGumbelMode(cm_for_scoring, fthr_mode);
@@ -2154,7 +2153,11 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   if(hmm_gum_mode == CP9_L)
     {
       CPlan9SWConfig(cm_for_scoring->cp9, cm_for_scoring->pbegin, cm_for_scoring->pbegin);
+      if(! (cm_for_scoring->flags & CM_LOCAL_END))
+	ConfigLocal(cm_for_scoring, cm_for_scoring->pbegin, cm_for_scoring->pend); 	/* need CM in local mode to calculate HMM EL probs, sloppy */
       CPlan9ELConfig(cm_for_scoring);
+      if(! (cm_for_scoring->flags & CM_LOCAL_END))
+	ConfigGlobal(cm_for_scoring); 	/* return CM back to global mode, sloppy */
     }
   else /* hmm_gum_mode == CP9_G (it's in the contract) */
     CPlan9GlobalConfig(cm_for_scoring->cp9);
@@ -2207,6 +2210,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 
       while(ip < N) /* while number seqs passed CM score threshold (ip) < N */
 	{
+	  ESL_ALLOC(name, sizeof(char) * 50);
 	  sprintf(name, "seq%d", ip+1);
 	  EmitParsetree(cm, r, name, TRUE, &tr, &sq, &L); /* TRUE: digitize the seq */
 	  while(L == 0) { FreeParsetree(tr); esl_sq_Destroy(sq); EmitParsetree(cm, r, name, TRUE, &tr, &sq, &L); }

@@ -1759,10 +1759,14 @@ CYKBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, int **hdmin, int 
 		      /* k is the length of the right fragment */
 		      tmp_kmin = ((j-jmax[w]) > hdmin[y][jp_y]) ? (j-jmax[w]) : hdmin[y][jp_y];
 		      if(tmp_kmin < 0) tmp_kmin = 0;
+		      /* HEREHEREHEREHEREHEREHEREHERE, ensure that hdmax[w][jp_w-tmp_kmin] is valid
+		       * before accessing it! */
 		      if(tmp_kmin < d-hdmax[w][jp_w-tmp_kmin]) tmp_kmin = d-hdmax[w][jp_w-tmp_kmin];
 		      /* tmp_kmin is now smallest k that satisfies (2), (3), and (4) */
 
 		      tmp_kmax = ((j-jmin[w]) < hdmax[y][jp_y]) ? (j-jmin[w]) : hdmax[y][jp_y];
+		      /* HEREHEREHEREHEREHEREHEREHERE, ensure that hdmin[w][jp_w-tmp_kmax] is valid
+		       * before accessing it! */
 		      if(tmp_kmax > d-hdmin[w][jp_w-tmp_kmax]) tmp_kmax = d-hdmin[w][jp_w-tmp_kmax];
 		      /* tmp_kmax is now largest k that satisfies (2), (3), and (4) */
 		      /*printf("tmp_kmin: %d | tmp_kmax: %d\n", tmp_kmin, tmp_kmax);*/

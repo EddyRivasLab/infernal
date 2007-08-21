@@ -577,6 +577,14 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MS
       FreeParsetree(tr);
       free(aseq);
     }
+  cm->nseq     = msa->nseq;
+  cm->eff_nseq = msa->nseq;
+  if(esl_opt_GetBoolean(go, "--treeforce"))
+    {
+      cm->nseq--;
+      cm->eff_nseq--;
+    }      
+
   /* ensure the dual insert states we will detach were populated with 0 counts */
   if(!(esl_opt_GetBoolean(go, "--nodetach")))
     {
@@ -680,6 +688,7 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
       else                                etarget = esl_opt_GetReal(go, "--ere");
 
       neff = CM_Eweight_RE(cm, pri, (float) msa->nseq, etarget, cm->null);
+      cm->eff_nseq = neff;
       CMRescale(cm, neff / (float) msa->nseq);
       printf("done. [etarget %.2f bits; neff %.2f]\n", etarget, neff);
     }
