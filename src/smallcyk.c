@@ -1762,7 +1762,7 @@ outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
       switch (cm->sttype[vroot]) {
       case MP_st:
 	if (W < 2) break;
-	if (dsq[i0] < Alphabet_size && dsq[j0] > Alphabet_size)
+	if (dsq[i0] < Alphabet_size && dsq[j0] < Alphabet_size)
 	  escore = cm->esc[vroot][(int) (dsq[i0]*Alphabet_size+dsq[j0])];
 	else
 	  escore = DegeneratePairScore(cm->esc[vroot], dsq[i0], dsq[j0]);
