@@ -237,16 +237,14 @@ void report_hit (int i, int j, int bestr, float score, scan_results_t *results)
  * Returns:  score of best overall hit
  */
 float 
-CYKScan(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, 
+CYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, 
 	float cutoff, scan_results_t *results)
 {
   /* Contract check */
   if(j0 < i0)
     esl_fatal("ERROR in CYKScan, i0: %d j0: %d\n", i0, j0);
-  if(sq == NULL)
-    esl_fatal("ERROR in CYKScan, sq is NULL\n");
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in CYKScan, sq is not digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR in CYKScan, dsq is NULL\n");
 
   int       status;
   float  ***alpha;              /* CYK DP score matrix, [v][j][d] */
@@ -394,10 +392,10 @@ CYKScan(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W,
 		      alpha[v][cur][d] = sc;
 		  
 		  i = j-d+1;
-		  if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
-		    alpha[v][cur][d] += cm->esc[v][(int) (sq->dsq[i]*cm->abc->K+sq->dsq[j])];
+		  if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][(dsq[i]*cm->abc->K+dsq[j])];
 		  else
-		    alpha[v][cur][d] += DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i], sq->dsq[j]);
+		    alpha[v][cur][d] += DegeneratePairScore(cm->abc, cm->esc[v], dsq[i], dsq[j]);
 		  
 		  if (alpha[v][cur][d] < IMPOSSIBLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -413,10 +411,10 @@ CYKScan(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W,
 		      alpha[v][cur][d] = sc;
 		  
 		  i = j-d+1;
-		  if (sq->dsq[i] < cm->abc->K)
-		    alpha[v][cur][d] += cm->esc[v][(int) sq->dsq[i]];
+		  if (dsq[i] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][dsq[i]];
 		  else
-		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[i], cm->esc[v]);
+		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
 		  
 		  if (alpha[v][cur][d] < IMPOSSIBLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -431,10 +429,10 @@ CYKScan(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W,
 		    if ((sc = alpha[y+yoffset][prv][d-1] + cm->tsc[v][yoffset]) > alpha[v][cur][d])
 		      alpha[v][cur][d] = sc;
 		  
-		  if (sq->dsq[j] < cm->abc->K)
-		    alpha[v][cur][d] += cm->esc[v][(int) sq->dsq[j]];
+		  if (dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][dsq[j]];
 		  else
-		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[j], cm->esc[v]);
+		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
 		  
 		  if (alpha[v][cur][d] < IMPOSSIBLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}

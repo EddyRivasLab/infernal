@@ -245,11 +245,11 @@ ParsetreeCount(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float wgt)
  *           given a CM that's prepared in log-odds form.
  */
 float
-ParsetreeScore(CM_t *cm, Parsetree_t *tr, ESL_SQ *sq, int do_null2)
+ParsetreeScore(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, int do_null2)
 {
   /* contract check */
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in ParsetreeScore(), sq should be digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR in ParsetreeScore(), dsq is NULL.\n");
 
   int tidx;			/* counter through positions in the parsetree        */
   int v,y;			/* parent, child state index in CM                   */
@@ -276,8 +276,8 @@ ParsetreeScore(CM_t *cm, Parsetree_t *tr, ESL_SQ *sq, int do_null2)
 	
 	if (cm->sttype[v] == MP_st) 
 	  {
-	    symi = sq->dsq[tr->emitl[tidx]];
-	    symj = sq->dsq[tr->emitr[tidx]];
+	    symi = dsq[tr->emitl[tidx]];
+	    symj = dsq[tr->emitr[tidx]];
             if (mode == 3)
               {
   	        if (symi < cm->abc->K && symj < cm->abc->K)
@@ -292,13 +292,13 @@ ParsetreeScore(CM_t *cm, Parsetree_t *tr, ESL_SQ *sq, int do_null2)
 	  } 
 	else if ( (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) && (mode == 3 || mode == 2) )
 	  {
-	    symi = sq->dsq[tr->emitl[tidx]];
+	    symi = dsq[tr->emitl[tidx]];
 	    if (symi < cm->abc->K) sc += cm->esc[v][(int) symi];
 	    else                   sc += esl_abc_FAvgScore(cm->abc, symi, cm->esc[v]);
 	  } 
 	else if ( (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && (mode == 3 || mode == 2) )
 	  {
-	    symj = sq->dsq[tr->emitr[tidx]];
+	    symj = dsq[tr->emitr[tidx]];
 	    if (symj < cm->abc->K) sc += cm->esc[v][(int) symj];
 	    else                   sc += esl_abc_FAvgScore(cm->abc, symj, cm->esc[v]);
 	  }
@@ -306,7 +306,7 @@ ParsetreeScore(CM_t *cm, Parsetree_t *tr, ESL_SQ *sq, int do_null2)
   }
 
   if(do_null2)
-    sc -= CM_TraceScoreCorrection(cm, tr, sq);
+    sc -= CM_TraceScoreCorrection(cm, tr, dsq);
 
   return sc;
 }
@@ -364,7 +364,7 @@ PrintParsetree(FILE *fp, Parsetree_t *tr)
  * Args:    fp    - FILE to write output to.
  *          tr    - parsetree to examine.
  *          cm    - model that was aligned to dsq to generate the parsetree
- *          sq    - sequence that was aligned to cm to generate the parsetree
+ *          dsq   - digitized sequence that was aligned to cm to generate the parsetree
  *          gamma - cumulative subsequence length probability distributions
  *                  used to generate the bands; from BandDistribution(); [0..v..M-1][0..W]
  *          W     - maximum window length W (gamma distributions range up to this)        
@@ -374,7 +374,7 @@ PrintParsetree(FILE *fp, Parsetree_t *tr)
  * Returns:  (void)
  */
 void
-ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_SQ *sq, int *dmin, int *dmax)
+ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax)
 {
   int   x;
   char  syml, symr;
@@ -390,8 +390,8 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_SQ *sq, int *dmin, int *d
     esl_fatal("In ParsetreeDump(), dmin is NULL, dmax is not.\n");
   if(dmin != NULL && dmax == NULL)
     esl_fatal("In ParsetreeDump(), dmax is NULL, dmin is not.\n");
-  if(! sq->flags & eslSQ_DIGITAL)
-    esl_fatal("In ParsetreeDump(), sq must be digitized");
+  if(dsq == NULL)
+    esl_fatal("In ParsetreeDump(), dsq is NULL");
 
   if(dmin != NULL && dmax != NULL) do_banded = TRUE;
   else                             do_banded = FALSE;
@@ -424,17 +424,17 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_SQ *sq, int *dmin, int *d
       syml = symr = ' ';
       esc = 0.;
       if (cm->sttype[v] == MP_st) {
-	if (mode == 3 || mode == 2) syml = cm->abc->sym[sq->dsq[tr->emitl[x]]]; 
-	if (mode == 3 || mode == 1) symr = cm->abc->sym[sq->dsq[tr->emitr[x]]];
-	if      (mode == 3) esc = DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[tr->emitl[x]], sq->dsq[tr->emitr[x]]);
-        else if (mode == 2) esc =   LeftMarginalScore(cm->abc, cm->esc[v], sq->dsq[tr->emitl[x]]);
-        else if (mode == 1) esc =  RightMarginalScore(cm->abc, cm->esc[v],                        sq->dsq[tr->emitr[x]]);
+	if (mode == 3 || mode == 2) syml = cm->abc->sym[dsq[tr->emitl[x]]]; 
+	if (mode == 3 || mode == 1) symr = cm->abc->sym[dsq[tr->emitr[x]]];
+	if      (mode == 3) esc = DegeneratePairScore(cm->abc, cm->esc[v], dsq[tr->emitl[x]], dsq[tr->emitr[x]]);
+        else if (mode == 2) esc =   LeftMarginalScore(cm->abc, cm->esc[v], dsq[tr->emitl[x]]);
+        else if (mode == 1) esc =  RightMarginalScore(cm->abc, cm->esc[v],                        dsq[tr->emitr[x]]);
       } else if ( (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) && (mode == 3 || mode == 2) ) {
-	syml = cm->abc->sym[sq->dsq[tr->emitl[x]]];
-	esc  = esl_abc_FAvgScore(cm->abc, sq->dsq[tr->emitl[x]], cm->esc[v]);
+	syml = cm->abc->sym[dsq[tr->emitl[x]]];
+	esc  = esl_abc_FAvgScore(cm->abc, dsq[tr->emitl[x]], cm->esc[v]);
       } else if ( (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) && (mode == 3 || mode == 1) ) {
-	symr = cm->abc->sym[sq->dsq[tr->emitr[x]]];
-	esc  = esl_abc_FAvgScore(cm->abc, sq->dsq[tr->emitr[x]], cm->esc[v]);
+	symr = cm->abc->sym[dsq[tr->emitr[x]]];
+	esc  = esl_abc_FAvgScore(cm->abc, dsq[tr->emitr[x]], cm->esc[v]);
       }
 
       /* Set tsc: transition score, or 0.
@@ -992,7 +992,7 @@ Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
  *           
  */
 float
-ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, ESL_SQ *sq, int print_flag)
+ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, int print_flag)
 {
   int   status;
   int tidx;			/* counter through positions in the parsetree        */
@@ -1016,8 +1016,8 @@ ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, ESL_SQ *sq, int print_fla
    * want to need to switch CM back and forth from local/global */
   if((!(cm->flags & CM_LOCAL_BEGIN)) || (!(cm->flags & CM_LOCAL_END)))
     esl_fatal("ERROR in ParsetreeScore_Global2Local() CM is not in local mode.\n");
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in ParsetreeScore_Global2Local(), sq should be digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR in ParsetreeScore_Global2Local(), dsq is NULL.\n");
 
   /* Allocate and initialize */
   ESL_ALLOC(v2n_map, sizeof(int)   * cm->M); 
@@ -1058,8 +1058,8 @@ ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, ESL_SQ *sq, int print_fla
 	
 	  if (cm->sttype[v] == MP_st) 
 	    {
-	      symi = sq->dsq[tr->emitl[tidx]];
-	      symj = sq->dsq[tr->emitr[tidx]];
+	      symi = dsq[tr->emitl[tidx]];
+	      symj = dsq[tr->emitr[tidx]];
 	      if (mode == 3)
 		{
 		  if (symi < cm->abc->K && symj < cm->abc->K)
@@ -1074,13 +1074,13 @@ ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, ESL_SQ *sq, int print_fla
 	    } 
 	  else if ( (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) && (mode == 3 || mode == 2) )
 	    {
-	      symi = sq->dsq[tr->emitl[tidx]];
+	      symi = dsq[tr->emitl[tidx]];
 	      if (symi < cm->abc->K) tr_esc[tidx] = cm->esc[v][(int) symi];
 	      else                   tr_esc[tidx] = esl_abc_FAvgScore(cm->abc, symi, cm->esc[v]);
 	    } 
 	  else if ( (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && (mode == 3 || mode == 2) )
 	    {
-	      symj = sq->dsq[tr->emitr[tidx]];
+	      symj = dsq[tr->emitr[tidx]];
 	      if (symj < cm->abc->K) tr_esc[tidx] = cm->esc[v][(int) symj];
 	      else                   tr_esc[tidx] = esl_abc_FAvgScore(cm->abc, symj, cm->esc[v]);
 	    }

@@ -115,7 +115,7 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc
 	  /*printf("SEARCHING >%s %d\n", dbseq->sq[reversed]->name, reversed);*/
 	  /* Scan */
 	  dbseq->results[reversed] = CreateResults(INIT_RESULTS);
-	  actually_search_target(cm, dbseq->sq[reversed], 1, dbseq->sq[reversed]->n, 
+	  actually_search_target(cm, dbseq->sq[reversed]->dsq, 1, dbseq->sq[reversed]->n, 
 				 min_cm_cutoff, min_cp9_cutoff, 
 				 dbseq->results[reversed], 
 				 TRUE,  /* filter with a CP9 HMM if appropriate */
@@ -136,7 +136,7 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc
 	    for (i=0; i<dbseq->results[reversed]->num_results; i++) 
 	      {
 		CYKDivideAndConquer
-		  (cm, dbseq->sq[reversed], 
+		  (cm, dbseq->sq[reversed]->dsq, dbseq->sq[reversed]->n,
 		   dbseq->results[reversed]->data[i].bestr,
 		   dbseq->results[reversed]->data[i].start, 
 		   dbseq->results[reversed]->data[i].stop, 
@@ -461,7 +461,7 @@ db_seq_t *read_next_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revco
  *           based on cm->search_opts.
  * 
  * Args:     cm         - the covariance model
- *           sq         - the target sequence (digitized)
+ *           dsq        - the target sequence (digitized)
  *           i0         - start of target subsequence (often 1, beginning of dsq)
  *           j0         - end of target subsequence (often L, end of dsq)
  *           cm_cutoff  - minimum CM  score to report 
@@ -476,12 +476,12 @@ db_seq_t *read_next_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revco
  *           ret_flen   - RETURN: subseq len that survived filter (NULL if not filtering)
  * Returns: Highest scoring hit from search (even if below cutoff).
  */
-float actually_search_target(CM_t *cm, ESL_SQ *sq, int i0, int j0, float cm_cutoff, 
+float actually_search_target(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cutoff, 
 			     float cp9_cutoff, scan_results_t *results, int do_filter, 
 			     int doing_cm_stats, int doing_cp9_stats, int *ret_flen)
 {
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in actually_search_target(), sq is not digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR in actually_search_target(), dsq is NULL.");
 
   float sc;
   int flen;
@@ -522,35 +522,35 @@ float actually_search_target(CM_t *cm, ESL_SQ *sq, int i0, int j0, float cm_cuto
     }      
 
   if(use_cp9)
-    sc = CP9Scan_dispatch(cm, sq, i0, j0, cm->W, cm_cutoff, cp9_cutoff, results, doing_cp9_stats, ret_flen);
+    sc = CP9Scan_dispatch(cm, dsq, i0, j0, cm->W, cm_cutoff, cp9_cutoff, results, doing_cp9_stats, ret_flen);
   else
     {
       if(cm->search_opts & CM_SEARCH_HBANDED)
 	{
 	  cp9b = AllocCP9Bands(cm, cm->cp9);
-	  CP9_seq2bands(cm, sq, i0, j0, cp9b, 
+	  CP9_seq2bands(cm, dsq, i0, j0, cp9b, 
 			NULL, /* we don't want the posterior matrix back */
 			0);   /* debug level */
 
 	  /*debug_print_hmm_bands(stdout, (j0-i0+1), cp9b, cm->tau, 3);*/
 	  if(cm->search_opts & CM_SEARCH_INSIDE)
-	    sc = iInsideBandedScan_jd(cm, sq, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
+	    sc = iInsideBandedScan_jd(cm, dsq, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
 				      i0, j0, cm->W, cm_cutoff, results);
 	  else /* don't do inside */
-	    sc = CYKBandedScan_jd(cm, sq, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
+	    sc = CYKBandedScan_jd(cm, dsq, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
 				  i0, j0, cm->W, cm_cutoff, results);
 	  FreeCP9Bands(cp9b);
 	}
       else if(cm->search_opts & CM_SEARCH_NOQDB)
 	if(cm->search_opts & CM_SEARCH_INSIDE)
-	  sc = iInsideScan(cm, sq, i0, j0, cm->W, cm_cutoff, results);
+	  sc = iInsideScan(cm, dsq, i0, j0, cm->W, cm_cutoff, results);
 	else /* don't do inside */
-	  sc = CYKScan (cm, sq, i0, j0, cm->W, cm_cutoff, results);
+	  sc = CYKScan (cm, dsq, i0, j0, cm->W, cm_cutoff, results);
       else /* use QDB */
 	if(cm->search_opts & CM_SEARCH_INSIDE)
-	  sc = iInsideBandedScan(cm, sq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
+	  sc = iInsideBandedScan(cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
 	else /* don't do inside */
-	  sc = CYKBandedScan (cm, sq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
+	  sc = CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
     }    
   return sc;
 }  
@@ -677,8 +677,8 @@ void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, db_s
 	  if (results->data[i].tr != NULL) 
 	    {
 	      ali = CreateFancyAli (results->data[i].tr, cm, cons, 
-				    dbseq->sq[in_revcomp], abc,
-				    (results->data[i].start));
+				    dbseq->sq[in_revcomp]->dsq, abc);
+				    
 	      PrintFancyAli(stdout, ali,
 			    (coordinate(in_revcomp, results->data[i].start, len)-1), /* offset in sq index */
 			    in_revcomp);
@@ -1283,7 +1283,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	{
 	  cp9_mx  = CreateCPlan9Matrix(1, cm->cp9->M, 25, 0);
 	  if(!silent_mode) printf("Aligning (to a CP9 HMM w/viterbi) %-20s", sq[i]->name);
-	  sc = CP9ViterbiOLD(sq[i], 1, sq[i]->n, cm->cp9, cp9_mx, &(cp9_tr[i]));
+	  sc = CP9ViterbiOLD(sq[i]->dsq, 1, sq[i]->n, cm->cp9, cp9_mx, &(cp9_tr[i]));
 	  if(!silent_mode) printf(" score: %10.2f bits\n", sc);
 	  if(parsesc != NULL) parsesc[i] = sc;
 	  FreeCPlan9Matrix(cp9_mx);
@@ -1294,7 +1294,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
       if(do_scoreonly)
 	{
 	  if(!silent_mode) printf("Aligning (w/full CYK score only) %-30s", sq[i]->name);
-	  sc = CYKInsideScore(cm, sq[i], 0, 1, sq[i]->n, 
+	  sc = CYKInsideScore(cm, sq[i]->dsq, sq[i]->n, 0, 1, sq[i]->n, 
 			      NULL, NULL); /* don't do QDB mode */
 	  if(!silent_mode) printf("    score: %10.2f bits\n", sc);
 	  if(parsesc != NULL) parsesc[i] = sc;
@@ -1305,11 +1305,11 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
       if(do_hbanded)
 	{
 	  if(do_sub)
-	    CP9_seq2bands(orig_cm, sq[i], 1, sq[i]->n, orig_cp9b, 
+	    CP9_seq2bands(orig_cm, sq[i]->dsq, 1, sq[i]->n, orig_cp9b, 
 			  &cp9_post, /* we DO want the posterior matrix back */
 			  debug_level);
 	  else
-	    CP9_seq2bands(orig_cm, sq[i], 1, sq[i]->n, orig_cp9b, 
+	    CP9_seq2bands(orig_cm, sq[i]->dsq, 1, sq[i]->n, orig_cp9b, 
 			  NULL, /* we don't want the posterior matrix back */
 			  debug_level);
 	}
@@ -1327,7 +1327,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	{
 	  /* (1) Get HMM posteriors (if do_hbanded, we already have them) */
 	  if(!do_hbanded) 
-	    CP9_seq2posteriors(orig_cm, sq[i], 1, sq[i]->n, &cp9_post, 
+	    CP9_seq2posteriors(orig_cm, sq[i]->dsq, 1, sq[i]->n, &cp9_post, 
 			       debug_level); 
 	  
 	  /* (2) infer the start and end HMM nodes (consensus cols) from posterior matrix.
@@ -1364,7 +1364,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	      sub_hmm    = sub_cm->cp9;
 	      sub_cp9map = sub_cm->cp9map;
 	      sub_cp9b   = AllocCP9Bands(sub_cm, sub_cm->cp9);
-	      CP9_seq2bands(sub_cm, sq[i], 1, sq[i]->n, sub_cp9b, 
+	      CP9_seq2bands(sub_cm, sq[i]->dsq, 1, sq[i]->n, sub_cp9b, 
 			    NULL, /* we don't want posterior matrix back */
 			    debug_level);
 	      hmm           = sub_hmm;    
@@ -1481,7 +1481,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	{
 	  if(do_qdb)
 	    {
-	      sc = CYKDivideAndConquer(cm, sq[i], 0, 1, sq[i]->n, 
+	      sc = CYKDivideAndConquer(cm, sq[i]->dsq, sq[i]->n, 0, 1, sq[i]->n, 
 				       &(tr[i]), cm->dmin, cm->dmax);
 	      if(bdump_level > 0)
  		qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
@@ -1499,7 +1499,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 		}
 	      /* Note the following CYK call will not enforce j bands, even
 	       * though user specified --hbanded. */
-	      sc = CYKDivideAndConquer(cm, sq[i], 0, 1, sq[i]->n, 
+	      sc = CYKDivideAndConquer(cm, sq[i]->dsq, sq[i]->n, 0, 1, sq[i]->n, 
 				       &(tr[i]), cp9b->safe_hdmin, cp9b->safe_hdmax);
 	      if(bdump_level > 0)
 		qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
@@ -1510,7 +1510,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 		debug_print_cm_params(cm);
 		printf("DONE DEBUG PRINTING CM PARAMS BEFORE D&C CALL\n");*/
 
-	      sc = CYKDivideAndConquer(cm, sq[i], 0, 1, sq[i]->n, &(tr[i]),
+	      sc = CYKDivideAndConquer(cm, sq[i]->dsq, sq[i]->n, 0, 1, sq[i]->n, &(tr[i]),
 				       NULL, NULL); /* we're not in QDB mode */
 	      if(bdump_level > 0)
 		{
@@ -1524,13 +1524,13 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	}
       else if(do_qdb)
 	{
-	  sc = CYKInside(cm, sq[i], 0, 1, sq[i]->n, &(tr[i]), cm->dmin, cm->dmax);
+	  sc = CYKInside(cm, sq[i]->dsq, sq[i]->n, 0, 1, sq[i]->n, &(tr[i]), cm->dmin, cm->dmax);
 	  if(bdump_level > 0)
 	    qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
 	}
       else if(do_hbanded)
 	{
-	  sc = CYKInside_b_jd(cm, sq[i], 0, 1, sq[i]->n, &(tr[i]), cp9b->jmin, 
+	  sc = CYKInside_b_jd(cm, sq[i]->dsq, sq[i]->n, 0, 1, sq[i]->n, &(tr[i]), cp9b->jmin, 
 			      cp9b->jmax, cp9b->hdmin, cp9b->hdmax, cp9b->safe_hdmin, cp9b->safe_hdmax);
 	  if(bdump_level > 0)
 	    qdb_trace_info_dump(cm, tr[i], cp9b->safe_hdmin, cp9b->safe_hdmax, bdump_level);
@@ -1540,7 +1540,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	      tmpsc = sc;
 	      printf("\n%s HMM banded parse had a negative score, realigning with non-banded CYK.\n", sq[i]->name);
 	      FreeParsetree(tr[i]);
-	      sc = CYKDivideAndConquer(cm, sq[i], 0, 1, sq[i]->n, &(tr[i]),
+	      sc = CYKDivideAndConquer(cm, sq[i]->dsq, sq[i]->n, 0, 1, sq[i]->n, &(tr[i]),
 				       NULL, NULL); /* we're not in QDB mode */
 	      if(fabs(sc-tmpsc) < 0.01)
 		printf("HMM banded parse was the optimal parse.\n\n");
@@ -1550,7 +1550,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	}
       else
 	{
-	  sc = CYKInside(cm, sq[i], 0, 1, sq[i]->n, &(tr[i]), NULL, NULL);
+	  sc = CYKInside(cm, sq[i]->dsq, sq[i]->n, 0, 1, sq[i]->n, &(tr[i]), NULL, NULL);
 	  if(bdump_level > 0)
 	    {
 	      /* We want band info but --hbanded wasn't used.  Useful if you're curious
@@ -1642,15 +1642,15 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
       if((cm->align_opts & CM_ALIGN_CHECKPARSESC) &&
 	 (!(cm->flags & CM_IS_SUB)))
 	{
-	  if (fabs(sc - ParsetreeScore(cm, tr[i], sq[i], FALSE)) >= 0.01)
+	  if (fabs(sc - ParsetreeScore(cm, tr[i], sq[i]->dsq, FALSE)) >= 0.01)
 	    esl_fatal("ERROR in actually_align_target(), alignment score differs from its parse tree's score");
 	}
 
       /* If debug level high enough, print out the parse tree */
       if((cm->align_opts & CM_ALIGN_PRINTTREES) || (debug_level > 2))
 	{
-	  fprintf(stdout, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr[i], sq[i], FALSE));;
-	  ParsetreeDump(stdout, tr[i], cm, sq[i], NULL, NULL);
+	  fprintf(stdout, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr[i], sq[i]->dsq, FALSE));;
+	  ParsetreeDump(stdout, tr[i], cm, sq[i]->dsq, NULL, NULL);
 	  fprintf(stdout, "//\n");
 	}
       /* Dump the trace with info on i, j and d bands
@@ -1688,17 +1688,17 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	{
 	  /* Convert the sub_cm parsetree to a full CM parsetree */
 	  if(debug_level > 0)
-	    ParsetreeDump(stdout, tr[i], cm, sq[i], NULL, NULL);
+	    ParsetreeDump(stdout, tr[i], cm, sq[i]->dsq, NULL, NULL);
 	  if(!(sub_cm2cm_parsetree(orig_cm, sub_cm, &orig_tr, tr[i], submap, FALSE, debug_level)))
 	    {
 	      printf("\n\nIncorrectly converted original trace:\n");
-	      ParsetreeDump(stdout, orig_tr, orig_cm, sq[i], NULL, NULL);
+	      ParsetreeDump(stdout, orig_tr, orig_cm, sq[i]->dsq, NULL, NULL);
 	      exit(1);
 	    }
 	  if(debug_level > 0)
 	    {
 	      printf("\n\nConverted original trace:\n");
-	      ParsetreeDump(stdout, orig_tr, orig_cm, sq[i], NULL, NULL);
+	      ParsetreeDump(stdout, orig_tr, orig_cm, sq[i]->dsq, NULL, NULL);
 	    }
 	  /* Replace the sub_cm trace with the converted orig_cm trace. */
 	  FreeParsetree(tr[i]);

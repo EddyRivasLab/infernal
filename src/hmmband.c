@@ -156,16 +156,16 @@ dbl_Score2Prob(int sc, float null)
  *           in the CP9Bands_t structure.
  *           
  * Args:     cm          - the covariance model
- *           sq          - sequence in digitized form
+ *           dsq         - sequence in digitized form
  *           i0          - start of target subsequence (often 1, beginning of sq)
- *           j0          - end of target subsequence (often sq->n, end of sq)
+ *           j0          - end of target subsequence (often L, end of sq)
  *           cp9b        - PRE-ALLOCATED, the HMM bands for this sequence, filled here.
  *           ret_cp9_post - RETURN: the HMM posterior matrix (NULL if not wanted)
  *           debug_level - verbosity level for debugging printf()s
  * Return:  void
  */
 void 
-CP9_seq2bands(CM_t *cm, ESL_SQ *sq, int i0, int j0, CP9Bands_t *cp9b, 
+CP9_seq2bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, 
 	      CP9_dpmatrix_t **ret_cp9_post, int debug_level)
 {
   int             status;
@@ -186,8 +186,8 @@ CP9_seq2bands(CM_t *cm, ESL_SQ *sq, int i0, int j0, CP9Bands_t *cp9b,
     esl_fatal("ERROR in CP9_seq2bands, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
   if((cm->search_opts & CM_SEARCH_HMMSCANBANDS) && (!(cm->search_opts & CM_SEARCH_HBANDED))) 
     esl_fatal("ERROR in CP9_seq2bands, CM_SEARCH_HMMSCANBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in CP9_seq2bands(), sq is not digitized.\n");
+  if(dsq == NULL) 
+    esl_fatal("ERROR in CP9_seq2bands, dsq is NULL.");
   
   use_sums = FALSE;
   if((cm->align_opts & CM_ALIGN_SUMS) || (cm->search_opts & CM_SEARCH_SUMS))
@@ -205,7 +205,7 @@ CP9_seq2bands(CM_t *cm, ESL_SQ *sq, int i0, int j0, CP9Bands_t *cp9b,
    */
 
   /* Step 1: Get HMM posteriors.*/
-  CP9_seq2posteriors(cm, sq, i0, j0, &cp9_post, debug_level);
+  CP9_seq2posteriors(cm, dsq, i0, j0, &cp9_post, debug_level);
 
   /* Step 2: posteriors -> HMM bands.*/
   if(use_sums) CP9_ifill_post_sums(cp9_post, cp9b, i0, j0);
@@ -267,9 +267,9 @@ CP9_seq2bands(CM_t *cm, ESL_SQ *sq, int i0, int j0, CP9Bands_t *cp9b,
  *           matrix.
  *           
  * Args:     cm           - the covariance model
- *           sq           - sequence in digitized form
- *           i0           - start of target subsequence (often 1, beginning of sq)
- *           j0           - end of target subsequence (often sq->n, end of sq)
+ *           dsq          - sequence in digitized form
+ *           i0           - start of target subsequence (often 1, beginning of dsq)
+ *           j0           - end of target subsequence (often L, end of dsq)
  *           ret_cp9_post - RETURN: the HMM posterior matrix for this sequence
  *           debug_level  - verbosity level for debugging printf()s
  *           
@@ -278,7 +278,7 @@ CP9_seq2bands(CM_t *cm, ESL_SQ *sq, int i0, int j0, CP9Bands_t *cp9b,
 #define OLDHMMALGS 0 /* use CP9ForwardOLD() and CP9BackwardOLD() */
 #define NEWHMMALGS 1 /* use CP9Forward() and CP9Backward() */
 void 
-CP9_seq2posteriors(CM_t *cm, ESL_SQ *sq, int i0, int j0, CP9_dpmatrix_t **ret_cp9_post,
+CP9_seq2posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9_post,
 		   int debug_level)
 {
   /*CP9_dpmatrix_t *cp9_mx;*/    /* growable DP matrix for viterbi                       */
@@ -289,8 +289,8 @@ CP9_seq2posteriors(CM_t *cm, ESL_SQ *sq, int i0, int j0, CP9_dpmatrix_t **ret_cp
   int do_scan2bands;             /* TRUE to use scanning Forward/Backward to get posteriors
 				  * that we'll use for a CM scan */
   /* Contract checks */
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in CP9_seq2posteriors(), sq is not digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR in CP9_seq2posteriors(), dsq is NULL.");
   if(cm->cp9 == NULL)
     esl_fatal("ERROR in CP9_seq2posteriors, but cm->cp9 is NULL.\n");
   if(cm->cp9map == NULL)
@@ -306,11 +306,11 @@ CP9_seq2posteriors(CM_t *cm, ESL_SQ *sq, int i0, int j0, CP9_dpmatrix_t **ret_cp
     do_scan2bands = FALSE;
 
   /* Step 1: Get HMM posteriors.*/
-  /*sc = CP9ViterbiOLD(sq, i0, j0, cm->cp9, cp9_mx);*/
+  /*sc = CP9ViterbiOLD(dsq, i0, j0, cm->cp9, cp9_mx);*/
   if(OLDHMMALGS)
-    sc = CP9ForwardOLD(sq, i0, j0, cm->cp9, &cp9_fwd);
+    sc = CP9ForwardOLD(dsq, i0, j0, cm->cp9, &cp9_fwd);
   else if(NEWHMMALGS)
-    sc = CP9Forward(cm, sq, i0, j0, (j0-i0+1), 
+    sc = CP9Forward(cm, dsq, i0, j0, (j0-i0+1), 
 		    0,    /* cp9_cutoff score, irrelevant */
 		    NULL,  /* don't care about score of each posn */
 		    NULL,  /* don't care about best scoring start point */
@@ -323,9 +323,9 @@ CP9_seq2posteriors(CM_t *cm, ESL_SQ *sq, int i0, int j0, CP9_dpmatrix_t **ret_cp
 
   if(debug_level > 0) printf("CP9 Forward  score : %.4f\n", sc);
   if(OLDHMMALGS)
-    sc = CP9BackwardOLD(sq, i0, j0, cm->cp9, &cp9_bck);
+    sc = CP9BackwardOLD(dsq, i0, j0, cm->cp9, &cp9_bck);
   else if(NEWHMMALGS)
-    sc = CP9Backward(cm, sq, i0, j0, (j0-i0+1), 
+    sc = CP9Backward(cm, dsq, i0, j0, (j0-i0+1), 
 		     0,    /* cp9_cutoff score, irrelevant */
 		     NULL,  /* don't care about score of each posn */
 		     NULL,  /* don't care about best scoring start point */
@@ -338,12 +338,12 @@ CP9_seq2posteriors(CM_t *cm, ESL_SQ *sq, int i0, int j0, CP9_dpmatrix_t **ret_cp
 
   if(debug_level > 0) printf("CP9 Backward score : %.4f\n", sc);
   
-  /*debug_check_CP9_FB(cp9_fwd, cp9_bck, cm->cp9, sc, i0, j0, sq);*/
+  /*debug_check_CP9_FB(cp9_fwd, cp9_bck, cm->cp9, sc, i0, j0, dsq);*/
   cp9_post = cp9_bck;
   if(do_scan2bands)
-    CP9ScanPosterior(sq, i0, j0, cm->cp9, cp9_fwd, cp9_bck, cp9_post);
+    CP9ScanPosterior(dsq, i0, j0, cm->cp9, cp9_fwd, cp9_bck, cp9_post);
   else /* !doing_search */
-    CP9Posterior(sq, i0, j0, cm->cp9, cp9_fwd, cp9_bck, cp9_post);
+    CP9Posterior(dsq, i0, j0, cm->cp9, cp9_fwd, cp9_bck, cp9_post);
 
   FreeCPlan9Matrix(cp9_fwd);
   if(ret_cp9_post != NULL)
@@ -371,7 +371,7 @@ CP9_seq2posteriors(CM_t *cm, ESL_SQ *sq, int i0, int j0, CP9_dpmatrix_t **ret_cp
  *           The scaling issue is dealt with by working in log space
  *           and calling ILogsum(); this is a slow but robust approach.
  *           
- * Args:     sq     - sequence in digitized form
+ * Args:     dsq    - sequence in digitized form
  *           i0     - start of target subsequence (often 1, beginning of dsq)
  *           j0     - end of target subsequence (often L, end of dsq)
  *           hmm    - the model
@@ -380,12 +380,11 @@ CP9_seq2posteriors(CM_t *cm, ESL_SQ *sq, int i0, int j0, CP9_dpmatrix_t **ret_cp
  * Return:   log P(S|M)/P(S|R), as a bit score.
  */
 float
-CP9ForwardOLD(ESL_SQ *sq, int i0, int j0, struct cplan9_s *hmm, 
+CP9ForwardOLD(ESL_DSQ *dsq, int i0, int j0, struct cplan9_s *hmm, 
 	      struct cp9_dpmatrix_s **ret_mx)
 {
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in CP9ForwardOLD(), sq is not digitized.\n");
-
+  if(dsq == NULL) 
+    esl_fatal("In CP9ForwardOLD() dsq is NULL.");
   struct cp9_dpmatrix_s *mx;
   int **mmx;
   int **imx;
@@ -425,7 +424,7 @@ CP9ForwardOLD(ESL_SQ *sq, int i0, int j0, struct cplan9_s *hmm,
    */
   for (ip = 1; ip <= L; ip++) /* ip is the relative position in the seq */
     {
-      i = i0+ip-1;		/* e.g. i is actual index in sq, runs from i0 to j0 */
+      i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from i0 to j0 */
 
       mmx[ip][0] = dmx[ip][0] = -INFTY;  /*M_0 (B) and D_0 (non-existent)
 					 don't emit.
@@ -433,14 +432,14 @@ CP9ForwardOLD(ESL_SQ *sq, int i0, int j0, struct cplan9_s *hmm,
       imx[ip][0]  = ILogsum(ILogsum(mmx[ip-1][0] + hmm->tsc[CTMI][0],
 				    imx[ip-1][0] + hmm->tsc[CTII][0]),
 			    dmx[ip-1][0] + hmm->tsc[CTDI][0]);
-      imx[ip][0] += hmm->isc[sq->dsq[i]][0];
+      imx[ip][0] += hmm->isc[dsq[i]][0];
       for (k = 1; k <= hmm->M; k++)
 	{
 	  mmx[ip][k]  = ILogsum(ILogsum(mmx[ip-1][k-1] + hmm->tsc[CTMM][k-1],
 				       imx[ip-1][k-1] + hmm->tsc[CTIM][k-1]),
 			       ILogsum(mmx[ip-1][0] + hmm->bsc[k],
 				       dmx[ip-1][k-1] + hmm->tsc[CTDM][k-1]));
-	  mmx[ip][k] += hmm->msc[sq->dsq[i]][k];
+	  mmx[ip][k] += hmm->msc[dsq[i]][k];
 
 	  dmx[ip][k]  = ILogsum(ILogsum(mmx[ip][k-1] + hmm->tsc[CTMD][k-1],
 				       imx[ip][k-1] + hmm->tsc[CTID][k-1]),
@@ -449,7 +448,7 @@ CP9ForwardOLD(ESL_SQ *sq, int i0, int j0, struct cplan9_s *hmm,
 	  imx[ip][k]  = ILogsum(ILogsum(mmx[ip-1][k] + hmm->tsc[CTMI][k],
 				       imx[ip-1][k] + hmm->tsc[CTII][k]),
 			       dmx[ip-1][k] + hmm->tsc[CTDI][k]);
-	  imx[ip][k] += hmm->isc[sq->dsq[i]][k];
+	  imx[ip][k] += hmm->isc[dsq[i]][k];
 	}
       erow[ip] = -INFTY;
       for (k = 1; k <= hmm->M; k++)
@@ -484,7 +483,7 @@ CP9ForwardOLD(ESL_SQ *sq, int i0, int j0, struct cplan9_s *hmm,
  *           This function is not enabled by default; it is only
  *           activated by -DSLOW at compile time.
  *           
- * Args:     sq    - sequence in digitized form
+ * Args:     dsq   - sequence in digitized form
  *           i0     - start of target subsequence (often 1, beginning of dsq)
  *           j0     - end of target subsequence (often L, end of dsq)
  *           hmm    - the model
@@ -494,11 +493,11 @@ CP9ForwardOLD(ESL_SQ *sq, int i0, int j0, struct cplan9_s *hmm,
  * Return:   log P(S|M)/P(S|R), as a bit score
  */
 float
-CP9ViterbiOLD(ESL_SQ *sq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s *mx,
+CP9ViterbiOLD(ESL_DSQ *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s *mx,
 	      CP9trace_t **ret_tr)
 {
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in CP9ViterbiOLD(), sq is not digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR in CP9ViterbiOLD(), dsq is NULL.");
 
   CP9trace_t  *tr;
   int **mmx;
@@ -554,7 +553,7 @@ CP9ViterbiOLD(ESL_SQ *sq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmat
       if((sc = dmx[ip-1][0] + hmm->tsc[CTDI][0]) > imx[ip][0])
 	imx[ip][0] = sc;
       if(imx[ip][0] != -INFTY)
-	imx[ip][0] += hmm->isc[sq->dsq[i]][0];
+	imx[ip][0] += hmm->isc[dsq[i]][0];
       else 
 	imx[ip][0] = -INFTY;
 
@@ -581,7 +580,7 @@ CP9ViterbiOLD(ESL_SQ *sq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmat
 		}
 	    }
 	  if(mmx[ip][k] != -INFTY)
-	    mmx[ip][k] += hmm->msc[sq->dsq[i]][k];
+	    mmx[ip][k] += hmm->msc[dsq[i]][k];
 	  else 
 	    mmx[ip][k] = -INFTY;
 
@@ -594,7 +593,7 @@ CP9ViterbiOLD(ESL_SQ *sq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmat
 	  if((sc = dmx[ip-1][k] + hmm->tsc[CTDI][k]) > imx[ip][k])
 	    imx[ip][k] = sc;
 	  if(imx[ip][k] != -INFTY)
-	    imx[ip][k] += hmm->isc[sq->dsq[i]][k];
+	    imx[ip][k] += hmm->isc[dsq[i]][k];
 	  else 
 	    imx[ip][k] = -INFTY;
 
@@ -639,7 +638,7 @@ CP9ViterbiOLD(ESL_SQ *sq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmat
   /* printf("returning sc: %d from CP9ViterbiOLD()\n", sc); */
   
   if (ret_tr != NULL) {
-    CP9ViterbiTrace(hmm, sq, i0, j0, mx, &tr);
+    CP9ViterbiTrace(hmm, dsq, i0, j0, mx, &tr);
     /* CP9PrintTrace(stdout, tr, hmm, dsq); */
     *ret_tr = tr;
   }
@@ -655,7 +654,7 @@ CP9ViterbiOLD(ESL_SQ *sq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmat
  *           The scaling issue is dealt with by working in log space
  *           and calling ILogsum(); this is a slow but robust approach.
  *           
- * Args:     sq     - sequence in digitized form
+ * Args:     dsq    - sequence in digitized form
  *           i0     - start of target subsequence (often 1, beginning of dsq)
  *           j0     - end of target subsequence (often L, end of dsq)
  *           hmm    - the model
@@ -664,10 +663,10 @@ CP9ViterbiOLD(ESL_SQ *sq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmat
  * Return:   log P(S|M)/P(S|R), as a bit score.
  */
 float
-CP9BackwardOLD(ESL_SQ *sq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s **ret_mx)
+CP9BackwardOLD(ESL_DSQ *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s **ret_mx)
 {
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in CP9BackwardOLD(), sq is not digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR in CP9BackwardOLD(), dsq is NULL.");
 
   struct cp9_dpmatrix_s *mx;
   int **mmx;
@@ -694,26 +693,26 @@ CP9BackwardOLD(ESL_SQ *sq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpma
   erow[W] = 0; /*have to end in E*/
 
   mmx[W][hmm->M] = erow[W] + hmm->esc[hmm->M]; /* M<-E ...                   */
-  mmx[W][hmm->M] += hmm->msc[sq->dsq[i]][hmm->M]; /* ... + emitted match symbol */
+  mmx[W][hmm->M] += hmm->msc[dsq[i]][hmm->M]; /* ... + emitted match symbol */
   /* can't come from I_M b/c we've emitted a single residue, L from M_M */
   imx[W][hmm->M] = erow[W] + hmm->tsc[CTIM][hmm->M];   /* I_M(C)<-E ... */
-  imx[W][hmm->M] += hmm->isc[sq->dsq[i]][hmm->M];           /* ... + emitted match symbol */
+  imx[W][hmm->M] += hmm->isc[dsq[i]][hmm->M];           /* ... + emitted match symbol */
   dmx[W][hmm->M] = erow[W] + hmm->tsc[CTDM][hmm->M];    /* D_M<-E */
   for (k = hmm->M-1; k >= 1; k--)
     {
       mmx[W][k]  = hmm->esc[k] + erow[W];
       mmx[W][k]  = ILogsum(mmx[W][k], dmx[W][k+1] + hmm->tsc[CTMD][k]);
-      mmx[W][k] += hmm->msc[sq->dsq[i]][k];
+      mmx[W][k] += hmm->msc[dsq[i]][k];
 
       imx[W][k] = dmx[W][k+1] + hmm->tsc[CTID][k];
-      imx[W][k] += hmm->isc[sq->dsq[i]][k];
+      imx[W][k] += hmm->isc[dsq[i]][k];
 
       dmx[W][k] = dmx[W][k+1] + hmm->tsc[CTDD][k];
     }
   
   mmx[W][0] = -INFTY; /*M_0 doesn't emit*/
   imx[W][0] = dmx[W][1] + hmm->tsc[CTID][0];
-  imx[W][0] += hmm->isc[sq->dsq[i]][hmm->M];    
+  imx[W][0] += hmm->isc[dsq[i]][hmm->M];    
   dmx[W][0] = -INFTY; /*D_0 doesn't exist*/
 
   /* Recursion. Done as a pull.
@@ -727,21 +726,21 @@ CP9BackwardOLD(ESL_SQ *sq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpma
       /* Now the main states. Note the boundary conditions at M.
        */
       mmx[ip][hmm->M] = imx[ip+1][hmm->M] + hmm->tsc[CTMI][hmm->M];
-      mmx[ip][hmm->M] += hmm->msc[sq->dsq[i]][hmm->M];
+      mmx[ip][hmm->M] += hmm->msc[dsq[i]][hmm->M];
       imx[ip][hmm->M] = imx[ip+1][hmm->M] + hmm->tsc[CTII][hmm->M];
-      imx[ip][hmm->M] += hmm->isc[sq->dsq[i]][hmm->M];
+      imx[ip][hmm->M] += hmm->isc[dsq[i]][hmm->M];
       dmx[ip][hmm->M] = imx[ip+1][hmm->M] + hmm->tsc[CTDI][hmm->M];  /* * */
       for (k = hmm->M-1; k >= 1; k--)
 	{
 	  mmx[ip][k]  = ILogsum(ILogsum(mmx[ip+1][k+1] + hmm->tsc[CTMM][k],
 				       imx[ip+1][k] + hmm->tsc[CTMI][k]),
 				dmx[ip][k+1] + hmm->tsc[CTMD][k]);
-	  mmx[ip][k] += hmm->msc[sq->dsq[i]][k];
+	  mmx[ip][k] += hmm->msc[dsq[i]][k];
 	  
 	  imx[ip][k]  = ILogsum(ILogsum(mmx[ip+1][k+1] + hmm->tsc[CTIM][k],
 				       imx[ip+1][k] + hmm->tsc[CTII][k]),
 			       dmx[ip][k+1] + hmm->tsc[CTID][k]);
-	  imx[ip][k] += hmm->isc[sq->dsq[i]][k];
+	  imx[ip][k] += hmm->isc[dsq[i]][k];
 	  
 	  dmx[ip][k]  = ILogsum(ILogsum(mmx[ip+1][k+1] + hmm->tsc[CTDM][k],
 				       imx[ip+1][k] + hmm->tsc[CTDI][k]),
@@ -751,7 +750,7 @@ CP9BackwardOLD(ESL_SQ *sq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpma
       imx[ip][0]  = ILogsum(ILogsum(mmx[ip+1][1] + hmm->tsc[CTIM][0],
 				    imx[ip+1][0] + hmm->tsc[CTII][0]),
 			    dmx[ip][1] + hmm->tsc[CTID][0]);
-      imx[ip][0] += hmm->isc[sq->dsq[i]][0];
+      imx[ip][0] += hmm->isc[dsq[i]][0];
       mmx[ip][0] = -INFTY;
       /*for (k = hmm->M-1; k >= 1; k--)*/ /*M_0 is the B state, it doesn't emit*/
       for (k = hmm->M; k >= 1; k--) /*M_0 is the B state, it doesn't emit*/
@@ -813,7 +812,7 @@ CP9BackwardOLD(ESL_SQ *sq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpma
  *           backward matrix can be used instead (overwriting it will not
  *           compromise the algorithm).
  *           
- * Args:     sq       - sequence in digitized form
+ * Args:     dsq      - sequence in digitized form
  *           i0       - start of target subsequence (often 1, beginning of dsq)
  *           j0       - end of target subsequence (often L, end of dsq)
  *           hmm      - the model
@@ -824,14 +823,14 @@ CP9BackwardOLD(ESL_SQ *sq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpma
  * Return:   void
  */
 void
-CP9Posterior(ESL_SQ *sq, int i0, int j0,
+CP9Posterior(ESL_DSQ *dsq, int i0, int j0,
 	     struct cplan9_s *hmm,
 	     struct cp9_dpmatrix_s *fmx,
 	     struct cp9_dpmatrix_s *bmx,
 	     struct cp9_dpmatrix_s *mx)
 {
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in CP9Posterior(), sq is not digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR in CP9Posterior(), dsq is NULL.");
 
   int i;
   int k;
@@ -859,8 +858,8 @@ CP9Posterior(ESL_SQ *sq, int i0, int j0,
     {
       i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from i0 to j0 */
       mx->mmx[ip][0] = -INFTY; /*M_0 does not emit*/
-      mx->imx[ip][0] = fmx->imx[ip][0] + bmx->imx[ip][0] - hmm->isc[sq->dsq[i]][0] - sc;
-      /*hmm->isc[sq->dsq[i]][0] will have been counted in both fmx->imx and bmx->imx*/
+      mx->imx[ip][0] = fmx->imx[ip][0] + bmx->imx[ip][0] - hmm->isc[dsq[i]][0] - sc;
+      /*hmm->isc[dsq[i]][0] will have been counted in both fmx->imx and bmx->imx*/
       mx->dmx[ip][0] = -INFTY; /*D_0 does not exist*/
 
       /*printf("fmx->mmx[ip:%d][0]: %d\n bmx->mmx[ip:%d][0]: %d\n", ip, fmx->mmx[ip][0], ip, bmx->mmx[ip][0]);
@@ -868,10 +867,10 @@ CP9Posterior(ESL_SQ *sq, int i0, int j0,
 	printf("fmx->dmx[ip:%d][0]: %d\n bmx->dmx[ip:%d][0]: %d\n", ip, fmx->dmx[ip][0], ip, bmx->dmx[ip][0]);*/
       for (k = 1; k <= hmm->M; k++) 
 	{
-	  mx->mmx[ip][k] = fmx->mmx[ip][k] + bmx->mmx[ip][k] - hmm->msc[sq->dsq[i]][k] - sc;
-	  /*hmm->msc[sq->dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
-	  mx->imx[ip][k] = fmx->imx[ip][k] + bmx->imx[ip][k] - hmm->isc[sq->dsq[i]][k] - sc;
-	  /*hmm->isc[sq->dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
+	  mx->mmx[ip][k] = fmx->mmx[ip][k] + bmx->mmx[ip][k] - hmm->msc[dsq[i]][k] - sc;
+	  /*hmm->msc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
+	  mx->imx[ip][k] = fmx->imx[ip][k] + bmx->imx[ip][k] - hmm->isc[dsq[i]][k] - sc;
+	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
 	  mx->dmx[ip][k] = fmx->dmx[ip][k] + bmx->dmx[ip][k] - sc;
 	  /*printf("fmx->mmx[ip:%d][%d]: %d\n bmx->mmx[ip:%d][%d]: %d\n", ip, k, fmx->mmx[ip][k], ip, k, bmx->mmx[ip][k]);
 	  printf("fmx->imx[ip:%d][%d]: %d\n bmx->imx[ip:%d][%d]: %d\n", ip, k, fmx->imx[ip][k], ip, k, bmx->imx[ip][k]);
@@ -2680,6 +2679,7 @@ ijd_banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax,
  *                    seq given the model
  *           i0     - start of target subsequence (often 1, beginning of dsq)
  *           j0     - end of target subsequence (often L, end of dsq)
+ *           dsq    - the digitized sequence
  *           
  * Note about sequence position indexing: although this function
  * works on a subsequence from i0 to j0, fmx and bmx have offset indices,
@@ -2688,15 +2688,14 @@ ijd_banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax,
  */
 void
 debug_check_CP9_FB(struct cp9_dpmatrix_s *fmx, struct cp9_dpmatrix_s *bmx, 
-		   struct cplan9_s *hmm, float sc, int i0, int j0, ESL_SQ *sq)
+		   struct cplan9_s *hmm, float sc, int i0, int j0, ESL_DSQ *dsq)
 {
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in debug_check_CP9_FB(), sq is not digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR in debug_check_CP9_FB(), dsq is NULL.");
 
   int k, i;
   float max_diff;  /* maximum allowed difference between sc and 
-		    * sum_k f[i][k] * b[i][k] for any i
-		    */
+		    * sum_k f[i][k] * b[i][k] for any i */
   float diff;
   int fb_sum;
   float fb_sc;
@@ -2724,24 +2723,24 @@ debug_check_CP9_FB(struct cp9_dpmatrix_s *fmx, struct cp9_dpmatrix_s *bmx,
 	  else 
 	    {
 	      to_add = fmx->mmx[ip][k] + bmx->mmx[ip][k];
-	      if(k > 0) to_add -= hmm->msc[sq->dsq[i]][k];
+	      if(k > 0) to_add -= hmm->msc[dsq[i]][k];
 	    }
-	  /* hmm->msc[sq->dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx
+	  /* hmm->msc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx
 	   * unless, we're talking about M_0, the B state, it doesn't emit */
 	  fb_sum = ILogsum(fb_sum, to_add);
 	  printf("fmx->mmx[ip:%d][k:%d]: %d\n", ip, k, fmx->mmx[ip][k]);
-	  printf("bmx->mmx[ip:%d][k:%d]: %d sum: %d\n", ip, k, (bmx->mmx[ip][k]-hmm->msc[sq->dsq[i]][k]), fb_sum);
+	  printf("bmx->mmx[ip:%d][k:%d]: %d sum: %d\n", ip, k, (bmx->mmx[ip][k]-hmm->msc[dsq[i]][k]), fb_sum);
 	  if(fmx->imx[ip][k] == -INFTY) to_add = -INFTY;
 	  else if(bmx->imx[ip][k] == -INFTY) to_add = -INFTY;
 	  else 
 	    {
 	      to_add = fmx->imx[ip][k] + bmx->imx[ip][k]; 
-	      to_add -= hmm->isc[sq->dsq[i]][k];
+	      to_add -= hmm->isc[dsq[i]][k];
 	    }
-	  /*hmm->isc[sq->dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
+	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
 	  fb_sum = ILogsum(fb_sum, to_add);
 	  printf("fmx->imx[ip:%d][k:%d]: %d\n", ip, k, fmx->imx[ip][k]);
-	  printf("bmx->imx[ip:%d][k:%d]: %d sum: %d\n", ip, k, (bmx->imx[ip][k]-hmm->isc[sq->dsq[i]][k]), fb_sum);
+	  printf("bmx->imx[ip:%d][k:%d]: %d sum: %d\n", ip, k, (bmx->imx[ip][k]-hmm->isc[dsq[i]][k]), fb_sum);
 	  /*fb_sum = ILogsum(fb_sum, fmx->dmx[ip][k] + bmx->dmx[ip][k]);*/
 	  printf("fmx->dmx[ip:%d][k:%d]: %d\n",   ip, k, fmx->dmx[ip][k]);
 	  printf("bmx->dmx[ip:%d][k:%d]: %d\n\n", ip, k, bmx->dmx[ip][k]);

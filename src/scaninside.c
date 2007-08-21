@@ -40,9 +40,9 @@
  *           function.
  *
  * Args:     cm        - the covariance model
- *           sq        - digitized sequence to search; 1..sq->n
+ *           dsq       - digitized sequence to search; 1..L
  *           i0        - start of target subsequence (1 for full seq)
- *           j0        - end of target subsequence (sq->n for full seq)
+ *           j0        - end of target subsequence (L for full seq)
  *           W         - max d: max size of a hit
  *           cutoff    - minimum score to report 
  *           results    - scan_results_t to add to; if NULL, don't add to it
@@ -50,7 +50,7 @@
  * Returns:  score of best overall hit
  */
 float 
-InsideScan(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, 
+InsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, 
 	   float cutoff, scan_results_t *results)
 
 {
@@ -78,10 +78,8 @@ InsideScan(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W,
   float     best_neg_score;     /* Best score overall score to return, used if all scores < 0 */
 
   /* Contract check */
-  if(sq == NULL)
-    esl_fatal("in InsideScan, sq is NULL\n");
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in InsideScan, sq is not digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("in InsideScan, dsq is NULL\n");
 
   /*****************************************************************
    * alpha allocations.
@@ -206,10 +204,10 @@ InsideScan(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W,
 		    alpha[v][cur][d] = LogSum2(alpha[v][cur][d], (alpha[y+yoffset][prv][d-2] 
 								 + cm->tsc[v][yoffset]));
 		  i = j-d+1;
-		  if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
-		    alpha[v][cur][d] += cm->esc[v][(sq->dsq[i]*cm->abc->K+sq->dsq[j])];
+		  if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][(dsq[i]*cm->abc->K+dsq[j])];
 		  else
-		    alpha[v][cur][d] += DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i], sq->dsq[j]);
+		    alpha[v][cur][d] += DegeneratePairScore(cm->abc, cm->esc[v], dsq[i], dsq[j]);
 		  
 		  if (alpha[v][cur][d] < IMPOSSIBLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -224,10 +222,10 @@ InsideScan(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W,
 		    alpha[v][cur][d] = LogSum2(alpha[v][cur][d], (alpha[y+yoffset][cur][d-1] 
 								 + cm->tsc[v][yoffset]));
 		  i = j-d+1;
-		  if (sq->dsq[i] < cm->abc->K)
-		    alpha[v][cur][d] += cm->esc[v][sq->dsq[i]];
+		  if (dsq[i] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][dsq[i]];
 		  else
-		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[i], cm->esc[v]);
+		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
 		  
 		  if (alpha[v][cur][d] < IMPOSSIBLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -241,10 +239,10 @@ InsideScan(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W,
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		    alpha[v][cur][d] = LogSum2(alpha[v][cur][d], (alpha[y+yoffset][prv][d-1] 
 								 + cm->tsc[v][yoffset]));
-		  if (sq->dsq[j] < cm->abc->K)
-		    alpha[v][cur][d] += cm->esc[v][sq->dsq[j]];
+		  if (dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][dsq[j]];
 		  else
-		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[j], cm->esc[v]);
+		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
 		  
 		  if (alpha[v][cur][d] < IMPOSSIBLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -412,7 +410,7 @@ InsideScan(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W,
  * Returns:  score of best overall hit
  */
 float
-InsideBandedScan(CM_t *cm, ESL_SQ *sq, int *dmin, int *dmax, int i0, int j0, int W, 
+InsideBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
 		 float cutoff, scan_results_t *results)
 {
   int       status;
@@ -444,10 +442,8 @@ InsideBandedScan(CM_t *cm, ESL_SQ *sq, int *dmin, int *dmax, int i0, int j0, int
   /* Contract check */
   if(j0 < i0)
     esl_fatal("in InsideBandedScan, i0: %d j0: %d\n", i0, j0);
-  if(sq == NULL)
-    esl_fatal("in InsideBandedScan, sq is NULL\n");
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in InsideBandedScan, sq is not digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR in InsideBandedScan, dsq is NULL.");
   if(!(cm->flags & CM_QDB))
     esl_fatal("in InsideBandedScan, QDBs invalid\n");
 
@@ -599,10 +595,10 @@ InsideBandedScan(CM_t *cm, ESL_SQ *sq, int *dmin, int *dmax, int i0, int j0, int
 								 + cm->tsc[v][yoffset]));
 		  
 		  i = j-d+1;
-		  if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
-		    alpha[v][cur][d] += cm->esc[v][(sq->dsq[i]*cm->abc->K+sq->dsq[j])];
+		  if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][(dsq[i]*cm->abc->K+dsq[j])];
 		  else
-		    alpha[v][cur][d] += DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i], sq->dsq[j]);
+		    alpha[v][cur][d] += DegeneratePairScore(cm->abc, cm->esc[v], dsq[i], dsq[j]);
 		  
 		  if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -618,10 +614,10 @@ InsideBandedScan(CM_t *cm, ESL_SQ *sq, int *dmin, int *dmax, int i0, int j0, int
 								 + cm->tsc[v][yoffset]));
 		  
 		  i = j-d+1;
-		  if (sq->dsq[i] < cm->abc->K)
-		    alpha[v][cur][d] += cm->esc[v][sq->dsq[i]];
+		  if (dsq[i] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][dsq[i]];
 		  else
-		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[i], cm->esc[v]);
+		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
 		  
 		  if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -636,10 +632,10 @@ InsideBandedScan(CM_t *cm, ESL_SQ *sq, int *dmin, int *dmax, int i0, int j0, int
 		    alpha[v][cur][d] = LogSum2(alpha[v][cur][d], (alpha[y+yoffset][prv][d-1] 
 								 + cm->tsc[v][yoffset]));
 		  
-		  if (sq->dsq[j] < cm->abc->K)
-		    alpha[v][cur][d] += cm->esc[v][sq->dsq[j]];
+		  if (dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][dsq[j]];
 		  else
-		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[j], cm->esc[v]);
+		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
 		  
 		  if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -864,7 +860,7 @@ InsideBandedScan(CM_t *cm, ESL_SQ *sq, int *dmin, int *dmax, int i0, int j0, int
  *           hiti, hitj, hitsc are allocated here if nec; caller free's w/ free().
  */
 void
-InsideBandedScan_jd(CM_t *cm, ESL_SQ *sq, int *jmin, int *jmax, int **hdmin, int **hdmax, int i0, 
+InsideBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax, int i0, 
 		 int j0, int W, int *ret_nhits, int **ret_hitr, int **ret_hiti, 
 		 int **ret_hitj, float **ret_hitsc, float min_thresh)
 {
@@ -905,8 +901,8 @@ InsideBandedScan_jd(CM_t *cm, ESL_SQ *sq, int *jmin, int *jmax, int **hdmin, int
   void     *tmp;                /* for ESL_RALLOC() */
 
   /* Contract check */
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in InsideBandedScan_jd, sq is not digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR in InsideBandedScan_jd, dsq is NULL.");
 
   /* EPN 08.11.05 Next line prevents wasteful computations when imposing
    * bands before the main recursion.  There is no need to worry about
@@ -1080,10 +1076,10 @@ InsideBandedScan_jd(CM_t *cm, ESL_SQ *sq, int *jmin, int *jmax, int **hdmin, int
 		    alpha[v][cur][d] = LogSum2(alpha[v][cur][d], (alpha[y+yoffset][prv][d-2] 
 								  + cm->tsc[v][yoffset]));
 		  i = j-d+1;
-		  if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
-		    alpha[v][cur][d] += cm->esc[v][(sq->dsq[i]*cm->abc->K+sq->dsq[j])];
+		  if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][(dsq[i]*cm->abc->K+dsq[j])];
 		  else
-		    alpha[v][cur][d] += DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i], sq->dsq[j]);
+		    alpha[v][cur][d] += DegeneratePairScore(cm->abc, cm->esc[v], dsq[i], dsq[j]);
 		  
 		  if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -1098,10 +1094,10 @@ InsideBandedScan_jd(CM_t *cm, ESL_SQ *sq, int *jmin, int *jmax, int **hdmin, int
 		    alpha[v][cur][d] = LogSum2(alpha[v][cur][d], (alpha[y+yoffset][cur][d-1] 
 								  + cm->tsc[v][yoffset]));
 		  i = j-d+1;
-		  if (sq->dsq[i] < cm->abc->K)
-		    alpha[v][cur][d] += cm->esc[v][sq->dsq[i]];
+		  if (dsq[i] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][dsq[i]];
 		  else
-		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[i], cm->esc[v]);
+		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
 		  
 		  if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -1115,10 +1111,10 @@ InsideBandedScan_jd(CM_t *cm, ESL_SQ *sq, int *jmin, int *jmax, int **hdmin, int
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		    alpha[v][cur][d] = LogSum2(alpha[v][cur][d], (alpha[y+yoffset][prv][d-1] 
 								  + cm->tsc[v][yoffset]));
-		  if (sq->dsq[j] < cm->abc->K)
-		    alpha[v][cur][d] += cm->esc[v][sq->dsq[j]];
+		  if (dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][dsq[j]];
 		  else
-		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[j], cm->esc[v]);
+		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
 		  
 		  if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -1392,7 +1388,7 @@ InsideBandedScan_jd(CM_t *cm, ESL_SQ *sq, int *jmin, int *jmax, int **hdmin, int
  * Returns:  score (float - not scaled int) of best overall hit
  */
 float 
-iInsideScan(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, 
+iInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, 
 	    float cutoff, scan_results_t *results)
 
 {
@@ -1420,10 +1416,8 @@ iInsideScan(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W,
   float     best_neg_score;     /* Best score overall score to return, used if all scores < 0 */
 
   /* Contract check */
-  if(sq == NULL)
-    esl_fatal("in iInsideScan, dsq is NULL\n");
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in iInsideScan, sq is not digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR in iInsideScan, dsq is NULL.");
 
   /*****************************************************************
    * alpha allocations.
@@ -1547,10 +1541,10 @@ iInsideScan(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W,
 		    alpha[v][cur][d] = ILogsum(alpha[v][cur][d], (alpha[y+yoffset][prv][d-2] 
 								  + cm->itsc[v][yoffset]));
 		  i = j-d+1;
-		  if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
-		    alpha[v][cur][d] += cm->iesc[v][(sq->dsq[i]*cm->abc->K+sq->dsq[j])];
+		  if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->iesc[v][(dsq[i]*cm->abc->K+dsq[j])];
 		  else
-		    alpha[v][cur][d] += iDegeneratePairScore(cm->abc, cm->iesc[v], sq->dsq[i], sq->dsq[j]);
+		    alpha[v][cur][d] += iDegeneratePairScore(cm->abc, cm->iesc[v], dsq[i], dsq[j]);
 		  
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
 		}
@@ -1565,10 +1559,10 @@ iInsideScan(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W,
 		    alpha[v][cur][d] = ILogsum(alpha[v][cur][d], (alpha[y+yoffset][cur][d-1] 
 								  + cm->itsc[v][yoffset]));
 		  i = j-d+1;
-		  if (sq->dsq[i] < cm->abc->K)
-		    alpha[v][cur][d] += cm->iesc[v][sq->dsq[i]];
+		  if (dsq[i] < cm->abc->K)
+		    alpha[v][cur][d] += cm->iesc[v][dsq[i]];
 		  else
-		    alpha[v][cur][d] += esl_abc_IAvgScore(cm->abc, sq->dsq[i], cm->iesc[v]);
+		    alpha[v][cur][d] += esl_abc_IAvgScore(cm->abc, dsq[i], cm->iesc[v]);
 
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
 		}
@@ -1582,10 +1576,10 @@ iInsideScan(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W,
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		    alpha[v][cur][d] = ILogsum(alpha[v][cur][d], (alpha[y+yoffset][prv][d-1] 
 								 + cm->itsc[v][yoffset]));
-		  if (sq->dsq[j] < cm->abc->K)
-		    alpha[v][cur][d] += cm->iesc[v][sq->dsq[j]];
+		  if (dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->iesc[v][dsq[j]];
 		  else
-		    alpha[v][cur][d] += esl_abc_IAvgScore(cm->abc, sq->dsq[j], cm->iesc[v]);
+		    alpha[v][cur][d] += esl_abc_IAvgScore(cm->abc, dsq[j], cm->iesc[v]);
 
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
 		}
@@ -1756,7 +1750,7 @@ iInsideScan(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W,
  * Returns:  score (float - not scaled int) of best overall hit
  */
 float
-iInsideBandedScan(CM_t *cm, ESL_SQ *sq, int *dmin, int *dmax, int i0, int j0, int W, 
+iInsideBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
 		  float cutoff, scan_results_t *results)
 {
   int       status;
@@ -1788,12 +1782,10 @@ iInsideBandedScan(CM_t *cm, ESL_SQ *sq, int *dmin, int *dmax, int i0, int j0, in
   /* Contract check */
   if(j0 < i0)
     esl_fatal("in iInsideBandedScan, i0: %d j0: %d\n", i0, j0);
-  if(sq == NULL)
-    esl_fatal("in iInsideBandedScan, sq is NULL\n");
   if(!(cm->flags & CM_QDB))
     esl_fatal("in iInsideBandedScan, QDBs invalid\n");
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in iInsideBandedScan, sq is not digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR in iInsideBandedScan, dsq is NULL.");
 
   /*printf("in iInsideBandedScan i0: %d j0: %d\n", i0, j0);*/
 
@@ -1946,10 +1938,10 @@ iInsideBandedScan(CM_t *cm, ESL_SQ *sq, int *dmin, int *dmax, int i0, int j0, in
 		      alpha[v][cur][d] = ILogsum(alpha[v][cur][d], (alpha[y+yoffset][prv][d-2] 
 								    + cm->itsc[v][yoffset]));
 		  i = j-d+1;
-		  if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
-		    alpha[v][cur][d] += cm->iesc[v][(sq->dsq[i]*cm->abc->K+sq->dsq[j])];
+		  if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->iesc[v][(dsq[i]*cm->abc->K+dsq[j])];
 		  else
-		    alpha[v][cur][d] += iDegeneratePairScore(cm->abc, cm->iesc[v], sq->dsq[i], sq->dsq[j]);
+		    alpha[v][cur][d] += iDegeneratePairScore(cm->abc, cm->iesc[v], dsq[i], dsq[j]);
 
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
 		}
@@ -1964,10 +1956,10 @@ iInsideBandedScan(CM_t *cm, ESL_SQ *sq, int *dmin, int *dmax, int i0, int j0, in
 		    alpha[v][cur][d] = ILogsum(alpha[v][cur][d], (alpha[y+yoffset][cur][d-1] 
 								  + cm->itsc[v][yoffset]));
 		  i = j-d+1;
-		  if (sq->dsq[i] < cm->abc->K)
-		    alpha[v][cur][d] += cm->iesc[v][sq->dsq[i]];
+		  if (dsq[i] < cm->abc->K)
+		    alpha[v][cur][d] += cm->iesc[v][dsq[i]];
 		  else
-		    alpha[v][cur][d] += esl_abc_IAvgScore(cm->abc, sq->dsq[i], cm->iesc[v]);
+		    alpha[v][cur][d] += esl_abc_IAvgScore(cm->abc, dsq[i], cm->iesc[v]);
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
 		}
 	    }
@@ -1981,10 +1973,10 @@ iInsideBandedScan(CM_t *cm, ESL_SQ *sq, int *dmin, int *dmax, int i0, int j0, in
 		    alpha[v][cur][d] = ILogsum(alpha[v][cur][d], (alpha[y+yoffset][prv][d-1] 
 								  + cm->itsc[v][yoffset]));
 		  
-		  if (sq->dsq[j] < cm->abc->K)
-		    alpha[v][cur][d] += cm->iesc[v][sq->dsq[j]];
+		  if (dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->iesc[v][dsq[j]];
 		  else
-		    alpha[v][cur][d] += esl_abc_IAvgScore(cm->abc, sq->dsq[j], cm->iesc[v]);
+		    alpha[v][cur][d] += esl_abc_IAvgScore(cm->abc, dsq[j], cm->iesc[v]);
 
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
 		}

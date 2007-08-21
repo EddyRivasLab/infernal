@@ -39,7 +39,7 @@ static void createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface);
  * Args:      tr    - parsetree for cm aligned to dsq
  *            cm    - model
  *            cons  - consensus information for cm; see CreateCMConsensus()
- *            sq    - sequence in digitized form
+ *            dsq   - digitized sequence
  *            abc   - alphabet to create alignment with (often cm->abc)
  *            i0    - position of first residue in sq to align (1 for first residue)
  *
@@ -49,7 +49,7 @@ static void createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface);
  * Xref:      STL6 p.58
  */
 Fancyali_t *
-CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_SQ *sq, const ESL_ALPHABET *abc, int i0)
+CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, const ESL_ALPHABET *abc)
 {
   /* Contract check. We allow the caller to specify the alphabet they want the 
    * resulting MSA in, but it has to make sense (see next few lines). */
@@ -191,8 +191,8 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_SQ *sq, const
       nd = cm->ndidx[v];	  /* what CM node we're in */
       lc   = cons->lpos[nd];	  /* where CM node aligns to in consensus */
       rc   = cons->rpos[nd];
-      symi = sq->dsq[tr->emitl[ti] + (i0-1)];  /* residue indices that node is aligned to */
-      symj = sq->dsq[tr->emitr[ti] + (i0-1)];
+      symi = dsq[tr->emitl[ti]];  /* residue indices that node is aligned to */
+      symj = dsq[tr->emitr[ti]];
       d = tr->emitr[ti] - tr->emitl[ti] + 1;
       mode = tr->mode[ti];
 

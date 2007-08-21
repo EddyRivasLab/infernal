@@ -73,7 +73,7 @@
 
 /* The alignment engine. 
  */
-static float inside_b_jd_me(CM_t *cm, ESL_SQ *sq, 
+static float inside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, 
 			    int r, int z, int i0, int j0, 
 			    int do_full,
 			    float ***alpha, float ****ret_alpha, 
@@ -87,7 +87,7 @@ static float inside_b_jd_me(CM_t *cm, ESL_SQ *sq,
 /* The traceback routine.
  */
 
-static float insideT_b_jd_me(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, 
+static float insideT_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 			     int r, int z, int i0, int j0, int allow_begin,
 			     int *jmin, int *jax,
 			     int **hdmin, int **hdmax,
@@ -157,10 +157,10 @@ PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax,
  *           more details on shared aspects.
  *           
  * Args:     cm     - the covariance model
- *           sq     - the sequence, 1..sq->n
+ *           sq     - the sequence, 1..L
  *           r      - root of subgraph to align to target subseq (usually 0, the model's root)
  *           i0     - start of target subsequence (often 1, beginning of dsq)
- *           j0     - end of target subsequence (often sq->n, end of dsq)
+ *           j0     - end of target subsequence (often L, end of dsq)
  *           ret_tr - RETURN: traceback (pass NULL if trace isn't wanted)
  *           dmin   - minimum d bound for each state v; [0..v..M-1]
  *           dmax   - maximum d bound for each state v; [0..v..M-1]
@@ -168,12 +168,12 @@ PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax,
  * Returns:  score of the alignment in bits.
  */
 float
-CYKInside_b_jd(CM_t *cm, ESL_SQ *sq, int r, int i0, int j0, Parsetree_t **ret_tr, 
+CYKInside_b_jd(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, 
 	       int *jmin, int *jmax, int **hdmin, int **hdmax, int *dmin, int *dmax)
 {
   /* Contract check */
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in CYKInside_b_jd(), sq is not digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR in CYKInside_b_jd(), dsq is NULL.\n");
 
   Parsetree_t *tr;
   int          z;
@@ -196,7 +196,7 @@ CYKInside_b_jd(CM_t *cm, ESL_SQ *sq, int r, int i0, int j0, Parsetree_t **ret_tr
   /* Create the parse tree, and initialize.
    */
   tr = CreateParsetree();
-  InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, sq->n, 0); /* init: attach the root S */
+  InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0); /* init: attach the root S */
   z  = cm->M-1;
   sc = 0.;
 
@@ -215,7 +215,7 @@ CYKInside_b_jd(CM_t *cm, ESL_SQ *sq, int r, int i0, int j0, Parsetree_t **ret_tr
      To use the non-memory efficient implementation call insideT_b()
      with the same arguments
    */
-  sc += insideT_b_jd_me(cm, sq, tr, r, z, i0, j0, (r==0), jmin, jmax, hdmin, hdmax, 
+  sc += insideT_b_jd_me(cm, dsq, L, tr, r, z, i0, j0, (r==0), jmin, jmax, hdmin, hdmax, 
 			dmin, dmax);
 
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
@@ -298,12 +298,12 @@ CYKInside_b_jd(CM_t *cm, ESL_SQ *sq, int r, int i0, int j0, Parsetree_t **ret_tr
  *           divide&conquer to sort out where a local begin might be used.
  *
  * Args:     cm        - the model    [0..M-1]
- *           sq        - the sequence [1..sq->n]   
+ *           sq        - the sequence [1..L]   
  *                     - length of the dsq
  *           vroot     - first start state of subtree (0, for whole model)
  *           vend      - last end state of subtree (cm->M-1, for whole model)
  *           i0        - first position in subseq to align (1, for whole seq)
- *           j0        - last position in subseq to align (sq->n, for whole seq)
+ *           j0        - last position in subseq to align (L, for whole seq)
  *           do_full   - if TRUE, we save all the decks in alpha, instead of
  *                       working in our default memory-efficient mode where 
  *                       we reuse decks and only the uppermost deck (vroot) is valid
@@ -338,7 +338,7 @@ CYKInside_b_jd(CM_t *cm, ESL_SQ *sq, int r, int i0, int j0, Parsetree_t **ret_tr
  * Returns: Score of the optimal alignment.  
  */
 static float 
-inside_b_jd_me(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_full,
+inside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
 	       float ***alpha, float ****ret_alpha, 
 	       struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
 	       void ****ret_shadow, 
@@ -347,8 +347,8 @@ inside_b_jd_me(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do
 	       int *safe_hdmin, int *safe_hdmax)
 {
   /* Contract check */
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in inside_b_jd_me(), sq is not digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR in inside_b_jd_me(), dsq is NULL.\n");
 
   int      status;
   int     *touch;       /* keeps track of how many higher decks still need this deck */
@@ -402,7 +402,7 @@ inside_b_jd_me(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do
    * int ** (for bifurcation decks). Watch out for the casts.
    * For most states we only need
    * to keep y as traceback info, and y <= 6. For bifurcations,
-   * we need to keep k, and k <= sq->n, and sq->n might be fairly big.
+   * we need to keep k, and k <= L, and L might be fairly big.
    * (We could probably limit k to an unsigned short ... anyone
    * aligning an RNA > 65536 would need a big computer... but
    * we'll hold off on that for now. We could also pack more
@@ -422,15 +422,15 @@ inside_b_jd_me(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do
        * we don't reuse decks b/c each state has different bands and therefore
        * different deck sizes, so we ALWAYS allocate a deck here.
        */
-      alpha[v] = alloc_jdbanded_vjd_deck(sq->n, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
+      alpha[v] = alloc_jdbanded_vjd_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
 
       if (cm->sttype[v] != E_st) {
 	if (ret_shadow != NULL) {
 	  if (cm->sttype[v] == B_st) {
-	    kshad     = alloc_jdbanded_vjd_kshadow_deck(sq->n, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
+	    kshad     = alloc_jdbanded_vjd_kshadow_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
 	    shadow[v] = (void **) kshad;
 	  } else {
-	    yshad     = alloc_jdbanded_vjd_yshadow_deck(sq->n, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
+	    yshad     = alloc_jdbanded_vjd_yshadow_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
 	    shadow[v] = (void **) yshad;
 	  }
 	}
@@ -627,10 +627,10 @@ inside_b_jd_me(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do
 		      }
 		  }
 		i = j-d+1;
-		if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
-		  alpha[v][jp_v][dp_v] += cm->esc[v][(sq->dsq[i]*cm->abc->K+sq->dsq[j])];
+		if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
+		  alpha[v][jp_v][dp_v] += cm->esc[v][(dsq[i]*cm->abc->K+dsq[j])];
 		else
-		  alpha[v][jp_v][dp_v] += DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i], sq->dsq[j]);
+		  alpha[v][jp_v][dp_v] += DegeneratePairScore(cm->abc, cm->esc[v], dsq[i], dsq[j]);
 		if (alpha[v][jp_v][dp_v] < IMPOSSIBLE) alpha[v][jp_v][dp_v] = IMPOSSIBLE;
 	      }
 	    }
@@ -668,10 +668,10 @@ inside_b_jd_me(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do
 		      }
 		  }
 		i = j-d+1;
-		if (sq->dsq[i] < cm->abc->K)
-		  alpha[v][jp_v][dp_v] += cm->esc[v][(int) sq->dsq[i]];
+		if (dsq[i] < cm->abc->K)
+		  alpha[v][jp_v][dp_v] += cm->esc[v][(int) dsq[i]];
 		else
-		  alpha[v][jp_v][dp_v] += esl_abc_FAvgScore(cm->abc, sq->dsq[i], cm->esc[v]);
+		  alpha[v][jp_v][dp_v] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
 		if (alpha[v][jp_v][dp_v] < IMPOSSIBLE) alpha[v][jp_v][dp_v] = IMPOSSIBLE;
 	      }
 	    }
@@ -709,10 +709,10 @@ inside_b_jd_me(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do
 			  }
 		      }
 		  }
-		if (sq->dsq[j] < cm->abc->K)
-		  alpha[v][jp_v][dp_v] += cm->esc[v][(int) sq->dsq[j]];
+		if (dsq[j] < cm->abc->K)
+		  alpha[v][jp_v][dp_v] += cm->esc[v][(int) dsq[j]];
 		else
-		  alpha[v][jp_v][dp_v] += esl_abc_FAvgScore(cm->abc, sq->dsq[j], cm->esc[v]);
+		  alpha[v][jp_v][dp_v] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
 		if (alpha[v][jp_v][dp_v] < IMPOSSIBLE) alpha[v][jp_v][dp_v] = IMPOSSIBLE;
 	      }
 	    }
@@ -791,7 +791,7 @@ inside_b_jd_me(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do
 	  }
       }
     } /* end loop over all v */
-  /*debug_print_alpha_banded_jd(alpha, cm, sq->n, jmin, jmax, hdmin, hdmax);*/
+  /*debug_print_alpha_banded_jd(alpha, cm, L, jmin, jmax, hdmin, hdmax);*/
 
   /* Now we free our memory. 
    * if we've got do_full set, all decks vroot..vend are now valid 
@@ -849,15 +849,15 @@ inside_b_jd_me(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do
  *           traceback, which already has state r at tr->n-1.
  */
 static float
-insideT_b_jd_me(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, 
+insideT_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 		int r, int z, int i0, int j0, 
 		int allow_begin, int *jmin, int *jmax,
 		int **hdmin, int **hdmax,
 		int *safe_hdmin, int *safe_hdmax)
 {
   /* Contract check */
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in insideT_b_jd_me(), sq is not digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR in insideT_b_jd_me(), dsq is NULL.");
 
   void   ***shadow;             /* the traceback shadow matrix */
   float     sc;			/* the score of the CYK alignment */
@@ -875,7 +875,7 @@ insideT_b_jd_me(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
 				 * giving the len of right fragment offset in deck z,
 				 * k = kp_z + hdmin[z][jp_z]*/
 
-  sc = inside_b_jd_me(cm, sq, r, z, i0, j0, 
+  sc = inside_b_jd_me(cm, dsq, L, r, z, i0, j0, 
 		      BE_EFFICIENT,	/* memory-saving mode */
 		      /*BE_PARANOID,*/	/* non-memory-saving mode */
 		      NULL, NULL,	/* manage your own matrix, I don't want it */
@@ -1425,7 +1425,7 @@ debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax)
  * Returns:  score of best overall hit
  */
 float
-CYKBandedScan_jd(CM_t *cm, ESL_SQ *sq, int *jmin, int *jmax, int **hdmin, int **hdmax, int i0, 
+CYKBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax, int i0, 
 		 int j0, int W, float cutoff, scan_results_t *results)
 {
   int       status;
@@ -1465,8 +1465,8 @@ CYKBandedScan_jd(CM_t *cm, ESL_SQ *sq, int *jmin, int *jmax, int **hdmin, int **
   /* Contract checks */
   if((!(cm->search_opts & CM_SEARCH_NOQDB)) && (cm->dmin == NULL || cm->dmax == NULL))
     esl_fatal("ERROR in CYKBandedScan_jd(), trying to use QDB, but cm->dmin, cm->dmax are NULL.\n");
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in CYKBandedScan_jd(), sq is not digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR in CYKBandedScan_jd(), dsq is NULL.");
 
   if(!(cm->search_opts & CM_SEARCH_NOQDB)) /* we're doing qdb */
     combine_qdb_hmm_d_bands(cm, jmin, jmax, hdmin, hdmax);
@@ -1528,12 +1528,12 @@ CYKBandedScan_jd(CM_t *cm, ESL_SQ *sq, int *jmin, int *jmax, int **hdmin, int **
    * This is a little SHMM that finds an optimal scoring parse
    * of multiple nonoverlapping hits.
    *****************************************************************/ 
-  ESL_ALLOC(gamma, sizeof(float) * (sq->n+1));
+  ESL_ALLOC(gamma, sizeof(float) * (L+1));
   gamma[0] = 0;
-  ESL_ALLOC(gback, sizeof(int)   * (sq->n+1));
+  ESL_ALLOC(gback, sizeof(int)   * (L+1));
   gback[0] = -1;
-  ESL_ALLOC(savesc, sizeof(float) * (sq->n+1));
-  ESL_ALLOC(saver,  sizeof(int)   * (sq->n+1));
+  ESL_ALLOC(savesc, sizeof(float) * (L+1));
+  ESL_ALLOC(saver,  sizeof(int)   * (L+1));
 
   /* Initialize the impossible deck, which we'll point to for 
    * j positions that are outside of the j band on v */
@@ -1678,10 +1678,10 @@ CYKBandedScan_jd(CM_t *cm, ESL_SQ *sq, int *jmin, int *jmax, int **hdmin, int **
 		      alpha[v][cur][d] = sc;
 		  
 		  i = j-d+1;
-		  if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
-		    alpha[v][cur][d] += cm->esc[v][(sq->dsq[i]*cm->abc->K+sq->dsq[j])];
+		  if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][(dsq[i]*cm->abc->K+dsq[j])];
 		  else
-		    alpha[v][cur][d] += DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i], sq->dsq[j]);
+		    alpha[v][cur][d] += DegeneratePairScore(cm->abc, cm->esc[v], dsq[i], dsq[j]);
 		  
 		  if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -1697,10 +1697,10 @@ CYKBandedScan_jd(CM_t *cm, ESL_SQ *sq, int *jmin, int *jmax, int **hdmin, int **
 		      alpha[v][cur][d] = sc;
 		  
 		  i = j-d+1;
-		  if (sq->dsq[i] < cm->abc->K)
-		    alpha[v][cur][d] += cm->esc[v][(int) sq->dsq[i]];
+		  if (dsq[i] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][(int) dsq[i]];
 		  else
-		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[i], cm->esc[v]);
+		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
 		  
 		  if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -1714,10 +1714,10 @@ CYKBandedScan_jd(CM_t *cm, ESL_SQ *sq, int *jmin, int *jmax, int **hdmin, int **
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		    if ((sc = alpha[y+yoffset][prv][d-1] + cm->tsc[v][yoffset]) > alpha[v][cur][d])
 		      alpha[v][cur][d] = sc;
-		  if (sq->dsq[j] < cm->abc->K)
-		    alpha[v][cur][d] += cm->esc[v][(int) sq->dsq[j]];
+		  if (dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->esc[v][(int) dsq[j]];
 		  else
-		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[j], cm->esc[v]);
+		    alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
 		  
 		  if (alpha[v][cur][d] < IMPROBABLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -1998,7 +1998,7 @@ for (v = 0; v < cm->M; v++)
  * Returns:  score of best overall hit
  */
 float
-iInsideBandedScan_jd(CM_t *cm, ESL_SQ *sq, int *jmin, int *jmax, int **hdmin, int **hdmax, int i0, 
+iInsideBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax, int i0, 
 		    int j0, int W, float cutoff, scan_results_t *results)
 {
   int        status;
@@ -2038,8 +2038,8 @@ iInsideBandedScan_jd(CM_t *cm, ESL_SQ *sq, int *jmin, int *jmax, int **hdmin, in
   /* Contract checks */
   if((!(cm->search_opts & CM_SEARCH_NOQDB)) && (cm->dmin == NULL || cm->dmax == NULL))
     esl_fatal("ERROR in iInsideBandedScan_jd(), trying to use QDB, but cm->dmin, cm->dmax are NULL.\n");
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in iInsideBandedScan_jd(), sq is not digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR in iInsideBandedScan_jd(), dsq is NULL.");
 
   if(!(cm->search_opts & CM_SEARCH_NOQDB)) /* we're doing qdb */
     combine_qdb_hmm_d_bands(cm, jmin, jmax, hdmin, hdmax);
@@ -2101,12 +2101,12 @@ iInsideBandedScan_jd(CM_t *cm, ESL_SQ *sq, int *jmin, int *jmax, int **hdmin, in
    * This is a little SHMM that finds an optimal scoring parse
    * of multiple nonoverlapping hits.
    *****************************************************************/ 
-  ESL_ALLOC(gamma, sizeof(float) * (sq->n+1));
+  ESL_ALLOC(gamma, sizeof(float) * (L+1));
   gamma[0] = 0;
-  ESL_ALLOC(gback, sizeof(int)   * (sq->n+1));
+  ESL_ALLOC(gback, sizeof(int)   * (L+1));
   gback[0] = -1;
-  ESL_ALLOC(savesc,sizeof(float) * (sq->n+1));
-  ESL_ALLOC(saver, sizeof(int)   * (sq->n+1));
+  ESL_ALLOC(savesc,sizeof(float) * (L+1));
+  ESL_ALLOC(saver, sizeof(int)   * (L+1));
 
   /* Initialize the impossible deck, which we'll point to for 
    * j positions that are outside of the j band on v */
@@ -2251,10 +2251,10 @@ iInsideBandedScan_jd(CM_t *cm, ESL_SQ *sq, int *jmin, int *jmax, int **hdmin, in
 		    alpha[v][cur][d] = ILogsum(alpha[v][cur][d], (alpha[y+yoffset][prv][d-2] + 
 								  cm->itsc[v][yoffset]));
 		  i = j-d+1;
-		  if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
-		    alpha[v][cur][d] += cm->iesc[v][(sq->dsq[i]*cm->abc->K+sq->dsq[j])];
+		  if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->iesc[v][(dsq[i]*cm->abc->K+dsq[j])];
 		  else
-		    alpha[v][cur][d] += iDegeneratePairScore(cm->abc, cm->iesc[v], sq->dsq[i], sq->dsq[j]);
+		    alpha[v][cur][d] += iDegeneratePairScore(cm->abc, cm->iesc[v], dsq[i], dsq[j]);
 		  
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
 		}
@@ -2269,10 +2269,10 @@ iInsideBandedScan_jd(CM_t *cm, ESL_SQ *sq, int *jmin, int *jmax, int **hdmin, in
 		    alpha[v][cur][d] = ILogsum(alpha[v][cur][d], (alpha[y+yoffset][cur][d-1] + 
 								  cm->itsc[v][yoffset]));
 		  i = j-d+1;
-		  if (sq->dsq[i] < cm->abc->K)
-		    alpha[v][cur][d] += cm->iesc[v][(int) sq->dsq[i]];
+		  if (dsq[i] < cm->abc->K)
+		    alpha[v][cur][d] += cm->iesc[v][(int) dsq[i]];
 		  else
-		    alpha[v][cur][d] += esl_abc_IAvgScore(cm->abc, sq->dsq[i], cm->iesc[v]);
+		    alpha[v][cur][d] += esl_abc_IAvgScore(cm->abc, dsq[i], cm->iesc[v]);
 		  
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
 		  /*printf("alpha[v][j:%3d][d:%3d]: %f\n", v, j, d, Scorify(alpha[v][cur][d]));*/
@@ -2288,10 +2288,10 @@ iInsideBandedScan_jd(CM_t *cm, ESL_SQ *sq, int *jmin, int *jmax, int **hdmin, in
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		    alpha[v][cur][d] = ILogsum(alpha[v][cur][d], (alpha[y+yoffset][prv][d-1] + 
 								  cm->itsc[v][yoffset]));
-		  if (sq->dsq[j] < cm->abc->K)
-		    alpha[v][cur][d] += cm->iesc[v][(int) sq->dsq[j]];
+		  if (dsq[j] < cm->abc->K)
+		    alpha[v][cur][d] += cm->iesc[v][(int) dsq[j]];
 		  else
-		    alpha[v][cur][d] += esl_abc_IAvgScore(cm->abc, sq->dsq[j], cm->iesc[v]);
+		    alpha[v][cur][d] += esl_abc_IAvgScore(cm->abc, dsq[j], cm->iesc[v]);
 		  
 		  if (alpha[v][cur][d] < -INFTY) alpha[v][cur][d] = -INFTY;
 		}
@@ -2666,7 +2666,7 @@ debug_print_shadow_banded_deck_jd(int v, void ***shadow, CM_t *cm, int L, int *j
 #if 0
 /* Here are the non-memory efficient functions, kept around for reference */
 /* The alignment engine (not memory efficient) */
-static float inside_b_jd(CM_t *cm, ESL_SQ *sq, 
+static float inside_b_jd(CM_t *cm, ESL_DSQ *dsq, int L, 
 			 int r, int z, int i0, int j0, 
 			 int do_full,
 			 float ***alpha, float ****ret_alpha, 
@@ -2678,7 +2678,7 @@ static float inside_b_jd(CM_t *cm, ESL_SQ *sq,
 			 int *safe_hdmin, int *safe_hdmax);
 
 /* The traceback routine (not memory efficient) */
-static float insideT_b_jd(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, 
+static float insideT_b_jd(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 			  int r, int z, int i0, int j0, int allow_begin,
 			  int *jmin, int *jax, 
 			  int **hdmin, int **hdmax,
@@ -2747,7 +2747,7 @@ static float insideT_b_jd(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
  *           divide&conquer to sort out where a local begin might be used.
  *
  * Args:     cm        - the model    [0..M-1]
- *           sq        - the sequence [1..sq->n]   
+ *           sq        - the sequence [1..L]   
  *           vroot     - first start state of subtree (0, for whole model)
  *           vend      - last end state of subtree (cm->M-1, for whole model)
  *           i0        - first position in subseq to align (1, for whole seq)
@@ -2786,7 +2786,7 @@ static float insideT_b_jd(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
  * Returns: Score of the optimal alignment.  
  */
 static float 
-inside_b_jd(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_full,
+inside_b_jd(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
 	    float ***alpha, float ****ret_alpha, 
 	    struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
 	    void ****ret_shadow, 
@@ -2817,8 +2817,8 @@ inside_b_jd(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_fu
 			     that we're using memory efficient bands */
   int      Wp;             /* W also changes depending on state */
 
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR, sq is not digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR, dsq is NULL.");
 
   /* 11.04.05 jd addition: */
   if(i0 != 1)
@@ -2826,7 +2826,7 @@ inside_b_jd(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_fu
       printf("inside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
       exit(1);
     }
-  if(j0 != sq->n)
+  if(j0 != L)
     {
       printf("inside_b_jd requires that j0 be L. This function is not set up for subsequence alignment.\n");
       exit(1);
@@ -2853,7 +2853,7 @@ inside_b_jd(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_fu
 				/* if caller didn't give us a deck pool, make one */
   if (dpool == NULL) dpool = deckpool_create();
   if (! deckpool_pop(dpool, &end))
-    end = alloc_vjd_deck(sq->n, i0, j0);
+    end = alloc_vjd_deck(L, i0, j0);
   nends = CMSubtreeCountStatetype(cm, vroot, E_st);
   for (j = 0; j <= W; j++) {
     end[j][0] = 0.;
@@ -2907,19 +2907,19 @@ inside_b_jd(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_fu
       } 
       if (! deckpool_pop(dpool, &(alpha[v]))) 
 	/* CYK Full ME Bands used 1 */
-	/* original line : alpha[v] = alloc_vjd_deck(sq->n, i0, j0);*/
-	alpha[v] = alloc_banded_vjd_deck(sq->n, i0, j0, safe_hdmin[v], safe_hdmax[v]);
+	/* original line : alpha[v] = alloc_vjd_deck(L, i0, j0);*/
+	alpha[v] = alloc_banded_vjd_deck(L, i0, j0, safe_hdmin[v], safe_hdmax[v]);
       
       if (ret_shadow != NULL) {
 	if (cm->sttype[v] == B_st) {
 	  /* CYK Full ME Bands used 2 */
 	  /* original line : kshad     = alloc_vjd_kshadow_deck(L, i0, j0); */
-	  kshad     = alloc_banded_vjd_kshadow_deck(sq->n, i0, j0, safe_hdmin[v], safe_hdmax[v]);
+	  kshad     = alloc_banded_vjd_kshadow_deck(L, i0, j0, safe_hdmin[v], safe_hdmax[v]);
 	  shadow[v] = (void **) kshad;
 	} else {
 	  /* CYK Full ME Bands used 3 */
 	  /* original line : yshad     = alloc_vjd_yshadow_deck(L, i0, j0); */
-	  yshad     = alloc_banded_vjd_yshadow_deck(sq->n, i0, j0, safe_hdmin[v], safe_hdmax[v]);
+	  yshad     = alloc_banded_vjd_yshadow_deck(L, i0, j0, safe_hdmin[v], safe_hdmax[v]);
 	  shadow[v] = (void **) yshad;
 	}
       }
@@ -3226,10 +3226,10 @@ inside_b_jd(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_fu
 		  }
 		
 		i = j-d+1;
-		if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
-		  alpha[v][j][d] += cm->esc[v][(sq->dsq[i]*cm->abc->K+sq->dsq[j])];
+		if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
+		  alpha[v][j][d] += cm->esc[v][(dsq[i]*cm->abc->K+dsq[j])];
 		else
-		  alpha[v][j][d] += DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i], sq->dsq[j]);
+		  alpha[v][j][d] += DegeneratePairScore(cm->abc, cm->esc[v], dsq[i], dsq[j]);
 
 		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 		*/
@@ -3257,10 +3257,10 @@ inside_b_jd(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_fu
 		      }
 		  }
 		i = j-d+1;
-		if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
-		  alpha[v][j][dp_v] += cm->esc[v][(sq->dsq[i]*cm->abc->K+sq->dsq[j])];
+		if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
+		  alpha[v][j][dp_v] += cm->esc[v][(dsq[i]*cm->abc->K+dsq[j])];
 		else
-		  alpha[v][j][dp_v] += DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i], sq->dsq[j]);
+		  alpha[v][j][dp_v] += DegeneratePairScore(cm->abc, cm->esc[v], dsq[i], dsq[j]);
 		
 		if (alpha[v][j][dp_v] < IMPOSSIBLE) alpha[v][j][dp_v] = IMPOSSIBLE;
 		/* CYK Full ME Bands used 7 end block */
@@ -3295,10 +3295,10 @@ inside_b_jd(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_fu
 		  } 
 		
 		i = j-d+1;
-		if (sq->dsq[i] < cm->abc->K)
-		  alpha[v][j][d] += cm->esc[v][(int) sq->dsq[i]];
+		if (dsq[i] < cm->abc->K)
+		  alpha[v][j][d] += cm->esc[v][(int) dsq[i]];
 		else
-		  alpha[v][j][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[i], cm->esc[v]);
+		  alpha[v][j][d] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
 		
 		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 		*/
@@ -3325,10 +3325,10 @@ inside_b_jd(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_fu
 		      }
 		  }
 		i = j-d+1;
-		if (sq->dsq[i] < cm->abc->K)
-		  alpha[v][j][dp_v] += cm->esc[v][(int) sq->dsq[i]];
+		if (dsq[i] < cm->abc->K)
+		  alpha[v][j][dp_v] += cm->esc[v][(int) dsq[i]];
 		else
-		  alpha[v][j][dp_v] += esl_abc_FAvgScore(cm->abc, sq->dsq[i], cm->esc[v]);
+		  alpha[v][j][dp_v] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
 		if (alpha[v][j][dp_v] < IMPOSSIBLE) alpha[v][j][dp_v] = IMPOSSIBLE;
 		/* CYK Full ME Bands used 9 end block */
 	      }
@@ -3360,10 +3360,10 @@ inside_b_jd(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_fu
 		    alpha[v][j][d] = sc;
 		    if (ret_shadow != NULL) yshad[j][d] = yoffset;
 		  }
-		if (sq->dsq[j] < cm->abc->K)
-		  alpha[v][j][d] += cm->esc[v][(int) sq->dsq[j]];
+		if (dsq[j] < cm->abc->K)
+		  alpha[v][j][d] += cm->esc[v][(int) dsq[j]];
 		else
-		  alpha[v][j][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[j], cm->esc[v]);
+		  alpha[v][j][d] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
 		
 		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 		*/
@@ -3388,10 +3388,10 @@ inside_b_jd(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_fu
 			  }
 		      }
 		  }
-		if (sq->dsq[j] < cm->abc->K)
-		  alpha[v][j][dp_v] += cm->esc[v][(int) sq->dsq[j]];
+		if (dsq[j] < cm->abc->K)
+		  alpha[v][j][dp_v] += cm->esc[v][(int) dsq[j]];
 		else
-		  alpha[v][j][dp_v] += esl_abc_FAvgScore(cm->abc, sq->dsq[j], cm->esc[v]);
+		  alpha[v][j][dp_v] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
 		
 		if (alpha[v][j][dp_v] < IMPOSSIBLE) alpha[v][j][dp_v] = IMPOSSIBLE;
 		/* CYK Full ME Bands used 11 end block */
@@ -3542,14 +3542,14 @@ inside_b_jd(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_fu
  *           traceback, which already has state r at tr->n-1.
  */
 static float
-insideT_b_jd(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, 
+insideT_b_jd(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 	     int r, int z, int i0, int j0, 
 	     int allow_begin, int *jmin, int *jmax,
 	     int **hdmin, int **hdmax,
 	     int *safe_hdmin, int *safe_hdmax)
 {
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR(), sq is not digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR(), dsq is NULL.\n");
 
   void   ***shadow;             /* the traceback shadow matrix */
   float     sc;			/* the score of the CYK alignment */
@@ -3563,7 +3563,7 @@ insideT_b_jd(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
   int       dp;                 /* add explanation */
   int       kp;                 /* add explanation */
 
-  sc = inside_b_jd(cm, sq, r, z, i0, j0, 
+  sc = inside_b_jd(cm, dsq, L, r, z, i0, j0, 
 		   BE_EFFICIENT,	/* memory-saving mode */
 		   NULL, NULL,	/* manage your own matrix, I don't want it */
 		   NULL, NULL,	/* manage your own deckpool, I don't want it */

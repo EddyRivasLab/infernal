@@ -492,13 +492,13 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQ **s
 	      fprintf(cfg->tracefp, "> %s\n", sq[i]->name);
 	      if(esl_opt_GetBoolean(go,"--hmmonly")) 
 		{
-		  fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", CP9TraceScore(cfg->cm->cp9, sq[i], cp9_tr[i]));
-		  CP9PrintTrace(cfg->tracefp, cp9_tr[i], cfg->cm->cp9, sq[i]);
+		  fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", CP9TraceScore(cfg->cm->cp9, sq[i]->dsq, cp9_tr[i]));
+		  CP9PrintTrace(cfg->tracefp, cp9_tr[i], cfg->cm->cp9, sq[i]->dsq);
 		}
 	      else
 		{
-		  fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", ParsetreeScore(cfg->cm, tr[i], sq[i], FALSE));
-		  ParsetreeDump(cfg->tracefp, tr[i], cfg->cm, sq[i], NULL, NULL); /* NULLs are dmin, dmax */
+		  fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", ParsetreeScore(cfg->cm, tr[i], sq[i]->dsq, FALSE));
+		  ParsetreeDump(cfg->tracefp, tr[i], cfg->cm, sq[i]->dsq, NULL, NULL); /* NULLs are dmin, dmax */
 		}
 	      fprintf(cfg->tracefp, "//\n");
 	    }
@@ -723,8 +723,8 @@ static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQ ***r
       esl_strdup(aseq[i], -1, &(uaseq[i]));
       esl_sq_Dealign(uaseq[i], uaseq[i], "-_.", cfg->withmsa->alen);
     }
-  ESL_RALLOC((*ret_tr), tmp, (sizeof(Parsetree_t *) * (cfg->nseq + cfg->withmsa->nseq)));
-  ESL_RALLOC((*ret_sq), tmp, (sizeof(ESL_SQ *)      * (cfg->nseq + cfg->withmsa->nseq)));
+  ESL_RALLOC((*ret_tr),  tmp, (sizeof(Parsetree_t *)  * (cfg->nseq + cfg->withmsa->nseq)));
+  ESL_RALLOC((*ret_sq),  tmp, (sizeof(ESL_SQ *)       * (cfg->nseq + cfg->withmsa->nseq)));
 
   /* Transmogrify each aligned seq to get a parsetree */
   /*for (i = 0; i < cfg->withmsa->nseq; i++)*/

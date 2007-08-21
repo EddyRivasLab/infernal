@@ -1711,18 +1711,18 @@ CP9_fake_tracebacks(ESL_MSA *msa, int *matassign, CP9trace_t ***ret_tr)
  *           (Usually as part of a model parameter re-estimation.)
  *           
  * Args:     hmm   - counts-based CM Plan 9 HMM
- *           sq    - sequence that traceback aligns to the HMM (1..L)
+ *           dsq   - sequence that traceback aligns to the HMM (1..L)
  *           wt    - weight on the sequence
  *           tr    - alignment of seq to HMM
  *           
  * Return:   (void)
  */
 void
-CP9TraceCount(CP9_t *hmm, ESL_SQ *sq, float wt, CP9trace_t *tr)
+CP9TraceCount(CP9_t *hmm, ESL_DSQ *dsq, float wt, CP9trace_t *tr)
 {
   /* contract check */
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in CP9TraceCount(), sq should be digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR in CP9TraceCount(), dsq is NULL.");
   
   int tpos;                     /* position in tr */
   int i;			/* symbol position in seq */
@@ -1734,9 +1734,9 @@ CP9TraceCount(CP9_t *hmm, ESL_SQ *sq, float wt, CP9trace_t *tr)
       /* Emission counts. 
        */
       if (tr->statetype[tpos] == CSTM) 
-	esl_abc_FCount(hmm->abc, hmm->mat[tr->nodeidx[tpos]], sq->dsq[i], wt);
+	esl_abc_FCount(hmm->abc, hmm->mat[tr->nodeidx[tpos]], dsq[i], wt);
       else if (tr->statetype[tpos] == CSTI) 
-	esl_abc_FCount(hmm->abc, hmm->ins[tr->nodeidx[tpos]], sq->dsq[i], wt);
+	esl_abc_FCount(hmm->abc, hmm->ins[tr->nodeidx[tpos]], dsq[i], wt);
 
       /* State transition counts
        */
@@ -1839,27 +1839,27 @@ CP9Statetype(char st)
  * Incept:   EPN, Wed May 30 06:07:14 2007
  *           
  * Args:     hmm   - HMM with valid log odds scores.
- *           sq    - digitized sequence that traceback aligns to the HMM (1..sq->n)
+ *           dsq   - digitized sequence that traceback aligns to the HMM (1..sq->n)
  *           tr    - alignment of seq to HMM
  *           
  * Return:   (void)
  */
 float
-CP9TraceScore(CP9_t *hmm, ESL_SQ *sq, CP9trace_t *tr)
+CP9TraceScore(CP9_t *hmm, ESL_DSQ *dsq, CP9trace_t *tr)
 {
   int score;			/* total score as a scaled integer */
   int tpos;                     /* position in tr */
   char sym;		        /* digitized symbol in dsq */
   
   /* Contract check */
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in CP9TraceScore, sq is not digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR in CP9TraceScore, dsq is NULL.");
 
   /*CP9PrintTrace(stdout, tr, hmm, sq); */
   score = 0;
   for (tpos = 0; tpos < tr->tlen-1; tpos++)
     {
-      sym = sq->dsq[tr->pos[tpos]];
+      sym = dsq[tr->pos[tpos]];
 
       /* Emissions from M and I states.
        */
@@ -1890,13 +1890,11 @@ CP9TraceScore(CP9_t *hmm, ESL_SQ *sq, CP9trace_t *tr)
  *           dsq - NULL or digitized sequence trace refers to.                
  */
 void
-CP9PrintTrace(FILE *fp, CP9trace_t *tr, CP9_t *hmm, ESL_SQ *sq)
+CP9PrintTrace(FILE *fp, CP9trace_t *tr, CP9_t *hmm, ESL_DSQ *dsq)
 {
   /* Contract check */
-  if((sq != NULL) && (! (sq->flags & eslSQ_DIGITAL)))
-    esl_fatal("ERROR in CP9PrintTrace, sq is not digitized.\n");
-  if((sq != NULL) && (hmm == NULL))
-    esl_fatal("ERROR in CP9PrintTrace, sq is non-NULL but HMM is NULL.\n");
+  if((dsq != NULL) && (hmm == NULL))
+    esl_fatal("ERROR in CP9PrintTrace, dsq is non-NULL but HMM is NULL.\n");
 
   int          tpos;		/* counter for trace position */
   unsigned int sym;
@@ -1924,7 +1922,7 @@ CP9PrintTrace(FILE *fp, CP9trace_t *tr, CP9_t *hmm, ESL_SQ *sq)
     fprintf(fp, "st  node   rpos  transit emission - traceback len %d\n", tr->tlen);
     fprintf(fp, "--  ---- ------  ------- --------\n");
     for (tpos = 0; tpos < tr->tlen; tpos++) {
-      if (sq != NULL) sym = sq->dsq[tr->pos[tpos]];
+      if (dsq != NULL) sym = dsq[tr->pos[tpos]];
 
       fprintf(fp, "%1s  %4d %6d  %7d", 
 	      CP9Statetype(tr->statetype[tpos]),
@@ -1938,7 +1936,7 @@ CP9PrintTrace(FILE *fp, CP9trace_t *tr, CP9_t *hmm, ESL_SQ *sq)
 	sc += CP9TransitionScoreLookup(hmm, tr->statetype[tpos], tr->nodeidx[tpos],
 				       tr->statetype[tpos+1], tr->nodeidx[tpos+1]);
       
-      if (sq != NULL) {
+      if (dsq != NULL) {
 	if (tr->statetype[tpos] == CSTM)  
 	  {
 	    fprintf(fp, " %8d %c", hmm->msc[(int) sym][tr->nodeidx[tpos]], 
@@ -2051,22 +2049,22 @@ CP9TransitionScoreLookup(struct cplan9_s *hmm, char st1, int k1,
  *           of optimum alignment.
  *           
  * Args:     hmm    - hmm, log odds form, used to make mx
- *           sq     - sequence aligned to (digital form) 1..sq->n  
+ *           dsq    - sequence aligned to (digital form) 1..L
  *           i0     - first residue of sequence, often 1
  *           j0     - last residue of sequence, often L
- *           mx     - the matrix to trace back in, N x hmm->M
+ *           mx     - the matrix to trace back in, L x hmm->M
  *           ret_tr - RETURN: traceback.
  *           
  * Return:   (void)
  *           ret_tr is allocated here. Free using CP9FreeTrace().
  */
 void
-CP9ViterbiTrace(struct cplan9_s *hmm, ESL_SQ *sq, int i0, int j0,
+CP9ViterbiTrace(struct cplan9_s *hmm, ESL_DSQ *dsq, int i0, int j0,
 		struct cp9_dpmatrix_s *mx, CP9trace_t **ret_tr)
 {
   /* contract check */
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in CP9ViterbiTrace(), sq should be digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR in CP9ViterbiTrace(), dsq is NULL.");
 
   CP9trace_t *tr;
   int curralloc;		/* current allocated length of trace */
@@ -2107,7 +2105,7 @@ CP9ViterbiTrace(struct cplan9_s *hmm, ESL_SQ *sq, int i0, int j0,
     switch (tr->statetype[tpos-1]) {
     case CSTM:			/* M connects from i-1,k-1, B or an EL*/
       /*printf("CSTM k: %d i:%d \n", k, i);*/
-      sc = mmx[i+1][k+1] - hmm->msc[sq->dsq[i+1]][k+1];
+      sc = mmx[i+1][k+1] - hmm->msc[dsq[i+1]][k+1];
       if (sc <= -INFTY) { CP9FreeTrace(tr); *ret_tr = NULL; return; }
       else if (sc == mmx[i][k] + hmm->tsc[CTMM][k])
 	{
@@ -2207,7 +2205,7 @@ CP9ViterbiTrace(struct cplan9_s *hmm, ESL_SQ *sq, int i0, int j0,
 
     case CSTI:			/* I connects from M,I,D, (I_0 connects from B also(*/
       /*printf("CSTI k: %d i:%d \n", k, i);*/
-      sc = imx[i+1][k] - hmm->isc[sq->dsq[i+1]][k];
+      sc = imx[i+1][k] - hmm->isc[dsq[i+1]][k];
       if (sc <= -INFTY) { CP9FreeTrace(tr); *ret_tr = NULL; return; }
       else if(k == 0) /* I_0 connects from B(M_0), and I_0 */
 	{

@@ -2681,7 +2681,7 @@ CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo,
       
       /* build model from tracebacks (code from HMMER's modelmakers.c::matassign2hmm() */
       for (i = 0; i < msa->nseq; i++) {
-	CP9TraceCount(shmm, sq[i], wgt[i], cp9_tr[i]);
+	CP9TraceCount(shmm, sq[i]->dsq, wgt[i], cp9_tr[i]);
       }
       nsampled += msa_nseq;
     }

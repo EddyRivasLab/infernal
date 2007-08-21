@@ -41,7 +41,7 @@ extern void     BandBounds(double **gamma, int M, int W, double p,
 extern void     PrintBandGraph(FILE *fp, double **gamma, int *min, int *max, int v, int W);
 
 extern void     PrintDPCellsSaved(CM_t *cm, int *min, int *max, int W);
-extern float    CYKBandedScan(CM_t *cm, ESL_SQ *sq, int *dmin, int *dmax, int i0, int j0, int W, 
+extern float    CYKBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
 			      float cutoff, scan_results_t *results);
 extern void     ExpandBands(CM_t *cm, int qlen, int *dmin, int *dmax);
 extern void     qdb_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *dmin, 
@@ -118,7 +118,7 @@ extern int     CMFileWrite(FILE *fp, CM_t *cm, int do_binary);
 
 /* from display.c
  */
-extern Fancyali_t    *CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_SQ *sq, const ESL_ALPHABET *abc, int i0);
+extern Fancyali_t    *CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, const ESL_ALPHABET *abc);
 extern void           PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp);
 extern void           FreeFancyAli(Fancyali_t *ali);
 extern CMConsensus_t *CreateCMConsensus(CM_t *cm, const ESL_ALPHABET *abc, float pthresh, float sthresh);
@@ -181,15 +181,15 @@ extern int          InsertTraceNode(Parsetree_t *tr, int y, int whichway,
 extern int          InsertTraceNodewithMode(Parsetree_t *tr, int y, int whichway, 
 				    int emitl, int emitr, int state, int mode);
 extern void         ParsetreeCount(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float wgt);
-extern float        ParsetreeScore(CM_t *cm, Parsetree_t *tr, ESL_SQ *sq, int do_null2);
+extern float        ParsetreeScore(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, int do_null2);
 extern void         PrintParsetree(FILE *fp, Parsetree_t *tr);
-extern void         ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_SQ *sq, int *dmin, int *dmax);
+extern void         ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax);
 extern int          ParsetreeCompare(Parsetree_t *t1, Parsetree_t *t2);
 extern void         SummarizeMasterTrace(FILE *fp, Parsetree_t *tr);
 extern void         MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm);
 extern int          Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt, 
 					 Parsetree_t **tr, int nseq, int do_full, int do_matchonly, ESL_MSA **ret_msa);
-extern float        ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, ESL_SQ *sq, int print_flag);
+extern float        ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, int print_flag);
 extern int          Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, CP9trace_t **ret_cp9_tr);
 
 /* from scancyk.c
@@ -201,17 +201,17 @@ extern int  compare_results (const void *a_void, const void *b_void);
 extern void sort_results (scan_results_t *results);
 extern void report_hit (int i, int j, int bestr, float score, scan_results_t *results);
 extern void remove_overlapping_hits (scan_results_t *results, int i0, int j0);
-extern float CYKScan(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, 
+extern float CYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, 
 		      float cutoff, scan_results_t *results);
 extern float CYKScanRequires(CM_t *cm, int L, int W);
 
 /* from smallcyk.c
  */
-extern float CYKDivideAndConquer(CM_t *cm, ESL_SQ *sq, int r, int i0, int j0, 
+extern float CYKDivideAndConquer(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, 
 				 Parsetree_t **ret_tr, int *dmin, int *dmax);
-extern float CYKInside(CM_t *cm, ESL_SQ *sq, int r, int i0, int j0, 
+extern float CYKInside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, 
 		       Parsetree_t **ret_tr, int *dmin, int *dmax);
-extern float CYKInsideScore(CM_t *cm, ESL_SQ *sq, int r, int i0, 
+extern float CYKInsideScore(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, 
 			    int j0, int *dmin, int *dmax);
 extern float CYKDemands(CM_t *cm, int L, int *dmin, int *dmax, int be_quiet);
 extern void  debug_print_bands(CM_t *cm, int *dmin, int *dmax);
@@ -255,7 +255,7 @@ extern void debug_print_shadow_banded_deck(int v, void ***shadow, CM_t *cm, int 
 
 /* from truncyk.c
  */
-float TrCYKInside(CM_t *cm, ESL_SQ *sq, int r, int i0, int j0, Parsetree_t **ret_tr, int *dmin, int *dmax);
+float TrCYKInside(CM_t *cm, ESL_DSQ *sq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, int *dmin, int *dmax);
 
 /* from cm_eweight.c
  * Entropy-based sequence weighting */
@@ -312,13 +312,13 @@ extern void CP9_reconfig2sub(CP9_t *hmm, int spos, int epos, int spos_nd, int ep
 extern void CP9HackInsertScores(CP9_t *cp9);
 extern void CP9EnforceHackMatchScores(CP9_t *cp9, int enf_start_pos, int enf_end_pos);
 extern void CP9_fake_tracebacks(ESL_MSA *msa, int *matassign, CP9trace_t ***ret_tr);
-extern void  CP9TraceCount(CP9_t *hmm, ESL_SQ *sq, float wt, CP9trace_t *tr);
-extern float CP9TraceScore(CP9_t *hmm, ESL_SQ *sq, CP9trace_t *tr);
-extern void  CP9PrintTrace(FILE *fp, CP9trace_t *tr, CP9_t *hmm, ESL_SQ *sq);
+extern void  CP9TraceCount(CP9_t *hmm, ESL_DSQ *dsq, float wt, CP9trace_t *tr);
+extern float CP9TraceScore(CP9_t *hmm, ESL_DSQ *dsq, CP9trace_t *tr);
+extern void  CP9PrintTrace(FILE *fp, CP9trace_t *tr, CP9_t *hmm, ESL_DSQ *dsq);
 extern char *CP9Statetype(char st);
 extern int   CP9TransitionScoreLookup(struct cplan9_s *hmm, char st1, int k1, 
 				    char st2, int k2);
-extern void  CP9ViterbiTrace(struct cplan9_s *hmm, ESL_SQ *sq, int i0, int j0,
+extern void  CP9ViterbiTrace(struct cplan9_s *hmm, ESL_DSQ *dsq, int i0, int j0,
 			     struct cp9_dpmatrix_s *mx, CP9trace_t **ret_tr);
 extern void  CP9ReverseTrace(CP9trace_t *tr);
 extern int   CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt, 
@@ -327,7 +327,7 @@ extern void  DuplicateCP9(CM_t *src_cm, CM_t *dest_cm);
 
 /* from hbandcyk.c
  */
-extern float CYKInside_b_jd(CM_t *cm, ESL_SQ *sq, int r, int i0, int j0, 
+extern float CYKInside_b_jd(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, 
 			    Parsetree_t **ret_tr, int *jmin, int *jmax, 
 			    int **hdmin, int **hdmax, int *dmin, int *dmax);
 extern void PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax,
@@ -341,30 +341,30 @@ extern void debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, 
 extern void debug_print_alpha_banded_jd(float ***alpha, CM_t *cm, int L, int *jmin, int *jmax, 
 					int **hdmin, int **hdmax);
 extern float ** alloc_jdbanded_vjd_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
-extern float CYKBandedScan_jd(CM_t *cm, ESL_SQ *sq, int *jmin, int *jmax, int **hdmin, int **hdmax, int i0, 
+extern float CYKBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax, int i0, 
 			      int j0, int W, float cutoff, scan_results_t *results);
-extern float iInsideBandedScan_jd(CM_t *cm, ESL_SQ *sq, int *jmin, int *jmax, int **hdmin, int **hdmax, int i0, 
+extern float iInsideBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax, int i0, 
 				  int j0, int W, float cutoff, scan_results_t *results);
 
 
 
 /* from CP9_scan.c */
-extern float CP9Viterbi(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret_sc, 
+extern float CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
 			int *ret_bestpos, scan_results_t *results, int do_scan,
 			int be_efficient, CP9_dpmatrix_t **ret_mx, CP9trace_t **ret_tr);
-extern float CP9Forward(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret_isc, 
+extern float CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_isc, 
 			int *ret_maxres, scan_results_t *results, int do_scan, int doing_align, 
 			int doing_rescan, int be_efficient, CP9_dpmatrix_t **ret_mx);
-extern float CP9Backward(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret_isc, 
+extern float CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_isc, 
 			 int *ret_maxres, scan_results_t *results, int do_scan, int doing_align, 
 			 int doing_rescan, int be_efficient, CP9_dpmatrix_t **ret_mx);
-extern float CP9Scan_dispatch(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cm_cutoff, 
+extern float CP9Scan_dispatch(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cm_cutoff, 
 			      float cp9_cutoff, scan_results_t *results, int doing_cp9_stats, int *ret_flen);
-extern float RescanFilterSurvivors(CM_t *cm, ESL_SQ *sq, scan_results_t *hmm_results, int i0, 
+extern float RescanFilterSurvivors(CM_t *cm, ESL_DSQ *dsq, scan_results_t *hmm_results, int i0, 
 				   int j0, int W, int padmode, int ipad, int jpad, int do_collapse,
 				   float cm_cutoff, float cp9_cutoff, scan_results_t *results, 
 				   int *ret_flen);
-extern void CP9ScanPosterior(ESL_SQ *sq, int i0, int j0, CP9_t *hmm, CP9_dpmatrix_t *fmx, 
+extern void CP9ScanPosterior(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_dpmatrix_t *fmx, 
 			     CP9_dpmatrix_t *bmx, CP9_dpmatrix_t *mx);
 extern float CP9ForwardScanDemands(CP9_t *cp9, int L);
 extern float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
@@ -409,23 +409,23 @@ extern int  MakeDealignedString(const ESL_ALPHABET *abc, char *aseq, int alen, c
 
 
 /* from scaninside.c */
-extern float  InsideScan(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, 
+extern float  InsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, 
 			 float cutoff, scan_results_t *results);
-extern float  InsideBandedScan(CM_t *cm, ESL_SQ *sq, int *dmin, int *dmax, int i0, int j0, int W, 
+extern float  InsideBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
 			       float cutoff, scan_results_t *results);
-extern void  InsideBandedScan_jd(CM_t *cm, ESL_SQ *sq, int *jmin, int *jmax, int **hdmin, int **hdmax,
+extern void  InsideBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax,
 				 int i0, int j0, int W, 
 				 int *ret_nhits, int **ret_hitr, 
 				 int **ret_hiti, int **ret_hitj, float **ret_hitsc,
 				 float min_thresh);
-extern float iInsideScan(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, 
+extern float iInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, 
 			 float cutoff, scan_results_t *results);
-extern float iInsideBandedScan(CM_t *cm, ESL_SQ *sq, int *dmin, int *dmax, int i0, int j0, int W, 
+extern float iInsideBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
 			       float cutoff, scan_results_t *results);
 extern float LogSum2(float p1, float p2);
 
 /* from cm_masks.c */
-extern float CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, ESL_SQ *sq);
+extern float CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq);
 
 /* from sub_cm.c */
 extern int  build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t **ret_submap, 

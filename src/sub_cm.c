@@ -2296,7 +2296,7 @@ check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int n
       
       /* build model from tracebacks (code from HMMER's modelmakers.c::matassign2hmm() */
       for (i = 0; i < msa->nseq; i++) {
-	CP9TraceCount(orig_hmm, sq[i], msa->wgt[i], cp9_tr[i]);
+	CP9TraceCount(orig_hmm, sq[i]->dsq, msa->wgt[i], cp9_tr[i]);
       }
       nsampled += msa_nseq;
     }
@@ -2370,7 +2370,7 @@ check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int n
       
       /* build model from tracebacks (code from HMMER's modelmakers.c::matassign2hmm() */
       for (i = 0; i < msa->nseq; i++) {
-	CP9TraceCount(orig_hmm, sq[i], msa->wgt[i], cp9_tr[i]);
+	CP9TraceCount(orig_hmm, sq[i]->dsq, msa->wgt[i], cp9_tr[i]);
       }
       nsampled += msa_nseq;
     }

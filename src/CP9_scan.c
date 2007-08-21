@@ -100,7 +100,7 @@
  *
  * Args
  *           cm        - the covariance model, includes cm->cp9: a CP9 HMM
- *           sq        - sequence in digitized form
+ *           dsq       - sequence in digitized form
  *           i0        - start of target subsequence (1 for beginning of dsq)
  *           j0        - end of target subsequence (L for end of dsq)
  *           W         - the maximum size of a hit (often cm->W)
@@ -118,7 +118,7 @@
  *           else         max log P(S|M)/P(S|R), for argmax subseq S of input seq i0..j0,
  */
 float
-CP9Viterbi(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret_sc, 
+CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
 	   int *ret_bestpos, scan_results_t *results, int do_scan,
 	   int be_efficient, CP9_dpmatrix_t **ret_mx, CP9trace_t **ret_tr)
 {
@@ -132,9 +132,9 @@ CP9Viterbi(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret_
   int          j;           /*     actual   position in the subsequence                     */
   int          jp;          /* j': relative position in the subsequence                     */
   int          cur, prv;    /* rows in DP matrix 0 or 1                                     */
-  int   i,k;
-  int         sc;
-  int   ip;		/* i': relative position in the subsequence  */
+  int          i,k;
+  int          sc;
+  int          ip;	    /* i': relative position in the subsequence  */
   int          L;           /* j0-i0+1: subsequence length                                  */
   float        fsc;         /* float log odds score                                         */
   float        curr_sc;     /* temporary score used for filling in gamma                    */
@@ -162,8 +162,8 @@ CP9Viterbi(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret_
   if((cm->search_opts & CM_SEARCH_HMMGREEDY) && 
      (cm->search_opts & CM_SEARCH_HMMRESCAN))
     esl_fatal("ERROR in CP9Viterbi, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in CP9Viterbi, sq is not digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR in CP9Viterbi, dsq is NULL.");
 
     
   best_sc     = IMPOSSIBLE;
@@ -258,7 +258,7 @@ CP9Viterbi(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret_
       if((sc = dmx[prv][0] + cm->cp9->tsc[CTDI][0]) > imx[cur][0])
 	imx[cur][0] = sc;
       if(imx[cur][0] != -INFTY)
-	imx[cur][0] += cm->cp9->isc[sq->dsq[j]][0];
+	imx[cur][0] += cm->cp9->isc[dsq[j]][0];
       else 
 	imx[cur][0] = -INFTY;
 
@@ -275,7 +275,7 @@ CP9Viterbi(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret_
 	  if((sc = dmx[prv][k-1] + cm->cp9->tsc[CTDM][k-1]) > mmx[cur][k])
 	    mmx[cur][k] = sc;
 	  if(mmx[cur][k] != -INFTY)
-	    mmx[cur][k] += cm->cp9->msc[sq->dsq[j]][k];
+	    mmx[cur][k] += cm->cp9->msc[dsq[j]][k];
 	  else 
 	    mmx[cur][k] = -INFTY;
 
@@ -288,7 +288,7 @@ CP9Viterbi(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret_
 	  if((sc = dmx[prv][k] + cm->cp9->tsc[CTDI][k]) > imx[cur][k])
 	    imx[cur][k] = sc;
 	  if(imx[cur][k] != -INFTY)
-	    imx[cur][k] += cm->cp9->isc[sq->dsq[j]][k];
+	    imx[cur][k] += cm->cp9->isc[dsq[j]][k];
 	  else 
 	    imx[cur][k] = -INFTY;
 
@@ -401,7 +401,7 @@ CP9Viterbi(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret_
     }
   
   if (!do_scan && ret_tr != NULL) {
-    CP9ViterbiTrace(cm->cp9, sq, i0, j0, mx, &tr);
+    CP9ViterbiTrace(cm->cp9, dsq, i0, j0, mx, &tr);
     /* CP9PrintTrace(stdout, tr, cm->cp9, dsq); */
     *ret_tr = tr;
   }
@@ -500,7 +500,7 @@ CP9Viterbi(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret_
  *           else         max log P(S|M)/P(S|R), for argmax subseq S of input seq i0..j0,
  */
 float
-CP9Forward(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret_sc, 
+CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
 	   int *ret_bestpos, scan_results_t *results, int do_scan, int doing_align, int doing_rescan, 
 	   int be_efficient, CP9_dpmatrix_t **ret_mx)
 {
@@ -549,8 +549,8 @@ CP9Forward(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret_
   if((cm->search_opts & CM_SEARCH_HMMGREEDY) && 
      (cm->search_opts & CM_SEARCH_HMMRESCAN))
     esl_fatal("ERROR in CP9Forward, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in CP9Forward, sq is not digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR in CP9Forward, dsq is NULL.");
     
   best_sc     = IMPOSSIBLE;
   best_pos    = -1;
@@ -643,7 +643,7 @@ CP9Forward(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret_
       imx[cur][0]  = ILogsum(ILogsum(mmx[prv][0] + cm->cp9->tsc[CTMI][0],
 				     imx[prv][0] + cm->cp9->tsc[CTII][0]),
 			     dmx[prv][0] + cm->cp9->tsc[CTDI][0]);
-      imx[cur][0] += cm->cp9->isc[sq->dsq[j]][0];
+      imx[cur][0] += cm->cp9->isc[dsq[j]][0];
       /*printf("mmx[jp:%d][%d]: %d %f\n", jp, 0, mmx[cur][0], Score2Prob(mmx[cur][0], 1.));
 	printf("imx[jp:%d][%d]: %d %f\n", jp, 0, imx[cur][0], Score2Prob(imx[cur][0], 1.));
 	printf("dmx[jp:%d][%d]: %d %f\n", jp, 0, dmx[cur][0], Score2Prob(dmx[cur][0], 1.));*/
@@ -659,7 +659,7 @@ CP9Forward(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret_
 	    for(c = 0; c < cm->cp9->el_from_ct[k]; c++) /* el_from_ct[k] is >= 0 */
 	      /* transition penalty to EL incurred when EL was entered */
 	      mmx[cur][k] = ILogsum(mmx[cur][k], (elmx[prv][cm->cp9->el_from_idx[k][c]]));
-	  mmx[cur][k] += cm->cp9->msc[sq->dsq[j]][k];
+	  mmx[cur][k] += cm->cp9->msc[dsq[j]][k];
 
 	  dmx[cur][k]  = ILogsum(ILogsum(mmx[cur][k-1] + cm->cp9->tsc[CTMD][k-1],
 					imx[cur][k-1] + cm->cp9->tsc[CTID][k-1]),
@@ -668,7 +668,7 @@ CP9Forward(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret_
 	  imx[cur][k]  = ILogsum(ILogsum(mmx[prv][k] + cm->cp9->tsc[CTMI][k],
 				       imx[prv][k] + cm->cp9->tsc[CTII][k]),
 			       dmx[prv][k] + cm->cp9->tsc[CTDI][k]);
-	  imx[cur][k] += cm->cp9->isc[sq->dsq[j]][k];
+	  imx[cur][k] += cm->cp9->isc[dsq[j]][k];
 
 	  if((cm->cp9->flags & CPLAN9_EL) && cm->cp9->has_el[k]) /* not all HMM nodes have an EL state (for ex: 
 							    HMM nodes that map to right half of a MATP_MP) */
@@ -778,7 +778,7 @@ CP9Forward(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret_
 		if(do_scan && cm->search_opts & CM_SEARCH_HMMRESCAN && doing_rescan == FALSE)
 		  {
 		    /*printf("rechecking hit from %d to %d\n", gback[jp], j);*/
-		    temp_sc = CP9Forward(cm, sq, gback[jp], j, cm->W, cutoff, 
+		    temp_sc = CP9Forward(cm, dsq, gback[jp], j, cm->W, cutoff, 
 					 NULL,  /* don't care about scores of each pos */
 					 NULL,  /* don't care about best scoring position */
 					 NULL,  /* don't report hits to results data structure */
@@ -962,7 +962,7 @@ CP9Forward(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret_
  *                            this is max_jp B->M[jp][0]
  */
 float
-CP9Backward(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret_sc, 
+CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
 	    int *ret_bestpos, scan_results_t *results, int do_scan, int doing_align, 
 	    int doing_rescan, int be_efficient, CP9_dpmatrix_t **ret_mx)
 {
@@ -1010,8 +1010,8 @@ CP9Backward(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret
   if((cm->search_opts & CM_SEARCH_HMMGREEDY) && 
      (cm->search_opts & CM_SEARCH_HMMRESCAN))
     esl_fatal("ERROR in CP9Backward, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in CP9Backward, sq is not digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR in CP9Backward, dsq is NULL.");
     
   best_sc     = IMPOSSIBLE;
   best_pos    = -1;
@@ -1073,9 +1073,9 @@ CP9Backward(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret
   mmx[cur][cm->cp9->M]  = 0. + 
     ILogsum(elmx[cur][cm->cp9->M] + cm->cp9->tsc[CTME][cm->cp9->M],/* M_M<-EL_M<-E, with 0 self loops in EL_M */
 	    cm->cp9->esc[cm->cp9->M]);                             /* M_M<-E ... everything ends in E (the 0; 2^0=1.0) */
-  mmx[cur][cm->cp9->M] += cm->cp9->msc[sq->dsq[i]][cm->cp9->M];  /* ... + emitted match symbol */
+  mmx[cur][cm->cp9->M] += cm->cp9->msc[dsq[i]][cm->cp9->M];  /* ... + emitted match symbol */
   imx[cur][cm->cp9->M]  = 0. + cm->cp9->tsc[CTIM][cm->cp9->M];     /* I_M<-E ... everything ends in E (the 0; 2^0=1.0) */
-  imx[cur][cm->cp9->M] += cm->cp9->isc[sq->dsq[i]][cm->cp9->M];  /* ... + emitted insert symbol */
+  imx[cur][cm->cp9->M] += cm->cp9->isc[dsq[i]][cm->cp9->M];  /* ... + emitted insert symbol */
   dmx[cur][cm->cp9->M]  = cm->cp9->tsc[CTDM][cm->cp9->M];          /* D_M<-E */
 
   /*******************************************************************
@@ -1090,7 +1090,7 @@ CP9Backward(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret
       mmx[cur][k]  = ILogsum(mmx[cur][k], dmx[cur][k+1] + cm->cp9->tsc[CTMD][k]);
       if(cm->cp9->flags & CPLAN9_EL)
 	mmx[cur][k]  = ILogsum(mmx[cur][k], elmx[cur][k] + cm->cp9->tsc[CTME][k]);
-      mmx[cur][k] += cm->cp9->msc[sq->dsq[i]][k];
+      mmx[cur][k] += cm->cp9->msc[dsq[i]][k];
 
       /*******************************************************************
        * No need to look at EL_k->M_M b/c elmx[cur] with cur == L means last emitted residue was L+1 
@@ -1098,7 +1098,7 @@ CP9Backward(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret
        * E which is handled above with the EL_k->E code). 
        *******************************************************************/
       imx[cur][k]  = dmx[cur][k+1] + cm->cp9->tsc[CTID][k];
-      imx[cur][k] += cm->cp9->isc[sq->dsq[i]][k];
+      imx[cur][k] += cm->cp9->isc[dsq[i]][k];
 
       dmx[cur][k]  = dmx[cur][k+1] + cm->cp9->tsc[CTDD][k];
       /* elmx[cur][k] was set above, out of order */
@@ -1108,7 +1108,7 @@ CP9Backward(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret
   mmx[cur][0]  = dmx[cur][1] + cm->cp9->tsc[CTMD][0]; /* M_0(B)->D_1, no seq emitted, all deletes */
   /* above line is diff from CPBackwardOLD() which has mmx[cur][0] = -INFTY; */
   imx[cur][0]  = dmx[cur][1] + cm->cp9->tsc[CTID][0];
-  imx[cur][0] += cm->cp9->isc[sq->dsq[i]][0];
+  imx[cur][0] += cm->cp9->isc[dsq[i]][0];
 
   dmx[cur][0]   = -INFTY; /*D_0 doesn't exist*/
   elmx[cur][0]  = -INFTY; /*EL_0 doesn't exist*/
@@ -1155,14 +1155,14 @@ CP9Backward(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret
 	    elmx[cur][cm->cp9->M] = elmx[cur][cm->cp9->M] + cm->cp9->el_selfsc;
 
 	  mmx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + cm->cp9->tsc[CTMI][cm->cp9->M];
-	  mmx[cur][cm->cp9->M] += cm->cp9->msc[sq->dsq[i]][cm->cp9->M];
+	  mmx[cur][cm->cp9->M] += cm->cp9->msc[dsq[i]][cm->cp9->M];
 
 	  if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[cm->cp9->M]))
 	    mmx[cur][cm->cp9->M] = ILogsum(mmx[cur][cm->cp9->M], 
 					   elmx[cur][cm->cp9->M] + cm->cp9->tsc[CTME][cm->cp9->M]);
 
 	  imx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + cm->cp9->tsc[CTII][cm->cp9->M];
-	  imx[cur][cm->cp9->M] += cm->cp9->isc[sq->dsq[i]][cm->cp9->M];
+	  imx[cur][cm->cp9->M] += cm->cp9->isc[dsq[i]][cm->cp9->M];
 	}
       else /* ip == 0 */
 	{
@@ -1208,14 +1208,14 @@ CP9Backward(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret
 		ILogsum(mmx[cur][cm->cp9->M], 
 			ILogsum(elmx[cur][cm->cp9->M] + cm->cp9->tsc[CTME][cm->cp9->M],/* M_M<-EL_M<-E, with 0 selfs in EL_M */
 				cm->cp9->esc[cm->cp9->M]));                             /* M_M<-E ... */
-	      ///mmx[cur][cm->cp9->M] += cm->cp9->msc[sq->dsq[i]][cm->cp9->M]; /* ... + emitted match symbol */
+	      ///mmx[cur][cm->cp9->M] += cm->cp9->msc[dsq[i]][cm->cp9->M]; /* ... + emitted match symbol */
 	      /* DO NOT add contribution of emitting i from M, it's been added above */
 	      
 	      imx[cur][cm->cp9->M]  =
 		ILogsum(imx[cur][cm->cp9->M],
 			(cm->cp9->tsc[CTIM][cm->cp9->M] +            /* I_M<-E + (only in scanner)     */
 			 0));                                        /* all parses end in E, 2^0 = 1.0;*/
-	      ///imx[cur][cm->cp9->M] += cm->cp9->isc[sq->dsq[i]][cm->cp9->M]; /* ... + emitted insert symbol */  
+	      ///imx[cur][cm->cp9->M] += cm->cp9->isc[dsq[i]][cm->cp9->M]; /* ... + emitted insert symbol */  
 	      /* DO NOT add contribution of emitting i from M, it's been added above */
 	    }
 	  dmx[cur][cm->cp9->M] =  
@@ -1255,12 +1255,12 @@ CP9Backward(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret
 				     (dmx[cur][k+1] + cm->cp9->tsc[CTMD][k]));
 	      if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[k]))
 		mmx[cur][k] = ILogsum(mmx[cur][k], elmx[cur][k] + cm->cp9->tsc[CTME][k]); /* penalty for entering EL */
-	      mmx[cur][k] += cm->cp9->msc[sq->dsq[i]][k];
+	      mmx[cur][k] += cm->cp9->msc[dsq[i]][k];
 
 	      imx[cur][k]  = ILogsum(ILogsum((mmx[prv][k+1] + cm->cp9->tsc[CTIM][k]),
 					     (imx[prv][k]   + cm->cp9->tsc[CTII][k])),
 				     (dmx[cur][k+1] + cm->cp9->tsc[CTID][k]));
-	      imx[cur][k] += cm->cp9->isc[sq->dsq[i]][k];
+	      imx[cur][k] += cm->cp9->isc[dsq[i]][k];
 
 	    }
 	  else
@@ -1292,7 +1292,7 @@ CP9Backward(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret
 	  imx[cur][0] = ILogsum(ILogsum((mmx[prv][1] + cm->cp9->tsc[CTIM][0]),
 					(imx[prv][0] + cm->cp9->tsc[CTII][0])),
 				(dmx[cur][1] + cm->cp9->tsc[CTID][k]));
-	  imx[cur][0] += cm->cp9->isc[sq->dsq[i]][k];
+	  imx[cur][0] += cm->cp9->isc[dsq[i]][k];
 	}
       else /* ip == 0 */
 	imx[cur][0] = -INFTY; /* need seq to get here */
@@ -1406,7 +1406,7 @@ CP9Backward(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret
 		  if(do_scan && cm->search_opts & CM_SEARCH_HMMRESCAN && doing_rescan == FALSE)
 		    {
 		      /*printf("rechecking hit from %d to %d\n", i, gback[ip]);*/
-		      temp_sc = CP9Backward(cm, sq, i, gback[ip], cm->W, cutoff,  /* *off-by-one* i+1 */
+		      temp_sc = CP9Backward(cm, dsq, i, gback[ip], cm->W, cutoff,  /* *off-by-one* i+1 */
 					    NULL,  /* don't care about scores of each pos */
 					    NULL,  /* don't care about best scoring position */
 					    NULL,  /* don't report hits to results data structure */
@@ -1520,7 +1520,7 @@ CP9Backward(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cutoff, int **ret
  * Returns:  best_sc, score of maximally scoring end position j 
  */
 float
-CP9Scan_dispatch(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cm_cutoff, 
+CP9Scan_dispatch(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cm_cutoff, 
 		 float cp9_cutoff, scan_results_t *results, int doing_cp9_stats,
 		 int *ret_flen)
 {
@@ -1549,8 +1549,8 @@ CP9Scan_dispatch(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cm_cutoff,
   if(!doing_cp9_stats && (!((cm->search_opts & CM_SEARCH_HMMFILTER) || 
 			    (cm->search_opts & CM_SEARCH_HMMONLY))))
     esl_fatal("ERROR in CP9Scan_dispatch(), not doing CP9 stats and neither CM_SEARCH_HMMFILTER nor CM_SEARCH_HMMONLY flag is up.\n");
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in CP9Scan_dispatch, sq is not digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR in CP9Scan_dispatch, dsq is NULL.");
 
   /*printf("in CP9Scan_dispatch(), i0: %d j0: %d\n", i0, j0);
     printf("cp9_cutoff: %f\n", cp9_cutoff);*/
@@ -1577,7 +1577,7 @@ CP9Scan_dispatch(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cm_cutoff,
   
   /* Scan the (sub)seq w/Forward, getting j end points of hits above cutoff */
   fwd_results = CreateResults(INIT_RESULTS);
-  best_hmm_fsc = CP9Forward(cm, sq, i0, j0, W, cp9_cutoff, NULL, NULL, fwd_results,
+  best_hmm_fsc = CP9Forward(cm, dsq, i0, j0, W, cp9_cutoff, NULL, NULL, fwd_results,
 			    TRUE,   /* we're scanning */
 			    FALSE,  /* we're not ultimately aligning */
 			    FALSE,  /* we're not rescanning */
@@ -1598,7 +1598,7 @@ CP9Scan_dispatch(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cm_cutoff,
   for(h = 0; h < fwd_results->num_results; h++) 
     {
       min_i = (fwd_results->data[h].stop - W + 1) >= 1 ? (fwd_results->data[h].stop - W + 1) : 1;
-      cur_best_hmm_bsc = CP9Backward(cm, sq, min_i, fwd_results->data[h].stop, W, cp9_cutoff, 
+      cur_best_hmm_bsc = CP9Backward(cm, dsq, min_i, fwd_results->data[h].stop, W, cp9_cutoff, 
 				     NULL, /* don't care about score of each posn */
 				     &i,   /* set i as the best scoring start point from j-W..j */
 				     ((cm->search_opts & CM_SEARCH_HMMONLY) ? results : bwd_results),  
@@ -1626,7 +1626,7 @@ CP9Scan_dispatch(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cm_cutoff,
 	  assert(i0 == 1); 
 	  remove_overlapping_hits (bwd_results, i0, j0);
 	}
-      best_cm_sc = RescanFilterSurvivors(cm, sq, bwd_results, i0, j0, W, 
+      best_cm_sc = RescanFilterSurvivors(cm, dsq, bwd_results, i0, j0, W, 
 					 padmode, ipad, jpad, 
 					 do_collapse, cm_cutoff, cp9_cutoff, 
 					 results, &flen);
@@ -1686,7 +1686,7 @@ CP9Scan_dispatch(CM_t *cm, ESL_SQ *sq, int i0, int j0, int W, float cm_cutoff,
  * Returns:  best_sc found when rescanning with CM 
  */
 float
-RescanFilterSurvivors(CM_t *cm, ESL_SQ *sq, scan_results_t *hmm_results, int i0, int j0,
+RescanFilterSurvivors(CM_t *cm, ESL_DSQ *dsq, scan_results_t *hmm_results, int i0, int j0,
 		      int W, int padmode, int ipad, int jpad, int do_collapse,
 		      float cm_cutoff, float cp9_cutoff, scan_results_t *results, int *ret_flen)
 {
@@ -1702,8 +1702,8 @@ RescanFilterSurvivors(CM_t *cm, ESL_SQ *sq, scan_results_t *hmm_results, int i0,
   /* check contract */
   if(padmode != PAD_SUBI_ADDJ && padmode != PAD_ADDI_SUBJ)
     ESL_EXCEPTION(eslEINCOMPAT, "can't determine mode.");
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in RescanFilterSurvivors(), sq is not digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR in RescanFilterSurvivors(), dsq is NULL.\n");
 
   best_cm_sc = IMPOSSIBLE;
   flen = 0;
@@ -1773,7 +1773,7 @@ RescanFilterSurvivors(CM_t *cm, ESL_SQ *sq, scan_results_t *hmm_results, int i0,
 	}
       /*printf("in RescanFilterSurvivors(): calling actually_search_target: %d %d h: %d nhits: %d\n", i, j, h, nhits);*/
       cm_sc =
-	actually_search_target(cm, sq, i, j, cm_cutoff, cp9_cutoff,
+	actually_search_target(cm, dsq, i, j, cm_cutoff, cp9_cutoff,
 			       results, /* keep results                                 */
 			       FALSE,   /* don't filter, we already have                */
 			       FALSE,   /* we're not building a histogram for CM stats  */
@@ -1829,7 +1829,7 @@ RescanFilterSurvivors(CM_t *cm, ESL_SQ *sq, scan_results_t *hmm_results, int i0,
  * Return:   void
  */
 void
-CP9ScanPosterior(ESL_SQ *sq, int i0, int j0,
+CP9ScanPosterior(ESL_DSQ *dsq, int i0, int j0,
 		     CP9_t *hmm,
 		     CP9_dpmatrix_t *fmx,
 		     CP9_dpmatrix_t *bmx,
@@ -1841,8 +1841,8 @@ CP9ScanPosterior(ESL_SQ *sq, int i0, int j0,
   int fb_sum; /* tmp value, the probability that the current residue (i) was
 	       * visited in any parse */
   /* contract check */
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in CP9ScanPosterior(), sq is not digitized.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR in CP9ScanPosterior(), dsq is NULL.");
 
   /*printf("\n\nin CP9ScanPosterior() i0: %d, j0: %d\n", i0, j0);*/
   fb_sum = -INFTY;
@@ -1886,14 +1886,14 @@ CP9ScanPosterior(ESL_SQ *sq, int i0, int j0,
 	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
       /*}*/
       mx->mmx[ip][0] = -INFTY; /*M_0 does not emit*/
-      mx->imx[ip][0] = fmx->imx[ip][0] + bmx->imx[ip][0] - hmm->isc[sq->dsq[i]][0] - fb_sum;
+      mx->imx[ip][0] = fmx->imx[ip][0] + bmx->imx[ip][0] - hmm->isc[dsq[i]][0] - fb_sum;
       /*hmm->isc[dsq[i]][0] will have been counted in both fmx->imx and bmx->imx*/
       mx->dmx[ip][0] = -INFTY; /*D_0 does not exist*/
       for (k = 1; k <= hmm->M; k++) 
 	{
-	  mx->mmx[ip][k] = fmx->mmx[ip][k] + bmx->mmx[ip][k] - hmm->msc[sq->dsq[i]][k] - fb_sum;
+	  mx->mmx[ip][k] = fmx->mmx[ip][k] + bmx->mmx[ip][k] - hmm->msc[dsq[i]][k] - fb_sum;
 	  /*hmm->msc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
-	  mx->imx[ip][k] = fmx->imx[ip][k] + bmx->imx[ip][k] - hmm->isc[sq->dsq[i]][k] - fb_sum;
+	  mx->imx[ip][k] = fmx->imx[ip][k] + bmx->imx[ip][k] - hmm->isc[dsq[i]][k] - fb_sum;
 	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
 	  mx->dmx[ip][k] = fmx->dmx[ip][k] + bmx->dmx[ip][k] - fb_sum;
 	}	  
@@ -2215,9 +2215,9 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 
 	  p = cmstats->gc2p[(get_gc_comp(sq, 1, L))]; /* in get_gc_comp() should be i and j of best hit */
 	  if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))
-	    tr_sc[i] = ParsetreeScore_Global2Local(cm_for_scoring, tr, sq, FALSE);
+	    tr_sc[i] = ParsetreeScore_Global2Local(cm_for_scoring, tr, sq->dsq, FALSE);
 	  else
-	    tr_sc[i] = ParsetreeScore(cm_for_scoring, tr, sq, FALSE); 
+	    tr_sc[i] = ParsetreeScore(cm_for_scoring, tr, sq->dsq, FALSE); 
 	  /*
 	  esl_sqio_Write(stdout, sq, eslSQFILE_FASTA, seq);
 	  ParsetreeDump(stdout, tr, cm, sq);
@@ -2245,7 +2245,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	      cm_for_scoring->tau = 0.01;
 	      //cm_for_scoring->tau = 0.001;
 	      
-	      hb_sc = actually_search_target(cm_for_scoring, sq, 1, L,
+	      hb_sc = actually_search_target(cm_for_scoring, sq->dsq, 1, L,
 					     0.,    /* cutoff is 0 bits (actually we'll find highest
 						     * negative score if it's < 0.0) */
 					     0.,    /* CP9 cutoff is 0 bits */
@@ -2267,7 +2267,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 		  s2_na++;
 		  cm_for_scoring->search_opts |= CM_SEARCH_HMMSCANBANDS;
 		  cm_for_scoring->tau = 1e-15;
-		  cm_sc = actually_search_target(cm_for_scoring, sq, 1, L,
+		  cm_sc = actually_search_target(cm_for_scoring, sq->dsq, 1, L,
 						 0.,    /* cutoff is 0 bits (actually we'll find highest
 							 * negative score if it's < 0.0) */
 						 0.,    /* CP9 cutoff is 0 bits */
@@ -2289,7 +2289,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 		      /* Stage 3 do QDB CYK */
 		      cm_for_scoring->search_opts &= ~CM_SEARCH_HBANDED;
 		      cm_for_scoring->search_opts &= ~CM_SEARCH_HMMSCANBANDS;
-		      cm_sc = actually_search_target(cm_for_scoring, sq, 1, L,
+		      cm_sc = actually_search_target(cm_for_scoring, sq->dsq, 1, L,
 						     0.,    /* cutoff is 0 bits (actually we'll find highest
 							     * negative score if it's < 0.0) */
 						     0.,    /* CP9 cutoff is 0 bits */
@@ -2320,7 +2320,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	       * Backward to get score of best hit, but we'll be detecting by a
 	       * Forward scan (then running Backward only on hits above our threshold).
 	       */
-	      hmm_sc_p[ip] = CP9Forward(cm_for_scoring, sq, 1, L, cm_for_scoring->W, 0., 
+	      hmm_sc_p[ip] = CP9Forward(cm_for_scoring, sq->dsq, 1, L, cm_for_scoring->W, 0., 
 					NULL,   /* don't return scores of hits */
 				       NULL,   /* don't return posns of hits */
 				       NULL,   /* don't keep track of hits */

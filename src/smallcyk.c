@@ -61,40 +61,40 @@ struct deckpool_s {
 
 /* The dividers and conquerors.
  */
-static float generic_splitter(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, 
+static float generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 			      int r, int vend, int i0, int j0);
-static float wedge_splitter(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, 
+static float wedge_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 			    int r, int z, int i0, int j0);
-static void  v_splitter(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
+static void  v_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 			int r, int z, int i0, int i1, int j1, int j0, int useEL);
 
 /* The alignment engines. 
  */
-static float inside(CM_t *cm, ESL_SQ *sq, 
+static float inside(CM_t *cm, ESL_DSQ *dsq, int L,
 		    int r, int z, int i0, int j0, int do_full,
 		    float ***alpha, float ****ret_alpha, 
 		    struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
 		    void ****ret_shadow, int allow_begin, int *ret_b, float *ret_bsc);
-static void  outside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
+static void  outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 		     int do_full, float ***beta, float ****ret_beta,
 		     struct deckpool_s *dpool, struct deckpool_s **ret_dpool);
-static float vinside(CM_t *cm, ESL_SQ *sq, 
+static float vinside(CM_t *cm, ESL_DSQ *dsq, int L,
 		     int r, int z, int i0, int i1, int j1, int j0, int useEL,
 		     int do_full, float ***a, float ****ret_a,
 		     struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
 		     char ****ret_shadow,
 		     int allow_begin, int *ret_b, float *ret_bsc);
-static void  voutside(CM_t *cm, ESL_SQ *sq, 
+static void  voutside(CM_t *cm, ESL_DSQ *dsq, int L, 
 		      int r, int z, int i0, int i1, int j1, int j0, int useEL,
 		      int do_full, float ***beta, float ****ret_beta,
 		      struct deckpool_s *dpool, struct deckpool_s **ret_dpool);
 
 /* The traceback routines.
  */
-static float insideT(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, 
+static float insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 		     int r, int z, int i0, int j0, int allow_begin, 
 		     int *dmin, int *dmax);
-static float vinsideT(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, 
+static float vinsideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 		      int r, int z, int i0, int i1, int j1, int j0, int useEL, 
 		      int allow_begin, int *dmin, int *dmax);
 
@@ -199,17 +199,17 @@ static int   cyk_extra_decks(CM_t *cm);
 
 /* The banded dividers and conquerors.
  */
-static float generic_splitter_b(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, 
+static float generic_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 				int r, int vend, int i0, int j0, int *dmin, int *dmax);
-static float wedge_splitter_b(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, 
+static float wedge_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 			      int r, int z, int i0, int j0, int *dmin, int *dmax);
-static void  v_splitter_b(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
+static void  v_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 			  int r, int z, int i0, int i1, int j1, int j0, int useEL,
 			  int *dmin, int *dmax);
 
 /* The banded alignment engines. 
  */
-static float inside_b(CM_t *cm, ESL_SQ *sq, 
+static float inside_b(CM_t *cm, ESL_DSQ *dsq, int L,
 		      int r, int z, int i0, int j0, 
 		      int do_full,
 		      float ***alpha, float ****ret_alpha, 
@@ -217,18 +217,18 @@ static float inside_b(CM_t *cm, ESL_SQ *sq,
 		      void ****ret_shadow, 
 		      int allow_begin, int *ret_b, float *ret_bsc,
 		      int *dmin, int *dmax);
-static void  outside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
+static void  outside_b(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 		       int do_full, float ***beta, float ****ret_beta,
 		       struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
 		       int *dmin, int *dmax);
-static float vinside_b(CM_t *cm, ESL_SQ *sq, 
+static float vinside_b(CM_t *cm, ESL_DSQ *dsq, int L,
 		       int r, int z, int i0, int i1, int j1, int j0, int useEL,
 		       int do_full, float ***a, float ****ret_a,
 		       struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
 		       char ****ret_shadow,
 		       int allow_begin, int *ret_b, float *ret_bsc,
 		       int *dmin, int *dmax);
-static void  voutside_b(CM_t *cm, ESL_SQ *sq, 
+static void  voutside_b(CM_t *cm, ESL_DSQ *dsq, int L,
 			int r, int z, int i0, int i1, int j1, int j0, int useEL,
 			int do_full, float ***beta, float ****ret_beta,
 			struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
@@ -272,7 +272,7 @@ static void  voutside_b(CM_t *cm, ESL_SQ *sq,
 
 /* The alignment engines. 
  */
-static float inside_b_me(CM_t *cm, ESL_SQ *sq, 
+static float inside_b_me(CM_t *cm, ESL_DSQ *dsq, int L,
 			 int r, int z, int i0, int j0, 
 			 int do_full,
 			 float ***alpha, float ****ret_alpha, 
@@ -285,7 +285,7 @@ static float inside_b_me(CM_t *cm, ESL_SQ *sq,
    this function was needed, but there's some crazy offset issues.
  */
 
-static float insideT_b_me(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, 
+static float insideT_b_me(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 			  int r, int z, int i0, int j0, int allow_begin,
 			  int *dmin, int *dmax);
 
@@ -298,8 +298,8 @@ static float insideT_b_me(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
  *           structure.
  *           
  *           The simplest call to this, for a model cm and a sequence
- *           sq of length L and no bands on d:
- *               CYKDivideAndConquer(cm, sq, 0, 1, &tr, NULL, NULL);
+ *           dsq of length L and no bands on d:
+ *               CYKDivideAndConquer(cm, dsq, L, 0, 1, &tr, NULL, NULL);
  *           which will align the model to the entire sequence. (The alignment
  *           will be global w.r.t the sequence.) 
  *           
@@ -313,10 +313,11 @@ static float insideT_b_me(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
  *           we return is the score for that complete parse tree.
  *
  * Args:     cm     - the covariance model
- *           sq     - the sequence, 1..L
+ *           dsq    - the digitized sequence, 1..L
+ *           L      - length of sequence
  *           r      - root of subgraph to align to target subseq (usually 0, the model's root)
  *           i0     - start of target subsequence (often 1, beginning of sq)
- *           j0     - end of target subsequence (often sq->n, end of sq)
+ *           j0     - end of target subsequence (often L, end of sq)
  *           ret_tr - RETURN: traceback (pass NULL if trace isn't wanted)
  *           dmin   - minimum d bound for each state v; [0..v..M-1] (NULL if non-banded)
  *           dmax   - maximum d bound for each state v; [0..v..M-1] (NULL if non-banded)
@@ -324,13 +325,9 @@ static float insideT_b_me(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
  * Returns: score of the alignment in bits.  
  */
 float
-CYKDivideAndConquer(CM_t *cm, ESL_SQ *sq, int r, int i0, int j0, Parsetree_t **ret_tr, 
+CYKDivideAndConquer(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, 
 		    int *dmin, int *dmax)
 {
-  /* Contract check */
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in CP9TraceCount, sq is not digitized.\n");
-
   Parsetree_t *tr;
   float        sc;
   int          z;
@@ -370,9 +367,9 @@ CYKDivideAndConquer(CM_t *cm, ESL_SQ *sq, int r, int i0, int j0, Parsetree_t **r
    * or generic_splitter_b() on the whole DP cube.
    */
   if(dmin == NULL && dmax == NULL)
-    sc += generic_splitter(cm, sq, tr, r, z, i0, j0);
+    sc += generic_splitter(cm, dsq, L, tr, r, z, i0, j0);
   else
-    sc += generic_splitter_b(cm, sq, tr, r, z, i0, j0, dmin, dmax);
+    sc += generic_splitter_b(cm, dsq, L, tr, r, z, i0, j0, dmin, dmax);
     
   /* Free memory and return
    */
@@ -395,7 +392,7 @@ CYKDivideAndConquer(CM_t *cm, ESL_SQ *sq, int r, int i0, int j0, Parsetree_t **r
  *           sq    - the sequence, 1..L
  *           r      - root of subgraph to align to target subseq (usually 0, the model's root)
  *           i0     - start of target subsequence (often 1, beginning of sq)
- *           j0     - end of target subsequence (often sq->n, end of sq)
+ *           j0     - end of target subsequence (often L, end of sq)
  *           ret_tr - RETURN: traceback (pass NULL if trace isn't wanted)
  *           dmin   - minimum d bound for each state v; [0..v..M-1] (NULL if non-banded)
  *           dmax   - maximum d bound for each state v; [0..v..M-1] (NULL if non-banded)
@@ -403,7 +400,7 @@ CYKDivideAndConquer(CM_t *cm, ESL_SQ *sq, int r, int i0, int j0, Parsetree_t **r
  * Returns:  score of the alignment in bits.
  */
 float
-CYKInside(CM_t *cm, ESL_SQ *sq, int r, int i0, int j0, Parsetree_t **ret_tr,
+CYKInside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr,
 	  int *dmin, int *dmax)
 {
   Parsetree_t *tr;
@@ -423,7 +420,7 @@ CYKInside(CM_t *cm, ESL_SQ *sq, int r, int i0, int j0, Parsetree_t **ret_tr,
   /* Create the parse tree, and initialize.
    */
   tr = CreateParsetree();
-  InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, sq->n, 0); /* init: attach the root S */
+  InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0); /* init: attach the root S */
   z  = cm->M-1;
   sc = 0.;
 
@@ -440,17 +437,17 @@ CYKInside(CM_t *cm, ESL_SQ *sq, int r, int i0, int j0, Parsetree_t **ret_tr,
    */
   /* if we're non-banded use the original function */
   if(dmin == NULL && dmax == NULL)
-    sc += insideT(cm, sq, tr, r, z, i0, j0, (r==0), 
+    sc += insideT(cm, dsq, L, tr, r, z, i0, j0, (r==0), 
 		  dmin, dmax);
   /* if we're using query dependent bands, call the 
    * memory efficient QDB alignment version.
    */
   else
-    sc += insideT_b_me(cm, sq, tr, r, z, i0, j0, (r==0),
+    sc += insideT_b_me(cm, dsq, L, tr, r, z, i0, j0, (r==0),
       dmin, dmax);
   /* To call the non-memory efficient version, uncomment
    * the following line: */
-  /*sc += insideT(cm, sq, tr, r, z, i0, j0, (r==0),    dmin, dmax);*/
+  /*sc += insideT(cm, dsq, L, tr, r, z, i0, j0, (r==0),    dmin, dmax);*/
 
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
   return sc;
@@ -475,14 +472,14 @@ CYKInside(CM_t *cm, ESL_SQ *sq, int r, int i0, int j0, Parsetree_t **ret_tr,
  *           sq    - the sequence, 1..L
  *           r      - root of subgraph to align to target subseq (usually 0, the model's root)
  *           i0     - start of target subsequence (often 1, beginning of sq)
- *           j0     - end of target subsequence (often sq->n, end of sq)
+ *           j0     - end of target subsequence (often L, end of sq)
  *           dmin   - minimum d bound for each state v; [0..v..M-1] (NULL if non-banded)
  *           dmax   - maximum d bound for each state v; [0..v..M-1] (NULL if non-banded)
  *
  * Returns:  score of the alignment in bits.
  */
 float
-CYKInsideScore(CM_t *cm, ESL_SQ *sq, int r, int i0, int j0, int *dmin, int *dmax)
+CYKInsideScore(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, int *dmin, int *dmax)
 {
   int    z;
   float  sc;
@@ -497,11 +494,11 @@ CYKInsideScore(CM_t *cm, ESL_SQ *sq, int r, int i0, int j0, int *dmin, int *dmax
     }
 
   if(dmin == NULL && dmax == NULL)
-    sc +=  inside(cm, sq, r, z, i0, j0, FALSE, 
+    sc +=  inside(cm, dsq, L, r, z, i0, j0, FALSE, 
 		  NULL, NULL, NULL, NULL, NULL,
 		  (r==0), NULL, NULL);
   else
-    sc +=  inside_b(cm, sq, r, z, i0, j0, FALSE, 
+    sc +=  inside_b(cm, dsq, L, r, z, i0, j0, FALSE, 
 		    NULL, NULL, NULL, NULL, NULL,
 		    (r==0), NULL, NULL, dmin, dmax);
 
@@ -687,7 +684,7 @@ CYKDemands(CM_t *cm, int L, int *dmin, int *dmax, int be_quiet)
  * Returns:  score of the optimal parse of sq(i0..j0) with cm^r_z 
  */
 static float
-generic_splitter(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, 
+generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 		 int r, int z, int i0, int j0)
 {
   float ***alpha;
@@ -710,12 +707,12 @@ generic_splitter(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
   /* 1. If the generic problem is small enough, solve it with inside^T,
    *    and append the trace to tr.
    */
-  if (insideT_size(cm, sq->n, r, z, i0, j0) < RAMLIMIT) {
+  if (insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT) {
     ESL_DPRINTF1(("Solving a generic w/ insideT - G%d[%s]..%d[%s], %d..%d\n",
 		  r, UniqueStatetype(cm->stid[r]),
 		  z, UniqueStatetype(cm->stid[z]),
 		  i0, j0));
-    sc = insideT(cm, sq, tr, r, z, i0, j0, (r==0), 
+    sc = insideT(cm, dsq, L, tr, r, z, i0, j0, (r==0), 
 		NULL, NULL); /* two NULLs mean 'don't use bands' */
 
     return sc;
@@ -733,7 +730,7 @@ generic_splitter(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
    */
   if (v > z-5) {		/* no bifurc? it's a wedge problem  */
     if (cm->sttype[z] != E_st) esl_fatal("inconceivable.");
-    sc = wedge_splitter(cm, sq, tr, r, z, i0, j0);
+    sc = wedge_splitter(cm, dsq, L, tr, r, z, i0, j0);
     return sc;
   }
 
@@ -749,15 +746,15 @@ generic_splitter(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
    * We also get b1: best choice for 0->b local begin. b1_sc is the score if we do this.
    * Analogous for b2, b2_sc on the other side.
    */
-  inside(cm, sq, w, wend, i0, j0, BE_EFFICIENT, NULL,  &alpha, NULL, &pool, NULL, 
+  inside(cm, dsq, L, w, wend, i0, j0, BE_EFFICIENT, NULL,  &alpha, NULL, &pool, NULL, 
 	 (r==0), &b1, &b1_sc);
-  inside(cm, sq, y, yend, i0, j0, BE_EFFICIENT, alpha, &alpha, pool, &pool, NULL,
+  inside(cm, dsq, L, y, yend, i0, j0, BE_EFFICIENT, alpha, &alpha, pool, &pool, NULL,
 	 (r==0), &b2, &b2_sc);
 
   /* Calculate beta[v] deck (stick it in alpha). Let the pool get free'd.
    * (If we're doing local alignment, deck M is the beta[EL] deck.)
    */
-  outside(cm, sq, r, v, i0, j0, BE_EFFICIENT, alpha, &beta, pool, NULL);
+  outside(cm, dsq, L, r, v, i0, j0, BE_EFFICIENT, alpha, &beta, pool, NULL);
 
   /* Find the optimal split at the B.
    */
@@ -822,7 +819,7 @@ generic_splitter(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
    * in a V problem that's still above us. The TRUE flag sets useEL.
    */
   if (best_k == -1) {	
-    v_splitter(cm, sq, tr, r, v, i0, best_j-best_d+1, best_j, j0, TRUE);    
+    v_splitter(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0, TRUE);    
     return best_sc;
   } 
 
@@ -833,13 +830,13 @@ generic_splitter(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
   if (best_k == -2) {
     InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b1);
     z = CMSubtreeFindEnd(cm, b1);
-    generic_splitter(cm, sq, tr, b1, z, i0, j0);
+    generic_splitter(cm, dsq, L, tr, b1, z, i0, j0);
     return best_sc;
   }
   if (best_k == -3) {
     InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b2);
     z = CMSubtreeFindEnd(cm, b2);
-    generic_splitter(cm, sq, tr, b2, z, i0, j0);
+    generic_splitter(cm, dsq, L, tr, b2, z, i0, j0);
     return best_sc;
   }
 
@@ -865,13 +862,13 @@ generic_splitter(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
 		yend, UniqueStatetype(cm->stid[yend]),
 		best_j-best_k+1, best_j));
 
-  v_splitter(cm, sq, tr, r, v, i0, best_j-best_d+1, best_j, j0, FALSE);
+  v_splitter(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0, FALSE);
   tv = tr->n-1;
 
   InsertTraceNode(tr, tv, TRACE_LEFT_CHILD, best_j-best_d+1, best_j-best_k, w);
-  generic_splitter(cm, sq, tr, w, wend, best_j-best_d+1, best_j-best_k);
+  generic_splitter(cm, dsq, L, tr, w, wend, best_j-best_d+1, best_j-best_k);
   InsertTraceNode(tr, tv, TRACE_RIGHT_CHILD, best_j-best_k+1, best_j, y);
-  generic_splitter(cm, sq, tr, y, yend, best_j-best_k+1, best_j);
+  generic_splitter(cm, dsq, L, tr, y, yend, best_j-best_k+1, best_j);
 
   return best_sc;
 }
@@ -908,7 +905,7 @@ generic_splitter(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
  * Returns:  The score of the best parse in bits.
  */
 static float 
-wedge_splitter(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, int r, int z, int i0, int j0)
+wedge_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0)
 {
   float ***alpha;
   float ***beta;
@@ -932,13 +929,13 @@ wedge_splitter(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, int r, int z, int i0, int 
    *    thing to do, so we ignore RAMLIMIT in that case.
    */
   if (cm->ndidx[z] == cm->ndidx[r] + 1 || 
-      insideT_size(cm, sq->n, r, z, i0, j0) < RAMLIMIT) 
+      insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT) 
     {
       ESL_DPRINTF1(("Solving a wedge:   G%d[%s]..%d[%s], %d..%d\n", 
 		r, UniqueStatetype(cm->stid[r]),
 		z, UniqueStatetype(cm->stid[z]),
 		i0,j0));
-      sc = insideT(cm, sq, tr, r, z, i0, j0, (r==0),
+      sc = insideT(cm, dsq, L, tr, r, z, i0, j0, (r==0),
 		   NULL, NULL); /* two NULLs mean 'don't use bands' */
 
       return sc;
@@ -962,10 +959,10 @@ wedge_splitter(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, int r, int z, int i0, int 
    *    is the score for using it.
    *    beta[cm->M] will contain the EL deck, if needed for local ends.
    */
-  inside(cm, sq, w, z, i0, j0, BE_EFFICIENT, 
+  inside(cm, dsq, L, w, z, i0, j0, BE_EFFICIENT, 
 	 NULL, &alpha, NULL, &pool, NULL, 
 	 (r==0), &b, &bsc);
-  outside(cm, sq, r, y, i0, j0, BE_EFFICIENT, NULL, &beta, pool, NULL);
+  outside(cm, dsq, L, r, y, i0, j0, BE_EFFICIENT, NULL, &beta, pool, NULL);
 
   /* 4. Find the optimal split at the split set: best_v, best_d, best_j
    */
@@ -1025,7 +1022,7 @@ wedge_splitter(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, int r, int z, int i0, int 
    * initialize the whole thing to IMPOSSIBLE anyway.
    */  
   if (best_v == -1) {
-    v_splitter(cm, sq, tr, r, w, i0, best_j-best_d+1, best_j, j0, TRUE);    
+    v_splitter(cm, dsq, L, tr, r, w, i0, best_j-best_d+1, best_j, j0, TRUE);    
     return best_sc;
   }
 
@@ -1036,7 +1033,7 @@ wedge_splitter(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, int r, int z, int i0, int 
    */
   if (best_v == -2) {
     InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b);
-    wedge_splitter(cm, sq, tr, b, z, i0, j0);
+    wedge_splitter(cm, dsq, L, tr, b, z, i0, j0);
     return best_sc; 
   }
 
@@ -1058,8 +1055,8 @@ wedge_splitter(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, int r, int z, int i0, int 
 		z, UniqueStatetype(cm->stid[z]),
 		best_j-best_d+1, best_j));
 
-  v_splitter(cm, sq, tr, r, best_v, i0, best_j-best_d+1, best_j, j0, FALSE);
-  wedge_splitter(cm, sq, tr, best_v, z, best_j-best_d+1, best_j);
+  v_splitter(cm, dsq, L, tr, r, best_v, i0, best_j-best_d+1, best_j, j0, FALSE);
+  wedge_splitter(cm, dsq, L, tr, best_v, z, best_j-best_d+1, best_j);
   return best_sc;
 }
 
@@ -1087,7 +1084,7 @@ wedge_splitter(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, int r, int z, int i0, int 
  * Returns:  (void)
  */
 static void
-v_splitter(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
+v_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	   int r, int z, int i0, int i1, int j1, int j0, 
 	   int useEL)
 {
@@ -1115,7 +1112,7 @@ v_splitter(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
 		r, UniqueStatetype(cm->stid[r]),
 		z, UniqueStatetype(cm->stid[z]),
 		i0,j1,j1,j0));
-      vinsideT(cm, sq, tr, r, z, i0, i1, j1, j0, useEL, (r==0),
+      vinsideT(cm, dsq, L, tr, r, z, i0, i1, j1, j0, useEL, (r==0),
 		NULL, NULL); /* two NULLs mean 'don't use bands' */
       return;
     }
@@ -1133,9 +1130,9 @@ v_splitter(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
    *    in alpha and beta even though we're in small memory mode.
    *    beta[cm->M] is the EL deck, needed for local ends.
    */
-  vinside (cm, sq, w, z, i0, i1, j1, j0, useEL, BE_EFFICIENT, 
+  vinside (cm, dsq, L, w, z, i0, i1, j1, j0, useEL, BE_EFFICIENT, 
 	   NULL, &alpha, NULL, &pool, NULL, (r==0), &b, &bsc);
-  voutside(cm, sq, r, y, i0, i1, j1, j0, useEL, BE_EFFICIENT, 
+  voutside(cm, dsq, L, r, y, i0, i1, j1, j0, useEL, BE_EFFICIENT, 
 	   NULL, &beta,  pool, NULL);
 
   /* 4. Find the optimal split: v, ip, jp. 
@@ -1187,7 +1184,7 @@ v_splitter(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
    * The TRUE flag sets useEL; we propagate allow_begin. 
    */
   if (best_v == -1) {
-    v_splitter(cm, sq, tr, r, w, i0, best_i, best_j, j0, TRUE);    
+    v_splitter(cm, dsq, L, tr, r, w, i0, best_i, best_j, j0, TRUE);    
     return;
   }
 
@@ -1202,7 +1199,7 @@ v_splitter(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
       {
 	InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b);
       }
-    v_splitter(cm, sq, tr, b, z, i0, i1, j1, j0, useEL);    
+    v_splitter(cm, dsq, L, tr, b, z, i0, i1, j1, j0, useEL);    
     return;
   }
 
@@ -1222,8 +1219,8 @@ v_splitter(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
 		z, UniqueStatetype(cm->stid[z]),
 		best_i, i1, j1, best_j));
 
-  v_splitter(cm, sq, tr, r,      best_v, i0,     best_i, best_j, j0, FALSE);
-  v_splitter(cm, sq, tr, best_v, z,      best_i, i1,     j1,     best_j, useEL);
+  v_splitter(cm, dsq, L, tr, r,      best_v, i0,     best_i, best_j, j0, FALSE);
+  v_splitter(cm, dsq, L, tr, best_v, z,      best_i, i1,     j1,     best_j, useEL);
   return;
 }
 
@@ -1322,7 +1319,7 @@ v_splitter(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
  * Returns: Score of the optimal alignment.  
  */
 static float 
-inside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_full,
+inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
        float ***alpha, float ****ret_alpha, 
        struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
        void ****ret_shadow, 
@@ -1352,7 +1349,7 @@ inside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_full,
 				/* if caller didn't give us a deck pool, make one */
   if (dpool == NULL) dpool = deckpool_create();
   if (! deckpool_pop(dpool, &end))
-    end = alloc_vjd_deck(sq->n, i0, j0);
+    end = alloc_vjd_deck(L, i0, j0);
   nends = CMSubtreeCountStatetype(cm, vroot, E_st);
   for (jp = 0; jp <= W; jp++) {
     j = i0+jp-1;		/* e.g. j runs from 0..L on whole seq */
@@ -1406,14 +1403,14 @@ inside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_full,
 	alpha[v] = end; continue; 
       } 
       if (! deckpool_pop(dpool, &(alpha[v]))) 
-	alpha[v] = alloc_vjd_deck(sq->n, i0, j0);
+	alpha[v] = alloc_vjd_deck(L, i0, j0);
 
       if (ret_shadow != NULL) {
 	if (cm->sttype[v] == B_st) {
-	  kshad     = alloc_vjd_kshadow_deck(sq->n, i0, j0); 
+	  kshad     = alloc_vjd_kshadow_deck(L, i0, j0); 
 	  shadow[v] = (void **) kshad;
 	} else {
-	  yshad     = alloc_vjd_yshadow_deck(sq->n, i0, j0); 
+	  yshad     = alloc_vjd_yshadow_deck(L, i0, j0); 
 	  shadow[v] = (void **) yshad;
 	}
       }
@@ -1476,10 +1473,10 @@ inside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_full,
 		  }
 		
 		i = j-d+1;
-		if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
-		  alpha[v][j][d] += cm->esc[v][(int) (sq->dsq[i]*cm->abc->K+sq->dsq[j])];
+		if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
+		  alpha[v][j][d] += cm->esc[v][(int) (dsq[i]*cm->abc->K+dsq[j])];
 		else
-		  alpha[v][j][d] += DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i], sq->dsq[j]);
+		  alpha[v][j][d] += DegeneratePairScore(cm->abc, cm->esc[v], dsq[i], dsq[j]);
 
 		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 	      }
@@ -1503,10 +1500,10 @@ inside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_full,
 		  } 
 		
 		i = j-d+1;
-		if (sq->dsq[i] < cm->abc->K)
-		  alpha[v][j][d] += cm->esc[v][sq->dsq[i]];
+		if (dsq[i] < cm->abc->K)
+		  alpha[v][j][d] += cm->esc[v][dsq[i]];
 		else
-		  alpha[v][j][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[i], cm->esc[v]);
+		  alpha[v][j][d] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
 		
 		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 	      }
@@ -1528,10 +1525,10 @@ inside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_full,
 		    alpha[v][j][d] = sc;
 		    if (ret_shadow != NULL) yshad[j][d] = yoffset;
 		  }
-		if (sq->dsq[j] < cm->abc->K)
-		  alpha[v][j][d] += cm->esc[v][sq->dsq[j]];
+		if (dsq[j] < cm->abc->K)
+		  alpha[v][j][d] += cm->esc[v][dsq[j]];
 		else
-		  alpha[v][j][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[j], cm->esc[v]);
+		  alpha[v][j][d] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
 		
 		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 	      }
@@ -1675,7 +1672,7 @@ inside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_full,
  *                       because of the size of the subseq decks.
  */
 static void
-outside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
+outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	int do_full, float ***beta, float ****ret_beta,
 	struct deckpool_s *dpool, struct deckpool_s **ret_dpool)
 {
@@ -1718,7 +1715,7 @@ outside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 
   for (v = w1; v <= w2; v++) {
     if (! deckpool_pop(dpool, &(beta[v])))
-      beta[v] = alloc_vjd_deck(sq->n, i0, j0);
+      beta[v] = alloc_vjd_deck(L, i0, j0);
     for (jp = 0; jp <= W; jp++) {
       j = i0-1+jp;
       for (d = 0; d <= jp; d++)
@@ -1731,7 +1728,7 @@ outside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
    */
   if (cm->flags & CM_LOCAL_END) {
     if (! deckpool_pop(dpool, &(beta[cm->M])))
-      beta[cm->M] = alloc_vjd_deck(sq->n, i0, j0);
+      beta[cm->M] = alloc_vjd_deck(L, i0, j0);
     for (jp = 0; jp <= W; jp++) {
       j = i0-1+jp;
       for (d = 0; d <= jp; d++)
@@ -1748,10 +1745,10 @@ outside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
       switch (cm->sttype[vroot]) {
       case MP_st:
 	if (W < 2) break;
-	if (sq->dsq[i0] < cm->abc->K && sq->dsq[j0] > cm->abc->K)
-	  escore = cm->esc[vroot][(int) (sq->dsq[i0]*cm->abc->K+sq->dsq[j0])];
+	if (dsq[i0] < cm->abc->K && dsq[j0] > cm->abc->K)
+	  escore = cm->esc[vroot][(int) (dsq[i0]*cm->abc->K+dsq[j0])];
 	else
-	  escore = DegeneratePairScore(cm->abc, cm->esc[vroot], sq->dsq[i0], sq->dsq[j0]);
+	  escore = DegeneratePairScore(cm->abc, cm->esc[vroot], dsq[i0], dsq[j0]);
 	beta[cm->M][j0-1][W-2] = cm->endsc[vroot] + 
 	  (cm->el_selfsc * (W-2)) + escore;
 
@@ -1760,10 +1757,10 @@ outside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
       case ML_st:
       case IL_st:
 	if (W < 1) break;
-	if (sq->dsq[i0] < cm->abc->K) 
-	  escore = cm->esc[vroot][(int) sq->dsq[i0]];
+	if (dsq[i0] < cm->abc->K) 
+	  escore = cm->esc[vroot][(int) dsq[i0]];
 	else
-	  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i0], cm->esc[vroot]);
+	  escore = esl_abc_FAvgScore(cm->abc, dsq[i0], cm->esc[vroot]);
 	beta[cm->M][j0][W-1] = cm->endsc[vroot] + 
 	  (cm->el_selfsc * (W-1)) + escore;
 
@@ -1772,10 +1769,10 @@ outside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
       case MR_st:
       case IR_st:
 	if (W < 1) break;
-	if (sq->dsq[j0] < cm->abc->K) 
-	  escore = cm->esc[vroot][(int) sq->dsq[j0]];
+	if (dsq[j0] < cm->abc->K) 
+	  escore = cm->esc[vroot][(int) dsq[j0]];
 	else
-	  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j0], cm->esc[vroot]);
+	  escore = esl_abc_FAvgScore(cm->abc, dsq[j0], cm->esc[vroot]);
 	beta[cm->M][j0-1][W-1] = cm->endsc[vroot] + 
 	  (cm->el_selfsc * (W-1)) + escore;
 	
@@ -1813,7 +1810,7 @@ outside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
        * a fresh one.
        */
       if (! deckpool_pop(dpool, &(beta[v])))
-	beta[v] = alloc_vjd_deck(sq->n, i0, j0);
+	beta[v] = alloc_vjd_deck(L, i0, j0);
 
       /* Init the whole deck to IMPOSSIBLE
        */
@@ -1826,7 +1823,7 @@ outside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
       /* If we can do a local begin into v, also init with that. 
        * By definition, beta[0][j0][W] == 0.
        */ 
-      if (vroot == 0 && i0 == 1 && j0 == sq->n && (cm->flags & CM_LOCAL_BEGIN))
+      if (vroot == 0 && i0 == 1 && j0 == L && (cm->flags & CM_LOCAL_BEGIN))
 	beta[v][j0][W] = cm->beginsc[v];
 
       /* main recursion:
@@ -1844,10 +1841,10 @@ outside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 	      case MP_st: 
 		if (j == j0 || d == jp) continue; /* boundary condition */
 
-		if (sq->dsq[i-1] < cm->abc->K && sq->dsq[j+1] > cm->abc->K)
-		  escore = cm->esc[y][(int) (sq->dsq[i-1]*cm->abc->K+sq->dsq[j+1])];
+		if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		  escore = cm->esc[y][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
 		else
-		  escore = DegeneratePairScore(cm->abc, cm->esc[y], sq->dsq[i-1], sq->dsq[j+1]);
+		  escore = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
 		
 		if ((sc = beta[y][j+1][d+2] + cm->tsc[y][voffset] + escore) > beta[v][j][d])
 		  beta[v][j][d] = sc;
@@ -1857,10 +1854,10 @@ outside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 	      case IL_st: 
 		if (d == jp) continue;	/* boundary condition (note when j=0, d=0*/
 
-		if (sq->dsq[i-1] < cm->abc->K) 
-		  escore = cm->esc[y][(int) sq->dsq[i-1]];
+		if (dsq[i-1] < cm->abc->K) 
+		  escore = cm->esc[y][(int) dsq[i-1]];
 		else
-		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i-1], cm->esc[y]);
+		  escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[y]);
 		  
 		if ((sc = beta[y][j][d+1] + cm->tsc[y][voffset] + escore) > beta[v][j][d])
 		  beta[v][j][d] = sc;
@@ -1870,10 +1867,10 @@ outside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 	      case IR_st:
 		if (j == j0) continue;
 		  
-		if (sq->dsq[j+1] < cm->abc->K) 
-		  escore = cm->esc[y][(int) sq->dsq[j+1]];
+		if (dsq[j+1] < cm->abc->K) 
+		  escore = cm->esc[y][(int) dsq[j+1]];
 		else
-		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j+1], cm->esc[y]);
+		  escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[y]);
 
 		if ((sc = beta[y][j+1][d+1] + cm->tsc[y][voffset] + escore) > beta[v][j][d])
 		  beta[v][j][d] = sc;
@@ -1908,10 +1905,10 @@ outside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 	      switch (cm->sttype[v]) {
 	      case MP_st: 
 		if (j == j0 || d == jp) continue; /* boundary condition */
-		if (sq->dsq[i-1] < cm->abc->K && sq->dsq[j+1] > cm->abc->K)
-		  escore = cm->esc[v][(int) (sq->dsq[i-1]*cm->abc->K+sq->dsq[j+1])];
+		if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		  escore = cm->esc[v][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
 		else
-		  escore = DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i-1], sq->dsq[j+1]);
+		  escore = DegeneratePairScore(cm->abc, cm->esc[v], dsq[i-1], dsq[j+1]);
 		if ((sc = beta[v][j+1][d+2] + cm->endsc[v] + 
 		     (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
 		  beta[cm->M][j][d] = sc;
@@ -1919,10 +1916,10 @@ outside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 	      case ML_st:
 	      case IL_st:
 		if (d == jp) continue;	
-		if (sq->dsq[i-1] < cm->abc->K) 
-		  escore = cm->esc[v][(int) sq->dsq[i-1]];
+		if (dsq[i-1] < cm->abc->K) 
+		  escore = cm->esc[v][(int) dsq[i-1]];
 		else
-		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i-1], cm->esc[v]);
+		  escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[v]);
 		if ((sc = beta[v][j][d+1] + cm->endsc[v] + 
 		     (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
 		  /*(cm->el_selfsc * (d+1)) + escore) > beta[cm->M][j][d])*/
@@ -1931,10 +1928,10 @@ outside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 	      case MR_st:
 	      case IR_st:
 		if (j == j0) continue;
-		if (sq->dsq[j+1] < cm->abc->K) 
-		  escore = cm->esc[v][(int) sq->dsq[j+1]];
+		if (dsq[j+1] < cm->abc->K) 
+		  escore = cm->esc[v][(int) dsq[j+1]];
 		else
-		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j+1], cm->esc[v]);
+		  escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[v]);
 		if ((sc = beta[v][j+1][d+1] + cm->endsc[v] + 
 		     (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
 		     /*(cm->el_selfsc * (d+1)) + escore) > beta[cm->M][j][d])*/
@@ -2074,7 +2071,7 @@ outside(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
  * Returns:  score.
  */
 static float
-vinside(CM_t *cm, ESL_SQ *sq, 
+vinside(CM_t *cm, ESL_DSQ *dsq, int L, 
 	int r, int z, int i0, int i1, int j1, int j0, int useEL,
 	int do_full, float ***a, float ****ret_a,
 	struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
@@ -2158,10 +2155,10 @@ vinside(CM_t *cm, ESL_SQ *sq,
 	if (i0 == i1 || j1 == j0) break;
 	/*a[z][jp+1][ip-1] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[z])));*/
 	a[z][jp+1][ip-1] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1));
-	if (sq->dsq[i1-1] < cm->abc->K && sq->dsq[j1+1] < cm->abc->K)
-	  a[z][jp+1][ip-1] += cm->esc[z][(int) (sq->dsq[i1-1]*cm->abc->K+sq->dsq[j1+1])];
+	if (dsq[i1-1] < cm->abc->K && dsq[j1+1] < cm->abc->K)
+	  a[z][jp+1][ip-1] += cm->esc[z][(int) (dsq[i1-1]*cm->abc->K+dsq[j1+1])];
 	else
-	  a[z][jp+1][ip-1] += DegeneratePairScore(cm->abc, cm->esc[z], sq->dsq[i1-1], sq->dsq[j1+1]);
+	  a[z][jp+1][ip-1] += DegeneratePairScore(cm->abc, cm->esc[z], dsq[i1-1], dsq[j1+1]);
 	if (ret_shadow != NULL) shadow[z][jp+1][ip-1] = USED_EL;
 	if (a[z][jp+1][ip-1] < IMPOSSIBLE) a[z][jp+1][ip-1] = IMPOSSIBLE;
 	break;
@@ -2170,10 +2167,10 @@ vinside(CM_t *cm, ESL_SQ *sq,
 	if (i0==i1) break;
 	/*a[z][jp][ip-1] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[z])));*/
 	a[z][jp][ip-1] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1));
-	if (sq->dsq[i1-1] < cm->abc->K)
-	  a[z][jp][ip-1] += cm->esc[z][(int) sq->dsq[i1-1]];
+	if (dsq[i1-1] < cm->abc->K)
+	  a[z][jp][ip-1] += cm->esc[z][(int) dsq[i1-1]];
 	else
-	  a[z][jp][ip-1] += esl_abc_FAvgScore(cm->abc, sq->dsq[i1-1], cm->esc[z]);
+	  a[z][jp][ip-1] += esl_abc_FAvgScore(cm->abc, dsq[i1-1], cm->esc[z]);
 	if (ret_shadow != NULL) shadow[z][jp][ip-1] = USED_EL;
 	if (a[z][jp][ip-1] < IMPOSSIBLE) a[z][jp][ip-1] = IMPOSSIBLE;
 	break;
@@ -2182,10 +2179,10 @@ vinside(CM_t *cm, ESL_SQ *sq,
 	if (j1==j0) break;
 	/*a[z][jp+1][ip] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[z])));*/
 	a[z][jp+1][ip] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1));
-	if (sq->dsq[j1+1] < cm->abc->K)
-	  a[z][jp+1][ip] += cm->esc[z][(int) sq->dsq[j1+1]];
+	if (dsq[j1+1] < cm->abc->K)
+	  a[z][jp+1][ip] += cm->esc[z][(int) dsq[j1+1]];
 	else
-	  a[z][jp+1][ip] += esl_abc_FAvgScore(cm->abc, sq->dsq[j1+1], cm->esc[z]);
+	  a[z][jp+1][ip] += esl_abc_FAvgScore(cm->abc, dsq[j1+1], cm->esc[z]);
 	if (ret_shadow != NULL) shadow[z][jp+1][ip] = USED_EL;
 	if (a[z][jp+1][ip] < IMPOSSIBLE) a[z][jp+1][ip] = IMPOSSIBLE;
 	break;
@@ -2277,10 +2274,10 @@ vinside(CM_t *cm, ESL_SQ *sq,
 		     /*printf("set a[%d][%d][%d] to %f\n", v, jp, ip, sc);*/
 		     if (ret_shadow != NULL) shadow[v][jp][ip] = (char) yoffset; 
 		   }
-	      if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
-		a[v][jp][ip] += cm->esc[v][(int) (sq->dsq[i]*cm->abc->K+sq->dsq[j])];
+	      if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
+		a[v][jp][ip] += cm->esc[v][(int) (dsq[i]*cm->abc->K+dsq[j])];
 	      else
-		a[v][jp][ip] += DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i], sq->dsq[j]);
+		a[v][jp][ip] += DegeneratePairScore(cm->abc, cm->esc[v], dsq[i], dsq[j]);
 	      if (a[v][jp][ip] < IMPOSSIBLE) a[v][jp][ip] = IMPOSSIBLE;  
 	    }
 	  }
@@ -2310,10 +2307,10 @@ vinside(CM_t *cm, ESL_SQ *sq,
 		    if (ret_shadow != NULL) shadow[v][jp][ip] = (char) yoffset; 
 		  }
 	      
-	      if (sq->dsq[i] < cm->abc->K)
-		a[v][jp][ip] += cm->esc[v][sq->dsq[i]];
+	      if (dsq[i] < cm->abc->K)
+		a[v][jp][ip] += cm->esc[v][dsq[i]];
 	      else
-		a[v][jp][ip] += esl_abc_FAvgScore(cm->abc, sq->dsq[i], cm->esc[v]);
+		a[v][jp][ip] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
 	      if (a[v][jp][ip] < IMPOSSIBLE) a[v][jp][ip] = IMPOSSIBLE;  
 	    }
 	  }
@@ -2343,10 +2340,10 @@ vinside(CM_t *cm, ESL_SQ *sq,
 		    if (ret_shadow != NULL) shadow[v][jp][ip] = (char) yoffset; 
 		  }
 	      
-	      if (sq->dsq[j] < cm->abc->K)
-		a[v][jp][ip] += cm->esc[v][sq->dsq[j]];
+	      if (dsq[j] < cm->abc->K)
+		a[v][jp][ip] += cm->esc[v][dsq[j]];
 	      else
-		a[v][jp][ip] += esl_abc_FAvgScore(cm->abc, sq->dsq[j], cm->esc[v]);
+		a[v][jp][ip] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
 	      if (a[v][jp][ip] < IMPOSSIBLE) a[v][jp][ip] = IMPOSSIBLE;  
 	    }
 	  }
@@ -2466,7 +2463,7 @@ vinside(CM_t *cm, ESL_SQ *sq,
  *                       because of the size of the subseq decks.
  */
 static void
-voutside(CM_t *cm, ESL_SQ *sq, 
+voutside(CM_t *cm, ESL_DSQ *dsq, int L, 
 	 int r, int z, int i0, int i1, int j1, int j0, int useEL,
 	 int do_full, float ***beta, float ****ret_beta,
 	 struct deckpool_s *dpool, struct deckpool_s **ret_dpool)
@@ -2519,30 +2516,30 @@ voutside(CM_t *cm, ESL_SQ *sq,
     switch(cm->sttype[r]) {
     case MP_st:
       if (i0 == i1 || j1 == j0) break;
-      if (sq->dsq[i0] < cm->abc->K && sq->dsq[j0] > cm->abc->K)
-	escore = cm->esc[r][(int) (sq->dsq[i0]*cm->abc->K+sq->dsq[j0])];
+      if (dsq[i0] < cm->abc->K && dsq[j0] > cm->abc->K)
+	escore = cm->esc[r][(int) (dsq[i0]*cm->abc->K+dsq[j0])];
       else
-	escore = DegeneratePairScore(cm->abc, cm->esc[r], sq->dsq[i0], sq->dsq[j0]);
+	escore = DegeneratePairScore(cm->abc, cm->esc[r], dsq[i0], dsq[j0]);
       beta[cm->M][j0-j1-1][1] = cm->endsc[r] + 
 	(cm->el_selfsc * ((j0-1)-(i0+1)+1)) + escore;
       break;
     case ML_st:
     case IL_st:
       if (i0 == i1) break;
-      if (sq->dsq[i0] < cm->abc->K) 
-	escore = cm->esc[r][(int) sq->dsq[i0]];
+      if (dsq[i0] < cm->abc->K) 
+	escore = cm->esc[r][(int) dsq[i0]];
       else
-	escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i0], cm->esc[r]);
+	escore = esl_abc_FAvgScore(cm->abc, dsq[i0], cm->esc[r]);
       beta[cm->M][j0-j1][1] = cm->endsc[r] + 
 	(cm->el_selfsc * ((j0)-(i0+1)+1)) + escore;
       break;
     case MR_st:
     case IR_st:
       if (j0==j1) break;
-      if (sq->dsq[j0] < cm->abc->K) 
-	escore = cm->esc[r][(int) sq->dsq[j0]];
+      if (dsq[j0] < cm->abc->K) 
+	escore = cm->esc[r][(int) dsq[j0]];
       else
-	escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j0], cm->esc[r]);
+	escore = esl_abc_FAvgScore(cm->abc, dsq[j0], cm->esc[r]);
       beta[cm->M][j0-j1-1][0] = cm->endsc[r] + 
 	(cm->el_selfsc * ((j0-1)-(i0)+1)) + escore;
       break;
@@ -2587,7 +2584,7 @@ voutside(CM_t *cm, ESL_SQ *sq,
       /* If we can get into deck v by a local begin transition, do an init
        * with that.
        */
-      if (r == 0 && i0 == 1 && j0 == sq->n && (cm->flags & CM_LOCAL_BEGIN))
+      if (r == 0 && i0 == 1 && j0 == L && (cm->flags & CM_LOCAL_BEGIN))
 	{
 	  if (cm->beginsc[v] > beta[v][j0-j1][0]) 
 	    beta[v][j0-j1][0] = cm->beginsc[v];
@@ -2609,10 +2606,10 @@ voutside(CM_t *cm, ESL_SQ *sq,
 	      case MP_st: 
 		if (j == j0 || i == i0) continue; /* boundary condition */
 
-		if (sq->dsq[i-1] < cm->abc->K && sq->dsq[j+1] > cm->abc->K)
-		  escore = cm->esc[y][(int) (sq->dsq[i-1]*cm->abc->K+sq->dsq[j+1])];
+		if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		  escore = cm->esc[y][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
 		else
-		  escore = DegeneratePairScore(cm->abc, cm->esc[y], sq->dsq[i-1], sq->dsq[j+1]);
+		  escore = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
 		
 		if ((sc = beta[y][jp+1][ip-1]+cm->tsc[y][voffset]+escore) > beta[v][jp][ip])
 		  beta[v][jp][ip] = sc;
@@ -2622,10 +2619,10 @@ voutside(CM_t *cm, ESL_SQ *sq,
 	      case IL_st: 
 		if (i == i0) continue;	/* boundary condition */
 
-		if (sq->dsq[i-1] < cm->abc->K) 
-		  escore = cm->esc[y][(int) sq->dsq[i-1]];
+		if (dsq[i-1] < cm->abc->K) 
+		  escore = cm->esc[y][(int) dsq[i-1]];
 		else
-		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i-1], cm->esc[y]);
+		  escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[y]);
 		  
 		if ((sc = beta[y][jp][ip-1]+cm->tsc[y][voffset]+escore) > beta[v][jp][ip])
 		  beta[v][jp][ip] = sc;
@@ -2635,10 +2632,10 @@ voutside(CM_t *cm, ESL_SQ *sq,
 	      case IR_st:
 		if (j == j0) continue;
 		  
-		if (sq->dsq[j+1] < cm->abc->K) 
-		  escore = cm->esc[y][(int) sq->dsq[j+1]];
+		if (dsq[j+1] < cm->abc->K) 
+		  escore = cm->esc[y][(int) dsq[j+1]];
 		else
-		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j+1], cm->esc[y]);
+		  escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[y]);
 
 		if ((sc = beta[y][jp+1][ip]+cm->tsc[y][voffset]+escore) > beta[v][jp][ip])
 		  beta[v][jp][ip] = sc;
@@ -2673,10 +2670,10 @@ voutside(CM_t *cm, ESL_SQ *sq,
 	      switch (cm->sttype[v]) {
 	      case MP_st:
 		if (j == j0 || i == i0) continue; /* boundary condition */
-		if (sq->dsq[i-1] < cm->abc->K && sq->dsq[j+1] > cm->abc->K)
-		  escore = cm->esc[v][(int) (sq->dsq[i-1]*cm->abc->K+sq->dsq[j+1])];
+		if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		  escore = cm->esc[v][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
 		else
-		  escore = DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i-1], sq->dsq[j+1]);
+		  escore = DegeneratePairScore(cm->abc, cm->esc[v], dsq[i-1], dsq[j+1]);
 		if ((sc = beta[v][jp+1][ip-1] + cm->endsc[v] + 
 		     (cm->el_selfsc * (j-i+1)) + escore) > beta[cm->M][jp][ip])
 		  beta[cm->M][jp][ip] = sc;
@@ -2684,10 +2681,10 @@ voutside(CM_t *cm, ESL_SQ *sq,
 	      case ML_st:
 	      case IL_st:
 		if (i == i0) continue;
-		if (sq->dsq[i-1] < cm->abc->K) 
-		  escore = cm->esc[v][(int) sq->dsq[i-1]];
+		if (dsq[i-1] < cm->abc->K) 
+		  escore = cm->esc[v][(int) dsq[i-1]];
 		else
-		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i-1], cm->esc[v]);
+		  escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[v]);
 		if ((sc = beta[v][jp][ip-1] + cm->endsc[v] + 
 		     (cm->el_selfsc * (j-i+1)) + escore) > beta[cm->M][jp][ip])
 		  beta[cm->M][jp][ip] = sc;
@@ -2695,10 +2692,10 @@ voutside(CM_t *cm, ESL_SQ *sq,
 	      case MR_st:
 	      case IR_st:
 		if (j == j0) continue;
-		if (sq->dsq[j+1] < cm->abc->K) 
-		  escore = cm->esc[v][(int) sq->dsq[j+1]];
+		if (dsq[j+1] < cm->abc->K) 
+		  escore = cm->esc[v][(int) dsq[j+1]];
 		else
-		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j+1], cm->esc[v]);
+		  escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[v]);
 		if ((sc = beta[v][jp+1][ip] + cm->endsc[v] + 
 		     (cm->el_selfsc * (j-i+1)) + escore) > beta[cm->M][jp][ip])
 		  beta[cm->M][jp][ip] = sc;
@@ -2793,7 +2790,7 @@ voutside(CM_t *cm, ESL_SQ *sq,
  *           be passed in as NULL.
  */
 static float
-insideT(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, 
+insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 	int r, int z, int i0, int j0, 
 	int allow_begin, int *dmin, int *dmax)
 {
@@ -2809,7 +2806,7 @@ insideT(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
 
   if(dmin == NULL && dmax == NULL)
     {
-      sc = inside(cm, sq, r, z, i0, j0, 
+      sc = inside(cm, dsq, L, r, z, i0, j0, 
 		  BE_EFFICIENT,	/* memory-saving mode */
 		  NULL, NULL,	/* manage your own matrix, I don't want it */
 		  NULL, NULL,	/* manage your own deckpool, I don't want it */
@@ -2819,7 +2816,7 @@ insideT(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
     }
   else
     {
-      sc = inside_b(cm, sq, r, z, i0, j0, 
+      sc = inside_b(cm, dsq, L, r, z, i0, j0, 
 		    BE_EFFICIENT,/* memory-saving mode */
 		    NULL, NULL,	 /* manage your own matrix, I don't want it */
 		    NULL, NULL,	 /* manage your own deckpool, I don't want it */
@@ -2923,7 +2920,7 @@ insideT(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
  *           be passed in as NULL.
  */
 static float
-vinsideT(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, 
+vinsideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 	 int r, int z, int i0, int i1, int j1, int j0, int useEL, 
 	 int allow_begin, int *dmin, int *dmax)
 {
@@ -2946,7 +2943,7 @@ vinsideT(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
 
   if(dmin == NULL && dmax == NULL)
     {
-      sc = vinside(cm, sq, r, z, i0, i1, j1, j0, useEL,
+      sc = vinside(cm, dsq, L, r, z, i0, i1, j1, j0, useEL,
 		   BE_EFFICIENT,	/* memory-saving mode */
 		   NULL, NULL,	/* manage your own matrix, I don't want it */
 		   NULL, NULL,	/* manage your own deckpool, I don't want it */
@@ -2956,7 +2953,7 @@ vinsideT(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
     }
   else
     {
-      sc = vinside_b(cm, sq, r, z, i0, i1, j1, j0, useEL,
+      sc = vinside_b(cm, dsq, L, r, z, i0, i1, j1, j0, useEL,
 		     BE_EFFICIENT,	/* memory-saving mode */
 		     NULL, NULL,	/* manage your own matrix, I don't want it */
 		     NULL, NULL,	/* manage your own deckpool, I don't want it */
@@ -3284,7 +3281,7 @@ alloc_vjd_deck(int L, int i, int j)
   int status;
   float **a;
   int     jp;
-  ESL_DPRINTF3(("alloc_vjd_deck : %.4f\n", size_vjd_deck(sq->n,i,j)));
+  ESL_DPRINTF3(("alloc_vjd_deck : %.4f\n", size_vjd_deck(L,i,j)));
   ESL_ALLOC(a, sizeof(float *) * (L+1)); /* always alloc 0..L rows, some of which are NULL */
   for (jp = 0;   jp < i-1;    jp++) a[jp]     = NULL;
   for (jp = j+1; jp <= L;     jp++) a[jp]     = NULL;
@@ -3516,7 +3513,7 @@ free_vji_shadow_matrix(char ***a, int M, int j1, int j0)
  * Date:     SRE, Mon Aug  7 07:45:37 2000 [St. Louis]
  */
 void
-CYKOutside(CM_t *cm, ESL_SQ *sq, float ***alpha)
+CYKOutside(CM_t *cm, ESL_DSQ *dsq, int L, float ***alpha)
 {
   int      status;
   float ***beta;		/* the scoring cube [v=0..M-1][j=0..L][d=0..j]*/
@@ -3559,7 +3556,7 @@ CYKOutside(CM_t *cm, ESL_SQ *sq, float ***alpha)
        * a fresh one.
        */
       if (! deckpool_pop(dpool, &(beta[v])))
-	beta[v] = alloc_vjd_deck(sq->n, 1, L);
+	beta[v] = alloc_vjd_deck(L, 1, L);
 
       /* main recursion:
        */
@@ -3595,10 +3592,10 @@ CYKOutside(CM_t *cm, ESL_SQ *sq, float ***alpha)
 		  case MP_st: 
 		    if (d == j || d == j-1) continue; /* boundary condition */
 
-		    if (sq->dsq[i-1] < cm->abc->K && sq->dsq[j+1] > cm->abc->K)
-		      escore = cm->esc[y][(int) (sq->dsq[i-1]*cm->abc->K+sq->dsq[j+1])];
+		    if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		      escore = cm->esc[y][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
 		    else
-		      escore = DegeneratePairScore(cm->abc, cm->esc[y], sq->dsq[i-1], sq->dsq[j+1]);
+		      escore = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
 
 		    if ((sc = beta[y][j+1][d+2] + cm->tsc[y][v] + escore) > beta[v][j][d])
 		      beta[v][j][d] = sc;
@@ -3608,10 +3605,10 @@ CYKOutside(CM_t *cm, ESL_SQ *sq, float ***alpha)
 		  case IL_st: 
 		    if (d == j) continue;	/* boundary condition (note when j=0, d=0*/
 
-		    if (sq->dsq[i-1] < cm->abc->K) 
-		      escore = cm->esc[y][(int) sq->dsq[i-1]];
+		    if (dsq[i-1] < cm->abc->K) 
+		      escore = cm->esc[y][(int) dsq[i-1]];
 		    else
-		      escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i-1], cm->esc[y]);
+		      escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[y]);
 		  
 		    if ((sc = beta[y][j][d+1] + cm->tsc[y][v] + escore) > beta[v][j][d])
 		      beta[v][j][d] = sc;
@@ -3621,10 +3618,10 @@ CYKOutside(CM_t *cm, ESL_SQ *sq, float ***alpha)
 		  case IR_st:
 		    if (d == j || j == L) continue;
 		  
-		    if (sq->dsq[j+1] < cm->abc->K) 
-		      escore = cm->esc[y][(int) sq->dsq[j+1]];
+		    if (dsq[j+1] < cm->abc->K) 
+		      escore = cm->esc[y][(int) dsq[j+1]];
 		    else
-		      escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j+1], cm->esc[y]);
+		      escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[y]);
 
 		    if ((sc = beta[y][j+1][d+1] + cm->tsc[y][v] + escore) > beta[v][j][d])
 		      beta[v][j][d] = sc;
@@ -3677,7 +3674,7 @@ CYKOutside(CM_t *cm, ESL_SQ *sq, float ***alpha)
  *
  * Purpose:  Solve a "generic problem": best parse of
  *           a possibly bifurcated subgraph cm^r_z to
- *           a substring sq->dsq[i0..j0]. r is usually a start
+ *           a substring dsq[i0..j0]. r is usually a start
  *           state (S_st) but may be any non-end state type in 
  *           the case of local alignment begins (ROOT 0->r).
  *           z is always an end state (E_st).
@@ -3705,7 +3702,7 @@ CYKOutside(CM_t *cm, ESL_SQ *sq, float ***alpha)
  * Returns:  score of the optimal parse of dsq(i0..j0) with cm^r_z 
  */
 static float
-generic_splitter_b(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, 
+generic_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 		 int r, int z, int i0, int j0, int *dmin, int *dmax)
 {
   float ***alpha;
@@ -3728,12 +3725,12 @@ generic_splitter_b(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
   /* 1. If the generic problem is small enough, solve it with insideT,
    *    and append the trace to tr.
    */
-  if (insideT_size(cm, sq->n, r, z, i0, j0) < RAMLIMIT) {
+  if (insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT) {
     ESL_DPRINTF1(("Solving a generic w/ insideT - G%d[%s]..%d[%s], %d..%d\n",
 		  r, UniqueStatetype(cm->stid[r]),
 		  z, UniqueStatetype(cm->stid[z]),
 		  i0, j0));
-    sc = insideT(cm, sq, tr, r, z, i0, j0, (r==0), dmin, dmax);
+    sc = insideT(cm, dsq, L, tr, r, z, i0, j0, (r==0), dmin, dmax);
     return sc;
   }
 
@@ -3749,7 +3746,7 @@ generic_splitter_b(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
    */
   if (v > z-5) {		/* no bifurc? it's a wedge problem  */
     if (cm->sttype[z] != E_st) esl_fatal("inconceivable.");
-    sc = wedge_splitter_b(cm, sq, tr, r, z, i0, j0, dmin, dmax);
+    sc = wedge_splitter_b(cm, dsq, L, tr, r, z, i0, j0, dmin, dmax);
     return sc;
   }
 
@@ -3765,15 +3762,15 @@ generic_splitter_b(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
    * We also get b1: best choice for 0->b local begin. b1_sc is the score if we do this.
    * Analogous for b2, b2_sc on the other side.
    */
-  inside_b(cm, sq, w, wend, i0, j0, BE_EFFICIENT, NULL,  &alpha, NULL, &pool, NULL, 
+  inside_b(cm, dsq, L, w, wend, i0, j0, BE_EFFICIENT, NULL,  &alpha, NULL, &pool, NULL, 
 	   (r==0), &b1, &b1_sc, dmin, dmax);
-  inside_b(cm, sq, y, yend, i0, j0, BE_EFFICIENT, alpha, &alpha, pool, &pool, NULL,
+  inside_b(cm, dsq, L, y, yend, i0, j0, BE_EFFICIENT, alpha, &alpha, pool, &pool, NULL,
 	   (r==0), &b2, &b2_sc, dmin, dmax);
 
   /* Calculate beta[v] deck (stick it in alpha). Let the pool get free'd.
    * (If we're doing local alignment, deck M is the beta[EL] deck.)
    */
-  outside_b(cm, sq, r, v, i0, j0, BE_EFFICIENT, alpha, &beta, pool, NULL, dmin, dmax);
+  outside_b(cm, dsq, L, r, v, i0, j0, BE_EFFICIENT, alpha, &beta, pool, NULL, dmin, dmax);
 
   /* Find the optimal split at the B.
    */
@@ -3841,7 +3838,7 @@ generic_splitter_b(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
    * in a V problem that's still above us. The TRUE flag sets useEL.
    */
   if (best_k == -1) {	
-    v_splitter_b(cm, sq, tr, r, v, i0, best_j-best_d+1, best_j, j0, TRUE, dmin, dmax);    
+    v_splitter_b(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0, TRUE, dmin, dmax);    
     return best_sc;
   } 
 
@@ -3852,13 +3849,13 @@ generic_splitter_b(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
   if (best_k == -2) {
     InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b1);
     z = CMSubtreeFindEnd(cm, b1);
-    generic_splitter_b(cm, sq, tr, b1, z, i0, j0, dmin, dmax);
+    generic_splitter_b(cm, dsq, L, tr, b1, z, i0, j0, dmin, dmax);
     return best_sc;
   }
   if (best_k == -3) {
     InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b2);
     z = CMSubtreeFindEnd(cm, b2);
-    generic_splitter_b(cm, sq, tr, b2, z, i0, j0, dmin, dmax);
+    generic_splitter_b(cm, dsq, L, tr, b2, z, i0, j0, dmin, dmax);
     return best_sc;
   }
 
@@ -3884,13 +3881,13 @@ generic_splitter_b(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
 		yend, UniqueStatetype(cm->stid[yend]),
 		best_j-best_k+1, best_j));
 
-  v_splitter_b(cm, sq, tr, r, v, i0, best_j-best_d+1, best_j, j0, FALSE, dmin, dmax);
+  v_splitter_b(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0, FALSE, dmin, dmax);
   tv = tr->n-1;
 
   InsertTraceNode(tr, tv, TRACE_LEFT_CHILD, best_j-best_d+1, best_j-best_k, w);
-  generic_splitter_b(cm, sq, tr, w, wend, best_j-best_d+1, best_j-best_k, dmin, dmax);
+  generic_splitter_b(cm, dsq, L, tr, w, wend, best_j-best_d+1, best_j-best_k, dmin, dmax);
   InsertTraceNode(tr, tv, TRACE_RIGHT_CHILD, best_j-best_k+1, best_j, y);
-  generic_splitter_b(cm, sq, tr, y, yend, best_j-best_k+1, best_j, dmin, dmax);
+  generic_splitter_b(cm, dsq, L, tr, y, yend, best_j-best_k+1, best_j, dmin, dmax);
 
   return best_sc;
 }
@@ -3902,7 +3899,7 @@ generic_splitter_b(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
  *
  * Purpose:  Solve a "wedge problem": best parse of an 
  *           unbifurcated subgraph cm^r..z to a substring
- *           sq->dsq[i0..j0]. r may be a start state (when
+ *           dsq[i0..j0]. r may be a start state (when
  *           the wedge problem comes from being a special case
  *           of a generic problem) or a non-insert state
  *           (D, MP, ML, MR) (when the wedge comes from a
@@ -3932,7 +3929,7 @@ generic_splitter_b(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
  * Returns:  The score of the best parse in bits.
  */
 static float 
-wedge_splitter_b(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, int r, int z, int i0, int j0,
+wedge_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0,
 		 int *dmin, int *dmax)
 {
   float ***alpha;
@@ -3957,13 +3954,13 @@ wedge_splitter_b(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, int r, int z, int i0, in
    *    thing to do, so we ignore RAMLIMIT in that case.
    */
   if (cm->ndidx[z] == cm->ndidx[r] + 1 || 
-      insideT_size(cm, sq->n, r, z, i0, j0) < RAMLIMIT) 
+      insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT) 
     {
       ESL_DPRINTF1(("Solving a wedge:   G%d[%s]..%d[%s], %d..%d\n", 
 		r, UniqueStatetype(cm->stid[r]),
 		z, UniqueStatetype(cm->stid[z]),
 		i0,j0));
-      sc = insideT(cm, sq, tr, r, z, i0, j0, (r==0), dmin, dmax);
+      sc = insideT(cm, dsq, L, tr, r, z, i0, j0, (r==0), dmin, dmax);
       return sc;
     }
 
@@ -3985,10 +3982,10 @@ wedge_splitter_b(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, int r, int z, int i0, in
    *    is the score for using it.
    *    beta[cm->M] will contain the EL deck, if needed for local ends.
    */
-  inside_b(cm, sq, w, z, i0, j0, BE_EFFICIENT, 
+  inside_b(cm, dsq, L, w, z, i0, j0, BE_EFFICIENT, 
 	   NULL, &alpha, NULL, &pool, NULL, 
 	   (r==0), &b, &bsc, dmin, dmax);
-  outside_b(cm, sq, r, y, i0, j0, BE_EFFICIENT, NULL, &beta, pool, NULL,
+  outside_b(cm, dsq, L, r, y, i0, j0, BE_EFFICIENT, NULL, &beta, pool, NULL,
   dmin, dmax);
 
   /* 4. Find the optimal split at the split set: best_v, best_d, best_j
@@ -4050,7 +4047,7 @@ wedge_splitter_b(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, int r, int z, int i0, in
    * initialize the whole thing to IMPOSSIBLE anyway.
    */  
   if (best_v == -1) {
-    v_splitter_b(cm, sq, tr, r, w, i0, best_j-best_d+1, best_j, j0, TRUE, dmin, dmax);    
+    v_splitter_b(cm, dsq, L, tr, r, w, i0, best_j-best_d+1, best_j, j0, TRUE, dmin, dmax);    
     return best_sc;
   }
 
@@ -4061,7 +4058,7 @@ wedge_splitter_b(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, int r, int z, int i0, in
    */
   if (best_v == -2) {
     InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b);
-    wedge_splitter_b(cm, sq, tr, b, z, i0, j0, dmin, dmax);
+    wedge_splitter_b(cm, dsq, L, tr, b, z, i0, j0, dmin, dmax);
     return best_sc; 
   }
 
@@ -4083,9 +4080,9 @@ wedge_splitter_b(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, int r, int z, int i0, in
 		z, UniqueStatetype(cm->stid[z]),
 		best_j-best_d+1, best_j));
 
-  v_splitter_b(cm, sq, tr, r, best_v, i0, best_j-best_d+1, best_j, j0, FALSE,
+  v_splitter_b(cm, dsq, L, tr, r, best_v, i0, best_j-best_d+1, best_j, j0, FALSE,
 	       dmin, dmax);
-  wedge_splitter_b(cm, sq, tr, best_v, z, best_j-best_d+1, best_j, dmin, dmax);
+  wedge_splitter_b(cm, dsq, L, tr, best_v, z, best_j-best_d+1, best_j, dmin, dmax);
   return best_sc;
 }
 
@@ -4121,7 +4118,7 @@ wedge_splitter_b(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, int r, int z, int i0, in
  * Returns:  (void)
  */
 static void
-v_splitter_b(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
+v_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	   int r, int z, int i0, int i1, int j1, int j0, 
 	   int useEL, int *dmin, int *dmax)
 {
@@ -4156,7 +4153,7 @@ v_splitter_b(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
 		r, UniqueStatetype(cm->stid[r]),
 		z, UniqueStatetype(cm->stid[z]),
 		i0,j1,j1,j0));
-      vinsideT(cm, sq, tr, r, z, i0, i1, j1, j0, useEL, (r==0), dmin, dmax);
+      vinsideT(cm, dsq, L, tr, r, z, i0, i1, j1, j0, useEL, (r==0), dmin, dmax);
       return;
     }
 
@@ -4173,10 +4170,10 @@ v_splitter_b(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
    *    in alpha and beta even though we're in small memory mode.
    *    beta[cm->M] is the EL deck, needed for local ends.
    */
-  vinside_b (cm, sq, w, z, i0, i1, j1, j0, useEL, BE_EFFICIENT, 
+  vinside_b (cm, dsq, L, w, z, i0, i1, j1, j0, useEL, BE_EFFICIENT, 
 	     NULL, &alpha, NULL, &pool, NULL, (r==0), &b, &bsc,
 	     dmin, dmax);
-  voutside_b(cm, sq, r, y, i0, i1, j1, j0, useEL, BE_EFFICIENT, 
+  voutside_b(cm, dsq, L, r, y, i0, i1, j1, j0, useEL, BE_EFFICIENT, 
 	     NULL, &beta,  pool, NULL, dmin, dmax);
 
   /* 4. Find the optimal split: v, ip, jp. 
@@ -4253,7 +4250,7 @@ v_splitter_b(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
    * The TRUE flag sets useEL; we propagate allow_begin. 
    */
   if (best_v == -1) {
-    v_splitter_b(cm, sq, tr, r, w, i0, best_i, best_j, j0, TRUE, dmin, dmax);    
+    v_splitter_b(cm, dsq, L, tr, r, w, i0, best_i, best_j, j0, TRUE, dmin, dmax);    
     return;
   }
 
@@ -4266,7 +4263,7 @@ v_splitter_b(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
   if (best_v == -2) {
     if (b != z) 
       InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b);
-    v_splitter_b(cm, sq, tr, b, z, i0, i1, j1, j0, useEL, dmin, dmax);    
+    v_splitter_b(cm, dsq, L, tr, b, z, i0, i1, j1, j0, useEL, dmin, dmax);    
     return;
   }
 
@@ -4286,9 +4283,9 @@ v_splitter_b(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
 		z, UniqueStatetype(cm->stid[z]),
 		best_i, i1, j1, best_j));
 
-  v_splitter_b(cm, sq, tr, r,      best_v, i0,     best_i, best_j, j0, FALSE,
+  v_splitter_b(cm, dsq, L, tr, r,      best_v, i0,     best_i, best_j, j0, FALSE,
 	       dmin, dmax);
-  v_splitter_b(cm, sq, tr, best_v, z,      best_i, i1,     j1,     best_j, useEL,
+  v_splitter_b(cm, dsq, L, tr, best_v, z,      best_i, i1,     j1,     best_j, useEL,
 	       dmin, dmax);
   
   free(imax);
@@ -4346,7 +4343,7 @@ v_splitter_b(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
  * Returns: Score of the optimal alignment.  
  */
 static float 
-inside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_full,
+inside_b(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
 	 float ***alpha, float ****ret_alpha, 
 	 struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
 	 void ****ret_shadow, 
@@ -4378,7 +4375,7 @@ inside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_full,
 				/* if caller didn't give us a deck pool, make one */
   if (dpool == NULL) dpool = deckpool_create();
   if (! deckpool_pop(dpool, &end))
-    end = alloc_vjd_deck(sq->n, i0, j0);
+    end = alloc_vjd_deck(L, i0, j0);
   nends = CMSubtreeCountStatetype(cm, vroot, E_st);
   for (jp = 0; jp <= W; jp++) {
     j = i0+jp-1;		/* e.g. j runs from 0..L on whole seq */
@@ -4432,14 +4429,14 @@ inside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_full,
 	alpha[v] = end; continue; 
       } 
       if (! deckpool_pop(dpool, &(alpha[v]))) 
-	alpha[v] = alloc_vjd_deck(sq->n, i0, j0);
+	alpha[v] = alloc_vjd_deck(L, i0, j0);
 
       if (ret_shadow != NULL) {
 	if (cm->sttype[v] == B_st) {
-	  kshad     = alloc_vjd_kshadow_deck(sq->n, i0, j0); 
+	  kshad     = alloc_vjd_kshadow_deck(L, i0, j0); 
 	  shadow[v] = (void **) kshad;
 	} else {
-	  yshad     = alloc_vjd_yshadow_deck(sq->n, i0, j0); 
+	  yshad     = alloc_vjd_yshadow_deck(L, i0, j0); 
 	  shadow[v] = (void **) yshad;
 	}
       }
@@ -4531,10 +4528,10 @@ inside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_full,
 		  }
 		
 		i = j-d+1;
-		if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
-		  alpha[v][j][d] += cm->esc[v][(int) (sq->dsq[i]*cm->abc->K+sq->dsq[j])];
+		if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
+		  alpha[v][j][d] += cm->esc[v][(int) (dsq[i]*cm->abc->K+dsq[j])];
 		else
-		  alpha[v][j][d] += DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i], sq->dsq[j]);
+		  alpha[v][j][d] += DegeneratePairScore(cm->abc, cm->esc[v], dsq[i], dsq[j]);
 
 		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 	      }
@@ -4559,10 +4556,10 @@ inside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_full,
 		  } 
 		
 		i = j-d+1;
-		if (sq->dsq[i] < cm->abc->K)
-		  alpha[v][j][d] += cm->esc[v][sq->dsq[i]];
+		if (dsq[i] < cm->abc->K)
+		  alpha[v][j][d] += cm->esc[v][dsq[i]];
 		else
-		  alpha[v][j][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[i], cm->esc[v]);
+		  alpha[v][j][d] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
 		
 		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 	      }
@@ -4585,10 +4582,10 @@ inside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_full,
 		    alpha[v][j][d] = sc;
 		    if (ret_shadow != NULL) yshad[j][d] = yoffset;
 		  }
-		if (sq->dsq[j] < cm->abc->K)
-		  alpha[v][j][d] += cm->esc[v][sq->dsq[j]];
+		if (dsq[j] < cm->abc->K)
+		  alpha[v][j][d] += cm->esc[v][dsq[j]];
 		else
-		  alpha[v][j][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[j], cm->esc[v]);
+		  alpha[v][j][d] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
 		
 		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 	      }
@@ -4721,7 +4718,7 @@ inside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_full,
  *           dmax      - maximum d bound for each state v; [0..v..M-1]
  */
 static void
-outside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
+outside_b(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	  int do_full, float ***beta, float ****ret_beta,
 	  struct deckpool_s *dpool, struct deckpool_s **ret_dpool, int *dmin, int *dmax)
 {
@@ -4765,7 +4762,7 @@ outside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 
   for (v = w1; v <= w2; v++) {
     if (! deckpool_pop(dpool, &(beta[v])))
-      beta[v] = alloc_vjd_deck(sq->n, i0, j0);
+      beta[v] = alloc_vjd_deck(L, i0, j0);
     for (jp = 0; jp <= W; jp++) {
       j = i0-1+jp;
       for (d = 0; d <= jp; d++)
@@ -4778,7 +4775,7 @@ outside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
    */
   if (cm->flags & CM_LOCAL_END) {
     if (! deckpool_pop(dpool, &(beta[cm->M])))
-      beta[cm->M] = alloc_vjd_deck(sq->n, i0, j0);
+      beta[cm->M] = alloc_vjd_deck(L, i0, j0);
     for (jp = 0; jp <= W; jp++) {
       j = i0-1+jp;
       for (d = 0; d <= jp; d++)
@@ -4795,10 +4792,10 @@ outside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
       switch (cm->sttype[vroot]) {
       case MP_st:
 	if (W < 2) break;
-	if (sq->dsq[i0] < cm->abc->K && sq->dsq[j0] > cm->abc->K)
-	  escore = cm->esc[vroot][(int) (sq->dsq[i0]*cm->abc->K+sq->dsq[j0])];
+	if (dsq[i0] < cm->abc->K && dsq[j0] > cm->abc->K)
+	  escore = cm->esc[vroot][(int) (dsq[i0]*cm->abc->K+dsq[j0])];
 	else
-	  escore = DegeneratePairScore(cm->abc, cm->esc[vroot], sq->dsq[i0], sq->dsq[j0]);
+	  escore = DegeneratePairScore(cm->abc, cm->esc[vroot], dsq[i0], dsq[j0]);
 	beta[cm->M][j0-1][W-2] = cm->endsc[vroot] + 
 	  (cm->el_selfsc * (W-2)) + escore;
 	if (beta[cm->M][j0-1][W-2] < IMPOSSIBLE) beta[cm->M][j0-1][W-2] = IMPOSSIBLE;
@@ -4806,10 +4803,10 @@ outside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
       case ML_st:
       case IL_st:
 	if (W < 1) break;
-	if (sq->dsq[i0] < cm->abc->K) 
-	  escore = cm->esc[vroot][(int) sq->dsq[i0]];
+	if (dsq[i0] < cm->abc->K) 
+	  escore = cm->esc[vroot][(int) dsq[i0]];
 	else
-	  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i0], cm->esc[vroot]);
+	  escore = esl_abc_FAvgScore(cm->abc, dsq[i0], cm->esc[vroot]);
 	beta[cm->M][j0][W-1] = cm->endsc[vroot] + 
 	  (cm->el_selfsc * (W-1)) + escore;
 	if (beta[cm->M][j0][W-1] < IMPOSSIBLE) beta[cm->M][j0][W-1] = IMPOSSIBLE;
@@ -4817,10 +4814,10 @@ outside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
       case MR_st:
       case IR_st:
 	if (W < 1) break;
-	if (sq->dsq[j0] < cm->abc->K) 
-	  escore = cm->esc[vroot][(int) sq->dsq[j0]];
+	if (dsq[j0] < cm->abc->K) 
+	  escore = cm->esc[vroot][(int) dsq[j0]];
 	else
-	  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j0], cm->esc[vroot]);
+	  escore = esl_abc_FAvgScore(cm->abc, dsq[j0], cm->esc[vroot]);
 	beta[cm->M][j0-1][W-1] = cm->endsc[vroot] + 
 	  (cm->el_selfsc * (W-1)) + escore;
 	if (beta[cm->M][j0-1][W-1] < IMPOSSIBLE) beta[cm->M][j0-1][W-1] = IMPOSSIBLE;
@@ -4854,7 +4851,7 @@ outside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
        * a fresh one.
        */
       if (! deckpool_pop(dpool, &(beta[v])))
-	beta[v] = alloc_vjd_deck(sq->n, i0, j0);
+	beta[v] = alloc_vjd_deck(L, i0, j0);
 
       /* Init the whole deck to IMPOSSIBLE
        */
@@ -4867,7 +4864,7 @@ outside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
       /* If we can do a local begin into v, also init with that. 
        * By definition, beta[0][j0][W] == 0.
        */ 
-      if ((vroot == 0 && i0 == 1 && j0 == sq->n && (cm->flags & CM_LOCAL_BEGIN))
+      if ((vroot == 0 && i0 == 1 && j0 == L && (cm->flags & CM_LOCAL_BEGIN))
 	  && (dmin[v] <= W && dmax[v] >= W))
 	  beta[v][j0][W] = cm->beginsc[v];
 
@@ -4888,10 +4885,10 @@ outside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 	      case MP_st: 
 		if (j == j0 || d == jp) continue; /* boundary condition */
 
-		if (sq->dsq[i-1] < cm->abc->K && sq->dsq[j+1] > cm->abc->K)
-		  escore = cm->esc[y][(int) (sq->dsq[i-1]*cm->abc->K+sq->dsq[j+1])];
+		if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		  escore = cm->esc[y][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
 		else
-		  escore = DegeneratePairScore(cm->abc, cm->esc[y], sq->dsq[i-1], sq->dsq[j+1]);
+		  escore = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
 		
 		if ((sc = beta[y][j+1][d+2] + cm->tsc[y][voffset] + escore) > beta[v][j][d])
 		  beta[v][j][d] = sc;
@@ -4901,10 +4898,10 @@ outside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 	      case IL_st: 
 		if (d == jp) continue;	/* boundary condition (note when j=0, d=0*/
 
-		if (sq->dsq[i-1] < cm->abc->K) 
-		  escore = cm->esc[y][(int) sq->dsq[i-1]];
+		if (dsq[i-1] < cm->abc->K) 
+		  escore = cm->esc[y][(int) dsq[i-1]];
 		else
-		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i-1], cm->esc[y]);
+		  escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[y]);
 		  
 		if ((sc = beta[y][j][d+1] + cm->tsc[y][voffset] + escore) > beta[v][j][d])
 		  beta[v][j][d] = sc;
@@ -4914,10 +4911,10 @@ outside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 	      case IR_st:
 		if (j == j0) continue;
 		  
-		if (sq->dsq[j+1] < cm->abc->K) 
-		  escore = cm->esc[y][(int) sq->dsq[j+1]];
+		if (dsq[j+1] < cm->abc->K) 
+		  escore = cm->esc[y][(int) dsq[j+1]];
 		else
-		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j+1], cm->esc[y]);
+		  escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[y]);
 
 		if ((sc = beta[y][j+1][d+1] + cm->tsc[y][voffset] + escore) > beta[v][j][d])
 		  beta[v][j][d] = sc;
@@ -4956,10 +4953,10 @@ outside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 	      switch (cm->sttype[v]) {
 	      case MP_st: 
 		if (j == j0 || d == jp) continue; /* boundary condition */
-		if (sq->dsq[i-1] < cm->abc->K && sq->dsq[j+1] > cm->abc->K)
-		  escore = cm->esc[v][(int) (sq->dsq[i-1]*cm->abc->K+sq->dsq[j+1])];
+		if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		  escore = cm->esc[v][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
 		else
-		  escore = DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i-1], sq->dsq[j+1]);
+		  escore = DegeneratePairScore(cm->abc, cm->esc[v], dsq[i-1], dsq[j+1]);
 		if ((sc = beta[v][j+1][d+2] + cm->endsc[v] + 
 		     (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
 		  beta[cm->M][j][d] = sc;
@@ -4967,10 +4964,10 @@ outside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 	      case ML_st:
 	      case IL_st:
 		if (d == jp) continue;	
-		if (sq->dsq[i-1] < cm->abc->K) 
-		  escore = cm->esc[v][(int) sq->dsq[i-1]];
+		if (dsq[i-1] < cm->abc->K) 
+		  escore = cm->esc[v][(int) dsq[i-1]];
 		else
-		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i-1], cm->esc[v]);
+		  escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[v]);
 		if ((sc = beta[v][j][d+1] + cm->endsc[v] + 
 		     (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
 		  beta[cm->M][j][d] = sc;
@@ -4978,10 +4975,10 @@ outside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
 	      case MR_st:
 	      case IR_st:
 		if (j == j0) continue;
-		if (sq->dsq[j+1] < cm->abc->K) 
-		  escore = cm->esc[v][(int) sq->dsq[j+1]];
+		if (dsq[j+1] < cm->abc->K) 
+		  escore = cm->esc[v][(int) dsq[j+1]];
 		else
-		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j+1], cm->esc[v]);
+		  escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[v]);
 		if ((sc = beta[v][j+1][d+1] + cm->endsc[v] + 
 		     (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
 		  beta[cm->M][j][d] = sc;
@@ -5124,7 +5121,7 @@ outside_b(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0,
  * Returns:  score.
  */
 static float
-vinside_b(CM_t *cm, ESL_SQ *sq, 
+vinside_b(CM_t *cm, ESL_DSQ *dsq, int L, 
 	int r, int z, int i0, int i1, int j1, int j0, int useEL,
 	int do_full, float ***a, float ****ret_a,
 	struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
@@ -5225,10 +5222,10 @@ vinside_b(CM_t *cm, ESL_SQ *sq,
 	/*a[z][jp+1][ip-1] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[z])));*/
 	a[z][jp+1][ip-1] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1));
 
-	if (sq->dsq[i1-1] < cm->abc->K && sq->dsq[j1+1] < cm->abc->K)
-	  a[z][jp+1][ip-1] += cm->esc[z][(int) (sq->dsq[i1-1]*cm->abc->K+sq->dsq[j1+1])];
+	if (dsq[i1-1] < cm->abc->K && dsq[j1+1] < cm->abc->K)
+	  a[z][jp+1][ip-1] += cm->esc[z][(int) (dsq[i1-1]*cm->abc->K+dsq[j1+1])];
 	else
-	  a[z][jp+1][ip-1] += DegeneratePairScore(cm->abc, cm->esc[z], sq->dsq[i1-1], sq->dsq[j1+1]);
+	  a[z][jp+1][ip-1] += DegeneratePairScore(cm->abc, cm->esc[z], dsq[i1-1], dsq[j1+1]);
 	if (ret_shadow != NULL) shadow[z][jp+1][ip-1] = USED_EL;
 	if (a[z][jp+1][ip-1] < IMPOSSIBLE) a[z][jp+1][ip-1] = IMPOSSIBLE;
 	break;
@@ -5238,10 +5235,10 @@ vinside_b(CM_t *cm, ESL_SQ *sq,
 	/*a[z][jp][ip-1] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[z])));*/
 	a[z][jp][ip-1] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1));
 
-	if (sq->dsq[i1-1] < cm->abc->K)
-	  a[z][jp][ip-1] += cm->esc[z][(int) sq->dsq[i1-1]];
+	if (dsq[i1-1] < cm->abc->K)
+	  a[z][jp][ip-1] += cm->esc[z][(int) dsq[i1-1]];
 	else
-	  a[z][jp][ip-1] += esl_abc_FAvgScore(cm->abc, sq->dsq[i1-1], cm->esc[z]);
+	  a[z][jp][ip-1] += esl_abc_FAvgScore(cm->abc, dsq[i1-1], cm->esc[z]);
 	if (ret_shadow != NULL) shadow[z][jp][ip-1] = USED_EL;
 	if (a[z][jp][ip-1] < IMPOSSIBLE) a[z][jp][ip-1] = IMPOSSIBLE;
 	break;
@@ -5251,10 +5248,10 @@ vinside_b(CM_t *cm, ESL_SQ *sq,
 	/*a[z][jp+1][ip] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - StateDelta(cm->sttype[z])));*/
 	a[z][jp+1][ip] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1));
 	
-	if (sq->dsq[j1+1] < cm->abc->K)
-	  a[z][jp+1][ip] += cm->esc[z][(int) sq->dsq[j1+1]];
+	if (dsq[j1+1] < cm->abc->K)
+	  a[z][jp+1][ip] += cm->esc[z][(int) dsq[j1+1]];
 	else
-	  a[z][jp+1][ip] += esl_abc_FAvgScore(cm->abc, sq->dsq[j1+1], cm->esc[z]);
+	  a[z][jp+1][ip] += esl_abc_FAvgScore(cm->abc, dsq[j1+1], cm->esc[z]);
 	if (ret_shadow != NULL) shadow[z][jp+1][ip] = USED_EL;
 	if (a[z][jp+1][ip] < IMPOSSIBLE) a[z][jp+1][ip] = IMPOSSIBLE;
 	break;
@@ -5407,10 +5404,10 @@ vinside_b(CM_t *cm, ESL_SQ *sq,
 		    a[v][jp][ip] = sc; 
 		    if (ret_shadow != NULL) shadow[v][jp][ip] = (char) yoffset; 
 		  }
-	      if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
-		a[v][jp][ip] += cm->esc[v][(int) (sq->dsq[i]*cm->abc->K+sq->dsq[j])];
+	      if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
+		a[v][jp][ip] += cm->esc[v][(int) (dsq[i]*cm->abc->K+dsq[j])];
 	      else
-		a[v][jp][ip] += DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i], sq->dsq[j]);
+		a[v][jp][ip] += DegeneratePairScore(cm->abc, cm->esc[v], dsq[i], dsq[j]);
 	      if (a[v][jp][ip] < IMPOSSIBLE) a[v][jp][ip] = IMPOSSIBLE;  
 	    }
 	  }
@@ -5445,10 +5442,10 @@ vinside_b(CM_t *cm, ESL_SQ *sq,
 		    if (ret_shadow != NULL) shadow[v][jp][ip] = (char) yoffset; 
 		  }
 	      
-	      if (sq->dsq[i] < cm->abc->K)
-		a[v][jp][ip] += cm->esc[v][sq->dsq[i]];
+	      if (dsq[i] < cm->abc->K)
+		a[v][jp][ip] += cm->esc[v][dsq[i]];
 	      else
-		a[v][jp][ip] += esl_abc_FAvgScore(cm->abc, sq->dsq[i], cm->esc[v]);
+		a[v][jp][ip] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
 	      if (a[v][jp][ip] < IMPOSSIBLE) a[v][jp][ip] = IMPOSSIBLE;  
 	    }
 	  }
@@ -5485,10 +5482,10 @@ vinside_b(CM_t *cm, ESL_SQ *sq,
 		    if (ret_shadow != NULL) shadow[v][jp][ip] = (char) yoffset; 
 		  }
 	      
-	      if (sq->dsq[j] < cm->abc->K)
-		a[v][jp][ip] += cm->esc[v][sq->dsq[j]];
+	      if (dsq[j] < cm->abc->K)
+		a[v][jp][ip] += cm->esc[v][dsq[j]];
 	      else
-		a[v][jp][ip] += esl_abc_FAvgScore(cm->abc, sq->dsq[j], cm->esc[v]);
+		a[v][jp][ip] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
 	      if (a[v][jp][ip] < IMPOSSIBLE) a[v][jp][ip] = IMPOSSIBLE;  
 	    }
 	  }
@@ -5617,7 +5614,7 @@ vinside_b(CM_t *cm, ESL_SQ *sq,
  * 
  */
 static void
-voutside_b(CM_t *cm, ESL_SQ *sq, 
+voutside_b(CM_t *cm, ESL_DSQ *dsq, int L, 
 	   int r, int z, int i0, int i1, int j1, int j0, int useEL,
 	   int do_full, float ***beta, float ****ret_beta,
 	   struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
@@ -5711,30 +5708,30 @@ voutside_b(CM_t *cm, ESL_SQ *sq,
     switch(cm->sttype[r]) {
     case MP_st:
       if (i0 == i1 || j1 == j0) break;
-      if (sq->dsq[i0] < cm->abc->K && sq->dsq[j0] > cm->abc->K)
-	escore = cm->esc[r][(int) (sq->dsq[i0]*cm->abc->K+sq->dsq[j0])];
+      if (dsq[i0] < cm->abc->K && dsq[j0] > cm->abc->K)
+	escore = cm->esc[r][(int) (dsq[i0]*cm->abc->K+dsq[j0])];
       else
-	escore = DegeneratePairScore(cm->abc, cm->esc[r], sq->dsq[i0], sq->dsq[j0]);
+	escore = DegeneratePairScore(cm->abc, cm->esc[r], dsq[i0], dsq[j0]);
       beta[cm->M][j0-j1-1][1] = cm->endsc[r] + 
 	(cm->el_selfsc * ((j0-1)-(i0+1)+1)) + escore;
       break;
     case ML_st:
     case IL_st:
       if (i0 == i1) break;
-      if (sq->dsq[i0] < cm->abc->K) 
-	escore = cm->esc[r][(int) sq->dsq[i0]];
+      if (dsq[i0] < cm->abc->K) 
+	escore = cm->esc[r][(int) dsq[i0]];
       else
-	escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i0], cm->esc[r]);
+	escore = esl_abc_FAvgScore(cm->abc, dsq[i0], cm->esc[r]);
       beta[cm->M][j0-j1][1] = cm->endsc[r] + 
 	(cm->el_selfsc * ((j0)-(i0+1)+1)) + escore;
       break;
     case MR_st:
     case IR_st:
       if (j0==j1) break;
-      if (sq->dsq[j0] < cm->abc->K) 
-	escore = cm->esc[r][(int) sq->dsq[j0]];
+      if (dsq[j0] < cm->abc->K) 
+	escore = cm->esc[r][(int) dsq[j0]];
       else
-	escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j0], cm->esc[r]);
+	escore = esl_abc_FAvgScore(cm->abc, dsq[j0], cm->esc[r]);
       beta[cm->M][j0-j1-1][0] = cm->endsc[r] + 
 	(cm->el_selfsc * ((j0-1)-(i0)+1)) + escore;
       break;
@@ -5808,7 +5805,7 @@ voutside_b(CM_t *cm, ESL_SQ *sq,
       /* If we can get into deck v by a local begin transition, do an init
        * with that.
        */
-      if (r == 0 && i0 == 1 && j0 == sq->n && (cm->flags & CM_LOCAL_BEGIN))
+      if (r == 0 && i0 == 1 && j0 == L && (cm->flags & CM_LOCAL_BEGIN))
 	{
 	  if (cm->beginsc[v] > beta[v][j0-j1][0]) 
 	    beta[v][j0-j1][0] = cm->beginsc[v];
@@ -5838,10 +5835,10 @@ voutside_b(CM_t *cm, ESL_SQ *sq,
 	      case MP_st: 
 		if (j == j0 || i == i0) continue; /* boundary condition */
 
-		if (sq->dsq[i-1] < cm->abc->K && sq->dsq[j+1] > cm->abc->K)
-		  escore = cm->esc[y][(int) (sq->dsq[i-1]*cm->abc->K+sq->dsq[j+1])];
+		if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		  escore = cm->esc[y][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
 		else
-		  escore = DegeneratePairScore(cm->abc, cm->esc[y], sq->dsq[i-1], sq->dsq[j+1]);
+		  escore = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
 		
 		if ((sc = beta[y][jp+1][ip-1]+cm->tsc[y][voffset]+escore) > beta[v][jp][ip])
 		  beta[v][jp][ip] = sc;
@@ -5851,10 +5848,10 @@ voutside_b(CM_t *cm, ESL_SQ *sq,
 	      case IL_st: 
 		if (i == i0) continue;	/* boundary condition */
 
-		if (sq->dsq[i-1] < cm->abc->K) 
-		  escore = cm->esc[y][(int) sq->dsq[i-1]];
+		if (dsq[i-1] < cm->abc->K) 
+		  escore = cm->esc[y][(int) dsq[i-1]];
 		else
-		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i-1], cm->esc[y]);
+		  escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[y]);
 		  
 		if ((sc = beta[y][jp][ip-1]+cm->tsc[y][voffset]+escore) > beta[v][jp][ip])
 		  beta[v][jp][ip] = sc;
@@ -5864,10 +5861,10 @@ voutside_b(CM_t *cm, ESL_SQ *sq,
 	      case IR_st:
 		if (j == j0) continue;
 		  
-		if (sq->dsq[j+1] < cm->abc->K) 
-		  escore = cm->esc[y][(int) sq->dsq[j+1]];
+		if (dsq[j+1] < cm->abc->K) 
+		  escore = cm->esc[y][(int) dsq[j+1]];
 		else
-		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j+1], cm->esc[y]);
+		  escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[y]);
 
 		if ((sc = beta[y][jp+1][ip]+cm->tsc[y][voffset]+escore) > beta[v][jp][ip])
 		  beta[v][jp][ip] = sc;
@@ -5909,10 +5906,10 @@ voutside_b(CM_t *cm, ESL_SQ *sq,
 	      switch (cm->sttype[v]) {
 	      case MP_st:
 		if (j == j0 || i == i0) continue; /* boundary condition */
-		if (sq->dsq[i-1] < cm->abc->K && sq->dsq[j+1] > cm->abc->K)
-		  escore = cm->esc[v][(int) (sq->dsq[i-1]*cm->abc->K+sq->dsq[j+1])];
+		if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		  escore = cm->esc[v][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
 		else
-		  escore = DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i-1], sq->dsq[j+1]);
+		  escore = DegeneratePairScore(cm->abc, cm->esc[v], dsq[i-1], dsq[j+1]);
 		if ((sc = beta[v][jp+1][ip-1] + cm->endsc[v] + 
 		     (cm->el_selfsc * (j-i+1))
 		     + escore) > beta[cm->M][jp][ip])
@@ -5921,10 +5918,10 @@ voutside_b(CM_t *cm, ESL_SQ *sq,
 	      case ML_st:
 	      case IL_st:
 		if (i == i0) continue;
-		if (sq->dsq[i-1] < cm->abc->K) 
-		  escore = cm->esc[v][(int) sq->dsq[i-1]];
+		if (dsq[i-1] < cm->abc->K) 
+		  escore = cm->esc[v][(int) dsq[i-1]];
 		else
-		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i-1], cm->esc[v]);
+		  escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[v]);
 		if ((sc = beta[v][jp][ip-1] + cm->endsc[v] + 
 		     (cm->el_selfsc * (j-i+1))
 		     + escore) > beta[cm->M][jp][ip])
@@ -5933,10 +5930,10 @@ voutside_b(CM_t *cm, ESL_SQ *sq,
 	      case MR_st:
 	      case IR_st:
 		if (j == j0) continue;
-		if (sq->dsq[j+1] < cm->abc->K) 
-		  escore = cm->esc[v][(int) sq->dsq[j+1]];
+		if (dsq[j+1] < cm->abc->K) 
+		  escore = cm->esc[v][(int) dsq[j+1]];
 		else
-		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j+1], cm->esc[v]);
+		  escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[v]);
 		if ((sc = beta[v][jp+1][ip] + cm->endsc[v] + 
 		     (cm->el_selfsc * (j-i+1))
 		     + escore) > beta[cm->M][jp][ip])
@@ -6078,7 +6075,7 @@ alloc_banded_vjd_deck(int L, int i, int j, int min, int max)
 
   //printf("in alloc banded vjd deck, L : %d, i : %d, j : %d, min : %d, max : %d\n", L, i, j, min, max);
 
-  ESL_DPRINTF3(("alloc_vjd_deck : %.4f\n", size_vjd_deck(sq->n,i,j)));
+  ESL_DPRINTF3(("alloc_vjd_deck : %.4f\n", size_vjd_deck(L,i,j)));
   ESL_ALLOC(a, sizeof(float *) * (L+1)); /* always alloc 0..L rows, some of which are NULL */
   for (jp = 0;   jp < i-1;    jp++) a[jp]     = NULL;
   for (jp = j+1; jp <= L;     jp++) a[jp]     = NULL;
@@ -6528,7 +6525,7 @@ debug_print_alpha(float ***alpha, CM_t *cm, int L)
  * Returns: Score of the optimal alignment.  
  */
 static float 
-inside_b_me(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_full,
+inside_b_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
 	    float ***alpha, float ****ret_alpha, 
 	    void ****ret_shadow, 
 	    int allow_begin, int *ret_b, float *ret_bsc,
@@ -6564,7 +6561,7 @@ inside_b_me(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_fu
   bsc = IMPOSSIBLE;
   W   = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
 				/* if caller didn't give us a deck pool, make one */
-  end = alloc_vjd_deck(sq->n, i0, j0);
+  end = alloc_vjd_deck(L, i0, j0);
   nends = CMSubtreeCountStatetype(cm, vroot, E_st);
   for (jp = 0; jp <= W; jp++) {
     j = i0+jp-1;		/* e.g. j runs from 0..L on whole seq */
@@ -6617,14 +6614,14 @@ inside_b_me(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_fu
       if (cm->sttype[v] == E_st) { 
 	alpha[v] = end; continue; 
       } 
-      alpha[v] = alloc_banded_vjd_deck(sq->n, i0, j0, dmin[v], dmax[v]);
+      alpha[v] = alloc_banded_vjd_deck(L, i0, j0, dmin[v], dmax[v]);
       
       if (ret_shadow != NULL) {
 	if (cm->sttype[v] == B_st) {
-	  kshad     = alloc_banded_vjd_kshadow_deck(sq->n, i0, j0, dmin[v], dmax[v]);
+	  kshad     = alloc_banded_vjd_kshadow_deck(L, i0, j0, dmin[v], dmax[v]);
 	  shadow[v] = (void **) kshad;
 	} else {
-	  yshad     = alloc_banded_vjd_yshadow_deck(sq->n, i0, j0, dmin[v], dmax[v]);
+	  yshad     = alloc_banded_vjd_yshadow_deck(L, i0, j0, dmin[v], dmax[v]);
 	  shadow[v] = (void **) yshad;
 	}
       }
@@ -6821,10 +6818,10 @@ inside_b_me(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_fu
 		      }
 		  }
 		i = j-d+1;
-		if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
-		  alpha[v][j][dp_v] += cm->esc[v][(int) (sq->dsq[i]*cm->abc->K+sq->dsq[j])];
+		if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
+		  alpha[v][j][dp_v] += cm->esc[v][(int) (dsq[i]*cm->abc->K+dsq[j])];
 		else
-		  alpha[v][j][dp_v] += DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i], sq->dsq[j]);
+		  alpha[v][j][dp_v] += DegeneratePairScore(cm->abc, cm->esc[v], dsq[i], dsq[j]);
 		
 		if (alpha[v][j][dp_v] < IMPOSSIBLE) alpha[v][j][dp_v] = IMPOSSIBLE;
 		/* CYK Full ME Bands used 7 end block */
@@ -6862,10 +6859,10 @@ inside_b_me(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_fu
 		      }
 		  }
 		i = j-d+1;
-		if (sq->dsq[i] < cm->abc->K)
-		  alpha[v][j][dp_v] += cm->esc[v][sq->dsq[i]];
+		if (dsq[i] < cm->abc->K)
+		  alpha[v][j][dp_v] += cm->esc[v][dsq[i]];
 		else
-		  alpha[v][j][dp_v] += esl_abc_FAvgScore(cm->abc, sq->dsq[i], cm->esc[v]);
+		  alpha[v][j][dp_v] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
 		if (alpha[v][j][dp_v] < IMPOSSIBLE) alpha[v][j][dp_v] = IMPOSSIBLE;
 		/* CYK Full ME Bands used 9 end block */
 	      }
@@ -6899,10 +6896,10 @@ inside_b_me(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_fu
 			  }
 		      }
 		  }
-		if (sq->dsq[j] < cm->abc->K)
-		  alpha[v][j][dp_v] += cm->esc[v][sq->dsq[j]];
+		if (dsq[j] < cm->abc->K)
+		  alpha[v][j][dp_v] += cm->esc[v][dsq[j]];
 		else
-		  alpha[v][j][dp_v] += esl_abc_FAvgScore(cm->abc, sq->dsq[j], cm->esc[v]);
+		  alpha[v][j][dp_v] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
 		
 		if (alpha[v][j][dp_v] < IMPOSSIBLE) alpha[v][j][dp_v] = IMPOSSIBLE;
 		/* CYK Full ME Bands used 11 end block */
@@ -7023,7 +7020,7 @@ inside_b_me(CM_t *cm, ESL_SQ *sq, int vroot, int vend, int i0, int j0, int do_fu
  *           traceback, which already has state r at tr->n-1.
  */
 static float
-insideT_b_me(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr, 
+insideT_b_me(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 	     int r, int z, int i0, int j0, 
 	     int allow_begin, int *dmin, int *dmax)
 {
@@ -7039,7 +7036,7 @@ insideT_b_me(CM_t *cm, ESL_SQ *sq, Parsetree_t *tr,
   int       dp;                 /* dp: d' d offset in current state v's band; dp = d - dmin[v] */
   int       kp;                 /* dp: k' k offset in current state v's band; kp = k - dmin[v] */
 
-  sc = inside_b_me(cm, sq, r, z, i0, j0, 
+  sc = inside_b_me(cm, dsq, L, r, z, i0, j0, 
 		   BE_EFFICIENT,	/* memory-saving mode */
 		   NULL, NULL,	        /* manage your own matrix, I don't want it */
 		   &shadow,		/* return a shadow matrix to me. */
