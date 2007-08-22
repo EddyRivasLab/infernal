@@ -39,8 +39,9 @@ static ESL_OPTIONS options[] = {
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
   { "-1",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "use tabular output summary format, 1 line per CM", 1 },
   { "-t",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "perform and report on timing experiments", 1 },
-  { "-L",        eslARG_INT,    "1000",NULL, "n>0",     NULL,      "-t",        NULL, "with -t, length of sequences for search    stats", 1 },
+  { "-L",        eslARG_INT,    "1000",NULL, "n>0",     NULL,      "-t",        NULL, "with -t, length of sequences for CM search stats", 1 },
   { "-N",        eslARG_INT,    "25",  NULL, "n>0",     NULL,      "-t",        NULL, "with -t, number of sequences for alignment stats", 1 },
+  { "--cp9L",    eslARG_INT,    "100000",NULL, "n>0",   NULL,      "-t",        NULL, "with -t, length of sequences for CP9 search stats", 1 },
   { "--beta",    eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,      NULL,        NULL, "set tail loss prob for QDB stats to <x>", 1 },
   { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,      NULL,       NULL,  "set tail loss prob for HMM banded stats to <x>", 1 },
   { "--exp",     eslARG_REAL,   NULL,  NULL, "0<x<=1.0",NULL,      NULL,        NULL, "exponentiate CM probabilities by <x> before calc'ing stats",  1 },
@@ -157,22 +158,29 @@ int
 summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w) 
 {
   int status;     
-  int L = esl_opt_GetInteger(go, "-L"); /* length sequence to search */
+  int L     = esl_opt_GetInteger(go, "-L");     /* length sequence to search */
+  int L_cp9 = esl_opt_GetInteger(go, "--cp9L"); /* length sequence to search with CP9 */
   float dpc;       /* number of     mega-DP calcs for search of length L */
   float dpc_q;     /* number of QDB mega-DP calcs for search of length L */
   float th_acc;    /* theoretical QDB acceleration */
+  float dpc_v;     /* number of CP9 mega-DP calcs for search of length L */
 
   /* optional, -t related variables */
-  ESL_DSQ *dsq;    /* digitized sequence of length L for timings  */
+  ESL_DSQ *dsq;    /* digitized sequence of length L for CM  timings  */
+  ESL_DSQ *dsq_cp9;/* digitized sequence of length L for CP9 timings  */
   float t_c;       /* number of seconds (w->user) for        CYK search */
   float t_i;       /* number of seconds (w->user) for     Inside search */
   float t_cq;      /* number of seconds (w->user) for QDB    CYK search */
   float t_iq;      /* number of seconds (w->user) for QDB Inside search */
+  float t_v;       /* number of seconds (w->user) for CP9 Viterbi search */
+  float t_f;       /* number of seconds (w->user) for CP9 Forward search */
 
   if(L < cm->W) { L = cm->W; printf("\tL increased to minimum size of cm->W (%d)\n", L); }
   if(esl_opt_GetBoolean(go, "-t")) { 
-    ESL_ALLOC(dsq, sizeof(ESL_DSQ) * L+2);
+    ESL_ALLOC(dsq,     sizeof(ESL_DSQ) * L    +2);
+    ESL_ALLOC(dsq_cp9, sizeof(ESL_DSQ) * L_cp9+2);
     esl_rnd_xfIID(r, cm->null, cm->abc->K, L, dsq);
+    esl_rnd_xfIID(r, cm->null, cm->abc->K, L_cp9, dsq_cp9);
   }
 
   /* estimate speedup due to QDB */
@@ -180,10 +188,13 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
   dpc_q  = count_scan_dp_calcs(cm, L, TRUE)  / 1000000.;
   th_acc = dpc / dpc_q;
 
+  dpc_v  = (float) (cm->clen+1) * L_cp9 * 11; /* 11 transition's queried per HMM node: 9 main model, begin,end */ 
+  dpc_v /= 1000000;
+
   /* print simple stats if -t not enabled */
-  printf("\tL: %d DP megacalcs: non-banded: %6.2f QDB: %6.2f th. speedup: %6.2fX\n", L, dpc, dpc_q, th_acc);
- else /* -t enabled, do timings  */
-    {
+  printf("\tL: %d DP megacalcs: non-banded: %6.2f QDB: %6.2f th. speedup: %6.2fX\n\tL: %d CP9 calcs:%6.2f\n", L, dpc, dpc_q, th_acc, L_cp9, dpc_v);
+  if(esl_opt_GetBoolean(go, "-t")) /* -t enabled, do timings  */
+  {
       /* cyk */
       esl_stopwatch_Start(w);
       CYKScan (cm, dsq, 1, L, cm->W, 0., NULL);
@@ -204,9 +215,36 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
       iInsideBandedScan (cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL);
       esl_stopwatch_Stop(w);
       t_iq = w->user;
-      printf("\t   CYK:\t%6.2fX QDB spdup\t%6.2f megacalcs/s\t %6.0f res/s\n", (t_c/t_cq), (dpc_q/t_cq), (L/t_cq));
-      printf("\tInside:\t%6.2fX QDB spdup\t%6.2f megacalcs/s\t %6.0f res/s\n", (t_i/t_iq), (dpc_q/t_iq), (L/t_iq));
-  }
+
+      if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))
+	esl_fatal("Couldn't build a CP9 HMM from the CM\n");
+      cm->flags |= CM_CP9; /* raise the CP9 flag */
+      
+      /* CP9 viterbi */
+      esl_stopwatch_Start(w);
+      CP9Viterbi(cm, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, NULL, NULL,
+		 TRUE,   /* we're scanning */
+		 TRUE,   /* be memory efficient */
+		 NULL,   /* don't want the DP matrix back */
+		 NULL);  /* don't want traces back */
+      esl_stopwatch_Stop(w);
+      t_v = w->user;
+      /* CP9 forward */
+      esl_stopwatch_Start(w);
+      CP9Forward(cm, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, NULL, NULL,
+		 TRUE,   /* we're scanning */
+		 FALSE,  /* we're not ultimately aligning */
+		 FALSE,  /* we're not rescanning */
+		 TRUE,   /* be memory efficient */
+		 NULL);  /* don't want the DP matrix back */
+      esl_stopwatch_Stop(w);
+      t_f = w->user;
+      printf("\t    CYK:\t%6.2fX QDB spdup\t%6.2f megacalcs/s\t %6.0f res/s\n", (t_c/t_cq), (dpc_q/t_cq), ((float) L/t_cq));
+      printf("\t Inside:\t%6.2fX QDB spdup\t%6.2f megacalcs/s\t %6.0f res/s\n", (t_i/t_iq), (dpc_q/t_iq), ((float) L/t_iq));
+      printf("\tViterbi:\t                \t%6.2f megacalcs/s\t %6.0f res/s\n",             (dpc_v/t_v),  ((float) L_cp9/t_v));
+      printf("\tForward:\t                \t%6.2f megacalcs/s\t %6.0f res/s\n",             (dpc_v/t_f),  ((float) L_cp9/t_f));
+      printf("t_v: %f\nt_f: %f\n", t_v, t_f);
+    }
   return eslOK;
 
  ERROR:

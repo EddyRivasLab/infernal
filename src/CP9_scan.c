@@ -354,7 +354,6 @@ CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
 	    }
 	}
     } /* end loop over end positions j */
-  sc = erow[W];
   /*printf("returing sc: %d from CPViterbi()\n", sc);*/
   if((!(cm->search_opts & CM_SEARCH_HMMGREEDY)) && /* resolve overlaps optimally */
      do_scan) /* else we can save time by skipping traceback */
