@@ -729,6 +729,7 @@ CYKBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int 
   int       gamma_j;            /* j index in the gamma matrix, which is indexed 0..j0-i0+1, 
 				 * while j runs from i0..j0 */
   int       gamma_i;            /* i index in the gamma* data structures */
+  int       curr_dmin;          /* temporary value for min d in for loops */
   int       curr_dmax;          /* temporary value for max d in for loops */
   float     best_score;         /* Best overall score from semi-HMM to return */
   float     best_neg_score;     /* Best score overall score to return, used if all scores < 0 */
@@ -857,11 +858,11 @@ CYKBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int 
 	  /* determine max d we're allowing for this state v and this position j */
 	  curr_dmax = (gamma_j < dmax[v]) ? gamma_j : dmax[v];
 	  if(curr_dmax > W) curr_dmax = W;
-
+	  curr_dmin = (dmin[v] > 0) ? dmin[v] : 1;
 	  if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
 	    {
 	      if (cm->stid[v] == BEGL_S) jp = j % (W+1); else jp = cur;
-	      for (d = dmin[v]; d <= curr_dmax; d++) 
+	      for (d = curr_dmin; d <= curr_dmax; d++) 
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][jp][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
@@ -873,14 +874,13 @@ CYKBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int 
 	    }
 	  else if (cm->sttype[v] == MP_st) 
 	    {
-	      for (d = dmin[v]; d <= curr_dmax; d++)
+	      for (d = curr_dmin; d <= curr_dmax; d++)
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		    if ((sc = alpha[y+yoffset][prv][d-2] + cm->tsc[v][yoffset]) > alpha[v][cur][d])
 		      alpha[v][cur][d] = sc;
-		  
 		  i = j-d+1;
 		  if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
 		    alpha[v][cur][d] += cm->esc[v][(int) (dsq[i]*cm->abc->K+dsq[j])];
@@ -892,14 +892,13 @@ CYKBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int 
 	    }
 	  else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) 
 	    {
-	      for (d = dmin[v]; d <= curr_dmax; d++)
+	      for (d = curr_dmin; d <= curr_dmax; d++)
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		    if ((sc = alpha[y+yoffset][cur][d-1] + cm->tsc[v][yoffset]) > alpha[v][cur][d])
 		      alpha[v][cur][d] = sc;
-		  
 		  i = j-d+1;
 		  if (dsq[i] < cm->abc->K)
 		    alpha[v][cur][d] += cm->esc[v][(int) dsq[i]];
@@ -911,14 +910,13 @@ CYKBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int 
 	    }
 	  else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) 
 	    {
-	      for (d = dmin[v]; d <= curr_dmax; d++)
+	      for (d = curr_dmin; d <= curr_dmax; d++)
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		    if ((sc = alpha[y+yoffset][prv][d-1] + cm->tsc[v][yoffset]) > alpha[v][cur][d])
 		      alpha[v][cur][d] = sc;
-		  
 		  if (dsq[j] < cm->abc->K)
 		    alpha[v][cur][d] += cm->esc[v][(int) dsq[j]];
 		  else
@@ -932,7 +930,7 @@ CYKBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int 
 	      w = cm->cfirst[v];
 	      y = cm->cnum[v];
 	      i = j-d+1;
-	      for (d = dmin[v]; d <= curr_dmax; d++) 
+	      for (d = curr_dmin; d <= curr_dmax; d++) 
 		{
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
 		  /* k is the length of the right fragment */
@@ -945,7 +943,7 @@ CYKBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int 
 		  else kmax = d-dmin[w];
 		  
 		  for (; k <= kmax; k++)
-		    {
+		    { 
 		      jp = (j-k)%(W+1);	   /* jp is rolling index into BEGL_S deck j dimension */
 		      if ((sc = alpha[w][jp][d-k] + alpha[y][cur][k]) > alpha[v][cur][d])
 			alpha[v][cur][d] = sc;
@@ -968,8 +966,9 @@ CYKBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int 
       /* determine max d we're allowing for the root state and this position j */
       curr_dmax = (gamma_j < dmax[0]) ? gamma_j : dmax[0];
       if(curr_dmax > W) curr_dmax = W;
+      curr_dmin = (dmin[0] > 0) ? dmin[0] : 1;
 
-      for (d = dmin[0]; d <= curr_dmax; d++)
+      for (d = curr_dmin; d <= curr_dmax; d++)
 	{
 	  y = cm->cfirst[0];
 	  alpha[0][cur][d] = alpha[y][cur][d] + cm->tsc[0][0];
@@ -977,7 +976,6 @@ CYKBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int 
 	  for (yoffset = 1; yoffset < cm->cnum[0]; yoffset++)
 	    if ((sc = alpha[y+yoffset][cur][d] + cm->tsc[0][yoffset]) > alpha[0][cur][d]) 
 	      alpha[0][cur][d] = sc;
-
 	  if (alpha[0][cur][d] < IMPROBABLE) alpha[0][cur][d] = IMPOSSIBLE;
 	  if (alpha[0][cur][d] > best_neg_score) best_neg_score = alpha[0][cur][d];
 	}
@@ -1111,7 +1109,6 @@ CYKBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int 
   
   if(best_score <= 0.) /* there were no hits found by the semi-HMM, no hits above 0 bits */
     best_score = best_neg_score;
-
   return best_score;
 
  ERROR:

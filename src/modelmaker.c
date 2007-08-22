@@ -95,6 +95,7 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
   int  diff, bestdiff, bestk;   /* used while finding optimal split points    */   
   int  nnodes;			/* number of nodes in CM                      */
   int  nstates;			/* number of states in CM                     */
+  int  clen;                    /* consensus length of the model              */
 
   if (msa->ss_cons == NULL)
     esl_fatal("No consensus structure annotation available for that alignment.");
@@ -157,7 +158,7 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
   nstates = nnodes = 0;
   gtr = CreateParsetree();	/* the parse tree we'll grow        */
   pda = esl_stack_ICreate();    /* a pushdown stack for our indices */
-  cm->clen = 0;
+  clen = 0;
 
   /* Construction strategy has to make sure we number the nodes in
    * preorder traversal: for bifurcations, we can't attach the right 
@@ -244,7 +245,7 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
 	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
 	nstates += 3;		/* MATL_nd -> ML_st, D_st, IL_st */
 	nnodes++;
-	cm->clen += 1;
+	clen += 1;
       }
 
       else if (ct[j] == 0) { 	/* j unpaired. MATR node. Deal with INSR */
@@ -256,7 +257,7 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
 	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
 	nstates += 3;		/* MATR_nd -> MR_st, D_st, IL_st */
 	nnodes++;
-	cm->clen += 1;
+	clen += 1;
       }
 
       else if (ct[i] == j) { /* i,j paired to each other. MATP. deal with INSL, INSR */
@@ -269,7 +270,7 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
 	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
 	nstates += 6;		/* MATP_nd -> MP_st, ML_st, MR_st, D_st, IL_st, IR_st */
 	nnodes++;
-	cm->clen += 2;
+	clen += 2;
       }
 
       else /* i,j paired but not to each other. BIFURC. no INS. */
@@ -336,6 +337,7 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
   cm = CreateCM(nnodes, nstates, msa->abc);
   cm_from_guide(cm, gtr);
   CMZero(cm);
+  cm->clen = clen;
 
   free(matassign);
   if (ret_cm  != NULL) *ret_cm  = cm;  else FreeCM(cm);
@@ -1605,6 +1607,7 @@ clean_cs(char *cs, int alen)
 
   /* Check it again.
    */
+  ESL_ALLOC(ct, (alen+1) * sizeof(int));
   status = esl_wuss2ct(cs, alen, ct);  
   free(ct);
   if(status == eslOK) 
