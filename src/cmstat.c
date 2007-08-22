@@ -37,7 +37,10 @@
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
-  { "-v",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "verbose output", 1 },
+  { "-1",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "use tabular output summary format, 1 line per CM", 1 },
+  { "-t",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "perform and report on timing experiments", 1 },
+  { "-L",        eslARG_INT,    "1000",NULL, "n>0",     NULL,      "-t",        NULL, "with -t, length of sequences for search    stats", 1 },
+  { "-N",        eslARG_INT,    "25",  NULL, "n>0",     NULL,      "-t",        NULL, "with -t, number of sequences for alignment stats", 1 },
   { "--beta",    eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,      NULL,        NULL, "set tail loss prob for QDB stats to <x>", 1 },
   { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,      NULL,       NULL,  "set tail loss prob for HMM banded stats to <x>", 1 },
   { "--exp",     eslARG_REAL,   NULL,  NULL, "0<x<=1.0",NULL,      NULL,        NULL, "exponentiate CM probabilities by <x> before calc'ing stats",  1 },
@@ -47,6 +50,8 @@ static ESL_OPTIONS options[] = {
 static char usage[]  = "[-options] <cmfile>";
 static char banner[] = "display summary statistics for CMs";
 
+static int    summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w); 
+static int    summarize_alignment(ESL_GETOPTS *go, CM_t *cm);
 static double cm_MeanMatchRelativeEntropy(const CM_t *cm);
 static double cm_MeanMatchEntropy(const CM_t *cm);
 static double cm_MeanMatchInfo(const CM_t *cm);
@@ -56,13 +61,12 @@ main(int argc, char **argv)
 {
   ESL_GETOPTS     *go = NULL;   /* command line processing   */
   ESL_ALPHABET    *abc = NULL;  /* alphabet                  */
+  ESL_RANDOMNESS  *r   = NULL;  /* source of randomness      */
+  ESL_STOPWATCH   *w   = NULL;  /* for timings               */
   char            *cmfile;	/* name of input CM file     */ 
   CMFILE          *cmfp;	/* open input CM file stream */
   CM_t            *cm;          /* CM most recently read     */
   int              ncm;         /* CM index                  */
-  float            s_dpc;       /*     DP cells for search   */
-  float            s_dpc_qdb;   /* QDB DP cells for search   */
-  float            s_spdup;     /* search speedup estimate   */
 
   /* Process command line options.
    */
@@ -94,7 +98,10 @@ main(int argc, char **argv)
     }
 
   cmfile     = esl_opt_GetArg(go, 1); 
-
+  if(esl_opt_GetBoolean(go, "-t")) { 
+    r = esl_randomness_CreateTimeseeded();
+    w = esl_stopwatch_Create();
+  }
   /* Initializations: open the CM file
    */
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
@@ -125,17 +132,11 @@ main(int argc, char **argv)
 	   CMCountStatetype(cm, B_st),
 	   cm_MeanMatchRelativeEntropy(cm));
 	   /*cm_MeanMatchInfo(cm));*/
-    if(esl_opt_GetBoolean(go, "-v"))
-      {
-	/* estimate speed up due to QDB */
-	s_dpc     = CYKDemands(cm, cm->W, NULL,     NULL,     TRUE) / 1000000.; 
-	s_dpc_qdb = CYKDemands(cm, cm->W, cm->dmin, cm->dmax, TRUE) / 1000000.; 
-	s_spdup   = s_dpc / s_dpc_qdb;
-	s_dpc    *= 1000000. / cm->W;
-	s_dpc_qdb*= 1000000. / cm->W;
-	printf("\tSearch stats:\n\t\t     %6.2f MC/MB\n\t\tQDB: %6.2f MC/MB\n\t\tACC: %6.2f\n",
-	       s_dpc, s_dpc_qdb, s_spdup);
-      }
+
+    if(! esl_opt_GetBoolean(go, "-1")) {
+      summarize_search(go, cm, r, w);
+      summarize_alignment(go, cm);
+    }
     FreeCM(cm);
   }
     
@@ -145,7 +146,90 @@ main(int argc, char **argv)
   exit(0);
 }
 
+/* Function:  summarize_search()
+ * Incept:    EPN, Tue Aug 21 20:00:28 2007
+ *
+ * Purpose:   Summarize search statistics to varying extents
+ *            based on command-line options.
+ */
+int
+summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w) 
+{
+  int status;     
+  int L = esl_opt_GetInteger(go, "-L"); /* length sequence to search */
+  float dpc;       /* number of     mega-DP cells for search of length L */
+  float dpc_q;     /* number of QDB mega-DP cells for search of length L */
+  float th_acc;    /* theoretical QDB acceleration */
 
+  /* optional, -t related variables */
+  ESL_DSQ *dsq;    /* digitized sequence of length L for timings  */
+  float t_c;       /* number of seconds (w->user) for        CYK search */
+  float t_i;       /* number of seconds (w->user) for     Inside search */
+  float t_cq;      /* number of seconds (w->user) for QDB    CYK search */
+  float t_iq;      /* number of seconds (w->user) for QDB Inside search */
+
+  if(L < cm->W) { L = cm->W; printf("\tL increased to minimum size of cm->W (%d)\n", L); }
+  if(esl_opt_GetBoolean(go, "-t")) { 
+    ESL_ALLOC(dsq, sizeof(ESL_DSQ) * L+2);
+    esl_rnd_xfIID(r, cm->null, cm->abc->K, L, dsq);
+  }
+
+  /* estimate speedup due to QDB */
+  dpc    = (CYKDemands(cm, cm->W, NULL,     NULL,     TRUE) / 1000000.); 
+  dpc_q  = (CYKDemands(cm, cm->W, cm->dmin, cm->dmax, TRUE) / 1000000.); 
+  dpc   *= (float) L / (float) cm->W;
+  dpc_q *= (float) L / (float) cm->W;
+  th_acc = dpc / dpc_q;
+
+  printf("\tSearch stats against target sequence of length %d residues:\n", L);
+  /* print simple stats if -t not enabled */
+  if(! esl_opt_GetBoolean(go, "-t"))
+    printf("\tDP megacells: non-banded: %6.2f QDB: %6.2f th. speedup: %6.2fX", dpc, dpc_q, th_acc);
+ else /* -t enabled, do timings  */
+    {
+      /* cyk */
+      esl_stopwatch_Start(w);
+      CYKScan (cm, dsq, 1, L, cm->W, 0., NULL);
+      esl_stopwatch_Stop(w);
+      t_c = w->user;
+      /* qdb cyk */
+      esl_stopwatch_Start(w);
+      CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL);
+      esl_stopwatch_Stop(w);
+      t_cq = w->user;
+      /* inside */
+      esl_stopwatch_Start(w);
+      iInsideScan (cm, dsq, 1, L, cm->W, 0., NULL);
+      esl_stopwatch_Stop(w);
+      t_i = w->user;
+      /* inside */
+      esl_stopwatch_Start(w);
+      iInsideBandedScan (cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL);
+      esl_stopwatch_Stop(w);
+      t_iq = w->user;
+      printf("\t   CYK:\t%6.2fX QDB spdup\t%6.2f megacells/s\t %6.0f res/s\n", (t_c/t_cq), (dpc_q/t_cq), (L/t_cq));
+      printf("\tInside:\t%6.2fX QDB spdup\t%6.2f megacells/s\t %6.0f res/s\n", (t_i/t_iq), (dpc_q/t_iq), (L/t_iq));
+  }
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
+/* Function:  summarize_alignment()
+ * Incept:    
+ *
+ * Purpose:   Summarize alignment statistics to varying extents
+ *            based on command-line options.
+ */
+int
+summarize_alignment(ESL_GETOPTS *go, CM_t *cm)
+{
+  /* HERE: do HMM banded alignment stats
+   * sample N=100 seqs, and calculate posteriors, determine new
+   * number of CYK DP calcs AND CP9 F/B calcs to get bands. */
+  return eslOK;
+}
 /* Function:  cm_MeanMatchInfo()
  * Incept:    SRE, Fri May  4 11:43:56 2007 [Janelia]
  *
@@ -252,4 +336,5 @@ cm_MeanMatchRelativeEntropy(const CM_t *cm)
   esl_fatal("Memory allocation error.");
   return 0.; /* NOTREACHED */
 }
+
 
