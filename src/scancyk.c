@@ -240,6 +240,8 @@ float
 CYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, 
 	float cutoff, scan_results_t *results)
 {
+  long dpc = 0;
+  long bifdpc = 0;
   /* Contract check */
   if(j0 < i0)
     esl_fatal("ERROR in CYKScan, i0: %d j0: %d\n", i0, j0);
@@ -376,8 +378,11 @@ CYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W,
 		  y = cm->cfirst[v];
 		  alpha[v][jp][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		    if ((sc = alpha[y+yoffset][cur][d] + cm->tsc[v][yoffset]) > alpha[v][jp][d]) 
+		    {
+  		      dpc++;
+		      if ((sc = alpha[y+yoffset][cur][d] + cm->tsc[v][yoffset]) > alpha[v][jp][d]) 
 		      alpha[v][jp][d] = sc;
+		    }
 		  if (alpha[v][jp][d] < IMPOSSIBLE) alpha[v][jp][d] = IMPOSSIBLE;
 		}
 	    }
@@ -388,9 +393,11 @@ CYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W,
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		    if ((sc = alpha[y+yoffset][prv][d-2] + cm->tsc[v][yoffset]) > alpha[v][cur][d])
-		      alpha[v][cur][d] = sc;
-		  
+		    {
+		      dpc++;
+		      if ((sc = alpha[y+yoffset][prv][d-2] + cm->tsc[v][yoffset]) > alpha[v][cur][d])
+			alpha[v][cur][d] = sc;
+		    }
 		  i = j-d+1;
 		  if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
 		    alpha[v][cur][d] += cm->esc[v][(dsq[i]*cm->abc->K+dsq[j])];
@@ -407,8 +414,11 @@ CYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W,
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v]))); 
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		    if ((sc = alpha[y+yoffset][cur][d-1] + cm->tsc[v][yoffset]) > alpha[v][cur][d])
-		      alpha[v][cur][d] = sc;
+		    {
+		      dpc++;
+		      if ((sc = alpha[y+yoffset][cur][d-1] + cm->tsc[v][yoffset]) > alpha[v][cur][d])
+			alpha[v][cur][d] = sc;
+		    }
 		  
 		  i = j-d+1;
 		  if (dsq[i] < cm->abc->K)
@@ -425,10 +435,11 @@ CYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W,
 		{
 		  y = cm->cfirst[v];
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
-		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
+		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+		    dpc++;
 		    if ((sc = alpha[y+yoffset][prv][d-1] + cm->tsc[v][yoffset]) > alpha[v][cur][d])
 		      alpha[v][cur][d] = sc;
-		  
+		  }		  
 		  if (dsq[j] < cm->abc->K)
 		    alpha[v][cur][d] += cm->esc[v][dsq[j]];
 		  else
@@ -445,12 +456,13 @@ CYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W,
 	      for (d = 1; d <= W && d <= gamma_j; d++) 
 		{
 		  alpha[v][cur][d] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
-
+		  
 		  for (k = 0; k <= d; k++) /* k is length of right fragment */
 		    {
 		      jp = (j-k)%(W+1);	   /* jp is rolling index into BEGL_S deck j dimension */
+		      bifdpc++;
 		      if ((sc = alpha[w][jp][d-k] + alpha[y][cur][k]) > alpha[v][cur][d])
-			alpha[v][cur][d] = sc;
+			alpha[v][cur][d] = sc; 
 		    }
 		  if (alpha[v][cur][d] < IMPOSSIBLE) alpha[v][cur][d] = IMPOSSIBLE;
 		}
@@ -471,10 +483,11 @@ CYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W,
 	  y = cm->cfirst[0];
 	  alpha[0][cur][d] = alpha[y][cur][d] + cm->tsc[0][0];
 	  bestr[d]         = 0;	/* root of the traceback = root state 0 */
-	  for (yoffset = 1; yoffset < cm->cnum[0]; yoffset++)
+	  for (yoffset = 1; yoffset < cm->cnum[0]; yoffset++) {
+	    dpc++;
 	    if ((sc = alpha[y+yoffset][cur][d] + cm->tsc[0][yoffset]) > alpha[0][cur][d]) 
 	      alpha[0][cur][d] = sc;
-
+	  }
 	  if (cm->flags & CM_LOCAL_BEGIN) {
 	    for (y = 1; y < cm->M; y++) {
 	      if (cm->stid[y] == BEGL_S) sc = alpha[y][j%(W+1)][d] + cm->beginsc[y];
@@ -597,6 +610,9 @@ CYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W,
   if(best_score <= 0.) /* there were no hits found by the semi-HMM, no hits above 0 bits */
     best_score = best_neg_score;
 
+  printf("CYKScan    dpc: %ld\n", dpc);
+  printf("CYKScan bifdpc: %ld\n", bifdpc);
+  printf("CYKScan   both: %ld\n", bifdpc + dpc);
   return best_score;
 
  ERROR:

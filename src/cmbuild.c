@@ -35,7 +35,7 @@
 
 #define WGTOPTS "--wgsc,--wblosum,--wpb,--wnone,--wgiven"      /* Exclusive options for relative weighting                    */
 #define EFFOPTS "--eent,--enone"               /* Exclusive options for effective sequence number calculation */
-#define ALPHOPTS "--rna"                       /* Exclusive options for alphabet choice */
+#define ALPHOPTS "--rna,--dna"                 /* Exclusive options for specifiying input MSA alphabet*/
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
@@ -85,8 +85,9 @@ static ESL_OPTIONS options[] = {
   { "--call",    eslARG_NONE,  FALSE,  NULL, NULL,      NULL,      NULL,        NULL, "build a separate CM from every seq in MSA", 8 },
   { "--corig",   eslARG_NONE,  FALSE,  NULL, NULL,      NULL,      NULL,        NULL, "build an additional CM from the original, full MSA", 8 }, 
   { "--cdump",   eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "dump an MSA for each cluster (CM) to file <s>", 8 },
-/* Selecting the alphabet rather than autoguessing it */
+/* Selecting the input MSA alphabet rather than autoguessing it */
   { "--rna",     eslARG_NONE,   FALSE, NULL, NULL,   ALPHOPTS,    NULL,     NULL, "input alignment is RNA sequence data",                  9},
+  { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,   ALPHOPTS,    NULL,     NULL, "input alignment is DNA sequence data",                  9},
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -267,11 +268,15 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 
   /* Guess alphabet, then make sure it's RNA or DNA */
   int type;
-  status = esl_msafile_GuessAlphabet(cfg->afp, &type);
-  if (status == eslEAMBIGUOUS)    ESL_FAIL(status, errbuf, "Failed to guess the bio alphabet used in %s.\nUse --rna option to specify it.", cfg->alifile);
-  else if (status == eslEFORMAT)  ESL_FAIL(status, errbuf, "Alignment file parse failed: %s\n", cfg->afp->errbuf);
-  else if (status == eslENODATA)  ESL_FAIL(status, errbuf, "Alignment file %s is empty\n", cfg->alifile);
-  else if (status != eslOK)       ESL_FAIL(status, errbuf, "Failed to read alignment file %s\n", cfg->alifile);
+  if      (esl_opt_GetBoolean(go, "--rna")) type = eslRNA;
+  else if (esl_opt_GetBoolean(go, "--dna")) type = eslDNA;
+  else { 
+    status = esl_msafile_GuessAlphabet(cfg->afp, &type);
+    if (status == eslEAMBIGUOUS)    ESL_FAIL(status, errbuf, "Failed to guess the bio alphabet used in %s.\nUse --rna option to specify it.", cfg->alifile);
+    else if (status == eslEFORMAT)  ESL_FAIL(status, errbuf, "Alignment file parse failed: %s\n", cfg->afp->errbuf);
+    else if (status == eslENODATA)  ESL_FAIL(status, errbuf, "Alignment file %s is empty\n", cfg->alifile);
+    else if (status != eslOK)       ESL_FAIL(status, errbuf, "Failed to read alignment file %s\n", cfg->alifile);
+  }
   /* We can read DNA/RNA but internally we treat it as RNA */
   if(! (type == eslRNA || type == eslDNA))
     ESL_FAIL(status, errbuf, "Alphabet is not DNA/RNA in %s\n", cfg->alifile);

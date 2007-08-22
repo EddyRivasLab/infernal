@@ -52,6 +52,7 @@ static char banner[] = "display summary statistics for CMs";
 
 static int    summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w); 
 static int    summarize_alignment(ESL_GETOPTS *go, CM_t *cm);
+static float count_scan_dp_calcs(CM_t *cm, int L, int use_qdb);
 static double cm_MeanMatchRelativeEntropy(const CM_t *cm);
 static double cm_MeanMatchEntropy(const CM_t *cm);
 static double cm_MeanMatchInfo(const CM_t *cm);
@@ -157,8 +158,8 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
 {
   int status;     
   int L = esl_opt_GetInteger(go, "-L"); /* length sequence to search */
-  float dpc;       /* number of     mega-DP cells for search of length L */
-  float dpc_q;     /* number of QDB mega-DP cells for search of length L */
+  float dpc;       /* number of     mega-DP calcs for search of length L */
+  float dpc_q;     /* number of QDB mega-DP calcs for search of length L */
   float th_acc;    /* theoretical QDB acceleration */
 
   /* optional, -t related variables */
@@ -175,16 +176,22 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
   }
 
   /* estimate speedup due to QDB */
-  dpc    = (CYKDemands(cm, cm->W, NULL,     NULL,     TRUE) / 1000000.); 
-  dpc_q  = (CYKDemands(cm, cm->W, cm->dmin, cm->dmax, TRUE) / 1000000.); 
+  dpc    = count_scan_dp_calcs(cm, L, FALSE);
+  printf("\n\n");
+  dpc_q  = count_scan_dp_calcs(cm, L, TRUE);
+  /*dpc_q  = (CYKDemands(cm, cm->W, cm->dmin, cm->dmax, FALSE) / 1000000.); */
+  printf("dpc   0: %f\n", dpc);
+  printf("dpc_q 0: %f\n", dpc_q);
   dpc   *= (float) L / (float) cm->W;
   dpc_q *= (float) L / (float) cm->W;
+  printf("dpc   1: %f\n", dpc);
+  printf("dpc_q 1: %f\n", dpc_q);
   th_acc = dpc / dpc_q;
 
   printf("\tSearch stats against target sequence of length %d residues:\n", L);
   /* print simple stats if -t not enabled */
   if(! esl_opt_GetBoolean(go, "-t"))
-    printf("\tDP megacells: non-banded: %6.2f QDB: %6.2f th. speedup: %6.2fX", dpc, dpc_q, th_acc);
+    printf("\tDP megacalcs: non-banded: %6.2f QDB: %6.2f th. speedup: %6.2fX\n", dpc, dpc_q, th_acc);
  else /* -t enabled, do timings  */
     {
       /* cyk */
@@ -207,8 +214,8 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
       iInsideBandedScan (cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL);
       esl_stopwatch_Stop(w);
       t_iq = w->user;
-      printf("\t   CYK:\t%6.2fX QDB spdup\t%6.2f megacells/s\t %6.0f res/s\n", (t_c/t_cq), (dpc_q/t_cq), (L/t_cq));
-      printf("\tInside:\t%6.2fX QDB spdup\t%6.2f megacells/s\t %6.0f res/s\n", (t_i/t_iq), (dpc_q/t_iq), (L/t_iq));
+      printf("\t   CYK:\t%6.2fX QDB spdup\t%6.2f megacalcs/s\t %6.0f res/s\n", (t_c/t_cq), (dpc_q/t_cq), (L/t_cq));
+      printf("\tInside:\t%6.2fX QDB spdup\t%6.2f megacalcs/s\t %6.0f res/s\n", (t_i/t_iq), (dpc_q/t_iq), (L/t_iq));
   }
   return eslOK;
 
@@ -230,6 +237,214 @@ summarize_alignment(ESL_GETOPTS *go, CM_t *cm)
    * number of CYK DP calcs AND CP9 F/B calcs to get bands. */
   return eslOK;
 }
+
+/* Function: count_scan_dp_calcs()
+ * Date:     EPN, Wed Aug 22 09:08:03 2007
+ *
+ * Purpose:  Count all DP calcs for a CM scan against a 
+ *           sequence of length L. Similar to smallcyk.c's
+ *           CYKDemands() but takes into account number of
+ *           transitions from each state, and is concerned
+ *           with a scanning dp matrix, not an alignment matrix.
+ *
+ * Args:     cm     - the model
+ *           L      - length of sequence
+ *           use_qdb- TRUE to enforce cm->dmin and cm->dmax for calculation
+ *
+ * Returns: (float) the total number of DP calculations, either using QDB or not.
+ */
+float
+count_scan_dp_calcs(CM_t *cm, int L, int use_qdb)
+{
+  int v, j;
+  float dpcalcs = 0.;
+  float dpcalcs_bif = 0.;
+  int prv, cur;
+
+  /* Contract check */
+  if(cm->W > L) esl_fatal("ERROR in count_scan_dp_calcs(), cm->W: %d exceeds L: %d\n", cm->W, L);
+
+  float  dpcells     = 0.;
+  float  bif_dpcells = 0.;
+  int d,y,z,kmin,kmax, bw;
+
+  if(! use_qdb) 
+    {
+      dpcells = (cm->W * L) - (cm->W * (cm->W-1) * .5); /* fillable dp cells per state (deck) */
+      for (j = 1; j < cm->W; j++) 
+	bif_dpcells += ((j    +2) * (j    +1) * .5) - 1;
+      for (j = cm->W; j <= L; j++)
+	bif_dpcells += ((cm->W+2) * (cm->W+1) * .5) - 1;
+
+      dpcalcs_bif = CMCountStatetype(cm, B_st) * bif_dpcells;
+
+      for(v = 0; v < cm->M; v++)
+	{
+	  if(cm->sttype[v] != B_st && cm->sttype[v] != E_st)
+	    dpcalcs += dpcells * cm->cnum[v];
+	}
+    }
+  else /* use_qdb */
+    {
+      for(v = 0; v < cm->M; v++)
+	{
+	  if(cm->sttype[v] != B_st && cm->sttype[v] != E_st)
+	    {
+	      bw = cm->dmax[v] - cm->dmin[v] + 1; /* band width */
+	      dpcalcs += (bw * L * cm->cnum[v]) - (bw * (bw-1) * 0.5);
+	    }
+	  else if(cm->sttype[v] == B_st)
+	    {
+	      y = cm->cfirst[v];
+	      z = cm->cnum[v];
+	      for (j = 1; j <= L; j++)
+		{
+		  for (d = cm->dmin[v]; d <= cm->dmax[v] && d <= j; d++)
+		    {
+		      if(cm->dmin[z] > (d-cm->dmax[y])) kmin = cm->dmin[z];
+		      else kmin = d-cm->dmax[y];
+		      if(kmin < 0) kmin = 0;
+		      if(cm->dmax[z] < (d-cm->dmin[y])) kmax = cm->dmax[z];
+		      else kmax = d-cm->dmin[y];
+		      if(kmin <= kmax)
+			{
+			  bw = (kmax - kmin + 1);
+			  dpcalcs_bif += ((bw+2) * (bw+1) * .5) - 1;
+			}
+		    }
+		}
+	    }
+	}
+    }
+  printf("\n\n%d count_scan_dp_calcs dpc     %.0f\n", use_qdb, dpcalcs);
+  printf("\n\n%d count_scan_dp_calcs dpc_bif %.0f\n", use_qdb, dpcalcs_bif);
+  printf("\n\n%d count_scan_dp_calcs total   %.0f\n", use_qdb, dpcalcs + dpcalcs_bif);
+  return dpcalcs + dpcalcs_bif;
+#if 0
+  float Mb_per_deck;    /* megabytes per deck */
+  int   bif_decks;	/* bifurcation decks  */
+  int   nends;		/* end decks (only need 1, even for multiple E's */
+  int   maxdecks;	/* maximum # of decks needed by CYKInside() */
+  int   extradecks;     /* max # of extra decks needed for bifurcs */
+  float smallmemory;	/* how much memory small version of CYKInside() needs */
+  float bigmemory;	/* how much memory a full CYKInside() would take */
+  float dpcells;	/* # of dp cells */
+  float bifcalcs;	/* # of inner loops executed for bifurcation calculations */
+  float bifcalcs_b;	/* # of inner loops executed for bifurcation calculations in QDB */
+  float dpcalcs;	/* # of inner loops executed for non-bif calculations */
+  float dpcalcs_b;	/* # of inner loops executed for bifurcation calculations in QDB */
+  int   j;
+  float avg_Mb_per_banded_deck;    /* average megabytes per deck in mem efficient big mode */
+  int   v, y, z, d, kmin, kmax; /* for QDB calculations */
+
+  Mb_per_deck = size_vjd_deck(L, 1, L);
+  bif_decks   = CMCountStatetype(cm, B_st);
+  nends       = CMCountStatetype(cm, E_st);
+  maxdecks    = cyk_deck_count(cm, 0, cm->M-1);
+  extradecks  = cyk_extra_decks(cm);
+  smallmemory = (float) maxdecks * Mb_per_deck;
+  bifcalcs = 0.;
+  for (j = 0; j <= L; j++)
+    bifcalcs += (float)(j+1)*(float)(j+2)/2.;
+  bifcalcs *= (float) bif_decks;
+  dpcalcs = (float) (L+2)*(float)(L+1)*0.5*(float) (cm->M - bif_decks - nends +1);
+  if(dmin == NULL && dmax == NULL)
+    {
+      bigmemory   = (float) (cm->M - nends +1) * Mb_per_deck;
+      dpcells     = (float) (L+2)*(float)(L+1)*0.5*(float) (cm->M - nends +1);
+      avg_Mb_per_banded_deck = 0.; /* irrelevant */
+    }
+  else
+    {
+      dpcells = 0.;
+      dpcalcs_b = 0.;
+      for(v = 0; v < cm->M; v++)
+	{
+	  dpcells   += (float) (L+1) * (float) (dmax[v] - dmin[v] + 1.);
+	  if(cm->sttype[v] != B_st)
+	    dpcalcs_b   += (float) (L+1) * (float) (dmax[v] - dmin[v] + 1.);
+	  for(d = dmin[v]; d <= dmax[v]; d++)
+	    {
+	      dpcells -= (float) d; /* subtract out cells for which d <= j */
+	      if(cm->sttype[v] != B_st)
+		dpcalcs_b   -= (float) d; 
+	    }
+	}
+      bigmemory   = (sizeof(float) * dpcells) / 1000000.;
+      avg_Mb_per_banded_deck = bigmemory / ((float) cm->M -nends + 1);
+      /* bigmemory and avg_Mb_per_banded_deck should be treated as approximates,
+       * I'm not sure if they're exactly correct. EPN, Mon Nov  6 07:56:13 2006 */
+
+      /* for QDB, to get bifcalcs, we need to count all the cells within the bands on
+       * left and right childs y and z of v, that are consistent with band on v 
+       * there's probably a more efficient way of doing this. */
+      bifcalcs_b = 0.;
+      for (v = 0; v < cm->M; v++)
+	{
+	  if(cm->sttype[v] == B_st)
+	    {
+	      y = cm->cfirst[v];
+	      z = cm->cnum[v];
+	      for (j = 0; j <= L; j++)
+		{
+		  for (d = dmin[v]; d <= dmax[v] && d <= j; d++)
+		    {
+		      if(dmin[z] > (d-dmax[y])) kmin = dmin[z];
+		      else kmin = d-dmax[y];
+		      if(kmin < 0) kmin = 0;
+		      if(dmax[z] < (d-dmin[y])) kmax = dmax[z];
+		      else kmax = d-dmin[y];
+		      if(kmin <= kmax)
+			bifcalcs_b += (float)(kmax - kmin + 1);
+		    }
+		}
+	    }
+	}
+    }
+
+  if(dmin == NULL && dmax == NULL)
+    {
+      if(!be_quiet)
+	{
+	  printf("CYK cpu/memory demand estimates:\n");
+	  printf("Mb per cyk deck:                  %.4f\n", Mb_per_deck);
+	  printf("# of decks (M):                   %d\n",   cm->M);
+	  printf("# of decks needed in small CYK:   %d\n",   maxdecks);
+	  printf("# of extra decks needed:          %d\n",   extradecks);
+	  printf("RAM needed for full CYK, Mb:      %.2f\n", bigmemory);
+	  printf("RAM needed for small CYK, Mb:     %.2f\n", smallmemory);
+	  printf("# of dp cells, total:             %.3g\n", dpcells);
+	  printf("# of non-bifurc dp cells:         %.3g\n", dpcalcs);
+	  printf("# of bifurcations:                %d\n",   bif_decks);
+	  printf("# of bifurc dp inner loop calcs:  %.3g\n", bifcalcs);
+	  printf("# of dp inner loops:              %.3g\n", dpcalcs+bifcalcs);
+	}
+      return (dpcalcs + bifcalcs);
+    }
+  else /* QDB */
+    {
+      if(!be_quiet)
+	{
+	  printf("QDB CYK cpu/memory demand estimates:\n");
+	  printf("Mb per cyk deck:                     %.4f\n", Mb_per_deck);
+	  printf("Avg Mb per QDB cyk deck:             %.4f\n", avg_Mb_per_banded_deck);
+	  printf("# of decks (M):                      %d\n",   cm->M);
+	  printf("# of decks needed in small QDB CYK:  %d\n",   maxdecks);
+	  printf("# of extra decks needed:             %d\n",   extradecks);
+	  printf("RAM needed for full QDB CYK, Mb:     %.2f\n", bigmemory);
+	  printf("RAM needed for small QDB CYK, Mb:    %.2f\n", smallmemory);
+	  printf("# of QDB dp cells, total:            %.3g\n", dpcells);
+	  printf("# of QDB non-bifurc dp cells:        %.3g\n", dpcalcs_b);
+	  printf("# of bifurcations:                   %d\n",   bif_decks);
+	  printf("# of QDB bifurc dp inner loop calcs: %.3g\n", bifcalcs_b);
+	  printf("# of QDB dp inner loops:             %.3g\n", dpcalcs_b+bifcalcs_b);
+	  printf("Estimated small CYK QDB aln speedup: %.4f\n", ((dpcalcs+bifcalcs)/(dpcalcs_b+bifcalcs_b)));
+	}
+      return (dpcalcs_b + bifcalcs_b);
+    }
+  #endif
+}
+
 /* Function:  cm_MeanMatchInfo()
  * Incept:    SRE, Fri May  4 11:43:56 2007 [Janelia]
  *
