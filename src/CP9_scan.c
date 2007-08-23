@@ -417,7 +417,7 @@ CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
     }
   if (ret_mx != NULL) *ret_mx = mx;
   else                FreeCPlan9Matrix(mx);
-  printf("Forward return_sc: %f\n", return_sc);
+  /*printf("Forward return_sc: %f\n", return_sc);*/
   return return_sc;
 
  ERROR:

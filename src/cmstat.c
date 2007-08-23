@@ -192,7 +192,7 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
   dpc_v /= 1000000;
 
   /* print simple stats if -t not enabled */
-  printf("\tL: %d DP megacalcs: non-banded: %6.2f QDB: %6.2f th. speedup: %6.2fX\n\tL: %d CP9 calcs:%6.2f\n", L, dpc, dpc_q, th_acc, L_cp9, dpc_v);
+  /*printf("\tSearch stats. L: %d DP megacalcs: non-banded: %6.2f QDB: %6.2f th. speedup: %6.2fX\n\tL: %d CP9 calcs:%6.2f\n", L, dpc, dpc_q, th_acc, L_cp9, dpc_v);*/
   if(esl_opt_GetBoolean(go, "-t")) /* -t enabled, do timings  */
   {
       /* cyk */
@@ -239,11 +239,36 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
 		 NULL);  /* don't want the DP matrix back */
       esl_stopwatch_Stop(w);
       t_f = w->user;
-      printf("\t    CYK:\t%6.2fX QDB spdup\t%6.2f megacalcs/s\t %6.0f res/s\n", (t_c/t_cq), (dpc_q/t_cq), ((float) L/t_cq));
+      float mc_s; /* million calcs / second */
+      float kb_s; /* kilobases / second */
+      float emp_acc; /* empirical acceleration from QDB */
+      float L_kb     = (float) L / 1000.;
+      float L_cp9_kb = (float) L_cp9 / 1000.;
+      printf("#\n");
+      printf("#\t\t\t Search statistics:\n");
+      printf("#\t\t\t %7s %6s %6s %6s %8s %5s %5s\n",             "alg",     "qdb Mc", "L (kb)",  "Mc/s",     "kb/s",   "qdbXt", "qdbXa");
+      printf("#\t\t\t %7s %6s %6s %6s %8s %5s %5s\n",             "-------", "------", "------","------", "--------", "------", "-----");
+      mc_s = dpc_q / t_cq; 
+      kb_s = ((float) L_kb) / t_cq; 
+      emp_acc = t_c / t_cq; 
+      printf(" \t\t\t %7s %6.1f %6.2f %6.1f %8.2f %5.1f %5.1f\n", "cyk",      dpc_q,   L_kb,    mc_s,     kb_s,       th_acc,   emp_acc);
+      mc_s = dpc_q / t_iq; 
+      kb_s = ((float) L_kb) / t_iq; 
+      emp_acc = t_i / t_iq; 
+      printf(" \t\t\t %7s %6s %6s %6.1f %8.2f %5s %5.1f\n",       "inside",   "\"",    "\"",    mc_s,     kb_s,        "\"",    emp_acc);
+      mc_s = dpc_v / t_v; 
+      kb_s = ((float) L_cp9_kb) / t_v; 
+      printf(" \t\t\t %7s %6.1f %6.2f %6.1f %8.2f %5s %5s\n",     "viterbi",  dpc_v,   L_cp9_kb,mc_s,     kb_s,        "",      "");
+      mc_s = dpc_v / t_f; 
+      kb_s = ((float) L_cp9_kb) / t_f; 
+      printf(" \t\t\t %7s %6s %6s %6.1f %8.2f %5s %5s\n",         "forward",  "\"",    "\"",    mc_s,     kb_s,        "",      "");
+
+      /*printf("\talg
+      printf("\t    CYK:\t%6.2f MC\t%6.2fX MC/s QDB spdup\t%6.2f megacalcs/s\t %6.0f res/s\n", (t_c/t_cq), (dpc_q/t_cq), ((float) L/t_cq));
       printf("\t Inside:\t%6.2fX QDB spdup\t%6.2f megacalcs/s\t %6.0f res/s\n", (t_i/t_iq), (dpc_q/t_iq), ((float) L/t_iq));
       printf("\tViterbi:\t                \t%6.2f megacalcs/s\t %6.0f res/s\n",             (dpc_v/t_v),  ((float) L_cp9/t_v));
       printf("\tForward:\t                \t%6.2f megacalcs/s\t %6.0f res/s\n",             (dpc_v/t_f),  ((float) L_cp9/t_f));
-      printf("t_v: %f\nt_f: %f\n", t_v, t_f);
+      printf("t_v: %f\nt_f: %f\n", t_v, t_f);*/
     }
   return eslOK;
 
