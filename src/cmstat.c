@@ -23,6 +23,7 @@
 #include <esl_getopts.h>
 #include <esl_histogram.h>
 #include <esl_random.h>
+#include <esl_sqio.h>
 #include <esl_stats.h>
 #include <esl_stopwatch.h>
 #include <esl_vectorops.h>
@@ -38,13 +39,16 @@ static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
   { "-1",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "use tabular output summary format, 1 line per CM", 1 },
-  { "-t",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "perform and report on timing experiments", 1 },
-  { "-L",        eslARG_INT,    "1000",NULL, "n>0",     NULL,      "-t",        NULL, "with -t, length of sequences for CM search stats", 1 },
-  { "-N",        eslARG_INT,    "25",  NULL, "n>0",     NULL,      "-t",        NULL, "with -t, number of sequences for alignment stats", 1 },
-  { "--cp9L",    eslARG_INT,    "100000",NULL, "n>0",   NULL,      "-t",        NULL, "with -t, length of sequences for CP9 search stats", 1 },
-  { "--beta",    eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,      NULL,        NULL, "set tail loss prob for QDB stats to <x>", 1 },
-  { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,      NULL,       NULL,  "set tail loss prob for HMM banded stats to <x>", 1 },
-  { "--exp",     eslARG_REAL,   NULL,  NULL, "0<x<=1.0",NULL,      NULL,        NULL, "exponentiate CM probabilities by <x> before calc'ing stats",  1 },
+  { "--beta",    eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,      NULL,        NULL, "set tail loss prob for QDB stats to <x>", 2 },
+  /* search stats options */
+  { "-s",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "do search timing experiments", 2 },
+  { "-L",        eslARG_INT,    "1000",NULL, "n>0",     NULL,      "-s",        NULL, "length of sequences for CM search stats", 2 },
+  { "--cp9L",    eslARG_INT,    "100000",NULL,"n>0",    NULL,      "-s",        NULL, "length of sequences for CP9 HMM search stats", 2 },
+  /* alignment stats options */
+  { "-a",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "do alignment timing experiments", 2 },
+  { "-N",        eslARG_INT,    "25",  NULL, "n>0",     NULL,      "-a",        NULL, "number of sequences for alignment stats", 1 },
+  { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,      "-a",        NULL,  "set tail loss prob for HMM banded stats to <x>", 1 },
+  { "--exp",     eslARG_REAL,   NULL,  NULL, "0<x",     NULL,      "-a",        NULL, "exponentiate CM probabilities by <x> before calc'ing stats",  1 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -52,8 +56,9 @@ static char usage[]  = "[-options] <cmfile>";
 static char banner[] = "display summary statistics for CMs";
 
 static int    summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w); 
-static int    summarize_alignment(ESL_GETOPTS *go, CM_t *cm);
+static int    summarize_alignment(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w); 
 static float  count_scan_dp_calcs(CM_t *cm, int L, int use_qdb);
+static float  count_align_dp_calcs(CM_t *cm, int L);
 static double cm_MeanMatchRelativeEntropy(const CM_t *cm);
 static double cm_MeanMatchEntropy(const CM_t *cm);
 static double cm_MeanMatchInfo(const CM_t *cm);
@@ -85,25 +90,28 @@ main(int argc, char **argv)
     {
       cm_banner(stdout, argv[0], banner);
       esl_usage(stdout, argv[0], usage);
-      puts("\nwhere options are:");
+      puts("\nwhere basic options are:");
       esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
+      puts("\noptions for statistics on search:");
+      esl_opt_DisplayHelp(stdout, go, 2, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
+      puts("\noptions for statistics on alignment:");
+      esl_opt_DisplayHelp(stdout, go, 3, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
       exit(0);
     }
   if (esl_opt_ArgNumber(go) != 1) 
     {
       puts("Incorrect number of command line arguments.");
       esl_usage(stdout, argv[0], usage);
-      puts("\n  where options are:");
+      puts("\n  where basic options are:");
       esl_opt_DisplayHelp(stdout, go, 1, 2, 80);
       printf("\nTo see more help on other available options, do %s -h\n\n", argv[0]);
       exit(1);
     }
 
   cmfile     = esl_opt_GetArg(go, 1); 
-  if(esl_opt_GetBoolean(go, "-t")) { 
-    r = esl_randomness_CreateTimeseeded();
-    w = esl_stopwatch_Create();
-  }
+  r = esl_randomness_CreateTimeseeded();
+  w = esl_stopwatch_Create();
+
   /* Initializations: open the CM file
    */
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
@@ -111,17 +119,22 @@ main(int argc, char **argv)
 
   /* Main body: read CMs one at a time, print one line of stats.
    */
-  printf("#\n");
-  printf("# %-4s %-20s %8s %8s %6s %5s %5s %3s %6s\n", "idx",  "name",                 "nseq",     "eff_nseq", "clen",   "W",     "M",     "bif", "relent");
-  printf("# %-4s %-20s %8s %8s %6s %5s %5s %3s %6s\n", "----", "--------------------", "--------", "--------", "------", "-----", "-----", "---", "------");
-
   ncm = 0;
   while (CMFileRead(cmfp, &abc, &cm))
   {
+    if(ncm == 0 || (esl_opt_GetBoolean(go, "-s") || esl_opt_GetBoolean(go, "-a"))) { 
+      printf("#\n");
+      printf("# %-4s %-20s %8s %8s %6s %5s %5s %3s %6s\n", "idx",  "name",                 "nseq",     "eff_nseq", "clen",   "W",     "M",     "bif", "relent");
+      printf("# %-4s %-20s %8s %8s %6s %5s %5s %3s %6s\n", "----", "--------------------", "--------", "--------", "------", "-----", "-----", "---", "------");
+    }
+
     ncm++;
     
     cm->beta = esl_opt_GetReal(go, "--beta");
-    ConfigQDB(cm);
+    cm->tau  = esl_opt_GetReal(go, "--tau");
+    cm->config_opts |= CM_CONFIG_QDB;
+    /*ConfigQDB(cm);*/
+    ConfigCM(cm, NULL, NULL);
     
     printf("%6d %-20s %8d %8.2f %6d %5d %5d %3d %6.2f\n",
 	   ncm,
@@ -135,13 +148,11 @@ main(int argc, char **argv)
 	   cm_MeanMatchRelativeEntropy(cm));
 	   /*cm_MeanMatchInfo(cm));*/
 
-    if(! esl_opt_GetBoolean(go, "-1")) {
-      summarize_search(go, cm, r, w);
-      summarize_alignment(go, cm);
-    }
+    if(esl_opt_GetBoolean(go, "-s")) summarize_search(go, cm, r, w);
+    if(esl_opt_GetBoolean(go, "-a")) summarize_alignment(go, cm, r, w);
     FreeCM(cm);
-  }
-    
+  }    
+
   esl_alphabet_Destroy(abc);
   CMFileClose(cmfp);
   esl_getopts_Destroy(go);
@@ -176,12 +187,10 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
   float t_f;       /* number of seconds (w->user) for CP9 Forward search */
 
   if(L < cm->W) { L = cm->W; printf("\tL increased to minimum size of cm->W (%d)\n", L); }
-  if(esl_opt_GetBoolean(go, "-t")) { 
-    ESL_ALLOC(dsq,     sizeof(ESL_DSQ) * L    +2);
-    ESL_ALLOC(dsq_cp9, sizeof(ESL_DSQ) * L_cp9+2);
-    esl_rnd_xfIID(r, cm->null, cm->abc->K, L, dsq);
-    esl_rnd_xfIID(r, cm->null, cm->abc->K, L_cp9, dsq_cp9);
-  }
+  ESL_ALLOC(dsq,     sizeof(ESL_DSQ) * L    +2);
+  ESL_ALLOC(dsq_cp9, sizeof(ESL_DSQ) * L_cp9+2);
+  esl_rnd_xfIID(r, cm->null, cm->abc->K, L, dsq);
+  esl_rnd_xfIID(r, cm->null, cm->abc->K, L_cp9, dsq_cp9);
 
   /* estimate speedup due to QDB */
   dpc    = count_scan_dp_calcs(cm, L, FALSE) / 1000000.;
@@ -191,89 +200,82 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
   dpc_v  = (float) (cm->clen+1) * L_cp9 * 11; /* 11 transition's queried per HMM node: 9 main model, begin,end */ 
   dpc_v /= 1000000;
 
-  /* print simple stats if -t not enabled */
-  /*printf("\tSearch stats. L: %d DP megacalcs: non-banded: %6.2f QDB: %6.2f th. speedup: %6.2fX\n\tL: %d CP9 calcs:%6.2f\n", L, dpc, dpc_q, th_acc, L_cp9, dpc_v);*/
-  if(esl_opt_GetBoolean(go, "-t")) /* -t enabled, do timings  */
-  {
-      /* cyk */
-      esl_stopwatch_Start(w);
-      CYKScan (cm, dsq, 1, L, cm->W, 0., NULL);
-      esl_stopwatch_Stop(w);
-      t_c = w->user;
-      /* qdb cyk */
-      esl_stopwatch_Start(w);
-      CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL);
-      esl_stopwatch_Stop(w);
-      t_cq = w->user;
-      /* inside */
-      esl_stopwatch_Start(w);
-      iInsideScan (cm, dsq, 1, L, cm->W, 0., NULL);
-      esl_stopwatch_Stop(w);
-      t_i = w->user;
-      /* inside */
-      esl_stopwatch_Start(w);
-      iInsideBandedScan (cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL);
-      esl_stopwatch_Stop(w);
-      t_iq = w->user;
+  /* cyk */
+  esl_stopwatch_Start(w);
+  CYKScan (cm, dsq, 1, L, cm->W, 0., NULL);
+  esl_stopwatch_Stop(w);
+  t_c = w->user;
 
-      if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))
-	esl_fatal("Couldn't build a CP9 HMM from the CM\n");
-      cm->flags |= CM_CP9; /* raise the CP9 flag */
-      
-      /* CP9 viterbi */
-      esl_stopwatch_Start(w);
-      CP9Viterbi(cm, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, NULL, NULL,
-		 TRUE,   /* we're scanning */
-		 TRUE,   /* be memory efficient */
-		 NULL,   /* don't want the DP matrix back */
-		 NULL);  /* don't want traces back */
-      esl_stopwatch_Stop(w);
-      t_v = w->user;
-      /* CP9 forward */
-      esl_stopwatch_Start(w);
-      CP9Forward(cm, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, NULL, NULL,
-		 TRUE,   /* we're scanning */
-		 FALSE,  /* we're not ultimately aligning */
-		 FALSE,  /* we're not rescanning */
-		 TRUE,   /* be memory efficient */
-		 NULL);  /* don't want the DP matrix back */
-      esl_stopwatch_Stop(w);
-      t_f = w->user;
-      float mc_s; /* million calcs / second */
-      float kb_s; /* kilobases / second */
-      float emp_acc; /* empirical acceleration from QDB */
-      float L_kb     = (float) L / 1000.;
-      float L_cp9_kb = (float) L_cp9 / 1000.;
-      printf("#\n");
-      printf("#\t\t\t Search statistics:\n");
-      printf("#\t\t\t %7s %6s %6s %6s %8s %5s %5s\n",             "alg",     "qdb Mc", "L (kb)",  "Mc/s",     "kb/s",   "qdbXt", "qdbXa");
-      printf("#\t\t\t %7s %6s %6s %6s %8s %5s %5s\n",             "-------", "------", "------","------", "--------", "------", "-----");
-      mc_s = dpc_q / t_cq; 
-      kb_s = ((float) L_kb) / t_cq; 
-      emp_acc = t_c / t_cq; 
-      printf(" \t\t\t %7s %6.1f %6.2f %6.1f %8.2f %5.1f %5.1f\n", "cyk",      dpc_q,   L_kb,    mc_s,     kb_s,       th_acc,   emp_acc);
-      mc_s = dpc_q / t_iq; 
-      kb_s = ((float) L_kb) / t_iq; 
-      emp_acc = t_i / t_iq; 
-      printf(" \t\t\t %7s %6s %6s %6.1f %8.2f %5s %5.1f\n",       "inside",   "\"",    "\"",    mc_s,     kb_s,        "\"",    emp_acc);
-      mc_s = dpc_v / t_v; 
-      kb_s = ((float) L_cp9_kb) / t_v; 
-      printf(" \t\t\t %7s %6.1f %6.2f %6.1f %8.2f %5s %5s\n",     "viterbi",  dpc_v,   L_cp9_kb,mc_s,     kb_s,        "",      "");
-      mc_s = dpc_v / t_f; 
-      kb_s = ((float) L_cp9_kb) / t_f; 
-      printf(" \t\t\t %7s %6s %6s %6.1f %8.2f %5s %5s\n",         "forward",  "\"",    "\"",    mc_s,     kb_s,        "",      "");
+  /* qdb cyk */
+  esl_stopwatch_Start(w);
+  CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL);
+  esl_stopwatch_Stop(w);
+  t_cq = w->user;
 
-      /*printf("\talg
-      printf("\t    CYK:\t%6.2f MC\t%6.2fX MC/s QDB spdup\t%6.2f megacalcs/s\t %6.0f res/s\n", (t_c/t_cq), (dpc_q/t_cq), ((float) L/t_cq));
-      printf("\t Inside:\t%6.2fX QDB spdup\t%6.2f megacalcs/s\t %6.0f res/s\n", (t_i/t_iq), (dpc_q/t_iq), ((float) L/t_iq));
-      printf("\tViterbi:\t                \t%6.2f megacalcs/s\t %6.0f res/s\n",             (dpc_v/t_v),  ((float) L_cp9/t_v));
-      printf("\tForward:\t                \t%6.2f megacalcs/s\t %6.0f res/s\n",             (dpc_v/t_f),  ((float) L_cp9/t_f));
-      printf("t_v: %f\nt_f: %f\n", t_v, t_f);*/
-    }
+  /* inside */
+  esl_stopwatch_Start(w);
+  iInsideScan (cm, dsq, 1, L, cm->W, 0., NULL);
+  esl_stopwatch_Stop(w);
+  t_i = w->user;
+
+  /* qdb inside */
+  esl_stopwatch_Start(w);
+  iInsideBandedScan (cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL);
+  esl_stopwatch_Stop(w);
+  t_iq = w->user;
+  
+  /* CP9 viterbi */
+  esl_stopwatch_Start(w);
+  CP9Viterbi(cm, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, NULL, NULL,
+	     TRUE,   /* we're scanning */
+	     TRUE,   /* be memory efficient */
+	     NULL,   /* don't want the DP matrix back */
+	     NULL);  /* don't want traces back */
+  esl_stopwatch_Stop(w);
+  t_v = w->user;
+  /* CP9 forward */
+  esl_stopwatch_Start(w);
+  CP9Forward(cm, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, NULL, NULL,
+	     TRUE,   /* we're scanning */
+	     FALSE,  /* we're not ultimately aligning */
+	     FALSE,  /* we're not rescanning */
+	     TRUE,   /* be memory efficient */
+	     NULL);  /* don't want the DP matrix back */
+  esl_stopwatch_Stop(w);
+  t_f = w->user;
+
+  /* print results */
+  float mc_s; /* million calcs / second */
+  float kb_s; /* kilobases / second */
+  float emp_acc; /* empirical acceleration from QDB */
+  float L_kb     = (float) L / 1000.;
+  float L_cp9_kb = (float) L_cp9 / 1000.;
+  printf("#\n");
+  printf("#\t\t\t Search statistics:\n");
+  printf("#\t\t\t %7s %6s %6s %6s %8s %5s %5s\n",             "alg",     "qdb Mc", "L (kb)",  "Mc/s",     "kb/s",   "qdbXt", "qdbXa");
+  printf("#\t\t\t %7s %6s %6s %6s %8s %5s %5s\n",             "-------", "------", "------","------", "--------", "------", "-----");
+  mc_s = dpc_q / t_cq; 
+  kb_s = ((float) L_kb) / t_cq; 
+  emp_acc = t_c / t_cq; 
+  printf(" \t\t\t %7s %6.1f %6.2f %6.1f %8.2f %5.1f %5.1f\n", "cyk",      dpc_q,   L_kb,    mc_s,     kb_s,       th_acc,   emp_acc);
+  mc_s = dpc_q / t_iq; 
+  kb_s = ((float) L_kb) / t_iq; 
+  emp_acc = t_i / t_iq; 
+  printf(" \t\t\t %7s %6s %6s %6.1f %8.2f %5s %5.1f\n",       "inside",   "\"",    "\"",    mc_s,     kb_s,        "\"",    emp_acc);
+  mc_s = dpc_v / t_v; 
+  kb_s = ((float) L_cp9_kb) / t_v; 
+  printf(" \t\t\t %7s %6.1f %6.2f %6.1f %8.2f %5s %5s\n",     "viterbi",  dpc_v,   L_cp9_kb,mc_s,     kb_s,        "",      "");
+  mc_s = dpc_v / t_f; 
+  kb_s = ((float) L_cp9_kb) / t_f; 
+  printf(" \t\t\t %7s %6s %6s %6.1f %8.2f %5s %5s\n",         "forward",  "\"",    "\"",    mc_s,     kb_s,        "",      "");
+  
+  free(dsq);
+  free(dsq_cp9);
   return eslOK;
 
  ERROR:
-  return status;
+  esl_fatal("ERROR code %d in summarize_stats().", status);
+  return status; /* NOTREACHED */
 }
 
 /* Function:  summarize_alignment()
@@ -283,12 +285,74 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
  *            based on command-line options.
  */
 int
-summarize_alignment(ESL_GETOPTS *go, CM_t *cm)
+summarize_alignment(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w) 
 {
   /* HERE: do HMM banded alignment stats
    * sample N=100 seqs, and calculate posteriors, determine new
    * number of CYK DP calcs AND CP9 F/B calcs to get bands. */
+  int status;
+  float dpc;  /* # DP calcs for non-banded alignment of consensus */
+  CMConsensus_t *con = NULL;            /* consensus info for the CM */
+  ESL_SQ *csq = NULL;
+  float t_dc; /* user seconds time for D&C alignment */
+  float t_hb; /* user seconds time for HMM banded alignment */
+  float mc_s; /* million calcs/second */
+
+  /* Create and align consensus sequence for D&C stats */
+  con = CreateCMConsensus(cm, cm->abc, 3.0, 1.0);
+  if((csq = esl_sq_CreateFrom("consensus", con->cseq, NULL, NULL, NULL)) == NULL)
+    { status = eslEMEM; goto ERROR; }
+  esl_sq_Digitize(cm->abc, csq);
+  dpc = count_align_dp_calcs(cm, csq->n) / 1000000.;
+
+  /* cyk inside (score only) */
+  esl_stopwatch_Start(w);
+  /*CYKDivideAndConquer(cm, csq->dsq, csq->n, 0, 1, csq->n, NULL, NULL, NULL);*/
+  CYKInsideScore(cm, csq->dsq, csq->n, 0, 1, csq->n, 
+		 NULL, NULL); /* don't do QDB mode */
+  esl_stopwatch_Stop(w);
+  t_dc = w->user;
+  mc_s = dpc / t_dc;
+
+  /* HMM banded */
+  /* Emit N seqs, and align them, to get total time up to reasonable level,
+   * and to average out tightness of bands */
+  int N = esl_opt_GetInteger(go, "-N");
+  ESL_SQ **sq = NULL;
+  ESL_ALLOC(sq, sizeof(ESL_SQ *) * N);
+  int L; 
+  float L_avg = 0.; 
+  int i;
+  for(i = 0; i < N; i++)
+    {
+      EmitParsetree(cm, r, "seq", TRUE, NULL, &(sq[i]), &L);
+      /*esl_sqio_Write(stdout, sq[i], eslSQFILE_FASTA);*/
+      L_avg += L;
+    }
+  L_avg /= (float) N;
+  cm->align_opts |= CM_ALIGN_HBANDED;
+  cm->align_opts |= CM_ALIGN_NOSMALL;
+  esl_stopwatch_Start(w);
+  actually_align_targets(cm, sq, N, NULL, NULL, NULL, NULL, 0, 0, TRUE);
+  esl_stopwatch_Stop(w);
+  t_hb = w->user / (float) N;
+  for(i = 0; i < N; i++) esl_sq_Destroy(sq[i]);
+  free(sq);
+
+  printf("#\n");
+  printf("#\t\t\t Alignment statistics:\n");
+  printf("#\t\t\t %7s %6s %6s %8s %8s %8s\n",             "alg",     "Mc",     "L",     "Mc/s",    "s/seq",        "accel");
+  printf("#\t\t\t %7s %6s %6s %8s %8s %8s\n",             "-------", "------", "------","--------", "--------", "--------");
+  /*mc_s = dpc / t_dc; */
+  printf(" \t\t\t %7s %6.1f %6d %8.1f %8.3f %8s\n",       "cyk",      dpc,      csq->n,  mc_s,      t_dc,       "-");
+  printf(" \t\t\t %7s %6s %6.0f %8s %8.3f %8.2f\n",       "hb cyk",   "?",      L_avg,   "?",       t_hb,       (t_dc/t_hb));
+
+  esl_sq_Destroy(csq);
+  FreeCMConsensus(con);
   return eslOK;
+ ERROR:
+  esl_fatal("ERROR code %d in summarize_stats().", status);
+  return status; /* NOTREACHED */
 }
 
 /* Function: count_scan_dp_calcs()
@@ -312,27 +376,27 @@ count_scan_dp_calcs(CM_t *cm, int L, int use_qdb)
   int v, j;
   float dpcalcs = 0.;
   float dpcalcs_bif = 0.;
-
+  
   /* Contract check */
   if(cm->W > L) esl_fatal("ERROR in count_scan_dp_calcs(), cm->W: %d exceeds L: %d\n", cm->W, L);
 
   float  dpcells     = 0.;
-  float  bif_dpcells = 0.;
+  float  dpcells_bif = 0.;
   int d,w,y,kmin,kmax, bw;
 
   if(! use_qdb) 
     {
       dpcells = (cm->W * L) - (cm->W * (cm->W-1) * .5); /* fillable dp cells per state (deck) */
       for (j = 1; j < cm->W; j++)
-	bif_dpcells += ((j    +2) * (j    +1) * .5) - 1;
+	dpcells_bif += ((j    +2) * (j    +1) * .5) - 1;
       for (j = cm->W; j <= L; j++)
-	bif_dpcells += ((cm->W+2) * (cm->W+1) * .5) - 1;
-      dpcalcs_bif = CMCountStatetype(cm, B_st) * bif_dpcells;
+	dpcells_bif += ((cm->W+2) * (cm->W+1) * .5) - 1; 
+      dpcalcs_bif = CMCountStatetype(cm, B_st) * dpcells_bif; /* no choice of transition */
       for(v = 0; v < cm->M; v++)
 	{
 	  if(cm->sttype[v] != B_st && cm->sttype[v] != E_st)
 	    {
-	      dpcalcs += dpcells * cm->cnum[v];
+	      dpcalcs += dpcells * cm->cnum[v]; /* cnum choices of transitions */
 
 	      /* non-obvious subtractions that match implementation in scancyk.c::CYKScan() */
 	      if(v == 0) dpcalcs  -= dpcells; 
@@ -382,6 +446,40 @@ count_scan_dp_calcs(CM_t *cm, int L, int use_qdb)
   /*printf("%d count_scan_dp_calcs dpc     %.0f\n", use_qdb, dpcalcs);
     printf("%d count_scan_dp_calcs dpc_bif %.0f\n", use_qdb, dpcalcs_bif);
     printf("%d count_scan_dp_calcs total   %.0f\n", use_qdb, dpcalcs + dpcalcs_bif);*/
+  return dpcalcs + dpcalcs_bif;
+}
+
+/* Function: count_scan_dp_calcs()
+ * Date:     EPN, Wed Aug 22 09:08:03 2007
+ *
+ * Purpose:  Count all non-d&c inside DP calcs for a CM 
+ *           alignment of a seq of length L. Similar to smallcyk.c's
+ *           CYKDemands() but takes into account number of
+ *           transitions from each state, and is concerned
+ *           with a scanning dp matrix, not an alignment matrix.
+ *
+ * Args:     cm     - the model
+ *           L      - length of sequence
+ *
+ * Returns: (float) the total number of DP calculations.
+ */
+float count_align_dp_calcs(CM_t *cm, int L)
+{
+  int v, j;
+  float dpcalcs = 0.;
+  float dpcalcs_bif = 0.;
+  
+  float  dpcells     = 0.;
+  float  dpcells_bif = 0.;
+
+  dpcells = (L+2) * (L+1) * 0.5; /* fillable dp cells per state (deck) */
+  for (j = 0; j <= L; j++)
+    dpcells_bif += (j+2) * (j+1) * .5;
+  dpcalcs_bif = CMCountStatetype(cm, B_st) * dpcells_bif; /* no choice of transitions */
+  for(v = 0; v < cm->M; v++)
+    if(cm->sttype[v] != B_st && cm->sttype[v] != E_st)
+      dpcalcs += dpcells * cm->cnum[v]; /* cnum choices of transitions */
+
   return dpcalcs + dpcalcs_bif;
 }
 
