@@ -42,6 +42,9 @@ typedef struct shadowmats_s {
    void ***T;
 } ShadowMats_t;
 
+/* External API */
+// CHANGEME - needed!
+
 /* Divide and conquer */
 float tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
                           int r, int vend, int i0, int j0, int allow_LM, int allow_RM);
@@ -61,7 +64,10 @@ float tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
                 AlphaMats_t *arg_alpha, AlphaMats_t *ret_alpha, 
                 struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
                 ShadowMats_t *ret_shadow, int *ret_mode, int *ret_v, int *ret_i, int *ret_j);
-
+float tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
+                 BetaMats_t *arg_beta, BetaMats_t *ret_beta,
+                 struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
+                 int *ret_mode, int *ret_v, int *ret_j);
 
 /* Traceback routine */
 float trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
@@ -742,7 +748,7 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
    return sc;
 }
 
-/* Function: trinside()
+/* Function: tr_inside()
  * Author:   DLK
  *
  * Purpose:  inside phase of CYK on truncated sequence
@@ -824,6 +830,12 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
       else if ( cm->stid[v] == MATL_ML ) model_len += 1;
       else if ( cm->stid[v] == MATR_MR ) model_len += 1;
    }
+// CHANGEME!
+// This correction doesn't belong here - it should be out at the top level API
+// because in D and C, inside may be called more that once
+// Existing drivers that call directly into the alignment engine (like the
+// one for parameterizing mu and lambda) will need to be adjusted so that they
+// get the correction as well
    /* 2.0 instead of 2 to force floating point division, not integer division */
    bsc = sreLOG2(2.0/(model_len*(model_len+1)));
 
@@ -1473,6 +1485,455 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
    if ( ret_shadow != NULL ) ret_shadow->Lmode = (void ***)Lmode_shadow;
    if ( ret_shadow != NULL ) ret_shadow->Rmode = (void ***)Rmode_shadow;
    return sc;
+}
+
+/* Function: troutside()
+ * Author:   DLK
+ * 
+ * Purpose:  outside version of truncated CYK run on
+ *           an unbifurcated model segment vroot..vend
+ *           Closely based on outside()
+ * Args;
+ *
+ * Returns:  Score of best local hit (not extending to vend)
+ */
+float
+tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
+           BetaMats_t *arg_beta, BetaMats_t *ret_beta,
+           struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
+           int *ret_mode, int *ret_v, int *ret_j)
+{
+   int    v,y;
+   int    j,d,i;
+   float  sc;
+   int   *touch;
+   float  esc;
+   int    W;
+   int    jp;
+   int    voffset;
+   int    w1, w2;
+
+   float  b_sc;
+   int    b_mode, b_v, b_j;
+
+   W = j0 - i0 + 1;
+   if ( dpool == NULL ) dpool = deckpool_create();
+
+   if ( beta == NULL )
+   {
+      beta->J = MallocOrDie(sizeof(float **) * (cm->M+1));
+      beta->L[0] = MallocOrDie(sizeof(float) * (cm->M+1)*W);
+      beta->R[0] = MallocOrDie(sizeof(float) * (cm->M+1)*W);
+      for ( v = 0; v < cm->M+1; v++ )
+      {
+         beta->J[v] = NULL;
+         beta->L[v] = beta->L[0] + (v * W);
+         beta->R[v] = beta->R[0] + (v * W);
+      }
+   }
+
+   /* Initialize the root deck, and its split set if applicable */
+   w1 = cm->nodemap[cm->ndidx[vroot]];
+   if (cm->sttype[vroot] == B_st)
+   {
+      w2 = w1;
+      if (vend != vroot) Die("vroot B but vroot != vend!\n");
+   }
+   else
+      w2 = cm->cfirst[w1] - 1;
+
+   for (v = w1; v <= w2; v++)
+   {
+      if (! deckpool_pop(dpool, &(beta->J[v])) )
+         beta->J[v] = alloc_vjd_deck(L, i0, j0);
+      for (jp = 0; jp <= W; jp++)
+      {
+         j = i0 + jp - 1;
+         for (d = 0; d <= jp; d++)
+            beta->J[v][j][d] = IMPOSSIBLE;
+         if ( vroot == 0 && v >= vroot )
+         {
+         beta->L[v][j] = 0.0;
+         beta->R[v][j] = 0.0;
+         }
+         else
+         {
+         beta->L[v][j] = IMPOSSIBLE;
+         beta->R[v][j] = IMPOSSIBLE;
+         }
+      }
+   }
+   beta->J[vroot][j0][W] = 0.0;
+   beta->L[vroot][j0][W] = 0.0;
+   beta->R[vroot][j0][W] = 0.0;
+
+   /* Initialize EL */
+   if (! deckpool_pop(dpool &(beta->J[cm->M])) )
+      beta->J[cm->M] = alloc_vjd_deck(L, i0, j0);
+   for (jp = 0; jp <= W; jp++)
+   {
+      j = i0 + jp - 1;
+      for (d = 0; d <= jp; d++)
+         beta->J[cm->M][j][d] = IMPOSSIBLE;
+      beta->L[cm->M][j] = IMPOSSIBLE;
+      beta->R[cm->M][j] = IMPOSSIBLE;
+   }
+
+   /* deal with vroot->EL */
+   /* Marginal modes don't transition to EL,
+    * so beta->L and beta->R remain at their
+    * initialization values of IMPOSSIBLE */
+   if (NOT_IMPOSSIBLE(cm->endsc[vroot]))
+   {
+      switch (cm->sttype[vroot])
+      {
+         case MP_st:
+            if (W < 2) break;
+            if (dsq[i0] < Alphabet_size && dsq[j0] < Alphabet_size)
+               esc = cm->esc[vroot][(int) (dsq[i0]*Alphabet_size+dsq[j0])];
+            else
+               esc = DegeneratePairScore(cm->esc[vroot], dsq[i0], dsq[j0]);
+            beta->J[cm->M][j0-1][W-2] = cm->endsc[vroot] + (cm->el_selfsc * (W-2)) + esc;
+            if (beta->J[cm->M][j0-1][W-2] < IMPOSSIBLE) beta->J[cm->M][j0-1][W-2] = IMPOSSIBLE;
+            break;
+         case ML_st:
+         case IL_st:
+            if (W < 1) break;
+            if (dsq[i0] < Alphabet_size)
+               esc = cm->esc[vroot][(int) dsq[i0]];
+            else
+               esc = DegenerateSingletScore(cm->esc[vroot], dsq[i0]);
+            beta->J[cm->M][j0][W-1] = cm->endsc[vroot] + (cm->el_selfsc * (W-1)) + esc;
+            if (beta->J[cm->M][j0][W-1] < IMPOSSIBLE) beta[cm->M][j0][W-1] = IMPOSSIBLE;
+            break;
+         case MR_st:
+         case IR_st:
+            if (W < 1) break;
+            if (dsq[j0] < Alphabet_size)
+               esc = cm->esc[vroot][(int) dsq[j0]];
+            else
+               esc = DegenerateSingletScore(cm->esc[vroot], dsq[j0]);
+            beta->J[cm->M][j0-1][W-1] = cm->endsc[vroot] + (cm->el_selfsc * (W-1)) + esc;
+            if (beta->J[cm->M][j0-1][W-1] < IMPOSSIBLE) beta[cm->M][j0][W-1] = IMPOSSIBLE;
+            break;
+         case  S_st:
+         case  D_st:
+            beta->J[cm->M][j0][W] = cm->endsc[vroot] + (cm->el_selfsc * W);
+            if (beta->J[cm->M][j0][W] < IMPOSSIBLE) beta->J[cm->M][j0][W] = IMPOSSIBLE;
+            break;
+         case  B_st: /* B_st can't go to EL? */
+         default:
+            Die("bogus parent state %d\n",cm->sttype[vroot]);
+      }
+   }
+
+   /* Initialize touch vector for controlling deck de-allocation */
+   touch = MallocOrDie(sizeof(int) * cm->M);
+   for (v = 0;      v < w1;    v++) touch[v] = 0;
+   for (v = vend+1; v < cm->M; v++) touch[v] = 0;
+   for (v = w1;     v <= vend; v++)
+   {
+      if (cm->sttype[v] == B_st) touch[v] = 2;
+      else                       touch[v] = cm->cnum[v];
+   }
+
+   b_sc = IMPOSSIBLE;
+   b_v  = -1;
+   b_j  = -1;
+   b_mode = -1;
+
+   /* Main loop through decks */
+   for (v = w2+1; v <= vend; v++)
+   {
+      /* Get a deck */
+      if (! deckpool_pop(dpool, &(beta->J[v])) )
+         beta->J[v] = alloc_vjd_deck(L, i0, j0);
+      for (jp = W; jp >= 0; jp--)
+      {
+         j = i0 + jp - 1;
+         for (d = jp; d >= 0; d--)
+         {
+            if (vroot == 0)
+               beta->J[v][j][d] = 0.0;
+            else
+               beta->J[v][j][d] = IMPOSSIBLE;
+         }
+         if (vroot == 0)
+         {
+            beta->L[v][j] = 0.0;
+            beta->R[v][j] = 0.0;
+         }
+         else
+         {
+            beta->L[v][j] = IMPOSSIBLE;
+            beta->R[v][j] = IMPOSSIBLE;
+         }
+      }
+
+      /* mini-recursion for beta->L */
+      for (j = i0; j <= j0; j++)
+      {
+         for (y = cm->plast[v]; y > cm->plast[v] - cm->pnum[v]; y--)
+         {
+            if (y < vroot) continue;
+            voffset = v - cm->cfirst[y];
+
+            switch (cm->sttype[y])
+            {
+               case MP_st:
+               case ML_st:
+               case IL_st:
+                  if (j > i0)
+                  {
+                     if (dsq[j-1] < Alphabet_size)
+                        esc = cm->esc[y][(int) dsq[j-1]];
+                     else
+                        esc = DegenerateSingletScore(cm->esc[y], dsq[j-1]);
+                     if ( (sc = beta->L[y][j-1] + cm->tsc[y][voffset] + esc) > beta->L[v][j] )
+                        beta->L[v][j] = sc;
+                  }
+                  break;
+               case MR_st:
+               case IR_st:
+               case  S_st:
+               case  E_st:
+               case  D_st:
+                  if ( (sc = beta->L[y][j] + cm->tsc[y][voffset]) > beta->L[v][j] )
+                     beta->L[v][j] = sc;
+                  break;
+               default:
+                  Die("Bogus parent type %d for y = %d, v = %d\n",cm->sttype[y],y,v);
+            }
+         }
+         if (beta->L[v][j] > b_sc)
+         {
+            b_sc = beta->L[v][j];
+            b_v  = v;
+            b_j  = j;
+            b_mode = 2;
+         }
+      }
+
+      /* mini-recursion for beta->R */
+      for (j = j0; j >= i0; j--)
+      {
+         for (y = cm->plast[v]; y > cm->plast[v] - cm->pnum[v]; y--)
+         {
+            if (y < vroot) continue;
+            voffset = v - cm->cfirst[y];
+
+            switch (cm->sttype[y])
+            {
+               case MP_st:
+               case MR_st:
+               case IR_st:
+                  if (j < j0)
+                  {
+                     if (dsq[j+1] < Alphabet_size)
+                        esc = cm->esc[y][(int) dsq[j+1]];
+                     else
+                        esc = DegenerateSingletScore(cm->esc[y], dsq[j+1]);
+                     if ( (sc = beta->R[y][j+1] + cm->tsc[y][voffset] + esc) > beta->R[v][j] )
+                        beta->R[v][j] = sc;
+                  }
+                  break;
+               case ML_st:
+               case IL_st:
+               case  S_st:
+               case  E_st:
+               case  D_st:
+                  if ( (sc = beta->R[y][j] + cm->tsc[y][voffset]) > beta->L[v][j] )
+                     beta->R[v][j] = sc;
+                  break;
+               default:
+                  Die("Bogus parent type %d for y = %d, v = %d\n",cm->sttype[y],y,v);
+            }
+         }
+         if (beta->R[v][j] > b_sc)
+         {
+            b_sc = beta->L[v][j];
+            b_v  = v;
+            b_j  = j;
+            b_mode = 1;
+         }
+      }
+
+      /* main recursion */
+      for (jp = W; jp >= 0; jp--)
+      {
+         j = i0 + jp - 1;
+         for (d = jp; d >= 0; d--)
+         {
+            i = j - d + 1;
+            for (y = cm->plast[v]; y > cm->plast[v] - cm->pnum[v]; y--)
+            {
+               if (y < vroot) continue;
+               voffset = v - cm->cfirst[y];
+
+               switch (cm->sttype[y])
+               {
+                  case MP_st:
+                     if (j != j0 && d != jp)
+                     {
+                        if (dsq[i-1] < Alphabet_size && dsq[j+1] < Alphabet_size)
+                           esc = cm->esc[y][(int) (dsq[i-1]*Alphabet_size + dsq[j+1])];
+                        else
+                           esc = DegeneratePairScore(cm->exc[y], dsq[i-1], dsq[j+1]);
+                        if ( (sc = beta->J[y][j+1][d+2] + cm->tsc[y][voffset] + esc) > beta->J[v][j][d] )
+                           beta->J[v][j][d] = sc;
+                        if ( (sc = beta->L[y][i-1]      + cm->tsc[y][voffset] + esc) > beta->J[v][j][d] )
+                           beta->J[v][j][d] = sc;
+                        if ( (sc = beta->R[y][j+1]      + cm->tsc[y][voffset] + esc) > beta->J[v][j][d] )
+                           beta->J[v][j][d] = sc;
+                     }
+                     break;
+                  case ML_st:
+                  case IL_st:
+                     if (d != jp)
+                     {
+                        if (dsq[i-1] < Alphabet_size)
+                           esc = cm->esc[y][(int) dsq[i-1]];
+                        else
+                           esc = DegenerateSingletScore(cm->esc[y], dsq[i-1]);
+                        if ( (sc = beta->J[y][j][d+1] + cm->tsc[y][voffset] + esc) > beta->J[v][j][d] )
+                           beta->J[v][j][d] = sc;
+                        if ( (sc = beta->R[y][j]      + cm->tsc[y][voffset] + esc) > beta->J[v][j][d] )
+                           beta->J[v][j][d] = sc;
+                     }
+                     break;
+                  case MR_st:
+                  case IR_st:
+                     if (j != j0)
+                     {
+                        if (dsq[j+1] < Alphabet_size)
+                           esc = cm->esc[y][(int) dsq[j+1]];
+                        else
+                           esc = DegenerateSingletScore(cm->esc[y], dsq[j+1]);
+                        if ( (sc = beta->J[y][j+1][d+1] + cm->tsc[y][voffset] + esc) > beta->J[v][j][d] )
+                           beta->J[v][j][d] = sc;
+                        if ( (sc = beta->L[y][i]        + cm->tsc[y][voffset] + esc) > beta->J[v][j][d] )
+                           beta->J[v][j][d] = sc;
+                     }
+                     break;
+                  case  S_st:
+                  case  E_st:
+                  case  D_st:
+                     if ( (sc = beta->J[y][j][d] + cm->tsc[y][voffset]) > beta->J[v][j][d] )
+                        beta->J[v][j][d] = sc;
+                     break;
+                  default:
+                     Die("Bogus parent type %d for y = %d, v = %d\n",cm->sttype[y],y,v);
+               } /* End switch over state types */
+            } /* End loop over parent states  - cell done */
+         } /* End loop over d - row done */
+      } /* End loop over jp - deck done */
+
+      /* v->EL transitions (beta->J only */
+      if (NOT_IMPOSSIBLE(cm->endsc[v]))
+      {
+         for (jp = 0; jp <= W; jp++)
+         {
+            j = i0-1+jp;
+            for (d = 0; d <= jp; d++)
+            {
+               i = j-d+1;
+               switch (cm->sttype[v])
+               {
+                  case MP_st:
+                     if (j == j0 || d == jp) continue; /* boundary condition */
+                     if (dsq[i-1] < Alphabet_size && dsq[j+1] < Alphabet_size)
+                        esc = cm->esc[v][(int) (dsq[i-1]*Alphabet_size+dsq[j+1])];
+                     else
+                        esc = DegeneratePairScore(cm->esc[v], dsq[i-1], dsq[j+1]);
+                     if ((sc = beta[v][j+1][d+2] + cm->endsc[v] + (cm->el_selfsc * d) + esc) > beta[cm->M][j][d])
+                        beta[cm->M][j][d] = sc;
+                     break;
+                  case ML_st:
+                  case IL_st:
+                     if (d == jp) continue;
+                     if (dsq[i-1] < Alphabet_size)
+                        esc = cm->esc[v][(int) dsq[i-1]];
+                     else
+                        esc = DegenerateSingletScore(cm->esc[v], dsq[i-1]);
+                     if ((sc = beta[v][j][d+1] + cm->endsc[v] + (cm->el_selfsc * d) + esc) > beta[cm->M][j][d])
+                        /*(cm->el_selfsc * (d+1)) + esc) > beta[cm->M][j][d])*/
+                        beta[cm->M][j][d] = sc;
+                     break;
+                  case MR_st:
+                  case IR_st:
+                     if (j == j0) continue;
+                     if (dsq[j+1] < Alphabet_size)
+                        esc = cm->esc[v][(int) dsq[j+1]];
+                     else
+                        esc = DegenerateSingletScore(cm->esc[v], dsq[j+1]);
+                     if ((sc = beta[v][j+1][d+1] + cm->endsc[v] + (cm->el_selfsc * d) + esc) > beta[cm->M][j][d])
+                        /*(cm->el_selfsc * (d+1)) + esc) > beta[cm->M][j][d])*/
+                        beta[cm->M][j][d] = sc;
+                     break;
+                  case S_st:
+                  case D_st:
+                  case E_st:
+                     if ((sc = beta[v][j][d] + cm->endsc[v] + (cm->el_selfsc * d)) > beta[cm->M][j][d])
+                        beta[cm->M][j][d] = sc;
+                     break;
+                  case B_st:
+                  default: Die("bogus parent state %d\n", cm->sttype[v]);
+                /* note that although B is a valid vend for a segment we'd do
+                   outside on, B->EL is set to be impossible, by the local alignment
+                   config. There's no point in having a B->EL because B is a nonemitter
+                   (indeed, it would introduce an alignment ambiguity). The same
+                   alignment case is handled by the X->EL transition where X is the
+                   parent consensus state (S, MP, ML, or MR) above the B. Thus,
+                   this code is relying on the NOT_IMPOSSIBLE() test, above,
+                   to make sure the sttype[vend]=B case gets into this switch.
+                */
+               } /* end switch over parent state type v */
+            } /* end inner loop over d */
+         } /* end outer loop over jp */
+      } /* end conditional section for dealing w/ v->EL local end transitions */
+
+      /* Recycle memory */
+      if (! do_full)
+      {
+         for (y = cm->plast[v]; y > cm->plast[v] - cm->pnum[v]; y--)
+         {
+            touch[y]--;
+            if (touch[y] == 0) { deckpool_push(dpool, beta->J[y]); beta->J[y] = NULL; }
+         }
+      }
+   } /* end loop over decks v */
+
+   /* Clean-up */
+   if (ret_beta == NULL)
+   {
+      for (v = w1; v <= vend; v++)
+         if (beta->J[v] != NULL) { deckpool_push(dpool, beta->J[v]); beta->J[v] = NULL; }
+      deckpool_push(dpool, beta->J[cm->M]); beta->J[cm->M] = NULL;
+      free(beta->L);
+      free(beta->R);
+   }
+   else
+   {
+      *ret_beta = beta;
+   }
+
+   if (ret_dpool == NULL)
+   {
+      float **a;
+      while (deckpool_pop(dpool,&a)) free_vjd_deck(a, i0, j0);
+      deckpool_free(dpool);
+   }
+   else
+   {
+      *ret_dpool = dpool;
+   }
+   free(touch);
+
+   if (ret_mode != NULL) *ret_mode = b_mode;
+   if (ret_v    != NULL) *ret_v    = b_v;
+   if (ret_j    != NULL) *ret_j    = b_j;
+
+   return b_sc;
 }
 
 /* Function: trinsideT()
