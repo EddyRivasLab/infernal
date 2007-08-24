@@ -6341,14 +6341,14 @@ debug_print_alpha_banded(float ***alpha, CM_t *cm, int L, int *dmin, int *dmax)
 
 
 /* EPN 05.09.05
-  debug_print_bands()
+ * debug_print_bands()
  * Function: debug_print_bands
  *
  * Purpose:  Print bands for each state.
  */
 
 void
-debug_print_bands(CM_t *cm, int *dmin, int *dmax)
+debug_print_bands(FILE *fp, CM_t *cm, int *dmin, int *dmax)
 {
   int status;
   int v;
@@ -6377,13 +6377,10 @@ debug_print_bands(CM_t *cm, int *dmin, int *dmax)
   nodetypes[6] = "ROOT";
   nodetypes[7] = "END";
 
-  printf("\nPrinting bands :\n");
-  printf("****************\n");
+  fprintf(fp, "\n");
   for(v = 0; v < cm->M; v++)
-   {
-     printf("band v:%d n:%d %-4s %-2s min:%d max:%d\n", v, cm->ndidx[v], nodetypes[(int) cm->ndtype[cm->ndidx[v]]], sttypes[(int) cm->sttype[v]], dmin[v], dmax[v]);
-   }
-  printf("****************\n\n");
+    fprintf(fp, "band v:%d n:%d %-4s %-2s min:%d max:%d\n", v, cm->ndidx[v], nodetypes[(int) cm->ndtype[cm->ndidx[v]]], sttypes[(int) cm->sttype[v]], dmin[v], dmax[v]);
+  fprintf(fp, "\n");
 
   free(sttypes);
   free(nodetypes);

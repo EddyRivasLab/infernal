@@ -1140,7 +1140,7 @@ ConfigQDB(CM_t *cm)
       cm->dmin = NULL;
       cm->dmax = NULL;
       safe_windowlen *= 2;
-      if(safe_windowlen > 1000000)
+      if(safe_windowlen > (cm->clen * 1000))
 	esl_fatal("ERROR safe_windowlen big: %d\n", safe_windowlen);
     }
   /* Set W as dmax[0], we're wasting time otherwise, looking at

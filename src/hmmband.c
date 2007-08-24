@@ -1982,10 +1982,10 @@ hmm2ij_bands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
   if(debug_level > 0)
     {
       printf("bands on i\n");
-      debug_print_bands(cm, imin, imax);
+      debug_print_bands(stdout, cm, imin, imax);
 
       printf("bands on j\n");
-      debug_print_bands(cm, jmin, jmax);
+      debug_print_bands(stdout, cm, jmin, jmax);
     }
 
   free(nss_imin);

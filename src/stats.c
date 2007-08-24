@@ -408,14 +408,19 @@ char resolve_degenerate (ESL_RANDOMNESS *r, char c) {
 
 /*
  * Function: GetDBInfo()
+ *
  * Date:     Easelification: EPN, Thu Dec  7 06:07:58 2006
  *           (initial - RSEARCH::get_dbinfo()) RJK, Thu Apr 11, 2002 [St. Louis]
+ *
  * Purpose:  Given a sequence file name, determine the total size of the
  *           seqs in the file (DB) and GC content information.
- * Args:     seqfile  - name of sequence file
+ *
+ * Args:     abc      - alphabet for sq file
+ *           sqfp     - open sequence file
  *           ret_N    - RETURN: total length (residues) or all seqs in seqfile
  *           gc_ct    - RETURN: gc_ct[x] observed 100-nt segments with GC% of x [0..100] 
- * seqfile   
+ *
+ * Dies on parse error of sqfile.
  */
 void GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, long *ret_N, double **ret_gc_ct) 
 {
@@ -437,37 +442,41 @@ void GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, long *ret_N, double *
   for (j=0; j<100; j++)
     allN[j] = 'N';
   
-  sq = esl_sq_CreateDigital(abc); 
+  if(ret_gc_ct != NULL) sq = esl_sq_CreateDigital(abc); 
+  else                  sq = esl_sq_Create(); /* allows abc to be NULL if we don't care about gc stats */
   while ((status = esl_sqio_Read(sqfp, sq)) == eslOK) 
     { 
       N += sq->n;
       /*printf("new N: %d\n", N);*/
-      for(i = 0; i < sq->n; i += 100)
+      if(ret_gc_ct != NULL) 
 	{
-	  j = (i+99 <= sq->n) ? i+99 : sq->n;
-	  gc = get_gc_comp(sq, i, j);
-	  /*printf(">%d.raw\n", i);*/
-	  allN_flag = TRUE;
-	  for(j = 0; j < 100 && (j+i) < sq->n; j++)
+	  for(i = 0; i < sq->n; i += 100)
 	    {
-	      if(abc->sym[sq->dsq[(i+j)]] != 'N')
-	      {
-		allN_flag = FALSE;
-		break;
-	      }
-	    }
-	  /*printf("N: %d i: %d gc: %d\n", N, i, gc);*/
-	  /* scale gc for chunks < 100 nt */
-	  if(j < 100) gc *= 100. / (float) j;
-
-	  /* don't count GC content of chunks < 20 nt, very hacky;
-	   * don't count GC content of chunks that are all N, this
-	   * will be common in RepeatMasked genomes where poly-Ns could
-	   * skew the base composition stats of the genome */
-	  if(j > 20 && !allN_flag)
-	    {
-	      /*printf("j: %d i: %d N: %d adding 1 to gc_ct[%d]\n", j, i, N, ((int) gc));*/
-	      gc_ct[(int) gc] += 1.;
+	      j = (i+99 <= sq->n) ? i+99 : sq->n;
+	      gc = get_gc_comp(sq, i, j);
+	      /*printf(">%d.raw\n", i);*/
+	      allN_flag = TRUE;
+	      for(j = 0; j < 100 && (j+i) < sq->n; j++)
+		{
+		  if(abc->sym[sq->dsq[(i+j)]] != 'N')
+		    {
+		      allN_flag = FALSE;
+		      break;
+		    }
+		}
+	      /*printf("N: %d i: %d gc: %d\n", N, i, gc);*/
+	      /* scale gc for chunks < 100 nt */
+	      if(j < 100) gc *= 100. / (float) j;
+	      
+	      /* don't count GC content of chunks < 20 nt, very hacky;
+	       * don't count GC content of chunks that are all N, this
+	       * will be common in RepeatMasked genomes where poly-Ns could
+	       * skew the base composition stats of the genome */
+	      if(j > 20 && !allN_flag)
+		{
+		  /*printf("j: %d i: %d N: %d adding 1 to gc_ct[%d]\n", j, i, N, ((int) gc));*/
+		  gc_ct[(int) gc] += 1.;
+		}
 	    }
 	}
       esl_sq_Reuse(sq); 

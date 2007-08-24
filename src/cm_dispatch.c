@@ -38,7 +38,7 @@
 /* Helper functions called by the main functions (main functions
  * declared in cm_dispatch.h) 
  */
-static db_seq_t *read_next_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revcomp);
+static int  read_next_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revcomp, db_seq_t **ret_dbseq);
 static void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, db_seq_t *dbseq,
 			   int do_complement, int used_HMM);
 static void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, ESL_SQ *sq,
@@ -70,7 +70,8 @@ static seqs_to_aln_t *read_next_aln_seqs(const ESL_ALPHABET *abc, ESL_SQFILE *se
  */
 void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons)
 {
-  int reversed;                /* Am I currently doing reverse complement? */
+  int status;
+  int reversed;                /* am I currently doing reverse complement? */
   int i,a;
   db_seq_t *dbseq;
   float min_cm_cutoff;
@@ -108,7 +109,7 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc
   do_revcomp = (!(cm->search_opts & CM_SEARCH_TOPONLY));
   do_align   = (!(cm->search_opts & CM_SEARCH_NOALIGN));
 
-  while ((dbseq = read_next_seq(cm->abc, dbfp, do_revcomp)))
+  while ((status = read_next_seq(cm->abc, dbfp, do_revcomp, &dbseq)) == eslOK)
     {
       for (reversed = 0; reversed <= do_revcomp; reversed++) 
 	{
@@ -122,8 +123,7 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc
 				 FALSE, /* we're not building a histogram for CM stats  */
 				 FALSE, /* we're not building a histogram for CP9 stats */
 				 NULL); /* filter fraction, TEMPORARILY NULL            */
-	  remove_overlapping_hits (dbseq->results[reversed],
-				   1, dbseq->sq[reversed]->n);
+	  remove_overlapping_hits (dbseq->results[reversed], 1, dbseq->sq[reversed]->n);
 	  if (((!(cm->search_opts & CM_SEARCH_HMMONLY)) && (cm->cutoff_type == E_CUTOFF)) || 
 	      ((cm->search_opts & CM_SEARCH_HMMONLY) && (cm->cp9_cutoff_type == E_CUTOFF)))
 	    remove_hits_over_e_cutoff (cm, dbseq->results[reversed],
@@ -173,6 +173,9 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc
 	}
       free(dbseq);
     }
+  if (status != eslEOF) 
+    esl_fatal("Parse failed, line %d, file %s:\n%s", 
+	      dbfp->linenumber, dbfp->filename, dbfp->errbuf);
 }
 
 #ifdef USE_MPI
@@ -407,50 +410,52 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *a
 
 /*
  * Function: read_next_seq
+ *
  * Date:     RJK, Wed May 29, 2002 [St. Louis]
  *           easeled: EPN, Fri Dec  8 11:40:20 2006
+ *
  * Purpose:  Given a dbfp and whether or not to take the reverse complement,
  *           reads in the sequence and prepares reverse complement.
+ *
+ * Returns:  eslOK on success; eslEOF if end of file, 
+ *           some other status code from esl_sqio_Read() if an error occurs.
  */
-db_seq_t *read_next_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revcomp) 
+int read_next_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revcomp, db_seq_t **ret_dbseq) 
 {
-  db_seq_t *ret_dbseq;
   int status;
-  char *tmp_seq;
+  db_seq_t *dbseq = NULL;
 
-  ESL_ALLOC(ret_dbseq, sizeof(db_seq_t));
+  ESL_ALLOC(dbseq, sizeof(db_seq_t));
+  dbseq->sq[0] = NULL;
+  dbseq->sq[1] = NULL;
 
-  ret_dbseq->sq[0] = esl_sq_CreateDigital(abc);
-  status = (esl_sqio_Read(dbfp, ret_dbseq->sq[0]) == eslOK);
+  dbseq->sq[0] = esl_sq_CreateDigital(abc);
 
-  while(status && ret_dbseq->sq[0]->n == 0) /* skip zero length seqs */
-    {
-      esl_sq_Reuse(ret_dbseq->sq[0]);
-      status = (esl_sqio_Read(dbfp, ret_dbseq->sq[0]) == eslOK);
-    }
-  if(!status)
-    return NULL;
+  while((status = esl_sqio_Read(dbfp, dbseq->sq[0])) == eslOK && (dbseq->sq[0]->n == 0)) /* skip zero length seqs */
+    esl_sq_Reuse(dbseq->sq[0]);
+
+  if(status != eslOK) goto ERROR;
 
   if (do_revcomp)
     {
-      /* make a new SQ object, to store the reverse complement */
-      ESL_ALLOC(tmp_seq, (ret_dbseq->sq[0]->n+2) * sizeof(char));
-      status = esl_abc_Textize(ret_dbseq->sq[0]->abc, ret_dbseq->sq[0]->dsq, ret_dbseq->sq[0]->n, tmp_seq);
-      if(status != eslOK) goto ERROR;
-      if((ret_dbseq->sq[1] = esl_sq_CreateFrom(ret_dbseq->sq[0]->name, tmp_seq,
-					       ret_dbseq->sq[0]->desc, ret_dbseq->sq[0]->acc, 
-					       ret_dbseq->sq[0]->ss)) == NULL) goto ERROR;
-      ret_dbseq->sq[1]->abc = ret_dbseq->sq[0]->abc;
-      revcomp(ret_dbseq->sq[1]->abc, ret_dbseq->sq[1], ret_dbseq->sq[1]);
+      /* make a new ESL_SQ object, to store the reverse complement */
+      if((dbseq->sq[1] = esl_sq_CreateDigitalFrom(abc, dbseq->sq[0]->name, dbseq->sq[0]->dsq, 
+						  dbseq->sq[0]->n, dbseq->sq[0]->desc, 
+						  dbseq->sq[0]->acc, dbseq->sq[0]->ss)) == NULL) goto ERROR;
+      /* reverse complement it in place */
+      revcomp(dbseq->sq[1]->abc, dbseq->sq[1], dbseq->sq[1]);
     }
-  ret_dbseq->results[0] = NULL;
-  ret_dbseq->results[1] = NULL;
+  dbseq->results[0] = NULL;
+  dbseq->results[1] = NULL;
 
-  return(ret_dbseq);
+  *ret_dbseq = dbseq;
+  return eslOK;
 
  ERROR:
-  esl_fatal("ERROR code: %d in read_next_seq", status);
-  return NULL; /* never reached */
+  if(dbseq->sq[0] != NULL) esl_sq_Destroy(dbseq->sq[0]);
+  if(dbseq->sq[1] != NULL) esl_sq_Destroy(dbseq->sq[1]);
+  if(dbseq != NULL) free(dbseq);
+  return status;
 }
 
 /* EPN, Mon Jan  8 06:42:59 2007
@@ -1238,7 +1243,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
     {
       if(bdump_level > 1) 
 	  /*printf("cm->beta:%f\n", cm->beta);*/
-	  debug_print_bands(cm, cm->dmin, cm->dmax);
+	  debug_print_bands(stdout, cm, cm->dmin, cm->dmax);
       expand_flag = FALSE;
       /* Copy dmin and dmax, so we can replace them after expansion */
       ESL_ALLOC(orig_dmin, sizeof(int) * cm->M);
@@ -1404,7 +1409,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	      if(bdump_level > 2) 
 		{
 		  printf("printing expanded bands :\n");
-		  debug_print_bands(cm, cm->dmin, cm->dmax);
+		  debug_print_bands(stdout, cm, cm->dmin, cm->dmax);
 		}
 	      expand_flag = TRUE;
 	    }
@@ -1764,9 +1769,10 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
  * Args:     comp  - destination for reverse complement of sq
  *           seq   - sequence to reverse complement
  *
- * Returns:  Dies immediately without cleanup on failure;
+ * Returns:  eslOK on success;
+ *           Dies immediately if any error occurs.
  */
-void
+int
 revcomp(const ESL_ALPHABET *abc, ESL_SQ *comp, ESL_SQ *sq)
 {
   int status;
@@ -1789,8 +1795,14 @@ revcomp(const ESL_ALPHABET *abc, ESL_SQ *comp, ESL_SQ *sq)
 
   if(sq->flags & eslSQ_DIGITAL) do_digital = TRUE;
 
-  if(do_digital) if(esl_rnd_XReverse(sq->dsq, sq->n, comp->dsq) != eslOK) goto ERROR;
-  if(do_digital) if(esl_rnd_CReverse(sq->seq, comp->seq) != eslOK) goto ERROR;
+  if(do_digital) {
+    if((status = esl_rnd_XReverse(sq->dsq, sq->n, comp->dsq)) != eslOK) 
+      goto ERROR; 
+  }
+  else {
+    if((status = esl_rnd_CReverse(sq->seq, comp->seq) != eslOK))
+      goto ERROR; 
+  } 
 
   if(do_digital)
     {
@@ -1851,9 +1863,11 @@ revcomp(const ESL_ALPHABET *abc, ESL_SQ *comp, ESL_SQ *sq)
 	     default:  break;		/* anything else? leave it; it's prob a gap or an X */
 	     }
 	}
-      return;
     }
+  return eslOK;
+
  ERROR: 
   esl_fatal("Unexpected error code: %d in revcomp().", status);
+  return status; /* NOTREACHED */
 }
     

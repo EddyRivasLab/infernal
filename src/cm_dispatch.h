@@ -46,5 +46,5 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 
 extern int PrintSearchInfo(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N);
 
-extern void  revcomp(const ESL_ALPHABET *abc, ESL_SQ *comp, ESL_SQ *sq);
+extern int revcomp(const ESL_ALPHABET *abc, ESL_SQ *comp, ESL_SQ *sq);
 #endif

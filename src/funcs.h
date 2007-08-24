@@ -214,7 +214,7 @@ extern float CYKInside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0,
 extern float CYKInsideScore(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, 
 			    int j0, int *dmin, int *dmax);
 extern float CYKDemands(CM_t *cm, int L, int *dmin, int *dmax, int be_quiet);
-extern void  debug_print_bands(CM_t *cm, int *dmin, int *dmax);
+extern void  debug_print_bands(FILE *fp, CM_t *cm, int *dmin, int *dmax);
 
 /* The memory management routines.
  */
