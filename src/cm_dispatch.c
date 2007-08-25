@@ -1083,18 +1083,20 @@ seqs_to_aln_t * read_next_aln_seqs(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, i
  *           sq           - the sequences
  *           nseq         - number of seqs we're aligning
  *           ret_tr       - RETURN: parsetrees (pass NULL if trace isn't wanted)
- *           ret_postcode - RETURN: postal code string
+ *           ret_postcode - RETURN: postal code strings (pass NULL if not wanted)
  *           ret_cp9_tr   - RETURN: CP9 traces only filled if cm->align_opts & CM_ALIGN_HMMONLY
  *           ret_sc       - RETURN: scores of parses, NULL if not wanted
  *           bdump_level  - verbosity level for band related print statements
  *           debug_level  - verbosity level for debugging print statements
  *           silent_mode  - TRUE to not print anything, FALSE to print scores 
+ * 
+ * Returns:  eslOK on success;
+ *           Dies if there's an error (not good for MPI).
  */
-void
+int
 actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, char ***ret_postcode,
 		       CP9trace_t ***ret_cp9_tr, float **ret_sc, int bdump_level, int debug_level, int silent_mode)
 {
-  int status;
   ESL_STOPWATCH   *watch;       /* for timings */
   int i;                        /* counter over sequences */
   int v;                        /* state counter */
@@ -1168,7 +1170,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 
   /* Contract checks */
   if(!(cm->flags & CMH_BITS)) 
-    esl_fatal("ERROR in actually_align_targets, CMH_BITS flag down.\n");
+    esl_fatal("actually_align_targets(), CMH_BITS flag down.\n");
 
   /*printf("in actually_align_targets\n");*/
 
@@ -1202,7 +1204,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
   }
 
   if((!(ret_cp9_tr == NULL)) && !do_hmmonly)
-    esl_fatal("ERROR in actually_align_targets, want CP9 traces, but not hmmonly mode.\n");
+    esl_fatal("actually_align_targets(), want CP9 traces, but not hmmonly mode.\n");
   if(!do_hmmonly && !do_scoreonly) 
     {
       ESL_ALLOC(tr, sizeof(Parsetree_t *) * nseq);
@@ -1338,7 +1340,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	  /* (2) infer the start and end HMM nodes (consensus cols) from posterior matrix.
 	   * Remember: we're necessarily in CP9 local mode, the --sub option turns local mode on. 
 	   */
-	  CP9NodeForPosn(orig_hmm, 1, sq[i]->n, 1,             cp9_post, &spos, &spos_state, 
+	  CP9NodeForPosn(orig_hmm, 1, sq[i]->n, 1, cp9_post, &spos, &spos_state, 
 			 FALSE, 0., TRUE, debug_level);
 	  CP9NodeForPosn(orig_hmm, 1, sq[i]->n, sq[i]->n, cp9_post, &epos, &epos_state, 
 			 FALSE, 0., FALSE, debug_level);
@@ -1358,10 +1360,10 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 			    &submap,            /* maps from the sub_cm to cm and vice versa           */
 			    FALSE,              /* DON'T build a fullsub model (deprecated)            */
 			    debug_level)))      /* print or don't print debugging info                 */
-	    esl_fatal("Couldn't build a sub CM from the CM\n");
+	    esl_fatal("ERROR actually_align_targets(), building sub CM.");
 	  /* Configure the sub_cm, the same as the cm, this will build a CP9 HMM if (do_hbanded) */
 	  ConfigCM(sub_cm, NULL, NULL);
-
+	  
 	  cm    = sub_cm; /* orig_cm still points to the original CM */
 	  if(do_hbanded) /* we're doing HMM banded alignment to the sub_cm */
 	    {
@@ -1753,7 +1755,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
       free(cp9_tr);
     }
 
-  return;
+  return eslOK;
  ERROR:
   esl_fatal("Memory allocation error.");
 }

@@ -37,8 +37,10 @@
  *           preset_dmax  - supplied dmax values, NULL if none
  *
  * Returns:   <eslOK> on success.
+ *            <eslEINVAL> on contract violation.
+ *            <eslEMEM> on memory allocation error.
  */
-void
+int 
 ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
 {
   int status;
@@ -70,7 +72,7 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
   if(cm->cp9map     != NULL) FreeCP9Map(cm->cp9map);
   if(cm->cp9        != NULL) FreeCPlan9(cm->cp9);
 
-  if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))
+  if(!(build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0)))
     esl_fatal("Couldn't build a CP9 HMM from the CM\n");
   cm->flags |= CM_CP9; /* raise the CP9 flag */
   
@@ -179,12 +181,10 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
   if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
     CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
 				     * makes all CP9 (if non-null) inserts equiprobable */
-
-  /*printf("leaving ConfigCM()\n");
-    debug_print_cm_params(stdout, cm);
+  /*debug_print_cm_params(stdout, cm);
     debug_print_cp9_params(stdout, cm->cp9, TRUE);*/
 
-  return;
+  return eslOK;
 
  ERROR:
   esl_fatal("Memory allocation error.");
@@ -250,9 +250,9 @@ ConfigCMEnforce(CM_t *cm)
     }
   if(do_build_cp9)
     {
-      if(!build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), 
+      if(!(build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), 
 			TRUE, /* b/c we're enforcing, check CP9 mirrors CM */
-			0.0001, 0))
+			0.0001, 0)))
 	esl_fatal("Couldn't build a CP9 HMM from the CM\n");
       cm->flags |= CM_CP9; /* raise the CP9 flag */
     }
@@ -858,7 +858,7 @@ EnforceSubsequence(CM_t *cm)
       ConfigQDB(cm);
     }      
 
-  CMLogoddsify(cm);
+  CMLogoddsify(cm); /* QDB calculation invalidates log odds scores */
   if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
     CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
 				     * makes all CP9 (if non-null) inserts equiprobable */

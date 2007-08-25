@@ -422,6 +422,358 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
     }	 
 }
 
+#ifdef HAVE_MPI
+/* mpi_master()
+ * The MPI version of cmsearch
+ * Follows standard pattern for a master/worker load-balanced MPI program 
+ * (SRE notes J1/78-79).
+ * 
+ * EPN: GOAL OF IMPLEMENTATION FOLLOWS IN LOWERCASE.
+ * IT IS NOT YET ACHIEVED.
+ * TO ACHIEVE WE'LL NEED ALL FUNCS CALLED BY MPI TO
+ * RETURN CLEANLY ALWAYS - BIG TASK TO REWRITE THOSE.
+ * CURRENTLY NEARLY ALL ERRORS ARE UNRECOVERABLE, BUT THESE
+ * ARE NOT LIMITED TO MPI COMMUNICATION ERRORS.
+ *
+ * A master can only return if it's successful. 
+ * Errors in an MPI master come in two classes: recoverable and nonrecoverable.
+ * 
+ * Recoverable errors include all worker-side errors, and any
+ * master-side error that do not affect MPI communication. Error
+ * messages from recoverable messages are delayed until we've cleanly
+ * shut down the workers.
+ * 
+ * Unrecoverable errors are master-side errors that may affect MPI
+ * communication, meaning we cannot count on being able to reach the
+ * workers and shut them down. Unrecoverable errors result in immediate
+ * cm_Fail()'s, which will cause MPI to shut down the worker processes
+ * uncleanly.
+ */
+static void
+mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
+{
+  int      xstatus       = eslOK;	/* changes from OK on recoverable error */
+  int      status;
+  int      have_work     = TRUE;	/* TRUE while work remains  */
+  int      nproc_working = 0;	        /* number of worker processes working, up to nproc-1 */
+  int      wi;          	        /* rank of next worker to get an alignment to work on */
+  char    *buf           = NULL;	/* input/output buffer, for packed MPI messages */
+  int      bn            = 0;
+
+  CM_t *cm;
+  db_seq_t *dbseqlist    = NULL;
+  /* change these */
+  ESL_MSA *msa           = NULL;
+  P7_HMM  *hmm           = NULL;
+  ESL_MSA **msalist      = NULL;
+  int      *msaidx       = NULL;
+  /* end of change these */
+
+  char     errmsg[eslERRBUFSIZE];
+  MPI_Status mpistatus; 
+  int      n;
+  int      pos;
+  
+  /* TEMPORARY */
+  if(esl_opt_GetBoolean(go, "--hmmcalcthr"))
+    esl_fatal("ERROR, --hmmcalcthr and --mpi not yet implemented.");
+
+  /* Master initialization: including, figure out the alphabet type.
+   * If any failure occurs, delay printing error message until we've shut down workers.
+   */
+  if (xstatus == eslOK) { if ((status = init_master_cfg(go, cfg, errmsg)) != eslOK) xstatus = status; }
+  if (xstatus == eslOK) { if ((status = init_shared_cfg(go, cfg, errmsg)) != eslOK) xstatus = status; }
+  if (xstatus == eslOK) { bn = 4096; if ((buf = malloc(sizeof(char) * bn)) == NULL) { sprintf(errmsg, "allocation failed"); xstatus = eslEMEM; } }
+
+  /*if (xstatus == eslOK) { if ((msalist = malloc(sizeof(ESL_MSA *) * cfg->nproc)) == NULL) { sprintf(errmsg, "allocation failed"); xstatus = eslEMEM; } }
+    if (xstatus == eslOK) { if ((msaidx  = malloc(sizeof(int)       * cfg->nproc)) == NULL) { sprintf(errmsg, "allocation failed"); xstatus = eslEMEM; } }*/
+
+  /* for (wi = 0; wi < cfg->nproc; wi++) { msalist[wi] = NULL; msaidx[wi] = 0; } */
+  MPI_Bcast(&xstatus, 1, MPI_INT, 0, MPI_COMM_WORLD);
+  if (xstatus != eslOK) p7_Fail(errmsg);
+  ESL_DPRINTF1(("MPI master is initialized\n"));
+
+  /* Worker initialization:
+   * Because we've already successfully initialized the master before we start
+   * initializing the workers, we don't expect worker initialization to fail;
+   * so we just receive a quick OK/error code reply from each worker to be sure,
+   * and don't worry about an informative message. 
+   */
+  MPI_Bcast(&(cfg->abc->type), 1, MPI_INT, 0, MPI_COMM_WORLD);
+  MPI_Reduce(&xstatus, &status, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD);
+  if (status != eslOK) p7_Fail("One or more MPI worker processes failed to initialize.");
+  ESL_DPRINTF1(("%d workers are initialized\n", cfg->nproc-1));
+
+
+  /* Main loop: combining load workers, send/receive, clear workers loops;
+   * also, catch error states and die later, after clean shutdown of workers.
+   * 
+   * When a recoverable error occurs, have_work = FALSE, xstatus !=
+   * eslOK, and errmsg is set to an informative message. No more
+   * errmsg's can be received after the first one. We wait for all the
+   * workers to clear their work units, then send them shutdown signals,
+   * then finally print our errmsg and exit.
+   * 
+   * Unrecoverable errors just crash us out with cm_Fail().
+   */
+  wi = 1;
+  while (have_work || nproc_working)
+    {
+      if (read_next_cm)
+	{
+	  if (CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
+	    {
+	      cfg->cm++;  
+	      ESL_DPRINTF1("MPI master read CM %d", cfg->cm);
+	      BroadcastCM();
+	    }
+	  else; /* no more cms, have_work = FALSE? */
+	}
+      if(read_next_seq) { ; }
+      /*read_next_seq() */
+      if (have_work) /* see mpifuncs.c:search_enqueue*/
+	{
+	  /* we have a seq, and all it's chunks have yet to be sent */
+	  /* see search_enqueue() and search_send_next_job() in mpifuncs
+	   *  for how to send a search job */
+
+	  if (CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
+	    {
+	      cfg->cm++;  
+	      ESL_DPRINTF1(("MPI master read CM %d", cfg->cm);
+	    }
+	  else 
+	    {
+	      have_work = FALSE;
+	      ESL_DPRINTF1(("MPI master has run out of CMs (having read %d)\n", cfg->cm));
+	    } 
+	}
+
+      if ((have_work && nproc_working == cfg->nproc-1) || (!have_work && nproc_working > 0))
+	{
+	  /* we're waiting to receive */
+	  if (MPI_Probe(MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &mpistatus) != 0) cm_Fail("mpi probe failed");
+	  if (MPI_Get_count(&mpistatus, MPI_PACKED, &n)                != 0) cm_Fail("mpi get count failed");
+	  wi = mpistatus.MPI_SOURCE;
+	  ESL_DPRINTF1(("MPI master sees a result of %d bytes from worker %d\n", n, wi));
+
+	  if (n > bn) {
+	    if ((buf = realloc(buf, sizeof(char) * n)) == NULL) cm_Fail("reallocation failed");
+	    bn = n; 
+	  }
+	  if (MPI_Recv(buf, bn, MPI_PACKED, wi, 0, MPI_COMM_WORLD, &mpistatus) != 0) p7_Fail("mpi recv failed");
+	  ESL_DPRINTF1(("MPI master has received the buffer\n"));
+
+	  /* If we're in a recoverable error state, we're only clearing worker results;
+           * just receive them, don't unpack them or print them.
+           * But if our xstatus is OK, go ahead and process the result buffer.
+	   */
+	  if (xstatus == eslOK)	
+	    {
+	      pos = 0;
+	      if (MPI_Unpack(buf, bn, &pos, &xstatus, 1, MPI_INT, MPI_COMM_WORLD)     != 0)     cm_Fail("mpi unpack failed");
+	      if (xstatus == eslOK) /* worker reported success. Get the result. */
+		{
+		  if (MPI_Unpack(buf, bn, &pos, &results_type,   1, MPI_INT, MPI_COMM_WORLD)     != 0)     cm_Fail("mpi unpack failed");
+		  if (results_type == MPIRESULTS_SEARCH) {
+		    ESL_DPRINTF1("MPI master sees that the result buffer contains search results\n");
+		    if (cm_search_results_MPIUnpack(buf, bn, &pos, MPI_COMM_WORLD, &(cfg->abc), &hmm) != eslOK) cm_Fail("search results unpack failed");
+		    ESL_DPRINTF1(("MPI master has unpacked search results\n"));
+
+		    if(esl_opt_GetBoolean(go, "--noalign")) {
+		      if ((status = output_result(go, cfg, errmsg, msaidx[wi], msalist[wi], hmm))     != eslOK) { xstatus = status; }
+		    }
+		    else ; /* NOT SURE WHAT TO DO HERE! need to enqueue the alignment work */
+		  }
+		  /* free stuff */
+		}
+	      else	/* worker reported an error. Get the errmsg. */
+		{
+		  if (MPI_Unpack(buf, bn, &pos, errmsg, eslERRBUFSIZE, MPI_CHAR, MPI_COMM_WORLD) != 0) cm_Fail("mpi unpack of errmsg failed");
+		  ESL_DPRINTF1(("MPI master sees that the result buffer contains an error message\n"));
+		}
+	    }
+	  esl_msa_Destroy(msalist[wi]);
+	  msalist[wi] = NULL;
+	  msaidx[wi]  = 0;
+	  nproc_working--;
+	}
+
+      if (have_work)
+	{   
+	  /* send something, sequence to search or alignment */
+	  ESL_DPRINTF1(("MPI master is sending sequence to worker %d\n", wi));
+	  if (search_job_MPISend() != eslOK) cm_Fail("MPI search job send failed");
+
+	  ilist[wi] = i;
+	  jlist[wi] = j;
+	  sqidx[wi] = nseq;
+
+	  wi++;
+	  nproc_working++;
+	}
+    }
+  
+  /* On success or recoverable errors:
+   * Shut down workers cleanly. 
+   */
+  ESL_DPRINTF1(("MPI master is done. Shutting down all the workers cleanly\n"));
+  /*for (wi = 1; wi < cfg->nproc; wi++) 
+    if (esl_msa_MPISend(NULL, wi, 0, MPI_COMM_WORLD, &buf, &bn) != eslOK) p7_Fail("MPI msa send failed");*/
+  free(buf);
+
+  if (xstatus != eslOK) cm_Fail(errmsg);
+  else                  return;
+}
+
+
+static void
+mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
+{
+  int           xstatus = eslOK;
+  int           status;
+  int           type;
+  CM_t         *cm  = NULL;
+  char         *wbuf = NULL;	/* packed send/recv buffer  */
+  int           wn   = 0;	/* allocation size for wbuf */
+  int           sz, n;		/* size of a packed message */
+  int           pos;
+  char          errmsg[eslERRBUFSIZE];
+
+  /* After master initialization: master broadcasts its status.
+   */
+  MPI_Bcast(&xstatus, 1, MPI_INT, 0, MPI_COMM_WORLD);
+  if (xstatus != eslOK) return; /* master saw an error code; workers do an immediate normal shutdown. */
+  ESL_DPRINTF1(("worker %d: sees that master has initialized\n", cfg->my_rank));
+  
+  /* Master now broadcasts worker initialization information (alphabet info?)
+   * Workers returns their status post-initialization.
+   * Initial allocation of wbuf must be large enough to guarantee that
+   * we can pack an error result into it, because after initialization,
+   * errors will be returned as packed (code, errmsg) messages.
+   */
+  MPI_Bcast(&type, 1, MPI_INT, 0, MPI_COMM_WORLD);
+  if (xstatus == eslOK) { if ((cfg->abc = esl_alphabet_Create(type))      == NULL)    xstatus = eslEMEM; }
+  if (xstatus == eslOK) { if ((status = init_shared_cfg(go, cfg, errmsg)) != eslOK)   xstatus = status;  }
+  if (xstatus == eslOK) { wn = 4096;  if ((wbuf = malloc(wn * sizeof(char))) == NULL) xstatus = eslEMEM; }
+  MPI_Reduce(&xstatus, &status, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD); /* everyone sends xstatus back to master */
+  if (xstatus != eslOK) {
+    if (wbuf != NULL) free(wbuf);
+    return; /* shutdown; we passed the error back for the master to deal with. */
+  }
+  ESL_DPRINTF2(("worker %d: initialized\n", cfg->my_rank));
+
+                      /* source = 0 (master); tag = 0 */
+  /* mpifuncs:search_receive_job() */
+  while (job_MPIRecv(&dsq, &n) == eslOK)
+    {
+      if(job_type == MPIJOB_SEARCH) {
+	ESL_DPRINTF1("worker %d: has received search job (i..j)\n", cfg->my_rank);
+	if ((status =   process_search_workunit(go, cfg, errmsg, cm, dsq, i, j, &results)) != eslOK) goto ERROR;
+	ESL_DPRINTF1("worker %d: has gathered search results\n", cfg->my_rank);
+
+	n = 0;
+	if (MPI_Pack_size(1, MPI_INT, MPI_COMM_WORLD, &sz) != 0)             goto ERROR;   n += sz;
+	if (search_results_MPIPackSize(hmm, MPI_COMM_WORLD, &sz)   != eslOK) goto ERROR;   n += sz;
+	if (n > wn) {
+	  void *tmp;
+	  ESL_RALLOC(wbuf, tmp, sizeof(char) * n);
+	  wn = n;
+	}
+	ESL_DPRINTF1(("worker %d: has calculated the search results will pack into %d bytes\n", cfg->my_rank, n));
+
+	pos = 0;
+	if (MPI_Pack(&status, 1, MPI_INT, wbuf, wn, &pos, MPI_COMM_WORLD)    != 0)     goto ERROR;
+	if (results_MPIPack(hmm, wbuf, wn, &pos, MPI_COMM_WORLD)             != eslOK) goto ERROR;
+	MPI_Send(wbuf, pos, MPI_PACKED, 0, 0, MPI_COMM_WORLD);
+	ESL_DPRINTF2(("worker %d: has sent search results to master in message of %d bytes\n", cfg->my_rank, pos));
+
+	FreeResults(results);
+      }
+      else if(job_type == MPIJOB_ALIGN) { ; }
+      else if(job_type == MPIJOB_CP9FILTER) { ; }
+    }
+  if (wbuf != NULL) free(wbuf);
+  return;
+
+ ERROR:
+  ESL_DPRINTF1(("worker %d: fails, is sending an error message, as follows:\n%s\n", cfg->my_rank, errmsg));
+  pos = 0;
+  MPI_Pack(&status, 1,                MPI_INT,  wbuf, wn, &pos, MPI_COMM_WORLD);
+  MPI_Pack(errmsg,  eslERRBUFSIZE,    MPI_CHAR, wbuf, wn, &pos, MPI_COMM_WORLD);
+  MPI_Send(wbuf, pos, MPI_PACKED, 0, 0, MPI_COMM_WORLD);
+  return;
+}
+#endif /*HAVE_MPI*/
+
+/* A search work unit consists of a CM, digitized sequence dsq, and indices i and j.
+ * The job is to search dsq from i..j and return search results in <*ret_results>.
+ */
+static int
+process_search_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_DSQ *dsq, 
+			int i, int j, scan_results_t *ret_results)
+{
+  int status;
+  float min_cm_cutoff;
+  float min_cp9_cutoff;
+  scan_results_t *results;
+
+  results        = CreateResults(INIT_RESULTS);
+  min_cm_cutoff  = MinCMScCutoff(cm);
+  min_cp9_cutoff = MinCP9ScCutoff(cm);
+  if ((status = actually_search_target(cm, dsq, i, j, min_cm_cutoff, min_cp9_cutoff, results,
+				       TRUE,  /* filter with a CP9 HMM if appropriate */
+				       FALSE, /* we're not building a histogram for CM stats  */
+				       FALSE, /* we're not building a histogram for CP9 stats */
+				       NULL)) /* filter fraction, TEMPORARILY NULL            */
+      != eslOK) goto ERROR;
+  
+
+
+  *ret_results = results;
+  return eslOK;
+  
+ ERROR:
+  ESL_DPRINTF1(("worker %d: has caught an error in process_search_workunit\n", cfg->my_rank));
+  FreeCM(cm);
+  FreeResults(results);
+  return status;
+}
+
+/* An alignment work unit consists of a CM, an int (nseq), nseq sequences (digitized) sq[].
+ * The job is to align the sequences and return parsetrees.
+ */
+static int
+process_aln_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_SQ *sq, 
+		     int nseq, Parsetree_t **ret_tr)
+{
+  if ((status = actually_align_targets(cm, sq, nseq, ret_tr, NULL, NULL, NULL, 0, 0, 0, TRUE)) != eslOK)
+    goto ERROR;
+  /* currently actually_align_targets() either returns eslOK or dies,
+   * TODO: have it always return a status, this will require having all funcs under it return status also */
+  return eslOK;
+  
+ ERROR:
+  ESL_DPRINTF1(("worker %d: has caught an error in process_aln_workunit\n", cfg->my_rank));
+  return status;
+}
+
+/* A CP9 filter work unit consists of a CM and an int (nseq).
+ * The job is to emit nseq sequences with a score better than cm->cutoff (rejecting
+ * those that are worse), and then search those seqs with a CP9, returning the scores of the
+ * best CP9 hit within each sequence.
+ */
+static int
+process_cp9filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq)
+{
+  esl_fatal("WRITE process_cp9filter_workunit()");
+  return eslOK;
+  
+ ERROR:
+  ESL_DPRINTF1(("worker %d: has caught an error in process_cp9filter_workunit\n", cfg->my_rank));
+  return status;
+}
+
 /* initialize_cm()
  * Setup the CM based on the command-line options/defaults;
  * only set flags and a few parameters. ConfigCM() configures
