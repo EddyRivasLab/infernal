@@ -67,12 +67,11 @@ REPOSITORY  = https://svn.janelia.org/eddylab/eddys/src/
 #
 PROGS = cmalign\
 	cmbuild\
+	cmcalibrate\
 	cmemit\
 	cmscore\
-	cmsearch
-
-# Optional programs for rigorous filters
-MPIPROGS  = @MPIPROGS@
+	cmsearch\
+	cmstat
 
 # Optional programs for rigorous filters
 RFPROGS = cm2hmm cm2hmmsearch
@@ -83,7 +82,6 @@ RFPROGS = cm2hmm cm2hmmsearch
 all: core $(RIGFILTERS)
 
 core:
-	(cd squid;     make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module)
 	(cd easel;     make CC="$(CC)" CFLAGS="$(CFLAGS)"; make)
 	(cd src;       make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module)
 	(cd testsuite; make CC="$(CC)" CFLAGS="$(CFLAGS)")
@@ -104,7 +102,7 @@ dist:
 	# 
 	# Export the release from Subversion control.
         # Because we use svn:externals, this automatically exports 
-	# the ssdk, squid, and Easel libraries as well.
+	# the ssdk, and Easel libraries as well.
 	#
 	svn export ${REPOSITORY}/${BASENAME}/tags/${RELEASE} ../${BASENAME}-${RELEASE}
 	# 
@@ -117,7 +115,6 @@ dist:
 	# Make the configure scripts from configure.ac's
 	#
 	(cd ../${BASENAME}-${RELEASE};       autoconf)
-	(cd ../${BASENAME}-${RELEASE}/squid; autoconf)
 	(cd ../${BASENAME}-${RELEASE}/easel; autoconf)
 	#
 	# We'll need a basic Makefiles for some steps; later
@@ -164,7 +161,6 @@ dist:
 	-rm -rf ../${BASENAME}-${RELEASE}/Manuscripts
 	-rm -rf ../${BASENAME}-${RELEASE}/ssdk
 	-rm -rf ../${BASENAME}-${RELEASE}/documentation/userguide
-	(cd ../${BASENAME}-${RELEASE}/squid; make implode)
 	(cd ../${BASENAME}-${RELEASE}/easel; make implode)
 	(cd ../${BASENAME}-${RELEASE}/;      make distclean)
 	#
@@ -184,16 +180,13 @@ dist:
 # runs a lot). 
 #
 check:
-	(cd testsuite; ./sqc -p ../squid 4 exercises.sqc . ../src)
+	(cd testsuite; ./sqc -p ../easel 4 exercises.sqc . ../src)
 
 # "make install" installs the programs in BINDIR
 #
 install:
 	mkdir -p ${BINDIR}
 	for file in $(PROGS); do\
-		cp src/$$file $(BINDIR)/;\
-	done
-	for file in $(MPIPROGS); do\
 		cp src/$$file $(BINDIR)/;\
 	done
 	if test -d $(RIGFILTERS); then\
@@ -209,7 +202,6 @@ clean:
 	(cd testsuite;               make clean)
 	(if cd documentation/userguide; then make clean; fi)
 	(cd src;                     make clean)
-	(cd squid;                   make clean)
 	(cd easel;                   make clean)
 	(cd rigfilters;              make clean)
 
@@ -222,7 +214,6 @@ distclean:
 	(cd testsuite;               make distclean)
 	(if cd documentation/userguide; then make distclean; fi)
 	(cd src;                     make distclean)
-	(cd squid;                   make distclean)
 	(cd easel;                   make distclean)
 	(cd rigfilters;              make distclean)
 	-rm Makefile
