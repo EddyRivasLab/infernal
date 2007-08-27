@@ -18,7 +18,7 @@ CFLAGS = @CFLAGS@
 #  LIBS contains system libraries that the configure script decides we need.
 #
 DEFS  = @DEFS@
-LIBS  = @LIBS@ 
+LIBS  = @LIBS@ -lm
 
 ## archiving command, and ranlib command if you need one.
 #  In general, you shouldn't need to change these, and they're
@@ -29,9 +29,7 @@ AR     = @AR@ rcv
 RANLIB = @RANLIB@
 
 # configuration for optional MPI functionality
-MPICC     = @MPICC@
 MPILIBS   = @MPILIBS@
-MPIPROGS  = @MPIPROGS@
 
 # Where the build arena is (module .h and .o files)
 #
@@ -66,11 +64,11 @@ OBJS  = alphabet.o\
 	cm_masks.o\
 	sub_cm.o\
 	stats.o\
-	mpifuncs.o\
 	cm_dispatch.o\
 	rnamat.o\
 	cm_cluster.o\
-	cm_errors.o
+	cm_errors.o\
+	mpisupport.o
 
 HDRS  = funcs.h\
 	prior.h\
@@ -78,8 +76,8 @@ HDRS  = funcs.h\
 	hmmband.h\
 	cplan9.h\
 	cm_postprob.h\
-	stats.h\
-	mpifuncs.h
+	cm_dispatch.h\
+	stats.h
 
 .c.o: 
 	$(CC) $(CFLAGS) $(DEFS) $(MYINCDIR) -c $<
@@ -87,22 +85,10 @@ HDRS  = funcs.h\
 #################################################################
 ## Targets defining how to make INFERNAL executables.
 ##
-all: 	$(PROGS) $(MPIPROGS)
+all: 	$(PROGS) 
 
 $(PROGS): @EXEC_DEPENDENCY@ $(OBJS) ${HDRS}
-	$(CC) $(CFLAGS) $(DEFS) $(MYLIBDIR) -o $@ $@.o $(OBJS) $(MYLIBS) $(LIBS)
-
-mpi-cmalign: cmalign.c $(OBJS) ${HDRS}
-	$(CC) -DMPI_EXECUTABLE $(CFLAGS) $(DEFS) $(MYINCDIR) -c cmalign.c
-	$(CC) -DMPI_EXECUTABLE $(CFLAGS) $(DEFS) $(MYLIBDIR) -o mpi-cmalign cmalign.o $(OBJS) $(MYLIBS) $(LIBS)
-
-mpi-cmsearch: cmsearch.c $(OBJS) ${HDRS}
-	$(CC) -DMPI_EXECUTABLE $(CFLAGS) $(DEFS) $(MYINCDIR) -c cmsearch.c
-	$(CC) -DMPI_EXECUTABLE $(CFLAGS) $(DEFS) $(MYLIBDIR) -o mpi-cmsearch cmsearch.o $(OBJS) $(MYLIBS) $(LIBS)
-
-mpi-cmcalibrate: cmcalibrate.c $(OBJS) ${HDRS}
-	$(CC) -DMPI_EXECUTABLE $(CFLAGS) $(DEFS) $(MYINCDIR) -c cmcalibrate.c
-	$(CC) -DMPI_EXECUTABLE $(CFLAGS) $(DEFS) $(MYLIBDIR) -o mpi-cmcalibrate cmcalibrate.o $(OBJS) $(MYLIBS) $(LIBS)
+	$(CC) $(CFLAGS) $(DEFS) $(MYLIBDIR) -o $@ $@.o $(OBJS) $(MYLIBS) $(LIBS) $(MPILIBS)
 
 
 #################################################################
@@ -120,10 +106,10 @@ libinfernal.a: $(OBJS) ${HDRS}
 ## Miscellaneous targets.
 ##
 clean:
-	-rm -f *.o *~ Makefile.bak core $(PROGS) $(MPIPROGS) TAGS gmon.out libinfernal.a
+	-rm -f *.o *~ Makefile.bak core $(PROGS) TAGS gmon.out libinfernal.a
 
 distclean:
-	-rm -f *.o *~ Makefile.bak core $(PROGS) $(MPIPROGS) TAGS gmon.out libinfernal.a
+	-rm -f *.o *~ Makefile.bak core $(PROGS) TAGS gmon.out libinfernal.a
 	-rm -f Makefile config.h
 
 TAGS:

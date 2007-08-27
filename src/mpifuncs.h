@@ -25,7 +25,7 @@
 #include "esl_config.h"
 #include "config.h"
 
-#ifdef USE_MPI
+#ifdef HAVE_MPI
 
 #include "mpi.h"
 #include "structs.h"
@@ -57,6 +57,7 @@
 #define ALN_RESULTS_TAG                  11
 #define ALN_JOB_PACKET_TAG               12
 
+#if 0
 typedef struct _job_t {
   char job_type;
   int seqlen;
@@ -135,6 +136,7 @@ extern int  aln_check_results   (Parsetree_t **all_parsetrees, char **all_postco
 				 int **process_status);
 extern void aln_send_terminate  (int rank_to_send_to);
 
+#endif
 /**************************************************************************************
  * EPN, Thu May 10 10:11:34 2007 New functions roughly following Easel/H3 conventions *
  *********************** **************************************************************/

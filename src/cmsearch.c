@@ -19,9 +19,14 @@
 #include <string.h>
 #include <time.h>
 
+#ifdef HAVE_MPI
+#include "mpi.h"
+#endif
+
 #include "easel.h"              /* better general sequence analysis library */
 #include "esl_getopts.h"
 #include "esl_gumbel.h"
+#include "esl_mpi.h"
 #include "esl_msa.h"
 #include "esl_sqio.h"
 #include "esl_stopwatch.h"
@@ -30,7 +35,6 @@
 #include "funcs.h"		/* external functions                   */
 #include "hmmband.h"
 #include "stats.h"
-#include "mpifuncs.h"
 #include "cm_dispatch.h"
 
 #define STRATOPTS  "--cmonly,--hmmfilter,--hmmonly"                 /* Exclusive choice for search strategy */
@@ -269,7 +273,6 @@ main(int argc, char **argv)
   if (esl_opt_GetBoolean(go, "--mpi")) 
     {
       cfg.do_mpi     = TRUE;
-      cfg.be_verbose = FALSE;
       MPI_Init(&argc, &argv);
       MPI_Comm_rank(MPI_COMM_WORLD, &(cfg.my_rank));
       MPI_Comm_size(MPI_COMM_WORLD, &(cfg.nproc));
@@ -316,7 +319,6 @@ main(int argc, char **argv)
  * Sets: 
  *    cfg->sqfp        - open sequence file                
  *    cfg->cmfp        - open CM file                
- *    cfg->abc         - digital input alphabet
  *    cfg->tfp         - optional output file
  *    cfg->bfp         - optional output file
  *    cfg->filhfp      - optional output file
@@ -396,7 +398,6 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   float          Smin;
 
   if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
-  /* init_shared_cfg UNNEC? */
   /*if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);*/
 
   while (CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
@@ -461,12 +462,12 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int      bn            = 0;
 
   CM_t *cm;
-  db_seq_t *dbseqlist    = NULL;
+  dbseq_t *dbseqlist    = NULL;
   /* change these */
-  ESL_MSA *msa           = NULL;
+  /*ESL_MSA *msa           = NULL;
   P7_HMM  *hmm           = NULL;
   ESL_MSA **msalist      = NULL;
-  int      *msaidx       = NULL;
+  int      *msaidx       = NULL;*/
   /* end of change these */
 
   char     errmsg[eslERRBUFSIZE];
@@ -477,20 +478,19 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   /* TEMPORARY */
   if(esl_opt_GetBoolean(go, "--hmmcalcthr"))
     esl_fatal("ERROR, --hmmcalcthr and --mpi not yet implemented.");
+  if(! esl_opt_GetBoolean(go, "--noalign")) 
+    esl_fatal("ERROR, --mpi currently requires --noalign.");
 
   /* Master initialization: including, figure out the alphabet type.
    * If any failure occurs, delay printing error message until we've shut down workers.
    */
   if (xstatus == eslOK) { if ((status = init_master_cfg(go, cfg, errmsg)) != eslOK) xstatus = status; }
-  if (xstatus == eslOK) { if ((status = init_shared_cfg(go, cfg, errmsg)) != eslOK) xstatus = status; }
+  /*if (xstatus == eslOK) { if ((status = init_shared_cfg(go, cfg, errmsg)) != eslOK) xstatus = status; }*/
   if (xstatus == eslOK) { bn = 4096; if ((buf = malloc(sizeof(char) * bn)) == NULL) { sprintf(errmsg, "allocation failed"); xstatus = eslEMEM; } }
-
-  /*if (xstatus == eslOK) { if ((msalist = malloc(sizeof(ESL_MSA *) * cfg->nproc)) == NULL) { sprintf(errmsg, "allocation failed"); xstatus = eslEMEM; } }
-    if (xstatus == eslOK) { if ((msaidx  = malloc(sizeof(int)       * cfg->nproc)) == NULL) { sprintf(errmsg, "allocation failed"); xstatus = eslEMEM; } }*/
 
   /* for (wi = 0; wi < cfg->nproc; wi++) { msalist[wi] = NULL; msaidx[wi] = 0; } */
   MPI_Bcast(&xstatus, 1, MPI_INT, 0, MPI_COMM_WORLD);
-  if (xstatus != eslOK) p7_Fail(errmsg);
+  if (xstatus != eslOK) cm_Fail(errmsg);
   ESL_DPRINTF1(("MPI master is initialized\n"));
 
   /* Worker initialization:
@@ -499,11 +499,10 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
    * so we just receive a quick OK/error code reply from each worker to be sure,
    * and don't worry about an informative message. 
    */
-  MPI_Bcast(&(cfg->abc->type), 1, MPI_INT, 0, MPI_COMM_WORLD);
-  MPI_Reduce(&xstatus, &status, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD);
-  if (status != eslOK) p7_Fail("One or more MPI worker processes failed to initialize.");
+  /*MPI_Bcast(&(cfg->abc->type), 1, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&xstatus, &status, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD);
+    if (status != eslOK) cm_Fail("One or more MPI worker processes failed to initialize.");*/
   ESL_DPRINTF1(("%d workers are initialized\n", cfg->nproc-1));
-
 
   /* Main loop: combining load workers, send/receive, clear workers loops;
    * also, catch error states and die later, after clean shutdown of workers.
@@ -517,36 +516,28 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
    * Unrecoverable errors just crash us out with cm_Fail().
    */
   wi = 1;
-  while (have_work || nproc_working)
+  while (CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
     {
-      if (read_next_cm)
+      cfg->ncm++;  
+      ESL_DPRINTF1(("MPI master read CM number %d\n", cfg->ncm));
+      if((status = cm_master_MPIBcast(cm, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
+#if 0
+      while (have_search_work || nproc_working)
 	{
-	  if (CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
+	  if (have_search_work) /* see mpifuncs.c:search_enqueue*/
 	    {
-	      cfg->cm++;  
-	      ESL_DPRINTF1("MPI master read CM %d", cfg->cm);
-	      BroadcastCM();
+	      /* read a new seq and chop it into chunks */
+	      if(active_seq == NULL) {
+		if(read_next_seq(active_seq)) {
+		  active_seq->chunks_sent = 0;
+		  active_seq->alignments_sent = -1;     /* None sent yet */
+		  chunksize = determine_chunksize;
+		  in_revcomp = 0;
+		  cur_pos = 1;
+		}
+		else have_work = FALSE;
+	      }
 	    }
-	  else; /* no more cms, have_work = FALSE? */
-	}
-      if(read_next_seq) { ; }
-      /*read_next_seq() */
-      if (have_work) /* see mpifuncs.c:search_enqueue*/
-	{
-	  /* we have a seq, and all it's chunks have yet to be sent */
-	  /* see search_enqueue() and search_send_next_job() in mpifuncs
-	   *  for how to send a search job */
-
-	  if (CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
-	    {
-	      cfg->cm++;  
-	      ESL_DPRINTF1(("MPI master read CM %d", cfg->cm);
-	    }
-	  else 
-	    {
-	      have_work = FALSE;
-	      ESL_DPRINTF1(("MPI master has run out of CMs (having read %d)\n", cfg->cm));
-	    } 
 	}
 
       if ((have_work && nproc_working == cfg->nproc-1) || (!have_work && nproc_working > 0))
@@ -577,7 +568,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		  if (MPI_Unpack(buf, bn, &pos, &results_type,   1, MPI_INT, MPI_COMM_WORLD)     != 0)     cm_Fail("mpi unpack failed");
 		  if (results_type == MPIRESULTS_SEARCH) {
 		    ESL_DPRINTF1("MPI master sees that the result buffer contains search results\n");
-		    if (cm_search_results_MPIUnpack(buf, bn, &pos, MPI_COMM_WORLD, &(cfg->abc), &hmm) != eslOK) cm_Fail("search results unpack failed");
+		    if (search_results_MPIUnpack(buf, bn, &pos, MPI_COMM_WORLD, &(cfg->abc)) != eslOK) cm_Fail("search results unpack failed");
 		    ESL_DPRINTF1(("MPI master has unpacked search results\n"));
 
 		    if(esl_opt_GetBoolean(go, "--noalign")) {
@@ -601,9 +592,14 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
       if (have_work)
 	{   
-	  /* send something, sequence to search or alignment */
-	  ESL_DPRINTF1(("MPI master is sending sequence to worker %d\n", wi));
-	  if (search_job_MPISend() != eslOK) cm_Fail("MPI search job send failed");
+	  /* send new search job */
+	  ESL_DPRINTF1(("MPI master is sending sequence to search to worker %d\n", wi));
+	  seqlen =  (chunksize < (active_seq->sq[0]->n - curpos + 1)) ? chunksize : (active_seq->sq[0]->n - curpos + 1);
+	  if (search_job_MPISend(active_sq->sq[in_revcomp]->dsq, curpos, seqlen) != eslOK) cm_Fail("MPI search job send failed");
+	  curpos += chunkoffset;
+	  if(curpos > active_seq->sq[0]->n) {
+	    if(do_revcomp && !in_revcomp) in_revcomp = TRUE;
+	    else ; /* free active seq so next loop a seq is read in */
 
 	  ilist[wi] = i;
 	  jlist[wi] = j;
@@ -612,14 +608,13 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  wi++;
 	  nproc_working++;
 	}
-    }
-  
+#endif
+	}
   /* On success or recoverable errors:
    * Shut down workers cleanly. 
    */
   ESL_DPRINTF1(("MPI master is done. Shutting down all the workers cleanly\n"));
-  /*for (wi = 1; wi < cfg->nproc; wi++) 
-    if (esl_msa_MPISend(NULL, wi, 0, MPI_COMM_WORLD, &buf, &bn) != eslOK) p7_Fail("MPI msa send failed");*/
+  if((status = cm_master_MPIBcast(NULL, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("Shutting down worker %d failed.", wi);
   free(buf);
 
   if (xstatus != eslOK) cm_Fail(errmsg);
@@ -646,27 +641,27 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if (xstatus != eslOK) return; /* master saw an error code; workers do an immediate normal shutdown. */
   ESL_DPRINTF1(("worker %d: sees that master has initialized\n", cfg->my_rank));
   
-  /* Master now broadcasts worker initialization information (alphabet info?)
-   * Workers returns their status post-initialization.
+  /* No initialization for workers, main() sets up their configuration. 
    * Initial allocation of wbuf must be large enough to guarantee that
    * we can pack an error result into it, because after initialization,
    * errors will be returned as packed (code, errmsg) messages.
    */
-  MPI_Bcast(&type, 1, MPI_INT, 0, MPI_COMM_WORLD);
-  if (xstatus == eslOK) { if ((cfg->abc = esl_alphabet_Create(type))      == NULL)    xstatus = eslEMEM; }
-  if (xstatus == eslOK) { if ((status = init_shared_cfg(go, cfg, errmsg)) != eslOK)   xstatus = status;  }
   if (xstatus == eslOK) { wn = 4096;  if ((wbuf = malloc(wn * sizeof(char))) == NULL) xstatus = eslEMEM; }
   MPI_Reduce(&xstatus, &status, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD); /* everyone sends xstatus back to master */
   if (xstatus != eslOK) {
     if (wbuf != NULL) free(wbuf);
     return; /* shutdown; we passed the error back for the master to deal with. */
   }
-  ESL_DPRINTF2(("worker %d: initialized\n", cfg->my_rank));
+  ESL_DPRINTF1(("worker %d: initialized\n", cfg->my_rank));
 
-                      /* source = 0 (master); tag = 0 */
-  /* mpifuncs:search_receive_job() */
-  while (job_MPIRecv(&dsq, &n) == eslOK)
+  /* source = 0 (master); tag = 0 */
+  while ((status = cm_worker_MPIBcast(0, MPI_COMM_WORLD, &wbuf, &wn, &(cfg->abc), &cm)) == eslOK)
     {
+      
+      ESL_DPRINTF1(("Worker %d succesfully received CM, num states: %d num nodes: %d\n", cfg->my_rank, cm->M, cm->nodes));
+      debug_print_cm_params(stdout, cm);
+
+#if 0
       if(job_type == MPIJOB_SEARCH) {
 	ESL_DPRINTF1("worker %d: has received search job (i..j)\n", cfg->my_rank);
 	if ((status =   process_search_workunit(go, cfg, errmsg, cm, dsq, i, j, &results)) != eslOK) goto ERROR;
@@ -686,13 +681,19 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	if (MPI_Pack(&status, 1, MPI_INT, wbuf, wn, &pos, MPI_COMM_WORLD)    != 0)     goto ERROR;
 	if (results_MPIPack(hmm, wbuf, wn, &pos, MPI_COMM_WORLD)             != eslOK) goto ERROR;
 	MPI_Send(wbuf, pos, MPI_PACKED, 0, 0, MPI_COMM_WORLD);
-	ESL_DPRINTF2(("worker %d: has sent search results to master in message of %d bytes\n", cfg->my_rank, pos));
+	ESL_DPRINTF1(("worker %d: has sent search results to master in message of %d bytes\n", cfg->my_rank, pos));
 
 	FreeResults(results);
       }
       else if(job_type == MPIJOB_ALIGN) { ; }
       else if(job_type == MPIJOB_CP9FILTER) { ; }
+#endif
+      FreeCM(cm);
+      cm = NULL;
     }
+  if (status == eslEOD) ESL_DPRINTF1(("Worker %d told CMs are done.", cfg->my_rank));
+  else goto ERROR;
+
   if (wbuf != NULL) free(wbuf);
   return;
 
@@ -711,7 +712,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
  */
 static int
 process_search_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_DSQ *dsq, 
-			int i, int j, scan_results_t *ret_results)
+			int i, int j, scan_results_t **ret_results)
 {
   int status;
   float min_cm_cutoff;
@@ -744,10 +745,11 @@ process_search_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
  * The job is to align the sequences and return parsetrees.
  */
 static int
-process_aln_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_SQ *sq, 
-		     int nseq, Parsetree_t **ret_tr)
+process_aln_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_SQ **sq, 
+		     int nseq, Parsetree_t ***ret_tr)
 {
-  if ((status = actually_align_targets(cm, sq, nseq, ret_tr, NULL, NULL, NULL, 0, 0, 0, TRUE)) != eslOK)
+  int status;
+  if ((status = actually_align_targets(cm, sq, nseq, ret_tr, NULL, NULL, NULL, 0, 0, TRUE)) != eslOK)
     goto ERROR;
   /* currently actually_align_targets() either returns eslOK or dies,
    * TODO: have it always return a status, this will require having all funcs under it return status also */
@@ -766,6 +768,7 @@ process_aln_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbu
 static int
 process_cp9filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq)
 {
+  int status;
   esl_fatal("WRITE process_cp9filter_workunit()");
   return eslOK;
   

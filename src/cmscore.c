@@ -16,9 +16,14 @@
 #include <string.h>
 #include <math.h>
 
+#ifdef HAVE_MPI
+#include "mpi.h"
+#endif
+
 #include "easel.h"
 #include "esl_alphabet.h"
 #include "esl_getopts.h"		
+#include "esl_mpi.h"
 #include "esl_msa.h"
 #include "esl_sqio.h"		
 #include "esl_stopwatch.h"
@@ -227,15 +232,17 @@ main(int argc, char **argv)
     {
       cfg.do_mpi     = TRUE;
       cfg.be_verbose = FALSE;
+      esl_fatal("ERROR --mpi not yet implemented.");
+
       MPI_Init(&argc, &argv);
       MPI_Comm_rank(MPI_COMM_WORLD, &(cfg.my_rank));
       MPI_Comm_size(MPI_COMM_WORLD, &(cfg.nproc));
 
-      if (cfg.my_rank > 0)  mpi_worker(go, &cfg);
-      else 		    mpi_master(go, &cfg);
+      /*if (cfg.my_rank > 0)  mpi_worker(go, &cfg);
+	else 		    mpi_master(go, &cfg);*/
 
-      esl_stopwatch_Stop(w);
-      esl_stopwatch_MPIReduce(w, 0, MPI_COMM_WORLD);
+      esl_stopwatch_Stop(cfg.w);
+      esl_stopwatch_MPIReduce(cfg.w, 0, MPI_COMM_WORLD);
       MPI_Finalize();
     }
   else

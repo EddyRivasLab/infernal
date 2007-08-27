@@ -188,6 +188,7 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
 
  ERROR:
   esl_fatal("Memory allocation error.");
+  return status; /* NOTREACHED */
 }
 
 /*

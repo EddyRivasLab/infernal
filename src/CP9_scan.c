@@ -42,7 +42,6 @@
 #include "funcs.h"
 #include "hmmband.h"
 #include "cm_dispatch.h"
-#include "mpifuncs.h"
 #include "stats.h"
 
   

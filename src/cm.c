@@ -124,6 +124,13 @@ CreateCMShell(void)
   cm->stats        = NULL;
   cm->pbegin       = DEFAULT_PBEGIN; /* summed probability of internal local begin */
   cm->pend         = DEFAULT_PEND;   /* summed probability of internal local end */
+
+  cm->ga     = 0.;  /* only valid if cm->flags & CMH_GA */
+  cm->tc     = 0.;  /* only valid if cm->flags & CMH_TC */
+  cm->nc     = 0.;  /* only valid if cm->flags & CMH_NC */
+  cm->eff_nseq = 0.;  
+  cm->nseq = 0;
+  cm->clen = 0;
   return cm;
 
  ERROR:
@@ -212,8 +219,7 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc)
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.\n");
-  return; /* never reached */
+  return NULL; /* never reached */
 }
 
 

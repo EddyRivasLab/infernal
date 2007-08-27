@@ -860,13 +860,11 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
  * Returns:  eslOK on success;
  *           eslEINVAL on contract violation.
  */
-int 
+void
 CP9NodeForPosn(struct cplan9_s *hmm, int i0, int j0, int x, struct cp9_dpmatrix_s *post, 
 	       int *ret_node, int *ret_type, int do_fullsub, float pmass, int is_start,
 	       int print_flag)
 {
-  int status;
-
   /* post->mmx[i][k]: posterior probability that posn i was emitted from node k's 
      match state */  
   int  max_k;    /* node index with highest posterior probability of emitting posn x */
@@ -876,14 +874,14 @@ CP9NodeForPosn(struct cplan9_s *hmm, int i0, int j0, int x, struct cp9_dpmatrix_
   int  k;        /* counter over nodes */
   /* used only if do_fullsub = TRUE */
   int reached_mass; /* TRUE if we've reached our pmass */
-  float curr_pmass; /* current pmass on left (if(is_start)) or right (if(is_end)) */
   
   reached_mass = FALSE;
   if(!is_start) pmass = 1. - pmass; /* we move left to right */
   
   /*printf("in CP9NodeForPosn is_start: %d pmass: %f\n", do_fullsub, is_start, pmass);*/
   if(x > j0 || x < i0)
-    ESL_XFAIL(eslEINVAL, "ERROR in CP9NodeForPosn(), asking for position x: %d outside subseq bounds i0: %d j0: %d\n", x, i0, j0);
+    /*ESL_XFAIL(eslEINVAL, "ERROR in CP9NodeForPosn(), asking for position x: %d outside subseq bounds i0: %d j0: %d\n", x, i0, j0);*/
+    esl_fatal("ERROR in CP9NodeForPosn(), asking for position x: %d outside subseq bounds i0: %d j0: %d\n", x, i0, j0);
   
   if(post->mmx[x][0] > post->imx[x][0])
     {
@@ -922,10 +920,7 @@ CP9NodeForPosn(struct cplan9_s *hmm, int i0, int j0, int x, struct cp9_dpmatrix_
     }
   *ret_node = max_k;
   *ret_type = max_type;
-  return eslOK;
-
- ERROR:
-  return status;
+  return;
 }
 
 

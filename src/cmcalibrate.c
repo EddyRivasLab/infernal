@@ -24,23 +24,27 @@
 #include <math.h>
 #include <time.h>
 
+#ifdef HAVE_MPI
+#include "mpi.h"
+#endif
+
 #include "easel.h"
 #include "esl_alphabet.h"
-#include "esl_getopts.h"
-#include "esl_histogram.h"
-#include "esl_vectorops.h"
 #include "esl_dmatrix.h"
-#include "esl_ratematrix.h"
 #include "esl_exponential.h"
-#include "esl_random.h"
+#include "esl_getopts.h"
 #include "esl_gumbel.h"
+#include "esl_histogram.h"
+#include "esl_mpi.h"
+#include "esl_random.h"
+#include "esl_ratematrix.h"
 #include "esl_stopwatch.h"
+#include "esl_vectorops.h"
 
 #include "structs.h"
 #include "funcs.h"		/* external functions                   */
 #include "stats.h"              /* gumbel functions */
 #include "cm_dispatch.h"	
-#include "mpifuncs.h"	
 
 #define CUTOPTS  "--eval,--ga,--nc,--tc,--all"  /* Exclusive choice for filter threshold score cutoff */
 

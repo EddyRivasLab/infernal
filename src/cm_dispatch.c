@@ -32,14 +32,13 @@
 #include "cm_postprob.h"
 #include "stats.h"
 #include "cplan9.h"
-#include "mpifuncs.h"
 #include "cm_dispatch.h"
 
 /* Helper functions called by the main functions (main functions
  * declared in cm_dispatch.h) 
  */
-static int  read_next_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revcomp, db_seq_t **ret_dbseq);
-static void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, db_seq_t *dbseq,
+static int  read_next_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revcomp, dbseq_t **ret_dbseq);
+static void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq,
 			   int do_complement, int used_HMM);
 static void remove_hits_over_e_cutoff (CM_t *cm, scan_results_t *results, ESL_SQ *sq,
 				       int used_HMM);
@@ -73,7 +72,7 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc
   int status;
   int reversed;                /* am I currently doing reverse complement? */
   int i,a;
-  db_seq_t *dbseq;
+  dbseq_t *dbseq;
   float min_cm_cutoff;
   float min_cp9_cutoff;
   int do_revcomp;
@@ -213,7 +212,7 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *a
   int  seqlen;
   char *seq;
   scan_results_t *results;
-  db_seq_t **active_seqs;
+  dbseq_t **active_seqs;
   job_t **process_status;
   int eof = FALSE;
   job_t *job_queue = NULL;
@@ -262,7 +261,7 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *a
     {
       /* Set up arrays to hold pointers to active seqs and jobs on
 	 processes */
-      ESL_ALLOC(active_seqs,    sizeof(db_seq_t *) * mpi_num_procs);
+      ESL_ALLOC(active_seqs,    sizeof(dbseq_t *) * mpi_num_procs);
       ESL_ALLOC(process_status, sizeof(job_t *)    * mpi_num_procs);
       for (active_seq_index=0; active_seq_index<mpi_num_procs; active_seq_index++) 
 	active_seqs[active_seq_index] = NULL;
@@ -420,12 +419,12 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *a
  * Returns:  eslOK on success; eslEOF if end of file, 
  *           some other status code from esl_sqio_Read() if an error occurs.
  */
-int read_next_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revcomp, db_seq_t **ret_dbseq) 
+int read_next_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revcomp, dbseq_t **ret_dbseq) 
 {
   int status;
-  db_seq_t *dbseq = NULL;
+  dbseq_t *dbseq = NULL;
 
-  ESL_ALLOC(dbseq, sizeof(db_seq_t));
+  ESL_ALLOC(dbseq, sizeof(dbseq_t));
   dbseq->sq[0] = NULL;
   dbseq->sq[1] = NULL;
 
@@ -575,7 +574,7 @@ float actually_search_target(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cu
  *           in_revcomp          are we doing the minus strand
  *           used_HMM            did we use an HMM to get hits?
  */
-void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, db_seq_t *dbseq,
+void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq,
 		    int do_complement, int used_HMM)
 {
   /* We allow the caller to specify the alphabet they want the 
@@ -1097,6 +1096,7 @@ int
 actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, char ***ret_postcode,
 		       CP9trace_t ***ret_cp9_tr, float **ret_sc, int bdump_level, int debug_level, int silent_mode)
 {
+  int              status;
   ESL_STOPWATCH   *watch;       /* for timings */
   int i;                        /* counter over sequences */
   int v;                        /* state counter */
@@ -1758,6 +1758,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
   return eslOK;
  ERROR:
   esl_fatal("Memory allocation error.");
+  return status; /* NEVERREACHED */
 }
 
 /* Function: revcomp()

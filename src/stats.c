@@ -30,7 +30,6 @@
 #include "funcs.h"		/* external functions                   */
 #include "stats.h"
 #include "cm_dispatch.h"
-#include "mpifuncs.h"
 
 /*
  * Function: AllocCMStats()

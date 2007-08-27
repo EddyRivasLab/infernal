@@ -19,16 +19,12 @@
  * EPN, Thu Jan  4 14:17:06 2007
  */
 
+#ifdef HAVE_MPI
+
 #include "esl_config.h"
 #include "config.h"
 
 #include <string.h>
-
-#ifdef USE_MPI 
-
-#define BUFSIZE 16384
-#define MIN_CHUNK_D_MULTIPLIER 10
-#define MAX_CHUNK_SIZE 1000000
 
 #include "mpi.h"
 #include "mpifuncs.h"
@@ -36,6 +32,12 @@
 #include "funcs.h"
 #include "cm_dispatch.h"
 #include "stats.h"
+
+#if 0
+
+#define BUFSIZE 16384
+#define MIN_CHUNK_D_MULTIPLIER 10
+#define MAX_CHUNK_SIZE 1000000
 
 #define VERSION_STRING "INFERNAL 1.0"
 #define VERSION_STRING_SIZE 100
@@ -1452,7 +1454,467 @@ mpi_worker_cm_and_cp9_search_maxsc(CM_t *cm, int do_fast, int do_minmax, int my_
   if (scores != NULL) free(scores);
   return;
 }
+#endif
+
+/* Function:  cm_MPIBroadcast()
+ * Incept:    EPN, Wed May  9 17:24:53 2007
+ *
+ * Purpose:   Sends CM <cm> to processor <dest>.
+ *            
+ *            If <cm> is NULL, sends a end-of-data signal to <dest>, to
+ *            tell it to shut down.
+ *            
+ */
+int
+cm_MPIBroadcast(CM_t *cm)
+{
+  int   status;
+  int   code;
+  int   sz, n, pos;
+
+  /* Figure out size */
+  if (MPI_Pack_size(1, MPI_INT, comm, &n) != 0) ESL_XEXCEPTION(eslESYS, "mpi pack size failed");
+  if (cm != NULL) {
+    if ((status = cm_MPIPackSize(cm, comm, &sz)) != eslOK) return status;
+    n += sz;
+  }
+
+  /* Make sure the buffer is allocated appropriately */
+  if (*buf == NULL || n > *nalloc) {
+    void *tmp;
+    ESL_RALLOC(*buf, tmp, sizeof(char) * n);
+    *nalloc = n; 
+  }
+
+  /* Pack the status code and HMM into the buffer */
+  pos  = 0;
+  code = (hmm == NULL) ? eslEOD : eslOK;
+  if (MPI_Pack(&code, 1, MPI_INT, *buf, n, &pos, comm) != 0) ESL_EXCEPTION(eslESYS, "mpi pack failed");
+  if (hmm != NULL) {
+    if ((status = p7_hmm_MPIPack(hmm, *buf, n, &pos, comm)) != eslOK) return status;
+  }
+
+  /* Send the packed HMM to the destination. */
+  if (MPI_Send(*buf, n, MPI_PACKED, dest, tag, comm) != 0)  ESL_EXCEPTION(eslESYS, "mpi send failed");
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
+/* Function:  cm_MPIPackSize()
+ * Synopsis:  Calculates size needed to pack a CM.
+ * Incept:    EPN, Mon Aug 27 10:34:15 2007
+ *            based on p7_hmm_MPIPackSize() from HMMER3.
+ *
+ * Purpose:   Calculate an upper bound on the number of bytes
+ *            that <cm_MPIPack()> will need to pack a CM
+ *            <cm> in a packed MPI message for MPI communicator
+ *            <comm>; return that number of bytes in <*ret_n>.
+ *
+ * Returns:   <eslOK> on success, and <*ret_n> contains the answer.
+ *
+ * Throws:    <eslESYS> if an MPI call fails, and <*ret_n> is 0.
+ */
+int
+cm_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n)
+{
+  int   status;
+  int   n = 0;
+  int   K = cm->abc->K;
+  int   M = cm->M;
+  int   nnodes = cm->nodes;
+  int   sz;
+
+  if (MPI_Pack_size(1,         MPI_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");   
+  n += 15*sz; 
+  /* M, nodes, flags, config_opts, search_opts, align_opts, nseq, clen, iel_selfsc, W (10)
+   * enf_start, cutoff_type, cp9_cutoff_type, hmmpad, np (5) 
+   */
+
+  if (MPI_Pack_size(1,       MPI_FLOAT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += (12+K)*sz; 
+  /* el_selfsc, enf_scdiff, sc_boost, cp9_sc_boost, cutoff, cp9_cutoff, pbegin, pend, eff_nseq (9) 
+   * ga, tc, nc, null (3+K) */
+
+  if (MPI_Pack_size(1,      MPI_DOUBLE, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += 2*sz; 
+  /* beta, tau */
+
+  if (MPI_Pack_size(M,        MPI_CHAR, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += 2*sz; 
+  /* sttype, stid */
+
+  if (MPI_Pack_size(M,         MPI_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += 7*sz; 
+  /* ndidx, cfirst, cnum, plast, pnum, ibeginsc, iendsc */
+
+  if (MPI_Pack_size(M,       MPI_FLOAT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += 4*sz; 
+  /* begin, end, beginsc, endsc */
+
+  if (MPI_Pack_size(nnodes,    MPI_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += 2*sz; 
+  /* nodemap, ndtype */
+
+  if (MPI_Pack_size(M*K*K,   MPI_FLOAT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += 2*sz; 
+  /* e, esc */
+
+  if (MPI_Pack_size(M*MAXCONNECT,MPI_FLOAT,comm,&sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += 2*sz; 
+  /* t, tsc */
+
+  if (MPI_Pack_size(M*K*K,    MPI_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += sz; 
+  /* iesc */
+
+  if (MPI_Pack_size(M*MAXCONNECT,MPI_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += sz; 
+  /* itsc */
+
+  if ((status = esl_mpi_PackOptSize(cm->enfseq, -1, MPI_CHAR, comm, &sz)) != eslOK) goto ERROR; 
+  n += sz; /* enfseq */
+
+  if ((status = esl_mpi_PackOptSize(cm->name, -1, MPI_CHAR, comm, &sz)) != eslOK) goto ERROR; 
+  n += sz; /* name */
+
+  if (cm->flags & CMH_ACC)  { if ((status = esl_mpi_PackOptSize(cm->acc, -1,  MPI_CHAR,  comm, &sz)) != eslOK) goto ERROR;  n+= sz; }
+  if (cm->flags & CMH_DESC) { if ((status = esl_mpi_PackOptSize(cm->desc,-1,  MPI_CHAR,  comm, &sz)) != eslOK) goto ERROR;  n+= sz; }
+  
+  *ret_n = n;
+  return eslOK;
+
+ ERROR:
+  *ret_n = 0;
+  return status;
+
+}
+
+/* Function:  cm_justread_MPIPackSize()
+ *
+ * Synopsis:  Calculates size needed to pack a CM that has
+ *            just been read from a CM file by a CMFileRead()
+ *            call, we'll need to pack far less than a fully
+ *            configure CM in this case.
+ *
+ * Incept:    EPN, Mon Aug 27 10:34:15 2007
+ *            based on p7_hmm_MPIPackSize() from HMMER3.
+ *
+ * Purpose:   Calculate an upper bound on the number of bytes
+ *            that <cm_MPIPack()> will need to pack a CM
+ *            <cm> in a packed MPI message for MPI communicator
+ *            <comm>; return that number of bytes in <*ret_n>.
+ *
+ * Returns:   <eslOK> on success, and <*ret_n> contains the answer.
+ *
+ * Throws:    <eslESYS> if an MPI call fails, and <*ret_n> is 0.
+ */
+int
+cm_justread_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n)
+{
+  int   status;
+  int   n = 0;
+  int   K = cm->abc->K;
+  int   M = cm->M;
+  int   nnodes = cm->nodes;
+  int   sz;
+
+  if (MPI_Pack_size(1,         MPI_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");   
+  n += 4*sz; /* M, nodes, nseq, clen */ 
+
+  if (MPI_Pack_size(1,       MPI_FLOAT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += (5+K)*sz; 
+  /* el_selfsc, eff_nseq, ga, tc, nc, null (5+K) */
+
+  if (MPI_Pack_size(M,        MPI_CHAR, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += 2*sz; 
+  /* sttype, stid */
+
+  if (MPI_Pack_size(M,         MPI_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += 7*sz; 
+  /* ndidx, cfirst, cnum, plast, pnum, ibeginsc, iendsc */
+
+  if (MPI_Pack_size(nnodes,    MPI_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += 2*sz; 
+  /* nodemap, ndtype */
+
+  if (MPI_Pack_size(M*K*K,   MPI_FLOAT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += sz; 
+  /* e */
+
+  if (MPI_Pack_size(M*MAXCONNECT,MPI_FLOAT,comm,&sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += sz; 
+  /* t */
+
+  if ((status = esl_mpi_PackOptSize(cm->name, -1, MPI_CHAR, comm, &sz)) != eslOK) goto ERROR; 
+  n += sz; /* name */
+
+  if (cm->flags & CMH_ACC)  { if ((status = esl_mpi_PackOptSize(cm->acc, -1,  MPI_CHAR,  comm, &sz)) != eslOK) goto ERROR;  n+= sz; }
+  if (cm->flags & CMH_DESC) { if ((status = esl_mpi_PackOptSize(cm->desc,-1,  MPI_CHAR,  comm, &sz)) != eslOK) goto ERROR;  n+= sz; }
+  
+  *ret_n = n;
+  return eslOK;
+
+ ERROR:
+  *ret_n = 0;
+  return status;
+
+}
+#endif
+void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank) 
+{
+  char buf[BUFSIZE];      /* Buffer for packing it all but the bulk of the CM */
+  int position = 0;         /* Where I am in the buffer */
+  int nstates, nnodes;
+  int enf_len;
+  int nparts;
+  int i;
+  int p;
+
+  position = 0;
+  if (mpi_my_rank == mpi_master_rank) 
+    {   /* I'm in charge */
+      /* contract check, if we claim to have Gumbel stats, we better have them */
+      if((*cm)->flags & CM_GUMBEL_STATS && (*cm)->stats == NULL)
+	esl_fatal("ERROR in broadcast_cm() master node claims to have Gumbel stats but cm->stats is NULL!\n");
+      nstates = (*cm)->M;
+      nnodes = (*cm)->nodes;
+      
+      /* Basics of the model */
+      MPI_Pack (&nstates,                  1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD); 
+      MPI_Pack (&nnodes,                   1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->flags),           1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->config_opts),     1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->align_opts),      1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->search_opts),     1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->el_selfsc),       1, MPI_FLOAT,  buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->iel_selfsc),      1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->W),               1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->enf_start),       1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->enf_scdiff),      1, MPI_FLOAT,  buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->sc_boost),        1, MPI_FLOAT,  buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->cp9_sc_boost),    1, MPI_FLOAT,  buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->cutoff_type),     1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->cutoff),          1, MPI_FLOAT,  buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->cp9_cutoff_type), 1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->cp9_cutoff),      1, MPI_FLOAT,  buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->beta),            1, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->tau),             1, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->hmmpad),          1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->pbegin),          1, MPI_FLOAT,  buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->pend),            1, MPI_FLOAT,  buf, BUFSIZE, &position, MPI_COMM_WORLD);
+
+      /* Take special care with enf_len, this is used later to get cm->enf_seq if nec */
+      if((*cm)->enf_start != 0) enf_len = strlen((*cm)->enf_seq);
+      else enf_len = 0;
+      MPI_Pack (&enf_len,                  1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+
+      /* Take special care with number of partitions, used later to get cm->stats if nec */
+      if((*cm)->flags & CM_GUMBEL_STATS) nparts = (*cm)->stats->np;
+      else nparts = 0;
+      MPI_Pack (&nparts,                  1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+
+    }
+  /* Broadcast to everyone */
+  MPI_Bcast (buf, BUFSIZE, MPI_PACKED, mpi_master_rank, MPI_COMM_WORLD);
+
+  /* Decode this first set */
+  position = 0;
+  if (mpi_my_rank != mpi_master_rank) 
+    {
+      MPI_Unpack (buf, BUFSIZE, &position, &nstates, 1, MPI_INT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &nnodes, 1, MPI_INT, MPI_COMM_WORLD);
+      *cm = CreateCM (nnodes, nstates);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->flags),           1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->config_opts),     1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->align_opts),      1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->search_opts),     1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->el_selfsc),       1, MPI_FLOAT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->iel_selfsc),      1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->W),               1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->enf_start),       1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->enf_scdiff),      1, MPI_FLOAT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->sc_boost),        1, MPI_FLOAT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cp9_sc_boost),    1, MPI_FLOAT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->ffract),          1, MPI_FLOAT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cutoff_type),     1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cutoff),          1, MPI_FLOAT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cp9_cutoff_type), 1, MPI_FLOAT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cp9_cutoff),      1, MPI_FLOAT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->beta),            1, MPI_DOUBLE,MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->tau),             1, MPI_DOUBLE,MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->hmmpad),          1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->pbegin),          1, MPI_FLOAT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->pend),            1, MPI_FLOAT,   MPI_COMM_WORLD);
+
+      MPI_Unpack (buf, BUFSIZE, &position, &enf_len,                  1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &nparts,                   1, MPI_INT,   MPI_COMM_WORLD);
+    }
+  /* Now we broadcast the rest of the model using many calls to MPI_Bcast.  
+     This is inefficient, but is probably negligible compared to the actual 
+     searches */
+  MPI_Bcast ((*cm)->null,   Alphabet_size, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->sttype, nstates,       MPI_CHAR,  mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->ndidx,  nstates,       MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->stid,   nstates,       MPI_CHAR,  mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->cfirst, nstates,       MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->cnum,   nstates,       MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->plast,  nstates,       MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->pnum,   nstates,       MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
+ 
+  MPI_Bcast ((*cm)->nodemap, nnodes, MPI_INT,  mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->ndtype,  nnodes, MPI_CHAR, mpi_master_rank, MPI_COMM_WORLD);
+
+  MPI_Bcast ((*cm)->begin,    nstates, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->end,      nstates, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->beginsc,  nstates, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->endsc,    nstates, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->ibeginsc, nstates, MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->iendsc,   nstates, MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
+
+  /* These next calls depend on Sean's FMX2Alloc to be what CreateCM calls, and to allocate one large
+     memory chunk at x[0] (where x is float **) and then fill in x[1]..x[n] with the appropriate offsets into
+     this chunk of memory */
+  MPI_Bcast ((*cm)->t[0], nstates*MAXCONNECT, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->e[0], nstates*Alphabet_size*Alphabet_size, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->tsc[0], nstates*MAXCONNECT, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->esc[0], nstates*Alphabet_size*Alphabet_size, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->itsc[0], nstates*MAXCONNECT, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->iesc[0], nstates*Alphabet_size*Alphabet_size, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
+
+  /* Broadcast the enf_seq, if it's NULL (enf_start == 0) we don't */
+  if((*cm)->enf_start != 0)
+    {
+      if (mpi_my_rank != mpi_master_rank) 
+	ESL_ALLOC((*cm)->enf_seq, sizeof(char) * (enf_len+1));
+      MPI_Bcast((*cm)->enf_seq, enf_len, MPI_CHAR, mpi_master_rank, MPI_COMM_WORLD);
+      if (mpi_my_rank != mpi_master_rank) 
+	(*cm)->enf_seq[enf_len] = '\0';
+    }
+
+  /* Broadcast the Gumbel stats if they exist 
+   * IMPT: currently filter threshold stats are NOT broadcasted as they're only
+   * used to get cm->cp9_cutoff, which is broadcasted separately. We could get 
+   * away with not broadcasting these stats too - though we'd have to modify 
+   * parallel_search_database() to be independent on Gumbel params */
+  if((*cm)->flags & CM_GUMBEL_STATS) /* flags were already sent/received */
+    {
+      if (mpi_my_rank != mpi_master_rank) 
+	(*cm)->stats = AllocCMStats(nparts); /* nparts was already sent/recd */
+      for(i = 0; i < NGUMBELMODES; i++)
+	for(p = 0; p < nparts; p++)
+	  {	    
+	    MPI_Bcast(&((*cm)->stats->gumAA[i][p]->N),      1, MPI_INT,    mpi_master_rank, MPI_COMM_WORLD);
+	    MPI_Bcast(&((*cm)->stats->gumAA[i][p]->L),      1, MPI_INT,    mpi_master_rank, MPI_COMM_WORLD);
+	    MPI_Bcast(&((*cm)->stats->gumAA[i][p]->mu),     1, MPI_DOUBLE, mpi_master_rank, MPI_COMM_WORLD);
+	    MPI_Bcast(&((*cm)->stats->gumAA[i][p]->lambda), 1, MPI_DOUBLE, mpi_master_rank, MPI_COMM_WORLD);
+	  }
+    }
+  return eslOK;
+}  
+
+
+/* BEGIN NEW 1.0 CODE HEREHEREHEREHERE */
+/*
+ * Function: search_results_MPIUnpack() 
+ * Date:     RJK, Wed May 29, 2002 [St. Louis]
+ * Purpose:  Does a blocking call to MPI_Recv until a process finishes, then
+ *           processes results and returns.
+ */
+#if 0
+int search_check_results (db_seq_t **active_seqs, job_t **process_status, int D) {
+  char *buf;
+  int bufsize;
+  MPI_Status status;
+  int data_from;        /* Who's sending us data */
+  char results_type;
+  int position = 0;
+  int num_results;
+  int start, stop, bestr;
+  float score;
+  db_seq_t *cur_seq;
+  char in_revcomp;
+  int index;
+  int i;
+  int cur_seq_index;
+  Parsetree_t *tr;
+
+  /* Get the size of the buffer */
+  MPI_Recv (&bufsize, 1, MPI_INT, MPI_ANY_SOURCE, 
+	    SEARCH_STD_SCAN_RESULTS_SIZE_TAG, MPI_COMM_WORLD, &status);
+  data_from = status.MPI_SOURCE;
+  ESL_ALLOC(buf, (char)*bufsize);
+
+  /* Figure out the sequence it belongs to */
+  cur_seq_index = process_status[data_from]->db_seq_index;
+  cur_seq = active_seqs[cur_seq_index];
+  index = process_status[data_from]->index;
+  in_revcomp = process_status[data_from]->in_revcomp;
+
+  /* Clear this job -- it's done */
+  free(process_status[data_from]);
+  process_status[data_from] = NULL;
+
+  /* Now get the results */
+  MPI_Recv (buf, bufsize, MPI_PACKED, data_from, SEARCH_STD_SCAN_RESULTS_TAG, 
+	    MPI_COMM_WORLD, &status);
+  MPI_Unpack (buf, bufsize, &position, &results_type, 1, 
+	      MPI_CHAR, MPI_COMM_WORLD);
+
+  if (results_type == SEARCH_STD_SCAN_RESULTS) {
+    MPI_Unpack (buf, bufsize, &position, &num_results, 1, 
+		MPI_INT, MPI_COMM_WORLD);
+    if (num_results > 0 && cur_seq->results[(int)in_revcomp] == NULL) {
+      cur_seq->results[(int)in_revcomp] = CreateResults (INIT_RESULTS);
+    }
+    for (i=0; i<num_results; i++) {
+      MPI_Unpack(buf, bufsize, &position, &start, 1, MPI_INT, MPI_COMM_WORLD);
+      MPI_Unpack(buf, bufsize, &position, &stop, 1, MPI_INT, MPI_COMM_WORLD);
+      MPI_Unpack(buf, bufsize, &position, &bestr, 1, MPI_INT, MPI_COMM_WORLD);
+      MPI_Unpack(buf, bufsize, &position, &score,1, MPI_FLOAT, MPI_COMM_WORLD);
+      /* Don't report hits from first D nucleotides in second overlapping seq
+	 because it wasn't a full analysis for seqs ending there -- longer
+	 seqs missed */
+      if (index == 1 || stop > D)
+	report_hit (index+start-1, index+stop-1, bestr, score, 
+		    cur_seq->results[(int)in_revcomp]);
+    }
+    cur_seq->chunks_sent--;
+  } else if (results_type == ALN_RESULTS) {
+    ESL_ALLOC(tr, sizeof(Parsetree_t));
+    /* Get size of the tree */
+    MPI_Unpack (buf, bufsize, &position, &(tr->memblock), 1, MPI_INT, MPI_COMM_WORLD);
+    MPI_Unpack (buf, bufsize, &position, &(tr->n), 1, MPI_INT, MPI_COMM_WORLD);
+    /* Allocate it */
+    ESL_ALLOC(tr->emitl, sizeof(int)*tr->n);
+    ESL_ALLOC(tr->emitr, sizeof(int)*tr->n);
+    ESL_ALLOC(tr->state, sizeof(int)*tr->n);
+    ESL_ALLOC(tr->nxtl,  sizeof(int)*tr->n);
+    ESL_ALLOC(tr->nxtr,  sizeof(int)*tr->n);
+    ESL_ALLOC(tr->prv,   sizeof(int)*tr->n);
+    ESL_ALLOC(tr->mode,  sizeof(int)*tr->n);
+    ESL_ALLOC(tr->nalloc,sizeof(int)*tr->n);
+    tr->nalloc = tr->n;
+
+    /* Unpack it */
+    MPI_Unpack (buf, bufsize, &position, tr->emitl, tr->n, MPI_INT, MPI_COMM_WORLD);
+    MPI_Unpack (buf, bufsize, &position, tr->emitr, tr->n, MPI_INT, MPI_COMM_WORLD);
+    MPI_Unpack (buf, bufsize, &position, tr->state, tr->n, MPI_INT, MPI_COMM_WORLD);
+    MPI_Unpack (buf, bufsize, &position, tr->nxtl, tr->n, MPI_INT, MPI_COMM_WORLD);
+    MPI_Unpack (buf, bufsize, &position, tr->nxtr, tr->n, MPI_INT, MPI_COMM_WORLD);
+    MPI_Unpack (buf, bufsize, &position, tr->prv, tr->n, MPI_INT, MPI_COMM_WORLD);
+    MPI_Unpack (buf, bufsize, &position, tr->mode, tr->n, MPI_INT, MPI_COMM_WORLD);
+    cur_seq->results[(int)in_revcomp]->data[index].tr = tr;
+    cur_seq->alignments_sent--;
+  } else {
+    Die ("Got result type %d when expecting SEARCH_STD_SCAN_RESULTS (%d) or ALN_RESULTS (%d)\n", results_type, SEARCH_STD_SCAN_RESULTS, ALN_RESULTS);
+  }
+  free(buf);
+  return(cur_seq_index);
+}
 
 #endif
 
 
+#endif

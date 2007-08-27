@@ -17,9 +17,14 @@
 #include <ctype.h>
 #include <float.h>
 
+#ifdef HAVE_MPI
+#include "mpi.h"
+#endif
+
 #include "easel.h"		/* general seq analysis library   */
 #include "esl_alphabet.h"
 #include "esl_getopts.h"		
+#include "esl_mpi.h"
 #include "esl_msa.h"
 #include "esl_sqio.h"		
 #include "esl_stopwatch.h"
@@ -29,7 +34,6 @@
 #include "hmmband.h"         
 #include "cplan9.h"
 #include "cm_postprob.h"
-#include "mpifuncs.h"
 #include "cm_dispatch.h"
 
 #define ALGOPTS  "--cyk,--inside,--outside,--hmmonly"        /* Exclusive choice for scoring algorithms */
@@ -246,12 +250,14 @@ main(int argc, char **argv)
     {
       cfg.do_mpi     = TRUE;
       cfg.be_verbose = FALSE;
+      esl_fatal("ERROR --mpi not yet implemented.");
+
       MPI_Init(&argc, &argv);
       MPI_Comm_rank(MPI_COMM_WORLD, &(cfg.my_rank));
       MPI_Comm_size(MPI_COMM_WORLD, &(cfg.nproc));
 
-      if (cfg.my_rank > 0)  mpi_worker(go, &cfg);
-      else 		    mpi_master(go, &cfg);
+      /*if (cfg.my_rank > 0)  mpi_worker(go, &cfg);
+	else 		    mpi_master(go, &cfg);*/
 
       esl_stopwatch_Stop(w);
       esl_stopwatch_MPIReduce(w, 0, MPI_COMM_WORLD);

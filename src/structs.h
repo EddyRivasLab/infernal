@@ -676,14 +676,14 @@ typedef struct _scan_results_t {
   int num_allocated;
 } scan_results_t;
 
-typedef struct _db_seq_t {
+typedef struct _dbseq_t {
   ESL_SQ *sq[2];
   scan_results_t *results[2];
   int chunks_sent;
   int alignments_sent;           /* -1 is flag for none queued yet */
   float best_score;              /* Best score for scan of this sequence */
   int partition;                 /* For histogram building */
-} db_seq_t;
+} dbseq_t;
 
 /* structure for MPI cmalign */
 typedef struct _seqs_to_aln_t {

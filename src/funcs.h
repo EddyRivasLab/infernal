@@ -10,10 +10,9 @@
 #include "prior.h"
 #include "rnamat.h"
 
-#ifdef USE_MPI
+#ifdef HAVE_MPI
 #include "mpi.h"
 #endif
-
 
 /* from alphabet.c
  */
@@ -138,7 +137,7 @@ extern void         FreeEmitMap(CMEmitMap_t *map);
 
 /* from modelconfig.c
  */
-extern void  ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax);
+extern int   ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax);
 extern void  ConfigCMEnforce(CM_t *cm);
 extern void  ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit);
 extern void  ConfigGlobal(CM_t *cm);
@@ -449,6 +448,43 @@ extern CMSubInfo_t *AllocSubInfo(int clen);
 extern void         FreeSubInfo(CMSubInfo_t *subinfo);
 extern void  debug_print_cm_params(FILE *fp, CM_t *cm);
 
+/* from rsearch_buildcm.c
+ */
+extern CM_t *build_cm (ESL_MSA *msa, fullmat_t *fullmat, int *querylen,
+		       float alpha, float beta, float alphap, float betap,
+		       float beginsc, float endsc);
+extern CM_t *read_cm (char *queryfile);
+
+/* from cm_cluster.c
+ */
+int MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff, int do_corig, 
+	      int *ret_num_msa, ESL_MSA ***ret_cmsa);
+
+/* from cm_errors.c */
+extern void cm_Die (char *format, ...);
+extern void cm_Fail(char *format, ...);
+
+/* from mpisupport.c */
+#if HAVE_MPI
+extern int cm_master_MPIBcast(CM_t *cm, int tag, MPI_Comm comm, char **buf, int *nalloc);
+extern int cm_worker_MPIBcast(int tag, MPI_Comm comm, char **buf, int *nalloc, ESL_ALPHABET **abc, CM_t **ret_cm);
+extern int cm_MPIUnpack(ESL_ALPHABET **abc, char *buf, int n, int *pos, MPI_Comm comm, CM_t **ret_cm);
+extern int cm_MPIPack(CM_t *cm, char *buf, int n, int *pos, MPI_Comm comm);
+extern int cm_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n);
+extern int cm_justread_MPIPack(CM_t *cm, char *buf, int n, int *pos, MPI_Comm comm);
+extern int cm_justread_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n);
+
+extern void mpi_worker_search_target(CM_t *cm, int my_rank);
+extern void mpi_worker_cm_and_cp9_search(CM_t *cm, int do_fast, int my_rank);
+extern void mpi_worker_cm_and_cp9_search_maxsc(CM_t *cm, int do_fast, int do_minmax, int my_rank);
+extern int dsq_MPISend(char *dsq, int L, int dest);
+extern int dsq_MPIRecv(char **ret_dsq, int *ret_L);
+extern int dsq_maxsc_MPISend(char *dsq, int L, float maxsc, int dest);
+extern int dsq_maxsc_MPIRecv(char **ret_dsq, int *ret_L, float *ret_maxsc);
+
+
+#endif
+
 /* Reading/writing of CP9 HMMs no longer supported. */
 #if 0
 /* from cp9_hmmio.c 
@@ -465,18 +501,3 @@ extern void     CP9_WriteAscHMM(FILE *fp, CP9_t *hmm);
 extern void     CP9_WriteBinHMM(FILE *fp, CP9_t *hmm);
 #endif
 
-/* from rsearch_buildcm.c
- */
-extern CM_t *build_cm (ESL_MSA *msa, fullmat_t *fullmat, int *querylen,
-		       float alpha, float beta, float alphap, float betap,
-		       float beginsc, float endsc);
-extern CM_t *read_cm (char *queryfile);
-
-/* from cm_cluster.c
- */
-int MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff, int do_corig, 
-	      int *ret_num_msa, ESL_MSA ***ret_cmsa);
-
-/* cm_errors.c */
-extern void cm_Die (char *format, ...);
-extern void cm_Fail(char *format, ...);
