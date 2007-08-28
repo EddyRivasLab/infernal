@@ -68,6 +68,10 @@ float tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0
                  BetaMats_t *arg_beta, BetaMats_t *ret_beta,
                  struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
                  int *ret_mode, int *ret_v, int *ret_j);
+float tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int j0,
+                 int useEL, int force_LM, int force_RM, int do_full, AlphaMats_t *alpha, 
+                 AlphaMats_t *ret_alpha, struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
+                 ShadowMats_t *ret_shadow, int *ret_mode, int *ret_v, int *ret_i, int *ret_j);
 
 /* Traceback routine */
 float trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
@@ -270,7 +274,7 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
          if ( (sc = beta->J[cm->M][j][d]) > best_sc) /* Joint parent to EL */
          {
             best_sc = sc;
-            best_k  = 0;
+            best_k  = -1;
             best_j  = j;
             best_d  = d;
             v_mode = 3; w_mode = 0; y_mode = 0;
@@ -601,10 +605,10 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
    y = cm->cfirst[w] - 1;
 
    /* Calculate alphas and betas */
-   b_sc =  vinside(cm, dsq, L, w, z, i0, i1, j1, j0, useEL, force_LM, force_RM,
-                   BE_EFFICIENT, NULL, &alpha, NULL, NULL, &b_mode, &b_v, &b_i, &b_j);
-   if (r != 0) b1_sc = IMPOSSIBLE;
-   voutside(cm, dsq, L, r, y, i0, i1, j1, j0, useEL, force_LM, force_RM, BE_EFFICIENT, NULL, &beta, NULL, NULL);
+   b_sc =  tr_vinside(cm, dsq, L, w, z, i0, i1, j1, j0, useEL, force_LM, force_RM,
+                      BE_EFFICIENT, NULL, &alpha, NULL, NULL, &b_mode, &b_v, &b_i, &b_j);
+   if (r != 0) b_sc = IMPOSSIBLE;
+   tr_voutside(cm, dsq, L, r, y, i0, i1, j1, j0, useEL, force_LM, force_RM, BE_EFFICIENT, NULL, &beta, NULL, NULL);
 
    /* Find our best split */
    best_sc = IMPOSSIBLE;
@@ -1681,6 +1685,16 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
             switch (cm->sttype[y])
             {
                case MP_st:
+                  if (j > i0)
+                  {
+                     if (dsq[j-1] < Alphabet_size)
+                        esc = LeftMarginalScore(cm->esc[v], dsq[j-1]);
+                     else
+                        Die("Still can't deal with marginalizing degenerate residues! dsq[%d] = %d\n",j-1,dsq[j-1]);
+                     if ( (sc = beta->L[y][j-1] + cm->tsc[y][voffset] + esc) > beta->L[v][j] )
+                        beta->L[v][j] = sc;
+                  }
+                  break;
                case ML_st:
                case IL_st:
                   if (j > i0)
@@ -1725,6 +1739,16 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
             switch (cm->sttype[y])
             {
                case MP_st:
+                  if (j < j0)
+                  {
+                     if (dsq[j+1] < Alphabet_size)
+                        esc = RightMarginalScore(cm->esc[v], dsq[j+1]);
+                     else
+                        Die("Still can't deal with marginalizing degenerate residues! dsq[%d] = %d\n",j+1,dsq[j+1]);
+                     if ( (sc = beta->R[y][j+1] + cm->tsc[y][voffset] + esc) > beta->R[v][j] )
+                        beta->R[v][j] = sc;
+                  }
+                  break;
                case MR_st:
                case IR_st:
                   if (j < j0)
@@ -1934,6 +1958,616 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
    if (ret_j    != NULL) *ret_j    = b_j;
 
    return b_sc;
+}
+
+/* Function: tr_vinside()
+ * Author:   DLK
+ *
+ * Purpose:  Inside-type tr-CYK for a v-problem
+ *           Closely modeled on vinside() and tr_inside()
+ *           Note use of vji coordinates rather than vjd
+ * Args:
+ *
+ * Returns:
+ */
+float
+tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int j0,
+           int useEL, int force_LM, int force_RM, int do_full, AlphaMats_t *arg_alpha, 
+           AlphaMats_t *ret_alpha, struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
+           ShadowMats_t *ret_shadow, int *ret_mode, int *ret_v, int *ret_i, int *ret_j)
+{
+   int v,i,j;
+   int w1, w2;
+   int jp, ip;
+   int *touch;
+   int y, yoffset;
+   float sc;
+
+   float b_sc;
+   int b_v, b_i, b_j, b_mode;
+
+   AlphaMats_t *alpha;
+   ShadowMats_t *shadow;
+
+   /* Initialization */
+   b_v = -1;
+   b_i = i0;
+   b_j = j0;
+   b_mode = 3;
+   b_sc = IMPOSSIBLE;
+
+   if ( dpool == NULL ) dpool = deckpool_create();
+
+   alpha = MallocOrDie(sizeof(AlphaMats_t));
+   shadow = MallocOrDie(sizeof(ShadowMats_t));
+
+   /* Create and initialize score matrices */
+   if ( arg_alpha == NULL )
+   {
+      alpha->J = NULL; alpha->L = NULL; alpha->R = NULL;
+   }
+   else
+   {
+      alpha->J = arg_alpha->J; alpha->L = arg_alpha->L; alpha->R = arg_alpha->R;
+   }
+
+   if ( alpha->J == NULL )
+   {
+      alpha->J = MallocOrDie(sizeof(float **) * (cm->M+1));
+      for (v = 0; v <= cm->M; v++) { alpha->J[v] = NULL; }
+   }
+   if ( alpha->L == NULL )
+   {
+      alpha->L = MallocOrDie(sizeof(float **) * (cm->M+1));
+      for (v = 0; v <= cm->M; v++) { alpha->L[v] = NULL; }
+   }
+   if ( alpha->R == NULL )
+   {
+      alpha->R = MallocOrDie(sizeof(float **) * (cm->M+1));
+      for (v = 0; v <= cm->M; v++) { alpha->R[v] = NULL; }
+   }
+
+   w1 = cm->nodemap[cm->ndidx[z]];
+   w2 = cm->cfirst[w1]-1;
+   for (v = w1; v <= w2; v++)
+   {
+      if (! deckpool_pop(dpool, &(alpha->J[v])) )
+         alpha->J[v] = alloc_vji_deck(i0, i1, j1, j0);
+      if (! deckpool_pop(dpool, &(alpha->L[v])) )
+         alpha->L[v] = alloc_vji_deck(i0, i1, j1, j0);
+      if (! deckpool_pop(dpool, &(alpha->R[v])) )
+         alpha->R[v] = alloc_vji_deck(i0, i1, j1, j0);
+      for (jp = 0; jp <= j0-j1; jp++)
+      {
+         for (ip = 0; ip <= i1-i0; ip++)
+         {
+            alpha->J[v][jp][ip] = IMPOSSIBLE;
+            alpha->L[v][jp][ip] = IMPOSSIBLE;
+            alpha->R[v][jp][ip] = IMPOSSIBLE;
+         }
+      }
+   }
+
+   touch = MallocOrDie(sizeof(int) * cm->M);
+   for (v = 0;    v < r;     v++) { touch[v] = 0; }
+   for (v = r;    v <= w2;   v++) { touch[v] = cm->pnum[v]; }
+   for (v = w2+1; v < cm->M; v++) { touch[v] = 0; }
+
+   /* Create shadow matrices */
+   if (ret_shadow != NULL)
+   {
+      shadow->J     = MallocOrDie(sizeof(char **) * cm->M);
+      shadow->L     = MallocOrDie(sizeof(char **) * cm->M);
+      shadow->R     = MallocOrDie(sizeof(char **) * cm->M);
+      shadow->Lmode = MallocOrDie(sizeof(char **) * cm->M);
+      shadow->Rmode = MallocOrDie(sizeof(char **) * cm->M);
+      for (v = 0; v < cm->M; v++)
+      {
+         shadow->J[v]      = NULL;
+         shadow->L[v]      = NULL;
+         shadow->R[v]      = NULL;
+         shadow->Lmode[v] = NULL;
+         shadow->Rmode[v] = NULL;
+      }
+   }
+
+   /* Initialize our non-IMPOSSIBLE boundary condition */
+   /* (Includes an unroll of the main recursion to handle EL) */
+   ip = i1 - i0;
+   jp = 0;
+   if (! useEL)
+   {
+      if (! force_LM && ! force_RM)
+         alpha->J[z][jp][ip] = 0.0;
+      if (! force_RM )
+         alpha->L[z][jp][ip] = 0.0;
+      if (! force_LM )
+         alpha->R[z][jp][ip] = 0.0;
+   }
+   else if (! force_LM && ! force_RM)
+   {
+      if (ret_shadow != NULL)
+      {
+         shadow->J[z]     = alloc_vji_shadow_deck(i0,i1,j1,j0);
+         shadow->L[z]     = alloc_vji_shadow_deck(i0,i1,j1,j0);
+         shadow->R[z]     = alloc_vji_shadow_deck(i0,i1,j1,j0);
+         shadow->Lmode[z] = alloc_vji_shadow_deck(i0,i1,j1,j0);
+         shadow->Rmode[z] = alloc_vji_shadow_deck(i0,i1,j1,j0);
+      }
+
+      switch (cm->sttype[z])
+      {
+         case  D_st:
+         case  S_st:
+            alpha->J[z][jp][ip] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1));
+            if (ret_shadow != NULL) shadow[z][jp][ip] = USED_EL;
+            break;
+         case MP_st:
+            if (i0 == i1 || j1 == j0) break;
+            alpha->J[z][jp+1][ip-1] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1));
+            if (dsq[i1-1] < Alphabet_size && dsq[j1+1] < Alphabet_size)
+               alpha->J[z][jp+1][ip-1] += cm->esc[z][(int) (dsq[i1-1]*Alphabet_size+dsq[j1+1])];
+            else
+               alpha->J[z][jp+1][ip-1] += DegeneratePairScore(cm->esc[z], dsq[i1-1], dsq[j1+1]);
+            if (ret_shadow != NULL) shadow->J[z][jp+1][ip-1] = USED_EL;
+            if (alpha->J[z][jp+1][ip-1] < IMPOSSIBLE) alpha->J[z][jp+1][ip-1] = IMPOSSIBLE;
+            break;
+         case ML_st:
+         case IL_st:
+            if (i0 == i1 ) break;
+            alpha->J[z][jp][ip-1] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1));
+            if (dsq[i1-1] < Alphabet_size)
+               alpha->J[z][jp][ip-1] += cm->esc[z][(int) dsq[i1-1]];
+            else
+               alpha->J[z][jp][ip-1] += DegenerateSingletScore(cm->esc[z], dsq[i1-1]);
+            if (ret_shadow != NULL) shadow->J[z][jp][ip-1] = USED_EL;
+            if (alpha->J[z][jp][ip-1] < IMPOSSIBLE) alpha->J[z][jp][ip-1] = IMPOSSIBLE;
+            break;
+         case MR_st:
+         case IR_st:
+            if (j1 == j0) break;
+            alpha->J[z][jp+1][ip] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1));
+            if (dsq[j1+1] < Alphabet_size)
+               alpha->J[z][jp+1][ip] += cm->esc[z][(int) dsq[j1+1]];
+            else
+               alpha->J[z][jp+1][ip] += DegenerateSingletScore(cm->esc[z], dsq[j1+1]);
+            if (ret_shadow != NULL) shadow->J[z][jp+1][ip] = USED_EL;
+            if (alpha->J[z][jp+1][ip] < IMPOSSIBLE) alpha->J[z][jp+1][ip] = IMPOSSIBLE;
+            break;
+         default:
+            Die("Bad input combination in tr_vinside: useEL TRUE, but cm->sttype[z] = %d\n",cm->sttype[z]);
+      }
+
+      alpha->L[z][jp][ip] = IMPOSSIBLE;
+      alpha->R[z][jp][ip] = IMPOSSIBLE;
+      if (ret_shadow != NULL)
+      {
+         /* didn't actually use EL, but this prevents a traceback bug */
+         shadow->L[z][jp][ip] = USED_EL;
+         shadow->R[z][jp][ip] = USED_EL;
+      }
+   }
+   else
+      Die("Bad input combination in tr_vinside: useEL %d force_LM %d force_RM %d\n",useEL,force_LM,force_RM);
+
+   /* Special case: empty sequence */
+   if (r == 0)
+   {
+      b_v = z; b_i = i1; b_j = j1;
+      if (! force_LM && ! force_RM)
+      {
+         b_sc = alpha->J[z][0][i1-i0];
+         b_mode = 3;
+      }
+      if (! force_RM && alpha->L[z][0][i1-i0] > b_sc)
+      {
+         b_sc = alpha->L[z][0][i1-i0];
+         b_mode = 2;
+      }
+      if (! force_LM && alpha->R[z][0][i1-i0] > b_sc)
+      {
+         b_sc = alpha->R[z][0][i1-i0];
+         b_mode = 1;
+      }
+
+      if (z == 0)
+      {
+         // I don't understand what exactly Sean's doing in this block
+         Die("Potentially unhandled case!\n");
+      }
+   }
+
+   /* Main recursion */
+   for (v = w1-1; v >= r; v--)
+   {
+      /* Get decks */
+      if (! deckpool_pop(dpool, &(alpha->J[v])) )
+         alpha->J[v] = alloc_vji_deck(i0,i1,j1,j0);
+      if (! deckpool_pop(dpool, &(alpha->L[v])) )
+         alpha->L[v] = alloc_vji_deck(i0,i1,j1,j0);
+      if (! deckpool_pop(dpool, &(alpha->R[v])) )
+         alpha->R[v] = alloc_vji_deck(i0,i1,j1,j0);
+
+      if (ret_shadow != NULL)
+      {
+         shadow->J[v] = alloc_vji_shadow_deck(i0,i1,j1,j0);
+         shadow->L[v] = alloc_vji_shadow_deck(i0,i1,j1,j0);
+         shadow->R[v] = alloc_vji_shadow_deck(i0,i1,j1,j0);
+      }
+
+      /* Double-check problem type */
+      if (cm->sttype[v] == E_st || cm->sttype[v] == B_st || (cm->sttype[v] == S_st && v > r))
+         Die("Non-V problem in tr_vinside(); cm->sttype[%d] = %d\n",v,cm->sttype[v]);
+
+      if (cm->sttype[v] == D_st || cm->sttype[v] == S_st)
+      {
+         for (jp = 0; jp <= j0-j1; jp++)
+         {
+            for (ip = i1-i0; ip >= 0; ip--)
+            {
+               y = cm->cfirst[v];
+               if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && ! force_LM && ! force_RM)
+                  if ( (sc = cm->endsc[v] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1))) > alpha->J[v][jp][ip])
+                  {
+                     alpha->J[v][jp][ip] = sc;
+                     if (ret_shadow != NULL) shadow->J[v][jp][ip] = USED_EL;
+                  }
+
+               for (yoffset = 0; yoffset < cm->num[v]; yoffset++)
+               {
+                  if (! force_RM && ! force_LM)
+                  if ( (sc = alpha->J[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) > alpha->J[v][jp][ip])
+                  {
+                     alpha->J[v][jp][ip] = sc;
+                     if (ret_shadow != NULL) shadow->J[v][jp][ip] = (char) yoffset;
+                  }
+                  if (! force_RM)
+                  if ( (sc = alpha->L[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) > alpha->L[v][jp][ip])
+                  {
+                     alpha->L[v][jp][ip] = sc;
+                     if (ret_shadow != NULL) { shadow->L[v][jp][ip] = (char) yoffset; shadow->Lmode[v][jp][ip] = 2; }
+                  }
+                  if (! force_LM)
+                  if ( (sc = alpha->R[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) > alpha->R[v][jp][ip])
+                  {
+                     alpha->R[v][jp][ip] = sc;
+                     if (ret_shadow != NULL) { shadow->R[v][jp][ip] = (char) yoffset; shadow->Rmode[v][jp][ip] = 1; }
+                  }
+               }
+
+               if ( alpha->J[v][jp][ip] < IMPOSSIBLE ) alpha->J[v][jp][ip] = IMPOSSIBLE;
+               if ( alpha->L[v][jp][ip] < IMPOSSIBLE ) alpha->L[v][jp][ip] = IMPOSSIBLE;
+               if ( alpha->R[v][jp][ip] < IMPOSSIBLE ) alpha->R[v][jp][ip] = IMPOSSIBLE;
+            }
+         }
+      }
+      else if (cm->sttype[v] == MP_st)
+      {
+         for  (jp = 0; jp <= j0-j1; jp++)
+         {
+            j = jp+j1;
+            for (ip = i1-i0; ip >= 0; ip--)
+            {
+               i = ip+i0;
+               y = cm->cfirst[v];
+
+               if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && !force_LM && !force_RM && jp > 0 && ip < i1-i0)
+                  if ( (sc = cm->endsc[v] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - 2))) > alpha->J[v][jp][ip] )
+                  {
+                     alpha->J[v][jp][ip] = sc;
+                     if (ret_shadow != NULL) shadow->J[v][jp][ip] = USED_EL;
+                  }
+
+               for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
+               {
+                  if (!force_LM && !force_RM && jp > 0 && ip < i1-i0)
+                  if ( (sc = alpha->J[y+yoffset][jp-1][ip+1] + cm->tsc[v][yoffset]) > alpha->J[v][jp][ip])
+                  {
+                     alpha->J[v][jp][ip] = sc;
+                     if (ret_shadow != NULL) shadow->J[v][jp][ip] = (char) yoffset;
+                  }
+                  if (!force_RM && ip < i1-i0)
+                  if ( (sc = alpha->L[y+yoffset][jp][ip+1] + cm->tsc[v][yoffset]) > alpha->L[v][jp][ip])
+                  {
+                     alpha->L[v][jp][ip] = sc;
+                     if (ret_shadow != NULL) { shadow->L[v][jp][ip] = (char) yoffset; shadow->Lmode[v][jp][ip] = 2; }
+                  }
+                  if (!force_RM && ip < i1-i0)
+                  if ( (sc = alpha->J[y+yoffset][jp][ip+1] + cm->tsc[v][yoffset]) > alpha->L[v][jp][ip])
+                  {
+                     alpha->L[v][jp][ip] = sc;
+                     if (ret_shadow != NULL) { shadow->L[v][jp][ip] = (char) yoffset; shadow->Lmode[v][jp][ip] = 3; }
+                  }
+                  if (!force_LM && jp > 0)
+                  if ( (sc = alpha->R[y+yoffset][jp-1][ip] + cm->tsc[v][yoffset]) > alpha->R[v][jp][ip])
+                  {
+                     alpha->R[v][jp][ip] = sc;
+                     if (ret_shadow != NULL) { shadow->R[v][jp][ip] = (char) yoffset; shadow->Rmode[v][jp][ip] = 1; }
+                  }
+                  if (!force_LM && jp > 0)
+                  if ( (sc = alpha->J[y+yoffset][jp-1][ip] + cm->tsc[v][yoffset]) > alpha->R[v][jp][ip])
+                  {
+                     alpha->R[v][jp][ip] = sc;
+                     if (ret_shadow != NULL) { shadow->R[v][jp][ip] = (char) yoffset; shadow->Rmode[v][jp][ip] = 3; }
+                  }
+               }
+
+               if (jp > 0 && ip < i1-i0)
+               {
+                  if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
+                     alpha->J[v][jp][ip] += cm->esc[v][(int) (dsq[i]*Alphabet_size+dsq[j])];
+                  else
+                     alpha->J[v][jp][ip] += DegeneratePairScore(cm->esc[v], dsq[i], dsq[j]);
+               }
+               if (ip < i1-i0)
+               {
+                  if (dsq[i] < Alphabet_size)
+                     alpha->L[v][jp][ip] += LeftMarginalScore(cm->esc[v], dsq[i]);
+                  else
+                     Die("Still can't deal with marginalizing degenerate residues! dsq[%d] = %d\n",i,dsq[i]);
+               }
+               if (jp > 0)
+               {
+                  if (dsq[j] < Alphabet_size)
+                     alpha->R[v][jp][ip] += RightMarginalScore(cm->esc[v], dsq[j]);
+                  else
+                     Die("Still can't deal with marginalizing degenerate residues! dsq[%d] = %d\n",j,dsq[j]);
+               }
+
+               if ( alpha->J[v][jp][ip] < IMPOSSIBLE) alpha->J[v][jp][ip] = IMPOSSIBLE;
+               if ( alpha->L[v][jp][ip] < IMPOSSIBLE) alpha->L[v][jp][ip] = IMPOSSIBLE;
+               if ( alpha->R[v][jp][ip] < IMPOSSIBLE) alpha->R[v][jp][ip] = IMPOSSIBLE;
+
+               if (r == 0)
+               {
+                  if (!force_LM && !force_RM)
+                  if ( alpha->J[v][jp][ip] > b_sc ) { b_mode = 3; b_v = v; b_j = j1+jp; b_i = i0+ip; b_sc = alpha->J[v][jp][ip]; }
+                  if (!force_RM)
+                  if ( alpha->L[v][jp][ip] > b_sc ) { b_mode = 2; b_v = v; b_j = j1+jp; b_i = i0+ip; b_sc = alpha->L[v][jp][ip]; }
+                  if (!force_LM)
+                  if ( alpha->R[v][jp][ip] > b_sc ) { b_mode = 1; b_v = v; b_j = j1+jp; b_i = i0+ip; b_sc = alpha->R[v][jp][ip]; }
+               }
+            }
+         }
+      }
+      else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st)
+      {
+         for (jp = 0; jp <= j0-j1; jp++)
+         {
+            for (ip = i1-i0; ip >= 0; ip--)
+            {
+               i = i0+ip;
+               y = cm->cfirst[v];
+
+               if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && !force_LM && !force_RM && ip < i1-k0)
+                  if ( (sc = cm->endsc[v] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - 1))) > alpha->J[v][jp][ip] )
+                  {
+                     alpha->J[v][jp][ip] = sc;
+                     if (ret_shadow != NULL) shadow->J[v][jp][ip] = USED_EL;
+                  }
+
+               for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
+               {
+                  if (!force_LM && !force_RM && ip < i1-i0)
+                  if ( (sc = alpha->J[y+yoffset][jp][ip+1] + cm->tsc[v][yoffset]) > alpha->J[v][jp][ip])
+                  {
+                     alpha->J[v][jp][ip] = sc;
+                     if (ret_shadow != NULL) shadow->J[v][jp][ip] = (char) yoffset;
+                  }
+                  if (!force_RM && ip < i1-i0)
+                  if ( (sc = alpha->L[y+yoffset][jp][ip+1] + cm->tsc[v][yoffset]) > alpha->L[v][jp][ip])
+                  {
+                     alpha->L[v][jp][ip] = sc;
+                     if (ret_shadow != NULL) { shadow->L[v][jp][ip] = (char) yoffset; shadow->Lmode[v][jp][ip] = 2; }
+                  }
+                  if (!force_LM)
+                  if ( (sc = alpha->R[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) > alpha->R[v][jp][ip])
+                  {
+                     alpha->R[v][jp][ip] = sc;
+                     if (ret_shadow != NULL) { shadow->R[v][jp][ip] = (char) yoffset; shadow->Rmode[v][jp][ip] = 1; }
+                  }
+                  if (!force_LM)
+                  if ( (sc = alpha->J[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) > alpha->R[v][jp][ip])
+                  {
+                     alpha->R[v][jp][ip] = sc;
+                     if (ret_shadow != NULL) { shadow->R[v][jp][ip] = (char) yoffset; shadow->Rmode[v][jp][ip] = 3; }
+                  }
+               }
+
+               if (ip < i1-i0)
+               {
+                  if (dsq[i] < Alphabet_size)
+                  {
+                     alpha->J[v][jp][ip] += cm->esc[v][(int) dsq[i]];
+                     alpha->L[v][jp][ip] += cm->esc[v][(int) dsq[i]];
+                  }
+                  else
+                  {
+                     alpha->J[v][jp][ip] += DegenerateSingletScore(cm->esc[v], dsq[i]);
+                     alpha->L[v][jp][ip] += DegenerateSingletScore(cm->esc[v], dsq[i]);
+                  }
+               }
+
+               if ( alpha->J[v][jp][ip] < IMPOSSIBLE) alpha->J[v][jp][ip] = IMPOSSIBLE;
+               if ( alpha->L[v][jp][ip] < IMPOSSIBLE) alpha->L[v][jp][ip] = IMPOSSIBLE;
+               if ( alpha->R[v][jp][ip] < IMPOSSIBLE) alpha->R[v][jp][ip] = IMPOSSIBLE;
+               
+               if (r == 0)
+               {
+                  if (!force_LM && !force_RM)
+                  if ( alpha->J[v][jp][ip] > b_sc ) { b_mode = 3; b_v = v; b_j = j1+jp; b_i = i0+ip; b_sc = alpha->J[v][jp][ip]; }
+                  if (!force_RM)
+                  if ( alpha->L[v][jp][ip] > b_sc ) { b_mode = 2; b_v = v; b_j = j1+jp; b_i = i0+ip; b_sc = alpha->L[v][jp][ip]; }
+               }
+            }
+         }
+      }
+      else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st)
+      {
+         for (jp = 0; jp <= j0-j1; jp++)
+         {
+            j = j1+jp;
+            for (ip = i1-i0; ip >= 0; ip--)
+            {
+               y = cm->cfirst[v];
+
+               if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && !force_LM && !force_RM && jp > 0)
+                  if ( (sc = cm->endsc[v] + (cm->el_selfsc * ((j1+jp)-(i0+ip)+1 - 1))) > alpha->J[v][jp][ip] )
+                  {
+                     alpha->J[v][jp][ip] = sc;
+                     if (ret_shadow != NULL) shaow->J[v][jp][ip] = USED_EL;
+                  }
+
+               for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
+               {
+                  if (!force_LM && !force_RM && jp > 0)
+                  if ( (sc = alpha->J[y+yoffset][jp-1][ip] + cm->tsc[v][yoffset]) > alpha->J[v][jp][ip])
+                  {
+                     alpha->J[v][jp][ip] = sc;
+                     if (ret_shadow != NULL) shadow->J[v][jp][ip] = (char) yoffset;
+                  }
+                  if (!force_RM)
+                  if ( (sc = alpha->L[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) > alpha->L[v][jp][ip])
+                  {
+                     alpha->L[v][jp][ip] = sc;
+                     if (ret_shadow != NULL) { shadow->L[v][jp][ip] = (char) yoffset; shadow->Lmode[v][jp][ip] = 2; }
+                  }
+                  if (!force_RM)
+                  if ( (sc = alpha->J[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) > alpha->L[v][jp][ip])
+                  {
+                     alpha->L[v][jp][ip] = sc;
+                     if (ret_shadow != NULL) { shadow->L[v][jp][ip] = (char) yoffset; shadow->Lmode[v][jp][ip] = 3; }
+                  }
+                  if (!force_LM && jp > 0)
+                  if ( (sc = alpha->R[y+yoffset][jp-1][ip] + cm->tsc[v][yoffset]) > alpha->R[v][jp][ip])
+                  {
+                     alpha->R[v][jp][ip] = sc;
+                     if (ret_shadow != NULL) { shadow->R[v][jp][ip] = (char) yoffset; shadow->Rmode[v][jp][ip] = 1; }
+                  }
+               }
+
+               if (jp > 0)
+               {
+                  if (dsq[j] < Alphabet_size)
+                  {
+                     alpha->J[v][jp][ip] += cm->esc[v][(int) dsq[j]];
+                     alpha->R[v][jp][ip] += cm->esc[v][(int) dsq[j]];
+                  }
+                  else
+                  {
+                     alpha->J[v][jp][ip] += DegenerateSingletScore(cm->esc[v], dsq[j]);
+                     alpha->R[v][jp][ip] += DegenerateSingletScore(cm->esc[v], dsq[j]);
+                  }
+               }
+
+               if ( alpha->J[v][jp][ip] < IMPOSSIBLE) alpha->J[v][jp][ip] = IMPOSSIBLE;
+               if ( alpha->L[v][jp][ip] < IMPOSSIBLE) alpha->L[v][jp][ip] = IMPOSSIBLE;
+               if ( alpha->R[v][jp][ip] < IMPOSSIBLE) alpha->R[v][jp][ip] = IMPOSSIBLE;
+
+               if ( r == 0)
+               {
+                  if (!force_LM && !force_RM)
+                  if ( alpha->J[v][jp][ip] > b_sc ) { b_mode = 3; b_v = v; b_j = j1+jp; b_i = i0+ip; b_sc = alpha->J[v][jp][ip]; }
+                  if (!force_LM)
+                  if ( alpha->R[v][jp][ip] > b_sc ) { b_mode = 1; b_v = v; b_j = j1+jp; b_i = i0+ip; b_sc = alpha->R[v][jp][ip]; }
+               }
+            }
+         }
+      }
+      else
+      {
+         Die("There's no way we could have gotten here - should have died before now\n");
+      }
+
+      /* If we're at root, give it the best (local) score */
+      if (v == 0)
+      {
+         alpha->J[v][j0-j1][0] = b_sc;
+         alpha->L[v][j0-j1][0] = b_sc;
+         alpha->R[v][j0-j1][0] = b_sc;
+         if (ret_shadow != NULL)
+         {
+            shadow->J[v][j0-j1][0] = USED_LOCAL_BEGIN;
+            shadow->L[v][j0-j1][0] = USED_LOCAL_BEGIN;
+            shadow->R[v][j0-j1][0] = USED_LOCAL_BEGIN;
+            shadow->Lmode[v][j0-j1][0] = b_mode;
+            shadow->Rmode[v][j0-j1][0] = b_mode;
+         }
+      }
+
+      /* Recycle memory */
+      if (! do_full)
+      {
+         for (y = cm->cfirst[v]; y < cm->cfirst[v]+cnum[v]; y++)
+         {
+            touch[y]--;
+            if (touch[y] == 0)
+            {
+               deckpool_push(dpool, alpha->J[y]);
+               deckpool_push(dpool, alpha->L[y]);
+               deckpool_push(dpool, alpha->R[y]);
+               alpha->J[y] = NULL;
+               alpha->L[y] = NULL;
+               alpha->R[y] = NULL;
+            }
+         }
+      }
+   } /* end loop over v */
+
+   sc = b_sc;
+   if (ret_v    != NULL ) *ret_v    = b_v;
+   if (ret_i    != NULL ) *ret_i    = b_i;
+   if (ret_j    != NULL ) *ret_j    = b_j;
+   if (ret_mode != NULL ) *ret_mode = b_mode;
+
+   /* Free or return score matrices */
+   if (ret_alpha == NULL)
+   {
+      for (v = r; v <= w2; v++)
+      {
+         if (alpha->J[v] != NULL)
+         {
+            deckpool_push(dpool, alpha->J[v]);
+            alpha->J[v] = NULL;
+         }
+         if (alpha->L[v] != NULL)
+         {
+            deckpool_push(dpool, alpha->L[v]);
+            alpha->L[v] = NULL;
+         }
+         if (alpha->R[v] != NULL)
+         {
+            deckpool_push(dpool, alpha->R[v]);
+            alpha->R[v] = NULL;
+         }
+      }
+      free(alpha->J);
+      free(alpha->L);
+      free(alpha->R);
+      free(alpha);
+   }
+   else
+   {
+      ret_alpha = alpha;
+   }
+
+   /* Free or return deck pool */
+   if (ret_dpool == NULL)
+   {
+      float **foo;
+      while (deckpool_pop(dpool, &foo))
+         free_vji_deck(foo, j1, j0);
+      deckpool_free(dpool);
+   }
+   else
+   {
+      *ret_dpool = dpool;
+   }
+
+   free(touch);
+   if (ret_shadow != NULL) ret_shadow = shadow;
+
+   return sc;
 }
 
 /* Function: trinsideT()
