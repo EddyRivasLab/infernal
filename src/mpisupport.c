@@ -879,7 +879,7 @@ cm_search_results_MPIPackSize(const search_results_t *results, MPI_Comm comm, in
 
   status = MPI_Pack_size (1, MPI_INT, comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
   for(i = 0; i < results->num_results; i++) {
-    if ((status = cm_search_result_node_MPIPackSize(results->data[i], comm, &sz))  != eslOK) goto ERROR; n += sz;
+    if ((status = cm_search_result_node_MPIPackSize(&(results->data[i]), comm, &sz))  != eslOK) goto ERROR; n += sz;
   }
 
   *ret_n = n;
@@ -921,7 +921,7 @@ cm_search_results_MPIPack(const search_results_t *results, char *buf, int n, int
 
   status = MPI_Pack((int *) &(results->num_results),   1, MPI_INT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
   for (i = 0; i < results->num_results; i++) {
-    status = cm_search_result_node_MPIPack(results->data[i], buf, n, position, comm);  if (status != eslOK) return status;
+    status = cm_search_result_node_MPIPack(&(results->data[i]), buf, n, position, comm);  if (status != eslOK) return status;
   }
   ESL_DPRINTF1(("cm_search_results_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
   
@@ -951,7 +951,6 @@ cm_search_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, search_re
 {
   int         status;
   search_results_t *results = NULL;
-  search_result_node_t *rnode = NULL;
   int         num_results;
   int         i;
 
@@ -1082,10 +1081,10 @@ cm_search_result_node_MPIPack(const search_result_node_t *rnode, char *buf, int 
  *            and <*pos> is undefined and should be considered to be corrupted.
  */
 int
-cm_search_result_node_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, search_result_node_t **ret_rnode)
+cm_search_result_node_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, search_result_node_t *ret_rnode)
 {
   int status;
-  search_result_node_t *rnode = NULL;
+  search_result_node_t rnode;
   int start, stop, bestr;
   float score;
   int has_tr;
@@ -1095,29 +1094,26 @@ cm_search_result_node_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, searc
   status = MPI_Unpack (buf, n, pos, &stop,  1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   status = MPI_Unpack (buf, n, pos, &bestr, 1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   status = MPI_Unpack (buf, n, pos, &score, 1, MPI_FLOAT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
-  ESL_ALLOC(rnode, sizeof(search_result_node_t));
-  rnode->start = start;
-  rnode->stop  = stop;
-  rnode->bestr = bestr;
-  rnode->score = score;
-  rnode->tr    = NULL;
+  rnode.start = start;
+  rnode.stop  = stop;
+  rnode.bestr = bestr;
+  rnode.score = score;
+  rnode.tr    = NULL;
 
   /* optionally, unpack a parsetree */
   status = MPI_Unpack (buf, n, pos, &has_tr, 1, MPI_INT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   if(has_tr == TRUE) {
     status = cm_parsetree_MPIUnpack(buf, n, pos, comm, &tr);  if (status != eslOK) return status;
-    rnode->tr = tr;
+    rnode.tr = tr;
   }
   
   *ret_rnode = rnode;
   return eslOK;
   
  ERROR:
-  if (rnode != NULL) {
-    if (tr != NULL) FreeParsetree(tr);
-    free(rnode);
-  }
-  *ret_rnode = NULL;
+  if (tr != NULL) FreeParsetree(tr);
+
+  ret_rnode = NULL;
   return status;
 }
 

@@ -36,31 +36,15 @@ search_results_t *CreateResults (int size) {
   ESL_ALLOC(results, sizeof(search_results_t));
   results->num_results = 0;
   results->num_allocated = size;
-  ESL_ALLOC(results->data, sizeof(search_result_node_t *)*size);
-  for(i = 0; i < results->num_allocated; i++) 
-    results->data[i] = CreateResultNode();
+  ESL_ALLOC(results->data, sizeof(search_result_node_t)*size);
+  for(i = 0; i < size; i++) {
+    results->data[i].start  = -1;    
+    results->data[i].stop   = -1;    
+    results->data[i].bestr  = -1;    
+    results->data[i].score  = IMPOSSIBLE;    
+    results->data[i].tr     = NULL;
+  }
   return (results);
- ERROR:
-  esl_fatal("Memory allocation error.");
-  return NULL; /* never reached */
-}
-
-/*
- * Function: CreateResultNode ()
- * Date:     EPN, Wed Aug 29 06:26:04 2007
- * Purpose:  Creates and initializes a result node.
- */
-search_result_node_t *CreateResultNode () {
-  int status;
-  search_result_node_t *rnode;
-
-  ESL_ALLOC(rnode, sizeof(search_result_node_t));
-  rnode->start = -1;
-  rnode->stop  = -1;
-  rnode->bestr = -1;
-  rnode->score = 0.;
-  rnode->tr    = NULL;
-  return (rnode);
  ERROR:
   esl_fatal("Memory allocation error.");
   return NULL; /* never reached */
@@ -74,49 +58,61 @@ void ExpandResults (search_results_t *results, int additional) {
   int status;
   void *tmp;
   int i;
-  ESL_RALLOC(results->data, tmp, sizeof(search_result_node_t *)* (results->num_allocated+additional));
-  for(i = results->num_allocated; i < (results->num_allocated+additional); i++) 
-    results->data[i] = CreateResultNode();
+  ESL_RALLOC(results->data, tmp, sizeof(search_result_node_t) * (results->num_allocated+additional));
+
+  for(i = results->num_allocated; i < (results->num_allocated + additional); i++) {
+    results->data[i].start  = -1;    
+    results->data[i].stop   = -1;    
+    results->data[i].bestr  = -1;    
+    results->data[i].score  = IMPOSSIBLE;    
+    results->data[i].tr     = NULL;
+  }
+
   results->num_allocated+=additional;
   return;
  ERROR:
   esl_fatal("Memory reallocation error.");
 }
 
-/* Function: AppendResults ()
+/* Function: AppendResults()
  * Date:     EPN, Wed Aug 29 08:58:28 2007
  *
  * Purpose:  Add result nodes from one results structure onto
- *           another by manipulating pointers. Originally written
- *           to add results returned from an MPI worker to a growing
- *           'master' results structure in the MPI master.
+ *           another by copying data and manipulating pointers. 
+ *           Originally written to add results returned from 
+ *           an MPI worker to a growing 'master' results structure 
+ *           in the MPI master. 
+
+ *           The search_results_node_t's (results->data)
+ *           must have their start, stop, bestr, and score data
+ *           copied because the results->data is not a set 
+ *           of pointers (the whole reason for this is so 
+ *           we can call quicksort() on the hits, which requires
+ *           we have a fixed distance between them in memory).
+ *           The parsetree, however, can have it's pointer 
+ *           simply switched.
+ *
+ *           i0 is an offset in the sequence, (i0-1) is added to
+ *           data[i].start and data[i].stop for hits in src_results. 
+ *           i0 == 1 means no offset. i0 != 1 usually useful for hits 
+ *           returned by MPI workers who were searching a database
+ *           subsequence.
  *
  * Note:     Because the dest_results->data now points to some of the
  *           src_results->data, be careful not to free src_results with
  *           FreeResults() if you don't want to lose dest_results.
  */
-void AppendResults (search_results_t *src_results, search_results_t *dest_results) {
-  int status;
-  void *tmp;
-  int i, ip;
-  int new_alloc = src_results->num_results - (dest_results->num_allocated - dest_results->num_results); 
-
-  if(src_results->num_results == 0) return; /* we don't need to append anything */
-  if(new_alloc > 0) {
-    ESL_RALLOC(dest_results->data, tmp, sizeof(search_result_node_t *) * (dest_results->num_allocated + new_alloc));
-  }
+void AppendResults (search_results_t *src_results, search_results_t *dest_results, int i0) {
+  int i;
   for(i = 0; i < src_results->num_results; i++) 
     {
-      ip = i + dest_results->num_results;
-      dest_results->data[ip] = src_results->data[i];
+      report_hit (src_results->data[i].start+i0-1, src_results->data[i].stop+i0-1, 
+		  src_results->data[i].bestr,      src_results->data[i].score,
+		    dest_results);
+      if(src_results->data[i].tr != NULL)
+	dest_results->data[i].tr = src_results->data[i].tr;
     }
-  dest_results->num_results   += src_results->num_results;
-  if(new_alloc > 0) 
-    dest_results->num_allocated += new_alloc;
-
   return;
- ERROR:
-  esl_fatal("Memory reallocation error.");
 }
 
 /*
@@ -127,9 +123,9 @@ void AppendResults (search_results_t *src_results, search_results_t *dest_result
 void FreeResults (search_results_t *r) {
   int i;
   if (r != NULL) {
-    for (i=0; i<r->num_results; i++) {
-      if (r->data[i]->tr != NULL) {
-	FreeParsetree(r->data[i]->tr);
+    for (i=0; i < r->num_allocated; i++) {
+      if (r->data[i].tr != NULL) {
+	FreeParsetree(r->data[i].tr);
       }
     }
     free (r->data);
@@ -190,7 +186,7 @@ void remove_overlapping_hits (search_results_t *results, int i0, int j0)
   int covered;
   int L;
   int yp;          /* offset position, yp = y-i0+1 */
-  search_result_node_t *swap;
+  search_result_node_t swap;
 
   if (results == NULL)
     return;
@@ -207,19 +203,19 @@ void remove_overlapping_hits (search_results_t *results, int i0, int j0)
 
   for (x=0; x<results->num_results; x++) {
     covered = 0;
-    for (y=results->data[x]->start; y<=results->data[x]->stop && !covered; y++) {
+    for (y=results->data[x].start; y<=results->data[x].stop && !covered; y++) {
       {
 	yp = y-i0+1; 
 	assert(yp > 0 && yp <= L);
 	if (covered_yet[yp] != 0) {
-	covered = 1;
+	  covered = 1;
 	} 
       }
     }
     if (covered == 1) {
-      results->data[x]->start = -1;        /* Flag -- remove later to keep sorted */
+      results->data[x].start = -1;        /* Flag -- remove later to keep sorted */
     } else {
-      for (y=results->data[x]->start; y<=results->data[x]->stop; y++) {
+      for (y=results->data[x].start; y<=results->data[x].stop; y++) {
 	yp = y-i0+1; 
 	covered_yet[yp] = 1;
       }
@@ -227,11 +223,11 @@ void remove_overlapping_hits (search_results_t *results, int i0, int j0)
   }
   free (covered_yet);
 
-  for (x=0; x<results->num_results; x++) {
+  for (x=0; x < results->num_results; x++) {
     while (results->num_results > 0 &&
-	   results->data[results->num_results-1]->start == -1)
+	   results->data[results->num_results-1].start == -1)
       results->num_results--;
-    if (x<results->num_results && results->data[x]->start == -1) {
+    if (x < results->num_results && results->data[x].start == -1) {
       swap = results->data[x];
       results->data[x] = results->data[results->num_results-1];
       results->data[results->num_results-1] = swap;
@@ -239,11 +235,12 @@ void remove_overlapping_hits (search_results_t *results, int i0, int j0)
     }
   }
   while (results->num_results > 0 &&
-	 results->data[results->num_results-1]->start == -1)
+	 results->data[results->num_results-1].start == -1)
     results->num_results--;
 
   sort_results(results);
   return;
+
  ERROR:
   esl_fatal("Memory allocation error.");
 }
@@ -277,11 +274,11 @@ void report_hit (int i, int j, int bestr, float score, search_results_t *results
   if (results->num_results == results->num_allocated) 
     ExpandResults (results, INIT_RESULTS);
 
-  results->data[results->num_results]->score = score;
-  results->data[results->num_results]->start = i;
-  results->data[results->num_results]->stop = j;
-  results->data[results->num_results]->bestr = bestr;
-  results->data[results->num_results]->tr = NULL;
+  results->data[results->num_results].score = score;
+  results->data[results->num_results].start = i;
+  results->data[results->num_results].stop = j;
+  results->data[results->num_results].bestr = bestr;
+  results->data[results->num_results].tr = NULL;
   results->num_results++;
 }
 

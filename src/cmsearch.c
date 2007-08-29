@@ -481,6 +481,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int do_rc = (! esl_opt_GetBoolean(go, "--toponly"));
   int in_rc = FALSE;
   int *rclist = NULL;
+  int rci;
 
   int seqpos = 1;
   int *seqposlist = NULL;
@@ -501,6 +502,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int need_seq = TRUE;
   int chunksize;
   search_results_t *worker_results;
+
+  int using_ecutoff; 
 
   /* TEMPORARY */
   if(esl_opt_GetBoolean(go, "--hmmcalcthr"))
@@ -571,6 +574,11 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	if((status = calc_filter_threshold(go, cfg, errbuf, cm, &Smin)     != eslOK)) cm_Fail("ERROR status: %d in calc_filter_threshold()", status);
       print_search_info(stdout, cm, cm_mode, cp9_mode, cfg->N, errbuf);
       
+      if ((!(cm->search_opts & CM_SEARCH_HMMONLY)) && (cm->cutoff_type == E_CUTOFF)      || 
+	  (  cm->search_opts & CM_SEARCH_HMMONLY)  && (cm->cp9_cutoff_type == E_CUTOFF))
+	using_ecutoff = TRUE;
+      else using_ecutoff = FALSE;
+
       wi = 1;
       ndbseq = 0;
       while (have_work || nproc_working)
@@ -586,8 +594,9 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
 		  dbseq->chunks_sent = 0;
 		  dbseq->alignments_sent = -1;     /* None sent yet */
-		  dbseq->results[0] = CreateResults(INIT_RESULTS);
-		  if(do_rc) dbseq->results[1] = CreateResults(INIT_RESULTS);
+		  for(rci = 0; rci <= do_rc; rci++) {
+		    dbseq->results[rci] = CreateResults(INIT_RESULTS);
+		  }
 		  in_rc = FALSE;
 		  seqpos = 1;
 		  
@@ -630,22 +639,25 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		  ESL_DPRINTF1(("MPI master has unpacked search results\n"));
 		      
 		  /* add results to dbseqlist[si_recv]->results[rclist[wi]] */
-		  AppendResults(worker_results, dbseqlist[si_recv]->results[rclist[wi]]);
+		  AppendResults(worker_results, dbseqlist[si_recv]->results[rclist[wi]], seqposlist[wi]);
 		  /* careful, dbseqlist[si_recv]->results[rclist[wi]] now points to the nodes in worker_results->data,
 		   * don't free those (don't use FreeResults(worker_results)) */
-		  free(worker_results);
+		  /*free(worker_results);*/
 		  worker_results = NULL;
 
 		  dbseqlist[si_recv]->chunks_sent--;
 		  if(sentlist[si_recv] && dbseqlist[si_recv]->chunks_sent == 0)
 		    {
+		      for(rci = 0; rci <= do_rc; rci++) {
+			remove_overlapping_hits(dbseqlist[si_recv]->results[rci], 1, dbseqlist[si_recv]->sq[rci]->n);
+			if(using_ecutoff) remove_hits_over_e_cutoff(cm, dbseqlist[si_recv]->results[rci], 
+								    dbseqlist[si_recv]->sq[rci], (cm->search_opts & CM_SEARCH_HMMONLY)); /* HMM hits? */
+		      }					      
 		      print_results(cm, cfg->abc_out, cons, dbseqlist[si_recv], do_rc, 
 				    (cm->search_opts & CM_SEARCH_HMMONLY)); /* use HMM stats (used HMM only)? */
-		      esl_sq_Destroy(dbseqlist[si_recv]->sq[0]);
-		      FreeResults(dbseqlist[si_recv]->results[0]);
-		      if(do_rc) { 
-			esl_sq_Destroy(dbseqlist[si_recv]->sq[1]);
-			FreeResults(dbseqlist[si_recv]->results[1]);
+		      for(rci = 0; rci <= do_rc; rci++) {
+			esl_sq_Destroy(dbseqlist[si_recv]->sq[rci]);
+			FreeResults(dbseqlist[si_recv]->results[rci]);
 		      }
 		      free(dbseqlist[si_recv]);
 		      dbseqlist[si_recv] = NULL;
@@ -668,7 +680,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	      if ((status = cm_dsq_MPISend(dbseqlist[si]->sq[in_rc]->dsq+seqpos-1, len, wi, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI search job send failed");
 	      
 	      silist[wi]      = si;
-	      seqposlist[wi]     = seqpos;
+	      seqposlist[wi]  = seqpos;
 	      lenlist[wi]     = len;
 	      rclist[wi]      = in_rc;
 	      dbseqlist[si]->chunks_sent++;

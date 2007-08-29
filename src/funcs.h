@@ -194,9 +194,8 @@ extern int          Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, CP9trace_t **r
 /* from scancyk.c
  */
 extern search_results_t *CreateResults (int size);
-extern search_result_node_t *CreateResultNode ();
 extern void ExpandResults (search_results_t *r, int additional);
-extern void AppendResults (search_results_t *src_results, search_results_t *dest_results);
+extern void AppendResults (search_results_t *src_results, search_results_t *dest_results, int i0);
 extern void FreeResults (search_results_t *r);
 extern int  compare_results (const void *a_void, const void *b_void);
 extern void sort_results (search_results_t *results);
@@ -485,7 +484,7 @@ extern int cm_search_results_MPIPack(const search_results_t *results, char *buf,
 extern int cm_search_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, search_results_t **ret_results);
 extern int cm_search_result_node_MPIPackSize(const search_result_node_t *rnode, MPI_Comm comm, int *ret_n) ;
 extern int cm_search_result_node_MPIPack(const search_result_node_t *rnode, char *buf, int n, int *position, MPI_Comm comm);
-extern int cm_search_result_node_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, search_result_node_t **ret_rnode);
+extern int cm_search_result_node_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, search_result_node_t *ret_rnode);
 extern int cm_parsetree_MPIPackSize(const Parsetree_t *tr, MPI_Comm comm, int *ret_n);
 extern int cm_parsetree_MPIPack(const Parsetree_t *tr, char *buf, int n, int *position, MPI_Comm comm);
 extern int cm_parsetree_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, Parsetree_t **ret_tr);

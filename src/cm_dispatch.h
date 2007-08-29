@@ -50,4 +50,6 @@ extern int  revcomp(const ESL_ALPHABET *abc, ESL_SQ *comp, ESL_SQ *sq);
 extern int  read_next_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revcomp, dbseq_t **ret_dbseq);
 extern void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq,
 			   int do_complement, int used_HMM);
+extern void remove_hits_over_e_cutoff (CM_t *cm, search_results_t *results, ESL_SQ *sq,
+				       int used_HMM);
 #endif

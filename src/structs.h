@@ -671,7 +671,7 @@ typedef struct _search_result_node_t {
 } search_result_node_t;
 
 typedef struct _search_results_t {
-  search_result_node_t **data;
+  search_result_node_t *data;
   int num_results;
   int num_allocated;
 } search_results_t;

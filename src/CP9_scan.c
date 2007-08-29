@@ -1595,8 +1595,8 @@ CP9Scan_dispatch(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cm_cutoff,
   bwd_results = CreateResults(INIT_RESULTS);
   for(h = 0; h < fwd_results->num_results; h++) 
     {
-      min_i = (fwd_results->data[h]->stop - W + 1) >= 1 ? (fwd_results->data[h]->stop - W + 1) : 1;
-      cur_best_hmm_bsc = CP9Backward(cm, dsq, min_i, fwd_results->data[h]->stop, W, cp9_cutoff, 
+      min_i = (fwd_results->data[h].stop - W + 1) >= 1 ? (fwd_results->data[h].stop - W + 1) : 1;
+      cur_best_hmm_bsc = CP9Backward(cm, dsq, min_i, fwd_results->data[h].stop, W, cp9_cutoff, 
 				     NULL, /* don't care about score of each posn */
 				     &i,   /* set i as the best scoring start point from j-W..j */
 				     ((cm->search_opts & CM_SEARCH_HMMONLY) ? results : bwd_results),  
@@ -1718,31 +1718,31 @@ RescanFilterSurvivors(CM_t *cm, ESL_DSQ *dsq, search_results_t *hmm_results, int
   nhits = hmm_results->num_results;
   for(h = 0; h < nhits; h++) 
     {
-      if(hmm_results->data[h]->stop > prev_j) 
+      if(hmm_results->data[h].stop > prev_j) 
 	ESL_EXCEPTION(eslEINCOMPAT, "j's not in descending order");
 
-      prev_j = hmm_results->data[h]->stop;
+      prev_j = hmm_results->data[h].stop;
 
       /* add pad */
       if(padmode == PAD_SUBI_ADDJ)
 	{
-	  i = ((hmm_results->data[h]->start - ipad) >= 1)    ? (hmm_results->data[h]->start - ipad) : 1;
-	  j = ((hmm_results->data[h]->stop  + jpad) <= j0)   ? (hmm_results->data[h]->stop  + jpad) : j0;
+	  i = ((hmm_results->data[h].start - ipad) >= 1)    ? (hmm_results->data[h].start - ipad) : 1;
+	  j = ((hmm_results->data[h].stop  + jpad) <= j0)   ? (hmm_results->data[h].stop  + jpad) : j0;
 	  if((h+1) < nhits)
-	    next_j = ((hmm_results->data[h+1]->stop + jpad) <= j0)   ? (hmm_results->data[h+1]->stop + jpad) : j0;
+	    next_j = ((hmm_results->data[h+1].stop + jpad) <= j0)   ? (hmm_results->data[h+1].stop + jpad) : j0;
 	  else
 	    next_j = -1;
 	}
       else if(padmode == PAD_ADDI_SUBJ)
 	{
-	  i = ((hmm_results->data[h]->stop  - jpad) >= 1)    ? (hmm_results->data[h]->stop  - jpad) : 1;
-	  j = ((hmm_results->data[h]->start + ipad) <= j0)   ? (hmm_results->data[h]->start + ipad) : j0;
+	  i = ((hmm_results->data[h].stop  - jpad) >= 1)    ? (hmm_results->data[h].stop  - jpad) : 1;
+	  j = ((hmm_results->data[h].start + ipad) <= j0)   ? (hmm_results->data[h].start + ipad) : j0;
 	  if((h+1) < nhits)
-	    next_j = ((hmm_results->data[h+1]->start + ipad) <= j0)   ? (hmm_results->data[h+1]->start + ipad) : j0;
+	    next_j = ((hmm_results->data[h+1].start + ipad) <= j0)   ? (hmm_results->data[h+1].start + ipad) : j0;
 	  else
 	    next_j = -1;
 	}
-      /*printf("subseq: hit %d i: %d (%d) j: %d (%d)\n", h, i, hmm_results->data[h]->start[h], j, hmm_results->data[h]->stop[h]);*/
+      /*printf("subseq: hit %d i: %d (%d) j: %d (%d)\n", h, i, hmm_results->data[h].start[h], j, hmm_results->data[h].stop[h]);*/
 
       if(do_collapse) /* collapse multiple hits that overlap after padding on both sides into a single hit */
 	{
@@ -1752,17 +1752,17 @@ RescanFilterSurvivors(CM_t *cm, ESL_DSQ *dsq, search_results_t *hmm_results, int
 	      h++;
 	      if(padmode == PAD_SUBI_ADDJ)
 		{
-		  i = ((hmm_results->data[h]->start - ipad) >= 1)    ? (hmm_results->data[h]->start - ipad) : 1;
+		  i = ((hmm_results->data[h].start - ipad) >= 1)    ? (hmm_results->data[h].start - ipad) : 1;
 		  if((h+1) < nhits)
-		    next_j = ((hmm_results->data[h+1]->stop + jpad) <= j0)   ? (hmm_results->data[h+1]->stop + jpad) : j0;
+		    next_j = ((hmm_results->data[h+1].stop + jpad) <= j0)   ? (hmm_results->data[h+1].stop + jpad) : j0;
 		  else
 		    next_j = -1;
 		}
 	      else if(padmode == PAD_ADDI_SUBJ)
 		{
-		  i = ((hmm_results->data[h]->stop - jpad) >= 1)    ? (hmm_results->data[h]->stop - jpad) : 1;
+		  i = ((hmm_results->data[h].stop - jpad) >= 1)    ? (hmm_results->data[h].stop - jpad) : 1;
 		  if((h+1) < nhits)
-		    next_j = ((hmm_results->data[h+1]->start + ipad) <= j0)   ? (hmm_results->data[h+1]->start + ipad) : j0;
+		    next_j = ((hmm_results->data[h+1].start + ipad) <= j0)   ? (hmm_results->data[h+1].start + ipad) : j0;
 		  else
 		    next_j = -1;
 		}

@@ -38,8 +38,6 @@
  * declared in cm_dispatch.h) 
  */
 
-static void remove_hits_over_e_cutoff (CM_t *cm, search_results_t *results, ESL_SQ *sq,
-				       int used_HMM);
 #ifdef USE_MPI
 static seqs_to_aln_t *read_next_aln_seqs(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int nseq, int index);
 #endif
@@ -134,10 +132,10 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc
 	      {
 		CYKDivideAndConquer
 		  (cm, dbseq->sq[reversed]->dsq, dbseq->sq[reversed]->n,
-		   dbseq->results[reversed]->data[i]->bestr,
-		   dbseq->results[reversed]->data[i]->start, 
-		   dbseq->results[reversed]->data[i]->stop, 
-		   &(dbseq->results[reversed]->data[i]->tr),
+		   dbseq->results[reversed]->data[i].bestr,
+		   dbseq->results[reversed]->data[i].start, 
+		   dbseq->results[reversed]->data[i].stop, 
+		   &(dbseq->results[reversed]->data[i].tr),
 		   //cm->dmin, cm->dmax);  
 		   dmin, dmax); /* dmin and dmax will be NULL unless cm->align_opts & CM_ALIGN_QDB */
 
@@ -145,12 +143,12 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc
 		   that it can be added in later.  This makes the print_alignment
 		   routine compatible with the parallel version, while not needing
 		   to send the entire database seq over for each alignment. */
-		for (a=0; a<dbseq->results[reversed]->data[i]->tr->n; a++) 
+		for (a=0; a<dbseq->results[reversed]->data[i].tr->n; a++) 
 		  {
-		    dbseq->results[reversed]->data[i]->tr->emitl[a] -= 
-		      (dbseq->results[reversed]->data[i]->start - 1);
-		    dbseq->results[reversed]->data[i]->tr->emitr[a] -= 
-		      (dbseq->results[reversed]->data[i]->start - 1);
+		    dbseq->results[reversed]->data[i].tr->emitl[a] -= 
+		      (dbseq->results[reversed]->data[i].start - 1);
+		    dbseq->results[reversed]->data[i].tr->emitr[a] -= 
+		      (dbseq->results[reversed]->data[i].start - 1);
 		  }
 	      }
 	    }
@@ -643,46 +641,46 @@ void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbse
       for (i=0; i<results->num_results; i++) 
 	{
 	  gc_comp = get_gc_comp (dbseq->sq[in_revcomp], 
-				 results->data[i]->start, results->data[i]->stop);
+				 results->data[i].start, results->data[i].stop);
 	  printf (" Query = %d - %d, Target = %d - %d\n", 
-		  (emap->lpos[cm->ndidx[results->data[i]->bestr]] + 1 
-		   - StateLeftDelta(cm->sttype[results->data[i]->bestr])),
-		  (emap->rpos[cm->ndidx[results->data[i]->bestr]] - 1 
-		   + StateRightDelta(cm->sttype[results->data[i]->bestr])),
-		  coordinate(in_revcomp, results->data[i]->start, len), 
-		  coordinate(in_revcomp, results->data[i]->stop, len));
+		  (emap->lpos[cm->ndidx[results->data[i].bestr]] + 1 
+		   - StateLeftDelta(cm->sttype[results->data[i].bestr])),
+		  (emap->rpos[cm->ndidx[results->data[i].bestr]] - 1 
+		   + StateRightDelta(cm->sttype[results->data[i].bestr])),
+		  coordinate(in_revcomp, results->data[i].start, len), 
+		  coordinate(in_revcomp, results->data[i].stop, len));
 	  if (do_stats) 
 	    {
 	      p = cm->stats->gc2p[gc_comp];
-	      score_for_Eval = results->data[i]->score;
+	      score_for_Eval = results->data[i].score;
 	      if(cm->flags & CM_ENFORCED)
 		{
 		  printf("\n\torig sc: %.3f", score_for_Eval);
 		  score_for_Eval -= cm->enf_scdiff;
 		  printf(" new sc: %.3f (diff: %.3f\n\n", score_for_Eval, cm->enf_scdiff);
 		}
-	      printf (" Score = %.2f, E = %.4g, P = %.4g, GC = %3d\n", results->data[i]->score,
+	      printf (" Score = %.2f, E = %.4g, P = %.4g, GC = %3d\n", results->data[i].score,
 		      RJK_ExtremeValueE(score_for_Eval, gum[p]->mu, 
 					gum[p]->lambda),
 		      esl_gumbel_surv((double) score_for_Eval, gum[p]->mu, 
 				      gum[p]->lambda), gc_comp);
 	      /*printf("  Mu[gc=%d]: %f, Lambda[gc=%d]: %f\n", gc_comp, mu[gc_comp], gc_comp,
 		lambda[gc_comp]);*/
-	      /*ExtremeValueP(results->data[i]->score, mu[gc_comp], 
+	      /*ExtremeValueP(results->data[i].score, mu[gc_comp], 
 		lambda[gc_comp]));*/
 	    } 
 	  else 
 	    {
-	      printf (" Score = %.2f, GC = %3d\n", results->data[i]->score, gc_comp);
+	      printf (" Score = %.2f, GC = %3d\n", results->data[i].score, gc_comp);
 	    }
 	  printf ("\n");
-	  if (results->data[i]->tr != NULL) 
+	  if (results->data[i].tr != NULL) 
 	    {
-	      ali = CreateFancyAli (results->data[i]->tr, cm, cons, 
+	      ali = CreateFancyAli (results->data[i].tr, cm, cons, 
 				    dbseq->sq[in_revcomp]->dsq, abc);
 				    
 	      PrintFancyAli(stdout, ali,
-			    (coordinate(in_revcomp, results->data[i]->start, len)-1), /* offset in sq index */
+			    (coordinate(in_revcomp, results->data[i].start, len)-1), /* offset in sq index */
 			    in_revcomp);
 	      FreeFancyAli(ali);
 	      printf ("\n");
@@ -711,7 +709,7 @@ void remove_hits_over_e_cutoff (CM_t *cm, search_results_t *results, ESL_SQ *sq,
 {
   int gc_comp;
   int i, x;
-  search_result_node_t *swap;
+  search_result_node_t swap;
   float score_for_Eval; /* the score we'll determine the statistical signifance
 			 * of. This will be the bit score stored in
 			 * dbseq unless (cm->flags & CM_ENFORCED)
@@ -741,9 +739,9 @@ void remove_hits_over_e_cutoff (CM_t *cm, search_results_t *results, ESL_SQ *sq,
 
   for (i=0; i<results->num_results; i++) 
     {
-      gc_comp = get_gc_comp (sq, results->data[i]->start, results->data[i]->stop);
+      gc_comp = get_gc_comp (sq, results->data[i].start, results->data[i].stop);
       p = cm->stats->gc2p[gc_comp];
-      score_for_Eval = results->data[i]->score;
+      score_for_Eval = results->data[i].score;
       if(cm->flags & CM_ENFORCED)
 	{
 	  /*printf("\n\tRM orig sc: %.3f", score_for_Eval);*/
@@ -754,19 +752,19 @@ void remove_hits_over_e_cutoff (CM_t *cm, search_results_t *results, ESL_SQ *sq,
       if (RJK_ExtremeValueE(score_for_Eval,
 			    gum[p]->mu, gum[p]->lambda) > cutoff) 
 	{
-	  results->data[i]->start = -1;
+	  results->data[i].start = -1;
 	}
       /*printf("Eval: %f, start: %d\n", RJK_ExtremeValueE(score_for_Eval,
 	mu[gc_comp], lambda[gc_comp]),
-	results->data[i]->start);*/
+	results->data[i].start);*/
     }
   
   for (x=0; x<results->num_results; x++) 
     {
       while (results->num_results > 0 && 
-	     results->data[results->num_results-1]->start == -1)
+	     results->data[results->num_results-1].start == -1)
 	results->num_results--;
-      if (x<results->num_results && results->data[x]->start == -1) 
+      if (x<results->num_results && results->data[x].start == -1) 
 	{
 	  swap = results->data[x];
 	  results->data[x] = results->data[results->num_results-1];
@@ -775,7 +773,7 @@ void remove_hits_over_e_cutoff (CM_t *cm, search_results_t *results, ESL_SQ *sq,
 	}
     }
   while (results->num_results > 0 &&
-	 results->data[results->num_results-1]->start == -1)
+	 results->data[results->num_results-1].start == -1)
     results->num_results--;
   sort_results(results);
 }  
