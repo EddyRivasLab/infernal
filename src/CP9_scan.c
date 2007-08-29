@@ -106,7 +106,7 @@
  *           cutoff    - minimum score to report
  *           ret_sc    - RETURN: int log odds Viterbi score for each end point [0..(j0-i0+1)]
  *           ret_maxres- RETURN: start position that gives maximum score max argmax_i sc[i]
- *           results   - scan_results_t to add to; if NULL, don't keep results
+ *           results   - search_results_t to add to; if NULL, don't keep results
  *           do_scan   - TRUE if we're scanning, HMM can start to emit anywhere i0..j0,
  *                       FALSE if we're not, HMM must start emitting at i0, end emitting at j0
  *           be_efficient- TRUE to keep only 2 rows of DP matrix in memory, FALSE keep whole thing
@@ -118,7 +118,7 @@
  */
 float
 CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
-	   int *ret_bestpos, scan_results_t *results, int do_scan,
+	   int *ret_bestpos, search_results_t *results, int do_scan,
 	   int be_efficient, CP9_dpmatrix_t **ret_mx, CP9trace_t **ret_tr)
 {
   int          status;
@@ -484,7 +484,7 @@ CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
  *           cutoff    - minimum score to report
  *           ret_sc    - RETURN: int log odds Forward score for each end point [0..(j0-i0+1)]
  *           ret_maxres- RETURN: start position that gives maximum score max argmax_i sc[i]
- *           results   - scan_results_t to add to; if NULL, don't keep results
+ *           results   - search_results_t to add to; if NULL, don't keep results
  *           do_scan   - TRUE if we're scanning, HMM can start to emit anywhere i0..j0,
  *                       FALSE if we're not, HMM must start emitting at i0, end emitting at j0
  *           doing_align  - TRUE if reason we've called this function is to help get posteriors
@@ -499,7 +499,7 @@ CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
  */
 float
 CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
-	   int *ret_bestpos, scan_results_t *results, int do_scan, int doing_align, int doing_rescan, 
+	   int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, int doing_rescan, 
 	   int be_efficient, CP9_dpmatrix_t **ret_mx)
 {
   int          status;
@@ -945,7 +945,7 @@ CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
  *           cutoff    - minimum score to report
  *           ret_sc    - RETURN: int log odds Backward score for each end point [0..(j0-i0+1)]
  *           ret_bestpos- RETURN: start position that gives maximum score max argmax_i sc[i]
- *           results   - scan_results_t to add to; if NULL, don't keep results
+ *           results   - search_results_t to add to; if NULL, don't keep results
  *           do_scan   - TRUE if we're scanning, HMM can start to emit anywhere i0..j0,
  *                       FALSE if we're not, HMM must start emitting at i0, end emitting at j0
  *           doing_align  - TRUE if reason we've called this function is to help get posteriors
@@ -961,7 +961,7 @@ CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
  */
 float
 CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
-	    int *ret_bestpos, scan_results_t *results, int do_scan, int doing_align, 
+	    int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, 
 	    int doing_rescan, int be_efficient, CP9_dpmatrix_t **ret_mx)
 {
   int          status;
@@ -1510,7 +1510,7 @@ CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **r
  *           W          - the maximum size of a hit (often cm->W)
  *           cm_cutoff  - minimum CM  score to report 
  *           cp9_cutoff - minimum CP9 score to report (or keep if filtering)
- *           results    - scan_results_t to add to, only passed to 
+ *           results    - search_results_t to add to, only passed to 
  *                        actually_search_target()
  *           doing_cp9_stats- TRUE if we're calc'ing stats for the CP9, in this 
  *                            case we never rescan with CM
@@ -1519,7 +1519,7 @@ CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **r
  */
 float
 CP9Scan_dispatch(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cm_cutoff, 
-		 float cp9_cutoff, scan_results_t *results, int doing_cp9_stats,
+		 float cp9_cutoff, search_results_t *results, int doing_cp9_stats,
 		 int *ret_flen)
 {
   int h;
@@ -1535,8 +1535,8 @@ CP9Scan_dispatch(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cm_cutoff,
   int ipad;
   int jpad;
   int padmode;
-  scan_results_t *fwd_results;
-  scan_results_t *bwd_results;
+  search_results_t *fwd_results;
+  search_results_t *bwd_results;
 
   /* check contract */
   if(cm->cp9 == NULL)
@@ -1595,8 +1595,8 @@ CP9Scan_dispatch(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cm_cutoff,
   bwd_results = CreateResults(INIT_RESULTS);
   for(h = 0; h < fwd_results->num_results; h++) 
     {
-      min_i = (fwd_results->data[h].stop - W + 1) >= 1 ? (fwd_results->data[h].stop - W + 1) : 1;
-      cur_best_hmm_bsc = CP9Backward(cm, dsq, min_i, fwd_results->data[h].stop, W, cp9_cutoff, 
+      min_i = (fwd_results->data[h]->stop - W + 1) >= 1 ? (fwd_results->data[h]->stop - W + 1) : 1;
+      cur_best_hmm_bsc = CP9Backward(cm, dsq, min_i, fwd_results->data[h]->stop, W, cp9_cutoff, 
 				     NULL, /* don't care about score of each posn */
 				     &i,   /* set i as the best scoring start point from j-W..j */
 				     ((cm->search_opts & CM_SEARCH_HMMONLY) ? results : bwd_results),  
@@ -1678,15 +1678,15 @@ CP9Scan_dispatch(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cm_cutoff,
  *           do_collapse- TRUE: collapse overlapping hits (after padding) into 1
  *           cm_cutoff  - minimum CM  score to report 
  *           cp9_cutoff - minimum CP9 score to report 
- *           results    - scan_results_t to add to, only passed to 
+ *           results    - search_results_t to add to, only passed to 
  *                        actually_search_target()
  *           ret_flen   - RETURN: subseq len that survived filter
  * Returns:  best_sc found when rescanning with CM 
  */
 float
-RescanFilterSurvivors(CM_t *cm, ESL_DSQ *dsq, scan_results_t *hmm_results, int i0, int j0,
+RescanFilterSurvivors(CM_t *cm, ESL_DSQ *dsq, search_results_t *hmm_results, int i0, int j0,
 		      int W, int padmode, int ipad, int jpad, int do_collapse,
-		      float cm_cutoff, float cp9_cutoff, scan_results_t *results, int *ret_flen)
+		      float cm_cutoff, float cp9_cutoff, search_results_t *results, int *ret_flen)
 {
   int h;
   int i, j;
@@ -1718,31 +1718,31 @@ RescanFilterSurvivors(CM_t *cm, ESL_DSQ *dsq, scan_results_t *hmm_results, int i
   nhits = hmm_results->num_results;
   for(h = 0; h < nhits; h++) 
     {
-      if(hmm_results->data[h].stop > prev_j) 
+      if(hmm_results->data[h]->stop > prev_j) 
 	ESL_EXCEPTION(eslEINCOMPAT, "j's not in descending order");
 
-      prev_j = hmm_results->data[h].stop;
+      prev_j = hmm_results->data[h]->stop;
 
       /* add pad */
       if(padmode == PAD_SUBI_ADDJ)
 	{
-	  i = ((hmm_results->data[h].start - ipad) >= 1)    ? (hmm_results->data[h].start - ipad) : 1;
-	  j = ((hmm_results->data[h].stop  + jpad) <= j0)   ? (hmm_results->data[h].stop  + jpad) : j0;
+	  i = ((hmm_results->data[h]->start - ipad) >= 1)    ? (hmm_results->data[h]->start - ipad) : 1;
+	  j = ((hmm_results->data[h]->stop  + jpad) <= j0)   ? (hmm_results->data[h]->stop  + jpad) : j0;
 	  if((h+1) < nhits)
-	    next_j = ((hmm_results->data[h+1].stop + jpad) <= j0)   ? (hmm_results->data[h+1].stop + jpad) : j0;
+	    next_j = ((hmm_results->data[h+1]->stop + jpad) <= j0)   ? (hmm_results->data[h+1]->stop + jpad) : j0;
 	  else
 	    next_j = -1;
 	}
       else if(padmode == PAD_ADDI_SUBJ)
 	{
-	  i = ((hmm_results->data[h].stop  - jpad) >= 1)    ? (hmm_results->data[h].stop  - jpad) : 1;
-	  j = ((hmm_results->data[h].start + ipad) <= j0)   ? (hmm_results->data[h].start + ipad) : j0;
+	  i = ((hmm_results->data[h]->stop  - jpad) >= 1)    ? (hmm_results->data[h]->stop  - jpad) : 1;
+	  j = ((hmm_results->data[h]->start + ipad) <= j0)   ? (hmm_results->data[h]->start + ipad) : j0;
 	  if((h+1) < nhits)
-	    next_j = ((hmm_results->data[h+1].start + ipad) <= j0)   ? (hmm_results->data[h+1].start + ipad) : j0;
+	    next_j = ((hmm_results->data[h+1]->start + ipad) <= j0)   ? (hmm_results->data[h+1]->start + ipad) : j0;
 	  else
 	    next_j = -1;
 	}
-      /*printf("subseq: hit %d i: %d (%d) j: %d (%d)\n", h, i, hmm_results->data[h].start[h], j, hmm_results->data[h].stop[h]);*/
+      /*printf("subseq: hit %d i: %d (%d) j: %d (%d)\n", h, i, hmm_results->data[h]->start[h], j, hmm_results->data[h]->stop[h]);*/
 
       if(do_collapse) /* collapse multiple hits that overlap after padding on both sides into a single hit */
 	{
@@ -1752,17 +1752,17 @@ RescanFilterSurvivors(CM_t *cm, ESL_DSQ *dsq, scan_results_t *hmm_results, int i
 	      h++;
 	      if(padmode == PAD_SUBI_ADDJ)
 		{
-		  i = ((hmm_results->data[h].start - ipad) >= 1)    ? (hmm_results->data[h].start - ipad) : 1;
+		  i = ((hmm_results->data[h]->start - ipad) >= 1)    ? (hmm_results->data[h]->start - ipad) : 1;
 		  if((h+1) < nhits)
-		    next_j = ((hmm_results->data[h+1].stop + jpad) <= j0)   ? (hmm_results->data[h+1].stop + jpad) : j0;
+		    next_j = ((hmm_results->data[h+1]->stop + jpad) <= j0)   ? (hmm_results->data[h+1]->stop + jpad) : j0;
 		  else
 		    next_j = -1;
 		}
 	      else if(padmode == PAD_ADDI_SUBJ)
 		{
-		  i = ((hmm_results->data[h].stop - jpad) >= 1)    ? (hmm_results->data[h].stop - jpad) : 1;
+		  i = ((hmm_results->data[h]->stop - jpad) >= 1)    ? (hmm_results->data[h]->stop - jpad) : 1;
 		  if((h+1) < nhits)
-		    next_j = ((hmm_results->data[h+1].start + ipad) <= j0)   ? (hmm_results->data[h+1].start + ipad) : j0;
+		    next_j = ((hmm_results->data[h+1]->start + ipad) <= j0)   ? (hmm_results->data[h+1]->start + ipad) : j0;
 		  else
 		    next_j = -1;
 		}

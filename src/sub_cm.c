@@ -616,7 +616,7 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
 				  TRUE); /* DO detach END_E-1 insert states, making them unreachable */
 
   /* Get the consensus sequence and consensus structure information from the original CM */
-  con = CreateCMConsensus(orig_cm, orig_cm->abc, 3.0, 1.0);
+  CreateCMConsensus(orig_cm, orig_cm->abc, 3.0, 1.0, &con);
   if(print_flag)
     {
       printf("con->cseq    : %s\n", con->cseq);
@@ -3947,7 +3947,7 @@ sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Pars
 
     }
 
-  orig_tr = CreateParsetree();
+  orig_tr = CreateParsetree(100);
   nodes_used = 0;
   for(cm_nd = 0; cm_nd < orig_cm->nodes; cm_nd++)
     {

@@ -299,7 +299,7 @@ summarize_alignment(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH 
   float mc_s; /* million calcs/second */
 
   /* Create and align consensus sequence for D&C stats */
-  con = CreateCMConsensus(cm, cm->abc, 3.0, 1.0);
+  CreateCMConsensus(cm, cm->abc, 3.0, 1.0, &con);
   if((csq = esl_sq_CreateFrom("consensus", con->cseq, NULL, NULL, NULL)) == NULL)
     { status = eslEMEM; goto ERROR; }
   esl_sq_Digitize(cm->abc, csq);

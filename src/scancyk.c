@@ -28,14 +28,39 @@
  * Date:     RJK, Mon Apr 1 2002 [St. Louis]
  * Purpose:  Creates a results type of specified size
  */
-scan_results_t *CreateResults (int size) {
+search_results_t *CreateResults (int size) {
   int status;
-  scan_results_t *results;
-  ESL_ALLOC(results, sizeof(scan_results_t));
+  search_results_t *results;
+  int i;
+
+  ESL_ALLOC(results, sizeof(search_results_t));
   results->num_results = 0;
   results->num_allocated = size;
-  ESL_ALLOC(results->data, sizeof(scan_result_node_t)*size);
+  ESL_ALLOC(results->data, sizeof(search_result_node_t *)*size);
+  for(i = 0; i < results->num_allocated; i++) 
+    results->data[i] = CreateResultNode();
   return (results);
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return NULL; /* never reached */
+}
+
+/*
+ * Function: CreateResultNode ()
+ * Date:     EPN, Wed Aug 29 06:26:04 2007
+ * Purpose:  Creates and initializes a result node.
+ */
+search_result_node_t *CreateResultNode () {
+  int status;
+  search_result_node_t *rnode;
+
+  ESL_ALLOC(rnode, sizeof(search_result_node_t));
+  rnode->start = -1;
+  rnode->stop  = -1;
+  rnode->bestr = -1;
+  rnode->score = 0.;
+  rnode->tr    = NULL;
+  return (rnode);
  ERROR:
   esl_fatal("Memory allocation error.");
   return NULL; /* never reached */
@@ -43,13 +68,52 @@ scan_results_t *CreateResults (int size) {
 
 /* Function: ExpandResults ()
  * Date:     RJK, Mon Apr 1 2002 [St. Louis]
- * Purpose:  Expans a results structure by specified amount
+ * Purpose:  Expands a results structure by specified amount
  */
-void ExpandResults (scan_results_t *results, int additional) {
+void ExpandResults (search_results_t *results, int additional) {
   int status;
   void *tmp;
-  ESL_RALLOC(results->data, tmp, sizeof(scan_result_node_t)* (results->num_allocated+additional));
+  int i;
+  ESL_RALLOC(results->data, tmp, sizeof(search_result_node_t *)* (results->num_allocated+additional));
+  for(i = results->num_allocated; i < (results->num_allocated+additional); i++) 
+    results->data[i] = CreateResultNode();
   results->num_allocated+=additional;
+  return;
+ ERROR:
+  esl_fatal("Memory reallocation error.");
+}
+
+/* Function: AppendResults ()
+ * Date:     EPN, Wed Aug 29 08:58:28 2007
+ *
+ * Purpose:  Add result nodes from one results structure onto
+ *           another by manipulating pointers. Originally written
+ *           to add results returned from an MPI worker to a growing
+ *           'master' results structure in the MPI master.
+ *
+ * Note:     Because the dest_results->data now points to some of the
+ *           src_results->data, be careful not to free src_results with
+ *           FreeResults() if you don't want to lose dest_results.
+ */
+void AppendResults (search_results_t *src_results, search_results_t *dest_results) {
+  int status;
+  void *tmp;
+  int i, ip;
+  int new_alloc = src_results->num_results - (dest_results->num_allocated - dest_results->num_results); 
+
+  if(src_results->num_results == 0) return; /* we don't need to append anything */
+  if(new_alloc > 0) {
+    ESL_RALLOC(dest_results->data, tmp, sizeof(search_result_node_t *) * (dest_results->num_allocated + new_alloc));
+  }
+  for(i = 0; i < src_results->num_results; i++) 
+    {
+      ip = i + dest_results->num_results;
+      dest_results->data[ip] = src_results->data[i];
+    }
+  dest_results->num_results   += src_results->num_results;
+  if(new_alloc > 0) 
+    dest_results->num_allocated += new_alloc;
+
   return;
  ERROR:
   esl_fatal("Memory reallocation error.");
@@ -60,12 +124,12 @@ void ExpandResults (scan_results_t *results, int additional) {
  * Date:     RJK, Mon Apr 1 2002 [St. Louis]
  * Purpose:  Frees a results structure
  */
-void FreeResults (scan_results_t *r) {
+void FreeResults (search_results_t *r) {
   int i;
   if (r != NULL) {
     for (i=0; i<r->num_results; i++) {
-      if (r->data[i].tr != NULL) {
-	FreeParsetree(r->data[i].tr);
+      if (r->data[i]->tr != NULL) {
+	FreeParsetree(r->data[i]->tr);
       }
     }
     free (r->data);
@@ -77,16 +141,16 @@ void FreeResults (scan_results_t *r) {
 /*
  * Function: compare_results()
  * Date:     RJK, Wed Apr 10, 2002 [St. Louis]
- * Purpose:  Compares two scan_result_node_ts based on score and returns -1
+ * Purpose:  Compares two search_result_node_ts based on score and returns -1
  *           if first is higher score than second, 0 if equal, 1 if first
  *           score is lower.  This results in sorting by score, highest
  *           first.
  */
 int compare_results (const void *a_void, const void *b_void) {
-  scan_result_node_t *a, *b;
+  search_result_node_t *a, *b;
  
-  a = (scan_result_node_t *)a_void;
-  b = (scan_result_node_t *)b_void;
+  a = (search_result_node_t *)a_void;
+  b = (search_result_node_t *)b_void;
 
   if (a->score < b->score)
     return (1);
@@ -118,7 +182,7 @@ int compare_results (const void *a_void, const void *b_void) {
  *        i0    - first position of subsequence results work for (1 for full seq)
  *        j0    - last  position of subsequence results work for (L for full seq)
  */
-void remove_overlapping_hits (scan_results_t *results, int i0, int j0)
+void remove_overlapping_hits (search_results_t *results, int i0, int j0)
 {
   int status;
   char *covered_yet;
@@ -126,7 +190,7 @@ void remove_overlapping_hits (scan_results_t *results, int i0, int j0)
   int covered;
   int L;
   int yp;          /* offset position, yp = y-i0+1 */
-  scan_result_node_t swap;
+  search_result_node_t *swap;
 
   if (results == NULL)
     return;
@@ -143,7 +207,7 @@ void remove_overlapping_hits (scan_results_t *results, int i0, int j0)
 
   for (x=0; x<results->num_results; x++) {
     covered = 0;
-    for (y=results->data[x].start; y<=results->data[x].stop && !covered; y++) {
+    for (y=results->data[x]->start; y<=results->data[x]->stop && !covered; y++) {
       {
 	yp = y-i0+1; 
 	assert(yp > 0 && yp <= L);
@@ -153,9 +217,9 @@ void remove_overlapping_hits (scan_results_t *results, int i0, int j0)
       }
     }
     if (covered == 1) {
-      results->data[x].start = -1;        /* Flag -- remove later to keep sorted */
+      results->data[x]->start = -1;        /* Flag -- remove later to keep sorted */
     } else {
-      for (y=results->data[x].start; y<=results->data[x].stop; y++) {
+      for (y=results->data[x]->start; y<=results->data[x]->stop; y++) {
 	yp = y-i0+1; 
 	covered_yet[yp] = 1;
       }
@@ -165,9 +229,9 @@ void remove_overlapping_hits (scan_results_t *results, int i0, int j0)
 
   for (x=0; x<results->num_results; x++) {
     while (results->num_results > 0 &&
-	   results->data[results->num_results-1].start == -1)
+	   results->data[results->num_results-1]->start == -1)
       results->num_results--;
-    if (x<results->num_results && results->data[x].start == -1) {
+    if (x<results->num_results && results->data[x]->start == -1) {
       swap = results->data[x];
       results->data[x] = results->data[results->num_results-1];
       results->data[results->num_results-1] = swap;
@@ -175,7 +239,7 @@ void remove_overlapping_hits (scan_results_t *results, int i0, int j0)
     }
   }
   while (results->num_results > 0 &&
-	 results->data[results->num_results-1].start == -1)
+	 results->data[results->num_results-1]->start == -1)
     results->num_results--;
 
   sort_results(results);
@@ -190,22 +254,22 @@ void remove_overlapping_hits (scan_results_t *results, int i0, int j0)
  * Purpose: Given a results array, sorts it with a call to qsort
  *
  */
-void sort_results (scan_results_t *results) 
+void sort_results (search_results_t *results) 
 {
-  qsort (results->data, results->num_results, sizeof(scan_result_node_t), compare_results);
+  qsort (results->data, results->num_results, sizeof(search_result_node_t), compare_results);
 }
 
 /*
  * Function: report_hit()
  * Date:     RJK, Sun Mar 31, 2002 [LGA Gate D7]
  *
- * Given j,d, coordinates, a score, and a scan_results_t data type,
+ * Given j,d, coordinates, a score, and a search_results_t data type,
  * adds result into the set of reportable results.  Naively adds hit.
  *
  * Non-overlap algorithm is now done in the scanning routine by Sean's
  * Semi-HMM code.  I've just kept the hit report structure for convenience.
  */
-void report_hit (int i, int j, int bestr, float score, scan_results_t *results) 
+void report_hit (int i, int j, int bestr, float score, search_results_t *results) 
 {
 
   if(results == NULL) 
@@ -213,11 +277,11 @@ void report_hit (int i, int j, int bestr, float score, scan_results_t *results)
   if (results->num_results == results->num_allocated) 
     ExpandResults (results, INIT_RESULTS);
 
-  results->data[results->num_results].score = score;
-  results->data[results->num_results].start = i;
-  results->data[results->num_results].stop = j;
-  results->data[results->num_results].bestr = bestr;
-  results->data[results->num_results].tr = NULL;
+  results->data[results->num_results]->score = score;
+  results->data[results->num_results]->start = i;
+  results->data[results->num_results]->stop = j;
+  results->data[results->num_results]->bestr = bestr;
+  results->data[results->num_results]->tr = NULL;
   results->num_results++;
 }
 
@@ -233,13 +297,13 @@ void report_hit (int i, int j, int bestr, float score, scan_results_t *results)
  *           j0          - end of target subsequence (L for full seq)
  *           W           - max d: max size of a hit
  *           cutoff      - minimum score to report 
- *           results     - scan_results_t to add to; if NULL, don't add to it
+ *           results     - search_results_t to add to; if NULL, don't add to it
  *
  * Returns:  score of best overall hit
  */
 float 
 CYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, 
-	float cutoff, scan_results_t *results)
+	float cutoff, search_results_t *results)
 {
   /* Contract check */
   if(j0 < i0)

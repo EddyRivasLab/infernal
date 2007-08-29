@@ -29,7 +29,7 @@ parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc, C
 			  int mpi_my_rank, int mpi_master_rank, int mpi_num_procs) ;
 extern float 
 actually_search_target(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cutoff, 
-		       float cp9_cutoff, scan_results_t *results, int do_filter, 
+		       float cp9_cutoff, search_results_t *results, int do_filter, 
 		       int doing_cm_stats, int doing_cp9_stats, int *ret_flen);
 extern void
 serial_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr, 
@@ -46,5 +46,8 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 
 extern int PrintSearchInfo(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N);
 
-extern int revcomp(const ESL_ALPHABET *abc, ESL_SQ *comp, ESL_SQ *sq);
+extern int  revcomp(const ESL_ALPHABET *abc, ESL_SQ *comp, ESL_SQ *sq);
+extern int  read_next_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revcomp, dbseq_t **ret_dbseq);
+extern void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq,
+			   int do_complement, int used_HMM);
 #endif

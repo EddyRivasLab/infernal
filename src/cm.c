@@ -219,7 +219,7 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc)
   return;
 
  ERROR:
-  return NULL; /* never reached */
+  return; /* never reached */
 }
 
 

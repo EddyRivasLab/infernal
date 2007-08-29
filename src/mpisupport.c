@@ -228,9 +228,10 @@ cm_MPIUnpack(ESL_ALPHABET **abc, char *buf, int n, int *pos, MPI_Comm comm, CM_t
   if (MPI_Unpack(buf, n, pos, cm->end,                   M, MPI_FLOAT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, cm->beginsc,               M, MPI_FLOAT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, cm->endsc,                 M, MPI_FLOAT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
-  
+    
   if (MPI_Unpack(buf, n, pos, cm->nodemap,          nnodes,   MPI_INT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
-  if (MPI_Unpack(buf, n, pos, cm->ndtype,           nnodes,   MPI_INT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
+
+  if (MPI_Unpack(buf, n, pos, cm->ndtype,           nnodes,  MPI_CHAR, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
   
   if (MPI_Unpack(buf, n, pos, cm->e[0],              M*K*K, MPI_FLOAT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, cm->esc[0],            M*K*K, MPI_FLOAT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
@@ -255,7 +256,6 @@ cm_MPIUnpack(ESL_ALPHABET **abc, char *buf, int n, int *pos, MPI_Comm comm, CM_t
   if (cm != NULL) FreeCM(cm);
   return status;
 }
-
 
 /* Function:  cm_MPIPack()
  * Incept:    EPN, Mon Aug 27 13:57:54 2007
@@ -339,7 +339,8 @@ cm_MPIPack(CM_t *cm, char *buf, int n, int *pos, MPI_Comm comm)
   if (MPI_Pack(cm->endsc,                 M, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
 
   if (MPI_Pack(cm->nodemap,          nnodes,   MPI_INT, buf, n, pos, comm)  != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
-  if (MPI_Pack(cm->ndtype,           nnodes,   MPI_INT, buf, n, pos, comm)  != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
+
+  if (MPI_Pack(cm->ndtype,           nnodes,  MPI_CHAR, buf, n, pos, comm)  != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
 
   if (MPI_Pack(cm->e[0],              M*K*K, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(cm->esc[0],            M*K*K, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
@@ -485,8 +486,12 @@ cm_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n)
   /* begin, end, beginsc, endsc */
 
   if (MPI_Pack_size(nnodes,    MPI_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
-  n += 2*sz; 
-  /* nodemap, ndtype */
+  n += sz; 
+  /* nodemap */
+
+  if (MPI_Pack_size(nnodes,   MPI_CHAR, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += sz; 
+  /* ndtype */
 
   if (MPI_Pack_size(M*K*K,   MPI_FLOAT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
   n += 2*sz; 
@@ -567,8 +572,12 @@ cm_justread_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n)
   /* ndidx, cfirst, cnum, plast, pnum, */
 
   if (MPI_Pack_size(nnodes,    MPI_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
-  n += 2*sz; 
-  /* nodemap, ndtype */
+  n += sz; 
+  /* nodemap */
+
+  if (MPI_Pack_size(nnodes,   MPI_CHAR, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += sz; 
+  /* ndtype */
 
   if (MPI_Pack_size(M*K*K,   MPI_FLOAT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
   n += sz; 
@@ -593,6 +602,656 @@ cm_justread_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n)
 
 }
 
+/* Function:  cm_dsq_MPISend()
+ *
+ * Incept:    EPN, Tue Aug 28 15:20:16 2007
+ *            
+ * Purpose:   Sends a digitized sequence and it's length
+ *            as a work unit to MPI process <dest> (<dest> ranges from <0..nproc-1>),
+ *            tagging the message with MPI tag <tag> for MPI communicator
+ *            <comm>. The receiver uses <cm_dsq_MPIRecv()> to receive the dsq.
+ *            
+ *            Work units are prefixed by a status code. If <dsq> is
+ *            <non-NULL>, the work unit is an <eslOK> code followed by
+ *            the packed MSA. If <dsq> is NULL, the work unit is an
+ *            <eslEOD> code, which <cm_dsq_MPIRecv()> knows how
+ *            to interpret; this is typically used for an end-of-data
+ *            signal to cleanly shut down worker processes.
+ *
+ *            In order to minimize alloc/free cycles, caller passes a
+ *            pointer to a working buffer <*buf> of size <*nalloc>
+ *            characters. If necessary (i.e. if <dsq> is too big to
+ *            fit), <*dsq> will be reallocated and <*nalloc> increased
+ *            to the new size. As a special case, if <*dsq> is <NULL>
+ *            and <*nalloc> is 0, the buffer will be allocated
+ *            appropriately, but the caller is still responsible for
+ *            free'ing it.
+ *            
+ * Args:      dsq    - digitized seq to send
+ *            L      - length of dsq we're sending (dsq could extend further)
+ *            dest   - MPI destination (0..nproc-1)
+ *            tag    - MPI tag
+ *            buf    - pointer to a working buffer 
+ *            nalloc - current allocated size of <*buf>, in characters
+ *
+ * Returns:   <eslOK> on success; <*buf> may have been reallocated and
+ *            <*nalloc> may have been increased.
+ *
+ * Throws:    <eslESYS> if an MPI call fails; <eslEMEM> if a malloc/realloc
+ *            fails. In either case, <*buf> and <*nalloc> remain valid and useful
+ *            memory (though the contents of <*buf> are undefined). 
+ */
+int
+cm_dsq_MPISend(ESL_DSQ *dsq, int L, int dest, int tag, MPI_Comm comm, char **buf, int *nalloc)
+{
+  int   status;
+  int   code;
+  int   sz, n, position;
+
+  /* First, figure out the size of the work unit */
+  if (MPI_Pack_size(2, MPI_INT, comm, &n) != 0) ESL_EXCEPTION(eslESYS, "mpi pack size failed"); 
+  if (dsq != NULL) { 
+    if (MPI_Pack_size(L+2, MPI_BYTE, comm, &sz) != 0) ESL_EXCEPTION(eslESYS, "mpi pack size failed"); 
+    n += sz;
+  }
+  ESL_DPRINTF1(("cm_dsq_MPISend(): dsq has size %d\n", n));
+
+  /* Make sure the buffer is allocated appropriately */
+  if (*buf == NULL || n > *nalloc) {
+    void *tmp;
+    ESL_RALLOC(*buf, tmp, sizeof(char) * n);
+    *nalloc = n; 
+  }
+  ESL_DPRINTF1(("cm_dsq_MPISend(): buffer is ready\n"));
+
+  /* Pack the status code, L and dsq into the buffer */
+  position = 0;
+  code     = (dsq == NULL) ? eslEOD : eslOK;
+  if (MPI_Pack(&code, 1, MPI_INT, *buf, n, &position, comm) != 0) ESL_EXCEPTION(eslESYS, "mpi pack failed"); 
+  if (dsq != NULL) {
+    if (MPI_Pack(&L,  1,   MPI_INT,  *buf, n, &position, comm) != 0) ESL_EXCEPTION(eslESYS, "mpi pack failed"); 
+    if (MPI_Pack(dsq, L+2, MPI_BYTE, *buf, n, &position, comm) != 0) ESL_EXCEPTION(eslESYS, "mpi pack failed"); 
+  }
+  ESL_DPRINTF1(("cm_dsq_MPISend(): dsq is packed into %d bytes\n", position));
+
+  /* Send the packed profile to destination  */
+  if (MPI_Send(*buf, n, MPI_PACKED, dest, tag, comm) != 0) ESL_EXCEPTION(eslESYS, "mpi send failed");
+  ESL_DPRINTF1(("cm_dsq_MPISend(): dsq is sent.\n"));
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
+/* Function:  cm_dsq_MPIRecv()
+ *
+ * Incept:    EPN, Tue Aug 28 15:29:34 2007
+ *
+ * Purpose:   Receives a work unit that consists of a digitized sequence
+ *            and it's lenght from <source> (<0..nproc-1>, or
+ *            <MPI_ANY_SOURCE>) tagged as <tag> from communicator <comm>.
+ *            
+ *            Work units are prefixed by a status code. If the unit's
+ *            code is <eslOK> and no errors are encountered, this
+ *            routine will return <eslOK> and a non-<NULL> <*ret_dsq>.
+ *            If the unit's code is <eslEOD> (a shutdown signal), 
+ *            this routine returns <eslEOD> and <*ret_dsq> is <NULL>.
+ *            
+ *            To minimize alloc/free cycles in this routine, caller
+ *            passes a pointer to a buffer <*buf> of size <*nalloc>
+ *            characters. These are passed by reference, because when
+ *            necessary, <*buf> will be reallocated and <*nalloc>
+ *            increased to the new size. As a special case, if <*buf>
+ *            is <NULL> and <*nalloc> is 0, the buffer will be
+ *            allocated appropriately, but the caller is still
+ *            responsible for free'ing it.
+ *
+ *            If the packed dsq is an end-of-data signal, return
+ *            <eslEOD>, and <*ret_dsq> is <NULL>.
+ *            
+ * Returns:   <eslOK> on success. <*ret_dsq> contains the new dsq; it
+ *            is allocated here, and the caller is responsible for
+ *            free'ing it.  <*buf> may have been reallocated to a
+ *            larger size, and <*nalloc> may have been increased.
+ *
+ *
+ * Throws:    <eslESYS> if an MPI call fails; <eslEMEM> if an allocation fails.
+ *            In either case, <*ret_dsq> is NULL, and the <buf> and its size
+ *            <*nalloc> remain valid.
+ */
+int
+cm_dsq_MPIRecv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc, ESL_DSQ **ret_dsq, int *ret_L)
+{
+  int         status, code;
+  ESL_DSQ    *dsq  = NULL;
+  int         L = 0;
+  int         n;
+  int         pos;
+  MPI_Status  mpistatus;
+
+  /* Probe first, because we need to know if our buffer is big enough. */
+  if (MPI_Probe(source, tag, comm, &mpistatus)  != 0) ESL_XEXCEPTION(eslESYS, "mpi probe failed");
+  if (MPI_Get_count(&mpistatus, MPI_PACKED, &n) != 0) ESL_XEXCEPTION(eslESYS, "mpi get count failed");
+
+  /* Make sure the buffer is allocated appropriately */
+  if (*buf == NULL || n > *nalloc) {
+    void *tmp;
+    ESL_RALLOC(*buf, tmp, sizeof(char) * n);
+    *nalloc = n; 
+  }
+
+  /* Receive the packed work unit */
+  ESL_DPRINTF1(("cm_dsq_MPIRecv(): about to receive dsq.\n"));
+  if (MPI_Recv(*buf, n, MPI_PACKED, source, tag, comm, &mpistatus) != 0) ESL_XEXCEPTION(eslESYS, "mpi recv failed");
+  ESL_DPRINTF1(("cm_dsq_MPIRecv(): dsq has been received.\n"));
+
+  /* Unpack it - where the first integer is a status code, OK or EOD */
+  ESL_DPRINTF1(("cm_dsq_MPIRecv(): about to unpack dsq.\n"));
+  pos = 0;
+  if (MPI_Unpack       (*buf, n, &pos, &code,                   1, MPI_INT,           comm) != 0)  ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  if (code == eslEOD) { status = eslEOD; goto ERROR; }
+
+  if (MPI_Unpack       (*buf, n, &pos, &L,                      1, MPI_INT,           comm) != 0)  ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  ESL_ALLOC(dsq, sizeof(ESL_DSQ) * (L+2));
+  if (MPI_Unpack       (*buf, n, &pos, dsq,                     L, MPI_BYTE,          comm) != 0)  ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  dsq[0] = dsq[L] = eslDSQ_SENTINEL;
+  ESL_DPRINTF1(("cm_dsq_MPIRecv(): dsq has been unpacked.\n"));
+
+  *ret_L   = L;
+  *ret_dsq = dsq;
+  return eslOK;
+
+ ERROR:
+  if (dsq != NULL) free(dsq);
+  *ret_dsq = NULL;
+  *ret_L   = 0;
+  return status;
+}
+
+
+/* Function:  cm_search_results_MPISend()
+ *
+ * Incept:    EPN, Tue Aug 28 15:51:30 2007
+ *            
+ * Purpose:   Send packed search results to MPI process <dest> 
+ *            (<dest> ranges from <0..nproc-1>), tagging the message 
+ *            with MPI tag <tag> for MPI communicator <comm>. 
+ *            The receiver uses <cm_search_results_MPIRecv()> to 
+ *            receive the results.
+ *            
+ *            Work units are prefixed by a status code. If <results> is
+ *            <non-NULL>, the work unit is an <eslOK> code followed by
+ *            the packed results. If <results> is NULL, the work unit is an
+ *            <eslEOD> code, which <cm_search_results_MPIRecv()> knows how
+ *            to interpret.
+ *
+ *            In order to minimize alloc/free cycles, caller passes a
+ *            pointer to a working buffer <*buf> of size <*nalloc>
+ *            characters. If necessary (i.e. if <dsq> is too big to
+ *            fit), <*dsq> will be reallocated and <*nalloc> increased
+ *            to the new size. As a special case, if <*dsq> is <NULL>
+ *            and <*nalloc> is 0, the buffer will be allocated
+ *            appropriately, but the caller is still responsible for
+ *            free'ing it.
+ *            
+ * Args:      results- search results to send
+ *            dest   - MPI destination (0..nproc-1)
+ *            tag    - MPI tag
+ *            buf    - pointer to a working buffer 
+ *            nalloc - current allocated size of <*buf>, in characters
+ *
+ * Returns:   <eslOK> on success; <*buf> may have been reallocated and
+ *            <*nalloc> may have been increased.
+ *
+ * Throws:    <eslESYS> if an MPI call fails; <eslEMEM> if a malloc/realloc
+ *            fails. In either case, <*buf> and <*nalloc> remain valid and useful
+ *            memory (though the contents of <*buf> are undefined). 
+ */
+int
+cm_search_results_MPISend(search_results_t *results, int dest, int tag, MPI_Comm comm, char **buf, int *nalloc)
+{
+  int   status;
+  int   code;
+  int   sz, n, position;
+
+  /* First, figure out the size of the work unit */
+  if (MPI_Pack_size(2, MPI_INT, comm, &n) != 0) ESL_EXCEPTION(eslESYS, "mpi pack size failed"); 
+  if (results != NULL) { 
+    if ((status = cm_search_results_MPIPackSize(results, comm, &sz)) != eslOK) return status;
+    n += sz;
+  }
+  ESL_DPRINTF1(("cm_search_results_MPISend(): dsq has size %d\n", n));
+
+  /* Make sure the buffer is allocated appropriately */
+  if (*buf == NULL || n > *nalloc) {
+    void *tmp;
+    ESL_RALLOC(*buf, tmp, sizeof(char) * n);
+    *nalloc = n; 
+  }
+  ESL_DPRINTF1(("cm_search_results_MPISend(): buffer is ready\n"));
+
+  /* Pack the status code, L and dsq into the buffer */
+  position = 0;
+  code     = (results == NULL) ? eslEOD : eslOK;
+  if (MPI_Pack(&code, 1, MPI_INT, *buf, n, &position, comm) != 0) ESL_EXCEPTION(eslESYS, "mpi pack failed"); 
+  if (results != NULL) {
+    if ((status = cm_search_results_MPIPack(results, *buf, n, &position, comm)) != eslOK) return status;
+  }
+  ESL_DPRINTF1(("cm_search_results_MPISend(): results is packed into %d bytes\n", position));
+
+  /* Send the packed profile to destination  */
+  if (MPI_Send(*buf, n, MPI_PACKED, dest, tag, comm) != 0) ESL_EXCEPTION(eslESYS, "mpi send failed");
+  ESL_DPRINTF1(("cm_search_results_MPISend(): results are sent.\n"));
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
+/* Function:  cm_search_results_MPIPackSize()
+ * Synopsis:  Calculates number of bytes needed to pack search
+ *            results.
+ * Incept:    EPN, Tue Aug 28 21:01:46 2007
+ *
+ * Purpose:   Calculate an upper bound on the number of bytes
+ *            that <cm_search_results_MPIPack()> will need to pack
+ *            search results in a packed MPI message in 
+ *            communicator <comm>; return that number of bytes 
+ *            in <*ret_n>. 
+ *            
+ *            Caller will generally use this result to determine how
+ *            to allocate a buffer before starting to pack into it.
+ *
+ * Returns:   <eslOK> on success, and <*ret_n> contains the answer.
+ *
+ * Throws:    <eslESYS> if an MPI call fails, and <*ret_n> is set to 0. 
+ *
+ * Note:      The sizing calls here need to stay matched up with
+ *            the calls in <cm_search_results_MPIPack()>.
+ */
+int
+cm_search_results_MPIPackSize(const search_results_t *results, MPI_Comm comm, int *ret_n)
+{
+  int status;
+  int sz;
+  int n = 0;
+  int i;
+
+  status = MPI_Pack_size (1, MPI_INT, comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  for(i = 0; i < results->num_results; i++) {
+    if ((status = cm_search_result_node_MPIPackSize(results->data[i], comm, &sz))  != eslOK) goto ERROR; n += sz;
+  }
+
+  *ret_n = n;
+  return eslOK;
+
+ ERROR:
+  *ret_n = 0;
+  return status;
+}
+
+/* Function:  cm_search_results_MPIPack()
+ * Synopsis:  Packs search results into MPI buffer.
+ * Incept:    EPN, Tue Aug 28 21:06:58 2007
+ *
+ * Purpose:   Packs search results in <results> into an 
+ *            MPI packed message buffer <buf> of length <n> bytes, 
+ *            starting at byte position
+ *            <*position>, for MPI communicator <comm>.
+ *
+ * Returns:   <eslOK> on success; <buf> now contains the
+ *            packed <results>, and <*position> is set to the byte
+ *            immediately following the last byte of the results
+ *            in <buf>. 
+ *
+ * Throws:    <eslESYS> if an MPI call fails; or <eslEMEM> if the
+ *            buffer's length <n> is overflowed by trying to pack
+ *            <results> into <buf>. In either case, the state of
+ *            <buf> and <*position> is undefined, and both should
+ *            be considered to be corrupted.
+ *
+ */
+int
+cm_search_results_MPIPack(const search_results_t *results, char *buf, int n, int *position, MPI_Comm comm)
+{
+  int status;
+  int i;
+
+  ESL_DPRINTF1(("cm_search_results_MPIPack(): ready.\n"));
+
+  status = MPI_Pack((int *) &(results->num_results),   1, MPI_INT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  for (i = 0; i < results->num_results; i++) {
+    status = cm_search_result_node_MPIPack(results->data[i], buf, n, position, comm);  if (status != eslOK) return status;
+  }
+  ESL_DPRINTF1(("cm_search_results_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
+  
+  if (*position > n) ESL_EXCEPTION(eslEMEM, "buffer overflow");
+  return eslOK;
+}
+
+/* Function:  cm_search_results_MPIUnpack()
+ * Synopsis:  Unpacks search results from an MPI buffer.
+ * Incept:    EPN, Wed Aug 29 05:10:20 2007
+ *
+ * Purpose:   Unpack a newly allocated search_results from MPI packed buffer
+ *            <buf>, starting from position <*pos>, where the total length
+ *            of the buffer in bytes is <n>. 
+ *
+ * Returns:   <eslOK> on success. <*pos> is updated to the position of
+ *            the next element in <buf> to unpack (if any). <*ret_results>
+ *            contains a newly allocated results, which the caller is 
+ *            responsible for free'ing.
+ *            
+ * Throws:    <eslESYS> on an MPI call failure. <eslEMEM> on allocation failure.
+ *            In either case, <*ret_results> is <NULL>, and the state of <buf>
+ *            and <*pos> is undefined and should be considered to be corrupted.
+ */
+int
+cm_search_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, search_results_t **ret_results)
+{
+  int         status;
+  search_results_t *results = NULL;
+  search_result_node_t *rnode = NULL;
+  int         num_results;
+  int         i;
+
+  status = MPI_Unpack (buf, n, pos, &num_results, 1, MPI_INT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  results = CreateResults(num_results);
+  ESL_DPRINTF1(("cm_search_results_MPIUnpack(): %d results.\n", num_results));
+  for (i = 0; i < num_results; i++) {
+    status = cm_search_result_node_MPIUnpack(buf, n, pos, comm, &(results->data[i]));  if (status != eslOK) return status;
+    results->num_results++;
+  }
+
+  *ret_results = results;
+  return eslOK;
+
+ ERROR:
+  if (results != NULL) FreeResults(results);
+  *ret_results = NULL;
+  return status;
+}
+
+/* Function:  cm_search_result_node_MPIPackSize()
+ * Synopsis:  Calculates number of bytes needed to pack a search
+ *            result node.
+ * Incept:    EPN, Wed Aug 29 05:19:33 2007
+ *
+ * Purpose:   Calculate an upper bound on the number of bytes
+ *            that <cm_search_result_node_MPIPack()> will need to pack
+ *            a search result node in a packed MPI message in 
+ *            communicator <comm>; return that number of bytes 
+ *            in <*ret_n>. 
+ *            
+ *            Caller will generally use this result to determine how
+ *            to allocate a buffer before starting to pack into it.
+ *
+ * Returns:   <eslOK> on success, and <*ret_n> contains the answer.
+ *
+ * Throws:    <eslESYS> if an MPI call fails, and <*ret_n> is set to 0. 
+ *
+ * Note:      The sizing calls here need to stay matched up with
+ *            the calls in <cm_search_result_node_MPIPack()>.
+ */
+int
+cm_search_result_node_MPIPackSize(const search_result_node_t *rnode, MPI_Comm comm, int *ret_n)
+{
+  int status;
+  int sz;
+  int n = 0;
+
+  status = MPI_Pack_size (1, MPI_INT, comm, &sz);   n += 3*sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  status = MPI_Pack_size (1, MPI_FLOAT, comm, &sz); n +=   sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  status = MPI_Pack_size (1, MPI_INT, comm, &sz);   n +=   sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  if(rnode->tr != NULL) {
+    if ((status = cm_parsetree_MPIPackSize(rnode->tr, comm, &sz))  != eslOK) goto ERROR; n += sz;
+  }
+
+  *ret_n = n;
+  return eslOK;
+
+ ERROR:
+  *ret_n = 0;
+  return status;
+}
+
+/* Function:  cm_search_result_node_MPIPack()
+ * Synopsis:  Packs search result node into MPI buffer.
+ * Incept:    EPN, Wed Aug 29 05:22:32 2007
+ *
+ * Purpose:   Packs search result node in <rnode> into an 
+ *            MPI packed message buffer <buf> of length <n> bytes, 
+ *            starting at byte position
+ *            <*position>, for MPI communicator <comm>.
+ *
+ * Returns:   <eslOK> on success; <buf> now contains the
+ *            packed <rnode>, and <*position> is set to the byte
+ *            immediately following the last byte of the results
+ *            in <buf>. 
+ *
+ * Throws:    <eslESYS> if an MPI call fails; or <eslEMEM> if the
+ *            buffer's length <n> is overflowed by trying to pack
+ *            <rnode> into <buf>. In either case, the state of
+ *            <buf> and <*position> is undefined, and both should
+ *            be considered to be corrupted.
+ *
+ */
+int
+cm_search_result_node_MPIPack(const search_result_node_t *rnode, char *buf, int n, int *position, MPI_Comm comm)
+{
+  int status;
+  int has_tr;
+
+  ESL_DPRINTF1(("cm_search_result_node_MPIPack(): ready.\n"));
+  
+  status = MPI_Pack((int *) &(rnode->start),   1, MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack((int *) &(rnode->stop),    1, MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack((int *) &(rnode->bestr),   1, MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack((int *) &(rnode->score),   1, MPI_FLOAT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  if(rnode->tr != NULL) {
+    has_tr = TRUE;
+    status = MPI_Pack(&has_tr,                 1, MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+    status = cm_parsetree_MPIPack(rnode->tr, buf, n, position, comm);  if (status != eslOK) return status;
+  }
+  else {
+    has_tr = FALSE;
+    status = MPI_Pack(&has_tr,                 1, MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  }
+
+  ESL_DPRINTF1(("cm_search_result_node_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
+
+  if (*position > n) ESL_EXCEPTION(eslEMEM, "buffer overflow");
+  return eslOK;
+}
+
+/* Function:  cm_search_result_node_MPIUnpack()
+ * Synopsis:  Unpacks search result node from an MPI buffer.
+ * Incept:    EPN, Wed Aug 29 05:10:20 2007
+ *
+ * Purpose:   Unpack a newly allocated search result node from MPI packed buffer
+ *            <buf>, starting from position <*pos>, where the total length
+ *            of the buffer in bytes is <n>. 
+ *
+ * Returns:   <eslOK> on success. <*pos> is updated to the position of
+ *            the next element in <buf> to unpack (if any). <*ret_rnode>
+ *            contains a newly allocated result node, which the caller is 
+ *            responsible for free'ing.
+ *            
+ * Throws:    <eslESYS> on an MPI call failure. <eslEMEM> on allocation failure.
+ *            In either case, <*ret_rnode> is <NULL>, and the state of <buf>
+ *            and <*pos> is undefined and should be considered to be corrupted.
+ */
+int
+cm_search_result_node_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, search_result_node_t **ret_rnode)
+{
+  int status;
+  search_result_node_t *rnode = NULL;
+  int start, stop, bestr;
+  float score;
+  int has_tr;
+  Parsetree_t *tr = NULL;
+
+  status = MPI_Unpack (buf, n, pos, &start, 1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, &stop,  1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, &bestr, 1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, &score, 1, MPI_FLOAT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  ESL_ALLOC(rnode, sizeof(search_result_node_t));
+  rnode->start = start;
+  rnode->stop  = stop;
+  rnode->bestr = bestr;
+  rnode->score = score;
+  rnode->tr    = NULL;
+
+  /* optionally, unpack a parsetree */
+  status = MPI_Unpack (buf, n, pos, &has_tr, 1, MPI_INT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  if(has_tr == TRUE) {
+    status = cm_parsetree_MPIUnpack(buf, n, pos, comm, &tr);  if (status != eslOK) return status;
+    rnode->tr = tr;
+  }
+  
+  *ret_rnode = rnode;
+  return eslOK;
+  
+ ERROR:
+  if (rnode != NULL) {
+    if (tr != NULL) FreeParsetree(tr);
+    free(rnode);
+  }
+  *ret_rnode = NULL;
+  return status;
+}
+
+/* Function:  cm_parsetree_MPIPackSize()
+ * Synopsis:  Calculates number of bytes needed to pack a 
+ *            parsetree.
+ * Incept:    EPN, Wed Aug 29 05:44:28 2007
+ *
+ * Purpose:   Calculate an upper bound on the number of bytes
+ *            that <cm_parsetree_MPIPack()> will need to pack
+ *            a parsetree in a packed MPI message in 
+ *            communicator <comm>; return that number of bytes 
+ *            in <*ret_n>. 
+ *            
+ *            Caller will generally use this result to determine how
+ *            to allocate a buffer before starting to pack into it.
+ *
+ * Returns:   <eslOK> on success, and <*ret_n> contains the answer.
+ *
+ * Throws:    <eslESYS> if an MPI call fails, and <*ret_n> is set to 0. 
+ *
+ * Note:      The sizing calls here need to stay matched up with
+ *            the calls in <cm_parsetree_MPIPack()>.
+ */
+int
+cm_parsetree_MPIPackSize(const Parsetree_t *tr, MPI_Comm comm, int *ret_n)
+{
+  int status;
+  int sz;
+  int n = 0;
+
+  status = MPI_Pack_size(1,     MPI_INT, comm, &sz); n += 2*sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  status = MPI_Pack_size(tr->n, MPI_INT, comm, &sz); n += 7*sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+
+  *ret_n = n;
+  return eslOK;
+
+ ERROR:
+  *ret_n = 0;
+  return status;
+}
+
+/* Function:  cm_parsetree_MPIPack()
+ * Synopsis:  Packs parsetree into MPI buffer.
+ * Incept:    EPN, Wed Aug 29 05:22:32 2007
+ *
+ * Purpose:   Packs parsetree <tr> into an 
+ *            MPI packed message buffer <buf> of length <n> bytes, 
+ *            starting at byte position
+ *            <*position>, for MPI communicator <comm>.
+ *
+ * Returns:   <eslOK> on success; <buf> now contains the
+ *            packed <tr>, and <*position> is set to the byte
+ *            immediately following the last byte of the results
+ *            in <buf>. 
+ *
+ * Throws:    <eslESYS> if an MPI call fails; or <eslEMEM> if the
+ *            buffer's length <n> is overflowed by trying to pack
+ *            <rnode> into <buf>. In either case, the state of
+ *            <buf> and <*position> is undefined, and both should
+ *            be considered to be corrupted.
+ *
+ */
+int
+cm_parsetree_MPIPack(const Parsetree_t *tr, char *buf, int n, int *position, MPI_Comm comm)
+{
+  int status;
+
+  ESL_DPRINTF1(("cm_parsetree_MPIPack(): ready.\n"));
+  
+  status = MPI_Pack((int *) &(tr->n),        1, MPI_INT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack((int *) &(tr->memblock), 1, MPI_INT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack(tr->emitl,           tr->n, MPI_INT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack(tr->emitr,           tr->n, MPI_INT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack(tr->state,           tr->n, MPI_INT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack(tr->mode,            tr->n, MPI_INT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack(tr->nxtl,            tr->n, MPI_INT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack(tr->nxtr,            tr->n, MPI_INT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack(tr->prv,             tr->n, MPI_INT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+
+  ESL_DPRINTF1(("cm_parsetree_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
+
+  if (*position > n) ESL_EXCEPTION(eslEMEM, "buffer overflow");
+  return eslOK;
+}
+
+/* Function:  cm_parsetree_MPIUnpack()
+ * Synopsis:  Unpacks parsetree from an MPI buffer.
+ * Incept:    EPN, Wed Aug 29 05:10:20 2007
+ *
+ * Purpose:   Unpack a newly allocated parsetree node from MPI packed buffer
+ *            <buf>, starting from position <*pos>, where the total length
+ *            of the buffer in bytes is <n>. 
+ *
+ * Returns:   <eslOK> on success. <*pos> is updated to the position of
+ *            the next element in <buf> to unpack (if any). <*ret_tr>
+ *            contains a newly allocated parsetree, which the caller is 
+ *            responsible for free'ing.
+ *            
+ * Throws:    <eslESYS> on an MPI call failure. <eslEMEM> on allocation failure.
+ *            In either case, <*ret_tr> is <NULL>, and the state of <buf>
+ *            and <*pos> is undefined and should be considered to be corrupted.
+ */
+int
+cm_parsetree_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, Parsetree_t **ret_tr)
+{
+  int status;
+  Parsetree_t *tr = NULL;
+  int tr_n, memblock; /* memblock is likely irrelevant, the tree probably won't grow */
+
+  status = MPI_Unpack (buf, n, pos, &tr_n,        1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  tr = CreateParsetree(n);
+  status = MPI_Unpack (buf, n, pos, &memblock,    1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  tr->memblock = memblock;
+
+  status = MPI_Unpack (buf, n, pos, tr->emitl, tr_n, MPI_INT,  comm); if (status != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, tr->emitr, tr_n, MPI_INT,  comm); if (status != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, tr->state, tr_n, MPI_INT,  comm); if (status != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, tr->mode,  tr_n, MPI_INT,  comm); if (status != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, tr->nxtl,  tr_n, MPI_INT,  comm); if (status != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, tr->nxtr,  tr_n, MPI_INT,  comm); if (status != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, tr->prv,   tr_n, MPI_INT,  comm); if (status != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+
+  *ret_tr = tr;
+  return eslOK;
+
+ ERROR:
+  if (tr != NULL) 
+    FreeParsetree(tr);
+  *ret_tr = NULL;
+  return status;
+}
+
+/*HEREHEREHERHEERERE old funcs below EPN, Tue Aug 28 15:51:13 2007*/
 /**************************************************************************************/
 /* EPN, Thu May 10 10:11:18 2007 New functions roughly following Easel/H3 conventions */
 /* Function: mpi_worker_search_target()
@@ -606,15 +1265,13 @@ cm_justread_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n)
 void
 mpi_worker_search_target(CM_t *cm, int my_rank)
 {
-  int status;
-  char *dsq = NULL;
+  ESL_DSQ *dsq = NULL;
   int   L;
   float best_sc;
 
   int doing_cm_stats  = FALSE;
   int doing_cp9_stats = FALSE;
 
-  int ctr = 0;
   if(cm->search_opts & CM_SEARCH_HMMONLY) doing_cp9_stats = TRUE;
   else doing_cm_stats = TRUE;
   /* Main loop */
@@ -633,9 +1290,6 @@ mpi_worker_search_target(CM_t *cm, int my_rank)
     }
   return;
 
- ERROR:
-  if (dsq != NULL) free(dsq);
-  return;
 }
 
 /* Function:  dsq_MPISend()
@@ -643,46 +1297,23 @@ mpi_worker_search_target(CM_t *cm, int my_rank)
  *
  * Purpose:   Send sequence <dsq> to processor <dest>.
  *            
- *            If <dsq> is NULL, sends a end-of-data signal to <dest>, to
- *            tell it to shut down.
+ * Returns:   eslOK on success; eslEINVAL if <dsq> is NULL
+ *            and eslESYS if there is an MPI error.
  */
 int
-dsq_MPISend(char *dsq, int L, int dest)
+dsq_MPISend(ESL_DSQ *dsq, int L, int dest)
 {
-  if(dsq == NULL) 
-    {
-      int eod = -1;
-      MPI_Send(&eod, 1, MPI_INT, dest, 0, MPI_COMM_WORLD);
-      return eslOK;
-    }
-  MPI_Send(&(L), 1, MPI_INT, dest, 0, MPI_COMM_WORLD);
-  /* receiver will now allocate storage, before reading on...*/
-  MPI_Send(dsq, (L+2), MPI_CHAR, dest, 0, MPI_COMM_WORLD);
-  return eslOK;
-}
+  int status;
 
-/* Function:  dsq_MPISend()
- * Incept:    EPN, Thu Jun  7 15:02:34 2007
- *
- * Purpose:   Send sequence <dsq> and max bit sc <maxsc> to processor <dest>.
- *            
- *            If <dsq> is NULL, sends a end-of-data signal to <dest>, to
- *            tell it to shut down.
- */
-int
-dsq_maxsc_MPISend(char *dsq, int L, float maxsc, int dest)
-{
-  if(dsq == NULL) 
-    {
-      int eod = -1;
-      MPI_Send(&eod, 1, MPI_INT, dest, 0, MPI_COMM_WORLD);
-      return eslOK;
-    }
-  MPI_Send(&(L), 1, MPI_INT, dest, 0, MPI_COMM_WORLD);
+  if(dsq == NULL) { status = eslESYS; goto ERROR; }
+
+  if(MPI_Send(&L, 1, MPI_INT, dest, 0, MPI_COMM_WORLD) != 0) ESL_EXCEPTION(eslESYS, "mpi send failed.");
   /* receiver will now allocate storage, before reading on...*/
-  MPI_Send(dsq, (L+2), MPI_CHAR, dest, 0, MPI_COMM_WORLD);
-  MPI_Send(&(maxsc), 1, MPI_FLOAT, dest, 0, MPI_COMM_WORLD);
+  if(MPI_Send(dsq, (L+2), MPI_BYTE, dest, 0, MPI_COMM_WORLD) != 0) ESL_EXCEPTION(eslESYS, "mpi send failed.");
   return eslOK;
+
+ ERROR: 
+  return status;
 }
 
 /* Function:  dsq_MPIRecv()
@@ -694,19 +1325,20 @@ dsq_maxsc_MPISend(char *dsq, int L, float maxsc, int dest)
  *            If it receives an end-of-data signal, returns <eslEOD>.
  */
 int
-dsq_MPIRecv(char **ret_dsq, int *ret_L)
+dsq_MPIRecv(ESL_DSQ **ret_dsq, int *ret_L)
 {
   int status;
   char *dsq = NULL;
   MPI_Status mpistatus;
   int L;
   
-  MPI_Recv(&L, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &mpistatus);
-  if (L == -1) return eslEOD;
-  ESL_ALLOC(dsq, sizeof(char) * (L+2));
-  MPI_Recv(dsq, (L+2), MPI_CHAR, 0, 0, MPI_COMM_WORLD, &mpistatus);
+  if(MPI_Recv(&L, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &mpistatus) != 0) ESL_EXCEPTION(eslESYS, "mpi receive failed.");
+  ESL_ALLOC(dsq, sizeof(ESL_DSQ) * (L+2));
+  if(MPI_Recv(dsq, (L+2), MPI_CHAR, 0, 0, MPI_COMM_WORLD, &mpistatus) != 0); ESL_EXCEPTION(eslESYS, "mpi receive failed.");
+  dsq[0] = dsq[(L+1)] = eslDSQ_SENTINEL;
   *ret_L   = L;
   *ret_dsq = dsq;
+  
   return eslOK;
 
  ERROR:
@@ -759,7 +1391,7 @@ void
 mpi_worker_cm_and_cp9_search(CM_t *cm, int do_fast, int my_rank)
 {
   int status;
-  char *dsq = NULL;
+  ESL_DSQ *dsq = NULL;
   int   L;
   float *scores = NULL;
   ESL_ALLOC(scores, sizeof(float) * 2);
@@ -836,7 +1468,6 @@ mpi_worker_cm_and_cp9_search_maxsc(CM_t *cm, int do_fast, int do_minmax, int my_
   int was_hmmonly;
   int was_hbanded;
   float orig_tau;
-  int passed_flag = FALSE;
   orig_tau = cm->tau;
 
   if(cm->search_opts & CM_SEARCH_HMMONLY) was_hmmonly = TRUE;
@@ -1103,7 +1734,7 @@ int search_check_results (db_seq_t **active_seqs, job_t **process_status, int D)
 
   /* Get the size of the buffer */
   MPI_Recv (&bufsize, 1, MPI_INT, MPI_ANY_SOURCE, 
-	    SEARCH_STD_SCAN_RESULTS_SIZE_TAG, MPI_COMM_WORLD, &status);
+	    SEARCH_STD_SEARCH_RESULTS_SIZE_TAG, MPI_COMM_WORLD, &status);
   data_from = status.MPI_SOURCE;
   ESL_ALLOC(buf, (char)*bufsize);
 
@@ -1118,12 +1749,12 @@ int search_check_results (db_seq_t **active_seqs, job_t **process_status, int D)
   process_status[data_from] = NULL;
 
   /* Now get the results */
-  MPI_Recv (buf, bufsize, MPI_PACKED, data_from, SEARCH_STD_SCAN_RESULTS_TAG, 
+  MPI_Recv (buf, bufsize, MPI_PACKED, data_from, SEARCH_STD_SEARCH_RESULTS_TAG, 
 	    MPI_COMM_WORLD, &status);
   MPI_Unpack (buf, bufsize, &position, &results_type, 1, 
 	      MPI_CHAR, MPI_COMM_WORLD);
 
-  if (results_type == SEARCH_STD_SCAN_RESULTS) {
+  if (results_type == SEARCH_STD_SEARCH_RESULTS) {
     MPI_Unpack (buf, bufsize, &position, &num_results, 1, 
 		MPI_INT, MPI_COMM_WORLD);
     if (num_results > 0 && cur_seq->results[(int)in_revcomp] == NULL) {
@@ -1169,7 +1800,7 @@ int search_check_results (db_seq_t **active_seqs, job_t **process_status, int D)
     cur_seq->results[(int)in_revcomp]->data[index].tr = tr;
     cur_seq->alignments_sent--;
   } else {
-    Die ("Got result type %d when expecting SEARCH_STD_SCAN_RESULTS (%d) or ALN_RESULTS (%d)\n", results_type, SEARCH_STD_SCAN_RESULTS, ALN_RESULTS);
+    Die ("Got result type %d when expecting SEARCH_STD_SEARCH_RESULTS (%d) or ALN_RESULTS (%d)\n", results_type, SEARCH_STD_SEARCH_RESULTS, ALN_RESULTS);
   }
   free(buf);
   return(cur_seq_index);
@@ -1177,3 +1808,81 @@ int search_check_results (db_seq_t **active_seqs, job_t **process_status, int D)
 #endif
 
 
+#if 0 
+/* Unnecessary? maybe not, keep here temporarily */
+
+/* Function:  cm_search_results_MPIRecv()
+ *
+ * Incept:    EPN, Wed Aug 29 05:05:06 2007
+ *
+ * Purpose:   Receives a work unit that consists of search results
+ *            <source> (<0..nproc-1>, or <MPI_ANY_SOURCE>) tagged 
+ *            as <tag> from communicator <comm>. 
+ *            
+ *            Work units are prefixed by a status code. If the unit's
+ *            code is <eslOK> and no errors are encountered, this
+ *            routine will return <eslOK> and a non-<NULL> <*ret_results>.
+ *            If the unit's code is <eslEOD> (a shutdown signal), 
+ *            this routine returns <eslEOD> and <*ret_results> is <NULL>.
+ *            
+ *            To minimize alloc/free cycles in this routine, caller
+ *            passes a pointer to a buffer <*buf> of size <*nalloc>
+ *            characters. These are passed by reference, because when
+ *            necessary, <*buf> will be reallocated and <*nalloc>
+ *            increased to the new size. As a special case, if <*buf>
+ *            is <NULL> and <*nalloc> is 0, the buffer will be
+ *            allocated appropriately, but the caller is still
+ *            responsible for free'ing it.
+ *
+ *            If the packed dsq is an end-of-data signal, return
+ *            <eslEOD>, and <*ret_results> is <NULL>. <*ret_mpistatus> is filled
+ *            with mpistatus.
+ *            
+ * Returns:   <eslOK> on success. <*ret_results> contains the new 
+ *            results; they are allocated here, and the caller is 
+ *            responsible for free'ing them.  <*buf> may have been 
+ *            reallocated to a larger size, and <*nalloc> may have 
+ *            been increased. <*ret_mpistatus> is filled with mpistatus.
+ *
+ *
+ * Throws:    <eslESYS> if an MPI call fails; <eslEMEM> if an allocation fails.
+ *            In either case, <*ret_results> is NULL, and the <buf> and its size
+ *            <*nalloc> remain valid.
+ */
+int
+cm_search_results_MPIRecv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc, search_results_t  **ret_results, 
+			  MPI_Status *ret_mpistatus)
+{
+  int         status, code;
+  int         n;
+  int         pos;
+
+  /* Probe first, because we need to know if our buffer is big enough. */
+  if (MPI_Probe(source, tag, comm, &mpistatus)  != 0) ESL_XEXCEPTION(eslESYS, "mpi probe failed");
+  if (MPI_Get_count(ret_mpistatus, MPI_PACKED, &n) != 0) ESL_XEXCEPTION(eslESYS, "mpi get count failed");
+
+  /* Make sure the buffer is allocated appropriately */
+  if (*buf == NULL || n > *nalloc) {
+    void *tmp;
+    ESL_RALLOC(*buf, tmp, sizeof(char) * n);
+    *nalloc = n; 
+  }
+
+  /* Receive the packed work unit */
+  ESL_DPRINTF1(("cm_search_results_MPIRecv(): about to receive results.\n"));
+  if (MPI_Recv(*buf, n, MPI_PACKED, source, tag, comm, &mpistatus) != 0) ESL_XEXCEPTION(eslESYS, "mpi recv failed");
+  ESL_DPRINTF1(("cm_search_results_MPIRecv(): results have been received.\n"));
+
+  /* Unpack it - where the first integer is a status code, OK or EOD */
+  ESL_DPRINTF1(("cm_search_results_MPIRecv(): about to unpack dsq.\n"));
+  pos = 0;
+  if (MPI_Unpack       (*buf, n, &pos, &code,                   1, MPI_INT,           comm) != 0)  ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  if (code == eslEOD) { status = eslEOD; goto ERROR; }
+
+  return cm_search_results_MPIUnpack(*buf, *nalloc, &pos, comm, ret_results);
+
+ ERROR:
+  *ret_results = NULL;
+  return status;
+}
+#endif

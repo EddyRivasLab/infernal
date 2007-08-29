@@ -2709,7 +2709,7 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
    */
   ESL_ALLOC(msa->ss_cons, (sizeof(char) * (alen+1)));
   ESL_ALLOC(msa->rf,      (sizeof(char) * (alen+1)));
-  con = CreateCMConsensus(cm, abc, 3.0, 1.0);
+  CreateCMConsensus(cm, abc, 3.0, 1.0, &con);
 
   for (cpos = 0; cpos <= emap->clen; cpos++) 
     {

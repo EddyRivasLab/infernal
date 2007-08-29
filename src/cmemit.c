@@ -422,7 +422,7 @@ emit_consensus(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
   ESL_SQ *csq = NULL;
 
   /* Determine consensus sequence */
-  con = CreateCMConsensus(cm, cfg->abc_out, 3.0, 1.0);
+  CreateCMConsensus(cm, cfg->abc_out, 3.0, 1.0, &con);
   if((csq = esl_sq_CreateFrom("CM generated consensus sequence [cmemit]", con->cseq, NULL, NULL, NULL)) == NULL)
     { status = eslEMEM; goto ERROR; }
   if((esl_sqio_Write(cfg->ofp, csq, eslSQFILE_FASTA)) != eslOK) 

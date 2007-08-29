@@ -688,7 +688,7 @@ PrintDPCellsSaved(CM_t *cm, int *min, int *max, int W)
  *           j0        - end of target subsequence (L for full seq)
  *           W         - max d: max size of a hit
  *           cutoff    - minimum score to report 
- *           results   - scan_results_t to add to; if NULL, don't add to it
+ *           results   - search_results_t to add to; if NULL, don't add to it
  *
  * Returns:  score of best overall hit
  *
@@ -697,7 +697,7 @@ PrintDPCellsSaved(CM_t *cm, int *min, int *max, int W)
  */
 float
 CYKBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
-	      float cutoff, scan_results_t *results)
+	      float cutoff, search_results_t *results)
 {
   /* Contract check */
   if(j0 < i0)

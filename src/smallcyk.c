@@ -347,7 +347,7 @@ CYKDivideAndConquer(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parset
    * The traceback machinery expects to build on a start state already
    * in the parsetree, so initialize by adding the root state.
    */
-  tr = CreateParsetree();
+  tr = CreateParsetree(100);
   InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, i0, j0, 0); /* init: attach the root S */
   z  = cm->M-1;
   sc = 0.;
@@ -419,7 +419,7 @@ CYKInside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **re
 
   /* Create the parse tree, and initialize.
    */
-  tr = CreateParsetree();
+  tr = CreateParsetree(100);
   InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0); /* init: attach the root S */
   z  = cm->M-1;
   sc = 0.;

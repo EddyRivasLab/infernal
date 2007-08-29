@@ -389,22 +389,22 @@ char search_receive_job (int *seqlen_p, char **seq_p, int *bestr_p,
 }
 
 /*
- * Function: search_send_scan_results
+ * Function: search_send_search_results
  * Date:     RJK, Tue May 28, 2002 [St. Louis]
  * Purpose:  Given a list of scan results, sends them to master node using
  *           MPI_Send
  */
-void search_send_scan_results (scan_results_t *results, int mpi_master_node) {
+void search_send_search_results (search_results_t *results, int mpi_master_node) {
   char *buf;
   int pos = 0;
   int i;
   int bufsize;
-  char results_type = SEARCH_STD_SCAN_RESULTS;
+  char results_type = SEARCH_STD_SEARCH_RESULTS;
 
-  bufsize = sizeof(char)+sizeof(int)+(sizeof(scan_result_node_t)*(results->num_results+1));
+  bufsize = sizeof(char)+sizeof(int)+(sizeof(search_result_node_t)*(results->num_results+1));
   ESL_ALLOC(buf, bufsize);
   /* Send the size of the results */
-  MPI_Send (&bufsize, 1, MPI_INT, mpi_master_node, SEARCH_STD_SCAN_RESULTS_SIZE_TAG, MPI_COMM_WORLD);
+  MPI_Send (&bufsize, 1, MPI_INT, mpi_master_node, SEARCH_STD_SEARCH_RESULTS_SIZE_TAG, MPI_COMM_WORLD);
 
   /* Send the results */
   MPI_Pack (&results_type, 1, MPI_CHAR, buf, bufsize, &pos, MPI_COMM_WORLD);
@@ -415,7 +415,7 @@ void search_send_scan_results (scan_results_t *results, int mpi_master_node) {
     MPI_Pack(&(results->data[i].bestr), 1, MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
     MPI_Pack(&(results->data[i].score), 1, MPI_FLOAT, buf, bufsize, &pos, MPI_COMM_WORLD);
   }
-  MPI_Send (buf, bufsize, MPI_PACKED, mpi_master_node, SEARCH_STD_SCAN_RESULTS_TAG, MPI_COMM_WORLD);
+  MPI_Send (buf, bufsize, MPI_PACKED, mpi_master_node, SEARCH_STD_SEARCH_RESULTS_TAG, MPI_COMM_WORLD);
 }
 
 /*
@@ -432,7 +432,7 @@ void search_send_align_results (Parsetree_t *tr, int mpi_master_node) {
   bufsize = sizeof(char)+sizeof(int)+sizeof(int)+7*((tr->n)+1)*sizeof(int);
   ESL_ALLOC(buf, bufsize);
   /* Send the size of the results */
-  MPI_Send (&bufsize, 1, MPI_INT, mpi_master_node, SEARCH_STD_SCAN_RESULTS_SIZE_TAG, MPI_COMM_WORLD);
+  MPI_Send (&bufsize, 1, MPI_INT, mpi_master_node, SEARCH_STD_SEARCH_RESULTS_SIZE_TAG, MPI_COMM_WORLD);
 
   /* Send the results */
   MPI_Pack (&results_type, 1, MPI_CHAR, buf, bufsize, &pos, MPI_COMM_WORLD);
@@ -446,7 +446,7 @@ void search_send_align_results (Parsetree_t *tr, int mpi_master_node) {
   MPI_Pack (tr->prv,  tr->n, MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
   MPI_Pack (tr->mode, tr->n, MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
 
-  MPI_Send (buf, bufsize, MPI_PACKED, mpi_master_node, SEARCH_STD_SCAN_RESULTS_TAG, MPI_COMM_WORLD);
+  MPI_Send (buf, bufsize, MPI_PACKED, mpi_master_node, SEARCH_STD_SEARCH_RESULTS_TAG, MPI_COMM_WORLD);
 }
 
 /*
@@ -638,7 +638,7 @@ int search_check_results (db_seq_t **active_seqs, job_t **process_status, int D)
 
   /* Get the size of the buffer */
   MPI_Recv (&bufsize, 1, MPI_INT, MPI_ANY_SOURCE, 
-	    SEARCH_STD_SCAN_RESULTS_SIZE_TAG, MPI_COMM_WORLD, &status);
+	    SEARCH_STD_SEARCH_RESULTS_SIZE_TAG, MPI_COMM_WORLD, &status);
   data_from = status.MPI_SOURCE;
   ESL_ALLOC(buf, (char)*bufsize);
 
@@ -653,12 +653,12 @@ int search_check_results (db_seq_t **active_seqs, job_t **process_status, int D)
   process_status[data_from] = NULL;
 
   /* Now get the results */
-  MPI_Recv (buf, bufsize, MPI_PACKED, data_from, SEARCH_STD_SCAN_RESULTS_TAG, 
+  MPI_Recv (buf, bufsize, MPI_PACKED, data_from, SEARCH_STD_SEARCH_RESULTS_TAG, 
 	    MPI_COMM_WORLD, &status);
   MPI_Unpack (buf, bufsize, &position, &results_type, 1, 
 	      MPI_CHAR, MPI_COMM_WORLD);
 
-  if (results_type == SEARCH_STD_SCAN_RESULTS) {
+  if (results_type == SEARCH_STD_SEARCH_RESULTS) {
     MPI_Unpack (buf, bufsize, &position, &num_results, 1, 
 		MPI_INT, MPI_COMM_WORLD);
     if (num_results > 0 && cur_seq->results[(int)in_revcomp] == NULL) {
@@ -704,7 +704,7 @@ int search_check_results (db_seq_t **active_seqs, job_t **process_status, int D)
     cur_seq->results[(int)in_revcomp]->data[index].tr = tr;
     cur_seq->alignments_sent--;
   } else {
-    Die ("Got result type %d when expecting SEARCH_STD_SCAN_RESULTS (%d) or ALN_RESULTS (%d)\n", results_type, SEARCH_STD_SCAN_RESULTS, ALN_RESULTS);
+    Die ("Got result type %d when expecting SEARCH_STD_SEARCH_RESULTS (%d) or ALN_RESULTS (%d)\n", results_type, SEARCH_STD_SEARCH_RESULTS, ALN_RESULTS);
   }
   free(buf);
   return(cur_seq_index);
@@ -743,7 +743,7 @@ int search_check_hist_results (db_seq_t **seqs, job_t **process_status, int D) {
 
   MPI_Unpack (buf, 32, &position, &results_type, 1, 
 	      MPI_CHAR, MPI_COMM_WORLD);
-  if (results_type == SEARCH_HIST_SCAN_RESULTS) {
+  if (results_type == SEARCH_HIST_SEARCH_RESULTS) {
     MPI_Unpack (buf, 32, &position, &score, 1, MPI_FLOAT, 
 		MPI_COMM_WORLD);
     seqs[db_seq_index]->chunks_sent--;
@@ -751,23 +751,23 @@ int search_check_hist_results (db_seq_t **seqs, job_t **process_status, int D) {
       seqs[db_seq_index]->best_score = score;
     }
   } else {
-    Die ("Got result type %d when expecting SEARCH_HIST_SCAN_RESULTS (%d)\n", 
-	 results_type, SEARCH_HIST_SCAN_RESULTS);
+    Die ("Got result type %d when expecting SEARCH_HIST_SEARCH_RESULTS (%d)\n", 
+	 results_type, SEARCH_HIST_SEARCH_RESULTS);
   }
   return(db_seq_index);
 }
 
 /*
- * Function: search_send_hist_scan_results
+ * Function: search_send_hist_search_results
  * Date:     RJK, Sat Jun 01, 2002 [St. Louis]
  * Purpose:  Given best score for building a histogram, sends to master
  *           node using MPI_Send
  */
-void search_send_hist_scan_results (float score, int mpi_master_node) {
+void search_send_hist_search_results (float score, int mpi_master_node) {
   char *buf;
   int pos = 0;
   int bufsize;
-  char results_type = SEARCH_HIST_SCAN_RESULTS;
+  char results_type = SEARCH_HIST_SEARCH_RESULTS;
 
   bufsize = sizeof(char)+sizeof(float);
   ESL_ALLOC(buf, bufsize);
@@ -1842,7 +1842,7 @@ int search_check_results (db_seq_t **active_seqs, job_t **process_status, int D)
 
   /* Get the size of the buffer */
   MPI_Recv (&bufsize, 1, MPI_INT, MPI_ANY_SOURCE, 
-	    SEARCH_STD_SCAN_RESULTS_SIZE_TAG, MPI_COMM_WORLD, &status);
+	    SEARCH_STD_SEARCH_RESULTS_SIZE_TAG, MPI_COMM_WORLD, &status);
   data_from = status.MPI_SOURCE;
   ESL_ALLOC(buf, (char)*bufsize);
 
@@ -1857,12 +1857,12 @@ int search_check_results (db_seq_t **active_seqs, job_t **process_status, int D)
   process_status[data_from] = NULL;
 
   /* Now get the results */
-  MPI_Recv (buf, bufsize, MPI_PACKED, data_from, SEARCH_STD_SCAN_RESULTS_TAG, 
+  MPI_Recv (buf, bufsize, MPI_PACKED, data_from, SEARCH_STD_SEARCH_RESULTS_TAG, 
 	    MPI_COMM_WORLD, &status);
   MPI_Unpack (buf, bufsize, &position, &results_type, 1, 
 	      MPI_CHAR, MPI_COMM_WORLD);
 
-  if (results_type == SEARCH_STD_SCAN_RESULTS) {
+  if (results_type == SEARCH_STD_SEARCH_RESULTS) {
     MPI_Unpack (buf, bufsize, &position, &num_results, 1, 
 		MPI_INT, MPI_COMM_WORLD);
     if (num_results > 0 && cur_seq->results[(int)in_revcomp] == NULL) {
@@ -1908,7 +1908,7 @@ int search_check_results (db_seq_t **active_seqs, job_t **process_status, int D)
     cur_seq->results[(int)in_revcomp]->data[index].tr = tr;
     cur_seq->alignments_sent--;
   } else {
-    Die ("Got result type %d when expecting SEARCH_STD_SCAN_RESULTS (%d) or ALN_RESULTS (%d)\n", results_type, SEARCH_STD_SCAN_RESULTS, ALN_RESULTS);
+    Die ("Got result type %d when expecting SEARCH_STD_SEARCH_RESULTS (%d) or ALN_RESULTS (%d)\n", results_type, SEARCH_STD_SEARCH_RESULTS, ALN_RESULTS);
   }
   free(buf);
   return(cur_seq_index);

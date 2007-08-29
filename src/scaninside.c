@@ -45,13 +45,13 @@
  *           j0        - end of target subsequence (L for full seq)
  *           W         - max d: max size of a hit
  *           cutoff    - minimum score to report 
- *           results    - scan_results_t to add to; if NULL, don't add to it
+ *           results    - search_results_t to add to; if NULL, don't add to it
  *
  * Returns:  score of best overall hit
  */
 float 
 InsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, 
-	   float cutoff, scan_results_t *results)
+	   float cutoff, search_results_t *results)
 
 {
   int       status;
@@ -405,13 +405,13 @@ InsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W,
  *           j0        - end of target subsequence (L for full seq)
  *           W         - max d: max size of a hit
  *           cutoff    - minimum score to report 
- *           results    - scan_results_t to add to; if NULL, don't add to it
+ *           results    - search_results_t to add to; if NULL, don't add to it
  *
  * Returns:  score of best overall hit
  */
 float
 InsideBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
-		 float cutoff, scan_results_t *results)
+		 float cutoff, search_results_t *results)
 {
   int       status;
   float  ***alpha;              /* CYK DP score matrix, [v][j][d] */
@@ -1386,13 +1386,13 @@ InsideBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, int **hdmin, i
  *           j0        - end of target subsequence (L for full seq)
  *           W         - max d: max size of a hit
  *           cutoff    - minimum score to report 
- *           results    - scan_results_t to add to; if NULL, don't add to it
+ *           results    - search_results_t to add to; if NULL, don't add to it
  *
  * Returns:  score (float - not scaled int) of best overall hit
  */
 float 
 iInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, 
-	    float cutoff, scan_results_t *results)
+	    float cutoff, search_results_t *results)
 
 {
   int       status;
@@ -1748,13 +1748,13 @@ iInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W,
  *           j0        - end of target subsequence (L for full seq)
  *           W         - max d: max size of a hit
  *           cutoff    - minimum score to report 
- *           results    - scan_results_t to add to; if NULL, don't add to it
+ *           results    - search_results_t to add to; if NULL, don't add to it
  *
  * Returns:  score (float - not scaled int) of best overall hit
  */
 float
 iInsideBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
-		  float cutoff, scan_results_t *results)
+		  float cutoff, search_results_t *results)
 {
   int       status;
   int    ***alpha;              /* inside DP score matrix (scaled ints), [v][j][d] */

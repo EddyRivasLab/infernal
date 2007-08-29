@@ -98,7 +98,7 @@ EmitParsetree(CM_t *cm, ESL_RANDOMNESS *r, char *name, int do_digital, Parsetree
   if(ret_sq != NULL && name == NULL)
     ESL_XEXCEPTION(eslEINVAL, "EmitParsetree requires a sequence name for the sequence it's creating.");
 
-  tr  = CreateParsetree();
+  tr  = CreateParsetree(100);
   pda = esl_stack_ICreate();
   gsq = esl_stack_CCreate();
   N   = 0;			

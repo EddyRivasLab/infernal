@@ -662,23 +662,23 @@ typedef struct cp9bands_s {
 
 /* structures from RSEARCH */
 #define INIT_RESULTS 100
-typedef struct _scan_result_node_t {
+typedef struct _search_result_node_t {
   int start;
   int stop;
   int bestr;   /* Best root state */
   float score;
   Parsetree_t *tr;
-} scan_result_node_t;
+} search_result_node_t;
 
-typedef struct _scan_results_t {
-  scan_result_node_t *data;
+typedef struct _search_results_t {
+  search_result_node_t **data;
   int num_results;
   int num_allocated;
-} scan_results_t;
+} search_results_t;
 
 typedef struct _dbseq_t {
   ESL_SQ *sq[2];
-  scan_results_t *results[2];
+  search_results_t *results[2];
   int chunks_sent;
   int alignments_sent;           /* -1 is flag for none queued yet */
   float best_score;              /* Best score for scan of this sequence */
@@ -731,6 +731,13 @@ typedef struct Ideckpool_s {
 /* Two modes for padding residues to HMM hits */
 #define PAD_SUBI_ADDJ 1
 #define PAD_ADDI_SUBJ 2
+
+/* MPI tags */
+#define MPI_WORK_EOD    0
+#define MPI_WORK_SEARCH 1
+
+#define MPI_RESULTS_SEARCH 2
+
 
 #endif /*STRUCTSH_INCLUDED*/
 

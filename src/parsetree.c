@@ -45,14 +45,14 @@
  * Return:   ptr to the new tree.
  */          
 Parsetree_t * 
-CreateParsetree(void)
+CreateParsetree(int size)
 {
   int status;
   Parsetree_t *new;
 
   ESL_ALLOC(new, sizeof(Parsetree_t));
   new->memblock = 100;		/* allocation block size can be optimized here if you want. */
-  new->nalloc   = new->memblock;
+  new->nalloc   = size;
   ESL_ALLOC(new->emitl, sizeof(int) * new->nalloc);
   ESL_ALLOC(new->emitr, sizeof(int) * new->nalloc);
   ESL_ALLOC(new->state, sizeof(int) * new->nalloc);
@@ -859,7 +859,7 @@ Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
   /* Gee, wasn't that easy?
    * Add the rest of the ("optional") information to the MSA.
    */
-  con = CreateCMConsensus(cm, abc, 3.0, 1.0);
+  CreateCMConsensus(cm, abc, 3.0, 1.0, &con);
 
   /* "author" info */
   ESL_ALLOC(msa->au, sizeof(char) * (strlen(PACKAGE_VERSION)+10));

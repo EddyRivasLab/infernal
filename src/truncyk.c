@@ -66,7 +66,7 @@ TrCYKInside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **
    }
 
    /* Create parse tree and initialize */
-   tr = CreateParsetree();
+   tr = CreateParsetree(100);
    InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, i0, j0, r);
    z = cm->M-1;
    sc = 0.0;

@@ -41,7 +41,7 @@ extern void     PrintBandGraph(FILE *fp, double **gamma, int *min, int *max, int
 
 extern void     PrintDPCellsSaved(CM_t *cm, int *min, int *max, int W);
 extern float    CYKBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
-			      float cutoff, scan_results_t *results);
+			      float cutoff, search_results_t *results);
 extern void     ExpandBands(CM_t *cm, int qlen, int *dmin, int *dmax);
 extern void     qdb_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *dmin, 
 				    int *dmax, int bdump_level);
@@ -120,7 +120,7 @@ extern int     CMFileWrite(FILE *fp, CM_t *cm, int do_binary);
 extern Fancyali_t    *CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, const ESL_ALPHABET *abc);
 extern void           PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp);
 extern void           FreeFancyAli(Fancyali_t *ali);
-extern CMConsensus_t *CreateCMConsensus(CM_t *cm, const ESL_ALPHABET *abc, float pthresh, float sthresh);
+extern int            CreateCMConsensus(CM_t *cm, const ESL_ALPHABET *abc, float pthresh, float sthresh, CMConsensus_t **ret_cons);
 extern void           FreeCMConsensus(CMConsensus_t *con);
 extern void           MainBanner(FILE *fp, char *banner); 
 extern int            IsCompensatory(const ESL_ALPHABET *abc, float *pij, int symi, int symj);
@@ -172,7 +172,7 @@ extern int  clean_cs(char *cs, int alen);
 				 
 /* from parsetree.c
  */
-extern Parsetree_t *CreateParsetree(void);
+extern Parsetree_t *CreateParsetree(int size);
 extern void         GrowParsetree(Parsetree_t *tr);
 extern void         FreeParsetree(Parsetree_t *tr);
 extern int          InsertTraceNode(Parsetree_t *tr, int y, int whichway, 
@@ -193,15 +193,17 @@ extern int          Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, CP9trace_t **r
 
 /* from scancyk.c
  */
-extern scan_results_t *CreateResults (int size);
-extern void ExpandResults (scan_results_t *r, int additional);
-extern void FreeResults (scan_results_t *r);
+extern search_results_t *CreateResults (int size);
+extern search_result_node_t *CreateResultNode ();
+extern void ExpandResults (search_results_t *r, int additional);
+extern void AppendResults (search_results_t *src_results, search_results_t *dest_results);
+extern void FreeResults (search_results_t *r);
 extern int  compare_results (const void *a_void, const void *b_void);
-extern void sort_results (scan_results_t *results);
-extern void report_hit (int i, int j, int bestr, float score, scan_results_t *results);
-extern void remove_overlapping_hits (scan_results_t *results, int i0, int j0);
+extern void sort_results (search_results_t *results);
+extern void report_hit (int i, int j, int bestr, float score, search_results_t *results);
+extern void remove_overlapping_hits (search_results_t *results, int i0, int j0);
 extern float CYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, 
-		      float cutoff, scan_results_t *results);
+		      float cutoff, search_results_t *results);
 extern float CYKScanRequires(CM_t *cm, int L, int W);
 
 /* from smallcyk.c
@@ -341,27 +343,27 @@ extern void debug_print_alpha_banded_jd(float ***alpha, CM_t *cm, int L, int *jm
 					int **hdmin, int **hdmax);
 extern float ** alloc_jdbanded_vjd_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
 extern float CYKBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax, int i0, 
-			      int j0, int W, float cutoff, scan_results_t *results);
+			      int j0, int W, float cutoff, search_results_t *results);
 extern float iInsideBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax, int i0, 
-				  int j0, int W, float cutoff, scan_results_t *results);
+				  int j0, int W, float cutoff, search_results_t *results);
 
 
 
 /* from CP9_scan.c */
 extern float CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
-			int *ret_bestpos, scan_results_t *results, int do_scan,
+			int *ret_bestpos, search_results_t *results, int do_scan,
 			int be_efficient, CP9_dpmatrix_t **ret_mx, CP9trace_t **ret_tr);
 extern float CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_isc, 
-			int *ret_maxres, scan_results_t *results, int do_scan, int doing_align, 
+			int *ret_maxres, search_results_t *results, int do_scan, int doing_align, 
 			int doing_rescan, int be_efficient, CP9_dpmatrix_t **ret_mx);
 extern float CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_isc, 
-			 int *ret_maxres, scan_results_t *results, int do_scan, int doing_align, 
+			 int *ret_maxres, search_results_t *results, int do_scan, int doing_align, 
 			 int doing_rescan, int be_efficient, CP9_dpmatrix_t **ret_mx);
 extern float CP9Scan_dispatch(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cm_cutoff, 
-			      float cp9_cutoff, scan_results_t *results, int doing_cp9_stats, int *ret_flen);
-extern float RescanFilterSurvivors(CM_t *cm, ESL_DSQ *dsq, scan_results_t *hmm_results, int i0, 
+			      float cp9_cutoff, search_results_t *results, int doing_cp9_stats, int *ret_flen);
+extern float RescanFilterSurvivors(CM_t *cm, ESL_DSQ *dsq, search_results_t *hmm_results, int i0, 
 				   int j0, int W, int padmode, int ipad, int jpad, int do_collapse,
-				   float cm_cutoff, float cp9_cutoff, scan_results_t *results, 
+				   float cm_cutoff, float cp9_cutoff, search_results_t *results, 
 				   int *ret_flen);
 extern void CP9ScanPosterior(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_dpmatrix_t *fmx, 
 			     CP9_dpmatrix_t *bmx, CP9_dpmatrix_t *mx);
@@ -409,18 +411,18 @@ extern int  MakeDealignedString(const ESL_ALPHABET *abc, char *aseq, int alen, c
 
 /* from scaninside.c */
 extern float  InsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, 
-			 float cutoff, scan_results_t *results);
+			 float cutoff, search_results_t *results);
 extern float  InsideBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
-			       float cutoff, scan_results_t *results);
+			       float cutoff, search_results_t *results);
 extern void  InsideBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax,
 				 int i0, int j0, int W, 
 				 int *ret_nhits, int **ret_hitr, 
 				 int **ret_hiti, int **ret_hitj, float **ret_hitsc,
 				 float min_thresh);
 extern float iInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, 
-			 float cutoff, scan_results_t *results);
+			 float cutoff, search_results_t *results);
 extern float iInsideBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
-			       float cutoff, scan_results_t *results);
+			       float cutoff, search_results_t *results);
 extern float LogSum2(float p1, float p2);
 
 /* from cm_masks.c */
@@ -474,11 +476,26 @@ extern int cm_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n);
 extern int cm_justread_MPIPack(CM_t *cm, char *buf, int n, int *pos, MPI_Comm comm);
 extern int cm_justread_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n);
 
+extern int cm_dsq_MPISend(ESL_DSQ *dsq, int L, int dest, int tag, MPI_Comm comm, char **buf, int *nalloc);
+extern int cm_dsq_MPIRecv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc, ESL_DSQ **ret_dsq, int *ret_L);
+extern int cm_search_results_MPISend(search_results_t *results, int dest, int tag, MPI_Comm comm, char **buf, int *nalloc);
+extern int cm_search_results_MPIRecv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc, search_results_t  **ret_results);
+extern int cm_search_results_MPIPackSize(const search_results_t *results, MPI_Comm comm, int *ret_n);
+extern int cm_search_results_MPIPack(const search_results_t *results, char *buf, int n, int *position, MPI_Comm comm);
+extern int cm_search_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, search_results_t **ret_results);
+extern int cm_search_result_node_MPIPackSize(const search_result_node_t *rnode, MPI_Comm comm, int *ret_n) ;
+extern int cm_search_result_node_MPIPack(const search_result_node_t *rnode, char *buf, int n, int *position, MPI_Comm comm);
+extern int cm_search_result_node_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, search_result_node_t **ret_rnode);
+extern int cm_parsetree_MPIPackSize(const Parsetree_t *tr, MPI_Comm comm, int *ret_n);
+extern int cm_parsetree_MPIPack(const Parsetree_t *tr, char *buf, int n, int *position, MPI_Comm comm);
+extern int cm_parsetree_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, Parsetree_t **ret_tr);
+
+
 extern void mpi_worker_search_target(CM_t *cm, int my_rank);
 extern void mpi_worker_cm_and_cp9_search(CM_t *cm, int do_fast, int my_rank);
 extern void mpi_worker_cm_and_cp9_search_maxsc(CM_t *cm, int do_fast, int do_minmax, int my_rank);
-extern int dsq_MPISend(char *dsq, int L, int dest);
-extern int dsq_MPIRecv(char **ret_dsq, int *ret_L);
+extern int dsq_MPISend(ESL_DSQ *dsq, int L, int dest);
+extern int dsq_MPIRecv(ESL_DSQ **ret_dsq, int *ret_L);
 extern int dsq_maxsc_MPISend(char *dsq, int L, float maxsc, int dest);
 extern int dsq_maxsc_MPIRecv(char **ret_dsq, int *ret_L, float *ret_maxsc);
 

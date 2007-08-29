@@ -195,7 +195,7 @@ CYKInside_b_jd(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t
 
   /* Create the parse tree, and initialize.
    */
-  tr = CreateParsetree();
+  tr = CreateParsetree(100);
   InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0); /* init: attach the root S */
   z  = cm->M-1;
   sc = 0.;
@@ -1420,13 +1420,13 @@ debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax)
  *           j0        - end of target subsequence (L for end of dsq)
  *           W         - max d: max size of a hit
  *           cutoff    - minimum score to report 
- *           results   - scan_results_t to add to; if NULL, don't add to it
+ *           results   - search_results_t to add to; if NULL, don't add to it
  *
  * Returns:  score of best overall hit
  */
 float
 CYKBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax, int i0, 
-		 int j0, int W, float cutoff, scan_results_t *results)
+		 int j0, int W, float cutoff, search_results_t *results)
 {
   int       status;
   float  ***alpha;              /* CYK DP score matrix, [v][j][d] */
@@ -1997,13 +1997,13 @@ for (v = 0; v < cm->M; v++)
  *           j0        - end of target subsequence (L for end of dsq)
  *           W         - max d: max size of a hit
  *           cutoff    - minimum score to report 
- *           results   - scan_results_t to add to; if NULL, don't add to it
+ *           results   - search_results_t to add to; if NULL, don't add to it
  *
  * Returns:  score of best overall hit
  */
 float
 iInsideBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax, int i0, 
-		    int j0, int W, float cutoff, scan_results_t *results)
+		    int j0, int W, float cutoff, search_results_t *results)
 {
   int        status;
   int     ***alpha;              /* CYK DP score matrix, [v][j][d] */

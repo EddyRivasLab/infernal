@@ -516,13 +516,14 @@ FreeFancyAli(Fancyali_t *ali)
  *            pthresh    - bit score threshold for base pairs to be lowercased
  *            sthresh    - bit score threshold for singlets to be lowercased
  *            
- * Returns:   CMConsensus_t structure.
+ * Returns:   <eslOK> on success, <eslEMEM> on memory error.
+8             CMConsensus_t structure in *ret_cons.
  *            Caller frees w/ FreeCMConsensus().
  *
  * Xref:      STL6 p.58.
  */
-CMConsensus_t *
-CreateCMConsensus(CM_t *cm, const ESL_ALPHABET *abc, float pthresh, float sthresh)
+int
+CreateCMConsensus(CM_t *cm, const ESL_ALPHABET *abc, float pthresh, float sthresh, CMConsensus_t **ret_cons)
 {
   /* Contract check. We allow the caller to specify the alphabet they want the 
    * resulting MSA in, but it has to make sense (see next few lines). */
@@ -694,11 +695,11 @@ CreateCMConsensus(CM_t *cm, const ESL_ALPHABET *abc, float pthresh, float sthres
   con->lpos = lpos;
   con->rpos = rpos;
   con->clen = cpos;
-  return con;
+  *ret_cons = con;
+  return eslOK;
 
  ERROR:
-  esl_fatal("Memory allocation error.\n");
-  return NULL; /* not reached */
+  return status;
 }
 
 void
