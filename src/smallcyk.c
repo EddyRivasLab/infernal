@@ -2520,7 +2520,7 @@ voutside(CM_t *cm, char *dsq, int L,
 	beta[cm->M][jp][ip] = IMPOSSIBLE;
     }
   }
-  if (useEL && cm->endsc[r] != IMPOSSIBLE) {
+  if (useEL && NOT_IMPOSSIBLE(cm->endsc[r])) {
     switch(cm->sttype[r]) {
     case MP_st:
       if (i0 == i1 || j1 == j0) break;
@@ -2669,7 +2669,7 @@ voutside(CM_t *cm, char *dsq, int L,
        * transitions v->EL, if we're doing local alignment and there's a 
        * possible transition.
        */
-      if (useEL && cm->endsc[v] != IMPOSSIBLE) {
+      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v])) {
 	for (jp = j0-j1; jp >= 0; jp--) {
 	  j = jp+j1;
 	  for (ip = 0; ip <= i1-i0; ip++) 
@@ -5660,7 +5660,7 @@ voutside_b(CM_t *cm, char *dsq, int L,
 	beta[cm->M][jp][ip] = IMPOSSIBLE;
     }
   }
-  if (useEL && cm->endsc[r] != IMPOSSIBLE) {
+  if (useEL && NOT_IMPOSSIBLE(cm->endsc[r])) {
     switch(cm->sttype[r]) {
     case MP_st:
       if (i0 == i1 || j1 == j0) break;
@@ -5846,7 +5846,7 @@ voutside_b(CM_t *cm, char *dsq, int L,
        * transitions v->EL, if we're doing local alignment and there's a 
        * possible transition.
        */
-      if (useEL && cm->endsc[v] != IMPOSSIBLE) {
+      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v])) {
 	for (jp = j0-j1; jp >= 0; jp--) {
 	  j = jp+j1;
 	  /* Careful here, we're filling in beta[cm->M][jp][ip] which is unbanded
