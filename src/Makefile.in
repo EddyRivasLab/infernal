@@ -43,41 +43,35 @@ OBJS  = alphabet.o\
 	bandcyk.o\
 	cm.o\
 	cmio.o\
-	display.o\
-	emit.o\
-	emitmap.o\
-	modelconfig.o\
-	modelmaker.o\
-	parsetree.o\
-	prior.o\
-	scancyk.o\
-	smallcyk.o\
-	truncyk.o\
+	cm_cluster.o\
+	cm_dispatch.o\
 	cm_eweight.o\
-	hmmband.o\
-	hbandcyk.o\
+	cm_errors.o\
+	cm_masks.o\
+	cm_postprob.o\
 	cplan9.o\
 	CP9_cm2wrhmm.o\
 	CP9_scan.o\
-	cm_postprob.o\
+	display.o\
+	emit.o\
+	emitmap.o\
+	hbandcyk.o\
+	hmmband.o\
+	modelconfig.o\
+	modelmaker.o\
+	mpisupport.o\
+	parsetree.o\
+	prior.o\
+	rnamat.o\
+	scancyk.o\
 	scaninside.o\
-	cm_masks.o\
+	smallcyk.o\
 	sub_cm.o\
 	stats.o\
-	cm_dispatch.o\
-	rnamat.o\
-	cm_cluster.o\
-	cm_errors.o\
-	mpisupport.o
+	truncyk.o
 
 HDRS  = funcs.h\
-	prior.h\
-	structs.h\
-	hmmband.h\
-	cplan9.h\
-	cm_postprob.h\
-	cm_dispatch.h\
-	stats.h
+	structs.h
 
 .c.o: 
 	$(CC) $(CFLAGS) $(DEFS) $(MYINCDIR) -c $<

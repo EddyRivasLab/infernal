@@ -16,13 +16,12 @@
 #include <string.h>
 #include <math.h>
 
-#include "structs.h"
-#include "funcs.h"
-#include "stats.h"
-
 #include "easel.h"
 #include "esl_alphabet.h"
 #include "esl_ssi.h"
+
+#include "funcs.h"
+#include "structs.h"
 
 static int is_integer(char *s);
 static int is_real(char *s);

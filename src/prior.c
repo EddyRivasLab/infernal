@@ -21,7 +21,7 @@
 #include <esl_fileparser.h>
 
 #include "funcs.h"
-#include "prior.h"
+#include "structs.h"
 
 Prior_t *
 Prior_Create(void)

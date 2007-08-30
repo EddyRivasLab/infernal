@@ -27,11 +27,8 @@
 #include "esl_stopwatch.h"
 #include "esl_vectorops.h"
 
-#include "structs.h"		/* data structures, macros, #define's   */
-#include "prior.h"		/* mixture Dirichlet prior */
 #include "funcs.h"		/* external functions                   */
-#include "hmmband.h"
-#include "stats.h"              /* for resolve_degenerate               */
+#include "structs.h"		/* data structures, macros, #define's   */
 
 #define WGTOPTS "--wgsc,--wblosum,--wpb,--wnone,--wgiven"      /* Exclusive options for relative weighting                    */
 #define EFFOPTS "--eent,--enone"               /* Exclusive options for effective sequence number calculation */
@@ -137,8 +134,8 @@ static int    parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char 
 static int    name_msa(const ESL_GETOPTS *go, ESL_MSA *msa, int nali);
 static double default_target_relent(const ESL_ALPHABET *abc, int M, double eX);
 static int    save_countvectors(char *cfile, CM_t *cm);
-static void   model_trace_info_dump(FILE *ofp, CM_t *cm, Parsetree_t *tr, char *aseq);
 static void   strip_wuss(char *ss);
+/*static void   model_trace_info_dump(FILE *ofp, CM_t *cm, Parsetree_t *tr, char *aseq);*/
 
 
 int

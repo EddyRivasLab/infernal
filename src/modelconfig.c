@@ -19,9 +19,8 @@
 #include "esl_stack.h"
 #include "esl_vectorops.h"
 
-#include "structs.h"
 #include "funcs.h"
-#include "cplan9.h"
+#include "structs.h"
 
 /*
  * Function: ConfigCM()

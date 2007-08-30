@@ -28,9 +28,8 @@
 #include "esl_sqio.h"		
 #include "esl_stopwatch.h"
 
-#include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
-#include "cm_dispatch.h"	/* alignment functions                   */
+#include "structs.h"		/* data structures, macros, #define's   */
 
 #define ALGOPTS  "--std,--qdb,--qdbsmall,--qdbboth,--hbanded,--hmmonly"  /* Exclusive choice for scoring algorithms */
 

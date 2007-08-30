@@ -22,8 +22,8 @@
 #include "esl_stack.h"
 #include "esl_sqio.h"
 
-#include "structs.h"
 #include "funcs.h"
+#include "structs.h"
 
 /* Function:  EmitParsetree()
  * Incept:    SRE, Mon Oct 13 22:35:46 2003 [Rams whupping Falcons, Monday Night Football]

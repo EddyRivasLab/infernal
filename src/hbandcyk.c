@@ -38,8 +38,8 @@
 #include "easel.h"
 #include "esl_stack.h"
 
-#include "structs.h"
 #include "funcs.h"
+#include "structs.h"
 
 
 /*******************************************************************************

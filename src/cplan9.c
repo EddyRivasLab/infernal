@@ -34,7 +34,6 @@
 
 #include "funcs.h"
 #include "structs.h"
-#include "cplan9.h"
 
 static void rightjustify(const ESL_ALPHABET *abc, char *s, int n);
 

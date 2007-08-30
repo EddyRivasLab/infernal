@@ -47,8 +47,8 @@
 #include "easel.h"
 #include "esl_stack.h"
 
-#include "structs.h"
 #include "funcs.h"
+#include "structs.h"
 
 CMEmitMap_t *
 CreateEmitMap(CM_t *cm)

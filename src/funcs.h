@@ -6,9 +6,6 @@
 #include "esl_msa.h"
 
 #include "structs.h"
-#include "cplan9.h"
-#include "prior.h"
-#include "rnamat.h"
 
 #ifdef HAVE_MPI
 #include "mpi.h"
@@ -464,6 +461,195 @@ int MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff, int do_co
 /* from cm_errors.c */
 extern void cm_Die (char *format, ...);
 extern void cm_Fail(char *format, ...);
+
+/* from cm_postprob.c */
+extern float FInside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
+		     float ***alpha, float ****ret_alpha, 
+		     struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
+		     int allow_begin);
+extern float IInside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
+		     int ***alpha, int ****ret_alpha, 
+		     struct Ideckpool_s *dpool, struct Ideckpool_s **ret_dpool,
+		     int allow_begin);
+extern float FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
+		      float ***beta, float ****ret_beta, 
+		      struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
+		      int allow_begin, float ***alpha, float ****ret_alpha, int do_check);
+extern float IOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
+		      int ***beta, int ****ret_beta, 
+		      struct Ideckpool_s *dpool, struct Ideckpool_s **ret_dpool,
+		      int allow_begin, int ***alpha, int ****ret_alpha, int do_check);
+extern void   CMPosterior(int L, CM_t *cm, float ***alpha, float ****ret_alpha, float ***beta, 
+			  float ****ret_beta, float ***post, float ****ret_post);
+extern void  ICMPosterior(int L, CM_t *cm, int ***alpha, int ****ret_alpha, int ***beta, 
+			 int ****ret_beta, int ***post, int ****ret_post);
+extern char  *CMPostalCode(CM_t *cm, int L, float ***post, Parsetree_t *tr);
+extern char *ICMPostalCode(CM_t *cm, int L, int ***post, Parsetree_t *tr);
+extern char Fscore2postcode(float sc);
+extern char Iscore2postcode(int sc);
+extern float FScore2Prob(float sc, float null);
+extern void  CMCheckPosterior(int L, CM_t *cm, float ***post);
+extern void ICMCheckPosterior(int L, CM_t *cm, int ***post);
+extern float FInside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
+			     float ***alpha, float ****ret_alpha, 
+			     struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
+			     int allow_begin, int *jmin, int *jmax, int **hdmin, int **hdmax);
+extern float IInside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
+			     int ***alpha, int ****ret_alpha, 
+			     struct Ideckpool_s *dpool, struct Ideckpool_s **ret_dpool,
+			     int allow_begin, int *jmin, int *jmax, int **hdmin, int **hdmax);
+extern float FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
+			      float ***beta, float ****ret_beta, 
+			      struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
+			      int allow_begin, float ***alpha, float ****ret_alpha, 
+			      int do_check, int *jmin, int *jmax, int **hdmin, int **hdmax);
+extern float IOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
+			      int ***beta, int ****ret_beta, 
+			      struct Ideckpool_s *dpool, struct Ideckpool_s **ret_dpool,
+			      int allow_begin, int ***alpha, int ****ret_alpha, 
+			      int do_check, int *jmin, int *jmax, int **hdmin, int **hdmax);
+extern void  CMPosterior_b_jd_me(int L, CM_t *cm, float ***alpha, float ****ret_alpha, 
+				 float ***beta, float ****ret_beta, float ***post, float ****ret_post,
+				 int *jmin, int *jmax, int **hdmin, int **hdmax);
+extern void ICMPosterior_b_jd_me(int L, CM_t *cm, int ***alpha, int ****ret_alpha, 
+				 int ***beta, int ****ret_beta, int ***post, int ****ret_post,
+				 int *jmin, int *jmax, int **hdmin, int **hdmax);
+extern char  *CMPostalCode_b_jd_me(CM_t *cm, int L, float ***post, Parsetree_t *tr,
+				   int *jmin, int *jmax, int **hdmin, int **hdmax);
+extern char *ICMPostalCode_b_jd_me(CM_t *cm, int L, int ***post, Parsetree_t *tr,
+				   int *jmin, int *jmax, int **hdmin, int **hdmax);
+     
+/* cm_postprob.c memory management routines analogous to those in smallcyk.c for
+ * handling scaled int log odds scores instead of floats. */
+extern Ideckpool_t *Ideckpool_create(void);
+extern void    Ideckpool_push(struct Ideckpool_s *dpool, int **deck);
+extern int     Ideckpool_pop(struct Ideckpool_s *d, int ***ret_deck);
+extern void    Ideckpool_free(struct Ideckpool_s *d);
+extern int   **Ialloc_vjd_deck(int L, int i, int j);
+extern int     Isize_vjd_deck(int L, int i, int j);
+extern void    Ifree_vjd_deck(int **a, int i, int j);
+extern void    Ifree_vjd_matrix(int ***a, int M, int i, int j);
+extern int ** Ialloc_jdbanded_vjd_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
+
+/* from rnamat.c */
+extern int numbered_nucleotide (char c);
+extern int numbered_basepair (char c, char d);
+extern FILE *MatFileOpen (char *matfile);
+extern fullmat_t *ReadMatrix(const ESL_ALPHABET *abc, FILE *matfp);
+extern int ribosum_calc_targets(fullmat_t *fullmat);
+
+/* from hmmband.c */
+extern CP9Bands_t * AllocCP9Bands(CM_t *cm, CP9_t *hmm);
+extern void         FreeCP9Bands(CP9Bands_t *cp9bands);
+extern double dbl_Score2Prob(int sc, float null);
+extern void CP9_seq2bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, 
+			  CP9_dpmatrix_t **ret_cp9_post, int debug_level);
+extern void CP9_seq2posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9_post,
+			       int debug_level);
+extern float CP9ForwardOLD(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, 
+			struct cp9_dpmatrix_s **ret_mx);
+extern float CP9ViterbiOLD(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s *mx, struct cp9trace_s **ret_tr);
+extern float CP9BackwardOLD(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s **ret_mx);
+extern void  CP9Posterior(ESL_DSQ *dsq, int i0, int j0,
+			  CP9_t *hmm,
+			  struct cp9_dpmatrix_s *fmx,
+			  struct cp9_dpmatrix_s *bmx,
+			  struct cp9_dpmatrix_s *mx);
+extern void CP9_ifill_post_sums(struct cp9_dpmatrix_s *post, CP9Bands_t *cp9, int i0, int j0);
+
+extern void CP9_hmm_band_bounds(int **post, int i0, int j0, int M, int *isum_pn, int *pn_min, int *pn_max, double p_thresh, 
+				int state_type, int use_sums, int debug_level);
+extern void hmm2ij_bands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m, 
+			 int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, 
+			 int *pn_max_d, int *imin, int *imax, int *jmin, int *jmax, 
+			 int debug_level);
+extern void relax_root_bands(int *imin, int *imax, int *jmin, int *jmax);
+extern void debug_print_hmm_bands(FILE *ofp, int L, CP9Bands_t *cp9b, double hmm_bandp, int debug_level);
+extern void ij_banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax, 
+				      int *jmin, int *jmax, int debug_level);
+extern void ijd_banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax, 
+				      int *jmin, int *jmax, int **hdmin, int **hdmax, 
+				      int debug_level);
+extern void debug_check_CP9_FB(struct cp9_dpmatrix_s *fmx, 
+			       struct cp9_dpmatrix_s *bmx, 
+			       CP9_t *hmm, float sc, int i0, int j0,
+			       ESL_DSQ *dsq);
+/* from cm_dispatch.c */
+extern void  serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons);
+extern void  parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons,
+				       int mpi_my_rank, int mpi_master_rank, int mpi_num_procs) ;
+extern float  actually_search_target(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cutoff, 
+				     float cp9_cutoff, search_results_t *results, int do_filter, 
+				     int doing_cm_stats, int doing_cp9_stats, int *ret_flen, int do_align_hits);
+extern void serial_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr, 
+				 char ***ret_postcode, CP9trace_t ***ret_cp9_tr, int *ret_nseq, float **ret_sc, 
+				 int bdump_level, int debug_level, int silent_mode);
+extern void parallel_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr,
+				   char ***ret_postcode, CP9trace_t ***ret_cp9_tr, int *ret_nseq,
+				   int bdump_level, int debug_level,
+				   int silent_mode, int mpi_my_rank, int mpi_master_rank, int mpi_num_procs);
+extern int actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, ESL_DSQ *dsq, search_results_t *results, Parsetree_t ***ret_tr, 
+				  char ***ret_postcode, CP9trace_t ***ret_cp9_tr, float **ret_sc, int bdump_level, int debug_level, 
+				  int silent_mode);
+extern int  revcomp(const ESL_ALPHABET *abc, ESL_SQ *comp, ESL_SQ *sq);
+extern int  read_next_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revcomp, dbseq_t **ret_dbseq);
+extern void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq,
+			   int do_complement, int used_HMM);
+extern void remove_hits_over_e_cutoff (CM_t *cm, search_results_t *results, ESL_SQ *sq,
+				       int used_HMM);
+
+/* from cplan9.c: functions stolen from HMMER-2.4::mathsupport.c */
+extern int   ILogsum(int p1, int p2);
+extern int   Prob2Score(float p, float null);
+extern float Score2Prob(int sc, float null);
+extern float Scorify(int sc);
+extern int   DegenerateSymbolScore(float *p, float *null, int ambig);
+
+/* from prior.c */
+extern Prior_t *Prior_Create(void);
+extern void     Prior_Destroy(Prior_t *pri);
+extern Prior_t *Prior_Read(FILE *fp);
+extern void     PriorifyCM(CM_t *cm, const Prior_t *pri);
+extern Prior_t *Prior_Default(void);
+extern struct p7prior_s *P7DefaultInfernalPrior(void);
+
+/* from stats.c */
+extern CMStats_t *AllocCMStats(int np);
+extern void FreeCMStats(CMStats_t *cmstats);
+extern int SetCMCutoff(CM_t *cm, int cm_cutoff_type, float cm_sc_cutoff, float cm_e_cutoff);
+extern int SetCP9Cutoff(CM_t *cm, int cp9_cutoff_type, float cp9_sc_cutoff, float cp9_e_cutoff,
+			float cm_e_cutoff);
+extern int PrintSearchInfo(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N);
+extern int debug_print_cmstats(CMStats_t *cmstats, int has_fthr);
+extern int debug_print_gumbelinfo(GumbelInfo_t *evd);
+extern int debug_print_filterthrinfo(CMStats_t *cmstats, CP9FilterThr_t *fthr);
+
+extern int  get_gc_comp(ESL_SQ *sq, int start, int stop);
+extern void OLD_serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
+				       CM_t *cm, int num_samples, 
+				       int sample_length, int doing_cp9_stats,
+				       int use_easel);
+extern void GetDBInfo(const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, long *ret_N, double **ret_gc_ct);
+
+extern float e_to_score (float E, double *mu, double *lambda);
+
+extern double RJK_ExtremeValueE (float x, double mu, double lambda);
+
+extern char resolve_degenerate (ESL_RANDOMNESS *r, char c);
+
+extern float MinCMScCutoff (CM_t *cm);
+extern float MinCP9ScCutoff (CM_t *cm);
+extern int   CM2Gumbel_mode(CM_t *cm, int *ret_cm_gum_mode, int *ret_cp9_gum_mode);
+extern int   CopyFThrInfo(CP9FilterThr_t *src, CP9FilterThr_t *dest);
+extern int   CopyCMStatsGumbel(CMStats_t *src, CMStats_t *dest);
+extern int   CopyCMStats(CMStats_t *src, CMStats_t *dest);
+#ifdef HAVE_MPI
+extern void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions, 
+			      CM_t *cm, int num_samples, int sample_length,
+			      int doing_cp9_stats,
+			      int mpi_my_rank, int mpi_num_procs, 
+			      int mpi_master_rank);
+#endif
 
 /* from mpisupport.c */
 #if HAVE_MPI

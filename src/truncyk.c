@@ -7,9 +7,8 @@
 #include "easel.h"
 #include "esl_stack.h"
 
-#include "structs.h"
 #include "funcs.h"
-#include "cm_postprob.h"
+#include "structs.h"
 
 #define BE_EFFICIENT 0
 #define BE_PARANOID  1

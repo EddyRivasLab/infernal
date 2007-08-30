@@ -30,9 +30,8 @@
 #include "esl_msa.h"   
 #include "esl_stopwatch.h"
 
-#include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
-#include "cm_postprob.h"
+#include "structs.h"		/* data structures, macros, #define's   */
 
 /*****************************************************************
  * CM {F,I}Inside() & {F,I}Outside() functions.
@@ -65,11 +64,10 @@
  *           system: [0..v..M-1][0..j..L][0..d..j]. However, we're
  *           only calculating a part of that matrix: i0-1..j in the rows, 
  *           and up to j0-i0+1 in the columns (d dimension). Where this is 
- *           handled the most is in two variables: W, which is the length of 
- *           the subsequence (j0-i0+1), and is oft used in place of L in the 
- *           usual CYK; and jp (read: j'), which is the *relative* j w.r.t. the
- *           subsequence, ranging from 0..W, and then d ranges from 
- *           0 to jp, and j is calculated from jp (i0-1+jp).
+ *           handled the most is in two variables: L, which is the length of 
+ *           the subsequence (j0-i0+1), and jp (read: j'), which is the 
+ *           *relative* j w.r.t. the subsequence, ranging from 0..L, and 
+ *           then d ranges from 0 to jp, and j is calculated from jp (i0-1+jp).
  *           
  *           The caller is allowed to provide us with a preexisting
  *           matrix and/or deckpool (thru "alpha" and "dpool"), or
@@ -82,7 +80,7 @@
  *           
  *
  * Args:     cm        - the model    [0..M-1]
- *           sq        - the sequence (digitized) [1..L]   
+ *           dsq       - the digitized sequence 
  *           i0        - first position in subseq to align (1, for whole seq)
  *           j0        - last position in subseq to align (L, for whole seq)
  *           do_full   - if TRUE, we save all the decks in alpha, instead of
@@ -106,15 +104,11 @@
  * Returns: log P(S|M)/P(S|R), as a bit score.
  */
 float 
-FInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
+FInside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
        float ***alpha, float ****ret_alpha, 
        struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
        int allow_begin)
 {
-  /* Contract check */
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in FInside(), sq is not digitized.\n");
-
   int      status;
   float  **end;         /* we re-use the end deck. */
   int      nends;       /* counter that tracks when we can release end deck to the pool */
@@ -123,21 +117,25 @@ FInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
   int      j,d,i,k;	/* indices in sequence dimensions */
   float    sc;		/* a temporary variable holding a score */
   int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
-  int      W;		/* subsequence length */
+  int      L;		/* subsequence length */
   int      jp;		/* j': relative position in the subsequence  */
   float    bsc;		/* total score for using local begin states */
-  
+
+  /* Contract check */
+  if(dsq == NULL)
+    esl_fatal("ERROR in FInside(), dsq is NULL.\n");
+
   /* Allocations and initializations
    */
   bsc = IMPOSSIBLE;
-  W   = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
+  L   = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
 				/* if caller didn't give us a deck pool, make one */
 
   if (dpool == NULL) dpool = deckpool_create();
   if (! deckpool_pop(dpool, &end))
-    end = alloc_vjd_deck(sq->n, i0, j0);
+    end = alloc_vjd_deck(L, i0, j0);
   nends = CMSubtreeCountStatetype(cm, 0, E_st);
-  for (jp = 0; jp <= W; jp++) {
+  for (jp = 0; jp <= L; jp++) {
     j = i0+jp-1;		/* e.g. j runs from 0..L on whole seq */
     end[j][0] = 0.;
     for (d = 1; d <= jp; d++) end[j][d] = IMPOSSIBLE;
@@ -162,8 +160,8 @@ FInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
   if(cm->flags & CM_LOCAL_BEGIN)
     {
       if (! deckpool_pop(dpool, &(alpha[cm->M]))) 
-	alpha[cm->M] = alloc_vjd_deck(sq->n, i0, j0);
-      for (jp = 0; jp <= W; jp++) {
+	alpha[cm->M] = alloc_vjd_deck(L, i0, j0);
+      for (jp = 0; jp <= L; jp++) {
 	j = i0-1+jp;
 	alpha[cm->M][j][0] = 0.;
 	/*alpha[cm->M][j][0] = IMPOSSIBLE;*/
@@ -187,11 +185,11 @@ FInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	alpha[v] = end; continue; 
       } 
       if (! deckpool_pop(dpool, &(alpha[v]))) 
-	alpha[v] = alloc_vjd_deck(sq->n, i0, j0);
+	alpha[v] = alloc_vjd_deck(L, i0, j0);
 
       if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
 	{
-	  for (jp = 0; jp <= W; jp++) {
+	  for (jp = 0; jp <= L; jp++) {
 	    j = i0-1+jp;
 	    for (d = 0; d <= jp; d++)
 	      {
@@ -210,7 +208,7 @@ FInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	}
       else if (cm->sttype[v] == B_st)
 	{
-	  for (jp = 0; jp <= W; jp++) {
+	  for (jp = 0; jp <= L; jp++) {
 	    j = i0-1+jp;
 	    for (d = 0; d <= jp; d++)
 	      {
@@ -227,7 +225,7 @@ FInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	}
       else if (cm->sttype[v] == MP_st)
 	{
-	  for (jp = 0; jp <= W; jp++) {
+	  for (jp = 0; jp <= L; jp++) {
 	    j = i0-1+jp;
 	    alpha[v][j][0] = IMPOSSIBLE;
 	    if (jp > 0) alpha[v][j][1] = IMPOSSIBLE;
@@ -243,10 +241,10 @@ FInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 							      + cm->tsc[v][yoffset]));
 		  }
 		i = j-d+1;
-		if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
-		  alpha[v][j][d] += cm->esc[v][(sq->dsq[i]*cm->abc->K+sq->dsq[j])];
+		if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
+		  alpha[v][j][d] += cm->esc[v][(dsq[i]*cm->abc->K+dsq[j])];
 		else
-		  alpha[v][j][d] += DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i], sq->dsq[j]);
+		  alpha[v][j][d] += DegeneratePairScore(cm->abc, cm->esc[v], dsq[i], dsq[j]);
 
 		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 	      }
@@ -254,7 +252,7 @@ FInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	}
       else if (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st)
 	{
-	  for (jp = 0; jp <= W; jp++) {
+	  for (jp = 0; jp <= L; jp++) {
 	    j = i0-1+jp;
 	    alpha[v][j][0] = IMPOSSIBLE;
 	    for (d = 1; d <= jp; d++)
@@ -268,17 +266,17 @@ FInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 							    + cm->tsc[v][yoffset]));
 		  }
 		i = j-d+1;
-		if (sq->dsq[i] < cm->abc->K)
-		  alpha[v][j][d] += cm->esc[v][sq->dsq[i]];
+		if (dsq[i] < cm->abc->K)
+		  alpha[v][j][d] += cm->esc[v][dsq[i]];
 		else
-		  alpha[v][j][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[i], cm->esc[v]);		
+		  alpha[v][j][d] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);		
 		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 	      }
 	  }
 	}
       else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st)
 	{
-	  for (jp = 0; jp <= W; jp++) {
+	  for (jp = 0; jp <= L; jp++) {
 	    j = i0-1+jp;
 	    alpha[v][j][0] = IMPOSSIBLE;
 	    for (d = 1; d <= jp; d++)
@@ -291,10 +289,10 @@ FInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 		    alpha[v][j][d] = LogSum2(alpha[v][j][d], (alpha[y][j-1][d-1] 
 							      + cm->tsc[v][yoffset]));
 		  }
-		if (sq->dsq[j] < cm->abc->K)
-		  alpha[v][j][d] += cm->esc[v][sq->dsq[j]];
+		if (dsq[j] < cm->abc->K)
+		  alpha[v][j][d] += cm->esc[v][dsq[j]];
 		else
-		  alpha[v][j][d] += esl_abc_FAvgScore(cm->abc, sq->dsq[j], cm->esc[v]);		
+		  alpha[v][j][d] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);		
 		
 		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 	      }
@@ -304,13 +302,13 @@ FInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
       /* Keep track of contributions of local begins */
       if (allow_begin)
 	{
-	  bsc = LogSum2(bsc, (alpha[v][j0][W] + cm->beginsc[v]));
+	  bsc = LogSum2(bsc, (alpha[v][j0][L] + cm->beginsc[v]));
 	}
 
       /* If we're at the root state, record contribution of local begins */
       if (allow_begin && v == 0)
 	{
-	  alpha[0][j0][W] = LogSum2(alpha[0][j0][W], bsc);
+	  alpha[0][j0][L] = LogSum2(alpha[0][j0][L], bsc);
 	}	  
 
       /* Now, if we're trying to reuse memory in our normal mode (e.g. ! do_full):
@@ -354,7 +352,7 @@ FInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
    * and end is NULL.
    * We could check this status to be sure (and we used to) but now we trust. 
    */
-  sc = alpha[0][j0][W];
+  sc = alpha[0][j0][L];
 
   /* If the caller doesn't want the matrix, free it (saving the decks in the pool!)
    * Else, pass it back to him.
@@ -392,15 +390,11 @@ FInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
  * instead of float log odds scores.
  */
 float
-IInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
+IInside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
        int   ***alpha, int   ****ret_alpha, 
        Ideckpool_t *dpool, Ideckpool_t **ret_dpool,
        int allow_begin)
 {
-  /* Contract check */
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in IInside(), sq is not digitized.\n");
-
   int      status;
   int    **end;         /* we re-use the end deck. */
   int      nends;       /* counter that tracks when we can release end deck to the pool */
@@ -409,21 +403,25 @@ IInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
   int      j,d,i,k;	/* indices in sequence dimensions */
   float    return_sc;   /* the return score, converted to bits (Scorified) */
   int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
-  int      W;		/* subsequence length */
+  int      L;		/* subsequence length */
   int      jp;		/* j': relative position in the subsequence  */
   int      bsc;		/* total score for using local begin states */
   
+  /* Contract check */
+  if(dsq == NULL)
+    esl_fatal("ERROR in IInside(), dsq is NULL.\n");
+
   /* Allocations and initializations
    */
   bsc = -INFTY;
-  W   = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
+  L   = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
 				/* if caller didn't give us a deck pool, make one */
 
   if (dpool == NULL) dpool = Ideckpool_create();
   if (! Ideckpool_pop(dpool, &end))
-    end = Ialloc_vjd_deck(sq->n, i0, j0);
+    end = Ialloc_vjd_deck(L, i0, j0);
   nends = CMSubtreeCountStatetype(cm, 0, E_st);
-  for (jp = 0; jp <= W; jp++) {
+  for (jp = 0; jp <= L; jp++) {
     j = i0+jp-1;		/* e.g. j runs from 0..L on whole seq */
     end[j][0] = 0.;
     for (d = 1; d <= jp; d++) end[j][d] = -INFTY;
@@ -448,8 +446,8 @@ IInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
   if(cm->flags & CM_LOCAL_BEGIN)
     {
       if (! Ideckpool_pop(dpool, &(alpha[cm->M]))) 
-	alpha[cm->M] = Ialloc_vjd_deck(sq->n, i0, j0);
-      for (jp = 0; jp <= W; jp++) {
+	alpha[cm->M] = Ialloc_vjd_deck(L, i0, j0);
+      for (jp = 0; jp <= L; jp++) {
 	j = i0-1+jp;
 	alpha[cm->M][j][0] = Prob2Score(1.0, 1.0);
 	/*alpha[cm->M][j][0] = IMPOSSIBLE;*/
@@ -473,11 +471,11 @@ IInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	alpha[v] = end; continue; 
       } 
       if (! Ideckpool_pop(dpool, &(alpha[v]))) 
-	alpha[v] = Ialloc_vjd_deck(sq->n, i0, j0);
+	alpha[v] = Ialloc_vjd_deck(L, i0, j0);
 
       if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
 	{
-	  for (jp = 0; jp <= W; jp++) {
+	  for (jp = 0; jp <= L; jp++) {
 	    j = i0-1+jp;
 	    for (d = 0; d <= jp; d++)
 	      {
@@ -496,7 +494,7 @@ IInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	}
       else if (cm->sttype[v] == B_st)
 	{
-	  for (jp = 0; jp <= W; jp++) {
+	  for (jp = 0; jp <= L; jp++) {
 	    j = i0-1+jp;
 	    for (d = 0; d <= jp; d++)
 	      {
@@ -513,7 +511,7 @@ IInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	}
       else if (cm->sttype[v] == MP_st)
 	{
-	  for (jp = 0; jp <= W; jp++) {
+	  for (jp = 0; jp <= L; jp++) {
 	    j = i0-1+jp;
 	    alpha[v][j][0] = -INFTY;
 	    if (jp > 0) alpha[v][j][1] = -INFTY;
@@ -529,10 +527,10 @@ IInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 							      + cm->itsc[v][yoffset]));
 		  }
 		i = j-d+1;
-		if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
-		  alpha[v][j][d] += cm->iesc[v][(sq->dsq[i]*cm->abc->K+sq->dsq[j])];
+		if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
+		  alpha[v][j][d] += cm->iesc[v][(dsq[i]*cm->abc->K+dsq[j])];
 		else
-		  alpha[v][j][d] += iDegeneratePairScore(cm->abc, cm->iesc[v], sq->dsq[i], sq->dsq[j]);
+		  alpha[v][j][d] += iDegeneratePairScore(cm->abc, cm->iesc[v], dsq[i], dsq[j]);
 
 		if (alpha[v][j][d] < -INFTY) alpha[v][j][d] = -INFTY;
 	      }
@@ -540,7 +538,7 @@ IInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	}
       else if (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st)
 	{
-	  for (jp = 0; jp <= W; jp++) {
+	  for (jp = 0; jp <= L; jp++) {
 	    j = i0-1+jp;
 	    alpha[v][j][0] = -INFTY;
 	    for (d = 1; d <= jp; d++)
@@ -554,10 +552,10 @@ IInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 							    + cm->itsc[v][yoffset]));
 		  }
 		i = j-d+1;
-		if (sq->dsq[i] < cm->abc->K)
-		  alpha[v][j][d] += cm->iesc[v][sq->dsq[i]];
+		if (dsq[i] < cm->abc->K)
+		  alpha[v][j][d] += cm->iesc[v][dsq[i]];
 		else
-		  alpha[v][j][d] += esl_abc_IAvgScore(cm->abc, sq->dsq[i], cm->iesc[v]);		
+		  alpha[v][j][d] += esl_abc_IAvgScore(cm->abc, dsq[i], cm->iesc[v]);		
 		
 		if (alpha[v][j][d] < -INFTY) alpha[v][j][d] = -INFTY;
 	      }
@@ -565,7 +563,7 @@ IInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	}
       else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st)
 	{
-	  for (jp = 0; jp <= W; jp++) {
+	  for (jp = 0; jp <= L; jp++) {
 	    j = i0-1+jp;
 	    alpha[v][j][0] = -INFTY;
 	    for (d = 1; d <= jp; d++)
@@ -578,10 +576,10 @@ IInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 		    alpha[v][j][d] = ILogsum(alpha[v][j][d], (alpha[y][j-1][d-1] 
 							      + cm->itsc[v][yoffset]));
 		  }
-		if (sq->dsq[j] < cm->abc->K)
-		  alpha[v][j][d] += cm->iesc[v][sq->dsq[j]];
+		if (dsq[j] < cm->abc->K)
+		  alpha[v][j][d] += cm->iesc[v][dsq[j]];
 		else
-		  alpha[v][j][d] += esl_abc_IAvgScore(cm->abc, sq->dsq[j], cm->iesc[v]);		
+		  alpha[v][j][d] += esl_abc_IAvgScore(cm->abc, dsq[j], cm->iesc[v]);		
 		
 		if (alpha[v][j][d] < -INFTY) alpha[v][j][d] = -INFTY;
 	      }
@@ -591,13 +589,13 @@ IInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
       /* Keep track of contributions of local begins */
       if (allow_begin)
 	{
-	  bsc = ILogsum(bsc, (alpha[v][j0][W] + cm->ibeginsc[v]));
+	  bsc = ILogsum(bsc, (alpha[v][j0][L] + cm->ibeginsc[v]));
 	}
 
       /* If we're at the root state, record contribution of local begins */
       if (allow_begin && v == 0)
 	{
-	  alpha[0][j0][W] = ILogsum(alpha[0][j0][W], bsc);
+	  alpha[0][j0][L] = ILogsum(alpha[0][j0][L], bsc);
 	}	  
 
       /* Now, if we're trying to reuse memory in our normal mode (e.g. ! do_full):
@@ -641,7 +639,7 @@ IInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
    * and end is NULL.
    * We could check this status to be sure (and we used to) but now we trust. 
    */
-  return_sc = Scorify(alpha[0][j0][W]);
+  return_sc = Scorify(alpha[0][j0][L]);
 
   /* If the caller doesn't want the matrix, free it (saving the decks in the pool!)
    * Else, pass it back to him.
@@ -692,9 +690,8 @@ IInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
  * 
  * Args:     cm        - the model    [0..M-1]
  *           dsq       - the sequence [1..L]   
- *           L         - length of the dsq
  *           i0        - first position in subseq to align (1, for whole seq)
- *           j0        - last position in subseq to align (sq->n, for whole seq)
+ *           j0        - last position in subseq to align (L, for whole seq)
  *           do_full   - if TRUE, we save all the decks in alpha and beta, instead of
  *                       working in our default memory-efficient mode where 
  *                       we reuse decks and only the uppermost deck (vroot) is valid
@@ -722,16 +719,12 @@ IInside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
  * Returns: log P(S|M)/P(S|R), as a bit score.
  ***********************************************************************/
 float 
-FOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
+FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 	 float ***beta, float ****ret_beta, 
 	 struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
 	 int allow_begin, float ***alpha, float ****ret_alpha, 
 	 int do_check)
 {
-  /* Contract check */
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in FOutside(), sq is not digitized.\n");
-
   int      status;
   int      v,y,z;	/* indices for states */
   int      j,d,i,k;	/* indices in sequence dimensions */
@@ -739,7 +732,7 @@ FOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
   int     *touch;       /* keeps track of how many higher decks still need this deck */
   float    escore;	/* an emission score, tmp variable */
   int      voffset;	/* index of v in t_v(y) transition scores */
-  int      W;		/* subsequence length */
+  int      L;		/* subsequence length */
   int      jp;		/* j': relative position in the subsequence  */
   float    bsc;		/* total score for using local begin states */
   float    return_sc;   /* P(S|M)/P(S|R) */
@@ -748,13 +741,17 @@ FOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
   float    diff;        /* temp variable used only if do_check = TRUE */
   float  **end;         /* we re-use the end deck. */
 
+  /* Contract check */
+  if(dsq == NULL)
+    esl_fatal("ERROR in FOutside(), dsq is NULL.\n");
+
   if (cm->flags & CM_LOCAL_END) { do_check = FALSE; } 
   /* Code for checking doesn't apply in local mode. See below. */
 
   /* Allocations and initializations
    */
   bsc = IMPOSSIBLE;
-  W   = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
+  L   = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
 				/* if caller didn't give us a deck pool, make one */
   if (dpool == NULL) dpool = deckpool_create();
 
@@ -770,20 +767,20 @@ FOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
   /* Initialize the root deck. Root is necessarily the ROOT_S state 0.
    */
   if (! deckpool_pop(dpool, &(beta[0])))
-    beta[0] = alloc_vjd_deck(sq->n, i0, j0);
-  for (jp = 0; jp <= W; jp++) {
+    beta[0] = alloc_vjd_deck(L, i0, j0);
+  for (jp = 0; jp <= L; jp++) {
     j = i0-1+jp;
     for (d = 0; d <= jp; d++)
       beta[0][j][d] = IMPOSSIBLE;
   }
-  beta[0][j0][W] = 0;		
+  beta[0][j0][L] = 0;		
 
   /* Initialize the EL deck at M, if we're doing local alignment w.r.t. ends.
    */
   if (cm->flags & CM_LOCAL_END) {
     if (! deckpool_pop(dpool, &(beta[cm->M])))
-      beta[cm->M] = alloc_vjd_deck(sq->n, i0, j0);
-    for (jp = 0; jp <= W; jp++) {
+      beta[cm->M] = alloc_vjd_deck(L, i0, j0);
+    for (jp = 0; jp <= L; jp++) {
       j = i0-1+jp;
       for (d = 0; d <= jp; d++)
 	beta[cm->M][j][d] = IMPOSSIBLE;
@@ -810,25 +807,25 @@ FOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
        * a fresh one.
        */
       if (! deckpool_pop(dpool, &(beta[v])))
-	beta[v] = alloc_vjd_deck(sq->n, i0, j0);
+	beta[v] = alloc_vjd_deck(L, i0, j0);
 
       /* Init the whole deck to IMPOSSIBLE
        */
-      for (jp = W; jp >= 0; jp--) {
+      for (jp = L; jp >= 0; jp--) {
 	j = i0-1+jp;
 	for (d = jp; d >= 0; d--) 
 	  beta[v][j][d] = IMPOSSIBLE;
       }
 
       /* If we can do a local begin into v, also init with that. 
-       * By definition, beta[0][j0][W] == 0.
+       * By definition, beta[0][j0][L] == 0.
        */ 
-      if (i0 == 1 && j0 == sq->n && (cm->flags & CM_LOCAL_BEGIN))
-	beta[v][j0][W] = cm->beginsc[v];
+      if (i0 == 1 && j0 == L && (cm->flags & CM_LOCAL_BEGIN))
+	beta[v][j0][L] = cm->beginsc[v];
 
       /* main recursion:
        */
-      for (jp = W; jp >= 0; jp--) {
+      for (jp = L; jp >= 0; jp--) {
 	j = i0-1+jp;
 	for (d = jp; d >= 0; d--) 
 	  {
@@ -838,7 +835,7 @@ FOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 		z = cm->cnum[y];	/* the other (right) S state */
 
 		beta[v][j][d] = beta[y][j][d] + alpha[z][j][0]; /* init on k=0 */
-		for (k = 1; k <= sq->n-j; k++)
+		for (k = 1; k <= L-j; k++)
 		  beta[v][j][d] = LogSum2(beta[v][j][d], (beta[y][j+k][d+k] + alpha[z][j+k][k]));
 	      }
 	    else if (cm->stid[v] == BEGR_S) 
@@ -859,10 +856,10 @@ FOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 		  case MP_st: 
 		    if (j == j0 || d == jp) continue; /* boundary condition */
 		    
-		    if (sq->dsq[i-1] < cm->abc->K && sq->dsq[j+1] > cm->abc->K)
-		      escore = cm->esc[y][(sq->dsq[i-1]*cm->abc->K+sq->dsq[j+1])];
+		    if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		      escore = cm->esc[y][(dsq[i-1]*cm->abc->K+dsq[j+1])];
 		    else
-		      escore = DegeneratePairScore(cm->abc, cm->esc[y], sq->dsq[i-1], sq->dsq[j+1]);
+		      escore = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
 		    beta[v][j][d] = LogSum2(beta[v][j][d], (beta[y][j+1][d+2] + cm->tsc[y][voffset]
 							   + escore));
 		    break;
@@ -871,10 +868,10 @@ FOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 		  case IL_st: 
 		    if (d == jp) continue;	/* boundary condition (note when j=0, d=0)*/
 		    
-		    if (sq->dsq[i-1] < cm->abc->K) 
-		      escore = cm->esc[y][sq->dsq[i-1]];
+		    if (dsq[i-1] < cm->abc->K) 
+		      escore = cm->esc[y][dsq[i-1]];
 		    else
-		      escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i-1], cm->esc[y]);
+		      escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[y]);
 		    beta[v][j][d] = LogSum2(beta[v][j][d], (beta[y][j][d+1] + cm->tsc[y][voffset] 
 							   + escore));
 		    break;
@@ -883,10 +880,10 @@ FOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 		  case IR_st:
 		    if (j == j0) continue;
 		    
-		    if (sq->dsq[j+1] < cm->abc->K) 
-		      escore = cm->esc[y][sq->dsq[j+1]];
+		    if (dsq[j+1] < cm->abc->K) 
+		      escore = cm->esc[y][dsq[j+1]];
 		    else
-		      escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j+1], cm->esc[y]);
+		      escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[y]);
 		    beta[v][j][d] = LogSum2(beta[v][j][d], (beta[y][j+1][d+1] + cm->tsc[y][voffset] 
 							   + escore));
 		    break;
@@ -909,7 +906,7 @@ FOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
        * (EL = deck at M.)
        */
       if (NOT_IMPOSSIBLE(cm->endsc[v])) {
-	for (jp = 0; jp <= W; jp++) { 
+	for (jp = 0; jp <= L; jp++) { 
 	  j = i0-1+jp;
 	  for (d = 0; d <= jp; d++) 
 	    {
@@ -917,30 +914,30 @@ FOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	      switch (cm->sttype[v]) {
 	      case MP_st: 
 		if (j == j0 || d == jp) continue; /* boundary condition */
-		if (sq->dsq[i-1] < cm->abc->K && sq->dsq[j+1] > cm->abc->K)
-		  escore = cm->esc[v][(sq->dsq[i-1]*cm->abc->K+sq->dsq[j+1])];
+		if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		  escore = cm->esc[v][(dsq[i-1]*cm->abc->K+dsq[j+1])];
 		else
-		  escore = DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i-1], sq->dsq[j+1]);
+		  escore = DegeneratePairScore(cm->abc, cm->esc[v], dsq[i-1], dsq[j+1]);
 		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][j+1][d+2] + cm->endsc[v] 
 								+ escore));
 		break;
 	      case ML_st:
 	      case IL_st:
 		if (d == jp) continue;	
-		if (sq->dsq[i-1] < cm->abc->K) 
-		  escore = cm->esc[v][sq->dsq[i-1]];
+		if (dsq[i-1] < cm->abc->K) 
+		  escore = cm->esc[v][dsq[i-1]];
 		else
-		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i-1], cm->esc[v]);
+		  escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[v]);
 		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][j][d+1] + cm->endsc[v] 
 								+ escore));
 		break;
 	      case MR_st:
 	      case IR_st:
 		if (j == j0) continue;
-		if (sq->dsq[j+1] < cm->abc->K) 
-		  escore = cm->esc[v][sq->dsq[j+1]];
+		if (dsq[j+1] < cm->abc->K) 
+		  escore = cm->esc[v][dsq[j+1]];
 		else
-		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j+1], cm->esc[v]);
+		  escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[v]);
 		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][j+1][d+1] + cm->endsc[v]
 								+ escore));
 		break;
@@ -986,7 +983,7 @@ FOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
    * (EL = deck at M.)
    */
   if (cm->flags & CM_LOCAL_END) {
-    for (jp = W; jp > 0; jp--) { /* careful w/ boundary here */
+    for (jp = L; jp > 0; jp--) { /* careful w/ boundary here */
       j = i0-1+jp;
       for (d = jp-1; d >= 0; d--) /* careful w/ boundary here */
 	beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[cm->M][j][d+1]
@@ -1022,7 +1019,7 @@ FOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	  num_split_states = SplitStatesInNode(cm->ndtype[n]);
 	  for(v = cm->nodemap[n]; v < cm->nodemap[n] + num_split_states; v++)
 	    {
-	      for (jp = 0; jp <= W; jp++) 
+	      for (jp = 0; jp <= L; jp++) 
 		{ 
 		  j = i0-1+jp;
 		  for (d = 0; d <= jp; d++) 
@@ -1031,11 +1028,11 @@ FOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 		    }
 		}
 	      }
-	  diff = alpha[0][j0][W] - sc;
+	  diff = alpha[0][j0][L] - sc;
 	  if(diff > 0.001 || diff < -0.001)
 	    {
 	      esl_fatal("ERROR: node %d P(S|M): %.5f inconsistent with Inside P(S|M): %.5f (diff: %.5f)\n", 
-		  n, sc, alpha[0][j0][W], diff);
+		  n, sc, alpha[0][j0][L], diff);
 	    }
 	}
 
@@ -1064,7 +1061,7 @@ FOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
   if(!(cm->flags & CM_LOCAL_END))
     {
       return_sc = IMPOSSIBLE;
-      for (jp = 0; jp <= W; jp++) 
+      for (jp = 0; jp <= L; jp++) 
 	{ 
 	  j = i0-1+jp;
 	  /* printf("\talpha[%3d][%3d][%3d]: %5.2f | beta[%3d][%3d][%3d]: %5.2f\n", (cm->M-1), (j), 0, alpha[(cm->M-1)][j][0], (cm->M-1), (j), 0, beta[(cm->M-1)][j][0]);*/
@@ -1073,7 +1070,7 @@ FOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
     }
   else /* return_sc = P(S|M) / P(S|R) from Inside() */
     {
-      return_sc = alpha[0][j0][W];
+      return_sc = alpha[0][j0][L];
     }
   /* If the caller doesn't want the beta matrix, free it.
    * (though it would be *stupid* for the caller not to want the
@@ -1132,16 +1129,12 @@ FOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
  * instead of float log odds scores.
  */
 float
-IOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
+IOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 	 int   ***beta, int   ****ret_beta, 
 	 Ideckpool_t *dpool, Ideckpool_t **ret_dpool,
 	 int allow_begin, int   ***alpha, int   ****ret_alpha, 
 	 int do_check)
 {
-  /* Contract check */
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in IOutside(), sq is not digitized.\n");
-
   int      status;
   int      v,y,z;	/* indices for states */
   int      j,d,i,k;	/* indices in sequence dimensions */
@@ -1150,7 +1143,7 @@ IOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
   int     *touch;       /* keeps track of how many higher decks still need this deck */
   int      iescore;	/* an emission score, tmp variable */
   int      voffset;	/* index of v in t_v(y) transition scores */
-  int      W;		/* subsequence length */
+  int      L;		/* subsequence length */
   int      jp;		/* j': relative position in the subsequence  */
   int      bsc;		/* total score for using local begin states */
   int      ireturn_sc;  /* P(S|M)/P(S|R), a scaled int*/
@@ -1160,13 +1153,17 @@ IOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
   float    diff;        /* temp variable used only if do_check = TRUE */
   int    **end;         /* we re-use the end deck. */
 
+  /* Contract check */
+  if(dsq == NULL)
+    esl_fatal("ERROR in IOutside(), dsq is NULL.\n");
+
   if (cm->flags & CM_LOCAL_END) { do_check = FALSE; } 
   /* Code for checking doesn't apply in local mode. See below. */
 
   /* Allocations and initializations
    */
   bsc = -INFTY;
-  W   = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
+  L   = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
 				/* if caller didn't give us a deck pool, make one */
   if (dpool == NULL) dpool = Ideckpool_create();
 
@@ -1182,20 +1179,20 @@ IOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
   /* Initialize the root deck. Root is necessarily the ROOT_S state 0.
    */
   if (! Ideckpool_pop(dpool, &(beta[0])))
-    beta[0] = Ialloc_vjd_deck(sq->n, i0, j0);
-  for (jp = 0; jp <= W; jp++) {
+    beta[0] = Ialloc_vjd_deck(L, i0, j0);
+  for (jp = 0; jp <= L; jp++) {
     j = i0-1+jp;
     for (d = 0; d <= jp; d++)
       beta[0][j][d] = -INFTY;
   }
-  beta[0][j0][W] = 0;		
+  beta[0][j0][L] = 0;		
 
   /* Initialize the EL deck at M, if we're doing local alignment w.r.t. ends.
    */
   if (cm->flags & CM_LOCAL_END) {
     if (! Ideckpool_pop(dpool, &(beta[cm->M])))
-      beta[cm->M] = Ialloc_vjd_deck(sq->n, i0, j0);
-    for (jp = 0; jp <= W; jp++) {
+      beta[cm->M] = Ialloc_vjd_deck(L, i0, j0);
+    for (jp = 0; jp <= L; jp++) {
       j = i0-1+jp;
       for (d = 0; d <= jp; d++)
 	beta[cm->M][j][d] = -INFTY;
@@ -1222,25 +1219,25 @@ IOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
        * a fresh one.
        */
       if (! Ideckpool_pop(dpool, &(beta[v])))
-	beta[v] = Ialloc_vjd_deck(sq->n, i0, j0);
+	beta[v] = Ialloc_vjd_deck(L, i0, j0);
 
       /* Init the whole deck to -INFTY
        */
-      for (jp = W; jp >= 0; jp--) {
+      for (jp = L; jp >= 0; jp--) {
 	j = i0-1+jp;
 	for (d = jp; d >= 0; d--) 
 	  beta[v][j][d] = -INFTY;
       }
 
       /* If we can do a local begin into v, also init with that. 
-       * By definition, beta[0][j0][W] == 0.
+       * By definition, beta[0][j0][L] == 0.
        */ 
-      if (i0 == 1 && j0 == sq->n && (cm->flags & CM_LOCAL_BEGIN))
-	beta[v][j0][W] = cm->ibeginsc[v];
+      if (i0 == 1 && j0 == L && (cm->flags & CM_LOCAL_BEGIN))
+	beta[v][j0][L] = cm->ibeginsc[v];
 
       /* main recursion:
        */
-      for (jp = W; jp >= 0; jp--) {
+      for (jp = L; jp >= 0; jp--) {
 	j = i0-1+jp;
 	for (d = jp; d >= 0; d--) 
 	  {
@@ -1250,7 +1247,7 @@ IOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 		z = cm->cnum[y];	/* the other (right) S state */
 
 		beta[v][j][d] = beta[y][j][d] + alpha[z][j][0]; /* init on k=0 */
-		for (k = 1; k <= sq->n-j; k++)
+		for (k = 1; k <= L-j; k++)
 		  beta[v][j][d] = ILogsum(beta[v][j][d], (beta[y][j+k][d+k] + alpha[z][j+k][k]));
 	      }
 	    else if (cm->stid[v] == BEGR_S) 
@@ -1271,10 +1268,10 @@ IOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 		  case MP_st: 
 		    if (j == j0 || d == jp) continue; /* boundary condition */
 		    
-		    if (sq->dsq[i-1] < cm->abc->K && sq->dsq[j+1] > cm->abc->K)
-		      iescore = cm->iesc[y][(sq->dsq[i-1]*cm->abc->K+sq->dsq[j+1])];
+		    if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		      iescore = cm->iesc[y][(dsq[i-1]*cm->abc->K+dsq[j+1])];
 		    else
-		      iescore = iDegeneratePairScore(cm->abc, cm->iesc[y], sq->dsq[i-1], sq->dsq[j+1]);
+		      iescore = iDegeneratePairScore(cm->abc, cm->iesc[y], dsq[i-1], dsq[j+1]);
 		    beta[v][j][d] = ILogsum(beta[v][j][d], (beta[y][j+1][d+2] + cm->itsc[y][voffset]
 							   + iescore));
 		    break;
@@ -1283,10 +1280,10 @@ IOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 		  case IL_st: 
 		    if (d == jp) continue;	/* boundary condition (note when j=0, d=0)*/
 		    
-		    if (sq->dsq[i-1] < cm->abc->K) 
-		      iescore = cm->iesc[y][sq->dsq[i-1]];
+		    if (dsq[i-1] < cm->abc->K) 
+		      iescore = cm->iesc[y][dsq[i-1]];
 		    else
-		      iescore = esl_abc_IAvgScore(cm->abc, sq->dsq[i-1], cm->iesc[y]);
+		      iescore = esl_abc_IAvgScore(cm->abc, dsq[i-1], cm->iesc[y]);
 		    beta[v][j][d] = ILogsum(beta[v][j][d], (beta[y][j][d+1] + cm->itsc[y][voffset] 
 							   + iescore));
 		    break;
@@ -1295,10 +1292,10 @@ IOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 		  case IR_st:
 		    if (j == j0) continue;
 		    
-		    if (sq->dsq[j+1] < cm->abc->K) 
-		      iescore = cm->iesc[y][sq->dsq[j+1]];
+		    if (dsq[j+1] < cm->abc->K) 
+		      iescore = cm->iesc[y][dsq[j+1]];
 		    else
-		      iescore = esl_abc_IAvgScore(cm->abc, sq->dsq[j+1], cm->iesc[y]);
+		      iescore = esl_abc_IAvgScore(cm->abc, dsq[j+1], cm->iesc[y]);
 		    beta[v][j][d] = ILogsum(beta[v][j][d], (beta[y][j+1][d+1] + cm->itsc[y][voffset] 
 							   + iescore));
 		    break;
@@ -1321,7 +1318,7 @@ IOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
        * (EL = deck at M.)
        */
       if (cm->iendsc[v] != -INFTY) {
-	for (jp = 0; jp <= W; jp++) { 
+	for (jp = 0; jp <= L; jp++) { 
 	  j = i0-1+jp;
 	  for (d = 0; d <= jp; d++) 
 	    {
@@ -1329,30 +1326,30 @@ IOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	      switch (cm->sttype[v]) {
 	      case MP_st: 
 		if (j == j0 || d == jp) continue; /* boundary condition */
-		if (sq->dsq[i-1] < cm->abc->K && sq->dsq[j+1] > cm->abc->K)
-		  iescore = cm->iesc[v][(sq->dsq[i-1]*cm->abc->K+sq->dsq[j+1])];
+		if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		  iescore = cm->iesc[v][(dsq[i-1]*cm->abc->K+dsq[j+1])];
 		else
-		  iescore = iDegeneratePairScore(cm->abc, cm->iesc[v], sq->dsq[i-1], sq->dsq[j+1]);
+		  iescore = iDegeneratePairScore(cm->abc, cm->iesc[v], dsq[i-1], dsq[j+1]);
 		beta[cm->M][j][d] = ILogsum(beta[cm->M][j][d], (beta[v][j+1][d+2] + cm->iendsc[v] 
 								+ iescore));
 		break;
 	      case ML_st:
 	      case IL_st:
 		if (d == jp) continue;	
-		if (sq->dsq[i-1] < cm->abc->K) 
-		  iescore = cm->iesc[v][sq->dsq[i-1]];
+		if (dsq[i-1] < cm->abc->K) 
+		  iescore = cm->iesc[v][dsq[i-1]];
 		else
-		  iescore = esl_abc_IAvgScore(cm->abc, sq->dsq[i-1], cm->iesc[v]);
+		  iescore = esl_abc_IAvgScore(cm->abc, dsq[i-1], cm->iesc[v]);
 		beta[cm->M][j][d] = ILogsum(beta[cm->M][j][d], (beta[v][j][d+1] + cm->iendsc[v] 
 								+ iescore));
 		break;
 	      case MR_st:
 	      case IR_st:
 		if (j == j0) continue;
-		if (sq->dsq[j+1] < cm->abc->K) 
-		  iescore = cm->iesc[v][sq->dsq[j+1]];
+		if (dsq[j+1] < cm->abc->K) 
+		  iescore = cm->iesc[v][dsq[j+1]];
 		else
-		  iescore = esl_abc_IAvgScore(cm->abc, sq->dsq[j+1], cm->iesc[v]);
+		  iescore = esl_abc_IAvgScore(cm->abc, dsq[j+1], cm->iesc[v]);
 		beta[cm->M][j][d] = ILogsum(beta[cm->M][j][d], (beta[v][j+1][d+1] + cm->iendsc[v]
 								+ iescore));
 		break;
@@ -1398,7 +1395,7 @@ IOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
    * (EL = deck at M.)
    */
   if (cm->flags & CM_LOCAL_END) {
-    for (jp = W; jp > 0; jp--) { /* careful w/ boundary here */
+    for (jp = L; jp > 0; jp--) { /* careful w/ boundary here */
       j = i0-1+jp;
       for (d = jp-1; d >= 0; d--) /* careful w/ boundary here */
 	beta[cm->M][j][d] = ILogsum(beta[cm->M][j][d], (beta[cm->M][j][d+1]
@@ -1443,7 +1440,7 @@ IOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	  num_split_states = SplitStatesInNode(cm->ndtype[n]);
 	  for(v = cm->nodemap[n]; v < cm->nodemap[n] + num_split_states; v++)
 	    {
-	      for (jp = 0; jp <= W; jp++) 
+	      for (jp = 0; jp <= L; jp++) 
 		{ 
 		  j = i0-1+jp;
 		  for (d = 0; d <= jp; d++) 
@@ -1451,11 +1448,11 @@ IOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 		}
 	      }
 	  fsc = Scorify(isc);
-	  diff = fsc - (Scorify(alpha[0][j0][W]));
+	  diff = fsc - (Scorify(alpha[0][j0][L]));
 	  if(diff > 0.01 || diff < -0.01)
 	    {
 	      esl_fatal("ERROR: node %d P(S|M): %.5f inconsistent with Inside P(S|M): %.5f (diff: %.5f)\n", 
-		  n, fsc, Scorify(alpha[0][j0][W]), diff);
+		  n, fsc, Scorify(alpha[0][j0][L]), diff);
 	    }
 	}
 
@@ -1484,7 +1481,7 @@ IOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
   if(!(cm->flags & CM_LOCAL_END))
     {
       ireturn_sc = -INFTY;
-      for (jp = 0; jp <= W; jp++) 
+      for (jp = 0; jp <= L; jp++) 
 	{ 
 	  j = i0-1+jp;
 	  /* printf("\talpha[%3d][%3d][%3d]: %5.2f | beta[%3d][%3d][%3d]: %5.2f\n", (cm->M-1), (j), 0, alpha[(cm->M-1)][j][0], (cm->M-1), (j), 0, beta[(cm->M-1)][j][0]);*/
@@ -1494,7 +1491,7 @@ IOutside(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
     }
   else /* ireturn_sc = P(S|M) / P(S|R) from Inside() */
     {
-      freturn_sc = Scorify(alpha[0][j0][W]);
+      freturn_sc = Scorify(alpha[0][j0][L]);
     }
   /* If the caller doesn't want the beta matrix, free it.
    * (though it would be *stupid* for the caller not to want the
@@ -2019,7 +2016,7 @@ ICMCheckPosterior(int L, CM_t *cm, int ***post)
  *           we don't care about the best local begin state for the
  *           same reason.
  *  
- * Purpose:  Run the Inside() alignment algorithm, on a 
+ *           Run the Inside() alignment algorithm, on a 
  *           subsequence from i0..j0, using the entire model, enforcing
  *           bands in both the j and d dimensions.
  * 
@@ -2028,11 +2025,10 @@ ICMCheckPosterior(int L, CM_t *cm, int ***post)
  *           system: [0..v..M-1][0..j..L][0..d..j]. However, we're
  *           only calculating a part of that matrix: i0-1..j in the rows, 
  *           and up to j0-i0+1 in the columns (d dimension). Where this is 
- *           handled the most is in two variables: W, which is the length of 
- *           the subsequence (j0-i0+1), and is oft used in place of L in the 
- *           usual CYK; and jp (read: j'), which is the *relative* j w.r.t. the
- *           subsequence, ranging from 0..W, and then d ranges from 
- *           0 to jp, and j is calculated from jp (i0-1+jp).
+ *           handled the most is in two variables: L, which is the length of 
+ *           the subsequence (j0-i0+1), and jp (read: j'), which is the 
+ *           *relative* j w.r.t. the subsequence, ranging from 0..W, and 
+ *           then d ranges from 0 to jp, and j is calculated from jp (i0-1+jp).
  *           
  *           The caller is allowed to provide us with a preexisting
  *           matrix and/or deckpool (thru "alpha" and "dpool"), or
@@ -2046,9 +2042,8 @@ ICMCheckPosterior(int L, CM_t *cm, int ***post)
  *
  * Args:     cm        - the model    [0..M-1]
  *           dsq       - the sequence [1..L]   
- *           L         - length of the dsq
  *           i0        - first position in subseq to align (1, for whole seq)
- *           j0        - last position in subseq to align (sq->n, for whole seq)
+ *           j0        - last position in subseq to align (L, for whole seq)
  *           do_full   - if TRUE, we save all the decks in alpha, instead of
  *                       working in our default memory-efficient mode where 
  *                       we reuse decks and only the uppermost deck (vroot) is valid
@@ -2077,15 +2072,11 @@ ICMCheckPosterior(int L, CM_t *cm, int ***post)
  * Returns: log P(S|M)/P(S|R), as a bit score.
  */
 float 
-FInside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
+FInside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		float ***alpha, float ****ret_alpha, 
 		struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
 		int allow_begin, int *jmin, int *jmax, int **hdmin, int **hdmax)
 {
-  /* Contract check */
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in FInside_b_jd_me(), sq is not digitized.\n");
-
   int      status;
   float  **end;         /* we re-use the end deck. */
   int      nends;       /* counter that tracks when we can release end deck to the pool */
@@ -2094,34 +2085,35 @@ FInside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
   int      j,d,i,k;	/* indices in sequence dimensions */
   float    sc;		/* a temporary variable holding a score */
   int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
-  int      W;		/* subsequence length */
+  int      L;		/* subsequence length */
   int      jp;		/* j': relative position in the subsequence  */
   float    bsc;		/* total score for using local begin states */
   /* variables used for memory efficient bands */
   int      dp_v;           /* d index for state v in alpha w/mem eff bands */
   int      dp_y;           /* d index for state y in alpha w/mem eff bands */
   int      kp_z;           /* k (in the d dim) index for state z in alpha w/mem eff bands */
-  int      Wp;             /* W also changes depending on state */
+  int      Lp;             /* W also changes depending on state */
   int      jp_v, jp_y, jp_z;
   int      kmin, kmax;
   int      tmp_jmin, tmp_jmax;
 
-  if(i0 != 1)
-    esl_fatal("FInside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
-  if(j0 != sq->n)
-    esl_fatal("FInside_b_jd requires that j0 be sq->n. This function is not set up for subsequence alignment.\n");
+  /* Contract check */
+  if(dsq == NULL)
+    esl_fatal("ERROR in FInside_b_jd_me(), dsq is NULL.\n");
+  if(i0 != 1) 
+    esl_fatal("ERROR: FInside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
 
   /* Allocations and initializations
    */
   bsc = IMPOSSIBLE;
-  W   = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
+  L   = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
 				/* if caller didn't give us a deck pool, make one */
 
   if (dpool == NULL) dpool = deckpool_create();
   if (! deckpool_pop(dpool, &end))
-    end = alloc_vjd_deck(sq->n, i0, j0);
+    end = alloc_vjd_deck(L, i0, j0);
   nends = CMSubtreeCountStatetype(cm, 0, E_st);
-  for (jp = 0; jp <= W; jp++) {
+  for (jp = 0; jp <= L; jp++) {
     j = i0+jp-1;		/* e.g. j runs from 0..L on whole seq */
     end[j][0] = 0.;
     for (d = 1; d <= jp; d++) end[j][d] = IMPOSSIBLE;
@@ -2147,8 +2139,8 @@ FInside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
   if(cm->flags & CM_LOCAL_BEGIN)
     {
       if (! deckpool_pop(dpool, &(alpha[cm->M]))) 
-	alpha[cm->M] = alloc_vjd_deck(sq->n, i0, j0);
-      for (jp = 0; jp <= W; jp++) {
+	alpha[cm->M] = alloc_vjd_deck(L, i0, j0);
+      for (jp = 0; jp <= L; jp++) {
 	j = i0-1+jp;
 	/*alpha[cm->M][j][0] = IMPOSSIBLE;*/
 	alpha[cm->M][j][0] = 0.;
@@ -2172,7 +2164,7 @@ FInside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	alpha[v] = end; continue; 
       } 
       if (! deckpool_pop(dpool, &(alpha[v]))) 
-	alpha[v] = alloc_jdbanded_vjd_deck(sq->n, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
+	alpha[v] = alloc_jdbanded_vjd_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
 
       /* We've only allocated alpha cells that are within the bands
        * on the j and d dimensions. This means we have to deal
@@ -2337,10 +2329,10 @@ FInside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 		      }
 		  }
 		i = j-d+1;
-		if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
-		  alpha[v][jp_v][dp_v] += cm->esc[v][(sq->dsq[i]*cm->abc->K+sq->dsq[j])];
+		if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
+		  alpha[v][jp_v][dp_v] += cm->esc[v][(dsq[i]*cm->abc->K+dsq[j])];
 		else
-		  alpha[v][jp_v][dp_v] += DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i], sq->dsq[j]);
+		  alpha[v][jp_v][dp_v] += DegeneratePairScore(cm->abc, cm->esc[v], dsq[i], dsq[j]);
 		
 		if (alpha[v][jp_v][dp_v] < IMPOSSIBLE) alpha[v][jp_v][dp_v] = IMPOSSIBLE;
 	      }
@@ -2375,10 +2367,10 @@ FInside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 		      }
 		  }
 		i = j-d+1;
-		if (sq->dsq[i] < cm->abc->K)
-		  alpha[v][jp_v][dp_v] += cm->esc[v][sq->dsq[i]];
+		if (dsq[i] < cm->abc->K)
+		  alpha[v][jp_v][dp_v] += cm->esc[v][dsq[i]];
 		else
-		  alpha[v][jp_v][dp_v] += esl_abc_FAvgScore(cm->abc, sq->dsq[i], cm->esc[v]);
+		  alpha[v][jp_v][dp_v] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
 		if (alpha[v][jp_v][dp_v] < IMPOSSIBLE) alpha[v][jp_v][dp_v] = IMPOSSIBLE;
 	      }
 	    }
@@ -2412,10 +2404,10 @@ FInside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 			  }
 		      }
 		  }
-		if (sq->dsq[j] < cm->abc->K)
-		  alpha[v][jp_v][dp_v] += cm->esc[v][sq->dsq[j]];
+		if (dsq[j] < cm->abc->K)
+		  alpha[v][jp_v][dp_v] += cm->esc[v][dsq[j]];
 		else
-		  alpha[v][jp_v][dp_v] += esl_abc_FAvgScore(cm->abc, sq->dsq[j], cm->esc[v]);
+		  alpha[v][jp_v][dp_v] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
 		
 		if (alpha[v][jp_v][dp_v] < IMPOSSIBLE) alpha[v][jp_v][dp_v] = IMPOSSIBLE;
 	      }
@@ -2423,17 +2415,17 @@ FInside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	}				/* finished calculating deck v. */
       
       /* Keep track of contributions of local begins */
-      /* The following loops originally access alpha[v][j0][W] but the index W will be
+      /* The following loops originally access alpha[v][j0][L] but the index L will be
 	 in different positions due to the bands */
       if(j0 >= jmin[v] && j0 <= jmax[v])
 	{
 	  jp_v = j0 - jmin[v];
-	  if(W >= hdmin[v][jp_v] && W <= hdmax[v][jp_v])
+	  if(L >= hdmin[v][jp_v] && L <= hdmax[v][jp_v])
 	    {
-	      Wp = W - hdmin[v][jp_v];
-	      /* If we get here alpha[v][jp_v][Wp] is a valid cell
+	      Lp = L - hdmin[v][jp_v];
+	      /* If we get here alpha[v][jp_v][Lp] is a valid cell
 	       * in the banded alpha matrix, corresponding to 
-	       * alpha[v][j0][W] in the platonic matrix.
+	       * alpha[v][j0][L] in the platonic matrix.
 	       */
 	      /* Check for local begin getting us to the root.
 	       * This is "off-shadow": if/when we trace back, we'll handle this
@@ -2443,7 +2435,7 @@ FInside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	       */
 	      if (allow_begin)
 		{
-		  bsc = LogSum2(bsc, (alpha[v][jp_v][Wp] + cm->beginsc[v]));
+		  bsc = LogSum2(bsc, (alpha[v][jp_v][Lp] + cm->beginsc[v]));
 		}
 	    }
 	}
@@ -2454,10 +2446,10 @@ FInside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	  if(j0 >= jmin[0] && j0 <= jmax[0])
 	    {
 	      jp_v = j0 - jmin[v];
-	      if(W >= hdmin[v][jp_v] && W <= hdmax[v][jp_v])
+	      if(L >= hdmin[v][jp_v] && L <= hdmax[v][jp_v])
 		{
 		  if (allow_begin && v == 0)
-		    alpha[0][jp_v][Wp] = LogSum2(alpha[0][jp_v][Wp], bsc);
+		    alpha[0][jp_v][Lp] = LogSum2(alpha[0][jp_v][Lp], bsc);
 		}
 	    }
 	}	  
@@ -2520,8 +2512,8 @@ FInside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
    * and end is NULL.
    * We could check this status to be sure (and we used to) but now we trust. 
    */
-  Wp = W - hdmin[0][j0-jmin[0]];
-  sc = alpha[0][j0-jmin[0]][Wp];
+  Lp = L - hdmin[0][j0-jmin[0]];
+  sc = alpha[0][j0-jmin[0]][Lp];
 
   /* If the caller doesn't want the matrix, free it (saving the decks in the pool!)
    * Else, pass it back to him.
@@ -2556,15 +2548,11 @@ FInside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 }
 
 float 
-IInside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
+IInside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		int   ***alpha, int   ****ret_alpha, 
 		Ideckpool_t *dpool, Ideckpool_t **ret_dpool,
 		int allow_begin, int *jmin, int *jmax, int **hdmin, int **hdmax)
 {
-  /* Contract check */
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in IInside_b_jd_me(), sq is not digitized.\n");
-
   int      status;       
   int    **end;         /* we re-use the end deck. */
   int      nends;       /* counter that tracks when we can release end deck to the pool */
@@ -2573,34 +2561,35 @@ IInside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
   int      j,d,i,k;	/* indices in sequence dimensions */
   float    return_sc;   /* the return score, converted to bits (Scorified) */
   int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
-  int      W;		/* subsequence length */
+  int      L;		/* subsequence length */
   int      jp;		/* j': relative position in the subsequence  */
   int      bsc;		/* total score for using local begin states */
   /* variables used for memory efficient bands */
   int      dp_v;           /* d index for state v in alpha w/mem eff bands */
   int      dp_y;           /* d index for state y in alpha w/mem eff bands */
   int      kp_z;           /* k (in the d dim) index for state z in alpha w/mem eff bands */
-  int      Wp;             /* W also changes depending on state */
+  int      Lp;             /* L also changes depending on state */
   int      jp_v, jp_y, jp_z;
   int      kmin, kmax;
   int      tmp_jmin, tmp_jmax;
 
-  if(i0 != 1)
-    esl_fatal("IInside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
-  if(j0 != sq->n)
-    esl_fatal("IInside_b_jd requires that j0 be L. This function is not set up for subsequence alignment.\n");
+  /* Contract check */
+  if(dsq == NULL)
+    esl_fatal("ERROR in IInside_b_jd_me(), dsq is NULL.\n");
+  if(i0 != 1) 
+    esl_fatal("ERROR: IInside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
 
   /* Allocations and initializations
    */
   bsc = -INFTY;
-  W   = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
+  L   = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
 				/* if caller didn't give us a deck pool, make one */
 
   if (dpool == NULL) dpool = Ideckpool_create();
   if (! Ideckpool_pop(dpool, &end))
-    end = Ialloc_vjd_deck(sq->n, i0, j0);
+    end = Ialloc_vjd_deck(L, i0, j0);
   nends = CMSubtreeCountStatetype(cm, 0, E_st);
-  for (jp = 0; jp <= W; jp++) {
+  for (jp = 0; jp <= L; jp++) {
     j = i0+jp-1;		/* e.g. j runs from 0..L on whole seq */
     end[j][0] = 0.;
     for (d = 1; d <= jp; d++) end[j][d] = -INFTY;
@@ -2626,8 +2615,8 @@ IInside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
   if(cm->flags & CM_LOCAL_BEGIN)
     {
       if (! Ideckpool_pop(dpool, &(alpha[cm->M]))) 
-	alpha[cm->M] = Ialloc_vjd_deck(sq->n, i0, j0);
-      for (jp = 0; jp <= W; jp++) {
+	alpha[cm->M] = Ialloc_vjd_deck(L, i0, j0);
+      for (jp = 0; jp <= L; jp++) {
 	j = i0-1+jp;
 	/*alpha[cm->M][j][0] = -INFTY;*/
 	alpha[cm->M][j][0] = 0.;
@@ -2651,7 +2640,7 @@ IInside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	alpha[v] = end; continue; 
       } 
       if (! Ideckpool_pop(dpool, &(alpha[v]))) 
-	alpha[v] = Ialloc_jdbanded_vjd_deck(sq->n, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
+	alpha[v] = Ialloc_jdbanded_vjd_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
 
       /* We've only allocated alpha cells that are within the bands
        * on the j and d dimensions. This means we have to deal
@@ -2816,10 +2805,10 @@ IInside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 		      }
 		  }
 		i = j-d+1;
-		if (sq->dsq[i] < cm->abc->K && sq->dsq[j] < cm->abc->K)
-		  alpha[v][jp_v][dp_v] += cm->iesc[v][(sq->dsq[i]*cm->abc->K+sq->dsq[j])];
+		if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
+		  alpha[v][jp_v][dp_v] += cm->iesc[v][(dsq[i]*cm->abc->K+dsq[j])];
 		else
-		  alpha[v][jp_v][dp_v] += iDegeneratePairScore(cm->abc, cm->iesc[v], sq->dsq[i], sq->dsq[j]);
+		  alpha[v][jp_v][dp_v] += iDegeneratePairScore(cm->abc, cm->iesc[v], dsq[i], dsq[j]);
 		
 		if (alpha[v][jp_v][dp_v] < -INFTY) alpha[v][jp_v][dp_v] = -INFTY;
 	      }
@@ -2854,10 +2843,10 @@ IInside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 		      }
 		  }
 		i = j-d+1;
-		if (sq->dsq[i] < cm->abc->K)
-		  alpha[v][jp_v][dp_v] += cm->iesc[v][sq->dsq[i]];
+		if (dsq[i] < cm->abc->K)
+		  alpha[v][jp_v][dp_v] += cm->iesc[v][dsq[i]];
 		else
-		  alpha[v][jp_v][dp_v] += esl_abc_IAvgScore(cm->abc, sq->dsq[i], cm->iesc[v]);
+		  alpha[v][jp_v][dp_v] += esl_abc_IAvgScore(cm->abc, dsq[i], cm->iesc[v]);
 		if (alpha[v][jp_v][dp_v] < -INFTY) alpha[v][jp_v][dp_v] = -INFTY;
 	      }
 	    }
@@ -2891,10 +2880,10 @@ IInside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 			  }
 		      }
 		  }
-		if (sq->dsq[j] < cm->abc->K)
-		  alpha[v][jp_v][dp_v] += cm->iesc[v][sq->dsq[j]];
+		if (dsq[j] < cm->abc->K)
+		  alpha[v][jp_v][dp_v] += cm->iesc[v][dsq[j]];
 		else
-		  alpha[v][jp_v][dp_v] += esl_abc_IAvgScore(cm->abc, sq->dsq[j], cm->iesc[v]);
+		  alpha[v][jp_v][dp_v] += esl_abc_IAvgScore(cm->abc, dsq[j], cm->iesc[v]);
 		
 		if (alpha[v][jp_v][dp_v] < -INFTY) alpha[v][jp_v][dp_v] = -INFTY;
 	      }
@@ -2902,17 +2891,17 @@ IInside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	}				/* finished calculating deck v. */
       
       /* Keep track of contributions of local begins */
-      /* The following loops originally access alpha[v][j0][W] but the index W will be
+      /* The following loops originally access alpha[v][j0][L] but the index L will be
 	 in different positions due to the bands */
       if(j0 >= jmin[v] && j0 <= jmax[v])
 	{
 	  jp_v = j0 - jmin[v];
-	  if(W >= hdmin[v][jp_v] && W <= hdmax[v][jp_v])
+	  if(L >= hdmin[v][jp_v] && L <= hdmax[v][jp_v])
 	    {
-	      Wp = W - hdmin[v][jp_v];
-	      /* If we get here alpha[v][jp_v][Wp] is a valid cell
+	      Lp = L - hdmin[v][jp_v];
+	      /* If we get here alpha[v][jp_v][Lp] is a valid cell
 	       * in the banded alpha matrix, corresponding to 
-	       * alpha[v][j0][W] in the platonic matrix.
+	       * alpha[v][j0][L] in the platonic matrix.
 	       */
 	      /* Check for local begin getting us to the root.
 	       * This is "off-shadow": if/when we trace back, we'll handle this
@@ -2922,7 +2911,7 @@ IInside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	       */
 	      if (allow_begin)
 		{
-		  bsc = ILogsum(bsc, (alpha[v][jp_v][Wp] + cm->ibeginsc[v]));
+		  bsc = ILogsum(bsc, (alpha[v][jp_v][Lp] + cm->ibeginsc[v]));
 		}
 	    }
 	}
@@ -2933,10 +2922,10 @@ IInside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	  if(j0 >= jmin[0] && j0 <= jmax[0])
 	    {
 	      jp_v = j0 - jmin[v];
-	      if(W >= hdmin[v][jp_v] && W <= hdmax[v][jp_v])
+	      if(L >= hdmin[v][jp_v] && L <= hdmax[v][jp_v])
 		{
 		  if (allow_begin && v == 0)
-		    alpha[0][jp_v][Wp] = ILogsum(alpha[0][jp_v][Wp], bsc);
+		    alpha[0][jp_v][Lp] = ILogsum(alpha[0][jp_v][Lp], bsc);
 		}
 	    }
 	}	  
@@ -2999,8 +2988,8 @@ IInside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
    * and end is NULL.
    * We could check this status to be sure (and we used to) but now we trust. 
    */
-  Wp = W - hdmin[0][j0-jmin[0]];
-  return_sc = Scorify(alpha[0][j0-jmin[0]][Wp]);
+  Lp = L - hdmin[0][j0-jmin[0]];
+  return_sc = Scorify(alpha[0][j0-jmin[0]][Lp]);
 
   /* If the caller doesn't want the matrix, free it (saving the decks in the pool!)
    * Else, pass it back to him.
@@ -3053,7 +3042,7 @@ IInside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
  *           dsq       - the sequence [1..L]   
  *           L         - length of the dsq
  *           i0        - first position in subseq to align (1, for whole seq)
- *           j0        - last position in subseq to align (sq->n, for whole seq)
+ *           j0        - last position in subseq to align (L, for whole seq)
  *           do_full   - if TRUE, we save all the decks in alpha and beta, instead of
  *                       working in our default memory-efficient mode where 
  *                       we reuse decks and only the uppermost deck (vroot) is valid
@@ -3089,16 +3078,12 @@ IInside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
  * Returns: log P(S|M)/P(S|R), as a bit score.
  ***********************************************************************/
 float 
-FOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
+FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		 float ***beta, float ****ret_beta, 
 		 struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
 		 int allow_begin, float ***alpha, float ****ret_alpha, 
 		 int do_check, int *jmin, int *jmax, int **hdmin, int **hdmax)
 {
-  /* Contract check */
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in FOutside_b_jd_me(), sq is not digitized.\n");
-
   int      status;
   int      v,y,z;	/* indices for states */
   int      j,d,i,k;	/* indices in sequence dimensions */
@@ -3106,7 +3091,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
   int     *touch;       /* keeps track of how many higher decks still need this deck */
   float    escore;	/* an emission score, tmp variable */
   int      voffset;	/* index of v in t_v(y) transition scores */
-  int      W;		/* subsequence length */
+  int      L;		/* subsequence length */
   int      jp;		/* j': relative position in the subsequence  */
   float    bsc;		/* total score for using local begin states */
   float    return_sc;   /* P(S|M)/P(S|R) */
@@ -3118,15 +3103,16 @@ FOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
   int      dp_v;           /* d index for state v in alpha w/mem eff bands */
   int      dp_y;           /* d index for state y in alpha w/mem eff bands */
   int      kp_z;           /* k (in the d dim) index for state z in alpha w/mem eff bands */
-  int      Wp;             /* W also changes depending on state */
+  int      Lp;             /* L also changes depending on state */
   int      jp_v, jp_y, jp_z;
   int      kmin, kmax;
   int      tmp_jmin, tmp_jmax;
 
-  if(i0 != 1)
-    esl_fatal("FOutside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
-  if(j0 != sq->n)
-    esl_fatal("FOutside_b_jd requires that j0 be L. This function is not set up for subsequence alignment.\n");
+  /* Contract check */
+  if(dsq == NULL)
+    esl_fatal("ERROR in FOutside_b_jd_me(), dsq is NULL.\n");
+  if(i0 != 1) 
+    esl_fatal("ERROR: FOutside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
 
   if (cm->flags & CM_LOCAL_END) { do_check = FALSE; } 
   /* Code for checking doesn't apply in local mode. See below. */
@@ -3134,7 +3120,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
   /* Allocations and initializations
    */
   bsc = IMPOSSIBLE;
-  W   = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
+  L   = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
 				/* if caller didn't give us a deck pool, make one */
   if (dpool == NULL) dpool = deckpool_create();
 
@@ -3150,7 +3136,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
   /* Initialize the root deck. Root is necessarily the ROOT_S state 0.
    */
   if (! deckpool_pop(dpool, &(beta[0])))
-    beta[0] = alloc_jdbanded_vjd_deck(sq->n, i0, j0, jmin[0], jmax[0], hdmin[0], hdmax[0]);
+    beta[0] = alloc_jdbanded_vjd_deck(L, i0, j0, jmin[0], jmax[0], hdmin[0], hdmax[0]);
   for (j = jmin[0]; j <= jmax[0]; j++)
     {
       jp_v = j - jmin[0];
@@ -3160,20 +3146,20 @@ FOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	  beta[0][jp_v][dp_v] = IMPOSSIBLE;
 	}
     }
-  /* non banded line: beta[0][j0][W] = 0; */
+  /* non banded line: beta[0][j0][L] = 0; */
   jp_v = j0 - jmin[0];
-  Wp = W - hdmin[0][jp_v];
-  assert(W >= hdmin[0][jp_v]);
-  assert(W <= hdmax[0][jp_v]);
-  beta[0][jp_v][Wp] = 0.;
+  Lp = L - hdmin[0][jp_v];
+  assert(L >= hdmin[0][jp_v]);
+  assert(L <= hdmax[0][jp_v]);
+  beta[0][jp_v][Lp] = 0.;
 
   /* Initialize the EL deck at M, if we're doing local alignment w.r.t. ends.
    * EL deck has no bands as currently implemented.
    */
   if (cm->flags & CM_LOCAL_END) {
     if (! deckpool_pop(dpool, &(beta[cm->M])))
-      beta[cm->M] = alloc_vjd_deck(sq->n, i0, j0);
-    for (jp = 0; jp <= W; jp++) {
+      beta[cm->M] = alloc_vjd_deck(L, i0, j0);
+    for (jp = 0; jp <= L; jp++) {
       j = i0-1+jp;
       for (d = 0; d <= jp; d++)
 	beta[cm->M][j][d] = IMPOSSIBLE;
@@ -3200,7 +3186,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
        * a fresh one.
        */
       if (! deckpool_pop(dpool, &(beta[v])))
-	beta[v] = alloc_jdbanded_vjd_deck(sq->n, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
+	beta[v] = alloc_jdbanded_vjd_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
 
       /* Init the whole deck to IMPOSSIBLE
        */
@@ -3215,17 +3201,17 @@ FOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	}
 
       /* If we can do a local begin into v, also init with that. 
-       * By definition, beta[0][j0][W] == 0.
+       * By definition, beta[0][j0][L] == 0.
        */ 
-      if (i0 == 1 && j0 == sq->n && (cm->flags & CM_LOCAL_BEGIN))
+      if (cm->flags & CM_LOCAL_BEGIN)
 	{
 	  if((j0 >= jmin[v]) && (j0 <= jmax[v]))
 	    {
 	      jp_v = j0 - jmin[v];
-	      if((W >= hdmin[v][jp_v]) && W <= hdmax[v][jp_v])
+	      if((L >= hdmin[v][jp_v]) && L <= hdmax[v][jp_v])
 		{
-		  Wp = W - hdmin[v][jp_v];
-		  beta[v][jp_v][Wp] = cm->beginsc[v];
+		  Lp = L - hdmin[v][jp_v];
+		  beta[v][jp_v][Lp] = cm->beginsc[v];
 		}
 	    }
 	}
@@ -3370,10 +3356,10 @@ FOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 			 */
 			dp_y = d - hdmin[y][jp_y+1];  /* d index for state y */
 			
-			if (sq->dsq[i-1] < cm->abc->K && sq->dsq[j+1] > cm->abc->K)
-			  escore = cm->esc[y][(sq->dsq[i-1]*cm->abc->K+sq->dsq[j+1])];
+			if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+			  escore = cm->esc[y][(dsq[i-1]*cm->abc->K+dsq[j+1])];
 			else
-			  escore = DegeneratePairScore(cm->abc, cm->esc[y], sq->dsq[i-1], sq->dsq[j+1]);
+			  escore = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
 			beta[v][jp_v][dp_v] = LogSum2(beta[v][jp_v][dp_v], (beta[y][jp_y+1][dp_y+2] 
 									    + cm->tsc[y][voffset] + escore));
 			break;
@@ -3388,10 +3374,10 @@ FOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 			 * corresponding to alpha[y][j][d+1] in the platonic matrix.
 			 */
 			dp_y = d - hdmin[y][jp_y];  /* d index for state y */
-			if (sq->dsq[i-1] < cm->abc->K) 
-			  escore = cm->esc[y][sq->dsq[i-1]];
+			if (dsq[i-1] < cm->abc->K) 
+			  escore = cm->esc[y][dsq[i-1]];
 			else
-			  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i-1], cm->esc[y]);
+			  escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[y]);
 			beta[v][jp_v][dp_v] = LogSum2(beta[v][jp_v][dp_v], (beta[y][jp_y][dp_y+1] 
 									    + cm->tsc[y][voffset] + escore));
 			break;
@@ -3406,10 +3392,10 @@ FOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 			 * corresponding to alpha[y][j+1][d+1] in the platonic matrix.
 			 */
 			dp_y = d - hdmin[y][(jp_y+1)];  /* d index for state y */
-			if (sq->dsq[j+1] < cm->abc->K) 
-			  escore = cm->esc[y][sq->dsq[j+1]];
+			if (dsq[j+1] < cm->abc->K) 
+			  escore = cm->esc[y][dsq[j+1]];
 			else
-			  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j+1], cm->esc[y]);
+			  escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[y]);
 			/*printf("j: %d | jmin[y]: %d | jmax[y]: %d | jp_v: %d | dp_v: %d | jp_y: %d | dp_y: %d\n", j, jmin[y], jmax[y], jp_v, dp_v, jp_y, dp_y);*/
 			beta[v][jp_v][dp_v] = LogSum2(beta[v][jp_v][dp_v], (beta[y][jp_y+1][dp_y+1] 
 									    + cm->tsc[y][voffset] + escore));
@@ -3450,10 +3436,10 @@ FOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 		case MP_st: 
 		  if (j == j0 || d == j) continue; /* boundary condition */
 		  if (((j+1) > jmax[v]) || ((d+2) > hdmax[v][jp_v])) continue; /*boundary condition*/
-		  if (sq->dsq[i-1] < cm->abc->K && sq->dsq[j+1] > cm->abc->K)
-		    escore = cm->esc[v][(sq->dsq[i-1]*cm->abc->K+sq->dsq[j+1])];
+		  if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		    escore = cm->esc[v][(dsq[i-1]*cm->abc->K+dsq[j+1])];
 		  else
-		    escore = DegeneratePairScore(cm->abc, cm->esc[v], sq->dsq[i-1], sq->dsq[j+1]);
+		    escore = DegeneratePairScore(cm->abc, cm->esc[v], dsq[i-1], dsq[j+1]);
 		  beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][jp_v+1][dp_v+2] + cm->endsc[v] 
 								  + escore));
 		break;
@@ -3461,10 +3447,10 @@ FOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	      case IL_st:
 		if (d == j) continue;	
 		if ((d+1) > hdmax[v][jp_v]) continue; /*boundary condition*/
-		if (sq->dsq[i-1] < cm->abc->K) 
-		  escore = cm->esc[v][sq->dsq[i-1]];
+		if (dsq[i-1] < cm->abc->K) 
+		  escore = cm->esc[v][dsq[i-1]];
 		else
-		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[i-1], cm->esc[v]);
+		  escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[v]);
 		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][jp_v][dp_v+1] + cm->endsc[v] 
 								+ escore));
 		break;
@@ -3472,10 +3458,10 @@ FOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	      case IR_st:
 		if (j == j0) continue;
 		if (((j+1) > jmax[v]) || ((d+1) > hdmax[v][jp_v])) continue; /*boundary condition*/
-		if (sq->dsq[j+1] < cm->abc->K) 
-		  escore = cm->esc[v][sq->dsq[j+1]];
+		if (dsq[j+1] < cm->abc->K) 
+		  escore = cm->esc[v][dsq[j+1]];
 		else
-		  escore = esl_abc_FAvgScore(cm->abc, sq->dsq[j+1], cm->esc[v]);
+		  escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[v]);
 		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][jp_v+1][dp_v+1] + cm->endsc[v] 
 								+ escore));
 		break;
@@ -3520,7 +3506,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
    * (EL = deck at M.)
    */
   if (cm->flags & CM_LOCAL_END) {
-    for (jp = W; jp > 0; jp--) { /* careful w/ boundary here */
+    for (jp = L; jp > 0; jp--) { /* careful w/ boundary here */
       j = i0-1+jp;
       for (d = jp-1; d >= 0; d--) /* careful w/ boundary here */
 	beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[cm->M][j][d+1]
@@ -3535,7 +3521,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
     printf("OUTSIDE JD, done printing beta\n");
   */
 
-  Wp = W - hdmin[0][j0-jmin[0]];
+  Lp = L - hdmin[0][j0-jmin[0]];
   if(do_check && (!(cm->flags & CM_LOCAL_END))) 
     /* Local ends make the following test invalid because it is not true that
      * exactly 1 state in each node's split set must be visited in each parse. 
@@ -3570,11 +3556,11 @@ FOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 		}
 	      }
 	  /*printf("checking node: %d | sc: %.6f\n", n, sc);*/
-	  diff = alpha[0][j0-jmin[0]][Wp] - sc;
+	  diff = alpha[0][j0-jmin[0]][Lp] - sc;
 	  if(diff > 0.001 || diff < -0.001)
 	    {
 	      esl_fatal("ERROR: node %d P(S|M): %.5f inconsistent with Inside P(S|M): %.5f (diff: %.5f)\n", 
-		  n, sc, alpha[0][(j0-jmin[0])][Wp], diff);
+		  n, sc, alpha[0][(j0-jmin[0])][Lp], diff);
 	    }
 	}
 
@@ -3612,7 +3598,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
     }
   else /* return_sc = P(S|M) / P(S|R) from Inside() */
     {
-      return_sc = alpha[0][(j0-jmin[0])][Wp];
+      return_sc = alpha[0][(j0-jmin[0])][Lp];
     }
 
   /* If the caller doesn't want the beta matrix, free it.
@@ -3670,16 +3656,12 @@ FOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 }
 
 float 
-IOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
+IOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		 int   ***beta, int   ****ret_beta, 
 		 Ideckpool_t *dpool, Ideckpool_t **ret_dpool,
 		 int allow_begin, int   ***alpha, int   ****ret_alpha, 
 		 int do_check, int *jmin, int *jmax, int **hdmin, int **hdmax)
 {
-  /* Contract check */
-  if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("ERROR in IOutside_b_jd_me(), sq is not digitized.\n");
-
   int      status;
   int      v,y,z;	/* indices for states */
   int      j,d,i,k;	/* indices in sequence dimensions */
@@ -3688,7 +3670,7 @@ IOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
   int     *touch;       /* keeps track of how many higher decks still need this deck */
   int      iescore;	/* an emission score, tmp variable */
   int      voffset;	/* index of v in t_v(y) transition scores */
-  int      W;		/* subsequence length */
+  int      L;		/* subsequence length */
   int      jp;		/* j': relative position in the subsequence  */
   int      bsc;		/* total score for using local begin states */
   int      ireturn_sc;  /* P(S|M)/P(S|R), a scaled int*/
@@ -3701,15 +3683,16 @@ IOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
   int      dp_v;           /* d index for state v in alpha w/mem eff bands */
   int      dp_y;           /* d index for state y in alpha w/mem eff bands */
   int      kp_z;           /* k (in the d dim) index for state z in alpha w/mem eff bands */
-  int      Wp;             /* W also changes depending on state */
+  int      Lp;             /* L also changes depending on state */
   int      jp_v, jp_y, jp_z;
   int      kmin, kmax;
   int      tmp_jmin, tmp_jmax;
 
-  if(i0 != 1)
-    esl_fatal("FOutside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
-  if(j0 != sq->n)
-    esl_fatal("FOutside_b_jd requires that j0 be L. This function is not set up for subsequence alignment.\n");
+  /* Contract check */
+  if(dsq == NULL)
+    esl_fatal("ERROR in IOutside_b_jd_me(), dsq is NULL.\n");
+  if(i0 != 1) 
+    esl_fatal("ERROR: IOutside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
 
   if (cm->flags & CM_LOCAL_END) { do_check = FALSE; } 
   /* Code for checking doesn't apply in local mode. See below. */
@@ -3717,7 +3700,7 @@ IOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
   /* Allocations and initializations
    */
   bsc = -INFTY;
-  W   = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
+  L   = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
 				/* if caller didn't give us a deck pool, make one */
   if (dpool == NULL) dpool = Ideckpool_create();
 
@@ -3733,7 +3716,7 @@ IOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
   /* Initialize the root deck. Root is necessarily the ROOT_S state 0.
    */
   if (! Ideckpool_pop(dpool, &(beta[0])))
-    beta[0] = Ialloc_jdbanded_vjd_deck(sq->n, i0, j0, jmin[0], jmax[0], hdmin[0], hdmax[0]);
+    beta[0] = Ialloc_jdbanded_vjd_deck(L, i0, j0, jmin[0], jmax[0], hdmin[0], hdmax[0]);
   for (j = jmin[0]; j <= jmax[0]; j++)
     {
       jp_v = j - jmin[0];
@@ -3743,26 +3726,26 @@ IOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	  beta[0][jp_v][dp_v] = -INFTY;
 	}
     }
-  /* non banded line: beta[0][j0][W] = 0; */
+  /* non banded line: beta[0][j0][L] = 0; */
   jp_v = j0 - jmin[0];
-  Wp = W - hdmin[0][jp_v];
-  assert(W >= hdmin[0][jp_v]);
-  assert(W <= hdmax[0][jp_v]);
-  beta[0][jp_v][Wp] = 0.;
+  Lp = L - hdmin[0][jp_v];
+  assert(L >= hdmin[0][jp_v]);
+  assert(L <= hdmax[0][jp_v]);
+  beta[0][jp_v][Lp] = 0.;
 
   /* Initialize the EL deck at M, if we're doing local alignment w.r.t. ends.
    * EL deck has no bands as currently implemented.
    */
   if (cm->flags & CM_LOCAL_END) {
     if (! Ideckpool_pop(dpool, &(beta[cm->M])))
-      beta[cm->M] = Ialloc_vjd_deck(sq->n, i0, j0);
-    for (jp = 0; jp <= W; jp++) {
+      beta[cm->M] = Ialloc_vjd_deck(L, i0, j0);
+    for (jp = 0; jp <= L; jp++) {
       j = i0-1+jp;
       for (d = 0; d <= jp; d++)
 	beta[cm->M][j][d] = -INFTY;
     }
     
-    /* We don't have to worry about vroot -> EL transitions the way 
+    /* Le don't have to worry about vroot -> EL transitions the way 
      * smallcyk.c::outside() does, because vroot = 0.
      */
   }
@@ -3775,7 +3758,7 @@ IOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
   /* Main loop down through the decks
    */
   /*for (v = 2; v < cm->M; v++) */ /*EPN is this 2 b/c Durbin p.287 
-				     has state 2 in the algorithm? b/c state 1 is root*/
+				     has state 2 in the algorithm? b/c state 1 is root? */
   for (v = 1; v < cm->M; v++)
     {
       /* First we need to fetch a deck of memory to fill in;
@@ -3783,7 +3766,7 @@ IOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
        * a fresh one.
        */
       if (! Ideckpool_pop(dpool, &(beta[v])))
-	beta[v] = Ialloc_jdbanded_vjd_deck(sq->n, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
+	beta[v] = Ialloc_jdbanded_vjd_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
 
       /* Init the whole deck to -INFTY
        */
@@ -3798,17 +3781,17 @@ IOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	}
 
       /* If we can do a local begin into v, also init with that. 
-       * By definition, beta[0][j0][W] == 0.
+       * By definition, beta[0][j0][L] == 0.
        */ 
-      if (i0 == 1 && j0 == sq->n && (cm->flags & CM_LOCAL_BEGIN))
+      if (cm->flags & CM_LOCAL_BEGIN)
 	{
 	  if((j0 >= jmin[v]) && (j0 <= jmax[v]))
 	    {
 	      jp_v = j0 - jmin[v];
-	      if((W >= hdmin[v][jp_v]) && W <= hdmax[v][jp_v])
+	      if((L >= hdmin[v][jp_v]) && L <= hdmax[v][jp_v])
 		{
-		  Wp = W - hdmin[v][jp_v];
-		  beta[v][jp_v][Wp] = cm->ibeginsc[v];
+		  Lp = L - hdmin[v][jp_v];
+		  beta[v][jp_v][Lp] = cm->ibeginsc[v];
 		}
 	    }
 	}
@@ -3953,10 +3936,10 @@ IOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 			 */
 			dp_y = d - hdmin[y][jp_y+1];  /* d index for state y */
 			
-			if (sq->dsq[i-1] < cm->abc->K && sq->dsq[j+1] > cm->abc->K)
-			  iescore = cm->iesc[y][(sq->dsq[i-1]*cm->abc->K+sq->dsq[j+1])];
+			if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+			  iescore = cm->iesc[y][(dsq[i-1]*cm->abc->K+dsq[j+1])];
 			else
-			  iescore = iDegeneratePairScore(cm->abc, cm->iesc[y], sq->dsq[i-1], sq->dsq[j+1]);
+			  iescore = iDegeneratePairScore(cm->abc, cm->iesc[y], dsq[i-1], dsq[j+1]);
 			beta[v][jp_v][dp_v] = ILogsum(beta[v][jp_v][dp_v], (beta[y][jp_y+1][dp_y+2] 
 									    + cm->itsc[y][voffset] + iescore));
 			break;
@@ -3971,10 +3954,10 @@ IOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 			 * corresponding to alpha[y][j][d+1] in the platonic matrix.
 			 */
 			dp_y = d - hdmin[y][jp_y];  /* d index for state y */
-			if (sq->dsq[i-1] < cm->abc->K) 
-			  iescore = cm->iesc[y][sq->dsq[i-1]];
+			if (dsq[i-1] < cm->abc->K) 
+			  iescore = cm->iesc[y][dsq[i-1]];
 			else
-			  iescore = esl_abc_IAvgScore(cm->abc, sq->dsq[i-1], cm->iesc[y]);
+			  iescore = esl_abc_IAvgScore(cm->abc, dsq[i-1], cm->iesc[y]);
 			beta[v][jp_v][dp_v] = ILogsum(beta[v][jp_v][dp_v], (beta[y][jp_y][dp_y+1] 
 									    + cm->itsc[y][voffset] + iescore));
 			break;
@@ -3989,10 +3972,10 @@ IOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 			 * corresponding to alpha[y][j+1][d+1] in the platonic matrix.
 			 */
 			dp_y = d - hdmin[y][(jp_y+1)];  /* d index for state y */
-			if (sq->dsq[j+1] < cm->abc->K) 
-			  iescore = cm->iesc[y][sq->dsq[j+1]];
+			if (dsq[j+1] < cm->abc->K) 
+			  iescore = cm->iesc[y][dsq[j+1]];
 			else
-			  iescore = esl_abc_IAvgScore(cm->abc, sq->dsq[j+1], cm->iesc[y]);
+			  iescore = esl_abc_IAvgScore(cm->abc, dsq[j+1], cm->iesc[y]);
 			/*printf("j: %d | jmin[y]: %d | jmax[y]: %d | jp_v: %d | dp_v: %d | jp_y: %d | dp_y: %d\n", j, jmin[y], jmax[y], jp_v, dp_v, jp_y, dp_y);*/
 			beta[v][jp_v][dp_v] = ILogsum(beta[v][jp_v][dp_v], (beta[y][jp_y+1][dp_y+1] 
 									    + cm->itsc[y][voffset] + iescore));
@@ -4033,10 +4016,10 @@ IOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 		case MP_st: 
 		  if (j == j0 || d == j) continue; /* boundary condition */
 		  if (((j+1) > jmax[v]) || ((d+2) > hdmax[v][jp_v])) continue; /*boundary condition*/
-		  if (sq->dsq[i-1] < cm->abc->K && sq->dsq[j+1] > cm->abc->K)
-		    iescore = cm->iesc[v][(sq->dsq[i-1]*cm->abc->K+sq->dsq[j+1])];
+		  if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		    iescore = cm->iesc[v][(dsq[i-1]*cm->abc->K+dsq[j+1])];
 		  else
-		    iescore = iDegeneratePairScore(cm->abc, cm->iesc[v], sq->dsq[i-1], sq->dsq[j+1]);
+		    iescore = iDegeneratePairScore(cm->abc, cm->iesc[v], dsq[i-1], dsq[j+1]);
 		  beta[cm->M][j][d] = ILogsum(beta[cm->M][j][d], (beta[v][jp_v+1][dp_v+2] + cm->iendsc[v] 
 								  + iescore));
 		break;
@@ -4044,10 +4027,10 @@ IOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	      case IL_st:
 		if (d == j) continue;	
 		if ((d+1) > hdmax[v][jp_v]) continue; /*boundary condition*/
-		if (sq->dsq[i-1] < cm->abc->K) 
-		  iescore = cm->iesc[v][sq->dsq[i-1]];
+		if (dsq[i-1] < cm->abc->K) 
+		  iescore = cm->iesc[v][dsq[i-1]];
 		else
-		  iescore = esl_abc_IAvgScore(cm->abc, sq->dsq[i-1], cm->iesc[v]);
+		  iescore = esl_abc_IAvgScore(cm->abc, dsq[i-1], cm->iesc[v]);
 		beta[cm->M][j][d] = ILogsum(beta[cm->M][j][d], (beta[v][jp_v][dp_v+1] + cm->iendsc[v] 
 								+ iescore));
 		break;
@@ -4055,10 +4038,10 @@ IOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	      case IR_st:
 		if (j == j0) continue;
 		if (((j+1) > jmax[v]) || ((d+1) > hdmax[v][jp_v])) continue; /*boundary condition*/
-		if (sq->dsq[j+1] < cm->abc->K) 
-		  iescore = cm->iesc[v][sq->dsq[j+1]];
+		if (dsq[j+1] < cm->abc->K) 
+		  iescore = cm->iesc[v][dsq[j+1]];
 		else
-		  iescore = esl_abc_IAvgScore(cm->abc, sq->dsq[j+1], cm->iesc[v]);
+		  iescore = esl_abc_IAvgScore(cm->abc, dsq[j+1], cm->iesc[v]);
 		beta[cm->M][j][d] = ILogsum(beta[cm->M][j][d], (beta[v][jp_v+1][dp_v+1] + cm->iendsc[v] 
 								+ iescore));
 		break;
@@ -4103,7 +4086,7 @@ IOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
    * (EL = deck at M.)
    */
   if (cm->flags & CM_LOCAL_END) {
-    for (jp = W; jp > 0; jp--) { /* careful w/ boundary here */
+    for (jp = L; jp > 0; jp--) { /* careful w/ boundary here */
       j = i0-1+jp;
       for (d = jp-1; d >= 0; d--) /* careful w/ boundary here */
 	beta[cm->M][j][d] = ILogsum(beta[cm->M][j][d], (beta[cm->M][j][d+1]
@@ -4118,7 +4101,7 @@ IOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
     printf("OUTSIDE JD, done printing beta\n");
   */
 
-  Wp = W - hdmin[0][j0-jmin[0]];
+  Lp = L - hdmin[0][j0-jmin[0]];
   if(do_check && (!(cm->flags & CM_LOCAL_END))) 
     /* Local ends make the following test invalid because it is not true that
      * exactly 1 state in each node's split set must be visited in each parse. 
@@ -4154,11 +4137,11 @@ IOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
 	      }
 	  fsc = Scorify(isc);
 	  /*printf("checking node: %d | sc: %.6f\n", n, fsc);*/
-	  diff = fsc - (Scorify(alpha[0][j0-jmin[0]][Wp]));
+	  diff = fsc - (Scorify(alpha[0][j0-jmin[0]][Lp]));
 	  if(diff > 0.01 || diff < -0.01)
 	    {
 	      esl_fatal("ERROR: node %d P(S|M): %.5f inconsistent with Inside P(S|M): %.5f (diff: %.5f)\n", 
-		  n, fsc, Scorify(alpha[0][(j0-jmin[0])][Wp]), diff);
+		  n, fsc, Scorify(alpha[0][(j0-jmin[0])][Lp]), diff);
 	    }
 	}
 
@@ -4197,7 +4180,7 @@ IOutside_b_jd_me(CM_t *cm, ESL_SQ *sq, int i0, int j0, int do_full,
     }
   else /* return_sc = P(S|M) / P(S|R) from Inside() */
     {
-      freturn_sc = Scorify(alpha[0][(j0-jmin[0])][Wp]);
+      freturn_sc = Scorify(alpha[0][(j0-jmin[0])][Lp]);
     }
 
   /* If the caller doesn't want the beta matrix, free it.

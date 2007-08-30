@@ -25,10 +25,8 @@
 #include "easel.h"
 #include "esl_mpi.h"
 
-#include "structs.h"
 #include "funcs.h"
-#include "cm_dispatch.h"
-#include "stats.h"
+#include "structs.h"
 
 /*****************************************************************
  * 1. Communicating a CM.

@@ -29,12 +29,8 @@
 #include "esl_sqio.h"		
 #include "esl_stopwatch.h"
 
-#include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
-#include "hmmband.h"         
-#include "cplan9.h"
-#include "cm_postprob.h"
-#include "cm_dispatch.h"
+#include "structs.h"		/* data structures, macros, #define's   */
 
 #define ALGOPTS  "--cyk,--inside,--outside,--hmmonly"        /* Exclusive choice for scoring algorithms */
 #define MEMOPTS  "--small,--nosmall"                         /* Exclusive choice for memory choice */

@@ -20,15 +20,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "structs.h"
-#include "funcs.h"
-#include "hmmband.h"
-
 #include "easel.h"
 #include "esl_alphabet.h"
 #include "esl_random.h"
+#include "esl_stack.h"
 #include "esl_vectorops.h"
 #include "esl_wuss.h"
+
+#include "funcs.h"
+#include "structs.h"
 
 static void  map_orig2sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, int print_flag);
 static int   map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, int orig_v, int sub_v);

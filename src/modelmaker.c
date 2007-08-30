@@ -42,8 +42,8 @@
 #include "esl_vectorops.h"
 #include "esl_wuss.h"
 
-#include "structs.h"
 #include "funcs.h"
+#include "structs.h"
 
 static int check_for_pknots(char *cs, int alen);
 

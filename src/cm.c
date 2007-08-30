@@ -23,9 +23,8 @@
 #include "esl_alphabet.h"
 #include "esl_stack.h"
 
-#include "structs.h"
 #include "funcs.h"
-#include "stats.h"
+#include "structs.h"
 
 /* Function: CreateCM(); CreateCMShell(); CreateCMBody()
  * Date:     SRE, Sat Jul 29 09:02:16 2000 [St. Louis]

@@ -26,10 +26,8 @@
 #include "esl_sqio.h"
 #include "esl_vectorops.h"
 
-#include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
-#include "stats.h"
-#include "cm_dispatch.h"
+#include "structs.h"		/* data structures, macros, #define's   */
 
 /*
  * Function: AllocCMStats()

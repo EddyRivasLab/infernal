@@ -41,10 +41,8 @@
 #include "esl_stopwatch.h"
 #include "esl_vectorops.h"
 
-#include "structs.h"
 #include "funcs.h"		/* external functions                   */
-#include "stats.h"              /* gumbel functions */
-#include "cm_dispatch.h"	
+#include "structs.h"
 
 #define CUTOPTS  "--eval,--ga,--nc,--tc,--all"  /* Exclusive choice for filter threshold score cutoff */
 
@@ -668,7 +666,8 @@ static int cm_fit_gumbel(CM_t *cm, ESL_GETOPTS *go, struct cfg_s *cfg,
 					      FALSE, /* don't filter with a CP9 HMM */
 					      (!(cm->search_opts & CM_SEARCH_HMMONLY)), /* TRUE if we're calcing CM  stats */
 					      (cm->search_opts & CM_SEARCH_HMMONLY),    /* TRUE if we're calcing CP9 stats */
-					      NULL);          /* filter fraction N/A */
+					      NULL,          /* filter fraction N/A */
+					      FALSE);/* do NOT align the hits */
 		  /* Add best score to histogram */
 		  esl_histogram_Add(h, sc);
 		}

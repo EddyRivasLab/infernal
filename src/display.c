@@ -19,12 +19,12 @@
 #include <ctype.h>
 #include <math.h>
 
-#include "structs.h"
-#include "funcs.h"
-
 #include "easel.h"
 #include "esl_stack.h"
 #include "esl_vectorops.h"
+
+#include "funcs.h"
+#include "structs.h"
 
 static int *createMultifurcationOrderChart(CM_t *cm);
 static void createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface);

@@ -30,10 +30,47 @@
 #include "easel.h"
 #include "esl_stopwatch.c"
 
-#include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
-#include "hmmband.h"
-#include "cplan9.h"
+#include "structs.h"		/* data structures, macros, #define's   */
+
+/* helper functions for hmm2ij_bands() */
+static void hmm2ij_prestate_step0_initialize(int n, int *nss_max_imin, int *nss_min_jmax, int i0, int j0);
+static void hmm2ij_prestate_step1_set_node_inserts(int n, int *nis_imin, int *nis_imax, 
+						   int *nis_jmin, int *nis_jmax,
+						   int *nss_imin, int *nss_imax, 
+						   int *nss_jmin, int *nss_jmax,
+						   int *pn_min_i, int *pn_max_i, 
+						   CP9Map_t *cp9map);
+static void hmm2ij_prestate_step2_determine_safe(int n, 	
+						 int nss_max_imin_np1, int nss_min_jmax_np1,
+						 int nis_imin_n, 
+						 int nis_jmax_n,
+						 int *safe_imax, int *safe_jmin);
+static void hmm2ij_prestate_step3_preset_node_splits(int n, int *nis_imin, int *nis_imax, 
+						     int *nis_jmin, int *nis_jmax,
+						     int *nss_imin, int *nss_imax, 
+						     int *nss_jmin, int *nss_jmax,
+						     int *pn_min_m, int *pn_max_m, 
+						     int *pn_min_d, int *pn_max_d, 
+						     CP9Map_t *cp9map);
+static void hmm2ij_split_state_step1_set_state_bands(int v, int n, 
+						     int tmp_imin, int tmp_imax, 
+						     int tmp_jmin, int tmp_jmax,
+						     int *imin, int *imax, int *jmin, int *jmax,
+						     int *nss_imin, int *nss_imax,
+						     int *nss_jmin, int *nss_jmax);
+static void hmm2ij_insert_state_step1_set_state_bands(int v, 
+						      int tmp_imin, int tmp_imax, 
+						      int tmp_jmin, int tmp_jmax,
+						      int *imin, int *imax, int *jmin, int *jmax);
+static void hmm2ij_state_step2_enforce_safe_trans(CM_t *cm, int v, int n, int *imax, int *jmin,
+						  int *nss_imax, int *nss_jmin, 
+						  int safe_imax, int safe_jmin);
+static void hmm2ij_state_step3_enforce_state_delta(CM_t *cm, int v, int *jmin, int *jmax);
+static void hmm2ij_state_step4_update_safe_holders(int v, int n, int imin_v, int jmax_v, int *nss_max_imin, 
+						   int *nss_min_jmax);
+static void hmm2ij_state_step5_non_emitter_d0_hack(int v, int imax_v, int *jmin);
+
 
 /**************************************************************************
  * EPN 10.28.06

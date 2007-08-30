@@ -41,8 +41,9 @@ parallel_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_
 		       int bdump_level, int debug_level,
 		       int silent_mode, int mpi_my_rank, int mpi_master_rank, int mpi_num_procs);
 extern int
-actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, char ***ret_postcode,
-		       CP9trace_t ***ret_cp9_tr, float **ret_sc, int bdump_level, int debug_level, int silent_mode);
+actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, ESL_DSQ *dsq, search_results_t *results, Parsetree_t ***ret_tr, 
+		       char ***ret_postcode, CP9trace_t ***ret_cp9_tr, float **ret_sc, int bdump_level, int debug_level, 
+		       int silent_mode);
 
 extern int PrintSearchInfo(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N);
 

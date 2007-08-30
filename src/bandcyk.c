@@ -24,8 +24,8 @@
 #include "esl_stack.h"
 #include "esl_sqio.h"
 
-#include "structs.h"
 #include "funcs.h"
+#include "structs.h"
 
 void
 BandExperiment(CM_t *cm)

@@ -28,8 +28,6 @@
 
 #include "funcs.h"
 #include "structs.h"
-#include "cplan9.h"
-
 
 static float
 cm2hmm_emit_prob(CM_t *cm, CP9Map_t *cp9map, int x, int i, int k);

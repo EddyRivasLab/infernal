@@ -20,6 +20,7 @@
 #include "esl_alphabet.h"
 #include "esl_vectorops.h"
 
+#include "funcs.h"
 #include "structs.h"
 
 /* Function: PairCount()

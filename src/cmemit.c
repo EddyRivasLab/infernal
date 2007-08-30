@@ -27,10 +27,8 @@
 #include <esl_vectorops.h>
 #include <esl_wuss.h>
 
-#include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* function declarations                */
-#include "stats.h"
-#include "cm_dispatch.h"	
+#include "structs.h"		/* data structures, macros, #define's   */
 
 #define ALPHOPTS "--rna,--dna"                         /* Exclusive options for alphabet choice */
 #define OUTOPTS  "-u,-c,-a,--hmmbuild"                 /* Exclusive options for output */

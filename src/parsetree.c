@@ -30,9 +30,8 @@
 #include "esl_vectorops.h"
 #include "esl_sqio.h"
 
-#include "structs.h"
 #include "funcs.h"
-#include "cplan9.h"
+#include "structs.h"
 
 /* Function: CreateParsetree()
  * Incept:   SRE 29 Feb 2000 [Seattle] from cove2.0 code.

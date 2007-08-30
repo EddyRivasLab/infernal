@@ -26,9 +26,8 @@
 #include "easel.h"
 #include "esl_vectorops.h"
 
-#include "prior.h"
-#include "structs.h"
 #include "funcs.h"
+#include "structs.h"
 
 /* Function: CM_Eweight [EPN]
  * based on:

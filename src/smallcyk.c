@@ -48,9 +48,8 @@
 #include "esl_stack.h"
 #include "esl_vectorops.h"
 
-#include "structs.h"
 #include "funcs.h"
-#include "cm_postprob.h"
+#include "structs.h"
 
 struct deckpool_s {
   float ***pool;
@@ -469,7 +468,8 @@ CYKInside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **re
  *           more details on shared aspects.
  *           
  * Args:     cm     - the covariance model
- *           sq    - the sequence, 1..L
+ *           dsq    - the sequence, 1..L
+ *           L      - length of sequence
  *           r      - root of subgraph to align to target subseq (usually 0, the model's root)
  *           i0     - start of target subsequence (often 1, beginning of sq)
  *           j0     - end of target subsequence (often L, end of sq)
@@ -708,7 +708,7 @@ generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    *    and append the trace to tr.
    */
   if (insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT) {
-    ESL_DPRINTF1(("Solving a generic w/ insideT - G%d[%s]..%d[%s], %d..%d\n",
+    ESL_DPRINTF2(("Solving a generic w/ insideT - G%d[%s]..%d[%s], %d..%d\n",
 		  r, UniqueStatetype(cm->stid[r]),
 		  z, UniqueStatetype(cm->stid[z]),
 		  i0, j0));
@@ -848,16 +848,16 @@ generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    * The problems must be solved in a particular order, since we're
    * constructing the trace in a postorder traversal.
    */
-  ESL_DPRINTF1(("Generic splitter:\n"));
-  ESL_DPRINTF1(("   V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
+  ESL_DPRINTF2(("Generic splitter:\n"));
+  ESL_DPRINTF2(("   V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
 		r, UniqueStatetype(cm->stid[r]),
 		v, UniqueStatetype(cm->stid[v]),
 		i0, best_j-best_d+1, best_j, j0));
-  ESL_DPRINTF1(("   generic: G%d[%s]..%d[%s], %d..%d\n", 
+  ESL_DPRINTF2(("   generic: G%d[%s]..%d[%s], %d..%d\n", 
 		w,    UniqueStatetype(cm->stid[w]),
 		wend, UniqueStatetype(cm->stid[wend]),
 		best_j-best_d+1, best_j-best_k));
-  ESL_DPRINTF1(("   generic: G%d[%s]..%d[%s], %d..%d\n", 
+  ESL_DPRINTF2(("   generic: G%d[%s]..%d[%s], %d..%d\n", 
 		y,    UniqueStatetype(cm->stid[y]),
 		yend, UniqueStatetype(cm->stid[yend]),
 		best_j-best_k+1, best_j));
@@ -931,7 +931,7 @@ wedge_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int
   if (cm->ndidx[z] == cm->ndidx[r] + 1 || 
       insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT) 
     {
-      ESL_DPRINTF1(("Solving a wedge:   G%d[%s]..%d[%s], %d..%d\n", 
+      ESL_DPRINTF2(("Solving a wedge:   G%d[%s]..%d[%s], %d..%d\n", 
 		r, UniqueStatetype(cm->stid[r]),
 		z, UniqueStatetype(cm->stid[z]),
 		i0,j0));
@@ -1045,12 +1045,12 @@ wedge_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int
    *    These have to solved in the order given because we're
    *    constructing the trace in postorder traversal.
    */
-  ESL_DPRINTF1(("Wedge splitter:\n"));
-  ESL_DPRINTF1(("   V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
+  ESL_DPRINTF2(("Wedge splitter:\n"));
+  ESL_DPRINTF2(("   V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
 		r, UniqueStatetype(cm->stid[r]),
 		best_v, UniqueStatetype(cm->stid[best_v]),
 		i0, best_j-best_d+1, best_j, j0));
-  ESL_DPRINTF1(("   wedge:   G%d[%s]..%d[%s], %d..%d\n", 
+  ESL_DPRINTF2(("   wedge:   G%d[%s]..%d[%s], %d..%d\n", 
 		best_v, UniqueStatetype(cm->stid[best_v]),
 		z, UniqueStatetype(cm->stid[z]),
 		best_j-best_d+1, best_j));
@@ -1108,7 +1108,7 @@ v_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    if (cm->ndidx[z] == cm->ndidx[r] + 1 || r == z || 
       vinsideT_size(cm, r, z, i0, i1, j1, j0) < RAMLIMIT)
     {
-      ESL_DPRINTF1(("Solving a V:   G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
+      ESL_DPRINTF2(("Solving a V:   G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
 		r, UniqueStatetype(cm->stid[r]),
 		z, UniqueStatetype(cm->stid[z]),
 		i0,j1,j1,j0));
@@ -1209,12 +1209,12 @@ v_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    * Solve in this order, because we're constructing the
    * trace in postorder traversal.
    */
-  ESL_DPRINTF1(("V splitter:\n"));
-  ESL_DPRINTF1(("   V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
+  ESL_DPRINTF2(("V splitter:\n"));
+  ESL_DPRINTF2(("   V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
 		r, UniqueStatetype(cm->stid[r]),
 		best_v, UniqueStatetype(cm->stid[best_v]),
 		i0, best_i, best_j, j0));
-  ESL_DPRINTF1(("   V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
+  ESL_DPRINTF2(("   V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
 		best_v, UniqueStatetype(cm->stid[best_v]),
 		z, UniqueStatetype(cm->stid[z]),
 		best_i, i1, j1, best_j));
@@ -3726,7 +3726,7 @@ generic_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    *    and append the trace to tr.
    */
   if (insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT) {
-    ESL_DPRINTF1(("Solving a generic w/ insideT - G%d[%s]..%d[%s], %d..%d\n",
+    ESL_DPRINTF2(("Solving a generic w/ insideT - G%d[%s]..%d[%s], %d..%d\n",
 		  r, UniqueStatetype(cm->stid[r]),
 		  z, UniqueStatetype(cm->stid[z]),
 		  i0, j0));
@@ -3867,16 +3867,16 @@ generic_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    * The problems must be solved in a particular order, since we're
    * constructing the trace in a postorder traversal.
    */
-  ESL_DPRINTF1(("Generic splitter:\n"));
-  ESL_DPRINTF1(("   V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
+  ESL_DPRINTF2(("Generic splitter:\n"));
+  ESL_DPRINTF2(("   V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
 		r, UniqueStatetype(cm->stid[r]),
 		v, UniqueStatetype(cm->stid[v]),
 		i0, best_j-best_d+1, best_j, j0));
-  ESL_DPRINTF1(("   generic: G%d[%s]..%d[%s], %d..%d\n", 
+  ESL_DPRINTF2(("   generic: G%d[%s]..%d[%s], %d..%d\n", 
 		w,    UniqueStatetype(cm->stid[w]),
 		wend, UniqueStatetype(cm->stid[wend]),
 		best_j-best_d+1, best_j-best_k));
-  ESL_DPRINTF1(("   generic: G%d[%s]..%d[%s], %d..%d\n", 
+  ESL_DPRINTF2(("   generic: G%d[%s]..%d[%s], %d..%d\n", 
 		y,    UniqueStatetype(cm->stid[y]),
 		yend, UniqueStatetype(cm->stid[yend]),
 		best_j-best_k+1, best_j));
@@ -3956,7 +3956,7 @@ wedge_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, i
   if (cm->ndidx[z] == cm->ndidx[r] + 1 || 
       insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT) 
     {
-      ESL_DPRINTF1(("Solving a wedge:   G%d[%s]..%d[%s], %d..%d\n", 
+      ESL_DPRINTF2(("Solving a wedge:   G%d[%s]..%d[%s], %d..%d\n", 
 		r, UniqueStatetype(cm->stid[r]),
 		z, UniqueStatetype(cm->stid[z]),
 		i0,j0));
@@ -4070,12 +4070,12 @@ wedge_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, i
    *    These have to solved in the order given because we're
    *    constructing the trace in postorder traversal.
    */
-  ESL_DPRINTF1(("Wedge splitter:\n"));
-  ESL_DPRINTF1(("   V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
+  ESL_DPRINTF2(("Wedge splitter:\n"));
+  ESL_DPRINTF2(("   V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
 		r, UniqueStatetype(cm->stid[r]),
 		best_v, UniqueStatetype(cm->stid[best_v]),
 		i0, best_j-best_d+1, best_j, j0));
-  ESL_DPRINTF1(("   wedge:   G%d[%s]..%d[%s], %d..%d\n", 
+  ESL_DPRINTF2(("   wedge:   G%d[%s]..%d[%s], %d..%d\n", 
 		best_v, UniqueStatetype(cm->stid[best_v]),
 		z, UniqueStatetype(cm->stid[z]),
 		best_j-best_d+1, best_j));
@@ -4149,7 +4149,7 @@ v_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    if (cm->ndidx[z] == cm->ndidx[r] + 1 || r == z || 
       vinsideT_size(cm, r, z, i0, i1, j1, j0) < RAMLIMIT)
     {
-      ESL_DPRINTF1(("Solving a V:   G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
+      ESL_DPRINTF2(("Solving a V:   G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
 		r, UniqueStatetype(cm->stid[r]),
 		z, UniqueStatetype(cm->stid[z]),
 		i0,j1,j1,j0));
@@ -4273,12 +4273,12 @@ v_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    * Solve in this order, because we're constructing the
    * trace in postorder traversal.
    */
-  ESL_DPRINTF1(("V splitter:\n"));
-  ESL_DPRINTF1(("   V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
+  ESL_DPRINTF2(("V splitter:\n"));
+  ESL_DPRINTF2(("   V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
 		r, UniqueStatetype(cm->stid[r]),
 		best_v, UniqueStatetype(cm->stid[best_v]),
 		i0, best_i, best_j, j0));
-  ESL_DPRINTF1(("   V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
+  ESL_DPRINTF2(("   V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
 		best_v, UniqueStatetype(cm->stid[best_v]),
 		z, UniqueStatetype(cm->stid[z]),
 		best_i, i1, j1, best_j));

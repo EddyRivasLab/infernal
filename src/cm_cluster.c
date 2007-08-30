@@ -27,8 +27,8 @@
 #include "esl_tree.h"
 #include "esl_vectorops.h"
 
-#include "structs.h"
 #include "funcs.h"
+#include "structs.h"
 
 static int select_node(ESL_TREE *T, double *diff, double mindiff, 
 		       int **ret_clust, int *ret_nc);

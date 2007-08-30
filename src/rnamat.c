@@ -18,9 +18,18 @@
 #include "esl_vectorops.h"
 #include "esl_wuss.h"
 
+#include "funcs.h"
 #include "structs.h"
-#include "rnamat.h"
 
+static matrix_t *setup_matrix (int size);
+static void print_matrix (FILE *fp, fullmat_t *fullmat);
+static float get_min_alpha_beta_sum (fullmat_t *fullmat);
+static void FreeMat(fullmat_t *fullmat);
+static int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, ESL_MSA *msa);
+static int unpaired_res (int i);
+static float simple_identity(const ESL_ALPHABET *abc, char *s1, char *s2);
+
+static void count_matrix (ESL_MSA *msa, fullmat_t *fullmat, double *background_nt, int cutoff_perc, int product_weights);
 /*
  * Maps c as follows:
  * A->0
@@ -222,7 +231,7 @@ int middle_of_stem (ESL_MSA *msa, int i, int j, int pos, int **ct) {
  *           the fractional identity between them. (0..1)
  *           (Gaps don't count toward anything.)
  */
-static float
+float
 simple_identity(const ESL_ALPHABET *abc, char *s1, char *s2)
 {
   int diff  = 0;

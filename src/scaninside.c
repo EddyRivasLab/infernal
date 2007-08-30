@@ -25,8 +25,8 @@
 
 #include "easel.h"
 
-#include "structs.h"
 #include "funcs.h"
+#include "structs.h"
 
 /**************************************************************
  * Function: InsideScan()
@@ -525,7 +525,7 @@ InsideBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, i
 
       alpha[v][1][0] = alpha[v][0][0];
       if (cm->stid[v] == BEGL_S) 
-	for (j = 2; j < W; j++) 
+	for (j = 2; j <= W; j++) 
 	  alpha[v][j][0] = alpha[v][0][0];
     }
   /* Impose the bands.
@@ -1829,7 +1829,7 @@ iInsideBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, 
       }
   }
   ESL_ALLOC(bestr, sizeof(int) * (W+1));
-
+  
   /*****************************************************************
    * alpha initializations.
    * We initialize on d=0, subsequences of length 0; these are
@@ -1870,7 +1870,7 @@ iInsideBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, 
 
       alpha[v][1][0] = alpha[v][0][0];
       if (cm->stid[v] == BEGL_S) 
-	for (j = 2; j < W; j++) 
+	for (j = 2; j <= W; j++) 
 	  alpha[v][j][0] = alpha[v][0][0];
     }
   /* Impose the bands.

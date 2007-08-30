@@ -26,13 +26,8 @@
 #include "esl_stack.h"
 #include "esl_stopwatch.h"   
 
-#include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
-#include "hmmband.h"         
-#include "cm_postprob.h"
-#include "stats.h"
-#include "cplan9.h"
-#include "cm_dispatch.h"
+#include "structs.h"		/* data structures, macros, #define's   */
 
 /* Helper functions called by the main functions (main functions
  * declared in cm_dispatch.h) 
@@ -117,7 +112,8 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc
 				 TRUE,  /* filter with a CP9 HMM if appropriate */
 				 FALSE, /* we're not building a histogram for CM stats  */
 				 FALSE, /* we're not building a histogram for CP9 stats */
-				 NULL); /* filter fraction, TEMPORARILY NULL            */
+				 NULL,  /* filter fraction, TEMPORARILY NULL            */
+				 do_align); /* align the search hits? */
 	  remove_overlapping_hits (dbseq->results[reversed], 1, dbseq->sq[reversed]->n);
 	  if (((!(cm->search_opts & CM_SEARCH_HMMONLY)) && (cm->cutoff_type == E_CUTOFF)) || 
 	      ((cm->search_opts & CM_SEARCH_HMMONLY) && (cm->cp9_cutoff_type == E_CUTOFF)))
@@ -125,33 +121,21 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc
 				       dbseq->sq[reversed], 
 				       (cm->search_opts & CM_SEARCH_HMMONLY)); /* HMM hits? */
 
-	  /* Align results */
-	  if (do_align) 
-	    {
-	    for (i=0; i<dbseq->results[reversed]->num_results; i++) 
-	      {
-		CYKDivideAndConquer
-		  (cm, dbseq->sq[reversed]->dsq, dbseq->sq[reversed]->n,
-		   dbseq->results[reversed]->data[i].bestr,
-		   dbseq->results[reversed]->data[i].start, 
-		   dbseq->results[reversed]->data[i].stop, 
-		   &(dbseq->results[reversed]->data[i].tr),
-		   //cm->dmin, cm->dmax);  
-		   dmin, dmax); /* dmin and dmax will be NULL unless cm->align_opts & CM_ALIGN_QDB */
-
-		/* Now, subtract out the starting point of the result so 
-		   that it can be added in later.  This makes the print_alignment
-		   routine compatible with the parallel version, while not needing
-		   to send the entire database seq over for each alignment. */
-		for (a=0; a<dbseq->results[reversed]->data[i].tr->n; a++) 
-		  {
-		    dbseq->results[reversed]->data[i].tr->emitl[a] -= 
-		      (dbseq->results[reversed]->data[i].start - 1);
-		    dbseq->results[reversed]->data[i].tr->emitr[a] -= 
-		      (dbseq->results[reversed]->data[i].start - 1);
-		  }
-	      }
+	  if (do_align) {
+	    for (i=0; i<dbseq->results[reversed]->num_results; i++) {
+	      /* subtract out the starting point of the result so 
+		 that it can be added in later.  This makes the print_alignment
+		 routine compatible with the parallel version, while not needing
+		 to send the entire database seq over for each alignment. */
+	      for (a=0; a<dbseq->results[reversed]->data[i].tr->n; a++) 
+		{
+		  dbseq->results[reversed]->data[i].tr->emitl[a] -= 
+		    (dbseq->results[reversed]->data[i].start - 1);
+		  dbseq->results[reversed]->data[i].tr->emitr[a] -= 
+		    (dbseq->results[reversed]->data[i].start - 1);
+		}
 	    }
+	  }
 	}
       /* Print results */
       print_results (cm, abc, cons, dbseq, do_revcomp, 
@@ -460,25 +444,28 @@ int read_next_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revcomp, db
  * Purpose:  Given a CM and a sequence, call the correct search algorithm
  *           based on cm->search_opts.
  * 
- * Args:     cm         - the covariance model
- *           dsq        - the target sequence (digitized)
- *           i0         - start of target subsequence (often 1, beginning of dsq)
- *           j0         - end of target subsequence (often L, end of dsq)
- *           cm_cutoff  - minimum CM  score to report 
- *           cp9_cutoff - minimum CP9 score to report (or keep if filtering)
- *           results    - search_results_t to add to; if NULL, don't add to it
- *           do_filter  - TRUE if we should filter, but only if cm->search_opts tells us to 
- *           doing_cm_stats - TRUE if the reason we're scanning this seq is to build
- *                            a histogram to calculate Gumbels for the CM, in this
- *                            case we don't filter regardless of what cm->search_opts says.
- *           doing_cp9_stats- TRUE if we're calc'ing stats for the CP9, in this 
- *                            case we always run CP9Forward()
- *           ret_flen   - RETURN: subseq len that survived filter (NULL if not filtering)
+ * Args:     cm              - the covariance model
+ *           dsq             - the target sequence (digitized)
+ *           i0              - start of target subsequence (often 1, beginning of dsq)
+ *           j0              - end of target subsequence (often L, end of dsq)
+ *           cm_cutoff       - minimum CM  score to report 
+ *           cp9_cutoff      - minimum CP9 score to report (or keep if filtering)
+ *           results         - search_results_t to keep results in, must be empty; if NULL, don't add to it
+ *           do_filter       - TRUE if we should filter, but only if cm->search_opts tells us to 
+ *           doing_cm_stats  - TRUE if the reason we're scanning this seq is to build
+ *                             a histogram to calculate Gumbels for the CM, in this
+ *                             case we don't filter regardless of what cm->search_opts says.
+ *           doing_cp9_stats - TRUE if we're calc'ing stats for the CP9, in this 
+ *                             case we always run CP9Forward()
+ *           ret_flen        - RETURN: subseq len that survived filter (NULL if not filtering)
+ *           do_align_hits   - TRUE to do alignments and return  parsetrees in results
+ *
  * Returns: Highest scoring hit from search (even if below cutoff).
  */
 float actually_search_target(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cutoff, 
 			     float cp9_cutoff, search_results_t *results, int do_filter, 
-			     int doing_cm_stats, int doing_cp9_stats, int *ret_flen)
+			     int doing_cm_stats, int doing_cp9_stats, int *ret_flen,
+			     int do_align_hits)
 {
   if(dsq == NULL)
     esl_fatal("ERROR in actually_search_target(), dsq is NULL.");
@@ -488,6 +475,7 @@ float actually_search_target(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cu
   CP9Bands_t  *cp9b;                    /* data structure for hmm bands (bands on the hmm states) 
 				         * and arrays for CM state bands, derived from HMM bands*/
   int use_cp9;    
+
   /*printf("in actually_search_target: i0: %d j0: %d do_filter: %d doing_cm_stats: %d doing_cp9_stats: %d\n", i0, j0, do_filter, doing_cm_stats, doing_cp9_stats);
     printf("\ti0: %d j0: %d filter: %d\n", i0, j0, do_filter);*/
 
@@ -496,6 +484,8 @@ float actually_search_target(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cu
     esl_fatal("ERROR in actually_search_target, CMH_BITS flag down.\n");
   if(doing_cm_stats && doing_cp9_stats)
     esl_fatal("ERROR in actually_search_target doing_cm_stats and doing_cp9_stats both TRUE.\n");
+  if(results != NULL && results->num_results > 0)
+    esl_fatal("ERROR in actually_search_target(): there's already hits in results.\n");
 
   flen = (j0-i0+1);
 
@@ -552,6 +542,10 @@ float actually_search_target(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cu
 	else /* don't do inside */
 	  sc = CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
     }    
+  if(results->num_results > 0 && do_align_hits)
+    actually_align_targets(cm, NULL, 0,
+			   dsq, results,   /* put function into dsq_mode, designed for aligning search hits */
+			   NULL, NULL, NULL, NULL, 0, 0, 0);
   return sc;
 }  
 
@@ -842,9 +836,13 @@ serial_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t 
    * to align_target_seqs()
    ****************************************************************/
   if(ret_cp9_tr == NULL)
-    actually_align_targets(cm, sq, nseq, &tr, &postcode, NULL, ret_sc, bdump_level, debug_level, silent_mode);
+    actually_align_targets(cm, sq, nseq, 
+			   NULL, NULL,   /* we're not aligning search result subseqs */
+			   &tr, &postcode, NULL, ret_sc, bdump_level, debug_level, silent_mode);
   else
-    actually_align_targets(cm, sq, nseq, &tr, &postcode, &cp9_tr, ret_sc, bdump_level, debug_level, silent_mode);
+    actually_align_targets(cm, sq, nseq, 
+			   NULL, NULL,   /* we're not aligning search result subseqs */
+			   &tr, &postcode, &cp9_tr, ret_sc, bdump_level, debug_level, silent_mode);
 
   /* Clean up and return */
   if(ret_tr     != NULL) *ret_tr = tr;
@@ -1000,8 +998,9 @@ parallel_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_
 	      debug_level = 0;
 	      bdump_level = 0;
 	      /* align the targets */
-	      actually_align_targets(cm, seqs_to_aln->sq, seqs_to_aln->nseq, &(seqs_to_aln->tr), 
-				     &(seqs_to_aln->postcode), NULL, bdump_level, debug_level, silent_mode);
+	      actually_align_targets(cm, seqs_to_aln->sq, seqs_to_aln->nseq, 
+				     NULL, NULL, /* we're not aligning search results */
+				     &(seqs_to_aln->tr), &(seqs_to_aln->postcode), NULL, bdump_level, debug_level, silent_mode);
 
 	      /*printf("done actually_align_targets\n");*/
 	      aln_send_results(seqs_to_aln, do_post, mpi_master_rank);
@@ -1072,33 +1071,56 @@ seqs_to_aln_t * read_next_aln_seqs(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, i
  * 
  * Purpose:  Given a CM and sequences, do preliminaries, call the correct 
  *           CYK function and return parsetrees and optionally postal codes 
- *           (if cm->align_opts & CM_ALIGN_POST)
- * 
- * Args:     CM           - the covariance model
- *           sq           - the sequences
- *           nseq         - number of seqs we're aligning
- *           ret_tr       - RETURN: parsetrees (pass NULL if trace isn't wanted)
- *           ret_postcode - RETURN: postal code strings (pass NULL if not wanted)
- *           ret_cp9_tr   - RETURN: CP9 traces only filled if cm->align_opts & CM_ALIGN_HMMONLY
- *           ret_sc       - RETURN: scores of parses, NULL if not wanted
- *           bdump_level  - verbosity level for band related print statements
- *           debug_level  - verbosity level for debugging print statements
- *           silent_mode  - TRUE to not print anything, FALSE to print scores 
+ *           (if cm->align_opts & CM_ALIGN_POST).
+ *
+ *           Two different modes are possible dependent on input args. Mode
+ *           is checked for during contract enforcement.
+ *
+ *           sq_mode: sq != NULL; nseq >  0; dsq == NULL; results == NULL.
+ *                    tr is NULL or non-NULL.
+ *                    align the nseq ESL_SQ sq sequences.
+ *
+ *          dsq_mode: sq == NULL; nseq == 0, dsq != NULL, results != NULL.
+ *                    tr is NULL.
+ *                    align the search results (hits) in results, which
+ *                    are all subsequences of a single sequence (dsq).
+ *                    parstrees are stored in results (not in ret_tr).
+ *
+ * Args:     CM             - the covariance model
+ *           sq             - the sequences (if sq_mode)
+ *           nseq           - number of seqs we're aligning (if sq_mode)
+ *           dsq            - a single digitized sequence (if dsq_mode)
+ *           search_results - search results with subsequence indices of dsq to align (if dsq_mode)
+ *           ret_tr         - RETURN: parsetrees (NULL if not wanted)
+ *           ret_postcode   - RETURN: postal code strings (NULL if not wanted)
+ *           ret_cp9_tr     - RETURN: CP9 traces only filled if cm->align_opts & CM_ALIGN_HMMONLY
+ *           ret_sc         - RETURN: scores of parses (NULL if not wanted)
+ *           bdump_level    - verbosity level for band related print statements
+ *           debug_level    - verbosity level for debugging print statements
+ *           silent_mode    - TRUE to not print anything, FALSE to print scores 
  * 
  * Returns:  eslOK on success;
  *           Dies if there's an error (not good for MPI).
  */
 int
-actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, char ***ret_postcode,
-		       CP9trace_t ***ret_cp9_tr, float **ret_sc, int bdump_level, int debug_level, int silent_mode)
+actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, ESL_DSQ *dsq, search_results_t *search_results,
+		       Parsetree_t ***ret_tr, char ***ret_postcode, CP9trace_t ***ret_cp9_tr, 
+		       float **ret_sc, int bdump_level, int debug_level, int silent_mode)
 {
-  int              status;
-  ESL_STOPWATCH   *watch;       /* for timings */
+  int status;
+  ESL_STOPWATCH *watch;         /* for timings */
+  int sq_mode  = FALSE;         /* we're aligning nseq seqs in sq */
+  int dsq_mode = FALSE;         /* we're aligning search_results->num_results seqs, all subseqs of dsq */
+  int nalign   = 0;             /* number of sequences we're aligning */
+  ESL_DSQ *cur_dsq;             /* ptr to digitized sequence we're currently aligning */
+  Parsetree_t **cur_tr;         /* pointer to the pointer to the parsetree we're currently creating */
+  int L;                        /* length of sequence/subseq we're currently aligning */
   int i;                        /* counter over sequences */
   int v;                        /* state counter */
+  int tn;                       /* counter over parsetree nodes */
   char           **postcode;    /* posterior decode array of strings        */
   Parsetree_t    **tr;          /* parse trees for the sequences */
-  CP9trace_t     **cp9_tr;   /* CP9 traces for the sequences */
+  CP9trace_t     **cp9_tr;      /* CP9 traces for the sequences */
   float            sc;		/* score for one sequence alignment */
   float            maxsc;	/* max score in all seqs */
   float            minsc;	/* min score in all seqs */
@@ -1166,7 +1188,21 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 
   /* Contract checks */
   if(!(cm->flags & CMH_BITS)) 
-    esl_fatal("actually_align_targets(), CMH_BITS flag down.\n");
+    esl_fatal("ERROR: actually_align_targets(), CMH_BITS flag down.\n");
+  /* determine mode */
+  if     ((sq != NULL && nseq >  0)                   && (dsq == NULL && search_results == NULL))  sq_mode = TRUE;
+  else if((sq == NULL && nseq == 0 && ret_tr == NULL) && (dsq != NULL && search_results != NULL)) dsq_mode = TRUE;
+  else   esl_fatal("ERROR: actually_align_targets(), can't determine mode (sq_mode or dsq_mode).\n");
+
+  if(dsq_mode && ret_postcode != NULL) cm_Fail("ERROR: actually_align_targets(), in dsq_mode, ret_post NON-NULL.\n");
+  if(dsq_mode && ret_cp9_tr   != NULL) cm_Fail("ERROR: actually_align_targets(), in dsq_mode, ret_cp9_tr NON-NULL.\n");
+  if(dsq_mode && (cm->align_opts & CM_ALIGN_HMMONLY)) cm_Fail("ERROR: actually_align_targets(), in dsq_mode, CM_ALIGN_HMMONLY option on.\n");
+  if(dsq_mode && (cm->align_opts & CM_ALIGN_POST))    cm_Fail("ERROR: actually_align_targets(), in dsq_mode, CM_ALIGN_POST option on.\n");
+  if(dsq_mode && (cm->align_opts & CM_ALIGN_INSIDE))  cm_Fail("ERROR: actually_align_targets(), in dsq_mode, CM_ALIGN_INSIDE option on.\n");
+  if(dsq_mode && (cm->align_opts & CM_ALIGN_OUTSIDE)) cm_Fail("ERROR: actually_align_targets(), in dsq_mode, CM_ALIGN_OUTSIDE option on.\n");
+
+  if      (sq_mode)   nalign = nseq;
+  else if(dsq_mode) { nalign = search_results->num_results; silent_mode = TRUE; }
 
   /*printf("in actually_align_targets\n");*/
 
@@ -1201,18 +1237,18 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 
   if((!(ret_cp9_tr == NULL)) && !do_hmmonly)
     esl_fatal("actually_align_targets(), want CP9 traces, but not hmmonly mode.\n");
-  if(!do_hmmonly && !do_scoreonly) 
-    {
-      ESL_ALLOC(tr, sizeof(Parsetree_t *) * nseq);
-      cp9_tr = NULL;
-    }
-  else if(do_hmmonly) /* do_hmmonly */
-    {
-      ESL_ALLOC(cp9_tr, sizeof(CP9trace_t *) * nseq);
-      tr = NULL;
-    }
+
+  tr     = NULL;
+  cp9_tr = NULL;
+  if(sq_mode) {
+    if(!do_hmmonly && !do_scoreonly)
+      ESL_ALLOC(tr, sizeof(Parsetree_t *) * nalign);
+    else if(do_hmmonly) /* do_hmmonly */
+      ESL_ALLOC(cp9_tr, sizeof(CP9trace_t *) * nalign);
+  }   
+ 
   if(ret_sc != NULL)
-    ESL_ALLOC(parsesc, sizeof(float) * nseq);
+    ESL_ALLOC(parsesc, sizeof(float) * nalign);
   else parsesc = NULL;
 
   minsc = FLT_MAX;
@@ -1263,7 +1299,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
       }
 
   if(do_post)
-    ESL_ALLOC(postcode, sizeof(char *) * nseq);
+    ESL_ALLOC(postcode, sizeof(char *) * nalign);
   if(do_hbanded)
     {
       cp9b = AllocCP9Bands(cm, cm->cp9);
@@ -1274,32 +1310,42 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
    *  Collect parse trees for each sequence
    *****************************************************************/
 
-  for (i = 0; i < nseq; i++)
+  for (i = 0; i < nalign; i++)
     {
       esl_stopwatch_Start(watch);
 
-      if (sq[i]->n == 0) continue;
+      if (sq_mode) { 
+	cur_dsq = sq[i]->dsq;
+	cur_tr  = &(tr[i]);
+	L       = sq[i]->n;
+      }
+      else if (dsq_mode) {
+	cur_dsq = dsq + search_results->data[i].start - 1;
+	cur_tr  = &(search_results->data[i].tr);
+	L       = search_results->data[i].stop - search_results->data[i].start + 1;
+      }
+
+      if (L == 0) continue; /* silently skip zero length seqs */
 
       /* Special case, if do_hmmonly, align seq with Viterbi, print score and move 
        * on to next seq */
-      if(do_hmmonly)
+      if(sq_mode && do_hmmonly)
 	{
 	  cp9_mx  = CreateCPlan9Matrix(1, cm->cp9->M, 25, 0);
-	  if(!silent_mode) printf("Aligning (to a CP9 HMM w/viterbi) %-20s", sq[i]->name);
-	  sc = CP9ViterbiOLD(sq[i]->dsq, 1, sq[i]->n, cm->cp9, cp9_mx, &(cp9_tr[i]));
-	  if(!silent_mode) printf(" score: %10.2f bits\n", sc);
+	  if(sq_mode && !silent_mode) printf("Aligning (to a CP9 HMM w/viterbi) %-20s", sq[i]->name);
+	  sc = CP9ViterbiOLD(cur_dsq, 1, L, cm->cp9, cp9_mx, &(cp9_tr[i]));
+	  if(sq_mode && !silent_mode) printf(" score: %10.2f bits\n", sc);
 	  if(parsesc != NULL) parsesc[i] = sc;
 	  FreeCPlan9Matrix(cp9_mx);
 	  continue;
 	}
       /* Special case, if do_scoreonly, align seq with full CYK inside, just to 
        * get the score. For testing, probably in cmscore. */
-      if(do_scoreonly)
+      if(sq_mode && do_scoreonly)
 	{
-	  if(!silent_mode) printf("Aligning (w/full CYK score only) %-30s", sq[i]->name);
-	  sc = CYKInsideScore(cm, sq[i]->dsq, sq[i]->n, 0, 1, sq[i]->n, 
-			      NULL, NULL); /* don't do QDB mode */
-	  if(!silent_mode) printf("    score: %10.2f bits\n", sc);
+	  if(sq_mode && !silent_mode) printf("Aligning (w/full CYK score only) %-30s", sq[i]->name);
+	  sc = CYKInsideScore(cm, cur_dsq, L, 0, 1, L, NULL, NULL); /* don't do QDB mode */
+	  if(sq_mode && !silent_mode) printf("    score: %10.2f bits\n", sc);
 	  if(parsesc != NULL) parsesc[i] = sc;
 	  continue;
 	}
@@ -1308,11 +1354,11 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
       if(do_hbanded)
 	{
 	  if(do_sub)
-	    CP9_seq2bands(orig_cm, sq[i]->dsq, 1, sq[i]->n, orig_cp9b, 
+	    CP9_seq2bands(orig_cm, cur_dsq, 1, L, orig_cp9b, 
 			  &cp9_post, /* we DO want the posterior matrix back */
 			  debug_level);
 	  else
-	    CP9_seq2bands(orig_cm, sq[i]->dsq, 1, sq[i]->n, orig_cp9b, 
+	    CP9_seq2bands(orig_cm, cur_dsq, 1, L, orig_cp9b, 
 			  NULL, /* we don't want the posterior matrix back */
 			  debug_level);
 	}
@@ -1330,15 +1376,15 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	{
 	  /* (1) Get HMM posteriors (if do_hbanded, we already have them) */
 	  if(!do_hbanded) 
-	    CP9_seq2posteriors(orig_cm, sq[i]->dsq, 1, sq[i]->n, &cp9_post, 
+	    CP9_seq2posteriors(orig_cm, cur_dsq, 1, L, &cp9_post, 
 			       debug_level); 
 	  
 	  /* (2) infer the start and end HMM nodes (consensus cols) from posterior matrix.
 	   * Remember: we're necessarily in CP9 local mode, the --sub option turns local mode on. 
 	   */
-	  CP9NodeForPosn(orig_hmm, 1, sq[i]->n, 1, cp9_post, &spos, &spos_state, 
+	  CP9NodeForPosn(orig_hmm, 1, L, 1, cp9_post, &spos, &spos_state, 
 			 FALSE, 0., TRUE, debug_level);
-	  CP9NodeForPosn(orig_hmm, 1, sq[i]->n, sq[i]->n, cp9_post, &epos, &epos_state, 
+	  CP9NodeForPosn(orig_hmm, 1, L, L, cp9_post, &epos, &epos_state, 
 			 FALSE, 0., FALSE, debug_level);
 	  /* If the most likely state to have emitted the first or last residue
 	   * is the insert state in node 0, it only makes sense to start modelling
@@ -1367,7 +1413,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	      sub_hmm    = sub_cm->cp9;
 	      sub_cp9map = sub_cm->cp9map;
 	      sub_cp9b   = AllocCP9Bands(sub_cm, sub_cm->cp9);
-	      CP9_seq2bands(sub_cm, sq[i]->dsq, 1, sq[i]->n, sub_cp9b, 
+	      CP9_seq2bands(sub_cm, cur_dsq, 1, L, sub_cp9b, 
 			    NULL, /* we don't want posterior matrix back */
 			    debug_level);
 	      hmm           = sub_hmm;    
@@ -1399,11 +1445,11 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 		}
 	      expand_flag = FALSE;
 	    }
-	  if((sq[i]->n < cm->dmin[0]) || (sq[i]->n > cm->dmax[0]))
+	  if((L < cm->dmin[0]) || (L > cm->dmax[0]))
 	    {
 	      /* the seq we're aligning is outside the root band, so we expand.*/
-	      ExpandBands(cm, sq[i]->n, cm->dmin, cm->dmax);
-	      if(debug_level > 0) printf("Expanded bands for seq : %s\n", sq[i]->name);
+	      ExpandBands(cm, L, cm->dmin, cm->dmax);
+	      if(sq_mode && debug_level > 0) printf("Expanded bands for seq : %s\n", sq[i]->name);
 	      if(bdump_level > 2) 
 		{
 		  printf("printing expanded bands :\n");
@@ -1413,7 +1459,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	    }
 	}
 
-      if(!silent_mode) 
+      if(sq_mode && !silent_mode) 
 	{
 	  if(do_sub) 
 	    printf("Aligning (to a sub CM) %-20s", sq[i]->name);
@@ -1424,16 +1470,16 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	{
 	  if(do_hbanded)
 	    {
-	      sc = IInside_b_jd_me(cm, sq[i], 1, sq[i]->n,
-				   BE_PARANOID,	/* non memory-saving mode */
+	      sc = IInside_b_jd_me(cm, cur_dsq, 1, L,
+				   TRUE,	/* non memory-saving mode */
 				   NULL, NULL,	/* manage your own matrix, I don't want it */
 				   NULL, NULL,	/* manage your own deckpool, I don't want it */
-				   do_local,        /* TRUE to allow local begins */
+				   do_local,    /* TRUE to allow local begins */
 				   cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
 	    }
 	  else
 	    {
-	      sc = IInside(cm, sq[i], 1, sq[i]->n,
+	      sc = IInside(cm, cur_dsq, 1, L,
 			   BE_EFFICIENT,	/* memory-saving mode */
 			   NULL, NULL,	/* manage your own matrix, I don't want it */
 			   NULL, NULL,	/* manage your own deckpool, I don't want it */
@@ -1446,15 +1492,15 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	  if(do_hbanded)
 	    {
 	      
-	      sc = IInside_b_jd_me(cm, sq[i], 1, sq[i]->n,
-				   BE_PARANOID,	/* save full alpha so we can run outside */
+	      sc = IInside_b_jd_me(cm, cur_dsq, 1, L,
+				   TRUE,	/* save full alpha so we can run outside */
 				   NULL, &alpha,	/* fill alpha, and return it, needed for FOutside() */
 				   NULL, NULL,	/* manage your own deckpool, I don't want it */
 				   do_local,        /* TRUE to allow local begins */
 				   cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
 	      /*do_check = TRUE;*/
-	      sc = IOutside_b_jd_me(cm, sq[i], 1, sq[i]->n,
-				    BE_PARANOID,	/* save full beta */
+	      sc = IOutside_b_jd_me(cm, cur_dsq, 1, L,
+				    TRUE,	/* save full beta */
 				    NULL, NULL,	/* manage your own matrix, I don't want it */
 				    NULL, NULL,	/* manage your own deckpool, I don't want it */
 				    do_local,       /* TRUE to allow local begins */
@@ -1465,13 +1511,13 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	    }
 	  else
 	    {
-	      sc = IInside(cm, sq[i], 1, sq[i]->n,
-			   BE_PARANOID,	/* save full alpha so we can run outside */
+	      sc = IInside(cm, cur_dsq, 1, L,
+			   TRUE,	/* save full alpha so we can run outside */
 			   NULL, &alpha,	/* fill alpha, and return it, needed for FOutside() */
 			   NULL, NULL,	/* manage your own deckpool, I don't want it */
 			   do_local);       /* TRUE to allow local begins */
-	      sc = IOutside(cm, sq[i], 1, sq[i]->n,
-			    BE_PARANOID,	/* save full beta */
+	      sc = IOutside(cm, cur_dsq, 1, L,
+			    TRUE,	/* save full beta */
 			    NULL, NULL,	/* manage your own matrix, I don't want it */
 			    NULL, NULL,	/* manage your own deckpool, I don't want it */
 			    do_local,       /* TRUE to allow local begins */
@@ -1484,10 +1530,10 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	{
 	  if(do_qdb)
 	    {
-	      sc = CYKDivideAndConquer(cm, sq[i]->dsq, sq[i]->n, 0, 1, sq[i]->n, 
-				       &(tr[i]), cm->dmin, cm->dmax);
+	      sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, 
+				       cur_tr, cm->dmin, cm->dmax);
 	      if(bdump_level > 0)
- 		qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
+ 		qdb_trace_info_dump(cm, *cur_tr, cm->dmin, cm->dmax, bdump_level);
 	    }
 	  else if(do_hbanded) /*j and d bands not tight enough to allow HMM banded full CYK*/
 	    {
@@ -1502,10 +1548,10 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 		}
 	      /* Note the following CYK call will not enforce j bands, even
 	       * though user specified --hbanded. */
-	      sc = CYKDivideAndConquer(cm, sq[i]->dsq, sq[i]->n, 0, 1, sq[i]->n, 
-				       &(tr[i]), cp9b->safe_hdmin, cp9b->safe_hdmax);
+	      sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, 
+				       cur_tr, cp9b->safe_hdmin, cp9b->safe_hdmax);
 	      if(bdump_level > 0)
-		qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
+		qdb_trace_info_dump(cm, *cur_tr, cm->dmin, cm->dmax, bdump_level);
 	    }
 	  else
 	    {
@@ -1513,7 +1559,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 		debug_print_cm_params(cm);
 		printf("DONE DEBUG PRINTING CM PARAMS BEFORE D&C CALL\n");*/
 
-	      sc = CYKDivideAndConquer(cm, sq[i]->dsq, sq[i]->n, 0, 1, sq[i]->n, &(tr[i]),
+	      sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr,
 				       NULL, NULL); /* we're not in QDB mode */
 	      if(bdump_level > 0)
 		{
@@ -1527,13 +1573,13 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	}
       else if(do_qdb)
 	{
-	  sc = CYKInside(cm, sq[i]->dsq, sq[i]->n, 0, 1, sq[i]->n, &(tr[i]), cm->dmin, cm->dmax);
+	  sc = CYKInside(cm, cur_dsq, L, 0, 1, L, cur_tr, cm->dmin, cm->dmax);
 	  if(bdump_level > 0)
 	    qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
 	}
       else if(do_hbanded)
 	{
-	  sc = CYKInside_b_jd(cm, sq[i]->dsq, sq[i]->n, 0, 1, sq[i]->n, &(tr[i]), cp9b->jmin, 
+	  sc = CYKInside_b_jd(cm, cur_dsq, L, 0, 1, L, cur_tr, cp9b->jmin, 
 			      cp9b->jmax, cp9b->hdmin, cp9b->hdmax, cp9b->safe_hdmin, cp9b->safe_hdmax);
 	  if(bdump_level > 0)
 	    qdb_trace_info_dump(cm, tr[i], cp9b->safe_hdmin, cp9b->safe_hdmax, bdump_level);
@@ -1541,19 +1587,19 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	  if(cm->align_opts & CM_ALIGN_HMMSAFE && sc < 0.)
 	    {
 	      tmpsc = sc;
-	      printf("\n%s HMM banded parse had a negative score, realigning with non-banded CYK.\n", sq[i]->name);
-	      FreeParsetree(tr[i]);
-	      sc = CYKDivideAndConquer(cm, sq[i]->dsq, sq[i]->n, 0, 1, sq[i]->n, &(tr[i]),
+	      if(!silent_mode) printf("\n%s HMM banded parse had a negative score, realigning with non-banded CYK.\n", sq[i]->name);
+	      FreeParsetree(*cur_tr);
+	      sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr,
 				       NULL, NULL); /* we're not in QDB mode */
-	      if(fabs(sc-tmpsc) < 0.01)
+	      if(!silent_mode && fabs(sc-tmpsc) < 0.01)
 		printf("HMM banded parse was the optimal parse.\n\n");
-	      else
+	      else if (!silent_mode)
 		printf("HMM banded parse was non-optimal, it was %.2f bits below the optimal.\n\n", (fabs(sc-tmpsc)));
 	    }	      
 	}
       else
 	{
-	  sc = CYKInside(cm, sq[i]->dsq, sq[i]->n, 0, 1, sq[i]->n, &(tr[i]), NULL, NULL);
+	  sc = CYKInside(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL);
 	  if(bdump_level > 0)
 	    {
 	      /* We want band info but --hbanded wasn't used.  Useful if you're curious
@@ -1571,30 +1617,30 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	      for (v = 0; v < cm->M; v++)
 		{
 		  post[v] = NULL;
-		  post[v] = Ialloc_jdbanded_vjd_deck(sq[i]->n, 1, sq[i]->n, cp9b->jmin[v], 
+		  post[v] = Ialloc_jdbanded_vjd_deck(L, 1, L, cp9b->jmin[v], 
 						      cp9b->jmax[v], cp9b->hdmin[v], cp9b->hdmax[v]);
 		}
 	      post[cm->M] = NULL;
-	      post[cm->M] = Ialloc_vjd_deck(sq[i]->n, 1, sq[i]->n);
-	      sc = IInside_b_jd_me(cm, sq[i], 1, sq[i]->n,
-				   BE_PARANOID,	/* save full alpha so we can run outside */
+	      post[cm->M] = Ialloc_vjd_deck(L, 1, L);
+	      sc = IInside_b_jd_me(cm, cur_dsq, 1, L,
+				   TRUE,	/* save full alpha so we can run outside */
 				   NULL, &alpha,	/* fill alpha, and return it, needed for IOutside() */
 				   NULL, NULL,	/* manage your own deckpool, I don't want it */
 				   do_local,       /* TRUE to allow local begins */
 				   cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
-	      sc = IOutside_b_jd_me(cm, sq[i], 1, sq[i]->n,
-				    BE_PARANOID,	/* save full beta */
+	      sc = IOutside_b_jd_me(cm, cur_dsq, 1, L,
+				    TRUE,	/* save full beta */
 				    NULL, &beta,	/* fill beta, and return it, needed for ICMPosterior() */
 				    NULL, NULL,	/* manage your own deckpool, I don't want it */
 				    do_local,       /* TRUE to allow local begins */
 				    alpha, &alpha,  /* alpha matrix from IInside(), and save it for CMPosterior*/
 				    do_check,      /* TRUE to check Outside probs agree with Inside */
 				    cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
-	      ICMPosterior_b_jd_me(sq[i]->n, cm, alpha, NULL, beta, NULL, post, &post,
+	      ICMPosterior_b_jd_me(L, cm, alpha, NULL, beta, NULL, post, &post,
 				   cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax);
-	      postcode[i] = ICMPostalCode_b_jd_me(cm, sq[i]->n, post, tr[i],
+	      postcode[i] = ICMPostalCode_b_jd_me(cm, L, post, tr[i],
 						  cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax);
-	      /*postcode[i] = CMPostalCode_b_jd_me(cm, sq[i]->n, post, tr[i],
+	      /*postcode[i] = CMPostalCode_b_jd_me(cm, L, post, tr[i],
 		cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax);*/
 	    }
 	  else
@@ -1602,35 +1648,35 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	      for (v = 0; v < cm->M+1; v++)
 		{
 		  post[v] = NULL;
-		  post[v] = Ialloc_vjd_deck(sq[i]->n, 1, sq[i]->n);
+		  post[v] = Ialloc_vjd_deck(L, 1, L);
 		}
-	      sc = IInside(cm, sq[i], 1, sq[i]->n,
-			   BE_PARANOID,	/* save full alpha so we can run outside */
+	      sc = IInside(cm, cur_dsq, 1, L,
+			   TRUE,	/* save full alpha so we can run outside */
 			   NULL, &alpha,	/* fill alpha, and return it, needed for IOutside() */
 			   NULL, NULL,	/* manage your own deckpool, I don't want it */
 			   do_local);       /* TRUE to allow local begins */
-	      sc = IOutside(cm, sq[i], 1, sq[i]->n,
-			    BE_PARANOID,	/* save full beta */
+	      sc = IOutside(cm, cur_dsq, 1, L,
+			    TRUE,	/* save full beta */
 			    NULL, &beta,	/* fill beta, and return it, needed for CMPosterior() */
 			    NULL, NULL,	/* manage your own deckpool, I don't want it */
 			    do_local,       /* TRUE to allow local begins */
 			    alpha, &alpha,  /* alpha matrix from IInside(), and save it for CMPosterior*/
 			    do_check);      /* TRUE to check Outside probs agree with Inside */
-	      ICMPosterior(sq[i]->n, cm, alpha, NULL, beta, NULL, post, &post);
+	      ICMPosterior(L, cm, alpha, NULL, beta, NULL, post, &post);
 	      if(do_check)
 		{
-		  ICMCheckPosterior(sq[i]->n, cm, post);
+		  ICMCheckPosterior(L, cm, post);
 		  printf("\nPosteriors checked (I).\n\n");
 		}
-	      postcode[i] = ICMPostalCode(cm, sq[i]->n, post, tr[i]);
-	      /*postcode[i] = CMPostalCode(cm, sq[i]->n, post, tr[i]);*/
+	      postcode[i] = ICMPostalCode(cm, L, post, tr[i]);
+	      /*postcode[i] = CMPostalCode(cm, L, post, tr[i]);*/
 	    }
 
 	  /* free post */
 	  if(post != NULL)
 	    {
 	      for (v = 0; v <= (cm->M); v++)
-		if (post[v] != NULL) { Ifree_vjd_deck(post[v], 1, sq[i]->n); post[v] = NULL;}
+		if (post[v] != NULL) { Ifree_vjd_deck(post[v], 1, L); post[v] = NULL;}
 	      free(post);
 	    }
 	}
@@ -1645,15 +1691,15 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
       if((cm->align_opts & CM_ALIGN_CHECKPARSESC) &&
 	 (!(cm->flags & CM_IS_SUB)))
 	{
-	  if (fabs(sc - ParsetreeScore(cm, tr[i], sq[i]->dsq, FALSE)) >= 0.01)
+	  if (fabs(sc - ParsetreeScore(cm, tr[i], cur_dsq, FALSE)) >= 0.01)
 	    esl_fatal("ERROR in actually_align_target(), alignment score differs from its parse tree's score");
 	}
 
       /* If debug level high enough, print out the parse tree */
       if((cm->align_opts & CM_ALIGN_PRINTTREES) || (debug_level > 2))
 	{
-	  fprintf(stdout, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr[i], sq[i]->dsq, FALSE));;
-	  ParsetreeDump(stdout, tr[i], cm, sq[i]->dsq, NULL, NULL);
+	  fprintf(stdout, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr[i], cur_dsq, FALSE));;
+	  ParsetreeDump(stdout, tr[i], cm, cur_dsq, NULL, NULL);
 	  fprintf(stdout, "//\n");
 	}
       /* Dump the trace with info on i, j and d bands
@@ -1691,27 +1737,38 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
 	{
 	  /* Convert the sub_cm parsetree to a full CM parsetree */
 	  if(debug_level > 0)
-	    ParsetreeDump(stdout, tr[i], cm, sq[i]->dsq, NULL, NULL);
-	  if(!(sub_cm2cm_parsetree(orig_cm, sub_cm, &orig_tr, tr[i], submap, FALSE, debug_level)))
+	    ParsetreeDump(stdout, *cur_tr, cm, cur_dsq, NULL, NULL);
+	  if(!(sub_cm2cm_parsetree(orig_cm, sub_cm, &orig_tr, *cur_tr, submap, FALSE, debug_level)))
 	    {
 	      printf("\n\nIncorrectly converted original trace:\n");
-	      ParsetreeDump(stdout, orig_tr, orig_cm, sq[i]->dsq, NULL, NULL);
+	      ParsetreeDump(stdout, orig_tr, orig_cm, cur_dsq, NULL, NULL);
 	      exit(1);
 	    }
 	  if(debug_level > 0)
 	    {
 	      printf("\n\nConverted original trace:\n");
-	      ParsetreeDump(stdout, orig_tr, orig_cm, sq[i]->dsq, NULL, NULL);
+	      ParsetreeDump(stdout, orig_tr, orig_cm, cur_dsq, NULL, NULL);
 	    }
 	  /* Replace the sub_cm trace with the converted orig_cm trace. */
-	  FreeParsetree(tr[i]);
-	  tr[i] = orig_tr;
+	  FreeParsetree(*cur_tr);
+	  *cur_tr = orig_tr;
 	  
 	  FreeSubMap(submap);
 	  FreeCM(sub_cm); /* cm and sub_cm now point to NULL */
 	  if(do_hbanded)
 	    FreeCP9Bands(sub_cp9b);
 	}
+      /* if we've just aligned a search_result hit, we had set the first residue
+       * to 1 to align it, this means the tr->emitl's and tr->emitr's are offset,
+       * correct for that here: 
+       */
+      if (dsq_mode) {
+	for(tn = 0; tn < (*cur_tr)->n; tn++) {
+	    (*cur_tr)->emitl[tn] += search_results->data[i].start - 1;
+	    (*cur_tr)->emitr[tn] += search_results->data[i].start - 1;
+	}
+      }
+
       esl_stopwatch_Stop(watch);
       if(do_timings) 
 	{ 
@@ -1732,24 +1789,26 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, Parsetree_t ***ret_tr, c
   if (ret_sc != NULL) *ret_sc = parsesc; 
   else if(parsesc != NULL) free(parsesc);
 
-  if (ret_tr != NULL) *ret_tr = tr; 
-  else if(!do_hmmonly && !do_scoreonly)
-    {
-      for(i = 0; i < nseq; i++)
-	FreeParsetree(tr[i]);
-      free(tr);
-    }
+  if(sq_mode) {
+    if (ret_tr != NULL) *ret_tr = tr; 
+    else if(sq_mode && (!do_hmmonly && !do_scoreonly))
+      {
+	for(i = 0; i < nalign; i++)
+	  FreeParsetree(tr[i]);
+	free(tr);
+      }
+    if(ret_cp9_tr != NULL) *ret_cp9_tr = cp9_tr;
+    else if(do_hmmonly)
+      {
+	for(i = 0; i < nalign; i++)
+	  CP9FreeTrace(cp9_tr[i]);
+	free(cp9_tr);
+      }
+  }
 
   if (do_post) *ret_postcode = postcode; 
   else ret_postcode = NULL;
   
-  if(ret_cp9_tr != NULL) *ret_cp9_tr = cp9_tr;
-  else if(do_hmmonly)
-    {
-      for(i = 0; i < nseq; i++)
-	CP9FreeTrace(cp9_tr[i]);
-      free(cp9_tr);
-    }
 
   return eslOK;
  ERROR:

@@ -38,12 +38,8 @@
 #include "esl_vectorops.h"
 #include "esl_stats.h"
 
-#include "structs.h"
 #include "funcs.h"
-#include "hmmband.h"
-#include "cm_dispatch.h"
-#include "stats.h"
-
+#include "structs.h"
   
 /* Function: CP9Viterbi()
  * based on  P7Viterbi() <-- this function's comments below  
@@ -1776,7 +1772,8 @@ RescanFilterSurvivors(CM_t *cm, ESL_DSQ *dsq, search_results_t *hmm_results, int
 			       FALSE,   /* don't filter, we already have                */
 			       FALSE,   /* we're not building a histogram for CM stats  */
 			       FALSE,   /* we're not building a histogram for CP9 stats */
-			       NULL);   /* filter fraction N/A                          */
+			       NULL,    /* filter fraction N/A                          */
+			       FALSE);  /* DO NOT align the hits in this recursive call */
       flen += (j - i + 1);
       if(cm_sc > best_cm_sc) best_cm_sc = cm_sc;
     }
@@ -2255,7 +2252,8 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 					     FALSE, /* don't filter with a CP9 HMM */
 					     FALSE, /* we're not calcing CM  stats */
 					     FALSE, /* we're not calcing CP9 stats */
-					     NULL); /* filter fraction N/A */
+					     NULL,  /* filter fraction N/A */
+					     FALSE);/* do NOT align the hits */
 	      //if(!do_fastfil) printf("%4d %5d %d T: %10.4f BC: %10.4f ", ip, i, passed_flag, tr_sc[i], hb_sc);
 	      if(hb_sc > cm_minbitsc[p] && !do_slow)
 		{
@@ -2277,7 +2275,8 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 						 FALSE, /* don't filter with a CP9 HMM */
 						 FALSE, /* we're not calcing CM  stats */
 						 FALSE, /* we're not calcing CP9 stats */
-						 NULL); /* filter fraction N/A */
+						 NULL,  /* filter fraction N/A */
+						 FALSE);/* do NOT align the hits */
 		  if(cm_sc > cm_minbitsc[p] && !do_slow)
 		    {
 		      s2_np++;
@@ -2299,7 +2298,8 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 						     FALSE, /* don't filter with a CP9 HMM */
 						     FALSE, /* we're not calcing CM  stats */
 						     FALSE, /* we're not calcing CP9 stats */
-						     NULL); /* filter fraction N/A */
+						     NULL,  /* filter fraction N/A */
+						     FALSE);/* do NOT align the hits */
 		      if(cm_sc > cm_minbitsc[p])
 			{
 			  s3_np++;

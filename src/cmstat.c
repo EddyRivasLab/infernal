@@ -29,11 +29,8 @@
 #include <esl_vectorops.h>
 #include <esl_wuss.h>
 
-#include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* function declarations                */
-#include "stats.h"
-#include "cm_dispatch.h"	
-
+#include "structs.h"		/* data structures, macros, #define's   */
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
@@ -333,7 +330,7 @@ summarize_alignment(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH 
   cm->align_opts |= CM_ALIGN_HBANDED;
   cm->align_opts |= CM_ALIGN_NOSMALL;
   esl_stopwatch_Start(w);
-  actually_align_targets(cm, sq, N, NULL, NULL, NULL, NULL, 0, 0, TRUE);
+  actually_align_targets(cm, sq, N, NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, TRUE);
   esl_stopwatch_Stop(w);
   t_hb = w->user / (float) N;
   for(i = 0; i < N; i++) esl_sq_Destroy(sq[i]);
