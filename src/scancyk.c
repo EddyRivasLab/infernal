@@ -33,6 +33,8 @@ search_results_t *CreateResults (int size) {
   search_results_t *results;
   int i;
 
+  if(size == 0) return NULL;
+
   ESL_ALLOC(results, sizeof(search_results_t));
   results->num_results = 0;
   results->num_allocated = size;
@@ -103,14 +105,15 @@ void ExpandResults (search_results_t *results, int additional) {
  *           FreeResults() if you don't want to lose dest_results.
  */
 void AppendResults (search_results_t *src_results, search_results_t *dest_results, int i0) {
-  int i;
+  int i, ip;
   for(i = 0; i < src_results->num_results; i++) 
     {
+      ip = dest_results->num_results;
       report_hit (src_results->data[i].start+i0-1, src_results->data[i].stop+i0-1, 
 		  src_results->data[i].bestr,      src_results->data[i].score,
-		    dest_results);
+		  dest_results);
       if(src_results->data[i].tr != NULL)
-	dest_results->data[i].tr = src_results->data[i].tr;
+	(*dest_results).data[ip].tr = (*src_results).data[i].tr;
     }
   return;
 }

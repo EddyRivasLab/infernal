@@ -953,10 +953,14 @@ cm_search_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, search_re
   int         i;
 
   status = MPI_Unpack (buf, n, pos, &num_results, 1, MPI_INT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  if(num_results == 0) { status = eslOK; goto ERROR; }
+
   results = CreateResults(num_results);
   ESL_DPRINTF1(("cm_search_results_MPIUnpack(): %d results.\n", num_results));
   for (i = 0; i < num_results; i++) {
     status = cm_search_result_node_MPIUnpack(buf, n, pos, comm, &(results->data[i]));  if (status != eslOK) return status;
+    assert(results->data[i].tr != NULL);
+    assert(results->data[i].tr->n > 0);
     results->num_results++;
   }
 
@@ -1048,7 +1052,7 @@ cm_search_result_node_MPIPack(const search_result_node_t *rnode, char *buf, int 
   if(rnode->tr != NULL) {
     has_tr = TRUE;
     status = MPI_Pack(&has_tr,                 1, MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
-    status = cm_parsetree_MPIPack(rnode->tr, buf, n, position, comm);  if (status != eslOK) return status;
+    status = cm_parsetree_MPIPack((Parsetree_t *) rnode->tr, buf, n, position, comm);  if (status != eslOK) return status;
   }
   else {
     has_tr = FALSE;
@@ -1085,7 +1089,7 @@ cm_search_result_node_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, searc
   search_result_node_t rnode;
   int start, stop, bestr;
   float score;
-  int has_tr;
+  int has_tr = FALSE;
   Parsetree_t *tr = NULL;
 
   status = MPI_Unpack (buf, n, pos, &start, 1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
@@ -1101,7 +1105,7 @@ cm_search_result_node_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, searc
   /* optionally, unpack a parsetree */
   status = MPI_Unpack (buf, n, pos, &has_tr, 1, MPI_INT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   if(has_tr == TRUE) {
-    status = cm_parsetree_MPIUnpack(buf, n, pos, comm, &tr);  if (status != eslOK) return status;
+    status   = cm_parsetree_MPIUnpack(buf, n, pos, comm, &tr);  if (status != eslOK) return status;
     rnode.tr = tr;
   }
   
@@ -1109,8 +1113,7 @@ cm_search_result_node_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, searc
   return eslOK;
   
  ERROR:
-  if (tr != NULL) FreeParsetree(tr);
-
+  if(tr != NULL) FreeParsetree(tr);
   ret_rnode = NULL;
   return status;
 }
@@ -1223,9 +1226,10 @@ cm_parsetree_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, Parsetree_t **
   int tr_n, memblock; /* memblock is likely irrelevant, the tree probably won't grow */
 
   status = MPI_Unpack (buf, n, pos, &tr_n,        1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
-  tr = CreateParsetree(n);
+  tr = CreateParsetree(tr_n);
   status = MPI_Unpack (buf, n, pos, &memblock,    1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   tr->memblock = memblock;
+  tr->n = tr_n;
 
   status = MPI_Unpack (buf, n, pos, tr->emitl, tr_n, MPI_INT,  comm); if (status != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   status = MPI_Unpack (buf, n, pos, tr->emitr, tr_n, MPI_INT,  comm); if (status != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
@@ -1277,7 +1281,8 @@ mpi_worker_search_target(CM_t *cm, int my_rank)
 				       NULL,  /* do not keep results */
 				       FALSE, /* do not filter with a CP9 HMM */
 				       doing_cm_stats, doing_cp9_stats,
-				       NULL); /* filter fraction, nobody cares */
+				       NULL,  /* filter fraction, nobody cares */
+				       FALSE);/* don't align hits */
       
       MPI_Send(&(best_sc), 1, MPI_FLOAT, 0, 0, MPI_COMM_WORLD);
       free(dsq);
@@ -1406,7 +1411,8 @@ mpi_worker_cm_and_cp9_search(CM_t *cm, int do_fast, int my_rank)
 					   NULL,  /* do not keep results */
 					   FALSE, /* do not filter with a CP9 HMM */
 					   FALSE, FALSE, /* not doing CM or CP9 Gumbel calcs */
-					   NULL); /* filter fraction, nobody cares */
+					   NULL,  /* filter fraction, nobody cares */
+					   FALSE);/* don't align hits */
       /* DO NOT CALL actually_search_target b/c that will run Forward then 
        * Backward to get score of best hit, but we'll be detecting by a
        * Forward scan (then running Backward only on hits above our threshold),
@@ -1430,7 +1436,7 @@ mpi_worker_cm_and_cp9_search(CM_t *cm, int do_fast, int my_rank)
   if(scores != NULL) free(scores);
   /*printf("\trank: %d RETURNING!\n", my_rank);*/
   return;
-
+  
  ERROR:
   if (dsq != NULL) free(dsq);
   if (scores != NULL) free(scores);
@@ -1480,18 +1486,6 @@ mpi_worker_cm_and_cp9_search_maxsc(CM_t *cm, int do_fast, int do_minmax, int my_
 	  cm->search_opts |= CM_SEARCH_HBANDED;
 	  cm->tau = 0.1;
 	  scores[0] = actually_search_target(cm, dsq, 1, L,
-					 0.,    /* cutoff is 0 bits (actually we'll find highest
-						 * negative score if it's < 0.0) */
-					 0.,    /* CP9 cutoff is 0 bits */
-					 NULL,  /* don't keep results */
-					 FALSE, /* don't filter with a CP9 HMM */
-					 FALSE, /* we're not calcing CM  stats */
-					 FALSE, /* we're not calcing CP9 stats */
-					 NULL); /* filter fraction N/A */
-	  if(scores[0] < maxsc) /* search with another, less strict (lower tau)  HMM banded parse */
-	    {
-	      cm->tau = 1e-10;
-	      scores[0] = actually_search_target(cm, dsq, 1, L,
 					     0.,    /* cutoff is 0 bits (actually we'll find highest
 						     * negative score if it's < 0.0) */
 					     0.,    /* CP9 cutoff is 0 bits */
@@ -1499,7 +1493,22 @@ mpi_worker_cm_and_cp9_search_maxsc(CM_t *cm, int do_fast, int do_minmax, int my_
 					     FALSE, /* don't filter with a CP9 HMM */
 					     FALSE, /* we're not calcing CM  stats */
 					     FALSE, /* we're not calcing CP9 stats */
-					     NULL); /* filter fraction N/A */
+					     NULL,  /* filter fraction N/A */
+					     FALSE);/* don't align hits */
+	  
+	  if(scores[0] < maxsc) /* search with another, less strict (lower tau)  HMM banded parse */
+	    {
+	      cm->tau = 1e-10;
+	      scores[0] = actually_search_target(cm, dsq, 1, L,
+						 0.,    /* cutoff is 0 bits (actually we'll find highest
+							 * negative score if it's < 0.0) */
+						 0.,    /* CP9 cutoff is 0 bits */
+						 NULL,  /* don't keep results */
+						 FALSE, /* don't filter with a CP9 HMM */
+						 FALSE, /* we're not calcing CM  stats */
+						 FALSE, /* we're not calcing CP9 stats */
+						 NULL,  /* filter fraction N/A */
+						 FALSE);/* don't align hits */
 	    }
 	}
       else
@@ -1509,8 +1518,9 @@ mpi_worker_cm_and_cp9_search_maxsc(CM_t *cm, int do_fast, int do_minmax, int my_
 					   NULL,  /* do not keep results */
 					   FALSE, /* do not filter with a CP9 HMM */
 					   FALSE, FALSE, /* not doing CM or CP9 Gumbel calcs */
-					   NULL); /* filter fraction, nobody cares */
-
+					   NULL,  /* filter fraction, nobody cares */
+					   FALSE);/* don't align hits */
+      
       /* Now do HMM search, but if do_minmax, only do HMM search 
        * if our CM score hasn't exceeded the max */
       if(do_minmax && scores[0] > maxsc)
@@ -1537,7 +1547,7 @@ mpi_worker_cm_and_cp9_search_maxsc(CM_t *cm, int do_fast, int do_minmax, int my_
   else cm->search_opts &= ~CM_SEARCH_HMMONLY;
   if(was_hbanded) cm->search_opts |= CM_SEARCH_HBANDED;
   else cm->search_opts &= ~CM_SEARCH_HBANDED;
-
+  
   if(scores != NULL) free(scores);
   /*printf("\trank: %d RETURNING!\n", my_rank);*/
   return;

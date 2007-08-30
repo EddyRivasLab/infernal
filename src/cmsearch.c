@@ -282,6 +282,8 @@ main(int argc, char **argv)
       MPI_Comm_rank(MPI_COMM_WORLD, &(cfg.my_rank));
       MPI_Comm_size(MPI_COMM_WORLD, &(cfg.nproc));
 
+      if(cfg.nproc == 1) cm_Fail("ERROR, MPI mode, but only 1 processor running...");
+
       if (cfg.my_rank > 0)  mpi_worker(go, &cfg);
       else 		    mpi_master(go, &cfg);
 
@@ -489,15 +491,15 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   char    *buf           = NULL;	/* input/output buffer, for packed MPI messages */
   int      bn            = 0;
   int      pos = 1;
-
+  float    min_cm_cutoff;
+  float    min_cp9_cutoff;
+  int      using_e_cutoff; 
 
   CM_t *cm;
   CMConsensus_t *cons = NULL;     /* precalculated consensus info for display purposes */
   int            cm_mode  = -1;   /* CM algorithm mode                        */
   int            cp9_mode = -1;   /* CP9 algorithm mode                       */
   float          Smin;
-
-  int rtype; /* results type */
 
   int si      = 0;
   int si_recv = 1;
@@ -527,13 +529,10 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int chunksize;
   search_results_t *worker_results;
 
-  int using_e_cutoff; 
 
   /* TEMPORARY */
   if(esl_opt_GetBoolean(go, "--hmmcalcthr"))
     cm_Fail("ERROR, --hmmcalcthr and --mpi not yet implemented.");
-  if(! esl_opt_GetBoolean(go, "--noalign")) 
-    cm_Fail("ERROR, --mpi currently requires --noalign.");
 
   /* Master initialization: including, figure out the alphabet type.
    * If any failure occurs, delay printing error message until we've shut down workers.
@@ -658,20 +657,33 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		  if ((status = cm_search_results_MPIUnpack(buf, bn, &pos, MPI_COMM_WORLD, &worker_results)) != eslOK) cm_Fail("search results unpack failed");
 		  ESL_DPRINTF1(("MPI master has unpacked search results\n"));
 		      
-		  /* add results to dbseqlist[si_recv]->results[rclist[wi]] */
-		  AppendResults(worker_results, dbseqlist[si_recv]->results[rclist[wi]], seqposlist[wi]);
-		  /* careful, dbseqlist[si_recv]->results[rclist[wi]] now points to the nodes in worker_results->data,
-		   * don't free those (don't use FreeResults(worker_results)) */
-		  /*free(worker_results);*/
-		  worker_results = NULL;
-
+		  /* worker_results will be NULL if 0 results (hits) sent back */
+		  int x;
+		  if(worker_results != NULL) { 
+		    /* add results to dbseqlist[si_recv]->results[rclist[wi]] */
+		    for(x = 0; x < worker_results->num_results; x++)
+		      { 
+			assert(worker_results->data[x].tr != NULL);
+			assert(worker_results->data[x].tr->n > 0);
+		      }
+		    AppendResults(worker_results, dbseqlist[si_recv]->results[rclist[wi]], seqposlist[wi]);
+		    /* careful, dbseqlist[si_recv]->results[rclist[wi]] now points to the nodes in worker_results->data,
+		     * don't free those (don't use FreeResults(worker_results)) */
+		    free(worker_results);
+		    worker_results = NULL;
+		  }
+		  for(x = 0; x < dbseqlist[si_recv]->results[rclist[wi]]->num_results; x++)
+		    { 
+		      assert(dbseqlist[si_recv]->results[rclist[wi]]->data[x].tr != NULL);
+		      assert(dbseqlist[si_recv]->results[rclist[wi]]->data[x].tr->n > 0);
+		    }
 		  dbseqlist[si_recv]->chunks_sent--;
 		  if(sentlist[si_recv] && dbseqlist[si_recv]->chunks_sent == 0)
 		    {
 		      for(rci = 0; rci <= cfg->do_rc; rci++) {
 			remove_overlapping_hits(dbseqlist[si_recv]->results[rci], 1, dbseqlist[si_recv]->sq[rci]->n);
 			if(using_e_cutoff) remove_hits_over_e_cutoff(cm, dbseqlist[si_recv]->results[rci], 
-								    dbseqlist[si_recv]->sq[rci], (cm->search_opts & CM_SEARCH_HMMONLY)); /* HMM hits? */
+								     dbseqlist[si_recv]->sq[rci], (cm->search_opts & CM_SEARCH_HMMONLY)); /* HMM hits? */
 		      }					      
 		      print_results(cm, cfg->abc_out, cons, dbseqlist[si_recv], cfg->do_rc, 
 				    (cm->search_opts & CM_SEARCH_HMMONLY)); /* use HMM stats (used HMM only)? */
@@ -762,12 +774,11 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   /*MPI_Status  mpistatus;*/
   ESL_DSQ      *dsq = NULL;
   int           L;
-  /*int           rtype;
-    int           wtype;*/           /* work unit type */
   search_results_t *results = NULL;
-  float min_cm_cutoff;
-  float min_cp9_cutoff;
-  
+  float         min_cm_cutoff;
+  float         min_cp9_cutoff;
+  int           using_e_cutoff;
+
   /* After master initialization: master broadcasts its status.
    */
   MPI_Bcast(&xstatus, 1, MPI_INT, 0, MPI_COMM_WORLD);
@@ -798,8 +809,8 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status   = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) goto ERROR;
       if(cm->flags & CM_GUMBEL_STATS) 
 	if((status = set_gumbels(go, cfg, errbuf, cm))                      != eslOK) goto ERROR;
-      if((  status = set_cutoffs(go, cfg, errbuf, cm, &min_cm_cutoff, 
-				 &min_cp9_cutoff, &cm_mode, &cp9_mode))     != eslOK) goto ERROR;
+      if((  status = set_cutoffs(go, cfg, errbuf, cm, &cm_mode, &cp9_mode, &min_cm_cutoff, 
+				 &min_cp9_cutoff, &using_e_cutoff))         != eslOK) goto ERROR;
       if((  status = set_window(go, cfg, errbuf, cm))                       != eslOK) goto ERROR;
       
       /* print_search_info(stdout, cm, cm_mode, cp9_mode, cfg->N, errbuf); */

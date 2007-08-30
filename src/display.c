@@ -51,16 +51,6 @@ static void createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface);
 Fancyali_t *
 CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, const ESL_ALPHABET *abc)
 {
-  /* Contract check. We allow the caller to specify the alphabet they want the 
-   * resulting MSA in, but it has to make sense (see next few lines). */
-  if(cm->abc->type == eslRNA)
-    { 
-      if(abc->type != eslRNA && abc->type != eslDNA)
-	esl_fatal("ERROR in CreateFancyAli(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
-    }
-  else if(cm->abc->K != abc->K)
-    esl_fatal("ERROR in CreateFancyAli(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
-
   int         status;
   Fancyali_t *ali;              /* alignment structure we're building        */
   ESL_STACK  *pda;              /* pushdown automaton used to traverse trace */
@@ -83,6 +73,16 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, con
   int         do_left, do_right;/* flags to generate left, right             */
   int cpos_l, cpos_r;   	/* positions in consensus (1..clen)          */
   int spos_l, spos_r;		/* positions in dsq (1..L)                   */
+
+  /* Contract check. We allow the caller to specify the alphabet they want the 
+   * resulting MSA in, but it has to make sense (see next few lines). */
+  if(cm->abc->type == eslRNA)
+    { 
+      if(abc->type != eslRNA && abc->type != eslDNA)
+	esl_fatal("ERROR in CreateFancyAli(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
+    }
+  else if(cm->abc->K != abc->K)
+    esl_fatal("ERROR in CreateFancyAli(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
 
   ESL_ALLOC(ali, sizeof(Fancyali_t));
   
@@ -155,9 +155,9 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, con
 	esl_stack_IPop(pda, &rstr); 	  ali->cstr[pos]   = rstr;
 	esl_stack_IPop(pda, &rcons);	  ali->cseq[pos]   = rcons;
 	esl_stack_IPop(pda, &rmid);	  ali->mid[pos]    = rmid;
-	esl_stack_IPop(pda, &rseq);    ali->aseq[pos]   = rseq;
-	esl_stack_IPop(pda, &cpos_r);  ali->ccoord[pos] = cpos_r;
-	esl_stack_IPop(pda, &spos_r);  ali->scoord[pos] = spos_r;
+	esl_stack_IPop(pda, &rseq);       ali->aseq[pos]   = rseq;
+	esl_stack_IPop(pda, &cpos_r);     ali->ccoord[pos] = cpos_r;
+	esl_stack_IPop(pda, &spos_r);     ali->scoord[pos] = spos_r;
 	pos++;
 	continue;
       }
@@ -530,10 +530,10 @@ CreateCMConsensus(CM_t *cm, const ESL_ALPHABET *abc, float pthresh, float sthres
   if(cm->abc->type == eslRNA)
     { 
       if(abc->type != eslRNA && abc->type != eslDNA)
-	esl_fatal("ERROR in CreateFancyAli(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
+	esl_fatal("ERROR in CreateCMConsensus(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
     }
   else if(cm->abc->K != abc->K)
-    esl_fatal("ERROR in CreateFancyAli(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
+    esl_fatal("ERROR in CreateCMConsensus(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
 
   int       status;
   CMConsensus_t *con;           /* growing consensus info */

@@ -58,7 +58,7 @@ CreateParsetree(int size)
   ESL_ALLOC(new->mode,  sizeof(int) * new->nalloc);
   ESL_ALLOC(new->nxtl,  sizeof(int) * new->nalloc);
   ESL_ALLOC(new->nxtr,  sizeof(int) * new->nalloc);
-  ESL_ALLOC(new->prv, sizeof(int) * new->nalloc);
+  ESL_ALLOC(new->prv,   sizeof(int) * new->nalloc);
   new->n = 0;
   return new;
  ERROR:

@@ -595,6 +595,7 @@ void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbse
   int cm_gum_mode;      /* Gumbel mode if we're using CM hits */
   int cp9_gum_mode;     /* Gumbel mode if we're using HMM hits */
   int p;                /* relevant partition */
+  int offset;         
 
   if(used_HMM)
     {
@@ -631,7 +632,9 @@ void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbse
 	  printf (">%s\n\n", name);
 	}
       printf ("  %s strand results:\n\n", in_revcomp ? "Minus" : "Plus");
-      
+
+      for (i=0; i<results->num_results; i++) 
+	printf("hit: %5d start: %5d stop: %5d len: %5d score: %9.3f\n", i, results->data[i].start, results->data[i].stop, len, results->data[i].score);
       for (i=0; i<results->num_results; i++) 
 	{
 	  gc_comp = get_gc_comp (dbseq->sq[in_revcomp], 
@@ -673,8 +676,10 @@ void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbse
 	      ali = CreateFancyAli (results->data[i].tr, cm, cons, 
 				    dbseq->sq[in_revcomp]->dsq, abc);
 				    
+	      if(in_revcomp) offset = len - 1;
+	      else           offset = 0;
 	      PrintFancyAli(stdout, ali,
-			    (coordinate(in_revcomp, results->data[i].start, len)-1), /* offset in sq index */
+			    offset,/*(coordinate(in_revcomp, results->data[i].start, len)-1), *//* offset in sq index */
 			    in_revcomp);
 	      FreeFancyAli(ali);
 	      printf ("\n");
@@ -1764,8 +1769,8 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, ESL_DSQ *dsq, search_res
        */
       if (dsq_mode) {
 	for(tn = 0; tn < (*cur_tr)->n; tn++) {
-	    (*cur_tr)->emitl[tn] += search_results->data[i].start - 1;
-	    (*cur_tr)->emitr[tn] += search_results->data[i].start - 1;
+	  (*cur_tr)->emitl[tn] += search_results->data[i].start - 1;
+	  (*cur_tr)->emitr[tn] += search_results->data[i].start - 1;
 	}
       }
 
