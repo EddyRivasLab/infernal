@@ -38,8 +38,8 @@
 #define ALPHOPTS   "--rna,--dna"                                    /* exclusive choice for output alphabet */
 
 #define I_CMCUTOPTS   "-E,-T,--ga,--tc,--nc,--negsc,--hmmonly"         /* exclusive choice for CM cutoff */
-#define I_HMMCUTOPTS1 "--hmmthr,--hmmcalcthr,--hmmE,--hmmT,--hmmnegsc" /* exclusive choice for HMM cutoff */
-#define I_HMMCUTOPTS2 "--hmmthr,--hmmcalcthr,--hmmE,--hmmT,--hmmnegsc,--cmonly" /* exclusive choice for HMM cutoff */
+#define I_HMMCUTOPTS1 "--hmmthr,--hmmcalcthr,--hmmE,--hmmT,--hmmnegsc" /* exclusive choice for HMM cutoff set 1 */
+#define I_HMMCUTOPTS2 "--hmmthr,--hmmcalcthr,--hmmE,--hmmT,--hmmnegsc,--cmonly" /* exclusive choice for HMM cutoff set 2 */
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
@@ -173,7 +173,8 @@ static int print_search_info(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long
 
 static int read_qdb_file(FILE *fp, CM_t *cm, int *dmin, int *dmax);
 static int is_integer(char *s);
-static int determine_chunksize(struct cfg_s *cfg, CM_t *cm);
+static int determine_cm_min_max_chunksize(struct cfg_s *cfg, CM_t *cm, int *ret_min_chunksize, int *ret_max_chunksize);
+static int determine_seq_chunksize(struct cfg_s *cfg, int L, int min_chunksize, int chunksize);
 
 int
 main(int argc, char **argv)
@@ -527,6 +528,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
   int need_seq = TRUE;
   int chunksize;
+  int min_chunksize;
+  int max_chunksize;
   search_results_t *worker_results;
 
 
@@ -582,7 +585,6 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   while (CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
     {
       cfg->ncm++;  
-      chunksize = determine_chunksize(cfg, cm);
       ESL_DPRINTF1(("MPI master read CM number %d\n", cfg->ncm));
       if((status = cm_master_MPIBcast(cm, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
       
@@ -597,6 +599,9 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if(esl_opt_GetBoolean(go, "--hmmcalcthr"))
 	if((status = calc_filter_threshold(go, cfg, errbuf, cm, &Smin))     != eslOK) cm_Fail(errbuf);
       print_search_info(stdout, cm, cm_mode, cp9_mode, cfg->N, errbuf);
+      determine_cm_min_max_chunksize(cfg, cm, &min_chunksize, &max_chunksize);
+      printf("min_chunksize: %d\n", min_chunksize);
+      printf("max_chunksize: %d\n", max_chunksize);
 
       wi = 1;
       ndbseq = 0;
@@ -625,6 +630,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		  dbseqlist[si] = dbseq;
 		  sentlist[si]  = FALSE;
 		  have_work = TRUE;
+		  chunksize = determine_seq_chunksize(cfg, dbseq->sq[0]->n, min_chunksize, max_chunksize);
+		  printf("L: %d chunksize: %d\n", dbseq->sq[0]->n, chunksize);
 		}
 	      else if(status == eslEOF) have_work = FALSE;
 	      else goto ERROR;
@@ -743,8 +750,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
    * Shut down workers cleanly. 
    */
   ESL_DPRINTF1(("MPI master is done. Shutting down all the workers cleanly\n"));
-  for (wi = 1; wi < cfg->nproc; wi++) 
-    if((status = cm_master_MPIBcast(NULL, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
+  if((status = cm_master_MPIBcast(NULL, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
   free(buf);
   
   if (xstatus != eslOK) cm_Fail(errbuf);
@@ -1417,12 +1423,46 @@ int print_search_info(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N, cha
   return eslOK;
 }
 
-/* determine_chunksize()
- * Given a sequence length, return the subseq length to 
- * send to each process (chunksize). 
+/* determine_cm_min_max_chunksize()
+ * Given a CM, return the minimum and maximum subseq length to 
+ * send to each process (min_chunksize & max_chunksize) based on 
+ * minimum and maximum time we want a worker to spend working on a single
+ * job, these are MPI_WORKER_MIN_SEC and MPI_WORKER_MAX_SEC constants from 
+ * structs.h. 
  */
 static int
-determine_chunksize(struct cfg_s *cfg, CM_t *cm)
+determine_cm_min_max_chunksize(struct cfg_s *cfg, CM_t *cm, int *ret_min_chunksize, int *ret_max_chunksize)
 {
-  return 1000;
+  int status;
+  int   L = 1000000;
+  float dpc; /* number of million dp calcs for L = 1 MB with or without QDB (depending on cm->search_opts) */
+  /* TO DO: update CountScanDPCalcs() for HMM filtering, not just QDB */
+  dpc = CountScanDPCalcs(cm, L, (! (cm->search_opts & CM_SEARCH_NOQDB))) / 1000000;
+  printf("dpc: %f\n", dpc);
+  *ret_min_chunksize = (int) (((float) MPI_WORKER_MIN_SEC * (float) L) / (dpc / MDPC_SEC));
+  *ret_max_chunksize = (int) (((float) MPI_WORKER_MAX_SEC * (float) L) / (dpc / MDPC_SEC));
+}
+
+/* determine_seq_chunksize()
+ *
+ * Given a sequence length, return the appropriate subseq length
+ * to send to each process (chunksize). Ideally we send exactly 1 chunk
+ * to each processor, but only if the time required is within a range
+ * given by MPI_WORKER_MIN_SEC and MPI_WORKER_MAX_SEC (in structs.h). 
+ * The chunksizes corresponding to those min/max times have been
+ * precomputed for the current CM, and are sent in as min_chunksize
+ * and max_chunksize.
+ */
+static int
+determine_seq_chunksize(struct cfg_s *cfg, int L, int min_chunksize, int max_chunksize)
+{
+  int status;
+  int chunksize;
+
+  if(cfg->do_rc) L *= 2;
+  chunksize = (int) ((float) L / (float) (cfg->nproc - 1));
+  if(chunksize < min_chunksize) return min_chunksize;
+  if(chunksize > max_chunksize) return max_chunksize;
+  return chunksize;
+
 }

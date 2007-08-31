@@ -54,7 +54,6 @@ static char banner[] = "display summary statistics for CMs";
 
 static int    summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w); 
 static int    summarize_alignment(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w); 
-static float  count_scan_dp_calcs(CM_t *cm, int L, int use_qdb);
 static float  count_align_dp_calcs(CM_t *cm, int L);
 static double cm_MeanMatchRelativeEntropy(const CM_t *cm);
 static double cm_MeanMatchEntropy(const CM_t *cm);
@@ -190,8 +189,8 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
   esl_rnd_xfIID(r, cm->null, cm->abc->K, L_cp9, dsq_cp9);
 
   /* estimate speedup due to QDB */
-  dpc    = count_scan_dp_calcs(cm, L, FALSE) / 1000000.;
-  dpc_q  = count_scan_dp_calcs(cm, L, TRUE)  / 1000000.;
+  dpc    = CountScanDPCalcs(cm, L, FALSE) / 1000000.;
+  dpc_q  = CountScanDPCalcs(cm, L, TRUE)  / 1000000.;
   th_acc = dpc / dpc_q;
 
   dpc_v  = (float) (cm->clen+1) * L_cp9 * 11; /* 11 transition's queried per HMM node: 9 main model, begin,end */ 
@@ -352,101 +351,7 @@ summarize_alignment(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH 
   return status; /* NOTREACHED */
 }
 
-/* Function: count_scan_dp_calcs()
- * Date:     EPN, Wed Aug 22 09:08:03 2007
- *
- * Purpose:  Count all DP calcs for a CM scan against a 
- *           sequence of length L. Similar to smallcyk.c's
- *           CYKDemands() but takes into account number of
- *           transitions from each state, and is concerned
- *           with a scanning dp matrix, not an alignment matrix.
- *
- * Args:     cm     - the model
- *           L      - length of sequence
- *           use_qdb- TRUE to enforce cm->dmin and cm->dmax for calculation
- *
- * Returns: (float) the total number of DP calculations, either using QDB or not.
- */
-float
-count_scan_dp_calcs(CM_t *cm, int L, int use_qdb)
-{
-  int v, j;
-  float dpcalcs = 0.;
-  float dpcalcs_bif = 0.;
-  
-  /* Contract check */
-  if(cm->W > L) esl_fatal("ERROR in count_scan_dp_calcs(), cm->W: %d exceeds L: %d\n", cm->W, L);
-
-  float  dpcells     = 0.;
-  float  dpcells_bif = 0.;
-  int d,w,y,kmin,kmax, bw;
-
-  if(! use_qdb) 
-    {
-      dpcells = (cm->W * L) - (cm->W * (cm->W-1) * .5); /* fillable dp cells per state (deck) */
-      for (j = 1; j < cm->W; j++)
-	dpcells_bif += ((j    +2) * (j    +1) * .5) - 1;
-      for (j = cm->W; j <= L; j++)
-	dpcells_bif += ((cm->W+2) * (cm->W+1) * .5) - 1; 
-      dpcalcs_bif = CMCountStatetype(cm, B_st) * dpcells_bif; /* no choice of transition */
-      for(v = 0; v < cm->M; v++)
-	{
-	  if(cm->sttype[v] != B_st && cm->sttype[v] != E_st)
-	    {
-	      dpcalcs += dpcells * cm->cnum[v]; /* cnum choices of transitions */
-
-	      /* non-obvious subtractions that match implementation in scancyk.c::CYKScan() */
-	      if(v == 0) dpcalcs  -= dpcells; 
-	      if(cm->sttype[v] == MP_st) dpcalcs  -= L * cm->cnum[v];
-	    }
-	}
-    }
-  else /* use_qdb */
-    {
-      for(v = 0; v < cm->M; v++)
-	{
-	  if(cm->sttype[v] != B_st && cm->sttype[v] != E_st)
-	    {
-	      bw = cm->dmax[v] - cm->dmin[v] + 1; /* band width */
-	      if(cm->dmin[v] == 0) bw--;
-	      dpcalcs += ((bw * L) - (bw * (bw-1) * 0.5)) * cm->cnum[v];
-
-	      /* non-obvious subtractions that match implementation in bandcyk.c::CYKBandedScan() */
-	      if(v == 0) dpcalcs  -= ((bw * L) - (bw * (bw-1) * 0.5)); 
-	      if(cm->sttype[v] == MP_st) dpcalcs  -= bw * cm->cnum[v];
-	    }
-
-	  else if(cm->sttype[v] == B_st)
-	    {
-	      w = cm->cfirst[v];
-	      y = cm->cnum[v];
-	      for (j = 1; j <= L; j++)
-		{
-		  d = (cm->dmin[v] > 0) ? cm->dmin[v] : 1;
-		  for (; d <= cm->dmax[v] && d <= j; d++)
-		    {
-		      if(cm->dmin[y] > (d-cm->dmax[w])) kmin = cm->dmin[y];
-		      else kmin = d-cm->dmax[w];
-		      if(kmin < 0) kmin = 0;
-		      if(cm->dmax[y] < (d-cm->dmin[w])) kmax = cm->dmax[y];
-		      else kmax = d-cm->dmin[w];
-		      if(kmin <= kmax)
-			{
-			  bw = (kmax - kmin + 1);
-			  dpcalcs_bif += bw;
-			}
-		    }
-		}
-	    }
-	}
-    }
-  /*printf("%d count_scan_dp_calcs dpc     %.0f\n", use_qdb, dpcalcs);
-    printf("%d count_scan_dp_calcs dpc_bif %.0f\n", use_qdb, dpcalcs_bif);
-    printf("%d count_scan_dp_calcs total   %.0f\n", use_qdb, dpcalcs + dpcalcs_bif);*/
-  return dpcalcs + dpcalcs_bif;
-}
-
-/* Function: count_scan_dp_calcs()
+/* Function: count_align_dp_calcs()
  * Date:     EPN, Wed Aug 22 09:08:03 2007
  *
  * Purpose:  Count all non-d&c inside DP calcs for a CM 

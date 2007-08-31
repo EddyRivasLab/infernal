@@ -201,6 +201,7 @@ extern void remove_overlapping_hits (search_results_t *results, int i0, int j0);
 extern float CYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, 
 		      float cutoff, search_results_t *results);
 extern float CYKScanRequires(CM_t *cm, int L, int W);
+extern float CountScanDPCalcs(CM_t *cm, int L, int use_qdb);
 
 /* from smallcyk.c
  */

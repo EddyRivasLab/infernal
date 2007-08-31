@@ -699,6 +699,7 @@ float
 CYKBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
 	      float cutoff, search_results_t *results)
 {
+  printf("in CYKBandedScan\n");
   /* Contract check */
   if(j0 < i0)
     esl_fatal("ERROR in CYKBandedScan, i0: %d j0: %d\n", i0, j0);

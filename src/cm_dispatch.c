@@ -633,8 +633,8 @@ void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbse
 	}
       printf ("  %s strand results:\n\n", in_revcomp ? "Minus" : "Plus");
 
-      for (i=0; i<results->num_results; i++) 
-	printf("hit: %5d start: %5d stop: %5d len: %5d score: %9.3f\n", i, results->data[i].start, results->data[i].stop, len, results->data[i].score);
+      /*for (i=0; i<results->num_results; i++) 
+	printf("hit: %5d start: %5d stop: %5d len: %5d emitl[0]: %5d emitr[0]: %5d score: %9.3f\n", i, results->data[i].start, results->data[i].stop, len, results->data[i].tr->emitl[0], results->data[i].tr->emitr[0], results->data[i].score);*/
       for (i=0; i<results->num_results; i++) 
 	{
 	  gc_comp = get_gc_comp (dbseq->sq[in_revcomp], 
@@ -673,13 +673,18 @@ void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbse
 	  printf ("\n");
 	  if (results->data[i].tr != NULL) 
 	    {
+	      /* careful here, all parsetrees have emitl/emitr sequence indices
+	       * relative to the hit subsequence of the dsq (i.e. emitl[0] always = 1),
+	       * so we pass dsq + start-1.
+	       */
 	      ali = CreateFancyAli (results->data[i].tr, cm, cons, 
-				    dbseq->sq[in_revcomp]->dsq, abc);
+				    dbseq->sq[in_revcomp]->dsq + 
+				    (results->data[i].start-1), abc);
 				    
 	      if(in_revcomp) offset = len - 1;
 	      else           offset = 0;
 	      PrintFancyAli(stdout, ali,
-			    offset,/*(coordinate(in_revcomp, results->data[i].start, len)-1), *//* offset in sq index */
+			    (coordinate(in_revcomp, results->data[i].start, len)-1), /* offset in sq index */
 			    in_revcomp);
 	      FreeFancyAli(ali);
 	      printf ("\n");
@@ -1767,12 +1772,12 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, ESL_DSQ *dsq, search_res
        * to 1 to align it, this means the tr->emitl's and tr->emitr's are offset,
        * correct for that here: 
        */
-      if (dsq_mode) {
+      /*if (dsq_mode) {
 	for(tn = 0; tn < (*cur_tr)->n; tn++) {
 	  (*cur_tr)->emitl[tn] += search_results->data[i].start - 1;
 	  (*cur_tr)->emitr[tn] += search_results->data[i].start - 1;
 	}
-      }
+	}*/
 
       esl_stopwatch_Stop(watch);
       if(do_timings) 
