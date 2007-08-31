@@ -29,13 +29,12 @@
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
 
+static seqs_to_aln_t * read_next_aln_seqs(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int nseq, int index) ;
+
 /* Helper functions called by the main functions (main functions
  * declared in cm_dispatch.h) 
  */
 
-#ifdef USE_MPI
-static seqs_to_aln_t *read_next_aln_seqs(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int nseq, int index);
-#endif
 
 /* coordinate -- macro that checks if it's reverse complement and if so 
    returns coordinate in original strand
@@ -99,7 +98,7 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc
   do_revcomp = (!(cm->search_opts & CM_SEARCH_TOPONLY));
   do_align   = (!(cm->search_opts & CM_SEARCH_NOALIGN));
 
-  while ((status = read_next_seq(cm->abc, dbfp, do_revcomp, &dbseq)) == eslOK)
+  while ((status = read_search_seq(cm->abc, dbfp, do_revcomp, &dbseq)) == eslOK)
     {
       for (reversed = 0; reversed <= do_revcomp; reversed++) 
 	{
@@ -265,7 +264,7 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *a
 			if (active_seqs[active_seq_index] == NULL) break;
 		      if (active_seq_index == mpi_num_procs) 
 			Die ("Tried to read more than %d seqs at once\n", mpi_num_procs);
-		      active_seqs[active_seq_index] = read_next_seq(cm->abc, dbfp, do_revcomp);
+		      active_seqs[active_seq_index] = read_search_seq(cm->abc, dbfp, do_revcomp);
 		      if (active_seqs[active_seq_index] == NULL) 
 			{
 			  eof = TRUE;
@@ -388,18 +387,18 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *a
 
 
 /*
- * Function: read_next_seq
+ * Function: read_search_seq
  *
  * Date:     RJK, Wed May 29, 2002 [St. Louis]
  *           easeled: EPN, Fri Dec  8 11:40:20 2006
  *
  * Purpose:  Given a dbfp and whether or not to take the reverse complement,
- *           reads in the sequence and prepares reverse complement.
+ *           reads in the next sequence and prepares reverse complement.
  *
  * Returns:  eslOK on success; eslEOF if end of file, 
  *           some other status code from esl_sqio_Read() if an error occurs.
  */
-int read_next_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revcomp, dbseq_t **ret_dbseq) 
+int read_search_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revcomp, dbseq_t **ret_dbseq) 
 {
   int status;
   dbseq_t *dbseq = NULL;
@@ -436,6 +435,73 @@ int read_next_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revcomp, db
   if(dbseq != NULL) free(dbseq);
   return status;
 }
+
+/*
+ * Function: read_align_seqs
+ * Date:     EPN, Fri Aug 31 15:20:37 2007
+ *
+ * Purpose:  Given a pointer to a seq file we're reading seqs to align
+ *           from, read in nseq seqs from the seq file, or 
+ *           if nseq == 0 && do_real_all == TRUE, read all the seqs.
+ *
+ * Returns:  <eslOK> on success with <*ret_seqs_to_aln_t> filled with 
+ *           seqs to align, *ret_seqs_to_aln_t->nseq gives number of seqs.
+ *           Dies immediately on failure with informative error message.
+ */
+int read_align_seqs(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int nseq, int do_read_all, seqs_to_aln_t **ret_seqs_to_aln) 
+{
+  int status;
+  int keep_reading = TRUE;
+  void *tmp;
+  int i;
+  seqs_to_aln_t *seqs_to_aln = NULL; 
+  int nalloc;
+  ESL_SQ **sq;
+
+  /* contract check */
+  if(do_read_all && nseq != 0) cm_Fail("if do_read_all is TRUE, nseq must be zero.");
+
+  i = 0;
+  nalloc = do_read_all ? 50 : nseq;
+  ESL_ALLOC(sq, sizeof(ESL_SQ *) * nalloc);
+
+  sq[i] = esl_sq_CreateDigital(abc);
+  while (keep_reading && (status = esl_sqio_Read(seqfp, sq[i])) == eslOK) {
+    if(sq[i]->n == 0) { esl_sq_Reuse(sq[i]); continue; }
+    i++;
+    if(do_read_all && i == nalloc) {
+      nalloc += 50;
+      ESL_RALLOC(sq, tmp, (sizeof(ESL_SQ *) * nalloc));
+    }
+    if(!do_read_all && i == nseq) keep_reading = FALSE; 
+
+    sq[i] = esl_sq_CreateDigital(abc);
+  }
+  /* destroy the last sequence that was alloc'ed but not filled */
+  esl_sq_Destroy(sq[i]);
+  if (status != eslEOF) cm_Fail("Parse failed, line %d, file %s:\n%s", 
+				seqfp->linenumber, seqfp->filename, seqfp->errbuf);
+
+  if(i > 0)
+    { 
+      ESL_ALLOC(seqs_to_aln, sizeof(seqs_to_aln_t));
+      seqs_to_aln->sq = sq;
+      seqs_to_aln->nseq = i;
+      seqs_to_aln->tr   = NULL;
+      seqs_to_aln->cp9_tr = NULL;
+      seqs_to_aln->index= 0;
+      seqs_to_aln->postcode = NULL;
+      *ret_seqs_to_aln = seqs_to_aln;
+    }
+  else
+    *ret_seqs_to_aln = NULL;
+  return eslOK;
+
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return eslEMEM; /* NEVERREACHED */
+}
+
 
 /* EPN, Mon Jan  8 06:42:59 2007
  * 
@@ -848,11 +914,11 @@ serial_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t 
   if(ret_cp9_tr == NULL)
     actually_align_targets(cm, sq, nseq, 
 			   NULL, NULL,   /* we're not aligning search result subseqs */
-			   &tr, &postcode, NULL, ret_sc, bdump_level, debug_level, silent_mode);
+			   &tr, NULL, &postcode, ret_sc, bdump_level, debug_level, silent_mode);
   else
     actually_align_targets(cm, sq, nseq, 
 			   NULL, NULL,   /* we're not aligning search result subseqs */
-			   &tr, &postcode, &cp9_tr, ret_sc, bdump_level, debug_level, silent_mode);
+			   NULL, &cp9_tr, &postcode, ret_sc, bdump_level, debug_level, silent_mode);
 
   /* Clean up and return */
   if(ret_tr     != NULL) *ret_tr = tr;
@@ -1010,7 +1076,7 @@ parallel_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_
 	      /* align the targets */
 	      actually_align_targets(cm, seqs_to_aln->sq, seqs_to_aln->nseq, 
 				     NULL, NULL, /* we're not aligning search results */
-				     &(seqs_to_aln->tr), &(seqs_to_aln->postcode), NULL, bdump_level, debug_level, silent_mode);
+				     &(seqs_to_aln->tr), NULL, &(seqs_to_aln->postcode), bdump_level, debug_level, silent_mode);
 
 	      /*printf("done actually_align_targets\n");*/
 	      aln_send_results(seqs_to_aln, do_post, mpi_master_rank);
@@ -1102,8 +1168,8 @@ seqs_to_aln_t * read_next_aln_seqs(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, i
  *           dsq            - a single digitized sequence (if dsq_mode)
  *           search_results - search results with subsequence indices of dsq to align (if dsq_mode)
  *           ret_tr         - RETURN: parsetrees (NULL if not wanted)
- *           ret_postcode   - RETURN: postal code strings (NULL if not wanted)
  *           ret_cp9_tr     - RETURN: CP9 traces only filled if cm->align_opts & CM_ALIGN_HMMONLY
+ *           ret_postcode   - RETURN: postal code strings (NULL if not wanted)
  *           ret_sc         - RETURN: scores of parses (NULL if not wanted)
  *           bdump_level    - verbosity level for band related print statements
  *           debug_level    - verbosity level for debugging print statements
@@ -1114,7 +1180,7 @@ seqs_to_aln_t * read_next_aln_seqs(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, i
  */
 int
 actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, ESL_DSQ *dsq, search_results_t *search_results,
-		       Parsetree_t ***ret_tr, char ***ret_postcode, CP9trace_t ***ret_cp9_tr, 
+		       Parsetree_t ***ret_tr, CP9trace_t ***ret_cp9_tr, char ***ret_postcode, 
 		       float **ret_sc, int bdump_level, int debug_level, int silent_mode)
 {
   int status;
@@ -1343,7 +1409,7 @@ actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, ESL_DSQ *dsq, search_res
 	{
 	  cp9_mx  = CreateCPlan9Matrix(1, cm->cp9->M, 25, 0);
 	  if(sq_mode && !silent_mode) printf("Aligning (to a CP9 HMM w/viterbi) %-20s", sq[i]->name);
-	  sc = CP9ViterbiOLD(cur_dsq, 1, L, cm->cp9, cp9_mx, &(cp9_tr[i]));
+	  sc = CP9ViterbiAlign(cur_dsq, 1, L, cm->cp9, cp9_mx, &(cp9_tr[i]));
 	  if(sq_mode && !silent_mode) printf(" score: %10.2f bits\n", sc);
 	  if(parsesc != NULL) parsesc[i] = sc;
 	  FreeCPlan9Matrix(cp9_mx);
@@ -1939,3 +2005,29 @@ revcomp(const ESL_ALPHABET *abc, ESL_SQ *comp, ESL_SQ *sq)
   return status; /* NOTREACHED */
 }
     
+/*
+ * Function: FreeSeqsToAln()
+ * Date:     EPN, Fri Aug 31 15:48:55 2007
+ * Purpose:  Frees a seqs_to_aln_t structure
+ */
+void FreeSeqsToAln(seqs_to_aln_t *s) {
+  int i;
+
+  if(s->sq != NULL)
+    for (i=0; i < s->nseq; i++)
+      esl_sq_Destroy(s->sq[i]);
+
+  if(s->tr != NULL) 
+    for (i=0; i < s->nseq; i++)
+      FreeParsetree(s->tr[i]);
+
+  if(s->cp9_tr != NULL)
+    for (i=0; i < s->nseq; i++)
+      CP9FreeTrace(s->cp9_tr[i]);
+
+  if(s->postcode != NULL)
+    for (i=0; i < s->nseq; i++)
+      free(s->postcode[i]);
+
+  free(s);
+}

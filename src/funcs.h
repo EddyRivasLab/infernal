@@ -348,7 +348,7 @@ extern float iInsideBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, 
 
 /* from CP9_scan.c */
 extern float CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
-			int *ret_bestpos, search_results_t *results, int do_scan,
+			int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, 
 			int be_efficient, CP9_dpmatrix_t **ret_mx, CP9trace_t **ret_tr);
 extern float CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_isc, 
 			int *ret_maxres, search_results_t *results, int do_scan, int doing_align, 
@@ -547,10 +547,10 @@ extern void CP9_seq2bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp
 			  CP9_dpmatrix_t **ret_cp9_post, int debug_level);
 extern void CP9_seq2posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9_post,
 			       int debug_level);
-extern float CP9ForwardOLD(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, 
+extern float CP9ForwardAlign(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, 
 			struct cp9_dpmatrix_s **ret_mx);
-extern float CP9ViterbiOLD(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s *mx, struct cp9trace_s **ret_tr);
-extern float CP9BackwardOLD(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s **ret_mx);
+extern float CP9ViterbiAlign(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s *mx, struct cp9trace_s **ret_tr);
+extern float CP9BackwardAlign(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s **ret_mx);
 extern void  CP9Posterior(ESL_DSQ *dsq, int i0, int j0,
 			  CP9_t *hmm,
 			  struct cp9_dpmatrix_s *fmx,
@@ -590,14 +590,16 @@ extern void parallel_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq
 				   int bdump_level, int debug_level,
 				   int silent_mode, int mpi_my_rank, int mpi_master_rank, int mpi_num_procs);
 extern int actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, ESL_DSQ *dsq, search_results_t *results, Parsetree_t ***ret_tr, 
-				  char ***ret_postcode, CP9trace_t ***ret_cp9_tr, float **ret_sc, int bdump_level, int debug_level, 
+				  CP9trace_t ***ret_cp9_tr, char ***ret_postcode, float **ret_sc, int bdump_level, int debug_level, 
 				  int silent_mode);
 extern int  revcomp(const ESL_ALPHABET *abc, ESL_SQ *comp, ESL_SQ *sq);
-extern int  read_next_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revcomp, dbseq_t **ret_dbseq);
+extern int  read_search_seq(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int do_revcomp, dbseq_t **ret_dbseq);
 extern void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq,
 			   int do_complement, int used_HMM);
 extern void remove_hits_over_e_cutoff (CM_t *cm, search_results_t *results, ESL_SQ *sq,
 				       int used_HMM);
+extern int  read_align_seqs(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int nseq, int read_all, seqs_to_aln_t **ret_seqs_to_aln);
+extern void FreeSeqsToAln(seqs_to_aln_t *s);
 
 /* from cplan9.c: functions stolen from HMMER-2.4::mathsupport.c */
 extern int   ILogsum(int p1, int p2);

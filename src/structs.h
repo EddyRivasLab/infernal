@@ -896,11 +896,12 @@ typedef struct _dbseq_t {
   int partition;                 /* For histogram building */
 } dbseq_t;
 
-/* structure for MPI cmalign */
+/* sequences to align, for cmalign and cmscore (implemented to ease MPI) */
 typedef struct _seqs_to_aln_t {
   ESL_SQ  **sq;                  /* the sequences */
   int nseq;                      /* number of sequences */
   Parsetree_t **tr;              /* parsetrees */
+  CP9trace_t **cp9_tr;           /* CP9 traces, usually NULL unless tr is NULL */
   char **postcode;               /* postal codes, left NULL unless do_post */
   int index;                     /* the index of the first sq (sq[0]) in master structure */
 } seqs_to_aln_t;

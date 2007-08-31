@@ -41,96 +41,43 @@
 #include "funcs.h"
 #include "structs.h"
   
-/* Function: CP9Viterbi()
- * based on  P7Viterbi() <-- this function's comments below  
- *           from HMMER 2.4devl core_algorithms.c
- *
+
+/***********************************************************************
+ * Function: CP9Viterbi()
+ * 
  * Purpose:  Runs the Viterbi dynamic programming algorithm on an
  *           input subsequence (i0-j0). 
- *           Somewhat flexible based on input options as follows:
+ *           Somewhat flexible based on input options.
+ *    
+ * Note:     IDENTICAL to CP9Forward() below with maxes replacing
+ *           sums in DP recursion, and the possibility of returning a
+ *           CP9 trace if doing_align == TRUE. See CP9Forward() for more info,
+ *           including more verbose 'Purpose' and description of arguments.
  *
- *           if(be_efficient): only allocates 2 rows of the Viterbi
- *           matrix, else allocates full L+1 matrix.
- *
- *           if(do_scan): allows parses to start at any position i
- *           i0..j0, changing meaning of DP matrix cells as discussed
- *           below.
- *
- *           Reference for algorithm (when do_scan is FALSE): 
- *           Durbin et. al. Biological Sequence Analysis; p. 58.
- *
- *           The meaning of the Viterbi (V) matrix DP cells for
- *           matches (M) inserts (I) and deletes (D):
- *
- *           For relative subsequence positions ip = 0..L:
- *           For HMM nodes 1..M: 
- *           V->M[ip][k] : score of most likely parse emitting seq
- *                         from i0..ip that visit node k's match 
- *                         state, which emits posn ip
- *           V->I[ip][k] : score of most likely parse emitting seq from 
- *                         i0..ip that visit node k's insert
- *                         state, which emits posn ip 
- *           V->D[ip][k] : score of most likely parse emitting seq from 
- *                         i0..ip that visit node k's delete
- *                         delete state, last emitted (leftmost)
- *                         posn was ip
- *
- *           For *special* HMM node 0:
- *           F->M[ip][0] : M_0 is the Begin state, which does not 
- *                         emit, so this is the score of the most likely
- *                         parse emitting seq from i0..ip that starts
- *                         in the begin state, the last emitted 
- *                         (leftmost) posn was ip.
- *
- *           Note: if ip=0, only D_k and M_0 states can have 
- *                 non-IMPOSSIBLE values. 
- *
- *           if(do_scan) the 'i0..ip' in the above definitions is
- *           changed to iE..ip such that i0 <= iE <= ip. Meaning
- *           any residue can be the first residue emitted in the
- *           parse. This means F->M[ip][0] is the score of the best
- *           parse emitting a subseq starting anywhere from i0..ip and 
- *           ending at ip. 
- *
- *
- * Args
- *           cm        - the covariance model, includes cm->cp9: a CP9 HMM
- *           dsq       - sequence in digitized form
- *           i0        - start of target subsequence (1 for beginning of dsq)
- *           j0        - end of target subsequence (L for end of dsq)
- *           W         - the maximum size of a hit (often cm->W)
- *           cutoff    - minimum score to report
- *           ret_sc    - RETURN: int log odds Viterbi score for each end point [0..(j0-i0+1)]
- *           ret_maxres- RETURN: start position that gives maximum score max argmax_i sc[i]
- *           results   - search_results_t to add to; if NULL, don't keep results
- *           do_scan   - TRUE if we're scanning, HMM can start to emit anywhere i0..j0,
- *                       FALSE if we're not, HMM must start emitting at i0, end emitting at j0
- *           be_efficient- TRUE to keep only 2 rows of DP matrix in memory, FALSE keep whole thing
- *           ret_mx    - RETURN: CP9 Viterbi DP matrix, NULL if not wanted
- *           ret_tr    - RETURN: CP9 traces, NULL if not wanted
- *
- * Returns:  if(!do_scan) log P(S|M)/P(S|R), as a bit score
- *           else         max log P(S|M)/P(S|R), for argmax subseq S of input seq i0..j0,
+ * Returns:  if(!do_scan) log P(S,tr|M)/P(S,tr|R), as a bit score
+ *           else         max log P(S,tr|M)/P(S,tr|R), for argmax subseq S of input seq i0..j0,
  */
 float
 CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
-	   int *ret_bestpos, search_results_t *results, int do_scan,
+	   int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, 
 	   int be_efficient, CP9_dpmatrix_t **ret_mx, CP9trace_t **ret_tr)
 {
   int          status;
-  CP9trace_t  *tr;
-  CP9_dpmatrix_t *mx;       /* the CP9 DP matrix                                            */
-  int **mmx;
-  int **imx;
-  int **dmx;
-  int  *erow;
   int          j;           /*     actual   position in the subsequence                     */
   int          jp;          /* j': relative position in the subsequence                     */
+  int          i;           /* j-W: position in the subsequence                             */
+  int          ip;          /* i': relative position in the subsequence                     */
   int          cur, prv;    /* rows in DP matrix 0 or 1                                     */
-  int          i,k;
-  int          sc;
-  int          ip;	    /* i': relative position in the subsequence  */
+  int          k;           /* CP9 HMM node position                                        */
   int          L;           /* j0-i0+1: subsequence length                                  */
+  CP9_dpmatrix_t *mx;       /* the CP9 DP matrix                                            */
+  int        **mmx;         /* DP matrix for match  state scores [0..1][0..cm->cp9->M]      */
+  int        **imx;         /* DP matrix for insert state scores [0..1][0..cm->cp9->M]      */
+  int        **dmx;         /* DP matrix for delete state scores [0..1][0..cm->cp9->M]      */
+  int        **elmx;        /* DP matrix for EL state scores [0..1][0..cm->cp9->M]          */
+  int         *erow;        /* end score for each position [0..1]                           */
+  int         *sc;          /* prob (seq from j0..jp | HMM) [0..jp..cm->cp9->M]             */
+  int          tmp_sc;      /* temporary int log odds score                                 */
   float        fsc;         /* float log odds score                                         */
   float        curr_sc;     /* temporary score used for filling in gamma                    */
   float       *gamma;       /* SHMM DP matrix for optimum nonoverlap resolution [0..j0-i0+1]*/
@@ -140,11 +87,12 @@ CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
   float        best_hmm_pos;/* residue giving best_hmm_sc                                   */
   float        best_sc;     /* Best score overall, returned if 0 hits found by HMM & do_scan*/
   float        best_pos;    /* residue giving best_sc                                       */
-  float        return_sc;   /* score to return, if (!do_scan) return overall Forward sc,    *
+  float        return_sc;   /* score to return, if (!do_scan) return overall Viterbi sc,    *
 			     * else return best_hmm_sc if # HMM hits>0, else return best_sc */
   int          nrows;       /* num rows for DP matrix, 2 or L+1 depending on be_efficient   */
-
-  W  = j0-i0+1;		/* the length of the subsequence */
+  int          c;           /* counter for EL states */
+  CP9trace_t  *tr;
+  /*debug_print_cp9_params(stdout, cm->cp9, TRUE);*/
 
   /*printf("in CP9Viterbi() i0: %d j0: %d\n", i0, j0);  */
   /* Contract checks */
@@ -159,7 +107,6 @@ CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
     esl_fatal("ERROR in CP9Viterbi, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
   if(dsq == NULL)
     esl_fatal("ERROR in CP9Viterbi, dsq is NULL.");
-
     
   best_sc     = IMPOSSIBLE;
   best_pos    = -1;
@@ -183,48 +130,51 @@ CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
    * M+1 columns */ 
   if(be_efficient) nrows = 2;
   else             nrows = L+1;
-  mx = AllocCPlan9Matrix(nrows, cm->cp9->M, &mmx, &imx, &dmx, NULL,
-			 NULL);
-  /* sc will hold P(seq up to j | Model) in int log odds form */
-  /*ESL_ALLOC(sc, sizeof(int) * (j0-i0+2));*/
+  mx = AllocCPlan9Matrix(nrows, cm->cp9->M, &mmx, &imx, &dmx, &elmx, &erow); 
 
-  /* ResizeCPlan9Matrix(mx, W, hmm->M, &mmx, &imx, &dmx, &erow);*/
-  /* Initialization of the zero row.
-   */
+  /* sc will hold P(seq up to j | Model) in int log odds form */
+  ESL_ALLOC(sc, sizeof(int) * (j0-i0+2));
+			
+  /* Initialization of the zero row. */
   mmx[0][0] = 0;      /* M_0 is state B, and everything starts in B */
   imx[0][0] = -INFTY; /* I_0 is state N, can't get here without emitting*/
   dmx[0][0] = -INFTY; /* D_0 doesn't exist. */
+  elmx[0][0]= -INFTY; /* can't go from B to EL state */
+  erow[0]   = -INFTY;   
+  /*printf("mmx[jp:%d][%d]: %d %f\n", 0, 0, mmx[0][0], Score2Prob(mmx[0][0], 1.));
+    printf("imx[jp:%d][%d]: %d %f\n", 0, 0, imx[0][0], Score2Prob(imx[0][0], 1.));
+    printf("dmx[jp:%d][%d]: %d %f\n", 0, 0, dmx[0][0], Score2Prob(dmx[0][0], 1.));
+    printf("elmx[jp:%d][%d]: %d %f\n", 0, 0, elmx[0][0], Score2Prob(elmx[0][0], 1.));*/
 
   /* Because there's a D state for every node 1..M, 
      dmx[0][k] is possible for all k 1..M */
   for (k = 1; k <= cm->cp9->M; k++)
-    mmx[0][k] = imx[0][k] = -INFTY;      /* need seq to get here */
-  for (k = 1; k <= cm->cp9->M; k++)
     {
-      dmx[0][k]  = -INFTY;
-      if((sc = mmx[0][k-1] + cm->cp9->tsc[CTMD][k-1]) > dmx[0][k])
-	dmx[0][k] = sc;
-      if((sc = dmx[0][k-1] + cm->cp9->tsc[CTDD][k-1]) > dmx[0][k])
-	dmx[0][k] = sc;
+      mmx[0][k] = imx[0][k] = elmx[0][k] = -INFTY;      /* need seq to get here */
+      dmx[0][k] = ILogsum(ILogsum(mmx[0][k-1] + cm->cp9->tsc[CTMD][k-1],
+				  imx[0][k-1] + cm->cp9->tsc[CTID][k-1]),
+			  dmx[0][k-1] + cm->cp9->tsc[CTDD][k-1]);
+      /*printf("mmx[jp:%d][%d]: %d %f\n", 0, k, mmx[0][k], Score2Prob(mmx[0][k], 1.));
+	printf("imx[jp:%d][%d]: %d %f\n", 0, k, imx[0][k], Score2Prob(imx[0][k], 1.));
+	printf("dmx[jp:%d][%d]: %d %f\n", 0, k, dmx[0][k], Score2Prob(dmx[0][k], 1.));
+	printf("elmx[jp:%d][%d]: %d %f\n", 0, k, dmx[0][k], Score2Prob(dmx[0][k], 1.));*/
     }
-
   /* We can do a full parse through all delete states. */
   erow[0] = dmx[0][cm->cp9->M] + cm->cp9->tsc[CTDM][cm->cp9->M]; 
-  fsc = Scorify(erow[0]);
+  sc[0] = erow[0];
+  fsc = Scorify(sc[0]);
   /*printf("jp: %d j: %d fsc: %f isc: %d\n", jp, j, fsc, isc[jp]);*/
   if(fsc > best_sc) 
     {
       best_sc = fsc;
       best_pos= i0-1;
     }
-  
+  /*printf("jp: %d j: %d fsc: %f sc: %d\n", 0, i0-1, Scorify(sc[0]), sc[0]);*/
+
   /*****************************************************************
    * The main loop: scan the sequence from position i0 to j0.
    *****************************************************************/
-
-  /* Recursion. Done as a pull.
-   * Note some slightly wasteful boundary conditions:  
-   */
+  /* Recursion. */
   for (j = i0; j <= j0; j++)
     {
       jp = j-i0+1;     /* jp is relative position in the sequence 1..L */
@@ -245,43 +195,51 @@ CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
 	mmx[cur][0] = -INFTY;
 
       dmx[cur][0] = -INFTY;  /*D_0 is non-existent*/
-      imx[cur][0] = -INFTY;
-      if((sc = mmx[prv][0] + cm->cp9->tsc[CTMI][0]) > imx[cur][0])
-	imx[cur][0] = sc;
-      if((sc = imx[prv][0] + cm->cp9->tsc[CTII][0]) > imx[cur][0])
-	imx[cur][0] = sc;
-      if((sc = dmx[prv][0] + cm->cp9->tsc[CTDI][0]) > imx[cur][0])
-	imx[cur][0] = sc;
+      elmx[cur][0]= -INFTY;  /*no EL state for node 0 */
+
+      if((tmp_sc = mmx[prv][0] + cm->cp9->tsc[CTMI][0]) > imx[cur][0])
+	imx[cur][0] = tmp_sc;
+      if((tmp_sc = imx[prv][0] + cm->cp9->tsc[CTII][0]) > imx[cur][0])
+	imx[cur][0] = tmp_sc;
+      if((tmp_sc = dmx[prv][0] + cm->cp9->tsc[CTDI][0]) > imx[cur][0])
+	imx[cur][0] = tmp_sc;
       if(imx[cur][0] != -INFTY)
 	imx[cur][0] += cm->cp9->isc[dsq[j]][0];
-      else 
-	imx[cur][0] = -INFTY;
+      /*printf("mmx[jp:%d][%d]: %d %f\n", jp, 0, mmx[cur][0], Score2Prob(mmx[cur][0], 1.));
+	printf("imx[jp:%d][%d]: %d %f\n", jp, 0, imx[cur][0], Score2Prob(imx[cur][0], 1.));
+	printf("dmx[jp:%d][%d]: %d %f\n", jp, 0, dmx[cur][0], Score2Prob(dmx[cur][0], 1.));*/
 
       for (k = 1; k <= cm->cp9->M; k++)
 	{
 	  /*match state*/
 	  mmx[cur][k] = -INFTY;
-	  if((sc = mmx[prv][k-1] + cm->cp9->tsc[CTMM][k-1]) > mmx[cur][k])
-	    mmx[cur][k] = sc;
-	  if((sc = imx[prv][k-1] + cm->cp9->tsc[CTIM][k-1]) > mmx[cur][k])
-	    mmx[cur][k] = sc;
-	  if((sc = mmx[prv][0] + cm->cp9->bsc[k]) > mmx[cur][k])
-	    mmx[cur][k] = sc;
-	  if((sc = dmx[prv][k-1] + cm->cp9->tsc[CTDM][k-1]) > mmx[cur][k])
-	    mmx[cur][k] = sc;
+	  if((tmp_sc = mmx[prv][k-1] + cm->cp9->tsc[CTMM][k-1]) > mmx[cur][k])
+	    mmx[cur][k] = tmp_sc;
+	  if((tmp_sc = imx[prv][k-1] + cm->cp9->tsc[CTIM][k-1]) > mmx[cur][k])
+	    mmx[cur][k] = tmp_sc;
+	  if((tmp_sc = mmx[prv][0] + cm->cp9->bsc[k]) > mmx[cur][k])
+	    mmx[cur][k] = tmp_sc;
+	  if((tmp_sc = dmx[prv][k-1] + cm->cp9->tsc[CTDM][k-1]) > mmx[cur][k])
+	    mmx[cur][k] = tmp_sc;
+
+	  /* check possibility we came from an EL, if they're valid */
+	  if(cm->cp9->flags & CPLAN9_EL) 
+	    for(c = 0; c < cm->cp9->el_from_ct[k]; c++) /* el_from_ct[k] is >= 0 */
+	      /* transition penalty to EL incurred when EL was entered */
+	      if((tmp_sc = elmx[prv][cm->cp9->el_from_idx[k][c]]) > mmx[cur][k])
+		mmx[cur][k] = tmp_sc;
+	  
 	  if(mmx[cur][k] != -INFTY)
 	    mmx[cur][k] += cm->cp9->msc[dsq[j]][k];
-	  else 
-	    mmx[cur][k] = -INFTY;
 
 	  /*insert state*/
 	  imx[cur][k] = -INFTY;
-	  if((sc = mmx[prv][k] + cm->cp9->tsc[CTMI][k]) > imx[cur][k])
-	    imx[cur][k] = sc;
-	  if((sc = imx[prv][k] + cm->cp9->tsc[CTII][k]) > imx[cur][k])
-	    imx[cur][k] = sc;
-	  if((sc = dmx[prv][k] + cm->cp9->tsc[CTDI][k]) > imx[cur][k])
-	    imx[cur][k] = sc;
+	  if((tmp_sc = mmx[prv][k] + cm->cp9->tsc[CTMI][k]) > imx[cur][k])
+	    imx[cur][k] = tmp_sc;
+	  if((tmp_sc = imx[prv][k] + cm->cp9->tsc[CTII][k]) > imx[cur][k])
+	    imx[cur][k] = tmp_sc;
+	  if((tmp_sc = dmx[prv][k] + cm->cp9->tsc[CTDI][k]) > imx[cur][k])
+	    imx[cur][k] = tmp_sc;
 	  if(imx[cur][k] != -INFTY)
 	    imx[cur][k] += cm->cp9->isc[dsq[j]][k];
 	  else 
@@ -289,21 +247,52 @@ CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
 
 	  /*delete state*/
 	  dmx[cur][k] = -INFTY;
-	  if((sc = mmx[cur][k-1] + cm->cp9->tsc[CTMD][k-1]) > dmx[cur][k])
-	    dmx[cur][k] = sc;
-	  if((sc = imx[cur][k-1] + cm->cp9->tsc[CTID][k-1]) > dmx[cur][k])
-	    dmx[cur][k] = sc;
-	  if((sc = dmx[cur][k-1] + cm->cp9->tsc[CTDD][k-1]) > dmx[cur][k])
-	    dmx[cur][k] = sc;
+	  if((tmp_sc = mmx[cur][k-1] + cm->cp9->tsc[CTMD][k-1]) > dmx[cur][k])
+	    dmx[cur][k] = tmp_sc;
+	  if((tmp_sc = imx[cur][k-1] + cm->cp9->tsc[CTID][k-1]) > dmx[cur][k])
+	    dmx[cur][k] = tmp_sc;
+	  if((tmp_sc = dmx[cur][k-1] + cm->cp9->tsc[CTDD][k-1]) > dmx[cur][k])
+	    dmx[cur][k] = tmp_sc;
+
+	  elmx[cur][k] = -INFTY;
+	  if((cm->cp9->flags & CPLAN9_EL) && cm->cp9->has_el[k]) /* not all HMM nodes have an EL state (for ex: 
+								    HMM nodes that map to right half of a MATP_MP) */
+	    {
+	      if((tmp_sc = mmx[cur][k] + cm->cp9->tsc[CTME][k]) > elmx[cur][k]) /* transitioned from cur node's match state */
+
+		elmx[cur][k] = tmp_sc;
+	      if((tmp_sc = elmx[prv][k] + cm->cp9->el_selfsc) > elmx[cur][k]) /* transitioned from cur node's EL state emitted ip on transition */
+		elmx[cur][k] = tmp_sc;
+	    }
+	  else elmx[cur][k] = -INFTY;
+	  /*printf("mmx[jp:%d][%d]: %d %f\n", jp, k, mmx[cur][k], Score2Prob(mmx[cur][k], 1.));
+	    printf("imx[jp:%d][%d]: %d %f\n", jp, k, imx[cur][k], Score2Prob(imx[cur][k], 1.));
+	    printf("dmx[jp:%d][%d]: %d %f\n", jp, k, dmx[cur][k], Score2Prob(dmx[cur][k], 1.));*/
 	}
+      /* determine erow[cur] == sc[jp], the int score of all possible parses ending at the current
+       * position (j) of the target sequence. */
       erow[cur] = -INFTY;
+
       for (k = 1; k <= cm->cp9->M; k++)
-	if ((sc = mmx[cur][k] + cm->cp9->esc[k]) > erow[cur])
-	  erow[cur] = sc;
-      if ((sc =  dmx[cur][cm->cp9->M] + cm->cp9->tsc[CTDM][cm->cp9->M]) > erow[cur])
-	erow[cur] = sc;
+	if ((tmp_sc = mmx[cur][k] + cm->cp9->esc[k]) > erow[cur])
+	  erow[cur] = tmp_sc;
+      if ((tmp_sc =  dmx[cur][cm->cp9->M] + cm->cp9->tsc[CTDM][cm->cp9->M]) > erow[cur])
+	erow[cur] = tmp_sc;
       /* transition from D_M -> end */
+      if ((tmp_sc =  imx[cur][cm->cp9->M] + cm->cp9->tsc[CTIM][cm->cp9->M]) > erow[cur])
+	erow[cur] = tmp_sc;
+      /* transition from I_M -> end */
+      if(cm->cp9->flags & CPLAN9_EL) /* no need to waste time otherwise */
+	{
+	  /* check if we came from an EL */
+	  for(c = 0; c < cm->cp9->el_from_ct[cm->cp9->M+1]; c++) /* el_from_ct[cm->cp9->M+1] holds # ELs that can go to END */
+	    if((tmp_sc = elmx[cur][cm->cp9->el_from_idx[cm->cp9->M+1][c]]) > erow[cur])
+	      erow[cur] = tmp_sc;
+	  /* transition penalty to EL incurred when EL was entered */
+	}
+      sc[jp] = erow[cur];
       fsc = Scorify(erow[cur]);
+      /*printf("jp: %d j: %d fsc: %f sc: %d\n", jp, j, fsc, sc[jp]);*/
       if(fsc > best_sc)
 	{
 	  best_sc = fsc;
@@ -342,16 +331,16 @@ CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
 	      if(results != NULL) 
 		{
 		  i = ((j-W+1)> i0) ? (j-W+1) : i0;
-		  /*printf("FWD greedy REPORTING HIT: i: %d j: %d fsc: %f\n", i, j, fsc);*/
+		  /*printf("VIT greedy REPORTING HIT: i: %d j: %d fsc: %f\n", i, j, fsc);*/
 		  report_hit (i, j, 0, fsc, results);
 		  /* 0 is for saver, which is irrelevant for HMM hits */
 		}
 	    }
 	}
     } /* end loop over end positions j */
-  /*printf("returing sc: %d from CPViterbi()\n", sc);*/
+      
   if((!(cm->search_opts & CM_SEARCH_HMMGREEDY)) && /* resolve overlaps optimally */
-     do_scan) /* else we can save time by skipping traceback */
+     (!doing_align || do_scan)) /* else we can save time by skipping traceback */
     {
       /*****************************************************************
        * Traceback stage.
@@ -373,7 +362,7 @@ CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
 	      {
 		if(results != NULL) /* report the hit */
 		  {
-		    printf("VITERBI reporting hit: i: %d j: %d sc: %f\n", gback[jp], j, savesc[jp]);
+		    /*printf("VIT reporting hit: i: %d j: %d sc: %f\n", gback[jp], j, savesc[jp]);*/
 		    report_hit(gback[jp], j, 0, savesc[jp], results); 
 		    /* 0 is for saver, which is irrelevant for HMM hits */
 		  }
@@ -388,17 +377,17 @@ CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
   free(savesc);
 
   /* determine score to return: (I know, too complex) */
-  if(!do_scan)
+  if(doing_align)
     {
-      return_sc = Scorify(erow[cur]); /* probably wrong */
+      return_sc = Scorify(sc[(j0-i0+1)]); /* L = j0-i0+1 */
       if(ret_bestpos != NULL) *ret_bestpos = i0;
+      if(ret_tr != NULL) 
+	{
+	  CP9ViterbiTrace(cm->cp9, dsq, i0, j0, mx, &tr);
+	  /* CP9PrintTrace(stdout, tr, cm->cp9, dsq); */
+	  *ret_tr = tr;
+	}
     }
-  
-  if (!do_scan && ret_tr != NULL) {
-    CP9ViterbiTrace(cm->cp9, dsq, i0, j0, mx, &tr);
-    /* CP9PrintTrace(stdout, tr, cm->cp9, dsq); */
-    *ret_tr = tr;
-  }
   else if(best_hmm_sc <= 0.) /* scanning and there were no hits found by the 
 			      * semi-HMM above 0.0 bits */
     {
@@ -410,9 +399,12 @@ CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
       return_sc = best_hmm_sc;
       if(ret_bestpos != NULL) *ret_bestpos = best_hmm_pos;
     }
+  if(ret_sc != NULL) *ret_sc = sc;
+  else free(sc);
   if (ret_mx != NULL) *ret_mx = mx;
   else                FreeCPlan9Matrix(mx);
-  /*printf("Forward return_sc: %f\n", return_sc);*/
+  /*printf("Viterbi return_sc: %f\n", return_sc);*/
+
   return return_sc;
 
  ERROR:
@@ -693,7 +685,6 @@ CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
 	    /* transition penalty to EL incurred when EL was entered */
 	}
       sc[jp] = erow[cur];
-      /* transition from D_M -> end */
       fsc = Scorify(sc[jp]);
       /*printf("jp: %d j: %d fsc: %f sc: %d\n", jp, j, fsc, sc[jp]);*/
       if(fsc > best_sc)

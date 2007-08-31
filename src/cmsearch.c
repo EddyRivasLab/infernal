@@ -173,8 +173,10 @@ static int print_search_info(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long
 
 static int read_qdb_file(FILE *fp, CM_t *cm, int *dmin, int *dmax);
 static int is_integer(char *s);
+#if HAVE_MPI
 static int determine_cm_min_max_chunksize(struct cfg_s *cfg, CM_t *cm, int *ret_min_chunksize, int *ret_max_chunksize);
 static int determine_seq_chunksize(struct cfg_s *cfg, int L, int min_chunksize, int chunksize);
+#endif 
 
 int
 main(int argc, char **argv)
@@ -353,9 +355,6 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   GetDBInfo(NULL, cfg->sqfp, &(cfg->N), NULL);  
   if (! esl_opt_GetBoolean(go, "--toponly")) cfg->N *= 2;
 
-  /* determine statistics of sequence file, this opens, determines 
-   * total size in nt, and closes it; really wasteful.
-   */
   /* open CM file */
   if ((cfg->cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
     ESL_FAIL(eslFAIL, NULL, "Failed to open covariance model save file %s\n", cfg->cmfile);
@@ -417,7 +416,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
       cfg->ncm++;
 
-      /* initialize the flags/options/params of the CM */
+      /* initialize the flags/options/params and configuration of the CM */
       if((  status = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) cm_Fail(errbuf);
       if((  status = CreateCMConsensus(cm, cfg->abc_out, 3.0, 1.0, &cons))  != eslOK) cm_Fail(errbuf);
       if(cm->flags & CM_GUMBEL_STATS) 
@@ -429,7 +428,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	if((status = calc_filter_threshold(go, cfg, errbuf, cm, &Smin))     != eslOK) cm_Fail(errbuf);
       print_search_info(stdout, cm, cm_mode, cp9_mode, cfg->N, errbuf);
 
-      while ((status = read_next_seq(cfg->abc, cfg->sqfp, cfg->do_rc, &dbseq)) == eslOK)
+      while ((status = read_search_seq(cfg->abc, cfg->sqfp, cfg->do_rc, &dbseq)) == eslOK)
 	{
 	  for(rci = 0; rci <= cfg->do_rc; rci++) {
 	    /*printf("SEARCHING >%s %d\n", dbseq->sq[reversed]->name, reversed);*/
@@ -611,7 +610,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    {
 	      need_seq = FALSE;
 	      /* read a new seq */
-	      if((status = read_next_seq(cfg->abc, cfg->sqfp, cfg->do_rc, &dbseq)) == eslOK) 
+	      if((status = read_next_search_seq(cfg->abc, cfg->sqfp, cfg->do_rc, &dbseq)) == eslOK) 
 		{
 		  ndbseq++;
 		  ESL_DASSERT1((ndbseq < cfg->nproc));
@@ -938,7 +937,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(! esl_opt_GetBoolean(go, "--hmmnoel"))     cm->config_opts |= CM_CONFIG_HMMEL;
   if(! esl_opt_GetBoolean(go, "--iins"))        cm->config_opts |= CM_CONFIG_ZEROINSERTS;
   if(  esl_opt_GetBoolean(go, "--elsilent"))    cm->config_opts |= CM_CONFIG_ELSILENT;
-  /* Config QDB? Yes, unless --noqdb or --hmmonly enabled */
+  /* config QDB? Yes, unless --noqdb or --hmmonly enabled */
   if(! (esl_opt_GetBoolean(go, "--noqdb") || esl_opt_GetBoolean(go, "--hmmonly")))
     cm->config_opts |= CM_CONFIG_QDB;
   /* are we enforcing a subseq? */
@@ -1423,6 +1422,7 @@ int print_search_info(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N, cha
   return eslOK;
 }
 
+#if HAVE_MPI
 /* determine_cm_min_max_chunksize()
  * Given a CM, return the minimum and maximum subseq length to 
  * send to each process (min_chunksize & max_chunksize) based on 
@@ -1433,7 +1433,6 @@ int print_search_info(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N, cha
 static int
 determine_cm_min_max_chunksize(struct cfg_s *cfg, CM_t *cm, int *ret_min_chunksize, int *ret_max_chunksize)
 {
-  int status;
   int   L = 1000000;
   float dpc; /* number of million dp calcs for L = 1 MB with or without QDB (depending on cm->search_opts) */
   /* TO DO: update CountScanDPCalcs() for HMM filtering, not just QDB */
@@ -1441,6 +1440,7 @@ determine_cm_min_max_chunksize(struct cfg_s *cfg, CM_t *cm, int *ret_min_chunksi
   printf("dpc: %f\n", dpc);
   *ret_min_chunksize = (int) (((float) MPI_WORKER_MIN_SEC * (float) L) / (dpc / MDPC_SEC));
   *ret_max_chunksize = (int) (((float) MPI_WORKER_MAX_SEC * (float) L) / (dpc / MDPC_SEC));
+  return eslOK;
 }
 
 /* determine_seq_chunksize()
@@ -1456,13 +1456,11 @@ determine_cm_min_max_chunksize(struct cfg_s *cfg, CM_t *cm, int *ret_min_chunksi
 static int
 determine_seq_chunksize(struct cfg_s *cfg, int L, int min_chunksize, int max_chunksize)
 {
-  int status;
   int chunksize;
-
   if(cfg->do_rc) L *= 2;
   chunksize = (int) ((float) L / (float) (cfg->nproc - 1));
   if(chunksize < min_chunksize) return min_chunksize;
   if(chunksize > max_chunksize) return max_chunksize;
   return chunksize;
-
 }
+#endif

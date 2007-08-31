@@ -305,7 +305,6 @@ float
 CYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, 
 	float cutoff, search_results_t *results)
 {
-  printf("in CYKScan\n");
   /* Contract check */
   if(j0 < i0)
     esl_fatal("ERROR in CYKScan, i0: %d j0: %d\n", i0, j0);

@@ -224,6 +224,7 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
   esl_stopwatch_Start(w);
   CP9Viterbi(cm, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, NULL, NULL,
 	     TRUE,   /* we're scanning */
+	     FALSE,  /* we're not ultimately aligning */
 	     TRUE,   /* be memory efficient */
 	     NULL,   /* don't want the DP matrix back */
 	     NULL);  /* don't want traces back */

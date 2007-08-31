@@ -312,7 +312,7 @@ CP9_seq2bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b,
  *           
  * Return:  void
  */
-#define OLDHMMALGS 0 /* use CP9ForwardOLD() and CP9BackwardOLD() */
+#define OLDHMMALGS 0 /* use CP9ForwardAlign() and CP9BackwardAlign() */
 #define NEWHMMALGS 1 /* use CP9Forward() and CP9Backward() */
 void 
 CP9_seq2posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9_post,
@@ -343,9 +343,9 @@ CP9_seq2posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_
     do_scan2bands = FALSE;
 
   /* Step 1: Get HMM posteriors.*/
-  /*sc = CP9ViterbiOLD(dsq, i0, j0, cm->cp9, cp9_mx);*/
+  /*sc = CP9ViterbiAlign(dsq, i0, j0, cm->cp9, cp9_mx);*/
   if(OLDHMMALGS)
-    sc = CP9ForwardOLD(dsq, i0, j0, cm->cp9, &cp9_fwd);
+    sc = CP9ForwardAlign(dsq, i0, j0, cm->cp9, &cp9_fwd);
   else if(NEWHMMALGS)
     sc = CP9Forward(cm, dsq, i0, j0, (j0-i0+1), 
 		    0,    /* cp9_cutoff score, irrelevant */
@@ -360,7 +360,7 @@ CP9_seq2posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_
 
   if(debug_level > 0) printf("CP9 Forward  score : %.4f\n", sc);
   if(OLDHMMALGS)
-    sc = CP9BackwardOLD(dsq, i0, j0, cm->cp9, &cp9_bck);
+    sc = CP9BackwardAlign(dsq, i0, j0, cm->cp9, &cp9_bck);
   else if(NEWHMMALGS)
     sc = CP9Backward(cm, dsq, i0, j0, (j0-i0+1), 
 		     0,    /* cp9_cutoff score, irrelevant */
@@ -392,15 +392,15 @@ CP9_seq2posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_
 
 /* Functions for getting posterior probabilities from the HMMs 
  * based on Ian Holmes' hmmer/src/postprob.c functions 
- * CP9ForwardOLD()
- * CP9ViterbiOLD()
- * CP9BackwardOLD()
+ * CP9ForwardAlign()
+ * CP9ViterbiAlign()
+ * CP9BackwardAlign()
  * CP9Posterior()
  * CP9_ifill_post_sums()
  */
 
 /***********************************************************************
- * Function: CP9ForwardOLD
+ * Function: CP9ForwardAlign
  * based on  P7Forward() <-- this function's comments below  
  *           from HMMER 2.4devl core_algorithms.c
  *
@@ -408,6 +408,11 @@ CP9_seq2posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_
  *           The scaling issue is dealt with by working in log space
  *           and calling ILogsum(); this is a slow but robust approach.
  *           
+ * Note:     Differs from CP9_scan.c:CP9Forward() in that this function
+ *           does not work in 'scan' mode. CP9_scan.c:CP9Forward() can
+ *           do scanning OR alignment, but is somewhat more complex than
+ *           this function.
+ *
  * Args:     dsq    - sequence in digitized form
  *           i0     - start of target subsequence (often 1, beginning of dsq)
  *           j0     - end of target subsequence (often L, end of dsq)
@@ -417,11 +422,11 @@ CP9_seq2posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_
  * Return:   log P(S|M)/P(S|R), as a bit score.
  */
 float
-CP9ForwardOLD(ESL_DSQ *dsq, int i0, int j0, struct cplan9_s *hmm, 
+CP9ForwardAlign(ESL_DSQ *dsq, int i0, int j0, struct cplan9_s *hmm, 
 	      struct cp9_dpmatrix_s **ret_mx)
 {
   if(dsq == NULL) 
-    esl_fatal("In CP9ForwardOLD() dsq is NULL.");
+    esl_fatal("In CP9ForwardAlign() dsq is NULL.");
   struct cp9_dpmatrix_s *mx;
   int **mmx;
   int **imx;
@@ -503,7 +508,7 @@ CP9ForwardOLD(ESL_DSQ *dsq, int i0, int j0, struct cplan9_s *hmm,
   return Scorify(sc);		/* the total Forward score. */
 }
 
-/* Function: CP9ViterbiOLD()
+/* Function: CP9ViterbiAlign()
  * based on  P7Viterbi() <-- this function's comments below  
  *           from HMMER 2.4devl core_algorithms.c
  *
@@ -517,9 +522,11 @@ CP9ForwardOLD(ESL_DSQ *dsq, int i0, int j0, struct cplan9_s *hmm,
  *           the ALTIVEC version in fast_algorithms.c is vectorized
  *           with Altivec-specific code, and is pretty opaque.
  *           
- *           This function is not enabled by default; it is only
- *           activated by -DSLOW at compile time.
- *           
+ * Note:     Differs from CP9_scan.c:CP9Viterbi() in that this function
+ *           does not work in 'scan' mode. CP9_scan.c:CP9Viterbi() can
+ *           do scanning OR alignment, but is somewhat more complex than
+ *           this function.
+ *
  * Args:     dsq   - sequence in digitized form
  *           i0     - start of target subsequence (often 1, beginning of dsq)
  *           j0     - end of target subsequence (often L, end of dsq)
@@ -530,11 +537,11 @@ CP9ForwardOLD(ESL_DSQ *dsq, int i0, int j0, struct cplan9_s *hmm,
  * Return:   log P(S|M)/P(S|R), as a bit score
  */
 float
-CP9ViterbiOLD(ESL_DSQ *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s *mx,
+CP9ViterbiAlign(ESL_DSQ *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s *mx,
 	      CP9trace_t **ret_tr)
 {
   if(dsq == NULL)
-    esl_fatal("ERROR in CP9ViterbiOLD(), dsq is NULL.");
+    esl_fatal("ERROR in CP9ViterbiAlign(), dsq is NULL.");
 
   CP9trace_t  *tr;
   int **mmx;
@@ -672,7 +679,7 @@ CP9ViterbiOLD(ESL_DSQ *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpm
 	}
     } 
   sc = erow[W];
-  /* printf("returning sc: %d from CP9ViterbiOLD()\n", sc); */
+  /* printf("returning sc: %d from CP9ViterbiAlign()\n", sc); */
   
   if (ret_tr != NULL) {
     CP9ViterbiTrace(hmm, dsq, i0, j0, mx, &tr);
@@ -683,9 +690,14 @@ CP9ViterbiOLD(ESL_DSQ *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpm
 }
 
 /*********************************************************************
- * Function: CP9BackwardOLD
+ * Function: CP9BackwardAlign
  * based on  P7Backward() <-- this function's comments below
  *           from HMMER 2.4devl core_algorithms.c
+ * 
+ * Note:     Differs from CP9_scan.c:CP9Backward() in that this function
+ *           does not work in 'scan' mode. CP9_scan.c:CP9Backward() can
+ *           do scanning OR alignment, but is somewhat more complex than
+ *           this function.
  * 
  * Purpose:  The Backward dynamic programming algorithm.
  *           The scaling issue is dealt with by working in log space
@@ -700,10 +712,10 @@ CP9ViterbiOLD(ESL_DSQ *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpm
  * Return:   log P(S|M)/P(S|R), as a bit score.
  */
 float
-CP9BackwardOLD(ESL_DSQ *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s **ret_mx)
+CP9BackwardAlign(ESL_DSQ *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s **ret_mx)
 {
   if(dsq == NULL)
-    esl_fatal("ERROR in CP9BackwardOLD(), dsq is NULL.");
+    esl_fatal("ERROR in CP9BackwardAlign(), dsq is NULL.");
 
   struct cp9_dpmatrix_s *mx;
   int **mmx;
