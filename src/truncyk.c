@@ -79,6 +79,8 @@ void tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j
 /* Traceback routine */
 float trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
                 int i0, int j0, int allow_begin, int *dmin, int *dmax);
+float tr_vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, 
+                  int i0, int i1, int j1, int j0, int useEL, int force_LM, int force_RM);
 
 /* Function: TrCYKInside()
  * Author:   DLK
@@ -340,14 +342,14 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    {
       if ( w_mode )
       {
-         InsertTraceNodeWithMode(tr, tr->n-1, TRACE_LEFT_CHILD, b1_i, b1_j, b1_v, b1_mode);
+         InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, b1_i, b1_j, b1_v, b1_mode);
          z = CMSubtreeFindEnd(cm, b1_v);
          tr_generic_splitter(cm, dsq, L, tr, b1_v, z, b1_i, b1_j, (b1_mode == 2), (b1_mode == 1));
          return best_sc;
       }
       else if ( y_mode )
       {
-         InsertTraceNodeWithMode(tr, tr->n-1, TRACE_LEFT_CHILD, b2_i, b2_j, b2_v, b2_mode);
+         InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, b2_i, b2_j, b2_v, b2_mode);
          z = CMSubtreeFindEnd(cm, b2_v);
          tr_generic_splitter(cm, dsq, L, tr, b2_v, z, b2_i, b2_j, (b2_mode == 2), (b2_mode == 1));
          return best_sc;
@@ -356,30 +358,30 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    }
    else /* case T: parent is empty, but both children are non-empty */
    {
-      InsertTraceNodeWithMode(tr, tr->n-1, TRACE_LEFT_CHILD, best_j - best_d + 1, best_j, v, 0);
+      InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, best_j - best_d + 1, best_j, v, 0);
    }
 
    tv = tr->n - 1;
    if ( w_mode )
    {
-      InsertTraceNodeWithMode(tr, tv, TRACE_LEFT_CHILD, best_j - best_d + 1, best_j - best_k, w, w_mode);
+      InsertTraceNodewithMode(tr, tv, TRACE_LEFT_CHILD, best_j - best_d + 1, best_j - best_k, w, w_mode);
       tr_generic_splitter(cm, dsq, L, tr, w, wend, best_j - best_d + 1, best_j - best_k, (w_mode == 2), (w_mode == 1));
    }
    else
    {
-      InsertTraceNodeWithMode(tr, tr->n-1, TRACE_LEFT_CHILD, best_j - best_d + 1, best_j - best_d, w, w_mode);
-      InsertTraceNodeWithMode(tr, tr->n-1, TRACE_LEFT_CHILD, best_j - best_d + 1, best_j - best_d, cm->M, 3);
+      InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, best_j - best_d + 1, best_j - best_d, w, w_mode);
+      InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, best_j - best_d + 1, best_j - best_d, cm->M, 3);
    }
 
    if ( y_mode )
    {
-      InsertTraceNodeWithMode(tr, tv, TRACE_RIGHT_CHILD, best_j - best_k + 1, best_j, y, y_mode);
+      InsertTraceNodewithMode(tr, tv, TRACE_RIGHT_CHILD, best_j - best_k + 1, best_j, y, y_mode);
       tr_generic_splitter(cm, dsq, L, tr, y, yend, best_j - best_k + 1, best_j, (y_mode == 2), (y_mode == 1));
    }
    else 
    {
-      InsertTraceNodeWithMode(tr, tv, TRACE_RIGHT_CHILD, best_j + 1, best_j, y, y_mode);
-      InsertTraceNodeWithMode(tr, tv, TRACE_RIGHT_CHILD, best_j + 1, best_j, cm->M, 3);
+      InsertTraceNodewithMode(tr, tv, TRACE_RIGHT_CHILD, best_j + 1, best_j, y, y_mode);
+      InsertTraceNodewithMode(tr, tv, TRACE_RIGHT_CHILD, best_j + 1, best_j, cm->M, 3);
    }
 
    return best_sc;
@@ -724,7 +726,7 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
    {
       if (best_v != z)
       {
-         InsertTraceNodeWithMode(tr, tr->n-1, TRACE_LEFT_CHILD, best_i, best_j, best_v, best_mode);
+         InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, best_i, best_j, best_v, best_mode);
       }
       tr_v_splitter(cm, dsq, L, tr, best_v, z, best_i, i1, j1, best_j, useEL, force_LM, force_RM);
    }
@@ -3223,6 +3225,116 @@ trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
    free_vjd_shadow_matrix(T_shadow, cm, i0, j0);
    free_vjd_shadow_matrix(Lmode_shadow, cm, i0, j0);
    free_vjd_shadow_matrix(Rmode_shadow, cm, i0, j0);
+
+   return sc;
+}
+
+/* Function: tr_vinsideT()
+ * Author:   DLK
+ * 
+ * Purpose:  Traceback wrapper for tr_vinside()
+ *           Appends trace to a traceback which
+ *           already has state r at t->n-1
+ * Args:
+ *
+ * Returns:
+ */
+float
+tr_vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, 
+            int i0, int i1, int j1, int j0, int useEL, int force_LM, int force_RM)
+{
+   float sc;
+   int v, i, j;
+   int ip, jp;
+   int mode, nxtmode;
+   int yoffset;
+
+   ShadowMats_t *shadow;
+
+   if (r == z)
+   {
+      if      (force_LM) mode = 2;
+      else if (force_RM) mode = 1;
+      else               mode = 3;
+
+      InsertTraceNode/ithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, r, mode);
+      return 0.0;
+   }
+
+   sc = tr_vinside(cm, dsq, L, r, z, i0, i1, j1, j0, useEL, force_LM, force_RM,
+                   BE_EFFICIENT, NULL, NULL, NULL, NULL, &shadow, &mode, &v, &i, &j);
+
+   if (r != v) Die("Uh oh... r should (maybe?) always be the same as v and they're not...\n");
+
+   /* start traceback */
+   while (1)
+   {
+      jp = j-j1;
+      ip = i-i0;
+
+      if      ( mode == 3 )
+      {
+         yoffset = ((char **) shadow->J[v])[jp][ip];
+         nxtmode = 3;
+      }
+      else if ( mode == 2 )
+      {
+         yoffset = ((char **) shadow->L[v])[jp][ip];
+         nxtmode = ((int **) shadow->Lmode[v])[jp][ip];
+      }
+      else if ( mode == 1 )
+      {
+         yoffset = ((char **) shadow->R[v])[jp][ip];
+         nxtmode = ((int **) shadow->Lmode[v])[jp][ip];
+      }
+      else
+         Die("Unknown mode in traceback!\n");
+
+      switch (cm->sttype[v])
+      {
+         case  S_st:
+         case  D_st:
+            break;
+         case MP_st:
+            if ( mode == 3 || mode == 2 ) i++;
+            if ( mode == 3 || mode == 1 ) j--;
+            break;
+         case ML_st:
+         case IL_st:
+            if ( mode == 3 || mode == 2 ) i++;
+            break;
+         case MR_st:
+         case IR_st:
+            if ( mode == 3 || mode == 1 ) j--;
+            break;
+         default:
+            Die("'Inconceivable!'\n'Youu keep using that word...'");
+      }
+      mode = nxtmode;
+
+      if (yoffset == USED_EL)
+      {
+         v = cm->M;
+         InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
+         break;
+      }
+      else if (yoffset == USED_LOCAL_BEGIN)
+      {   /* local begin, can only happen once, from root */
+         if (v != 0)
+            Die("Impossible local begin in traceback!\n");
+         else
+            Die("Shoopid, you actually need to deal with this local begin case\n");
+      }
+      else
+      {
+         v = cm->cfirst[v] + yoffset;
+         InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
+      }
+   }
+
+   free_vji_shadow_matrix(shadow->J, cm->M, j1, j0);
+   free_vji_shadow_matrix(shadow->L, cm->M, j1, j0);
+   free_vji_shadow_matrix(shadow->R, cm->M, j1, j0);
 
    return sc;
 }
