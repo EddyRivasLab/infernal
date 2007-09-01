@@ -900,10 +900,10 @@ typedef struct _dbseq_t {
 typedef struct _seqs_to_aln_t {
   ESL_SQ  **sq;                  /* the sequences */
   int nseq;                      /* number of sequences */
+  int nalloc;                    /* number of sequences alloc'ed */
   Parsetree_t **tr;              /* parsetrees */
   CP9trace_t **cp9_tr;           /* CP9 traces, usually NULL unless tr is NULL */
   char **postcode;               /* postal codes, left NULL unless do_post */
-  int index;                     /* the index of the first sq (sq[0]) in master structure */
 } seqs_to_aln_t;
 
 /* The integer log odds score deckpool for integer versions of 

@@ -598,8 +598,10 @@ extern void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *con
 			   int do_complement, int used_HMM);
 extern void remove_hits_over_e_cutoff (CM_t *cm, search_results_t *results, ESL_SQ *sq,
 				       int used_HMM);
-extern int  read_align_seqs(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int nseq, int read_all, seqs_to_aln_t **ret_seqs_to_aln);
-extern void FreeSeqsToAln(seqs_to_aln_t *s);
+extern seqs_to_aln_t *CreateSeqsToAln(int size);
+extern int  GrowSeqsToAln(int new_alloc);
+extern void FreeSeqsToAln(seqs_to_aln_t *seqs_to_aln);
+extern int  ReadSeqsToAln(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int nseq, int do_read_all, seqs_to_aln_t *seqs_to_aln); 
 
 /* from cplan9.c: functions stolen from HMMER-2.4::mathsupport.c */
 extern int   ILogsum(int p1, int p2);

@@ -437,71 +437,152 @@ int read_search_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revcomp, 
 }
 
 /*
- * Function: read_align_seqs
+ * Function: CreateSeqsToAln()
+ * Date:     EPN, Sat Sep  1 10:51:28 2007
+ *
+ * Purpose:  Allocate and return a seqs_to_aln_t data structure.
+ *
+ * Note:     Pointers to individual seqs, parstrees, cp9 traces
+ *           and postal codes are allocated and set to NULL.
+ *           This is unorthodox, but convenient, especially
+ *           for MPI.
+ *
+ * Returns:  An initialized and allocated (for nalloc seqs) 
+ *           seqs_to_aln_t object.
+ *           Dies immediately on a memory error.
+ */
+seqs_to_aln_t *CreateSeqsToAln(int size)
+{
+  int status;
+  seqs_to_aln_t *seqs_to_aln;
+
+  ESL_ALLOC(seqs_to_aln, sizeof(seqs_to_aln_t));
+  ESL_ALLOC(seqs_to_aln->sq,      sizeof(ESL_SQ *)      * nalloc);
+  ESL_ALLOC(seqs_to_aln->tr,      sizeof(Parsetree_t *) * nalloc);
+  ESL_ALLOC(seqs_to_aln->cp9_tr,  sizeof(CP9trace_t *)  * nalloc);
+  ESL_ALLOC(seqs_to_aln->postcode,sizeof(char *)        * nalloc);
+  for(i = 0; i < size; i++)
+    seqs_to_aln->sq[i] = seqs_to_aln->tr[i] = seqs_to_aln->cp9_tr[i] = seqs_to_aln->postcode[i] = NULL;
+  seqs_to_aln->nalloc = nalloc;
+  return seqs_to_aln;
+
+ ERROR:
+  cm_Fail("Memory error.");
+  return NULL; /* NEVERREACHED */
+}
+
+/*
+ * Function: GrowSeqsToAln()
+ * Date:     EPN, Sat Sep  1 11:10:22 2007
+ *
+ * Purpose:  Grow a seqs_to_aln_t object by <new_alloc>.
+ *
+ * Note:     Pointers to individual seqs, parstrees, cp9 traces
+ *           and postal codes are allocated and set to NULL.
+ *           This is unorthodox, but convenient, especially
+ *           for MPI.
+ */
+int GrowSeqsToAln(int new_alloc)
+{
+  int status;
+  void *tmp;
+  ESL_RALLOC(seqs_to_aln->sq,       tmp, sizeof(ESL_SQ *)      * (seqs_to_aln->nalloc + new_alloc)); 
+  ESL_RALLOC(seqs_to_aln->tr,       tmp, sizeof(Parsetree_t *) * (seqs_to_aln->nalloc + new_alloc));
+  ESL_RALLOC(seqs_to_aln->cp9_tr,   tmp, sizeof(CP9trace_t *)  * (seqs_to_aln->nalloc + new_alloc));
+  ESL_RALLOC(seqs_to_aln->postcode, tmp, sizeof(char *)        * (seqs_to_aln->nalloc + new_alloc));
+  for(i = seqs_to_aln->nalloc; i < (seqs_to_aln->nalloc + new_alloc); i++)
+    seqs_to_aln->sq[i] = seqs_to_aln->tr[i] = seqs_to_aln->cp9_tr[i] = seqs_to_aln->postcode[i] = NULL;
+  seqs_to_aln->nalloc += new_alloc;
+  return eslOK;
+
+ ERROR:
+  cm_Fail("Memory reallocation error.");
+  return status; /* NEVERREACHED */
+}
+
+/*
+ * Function: FreeSeqsToAln()
+ * Date:     EPN, Sat Sep  1 11:18:39 2007
+ *
+ * Purpose:  Free a seqs_to_aln_t object.
+ *
+ * Returns:  eslOK on success. Immediately dies if some error occurs.
+ */
+int FreeSeqsToAln(seqs_to_aln_t *seqs_to_aln)
+{
+  int status;
+  int i;
+  if(seqs_to_aln->sq != NULL) /* with MPI workers, we sometimes free the sequences outside this function */
+    { 
+      for(i = 0; i < seqs_to_aln->nseq; i++) esl_sq_Destroy(seqs_to_aln->sq[i]);
+      free(seqs_to_aln->nseq);
+    }
+  for(i = 0; i < seqs_to_aln->nseq; i++)
+    {
+      if(seqs_to_aln->tr[i]       != NULL) FreeParsetree(seqs_to_aln->tr[i]);
+      if(seqs_to_aln->cp9_tr[i]   != NULL) CP9FreeTrace(seqs_to_aln->cp9_tr[i]);
+      if(seqs_to_aln->postcode[i] != NULL) free(postcode[i]);
+    }
+  free(seqs_to_aln->tr);
+  free(seqs_to_aln->cp9_tr);
+  free(seqs_to_aln->postcode);
+  free(seqs_to_aln);
+}
+
+/*
+ * Function: ReadSeqsToAln()
  * Date:     EPN, Fri Aug 31 15:20:37 2007
  *
  * Purpose:  Given a pointer to a seq file we're reading seqs to align
  *           from, read in nseq seqs from the seq file, or 
  *           if nseq == 0 && do_real_all == TRUE, read all the seqs.
+ *           Add the sequences to a growing seqs_to_aln_t object,
+ *           a pointer to which is passed in.
  *
  * Returns:  <eslOK> on success with <*ret_seqs_to_aln_t> filled with 
  *           seqs to align, *ret_seqs_to_aln_t->nseq gives number of seqs.
  *           Dies immediately on failure with informative error message.
  */
-int read_align_seqs(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int nseq, int do_read_all, seqs_to_aln_t **ret_seqs_to_aln) 
+int ReadSeqsToAln(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int nseq, int do_read_all, seqs_to_aln_t *seqs_to_aln) 
 {
   int status;
   int keep_reading = TRUE;
   void *tmp;
   int i;
-  seqs_to_aln_t *seqs_to_aln = NULL; 
   int nalloc;
   ESL_SQ **sq;
 
   /* contract check */
-  if(do_read_all && nseq != 0) cm_Fail("if do_read_all is TRUE, nseq must be zero.");
+  if(  do_read_all && nseq != 0) cm_Fail("if do_read_all is TRUE,  nseq must be zero.");
+  if(! do_read_all && nseq <= 0) cm_Fail("if do_read_all is FALSE, nseq must be at least 1.");
 
-  i = 0;
-  nalloc = do_read_all ? 50 : nseq;
-  ESL_ALLOC(sq, sizeof(ESL_SQ *) * nalloc);
+  new_alloc  = do_read_all ? 50 : nseq;
+  new_alloc -= seqs_to_aln->nalloc - seqs_to_aln->nseq;
 
-  sq[i] = esl_sq_CreateDigital(abc);
-  while (keep_reading && (status = esl_sqio_Read(seqfp, sq[i])) == eslOK) {
-    if(sq[i]->n == 0) { esl_sq_Reuse(sq[i]); continue; }
+  GrowSeqsToAln(new_alloc);
+  nseq_orig = seqs_to_aln->nseq;
+  i         = seqs_to_aln->nseq;
+
+  seqs_to_aln->sq[i] = esl_sq_CreateDigital(abc);
+  while (keep_reading && (status = esl_sqio_Read(seqfp, seqs_to_aln->sq[i])) == eslOK) {
+    if(seqs_to_aln->sq[i]->n == 0) { esl_sq_Reuse(seqs_to_aln->sq[i]); continue; }
     i++;
-    if(do_read_all && i == nalloc) {
-      nalloc += 50;
-      ESL_RALLOC(sq, tmp, (sizeof(ESL_SQ *) * nalloc));
-    }
-    if(!do_read_all && i == nseq) keep_reading = FALSE; 
-
-    sq[i] = esl_sq_CreateDigital(abc);
+    if(  do_read_all &&  i == seqs_to_aln->nalloc) GrowSeqsToAln(50);
+    if(! do_read_all && (i - nseq_orig) == nseq)   keep_reading = FALSE; 
+    seqs_to_aln->sq[i] = esl_sq_CreateDigital(abc);
   }
   /* destroy the last sequence that was alloc'ed but not filled */
-  esl_sq_Destroy(sq[i]);
-  if (status != eslEOF) cm_Fail("Parse failed, line %d, file %s:\n%s", 
-				seqfp->linenumber, seqfp->filename, seqfp->errbuf);
-
-  if(i > 0)
-    { 
-      ESL_ALLOC(seqs_to_aln, sizeof(seqs_to_aln_t));
-      seqs_to_aln->sq = sq;
-      seqs_to_aln->nseq = i;
-      seqs_to_aln->tr   = NULL;
-      seqs_to_aln->cp9_tr = NULL;
-      seqs_to_aln->index= 0;
-      seqs_to_aln->postcode = NULL;
-      *ret_seqs_to_aln = seqs_to_aln;
-    }
-  else
-    *ret_seqs_to_aln = NULL;
-  return eslOK;
+  esl_sq_Destroy(seqs_to_aln->sq[i]);
+  if ((  do_read_all && status != eslEOF) || 
+      (! do_read_all && status != eslOK))
+    cm_Fail("Parse failed, line %d, file %s:\n%s", 
+	    seqfp->linenumber, seqfp->filename, seqfp->errbuf);
+  return status;
 
  ERROR:
   cm_Fail("Memory allocation error.");
   return eslEMEM; /* NEVERREACHED */
 }
-
 
 /* EPN, Mon Jan  8 06:42:59 2007
  * 

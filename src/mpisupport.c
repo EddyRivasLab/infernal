@@ -28,6 +28,25 @@
 #include "funcs.h"
 #include "structs.h"
 
+/* TODO: EPN, Sat Sep  1 12:10:02 2007
+ * Write these funcs:
+ * cm_seqs_to_aln_MPISend(): if seqs_to_aln->sq == NULL don't send seqs, 
+ *                           else send digitized seqs. if seqs_to_aln = NULL
+ *                           send ENDOFWORK signal
+ * cm_seqs_to_aln_MPIRecv(): (like receiving an MSA, hmmbuild's workunit)
+ *                           need to check 
+ * cm_seqs_to_aln_MPIPackSize(): NEED TO CHECK ->tr[i], cp9_tr[i] postcode[i]
+ *                               for all seqs, they should be either all NULL
+ *                               or non-NULL. send them if non-NULL. ->sq could be NULL.
+ * 
+ * cm_seqs_to_aln_MPIPack(): check again as in packsize()?
+ * cm_seqs_to_aln_MPIUnPack():
+ *
+ * little unclear on why master won't receive with cm_seqs_to_aln_MPIRecv() but 
+ * rather just receives the buffer with MPIRecv() and then calls cm_seqs_to_aln_MPIRecv()
+ * I think the reason is so he can catch the case when there's an error.
+ *
+ ****************************
 /*****************************************************************
  * 1. Communicating a CM.
  *****************************************************************/
@@ -128,7 +147,6 @@ cm_worker_MPIBcast(int tag, MPI_Comm comm, char **buf, int *nalloc, ESL_ALPHABET
 
   /* Receive the CM broadcast */
   if (MPI_Bcast (*buf, n, MPI_PACKED, 0, MPI_COMM_WORLD) != 0) ESL_EXCEPTION(eslESYS, "mpi broadcast failed.");
-
 
   /* Unpack it - where the first integer is a status code, OK or EOD */
   pos = 0;
