@@ -97,7 +97,6 @@ static ESL_OPTIONS options[] = {
  * 
  * This structure is passed to routines within main.c, as a means of semi-encapsulation
  * of shared data amongst different parallel processes (threads or MPI processes).
- * NOTE: MPI not yet implemented.
  */
 struct cfg_s {
   char         *cmfile;	        /* name of input CM file  */ 
@@ -136,7 +135,7 @@ static void  mpi_master    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 static void  mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 #endif
 
-static int process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, seqs_to_aln_t seqs_to_aln);
+static int process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, seqs_to_aln_t *seqs_to_aln);
 static int output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, seqs_to_aln_t *seqs_to_aln);
 
 static int initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
@@ -144,6 +143,8 @@ static int check_withali(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *c
 static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr, int *ret_nseq, char *errbuf);
 static int compare_cm_guide_trees(CM_t *cm1, CM_t *cm2);
 static int make_aligned_string(char *aseq, char *gapstring, int alen, char *ss, char **ret_s);
+static int determine_nseq_per_worker(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int *ret_nseq_worker);
+static int add_worker_seqs_to_master(seqs_to_aln_t *master_seqs, seqs_to_aln_t *worker_seqs, int offset);
 
 int
 main(int argc, char **argv)
@@ -380,12 +381,12 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       /* initialize the flags/options/params and configuration of the CM */
       if((status   = initialize_cm(go, cfg, errbuf, cm))                    != eslOK)    cm_Fail(errbuf);
       /* read in all sequences, this is wasteful, but Parsetrees2Alignment() requires all seqs in memory */
-      seqs_to_aln = CreateSeqsToAln(50);
-      if((status = read_align_seqs(cm->abc, cfg->sqfp, 0, TRUE, seqs_to_aln)) != eslEOF) cm_Fail("Error reading sqfile: %s\n" cfg->sqfile);
+      seqs_to_aln = CreateSeqsToAln(50, FALSE);
+      if((status = ReadSeqsToAln(cfg->abc, cfg->sqfp, 0, TRUE, seqs_to_aln, FALSE)) != eslEOF) cm_Fail("Error read sqfile: %s\n", cfg->sqfile);
       /* align all sequences */
       if ((status = process_workunit(go, cfg, errbuf, cm, seqs_to_aln)) != eslOK) cm_Fail(errbuf);
       if ((status = output_result   (go, cfg, errbuf, cm, seqs_to_aln)) != eslOK) cm_Fail(errbuf);
-
+      
       /* clean up */
       FreeSeqsToAln(seqs_to_aln);
       FreeCM(cm);
@@ -433,8 +434,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int      pos = 1;
 
   CM_t *cm;
+  int nseq_worker
 
-  int si = 0;
   seqs_to_aln_t **seqlist    = NULL;
   seqs_to_aln_t  *seq        = NULL;
   int            *seqidx     = NULL;
@@ -462,7 +463,6 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
    * so we just receive a quick OK/error code reply from each worker to be sure,
    * and don't worry about an informative message. 
    */
-  MPI_Bcast(&(cfg->N), 1, MPI_LONG, 0, MPI_COMM_WORLD);
   MPI_Reduce(&xstatus, &status, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD);
   if (status != eslOK) cm_Fail("One or more MPI worker processes failed to initialize.");
   ESL_DPRINTF1(("%d workers are initialized\n", cfg->nproc-1));
@@ -491,16 +491,15 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       printf("nseq_worker: %d\n", nseq_worker);
 
       wi = 1;
-      all_seqs_to_aln = CreateSeqsToAln(50);
+      all_seqs_to_aln = CreateSeqsToAln(50, TRUE);
       nseq_total      = 0;
       while (have_work || nproc_working)
 	{
 	  if (have_work) 
 	    {
-	      if((status = ReadSeqsToAln(cfg->sqfp, nseq_worker, FALSE, all_seqs_to_aln)) == eslOK)
+	      if((status = ReadSeqsToAln(cfg->sqfp, nseq_worker, FALSE, all_seqs_to_aln, TRUE)) == eslOK)
 	      {
-		nseq_total += all_seqs_to_aln->nseq 
-		ESL_DPRINTF1(("MPI master read %d seqs\n", seqs_to_aln->nseq));
+		ESL_DPRINTF1(("MPI master read %d seqs\n", all_seqs_to_aln->nseq));
 	      }
 	      else 
 		{
@@ -535,23 +534,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		  ESL_DPRINTF1(("MPI master sees that the result buffer contains search results (si_recv:%d)\n", si_recv));
 		  if ((status = cm_seqs_to_aln_MPIUnpack(buf, bn, &pos, MPI_COMM_WORLD, &worker_seqs_to_aln)) != eslOK) cm_Fail("search results unpack failed");
 		  ESL_DPRINTF1(("MPI master has unpacked search results\n"));
-		      
-		  for(x = seqidx[wi]; x < (seqidx[wi] + worker_seqs_to_aln->nseq); x++)
-		    {
-		      /* all_seqs_to_aln->sq[x] already points to relevant seq */
-		      /* worker_seqs_to_aln->sq[(x-seqidx[wi])]] should be NULL */
-		      assert(worker_seqs_to_aln->sq[(x-seqidx[wi])] == NULL);
-		      all_seqs_to_aln->tr[x]       = worker_seqs_to_aln->tr[(x-seqidx[wi])];       /* might be NULL */
-		      all_seqs_to_aln->cp9_tr[x]   = worker_seqs_to_aln->cp9_tr[(x-seqidx[wi])];   /* might be NULL */
-		      all_seqs_to_aln->postcode[x] = worker_seqs_to_aln->postcode[(x-seqidx[wi])]; /* might be NULL */
-		    }
-		  /* careful not to free parsetrees, cp9 traces or postal codes, worker_results->sq should be NULL */
-		  free(worker_seqs_to_aln->sq);       /* this was just an array of pointers */
-		  free(worker_seqs_to_aln->tr);       /* this was just an array of pointers */
-		  free(worker_seqs_to_aln->cp9_tr);   /* this was just an array of pointers */
-		  free(worker_seqs_to_aln->postcode); /* this was just an array of pointers */
-		  free(worker_seqs_to_aln);
-		  worker_seqs_to_aln = NULL;
+		  if ((status = add_worker_seqs_to_aln(all_seqs_to_aln, worker_seqs_to_aln, seqidx[wi])) != eslOK) cm_Fail("adding worker results to master results failed");
+		  FreeSeqsToAln(worker_seqs_to_aln);
 		}
 	      else	/* worker reported an error. Get the errbuf. */
 		{
@@ -627,7 +611,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
     if (wbuf != NULL) free(wbuf);
     return; /* shutdown; we passed the error back for the master to deal with. */
   }
-  ESL_DPRINTF1(("worker %d: initialized\n", cfg->my_rank);
+  ESL_DPRINTF1(("worker %d: initialized\n", cfg->my_rank));
   
   /* source = 0 (master); tag = 0 */
   while ((status = cm_worker_MPIBcast(0, MPI_COMM_WORLD, &wbuf, &wn, &(cfg->abc), &cm)) == eslOK)
@@ -784,27 +768,12 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
  */
 static int
 process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, 
-		 seqs_to_aln_t seqs_to_aln);
+		 seqs_to_aln_t *seqs_to_aln)
 {
-  int status;
-  Parsetree_t **tr       = NULL;
-  char        **postcode = NULL;
-  CP9trace_t  **cp9_tr   = NULL;
-
-  if(! (esl_opt_GetBoolean(go, "--hmmonly"))) 
-    actually_align_targets(cm, seqs_to_aln->sq, seqs_to_aln->nseq, 
-			   NULL, NULL,   /* we're not aligning search hits */
-			   &(seqs_to_aln->tr), NULL, &(seqs_to_aln->postcode), NULL, esl_opt_GetInteger(go, "--banddump"),
-			   esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"));
-  else
-    actually_align_targets(cm, seqs_to_aln->sq, seqs_to_aln->nseq, 
-			   NULL, NULL,   /* we're not aligning search hits */
-			   NULL, &(seqs_to_aln->cp9_tr), &(seqs_to_aln->postcode), NULL, esl_opt_GetInteger(go, "--banddump"),
-			   esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"));
-  
-  if(tr       != NULL) for(i = 0; i < seqs_to_aln->nseq; i++) seqs_to_aln->tr[i]       = tr[i];
-  if(cp9_tr   != NULL) for(i = 0; i < seqs_to_aln->nseq; i++) seqs_to_aln->cp9_tr[i]   = cp9_tr[i];
-  if(postcode != NULL) for(i = 0; i < seqs_to_aln->nseq; i++) seqs_to_aln->postcode[i] = postcode[i];
+  actually_align_targets(cm, seqs_to_aln,
+			 NULL, NULL,   /* we're not aligning search hits */
+			 NULL, esl_opt_GetInteger(go, "--banddump"),
+			 esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"));
   return eslOK;
   
   /* ERROR:
@@ -1114,7 +1083,7 @@ make_aligned_string(char *aseq, char *gapstring, int alen, char *ss, char **ret_
   return status;
 }
 
-/* determine_nseq_worker()
+/* determine_nseq_per_worker()
  * Given a CM, return the number of sequences we think we should send
  * to each worker (we don't know the number of sequences in the file).
  * The calculation is based on trying to get a worker to spend 
@@ -1122,8 +1091,47 @@ make_aligned_string(char *aseq, char *gapstring, int alen, char *ss, char **ret_
  * from structs.h. 
  */
 static int
-determine_nseq_worker(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int *ret_nseq_worker)
+determine_nseq_per_worker(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int *ret_nseq_worker)
 {
   *ret_nseq_worker = 5;
+  return eslOK;
+}
+
+/* add_worker_seqs_to_master
+ * Add results (parstrees or CP9 traces, and possibly postcodes) from a
+ * worker's seqs_to_aln object to a master seqs_to_aln object.
+ */
+static int
+add_worker_seqs_to_master(seqs_to_aln_t *master_seqs, seqs_to_aln_t *worker_seqs, int offset)
+{
+  int x;
+
+  if(worker_seqs->sq != NULL); cm_Fail("add_worker_seqs_to_master(), worker_seqs->sq non-NULL.");
+  if(master_seqs->nseq < (offset + worker_seqs->nseq)) cm_Fail("add_worker_seqs_to_master(), master->nseq: %d, offset %d, worker->nseq: %d\n", master_seqs->nseq, offset, worker_seqs->nseq);
+
+  if(worker_seqs->tr != NULL) {
+    if(master_seqs->tr == NULL) cm_Fail("add_worker_seqs_to_master(), worker returned parsetrees, master->tr is NULL.");
+    for(x = offset; x < (offset + worker_seqs->nseq); x++) {
+      assert(master_seqs->tr[x] == NULL); 
+      master_seqs->tr[x] = worker_seqs->tr[(x-offset)];
+    }
+  }
+
+  if(worker_seqs->cp9_tr != NULL) {
+    if(master_seqs->cp9_tr == NULL) cm_Fail("add_worker_seqs_to_master(), worker returned cp9 traces, master->cp9_tr is NULL.");
+    for(x = offset; x < (offset + worker_seqs->nseq); x++) {
+      assert(master_seqs->cp9_tr[x] == NULL); 
+      master_seqs->cp9_tr[x] = worker_seqs->cp9_tr[(x-offset)];
+    }
+  }
+
+  if(worker_seqs->postcode != NULL) {
+    if(master_seqs->postcode == NULL) cm_Fail("add_worker_seqs_to_master(), worker returned postcodes, master->postcode is NULL.");
+    for(x = offset; x < (offset + worker_seqs->nseq); x++) {
+      assert(master_seqs->postcode[x] == NULL); 
+      master_seqs->postcode[x] = worker_seqs->postcode[(x-offset)];
+    }
+  }
+
   return eslOK;
 }

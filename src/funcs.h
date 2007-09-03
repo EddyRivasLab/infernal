@@ -589,19 +589,18 @@ extern void parallel_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq
 				   char ***ret_postcode, CP9trace_t ***ret_cp9_tr, int *ret_nseq,
 				   int bdump_level, int debug_level,
 				   int silent_mode, int mpi_my_rank, int mpi_master_rank, int mpi_num_procs);
-extern int actually_align_targets(CM_t *cm, ESL_SQ **sq, int nseq, ESL_DSQ *dsq, search_results_t *results, Parsetree_t ***ret_tr, 
-				  CP9trace_t ***ret_cp9_tr, char ***ret_postcode, float **ret_sc, int bdump_level, int debug_level, 
-				  int silent_mode);
+extern int actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *results, 
+				  float **ret_sc, int bdump_level, int debug_level, int silent_mode);
 extern int  revcomp(const ESL_ALPHABET *abc, ESL_SQ *comp, ESL_SQ *sq);
 extern int  read_search_seq(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int do_revcomp, dbseq_t **ret_dbseq);
 extern void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq,
 			   int do_complement, int used_HMM);
 extern void remove_hits_over_e_cutoff (CM_t *cm, search_results_t *results, ESL_SQ *sq,
 				       int used_HMM);
-extern seqs_to_aln_t *CreateSeqsToAln(int size);
-extern int  GrowSeqsToAln(int new_alloc);
+extern seqs_to_aln_t *CreateSeqsToAln(int size, int i_am_mpi_master);
+extern int GrowSeqsToAln(seqs_to_aln_t *seqs_to_aln, int new_alloc, int i_am_mpi_master); 
 extern void FreeSeqsToAln(seqs_to_aln_t *seqs_to_aln);
-extern int  ReadSeqsToAln(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int nseq, int do_read_all, seqs_to_aln_t *seqs_to_aln); 
+extern int  ReadSeqsToAln(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int nseq, int do_read_all, seqs_to_aln_t *seqs_to_aln, int i_am_mpi_master); 
 
 /* from cplan9.c: functions stolen from HMMER-2.4::mathsupport.c */
 extern int   ILogsum(int p1, int p2);
