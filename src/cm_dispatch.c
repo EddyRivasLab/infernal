@@ -44,7 +44,7 @@
 #define coordinate(a,b,c) ( a ? -1*b+c+1 : b)
 
 /*
- * Function: read_search_seq
+ * Function: read_next_search_seq
  *
  * Date:     RJK, Wed May 29, 2002 [St. Louis]
  *           easeled: EPN, Fri Dec  8 11:40:20 2006
@@ -55,7 +55,7 @@
  * Returns:  eslOK on success; eslEOF if end of file, 
  *           some other status code from esl_sqio_Read() if an error occurs.
  */
-int read_search_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revcomp, dbseq_t **ret_dbseq) 
+int read_next_search_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revcomp, dbseq_t **ret_dbseq) 
 {
   int status;
   dbseq_t *dbseq = NULL;
@@ -1834,7 +1834,7 @@ void serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc
   do_revcomp = (!(cm->search_opts & CM_SEARCH_TOPONLY));
   do_align   = (!(cm->search_opts & CM_SEARCH_NOALIGN));
 
-  while ((status = read_search_seq(cm->abc, dbfp, do_revcomp, &dbseq)) == eslOK)
+  while ((status = read_next_search_seq(cm->abc, dbfp, do_revcomp, &dbseq)) == eslOK)
     {
       for (reversed = 0; reversed <= do_revcomp; reversed++) 
 	{
@@ -2000,7 +2000,7 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *a
 			if (active_seqs[active_seq_index] == NULL) break;
 		      if (active_seq_index == mpi_num_procs) 
 			Die ("Tried to read more than %d seqs at once\n", mpi_num_procs);
-		      active_seqs[active_seq_index] = read_search_seq(cm->abc, dbfp, do_revcomp);
+		      active_seqs[active_seq_index] = read_next_search_seq(cm->abc, dbfp, do_revcomp);
 		      if (active_seqs[active_seq_index] == NULL) 
 			{
 			  eof = TRUE;

@@ -428,7 +428,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	if((status = calc_filter_threshold(go, cfg, errbuf, cm, &Smin))     != eslOK) cm_Fail(errbuf);
       print_search_info(stdout, cm, cm_mode, cp9_mode, cfg->N, errbuf);
 
-      while ((status = read_search_seq(cfg->abc, cfg->sqfp, cfg->do_rc, &dbseq)) == eslOK)
+      while ((status = read_next_search_seq(cfg->abc, cfg->sqfp, cfg->do_rc, &dbseq)) == eslOK)
 	{
 	  for(rci = 0; rci <= cfg->do_rc; rci++) {
 	    /*printf("SEARCHING >%s %d\n", dbseq->sq[reversed]->name, reversed);*/

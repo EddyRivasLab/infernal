@@ -28,32 +28,6 @@
 #include "funcs.h"
 #include "structs.h"
 
-/* TODO: EPN, EPN, Mon Sep  3 16:01:36 2007
-   write these funcs:
-     cm_digitized_sq_MPIPackSize()
-     cm_digitized_sq_MPIPack()
-     cm_digitized_sq_MPIUnpack()
- * cm_seqs_to_aln_MPIRecv(): (like receiving an MSA, hmmbuild's workunit)
-*/
-/* TODO: EPN, Sat Sep  1 12:10:02 2007
- * Write these funcs:
- * cm_seqs_to_aln_MPISend(): if seqs_to_aln->sq == NULL don't send seqs, 
- *                           else send digitized seqs. if seqs_to_aln = NULL
- *                           send ENDOFWORK signal
- * cm_seqs_to_aln_MPIRecv(): (like receiving an MSA, hmmbuild's workunit)
- *                           need to check 
- * cm_seqs_to_aln_MPIPackSize(): NEED TO CHECK ->tr[i], cp9_tr[i] postcode[i]
- *                               for all seqs, they should be either all NULL
- *                               or non-NULL. send them if non-NULL. ->sq could be NULL.
- * 
- * cm_seqs_to_aln_MPIPack(): check again as in packsize()?
- * cm_seqs_to_aln_MPIUnPack():
- *
- * little unclear on why master won't receive with cm_seqs_to_aln_MPIRecv() but 
- * rather just receives the buffer with MPIRecv() and then calls cm_seqs_to_aln_MPIRecv()
- * I think the reason is so he can catch the case when there's an error.
- *
- ****************************
 /*****************************************************************
  * 1. Communicating a CM.
  *****************************************************************/
@@ -776,8 +750,8 @@ cm_dsq_MPIRecv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc, ESL_
 
   if (MPI_Unpack       (*buf, n, &pos, &L,                      1, MPI_INT,           comm) != 0)  ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   ESL_ALLOC(dsq, sizeof(ESL_DSQ) * (L+2));
-  if (MPI_Unpack       (*buf, n, &pos, dsq,                     L, MPI_BYTE,          comm) != 0)  ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
-  dsq[0] = dsq[L] = eslDSQ_SENTINEL;
+  if (MPI_Unpack       (*buf, n, &pos, dsq,                  (L+2), MPI_BYTE,          comm) != 0)  ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  dsq[0] = dsq[L] = eslDSQ_SENTINEL; /* overwrite */
   ESL_DPRINTF1(("cm_dsq_MPIRecv(): dsq has been unpacked.\n"));
 
   *ret_L   = L;
@@ -1134,7 +1108,6 @@ cm_search_result_node_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, searc
   return status;
 }
 
-/* KACHOW */
 /* Function:  cm_seqs_to_aln_MPISend()
  *
  * Incept:    EPN, Mon Sep  3 14:58:12 2007
@@ -1165,7 +1138,7 @@ cm_search_result_node_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, searc
  *            memory (though the contents of <*buf> are undefined). 
  */
 int
-cm_seqs_to_aln_MPISend(seqs_to_aln_t *seqs_to_aln, int dest, int tag, MPI_Comm comm, char **buf, int *nalloc)
+cm_seqs_to_aln_MPISend(seqs_to_aln_t *seqs_to_aln, int offset, int nseq_to_send, int dest, int tag, MPI_Comm comm, char **buf, int *nalloc)
 {
   int   status;
   int   code;
@@ -1173,8 +1146,8 @@ cm_seqs_to_aln_MPISend(seqs_to_aln_t *seqs_to_aln, int dest, int tag, MPI_Comm c
 
   /* First, figure out the size of the work unit */
   if (MPI_Pack_size(2, MPI_INT, comm, &n) != 0) ESL_EXCEPTION(eslESYS, "mpi pack size failed"); 
-  if (results != NULL) { 
-    if ((status = cm_seqs_to_aln_MPIPackSize(results, comm, &sz)) != eslOK) return status;
+  if (seqs_to_aln != NULL) { 
+    if ((status = cm_seqs_to_aln_MPIPackSize(seqs_to_aln, offset, nseq_to_send, comm, &sz)) != eslOK) return status;
     n += sz;
   }
   ESL_DPRINTF1(("cm_seqs_to_aln_MPISend(): seqs_to_aln has size %d\n", n));
@@ -1191,24 +1164,99 @@ cm_seqs_to_aln_MPISend(seqs_to_aln_t *seqs_to_aln, int dest, int tag, MPI_Comm c
   position = 0;
   code     = (seqs_to_aln == NULL) ? eslEOD : eslOK;
   if (MPI_Pack(&code, 1, MPI_INT, *buf, n, &position, comm) != 0) ESL_EXCEPTION(eslESYS, "mpi pack failed"); 
-  if (results != NULL) {
-    if ((status = cm_seqs_to_aln_MPIPack(seqs_to_aln, *buf, n, &position, comm)) != eslOK) return status;
+  if (seqs_to_aln != NULL) {
+    if ((status = cm_seqs_to_aln_MPIPack(seqs_to_aln, offset, nseq_to_send, *buf, n, &position, comm)) != eslOK) return status;
   }
-  ESL_DPRINTF1(("cm_seqs_to_aln_MPISend(): results is packed into %d bytes\n", position));
+  ESL_DPRINTF1(("cm_seqs_to_aln_MPISend(): seqs_to_aln is packed into %d bytes\n", position));
 
   /* Send the packed profile to destination  */
   if (MPI_Send(*buf, n, MPI_PACKED, dest, tag, comm) != 0) ESL_EXCEPTION(eslESYS, "mpi send failed");
-  ESL_DPRINTF1(("cm_seqs_to_aln_MPISend(): results are sent.\n"));
+  ESL_DPRINTF1(("cm_seqs_to_aln_MPISend(): seqs_to_aln are sent.\n"));
   return eslOK;
 
  ERROR:
   return status;
 }
 
-/* Function:  cm_search_results_MPIPackSize()
- * Synopsis:  Calculates number of bytes needed to pack search
- *            results.
- * Incept:    EPN, Tue Aug 28 21:01:46 2007
+/* Function:  cm_seqs_to_aln_MPIRecv()
+ *
+ * Incept:    EPN, Mon Sep  3 19:42:47 2007
+ *
+ * Purpose:   Receives a work unit that consists of a seqs_to_aln data structure.
+ *            from <source> (<0..nproc-1>, or <MPI_ANY_SOURCE>) tagged as <tag> 
+ *            from communicator <comm>.
+ *            
+ *            Work units are prefixed by a status code. If the unit's
+ *            code is <eslOK> and no errors are encountered, this
+ *            routine will return <eslOK> and a non-<NULL> <*ret_seqs_to_aln>.
+ *            If the unit's code is <eslEOD> (a shutdown signal), 
+ *            this routine returns <eslEOD> and <*ret_seqs_to_aln> is <NULL>.
+ *            
+ *            To minimize alloc/free cycles in this routine, caller
+ *            passes a pointer to a buffer <*buf> of size <*nalloc>
+ *            characters. These are passed by reference, because when
+ *            necessary, <*buf> will be reallocated and <*nalloc>
+ *            increased to the new size. As a special case, if <*buf>
+ *            is <NULL> and <*nalloc> is 0, the buffer will be
+ *            allocated appropriately, but the caller is still
+ *            responsible for free'ing it.
+ *
+ *            If the packed seqs_to_aln is an end-of-data signal, return
+ *            <eslEOD>, and <*ret_seqs_to_aln> is <NULL>.
+ *            
+ * Returns:   <eslOK> on success. <*ret_seqs_to_aln> contains the new 
+ *            seqs_to_aln object; it is allocated here, and the caller 
+ *            is responsible for free'ing it.  <*buf> may have been 
+ *            reallocated to a larger size, and <*nalloc> may have been 
+ *            increased.
+ *
+ * Throws:    <eslESYS> if an MPI call fails; <eslEMEM> if an allocation fails.
+ *            In either case, <*ret_seqs_to_aln> is NULL, and the <buf> and its size
+ *            <*nalloc> remain valid.
+ */
+int
+cm_seqs_to_aln_MPIRecv(const ESL_ALPHABET *abc, int source, int tag, MPI_Comm comm, char **buf, int *nalloc, seqs_to_aln_t **ret_seqs_to_aln)
+{
+  int         status, code;
+  seqs_to_aln_t *seqs_to_aln;
+  int         n;
+  int         pos;
+  MPI_Status  mpistatus;
+
+  /* Probe first, because we need to know if our buffer is big enough. */
+  if (MPI_Probe(source, tag, comm, &mpistatus)  != 0) ESL_XEXCEPTION(eslESYS, "mpi probe failed");
+  if (MPI_Get_count(&mpistatus, MPI_PACKED, &n) != 0) ESL_XEXCEPTION(eslESYS, "mpi get count failed");
+
+  /* Make sure the buffer is allocated appropriately */
+  if (*buf == NULL || n > *nalloc) {
+    void *tmp;
+    ESL_RALLOC(*buf, tmp, sizeof(char) * n);
+    *nalloc = n; 
+  }
+
+  /* Receive the packed work unit */
+  ESL_DPRINTF1(("cm_seqs_to_aln_MPIRecv(): about to receive dsq.\n"));
+  if (MPI_Recv(*buf, n, MPI_PACKED, source, tag, comm, &mpistatus) != 0) ESL_XEXCEPTION(eslESYS, "mpi recv failed");
+  ESL_DPRINTF1(("cm_seqs_to_aln_MPIRecv(): dsq has been received.\n"));
+
+  /* Unpack it - where the first integer is a status code, OK or EOD */
+  ESL_DPRINTF1(("cm_seqs_to_aln_MPIRecv(): about to unpack dsq.\n"));
+  pos = 0;
+  if (MPI_Unpack       (*buf, n, &pos, &code,                   1, MPI_INT,           comm) != 0)  ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  if (code == eslEOD) { status = eslEOD; goto ERROR; }
+
+  return cm_seqs_to_aln_MPIUnpack(abc, *buf, *nalloc, &pos, comm, ret_seqs_to_aln);
+
+ ERROR:
+  if (seqs_to_aln != NULL) FreeSeqsToAln(seqs_to_aln);
+  *ret_seqs_to_aln = NULL;
+  return status;
+}
+
+/* Function:  cm_seqs_to_aln_MPIPackSize()
+ * Synopsis:  Calculates number of bytes needed to pack a
+ *            seqs_to_aln object.
+ * Incept:    EPN, Mon Sep  3 19:49:31 2007
  *
  * Purpose:   Calculate an upper bound on the number of bytes
  *            that <cm_seqs_to_aln_MPIPack()> will need to pack
@@ -1227,7 +1275,7 @@ cm_seqs_to_aln_MPISend(seqs_to_aln_t *seqs_to_aln, int dest, int tag, MPI_Comm c
  *            the calls in <cm_seqs_to_aln_MPIPack()>.
  */
 int
-cm_seqs_to_aln_MPIPackSize(const seqs_to_aln_t *results, int offset, int nseq_to_pack, MPI_Comm comm, int *ret_n)
+cm_seqs_to_aln_MPIPackSize(const seqs_to_aln_t *seqs_to_aln, int offset, int nseq_to_pack, MPI_Comm comm, int *ret_n)
 {
   int status;
   int sz;
@@ -1295,7 +1343,6 @@ cm_seqs_to_aln_MPIPackSize(const seqs_to_aln_t *results, int offset, int nseq_to
   *ret_n = 0;
   return status;
 }
-kachow
 
 /* Function:  cm_seqs_to_aln_MPIPack()
  * Synopsis:  Packs seqs_to_aln into MPI buffer.
@@ -1408,7 +1455,7 @@ cm_seqs_to_aln_MPIPack(const seqs_to_aln_t *seqs_to_aln, int offset, int nseq_to
  *            and <*pos> is undefined and should be considered to be corrupted.
  */
 int
-cm_seqs_to_aln_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, seqs_to_aln_t **ret_seqs_to_aln)
+cm_seqs_to_aln_MPIUnpack(const ESL_ALPHABET *abc, char *buf, int n, int *pos, MPI_Comm comm, seqs_to_aln_t **ret_seqs_to_aln)
 {
   int         status;
   seqs_to_aln_t *seqs_to_aln = NULL;
@@ -1431,7 +1478,7 @@ cm_seqs_to_aln_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, seqs_to_aln_
 
   if(has_sq)  
     for (i = 0; i < num_seqs_to_aln; i++) {
-      status = cm_digitized_sq_MPIUnpack(buf, n, pos, comm, &(seqs_to_aln->sq[i]));  if (status != eslOK) goto ERROR;;
+      status = cm_digitized_sq_MPIUnpack(abc, buf, n, pos, comm, &(seqs_to_aln->sq[i]));  if (status != eslOK) goto ERROR;;
     }
 
   if(has_tr) {
@@ -1444,14 +1491,14 @@ cm_seqs_to_aln_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, seqs_to_aln_
   if(has_cp9_tr) {
     ESL_ALLOC(seqs_to_aln->cp9_tr, sizeof(CP9trace_t *) * num_seqs_to_aln);
     for (i = 0; i < num_seqs_to_aln; i++) {
-      status = cm_sq_MPIUnpack(buf, n, pos, comm, &(seqs_to_aln->cp9_tr[i]));  if (status != eslOK) goto ERROR;;
+      status = cm_cp9trace_MPIUnpack(buf, n, pos, comm, &(seqs_to_aln->cp9_tr[i]));  if (status != eslOK) goto ERROR;;
     }
   }
 
   if(has_post) {
     ESL_ALLOC(seqs_to_aln->postcode, sizeof(char *) * num_seqs_to_aln);
     for (i = 0; i < num_seqs_to_aln; i++) {
-      status = esl_mpi_UnpackOpt(buf, n, pos, (void **) &(seqs_to_aln->postcode[i])); if (status != eslOK) goto ERROR;;
+      status = esl_mpi_UnpackOpt(buf, n, pos, (void **) &(seqs_to_aln->postcode[i]), NULL, MPI_CHAR, comm); if (status != eslOK) goto ERROR;;
     }
   }
   seqs_to_aln->nseq = num_seqs_to_aln;
@@ -1703,7 +1750,7 @@ cm_cp9trace_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, CP9trace_t **re
   cp9_tr->tlen = cp9_tr_n;
 
   status = MPI_Unpack (buf, n, pos, cp9_tr->statetype, cp9_tr_n, MPI_CHAR,  comm); if (status != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
-  status = MPI_Unpack (buf, n, pos, cp9_tr->nodeidxr,  cp9_tr_n, MPI_INT,   comm); if (status != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, cp9_tr->nodeidx,   cp9_tr_n, MPI_INT,   comm); if (status != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   status = MPI_Unpack (buf, n, pos, cp9_tr->pos,       cp9_tr_n, MPI_INT,   comm); if (status != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
 
   *ret_cp9_tr = cp9_tr;
@@ -1716,6 +1763,134 @@ cm_cp9trace_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, CP9trace_t **re
   return status;
 }
 
+
+/* Function:  cm_digitized_sq_MPIPackSize()
+ * Synopsis:  Calculates number of bytes needed to pack a 
+ *            the name and dsq of a digitized ESL_SQ.
+ * Incept:    EPN, Mon Sep  3 19:22:05 2007
+ *
+ * Purpose:   Calculate an upper bound on the number of bytes
+ *            that <cm_digitized_sq_MPIPack()> will need to pack
+ *            a digitized sq in a packed MPI message in 
+ *            communicator <comm>; return that number of bytes 
+ *            in <*ret_n>. 
+ *            
+ *            Caller will generally use this result to determine how
+ *            to allocate a buffer before starting to pack into it.
+ *
+ * Returns:   <eslOK> on success, and <*ret_n> contains the answer.
+ *
+ * Throws:    <eslESYS> if an MPI call fails, and <*ret_n> is set to 0. 
+ *
+ * Note:      The sizing calls here need to stay matched up with
+ *            the calls in <cm_digitized_sq_MPIPack()>.
+ */
+int
+cm_digitized_sq_MPIPackSize(const ESL_SQ *sq, MPI_Comm comm, int *ret_n)
+{
+  int status;
+  int sz;
+  int n = 0;
+
+  /* contract check */
+  if(! (sq->flags  & eslSQ_DIGITAL)) ESL_XEXCEPTION(eslESYS, "cm_digitized_sq_MPIPackSize, sq not digitized.");
+
+  /* space for sq->n, sq->name, and sq->dsq only */
+  status = MPI_Pack_size(1,     MPI_INT,  comm, &sz);              n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  status = esl_mpi_PackOptSize(sq->name, -1, MPI_CHAR, comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  status = MPI_Pack_size((sq->n+2), MPI_BYTE, comm, &sz);          n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+
+  *ret_n = n;
+  return eslOK;
+
+ ERROR:
+  *ret_n = 0;
+  return status;
+}
+
+/* Function:  cm_digitized_sq_MPIPack()
+ * Synopsis:  Packs minimal part of a sq in digital form into MPI buffer.
+ * Incept:    EPN, Mon Sep  3 19:28:30 2007
+ *
+ * Purpose:   Packs the essential info of a sq <sq> into an 
+ *            MPI packed message buffer <buf> of length <n> bytes, 
+ *            starting at byte position
+ *            <*position>, for MPI communicator <comm>.
+ *
+ * Returns:   <eslOK> on success; <buf> now contains the
+ *            packed <sq>, and <*position> is set to the byte
+ *            immediately following the last byte of the results
+ *            in <buf>. 
+ *
+ * Throws:    <eslESYS> if an MPI call fails; or <eslEMEM> if the
+ *            buffer's length <n> is overflowed by trying to pack
+ *            <rnode> into <buf>. In either case, the state of
+ *            <buf> and <*position> is undefined, and both should
+ *            be considered to be corrupted.
+ *
+ */
+int
+cm_digitized_sq_MPIPack(const ESL_SQ *sq, char *buf, int n, int *position, MPI_Comm comm)
+{
+  int status;
+
+  /* contract check */
+  if(! (sq->flags  & eslSQ_DIGITAL)) ESL_EXCEPTION(eslESYS, "cm_digitized_sq_MPIPackSize, sq not digitized.");
+
+  ESL_DPRINTF1(("cm_digitized_sq_MPIPack(): ready.\n"));
+  
+  status = MPI_Pack((int *) &(sq->n),             1, MPI_INT, buf, n, position,  comm);  if (status != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
+  status = esl_mpi_PackOpt(sq->name, -1, MPI_CHAR, buf, n, position,  comm);             if (status != eslOK) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack((ESL_DSQ *) &(sq->dsq), sq->n+2,MPI_BYTE, buf, n, position, comm);   if (status != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
+
+  ESL_DPRINTF1(("cm_digitized_sq_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
+
+  if (*position > n) ESL_EXCEPTION(eslEMEM, "buffer overflow");
+  return eslOK;
+}
+
+/* Function:  cm_digitized_sq_MPIUnpack()
+ * Synopsis:  Unpacks essential part of a digitized sq from an MPI buffer.
+ * Incept:    EPN, Mon Sep  3 19:32:00 2007
+ *
+ * Purpose:   Unpack a newly allocated sq from MPI packed buffer
+ *            <buf>, starting from position <*pos>, where the total length
+ *            of the buffer in bytes is <n>. 
+ *
+ * Returns:   <eslOK> on success. <*pos> is updated to the position of
+ *            the next element in <buf> to unpack (if any). <*ret_tr>
+ *            contains a newly allocated digitized sq, which the caller is 
+ *            responsible for free'ing.
+ *            
+ * Throws:    <eslESYS> on an MPI call failure. <eslEMEM> on allocation failure.
+ *            In either case, <*ret_tr> is <NULL>, and the state of <buf>
+ *            and <*pos> is undefined and should be considered to be corrupted.
+ */
+int
+cm_digitized_sq_MPIUnpack(const ESL_ALPHABET *abc, char *buf, int n, int *pos, MPI_Comm comm, ESL_SQ **ret_sq)
+{
+  int status;
+  ESL_DSQ *dsq = NULL;
+  char *name = NULL;
+  int L;
+
+  status = MPI_Unpack       (buf, n, pos, &L,                 1, MPI_INT,  comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(name), NULL, MPI_CHAR, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack       (buf, n, pos, (void**)&(dsq),  L+2,  MPI_BYTE, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  dsq[0] = dsq[L] = eslDSQ_SENTINEL; /* overwrite */
+
+  *ret_sq = esl_sq_CreateDigitalFrom(abc, name, dsq, L, NULL, NULL, NULL);
+  free(dsq);  /* a copy was made */
+  free(name); /* a copy was made */
+
+  return eslOK;
+
+ ERROR:
+  if (dsq  != NULL) free(dsq);
+  if (name != NULL) free(name);
+  *ret_sq = NULL;
+  return status;
+}
 /*HEREHEREHERHEERERE old funcs below EPN, Tue Aug 28 15:51:13 2007*/
 /**************************************************************************************/
 /* EPN, Thu May 10 10:11:18 2007 New functions roughly following Easel/H3 conventions */
