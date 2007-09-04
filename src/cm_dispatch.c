@@ -157,12 +157,13 @@ int GrowSeqsToAln(seqs_to_aln_t *seqs_to_aln, int new_alloc, int i_am_mpi_master
   int status;
   void *tmp;
   int i;
-  ESL_RALLOC(seqs_to_aln->sq,       tmp, sizeof(ESL_SQ *)      * (seqs_to_aln->nalloc + new_alloc)); 
+
+  ESL_RALLOC(seqs_to_aln->sq, tmp, sizeof(ESL_SQ *) * (seqs_to_aln->nalloc + new_alloc)); 
 
   if(i_am_mpi_master) {
-    ESL_RALLOC(seqs_to_aln->tr,       tmp, sizeof(Parsetree_t *) * seqs_to_aln->nalloc + new_alloc);
-    ESL_RALLOC(seqs_to_aln->cp9_tr,   tmp, sizeof(CP9trace_t)    * seqs_to_aln->nalloc + new_alloc);
-    ESL_RALLOC(seqs_to_aln->postcode, tmp, sizeof(char *)        * seqs_to_aln->nalloc + new_alloc);
+    ESL_RALLOC(seqs_to_aln->tr,       tmp, sizeof(Parsetree_t *) * (seqs_to_aln->nalloc + new_alloc));
+    ESL_RALLOC(seqs_to_aln->cp9_tr,   tmp, sizeof(CP9trace_t)    * (seqs_to_aln->nalloc + new_alloc));
+    ESL_RALLOC(seqs_to_aln->postcode, tmp, sizeof(char *)        * (seqs_to_aln->nalloc + new_alloc));
     for(i = seqs_to_aln->nalloc; i < (seqs_to_aln->nalloc + new_alloc); i++) {
       seqs_to_aln->tr[i] = NULL;
       seqs_to_aln->cp9_tr[i] = NULL;
@@ -244,36 +245,32 @@ int ReadSeqsToAln(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int nseq, int do_r
   int status;
   int keep_reading = TRUE;
   int i;
-  int new_alloc;
   int nseq_orig;
 
   /* contract check */
   if(  do_read_all && nseq != 0) cm_Fail("if do_read_all is TRUE,  nseq must be zero.");
   if(! do_read_all && nseq <= 0) cm_Fail("if do_read_all is FALSE, nseq must be at least 1.");
 
-  new_alloc  = do_read_all ? 50 : nseq;
-  new_alloc -= seqs_to_aln->nalloc - seqs_to_aln->nseq;
-
-  if(new_alloc > 0) GrowSeqsToAln(seqs_to_aln, new_alloc, i_am_mpi_master);
   nseq_orig = seqs_to_aln->nseq;
   i         = seqs_to_aln->nseq;
+  if(i == seqs_to_aln->nalloc) GrowSeqsToAln(seqs_to_aln, 100, i_am_mpi_master);
 
   seqs_to_aln->sq[i] = esl_sq_CreateDigital(abc);
   while (keep_reading && (status = esl_sqio_Read(seqfp, seqs_to_aln->sq[i])) == eslOK) {
     if(seqs_to_aln->sq[i]->n == 0) { esl_sq_Reuse(seqs_to_aln->sq[i]); continue; }
     i++;
-    if(  do_read_all &&  i == seqs_to_aln->nalloc) GrowSeqsToAln(seqs_to_aln, 50, i_am_mpi_master);
+    if(i == seqs_to_aln->nalloc) GrowSeqsToAln(seqs_to_aln, 100, i_am_mpi_master);
     if(! do_read_all && (i - nseq_orig) == nseq)   keep_reading = FALSE; 
     seqs_to_aln->sq[i] = esl_sq_CreateDigital(abc);
   }
   /* destroy the last sequence that was alloc'ed but not filled */
   esl_sq_Destroy(seqs_to_aln->sq[i]);
-  if ((  do_read_all && status != eslEOF) || 
-      (! do_read_all && status != eslOK))
+  if ((  do_read_all && status  != eslEOF) || 
+      (! do_read_all && (status != eslEOF && status != eslOK)))
     cm_Fail("Parse failed, line %d, file %s:\n%s", 
 	    seqfp->linenumber, seqfp->filename, seqfp->errbuf);
 
-  seqs_to_aln->nseq = nseq_orig + i;
+  seqs_to_aln->nseq = i;
   return status;
 
 }

@@ -751,7 +751,7 @@ cm_dsq_MPIRecv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc, ESL_
   if (MPI_Unpack       (*buf, n, &pos, &L,                      1, MPI_INT,           comm) != 0)  ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   ESL_ALLOC(dsq, sizeof(ESL_DSQ) * (L+2));
   if (MPI_Unpack       (*buf, n, &pos, dsq,                  (L+2), MPI_BYTE,          comm) != 0)  ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
-  dsq[0] = dsq[L] = eslDSQ_SENTINEL; /* overwrite */
+  dsq[0] = dsq[(L+1)] = eslDSQ_SENTINEL; /* overwrite */
   ESL_DPRINTF1(("cm_dsq_MPIRecv(): dsq has been unpacked.\n"));
 
   *ret_L   = L;
@@ -1218,7 +1218,7 @@ int
 cm_seqs_to_aln_MPIRecv(const ESL_ALPHABET *abc, int source, int tag, MPI_Comm comm, char **buf, int *nalloc, seqs_to_aln_t **ret_seqs_to_aln)
 {
   int         status, code;
-  seqs_to_aln_t *seqs_to_aln;
+  seqs_to_aln_t *seqs_to_aln = NULL;
   int         n;
   int         pos;
   MPI_Status  mpistatus;
@@ -1372,7 +1372,7 @@ cm_seqs_to_aln_MPIPack(const seqs_to_aln_t *seqs_to_aln, int offset, int nseq_to
   int i;
 
   ESL_DPRINTF1(("cm_seqs_to_aln_MPIPack(): ready.\n"));
-  ESL_DASSERT1((seqs_to_aln->nseq > (offset + nseq_to_pack)));
+  ESL_DASSERT1((seqs_to_aln->nseq >= (offset + nseq_to_pack)));
 
   /* determine what information we have in the seqs_to_aln object */
   int has_sq      = TRUE;
@@ -1480,6 +1480,7 @@ cm_seqs_to_aln_MPIUnpack(const ESL_ALPHABET *abc, char *buf, int n, int *pos, MP
     for (i = 0; i < num_seqs_to_aln; i++) {
       status = cm_digitized_sq_MPIUnpack(abc, buf, n, pos, comm, &(seqs_to_aln->sq[i]));  if (status != eslOK) goto ERROR;;
     }
+  else if(seqs_to_aln->sq != NULL) { free(seqs_to_aln->sq); seqs_to_aln->sq = NULL; }
 
   if(has_tr) {
     ESL_ALLOC(seqs_to_aln->tr, sizeof(Parsetree_t *) * num_seqs_to_aln);
@@ -1841,7 +1842,7 @@ cm_digitized_sq_MPIPack(const ESL_SQ *sq, char *buf, int n, int *position, MPI_C
   
   status = MPI_Pack((int *) &(sq->n),             1, MPI_INT, buf, n, position,  comm);  if (status != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
   status = esl_mpi_PackOpt(sq->name, -1, MPI_CHAR, buf, n, position,  comm);             if (status != eslOK) ESL_EXCEPTION(eslESYS, "pack failed");
-  status = MPI_Pack((ESL_DSQ *) &(sq->dsq), sq->n+2,MPI_BYTE, buf, n, position, comm);   if (status != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack((ESL_DSQ *) sq->dsq, sq->n+2,MPI_BYTE, buf, n, position, comm);   if (status != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
 
   ESL_DPRINTF1(("cm_digitized_sq_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
 
@@ -1875,9 +1876,10 @@ cm_digitized_sq_MPIUnpack(const ESL_ALPHABET *abc, char *buf, int n, int *pos, M
   int L;
 
   status = MPI_Unpack       (buf, n, pos, &L,                 1, MPI_INT,  comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  ESL_ALLOC(dsq, sizeof(ESL_DSQ) * (L+2));
   status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(name), NULL, MPI_CHAR, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
-  status = MPI_Unpack       (buf, n, pos, (void**)&(dsq),  L+2,  MPI_BYTE, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
-  dsq[0] = dsq[L] = eslDSQ_SENTINEL; /* overwrite */
+  status = MPI_Unpack       (buf, n, pos, dsq,  L+2,  MPI_BYTE, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  dsq[0] = dsq[(L+1)] = eslDSQ_SENTINEL; /* overwrite */
 
   *ret_sq = esl_sq_CreateDigitalFrom(abc, name, dsq, L, NULL, NULL, NULL);
   free(dsq);  /* a copy was made */

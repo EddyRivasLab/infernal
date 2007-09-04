@@ -246,11 +246,12 @@ main(int argc, char **argv)
     {
       cfg.do_mpi     = TRUE;
       cfg.be_verbose = FALSE;
-      esl_fatal("ERROR --mpi not yet implemented.");
 
       MPI_Init(&argc, &argv);
       MPI_Comm_rank(MPI_COMM_WORLD, &(cfg.my_rank));
       MPI_Comm_size(MPI_COMM_WORLD, &(cfg.nproc));
+
+      if(cfg.nproc == 1) cm_Fail("ERROR, MPI mode, but only 1 processor running...");
 
       if (cfg.my_rank > 0)  mpi_worker(go, &cfg);
       else 		    mpi_master(go, &cfg);
@@ -381,7 +382,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       /* initialize the flags/options/params and configuration of the CM */
       if((status   = initialize_cm(go, cfg, errbuf, cm))                    != eslOK)    cm_Fail(errbuf);
       /* read in all sequences, this is wasteful, but Parsetrees2Alignment() requires all seqs in memory */
-      seqs_to_aln = CreateSeqsToAln(50, FALSE);
+      seqs_to_aln = CreateSeqsToAln(100, FALSE);
       if((status = ReadSeqsToAln(cfg->abc, cfg->sqfp, 0, TRUE, seqs_to_aln, FALSE)) != eslEOF) cm_Fail("Error read sqfile: %s\n", cfg->sqfile);
       /* align all sequences */
       if ((status = process_workunit(go, cfg, errbuf, cm, seqs_to_aln)) != eslOK) cm_Fail(errbuf);
@@ -436,6 +437,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   CM_t *cm;
   int nseq_per_worker;
   int nseq_this_worker;
+  int nseq_prev;
 
   seqs_to_aln_t  *all_seqs_to_aln    = NULL;
   seqs_to_aln_t  *worker_seqs_to_aln = NULL;
@@ -491,14 +493,15 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       printf("nseq_per_worker: %d\n", nseq_per_worker);
 
       wi = 1;
-      all_seqs_to_aln = CreateSeqsToAln(50, TRUE);
+      all_seqs_to_aln = CreateSeqsToAln(100, TRUE);
       while (have_work || nproc_working)
 	{
 	  if (have_work) 
 	    {
+	      nseq_prev = all_seqs_to_aln->nseq;
 	      if((status = ReadSeqsToAln(cfg->abc, cfg->sqfp, nseq_per_worker, FALSE, all_seqs_to_aln, TRUE)) == eslOK)
 	      {
-		nseq_this_worker = all_seqs_to_aln->nseq - all_seqs_to_aln->nseq;
+		nseq_this_worker = all_seqs_to_aln->nseq - nseq_prev;
 		ESL_DPRINTF1(("MPI master read %d seqs\n", all_seqs_to_aln->nseq));
 	      }
 	      else 
@@ -535,7 +538,16 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		  if ((status = cm_seqs_to_aln_MPIUnpack(cfg->abc, buf, bn, &pos, MPI_COMM_WORLD, &worker_seqs_to_aln)) != eslOK) cm_Fail("search results unpack failed");
 		  ESL_DPRINTF1(("MPI master has unpacked search results\n"));
 		  if ((status = add_worker_seqs_to_master(all_seqs_to_aln, worker_seqs_to_aln, seqidx[wi])) != eslOK) cm_Fail("adding worker results to master results failed");
-		  FreeSeqsToAln(worker_seqs_to_aln);
+		  /* careful not to free data from worker_seqs_to_aln we've
+		   * just added to all_seqs_to_aln. we didn't copy it, we just
+		   * had pointers in all_seqs_to_aln point to it. We can 
+		   * free the worker's pointers to those pointers though */
+		  if(worker_seqs_to_aln->sq       != NULL) free(worker_seqs_to_aln->sq);
+		  if(worker_seqs_to_aln->tr       != NULL) free(worker_seqs_to_aln->tr);
+		  if(worker_seqs_to_aln->cp9_tr   != NULL) free(worker_seqs_to_aln->cp9_tr);
+		  if(worker_seqs_to_aln->postcode != NULL) free(worker_seqs_to_aln->postcode);
+		  free(worker_seqs_to_aln);
+								
 		}
 	      else	/* worker reported an error. Get the errbuf. */
 		{
@@ -555,6 +567,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	      nproc_working++;
 	    }
 	}
+      /* we have all worker's results, output the alignment */
+      if ((status = output_result(go, cfg, errbuf, cm, all_seqs_to_aln)) != eslOK) cm_Fail(errbuf);
       ESL_DPRINTF1(("MPI master: done with this CM. Telling all workers\n"));
       for (wi = 1; wi < cfg->nproc; wi++) 
 	if ((status = cm_seqs_to_aln_MPISend(NULL, 0, 0, wi, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("Shutting down a worker failed.");
@@ -1102,7 +1116,7 @@ add_worker_seqs_to_master(seqs_to_aln_t *master_seqs, seqs_to_aln_t *worker_seqs
 {
   int x;
 
-  if(worker_seqs->sq != NULL); cm_Fail("add_worker_seqs_to_master(), worker_seqs->sq non-NULL.");
+  if(worker_seqs->sq != NULL) cm_Fail("add_worker_seqs_to_master(), worker_seqs->sq non-NULL.");
   if(master_seqs->nseq < (offset + worker_seqs->nseq)) cm_Fail("add_worker_seqs_to_master(), master->nseq: %d, offset %d, worker->nseq: %d\n", master_seqs->nseq, offset, worker_seqs->nseq);
 
   if(worker_seqs->tr != NULL) {
