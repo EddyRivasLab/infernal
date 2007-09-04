@@ -384,7 +384,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status   = initialize_cm(go, cfg, errbuf, cm))                    != eslOK)    cm_Fail(errbuf);
       /* read in all sequences, this is wasteful, but Parsetrees2Alignment() requires all seqs in memory */
       seqs_to_aln = CreateSeqsToAln(100, FALSE);
-      if((status = ReadSeqsToAln(cfg->abc, cfg->sqfp, 0, TRUE, seqs_to_aln, FALSE)) != eslEOF) cm_Fail("Error read sqfile: %s\n", cfg->sqfile);
+      if((status = ReadSeqsToAln(cfg->abc, cfg->sqfp, 0, TRUE, seqs_to_aln, FALSE)) != eslEOF) cm_Fail("Error reading sqfile: %s\n", cfg->sqfile);
       /* align all sequences */
       if ((status = process_workunit(go, cfg, errbuf, cm, seqs_to_aln)) != eslOK) cm_Fail(errbuf);
       if ((status = output_result   (go, cfg, errbuf, cm, seqs_to_aln)) != eslOK) cm_Fail(errbuf);
@@ -547,6 +547,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		  if(worker_seqs_to_aln->tr       != NULL) free(worker_seqs_to_aln->tr);
 		  if(worker_seqs_to_aln->cp9_tr   != NULL) free(worker_seqs_to_aln->cp9_tr);
 		  if(worker_seqs_to_aln->postcode != NULL) free(worker_seqs_to_aln->postcode);
+		  if(worker_seqs_to_aln->sc       != NULL) free(worker_seqs_to_aln->sc);
 		  free(worker_seqs_to_aln);
 								
 		}
@@ -783,7 +784,7 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
 {
   actually_align_targets(cm, seqs_to_aln,
 			 NULL, NULL,   /* we're not aligning search hits */
-			 NULL, esl_opt_GetInteger(go, "--banddump"),
+			 esl_opt_GetInteger(go, "--banddump"),
 			 esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"));
   return eslOK;
   
@@ -1141,6 +1142,14 @@ add_worker_seqs_to_master(seqs_to_aln_t *master_seqs, seqs_to_aln_t *worker_seqs
     for(x = offset; x < (offset + worker_seqs->nseq); x++) {
       assert(master_seqs->postcode[x] == NULL); 
       master_seqs->postcode[x] = worker_seqs->postcode[(x-offset)];
+    }
+  }
+
+  if(worker_seqs->sc != NULL) {
+    if(master_seqs->sc == NULL) cm_Fail("add_worker_seqs_to_master(), worker returned scores, master->sc is NULL.");
+    for(x = offset; x < (offset + worker_seqs->nseq); x++) {
+      assert(!(NOT_IMPOSSIBLE(master_seqs->sc[x])));
+      master_seqs->sc[x] = worker_seqs->sc[(x-offset)];
     }
   }
 

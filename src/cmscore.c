@@ -1,4 +1,4 @@
-/* SRE, Thu Aug  3 17:08:45 2000 [StL]
+/* SRE, Thu Aug  3 17:08:44 2000 [StL]
  * SVN $Id$
  * 
  * Score a CM against unaligned sequence examples.
@@ -27,11 +27,13 @@
 #include "esl_msa.h"
 #include "esl_sqio.h"		
 #include "esl_stopwatch.h"
+#include "esl_vectorops.h"
 
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
 
 #define ALGOPTS  "--std,--qdb,--qdbsmall,--qdbboth,--hbanded,--hmmonly"  /* Exclusive choice for scoring algorithms */
+#define SEQOPTS  "--emit,--random,--infile"                              /* Exclusive choice for sequence input */
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
@@ -45,11 +47,14 @@ static ESL_OPTIONS options[] = {
   /* Miscellaneous expert options */
   { "--stringent",eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        NULL, "require the two parsetrees to be identical", 2 },
   { "--sub",      eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        "-l", "build sub CM for columns b/t HMM predicted start/end points", 2 },
-  { "--zeroinserts",eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "set insert emission scores to 0", 2 },
+  { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 2 },
   { "--elsilent",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      "-l",        NULL, "disallow local end (EL) emissions", 2 },
-  /* Output options */
-  { "--regress", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test data to file <f>", 3 },
-  { "--tfile",   eslARG_OUTFILE,NULL,  NULL, NULL,      NULL,      NULL,        NULL, "dump parsetrees to file <f>",  3 },
+  /* options for generating/reading sequences to score */
+  { "--emit",    eslARG_INT,    "100", NULL, "n>0",     NULL,      NULL,     SEQOPTS, "emit <n> sequences from each CM [default: 100]", 3 },
+  { "--random",  eslARG_INT,    "100", NULL, "n>0",     NULL,      NULL,     SEQOPTS, "emit <n> random seq from cm->null model (length = CM consensus)", 3},
+  { "--infile",  eslARG_INFILE,  NULL, NULL, NULL,      NULL,      NULL,     SEQOPTS, "read sequences to align from file <s>", 3 },
+  { "--outfile", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,  "--infile", "save seqs to file <s>", 3 },
+  { "--seed",    eslARG_INT,     NULL, NULL, "n>0",     NULL,      NULL,    "--seed", "set random number seed to <n>", 3 },
   /* Stage 2 algorithm options */
   { "--std",     eslARG_NONE,"default",NULL, NULL,   ALGOPTS,      NULL,        NULL, "compare divide and conquer versus standard CYK", 4 },
   { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "compare non-banded d&c versus QDB standard CYK", 4 },
@@ -66,8 +71,11 @@ static ESL_OPTIONS options[] = {
   { "--betae",   eslARG_INT,  NULL,    NULL, "0<n<50",   NULL, "--betas",       NULL, "set final   (stage N) tail loss prob to 10E-<x> for QDB", 5 },
   { "--taus",    eslARG_INT,  NULL,    NULL, "0<n<50",   NULL,"--hbanded,--taue",NULL,"set initial (stage 2) tail loss prob to 10E-<x> for HMM banding", 5 },
   { "--taue",    eslARG_INT,  NULL,    NULL, "0<n<50",   NULL,"--hbanded,--taus",NULL,"set final   (stage N) tail loss prob to 10E-<x> for HMM banding", 5 },
-/* Other options */
-  { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,    NULL, "arrest after start: for debugging MPI under gdb",   10 },  
+  /* Output options */
+  { "--regress", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test data to file <f>", 6 },
+  { "--tfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump parsetrees to file <f>",  6 },
+  /* Other options */
+  { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,    NULL, "arrest after start: for debugging MPI under gdb",   7 },  
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -78,10 +86,6 @@ static ESL_OPTIONS options[] = {
  * NOTE: MPI not yet implemented.
  */
 struct cfg_s {
-  char         *cmfile;	        /* name of input CM file  */ 
-  char         *sqfile;	        /* name of sequence file  */ 
-  ESL_SQFILE   *sqfp;           /* open sequence input file stream */
-  int           fmt;		/* format code for seqfile */
   ESL_ALPHABET *abc;		/* digital alphabet for input */
   int           be_verbose;	/* one-line-per-seq summary */
   int           nseq;           /* which number sequence this is in file (only valid in serial mode) */
@@ -92,6 +96,9 @@ struct cfg_s {
   float        *s1_sc;          /* [0..cfg->nseq] scores for stage 1 parses, filled in 1st output_result() call*/
   ESL_STOPWATCH *s1_w;          /* stopwatch for timing stage 1 */
   ESL_STOPWATCH *w;             /* stopwatch for timing stages 2+ */
+  ESL_RANDOMNESS *r;            /* source of randomness for generating sequences */
+  int           infmt;		/* format code for input seqfile */
+  int           ncm;            /* number CM we're on */
 
   int           do_mpi;		/* TRUE if we're doing MPI parallelization */
   int           nproc;		/* how many MPI processes, total */
@@ -99,12 +106,16 @@ struct cfg_s {
   int           do_stall;	/* TRUE to stall the program until gdb attaches */
 
   /* Masters only (i/o streams) */
+  char         *cmfile;	        /* name of input CM file  */ 
   CMFILE       *cmfp;		/* open input CM file stream       */
+  ESL_SQFILE   *sqfp;           /* open sequence input file stream */
   FILE         *tracefp;	/* optional output for parsetrees  */
   FILE         *regressfp;	/* optional output for regression test  */
+  FILE         *ofp;	        /* name of output sequence file  */ 
+
 };
 
-static char usage[]  = "[-options] <cmfile> <sequence file>";
+static char usage[]  = "[-options] <cmfile>";
 static char banner[] = "score RNA covariance model against sequences";
 
 static int  init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
@@ -116,11 +127,11 @@ static void  mpi_master    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 static void  mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 #endif
 
-static int process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, 
-			    seqs_to_aln_t *seqs_to_aln, float **ret_sc);
-static int output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, seqs_to_aln_t *seqs_to_aln, float *sc);
+static int process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, seqs_to_aln_t *seqs_to_aln);
+static int output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, seqs_to_aln_t *seqs_to_aln);
 static int initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int summarize_align_options(CM_t *cm);
+static int get_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int i_am_mpi_master, seqs_to_aln_t **ret_seqs_to_aln);
 
 int
 main(int argc, char **argv)
@@ -151,15 +162,19 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
       puts("\nexpert miscellaneous options:");
       esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
-      puts("\noutput options are:");
+      puts("\noptions for source of input sequences:");
       esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
       puts("\nstage 2 alignment options, to compare to stage 1 (D&C non-banded), are:");
       esl_opt_DisplayHelp(stdout, go, 4, 2, 80); 
       puts("\noptions for testing multiple tau/beta values for --hbanded/--qdb:");
       esl_opt_DisplayHelp(stdout, go, 5, 2, 80); 
+      puts("\noutput options are:");
+      esl_opt_DisplayHelp(stdout, go, 6, 2, 80); 
+      puts("\n  other options:");
+      esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
       exit(0);
     }
-  if (esl_opt_ArgNumber(go) != 2) 
+  if (esl_opt_ArgNumber(go) != 1) 
     {
       puts("Incorrect number of command line arguments.");
       esl_usage(stdout, argv[0], usage);
@@ -193,12 +208,13 @@ main(int argc, char **argv)
   /* Initialize what we can in the config structure (without knowing the input alphabet yet).
    */
   cfg.cmfile     = esl_opt_GetArg(go, 1); 
-  cfg.sqfile     = esl_opt_GetArg(go, 2); 
-  cfg.fmt        = eslSQFILE_UNKNOWN;      /* autodetect sequence file format by default. */ 
+  cfg.infmt      = eslSQFILE_UNKNOWN;      /* autodetect sequence file format by default. */ 
   cfg.abc        = NULL;	           /* created in init_master_cfg() in masters, or in mpi_worker() in workers */
   if (esl_opt_GetBoolean(go, "-1")) cfg.be_verbose = FALSE;        
   else                              cfg.be_verbose = TRUE;        
   cfg.cmfp       = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
+  cfg.sqfp       = NULL;                   /* opened in init_master_cfg() in masters, stays NULL for workers */
+  cfg.ofp        = NULL;                   /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.tracefp    = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.regressfp  = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.nseq       = 0;		           /* this counter is incremented in masters */
@@ -209,7 +225,7 @@ main(int argc, char **argv)
   cfg.s1_sc      = NULL;                   /* alloc'ed and filled in first call to output_result() in masters, stays NULL in workers */
   cfg.s1_w       = NULL;                   /* created in init_master_cfg in masters, stays NULL in workers */
   cfg.w          = NULL;                   /* created in init_master_cfg in masters, stays NULL in workers */
-
+  cfg.r          = NULL;                   /* created in init_master_cfg in masters, stays NULL in workers */
 
   cfg.do_mpi     = FALSE;	           /* this gets reset below, if we init MPI */
   cfg.nproc      = 0;		           /* this gets reset below, if we init MPI */
@@ -264,6 +280,10 @@ main(int argc, char **argv)
       printf("Regression data (parsetrees) saved in file %s.\n", esl_opt_GetString(go, "--regress"));
       fclose(cfg.regressfp);
     }
+    if (cfg.ofp       != NULL) { 
+      printf("Sequences scored against the CM saved in file %s.\n", esl_opt_GetString(go, "--outfile"));
+      fclose(cfg.ofp);
+    }
     if (cfg.s1_sc     != NULL) free(cfg.s1_sc);
   }
   if (cfg.abc       != NULL) esl_alphabet_Destroy(cfg.abc);
@@ -279,11 +299,12 @@ main(int argc, char **argv)
  * Called by masters, mpi or serial.
  * Already set:
  *    cfg->cmfile      - command line arg 1
- *    cfg->sqfile      - command line arg 2
- *    cfg->fmt         - format of output file
+ *    cfg->infmt       - format of input file
  * Sets: 
  *    cfg->cmfp        - open CM file                
  *    cfg->abc         - digital input alphabet
+ *    cfg->ofp         - optional output sequence file
+ *    cfg->sqfp        - optional input sequence file
  *    cfg->tracefp     - optional output file
  *    cfg->regressfp   - optional output file
  *    cfg->nstages     - number of alignment stages
@@ -291,6 +312,7 @@ main(int argc, char **argv)
  *    cfg->tau         - tau values for each stage
  *    cfg->s1_w        - stopwatch for timing stage 1
  *    cfg->w           - stopwatch for timing stage 2+
+ *    cfg->r           - source of randomness 
  *                   
  * Errors in the MPI master here are considered to be "recoverable",
  * in the sense that we'll try to delay output of the error message
@@ -302,17 +324,24 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 {
   int status;
 
-  /* open input sequence file */
-  status = esl_sqfile_Open(cfg->sqfile, cfg->fmt, NULL, &(cfg->sqfp));
-  if (status == eslENOTFOUND)    ESL_FAIL(status, errbuf, "File %s doesn't exist or is not readable\n", cfg->sqfile);
-  else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "Couldn't determine format of sequence file %s\n", cfg->sqfile);
-  else if (status == eslEINVAL)  ESL_FAIL(status, errbuf, "Can’t autodetect stdin or .gz."); 
-  else if (status != eslOK)      ESL_FAIL(status, errbuf, "Sequence file open failed with error %d\n", status);
-  cfg->fmt = cfg->sqfp->format;
-
   /* open CM file */
   if ((cfg->cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
     ESL_FAIL(eslFAIL, NULL, "Failed to open covariance model save file %s\n", cfg->cmfile);
+
+  /* optionally, open the input sequence file */
+  if(! esl_opt_IsDefault(go, "--infile")) { 
+    status = esl_sqfile_Open(esl_opt_GetString(go, "--infile"), cfg->infmt, NULL, &(cfg->sqfp));
+    if (status == eslENOTFOUND)    ESL_FAIL(status, errbuf, "File %s doesn't exist or is not readable\n", esl_opt_GetString(go, "--infile"));
+    else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "Couldn't determine format of sequence file %s\n", esl_opt_GetString(go, "--infile"));
+    else if (status == eslEINVAL)  ESL_FAIL(status, errbuf, "Can’t autodetect stdin or .gz."); 
+    else if (status != eslOK)      ESL_FAIL(status, errbuf, "Sequence file open failed with error %d\n", status);
+    cfg->infmt = cfg->sqfp->format;
+  }
+  /* optionally, open output file */
+  if (esl_opt_GetString(go, "--outfile") != NULL) {
+    if ((cfg->ofp = fopen(esl_opt_GetString(go, "--outfile"), "w")) == NULL) 
+      ESL_FAIL(eslFAIL, errbuf, "Failed to open --outfile output file %s\n", esl_opt_GetString(go, "--outfile"));
+  } 
 
   /* optionally, open trace file */
   if (esl_opt_GetString(go, "--tfile") != NULL) {
@@ -366,6 +395,18 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   cfg->s1_sc = NULL; /* alloc'ed and filled in first call of output_result */
   cfg->s1_w  = esl_stopwatch_Create();
   cfg->w     = esl_stopwatch_Create();
+
+  /* create RNG */
+  if (! esl_opt_IsDefault(go, "--seed")) 
+    cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "--seed"));
+  else cfg->r = esl_randomness_CreateTimeseeded();
+
+  cfg->ncm = 0;
+
+  if (cfg->r       == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create random number generator: probably out of memory");
+  if (cfg->s1_w    == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create stopwatch: probably out of memory");
+  if (cfg->w       == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create stopwatch: probably out of memory");
+
   return eslOK;
 
  ERROR:
@@ -386,8 +427,8 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   char     errbuf[eslERRBUFSIZE];
   CM_t    *cm;
   seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, holds seqs, parsetrees, CP9 traces, postcodes */
-  float *sc; /* scores for each seq, for each stage */
-  
+  int      i;
+
   if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   /* init_shared_cfg UNNEC? */
   /*if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);*/
@@ -395,7 +436,11 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   while (CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
     {
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
+      cfg->ncm++;
 
+      /* get sequences, either generate them (--emit (default) or --random) or read them (--infile) */
+      if((status = get_sequences(go, cfg, errbuf, cm, FALSE, &seqs_to_aln)) != eslOK) cm_Fail(errbuf);
+	  
       /* Align sequences cfg->nstages times */
       for(cfg->s = 0; cfg->s < cfg->nstages; cfg->s++) 
 	{
@@ -406,31 +451,32 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  /* initialize the flags/options/params of the CM for the current stage */
 	  if((status = initialize_cm(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
 
-	  /* read in all sequences, this is wasteful, but easier to implement */
-	  seqs_to_aln = CreateSeqsToAln(100, FALSE);
-	  if((status = ReadSeqsToAln(cfg->abc, cfg->sqfp, 0, TRUE, seqs_to_aln, FALSE)) != eslEOF) cm_Fail("Error read sqfile: %s\n", cfg->sqfile);
 
 	  /* align all sequences, keep scores in sc */
-	  if ((status = process_workunit(go, cfg, errbuf, cm, seqs_to_aln, &sc)) != eslOK) cm_Fail(errbuf);
+	  if ((status = process_workunit(go, cfg, errbuf, cm, seqs_to_aln)) != eslOK) cm_Fail(errbuf);
 	  
 	  /* stop timing */
 	  if(cfg->s == 0) esl_stopwatch_Stop(cfg->s1_w);
 	  else            esl_stopwatch_Stop(cfg->w);
-	  if ((status = output_result(go, cfg, errbuf, cm, seqs_to_aln, sc)) != eslOK) cm_Fail(errbuf);
-	  free(sc);
+	  if ((status = output_result(go, cfg, errbuf, cm, seqs_to_aln)) != eslOK) cm_Fail(errbuf);
 
-	  /* clean up */
-	  FreeSeqsToAln(seqs_to_aln);
-	  /* rewind the sqfile so we can read the seqs again */
-	  esl_sqio_Rewind(cfg->sqfp); /* we may be searching this file again with another CM */
+	  /* clean up, free everything in seqs_to_aln but the sqs, which we'll reuse for each stage */
+	  if(seqs_to_aln->tr       != NULL) { for (i=0; i < seqs_to_aln->nseq; i++) if(seqs_to_aln->tr[i] != NULL)       FreeParsetree(seqs_to_aln->tr[i]); }
+	  if(seqs_to_aln->cp9_tr   != NULL) { for (i=0; i < seqs_to_aln->nseq; i++) if(seqs_to_aln->cp9_tr[i] != NULL)   CP9FreeTrace(seqs_to_aln->cp9_tr[i]); }
+	  if(seqs_to_aln->postcode != NULL) { for (i=0; i < seqs_to_aln->nseq; i++) if(seqs_to_aln->postcode[i] != NULL) free(seqs_to_aln->postcode[i]); }
+	  for (i=0; i < seqs_to_aln->nseq; i++) seqs_to_aln->sc[i] = IMPOSSIBLE;
+	  seqs_to_aln->tr       = NULL;
+	  seqs_to_aln->cp9_tr   = NULL;
+	  seqs_to_aln->postcode = NULL;
 	}
+      FreeSeqsToAln(seqs_to_aln); 
       FreeCM(cm);
     }
 }
 
 
 static int
-output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, seqs_to_aln_t *seqs_to_aln, float *sc)
+output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, seqs_to_aln_t *seqs_to_aln)
 {
   int status;
   int i;
@@ -478,8 +524,10 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
   if(cfg->s == 0) /* store the scores, only */
     {
       ESL_ALLOC(cfg->s1_sc, sizeof(float) * seqs_to_aln->nseq);
-      for(i = 0; i < seqs_to_aln->nseq; i++)
+      for(i = 0; i < seqs_to_aln->nseq; i++) {
 	cfg->s1_sc[i] = ParsetreeScore(cm, seqs_to_aln->tr[i], seqs_to_aln->sq[i]->dsq, FALSE);
+	ESL_DASSERT1(((fabs(cfg->s1_sc[i] - seqs_to_aln->sc[i])) < 1e-4));
+      }
     }
   else /* if(cfg->s > 0) we don't do the comparison test for stage 0 */
     {
@@ -493,10 +541,10 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	  /* TO DO: write function that inside actually_align_targets() takes
 	   * a CP9 parse, and converts it to a CM parsetree */
 	  if(esl_opt_GetBoolean(go, "-i"))
-	    printf("%-12s S1: %.3f S%d: %.3f diff: %.3f\n", seqs_to_aln->sq[i]->name, cfg->s1_sc[i], (cfg->s+1), sc[i], (fabs(cfg->s1_sc[i] - sc[i])));
-	  if(fabs(cfg->s1_sc[i] -  sc[i]) > 0.0001) {
+	    printf("%-12s S1: %.3f S%d: %.3f diff: %.3f\n", seqs_to_aln->sq[i]->name, cfg->s1_sc[i], (cfg->s+1), seqs_to_aln->sc[i], (fabs(cfg->s1_sc[i] - seqs_to_aln->sc[i])));
+	  if(fabs(cfg->s1_sc[i] -  seqs_to_aln->sc[i]) > 0.0001) {
 	    diff_ct++;
-	    diff_sc += fabs(cfg->s1_sc[i] - sc[i]);
+	    diff_sc += fabs(cfg->s1_sc[i] - seqs_to_aln->sc[i]);
 	  }
 	}
       /* Print summary for this stage versus stage 1 */ 
@@ -533,11 +581,11 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
  */
 static int
 process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, 
-		 seqs_to_aln_t *seqs_to_aln, float **ret_sc)
+		 seqs_to_aln_t *seqs_to_aln)
 {
   actually_align_targets(cm, seqs_to_aln,
 			 NULL, NULL,   /* we're not aligning search hits */
-			 ret_sc, 0, 0, TRUE);
+			 0, 0, TRUE);
   return eslOK;
   
   /* ERROR:
@@ -586,9 +634,9 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
       cm->align_opts  |=  CM_ALIGN_SUB;
       cm->align_opts  &= ~CM_ALIGN_CHECKPARSESC; /* parsetree score won't match aln score */
     }
-  if(esl_opt_GetBoolean(go, "-i"))            cm->align_opts  |= CM_ALIGN_TIME;
-  if(esl_opt_GetBoolean(go, "--zeroinserts")) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
-  if(esl_opt_GetBoolean(go, "--elsilent"))    cm->config_opts |= CM_CONFIG_ELSILENT;
+  /*if(  esl_opt_GetBoolean(go, "-i"))         cm->align_opts  |= CM_ALIGN_TIME;*/
+  if(! esl_opt_GetBoolean(go, "--iins"))     cm->config_opts |= CM_CONFIG_ZEROINSERTS;
+  if(  esl_opt_GetBoolean(go, "--elsilent")) cm->config_opts |= CM_CONFIG_ELSILENT;
 
   if(cfg->s == 0) /* set up stage 1 alignment we'll compare all other stages to */
     {
@@ -679,4 +727,65 @@ int summarize_align_options(CM_t *cm)
 }
 
 
+
+/* get_sequences()
+ * Get sequences to score by either generating them
+ * or reading them from a file depending on the input options.
+ *
+ * Sequences are allocated slightly different if the MPI master
+ * calls this function, to allow us to store them after receiving
+ * them back from workers in any order.
+ */
+static int
+get_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int i_am_mpi_master, seqs_to_aln_t **ret_seqs_to_aln)
+{
+  int status = eslOK;
+  int do_emit   = FALSE;
+  int do_random = FALSE;
+  int do_infile = FALSE;
+  seqs_to_aln_t *seqs_to_aln = NULL;
+  double *dnull = NULL;
+  int i;
+
+  if  (  esl_opt_IsDefault(go, "--emit") && esl_opt_IsDefault(go, "--random") && esl_opt_IsDefault(go, "--infile")) do_emit = TRUE;
+  if  (! esl_opt_IsDefault(go, "--emit"))   do_emit = TRUE;
+  if  (! esl_opt_IsDefault(go, "--random")) do_random = TRUE;
+  if  (! esl_opt_IsDefault(go, "--infile")) do_infile = TRUE;
+
+  ESL_DASSERT1(((do_emit + do_random + do_infile) == 1));
+
+  if(do_emit) {
+    seqs_to_aln = CMEmitSeqsToAln(cfg->r, cm, cfg->ncm, esl_opt_GetInteger(go, "--emit"), i_am_mpi_master);
+  }
+  else if(do_random) {
+    ESL_ALLOC(dnull, sizeof(double) * cm->abc->K);
+    for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
+    esl_vec_DNorm(dnull, cm->abc->K);
+    seqs_to_aln = RandomEmitSeqsToAln(cfg->r, cm->abc, dnull, cfg->ncm, esl_opt_GetInteger(go, "--random"), cm->clen, i_am_mpi_master);
+    free(dnull);
+  }
+  else if(do_infile)
+    {
+      seqs_to_aln = CreateSeqsToAln(100, i_am_mpi_master);
+      if((status = ReadSeqsToAln(cfg->abc, cfg->sqfp, 0, TRUE, seqs_to_aln, i_am_mpi_master)) != eslEOF) 
+	cm_Fail("Error reading sqfile: %s\n", esl_opt_GetString(go, "--infile"));
+      /* rewind the sqfile so we can read the seqs again */
+      esl_sqio_Rewind(cfg->sqfp); /* we may be searching this file again with another CM */
+    }    
+  else cm_Fail("get_sequences() error, !do_emit, !do_random and !do_infile.");
+
+  /* optionally, print out the sequences to outfile */
+  if(cfg->ofp != NULL) {
+    for(i = 0; i < seqs_to_aln->nseq; i++)
+      if((esl_sqio_Write(cfg->ofp, seqs_to_aln->sq[i], eslSQFILE_FASTA)) != eslOK) cm_Fail("Error writing unaligned sequences to %s.", esl_opt_GetString(go, "--outfile"));
+    fprintf(cfg->ofp, "//\n");
+  }
+
+  *ret_seqs_to_aln = seqs_to_aln;
+  return eslOK;
+
+ ERROR:
+  cm_Fail("memory allocation error.");
+  return status; /* NEVERREACHED */
+}
 

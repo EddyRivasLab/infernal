@@ -590,7 +590,7 @@ extern void parallel_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq
 				   int bdump_level, int debug_level,
 				   int silent_mode, int mpi_my_rank, int mpi_master_rank, int mpi_num_procs);
 extern int actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *results, 
-				  float **ret_sc, int bdump_level, int debug_level, int silent_mode);
+				  int bdump_level, int debug_level, int silent_mode);
 extern int  revcomp(const ESL_ALPHABET *abc, ESL_SQ *comp, ESL_SQ *sq);
 extern int  read_next_search_seq(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int do_revcomp, dbseq_t **ret_dbseq);
 extern void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq,
@@ -601,6 +601,8 @@ extern seqs_to_aln_t *CreateSeqsToAln(int size, int i_am_mpi_master);
 extern int GrowSeqsToAln(seqs_to_aln_t *seqs_to_aln, int new_alloc, int i_am_mpi_master); 
 extern void FreeSeqsToAln(seqs_to_aln_t *seqs_to_aln);
 extern int  ReadSeqsToAln(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int nseq, int do_read_all, seqs_to_aln_t *seqs_to_aln, int i_am_mpi_master); 
+extern seqs_to_aln_t *CMEmitSeqsToAln(ESL_RANDOMNESS *r, CM_t *cm, int ncm, int nseq, int i_am_mpi_master);
+extern seqs_to_aln_t *RandomEmitSeqsToAln(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, double *pdist, int extranum, int nseq, int L, int i_am_mpi_master); 
 
 /* from cplan9.c: functions stolen from HMMER-2.4::mathsupport.c */
 extern int   ILogsum(int p1, int p2);

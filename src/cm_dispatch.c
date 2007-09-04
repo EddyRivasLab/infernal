@@ -119,6 +119,7 @@ seqs_to_aln_t *CreateSeqsToAln(int size, int i_am_mpi_master)
   seqs_to_aln->tr       = NULL;
   seqs_to_aln->cp9_tr   = NULL;
   seqs_to_aln->postcode = NULL;
+  seqs_to_aln->sc       = NULL;
   seqs_to_aln->nalloc   = size;
   seqs_to_aln->nseq     = 0;
 
@@ -126,10 +127,12 @@ seqs_to_aln_t *CreateSeqsToAln(int size, int i_am_mpi_master)
     ESL_ALLOC(seqs_to_aln->tr,       sizeof(Parsetree_t *) * size);
     ESL_ALLOC(seqs_to_aln->cp9_tr,   sizeof(CP9trace_t)    * size);
     ESL_ALLOC(seqs_to_aln->postcode, sizeof(char *)        * size);
+    ESL_ALLOC(seqs_to_aln->sc,       sizeof(float)         * size);
     for(i = 0; i < size; i++) {
-      seqs_to_aln->tr[i] = NULL;
-      seqs_to_aln->cp9_tr[i] = NULL;
+      seqs_to_aln->tr[i]       = NULL;
+      seqs_to_aln->cp9_tr[i]   = NULL;
       seqs_to_aln->postcode[i] = NULL;
+      seqs_to_aln->sc[i]       = IMPOSSIBLE;
     }
   }
   return seqs_to_aln;
@@ -164,10 +167,12 @@ int GrowSeqsToAln(seqs_to_aln_t *seqs_to_aln, int new_alloc, int i_am_mpi_master
     ESL_RALLOC(seqs_to_aln->tr,       tmp, sizeof(Parsetree_t *) * (seqs_to_aln->nalloc + new_alloc));
     ESL_RALLOC(seqs_to_aln->cp9_tr,   tmp, sizeof(CP9trace_t)    * (seqs_to_aln->nalloc + new_alloc));
     ESL_RALLOC(seqs_to_aln->postcode, tmp, sizeof(char *)        * (seqs_to_aln->nalloc + new_alloc));
+    ESL_RALLOC(seqs_to_aln->sc,       tmp, sizeof(float)         * (seqs_to_aln->nalloc + new_alloc));
     for(i = seqs_to_aln->nalloc; i < (seqs_to_aln->nalloc + new_alloc); i++) {
-      seqs_to_aln->tr[i] = NULL;
-      seqs_to_aln->cp9_tr[i] = NULL;
+      seqs_to_aln->tr[i]       = NULL;
+      seqs_to_aln->cp9_tr[i]   = NULL;
       seqs_to_aln->postcode[i] = NULL;
+      seqs_to_aln->sc[i]       = IMPOSSIBLE;
     }
   }
   
@@ -218,6 +223,9 @@ void FreeSeqsToAln(seqs_to_aln_t *s)
       if(s->postcode[i] != NULL) free(s->postcode[i]);
     free(s->postcode);
   }
+
+  if(s->sc != NULL) free(s->sc);
+
   free(s);
 }
 
@@ -273,6 +281,113 @@ int ReadSeqsToAln(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int nseq, int do_r
   seqs_to_aln->nseq = i;
   return status;
 
+}
+
+/*
+ * Function: CMEmitSeqsToAln()
+ * Date:     EPN, Tue Sep  4 13:22:11 2007   
+ *
+ * Purpose:  Create a seqs_to_aln object by generating sequences
+ *           from a CM.
+ *
+ * Note:     Sequences are allocated slightly different if the MPI master
+ *           calls this function, to allow us to store them after receiving
+ *           them back from workers in any order.
+ *
+ * Args:     r               - source of randomness
+ *           cm              - CM to emit from
+ *           ncm             - number for CM (only for naming seqs if cm->name == NULL)
+ *           nseq            - number of seqs to emit
+ *           i_am_mpi_master - TRUE if called from MPI master (see Note)
+ *
+ * Returns:  Ptr to a newly allocated seqs_to_aln object with nseq sequences to align.
+ *           Dies immediately on failure with informative error message.
+ */
+seqs_to_aln_t *CMEmitSeqsToAln(ESL_RANDOMNESS *r, CM_t *cm, int ncm, int nseq, int i_am_mpi_master) 
+{
+  int status;
+  seqs_to_aln_t *seqs_to_aln = NULL;
+  char *name = NULL;
+  int namelen;
+  int L;
+  int i;
+
+  seqs_to_aln = CreateSeqsToAln(nseq, i_am_mpi_master);
+
+  if(cm->name != NULL) namelen = strlen(cm->name) + 50; /* 50 digit int is considered max, sloppy. */
+  else                 namelen = 100;                   /* 50 digit int is considered max, sloppy. */
+  ESL_ALLOC(name, sizeof(char) * namelen);
+
+  for(i = 0; i < nseq; i++)
+    {
+      if(cm->name != NULL) sprintf(name, "%s-%d", cm->name, i+1);
+      else                 sprintf(name, "%d-%d", ncm, i+1);
+      EmitParsetree(cm, r, name, TRUE, NULL, &(seqs_to_aln->sq[i]), &L);
+    }
+  seqs_to_aln->nseq = nseq;
+
+  free(name);
+  return seqs_to_aln;
+
+
+ ERROR:
+  cm_Fail("memory allocation error");
+  return NULL;
+}
+
+/*
+ * Function: RandomEmitSeqsToAln()
+ * Date:     EPN, Tue Sep  4 13:42:16 2007
+ *
+ * Purpose:  Create a seqs_to_aln object by generating sequences
+ *           randomly from a background distro.
+ *
+ * Note:     Sequences are allocated slightly different if the MPI master
+ *           calls this function, to allow us to store them after receiving
+ *           them back from workers in any order.
+ *
+ * Args:     r               - source of randomness
+ *           abc             - alphabet 
+ *           pdist           - probability distribution to use for emitting
+ *           extranum        - use this as first part of sequence name (could be ncm)
+ *           nseq            - number of seqs to emit
+ *           L               - length to make sequences 
+ *           i_am_mpi_master - TRUE if called from MPI master (see Note)
+ *
+ * Returns:  Ptr to a newly allocated seqs_to_aln object with nseq sequences to align.
+ *           Dies immediately on failure with informative error message.
+ */
+seqs_to_aln_t *RandomEmitSeqsToAln(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, double *pdist, int extranum, int nseq, int L, int i_am_mpi_master) 
+{
+  int status;
+  seqs_to_aln_t *seqs_to_aln = NULL;
+  char *name = NULL;
+  int namelen;
+  int i;
+  ESL_DSQ *randdsq = NULL;
+
+  seqs_to_aln = CreateSeqsToAln(nseq, i_am_mpi_master);
+  ESL_ALLOC(randdsq,      sizeof(ESL_DSQ)* (L+2));
+
+  namelen = 100;                   /* 100 digit int is considered max, sloppy. */
+  ESL_ALLOC(name, sizeof(char) * namelen);
+
+  for(i = 0; i < nseq; i++)
+    {
+      sprintf(name, "randseq%d-%d", extranum, i+1);
+      if (esl_rnd_xIID(r, pdist, abc->K, L, randdsq)  != eslOK) cm_Fail("RandomEmitSeqsToAln(): failure creating random sequence.");
+      if((seqs_to_aln->sq[i] = esl_sq_CreateDigitalFrom(abc, name, randdsq, L, NULL, NULL, NULL)) == NULL) 
+	 cm_Fail("RandomEmitSeqsToAln() error.");
+    }
+  seqs_to_aln->nseq = nseq;
+
+  free(name);
+  free(randdsq);
+  return seqs_to_aln;
+
+ ERROR:
+  cm_Fail("memory allocation error");
+  return NULL;
 }
 
 /* EPN, Mon Jan  8 06:42:59 2007
@@ -383,7 +498,7 @@ float actually_search_target(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cu
   if(results->num_results > 0 && do_align_hits)
     actually_align_targets(cm, NULL, 
 			   dsq, results,   /* put function into dsq_mode, designed for aligning search hits */
-			   NULL, 0, 0, 0);
+			   0, 0, 0);
   return sc;
 }  
 
@@ -648,7 +763,6 @@ void remove_hits_over_e_cutoff (CM_t *cm, search_results_t *results, ESL_SQ *sq,
  *           seqs_to_aln    - the sequences (if sq_mode)
  *           dsq            - a single digitized sequence (if dsq_mode)
  *           search_results - search results with subsequence indices of dsq to align (if dsq_mode)
- *           ret_sc         - RETURN: scores of parses (NULL if not wanted)
  *           bdump_level    - verbosity level for band related print statements
  *           debug_level    - verbosity level for debugging print statements
  *           silent_mode    - TRUE to not print anything, FALSE to print scores 
@@ -658,7 +772,7 @@ void remove_hits_over_e_cutoff (CM_t *cm, search_results_t *results, ESL_SQ *sq,
  */
 int
 actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *search_results,
-		       float **ret_sc, int bdump_level, int debug_level, int silent_mode)
+		       int bdump_level, int debug_level, int silent_mode)
 {
   int status;
   ESL_STOPWATCH *watch;         /* for timings */
@@ -816,9 +930,7 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
       ESL_ALLOC(postcode, sizeof(char *) * nalign);
   }   
  
-  if(ret_sc != NULL)
-    ESL_ALLOC(parsesc, sizeof(float) * nalign);
-  else parsesc = NULL;
+  ESL_ALLOC(parsesc, sizeof(float) * nalign);
 
   minsc = FLT_MAX;
   maxsc = -FLT_MAX;
@@ -902,7 +1014,7 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
 	  if(sq_mode && !silent_mode) printf("Aligning (to a CP9 HMM w/viterbi) %-20s", seqs_to_aln->sq[i]->name);
 	  sc = CP9ViterbiAlign(cur_dsq, 1, L, cm->cp9, cp9_mx, &(cp9_tr[i]));
 	  if(sq_mode && !silent_mode) printf(" score: %10.2f bits\n", sc);
-	  if(parsesc != NULL) parsesc[i] = sc;
+	  parsesc[i] = sc;
 	  FreeCPlan9Matrix(cp9_mx);
 	  continue;
 	}
@@ -913,7 +1025,7 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
 	  if(sq_mode && !silent_mode) printf("Aligning (w/full CYK score only) %-30s", seqs_to_aln->sq[i]->name);
 	  sc = CYKInsideScore(cm, cur_dsq, L, 0, 1, L, NULL, NULL); /* don't do QDB mode */
 	  if(sq_mode && !silent_mode) printf("    score: %10.2f bits\n", sc);
-	  if(parsesc != NULL) parsesc[i] = sc;
+	  parsesc[i] = sc;
 	  continue;
 	}
 
@@ -1252,7 +1364,7 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
       if (sc < minsc) minsc = sc;
       
       if(!silent_mode) printf("    score: %10.2f bits\n", sc);
-      if(parsesc != NULL) parsesc[i] = sc;
+      parsesc[i] = sc;
       
       /* check parsetree score if cm->align_opts & CM_ALIGN_CHECKPARSESC */
       if((cm->align_opts & CM_ALIGN_CHECKPARSESC) &&
@@ -1353,13 +1465,11 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
     }
   esl_stopwatch_Destroy(watch);
   
-  if (ret_sc != NULL) *ret_sc = parsesc; 
-      else if(parsesc != NULL) free(parsesc);
-
   if(sq_mode) {
     seqs_to_aln->tr       = tr;       /* could be NULL */
     seqs_to_aln->cp9_tr   = cp9_tr;   /* could be NULL */
     seqs_to_aln->postcode = postcode; /* could be NULL */
+    seqs_to_aln->sc       = parsesc;  /* shouldn't be NULL */
   }
  
   return eslOK;

@@ -904,6 +904,10 @@ typedef struct _seqs_to_aln_t {
   Parsetree_t **tr;              /* parsetrees */
   CP9trace_t **cp9_tr;           /* CP9 traces, usually NULL unless tr is NULL */
   char **postcode;               /* postal codes, left NULL unless do_post */
+  float *sc;                     /* score for each seq, can be parsetree score (usually if tr != NULL),
+				  * CP9 trace score (usually if cp9_tr != NULL), but could also be
+				  * score for the sub parsetree (in case of sub CM alignment)
+				  */
 } seqs_to_aln_t;
 
 /* The integer log odds score deckpool for integer versions of 
