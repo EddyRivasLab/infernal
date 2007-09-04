@@ -156,11 +156,12 @@ float
 tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
                     int r, int z, int i0, int j0, int allow_LM, int allow_RM)
 {
-   AlphaMats_t alpha;
-   BetaMats_t  beta;
+   AlphaMats_t *alpha;
+   BetaMats_t  *beta;
    struct deckpool_s *pool;
    int        v,w,y;
    int        wend, yend;
+   int        tv;
    int        jp;
    int        W;
    float      sc;
@@ -168,10 +169,11 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    float      best_sc;
    int        best_j, best_d, best_k;
    int        v_mode, w_mode, y_mode;
-   int        b1_mode, b2mode;
+   int        b1_mode, b2_mode, b3_mode;
    int        b1_v, b1_i, b1_j;
    int        b2_v, b2_i, b2_j;
-   float      b1_sc, b2_sc;
+   int        b3_v, b3_j;
+   float      b1_sc, b2_sc, b3_sc;
 
    /* Case 1: problem size is small; solve with trinsideT()
     * size calculation is heuristic based on size of insideT() */
@@ -201,13 +203,13 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 
    /* Calculate alphas for w and y
     * also pick up best local begins in each subtree */
-   b1_sc = tr_inside(cm, dsq, L, w, wend, i0, j0, BE_EFFICIENT, NULL, &alpha, NULL, &pool, NULL, &b1_mode, &b1_v, &b1_i, &b1_j);
-   if (!allow_begin) b1_sc = IMPOSSIBLE;
-   b2_sc = tr_inside(cm, dsq, L, y, yend, i0, j0, BE_EFFICIENT,alpha, &alpha, pool,  NULL, NULL, &b2_mode, &b2_v, &b2_i, &b2_j);
-   if (!allow_begin) b2_sc = IMPOSSIBLE;
+   b1_sc = tr_inside(cm, dsq, L, w, wend, i0, j0, BE_EFFICIENT, NULL, alpha, NULL, &pool, NULL, &b1_mode, &b1_v, &b1_i, &b1_j);
+   if (r != 0) b1_sc = IMPOSSIBLE;
+   b2_sc = tr_inside(cm, dsq, L, y, yend, i0, j0, BE_EFFICIENT,alpha, alpha, pool,  NULL, NULL, &b2_mode, &b2_v, &b2_i, &b2_j);
+   if (r != 0) b2_sc = IMPOSSIBLE;
 
    /* Calculate beta; release pool */
-   b3_sc = tr_outside(cm, dsq, L, r, v, i0, j0, BE_EFFICIENT, NULL, &beta, NULL, NULL, &b3_mode, &b3_v, &b3_j);
+   b3_sc = tr_outside(cm, dsq, L, r, v, i0, j0, BE_EFFICIENT, NULL, beta, NULL, NULL, &b3_mode, &b3_v, &b3_j);
 
    /* OK, to the point of actually finding the best split
     * We have a lot more types of splits than the non-truncated
@@ -401,8 +403,8 @@ float
 tr_wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
                   int r, int z, int i0, int j0, int allow_LM, int allow_RM)
 {
-   Alphamats_t *alpha;
-   Betamats_t  *beta;
+   AlphaMats_t *alpha;
+   BetaMats_t  *beta;
    float        sc;
    float        best_sc;
    int          v,w,y;
@@ -429,10 +431,10 @@ tr_wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    y = cm->cfirst[w] - 1;
 
    /* Get alphas and betas */
-   b1_sc = tr_inside(cm, dsq, L, w, z, i0, j0, BE_EFFICIENT, NULL, &alpha, NULL, NULL, NULL,
+   b1_sc = tr_inside(cm, dsq, L, w, z, i0, j0, BE_EFFICIENT, NULL, alpha, NULL, NULL, NULL,
              &b1_mode, &b1_v, &b1_i, &b1_j);
    if (r != 0) b1_sc = IMPOSSIBLE;
-   b2_sc = tr_outside(cm, dsq, L, r, y, i0, j0, BE_EFFICIENT, NULL, &beta, NULL, NULL,
+   b2_sc = tr_outside(cm, dsq, L, r, y, i0, j0, BE_EFFICIENT, NULL, beta, NULL, NULL,
              &b2_mode, &b2_v, &b2_j);
    if ( b2_mode == 2 && !allow_LM ) b2_sc = IMPOSSIBLE;
    if ( b2_mode == 1 && !allow_RM ) b2_sc = IMPOSSIBLE;
@@ -518,7 +520,7 @@ tr_wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
       best_sc = b1_sc;
       best_v  = b1_v;
       best_j  = b1_j;
-      best_d  = b1_d;
+      best_d  = b1_j - b1_i + 1;
       p_mode = 0; c_mode = b1_mode;
    }
 
@@ -577,12 +579,16 @@ void
 tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int i1,
               int j1, int j0, int useEL, int force_LM, int force_RM)
 {
-   Alphamats_t *alpha;
-   Betamats_t  *beta;
+   AlphaMats_t *alpha;
+   BetaMats_t  *beta;
    float        sc, best_sc;
    int          v, w, y;
    int          best_v, best_i, best_j;
    int          midnode;
+   int          p_mode, c_mode;
+   int          jp, ip;
+   float        b_sc;
+   int          b_mode, b_v, b_i, b_j;
 
 // Recommend a special handler for the fully marginal cases (linear alg.)
    /*
@@ -611,9 +617,9 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
 
    /* Calculate alphas and betas */
    b_sc =  tr_vinside(cm, dsq, L, w, z, i0, i1, j1, j0, useEL, force_LM, force_RM,
-                      BE_EFFICIENT, NULL, &alpha, NULL, NULL, &b_mode, &b_v, &b_i, &b_j);
+                      BE_EFFICIENT, NULL, alpha, NULL, NULL, NULL, &b_mode, &b_v, &b_i, &b_j);
    if (r != 0) b_sc = IMPOSSIBLE;
-   tr_voutside(cm, dsq, L, r, y, i0, i1, j1, j0, useEL, force_LM, force_RM, BE_EFFICIENT, NULL, &beta, NULL, NULL);
+   tr_voutside(cm, dsq, L, r, y, i0, i1, j1, j0, useEL, force_LM, force_RM, BE_EFFICIENT, NULL, beta, NULL, NULL);
 
    /* Find our best split */
    best_sc = IMPOSSIBLE;
@@ -621,7 +627,7 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
    {
       for (ip = 0; ip <= i1-i0; ip++)
       {
-         for (jp = 0; jp <= j0-j1, jp++)
+         for (jp = 0; jp <= j0-j1; jp++)
          {
             if ( ! force_LM && ! force_RM )
             if ( (sc = alpha->J[v][jp][ip] + beta->J[v][jp][ip]) > best_sc )
@@ -706,7 +712,7 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
    free_vji_matrix(alpha->L, cm->M, j1, j0);
    free_vji_matrix(alpha->R, cm->M, j1, j0);
    free_vji_matrix(alpha->T, cm->M, j1, j0);
-   free_vji_matrix( beat->J, cm->M, j1, j0);
+   free_vji_matrix( beta->J, cm->M, j1, j0);
 // Free the other betas....
 
    /* Interpret and subdivide */
@@ -726,7 +732,7 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
    {
       if (best_v != z)
       {
-         InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, best_i, best_j, best_v, best_mode);
+         InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, best_i, best_j, best_v, c_mode);
       }
       tr_v_splitter(cm, dsq, L, tr, best_v, z, best_i, i1, j1, best_j, useEL, force_LM, force_RM);
    }
@@ -788,7 +794,7 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
    int     *touch;
    int      v,y,z;
    int      j,d,i,k;
-   float    sc,tsc;
+   float    sc;
    int      yoffset;
    int      W;
    int      jp;
@@ -1470,9 +1476,9 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
    else
    {
       ret_alpha->J = alpha;
-      ret_alpha->L = alpha->L;
-      ret_alpha->R = alpha->R;
-      ret_alpha->T = alpha->T;
+      ret_alpha->L = L_alpha;
+      ret_alpha->R = R_alpha;
+      ret_alpha->T = T_alpha;
    }
 
    /* Free or return deckpool */
@@ -1525,10 +1531,13 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
    float  b_sc;
    int    b_mode, b_v, b_j;
 
+   BetaMats_t *beta;
+
    W = j0 - i0 + 1;
    if ( dpool == NULL ) dpool = deckpool_create();
 
-   if ( beta == NULL )
+   beta = MallocOrDie(sizeof(BetaMats_t));
+   if ( arg_beta == NULL )
    {
       beta->J = MallocOrDie(sizeof(float **) * (cm->M+1));
       beta->L[0] = MallocOrDie(sizeof(float) * (cm->M+1)*W);
@@ -1538,6 +1547,18 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
          beta->J[v] = NULL;
          beta->L[v] = beta->L[0] + (v * W);
          beta->R[v] = beta->R[0] + (v * W);
+      }
+   }
+   else
+   {
+      beta->J = arg_beta->J;
+      beta->L = arg_beta->L;
+      beta->R = arg_beta->R;
+      for ( v = 0; v < cm->M+1; v++ )
+      {
+         beta->J[v] = arg_beta->J[v];
+         beta->L[v] = arg_beta->L[v];
+         beta->R[v] = arg_beta->R[v];
       }
    }
 
@@ -1580,7 +1601,7 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
    beta->R[vroot][j0]    = 0.0;
 
    /* Initialize EL */
-   if (! deckpool_pop(dpool &(beta->J[cm->M])) )
+   if (! deckpool_pop(dpool, &(beta->J[cm->M])) )
       beta->J[cm->M] = alloc_vjd_deck(L, i0, j0);
    for (jp = 0; jp <= W; jp++)
    {
@@ -1616,7 +1637,7 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
             else
                esc = DegenerateSingletScore(cm->esc[vroot], dsq[i0]);
             beta->J[cm->M][j0][W-1] = cm->endsc[vroot] + (cm->el_selfsc * (W-1)) + esc;
-            if (beta->J[cm->M][j0][W-1] < IMPOSSIBLE) beta[cm->M][j0][W-1] = IMPOSSIBLE;
+            if (beta->J[cm->M][j0][W-1] < IMPOSSIBLE) beta->J[cm->M][j0][W-1] = IMPOSSIBLE;
             break;
          case MR_st:
          case IR_st:
@@ -1626,7 +1647,7 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
             else
                esc = DegenerateSingletScore(cm->esc[vroot], dsq[j0]);
             beta->J[cm->M][j0-1][W-1] = cm->endsc[vroot] + (cm->el_selfsc * (W-1)) + esc;
-            if (beta->J[cm->M][j0-1][W-1] < IMPOSSIBLE) beta[cm->M][j0][W-1] = IMPOSSIBLE;
+            if (beta->J[cm->M][j0-1][W-1] < IMPOSSIBLE) beta->J[cm->M][j0][W-1] = IMPOSSIBLE;
             break;
          case  S_st:
          case  D_st:
@@ -1810,7 +1831,7 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
                         if (dsq[i-1] < Alphabet_size && dsq[j+1] < Alphabet_size)
                            esc = cm->esc[y][(int) (dsq[i-1]*Alphabet_size + dsq[j+1])];
                         else
-                           esc = DegeneratePairScore(cm->exc[y], dsq[i-1], dsq[j+1]);
+                           esc = DegeneratePairScore(cm->esc[y], dsq[i-1], dsq[j+1]);
                         if ( (sc = beta->J[y][j+1][d+2] + cm->tsc[y][voffset] + esc) > beta->J[v][j][d] )
                            beta->J[v][j][d] = sc;
                         if ( (sc = beta->L[y][i-1]      + cm->tsc[y][voffset] + esc) > beta->J[v][j][d] )
@@ -1877,8 +1898,8 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
                         esc = cm->esc[v][(int) (dsq[i-1]*Alphabet_size+dsq[j+1])];
                      else
                         esc = DegeneratePairScore(cm->esc[v], dsq[i-1], dsq[j+1]);
-                     if ((sc = beta[v][j+1][d+2] + cm->endsc[v] + (cm->el_selfsc * d) + esc) > beta[cm->M][j][d])
-                        beta[cm->M][j][d] = sc;
+                     if ((sc = beta->J[v][j+1][d+2] + cm->endsc[v] + (cm->el_selfsc * d) + esc) > beta->J[cm->M][j][d])
+                        beta->J[cm->M][j][d] = sc;
                      break;
                   case ML_st:
                   case IL_st:
@@ -1887,9 +1908,9 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
                         esc = cm->esc[v][(int) dsq[i-1]];
                      else
                         esc = DegenerateSingletScore(cm->esc[v], dsq[i-1]);
-                     if ((sc = beta[v][j][d+1] + cm->endsc[v] + (cm->el_selfsc * d) + esc) > beta[cm->M][j][d])
+                     if ((sc = beta->J[v][j][d+1] + cm->endsc[v] + (cm->el_selfsc * d) + esc) > beta->J[cm->M][j][d])
                         /*(cm->el_selfsc * (d+1)) + esc) > beta[cm->M][j][d])*/
-                        beta[cm->M][j][d] = sc;
+                        beta->J[cm->M][j][d] = sc;
                      break;
                   case MR_st:
                   case IR_st:
@@ -1898,15 +1919,15 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
                         esc = cm->esc[v][(int) dsq[j+1]];
                      else
                         esc = DegenerateSingletScore(cm->esc[v], dsq[j+1]);
-                     if ((sc = beta[v][j+1][d+1] + cm->endsc[v] + (cm->el_selfsc * d) + esc) > beta[cm->M][j][d])
+                     if ((sc = beta->J[v][j+1][d+1] + cm->endsc[v] + (cm->el_selfsc * d) + esc) > beta->J[cm->M][j][d])
                         /*(cm->el_selfsc * (d+1)) + esc) > beta[cm->M][j][d])*/
-                        beta[cm->M][j][d] = sc;
+                        beta->J[cm->M][j][d] = sc;
                      break;
                   case S_st:
                   case D_st:
                   case E_st:
-                     if ((sc = beta[v][j][d] + cm->endsc[v] + (cm->el_selfsc * d)) > beta[cm->M][j][d])
-                        beta[cm->M][j][d] = sc;
+                     if ((sc = beta->J[v][j][d] + cm->endsc[v] + (cm->el_selfsc * d)) > beta->J[cm->M][j][d])
+                        beta->J[cm->M][j][d] = sc;
                      break;
                   case B_st:
                   default: Die("bogus parent state %d\n", cm->sttype[v]);
@@ -1946,7 +1967,7 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
    }
    else
    {
-      *ret_beta = beta;
+      ret_beta = beta;
    }
 
    if (ret_dpool == NULL)
@@ -2096,11 +2117,11 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
    {
       if (ret_shadow != NULL)
       {
-         shadow->J[z]     = alloc_vji_shadow_deck(i0,i1,j1,j0);
-         shadow->L[z]     = alloc_vji_shadow_deck(i0,i1,j1,j0);
-         shadow->R[z]     = alloc_vji_shadow_deck(i0,i1,j1,j0);
-         shadow->Lmode[z] = alloc_vji_shadow_deck(i0,i1,j1,j0);
-         shadow->Rmode[z] = alloc_vji_shadow_deck(i0,i1,j1,j0);
+         shadow->J[z]     = (void **) alloc_vji_shadow_deck(i0,i1,j1,j0);
+         shadow->L[z]     = (void **) alloc_vji_shadow_deck(i0,i1,j1,j0);
+         shadow->R[z]     = (void **) alloc_vji_shadow_deck(i0,i1,j1,j0);
+         shadow->Lmode[z] = (void **) alloc_vji_shadow_deck(i0,i1,j1,j0);
+         shadow->Rmode[z] = (void **) alloc_vji_shadow_deck(i0,i1,j1,j0);
       }
 
       switch (cm->sttype[z])
@@ -2108,7 +2129,7 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
          case  D_st:
          case  S_st:
             alpha->J[z][jp][ip] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1));
-            if (ret_shadow != NULL) shadow[z][jp][ip] = USED_EL;
+            if (ret_shadow != NULL) ((char **)shadow->J[z])[jp][ip] = USED_EL;
             break;
          case MP_st:
             if (i0 == i1 || j1 == j0) break;
@@ -2117,7 +2138,7 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
                alpha->J[z][jp+1][ip-1] += cm->esc[z][(int) (dsq[i1-1]*Alphabet_size+dsq[j1+1])];
             else
                alpha->J[z][jp+1][ip-1] += DegeneratePairScore(cm->esc[z], dsq[i1-1], dsq[j1+1]);
-            if (ret_shadow != NULL) shadow->J[z][jp+1][ip-1] = USED_EL;
+            if (ret_shadow != NULL) ((char **)shadow->J[z])[jp+1][ip-1] = USED_EL;
             if (alpha->J[z][jp+1][ip-1] < IMPOSSIBLE) alpha->J[z][jp+1][ip-1] = IMPOSSIBLE;
             break;
          case ML_st:
@@ -2128,7 +2149,7 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
                alpha->J[z][jp][ip-1] += cm->esc[z][(int) dsq[i1-1]];
             else
                alpha->J[z][jp][ip-1] += DegenerateSingletScore(cm->esc[z], dsq[i1-1]);
-            if (ret_shadow != NULL) shadow->J[z][jp][ip-1] = USED_EL;
+            if (ret_shadow != NULL) ((char **)shadow->J[z])[jp][ip-1] = USED_EL;
             if (alpha->J[z][jp][ip-1] < IMPOSSIBLE) alpha->J[z][jp][ip-1] = IMPOSSIBLE;
             break;
          case MR_st:
@@ -2139,7 +2160,7 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
                alpha->J[z][jp+1][ip] += cm->esc[z][(int) dsq[j1+1]];
             else
                alpha->J[z][jp+1][ip] += DegenerateSingletScore(cm->esc[z], dsq[j1+1]);
-            if (ret_shadow != NULL) shadow->J[z][jp+1][ip] = USED_EL;
+            if (ret_shadow != NULL) ((char **)shadow->J[z])[jp+1][ip] = USED_EL;
             if (alpha->J[z][jp+1][ip] < IMPOSSIBLE) alpha->J[z][jp+1][ip] = IMPOSSIBLE;
             break;
          default:
@@ -2151,8 +2172,8 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
       if (ret_shadow != NULL)
       {
          /* didn't actually use EL, but this prevents a traceback bug */
-         shadow->L[z][jp][ip] = USED_EL;
-         shadow->R[z][jp][ip] = USED_EL;
+         ((char **)shadow->L[z])[jp][ip] = USED_EL;
+         ((char **)shadow->R[z])[jp][ip] = USED_EL;
       }
    }
    else
@@ -2198,9 +2219,9 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
 
       if (ret_shadow != NULL)
       {
-         shadow->J[v] = alloc_vji_shadow_deck(i0,i1,j1,j0);
-         shadow->L[v] = alloc_vji_shadow_deck(i0,i1,j1,j0);
-         shadow->R[v] = alloc_vji_shadow_deck(i0,i1,j1,j0);
+         shadow->J[v] = (void **) alloc_vji_shadow_deck(i0,i1,j1,j0);
+         shadow->L[v] = (void **) alloc_vji_shadow_deck(i0,i1,j1,j0);
+         shadow->R[v] = (void **) alloc_vji_shadow_deck(i0,i1,j1,j0);
       }
 
       /* Double-check problem type */
@@ -2218,28 +2239,28 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
                   if ( (sc = cm->endsc[v] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1))) > alpha->J[v][jp][ip])
                   {
                      alpha->J[v][jp][ip] = sc;
-                     if (ret_shadow != NULL) shadow->J[v][jp][ip] = USED_EL;
+                     if (ret_shadow != NULL) ((char **)shadow->J[v])[jp][ip] = USED_EL;
                   }
 
-               for (yoffset = 0; yoffset < cm->num[v]; yoffset++)
+               for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
                {
                   if (! force_RM && ! force_LM)
                   if ( (sc = alpha->J[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) > alpha->J[v][jp][ip])
                   {
                      alpha->J[v][jp][ip] = sc;
-                     if (ret_shadow != NULL) shadow->J[v][jp][ip] = (char) yoffset;
+                     if (ret_shadow != NULL) ((char **)shadow->J[v])[jp][ip] = (char) yoffset;
                   }
                   if (! force_RM)
                   if ( (sc = alpha->L[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) > alpha->L[v][jp][ip])
                   {
                      alpha->L[v][jp][ip] = sc;
-                     if (ret_shadow != NULL) { shadow->L[v][jp][ip] = (char) yoffset; shadow->Lmode[v][jp][ip] = 2; }
+                     if (ret_shadow != NULL) { ((char **)shadow->L[v])[jp][ip] = (char) yoffset; ((char **)shadow->Lmode[v])[jp][ip] = 2; }
                   }
                   if (! force_LM)
                   if ( (sc = alpha->R[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) > alpha->R[v][jp][ip])
                   {
                      alpha->R[v][jp][ip] = sc;
-                     if (ret_shadow != NULL) { shadow->R[v][jp][ip] = (char) yoffset; shadow->Rmode[v][jp][ip] = 1; }
+                     if (ret_shadow != NULL) { ((char **)shadow->R[v])[jp][ip] = (char) yoffset; ((char **)shadow->Rmode[v])[jp][ip] = 1; }
                   }
                }
 
@@ -2263,7 +2284,7 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
                   if ( (sc = cm->endsc[v] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - 2))) > alpha->J[v][jp][ip] )
                   {
                      alpha->J[v][jp][ip] = sc;
-                     if (ret_shadow != NULL) shadow->J[v][jp][ip] = USED_EL;
+                     if (ret_shadow != NULL) ((char **)shadow->J[v])[jp][ip] = USED_EL;
                   }
 
                for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
@@ -2272,31 +2293,31 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
                   if ( (sc = alpha->J[y+yoffset][jp-1][ip+1] + cm->tsc[v][yoffset]) > alpha->J[v][jp][ip])
                   {
                      alpha->J[v][jp][ip] = sc;
-                     if (ret_shadow != NULL) shadow->J[v][jp][ip] = (char) yoffset;
+                     if (ret_shadow != NULL) ((char **)shadow->J[v])[jp][ip] = (char) yoffset;
                   }
                   if (!force_RM && ip < i1-i0)
                   if ( (sc = alpha->L[y+yoffset][jp][ip+1] + cm->tsc[v][yoffset]) > alpha->L[v][jp][ip])
                   {
                      alpha->L[v][jp][ip] = sc;
-                     if (ret_shadow != NULL) { shadow->L[v][jp][ip] = (char) yoffset; shadow->Lmode[v][jp][ip] = 2; }
+                     if (ret_shadow != NULL) { ((char **)shadow->L[v])[jp][ip] = (char) yoffset; ((char **)shadow->Lmode[v])[jp][ip] = 2; }
                   }
                   if (!force_RM && ip < i1-i0)
                   if ( (sc = alpha->J[y+yoffset][jp][ip+1] + cm->tsc[v][yoffset]) > alpha->L[v][jp][ip])
                   {
                      alpha->L[v][jp][ip] = sc;
-                     if (ret_shadow != NULL) { shadow->L[v][jp][ip] = (char) yoffset; shadow->Lmode[v][jp][ip] = 3; }
+                     if (ret_shadow != NULL) { ((char **)shadow->L[v])[jp][ip] = (char) yoffset; ((char **)shadow->Lmode[v])[jp][ip] = 3; }
                   }
                   if (!force_LM && jp > 0)
                   if ( (sc = alpha->R[y+yoffset][jp-1][ip] + cm->tsc[v][yoffset]) > alpha->R[v][jp][ip])
                   {
                      alpha->R[v][jp][ip] = sc;
-                     if (ret_shadow != NULL) { shadow->R[v][jp][ip] = (char) yoffset; shadow->Rmode[v][jp][ip] = 1; }
+                     if (ret_shadow != NULL) { ((char **)shadow->R[v])[jp][ip] = (char) yoffset; ((char **)shadow->Rmode[v])[jp][ip] = 1; }
                   }
                   if (!force_LM && jp > 0)
                   if ( (sc = alpha->J[y+yoffset][jp-1][ip] + cm->tsc[v][yoffset]) > alpha->R[v][jp][ip])
                   {
                      alpha->R[v][jp][ip] = sc;
-                     if (ret_shadow != NULL) { shadow->R[v][jp][ip] = (char) yoffset; shadow->Rmode[v][jp][ip] = 3; }
+                     if (ret_shadow != NULL) { ((char **)shadow->R[v])[jp][ip] = (char) yoffset; ((char **)shadow->Rmode[v])[jp][ip] = 3; }
                   }
                }
 
@@ -2347,11 +2368,11 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
                i = i0+ip;
                y = cm->cfirst[v];
 
-               if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && !force_LM && !force_RM && ip < i1-k0)
+               if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && !force_LM && !force_RM && ip < i1-i0)
                   if ( (sc = cm->endsc[v] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - 1))) > alpha->J[v][jp][ip] )
                   {
                      alpha->J[v][jp][ip] = sc;
-                     if (ret_shadow != NULL) shadow->J[v][jp][ip] = USED_EL;
+                     if (ret_shadow != NULL) ((char **)shadow->J[v])[jp][ip] = USED_EL;
                   }
 
                for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
@@ -2360,25 +2381,25 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
                   if ( (sc = alpha->J[y+yoffset][jp][ip+1] + cm->tsc[v][yoffset]) > alpha->J[v][jp][ip])
                   {
                      alpha->J[v][jp][ip] = sc;
-                     if (ret_shadow != NULL) shadow->J[v][jp][ip] = (char) yoffset;
+                     if (ret_shadow != NULL) ((char **)shadow->J[v])[jp][ip] = (char) yoffset;
                   }
                   if (!force_RM && ip < i1-i0)
                   if ( (sc = alpha->L[y+yoffset][jp][ip+1] + cm->tsc[v][yoffset]) > alpha->L[v][jp][ip])
                   {
                      alpha->L[v][jp][ip] = sc;
-                     if (ret_shadow != NULL) { shadow->L[v][jp][ip] = (char) yoffset; shadow->Lmode[v][jp][ip] = 2; }
+                     if (ret_shadow != NULL) { ((char **)shadow->L[v])[jp][ip] = (char) yoffset; ((char **)shadow->Lmode[v])[jp][ip] = 2; }
                   }
                   if (!force_LM)
                   if ( (sc = alpha->R[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) > alpha->R[v][jp][ip])
                   {
                      alpha->R[v][jp][ip] = sc;
-                     if (ret_shadow != NULL) { shadow->R[v][jp][ip] = (char) yoffset; shadow->Rmode[v][jp][ip] = 1; }
+                     if (ret_shadow != NULL) { ((char **)shadow->R[v])[jp][ip] = (char) yoffset; ((char **)shadow->Rmode[v])[jp][ip] = 1; }
                   }
                   if (!force_LM)
                   if ( (sc = alpha->J[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) > alpha->R[v][jp][ip])
                   {
                      alpha->R[v][jp][ip] = sc;
-                     if (ret_shadow != NULL) { shadow->R[v][jp][ip] = (char) yoffset; shadow->Rmode[v][jp][ip] = 3; }
+                     if (ret_shadow != NULL) { ((char **)shadow->R[v])[jp][ip] = (char) yoffset; ((char **)shadow->Rmode[v])[jp][ip] = 3; }
                   }
                }
 
@@ -2423,7 +2444,7 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
                   if ( (sc = cm->endsc[v] + (cm->el_selfsc * ((j1+jp)-(i0+ip)+1 - 1))) > alpha->J[v][jp][ip] )
                   {
                      alpha->J[v][jp][ip] = sc;
-                     if (ret_shadow != NULL) shaow->J[v][jp][ip] = USED_EL;
+                     if (ret_shadow != NULL) ((char **)shadow->J[v])[jp][ip] = USED_EL;
                   }
 
                for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
@@ -2432,25 +2453,25 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
                   if ( (sc = alpha->J[y+yoffset][jp-1][ip] + cm->tsc[v][yoffset]) > alpha->J[v][jp][ip])
                   {
                      alpha->J[v][jp][ip] = sc;
-                     if (ret_shadow != NULL) shadow->J[v][jp][ip] = (char) yoffset;
+                     if (ret_shadow != NULL) ((char **)shadow->J[v])[jp][ip] = (char) yoffset;
                   }
                   if (!force_RM)
                   if ( (sc = alpha->L[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) > alpha->L[v][jp][ip])
                   {
                      alpha->L[v][jp][ip] = sc;
-                     if (ret_shadow != NULL) { shadow->L[v][jp][ip] = (char) yoffset; shadow->Lmode[v][jp][ip] = 2; }
+                     if (ret_shadow != NULL) { ((char **)shadow->L[v])[jp][ip] = (char) yoffset; ((char **)shadow->Lmode[v])[jp][ip] = 2; }
                   }
                   if (!force_RM)
                   if ( (sc = alpha->J[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) > alpha->L[v][jp][ip])
                   {
                      alpha->L[v][jp][ip] = sc;
-                     if (ret_shadow != NULL) { shadow->L[v][jp][ip] = (char) yoffset; shadow->Lmode[v][jp][ip] = 3; }
+                     if (ret_shadow != NULL) { ((char **)shadow->L[v])[jp][ip] = (char) yoffset; ((char **)shadow->Lmode[v])[jp][ip] = 3; }
                   }
                   if (!force_LM && jp > 0)
                   if ( (sc = alpha->R[y+yoffset][jp-1][ip] + cm->tsc[v][yoffset]) > alpha->R[v][jp][ip])
                   {
                      alpha->R[v][jp][ip] = sc;
-                     if (ret_shadow != NULL) { shadow->R[v][jp][ip] = (char) yoffset; shadow->Rmode[v][jp][ip] = 1; }
+                     if (ret_shadow != NULL) { ((char **)shadow->R[v])[jp][ip] = (char) yoffset; ((char **)shadow->Rmode[v])[jp][ip] = 1; }
                   }
                }
 
@@ -2495,18 +2516,18 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
          alpha->R[v][j0-j1][0] = b_sc;
          if (ret_shadow != NULL)
          {
-            shadow->J[v][j0-j1][0] = USED_LOCAL_BEGIN;
-            shadow->L[v][j0-j1][0] = USED_LOCAL_BEGIN;
-            shadow->R[v][j0-j1][0] = USED_LOCAL_BEGIN;
-            shadow->Lmode[v][j0-j1][0] = b_mode;
-            shadow->Rmode[v][j0-j1][0] = b_mode;
+            ((char **)shadow->J[v])[j0-j1][0] = USED_LOCAL_BEGIN;
+            ((char **)shadow->L[v])[j0-j1][0] = USED_LOCAL_BEGIN;
+            ((char **)shadow->R[v])[j0-j1][0] = USED_LOCAL_BEGIN;
+            ((char **)shadow->Lmode[v])[j0-j1][0] = b_mode;
+            ((char **)shadow->Rmode[v])[j0-j1][0] = b_mode;
          }
       }
 
       /* Recycle memory */
       if (! do_full)
       {
-         for (y = cm->cfirst[v]; y < cm->cfirst[v]+cnum[v]; y++)
+         for (y = cm->cfirst[v]; y < cm->cfirst[v]+cm->cnum[v]; y++)
          {
             touch[y]--;
             if (touch[y] == 0)
@@ -2776,7 +2797,7 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
                      if (dsq[i-1] < Alphabet_size)
                         esc = cm->esc[y][(int) dsq[i-1]];
                      else
-                        esc = DegenerateSingleScore(cm->esc[y], dsq[i-1]);
+                        esc = DegenerateSingletScore(cm->esc[y], dsq[i-1]);
                      if ( (sc = beta->L[y][ip-1] + cm->tsc[y][voffset] + esc) > beta->L[v][ip] )
                         beta->L[v][ip] = sc;
                   }
@@ -2940,7 +2961,7 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
                            esc = cm->esc[v][(int) (dsq[i-1]*Alphabet_size+dsq[j+1])];
                         else
                            esc = DegeneratePairScore(cm->esc[v], dsq[i-1], dsq[j+1]);
-                        if ( (sc = beta->J[v][jp+1][ip-1] + cm->endsc[v] + (cm->el_slfsc* (j-i+1)) + esc) > beta->J[cm->M][jp][ip] )
+                        if ( (sc = beta->J[v][jp+1][ip-1] + cm->endsc[v] + (cm->el_selfsc* (j-i+1)) + esc) > beta->J[cm->M][jp][ip] )
                            beta->J[cm->M][jp][ip] = sc;
                      }
                      break;
@@ -2952,7 +2973,7 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
                            esc = cm->esc[v][(int) dsq[i-1]];
                         else
                            esc = DegenerateSingletScore(cm->esc[v], dsq[i-1]);
-                        if ( (sc = beta->J[v][jp][ip-1] + cm->endsc[v] + (cm->el_slfsc* (j-i+1)) + esc) > beta->J[cm->M][jp][ip] )
+                        if ( (sc = beta->J[v][jp][ip-1] + cm->endsc[v] + (cm->el_selfsc* (j-i+1)) + esc) > beta->J[cm->M][jp][ip] )
                            beta->J[cm->M][jp][ip] = sc;
                      }
                      break;
@@ -2964,7 +2985,7 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
                            esc = cm->esc[v][(int) dsq[j+1]];
                         else
                            esc = DegenerateSingletScore(cm->esc[v], dsq[j+1]);
-                        if ( (sc = beta->J[v][jp+1][ip] + cm->endsc[v] + (cm->el_slfsc* (j-i+1)) + esc) > beta->J[cm->M][jp][ip] )
+                        if ( (sc = beta->J[v][jp+1][ip] + cm->endsc[v] + (cm->el_selfsc* (j-i+1)) + esc) > beta->J[cm->M][jp][ip] )
                            beta->J[cm->M][jp][ip] = sc;
                      }
                      break;
@@ -2997,14 +3018,14 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
    if (ret_beta == NULL)
    {
       for (v = r; v <= z; v++)
-         if (beta-J[v] != NULL) { deckpool_push(dpool, beta->J[v]); beta->J[v] = NULL; }
+         if (beta->J[v] != NULL) { deckpool_push(dpool, beta->J[v]); beta->J[v] = NULL; }
       deckpool_push(dpool, beta->J[cm->M]); beta->J[cm->M] = NULL;
       free(beta->L);
       free(beta->R);
    }
    else
    {
-      *ret_beta = beta;
+      ret_beta = beta;
    }
 
    if (ret_dpool == NULL)
@@ -3257,12 +3278,12 @@ tr_vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
       else if (force_RM) mode = 1;
       else               mode = 3;
 
-      InsertTraceNode/ithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, r, mode);
+      InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, r, mode);
       return 0.0;
    }
 
    sc = tr_vinside(cm, dsq, L, r, z, i0, i1, j1, j0, useEL, force_LM, force_RM,
-                   BE_EFFICIENT, NULL, NULL, NULL, NULL, &shadow, &mode, &v, &i, &j);
+                   BE_EFFICIENT, NULL, NULL, NULL, NULL, shadow, &mode, &v, &i, &j);
 
    if (r != v) Die("Uh oh... r should (maybe?) always be the same as v and they're not...\n");
 
@@ -3332,9 +3353,11 @@ tr_vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
       }
    }
 
-   free_vji_shadow_matrix(shadow->J, cm->M, j1, j0);
-   free_vji_shadow_matrix(shadow->L, cm->M, j1, j0);
-   free_vji_shadow_matrix(shadow->R, cm->M, j1, j0);
+   free_vji_shadow_matrix((char ***) shadow->J, cm->M, j1, j0);
+   free_vji_shadow_matrix((char ***) shadow->L, cm->M, j1, j0);
+   free_vji_shadow_matrix((char ***) shadow->R, cm->M, j1, j0);
+   free_vji_shadow_matrix((char ***) shadow->Lmode, cm->M, j1, j0);
+   free_vji_shadow_matrix((char ***) shadow->Rmode, cm->M, j1, j0);
 
    return sc;
 }
