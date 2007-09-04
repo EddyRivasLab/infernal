@@ -1483,6 +1483,7 @@ cm_seqs_to_aln_MPIUnpack(const ESL_ALPHABET *abc, char *buf, int n, int *pos, MP
   int         has_tr;
   int         has_cp9_tr;
   int         has_post;
+  int         has_sc;
 
   status = MPI_Unpack (buf, n, pos, &num_seqs_to_aln, 1, MPI_INT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   status = MPI_Unpack (buf, n, pos, &has_sq,          1, MPI_INT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");

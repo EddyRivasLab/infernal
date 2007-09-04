@@ -501,10 +501,10 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    {
 	      nseq_prev = all_seqs_to_aln->nseq;
 	      if((status = ReadSeqsToAln(cfg->abc, cfg->sqfp, nseq_per_worker, FALSE, all_seqs_to_aln, TRUE)) == eslOK)
-	      {
-		nseq_this_worker = all_seqs_to_aln->nseq - nseq_prev;
-		ESL_DPRINTF1(("MPI master read %d seqs\n", all_seqs_to_aln->nseq));
-	      }
+		{
+		  nseq_this_worker = all_seqs_to_aln->nseq - nseq_prev;
+		  ESL_DPRINTF1(("MPI master read %d seqs\n", all_seqs_to_aln->nseq));
+		}
 	      else 
 		{
 		  have_work = FALSE;
@@ -572,6 +572,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       /* we have all worker's results, output the alignment */
       if ((status = output_result(go, cfg, errbuf, cm, all_seqs_to_aln)) != eslOK) cm_Fail(errbuf);
       ESL_DPRINTF1(("MPI master: done with this CM. Telling all workers\n"));
+      /* send workers the message that we're done with this stage */
       for (wi = 1; wi < cfg->nproc; wi++) 
 	if ((status = cm_seqs_to_aln_MPISend(NULL, 0, 0, wi, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("Shutting down a worker failed.");
       FreeCM(cm);
