@@ -272,6 +272,7 @@ main(int argc, char **argv)
    */
   if (cfg.my_rank == 0) {
     if (! esl_opt_IsDefault(go, "-o")) { fclose(cfg.ofp); }
+    if (cfg.cmfp      != NULL) CMFileClose(cfg.cmfp);
     if (cfg.sqfp      != NULL) esl_sqfile_Close(cfg.sqfp);
     if (cfg.tracefp   != NULL) fclose(cfg.tracefp);
     if (cfg.regressfp != NULL) fclose(cfg.regressfp);

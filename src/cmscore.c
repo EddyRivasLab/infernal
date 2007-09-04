@@ -80,11 +80,11 @@ static ESL_OPTIONS options[] = {
 struct cfg_s {
   char         *cmfile;	        /* name of input CM file  */ 
   char         *sqfile;	        /* name of sequence file  */ 
+  ESL_SQFILE   *sqfp;           /* open sequence input file stream */
   int           fmt;		/* format code for seqfile */
   ESL_ALPHABET *abc;		/* digital alphabet for input */
   int           be_verbose;	/* one-line-per-seq summary */
   int           nseq;           /* which number sequence this is in file (only valid in serial mode) */
-  CM_t         *cm;             /* the CM to align to */
   int           nstages;        /* number of stages of alignment we'll do */
   int           s;              /* which stage we're on [0..nstages-1], 0 = stage 1, 1 = stage 2 etc. */
   double       *beta;           /* [0..nstages-1] beta for each stage, NULL if not doing QDB */
@@ -116,10 +116,10 @@ static void  mpi_master    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 static void  mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 #endif
 
-/* static int process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t ***opt_tr); */
-static int output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQ **sq, Parsetree_t **tr, CP9trace_t **cp9_tr,
-			 float *scoreonly_sc);
-static int initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
+static int process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, 
+			    seqs_to_aln_t *seqs_to_aln, float **ret_sc);
+static int output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, seqs_to_aln_t *seqs_to_aln, float *sc);
+static int initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int summarize_align_options(CM_t *cm);
 
 int
@@ -202,7 +202,6 @@ main(int argc, char **argv)
   cfg.tracefp    = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.regressfp  = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.nseq       = 0;		           /* this counter is incremented in masters */
-  cfg.cm         = NULL;                   /* created in init_master_cfg() in masters, or in mpi_worker() in workers */
   cfg.nstages    = 0;                      /* set in init_master_cfg() in masters, stays 0 for workers */
   cfg.s          = 0;                      /* initialized to 0 in init_master_cfg() in masters, stays 0 for workers */
   cfg.beta       = NULL;                   /* alloc'ed and filled in init_master_cfg() in masters, stays NULL in workers */
@@ -237,8 +236,10 @@ main(int argc, char **argv)
       MPI_Comm_rank(MPI_COMM_WORLD, &(cfg.my_rank));
       MPI_Comm_size(MPI_COMM_WORLD, &(cfg.nproc));
 
-      /*if (cfg.my_rank > 0)  mpi_worker(go, &cfg);
-	else 		    mpi_master(go, &cfg);*/
+      if(cfg.nproc == 1) cm_Fail("ERROR, MPI mode, but only 1 processor running...");
+
+      if (cfg.my_rank > 0)  mpi_worker(go, &cfg);
+      else 		    mpi_master(go, &cfg);
 
       esl_stopwatch_Stop(cfg.w);
       esl_stopwatch_MPIReduce(cfg.w, 0, MPI_COMM_WORLD);
@@ -253,6 +254,8 @@ main(int argc, char **argv)
   /* Clean up the shared cfg. 
    */
   if (cfg.my_rank == 0) {
+    if (cfg.cmfp      != NULL) CMFileClose(cfg.cmfp);
+    if (cfg.sqfp      != NULL) esl_sqfile_Close(cfg.sqfp);
     if (cfg.tracefp   != NULL) {
       printf("Parsetrees saved in file %s.\n", esl_opt_GetString(go, "--tfile"));
       fclose(cfg.tracefp);
@@ -263,7 +266,6 @@ main(int argc, char **argv)
     }
     if (cfg.s1_sc     != NULL) free(cfg.s1_sc);
   }
-  if (cfg.cm        != NULL) FreeCM(cfg.cm);
   if (cfg.abc       != NULL) esl_alphabet_Destroy(cfg.abc);
   if (cfg.beta      != NULL) free(cfg.beta);
   if (cfg.tau       != NULL) free(cfg.tau);
@@ -299,15 +301,18 @@ static int
 init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 {
   int status;
-  CMFILE *cmfp; 
 
-  /* open CM file and read (only) the first CM in it. */
-  if ((cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
-    cm_Fail("Failed to open covariance model save file %s\n", cfg->cmfile);
-  if(!CMFileRead(cmfp, &(cfg->abc), &(cfg->cm)))
-    cm_Fail("Failed to read a CM from %s -- file corrupt?\n", cfg->cmfile);
-  if (cfg->cm == NULL) cm_Fail("Failed to read a CM from %s -- file empty?\n", cfg->cmfile);
-  CMFileClose(cmfp);
+  /* open input sequence file */
+  status = esl_sqfile_Open(cfg->sqfile, cfg->fmt, NULL, &(cfg->sqfp));
+  if (status == eslENOTFOUND)    ESL_FAIL(status, errbuf, "File %s doesn't exist or is not readable\n", cfg->sqfile);
+  else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "Couldn't determine format of sequence file %s\n", cfg->sqfile);
+  else if (status == eslEINVAL)  ESL_FAIL(status, errbuf, "Can’t autodetect stdin or .gz."); 
+  else if (status != eslOK)      ESL_FAIL(status, errbuf, "Sequence file open failed with error %d\n", status);
+  cfg->fmt = cfg->sqfp->format;
+
+  /* open CM file */
+  if ((cfg->cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
+    ESL_FAIL(eslFAIL, NULL, "Failed to open covariance model save file %s\n", cfg->cmfile);
 
   /* optionally, open trace file */
   if (esl_opt_GetString(go, "--tfile") != NULL) {
@@ -366,6 +371,7 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
  ERROR:
   return status;
 }
+
 /* serial_master()
  * The serial version of cmscore.
  * Score each sequence against the CM with specified
@@ -378,166 +384,125 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 {
   int      status;
   char     errbuf[eslERRBUFSIZE];
-  ESL_SQ **sq;
-  int       i;
-  Parsetree_t    **tr;          /* parse trees for the sequences for stage 2 -> nstages */
-  CP9trace_t     **cp9_tr;      /* CP9 traces for the sequences for stage 2 -> nstages */
-  ESL_SQFILE      *sqfp;        /* open sequence file stream, we wastefully read the sequences
-				 * at each stage, opening and closing the seq file  */
-
+  CM_t    *cm;
+  seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, holds seqs, parsetrees, CP9 traces, postcodes */
+  float *sc; /* scores for each seq, for each stage */
   
   if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   /* init_shared_cfg UNNEC? */
   /*if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);*/
 
-  /* Align sequences cfg->nstages times */
-  for(cfg->s = 0; cfg->s < cfg->nstages; cfg->s++) 
+  while (CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
     {
-      /* open input sequence file */
-      status = esl_sqfile_Open(cfg->sqfile, cfg->fmt, NULL, &(sqfp));
-      if (status == eslENOTFOUND)    cm_Fail("File %s doesn't exist or is not readable\n", cfg->sqfile);
-      else if (status == eslEFORMAT) cm_Fail("Couldn't determine format of sequence file %s\n", cfg->sqfile);
-      else if (status == eslEINVAL)  cm_Fail("Can’t autodetect stdin or .gz."); 
-      else if (status != eslOK)      cm_Fail("Sequence file open failed with error %d\n", status);
-      cfg->fmt = sqfp->format;
-      
-      /* Start timing. */
-      if(cfg->s == 0) esl_stopwatch_Start(cfg->s1_w);
-      else            esl_stopwatch_Start(cfg->w);
+      if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
 
-      /* initialize the flags/options/params of the CM for the current stage */
-      initialize_cm(go, cfg, errbuf);
-      /* Configure the CM for alignment based on cm->config_opts and cm->align_opts.
-       * set local mode, make cp9 HMM, calculate QD bands etc. */
-      ConfigCM(cfg->cm, NULL, NULL);
-      /* Align the sequences for this stage, there's no 'process_workunit() function' 
-       * but rather different functions for serial/mpi */ 
-      if(cfg->s > 0 && esl_opt_GetBoolean(go, "--scoreonly")) /* only score the seqs, don't get parsetrees */
+      /* Align sequences cfg->nstages times */
+      for(cfg->s = 0; cfg->s < cfg->nstages; cfg->s++) 
 	{
-	  float *scoreonly_sc;
-	  serial_align_targets(sqfp, cfg->cm, &sq, NULL, NULL, NULL, &cfg->nseq, 
-			       &scoreonly_sc, 0, 0, (! esl_opt_GetBoolean(go, "-i")));
+	  /* Start timing. */
+	  if(cfg->s == 0) esl_stopwatch_Start(cfg->s1_w);
+	  else            esl_stopwatch_Start(cfg->w);
+	  
+	  /* initialize the flags/options/params of the CM for the current stage */
+	  if((status = initialize_cm(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
+
+	  /* read in all sequences, this is wasteful, but easier to implement */
+	  seqs_to_aln = CreateSeqsToAln(100, FALSE);
+	  if((status = ReadSeqsToAln(cfg->abc, cfg->sqfp, 0, TRUE, seqs_to_aln, FALSE)) != eslEOF) cm_Fail("Error read sqfile: %s\n", cfg->sqfile);
+
+	  /* align all sequences, keep scores in sc */
+	  if ((status = process_workunit(go, cfg, errbuf, cm, seqs_to_aln, &sc)) != eslOK) cm_Fail(errbuf);
 	  
 	  /* stop timing */
 	  if(cfg->s == 0) esl_stopwatch_Stop(cfg->s1_w);
 	  else            esl_stopwatch_Stop(cfg->w);
-	  if ((status = output_result(go, cfg, errbuf, sq, tr, NULL, scoreonly_sc))        != eslOK) cm_Fail(errbuf);
-	  free(scoreonly_sc);
-	}
-      else if(cfg->s > 0 && ((esl_opt_GetBoolean(go, "--hmmonly")))) /* hmm alignment */
-	{
-	  serial_align_targets(sqfp, cfg->cm, &sq, NULL, NULL, &cp9_tr, &cfg->nseq, 
-			       NULL, 0, 0, (! esl_opt_GetBoolean(go, "-i")));
-	  /* stop timing */
-	  if(cfg->s == 0) esl_stopwatch_Stop(cfg->s1_w);
-	  else            esl_stopwatch_Stop(cfg->w);
-	  if ((status = output_result(go, cfg, errbuf, sq, NULL, cp9_tr, NULL))        != eslOK) cm_Fail(errbuf);
-	  for (i = 0; i < cfg->nseq; i++) CP9FreeTrace(cp9_tr[i]);
-	  free(cp9_tr);
-	}
-      else /* CYK alignment of some sort */
-	{
-	  serial_align_targets(sqfp, cfg->cm, &sq, &tr, NULL, NULL, &cfg->nseq, 
-			       NULL, 0, 0, (! esl_opt_GetBoolean(go, "-i")));
-	  /* stop timing */
-	  if(cfg->s == 0) esl_stopwatch_Stop(cfg->s1_w);
-	  else            esl_stopwatch_Stop(cfg->w);
-	  if ((status = output_result(go, cfg, errbuf, sq, tr, NULL, NULL))        != eslOK) cm_Fail(errbuf);
-	  for (i = 0; i < cfg->nseq; i++) FreeParsetree(tr[i]);
-	  free(tr);
-	}
+	  if ((status = output_result(go, cfg, errbuf, cm, seqs_to_aln, sc)) != eslOK) cm_Fail(errbuf);
+	  free(sc);
 
-      /* free sequences, we wastefully read them in separately (within serial_align_targets()) for each stage */
-      for (i = 0; i < cfg->nseq; i++) esl_sq_Destroy(sq[i]);
-      free(sq);
-      esl_sqfile_Close(sqfp);
+	  /* clean up */
+	  FreeSeqsToAln(seqs_to_aln);
+	  /* rewind the sqfile so we can read the seqs again */
+	  esl_sqio_Rewind(cfg->sqfp); /* we may be searching this file again with another CM */
+	}
+      FreeCM(cm);
     }
 }
 
 
 static int
-output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQ **sq, Parsetree_t **tr, CP9trace_t **cp9_tr, 
-	      float *scoreonly_sc)
+output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, seqs_to_aln_t *seqs_to_aln, float *sc)
 {
   int status;
   int i;
 
   /* print the parsetrees to regression file or parse file */
-  for(i = 0; i < cfg->nseq; i++)
+  for(i = 0; i < seqs_to_aln->nseq; i++)
     {
-      for(i = 0; i < cfg->nseq; i++)
+      if (cfg->regressfp != NULL) 
 	{
-	  if (cfg->regressfp != NULL) 
+	  fprintf(cfg->regressfp, "> %s\n", seqs_to_aln->sq[i]->name);
+	  if(esl_opt_GetBoolean(go,"--hmmonly")) 
 	    {
-	      fprintf(cfg->regressfp, "> %s\n", sq[i]->name);
-	      if(esl_opt_GetBoolean(go,"--hmmonly")) 
-		{
-		  fprintf(cfg->regressfp, "  SCORE : %.2f bits\n", CP9TraceScore(cfg->cm->cp9, sq[i]->dsq, cp9_tr[i]));
-		  CP9PrintTrace(cfg->regressfp, cp9_tr[i], cfg->cm->cp9, sq[i]->dsq);
-		}
-	      else
-		{
-		  fprintf(cfg->regressfp, "  SCORE : %.2f bits\n", ParsetreeScore(cfg->cm, tr[i], sq[i]->dsq, FALSE));
-		  ParsetreeDump(cfg->regressfp, tr[i], cfg->cm, sq[i]->dsq, NULL, NULL); /* NULLs are dmin, dmax */
-		}
-	      fprintf(cfg->regressfp, "//\n");
+	      ESL_DASSERT1((seqs_to_aln->cp9_tr != NULL));
+	      fprintf(cfg->regressfp, "  SCORE : %.2f bits\n", CP9TraceScore(cm->cp9, seqs_to_aln->sq[i]->dsq, seqs_to_aln->cp9_tr[i]));
+	      CP9PrintTrace(cfg->regressfp, seqs_to_aln->cp9_tr[i], cm->cp9, seqs_to_aln->sq[i]->dsq);
 	    }
-	  if (cfg->tracefp   != NULL) 
+	  else
 	    {
-	      fprintf(cfg->tracefp, "> %s\n", sq[i]->name);
-	      if(esl_opt_GetBoolean(go,"--hmmonly")) 
-		{
-		  fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", CP9TraceScore(cfg->cm->cp9, sq[i]->dsq, cp9_tr[i]));
-		  CP9PrintTrace(cfg->tracefp, cp9_tr[i], cfg->cm->cp9, sq[i]->dsq);
-		}
-	      else
-		{
-		  fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", ParsetreeScore(cfg->cm, tr[i], sq[i]->dsq, FALSE));
-		  ParsetreeDump(cfg->tracefp, tr[i], cfg->cm, sq[i]->dsq, NULL, NULL); /* NULLs are dmin, dmax */
-		}
-	      fprintf(cfg->tracefp, "//\n");
+	      ESL_DASSERT1((seqs_to_aln->tr != NULL));
+	      fprintf(cfg->regressfp, "  SCORE : %.2f bits\n", ParsetreeScore(cm, seqs_to_aln->tr[i], seqs_to_aln->sq[i]->dsq, FALSE));
+	      ParsetreeDump(cfg->regressfp, seqs_to_aln->tr[i], cm, seqs_to_aln->sq[i]->dsq, NULL, NULL); /* NULLs are dmin, dmax */
 	    }
+	  fprintf(cfg->regressfp, "//\n");
+	}
+      if (cfg->tracefp != NULL) 
+	{
+	  fprintf(cfg->tracefp, "> %s\n", seqs_to_aln->sq[i]->name);
+	  if(esl_opt_GetBoolean(go,"--hmmonly")) 
+	    {
+	      ESL_DASSERT1((seqs_to_aln->cp9_tr != NULL));
+	      fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", CP9TraceScore(cm->cp9, seqs_to_aln->sq[i]->dsq, seqs_to_aln->cp9_tr[i]));
+	      CP9PrintTrace(cfg->tracefp, seqs_to_aln->cp9_tr[i], cm->cp9, seqs_to_aln->sq[i]->dsq);
+	    }
+	  else
+	    {
+	      ESL_DASSERT1((seqs_to_aln->tr != NULL));
+	      fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", ParsetreeScore(cm, seqs_to_aln->tr[i], seqs_to_aln->sq[i]->dsq, FALSE));
+	      ParsetreeDump(cfg->tracefp, seqs_to_aln->tr[i], cm, seqs_to_aln->sq[i]->dsq, NULL, NULL); /* NULLs are dmin, dmax */
+	    }
+	  fprintf(cfg->tracefp, "//\n");
 	}
     }
 
   /* print info about scores of parsetrees */
   if(cfg->s == 0) /* store the scores, only */
     {
-      ESL_ALLOC(cfg->s1_sc, sizeof(float) * cfg->nseq);
-      for(i = 0; i < cfg->nseq; i++)
-	cfg->s1_sc[i] = ParsetreeScore(cfg->cm, tr[i], sq[i]->dsq, FALSE);
+      ESL_ALLOC(cfg->s1_sc, sizeof(float) * seqs_to_aln->nseq);
+      for(i = 0; i < seqs_to_aln->nseq; i++)
+	cfg->s1_sc[i] = ParsetreeScore(cm, seqs_to_aln->tr[i], seqs_to_aln->sq[i]->dsq, FALSE);
     }
   else /* if(cfg->s > 0) we don't do the comparison test for stage 0 */
     {
       /* Compare parsetrees from stage 1 and stage s (current stage) and collect stats */
-      float *sc;           /* parse scores for current stage of alignment */
       double diff_sc = 0.; /* difference in summed parse scores for this stage versus stage 1 */
       int    diff_ct = 0.; /* number of parses different between this stage and stage 1 */
       double spdup;        /* speed-up versus stage 1 */
 
-      ESL_ALLOC(sc, (sizeof (float) * cfg->nseq));
-      for(i = 0; i < cfg->nseq; i++)
+      for(i = 0; i < seqs_to_aln->nseq; i++)
 	{
-	  /* TO DO: write function that in actually_align_targets(), takes
+	  /* TO DO: write function that inside actually_align_targets() takes
 	   * a CP9 parse, and converts it to a CM parsetree */
-	  if(esl_opt_GetBoolean(go, "--hmmonly"))
-	    sc[i] = CP9TraceScore(cfg->cm->cp9, sq[i]->dsq, cp9_tr[i]);
-	  else if (esl_opt_GetBoolean(go, "--scoreonly"))
-	    sc[i] = scoreonly_sc[i];
-	  else
-	    sc[i] = ParsetreeScore(cfg->cm, tr[i], sq[i]->dsq, FALSE);
 	  if(esl_opt_GetBoolean(go, "-i"))
-	    printf("%-12s S1: %.3f S%d: %.3f diff: %.3f\n", sq[i]->name, cfg->s1_sc[i], (cfg->s+1), sc[i], (fabs(cfg->s1_sc[i] - sc[i])));
-	  if(fabs(cfg->s1_sc[i] -  sc[i]) > 0.0001)
-	    {
-	      diff_ct++;
-	      diff_sc += fabs(cfg->s1_sc[i] - sc[i]);
-	    }
+	    printf("%-12s S1: %.3f S%d: %.3f diff: %.3f\n", seqs_to_aln->sq[i]->name, cfg->s1_sc[i], (cfg->s+1), sc[i], (fabs(cfg->s1_sc[i] - sc[i])));
+	  if(fabs(cfg->s1_sc[i] -  sc[i]) > 0.0001) {
+	    diff_ct++;
+	    diff_sc += fabs(cfg->s1_sc[i] - sc[i]);
+	  }
 	}
       /* Print summary for this stage versus stage 1 */ 
       printf("Results summary for stage %d:\n", (cfg->s+1));
       printf("---------------------------------\n");
-      printf("Number seqs aligned:     %d\n", cfg->nseq);
+      printf("Number seqs aligned:     %d\n", seqs_to_aln->nseq);
       esl_stopwatch_Display(stdout, cfg->s1_w, "Stage  1 time:           ");
       printf("Stage %2d time:           ", (cfg->s+1));
       esl_stopwatch_Display(stdout, cfg->w, "");
@@ -546,21 +511,40 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQ **s
 
       if(! esl_opt_GetBoolean(go, "--hmmonly"))
 	{
-	  printf("Avg bit score diff:      %.2f\n", (diff_sc / ((float) cfg->nseq)));
+	  printf("Avg bit score diff:      %.2f\n", (diff_sc / ((float) seqs_to_aln->nseq)));
 	  if(diff_ct == 0)
 	    printf("Avg sc diff(>1e-4):      %.2f\n", 0.);
 	  else
 	    printf("Avg sc diff(>1e-4):      %.2f\n", (diff_sc / ((float) diff_ct)));
 	  printf("Num   diff (>1e-4):      %d\n", (diff_ct));
-	  printf("Fract diff (>1e-4):      %.5f\n", (((float) diff_ct) / ((float) cfg->nseq)));
+	  printf("Fract diff (>1e-4):      %.5f\n", (((float) diff_ct) / ((float) seqs_to_aln->nseq)));
 	  printf("\n\n");
 	}
-      free(sc);
     }
   return eslOK;
 
  ERROR:
   return status;
+}
+
+/* An alignment work unit consists a seqs_to_aln_t object which contains sequences to align, 
+ * and space for their parsetrees, or CP9 traces, and possibly postal codes.
+ * The job is to align the sequences and create parsetrees or cp9 traces and maybe postal codes.
+ */
+static int
+process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, 
+		 seqs_to_aln_t *seqs_to_aln, float **ret_sc)
+{
+  actually_align_targets(cm, seqs_to_aln,
+			 NULL, NULL,   /* we're not aligning search hits */
+			 ret_sc, 0, 0, TRUE);
+  return eslOK;
+  
+  /* ERROR:
+  ESL_DPRINTF1(("worker %d: has caught an error in process_search_workunit\n", cfg->my_rank));
+  FreeCM(cm);
+  FreeResults(results);
+  return status;*/
 }
 
 /* initialize_cm()
@@ -569,67 +553,73 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQ **s
  * a few parameters. ConfigCM() configures the CM.
  */
 static int
-initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
+initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
   /* set up params/flags/options of the CM */
-  if(cfg->beta != NULL) cfg->cm->beta = cfg->beta[cfg->s];
-  if(cfg->tau  != NULL) cfg->cm->tau  = cfg->tau[cfg->s];
+  if(cfg->beta != NULL) cm->beta = cfg->beta[cfg->s];
+  if(cfg->tau  != NULL) cm->tau  = cfg->tau[cfg->s];
 
-  cfg->cm->align_opts = 0;  /* clear alignment options from previous stage */
-  cfg->cm->config_opts = 0; /* clear configure options from previous stage */
+  cm->align_opts = 0;  /* clear alignment options from previous stage */
+  cm->config_opts = 0; /* clear configure options from previous stage */
   /* Clear QDBs if they exist */
-  if(cfg->cm->flags & CM_QDB)
+  if(cm->flags & CM_QDB)
     {
-      free(cfg->cm->dmin);
-      free(cfg->cm->dmax);
-      cfg->cm->dmin = NULL;
-      cfg->cm->dmax = NULL;
-      cfg->cm->flags &= ~CM_QDB;
+      free(cm->dmin);
+      free(cm->dmax);
+      cm->dmin = NULL;
+      cm->dmax = NULL;
+      cm->flags &= ~CM_QDB;
     }
 
   /* enable option to check parsetree score against the alignment score */
-  cfg->cm->align_opts  |= CM_ALIGN_CHECKPARSESC;
+  cm->align_opts  |= CM_ALIGN_CHECKPARSESC;
 
-  /* Update cfg->cm->config_opts and cfg->cm->align_opts based on command line options */
+  /* Update cm->config_opts and cm->align_opts based on command line options */
   if(esl_opt_GetBoolean(go, "-l"))
     {
-      cfg->cm->config_opts |= CM_CONFIG_LOCAL;
-      cfg->cm->config_opts |= CM_CONFIG_HMMLOCAL;
-      cfg->cm->config_opts |= CM_CONFIG_HMMEL;
+      cm->config_opts |= CM_CONFIG_LOCAL;
+      cm->config_opts |= CM_CONFIG_HMMLOCAL;
+      cm->config_opts |= CM_CONFIG_HMMEL;
     }
   if(esl_opt_GetBoolean(go, "--sub"))         
     { 
-      cfg->cm->align_opts  |=  CM_ALIGN_SUB;
-      cfg->cm->align_opts  &= ~CM_ALIGN_CHECKPARSESC; /* parsetree score won't match aln score */
+      cm->align_opts  |=  CM_ALIGN_SUB;
+      cm->align_opts  &= ~CM_ALIGN_CHECKPARSESC; /* parsetree score won't match aln score */
     }
-  if(esl_opt_GetBoolean(go, "-i"))            cfg->cm->align_opts  |= CM_ALIGN_TIME;
-  if(esl_opt_GetBoolean(go, "--zeroinserts")) cfg->cm->config_opts |= CM_CONFIG_ZEROINSERTS;
-  if(esl_opt_GetBoolean(go, "--elsilent"))    cfg->cm->config_opts |= CM_CONFIG_ELSILENT;
+  if(esl_opt_GetBoolean(go, "-i"))            cm->align_opts  |= CM_ALIGN_TIME;
+  if(esl_opt_GetBoolean(go, "--zeroinserts")) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
+  if(esl_opt_GetBoolean(go, "--elsilent"))    cm->config_opts |= CM_CONFIG_ELSILENT;
 
   if(cfg->s == 0) /* set up stage 1 alignment we'll compare all other stages to */
     {
       /* only one option allows cmscore NOT to do standard CYK as first stage aln */
       if(esl_opt_GetBoolean(go, "--qdbboth")) { 
-	cfg->cm->align_opts  |= CM_ALIGN_QDB;
-	cfg->cm->config_opts |= CM_CONFIG_QDB;
+	cm->align_opts  |= CM_ALIGN_QDB;
+	cm->config_opts |= CM_CONFIG_QDB;
       }
     }      
   else { /* cfg->s > 0, we're at least on stage 2 */
-    if(esl_opt_GetBoolean(go, "--hbanded"))     cfg->cm->align_opts  |= CM_ALIGN_HBANDED;
-    if(esl_opt_GetBoolean(go, "--hmmonly"))     cfg->cm->align_opts  |= CM_ALIGN_HMMONLY;
-    if(esl_opt_GetBoolean(go, "--hsafe"))       cfg->cm->align_opts  |= CM_ALIGN_HMMSAFE;
-    if(esl_opt_GetBoolean(go, "--scoreonly"))   cfg->cm->align_opts  |= CM_ALIGN_SCOREONLY;
+    if(esl_opt_GetBoolean(go, "--hbanded"))     cm->align_opts  |= CM_ALIGN_HBANDED;
+    if(esl_opt_GetBoolean(go, "--hmmonly"))     cm->align_opts  |= CM_ALIGN_HMMONLY;
+    if(esl_opt_GetBoolean(go, "--hsafe"))       cm->align_opts  |= CM_ALIGN_HMMSAFE;
+    if(esl_opt_GetBoolean(go, "--scoreonly"))   cm->align_opts  |= CM_ALIGN_SCOREONLY;
     if(esl_opt_GetBoolean(go, "--qdb") || esl_opt_GetBoolean(go, "--qdbsmall"))                    
       { 
-	cfg->cm->align_opts  |= CM_ALIGN_QDB;
-	cfg->cm->config_opts |= CM_CONFIG_QDB;
+	cm->align_opts  |= CM_ALIGN_QDB;
+	cm->config_opts |= CM_CONFIG_QDB;
       }
     /* only 1 way stage 2+ alignment will be D&C, if --qdbsmall was enabled */
     if(! esl_opt_GetBoolean(go, "--qdbsmall"))
-      cfg->cm->align_opts  |= CM_ALIGN_NOSMALL;
+      cm->align_opts  |= CM_ALIGN_NOSMALL;
   }
   printf("Stage %2d alignment:\n", (cfg->s+1));
-  summarize_align_options(cfg->cm);
+  summarize_align_options(cm);
+
+  /* finally, configure the CM for alignment based on cm->config_opts and cm->align_opts.
+   * set local mode, make cp9 HMM, calculate QD bands etc. 
+   */
+  ConfigCM(cm, NULL, NULL);
+
   return eslOK;
 }
 
