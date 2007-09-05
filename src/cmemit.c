@@ -758,7 +758,7 @@ main(int argc, char **argv)
       /*esl_histogram_Print(stdout, h);*/
 
       esl_histogram_GetData(h, &xv, &n);
-      esl_stats_Mean(xv, n, &mean, &var);
+      esl_stats_DMean(xv, n, &mean, &var);
       printf("N: %d\nMean:   %f\nVar:    %f\nSt dev: %f\n", n, mean, var, sqrt(var));
 
       esl_histogram_Destroy(h);
