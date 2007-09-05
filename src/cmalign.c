@@ -612,8 +612,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if (xstatus != eslOK) return; /* master saw an error code; workers do an immediate normal shutdown. */
   ESL_DPRINTF1(("worker %d: sees that master has initialized\n", cfg->my_rank));
   
-  /* Master now broadcasts worker initialization information (db size N) 
-   * Workers returns their status post-initialization.
+  /* Workers returns their status post-initialization.
    * Initial allocation of wbuf must be large enough to guarantee that
    * we can pack an error result into it, because after initialization,
    * errors will be returned as packed (code, errbuf) messages.

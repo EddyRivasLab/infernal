@@ -1235,12 +1235,12 @@ cm_seqs_to_aln_MPIRecv(const ESL_ALPHABET *abc, int source, int tag, MPI_Comm co
   }
 
   /* Receive the packed work unit */
-  ESL_DPRINTF1(("cm_seqs_to_aln_MPIRecv(): about to receive dsq.\n"));
+  ESL_DPRINTF1(("cm_seqs_to_aln_MPIRecv(): about to receive seqs_to_aln.\n"));
   if (MPI_Recv(*buf, n, MPI_PACKED, source, tag, comm, &mpistatus) != 0) ESL_XEXCEPTION(eslESYS, "mpi recv failed");
-  ESL_DPRINTF1(("cm_seqs_to_aln_MPIRecv(): dsq has been received.\n"));
+  ESL_DPRINTF1(("cm_seqs_to_aln_MPIRecv(): seqs_to_aln has been received.\n"));
 
   /* Unpack it - where the first integer is a status code, OK or EOD */
-  ESL_DPRINTF1(("cm_seqs_to_aln_MPIRecv(): about to unpack dsq.\n"));
+  ESL_DPRINTF1(("cm_seqs_to_aln_MPIRecv(): about to unpack seqs_to_aln.\n"));
   pos = 0;
   if (MPI_Unpack       (*buf, n, &pos, &code,                   1, MPI_INT,           comm) != 0)  ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   if (code == eslEOD) { status = eslEOD; goto ERROR; }
@@ -1447,7 +1447,7 @@ cm_seqs_to_aln_MPIPack(const seqs_to_aln_t *seqs_to_aln, int offset, int nseq_to
     }
 
   if(has_sc)
-    status = MPI_Pack(&(seqs_to_aln->sc[i]), nseq_to_pack, MPI_FLOAT, buf, n, position, comm); if (status != eslOK) return status;
+    status = MPI_Pack((seqs_to_aln->sc + (offset * sizeof(float))), nseq_to_pack, MPI_FLOAT, buf, n, position, comm); if (status != eslOK) return status;
 
   ESL_DPRINTF1(("cm_seqs_to_aln_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
   

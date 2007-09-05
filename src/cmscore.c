@@ -118,7 +118,7 @@ static char usage[]  = "[-options] <cmfile>";
 static char banner[] = "score RNA covariance model against sequences";
 
 static int  init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
-/* static int  init_shared_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf); */
+static int  init_shared_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf); 
 
 static void  serial_master (const ESL_GETOPTS *go, struct cfg_s *cfg);
 #ifdef HAVE_MPI
@@ -129,7 +129,7 @@ static void  mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 static int process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, seqs_to_aln_t *seqs_to_aln);
 static int output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, seqs_to_aln_t *seqs_to_aln);
 static int initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
-static int summarize_align_options(CM_t *cm);
+static int summarize_align_options(const struct cfg_s *cfg, CM_t *cm);
 static int get_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int i_am_mpi_master, seqs_to_aln_t **ret_seqs_to_aln);
 static int determine_nseq_per_worker(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int *ret_nseq_worker);
 static int add_worker_seqs_to_master(seqs_to_aln_t *master_seqs, seqs_to_aln_t *worker_seqs, int offset);
@@ -305,11 +305,6 @@ main(int argc, char **argv)
  *    cfg->sqfp        - optional input sequence file
  *    cfg->tracefp     - optional output file
  *    cfg->regressfp   - optional output file
- *    cfg->nstages     - number of alignment stages
- *    cfg->beta        - beta values for each stage
- *    cfg->tau         - tau values for each stage
- *    cfg->s1_w        - stopwatch for timing stage 1
- *    cfg->w           - stopwatch for timing stage 2+
  *    cfg->r           - source of randomness 
  *                   
  * Errors in the MPI master here are considered to be "recoverable",
@@ -331,7 +326,7 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     status = esl_sqfile_Open(esl_opt_GetString(go, "--infile"), cfg->infmt, NULL, &(cfg->sqfp));
     if (status == eslENOTFOUND)    ESL_FAIL(status, errbuf, "File %s doesn't exist or is not readable\n", esl_opt_GetString(go, "--infile"));
     else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "Couldn't determine format of sequence file %s\n", esl_opt_GetString(go, "--infile"));
-    else if (status == eslEINVAL)  ESL_FAIL(status, errbuf, "Canâ€™t autodetect stdin or .gz."); 
+    else if (status == eslEINVAL)  ESL_FAIL(status, errbuf, "Can$.1Žòùt autodetect stdin or .gz."); 
     else if (status != eslOK)      ESL_FAIL(status, errbuf, "Sequence file open failed with error %d\n", status);
     cfg->infmt = cfg->sqfp->format;
   }
@@ -353,10 +348,40 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 	cm_Fail("Failed to open --regress output file %s\n", esl_opt_GetString(go, "--regress"));
     }
 
+  /* create RNG */
+  if (! esl_opt_IsDefault(go, "--seed")) 
+    cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "--seed"));
+  else cfg->r = esl_randomness_CreateTimeseeded();
+
+  if (cfg->r       == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create random number generator: probably out of memory");
+  return eslOK;
+}
+
+/* init_shared_cfg() 
+ * Shared initialization of cfg
+ *
+ * Sets/creates:
+ *    cfg->ncm
+ *    cfg->nstages
+ *    cfg->beta
+ *    cfg->tau
+ *    cfg->w
+ *    cfg->s1_w
+ *    
+ * Because this is called from an MPI worker, it cannot print; 
+ * it must return error messages, not print them.
+ */
+static int
+init_shared_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
+{
+  int status;
+  int s;
+
+  cfg->ncm = 0;
   /* determine the number of stages and beta and tau values for each stage */
   cfg->beta = NULL;
   cfg->tau  = NULL;
-  int s;
+
   if((! (esl_opt_IsDefault(go, "--betas"))) && (! (esl_opt_IsDefault(go, "--betae"))))
     {
       cfg->nstages = esl_opt_GetInteger(go, "--betae") - esl_opt_GetInteger(go, "--betas") + 2;
@@ -390,18 +415,9 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 	  cfg->tau[1] = esl_opt_GetReal(go, "--tau");
 	}
     }  
-  cfg->s1_sc = NULL; /* alloc'ed and filled in first call of output_result */
   cfg->s1_w  = esl_stopwatch_Create();
   cfg->w     = esl_stopwatch_Create();
 
-  /* create RNG */
-  if (! esl_opt_IsDefault(go, "--seed")) 
-    cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "--seed"));
-  else cfg->r = esl_randomness_CreateTimeseeded();
-
-  cfg->ncm = 0;
-
-  if (cfg->r       == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create random number generator: probably out of memory");
   if (cfg->s1_w    == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create stopwatch: probably out of memory");
   if (cfg->w       == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create stopwatch: probably out of memory");
 
@@ -425,11 +441,9 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   char     errbuf[eslERRBUFSIZE];
   CM_t    *cm;
   seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, holds seqs, parsetrees, CP9 traces, postcodes */
-  int      i;
 
   if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
-  /* init_shared_cfg UNNEC? */
-  /*if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);*/
+  if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
 
   while (CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
     {
@@ -442,7 +456,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       /* align sequences cfg->nstages times */
       for(cfg->s = 0; cfg->s < cfg->nstages; cfg->s++) 
 	{
-	  /* Start timing. */
+	  /* start timing */
 	  if(cfg->s == 0) esl_stopwatch_Start(cfg->s1_w);
 	  else            esl_stopwatch_Start(cfg->w);
 	  
@@ -458,16 +472,12 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if ((status = output_result(go, cfg, errbuf, cm, seqs_to_aln)) != eslOK) cm_Fail(errbuf);
 
 	  /* clean up, free everything in seqs_to_aln but the sqs, which we'll reuse for each stage */
-	  if(seqs_to_aln->tr       != NULL) { for (i=0; i < seqs_to_aln->nseq; i++) if(seqs_to_aln->tr[i] != NULL)       FreeParsetree(seqs_to_aln->tr[i]); }
-	  if(seqs_to_aln->cp9_tr   != NULL) { for (i=0; i < seqs_to_aln->nseq; i++) if(seqs_to_aln->cp9_tr[i] != NULL)   CP9FreeTrace(seqs_to_aln->cp9_tr[i]); }
-	  if(seqs_to_aln->postcode != NULL) { for (i=0; i < seqs_to_aln->nseq; i++) if(seqs_to_aln->postcode[i] != NULL) free(seqs_to_aln->postcode[i]); }
-	  for (i=0; i < seqs_to_aln->nseq; i++) seqs_to_aln->sc[i] = IMPOSSIBLE;
-	  seqs_to_aln->tr       = NULL;
-	  seqs_to_aln->cp9_tr   = NULL;
-	  seqs_to_aln->postcode = NULL;
+	  FreePartialSeqsToAln(seqs_to_aln, FALSE, TRUE, TRUE, TRUE, TRUE);
+	                                 /* sq,    tr,  cp9_tr,post, sc  */ 
 	}
       FreeSeqsToAln(seqs_to_aln); 
       FreeCM(cm);
+      printf("//\n");
     }
 }
 
@@ -518,17 +528,17 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   seqs_to_aln_t  *all_seqs_to_aln    = NULL;
   seqs_to_aln_t  *worker_seqs_to_aln = NULL;
   int            *seqidx         = NULL;
-  int             i;
 
   char     errbuf[eslERRBUFSIZE];
   MPI_Status mpistatus; 
   int      n;
+  int      i;
 
   /* Master initialization: including, figure out the alphabet type.
    * If any failure occurs, delay printing error message until we've shut down workers.
    */
   if (xstatus == eslOK) { if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) xstatus = status; }
-  /*if (xstatus == eslOK) { if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) xstatus = status; }*/
+  if (xstatus == eslOK) { if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) xstatus = status; }
   if (xstatus == eslOK) { bn = 4096; if ((buf = malloc(sizeof(char) * bn)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
   if (xstatus == eslOK) { if ((seqidx  = malloc(sizeof(int) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
   for (wi = 0; wi < cfg->nproc; wi++) seqidx[wi] = 0;
@@ -567,6 +577,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       /* align sequences cfg->nstages times */
       for(cfg->s = 0; cfg->s < cfg->nstages; cfg->s++) 
 	{
+	  have_work     = TRUE;	/* TRUE while work remains  */
 	  /* Start timing. */
 	  if(cfg->s == 0) esl_stopwatch_Start(cfg->s1_w);
 	  else            esl_stopwatch_Start(cfg->w);
@@ -576,12 +587,12 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
 	  if(cfg->s == 0) {
 	    /* get sequences, either generate them (--emit (default) or --random) or read them (--infile) */
-	    if((status = get_sequences(go, cfg, errbuf, cm, FALSE, &all_seqs_to_aln)) != eslOK) cm_Fail(errbuf);
+	    if((status = get_sequences(go, cfg, errbuf, cm, TRUE, &all_seqs_to_aln)) != eslOK) cm_Fail(errbuf);
 	  }
 
 	  /* determine number of sequences per worker, depends on the stage (b/c stage 1 is slow, stage 2+ may be fast) */
 	  determine_nseq_per_worker(go, cfg, cm, &nseq_per_worker); /* this func dies internally if there's some error */
-	  printf("cfg->s: %d nseq_per_worker: %d\n", cfg->s, nseq_per_worker);
+	  ESL_DPRINTF1(("cfg->s: %d nseq_per_worker: %d\n", cfg->s, nseq_per_worker));
 	  
 	  wi = 1;
 	  nseq_sent = 0;
@@ -647,8 +658,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	      if (have_work)
 		{   
 		  /* send new alignment job */
-		  ESL_DPRINTF1(("MPI master is sending sequence to search to worker %d\n", wi));
-		  if ((status = cm_seqs_to_aln_MPISend(all_seqs_to_aln, all_seqs_to_aln->nseq - nseq_this_worker, nseq_this_worker, wi, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI search job send failed");
+		  ESL_DPRINTF1(("MPI master is sending sequences to align to worker %d\n", wi));
+		  if ((status = cm_seqs_to_aln_MPISend(all_seqs_to_aln, nseq_sent, nseq_this_worker, wi, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI search job send failed");
 		  seqidx[wi] = nseq_sent;
 		  nseq_sent += nseq_this_worker;
 		  wi++;
@@ -672,20 +683,23 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if ((status = output_result(go, cfg, errbuf, cm, all_seqs_to_aln)) != eslOK) cm_Fail(errbuf);
 
 	  /* clean up, free everything in all_seqs_to_aln but the sqs, which we'll reuse for each stage */
-	  if(all_seqs_to_aln->tr       != NULL) { for (i=0; i < all_seqs_to_aln->nseq; i++) if(all_seqs_to_aln->tr[i] != NULL)       FreeParsetree(all_seqs_to_aln->tr[i]); }
-	  if(all_seqs_to_aln->cp9_tr   != NULL) { for (i=0; i < all_seqs_to_aln->nseq; i++) if(all_seqs_to_aln->cp9_tr[i] != NULL)   CP9FreeTrace(all_seqs_to_aln->cp9_tr[i]); }
-	  if(all_seqs_to_aln->postcode != NULL) { for (i=0; i < all_seqs_to_aln->nseq; i++) if(all_seqs_to_aln->postcode[i] != NULL) free(all_seqs_to_aln->postcode[i]); }
+	  if(all_seqs_to_aln->tr       != NULL) { for (i=0; i < all_seqs_to_aln->nseq; i++) if(all_seqs_to_aln->tr[i] != NULL)       { FreeParsetree(all_seqs_to_aln->tr[i]);  all_seqs_to_aln->tr[i] = NULL; } }
+	  if(all_seqs_to_aln->cp9_tr   != NULL) { for (i=0; i < all_seqs_to_aln->nseq; i++) if(all_seqs_to_aln->cp9_tr[i] != NULL)   { CP9FreeTrace(all_seqs_to_aln->cp9_tr[i]); all_seqs_to_aln->tr[i] = NULL; } }
+	  if(all_seqs_to_aln->postcode != NULL) { for (i=0; i < all_seqs_to_aln->nseq; i++) if(all_seqs_to_aln->postcode[i] != NULL) { free(all_seqs_to_aln->postcode[i]); all_seqs_to_aln->tr[i] = NULL; } }
 	  for (i=0; i < all_seqs_to_aln->nseq; i++) all_seqs_to_aln->sc[i] = IMPOSSIBLE;
-	  all_seqs_to_aln->tr       = NULL;
-	  all_seqs_to_aln->cp9_tr   = NULL;
-	  all_seqs_to_aln->postcode = NULL;
+	  /*all_seqs_to_aln->tr       = NULL;
+	    all_seqs_to_aln->cp9_tr   = NULL;
+	    all_seqs_to_aln->postcode = NULL;*/
+	  /*FreePartialSeqsToAln(all_seqs_to_aln, FALSE, TRUE, TRUE, TRUE, FALSE);*/
+	                                     /* sq,    tr,  cp9_tr,post, sc  */ 
 	}
+      ESL_DPRINTF1(("MPI master: done with this CM.\n"));
 
-      ESL_DPRINTF1(("MPI master: done with this CM. Telling all workers\n"));
-      for (wi = 1; wi < cfg->nproc; wi++) 
-	if ((status = cm_seqs_to_aln_MPISend(NULL, 0, 0, wi, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("Shutting down a worker failed.");
-      FreeCM(cm);
+      /*for (wi = 1; wi < cfg->nproc; wi++) 
+	if ((status = cm_seqs_to_aln_MPISend(NULL, 0, 0, wi, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("Shutting down a worker failed.");*/
       FreeSeqsToAln(all_seqs_to_aln); 
+      FreeCM(cm);
+      printf("//\n");
     }
 
   /* On success or recoverable errors:
@@ -712,19 +726,21 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int           pos;
   char          errbuf[eslERRBUFSIZE];
   seqs_to_aln_t *seqs_to_aln = NULL;
-  int           i;
+  int           do_free_tr = TRUE;
+  int           do_free_cp9_tr = TRUE;
+
   /* After master initialization: master broadcasts its status.
    */
   MPI_Bcast(&xstatus, 1, MPI_INT, 0, MPI_COMM_WORLD);
   if (xstatus != eslOK) return; /* master saw an error code; workers do an immediate normal shutdown. */
   ESL_DPRINTF1(("worker %d: sees that master has initialized\n", cfg->my_rank));
   
-  /* Master now broadcasts worker initialization information (db size N) 
-   * Workers returns their status post-initialization.
+  /* Workers returns their status post-initialization.
    * Initial allocation of wbuf must be large enough to guarantee that
    * we can pack an error result into it, because after initialization,
    * errors will be returned as packed (code, errbuf) messages.
    */
+  if (xstatus == eslOK) { if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK)   xstatus = status;  }
   if (xstatus == eslOK) { wn = 4096;  if ((wbuf = malloc(wn * sizeof(char))) == NULL) xstatus = eslEMEM; }
   MPI_Reduce(&xstatus, &status, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD); /* everyone sends xstatus back to master */
   if (xstatus != eslOK) {
@@ -736,17 +752,17 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   /* source = 0 (master); tag = 0 */
   while ((status = cm_worker_MPIBcast(0, MPI_COMM_WORLD, &wbuf, &wn, &(cfg->abc), &cm)) == eslOK)
     {
+      cfg->ncm++;  
       ESL_DPRINTF1(("Worker %d succesfully received CM, num states: %d num nodes: %d\n", cfg->my_rank, cm->M, cm->nodes));
-      
 
       /* align sequences cfg->nstages times */
-      for(cfg->s = 0; cfg->s < cfg->nstages; cfg->s++) 
+      for(cfg->s = 0; cfg->s < cfg->nstages; cfg->s++)
 	{
 	  /* Start timing. */
 	  if(cfg->s == 0) esl_stopwatch_Start(cfg->s1_w);
 	  else            esl_stopwatch_Start(cfg->w);
 
-	  /* initialize the flags/options/params of the CM */
+	  /* initialize the flags/options/params of the CM for current stage */
 	  if((status   = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) goto ERROR;
       
 	  while((status = cm_seqs_to_aln_MPIRecv(cfg->abc, 0, 0, MPI_COMM_WORLD, &wbuf, &wn, &seqs_to_aln)) == eslOK)
@@ -756,15 +772,12 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	      if ((status = process_workunit(go, cfg, errbuf, cm, seqs_to_aln)) != eslOK) cm_Fail(errbuf);
 	      ESL_DPRINTF1(("worker %d: has gathered alignment results\n", cfg->my_rank));
 	      
-	      /* clean up, free everything but the scores, which we'll pass back to the master */
-	      if(seqs_to_aln->sq       != NULL) { for (i=0; i < seqs_to_aln->nseq; i++) if(seqs_to_aln->sq[i] != NULL)       esl_sq_Destroy(seqs_to_aln->sq[i]); }
-	      if(seqs_to_aln->tr       != NULL) { for (i=0; i < seqs_to_aln->nseq; i++) if(seqs_to_aln->tr[i] != NULL)       FreeParsetree(seqs_to_aln->tr[i]); }
-	      if(seqs_to_aln->cp9_tr   != NULL) { for (i=0; i < seqs_to_aln->nseq; i++) if(seqs_to_aln->cp9_tr[i] != NULL)   CP9FreeTrace(seqs_to_aln->cp9_tr[i]); }
-	      if(seqs_to_aln->postcode != NULL) { for (i=0; i < seqs_to_aln->nseq; i++) if(seqs_to_aln->postcode[i] != NULL) free(seqs_to_aln->postcode[i]); }
-	      seqs_to_aln->sq       = NULL;
-	      seqs_to_aln->tr       = NULL;
-	      seqs_to_aln->cp9_tr   = NULL;
-	      seqs_to_aln->postcode = NULL;
+	      /* clean up, free everything in seqs_to_aln but the scores, and maybe the parsetrees or 
+	       * cp9_traces (only if --regress or --tfile enabled though), which we'll pass back to the master */
+	      do_free_tr = do_free_cp9_tr = TRUE;
+	      if((! esl_opt_IsDefault(go, "--regress")) || (! esl_opt_IsDefault(go, "--tfile"))) do_free_tr = do_free_cp9_tr = FALSE;
+	      FreePartialSeqsToAln(seqs_to_aln, TRUE, do_free_tr, do_free_cp9_tr, TRUE, FALSE);
+                                             /* sq,   tr,         cp9_tr,         post, sc   */ 
 
 	      n = 0;
 	      if (cm_seqs_to_aln_MPIPackSize(seqs_to_aln, 0, seqs_to_aln->nseq, MPI_COMM_WORLD, &sz) != eslOK) goto ERROR; n += sz;  
@@ -782,7 +795,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	      ESL_DPRINTF1(("worker %d: has sent results to master in message of %d bytes\n", cfg->my_rank, pos));
 	      
 	    }
-	  if(status == eslEOD)ESL_DPRINTF1(("worker %d: has seen message to stop for this stage with this CM.\n", cfg->my_rank));
+	  if(status == eslEOD) ESL_DPRINTF1(("worker %d: has seen message to stop for this stage with this CM.\n", cfg->my_rank));
 	  else goto ERROR;
 
 	  /* stop timing */
@@ -796,7 +809,6 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  }
 	}
       FreeCM(cm);
-      cm = NULL;
     }
   if (status == eslEOD) ESL_DPRINTF1(("worker %d told CMs are done.\n", cfg->my_rank));
   else goto ERROR;
@@ -864,8 +876,9 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
     {
       ESL_ALLOC(cfg->s1_sc, sizeof(float) * seqs_to_aln->nseq);
       for(i = 0; i < seqs_to_aln->nseq; i++) {
-	cfg->s1_sc[i] = ParsetreeScore(cm, seqs_to_aln->tr[i], seqs_to_aln->sq[i]->dsq, FALSE);
-	ESL_DASSERT1(((fabs(cfg->s1_sc[i] - seqs_to_aln->sc[i])) < 1e-4));
+	cfg->s1_sc[i] = seqs_to_aln->sc[i];
+	/*cfg->s1_sc[i] = ParsetreeScore(cm, seqs_to_aln->tr[i], seqs_to_aln->sq[i]->dsq, FALSE);
+	  ESL_DASSERT1(((fabs(cfg->s1_sc[i] - seqs_to_aln->sc[i])) < 1e-4));*/
       }
     }
   else /* if(cfg->s > 0) we don't do the comparison test for stage 0 */
@@ -905,7 +918,8 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	    printf("Avg sc diff(>1e-4):      %.2f\n", (diff_sc / ((float) diff_ct)));
 	  printf("Num   diff (>1e-4):      %d\n", (diff_ct));
 	  printf("Fract diff (>1e-4):      %.5f\n", (((float) diff_ct) / ((float) seqs_to_aln->nseq)));
-	  printf("\n\n");
+	  printf("---------------------------------\n");
+	  printf("\n");
 	}
     }
   return eslOK;
@@ -999,9 +1013,23 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
     if(! esl_opt_GetBoolean(go, "--qdbsmall"))
       cm->align_opts  |= CM_ALIGN_NOSMALL;
   }
-  printf("Stage %2d alignment:\n", (cfg->s+1));
-  summarize_align_options(cm);
-
+  if(cfg->my_rank == 0) 
+    {
+      if(cfg->s == 0 && cfg->ncm == 1) {
+	if     (! esl_opt_IsDefault(go, "--infile")) printf("Sequence mode: file (%s)\n", esl_opt_GetString(go, "--infile"));
+	else if(! esl_opt_IsDefault(go, "--random")) printf("Sequence mode: random (seed: %ld)\n", esl_randomness_GetSeed(cfg->r));
+	else                                         printf("Sequence mode: CM emitted (seed: %ld)\n", esl_randomness_GetSeed(cfg->r));
+      }
+      if(cfg->s == 0) { 
+	printf("=================================\n");
+	printf("CM: ");
+	if(cm->name == NULL) printf("%d\n", (cfg->ncm+1));
+	else printf("%s\n", cm->name);
+	printf("=================================\n");
+      }
+      printf("Stage %2d alignment:\n", (cfg->s+1));
+      summarize_align_options(cfg, cm);
+    }
   /* finally, configure the CM for alignment based on cm->config_opts and cm->align_opts.
    * set local mode, make cp9 HMM, calculate QD bands etc. 
    */
@@ -1014,7 +1042,7 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
  * Date:     EPN, Wed Jan 17 09:08:18 2007
  * Purpose:  Print out alignment options in pretty format. 
  */
-int summarize_align_options(CM_t *cm)
+int summarize_align_options(const struct cfg_s *cfg, CM_t *cm)
 {
   printf("---------------------------------\n");
   /* Algorithm */
@@ -1058,14 +1086,10 @@ int summarize_align_options(CM_t *cm)
   /* Sub mode? */
   if(cm->align_opts & CM_ALIGN_SUB)
     printf("Sub mode.\n");
-  if(cm->align_opts & CM_ALIGN_FSUB)
-    printf("Full Sub mode.\n");
 
-  printf("---------------------------------\n");
+  if(cfg->ncm > 1) printf("---------------------------------\n");
   return eslOK;
 }
-
-
 
 /* get_sequences()
  * Get sequences to score by either generating them

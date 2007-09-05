@@ -192,8 +192,8 @@ int GrowSeqsToAln(seqs_to_aln_t *seqs_to_aln, int new_alloc, int i_am_mpi_master
  *
  * Purpose:  Free a seqs_to_aln_t object.
  *
- * Returns:  eslOK on success. Immediately dies if some error occurs.
- * Purpose:  Frees a seqs_to_aln_t structure
+ * Returns:  void
+ *
  */
 void FreeSeqsToAln(seqs_to_aln_t *s) 
 {
@@ -227,6 +227,54 @@ void FreeSeqsToAln(seqs_to_aln_t *s)
   if(s->sc != NULL) free(s->sc);
 
   free(s);
+}
+
+/*
+ * Function: FreePartialSeqsToAln()
+ *
+ * Date:     EPN, Wed Sep  5 06:58:39 2007
+ *
+ * Purpose:  Free specified parts of a seqs_to_aln_t object. 
+ *
+ * Returns:  void
+ *
+ */
+void FreePartialSeqsToAln(seqs_to_aln_t *s, int do_free_sq, int do_free_tr, int do_free_cp9_tr, int do_free_post, int do_free_sc) 
+{
+  int i;
+  
+  if(do_free_sq && s->sq != NULL) {
+    for (i=0; i < s->nseq; i++) 
+      if(s->sq[i] != NULL) esl_sq_Destroy(s->sq[i]);
+    free(s->sq);
+    s->sq = NULL;
+  }
+
+  if(do_free_tr && s->tr != NULL) {
+    for (i=0; i < s->nseq; i++)
+      if(s->tr[i] != NULL) FreeParsetree(s->tr[i]);
+    free(s->tr);
+    s->tr = NULL;
+  }
+
+  if(do_free_cp9_tr && s->cp9_tr != NULL) {
+    for (i=0; i < s->nseq; i++)
+      if(s->cp9_tr[i] != NULL) CP9FreeTrace(s->cp9_tr[i]);
+    free(s->cp9_tr);
+    s->cp9_tr = NULL;
+  }
+ 
+  if(do_free_post && s->postcode != NULL) {
+    for (i=0; i < s->nseq; i++)
+      if(s->postcode[i] != NULL) free(s->postcode[i]);
+    free(s->postcode);
+    s->postcode = NULL;
+  }
+
+  if(do_free_sc && s->sc != NULL) {
+    free(s->sc);
+    s->sc = NULL;
+  }
 }
 
 /*
@@ -864,6 +912,7 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
   if( sq_mode && (seqs_to_aln->tr       != NULL)) cm_Fail("ERROR: actually_align_targets(), in sq_mode, seqs_to_aln->tr is non-NULL.\n");
   if( sq_mode && (seqs_to_aln->cp9_tr   != NULL)) cm_Fail("ERROR: actually_align_targets(), in sq_mode, seqs_to_aln->cp9_tr is non-NULL.\n");
   if( sq_mode && (seqs_to_aln->postcode != NULL)) cm_Fail("ERROR: actually_align_targets(), in sq_mode, seqs_to_aln->postcode is non-NULL.\n");
+  if( sq_mode && (seqs_to_aln->sc       != NULL)) cm_Fail("ERROR: actually_align_targets(), in sq_mode, seqs_to_aln->sc is non-NULL.\n");
   
   if(dsq_mode && (cm->align_opts & CM_ALIGN_HMMONLY)) cm_Fail("ERROR: actually_align_targets(), in dsq_mode, CM_ALIGN_HMMONLY option on.\n");
   if(dsq_mode && (cm->align_opts & CM_ALIGN_POST))    cm_Fail("ERROR: actually_align_targets(), in dsq_mode, CM_ALIGN_POST option on.\n");
