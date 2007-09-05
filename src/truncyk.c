@@ -1,3 +1,19 @@
+/* truncyk.c
+ * DLK
+ *
+ * Fully local alignment of  target (sub)sequence to a CM
+ * using truncated-CYK algorithm
+ */
+
+/************************************************************
+ *
+ * truncyk external API:
+ *
+ * TrCYK_DnC()          - Divide and conquer
+ * TrCYK_Inside()       - Inside with or without traceback
+ *
+ ************************************************************/
+
 #include "config.h"
 
 #include <stdio.h>
@@ -15,6 +31,13 @@
 
 #define USED_LOCAL_BEGIN 101
 #define USED_EL          102
+
+struct deckpool_s {
+   float ***pool;
+   int      n;
+   int      nalloc;
+   int      block;
+};
 
 /* Structure: AlphaMats_t */
 typedef struct alphamats_s {
@@ -42,9 +65,6 @@ typedef struct shadowmats_s {
    void ***T;
 } ShadowMats_t;
 
-/* External API */
-// CHANGEME - needed!
-
 /* Divide and conquer */
 float tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
                           int r, int vend, int i0, int j0, int allow_LM, int allow_RM);
@@ -54,7 +74,7 @@ void        tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
                           int r, int z,    int i0, int i1, int j1, int j0,
                           int useEL, int force_LM, int force_RM);
 
-/* Alignment engine */
+/* Alignment engines */
 /* trinside is legacy, aviod use! */
 float trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
                 void ****ret_shadow, void ****ret_L_shadow, void ****ret_R_shadow,
@@ -77,38 +97,28 @@ void tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j
                  BetaMats_t *ret_beta, struct deckpool_s *dpool, struct deckpool_s **ret_dpool);
 
 /* Traceback routine */
-float trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
-                int i0, int j0, int allow_begin, int *dmin, int *dmax);
+float tr_insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
+                int i0, int j0, int allow_begin);
 float tr_vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, 
                   int i0, int i1, int j1, int j0, int useEL, int force_LM, int force_RM);
 
-/* Function: TrCYKInside()
+/* Function: TrCYK_DnC()
  * Author:   DLK
  *
- * Purpose:  Full CYK alignment for truncated sequences
- *           with traceback
- * 
- *           Based on CYKInside()
+ * Purpose:  Divide-and-conquer CYK alignment
+ *           for truncated sequences with traceback
  *
- * Args:     cm      - the covariance model
- *           dsq     - the sequence, 1..L
- *           L       - length of the sequence
- *           r       - root of subgraph to align to target subseq (usually 0, the model's root)
- *           i0      - start of target subsequence (usually 1, beginning of dsq)
- *           j0      - end of target subsequence (usually L, end of dsq)
- *           ret_tr  - RETURN: traceback (pass NULL if trace isn't wanted)
- *           dmin    - minimum d bound for each state v (NULL if non-banded)
- *           dmax    - maximum d bound for each state v (NULL if non-banded)
+ * Args:
  *
- * Returns;  score of the alignment in bits
+ * Returns:  score of the alignment in bits
  */
 float
-TrCYKInside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr,
-            int *dmin, int *dmax)
+TrCYK_DnC(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr)
 {
    Parsetree_t *tr;
    int          z;
-   float        sc;
+   float        sc, bsc;
+   int          v, model_len;
 
    /* Check input parameters */
    if ( cm->stid[r] != ROOT_S )
@@ -124,20 +134,107 @@ TrCYKInside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret
    tr = CreateParsetree();
    InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, i0, j0, r);
    z = cm->M-1;
-   sc = 0.0;
 
    /* If local begin is known */
    if ( r != 0 )
    {
       InsertTraceNode(tr, 0, TRACE_LEFT_CHILD, i0, j0, r);
       z = CMSubtreeFindEnd(cm, r);
-      sc = cm->beginsc[r];
    }
 
-   /* Solve by calling trinsideT() */
-   sc += trinsideT(cm, dsq, L, tr, r, z, i0, j0, (r==0), dmin, dmax);
+   /* Solve by calling tr_generic_splitter() */
+   sc = tr_generic_splitter(cm, dsq, L, tr, r, z, i0, j0, TRUE, TRUE);
 
-   if ( ret_tr != NULL ) *ret_tr = tr; else FreeParsetree(tr);
+   model_len = 0;
+   for ( v = r; v < cm->M; v++ )
+   {
+      if      ( cm->stid[v] == MATP_MP ) model_len += 2;
+      else if ( cm->stid[v] == MATL_ML ) model_len += 1;
+      else if ( cm->stid[v] == MATR_MR ) model_len += 1;
+   }
+   /* 2.0 instead of 2 to force floating point division, not integer division */
+   bsc = sreLOG2(2.0/(model_len*(model_len+1)));
+
+   sc += bsc;
+
+   if ( ret_tr != NULL ) { *ret_tr = tr; }
+   else { FreeParsetree(tr); }
+
+   return sc;
+}
+
+/* Function: TrCYK_Inside()
+ * Author:   DLK
+ *
+ * Purpose:  Full CYK alignment for truncated sequences
+ *           with traceback
+ * 
+ *           Based on CYKInside()
+ *
+ * Args:     cm      - the covariance model
+ *           dsq     - the sequence, 1..L
+ *           L       - length of the sequence
+ *           r       - root of subgraph to align to target subseq (usually 0, the model's root)
+ *           i0      - start of target subsequence (usually 1, beginning of dsq)
+ *           j0      - end of target subsequence (usually L, end of dsq)
+ *           ret_tr  - RETURN: traceback (pass NULL if trace isn't wanted)
+ *
+ * Returns;  score of the alignment in bits
+ */
+float
+TrCYK_Inside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr)
+{
+   Parsetree_t *tr;
+   int          z;
+   float        sc, bsc;
+   int          v, model_len;
+
+   /* Check input parameters */
+   if ( cm->stid[r] != ROOT_S )
+   {
+      if (! (cm->flags & CM_LOCAL_BEGIN)) Die("internal error: we're not in local mode, but r is not root");
+      if ( (cm->stid[r] != MATP_MP) &&
+           (cm->stid[r] != MATL_ML) &&
+           (cm->stid[r] != MATR_MR) &&
+           (cm->stid[r] != BIF_B  )    )  Die("internal error: trying to do a local begin at a non-mainline start");
+   }
+
+   if ( ret_tr != NULL)
+   {
+      /* Create parse tree and initialize */
+      tr = CreateParsetree();
+      InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, i0, j0, r);
+      z = cm->M-1;
+ 
+      /* If local begin is known */
+      if ( r != 0 )
+      {
+         InsertTraceNode(tr, 0, TRACE_LEFT_CHILD, i0, j0, r);
+         z = CMSubtreeFindEnd(cm, r);
+      }
+
+      /* Solve by calling tr_insideT() */
+      sc = tr_insideT(cm, dsq, L, tr, r, z, i0, j0, (r==0));
+   }
+   else
+   {
+      sc = tr_inside(cm, dsq, L, r, z, i0, j0, BE_EFFICIENT,
+                     NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+   }
+
+   model_len = 0;
+   for ( v = r; v < cm->M; v++ )
+   {
+      if      ( cm->stid[v] == MATP_MP ) model_len += 2;
+      else if ( cm->stid[v] == MATL_ML ) model_len += 1;
+      else if ( cm->stid[v] == MATR_MR ) model_len += 1;
+   }
+   /* 2.0 instead of 2 to force floating point division, not integer division */
+   bsc = sreLOG2(2.0/(model_len*(model_len+1)));
+
+   sc += bsc;
+
+   if ( ret_tr != NULL ) *ret_tr = tr;
 
    return sc;
 }
@@ -175,11 +272,14 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    int        b3_v, b3_j;
    float      b1_sc, b2_sc, b3_sc;
 
-   /* Case 1: problem size is small; solve with trinsideT()
+   alpha = MallocOrDie(sizeof(AlphaMats_t));
+   beta  = MallocOrDie(sizeof(BetaMats_t));
+
+   /* Case 1: problem size is small; solve with tr_insideT()
     * size calculation is heuristic based on size of insideT() */
    if (5*insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT)
    {
-      sc = trinsideT(cm, dsq, L, tr, r, z, i0, j0, (r==0), NULL, NULL);
+      sc = tr_insideT(cm, dsq, L, tr, r, z, i0, j0, (r==0));
       return sc;
    }
 
@@ -325,7 +425,8 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    free_vjd_matrix(alpha->R, cm->M, i0, j0);
    free_vjd_matrix(alpha->T, cm->M, i0, j0);
    free_vjd_matrix( beta->J, cm->M, i0, j0);
-// need to free the other stuff in beta too... */
+   free(beta->L);
+   free(beta->R);
 
    /* Found the best path, now to interpret and sub-divide */
    if ( v_mode ) /* parent graph is non-empty */
@@ -417,11 +518,14 @@ tr_wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    int          b1_mode, b1_v, b1_i, b1_j;
    int          b2_mode, b2_v, b2_j;
 
+   alpha = MallocOrDie(sizeof(AlphaMats_t));
+   beta  = MallocOrDie(sizeof(BetaMats_t));
+
    /* Special case: problem is small enough to be solved with traceback */
    if ( (cm->ndidx[z] == cm->ndidx[r] + 1) || 
         (5 * insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT) )
    {
-      sc = trinsideT(cm, dsq, L, tr, r, z, i0, j0, (r==0), NULL, NULL);
+      sc = tr_insideT(cm, dsq, L, tr, r, z, i0, j0, (r==0));
       return sc;
    }
 
@@ -590,6 +694,9 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
    float        b_sc;
    int          b_mode, b_v, b_i, b_j;
 
+   alpha = MallocOrDie(sizeof(AlphaMats_t));
+   beta  = MallocOrDie(sizeof(BetaMats_t));
+
 // Recommend a special handler for the fully marginal cases (linear alg.)
    /*
    if ( force_LM)
@@ -711,9 +818,9 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
    free_vji_matrix(alpha->J, cm->M, j1, j0);
    free_vji_matrix(alpha->L, cm->M, j1, j0);
    free_vji_matrix(alpha->R, cm->M, j1, j0);
-   free_vji_matrix(alpha->T, cm->M, j1, j0);
    free_vji_matrix( beta->J, cm->M, j1, j0);
-// Free the other betas....
+   free(beta->L);
+   free(beta->R);
 
    /* Interpret and subdivide */
    if ( p_mode )
@@ -760,6 +867,13 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
    sc = tr_inside(cm, dsq, L, vroot, vend, i0, j0, do_full,
                   NULL, NULL, NULL, NULL, &shadow,
                   ret_mode, ret_v, ret_i, ret_j);
+   *ret_shadow = shadow.J;
+   *ret_L_shadow = shadow.L;
+   *ret_R_shadow = shadow.R;
+   *ret_T_shadow = shadow.T;
+   *ret_Lmode_shadow = shadow.Lmode;
+   *ret_Rmode_shadow = shadow.Rmode;
+
    return sc;
 }
 
@@ -808,8 +922,6 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
    char   **yshad;
    int      r_v, r_i, r_j, r_mode;
    float    r_sc;
-   int      model_len;
-   float    bsc;
 
    float ***alpha;
    float ***L_alpha;
@@ -838,21 +950,6 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
    r_mode = 3;
    r_sc = IMPOSSIBLE;
    W = j0-i0+1;
-   model_len = 0;
-   for ( v = vend; v >= vroot; v-- )
-   {
-      if      ( cm->stid[v] == MATP_MP ) model_len += 2;
-      else if ( cm->stid[v] == MATL_ML ) model_len += 1;
-      else if ( cm->stid[v] == MATR_MR ) model_len += 1;
-   }
-// CHANGEME!
-// This correction doesn't belong here - it should be out at the top level API
-// because in D and C, inside may be called more that once
-// Existing drivers that call directly into the alignment engine (like the
-// one for parameterizing mu and lambda) will need to be adjusted so that they
-// get the correction as well
-   /* 2.0 instead of 2 to force floating point division, not integer division */
-   bsc = sreLOG2(2.0/(model_len*(model_len+1)));
 
    /* Make a deckpool */
    if ( dpool == NULL ) dpool = deckpool_create();
@@ -1133,14 +1230,14 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
 
                /* Shouldn't allow exit from marginal B if one of the children is NULL, sinee that is covered by the */
                /* root of the other child, and we haven't added anything above the bifurcation */
-               if ((  alpha[v][j][d] + bsc > r_sc) && (allow_J_exit) )
-               { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc +   alpha[v][j][d]; }
-               if ((L_alpha[v][j][d] + bsc > r_sc) && (allow_L_exit) )
-               { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc + L_alpha[v][j][d]; }
-               if ((R_alpha[v][j][d] + bsc > r_sc) && (allow_R_exit) )
-               { r_mode = 1; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc + R_alpha[v][j][d]; }
-               if ( T_alpha[v][j][d] + bsc > r_sc )
-               { r_mode = 0; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc + T_alpha[v][j][d]; }
+               if ((  alpha[v][j][d] > r_sc) && (allow_J_exit) )
+               { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc =   alpha[v][j][d]; }
+               if ((L_alpha[v][j][d] > r_sc) && (allow_L_exit) )
+               { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = L_alpha[v][j][d]; }
+               if ((R_alpha[v][j][d] > r_sc) && (allow_R_exit) )
+               { r_mode = 1; r_v = v; r_j = j; r_i = j-d+1; r_sc = R_alpha[v][j][d]; }
+               if ( T_alpha[v][j][d] > r_sc )
+               { r_mode = 0; r_v = v; r_j = j; r_i = j-d+1; r_sc = T_alpha[v][j][d]; }
             }
          }
       }
@@ -1225,9 +1322,9 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
 
             for ( d = 1; d <= jp; d++ )
             {
-               if (   alpha[v][j][d] + bsc > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc +   alpha[v][j][d]; }
-               if ( L_alpha[v][j][d] + bsc > r_sc ) { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc + L_alpha[v][j][d]; }
-               if ( R_alpha[v][j][d] + bsc > r_sc ) { r_mode = 1; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc + R_alpha[v][j][d]; }
+               if (   alpha[v][j][d] > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc =   alpha[v][j][d]; }
+               if ( L_alpha[v][j][d] > r_sc ) { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = L_alpha[v][j][d]; }
+               if ( R_alpha[v][j][d] > r_sc ) { r_mode = 1; r_v = v; r_j = j; r_i = j-d+1; r_sc = R_alpha[v][j][d]; }
             }
          }
       }
@@ -1302,8 +1399,8 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
 
             for ( d = 1; d <= jp; d++ )
             {
-               if (   alpha[v][j][d] + bsc > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc +   alpha[v][j][d]; }
-               if ( L_alpha[v][j][d] + bsc > r_sc ) { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc + L_alpha[v][j][d]; }
+               if (   alpha[v][j][d] > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc =   alpha[v][j][d]; }
+               if ( L_alpha[v][j][d] > r_sc ) { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = L_alpha[v][j][d]; }
             }
          }
       }
@@ -1377,8 +1474,8 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
 
             for ( d = 1; d <= jp; d++ )
             {
-               if (   alpha[v][j][d] + bsc > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc +   alpha[v][j][d]; }
-               if ( R_alpha[v][j][d] + bsc > r_sc ) { r_mode = 1; r_v = v; r_j = j; r_i = j-d+1; r_sc = bsc + R_alpha[v][j][d]; }
+               if (   alpha[v][j][d] > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc =   alpha[v][j][d]; }
+               if ( R_alpha[v][j][d] > r_sc ) { r_mode = 1; r_v = v; r_j = j; r_i = j-d+1; r_sc = R_alpha[v][j][d]; }
             }
          }
       }
@@ -1540,13 +1637,15 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
    if ( arg_beta == NULL )
    {
       beta->J = MallocOrDie(sizeof(float **) * (cm->M+1));
-      beta->L[0] = MallocOrDie(sizeof(float) * (cm->M+1)*W);
-      beta->R[0] = MallocOrDie(sizeof(float) * (cm->M+1)*W);
+      beta->L = MallocOrDie(sizeof(float  *) * (cm->M+1));
+      beta->R = MallocOrDie(sizeof(float  *) * (cm->M+1));
+      beta->L[0] = MallocOrDie(sizeof(float) * (cm->M+1)*(L+2));
+      beta->R[0] = MallocOrDie(sizeof(float) * (cm->M+1)*(L+2));
       for ( v = 0; v < cm->M+1; v++ )
       {
          beta->J[v] = NULL;
-         beta->L[v] = beta->L[0] + (v * W);
-         beta->R[v] = beta->R[0] + (v * W);
+         beta->L[v] = beta->L[0] + v*(L+2);
+         beta->R[v] = beta->R[0] + v*(L+2);
       }
    }
    else
@@ -1594,6 +1693,16 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
             beta->L[v][j] = IMPOSSIBLE;
             beta->R[v][j] = IMPOSSIBLE;
          }
+      }
+      if ( vroot == 0 )
+      {
+         beta->L[v][i0+W] = 0.0;
+         beta->R[v][i0+W] = 0.0;
+      }
+      else
+      {
+         beta->L[v][i0+W] = IMPOSSIBLE;
+         beta->R[v][i0+W] = IMPOSSIBLE;
       }
    }
    beta->J[vroot][j0][W] = 0.0;
@@ -1702,9 +1811,10 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
             beta->R[v][j] = IMPOSSIBLE;
          }
       }
+      beta->L[v][i0+W] = IMPOSSIBLE;
 
       /* mini-recursion for beta->L */
-      for (j = i0; j <= j0; j++)
+      for (j = i0; j <= j0+1; j++)
       {
          for (y = cm->plast[v]; y > cm->plast[v] - cm->pnum[v]; y--)
          {
@@ -1758,7 +1868,7 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
       }
 
       /* mini-recursion for beta->R */
-      for (j = j0; j >= i0; j--)
+      for (j = j0; j >= i0-1; j--)
       {
          for (y = cm->plast[v]; y > cm->plast[v] - cm->pnum[v]; y--)
          {
@@ -1967,7 +2077,9 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
    }
    else
    {
-      ret_beta = beta;
+      ret_beta->J = beta->J;
+      ret_beta->L = beta->L;
+      ret_beta->R = beta->R;
    }
 
    if (ret_dpool == NULL)
@@ -2222,7 +2334,20 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
          shadow->J[v] = (void **) alloc_vji_shadow_deck(i0,i1,j1,j0);
          shadow->L[v] = (void **) alloc_vji_shadow_deck(i0,i1,j1,j0);
          shadow->R[v] = (void **) alloc_vji_shadow_deck(i0,i1,j1,j0);
+         shadow->Lmode[v] = (void **) alloc_vji_shadow_deck(i0,i1,j1,j0);
+         shadow->Rmode[v] = (void **) alloc_vji_shadow_deck(i0,i1,j1,j0);
       }
+
+      /* Full initialization of the deck */
+      /* This may be wasteful, since it could be folded into the rest
+       * of the DP */
+      for (jp = 0; jp <= j0-j1; jp++)
+         for (ip = i1-i0; ip >= 0; ip--)
+         {
+            alpha->J[v][jp][ip] = IMPOSSIBLE;
+            alpha->L[v][jp][ip] = IMPOSSIBLE;
+            alpha->R[v][jp][ip] = IMPOSSIBLE;
+         }
 
       /* Double-check problem type */
       if (cm->sttype[v] == E_st || cm->sttype[v] == B_st || (cm->sttype[v] == S_st && v > r))
@@ -2577,7 +2702,9 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
    }
    else
    {
-      ret_alpha = alpha;
+      ret_alpha->J = alpha->J;
+      ret_alpha->L = alpha->L;
+      ret_alpha->R = alpha->R;
    }
 
    /* Free or return deck pool */
@@ -2594,7 +2721,14 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
    }
 
    free(touch);
-   if (ret_shadow != NULL) ret_shadow = shadow;
+   if (ret_shadow != NULL)
+   {
+      ret_shadow->J = shadow->J;
+      ret_shadow->L = shadow->L;
+      ret_shadow->R = shadow->R;
+      ret_shadow->Lmode = shadow->Lmode;
+      ret_shadow->Rmode = shadow->Rmode;
+   }
 
    return sc;
 }
@@ -2629,7 +2763,10 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
 
    if (arg_beta == NULL)
    {
+      beta = MallocOrDie(sizeof(BetaMats_t));
       beta->J = MallocOrDie(sizeof(float **) * (cm->M+1));
+      beta->L = MallocOrDie(sizeof(float  *) * (cm->M+1));
+      beta->R = MallocOrDie(sizeof(float  *) * (cm->M+1));
       beta->L[0] = MallocOrDie(sizeof(float) * (cm->M+1)*(i1-i0+1));
       beta->R[0] = MallocOrDie(sizeof(float) * (cm->M+1)*(j0-j1+1));
       for (v = 0; v < cm->M+1; v++)
@@ -3025,13 +3162,19 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
    }
    else
    {
-      ret_beta = beta;
+      ret_beta->J = beta->J;
+      ret_beta->L = beta->L;
+      ret_beta->R = beta->R;
    }
 
    if (ret_dpool == NULL)
    {
       float **a;
-      while (deckpool_pop(dpool, &a)) free_vji_deck(a,j1,j0);
+      while (deckpool_pop(dpool, &a))
+      {
+         if (a == NULL) { fprintf(stderr,"WARNING: We've got issues: popped from deckpool but it's NULL!\n"); continue; }
+         free_vji_deck(a,j1,j0);
+      }
       deckpool_free(dpool);
    }
    else
@@ -3044,7 +3187,7 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
    return;
 }
 
-/* Function: trinsideT()
+/* Function: tr_insideT()
  * Author:   DLK
  * 
  * Purpose:  inside with traceback on truncated sequence
@@ -3059,16 +3202,12 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
  *           i0      - start of target subsequence (usually 1, beginning of dsq)
  *           j0      - end of target subsequence (usually L, end of dsq)
  *           allow_begin - allow local begin (true/false)
- *           dmin    - minimum d bound for each state v (NULL if non-banded)
- *           dmax    - maximum d bound for each state v (NULL if non-banded)
- *                     In current implementation, dmin and dmax are ignored!
- *                     placeholders for future compatibility if needed.
  *
  * Returns:  score of optimal alignment (float)
  */
 float
-trinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
-          int i0, int j0, int allow_begin, int *dmin, int *dmax)
+tr_insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
+          int i0, int j0, int allow_begin)
 {
    void    ***shadow;		/* standard shadow matrix with state information */
    void    ***L_shadow;		/* left marginal shadow matrix with state information */
@@ -3271,6 +3410,7 @@ tr_vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
    int yoffset;
 
    ShadowMats_t *shadow;
+   shadow = MallocOrDie(sizeof(ShadowMats_t));
 
    if (r == z)
    {
@@ -3285,10 +3425,15 @@ tr_vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
    sc = tr_vinside(cm, dsq, L, r, z, i0, i1, j1, j0, useEL, force_LM, force_RM,
                    BE_EFFICIENT, NULL, NULL, NULL, NULL, shadow, &mode, &v, &i, &j);
 
-   if (r != v) Die("Uh oh... r should (maybe?) always be the same as v and they're not...\n");
+   if (r != 0 && r != v)
+   {
+      v = r;
+      i = i0;
+      j = j0;
+   }
 
    /* start traceback */
-   while (1)
+   while (v != z)
    {
       jp = j-j1;
       ip = i-i0;

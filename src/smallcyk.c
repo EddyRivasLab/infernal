@@ -98,8 +98,8 @@ static float vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 
 /* The size calculators.
  */
-static float insideT_size(CM_t *cm, int L, int r, int z, int i0, int j0);
-static float vinsideT_size(CM_t *cm, int r, int z, int i0, int i1, int j1, int j0);
+float insideT_size(CM_t *cm, int L, int r, int z, int i0, int j0);
+float vinsideT_size(CM_t *cm, int r, int z, int i0, int i1, int j1, int j0);
 static int   cyk_deck_count(CM_t *cm, int r, int z);
 static int   cyk_extra_decks(CM_t *cm);
 
@@ -3047,7 +3047,7 @@ vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
  *           and solve a generic or wedge problem without any
  *           more divide/conquer.
  */
-static float
+float
 insideT_size(CM_t *cm, int L, int r, int z, int i0, int j0)
 {
   float Mb;
@@ -3070,7 +3070,7 @@ insideT_size(CM_t *cm, int L, int r, int z, int i0, int j0)
   return Mb;
 }
 
-static float
+float
 vinsideT_size(CM_t *cm, int r, int z, int i0, int i1, int j1, int j0)
 {
   float Mb;

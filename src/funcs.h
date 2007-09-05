@@ -214,6 +214,10 @@ extern float CYKInsideScore(CM_t *cm, char *dsq, int L, int r, int i0,
 extern float CYKDemands(CM_t *cm, int L, int *dmin, int *dmax, float **ret_dpc_b, int be_quiet);
 extern void  debug_print_bands(CM_t *cm, int *dmin, int *dmax);
 
+/* size calculators - not normally part of external API, but truncyk.c currently uses them */
+extern float insideT_size(CM_t *cm, int L, int r, int z, int i0, int j0);
+extern float vinsideT_size(CM_t *cm, int r, int z, int i0, int i1, int j1, int j0);
+
 /* The memory management routines.
  */
 extern struct  deckpool_s *deckpool_create(void);
@@ -253,7 +257,14 @@ extern void debug_print_shadow_banded_deck(int v, void ***shadow, CM_t *cm, int 
 
 /* from truncyk.c
  */
-float TrCYKInside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, int *dmin, int *dmax);
+float TrCYK_DnC(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr);
+float TrCYK_Inside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr);
+/* legacy, avoid use: */
+float trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
+                void ****ret_shadow, void ****ret_L_shadow, void ****ret_R_shadow,
+                void ****ret_T_shadow, void ****ret_Lmode_shadow, void ****ret_Rmode_shadow,
+                int *ret_mode, int *ret_v, int *ret_i, int *ret_j);
+
 
 /* from cm_eweight.c
  * Entropy-based sequence weighting */

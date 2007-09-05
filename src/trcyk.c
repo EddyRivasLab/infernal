@@ -70,7 +70,7 @@ fflush(stdout);
       int i0 = 1;
       int j0 = sqinfo.len;
       /* Do alignment */
-      sc = TrCYKInside(cm, dsq, sqinfo.len, 0, i0, j0, &tr, NULL, NULL);
+      sc = TrCYK_Inside(cm, dsq, sqinfo.len, 0, i0, j0, &tr);
       /* Print alignment */
 /* ParsetreeDump(stdout,tr,cm,dsq); printf("\n\n"); */
       printf("score:    %.2f\n",sc);
@@ -86,7 +86,7 @@ fflush(stdout);
       rdsq = DigitizeSequence(seq, sqinfo.len);
       printf("sequence: %s (reversed)\n", sqinfo.name);
 fflush(stdout);
-      sc = TrCYKInside(cm,rdsq, sqinfo.len, 0, i0, j0, &tr, NULL, NULL);
+      sc = TrCYK_Inside(cm,rdsq, sqinfo.len, 0, i0, j0, &tr);
       printf("score:    %.2f\n",sc);
 fflush(stdout);
       fali = CreateFancyAli(tr, cm, cons,rdsq);
