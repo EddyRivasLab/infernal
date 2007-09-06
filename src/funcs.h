@@ -519,8 +519,10 @@ extern char  *CMPostalCode_b_jd_me(CM_t *cm, int L, float ***post, Parsetree_t *
 				   int *jmin, int *jmax, int **hdmin, int **hdmax);
 extern char *ICMPostalCode_b_jd_me(CM_t *cm, int L, int ***post, Parsetree_t *tr,
 				   int *jmin, int *jmax, int **hdmin, int **hdmax);
+extern float ParsetreeSampleFromIInside(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, int ***alpha, Parsetree_t **ret_tr,
+					int ****ret_alpha);
      
-/* cm_postprob.c memory management routines analogous to those in smallcyk.c for
+/* cm_postprob.c: memory management routines analogous to those in smallcyk.c for
  * handling scaled int log odds scores instead of floats. */
 extern Ideckpool_t *Ideckpool_create(void);
 extern void    Ideckpool_push(struct Ideckpool_s *dpool, int **deck);
@@ -590,7 +592,7 @@ extern void parallel_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq
 				   int bdump_level, int debug_level,
 				   int silent_mode, int mpi_my_rank, int mpi_master_rank, int mpi_num_procs);
 extern int actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *results, 
-				  int bdump_level, int debug_level, int silent_mode);
+				  int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r);
 extern int  revcomp(const ESL_ALPHABET *abc, ESL_SQ *comp, ESL_SQ *sq);
 extern int  read_next_search_seq(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int do_revcomp, dbseq_t **ret_dbseq);
 extern void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq,

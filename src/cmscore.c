@@ -938,7 +938,7 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
 {
   actually_align_targets(cm, seqs_to_aln,
 			 NULL, NULL,   /* we're not aligning search hits */
-			 0, 0, TRUE);
+			 0, 0, TRUE, NULL);
   return eslOK;
   
   /* ERROR:

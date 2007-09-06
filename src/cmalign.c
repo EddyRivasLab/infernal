@@ -785,7 +785,7 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
   actually_align_targets(cm, seqs_to_aln,
 			 NULL, NULL,   /* we're not aligning search hits */
 			 esl_opt_GetInteger(go, "--banddump"),
-			 esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"));
+			 esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"), NULL);
   return eslOK;
   
   /* ERROR:

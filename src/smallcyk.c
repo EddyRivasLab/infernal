@@ -104,7 +104,7 @@ static float vinsideT_size(CM_t *cm, int r, int z, int i0, int i1, int j1, int j
 static int   cyk_deck_count(CM_t *cm, int r, int z);
 static int   cyk_extra_decks(CM_t *cm);
 
-/* The memory management routines are in funcs.h so hbandcyk.c 
+/* The memory management routines are in funcs.h so hbandcyk.c can access them 
  */
 
 /* BE_EFFICIENT and BE_PARANOID are alternative (exclusive) settings
@@ -280,8 +280,8 @@ static float inside_b_me(CM_t *cm, ESL_DSQ *dsq, int L,
 			 int *dmin, int *dmax);
 
 /* The traceback routines.
-   At first, it wasn't immediately obvious that a *_me version of  
-   this function was needed, but there's some crazy offset issues.
+ * At first, it wasn't immediately obvious that a *_me version of  
+ * this function was needed, but there's some crazy offset issues. [EPN]
  */
 
 static float insideT_b_me(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
@@ -2810,8 +2810,8 @@ insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 		  BE_EFFICIENT,	/* memory-saving mode */
 		  NULL, NULL,	/* manage your own matrix, I don't want it */
 		  NULL, NULL,	/* manage your own deckpool, I don't want it */
-		  &shadow,		/* return a shadow matrix to me. */
-		  allow_begin,      /* TRUE to allow local begins */
+		  &shadow,	/* return a shadow matrix to me. */
+		  allow_begin,  /* TRUE to allow local begins */
 		  &b, &bsc);	/* if allow_begin is TRUE, gives info on optimal b */
     }
   else

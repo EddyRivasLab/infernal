@@ -9,11 +9,11 @@
  * in the j and d dimensions). 
  *
  * Most of the alignment functions (ex: Inside) have two versions:
- * FInside() and IInside(), the first uses float log odds scores, the
+ * FInside() and IInside(), the former uses float log odds scores, the
  * latter uses scaled int log odds scores. Floats are more precise but
- * about 10X slower than ints, the difference b/c it's necessary to go
+ * about 10X slower than ints, the difference is b/c it's necessary to go
  * into and out of log space to add floats in LogSum2, while ILogsum
- * uses a faster trick with ints.
+ * uses a precomputed lookup table with ints.
  */
 
 #include "esl_config.h"
@@ -28,10 +28,14 @@
 
 #include "easel.h"		/* general sequence analysis library    */
 #include "esl_msa.h"   
+#include "esl_stack.h"
 #include "esl_stopwatch.h"
+#include "esl_vectorops.h"
 
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
+
+static int get_iemission_score(CM_t *cm, ESL_DSQ *dsq, int v, int i, int j);
 
 /*****************************************************************
  * CM {F,I}Inside() & {F,I}Outside() functions.
@@ -41,7 +45,8 @@
  *            BMC Bioinformatics publication.
  *****************************************************************/ 
 
-/* Function: FInside() 
+/*
+ * Function: FInside() 
  *           IInside() 
  * 
  * Purpose:  The Inside dynamic programming algorithm for CMs.
@@ -665,7 +670,7 @@ IInside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   }
 
   free(touch);
-  ;/*printf("\tIInside() sc  : %f\n", return_sc);*/
+  /*printf("\tIInside() sc  : %f\n", return_sc);*/
   return return_sc;
 
  ERROR:
@@ -4713,3 +4718,224 @@ Ialloc_jdbanded_vjd_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, in
   return NULL; /* never reached */
 }
 
+
+/*
+ * Function: ParsetreeSampleFromIInside()
+ * Incept:   EPN, Thu Sep  6 09:58:26 2007
+ *          
+ * Purpose:  Sample a parsetree from an non-banded integer Inside matrix.
+ *           
+ * Args:     r        - source of randomness
+ *           cm       - the model
+ *           dsq      - digitized sequence
+ *           L        - length of dsq, alpha *must* go from 1..L
+ *           alpha    - pre-calculated Inside matrix (ints)
+ *           ret_tr   - ptr to parsetree we'll return (*must* be non-NULL)
+ *           ret_alpha- pass NULL to free input alpha, otherwise it's passed back here
+ *
+ * Return:   score of sampled parsetree; dies immediately with cm_Fail if an error occurs.
+ */
+float
+ParsetreeSampleFromIInside(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, int ***alpha, Parsetree_t **ret_tr, int ****ret_alpha)
+{
+  int   status;
+  int   v, j, d;
+  float sc;
+  int  **end;         /* used for freeing alpha b/c we re-use the end deck. */
+  Parsetree_t *tr;
+  ESL_STACK *pda;
+  int i, k, b;
+  int       y, yoffset;
+  int       z;
+  int       bifparent;
+  float     pvec[MAXCONNECT];
+  float     *bifvec;
+  int       isc; 
+  float     maxsc;
+
+  /* contract check */
+  if(ret_tr == NULL) cm_Fail("ParsetreeSampleFromIInside(), ret_tr is NULL.");
+  if(r      == NULL) cm_Fail("ParsetreeSampleFromIInside(), source of randomness r is NULL.");
+  
+  /* initialize pvec */
+  esl_vec_FSet(pvec, MAXCONNECT, 0.);
+
+  /* Create a parse tree structure and initialize it by adding the root state.
+   */
+  tr = CreateParsetree(100);
+  InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0); /* init: attach the root S */
+  sc = 0.;
+
+  /* Stochastically traceback through the Inside matrix 
+   * this section of code is stolen and adapted from smallcyk.c:insideT() 
+   */
+  pda = esl_stack_ICreate();
+  v = 0;
+
+  j = d = L;
+  i = 1;
+
+  /*printf("Starting traceback in insideT()\n");*/
+  while (1) {
+    if (cm->sttype[v] == B_st) {
+      y = cm->cfirst[v];
+      z = cm->cnum[v];
+
+      ESL_ALLOC(bifvec, sizeof(float) * (d+1));
+      /* set pvec[] as (float-ized) log odds scores for each child we can transit to */
+      for(k = 0; k <= d; k++) 
+	bifvec[k] = Scorify(alpha[y][j-k][d-k] + alpha[z][j][k]);
+      maxsc = esl_vec_FMax(bifvec, (d+1));
+      esl_vec_FIncrement(bifvec, (d+1), (-1. * maxsc));
+      esl_vec_FScale(bifvec, (d+1), log(2));
+      esl_vec_FLogNorm(bifvec, (d+1));
+      k = esl_rnd_FChoose(r, bifvec, (d+1));
+
+      /* no need to update isc, bifurcations are mandatory with no score */
+
+      /* Store info about the right fragment that we'll retrieve later:
+       */
+      esl_stack_IPush(pda, j);	/* remember the end j    */
+      esl_stack_IPush(pda, k);	/* remember the subseq length k */
+      esl_stack_IPush(pda, tr->n-1);	/* remember the trace index of the parent B state */
+
+      /* Deal with attaching left start state.
+       */
+      j = j-k;
+      d = d-k;
+      i = j-d+1;
+      InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+      v = y;
+    } else if (cm->sttype[v] == E_st || cm->sttype[v] == EL_st) {
+      /* We don't trace back from an E or EL. Instead, we're done with the
+       * left branch of the tree, and we try to swing over to the right
+       * branch by popping a right start off the stack and attaching
+       * it. If the stack is empty, then we're done with the
+       * traceback altogether. This is the only way to break the
+       * while (1) loop.
+       */
+      if (esl_stack_IPop(pda, &bifparent) == eslEOD) break;
+      esl_stack_IPop(pda, &d);
+      esl_stack_IPop(pda, &j);
+      v = tr->state[bifparent];	/* recover state index of B */
+      y = cm->cnum[v];		/* find state index of right S */
+      i = j-d+1;
+				/* attach the S to the right */
+      InsertTraceNode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, y);
+
+      v = y;
+    } else {
+      /* choose which transition we take 
+       * local begins and ends are forbidden for now 
+       */
+      esl_vec_FSet(pvec, MAXCONNECT, 0.); /* not really necessary */
+      /* printf("v: %d\n", v);
+       * isc  = alpha[v][j][d];
+       * unnec? right? subtract out emission score, if any 
+       * isc -= get_iemission_score(cm, dsq, v, i, j); */
+
+      isc += get_iemission_score(cm, dsq, v, i, j); 
+
+      /* set pvec[] as (float-ized) log odds scores for each child we can transit to */
+      for(yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	y = yoffset + cm->cfirst[v];
+	pvec[yoffset] = Scorify(cm->itsc[v][yoffset] + 
+				alpha[y][j - StateRightDelta(cm->sttype[v])][d - StateDelta(cm->sttype[v])]);
+      }
+      maxsc = esl_vec_FMax(pvec, cm->cnum[v]);
+      esl_vec_FIncrement(pvec, cm->cnum[v], (-1. * maxsc));
+
+      /* we can treat the log odds scores as log probs, because
+       * the log probability of the null model is the same for each,
+       * so essentially we've divided each score by the same constant, so 
+       * the *relative* proportion of the log odds scores is the
+       * same as the relative proportion of the log probabilities (seq | model) */
+
+      /* get from log_2 to log_e, so we can use easel's log vec ops */
+      esl_vec_FScale(pvec, cm->cnum[v], log(2));
+      esl_vec_FLogNorm(pvec, cm->cnum[v]);
+      yoffset = esl_rnd_FChoose(r, pvec, cm->cnum[v]);
+      isc += cm->tsc[v][yoffset];
+
+      y = cm->cfirst[v] + yoffset;
+
+      /*printf("v : %d | r : %d | z : %d | 1 : %d | \n", v, r, z, 1);*/
+      /*printf("\tyoffset : %d\n", yoffset);*/
+      switch (cm->sttype[v]) {
+      case D_st:            break;
+      case MP_st: i++; j--; break;
+      case ML_st: i++;      break;
+      case MR_st:      j--; break;
+      case IL_st: i++;      break;
+      case IR_st:      j--; break;
+      case S_st:            break;
+      default:    esl_fatal("'Inconceivable!'\n'You keep using that word...'");
+      }
+      d = j-i+1;
+
+      if (yoffset == USED_EL) 
+	{	/* a local alignment end */
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M);
+	  v = cm->M;		/* now we're in EL. */
+	}
+      else if (yoffset == USED_LOCAL_BEGIN) 
+	{ /* local begin; can only happen once, from root */
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, b);
+	  v = b;
+	}
+      else 
+	{
+	  y = cm->cfirst[v] + yoffset;
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+	  v = y;
+	}
+    }
+  }
+  esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
+
+  /* If the caller doesn't want the alpha matrix, free it
+   */
+  if (ret_alpha == NULL) {
+    for (v = 0; v <= cm->M; v++) /* be careful of our reuse of the end deck -- free it only once */
+      if (alpha[v] != NULL) { 
+	if (cm->sttype[v] != E_st) { Ifree_vjd_deck(alpha[v], 1, L); alpha[v] = NULL; }
+	else end = alpha[v]; 
+	}
+    if (end != NULL) { Ifree_vjd_deck(end, 1, L); end = NULL; }
+    free(alpha);
+  } else *ret_alpha = alpha;
+
+  return Scorify(isc);
+
+ ERROR:
+  cm_Fail("memory error.");
+  return 0.; /* NEVERREACHED */
+}
+
+
+/*
+ * Function: GetIEmissionScore()
+ * Incept:   EPN, Thu Sep  6 13:35:36 2007
+ *          
+ * Purpose:  Given a CM, dsq, state index and coordinates return the integer emission
+ *           score.
+ *           
+ * Args:     cm       - the model
+ *           dsq      - digitized sequence
+ *           v        - state index
+ *           i        - dsq index for first position of subseq for subtree at v
+ *           j        - dsq index for last position of subseq for subtree at v
+ *
+ * Return:   integer emission score, 0 if state is non-emitter.
+ */
+int
+get_iemission_score(CM_t *cm, ESL_DSQ *dsq, int v, int i, int j)
+{
+  if     (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) return esl_abc_IAvgScore(cm->abc, dsq[i], cm->iesc[v]);
+  else if(cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) return esl_abc_IAvgScore(cm->abc, dsq[j], cm->iesc[v]);
+  else if(cm->sttype[v] == MP_st) {
+    if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K) return cm->iesc[v][(dsq[i]*cm->abc->K+dsq[j])];
+    else return iDegeneratePairScore(cm->abc, cm->iesc[v], dsq[i], dsq[j]);
+  }
+  else return 0;
+}

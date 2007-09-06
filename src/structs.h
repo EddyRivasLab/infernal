@@ -609,6 +609,7 @@ typedef struct cm_s {
 #define CM_ALIGN_PRINTTREES    (1<<13) /* print parsetrees to stdout               */
 #define CM_ALIGN_HMMSAFE       (1<<14) /* realign seqs w/HMM banded CYK bit sc < 0 */
 #define CM_ALIGN_SCOREONLY     (1<<15) /* do full CYK/inside to get score only     */
+#define CM_ALIGN_SAMPLE        (1<<16) /* sample parsetrees from the inside matrix */
 
 /* search options, cm->search_opts */
 #define CM_SEARCH_NOQDB        (1<<0)  /* DO NOT use QDB to search (QDB is default)*/
@@ -1016,6 +1017,22 @@ typedef struct _fullmat_t {
   int       probs_flag;  /* TRUE if matrix values are target probs, FALSE if 
 			  * they're log odds scores, or unfilled */
 } fullmat_t;
+
+/* BE_EFFICIENT and BE_PARANOID are alternative (exclusive) settings
+ * for the do_full? argument to the alignment engines.
+ */
+#define BE_EFFICIENT  0		/* setting for do_full: small memory mode */
+#define BE_PARANOID   1		/* setting for do_full: keep whole matrix, perhaps for debugging */
+
+/* Special flags for use in shadow (traceback) matrices, instead of
+ * offsets to connected states. When yshad[0][][] is USED_LOCAL_BEGIN,
+ * the b value returned by inside() is the best connected state (a 0->b
+ * local entry). When yshad[v][][] is USED_EL, there is a v->EL transition
+ * and the remaining subsequence is aligned to the EL state. 
+ */
+#define USED_LOCAL_BEGIN 101
+#define USED_EL          102
+
 
 #endif /*STRUCTSH_INCLUDED*/
 

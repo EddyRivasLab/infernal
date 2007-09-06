@@ -33,6 +33,7 @@
 #define WGTOPTS "--wgsc,--wblosum,--wpb,--wnone,--wgiven"      /* Exclusive options for relative weighting                    */
 #define EFFOPTS "--eent,--enone"               /* Exclusive options for effective sequence number calculation */
 #define ALPHOPTS "--rna,--dna"                 /* Exclusive options for specifiying input MSA alphabet*/
+#define TRAINOPTS "--EM,--gibbs"               /* Exclusive options for specifiying training method */
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
@@ -59,10 +60,12 @@ static ESL_OPTIONS options[] = {
   { "--pbswitch",eslARG_INT,  "1000",  NULL,"n>0",       NULL,    NULL,      NULL, "set failover to efficient PB wgts at > <n> seqs",  3},
   { "--wid",     eslARG_REAL, "0.62",  NULL,"0<=x<=1",   NULL,"--wblosum",   NULL, "for --wblosum: set identity cutoff",               3},
 /* Refining the seed alignment */
-  { "--EM",      eslARG_OUTFILE, NULL,  NULL, NULL,       NULL,    NULL,     NULL, "refine the input aln using Expectation-Maximization, save to <s>", 4},
+  { "--EM",      eslARG_OUTFILE, NULL,  NULL, NULL,   TRAINOPTS,  NULL,      NULL, "refine the input aln using Expectation-Maximization, save to <s>", 4},
+  { "--gibbs",   eslARG_OUTFILE, NULL,  NULL, NULL,   TRAINOPTS,  NULL,      NULL, "refine the input aln using Gibbs sampling, save to <s>", 4},
+  { "--seed",    eslARG_INT,     NULL,  NULL, "n>0",      NULL,"--gibbs",    NULL, "for --gibbs, set random number generator seed to <n>",  4 },
   { "--hbanded", eslARG_NONE,   FALSE,  NULL, NULL,       NULL,   "--EM",    NULL, "accelerate --EM using CM plan 9 HMM banded CYK aln algorithm", 4 },
   { "--tau",     eslARG_REAL,   "1E-7", NULL, "0<x<1",    NULL,"--hbanded",  NULL, "set tail loss prob for --hbanded to <x>", 4 },
-  { "--sub",     eslARG_NONE,   FALSE,  NULL, NULL,       NULL,     "--EM",  NULL, "for --EM, build sub CM for columns b/t HMM predicted start/end points", 4 },
+  { "--sub",     eslARG_NONE,   FALSE,  NULL, NULL,       NULL,   "--EM",    NULL, "for --EM, build sub CM for columns b/t HMM predicted start/end points", 4 },
 /* Alternate effective sequence weighting strategies */
   { "--eent",    eslARG_NONE,"default",NULL, NULL,    EFFOPTS,    NULL,      NULL, "adjust eff seq # to achieve relative entropy target", 5},
   { "--enone",   eslARG_NONE,  FALSE,  NULL, NULL,    EFFOPTS,    NULL,      NULL, "no effective seq # weighting: just use nseq",         5},
@@ -118,10 +121,11 @@ struct cfg_s {
 
   fullmat_t    *fullmat;        /* if --rsearch, the full RIBOSUM matrix */
   FILE         *cdfp;           /* if --cdump, output file handle for dumping clustered MSAs */
-  FILE         *emfp;           /* if --EM, output file handle for dumping refined MSAs */
+  FILE         *trfp;           /* if --EM or --gibbs, output file handle for dumping refined MSAs */
 
   int           be_verbose;	/* standard verbose output, as opposed to one-line-per-CM summary */
   int           nali;		/* which # alignment this is in file (only valid in serial mode)   */
+  ESL_RANDOMNESS *r;            /* source of randomness, only created if --gibbs enabled */
 };
 
 static char usage[]  = "[-options] <cmfile output> <alignment file>";
@@ -220,7 +224,8 @@ main(int argc, char **argv)
   cfg.pri        = NULL;                   /* created in init_cfg() */
   cfg.fullmat    = NULL;                   /* read (possibly) in init_cfg() */
   cfg.cdfp       = NULL;	           /* opened (possibly) in init_cfg() */
-  cfg.emfp       = NULL;	           /* opened (possibly) in init_cfg() */
+  cfg.trfp       = NULL;	           /* opened (possibly) in init_cfg() */
+  cfg.r          = NULL;	           /* created (possibly) in init_cfg() */
 
   if (esl_opt_GetBoolean(go, "-1")) cfg.be_verbose = FALSE;        
   else                              cfg.be_verbose = TRUE;        
@@ -241,7 +246,7 @@ main(int argc, char **argv)
   if (cfg.pri   != NULL) Prior_Destroy(cfg.pri);
   if (cfg.null  != NULL) free(cfg.null);
   if (cfg.cdfp  != NULL) fclose(cfg.cdfp);
-  if (cfg.emfp  != NULL) fclose(cfg.emfp);
+  if (cfg.trfp  != NULL) fclose(cfg.trfp);
 
   esl_getopts_Destroy(go);
   esl_stopwatch_Destroy(w);
@@ -345,8 +350,20 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   /* if --EM enabled, open output file for refined MSAs */
   if (esl_opt_GetString(go, "--EM") != NULL)
     {
-      if ((cfg->emfp = fopen(esl_opt_GetString(go, "--EM"), "w")) == NULL)
+      if ((cfg->trfp = fopen(esl_opt_GetString(go, "--EM"), "w")) == NULL)
 	cm_Fail("Failed to open output file %s for writing MSAs to", esl_opt_GetString(go, "--EM"));
+    }
+  /* if --gibbs enabled, open output file for refined MSAs, and seed RNG */
+  if (esl_opt_GetString(go, "--gibbs") != NULL)
+    {
+      if ((cfg->trfp = fopen(esl_opt_GetString(go, "--gibbs"), "w")) == NULL)
+	cm_Fail("Failed to open output file %s for writing MSAs to", esl_opt_GetString(go, "--gibbs"));
+
+      /* create RNG */
+      if (! esl_opt_IsDefault(go, "--seed")) 
+	cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "--seed"));
+      else cfg->r = esl_randomness_CreateTimeseeded();
+      if (cfg->r       == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create random number generator: probably out of memory");
     }
 
   if (cfg->pri   == NULL) ESL_FAIL(eslEINVAL, errbuf, "alphabet initialization failed");
@@ -429,7 +446,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  /* msa -> cm */
 	  if ((status = process_workunit(go, cfg, errbuf, msa, &cm, &tr)) != eslOK) cm_Fail(errbuf);
 	  /* optionally, iterative over cm -> parsetrees -> msa -> cm ... until convergence, via EM (or Gibbs - not yet, but eventually) */
-	  if (! esl_opt_IsDefault(go, "--EM")) {
+	  if ((! esl_opt_IsDefault(go, "--EM")) || (! esl_opt_IsDefault(go, "--gibbs"))) {
 	    if ((status = refine_msa(go, cfg, errbuf, cm, msa, tr, &new_cm, NULL, NULL, &niter)) != eslOK) cm_Fail(errbuf);
 	    if (niter > 1) { /* if niter == 1, we didn't make a new CM (new_cm == cm), so we don't free it */
 	      FreeCM(cm); 
@@ -545,13 +562,13 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
     {
       iter++;
       if(iter == 1) { cm = init_cm; msa = input_msa; }
-
+      
       /* 1. cm -> parsetrees */
       if(iter > 1) FreePartialSeqsToAln(seqs_to_aln, FALSE, TRUE, TRUE, TRUE, TRUE);
-	                                          /* sq,    tr, cp9_tr, post, sc */ 
+      /* sq,    tr, cp9_tr, post, sc */ 
       /* initialize/configure CM, we may be doing HMM banded alignment for ex. */
-     initialize_cm(go, cfg, errbuf, cm);
-     actually_align_targets(cm, seqs_to_aln, NULL, NULL, 0, 0, FALSE);
+      initialize_cm(go, cfg, errbuf, cm);
+      actually_align_targets(cm, seqs_to_aln, NULL, NULL, 0, 0, FALSE, cfg->r);
       
       /* sum parse scores and check for convergence */
       printf("iteration: %4d\n", iter);
@@ -581,7 +598,7 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
   /* esl_msa_Write(stdout, msa, cfg->fmt); */
 
   /* write out final alignment */
-  esl_msa_Write(cfg->emfp, msa, cfg->fmt); 
+  esl_msa_Write(cfg->trfp, msa, cfg->fmt); 
 
   /* clean up */
   if(ret_cm == NULL) cm_Fail("ret_cm is NULL.");
@@ -1198,7 +1215,8 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   cm->tau    = esl_opt_GetReal(go, "--tau");  /* this will be DEFAULT_TAU unless changed at command line */
 
   /* update cm->align->opts */
-  if(esl_opt_GetBoolean(go, "--hbanded")) {
+  if(! esl_opt_IsDefault (go, "--gibbs"))       cm->align_opts  |= CM_ALIGN_SAMPLE;
+  if(  esl_opt_GetBoolean(go, "--hbanded")) {
     cm->align_opts  |= CM_ALIGN_HBANDED;
     cm->align_opts  |= CM_ALIGN_NOSMALL; 
   }

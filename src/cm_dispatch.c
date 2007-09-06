@@ -596,7 +596,7 @@ float actually_search_target(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cu
   if(results->num_results > 0 && do_align_hits)
     actually_align_targets(cm, NULL, 
 			   dsq, results,   /* put function into dsq_mode, designed for aligning search hits */
-			   0, 0, 0);
+			   0, 0, 0, NULL);
   return sc;
 }  
 
@@ -864,13 +864,14 @@ void remove_hits_over_e_cutoff (CM_t *cm, search_results_t *results, ESL_SQ *sq,
  *           bdump_level    - verbosity level for band related print statements
  *           debug_level    - verbosity level for debugging print statements
  *           silent_mode    - TRUE to not print anything, FALSE to print scores 
+ *           r              - source of randomness (NULL unless CM_ALIGN_SAMPLE)
  * 
  * Returns:  eslOK on success;
  *           Dies if there's an error (not good for MPI).
  */
 int
 actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *search_results,
-		       int bdump_level, int debug_level, int silent_mode)
+		       int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r)
 {
   int status;
   ESL_STOPWATCH *watch;         /* for timings */
@@ -935,6 +936,7 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
   int             ***post;     /* post DP matrix for Inside() */
 
   float             *parsesc; /* parsetree scores of each sequence */
+  int              **end;     /* so we re-use the end deck in Inside/Outside matrices */
 
   int do_small     = TRUE;
   int do_local     = FALSE;
@@ -949,10 +951,16 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
   int do_post      = FALSE;
   int do_timings   = FALSE;
   int do_check     = FALSE;
+  int do_sample    = FALSE;
 
   /* Contract checks */
   if(!(cm->flags & CMH_BITS)) 
-    esl_fatal("ERROR: actually_align_targets(), CMH_BITS flag down.\n");
+    esl_fatal("actually_align_targets(), CMH_BITS flag down.\n");
+  if(r == NULL && (cm->align_opts & CM_ALIGN_SAMPLE))
+    esl_fatal("actually_align_targets(), no source of randomness, but CM_ALIGN_SAMPLE alignment option on.\n");
+  if(r != NULL && (!(cm->align_opts & CM_ALIGN_SAMPLE)))
+    esl_fatal("actually_align_targets(), we have a source of randomness, but CM_ALIGN_SAMPLE alignment option off.\n");
+
   /* determine mode */
   if     (seqs_to_aln != NULL && (dsq == NULL && search_results == NULL))  sq_mode = TRUE;
   else if(seqs_to_aln == NULL && (dsq != NULL && search_results != NULL)) dsq_mode = TRUE;
@@ -968,6 +976,7 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
   if(dsq_mode && (cm->align_opts & CM_ALIGN_POST))    cm_Fail("ERROR: actually_align_targets(), in dsq_mode, CM_ALIGN_POST option on.\n");
   if(dsq_mode && (cm->align_opts & CM_ALIGN_INSIDE))  cm_Fail("ERROR: actually_align_targets(), in dsq_mode, CM_ALIGN_INSIDE option on.\n");
   if(dsq_mode && (cm->align_opts & CM_ALIGN_OUTSIDE)) cm_Fail("ERROR: actually_align_targets(), in dsq_mode, CM_ALIGN_OUTSIDE option on.\n");
+  if(dsq_mode && (cm->align_opts & CM_ALIGN_SAMPLE))  cm_Fail("ERROR: actually_align_targets(), in dsq_mode, CM_ALIGN_SAMPLE option on.\n");
 
   if((cm->align_opts & CM_ALIGN_POST) && (cm->align_opts & CM_ALIGN_HMMONLY))  
     cm_Fail("ERROR: actually_align_targets(), CM_ALIGN_POST and CM_ALIGN_HMMONLY options are incompatible.\n");
@@ -992,6 +1001,10 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
   if(cm->align_opts  & CM_ALIGN_TIME)       do_timings   = TRUE;
   if(cm->align_opts  & CM_ALIGN_CHECKINOUT) do_check     = TRUE;
   if(cm->align_opts  & CM_ALIGN_SCOREONLY)  do_scoreonly = TRUE;
+  if(cm->align_opts  & CM_ALIGN_SAMPLE)     do_sample    = TRUE;
+
+  /* another contract check */
+  if((do_sample + do_inside + do_outside + do_post) > 1) cm_Fail("actually_align_targets(), exactly 0 or 1 of the following must be TRUE (== 1):\n\tdo_sample = %d\n\tdo_inside = %d\n\tdo_outside = %d\n\t do_post%d\n\tdo_hmmonly: %d\n\tdo_scoreonly: %d\n", do_sample, do_inside, do_outside, do_post, do_hmmonly, do_scoreonly);
 
   if(debug_level > 0) {
     printf("do_local  : %d\n", do_local);
@@ -1084,10 +1097,10 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
       orig_cp9b = cp9b; 
     }
   orig_cm = cm;
+
   /*****************************************************************
    *  Collect parse trees for each sequence
    *****************************************************************/
-
   for (i = 0; i < nalign; i++)
     {
       esl_stopwatch_Start(watch);
@@ -1244,8 +1257,34 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
 	  else
 	    printf("Aligning %-30s", seqs_to_aln->sq[i]->name);
 	}
-      if (do_inside)
-	{
+
+      /* beginning of large if() else if() else if() ... statement 
+       */
+      if(do_sample) 
+	{ 
+	  if(do_hbanded)
+	    {
+	      IInside_b_jd_me(cm, cur_dsq, 1, L,
+			      TRUE,	   /* non memory-saving mode, we sample from alpha mx */
+			      NULL, &alpha,/* fill alpha, and return it, we'll sample a parsetree from it */
+			      NULL, NULL,  /* manage your own deckpool, I don't want it */
+			      do_local,    /* TRUE to allow local begins */
+			      cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
+	      cm_Fail("You need to write ParsetreeSampleFromIInside_b_jd_me()");
+	      /*sc = ParsetreeSampleFromIInside_b_jd_me(r, cm, cur_dsq, 1, L, alpha, &ret_tr);*/
+	    }
+	  else
+	    {
+	      IInside(cm, cur_dsq, 1, L,
+		      TRUE,            /* save full alpha, so we can sample from it,  */
+		      NULL, &alpha,    /* fill alpha, and return it, we'll sample a parsetree from it */
+		      NULL, NULL,      /* manage your own deckpool, I don't want it */
+		      do_local);       /* TRUE to allow local begins */
+	      sc = ParsetreeSampleFromIInside(r, cm, cur_dsq, L, alpha, cur_tr, NULL);
+	    }
+	}
+      if(do_inside) 
+	{ 
 	  if(do_hbanded)
 	    {
 	      sc = IInside_b_jd_me(cm, cur_dsq, 1, L,
@@ -1258,50 +1297,60 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
 	  else
 	    {
 	      sc = IInside(cm, cur_dsq, 1, L,
-			   BE_EFFICIENT,	/* memory-saving mode */
+			   BE_EFFICIENT,/* memory-saving mode */
 			   NULL, NULL,	/* manage your own matrix, I don't want it */
 			   NULL, NULL,	/* manage your own deckpool, I don't want it */
 			   do_local);       /* TRUE to allow local begins */
 	    }
-
 	}
       else if(do_outside)
 	{	
 	  if(do_hbanded)
 	    {
-	      
+	      /* need alpha matrix from Inside to do Outside */
 	      sc = IInside_b_jd_me(cm, cur_dsq, 1, L,
-				   TRUE,	/* save full alpha so we can run outside */
-				   NULL, &alpha,	/* fill alpha, and return it, needed for FOutside() */
-				   NULL, NULL,	/* manage your own deckpool, I don't want it */
-				   do_local,        /* TRUE to allow local begins */
+				   TRUE,	 /* save full alpha so we can run outside */
+				   NULL, &alpha, /* fill alpha, and return it, needed for IOutside() */
+				   NULL, NULL,	 /* manage your own deckpool, I don't want it */
+				   do_local,     /* TRUE to allow local begins */
 				   cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
 	      /*do_check = TRUE;*/
 	      sc = IOutside_b_jd_me(cm, cur_dsq, 1, L,
-				    TRUE,	/* save full beta */
-				    NULL, NULL,	/* manage your own matrix, I don't want it */
-				    NULL, NULL,	/* manage your own deckpool, I don't want it */
-				    do_local,       /* TRUE to allow local begins */
-				    alpha,          /* alpha matrix from FInside_b_jd_me() */
-				    NULL,           /* don't save alpha */
-				    do_check,       /* TRUE to check Outside probs agree with Inside */
+				    TRUE,	 /* save full beta */
+				    NULL, NULL,	 /* manage your own matrix, I don't want it */
+				    NULL, NULL,	 /* manage your own deckpool, I don't want it */
+				    do_local,    /* TRUE to allow local begins */
+				    alpha,       /* alpha matrix from FInside_b_jd_me() */
+				    NULL,        /* don't save alpha */
+				    do_check,    /* TRUE to check Outside probs agree with Inside */
 				    cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
+	      /* free alpha */
+	      if(alpha != NULL) {
+		for (v = 0; v <= cm->M; v++) /* be careful of our reuse of the end deck -- free it only once */
+		  if (alpha[v] != NULL) { 
+		    if (cm->sttype[v] != E_st) { Ifree_vjd_deck(alpha[v], 1, L); alpha[v] = NULL; }
+		    else end = alpha[v]; 
+		  }
+		if (end != NULL) { Ifree_vjd_deck(end, 1, L); end = NULL; }
+		free(alpha);
+	      }
 	    }
 	  else
 	    {
+	      /* need alpha matrix from Inside to do Outside */
 	      sc = IInside(cm, cur_dsq, 1, L,
-			   TRUE,	/* save full alpha so we can run outside */
-			   NULL, &alpha,	/* fill alpha, and return it, needed for FOutside() */
-			   NULL, NULL,	/* manage your own deckpool, I don't want it */
-			   do_local);       /* TRUE to allow local begins */
+			   TRUE,	        /* save full alpha so we can run outside */
+			   NULL, &alpha,	/* fill alpha, and return it, needed for IOutside() */
+			   NULL, NULL,	        /* manage your own deckpool, I don't want it */
+			   do_local);           /* TRUE to allow local begins */
 	      sc = IOutside(cm, cur_dsq, 1, L,
-			    TRUE,	/* save full beta */
-			    NULL, NULL,	/* manage your own matrix, I don't want it */
-			    NULL, NULL,	/* manage your own deckpool, I don't want it */
-			    do_local,       /* TRUE to allow local begins */
-			    alpha,         /* alpha matrix from IInside() */
-			    NULL,           /* don't save alpha */
-			    do_check);      /* TRUE to check Outside probs agree with Inside */
+			    TRUE,	        /* save full beta */
+			    NULL, NULL,	        /* manage your own matrix, I don't want it */
+			    NULL, NULL,	        /* manage your own deckpool, I don't want it */
+			    do_local,           /* TRUE to allow local begins */
+			    alpha,              /* alpha matrix from IInside() */
+			    NULL,               /* don't save alpha */
+			    do_check);          /* TRUE to check Outside probs agree with Inside */
 	    }
 	}
       else if (do_small) 
@@ -1348,7 +1397,7 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
 		  qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
 		}
 	    }
-	}
+        }
       else if(do_qdb)
 	{
 	  sc = CYKInside(cm, cur_dsq, L, 0, 1, L, cur_tr, cm->dmin, cm->dmax);
@@ -1387,7 +1436,9 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
 	      qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
 	    }
 	}
-      if(do_post) /* Do Inside() and Outside() runs and use alpha and beta to get posteriors */
+      /* end of large if() else if() else if() else statement: */
+
+      if(do_post) /* do Inside() and Outside() runs and use alpha and beta to get posteriors */
 	{	
 	  ESL_ALLOC(post, sizeof(int **) * (cm->M+1));
 	  if(do_hbanded)
@@ -1440,7 +1491,7 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
 			    do_local,       /* TRUE to allow local begins */
 			    alpha, &alpha,  /* alpha matrix from IInside(), and save it for CMPosterior*/
 			    do_check);      /* TRUE to check Outside probs agree with Inside */
-	      ICMPosterior(L, cm, alpha, NULL, beta, NULL, post, &post);
+	      ICMPosterior(L, cm, alpha, NULL, beta, NULL, post, &post); /* this frees alpha, beta */
 	      if(do_check)
 		{
 		  ICMCheckPosterior(L, cm, post);
@@ -1450,7 +1501,7 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
 	      /*postcode[i] = CMPostalCode(cm, L, post, tr[i]);*/
 	    }
 
-	  /* free post */
+	  /* free post  */
 	  if(post != NULL)
 	    {
 	      for (v = 0; v <= (cm->M); v++)
@@ -1536,16 +1587,6 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
 	  if(do_hbanded)
 	    FreeCP9Bands(sub_cp9b);
 	}
-      /* if we've just aligned a search_result hit, we had set the first residue
-       * to 1 to align it, this means the tr->emitl's and tr->emitr's are offset,
-       * correct for that here: 
-       */
-      /*if (dsq_mode) {
-	for(tn = 0; tn < (*cur_tr)->n; tn++) {
-	  (*cur_tr)->emitl[tn] += search_results->data[i].start - 1;
-	  (*cur_tr)->emitr[tn] += search_results->data[i].start - 1;
-	}
-	}*/
 
       esl_stopwatch_Stop(watch);
       if(do_timings) 
@@ -1806,11 +1847,11 @@ serial_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t 
   if(ret_cp9_tr == NULL)
     actually_align_targets(cm, seqs_to_aln,
 			   NULL, NULL,   /* we're not aligning search result subseqs */
-			   ret_sc, bdump_level, debug_level, silent_mode);
+			   ret_sc, bdump_level, debug_level, silent_mode, NULL);
   else
     actually_align_targets(cm, seqs_to_aln
 			   NULL, NULL,   /* we're not aligning search result subseqs */
-			   ret_sc, bdump_level, debug_level, silent_mode);
+			   ret_sc, bdump_level, debug_level, silent_mode, NULL);
 
   /* Clean up and return */
   if(ret_tr     != NULL) *ret_tr = tr;
@@ -1968,7 +2009,7 @@ parallel_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_
 	      /* align the targets */
 	      actually_align_targets(cm, seqs_to_aln->sq, seqs_to_aln->nseq, 
 				     NULL, NULL, /* we're not aligning search results */
-				     &(seqs_to_aln->tr), NULL, &(seqs_to_aln->postcode), bdump_level, debug_level, silent_mode);
+				     &(seqs_to_aln->tr), NULL, &(seqs_to_aln->postcode), bdump_level, debug_level, silent_mode, NULL);
 
 	      /*printf("done actually_align_targets\n");*/
 	      aln_send_results(seqs_to_aln, do_post, mpi_master_rank);
