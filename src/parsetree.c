@@ -586,7 +586,7 @@ MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm)
  *           tr         - array of tracebacks
  *           do_full    - TRUE to always include all match columns in alignment
  *           do_matchonly - TRUE to ONLY include match columns
- *           ret_msa    - MSA, alloc'ed created here
+ *           ret_msa    - MSA, alloc'ed/created here
  *
  * Return:   eslOK on succes, eslEMEM on memory error.
  *           MSA structure in ret_msa, caller responsible for freeing.

@@ -598,6 +598,7 @@ extern void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *con
 extern void remove_hits_over_e_cutoff (CM_t *cm, search_results_t *results, ESL_SQ *sq,
 				       int used_HMM);
 extern seqs_to_aln_t *CreateSeqsToAln(int size, int i_am_mpi_master);
+extern seqs_to_aln_t *CreateSeqsToAlnFromSq(ESL_SQ **sq, int size, int i_am_mpi_master);
 extern int GrowSeqsToAln(seqs_to_aln_t *seqs_to_aln, int new_alloc, int i_am_mpi_master); 
 extern void FreeSeqsToAln(seqs_to_aln_t *seqs_to_aln);
 extern void FreePartialSeqsToAln(seqs_to_aln_t *s, int do_free_sq, int do_free_tr, int do_free_cp9_tr, int do_free_post, int do_free_sc);

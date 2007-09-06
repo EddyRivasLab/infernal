@@ -143,6 +143,56 @@ seqs_to_aln_t *CreateSeqsToAln(int size, int i_am_mpi_master)
 }
 
 /*
+ * Function: CreateSeqsToAlnFromSq()
+ * Date:     EPN, Wed Sep  5 18:13:11 2007
+ *
+ * Purpose:  Allocate and return a seqs_to_aln_t data structure, setting
+ *           seqs_to_aln->sq ptr to an input ptr to ESL_SQs.
+ *
+ *           If(i_am_mpi_master), we allocate the seqs_to_aln data
+ *           structure differently, b/c we need to keep valid pointers 
+ *           for the results (parsetrees, cp9 traces, postcodes) that may
+ *           come back from the workers in any order.
+ *
+ * Returns:  An initialized and allocated (for nalloc seqs) 
+ *           seqs_to_aln_t object.
+ *           Dies immediately on a memory error.
+ */
+seqs_to_aln_t *CreateSeqsToAlnFromSq(ESL_SQ **sq, int size, int i_am_mpi_master)
+{
+  int status;
+  int i;
+  seqs_to_aln_t *seqs_to_aln;
+
+  ESL_ALLOC(seqs_to_aln, sizeof(seqs_to_aln_t));
+  seqs_to_aln->sq       = sq;
+  seqs_to_aln->tr       = NULL;
+  seqs_to_aln->cp9_tr   = NULL;
+  seqs_to_aln->postcode = NULL;
+  seqs_to_aln->sc       = NULL;
+  seqs_to_aln->nalloc   = size;
+  seqs_to_aln->nseq     = size;
+
+  if(i_am_mpi_master) {
+    ESL_ALLOC(seqs_to_aln->tr,       sizeof(Parsetree_t *) * size);
+    ESL_ALLOC(seqs_to_aln->cp9_tr,   sizeof(CP9trace_t)    * size);
+    ESL_ALLOC(seqs_to_aln->postcode, sizeof(char *)        * size);
+    ESL_ALLOC(seqs_to_aln->sc,       sizeof(float)         * size);
+    for(i = 0; i < size; i++) {
+      seqs_to_aln->tr[i]       = NULL;
+      seqs_to_aln->cp9_tr[i]   = NULL;
+      seqs_to_aln->postcode[i] = NULL;
+      seqs_to_aln->sc[i]       = IMPOSSIBLE;
+    }
+  }
+  return seqs_to_aln;
+
+ ERROR:
+  cm_Fail("Memory error.");
+  return NULL; /* NEVERREACHED */
+}
+
+/*
  * Function: GrowSeqsToAln()
  * Date:     EPN, Sat Sep  1 11:10:22 2007
  *
@@ -225,7 +275,7 @@ void FreeSeqsToAln(seqs_to_aln_t *s)
   }
 
   if(s->sc != NULL) free(s->sc);
-
+  
   free(s);
 }
 
