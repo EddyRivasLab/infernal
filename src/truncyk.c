@@ -272,9 +272,6 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    int        b3_v, b3_j;
    float      b1_sc, b2_sc, b3_sc;
 
-   alpha = MallocOrDie(sizeof(AlphaMats_t));
-   beta  = MallocOrDie(sizeof(BetaMats_t));
-
    /* Case 1: problem size is small; solve with tr_insideT()
     * size calculation is heuristic based on size of insideT() */
    if (5*insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT)
@@ -294,6 +291,9 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
       sc = tr_wedge_splitter(cm, dsq, L, tr, r, z, i0, j0, allow_LM, allow_RM);
       return sc;
    }
+
+   alpha = MallocOrDie(sizeof(AlphaMats_t));
+   beta  = MallocOrDie(sizeof(BetaMats_t));
 
    /* Unusual cases dispatched, back to case 2 (bifurcation) */
    w = cm->cfirst[v];
@@ -425,8 +425,10 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    free_vjd_matrix(alpha->R, cm->M, i0, j0);
    free_vjd_matrix(alpha->T, cm->M, i0, j0);
    free_vjd_matrix( beta->J, cm->M, i0, j0);
-   free(beta->L);
-   free(beta->R);
+   free(beta->L[0]); free(beta->L);
+   free(beta->R[0]); free(beta->R);
+   free(alpha);
+   free(beta);
 
    /* Found the best path, now to interpret and sub-divide */
    if ( v_mode ) /* parent graph is non-empty */
@@ -518,9 +520,6 @@ tr_wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    int          b1_mode, b1_v, b1_i, b1_j;
    int          b2_mode, b2_v, b2_j;
 
-   alpha = MallocOrDie(sizeof(AlphaMats_t));
-   beta  = MallocOrDie(sizeof(BetaMats_t));
-
    /* Special case: problem is small enough to be solved with traceback */
    if ( (cm->ndidx[z] == cm->ndidx[r] + 1) || 
         (5 * insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT) )
@@ -528,6 +527,9 @@ tr_wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
       sc = tr_insideT(cm, dsq, L, tr, r, z, i0, j0, (r==0));
       return sc;
    }
+
+   alpha = MallocOrDie(sizeof(AlphaMats_t));
+   beta  = MallocOrDie(sizeof(BetaMats_t));
 
    /* Calculate a midpoint to split at */
    midnode = cm->ndidx[r] + ((cm->ndidx[z] - cm->ndidx[r])/2);
@@ -645,7 +647,10 @@ tr_wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    free_vjd_matrix(alpha->R, cm->M, i0, j0);
    free_vjd_matrix(alpha->T, cm->M, i0, j0);
    free_vjd_matrix( beta->J, cm->M, i0, j0);
-/* again, the remainder of beta... */
+   free(beta->L[0]); free(beta->L);
+   free(beta->R[0]); free(beta->R);
+   free(alpha);
+   free(beta);
    
    if ( p_mode )
    {
@@ -694,9 +699,6 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
    float        b_sc;
    int          b_mode, b_v, b_i, b_j;
 
-   alpha = MallocOrDie(sizeof(AlphaMats_t));
-   beta  = MallocOrDie(sizeof(BetaMats_t));
-
 // Recommend a special handler for the fully marginal cases (linear alg.)
    /*
    if ( force_LM)
@@ -716,6 +718,9 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
       tr_vinsideT(cm, dsq, L, tr, r, z, i0, i1, j1, j0, useEL, force_LM, force_RM);
       return;
    }
+
+   alpha = MallocOrDie(sizeof(AlphaMats_t));
+   beta  = MallocOrDie(sizeof(BetaMats_t));
 
    /* Find split set */
    midnode = cm->ndidx[r] + ((cm->ndidx[z] - cm->ndidx[r])/2);
@@ -819,8 +824,10 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
    free_vji_matrix(alpha->L, cm->M, j1, j0);
    free_vji_matrix(alpha->R, cm->M, j1, j0);
    free_vji_matrix( beta->J, cm->M, j1, j0);
-   free(beta->L);
-   free(beta->R);
+   free(beta->L[0]); free(beta->L);
+   free(beta->R[0]); free(beta->R);
+   free(alpha);
+   free(beta);
 
    /* Interpret and subdivide */
    if ( p_mode )
@@ -1228,16 +1235,19 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                if ( L_alpha[v][j][d] < IMPOSSIBLE ) { L_alpha[v][j][d] = IMPOSSIBLE; }
                if ( R_alpha[v][j][d] < IMPOSSIBLE ) { R_alpha[v][j][d] = IMPOSSIBLE; }
 
-               /* Shouldn't allow exit from marginal B if one of the children is NULL, sinee that is covered by the */
-               /* root of the other child, and we haven't added anything above the bifurcation */
-               if ((  alpha[v][j][d] > r_sc) && (allow_J_exit) )
-               { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc =   alpha[v][j][d]; }
-               if ((L_alpha[v][j][d] > r_sc) && (allow_L_exit) )
-               { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = L_alpha[v][j][d]; }
-               if ((R_alpha[v][j][d] > r_sc) && (allow_R_exit) )
-               { r_mode = 1; r_v = v; r_j = j; r_i = j-d+1; r_sc = R_alpha[v][j][d]; }
-               if ( T_alpha[v][j][d] > r_sc )
-               { r_mode = 0; r_v = v; r_j = j; r_i = j-d+1; r_sc = T_alpha[v][j][d]; }
+               if ( vroot == 0 || v == vroot )
+               {
+                  /* Shouldn't allow exit from marginal B if one of the children is NULL, sinee that is covered by the */
+                  /* root of the other child, and we haven't added anything above the bifurcation */
+                  if ((  alpha[v][j][d] > r_sc) && (allow_J_exit) )
+                  { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc =   alpha[v][j][d]; }
+                  if ((L_alpha[v][j][d] > r_sc) && (allow_L_exit) )
+                  { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = L_alpha[v][j][d]; }
+                  if ((R_alpha[v][j][d] > r_sc) && (allow_R_exit) )
+                  { r_mode = 1; r_v = v; r_j = j; r_i = j-d+1; r_sc = R_alpha[v][j][d]; }
+                  if ( T_alpha[v][j][d] > r_sc )
+                  { r_mode = 0; r_v = v; r_j = j; r_i = j-d+1; r_sc = T_alpha[v][j][d]; }
+               }
             }
          }
       }
@@ -1322,9 +1332,12 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
 
             for ( d = 1; d <= jp; d++ )
             {
-               if (   alpha[v][j][d] > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc =   alpha[v][j][d]; }
-               if ( L_alpha[v][j][d] > r_sc ) { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = L_alpha[v][j][d]; }
-               if ( R_alpha[v][j][d] > r_sc ) { r_mode = 1; r_v = v; r_j = j; r_i = j-d+1; r_sc = R_alpha[v][j][d]; }
+               if ( vroot == 0 || v == vroot )
+               {
+                  if (   alpha[v][j][d] > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc =   alpha[v][j][d]; }
+                  if ( L_alpha[v][j][d] > r_sc ) { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = L_alpha[v][j][d]; }
+                  if ( R_alpha[v][j][d] > r_sc ) { r_mode = 1; r_v = v; r_j = j; r_i = j-d+1; r_sc = R_alpha[v][j][d]; }
+               }
             }
          }
       }
@@ -1399,8 +1412,11 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
 
             for ( d = 1; d <= jp; d++ )
             {
-               if (   alpha[v][j][d] > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc =   alpha[v][j][d]; }
-               if ( L_alpha[v][j][d] > r_sc ) { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = L_alpha[v][j][d]; }
+               if ( vroot == 0 || v == vroot )
+               {
+                  if (   alpha[v][j][d] > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc =   alpha[v][j][d]; }
+                  if ( L_alpha[v][j][d] > r_sc ) { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = L_alpha[v][j][d]; }
+               }
             }
          }
       }
@@ -1474,8 +1490,11 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
 
             for ( d = 1; d <= jp; d++ )
             {
-               if (   alpha[v][j][d] > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc =   alpha[v][j][d]; }
-               if ( R_alpha[v][j][d] > r_sc ) { r_mode = 1; r_v = v; r_j = j; r_i = j-d+1; r_sc = R_alpha[v][j][d]; }
+               if ( vroot == 0 || v == vroot )
+               {
+                  if (   alpha[v][j][d] > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc =   alpha[v][j][d]; }
+                  if ( R_alpha[v][j][d] > r_sc ) { r_mode = 1; r_v = v; r_j = j; r_i = j-d+1; r_sc = R_alpha[v][j][d]; }
+               }
             }
          }
       }
@@ -2072,8 +2091,8 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
       for (v = w1; v <= vend; v++)
          if (beta->J[v] != NULL) { deckpool_push(dpool, beta->J[v]); beta->J[v] = NULL; }
       deckpool_push(dpool, beta->J[cm->M]); beta->J[cm->M] = NULL;
-      free(beta->L);
-      free(beta->R);
+      free(beta->L[0]); free(beta->L);
+      free(beta->R[0]); free(beta->R);
    }
    else
    {
@@ -2081,6 +2100,7 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
       ret_beta->L = beta->L;
       ret_beta->R = beta->R;
    }
+   free(beta);
 
    if (ret_dpool == NULL)
    {
@@ -2347,6 +2367,15 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
             alpha->J[v][jp][ip] = IMPOSSIBLE;
             alpha->L[v][jp][ip] = IMPOSSIBLE;
             alpha->R[v][jp][ip] = IMPOSSIBLE;
+            if (ret_shadow != NULL)
+            {
+               /* Didn't really use EL, but trying to eliminate uninitialized values */
+               ((char **)shadow->J[v])[jp][ip] = USED_EL;
+               ((char **)shadow->L[v])[jp][ip] = USED_EL;
+               ((char **)shadow->R[v])[jp][ip] = USED_EL;
+               ((char **)shadow->Lmode[v])[jp][ip] = 0;
+               ((char **)shadow->Rmode[v])[jp][ip] = 0;
+            }
          }
 
       /* Double-check problem type */
@@ -2698,7 +2727,6 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
       free(alpha->J);
       free(alpha->L);
       free(alpha->R);
-      free(alpha);
    }
    else
    {
@@ -2706,6 +2734,7 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
       ret_alpha->L = alpha->L;
       ret_alpha->R = alpha->R;
    }
+   free(alpha);
 
    /* Free or return deck pool */
    if (ret_dpool == NULL)
@@ -2729,6 +2758,7 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
       ret_shadow->Lmode = shadow->Lmode;
       ret_shadow->Rmode = shadow->Rmode;
    }
+   free(shadow);
 
    return sc;
 }
@@ -2761,9 +2791,9 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
    /* Initialization */
    if (dpool == NULL) dpool = deckpool_create();
 
+   beta = MallocOrDie(sizeof(BetaMats_t));
    if (arg_beta == NULL)
    {
-      beta = MallocOrDie(sizeof(BetaMats_t));
       beta->J = MallocOrDie(sizeof(float **) * (cm->M+1));
       beta->L = MallocOrDie(sizeof(float  *) * (cm->M+1));
       beta->R = MallocOrDie(sizeof(float  *) * (cm->M+1));
@@ -2775,6 +2805,12 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
          beta->L[v] = beta->L[0] + (v * (i1-i0+1));
          beta->R[v] = beta->R[0] + (v * (j0-j1+1));
       }
+   }
+   else
+   {
+      beta->J = arg_beta->J;
+      beta->L = arg_beta->L;
+      beta->R = arg_beta->R;
    }
 
    /* Initialize root deck */
@@ -3157,8 +3193,8 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
       for (v = r; v <= z; v++)
          if (beta->J[v] != NULL) { deckpool_push(dpool, beta->J[v]); beta->J[v] = NULL; }
       deckpool_push(dpool, beta->J[cm->M]); beta->J[cm->M] = NULL;
-      free(beta->L);
-      free(beta->R);
+      free(beta->L[0]); free(beta->L);
+      free(beta->R[0]); free(beta->R);
    }
    else
    {
@@ -3166,6 +3202,7 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
       ret_beta->L = beta->L;
       ret_beta->R = beta->R;
    }
+   free(beta);
 
    if (ret_dpool == NULL)
    {
@@ -3430,6 +3467,7 @@ tr_vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
       v = r;
       i = i0;
       j = j0;
+      mode = 3;
    }
 
    /* start traceback */
@@ -3503,6 +3541,7 @@ tr_vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
    free_vji_shadow_matrix((char ***) shadow->R, cm->M, j1, j0);
    free_vji_shadow_matrix((char ***) shadow->Lmode, cm->M, j1, j0);
    free_vji_shadow_matrix((char ***) shadow->Rmode, cm->M, j1, j0);
+   free(shadow);
 
    return sc;
 }
