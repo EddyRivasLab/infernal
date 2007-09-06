@@ -796,9 +796,8 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
 }
 
 /* initialize_cm()
- * Setup the CM based on the command-line options/defaults;
- * only set flags and a few parameters. ConfigCM() configures
- * the CM.
+ * Setup the CM based on the command-line options/defaults.
+ * Configures the CM with a ConfigCM() call at end.
  */
 static int
 initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)

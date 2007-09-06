@@ -1021,7 +1021,7 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
  *           
  * Args:     abc       - the alphabet
  *           ss_cons   - input consensus structure string 
- *           clen       - length of ss_cons, number of consensus columns
+ *           clen      - length of ss_cons, number of consensus columns
  *           ret_cm    - RETURN: new model                      (maybe NULL)
  *           ret_gtr   - RETURN: guide tree for alignment (maybe NULL)
  *           
@@ -1044,6 +1044,7 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen,
   int  diff, bestdiff, bestk;   /* used while finding optimal split points    */   
   int  nnodes;			/* number of nodes in CM                      */
   int  nstates;			/* number of states in CM                     */
+  int  obs_clen;                /* observed (MATL+MATR+2*MATP) consensus len  */
 
   if (ss_cons == NULL)
     esl_fatal("No consensus structure annotation available in ConsensusModelmaker().");
@@ -1070,7 +1071,7 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen,
   nstates = nnodes = 0;
   gtr = CreateParsetree(100);	/* the parse tree we'll grow        */
   pda = esl_stack_ICreate();    /* a pushdown stack for our indices */
-  cm->clen = 0;
+  obs_clen = 0;
 
   /* Construction strategy has to make sure we number the nodes in
    * preorder traversal: for bifurcations, we can't attach the right 
@@ -1154,7 +1155,7 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen,
 	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
 	nstates += 3;		/* MATL_nd -> ML_st, D_st, IL_st */
 	nnodes++;
-	cm->clen++;
+	obs_clen++;
       }
 
       else if (ct[j] == 0) { 	/* j unpaired. MATR node. Deal with INSR */
@@ -1166,7 +1167,7 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen,
 	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
 	nstates += 3;		/* MATR_nd -> MR_st, D_st, IL_st */
 	nnodes++;
-	cm->clen++;
+	obs_clen++;
       }
 
       else if (ct[i] == j) { /* i,j paired to each other. MATP. deal with INSL, INSR */
@@ -1179,7 +1180,7 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen,
 	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
 	nstates += 6;		/* MATP_nd -> MP_st, ML_st, MR_st, D_st, IL_st, IR_st */
 	nnodes++;
-	cm->clen += 2;
+	obs_clen += 2;
       }
 
       else /* i,j paired but not to each other. BIFURC. no INS. */
@@ -1235,6 +1236,7 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen,
 	  nnodes++;
 	}
     }	/* while something's on the stack */
+  if(obs_clen != clen) cm_Fail("ConsensusModelMaker(): obs_clen: %d != passed in clen: %d\n", obs_clen, clen);
   esl_stack_Destroy(pda);
   free(ct);
 
@@ -1245,6 +1247,7 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen,
   cm = CreateCM(nnodes, nstates, abc);
   cm_from_guide(cm, gtr);
   CMZero(cm);
+  cm->clen = clen;
 
   if (ret_cm  != NULL) *ret_cm  = cm;  else FreeCM(cm);
   if (ret_gtr != NULL) *ret_gtr = gtr; else FreeParsetree(gtr);
