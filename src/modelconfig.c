@@ -49,8 +49,6 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
   int v;
   
   /* Contract checks */
-  if((cm->config_opts & CM_CONFIG_ELSILENT) && (!(cm->config_opts & CM_CONFIG_LOCAL)))
-    esl_fatal("ERROR in ConfigCM() trying to non-local CM to silence EL\n");
   if((cm->search_opts & CM_SEARCH_HMMSCANBANDS) && 
      (!(cm->search_opts & CM_SEARCH_HMMFILTER)))
     esl_fatal("ERROR in ConfigCM() trying to search with HMM derived bands, but w/o using a  HMM filter.");
@@ -81,9 +79,6 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
     { 
       ConfigLocal(cm, cm->pbegin, cm->pend);
       CMLogoddsify(cm);
-      
-      if(cm->config_opts & CM_CONFIG_ELSILENT)
-	ConfigLocal_DisallowELEmissions(cm);
     }
   /* Possibly configure the CP9 for local alignment
    * Note: CP9 local/glocal config does not necessarily match CM config 
@@ -263,8 +258,6 @@ ConfigCMEnforce(CM_t *cm)
       ConfigLocalEnforce(cm, cm->pbegin, cm->pend); /* even in local we require each parse 
 						     * go through the enforced subseq */
       CMLogoddsify(cm);
-      if(cm->config_opts & CM_CONFIG_ELSILENT)
-	ConfigLocal_DisallowELEmissions(cm);
       if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
 	CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
 				     * makes all CP9 (if non-null) inserts equiprobable */
@@ -378,7 +371,7 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
       for (v = 0; v < cm->cnum[0]; v++)
 	cm->root_trans[v] = cm->t[0][v];
     }
-  for (v = 0; v < cm->cnum[0]; v++)cm->t[0][v] = 0.;
+  for (v = 0; v < cm->cnum[0]; v++) cm->t[0][v] = 0.;
 
   /* Node 1 gets prob 1-p_internal_start.
    */
@@ -607,8 +600,10 @@ ConfigLocal_DisallowELEmissions(CM_t *cm)
    * 2 * IMPOSSIBLE, and IMPOSSIBLE must be > -FLT_MAX/3 so we can add it together 3 
    * times (see structs.h). 
    */
+  cm_Fail("ConfigLocal_DisallowELEmissions is deprecated.");
   cm->el_selfsc = (IMPOSSIBLE / (cm->W+1));
-  cm->iel_selfsc = -INFTY;
+  cm->iel_selfsc = -INFTY; 
+  cm->iel_selfsc = -100 * INTSCALE; 
   return;
 }
 

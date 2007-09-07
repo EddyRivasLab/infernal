@@ -54,11 +54,10 @@ static ESL_OPTIONS options[] = {
   { "--time",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "print timings for alignment, band calculation, etc.", 2 },
   { "--regress", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regresion test data to file <f>", 2 },
   { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 1 },
-  { "--elsilent",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      "-l",        NULL, "disallow local end (EL) emissions", 2 },
   /* Algorithm options */
   { "--cyk",     eslARG_NONE,"default",NULL, NULL,   ALGOPTS,      NULL,        NULL, "align with the CYK algorithm", 3 },
   { "--hmmonly", eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "align to a CM Plan 9 HMM with the Viterbi algorithm",3 },
-  { "--inside",  eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,   "--cyk",        NULL, "don't align; return scores from the Inside algorithm", 3 },
+  { "--inside",  eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "don't align; return scores from the Inside algorithm", 3 },
   { "--outside", eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "don't align; return scores from the Outside algorithm", 3 },
   { "--post",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "align with CYK and append posterior probabilities", 3 },
   { "--checkpost",eslARG_NONE,  FALSE, NULL, NULL,      NULL,  "--post",        NULL, "check that posteriors are correctly calc'ed", 3 },
@@ -815,7 +814,6 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
       cm->config_opts |= CM_CONFIG_HMMLOCAL;
       cm->config_opts |= CM_CONFIG_HMMEL;
     }
-  if(esl_opt_GetBoolean(go, "--elsilent"))    cm->config_opts |= CM_CONFIG_ELSILENT;
   if(! esl_opt_GetBoolean(go, "--iins"))      cm->config_opts |= CM_CONFIG_ZEROINSERTS;
 
   /* update cm->align->opts */

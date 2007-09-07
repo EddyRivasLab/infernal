@@ -53,7 +53,6 @@ static ESL_OPTIONS options[] = {
   { "--window",  eslARG_INT,    NULL,  NULL, "n>0",     NULL,      NULL,        NULL, "set scanning window size to <n> [default: calculated]", 1 },
   { "--null2",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmonly", "turn on the post hoc second null model", 1 },
   { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 1 },
-  { "--elsilent",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "disallow CM local end (EL) emissions", 1 },
   { "--rtrans",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmonly", "replace CM transition scores from <cmfile> with RSEARCH scores", 1 },
   { "--greedy",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmonly", "resolve overlapping hits with a greedy algorithm a la RSEARCH", 1 },
   /* strategy choice */
@@ -936,7 +935,6 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(  esl_opt_GetBoolean(go, "--hmmlocal"))    cm->config_opts |= CM_CONFIG_HMMLOCAL;
   if(! esl_opt_GetBoolean(go, "--hmmnoel"))     cm->config_opts |= CM_CONFIG_HMMEL;
   if(! esl_opt_GetBoolean(go, "--iins"))        cm->config_opts |= CM_CONFIG_ZEROINSERTS;
-  if(  esl_opt_GetBoolean(go, "--elsilent"))    cm->config_opts |= CM_CONFIG_ELSILENT;
   /* config QDB? Yes, unless --noqdb or --hmmonly enabled */
   if(! (esl_opt_GetBoolean(go, "--noqdb") || esl_opt_GetBoolean(go, "--hmmonly")))
     cm->config_opts |= CM_CONFIG_QDB;

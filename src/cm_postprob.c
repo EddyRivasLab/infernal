@@ -4748,17 +4748,21 @@ ParsetreeSampleFromIInside(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, int
   int       y, yoffset;
   int       z;
   int       bifparent;
-  float     pvec[MAXCONNECT];
-  float     *bifvec;
+  float     pvec[MAXCONNECT+1]; /* max num children + 1 for possibility of EL */
+  float    *bifvec;             /* for choosing transition out of BIF_B states */
+  float    *rootvec;            /* for choosing transition out of ROOT_S, could be large if local begins are on */
+  int       el_is_possible;
+  int       ntrans;
   int       isc; 
   float     maxsc;
+  int       nd;
 
   /* contract check */
   if(ret_tr == NULL) cm_Fail("ParsetreeSampleFromIInside(), ret_tr is NULL.");
   if(r      == NULL) cm_Fail("ParsetreeSampleFromIInside(), source of randomness r is NULL.");
   
   /* initialize pvec */
-  esl_vec_FSet(pvec, MAXCONNECT, 0.);
+  esl_vec_FSet(pvec, (MAXCONNECT+1), 0.);
 
   /* Create a parse tree structure and initialize it by adding the root state.
    */
@@ -4775,14 +4779,13 @@ ParsetreeSampleFromIInside(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, int
   j = d = L;
   i = 1;
 
-  /*printf("Starting traceback in insideT()\n");*/
   while (1) {
     if (cm->sttype[v] == B_st) {
       y = cm->cfirst[v];
       z = cm->cnum[v];
 
       ESL_ALLOC(bifvec, sizeof(float) * (d+1));
-      /* set pvec[] as (float-ized) log odds scores for each child we can transit to */
+      /* set bifvec[] as (float-ized) log odds scores for each child we can transit to */
       for(k = 0; k <= d; k++) 
 	bifvec[k] = Scorify(alpha[y][j-k][d-k] + alpha[z][j][k]);
       maxsc = esl_vec_FMax(bifvec, (d+1));
@@ -4790,8 +4793,7 @@ ParsetreeSampleFromIInside(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, int
       esl_vec_FScale(bifvec, (d+1), log(2));
       esl_vec_FLogNorm(bifvec, (d+1));
       k = esl_rnd_FChoose(r, bifvec, (d+1));
-
-      /* no need to update isc, bifurcations are mandatory with no score */
+      free(bifvec);
 
       /* Store info about the right fragment that we'll retrieve later:
        */
@@ -4825,39 +4827,72 @@ ParsetreeSampleFromIInside(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, int
 
       v = y;
     } else {
-      /* choose which transition we take 
-       * local begins and ends are forbidden for now 
-       */
-      esl_vec_FSet(pvec, MAXCONNECT, 0.); /* not really necessary */
-      /* printf("v: %d\n", v);
-       * isc  = alpha[v][j][d];
-       * unnec? right? subtract out emission score, if any 
-       * isc -= get_iemission_score(cm, dsq, v, i, j); */
-
-      isc += get_iemission_score(cm, dsq, v, i, j); 
-
-      /* set pvec[] as (float-ized) log odds scores for each child we can transit to */
-      for(yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
-	y = yoffset + cm->cfirst[v];
-	pvec[yoffset] = Scorify(cm->itsc[v][yoffset] + 
-				alpha[y][j - StateRightDelta(cm->sttype[v])][d - StateDelta(cm->sttype[v])]);
-      }
-      maxsc = esl_vec_FMax(pvec, cm->cnum[v]);
-      esl_vec_FIncrement(pvec, cm->cnum[v], (-1. * maxsc));
-
-      /* we can treat the log odds scores as log probs, because
-       * the log probability of the null model is the same for each,
-       * so essentially we've divided each score by the same constant, so 
-       * the *relative* proportion of the log odds scores is the
-       * same as the relative proportion of the log probabilities (seq | model) */
-
-      /* get from log_2 to log_e, so we can use easel's log vec ops */
-      esl_vec_FScale(pvec, cm->cnum[v], log(2));
-      esl_vec_FLogNorm(pvec, cm->cnum[v]);
-      yoffset = esl_rnd_FChoose(r, pvec, cm->cnum[v]);
-      isc += cm->tsc[v][yoffset];
-
-      y = cm->cfirst[v] + yoffset;
+      if((v > 0) || (! (cm->flags & CM_LOCAL_BEGIN))) /* ROOT_S with local begins on is a special case that we handle below */
+	{ 
+	  /* choose which transition we take */
+	  esl_vec_FSet(pvec, (MAXCONNECT+1), IMPOSSIBLE); /* not really necessary */
+	  isc += get_iemission_score(cm, dsq, v, i, j); 
+	  
+	  /* set pvec[] as (float-ized) log odds scores for each child we can transit to, 
+	   * plus a local end (if possible) */
+	  ntrans = cm->cnum[v];
+	  el_is_possible = FALSE;
+	  if((cm->flags & CM_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) { 
+	    el_is_possible = TRUE; 
+	    ntrans++; 
+	  }
+	  for(yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	    y = yoffset + cm->cfirst[v];
+	    pvec[yoffset] = Scorify(cm->itsc[v][yoffset] + 
+				    alpha[y][j - StateRightDelta(cm->sttype[v])][d - StateDelta(cm->sttype[v])]);
+	  }
+	  if(el_is_possible) pvec[cm->cnum[v]] = Scorify(cm->iendsc[v] + 
+						 alpha[cm->M][j][d]); /* EL is silent when we transition into it from non-EL */
+	  /* note: we can treat the log odds scores as log probs, because
+	   * the log probability of the null model is the same for each,
+	   * so essentially we've divided each score by the same constant, so 
+	   * the *relative* proportion of the log odds scores is the
+	   * same as the relative proportion of the log probabilities (seq | model) */
+	  
+	  maxsc = esl_vec_FMax(pvec, ntrans);
+	  esl_vec_FIncrement(pvec, ntrans, (-1. * maxsc));
+	  /* get from log_2 to log_e, so we can use easel's log vec ops */
+	  esl_vec_FScale  (pvec, ntrans, log(2));
+	  esl_vec_FLogNorm(pvec, ntrans);
+	  yoffset = esl_rnd_FChoose(r, pvec, ntrans);
+	  if(yoffset < cm->cnum[v]) isc += cm->itsc[v][yoffset]; 
+	  else {
+	    isc += cm->iendsc[v] + (cm->iel_selfsc * (d - StateDelta(cm->sttype[v])));
+	    yoffset = USED_EL; /* we chose EL */
+	  }
+	}
+      else /* v == 0 && (cm->flags && CM_LOCAL_BEGIN) ( local begins are on )*/
+	{
+	  ntrans = cm->M; /* pretend all states are possible to begin into, but they're not as some will remain IMPOSSIBLE */
+	  ESL_ALLOC(rootvec, sizeof(float) * (ntrans));
+	  esl_vec_FSet(rootvec, ntrans, IMPOSSIBLE);
+	  rootvec[cm->nodemap[1]] = Scorify(cm->ibeginsc[cm->nodemap[1]] + 
+					    alpha[cm->nodemap[1]][j][d]); /* ROOT_S is silent */
+	  for (nd = 2; nd < cm->nodes; nd++) {
+	    if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+		cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd)  
+	      {
+		rootvec[cm->nodemap[nd]] = Scorify(cm->ibeginsc[cm->nodemap[nd]] + 
+						   alpha[cm->nodemap[nd]][j][d]); /* ROOT_S is silent */
+	      }
+	  }
+	  /* this block is shared with v > 0 block, but we repeat it here so we don't need another if statement */
+	  maxsc = esl_vec_FMax(rootvec, ntrans);
+	  esl_vec_FIncrement(rootvec, ntrans, (-1. * maxsc));
+	  /* get from log_2 to log_e, so we can use easel's log vec ops */
+	  esl_vec_FScale  (rootvec, ntrans, log(2));
+	  esl_vec_FLogNorm(rootvec, ntrans);
+	  yoffset = esl_rnd_FChoose(r, rootvec, ntrans);
+	  /* end of similar block with v > 0 */
+	  isc += cm->ibeginsc[yoffset];
+	  yoffset = USED_LOCAL_BEGIN; 
+	  free(rootvec); /* we will not need this again */
+	}
 
       /*printf("v : %d | r : %d | z : %d | 1 : %d | \n", v, r, z, 1);*/
       /*printf("\tyoffset : %d\n", yoffset);*/

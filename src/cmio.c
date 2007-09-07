@@ -313,6 +313,9 @@ CMFilePositionByIndex(CMFILE *cmf, int idx)
 int 
 CMFileWrite(FILE *fp, CM_t *cm, int do_binary)
 {
+  if((cm->flags & CM_LOCAL_BEGIN) && (cm->flags & CM_LOCAL_END)) cm_Fail("CMFileWrite(), CM_LOCAL_BEGIN and CM_LOCAL_END flags are up.");
+  if (cm->flags & CM_LOCAL_BEGIN) cm_Fail("CMFileWrite(), CM_LOCAL_BEGIN flag is up.");
+  if (cm->flags & CM_LOCAL_END)   cm_Fail("CMFileWrite(), CM_LOCAL_END flag is up.");
   if (do_binary) return write_binary_cm(fp, cm);
   else           return write_ascii_cm(fp, cm);
 }

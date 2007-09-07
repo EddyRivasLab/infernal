@@ -48,7 +48,6 @@ static ESL_OPTIONS options[] = {
   { "--stringent",eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        NULL, "require the two parsetrees to be identical", 2 },
   { "--sub",      eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        "-l", "build sub CM for columns b/t HMM predicted start/end points", 2 },
   { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 2 },
-  { "--elsilent",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      "-l",        NULL, "disallow local end (EL) emissions", 2 },
   /* options for generating/reading sequences to score */
   { "--emit",    eslARG_INT,    "100", NULL, "n>0",     NULL,      NULL,     SEQOPTS, "emit <n> sequences from each CM [default: 100]", 3 },
   { "--random",  eslARG_INT,    "100", NULL, "n>0",     NULL,      NULL,     SEQOPTS, "emit <n> random seq from cm->null model (length = CM consensus)", 3},
@@ -989,7 +988,6 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
     }
   /*if(  esl_opt_GetBoolean(go, "-i"))         cm->align_opts  |= CM_ALIGN_TIME;*/
   if(! esl_opt_GetBoolean(go, "--iins"))     cm->config_opts |= CM_CONFIG_ZEROINSERTS;
-  if(  esl_opt_GetBoolean(go, "--elsilent")) cm->config_opts |= CM_CONFIG_ELSILENT;
 
   if(cfg->s == 0) /* set up stage 1 alignment we'll compare all other stages to */
     {

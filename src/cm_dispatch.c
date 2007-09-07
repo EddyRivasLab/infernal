@@ -1034,7 +1034,7 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
   cp9_tr   = NULL;
   postcode = NULL;
   if(sq_mode) {
-    if(!do_hmmonly && !do_scoreonly)
+    if(!do_hmmonly && !do_scoreonly && !do_inside && !do_outside)
       ESL_ALLOC(tr, sizeof(Parsetree_t *) * nalign);
     else if(do_hmmonly) /* do_hmmonly */
       ESL_ALLOC(cp9_tr, sizeof(CP9trace_t *) * nalign);
@@ -1297,7 +1297,7 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
 	  else
 	    {
 	      sc = IInside(cm, cur_dsq, 1, L,
-			   BE_EFFICIENT,/* memory-saving mode */
+			   FALSE,       /* memory-saving mode */
 			   NULL, NULL,	/* manage your own matrix, I don't want it */
 			   NULL, NULL,	/* manage your own deckpool, I don't want it */
 			   do_local);       /* TRUE to allow local begins */

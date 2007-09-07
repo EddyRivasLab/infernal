@@ -1870,12 +1870,15 @@ cm_Validate(CM_t *cm, float tol, char *errbuf)
   int status;
   int v;
   int clen = 0;
+  float pvec[MAXCONNECT+1];
+  int y;
 
   if (cm             == NULL)       ESL_XFAIL(eslFAIL, errbuf, "CM is a null pointer");
   if (cm->M          <  1)          ESL_XFAIL(eslFAIL, errbuf, "CM has M < 1");
   if (cm->abc        == NULL)       ESL_XFAIL(eslFAIL, errbuf, "CM has no alphabet reference");
   if (cm->abc->type  == eslUNKNOWN) ESL_XFAIL(eslFAIL, errbuf, "CM's alphabet is set to unknown");
   
+  esl_vec_FSet(pvec, MAXCONNECT+1, 0.); 
   for (v = 0; v < cm->M; v++)
     {
       if(StateDelta(cm->sttype[v]) == 2)
@@ -1888,15 +1891,30 @@ cm_Validate(CM_t *cm, float tol, char *errbuf)
 	  if (esl_vec_FValidate(cm->e[v], cm->abc->K, tol, NULL) != eslOK) 
 	    ESL_XFAIL(eslFAIL, errbuf, "e[%d] fails pvector validation", v); 
 	}
-      if (cm->sttype[v] != B_st && cm->sttype[v] != E_st)
-	if(esl_vec_FValidate(cm->t[v], cm->cnum[v], tol, NULL) != eslOK) 
-	  ESL_XFAIL(eslFAIL, errbuf, "t[%d] fails pvector validation", v);
+      if (cm->sttype[v] != B_st && cm->sttype[v] != E_st) 
+	{
+	  if ((! (cm->flags & CM_LOCAL_BEGIN)) && (! (cm->flags & CM_LOCAL_END)))
+	    {
+	      if(esl_vec_FValidate(cm->t[v], cm->cnum[v], tol, NULL) != eslOK) 
+		ESL_XFAIL(eslFAIL, errbuf, "t[%d] fails pvector validation", v);
+	    }
+	  else if (v > 0 && (cm->flags & CM_LOCAL_END))
+	    {
+	      esl_vec_FSet(pvec, MAXCONNECT+1, 0.); /* not really nec */
+	      for(y = 0; y < cm->cnum[v]; y++) pvec[y] = cm->t[v][y];
+	      pvec[cm->cnum[v]] = cm->end[v];
+	      if(esl_vec_FValidate(pvec, (cm->cnum[v]+1), tol, NULL) != eslOK) 
+		ESL_XFAIL(eslFAIL, errbuf, "t[%d] (with local end) fails pvector validation", v);
+	    }
+	}
       if(cm->stid[v] == MATL_ML) clen++;
       if(cm->stid[v] == MATR_MR) clen++;
       if(cm->stid[v] == MATP_MP) clen+=2;
     }
+  if(cm->flags & CM_LOCAL_BEGIN) 
+    if(esl_vec_FValidate(cm->begin, cm->M, tol, NULL) != eslOK) 
   if(cm->clen != clen) ESL_XFAIL(eslFAIL, errbuf, "consensus length %d not correctly stored in CM, should be %d", cm->clen, clen);
-  
+
   return eslOK;
 
  ERROR:
