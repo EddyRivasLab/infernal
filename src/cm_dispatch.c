@@ -1270,8 +1270,7 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
 			      NULL, NULL,  /* manage your own deckpool, I don't want it */
 			      do_local,    /* TRUE to allow local begins */
 			      cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
-	      cm_Fail("You need to write ParsetreeSampleFromIInside_b_jd_me()");
-	      /*sc = ParsetreeSampleFromIInside_b_jd_me(r, cm, cur_dsq, 1, L, alpha, &ret_tr);*/
+	      sc = ParsetreeSampleFromIInside_b_jd_me(r, cm, cur_dsq, L, alpha, cp9b, cur_tr, NULL);
 	    }
 	  else
 	    {
@@ -1283,7 +1282,7 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
 	      sc = ParsetreeSampleFromIInside(r, cm, cur_dsq, L, alpha, cur_tr, NULL);
 	    }
 	}
-      if(do_inside) 
+      else if(do_inside) 
 	{ 
 	  if(do_hbanded)
 	    {

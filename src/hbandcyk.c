@@ -898,9 +898,9 @@ insideT_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 
   while (1) {
     if(cm->sttype[v] != EL_st && d > hdmax[v][jp_v])
-      esl_fatal("ERROR in insideT_b_jd(). d : %d > safe_hdmax[%d] (%d)\n", d, v, safe_hdmax[v]);
+      esl_fatal("ERROR in insideT_b_jd(). d : %d > hdmax[%d] (%d)\n", d, v, hdmax[v]);
     if(cm->sttype[v] != EL_st && d < hdmin[v][jp_v])
-      esl_fatal("ERROR in insideT_b_jd(). d : %d < safe_hdmin[%d] (%d)\n", d, v, safe_hdmin[v]);
+      esl_fatal("ERROR in insideT_b_jd(). d : %d < hdmin[%d] (%d)\n", d, v, hdmin[v]);
     
     if (cm->sttype[v] == B_st) {
       kp_z = ((int **) shadow[v])[jp_v][dp_v];   /* kp = offset len of right fragment */

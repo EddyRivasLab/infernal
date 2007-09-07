@@ -521,6 +521,8 @@ extern char *ICMPostalCode_b_jd_me(CM_t *cm, int L, int ***post, Parsetree_t *tr
 				   int *jmin, int *jmax, int **hdmin, int **hdmax);
 extern float ParsetreeSampleFromIInside(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, int ***alpha, Parsetree_t **ret_tr,
 					int ****ret_alpha);
+extern float ParsetreeSampleFromIInside_b_jd_me(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, int ***alpha, CP9Bands_t *cp9b, 
+						Parsetree_t **ret_tr, int ****ret_alpha);
      
 /* cm_postprob.c: memory management routines analogous to those in smallcyk.c for
  * handling scaled int log odds scores instead of floats. */
