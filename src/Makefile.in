@@ -37,7 +37,7 @@ MYLIBS   = -leasel
 MYLIBDIR = -L../easel 
 MYINCDIR = -I../easel 
 
-PROGS = cmalign cmbuild cmcalibrate cmemit cmscore cmsearch 
+PROGS = cmalign cmbuild cmcalibrate cmemit cmscore cmsearch cmstat
 
 OBJS  = alphabet.o\
 	bandcyk.o\
@@ -57,6 +57,7 @@ OBJS  = alphabet.o\
 	emitmap.o\
 	hbandcyk.o\
 	hmmband.o\
+	logsum.o\
 	modelconfig.o\
 	modelmaker.o\
 	mpisupport.o\

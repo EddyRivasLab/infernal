@@ -71,6 +71,11 @@ main(int argc, char **argv)
   CM_t            *cm;          /* CM most recently read     */
   int              ncm;         /* CM index                  */
 
+#if USE_NEWLOGSUM
+  init_ilogsum();
+  FLogsumInit();
+#endif
+
   /* Process command line options.
    */
   go = esl_getopts_Create(options);
@@ -315,6 +320,7 @@ summarize_alignment(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH 
   /* Emit N seqs, and align them, to get total time up to reasonable level,
    * and to average out tightness of bands */
   int N = esl_opt_GetInteger(go, "-N");
+  seqs_to_aln_t *seqs_to_aln = NULL;
   ESL_SQ **sq = NULL;
   ESL_ALLOC(sq, sizeof(ESL_SQ *) * N);
   int L; 
@@ -330,11 +336,11 @@ summarize_alignment(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH 
   cm->align_opts |= CM_ALIGN_HBANDED;
   cm->align_opts |= CM_ALIGN_NOSMALL;
   esl_stopwatch_Start(w);
-  actually_align_targets(cm, sq, N, NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, TRUE);
+  seqs_to_aln = CreateSeqsToAlnFromSq(sq, N, FALSE);
+  actually_align_targets(cm, seqs_to_aln, NULL, NULL, 0, 0, TRUE, NULL);
   esl_stopwatch_Stop(w);
   t_hb = w->user / (float) N;
-  for(i = 0; i < N; i++) esl_sq_Destroy(sq[i]);
-  free(sq);
+  FreeSeqsToAln(seqs_to_aln);
 
   printf("#\n");
   printf("#\t\t\t Alignment statistics:\n");

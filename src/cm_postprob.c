@@ -1718,21 +1718,6 @@ ICMPosterior(int L, CM_t *cm, int   ***alpha, int   ****ret_alpha, int   ***beta
 
 }
 
-/***************************************************************/
-/* Function: LogSum2()
- * 
- * Purpose:  Returns the log_2 of the sum of two log_2 probabilities.
- *           log(exp(p1)+exp(p2)) = p1 + log(1 + exp(p2-p1)) for p1 > p2
- *           Note that this is in log_2 space.
- */
-float 
-LogSum2(float p1, float p2)
-{
-  if (p1 > p2)
-    return (p1-p2 > 50.) ? p1 : p1 + sreLOG2(1. + pow(2.,(p2-p1)));
-  else
-    return (p2-p1 > 50.) ? p2 : p2 + sreLOG2(1. + pow(2.,(p1-p2)));
-}
 
 /* Function: CMPostalCode()
  * Date:     EPN 05.25.06 based on SRE's PostalCode() 

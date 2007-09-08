@@ -20,6 +20,9 @@
 #include "esl_random.h"
 #include "esl_sqio.h"
 
+#define USE_NEWLOGSUM 1
+#define USE_OLDLOGSUM 0
+
 /* various default parameters for CMs and CP9 HMMs */ 
 #define DEFAULT_CM_CUTOFF 0.1
 #define DEFAULT_CM_CUTOFF_TYPE E_CUTOFF
@@ -50,9 +53,6 @@
 #define MAXABET     4
 #define CP9MAXABET  4 /* should be same as MAXABET */
 #define MAXDEGEN   17
-
-#define INTSCALE    1000.0      /* scaling constant for floats to integer scores */
-#define LOGSUM_TBL  20000       /* controls precision of ILogsum()            */
 
 /* We're moderately paranoid about underflow and overflow errors, so
  * we do some checking on the magnitude of the scores.
@@ -1031,6 +1031,34 @@ typedef struct _fullmat_t {
  */
 #define USED_LOCAL_BEGIN 101
 #define USED_EL          102
+
+/* EPN, Fri Sep  7 16:49:43 2007
+ * From HMMER3's p7_config.h:
+ *
+ * Sean's notes (verbatim):
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ * In Forward algorithm implementations, we use a table lookup in
+ * p7_FLogsum() to calculate summed probabilities in log
+ * space. p7_INTSCALE defines the precision of the calculation; the
+ * default of 1000.0 means rounding differences to the nearest 0.001
+ * nat. p7_LOGSUM_TBL defines the size of the lookup table; the
+ * default of 16000 means entries are calculated for differences of 0
+ * to 16.000 nats (when p7_INTSCALE is 1000.0).  e^{-p7_LOGSUM_TBL /
+ * p7_INTSCALE} should be on the order of the machine FLT_EPSILON,
+ * typically 1.2e-7.
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ * EPN: Infernal uses bits, not nats. 1.2e-7 =~ 2^-23 =~ e^-16. 
+ *      And I've removed the p7_ prefixes.
+ */
+#if USE_NEWLOGSUM
+#define INTSCALE     1000.0f
+#define LOGSUM_TBL   23000
+#endif
+/* Below is infernal -->v0.81 constants for logsums */
+#if USE_OLDLOGSUM
+#define INTSCALE    1000.0      /* scaling constant for floats to integer scores */
+#define LOGSUM_TBL  20000       /* controls precision of ILogsum()            */
+#endif
 
 
 #endif /*STRUCTSH_INCLUDED*/

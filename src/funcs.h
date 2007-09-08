@@ -11,6 +11,9 @@
 #include "mpi.h"
 #endif
 
+#define USE_NEWLOGSUM 1
+#define USE_OLDLOGSUM 0
+
 /* from alphabet.c
  */
 extern void   PairCount(const ESL_ALPHABET *abc, float *counters, char syml, char symr, float wt);
@@ -420,7 +423,6 @@ extern float iInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W,
 			 float cutoff, search_results_t *results);
 extern float iInsideBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
 			       float cutoff, search_results_t *results);
-extern float LogSum2(float p1, float p2);
 
 /* from cm_masks.c */
 extern float CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq);
@@ -610,8 +612,12 @@ extern int  ReadSeqsToAln(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int nseq, 
 extern seqs_to_aln_t *CMEmitSeqsToAln(ESL_RANDOMNESS *r, CM_t *cm, int ncm, int nseq, int i_am_mpi_master);
 extern seqs_to_aln_t *RandomEmitSeqsToAln(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, double *pdist, int extranum, int nseq, int L, int i_am_mpi_master); 
 
+/* from logsum.c: (stolen from HMMER3 dev code) EPN, Fri Sep  7 16:56:45 2007 */
+
 /* from cplan9.c: functions stolen from HMMER-2.4::mathsupport.c */
+#if USE_OLDLOGSUM
 extern int   ILogsum(int p1, int p2);
+#endif
 extern int   Prob2Score(float p, float null);
 extern float Score2Prob(int sc, float null);
 extern float Scorify(int sc);
@@ -726,4 +732,13 @@ extern int      CP9_HMMFilePositionByIndex(CP9HMMFILE *hmmfp, int idx);
 extern void     CP9_WriteAscHMM(FILE *fp, CP9_t *hmm);
 extern void     CP9_WriteBinHMM(FILE *fp, CP9_t *hmm);
 #endif
+
+/* from logsum.c */
+extern void  init_ilogsum(void);
+extern int   ILogsum(int s1, int s2);
+
+#if USE_NEWLOGSUM
+extern void  FLogsumInit(void);
+#endif
+extern float LogSum2(float p1, float p2);
 

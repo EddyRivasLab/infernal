@@ -1443,68 +1443,15 @@ CP9_reconfig2sub(struct cplan9_s *hmm, int spos, int epos, int spos_nd,
 /************************************************************************
  * Functions stolen from HMMER 2.4 for use with CM plan 9 HMMs.
  * Eventually, these should go away, replaced with Easel funcs. 
- * These first 4 were stolen from HMMER:mathsupport.c
+ * These first 3 were stolen from HMMER:mathsupport.c
  * 
- * ILogSum() (and auxiliary funcs associated with it)
  * Score2Prob()
  * Prob2Score()
  * Scorify()
  * 
- *                           
- ************************************************************************/
-/* Function: ILogsum()
- * 
- * Purpose:  Return the scaled integer log probability of
- *           the sum of two probabilities p1 and p2, where
- *           p1 and p2 are also given as scaled log probabilities.
- *         
- *           log(exp(p1)+exp(p2)) = p1 + log(1 + exp(p2-p1)) for p1 > p2
- *           
- *           For speed, builds a lookup table the first time it's called.
- *           LOGSUM_TBL is set to 20000 by default, in config.h.
- *
- *           Because of the one-time initialization, we have to
- *           be careful in a multithreaded implementation... hence
- *           the use of pthread_once(), which forces us to put
- *           the initialization routine and the lookup table outside
- *           ILogsum(). (Thanks to Henry Gabb at Intel for pointing
- *           out this problem.)
- *           
- * Args:     p1,p2 -- scaled integer log_2 probabilities to be summed
- *                    in probability space.
- *                    
- * Return:   scaled integer log_2 probability of the sum.
+ * NOTE: ILogSum() (and auxiliary funcs associated with it) used to be here
+ * but moved to logsum.c (EPN, Sat Sep  8 15:49:47 2007)
  */
-
-static int ilogsum_lookup[LOGSUM_TBL];
-static void 
-init_ilogsum(void)
-{
-  int i;
-  for (i = 0; i < LOGSUM_TBL; i++) 
-    ilogsum_lookup[i] = (int) (INTSCALE * 1.44269504 * 
-	   (log(1.+exp(0.69314718 * (float) -i/INTSCALE))));
-}
-int 
-ILogsum(int p1, int p2)
-{
-  int    diff;
-#ifdef HMMER_THREADS
-  static pthread_once_t firsttime = PTHREAD_ONCE_INIT;
-  pthread_once(&firsttime, init_ilogsum);
-#else
-  static int firsttime = 1;
-  if (firsttime) { init_ilogsum(); firsttime = 0; }
-#endif
-  if(p1 == -INFTY) return p2; /* EPN */
-  if(p2 == -INFTY) return p1; /* EPN */
-
-  diff = p1-p2;
-  if      (diff >=  LOGSUM_TBL) return p1;
-  else if (diff <= -LOGSUM_TBL) return p2;
-  else if (diff > 0)            return p1 + ilogsum_lookup[diff];
-  else                          return p2 + ilogsum_lookup[-diff];
-} 
 
 /* Function: Prob2Score()
  * 
