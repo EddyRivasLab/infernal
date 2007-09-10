@@ -132,13 +132,13 @@ TrCYK_DnC(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_t
 
    /* Create parse tree and initialize */
    tr = CreateParsetree();
-   InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, i0, j0, r);
+   /* InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, i0, j0, r); */
    z = cm->M-1;
 
    /* If local begin is known */
    if ( r != 0 )
    {
-      InsertTraceNode(tr, 0, TRACE_LEFT_CHILD, i0, j0, r);
+      InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, i0, j0, r);
       z = CMSubtreeFindEnd(cm, r);
    }
 
@@ -203,13 +203,14 @@ TrCYK_Inside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **re
    {
       /* Create parse tree and initialize */
       tr = CreateParsetree();
-      InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, i0, j0, r);
+      /* For purely local alignment, we don't want this state in the parse */
+      /* InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, i0, j0, r); */
       z = cm->M-1;
  
       /* If local begin is known */
       if ( r != 0 )
       {
-         InsertTraceNode(tr, 0, TRACE_LEFT_CHILD, i0, j0, r);
+         InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, i0, j0, r);
          z = CMSubtreeFindEnd(cm, r);
       }
 
@@ -3268,6 +3269,8 @@ tr_insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
                  &mode, &v, &i, &j );
    pda = esl_stack_ICreate();
    d = j-i+1;
+
+   InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
 
    while (1)
    {
