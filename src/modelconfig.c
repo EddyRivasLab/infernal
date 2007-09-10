@@ -1128,7 +1128,7 @@ ConfigQDB(CM_t *cm)
       cm->dmax = NULL;
     }
   /*debug_print_cm_params(cm);*/
-  while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta, 0, &(cm->dmin), &(cm->dmax), NULL)))
+  while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta, 0, &(cm->dmin), &(cm->dmax), NULL, NULL)))
     {
       free(cm->dmin);
       free(cm->dmax);

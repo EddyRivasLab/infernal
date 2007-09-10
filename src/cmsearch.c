@@ -366,19 +366,19 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 
   /* optionally, open bands file */
   if (esl_opt_GetString(go, "--bfile") != NULL) {
-    if ((cfg->tfp = fopen(esl_opt_GetString(go, "--bfile"), "w")) == NULL) 
+    if ((cfg->bfp = fopen(esl_opt_GetString(go, "--bfile"), "w")) == NULL) 
 	ESL_FAIL(eslFAIL, errbuf, "Failed to open --bfile output file %s\n", esl_opt_GetString(go, "--bfile"));
     }
 
   /* optionally, open filter threshold calc histogram file */
   if (esl_opt_GetString(go, "--filhfile") != NULL) {
-    if ((cfg->tfp = fopen(esl_opt_GetString(go, "--filhfile"), "w")) == NULL) 
+    if ((cfg->filhfp = fopen(esl_opt_GetString(go, "--filhfile"), "w")) == NULL) 
 	ESL_FAIL(eslFAIL, errbuf, "Failed to open --filhfile output file %s\n", esl_opt_GetString(go, "--filhfile"));
     }
 
   /* optionally, open filter threshold calc info file */
   if (esl_opt_GetString(go, "--filrfile") != NULL) {
-    if ((cfg->tfp = fopen(esl_opt_GetString(go, "--filrfile"), "w")) == NULL) 
+    if ((cfg->filrfp = fopen(esl_opt_GetString(go, "--filrfile"), "w")) == NULL) 
 	ESL_FAIL(eslFAIL, errbuf, "Failed to open --filrfile output file %s\n", esl_opt_GetString(go, "--filrfile"));
     }
 
@@ -1213,7 +1213,7 @@ set_window(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     int *dmin;
     int *dmax;
     int safe_windowlen = cm->clen * 2;
-    while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta, 0, &(dmin), &(dmax), NULL)))
+    while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta, 0, &(dmin), &(dmax), NULL, NULL)))
       {
 	free(dmin);
 	free(dmax);

@@ -34,7 +34,7 @@ BandExperiment(CM_t *cm)
   int *dmin, *dmax;
 
   W = 1000;
-  while (! BandCalculationEngine(cm, W, 0.00001, FALSE, &dmin, &dmax, NULL))
+  while (! BandCalculationEngine(cm, W, 0.00001, FALSE, &dmin, &dmax, NULL, NULL))
     {
       W += 1000;
       ESL_DPRINTF1(("increasing W to %d, redoing band calculation...\n", W));
@@ -99,6 +99,9 @@ BandExperiment(CM_t *cm)
  *                        Pass NULL if you don't want dmax back.
  *            ret_gamma - RETURN: gamma[v][n], [0..M-1][0..W], is the prob
  *                        density Prob(length=n | parse subtree rooted at v).
+ *            ret_seqlen- RETURN: average hit length for a subtree rooted 
+ *                        at each state. NULL if not wanted. If non-NULL
+ *                        save_densities must be TRUE (contract checks this).
  *
  * Returns:   1 on success.
  *            0 if W was too small; caller needs to increase W and
@@ -115,7 +118,8 @@ BandExperiment(CM_t *cm)
  */
 int
 BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
-		      int **ret_dmin, int **ret_dmax, double ***ret_gamma)
+		      int **ret_dmin, int **ret_dmax, double ***ret_gamma,
+		      float **ret_seqlen)
 {
   double **gamma;               /* P(length = n) for each state v            */
   double  *tmp;
@@ -134,6 +138,13 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
   int      yoffset;             /* counter over children */
   int      reset_local_ends;    /* TRUE if we erased them and need to reset */
   int      reset_cp9_local_ends;/* TRUE if we erased them and need to reset */
+  float   *seqlen;              /* average seqlen for each state, only calc'ed if
+				 * ret_seqlen != NULL */
+  double  *tmp_gamma_v;         /* temp copy of gamma[v] when calc'ing seqlen */
+
+  if(ret_seqlen != NULL && (! save_densities))
+    cm_Fail("BandCalculationEngine() ret_seqlen non-NULL and save_densities is FALSE.");
+
   /* If we're in local to avoid extremely wide bands due to 
    * the permissive nature of local ends, we make local ends
    * impossible for the band calculation than make them
@@ -359,6 +370,27 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
     }
   if (! BandTruncationNegligible(gamma[0], dmax[0], W, NULL)) 
     { status = 0; goto CLEANUP; }
+
+  if(ret_seqlen != NULL) {
+    ESL_ALLOC(seqlen, sizeof(float) * cm->M);
+    esl_vec_FSet(seqlen, cm->M, 0.);
+    /* for each state, copy gamma[v] into tmp_gamma_v only from
+     * dmin[v]..dmax[v]. Then normalize tmp_gamma_v, and use it
+     * to calculate the average subseq len at v. We don't use
+     * n = 1..W b/c it would take much longer and is unlikely
+     * to change the average length much at all (unless beta is large).
+     */
+    for(v = 0; v < cm->M; v++) {
+      ESL_ALLOC(tmp_gamma_v, sizeof(double) * (dmax[v] - dmin[v] + 1));
+      for(n = dmin[v]; n <= dmax[v]; n++) 
+	tmp_gamma_v[(n-dmin[v])] = gamma[v][n];
+      esl_vec_DNorm(tmp_gamma_v, (dmax[v] - dmin[v] + 1));
+      for(n = 0; n <= (dmax[v]-dmin[v]); n++) 
+	seqlen[v] += tmp_gamma_v[n] * ((float) (n + dmin[v]));
+      free(tmp_gamma_v);
+    }
+    *ret_seqlen = seqlen;
+  }
 
   status = 1;
 

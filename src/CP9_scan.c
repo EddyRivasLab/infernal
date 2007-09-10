@@ -2315,13 +2315,13 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	       */
 	      hmm_sc_p[ip] = CP9Forward(cm_for_scoring, sq->dsq, 1, L, cm_for_scoring->W, 0., 
 					NULL,   /* don't return scores of hits */
-				       NULL,   /* don't return posns of hits */
-				       NULL,   /* don't keep track of hits */
-				       TRUE,   /* we're scanning */
-				       FALSE,  /* we're not ultimately aligning */
-				       FALSE,  /* we're not rescanning */
-				       TRUE,   /* be memory efficient */
-				       NULL);  /* don't want the DP matrix back */
+					NULL,   /* don't return posns of hits */
+					NULL,   /* don't keep track of hits */
+					TRUE,   /* we're scanning */
+					FALSE,  /* we're not ultimately aligning */
+					FALSE,  /* we're not rescanning */
+					TRUE,   /* be memory efficient */
+					NULL);  /* don't want the DP matrix back */
 	      hmm_eval_p[ip] = RJK_ExtremeValueE(hmm_sc_p[ip], hmm_mu[p], cmstats->gumAA[hmm_gum_mode][p]->lambda);
 	      if(Rpts_fp != NULL)
 		fprintf(Rpts_fp, "%.15f %.15f\n", hmm_sc_p[ip], cm_sc);

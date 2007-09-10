@@ -446,6 +446,8 @@ typedef struct cmstats_s {
 #define CP9_G 5
 #define NGUMBELMODES 6
 #define NFTHRMODES   4
+#define NCMMODES     4
+#define NCP9MODES    2
 
 /* Structure: CM_t
  * Incept:    SRE, 9 Mar 2000 [San Carlos CA]
