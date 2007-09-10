@@ -3270,7 +3270,10 @@ tr_insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
    pda = esl_stack_ICreate();
    d = j-i+1;
 
-   InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
+   if (r == 0)
+   {
+      InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
+   }
 
    while (1)
    {
