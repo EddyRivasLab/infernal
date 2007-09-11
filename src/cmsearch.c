@@ -79,7 +79,7 @@ static ESL_OPTIONS options[] = {
   /* HMM filtering options */
   { "--hmmpad",  eslARG_INT,    NULL,  NULL, NULL,      NULL,"--hmmfilter",     NULL, "subseqs \'i-<n>..j+<n>\' survive", 6 },
   { "--hbanded", eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hmmfilter",     NULL, "calculate and use HMM bands in CM search", 6 },
-  { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 6 },
+  { "--tau",     eslARG_REAL,   "1e-7",NULL, "0<x<1",   NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 6 },
   { "--scan2bands",eslARG_NONE, FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "derive HMM bands from scanning Forward/Backward", 6 },
   { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use posterior sums during HMM band calculation (widens bands)", 6 },
   /* HMM configuration options */

@@ -422,6 +422,28 @@ typedef struct cp9filterthr_s {
   int   was_fast;      /* TRUE if hacky fast method for calcing thresholds was used */
 } CP9FilterThr_t;
 
+
+/* Structure SubFilterInfo_t: Information on possible sub CM filters for a CM.
+ */
+typedef struct subfilterinfo_s {
+  int    M;            /* # states in the CM */
+  int    nends;        /* # end states in the CM */
+  int    ncands;       /* number of candidate states, these *could* be sub CM roots */
+  double beta;         /* beta used for calculating avglen */
+  float  minlen;       /* minimum average length (avglen) a candidate state must have */
+  int   *iscandA;      /* [0..v..cm->M] TRUE if state v is a candidate sub CM root, FALSE otherwise */
+  float *avglenA;      /* [0..v..cm->M] average length of a hit rooted at v (from QDB) */
+  int   *groupA;       /* [0..i..M-1]      end group this state belongs to */
+  int   *startA;       /* [0..i..nends-1], first state in end state i's group */
+  int   *endA;         /* [0..i..nends-1], final state in end state i's group */
+  int  **withinAA;     /* [0..i..nends-1][0..j..nends-1] = TRUE if end state j's group   
+			* is within end state i's group.
+	                * group j is 'within' i IFF: 
+			*         (startA[i] < startA[j]) && (endA[j] < endA[i]) 
+			*/
+
+} SubFilterInfo_t;
+
 /* Structure CMStats_t
  */
 typedef struct cmstats_s {

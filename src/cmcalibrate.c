@@ -38,6 +38,7 @@
 #include "esl_mpi.h"
 #include "esl_random.h"
 #include "esl_ratematrix.h"
+#include "esl_stack.h"
 #include "esl_stopwatch.h"
 #include "esl_vectorops.h"
 
@@ -59,9 +60,12 @@ static ESL_OPTIONS options[] = {
   { "--dbfile",  eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL, "--filonly", "use GC content distribution from file <s>",  2},
   { "--gumhfile",eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL, "--filonly", "save fitted Gumbel histogram(s) to file <s>", 2 },
   { "--gumqqfile",eslARG_STRING, NULL, NULL, NULL,      NULL,      NULL, "--filonly", "save Q-Q plot for Gumbel histogram(s) to file <s>", 2 },
+  { "--beta",    eslARG_REAL,  "1e-7",NULL, "x>0",     NULL,      NULL,    "--noqdb", "set tail loss prob for Gumbel calculation to <x>", 5 },
+  { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "DO NOT use query dependent banding (QDB) Gumbel searches", 5 },
   /* options for filter threshold calculation */
   { "--filonly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly", "only calculate filter thresholds, don't estimate Gumbels", 3},
   { "--filN",    eslARG_INT,   "1000", NULL, "n>0",     NULL,      NULL, "--gumonly", "number of emitted sequences for HMM filter threshold calc",    3 },
+  { "--fbeta",   eslARG_REAL,  "1e-3",NULL, "x>0",     NULL,      NULL, "--gumonly", "set tail loss prob for filtering sub-CMs QDB to <x>", 5 },
   { "--F",       eslARG_REAL,  "0.95", NULL, "0<x<=1",  NULL,      NULL, "--gumonly", "required fraction of seqs that survive HMM filter", 3},
   { "--fstep",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly", "step from F to 1.0 while S < Starg", 3},
   { "--starg",   eslARG_REAL,  "0.01", NULL, "0<x<=1",  NULL,      NULL, "--gumonly", "target filter survival fraction", 3},
@@ -86,27 +90,27 @@ static ESL_OPTIONS options[] = {
 };
 
 struct cfg_s {
-  char           *cmfile;	      /* name of input CM file  */ 
-  ESL_RANDOMNESS *r;
-  ESL_ALPHABET   *abc;
-  double         *gc_freq;
-  double         *pgc_freq;
-  int             be_verbose;	
-  ESL_STOPWATCH  *w;
-  CMStats_t     **cmstatsA;           /* the CM stats data structures, 1 for each CM */
-  int             ncm;                /* what number CM we're on */
-  int             cmalloc;            /* number of cmstats we have allocated */
-  char           *tmpfile;            /* tmp file we're writing to */
-  char           *mode;               /* write mode, "w" or "wb"                     */
-  float           minlen;             /* minimum average length of a subseq for calc'ing gumbels */
-  long            dbsize;             /* size of DB for gumbel stats (impt for E-value cutoffs for filters) */ 
-  float          *cutoffA;            /* bit score cutoff for each partition, changes to reflect
+  char            *cmfile;	      /* name of input CM file  */ 
+  ESL_RANDOMNESS  *r;
+  ESL_ALPHABET    *abc;
+  double          *gc_freq;
+  double          *pgc_freq;
+  int              be_verbose;	
+  ESL_STOPWATCH   *w;
+  CMStats_t      **cmstatsA;           /* the CM stats data structures, 1 for each CM */
+  SubFilterInfo_t *subinfo;           /* sub-CM filter information */
+  int              ncm;                /* what number CM we're on */
+  int              cmalloc;            /* number of cmstats we have allocated */
+  char            *tmpfile;            /* tmp file we're writing to */
+  char            *mode;               /* write mode, "w" or "wb"                     */
+  long             dbsize;             /* size of DB for gumbel stats (impt for E-value cutoffs for filters) */ 
+  float           *cutoffA;            /* bit score cutoff for each partition, changes to reflect
 				       * current mode CM is in, on masters and workers */
 
-  int             do_mpi;
-  int             my_rank;
-  int             nproc;
-  int             do_stall;	/* TRUE to stall the program until gdb attaches */
+  int              do_mpi;
+  int              my_rank;
+  int              nproc;
+  int              do_stall;	/* TRUE to stall the program until gdb attaches */
 
   /* Masters only (i/o streams) */
   CMFILE       *cmfp;		/* open input CM file stream       */
@@ -131,13 +135,15 @@ static int process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char
 			    int emit_from_cm, float ***ret_vscAA, float **ret_cp9scA);
 static int initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int initialize_cmstats(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
+static int initialize_sub_filter_info(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm);
+
 static int update_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int fthr_mode);
+static int update_qdbs(const ESL_GETOPTS *go, CM_t *cm, int doing_filter);
 static int set_partition_gc_freq(struct cfg_s *cfg, int p);
-static int find_possible_filter_states(struct cfg_s *cfg, CM_t *cm, int **ret_fitme, float **ret_avglen);
 static int calc_avg_hit_length(CM_t *cm, float **ret_hitlen, double beta);
 static int pick_stemwinners(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, double *muA, double *lambdaA, float *avglen, int **ret_vwin, int *ret_nwin);
 static int fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores, double *ret_mu, double *ret_lambda);
-static int cm_fit_histograms(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float **vscA, int nscores, int *lbegin, double **ret_muA, double **ret_lambdaA);
+static int cm_fit_histograms(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float **vscA, int nscores, double **ret_muA, double **ret_lambdaA);
 static ESL_DSQ * get_random_dsq(const struct cfg_s *cfg, CM_t *cm, double *dnull, int L);
 static ESL_DSQ * get_cmemit_dsq(const struct cfg_s *cfg, CM_t *cm, int *ret_L, int *ret_p);
 static float search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float **ret_vsc);
@@ -199,9 +205,9 @@ main(int argc, char **argv)
   cfg.w        = NULL; 
   cfg.ncm      = 0;
   cfg.cmstatsA = NULL;
+  cfg.subinfo  = NULL;
   cfg.tmpfile  = NULL;
   cfg.mode     = NULL;
-  cfg.minlen   = 7.;      /* not user changeable, should it be? is 8 not good? */
   cfg.dbsize   = 1000000; /* default DB size = 1MB, changed ONLY if --dbfile enabled */
   cfg.cutoffA  = NULL; 
 
@@ -393,8 +399,6 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   double    **lambdaA = NULL;  /* same as muA, but lambda */
   /*int           *vwin = NULL;
     int            nwin = 0;*/
-  int          *fitme = NULL;
-  float       *avglen = NULL;
   int        gum_mode = 0;
   int               p;
   float **gum_vscAA = NULL; /* [0..v..cm->M-1][0..nseq-1] best cm score for each state, each random seq */
@@ -410,14 +414,17 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
       cfg->ncm++;
 
-      if((status = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) cm_Fail(errbuf);
-      if((status = initialize_cmstats(go, cfg, errbuf))                   != eslOK) cm_Fail(errbuf);
-      if((status = find_possible_filter_states(cfg, cm, &fitme, &avglen)) != eslOK) cm_Fail(errbuf);
+      if((status = initialize_cm(go, cfg, errbuf, cm))          != eslOK) cm_Fail(errbuf);
+      if((status = initialize_cmstats(go, cfg, errbuf))         != eslOK) cm_Fail(errbuf);
+      if((status = initialize_sub_filter_info(go, cfg, cm))     != eslOK) cm_Fail("initialize_sub_info failed unexpectedly (status: %d)", status);
+      cm_Fail("done.");
 
       //for(gum_mode = 0; gum_mode < NGUMBELMODES; gum_mode++) {
       for(gum_mode = 0; gum_mode < 1; gum_mode++) 
 	{
 	  ConfigForGumbelMode(cm, gum_mode);
+	  /* recalc QDBs for fitting Gumbels */
+	  update_qdbs(go, cm, FALSE);
 	  ESL_ALLOC(muA,     sizeof(double *) * cfg->cmstatsA[cfg->ncm-1]->np);
 	  ESL_ALLOC(lambdaA, sizeof(double *) * cfg->cmstatsA[cfg->ncm-1]->np);
 	  for (p = 0; p < cfg->cmstatsA[cfg->ncm-1]->np; p++) 
@@ -427,7 +434,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		{ /* CM mode */
 		  /* search random sequences to get gumbels */
 		  if((status = process_workunit (go, cfg, errbuf, cm, cmN,   FALSE, &gum_vscAA, NULL))        != eslOK) cm_Fail(errbuf);
-		  if((status = cm_fit_histograms(go, cfg, errbuf, cm, gum_vscAA, cmN, fitme, &(muA[p]), &(lambdaA[p]))) != eslOK) cm_Fail(errbuf);
+		  if((status = cm_fit_histograms(go, cfg, errbuf, cm, gum_vscAA, cmN, &(muA[p]), &(lambdaA[p]))) != eslOK) cm_Fail(errbuf);
 		  cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->mu     = muA[p][0];
 		  cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->lambda = lambdaA[p][0];
 		  cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->L      = cm->W*2;
@@ -446,9 +453,12 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    /* update cfg, so cutoff[p] is bit score for current gum_mode, and i can access it inside
 	     * process_workunit, by passing it to cm_emit_seqs_to_aln_above_cutoff() */
 	    if((status = update_cutoffs(go, cfg, errbuf, cm, gum_mode)) != eslOK) cm_Fail(errbuf);
-	    
+	    /* recalc QDBs for filtering sub CMs */
+	    update_qdbs(go, cm, TRUE);
 	    /* search emitted sequences to get filter thresholds */
 	    if((status = process_workunit (go, cfg, errbuf, cm, cmN, TRUE, &fil_vscAA, &fil_cp9scA)) != eslOK) cm_Fail(errbuf);
+
+
 	    cm_Fail("done.");
 	  }
 	  /* free muA and lambdaA */
@@ -600,10 +610,58 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
 static int
 initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
+  cm->beta   = esl_opt_GetReal(go, "--beta"); /* this will be 1e-7 (default beta) unless changed at command line */
+
   if(!(esl_opt_GetBoolean(go, "--iins"))) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
-  cm->config_opts |= CM_CONFIG_QDB;   /* configure QDB, only to get W */
-  cm->search_opts |= CM_SEARCH_NOQDB; /* don't use QDB to search */
+
+  /* config QDB? Yes, unless --noqdb enabled */
+  if(! (esl_opt_GetBoolean(go, "--noqdb"))) 
+    cm->config_opts |= CM_CONFIG_QDB;   /* configure QDB */
+  else
+    cm->search_opts |= CM_SEARCH_NOQDB; /* don't use QDB to search */
+
   ConfigCM(cm, NULL, NULL);
+  return eslOK;
+}
+
+
+/* update_qdbs()
+ * Update a CM's QDB related parameters based on whether
+ * we are about to calculate filter stats (if doing_filter)
+ * or about to calculate Gumbel stats (if !doing_filter).
+ */
+static int
+update_qdbs(const ESL_GETOPTS *go, CM_t *cm, int doing_filter)
+{
+  if(doing_filter) {
+    cm->beta   = esl_opt_GetReal(go, "--fbeta"); /* this will be 1e-3 unless changed at command line */
+    cm->search_opts &= ~CM_SEARCH_NOQDB; /* don't use QDB to search */
+    if(cm->flags & CM_QDB)
+      {
+	free(cm->dmin);
+	free(cm->dmax);
+	cm->dmin = NULL;
+	cm->dmax = NULL;
+	cm->flags &= ~CM_QDB;
+      }
+    ConfigQDB(cm);
+  }
+  else { /* doing Gumbels */
+    cm->beta = esl_opt_GetReal(go, "--beta"); /* this will be 1e-7 unless changed at command line */
+    if(! (esl_opt_GetBoolean(go, "--noqdb"))) {
+      cm->search_opts &= ~CM_SEARCH_NOQDB; 
+      if(cm->flags & CM_QDB)
+	{
+	  free(cm->dmin);
+	  free(cm->dmax);
+	  cm->dmin = NULL;
+	  cm->dmax = NULL;
+	  cm->flags &= ~CM_QDB;
+	}
+      ConfigQDB(cm);
+    }
+    else cm->search_opts |= CM_SEARCH_NOQDB; /* don't use QDB to search */
+  }
   return eslOK;
 }
 
@@ -664,41 +722,134 @@ update_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm,
   return eslOK;
 }  
 
-/* Function: find_possible_filter_states()
- * Date:     EPN, Mon Sep 10 15:49:43 2007
+/* Function: initialize_sub_filter_info
+ * Date:     EPN, Tue Sep 11 10:44:52 2007
  *
- * Purpose:  Given a CM, fill an array of length cm->M with TRUE, FALSE for each
+ * Purpose:  Given a CM, determine which states could be used as sub-CM filter
+ *           roots and also which 'end' (kind of like a stem) they belong to. 
+ *           
+ *           Determining which states are possible sub-CM filter roots:
+ *           Fill an array of length cm->M with TRUE, FALSE for each
  *           state. TRUE if we should fit a Gumbel to the state b/c it may be
  *           a good sub-CM filter root state, or FALSE if not. Criteria is that
  *           a state must be a possible local entry state AND must have an average
  *           subseq length of cfg->minlen.
- *
+ * 
+ *           Finding which 'end group' each state v belongs to:
+ *           Each end group is defined by a start/end state pair. 
+ *           Each state v belongs to the group defined by start'/end'
+ *           where start' is the maximum start state index that is 
+ *           less than v. The assignments of states to groups is most
+ *           efficiently done using a push down stack. 
+ *            
  * Returns:  eslOK on success;
  */
 int
-find_possible_filter_states(struct cfg_s *cfg, CM_t *cm, int **ret_fitme, float **ret_avglen)
+initialize_sub_filter_info(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 {
   int    status;
-  int   *fitme  = NULL;
-  float *avglen = NULL;
   int nd;
   int v;
+  ESL_STACK   *pda;
+  int cur_end = 0;
+  int i,j;
+  int start_nd;
 
-  if((status = calc_avg_hit_length(cm, &avglen, 1e-15)) != eslOK) return status;
+  if(cfg->subinfo != NULL) ;/* FreeSubFilterInfo() */
+  cfg->subinfo = NULL;
 
-  ESL_ALLOC(fitme, sizeof(int) * cm->M);
-  esl_vec_ISet(fitme, cm->M, FALSE);
+  ESL_ALLOC(cfg->subinfo, sizeof(SubFilterInfo_t));
 
-  fitme[0] = TRUE; /* ROOT_S: has to be true */
-  for (nd = 1; nd < cm->nodes; nd++) /* note: nd 1 must be MATP, MATL, MATR, or BIF */
+  cfg->subinfo->M      = cm->M;
+  cfg->subinfo->minlen = 7.;      /* not user changeable, should it be? is 7 not good? */
+  
+  /* determine average length for each subtree (state) */
+  cfg->subinfo->beta = 1e-15;
+  if((status = calc_avg_hit_length(cm, &(cfg->subinfo->avglenA), cfg->subinfo->beta)) != eslOK) return status;
+
+  /* determine which states are candidate sub-CM filter root states */
+  ESL_ALLOC(cfg->subinfo->iscandA, sizeof(int) * cm->M);
+  esl_vec_ISet(cfg->subinfo->iscandA, cm->M, FALSE);
+  cfg->subinfo->ncands = 1;
+  cfg->subinfo->iscandA[0] = TRUE; /* ROOT_S: has to be TRUE */
+  for (nd = 1; nd < cm->nodes; nd++) { /* note: nd 1 must be MATP, MATL, MATR, or BIF */
     if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
-    	cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd) 
-      {
-	v = cm->nodemap[nd];
-	if(avglen[v] > cfg->minlen) fitme[v] = TRUE;
+	cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd) {
+      v = cm->nodemap[nd];
+      if(cfg->subinfo->avglenA[v] > cfg->subinfo->minlen) {
+	cfg->subinfo->iscandA[v] = TRUE;
+	cfg->subinfo->ncands++;
       }
-  *ret_avglen = avglen;
-  *ret_fitme  = fitme;
+    }
+  }
+
+  /* determine each end state's 'group' 
+   * first, allocate data structures for this info 
+   */
+  cfg->subinfo->ngroups = CMCountStatetype(cm, E_st);
+  ESL_ALLOC(cfg->subinfo->groupA,   sizeof(int) *   cfg->subinfo->M);
+  esl_vec_ISet(cfg->subinfo->groupA, cfg->subinfo->M, -1);
+
+  ESL_ALLOC(cfg->subinfo->startA,   sizeof(int) *   cfg->subinfo->ngroups);
+  ESL_ALLOC(cfg->subinfo->endA,     sizeof(int) *   cfg->subinfo->ngroups);
+
+  ESL_ALLOC(cfg->subinfo->withinAA, sizeof(int *) * cfg->subinfo->ngroups);
+  for(i = 0; i < cfg->subinfo->ngroups; i++) 
+    {
+      ESL_ALLOC(cfg->subinfo->withinAA[i], sizeof(int) * cfg->subinfo->ngroups);
+      esl_vec_ISet(cfg->subinfo->withinAA[i], cfg->subinfo->ngroups, FALSE);
+    }
+  
+
+  /* first group is the ROOT_S group, these are all states in nodes
+   * prior to the first BIF node */
+  pda  = esl_stack_ICreate();
+  v = 0; 
+  cfg->subinfo->startA[0] = 0;
+  while(cm->sttype[v] != B_st) cfg->subinfo->groupA[v++] = 0; 
+  cfg->subinfo->endA[0] = v-1;
+  for(j = 1; j < cfg->subinfo->ngroups; j++) /* all groups are 'within' the ROOT_S's group */
+    cfg->subinfo->withinAA[0][j] = TRUE;
+
+  /* to get info for all other groups >= 1, traverse CM using a stack, recording relevant info */
+  if(cfg->subinfo->ngroups > 1) /* no need to traverse CM, only 1 group (ROOT_S->END_E(cm->M-1)) which we already filled info on */
+    {
+      cur_end = 1;
+      for(nd = 1; nd < cm->nodes; nd++) 
+	{
+	  if(cm->ndtype[nd] == BIF_nd) 
+	    {
+	  
+	      esl_stack_IPush(pda, cur_end + 2);
+	      esl_stack_IPush(pda, cm->ndidx[cm->cnum[cm->nodemap[nd]]]);   /* right child */
+	      esl_stack_IPush(pda, cur_end + 1);
+	      esl_stack_IPush(pda, cm->ndidx[cm->cnum[cm->nodemap[nd]]]);   /* left child */
+	      cur_end += 2;
+	    }
+	  else if(cm->ndtype[nd] == END_nd) 
+	    {
+	      esl_stack_IPop(pda, &start_nd);
+	      esl_stack_IPop(pda, &j);
+	      cfg->subinfo->startA[j] = cm->nodemap[start_nd];
+	      cfg->subinfo->endA[j]   = cm->nodemap[nd];
+	      for(v = cfg->subinfo->startA[j]; v <= cfg->subinfo->endA[j]; v++)
+		if(cfg->subinfo->groupA[v] != -1)
+		  v = cfg->subinfo->endA[(cfg->subinfo->groupA[v])]; /* skip this group, that's already filled, (the v++ will still happen) */
+		else cfg->subinfo->groupA[v] = j;
+
+	      /* the end group we just defined is 'withing' each end group currently 
+	       * in the stack. group j is 'within' i IFF:
+	       *    (startA[i] < startA[j]) && (endA[j] < endA[i])
+	       */
+	      for(i = 0; i < pda->n; i += 2) /* += 2 b/c only every other element is a end group index */
+		cfg->subinfo->withinAA[pda->idata[i]][j] = TRUE;
+	    }
+	}
+      if(esl_stack_ObjectCount(pda) != 0) cm_Fail("initialize_sub_filter_info() error, stack not empty after all nodes");
+    }
+  printf("\n");
+  for(v = 0; v < cm->M; v++) { printf("groupA[%4d]: %d\n", v, cfg->subinfo->groupA[v]); assert(cfg->subinfo->groupA[v] >= 0); }
+
   return eslOK;
 
  ERROR:
@@ -805,7 +956,7 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
  */
 static int
 cm_fit_histograms(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
-		  float **vscA, int nscores, int *fitme, double **ret_muA, double **ret_lambdaA)
+		  float **vscA, int nscores, double **ret_muA, double **ret_lambdaA)
 {
   int status;
   double *muA = NULL;
@@ -816,7 +967,7 @@ cm_fit_histograms(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *
   ESL_ALLOC(lambdaA, sizeof(double) * cm->M);
 
   for(v = 0; v < cm->M; v++) {
-    if(fitme[v]) {
+    if(cfg->subinfo->iscandA[v]) {
       printf("FITTING v: %d sttype: %d\n", v, cm->sttype[v]);
       fit_histogram(go, cfg, errbuf, vscA[v], nscores, &(muA[v]), &(lambdaA[v]));
     }
@@ -1511,8 +1662,8 @@ seqs_to_aln_t *cm_emit_seqs_to_aln_above_cutoff(const ESL_GETOPTS *go, struct cf
 	{ i++; break; }
       s2_np++;
       /* stage 3 */
-      cm->search_opts &~ CM_SEARCH_HBANDED;
-      cm->search_opts &~ CM_SEARCH_HBANDED;
+      cm->search_opts &= ~CM_SEARCH_HBANDED;
+      cm->search_opts &= ~CM_SEARCH_HBANDED;
       if((sc = search_target_cm_calibration(cm, seqs_to_aln->sq[i]->dsq, cm->dmin, cm->dmax, 1, seqs_to_aln->sq[i]->n, cm->W, NULL)) > cfg->cutoffA[p])
 	{ i++; break; }
       s3_np++;
