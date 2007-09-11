@@ -448,6 +448,8 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    {
       if ( w_mode )
       {
+if (b1_mode < 1 || b1_mode > 3)
+fprintf(stderr,"Catch uninitialized value in valgrind!\n");
          InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, b1_i, b1_j, b1_v, b1_mode);
          z = CMSubtreeFindEnd(cm, b1_v);
          tr_generic_splitter(cm, dsq, L, tr, b1_v, z, b1_i, b1_j, (b1_mode == 2), (b1_mode == 1));
@@ -455,6 +457,8 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
       }
       else if ( y_mode )
       {
+if (b2_mode < 1 || b2_mode > 3)
+fprintf(stderr,"Catch uninitialized value in valgrind!\n");
          InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, b2_i, b2_j, b2_v, b2_mode);
          z = CMSubtreeFindEnd(cm, b2_v);
          tr_generic_splitter(cm, dsq, L, tr, b2_v, z, b2_i, b2_j, (b2_mode == 2), (b2_mode == 1));
@@ -470,22 +474,30 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    tv = tr->n - 1;
    if ( w_mode )
    {
+if (w_mode < 1 || w_mode > 3)
+fprintf(stderr,"Catch uninitialized value in valgrind!\n");
       InsertTraceNodewithMode(tr, tv, TRACE_LEFT_CHILD, best_j - best_d + 1, best_j - best_k, w, w_mode);
       tr_generic_splitter(cm, dsq, L, tr, w, wend, best_j - best_d + 1, best_j - best_k, (w_mode == 2), (w_mode == 1));
    }
    else
    {
+if (w_mode < 1 || w_mode > 3)
+fprintf(stderr,"Catch uninitialized value in valgrind!\n");
       InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, best_j - best_d + 1, best_j - best_d, w, w_mode);
       InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, best_j - best_d + 1, best_j - best_d, cm->M, 3);
    }
 
    if ( y_mode )
    {
+if (y_mode < 1 || y_mode > 3)
+fprintf(stderr,"Catch uninitialized value in valgrind!\n");
       InsertTraceNodewithMode(tr, tv, TRACE_RIGHT_CHILD, best_j - best_k + 1, best_j, y, y_mode);
       tr_generic_splitter(cm, dsq, L, tr, y, yend, best_j - best_k + 1, best_j, (y_mode == 2), (y_mode == 1));
    }
    else 
    {
+if (y_mode < 1 || y_mode > 3)
+fprintf(stderr,"Catch uninitialized value in valgrind!\n");
       InsertTraceNodewithMode(tr, tv, TRACE_RIGHT_CHILD, best_j + 1, best_j, y, y_mode);
       InsertTraceNodewithMode(tr, tv, TRACE_RIGHT_CHILD, best_j + 1, best_j, cm->M, 3);
    }
@@ -835,7 +847,7 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
    {
       if ( c_mode )
       {
-         tr_v_splitter(cm, dsq, L, tr, r, best_v, i0, best_i, best_j, j0, FALSE, force_LM, force_RM);
+         tr_v_splitter(cm, dsq, L, tr, r, best_v, i0, best_i, best_j, j0, FALSE, (c_mode == 2), (c_mode == 1));
          tr_v_splitter(cm, dsq, L, tr, best_v, z, best_i, i1, j1, best_j, useEL, force_LM, force_RM);  
       }
       else
@@ -847,6 +859,8 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
    {
       if (best_v != z)
       {
+if (c_mode < 1 || c_mode > 3)
+fprintf(stderr,"Catch uninitialized value in valgrind!\n");
          InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, best_i, best_j, best_v, c_mode);
       }
       tr_v_splitter(cm, dsq, L, tr, best_v, z, best_i, i1, j1, best_j, useEL, force_LM, force_RM);
@@ -1285,30 +1299,30 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                      if ( ret_shadow != NULL ) { ((char **)shadow[v])[j][d] = yoffset; }
                   }
 
-                  if ( (sc = L_alpha[y+yoffset][j][d-1] + cm->tsc[v][yoffset]) > L_alpha[v][j][d])
-                  {
-                     L_alpha[v][j][d] = sc;
-                     if ( ret_shadow != NULL ) { ((char **)L_shadow[v])[j][d] = yoffset; }
-                     if ( ret_shadow != NULL ) { Lmode_shadow[v][j][d] = 2; }
-                  }
                   if ( (sc = alpha[y+yoffset][j][d-1] + cm->tsc[v][yoffset]) > L_alpha[v][j][d])
                   {
                      L_alpha[v][j][d] = sc;
                      if ( ret_shadow != NULL ) { ((char **)L_shadow[v])[j][d] = yoffset; }
                      if ( ret_shadow != NULL ) { Lmode_shadow[v][j][d] = 3; }
                   }
-
-                  if ( (sc = R_alpha[y+yoffset][j-1][d-1] + cm->tsc[v][yoffset]) > R_alpha[v][j][d])
+                  if ( (sc = L_alpha[y+yoffset][j][d-1] + cm->tsc[v][yoffset]) > L_alpha[v][j][d])
                   {
-                     R_alpha[v][j][d] = sc;
-                     if ( ret_shadow != NULL ) { ((char **)R_shadow[v])[j][d] = yoffset; }
-                     if ( ret_shadow != NULL ) { Rmode_shadow[v][j][d] = 1; }
+                     L_alpha[v][j][d] = sc;
+                     if ( ret_shadow != NULL ) { ((char **)L_shadow[v])[j][d] = yoffset; }
+                     if ( ret_shadow != NULL ) { Lmode_shadow[v][j][d] = 2; }
                   }
+
                   if ( (sc = alpha[y+yoffset][j-1][d-1] + cm->tsc[v][yoffset]) > R_alpha[v][j][d])
                   {
                      R_alpha[v][j][d] = sc;
                      if ( ret_shadow != NULL ) { ((char **)R_shadow[v])[j][d] = yoffset; }
                      if ( ret_shadow != NULL ) { Rmode_shadow[v][j][d] = 3; }
+                  }
+                  if ( (sc = R_alpha[y+yoffset][j-1][d-1] + cm->tsc[v][yoffset]) > R_alpha[v][j][d])
+                  {
+                     R_alpha[v][j][d] = sc;
+                     if ( ret_shadow != NULL ) { ((char **)R_shadow[v])[j][d] = yoffset; }
+                     if ( ret_shadow != NULL ) { Rmode_shadow[v][j][d] = 1; }
                   }
                }
 
@@ -1379,18 +1393,18 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                      if ( ret_shadow != NULL ) { Lmode_shadow[v][j][d] = 2; }
                   }
 
-                  if  ( (sc = R_alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) > R_alpha[v][j][d] )
-                  {
-                     R_alpha[v][j][d] = sc;
-                     if ( ret_shadow != NULL ) { ((char **)R_shadow[v])[j][d] = yoffset; }
-                     if ( ret_shadow != NULL ) { Rmode_shadow[v][j][d] = 1; }
-                  }
-
                   if  ( (sc = alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) > R_alpha[v][j][d] )
                   {
                      R_alpha[v][j][d] = sc;
                      if ( ret_shadow != NULL ) { ((char **)R_shadow[v])[j][d] = yoffset; }
                      if ( ret_shadow != NULL ) { Rmode_shadow[v][j][d] = 3; }
+                  }
+
+                  if  ( (sc = R_alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) > R_alpha[v][j][d] )
+                  {
+                     R_alpha[v][j][d] = sc;
+                     if ( ret_shadow != NULL ) { ((char **)R_shadow[v])[j][d] = yoffset; }
+                     if ( ret_shadow != NULL ) { Rmode_shadow[v][j][d] = 1; }
                   }
                }
 
@@ -1450,18 +1464,18 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                      if ( ret_shadow != NULL ) { ((char **)shadow[v])[j][d] = yoffset; }
                   }
 
-                  if  ( (sc = L_alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) > L_alpha[v][j][d] )
-                  {
-                     L_alpha[v][j][d] = sc;
-                     if ( ret_shadow != NULL ) { ((char **)L_shadow[v])[j][d] = yoffset; }
-                     if ( ret_shadow != NULL ) { Lmode_shadow[v][j][d] = 2; }
-                  }
-
                   if  ( (sc = alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) > L_alpha[v][j][d] )
                   {
                      L_alpha[v][j][d] = sc;
                      if ( ret_shadow != NULL ) { ((char **)L_shadow[v])[j][d] = yoffset; }
                      if ( ret_shadow != NULL ) { Lmode_shadow[v][j][d] = 3; }
+                  }
+
+                  if  ( (sc = L_alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) > L_alpha[v][j][d] )
+                  {
+                     L_alpha[v][j][d] = sc;
+                     if ( ret_shadow != NULL ) { ((char **)L_shadow[v])[j][d] = yoffset; }
+                     if ( ret_shadow != NULL ) { Lmode_shadow[v][j][d] = 2; }
                   }
 
                   if  ( d > 1 )
@@ -1847,7 +1861,7 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
                   if (j > i0)
                   {
                      if (dsq[j-1] < Alphabet_size)
-                        esc = LeftMarginalScore(cm->esc[v], dsq[j-1]);
+                        esc = LeftMarginalScore(cm->esc[y], dsq[j-1]);
                      else
                         Die("Still can't deal with marginalizing degenerate residues! dsq[%d] = %d\n",j-1,dsq[j-1]);
                      if ( (sc = beta->L[y][j-1] + cm->tsc[y][voffset] + esc) > beta->L[v][j] )
@@ -1901,7 +1915,7 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
                   if (j < j0)
                   {
                      if (dsq[j+1] < Alphabet_size)
-                        esc = RightMarginalScore(cm->esc[v], dsq[j+1]);
+                        esc = RightMarginalScore(cm->esc[y], dsq[j+1]);
                      else
                         Die("Still can't deal with marginalizing degenerate residues! dsq[%d] = %d\n",j+1,dsq[j+1]);
                      if ( (sc = beta->R[y][j+1] + cm->tsc[y][voffset] + esc) > beta->R[v][j] )
@@ -2451,28 +2465,28 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
                      if (ret_shadow != NULL) ((char **)shadow->J[v])[jp][ip] = (char) yoffset;
                   }
                   if (!force_RM && ip < i1-i0)
-                  if ( (sc = alpha->L[y+yoffset][jp][ip+1] + cm->tsc[v][yoffset]) > alpha->L[v][jp][ip])
-                  {
-                     alpha->L[v][jp][ip] = sc;
-                     if (ret_shadow != NULL) { ((char **)shadow->L[v])[jp][ip] = (char) yoffset; ((char **)shadow->Lmode[v])[jp][ip] = 2; }
-                  }
-                  if (!force_RM && ip < i1-i0)
                   if ( (sc = alpha->J[y+yoffset][jp][ip+1] + cm->tsc[v][yoffset]) > alpha->L[v][jp][ip])
                   {
                      alpha->L[v][jp][ip] = sc;
                      if (ret_shadow != NULL) { ((char **)shadow->L[v])[jp][ip] = (char) yoffset; ((char **)shadow->Lmode[v])[jp][ip] = 3; }
                   }
-                  if (!force_LM && jp > 0)
-                  if ( (sc = alpha->R[y+yoffset][jp-1][ip] + cm->tsc[v][yoffset]) > alpha->R[v][jp][ip])
+                  if (!force_RM && ip < i1-i0)
+                  if ( (sc = alpha->L[y+yoffset][jp][ip+1] + cm->tsc[v][yoffset]) > alpha->L[v][jp][ip])
                   {
-                     alpha->R[v][jp][ip] = sc;
-                     if (ret_shadow != NULL) { ((char **)shadow->R[v])[jp][ip] = (char) yoffset; ((char **)shadow->Rmode[v])[jp][ip] = 1; }
+                     alpha->L[v][jp][ip] = sc;
+                     if (ret_shadow != NULL) { ((char **)shadow->L[v])[jp][ip] = (char) yoffset; ((char **)shadow->Lmode[v])[jp][ip] = 2; }
                   }
                   if (!force_LM && jp > 0)
                   if ( (sc = alpha->J[y+yoffset][jp-1][ip] + cm->tsc[v][yoffset]) > alpha->R[v][jp][ip])
                   {
                      alpha->R[v][jp][ip] = sc;
                      if (ret_shadow != NULL) { ((char **)shadow->R[v])[jp][ip] = (char) yoffset; ((char **)shadow->Rmode[v])[jp][ip] = 3; }
+                  }
+                  if (!force_LM && jp > 0)
+                  if ( (sc = alpha->R[y+yoffset][jp-1][ip] + cm->tsc[v][yoffset]) > alpha->R[v][jp][ip])
+                  {
+                     alpha->R[v][jp][ip] = sc;
+                     if (ret_shadow != NULL) { ((char **)shadow->R[v])[jp][ip] = (char) yoffset; ((char **)shadow->Rmode[v])[jp][ip] = 1; }
                   }
                }
 
@@ -2545,16 +2559,16 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
                      if (ret_shadow != NULL) { ((char **)shadow->L[v])[jp][ip] = (char) yoffset; ((char **)shadow->Lmode[v])[jp][ip] = 2; }
                   }
                   if (!force_LM)
-                  if ( (sc = alpha->R[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) > alpha->R[v][jp][ip])
-                  {
-                     alpha->R[v][jp][ip] = sc;
-                     if (ret_shadow != NULL) { ((char **)shadow->R[v])[jp][ip] = (char) yoffset; ((char **)shadow->Rmode[v])[jp][ip] = 1; }
-                  }
-                  if (!force_LM)
                   if ( (sc = alpha->J[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) > alpha->R[v][jp][ip])
                   {
                      alpha->R[v][jp][ip] = sc;
                      if (ret_shadow != NULL) { ((char **)shadow->R[v])[jp][ip] = (char) yoffset; ((char **)shadow->Rmode[v])[jp][ip] = 3; }
+                  }
+                  if (!force_LM)
+                  if ( (sc = alpha->R[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) > alpha->R[v][jp][ip])
+                  {
+                     alpha->R[v][jp][ip] = sc;
+                     if (ret_shadow != NULL) { ((char **)shadow->R[v])[jp][ip] = (char) yoffset; ((char **)shadow->Rmode[v])[jp][ip] = 1; }
                   }
                }
 
@@ -2611,16 +2625,16 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
                      if (ret_shadow != NULL) ((char **)shadow->J[v])[jp][ip] = (char) yoffset;
                   }
                   if (!force_RM)
-                  if ( (sc = alpha->L[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) > alpha->L[v][jp][ip])
-                  {
-                     alpha->L[v][jp][ip] = sc;
-                     if (ret_shadow != NULL) { ((char **)shadow->L[v])[jp][ip] = (char) yoffset; ((char **)shadow->Lmode[v])[jp][ip] = 2; }
-                  }
-                  if (!force_RM)
                   if ( (sc = alpha->J[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) > alpha->L[v][jp][ip])
                   {
                      alpha->L[v][jp][ip] = sc;
                      if (ret_shadow != NULL) { ((char **)shadow->L[v])[jp][ip] = (char) yoffset; ((char **)shadow->Lmode[v])[jp][ip] = 3; }
+                  }
+                  if (!force_RM)
+                  if ( (sc = alpha->L[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) > alpha->L[v][jp][ip])
+                  {
+                     alpha->L[v][jp][ip] = sc;
+                     if (ret_shadow != NULL) { ((char **)shadow->L[v])[jp][ip] = (char) yoffset; ((char **)shadow->Lmode[v])[jp][ip] = 2; }
                   }
                   if (!force_LM && jp > 0)
                   if ( (sc = alpha->R[y+yoffset][jp-1][ip] + cm->tsc[v][yoffset]) > alpha->R[v][jp][ip])
@@ -3272,6 +3286,8 @@ tr_insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
 
    if (r == 0)
    {
+if (mode < 1 || mode > 3)
+fprintf(stderr,"Catch uninitialized value in valgrind!\n");
       InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
    }
 
@@ -3333,6 +3349,8 @@ tr_insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
          d = d-k;
          i = j-d+1;
          v = cm->cfirst[v];
+if (mode < 1 || mode > 3)
+fprintf(stderr,"Catch uninitialized value in valgrind!\n");
          InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
       }
       else if ( (cm->sttype[v] == E_st) || (cm->sttype[v] == EL_st) )
@@ -3346,6 +3364,8 @@ tr_insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
          i = j-d+1;
 
          v = y;
+if (mode < 1 || mode > 3)
+fprintf(stderr,"Catch uninitialized value in valgrind!\n");
          InsertTraceNodewithMode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, v, mode);
       }
       else
@@ -3358,12 +3378,12 @@ tr_insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
          else if ( mode == 2 )
          {
             yoffset = ((char **) L_shadow[v])[j][d];
-            nxtmode = ((int **)Lmode_shadow[v])[j][d];
+            nxtmode = ((int  **)Lmode_shadow[v])[j][d];
          }
          else if ( mode == 1 )
          {
             yoffset = ((char **) R_shadow[v])[j][d];
-            nxtmode = ((int **)Rmode_shadow[v])[j][d];
+            nxtmode = ((int  **)Rmode_shadow[v])[j][d];
          }
          else { Die("Unknown mode in traceback!"); }
 
@@ -3404,6 +3424,8 @@ tr_insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
          if ( yoffset == USED_EL )
          {
             v = cm->M;
+if (mode < 1 || mode > 3)
+fprintf(stderr,"Catch uninitialized value in valgrind!\n");
             InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
          }
          else if ( yoffset == USED_LOCAL_BEGIN )
@@ -3416,6 +3438,8 @@ tr_insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
          else
          {
             v = cm->cfirst[v] + yoffset;
+if (mode < 1 || mode > 3)
+fprintf(stderr,"Catch uninitialized value in valgrind!\n");
             InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
          }
       }
@@ -3452,7 +3476,9 @@ tr_vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
    int mode, nxtmode;
    int yoffset;
 
+   AlphaMats_t *alpha;
    ShadowMats_t *shadow;
+   alpha  = MallocOrDie(sizeof(AlphaMats_t));
    shadow = MallocOrDie(sizeof(ShadowMats_t));
 
    if (r == z)
@@ -3461,20 +3487,39 @@ tr_vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
       else if (force_RM) mode = 1;
       else               mode = 3;
 
+if (mode < 1 || mode > 3)
+fprintf(stderr,"Catch uninitialized value in valgrind!\n");
       InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, r, mode);
       return 0.0;
    }
 
    sc = tr_vinside(cm, dsq, L, r, z, i0, i1, j1, j0, useEL, force_LM, force_RM,
-                   BE_EFFICIENT, NULL, NULL, NULL, NULL, shadow, &mode, &v, &i, &j);
+                   BE_EFFICIENT, NULL, alpha, NULL, NULL, shadow, &mode, &v, &i, &j);
+
+   if (r == 0)
+   {
+if (mode < 1 || mode > 3)
+fprintf(stderr,"Catch uninitialized value in valgrind!\n");
+      InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
+   }
 
    if (r != 0 && r != v)
    {
       v = r;
       i = i0;
       j = j0;
+      ip = 0; jp = j0-j1;
       mode = 3;
+      if (alpha->L[v][jp][ip] > alpha->J[v][jp][ip])
+         mode = 2;
+      if (alpha->R[v][jp][ip] > alpha->J[v][jp][ip] && alpha->R[v][jp][ip] > alpha->L[v][jp][ip])
+         mode = 1;
    }
+
+   free_vji_matrix(alpha->J, cm->M, j1, j0);
+   free_vji_matrix(alpha->L, cm->M, j1, j0);
+   free_vji_matrix(alpha->R, cm->M, j1, j0);
+   free(alpha);
 
    /* start traceback */
    while (v != z)
@@ -3490,12 +3535,12 @@ tr_vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
       else if ( mode == 2 )
       {
          yoffset = ((char **) shadow->L[v])[jp][ip];
-         nxtmode = ((int **) shadow->Lmode[v])[jp][ip];
+         nxtmode = ((char **) shadow->Lmode[v])[jp][ip];
       }
       else if ( mode == 1 )
       {
          yoffset = ((char **) shadow->R[v])[jp][ip];
-         nxtmode = ((int **) shadow->Lmode[v])[jp][ip];
+         nxtmode = ((char **) shadow->Lmode[v])[jp][ip];
       }
       else
          Die("Unknown mode in traceback!\n");
@@ -3525,6 +3570,8 @@ tr_vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
       if (yoffset == USED_EL)
       {
          v = cm->M;
+if (mode < 1 || mode > 3)
+fprintf(stderr,"Catch uninitialized value in valgrind!\n");
          InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
          break;
       }
@@ -3538,6 +3585,8 @@ tr_vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
       else
       {
          v = cm->cfirst[v] + yoffset;
+if (mode < 1 || mode > 3)
+fprintf(stderr,"Catch uninitialized value in valgrind!\n");
          InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
       }
    }
