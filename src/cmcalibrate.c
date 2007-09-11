@@ -99,6 +99,8 @@ struct cfg_s {
   char           *tmpfile;            /* tmp file we're writing to */
   char           *mode;               /* write mode, "w" or "wb"                     */
   float           minlen;             /* minimum average length of a subseq for calc'ing gumbels */
+  float          *cutoff;             /* bit score cutoff for each partition, changes to reflect
+				       * current mode CM is in, on masters and workers */
 
   int             do_mpi;
   int             my_rank;
@@ -124,9 +126,8 @@ static void  serial_master (const ESL_GETOPTS *go, struct cfg_s *cfg);
 static void  mpi_master    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 static void  mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 #endif
-static int process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq, 
-			    float ***ret_cm_vbest_scA, float **ret_cp9_sc);
-
+static int process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq,
+			    int emit_from_cm, float ***ret_vscAA, float **ret_cp9scA);
 static int initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int initialize_cmstats(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int set_partition_gc_freq(struct cfg_s *cfg, int p);
@@ -134,8 +135,9 @@ static int find_possible_filter_states(struct cfg_s *cfg, CM_t *cm, int **ret_fi
 static int calc_avg_hit_length(CM_t *cm, float **ret_hitlen, double beta);
 static int pick_stemwinners(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, double *muA, double *lambdaA, float *avglen, int **ret_vwin, int *ret_nwin);
 static int fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores, double *ret_mu, double *ret_lambda);
-static int cm_fit_histograms(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float **cm_vbest_scA, int nscores, int *lbegin, double **ret_muA, double **ret_lambdaA);
-static int search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float **ret_cm_vbest_scA);
+static int cm_fit_histograms(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float **vscA, int nscores, int *lbegin, double **ret_muA, double **ret_lambdaA);
+static int search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float **ret_vscA);
+static seqs_to_aln_t *cm_emit_seqs_to_aln_above_cutoff(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int nseq)
 
 int
 main(int argc, char **argv)
@@ -198,6 +200,7 @@ main(int argc, char **argv)
   cfg.tmpfile  = NULL;
   cfg.mode     = NULL;
   cfg.minlen   = 7.;   /* not user changeable, should it be? is 8 not good? */
+  cfg.cutoff   = NULL; 
 
   cfg.gumhfp   = NULL; /* ALWAYS remains NULL for mpi workers */
   cfg.gumqfp   = NULL; /* ALWAYS remains NULL for mpi workers */
@@ -383,16 +386,19 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   CM_t          *cm = NULL;
   int            cmN  = esl_opt_GetInteger(go, "--cmN");
   int            hmmN = esl_opt_GetInteger(go, "--hmmN");
-  double         *muA = NULL;
-  double     *lambdaA = NULL;
-  int           *vwin = NULL;
-  int            nwin = 0;
+  double        **muA = NULL;  /* [0..np-1][0..cm->M-1], mu for each partition, each state, 
+				* muA[][v] == -1. if we're not fitting state v to a gumbel */
+  double    **lambdaA = NULL;  /* same as muA, but lambda */
+  /*int           *vwin = NULL;
+    int            nwin = 0;*/
   int          *fitme = NULL;
   float       *avglen = NULL;
   int        gum_mode = 0;
   int               p;
-  float      **cm_vbest_scA = NULL; /* [0..v..cm->M-1][0..nseq-1] best cm score for each state, each seq */
-  float       *cp9_sc       = NULL; /*                [0..nseq-1] best cp9 score for each seq */
+  float **gum_vscAA = NULL; /* [0..v..cm->M-1][0..nseq-1] best cm score for each state, each random seq */
+  float **fil_vscAA = NULL; /* [0..v..cm->M-1][0..nseq-1] best cm score for each state, each emitted seq */
+  float   *gum_cp9scA = NULL; /*                [0..nseq-1] best cp9 score for each random seq */
+  float   *fil_cp9scA = NULL; /*                [0..nseq-1] best cp9 score for each emitted seq */
 
   if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   /*if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);*/
@@ -406,98 +412,136 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status = initialize_cmstats(go, cfg, errbuf))                   != eslOK) cm_Fail(errbuf);
       if((status = find_possible_filter_states(cfg, cm, &fitme, &avglen)) != eslOK) cm_Fail(errbuf);
 
-      if(! esl_opt_GetBoolean(go, "--filonly")) {
-	//for(gum_mode = 0; gum_mode < NGUMBELMODES; gum_mode++) {
-	for(gum_mode = 0; gum_mode < 1; gum_mode++) {
+      //for(gum_mode = 0; gum_mode < NGUMBELMODES; gum_mode++) {
+      for(gum_mode = 0; gum_mode < 1; gum_mode++) 
+	{
 	  ConfigForGumbelMode(cm, gum_mode);
-	  for (p = 0; p < cfg->cmstatsA[cfg->ncm-1]->np; p++) {
-	    if(cfg->gc_freq != NULL) set_partition_gc_freq(cfg, p);
-	    if(gum_mode < NCMMODES) { /* CM gumbel */
-	      if((status = process_workunit (go, cfg, errbuf, cm, cmN,  &cm_vbest_scA, NULL))                 != eslOK) cm_Fail(errbuf);
-	      if((status = cm_fit_histograms(go, cfg, errbuf, cm, cm_vbest_scA, cmN, fitme, &muA, &lambdaA)) != eslOK) cm_Fail(errbuf);
-	      if((status = pick_stemwinners (go, cfg, errbuf, cm, muA, lambdaA, avglen, &vwin, &nwin))  != eslOK) cm_Fail(errbuf);
-	      free(muA); 
-	      free(lambdaA); 
-	      free(vwin);
-	    } 
-	    else { /* CP9 gumbel */
-	      if((status = process_workunit (go, cfg, errbuf, cm, hmmN, NULL, &cp9_sc))           != eslOK) cm_Fail(errbuf);
-	      if((status = fit_histogram(go, cfg, errbuf, cp9_sc, hmmN, &(cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->mu), 
-					 &(cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->lambda)))                 != eslOK) cm_Fail(errbuf);
+	  ESL_ALLOC(muA,     sizeof(double *) * cfg->cmstatsA[cfg->ncm-1]->np);
+	  ESL_ALLOC(lambdaA, sizeof(double *) * cfg->cmstatsA[cfg->ncm-1]->np);
+	  for (p = 0; p < cfg->cmstatsA[cfg->ncm-1]->np; p++) 
+	    {
+	      if(cfg->gc_freq != NULL) set_partition_gc_freq(cfg, p);
+	      if(gum_mode < NCMMODES) 
+		{ /* CM mode */
+		  /* search random sequences to get gumbels */
+		  if((status = process_workunit (go, cfg, errbuf, cm, cmN,   FALSE, &gum_vscAA, NULL))        != eslOK) cm_Fail(errbuf);
+		  if((status = cm_fit_histograms(go, cfg, errbuf, cm, gum_vscAA, cmN, fitme, &(muA[p]), &(lambdaA[p]))) != eslOK) cm_Fail(errbuf);
+		  cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->mu     = muA[p][0];
+		  cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->lambda = lambdaA[p][0];
+		}
+	      else 
+		{ /* CP9 mode, only fit gumbels */
+		  if((status = process_workunit (go, cfg, errbuf, cm, hmmN, FALSE, NULL, &gum_cp9scA))                 != eslOK) cm_Fail(errbuf);
+		  if((status = fit_histogram(go, cfg, errbuf, gum_cp9scA, hmmN, &(cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->mu), 
+					     &(cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->lambda)))     != eslOK) cm_Fail(errbuf);
+		}
 	    }
+	  if(gum_mode < NCMMODES) {
+	    /* update cfg, so cutoff[p] is bit score for current gum_mode, and i can access it inside
+	     * process_workunit, by passing it to cm_emit_seqs_to_aln_above_cutoff() */
+	    if((status = update_cutoff(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
+	    
+	    /* search emitted sequences to get filter thresholds */
+	    if((status = process_workunit (go, cfg, errbuf, cm, cmN, TRUE, &fil_vscAA, &fil_cp9scA))       != eslOK) cm_Fail(errbuf);
+	    cm_Fail("done.");
 	  }
+	  /* free muA and lambdaA */
 	}
-      }
     }
 }
 
-/* A work unit consists of a CM and a number of sequences <nseq>. 
- * The job is to generate <nseq> sequences, and search them each. If we're
- * in using the CM (in which case ret_cm_vbest_scA != NULL && ret_cp9_sc == NULL),
- * we return the best score seen at each state of the CM for each sequence
- * in <ret_cm_vbest_scA>.   
- * If we're using the CP9 HMM, (in which case <ret_cm_vbest_scA> == NULL && 
- * ret_cp9_sc != NULL), we return the best CP9 HMM score of each seq in 
- * <ret_cp9_sc>.
+/* Function: process_workunit()
+ * Date:     EPN, Mon Sep 10 16:55:09 2007
+ *
+ * Purpose:  A work unit consists of a CM, a int specifying a number of 
+ *           sequences <nseq>, and a flag indicated how to generate those
+ *           sequences. The job is to generate <nseq> sequences either
+ *           from a probability distribution (if !<emit_from_cm>) or
+ *           by emitting from a CM (if <emit_from_cm>), and then 
+ *           to search those sequences, with a CM (if ret_vscAA
+ *           passed in as non-NULL), and/or CP9 HMM (if ret_cp9scA non-NULL.
+ *           Scores are returned. If CM searches are performed,
+ *           the best CM scores for each state for each sequence are 
+ *           returned in <ret_vscAA>. If CP9 searches are performed, 
+ *           the best CP9 score for each sequence is returned in <ret_cp9scA>.
+ *
+ * Args:     go           - getopts
+ *           cfg          - cmcalibrate's configuration
+ *           errbuf       - for writing out error messages
+ *           cm           - the CM (already configured as we want it)
+ *           nseq         - number of seqs to generate
+ *           emit_from_cm - TRUE to emit from CM; FALSE emit random 
+ *           ret_vscAA    - RETURN: [0..v..cm->M-1][0..nseq-1] best 
+ *                                  score at each state v for each seq
+ *           ret_cp9scA   - RETURN: [0..nseq-1] best CP9 score for each seq
+ *
+ * Returns:  eslOK on success; dies immediately if some error occurs.
  */
 static int
 process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq,
-		 float ***ret_cm_vbest_scA, float **ret_cp9_sc)
+		 int emit_from_cm, float ***ret_vscAA, float **ret_cp9scA)
 {
   int status;
   int use_cm  = FALSE;
   int use_cp9 = FALSE;
+
   seqs_to_aln_t *seqs_to_aln = NULL;
-  double *dnull = NULL;
-  float **cm_vbest_scA    = NULL;  /* [0..v..cm->M-1][0..i..nseq-1] best CM score for each state, each seq */
-  float  *cur_cm_vbest_sc = NULL;  /* [0..v..cm->M-1]               best CM score for each state cur seq */
-  float  *cp9_sc          = NULL;  /*                [0..i..nseq-1] best CP9 score for each seq */
+  double        *dnull       = NULL;
+  float        **vscAA       = NULL;  /* [0..v..cm->M-1][0..i..nseq-1] best CM score for each state, each seq */
+  float         *cur_vscA = NULL;     /* [0..v..cm->M-1]               best CM score for each state cur seq */
+  float         *cp9scA      = NULL;  /*                [0..i..nseq-1] best CP9 score for each seq */
   int i;
   int v;
 
   /* contract check */
-  if(ret_cm_vbest_scA  == NULL && ret_cp9_sc == NULL) { sprintf(errbuf, "process_gumbel_workunit, ret_cm_vbest_scA and ret_cp9_sc both NULL."); return eslEINVAL; } 
-  if(ret_cm_vbest_scA  != NULL && ret_cp9_sc != NULL) { sprintf(errbuf, "process_gumbel_workunit, ret_cm_vbest_scA and ret_cp9_sc both non-NULL."); return eslEINVAL; } 
+  if(ret_vscAA  == NULL && ret_cp9scA == NULL) { sprintf(errbuf, "process_workunit, ret_vscAA and ret_cp9scA both NULL."); return eslEINVAL; } 
+  if(ret_vscAA  != NULL && ret_cp9scA != NULL && !emit_from_cm) { sprintf(errbuf, "process_workunit, ret_vscAA and ret_cp9scA both non-NULL, but emit_from_cm is FALSE."); return eslEINVAL; } 
 
-  /* determine if we're calc'ing CM stats or CP9 stats */
-  if(ret_cm_vbest_scA  != NULL) use_cm  = TRUE;
-  if(ret_cp9_sc        != NULL) use_cp9 = TRUE;
+  /* determine if we're calc'ing CM stats, CP9 stats, or both */
+  if(ret_vscAA   != NULL) use_cm  = TRUE;
+  if(ret_cp9scA  != NULL)  use_cp9 = TRUE;
 
   if(use_cm) { 
-    ESL_ALLOC(cm_vbest_scA, sizeof(float *) * cm->M);
-    for(v = 0; v < cm->M; v++) ESL_ALLOC(cm_vbest_scA[v], sizeof(float) * nseq);
-    ESL_ALLOC(cur_cm_vbest_sc, sizeof(float) * cm->M);
+    ESL_ALLOC(vscAA, sizeof(float *) * cm->M);
+    for(v = 0; v < cm->M; v++) ESL_ALLOC(vscAA[v], sizeof(float) * nseq);
+    ESL_ALLOC(cur_vscA, sizeof(float) * cm->M);
   }
-  if(use_cp9) ESL_ALLOC(cp9_sc,       sizeof(float) * nseq);
+  if(use_cp9) ESL_ALLOC(cp9scA, sizeof(float) * nseq);
 
   /* generate all sequences first (this is not memory efficient, but shouldn't be a problem unless 100K+ seqs) */
-  ESL_ALLOC(dnull, sizeof(double) * cm->abc->K);
-  for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
-  esl_vec_DNorm(dnull, cm->abc->K);
-  seqs_to_aln = RandomEmitSeqsToAln(cfg->r, cm->abc, dnull, cfg->ncm, nseq, cm->W*2, FALSE);
-  free(dnull);
-
-  /* collect scores, either best CM scores at each state, or best overall CP9 score */
-  for(i = 0; i < nseq; i++) {
-    if (use_cm) { 
-      search_target_cm_calibration(cm, seqs_to_aln->sq[i]->dsq, NULL, NULL, 1, seqs_to_aln->sq[i]->n, cm->W, &(cur_cm_vbest_sc)); 
-      for(v = 0; v < cm->M; v++) cm_vbest_scA[v][i] = cur_cm_vbest_sc[v];
-      free(cur_cm_vbest_sc);
-    }
-    else if (use_cp9) cp9_sc[i] = CP9Forward(cm, seqs_to_aln->sq[i]->dsq, 1, seqs_to_aln->sq[i]->n, cm->W, 0., 
-					      NULL,   /* don't return scores of hits */
-					      NULL,   /* don't return posns of hits */
-					      NULL,   /* don't keep track of hits */
-					      TRUE,   /* we're scanning */
-					      FALSE,  /* we're not ultimately aligning */
-					      FALSE,  /* we're not rescanning */
-					      TRUE,   /* be memory efficient */
-					      NULL);  /* don't want the DP matrix back */
+  if(emit_from_cm) seqs_to_aln = cm_emit_seqs_to_aln(go, cfg, cm, cfg->ncm, nseq);
+  else {
+    if(cfg->pgc_freq != NULL) cm_Fail("ERROR process_workunit() cfg->pgc_freq non-NULL, this behavior is not yet implemented"); 
+    ESL_ALLOC(dnull, sizeof(double) * cm->abc->K);
+    for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
+    esl_vec_DNorm(dnull, cm->abc->K);
+    seqs_to_aln = RandomEmitSeqsToAln(cfg->r, cm->abc, dnull, cfg->ncm, nseq, cm->W*2, FALSE);
+    free(dnull);
   }
-  FreeSeqsToAln(seqs_to_aln);
 
-  if(use_cm)  *ret_cm_vbest_scA  = cm_vbest_scA;
-  if(use_cp9) *ret_cp9_sc        = cp9_sc;
+  /* collect scores, best CM scores at each state and/or best overall CP9 score */
+  for(i = 0; i < nseq; i++) 
+    {
+      if (use_cm)
+	{ 
+	  search_target_cm_calibration(cm, seqs_to_aln->sq[i]->dsq, NULL, NULL, 1, seqs_to_aln->sq[i]->n, cm->W, &(cur_vscA)); 
+	  for(v = 0; v < cm->M; v++) vscAA[v][i] = cur_vscA[v];
+	  free(cur_vscA);
+	}
+      if (use_cp9) cp9scA[i] = CP9Forward(cm, seqs_to_aln->sq[i]->dsq, 1, seqs_to_aln->sq[i]->n, cm->W, 0., 
+					  NULL,   /* don't return scores of hits */
+					  NULL,   /* don't return posns of hits */
+					  NULL,   /* don't keep track of hits */
+					  TRUE,   /* we're scanning */
+					  FALSE,  /* we're not ultimately aligning */
+					  FALSE,  /* we're not rescanning */
+					  TRUE,   /* be memory efficient */
+					  NULL);  /* don't want the DP matrix back */
+    }
+  FreeSeqsToAln(seqs_to_aln);
+  
+  if(use_cm)  *ret_vscAA  = vscAA;
+  if(use_cp9) *ret_cp9scA = cp9scA;
   return eslOK;
 
  ERROR:
@@ -677,7 +721,7 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
  */
 static int
 cm_fit_histograms(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
-		  float **cm_vbest_scA, int nscores, int *fitme, double **ret_muA, double **ret_lambdaA)
+		  float **vscA, int nscores, int *fitme, double **ret_muA, double **ret_lambdaA)
 {
   int status;
   double *muA = NULL;
@@ -690,10 +734,12 @@ cm_fit_histograms(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *
   for(v = 0; v < cm->M; v++) {
     if(fitme[v]) {
       printf("FITTING v: %d sttype: %d\n", v, cm->sttype[v]);
-      fit_histogram(go, cfg, errbuf, cm_vbest_scA[v], nscores, &(muA[v]), &(lambdaA[v]));
+      fit_histogram(go, cfg, errbuf, vscA[v], nscores, &(muA[v]), &(lambdaA[v]));
     }
     else muA[v] = lambdaA[v] = -1.;
   }
+  cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]
+
   *ret_muA     = muA;
   *ret_lambdaA = lambdaA;
   return eslOK;
@@ -730,19 +776,19 @@ pick_stemwinners(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *c
  *           i0        - start of target subsequence (1 for full seq)
  *           j0        - end of target subsequence (L for full seq)
  *           W         - max d: max size of a hit
- *           ret_vbest_sc  - RETURN: [0..v..M-1] best score at each state v
+ *           ret_vsc  - RETURN: [0..v..M-1] best score at each state v
  *
- * Returns:  eslOK on success; dies immediately if some error occurs.
- *
+ * Returns:  score of best overall hit (vsc[0]).
+ *           dies immediately if some error occurs.
  */
-int
-search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float **ret_vbest_sc)
+float 
+search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float **ret_vsc)
 {
   int       status;
   float  ***alpha;              /* CYK DP score matrix, [v][j][d] */
   int    ***ialpha;             /* Inside DP score matrix, [v][j][d] */
-  float    *vbest_sc;           /* best score for each state (float) */
-  float    *ivbest_sc;          /* best score for each state (int, only used if do_inside) */
+  float    *vsc;           /* best score for each state (float) */
+  float    *ivsc;          /* best score for each state (int, only used if do_inside) */
   int       yoffset;		/* offset to a child state */
   int       i,j;		/* index of start/end positions in sequence, 0..L */
   int       d;			/* a subsequence length, 0..W */
@@ -769,8 +815,8 @@ search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i
   L = j0-i0+1;
   if (W > L) W = L; 
 
-  ESL_ALLOC(vbest_sc, sizeof(float) * cm->M);
-  esl_vec_FSet(vbest_sc, cm->M, IMPOSSIBLE);
+  ESL_ALLOC(vsc, sizeof(float) * cm->M);
+  esl_vec_FSet(vsc, cm->M, IMPOSSIBLE);
 
   if(do_cyk) { 
 
@@ -899,7 +945,7 @@ search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i
 		  jp_w = (j-k)%(W+1);	   /* jp is rolling index into BEGL_S deck j dimension */
 		      alpha[v][jp_v][d] = ESL_MAX(alpha[v][jp_v][d], (alpha[w][jp_w][d-k] + alpha[y][jp_y][k]));
 		}
-		vbest_sc[v] = ESL_MAX(vbest_sc[0], alpha[v][jp_v][d]);
+		vsc[v] = ESL_MAX(vsc[0], alpha[v][jp_v][d]);
 	      }
 	    }
 	    else { /* if cm->sttype[v] != B_st */
@@ -927,7 +973,7 @@ search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i
 		  alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
 		  break;
 		} /* end of switch */
-		vbest_sc[v] = ESL_MAX(vbest_sc[v], alpha[v][jp_v][d]);
+		vsc[v] = ESL_MAX(vsc[v], alpha[v][jp_v][d]);
 	      } /* end of d = dn; d <= dx; d++ */
 	    } /* end of else (v != B_st) */
 	  } /*loop over decks v>0 */
@@ -959,7 +1005,7 @@ search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i
 	  alpha[0][cur][d] = ESL_MAX(IMPOSSIBLE, alpha[y][cur][d] + cm->tsc[0][0]);
 	  for (yoffset = 1; yoffset < cm->cnum[0]; yoffset++) 
 	    alpha[0][cur][d] = ESL_MAX (alpha[0][cur][d], (alpha[y+yoffset][cur][d] + cm->tsc[0][yoffset]));
-	  vbest_sc[0] = ESL_MAX(vbest_sc[0], alpha[0][cur][d]);
+	  vsc[0] = ESL_MAX(vsc[0], alpha[0][cur][d]);
 	}
 	
 	if (cm->flags & CM_LOCAL_BEGIN) {
@@ -977,12 +1023,12 @@ search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i
 	    jp_y = (cm->stid[y] == BEGL_S) ? (j % (W+1)) : cur;
 	    for (d = dn; d <= dx; d++) {
 	      alpha[0][cur][d] = ESL_MAX(alpha[0][cur][d], alpha[y][jp_y][d] + cm->beginsc[y]);
-	      vbest_sc[0] = ESL_MAX(vbest_sc[0], alpha[0][cur][d]);
+	      vsc[0] = ESL_MAX(vsc[0], alpha[0][cur][d]);
 	    }
 	  }
 	}
       } /* end loop over end positions j */
-    /* free alpha, we only care about vbest_sc 
+    /* free alpha, we only care about vsc 
      */
     for (v = 0; v < cm->M; v++) 
       {
@@ -1004,8 +1050,8 @@ search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i
    *********************/
   else { /* ! do_cyk, do_inside, with scaled int log odds scores instead of floats */
 
-    ESL_ALLOC(ivbest_sc, sizeof(int) * cm->M);
-    esl_vec_FSet(ivbest_sc, cm->M, -INFTY);
+    ESL_ALLOC(ivsc, sizeof(int) * cm->M);
+    esl_vec_FSet(ivsc, cm->M, -INFTY);
     
     /* ialpha allocations. (see comments for do_cyk section */ 
     ESL_ALLOC(ialpha, sizeof(int **) * cm->M);
@@ -1112,7 +1158,7 @@ search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i
 		  jp_w = (j-k)%(W+1);	   /* jp is rolling index into BEGL_S deck j dimension */
 		      ialpha[v][jp_v][d] = ESL_MAX(ialpha[v][jp_v][d], (ialpha[w][jp_w][d-k] + ialpha[y][jp_y][k]));
 		}
-		ivbest_sc[v] = ESL_MAX(ivbest_sc[0], ialpha[v][jp_v][d]);
+		ivsc[v] = ESL_MAX(ivsc[0], ialpha[v][jp_v][d]);
 	      }
 	    }
 	    else { /* if cm->sttype[v] != B_st */
@@ -1140,7 +1186,7 @@ search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i
 		  ialpha[v][cur][d] += esl_abc_IAvgScore(cm->abc, dsq[j], cm->iesc[v]);
 		  break;
 		} /* end of switch */
-		ivbest_sc[v] = ESL_MAX(ivbest_sc[v], ialpha[v][jp_v][d]);
+		ivsc[v] = ESL_MAX(ivsc[v], ialpha[v][jp_v][d]);
 	      } /* end of d = dn; d <= dx; d++ */
 	    } /* end of else (v != B_st) */
 	  } /*loop over decks v>0 */
@@ -1171,7 +1217,7 @@ search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i
 	  ialpha[0][cur][d] = ESL_MAX(IMPOSSIBLE, ialpha[y][cur][d] + cm->itsc[0][0]);
 	  for (yoffset = 1; yoffset < cm->cnum[0]; yoffset++) 
 	    ialpha[0][cur][d] = ESL_MAX (ialpha[0][cur][d], (ialpha[y+yoffset][cur][d] + cm->itsc[0][yoffset]));
-	  ivbest_sc[0] = ESL_MAX(ivbest_sc[0], ialpha[0][cur][d]);
+	  ivsc[0] = ESL_MAX(ivsc[0], ialpha[0][cur][d]);
 	}
 	
 	if (cm->flags & CM_LOCAL_BEGIN) {
@@ -1186,12 +1232,12 @@ search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i
 	    jp_y = (cm->stid[y] == BEGL_S) ? (j % (W+1)) : cur;
 	    for (d = dn; d <= dx; d++) {
 	      ialpha[0][cur][d] = ESL_MAX(ialpha[0][cur][d], ialpha[y][jp_y][d] + cm->ibeginsc[y]);
-	      ivbest_sc[0] = ESL_MAX(ivbest_sc[0], ialpha[0][cur][d]);
+	      ivsc[0] = ESL_MAX(ivsc[0], ialpha[0][cur][d]);
 	    }
 	  }
 	}
       } /* end loop over end positions j */
-    /* free ialpha, we only care about ivbest_sc 
+    /* free ialpha, we only care about ivsc 
      */
     for (v = 0; v < cm->M; v++) 
       {
@@ -1207,20 +1253,119 @@ search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i
 	}
       }
     free(ialpha);
-    /* convert ivbest_sc to floats in vbest_sc */
-    ESL_ALLOC(vbest_sc, sizeof(float) * cm->M);
+    /* convert ivsc to floats in vsc */
+    ESL_ALLOC(vsc, sizeof(float) * cm->M);
     for(v = 0; v < cm->M; v++)
-      vbest_sc[v] = Scorify(ivbest_sc[v]);
-    free(ivbest_sc);
+      vsc[v] = Scorify(ivsc[v]);
+    free(ivsc);
   }
   /**************************
    * end of else (do_inside)
    **************************/
 
-  *ret_vbest_sc = vbest_sc;
-  return eslOK;
+  if (ret_vsc != NULL) *ret_vsc = vsc;
+  else free(vsc);
+
+  return vsc[0];
 
   ERROR:
     cm_Fail("Memory allocation error.\n");
-    return eslEMEM; /* never reached */
-  }
+    return 0.; /* NEVERREACHED */
+}
+
+
+/*
+ * Function: cm_emit_seqs_to_aln_above_cutoff()
+ * Date:     EPN, Mon Sep 10 17:31:36 2007
+ *
+ * Purpose:  Create a seqs_to_aln object by generating sequences
+ *           from a CM. Only accept sequences that have a CM hit
+ *           within them above a bit score cutoff.
+ *
+ * Args:     go              - getopts
+ *           cfg             - cmcalibrate's configuration
+ *           cm              - CM to emit from
+ *           nseq            - number of seqs to emit
+ *           cutoff          - bit score cutoff 
+ *
+ * Returns:  Ptr to a newly allocated seqs_to_aln object with nseq sequences to align.
+ *           Dies immediately on failure with informative error message.
+ */
+seqs_to_aln_t *cm_emit_seqs_to_aln_above_cutoff(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int nseq)
+{
+  int status;
+  seqs_to_aln_t *seqs_to_aln = NULL;
+  char *name = NULL;
+  int namelen;
+  int L;
+  int i;
+  int do_cyk = TRUE;
+  Parsetree_t *tr = NULL;
+
+  if(cm->dmin == NULL || cm->dmax == NULL) cm_Fail("cm_emit_seqs_to_aln_above_cutoff(), dmin, dmax are NULL.");
+  if(cm->search_opts & CM_SEARCH_NOQDB) cm_Fail("cm_emit_seqs_to_aln_above_cutoff(), search opt NOQDB enabled.");
+
+  seqs_to_aln = CreateSeqsToAln(nseq, FALSE);
+
+  if(cm->name != NULL) namelen = strlen(cm->name) + 50; /* 50 digit int is considered max, sloppy. */
+  else                 namelen = 100;                   /* 50 digit int is considered max, sloppy. */
+  ESL_ALLOC(name, sizeof(char) * namelen);
+
+  while(i < nseq)
+    {
+      if(cm->name != NULL) sprintf(name, "%s-%d", cm->name, i+1);
+      else                 sprintf(name, "%d-%d", cfg->ncm-1, i+1);
+      L = 0; 
+      EmitParsetree(cm, cfg->r, name, TRUE, &tr, &(seqs_to_aln->sq[i]), &L);
+      while(L == 0) { FreeParsetree(tr); esl_sq_Destroy(seqs_to_aln->sq[i]); EmitParsetree(cm, cfg->r, name, TRUE, &tr, &(seqs_to_aln->sq[i]), &L); }
+      p = cfg->cmstatsA[(ncm-1)]->gc2p[(get_gc_comp(seqs_to_aln->sq[i], 1, L))]; /* in get_gc_comp() should be i and j of best hit */
+
+      sc = ParsetreeScore(cm, tr, seqs_to_aln->sq[i]->dsq, FALSE); 
+      FreeParsetree(tr);
+      if(sc > cfg->cutoff[p]) { i++; continue; }
+
+      /* If we get here, parse score is not above cfg->cutoff[p], we want to determine if 
+       * this sequence has a hit in it above the cfg->cutoff[p] as quickly as possible. 
+       *
+       * Stage 1: HMM banded search tau = 1e-2
+       * Stage 2: HMM banded search with scanning bands, tau = 1e-10
+       * Stage 3: QDB search (CYK or inside), beta = cm->beta (should be default beta)
+       *
+       * If we find a hit > cfg->cutoff[p] at any stage, we accept the seq, increment i and move on.
+       * We don't do a full non-banded parse to ensure that we don't exceed the cfg->cutoff[p], 
+       * because QDB is on in cmsearch by default.
+       */
+
+      /* stage 1 */
+      cm->search_opts |= CM_SEARCH_HBANDED;
+      cm->tau = 0.01;
+      if((sc = actually_search_target(cm, seqs_to_aln->sq[i]->dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE)) > cfg->cutoff[p]) 
+	{ i++; break; }
+      s1_np++;
+      /* stage 2 */
+      cm->search_opts |= CM_SEARCH_HMMSCANBANDS;
+      cm->tau = 1e-10;
+      if((sc = actually_search_target(cm, seqs_to_aln->sq[i]->dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE)) > cfg->cutoff[p]) 
+	{ i++; break; }
+      s2_np++;
+      /* stage 3 */
+      cm->search_opts &~ CM_SEARCH_HBANDED;
+      cm->search_opts &~ CM_SEARCH_HBANDED;
+      if((sc = search_target_cm_calibration(cm, seqs_to_aln->sq[i]->dsq, cm->dmin, cm->dmax, 1, seqs_to_aln->sq[i]->n, cm->W, NULL)) > cfg->cutoff[p])
+	{ i++; break; }
+      s3_np++;
+      if(s3_np > (1000 * nseq)) cm_Fail("cm_emit_seqs_to_aln_above_cutoff(), wanted %d seqs above cutoff: %d bits, reached limit of %d seqs\n", nseq, cfg->cutoff[p], (1000 * nseq));
+
+      /* didn't pass */
+      esl_sq_Destroy(seqs_to_aln->sq[i]);
+    }
+
+  seqs_to_aln->nseq = nseq;
+
+  free(name);
+  return seqs_to_aln;
+
+ ERROR:
+  cm_Fail("memory allocation error");
+  return NULL;
+}
