@@ -71,7 +71,7 @@ static ESL_OPTIONS options[] = {
   { "--filhfile",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL, "--gumonly", "save CP9 filter threshold histogram(s) to file <s>", 3},
   { "--filrfile",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL, "--gumonly", "save CP9 filter threshold information in R format to file <s>", 3},
   /* exclusive choice of filter threshold cutoff */
-  { "--eval",    eslARG_REAL,    "10", NULL, "x>0",  CUTOPTS,      NULL, "--gumonly", "min CM E-val (for a 1MB db) to consider for filter thr calc", 4}, 
+  { "--eval",    eslARG_REAL,   "0.1", NULL, "x>0",  CUTOPTS,      NULL, "--gumonly", "min CM E-val (for a 1MB db) to consider for filter thr calc", 4}, 
   { "--ga",      eslARG_NONE,   FALSE, NULL, "x>0",  CUTOPTS,      NULL, "--gumonly", "use CM gathering threshold as minimum sc for filter thr calc", 4}, 
   { "--nc",      eslARG_NONE,   FALSE, NULL, "x>0",  CUTOPTS,      NULL, "--gumonly", "use CM noise cutoff as minimum sc for filter thr calc", 4}, 
   { "--tc",      eslARG_NONE,   FALSE, NULL, "x>0",  CUTOPTS,      NULL, "--gumonly", "use CM trusted cutoff as minimum sc for filter thr calc", 4},   
@@ -99,7 +99,8 @@ struct cfg_s {
   char           *tmpfile;            /* tmp file we're writing to */
   char           *mode;               /* write mode, "w" or "wb"                     */
   float           minlen;             /* minimum average length of a subseq for calc'ing gumbels */
-  float          *cutoff;             /* bit score cutoff for each partition, changes to reflect
+  long            dbsize;             /* size of DB for gumbel stats (impt for E-value cutoffs for filters) */ 
+  float          *cutoffA;            /* bit score cutoff for each partition, changes to reflect
 				       * current mode CM is in, on masters and workers */
 
   int             do_mpi;
@@ -130,15 +131,16 @@ static int process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char
 			    int emit_from_cm, float ***ret_vscAA, float **ret_cp9scA);
 static int initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int initialize_cmstats(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
+static int update_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int fthr_mode);
 static int set_partition_gc_freq(struct cfg_s *cfg, int p);
 static int find_possible_filter_states(struct cfg_s *cfg, CM_t *cm, int **ret_fitme, float **ret_avglen);
 static int calc_avg_hit_length(CM_t *cm, float **ret_hitlen, double beta);
 static int pick_stemwinners(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, double *muA, double *lambdaA, float *avglen, int **ret_vwin, int *ret_nwin);
 static int fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores, double *ret_mu, double *ret_lambda);
 static int cm_fit_histograms(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float **vscA, int nscores, int *lbegin, double **ret_muA, double **ret_lambdaA);
-static int search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float **ret_vscA);
-static seqs_to_aln_t *cm_emit_seqs_to_aln_above_cutoff(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int nseq)
-
+static ESL_DSQ * get_random_dsq(const struct cfg_s *cfg, CM_t *cm, double *dnull, int L);
+static ESL_DSQ * get_cmemit_dsq(const struct cfg_s *cfg, CM_t *cm, int *ret_L, int *ret_p);
+static float search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float **ret_vsc);
 int
 main(int argc, char **argv)
 {
@@ -199,8 +201,9 @@ main(int argc, char **argv)
   cfg.cmstatsA = NULL;
   cfg.tmpfile  = NULL;
   cfg.mode     = NULL;
-  cfg.minlen   = 7.;   /* not user changeable, should it be? is 8 not good? */
-  cfg.cutoff   = NULL; 
+  cfg.minlen   = 7.;      /* not user changeable, should it be? is 8 not good? */
+  cfg.dbsize   = 1000000; /* default DB size = 1MB, changed ONLY if --dbfile enabled */
+  cfg.cutoffA  = NULL; 
 
   cfg.gumhfp   = NULL; /* ALWAYS remains NULL for mpi workers */
   cfg.gumqfp   = NULL; /* ALWAYS remains NULL for mpi workers */
@@ -274,7 +277,6 @@ static int
 init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 {
   int status;
-  long N; 
 
   /* open CM file */
   if ((cfg->cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
@@ -316,7 +318,7 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     else if (status == eslEFORMAT) esl_fatal("Format unrecognized."); 
     else if (status == eslEINVAL)  esl_fatal("Can’t autodetect stdin or .gz."); 
     else if (status != eslOK)      esl_fatal("Failed to open sequence database file, code %d.", status); 
-    GetDBInfo(tmp_abc, dbfp, &N, &(cfg->gc_freq));
+    GetDBInfo(tmp_abc, dbfp, &(cfg->dbsize), &(cfg->gc_freq));
     esl_vec_DNorm(cfg->gc_freq, GC_SEGMENTS);
     esl_alphabet_Destroy(cfg->abc);
     esl_sqfile_Close(dbfp);
@@ -428,26 +430,34 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		  if((status = cm_fit_histograms(go, cfg, errbuf, cm, gum_vscAA, cmN, fitme, &(muA[p]), &(lambdaA[p]))) != eslOK) cm_Fail(errbuf);
 		  cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->mu     = muA[p][0];
 		  cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->lambda = lambdaA[p][0];
+		  cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->L      = cm->W*2;
+		  cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->N      = cmN;
 		}
 	      else 
 		{ /* CP9 mode, only fit gumbels */
 		  if((status = process_workunit (go, cfg, errbuf, cm, hmmN, FALSE, NULL, &gum_cp9scA))                 != eslOK) cm_Fail(errbuf);
 		  if((status = fit_histogram(go, cfg, errbuf, gum_cp9scA, hmmN, &(cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->mu), 
 					     &(cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->lambda)))     != eslOK) cm_Fail(errbuf);
+		  cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->L      = cm->W*2;
+		  cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->N      = hmmN;
 		}
 	    }
 	  if(gum_mode < NCMMODES) {
 	    /* update cfg, so cutoff[p] is bit score for current gum_mode, and i can access it inside
 	     * process_workunit, by passing it to cm_emit_seqs_to_aln_above_cutoff() */
-	    if((status = update_cutoff(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
+	    if((status = update_cutoffs(go, cfg, errbuf, cm, gum_mode)) != eslOK) cm_Fail(errbuf);
 	    
 	    /* search emitted sequences to get filter thresholds */
-	    if((status = process_workunit (go, cfg, errbuf, cm, cmN, TRUE, &fil_vscAA, &fil_cp9scA))       != eslOK) cm_Fail(errbuf);
+	    if((status = process_workunit (go, cfg, errbuf, cm, cmN, TRUE, &fil_vscAA, &fil_cp9scA)) != eslOK) cm_Fail(errbuf);
 	    cm_Fail("done.");
 	  }
 	  /* free muA and lambdaA */
 	}
     }
+  return;
+ ERROR:
+  cm_Fail("serial_master(), memory allocation error.");
+  return; /* NEVERREACHED */
 }
 
 /* Function: process_workunit()
@@ -455,15 +465,37 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
  *
  * Purpose:  A work unit consists of a CM, a int specifying a number of 
  *           sequences <nseq>, and a flag indicated how to generate those
- *           sequences. The job is to generate <nseq> sequences either
- *           from a probability distribution (if !<emit_from_cm>) or
- *           by emitting from a CM (if <emit_from_cm>), and then 
- *           to search those sequences, with a CM (if ret_vscAA
- *           passed in as non-NULL), and/or CP9 HMM (if ret_cp9scA non-NULL.
- *           Scores are returned. If CM searches are performed,
- *           the best CM scores for each state for each sequence are 
- *           returned in <ret_vscAA>. If CP9 searches are performed, 
- *           the best CP9 score for each sequence is returned in <ret_cp9scA>.
+ *           sequences. The job is to generate <nseq> sequences and search
+ *           them with a CM and/or CP9, saving scores, which are returned.
+ *
+ *           This function can be run in 1 of 3 modes, determined by the
+ *           status of the input variables:
+ *         
+ *           Mode 1. Gumbel calculation for CM. 
+ *           <emit_from_cm> is FALSE, ret_vscAA != NULL, ret_cp9scA == NULL
+ *           Emit randomly and search only with the CM. <ret_vscAA> is filled
+ *           with the best CM score at each state for each sequence.
+ *
+ *           Mode 2. Gumbel calculation for CP9.
+ *           <emit_from_cm> is FALSE, ret_vscAA == NULL, ret_cp9scA != NULL
+ *           Emit randomly and search only with the CP9. <ret_cp9scA> is filled
+ *           with the best CP9 score for each sequence.
+ *
+ *           Mode 3. Scores will eventually be used to determine filter thresholds.
+ *           <emit_from_cm> is TRUE, ret_vscAA != NULL, ret_cp9scA != NULL
+ *           Emit from the CM (which is already configured how we want it). Search
+ *           with the CM and CP9. <ret_vscAA> and <ret_cp9scA> filled as explained
+ *           in modes 1 and 2. Importantly, in this mode, each sequence must have
+ *           a NON-BANDED CYK scan hit above a given cutoff. That cutoff is given
+ *           as a bit score in cfg->cutoffA[p], where p is the partition for the
+ *           sequence (p is determined in get_cmemit_dsq() called from this function). 
+ *           Sequences that have no hit better than cutoff are not accepted. 
+ *           The cutoff[p] value is assumed to be already set before this
+ *           function is entered.
+ *
+ *           The ability to run 3 different modes complicates the code a bit,
+ *           but I prefered it to making 2 separate functions b/c a significant
+ *           part of those 2 functions would have identical code.
  *
  * Args:     go           - getopts
  *           cfg          - cmcalibrate's configuration
@@ -481,26 +513,29 @@ static int
 process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq,
 		 int emit_from_cm, float ***ret_vscAA, float **ret_cp9scA)
 {
-  int status;
-  int use_cm  = FALSE;
-  int use_cp9 = FALSE;
-
-  seqs_to_aln_t *seqs_to_aln = NULL;
-  double        *dnull       = NULL;
+  int            status;
+  int            use_cm      = FALSE;
+  int            use_cp9     = FALSE;
   float        **vscAA       = NULL;  /* [0..v..cm->M-1][0..i..nseq-1] best CM score for each state, each seq */
-  float         *cur_vscA = NULL;     /* [0..v..cm->M-1]               best CM score for each state cur seq */
+  float         *cur_vscA    = NULL;  /* [0..v..cm->M-1]               best CM score for each state cur seq */
   float         *cp9scA      = NULL;  /*                [0..i..nseq-1] best CP9 score for each seq */
-  int i;
-  int v;
+  double        *dnull       = NULL;
+  int            p;                   /* what partition we're in, not used unless emit_from_cm = TRUE */
+  int            i;
+  int            v;
+  int            L;
+  int            passed_flag;
+  ESL_DSQ       *dsq;
 
   /* contract check */
   if(ret_vscAA  == NULL && ret_cp9scA == NULL) { sprintf(errbuf, "process_workunit, ret_vscAA and ret_cp9scA both NULL."); return eslEINVAL; } 
   if(ret_vscAA  != NULL && ret_cp9scA != NULL && !emit_from_cm) { sprintf(errbuf, "process_workunit, ret_vscAA and ret_cp9scA both non-NULL, but emit_from_cm is FALSE."); return eslEINVAL; } 
 
-  /* determine if we're calc'ing CM stats, CP9 stats, or both */
+  /* determine mode, are we calc'ing CM stats, CP9 stats, or both */
   if(ret_vscAA   != NULL) use_cm  = TRUE;
-  if(ret_cp9scA  != NULL)  use_cp9 = TRUE;
+  if(ret_cp9scA  != NULL) use_cp9 = TRUE;
 
+  /* allocate the score arrays we'll pass back */
   if(use_cm) { 
     ESL_ALLOC(vscAA, sizeof(float *) * cm->M);
     for(v = 0; v < cm->M; v++) ESL_ALLOC(vscAA[v], sizeof(float) * nseq);
@@ -508,38 +543,47 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
   }
   if(use_cp9) ESL_ALLOC(cp9scA, sizeof(float) * nseq);
 
-  /* generate all sequences first (this is not memory efficient, but shouldn't be a problem unless 100K+ seqs) */
-  if(emit_from_cm) seqs_to_aln = cm_emit_seqs_to_aln(go, cfg, cm, cfg->ncm, nseq);
-  else {
-    if(cfg->pgc_freq != NULL) cm_Fail("ERROR process_workunit() cfg->pgc_freq non-NULL, this behavior is not yet implemented"); 
+  /* fill dnull, a double version of cm->null, but only if we're going to need it to generate random seqs */
+  if(!emit_from_cm && cfg->pgc_freq == NULL) {
     ESL_ALLOC(dnull, sizeof(double) * cm->abc->K);
     for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
     esl_vec_DNorm(dnull, cm->abc->K);
-    seqs_to_aln = RandomEmitSeqsToAln(cfg->r, cm->abc, dnull, cfg->ncm, nseq, cm->W*2, FALSE);
-    free(dnull);
   }
 
-  /* collect scores, best CM scores at each state and/or best overall CP9 score */
+  /* generate dsqs one at a time and collect best CM scores at each state and/or best overall CP9 score */
   for(i = 0; i < nseq; i++) 
     {
+      passed_flag = TRUE;
+      if(emit_from_cm)   dsq = get_cmemit_dsq(cfg, cm, &L, &p);
+      else             { dsq = get_random_dsq(cfg, cm, dnull, cm->W*2); L = cm->W*2; }
+      /* if nec, search with CM */
       if (use_cm)
 	{ 
-	  search_target_cm_calibration(cm, seqs_to_aln->sq[i]->dsq, NULL, NULL, 1, seqs_to_aln->sq[i]->n, cm->W, &(cur_vscA)); 
+	  search_target_cm_calibration(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, &(cur_vscA)); 
 	  for(v = 0; v < cm->M; v++) vscAA[v][i] = cur_vscA[v];
 	  free(cur_vscA);
+
+	  /* if we're emitting from CM for filter stats, we have to ensure this dsq has a hit
+	   * above our cutoff, if not we don't want to count it */
+	  if(emit_from_cm && vscAA[0][i] < cfg->cutoffA[p]) {
+	    search_target_cm_calibration(cm, dsq, NULL, NULL, 1, L, cm->W, &(cur_vscA)); 
+	    if(cur_vscA[0] < cfg->cutoffA[p]) { passed_flag = FALSE; i--; } /* set flag to FALSE, decrement i */
+	    free(cur_vscA);
+	  }
 	}
-      if (use_cp9) cp9scA[i] = CP9Forward(cm, seqs_to_aln->sq[i]->dsq, 1, seqs_to_aln->sq[i]->n, cm->W, 0., 
-					  NULL,   /* don't return scores of hits */
-					  NULL,   /* don't return posns of hits */
-					  NULL,   /* don't keep track of hits */
-					  TRUE,   /* we're scanning */
-					  FALSE,  /* we're not ultimately aligning */
-					  FALSE,  /* we're not rescanning */
-					  TRUE,   /* be memory efficient */
-					  NULL);  /* don't want the DP matrix back */
+      /* if nec, search with CP9 */
+      if (use_cp9 && passed_flag) cp9scA[i] = CP9Forward(cm, dsq, 1, L, cm->W, 0., 
+							 NULL,   /* don't return scores of hits */
+							 NULL,   /* don't return posns of hits */
+							 NULL,   /* don't keep track of hits */
+							 TRUE,   /* we're scanning */
+							 FALSE,  /* we're not ultimately aligning */
+							 FALSE,  /* we're not rescanning */
+							 TRUE,   /* be memory efficient */
+							 NULL);  /* don't want the DP matrix back */
+      free(dsq);
     }
-  FreeSeqsToAln(seqs_to_aln);
-  
+  if(dnull != NULL) free(dnull);
   if(use_cm)  *ret_vscAA  = vscAA;
   if(use_cp9) *ret_cp9scA = cp9scA;
   return eslOK;
@@ -569,6 +613,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 static int
 initialize_cmstats(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 {
+  int status;
   int i;
 
   cfg->cmstatsA[cfg->ncm-1] = AllocCMStats(1); /* Always 1 partition (TEMPORARY) */
@@ -577,8 +622,47 @@ initialize_cmstats(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   for(i = 0; i < GC_SEGMENTS; i++)
     cfg->cmstatsA[cfg->ncm-1]->gc2p[i] = 0; 
 
+  if(cfg->cutoffA != NULL) free(cfg->cutoffA);
+  ESL_ALLOC(cfg->cutoffA, sizeof(float) * 1); /* number of partitions */
   return eslOK;
+
+ ERROR:
+  sprintf(errbuf, "initialize_cmstats(), memory allocation error (status: %d).", status);
+  return status;
 }
+
+/* update_cutoffs()
+ * Update the cfg->cutoffA array to have the bit score cutoff for each partition
+ * for the 'current' cm (number ncm-1).
+ */
+static int
+update_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int fthr_mode)
+{
+  double         tmp_K;          /* used for recalc'ing Gumbel stats for DB size */
+  double         ecutoff;       /* filled if we're using an E-value cutoff */
+  int            p;
+  double         mu;
+
+  if(esl_opt_GetBoolean(go, "--all")) {
+    for (p = 0; p < cfg->cmstatsA[cfg->ncm-1]->np; p++)
+      cfg->cutoffA[p] = -eslINFINITY;
+  }
+  else if (esl_opt_GetBoolean(go, "--ga"))   cm_Fail("update_cutoffs() --ga not yet implemented.");
+  else if (esl_opt_GetBoolean(go, "--nc"))   cm_Fail("update_cutoffs() --ga not yet implemented.");
+  else if (esl_opt_GetBoolean(go, "--tc"))   cm_Fail("update_cutoffs() --ga not yet implemented.");
+  else ecutoff = esl_opt_GetReal(go, "--eval"); /* default, use --eval cutoff */
+
+  for (p = 0; p < cfg->cmstatsA[cfg->ncm-1]->np; p++)
+    {
+      /* First determine mu based on db_size */
+      tmp_K = exp(cfg->cmstatsA[cfg->ncm-1]->gumAA[fthr_mode][p]->mu * cfg->cmstatsA[cfg->ncm-1]->gumAA[fthr_mode][p]->lambda) / 
+	cfg->cmstatsA[cfg->ncm-1]->gumAA[fthr_mode][p]->L;
+      mu = log(tmp_K  * ((double) cfg->dbsize)) / cfg->cmstatsA[cfg->ncm-1]->gumAA[fthr_mode][p]->lambda;
+      /* Now determine bit score */
+      cfg->cutoffA[p] = mu - (log(ecutoff) / cfg->cmstatsA[cfg->ncm-1]->gumAA[fthr_mode][p]->lambda);
+    }
+  return eslOK;
+}  
 
 /* Function: find_possible_filter_states()
  * Date:     EPN, Mon Sep 10 15:49:43 2007
@@ -738,7 +822,6 @@ cm_fit_histograms(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *
     }
     else muA[v] = lambdaA[v] = -1.;
   }
-  cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]
 
   *ret_muA     = muA;
   *ret_lambdaA = lambdaA;
@@ -757,6 +840,85 @@ int
 pick_stemwinners(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, double *muA, double *lambdaA, float *avglen, int **ret_vwin, int *ret_nwin)
 {
   return eslOK;
+}
+
+/* Function: get_random_dsq()
+ * Date:     EPN, Tue Sep 11 08:31:47 2007
+ * 
+ * Purpose:  Generate a random digitized seq and return it.
+ *           Two possible modes:
+ *           1. if(cfg->pgc_freq == NULL && dnull != NULL) 
+ *              use dnull disto (a double version of cm->null) to generate
+ *           2. if(cfg->pgc_freq != NULL && dnull == NULL) 
+ *              use choose a GC frequency from cfg->pgc_freq
+ *              and generate with that
+ *
+ * Returns:  eslOK on success;
+ */
+ESL_DSQ *
+get_random_dsq(const struct cfg_s *cfg, CM_t *cm, double *dnull, int L)
+{
+  int status;
+  double  gc_comp;
+  double *distro = NULL;
+  int do_free_distro = FALSE;
+  ESL_DSQ *dsq = NULL;
+
+  /* contract check, make sure we're in a valid mode */
+  if(cfg->pgc_freq == NULL && dnull == NULL) cm_Fail("get_random_dsq(), cfg->pgc_freq == NULL and dnull == NULL");
+  if(cfg->pgc_freq != NULL && dnull != NULL) cm_Fail("get_random_dsq(), cfg->pgc_freq != NULL and dnull != NULL");
+
+  /* determine mode */ /* generate sequence */
+  if      (cfg->pgc_freq == NULL && dnull != NULL) distro = dnull;
+  else if (cfg->pgc_freq != NULL && dnull == NULL) {
+    assert(cm->abc->K == 4);
+    ESL_ALLOC(distro, sizeof(double) * cm->abc->K);
+    do_free_distro = TRUE;
+    gc_comp = 0.01 * esl_rnd_DChoose(cfg->r, cfg->pgc_freq, GC_SEGMENTS);
+    distro[1] = distro[2] = 0.5 * gc_comp;
+    distro[0] = distro[3] = 0.5 * (1. - gc_comp);
+  }
+  /* generate sequence */
+  ESL_ALLOC(dsq, sizeof(ESL_DSQ) * (L+2));
+  if (esl_rnd_xIID(cfg->r, dnull, cm->abc->K, L, dsq) != eslOK) cm_Fail("get_random_dsq(): failure creating random sequence.");
+
+  if (do_free_distro) free(distro);
+  return dsq;
+
+ ERROR:
+  cm_Fail("get_random_dsq() memory allocation error.");
+  return NULL; /*NEVERREACHED */
+}
+
+/* Function: get_cmemit_dsq()
+ * Date:     EPN, Tue Sep 11 08:51:33 2007
+ * 
+ * Purpose:  Generate a dsq from a CM and return it.
+ *
+ * Returns:  eslOK on success;
+ */
+ESL_DSQ *
+get_cmemit_dsq(const struct cfg_s *cfg, CM_t *cm, int *ret_L, int *ret_p)
+{
+  int p;
+  int L;
+  ESL_SQ *sq;
+  ESL_DSQ *dsq;
+
+  EmitParsetree(cm, cfg->r, "irrelevant", TRUE, NULL, &sq, &L);
+  /* determine the partition */
+  p = cfg->cmstatsA[cfg->ncm-1]->gc2p[(get_gc_comp(sq, 1, L))]; /* in get_gc_comp() should be i and j of best hit */
+
+  /* free everything allocated by a esl_sqio.c:esl_sq_CreateFrom() call, but the dsq */
+  dsq = sq->dsq;
+  free(sq->name);
+  free(sq->acc);
+  free(sq->desc);
+  free(sq);
+
+  *ret_L = L;
+  *ret_p = p;
+  return sq->dsq;
 }
 
 /* Function: search_target_cm_calibration() based on bandcyk.c:CYKBandedScan()
@@ -1273,7 +1435,7 @@ search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i
     return 0.; /* NEVERREACHED */
 }
 
-
+#if 0
 /*
  * Function: cm_emit_seqs_to_aln_above_cutoff()
  * Date:     EPN, Mon Sep 10 17:31:36 2007
@@ -1322,39 +1484,39 @@ seqs_to_aln_t *cm_emit_seqs_to_aln_above_cutoff(const ESL_GETOPTS *go, struct cf
 
       sc = ParsetreeScore(cm, tr, seqs_to_aln->sq[i]->dsq, FALSE); 
       FreeParsetree(tr);
-      if(sc > cfg->cutoff[p]) { i++; continue; }
+      if(sc > cfg->cutoffA[p]) { i++; continue; }
 
-      /* If we get here, parse score is not above cfg->cutoff[p], we want to determine if 
-       * this sequence has a hit in it above the cfg->cutoff[p] as quickly as possible. 
+      /* If we get here, parse score is not above cfg->cutoffA[p], we want to determine if 
+       * this sequence has a hit in it above the cfg->cutoffA[p] as quickly as possible. 
        *
        * Stage 1: HMM banded search tau = 1e-2
        * Stage 2: HMM banded search with scanning bands, tau = 1e-10
        * Stage 3: QDB search (CYK or inside), beta = cm->beta (should be default beta)
        *
-       * If we find a hit > cfg->cutoff[p] at any stage, we accept the seq, increment i and move on.
-       * We don't do a full non-banded parse to ensure that we don't exceed the cfg->cutoff[p], 
+       * If we find a hit > cfg->cutoffA[p] at any stage, we accept the seq, increment i and move on.
+       * We don't do a full non-banded parse to ensure that we don't exceed the cfg->cutoffA[p], 
        * because QDB is on in cmsearch by default.
        */
 
       /* stage 1 */
       cm->search_opts |= CM_SEARCH_HBANDED;
       cm->tau = 0.01;
-      if((sc = actually_search_target(cm, seqs_to_aln->sq[i]->dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE)) > cfg->cutoff[p]) 
+      if((sc = actually_search_target(cm, seqs_to_aln->sq[i]->dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE)) > cfg->cutoffA[p]) 
 	{ i++; break; }
       s1_np++;
       /* stage 2 */
       cm->search_opts |= CM_SEARCH_HMMSCANBANDS;
       cm->tau = 1e-10;
-      if((sc = actually_search_target(cm, seqs_to_aln->sq[i]->dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE)) > cfg->cutoff[p]) 
+      if((sc = actually_search_target(cm, seqs_to_aln->sq[i]->dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE)) > cfg->cutoffA[p]) 
 	{ i++; break; }
       s2_np++;
       /* stage 3 */
       cm->search_opts &~ CM_SEARCH_HBANDED;
       cm->search_opts &~ CM_SEARCH_HBANDED;
-      if((sc = search_target_cm_calibration(cm, seqs_to_aln->sq[i]->dsq, cm->dmin, cm->dmax, 1, seqs_to_aln->sq[i]->n, cm->W, NULL)) > cfg->cutoff[p])
+      if((sc = search_target_cm_calibration(cm, seqs_to_aln->sq[i]->dsq, cm->dmin, cm->dmax, 1, seqs_to_aln->sq[i]->n, cm->W, NULL)) > cfg->cutoffA[p])
 	{ i++; break; }
       s3_np++;
-      if(s3_np > (1000 * nseq)) cm_Fail("cm_emit_seqs_to_aln_above_cutoff(), wanted %d seqs above cutoff: %d bits, reached limit of %d seqs\n", nseq, cfg->cutoff[p], (1000 * nseq));
+      if(s3_np > (1000 * nseq)) cm_Fail("cm_emit_seqs_to_aln_above_cutoff(), wanted %d seqs above cutoff: %d bits, reached limit of %d seqs\n", nseq, cfg->cutoffA[p], (1000 * nseq));
 
       /* didn't pass */
       esl_sq_Destroy(seqs_to_aln->sq[i]);
@@ -1369,3 +1531,4 @@ seqs_to_aln_t *cm_emit_seqs_to_aln_above_cutoff(const ESL_GETOPTS *go, struct cf
   cm_Fail("memory allocation error");
   return NULL;
 }
+#endif
