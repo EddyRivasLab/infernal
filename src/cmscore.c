@@ -686,16 +686,9 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if(all_seqs_to_aln->cp9_tr   != NULL) { for (i=0; i < all_seqs_to_aln->nseq; i++) if(all_seqs_to_aln->cp9_tr[i] != NULL)   { CP9FreeTrace(all_seqs_to_aln->cp9_tr[i]); all_seqs_to_aln->tr[i] = NULL; } }
 	  if(all_seqs_to_aln->postcode != NULL) { for (i=0; i < all_seqs_to_aln->nseq; i++) if(all_seqs_to_aln->postcode[i] != NULL) { free(all_seqs_to_aln->postcode[i]); all_seqs_to_aln->tr[i] = NULL; } }
 	  for (i=0; i < all_seqs_to_aln->nseq; i++) all_seqs_to_aln->sc[i] = IMPOSSIBLE;
-	  /*all_seqs_to_aln->tr       = NULL;
-	    all_seqs_to_aln->cp9_tr   = NULL;
-	    all_seqs_to_aln->postcode = NULL;*/
-	  /*FreePartialSeqsToAln(all_seqs_to_aln, FALSE, TRUE, TRUE, TRUE, FALSE);*/
-	                                     /* sq,    tr,  cp9_tr,post, sc  */ 
 	}
       ESL_DPRINTF1(("MPI master: done with this CM.\n"));
 
-      /*for (wi = 1; wi < cfg->nproc; wi++) 
-	if ((status = cm_seqs_to_aln_MPISend(NULL, 0, 0, wi, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("Shutting down a worker failed.");*/
       FreeSeqsToAln(all_seqs_to_aln); 
       FreeCM(cm);
       printf("//\n");

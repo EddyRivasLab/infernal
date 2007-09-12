@@ -104,13 +104,21 @@ struct cfg_s {
   char            *tmpfile;            /* tmp file we're writing to */
   char            *mode;               /* write mode, "w" or "wb"                     */
   long             dbsize;             /* size of DB for gumbel stats (impt for E-value cutoffs for filters) */ 
+
+  /* the following data is modified for each CM, and in some cases for each stat mode for each CM,
+   * it is assumed to be 'current' in many functions.
+   */
   float           *cutoffA;            /* bit score cutoff for each partition, changes to reflect
 				        * current mode CM is in, on masters and workers */
   float           *vcalcs;             /* [0..v..cm->M-1] millions of calcs for each subtree to scan 1 KB with --beta  */
   float           *fil_vcalcs;         /* [0..v..cm->M-1] millions of calcs for each subtree to scan 1 KB with --fbeta */
   int             *dmin_gumbel;        /* [0..v..cm->M-1] dmin for current CM and CM configuration, updated in update_qdbs() */
   int             *dmax_gumbel;        /* [0..v..cm->M-1] dmax for current CM and CM configuration, updated in update_qdbs() */
+  double         **vmuAA;              /* [0..np-1][0..cm->M-1], mu for each partition, each state, 
+				        * if vmuAAA[][v] == -1 : we're not fitting state v to a gumbel */
+  double         **vlambdaAA;          /* same as vmuAA, but lambda */
 
+  /* mpi */
   int              do_mpi;
   int              my_rank;
   int              nproc;
@@ -145,15 +153,15 @@ static int update_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf
 static int update_qdbs(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int doing_filter);
 static int set_partition_gc_freq(struct cfg_s *cfg, int p);
 static int calc_avg_hit_length(CM_t *cm, float **ret_hitlen, double beta);
-static int pick_stemwinners(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, double *muA, double *lambdaA, float *avglen, int **ret_vwin, int *ret_nwin);
 static int fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores, double *ret_mu, double *ret_lambda);
-static int cm_fit_histograms(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float **vscA, int nscores, double **ret_muA, double **ret_lambdaA);
+static int cm_fit_histograms(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float **vscA, int nscores, int p);
 static ESL_DSQ * get_random_dsq(const struct cfg_s *cfg, CM_t *cm, double *dnull, int L);
 static ESL_DSQ * get_cmemit_dsq(const struct cfg_s *cfg, CM_t *cm, int *ret_L, int *ret_p, Parsetree_t **ret_tr);
 static float search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float **ret_vsc);
 static float count_search_target_calcs(CM_t *cm, int L, int *dmin, int *dmax, int W, float **ret_vcalcs);
 static int cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, ESL_DSQ *dsq, 
 				    Parsetree_t *tr, int L, int *dmin_default_beta, int *dmax_default_beta, float cutoff);
+static int calc_sub_filter_sets(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, float **fil_vscAA);
 
 int
 main(int argc, char **argv)
@@ -222,6 +230,8 @@ main(int argc, char **argv)
   cfg.fil_vcalcs = NULL;
   cfg.dmin_gumbel = NULL;
   cfg.dmax_gumbel = NULL;
+  cfg.vmuAA     = NULL;
+  cfg.vlambdaAA = NULL;
 
   cfg.gumhfp   = NULL; /* ALWAYS remains NULL for mpi workers */
   cfg.gumqfp   = NULL; /* ALWAYS remains NULL for mpi workers */
@@ -406,15 +416,12 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   CM_t          *cm = NULL;
   int            cmN  = esl_opt_GetInteger(go, "--cmN");
   int            hmmN = esl_opt_GetInteger(go, "--hmmN");
-  double        **muA = NULL;  /* [0..np-1][0..cm->M-1], mu for each partition, each state, 
-				* muA[][v] == -1. if we're not fitting state v to a gumbel */
-  double    **lambdaA = NULL;  /* same as muA, but lambda */
   /*int           *vwin = NULL;
     int            nwin = 0;*/
   int        gum_mode = 0;
   int               p;
-  float **gum_vscAA = NULL; /* [0..v..cm->M-1][0..nseq-1] best cm score for each state, each random seq */
-  float **fil_vscAA = NULL; /* [0..v..cm->M-1][0..nseq-1] best cm score for each state, each emitted seq */
+  float  **gum_vscAA  = NULL; /* [0..v..cm->M-1][0..nseq-1] best cm score for each state, each random seq */
+  float  **fil_vscAA  = NULL; /* [0..v..cm->M-1][0..nseq-1] best cm score for each state, each emitted seq */
   float   *gum_cp9scA = NULL; /*                [0..nseq-1] best cp9 score for each random seq */
   float   *fil_cp9scA = NULL; /*                [0..nseq-1] best cp9 score for each emitted seq */
 
@@ -436,18 +443,16 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  ConfigForGumbelMode(cm, gum_mode);
 	  /* recalc QDBs for fitting Gumbels */
 	  update_qdbs(go, cfg, cm, FALSE);
-	  ESL_ALLOC(muA,     sizeof(double *) * cfg->cmstatsA[cfg->ncm-1]->np);
-	  ESL_ALLOC(lambdaA, sizeof(double *) * cfg->cmstatsA[cfg->ncm-1]->np);
 	  for (p = 0; p < cfg->cmstatsA[cfg->ncm-1]->np; p++) 
 	    {
 	      if(cfg->gc_freq != NULL) set_partition_gc_freq(cfg, p);
 	      if(gum_mode < NCMMODES) 
 		{ /* CM mode */
 		  /* search random sequences to get gumbels */
-		  if((status = process_workunit (go, cfg, errbuf, cm, cmN,   FALSE, &gum_vscAA, NULL))        != eslOK) cm_Fail(errbuf);
-		  if((status = cm_fit_histograms(go, cfg, errbuf, cm, gum_vscAA, cmN, &(muA[p]), &(lambdaA[p]))) != eslOK) cm_Fail(errbuf);
-		  cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->mu     = muA[p][0];
-		  cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->lambda = lambdaA[p][0];
+		  if((status = process_workunit (go, cfg, errbuf, cm, cmN,   FALSE, &gum_vscAA, NULL)) != eslOK) cm_Fail(errbuf);
+		  if((status = cm_fit_histograms(go, cfg, errbuf, cm, gum_vscAA, cmN, p))              != eslOK) cm_Fail(errbuf);
+		  cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->mu     = cfg->vmuAA[p][0];
+		  cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->lambda = cfg->vlambdaAA[p][0];
 		  cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->L      = cm->W*2;
 		  cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->N      = cmN;
 		}
@@ -461,23 +466,23 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		}
 	    }
 	  if(gum_mode < NCMMODES) {
-	    /* update cfg, so cutoff[p] is bit score for current gum_mode, and i can access it inside
-	     * process_workunit, by passing it to cm_emit_seqs_to_aln_above_cutoff() */
 	    if((status = update_cutoffs(go, cfg, errbuf, cm, gum_mode)) != eslOK) cm_Fail(errbuf);
-	    /* recalc QDBs for filtering sub CMs */
-	    update_qdbs(go, cfg, cm, TRUE);
+	    update_qdbs(go, cfg, cm, TRUE); /* recalc QDBs for filtering sub CMs */
+	    printf("\n\ncutoffsA[0]: %10.4f\n\n", cfg->cutoffA[0]);
+
 	    /* search emitted sequences to get filter thresholds */
 	    if((status = process_workunit (go, cfg, errbuf, cm, cmN, TRUE, &fil_vscAA, &fil_cp9scA)) != eslOK) cm_Fail(errbuf);
 
-	    cm_Fail("done.");
+	    /* determine best n-state sets of sub-CM filter states */
+	    if((status = calc_sub_filter_sets(go, cfg, cm, fil_vscAA)) != eslOK) cm_Fail("unexpected error code: %d in calc_sub_filter_sets.");
+	       
+	    /* determine HMM filter threshold */
+	    /* if((status = calc_cp9_filter_thr(go, cfg, errbuf, cm, fil_vscAA)) != eslOK) cm_Fail("unexpected error code: %d in calc_cp9_filter_thr.");*/
 	  }
 	  /* free muA and lambdaA */
 	}
     }
   return;
- ERROR:
-  cm_Fail("serial_master(), memory allocation error.");
-  return; /* NEVERREACHED */
 }
 
 /* Function: process_workunit()
@@ -547,6 +552,8 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
   int            nfailed = 0;
   Parsetree_t   *tr;
   ESL_DSQ       *dsq;
+  float          sc1;
+  float          sc2;
 
   /* contract check */
   if(ret_vscAA  == NULL && ret_cp9scA == NULL) { sprintf(errbuf, "process_workunit, ret_vscAA and ret_cp9scA both NULL."); return eslEINVAL; } 
@@ -591,7 +598,13 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
       /* if nec, search with CM */
       if (use_cm)
 	{ 
-	  search_target_cm_calibration(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, &(cur_vscA)); 
+	  sc1 = search_target_cm_calibration(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, &(cur_vscA)); 
+	  sc2 = actually_search_target(cm, dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE);
+	  printf("i: %4d sc1: %10.4f sc2: %10.4f\n", i, sc1, sc2);
+	  fflush(stdout);
+	  if(fabs(sc1 - sc2) > 0.01) 
+	    cm_Fail("i: %4d sc1: %10.4f sc2: %10.4f\n", i, sc1, sc2);
+
 	  for(v = 0; v < cm->M; v++) vscAA[v][i] = cur_vscA[v];
 	  free(cur_vscA);
 	}
@@ -728,6 +741,7 @@ initialize_cmstats(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 {
   int status;
   int i;
+  int p;
 
   cfg->cmstatsA[cfg->ncm-1] = AllocCMStats(1); /* Always 1 partition (TEMPORARY) */
   cfg->cmstatsA[cfg->ncm-1]->ps[0] = 0;
@@ -737,7 +751,25 @@ initialize_cmstats(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 
   if(cfg->cutoffA != NULL) free(cfg->cutoffA);
   ESL_ALLOC(cfg->cutoffA, sizeof(float) * 1); /* number of partitions */
+
+  /* free, and then reallocate cfg->vmuAA, and cfg->vlambdaAA 
+   * this is unnec, unless number of partitions has changed (which currently
+   * is impossible) */
+  if(cfg->vmuAA != NULL) 
+    for(p = 0; p < cfg->cmstatsA[cfg->ncm-2]->np; p++) 
+      { free(cfg->vmuAA[p]); cfg->vmuAA[p] = NULL; }
+
+  if(cfg->vlambdaAA != NULL) 
+    for(p = 0; p < cfg->cmstatsA[cfg->ncm-2]->np; p++) 
+      { free(cfg->vlambdaAA[p]); cfg->vlambdaAA[p] = NULL; }
+
+  ESL_ALLOC(cfg->vmuAA,     sizeof(double *) * cfg->cmstatsA[cfg->ncm-1]->np);
+  ESL_ALLOC(cfg->vlambdaAA, sizeof(double *) * cfg->cmstatsA[cfg->ncm-1]->np);
+  cfg->vmuAA[0]     = NULL;
+  cfg->vlambdaAA[0] = NULL;
+
   return eslOK;
+
 
  ERROR:
   sprintf(errbuf, "initialize_cmstats(), memory allocation error (status: %d).", status);
@@ -1068,26 +1100,25 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
  */
 static int
 cm_fit_histograms(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
-		  float **vscA, int nscores, double **ret_muA, double **ret_lambdaA)
+		  float **vscA, int nscores, int p)
 {
   int status;
-  double *muA = NULL;
-  double *lambdaA = NULL;
   int v;
 
-  ESL_ALLOC(muA,     sizeof(double) * cm->M);
-  ESL_ALLOC(lambdaA, sizeof(double) * cm->M);
+  if(cfg->vmuAA[p]     != NULL) free(cfg->vmuAA[p]);
+  if(cfg->vlambdaAA[p] != NULL) free(cfg->vlambdaAA[p]);
+  
+  ESL_ALLOC(cfg->vmuAA[p],     sizeof(double) * cm->M);
+  ESL_ALLOC(cfg->vlambdaAA[p], sizeof(double) * cm->M);
 
   for(v = 0; v < cm->M; v++) {
     if(cfg->subinfo->iscandA[v]) {
       printf("FITTING v: %d sttype: %d\n", v, cm->sttype[v]);
-      fit_histogram(go, cfg, errbuf, vscA[v], nscores, &(muA[v]), &(lambdaA[v]));
+      fit_histogram(go, cfg, errbuf, vscA[v], nscores, &(cfg->vmuAA[p][v]), &(cfg->vlambdaAA[p][v]));
     }
-    else muA[v] = lambdaA[v] = -1.;
+    else cfg->vmuAA[p][v] = cfg->vlambdaAA[p][v] = -1.;
   }
 
-  *ret_muA     = muA;
-  *ret_lambdaA = lambdaA;
   return eslOK;
 
  ERROR:
@@ -1192,6 +1223,70 @@ get_cmemit_dsq(const struct cfg_s *cfg, CM_t *cm, int *ret_L, int *ret_p, Parset
   return dsq;
 }
 
+/* Function: calc_sub_filter_sets()
+ * Date:     EPN, Wed Sep 12 11:57:25 2007
+ *
+ * Purpose:  Given a CM and information on possible sub CM root filter states,
+ *           exhaustively search for the most effective sets of states for
+ *           filtering.
+ *            
+ * Returns:  eslOK on success;
+ *           Dies immediately on an error.
+ */
+int
+calc_sub_filter_sets(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, float **fil_vscAA)
+{
+  int    status;
+  int    v;
+  float **sorted_fil_vscAA;
+  int    cmN  = esl_opt_GetInteger(go, "--cmN");
+  int    Fidx;
+  float  sc;
+  float  E;
+  float  fil_calcs;
+  float  nonfil_calcs;
+  float  spdup;
+  int    i;
+
+  Fidx = (int) (1. - 0.95) * cmN;
+
+  if(cfg->cmstatsA[cfg->ncm-1]->np != 1) cm_Fail("calc_sub_filter_sets(), not yet implemented for multiple partitions.\nYou'll need to keep track of partition of each sequence OR\nstore E-values not scores inside process_workunit.");
+
+  ESL_ALLOC(sorted_fil_vscAA, sizeof(float *) * cm->M);
+
+  printf("\n\n***********************************\nvscAA[0] scores:\n");
+  for(i = 0; i < cmN; i++)
+    printf("i: %4d sc: %10.4f\n", i, fil_vscAA[0][i]);
+  printf("***********************************\n\n");
+
+  for(v = 0; v < cm->M; v++)
+    {
+      ESL_ALLOC(sorted_fil_vscAA[v], sizeof(float) * cmN);
+      esl_vec_FCopy(fil_vscAA[v], cmN, sorted_fil_vscAA[v]); 
+      esl_vec_FSortIncreasing(sorted_fil_vscAA[v], cmN);
+    }
+  
+  for(v = 0; v < cm->M; v++) {
+    if(cfg->subinfo->iscandA[v]) {
+      sc = sorted_fil_vscAA[v][Fidx];
+      /* E is expected number of hits for db of length 2 * cm->W */
+      E  = RJK_ExtremeValueE(sc, cfg->vmuAA[0][v], cfg->vlambdaAA[0][v]);
+      /* note partition = 0, this is bogus if more than 1 partition, that's why we die if there are more (see above). */
+      fil_calcs  = cfg->fil_vcalcs[v];
+      printf("SUB %3d sc: %10.4f E: %10.4f filt: %10.4f ", v, sc, E, fil_calcs);
+      fil_calcs += E * (1000. / (cm->W * 2)) * cfg->vcalcs[0];
+      nonfil_calcs = cfg->vcalcs[0];
+      spdup = nonfil_calcs / fil_calcs;
+      printf("surv: %10.4f sum : %10.4f full: %10.4f spdup %10.4f\n", (fil_calcs - E * (1000. / (cm->W * 2)) * cfg->vcalcs[0]), fil_calcs, nonfil_calcs, spdup);
+    }  
+  }
+  return eslOK;
+
+ ERROR:
+  cm_Fail("calc_sub_filter_sets(), memory allocation error.");
+  return status; /* NEVERREACHED */
+}
+
 /* Function: search_target_cm_calibration() based on bandcyk.c:CYKBandedScan()
  * Date:     EPN, Sun Sep  9 19:05:07 2007
  *
@@ -1240,6 +1335,7 @@ search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i
 
   int       do_cyk    = FALSE;  /* TRUE: do cyk; FALSE: do_inside */
   int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
+  float     ret_val;
 
   /* determine if we're doing cyk/inside banded/non-banded */
   if(! (cm->search_opts & CM_SEARCH_INSIDE)) do_cyk    = TRUE;
@@ -1696,10 +1792,11 @@ search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i
    * end of else (do_inside)
    **************************/
 
+  ret_val = vsc[0];
   if (ret_vsc != NULL) *ret_vsc = vsc;
   else free(vsc);
-
-  return vsc[0];
+  
+  return ret_val;
 
   ERROR:
     cm_Fail("Memory allocation error.\n");
@@ -1910,6 +2007,7 @@ int cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_
   if(sc > cutoff) { /* parse score exceeds cutoff */
     assert(cm->flags       == init_flags);
     assert(cm->search_opts == init_search_opts);
+    printf("0 sc: %10.4f ", sc);
     return TRUE;
   } 
 
@@ -1927,6 +2025,7 @@ int cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_
     if(turn_hbanded_back_off) { cm->search_opts &= ~CM_SEARCH_HBANDED; cm->tau = orig_tau; }
     assert(cm->flags       == init_flags);
     assert(cm->search_opts == init_search_opts);
+    printf("1 sc: %10.4f ", sc);
     return TRUE;
   } 
 
@@ -1939,6 +2038,7 @@ int cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_
     if(turn_hmmscanbands_back_off) { cm->search_opts &= ~CM_SEARCH_HMMSCANBANDS; cm->tau = orig_tau; }
     assert(cm->flags       == init_flags);
     assert(cm->search_opts == init_search_opts);
+    printf("2 sc: %10.4f ", sc);
     return TRUE;
   } 
 
@@ -1953,7 +2053,7 @@ int cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_
   assert(cm->flags       == init_flags);
   assert(cm->search_opts == init_search_opts);
 
-  if(sc > cutoff) return TRUE;
+  if(sc > cutoff) { printf("3 sc: %10.4f ", sc);  return TRUE; }
   else return FALSE;
 }
 

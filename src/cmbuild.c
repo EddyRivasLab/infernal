@@ -59,40 +59,40 @@ static ESL_OPTIONS options[] = {
   { "--wgiven",  eslARG_NONE,  FALSE,  NULL, NULL,    WGTOPTS,    NULL,      NULL, "use weights as given in MSA file",                 3},
   { "--pbswitch",eslARG_INT,  "1000",  NULL,"n>0",       NULL,    NULL,      NULL, "set failover to efficient PB wgts at > <n> seqs",  3},
   { "--wid",     eslARG_REAL, "0.62",  NULL,"0<=x<=1",   NULL,"--wblosum",   NULL, "for --wblosum: set identity cutoff",               3},
-/* Refining the seed alignment */
-  { "--refine",  eslARG_OUTFILE, NULL,  NULL, NULL,       NULL,  NULL,       NULL, "refine the input aln using Expectation-Maximization, save to <s>", 4},
-  { "--gibbs",   eslARG_NONE,   FALSE,  NULL, NULL,       NULL,"--refine",   NULL, "w/--refine, use Gibbs sampling instead of EM", 4},
-  { "--seed",    eslARG_INT,     NULL,  NULL, "n>0",      NULL,"--gibbs",    NULL, "w/--gibbs, set random number generator seed to <n>",  4 },
-  { "--hbanded", eslARG_NONE,   FALSE,  NULL, NULL,       NULL,"--refine",   NULL, "accelerate --refine using CM plan 9 HMM banded CYK aln algorithm", 4 },
-  { "--tau",     eslARG_REAL,   "1E-7", NULL, "0<x<1",    NULL,"--hbanded",  NULL, "set tail loss prob for --hbanded to <x>", 4 },
-  { "--sub",     eslARG_NONE,   FALSE,  NULL, NULL,       NULL,"--refine",   NULL, "w/--refine, build sub CM for columns b/t HMM predicted start/end points", 4 },
-  { "--local",   eslARG_NONE,   FALSE,  NULL, NULL,       NULL,"--refine",   NULL, "w/--refine, align locally w.r.t the model", 4 },
 /* Alternate effective sequence weighting strategies */
-  { "--eent",    eslARG_NONE,"default",NULL, NULL,    EFFOPTS,    NULL,      NULL, "adjust eff seq # to achieve relative entropy target", 5},
-  { "--enone",   eslARG_NONE,  FALSE,  NULL, NULL,    EFFOPTS,    NULL,      NULL, "no effective seq # weighting: just use nseq",         5},
-  { "--ere",     eslARG_REAL,  NULL,   NULL,"x>0",       NULL, "--eent",     NULL, "for --eent: set target relative entropy to <x>",      5},
-  { "--eX",      eslARG_REAL,  "6.0",  NULL,"x>0",       NULL, "--eent",  "--ere", "for --eent: set minimum total rel ent param to <x>",  5}, 
+  { "--eent",    eslARG_NONE,"default",NULL, NULL,    EFFOPTS,    NULL,      NULL, "adjust eff seq # to achieve relative entropy target", 4},
+  { "--enone",   eslARG_NONE,  FALSE,  NULL, NULL,    EFFOPTS,    NULL,      NULL, "no effective seq # weighting: just use nseq",         4},
+  { "--ere",     eslARG_REAL,  NULL,   NULL,"x>0",       NULL, "--eent",     NULL, "for --eent: set target relative entropy to <x>",      4},
+  { "--eX",      eslARG_REAL,  "6.0",  NULL,"x>0",       NULL, "--eent",  "--ere", "for --eent: set minimum total rel ent param to <x>",  4}, 
 /* Verbose output files */
-  { "--cfile",   eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save count vectors to file <s>", 6 },
-  { "--cmtbl",   eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save tabular description of CM topology to file <s>", 6 },
-  { "--emap",    eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save consensus emit map to file <s>", 6 },
-  { "--gtree",   eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save tree description of master tree to file <s>", 6 },
-  { "--gtbl",    eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save tabular description of master tree to file <s>", 6 },
-  { "--tfile",   eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump individual sequence tracebacks to file <s>", 6 },
-  { "--bfile",   eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save bands to file <f>, which can be read by cmsearch", 6 },
+  { "--cfile",   eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save count vectors to file <s>", 5 },
+  { "--cmtbl",   eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save tabular description of CM topology to file <s>", 5 },
+  { "--emap",    eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save consensus emit map to file <s>", 5 },
+  { "--gtree",   eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save tree description of master tree to file <s>", 5 },
+  { "--gtbl",    eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save tabular description of master tree to file <s>", 5 },
+  { "--tfile",   eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump individual sequence tracebacks to file <s>", 5 },
+  { "--bfile",   eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save bands to file <f>, which can be read by cmsearch", 5 },
 /* Debugging/experimentation */
-  { "--nobalance",eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        NULL, "don't rebalance the CM; number in strict preorder", 7 },
-  { "--regress",  eslARG_STRING, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test information to file <s>", 7 },  
-  { "--ignorant", eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        NULL, "strip the structural info from input alignment", 7 },
+  { "--nobalance",eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        NULL, "don't rebalance the CM; number in strict preorder", 6 },
+  { "--regress",  eslARG_STRING, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test information to file <s>", 6 },  
+  { "--ignorant", eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        NULL, "strip the structural info from input alignment", 6 },
 /* Customizing null model or priors */
-  { "--null",    eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL, "--rsearch", "read null (random sequence) model from file <s>", 8 },
-  { "--prior",   eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL, "--rsearch", "read priors from file <s>", 8 },
+  { "--null",    eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL, "--rsearch", "read null (random sequence) model from file <s>", 7 },
+  { "--prior",   eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL, "--rsearch", "read priors from file <s>", 7 },
 /* Building multiple CMs after clustering input MSA */
-  { "--ctarget", eslARG_INT,    "0",   NULL, "n>=0",    NULL,      NULL,    "--call", "build (at most) <n> CMs by partitioning MSA into <n> clusters", 9 },
-  { "--cmindiff",eslARG_REAL,   "0.",  NULL,"0.<=x<=1.",NULL,      NULL,    "--call", "min difference b/t 2 clusters is <x>, each cluster -> CM", 9 }, 
-  { "--call",    eslARG_NONE,  FALSE,  NULL, NULL,      NULL,      NULL,        NULL, "build a separate CM from every seq in MSA", 9 },
-  { "--corig",   eslARG_NONE,  FALSE,  NULL, NULL,      NULL,      NULL,        NULL, "build an additional CM from the original, full MSA", 9 }, 
-  { "--cdump",   eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "dump an MSA for each cluster (CM) to file <s>", 9 },
+  { "--ctarget", eslARG_INT,    "0",   NULL, "n>=0",    NULL,      NULL,    "--call", "build (at most) <n> CMs by partitioning MSA into <n> clusters", 8 },
+  { "--cmindiff",eslARG_REAL,   "0.",  NULL,"0.<=x<=1.",NULL,      NULL,    "--call", "min difference b/t 2 clusters is <x>, each cluster -> CM", 8 }, 
+  { "--call",    eslARG_NONE,  FALSE,  NULL, NULL,      NULL,      NULL,        NULL, "build a separate CM from every seq in MSA", 8 },
+  { "--corig",   eslARG_NONE,  FALSE,  NULL, NULL,      NULL,      NULL,        NULL, "build an additional CM from the original, full MSA", 8 }, 
+  { "--cdump",   eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "dump an MSA for each cluster (CM) to file <s>", 8 },
+/* Refining the seed alignment */
+  { "--refine",  eslARG_OUTFILE, NULL,  NULL, NULL,       NULL,  NULL,       NULL, "refine input aln w/Expectation-Maximization, save to <s>", 9 },
+  { "--gibbs",   eslARG_NONE,   FALSE,  NULL, NULL,       NULL,"--refine",   NULL, "w/--refine, use Gibbs sampling instead of EM", 9 },
+  { "--seed",    eslARG_INT,     NULL,  NULL, "n>0",      NULL,"--gibbs",    NULL, "w/--gibbs, set random number generator seed to <n>",  9 },
+  { "--hbanded", eslARG_NONE,   FALSE,  NULL, NULL,       NULL,"--refine",   NULL, "accelerate --refine using HMM banded CYK aln algorithm", 9 },
+  { "--tau",     eslARG_REAL,   "1E-7", NULL, "0<x<1",    NULL,"--hbanded",  NULL, "set tail loss prob for --hbanded to <x>", 9 },
+  { "--sub",     eslARG_NONE,   FALSE,  NULL, NULL,       NULL,"--refine",   NULL, "w/--refine, use sub CM for columns b/t HMM start/end points", 9 },
+  { "--local",   eslARG_NONE,   FALSE,  NULL, NULL,       NULL,"--refine",   NULL, "w/--refine, align locally w.r.t the model", 9 },
 /* Selecting the input MSA alphabet rather than autoguessing it */
   { "--rna",     eslARG_NONE,   FALSE, NULL, NULL,   ALPHOPTS,    NULL,     NULL, "input alignment is RNA sequence data", 10},
   { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,   ALPHOPTS,    NULL,     NULL, "input alignment is DNA sequence data", 10},
@@ -198,8 +198,10 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
       puts("\noptions for building multiple CMs after clustering input MSA:");
       esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
-      puts("\n  options for selecting alphabet rather than guessing it:");
+      puts("\nexpert options for refining the input alignment:");
       esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
+      puts("\n options for selecting alphabet rather than guessing it:");
+      esl_opt_DisplayHelp(stdout, go, 10, 2, 80);
       exit(0);
     }
   if (esl_opt_ArgNumber(go) != 2) 

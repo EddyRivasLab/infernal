@@ -1834,7 +1834,7 @@ CYKBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, int **hdmin, int 
       for (d = hdmax[0][jp_v]+1; d <= W;      d++) 
 	alpha[0][cur][d] = IMPOSSIBLE;
       
-      for (d = hdmin[v][jp_v]; ((d <= hdmax[v][jp_v] && d <= gamma_j) && d <= W); d++) 
+      for (d = hdmin[0][jp_v]; ((d <= hdmax[0][jp_v] && d <= gamma_j) && d <= W); d++) 
 	{
 	  y = cm->cfirst[0];
 	  alpha[0][cur][d] = alpha[y][cur][d] + cm->tsc[0][0];
@@ -1862,7 +1862,7 @@ CYKBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, int **hdmin, int 
 	      for (d = tmp_dmin; d <= tmp_dmax; d++)
 		{
 		  if (cm->stid[y] == BEGL_S) sc = alpha[y][j%(W+1)][d] + cm->beginsc[y];
-		  else                       sc = alpha[y][cur][d]     + cm->beginsc[y];
+		  else                       sc = alpha[y][cur][d]     + cm->beginsc[y]; /* BUG! alpha[y][cur][d] outside bands */
 		  if (sc > alpha[0][cur][d]) {
 		    alpha[0][cur][d] = sc;
 		    bestr[d]         = y;
