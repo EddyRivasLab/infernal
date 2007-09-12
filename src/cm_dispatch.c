@@ -74,9 +74,9 @@ int read_next_search_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revc
   if (do_revcomp)
     {
       /* make a new ESL_SQ object, to store the reverse complement */
-      /*if((dbseq->sq[1] = esl_sq_CreateDigitalFrom(abc, dbseq->sq[0]->name, dbseq->sq[0]->dsq, 
+      if((dbseq->sq[1] = esl_sq_CreateDigitalFrom(abc, dbseq->sq[0]->name, dbseq->sq[0]->dsq, 
 						  dbseq->sq[0]->n, dbseq->sq[0]->desc, 
-						  dbseq->sq[0]->acc, dbseq->sq[0]->ss)) == NULL) goto ERROR;*/
+						  dbseq->sq[0]->acc, dbseq->sq[0]->ss)) == NULL) goto ERROR;
       /* reverse complement it in place */
       revcomp(dbseq->sq[1]->abc, dbseq->sq[1], dbseq->sq[1]);
     }

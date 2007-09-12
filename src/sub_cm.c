@@ -2222,7 +2222,7 @@ check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int n
 	      /* we misassigned this guy, overwrite */ 
 	    }
 	}
-      /*esl_msa_ColumnSubset(msa, useme);*/
+      esl_msa_ColumnSubset(msa, useme);
       
       /* Shorten the dsq's */
       for (i = 0; i < msa_nseq; i++)

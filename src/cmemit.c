@@ -661,7 +661,7 @@ truncate_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA *msa, char 
     printf("useme[%d]: %d\n", apos, useme[apos]);
   */
 
-  /*esl_msa_ColumnSubset(msa, useme);*/
+  esl_msa_ColumnSubset(msa, useme);
   free(useme);
   free(ct);
   return eslOK;
