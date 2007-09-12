@@ -2699,7 +2699,7 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
       esl_vec_ISet(useme, msa->alen, FALSE);
       for(cpos = 0; cpos <= emap->clen; cpos++)
 	if(matmap[cpos] != -1) useme[matmap[cpos]] = TRUE;
-      esl_msa_ColumnSubset(msa, useme);
+      /*esl_msa_ColumnSubset(msa, useme);*/
       free(useme);
     }
 

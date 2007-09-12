@@ -725,7 +725,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	    {                                                                          
 	      if((status =make_aligned_string(msa->aseq[i], "-_.", msa->alen, seqs_to_aln->postcode[i], &apostcode)) != eslOK)
 		ESL_FAIL(status, errbuf, "error creating posterior string\n");
-	      esl_msa_AppendGR(msa, "POST", i, apostcode);                                  
+	      /*esl_msa_AppendGR(msa, "POST", i, apostcode);*/                                  
 	      free(apostcode);                                                         
 	    }                                                                          
 	}                                                                              

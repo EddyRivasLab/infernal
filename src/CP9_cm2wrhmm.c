@@ -2649,7 +2649,7 @@ CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo,
 	      /* we misassigned this guy, overwrite */ 
 	    }
 	}
-      esl_msa_ColumnSubset(msa, useme);
+      /*esl_msa_ColumnSubset(msa, useme);*/
       
       /* Shorten the sequences */
       char         *tmp_name;           /* name for the seqs */

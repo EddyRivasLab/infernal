@@ -423,25 +423,27 @@ typedef struct cp9filterthr_s {
 } CP9FilterThr_t;
 
 
-/* Structure SubFilterInfo_t: Information on possible sub CM filters for a CM.
- */
+/* Structure SubFilterInfo_t: Information on possible sub CM filters for a CM.                           
+ * States of a CM are grouped into 'start groups'. There is one start group                              
+ * for each start state of the CM. A 'start group' begins with a start state and ends                    
+ * with a E or B state, and includes all states in between.                                              
+ */                                                                                                      
 typedef struct subfilterinfo_s {
-  int    M;            /* # states in the CM */
-  int    nends;        /* # end states in the CM */
-  int    ncands;       /* number of candidate states, these *could* be sub CM roots */
-  double beta;         /* beta used for calculating avglen */
-  float  minlen;       /* minimum average length (avglen) a candidate state must have */
-  int   *iscandA;      /* [0..v..cm->M] TRUE if state v is a candidate sub CM root, FALSE otherwise */
-  float *avglenA;      /* [0..v..cm->M] average length of a hit rooted at v (from QDB) */
-  int   *groupA;       /* [0..i..M-1]      end group this state belongs to */
-  int   *startA;       /* [0..i..nends-1], first state in end state i's group */
-  int   *endA;         /* [0..i..nends-1], final state in end state i's group */
-  int  **withinAA;     /* [0..i..nends-1][0..j..nends-1] = TRUE if end state j's group   
-			* is within end state i's group.
-	                * group j is 'within' i IFF: 
-			*         (startA[i] < startA[j]) && (endA[j] < endA[i]) 
-			*/
-
+  int    M;            /* # states in the CM */                                                          
+  int    nstarts;      /* # start states (and start groups) in the CM */                                 
+  int    ncands;       /* number of candidate states, these *could* be sub CM roots */                   
+  double beta;         /* beta used for calculating avglenA */                                           
+  float  minlen;       /* minimum average length (avglen) a candidate state must have */                 
+  int   *iscandA;      /* [0..v..cm->M] TRUE if state v is a candidate sub CM root, FALSE otherwise */   
+  float *avglenA;      /* [0..v..cm->M] average length of a hit rooted at v (from QDB) */                
+  int   *startA;       /* [0..i..M-1] start group this state belongs to */                               
+  int   *firstA;       /* [0..i..nstarts-1], first state in start state i's group */                     
+  int   *lastA;        /* [0..i..nstarts-1], last state in start state i's group */                      
+  int  **withinAA;     /* [0..i..nstarts-1][0..j..nstarts-1] = TRUE if start state j's group             
+                        * is within start state i's group.                                               
+                        *  emap->startA[cm->nodemap[i]]->lpos < emap->startA[cm->nodemap[j]]->lpos  &&   
+                        *  emap->endA  [cm->nodemap[i]]->rpos > emap->endA  [cm->nodemap[j]]->rpos       
+                        */			
 } SubFilterInfo_t;
 
 /* Structure CMStats_t

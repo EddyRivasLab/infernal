@@ -751,9 +751,9 @@ initialize_sub_filter_info(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
   int nd;
   int v;
   ESL_STACK   *pda;
-  int cur_end = 0;
+  int j_popped;
   int i,j;
-  int start_nd;
+  int on_right;
 
   if(cfg->subinfo != NULL) ;/* FreeSubFilterInfo() */
   cfg->subinfo = NULL;
@@ -783,73 +783,130 @@ initialize_sub_filter_info(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
     }
   }
 
-  /* determine each end state's 'group' 
+  /* determine each end state's 'start group' 
    * first, allocate data structures for this info 
    */
-  cfg->subinfo->ngroups = CMCountStatetype(cm, E_st);
-  ESL_ALLOC(cfg->subinfo->groupA,   sizeof(int) *   cfg->subinfo->M);
-  esl_vec_ISet(cfg->subinfo->groupA, cfg->subinfo->M, -1);
+  cfg->subinfo->nstarts = CMCountStatetype(cm, S_st);
+  ESL_ALLOC(cfg->subinfo->startA,   sizeof(int) *   cfg->subinfo->M);
+  esl_vec_ISet(cfg->subinfo->startA, cfg->subinfo->M, -1);
 
-  ESL_ALLOC(cfg->subinfo->startA,   sizeof(int) *   cfg->subinfo->ngroups);
-  ESL_ALLOC(cfg->subinfo->endA,     sizeof(int) *   cfg->subinfo->ngroups);
+  ESL_ALLOC(cfg->subinfo->firstA,    sizeof(int) *  cfg->subinfo->nstarts);
+  ESL_ALLOC(cfg->subinfo->lastA,     sizeof(int) *  cfg->subinfo->nstarts);
 
-  ESL_ALLOC(cfg->subinfo->withinAA, sizeof(int *) * cfg->subinfo->ngroups);
-  for(i = 0; i < cfg->subinfo->ngroups; i++) 
+  ESL_ALLOC(cfg->subinfo->withinAA, sizeof(int *) * cfg->subinfo->nstarts);
+  for(i = 0; i < cfg->subinfo->nstarts; i++) 
     {
-      ESL_ALLOC(cfg->subinfo->withinAA[i], sizeof(int) * cfg->subinfo->ngroups);
-      esl_vec_ISet(cfg->subinfo->withinAA[i], cfg->subinfo->ngroups, FALSE);
+      ESL_ALLOC(cfg->subinfo->withinAA[i], sizeof(int) * cfg->subinfo->nstarts);
+      esl_vec_ISet(cfg->subinfo->withinAA[i], cfg->subinfo->nstarts, FALSE);
     }
   
-
-  /* first group is the ROOT_S group, these are all states in nodes
-   * prior to the first BIF node */
+  /* traverse the CM using a pda, code stolen and modified from Sean's
+   *  cmemit.c:CreateEmitMap() 
+   */
+  nd   = 0;
   pda  = esl_stack_ICreate();
-  v = 0; 
-  cfg->subinfo->startA[0] = 0;
-  while(cm->sttype[v] != B_st) cfg->subinfo->groupA[v++] = 0; 
-  cfg->subinfo->endA[0] = v-1;
-  for(j = 1; j < cfg->subinfo->ngroups; j++) /* all groups are 'within' the ROOT_S's group */
-    cfg->subinfo->withinAA[0][j] = TRUE;
+  j    = 0;
+  cfg->subinfo->firstA[0] = 0;
 
-  /* to get info for all other groups >= 1, traverse CM using a stack, recording relevant info */
-  if(cfg->subinfo->ngroups > 1) /* no need to traverse CM, only 1 group (ROOT_S->END_E(cm->M-1)) which we already filled info on */
+  esl_stack_IPush(pda, 0);		/* 0 = left side. 1 would = right side. */
+  esl_stack_IPush(pda, j);		/* 0 = left side. 1 would = right side. */
+  esl_stack_IPush(pda, nd);
+  while (esl_stack_IPop(pda, &nd) != eslEOD)
     {
-      cur_end = 1;
-      for(nd = 1; nd < cm->nodes; nd++) 
+      esl_stack_IPop(pda, &j_popped);
+      esl_stack_IPop(pda, &on_right);
+      printf("nd: %3d j_popped: %3d on_right: %d\n", nd, j_popped, on_right);
+      
+      if (on_right) 
 	{
-	  if(cm->ndtype[nd] == BIF_nd) 
-	    {
-	  
-	      esl_stack_IPush(pda, cur_end + 2);
-	      esl_stack_IPush(pda, cm->ndidx[cm->cnum[cm->nodemap[nd]]]);   /* right child */
-	      esl_stack_IPush(pda, cur_end + 1);
-	      esl_stack_IPush(pda, cm->ndidx[cm->cnum[cm->nodemap[nd]]]);   /* left child */
-	      cur_end += 2;
-	    }
-	  else if(cm->ndtype[nd] == END_nd) 
-	    {
-	      esl_stack_IPop(pda, &start_nd);
-	      esl_stack_IPop(pda, &j);
-	      cfg->subinfo->startA[j] = cm->nodemap[start_nd];
-	      cfg->subinfo->endA[j]   = cm->nodemap[nd];
-	      for(v = cfg->subinfo->startA[j]; v <= cfg->subinfo->endA[j]; v++)
-		if(cfg->subinfo->groupA[v] != -1)
-		  v = cfg->subinfo->endA[(cfg->subinfo->groupA[v])]; /* skip this group, that's already filled, (the v++ will still happen) */
-		else cfg->subinfo->groupA[v] = j;
-
-	      /* the end group we just defined is 'withing' each end group currently 
-	       * in the stack. group j is 'within' i IFF:
-	       *    (startA[i] < startA[j]) && (endA[j] < endA[i])
+	  if(cm->ndtype[nd] == BEGL_nd ||  cm->ndtype[nd] == BEGR_nd) 
+	    { 
+	      /* we're done with start group j_popped, it is within
+	       * all start groups currently in the stack.
 	       */
-	      for(i = 0; i < pda->n; i += 2) /* += 2 b/c only every other element is a end group index */
-		cfg->subinfo->withinAA[pda->idata[i]][j] = TRUE;
+	      for(i = 1; i < pda->n; i += 3) /* += 3 b/c only every third element is a state group index */
+		cfg->subinfo->withinAA[pda->idata[i]][j_popped] = TRUE;
 	    }
 	}
-      if(esl_stack_ObjectCount(pda) != 0) cm_Fail("initialize_sub_filter_info() error, stack not empty after all nodes");
+      else
+	{
+	  if (cm->ndtype[nd] == BEGL_nd || cm->ndtype[nd] == BEGR_nd) 
+	    {
+	      j++;
+	      cfg->subinfo->firstA[j] = cm->nodemap[nd];
+	    }
+	  if (cm->ndtype[nd] == END_nd) 
+	    {
+	      cfg->subinfo->lastA[j] = cm->nodemap[nd];
+	      for(v = cfg->subinfo->firstA[j]; v <= cfg->subinfo->lastA[j]; v++) cfg->subinfo->startA[v] = j;
+	    }
+	  if (cm->ndtype[nd] == BIF_nd) 
+	    {
+	      cfg->subinfo->lastA[j] = cm->nodemap[nd];
+	      for(v = cfg->subinfo->firstA[j]; v <= cfg->subinfo->lastA[j]; v++) cfg->subinfo->startA[v] = j;
+
+				/* push the BIF back on for its right side  */
+	      esl_stack_IPush(pda, 1);
+	      esl_stack_IPush(pda, j);
+	      esl_stack_IPush(pda, nd);
+                            /* push node index for right child */
+	      esl_stack_IPush(pda, 0);
+	      esl_stack_IPush(pda, j);
+	      esl_stack_IPush(pda, cm->ndidx[cm->cnum[cm->nodemap[nd]]]);   
+                            /* push node index for left child */
+	      esl_stack_IPush(pda, 0);
+	      esl_stack_IPush(pda, j);
+	      esl_stack_IPush(pda, cm->ndidx[cm->cfirst[cm->nodemap[nd]]]); 
+	    }
+	  else
+	    {
+	      /* push the node back on for right side */
+	      esl_stack_IPush(pda, 1);
+	      esl_stack_IPush(pda, j);
+	      esl_stack_IPush(pda, nd);
+	      /* push next BIF, END node on */
+	      if (cm->ndtype[nd] != END_nd) {
+		while(cm->ndtype[nd] != BIF_nd && cm->ndtype[nd] != END_nd) nd++;
+		esl_stack_IPush(pda, 0);
+		esl_stack_IPush(pda, j);
+		esl_stack_IPush(pda, nd);
+	      }
+	    }
+	}
     }
   printf("\n");
-  for(v = 0; v < cm->M; v++) { printf("groupA[%4d]: %d\n", v, cfg->subinfo->groupA[v]); assert(cfg->subinfo->groupA[v] >= 0); }
+  for(v = 0; v < cm->M; v++) { printf("startA[%4d]: %d\n", v, cfg->subinfo->startA[v]); assert(cfg->subinfo->startA[v] >= 0); }
+  for(i = 0; i < cfg->subinfo->nstarts; i++) {
+    printf("firstA[%2d]: %4d\ntlastA [%2d]: %4d\n", i, cfg->subinfo->firstA[i], i, cfg->subinfo->lastA[i]);
+    for(j = 0; j < cfg->subinfo->nstarts; j++) 
+      printf("\twithinAA[%2d][%2d] %d\n", i, j, cfg->subinfo->withinAA[i][j]);
+    printf("\n");
+  }
 
+  /* temporary check of withinAA */
+  CMEmitMap_t *emap;
+  int ileft, iright, jleft, jright;
+  emap = CreateEmitMap(cm);
+  for(i = 0; i < cfg->subinfo->nstarts; i++)
+    {
+      ileft  = emap->lpos[cm->ndidx[cfg->subinfo->firstA[i]]];
+      iright = emap->rpos[cm->ndidx[cfg->subinfo->firstA[i]]];
+      for(j = 0; j < cfg->subinfo->nstarts; j++)
+	{
+	  if(i == j) continue;
+	  jleft  = emap->lpos[cm->ndidx[cfg->subinfo->firstA[j]]];
+	  jright = emap->rpos[cm->ndidx[cfg->subinfo->firstA[j]]];
+
+	  if(cfg->subinfo->withinAA[i][j]) {
+	    if(! ((ileft <= jleft) && (iright >= jright)))
+	      { printf("Crap."); }
+	  }
+	  else {
+	    if((ileft <= jleft) && (iright >= jright))
+	      printf("Crapola.");
+	  }
+	}
+    }
   return eslOK;
 
  ERROR:
