@@ -55,6 +55,7 @@ OBJS  = alphabet.o\
 	display.o\
 	emit.o\
 	emitmap.o\
+	fastsearch.o\
 	hbandcyk.o\
 	hmmband.o\
 	logsum.o\

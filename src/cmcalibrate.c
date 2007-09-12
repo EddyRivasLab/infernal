@@ -554,6 +554,7 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
   ESL_DSQ       *dsq;
   float          sc1;
   float          sc2;
+  float          sc3;
 
   /* contract check */
   if(ret_vscAA  == NULL && ret_cp9scA == NULL) { sprintf(errbuf, "process_workunit, ret_vscAA and ret_cp9scA both NULL."); return eslEINVAL; } 
@@ -600,10 +601,13 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
 	{ 
 	  sc1 = search_target_cm_calibration(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, &(cur_vscA)); 
 	  sc2 = actually_search_target(cm, dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE);
-	  printf("i: %4d sc1: %10.4f sc2: %10.4f\n", i, sc1, sc2);
+	  sc3 = FastCYKScan(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL, NULL, NULL);
+	    printf("i: %4d sc1: %10.4f sc2: %10.4f sc3: %10.4f \n", i, sc1, sc2, sc3);
 	  fflush(stdout);
 	  if(fabs(sc1 - sc2) > 0.01) 
 	    cm_Fail("i: %4d sc1: %10.4f sc2: %10.4f\n", i, sc1, sc2);
+	  if(fabs(sc1 - sc3) > 0.01) 
+	    cm_Fail("i: %4d sc1: %10.4f sc3: %10.4f\n", i, sc1, sc3);
 
 	  for(v = 0; v < cm->M; v++) vscAA[v][i] = cur_vscA[v];
 	  free(cur_vscA);

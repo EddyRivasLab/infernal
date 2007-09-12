@@ -348,6 +348,10 @@ extern float iInsideBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, 
 				  int j0, int W, float cutoff, search_results_t *results);
 
 
+/* from fastsearch.c */
+extern float FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float cutoff, 
+			 search_results_t *results, float **ret_vsc, float *ret_best_hit_sc);
+
 
 /* from CP9_scan.c */
 extern float CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
