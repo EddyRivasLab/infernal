@@ -1142,6 +1142,11 @@ ConfigQDB(CM_t *cm)
    * hits that are bigger than we're allowing with QDB. */
   cm->W = cm->dmax[0];
   cm->flags |= CM_QDB; /* raise the QDB flag */
+
+  CMLogoddsify(cm); /* QDB calculation invalidates log odds scores */
+  if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
+    CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
+				     * makes all CP9 (if non-null) inserts equiprobable */
   return eslOK;
 }
 

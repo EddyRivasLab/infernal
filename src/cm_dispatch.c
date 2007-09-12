@@ -593,7 +593,7 @@ float actually_search_target(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cu
 	else /* don't do inside */
 	  sc = CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
     }    
-  if(results->num_results > 0 && do_align_hits)
+  if((results != NULL && results->num_results > 0) && do_align_hits)
     actually_align_targets(cm, NULL, 
 			   dsq, results,   /* put function into dsq_mode, designed for aligning search hits */
 			   0, 0, 0, NULL);

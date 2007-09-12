@@ -108,6 +108,8 @@ struct cfg_s {
 				        * current mode CM is in, on masters and workers */
   float           *vcalcs;             /* [0..v..cm->M-1] millions of calcs for each subtree to scan 1 KB with --beta  */
   float           *fil_vcalcs;         /* [0..v..cm->M-1] millions of calcs for each subtree to scan 1 KB with --fbeta */
+  int             *dmin_gumbel;        /* [0..v..cm->M-1] dmin for current CM and CM configuration, updated in update_qdbs() */
+  int             *dmax_gumbel;        /* [0..v..cm->M-1] dmax for current CM and CM configuration, updated in update_qdbs() */
 
   int              do_mpi;
   int              my_rank;
@@ -147,9 +149,11 @@ static int pick_stemwinners(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errb
 static int fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores, double *ret_mu, double *ret_lambda);
 static int cm_fit_histograms(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float **vscA, int nscores, double **ret_muA, double **ret_lambdaA);
 static ESL_DSQ * get_random_dsq(const struct cfg_s *cfg, CM_t *cm, double *dnull, int L);
-static ESL_DSQ * get_cmemit_dsq(const struct cfg_s *cfg, CM_t *cm, int *ret_L, int *ret_p);
+static ESL_DSQ * get_cmemit_dsq(const struct cfg_s *cfg, CM_t *cm, int *ret_L, int *ret_p, Parsetree_t **ret_tr);
 static float search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float **ret_vsc);
 static float count_search_target_calcs(CM_t *cm, int L, int *dmin, int *dmax, int W, float **ret_vcalcs);
+static int cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, ESL_DSQ *dsq, 
+				    Parsetree_t *tr, int L, int *dmin_default_beta, int *dmax_default_beta, float cutoff);
 
 int
 main(int argc, char **argv)
@@ -216,6 +220,8 @@ main(int argc, char **argv)
   cfg.cutoffA  = NULL; 
   cfg.vcalcs   = NULL;
   cfg.fil_vcalcs = NULL;
+  cfg.dmin_gumbel = NULL;
+  cfg.dmax_gumbel = NULL;
 
   cfg.gumhfp   = NULL; /* ALWAYS remains NULL for mpi workers */
   cfg.gumqfp   = NULL; /* ALWAYS remains NULL for mpi workers */
@@ -538,7 +544,8 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
   int            i;
   int            v;
   int            L;
-  int            passed_flag;
+  int            nfailed = 0;
+  Parsetree_t   *tr;
   ESL_DSQ       *dsq;
 
   /* contract check */
@@ -567,36 +574,37 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
   /* generate dsqs one at a time and collect best CM scores at each state and/or best overall CP9 score */
   for(i = 0; i < nseq; i++) 
     {
-      passed_flag = TRUE;
-      if(emit_from_cm)   dsq = get_cmemit_dsq(cfg, cm, &L, &p);
-      else             { dsq = get_random_dsq(cfg, cm, dnull, cm->W*2); L = cm->W*2; }
+      if(emit_from_cm) { /* if emit_from_cm == TRUE, use_cm == TRUE */
+	if(nfailed > 1000 * nseq) { cm_Fail("Max number of failures (%d) reached while trying to emit %d seqs.\n", nfailed, nseq); }
+	dsq = get_cmemit_dsq(cfg, cm, &L, &p, &tr);
+	while(!(cm_find_hit_above_cutoff(go, cfg, cm, dsq, tr, L, cfg->dmin_gumbel, cfg->dmax_gumbel, cfg->cutoffA[p]))) { 
+	  free(dsq); 	
+	  /* parsetree tr is freed in cm_find_hit_above_cutoff() */
+	  dsq = get_cmemit_dsq(cfg, cm, &L, &p, &tr);
+	  nfailed++;
+	}
+      }
+      else { 
+	dsq = get_random_dsq(cfg, cm, dnull, cm->W*2); 
+	L = cm->W*2; 
+      }
       /* if nec, search with CM */
       if (use_cm)
 	{ 
-	  /* HEREHEREHEREHERE, set up some type of tiered system to determine if we pass */
-
 	  search_target_cm_calibration(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, &(cur_vscA)); 
 	  for(v = 0; v < cm->M; v++) vscAA[v][i] = cur_vscA[v];
 	  free(cur_vscA);
-
-	  /* if we're emitting from CM for filter stats, we have to ensure this dsq has a hit
-	   * above our cutoff, if not we don't want to count it */
-	  if(emit_from_cm && vscAA[0][i] < cfg->cutoffA[p]) {
-	    search_target_cm_calibration(cm, dsq, NULL, NULL, 1, L, cm->W, &(cur_vscA)); 
-	    if(cur_vscA[0] < cfg->cutoffA[p]) { passed_flag = FALSE; i--; } /* set flag to FALSE, decrement i */
-	    free(cur_vscA);
-	  }
 	}
       /* if nec, search with CP9 */
-      if (use_cp9 && passed_flag) cp9scA[i] = CP9Forward(cm, dsq, 1, L, cm->W, 0., 
-							 NULL,   /* don't return scores of hits */
-							 NULL,   /* don't return posns of hits */
-							 NULL,   /* don't keep track of hits */
-							 TRUE,   /* we're scanning */
-							 FALSE,  /* we're not ultimately aligning */
-							 FALSE,  /* we're not rescanning */
-							 TRUE,   /* be memory efficient */
-							 NULL);  /* don't want the DP matrix back */
+      if (use_cp9) cp9scA[i] = CP9Forward(cm, dsq, 1, L, cm->W, 0., 
+					  NULL,   /* don't return scores of hits */
+					  NULL,   /* don't return posns of hits */
+					  NULL,   /* don't keep track of hits */
+					  TRUE,   /* we're scanning */
+					  FALSE,  /* we're not ultimately aligning */
+					  FALSE,  /* we're not rescanning */
+					  TRUE,   /* be memory efficient */
+					  NULL);  /* don't want the DP matrix back */
       free(dsq);
     }
   if(dnull != NULL) free(dnull);
@@ -642,9 +650,12 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 static int
 update_qdbs(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int doing_filter)
 {
+  int status;
+  int v;
+  
   if(doing_filter) {
     cm->beta   = esl_opt_GetReal(go, "--fbeta"); /* this will be 1e-3 unless changed at command line */
-    cm->search_opts &= ~CM_SEARCH_NOQDB; /* don't use QDB to search */
+    cm->search_opts &= ~CM_SEARCH_NOQDB; /* use QDB to search */
     if(cm->flags & CM_QDB)
       {
 	free(cm->dmin);
@@ -672,18 +683,41 @@ update_qdbs(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int doing_filter
 	  cm->flags &= ~CM_QDB;
 	}
       ConfigQDB(cm);
-    /* determine millions of DP calcs for each state, only if we don't already know this,
-     * these will be free'd and set to NULL every time we read a new CM */
-    if(cfg->fil_vcalcs == NULL) 
-      count_search_target_calcs(cm, 1000, cm->dmin, cm->dmax, cm->W, &(cfg->vcalcs));
+      CMLogoddsify(cm); /* QDB calculation invalidates log odds scores */
+
+      /* determine #millions of DP calcs for each state, only if we don't already know this,
+       * these will be free'd and set to NULL every time we read a new CM */
+      if(cfg->vcalcs == NULL) 
+	count_search_target_calcs(cm, 1000, cm->dmin, cm->dmax, cm->W, &(cfg->vcalcs));
+
+      /* we keep track of the QDBs for doing Gumbels (so we can ensure our emitted 
+       * seqs used to calc filter thresholds are better than our cutoff), so 
+       * we update them here 
+       */
+      if(cfg->dmin_gumbel != NULL) { free(cfg->dmin_gumbel); cfg->dmin_gumbel = NULL; }
+      if(cfg->dmax_gumbel != NULL) { free(cfg->dmax_gumbel); cfg->dmax_gumbel = NULL; }
+      ESL_ALLOC(cfg->dmin_gumbel, sizeof(int) * cm->M);
+      ESL_ALLOC(cfg->dmax_gumbel, sizeof(int) * cm->M);
+      for(v = 0; v < cm->M; v++) {
+	cfg->dmin_gumbel[v] = cm->dmin[v];
+	cfg->dmax_gumbel[v] = cm->dmax[v];
+      }
     }
-    else {
-      if(cfg->fil_vcalcs == NULL) 
+    else { /* --noqdb */
+      if(cfg->vcalcs == NULL) 
 	count_search_target_calcs(cm, 1000, NULL, NULL, cm->W, &(cfg->vcalcs));
       cm->search_opts |= CM_SEARCH_NOQDB; /* don't use QDB to search */
+
+      /* make sure we don't have dmin_gumbel, dmax_gumbel (if we do, it's due to a coding error) */
+      assert(cfg->dmin_gumbel == NULL);
+      assert(cfg->dmax_gumbel == NULL);
     }
   }
   return eslOK;
+
+ ERROR: 
+  cm_Fail("update_qdbs(): memory allocation error.");
+  return status; /* NEVERREACHED */
 }
 
 /* initialize_cmstats()
@@ -898,7 +932,7 @@ initialize_sub_filter_info(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
   printf("\n");
   for(v = 0; v < cm->M; v++) { printf("startA[%4d]: %d\n", v, cfg->subinfo->startA[v]); assert(cfg->subinfo->startA[v] >= 0); }
   for(i = 0; i < cfg->subinfo->nstarts; i++) {
-    printf("firstA[%2d]: %4d\ntlastA [%2d]: %4d\n", i, cfg->subinfo->firstA[i], i, cfg->subinfo->lastA[i]);
+    printf("firstA[%2d]: %4d\nlastA [%2d]: %4d\n", i, cfg->subinfo->firstA[i], i, cfg->subinfo->lastA[i]);
     for(j = 0; j < cfg->subinfo->nstarts; j++) 
       printf("\twithinAA[%2d][%2d] %d\n", i, j, cfg->subinfo->withinAA[i][j]);
     printf("\n");
@@ -1127,14 +1161,21 @@ get_random_dsq(const struct cfg_s *cfg, CM_t *cm, double *dnull, int L)
  * Returns:  eslOK on success;
  */
 ESL_DSQ *
-get_cmemit_dsq(const struct cfg_s *cfg, CM_t *cm, int *ret_L, int *ret_p)
+get_cmemit_dsq(const struct cfg_s *cfg, CM_t *cm, int *ret_L, int *ret_p, Parsetree_t **ret_tr)
 {
   int p;
   int L;
   ESL_SQ *sq;
   ESL_DSQ *dsq;
+  Parsetree_t *tr;
 
-  EmitParsetree(cm, cfg->r, "irrelevant", TRUE, NULL, &sq, &L);
+  EmitParsetree(cm, cfg->r, "irrelevant", TRUE, &tr, &sq, &L);
+  while(L == 0) { 
+    FreeParsetree(tr); 
+    esl_sq_Destroy(sq); 
+    EmitParsetree(cm, cfg->r, "irrelevant", TRUE, &tr, &sq, &L);
+  }
+
   /* determine the partition */
   p = cfg->cmstatsA[cfg->ncm-1]->gc2p[(get_gc_comp(sq, 1, L))]; /* in get_gc_comp() should be i and j of best hit */
 
@@ -1145,9 +1186,10 @@ get_cmemit_dsq(const struct cfg_s *cfg, CM_t *cm, int *ret_L, int *ret_p)
   free(sq->desc);
   free(sq);
 
-  *ret_L = L;
-  *ret_p = p;
-  return sq->dsq;
+  *ret_L  = L;
+  *ret_p  = p;
+  *ret_tr = tr;
+  return dsq;
 }
 
 /* Function: search_target_cm_calibration() based on bandcyk.c:CYKBandedScan()
@@ -1804,6 +1846,117 @@ count_search_target_calcs(CM_t *cm, int L, int *dmin, int *dmax, int W, float **
   return 0.;
 }
 
+/*
+ * Function: cm_find_hit_above_cutoff()
+ * Date:     EPN, Wed Sep 12 04:59:08 2007
+ *
+ * Purpose:  Given a CM, a sequence, and a cutoff, try to 
+ *           *quickly* answer the question: Does this sequence 
+ *           contain a hit to the CM above the cutoff?
+ *           To do this we first check the parsetree score, and
+ *           then do do up to 3 iterations of search.
+ *           The first 2 are performend with j and d bands 
+ *           (of decreasing tightness), then default 
+ *           search (with QDB unless --noqdb enabled) is done.
+ *           We return TRUE if any search finds a hit above
+ *           cutoff, and FALSE otherwise.
+ *
+ * Args:     go              - getopts
+ *           cfg             - cmcalibrate's configuration
+ *           cm              - CM to emit from
+ *           dsq             - the digitized sequence to search
+ *           tr              - parsetree for dsq
+ *           L               - length of sequence
+ *           dmin_default_beta - dmin for --beta (will be null if --noqdb)
+ *           dmax_default_beta - dmax for --beta (will be null if --noqdb)
+ *           cutoff          - bit score cutoff 
+ *
+ * Returns:  TRUE if a hit above cutoff is found.
+ *           FALSE otherwise.
+ *           Dies immediately on failure with informative error message.
+ */
+int cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, ESL_DSQ *dsq,
+			     Parsetree_t *tr, int L, int *dmin_default_beta, int *dmax_default_beta, float cutoff)
+{
+  int init_flags       = cm->flags;
+  int init_search_opts = cm->search_opts;
+  int turn_qdb_back_on = FALSE;
+  int turn_hbanded_back_off = FALSE;
+  int turn_hmmscanbands_back_off = FALSE;
+  double orig_tau = cm->tau;
+  float sc;
+
+  /* contract check */
+  if(dmin_default_beta == NULL && dmax_default_beta == NULL && (! esl_opt_GetBoolean(go, "--noqdb")))
+    cm_Fail("cm_find_hit_above_cutoff(), dmin_default_beta and dmax_default_beta are null, but --noqdb is not enabled.");
+
+  /* Determine if this sequence has a hit in it above the cutoff as quickly as possible. 
+   * Stage 0: Check parsetree score
+   * Stage 1: HMM banded search tau = 1e-2
+   * Stage 2: HMM banded search with scanning bands, tau = 1e-10
+   * Stage 3: QDB search (CYK or inside), beta = --beta, (THIS IS MOST LENIENT SEARCH WE'LL DO)
+   *
+   * The earliest stage at which we find a hit > cutoff at any stage, we return cm->flags, cm->search_opts
+   * to how they were when we entered, and return TRUE.
+   *
+   * NOTE: We don't do a full non-banded parse to be 100% sure we don't exceed the cutoff, 
+   * unless dmin_default_beta == dmax_default_beta == NULL, (which should only be the case 
+   * if --noqdb enable) to ensure that we don't exceed the cutoff, because we assume the
+   * --beta value used in *this* cmcalibrate run will also be used for any cmsearch runs.
+   */
+
+  sc = ParsetreeScore(cm, tr, dsq, FALSE); 
+  FreeParsetree(tr);
+  if(sc > cutoff) { /* parse score exceeds cutoff */
+    assert(cm->flags       == init_flags);
+    assert(cm->search_opts == init_search_opts);
+    return TRUE;
+  } 
+
+  if(!(cm->search_opts & CM_SEARCH_NOQDB))        turn_qdb_back_on = TRUE;
+  if(!(cm->search_opts & CM_SEARCH_HBANDED))      turn_hbanded_back_off = TRUE;
+  if(!(cm->search_opts & CM_SEARCH_HMMSCANBANDS)) turn_hmmscanbands_back_off = TRUE;
+
+  cm->search_opts |= CM_SEARCH_NOQDB;
+
+  /* stage 1 */
+  cm->search_opts |= CM_SEARCH_HBANDED;
+  cm->tau = 0.01;
+  if((sc = actually_search_target(cm, dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE)) > cutoff) { 
+    if(turn_qdb_back_on)        cm->search_opts &= ~CM_SEARCH_NOQDB; 
+    if(turn_hbanded_back_off) { cm->search_opts &= ~CM_SEARCH_HBANDED; cm->tau = orig_tau; }
+    assert(cm->flags       == init_flags);
+    assert(cm->search_opts == init_search_opts);
+    return TRUE;
+  } 
+
+  /* stage 2 */
+  cm->search_opts |= CM_SEARCH_HMMSCANBANDS;
+  cm->tau = 1e-10;
+  if((sc = actually_search_target(cm, dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE)) > cutoff) {
+    if(turn_qdb_back_on)             cm->search_opts &= ~CM_SEARCH_NOQDB; 
+    if(turn_hbanded_back_off)      { cm->search_opts &= ~CM_SEARCH_HBANDED;      cm->tau = orig_tau; }
+    if(turn_hmmscanbands_back_off) { cm->search_opts &= ~CM_SEARCH_HMMSCANBANDS; cm->tau = orig_tau; }
+    assert(cm->flags       == init_flags);
+    assert(cm->search_opts == init_search_opts);
+    return TRUE;
+  } 
+
+  /* stage 3, use 'default' dmin, dmax (which could be NULL) */
+  cm->search_opts &= ~CM_SEARCH_HBANDED;
+  cm->search_opts &= ~CM_SEARCH_HMMSCANBANDS;
+  if(turn_qdb_back_on) cm->search_opts &= ~CM_SEARCH_NOQDB; 
+
+  sc = search_target_cm_calibration(cm, dsq, dmin_default_beta, dmax_default_beta, 1, L, cm->W, NULL);
+  if(!turn_hbanded_back_off)      { cm->search_opts |= CM_SEARCH_HBANDED;      cm->tau = orig_tau; }
+  if(!turn_hmmscanbands_back_off) { cm->search_opts |= CM_SEARCH_HMMSCANBANDS; cm->tau = orig_tau; }
+  assert(cm->flags       == init_flags);
+  assert(cm->search_opts == init_search_opts);
+
+  if(sc > cutoff) return TRUE;
+  else return FALSE;
+}
+
 #if 0
 /*
  * Function: cm_emit_seqs_to_aln_above_cutoff()
@@ -1900,4 +2053,5 @@ seqs_to_aln_t *cm_emit_seqs_to_aln_above_cutoff(const ESL_GETOPTS *go, struct cf
   cm_Fail("memory allocation error");
   return NULL;
 }
+
 #endif
