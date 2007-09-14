@@ -588,6 +588,29 @@ tr_wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    /* Find the split */
    W = j0 - i0 + 1;
    best_sc = IMPOSSIBLE;
+
+   /* Special case: parent empty, child has local hit */
+   if (b1_sc > best_sc)
+   {
+      best_sc = b1_sc;
+      best_v  = b1_v;
+      best_j  = b1_j;
+      best_d  = b1_j - b1_i + 1;
+      p_mode = 0; c_mode = b1_mode;
+   }
+
+   /* Special case: child empty, parent has local hit */
+   /* 1 and 2 are the only appropriate values for b2_mode */
+   if (b2_sc > best_sc)
+   {
+      best_sc = b2_sc;
+      best_v  = b2_v;
+      best_j  = b2_j;
+      best_d  = 0;
+      p_mode = b2_mode; c_mode = 0;
+   }
+  
+   /* Standard cases */
    for (v = w; v <= y; v++)
    {
       for (jp = 0; jp <= W; jp++)
@@ -658,27 +681,6 @@ tr_wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
             p_mode = 3; c_mode = 0;
          }
       }
-   }
-
-   /* Special case: parent empty, child has local hit */
-   if (b1_sc > best_sc)
-   {
-      best_sc = b1_sc;
-      best_v  = b1_v;
-      best_j  = b1_j;
-      best_d  = b1_j - b1_i + 1;
-      p_mode = 0; c_mode = b1_mode;
-   }
-
-   /* Special case: child empty, parent has local hit */
-   /* 1 and 2 are the only appropriate values for b2_mode */
-   if (b2_sc > best_sc)
-   {
-      best_sc = b2_sc;
-      best_v  = b2_v;
-      best_j  = b2_j;
-      best_d  = 0;
-      p_mode = b2_mode; c_mode = 0;
    }
 
    /* Free alpha and beta */
@@ -780,8 +782,19 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
                r_allow_J, r_allow_L, r_allow_R, z_allow_J, z_allow_L, z_allow_R,
                NULL, beta, NULL, NULL);
 
-   /* Find our best split */
    best_sc = IMPOSSIBLE;
+
+   /* check local begin */
+   if (b_sc > best_sc)
+   {
+      best_sc = b_sc;
+      best_v  = b_v;
+      best_i  = b_i;
+      best_j  = b_j;
+      p_mode = 0; c_mode = b_mode;
+   }
+
+   /* Find our best split */
    for (v = w; v <= y; v++)
    {
       for (ip = 0; ip <= i1-i0; ip++)
@@ -856,16 +869,6 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
       }
    }
 
-   /* check local begin */
-   if (b_sc > best_sc)
-   {
-      best_sc = b_sc;
-      best_v  = b_v;
-      best_i  = b_i;
-      best_j  = b_j;
-      p_mode = 0; c_mode = b_mode;
-   }
-
    /* Free memory */
    free_vji_matrix(alpha->J, cm->M, j1, j0);
    free_vji_matrix(alpha->L, cm->M, j1, j0);
@@ -884,7 +887,7 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
          tr_v_splitter(cm, dsq, L, tr, r, best_v, i0, best_i, best_j, j0,
                        FALSE, r_allow_J, r_allow_L, r_allow_R, (c_mode == 3), (c_mode == 2), (c_mode == 1));
          tr_v_splitter(cm, dsq, L, tr, best_v, z, best_i, i1, j1, best_j,
-                       useEL, (p_mode == 3), (p_mode == 2), (p_mode == 1), z_allow_J, z_allow_L, z_allow_R);  
+                       useEL, (c_mode == 3), (c_mode == 2), (c_mode == 1), z_allow_J, z_allow_L, z_allow_R);  
       }
       else
       {
@@ -2393,6 +2396,7 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
 
       if (z == 0)
       {
+         // FIXME
          // I don't understand what exactly Sean's doing in this block
          Die("Potentially unhandled case!\n");
       }
@@ -2561,7 +2565,7 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
                if ( alpha->L[v][jp][ip] < IMPOSSIBLE) alpha->L[v][jp][ip] = IMPOSSIBLE;
                if ( alpha->R[v][jp][ip] < IMPOSSIBLE) alpha->R[v][jp][ip] = IMPOSSIBLE;
 
-               if ( allow_begin || v == r )
+               if ( allow_begin )
                {
                   if ( r_allow_J )
                   if ( alpha->J[v][jp][ip] > b_sc ) { b_mode = 3; b_v = v; b_j = j1+jp; b_i = i0+ip; b_sc = alpha->J[v][jp][ip]; }
@@ -2635,7 +2639,7 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
                if ( alpha->L[v][jp][ip] < IMPOSSIBLE) alpha->L[v][jp][ip] = IMPOSSIBLE;
                if ( alpha->R[v][jp][ip] < IMPOSSIBLE) alpha->R[v][jp][ip] = IMPOSSIBLE;
                
-               if ( allow_begin || v == r )
+               if ( allow_begin )
                {
                   if ( r_allow_J )
                   if ( alpha->J[v][jp][ip] > b_sc ) { b_mode = 3; b_v = v; b_j = j1+jp; b_i = i0+ip; b_sc = alpha->J[v][jp][ip]; }
@@ -2707,7 +2711,7 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
                if ( alpha->L[v][jp][ip] < IMPOSSIBLE) alpha->L[v][jp][ip] = IMPOSSIBLE;
                if ( alpha->R[v][jp][ip] < IMPOSSIBLE) alpha->R[v][jp][ip] = IMPOSSIBLE;
 
-               if ( allow_begin || v == r )
+               if ( allow_begin )
                {
                   if ( r_allow_J )
                   if ( alpha->J[v][jp][ip] > b_sc ) { b_mode = 3; b_v = v; b_j = j1+jp; b_i = i0+ip; b_sc = alpha->J[v][jp][ip]; }
@@ -2720,6 +2724,16 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
       else
       {
          Die("There's no way we could have gotten here - should have died before now\n");
+      }
+
+      if (v == r)
+      {
+         if ( r_allow_J )
+         if ( alpha->J[v][j0-j1][0] > b_sc) { b_mode = 3; b_v = v; b_j = j0; b_i = i0; b_sc = alpha->J[v][j0-j1][0]; }
+         if ( r_allow_L )
+         if ( alpha->L[v][j0-j1][0] > b_sc) { b_mode = 2; b_v = v; b_j = j0; b_i = i0; b_sc = alpha->L[v][j0-j1][0]; }
+         if ( r_allow_R )
+         if ( alpha->R[v][j0-j1][0] > b_sc) { b_mode = 1; b_v = v; b_j = j0; b_i = i0; b_sc = alpha->R[v][j0-j1][0]; }
       }
 
       /* If we're at root, give it the best (local) score */
