@@ -202,14 +202,14 @@ main(int argc, char **argv)
        * can catch the problem.
        */
       if (tr1 != NULL && fabs(sc1 - ptsc1) >= 0.01)
-	fprintf(stderr,"TrCYKInside score differs from its parse tree's score\n");
+	Die("TrCYKInside score differs from its parse tree's score\n");
       if (tr2 != NULL && fabs(sc2 - ptsc2) >= 0.01)
-	fprintf(stderr,"TrCYKDivideAndConquer score differs from its parse tree's score\n");
+	Die("TrCYKDivideAndConquer score differs from its parse tree's score\n");
       if (!do_smallonly && fabs(sc1 - sc2) >= 0.01) 
-	fprintf(stderr,"TrCYKInside score differs from TrCYKDivideAndConquer\n");
+	Die("TrCYKInside score differs from TrCYKDivideAndConquer\n");
       if (tr1 != NULL && tr2 != NULL && 
 	  compare_stringently && !ParsetreeCompare(tr1, tr2))
-	fprintf(stderr,"Parse trees for TrCYKInside and TrCYKDivideAndConquer differ\n");
+	Die("Parse trees for TrCYKInside and TrCYKDivideAndConquer differ\n");
       
       /* Save regression test data
        */

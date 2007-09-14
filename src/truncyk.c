@@ -67,12 +67,15 @@ typedef struct shadowmats_s {
 
 /* Divide and conquer */
 float tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
-                          int r, int vend, int i0, int j0, int allow_LM, int allow_RM);
+                          int r, int vend, int i0, int j0,
+                          int r_allow_J, int r_allow_L, int r_allow_R);
 float   tr_wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
-                          int r, int z,    int i0, int j0, int allow_LM, int aloow_RM);
+                          int r, int z,    int i0, int j0,
+                          int r_allow_J, int r_allow_L, int r_allow_R);
 void        tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
                           int r, int z,    int i0, int i1, int j1, int j0,
-                          int useEL, int force_LM, int force_RM);
+                          int useEL, int r_allow_J, int r_allow_L, int r_allow_R,
+                          int z_allow_J, int z_allow_L, int z_allow_R);
 
 /* Alignment engines */
 /* trinside is legacy, aviod use! */
@@ -81,26 +84,34 @@ float trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0,
                 void ****ret_T_shadow, void ****ret_Lmode_shadow, void ****ret_Rmode_shadow,
                 int *ret_mode, int *ret_v, int *ret_i, int *ret_j);
 float tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
+                int allow_begin, int r_allow_J, int r_allow_L, int r_allow_R,
                 AlphaMats_t *arg_alpha, AlphaMats_t *ret_alpha, 
                 struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
                 ShadowMats_t *ret_shadow, int *ret_mode, int *ret_v, int *ret_i, int *ret_j);
 float tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
+                 int r_allow_J, int r_allow_L, int r_allow_R,
                  BetaMats_t *arg_beta, BetaMats_t *ret_beta,
                  struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
                  int *ret_mode, int *ret_v, int *ret_j);
 float tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int j0,
-                 int useEL, int force_LM, int force_RM, int do_full, AlphaMats_t *arg_alpha, 
-                 AlphaMats_t *ret_alpha, struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
+                 int useEL, int do_full, int allow_begin,
+                 int r_allow_J, int r_allow_L, int r_allow_R,
+                 int z_allow_J, int z_allow_L, int z_allow_R,
+                 AlphaMats_t *arg_alpha, AlphaMats_t *ret_alpha,
+                 struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
                  ShadowMats_t *ret_shadow, int *ret_mode, int *ret_v, int *ret_i, int *ret_j);
 void tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int j0,
-                 int useEL, int force_LM, int force_RM, int do_full, BetaMats_t *arg_beta,
+                 int useEL, int do_full, int r_allow_J, int r_allow_L, int r_allow_R,
+                 int z_allow_J, int z_allow_L, int z_allow_R, BetaMats_t *arg_beta,
                  BetaMats_t *ret_beta, struct deckpool_s *dpool, struct deckpool_s **ret_dpool);
 
 /* Traceback routine */
-float tr_insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
-                int i0, int j0, int allow_begin);
+float tr_insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0,
+                 int r_allow_J, int r_allow_L, int r_allow_R);
 float tr_vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, 
-                  int i0, int i1, int j1, int j0, int useEL, int force_LM, int force_RM);
+                  int i0, int i1, int j1, int j0, int useEL,
+                  int r_allow_J, int r_allow_L, int r_allow_R,
+                  int z_allow_J, int z_allow_L, int z_allow_R);
 
 /* Function: TrCYK_DnC()
  * Author:   DLK
@@ -143,7 +154,7 @@ TrCYK_DnC(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_t
    }
 
    /* Solve by calling tr_generic_splitter() */
-   sc = tr_generic_splitter(cm, dsq, L, tr, r, z, i0, j0, TRUE, TRUE);
+   sc = tr_generic_splitter(cm, dsq, L, tr, r, z, i0, j0, TRUE, TRUE, TRUE);
 
    model_len = 0;
    for ( v = r; v < cm->M; v++ )
@@ -215,11 +226,12 @@ TrCYK_Inside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **re
       }
 
       /* Solve by calling tr_insideT() */
-      sc = tr_insideT(cm, dsq, L, tr, r, z, i0, j0, (r==0));
+      sc = tr_insideT(cm, dsq, L, tr, r, z, i0, j0, TRUE, TRUE, TRUE);
    }
    else
    {
       sc = tr_inside(cm, dsq, L, r, z, i0, j0, BE_EFFICIENT,
+                     TRUE, TRUE, TRUE, TRUE,
                      NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
    }
 
@@ -252,7 +264,8 @@ TrCYK_Inside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **re
  */
 float
 tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
-                    int r, int z, int i0, int j0, int allow_LM, int allow_RM)
+                    int r, int z, int i0, int j0,
+                    int r_allow_J, int r_allow_L, int r_allow_R)
 {
    AlphaMats_t *alpha;
    BetaMats_t  *beta;
@@ -272,12 +285,13 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    int        b2_v, b2_i, b2_j;
    int        b3_v, b3_j;
    float      b1_sc, b2_sc, b3_sc;
+   int        useEL;
 
    /* Case 1: problem size is small; solve with tr_insideT()
     * size calculation is heuristic based on size of insideT() */
    if (5*insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT)
    {
-      sc = tr_insideT(cm, dsq, L, tr, r, z, i0, j0, (r==0));
+      sc = tr_insideT(cm, dsq, L, tr, r, z, i0, j0, r_allow_J, r_allow_L, r_allow_R);
       return sc;
    }
 
@@ -289,7 +303,7 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    if (cm->sttype[v] != B_st)
    {
       if (cm->sttype[z] != E_st) Die("z in tr_generic_splitter not E_st - that ain't right");
-      sc = tr_wedge_splitter(cm, dsq, L, tr, r, z, i0, j0, allow_LM, allow_RM);
+      sc = tr_wedge_splitter(cm, dsq, L, tr, r, z, i0, j0, r_allow_J, r_allow_L, r_allow_R);
       return sc;
    }
 
@@ -304,13 +318,19 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 
    /* Calculate alphas for w and y
     * also pick up best local begins in each subtree */
-   b1_sc = tr_inside(cm, dsq, L, w, wend, i0, j0, BE_EFFICIENT, NULL, alpha, NULL, &pool, NULL, &b1_mode, &b1_v, &b1_i, &b1_j);
+   b1_sc = tr_inside(cm, dsq, L, w, wend, i0, j0, BE_EFFICIENT,
+                     (r == 0), TRUE, r_allow_L, r_allow_R,
+                     NULL, alpha, NULL, &pool, NULL, &b1_mode, &b1_v, &b1_i, &b1_j);
    if (r != 0) b1_sc = IMPOSSIBLE;
-   b2_sc = tr_inside(cm, dsq, L, y, yend, i0, j0, BE_EFFICIENT,alpha, alpha, pool,  NULL, NULL, &b2_mode, &b2_v, &b2_i, &b2_j);
+   b2_sc = tr_inside(cm, dsq, L, y, yend, i0, j0, BE_EFFICIENT,
+                     (r == 0), TRUE, r_allow_L, r_allow_R,
+                     alpha, alpha, pool,  NULL, NULL, &b2_mode, &b2_v, &b2_i, &b2_j);
    if (r != 0) b2_sc = IMPOSSIBLE;
 
    /* Calculate beta; release pool */
-   b3_sc = tr_outside(cm, dsq, L, r, v, i0, j0, BE_EFFICIENT, NULL, beta, NULL, NULL, &b3_mode, &b3_v, &b3_j);
+   b3_sc = tr_outside(cm, dsq, L, r, v, i0, j0, BE_EFFICIENT,
+                      r_allow_J, r_allow_L, r_allow_R,
+                      NULL, beta, NULL, NULL, &b3_mode, &b3_v, &b3_j);
 
    /* OK, to the point of actually finding the best split
     * We have a lot more types of splits than the non-truncated
@@ -332,7 +352,7 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
                best_d  = d;
                v_mode = 3; w_mode = 3; y_mode = 3;
             }
-            if ( allow_LM )
+            if ( r_allow_L )
             if ( (sc = alpha->J[w][j-k][d-k] + alpha->L[y][j][k] + beta->L[v][j-d+1]) > best_sc )
             {
                best_sc = sc;
@@ -341,7 +361,7 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
                best_d  = d;
                v_mode = 2; w_mode = 3; y_mode = 2;
             }
-            if ( allow_RM )
+            if ( r_allow_R )
             if ( (sc = alpha->R[w][j-k][d-k] + alpha->J[y][j][k] + beta->R[v][j]) > best_sc )
             {
                best_sc = sc;
@@ -350,7 +370,7 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
                best_d  = d;
                v_mode = 1; w_mode = 1; y_mode = 3;
             }
-            if ( allow_LM && allow_RM )
+            if ( r_allow_L && r_allow_R )
             if ( (sc = alpha->R[w][j-k][d-k] + alpha->L[y][j][k]) > best_sc )
             {
                best_sc = sc;
@@ -361,7 +381,7 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
             }
          }
 
-         if ( allow_LM )
+         if ( r_allow_L )
          if ( (sc = alpha->L[w][j][d] + beta->L[v][j-d+1]) > best_sc )
          {
             best_sc = sc;
@@ -370,7 +390,7 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
             best_d  = d;
             v_mode = 2; w_mode = 2; y_mode = 0;
          }
-         if ( allow_RM )
+         if ( r_allow_R )
          if ( (sc = alpha->R[y][j][d] + beta->R[v][j]) > best_sc )
          {
             best_sc = sc;
@@ -386,6 +406,7 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
             best_j  = j;
             best_d  = d;
             v_mode = 3; w_mode = 0; y_mode = 0;
+            useEL = TRUE;
          }
       }
    }
@@ -418,6 +439,7 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
       best_k  = b3_v;
       best_j  = b3_j;
       v_mode = b3_mode; w_mode = 0; y_mode = 0;
+      useEL = FALSE;
    }
 
    /* Free alphas */
@@ -436,12 +458,14 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    {
       if ( w_mode == 0 && y_mode == 0 ) /* local hit in parent (marginal) */
       {
-         tr_v_splitter(cm, dsq, L, tr, r, b3_v, i0, best_j+1, best_j, j0, (best_k == -1), (v_mode == 2), (v_mode == 1));
+         tr_v_splitter(cm, dsq, L, tr, r, b3_v, i0, best_j+1, best_j, j0, 
+                       useEL, r_allow_J, r_allow_L, r_allow_R, (v_mode == 3), (v_mode == 2), (v_mode == 1));
          return best_sc;
       }
       else
       {
-         tr_v_splitter(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0, (best_k == -1), (v_mode == 2), (v_mode == 1));
+         tr_v_splitter(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0,
+                       FALSE, r_allow_J, r_allow_L, r_allow_R, (v_mode == 3), (v_mode == 2), (v_mode == 1));
       }
    }
    else if ( w_mode == 0 || y_mode == 0 ) /* local entry to one of the children */
@@ -452,7 +476,7 @@ if (b1_mode < 1 || b1_mode > 3)
 fprintf(stderr,"Catch uninitialized value in valgrind!\n");
          InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, b1_i, b1_j, b1_v, b1_mode);
          z = CMSubtreeFindEnd(cm, b1_v);
-         tr_generic_splitter(cm, dsq, L, tr, b1_v, z, b1_i, b1_j, (b1_mode == 2), (b1_mode == 1));
+         tr_generic_splitter(cm, dsq, L, tr, b1_v, z, b1_i, b1_j, (b1_mode == 3), (b1_mode == 2), (b1_mode == 1));
          return best_sc;
       }
       else if ( y_mode )
@@ -461,7 +485,7 @@ if (b2_mode < 1 || b2_mode > 3)
 fprintf(stderr,"Catch uninitialized value in valgrind!\n");
          InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, b2_i, b2_j, b2_v, b2_mode);
          z = CMSubtreeFindEnd(cm, b2_v);
-         tr_generic_splitter(cm, dsq, L, tr, b2_v, z, b2_i, b2_j, (b2_mode == 2), (b2_mode == 1));
+         tr_generic_splitter(cm, dsq, L, tr, b2_v, z, b2_i, b2_j, (b2_mode == 3), (b2_mode == 2), (b2_mode == 1));
          return best_sc;
       }
       else Die("Danger, danger!\n");
@@ -477,7 +501,7 @@ fprintf(stderr,"Catch uninitialized value in valgrind!\n");
 if (w_mode < 1 || w_mode > 3)
 fprintf(stderr,"Catch uninitialized value in valgrind!\n");
       InsertTraceNodewithMode(tr, tv, TRACE_LEFT_CHILD, best_j - best_d + 1, best_j - best_k, w, w_mode);
-      tr_generic_splitter(cm, dsq, L, tr, w, wend, best_j - best_d + 1, best_j - best_k, (w_mode == 2), (w_mode == 1));
+      tr_generic_splitter(cm, dsq, L, tr, w, wend, best_j - best_d + 1, best_j - best_k, (w_mode == 3), (w_mode == 2), (w_mode == 1));
    }
    else
    {
@@ -492,7 +516,7 @@ fprintf(stderr,"Catch uninitialized value in valgrind!\n");
 if (y_mode < 1 || y_mode > 3)
 fprintf(stderr,"Catch uninitialized value in valgrind!\n");
       InsertTraceNodewithMode(tr, tv, TRACE_RIGHT_CHILD, best_j - best_k + 1, best_j, y, y_mode);
-      tr_generic_splitter(cm, dsq, L, tr, y, yend, best_j - best_k + 1, best_j, (y_mode == 2), (y_mode == 1));
+      tr_generic_splitter(cm, dsq, L, tr, y, yend, best_j - best_k + 1, best_j, (y_mode == 3), (y_mode == 2), (y_mode == 1));
    }
    else 
    {
@@ -517,7 +541,8 @@ fprintf(stderr,"Catch uninitialized value in valgrind!\n");
  */
 float
 tr_wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
-                  int r, int z, int i0, int j0, int allow_LM, int allow_RM)
+                  int r, int z, int i0, int j0,
+                  int r_allow_J, int r_allow_L, int r_allow_R)
 {
    AlphaMats_t *alpha;
    BetaMats_t  *beta;
@@ -537,7 +562,7 @@ tr_wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    if ( (cm->ndidx[z] == cm->ndidx[r] + 1) || 
         (5 * insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT) )
    {
-      sc = tr_insideT(cm, dsq, L, tr, r, z, i0, j0, (r==0));
+      sc = tr_insideT(cm, dsq, L, tr, r, z, i0, j0, r_allow_J, r_allow_L, r_allow_R);
       return sc;
    }
 
@@ -550,13 +575,15 @@ tr_wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    y = cm->cfirst[w] - 1;
 
    /* Get alphas and betas */
-   b1_sc = tr_inside(cm, dsq, L, w, z, i0, j0, BE_EFFICIENT, NULL, alpha, NULL, NULL, NULL,
-             &b1_mode, &b1_v, &b1_i, &b1_j);
+   b1_sc = tr_inside(cm, dsq, L, w, z, i0, j0, BE_EFFICIENT,
+                     (r == 0), TRUE, r_allow_L, r_allow_R,
+                     NULL, alpha, NULL, NULL, NULL, &b1_mode, &b1_v, &b1_i, &b1_j);
    if (r != 0) b1_sc = IMPOSSIBLE;
-   b2_sc = tr_outside(cm, dsq, L, r, y, i0, j0, BE_EFFICIENT, NULL, beta, NULL, NULL,
-             &b2_mode, &b2_v, &b2_j);
-   if ( b2_mode == 2 && !allow_LM ) b2_sc = IMPOSSIBLE;
-   if ( b2_mode == 1 && !allow_RM ) b2_sc = IMPOSSIBLE;
+   b2_sc = tr_outside(cm, dsq, L, r, y, i0, j0, BE_EFFICIENT,
+             r_allow_J, r_allow_L, r_allow_R,
+             NULL, beta, NULL, NULL, &b2_mode, &b2_v, &b2_j);
+   if ( b2_mode == 2 && !r_allow_L ) b2_sc = IMPOSSIBLE;
+   if ( b2_mode == 1 && !r_allow_R ) b2_sc = IMPOSSIBLE;
 
    /* Find the split */
    W = j0 - i0 + 1;
@@ -576,7 +603,7 @@ tr_wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
                best_j  = j;
                p_mode = 3; c_mode = 3;
             }
-            if ( allow_LM )
+            if ( r_allow_L )
             if ( (sc = alpha->J[v][j][d] + beta->L[v][j-d+1]) > best_sc )
             {
                best_sc = sc;
@@ -585,7 +612,7 @@ tr_wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
                best_j  = j;
                p_mode = 2; c_mode = 3;
             }
-            if ( allow_LM )
+            if ( r_allow_L )
             if ( (sc = alpha->L[v][j][d] + beta->L[v][j-d+1]) > best_sc )
             {
                best_sc = sc;
@@ -594,7 +621,7 @@ tr_wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
                best_j  = j;
                p_mode = 2; c_mode = 2;
             }
-            if ( allow_RM )
+            if ( r_allow_R )
             if ( (sc = alpha->J[v][j][d] + beta->R[v][j]) > best_sc )
             {
                best_sc = sc;
@@ -603,7 +630,7 @@ tr_wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
                best_j  = j;
                p_mode = 1; c_mode = 3;
             }
-            if ( allow_RM )
+            if ( r_allow_R )
             if ( (sc = alpha->R[v][j][d] + beta->R[v][j]) > best_sc )
             {
                best_sc = sc;
@@ -669,18 +696,20 @@ tr_wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    {
       if ( c_mode == 0 ) /* child empty */
       {
-         tr_v_splitter(cm, dsq, L, tr, r, (p_mode == 3 ? w : b2_v), i0, best_j - best_d + 1, best_j, j0, (p_mode == 3), (p_mode == 2), (p_mode == 1));
+         tr_v_splitter(cm, dsq, L, tr, r, (p_mode == 3 ? w : b2_v), i0, best_j - best_d + 1, best_j, j0,
+                       (p_mode == 3), r_allow_J, r_allow_L, r_allow_R, (p_mode == 3), (p_mode == 2), (p_mode == 1));
          return best_sc;
       }
       else
       {
-         tr_v_splitter(cm, dsq, L, tr, r, best_v, i0, best_j - best_d + 1, best_j, j0, FALSE, (p_mode == 2), (p_mode == 1));
+         tr_v_splitter(cm, dsq, L, tr, r, best_v, i0, best_j - best_d + 1, best_j, j0,
+                       FALSE, r_allow_J, r_allow_L, r_allow_R, (p_mode == 3), (p_mode == 2), (p_mode == 1));
       }
    }
 
    if ( c_mode )
    {
-      tr_wedge_splitter(cm, dsq, L, tr, best_v, z, best_j - best_d + 1, best_j, (c_mode == 2), (c_mode == 1));
+      tr_wedge_splitter(cm, dsq, L, tr, best_v, z, best_j - best_d + 1, best_j, (c_mode == 3), (c_mode == 2), (c_mode == 1));
    }
    else /* parent and child both empty */
       Die("Danger, danger!\n");
@@ -699,7 +728,8 @@ tr_wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
  */
 void
 tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int i1,
-              int j1, int j0, int useEL, int force_LM, int force_RM)
+              int j1, int j0, int useEL, int r_allow_J, int r_allow_L, int r_allow_R,
+              int z_allow_J, int z_allow_L, int z_allow_R)
 {
    AlphaMats_t *alpha;
    BetaMats_t  *beta;
@@ -728,7 +758,8 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
    if (cm->ndidx[z] == cm->ndidx[r] + 1 || r == z ||
        5*vinsideT_size(cm, r, z, i0, i1, j1, j0) < RAMLIMIT)
    {
-      tr_vinsideT(cm, dsq, L, tr, r, z, i0, i1, j1, j0, useEL, force_LM, force_RM);
+      tr_vinsideT(cm, dsq, L, tr, r, z, i0, i1, j1, j0, useEL,
+                  r_allow_J, r_allow_L, r_allow_R, z_allow_J, z_allow_L, z_allow_R);
       return;
    }
 
@@ -741,10 +772,13 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
    y = cm->cfirst[w] - 1;
 
    /* Calculate alphas and betas */
-   b_sc =  tr_vinside(cm, dsq, L, w, z, i0, i1, j1, j0, useEL, force_LM, force_RM,
-                      BE_EFFICIENT, NULL, alpha, NULL, NULL, NULL, &b_mode, &b_v, &b_i, &b_j);
+   b_sc =  tr_vinside(cm, dsq, L, w, z, i0, i1, j1, j0, useEL, BE_EFFICIENT, (r == 0),
+                      z_allow_J, r_allow_L, r_allow_R, z_allow_J, z_allow_L, z_allow_R,
+                      NULL, alpha, NULL, NULL, NULL, &b_mode, &b_v, &b_i, &b_j);
    if (r != 0) b_sc = IMPOSSIBLE;
-   tr_voutside(cm, dsq, L, r, y, i0, i1, j1, j0, useEL, force_LM, force_RM, BE_EFFICIENT, NULL, beta, NULL, NULL);
+   tr_voutside(cm, dsq, L, r, y, i0, i1, j1, j0, useEL, BE_EFFICIENT, 
+               r_allow_J, r_allow_L, r_allow_R, z_allow_J, z_allow_L, z_allow_R,
+               NULL, beta, NULL, NULL);
 
    /* Find our best split */
    best_sc = IMPOSSIBLE;
@@ -754,7 +788,7 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
       {
          for (jp = 0; jp <= j0-j1; jp++)
          {
-            if ( ! force_LM && ! force_RM )
+            if ( z_allow_J )
             if ( (sc = alpha->J[v][jp][ip] + beta->J[v][jp][ip]) > best_sc )
             {
                best_sc = sc;
@@ -763,7 +797,7 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
                best_j  = jp + j1;
                p_mode = 3; c_mode = 3;
             }
-            if ( ! force_LM && ! force_RM )
+            if ( z_allow_J && r_allow_L )
             if ( (sc = alpha->J[v][jp][ip] + beta->L[v][ip]) > best_sc )
             {
                best_sc = sc;
@@ -772,7 +806,7 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
                best_j  = jp + j1;
                p_mode = 2; c_mode = 3;
             }
-            if ( ! force_RM )
+            if ( z_allow_L )
             if ( (sc = alpha->L[v][jp][ip] + beta->L[v][ip]) > best_sc )
             {
                best_sc = sc;
@@ -781,7 +815,7 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
                best_j  = jp + j1;
                p_mode = 2; c_mode = 2;
             }
-            if ( ! force_LM && ! force_RM )
+            if ( z_allow_J && r_allow_R )
             if ( (sc = alpha->J[v][jp][ip] + beta->R[v][jp]) > best_sc )
             {
                best_sc = sc;
@@ -790,7 +824,7 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
                best_j  = jp + j1;
                p_mode = 1; c_mode = 3;
             }
-            if ( ! force_LM )
+            if ( z_allow_R )
             if ( (sc = alpha->R[v][jp][ip] + beta->R[v][jp]) > best_sc )
             {
                best_sc = sc;
@@ -847,12 +881,15 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
    {
       if ( c_mode )
       {
-         tr_v_splitter(cm, dsq, L, tr, r, best_v, i0, best_i, best_j, j0, FALSE, (c_mode == 2), (c_mode == 1));
-         tr_v_splitter(cm, dsq, L, tr, best_v, z, best_i, i1, j1, best_j, useEL, force_LM, force_RM);  
+         tr_v_splitter(cm, dsq, L, tr, r, best_v, i0, best_i, best_j, j0,
+                       FALSE, r_allow_J, r_allow_L, r_allow_R, (c_mode == 3), (c_mode == 2), (c_mode == 1));
+         tr_v_splitter(cm, dsq, L, tr, best_v, z, best_i, i1, j1, best_j,
+                       useEL, (p_mode == 3), (p_mode == 2), (p_mode == 1), z_allow_J, z_allow_L, z_allow_R);  
       }
       else
       {
-         tr_v_splitter(cm, dsq, L, tr, r, w, i0, best_i, best_j, j0, TRUE, FALSE, FALSE);
+         tr_v_splitter(cm, dsq, L, tr, r, w, i0, best_i, best_j, j0,
+                       TRUE, r_allow_J, r_allow_L, r_allow_R, TRUE, FALSE, FALSE);
       }
    }
    else
@@ -863,7 +900,8 @@ if (c_mode < 1 || c_mode > 3)
 fprintf(stderr,"Catch uninitialized value in valgrind!\n");
          InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, best_i, best_j, best_v, c_mode);
       }
-      tr_v_splitter(cm, dsq, L, tr, best_v, z, best_i, i1, j1, best_j, useEL, force_LM, force_RM);
+      tr_v_splitter(cm, dsq, L, tr, best_v, z, best_i, i1, j1, best_j,
+                    useEL, (c_mode == 3), (c_mode == 2), (c_mode == 1), z_allow_J, z_allow_L, z_allow_R);
    }
 
    return;
@@ -887,6 +925,7 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
    shadow.Rmode = *ret_Rmode_shadow;
 
    sc = tr_inside(cm, dsq, L, vroot, vend, i0, j0, do_full,
+                  TRUE, TRUE, TRUE, TRUE,
                   NULL, NULL, NULL, NULL, &shadow,
                   ret_mode, ret_v, ret_i, ret_j);
    *ret_shadow = shadow.J;
@@ -921,9 +960,10 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
  */
 float
 tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
-                AlphaMats_t *arg_alpha, AlphaMats_t *ret_alpha, 
-                struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
-                ShadowMats_t *ret_shadow, int *ret_mode, int *ret_v, int *ret_i, int *ret_j)
+          int allow_begin, int r_allow_J, int r_allow_L, int r_allow_R,
+          AlphaMats_t *arg_alpha, AlphaMats_t *ret_alpha, 
+          struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
+          ShadowMats_t *ret_shadow, int *ret_mode, int *ret_v, int *ret_i, int *ret_j)
 {
    float  **end;
    int      nends;
@@ -1250,7 +1290,7 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                if ( L_alpha[v][j][d] < IMPOSSIBLE ) { L_alpha[v][j][d] = IMPOSSIBLE; }
                if ( R_alpha[v][j][d] < IMPOSSIBLE ) { R_alpha[v][j][d] = IMPOSSIBLE; }
 
-               if ( vroot == 0 || v == vroot )
+               if ( allow_begin || v == vroot )
                {
                   /* Shouldn't allow exit from marginal B if one of the children is NULL, sinee that is covered by the */
                   /* root of the other child, and we haven't added anything above the bifurcation */
@@ -1347,7 +1387,7 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
 
             for ( d = 1; d <= jp; d++ )
             {
-               if ( vroot == 0 || v == vroot )
+               if ( allow_begin || v == vroot )
                {
                   if (   alpha[v][j][d] > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc =   alpha[v][j][d]; }
                   if ( L_alpha[v][j][d] > r_sc ) { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = L_alpha[v][j][d]; }
@@ -1427,7 +1467,7 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
 
             for ( d = 1; d <= jp; d++ )
             {
-               if ( vroot == 0 || v == vroot )
+               if ( allow_begin || v == vroot )
                {
                   if (   alpha[v][j][d] > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc =   alpha[v][j][d]; }
                   if ( L_alpha[v][j][d] > r_sc ) { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = L_alpha[v][j][d]; }
@@ -1505,7 +1545,7 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
 
             for ( d = 1; d <= jp; d++ )
             {
-               if ( vroot == 0 || v == vroot )
+               if ( allow_begin || v == vroot )
                {
                   if (   alpha[v][j][d] > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc =   alpha[v][j][d]; }
                   if ( R_alpha[v][j][d] > r_sc ) { r_mode = 1; r_v = v; r_j = j; r_i = j-d+1; r_sc = R_alpha[v][j][d]; }
@@ -1645,6 +1685,7 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
  */
 float
 tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
+           int r_allow_J, int r_allow_L, int r_allow_R,
            BetaMats_t *arg_beta, BetaMats_t *ret_beta,
            struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
            int *ret_mode, int *ret_v, int *ret_j)
@@ -2148,8 +2189,11 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
  */
 float
 tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int j0,
-           int useEL, int force_LM, int force_RM, int do_full, AlphaMats_t *arg_alpha, 
-           AlphaMats_t *ret_alpha, struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
+           int useEL, int do_full, int allow_begin,
+           int r_allow_J, int r_allow_L, int r_allow_R,
+           int z_allow_J, int z_allow_L, int z_allow_R,
+           AlphaMats_t *arg_alpha, AlphaMats_t *ret_alpha,
+           struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
            ShadowMats_t *ret_shadow, int *ret_mode, int *ret_v, int *ret_i, int *ret_j)
 {
    int v,i,j;
@@ -2253,14 +2297,14 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
    jp = 0;
    if (! useEL)
    {
-      if (! force_LM && ! force_RM)
+      if ( z_allow_J )
          alpha->J[z][jp][ip] = 0.0;
-      if (! force_RM )
+      if ( z_allow_L )
          alpha->L[z][jp][ip] = 0.0;
-      if (! force_LM )
+      if ( z_allow_R )
          alpha->R[z][jp][ip] = 0.0;
    }
-   else if (! force_LM && ! force_RM)
+   else if ( z_allow_J )
    {
       if (ret_shadow != NULL)
       {
@@ -2324,23 +2368,24 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
       }
    }
    else
-      Die("Bad input combination in tr_vinside: useEL %d force_LM %d force_RM %d\n",useEL,force_LM,force_RM);
+      Die("Bad input combination in tr_vinside: useEL %d z_allow_J %d \n",useEL,z_allow_J);
 
    /* Special case: empty sequence */
    if (r == 0)
    {
       b_v = z; b_i = i1; b_j = j1;
-      if (! force_LM && ! force_RM)
+      b_sc = IMPOSSIBLE; b_mode = 0;
+      if (z_allow_J && alpha->J[z][0][i1-i0] > b_sc)
       {
          b_sc = alpha->J[z][0][i1-i0];
          b_mode = 3;
       }
-      if (! force_RM && alpha->L[z][0][i1-i0] > b_sc)
+      if (z_allow_L && alpha->L[z][0][i1-i0] > b_sc)
       {
          b_sc = alpha->L[z][0][i1-i0];
          b_mode = 2;
       }
-      if (! force_LM && alpha->R[z][0][i1-i0] > b_sc)
+      if (z_allow_R && alpha->R[z][0][i1-i0] > b_sc)
       {
          b_sc = alpha->R[z][0][i1-i0];
          b_mode = 1;
@@ -2404,7 +2449,7 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
             for (ip = i1-i0; ip >= 0; ip--)
             {
                y = cm->cfirst[v];
-               if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && ! force_LM && ! force_RM)
+               if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && z_allow_J)
                   if ( (sc = cm->endsc[v] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1))) > alpha->J[v][jp][ip])
                   {
                      alpha->J[v][jp][ip] = sc;
@@ -2413,19 +2458,19 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
 
                for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
                {
-                  if (! force_RM && ! force_LM)
+                  if ( z_allow_J )
                   if ( (sc = alpha->J[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) > alpha->J[v][jp][ip])
                   {
                      alpha->J[v][jp][ip] = sc;
                      if (ret_shadow != NULL) ((char **)shadow->J[v])[jp][ip] = (char) yoffset;
                   }
-                  if (! force_RM)
+                  if ( r_allow_J )
                   if ( (sc = alpha->L[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) > alpha->L[v][jp][ip])
                   {
                      alpha->L[v][jp][ip] = sc;
                      if (ret_shadow != NULL) { ((char **)shadow->L[v])[jp][ip] = (char) yoffset; ((char **)shadow->Lmode[v])[jp][ip] = 2; }
                   }
-                  if (! force_LM)
+                  if ( r_allow_R )
                   if ( (sc = alpha->R[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) > alpha->R[v][jp][ip])
                   {
                      alpha->R[v][jp][ip] = sc;
@@ -2449,7 +2494,7 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
                i = ip+i0;
                y = cm->cfirst[v];
 
-               if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && !force_LM && !force_RM && jp > 0 && ip < i1-i0)
+               if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && z_allow_J && jp > 0 && ip < i1-i0)
                   if ( (sc = cm->endsc[v] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - 2))) > alpha->J[v][jp][ip] )
                   {
                      alpha->J[v][jp][ip] = sc;
@@ -2458,31 +2503,31 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
 
                for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
                {
-                  if (!force_LM && !force_RM && jp > 0 && ip < i1-i0)
+                  if (z_allow_J && jp > 0 && ip < i1-i0)
                   if ( (sc = alpha->J[y+yoffset][jp-1][ip+1] + cm->tsc[v][yoffset]) > alpha->J[v][jp][ip])
                   {
                      alpha->J[v][jp][ip] = sc;
                      if (ret_shadow != NULL) ((char **)shadow->J[v])[jp][ip] = (char) yoffset;
                   }
-                  if (!force_RM && ip < i1-i0)
+                  if (r_allow_L && ip < i1-i0)
                   if ( (sc = alpha->J[y+yoffset][jp][ip+1] + cm->tsc[v][yoffset]) > alpha->L[v][jp][ip])
                   {
                      alpha->L[v][jp][ip] = sc;
                      if (ret_shadow != NULL) { ((char **)shadow->L[v])[jp][ip] = (char) yoffset; ((char **)shadow->Lmode[v])[jp][ip] = 3; }
                   }
-                  if (!force_RM && ip < i1-i0)
+                  if (r_allow_L && ip < i1-i0)
                   if ( (sc = alpha->L[y+yoffset][jp][ip+1] + cm->tsc[v][yoffset]) > alpha->L[v][jp][ip])
                   {
                      alpha->L[v][jp][ip] = sc;
                      if (ret_shadow != NULL) { ((char **)shadow->L[v])[jp][ip] = (char) yoffset; ((char **)shadow->Lmode[v])[jp][ip] = 2; }
                   }
-                  if (!force_LM && jp > 0)
+                  if (r_allow_R && jp > 0)
                   if ( (sc = alpha->J[y+yoffset][jp-1][ip] + cm->tsc[v][yoffset]) > alpha->R[v][jp][ip])
                   {
                      alpha->R[v][jp][ip] = sc;
                      if (ret_shadow != NULL) { ((char **)shadow->R[v])[jp][ip] = (char) yoffset; ((char **)shadow->Rmode[v])[jp][ip] = 3; }
                   }
-                  if (!force_LM && jp > 0)
+                  if (r_allow_R && jp > 0)
                   if ( (sc = alpha->R[y+yoffset][jp-1][ip] + cm->tsc[v][yoffset]) > alpha->R[v][jp][ip])
                   {
                      alpha->R[v][jp][ip] = sc;
@@ -2516,13 +2561,13 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
                if ( alpha->L[v][jp][ip] < IMPOSSIBLE) alpha->L[v][jp][ip] = IMPOSSIBLE;
                if ( alpha->R[v][jp][ip] < IMPOSSIBLE) alpha->R[v][jp][ip] = IMPOSSIBLE;
 
-               if (r == 0)
+               if ( allow_begin || v == r )
                {
-                  if (!force_LM && !force_RM)
+                  if ( r_allow_J )
                   if ( alpha->J[v][jp][ip] > b_sc ) { b_mode = 3; b_v = v; b_j = j1+jp; b_i = i0+ip; b_sc = alpha->J[v][jp][ip]; }
-                  if (!force_RM)
+                  if ( r_allow_L )
                   if ( alpha->L[v][jp][ip] > b_sc ) { b_mode = 2; b_v = v; b_j = j1+jp; b_i = i0+ip; b_sc = alpha->L[v][jp][ip]; }
-                  if (!force_LM)
+                  if ( r_allow_R )
                   if ( alpha->R[v][jp][ip] > b_sc ) { b_mode = 1; b_v = v; b_j = j1+jp; b_i = i0+ip; b_sc = alpha->R[v][jp][ip]; }
                }
             }
@@ -2537,7 +2582,7 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
                i = i0+ip;
                y = cm->cfirst[v];
 
-               if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && !force_LM && !force_RM && ip < i1-i0)
+               if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && z_allow_J && ip < i1-i0)
                   if ( (sc = cm->endsc[v] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1 - 1))) > alpha->J[v][jp][ip] )
                   {
                      alpha->J[v][jp][ip] = sc;
@@ -2546,25 +2591,25 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
 
                for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
                {
-                  if (!force_LM && !force_RM && ip < i1-i0)
+                  if (z_allow_J && ip < i1-i0)
                   if ( (sc = alpha->J[y+yoffset][jp][ip+1] + cm->tsc[v][yoffset]) > alpha->J[v][jp][ip])
                   {
                      alpha->J[v][jp][ip] = sc;
                      if (ret_shadow != NULL) ((char **)shadow->J[v])[jp][ip] = (char) yoffset;
                   }
-                  if (!force_RM && ip < i1-i0)
+                  if (r_allow_L && ip < i1-i0)
                   if ( (sc = alpha->L[y+yoffset][jp][ip+1] + cm->tsc[v][yoffset]) > alpha->L[v][jp][ip])
                   {
                      alpha->L[v][jp][ip] = sc;
                      if (ret_shadow != NULL) { ((char **)shadow->L[v])[jp][ip] = (char) yoffset; ((char **)shadow->Lmode[v])[jp][ip] = 2; }
                   }
-                  if (!force_LM)
+                  if ( r_allow_R )
                   if ( (sc = alpha->J[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) > alpha->R[v][jp][ip])
                   {
                      alpha->R[v][jp][ip] = sc;
                      if (ret_shadow != NULL) { ((char **)shadow->R[v])[jp][ip] = (char) yoffset; ((char **)shadow->Rmode[v])[jp][ip] = 3; }
                   }
-                  if (!force_LM)
+                  if ( r_allow_R )
                   if ( (sc = alpha->R[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) > alpha->R[v][jp][ip])
                   {
                      alpha->R[v][jp][ip] = sc;
@@ -2590,11 +2635,11 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
                if ( alpha->L[v][jp][ip] < IMPOSSIBLE) alpha->L[v][jp][ip] = IMPOSSIBLE;
                if ( alpha->R[v][jp][ip] < IMPOSSIBLE) alpha->R[v][jp][ip] = IMPOSSIBLE;
                
-               if (r == 0)
+               if ( allow_begin || v == r )
                {
-                  if (!force_LM && !force_RM)
+                  if ( r_allow_J )
                   if ( alpha->J[v][jp][ip] > b_sc ) { b_mode = 3; b_v = v; b_j = j1+jp; b_i = i0+ip; b_sc = alpha->J[v][jp][ip]; }
-                  if (!force_RM)
+                  if ( r_allow_L )
                   if ( alpha->L[v][jp][ip] > b_sc ) { b_mode = 2; b_v = v; b_j = j1+jp; b_i = i0+ip; b_sc = alpha->L[v][jp][ip]; }
                }
             }
@@ -2609,7 +2654,7 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
             {
                y = cm->cfirst[v];
 
-               if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && !force_LM && !force_RM && jp > 0)
+               if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) && z_allow_J && jp > 0)
                   if ( (sc = cm->endsc[v] + (cm->el_selfsc * ((j1+jp)-(i0+ip)+1 - 1))) > alpha->J[v][jp][ip] )
                   {
                      alpha->J[v][jp][ip] = sc;
@@ -2618,25 +2663,25 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
 
                for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
                {
-                  if (!force_LM && !force_RM && jp > 0)
+                  if (z_allow_J && jp > 0)
                   if ( (sc = alpha->J[y+yoffset][jp-1][ip] + cm->tsc[v][yoffset]) > alpha->J[v][jp][ip])
                   {
                      alpha->J[v][jp][ip] = sc;
                      if (ret_shadow != NULL) ((char **)shadow->J[v])[jp][ip] = (char) yoffset;
                   }
-                  if (!force_RM)
+                  if ( r_allow_L )
                   if ( (sc = alpha->J[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) > alpha->L[v][jp][ip])
                   {
                      alpha->L[v][jp][ip] = sc;
                      if (ret_shadow != NULL) { ((char **)shadow->L[v])[jp][ip] = (char) yoffset; ((char **)shadow->Lmode[v])[jp][ip] = 3; }
                   }
-                  if (!force_RM)
+                  if ( r_allow_L )
                   if ( (sc = alpha->L[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) > alpha->L[v][jp][ip])
                   {
                      alpha->L[v][jp][ip] = sc;
                      if (ret_shadow != NULL) { ((char **)shadow->L[v])[jp][ip] = (char) yoffset; ((char **)shadow->Lmode[v])[jp][ip] = 2; }
                   }
-                  if (!force_LM && jp > 0)
+                  if (r_allow_R && jp > 0)
                   if ( (sc = alpha->R[y+yoffset][jp-1][ip] + cm->tsc[v][yoffset]) > alpha->R[v][jp][ip])
                   {
                      alpha->R[v][jp][ip] = sc;
@@ -2662,11 +2707,11 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
                if ( alpha->L[v][jp][ip] < IMPOSSIBLE) alpha->L[v][jp][ip] = IMPOSSIBLE;
                if ( alpha->R[v][jp][ip] < IMPOSSIBLE) alpha->R[v][jp][ip] = IMPOSSIBLE;
 
-               if ( r == 0)
+               if ( allow_begin || v == r )
                {
-                  if (!force_LM && !force_RM)
+                  if ( r_allow_J )
                   if ( alpha->J[v][jp][ip] > b_sc ) { b_mode = 3; b_v = v; b_j = j1+jp; b_i = i0+ip; b_sc = alpha->J[v][jp][ip]; }
-                  if (!force_LM)
+                  if ( r_allow_R )
                   if ( alpha->R[v][jp][ip] > b_sc ) { b_mode = 1; b_v = v; b_j = j1+jp; b_i = i0+ip; b_sc = alpha->R[v][jp][ip]; }
                }
             }
@@ -2791,7 +2836,8 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
  */
 void
 tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int j0,
-            int useEL, int force_LM, int force_RM, int do_full, BetaMats_t *arg_beta,
+            int useEL, int do_full, int r_allow_J, int r_allow_L, int r_allow_R,
+            int z_allow_J, int z_allow_L, int z_allow_R, BetaMats_t *arg_beta,
             BetaMats_t *ret_beta, struct deckpool_s *dpool, struct deckpool_s **ret_dpool)
 {
    int v,y;
@@ -2843,27 +2889,27 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
    for (jp = 0; jp <= j0-j1; jp++)
    {
       for (ip = 0; ip <= i1-i0; ip++)
-         if (r == 0 && ! force_LM && ! force_RM)
+         if (r == 0 && r_allow_J )
             beta->J[r][jp][ip] = 0.0;
          else
             beta->J[r][jp][ip] = IMPOSSIBLE;
-      if ( r == 0  && ! force_LM )
+      if ( r == 0  && r_allow_R )
          beta->R[r][jp] = 0.0;
       else
          beta->R[r][jp] = IMPOSSIBLE;
    }
    for (ip = 0; ip <= i1-i0; ip++)
    {
-      if (r == 0 && ! force_RM )
+      if (r == 0 && r_allow_L )
          beta->L[r][ip] = 0.0;
       else
          beta->L[r][ip] = IMPOSSIBLE;
    }
-   if (! force_LM && ! force_RM)
+   if ( r_allow_J )
       beta->J[r][j0-j1][0] = 0.0;
-   if (! force_RM)
+   if ( r_allow_L )
       beta->L[r][0] = 0.0;
-   if (! force_LM)
+   if ( r_allow_R )
       beta->R[r][j0-j1] = 0.0;
 
    /* Deal with vroot->EL; marginal modes don't use EL */
@@ -2937,26 +2983,26 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
       {
          for (ip = 0; ip <= i1-i0; ip++)
          {
-            if (r == 0 && ! force_LM && ! force_RM)
+            if (r == 0 && r_allow_J )
                beta->J[v][jp][ip] = 0.0;
             else
                beta->J[v][jp][ip] = IMPOSSIBLE;
          }
-         if (r == 0 && ! force_LM)
+         if (r == 0 && r_allow_R )
             beta->R[v][jp] = 0.0;
          else
             beta->R[v][jp] = IMPOSSIBLE;
       }
       for (ip = 0; ip <= i1-i0; ip++)
       {
-         if (r == 0 && ! force_RM)
+         if (r == 0 && r_allow_L )
             beta->L[v][ip] = 0.0;
          else
             beta->L[v][ip] = IMPOSSIBLE;
       }
 
       /* mini-recursion for beta->L */
-      if (! force_RM)
+      if ( r_allow_L )
       for (ip = 0; ip <= i1-i0; ip++)
       {
          i = i0+ip;
@@ -3007,7 +3053,7 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
       }
 
       /* mini-recursion for beta->R */
-      if (! force_LM)
+      if ( z_allow_R )
       for (jp = j0-j1; jp >= 0; jp--)
       {
          j = j1+jp;
@@ -3058,7 +3104,7 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
       }
 
       /* Main recursion */
-      if (! force_LM && ! force_RM)
+      if ( z_allow_J )
       for (jp = j0-j1; jp >= 0; jp--)
       {
          j = j1+jp;
@@ -3253,13 +3299,12 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
  *           z       - last state of the subgraph
  *           i0      - start of target subsequence (usually 1, beginning of dsq)
  *           j0      - end of target subsequence (usually L, end of dsq)
- *           allow_begin - allow local begin (true/false)
  *
  * Returns:  score of optimal alignment (float)
  */
 float
 tr_insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
-          int i0, int j0, int allow_begin)
+          int i0, int j0, int r_allow_J, int r_allow_L, int r_allow_R)
 {
    void    ***shadow;		/* standard shadow matrix with state information */
    void    ***L_shadow;		/* left marginal shadow matrix with state information */
@@ -3275,12 +3320,29 @@ tr_insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
    int        y, yoffset;
    int        bifparent;
 
+   ShadowMats_t *all_shadow;
+   all_shadow = MallocOrDie(sizeof(ShadowMats_t));
+
+/*
    sc = trinside(cm, dsq, L, r, z, i0, j0,
                  BE_EFFICIENT,
                  &shadow,
                  &L_shadow, &R_shadow, &T_shadow,
                  &Lmode_shadow, &Rmode_shadow,
                  &mode, &v, &i, &j );
+ */
+
+   sc = tr_inside(cm, dsq, L, r, z, i0, j0, BE_EFFICIENT,
+                  (r == 0), r_allow_J, r_allow_L, r_allow_R,
+                  NULL, NULL, NULL, NULL, all_shadow,
+                  &mode, &v, &i, &j);
+   shadow = all_shadow->J;
+   L_shadow = all_shadow->L;
+   R_shadow = all_shadow->R;
+   T_shadow = all_shadow->T;
+   Lmode_shadow = all_shadow->Lmode;
+   Rmode_shadow = all_shadow->Rmode;
+
    pda = esl_stack_ICreate();
    d = j-i+1;
 
@@ -3468,7 +3530,9 @@ fprintf(stderr,"Catch uninitialized value in valgrind!\n");
  */
 float
 tr_vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, 
-            int i0, int i1, int j1, int j0, int useEL, int force_LM, int force_RM)
+            int i0, int i1, int j1, int j0, int useEL,
+            int r_allow_J, int r_allow_L, int r_allow_R,
+            int z_allow_J, int z_allow_L, int z_allow_R)
 {
    float sc;
    int v, i, j;
@@ -3483,9 +3547,9 @@ tr_vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
 
    if (r == z)
    {
-      if      (force_LM) mode = 2;
-      else if (force_RM) mode = 1;
-      else               mode = 3;
+      if      ( r_allow_J ) mode = 3;
+      else if ( r_allow_L ) mode = 2;
+      else                  mode = 1;
 
 if (mode < 1 || mode > 3)
 fprintf(stderr,"Catch uninitialized value in valgrind!\n");
@@ -3493,8 +3557,9 @@ fprintf(stderr,"Catch uninitialized value in valgrind!\n");
       return 0.0;
    }
 
-   sc = tr_vinside(cm, dsq, L, r, z, i0, i1, j1, j0, useEL, force_LM, force_RM,
-                   BE_EFFICIENT, NULL, alpha, NULL, NULL, shadow, &mode, &v, &i, &j);
+   sc = tr_vinside(cm, dsq, L, r, z, i0, i1, j1, j0, useEL, BE_EFFICIENT, (r == 0),
+                   r_allow_J, r_allow_L, r_allow_R, z_allow_J, z_allow_L, z_allow_R,
+                   NULL, alpha, NULL, NULL, shadow, &mode, &v, &i, &j);
 
    if (r == 0)
    {
