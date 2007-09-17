@@ -705,7 +705,7 @@ tr_wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
       else
       {
          tr_v_splitter(cm, dsq, L, tr, r, best_v, i0, best_j - best_d + 1, best_j, j0,
-                       FALSE, r_allow_J, r_allow_L, r_allow_R, (p_mode == 3), (p_mode == 2), (p_mode == 1));
+                       FALSE, r_allow_J, r_allow_L, r_allow_R, (c_mode == 3), (c_mode == 2), (c_mode == 1));
       }
    }
 
@@ -1293,7 +1293,7 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                if ( L_alpha[v][j][d] < IMPOSSIBLE ) { L_alpha[v][j][d] = IMPOSSIBLE; }
                if ( R_alpha[v][j][d] < IMPOSSIBLE ) { R_alpha[v][j][d] = IMPOSSIBLE; }
 
-               if ( allow_begin || v == vroot )
+               if ( allow_begin )
                {
                   /* Shouldn't allow exit from marginal B if one of the children is NULL, sinee that is covered by the */
                   /* root of the other child, and we haven't added anything above the bifurcation */
@@ -1390,7 +1390,7 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
 
             for ( d = 1; d <= jp; d++ )
             {
-               if ( allow_begin || v == vroot )
+               if ( allow_begin )
                {
                   if (   alpha[v][j][d] > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc =   alpha[v][j][d]; }
                   if ( L_alpha[v][j][d] > r_sc ) { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = L_alpha[v][j][d]; }
@@ -1470,7 +1470,7 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
 
             for ( d = 1; d <= jp; d++ )
             {
-               if ( allow_begin || v == vroot )
+               if ( allow_begin )
                {
                   if (   alpha[v][j][d] > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc =   alpha[v][j][d]; }
                   if ( L_alpha[v][j][d] > r_sc ) { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = L_alpha[v][j][d]; }
@@ -1548,7 +1548,7 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
 
             for ( d = 1; d <= jp; d++ )
             {
-               if ( allow_begin || v == vroot )
+               if ( allow_begin )
                {
                   if (   alpha[v][j][d] > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc =   alpha[v][j][d]; }
                   if ( R_alpha[v][j][d] > r_sc ) { r_mode = 1; r_v = v; r_j = j; r_i = j-d+1; r_sc = R_alpha[v][j][d]; }
@@ -1559,6 +1559,13 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
       else
       {
          Die("'Inconceivable!'\n'You keep using that word...'");
+      }
+
+      if ( v == vroot )
+      {
+         if  (   alpha[v][j0][W] > r_sc ) { r_mode = 3; r_v = v; r_j = j0; r_i = j0-W+1; r_sc =   alpha[v][j0][W]; }
+         if  ( L_alpha[v][j0][W] > r_sc ) { r_mode = 2; r_v = v; r_j = j0; r_i = j0-W+1; r_sc = L_alpha[v][j0][W]; }
+         if  ( R_alpha[v][j0][W] > r_sc ) { r_mode = 1; r_v = v; r_j = j0; r_i = j0-W+1; r_sc = R_alpha[v][j0][W]; }
       }
 
       if ( v==0 )
@@ -1784,8 +1791,8 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
       }
    }
    beta->J[vroot][j0][W] = 0.0;
-   beta->L[vroot][ 0]    = 0.0;
-   beta->R[vroot][j0]    = 0.0;
+   if (r_allow_L) beta->L[vroot][i0] = 0.0; else beta->L[vroot][i0] = IMPOSSIBLE;
+   if (r_allow_R) beta->R[vroot][j0] = 0.0; else beta->R[vroot][j0] = IMPOSSIBLE;
 
    /* Initialize EL */
    if (! deckpool_pop(dpool, &(beta->J[cm->M])) )
@@ -1892,6 +1899,7 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
       beta->L[v][i0+W] = IMPOSSIBLE;
 
       /* mini-recursion for beta->L */
+      if ( r_allow_L )
       for (j = i0; j <= j0+1; j++)
       {
          for (y = cm->plast[v]; y > cm->plast[v] - cm->pnum[v]; y--)
@@ -1946,6 +1954,7 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
       }
 
       /* mini-recursion for beta->R */
+      if ( r_allow_R )
       for (j = j0; j >= i0-1; j--)
       {
          for (y = cm->plast[v]; y > cm->plast[v] - cm->pnum[v]; y--)
@@ -3067,7 +3076,7 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
       }
 
       /* mini-recursion for beta->R */
-      if ( z_allow_R )
+      if ( r_allow_R )
       for (jp = j0-j1; jp >= 0; jp--)
       {
          j = j1+jp;
