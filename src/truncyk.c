@@ -606,7 +606,7 @@ tr_wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
       best_sc = b2_sc;
       best_v  = b2_v;
       best_j  = b2_j;
-      best_d  = 0;
+      best_d  = 1;
       p_mode = b2_mode; c_mode = 0;
    }
   
@@ -1944,9 +1944,23 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
                   Die("Bogus parent type %d for y = %d, v = %d\n",cm->sttype[y],y,v);
             }
          }
-         if (beta->L[v][j] > b_sc)
+         esc = 0.0;
+         if ( j <= j0 )
          {
-            b_sc = beta->L[v][j];
+            if (cm->sttype[v] == MP_st)
+            {
+               if (dsq[j] < Alphabet_size) esc = LeftMarginalScore(cm->esc[v], dsq[j]);
+               else Die("Still can't deal with marginalizing degenerate residues! dsq[%d] = %d\n",j-1,dsq[j-1]);
+            }
+            if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st)
+            {
+               if (dsq[j] < Alphabet_size) esc = cm->esc[v][(int) dsq[j]];
+               else                        esc = DegenerateSingletScore(cm->esc[v], dsq[j]);
+            }
+         }
+         if (beta->L[v][j] + esc > b_sc)
+         {
+            b_sc = beta->L[v][j] + esc;
             b_v  = v;
             b_j  = j;
             b_mode = 2;
@@ -1999,9 +2013,23 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
                   Die("Bogus parent type %d for y = %d, v = %d\n",cm->sttype[y],y,v);
             }
          }
-         if (beta->R[v][j] > b_sc)
+         esc = 0.0;
+         if ( j >= i0 )
          {
-            b_sc = beta->L[v][j];
+            if (cm->sttype[v] == MP_st)
+            {
+               if (dsq[j] < Alphabet_size) esc = RightMarginalScore(cm->esc[v], dsq[j]);
+               else Die("Still can't deal with marginalizing degenerate residues! dsq[%d] = %d\n",j-1,dsq[j-1]);
+            }
+            if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st)
+            {
+               if (dsq[j] < Alphabet_size) esc = cm->esc[v][(int) dsq[j]];
+               else                        esc = DegenerateSingletScore(cm->esc[v], dsq[j]);
+            }
+         }
+         if (beta->R[v][j] + esc > b_sc)
+         {
+            b_sc = beta->L[v][j] + esc;
             b_v  = v;
             b_j  = j;
             b_mode = 1;
@@ -2477,7 +2505,7 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
                      alpha->J[v][jp][ip] = sc;
                      if (ret_shadow != NULL) ((char **)shadow->J[v])[jp][ip] = (char) yoffset;
                   }
-                  if ( r_allow_J )
+                  if ( r_allow_L )
                   if ( (sc = alpha->L[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) > alpha->L[v][jp][ip])
                   {
                      alpha->L[v][jp][ip] = sc;
