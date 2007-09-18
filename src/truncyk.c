@@ -807,7 +807,7 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
                best_j  = jp + j1;
                p_mode = 2; c_mode = 3;
             }
-            if ( z_allow_L )
+            if ( r_allow_L )
             if ( (sc = alpha->L[v][jp][ip] + beta->L[v][ip]) > best_sc )
             {
                best_sc = sc;
@@ -825,7 +825,7 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
                best_j  = jp + j1;
                p_mode = 1; c_mode = 3;
             }
-            if ( z_allow_R )
+            if ( r_allow_R )
             if ( (sc = alpha->R[v][jp][ip] + beta->R[v][jp]) > best_sc )
             {
                best_sc = sc;
