@@ -251,7 +251,9 @@ ParsetreeScore(CM_t *cm, Parsetree_t *tr, char *dsq, int do_null2)
       {
 	y = tr->state[tr->nxtl[tidx]];      /* index of child state in CM  */
 
-	if (v == 0 && (cm->flags & CM_LOCAL_BEGIN))
+        if (tr->nxtl[tidx] == -1)
+          ;
+	else if (v == 0 && (cm->flags & CM_LOCAL_BEGIN))
 	  sc += cm->beginsc[y];
 	else if (y == cm->M) /* CM_LOCAL_END is presumably set, else this wouldn't happen */
 	  sc += cm->endsc[v] + (cm->el_selfsc * (tr->emitr[tidx] - tr->emitl[tidx] + 1 - StateDelta(cm->sttype[v])));
@@ -397,7 +399,9 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq)
       if (v != cm->M && cm->sttype[v] != B_st && cm->sttype[v] != E_st) {
 	y = tr->state[tr->nxtl[x]];
 
-	if (v == 0 && (cm->flags & CM_LOCAL_BEGIN))
+        if ( tr->nxtl[x] == -1 )
+          ;
+	else if (v == 0 && (cm->flags & CM_LOCAL_BEGIN))
 	  tsc = cm->beginsc[y];
 	else if (y == cm->M) /* CM_LOCAL_END is presumably set, else this wouldn't happen */
 	  tsc = cm->endsc[v] + (cm->el_selfsc * (tr->emitr[x] - tr->emitl[x] + 1 - StateDelta(cm->sttype[v])));
