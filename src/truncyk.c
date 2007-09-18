@@ -472,8 +472,6 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    {
       if ( w_mode )
       {
-if (b1_mode < 1 || b1_mode > 3)
-fprintf(stderr,"Catch uninitialized value in valgrind!\n");
          InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, b1_i, b1_j, b1_v, b1_mode);
          z = CMSubtreeFindEnd(cm, b1_v);
          tr_generic_splitter(cm, dsq, L, tr, b1_v, z, b1_i, b1_j, (b1_mode == 3), (b1_mode == 2), (b1_mode == 1));
@@ -481,8 +479,6 @@ fprintf(stderr,"Catch uninitialized value in valgrind!\n");
       }
       else if ( y_mode )
       {
-if (b2_mode < 1 || b2_mode > 3)
-fprintf(stderr,"Catch uninitialized value in valgrind!\n");
          InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, b2_i, b2_j, b2_v, b2_mode);
          z = CMSubtreeFindEnd(cm, b2_v);
          tr_generic_splitter(cm, dsq, L, tr, b2_v, z, b2_i, b2_j, (b2_mode == 3), (b2_mode == 2), (b2_mode == 1));
@@ -498,30 +494,22 @@ fprintf(stderr,"Catch uninitialized value in valgrind!\n");
    tv = tr->n - 1;
    if ( w_mode )
    {
-if (w_mode < 1 || w_mode > 3)
-fprintf(stderr,"Catch uninitialized value in valgrind!\n");
       InsertTraceNodewithMode(tr, tv, TRACE_LEFT_CHILD, best_j - best_d + 1, best_j - best_k, w, w_mode);
       tr_generic_splitter(cm, dsq, L, tr, w, wend, best_j - best_d + 1, best_j - best_k, (w_mode == 3), (w_mode == 2), (w_mode == 1));
    }
    else
    {
-if (w_mode < 1 || w_mode > 3)
-fprintf(stderr,"Catch uninitialized value in valgrind!\n");
       InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, best_j - best_d + 1, best_j - best_d, w, w_mode);
       InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, best_j - best_d + 1, best_j - best_d, cm->M, 3);
    }
 
    if ( y_mode )
    {
-if (y_mode < 1 || y_mode > 3)
-fprintf(stderr,"Catch uninitialized value in valgrind!\n");
       InsertTraceNodewithMode(tr, tv, TRACE_RIGHT_CHILD, best_j - best_k + 1, best_j, y, y_mode);
       tr_generic_splitter(cm, dsq, L, tr, y, yend, best_j - best_k + 1, best_j, (y_mode == 3), (y_mode == 2), (y_mode == 1));
    }
    else 
    {
-if (y_mode < 1 || y_mode > 3)
-fprintf(stderr,"Catch uninitialized value in valgrind!\n");
       InsertTraceNodewithMode(tr, tv, TRACE_RIGHT_CHILD, best_j + 1, best_j, y, y_mode);
       InsertTraceNodewithMode(tr, tv, TRACE_RIGHT_CHILD, best_j + 1, best_j, cm->M, 3);
    }
@@ -899,8 +887,6 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
    {
       if (best_v != z)
       {
-if (c_mode < 1 || c_mode > 3)
-fprintf(stderr,"Catch uninitialized value in valgrind!\n");
          InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, best_i, best_j, best_v, c_mode);
       }
       tr_v_splitter(cm, dsq, L, tr, best_v, z, best_i, i1, j1, best_j,
@@ -3399,8 +3385,6 @@ tr_insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
 
    if (r == 0)
    {
-if (mode < 1 || mode > 3)
-fprintf(stderr,"Catch uninitialized value in valgrind!\n");
       InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
    }
 
@@ -3462,8 +3446,6 @@ fprintf(stderr,"Catch uninitialized value in valgrind!\n");
          d = d-k;
          i = j-d+1;
          v = cm->cfirst[v];
-if (mode < 1 || mode > 3)
-fprintf(stderr,"Catch uninitialized value in valgrind!\n");
          InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
       }
       else if ( (cm->sttype[v] == E_st) || (cm->sttype[v] == EL_st) )
@@ -3477,8 +3459,6 @@ fprintf(stderr,"Catch uninitialized value in valgrind!\n");
          i = j-d+1;
 
          v = y;
-if (mode < 1 || mode > 3)
-fprintf(stderr,"Catch uninitialized value in valgrind!\n");
          InsertTraceNodewithMode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, v, mode);
       }
       else
@@ -3532,14 +3512,14 @@ fprintf(stderr,"Catch uninitialized value in valgrind!\n");
                Die("'Inconceivable!'\n'You keep using that word...'");
          }
          d = j-i+1;
-         mode = nxtmode;
 
          if ( yoffset == USED_EL )
          {
             v = cm->M;
-if (mode < 1 || mode > 3)
-fprintf(stderr,"Catch uninitialized value in valgrind!\n");
-            InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
+            if (mode == 3)
+            {
+               InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
+            }
          }
          else if ( yoffset == USED_LOCAL_BEGIN )
          {  /* local begin, can only happen once, from root */
@@ -3550,9 +3530,8 @@ fprintf(stderr,"Catch uninitialized value in valgrind!\n");
          }
          else
          {
+            mode = nxtmode;
             v = cm->cfirst[v] + yoffset;
-if (mode < 1 || mode > 3)
-fprintf(stderr,"Catch uninitialized value in valgrind!\n");
             InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
          }
       }
@@ -3602,8 +3581,6 @@ tr_vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
       else if ( r_allow_L ) mode = 2;
       else                  mode = 1;
 
-if (mode < 1 || mode > 3)
-fprintf(stderr,"Catch uninitialized value in valgrind!\n");
       InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, r, mode);
       return 0.0;
    }
@@ -3614,8 +3591,6 @@ fprintf(stderr,"Catch uninitialized value in valgrind!\n");
 
    if (r == 0)
    {
-if (mode < 1 || mode > 3)
-fprintf(stderr,"Catch uninitialized value in valgrind!\n");
       InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
    }
 
@@ -3686,8 +3661,6 @@ fprintf(stderr,"Catch uninitialized value in valgrind!\n");
       if (yoffset == USED_EL)
       {
          v = cm->M;
-if (mode < 1 || mode > 3)
-fprintf(stderr,"Catch uninitialized value in valgrind!\n");
          InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
          break;
       }
@@ -3701,8 +3674,6 @@ fprintf(stderr,"Catch uninitialized value in valgrind!\n");
       else
       {
          v = cm->cfirst[v] + yoffset;
-if (mode < 1 || mode > 3)
-fprintf(stderr,"Catch uninitialized value in valgrind!\n");
          InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
       }
    }
