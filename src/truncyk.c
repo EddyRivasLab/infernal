@@ -352,7 +352,7 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
                best_d  = d;
                v_mode = 3; w_mode = 3; y_mode = 3;
             }
-            if ( r_allow_L )
+            if ( r_allow_L && k > 0 )
             if ( (sc = alpha->J[w][j-k][d-k] + alpha->L[y][j][k] + beta->L[v][j-d+1]) > best_sc )
             {
                best_sc = sc;
@@ -361,7 +361,7 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
                best_d  = d;
                v_mode = 2; w_mode = 3; y_mode = 2;
             }
-            if ( r_allow_R )
+            if ( r_allow_R && k < d )
             if ( (sc = alpha->R[w][j-k][d-k] + alpha->J[y][j][k] + beta->R[v][j]) > best_sc )
             {
                best_sc = sc;
@@ -370,7 +370,7 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
                best_d  = d;
                v_mode = 1; w_mode = 1; y_mode = 3;
             }
-            if ( r_allow_L && r_allow_R )
+            if ( r_allow_L && r_allow_R && k > 0 && k < d )
             if ( (sc = alpha->R[w][j-k][d-k] + alpha->L[y][j][k]) > best_sc )
             {
                best_sc = sc;
@@ -390,6 +390,15 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
             best_d  = d;
             v_mode = 2; w_mode = 2; y_mode = 0;
          }
+         if ( r_allow_L )
+         if ( (sc = alpha->J[w][j][d] + beta->L[v][j-d+1]) > best_sc )
+         {
+            best_sc = sc;
+            best_k  = 0;
+            best_j  = j;
+            best_d  = d;
+            v_mode = 2; w_mode = 3; y_mode = 0;
+         }
          if ( r_allow_R )
          if ( (sc = alpha->R[y][j][d] + beta->R[v][j]) > best_sc )
          {
@@ -398,6 +407,15 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
             best_j  = j;
             best_d  = d;
             v_mode = 1; w_mode = 0; y_mode = 1;
+         }
+         if ( r_allow_R )
+         if ( (sc = alpha->J[y][j][d] + beta->R[v][j]) > best_sc )
+         {
+            best_sc = sc;
+            best_k  = d;
+            best_j  = j;
+            best_d  = d;
+            v_mode = 1; w_mode = 0; y_mode = 3;
          }
          if ( (sc = beta->J[cm->M][j][d]) > best_sc) /* Joint parent to EL */
          {
@@ -500,7 +518,7 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    else
    {
       InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, best_j - best_d + 1, best_j - best_d, w, w_mode);
-      InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, best_j - best_d + 1, best_j - best_d, cm->M, 3);
+      //InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, best_j - best_d + 1, best_j - best_d, cm->M, 3);
    }
 
    if ( y_mode )
@@ -511,7 +529,7 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    else 
    {
       InsertTraceNodewithMode(tr, tv, TRACE_RIGHT_CHILD, best_j + 1, best_j, y, y_mode);
-      InsertTraceNodewithMode(tr, tv, TRACE_RIGHT_CHILD, best_j + 1, best_j, cm->M, 3);
+      //InsertTraceNodewithMode(tr, tv, TRACE_RIGHT_CHILD, best_j + 1, best_j, cm->M, 3);
    }
 
    return best_sc;
