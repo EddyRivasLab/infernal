@@ -812,7 +812,6 @@ update_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm,
       mu = log(tmp_K  * ((double) cfg->dbsize)) / cfg->cmstatsA[cfg->ncm-1]->gumAA[fthr_mode][p]->lambda;
       /* Now determine bit score */
       cfg->cutoffA[p] = mu - (log(ecutoff) / cfg->cmstatsA[cfg->ncm-1]->gumAA[fthr_mode][p]->lambda);
-      /* TEMPORARY! */ cfg->cutoffA[p] = 35.;
     }
   return eslOK;
 }  
