@@ -3631,7 +3631,7 @@ tr_vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
       else if ( mode == 1 )
       {
          yoffset = ((char **) shadow->R[v])[jp][ip];
-         nxtmode = ((char **) shadow->Lmode[v])[jp][ip];
+         nxtmode = ((char **) shadow->Rmode[v])[jp][ip];
       }
       else
          Die("Unknown mode in traceback!\n");
