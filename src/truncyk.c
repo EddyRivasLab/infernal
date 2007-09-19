@@ -2007,7 +2007,7 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
                if (dsq[j] < Alphabet_size) esc = RightMarginalScore(cm->esc[v], dsq[j]);
                else Die("Still can't deal with marginalizing degenerate residues! dsq[%d] = %d\n",j-1,dsq[j-1]);
             }
-            if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st)
+            if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st)
             {
                if (dsq[j] < Alphabet_size) esc = cm->esc[v][(int) dsq[j]];
                else                        esc = DegenerateSingletScore(cm->esc[v], dsq[j]);
@@ -2015,7 +2015,7 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
          }
          if (beta->R[v][j] + esc > b_sc)
          {
-            b_sc = beta->L[v][j] + esc;
+            b_sc = beta->R[v][j] + esc;
             b_v  = v;
             b_j  = j;
             b_mode = 1;
