@@ -282,7 +282,7 @@ ParsetreeScore(CM_t *cm, Parsetree_t *tr, char *dsq, int do_null2)
 	    if (symi < Alphabet_size) sc += cm->esc[v][(int) symi];
 	    else                      sc += DegenerateSingletScore(cm->esc[v], symi);
 	  } 
-	else if ( (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && (mode == 3 || mode == 2) )
+	else if ( (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && (mode == 3 || mode == 1) )
 	  {
 	    symj = dsq[tr->emitr[tidx]];
 	    if (symj < Alphabet_size) sc += cm->esc[v][(int) symj];
@@ -1311,7 +1311,7 @@ ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, char *dsq, int print_flag
 	      if (symi < Alphabet_size) tr_esc[tidx] = cm->esc[v][(int) symi];
 	      else                      tr_esc[tidx] = DegenerateSingletScore(cm->esc[v], symi);
 	    } 
-	  else if ( (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && (mode == 3 || mode == 2) )
+	  else if ( (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && (mode == 3 || mode == 1) )
 	    {
 	      symj = dsq[tr->emitr[tidx]];
 	      if (symj < Alphabet_size) tr_esc[tidx] = cm->esc[v][(int) symj];
