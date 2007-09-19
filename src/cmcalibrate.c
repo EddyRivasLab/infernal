@@ -162,6 +162,7 @@ static float count_search_target_calcs(CM_t *cm, int L, int *dmin, int *dmax, in
 static int cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, ESL_DSQ *dsq, 
 				    Parsetree_t *tr, int L, int *dmin_default_beta, int *dmax_default_beta, float cutoff);
 static int calc_sub_filter_sets(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, float **fil_vscAA);
+static void find_pair_of_thresholds(const ESL_GETOPTS *go, const struct cfg_s *cfg, int cmN, float threshold, float *uiA, float *ujA, float *siA, float *sjA, float *ret_icalcs, float *ret_jcalcs, int print_flag);
 
 int
 main(int argc, char **argv)
@@ -236,6 +237,7 @@ main(int argc, char **argv)
   cfg.gumhfp   = NULL; /* ALWAYS remains NULL for mpi workers */
   cfg.gumqfp   = NULL; /* ALWAYS remains NULL for mpi workers */
   cfg.filhfp   = NULL; /* ALWAYS remains NULL for mpi workers */
+  cfg.filrfp   = NULL; /* ALWAYS remains NULL for mpi workers */
   cfg.abc      = NULL; 
 
   cfg.do_mpi   = FALSE;
@@ -439,6 +441,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
       //for(gum_mode = 0; gum_mode < NGUMBELMODES; gum_mode++) {
       for(gum_mode = 0; gum_mode < 1; gum_mode++) 
+      //for(gum_mode = 1; gum_mode < 2; gum_mode++) 
 	{
 	  ConfigForGumbelMode(cm, gum_mode);
 	  /* recalc QDBs for fitting Gumbels */
@@ -553,8 +556,8 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
   Parsetree_t   *tr;
   ESL_DSQ       *dsq;
   float          sc1;
-  float          sc2;
-  float          sc3;
+  /*float          sc2;
+    float          sc3;*/
 
   /* contract check */
   if(ret_vscAA  == NULL && ret_cp9scA == NULL) { sprintf(errbuf, "process_workunit, ret_vscAA and ret_cp9scA both NULL."); return eslEINVAL; } 
@@ -600,15 +603,15 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
       if (use_cm)
 	{ 
 	  sc1 = search_target_cm_calibration(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, &(cur_vscA)); 
-	  sc2 = actually_search_target(cm, dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE);
-	  sc3 = FastCYKScan(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL, NULL, NULL);
+	  /*sc2 = actually_search_target(cm, dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE);
+	    sc3 = FastCYKScan(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL, NULL, NULL);
 	    printf("i: %4d sc1: %10.4f sc2: %10.4f sc3: %10.4f \n", i, sc1, sc2, sc3);
 	  fflush(stdout);
 	  if(fabs(sc1 - sc2) > 0.01) 
 	    cm_Fail("i: %4d sc1: %10.4f sc2: %10.4f\n", i, sc1, sc2);
 	  if(fabs(sc1 - sc3) > 0.01) 
 	    cm_Fail("i: %4d sc1: %10.4f sc3: %10.4f\n", i, sc1, sc3);
-
+	  */
 	  for(v = 0; v < cm->M; v++) vscAA[v][i] = cur_vscA[v];
 	  free(cur_vscA);
 	}
@@ -809,6 +812,7 @@ update_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm,
       mu = log(tmp_K  * ((double) cfg->dbsize)) / cfg->cmstatsA[cfg->ncm-1]->gumAA[fthr_mode][p]->lambda;
       /* Now determine bit score */
       cfg->cutoffA[p] = mu - (log(ecutoff) / cfg->cmstatsA[cfg->ncm-1]->gumAA[fthr_mode][p]->lambda);
+      /* TEMPORARY! */ cfg->cutoffA[p] = 35.;
     }
   return eslOK;
 }  
@@ -966,7 +970,7 @@ initialize_sub_filter_info(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	}
     }
   printf("\n");
-  for(v = 0; v < cm->M; v++) { printf("startA[%4d]: %d\n", v, cfg->subinfo->startA[v]); assert(cfg->subinfo->startA[v] >= 0); }
+  for(v = 0; v < cm->M; v++) { /*printf("startA[%4d]: %d\n", v, cfg->subinfo->startA[v]);*/ assert(cfg->subinfo->startA[v] >= 0); }
   for(i = 0; i < cfg->subinfo->nstarts; i++) {
     printf("firstA[%2d]: %4d\nlastA [%2d]: %4d\n", i, cfg->subinfo->firstA[i], i, cfg->subinfo->lastA[i]);
     for(j = 0; j < cfg->subinfo->nstarts; j++) 
@@ -1243,20 +1247,26 @@ calc_sub_filter_sets(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, float *
   int    status;
   int    v;
   float **sorted_fil_vscAA;
+  float **sorted_fil_EAA;
   int    cmN  = esl_opt_GetInteger(go, "--cmN");
   int    Fidx;
   float  sc;
   float  E;
   float  fil_calcs;
+  float  surv_calcs;
   float  nonfil_calcs;
   float  spdup;
   int    i;
+  int n, j, v_i, v_j;
 
-  Fidx = (int) (1. - 0.95) * cmN;
+  float F = esl_opt_GetReal(go, "--F");
+  Fidx = (int) (1. - F) * cmN;
 
   if(cfg->cmstatsA[cfg->ncm-1]->np != 1) cm_Fail("calc_sub_filter_sets(), not yet implemented for multiple partitions.\nYou'll need to keep track of partition of each sequence OR\nstore E-values not scores inside process_workunit.");
 
+  /*****************TEMPORARY PRINTF BEGIN***************************/
   ESL_ALLOC(sorted_fil_vscAA, sizeof(float *) * cm->M);
+  ESL_ALLOC(sorted_fil_EAA, sizeof(float *) * cm->M);
 
   printf("\n\n***********************************\nvscAA[0] scores:\n");
   for(i = 0; i < cmN; i++)
@@ -1269,7 +1279,6 @@ calc_sub_filter_sets(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, float *
       esl_vec_FCopy(fil_vscAA[v], cmN, sorted_fil_vscAA[v]); 
       esl_vec_FSortIncreasing(sorted_fil_vscAA[v], cmN);
     }
-  
   for(v = 0; v < cm->M; v++) {
     if(cfg->subinfo->iscandA[v]) {
       sc = sorted_fil_vscAA[v][Fidx];
@@ -1277,18 +1286,163 @@ calc_sub_filter_sets(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, float *
       E  = RJK_ExtremeValueE(sc, cfg->vmuAA[0][v], cfg->vlambdaAA[0][v]);
       /* note partition = 0, this is bogus if more than 1 partition, that's why we die if there are more (see above). */
       fil_calcs  = cfg->fil_vcalcs[v];
-      printf("SUB %3d sc: %10.4f E: %10.4f filt: %10.4f ", v, sc, E, fil_calcs);
-      fil_calcs += E * (1000. / (cm->W * 2)) * cfg->vcalcs[0];
+      surv_calcs = E * (1000. / (cm->W * 2)) * cfg->vcalcs[0];
+      printf("SUB %3d sg: %2d sc: %10.4f E: %10.4f filt: %10.4f ", v, cfg->subinfo->startA[v], sc, E, fil_calcs);
+      fil_calcs += surv_calcs;
       nonfil_calcs = cfg->vcalcs[0];
       spdup = nonfil_calcs / fil_calcs;
-      printf("surv: %10.4f sum : %10.4f full: %10.4f spdup %10.4f\n", (fil_calcs - E * (1000. / (cm->W * 2)) * cfg->vcalcs[0]), fil_calcs, nonfil_calcs, spdup);
+      printf("surv: %10.4f sum : %10.4f full: %10.4f spdup %10.4f\n", surv_calcs, fil_calcs, nonfil_calcs, spdup);
     }  
   }
+  
+  for(v = 0; v < cm->M; v++) 
+    {
+      ESL_ALLOC(sorted_fil_EAA[v], sizeof(float *) * cmN);
+      /* E is expected number of hits for db of length 2 * cm->W */
+      /* assumes only 1 partition */
+      /*sorted_fil_EAA[v] = RJK_ExtremeValueE(sorted_fil_vscAA[v], cfg->vmuAA[0][v], cfg->vlambdaAA[0][v]);*/
+    }      
+
+  /*****************TEMPORARY PRINTF END***************************/
+  
+  float **calcsAA;
+  ESL_ALLOC(calcsAA, sizeof(float *) * cm->M);
+  for(v = 0; v < cm->M; v++) 
+    {
+      if(cfg->subinfo->iscandA[v]) 
+	{
+	  ESL_ALLOC(calcsAA[v], sizeof(float *) * cmN);
+	  for(n = 0; n < cmN; n++) 
+	    {
+	      /* E is expected number of hits for db of length 2 * cm->W */
+	      E  = RJK_ExtremeValueE(fil_vscAA[v][n], cfg->vmuAA[0][v], cfg->vlambdaAA[0][v]);
+	      /* note partition = 0, this is bogus if more than 1 partition, that's why we die if there are more (see above). */
+	      calcsAA[v][n]  = cfg->fil_vcalcs[v] + E * (1000. / (cm->W * 2)) * cfg->vcalcs[0];
+	    }
+	}
+      else calcsAA[v] = NULL;
+    }      
+  float **pair_calcs;
+  float **pair_calcs_i;
+  float **pair_calcs_j;
+  float **pair_thresh_i;
+  float **pair_thresh_j;
+  float *sorted_calcs_i;
+  float *sorted_calcs_j;
+  ESL_ALLOC(sorted_calcs_i, sizeof(float) * cmN);
+  ESL_ALLOC(sorted_calcs_j, sizeof(float) * cmN);
+
+  float E_i, E_j, ithresh, jthresh, icalcs, jcalcs;
+  ESL_ALLOC(pair_calcs, sizeof(float *) * cfg->subinfo->nstarts);
+  ESL_ALLOC(pair_calcs_i, sizeof(float *) * cfg->subinfo->nstarts);
+  ESL_ALLOC(pair_calcs_j, sizeof(float *) * cfg->subinfo->nstarts);
+  ESL_ALLOC(pair_thresh_i, sizeof(float *) * cfg->subinfo->nstarts);
+  ESL_ALLOC(pair_thresh_j, sizeof(float *) * cfg->subinfo->nstarts);
+
+  int print_flag = FALSE;
+  for (i = 0; i < cfg->subinfo->nstarts; i++) 
+    {
+      ESL_ALLOC(pair_calcs[i], sizeof(float) * cfg->subinfo->nstarts);
+      ESL_ALLOC(pair_calcs_i[i], sizeof(float) * cfg->subinfo->nstarts);
+      ESL_ALLOC(pair_calcs_j[i], sizeof(float) * cfg->subinfo->nstarts);
+      ESL_ALLOC(pair_thresh_i[i], sizeof(float) * cfg->subinfo->nstarts);
+      ESL_ALLOC(pair_thresh_j[i], sizeof(float) * cfg->subinfo->nstarts);
+      esl_vec_FSet(pair_calcs[i], cfg->subinfo->nstarts, eslINFINITY);
+      esl_vec_FSet(pair_calcs_i[i], cfg->subinfo->nstarts, eslINFINITY);
+      esl_vec_FSet(pair_calcs_j[i], cfg->subinfo->nstarts, eslINFINITY);
+      esl_vec_FSet(pair_thresh_i[i], cfg->subinfo->nstarts, eslINFINITY);
+      esl_vec_FSet(pair_thresh_j[i], cfg->subinfo->nstarts, eslINFINITY);
+      for (j = (i+1); j < cfg->subinfo->nstarts; j++) 
+	{
+	  if(!(cfg->subinfo->withinAA[i][j])) 
+	    {
+	      printf("\n\ni:j (%d:%d)\n", i, j);
+	      for(v_i = cfg->subinfo->firstA[i]; v_i <= cfg->subinfo->lastA[i]; v_i++)
+		{
+		  if(cfg->subinfo->iscandA[v_i])
+		    {
+		      esl_vec_FCopy(calcsAA[v_i], cmN, sorted_calcs_i); 
+		      esl_vec_FSortIncreasing(sorted_calcs_i, cmN);
+		      for(v_j = cfg->subinfo->firstA[j]; v_j <= cfg->subinfo->lastA[j]; v_j++)
+			{
+			  if(cfg->subinfo->iscandA[v_j])
+			    {
+			      /*maxE_i = sorted_fil_EAA[v_i][Fidx];*/
+			      esl_vec_FCopy(calcsAA[v_j], cmN, sorted_calcs_j); 
+			      esl_vec_FSortIncreasing(sorted_calcs_j, cmN);
+			      
+			      find_pair_of_thresholds(go, cfg, cmN, pair_calcs[i][j], calcsAA[v_i], calcsAA[v_j], sorted_calcs_i, sorted_calcs_j, &icalcs, &jcalcs, print_flag);
+			      
+			      E_i     = (icalcs - cfg->fil_vcalcs[v_i]) / ((1000. / (cm->W * 2)) * cfg->vcalcs[0]);
+			      E_j     = (jcalcs - cfg->fil_vcalcs[v_j]) / ((1000. / (cm->W * 2)) * cfg->vcalcs[0]);
+			      ithresh = cfg->vmuAA[0][v_i] - (log(E_i) / cfg->vmuAA[0][v_i]);
+			      jthresh = cfg->vmuAA[0][v_j] - (log(E_j) / cfg->vmuAA[0][v_j]);
+			      
+			      if((icalcs + jcalcs) < pair_calcs[i][j]) 
+				{
+				  printf("\ti: %4d v_i: %4d ithresh: %10.4f icalcs: %10.4f\tj: %4d v_j: %4d jthresh: %10.4f jcalcs: %10.4f TOTAL: %10.4f SPDUP %10.4f\n", 
+					 i, v_i, ithresh, icalcs, j, v_j, jthresh, jcalcs, (icalcs+jcalcs), (cfg->vcalcs[0] / (icalcs+jcalcs)));
+				  pair_calcs[i][j]   = (icalcs + jcalcs);
+				  pair_calcs_i[i][j] = icalcs;
+				  pair_calcs_j[i][j] = jcalcs;
+				  pair_thresh_i[i][j] = ithresh;
+				  pair_thresh_j[i][j] = jthresh;
+				}
+			    }
+			}
+		    }
+		}
+	    }
+	}
+    }
+
   return eslOK;
 
  ERROR:
   cm_Fail("calc_sub_filter_sets(), memory allocation error.");
   return status; /* NEVERREACHED */
+}
+
+/* Function: find_pair_of_thresholds()
+ * Date:     EPN, Mon Sep 17 15:54:51 2007
+ * 
+ * Purpose:  Given arrays of sorted and unsorted numbers of DP calculations, find
+ *           the optimal pair. Complexity: O(cmN). Is this greedy strategy
+ *           guaranteed to find the optimal pair? (I *think* so).
+ *
+ * Returns:  eslOK on success;
+ */
+void
+find_pair_of_thresholds(const ESL_GETOPTS *go, const struct cfg_s *cfg, int cmN, float threshold, float *uiA, float *ujA, float *siA, float *sjA, float *ret_icalcs, float *ret_jcalcs, int print_flag)
+{
+  float icalcs = 0.;
+  float jcalcs = 0.;
+  int n;
+  int in = -1;
+  int jn = -1;
+
+  /* temporary */
+  FILE *out;
+  if(print_flag)
+    out = fopen("cmc.R", "w");
+
+  for(n = 0; n < cmN; n++)
+    {
+      if(print_flag) fprintf(out, "%f %f\n", uiA[n], ujA[n]);
+      if(icalcs + jcalcs > threshold) break;
+      if(uiA[n] > icalcs && ujA[n] > jcalcs) 
+	{
+	  if((uiA[n] - icalcs) > (ujA[n] - jcalcs)) 
+	    { jcalcs = ujA[n]; jn = n; }
+	  else
+	    { icalcs = uiA[n]; in = n; }
+	}
+    }
+  *ret_icalcs = icalcs;
+  *ret_jcalcs = jcalcs;
+
+  if(print_flag) fclose(out);
+  return;
 }
 
 /* Function: search_target_cm_calibration() based on bandcyk.c:CYKBandedScan()
@@ -2011,7 +2165,7 @@ int cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_
   if(sc > cutoff) { /* parse score exceeds cutoff */
     assert(cm->flags       == init_flags);
     assert(cm->search_opts == init_search_opts);
-    printf("0 sc: %10.4f ", sc);
+    printf("0 sc: %10.4f\n", sc);
     return TRUE;
   } 
 
@@ -2022,7 +2176,7 @@ int cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_
   cm->search_opts |= CM_SEARCH_NOQDB;
 
   /* stage 1 */
-  cm->search_opts |= CM_SEARCH_HBANDED;
+  /*cm->search_opts |= CM_SEARCH_HBANDED;
   cm->tau = 0.01;
   if((sc = actually_search_target(cm, dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE)) > cutoff) { 
     if(turn_qdb_back_on)        cm->search_opts &= ~CM_SEARCH_NOQDB; 
@@ -2031,10 +2185,10 @@ int cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_
     assert(cm->search_opts == init_search_opts);
     printf("1 sc: %10.4f ", sc);
     return TRUE;
-  } 
+    } */
 
   /* stage 2 */
-  cm->search_opts |= CM_SEARCH_HMMSCANBANDS;
+  /*cm->search_opts |= CM_SEARCH_HMMSCANBANDS;
   cm->tau = 1e-10;
   if((sc = actually_search_target(cm, dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE)) > cutoff) {
     if(turn_qdb_back_on)             cm->search_opts &= ~CM_SEARCH_NOQDB; 
@@ -2044,7 +2198,7 @@ int cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_
     assert(cm->search_opts == init_search_opts);
     printf("2 sc: %10.4f ", sc);
     return TRUE;
-  } 
+    } */
 
   /* stage 3, use 'default' dmin, dmax (which could be NULL) */
   cm->search_opts &= ~CM_SEARCH_HBANDED;
@@ -2057,7 +2211,7 @@ int cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_
   assert(cm->flags       == init_flags);
   assert(cm->search_opts == init_search_opts);
 
-  if(sc > cutoff) { printf("3 sc: %10.4f ", sc);  return TRUE; }
+  if(sc > cutoff) { printf("3 sc: %10.4f\n", sc);  return TRUE; }
   else return FALSE;
 }
 

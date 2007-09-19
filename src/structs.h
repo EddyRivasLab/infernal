@@ -434,9 +434,9 @@ typedef struct subfilterinfo_s {
   int    ncands;       /* number of candidate states, these *could* be sub CM roots */                   
   double beta;         /* beta used for calculating avglenA */                                           
   float  minlen;       /* minimum average length (avglen) a candidate state must have */                 
-  int   *iscandA;      /* [0..v..cm->M] TRUE if state v is a candidate sub CM root, FALSE otherwise */   
-  float *avglenA;      /* [0..v..cm->M] average length of a hit rooted at v (from QDB) */                
-  int   *startA;       /* [0..i..M-1] start group this state belongs to */                               
+  int   *iscandA;      /* [0..v..cm->M-1] TRUE if state v is a candidate sub CM root, FALSE otherwise */   
+  float *avglenA;      /* [0..v..cm->M-1] average length of a hit rooted at v (from QDB) */                
+  int   *startA;       /* [0..i..cm->M-1] start group this state belongs to */                               
   int   *firstA;       /* [0..i..nstarts-1], first state in start state i's group */                     
   int   *lastA;        /* [0..i..nstarts-1], last state in start state i's group */                      
   int  **withinAA;     /* [0..i..nstarts-1][0..j..nstarts-1] = TRUE if start state j's group             
