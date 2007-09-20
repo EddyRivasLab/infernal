@@ -403,7 +403,7 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
          if ( (sc = alpha->R[y][j][d] + beta->R[v][j]) > best_sc )
          {
             best_sc = sc;
-            best_k  = 0;
+            best_k  = d;
             best_j  = j;
             best_d  = d;
             v_mode = 1; w_mode = 0; y_mode = 1;
@@ -717,6 +717,10 @@ tr_wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
 
    if ( c_mode )
    {
+      if ( p_mode == 0 )
+      {
+         InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, best_j - best_d + 1, best_j, best_v, c_mode);
+      }
       tr_wedge_splitter(cm, dsq, L, tr, best_v, z, best_j - best_d + 1, best_j, (c_mode == 3), (c_mode == 2), (c_mode == 1));
    }
    else /* parent and child both empty */
@@ -1687,7 +1691,7 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
    return sc;
 }
 
-/* Function: troutside()
+/* Function: tr_outside()
  * Author:   DLK
  * 
  * Purpose:  outside version of truncated CYK run on
@@ -2010,7 +2014,7 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
                case  S_st:
                case  E_st:
                case  D_st:
-                  if ( (sc = beta->R[y][j] + cm->tsc[y][voffset]) > beta->L[v][j] )
+                  if ( (sc = beta->R[y][j] + cm->tsc[y][voffset]) > beta->R[v][j] )
                      beta->R[v][j] = sc;
                   break;
                default:
@@ -3687,13 +3691,27 @@ tr_vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
          if (v != 0)
             Die("Impossible local begin in traceback!\n");
          else
-            Die("Shoopid, you actually need to deal with this local begin case\n");
+            Die("DEV: you actually need to deal with this local begin case\n");
       }
       else
       {
          v = cm->cfirst[v] + yoffset;
          InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, v, mode);
       }
+   }
+
+   if (useEL)
+   {
+      switch (cm->sttype[z])
+      {
+         case MP_st: i++; j--; break;
+         case ML_st:
+         case IL_st: i++;      break;
+         case MR_st:
+         case IR_st:      j--; break;
+      }
+
+      InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M, 3);
    }
 
    free_vji_shadow_matrix((char ***) shadow->J, cm->M, j1, j0);
