@@ -1029,7 +1029,35 @@ static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, E
       (*ret_sq)[i]      = esl_sq_CreateFrom(cfg->withmsa->sqname[ip], uaseq[ip], NULL, NULL, NULL);
       esl_sq_Digitize(cm->abc, (*ret_sq)[i]);
     }
-  *ret_nseq += cfg->withmsa->nseq; /* we added these seqs to sq, tr */
+
+  /* Swap some pointers so the included alignment appears at the top of the output 
+   * alignment instead of the bottom. */
+  Parsetree_t **tmp_tr;
+  ESL_SQ      **tmp_sq;
+  ESL_ALLOC(tmp_tr, sizeof(Parsetree_t *) * (*ret_nseq + cfg->withmsa->nseq));
+  ESL_ALLOC(tmp_sq, sizeof(ESL_SQ *)      * (*ret_nseq + cfg->withmsa->nseq));
+  for(i = 0; i < (*ret_nseq + cfg->withmsa->nseq); i++)
+    {
+      tmp_tr[i] = (*ret_tr)[i];
+      tmp_sq[i] = (*ret_sq)[i];
+    }
+  for(i = 0; i < *ret_nseq; i++)
+    {
+      ip = i + cfg->withmsa->nseq;
+      (*ret_tr)[ip] = tmp_tr[i];
+      (*ret_sq)[ip] = tmp_sq[i];
+    }
+  for(i = *ret_nseq; i < (*ret_nseq + cfg->withmsa->nseq); i++)
+    {
+      ip = i - *ret_nseq;
+      (*ret_tr)[ip] = tmp_tr[i];
+      (*ret_sq)[ip] = tmp_sq[i];
+    }
+  free(tmp_tr);
+  free(tmp_sq);
+
+  /* update *ret_nseq */
+  *ret_nseq    += cfg->withmsa->nseq;
 
   /* Clean up and exit. */
   esl_Free2D((void **) map,   cfg->withmsa->nseq);
