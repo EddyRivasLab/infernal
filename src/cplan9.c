@@ -2446,7 +2446,7 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
   ESL_ALLOC(matmap, sizeof(int) * (emap->clen+1));
   ESL_ALLOC(imap,   sizeof(int) * (emap->clen+1));
   ESL_ALLOC(elmap,  sizeof(int) * (emap->clen+1));
-  ESL_ALLOC(eposmap,sizeof(int *) * (emap->clen+1));
+  ESL_ALLOC(eposmap,sizeof(int *) * (nseq));
   /* eposmap is 2D b/c different traces can have different epos
    * (position where EL inserts) for the same EL state, for example:
    * an EL state for node 9 may reconnect at node 25 in one parse
@@ -2563,6 +2563,10 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
     }
                                 /* allocation for new alignment */
   msa = esl_msa_Create(nseq, alen);
+  msa->nseq = nseq;
+  msa->alen = alen;
+  msa->abc  = (ESL_ALPHABET *) abc;
+
   for (idx = 0; idx < nseq; idx++) 
     {
       if(! (sq[idx]->flags & eslSQ_DIGITAL))
@@ -2725,7 +2729,6 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
   if(elmap != NULL)  free(elmap);
   if(maxels!= NULL)  free(maxels);
   if(matmap!= NULL)  free(matmap);
-  if(elmap != NULL)  free(elmap);
   esl_Free2D((void **) eposmap, nseq);
   if(msa   != NULL)  esl_msa_Destroy(msa);
   return status;

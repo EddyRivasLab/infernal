@@ -265,7 +265,7 @@ main(int argc, char **argv)
       serial_master(go, &cfg);
       esl_stopwatch_Stop(w);
     }
-  if (cfg.my_rank == 0) esl_stopwatch_Display(cfg.ofp, w, "# CPU time: ");
+  if (cfg.my_rank == 0) esl_stopwatch_Display(stdout, w, "# CPU time: ");
 
   /* Clean up the shared cfg. 
    */
@@ -378,7 +378,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
     {
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
       cfg->ncm++;
-      
+
       /* initialize the flags/options/params and configuration of the CM */
       if((status   = initialize_cm(go, cfg, errbuf, cm))                    != eslOK)    cm_Fail(errbuf);
       /* read in all sequences, this is wasteful, but Parsetrees2Alignment() requires all seqs in memory */
