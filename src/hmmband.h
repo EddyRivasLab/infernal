@@ -16,12 +16,15 @@
  * the end of the hmmband.c file.
  */
 
+#include "esl_config.h"
 #include "config.h"
-#include "squid.h"		/* general sequence analysis library    */
-#include "msa.h"                /* squid's multiple alignment i/o       */
-#include "stopwatch.h"          /* squid's process timing module        */
+
+#include "easel.h"         
+#include "esl_msa.h"       
+#include "esl_stack.h"
+#include "esl_stopwatch.h" 
+
 #include "structs.h"		/* data structures, macros, #define's   */
-#include "sre_stack.h"
 #include "cplan9.h"
 
 extern CP9Bands_t * AllocCP9Bands(CM_t *cm, CP9_t *hmm);
@@ -31,23 +34,23 @@ extern double dbl_Score2Prob(int sc, float null);
 
 /* CP9_seq2bands() takes a CM, sequence, and allocated CP9Bands_t structure and
  * calculates the CP9Bands_t by calling many of the other functions below. */
-extern void CP9_seq2bands(CM_t *cm, char *dsq, int i0, int j0, CP9Bands_t *cp9b, 
+extern void CP9_seq2bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, 
 			  CP9_dpmatrix_t **ret_cp9_post, int debug_level);
 
 /* CP9_seq2posteriors() takes a CM and sequence and runs Forward and Backward algorithms
  * (or scanning Forward/Backward) and returns a CP9 posterior matrix. */
-extern void CP9_seq2posteriors(CM_t *cm, char *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9_post,
+extern void CP9_seq2posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9_post,
 			       int debug_level);
 
 /* Functions for getting posterior probabilities from CP9 HMMs 
  * based on Ian Holmes' hmmer/src/postprob.c functions 
  * P7Forward() is in HMMER's core_algorithms.c 
  * and P7Backward() is in HMMER's postprob.c*/
-extern float CP9ForwardOLD(char *dsq, int i0, int j0, CP9_t *hmm, 
+extern float CP9ForwardOLD(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, 
 			struct cp9_dpmatrix_s **ret_mx);
-extern float CP9ViterbiOLD(char *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s *mx, struct cp9trace_s **ret_tr);
-extern float CP9BackwardOLD(char *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s **ret_mx);
-extern void  CP9Posterior(char *dsq, int i0, int j0,
+extern float CP9ViterbiOLD(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s *mx, struct cp9trace_s **ret_tr);
+extern float CP9BackwardOLD(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s **ret_mx);
+extern void  CP9Posterior(ESL_DSQ *dsq, int i0, int j0,
 			  CP9_t *hmm,
 			  struct cp9_dpmatrix_s *fmx,
 			  struct cp9_dpmatrix_s *bmx,
@@ -112,7 +115,7 @@ extern void ijd_banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *imin, int
 extern void debug_check_CP9_FB(struct cp9_dpmatrix_s *fmx, 
 			       struct cp9_dpmatrix_s *bmx, 
 			       CP9_t *hmm, float sc, int i0, int j0,
-			       char *dsq);
+			       ESL_DSQ *dsq);
 
 /* Other misc. functions */
 extern void relax_root_bands(int *imin, int *imax, int *jmin, int *jmax);

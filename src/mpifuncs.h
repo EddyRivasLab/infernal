@@ -22,9 +22,10 @@
 #ifndef _MPIFUNCS_H
 #define _MPIFUNCS_H
 
+#include "esl_config.h"
 #include "config.h"
 
-#ifdef USE_MPI
+#ifdef HAVE_MPI
 
 #include "mpi.h"
 #include "structs.h"
@@ -37,16 +38,16 @@
 #define ALN_WORK                  4
 
 /* Results types */
-#define SEARCH_STD_SCAN_RESULTS   0
+#define SEARCH_STD_SEARCH_RESULTS   0
 #define SEARCH_ALIGN_RESULTS      1
-#define SEARCH_HIST_SCAN_RESULTS  2
+#define SEARCH_HIST_SEARCH_RESULTS  2
 #define ALN_RESULTS               3
 
 /* Communication tags */
 #define JOB_PACKET_TAG                   1
 #define SEQ_TAG                          2
-#define SEARCH_STD_SCAN_RESULTS_SIZE_TAG 3
-#define SEARCH_STD_SCAN_RESULTS_TAG      4
+#define SEARCH_STD_SEARCH_RESULTS_SIZE_TAG 3
+#define SEARCH_STD_SEARCH_RESULTS_TAG      4
 #define SEARCH_HIST_RESULTS_TAG          5
 #define SEARCH_ALIGN_RESULTS_SIZE_TAG    6
 #define SEARCH_ALIGN_RESULTS_TAG         7
@@ -56,6 +57,7 @@
 #define ALN_RESULTS_TAG                  11
 #define ALN_JOB_PACKET_TAG               12
 
+#if 0
 typedef struct _job_t {
   char job_type;
   int seqlen;
@@ -91,8 +93,8 @@ extern void search_second_broadcast (CM_t **cm, long *N, int mpi_my_rank, int mp
 /* Get job from master process */
 extern char search_receive_job (int *seqlen_p, char **seq_p, int *bestr_p, int mpi_master_rank);
 
-/* Send results of a scan (scan_results_t) */
-extern void search_send_scan_results (scan_results_t *results, int mpi_master_node);
+/* Send results of a scan (search_results_t) */
+extern void search_send_search_results (search_results_t *results, int mpi_master_node);
 
 /* Send results of an alignment (Parsetree_t *) */
 extern void search_send_align_results (Parsetree_t *tr, int mpi_master_node);
@@ -118,7 +120,7 @@ extern int search_check_results (db_seq_t **active_seqs, job_t **process_status,
 extern int search_check_hist_results (db_seq_t **seq, job_t **process_status, int D);
 
 /* Send histogram scan results */
-extern void search_send_hist_scan_results (float score, int mpi_master_node);
+extern void search_send_hist_search_results (float score, int mpi_master_node);
 
 /* Send the termination code to rank i */
 extern void search_send_terminate (int i);
@@ -134,17 +136,18 @@ extern int  aln_check_results   (Parsetree_t **all_parsetrees, char **all_postco
 				 int **process_status);
 extern void aln_send_terminate  (int rank_to_send_to);
 
+#endif
 /**************************************************************************************
  * EPN, Thu May 10 10:11:34 2007 New functions roughly following Easel/H3 conventions *
  *********************** **************************************************************/
 extern void mpi_worker_search_target(CM_t *cm, int my_rank);
 extern void mpi_worker_cm_and_cp9_search(CM_t *cm, int do_fast, int my_rank);
 extern void mpi_worker_cm_and_cp9_search_maxsc(CM_t *cm, int do_fast, int do_minmax, int my_rank);
-extern int dsq_MPISend(char *dsq, int L, int dest);
-extern int dsq_MPIRecv(char **ret_dsq, int *ret_L);
-extern int dsq_maxsc_MPISend(char *dsq, int L, float maxsc, int dest);
-extern int dsq_maxsc_MPIRecv(char **ret_dsq, int *ret_L, float *ret_maxsc);
-extern int cm_MPIBroadcast(CM_t *cm);
+extern int  dsq_MPISend(char *dsq, int L, int dest);
+extern int  dsq_MPIRecv(char **ret_dsq, int *ret_L);
+extern int  dsq_maxsc_MPISend(char *dsq, int L, float maxsc, int dest);
+extern int  dsq_maxsc_MPIRecv(char **ret_dsq, int *ret_L, float *ret_maxsc);
+extern int  cm_MPIBroadcast(CM_t *cm);
 
 #endif
 #endif

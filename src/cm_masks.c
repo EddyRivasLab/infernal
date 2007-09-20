@@ -14,16 +14,18 @@
  * 
  */
 
+#include "esl_config.h"
 #include "config.h"
-#include "squidconf.h"
 
 #include <stdio.h>
 #include <math.h>
 #include <float.h>
 
-#include "squid.h"
-#include "structs.h"
+#include "easel.h"
+#include "esl_vectorops.h"
+
 #include "funcs.h"
+#include "structs.h"
 
 /* Function: CM_TraceScoreCorrection()
  * based on     TraceScoreCorrection() from HMMER:
@@ -38,7 +40,7 @@
  * Return:   the log_2-odds score correction.          
  */
 float
-CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, char *dsq)
+CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq)
 {
   float p[MAXABET];		/* null2 model distribution */
   float sc[MAXDEGEN];		/* null model scores       */
@@ -56,7 +58,7 @@ CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, char *dsq)
    * all M, I states that appear in the trace. Ad hoc? Sure, you betcha. 
    */
 		/* trivial preorder traverse, since we're already numbered that way */
-  FSet(p, MAXABET, 0.0);
+  esl_vec_FSet(p, MAXABET, 0.0);
   for (tidx = 0; tidx < tr->n; tidx++) {
     v = tr->state[tidx];        	/* index of parent state in CM */
     if(cm->sttype[v] == MP_st)
@@ -75,18 +77,17 @@ CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, char *dsq)
       }
     else if(cm->sttype[v] == ML_st || cm->sttype[v] == IL_st ||
 	    cm->sttype[v] == MR_st || cm->sttype[v] == IR_st)
-      FAdd(p, cm->e[v], MAXABET);
+      esl_vec_FAdd(p, cm->e[v], MAXABET);
   }
 
-  FNorm(p, MAXABET);
+  esl_vec_FNorm(p, MAXABET);
 
   for (a = 0; a < MAXABET; a++)
     sc[a] = sreLOG2(p[a] / cm->null[a]);
 				/* could avoid this chunk if we knew
 				   we didn't need any degenerate char scores */
   for (a = MAXABET; a < MAXDEGEN; a++)
-    sc[a] = DegenerateSingletScore(p, a);  /* not completely sure about this line EPN */
-					       
+    sc[a] = esl_abc_FAvgScore(cm->abc, a, p);  /* not completely sure about this line EPN */
 
   /* Score all the state emissions that appear in the trace.
    */
@@ -97,10 +98,10 @@ CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, char *dsq)
     j = tr->emitr[tidx];
     if (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || 
 	cm->sttype[v] == IL_st)
-      score += sc[(int) dsq[i]];
+      score += sc[dsq[i]];
     if (cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || 
 	cm->sttype[v] == IR_st)
-      score += sc[(int) dsq[j]];
+      score += sc[dsq[j]];
   }
    /* Apply an ad hoc 8 bit fudge factor penalty;
     * interpreted as a prior, saying that the second null model is 

@@ -9,16 +9,22 @@
  ***************************************************************** 
  */ 
 
+#include "esl_config.h"
 #include "config.h"
 
 #include <stdio.h>
 #include <string.h>
-#include "squid.h"
-#include "ssi.h"
+#include <math.h>
 
-#include "structs.h"
+#include "easel.h"
+#include "esl_alphabet.h"
+#include "esl_ssi.h"
+
 #include "funcs.h"
-#include "stats.h"
+#include "structs.h"
+
+static int is_integer(char *s);
+static int is_real(char *s);
 
 /* Magic numbers identifying binary formats.
 */
@@ -66,12 +72,13 @@ static unsigned int v01swap  = 0xb1b0ede3; /* v0.1 binary, byteswapped         *
 #define CMIO_FTHRFAST     36
 #define CMIO_HASEVD       37
 #define CMIO_HASFTHR      38
+#define CMIO_ABCTYPE      39
 
-static void write_ascii_cm(FILE *fp, CM_t *cm);
-static int  read_ascii_cm(CMFILE *cmf, CM_t **ret_cm);
+static int  write_ascii_cm(FILE *fp, CM_t *cm);
+static int  read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm);
 
-static void write_binary_cm(FILE *fp, CM_t *cm);
-static int  read_binary_cm(CMFILE *cmf, CM_t **ret_cm);
+static int  write_binary_cm(FILE *fp, CM_t *cm);
+static int  read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm);
 static void tagged_fwrite(int tag, void *ptr, size_t size, size_t nmemb, FILE *fp);
 static int  tagged_fread(int expected_tag, char *s, size_t size, size_t nmemb, FILE *fp);
 static void tagged_bin_string_write(int tag, char *s, FILE *fp);
@@ -104,16 +111,19 @@ static float ascii2prob(char *s, float null);
 CMFILE *
 CMFileOpen(char *cmfile, char *env)
 {
+  int           status;
   CMFILE       *cmf;
   unsigned int  magic;
-  char         *ssifile;
-  char         *dir;
+  char         *ssifile = NULL;	/* constructed name of SSI index file             */
+  char         *envfile = NULL;	/* full path to filename after using environment  */
   char          buf[512];
+  int           n = strlen(cmfile);
 
   /* Allocate the CMFILE, and initialize.
    */
-  cmf            = MallocOrDie(sizeof(CMFILE));
+  ESL_ALLOC(cmf, sizeof(CMFILE));
   cmf->f         = NULL;
+  cmf->fname     = NULL;
   cmf->ssi       = NULL;
   cmf->is_binary = FALSE;
   cmf->byteswap  = FALSE;
@@ -124,35 +134,23 @@ CMFileOpen(char *cmfile, char *env)
    * Open in mode "r" even if it's binary, not "rb", because we only 
    * guarantee POSIX compatibility, not general ANSI C.
    */
-  if ((cmf->f = fopen(cmfile, "r")) != NULL)
+  if ((cmf->f = fopen(cmfile, "r")) != NULL) 
     {
-      ssifile = MallocOrDie(sizeof(char) * (strlen(cmfile) + 5));
-      sprintf(ssifile, "%s.ssi", cmfile);
-      
-      if ((cmf->mode = SSIRecommendMode(cmfile)) == -1)
-	Die("SSIRecommendMode() failed");
+      if ((status = esl_FileNewSuffix(cmfile, "ssi", &ssifile)) != eslOK) goto ERROR;
+      if ((status = esl_strdup(cmfile, n, &(cmf->fname)))       != eslOK) goto ERROR;
     }
-  else if ((cmf->f = EnvFileOpen(cmfile, env, &dir)) != NULL)
+  else if (esl_FileEnvOpen(cmfile, env, &(cmf->f), &envfile) == eslOK)
     {
-      char *full;
-      full    = FileConcat(dir, cmfile);
-
-      ssifile = MallocOrDie(sizeof(char) * (strlen(full) + strlen(cmfile) + 5));
-      sprintf(ssifile, "%s.ssi", full);
-
-      if ((cmf->mode = SSIRecommendMode(full)) == -1)
-	Die("SSIRecommendMode() failed unexpectedly");
-
-      free(full);
-      free(dir);
+      if ((status = esl_FileNewSuffix(envfile, "ssi", &ssifile)) != eslOK) goto ERROR;
+      if ((status = esl_strdup(envfile, -1, &(cmf->fname)))      != eslOK) goto ERROR;
     }
-  else return NULL;
-  
-  /* Open the SSI index file, if it exists; if it doesn't,
-   * cmf->ssi stays NULL.
-   */
-  SSIOpen(ssifile, &(cmf->ssi));
-  free(ssifile);
+  else
+    { status = eslENOTFOUND; goto ERROR; }
+
+  /* Attempt to open the ssi index file. cmf->ssi silently stays NULL if the ssifile isn't found. */
+  if (ssifile != NULL) esl_ssi_Open(ssifile, &(cmf->ssi));
+  if (envfile != NULL) free(envfile);
+  if (ssifile != NULL) free(ssifile);
 
   /* Now initialize the disk offset; though it's technically
    * undefined... cmf->offset is the offset of the *last*
@@ -161,9 +159,8 @@ CMFileOpen(char *cmfile, char *env)
    * anyway. Since the offset is an opaque type, you can't
    * just set it to a number.
    */
-  if (SSIGetFilePosition(cmf->f, cmf->mode, &(cmf->offset)) != 0)
-    Die("SSIGetFilePosition() failed unexpectedly");
- 
+  cmf->offset = ftello(cmf->f); 
+
   /* Peek at the first 4 bytes to see if it's a binary file.
    */
   if (! fread((char *) &magic, sizeof(unsigned int), 1, cmf->f)) {
@@ -184,7 +181,7 @@ CMFileOpen(char *cmfile, char *env)
     cmf->byteswap  = TRUE;
     return cmf;
   } else if (magic & 0x80000000) 
-    Die("\
+    esl_fatal("\
 %s appears to be a binary file but the format is not recognized.\n\
 It may be from an Infernal version more recent than yours,\n\
 or may be a different kind of binary altogether.\n", cmfile);
@@ -207,6 +204,9 @@ or may be a different kind of binary altogether.\n", cmfile);
    */
   CMFileClose(cmf);
   return NULL;
+
+ ERROR:
+  return NULL; /* not reached */
 }
 
 /* Function:  CMFileRead()
@@ -216,7 +216,22 @@ or may be a different kind of binary altogether.\n", cmfile);
  *            Sets the offset in the CMFILE structure to
  *            the offset to the start of this CM.
  *
+ *            From HMMER3:
+ *            Caller may or may not already know what alphabet the HMM
+ *            is expected to be in.  A reference to the pointer to the
+ *            current alphabet is passed in <*ret_abc>. If the alphabet
+ *            is unknown, pass <*ret_abc = NULL>, and when the
+ *            new CM is read, an appropriate new alphabet object is
+ *            allocated and passed back to the caller in <*ret_abc>.
+ *            If the alphabet is already known, <ret_abc> points to
+ *            that object ptr, and the new HMM's alphabet type is
+ *            verified to agree with it. This mechanism allows an
+ *            application to let the first HMM determine the alphabet
+ *            type for the application, while still keeping the
+ *            alphabet under the application's scope of control.
+ *
  * Args:      cmf    - open CMFILE, positioned at start of a CM
+ *            ret_abc- alphabet (see above)
  *            ret_cm - RETURN: cm, or NULL on any parsing failure
  *
  * Returns:   1 on success; 0 at EOF.
@@ -224,13 +239,11 @@ or may be a different kind of binary altogether.\n", cmfile);
  * Xref:      STL6 p.108.
  */
 int
-CMFileRead(CMFILE *cmf, CM_t **ret_cm)
+CMFileRead(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 {
-  if (SSIGetFilePosition(cmf->f, cmf->mode, &(cmf->offset)) != 0)
-    Die("SSIGetFilePosition() failed unexpectedly");
-  
-  if (cmf->is_binary) return read_binary_cm(cmf, ret_cm);
-  else                return read_ascii_cm(cmf, ret_cm);
+  cmf->offset = ftello(cmf->f); /* is this right? */
+  if (cmf->is_binary) return read_binary_cm(cmf, ret_abc, ret_cm);
+  else                return read_ascii_cm(cmf, ret_abc, ret_cm);
 }
 
 /* Function:  CMFileClose()
@@ -243,8 +256,9 @@ CMFileRead(CMFILE *cmf, CM_t **ret_cm)
 void
 CMFileClose(CMFILE *cmf)
 {
-  if (cmf->f   != NULL) { fclose(cmf->f);     cmf->f   = NULL; }
-  if (cmf->ssi != NULL) { SSIClose(cmf->ssi); cmf->ssi = NULL; }
+  if (cmf->f     != NULL) { fclose(cmf->f);     cmf->f   = NULL; }
+  if (cmf->fname != NULL)   free(cmf->fname); 
+  if (cmf->ssi   != NULL) { esl_ssi_Close(cmf->ssi); cmf->ssi = NULL; }
   free(cmf);
 }
 
@@ -266,24 +280,26 @@ CMFileRewind(CMFILE *cmf)
 int
 CMFilePositionByKey(CMFILE *cmf, char *key)
 {
-  SSIOFFSET  offset;		/* offset in cmfile, from SSI */
-  int        fh;		/* ignored.                   */
+  uint16_t fh;
+  off_t    offset;
+  int      status;
 
-  if (cmf->ssi == NULL) return 0;
-  if (SSIGetOffsetByName(cmf->ssi, key, &fh, &offset) != 0) return 0;
-  if (SSISetFilePosition(cmf->f, &offset) != 0) return 0;
-  return 1;
+  if (cmf->ssi == NULL) ESL_EXCEPTION(eslEINVAL, "Need an open SSI index to call p7_hmmfile_PositionByKey()");
+  if ((status = esl_ssi_FindName(cmf->ssi, key, &fh, &offset)) != eslOK) return status;
+  if (fseeko(cmf->f, offset, SEEK_SET) != 0)    ESL_EXCEPTION(eslESYS, "fseek failed");
+  return eslOK;
 } 
 int 
 CMFilePositionByIndex(CMFILE *cmf, int idx)
 {				/* idx runs from 0..ncm-1 */
-  int        fh;		/* file handle is ignored; only one CM file */
-  SSIOFFSET  offset;		/* file position of CM */
+  uint16_t fh;
+  off_t    offset;
+  int      status;
 
-  if (cmf->ssi == NULL) return 0;
-  if (SSIGetOffsetByNumber(cmf->ssi, idx, &fh, &offset) != 0) return 0;
-  if (SSISetFilePosition(cmf->f, &offset) != 0) return 0;
-  return 1;
+  if (cmf->ssi == NULL) ESL_EXCEPTION(eslEINVAL, "Need an open SSI index to call p7_hmmfile_PositionByKey()");
+  if ((status = esl_ssi_FindNumber(cmf->ssi, idx, &fh, &offset)) != eslOK) return status;
+  if (fseeko(cmf->f, offset, SEEK_SET) != 0)    ESL_EXCEPTION(eslESYS, "fseek failed");
+  return eslOK;
 }
 
 
@@ -294,11 +310,14 @@ CMFilePositionByIndex(CMFILE *cmf, int idx)
  *            If do_binary is TRUE, use binary format; else flatfile.
  * Xref:      STL6 p.108.
  */
-void
+int 
 CMFileWrite(FILE *fp, CM_t *cm, int do_binary)
 {
-  if (do_binary) write_binary_cm(fp, cm);
-  else           write_ascii_cm(fp, cm);
+  if((cm->flags & CM_LOCAL_BEGIN) && (cm->flags & CM_LOCAL_END)) cm_Fail("CMFileWrite(), CM_LOCAL_BEGIN and CM_LOCAL_END flags are up.");
+  if (cm->flags & CM_LOCAL_BEGIN) cm_Fail("CMFileWrite(), CM_LOCAL_BEGIN flag is up.");
+  if (cm->flags & CM_LOCAL_END)   cm_Fail("CMFileWrite(), CM_LOCAL_END flag is up.");
+  if (do_binary) return write_binary_cm(fp, cm);
+  else           return write_ascii_cm(fp, cm);
 }
 		   
 
@@ -308,7 +327,7 @@ CMFileWrite(FILE *fp, CM_t *cm, int do_binary)
  * Purpose:   Write a CM in flatfile format.
  * Xref:      STL6 p.108
  */
-static void
+static int
 write_ascii_cm(FILE *fp, CM_t *cm)
 {
   int v,x,y,nd;
@@ -316,18 +335,22 @@ write_ascii_cm(FILE *fp, CM_t *cm)
   fprintf(fp, "INFERNAL-1 [%s]\n", PACKAGE_VERSION);
 
   fprintf(fp, "NAME   %s\n", cm->name);
-  if (cm->acc  != NULL)  fprintf(fp, "ACC    %s\n", cm->acc);
-  if (cm->desc != NULL)  fprintf(fp, "DESC   %s\n", cm->desc);
-  fprintf(fp, "STATES %d\n", cm->M);
-  fprintf(fp, "NODES  %d\n", cm->nodes);
-  /* EPN 08.18.05 */
-  fprintf(fp, "W      %d\n", cm->W);
-  /* EPN 11.15.05 */
-  fprintf(fp, "el_selfsc %f\n", cm->el_selfsc);
-
+  if (cm->acc  != NULL)    fprintf(fp, "ACC    %s\n", cm->acc);
+  if (cm->desc != NULL)    fprintf(fp, "DESC   %s\n", cm->desc);
+  /* Rfam cutoffs */
+  if (cm->flags & CMH_GA)  fprintf(fp, "GA     %.2f\n", cm->ga);
+  if (cm->flags & CMH_TC)  fprintf(fp, "TC     %.2f\n", cm->tc);
+  if (cm->flags & CMH_NC)  fprintf(fp, "NC     %.2f\n", cm->nc);
+  fprintf(fp, "STATES %d\n",   cm->M);
+  fprintf(fp, "NODES  %d\n",   cm->nodes);
+  fprintf(fp, "ALPHABET %d\n", cm->abc->type);
+  fprintf(fp, "ELSELF %.8f\n", cm->el_selfsc);
+  fprintf(fp, "NSEQ   %d\n",   cm->nseq);
+  fprintf(fp, "EFFNSEQ %.8f\n",cm->eff_nseq);
+  fprintf(fp, "CLEN    %d\n",  cm->clen);
   fputs("NULL  ", fp);
-  for (x = 0; x < Alphabet_size; x++)
-    fprintf(fp, "%6s ", prob2ascii(cm->null[x], 1/(float)(Alphabet_size)));
+  for (x = 0; x < cm->abc->K; x++)
+    fprintf(fp, "%6s ", prob2ascii(cm->null[x], 1/(float)(cm->abc->K)));
   fputs("\n", fp);
 
   /* E-value statistics
@@ -416,23 +439,25 @@ write_ascii_cm(FILE *fp, CM_t *cm)
        */
       if (cm->sttype[v] == MP_st) 
 	{
-	  for (x = 0; x < Alphabet_size; x++)
-	    for (y = 0; y < Alphabet_size; y++)
-	      fprintf(fp, "%6s ", prob2ascii(cm->e[v][x*Alphabet_size+y], cm->null[x]*cm->null[y]));
+	  for (x = 0; x < cm->abc->K; x++)
+	    for (y = 0; y < cm->abc->K; y++)
+	      fprintf(fp, "%6s ", prob2ascii(cm->e[v][x*cm->abc->K+y], cm->null[x]*cm->null[y]));
 	}
       else if (cm->sttype[v] == ML_st || cm->sttype[v] == MR_st || cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
 	{
-	  for (x = 0; x < Alphabet_size; x++)
+	  for (x = 0; x < cm->abc->K; x++)
 	    fprintf(fp, "%6s ", prob2ascii(cm->e[v][x], cm->null[x]));
 	}
       fputs("\n", fp);
     }
   fputs("//\n", fp);
+  return eslOK;
 } 
 
 static int  
-read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
+read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 {
+  int     status;
   CM_t   *cm;
   char   *buf;
   int     n;			/* length of buf */
@@ -450,6 +475,12 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
   int     p;                    /* counter for partitions          */
   int     gc;                   /* counter over gc contents        */
   int     i;                    /* counter over gum_modes for EVDs */
+  int     alphabet_type;        /* type of ESL_ALPHABET */
+  ESL_ALPHABET *abc = NULL;
+  int     read_nstates = FALSE; /* TRUE once we've read the number of states */
+  int     read_nnodes  = FALSE; /* TRUE once we've read the number of nodes */
+  int     read_clen = FALSE;
+  int     clen = 0;
 
   cm  = NULL;
   buf = NULL;
@@ -457,7 +488,8 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
   for(i = 0; i < NGUMBELMODES; i++)  gum_flags[i] = FALSE;
   for(i = 0; i < NFTHRMODES; i++) fthr_flags[i] = FALSE;
 
-  if (feof(cmf->f) || sre_fgets(&buf, &n, cmf->f) == NULL) return 0;
+  if (feof(cmf->f) || esl_fgets(&buf, &n, cmf->f) != eslOK) return 0;
+  
   if (strncmp(buf, "INFERNAL-1", 10) != 0)                 goto FAILURE;
 
   /* Parse the header information
@@ -466,71 +498,127 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
    */
   cm = CreateCMShell();
   M  = N = -1;
-  while (sre_fgets(&buf, &n, cmf->f) != NULL) 
+  while (esl_fgets(&buf, &n, cmf->f) != eslEOF) 
     {
       s   = buf;
-      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-      if (strcmp(tok, "NAME") == 0) 
+      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+      else if (strcmp(tok, "NAME") == 0) 
 	{
-	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	  cm->name = sre_strdup(tok, toklen);
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  esl_strdup(tok, toklen, &(cm->name));
 	}
       else if (strcmp(tok, "ACC") == 0) 
 	{
-	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	  cm->acc = sre_strdup(tok, toklen);
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  esl_strdup(tok, toklen, &(cm->acc));
 	}
       else if (strcmp(tok, "DESC") == 0) 
 	{
-	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	  cm->desc = sre_strdup(tok, toklen);
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  esl_strdup(tok, toklen, &(cm->desc));
+	}
+      else if (strcmp(tok, "GA") == 0) 
+	{
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  cm->ga = atof(tok);
+	  cm->flags |= CMH_GA;
+	}
+      else if (strcmp(tok, "TC") == 0) 
+	{
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  cm->tc = atof(tok);
+	  cm->flags |= CMH_TC;
+	}
+      else if (strcmp(tok, "NC") == 0) 
+	{
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  cm->nc = atof(tok);
+	  cm->flags |= CMH_NC;
 	}
       else if (strcmp(tok, "STATES") == 0) 
 	{
-	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	  M = atoi(tok);
+	  read_nstates = TRUE;
 	}
       else if (strcmp(tok, "NODES") == 0) 
 	{
-	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	  N = atoi(tok);
+	  read_nnodes = TRUE;
+	}
+      else if (strcmp(tok, "ALPHABET") == 0) 
+	{
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  alphabet_type = atoi(tok);
+	  /* Set or verify alphabet. */
+	  if (*ret_abc == NULL)	{	/* still unknown: set it, pass control of it back to caller */
+	    if ((abc = esl_alphabet_Create(alphabet_type)) == NULL)       { status = eslEMEM;      goto FAILURE; }
+	  } else {			/* already known: check it */
+	    abc = *ret_abc;
+	    if ((*ret_abc)->type != alphabet_type)                        { status = eslEINCOMPAT; goto FAILURE; }
+	  }
+	  /* Now we have the alphabet and we should have N and M, so we can build the
+	   * full model, and set the alphabet (which we need to do before alloc'ing/setting
+	   * the null model */
+	  if(! (read_nstates && read_nnodes))
+	    {
+	      printf("ERROR, STATES and NODES lines should precede alphabet line");
+	      goto FAILURE;
+	    }
+	  CreateCMBody(cm, N, M, abc);
+	}	    
+      else if (strcmp(tok, "ELSELF") == 0) 
+	{
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  cm->el_selfsc = atof(tok);
+	}
+      else if (strcmp(tok, "NSEQ") == 0) 
+	{
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  cm->nseq = atoi(tok);
+	}
+      else if (strcmp(tok, "EFFNSEQ") == 0) 
+	{
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  cm->eff_nseq = atof(tok);
+	}
+      else if (strcmp(tok, "CLEN") == 0) 
+	{
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  clen = atoi(tok); /* we'll compare this to what we calculate at end of func */
+	  read_clen = TRUE;
 	}
       else if (strcmp(tok, "NULL") == 0) 
 	{
-	  for (x = 0; x < Alphabet_size; x++)
+	  if(cm->abc == NULL) 
 	    {
-	      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	      cm->null[x] = ascii2prob(tok, (1./(float)Alphabet_size));
+	      printf("ERROR, cm->abc is not yet set but we're trying to allocate the null model.");
+	      goto FAILURE;
 	    }
-	}
-      /* EPN 08.18.05 */
-      else if (strcmp(tok, "W") == 0) 
-	{
-	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	  cm->W = atoi(tok);
-	}
-      /* EPN 11.15.05 */
-      else if (strcmp(tok, "el_selfsc") == 0) 
-	{
-	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	  cm->el_selfsc = atof(tok);
+	  /* cm-> null already allocated in CreateCMBody() */
+	  for (x = 0; x < abc->K; x++)
+	    {
+	      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	      cm->null[x] = ascii2prob(tok, (1./(float) abc->K));
+	    }
 	}
       /* information on partitions for EVDs */
       else if (strcmp(tok, "PART") == 0) 
 	{
-	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	  if (! IsInt(tok))                                     goto FAILURE;
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  if (! is_integer(tok))                                      goto FAILURE;
 	  /* First token is num partitions, allocate cmstats object based on this */
 	  cm->stats = AllocCMStats(atoi(tok));
 	  for(p = 0; p < cm->stats->np; p++)
 	    {
 	      /* there are 2 * cm->stats->np tokens left on this line,
 	       * (ps, pe) pairs for each partition */
-	      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	      if (! IsInt(tok))                                     goto FAILURE;
+	      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	      if (! is_integer(tok))                                      goto FAILURE;
 	      cm->stats->ps[p] = atoi(tok);
-	      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	      if (! IsInt(tok))                                     goto FAILURE;
+	      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	      if (! is_integer(tok))                                      goto FAILURE;
 	      cm->stats->pe[p] = atoi(tok);
 	    }
 	  /* Now set the gc2p GC content to partition map, 
@@ -563,21 +651,21 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
 	else                                         goto FAILURE;
 
 	/* now we know what EVD we're reading, read it */
-	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	if (! IsInt(tok))                                     goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_integer(tok))                                     goto FAILURE;
 	p = atoi(tok);
 	if (p >= cm->stats->np)                               goto FAILURE;
-	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	if (! IsInt(tok))                                     goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_integer(tok))                                     goto FAILURE;
 	cm->stats->gumAA[gum_mode][p]->N = atoi(tok);
-	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	if (! IsInt(tok))                                     goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_integer(tok))                                     goto FAILURE;
 	cm->stats->gumAA[gum_mode][p]->L = atoi(tok);
-	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	if (! IsReal(tok))                                    goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                                    goto FAILURE;
 	cm->stats->gumAA[gum_mode][p]->mu = atof(tok);
-	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	if (! IsReal(tok))                                    goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                                    goto FAILURE;
 	cm->stats->gumAA[gum_mode][p]->lambda = atof(tok);
 	
 	gum_flags[gum_mode] = TRUE;
@@ -601,29 +689,29 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
 	else                                         goto FAILURE;
 
 	/* now we know what mode we're reading, read it */
-	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	if (! IsInt(tok))                                     goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_integer(tok))                                     goto FAILURE;
 	cm->stats->fthrA[fthr_mode]->N = atoi(tok);
-	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	if (! IsReal(tok))                                    goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                                    goto FAILURE;
 	cm->stats->fthrA[fthr_mode]->cm_eval = atof(tok);
-	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	if (! IsReal(tok))                                    goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                                    goto FAILURE;
 	cm->stats->fthrA[fthr_mode]->l_eval = atof(tok);
-	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	if (! IsReal(tok))                                    goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                                    goto FAILURE;
 	cm->stats->fthrA[fthr_mode]->l_F = atof(tok);
-	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	if (! IsReal(tok))                                    goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                                    goto FAILURE;
 	cm->stats->fthrA[fthr_mode]->g_eval = atof(tok);
-	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	if (! IsReal(tok))                                    goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                                    goto FAILURE;
 	cm->stats->fthrA[fthr_mode]->g_F = atof(tok);
-	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	if (! IsInt(tok))                                     goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_integer(tok))                                     goto FAILURE;
 	cm->stats->fthrA[fthr_mode]->db_size = atoi(tok);
-	if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;
-	if (! IsInt(tok))                                     goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_integer(tok))                                     goto FAILURE;
 	cm->stats->fthrA[fthr_mode]->was_fast = atoi(tok);
 
 	fthr_flags[fthr_mode] = TRUE;
@@ -646,7 +734,7 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
     if(((have_gums && (!gum_flags[gum_mode]))) ||
        ((!have_gums) && (gum_flags[gum_mode])))
       goto FAILURE;
-
+  
   /* if we have any HMM filter stats, we (currently) require all of them */
   have_fthrs = fthr_flags[0];
   for(i = 0; i < NFTHRMODES; i++)
@@ -656,59 +744,62 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
 
   /* Main model section. 
    */
-  CreateCMBody(cm, N, M);
   CMZero(cm);
   if(have_gums)  cm->flags |= CM_GUMBEL_STATS;
   if(have_fthrs) cm->flags |= CM_FTHR_STATS;
   nd = -1;
+  cm->clen = 0;
   for (v = 0; v < cm->M; v++)
     {
-      if (sre_fgets(&buf, &n, cmf->f) == NULL) goto FAILURE;
+      if (esl_fgets(&buf, &n, cmf->f) != eslOK) goto FAILURE;
       s = buf;
-      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
+      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
       
       /* Ah, a node line. Process it and get the following line.
        */
       if (*tok == '[') 
 	{
-	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
 	  if ((x = NodeCode(tok)) == -1)                        goto FAILURE;
-	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
-	  if (!IsInt(tok))                                      goto FAILURE;
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
+	  if (!is_integer(tok))                                      goto FAILURE;
 	  nd = atoi(tok);
 	  cm->ndtype[nd]  = x;
+	  if(cm->ndtype[nd] == MATP_nd) cm->clen+=2;
+	  else if(cm->ndtype[nd] == MATL_nd) cm->clen++;
+	  else if(cm->ndtype[nd] == MATR_nd) cm->clen++;
 	  cm->nodemap[nd] = v;
 
-	  if (sre_fgets(&buf, &n, cmf->f) == NULL)              goto FAILURE;
+	  if (esl_fgets(&buf, &n, cmf->f) != eslOK)              goto FAILURE;
 	  s = buf;
-	  if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
 	}
 
       /* Process state line.
        */
       if ((cm->sttype[v] = StateCode(tok)) == -1)           goto FAILURE;
-      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
-      if (! IsInt(tok))                                     goto FAILURE;
+      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
+      if (! is_integer(tok))                                     goto FAILURE;
       if (atoi(tok) != v)                                   goto FAILURE;
-      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
-      if (! IsInt(tok))                                     goto FAILURE;
+      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
+      if (! is_integer(tok))                                     goto FAILURE;
       cm->plast[v] = atoi(tok);
-      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
-      if (! IsInt(tok))                                     goto FAILURE;
+      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
+      if (! is_integer(tok))                                     goto FAILURE;
       cm->pnum[v] = atoi(tok);
-      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
-      if (! IsInt(tok))                                     goto FAILURE;
+      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
+      if (! is_integer(tok))                                     goto FAILURE;
       cm->cfirst[v] = atoi(tok);
-      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
-      if (! IsInt(tok))                                     goto FAILURE;
+      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
+      if (! is_integer(tok))                                     goto FAILURE;
       cm->cnum[v] = atoi(tok);
 				/* Transition probabilities. */
       if (cm->sttype[v] != B_st) 
 	{
 	  for (x = 0; x < cm->cnum[v]; x++)
 	    {
-	      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
-	      if (! IsReal(tok) && *tok != '*')                      goto FAILURE;
+	      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
+	      if (! is_real(tok) && *tok != '*')                      goto FAILURE;
 	      cm->t[v][x] = ascii2prob(tok, 1.);
 	    }
 	}
@@ -716,21 +807,21 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
       if (cm->sttype[v] == ML_st || cm->sttype[v] == MR_st ||
 	  cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
 	{
-	  for (x = 0; x < Alphabet_size; x++)
+	  for (x = 0; x < cm->abc->K; x++)
 	    {
-	      if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
-	      if (! IsReal(tok) && *tok != '*')                     goto FAILURE;
+	      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
+	      if (! is_real(tok) && *tok != '*')                     goto FAILURE;
 	      cm->e[v][x] = ascii2prob(tok, cm->null[x]);
 	    }
 	}
       else if (cm->sttype[v] == MP_st) 
 	{
-	  for (x = 0; x < Alphabet_size; x++)
-	    for (y = 0; y < Alphabet_size; y++)
+	  for (x = 0; x < cm->abc->K; x++)
+	    for (y = 0; y < cm->abc->K; y++)
 	      {
-		if ((tok = sre_strtok(&s, " \t\n", &toklen)) == NULL) goto FAILURE;      
-		if (! IsReal(tok) && *tok != '*')                     goto FAILURE;
-		cm->e[v][x*Alphabet_size+y] = ascii2prob(tok, cm->null[x]*cm->null[y]);
+		if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
+		if (! is_real(tok) && *tok != '*')                     goto FAILURE;
+		cm->e[v][x*cm->abc->K+y] = ascii2prob(tok, cm->null[x]*cm->null[y]);
 	      }
 	} 
 
@@ -740,7 +831,7 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
 
   /* Advance to record separator
    */
-  while (sre_fgets(&buf, &n, cmf->f) != NULL) 
+  while (esl_fgets(&buf, &n, cmf->f) != eslEOF) 
     if (strncmp(buf, "//", 2) == 0) 
       break;
 
@@ -752,12 +843,20 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
 					  * cmbuild --nodetach  was used to build the CM  */
 				  TRUE); /* Detach the states by setting trans probs into them as 0.0   */
 
+  /* check that the clen we calc'ed is the same as the CLEN line said */
+  if (read_clen && clen != cm->clen) 
+    {
+      printf("ERROR, calculated consensus length %d does not equal read CLEN: %d.\n", cm->clen, clen);
+      goto FAILURE;
+    }
+
   /* Success.
-   * Renormalize the CM, build the CP9 HMM and return.
+   * Renormalize the CM, and return.
    */
   CMRenormalize(cm);
 
   if (buf != NULL) free(buf);
+  if (*ret_abc == NULL) *ret_abc = abc;	/* pass our new alphabet back to caller, if caller didn't know it already */
   *ret_cm = cm;
   return 1;
 
@@ -774,11 +873,13 @@ read_ascii_cm(CMFILE *cmf, CM_t **ret_cm)
  * Purpose:  Write a CM in binary format.
  *
  */
-static void
+static int
 write_binary_cm(FILE *fp, CM_t *cm)
 {
   int v, i ,p;
   int has_gum, has_fthr;
+  int atype;
+  atype = cm->abc->type;
 
   fwrite((char *) &(v01magic), sizeof(unsigned int), 1, fp);
 
@@ -787,14 +888,13 @@ write_binary_cm(FILE *fp, CM_t *cm)
    */
   tagged_fwrite(CMIO_M,            &cm->M,          sizeof(int),   1, fp);
   tagged_fwrite(CMIO_NODES,        &cm->nodes,      sizeof(int),   1, fp);  
+  tagged_fwrite(CMIO_ALPHABETTYPE, &atype,          sizeof(int),   1, fp);
 
   tagged_bin_string_write(CMIO_NAME, cm->name,  fp);
   tagged_bin_string_write(CMIO_ACC,  cm->acc,   fp);
   tagged_bin_string_write(CMIO_DESC, cm->desc,  fp);
 
-  tagged_fwrite(CMIO_ALPHABETTYPE, &Alphabet_type, sizeof(int),   1, fp);
-  tagged_fwrite(CMIO_ALPHABETSIZE, &Alphabet_size, sizeof(int),   1, fp);
-  tagged_fwrite(CMIO_NULL,         cm->null,       sizeof(float), Alphabet_size, fp);
+  tagged_fwrite(CMIO_NULL,         cm->null,       sizeof(float), cm->abc->K, fp);
   tagged_fwrite(CMIO_STTYPE,       cm->sttype,     sizeof(char),  cm->M, fp);
   tagged_fwrite(CMIO_NDIDX,        cm->ndidx,      sizeof(int),   cm->M, fp);  
   tagged_fwrite(CMIO_STID,         cm->stid,       sizeof(char),  cm->M, fp);  
@@ -858,7 +958,7 @@ write_binary_cm(FILE *fp, CM_t *cm)
     }
   for (v = 0; v < cm->M; v++) {
     tagged_fwrite(CMIO_T, cm->t[v], sizeof(float), MAXCONNECT, fp);
-    tagged_fwrite(CMIO_E, cm->e[v], sizeof(float), Alphabet_size*Alphabet_size, fp);
+    tagged_fwrite(CMIO_E, cm->e[v], sizeof(float), cm->abc->K*cm->abc->K, fp);
   }
 
   tagged_fwrite(CMIO_END_DATA, NULL, 0, 0, fp);
@@ -866,6 +966,7 @@ write_binary_cm(FILE *fp, CM_t *cm)
   /* Note: begin, end, and flags not written out. Local alignment is
    * run-time configuration right now.
    */
+  return eslOK;
 }
 
 
@@ -875,20 +976,21 @@ write_binary_cm(FILE *fp, CM_t *cm)
  * Purpose:  Read a CM from disk.
  */
 static int
-read_binary_cm(CMFILE *cmf, CM_t **ret_cm)
+read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 {
   FILE         *fp;
   CM_t         *cm;
   unsigned int  magic;
   int           M;
   int           nodes;
-  int           atype;
-  int           asize;
+  int           alphabet_type;
   int           v;
   int           has_gum;
   int           has_fthr;
   int           np;
   int           i, p;
+  ESL_ALPHABET *abc = NULL;
+  int           status;
 
   cm = NULL;
   fp = cmf->f;
@@ -898,15 +1000,22 @@ read_binary_cm(CMFILE *cmf, CM_t **ret_cm)
   
   if (! tagged_fread(CMIO_M,     (void *) &M,     sizeof(int), 1, fp)) goto FAILURE;
   if (! tagged_fread(CMIO_NODES, (void *) &nodes, sizeof(int), 1, fp)) goto FAILURE;
-  cm = CreateCM(nodes, M);
+  if (! tagged_fread(CMIO_ALPHABETTYPE,(void *) &alphabet_type, sizeof(int), 1, fp)) goto FAILURE;
+
+  /* Set or verify alphabet. */
+  if (*ret_abc == NULL)	{	/* still unknown: set it, pass control of it back to caller */
+    if ((abc = esl_alphabet_Create(alphabet_type)) == NULL)       { status = eslEMEM;      goto FAILURE; }
+  } else {			/* already known: check it */
+    abc = *ret_abc;
+    if ((*ret_abc)->type != alphabet_type)                        { status = eslEINCOMPAT; goto FAILURE; }
+  }
+  cm = CreateCM(nodes, M, abc);
 
   if (! tagged_bin_string_read(CMIO_NAME, &(cm->name),  fp)) goto FAILURE;
   if (! tagged_bin_string_read(CMIO_ACC,  &(cm->acc),   fp)) goto FAILURE;
   if (! tagged_bin_string_read(CMIO_DESC, &(cm->desc),  fp)) goto FAILURE;
   
-  if (! tagged_fread(CMIO_ALPHABETTYPE, (void *) &atype,         sizeof(int),   1, fp))             goto FAILURE;
-  if (! tagged_fread(CMIO_ALPHABETSIZE, (void *) &asize,         sizeof(int),   1, fp))             goto FAILURE;
-  if (! tagged_fread(CMIO_NULL,         (void *) cm->null,       sizeof(float), Alphabet_size, fp)) goto FAILURE;
+  if (! tagged_fread(CMIO_NULL,         (void *) cm->null,       sizeof(float), cm->abc->K, fp))    goto FAILURE;
   if (! tagged_fread(CMIO_STTYPE,       (void *) cm->sttype,     sizeof(char),  cm->M, fp))         goto FAILURE;
   if (! tagged_fread(CMIO_NDIDX,        (void *) cm->ndidx,      sizeof(int),   cm->M, fp))         goto FAILURE;  
   if (! tagged_fread(CMIO_STID,         (void *) cm->stid,       sizeof(char),  cm->M, fp))         goto FAILURE;  
@@ -959,7 +1068,7 @@ read_binary_cm(CMFILE *cmf, CM_t **ret_cm)
     }
   for (v = 0; v < cm->M; v++) {
     if (! tagged_fread(CMIO_T, (void *) cm->t[v], sizeof(float), MAXCONNECT, fp)) goto FAILURE;
-    if (! tagged_fread(CMIO_E, (void *) cm->e[v], sizeof(float), Alphabet_size*Alphabet_size, fp)) goto FAILURE;
+    if (! tagged_fread(CMIO_E, (void *) cm->e[v], sizeof(float), cm->abc->K*cm->abc->K, fp)) goto FAILURE;
   }
   if (! tagged_fread(CMIO_END_DATA, (void *) NULL, 0, 0, fp)) goto FAILURE;
 
@@ -1020,6 +1129,7 @@ tagged_bin_string_write(int tag, char *s, FILE *fp)
 static int
 tagged_bin_string_read(int expected_tag, char **ret_s, FILE *fp)
 {
+  int status;
   int tag;
   int nbytes;
   char *s;
@@ -1028,12 +1138,16 @@ tagged_bin_string_read(int expected_tag, char **ret_s, FILE *fp)
   if (tag != expected_tag) return 0;
   fread(&nbytes, sizeof(int), 1, fp);
   if (nbytes > 0) {
-    s = MallocOrDie(sizeof(char) * (nbytes+1));
+    ESL_ALLOC(s, sizeof(char) * (nbytes+1));
     s[nbytes] = '\0';
     fread(s, sizeof(char), nbytes, fp);
   } else s = NULL; 
   *ret_s = s;
   return 1;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+  return 0; /* never reached */
 }
 /*****************************************************************
  * Some miscellaneous utility functions
@@ -1066,3 +1180,91 @@ ascii2prob(char *s, float null)
   return (*s == '*') ? 0. : exp(atof(s)/1.44269504)*null;
 }
 
+/* EPN, Tue Aug  7 15:54:15 2007
+ * is_integer() and is_real(), savagely ripped verbatim out
+ * of Easel's esl_getopts.c, where they were private.
+ */
+/* Function: is_integer()
+ * 
+ * Returns TRUE if <s> points to something that atoi() will parse
+ * completely and convert to an integer.
+ */
+static int
+is_integer(char *s)
+{
+  int hex = 0;
+
+  if (s == NULL) return 0;
+  while (isspace((int) (*s))) s++;      /* skip whitespace */
+  if (*s == '-' || *s == '+') s++;      /* skip leading sign */
+				        /* skip leading conversion signals */
+  if ((strncmp(s, "0x", 2) == 0 && (int) strlen(s) > 2) ||
+      (strncmp(s, "0X", 2) == 0 && (int) strlen(s) > 2))
+    {
+      s += 2;
+      hex = 1;
+    }
+  else if (*s == '0' && (int) strlen(s) > 1)
+    s++;
+				/* examine remainder for garbage chars */
+  if (!hex)
+    while (*s != '\0')
+      {
+	if (!isdigit((int) (*s))) return 0;
+	s++;
+      }
+  else
+    while (*s != '\0')
+      {
+	if (!isxdigit((int) (*s))) return 0;
+	s++;
+      }
+  return 1;
+}
+
+
+/* is_real()
+ * 
+ * Returns TRUE if <s> is a string representation
+ * of a valid floating point number, convertable
+ * by atof().
+ */
+static int
+is_real(char *s)
+{
+  int gotdecimal = 0;
+  int gotexp     = 0;
+  int gotreal    = 0;
+
+  if (s == NULL) return 0;
+
+  while (isspace((int) (*s))) s++; /* skip leading whitespace */
+  if (*s == '-' || *s == '+') s++; /* skip leading sign */
+
+  /* Examine remainder for garbage. Allowed one '.' and
+   * one 'e' or 'E'; if both '.' and e/E occur, '.'
+   * must be first.
+   */
+  while (*s != '\0')
+    {
+      if (isdigit((int) (*s))) 	gotreal++;
+      else if (*s == '.')
+	{
+	  if (gotdecimal) return 0; /* can't have two */
+	  if (gotexp) return 0;     /* e/E preceded . */
+	  else gotdecimal++;
+	}
+      else if (*s == 'e' || *s == 'E')
+	{
+	  if (gotexp) return 0;	/* can't have two */
+	  else gotexp++;
+	}
+      else if (isspace((int) (*s)))
+	break;
+      s++;
+    }
+
+  while (isspace((int) (*s))) s++;         /* skip trailing whitespace */
+  if (*s == '\0' && gotreal) return 1;
+  else return 0;
+}

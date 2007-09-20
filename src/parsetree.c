@@ -16,21 +16,22 @@
  */
 
 
+#include "esl_config.h"
 #include "config.h"
 
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
-
-#include "squid.h"
-
-#include "structs.h"
-#include "funcs.h"
-#include "cplan9.h"
+#include <math.h>
 
 #include "easel.h"
+#include "esl_alphabet.h"
 #include "esl_vectorops.h"
+#include "esl_sqio.h"
+
+#include "funcs.h"
+#include "structs.h"
 
 /* Function: CreateParsetree()
  * Incept:   SRE 29 Feb 2000 [Seattle] from cove2.0 code.
@@ -43,22 +44,26 @@
  * Return:   ptr to the new tree.
  */          
 Parsetree_t * 
-CreateParsetree(void)
+CreateParsetree(int size)
 {
+  int status;
   Parsetree_t *new;
 
-  new           = MallocOrDie (sizeof(Parsetree_t));
+  ESL_ALLOC(new, sizeof(Parsetree_t));
   new->memblock = 100;		/* allocation block size can be optimized here if you want. */
-  new->nalloc   = new->memblock;
-  new->emitl    = MallocOrDie(sizeof(int) * new->nalloc);
-  new->emitr    = MallocOrDie(sizeof(int) * new->nalloc);
-  new->state    = MallocOrDie(sizeof(int) * new->nalloc);
-  new->mode     = MallocOrDie(sizeof(int) * new->nalloc);
-  new->nxtl     = MallocOrDie(sizeof(int) * new->nalloc);
-  new->nxtr     = MallocOrDie(sizeof(int) * new->nalloc);
-  new->prv      = MallocOrDie(sizeof(int) * new->nalloc);
+  new->nalloc   = size;
+  ESL_ALLOC(new->emitl, sizeof(int) * new->nalloc);
+  ESL_ALLOC(new->emitr, sizeof(int) * new->nalloc);
+  ESL_ALLOC(new->state, sizeof(int) * new->nalloc);
+  ESL_ALLOC(new->mode,  sizeof(int) * new->nalloc);
+  ESL_ALLOC(new->nxtl,  sizeof(int) * new->nalloc);
+  ESL_ALLOC(new->nxtr,  sizeof(int) * new->nalloc);
+  ESL_ALLOC(new->prv,   sizeof(int) * new->nalloc);
   new->n = 0;
   return new;
+ ERROR:
+  esl_fatal("ERROR allocated parsetree.\n");
+  return NULL; /* never reached */
 }
 
 /* Function: GrowParsetree()
@@ -69,14 +74,20 @@ CreateParsetree(void)
 void
 GrowParsetree(Parsetree_t *tr)
 {
+  int   status;
+  void *tmp;
   tr->nalloc += tr->memblock;
-  tr->emitl = ReallocOrDie(tr->emitl, sizeof(int) * tr->nalloc);
-  tr->emitr = ReallocOrDie(tr->emitr, sizeof(int) * tr->nalloc);
-  tr->state = ReallocOrDie(tr->state, sizeof(int) * tr->nalloc);
-  tr->mode  = ReallocOrDie(tr->mode,  sizeof(int) * tr->nalloc);
-  tr->nxtl  = ReallocOrDie(tr->nxtl,  sizeof(int) * tr->nalloc);
-  tr->nxtr  = ReallocOrDie(tr->nxtr,  sizeof(int) * tr->nalloc);
-  tr->prv   = ReallocOrDie(tr->prv,   sizeof(int) * tr->nalloc);
+  ESL_RALLOC(tr->emitl, tmp, sizeof(int) * tr->nalloc);
+  ESL_RALLOC(tr->emitr, tmp, sizeof(int) * tr->nalloc);
+  ESL_RALLOC(tr->state, tmp, sizeof(int) * tr->nalloc);
+  ESL_RALLOC(tr->mode,  tmp, sizeof(int) * tr->nalloc);
+  ESL_RALLOC(tr->nxtl,  tmp, sizeof(int) * tr->nalloc);
+  ESL_RALLOC(tr->nxtr,  tmp, sizeof(int) * tr->nalloc);
+  ESL_RALLOC(tr->prv,   tmp, sizeof(int) * tr->nalloc);
+  return;
+  
+ ERROR:
+  esl_fatal("ERROR growing parsetree.\n");
 }
 
 /* Function: FreeParsetree()
@@ -197,7 +208,7 @@ InsertTraceNode(Parsetree_t *tr, int y, int whichway, int emitl, int emitr, int 
  * Returns:  (void)
  */
 void
-ParsetreeCount(CM_t *cm, Parsetree_t *tr, char *dsq, float wgt)
+ParsetreeCount(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float wgt)
 {
   int tidx;			/* counter through positions in the parsetree        */
   int v,z;			/* parent, child state index in CM                   */
@@ -217,11 +228,11 @@ ParsetreeCount(CM_t *cm, Parsetree_t *tr, char *dsq, float wgt)
 	  cm->t[v][z - cm->cfirst[v]] += wgt; 
 
 	if (cm->sttype[v] == MP_st) 
-	  PairCount(cm->e[v], dsq[tr->emitl[tidx]], dsq[tr->emitr[tidx]], wgt);
+	  PairCount(cm->abc, cm->e[v], dsq[tr->emitl[tidx]], dsq[tr->emitr[tidx]], wgt);
 	else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) 
-	  SingletCount(cm->e[v], dsq[tr->emitl[tidx]], wgt);
+	  esl_abc_FCount(cm->abc, cm->e[v], dsq[tr->emitl[tidx]], wgt);
 	else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) 
-	  SingletCount(cm->e[v], dsq[tr->emitr[tidx]], wgt);
+	  esl_abc_FCount(cm->abc, cm->e[v], dsq[tr->emitr[tidx]], wgt);
       }
   }
 }    
@@ -233,11 +244,15 @@ ParsetreeCount(CM_t *cm, Parsetree_t *tr, char *dsq, float wgt)
  *           given a CM that's prepared in log-odds form.
  */
 float
-ParsetreeScore(CM_t *cm, Parsetree_t *tr, char *dsq, int do_null2)
+ParsetreeScore(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, int do_null2)
 {
+  /* contract check */
+  if(dsq == NULL)
+    esl_fatal("ERROR in ParsetreeScore(), dsq is NULL.\n");
+
   int tidx;			/* counter through positions in the parsetree        */
   int v,y;			/* parent, child state index in CM                   */
-  char symi, symj;		/* symbol indices for emissions, 0..Alphabet_iupac-1 */
+  ESL_DSQ symi, symj;		/* symbol indices for emissions, 0..cm->abc->Kp-1    */
   float sc;			/* the log-odds score of the parse tree */
   int mode;
 
@@ -251,9 +266,7 @@ ParsetreeScore(CM_t *cm, Parsetree_t *tr, char *dsq, int do_null2)
       {
 	y = tr->state[tr->nxtl[tidx]];      /* index of child state in CM  */
 
-        if (tr->nxtl[tidx] == -1)
-          ;
-	else if (v == 0 && (cm->flags & CM_LOCAL_BEGIN))
+	if (v == 0 && (cm->flags & CM_LOCAL_BEGIN))
 	  sc += cm->beginsc[y];
 	else if (y == cm->M) /* CM_LOCAL_END is presumably set, else this wouldn't happen */
 	  sc += cm->endsc[v] + (cm->el_selfsc * (tr->emitr[tidx] - tr->emitl[tidx] + 1 - StateDelta(cm->sttype[v])));
@@ -266,27 +279,27 @@ ParsetreeScore(CM_t *cm, Parsetree_t *tr, char *dsq, int do_null2)
 	    symj = dsq[tr->emitr[tidx]];
             if (mode == 3)
               {
-  	        if (symi < Alphabet_size && symj < Alphabet_size)
-	          sc += cm->esc[v][(int) (symi*Alphabet_size+symj)];
+  	        if (symi < cm->abc->K && symj < cm->abc->K)
+	          sc += cm->esc[v][(int) (symi*cm->abc->K+symj)];
 	        else
-	          sc += DegeneratePairScore(cm->esc[v], symi, symj);
+	          sc += DegeneratePairScore(cm->abc, cm->esc[v], symi, symj);
               }
             else if (mode == 2)
-              sc += LeftMarginalScore(cm->esc[v], symi);
+              sc += LeftMarginalScore(cm->abc, cm->esc[v], symi);
             else if (mode == 1)
-              sc += RightMarginalScore(cm->esc[v], symj);
+              sc += RightMarginalScore(cm->abc, cm->esc[v], symj);
 	  } 
 	else if ( (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) && (mode == 3 || mode == 2) )
 	  {
 	    symi = dsq[tr->emitl[tidx]];
-	    if (symi < Alphabet_size) sc += cm->esc[v][(int) symi];
-	    else                      sc += DegenerateSingletScore(cm->esc[v], symi);
+	    if (symi < cm->abc->K) sc += cm->esc[v][(int) symi];
+	    else                   sc += esl_abc_FAvgScore(cm->abc, symi, cm->esc[v]);
 	  } 
-	else if ( (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && (mode == 3 || mode == 1) )
+	else if ( (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && (mode == 3 || mode == 2) )
 	  {
 	    symj = dsq[tr->emitr[tidx]];
-	    if (symj < Alphabet_size) sc += cm->esc[v][(int) symj];
-	    else                      sc += DegenerateSingletScore(cm->esc[v], symj);
+	    if (symj < cm->abc->K) sc += cm->esc[v][(int) symj];
+	    else                   sc += esl_abc_FAvgScore(cm->abc, symj, cm->esc[v]);
 	  }
       }
   }
@@ -347,14 +360,20 @@ PrintParsetree(FILE *fp, Parsetree_t *tr)
  *           annotated with relevant information from the sequence
  *           and the model.
  *
- * Args:    
+ * Args:    fp    - FILE to write output to.
+ *          tr    - parsetree to examine.
+ *          cm    - model that was aligned to dsq to generate the parsetree
+ *          dsq   - digitized sequence that was aligned to cm to generate the parsetree
+ *          gamma - cumulative subsequence length probability distributions
+ *                  used to generate the bands; from BandDistribution(); [0..v..M-1][0..W]
+ *          W     - maximum window length W (gamma distributions range up to this)        
+ *          dmin  - minimum subseq length for each state; [0..v..M-1] NULL for non-banded output
+ *          dmax  - maximum subseq length for each state; [0..v..M-1] NULL for non-banded output
  *
- * Returns:  
- *
- * Example:  
+ * Returns:  (void)
  */
 void
-ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq)
+ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax)
 {
   int   x;
   char  syml, symr;
@@ -362,11 +381,36 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq)
   float esc;
   int   v,y;
   int   mode;
+  int   do_banded;
+  int   L;
 
-  fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s\n",
-	  " idx ","emitl", "emitr", "state", " nxtl", " nxtr", " prv ", " tsc ", " esc ");
-  fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s\n",
-	 "-----", "------", "------", "-------", "-----","-----", "-----","-----", "-----");
+  /* Contract check */
+  if(dmin == NULL && dmax != NULL)
+    esl_fatal("In ParsetreeDump(), dmin is NULL, dmax is not.\n");
+  if(dmin != NULL && dmax == NULL)
+    esl_fatal("In ParsetreeDump(), dmax is NULL, dmin is not.\n");
+  if(dsq == NULL)
+    esl_fatal("In ParsetreeDump(), dsq is NULL");
+
+  if(dmin != NULL && dmax != NULL) do_banded = TRUE;
+  else                             do_banded = FALSE;
+
+  if(do_banded)
+    {
+      fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s %5s %5s\n",
+	      " idx ", "emitl", "emitr", "state", " nxtl", " nxtr", " prv ", " tsc ", " esc ", 
+	      " L   ", " dmin", " dmax");
+      fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s %5s %5s\n",
+	      "-----", "------", "------", "-------", "-----","-----", "-----","-----", "-----",
+	      "-----", "-----", "-----");
+    }
+  else
+    {
+      fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s\n",
+	      " idx ","emitl", "emitr", "state", " nxtl", " nxtr", " prv ", " tsc ", " esc ");
+      fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s\n",
+	      "-----", "------", "------", "-------", "-----","-----", "-----","-----", "-----");
+    }
   for (x = 0; x < tr->n; x++)
     {
       v = tr->state[x];
@@ -379,17 +423,17 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq)
       syml = symr = ' ';
       esc = 0.;
       if (cm->sttype[v] == MP_st) {
-	if (mode == 3 || mode == 2) syml = Alphabet[(int)dsq[tr->emitl[x]]]; 
-	if (mode == 3 || mode == 1) symr = Alphabet[(int)dsq[tr->emitr[x]]];
-	if      (mode == 3) esc = DegeneratePairScore(cm->esc[v], dsq[tr->emitl[x]], dsq[tr->emitr[x]]);
-        else if (mode == 2) esc =   LeftMarginalScore(cm->esc[v], dsq[tr->emitl[x]]);
-        else if (mode == 1) esc =  RightMarginalScore(cm->esc[v],                    dsq[tr->emitr[x]]);
+	if (mode == 3 || mode == 2) syml = cm->abc->sym[dsq[tr->emitl[x]]]; 
+	if (mode == 3 || mode == 1) symr = cm->abc->sym[dsq[tr->emitr[x]]];
+	if      (mode == 3) esc = DegeneratePairScore(cm->abc, cm->esc[v], dsq[tr->emitl[x]], dsq[tr->emitr[x]]);
+        else if (mode == 2) esc =   LeftMarginalScore(cm->abc, cm->esc[v], dsq[tr->emitl[x]]);
+        else if (mode == 1) esc =  RightMarginalScore(cm->abc, cm->esc[v],                        dsq[tr->emitr[x]]);
       } else if ( (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) && (mode == 3 || mode == 2) ) {
-	syml = Alphabet[(int)dsq[tr->emitl[x]]];
-	esc  = DegenerateSingletScore(cm->esc[v], dsq[tr->emitl[x]]);
+	syml = cm->abc->sym[dsq[tr->emitl[x]]];
+	esc  = esl_abc_FAvgScore(cm->abc, dsq[tr->emitl[x]], cm->esc[v]);
       } else if ( (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) && (mode == 3 || mode == 1) ) {
-	symr = Alphabet[(int)dsq[tr->emitr[x]]];
-	esc  = DegenerateSingletScore(cm->esc[v], dsq[tr->emitr[x]]);
+	symr = cm->abc->sym[dsq[tr->emitr[x]]];
+	esc  = esl_abc_FAvgScore(cm->abc, dsq[tr->emitr[x]], cm->esc[v]);
       }
 
       /* Set tsc: transition score, or 0.
@@ -399,9 +443,7 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq)
       if (v != cm->M && cm->sttype[v] != B_st && cm->sttype[v] != E_st) {
 	y = tr->state[tr->nxtl[x]];
 
-        if ( tr->nxtl[x] == -1 )
-          ;
-	else if (v == 0 && (cm->flags & CM_LOCAL_BEGIN))
+	if (v == 0 && (cm->flags & CM_LOCAL_BEGIN))
 	  tsc = cm->beginsc[y];
 	else if (y == cm->M) /* CM_LOCAL_END is presumably set, else this wouldn't happen */
 	  tsc = cm->endsc[v] + (cm->el_selfsc * (tr->emitr[x] - tr->emitl[x] + 1 - StateDelta(cm->sttype[v])));
@@ -411,12 +453,29 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, char *dsq)
 
       /* Print the info line for this state
        */
-      fprintf(fp, "%5d %5d%c %5d%c %5d%-2s %5d %5d %5d %5.2f %5.2f\n",
-	      x, tr->emitl[x], syml, tr->emitr[x], symr, tr->state[x], 
-	      Statetype(cm->sttype[v]), tr->nxtl[x], tr->nxtr[x], tr->prv[x], tsc, esc);
+      if(do_banded)
+	{
+	  L = tr->emitr[x]-tr->emitl[x]+1;
+	  fprintf(fp, "%5d %5d%c %5d%c %5d%-2s %5d %5d %5d %5.2f %5.2f %5d %5d %5d %2s\n",
+		  x, tr->emitl[x], syml, tr->emitr[x], symr, tr->state[x], 
+		  Statetype(cm->sttype[v]), tr->nxtl[x], tr->nxtr[x], tr->prv[x], tsc, esc,
+		  L, dmin[v], dmax[v],
+		  (L >= dmin[v] && L <= dmax[v]) ? "" : "!!");
+	}
+      else
+	{
+	  fprintf(fp, "%5d %5d%c %5d%c %5d%-2s %5d %5d %5d %5.2f %5.2f\n",
+		  x, tr->emitl[x], syml, tr->emitr[x], symr, tr->state[x], 
+		  Statetype(cm->sttype[v]), tr->nxtl[x], tr->nxtr[x], tr->prv[x], tsc, esc);
+	}
     }
-  fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s\n",
-	 "-----", "------", "------", "-------", "-----","-----", "-----","-----", "-----");
+  if(do_banded)
+    fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s %5s %5s\n",
+	    "-----", "------", "------", "-------", "-----","-----", "-----","-----", "-----",
+	    "-----", "-----", "-----");
+  else
+    fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s\n",
+	    "-----", "------", "------", "-------", "-----","-----", "-----","-----", "-----");
   fflush(fp);
 } 
 
@@ -512,58 +571,86 @@ MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm)
 }
 
 
-/***********************************************************************************
+/*
  * Function : Parsetrees2Alignment()
- *            
- *            EPN Modified to optionally print out all consensus columns (even those
- *            that have all gaps aligned to them) if the --full option was used.
- ***********************************************************************************/
-
-MSA *
-Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt, 
-		     Parsetree_t **tr, int nseq, int do_full)
+ *
+ * Purpose:   Creates a MSA from a set of parsetrees and a CM.
+ *
+ * 
+ * Args:     cm         - the CM the CP9 was built from, needed to get emitmap,
+ *                        so we know where to put EL transitions
+ *           abc        - alphabet to use to create the return MSA
+ *           sq         - sequences, must be digitized (we check for it)
+ *           wgt        - weights for seqs, NULL for none
+ *           nseq       - number of sequences
+ *           tr         - array of tracebacks
+ *           do_full    - TRUE to always include all match columns in alignment
+ *           do_matchonly - TRUE to ONLY include match columns
+ *           ret_msa    - MSA, alloc'ed/created here
+ *
+ * Return:   eslOK on succes, eslEMEM on memory error.
+ *           MSA structure in ret_msa, caller responsible for freeing.
+ *
+ * Returns:   eslOK on success, eslEMEM on memory error, 
+ *            Also ret_msa is filled with a new MSA.
+ *
+ */
+int
+Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt, 
+		     Parsetree_t **tr, int nseq, int do_full, int do_matchonly, 
+		     ESL_MSA **ret_msa)
 {
-  MSA         *msa;          /* multiple sequence alignment */
-  CMEmitMap_t *emap;         /* consensus emit map for the CM */
+  /* Contract check. We allow the caller to specify the alphabet they want the 
+   * resulting MSA in, but it has to make sense (see next few lines). */
+  if(cm->abc->type == eslRNA)
+    { 
+      if(abc->type != eslRNA && abc->type != eslDNA)
+	esl_fatal("ERROR in Parsetrees2Alignment(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
+    }
+  else if(cm->abc->K != abc->K)
+    esl_fatal("ERROR in Parsetrees2Alignment(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
+
+  int          status;       /* easel status flag */
+  ESL_MSA     *msa   = NULL; /* multiple sequence alignment */
+  CMEmitMap_t *emap  = NULL; /* consensus emit map for the CM */
   int          i;            /* counter over traces */
   int          v, nd;        /* state, node indices */
   int          cpos;         /* counter over consensus positions (0)1..clen */
-  int         *matuse;       /* TRUE if we need a cpos in mult alignment */
-  int         *iluse;        /* # of IL insertions after a cpos for 1 trace */
-  int         *eluse;        /* # of EL insertions after a cpos for 1 trace */
-  int         *iruse;        /* # of IR insertions after a cpos for 1 trace */
-  int         *maxil;        /* max # of IL insertions after a cpos */
-  int         *maxel;        /* max # of EL insertions after a cpos */
-  int         *maxir;        /* max # of IR insertions after a cpos */
-  int	      *matmap;       /* apos corresponding to a cpos */
-  int         *ilmap;        /* first apos for an IL following a cpos */
-  int         *elmap;        /* first apos for an EL following a cpos */
-  int         *irmap;        /* first apos for an IR following a cpos */
+  int         *matuse= NULL; /* TRUE if we need a cpos in mult alignment */
+  int         *iluse = NULL; /* # of IL insertions after a cpos for 1 trace */
+  int         *eluse = NULL; /* # of EL insertions after a cpos for 1 trace */
+  int         *iruse = NULL; /* # of IR insertions after a cpos for 1 trace */
+  int         *maxil = NULL; /* max # of IL insertions after a cpos */
+  int         *maxel = NULL; /* max # of EL insertions after a cpos */
+  int         *maxir = NULL; /* max # of IR insertions after a cpos */
+  int	      *matmap= NULL; /* apos corresponding to a cpos */
+  int         *ilmap = NULL; /* first apos for an IL following a cpos */
+  int         *elmap = NULL; /* first apos for an EL following a cpos */
+  int         *irmap = NULL; /* first apos for an IR following a cpos */
   int          alen;	     /* length of msa in columns */
   int          apos;	     /* position in an aligned sequence in MSA */
   int          rpos;	     /* position in an unaligned sequence in dsq */
   int          tpos;         /* position in a parsetree */
   int          el_len;	     /* length of an EL insertion in residues */
-  CMConsensus_t *con;        /* consensus information for the CM */
+  CMConsensus_t *con = NULL; /* consensus information for the CM */
   int          prvnd;	     /* keeps track of previous node for EL */
 
   emap = CreateEmitMap(cm);
 
-  matuse = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  iluse  = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  eluse  = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  iruse  = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  maxil  = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  maxel  = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  maxir  = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  matmap = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  ilmap  = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  elmap  = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  irmap  = MallocOrDie(sizeof(int)*(emap->clen+1));   
+  ESL_ALLOC(matuse, sizeof(int)*(emap->clen+1));   
+  ESL_ALLOC(iluse,  sizeof(int)*(emap->clen+1));   
+  ESL_ALLOC(eluse,  sizeof(int)*(emap->clen+1));   
+  ESL_ALLOC(iruse,  sizeof(int)*(emap->clen+1));   
+  ESL_ALLOC(maxil,  sizeof(int)*(emap->clen+1));   
+  ESL_ALLOC(maxel,  sizeof(int)*(emap->clen+1));   
+  ESL_ALLOC(maxir,  sizeof(int)*(emap->clen+1));   
+  ESL_ALLOC(matmap, sizeof(int)*(emap->clen+1));   
+  ESL_ALLOC(ilmap,  sizeof(int)*(emap->clen+1));   
+  ESL_ALLOC(elmap,  sizeof(int)*(emap->clen+1));   
+  ESL_ALLOC(irmap,  sizeof(int)*(emap->clen+1));   
   
   for (cpos = 0; cpos <= emap->clen; cpos++) 
     {
-      /* EPN modified only following 4 lines to allow --full option */
       if(!do_full || cpos == 0)
 	matuse[cpos] = 0;
       else
@@ -651,12 +738,17 @@ Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt,
   /* We're getting closer.
    * Now we can allocate for the MSA.
    */
-  msa = MSAAlloc(nseq, alen);
+  msa = esl_msa_Create(nseq, alen);
   msa->nseq = nseq;
   msa->alen = alen;
+  msa->abc  = (ESL_ALPHABET *) abc;
 
   for (i = 0; i < nseq; i++)
     {
+      /* Contract check */
+      if(! (sq[i]->flags & eslSQ_DIGITAL))
+	esl_fatal("ERROR in Parsetrees2Alignment(), sq %d is not digitized.\n", i);
+
       /* Initialize the aseq with all pads '.' (in insert cols) 
        * and deletes '-' (in match cols).
        */
@@ -683,33 +775,33 @@ Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt,
 	    cpos = emap->lpos[nd];
 	    apos = matmap[cpos];
 	    rpos = tr[i]->emitl[tpos];
-	    msa->aseq[i][apos] = Alphabet[(int) dsq[i][rpos]];
+	    msa->aseq[i][apos] = abc->sym[sq[i]->dsq[rpos]];
 
 	    cpos = emap->rpos[nd];
 	    apos = matmap[cpos];
 	    rpos = tr[i]->emitr[tpos];
-	    msa->aseq[i][apos] = Alphabet[(int) dsq[i][rpos]];
+	    msa->aseq[i][apos] = abc->sym[sq[i]->dsq[rpos]];
 	    break;
 	    
 	  case ML_st:
 	    cpos = emap->lpos[nd];
 	    apos = matmap[cpos];
 	    rpos = tr[i]->emitl[tpos];
-	    msa->aseq[i][apos] = Alphabet[(int) dsq[i][rpos]];
+	    msa->aseq[i][apos] = abc->sym[sq[i]->dsq[rpos]];
 	    break;
 
 	  case MR_st:
 	    cpos = emap->rpos[nd];
 	    apos = matmap[cpos];
 	    rpos = tr[i]->emitr[tpos];
-	    msa->aseq[i][apos] = Alphabet[(int) dsq[i][rpos]];
+	    msa->aseq[i][apos] = abc->sym[sq[i]->dsq[rpos]];
 	    break;
 
 	  case IL_st:
 	    cpos = emap->lpos[nd];
 	    apos = ilmap[cpos] + iluse[cpos];
 	    rpos = tr[i]->emitl[tpos];
-	    msa->aseq[i][apos] = tolower((int) Alphabet[(int) dsq[i][rpos]]);
+	    msa->aseq[i][apos] = tolower((int) abc->sym[sq[i]->dsq[rpos]]);
 	    iluse[cpos]++;
 	    break;
 
@@ -723,7 +815,7 @@ Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt,
 	    apos = elmap[cpos]; 
 	    for (rpos = tr[i]->emitl[tpos]; rpos <= tr[i]->emitr[tpos]; rpos++)
 	      {
-		msa->aseq[i][apos] = tolower((int) Alphabet[(int) dsq[i][rpos]]);
+		msa->aseq[i][apos] = tolower((int) abc->sym[sq[i]->dsq[rpos]]);
 		apos++;
 	      }
 	    break;
@@ -732,7 +824,7 @@ Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt,
 	    cpos = emap->rpos[nd]-1;  /* -1 converts to "following this one" */
 	    apos = irmap[cpos] - iruse[cpos];  /* writing backwards, 3'->5' */
 	    rpos = tr[i]->emitr[tpos];
-	    msa->aseq[i][apos] = tolower((int) Alphabet[(int) dsq[i][rpos]]);
+	    msa->aseq[i][apos] = tolower((int) abc->sym[sq[i]->dsq[rpos]]);
 	    iruse[cpos]++;
 	    break;
 
@@ -766,361 +858,15 @@ Parsetrees2Alignment(CM_t *cm, char **dsq, SQINFO *sqinfo, float *wgt,
   /* Gee, wasn't that easy?
    * Add the rest of the ("optional") information to the MSA.
    */
-  con = CreateCMConsensus(cm, 3.0, 1.0);
+  CreateCMConsensus(cm, abc, 3.0, 1.0, &con);
 
   /* "author" info */
-  msa->au   = MallocOrDie(sizeof(char) * (strlen(PACKAGE_VERSION)+10));
+  ESL_ALLOC(msa->au, sizeof(char) * (strlen(PACKAGE_VERSION)+10));
   sprintf(msa->au, "Infernal %s", PACKAGE_VERSION);
 
   for (i = 0; i < nseq; i++)
     {
-      msa->sqname[i] = sre_strdup(sqinfo[i].name, -1);
-      msa->sqlen[i]  = sqinfo[i].len;
-      if (sqinfo[i].flags & SQINFO_ACC)
-        MSASetSeqAccession(msa, i, sqinfo[i].acc);
-      if (sqinfo[i].flags & SQINFO_DESC)
-        MSASetSeqDescription(msa, i, sqinfo[i].desc);
-
-      /* TODO: individual SS annotations
-       */
-      
-      if (wgt == NULL) msa->wgt[i] = 1.0;
-      else             msa->wgt[i] = wgt[i];
-    }
-
-  /* Construct the secondary structure consensus line, msa->ss_cons:
-   *       IL, IR are annotated as .
-   *       EL is annotated as ~
-   *       and match columns use the structure code.
-   * Also the primary sequence consensus/reference coordinate system line,
-   * msa->rf.
-   */
-  msa->ss_cons = MallocOrDie(sizeof(char) * (alen+1));
-  msa->rf = MallocOrDie(sizeof(char) * (alen+1));
-  for (cpos = 0; cpos <= emap->clen; cpos++) 
-    {
-      if (matuse[cpos]) 
-	{ /* CMConsensus is off-by-one right now, 0..clen-1 relative to cpos's 1..clen */
-
-	  /* bug i1, xref STL7 p.12. Before annotating something as a base pair,
-	   * make sure the paired column is also present.
-	   */
-	  if (con->ct[cpos-1] != -1 && matuse[con->ct[cpos-1]+1] == 0) {
-	    msa->ss_cons[matmap[cpos]] = '.';
-	    msa->rf[matmap[cpos]]      = con->cseq[cpos-1];
-	  } else {
-	    msa->ss_cons[matmap[cpos]] = con->cstr[cpos-1];	
-	    msa->rf[matmap[cpos]]      = con->cseq[cpos-1];
-	  }
-	}
-      if (maxil[cpos] > 0) 
-	for (apos = ilmap[cpos]; apos < ilmap[cpos] + maxil[cpos]; apos++)
-	  {
-	    msa->ss_cons[apos] = '.';
-	    msa->rf[apos] = '.';
-	  }
-      if (maxel[cpos] > 0)
-	for (apos = elmap[cpos]; apos < elmap[cpos] + maxel[cpos]; apos++)
-	  {
-	    msa->ss_cons[apos] = '~';
-	    msa->rf[apos] = '~';
-	  }
-      if (maxir[cpos] > 0)	/* remember to write backwards */
-	for (apos = irmap[cpos]; apos > irmap[cpos] - maxir[cpos]; apos--)
-	  {
-	    msa->ss_cons[apos] = '.';
-	    msa->rf[apos] = '.';
-	  }
-    }
-  msa->ss_cons[alen] = '\0';
-  msa->rf[alen] = '\0';
-
-  FreeCMConsensus(con);
-  FreeEmitMap(emap);
-  free(matuse);
-  free(iluse);
-  free(eluse);
-  free(iruse);
-  free(maxil);
-  free(maxel);
-  free(maxir);
-  free(matmap);
-  free(ilmap);
-  free(elmap);
-  free(irmap);
-  return msa;
-}
-
-/***********************************************************************************
- * Function : ESL_Parsetrees2Alignment()
- *            
- *            EPN Modified to optionally print out all consensus columns (even those
- *            that have all gaps aligned to them) if the --full option was used.
- ***********************************************************************************/
-
-MSA *
-ESL_Parsetrees2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt, 
-			 Parsetree_t **tr, int nseq, int do_full, int do_matchonly)
-{
-  MSA         *msa;          /* multiple sequence alignment */
-  CMEmitMap_t *emap;         /* consensus emit map for the CM */
-  int          i;            /* counter over traces */
-  int          v, nd;        /* state, node indices */
-  int          cpos;         /* counter over consensus positions (0)1..clen */
-  int         *matuse;       /* TRUE if we need a cpos in mult alignment */
-  int         *iluse;        /* # of IL insertions after a cpos for 1 trace */
-  int         *eluse;        /* # of EL insertions after a cpos for 1 trace */
-  int         *iruse;        /* # of IR insertions after a cpos for 1 trace */
-  int         *maxil;        /* max # of IL insertions after a cpos */
-  int         *maxel;        /* max # of EL insertions after a cpos */
-  int         *maxir;        /* max # of IR insertions after a cpos */
-  int	      *matmap;       /* apos corresponding to a cpos */
-  int         *ilmap;        /* first apos for an IL following a cpos */
-  int         *elmap;        /* first apos for an EL following a cpos */
-  int         *irmap;        /* first apos for an IR following a cpos */
-  int          alen;	     /* length of msa in columns */
-  int          apos;	     /* position in an aligned sequence in MSA */
-  int          rpos;	     /* position in an unaligned sequence in dsq */
-  int          tpos;         /* position in a parsetree */
-  int          el_len;	     /* length of an EL insertion in residues */
-  CMConsensus_t *con;        /* consensus information for the CM */
-  int          prvnd;	     /* keeps track of previous node for EL */
-
-  emap = CreateEmitMap(cm);
-
-  matuse = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  iluse  = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  eluse  = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  iruse  = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  maxil  = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  maxel  = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  maxir  = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  matmap = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  ilmap  = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  elmap  = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  irmap  = MallocOrDie(sizeof(int)*(emap->clen+1));   
-  
-  for (cpos = 0; cpos <= emap->clen; cpos++) 
-    {
-      /* EPN modified only following 4 lines to allow --full option */
-      if(!do_full || cpos == 0)
-	matuse[cpos] = 0;
-      else
-	matuse[cpos] = 1;
-      maxil[cpos] = maxel[cpos] = maxir[cpos] = 0;
-      ilmap[cpos] = elmap[cpos] = irmap[cpos] = 0;
-    }
-
-  /* Look at all the traces; find maximum length of
-   * insert needed at each of the clen+1 possible gap
-   * points. (There are three types of insert, IL/EL/IR.)
-   * Also find whether we don't need some of the match
-   * (consensus) columns.
-   */
-  for (i = 0; i < nseq; i++) 
-    {
-      for (cpos = 0; cpos <= emap->clen; cpos++) 
-	iluse[cpos] = eluse[cpos] = iruse[cpos] = 0;
-
-      for (tpos = 0; tpos < tr[i]->n; tpos++)
-	{
-	  v  = tr[i]->state[tpos];
-	  if (cm->sttype[v] == EL_st) nd = prvnd;
-	  else                        nd = cm->ndidx[v];
-	  
-	  switch (cm->sttype[v]) {
-	  case MP_st: 
-	    matuse[emap->lpos[nd]] = 1;
-	    matuse[emap->rpos[nd]] = 1;
-	    break;
-	  case ML_st:
-	    matuse[emap->lpos[nd]] = 1;
-	    break;
-	  case MR_st:
-	    matuse[emap->rpos[nd]] = 1;
-	    break;
-	  case IL_st:
-	    iluse[emap->lpos[nd]]++;
-	    break;
-	  case IR_st:		
-            /* remember, convention on rpos is that IR precedes this
-             * cpos. Make it after the previous cpos, hence the -1. 
-	     */
-	    iruse[emap->rpos[nd]-1]++;
-	    break;
-	  case EL_st:
-	    el_len = tr[i]->emitr[tpos] - tr[i]->emitl[tpos] + 1;
-	    eluse[emap->epos[nd]] = el_len;
-            /* not possible to have >1 EL in same place; could assert this */
-	    break;
-	  }
-
-	  prvnd = nd;
-	} /* end looking at trace i */
-
-      for (cpos = 0; cpos <= emap->clen; cpos++) 
-	{
-	  if (iluse[cpos] > maxil[cpos]) maxil[cpos] = iluse[cpos];
-	  if (eluse[cpos] > maxel[cpos]) maxel[cpos] = eluse[cpos];
-	  if (iruse[cpos] > maxir[cpos]) maxir[cpos] = iruse[cpos];
-	}
-    } /* end calculating lengths used by all traces */
-  
-
-  /* Now we can calculate the total length of the multiple alignment, alen;
-   * and the maps ilmap, elmap, and irmap that turn a cpos into an apos
-   * in the multiple alignment: e.g. for an IL that follows consensus position
-   * cpos, put it at or after apos = ilmap[cpos] in aseq[][].
-   * IR's are filled in backwards (3'->5') and rightflushed.
-   */
-  alen = 0;
-  for (cpos = 0; cpos <= emap->clen; cpos++)
-    {
-      if (matuse[cpos]) {
-	matmap[cpos] = alen; 
-	alen++;
-      } else 
-	matmap[cpos] = -1;
-
-      ilmap[cpos] = alen; alen += maxil[cpos];
-      elmap[cpos] = alen; alen += maxel[cpos];
-      alen += maxir[cpos]; irmap[cpos] = alen-1; 
-    }
-
-  /* We're getting closer.
-   * Now we can allocate for the MSA.
-   */
-  msa = MSAAlloc(nseq, alen);
-  msa->nseq = nseq;
-  msa->alen = alen;
-
-  for (i = 0; i < nseq; i++)
-    {
-      /* Initialize the aseq with all pads '.' (in insert cols) 
-       * and deletes '-' (in match cols).
-       */
-      for (apos = 0; apos < alen; apos++)
-	msa->aseq[i][apos] = '.';
-      for (cpos = 0; cpos <= emap->clen; cpos++)
-	if (matmap[cpos] != -1) msa->aseq[i][matmap[cpos]] = '-';
-      msa->aseq[i][alen] = '\0';
-
-      /* Traverse this guy's trace, and place all his
-       * emitted residues.
-       */
-      for (cpos = 0; cpos <= emap->clen; cpos++)
-	iluse[cpos] = iruse[cpos] = 0;
-
-      for (tpos = 0; tpos < tr[i]->n; tpos++) 
-	{
-	  v  = tr[i]->state[tpos];
-	  if (cm->sttype[v] == EL_st) nd = prvnd;
-	  else                        nd = cm->ndidx[v];
-
-	  switch (cm->sttype[v]) {
-	  case MP_st:
-	    cpos = emap->lpos[nd];
-	    apos = matmap[cpos];
-	    rpos = tr[i]->emitl[tpos];
-	    msa->aseq[i][apos] = Alphabet[(int) sq[i]->dsq[rpos]];
-
-	    cpos = emap->rpos[nd];
-	    apos = matmap[cpos];
-	    rpos = tr[i]->emitr[tpos];
-	    msa->aseq[i][apos] = Alphabet[(int) sq[i]->dsq[rpos]];
-	    break;
-	    
-	  case ML_st:
-	    cpos = emap->lpos[nd];
-	    apos = matmap[cpos];
-	    rpos = tr[i]->emitl[tpos];
-	    msa->aseq[i][apos] = Alphabet[(int) sq[i]->dsq[rpos]];
-	    break;
-
-	  case MR_st:
-	    cpos = emap->rpos[nd];
-	    apos = matmap[cpos];
-	    rpos = tr[i]->emitr[tpos];
-	    msa->aseq[i][apos] = Alphabet[(int) sq[i]->dsq[rpos]];
-	    break;
-
-	  case IL_st:
-	    cpos = emap->lpos[nd];
-	    apos = ilmap[cpos] + iluse[cpos];
-	    rpos = tr[i]->emitl[tpos];
-	    msa->aseq[i][apos] = tolower((int) Alphabet[(int) sq[i]->dsq[rpos]]);
-	    iluse[cpos]++;
-	    break;
-
-	  case EL_st: 
-            /* we can assert eluse[cpos] always == 0 when we enter,
-	     * because we can only have one EL insertion event per 
-             * cpos. If we ever decide to regularize (split) insertions,
-             * though, we'll want to calculate eluse in the rpos loop.
-             */
-	    cpos = emap->epos[nd]; 
-	    apos = elmap[cpos]; 
-	    for (rpos = tr[i]->emitl[tpos]; rpos <= tr[i]->emitr[tpos]; rpos++)
-	      {
-		msa->aseq[i][apos] = tolower((int) Alphabet[(int) sq[i]->dsq[rpos]]);
-		apos++;
-	      }
-	    break;
-
-	  case IR_st: 
-	    cpos = emap->rpos[nd]-1;  /* -1 converts to "following this one" */
-	    apos = irmap[cpos] - iruse[cpos];  /* writing backwards, 3'->5' */
-	    rpos = tr[i]->emitr[tpos];
-	    msa->aseq[i][apos] = tolower((int) Alphabet[(int) sq[i]->dsq[rpos]]);
-	    iruse[cpos]++;
-	    break;
-
-	  case D_st:
-	    if (cm->stid[v] == MATP_D || cm->stid[v] == MATL_D) 
-	      {
-		cpos = emap->lpos[nd];
-		if (matuse[cpos]) msa->aseq[i][matmap[cpos]] = '-';
-	      }
-	    if (cm->stid[v] == MATP_D || cm->stid[v] == MATR_D) 
-	      {
-		cpos = emap->rpos[nd];
-		if (matuse[cpos]) msa->aseq[i][matmap[cpos]] = '-';
-	      }
-	    break;
-
-	  } /* end of the switch statement */
-
-
-	  prvnd = nd;
-	} /* end traversal over trace i. */
-
-      /* Here is where we could put some insert-regularization code
-       * a la HMMER: reach into each insert, find a random split point,
-       * and shove part of it flush-right. But, for now, don't bother.
-       */
-
-    } /* end loop over all parsetrees */
-
-
-  /* Gee, wasn't that easy?
-   * Add the rest of the ("optional") information to the MSA.
-   */
-  con = CreateCMConsensus(cm, 3.0, 1.0);
-
-  /* "author" info */
-  msa->au   = MallocOrDie(sizeof(char) * (strlen(PACKAGE_VERSION)+10));
-  sprintf(msa->au, "Infernal %s", PACKAGE_VERSION);
-
-  for (i = 0; i < nseq; i++)
-    {
-      msa->sqname[i] = sre_strdup(sq[i]->name, -1);
-      msa->sqlen[i]  = sq[i]->n;
-      /*if (sqinfo[i].flags & SQINFO_ACC)
-        MSASetSeqAccession(msa, i, sqinfo[i].acc);
-      if (sqinfo[i].flags & SQINFO_DESC)
-        MSASetSeqDescription(msa, i, sqinfo[i].desc);
-      */
-
+      esl_strdup(sq[i]->name, -1, &(msa->sqname[i]));
       /* TODO: individual SS annotations
        */
       if (wgt == NULL) msa->wgt[i] = 1.0;
@@ -1134,8 +880,8 @@ ESL_Parsetrees2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt,
    * Also the primary sequence consensus/reference coordinate system line,
    * msa->rf.
    */
-  msa->ss_cons = MallocOrDie(sizeof(char) * (alen+1));
-  msa->rf = MallocOrDie(sizeof(char) * (alen+1));
+  ESL_ALLOC(msa->ss_cons, (sizeof(char) * (alen+1)));
+  ESL_ALLOC(msa->rf,      (sizeof(char) * (alen+1)));
   for (cpos = 0; cpos <= emap->clen; cpos++) 
     {
       if (matuse[cpos]) 
@@ -1177,16 +923,16 @@ ESL_Parsetrees2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt,
   /* If we only want the match columns, shorten the alignment
    * by getting rid of the inserts. (Alternatively we could probably
    * simplify the building of the alignment, but all that pretty code
-   * above already existed, so we do this post-msa-building shortening.
+   * above already existed, so we do this post-msa-building shortening).
    */
   if(do_matchonly)
     {
       int *useme;
-      useme = MallocOrDie(sizeof(int) * (msa->alen));
+      ESL_ALLOC(useme, sizeof(int) * (msa->alen));
       esl_vec_ISet(useme, msa->alen, FALSE);
       for(cpos = 0; cpos <= emap->clen; cpos++)
 	if(matmap[cpos] != -1) useme[matmap[cpos]] = TRUE;
-      MSAShorterAlignment(msa, useme);
+      esl_msa_ColumnSubset(msa, useme);
       free(useme);
     }
 
@@ -1203,7 +949,25 @@ ESL_Parsetrees2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt,
   free(ilmap);
   free(elmap);
   free(irmap);
-  return msa;
+  *ret_msa = msa;
+  return eslOK;
+
+ ERROR:
+  if(con   != NULL)  FreeCMConsensus(con);
+  if(emap  != NULL)  FreeEmitMap(emap);
+  if(matuse!= NULL)  free(matuse);
+  if(iluse != NULL)  free(iluse);
+  if(eluse != NULL)  free(eluse);
+  if(iruse != NULL)  free(iruse);
+  if(maxil != NULL)  free(maxil);
+  if(maxel != NULL)  free(maxel);
+  if(maxir != NULL)  free(maxir);
+  if(matmap!= NULL)  free(matmap);
+  if(ilmap != NULL)  free(ilmap);
+  if(elmap != NULL)  free(elmap);
+  if(irmap != NULL)  free(irmap);
+  if(msa   != NULL)  esl_msa_Destroy(msa);
+  return status;
 }
 
 /* Function: ParsetreeScore_Global2Local()
@@ -1227,12 +991,12 @@ ESL_Parsetrees2Alignment(CM_t *cm, ESL_SQ **sq, float *wgt,
  *           
  */
 float
-ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, char *dsq, int print_flag)
+ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, int print_flag)
 {
   int   status;
   int tidx;			/* counter through positions in the parsetree        */
   int v,y;			/* parent, child state index in CM                   */
-  char symi, symj;		/* symbol indices for emissions, 0..Alphabet_iupac-1 */
+  ESL_DSQ symi, symj;		/* symbol indices for emissions, 0..Alphabet_iupac-1 */
   int mode;
   int    tp;                    /* trace index offset, for v's with > tidx (IL or IR)*/
   float *tr_esc;                /* [0..tr->n-1] score of emissions from each trace node */
@@ -1251,6 +1015,8 @@ ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, char *dsq, int print_flag
    * want to need to switch CM back and forth from local/global */
   if((!(cm->flags & CM_LOCAL_BEGIN)) || (!(cm->flags & CM_LOCAL_END)))
     esl_fatal("ERROR in ParsetreeScore_Global2Local() CM is not in local mode.\n");
+  if(dsq == NULL)
+    esl_fatal("ERROR in ParsetreeScore_Global2Local(), dsq is NULL.\n");
 
   /* Allocate and initialize */
   ESL_ALLOC(v2n_map, sizeof(int)   * cm->M); 
@@ -1295,27 +1061,27 @@ ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, char *dsq, int print_flag
 	      symj = dsq[tr->emitr[tidx]];
 	      if (mode == 3)
 		{
-		  if (symi < Alphabet_size && symj < Alphabet_size)
-		    tr_esc[tidx] = cm->esc[v][(int) (symi*Alphabet_size+symj)];
+		  if (symi < cm->abc->K && symj < cm->abc->K)
+		    tr_esc[tidx] = cm->esc[v][(int) (symi*cm->abc->K+symj)];
 		  else
-		    tr_esc[tidx] = DegeneratePairScore(cm->esc[v], symi, symj);
+		    tr_esc[tidx] = DegeneratePairScore(cm->abc, cm->esc[v], symi, symj);
 		}
 	      else if (mode == 2)
-		tr_esc[tidx] = LeftMarginalScore(cm->esc[v], symi);
+		tr_esc[tidx] = LeftMarginalScore(cm->abc, cm->esc[v], symi);
 	      else if (mode == 1)
-		tr_esc[tidx] = RightMarginalScore(cm->esc[v], symj);
+		tr_esc[tidx] = RightMarginalScore(cm->abc, cm->esc[v], symj);
 	    } 
 	  else if ( (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) && (mode == 3 || mode == 2) )
 	    {
 	      symi = dsq[tr->emitl[tidx]];
-	      if (symi < Alphabet_size) tr_esc[tidx] = cm->esc[v][(int) symi];
-	      else                      tr_esc[tidx] = DegenerateSingletScore(cm->esc[v], symi);
+	      if (symi < cm->abc->K) tr_esc[tidx] = cm->esc[v][(int) symi];
+	      else                   tr_esc[tidx] = esl_abc_FAvgScore(cm->abc, symi, cm->esc[v]);
 	    } 
-	  else if ( (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && (mode == 3 || mode == 1) )
+	  else if ( (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && (mode == 3 || mode == 2) )
 	    {
 	      symj = dsq[tr->emitr[tidx]];
-	      if (symj < Alphabet_size) tr_esc[tidx] = cm->esc[v][(int) symj];
-	      else                      tr_esc[tidx] = DegenerateSingletScore(cm->esc[v], symj);
+	      if (symj < cm->abc->K) tr_esc[tidx] = cm->esc[v][(int) symj];
+	      else                   tr_esc[tidx] = esl_abc_FAvgScore(cm->abc, symj, cm->esc[v]);
 	    }
 	}
     }
@@ -1408,7 +1174,7 @@ ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, char *dsq, int print_flag
  * cp9trace_s *ret_cp9_tr   - the CP9 trace to return, alloc'ed here
  */
 int
-Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, struct cp9trace_s **ret_cp9_tr)
+Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, CP9trace_t **ret_cp9_tr)
 {
   /* Check the contract */
   if(cm->cp9 == NULL || (!(cm->flags & CM_CP9)))
@@ -1417,7 +1183,7 @@ Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, struct cp9trace_s **ret_cp9_tr)
     esl_fatal("In Parsetree2CP9trace, cm->cp9map is NULL.\n");
 
   int status;                /* Easel status                            */
-  struct cp9trace_s *cp9_tr; /* the CP9 trace we're creating            */
+  CP9trace_t *cp9_tr; /* the CP9 trace we're creating            */
   int **ks_ct = NULL; /* [0..2][0..cp9->M] number of times each state was used
 		       * 1st D: 0 = MATCH, 1 = INSERT, 2 = DELETE */
   int  tidx;                 /* counter over parsetree nodes */
@@ -1536,5 +1302,5 @@ Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, struct cp9trace_s **ret_cp9_tr)
   for(ks = 0; ks < 3; ks++)
     if(ks_ct[ks] != NULL) free(ks_ct[ks]);
   if(ks_ct != NULL) free(ks_ct);
-  return -1;
+  return eslFAIL;
 }

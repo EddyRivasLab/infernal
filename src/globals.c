@@ -14,7 +14,6 @@
  ************************************************************
  */
 
-#include "squid.h"
 #include "structs.h"
 
 /* The symbol alphabet.

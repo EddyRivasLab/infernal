@@ -10,19 +10,21 @@
  *****************************************************************  
  */
 
+#include "esl_config.h"
 #include "config.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <math.h>
 
-#include "squid.h"
-#include "sre_stack.h"
-#include "vectorops.h"
+#include "easel.h"
+#include "esl_stack.h"
+#include "esl_vectorops.h"
 
-#include "structs.h"
 #include "funcs.h"
+#include "structs.h"
 
 static int *createMultifurcationOrderChart(CM_t *cm);
 static void createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface);
@@ -38,6 +40,8 @@ static void createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface);
  *            cm    - model
  *            cons  - consensus information for cm; see CreateCMConsensus()
  *            dsq   - digitized sequence
+ *            abc   - alphabet to create alignment with (often cm->abc)
+ *            i0    - position of first residue in sq to align (1 for first residue)
  *
  * Returns:   fancy alignment structure.
  *            Caller frees, with FreeFancyAli(ali).
@@ -45,10 +49,11 @@ static void createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface);
  * Xref:      STL6 p.58
  */
 Fancyali_t *
-CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
+CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, const ESL_ALPHABET *abc)
 {
+  int         status;
   Fancyali_t *ali;              /* alignment structure we're building        */
-  Nstack_t   *pda;              /* pushdown automaton used to traverse trace */
+  ESL_STACK  *pda;              /* pushdown automaton used to traverse trace */
   int         type;		/* type of pda move: PDA_RESIDUE, PDA_STATE  */
   int         v;		/* state index       */
   int         nd;		/* node index        */
@@ -69,7 +74,17 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
   int cpos_l, cpos_r;   	/* positions in consensus (1..clen)          */
   int spos_l, spos_r;		/* positions in dsq (1..L)                   */
 
-  ali = MallocOrDie(sizeof(Fancyali_t));
+  /* Contract check. We allow the caller to specify the alphabet they want the 
+   * resulting MSA in, but it has to make sense (see next few lines). */
+  if(cm->abc->type == eslRNA)
+    { 
+      if(abc->type != eslRNA && abc->type != eslDNA)
+	esl_fatal("ERROR in CreateFancyAli(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
+    }
+  else if(cm->abc->K != abc->K)
+    esl_fatal("ERROR in CreateFancyAli(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
+
+  ESL_ALLOC(ali, sizeof(Fancyali_t));
   
   /* Calculate length of the alignment display.
    *   MATP node        : +2
@@ -86,7 +101,7 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
 	nd = cm->ndidx[tr->state[ti-1]]; /* calculate node that EL replaced */
 	qinset     = cons->rpos[nd] - cons->lpos[nd] + 1;
 	tinset     = tr->emitr[ti]  - tr->emitl[ti]  + 1;
-	ninset     = MAX(qinset,tinset);
+	ninset     = ESL_MAX(qinset,tinset);
 	ali->len += 4;
 	do { ali->len++; ninset/=10; } while (ninset); /* poor man's (int)log_10(ninset)+1 */
 	continue;
@@ -106,15 +121,15 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
    * because of the way we deal w/ EL. 
    */
   if (cm->annote != NULL ) 
-    ali->annote = MallocOrDie(sizeof(char) * (ali->len+1));
+    ESL_ALLOC(ali->annote, sizeof(char) * (ali->len+1));
   else                     
     ali->annote = NULL;
-  ali->cstr     = MallocOrDie(sizeof(char) * (ali->len+1));
-  ali->cseq     = MallocOrDie(sizeof(char) * (ali->len+1));
-  ali->mid      = MallocOrDie(sizeof(char) * (ali->len+1));
-  ali->aseq     = MallocOrDie(sizeof(char) * (ali->len+1));
-  ali->scoord   = MallocOrDie(sizeof(int)  * ali->len);
-  ali->ccoord   = MallocOrDie(sizeof(int)  * ali->len);
+  ESL_ALLOC(ali->cstr, sizeof(char) * (ali->len+1));
+  ESL_ALLOC(ali->cseq, sizeof(char) * (ali->len+1));
+  ESL_ALLOC(ali->mid,  sizeof(char) * (ali->len+1));
+  ESL_ALLOC(ali->aseq, sizeof(char) * (ali->len+1));
+  ESL_ALLOC(ali->scoord, sizeof(int)  * ali->len);
+  ESL_ALLOC(ali->ccoord, sizeof(int)  * ali->len);
 
   if (cm->annote != NULL) memset(ali->annote, ' ', ali->len);
   memset(ali->cstr, ' ', ali->len);
@@ -127,29 +142,29 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
   /* Fill in the lines: traverse the traceback.
    */
   pos = 0;
-  pda = CreateNstack();
-  PushNstack(pda, 0);
-  PushNstack(pda, PDA_STATE);
-  while (PopNstack(pda, &type))
+  pda = esl_stack_ICreate();
+  esl_stack_IPush(pda, 0);
+  esl_stack_IPush(pda, PDA_STATE);
+  while (esl_stack_IPop(pda, &type) != eslEOD)
     {
       if (type == PDA_RESIDUE) {
 	if (cm->annote != NULL) { 
-	  PopNstack(pda, &rannote); 
+	  esl_stack_IPop(pda, &rannote); 
 	  ali->annote[pos] = rannote;
 	}
-	PopNstack(pda, &rstr); 	  ali->cstr[pos]   = rstr;
-	PopNstack(pda, &rcons);	  ali->cseq[pos]   = rcons;
-	PopNstack(pda, &rmid);	  ali->mid[pos]    = rmid;
-	PopNstack(pda, &rseq);    ali->aseq[pos]   = rseq;
-	PopNstack(pda, &cpos_r);  ali->ccoord[pos] = cpos_r;
-	PopNstack(pda, &spos_r);  ali->scoord[pos] = spos_r;
+	esl_stack_IPop(pda, &rstr); 	  ali->cstr[pos]   = rstr;
+	esl_stack_IPop(pda, &rcons);	  ali->cseq[pos]   = rcons;
+	esl_stack_IPop(pda, &rmid);	  ali->mid[pos]    = rmid;
+	esl_stack_IPop(pda, &rseq);       ali->aseq[pos]   = rseq;
+	esl_stack_IPop(pda, &cpos_r);     ali->ccoord[pos] = cpos_r;
+	esl_stack_IPop(pda, &spos_r);     ali->scoord[pos] = spos_r;
 	pos++;
 	continue;
       }
 	
       /* Else, we're PDA_STATE - e.g. dealing with a trace node.
        */
-      PopNstack(pda, &ti);
+      esl_stack_IPop(pda, &ti);
       v = tr->state[ti];
 
       /* Deal with EL (local ends, state M) as a special case.
@@ -162,7 +177,7 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
 	nd = 1 + cm->ndidx[tr->state[ti-1]]; /* calculate node that EL replaced */
 	qinset     = cons->rpos[nd] - cons->lpos[nd] + 1;
 	tinset     = tr->emitr[ti]  - tr->emitl[ti]  + 1;
-	ninset     = MAX(qinset,tinset);
+	ninset     = ESL_MAX(qinset,tinset);
 	numwidth = 0; do { numwidth++; ninset/=10; } while (ninset); /* poor man's (int)log_10(ninset)+1 */
 	memset(ali->cstr+pos,  '~', numwidth+4);
 	sprintf(ali->cseq+pos, "*[%*d]*", numwidth, qinset);
@@ -189,7 +204,7 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
 	if (cm->annote != NULL) lannote = '.';
 	lstr    = '.';
 	lcons   = '.';
-	if (mode == 3 || mode == 2) lseq = tolower((int) Alphabet[symi]);
+	if (mode == 3 || mode == 2) lseq = tolower((int) abc->sym[symi]);
         else                        lseq = '~';
 	cpos_l  = 0;
 	spos_l  = tr->emitl[ti];
@@ -198,7 +213,7 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
 	if (cm->annote != NULL) rannote = '.';
 	rstr    = '.';
 	rcons   = '.';
-	if (mode == 3 || mode == 1) rseq = tolower((int) Alphabet[symj]);
+	if (mode == 3 || mode == 1) rseq = tolower((int) abc->sym[symj]);
         else                        rseq = '~';
 	cpos_r  = 0;
 	spos_r  = tr->emitr[ti];
@@ -210,8 +225,8 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
 	  lcons  = cons->cseq[lc];
 	  cpos_l = lc+1;
 	  if (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st) {
-	    if      (mode == 3)         lseq = Alphabet[symi];
-            else if (mode == 2 && d>0 ) lseq = Alphabet[symi];
+	    if      (mode == 3)         lseq = abc->sym[symi];
+            else if (mode == 2 && d>0 ) lseq = abc->sym[symi];
             else                        lseq = '~';
 	    spos_l = tr->emitl[ti];
 	  } else {
@@ -227,8 +242,8 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
 	  rcons  = cons->cseq[rc];
 	  cpos_r = rc+1;
 	  if (cm->sttype[v] == MP_st || cm->sttype[v] == MR_st) {
-	    if      (mode == 3)         rseq = Alphabet[symj];
-            else if (mode == 1 && d>0 ) rseq = Alphabet[symj];
+	    if      (mode == 3)         rseq = abc->sym[symj];
+            else if (mode == 1 && d>0 ) rseq = abc->sym[symj];
             else                        rseq = '~';
 	    spos_r = tr->emitr[ti];
 	  } else {
@@ -250,23 +265,23 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
 	  }
         else if (mode != 3)
           ;
-	else if (IsCompensatory(cm->e[v], symi, symj)) 
+	else if (IsCompensatory(cm->abc, cm->e[v], symi, symj)) 
 	  lmid = rmid = ':';
-	else if (DegeneratePairScore(cm->esc[v], symi, symj) >= 0)
+	else if (DegeneratePairScore(cm->abc, cm->esc[v], symi, symj) >= 0)
 	  lmid = rmid = '+';
       } else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) {
 	if (lseq == toupper(lcons)) 
 	  lmid = lseq;
         else if ( (mode != 3) && (mode != 2) )
           ;
-	else if (DegenerateSingletScore(cm->esc[v], symi) > 0)
+	else if(esl_abc_FAvgScore(cm->abc, symi, cm->esc[v]) > 0)
 	  lmid = '+';
       } else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) {
 	if (rseq == toupper(rcons)) 
 	  rmid = rseq;
         else if ( (mode != 3) && (mode != 1) )
           ;
-	else if (DegenerateSingletScore(cm->esc[v], symj) > 0)
+	else if(esl_abc_FAvgScore(cm->abc, symj, cm->esc[v]) > 0)
 	  rmid = '+';
       }
 
@@ -284,26 +299,26 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
 	pos++;
       }
       if (do_right) {
-	PushNstack(pda, spos_r);
-	PushNstack(pda, cpos_r);
-	PushNstack(pda, (int) rseq);
-	PushNstack(pda, (int) rmid);
-	PushNstack(pda, (int) rcons);
-	PushNstack(pda, (int) rstr);
-	if (cm->annote != NULL) PushNstack(pda, (int) rannote);
-	PushNstack(pda, PDA_RESIDUE);
+	esl_stack_IPush(pda, spos_r);
+	esl_stack_IPush(pda, cpos_r);
+	esl_stack_IPush(pda, (int) rseq);
+	esl_stack_IPush(pda, (int) rmid);
+	esl_stack_IPush(pda, (int) rcons);
+	esl_stack_IPush(pda, (int) rstr);
+	if (cm->annote != NULL) esl_stack_IPush(pda, (int) rannote);
+	esl_stack_IPush(pda, PDA_RESIDUE);
       }
 
       /* Push the child trace nodes onto the PDA;
        * right first, so it pops last.
        */
       if (tr->nxtr[ti] != -1) {
-	PushNstack(pda, tr->nxtr[ti]);
-	PushNstack(pda, PDA_STATE);
+	esl_stack_IPush(pda, tr->nxtr[ti]);
+	esl_stack_IPush(pda, PDA_STATE);
       }
       if (tr->nxtl[ti] != -1) {
-	PushNstack(pda, tr->nxtl[ti]);
-	PushNstack(pda, PDA_STATE);
+	esl_stack_IPush(pda, tr->nxtl[ti]);
+	esl_stack_IPush(pda, PDA_STATE);
       }
     } /* end loop over the PDA; PDA now empty */
 	 
@@ -334,8 +349,12 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
   for (pos = 0; pos < ali->len; pos++)
     if (ali->ccoord[pos] != 0) ali->cto = ali->ccoord[pos];
 
-  FreeNstack(pda);
+  esl_stack_Destroy(pda);
   return ali;
+
+ ERROR:
+  esl_fatal("Memory allocation error.\n");
+  return NULL; /* not reached */
 }
 
 /* Function: PrintFancyAli()
@@ -357,6 +376,7 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, char *dsq)
 void
 PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp)
 {
+  int   status;
   char *buf;
   int   pos;
   int   linelength;
@@ -366,7 +386,7 @@ PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp)
   int   i2print, j2print; /* i,j indices we'll print, used to deal
 				 * with case of reverse complement */
   linelength = 60;
-  buf = MallocOrDie(sizeof(char) * (linelength + 1));
+  ESL_ALLOC(buf, sizeof(char) * (linelength + 1));
   buf[linelength] = '\0';
   for (pos = 0; pos < ali->len; pos += linelength)
     {
@@ -440,6 +460,10 @@ PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp)
     }
   free(buf);
   fflush(fp);
+  return;
+
+ ERROR:
+  esl_fatal("Memory allocation error.\n");
 }
 
 
@@ -488,17 +512,30 @@ FreeFancyAli(Fancyali_t *ali)
  *                AAGGGAACCCTTGGGTGGGTTCCACAACCCAA   
  *
  * Args:      cm         - the model
+ *            abc        - alphabet to create con->cseq with (often cm->abc)
  *            pthresh    - bit score threshold for base pairs to be lowercased
  *            sthresh    - bit score threshold for singlets to be lowercased
  *            
- * Returns:   CMConsensus_t structure.
+ * Returns:   <eslOK> on success, <eslEMEM> on memory error.
+8             CMConsensus_t structure in *ret_cons.
  *            Caller frees w/ FreeCMConsensus().
  *
  * Xref:      STL6 p.58.
  */
-CMConsensus_t *
-CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
+int
+CreateCMConsensus(CM_t *cm, const ESL_ALPHABET *abc, float pthresh, float sthresh, CMConsensus_t **ret_cons)
 {
+  /* Contract check. We allow the caller to specify the alphabet they want the 
+   * resulting MSA in, but it has to make sense (see next few lines). */
+  if(cm->abc->type == eslRNA)
+    { 
+      if(abc->type != eslRNA && abc->type != eslDNA)
+	esl_fatal("ERROR in CreateCMConsensus(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
+    }
+  else if(cm->abc->K != abc->K)
+    esl_fatal("ERROR in CreateCMConsensus(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
+
+  int       status;
   CMConsensus_t *con;           /* growing consensus info */
   char     *cseq;               /* growing consensus sequence display string   */
   char     *cstr;               /* growing consensus structure display string  */
@@ -506,7 +543,7 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
   int      *lpos, *rpos;        /* maps node->consensus position, [0..nodes-1] */
   int       cpos;		/* current position in cseq, cstr              */
   int       nalloc;		/* current allocated length of cseq, cstr      */
-  Nstack_t *pda;                /* pushdown automaton used to traverse model   */
+  ESL_STACK *pda;               /* pushdown automaton used to traverse model   */
   int      *multiorder;         /* "height" of each node (multifurcation order), [0..nodes-1] */
   int      *inface;             /* face count for each node, inside */
   int      *outface;            /* face count for each node, outside */
@@ -516,12 +553,13 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
   char      lstruc, rstruc;
   int       x;
   int       pairpartner;	/* coord of left pairing partner of a right base */
+  void     *tmp;                /* for ESL_RALLOC */
 
-  lpos    = MallocOrDie(sizeof(int) * cm->nodes);
-  rpos    = MallocOrDie(sizeof(int) * cm->nodes);
-  cseq    = MallocOrDie(sizeof(char) * 100);
-  cstr    = MallocOrDie(sizeof(char) * 100);
-  ct      = MallocOrDie(sizeof(int)  * 100);
+  ESL_ALLOC(lpos, sizeof(int) * cm->nodes);
+  ESL_ALLOC(rpos, sizeof(int) * cm->nodes);
+  ESL_ALLOC(cseq, sizeof(char) * 100);
+  ESL_ALLOC(cstr, sizeof(char) * 100);
+  ESL_ALLOC(ct,   sizeof(int)  * 100);
   nalloc  = 100;
   cpos    = 0;
 
@@ -531,16 +569,16 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
   multiorder = createMultifurcationOrderChart(cm);
   createFaceCharts(cm, &inface, &outface);
 
-  pda = CreateNstack();
-  PushNstack(pda, 0);
-  PushNstack(pda, PDA_STATE);
-  while (PopNstack(pda, &type)) {
+  pda = esl_stack_ICreate();
+  esl_stack_IPush(pda, 0);
+  esl_stack_IPush(pda, PDA_STATE);
+  while (esl_stack_IPop(pda, &type) != eslEOD) {
     if (type == PDA_RESIDUE) 
       {
-	PopNstack(pda, &x); rchar  = (char) x;
-	PopNstack(pda, &x); rstruc = (char) x;
-	PopNstack(pda, &pairpartner); 
-	PopNstack(pda, &nd);
+	esl_stack_IPop(pda, &x); rchar  = (char) x;
+	esl_stack_IPop(pda, &x); rstruc = (char) x;
+	esl_stack_IPop(pda, &pairpartner); 
+	esl_stack_IPop(pda, &nd);
 	rpos[nd]   = cpos;
 	cseq[cpos] = rchar;
 	cstr[cpos] = rstruc;
@@ -550,12 +588,12 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
       }
     else if (type == PDA_MARKER) 
       {
-	PopNstack(pda, &nd);
+	esl_stack_IPop(pda, &nd);
 	rpos[nd]   = cpos;
       }
     else if (type == PDA_STATE) 
       {
-	PopNstack(pda, &v);
+	esl_stack_IPop(pda, &v);
 	nd    = cm->ndidx[v];
 	lchar = rchar = lstruc = rstruc = 0;
 
@@ -564,9 +602,9 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
 	 */
 	if (cm->stid[v] == MATP_MP) 
 	  {
-	    x = FArgMax(cm->esc[v], Alphabet_size*Alphabet_size);
-	    lchar = Alphabet[x / Alphabet_size];
-	    rchar = Alphabet[x % Alphabet_size];
+	    x = esl_vec_FArgMax(cm->esc[v], abc->K*abc->K);
+	    lchar = abc->sym[x / abc->K];
+	    rchar = abc->sym[x % abc->K];
 	    if (cm->esc[v][x] < pthresh) {
 	      lchar = tolower((int) lchar);
 	      rchar = tolower((int) rchar);
@@ -578,8 +616,8 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
 	    default: lstruc = '{'; rstruc = '}'; break;
 	    }
 	} else if (cm->stid[v] == MATL_ML) {
-	  x = FArgMax(cm->esc[v], Alphabet_size);
-	  lchar = Alphabet[x];
+	  x = esl_vec_FArgMax(cm->esc[v], cm->abc->K);
+	  lchar = abc->sym[x];
 	  if (cm->esc[v][x] < sthresh) lchar = tolower((int) lchar);
 	  if      (outface[nd] == 0)                    lstruc = ':'; /* external ss */
 	  else if (inface[nd] == 0 && outface[nd] == 1) lstruc = '_'; /* hairpin loop */
@@ -587,8 +625,8 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
 	  else                                          lstruc = ','; /* multiloop */
 	  rstruc = ' ';
 	} else if (cm->stid[v] == MATR_MR) {
-	  x = FArgMax(cm->esc[v], Alphabet_size);
-	  rchar = Alphabet[x];
+	  x = esl_vec_FArgMax(cm->esc[v], cm->abc->K);
+	  rchar = abc->sym[x];
 	  if (cm->esc[v][x] < sthresh) rchar = tolower((int) rchar);
 	  if      (outface[nd] == 0)                    rstruc = ':'; /* external ss */
 	  else if (inface[nd] == 0 && outface[nd] == 1) rstruc = '?'; /* doesn't happen */
@@ -608,15 +646,15 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
 	  cpos++;
 	}
 	if (rchar) {
-	  PushNstack(pda, nd);
-	  if (lchar) PushNstack(pda, cpos-1);
-	  else       PushNstack(pda, -1);
-	  PushNstack(pda, rstruc);
-	  PushNstack(pda, rchar);
-	  PushNstack(pda, PDA_RESIDUE);
+	  esl_stack_IPush(pda, nd);
+	  if (lchar) esl_stack_IPush(pda, cpos-1);
+	  else       esl_stack_IPush(pda, -1);
+	  esl_stack_IPush(pda, rstruc);
+	  esl_stack_IPush(pda, rchar);
+	  esl_stack_IPush(pda, PDA_RESIDUE);
 	} else {
-	  PushNstack(pda, nd);
-	  PushNstack(pda, PDA_MARKER);
+	  esl_stack_IPush(pda, nd);
+	  esl_stack_IPush(pda, PDA_MARKER);
 	}
 
 	/* Transit - to consensus states only.
@@ -624,40 +662,44 @@ CreateCMConsensus(CM_t *cm, float pthresh, float sthresh)
 	 * state without making assumptions about numbering or connectivity.
 	 */
 	if (cm->sttype[v] == B_st) {
-	  PushNstack(pda, cm->cnum[v]);     /* right S  */
-	  PushNstack(pda, PDA_STATE);
-	  PushNstack(pda, cm->cfirst[v]);   /* left S */
-	  PushNstack(pda, PDA_STATE);
+	  esl_stack_IPush(pda, cm->cnum[v]);     /* right S  */
+	  esl_stack_IPush(pda, PDA_STATE);
+	  esl_stack_IPush(pda, cm->cfirst[v]);   /* left S */
+	  esl_stack_IPush(pda, PDA_STATE);
 	} else if (cm->sttype[v] != E_st) {
 	  v = cm->nodemap[cm->ndidx[cm->cfirst[v] + cm->cnum[v] - 1]];
-	  PushNstack(pda, v);
-	  PushNstack(pda, PDA_STATE);
+	  esl_stack_IPush(pda, v);
+	  esl_stack_IPush(pda, PDA_STATE);
 	}
       } /*end PDA_STATE block*/
 
     if (cpos == nalloc) {
       nalloc += 100;
-      cseq = ReallocOrDie(cseq, sizeof(char) * nalloc);
-      cstr = ReallocOrDie(cstr, sizeof(char) * nalloc);
-      ct   = ReallocOrDie(ct,   sizeof(int)  * nalloc);
+      ESL_RALLOC(cseq, tmp, sizeof(char) * nalloc);
+      ESL_RALLOC(cstr, tmp, sizeof(char) * nalloc);
+      ESL_RALLOC(ct,   tmp, sizeof(int)  * nalloc);
     }
   }/* PDA now empty... done generating cseq, cstr, and node->consensus residue map */
   cseq[cpos] = '\0';
   cstr[cpos] = '\0';
 
-  FreeNstack(pda);
+  esl_stack_Destroy(pda);
   free(multiorder);
   free(inface);
   free(outface);
 
-  con = MallocOrDie(sizeof(CMConsensus_t));
+  ESL_ALLOC(con, sizeof(CMConsensus_t));
   con->cseq = cseq;
   con->cstr = cstr;
   con->ct   = ct;
   con->lpos = lpos;
   con->rpos = rpos;
   con->clen = cpos;
-  return con;
+  *ret_cons = con;
+  return eslOK;
+
+ ERROR:
+  return status;
 }
 
 void
@@ -702,12 +744,13 @@ FreeCMConsensus(CMConsensus_t *con)
 static int *
 createMultifurcationOrderChart(CM_t *cm)
 {
+  int status;
   int  v, nd, left, right;
   int *height;
   int *seg_has_pairs;
 
-  height        = MallocOrDie(sizeof(int) * cm->nodes);
-  seg_has_pairs = MallocOrDie(sizeof(int) * cm->nodes);
+  ESL_ALLOC(height,        sizeof(int) * cm->nodes);
+  ESL_ALLOC(seg_has_pairs, sizeof(int) * cm->nodes);
   for (nd = cm->nodes-1; nd >= 0; nd--)
     {
       v = cm->nodemap[nd];
@@ -723,14 +766,18 @@ createMultifurcationOrderChart(CM_t *cm)
 	{
 	  left  = cm->ndidx[cm->cfirst[v]]; 
 	  right = cm->ndidx[cm->cnum[v]];
-	  height[nd] = MAX(height[left] + seg_has_pairs[left],
-			   height[right] + seg_has_pairs[right]);
+	  height[nd] = ESL_MAX(height[left] + seg_has_pairs[left],
+			       height[right] + seg_has_pairs[right]);
 	}
       else
 	height[nd] = height[nd+1]; 
     }
   free(seg_has_pairs);
   return height;
+
+ ERROR:
+  esl_fatal("Memory allocation error.\n");
+  return 0; /* never reached */
 }	
 	
      
@@ -768,13 +815,14 @@ createMultifurcationOrderChart(CM_t *cm)
 static void
 createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface)
 {
+  int  status;
   int *inface;
   int *outface;
   int  nd, left, right, parent;
   int  v,w,y;
 
-  inface  = MallocOrDie(sizeof(int) * cm->nodes);
-  outface = MallocOrDie(sizeof(int) * cm->nodes);
+  ESL_ALLOC(inface,  sizeof(int) * cm->nodes);
+  ESL_ALLOC(outface, sizeof(int) * cm->nodes);
 
   /* inface - the number of faces below us in descendant
    *          subtrees. if 0, we're either external, or
@@ -829,6 +877,10 @@ createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface)
   
   *ret_inface  = inface;
   *ret_outface = outface;
+  return;
+
+ ERROR:
+  esl_fatal("Memory allocation error.\n");
 }
 	
 
@@ -887,21 +939,21 @@ MainBanner(FILE *fp, char *banner)
  * Returns:  TRUE or FALSE.
  */
 int
-IsCompensatory(float *pij, int symi, int symj)
+IsCompensatory(const ESL_ALPHABET *abc, float *pij, int symi, int symj)
 {
   int   x;
   float pi, pj;
 
-  if (symi >= Alphabet_size || symj >= Alphabet_size) 
+  if (symi >= abc->K || symj >= abc->K) 
     return FALSE;
 
   pi = pj = 0.;
-  for (x = 0; x < Alphabet_size; x++) 
+  for (x = 0; x < abc->K; x++) 
     {
-      pi += pij[symi*Alphabet_size + x];
-      pj += pij[x*Alphabet_size    + symi];
+      pi += pij[symi*abc->K + x];
+      pj += pij[x*abc->K    + symi];
     }
-  if (log(pij[symi*Alphabet_size+symj]) - log(pi) - log(pj) >= 0)
+  if (log(pij[symi*abc->K+symj]) - log(pi) - log(pj) >= 0)
     return TRUE;
   else 
     return FALSE;

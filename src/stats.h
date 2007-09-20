@@ -6,8 +6,10 @@
 
 #ifndef _stats_h
 #define _stats_h
-#include "esl_sqio.h"
+#include "esl_config.h"
 #include "config.h"
+
+#include "esl_sqio.h"
 
 extern CMStats_t *AllocCMStats(int np);
 extern void FreeCMStats(CMStats_t *cmstats);
@@ -19,8 +21,7 @@ extern int debug_print_cmstats(CMStats_t *cmstats, int has_fthr);
 extern int debug_print_gumbelinfo(GumbelInfo_t *evd);
 extern int debug_print_filterthrinfo(CMStats_t *cmstats, CP9FilterThr_t *fthr);
 
-extern int  get_gc_comp(char *seq, int start, int stop);
-
+extern int  get_gc_comp(ESL_SQ *sq, int start, int stop);
 extern void OLD_serial_make_histogram (int *gc_count, int *partitions, int num_partitions,
 				       CM_t *cm, int num_samples, 
 				       int sample_length, int doing_cp9_stats,
@@ -35,13 +36,13 @@ void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions
 			      int mpi_master_rank);
 #endif
 
-extern void GetDBInfo(ESL_SQFILE *sqfp, long *ret_N, double **ret_gc_ct);
+extern void GetDBInfo(const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, long *ret_N, double **ret_gc_ct);
 
 extern float e_to_score (float E, double *mu, double *lambda);
 
 extern double RJK_ExtremeValueE (float x, double mu, double lambda);
 
-extern char resolve_degenerate (char c);
+extern char resolve_degenerate (ESL_RANDOMNESS *r, char c);
 
 extern float MinCMScCutoff (CM_t *cm);
 extern float MinCP9ScCutoff (CM_t *cm);

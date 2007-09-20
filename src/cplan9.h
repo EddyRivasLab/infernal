@@ -94,6 +94,7 @@ typedef struct cplan9_s {
    *   manipulations, for efficiency in DP algorithms.
    * CPLAN9_HASPROBS flag is raised when these probs are all valid.
    */
+  const ESL_ALPHABET *abc;      /* pointer to the alphabet, usually points to cm->abc */
   int     M;                    /* length of the model (# nodes)        +*/
   float **t;                    /* transition prob's. t[0..M][0..9]   +*/
   float **mat;                  /* match emissions.  mat[1..M][0..3]   +*/ 
@@ -213,22 +214,6 @@ typedef struct cp9_dpmatrix_s {
   int padM;			/* extra pad in HMM length/columns   */
 } CP9_dpmatrix_t;
 
-/* Structure: CP9HMMFILE
- * 
- * Purpose:   An open HMM file or HMM library. See CP9_hmmio.c
- */
-struct CP9_hmmfile_s {
-  FILE    *f;			/* pointer to file opened for reading           */
-  SSIFILE *ssi;			/* pointer to open SSI index, or NULL           */
-  int (*parser)(struct CP9_hmmfile_s *, struct cplan9_s **);  /* parsing function    */
-  int   is_binary;		/* TRUE if format is a binary one               */
-  int   byteswap;               /* TRUE if binary and byteswapped               */
-
-  int       is_seekable;	/* TRUE if we use offsets in this HMM file  */
-  int       mode;		/* type of offset                           */
-  SSIOFFSET offset;		/* Disk offset for beginning of current HMM */
-};
-typedef struct CP9_hmmfile_s CP9HMMFILE; 
 
 /* CM Plan 9 model state types
  * used in traceback structure

@@ -7,6 +7,7 @@
 # for running on the cluster.
 #
 # Usage: perl rmark_MPI_cmsearch.pl
+#             <num procs to use>
 #             <.rmm file name>
 #             <.rmk file name>
 #             <seq dir with *.ali *.idx *.test and *.raw files>
@@ -81,7 +82,7 @@ $embed_file    = $seq_dir . "/" . $genome_root . ".ebd";
 
 if(! (-e ("rmark_process_glbf.pl"))) { die("ERROR, rmark_process_glbf.pl must exist in the current directory."); } 
 else { system("cp rmark_process_glbf.pl $run_dir"); } 
-if(! (-e ("rmark_times.pl"))) { die("ERROR, rmark_process_glbf.pl must exist in the current directory."); } 
+if(! (-e ("rmark_times.pl"))) { die("ERROR, rmark_times.pl must exist in the current directory."); } 
 else { system("cp rmark_times.pl $run_dir"); } 
 if(! (-e ("infernal2time.pl"))) { die("ERROR, infernal2time.pl must exist in the current directory."); } 
 else { system("cp infernal2time.pl $run_dir"); }
@@ -150,7 +151,7 @@ for($i = 0; $i < scalar(@fam_roots_arr); $i++)
 
     $cmsearch_call = "mpirun -l C $cms --noalign $cm $genome_file";
 
-    $exec_line = "qsub -N $job_name -o $out_name -b y -cwd -V -j y -pe lam-mpi-tight $nprocs \'" . $cmsearch_call . " > $cmsearch_name\'";
+    $exec_line = "qsub -q c05.q,c06.q,c07.q,c08.q,c09.q,c10.q,c11.q,c12.q,c13.q,c14.q -N $job_name -o $out_name -b y -cwd -V -j y -pe lam-mpi-tight $nprocs \'" . $cmsearch_call . " > $cmsearch_name\'";
     push(@exec_lines, $exec_line);
 }
 

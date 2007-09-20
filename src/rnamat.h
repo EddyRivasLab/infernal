@@ -1,5 +1,5 @@
 /*
- * rnacomp.h
+ * rnamat.h
  * 
  * Header file for API for RNA matrix routines.  Used in parsing alignment
  * into matrix and later reading in matrix.
@@ -11,13 +11,14 @@
 #ifndef _RNAMAT_H
 #define _RNAMAT_H
 
-#include "squid.h"
-#include "msa.h"
+#include "esl_config.h"
+#include "config.h"
+
+#include "easel.h"
+#include "esl_msa.h"
+
 #include "structs.h"
 
-#define RNA_ALPHABET_SIZE Alphabet_size
-
-#define RNA_ALPHABET "ACGU"
 #define RNAPAIR_ALPHABET "AAAACCCCGGGGUUUU"
 #define RNAPAIR_ALPHABET2 "ACGUACGUACGUACGU"
 
@@ -39,6 +40,7 @@ typedef struct _matrix_t {
  * Full matrix definition, includes the g background freq vector (added by EPN). 
  */
 typedef struct _fullmat_t {
+  const ESL_ALPHABET *abc;/* alphabet, we enforce it's eslRNA */
   matrix_t *unpaired;
   matrix_t *paired;
   char     *name;
@@ -50,12 +52,11 @@ typedef struct _fullmat_t {
 			  * they're log odds scores, or unfilled */
 } fullmat_t;
 
-/* Returns true if pos. C of seq B of msa A is a gap as defined by isgap(c) 
-   from squid */
-#define is_rna_gap(A, B, C) (isgap(A->aseq[B][C]))
+/* Returns true if pos. C of seq B of msa A is a gap */
+#define is_rna_gap(A, B, C) (esl_abc_CIsGap(A->abc, A->aseq[B][C]))
 
-/* Returns true if pos. C of seq B of msa A is an uppercase A, C, G, T, or U */
-#define is_defined_rna_nucleotide(A, B, C) (A->aseq[B][C] == 'A' || A->aseq[B][C] == 'C' || A->aseq[B][C] == 'G' || A->aseq[B][C] == 'T' || A->aseq[B][C] == 'U')
+/* Returns true if position C of digitized sequence B of msa A is a canonical */
+#define is_defined_rna_nucleotide(A, B, C) (esl_abc_CIsCanonical(A->abc, A->aseq[B][C]))
 
 /*
  * Maps c as follows
@@ -102,7 +103,7 @@ matrix_t *setup_matrix (int size);
  * Actually count the basepairs and gaps into the fullmat simply by summing
  * to existing values there.  Also counts nt counts to background_nt
  */
-void count_matrix (MSA *msa, fullmat_t *fullmat, double *background_nt,
+void count_matrix (ESL_MSA *msa, fullmat_t *fullmat, double *background_nt,
 		   int cutoff_perc, int product_weights);
 
 /*
@@ -113,11 +114,10 @@ void print_matrix (FILE *fp, fullmat_t *fullmat);
 /*
  * Read the matrix from a file
  */
-fullmat_t *OldReadMatrix(FILE *matfp);
-fullmat_t *ReadMatrix(FILE *matfp);
+fullmat_t *ReadMatrix(const ESL_ALPHABET *abc, FILE *matfp);
 
 /*
- * Opens matrix file, trying many different filenames
+ * Opens matrix file
  */
 FILE *MatFileOpen (char *matfile);
 
@@ -134,7 +134,7 @@ int ribosum_calc_targets(fullmat_t *fullmat);
 
 /* resolve degeneracies in a single seq MSA by replacing
  * with most likely target residue within degenerate alphabet */
-int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, MSA *msa);
+int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, ESL_MSA *msa);
 
 /*
  * Maps i as follows:

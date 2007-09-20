@@ -71,7 +71,11 @@
 
 /* --enable-mpi            MPI parallelization
  */
-#undef USE_MPI
+#undef HAVE_MPI
+
+/* Debugging hooks
+ */
+#undef cm_DEBUGLEVEL
 
 #endif /* CONFIGH_INCLUDED */
 

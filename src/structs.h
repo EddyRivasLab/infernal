@@ -12,11 +12,16 @@
  ***************************************************************** 
  */
 
-#include "squid.h"
-#include "ssi.h"               /* CMFILE supports SSI indexes */
+#include "esl_config.h"
+#include "config.h"
+
 #include "easel.h"
+#include "esl_dirichlet.h"
+#include "esl_random.h"
 #include "esl_sqio.h"
-#include "cplan9.h"
+
+#define USE_NEWLOGSUM 1
+#define USE_OLDLOGSUM 0
 
 /* various default parameters for CMs and CP9 HMMs */ 
 #define DEFAULT_CM_CUTOFF 0.1
@@ -29,7 +34,7 @@
 #define DEFAULT_HMMPAD 0
 #define DEFAULT_PBEGIN 0.05  /* EPN 06.29.07 (formerly 0.5) */
 #define DEFAULT_PEND   0.05  /* EPN 06.29.07 (formerly 0.5) */
-#define DEFAULT_ETARGET 1.46 /* EPN 07.10.07 (formerly (v0.7->v0.8) 1.46 */
+#define DEFAULT_ETARGET 0.54 /* EPN 07.10.07 (formerly (v0.7->v0.8)= 2.-0.54 = 1.46 */
 
 /* default num samples for CM and CP9 E-values */
 #define DEFAULT_NUM_SAMPLES 1000
@@ -45,19 +50,9 @@
 
 /* Alphabet information is declared here, and defined in globals.c.
  */
-#define MAXABET           4	/* max for Alphabet_size             */
-#define MAXDEGEN         17     /* maximum for Alphabet_iupac        */
-#define DIGITAL_GAP      126	/* see alphabet.c:DigitizeSequence() */
-#define DIGITAL_SENTINEL 127    
-#define INTSCALE    1000.0      /* scaling constant for floats to integer scores */
-#define LOGSUM_TBL  20000       /* controls precision of ILogsum()            */
-
-extern int   Alphabet_type;
-extern int   Alphabet_size;
-extern int   Alphabet_iupac;
-extern char *Alphabet;
-extern char  Degenerate[MAXDEGEN][MAXABET];
-extern int   DegenCount[MAXDEGEN];
+#define MAXABET     4
+#define CP9MAXABET  4 /* should be same as MAXABET */
+#define MAXDEGEN   17
 
 /* We're moderately paranoid about underflow and overflow errors, so
  * we do some checking on the magnitude of the scores.
@@ -86,11 +81,221 @@ extern int   DegenCount[MAXDEGEN];
 #define sreEXP2(x)  (exp((x) * 0.69314718 )) 
 #define epnEXP10(x) (exp((x) * 2.30258509 ))
 #define NOTZERO(x)  (fabs(x - 0.) > -1e6)
-
-/* For CM Plan 9 HMMs which has scores as integers */
 #define INFTY       987654321   /* infinity for purposes of integer DP cells       */
 
-/* State types. (cm->sttype[])
+/***********************************************************************************
+ * CM Plan 9 HMM information                                                       */
+
+/* Structure: cm_plan9_s
+ * 
+ * 03.10.06 EPN: Original intended use of CM plan 9 structure is to read a CM
+ * file, and build CM plan 9 HMM based on the CM, first by determining the 
+ * probabilities for each state of the HMM, and then logoddsifying the model. 
+ *
+ * Declaration of a CM Plan 9 profile-HMM structure.
+ * Modified from a plan 7 (with (hopefully) minimal change) to mirror a CM 
+ * as closely as possible.
+ * 
+ * The model has two forms:
+ * 1. The "core" model has 0..M nodes, node 0 is special, its "match" state
+ *    is really state B (which is forced silent by having hmm->mat[0] = NULL and
+ *    hmm->msc[0] = NULL), its "insert" state is really state N (with emission
+ *    probs hmm->ins[0]), and it has NO DELETE STATE. 
+ * 
+ *    hmm->t[0][CTMM]: 0. (B->M_1 transition is hmm->begin[1])
+ *    hmm->t[0][CTMI]: transition from B to N (I_0); 
+ *    hmm->t[0][CTMD]: transition from B to D_1;
+ *    hmm->t[0][CTME]: null (transition from B to an EL state is impossible)
+ *    hmm->t[0][CTIM]: transition from N to M_1;
+ *    hmm->t[0][CTII]: N self transition; 
+ *    hmm->t[0][CTID]: N -> D_1
+ *    hmm->t[0][CTDM]: null
+ *    hmm->t[0][CTDI]: null
+ *    hmm->t[0][CTDD]: null
+ *    
+ *    t[0..M] are the state transition probs. t[k][CTME] is an
+ *    end-local probability, the EL states can only be reached by a
+ *    subset of match states, this probability is -INFTY for states
+ *    that can't reach the EL. 
+ *
+ *    t[M] are special, because this node transits to the end (E
+ *    state). The E state is (sort-of) treated as match state M+1, as
+ *    t[M][CTIM] is the transition from I_M to E, t[M][CTDM] is the
+ *    transition from D_M to E. However, t[M][CTMM] is always 0.0,
+ *    the transition from M_M to E is end[hmm->M]; t[M][CTMD],
+ *    t[M][CTDD], t[M][CTDI] are set as 0.0.
+ *    
+ *    mat[1..M] are match emission probs.
+ *    ins[0..M] are insert emission probs.  (ins[0] is state N emission probs)
+ *
+ *    The CM_PLAN9_HASPROB flag is up when these all correspond to a fully normalized
+ *    profile HMM.
+ *    
+ * 2. The "logoddsified" model is the configured model, converted to
+ *    integer score form and ready for alignment algorithms. 
+ *    bsc, esc scores correspond to begin, and end probabilities.
+ *    
+ *    The CPLAN9_HASBITS flag is up when both of these are ready for
+ *    alignment.
+ *    
+ */
+typedef struct cplan9_s {
+  /* The main model in probability form: data-dependent probabilities.
+   * Transition probabilities are usually accessed as a
+   *   two-D array: hmm->t[k][CTMM], for instance. They are allocated
+   *   such that they can also be stepped through in 1D by pointer
+   *   manipulations, for efficiency in DP algorithms.
+   * CPLAN9_HASPROB flag is raised when these probs are all valid.
+   */
+  const ESL_ALPHABET *abc;      /* pointer to the alphabet, usually points to cm->abc */
+  int     M;                    /* length of the model (# nodes)        +*/
+  float **t;                    /* transition prob's. t[0..M][0..9]   +*/
+  float **mat;                  /* match emissions.  mat[1..M][0..3]   +*/ 
+  float **ins;                  /* insert emissions. ins[0..M][0..3] +*/
+
+  /* The unique states of CM Plan 9 in probability form.
+   * These are the algorithm-dependent, data-independent probabilities.
+   * Some parts of the code may briefly use a trick of copying tbd1
+   *   into begin[0]; this makes it easy to call FChoose() or FNorm()
+   *   on the resulting vector. However, in general begin[0] is not
+   *   a valid number.
+   */
+  float  *begin;                /* 1..M B->M state transitions                +*/
+  float  *end;                  /* 1..M M->E state transitions (!= a dist!)   +*/
+
+  /* The model's log-odds score form.
+   * These are created from the probabilities by LogoddsifyHMM_cp9().
+   * By definition, null[] emission scores are all zero.
+   * Note that emission distributions are over possible alphabet symbols,
+   * not just the unambiguous protein or DNA alphabet: we
+   * precalculate the scores for all IUPAC degenerate symbols we
+   * may see. 
+   *
+   * Note the reversed indexing on msc, isc, tsc -- for efficiency reasons.
+   * They're not probability vectors any more so we can reorder them
+   * without wildly complicating our life.
+   * 
+   * The _mem ptrs are where the real memory is alloc'ed and free'd,
+   * as opposed to where it is accessed.
+   * This came in with Erik Lindahl's altivec port; it allows alignment on
+   * 16-byte boundaries. In the non-altivec code, this is just a little
+   * redundancy; tsc and tsc_mem point to the same thing, for example.
+   * 
+   * CPLAN9_HASBITS flag is up when these scores are valid.
+   */
+  int  **tsc;                   /* transition scores     [0.9][0.M]       +*/
+  int  **msc;                   /* match emission scores [0.MAXDEGEN-1][1.M] +*/
+  int  **isc;                   /* ins emission scores   [0.MAXDEGEN-1][0.M] +*/
+  int   *bsc;                   /* begin transitions     [1.M]              +*/
+  int   *esc;			/* end transitions       [1.M]              +*/
+  int   *tsc_mem, *msc_mem, *isc_mem, *bsc_mem, *esc_mem;
+
+  /* The null model probabilities.
+   */
+  float  null[CP9MAXABET];         /* "random sequence" emission prob's     +*/
+  float  p1;                       /* null model loop probability           +*/
+  float  el_self;                  /* EL transition self loop probability    */
+  int    el_selfsc;                /* EL transition self loop score          */
+  int   *has_el;                   /* has_el[k] is TRUE if node k has an EL state */
+  int   *el_from_ct;               /* el_from_ct[k] is the number of HMM nodes kp
+				    * where a transition from kp's EL state to k's
+				    * match state is valid. */
+  int  **el_from_idx;              /* [0..M+1][] el_from_idx[k] is an array of 
+				    * size el_from_idx[k] each element is a node 
+				    * kp where a transition from kp's EL state 
+				    * to k's match state is allowed */
+  int  **el_from_cmnd;             /* [0..M+1][] el_from_cmnd[k] is an array of 
+				    * size el_from_idx[k] element i is the CM
+				    * node that the EL transition to k to 
+				    * el_from_idx[k][i] corresponds with, used
+				    * only for building alignments from traces. */
+  int flags;                       /* bit flags indicating state of HMM, valid data +*/
+} CP9_t;
+
+/* Flag codes for cplan9->flags.
+ */
+#define CPLAN9_HASBITS     (1<<0)    /* raised if model has log-odds scores      */
+#define CPLAN9_HASPROB     (1<<1)    /* raised if model has probabilities        */
+#define CPLAN9_LOCAL_BEGIN (1<<2)    /* raised if model has local begins turned on */
+#define CPLAN9_LOCAL_END   (1<<3)    /* raised if model has S/W local ends turned on */
+#define CPLAN9_EL          (1<<4)    /* raised if model has EL local ends turned on */
+
+/* Indices for CM Plan9 main model state transitions.
+ * Used for indexing hmm->t[k][]
+ * mnemonic: Cm plan 9 Transition from Match to Match = CTMM
+ */
+#define CTMM  0
+#define CTMI  1
+#define CTMD  2
+#define CTME  3
+#define CTIM  4
+#define CTII  5
+#define CTID  6
+#define CTDM  7
+#define CTDI  8
+#define CTDD  9
+
+/* Declaration of CM Plan9 dynamic programming matrix structure.
+ */
+typedef struct cp9_dpmatrix_s {
+  int **mmx;			/* match scores  [0.1..N][0..M] */
+  int **imx;			/* insert scores [0.1..N][0..M] */
+  int **dmx;			/* delete scores [0.1..N][0..M] */
+  int **elmx;			/* end local scores [0.1..N][0..M] */
+  int  *erow;                   /* score for E state [0.1..N] */
+  /* Hidden ptrs where the real memory is kept; this trick was
+   * introduced by Erik Lindahl with the Altivec port; it's used to
+   * align xmx, etc. on 16-byte boundaries for cache optimization.
+   */
+  void *mmx_mem, *imx_mem, *dmx_mem, *elmx_mem;
+
+  int *  workspace;      /* Workspace for altivec (aligned ptr)    */
+  int *  workspace_mem;  /* Actual allocated pointer for workspace */
+  
+  /* The other trick brought in w/ the Lindahl Altivec port; dp matrix
+   * is retained and grown, rather than reallocated for every HMM or sequence.
+   * Keep track of current allocated-for size in rows (sequence length N)
+   * and columns (HMM length M). Also keep track of pad sizes: how much
+   * we should overallocate rows or columns when we reallocate. If pad = 0,
+   * then we're not growable in this dimension.
+   */
+  int maxN;			/* alloc'ed for seq of length N; N+1 rows */
+  int maxM;			/* alloc'ed for HMM of length M; M+1 cols */
+
+  int padN;			/* extra pad in sequence length/rows */
+  int padM;			/* extra pad in HMM length/columns   */
+} CP9_dpmatrix_t;
+
+
+/* CM Plan 9 model state types
+ * used in traceback structure
+ */
+#define CSTBOGUS 0
+#define CSTM     1
+#define CSTD     2
+#define CSTI     3
+#define CSTB     4  /* M_0 the B state */
+#define CSTE     5  /* the end state, M_(k+1) */
+#define CSTEL    6  /* an EL (end local) state */
+/* Structure: cp9trace_s
+ * 
+ * Traceback structure for alignments of model to sequence.
+ * Each array in a trace_s is 0..tlen-1.
+ * Element 0 is always to M_0 (match state of node 0)
+ * Element tlen-1 is always to the E_st
+ */
+typedef struct cp9trace_s {
+  int   tlen;                   /* length of traceback                           */
+  char *statetype;              /* state type used for alignment                 */
+  int  *nodeidx;                /* idx of aligned node, 0..M if M or I 1..M if D */
+  int  *pos;                    /* position in dsq, 1..L, or 0 if none           */ 
+} CP9trace_t;
+
+/************************************************************************************
+ * End of CM Plan 9 HMM information.
+ ************************************************************************************/
+
+/* CM State types. (cm->sttype[])
  */
 #define MAXCONNECT 6            /* maximum number of states per node */
 
@@ -105,7 +310,7 @@ extern int   DegenCount[MAXDEGEN];
 #define B_st     8		/* bifurcation  */
 #define EL_st    9              /* local end    */
 
-/* Node types (8) (cm->ndtype[])
+/* CM Node types (8) (cm->ndtype[])
  */
 #define NODETYPES 8		
 
@@ -119,7 +324,7 @@ extern int   DegenCount[MAXDEGEN];
 #define ROOT_nd   6		
 #define END_nd    7
 
-/* Unique state identifiers  (cm->stid[])
+/* CM Unique state identifiers  (cm->stid[])
  */
 #define UNIQUESTATES 21
 
@@ -217,6 +422,30 @@ typedef struct cp9filterthr_s {
   int   was_fast;      /* TRUE if hacky fast method for calcing thresholds was used */
 } CP9FilterThr_t;
 
+
+/* Structure SubFilterInfo_t: Information on possible sub CM filters for a CM.                           
+ * States of a CM are grouped into 'start groups'. There is one start group                              
+ * for each start state of the CM. A 'start group' begins with a start state and ends                    
+ * with a E or B state, and includes all states in between.                                              
+ */                                                                                                      
+typedef struct subfilterinfo_s {
+  int    M;            /* # states in the CM */                                                          
+  int    nstarts;      /* # start states (and start groups) in the CM */                                 
+  int    ncands;       /* number of candidate states, these *could* be sub CM roots */                   
+  double beta;         /* beta used for calculating avglenA */                                           
+  float  minlen;       /* minimum average length (avglen) a candidate state must have */                 
+  int   *iscandA;      /* [0..v..cm->M-1] TRUE if state v is a candidate sub CM root, FALSE otherwise */   
+  float *avglenA;      /* [0..v..cm->M-1] average length of a hit rooted at v (from QDB) */                
+  int   *startA;       /* [0..i..cm->M-1] start group this state belongs to */                               
+  int   *firstA;       /* [0..i..nstarts-1], first state in start state i's group */                     
+  int   *lastA;        /* [0..i..nstarts-1], last state in start state i's group */                      
+  int  **withinAA;     /* [0..i..nstarts-1][0..j..nstarts-1] = TRUE if start state j's group             
+                        * is within start state i's group.                                               
+                        *  emap->startA[cm->nodemap[i]]->lpos < emap->startA[cm->nodemap[j]]->lpos  &&   
+                        *  emap->endA  [cm->nodemap[i]]->rpos > emap->endA  [cm->nodemap[j]]->rpos       
+                        */			
+} SubFilterInfo_t;
+
 /* Structure CMStats_t
  */
 typedef struct cmstats_s {
@@ -227,6 +456,7 @@ typedef struct cmstats_s {
   GumbelInfo_t ***gumAA;     /* [0..NSTATMODES-1][0..np-1] */
   CP9FilterThr_t **fthrA;    /* [0..NFTHRMODES-1] */
 } CMStats_t;
+
 
 /* Stat modes, 
  * 0..NSTATMODES-1 are first dimension of cmstats->gumAA 
@@ -240,6 +470,8 @@ typedef struct cmstats_s {
 #define CP9_G 5
 #define NGUMBELMODES 6
 #define NFTHRMODES   4
+#define NCMMODES     4
+#define NCP9MODES    2
 
 /* Structure: CM_t
  * Incept:    SRE, 9 Mar 2000 [San Carlos CA]
@@ -260,11 +492,22 @@ typedef struct cm_s {
   char *desc;		/*   optional description of the model, or NULL    */
   char *annote;         /*   consensus column annotation line, or NULL     */ /* ONLY PARTIALLY IMPLEMENTED, BEWARE */
 
+  /* new for 1.0 */
+  char  *comlog;	/*   command line(s) that built model      (mandatory) */ /* String, \0-terminated */
+  int    nseq;		/*   number of training sequences          (mandatory) */
+  float  eff_nseq;	/*   effective number of seqs (<= nseq)    (mandatory) */
+  char  *ctime;		/*   creation date                         (mandatory) */
+  float  ga;	        /*   per-seq/per-domain gathering thresholds (bits) (CMH_GA) */
+  float  tc;            /*   per-seq/per-domain trusted cutoff (bits)       (CMH_TC) */
+  float  nc;	        /*   per-seq/per-domain noise cutoff (bits)         (CMH_NC) */
+
+
 			/* Information about the null model:               */
   float *null;          /*   residue probabilities [0..3]                  */
 
 			/* Information about the state type:               */
   int   M;		/*   number of states in the model                 */
+  int   clen;		/*   consensus length (2*MATP+MATL+MATR)           */
   char *sttype;		/*   type of state this is; e.g. MP_st             */
   int  *ndidx;		/*   index of node this state belongs to           */
   char *stid;		/*   unique state identifier; e.g. MATP_MP         */
@@ -339,22 +582,31 @@ typedef struct cm_s {
   int   iel_selfsc;     /* scaled int version of el_selfsc         */
 
   CMStats_t *stats;     /* holds Gumbel stats and HMM filtering thresholds */
+
+  /* From 1.0-ification, based on HMMER3 */
+  const  ESL_ALPHABET *abc;     /* ptr to alphabet info (cm->abc->K is alphabet size)*/
 } CM_t;
 
 /* status flags, cm->flags */
-#define CM_HASBITS             (1<<0)  /* CM has valid log odds scores             */
-#define CM_LOCAL_BEGIN         (1<<1)  /* Begin distribution is active (local ali) */
-#define CM_LOCAL_END           (1<<2)  /* End distribution is active (local ali)   */
-#define CM_GUMBEL_STATS        (1<<3)  /* Gumbel stats for local/glocal CYK/Ins set*/
-#define CM_FTHR_STATS          (1<<4)  /* CP9 HMM filter threshold stats are set   */
-#define CM_QDB                 (1<<5)  /* query-dependent bands, QDB valid         */
-#define CM_CP9                 (1<<6)  /* CP9 HMM is valid in cm->cp9              */
-#define CM_CP9STATS            (1<<7)  /* CP9 HMM has Gumbel stats                 */
-#define CM_IS_SUB              (1<<8)  /* the CM is a sub CM                       */
-#define CM_ENFORCED            (1<<9)  /* CM is reparam'ized to enforce a subseq   */
-#define CM_IS_RSEARCH          (1<<10) /* the CM was parameterized a la RSEARCH    */
-#define CM_RSEARCHTRANS        (1<<11) /* CM has/will have RSEARCH transitions     */
-#define CM_RSEARCHEMIT         (1<<12) /* CM has/will have RSEARCH emissions       */
+#define CMH_BITS               (1<<0)  /* CM has valid log odds scores             */
+#define CMH_ACC                (1<<1)  /* accession number is available            */
+#define CMH_DESC               (1<<2)  /* description exists                       */
+#define CMH_GA                 (1<<3)  /* gathering threshold exists               */
+#define CMH_TC                 (1<<4)  /* trusted cutoff exists                    */
+#define CMH_NC                 (1<<5)  /* noise cutoff exists                      */
+
+#define CM_LOCAL_BEGIN         (1<<6)  /* Begin distribution is active (local ali) */
+#define CM_LOCAL_END           (1<<7)  /* End distribution is active (local ali)   */
+#define CM_GUMBEL_STATS        (1<<8)  /* Gumbel stats for local/glocal CYK/Ins set*/
+#define CM_FTHR_STATS          (1<<9)  /* CP9 HMM filter threshold stats are set   */
+#define CM_QDB                 (1<<10) /* query-dependent bands, QDB valid         */
+#define CM_CP9                 (1<<11) /* CP9 HMM is valid in cm->cp9              */
+#define CM_CP9STATS            (1<<12) /* CP9 HMM has Gumbel stats                 */
+#define CM_IS_SUB              (1<<13) /* the CM is a sub CM                       */
+#define CM_ENFORCED            (1<<14) /* CM is reparam'ized to enforce a subseq   */
+#define CM_IS_RSEARCH          (1<<15) /* the CM was parameterized a la RSEARCH    */
+#define CM_RSEARCHTRANS        (1<<16) /* CM has/will have RSEARCH transitions     */
+#define CM_RSEARCHEMIT         (1<<17) /* CM has/will have RSEARCH emissions       */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL        (1<<0)  /* configure the model for local alignment  */
@@ -362,9 +614,8 @@ typedef struct cm_s {
 #define CM_CONFIG_HMMEL        (1<<2)  /* configure the CP9   for local alignment  */
 #define CM_CONFIG_ENFORCE      (1<<3)  /* enforce a subseq be incl. in each parse  */
 #define CM_CONFIG_ENFORCEHMM   (1<<4)  /* build CP9 HMM to only enforce subseq     */
-#define CM_CONFIG_ELSILENT     (1<<5)  /* disallow EL state emissions              */
-#define CM_CONFIG_ZEROINSERTS  (1<<6)  /* make all insert emissions equiprobable   */
-#define CM_CONFIG_QDB          (1<<7)  /* calculate query dependent bands          */
+#define CM_CONFIG_ZEROINSERTS  (1<<5)  /* make all insert emissions equiprobable   */
+#define CM_CONFIG_QDB          (1<<6)  /* calculate query dependent bands          */
 
 /* alignment options, cm->align_opts */
 #define CM_ALIGN_NOSMALL       (1<<0)  /* DO NOT use small CYK D&C                 */
@@ -383,6 +634,7 @@ typedef struct cm_s {
 #define CM_ALIGN_PRINTTREES    (1<<13) /* print parsetrees to stdout               */
 #define CM_ALIGN_HMMSAFE       (1<<14) /* realign seqs w/HMM banded CYK bit sc < 0 */
 #define CM_ALIGN_SCOREONLY     (1<<15) /* do full CYK/inside to get score only     */
+#define CM_ALIGN_SAMPLE        (1<<16) /* sample parsetrees from the inside matrix */
 
 /* search options, cm->search_opts */
 #define CM_SEARCH_NOQDB        (1<<0)  /* DO NOT use QDB to search (QDB is default)*/
@@ -413,11 +665,12 @@ typedef struct cm_s {
  */
 typedef struct cmfile_s {
   FILE     *f;                  /* open file for reading */
-  SSIFILE  *ssi;                /* ptr to open SSI index, or NULL if unavailable */
+  char     *fname;              /* name of the CM file; [STDIN] if -           */
+  ESL_SSI  *ssi;                /* ptr to open SSI index, or NULL if unavailable */
   int       is_binary;		/* TRUE if file is in binary format */
   int       byteswap;		/* TRUE if binary and we need to swap byte order */
-  SSIOFFSET offset;		/* disk offset of the CM that was read last */
   int       mode;		/* type of SSI offset (part of SSI API) */
+  off_t     offset;             /* disk offset of the CM that was read last */
 } CMFILE;
 
 
@@ -646,36 +899,41 @@ typedef struct cp9bands_s {
 
 /* structures from RSEARCH */
 #define INIT_RESULTS 100
-typedef struct _scan_result_node_t {
+typedef struct _search_result_node_t {
   int start;
   int stop;
   int bestr;   /* Best root state */
   float score;
   Parsetree_t *tr;
-} scan_result_node_t;
+} search_result_node_t;
 
-typedef struct _scan_results_t {
-  scan_result_node_t *data;
+typedef struct _search_results_t {
+  search_result_node_t *data;
   int num_results;
   int num_allocated;
-} scan_results_t;
+} search_results_t;
 
-typedef struct _db_seq_t {
-  ESL_SQ  *sq[2];
-  scan_results_t *results[2];
+typedef struct _dbseq_t {
+  ESL_SQ *sq[2];
+  search_results_t *results[2];
   int chunks_sent;
   int alignments_sent;           /* -1 is flag for none queued yet */
   float best_score;              /* Best score for scan of this sequence */
   int partition;                 /* For histogram building */
-} db_seq_t;
+} dbseq_t;
 
-/* structure for MPI cmalign */
+/* sequences to align, for cmalign and cmscore (implemented to ease MPI) */
 typedef struct _seqs_to_aln_t {
   ESL_SQ  **sq;                  /* the sequences */
   int nseq;                      /* number of sequences */
+  int nalloc;                    /* number of sequences alloc'ed */
   Parsetree_t **tr;              /* parsetrees */
+  CP9trace_t **cp9_tr;           /* CP9 traces, usually NULL unless tr is NULL */
   char **postcode;               /* postal codes, left NULL unless do_post */
-  int index;                     /* the index of the first sq (sq[0]) in master structure */
+  float *sc;                     /* score for each seq, can be parsetree score (usually if tr != NULL),
+				  * CP9 trace score (usually if cp9_tr != NULL), but could also be
+				  * score for the sub parsetree (in case of sub CM alignment)
+				  */
 } seqs_to_aln_t;
 
 /* The integer log odds score deckpool for integer versions of 
@@ -687,6 +945,25 @@ typedef struct Ideckpool_s {
   int      block;
 } Ideckpool_t;
 
+/* Structure: Prior_t
+ * 
+ * Dirichlet priors on all model parameters. 
+ */
+typedef struct {
+  /* transition priors */
+  int    tsetnum;                           /* number of transition sets to read in */
+  int    tsetmap[UNIQUESTATES][NODETYPES];  /* tsetmap[a][b] is for transition set from ustate a to node b */
+  ESL_MIXDCHLET **t;	                    /* array of transition priors, 0..tsetnum-1 */
+
+  /* emission priors */
+  ESL_MIXDCHLET *mbp;		/* consensus base pair emission prior */
+  ESL_MIXDCHLET *mnt;		/* consensus singlet emission prior */
+  ESL_MIXDCHLET *i;		/* nonconsensus singlet emission prior */
+
+  /* bookkeeping */
+  int  maxnq;			/* maximum # of components in any prior */
+  int  maxnalpha;		/* maximum # of parameters in any prior */
+} Prior_t;
 
 #define BUSY 1
 #define IDLE 0
@@ -715,6 +992,100 @@ typedef struct Ideckpool_s {
 /* Two modes for padding residues to HMM hits */
 #define PAD_SUBI_ADDJ 1
 #define PAD_ADDI_SUBJ 2
+
+/* MPI tags */
+#define MPI_WORK_EOD    0
+#define MPI_WORK_SEARCH 1
+
+#define MPI_RESULTS_SEARCH 2
+/* MPI worker time constraints */
+#define MPI_WORKER_MIN_SEC 5.
+#define MPI_WORKER_MAX_SEC 60.
+#define MDPC_SEC 50.
+
+/* RSEARCH macros/#defines etc. (from rnamat.h) */
+
+#define RNAPAIR_ALPHABET "AAAACCCCGGGGUUUU"
+#define RNAPAIR_ALPHABET2 "ACGUACGUACGUACGU"
+/* Returns true if pos. C of seq B of msa A is a gap */
+#define is_rna_gap(A, B, C) (esl_abc_CIsGap(A->abc, A->aseq[B][C]))
+/* Returns true if position C of digitized sequence B of msa A is a canonical */
+#define is_defined_rna_nucleotide(A, B, C) (esl_abc_CIsCanonical(A->abc, A->aseq[B][C]))
+#define unpairedmat_size (matrix_index(3,3) + 1)
+#define pairedmat_size (matrix_index (15,15) + 1)
+/* Maps to index of matrix, using binary representation of
+ * nucleotides (unsorted).
+ * See lab book 7, p. 3-4 for details of mapping function (RJK) */
+#define matrix_index(X,Y) ((X>Y) ? X*(X+1)/2+Y: Y*(Y+1)/2+X)
+/* Matrix type
+ * Contains array in one dimension (to be indexed later), matrix size,
+ * H, and E. 
+ */
+typedef struct _matrix_t {
+  double *matrix;
+  int edge_size;         /* Size of one edge, e.g. 4 for 4x4 matrix */
+  int full_size;         /* Num of elements, e.g. 10 for 4x4 matirx */
+  double H;
+  double E;
+} matrix_t;
+
+/* Full matrix definition, includes the g background freq vector (g added by EPN). */
+typedef struct _fullmat_t {
+  const ESL_ALPHABET *abc;/* alphabet, we enforce it's eslRNA */
+  matrix_t *unpaired;
+  matrix_t *paired;
+  char     *name;
+  float    *g;           /* EPN: the background distro, g vector in RSEARCH paper
+			  * this now appears in the RIBOSUM matrix files */
+  int       scores_flag; /* TRUE if matrix values are log odds scores, FALSE if 
+			  * they're target probs, or unfilled */
+  int       probs_flag;  /* TRUE if matrix values are target probs, FALSE if 
+			  * they're log odds scores, or unfilled */
+} fullmat_t;
+
+/* BE_EFFICIENT and BE_PARANOID are alternative (exclusive) settings
+ * for the do_full? argument to the alignment engines.
+ */
+#define BE_EFFICIENT  0		/* setting for do_full: small memory mode */
+#define BE_PARANOID   1		/* setting for do_full: keep whole matrix, perhaps for debugging */
+
+/* Special flags for use in shadow (traceback) matrices, instead of
+ * offsets to connected states. When yshad[0][][] is USED_LOCAL_BEGIN,
+ * the b value returned by inside() is the best connected state (a 0->b
+ * local entry). When yshad[v][][] is USED_EL, there is a v->EL transition
+ * and the remaining subsequence is aligned to the EL state. 
+ */
+#define USED_LOCAL_BEGIN 101
+#define USED_EL          102
+
+/* EPN, Fri Sep  7 16:49:43 2007
+ * From HMMER3's p7_config.h:
+ *
+ * Sean's notes (verbatim):
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ * In Forward algorithm implementations, we use a table lookup in
+ * p7_FLogsum() to calculate summed probabilities in log
+ * space. p7_INTSCALE defines the precision of the calculation; the
+ * default of 1000.0 means rounding differences to the nearest 0.001
+ * nat. p7_LOGSUM_TBL defines the size of the lookup table; the
+ * default of 16000 means entries are calculated for differences of 0
+ * to 16.000 nats (when p7_INTSCALE is 1000.0).  e^{-p7_LOGSUM_TBL /
+ * p7_INTSCALE} should be on the order of the machine FLT_EPSILON,
+ * typically 1.2e-7.
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ * EPN: Infernal uses bits, not nats. 1.2e-7 =~ 2^-23 =~ e^-16. 
+ *      And I've removed the p7_ prefixes.
+ */
+#if USE_NEWLOGSUM
+#define INTSCALE     1000.0f
+#define LOGSUM_TBL   23000
+#endif
+/* Below is infernal -->v0.81 constants for logsums */
+#if USE_OLDLOGSUM
+#define INTSCALE    1000.0      /* scaling constant for floats to integer scores */
+#define LOGSUM_TBL  20000       /* controls precision of ILogsum()            */
+#endif
+
 
 #endif /*STRUCTSH_INCLUDED*/
 

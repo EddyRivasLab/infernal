@@ -19,13 +19,12 @@
  * EPN, Thu Jan  4 14:17:06 2007
  */
 
+#ifdef HAVE_MPI
+
+#include "esl_config.h"
 #include "config.h"
 
-#ifdef USE_MPI 
-
-#define BUFSIZE 16384
-#define MIN_CHUNK_D_MULTIPLIER 10
-#define MAX_CHUNK_SIZE 1000000
+#include <string.h>
 
 #include "mpi.h"
 #include "mpifuncs.h"
@@ -34,9 +33,13 @@
 #include "cm_dispatch.h"
 #include "stats.h"
 
-#include <string.h>
+#if 0
 
-#define VERSION_STRING "INFERNAL 0.72"
+#define BUFSIZE 16384
+#define MIN_CHUNK_D_MULTIPLIER 10
+#define MAX_CHUNK_SIZE 1000000
+
+#define VERSION_STRING "INFERNAL 1.0"
 #define VERSION_STRING_SIZE 100
 
 /***************************************************************************
@@ -99,7 +102,7 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
     {   /* I'm in charge */
       /* contract check, if we claim to have Gumbel stats, we better have them */
       if((*cm)->flags & CM_GUMBEL_STATS && (*cm)->stats == NULL)
-	Die("ERROR in broadcast_cm() master node claims to have Gumbel stats but cm->stats is NULL!\n");
+	esl_fatal("ERROR in broadcast_cm() master node claims to have Gumbel stats but cm->stats is NULL!\n");
       nstates = (*cm)->M;
       nnodes = (*cm)->nodes;
       
@@ -210,7 +213,7 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
   if((*cm)->enf_start != 0)
     {
       if (mpi_my_rank != mpi_master_rank) 
-	(*cm)->enf_seq = MallocOrDie(sizeof(char) * (enf_len+1));
+	ESL_ALLOC((*cm)->enf_seq, sizeof(char) * (enf_len+1));
       MPI_Bcast((*cm)->enf_seq, enf_len, MPI_CHAR, mpi_master_rank, MPI_COMM_WORLD);
       if (mpi_my_rank != mpi_master_rank) 
 	(*cm)->enf_seq[enf_len] = '\0';
@@ -249,10 +252,11 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
 void search_first_broadcast (int *num_samples, float *W_scale,
 			     int mpi_my_rank, int mpi_master_rank) 
 {
+  int  status;
   int   bufsize = sizeof(int) + sizeof(float);
   char *buf;                /* Buffer for packing */
   int   position = 0;         /* Where I am in the buffer */
-  buf = MallocOrDie(bufsize);
+  ESL_ALLOC(buf, bufsize);
 
   /*printf("entered search_first_broadcast: my: %d master: %d\n", mpi_my_rank, mpi_master_rank);*/
 
@@ -273,6 +277,10 @@ void search_first_broadcast (int *num_samples, float *W_scale,
       MPI_Unpack (buf, BUFSIZE, &position, W_scale, 1, MPI_FLOAT, MPI_COMM_WORLD);
     }
   /*printf("leaving search_first_broadcast: do_qdb: %d do_inside: %d\n", (*do_qdb), (*do_inside));*/
+
+  return;
+ ERROR:
+  esl_fatal("Memory allocation error.");
 }
 
 /*
@@ -371,7 +379,7 @@ char search_receive_job (int *seqlen_p, char **seq_p, int *bestr_p,
   if (*seqlen_p > 0) {
     /* Receive a partial sequence and convert to digitized sequence format
        by placing sentinels at end */
-    seq = MallocOrDie(sizeof(char)*(*seqlen_p+2));
+    ESL_ALLOC(seq = MallocOrDie(sizeof(char)*(*seqlen_p+2)));
     seq[0] = seq[*seqlen_p+1] = DIGITAL_SENTINEL;
     MPI_Recv (seq+1, *seqlen_p, MPI_CHAR, mpi_master_rank, SEQ_TAG, 
 	      MPI_COMM_WORLD, &status);
@@ -381,22 +389,22 @@ char search_receive_job (int *seqlen_p, char **seq_p, int *bestr_p,
 }
 
 /*
- * Function: search_send_scan_results
+ * Function: search_send_search_results
  * Date:     RJK, Tue May 28, 2002 [St. Louis]
  * Purpose:  Given a list of scan results, sends them to master node using
  *           MPI_Send
  */
-void search_send_scan_results (scan_results_t *results, int mpi_master_node) {
+void search_send_search_results (search_results_t *results, int mpi_master_node) {
   char *buf;
   int pos = 0;
   int i;
   int bufsize;
-  char results_type = SEARCH_STD_SCAN_RESULTS;
+  char results_type = SEARCH_STD_SEARCH_RESULTS;
 
-  bufsize = sizeof(char)+sizeof(int)+(sizeof(scan_result_node_t)*(results->num_results+1));
-  buf = MallocOrDie(bufsize);
+  bufsize = sizeof(char)+sizeof(int)+(sizeof(search_result_node_t)*(results->num_results+1));
+  ESL_ALLOC(buf, bufsize);
   /* Send the size of the results */
-  MPI_Send (&bufsize, 1, MPI_INT, mpi_master_node, SEARCH_STD_SCAN_RESULTS_SIZE_TAG, MPI_COMM_WORLD);
+  MPI_Send (&bufsize, 1, MPI_INT, mpi_master_node, SEARCH_STD_SEARCH_RESULTS_SIZE_TAG, MPI_COMM_WORLD);
 
   /* Send the results */
   MPI_Pack (&results_type, 1, MPI_CHAR, buf, bufsize, &pos, MPI_COMM_WORLD);
@@ -407,7 +415,7 @@ void search_send_scan_results (scan_results_t *results, int mpi_master_node) {
     MPI_Pack(&(results->data[i].bestr), 1, MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
     MPI_Pack(&(results->data[i].score), 1, MPI_FLOAT, buf, bufsize, &pos, MPI_COMM_WORLD);
   }
-  MPI_Send (buf, bufsize, MPI_PACKED, mpi_master_node, SEARCH_STD_SCAN_RESULTS_TAG, MPI_COMM_WORLD);
+  MPI_Send (buf, bufsize, MPI_PACKED, mpi_master_node, SEARCH_STD_SEARCH_RESULTS_TAG, MPI_COMM_WORLD);
 }
 
 /*
@@ -422,9 +430,9 @@ void search_send_align_results (Parsetree_t *tr, int mpi_master_node) {
   char results_type = ALN_RESULTS;
 
   bufsize = sizeof(char)+sizeof(int)+sizeof(int)+7*((tr->n)+1)*sizeof(int);
-  buf = MallocOrDie(bufsize);
+  ESL_ALLOC(buf, bufsize);
   /* Send the size of the results */
-  MPI_Send (&bufsize, 1, MPI_INT, mpi_master_node, SEARCH_STD_SCAN_RESULTS_SIZE_TAG, MPI_COMM_WORLD);
+  MPI_Send (&bufsize, 1, MPI_INT, mpi_master_node, SEARCH_STD_SEARCH_RESULTS_SIZE_TAG, MPI_COMM_WORLD);
 
   /* Send the results */
   MPI_Pack (&results_type, 1, MPI_CHAR, buf, bufsize, &pos, MPI_COMM_WORLD);
@@ -438,7 +446,7 @@ void search_send_align_results (Parsetree_t *tr, int mpi_master_node) {
   MPI_Pack (tr->prv,  tr->n, MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
   MPI_Pack (tr->mode, tr->n, MPI_INT, buf, bufsize, &pos, MPI_COMM_WORLD);
 
-  MPI_Send (buf, bufsize, MPI_PACKED, mpi_master_node, SEARCH_STD_SCAN_RESULTS_TAG, MPI_COMM_WORLD);
+  MPI_Send (buf, bufsize, MPI_PACKED, mpi_master_node, SEARCH_STD_SEARCH_RESULTS_TAG, MPI_COMM_WORLD);
 }
 
 /*
@@ -503,7 +511,7 @@ job_t *search_enqueue (db_seq_t *active_seq, int db_seq_index,
   active_seq->alignments_sent = -1;     /* None sent yet */
   for (in_revcomp = 0; in_revcomp <= do_revcomp; in_revcomp++) {
     for (curpos = 1; curpos <= active_seq->sq[0]->n; curpos += chunkoffset) {
-      new_entry = MallocOrDie (sizeof(db_seq_t));
+      ESL_ALLOC(new_entry, sizeof(db_seq_t));
       new_entry->next = NULL;
       if (cur_tail != NULL)
 	cur_tail->next = new_entry;
@@ -555,7 +563,7 @@ void search_enqueue_alignments (job_t **queue, db_seq_t *active_seq, int db_seq_
     for (result_index = 0; 
 	 result_index < active_seq->results[in_revcomp]->num_results;
 	 result_index++) {
-      new_entry = MallocOrDie (sizeof(db_seq_t));
+      ESL_ALLOC(new_entry, sizeof(db_seq_t));
       new_entry->next = NULL;
       if (cur_tail != NULL)
 	cur_tail->next = new_entry;
@@ -630,9 +638,9 @@ int search_check_results (db_seq_t **active_seqs, job_t **process_status, int D)
 
   /* Get the size of the buffer */
   MPI_Recv (&bufsize, 1, MPI_INT, MPI_ANY_SOURCE, 
-	    SEARCH_STD_SCAN_RESULTS_SIZE_TAG, MPI_COMM_WORLD, &status);
+	    SEARCH_STD_SEARCH_RESULTS_SIZE_TAG, MPI_COMM_WORLD, &status);
   data_from = status.MPI_SOURCE;
-  buf = MallocOrDie(sizeof(char)*bufsize);
+  ESL_ALLOC(buf, (char)*bufsize);
 
   /* Figure out the sequence it belongs to */
   cur_seq_index = process_status[data_from]->db_seq_index;
@@ -645,12 +653,12 @@ int search_check_results (db_seq_t **active_seqs, job_t **process_status, int D)
   process_status[data_from] = NULL;
 
   /* Now get the results */
-  MPI_Recv (buf, bufsize, MPI_PACKED, data_from, SEARCH_STD_SCAN_RESULTS_TAG, 
+  MPI_Recv (buf, bufsize, MPI_PACKED, data_from, SEARCH_STD_SEARCH_RESULTS_TAG, 
 	    MPI_COMM_WORLD, &status);
   MPI_Unpack (buf, bufsize, &position, &results_type, 1, 
 	      MPI_CHAR, MPI_COMM_WORLD);
 
-  if (results_type == SEARCH_STD_SCAN_RESULTS) {
+  if (results_type == SEARCH_STD_SEARCH_RESULTS) {
     MPI_Unpack (buf, bufsize, &position, &num_results, 1, 
 		MPI_INT, MPI_COMM_WORLD);
     if (num_results > 0 && cur_seq->results[(int)in_revcomp] == NULL) {
@@ -670,19 +678,21 @@ int search_check_results (db_seq_t **active_seqs, job_t **process_status, int D)
     }
     cur_seq->chunks_sent--;
   } else if (results_type == ALN_RESULTS) {
-    tr = MallocOrDie(sizeof(Parsetree_t));
+    ESL_ALLOC(tr, sizeof(Parsetree_t));
     /* Get size of the tree */
     MPI_Unpack (buf, bufsize, &position, &(tr->memblock), 1, MPI_INT, MPI_COMM_WORLD);
     MPI_Unpack (buf, bufsize, &position, &(tr->n), 1, MPI_INT, MPI_COMM_WORLD);
     /* Allocate it */
-    tr->emitl = MallocOrDie(sizeof(int)*tr->n);
-    tr->emitr = MallocOrDie(sizeof(int)*tr->n);
-    tr->state = MallocOrDie(sizeof(int)*tr->n);
-    tr->nxtl = MallocOrDie(sizeof(int)*tr->n);
-    tr->nxtr = MallocOrDie(sizeof(int)*tr->n);
-    tr->prv = MallocOrDie(sizeof(int)*tr->n);
-    tr->mode = MallocOrDie(sizeof(int)*tr->n);
+    ESL_ALLOC(tr->emitl, sizeof(int)*tr->n);
+    ESL_ALLOC(tr->emitr, sizeof(int)*tr->n);
+    ESL_ALLOC(tr->state, sizeof(int)*tr->n);
+    ESL_ALLOC(tr->nxtl,  sizeof(int)*tr->n);
+    ESL_ALLOC(tr->nxtr,  sizeof(int)*tr->n);
+    ESL_ALLOC(tr->prv,   sizeof(int)*tr->n);
+    ESL_ALLOC(tr->mode,  sizeof(int)*tr->n);
+    ESL_ALLOC(tr->nalloc,sizeof(int)*tr->n);
     tr->nalloc = tr->n;
+
     /* Unpack it */
     MPI_Unpack (buf, bufsize, &position, tr->emitl, tr->n, MPI_INT, MPI_COMM_WORLD);
     MPI_Unpack (buf, bufsize, &position, tr->emitr, tr->n, MPI_INT, MPI_COMM_WORLD);
@@ -694,7 +704,7 @@ int search_check_results (db_seq_t **active_seqs, job_t **process_status, int D)
     cur_seq->results[(int)in_revcomp]->data[index].tr = tr;
     cur_seq->alignments_sent--;
   } else {
-    Die ("Got result type %d when expecting SEARCH_STD_SCAN_RESULTS (%d) or ALN_RESULTS (%d)\n", results_type, SEARCH_STD_SCAN_RESULTS, ALN_RESULTS);
+    Die ("Got result type %d when expecting SEARCH_STD_SEARCH_RESULTS (%d) or ALN_RESULTS (%d)\n", results_type, SEARCH_STD_SEARCH_RESULTS, ALN_RESULTS);
   }
   free(buf);
   return(cur_seq_index);
@@ -733,7 +743,7 @@ int search_check_hist_results (db_seq_t **seqs, job_t **process_status, int D) {
 
   MPI_Unpack (buf, 32, &position, &results_type, 1, 
 	      MPI_CHAR, MPI_COMM_WORLD);
-  if (results_type == SEARCH_HIST_SCAN_RESULTS) {
+  if (results_type == SEARCH_HIST_SEARCH_RESULTS) {
     MPI_Unpack (buf, 32, &position, &score, 1, MPI_FLOAT, 
 		MPI_COMM_WORLD);
     seqs[db_seq_index]->chunks_sent--;
@@ -741,26 +751,26 @@ int search_check_hist_results (db_seq_t **seqs, job_t **process_status, int D) {
       seqs[db_seq_index]->best_score = score;
     }
   } else {
-    Die ("Got result type %d when expecting SEARCH_HIST_SCAN_RESULTS (%d)\n", 
-	 results_type, SEARCH_HIST_SCAN_RESULTS);
+    Die ("Got result type %d when expecting SEARCH_HIST_SEARCH_RESULTS (%d)\n", 
+	 results_type, SEARCH_HIST_SEARCH_RESULTS);
   }
   return(db_seq_index);
 }
 
 /*
- * Function: search_send_hist_scan_results
+ * Function: search_send_hist_search_results
  * Date:     RJK, Sat Jun 01, 2002 [St. Louis]
  * Purpose:  Given best score for building a histogram, sends to master
  *           node using MPI_Send
  */
-void search_send_hist_scan_results (float score, int mpi_master_node) {
+void search_send_hist_search_results (float score, int mpi_master_node) {
   char *buf;
   int pos = 0;
   int bufsize;
-  char results_type = SEARCH_HIST_SCAN_RESULTS;
+  char results_type = SEARCH_HIST_SEARCH_RESULTS;
 
   bufsize = sizeof(char)+sizeof(float);
-  buf = MallocOrDie(bufsize);
+  ESL_ALLOC(buf, bufsize);
 
   /* Send the results */
   MPI_Pack (&results_type, 1, MPI_CHAR, buf, bufsize, &pos, MPI_COMM_WORLD);
@@ -823,7 +833,7 @@ void aln_send_next_job (seqs_to_aln_t *seqs_to_aln, int rank_to_send_to)
   /*printf("in aln_send_next_job, rank_to_send_to: %d\n", rank_to_send_to);*/
 
   bufsize = sizeof(char) + ((3 + (2 * seqs_to_aln->nseq)) * sizeof(int));
-  buf = MallocOrDie(bufsize);
+  ESL_ALLOC(buf, bufsize);
   
   /* Send the size of the job */
   MPI_Send (&bufsize, 1, MPI_INT, rank_to_send_to, ALN_JOB_SIZE_TAG, MPI_COMM_WORLD);
@@ -831,7 +841,7 @@ void aln_send_next_job (seqs_to_aln_t *seqs_to_aln, int rank_to_send_to)
   MPI_Pack (&job_type, 1, MPI_CHAR, buf, bufsize, &position, MPI_COMM_WORLD);
   MPI_Pack (&(seqs_to_aln->index), 1, MPI_INT, buf, bufsize, &position, MPI_COMM_WORLD);
 
-  namelen = MallocOrDie(sizeof(int) * seqs_to_aln->nseq);
+  ESL_ALLOC(namelen, sizeof(int) * seqs_to_aln->nseq);
 
   /* Send the seqs_to_aln_t data structure, piecewise */
   /* First send the number of sequences */
@@ -875,13 +885,13 @@ char aln_receive_job (seqs_to_aln_t **ret_seqs_to_aln, int mpi_master_rank)
   int position = 0;
   char job_type;
   seqs_to_aln_t *seqs_to_aln;
-  seqs_to_aln = MallocOrDie(sizeof(seqs_to_aln_t));
+  ESL_ALLOC(seqs_to_aln, sizeof(seqs_to_aln_t));
   int i;
   int *namelen;
 
   /* Get the size of the buffer */
   MPI_Recv (&bufsize, 1, MPI_INT, MPI_ANY_SOURCE, ALN_JOB_SIZE_TAG, MPI_COMM_WORLD, &status);
-  buf = MallocOrDie(sizeof(char)*bufsize);
+  ESL_ALLOC(buf, sizeof(char)*bufsize);
 
   /* Get the job */
   MPI_Recv (buf, bufsize, MPI_PACKED, mpi_master_rank, ALN_JOB_PACKET_TAG, 
@@ -892,8 +902,8 @@ char aln_receive_job (seqs_to_aln_t **ret_seqs_to_aln, int mpi_master_rank)
     {
       MPI_Unpack (buf, bufsize, &position, &(seqs_to_aln->index), 1, MPI_INT, MPI_COMM_WORLD);
       MPI_Unpack (buf, bufsize, &position, &(seqs_to_aln->nseq),  1, MPI_INT, MPI_COMM_WORLD);
-      seqs_to_aln->sq = MallocOrDie(sizeof(ESL_SQ *) * seqs_to_aln->nseq);
-      namelen         = MallocOrDie(sizeof(int)      * seqs_to_aln->nseq);
+      ESL_ALLOC(seqs_to_aln->sq, sizeof(ESL_SQ *) * seqs_to_aln->nseq);
+      ESL_ALLOC(namelen,         sizeof(int)      * seqs_to_aln->nseq);
 
       for(i = 0; i < seqs_to_aln->nseq; i++)
 	{
@@ -915,7 +925,7 @@ char aln_receive_job (seqs_to_aln_t **ret_seqs_to_aln, int mpi_master_rank)
 	{
 	  if(seqs_to_aln->sq[i]->n > 0)
 	    {
-	      seqs_to_aln->sq[i]->dsq = MallocOrDie(sizeof(char)*((seqs_to_aln->sq[i]->n)+2));
+	      ESL_ALLOC(seqs_to_aln->sq[i]->dsq, sizeof(char)*((seqs_to_aln->sq[i]->n)+2));
 	      MPI_Recv (seqs_to_aln->sq[i]->dsq, (seqs_to_aln->sq[i]->n+2), MPI_CHAR, 
 			mpi_master_rank, SEQ_TAG, MPI_COMM_WORLD, &status);
 	    }
@@ -923,7 +933,7 @@ char aln_receive_job (seqs_to_aln_t **ret_seqs_to_aln, int mpi_master_rank)
       *ret_seqs_to_aln = seqs_to_aln;
     }
   else if(job_type != TERMINATE_WORK)
-    Die("ERROR in aln_receive_job did not receive ALN_WORK or TERMINATE_WORK signal\n");
+    esl_fatal("ERROR in aln_receive_job did not receive ALN_WORK or TERMINATE_WORK signal\n");
 
   return(job_type);
 }
@@ -949,7 +959,7 @@ void aln_send_results (seqs_to_aln_t *seqs_to_aln, int do_post, int mpi_master_n
     for(i = 0; i < seqs_to_aln->nseq; i++)
       bufsize += (seqs_to_aln->sq[i]->n + 1) * sizeof(char) + sizeof(int);
 
-  buf = MallocOrDie(bufsize);
+  ESL_ALLOC(buf, bufsize);
 
   /* Send the size of the results */
   MPI_Send (&bufsize, 1, MPI_INT, mpi_master_node, ALN_RESULTS_SIZE_TAG, MPI_COMM_WORLD);
@@ -1009,7 +1019,7 @@ int aln_check_results (Parsetree_t **all_parsetrees, char **all_postcodes, int *
   MPI_Recv (&bufsize, 1, MPI_INT, MPI_ANY_SOURCE, 
 	    ALN_RESULTS_SIZE_TAG, MPI_COMM_WORLD, &status);
   data_from = status.MPI_SOURCE;
-  buf = MallocOrDie(sizeof(char)*bufsize);
+  ESL_ALLOC(buf, sizeof(char)*bufsize);
 
   /* Clear this job -- it's done */
   (*process_status)[data_from] = IDLE;
@@ -1029,19 +1039,21 @@ int aln_check_results (Parsetree_t **all_parsetrees, char **all_postcodes, int *
       for (i=0; i < nseq; i++) 
 	{
 	  /* Get a parsetree for each sequence */
-	  tr = MallocOrDie(sizeof(Parsetree_t));
+	  ESL_ALLOC(tr, sizeof(Parsetree_t));
 	  /* Get size of the tree */
 	  MPI_Unpack (buf, bufsize, &position, &(tr->memblock), 1, MPI_INT, MPI_COMM_WORLD);
 	  MPI_Unpack (buf, bufsize, &position, &(tr->n), 1, MPI_INT, MPI_COMM_WORLD);
 	  /* Allocate it */
-	  tr->emitl = MallocOrDie(sizeof(int)*tr->n);
-	  tr->emitr = MallocOrDie(sizeof(int)*tr->n);
-	  tr->state = MallocOrDie(sizeof(int)*tr->n);
-	  tr->nxtl  = MallocOrDie(sizeof(int)*tr->n);
-	  tr->nxtr  = MallocOrDie(sizeof(int)*tr->n);
-	  tr->prv   = MallocOrDie(sizeof(int)*tr->n);
-	  tr->mode  = MallocOrDie(sizeof(int)*tr->n);
+	  ESL_ALLOC(tr->emitl, sizeof(int)*tr->n);
+	  ESL_ALLOC(tr->emitr, sizeof(int)*tr->n);
+	  ESL_ALLOC(tr->state, sizeof(int)*tr->n);
+	  ESL_ALLOC(tr->nxtl,  sizeof(int)*tr->n);
+	  ESL_ALLOC(tr->nxtr,  sizeof(int)*tr->n);
+	  ESL_ALLOC(tr->prv,   sizeof(int)*tr->n);
+	  ESL_ALLOC(tr->mode,  sizeof(int)*tr->n);
+	  ESL_ALLOC(tr->nalloc,sizeof(int)*tr->n);
 	  tr->nalloc = tr->n;
+
 	  /* Unpack it */
 	  MPI_Unpack (buf, bufsize, &position, tr->emitl, tr->n, MPI_INT, MPI_COMM_WORLD);
 	  MPI_Unpack (buf, bufsize, &position, tr->emitr, tr->n, MPI_INT, MPI_COMM_WORLD);
@@ -1063,7 +1075,7 @@ int aln_check_results (Parsetree_t **all_parsetrees, char **all_postcodes, int *
 	    {
 	      /* unpack the postcodes */
 	      MPI_Unpack (buf, bufsize, &position, &postsize,   1       , MPI_INT,  MPI_COMM_WORLD);
-	      postcode = MallocOrDie(sizeof(char) * (postsize+1));
+	      ESL_ALLOC(postcode, sizeof(char) * (postsize+1));
 	      MPI_Unpack (buf, bufsize, &position, postcode, (postsize+1), MPI_CHAR, MPI_COMM_WORLD);
 	      all_postcodes[index++] = postcode;
 	    }
@@ -1089,8 +1101,7 @@ void aln_send_terminate (int rank_to_send_to)
   char job_type = TERMINATE_WORK;
 
   bufsize = sizeof(char);
-
-  buf = MallocOrDie(bufsize);
+  ESL_ALLOC(buf, bufsize);
   
   /* Send the bufsize (only b/c aln_receive_job expects it) */
   MPI_Send (&bufsize, 1, MPI_INT, rank_to_send_to, ALN_JOB_SIZE_TAG, MPI_COMM_WORLD);
@@ -1443,7 +1454,467 @@ mpi_worker_cm_and_cp9_search_maxsc(CM_t *cm, int do_fast, int do_minmax, int my_
   if (scores != NULL) free(scores);
   return;
 }
+#endif
+
+/* Function:  cm_MPIBroadcast()
+ * Incept:    EPN, Wed May  9 17:24:53 2007
+ *
+ * Purpose:   Sends CM <cm> to processor <dest>.
+ *            
+ *            If <cm> is NULL, sends a end-of-data signal to <dest>, to
+ *            tell it to shut down.
+ *            
+ */
+int
+cm_MPIBroadcast(CM_t *cm)
+{
+  int   status;
+  int   code;
+  int   sz, n, pos;
+
+  /* Figure out size */
+  if (MPI_Pack_size(1, MPI_INT, comm, &n) != 0) ESL_XEXCEPTION(eslESYS, "mpi pack size failed");
+  if (cm != NULL) {
+    if ((status = cm_MPIPackSize(cm, comm, &sz)) != eslOK) return status;
+    n += sz;
+  }
+
+  /* Make sure the buffer is allocated appropriately */
+  if (*buf == NULL || n > *nalloc) {
+    void *tmp;
+    ESL_RALLOC(*buf, tmp, sizeof(char) * n);
+    *nalloc = n; 
+  }
+
+  /* Pack the status code and HMM into the buffer */
+  pos  = 0;
+  code = (hmm == NULL) ? eslEOD : eslOK;
+  if (MPI_Pack(&code, 1, MPI_INT, *buf, n, &pos, comm) != 0) ESL_EXCEPTION(eslESYS, "mpi pack failed");
+  if (hmm != NULL) {
+    if ((status = p7_hmm_MPIPack(hmm, *buf, n, &pos, comm)) != eslOK) return status;
+  }
+
+  /* Send the packed HMM to the destination. */
+  if (MPI_Send(*buf, n, MPI_PACKED, dest, tag, comm) != 0)  ESL_EXCEPTION(eslESYS, "mpi send failed");
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
+/* Function:  cm_MPIPackSize()
+ * Synopsis:  Calculates size needed to pack a CM.
+ * Incept:    EPN, Mon Aug 27 10:34:15 2007
+ *            based on p7_hmm_MPIPackSize() from HMMER3.
+ *
+ * Purpose:   Calculate an upper bound on the number of bytes
+ *            that <cm_MPIPack()> will need to pack a CM
+ *            <cm> in a packed MPI message for MPI communicator
+ *            <comm>; return that number of bytes in <*ret_n>.
+ *
+ * Returns:   <eslOK> on success, and <*ret_n> contains the answer.
+ *
+ * Throws:    <eslESYS> if an MPI call fails, and <*ret_n> is 0.
+ */
+int
+cm_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n)
+{
+  int   status;
+  int   n = 0;
+  int   K = cm->abc->K;
+  int   M = cm->M;
+  int   nnodes = cm->nodes;
+  int   sz;
+
+  if (MPI_Pack_size(1,         MPI_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");   
+  n += 15*sz; 
+  /* M, nodes, flags, config_opts, search_opts, align_opts, nseq, clen, iel_selfsc, W (10)
+   * enf_start, cutoff_type, cp9_cutoff_type, hmmpad, np (5) 
+   */
+
+  if (MPI_Pack_size(1,       MPI_FLOAT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += (12+K)*sz; 
+  /* el_selfsc, enf_scdiff, sc_boost, cp9_sc_boost, cutoff, cp9_cutoff, pbegin, pend, eff_nseq (9) 
+   * ga, tc, nc, null (3+K) */
+
+  if (MPI_Pack_size(1,      MPI_DOUBLE, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += 2*sz; 
+  /* beta, tau */
+
+  if (MPI_Pack_size(M,        MPI_CHAR, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += 2*sz; 
+  /* sttype, stid */
+
+  if (MPI_Pack_size(M,         MPI_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += 7*sz; 
+  /* ndidx, cfirst, cnum, plast, pnum, ibeginsc, iendsc */
+
+  if (MPI_Pack_size(M,       MPI_FLOAT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += 4*sz; 
+  /* begin, end, beginsc, endsc */
+
+  if (MPI_Pack_size(nnodes,    MPI_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += 2*sz; 
+  /* nodemap, ndtype */
+
+  if (MPI_Pack_size(M*K*K,   MPI_FLOAT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += 2*sz; 
+  /* e, esc */
+
+  if (MPI_Pack_size(M*MAXCONNECT,MPI_FLOAT,comm,&sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += 2*sz; 
+  /* t, tsc */
+
+  if (MPI_Pack_size(M*K*K,    MPI_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += sz; 
+  /* iesc */
+
+  if (MPI_Pack_size(M*MAXCONNECT,MPI_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += sz; 
+  /* itsc */
+
+  if ((status = esl_mpi_PackOptSize(cm->enfseq, -1, MPI_CHAR, comm, &sz)) != eslOK) goto ERROR; 
+  n += sz; /* enfseq */
+
+  if ((status = esl_mpi_PackOptSize(cm->name, -1, MPI_CHAR, comm, &sz)) != eslOK) goto ERROR; 
+  n += sz; /* name */
+
+  if (cm->flags & CMH_ACC)  { if ((status = esl_mpi_PackOptSize(cm->acc, -1,  MPI_CHAR,  comm, &sz)) != eslOK) goto ERROR;  n+= sz; }
+  if (cm->flags & CMH_DESC) { if ((status = esl_mpi_PackOptSize(cm->desc,-1,  MPI_CHAR,  comm, &sz)) != eslOK) goto ERROR;  n+= sz; }
+  
+  *ret_n = n;
+  return eslOK;
+
+ ERROR:
+  *ret_n = 0;
+  return status;
+
+}
+
+/* Function:  cm_justread_MPIPackSize()
+ *
+ * Synopsis:  Calculates size needed to pack a CM that has
+ *            just been read from a CM file by a CMFileRead()
+ *            call, we'll need to pack far less than a fully
+ *            configure CM in this case.
+ *
+ * Incept:    EPN, Mon Aug 27 10:34:15 2007
+ *            based on p7_hmm_MPIPackSize() from HMMER3.
+ *
+ * Purpose:   Calculate an upper bound on the number of bytes
+ *            that <cm_MPIPack()> will need to pack a CM
+ *            <cm> in a packed MPI message for MPI communicator
+ *            <comm>; return that number of bytes in <*ret_n>.
+ *
+ * Returns:   <eslOK> on success, and <*ret_n> contains the answer.
+ *
+ * Throws:    <eslESYS> if an MPI call fails, and <*ret_n> is 0.
+ */
+int
+cm_justread_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n)
+{
+  int   status;
+  int   n = 0;
+  int   K = cm->abc->K;
+  int   M = cm->M;
+  int   nnodes = cm->nodes;
+  int   sz;
+
+  if (MPI_Pack_size(1,         MPI_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");   
+  n += 4*sz; /* M, nodes, nseq, clen */ 
+
+  if (MPI_Pack_size(1,       MPI_FLOAT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += (5+K)*sz; 
+  /* el_selfsc, eff_nseq, ga, tc, nc, null (5+K) */
+
+  if (MPI_Pack_size(M,        MPI_CHAR, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += 2*sz; 
+  /* sttype, stid */
+
+  if (MPI_Pack_size(M,         MPI_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += 7*sz; 
+  /* ndidx, cfirst, cnum, plast, pnum, ibeginsc, iendsc */
+
+  if (MPI_Pack_size(nnodes,    MPI_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += 2*sz; 
+  /* nodemap, ndtype */
+
+  if (MPI_Pack_size(M*K*K,   MPI_FLOAT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += sz; 
+  /* e */
+
+  if (MPI_Pack_size(M*MAXCONNECT,MPI_FLOAT,comm,&sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += sz; 
+  /* t */
+
+  if ((status = esl_mpi_PackOptSize(cm->name, -1, MPI_CHAR, comm, &sz)) != eslOK) goto ERROR; 
+  n += sz; /* name */
+
+  if (cm->flags & CMH_ACC)  { if ((status = esl_mpi_PackOptSize(cm->acc, -1,  MPI_CHAR,  comm, &sz)) != eslOK) goto ERROR;  n+= sz; }
+  if (cm->flags & CMH_DESC) { if ((status = esl_mpi_PackOptSize(cm->desc,-1,  MPI_CHAR,  comm, &sz)) != eslOK) goto ERROR;  n+= sz; }
+  
+  *ret_n = n;
+  return eslOK;
+
+ ERROR:
+  *ret_n = 0;
+  return status;
+
+}
+#endif
+void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank) 
+{
+  char buf[BUFSIZE];      /* Buffer for packing it all but the bulk of the CM */
+  int position = 0;         /* Where I am in the buffer */
+  int nstates, nnodes;
+  int enf_len;
+  int nparts;
+  int i;
+  int p;
+
+  position = 0;
+  if (mpi_my_rank == mpi_master_rank) 
+    {   /* I'm in charge */
+      /* contract check, if we claim to have Gumbel stats, we better have them */
+      if((*cm)->flags & CM_GUMBEL_STATS && (*cm)->stats == NULL)
+	esl_fatal("ERROR in broadcast_cm() master node claims to have Gumbel stats but cm->stats is NULL!\n");
+      nstates = (*cm)->M;
+      nnodes = (*cm)->nodes;
+      
+      /* Basics of the model */
+      MPI_Pack (&nstates,                  1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD); 
+      MPI_Pack (&nnodes,                   1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->flags),           1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->config_opts),     1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->align_opts),      1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->search_opts),     1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->el_selfsc),       1, MPI_FLOAT,  buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->iel_selfsc),      1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->W),               1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->enf_start),       1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->enf_scdiff),      1, MPI_FLOAT,  buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->sc_boost),        1, MPI_FLOAT,  buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->cp9_sc_boost),    1, MPI_FLOAT,  buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->cutoff_type),     1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->cutoff),          1, MPI_FLOAT,  buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->cp9_cutoff_type), 1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->cp9_cutoff),      1, MPI_FLOAT,  buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->beta),            1, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->tau),             1, MPI_DOUBLE, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->hmmpad),          1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->pbegin),          1, MPI_FLOAT,  buf, BUFSIZE, &position, MPI_COMM_WORLD);
+      MPI_Pack (&((*cm)->pend),            1, MPI_FLOAT,  buf, BUFSIZE, &position, MPI_COMM_WORLD);
+
+      /* Take special care with enf_len, this is used later to get cm->enf_seq if nec */
+      if((*cm)->enf_start != 0) enf_len = strlen((*cm)->enf_seq);
+      else enf_len = 0;
+      MPI_Pack (&enf_len,                  1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+
+      /* Take special care with number of partitions, used later to get cm->stats if nec */
+      if((*cm)->flags & CM_GUMBEL_STATS) nparts = (*cm)->stats->np;
+      else nparts = 0;
+      MPI_Pack (&nparts,                  1, MPI_INT, buf, BUFSIZE, &position, MPI_COMM_WORLD);
+
+    }
+  /* Broadcast to everyone */
+  MPI_Bcast (buf, BUFSIZE, MPI_PACKED, mpi_master_rank, MPI_COMM_WORLD);
+
+  /* Decode this first set */
+  position = 0;
+  if (mpi_my_rank != mpi_master_rank) 
+    {
+      MPI_Unpack (buf, BUFSIZE, &position, &nstates, 1, MPI_INT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &nnodes, 1, MPI_INT, MPI_COMM_WORLD);
+      *cm = CreateCM (nnodes, nstates);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->flags),           1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->config_opts),     1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->align_opts),      1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->search_opts),     1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->el_selfsc),       1, MPI_FLOAT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->iel_selfsc),      1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->W),               1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->enf_start),       1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->enf_scdiff),      1, MPI_FLOAT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->sc_boost),        1, MPI_FLOAT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cp9_sc_boost),    1, MPI_FLOAT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->ffract),          1, MPI_FLOAT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cutoff_type),     1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cutoff),          1, MPI_FLOAT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cp9_cutoff_type), 1, MPI_FLOAT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cp9_cutoff),      1, MPI_FLOAT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->beta),            1, MPI_DOUBLE,MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->tau),             1, MPI_DOUBLE,MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->hmmpad),          1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->pbegin),          1, MPI_FLOAT, MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->pend),            1, MPI_FLOAT,   MPI_COMM_WORLD);
+
+      MPI_Unpack (buf, BUFSIZE, &position, &enf_len,                  1, MPI_INT,   MPI_COMM_WORLD);
+      MPI_Unpack (buf, BUFSIZE, &position, &nparts,                   1, MPI_INT,   MPI_COMM_WORLD);
+    }
+  /* Now we broadcast the rest of the model using many calls to MPI_Bcast.  
+     This is inefficient, but is probably negligible compared to the actual 
+     searches */
+  MPI_Bcast ((*cm)->null,   Alphabet_size, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->sttype, nstates,       MPI_CHAR,  mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->ndidx,  nstates,       MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->stid,   nstates,       MPI_CHAR,  mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->cfirst, nstates,       MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->cnum,   nstates,       MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->plast,  nstates,       MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->pnum,   nstates,       MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
+ 
+  MPI_Bcast ((*cm)->nodemap, nnodes, MPI_INT,  mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->ndtype,  nnodes, MPI_CHAR, mpi_master_rank, MPI_COMM_WORLD);
+
+  MPI_Bcast ((*cm)->begin,    nstates, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->end,      nstates, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->beginsc,  nstates, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->endsc,    nstates, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->ibeginsc, nstates, MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->iendsc,   nstates, MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
+
+  /* These next calls depend on Sean's FMX2Alloc to be what CreateCM calls, and to allocate one large
+     memory chunk at x[0] (where x is float **) and then fill in x[1]..x[n] with the appropriate offsets into
+     this chunk of memory */
+  MPI_Bcast ((*cm)->t[0], nstates*MAXCONNECT, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->e[0], nstates*Alphabet_size*Alphabet_size, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->tsc[0], nstates*MAXCONNECT, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->esc[0], nstates*Alphabet_size*Alphabet_size, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->itsc[0], nstates*MAXCONNECT, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->iesc[0], nstates*Alphabet_size*Alphabet_size, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
+
+  /* Broadcast the enf_seq, if it's NULL (enf_start == 0) we don't */
+  if((*cm)->enf_start != 0)
+    {
+      if (mpi_my_rank != mpi_master_rank) 
+	ESL_ALLOC((*cm)->enf_seq, sizeof(char) * (enf_len+1));
+      MPI_Bcast((*cm)->enf_seq, enf_len, MPI_CHAR, mpi_master_rank, MPI_COMM_WORLD);
+      if (mpi_my_rank != mpi_master_rank) 
+	(*cm)->enf_seq[enf_len] = '\0';
+    }
+
+  /* Broadcast the Gumbel stats if they exist 
+   * IMPT: currently filter threshold stats are NOT broadcasted as they're only
+   * used to get cm->cp9_cutoff, which is broadcasted separately. We could get 
+   * away with not broadcasting these stats too - though we'd have to modify 
+   * parallel_search_database() to be independent on Gumbel params */
+  if((*cm)->flags & CM_GUMBEL_STATS) /* flags were already sent/received */
+    {
+      if (mpi_my_rank != mpi_master_rank) 
+	(*cm)->stats = AllocCMStats(nparts); /* nparts was already sent/recd */
+      for(i = 0; i < NGUMBELMODES; i++)
+	for(p = 0; p < nparts; p++)
+	  {	    
+	    MPI_Bcast(&((*cm)->stats->gumAA[i][p]->N),      1, MPI_INT,    mpi_master_rank, MPI_COMM_WORLD);
+	    MPI_Bcast(&((*cm)->stats->gumAA[i][p]->L),      1, MPI_INT,    mpi_master_rank, MPI_COMM_WORLD);
+	    MPI_Bcast(&((*cm)->stats->gumAA[i][p]->mu),     1, MPI_DOUBLE, mpi_master_rank, MPI_COMM_WORLD);
+	    MPI_Bcast(&((*cm)->stats->gumAA[i][p]->lambda), 1, MPI_DOUBLE, mpi_master_rank, MPI_COMM_WORLD);
+	  }
+    }
+  return eslOK;
+}  
+
+
+/* BEGIN NEW 1.0 CODE HEREHEREHEREHERE */
+/*
+ * Function: search_results_MPIUnpack() 
+ * Date:     RJK, Wed May 29, 2002 [St. Louis]
+ * Purpose:  Does a blocking call to MPI_Recv until a process finishes, then
+ *           processes results and returns.
+ */
+#if 0
+int search_check_results (db_seq_t **active_seqs, job_t **process_status, int D) {
+  char *buf;
+  int bufsize;
+  MPI_Status status;
+  int data_from;        /* Who's sending us data */
+  char results_type;
+  int position = 0;
+  int num_results;
+  int start, stop, bestr;
+  float score;
+  db_seq_t *cur_seq;
+  char in_revcomp;
+  int index;
+  int i;
+  int cur_seq_index;
+  Parsetree_t *tr;
+
+  /* Get the size of the buffer */
+  MPI_Recv (&bufsize, 1, MPI_INT, MPI_ANY_SOURCE, 
+	    SEARCH_STD_SEARCH_RESULTS_SIZE_TAG, MPI_COMM_WORLD, &status);
+  data_from = status.MPI_SOURCE;
+  ESL_ALLOC(buf, (char)*bufsize);
+
+  /* Figure out the sequence it belongs to */
+  cur_seq_index = process_status[data_from]->db_seq_index;
+  cur_seq = active_seqs[cur_seq_index];
+  index = process_status[data_from]->index;
+  in_revcomp = process_status[data_from]->in_revcomp;
+
+  /* Clear this job -- it's done */
+  free(process_status[data_from]);
+  process_status[data_from] = NULL;
+
+  /* Now get the results */
+  MPI_Recv (buf, bufsize, MPI_PACKED, data_from, SEARCH_STD_SEARCH_RESULTS_TAG, 
+	    MPI_COMM_WORLD, &status);
+  MPI_Unpack (buf, bufsize, &position, &results_type, 1, 
+	      MPI_CHAR, MPI_COMM_WORLD);
+
+  if (results_type == SEARCH_STD_SEARCH_RESULTS) {
+    MPI_Unpack (buf, bufsize, &position, &num_results, 1, 
+		MPI_INT, MPI_COMM_WORLD);
+    if (num_results > 0 && cur_seq->results[(int)in_revcomp] == NULL) {
+      cur_seq->results[(int)in_revcomp] = CreateResults (INIT_RESULTS);
+    }
+    for (i=0; i<num_results; i++) {
+      MPI_Unpack(buf, bufsize, &position, &start, 1, MPI_INT, MPI_COMM_WORLD);
+      MPI_Unpack(buf, bufsize, &position, &stop, 1, MPI_INT, MPI_COMM_WORLD);
+      MPI_Unpack(buf, bufsize, &position, &bestr, 1, MPI_INT, MPI_COMM_WORLD);
+      MPI_Unpack(buf, bufsize, &position, &score,1, MPI_FLOAT, MPI_COMM_WORLD);
+      /* Don't report hits from first D nucleotides in second overlapping seq
+	 because it wasn't a full analysis for seqs ending there -- longer
+	 seqs missed */
+      if (index == 1 || stop > D)
+	report_hit (index+start-1, index+stop-1, bestr, score, 
+		    cur_seq->results[(int)in_revcomp]);
+    }
+    cur_seq->chunks_sent--;
+  } else if (results_type == ALN_RESULTS) {
+    ESL_ALLOC(tr, sizeof(Parsetree_t));
+    /* Get size of the tree */
+    MPI_Unpack (buf, bufsize, &position, &(tr->memblock), 1, MPI_INT, MPI_COMM_WORLD);
+    MPI_Unpack (buf, bufsize, &position, &(tr->n), 1, MPI_INT, MPI_COMM_WORLD);
+    /* Allocate it */
+    ESL_ALLOC(tr->emitl, sizeof(int)*tr->n);
+    ESL_ALLOC(tr->emitr, sizeof(int)*tr->n);
+    ESL_ALLOC(tr->state, sizeof(int)*tr->n);
+    ESL_ALLOC(tr->nxtl,  sizeof(int)*tr->n);
+    ESL_ALLOC(tr->nxtr,  sizeof(int)*tr->n);
+    ESL_ALLOC(tr->prv,   sizeof(int)*tr->n);
+    ESL_ALLOC(tr->mode,  sizeof(int)*tr->n);
+    ESL_ALLOC(tr->nalloc,sizeof(int)*tr->n);
+    tr->nalloc = tr->n;
+
+    /* Unpack it */
+    MPI_Unpack (buf, bufsize, &position, tr->emitl, tr->n, MPI_INT, MPI_COMM_WORLD);
+    MPI_Unpack (buf, bufsize, &position, tr->emitr, tr->n, MPI_INT, MPI_COMM_WORLD);
+    MPI_Unpack (buf, bufsize, &position, tr->state, tr->n, MPI_INT, MPI_COMM_WORLD);
+    MPI_Unpack (buf, bufsize, &position, tr->nxtl, tr->n, MPI_INT, MPI_COMM_WORLD);
+    MPI_Unpack (buf, bufsize, &position, tr->nxtr, tr->n, MPI_INT, MPI_COMM_WORLD);
+    MPI_Unpack (buf, bufsize, &position, tr->prv, tr->n, MPI_INT, MPI_COMM_WORLD);
+    MPI_Unpack (buf, bufsize, &position, tr->mode, tr->n, MPI_INT, MPI_COMM_WORLD);
+    cur_seq->results[(int)in_revcomp]->data[index].tr = tr;
+    cur_seq->alignments_sent--;
+  } else {
+    Die ("Got result type %d when expecting SEARCH_STD_SEARCH_RESULTS (%d) or ALN_RESULTS (%d)\n", results_type, SEARCH_STD_SEARCH_RESULTS, ALN_RESULTS);
+  }
+  free(buf);
+  return(cur_seq_index);
+}
 
 #endif
 
 
+#endif

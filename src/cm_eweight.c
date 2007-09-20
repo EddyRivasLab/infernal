@@ -16,17 +16,18 @@
  * SVN $Id$
  */
 
+#include "esl_config.h"
 #include "config.h"
-#include "squidconf.h"
-#include "easel.h"
 
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
-#include "prior.h"
-#include "structs.h"
+#include "easel.h"
+#include "esl_vectorops.h"
+
 #include "funcs.h"
-#include <esl_vectorops.h>
+#include "structs.h"
 
 /* Function: CM_Eweight [EPN]
  * based on:
@@ -43,9 +44,10 @@
  * Return: eff_no        - New effective sequence number.                         
  */
 double
-CM_Eweight(CM_t *cm, Prior_t *pri, float numb_seqs, 
+CM_Eweight(CM_t *cm, const Prior_t *pri, float numb_seqs, 
 	float targetent)
 {
+  int status;
   int i;
   int j;
   float eff_no;                  /* New effective sequence number */
@@ -70,10 +72,10 @@ CM_Eweight(CM_t *cm, Prior_t *pri, float numb_seqs,
   /**************
    * Allocations
    **************/
-  ent    = MallocOrDie((cm->nodes) * sizeof(double));
-  counts = MallocOrDie(sizeof(double) * pri->maxnalpha);
-  probs  = MallocOrDie(sizeof(double) * pri->maxnalpha);
-  mixq   = MallocOrDie(sizeof(double) * pri->maxnq);
+  ESL_ALLOC(ent,      sizeof(double) * cm->nodes);
+  ESL_ALLOC(counts,   sizeof(double) * pri->maxnalpha);
+  ESL_ALLOC(probs,    sizeof(double) * pri->maxnalpha);
+  ESL_ALLOC(mixq,     sizeof(double) * pri->maxnq);
 	  	  
   /*****************
    * Initializations 
@@ -202,7 +204,7 @@ CM_Eweight(CM_t *cm, Prior_t *pri, float numb_seqs,
 	      /* Re-scale the current counts by the previously determined amount. 
 	       * (easel/esl_vectorops.c) 
 	       */
-	      DScale(counts, (MAXABET*MAXABET), scale);
+	      esl_vec_DScale(counts, (MAXABET*MAXABET), scale);
 	      
 	      /* Re-add priors to these scaled counts. (easel/esl_dirichlet.c) */
 	      esl_mixdchlet_MPParameters(counts, MAXABET*MAXABET,
@@ -222,7 +224,7 @@ CM_Eweight(CM_t *cm, Prior_t *pri, float numb_seqs,
 	      /* Re-scale the current counts by the previously determined amount. 
 	       * (easel/esl_vectorops.c) 
 	       */
-	      DScale(counts, MAXABET, scale);
+	      esl_vec_DScale(counts, MAXABET, scale);
 	      
 	      /* Re-add the priors to these scaled counts. (easel/esl_dirichlet.c) */
 	      esl_mixdchlet_MPParameters(counts, MAXABET,
@@ -257,6 +259,10 @@ CM_Eweight(CM_t *cm, Prior_t *pri, float numb_seqs,
   eff_no = numb_seqs * scale;
   /*printf("[scale=%.2f] ", scale);*/
   return(eff_no);
+
+ ERROR: 
+  esl_fatal("Memory allocation error.");
+  return 0.; /* never reached */
 }
 
 
@@ -348,8 +354,8 @@ CMRescale(CM_t *cm, float scale)
     }/* end loop over states v */
 
   /* begin, end transitions; only valid [0..M-1] */
-  FScale(cm->begin, cm->M, scale);
-  FScale(cm->end,   cm->M, scale);
+  esl_vec_FScale(cm->begin, cm->M, scale);
+  esl_vec_FScale(cm->end,   cm->M, scale);
   
   return;
 }
@@ -373,9 +379,10 @@ CMRescale(CM_t *cm, float scale)
  * Return: eff_no        - New effective sequence number.                         
  */
 double
-CM_Eweight_RE(CM_t *cm, Prior_t *pri, float numb_seqs, 
+CM_Eweight_RE(CM_t *cm, const Prior_t *pri, float numb_seqs, 
 	      float target_relent, float *randomseq)
 {
+  int status;
   int i;
   int j;
   float eff_no;                  /* New effective sequence number */
@@ -402,10 +409,10 @@ CM_Eweight_RE(CM_t *cm, Prior_t *pri, float numb_seqs,
   /**************
    * Allocations
    **************/
-  rel_ent    = MallocOrDie((cm->nodes) * sizeof(double));
-  counts = MallocOrDie(sizeof(double) * pri->maxnalpha);
-  probs  = MallocOrDie(sizeof(double) * pri->maxnalpha);
-  mixq   = MallocOrDie(sizeof(double) * pri->maxnq);
+  ESL_ALLOC(rel_ent, sizeof(double) * (cm->nodes));
+  ESL_ALLOC(counts,  sizeof(double) * pri->maxnalpha);
+  ESL_ALLOC(probs,   sizeof(double) * pri->maxnalpha);
+  ESL_ALLOC(mixq,    sizeof(double) * pri->maxnq);
 	  	  
   /*****************
    * Initializations 
@@ -544,7 +551,7 @@ CM_Eweight_RE(CM_t *cm, Prior_t *pri, float numb_seqs,
 	      /* Re-scale the current counts by the previously determined amount. 
 	       * (easel/esl_vectorops.c) 
 	       */
-	      DScale(counts, (MAXABET*MAXABET), scale);
+	      esl_vec_DScale(counts, (MAXABET*MAXABET), scale);
 	      
 	      /* Re-add priors to these scaled counts. (easel/esl_dirichlet.c) */
 	      esl_mixdchlet_MPParameters(counts, MAXABET*MAXABET,
@@ -565,7 +572,7 @@ CM_Eweight_RE(CM_t *cm, Prior_t *pri, float numb_seqs,
 	      /* Re-scale the current counts by the previously determined amount. 
 	       * (easel/esl_vectorops.c) 
 	       */
-	      DScale(counts, MAXABET, scale);
+	      esl_vec_DScale(counts, MAXABET, scale);
 	      
 	      /* Re-add the priors to these scaled counts. (easel/esl_dirichlet.c) */
 	      esl_mixdchlet_MPParameters(counts, MAXABET,
@@ -601,6 +608,10 @@ CM_Eweight_RE(CM_t *cm, Prior_t *pri, float numb_seqs,
   eff_no = numb_seqs * scale;
   /*printf("[scale=%.2f] ", scale);*/
   return(eff_no);
+
+ ERROR: 
+  esl_fatal("Memory allocation error.");
+  return 0.; /* never reached */
 }
 
 /* Function:  DRelEntropy()

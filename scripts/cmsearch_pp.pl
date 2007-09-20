@@ -221,14 +221,14 @@ for($x = 0; $x < scalar(@sorted_ci_A); $x++)
 	}
 	if($cm =~ m/\w/)
 	{
-	    $out_lines_A[$x] = sprintf("%-24s %-24s %7.2f %9d %9d %d (GC=%2d)\n", $cm, $targname, $sc, $start, $end, $orient, $gc_content); 
+	    $out_lines_A[$x] = sprintf("%-24s %-24s %12.7f %9d %9d %d (GC=%2d)\n", $cm, $targname, $sc, $start, $end, $orient, $gc_content); 
 	    $cm .= "|";
 	    if($do_top_query) { $cm_for_out_lines_A[$x]     = $cm;    }
 	    if($do_top_target){ $target_for_out_lines_A[$x] = $targname;}
 	}
 	else
 	{
-	    $out_lines_A[$x] = sprintf("%-24s %7.2f %9d %9d %d (GC=%2d)\n", $targname, $sc, $start, $end, $orient, $gc_content); 
+	    $out_lines_A[$x] = sprintf("%-24s %12.7f %9d %9d %d (GC=%2d)\n", $targname, $sc, $start, $end, $orient, $gc_content); 
 	    if($do_top_query) { $cm_for_out_lines_A[$x]     = "ONLYONE";}
 	    if($do_top_target){ $target_for_out_lines_A[$x] = $targname;  }
 	}

@@ -57,7 +57,7 @@ main(int argc, char **argv)
    if (do_local) cm->config_opts |= CM_CONFIG_LOCAL;
 
    ConfigCM(cm, NULL, NULL);
-   cons = CreateCMConsensus(cm, 3.0, 1.0);
+   CreateCMConsensus(cm, 3.0, 1.0, &con);
 
    while ( ReadSeq(sqfp, sqfp->format, &seq, &sqinfo) )
    {

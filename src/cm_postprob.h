@@ -11,24 +11,27 @@
 #ifndef CMPOSTPROB_INCLUDED
 #define CMPOSTPROB_INCLUDED
 
+#include "esl_config.h"
 #include "config.h"
+
+#include "easel.h"
+
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
-#include "squid.h"
 
-extern float FInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
+extern float FInside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		     float ***alpha, float ****ret_alpha, 
 		     struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
 		     int allow_begin);
-extern float IInside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
+extern float IInside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		     int ***alpha, int ****ret_alpha, 
 		     struct Ideckpool_s *dpool, struct Ideckpool_s **ret_dpool,
 		     int allow_begin);
-extern float FOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
+extern float FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		      float ***beta, float ****ret_beta, 
 		      struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
 		      int allow_begin, float ***alpha, float ****ret_alpha, int do_check);
-extern float IOutside(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
+extern float IOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		      int ***beta, int ****ret_beta, 
 		      struct Ideckpool_s *dpool, struct Ideckpool_s **ret_dpool,
 		      int allow_begin, int ***alpha, int ****ret_alpha, int do_check);
@@ -44,20 +47,20 @@ extern float FScore2Prob(float sc, float null);
 extern void  CMCheckPosterior(int L, CM_t *cm, float ***post);
 extern void ICMCheckPosterior(int L, CM_t *cm, int ***post);
 
-extern float FInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
+extern float FInside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 			     float ***alpha, float ****ret_alpha, 
 			     struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
 			     int allow_begin, int *jmin, int *jmax, int **hdmin, int **hdmax);
-extern float IInside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
+extern float IInside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 			     int ***alpha, int ****ret_alpha, 
 			     struct Ideckpool_s *dpool, struct Ideckpool_s **ret_dpool,
 			     int allow_begin, int *jmin, int *jmax, int **hdmin, int **hdmax);
-extern float FOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
+extern float FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 			      float ***beta, float ****ret_beta, 
 			      struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
 			      int allow_begin, float ***alpha, float ****ret_alpha, 
 			      int do_check, int *jmin, int *jmax, int **hdmin, int **hdmax);
-extern float IOutside_b_jd_me(CM_t *cm, char *dsq, int L, int i0, int j0, int do_full,
+extern float IOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 			      int ***beta, int ****ret_beta, 
 			      struct Ideckpool_s *dpool, struct Ideckpool_s **ret_dpool,
 			      int allow_begin, int ***alpha, int ****ret_alpha, 

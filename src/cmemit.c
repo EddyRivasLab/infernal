@@ -5,828 +5,674 @@
 /* cmemit.c
  * EPN, 09.01.06 Janelia Farm
  * based on HMMER-2.3.2's hmmemit.c from SRE
- *  
- * main() for generating sequences from an CM
+ * Easelfied: EPN, Tue Aug 14 07:01:44 2007 
+ *
+ * Generate sequences from a CM.
  */
 
-#include "config.h"		/* compile-time configuration constants */
-#include "squidconf.h"
+#include "esl_config.h"
+#include "config.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
-#include "structs.h"		/* data structures, macros, #define's   */
-#include "funcs.h"		/* function declarations                */
-#include "squid.h"		/* general sequence analysis library    */
-#include "msa.h"		/* squid's multiple sequence i/o        */
-#include "stats.h"
-#include "cm_dispatch.h"	
-#include "sre_random.h"
-#include <esl_vectorops.h>
+#include "easel.h"
+#include <esl_getopts.h>
 #include <esl_histogram.h>
-#include <esl_stats.h>
 #include <esl_random.h>
+#include <esl_stats.h>
+#include <esl_stopwatch.h>
+#include <esl_vectorops.h>
+#include <esl_wuss.h>
 
-static char banner[] = "cmemit - generate sequences from a covariance model";
+#include "funcs.h"		/* function declarations                */
+#include "structs.h"		/* data structures, macros, #define's   */
 
-static char usage[]  = "\
-Usage: cmemit [-options] <cm file>\n\
-Available options are:\n\
-   -l     : local; emit from a locally configured CM\n\
-   -s <n> : set random number seed to <n>\n\
-   -a     : write generated sequences as an alignment, not FASTA\n\
-   -c     : generate a single \"consensus\" sequence\n\
-   -h     : help; print brief help on version and usage\n\
-   -n <n> : emit <n> sequences (default 10)\n\
-   -o <f> : save sequences in file <f>\n\
-   -q     : quiet - suppress verbose banner\n\
-";
+#define ALPHOPTS "--rna,--dna"                         /* Exclusive options for alphabet choice */
+#define OUTOPTS  "-u,-c,-a,--hmmbuild"                 /* Exclusive options for output */
 
-static char experts[] = "\
-   --begin <n>    : truncate alignment, begin at match column <n>\n\
-   --end   <n>    : truncate alignment, end   at match column <n>\n\
-   --zeroinserts  : set insert emission scores to 0\n\
-   --hmmbuild     : build a ML CM Plan 9 HMM from the samples\n\
-   --hmmscore     : score samples with a CM Plan 9 HMM\n\
-   --hmmlocal     : w/hmmscore, search with CP9 HMM in local mode\n\
-   --hmmfast      : w/hmmscore, assume CM parse tree scores are optimal\n\
-   --hmmrealfast  : w/hmmscore, assume CM & HMM parse scores are optimal\n\
-   --cmeval       : w/hmmscore, min CM E-value to consider\n\
-   --cmN <n>      : w/hmmscore & cmeval, db size E-val corresponds with\n\
-   --inside       : w/hmmscore, score CM seqs with inside\n\
-   --ptest        : do parse test, are sampled parses optimal?\n\
-   --exp <x>      : exponentiate CM probs by <x> prior to emitting\n\
-";
-
-static struct opt_s OPTIONS[] = {
-  { "-h",        TRUE,  sqdARG_NONE }, 
-  { "-s",        TRUE,  sqdARG_INT},
-  { "-l",        TRUE,  sqdARG_NONE },
-  { "-a",        TRUE,  sqdARG_NONE },  
-  { "-c",        TRUE,  sqdARG_NONE },  
-  { "-n",        TRUE,  sqdARG_INT},  
-  { "-o",        TRUE,  sqdARG_STRING},
-  { "-q",        TRUE,  sqdARG_NONE},  
-  { "--begin",   FALSE, sqdARG_INT },
-  { "--end",     FALSE, sqdARG_INT },
-  { "--zeroinserts",FALSE, sqdARG_NONE},
-  { "--hmmbuild",FALSE, sqdARG_NONE },
-  { "--hmmscore",FALSE, sqdARG_NONE },
-  { "--hmmlocal",FALSE, sqdARG_NONE },
-  { "--hmmfast", FALSE, sqdARG_NONE },
-  { "--hmmrealfast", FALSE, sqdARG_NONE },
-  { "--cmeval",  FALSE, sqdARG_FLOAT },
-  { "--cmN",     FALSE, sqdARG_FLOAT },
-  { "--ptest",   FALSE, sqdARG_NONE },
-  { "--exp",     FALSE, sqdARG_FLOAT },
-  { "--inside",  FALSE, sqdARG_NONE }
+static ESL_OPTIONS options[] = {
+  /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
+  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
+  { "-l",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "local; emit from a locally configured model",  1 },
+  { "-s",        eslARG_INT,    NULL,  NULL, "n>0",     NULL,      NULL,        NULL, "set random number generator seed to <n>",  1 },
+  { "-n",        eslARG_INT,    "10",  NULL, "n>0",     NULL,      NULL,        NULL, "generate <n> sequences",  1 },
+  { "-q",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "quiet; suppress verbose banner",         1 },
+  /* output options */
+  { "-o",        eslARG_OUTFILE,NULL,  NULL, NULL,      NULL,      NULL,        NULL, "save sequences in file <f>", 2 },
+  { "-u",        eslARG_NONE,"default",NULL, NULL,   OUTOPTS,     NULL,        NULL, "write generated sequences as unaligned FASTA",  2 },
+  { "-a",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,      NULL,        NULL, "write generated sequences as a STOCKHOLM alignment",  2 },
+  { "-c",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,      NULL,        NULL, "generate a single \"consensus\" sequence only",  2 },
+  { "--hmmbuild",eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,      NULL,   "--tfile", "build and output a ML CM Plan 9 HMM from generated alignment", 2 },
+  { "--tfile",   eslARG_OUTFILE,NULL,  NULL, NULL,      NULL,      NULL,        NULL, "dump parsetrees to file <f>",  2 },
+  { "--rna",     eslARG_NONE,"default",NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as RNA sequence data", 2 },
+  { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 2 },
+  /* Miscellaneous expert options */
+  { "--zeroinserts",eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "zero insert emission scores (A,C,G,U equiprobable)", 3 },
+  { "--exp",     eslARG_REAL,   NULL,  NULL, "0<x<=1.0",NULL,      NULL,        NULL, "exponentiate CM probabilities by <x> before emitting",  3 },
+  { "--begin",   eslARG_INT,    NULL,  NULL, "n>=1",    NULL,"-a,--end",        NULL, "truncate alignment, begin at match column <n>", 3 },
+  { "--end",     eslARG_INT,    NULL,  NULL, "n>=1",    NULL,"-a,--begin",      NULL, "truncate alignment,   end at match column <n>", 3 },
+  {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
-#define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
+
+/* struct cfg_s : "Global" application configuration shared by all threads/processes
+ * 
+ * This structure is passed to routines within main.c, as a means of semi-encapsulation
+ * of shared data amongst different parallel processes (threads or MPI processes).
+ * This strategy is used despite the fact that a MPI version of cmemit does not
+ * yet exist! 
+ */
+struct cfg_s {
+  char         *cmfile;	        /* name of input CM file  */ 
+  CMFILE       *cmfp;		/* open input CM file stream       */
+  ESL_ALPHABET *abc;		/* digital alphabet for CM */
+  ESL_ALPHABET *abc_out; 	/* digital alphabet for writing */
+  FILE         *ofp;		/* output file (default is stdout) */
+  FILE         *pfp;		/* optional output file for parsetrees */
+  ESL_RANDOMNESS *r;            /* source of randomness */
+  int           ncm;            /* number CM we're at in file */
+};
+
+static char usage[]  = "[-options] <cmfile>";
+static char banner[] = "generate sequences from a covariance model";
+
+static int  init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
+
+static void master(const ESL_GETOPTS *go, struct cfg_s *cfg);
+
+static int initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf);
+static int emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf);
+static int emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf);
+static int emit_consensus(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf);
+static int build_cp9(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf);
+static int truncate_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA *msa, char *errbuf);
+
 
 int
-main(int argc, char **argv) 
+main(int argc, char **argv)
 {
-  char            *cmfile;      /* file to read CM from */	
-  CMFILE          *cmfp;	/* open CM file */
-  ESL_RANDOMNESS  *r = NULL;    /* source of randomness                    */
-  CM_t            *cm;          /* CM to generate from */
+  ESL_GETOPTS     *go = NULL;   /* command line processing                     */
+  /*ESL_STOPWATCH   *w  = esl_stopwatch_Create();*/
+  struct cfg_s     cfg;
 
-  FILE            *fp;          /* output file handle                      */
-  char            *ofile;       /* output sequence file                    */
-  int              L;		/* length of a sequence                    */
-  int              i;		/* counter over sequences                  */
-
-  int              nseq;	/* number of seqs to sample                */
-  long             seed;	/* random number generator seed            */
-  int              seed_set;	/* TRUE if -s set on command line      */
-  int              do_qdb;	/* TRUE to config QDBs (on by default)     */
-  int              do_local;	/* TRUE to config the model in local mode  */
-  int              be_quiet;	/* TRUE to silence header/footer           */
-  int              do_alignment;/* TRUE to output in aligned format        */ 
-  int              do_consensus;/* TRUE to do a single consensus seq       */
-
-  char *optname;                /* name of option found by Getopt()        */
-  char *optarg;                 /* argument found by Getopt()              */
-  int   optind;                 /* index in argv[]                         */
-  int   begin_set;              /* TRUE if --begin entered at command line */
-  int   end_set;                /* TRUE if --end entered at command line   */
-  int   spos;                   /* start match column for MSA              */
-  int   epos;                   /* end match column for MSA                */
-  int   ncols;                  /* number of match columns modelled by CM  */
-  int   v;                      /* counter over states                     */
-  int   do_zero_inserts;         /* TRUE to zero insert emission scores    */
-  int   build_cp9;              /* TRUE to build a ML CP9 HMM from the 
-				 * sampled parses of the CM                */
-  int   do_score_cp9;           /* TRUE to score each seq against CP9 HMM  */
-  int   do_hmmlocal;            /* if score_cp9, put CP9 in local mode     */
-  int   do_fastfil;             /* TRUE to assume CM parse score is opt    */
-  int   do_hmmfastfil;          /* TRUE to assume CM/HMMparse score is opt */
-  float cm_sc_cutoff = IMPOSSIBLE;  
-  float cm_e_cutoff  = 10.;
-  int   cm_cutoff_type = SCORE_CUTOFF; 
-  long  cmN = 0;                /* if nec, db size associated with cm_e_cutoff */
-  int   cmN_set;                /* TRUE if --cmN enabled                   */
-  int   do_ptest;               /* TRUE:check if emitted parses are optimal*/
-  int   do_exp;                 /* TRUE to exponentiate CM before emitting */
-  double exp_factor;            /* factor to exponentiate CM params by     */
-  int   do_inside;              /* TRUE to search emitted seqs w/inside    */
   /*********************************************** 
    * Parse command line
    ***********************************************/
 
-  nseq         = 10;
-  seed         = time ((time_t *) NULL);
-  be_quiet     = FALSE;
-  seed_set     = FALSE;
-  do_qdb       = TRUE;  /* on by default */
-  do_local     = FALSE;
-  do_alignment = FALSE;  
-  do_consensus = FALSE;
-  begin_set    = FALSE;
-  end_set      = FALSE;
-  do_zero_inserts=FALSE;
-  build_cp9    = FALSE;
-  do_score_cp9 = FALSE;
-  do_fastfil   = FALSE;
-  do_hmmfastfil= FALSE;
-  do_hmmlocal  = FALSE;
-  do_ptest     = FALSE;
-  do_exp       = FALSE;
-  do_inside    = FALSE;
-  cmN_set      = FALSE;
-  ofile        = NULL;
+  /* Process command line options.
+   */
+  go = esl_getopts_Create(options);
+  if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK || 
+      esl_opt_VerifyConfig(go)               != eslOK)
+    {
+      printf("Failed to parse command line: %s\n", go->errbuf);
+      esl_usage(stdout, argv[0], usage);
+      printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
+      exit(1);
+    }
+  if (esl_opt_GetBoolean(go, "-h") == TRUE) 
+    {
+      cm_banner(stdout, argv[0], banner);
+      esl_usage(stdout, argv[0], usage);
+      puts("\nwhere general options are:");
+      esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
+      puts("\noutput options are:");
+      esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
+      puts("\nmiscellaneous expert options:");
+      esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
+      exit(0);
+    }
+  if (esl_opt_ArgNumber(go) != 1) 
+    {
+      puts("Incorrect number of command line arguments.");
+      esl_usage(stdout, argv[0], usage);
+      puts("\n  where basic options are:");
+      esl_opt_DisplayHelp(stdout, go, 1, 2, 80);
+      printf("\nTo see more help on other available options, do %s -h\n\n", argv[0]);
+      exit(1);
+    }
+  /* Initialize what we can in the config structure (without knowing the alphabet yet).
+   * We could assume RNA, but this HMMER3 based approach is more general.
+   */
+  cfg.cmfile     = esl_opt_GetArg(go, 1); 
+  cfg.cmfp       = NULL;	           /* opened in init_cfg() */
+  cfg.abc        = NULL;	           /* created in init_cfg() */
+  cfg.abc_out    = NULL;	           /* created in init_cfg() */
+  cfg.ofp        = NULL;	           /* opened in init_cfg() */
+  cfg.pfp        = NULL;	           /* opened in init_cfg() */
+  cfg.r          = NULL;	           /* created in init_cfg() */
 
-  while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
-                &optind, &optname, &optarg))  {
-    if      (strcmp(optname, "-l")      == 0) do_local     = TRUE;
-    else if (strcmp(optname, "-s")      == 0) { seed_set = TRUE; seed = (long) atoi(optarg); } 
-    else if (strcmp(optname, "-a")      == 0) do_alignment = TRUE;
-    else if (strcmp(optname, "-c")      == 0) do_consensus = TRUE;
-    else if (strcmp(optname, "-n")      == 0) nseq         = atoi(optarg); 
-    else if (strcmp(optname, "-o")      == 0) ofile        = optarg;
-    else if (strcmp(optname, "-q")      == 0) be_quiet     = TRUE;
-    else if (strcmp(optname, "--begin") == 0) { begin_set  = TRUE; spos = atoi(optarg); }
-    else if (strcmp(optname, "--end")   == 0) { end_set    = TRUE; epos = atoi(optarg); }
-    else if (strcmp(optname, "--zeroinserts")== 0) do_zero_inserts = TRUE;
-    else if (strcmp(optname, "--hmmbuild") == 0) build_cp9 = TRUE;
-    else if (strcmp(optname, "--hmmscore") == 0) do_score_cp9 = TRUE;
-    else if (strcmp(optname, "--hmmlocal") == 0) do_hmmlocal = TRUE;
-    else if (strcmp(optname, "--hmmfast")  == 0) do_fastfil   = TRUE;
-    else if (strcmp(optname, "--hmmrealfast")  == 0) { do_fastfil = TRUE; do_hmmfastfil   = TRUE; }
-    else if (strcmp(optname, "--cmeval")   == 0) { cm_cutoff_type = E_CUTOFF; cm_e_cutoff = atof(optarg); } 
-    else if (strcmp(optname, "--cmN")      == 0) { cmN_set = TRUE; cmN = (long) atoi(optarg); } 
-    else if (strcmp(optname, "--ptest")    == 0) do_ptest = TRUE; 
-    else if (strcmp(optname, "--exp")      == 0) { do_exp = TRUE; exp_factor = atof(optarg); }
-    else if (strcmp(optname, "--inside")   == 0) do_inside = TRUE; 
-    else if (strcmp(optname, "-h")      == 0) 
-      {
-	MainBanner(stdout, banner);
-	puts(usage);
-	puts(experts);
-	exit(EXIT_SUCCESS);
-      }
+  /* do work */
+  /*esl_stopwatch_Start(w);*/
+  master(go, &cfg);
+  /*esl_stopwatch_Stop(w);
+    esl_stopwatch_Display(cfg.ofp, w, "# CPU time: ");*/
+
+  /* Clean up the cfg. 
+   */
+  if (! esl_opt_IsDefault(go, "-o")) { fclose(cfg.ofp); }
+  if (cfg.pfp   != NULL) fclose(cfg.pfp);
+  if (cfg.abc   != NULL) { esl_alphabet_Destroy(cfg.abc); cfg.abc = NULL; }
+  if (cfg.abc_out != NULL) esl_alphabet_Destroy(cfg.abc_out);
+  if (cfg.cmfp  != NULL) CMFileClose(cfg.cmfp);
+  if (cfg.r     != NULL) esl_randomness_Destroy(cfg.r);
+
+  esl_getopts_Destroy(go);
+  /*esl_stopwatch_Destroy(w);*/
+  return 0;
+}
+
+/* init_cfg()
+ * Already set:
+ *    cfg->cmfile  - command line arg 1
+ * Sets: 
+ *    cfg->cmfp    - open CM file
+ *    cfg->abc_out - digital alphabet for output
+ *    cfg->ofp     - open output alignment file                
+ *    cfg->pfp     - optional output file for parsetrees
+ *    cfg->r       - source of randomness
+ */
+static int
+init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
+{
+  /* open CM file for reading */
+  if ((cfg->cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
+    ESL_FAIL(eslFAIL, NULL, "Failed to open covariance model save file %s\n", cfg->cmfile);
+
+  /* create output alphabet */
+  if      (esl_opt_GetBoolean(go, "--rna"))     cfg->abc_out = esl_alphabet_Create(eslRNA);
+  else if (esl_opt_GetBoolean(go, "--dna"))     cfg->abc_out = esl_alphabet_Create(eslDNA);
+
+  /* open output file if necessary */
+  if (esl_opt_GetString(go, "-o") != NULL) {
+    if ((cfg->ofp = fopen(esl_opt_GetString(go, "-o"), "w")) == NULL) 
+      ESL_FAIL(eslFAIL, errbuf, "Failed to open -o output file %s\n", esl_opt_GetString(go, "-o"));
+  } else cfg->ofp = stdout;
+
+  /* open parsetree output file if necessary */
+  if (esl_opt_GetString(go, "--tfile") != NULL) {
+    if ((cfg->pfp = fopen(esl_opt_GetString(go, "--tfile"), "w")) == NULL)
+      ESL_FAIL(eslFAIL, errbuf, "Failed to open --tfile output file %s\n", esl_opt_GetString(go, "--tfile"));
   }
-  if (argc - optind != 1)
-    Die("Incorrect number of arguments.\n%s\n", usage);
 
-  cmfile = argv[optind++];
+  /* create RNG */
+  if (! esl_opt_IsDefault(go, "-s")) 
+    cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
+  else cfg->r = esl_randomness_CreateTimeseeded();
 
-  /* Check for incompatible option combos */
-  if (do_alignment && do_consensus)
-    Die("Sorry, -a and -c are incompatible.\nUsage:\n%s", usage); 
-  if (nseq != 10 && do_consensus)
-    Warn("-c (consensus) overrides -n (# of sampled seqs)");
-  if((begin_set && !end_set) || (!begin_set && end_set))
-    Die("Must use both --begin and --end or neither.\n");
-  if(begin_set && (!do_alignment && !build_cp9))
-    Die("--begin and --end only work with -a or --cp9\n");
-  if(build_cp9 && do_alignment)
-    Die("Sorry, --cp9 and -a are incompatible.\nUsage:\n%s", usage);
-  if(do_hmmlocal && !do_score_cp9)
-    Die("ERROR --hmmlocal only makes sense in combination with --hmmscore.\n");
-  if(do_score_cp9 && (do_alignment || do_consensus))
-    Die("ERROR --hmmscore does not work in combination with -a or -c.\n");
-  if(do_fastfil && do_ptest)
-    Die("ERROR --hmmfast does not work in combination with --ptest.\n");
-  if(do_hmmfastfil && do_ptest)
-    Die("ERROR --hmmrealfast does not work in combination with --ptest.\n");
-  if((!cmN_set) && (cm_cutoff_type == E_CUTOFF))
-    Die("ERROR --cmN and --cmeval must both be used if one is used.\n");
-  
-  /*****************************************************************
-   * Input and configure the CM
-   *****************************************************************/
+  if (cfg->abc_out == NULL) ESL_FAIL(eslEINVAL, errbuf, "Output alphabet creation failed.");
+  if (cfg->r       == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create random number generator: probably out of memory");
 
-  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
-    Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
-  if (! CMFileRead(cmfp, &cm))
-    Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
-  if (cm == NULL) 
-    Die("%s empty?\n", cmfile);
-  CMFileClose(cmfp);
+  return eslOK;
+}
 
-  if(do_qdb)          cm->config_opts |= CM_CONFIG_QDB;
-  if(do_local)        cm->config_opts |= CM_CONFIG_LOCAL;
-  if(do_hmmlocal)     cm->config_opts |= CM_CONFIG_HMMLOCAL;
-  if(do_inside)       cm->search_opts |= CM_SEARCH_INSIDE;
-  if(do_zero_inserts) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
+/* master()
+ * The serial version of cmemit. (There is no parallel version yet).
+ * For each CM, emit sequences/alignment and create output.
+ * 
+ * We only return if successful. All errors are handled immediately and fatally with cm_Fail().
+ */
+static void
+master(const ESL_GETOPTS *go, struct cfg_s *cfg)
+{
+  int      status;
+  char     errbuf[eslERRBUFSIZE];
+  CM_t    *cm = NULL;
+
+  if ((status = init_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
+
+  cfg->ncm = 0;
+
+  while (CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
+  {
+    if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
+    cfg->ncm++;
+    if((status = initialize_cm(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
+    /* Pick 1 of 4 exclusive output options. Output is handled within each function. */
+    if     (esl_opt_GetBoolean(go, "-u")) { 
+      if((status = emit_unaligned(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
+    }
+    else if(esl_opt_GetBoolean(go, "-c")) {
+      if((status = emit_consensus(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
+    }
+    else if(esl_opt_GetBoolean(go, "-a")) {
+      if((status = emit_alignment(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
+    }
+    else if(esl_opt_GetBoolean(go, "--hmmbuild")) {
+      if((status = build_cp9     (go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
+    }
+    FreeCM(cm);
+  }
+  return;
+}
+
+/* initialize_cm()
+ * Setup the CM based on the command-line options/defaults;
+ * only set flags and a few parameters. ConfigCM() configures
+ * the CM.
+ */
+static int
+initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf)
+{
+  /* Update cfg->cm->config_opts and cfg->cm->align_opts based on command line options */
+  if(esl_opt_GetBoolean(go, "-l"))            cm->config_opts |= CM_CONFIG_LOCAL;
+  if(esl_opt_GetBoolean(go, "--zeroinserts")) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
   ConfigCM(cm, NULL, NULL);
+  if(! esl_opt_IsDefault(go, "--exp"))        ExponentiateCM(cm, esl_opt_GetReal(go, "--exp"));
+  
+  return eslOK;
+}
 
-  /* Determine number of consensus columns modelled by CM */
-  ncols = 0;
-  for(v = 0; v <= cm->M; v++)
+/* emit_unaligned
+ * Given a configured CM, generate and output unaligned sequences.
+ */
+static int
+emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf)
+{
+  /* Contract check, output alphabet must be identical to CM alphabet 
+   * with sole exception that CM alphabet can be eslRNA with output alphabet eslDNA.
+   */
+  if(cm->abc->type != cfg->abc_out->type)
+    if(! (cm->abc->type == eslRNA && cfg->abc_out->type != eslDNA))
+      ESL_FAIL(eslFAIL, errbuf, "CM alphabet type must match output alphabet type (unless CM=RNA and output=DNA).");
+
+  int status;
+  Parsetree_t *tr = NULL;  /* generated parsetree */
+  ESL_SQ *sq = NULL;
+  char *name;
+  int namelen;
+  int i, L; 
+
+  if(cm->name != NULL) namelen = strlen(cm->name) + 50; /* 50 digit int is considered max, sloppy. */
+  else                 namelen = 100;                   /* 50 digit int is considered max, sloppy. */
+  ESL_ALLOC(name, sizeof(char) * namelen);
+
+  for(i = 0; i < esl_opt_GetInteger(go, "-n"); i++)
     {
-      if(cm->stid[v] ==  MATP_MP)
-	ncols += 2;
-      else if(cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR)
-	ncols++;
-    }
-
-  if(begin_set && end_set)
-    {
-      if(spos < 1) Die("ERROR, when using --begin <n>, <n> must be >= 1\n");
-      if(epos > ncols) Die("ERROR, --end %d selected; there's only %d match columns.\n", epos, ncols);
-    }
-
-
-  /**********************
-   * Creae and seed RNG *
-   **********************/
-  if (!(seed_set)) 
-    seed = time ((time_t *) NULL);
-  if ((r = esl_randomness_Create(seed)) == NULL) /* we want to know what seed is, this is why
-						  * we don't use esl_randomness_CreateTimeseeded(),
-						  * b/c we lose the seed in that function. */
-    esl_fatal("Failed to create random number generator: probably out of memory");
-
-  /*********************************************** 
-   * Open output file, if needed.
-   ***********************************************/
-
-   if (ofile == NULL) fp = stdout;
-   else {
-     if ((fp = fopen(ofile, "w")) == NULL)
-       Die("Failed to open output file %s for writing", ofile);
-   }
-
-  /*********************************************** 
-   * Show the options banner
-   ***********************************************/
-
-  if (! be_quiet) 
-    {
-      MainBanner(stdout, banner);
-      printf("CM file:             %s\n", cmfile);
-      if (! do_consensus) {
-	printf("Number of seqs:       %d\n", nseq);
-	printf("Random seed:          %ld\n", seed);
-      } else {
-	printf("Generating consensus sequence.\n");
-      }
-      printf("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n\n");
-    }
-
-    /*********************************************** 
-     * Do the work.
-     * If we're generating an alignment, we have to collect
-     * all our traces, then output. If we're generating unaligned
-     * sequences, we can emit one at a time.
-     ***********************************************/
-
-  if (do_exp)
-    ExponentiateCM(cm, exp_factor);
-
-  if (do_consensus) 
-    {
-      CMConsensus_t *con;            /* consensus info for the CM */
-      char    *seq;
-      SQINFO   sqinfo;      /* info about sequence (name/desc)        */
-	
-      /* Determine consensus sequence */
-      con = CreateCMConsensus(cm, 3.0, 1.0);
-      
-      seq = MallocOrDie(sizeof(char) * (con->clen+1));
-      strcpy(seq, con->cseq);
-      L = con->clen;
-      strcpy(sqinfo.name, cm->name);
-      strcpy(sqinfo.desc, "CM generated consensus sequence [cmemit]");
-      
-      sqinfo.len = L;
-      sqinfo.flags = SQINFO_NAME | SQINFO_DESC | SQINFO_LEN;
-      
-      WriteSeq(fp, SQFILE_FASTA, seq, &sqinfo);
-      free(seq);
-      FreeCMConsensus(con);
-    }
-  else if(do_alignment)
-    {
-      Parsetree_t **tr;             /* Parsetrees of emitted aligned sequences */
-      char    **dsq;                /* digitized sequences                     */
-      SQINFO            *sqinfo;    /* info about sequences (name/desc)        */
-      MSA               *msa;       /* alignment */
-      float             *wgt;
-      int *useme;
-      int apos;
-      int cc;
-      int *ct;		/* 0..alen-1 base pair partners array         */
-
-      dsq    = MallocOrDie(sizeof(char *)      * nseq);
-      tr     = MallocOrDie(sizeof(Parsetree_t) * nseq);
-      sqinfo = MallocOrDie(sizeof(SQINFO)      * nseq);
-      wgt    = MallocOrDie(sizeof(float)       * nseq);
-      FSet(wgt, nseq, 1.0);
-      
-      for (i = 0; i < nseq; i++)
+      if(cm->name != NULL) sprintf(name, "%s-%d", cm->name, i+1);
+      else                 sprintf(name, "%d-%d", cfg->ncm, i+1);
+      EmitParsetree(cm, cfg->r, name, TRUE, &tr, &sq, &L);
+      sq->abc = cfg->abc_out;
+      if((esl_sqio_Write(cfg->ofp, sq, eslSQFILE_FASTA)) != eslOK) 
+	ESL_FAIL(eslFAIL, errbuf, "Error writing unaligned sequences.");
+      if(cfg->pfp != NULL)
 	{
-	  EmitParsetree(cm, r, &(tr[i]), NULL, &(dsq[i]), &L);
-	  sprintf(sqinfo[i].name, "seq%d", i+1);
-	  sqinfo[i].len   = L;
-	  sqinfo[i].flags = SQINFO_NAME | SQINFO_LEN;
+	  fprintf(cfg->pfp, "> %s\n", sq->name);
+	  ParsetreeDump(cfg->pfp, tr, cm, sq->dsq, NULL, NULL);
+	  fprintf(cfg->pfp, "//\n");
 	}
-      
-      msa = Parsetrees2Alignment(cm, dsq, sqinfo, NULL, tr, nseq, 
-				 TRUE); /* we want all match columns in alignment */
-      msa->name = sre_strdup(cm->name, -1);
-      msa->desc = sre_strdup("Synthetic sequence alignment generated by cmemit", -1);
-      
-      if(begin_set && end_set)
-	{
-	  WUSS2ct(msa->ss_cons, msa->alen, FALSE, &ct);  
-	  /* Truncate the alignment prior to consensus column spos and after 
-	     consensus column epos */
-	  useme = (int *) MallocOrDie (sizeof(int) * (msa->alen+1));
-	  for (apos = 0, cc = 0; apos < msa->alen; apos++)
-	    {
-	      /* Careful here, placement of cc++ increment is impt, 
-	       * we want all inserts between cc=spos-1 and cc=spos,
-	       * and between cc=epos and cc=epos+1.
-	       * Also be careful: ct[] is index 1..alen,
-	       * and msa->ss_cons is 0..alen-1.
-	       */
-	      if(cc < (spos-1) || cc > epos)
-		{
-		  useme[apos] = 0;
-		  if(ct[(apos+1)] != 0) ct[ct[(apos+1)]] = 0;
-		  ct[(apos+1)] = 0;
-		}
-	      else
-		{
-		  useme[apos] = 1;
-		}
-	      if (!isgap(msa->rf[apos])) 
-		{ 
-		  cc++; 
-		  if(cc == (epos+1))
-		    {
-		      useme[apos] = 0; 
-		      /* we misassigned this guy, overwrite */ 
-		      if(ct[(apos+1)] != 0) ct[ct[(apos+1)]] = 0;
-		      ct[(apos+1)] = 0;
-		    }
-		}
-	    }
-	  /* construct the new structure based on the ct array,
-	   * we don't do full WUSS notation (just laziness) */
-	  for (apos = 0; apos < msa->alen; apos++)
-	    {
-	      if(ct[(apos+1)] == 0)
-		{
-		  if(msa->ss_cons[apos] != '.')
-		    msa->ss_cons[apos] = ':';
-		}
-	      else if (ct[apos+1]  > (apos+1)) msa->ss_cons[apos] = '<';
-	      else if (ct[apos+1]  < (apos+1)) msa->ss_cons[apos] = '>';
-	    }	    
-	  free(ct);
-	  
-	  /*rintf("\n\nDEBUG PRINTING ORIG ALIGNMENT:\n");
-	    WriteStockholm(fp, msa);
-	    printf("\n\nDONE DEBUG PRINTING ORIG ALIGNMENT:\n");
-	    for(apos=0; apos < msa->alen; apos++)
-	    printf("useme[%d]: %d\n", apos, useme[apos]);
-	  */
-	  
-	  MSAShorterAlignment(msa, useme);
-	  free(useme);
-	}
-      
-      /* Output the alignment */
-      WriteStockholm(fp, msa);
-      
-      /* Free memory */
-      for (i = 0; i < nseq; i++) 
-	{
-	  FreeParsetree(tr[i]);
-	  free(dsq[i]);
-	}
-      free(sqinfo);
-      free(dsq);
-      free(wgt);
-      MSAFree(msa);
-      free(tr);
+      FreeParsetree(tr);
+      esl_sq_Destroy(sq); /* can't reuse b/c a new one is allocated in EmitParsetree() */
     }
+  if(cfg->pfp != NULL) printf("Parsetrees saved to file %s.\n", esl_opt_GetString(go, "--tfile"));
+  free(name);
+  return eslOK;
 
-  else if(build_cp9)
+ ERROR:
+  return status;
+}
+
+/* emit_alignment
+ * Given a configured CM, generate and output a MSA.
+ */
+static int
+emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf)
+{
+  /* Contract check, output alphabet must be identical to CM alphabet 
+   * with sole exception that CM alphabet can be eslRNA with output alphabet eslDNA. */
+  if(cm->abc->type != cfg->abc_out->type)
+    if(! (cm->abc->type == eslRNA && cfg->abc_out->type != eslDNA))
+      ESL_FAIL(eslFAIL, errbuf, "CM alphabet type must match output alphabet type (unless CM=RNA and output=DNA).");
+
+  int status;
+  Parsetree_t **tr = NULL;  /* generated parsetrees */
+  ESL_SQ **sq = NULL;       /* generated sequences */
+  char *name;
+  int namelen;
+  int i, L; 
+  ESL_MSA *msa = NULL;      /* the MSA we're building */
+  int nseq = esl_opt_GetInteger(go, "-n");
+  int do_truncate;
+
+  if((! esl_opt_IsDefault(go, "--begin")) && (! esl_opt_IsDefault(go, "--end"))) 
+    do_truncate = TRUE;
+  else do_truncate = FALSE;
+
+  if(cm->name != NULL) namelen = strlen(cm->name) + 50; /* 50 digit int is considered max, sloppy. */
+  else                 namelen = 100;                   /* 50 digit int is considered max, sloppy. */
+  ESL_ALLOC(name, sizeof(char) * namelen);
+
+  ESL_ALLOC(sq, sizeof(ESL_SQ *) * nseq);
+  ESL_ALLOC(tr, sizeof(Parsetree_t *) * nseq);
+
+  for(i = 0; i < nseq; i++)
     {
-      Parsetree_t **tr;             /* Parsetrees of emitted aligned sequences */
-      char    **dsq;                /* digitized sequences                     */
-      char    **seq;                /* actual sequences (real letters)         */
-      SQINFO            *sqinfo;    /* info about sequences (name/desc)        */
-      MSA               *msa;       /* alignment */
-      float             *wgt;
-      int apos;
-      int cc;
-
-      int *matassign;
-      int *useme;
-      int msa_nseq;                 /* this is the number of sequences per MSA,
-				     * current strategy is to sample (nseq/nseq_per_msa)
-				     * alignments from the CM, and add counts from
-				     * each to the shmm in counts form (to limit memory)
-				     */
-      int nsampled;                 /* number of sequences sampled thus far */
-
-      CP9_t  *shmm;
-      CP9trace_t **cp9_tr;   /* fake tracebacks for each seq            */
-      int idx;
-
-      msa_nseq = 1000;
-      /* Allocate and zero the new HMM we're going to build by sampling from
-       * the CM.
-       */
-      if(begin_set && end_set)
-	shmm = AllocCPlan9(epos - spos + 1);
-      else
-	shmm = AllocCPlan9(ncols);
-
-      ZeroCPlan9(shmm);
-
-      /* sample MSA(s) from the CM */
-      nsampled = 0;
-      dsq    = MallocOrDie(sizeof(char *)             * msa_nseq);
-      seq    = MallocOrDie(sizeof(char *)             * msa_nseq);
-      tr     = MallocOrDie(sizeof(Parsetree_t)        * msa_nseq);
-      sqinfo = MallocOrDie(sizeof(SQINFO)             * msa_nseq);
-      wgt    = MallocOrDie(sizeof(float)              * msa_nseq);
-      FSet(wgt, msa_nseq, 1.0);
-      
-      while(nsampled < nseq)
+      if(cm->name != NULL) sprintf(name, "%s-%d", cm->name, i+1);
+      else                 sprintf(name, "%d-%d", cfg->ncm, i+1);
+      EmitParsetree(cm, cfg->r, name, TRUE, &(tr[i]), &(sq[i]), &L);
+      sq[i]->abc = cfg->abc_out;
+      if(cfg->pfp != NULL)
 	{
-	  /*printf("nsampled: %d\n", nsampled);*/
-	  if(nsampled != 0)
-	    {
-	      /* clean up from previous MSA */
-	      MSAFree(msa);
-	      free(matassign);
-	      if(begin_set && end_set)
-		{
-		  free(useme);
-		  for (i = 0; i < msa_nseq; i++)
-		    free(seq[i]);
-		}
-	      for (i = 0; i < msa_nseq; i++)
-		{
-		  CP9FreeTrace(cp9_tr[i]);
-		  FreeParsetree(tr[i]);
-		  free(dsq[i]);
-		}
-	      free(cp9_tr);
-	    }
-	  /* Emit msa_nseq parsetrees from the CM */
-	  if(nsampled + msa_nseq > nseq)
-	    msa_nseq = nseq - nsampled;
+	  fprintf(cfg->pfp, "> %s\n", sq[i]->name);
+	  ParsetreeDump(cfg->pfp, tr[i], cm, sq[i]->dsq, NULL, NULL);
+	  fprintf(cfg->pfp, "//\n");
+	}
+    }
+  if((status = Parsetrees2Alignment(cm, cfg->abc_out, sq, NULL, tr, nseq,
+				    TRUE,  /* we want all match columns */
+				    FALSE, /* we don't want ONLY match columns */
+				    &msa) != eslOK))
+    ESL_XFAIL(eslFAIL, errbuf, "Error generating alignment from parsetrees.");
+  if(cm->name != NULL) 
+    if((status = esl_strdup(cm->name, -1, &(msa->name))) != eslOK) goto ERROR;
+  if((status = esl_strdup("Synthetic sequence alignment generated by cmemit", 
+			  -1, &(msa->desc))) != eslOK)  goto ERROR;
+
+  /* Truncate the alignment if nec */
+  if(do_truncate)
+    if((status = truncate_msa(go, cfg, msa, errbuf)) != eslOK) 
+      ESL_XFAIL(status, errbuf, "Error truncating alignment.");
+
+  /* Output the alignment */
+  status = esl_msa_Write(cfg->ofp, msa, eslMSAFILE_STOCKHOLM);
+  if      (status == eslEMEM) ESL_XFAIL(status, errbuf, "Memory error when outputting alignment\n");
+  else if (status != eslOK)   ESL_XFAIL(status, errbuf, "Writing alignment file failed with error %d\n", status);
+
+  if(cfg->pfp != NULL) printf("Parsetrees saved to file %s.\n", esl_opt_GetString(go, "--tfile"));
+  for(i = 0; i < nseq; i++)
+    {
+      esl_sq_Destroy(sq[i]);
+      FreeParsetree(tr[i]);
+    }
+  free(sq);
+  free(tr);
+  free(name);
+  esl_msa_Destroy(msa);
+  return eslOK;
+
+ ERROR:
+  
+  if(sq != NULL) {
+    for(i = 0; i < nseq; i++)
+      if(sq[i] != NULL) esl_sq_Destroy(sq[i]);
+    free(sq);
+  }
+  if(tr != NULL) {
+    for(i = 0; i < nseq; i++)
+      if(tr[i] != NULL) FreeParsetree(tr[i]);
+    free(tr);
+  }
+  if(name != NULL) free(name);
+  if(msa  != NULL) esl_msa_Destroy(msa);
+  return status;
+}
+
+/* emit_consensus
+ * Given a configured CM, generate and output the consensus sequence.
+ */
+static int
+emit_consensus(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf)
+{
+  int status;
+  CMConsensus_t *con = NULL;            /* consensus info for the CM */
+  ESL_SQ *csq = NULL;
+
+  /* Determine consensus sequence */
+  CreateCMConsensus(cm, cfg->abc_out, 3.0, 1.0, &con);
+  if((csq = esl_sq_CreateFrom("CM generated consensus sequence [cmemit]", con->cseq, NULL, NULL, NULL)) == NULL)
+    { status = eslEMEM; goto ERROR; }
+  if((esl_sqio_Write(cfg->ofp, csq, eslSQFILE_FASTA)) != eslOK) 
+    ESL_FAIL(status, errbuf, "Error writing unaligned sequences.");
+
+  esl_sq_Destroy(csq);
+  FreeCMConsensus(con);
+  return eslOK;
+
+ ERROR:
+  if(csq != NULL) esl_sq_Destroy(csq);
+  if(con != NULL) FreeCMConsensus(con);
+  return status;
+}
+
+/* build_cp9
+ * Given a configured CM, generete counts for a ML HMM
+ * (no pseudocounts) by generating >= 1 MSA from the CM.
+ * We use more than 1 MSA only to limit memory usage.
+ */
+static int
+build_cp9(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf)
+{
+  int status;
+  Parsetree_t **tr = NULL;  /* generated parsetrees */
+  ESL_SQ **sq = NULL;       /* generated sequences */
+  char *name;
+  int namelen;
+  int i, L; 
+  ESL_MSA *msa = NULL;      /* an MSA to pull counts from */
+  int nseq = esl_opt_GetInteger(go, "-n");
+  int *matassign = NULL;
+  int nsampled = 0;                 /* number of sequences sampled thus far */
+  int do_truncate;
+  CP9_t  *shmm = NULL;
+  CP9trace_t **cp9_tr;   /* fake tracebacks for each seq            */
+  int bpos = 0;
+  int epos = 0;
+  int apos = 0;
+  int msa_nseq = 1000;          /* number of seqs per MSA, current strategy is to 
+				 * sample (nseq/nseq_per_msa) alignments from the CM, 
+				 * and add counts from each to the shmm in counts form 
+				 *(to limit memory) */
+  
+  /* Allocate and zero the new HMM we're going to build by sampling from the CM.
+   */
+  if((! esl_opt_IsDefault(go, "--begin")) && (! esl_opt_IsDefault(go, "--end"))) 
+    {
+      do_truncate = TRUE;
+      bpos = esl_opt_GetInteger(go, "--begin");
+      epos = esl_opt_GetInteger(go, "--end");
+      shmm = AllocCPlan9((epos - bpos + 1), cm->abc);
+    }
+  else 
+    {
+      do_truncate = FALSE;
+      shmm = AllocCPlan9(cm->clen, cm->abc);
+    }
+  ZeroCPlan9(shmm);
+
+  if(cm->name != NULL) namelen = strlen(cm->name) + 50; /* 50 digit int is considered max, sloppy. */
+  else                 namelen = 100;                   /* 50 digit int is considered max, sloppy. */
+  ESL_ALLOC(name, sizeof(char) * namelen);
+
+  /* sample MSA(s) from the CM */
+  ESL_ALLOC(sq,     sizeof(ESL_SQ *)      * msa_nseq);
+  ESL_ALLOC(tr,     sizeof(Parsetree_t *) * msa_nseq);
+  ESL_ALLOC(cp9_tr, sizeof(CP9trace_t *)  * msa_nseq);
+  while(nsampled < nseq)
+    {
+      if(nsampled != 0) 
+	{
+	  /* clean up from previous MSA */
+	  esl_msa_Destroy(msa);
+	  free(matassign);
 	  for (i = 0; i < msa_nseq; i++)
 	    {
-	      EmitParsetree(cm, r, &(tr[i]), NULL, &(dsq[i]), &L);
-	      sprintf(sqinfo[i].name, "seq%d", i+1);
-	      sqinfo[i].len   = L;
-	      sqinfo[i].flags = SQINFO_NAME | SQINFO_LEN;
+	      CP9FreeTrace(cp9_tr[i]);
+	      FreeParsetree(tr[i]);
+	      esl_sq_Reuse(sq[i]);
 	    }
-	  /* Build a new MSA from these parsetrees */
-	  msa = Parsetrees2Alignment(cm, dsq, sqinfo, NULL, tr, msa_nseq, TRUE);
-	  
-	  /* Add the counts to the growing counts-based HMM */
-
-	  /* If necessary, truncate the alignment prior to consensus column spos 
-	   * and after consensus column epos */
-	  if(begin_set && end_set)
-	    {
-	      useme = (int *) MallocOrDie (sizeof(int) * (msa->alen+1));
-	      for (apos = 0, cc = 0; apos < msa->alen; apos++)
-		{
-		  /* Careful here, placement of cc++ increment is impt, 
-		   * we want all inserts between cc=spos-1 and cc=spos,
-		   * and between cc=epos and cc=epos+1.
-		   */
-		  if(cc < (spos-1) || cc > epos)
-		    useme[apos] = 0;
-		  else
-		    useme[apos] = 1;
-		  if (!isgap(msa->rf[apos])) 
-		    { 
-		      cc++; 
-		      if(cc == (epos+1))
-			useme[apos] = 0; 
-		      /* we misassigned this guy, overwrite */ 
-		    }
-		}
-	      MSAShorterAlignment(msa, useme);
-	      
-	      /* Shorten the dsq's to match the shortened MSA */
-	      for (i = 0; i < msa_nseq; i++)
-		{
-		  MakeDealignedString(msa->aseq[i], msa->alen, msa->aseq[i], &(seq[i])); 
-		  free(dsq[i]);
-		  dsq[i] = DigitizeSequence(seq[i], strlen(seq[i]));
-		}
-	    }
-	  /* Determine match assignment from RF annotation
-	   */
-	  matassign = (int *) MallocOrDie (sizeof(int) * (msa->alen+1));
-	  matassign[0] = 0;
-	  for (apos = 0; apos < msa->alen; apos++)
-	    {
-	      matassign[apos+1] = 0;
-	      if (!isgap(msa->rf[apos])) 
-		matassign[apos+1] = 1;
-	    }
-	  /* make fake tracebacks for each seq */
-	  CP9_fake_tracebacks(msa->aseq, msa->nseq, msa->alen, matassign, &cp9_tr);
-	  
-	  /* build model from tracebacks (code from HMMER's modelmakers.c::matassign2hmm() */
-	  for (idx = 0; idx < msa->nseq; idx++) {
-	    CP9TraceCount(shmm, dsq[idx], msa->wgt[idx], cp9_tr[idx]);
-	  }
-	  nsampled += msa_nseq;
 	}
-      
-      /* clean up from final MSA */
-      MSAFree(msa);
-      free(matassign);
-      if(begin_set && end_set)
-	{
-	  free(useme);
-	  for (i = 0; i < msa_nseq; i++)
-	    free(seq[i]);
-	}
+      /* Emit msa_nseq parsetrees from the CM */
+      if(nsampled + msa_nseq > nseq) msa_nseq = nseq - nsampled;
       for (i = 0; i < msa_nseq; i++)
 	{
-	  CP9FreeTrace(cp9_tr[i]);
-	  FreeParsetree(tr[i]);
-	  free(dsq[i]);
+	  if(cm->name != NULL) sprintf(name, "%s-%d", cm->name, i+1);
+	  else                 sprintf(name, "%d-%d", cfg->ncm, i+1);
+	  EmitParsetree(cm, cfg->r, name, TRUE, &(tr[i]), &(sq[i]), &L);
+	  sq[i]->abc = cfg->abc_out;
 	}
-      free(cp9_tr);
+      /* Build a new MSA from these parsetrees */
+      if((status = Parsetrees2Alignment(cm, cfg->abc_out, sq, NULL, tr, nseq,
+					TRUE,  /* we want all match columns */
+					FALSE, /* we don't want ONLY match columns */
+					&msa) != eslOK))
+	ESL_XFAIL(eslFAIL, errbuf, "Error generating alignment from parsetrees during HMM construction.");
 
-      printf("PRINTING NON-NORM SAMPLED HMM PARAMS:\n");
-      debug_print_cp9_params(stdout, shmm);
-      printf("DONE PRINTING NON-NORM SAMPLED HMM PARAMS:\n");
+      /* Truncate the alignment if nec */
+      if(do_truncate)
+	if((status = truncate_msa(go, cfg, msa, errbuf)) != eslOK) 
+	  ESL_XFAIL(status, errbuf, "Error truncating alignment during HMM construction.");
 
-      CPlan9Renormalize(shmm);
-      CP9Logoddsify(shmm);
+      /* Determine match assignment from RF annotation
+       */
+      ESL_ALLOC(matassign, sizeof(int) * (msa->alen+1));
+      matassign[0] = 0;
+      for (apos = 1; apos <= msa->alen; apos++)
+	matassign[apos] = esl_abc_CIsGap(msa->abc, msa->rf[apos-1]) ? FALSE : TRUE;  
 
-      printf("PRINTING NORM SAMPLED HMM PARAMS:\n");
-      debug_print_cp9_params(stdout, shmm);
-      printf("DONE PRINTING NORM SAMPLED HMM PARAMS:\n");
-      
-      FreeCPlan9(shmm);
-      free(seq);
-      free(dsq);
-    }      
-  else if(do_score_cp9)				/* emit unaligned seqs and score 
-						 * each with a CP9 HMM */
-    {
-      Parsetree_t      *tr;         /* generated trace                        */
-      CP9trace_t       *cp9_tr;     /* CP9 traceback (used if --hmmrealfast)  */      
-      char             *dsq;        /* digitized sequence                     */
-      char             *seq;        /* alphabetic sequence                    */
-      float             cm_sc;
-      float            *hmm_sc;
-      int               max_attempts = 500 * nseq;
-      int               nattempts = 0;
-      float             f;
-      float             hmm_cutoff = 0.;
-      double           *xv;
-      int               n;
-      double            mean, var;
-      float             diff = 0.;  /* total diff b/t optimal/emitted parse scs */
-      int               ndiff = 0;
-      float             esc;        /* emitted parse tree score               */
-      SQINFO            sqinfo;     /* info about sequence (name/len)         */
-      int               cm_mode;    /* Gumbel mode to use for CM */
-      int               cp9_mode;   /* Gumbel mode to use for CP9 */
-      float             tmp_K;
-      float             eval;
-
-      SetCMCutoff(cm, cm_cutoff_type, cm_sc_cutoff, cm_e_cutoff);
-      SetCP9Cutoff(cm, SCORE_CUTOFF, 0., 0., cm->cutoff);
-      CM2Gumbel_mode(cm, &cm_mode, &cp9_mode); 
-
-      if(cm->cutoff_type == E_CUTOFF)
-	{
-	  /* Working with first partition */
-	  if(cm->stats->np > 1)
-	    Die("ERROR CM Gumbel stats for > 1 partition, not yet implemented.\n");
-	  /* First update mu based on --cmN argument */
-	  tmp_K = exp(cm->stats->gumAA[cm_mode][0]->mu * cm->stats->gumAA[cm_mode][0]->lambda) / 
-	    cm->stats->gumAA[cm_mode][0]->L;
-	  cm->stats->gumAA[cm_mode][0]->mu = log(tmp_K * ((double) cmN)) /
-	    cm->stats->gumAA[cm_mode][0]->lambda;
-	  cm->stats->gumAA[cm_mode][0]->L = cmN; /* update L, the seq size stats correspond to */
-	  cm_sc_cutoff = (cm->stats->gumAA[cm_mode][0]->mu - 
-			  (log(cm->cutoff) / cm->stats->gumAA[cm_mode][0]->lambda));
-
-	  tmp_K = exp(cm->stats->gumAA[cp9_mode][0]->mu * cm->stats->gumAA[cp9_mode][0]->lambda) / 
-	    cm->stats->gumAA[cp9_mode][0]->L;
-	  cm->stats->gumAA[cp9_mode][0]->mu = log(tmp_K * ((double) cmN)) /
-	    cm->stats->gumAA[cp9_mode][0]->lambda;
-	  cm->stats->gumAA[cp9_mode][0]->L = cmN; /* update L, the seq size stats correspond to */
-
-	  PrintSearchInfo(stdout, cm, cm_mode, cp9_mode, cmN);
-
-	}
-      else
-	{
-	  cm_sc_cutoff = IMPOSSIBLE;
-	  PrintSearchInfo(stdout, cm, cm_mode, cp9_mode, 0);
-	}
-      
-      ESL_HISTOGRAM *h = esl_histogram_CreateFull(100, 1000, 0.2);
-      hmm_sc = MallocOrDie(sizeof(float) * nseq);
-      sre_srandom(33);
-
-      printf("do fastfil: %d\n", do_fastfil);
-      for (i = 0; i < nseq; i++)
-	{
-	  if(nattempts++ > max_attempts) 
-	    Die("ERROR number of attempts exceeded 500 times number of seqs.\n");
-	  EmitParsetree(cm, r, &tr, &seq, &dsq, &L);
-	  /*sprintf(sqinfo.name, "seq%d", i+1);
-	    sqinfo.len   = L;
-	    sqinfo.flags = SQINFO_NAME | SQINFO_LEN;
-	    printf("nattempts: %d\n", nattempts);
-	    WriteSeq(stdout, SQFILE_FASTA, seq, &sqinfo);
-	    ParsetreeDump(stdout, tr, cm, dsq);*/
-
-	  cm->search_opts &= ~CM_SEARCH_HMMONLY;
-	  if(do_fastfil) 
-	    cm_sc = ParsetreeScore(cm, tr, dsq, FALSE);
-	  else
-	    cm_sc = actually_search_target(cm, dsq, 1, L,
-					   0.,    /* cutoff is 0 bits (actually we'll find highest
-						   * negative score if it's < 0.0) */
-					   0.,    /* CP9 cutoff is 0 bits */
-					   NULL,  /* don't keep results */
-					   FALSE, /* don't filter with a CP9 HMM */
-					   FALSE, /* we're not calcing CM  stats */
-					   FALSE, /* we're not calcing CP9 stats */
-					   NULL); /* filter fraction N/A */
-	  while(cm_sc < cm_sc_cutoff)
-	    {
-	      FreeParsetree(tr);
-	      free(dsq);
-	      free(seq);
-	      EmitParsetree(cm, r, &tr, &seq, &dsq, &L);
-
-	      /*sprintf(sqinfo.name, "seq%d", i+1);
-		sqinfo.len   = L;
-		sqinfo.flags = SQINFO_NAME | SQINFO_LEN;
-		printf("nattempts: %d\n", nattempts);
-		WriteSeq(stdout, SQFILE_FASTA, seq, &sqinfo);
-		ParsetreeDump(stdout, tr, cm, dsq);*/
-	      
-	      if(do_fastfil) 
-		cm_sc = ParsetreeScore(cm, tr, dsq, FALSE);
-	      else
-		cm_sc = actually_search_target(cm, dsq, 1, L,
-					       0.,    /* cutoff is 0 bits (actually we'll find highest
-						       * negative score if it's < 0.0) */
-					       0.,    /* CP9 cutoff is 0 bits */
-					       NULL,  /* don't keep results */
-					       FALSE, /* don't filter with a CP9 HMM */
-					       FALSE, /* we're not calcing CM  stats */
-					       FALSE, /* we're not calcing CP9 stats */
-					       NULL); /* filter fraction N/A */
-	      if(nattempts++ > max_attempts)
-		Die("ERROR number of attempts exceeded 50 times number of seqs.\n");
-	    }
-	  esl_histogram_Add(h, cm_sc);
-	  if(do_ptest) 
-	    {
-	      esc   = ParsetreeScore(cm, tr, dsq, FALSE);
-	      diff += fabs(cm_sc - esc);
-	    }
-	  cm->search_opts |= CM_SEARCH_HMMONLY;
-	  if(do_hmmfastfil) /* don't search with the HMM, convert the CM
-			     * parsetree to an alignment, than an implicit CP9 trace */
-	    {
-	      Parsetree2CP9trace(cm, tr, &cp9_tr);
-	      /*CP9PrintTrace(stdout, cp9_tr, cm->cp9, dsq);*/
-	      hmm_sc[i] = CP9TraceScore(cm->cp9, dsq, cp9_tr);
-	      CP9FreeTrace(cp9_tr);
-	    }
-	  else
-	    hmm_sc[i] = CP9Forward(cm, dsq, 1, L, cm->W, 0., 
-				   NULL,   /* don't return scores of hits */
-				   NULL,   /* don't return posns of hits */
-				   NULL,   /* don't keep track of hits */
-				   TRUE,   /* we're scanning */
-				   FALSE,  /* we're not ultimately aligning */
-				   FALSE,  /* we're not rescanning */
-				   TRUE,   /* be memory efficient */
-				   NULL);  /* don't want the DP matrix back */
-	  FreeParsetree(tr);
-	  free(dsq);
-	  free(seq);
-
-
-	  if(do_ptest) 
-	    {
-	      printf("i: %4d cm sc: %10.4f hmm sc: %10.4f ", i, cm_sc, hmm_sc[i]);
-	      printf("D: %10.3f (E: %10.3f)\n", (cm_sc - esc), esc);
-	      if(fabs(cm_sc-esc) > 0.0001) ndiff++;
-	    }
-	}
-      if(do_ptest) printf("Summary: Num diff: %d Bit diff: %.3f Avg per seq: %.3f\n", ndiff, diff, (diff/nseq));
-      /* Sort the HMM scores with quicksort */
-      esl_vec_FSortDecreasing(hmm_sc, nseq);
-      f = 0.95;
-      for(i = ((int) (f * (float) nseq) - 1); i < nseq; i++)
-	printf("i: %4d hmm sc: %10.4f\n", i, hmm_sc[i]);
-
-      /*esl_histogram_Print(stdout, h);*/
-
-      esl_histogram_GetData(h, &xv, &n);
-      esl_stats_DMean(xv, n, &mean, &var);
-      printf("N: %d\nMean:   %f\nVar:    %f\nSt dev: %f\n", n, mean, var, sqrt(var));
-
-      esl_histogram_Destroy(h);
-      
-      hmm_cutoff = hmm_sc[(int) ((f) * (float) nseq) - 1];
-      printf("HMM filter bit score threshold for finding %.2f CM hits > %.2f bits: %.4f\n", f, cm_sc_cutoff, hmm_cutoff);
-      printf("\n\nnattempts: %d\n", nattempts);
-
-      if(cm->flags & CM_GUMBEL_STATS)
-	{
-	  eval = RJK_ExtremeValueE(hmm_cutoff, 
-				   cm->stats->gumAA[cp9_mode][0]->mu,
-				   cm->stats->gumAA[cp9_mode][0]->lambda);
-	  printf("05.21.07 %d %d %f %f\n", cm_mode, cp9_mode, hmm_cutoff, eval);
-	}
-      free(hmm_sc);
-    }
-  else				/* unaligned sequence output */
-    {
-      Parsetree_t      *tr;         /* generated trace                        */
-      char             *dsq;        /* digitized sequence                     */
-      char             *seq;        /* alphabetic sequence                    */
-      SQINFO            sqinfo;     /* info about sequence (name/len)         */
-      float             diff = 0.;  /* total diff b/t optimal/emitted parse scs */
-      float             esc;        /* emitted parse tree score               */
-      float             osc;        /* optimal parse tree score               */
-      int               ndiff = 0;
-      for (i = 0; i < nseq; i++)
-	{
-	  EmitParsetree(cm, r, &tr, &seq, &dsq, &L);
-
-	  sprintf(sqinfo.name, "%s-%d", cm->name, i+1);
-	  sqinfo.len   = L;
-	  sqinfo.flags = SQINFO_NAME | SQINFO_LEN;
-	  WriteSeq(fp, SQFILE_FASTA, seq, &sqinfo);
+      /* Add the counts to the growing counts-based HMM */
+      /* make fake tracebacks for each seq, first we need to digitize the MSA */
+      esl_msa_Digitize(msa->abc, msa);
+      CP9_fake_tracebacks(msa, matassign, &cp9_tr);
 	  
-	  if(do_ptest) /* Check score diff, if any w/optimal parse */
-	    {
-	      
-	      esc = ParsetreeScore(cm, tr, dsq, FALSE);
-	      osc = actually_search_target(cm, dsq, 1, L,
-					   0.,    /* cutoff is 0 bits (actually we'll find highest
-						   * negative score if it's < 0.0) */
-					   0.,    /* CP9 cutoff is 0 bits */
-					   NULL,  /* don't keep results */
-					   FALSE, /* don't filter with a CP9 HMM */
-					   FALSE, /* we're not calcing CM  stats */
-					   FALSE, /* we're not calcing CP9 stats */
-					   NULL); /* filter fraction N/A */
-	      diff += fabs(osc-esc);
-	      printf("i: %5d %10.3f (E: %10.3f O: %10.3f)\n", i, (osc-esc), esc, osc);
-	      if(fabs(osc-esc) > 0.0001) ndiff++;
-	    }
-	  FreeParsetree(tr);
-	  free(dsq);
-	  free(seq);
-	}
-      if(do_ptest) printf("Summary: Num diff: %d Bit diff: %.3f Avg per seq: %.3f\n", ndiff, diff, (diff/nseq));
+      /* build model from tracebacks (code from HMMER's modelmakers.c::matassign2hmm() */
+      for (i = 0; i < msa->nseq; i++) 
+	CP9TraceCount(shmm, sq[i]->dsq, 1.0, cp9_tr[i]);
+      nsampled += msa_nseq;
     }
-  FreeCM(cm);
-  
-  /* We're done; clean up and exit.
-   */
-    if (ofile != NULL) {
-      fclose(fp);
-      if (!be_quiet) printf("Output saved in file %s\n", ofile);
+      
+  /* clean up from final MSA */
+  esl_msa_Destroy(msa);
+  free(matassign);
+  for (i = 0; i < msa_nseq; i++)
+    {
+      CP9FreeTrace(cp9_tr[i]);
+      FreeParsetree(tr[i]);
+      esl_sq_Destroy(sq[i]);
     }
-    SqdClean();
-    return 0;
+  free(cp9_tr);
+  free(tr);
+  free(sq);
+  free(name);
+
+  printf("Printing NON-normalized sampled HMM parameters:\n");
+  debug_print_cp9_params(stdout, shmm, FALSE);
+  printf("finished printing NON-normalized sampled HMM parameters.\n");
+
+  CPlan9Renormalize(shmm);
+  CP9Logoddsify(shmm);
+
+  printf("Printing normalized sampled HMM parameters:\n");
+  debug_print_cp9_params(stdout, shmm, TRUE);
+  printf("finished printing normalized sampled HMM parameters.\n");
+
+  FreeCPlan9(shmm);
+  return eslOK;
+
+ ERROR:
+  if(shmm != NULL) FreeCPlan9(shmm);
+  if(cp9_tr != NULL)
+    {
+      for(i = 0; i < msa_nseq; i++)
+	CP9FreeTrace(cp9_tr[i]);
+      free(cp9_tr);
+    }
+  if(tr != NULL)
+    {
+      for(i = 0; i < msa_nseq; i++)
+	FreeParsetree(tr[i]);
+      free(tr);
+    }
+  if(sq != NULL)
+    {
+      for(i = 0; i < msa_nseq; i++)
+	esl_sq_Destroy(sq[i]);
+      free(sq);
+    }
+  if(name != NULL) free(name);
+  return status;
 }
+
+/* truncate_msa
+ * Truncate a MSA outside begin..end consensus columns 
+ * (non-gap RF chars) and return the alignment. Careful
+ * to remove any consensus structure outside begin..end.
+ */
+static int
+truncate_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA *msa, char *errbuf)
+{
+  int status;
+  int *useme = NULL;    /* 1..alen: keep this column? */
+  int *ct    = NULL;    /* 1..alen base pair partners array */
+  int apos = 0;
+  int bpos = esl_opt_GetInteger(go, "--begin");
+  int epos = esl_opt_GetInteger(go, "--end");
+  int cc = 0;
+
+  ESL_ALLOC(useme, sizeof(int) * (msa->alen+1));
+  ESL_ALLOC(ct,    sizeof(int) * (msa->alen+1));
+
+  int clen = 0;
+  for (apos = 0, cc = 0; apos < msa->alen; apos++)
+    if (!esl_abc_CIsGap(msa->abc, msa->rf[apos])) clen++;
+  if(esl_opt_GetInteger(go, "--end") > clen)
+    ESL_XFAIL(status, errbuf, "Error, with --end <n> option, <n> must be <= consensus length of CM (%d).\n", clen);
+
+  /* remove pknots in place (actually unnec for CM ss_cons) */
+  if((status = esl_wuss_nopseudo(msa->ss_cons, msa->ss_cons)) != eslOK) goto ERROR; 
+
+  /* get a ct array from the structure */
+  if((status = esl_wuss2ct(msa->ss_cons, msa->alen, ct)) != eslOK) goto ERROR;  
+
+  /* Truncate the alignment prior to consensus column bpos and after 
+   * consensus column epos.  */
+  for (apos = 0, cc = 0; apos < msa->alen; apos++)
+    {
+      /* Careful here, placement of cc++ increment is impt, we want all 
+       * inserts between cc=bpos-1 and cc=bpos, and b/t cc=epos and 
+       * cc=epos+1. Also be careful: ct[] is index 1..alen, and 
+       * msa->ss_cons is 0..alen-1. 
+       */
+      if(cc < (bpos-1) || cc > epos) {
+	useme[apos] = 0;
+	if(ct[(apos+1)] != 0) ct[ct[(apos+1)]] = 0;
+	ct[(apos+1)] = 0;
+      }
+      else
+	useme[apos] = 1;
+      if (!esl_abc_CIsGap(msa->abc, msa->rf[apos])) { 
+	cc++; 
+	if(cc == (epos+1)){
+	  useme[apos] = 0; 
+	  /* we misassigned this guy, overwrite */ 
+	  if(ct[(apos+1)] != 0) ct[ct[(apos+1)]] = 0;
+	  ct[(apos+1)] = 0;
+	}
+      }
+    }
+  /* construct the new structure based on the cleaned ct array */
+  if((status = esl_ct2wuss(ct, msa->alen, msa->ss_cons)) != eslOK) goto ERROR;
+  
+  /*printf("\n\nDEBUG PRINTING ORIG ALIGNMENT:\n");
+    WriteStockholm(fp, msa);
+    printf("\n\nDONE DEBUG PRINTING ORIG ALIGNMENT:\n");
+    for(apos=0; apos < msa->alen; apos++)
+    printf("useme[%d]: %d\n", apos, useme[apos]);
+  */
+
+  esl_msa_ColumnSubset(msa, useme);
+  free(useme);
+  free(ct);
+  return eslOK;
+
+ ERROR:
+  if(useme != NULL) free(useme);
+  if(ct    != NULL) free(ct);
+  return status;
+}
+
+
+
+
 
