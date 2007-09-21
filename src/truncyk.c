@@ -230,6 +230,15 @@ TrCYK_Inside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **re
    }
    else
    {
+      z = cm->M-1;
+ 
+      /* If local begin is known */
+      if ( r != 0 )
+      {
+         InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, i0, j0, r);
+         z = CMSubtreeFindEnd(cm, r);
+      }
+
       sc = tr_inside(cm, dsq, L, r, z, i0, j0, BE_EFFICIENT,
                      TRUE, TRUE, TRUE, TRUE,
                      NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
@@ -286,6 +295,11 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    int        b3_v, b3_j;
    float      b1_sc, b2_sc, b3_sc;
    int        useEL;
+
+   int        v_allow_T = FALSE;
+
+   if (r == 0) v_allow_T = TRUE;
+   if (!r_allow_J && !r_allow_L && !r_allow_R) v_allow_T = TRUE;
 
    /* Case 1: problem size is small; solve with tr_insideT()
     * size calculation is heuristic based on size of insideT() */
@@ -370,7 +384,7 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
                best_d  = d;
                v_mode = 1; w_mode = 1; y_mode = 3;
             }
-            if ( r_allow_L && r_allow_R && k > 0 && k < d )
+            if ( v_allow_T && k > 0 && k < d )
             if ( (sc = alpha->R[w][j-k][d-k] + alpha->L[y][j][k]) > best_sc )
             {
                best_sc = sc;
@@ -476,33 +490,35 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    {
       if ( w_mode == 0 && y_mode == 0 ) /* local hit in parent (marginal) */
       {
-         tr_v_splitter(cm, dsq, L, tr, r, b3_v, i0, best_j+1, best_j, j0, 
+if (b3_v == -1)
+Die("1Superbad: passing z = -1!\n");
+         tr_v_splitter(cm, dsq, L, tr, r, b3_v, i0, best_j, best_j, j0, 
                        useEL, r_allow_J, r_allow_L, r_allow_R, (v_mode == 3), (v_mode == 2), (v_mode == 1));
          return best_sc;
       }
       else
       {
+if (v == -1) Die("2Superbad: passing z = -1!\n");
          tr_v_splitter(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0,
                        FALSE, r_allow_J, r_allow_L, r_allow_R, (v_mode == 3), (v_mode == 2), (v_mode == 1));
       }
    }
    else if ( w_mode == 0 || y_mode == 0 ) /* local entry to one of the children */
    {
-      if ( w_mode )
+      if ( b1_sc > b2_sc )
       {
          InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, b1_i, b1_j, b1_v, b1_mode);
          z = CMSubtreeFindEnd(cm, b1_v);
          tr_generic_splitter(cm, dsq, L, tr, b1_v, z, b1_i, b1_j, (b1_mode == 3), (b1_mode == 2), (b1_mode == 1));
          return best_sc;
       }
-      else if ( y_mode )
+      else
       {
          InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, b2_i, b2_j, b2_v, b2_mode);
          z = CMSubtreeFindEnd(cm, b2_v);
          tr_generic_splitter(cm, dsq, L, tr, b2_v, z, b2_i, b2_j, (b2_mode == 3), (b2_mode == 2), (b2_mode == 1));
          return best_sc;
       }
-      else Die("Danger, danger!\n");
    }
    else /* case T: parent is empty, but both children are non-empty */
    {
@@ -704,12 +720,14 @@ tr_wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    {
       if ( c_mode == 0 ) /* child empty */
       {
+if ((p_mode == 3 ? w : b2_v) == -1) Die("3Superbad: passing z = -1!\n");
          tr_v_splitter(cm, dsq, L, tr, r, (p_mode == 3 ? w : b2_v), i0, best_j - best_d + 1, best_j, j0,
                        (p_mode == 3), r_allow_J, r_allow_L, r_allow_R, (p_mode == 3), (p_mode == 2), (p_mode == 1));
          return best_sc;
       }
       else
       {
+if (best_v == -1) Die("4Superbad: passing z = -1!\n");
          tr_v_splitter(cm, dsq, L, tr, r, best_v, i0, best_j - best_d + 1, best_j, j0,
                        FALSE, r_allow_J, r_allow_L, r_allow_R, (c_mode == 3), (c_mode == 2), (c_mode == 1));
       }
@@ -724,7 +742,7 @@ tr_wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
       tr_wedge_splitter(cm, dsq, L, tr, best_v, z, best_j - best_d + 1, best_j, (c_mode == 3), (c_mode == 2), (c_mode == 1));
    }
    else /* parent and child both empty */
-      Die("Danger, danger!\n");
+      Die("Danger, danger! p_mode = %d c_mode = %d\n",p_mode,c_mode);
 
    return best_sc;
 }
@@ -894,8 +912,10 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
    {
       if ( c_mode )
       {
+if (best_v == -1) Die("5Superbad: passing z = -1!\n");
          tr_v_splitter(cm, dsq, L, tr, r, best_v, i0, best_i, best_j, j0,
                        FALSE, r_allow_J, r_allow_L, r_allow_R, (c_mode == 3), (c_mode == 2), (c_mode == 1));
+if (z == -1) Die("6Superbad: passing z = -1!\n");
          tr_v_splitter(cm, dsq, L, tr, best_v, z, best_i, i1, j1, best_j,
                        useEL, (c_mode == 3), (c_mode == 2), (c_mode == 1), z_allow_J, z_allow_L, z_allow_R);  
       }
@@ -911,6 +931,7 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
       {
          InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, best_i, best_j, best_v, c_mode);
       }
+if (z == -1) Die("7Superbad: passing z = -1!\n");
       tr_v_splitter(cm, dsq, L, tr, best_v, z, best_i, i1, j1, best_j,
                     useEL, (c_mode == 3), (c_mode == 2), (c_mode == 1), z_allow_J, z_allow_L, z_allow_R);
    }
