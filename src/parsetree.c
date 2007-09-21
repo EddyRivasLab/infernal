@@ -634,6 +634,7 @@ Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
   int          el_len;	     /* length of an EL insertion in residues */
   CMConsensus_t *con = NULL; /* consensus information for the CM */
   int          prvnd;	     /* keeps track of previous node for EL */
+  int          nins;          /* insert counter used for splitting inserts */
 
   emap = CreateEmitMap(cm);
 
@@ -847,11 +848,60 @@ Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
 	  prvnd = nd;
 	} /* end traversal over trace i. */
 
-      /* Here is where we could put some insert-regularization code
-       * a la HMMER: reach into each insert, find a random split point,
-       * and shove part of it flush-right. But, for now, don't bother.
+      /* IL/EL Insertions are currently flush-left and IR insertions are currently flush-right.
+       * This is pre-1.0 Infernal behavior. If(cm->align_opts & CM_ALIGN_FLUSHINSERTS) we leave them all alone,
+       * otherwise we regularize (split) the internal inserts, we flush the 5' inserts right and the 3'
+       * inserts left (note: pre 1.0 behavior does the opposite, flushes 5' left (assuming they're ROOT_ILs)
+       * and flushes 3' right (assuming they're ROOT_IRs).
+       *
+       * We have to be careful about EL's. We don't want to group IL/IR's and EL's together and then split them
+       * because we need to annotate IL/IR's as '.'s in the consensus structure and EL's as '~'. So we split
+       * each group separately. There should only be either IL or IR's at any position (b/c assuming we've
+       * detached the CM grammar ambiguity (which is default in cmbuild)). But we don't count on it here.
        */
+      if(! (cm->align_opts & CM_ALIGN_FLUSHINSERTS)) /* default behavior, split insert in half */
+	{
+	  /* Deal with inserts before first consensus position, ILs, then ELs, then IRs
+	   * IL's are flush left, we want flush right */
+	  rightjustify(msa->abc, msa->aseq[i], maxil[0]);
+	  /* EL's are flush left, we want flush right I think these are impossible, but just in case... */
+	  rightjustify(msa->abc, msa->aseq[i]+maxil[0], maxel[0]);
+	  /* IR's are flush right, we want flush right, do nothing */
 
+	  /* split all internal insertions */
+	  for (cpos = 1; cpos < emap->clen; cpos++) 
+	    {
+	      if(maxil[cpos] > 1) /* we're flush LEFT, want to split */
+		{
+		  apos = matmap[cpos]+1;
+		  for (nins = 0; islower((int) (msa->aseq[i][apos])); apos++)
+		    nins++;
+		  nins /= 2;		/* split the insertion in half */
+		  rightjustify(msa->abc, msa->aseq[i]+matmap[cpos]+1+nins, maxil[cpos]-nins);
+		}
+	      if(maxel[cpos] > 1) /* we're flush LEFT, want to split */
+		{
+		  apos = matmap[cpos]+1 + maxil[cpos];
+		  for (nins = 0; islower((int) (msa->aseq[i][apos])); apos++)
+		    nins++;
+		  nins /= 2;		/* split the insertion in half */
+		  rightjustify(msa->abc, msa->aseq[i]+matmap[cpos]+1+maxil[cpos]+nins, maxel[cpos]-nins);
+		}
+	      if(maxir[cpos] > 1) /* we're flush RIGHT, want to split */
+		{
+		  apos = matmap[cpos+1]-1;
+		  for (nins = 0; islower((int) (msa->aseq[i][apos])); apos--)
+		    nins++;
+		  nins ++; nins /= 2;		/* split the insertion in half (++ makes it same behavior as IL/EL */
+		  leftjustify(msa->abc, msa->aseq[i]+matmap[cpos]+1 + maxil[cpos] + maxel[cpos], maxir[cpos]-nins);
+		}
+	    }
+	  /* Deal with inserts after final consensus position, IL's then EL's, then IR's
+	   * IL's are flush left, we want flush left, do nothing 
+	   * EL's are flush left, we want flush left, do nothing 
+	   * IR's are flush right, we want flush left */
+	  leftjustify(msa->abc, msa->aseq[i]+matmap[emap->clen]+1 + maxil[emap->clen] + maxel[emap->clen], maxir[emap->clen]);
+	}
     } /* end loop over all parsetrees */
 
 
@@ -1304,3 +1354,56 @@ Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, CP9trace_t **ret_cp9_tr)
   if(ks_ct != NULL) free(ks_ct);
   return eslFAIL;
 }
+
+/* Function: rightjustify()
+ * 
+ * Purpose:  Given a gap-containing string of length n,
+ *           pull all the non-gap characters as far as
+ *           possible to the right, leaving gaps on the
+ *           left side. Used to rearrange the positions
+ *           of insertions in CM generated alignments.
+ */
+void
+rightjustify(const ESL_ALPHABET *abc, char *s, int n)
+{
+  int npos;
+  int opos;
+
+  npos = n-1;
+  opos = n-1;
+  while (opos >= 0) {
+    if (esl_abc_CIsGap(abc, s[opos]))
+      opos--;
+    else
+      s[npos--]=s[opos--];  
+  }
+  while (npos >= 0) 
+    s[npos--] = '.';
+}
+
+/* Function: leftjustify()
+ * 
+ * Purpose:  Given a gap-containing string of length n,
+ *           pull all the non-gap characters as far as
+ *           possible to the left, leaving gaps on the
+ *           right side. Used to rearrange the positions
+ *           of insertions in CM generated alignments.
+ */
+void
+leftjustify(const ESL_ALPHABET *abc, char *s, int n)
+{
+  int npos;
+  int opos;
+
+  npos = 0;
+  opos = 0;
+  while (opos < n) {
+    if (esl_abc_CIsGap(abc, s[opos]))
+      opos++;
+    else
+      s[npos++]=s[opos++];  
+  }
+  while (npos < n) 
+    s[npos++] = '.';
+}
+

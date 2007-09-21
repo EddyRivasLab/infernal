@@ -191,6 +191,8 @@ extern int          Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_
 					 Parsetree_t **tr, int nseq, int do_full, int do_matchonly, ESL_MSA **ret_msa);
 extern float        ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, int print_flag);
 extern int          Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, CP9trace_t **ret_cp9_tr);
+extern void         rightjustify(const ESL_ALPHABET *abc, char *s, int n);
+extern void         leftjustify(const ESL_ALPHABET *abc, char *s, int n);
 
 /* from scancyk.c
  */

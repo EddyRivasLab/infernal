@@ -635,6 +635,7 @@ typedef struct cm_s {
 #define CM_ALIGN_HMMSAFE       (1<<14) /* realign seqs w/HMM banded CYK bit sc < 0 */
 #define CM_ALIGN_SCOREONLY     (1<<15) /* do full CYK/inside to get score only     */
 #define CM_ALIGN_SAMPLE        (1<<16) /* sample parsetrees from the inside matrix */
+#define CM_ALIGN_FLUSHINSERTS  (1<<17) /* flush inserts L/R like pre 1.0 infernal  */
 
 /* search options, cm->search_opts */
 #define CM_SEARCH_NOQDB        (1<<0)  /* DO NOT use QDB to search (QDB is default)*/

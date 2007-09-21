@@ -35,7 +35,6 @@
 #include "funcs.h"
 #include "structs.h"
 
-static void rightjustify(const ESL_ALPHABET *abc, char *s, int n);
 
 /* Functions: AllocCPlan9(), AllocCPlan9Shell(), AllocCPlan9Body(), FreeCPlan9()
  * 
@@ -2382,23 +2381,6 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
 		    int nseq, CP9trace_t **tr, int do_full, int do_matchonly,
 		    ESL_MSA **ret_msa)
 {
-  /* Contract checks */
-  if(cm->cp9 == NULL)
-    esl_fatal("ERROR in CP9Traces2Alignment, cm->cp9 is NULL.\n");
-  if(cm->cp9map == NULL)
-    esl_fatal("ERROR in CP9Traces2Alignment, cm->cp9map is NULL.\n");
-  if(!(cm->flags & CM_CP9))
-     esl_fatal("ERROR in CP9Traces2Alignment, CM_CP9 flag is down.");
-  /* We allow the caller to specify the alphabet they want the 
-   * resulting MSA in, but it has to make sense (see next few lines). */
-  if(cm->abc->type == eslRNA)
-    { 
-      if(abc->type != eslRNA && abc->type != eslDNA)
-	esl_fatal("ERROR in Parsetrees2Alignment(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
-    }
-  else if(cm->abc->K != abc->K)
-    esl_fatal("ERROR in Parsetrees2Alignment(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
-
   int status;                   /* easel status flag */
   ESL_MSA   *msa;               /* RETURN: new alignment */
   int    idx;                   /* counter for sequences */
@@ -2423,7 +2405,55 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
   CMConsensus_t *con = NULL;    /* consensus information for the CM */
   int          next_match;      /* used for filling eposmap */
   int          c;               /* counter over possible EL froms */
+  int         *insleft;         /* [0..cpos..clen] TRUE if inserts *following* cpos should be flush right */
+  int          nd;              /* counter over nodes */
+  int          max_ins_or_el[2];/* for regularizing (splitting) inserts */
+  int          pass_offset[2];  /* for regularizing (splitting) inserts */
+  int          pass;            /* for regularizing (splitting) inserts */
+
+  /* Contract checks */
+  if(cm->cp9 == NULL)
+    esl_fatal("ERROR in CP9Traces2Alignment, cm->cp9 is NULL.\n");
+  if(cm->cp9map == NULL)
+    esl_fatal("ERROR in CP9Traces2Alignment, cm->cp9map is NULL.\n");
+  if(!(cm->flags & CM_CP9))
+     esl_fatal("ERROR in CP9Traces2Alignment, CM_CP9 flag is down.");
+  /* We allow the caller to specify the alphabet they want the 
+   * resulting MSA in, but it has to make sense (see next few lines). */
+  if(cm->abc->type == eslRNA)
+    { 
+      if(abc->type != eslRNA && abc->type != eslDNA)
+	esl_fatal("ERROR in Parsetrees2Alignment(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
+    }
+  else if(cm->abc->K != abc->K)
+    esl_fatal("ERROR in Parsetrees2Alignment(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
+
+  /* create the emit map */
   emap = CreateEmitMap(cm);
+
+  /* Determine which direction we emit to for each consensus column,
+   * IL's emit left, IR's emit right, but this info isn't indexed by
+   * consensus column, so we use an emitmap to get it.  This is used
+   * to determine if we go IL before EL or EL before IR when inserting
+   * both regular IL/IR inserts and EL inserts in same place. This is
+   * also used if we have enabled (cm->align_opts &
+   * CM_ALIGN_FLUSHINSERTS) which overides default behavior to split
+   * the inserts and adopts 'flush left for IL / flush right for IR'
+   * behavior (which older versions of Infernal used).
+   */
+  ESL_ALLOC(insleft, sizeof(int) * emap->clen);
+  esl_vec_ISet(insleft, cm->clen, -1);
+  for(nd = 0; nd < cm->nodes; nd++)
+    {
+      if(cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd || cm->ndtype[nd] == BEGR_nd || cm->ndtype[nd] == ROOT_nd)
+	if(insleft[emap->lpos[nd]] == -1) /* deal with sole CM grammar ambiguity */
+	  insleft[emap->lpos[nd]] = TRUE;
+      if(cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd)
+	insleft[emap->rpos[nd]-1] = FALSE;
+    }
+  /* check we've constructed insleft properly, TEMPORARY */
+  for(cpos = 0; cpos <= emap->clen; cpos++)
+    assert(insleft[cpos] != -1);
 
   /* Here's the problem. We want to align the match states in columns,
    * but some sequences have inserted symbols in them; we need some
@@ -2447,6 +2477,7 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
   ESL_ALLOC(imap,   sizeof(int) * (emap->clen+1));
   ESL_ALLOC(elmap,  sizeof(int) * (emap->clen+1));
   ESL_ALLOC(eposmap,sizeof(int *) * (nseq));
+
   /* eposmap is 2D b/c different traces can have different epos
    * (position where EL inserts) for the same EL state, for example:
    * an EL state for node 9 may reconnect at node 25 in one parse
@@ -2556,10 +2587,14 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
       else 
 	matmap[cpos] = -1;
       
-      imap[cpos]  = alen;
-      alen += maxins[cpos];
-      elmap[cpos] = alen; 
-      alen += maxels[cpos];
+      if(insleft[cpos]) { /* IL state inserts here, IL's go before EL's */
+	imap[cpos]  = alen; alen += maxins[cpos];
+	elmap[cpos] = alen; alen += maxels[cpos];
+      }
+      else { /* IR state inserts here, IR's go after EL's */
+	elmap[cpos] = alen; alen += maxels[cpos];
+	imap[cpos]  = alen; alen += maxins[cpos];
+      }
     }
                                 /* allocation for new alignment */
   msa = esl_msa_Create(nseq, alen);
@@ -2598,6 +2633,7 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
 	    apos = matmap[cpos]+1;	/* need for handling D->I; xref STL6/p.117 */
 	  else if (statetype == CSTI) 
 	    {
+	      /* flush all inserts left for now, we'll split or flush-right after we're done with all seqs */
 	      apos = imap[cpos] + iuse[cpos];
 	      msa->aseq[idx][apos] = (char) tolower((int) abc->sym[sq[idx]->dsq[rpos]]);
 	      iuse[cpos]++;
@@ -2616,22 +2652,69 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
 	  else if (statetype == CSTE)
 	    apos = matmap[emap->clen]+1;	/* set position for C-term tail */
 	}
-      /* N-terminal extension is right-justified.
-       * Internal inserts are split in half, and C-term is right-justified.
-       * C-terminal extension remains left-justified.
+
+      /* All insertions (IL/IR/EL) are currently flush-left, but they won't all remain so.
+       * Two options for what to do:
+       * 1. Split insertions (this is default): 
+       *    5' extension (ROOT_IL: prior to cpos 1) is right-justified.
+       *    Internal inserts are split in half
+       *    3' extension (ROOT_IR: after final cpos) remains left-justified.
+       * 2. Flush IL's left, IR's right only ON if cm->align_opts & CM_ALIGN_FLUSHINSERTS (this was Infernal pre-1.0 default)
+       *    use insleft array to determine which type of insert (IL,IR) emits after each 
+       *    consensus column, and flush inserts appropriately.
+       *
+       * We have to be careful about EL's. We don't want to group IL/IR's and EL's together and then split them
+       * because we need to annotate IL/IR's as '.'s in the consensus structure and EL's as '~'. So we split
+       * each of the 2 group of inserts separately (IL or IR's (their can only be one per position)) and EL's.
+       * This is done somewhat confusingly (but without repeating too much code) with the
+       * for (pass = 0; pass <= 1; pass++) loop, and the max_ins_or_el[] and pass_offset[] arrays.
        */
-      rightjustify(msa->abc, msa->aseq[idx], maxins[0]);
-      
+
+      /* deal with inserts before cpos 1, don't think they're can be EL's here, but we leave it in case I'm forgetting.
+       * if there are EL's they would come after any ROOT_ILs */
+      if(!(cm->align_opts & CM_ALIGN_FLUSHINSERTS)) /* default behavior, flush ROOT_IL right, else leave ROOT_IL flush left */
+	rightjustify(msa->abc, msa->aseq[idx], maxins[0]);
+      if(!(cm->align_opts & CM_ALIGN_FLUSHINSERTS)) /* default behavior, flush pre-cpos=1 ELs right, else leave them flush left */
+	rightjustify(msa->abc, msa->aseq[idx]+maxins[0], maxels[0]);
+
       for (cpos = 1; cpos < emap->clen; cpos++) 
 	{
-	  if (maxins[cpos] > 1) 
+	  if(insleft[cpos]) { /* ILs then ELs */
+	    max_ins_or_el[0] = maxins[cpos];
+	    max_ins_or_el[1] = maxels[cpos];
+	    pass_offset[0]   = 0;
+	    pass_offset[1]   = maxins[cpos]; /* we'll have to add this to get to appropriate alignment position when pass==1 */
+	  }
+	  else { /* ELs then IRs */
+	    max_ins_or_el[0] = maxels[cpos];
+	    max_ins_or_el[1] = maxins[cpos];
+	    pass_offset[0]   = 0;
+	    pass_offset[1]   = maxels[cpos]; /* we'll have to add this to get to appropriate alignment position when pass==1 */
+	  }
+	  for(pass = 0; pass <= 1; pass++)
 	    {
-	      for (nins = 0, apos = matmap[cpos]+1; islower((int) (msa->aseq[idx][apos])); apos++)
-		nins++;
-	      nins /= 2;		/* split the insertion in half */
-	      rightjustify(msa->abc, msa->aseq[idx]+matmap[cpos]+1+nins, maxins[cpos]-nins);
+	      if (max_ins_or_el[pass]  > 1) 
+		{
+		  apos = matmap[cpos]+1 + pass_offset[pass];
+		  if(! (cm->align_opts & CM_ALIGN_FLUSHINSERTS)) /* default behavior, split insert in half */
+		    {
+		      for (nins = 0; islower((int) (msa->aseq[idx][apos])); apos++)
+			nins++;
+		      nins /= 2;		/* split the insertion in half */
+		      rightjustify(msa->abc, msa->aseq[idx]+matmap[cpos]+1 + pass_offset[pass] + nins, max_ins_or_el[pass]-nins);
+		    }
+		  /* else revert to pre-1.0 infernal behavior, flush IL's left, and flush IR's right */
+		  else if(!(insleft[cpos])) /* only insert right if next consensus column doesn't insert left */
+		    rightjustify(msa->abc, msa->aseq[idx] + apos, max_ins_or_el[pass]);
+		}
 	    }
 	}
+      /* deal with inserts after final cpos 1, 
+       * if there are EL's they would come before any ROOT_IRs */
+      if(cm->align_opts & CM_ALIGN_FLUSHINSERTS) /* old behavior, flush ROOT_IR right, else (default) leave ROOT_IR flush left */
+	  rightjustify(msa->abc, msa->aseq[idx]+matmap[emap->clen]+1, maxels[emap->clen]);
+      if(cm->align_opts & CM_ALIGN_FLUSHINSERTS) /* old behavior, flush ROOT_IR right, else (default) leave ROOT_IR flush left */
+	  rightjustify(msa->abc, msa->aseq[idx]+matmap[emap->clen]+1+maxels[emap->clen], maxins[emap->clen]);
     }
   /***********************************************
    * Build the rest of the MSA annotation.
@@ -2717,6 +2800,7 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
   free(matmap);
   free(imap);
   free(elmap);
+  free(insleft);
   esl_Free2D((void **) eposmap, nseq);
   *ret_msa = msa;
   return eslOK;
@@ -2733,32 +2817,6 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
   if(msa   != NULL)  esl_msa_Destroy(msa);
   return status;
 }
-/* Function: rightjustify()
- * 
- * Purpose:  Given a gap-containing string of length n,
- *           pull all the non-gap characters as far as
- *           possible to the right, leaving gaps on the
- *           left side. Used to rearrange the positions
- *           of insertions in HMMER alignments.
- */
-static void
-rightjustify(const ESL_ALPHABET *abc, char *s, int n)
-{
-  int npos;
-  int opos;
-
-  npos = n-1;
-  opos = n-1;
-  while (opos >= 0) {
-    if (esl_abc_CIsGap(abc, s[opos]))
-      opos--;
-    else
-      s[npos--]=s[opos--];  
-  }
-  while (npos >= 0) 
-    s[npos--] = '.';
-}
-
 
 /*
  * Function: DuplicateCP9
