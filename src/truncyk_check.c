@@ -92,7 +92,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--informat")  == 0) {
       format = String2SeqfileFormat(optarg);
       if (format == SQFILE_UNKNOWN) 
-	Die("unrecognized sequence file format \"%s\"", optarg);
+	cm_Die("unrecognized sequence file format \"%s\"", optarg);
     }
     else if (strcmp(optname, "-h") == 0) {
       MainBanner(stdout, banner);
@@ -102,7 +102,7 @@ main(int argc, char **argv)
     }
   }
 
-  if (argc - optind != 2) Die("Incorrect number of arguments.\n%s\n", usage);
+  if (argc - optind != 2) cm_Die("Incorrect number of arguments.\n%s\n", usage);
   cmfile = argv[optind++];
   seqfile = argv[optind++]; 
   
@@ -113,19 +113,19 @@ main(int argc, char **argv)
   watch = StopwatchCreate();
 
   if ((sqfp = SeqfileOpen(seqfile, format, NULL)) == NULL)
-    Die("Failed to open sequence database file %s\n%s\n", seqfile, usage);
+    cm_Die("Failed to open sequence database file %s\n%s\n", seqfile, usage);
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
-    Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
+    cm_Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
 
   if (! CMFileRead(cmfp, &cm))
-    Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
+    cm_Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
   if (cm == NULL) 
-    Die("%s empty?\n", cmfile);
+    cm_Die("%s empty?\n", cmfile);
 
 				/* open regression test data file */
   if (regressfile != NULL) {
     if ((regressfp = fopen(regressfile, "w")) == NULL)
-      Die("Failed to open regression test file %s", regressfile);
+      cm_Die("Failed to open regression test file %s", regressfile);
   }
 
   
@@ -202,14 +202,14 @@ main(int argc, char **argv)
        * can catch the problem.
        */
       if (tr1 != NULL && fabs(sc1 - ptsc1) >= 0.01)
-	Die("TrCYKInside score differs from its parse tree's score\n");
+	cm_Die("TrCYKInside score differs from its parse tree's score\n");
       if (tr2 != NULL && fabs(sc2 - ptsc2) >= 0.01)
-	Die("TrCYKDivideAndConquer score differs from its parse tree's score\n");
+	cm_Die("TrCYKDivideAndConquer score differs from its parse tree's score\n");
       if (!do_smallonly && fabs(sc1 - sc2) >= 0.01) 
-	Die("TrCYKInside score differs from TrCYKDivideAndConquer\n");
+	cm_Die("TrCYKInside score differs from TrCYKDivideAndConquer\n");
       if (tr1 != NULL && tr2 != NULL && 
 	  compare_stringently && !ParsetreeCompare(tr1, tr2))
-	Die("Parse trees for TrCYKInside and TrCYKDivideAndConquer differ\n");
+	cm_Die("Parse trees for TrCYKInside and TrCYKDivideAndConquer differ\n");
       
       /* Save regression test data
        */

@@ -39,20 +39,20 @@ main(int argc, char **argv)
    /* Should process options, but for now assume none and set optind */
    optind = 1;
 
-   if ( argc - optind != 2 ) Die("Incorrect number of arguments\n");
+   if ( argc - optind != 2 ) cm_Die("Incorrect number of arguments\n");
    cmfile = argv[optind++];
    seqfile = argv[optind++];
 
    if ( (cmfp = CMFileOpen(cmfile, NULL)) == NULL )
-      Die("Failed to open covariance model save file\n");
+      cm_Die("Failed to open covariance model save file\n");
    if (! CMFileRead(cmfp, &cm))
-      Die("Failed to read a CM from cm file\n");
+      cm_Die("Failed to read a CM from cm file\n");
    if (cm == NULL)
-      Die("CM file empty?\n");
+      cm_Die("CM file empty?\n");
    CMFileClose(cmfp);
 
    if ( (sqfp = SeqfileOpen(seqfile, format, NULL)) == NULL)
-      Die("Failed to open sequence database file\n");
+      cm_Die("Failed to open sequence database file\n");
 
    if (do_local) cm->config_opts |= CM_CONFIG_LOCAL;
 

@@ -20,6 +20,7 @@
 #include <stdlib.h>
 
 #include "easel.h"
+#include "esl_alphabet.h"
 #include "esl_stack.h"
 
 #include "structs.h"
@@ -66,49 +67,49 @@ typedef struct shadowmats_s {
 } ShadowMats_t;
 
 /* Divide and conquer */
-float tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
+float tr_generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
                           int r, int vend, int i0, int j0,
                           int r_allow_J, int r_allow_L, int r_allow_R);
-float   tr_wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
+float   tr_wedge_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
                           int r, int z,    int i0, int j0,
                           int r_allow_J, int r_allow_L, int r_allow_R);
-void        tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
+void        tr_v_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
                           int r, int z,    int i0, int i1, int j1, int j0,
                           int useEL, int r_allow_J, int r_allow_L, int r_allow_R,
                           int z_allow_J, int z_allow_L, int z_allow_R);
 
 /* Alignment engines */
 /* trinside is legacy, aviod use! */
-float trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
+float trinside (CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
                 void ****ret_shadow, void ****ret_L_shadow, void ****ret_R_shadow,
                 void ****ret_T_shadow, void ****ret_Lmode_shadow, void ****ret_Rmode_shadow,
                 int *ret_mode, int *ret_v, int *ret_i, int *ret_j);
-float tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
+float tr_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
                 int allow_begin, int r_allow_J, int r_allow_L, int r_allow_R,
                 AlphaMats_t *arg_alpha, AlphaMats_t *ret_alpha, 
                 struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
                 ShadowMats_t *ret_shadow, int *ret_mode, int *ret_v, int *ret_i, int *ret_j);
-float tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
+float tr_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
                  int r_allow_J, int r_allow_L, int r_allow_R,
                  BetaMats_t *arg_beta, BetaMats_t *ret_beta,
                  struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
                  int *ret_mode, int *ret_v, int *ret_j);
-float tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int j0,
+float tr_vinside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int z, int i0, int i1, int j1, int j0,
                  int useEL, int do_full, int allow_begin,
                  int r_allow_J, int r_allow_L, int r_allow_R,
                  int z_allow_J, int z_allow_L, int z_allow_R,
                  AlphaMats_t *arg_alpha, AlphaMats_t *ret_alpha,
                  struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
                  ShadowMats_t *ret_shadow, int *ret_mode, int *ret_v, int *ret_i, int *ret_j);
-void tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int j0,
+void tr_voutside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int z, int i0, int i1, int j1, int j0,
                  int useEL, int do_full, int r_allow_J, int r_allow_L, int r_allow_R,
                  int z_allow_J, int z_allow_L, int z_allow_R, BetaMats_t *arg_beta,
                  BetaMats_t *ret_beta, struct deckpool_s *dpool, struct deckpool_s **ret_dpool);
 
 /* Traceback routine */
-float tr_insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0,
+float tr_insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0,
                  int r_allow_J, int r_allow_L, int r_allow_R);
-float tr_vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, 
+float tr_vinsideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, 
                   int i0, int i1, int j1, int j0, int useEL,
                   int r_allow_J, int r_allow_L, int r_allow_R,
                   int z_allow_J, int z_allow_L, int z_allow_R);
@@ -124,7 +125,7 @@ float tr_vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
  * Returns:  score of the alignment in bits
  */
 float
-TrCYK_DnC(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr)
+TrCYK_DnC(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr)
 {
    Parsetree_t *tr;
    int          z;
@@ -134,15 +135,15 @@ TrCYK_DnC(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_t
    /* Check input parameters */
    if ( cm->stid[r] != ROOT_S )
    {
-      if (! (cm->flags & CM_LOCAL_BEGIN)) Die("internal error: we're not in local mode, but r is not root");
+      if (! (cm->flags & CM_LOCAL_BEGIN)) cm_Die("internal error: we're not in local mode, but r is not root");
       if ( (cm->stid[r] != MATP_MP) &&
            (cm->stid[r] != MATL_ML) &&
            (cm->stid[r] != MATR_MR) &&
-           (cm->stid[r] != BIF_B  )    )  Die("internal error: trying to do a local begin at a non-mainline start");
+           (cm->stid[r] != BIF_B  )    )  cm_Die("internal error: trying to do a local begin at a non-mainline start");
    }
 
    /* Create parse tree and initialize */
-   tr = CreateParsetree();
+   tr = CreateParsetree(100);
    /* InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, i0, j0, r); */
    z = cm->M-1;
 
@@ -193,7 +194,7 @@ TrCYK_DnC(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_t
  * Returns;  score of the alignment in bits
  */
 float
-TrCYK_Inside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr)
+TrCYK_Inside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr)
 {
    Parsetree_t *tr;
    int          z;
@@ -203,17 +204,17 @@ TrCYK_Inside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **re
    /* Check input parameters */
    if ( cm->stid[r] != ROOT_S )
    {
-      if (! (cm->flags & CM_LOCAL_BEGIN)) Die("internal error: we're not in local mode, but r is not root");
+      if (! (cm->flags & CM_LOCAL_BEGIN)) cm_Die("internal error: we're not in local mode, but r is not root");
       if ( (cm->stid[r] != MATP_MP) &&
            (cm->stid[r] != MATL_ML) &&
            (cm->stid[r] != MATR_MR) &&
-           (cm->stid[r] != BIF_B  )    )  Die("internal error: trying to do a local begin at a non-mainline start");
+           (cm->stid[r] != BIF_B  )    )  cm_Die("internal error: trying to do a local begin at a non-mainline start");
    }
 
    if ( ret_tr != NULL)
    {
       /* Create parse tree and initialize */
-      tr = CreateParsetree();
+      tr = CreateParsetree(100);
       /* For purely local alignment, we don't want this state in the parse */
       /* InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, i0, j0, r); */
       z = cm->M-1;
@@ -272,7 +273,7 @@ TrCYK_Inside(CM_t *cm, char *dsq, int L, int r, int i0, int j0, Parsetree_t **re
  * Returns:
  */
 float
-tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
+tr_generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
                     int r, int z, int i0, int j0,
                     int r_allow_J, int r_allow_L, int r_allow_R)
 {
@@ -316,13 +317,13 @@ tr_generic_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    /* Case 3: no bifurcations -> wedge problem */
    if (cm->sttype[v] != B_st)
    {
-      if (cm->sttype[z] != E_st) Die("z in tr_generic_splitter not E_st - that ain't right");
+      if (cm->sttype[z] != E_st) cm_Die("z in tr_generic_splitter not E_st - that ain't right");
       sc = tr_wedge_splitter(cm, dsq, L, tr, r, z, i0, j0, r_allow_J, r_allow_L, r_allow_R);
       return sc;
    }
 
-   alpha = MallocOrDie(sizeof(AlphaMats_t));
-   beta  = MallocOrDie(sizeof(BetaMats_t));
+   alpha = malloc(sizeof(AlphaMats_t));
+   beta  = malloc(sizeof(BetaMats_t));
 
    /* Unusual cases dispatched, back to case 2 (bifurcation) */
    w = cm->cfirst[v];
@@ -498,7 +499,7 @@ Die("1Superbad: passing z = -1!\n");
       }
       else
       {
-if (v == -1) Die("2Superbad: passing z = -1!\n");
+if (v == -1) cm_Die("2Superbad: passing z = -1!\n");
          tr_v_splitter(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0,
                        FALSE, r_allow_J, r_allow_L, r_allow_R, (v_mode == 3), (v_mode == 2), (v_mode == 1));
       }
@@ -562,7 +563,7 @@ if (v == -1) Die("2Superbad: passing z = -1!\n");
  * Returns:
  */
 float
-tr_wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
+tr_wedge_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
                   int r, int z, int i0, int j0,
                   int r_allow_J, int r_allow_L, int r_allow_R)
 {
@@ -588,8 +589,8 @@ tr_wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
       return sc;
    }
 
-   alpha = MallocOrDie(sizeof(AlphaMats_t));
-   beta  = MallocOrDie(sizeof(BetaMats_t));
+   alpha = malloc(sizeof(AlphaMats_t));
+   beta  = malloc(sizeof(BetaMats_t));
 
    /* Calculate a midpoint to split at */
    midnode = cm->ndidx[r] + ((cm->ndidx[z] - cm->ndidx[r])/2);
@@ -720,14 +721,14 @@ tr_wedge_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr,
    {
       if ( c_mode == 0 ) /* child empty */
       {
-if ((p_mode == 3 ? w : b2_v) == -1) Die("3Superbad: passing z = -1!\n");
+if ((p_mode == 3 ? w : b2_v) == -1) cm_Die("3Superbad: passing z = -1!\n");
          tr_v_splitter(cm, dsq, L, tr, r, (p_mode == 3 ? w : b2_v), i0, best_j - best_d + 1, best_j, j0,
                        (p_mode == 3), r_allow_J, r_allow_L, r_allow_R, (p_mode == 3), (p_mode == 2), (p_mode == 1));
          return best_sc;
       }
       else
       {
-if (best_v == -1) Die("4Superbad: passing z = -1!\n");
+if (best_v == -1) cm_Die("4Superbad: passing z = -1!\n");
          tr_v_splitter(cm, dsq, L, tr, r, best_v, i0, best_j - best_d + 1, best_j, j0,
                        FALSE, r_allow_J, r_allow_L, r_allow_R, (c_mode == 3), (c_mode == 2), (c_mode == 1));
       }
@@ -742,7 +743,7 @@ if (best_v == -1) Die("4Superbad: passing z = -1!\n");
       tr_wedge_splitter(cm, dsq, L, tr, best_v, z, best_j - best_d + 1, best_j, (c_mode == 3), (c_mode == 2), (c_mode == 1));
    }
    else /* parent and child both empty */
-      Die("Danger, danger! p_mode = %d c_mode = %d\n",p_mode,c_mode);
+      cm_Die("Danger, danger! p_mode = %d c_mode = %d\n",p_mode,c_mode);
 
    return best_sc;
 }
@@ -757,7 +758,7 @@ if (best_v == -1) Die("4Superbad: passing z = -1!\n");
  * Returns;  none
  */
 void
-tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int i1,
+tr_v_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int i1,
               int j1, int j0, int useEL, int r_allow_J, int r_allow_L, int r_allow_R,
               int z_allow_J, int z_allow_L, int z_allow_R)
 {
@@ -793,8 +794,8 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
       return;
    }
 
-   alpha = MallocOrDie(sizeof(AlphaMats_t));
-   beta  = MallocOrDie(sizeof(BetaMats_t));
+   alpha = malloc(sizeof(AlphaMats_t));
+   beta  = malloc(sizeof(BetaMats_t));
 
    /* Find split set */
    midnode = cm->ndidx[r] + ((cm->ndidx[z] - cm->ndidx[r])/2);
@@ -912,10 +913,10 @@ tr_v_splitter(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, int i0,
    {
       if ( c_mode )
       {
-if (best_v == -1) Die("5Superbad: passing z = -1!\n");
+if (best_v == -1) cm_Die("5Superbad: passing z = -1!\n");
          tr_v_splitter(cm, dsq, L, tr, r, best_v, i0, best_i, best_j, j0,
                        FALSE, r_allow_J, r_allow_L, r_allow_R, (c_mode == 3), (c_mode == 2), (c_mode == 1));
-if (z == -1) Die("6Superbad: passing z = -1!\n");
+if (z == -1) cm_Die("6Superbad: passing z = -1!\n");
          tr_v_splitter(cm, dsq, L, tr, best_v, z, best_i, i1, j1, best_j,
                        useEL, (c_mode == 3), (c_mode == 2), (c_mode == 1), z_allow_J, z_allow_L, z_allow_R);  
       }
@@ -931,7 +932,7 @@ if (z == -1) Die("6Superbad: passing z = -1!\n");
       {
          InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, best_i, best_j, best_v, c_mode);
       }
-if (z == -1) Die("7Superbad: passing z = -1!\n");
+if (z == -1) cm_Die("7Superbad: passing z = -1!\n");
       tr_v_splitter(cm, dsq, L, tr, best_v, z, best_i, i1, j1, best_j,
                     useEL, (c_mode == 3), (c_mode == 2), (c_mode == 1), z_allow_J, z_allow_L, z_allow_R);
    }
@@ -941,7 +942,7 @@ if (z == -1) Die("7Superbad: passing z = -1!\n");
 
 /* Legacy wrapper */
 float
-trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
+trinside (CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
           void ****ret_shadow, void ****ret_L_shadow, void ****ret_R_shadow,
           void ****ret_T_shadow, void ****ret_Lmode_shadow, void ****ret_Rmode_shadow,
           int *ret_mode, int *ret_v, int *ret_i, int *ret_j)
@@ -991,7 +992,7 @@ trinside (CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
  * Returns:  Score of the optimal alignment
  */
 float
-tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
+tr_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
           int allow_begin, int r_allow_J, int r_allow_L, int r_allow_R,
           AlphaMats_t *arg_alpha, AlphaMats_t *ret_alpha, 
           struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
@@ -1060,26 +1061,26 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
    /* Create score matrices */
    if ( alpha == NULL )
    {
-      alpha = MallocOrDie(sizeof(float **) * (cm->M+1));
+      alpha = malloc(sizeof(float **) * (cm->M+1));
       for ( v=0; v<=cm->M; v++ ) { alpha[v] = NULL; }
    }
    if ( L_alpha == NULL )
    {
-      L_alpha = MallocOrDie(sizeof(float **) * (cm->M+1));
+      L_alpha = malloc(sizeof(float **) * (cm->M+1));
       for ( v=0; v<=cm->M; v++ ) { L_alpha[v] = NULL; }
    }
    if ( R_alpha == NULL )
    {
-      R_alpha = MallocOrDie(sizeof(float **) * (cm->M+1));
+      R_alpha = malloc(sizeof(float **) * (cm->M+1));
       for ( v=0; v<=cm->M; v++ ) { R_alpha[v] = NULL; }
    }
    if ( T_alpha == NULL )
    {
-      T_alpha = MallocOrDie(sizeof(float **) * (cm->M+1));
+      T_alpha = malloc(sizeof(float **) * (cm->M+1));
       for ( v=0; v<=cm->M; v++ ) { T_alpha[v] = NULL; }
    }
 
-   touch = MallocOrDie(sizeof(int) *cm->M);
+   touch = malloc(sizeof(int) *cm->M);
    for ( v=0;      v<vroot; v++ ) { touch[v] = 0; }
    for ( v=vroot;  v<=vend; v++ ) { touch[v] = cm->pnum[v]; }
    for ( v=vend+1; v<cm->M; v++ ) {touch[v] = 0; }
@@ -1087,22 +1088,22 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
    /* Create shadow matrices */
    if ( ret_shadow != NULL ) 
    {
-      shadow = (void ***) MallocOrDie(sizeof(void **) * cm->M);
+      shadow = (void ***) malloc(sizeof(void **) * cm->M);
       for ( v=0; v<cm->M; v++ ) { shadow[v] = NULL; }
 
-      L_shadow = (void ***) MallocOrDie(sizeof(void **) * cm->M);
+      L_shadow = (void ***) malloc(sizeof(void **) * cm->M);
       for ( v=0; v<cm->M; v++ ) { L_shadow[v] = NULL; }
 
-      R_shadow = (void ***) MallocOrDie(sizeof(void **) * cm->M);
+      R_shadow = (void ***) malloc(sizeof(void **) * cm->M);
       for ( v=0; v<cm->M; v++ ) { R_shadow[v] = NULL; }
 
-      T_shadow = (void ***) MallocOrDie(sizeof(void **) * cm->M);
+      T_shadow = (void ***) malloc(sizeof(void **) * cm->M);
       for ( v=0; v<cm->M; v++ ) { T_shadow[v] = NULL; }
 
-      Lmode_shadow = (int ***) MallocOrDie(sizeof(int **) * cm->M);
+      Lmode_shadow = (int ***) malloc(sizeof(int **) * cm->M);
       for ( v=0; v<cm->M; v++ ) { Lmode_shadow[v] = NULL; }
 
-      Rmode_shadow = (int ***) MallocOrDie(sizeof(int **) * cm->M);
+      Rmode_shadow = (int ***) malloc(sizeof(int **) * cm->M);
       for ( v=0; v<cm->M; v++ ) { Rmode_shadow[v] = NULL; }
    }
 
@@ -1346,15 +1347,15 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
             y = cm->cfirst[v];
             alpha[v][j][0] = IMPOSSIBLE;
             L_alpha[v][j][0] = IMPOSSIBLE;
-            R_alpha[v][j][0] = IMPOSSIBLE;;
+            R_alpha[v][j][0] = IMPOSSIBLE;
             if ( jp > 0 ) {
                alpha[v][j][1] = IMPOSSIBLE;
-               if ( dsq[j] < Alphabet_size ) { L_alpha[v][j][1] =  LeftMarginalScore(cm->esc[v],dsq[j]); }
-               else { Die("Still can't deal with marginalizing degenerate residues! x %d dsq[x] %d",j,dsq[j]); }
-               if ( dsq[j] < Alphabet_size ) { R_alpha[v][j][1] = RightMarginalScore(cm->esc[v],dsq[j]); }
-               else { Die("Still can't deal with marginalizing degenerate residues! x %d dsq[x] %d",j,dsq[j]); }
-            if ( ret_shadow != NULL ) { ((char **)L_shadow[v])[j][1] = USED_EL; }
-            if ( ret_shadow != NULL ) { ((char **)R_shadow[v])[j][1] = USED_EL; }
+               if ( dsq[j] < cm->abc->K ) { L_alpha[v][j][1] =  LeftMarginalScore(cm->abc, cm->esc[v],dsq[j]); }
+               else { cm_Die("Still can't deal with marginalizing degenerate residues! x %d dsq[x] %d",j,dsq[j]); }
+               if ( dsq[j] < cm->abc->K ) { R_alpha[v][j][1] = RightMarginalScore(cm->abc, cm->esc[v],dsq[j]); }
+               else { cm_Die("Still can't deal with marginalizing degenerate residues! x %d dsq[x] %d",j,dsq[j]); }
+               if ( ret_shadow != NULL ) { ((char **)L_shadow[v])[j][1] = USED_EL; }
+               if ( ret_shadow != NULL ) { ((char **)R_shadow[v])[j][1] = USED_EL; }
             }
             for ( d=2; d<=jp; d++)
             {
@@ -1399,18 +1400,18 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                }
 
                i = j-d+1;
-               if ( dsq[i] < Alphabet_size && dsq[j] < Alphabet_size )
-               {  alpha[v][j][d] += cm->esc[v][(int) (dsq[i]*Alphabet_size+dsq[j])]; }
+               if ( dsq[i] < cm->abc->K && dsq[j] < cm->abc->K )
+               {  alpha[v][j][d] += cm->esc[v][(int) (dsq[i]*cm->abc->K+dsq[j])]; }
                else
-               {  alpha[v][j][d] += DegeneratePairScore(cm->esc[v], dsq[i], dsq[j]); }
-               if ( dsq[i] < Alphabet_size )
-               { L_alpha[v][j][d] +=  LeftMarginalScore(cm->esc[v],dsq[i]); }
+               {  alpha[v][j][d] += DegeneratePairScore(cm->abc, cm->esc[v], dsq[i], dsq[j]); }
+               if ( dsq[i] < cm->abc->K )
+               { L_alpha[v][j][d] +=  LeftMarginalScore(cm->abc, cm->esc[v],dsq[i]); }
                else
-               { Die("Still can't deal with marginalizing degenerate residues! x %d dsq[x] %d",i,dsq[i]); }
-               if ( dsq[j] < Alphabet_size )
-               { R_alpha[v][j][d] += RightMarginalScore(cm->esc[v],dsq[j]); }
+               { cm_Die("Still can't deal with marginalizing degenerate residues! x %d dsq[x] %d",i,dsq[i]); }
+               if ( dsq[j] < cm->abc->K )
+               { R_alpha[v][j][d] += RightMarginalScore(cm->abc, cm->esc[v],dsq[j]); }
                else
-               { Die("Still can't deal with marginalizing degenerate residues! x %d dsq[x] %d",j,dsq[j]); }
+               { cm_Die("Still can't deal with marginalizing degenerate residues! x %d dsq[x] %d",j,dsq[j]); }
 
                if (   alpha[v][j][d] < IMPOSSIBLE ) {   alpha[v][j][d] = IMPOSSIBLE; }
                if ( L_alpha[v][j][d] < IMPOSSIBLE ) { L_alpha[v][j][d] = IMPOSSIBLE; }
@@ -1481,15 +1482,15 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                }
 
                i = j-d+1;
-               if ( dsq[i] < Alphabet_size ) 
+               if ( dsq[i] < cm->abc->K ) 
                {
                     alpha[v][j][d] += cm->esc[v][(int) dsq[i]];
                   L_alpha[v][j][d] += cm->esc[v][(int) dsq[i]];
                }
                else
                {
-                    alpha[v][j][d] += DegenerateSingletScore(cm->esc[v], dsq[i]);
-                  L_alpha[v][j][d] += DegenerateSingletScore(cm->esc[v], dsq[i]);
+                    alpha[v][j][d] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
+                  L_alpha[v][j][d] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
                }
 
                if (   alpha[v][j][d] < IMPOSSIBLE ) {   alpha[v][j][d] = IMPOSSIBLE; }
@@ -1559,15 +1560,15 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
                   }
                }
 
-               if ( dsq[j] < Alphabet_size ) 
+               if ( dsq[j] < cm->abc->K ) 
                {
                     alpha[v][j][d] += cm->esc[v][(int) dsq[j]];
                   R_alpha[v][j][d] += cm->esc[v][(int) dsq[j]];
                }
                else
                {
-                    alpha[v][j][d] += DegenerateSingletScore(cm->esc[v], dsq[j]);
-                  R_alpha[v][j][d] += DegenerateSingletScore(cm->esc[v], dsq[j]);
+                    alpha[v][j][d] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
+                  R_alpha[v][j][d] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
                }
 
                if (   alpha[v][j][d] < IMPOSSIBLE ) {   alpha[v][j][d] = IMPOSSIBLE; }
@@ -1587,7 +1588,7 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
       }
       else
       {
-         Die("'Inconceivable!'\n'You keep using that word...'");
+         cm_Die("'Inconceivable!'\n'You keep using that word...'");
       }
 
       if ( v == vroot )
@@ -1723,7 +1724,7 @@ tr_inside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int d
  * Returns:  Score of best local hit (not extending to vend)
  */
 float
-tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
+tr_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
            int r_allow_J, int r_allow_L, int r_allow_R,
            BetaMats_t *arg_beta, BetaMats_t *ret_beta,
            struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
@@ -1747,14 +1748,14 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
    W = j0 - i0 + 1;
    if ( dpool == NULL ) dpool = deckpool_create();
 
-   beta = MallocOrDie(sizeof(BetaMats_t));
+   beta = malloc(sizeof(BetaMats_t));
    if ( arg_beta == NULL )
    {
-      beta->J = MallocOrDie(sizeof(float **) * (cm->M+1));
-      beta->L = MallocOrDie(sizeof(float  *) * (cm->M+1));
-      beta->R = MallocOrDie(sizeof(float  *) * (cm->M+1));
-      beta->L[0] = MallocOrDie(sizeof(float) * (cm->M+1)*(L+2));
-      beta->R[0] = MallocOrDie(sizeof(float) * (cm->M+1)*(L+2));
+      beta->J = malloc(sizeof(float **) * (cm->M+1));
+      beta->L = malloc(sizeof(float  *) * (cm->M+1));
+      beta->R = malloc(sizeof(float  *) * (cm->M+1));
+      beta->L[0] = malloc(sizeof(float) * (cm->M+1)*(L+2));
+      beta->R[0] = malloc(sizeof(float) * (cm->M+1)*(L+2));
       for ( v = 0; v < cm->M+1; v++ )
       {
          beta->J[v] = NULL;
@@ -1780,7 +1781,7 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
    if (cm->sttype[vroot] == B_st)
    {
       w2 = w1;
-      if (vend != vroot) Die("vroot B but vroot != vend!\n");
+      if (vend != vroot) cm_Die("vroot B but vroot != vend!\n");
    }
    else
       w2 = cm->cfirst[w1] - 1;
@@ -1845,30 +1846,30 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
       {
          case MP_st:
             if (W < 2) break;
-            if (dsq[i0] < Alphabet_size && dsq[j0] < Alphabet_size)
-               esc = cm->esc[vroot][(int) (dsq[i0]*Alphabet_size+dsq[j0])];
+            if (dsq[i0] < cm->abc->K && dsq[j0] < cm->abc->K)
+               esc = cm->esc[vroot][(int) (dsq[i0]*cm->abc->K+dsq[j0])];
             else
-               esc = DegeneratePairScore(cm->esc[vroot], dsq[i0], dsq[j0]);
+               esc = DegeneratePairScore(cm->abc, cm->esc[vroot], dsq[i0], dsq[j0]);
             beta->J[cm->M][j0-1][W-2] = cm->endsc[vroot] + (cm->el_selfsc * (W-2)) + esc;
             if (beta->J[cm->M][j0-1][W-2] < IMPOSSIBLE) beta->J[cm->M][j0-1][W-2] = IMPOSSIBLE;
             break;
          case ML_st:
          case IL_st:
             if (W < 1) break;
-            if (dsq[i0] < Alphabet_size)
+            if (dsq[i0] < cm->abc->K)
                esc = cm->esc[vroot][(int) dsq[i0]];
             else
-               esc = DegenerateSingletScore(cm->esc[vroot], dsq[i0]);
+               esc = esl_abc_FAvgScore(cm->abc, dsq[i0], cm->esc[vroot]);
             beta->J[cm->M][j0][W-1] = cm->endsc[vroot] + (cm->el_selfsc * (W-1)) + esc;
             if (beta->J[cm->M][j0][W-1] < IMPOSSIBLE) beta->J[cm->M][j0][W-1] = IMPOSSIBLE;
             break;
          case MR_st:
          case IR_st:
             if (W < 1) break;
-            if (dsq[j0] < Alphabet_size)
+            if (dsq[j0] < cm->abc->K)
                esc = cm->esc[vroot][(int) dsq[j0]];
             else
-               esc = DegenerateSingletScore(cm->esc[vroot], dsq[j0]);
+               esc = esl_abc_FAvgScore(cm->abc, dsq[j0], cm->esc[vroot]);
             beta->J[cm->M][j0-1][W-1] = cm->endsc[vroot] + (cm->el_selfsc * (W-1)) + esc;
             if (beta->J[cm->M][j0-1][W-1] < IMPOSSIBLE) beta->J[cm->M][j0][W-1] = IMPOSSIBLE;
             break;
@@ -1879,12 +1880,12 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
             break;
          case  B_st: /* B_st can't go to EL? */
          default:
-            Die("bogus parent state %d\n",cm->sttype[vroot]);
+            cm_Die("bogus parent state %d\n",cm->sttype[vroot]);
       }
    }
 
    /* Initialize touch vector for controlling deck de-allocation */
-   touch = MallocOrDie(sizeof(int) * cm->M);
+   touch = malloc(sizeof(int) * cm->M);
    for (v = 0;      v < w1;    v++) touch[v] = 0;
    for (v = vend+1; v < cm->M; v++) touch[v] = 0;
    for (v = w1;     v <= vend; v++)
@@ -1941,10 +1942,10 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
                case MP_st:
                   if (j > i0)
                   {
-                     if (dsq[j-1] < Alphabet_size)
-                        esc = LeftMarginalScore(cm->esc[y], dsq[j-1]);
+                     if (dsq[j-1] < cm->abc->K)
+                        esc = LeftMarginalScore(cm->abc, cm->esc[y], dsq[j-1]);
                      else
-                        Die("Still can't deal with marginalizing degenerate residues! dsq[%d] = %d\n",j-1,dsq[j-1]);
+                        cm_Die("Still can't deal with marginalizing degenerate residues! dsq[%d] = %d\n",j-1,dsq[j-1]);
                      if ( (sc = beta->L[y][j-1] + cm->tsc[y][voffset] + esc) > beta->L[v][j] )
                         beta->L[v][j] = sc;
                   }
@@ -1953,10 +1954,10 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
                case IL_st:
                   if (j > i0)
                   {
-                     if (dsq[j-1] < Alphabet_size)
+                     if (dsq[j-1] < cm->abc->K)
                         esc = cm->esc[y][(int) dsq[j-1]];
                      else
-                        esc = DegenerateSingletScore(cm->esc[y], dsq[j-1]);
+                        esc = esl_abc_FAvgScore(cm->abc, dsq[j-1], cm->esc[v]);
                      if ( (sc = beta->L[y][j-1] + cm->tsc[y][voffset] + esc) > beta->L[v][j] )
                         beta->L[v][j] = sc;
                   }
@@ -1970,7 +1971,7 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
                      beta->L[v][j] = sc;
                   break;
                default:
-                  Die("Bogus parent type %d for y = %d, v = %d\n",cm->sttype[y],y,v);
+                  cm_Die("Bogus parent type %d for y = %d, v = %d\n",cm->sttype[y],y,v);
             }
          }
          esc = 0.0;
@@ -1978,13 +1979,13 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
          {
             if (cm->sttype[v] == MP_st)
             {
-               if (dsq[j] < Alphabet_size) esc = LeftMarginalScore(cm->esc[v], dsq[j]);
-               else Die("Still can't deal with marginalizing degenerate residues! dsq[%d] = %d\n",j-1,dsq[j-1]);
+               if (dsq[j] < cm->abc->K) esc = LeftMarginalScore(cm->abc, cm->esc[v], dsq[j]);
+               else cm_Die("Still can't deal with marginalizing degenerate residues! dsq[%d] = %d\n",j-1,dsq[j-1]);
             }
             if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st)
             {
-               if (dsq[j] < Alphabet_size) esc = cm->esc[v][(int) dsq[j]];
-               else                        esc = DegenerateSingletScore(cm->esc[v], dsq[j]);
+               if (dsq[j] < cm->abc->K) esc = cm->esc[v][(int) dsq[j]];
+               else                        esc = esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
             }
          }
          if (beta->L[v][j] + esc > b_sc)
@@ -2010,10 +2011,10 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
                case MP_st:
                   if (j < j0)
                   {
-                     if (dsq[j+1] < Alphabet_size)
-                        esc = RightMarginalScore(cm->esc[y], dsq[j+1]);
+                     if (dsq[j+1] < cm->abc->K)
+                        esc = RightMarginalScore(cm->abc, cm->esc[y], dsq[j+1]);
                      else
-                        Die("Still can't deal with marginalizing degenerate residues! dsq[%d] = %d\n",j+1,dsq[j+1]);
+                        cm_Die("Still can't deal with marginalizing degenerate residues! dsq[%d] = %d\n",j+1,dsq[j+1]);
                      if ( (sc = beta->R[y][j+1] + cm->tsc[y][voffset] + esc) > beta->R[v][j] )
                         beta->R[v][j] = sc;
                   }
@@ -2022,10 +2023,10 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
                case IR_st:
                   if (j < j0)
                   {
-                     if (dsq[j+1] < Alphabet_size)
+                     if (dsq[j+1] < cm->abc->K)
                         esc = cm->esc[y][(int) dsq[j+1]];
                      else
-                        esc = DegenerateSingletScore(cm->esc[y], dsq[j+1]);
+                        esc = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[y]);
                      if ( (sc = beta->R[y][j+1] + cm->tsc[y][voffset] + esc) > beta->R[v][j] )
                         beta->R[v][j] = sc;
                   }
@@ -2039,7 +2040,7 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
                      beta->R[v][j] = sc;
                   break;
                default:
-                  Die("Bogus parent type %d for y = %d, v = %d\n",cm->sttype[y],y,v);
+                  cm_Die("Bogus parent type %d for y = %d, v = %d\n",cm->sttype[y],y,v);
             }
          }
          esc = 0.0;
@@ -2047,13 +2048,13 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
          {
             if (cm->sttype[v] == MP_st)
             {
-               if (dsq[j] < Alphabet_size) esc = RightMarginalScore(cm->esc[v], dsq[j]);
-               else Die("Still can't deal with marginalizing degenerate residues! dsq[%d] = %d\n",j-1,dsq[j-1]);
+               if (dsq[j] < cm->abc->K) esc = RightMarginalScore(cm->abc, cm->esc[v], dsq[j]);
+               else cm_Die("Still can't deal with marginalizing degenerate residues! dsq[%d] = %d\n",j-1,dsq[j-1]);
             }
             if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st)
             {
-               if (dsq[j] < Alphabet_size) esc = cm->esc[v][(int) dsq[j]];
-               else                        esc = DegenerateSingletScore(cm->esc[v], dsq[j]);
+               if (dsq[j] < cm->abc->K) esc = cm->esc[v][(int) dsq[j]];
+               else                        esc = esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
             }
          }
          if (beta->R[v][j] + esc > b_sc)
@@ -2082,10 +2083,10 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
                   case MP_st:
                      if (j != j0 && d != jp)
                      {
-                        if (dsq[i-1] < Alphabet_size && dsq[j+1] < Alphabet_size)
-                           esc = cm->esc[y][(int) (dsq[i-1]*Alphabet_size + dsq[j+1])];
+                        if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
+                           esc = cm->esc[y][(int) (dsq[i-1]*cm->abc->K + dsq[j+1])];
                         else
-                           esc = DegeneratePairScore(cm->esc[y], dsq[i-1], dsq[j+1]);
+                           esc = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
                         if ( (sc = beta->J[y][j+1][d+2] + cm->tsc[y][voffset] + esc) > beta->J[v][j][d] )
                            beta->J[v][j][d] = sc;
                         if ( (sc = beta->L[y][i-1]      + cm->tsc[y][voffset] + esc) > beta->J[v][j][d] )
@@ -2098,10 +2099,10 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
                   case IL_st:
                      if (d != jp)
                      {
-                        if (dsq[i-1] < Alphabet_size)
+                        if (dsq[i-1] < cm->abc->K)
                            esc = cm->esc[y][(int) dsq[i-1]];
                         else
-                           esc = DegenerateSingletScore(cm->esc[y], dsq[i-1]);
+                           esc = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[y]);
                         if ( (sc = beta->J[y][j][d+1] + cm->tsc[y][voffset] + esc) > beta->J[v][j][d] )
                            beta->J[v][j][d] = sc;
                         if ( (sc = beta->R[y][j]      + cm->tsc[y][voffset] + esc) > beta->J[v][j][d] )
@@ -2112,10 +2113,10 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
                   case IR_st:
                      if (j != j0)
                      {
-                        if (dsq[j+1] < Alphabet_size)
+                        if (dsq[j+1] < cm->abc->K)
                            esc = cm->esc[y][(int) dsq[j+1]];
                         else
-                           esc = DegenerateSingletScore(cm->esc[y], dsq[j+1]);
+                           esc = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[y]);
                         if ( (sc = beta->J[y][j+1][d+1] + cm->tsc[y][voffset] + esc) > beta->J[v][j][d] )
                            beta->J[v][j][d] = sc;
                         if ( (sc = beta->L[y][i]        + cm->tsc[y][voffset] + esc) > beta->J[v][j][d] )
@@ -2129,7 +2130,7 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
                         beta->J[v][j][d] = sc;
                      break;
                   default:
-                     Die("Bogus parent type %d for y = %d, v = %d\n",cm->sttype[y],y,v);
+                     cm_Die("Bogus parent type %d for y = %d, v = %d\n",cm->sttype[y],y,v);
                } /* End switch over state types */
             } /* End loop over parent states  - cell done */
          } /* End loop over d - row done */
@@ -2148,20 +2149,20 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
                {
                   case MP_st:
                      if (j == j0 || d == jp) continue; /* boundary condition */
-                     if (dsq[i-1] < Alphabet_size && dsq[j+1] < Alphabet_size)
-                        esc = cm->esc[v][(int) (dsq[i-1]*Alphabet_size+dsq[j+1])];
+                     if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
+                        esc = cm->esc[v][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
                      else
-                        esc = DegeneratePairScore(cm->esc[v], dsq[i-1], dsq[j+1]);
+                        esc = DegeneratePairScore(cm->abc, cm->esc[v], dsq[i-1], dsq[j+1]);
                      if ((sc = beta->J[v][j+1][d+2] + cm->endsc[v] + (cm->el_selfsc * d) + esc) > beta->J[cm->M][j][d])
                         beta->J[cm->M][j][d] = sc;
                      break;
                   case ML_st:
                   case IL_st:
                      if (d == jp) continue;
-                     if (dsq[i-1] < Alphabet_size)
+                     if (dsq[i-1] < cm->abc->K)
                         esc = cm->esc[v][(int) dsq[i-1]];
                      else
-                        esc = DegenerateSingletScore(cm->esc[v], dsq[i-1]);
+                        esc = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[v]);
                      if ((sc = beta->J[v][j][d+1] + cm->endsc[v] + (cm->el_selfsc * d) + esc) > beta->J[cm->M][j][d])
                         /*(cm->el_selfsc * (d+1)) + esc) > beta[cm->M][j][d])*/
                         beta->J[cm->M][j][d] = sc;
@@ -2169,10 +2170,10 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
                   case MR_st:
                   case IR_st:
                      if (j == j0) continue;
-                     if (dsq[j+1] < Alphabet_size)
+                     if (dsq[j+1] < cm->abc->K)
                         esc = cm->esc[v][(int) dsq[j+1]];
                      else
-                        esc = DegenerateSingletScore(cm->esc[v], dsq[j+1]);
+                        esc = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[v]);
                      if ((sc = beta->J[v][j+1][d+1] + cm->endsc[v] + (cm->el_selfsc * d) + esc) > beta->J[cm->M][j][d])
                         /*(cm->el_selfsc * (d+1)) + esc) > beta[cm->M][j][d])*/
                         beta->J[cm->M][j][d] = sc;
@@ -2184,7 +2185,7 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
                         beta->J[cm->M][j][d] = sc;
                      break;
                   case B_st:
-                  default: Die("bogus parent state %d\n", cm->sttype[v]);
+                  default: cm_Die("bogus parent state %d\n", cm->sttype[v]);
                 /* note that although B is a valid vend for a segment we'd do
                    outside on, B->EL is set to be impossible, by the local alignment
                    config. There's no point in having a B->EL because B is a nonemitter
@@ -2257,7 +2258,7 @@ tr_outside(CM_t *cm, char *dsq, int L, int vroot, int vend, int i0, int j0, int 
  * Returns:
  */
 float
-tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int j0,
+tr_vinside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int z, int i0, int i1, int j1, int j0,
            int useEL, int do_full, int allow_begin,
            int r_allow_J, int r_allow_L, int r_allow_R,
            int z_allow_J, int z_allow_L, int z_allow_R,
@@ -2287,8 +2288,8 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
 
    if ( dpool == NULL ) dpool = deckpool_create();
 
-   alpha = MallocOrDie(sizeof(AlphaMats_t));
-   shadow = MallocOrDie(sizeof(ShadowMats_t));
+   alpha = malloc(sizeof(AlphaMats_t));
+   shadow = malloc(sizeof(ShadowMats_t));
 
    /* Create and initialize score matrices */
    if ( arg_alpha == NULL )
@@ -2302,17 +2303,17 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
 
    if ( alpha->J == NULL )
    {
-      alpha->J = MallocOrDie(sizeof(float **) * (cm->M+1));
+      alpha->J = malloc(sizeof(float **) * (cm->M+1));
       for (v = 0; v <= cm->M; v++) { alpha->J[v] = NULL; }
    }
    if ( alpha->L == NULL )
    {
-      alpha->L = MallocOrDie(sizeof(float **) * (cm->M+1));
+      alpha->L = malloc(sizeof(float **) * (cm->M+1));
       for (v = 0; v <= cm->M; v++) { alpha->L[v] = NULL; }
    }
    if ( alpha->R == NULL )
    {
-      alpha->R = MallocOrDie(sizeof(float **) * (cm->M+1));
+      alpha->R = malloc(sizeof(float **) * (cm->M+1));
       for (v = 0; v <= cm->M; v++) { alpha->R[v] = NULL; }
    }
 
@@ -2337,7 +2338,7 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
       }
    }
 
-   touch = MallocOrDie(sizeof(int) * cm->M);
+   touch = malloc(sizeof(int) * cm->M);
    for (v = 0;    v < r;     v++) { touch[v] = 0; }
    for (v = r;    v <= w2;   v++) { touch[v] = cm->pnum[v]; }
    for (v = w2+1; v < cm->M; v++) { touch[v] = 0; }
@@ -2345,11 +2346,11 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
    /* Create shadow matrices */
    if (ret_shadow != NULL)
    {
-      shadow->J     = MallocOrDie(sizeof(char **) * cm->M);
-      shadow->L     = MallocOrDie(sizeof(char **) * cm->M);
-      shadow->R     = MallocOrDie(sizeof(char **) * cm->M);
-      shadow->Lmode = MallocOrDie(sizeof(char **) * cm->M);
-      shadow->Rmode = MallocOrDie(sizeof(char **) * cm->M);
+      shadow->J     = malloc(sizeof(char **) * cm->M);
+      shadow->L     = malloc(sizeof(char **) * cm->M);
+      shadow->R     = malloc(sizeof(char **) * cm->M);
+      shadow->Lmode = malloc(sizeof(char **) * cm->M);
+      shadow->Rmode = malloc(sizeof(char **) * cm->M);
       for (v = 0; v < cm->M; v++)
       {
          shadow->J[v]      = NULL;
@@ -2394,10 +2395,10 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
          case MP_st:
             if (i0 == i1 || j1 == j0) break;
             alpha->J[z][jp+1][ip-1] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1));
-            if (dsq[i1-1] < Alphabet_size && dsq[j1+1] < Alphabet_size)
-               alpha->J[z][jp+1][ip-1] += cm->esc[z][(int) (dsq[i1-1]*Alphabet_size+dsq[j1+1])];
+            if (dsq[i1-1] < cm->abc->K && dsq[j1+1] < cm->abc->K)
+               alpha->J[z][jp+1][ip-1] += cm->esc[z][(int) (dsq[i1-1]*cm->abc->K+dsq[j1+1])];
             else
-               alpha->J[z][jp+1][ip-1] += DegeneratePairScore(cm->esc[z], dsq[i1-1], dsq[j1+1]);
+               alpha->J[z][jp+1][ip-1] += DegeneratePairScore(cm->abc, cm->esc[z], dsq[i1-1], dsq[j1+1]);
             if (ret_shadow != NULL) ((char **)shadow->J[z])[jp+1][ip-1] = USED_EL;
             if (alpha->J[z][jp+1][ip-1] < IMPOSSIBLE) alpha->J[z][jp+1][ip-1] = IMPOSSIBLE;
             break;
@@ -2405,10 +2406,10 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
          case IL_st:
             if (i0 == i1 ) break;
             alpha->J[z][jp][ip-1] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1));
-            if (dsq[i1-1] < Alphabet_size)
+            if (dsq[i1-1] < cm->abc->K)
                alpha->J[z][jp][ip-1] += cm->esc[z][(int) dsq[i1-1]];
             else
-               alpha->J[z][jp][ip-1] += DegenerateSingletScore(cm->esc[z], dsq[i1-1]);
+               alpha->J[z][jp][ip-1] += esl_abc_FAvgScore(cm->abc, dsq[i1-1], cm->esc[z]);
             if (ret_shadow != NULL) ((char **)shadow->J[z])[jp][ip-1] = USED_EL;
             if (alpha->J[z][jp][ip-1] < IMPOSSIBLE) alpha->J[z][jp][ip-1] = IMPOSSIBLE;
             break;
@@ -2416,15 +2417,15 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
          case IR_st:
             if (j1 == j0) break;
             alpha->J[z][jp+1][ip] = cm->endsc[z] + (cm->el_selfsc * ((jp+j1)-(ip+i0)+1));
-            if (dsq[j1+1] < Alphabet_size)
+            if (dsq[j1+1] < cm->abc->K)
                alpha->J[z][jp+1][ip] += cm->esc[z][(int) dsq[j1+1]];
             else
-               alpha->J[z][jp+1][ip] += DegenerateSingletScore(cm->esc[z], dsq[j1+1]);
+               alpha->J[z][jp+1][ip] += esl_abc_FAvgScore(cm->abc, dsq[j1+1], cm->esc[z]);
             if (ret_shadow != NULL) ((char **)shadow->J[z])[jp+1][ip] = USED_EL;
             if (alpha->J[z][jp+1][ip] < IMPOSSIBLE) alpha->J[z][jp+1][ip] = IMPOSSIBLE;
             break;
          default:
-            Die("Bad input combination in tr_vinside: useEL TRUE, but cm->sttype[z] = %d\n",cm->sttype[z]);
+            cm_Die("Bad input combination in tr_vinside: useEL TRUE, but cm->sttype[z] = %d\n",cm->sttype[z]);
       }
 
       alpha->L[z][jp][ip] = IMPOSSIBLE;
@@ -2437,7 +2438,7 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
       }
    }
    else
-      Die("Bad input combination in tr_vinside: useEL %d z_allow_J %d \n",useEL,z_allow_J);
+      cm_Die("Bad input combination in tr_vinside: useEL %d z_allow_J %d \n",useEL,z_allow_J);
 
    /* Special case: empty sequence */
    if (r == 0)
@@ -2464,7 +2465,7 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
       {
          // FIXME
          // I don't understand what exactly Sean's doing in this block
-         Die("Potentially unhandled case!\n");
+         cm_Die("Potentially unhandled case!\n");
       }
    }
 
@@ -2510,7 +2511,7 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
 
       /* Double-check problem type */
       if (cm->sttype[v] == E_st || cm->sttype[v] == B_st || (cm->sttype[v] == S_st && v > r))
-         Die("Non-V problem in tr_vinside(); cm->sttype[%d] = %d\n",v,cm->sttype[v]);
+         cm_Die("Non-V problem in tr_vinside(); cm->sttype[%d] = %d\n",v,cm->sttype[v]);
 
       if (cm->sttype[v] == D_st || cm->sttype[v] == S_st)
       {
@@ -2607,24 +2608,24 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
 
                if (jp > 0 && ip < i1-i0)
                {
-                  if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
-                     alpha->J[v][jp][ip] += cm->esc[v][(int) (dsq[i]*Alphabet_size+dsq[j])];
+                  if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
+                     alpha->J[v][jp][ip] += cm->esc[v][(int) (dsq[i]*cm->abc->K+dsq[j])];
                   else
-                     alpha->J[v][jp][ip] += DegeneratePairScore(cm->esc[v], dsq[i], dsq[j]);
+                     alpha->J[v][jp][ip] += DegeneratePairScore(cm->abc, cm->esc[v], dsq[i], dsq[j]);
                }
                if (ip < i1-i0)
                {
-                  if (dsq[i] < Alphabet_size)
-                     alpha->L[v][jp][ip] += LeftMarginalScore(cm->esc[v], dsq[i]);
+                  if (dsq[i] < cm->abc->K)
+                     alpha->L[v][jp][ip] += LeftMarginalScore(cm->abc, cm->esc[v], dsq[i]);
                   else
-                     Die("Still can't deal with marginalizing degenerate residues! dsq[%d] = %d\n",i,dsq[i]);
+                     cm_Die("Still can't deal with marginalizing degenerate residues! dsq[%d] = %d\n",i,dsq[i]);
                }
                if (jp > 0)
                {
-                  if (dsq[j] < Alphabet_size)
-                     alpha->R[v][jp][ip] += RightMarginalScore(cm->esc[v], dsq[j]);
+                  if (dsq[j] < cm->abc->K)
+                     alpha->R[v][jp][ip] += RightMarginalScore(cm->abc, cm->esc[v], dsq[j]);
                   else
-                     Die("Still can't deal with marginalizing degenerate residues! dsq[%d] = %d\n",j,dsq[j]);
+                     cm_Die("Still can't deal with marginalizing degenerate residues! dsq[%d] = %d\n",j,dsq[j]);
                }
 
                if ( alpha->J[v][jp][ip] < IMPOSSIBLE) alpha->J[v][jp][ip] = IMPOSSIBLE;
@@ -2689,15 +2690,15 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
 
                if (ip < i1-i0)
                {
-                  if (dsq[i] < Alphabet_size)
+                  if (dsq[i] < cm->abc->K)
                   {
                      alpha->J[v][jp][ip] += cm->esc[v][(int) dsq[i]];
                      alpha->L[v][jp][ip] += cm->esc[v][(int) dsq[i]];
                   }
                   else
                   {
-                     alpha->J[v][jp][ip] += DegenerateSingletScore(cm->esc[v], dsq[i]);
-                     alpha->L[v][jp][ip] += DegenerateSingletScore(cm->esc[v], dsq[i]);
+                     alpha->J[v][jp][ip] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
+                     alpha->L[v][jp][ip] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
                   }
                }
 
@@ -2761,15 +2762,15 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
 
                if (jp > 0)
                {
-                  if (dsq[j] < Alphabet_size)
+                  if (dsq[j] < cm->abc->K)
                   {
                      alpha->J[v][jp][ip] += cm->esc[v][(int) dsq[j]];
                      alpha->R[v][jp][ip] += cm->esc[v][(int) dsq[j]];
                   }
                   else
                   {
-                     alpha->J[v][jp][ip] += DegenerateSingletScore(cm->esc[v], dsq[j]);
-                     alpha->R[v][jp][ip] += DegenerateSingletScore(cm->esc[v], dsq[j]);
+                     alpha->J[v][jp][ip] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
+                     alpha->R[v][jp][ip] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
                   }
                }
 
@@ -2789,7 +2790,7 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
       }
       else
       {
-         Die("There's no way we could have gotten here - should have died before now\n");
+         cm_Die("There's no way we could have gotten here - should have died before now\n");
       }
 
       if (v == r)
@@ -2915,7 +2916,7 @@ tr_vinside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int
  * Returns:
  */
 void
-tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, int j0,
+tr_voutside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int z, int i0, int i1, int j1, int j0,
             int useEL, int do_full, int r_allow_J, int r_allow_L, int r_allow_R,
             int z_allow_J, int z_allow_L, int z_allow_R, BetaMats_t *arg_beta,
             BetaMats_t *ret_beta, struct deckpool_s *dpool, struct deckpool_s **ret_dpool)
@@ -2932,14 +2933,14 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
    /* Initialization */
    if (dpool == NULL) dpool = deckpool_create();
 
-   beta = MallocOrDie(sizeof(BetaMats_t));
+   beta = malloc(sizeof(BetaMats_t));
    if (arg_beta == NULL)
    {
-      beta->J = MallocOrDie(sizeof(float **) * (cm->M+1));
-      beta->L = MallocOrDie(sizeof(float  *) * (cm->M+1));
-      beta->R = MallocOrDie(sizeof(float  *) * (cm->M+1));
-      beta->L[0] = MallocOrDie(sizeof(float) * (cm->M+1)*(i1-i0+1));
-      beta->R[0] = MallocOrDie(sizeof(float) * (cm->M+1)*(j0-j1+1));
+      beta->J = malloc(sizeof(float **) * (cm->M+1));
+      beta->L = malloc(sizeof(float  *) * (cm->M+1));
+      beta->R = malloc(sizeof(float  *) * (cm->M+1));
+      beta->L[0] = malloc(sizeof(float) * (cm->M+1)*(i1-i0+1));
+      beta->R[0] = malloc(sizeof(float) * (cm->M+1)*(j0-j1+1));
       for (v = 0; v < cm->M+1; v++)
       {
          beta->J[v] = NULL;
@@ -3007,30 +3008,30 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
       {
          case MP_st:
             if (i0 == i1 || j1 == j0) break;
-            if (dsq[i0] < Alphabet_size && dsq[j0] < Alphabet_size)
-               esc = cm->esc[r][(int) (dsq[i0]*Alphabet_size+dsq[j0])];
+            if (dsq[i0] < cm->abc->K && dsq[j0] < cm->abc->K)
+               esc = cm->esc[r][(int) (dsq[i0]*cm->abc->K+dsq[j0])];
             else
-               esc = DegeneratePairScore(cm->esc[r], dsq[i0], dsq[j0]);
+               esc = DegeneratePairScore(cm->abc, cm->esc[r], dsq[i0], dsq[j0]);
             beta->J[cm->M][j0-j1-1][1] = cm->endsc[r] + (cm->el_selfsc * ((j0-1)-(i0+1)+1)) + esc;
             if (beta->J[cm->M][j0-j1-1][1] < IMPOSSIBLE) beta->J[cm->M][j0-j1-1][1] = IMPOSSIBLE;
             break;
          case ML_st:
          case IL_st:
             if (i0 == i1) break;
-            if (dsq[i0] < Alphabet_size)
+            if (dsq[i0] < cm->abc->K)
                esc = cm->esc[r][(int) dsq[i0]];
             else
-               esc = DegenerateSingletScore(cm->esc[r], dsq[i0]);
+               esc = esl_abc_FAvgScore(cm->abc, dsq[i0], cm->esc[r]);
             beta->J[cm->M][j0-j1][1] = cm->endsc[r] + (cm->el_selfsc * ((j0)-(i0+1)+1)) + esc;
             if (beta->J[cm->M][j0-j1][1] < IMPOSSIBLE) beta->J[cm->M][j0-j1][1] = IMPOSSIBLE;
             break;
          case MR_st:
          case IR_st:
             if (j1 == j0) break;
-            if (dsq[j0] < Alphabet_size)
+            if (dsq[j0] < cm->abc->K)
                esc = cm->esc[r][(int) dsq[j0]];
             else
-               esc = DegenerateSingletScore(cm->esc[r], dsq[j0]);
+               esc = esl_abc_FAvgScore(cm->abc, dsq[j0], cm->esc[r]);
             beta->J[cm->M][j0-j1-1][0] = cm->endsc[r] + (cm->el_selfsc * ((j0-1)-(i0)+1)) + esc;
             if (beta->J[cm->M][j0-j1-1][0] < IMPOSSIBLE) beta->J[cm->M][j0-j1-1][0] = IMPOSSIBLE;
             break;
@@ -3039,12 +3040,12 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
             beta->J[cm->M][j0-j1][0] = cm->endsc[r] + (cm->el_selfsc * ((j0)-(i0)+1));
             break;
          default:
-            Die("bogus parent state %d\n",cm->sttype[r]);
+            cm_Die("bogus parent state %d\n",cm->sttype[r]);
       }
    }
 
    /* Initialize touch vector for controlling deck recycling */
-   touch = MallocOrDie(sizeof(int) * cm->M);
+   touch = malloc(sizeof(int) * cm->M);
    for (v =   0; v <     r; v++) touch[v] = 0;
    for (v = z+1; v < cm->M; v++) touch[v] = 0;
    for (v =   r; v <=    z; v++)
@@ -3096,10 +3097,10 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
                case MP_st:
                   if (ip > 0)
                   {
-                     if (dsq[i-1] < Alphabet_size)
-                        esc = LeftMarginalScore(cm->esc[y], dsq[i-1]);
+                     if (dsq[i-1] < cm->abc->K)
+                        esc = LeftMarginalScore(cm->abc, cm->esc[y], dsq[i-1]);
                      else
-                        Die("Still can't deal with marginalizing degenerate residues: dsq[%d] = %d\n",i-1,dsq[i-1]);
+                        cm_Die("Still can't deal with marginalizing degenerate residues: dsq[%d] = %d\n",i-1,dsq[i-1]);
                      if ( (sc = beta->L[y][ip-1] + cm->tsc[y][voffset] + esc) > beta->L[v][ip] )
                         beta->L[v][ip] = sc;
                   }
@@ -3108,10 +3109,10 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
                case IL_st:
                   if (ip > 0)
                   {
-                     if (dsq[i-1] < Alphabet_size)
+                     if (dsq[i-1] < cm->abc->K)
                         esc = cm->esc[y][(int) dsq[i-1]];
                      else
-                        esc = DegenerateSingletScore(cm->esc[y], dsq[i-1]);
+                        esc = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[y]);
                      if ( (sc = beta->L[y][ip-1] + cm->tsc[y][voffset] + esc) > beta->L[v][ip] )
                         beta->L[v][ip] = sc;
                   }
@@ -3125,7 +3126,7 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
                      beta->L[v][ip] = sc;
                   break;
                default:
-                  Die("Bogus parent type %d for y = %d, v = %d\n",cm->sttype[y],y,v);
+                  cm_Die("Bogus parent type %d for y = %d, v = %d\n",cm->sttype[y],y,v);
             }
          }
 
@@ -3147,10 +3148,10 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
                case MP_st:
                   if (jp < j0-j1)
                   {
-                     if (dsq[j+1] < Alphabet_size)
-                        esc = RightMarginalScore(cm->esc[y], dsq[j+1]);
+                     if (dsq[j+1] < cm->abc->K)
+                        esc = RightMarginalScore(cm->abc, cm->esc[y], dsq[j+1]);
                      else
-                        Die("Still can't deal with marginalizing degenerate residues: dsq[%d] = %d\n",j+1,dsq[j+1]);
+                        cm_Die("Still can't deal with marginalizing degenerate residues: dsq[%d] = %d\n",j+1,dsq[j+1]);
                      if ( (sc = beta->R[y][jp+1] + cm->tsc[y][voffset] + esc) > beta->R[v][jp] )
                         beta->R[v][jp] = sc;
                   }
@@ -3159,10 +3160,10 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
                case IR_st:
                   if (jp < j0-j1)
                   {
-                     if (dsq[j+1] < Alphabet_size)
+                     if (dsq[j+1] < cm->abc->K)
                         esc = cm->esc[y][(int) dsq[j+1]];
                      else
-                        esc = DegenerateSingletScore(cm->esc[y], dsq[j+1]);
+                        esc = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[y]);
                      if ( (sc = beta->R[y][jp+1] + cm->tsc[y][voffset] + esc) > beta->R[v][jp] )
                         beta->R[v][jp] = sc;
                   }
@@ -3176,7 +3177,7 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
                      beta->R[v][jp] = sc;
                   break;
                default:
-                  Die("Bogus parent type %d for y = %d, v = %d\n",cm->sttype[y],y,v);
+                  cm_Die("Bogus parent type %d for y = %d, v = %d\n",cm->sttype[y],y,v);
             }
          }
 
@@ -3201,10 +3202,10 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
                   case MP_st:
                      if (j != j0 && i != i0)
                      {
-                        if (dsq[i-1] < Alphabet_size && dsq[j+1] < Alphabet_size)
-                           esc = cm->esc[y][(int) (dsq[i-1]*Alphabet_size+dsq[j+1])];
+                        if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
+                           esc = cm->esc[y][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
                         else
-                           esc = DegeneratePairScore(cm->esc[y], dsq[i-1], dsq[j+1]);
+                           esc = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
                         if ( (sc = beta->J[y][jp+1][ip-1] + cm->tsc[y][voffset] + esc) > beta->J[v][jp][ip] )
                            beta->J[v][jp][ip] = sc;
                         if ( (sc = beta->L[y][ip-1]       + cm->tsc[y][voffset] + esc) > beta->J[v][jp][ip] )
@@ -3217,10 +3218,10 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
                   case IL_st:
                      if (i != i0)
                      {
-                        if (dsq[i-1] < Alphabet_size)
+                        if (dsq[i-1] < cm->abc->K)
                            esc = cm->esc[y][(int) dsq[i-1]];
                         else
-                           esc = DegenerateSingletScore(cm->esc[y], dsq[i-1]);
+                           esc = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[y]);
                         if ( (sc = beta->J[y][jp][ip-1] + cm->tsc[y][voffset] + esc) > beta->J[v][jp][ip] )
                            beta->J[v][jp][ip] = sc;
                         if ( (sc = beta->R[y][jp]       + cm->tsc[y][voffset] + esc) > beta->J[v][jp][ip] )
@@ -3231,10 +3232,10 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
                   case IR_st:
                      if (j != j0)
                      {
-                        if (dsq[j+1] < Alphabet_size)
+                        if (dsq[j+1] < cm->abc->K)
                            esc = cm->esc[y][(int) dsq[j+1]];
                         else
-                           esc = DegenerateSingletScore(cm->esc[y], dsq[j+1]);
+                           esc = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[y]);
                         if ( (sc = beta->J[y][jp+1][ip] + cm->tsc[y][voffset] + esc) > beta->J[v][jp][ip] )
                            beta->J[v][jp][ip] = sc;
                         if ( (sc = beta->L[y][ip]       + cm->tsc[y][voffset] + esc) > beta->J[v][jp][ip] )
@@ -3248,7 +3249,7 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
                         beta->J[v][jp][ip] = sc;
                      break;
                   default:
-                     Die("Bogus parent type %d for y = %d, v = %d\n",cm->sttype[y],y,v);
+                     cm_Die("Bogus parent type %d for y = %d, v = %d\n",cm->sttype[y],y,v);
                }
             }
 
@@ -3271,10 +3272,10 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
                   case MP_st:
                      if (j != j0 && i != i0)
                      {
-                        if (dsq[i-1] < Alphabet_size && dsq[j+1] < Alphabet_size)
-                           esc = cm->esc[v][(int) (dsq[i-1]*Alphabet_size+dsq[j+1])];
+                        if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
+                           esc = cm->esc[v][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
                         else
-                           esc = DegeneratePairScore(cm->esc[v], dsq[i-1], dsq[j+1]);
+                           esc = DegeneratePairScore(cm->abc, cm->esc[v], dsq[i-1], dsq[j+1]);
                         if ( (sc = beta->J[v][jp+1][ip-1] + cm->endsc[v] + (cm->el_selfsc* (j-i+1)) + esc) > beta->J[cm->M][jp][ip] )
                            beta->J[cm->M][jp][ip] = sc;
                      }
@@ -3283,10 +3284,10 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
                   case IL_st:
                      if (i != i0)
                      {
-                        if (dsq[i-1] < Alphabet_size)
+                        if (dsq[i-1] < cm->abc->K)
                            esc = cm->esc[v][(int) dsq[i-1]];
                         else
-                           esc = DegenerateSingletScore(cm->esc[v], dsq[i-1]);
+                           esc = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[v]);
                         if ( (sc = beta->J[v][jp][ip-1] + cm->endsc[v] + (cm->el_selfsc* (j-i+1)) + esc) > beta->J[cm->M][jp][ip] )
                            beta->J[cm->M][jp][ip] = sc;
                      }
@@ -3295,10 +3296,10 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
                   case IR_st:
                      if (j != j0)
                      {
-                        if (dsq[j+1] < Alphabet_size)
+                        if (dsq[j+1] < cm->abc->K)
                            esc = cm->esc[v][(int) dsq[j+1]];
                         else
-                           esc = DegenerateSingletScore(cm->esc[v], dsq[j+1]);
+                           esc = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[v]);
                         if ( (sc = beta->J[v][jp+1][ip] + cm->endsc[v] + (cm->el_selfsc* (j-i+1)) + esc) > beta->J[cm->M][jp][ip] )
                            beta->J[cm->M][jp][ip] = sc;
                      }
@@ -3309,7 +3310,7 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
                      if ( (sc = beta->J[v][jp][ip] + cm->endsc[v]  + (cm->el_selfsc * (j-1+1)) + esc) > beta->J[cm->M][jp][ip] )
                         beta->J[cm->M][jp][ip] = sc;
                   default:
-                     Die("Bogus parent type %d for y = %d, v = %d\n",cm->sttype[y],y,v);
+                     cm_Die("Bogus parent type %d for y = %d, v = %d\n",cm->sttype[y],y,v);
                }
 
                if (beta->J[cm->M][jp][ip] < IMPOSSIBLE) beta->J[cm->M][jp][ip] = IMPOSSIBLE;
@@ -3383,7 +3384,7 @@ tr_voutside(CM_t *cm, char *dsq, int L, int r, int z, int i0, int i1, int j1, in
  * Returns:  score of optimal alignment (float)
  */
 float
-tr_insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
+tr_insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
           int i0, int j0, int r_allow_J, int r_allow_L, int r_allow_R)
 {
    void    ***shadow;		/* standard shadow matrix with state information */
@@ -3401,7 +3402,7 @@ tr_insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
    int        bifparent;
 
    ShadowMats_t *all_shadow;
-   all_shadow = MallocOrDie(sizeof(ShadowMats_t));
+   all_shadow = malloc(sizeof(ShadowMats_t));
 
 /*
    sc = trinside(cm, dsq, L, r, z, i0, j0,
@@ -3483,7 +3484,7 @@ tr_insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
 
              mode = 1;
          }
-         else { Die("Unknown mode in traceback!"); }
+         else { cm_Die("Unknown mode in traceback!"); }
 
          j = j-k;
          d = d-k;
@@ -3521,7 +3522,7 @@ tr_insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
             yoffset = ((char **) R_shadow[v])[j][d];
             nxtmode = ((int  **)Rmode_shadow[v])[j][d];
          }
-         else { Die("Unknown mode in traceback!"); }
+         else { cm_Die("Unknown mode in traceback!"); }
 
          switch (cm->sttype[v])
          {
@@ -3552,7 +3553,7 @@ tr_insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
             case  S_st:
                break;
             default:
-               Die("'Inconceivable!'\n'You keep using that word...'");
+               cm_Die("'Inconceivable!'\n'You keep using that word...'");
          }
          d = j-i+1;
 
@@ -3569,7 +3570,7 @@ tr_insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
             /* However, all hits from truncyk() are local hits, and this should have
                been dealt with immediately after return from the DP function.
                If we've reached this point, there's a major problem */
-            Die("Impossible local begin in traceback\n");
+            cm_Die("Impossible local begin in traceback\n");
          }
          else
          {
@@ -3602,7 +3603,7 @@ tr_insideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
  * Returns:
  */
 float
-tr_vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z, 
+tr_vinsideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, 
             int i0, int i1, int j1, int j0, int useEL,
             int r_allow_J, int r_allow_L, int r_allow_R,
             int z_allow_J, int z_allow_L, int z_allow_R)
@@ -3615,8 +3616,8 @@ tr_vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
 
    AlphaMats_t *alpha;
    ShadowMats_t *shadow;
-   alpha  = MallocOrDie(sizeof(AlphaMats_t));
-   shadow = MallocOrDie(sizeof(ShadowMats_t));
+   alpha  = malloc(sizeof(AlphaMats_t));
+   shadow = malloc(sizeof(ShadowMats_t));
 
    if (r == z)
    {
@@ -3677,7 +3678,7 @@ tr_vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
          nxtmode = ((char **) shadow->Rmode[v])[jp][ip];
       }
       else
-         Die("Unknown mode in traceback!\n");
+         cm_Die("Unknown mode in traceback!\n");
 
       switch (cm->sttype[v])
       {
@@ -3697,7 +3698,7 @@ tr_vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
             if ( mode == 3 || mode == 1 ) j--;
             break;
          default:
-            Die("'Inconceivable!'\n'Youu keep using that word...'");
+            cm_Die("'Inconceivable!'\n'Youu keep using that word...'");
       }
       mode = nxtmode;
 
@@ -3710,9 +3711,9 @@ tr_vinsideT(CM_t *cm, char *dsq, int L, Parsetree_t *tr, int r, int z,
       else if (yoffset == USED_LOCAL_BEGIN)
       {   /* local begin, can only happen once, from root */
          if (v != 0)
-            Die("Impossible local begin in traceback!\n");
+            cm_Die("Impossible local begin in traceback!\n");
          else
-            Die("DEV: you actually need to deal with this local begin case\n");
+            cm_Die("DEV: you actually need to deal with this local begin case\n");
       }
       else
       {
