@@ -492,7 +492,7 @@ tr_generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
       if ( w_mode == 0 && y_mode == 0 ) /* local hit in parent (marginal) */
       {
 if (b3_v == -1)
-Die("1Superbad: passing z = -1!\n");
+cm_Die("1Superbad: passing z = -1!\n");
          tr_v_splitter(cm, dsq, L, tr, r, b3_v, i0, best_j, best_j, j0, 
                        useEL, r_allow_J, r_allow_L, r_allow_R, (v_mode == 3), (v_mode == 2), (v_mode == 1));
          return best_sc;

@@ -3,7 +3,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "squid.h"
+#include "easel.h"
+#include "esl_alphabet.c"
+#include "esl_msa.h"
+#include "esl_sqio.h"
 
 #include "structs.h"
 #include "funcs.h"
@@ -12,15 +15,13 @@ int
 main(int argc, char **argv)
 {
    char          *cmfile;
+   ESL_ALPHABET  *abc;
    char          *seqfile;
-   SQFILE        *sqfp;
+   ESL_SQFILE    *sqfp;
    int            format;
    CMFILE        *cmfp;
    CM_t          *cm;
-   char          *seq;
-   SQINFO         sqinfo;
-   char          *dsq;
-   char          *rdsq;
+   ESL_SQ        *seq;
    float          sc;
    Parsetree_t   *tr;
    Fancyali_t    *fali;
@@ -33,7 +34,16 @@ main(int argc, char **argv)
    /* char *optarg; */
    int   optind;
 
-   format = SQFILE_UNKNOWN;
+   cmfile = seqfile = NULL;
+   abc = NULL;
+   sqfp = NULL;
+   cmfp = NULL;
+   cm = NULL;
+   seq = NULL;
+   tr = NULL;
+   fali = NULL;
+   cons = NULL;
+   format = eslSQFILE_UNKNOWN;
    do_local = TRUE;
 
    /* Should process options, but for now assume none and set optind */
@@ -45,63 +55,56 @@ main(int argc, char **argv)
 
    if ( (cmfp = CMFileOpen(cmfile, NULL)) == NULL )
       cm_Die("Failed to open covariance model save file\n");
-   if (! CMFileRead(cmfp, &cm))
+   if (! CMFileRead(cmfp, &abc, &cm))
       cm_Die("Failed to read a CM from cm file\n");
    if (cm == NULL)
       cm_Die("CM file empty?\n");
    CMFileClose(cmfp);
 
-   if ( (sqfp = SeqfileOpen(seqfile, format, NULL)) == NULL)
+   if ( esl_sqfile_Open(seqfile, format, NULL, &sqfp) != eslOK )
       cm_Die("Failed to open sequence database file\n");
 
    if (do_local) cm->config_opts |= CM_CONFIG_LOCAL;
 
    ConfigCM(cm, NULL, NULL);
-   CreateCMConsensus(cm, 3.0, 1.0, &con);
+   CreateCMConsensus(cm, cm->abc, 3.0, 1.0, &cons);
 
-   while ( ReadSeq(sqfp, sqfp->format, &seq, &sqinfo) )
+   seq = esl_sq_Create();
+   while ( esl_sqio_Read(sqfp, seq) == eslOK )
    {
-      if (sqinfo.len == 0) continue;
-      dsq = DigitizeSequence(seq, sqinfo.len);
+      if (seq->n == 0) continue;
 
-      printf("sequence: %s\n", sqinfo.name);
-fflush(stdout);
+      printf("sequence: %s\n", seq->name);
 
       int i0 = 1;
-      int j0 = sqinfo.len;
+      int j0 = seq->n;
+      
+      if (seq->dsq == NULL) 
+         esl_sq_Digitize(abc, seq);
       /* Do alignment */
-      sc = TrCYK_Inside(cm, dsq, sqinfo.len, 0, i0, j0, &tr);
+      sc = TrCYK_Inside(cm, seq->dsq, seq->n, 0, i0, j0, &tr);
       /* Print alignment */
-/* ParsetreeDump(stdout,tr,cm,dsq); printf("\n\n"); */
       printf("score:    %.2f\n",sc);
-fflush(stdout);
-      fali = CreateFancyAli(tr, cm, cons, dsq);
+      fali = CreateFancyAli(tr, cm, cons, seq->dsq, cm->abc);
       PrintFancyAli(stdout, fali, 
 		    0,      /* offset in seq index */
 		    FALSE); /* not on reverse complement strand */
-fflush(stdout);
       FreeFancyAli(fali);
 
-      revcomp(seq,seq);
-      rdsq = DigitizeSequence(seq, sqinfo.len);
-      printf("sequence: %s (reversed)\n", sqinfo.name);
-fflush(stdout);
-      sc = TrCYK_Inside(cm,rdsq, sqinfo.len, 0, i0, j0, &tr);
+      printf("sequence: %s (reversed)\n", seq->name);
+      revcomp(abc, seq, seq);
+      sc = TrCYK_Inside(cm,seq->dsq, seq->n, 0, i0, j0, &tr);
       printf("score:    %.2f\n",sc);
-fflush(stdout);
-      fali = CreateFancyAli(tr, cm, cons,rdsq);
+      fali = CreateFancyAli(tr, cm, cons,seq->dsq, cm->abc);
       PrintFancyAli(stdout, fali, 0, FALSE);
-fflush(stdout);
 
       FreeFancyAli(fali);
-      free(dsq);
-      free(rdsq);
-      FreeSequence(seq, &sqinfo);
    }
+   esl_sq_Destroy(seq);
 
    FreeCMConsensus(cons);
    FreeCM(cm);
-   SeqfileClose(sqfp);
+   esl_sqfile_Close(sqfp);
 
    return EXIT_SUCCESS;
 }

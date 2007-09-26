@@ -8,9 +8,10 @@
 #include <string.h>
 #include <math.h>
 
-#include "squid.h"		/* general sequence analysis library    */
-#include "msa.h"                /* squid's multiple alignment i/o       */
-#include "stopwatch.h"          /* squid's process timing module        */
+#include "easel.h"
+#include "esl_alphabet.h"
+#include "esl_sqio.h"
+#include "esl_msa.h"
 
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
@@ -46,14 +47,13 @@ int
 main(int argc, char **argv)
 {
   char            *cmfile;      /* file to read CM from */	
+  ESL_ALPHABET    *abc;
   char            *seqfile;     /* file to read sequences from */
   int              format;      /* format of sequence file */
   CMFILE          *cmfp;        /* open CM file for reading */
-  SQFILE	  *sqfp;        /* open seqfile for reading */
+  ESL_SQFILE	  *sqfp;        /* open seqfile for reading */
   CM_t            *cm;          /* a covariance model       */
-  char            *seq;         /* RNA sequence */
-  SQINFO           sqinfo;      /* optional info attached to seq */
-  char            *dsq;         /* digitized RNA sequence */
+  ESL_SQ          *seq;         /* RNA sequence */
   Stopwatch_t     *watch;
   float            sc1,  sc2;	/* score of a sequence */
   Parsetree_t     *tr1, *tr2;	/* a traceback */
@@ -76,7 +76,8 @@ main(int argc, char **argv)
    * Parse command line
    ***********************************************/
 
-  format              = SQFILE_UNKNOWN;
+  abc = NULL;
+  format              = eslSQFILE_UNKNOWN;
   do_local            = TRUE;
   do_scoreonly        = FALSE;
   do_smallonly        = FALSE;
@@ -91,7 +92,7 @@ main(int argc, char **argv)
     else if (strcmp(optname, "--stringent") == 0) compare_stringently = TRUE;
     else if (strcmp(optname, "--informat")  == 0) {
       format = String2SeqfileFormat(optarg);
-      if (format == SQFILE_UNKNOWN) 
+      if (format == eslSQFILE_UNKNOWN) 
 	cm_Die("unrecognized sequence file format \"%s\"", optarg);
     }
     else if (strcmp(optname, "-h") == 0) {
@@ -112,12 +113,13 @@ main(int argc, char **argv)
 
   watch = StopwatchCreate();
 
-  if ((sqfp = SeqfileOpen(seqfile, format, NULL)) == NULL)
+  if ( esl_sqfile_Open(seqfile, format, NULL, &sqfp) != eslOK )
     cm_Die("Failed to open sequence database file %s\n%s\n", seqfile, usage);
+
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
     cm_Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
 
-  if (! CMFileRead(cmfp, &cm))
+  if (! CMFileRead(cmfp, &abc, &cm))
     cm_Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
   if (cm == NULL) 
     cm_Die("%s empty?\n", cmfile);
@@ -142,13 +144,15 @@ main(int argc, char **argv)
   if((cm->el_selfsc * cm->W) < IMPOSSIBLE)
     cm->el_selfsc = (IMPOSSIBLE / (cm->W+1));
 
-  while (ReadSeq(sqfp, sqfp->format, &seq, &sqinfo))
+  seq = esl_sq_Create();
+  while ( esl_sqio_Read(sqfp, seq) == eslOK )
     {
       /* CYKDemands(cm, sqinfo.len);  */
 
-      if (sqinfo.len == 0) continue; 	/* silently skip len 0 seqs */
+      if (seq->n == 0) continue; 	/* silently skip len 0 seqs */
       
-      dsq = DigitizeSequence(seq, sqinfo.len);
+      if (seq->dsq == NULL)
+         esl_sq_Digitize(abc, seq);
 
       tr1 = tr2 = NULL;
 
@@ -169,14 +173,14 @@ main(int argc, char **argv)
 	StopwatchZero(watch);
 	StopwatchStart(watch);
 	if (do_scoreonly) {
-	  sc1 = TrCYK_Inside(cm, dsq, sqinfo.len, 0, 1, sqinfo.len, NULL);
-	  printf("%-12s : %.2f\n", sqinfo.name, sc1);
+	  sc1 = TrCYK_Inside(cm, seq->dsq, seq->n, 0, 1, seq->n, NULL);
+	  printf("%-12s : %.2f\n", seq->name, sc1);
 	} else {
-	  sc1 = TrCYK_Inside(cm, dsq, sqinfo.len, 0, 1, sqinfo.len, &tr1);  
-	  ParsetreeDump(stdout, tr1, cm, dsq);
-          ptsc1 = ParsetreeScore(cm, tr1, dsq, FALSE);
+	  sc1 = TrCYK_Inside(cm, seq->dsq, seq->n, 0, 1, sqinfo.len, &tr1);  
+	  ParsetreeDump(stdout, tr1, cm, seq->dsq, NULL, NULL);
+          ptsc1 = ParsetreeScore(cm, tr1, seq->dsq, FALSE);
           ptsc1 += bsc;
-	  printf("%-12s : %.2f  %.2f\n", sqinfo.name, sc1, ptsc1);
+	  printf("%-12s : %.2f  %.2f\n", seq->name, sc1, ptsc1);
 	}
 	StopwatchStop(watch);
 	StopwatchDisplay(stdout, "CPU time: ", watch);
@@ -187,11 +191,11 @@ main(int argc, char **argv)
       printf("-------------------------------\n");
       StopwatchZero(watch);
       StopwatchStart(watch);
-      sc2 = TrCYK_DnC(cm, dsq, sqinfo.len, 0, 1, sqinfo.len, &tr2);  
-      ParsetreeDump(stdout, tr2, cm, dsq);
-      ptsc2 = ParsetreeScore(cm, tr2, dsq, FALSE);
+      sc2 = TrCYK_DnC(cm, seq->dsq, seq->n, 0, 1, sqinfo.len, &tr2);  
+      ParsetreeDump(stdout, tr2, cm, seq->dsq, NULL, NULL);
+      ptsc2 = ParsetreeScore(cm, tr2, seq->dsq, FALSE);
       ptsc2 += bsc;
-      printf("%-12s : %.2f  %.2f\n", sqinfo.name, sc2, ptsc2);
+      printf("%-12s : %.2f  %.2f\n", seq->name, sc2, ptsc2);
       StopwatchStop(watch);
       StopwatchDisplay(stdout, "CPU time: ", watch);
       puts("");
@@ -214,21 +218,20 @@ main(int argc, char **argv)
       /* Save regression test data
        */
       if (regressfile != NULL) {
-	if (tr1 != NULL) ParsetreeDump(regressfp, tr1, cm, dsq);
-	if (tr2 != NULL) ParsetreeDump(regressfp, tr2, cm, dsq);
+	if (tr1 != NULL) ParsetreeDump(regressfp, tr1, cm, seq->dsq, NULL, NULL);
+	if (tr2 != NULL) ParsetreeDump(regressfp, tr2, cm, seq->dsq, NULL, NULL);
       }
 
-      FreeSequence(seq, &sqinfo);
       if (tr1 != NULL) FreeParsetree(tr1);  
       if (tr2 != NULL) FreeParsetree(tr2); 
-      free(dsq);
     }
+    esl_sq_Destroy(seq);
 
   if (regressfile != NULL) fclose(regressfp);
   FreeCM(cm);
   CMFileClose(cmfp);
-  SeqfileClose(sqfp);
+  esl_sqfile_Close(sqfp);
   StopwatchFree(watch);
-  SqdClean();
+
   return EXIT_SUCCESS;
 }
