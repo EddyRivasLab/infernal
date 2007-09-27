@@ -12,6 +12,7 @@
 #include "esl_alphabet.h"
 #include "esl_sqio.h"
 #include "esl_msa.h"
+#include "esl_stopwatch.h"
 
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
@@ -54,7 +55,7 @@ main(int argc, char **argv)
   ESL_SQFILE	  *sqfp;        /* open seqfile for reading */
   CM_t            *cm;          /* a covariance model       */
   ESL_SQ          *seq;         /* RNA sequence */
-  Stopwatch_t     *watch;
+  ESL_STOPWATCH   *watch;
   float            sc1,  sc2;	/* score of a sequence */
   Parsetree_t     *tr1, *tr2;	/* a traceback */
   float            ptsc1, ptsc2; /* scores from interpreting parsetrees */
@@ -111,7 +112,7 @@ main(int argc, char **argv)
    * Preliminaries: open our files for i/o; get a CM
    ***********************************************/
 
-  watch = StopwatchCreate();
+  watch = esl_stopwatch_Create();
 
   if ( esl_sqfile_Open(seqfile, format, NULL, &sqfp) != eslOK )
     cm_Die("Failed to open sequence database file %s\n%s\n", seqfile, usage);
@@ -170,34 +171,32 @@ main(int argc, char **argv)
       if (! do_smallonly) {
 	printf("Full inside algorithm:\n");
 	printf("----------------------\n");
-	StopwatchZero(watch);
-	StopwatchStart(watch);
+	esl_stopwatch_Start(watch);
 	if (do_scoreonly) {
 	  sc1 = TrCYK_Inside(cm, seq->dsq, seq->n, 0, 1, seq->n, NULL);
 	  printf("%-12s : %.2f\n", seq->name, sc1);
 	} else {
-	  sc1 = TrCYK_Inside(cm, seq->dsq, seq->n, 0, 1, sqinfo.len, &tr1);  
+	  sc1 = TrCYK_Inside(cm, seq->dsq, seq->n, 0, 1, seq->n, &tr1);  
 	  ParsetreeDump(stdout, tr1, cm, seq->dsq, NULL, NULL);
           ptsc1 = ParsetreeScore(cm, tr1, seq->dsq, FALSE);
           ptsc1 += bsc;
 	  printf("%-12s : %.2f  %.2f\n", seq->name, sc1, ptsc1);
 	}
-	StopwatchStop(watch);
-	StopwatchDisplay(stdout, "CPU time: ", watch);
+	esl_stopwatch_Stop(watch);
+	esl_stopwatch_Display(stdout, watch, "CPU time: ");
 	puts("");
       }
 
       printf("Divide and conquer algorithm:\n");
       printf("-------------------------------\n");
-      StopwatchZero(watch);
-      StopwatchStart(watch);
-      sc2 = TrCYK_DnC(cm, seq->dsq, seq->n, 0, 1, sqinfo.len, &tr2);  
+      esl_stopwatch_Start(watch);
+      sc2 = TrCYK_DnC(cm, seq->dsq, seq->n, 0, 1, seq->n, &tr2);  
       ParsetreeDump(stdout, tr2, cm, seq->dsq, NULL, NULL);
       ptsc2 = ParsetreeScore(cm, tr2, seq->dsq, FALSE);
       ptsc2 += bsc;
       printf("%-12s : %.2f  %.2f\n", seq->name, sc2, ptsc2);
-      StopwatchStop(watch);
-      StopwatchDisplay(stdout, "CPU time: ", watch);
+      esl_stopwatch_Stop(watch);
+      esl_stopwatch_Display(stdout, watch, "CPU time: ");
       puts("");
 
       /* Test that the two solutions are identical; or if not identical,
@@ -231,7 +230,7 @@ main(int argc, char **argv)
   FreeCM(cm);
   CMFileClose(cmfp);
   esl_sqfile_Close(sqfp);
-  StopwatchFree(watch);
+  esl_stopwatch_Destroy(watch);
 
   return EXIT_SUCCESS;
 }
