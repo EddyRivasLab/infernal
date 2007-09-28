@@ -13,36 +13,22 @@
 #include "esl_sqio.h"
 #include "esl_msa.h"
 #include "esl_stopwatch.h"
+#include "esl_getopts.h"
 
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
 
 static char banner[] = "truncyk_check - score RNA covariance model against sequences";
 
-static char usage[]  = "\
-Usage: truncyk_check [-options] <cmfile> <sequence file>\n\
-  Most commonly used options are:\n\
-   -h     : help; print brief help on version and usage\n\
-";
-
-static char experts[] = "\
-  Expert, in development, or infrequently used options are:\n\
-   --informat <s>: specify that input sequence file is in format <s>\n\
-   --regress <f> : save regression test data to file <f>\n\
-   --scoreonly   : for full CYK/inside stage, do only score, save memory\n\
-   --smallonly   : do only d&c, don't do full CYK/inside\n\
-   --stringent   : require the two parse trees to be identical\n\
-";
-
-static struct opt_s OPTIONS[] = {
-  { "-h", TRUE, sqdARG_NONE }, 
-  { "--informat",   FALSE, sqdARG_STRING },
-  { "--regress",    FALSE, sqdARG_STRING },
-  { "--scoreonly",  FALSE, sqdARG_NONE },
-  { "--smallonly",  FALSE, sqdARG_NONE },
-  { "--stringent",  FALSE, sqdARG_NONE },
+static ESL_OPTIONS options[] = {
+  { "-h",         eslARG_NONE,  FALSE, NULL, NULL, NULL, NULL, NULL, "show help",                                             0}, 
+  { "--regress",  eslARG_INFILE,NULL,  NULL, NULL, NULL, NULL, NULL, "save regression test data to file <f>",                 0},
+  { "--scoreonly",eslARG_NONE,  FALSE, NULL, NULL, NULL, NULL, NULL, "do score only for full CYK/inside stage to save memory",0},
+  { "--smallonly",eslARG_NONE,  FALSE, NULL, NULL, NULL, NULL, NULL, "skip full CYK/inside, do divide&conquer only",          0},
+  { "--stringent",eslARG_NONE,  FALSE, NULL, NULL, NULL, NULL, NULL, "require the two parse trees to be indentical",          0},
+  {0,0,0,0,0,0,0,0,0,0},
 };
-#define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
+static char usage[]  = "Usage: truncyk_check [-options] <cmfile> <sequence file>";
 
 int
 main(int argc, char **argv)
@@ -73,40 +59,36 @@ main(int argc, char **argv)
   char *optarg;                 /* argument found by Getopt()              */
   int   optind;                 /* index in argv[]                         */
 
+  ESL_GETOPTS *go;
+  char        *arg;
+
   /*********************************************** 
    * Parse command line
    ***********************************************/
 
-  abc = NULL;
-  format              = eslSQFILE_UNKNOWN;
-  do_local            = TRUE;
-  do_scoreonly        = FALSE;
-  do_smallonly        = FALSE;
-  regressfile         = NULL;
-  compare_stringently = FALSE;
-  
-  while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
-                &optind, &optname, &optarg))  {
-    if      (strcmp(optname, "--regress")   == 0) regressfile         = optarg;
-    else if (strcmp(optname, "--smallonly") == 0) do_smallonly        = TRUE;
-    else if (strcmp(optname, "--scoreonly") == 0) do_scoreonly        = TRUE;
-    else if (strcmp(optname, "--stringent") == 0) compare_stringently = TRUE;
-    else if (strcmp(optname, "--informat")  == 0) {
-      format = String2SeqfileFormat(optarg);
-      if (format == eslSQFILE_UNKNOWN) 
-	cm_Die("unrecognized sequence file format \"%s\"", optarg);
-    }
-    else if (strcmp(optname, "-h") == 0) {
-      MainBanner(stdout, banner);
-      puts(usage);
-      puts(experts);
-      exit(EXIT_SUCCESS);
-    }
+  go = esl_getopts_Create(options);
+  if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK) esl_fatal("Failed to parse command line: %s\n", go->errbuf);
+  if (esl_opt_VerifyConfig(go) != eslOK) esl_fatal("Failed to parse command line: %s\n", go->errbuf);
+
+  if (esl_opt_GetBoolean(go, "-h") == TRUE) {
+    puts(usage);
+    puts("\n where options are:");
+    esl_opt_DisplayHelp(stdout, go, 0, 2, 80); /* 0=all docgroups; 2=indentation; 80=width */
+    return 0;
   }
 
-  if (argc - optind != 2) cm_Die("Incorrect number of arguments.\n%s\n", usage);
-  cmfile = argv[optind++];
-  seqfile = argv[optind++]; 
+  if (esl_opt_ArgNumber(go) != 2) esl_fatal("Incorrect number of command line arguments.\n%s\n", usage);
+  cmfile = esl_opt_GetArg(go, 1);
+  seqfile = esl_opt_GetArg(go, 2);
+  
+
+  abc = NULL;
+  do_local            = TRUE;
+  do_scoreonly        = esl_opt_GetBoolean(go,"--scoreonly");
+  do_smallonly        = esl_opt_GetBoolean(go,"--smallonly");
+  compare_stringently = esl_opt_GetBoolean(go,"--stringent");
+  regressfile         = esl_opt_GetString(go,"--regress");
+  format              = eslSQFILE_UNKNOWN;
   
   /*********************************************** 
    * Preliminaries: open our files for i/o; get a CM
