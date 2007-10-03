@@ -18,6 +18,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
 #include "easel.h"
 #include "esl_alphabet.h"
@@ -2105,6 +2106,8 @@ tr_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
                            esc = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[y]);
                         if ( (sc = beta->J[y][j][d+1] + cm->tsc[y][voffset] + esc) > beta->J[v][j][d] )
                            beta->J[v][j][d] = sc;
+                        if ( (sc = beta->L[y][i-1]    + cm->tsc[y][voffset] + esc) > beta->J[v][j][d] )
+                           beta->J[v][j][d] = sc;
                         if ( (sc = beta->R[y][j]      + cm->tsc[y][voffset] + esc) > beta->J[v][j][d] )
                            beta->J[v][j][d] = sc;
                      }
@@ -2120,6 +2123,8 @@ tr_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
                         if ( (sc = beta->J[y][j+1][d+1] + cm->tsc[y][voffset] + esc) > beta->J[v][j][d] )
                            beta->J[v][j][d] = sc;
                         if ( (sc = beta->L[y][i]        + cm->tsc[y][voffset] + esc) > beta->J[v][j][d] )
+                           beta->J[v][j][d] = sc;
+                        if ( (sc = beta->R[y][j+1]      + cm->tsc[y][voffset] + esc) > beta->J[v][j][d] )
                            beta->J[v][j][d] = sc;
                      }
                      break;
@@ -3224,6 +3229,8 @@ tr_voutside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int z, int i0, int i1, int j1,
                            esc = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[y]);
                         if ( (sc = beta->J[y][jp][ip-1] + cm->tsc[y][voffset] + esc) > beta->J[v][jp][ip] )
                            beta->J[v][jp][ip] = sc;
+                        if ( (sc = beta->L[y][ip-1]     + cm->tsc[y][voffset] + esc) > beta->J[v][jp][ip] )
+                           beta->J[v][jp][ip] = sc;
                         if ( (sc = beta->R[y][jp]       + cm->tsc[y][voffset] + esc) > beta->J[v][jp][ip] )
                            beta->J[v][jp][ip] = sc;
                      }
@@ -3239,6 +3246,8 @@ tr_voutside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int z, int i0, int i1, int j1,
                         if ( (sc = beta->J[y][jp+1][ip] + cm->tsc[y][voffset] + esc) > beta->J[v][jp][ip] )
                            beta->J[v][jp][ip] = sc;
                         if ( (sc = beta->L[y][ip]       + cm->tsc[y][voffset] + esc) > beta->J[v][jp][ip] )
+                           beta->J[v][jp][ip] = sc;
+                        if ( (sc = beta->R[y][jp+1]     + cm->tsc[y][voffset] + esc) > beta->J[v][jp][ip] )
                            beta->J[v][jp][ip] = sc;
                      }
                      break;
