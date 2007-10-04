@@ -113,10 +113,13 @@ main(int argc, char **argv)
       cm_Die("Failed to open regression test file %s", regressfile);
   }
 
-  
+/* 
   if (do_local) ConfigLocal(cm, 0.5, 0.5);
   CMLogoddsify(cm);
-  CMHackInsertScores(cm);	/* TEMPORARY: FIXME */
+  CMHackInsertScores(cm);*/	/* TEMPORARY: FIXME */
+
+  if (do_local) cm->config_opts |= CM_CONFIG_LOCAL;
+  ConfigCM(cm, NULL, NULL);
 
   /* EPN 11.18.05 Now that know what windowlen is, we need to ensure that
    * cm->el_selfsc * W >= IMPOSSIBLE (cm->el_selfsc is the score for an EL self transition)
@@ -205,6 +208,10 @@ main(int argc, char **argv)
 
       if (tr1 != NULL) FreeParsetree(tr1);  
       if (tr2 != NULL) FreeParsetree(tr2); 
+
+
+    esl_sq_Destroy(seq);
+  seq = esl_sq_Create();
     }
     esl_sq_Destroy(seq);
 

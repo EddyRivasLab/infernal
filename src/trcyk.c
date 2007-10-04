@@ -22,9 +22,10 @@ main(int argc, char **argv)
    CMFILE        *cmfp;
    CM_t          *cm;
    ESL_SQ        *seq;
-   float          sc;
+   float          sc, rev_sc;
    Parsetree_t   *tr;
    Fancyali_t    *fali;
+   Fancyali_t    *rev_fali;
    CMConsensus_t *cons;
 
    int do_local;
@@ -42,6 +43,7 @@ main(int argc, char **argv)
    seq = NULL;
    tr = NULL;
    fali = NULL;
+   rev_fali = NULL;
    cons = NULL;
    format = eslSQFILE_UNKNOWN;
    do_local = TRUE;
@@ -74,31 +76,39 @@ main(int argc, char **argv)
    {
       if (seq->n == 0) continue;
 
-      printf("sequence: %s\n", seq->name);
-
       int i0 = 1;
       int j0 = seq->n;
       
       if (seq->dsq == NULL) 
          esl_sq_Digitize(abc, seq);
-      /* Do alignment */
-      sc = TrCYK_Inside(cm, seq->dsq, seq->n, 0, i0, j0, &tr);
-      /* Print alignment */
-      printf("score:    %.2f\n",sc);
+      sc = TrCYK_DnC(cm, seq->dsq, seq->n, 0, i0, j0, &tr);
       fali = CreateFancyAli(tr, cm, cons, seq->dsq, cm->abc);
-      PrintFancyAli(stdout, fali, 
-		    0,      /* offset in seq index */
-		    FALSE); /* not on reverse complement strand */
-      FreeFancyAli(fali);
+      FreeParsetree(tr);
 
-      printf("sequence: %s (reversed)\n", seq->name);
       revcomp(abc, seq, seq);
-      sc = TrCYK_Inside(cm,seq->dsq, seq->n, 0, i0, j0, &tr);
-      printf("score:    %.2f\n",sc);
-      fali = CreateFancyAli(tr, cm, cons,seq->dsq, cm->abc);
-      PrintFancyAli(stdout, fali, 0, FALSE);
+      rev_sc = TrCYK_DnC(cm,seq->dsq, seq->n, 0, i0, j0, &tr);
+      rev_fali = CreateFancyAli(tr, cm, cons,seq->dsq, cm->abc);
+      FreeParsetree(tr);
+
+      if (sc > rev_sc)
+      {
+         printf("sequence: %s\n", seq->name);
+         printf("score:    %.2f\n",sc);
+         PrintFancyAli(stdout, fali, 0, FALSE);
+      }
+      else
+      {
+         printf("sequence: %s (reversed)\n", seq->name);
+         printf("score:    %.2f\n",rev_sc);
+         PrintFancyAli(stdout, fali, seq->n, TRUE);
+      }
 
       FreeFancyAli(fali);
+      FreeFancyAli(rev_fali);
+
+   esl_sq_Destroy(seq);
+   seq = esl_sq_Create();
+
    }
    esl_sq_Destroy(seq);
 
