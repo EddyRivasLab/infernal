@@ -1501,7 +1501,7 @@ tr_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
 
             for ( d = 1; d <= jp; d++ )
             {
-               if ( allow_begin )
+               if ( cm->sttype[v] == ML_st && allow_begin )
                {
                   if (   alpha[v][j][d] > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc =   alpha[v][j][d]; }
                   if ( L_alpha[v][j][d] > r_sc ) { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = L_alpha[v][j][d]; }
@@ -1579,7 +1579,7 @@ tr_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
 
             for ( d = 1; d <= jp; d++ )
             {
-               if ( allow_begin )
+               if ( cm->sttype[v] == MR_st && allow_begin )
                {
                   if (   alpha[v][j][d] > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc =   alpha[v][j][d]; }
                   if ( R_alpha[v][j][d] > r_sc ) { r_mode = 1; r_v = v; r_j = j; r_i = j-d+1; r_sc = R_alpha[v][j][d]; }
@@ -2711,7 +2711,7 @@ tr_vinside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int z, int i0, int i1, int j1, 
                if ( alpha->L[v][jp][ip] < IMPOSSIBLE) alpha->L[v][jp][ip] = IMPOSSIBLE;
                if ( alpha->R[v][jp][ip] < IMPOSSIBLE) alpha->R[v][jp][ip] = IMPOSSIBLE;
                
-               if ( allow_begin )
+               if ( cm->sttype[v] == ML_st && allow_begin )
                {
                   if ( r_allow_J )
                   if ( alpha->J[v][jp][ip] > b_sc ) { b_mode = 3; b_v = v; b_j = j1+jp; b_i = i0+ip; b_sc = alpha->J[v][jp][ip]; }
@@ -2783,7 +2783,7 @@ tr_vinside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int z, int i0, int i1, int j1, 
                if ( alpha->L[v][jp][ip] < IMPOSSIBLE) alpha->L[v][jp][ip] = IMPOSSIBLE;
                if ( alpha->R[v][jp][ip] < IMPOSSIBLE) alpha->R[v][jp][ip] = IMPOSSIBLE;
 
-               if ( allow_begin )
+               if ( cm->sttype[v] == MR_st && allow_begin )
                {
                   if ( r_allow_J )
                   if ( alpha->J[v][jp][ip] > b_sc ) { b_mode = 3; b_v = v; b_j = j1+jp; b_i = i0+ip; b_sc = alpha->J[v][jp][ip]; }
