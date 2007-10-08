@@ -1740,6 +1740,7 @@ tr_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
    int    jp;
    int    voffset;
    int    w1, w2;
+   int    allow_begin;
 
    float  b_sc;
    int    b_mode, b_v, b_j;
@@ -1789,17 +1790,24 @@ tr_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
 
    for (v = w1; v <= w2; v++)
    {
+      allow_begin = TRUE;
+      if ( vroot != 0 ) allow_begin = FALSE;
+      if ( cm->sttype[v] == IL_st ||
+           cm->sttype[v] == IR_st ||
+           cm->sttype[v] ==  S_st ||
+           cm->sttype[v] ==  D_st ||
+           cm->sttype[v] ==  E_st    ) allow_begin = FALSE;
       if (! deckpool_pop(dpool, &(beta->J[v])) )
          beta->J[v] = alloc_vjd_deck(L, i0, j0);
       for (jp = 0; jp <= W; jp++)
       {
          j = i0 + jp - 1;
          for (d = 0; d <= jp; d++)
-            if ( vroot == 0 )
+            if ( allow_begin )
                beta->J[v][j][d] = 0.0;
             else
                beta->J[v][j][d] = IMPOSSIBLE;
-         if ( vroot == 0 )
+         if ( allow_begin )
          {
             beta->L[v][j] = 0.0;
             beta->R[v][j] = 0.0;
@@ -1810,7 +1818,7 @@ tr_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
             beta->R[v][j] = IMPOSSIBLE;
          }
       }
-      if ( vroot == 0 )
+      if ( allow_begin )
       {
          beta->L[v][i0+W] = 0.0;
          beta->R[v][i0+W] = 0.0;
@@ -1903,6 +1911,14 @@ tr_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
    /* Main loop through decks */
    for (v = w2+1; v <= vend; v++)
    {
+      allow_begin = TRUE;
+      if ( vroot != 0 ) allow_begin = FALSE;
+      if ( cm->sttype[v] == IL_st ||
+           cm->sttype[v] == IR_st ||
+           cm->sttype[v] ==  S_st ||
+           cm->sttype[v] ==  D_st ||
+           cm->sttype[v] ==  E_st    ) allow_begin = FALSE;
+
       /* Get a deck */
       if (! deckpool_pop(dpool, &(beta->J[v])) )
          beta->J[v] = alloc_vjd_deck(L, i0, j0);
@@ -1911,12 +1927,12 @@ tr_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
          j = i0 + jp - 1;
          for (d = jp; d >= 0; d--)
          {
-            if (vroot == 0)
+            if ( allow_begin )
                beta->J[v][j][d] = 0.0;
             else
                beta->J[v][j][d] = IMPOSSIBLE;
          }
-         if (vroot == 0)
+         if ( allow_begin )
          {
             beta->L[v][j] = 0.0;
             beta->R[v][j] = 0.0;
@@ -2932,6 +2948,7 @@ tr_voutside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int z, int i0, int i1, int j1,
    float sc, esc;
    int voffset;
    int *touch;
+   int allow_begin;
 
    BetaMats_t *beta;
 
@@ -3062,6 +3079,13 @@ tr_voutside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int z, int i0, int i1, int j1,
    /* Main loop through decks */
    for (v = r+1; v <= z; v++)
    {
+      allow_begin = TRUE;
+      if (r != 0) allow_begin = FALSE;
+      if ( cm->sttype[v] == IL_st ||
+           cm->sttype[v] == IR_st ||
+           cm->sttype[v] ==  S_st ||
+           cm->sttype[v] ==  D_st ||
+           cm->sttype[v] ==  E_st    ) allow_begin = FALSE;
       /* Get a deck */
       if (! deckpool_pop(dpool, &(beta->J[v])) )
          beta->J[v] = alloc_vji_deck(i0,i1,j1,j0);
@@ -3069,19 +3093,19 @@ tr_voutside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int z, int i0, int i1, int j1,
       {
          for (ip = 0; ip <= i1-i0; ip++)
          {
-            if (r == 0 && r_allow_J )
+            if (allow_begin && r_allow_J )
                beta->J[v][jp][ip] = 0.0;
             else
                beta->J[v][jp][ip] = IMPOSSIBLE;
          }
-         if (r == 0 && r_allow_R )
+         if (allow_begin && r_allow_R )
             beta->R[v][jp] = 0.0;
          else
             beta->R[v][jp] = IMPOSSIBLE;
       }
       for (ip = 0; ip <= i1-i0; ip++)
       {
-         if (r == 0 && r_allow_L )
+         if (allow_begin && r_allow_L )
             beta->L[v][ip] = 0.0;
          else
             beta->L[v][ip] = IMPOSSIBLE;
