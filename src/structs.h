@@ -1088,5 +1088,79 @@ typedef struct _fullmat_t {
 #endif
 
 
+/* from cp9_fastsearch.c, based on HMMER 3's impl_jb.c */
+/*****************************************************************
+ * 1. CP9_OPROFILE: a scoring profile
+ *****************************************************************/
+
+/* Indices for transition scores gm->tsc[k][] */
+/* order is optimized for dynamic programming */
+enum cp9o_tsc_e { 
+  /*  cp9O_MM = 0,
+  cp9O_IM = 1, 
+  cp9O_DM = 2, 
+  cp9O_MD = 3,
+  cp9O_DD = 4, 
+  cp9O_MI = 5, 
+  cp9O_II = 6, 
+  cp9O_ID = 7, 
+  cp9O_DI = 8, 
+  cp9O_BM = 9, 
+  cp9O_MEL=10, 
+  cp9O_ME =11 */
+  cp9O_MM = 0,
+  cp9O_IM = 1, 
+  cp9O_DM = 2, 
+  cp9O_BM = 3, 
+  cp9O_MI = 4, 
+  cp9O_II = 5, 
+  cp9O_DI = 6, 
+  cp9O_MD = 7,
+  cp9O_ID = 8, 
+  cp9O_DD = 9, 
+  cp9O_ME =10,
+  cp9O_MEL=11 
+};
+#define cp9O_NTRANS 12
+
+/* Indices for residue emission score vectors
+ */
+enum cp9o_rsc_e {
+  cp9O_MSC = 0,
+  cp9O_ISC = 1 
+};
+#define cp9O_NR 2
+
+typedef struct cp9_oprofile_s {
+  int     M;
+  int    *tsc;	/* [0.1..M-1][0..cp9X_NTSC-1] */
+  int   **rsc;	/* [0..Kp-1][0.1..M][cp9X_NR] */
+  const ESL_ALPHABET *abc;
+} CP9_OPROFILE;
+
+
+/*****************************************************************
+ * 2. CP9_OMX: a dynamic programming matrix
+ *****************************************************************/
+enum cp9x_scells_e {
+  cp9X_M = 0, 
+  cp9X_I = 1,
+  cp9X_D = 2, 
+  cp9X_EL= 3
+};
+#define cp9X_NSCELLS 4
+
+typedef struct cp9_omx_s {
+  int M;
+  int L;
+
+  size_t ncells;
+  size_t nrows;
+  
+  int **dp;			/* [0.1..L][0.1..M][0..cp9X_NSCELLS-1] */
+} CP9_OMX;
+
+
+
 #endif /*STRUCTSH_INCLUDED*/
 

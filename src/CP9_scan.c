@@ -152,9 +152,13 @@ CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
   for (k = 1; k <= cm->cp9->M; k++)
     {
       mmx[0][k] = imx[0][k] = elmx[0][k] = -INFTY;      /* need seq to get here */
-      dmx[0][k] = ILogsum(ILogsum(mmx[0][k-1] + cm->cp9->tsc[CTMD][k-1],
-				  imx[0][k-1] + cm->cp9->tsc[CTID][k-1]),
-			  dmx[0][k-1] + cm->cp9->tsc[CTDD][k-1]);
+      dmx[0][k]  = -INFTY;
+      if((tmp_sc = mmx[0][k-1] + cm->cp9->tsc[CTMD][k-1]) > dmx[0][k])
+	dmx[0][k] = tmp_sc;
+      if((tmp_sc = imx[0][k-1] + cm->cp9->tsc[CTID][k-1]) > dmx[0][k])
+	dmx[0][k] = tmp_sc;
+      if((tmp_sc = dmx[0][k-1] + cm->cp9->tsc[CTDD][k-1]) > dmx[0][k])
+	dmx[0][k] = tmp_sc;
       /*printf("mmx[jp:%d][%d]: %d %f\n", 0, k, mmx[0][k], Score2Prob(mmx[0][k], 1.));
 	printf("imx[jp:%d][%d]: %d %f\n", 0, k, imx[0][k], Score2Prob(imx[0][k], 1.));
 	printf("dmx[jp:%d][%d]: %d %f\n", 0, k, dmx[0][k], Score2Prob(dmx[0][k], 1.));
@@ -198,6 +202,7 @@ CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
       dmx[cur][0] = -INFTY;  /*D_0 is non-existent*/
       elmx[cur][0]= -INFTY;  /*no EL state for node 0 */
 
+      imx[cur][0] = -INFTY; /* initialization */
       if((tmp_sc = mmx[prv][0] + cm->cp9->tsc[CTMI][0]) > imx[cur][0])
 	imx[cur][0] = tmp_sc;
       if((tmp_sc = imx[prv][0] + cm->cp9->tsc[CTII][0]) > imx[cur][0])

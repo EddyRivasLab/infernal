@@ -657,6 +657,7 @@ CYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W,
   free(saver);
   if(best_score <= 0.) /* there were no hits found by the semi-HMM, no hits above 0 bits */
     best_score = best_neg_score;
+  /* printf("CYKScan() return score: %10.4f\n", best_score); */
   return best_score;
 
  ERROR:

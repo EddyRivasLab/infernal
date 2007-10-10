@@ -52,6 +52,7 @@ OBJS  = alphabet.o\
 	cplan9.o\
 	CP9_cm2wrhmm.o\
 	CP9_scan.o\
+	cp9_fastsearch.o\
 	display.o\
 	emit.o\
 	emitmap.o\

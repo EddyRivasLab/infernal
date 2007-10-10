@@ -1132,7 +1132,8 @@ make_aligned_string(char *aseq, char *gapstring, int alen, char *ss, char **ret_
 static int
 determine_nseq_per_worker(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int *ret_nseq_worker)
 {
-  *ret_nseq_worker = 5;
+  /**ret_nseq_worker = 5;*/
+  *ret_nseq_worker = 1;
   return eslOK;
 }
 

@@ -157,7 +157,7 @@ main(int argc, char **argv)
   esl_alphabet_Destroy(abc);
   CMFileClose(cmfp);
   esl_getopts_Destroy(go);
-  exit(0);
+  return 0;
 }
 
 /* Function:  summarize_search()
@@ -176,6 +176,8 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
   float dpc_q;     /* number of QDB mega-DP calcs for search of length L */
   float th_acc;    /* theoretical QDB acceleration */
   float dpc_v;     /* number of CP9 mega-DP calcs for search of length L */
+  CP9_OPROFILE    *om      = NULL; /* optimized CP9 profile */
+  CP9_OMX         *ox      = NULL; /* optimized CP9 matrix */
 
   /* optional, -t related variables */
   ESL_DSQ *dsq;    /* digitized sequence of length L for CM  timings  */
@@ -202,14 +204,18 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
   dpc_v /= 1000000;
 
   /* cyk */
+  /*CYKScan (cm, dsq, 1, L, cm->W, 0., NULL);*/
+  /*EXPTLFastCYKScan(cm, dsq, NULL, NULL, 1, L, cm->W, 0., NULL, NULL, NULL);*/
   esl_stopwatch_Start(w);
-  CYKScan (cm, dsq, 1, L, cm->W, 0., NULL);
+  FastCYKScan(cm, dsq, NULL, NULL, 1, L, cm->W, 0., NULL, NULL, NULL);
   esl_stopwatch_Stop(w);
   t_c = w->user;
 
   /* qdb cyk */
+  /*CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL); 
+    EXPTLFastCYKScan(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL, NULL, NULL);*/
   esl_stopwatch_Start(w);
-  CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL);
+  FastCYKScan(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL, NULL, NULL);
   esl_stopwatch_Stop(w);
   t_cq = w->user;
 
@@ -226,15 +232,24 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
   t_iq = w->user;
   
   /* CP9 viterbi */
+  om = cp9_oprofile_Create(cm->cp9->M, cm->abc);
+  cp9_oprofile_Convert(cm, om);
+  ox = cp9_omx_Create(om->M, 2);
   esl_stopwatch_Start(w);
-  CP9Viterbi(cm, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, NULL, NULL,
-	     TRUE,   /* we're scanning */
-	     FALSE,  /* we're not ultimately aligning */
-	     TRUE,   /* be memory efficient */
-	     NULL,   /* don't want the DP matrix back */
-	     NULL);  /* don't want traces back */
+
+  //NULL);  /* don't want traces back */
+  /* CP9Viterbi(cm, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, NULL, NULL, */
+  cp9_FastViterbi(cm, om, ox, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, NULL, NULL,
+		  TRUE,   /* we're scanning */
+		  FALSE,  /* we're not ultimately aligning */
+		  TRUE,   /* be memory efficient */
+		  NULL,   /* don't want the DP matrix back */
+		  NULL);  /* don't want traces back */
   esl_stopwatch_Stop(w);
   t_v = w->user;
+  cp9_omx_Destroy(ox);
+  cp9_oprofile_Destroy(om);
+
   /* CP9 forward */
   esl_stopwatch_Start(w);
   CP9Forward(cm, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, NULL, NULL,

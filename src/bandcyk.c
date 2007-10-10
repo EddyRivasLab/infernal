@@ -1141,6 +1141,7 @@ CYKBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int 
   
   if(best_score <= 0.) /* there were no hits found by the semi-HMM, no hits above 0 bits */
     best_score = best_neg_score;
+  /* printf("CYKBandedScan() return score: %10.4f\n", best_score); */
   return best_score;
 
  ERROR:
