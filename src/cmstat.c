@@ -232,14 +232,9 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
   t_iq = w->user;
   
   /* CP9 viterbi */
-  om = cp9_oprofile_Create(cm->cp9->M, cm->abc);
-  cp9_oprofile_Convert(cm, om);
-  ox = cp9_omx_Create(om->M, 2);
   esl_stopwatch_Start(w);
-
-  //NULL);  /* don't want traces back */
   /* CP9Viterbi(cm, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, NULL, NULL, */
-  cp9_FastViterbi(cm, om, ox, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, NULL, NULL,
+  cp9_FastViterbi(cm, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, NULL, NULL,
 		  TRUE,   /* we're scanning */
 		  FALSE,  /* we're not ultimately aligning */
 		  TRUE,   /* be memory efficient */
