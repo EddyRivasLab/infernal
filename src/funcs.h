@@ -775,14 +775,3 @@ extern float LogSum2(float p1, float p2);
 extern float cp9_FastViterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
 			     int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, 
 			     int be_efficient, CP9_dpmatrix_t **ret_mx, CP9trace_t **ret_tr);
-extern float cp9_EXTPLFastViterbi(CM_t *cm, const CP9_OPROFILE *om, const CP9_OMX *ox, ESL_DSQ *dsq, 
-				  int i0, int j0, int W, float cutoff, int **ret_sc, 
-				  int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, 
-				  int be_efficient, CP9_dpmatrix_t **ret_mx, CP9trace_t **ret_tr);
-extern CP9_OPROFILE *cp9_oprofile_Create(int M, const ESL_ALPHABET *abc);
-extern void         cp9_oprofile_Destroy(CP9_OPROFILE *om);
-extern CP9_OMX      *cp9_omx_Create(int allocM, int allocL);
-extern void         cp9_omx_Destroy(CP9_OMX *ox);
-extern int          cp9_omx_GrowTo(CP9_OMX *ox, int allocM, int allocL);
-extern int          cp9_omx_Dump(FILE *ofp, CP9_OMX *ox);
-extern int          cp9_oprofile_Convert(CM_t *cm, CP9_OPROFILE *om);

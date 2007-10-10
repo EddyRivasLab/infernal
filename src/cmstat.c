@@ -176,8 +176,6 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
   float dpc_q;     /* number of QDB mega-DP calcs for search of length L */
   float th_acc;    /* theoretical QDB acceleration */
   float dpc_v;     /* number of CP9 mega-DP calcs for search of length L */
-  CP9_OPROFILE    *om      = NULL; /* optimized CP9 profile */
-  CP9_OMX         *ox      = NULL; /* optimized CP9 matrix */
 
   /* optional, -t related variables */
   ESL_DSQ *dsq;    /* digitized sequence of length L for CM  timings  */
@@ -242,8 +240,6 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
 		  NULL);  /* don't want traces back */
   esl_stopwatch_Stop(w);
   t_v = w->user;
-  cp9_omx_Destroy(ox);
-  cp9_oprofile_Destroy(om);
 
   /* CP9 forward */
   esl_stopwatch_Start(w);
