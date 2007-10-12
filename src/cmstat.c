@@ -176,6 +176,8 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
   float dpc_q;     /* number of QDB mega-DP calcs for search of length L */
   float th_acc;    /* theoretical QDB acceleration */
   float dpc_v;     /* number of CP9 mega-DP calcs for search of length L */
+  int   minL = 0;  /* minimum length can safely scan with optimized Forward(), -1 ==> any length */
+  int   be_safe;   /* should we be safe, and not use optimized Forward()? */
 
   /* optional, -t related variables */
   ESL_DSQ *dsq;    /* digitized sequence of length L for CM  timings  */
@@ -202,17 +204,17 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
   dpc_v /= 1000000;
 
   /* cyk */
-  /*CYKScan (cm, dsq, 1, L, cm->W, 0., NULL);*/
   /*EXPTLFastCYKScan(cm, dsq, NULL, NULL, 1, L, cm->W, 0., NULL, NULL, NULL);*/
   esl_stopwatch_Start(w);
   FastCYKScan(cm, dsq, NULL, NULL, 1, L, cm->W, 0., NULL, NULL, NULL);
+  //CYKScan (cm, dsq, 1, L, cm->W, 0., NULL);
   esl_stopwatch_Stop(w);
   t_c = w->user;
 
   /* qdb cyk */
-  /*CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL); 
-    EXPTLFastCYKScan(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL, NULL, NULL);*/
+  /*EXPTLFastCYKScan(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL, NULL, NULL);*/
   esl_stopwatch_Start(w);
+  /*CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL); */
   FastCYKScan(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL, NULL, NULL);
   esl_stopwatch_Stop(w);
   t_cq = w->user;
@@ -231,7 +233,7 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
   
   /* CP9 viterbi */
   esl_stopwatch_Start(w);
-  /* CP9Viterbi(cm, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, NULL, NULL, */
+  /*CP9Viterbi(cm, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, NULL, NULL, */
   cp9_FastViterbi(cm, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, NULL, NULL,
 		  TRUE,   /* we're scanning */
 		  FALSE,  /* we're not ultimately aligning */
@@ -243,12 +245,20 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
 
   /* CP9 forward */
   esl_stopwatch_Start(w);
-  CP9Forward(cm, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, NULL, NULL,
-	     TRUE,   /* we're scanning */
-	     FALSE,  /* we're not ultimately aligning */
-	     FALSE,  /* we're not rescanning */
-	     TRUE,   /* be memory efficient */
-	     NULL);  /* don't want the DP matrix back */
+  /* determine the minimum length we can search safely with the optimized forward implementation. */
+  minL = cp9_WorstForward(cm, -INFTY, TRUE, FALSE);
+  /*CP9Forward(cm, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, NULL, NULL,*/
+  be_safe = FALSE;
+  ESL_DPRINTF1(("minL: %d L: %d\n", minL, L));
+  if(minL != -1 && minL <= L) be_safe = TRUE;
+  esl_stopwatch_Start(w);
+  cp9_EXPTLFastForward(cm, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, NULL, NULL,
+		       TRUE,   /* we are scanning */
+		       FALSE,  /* we are not ultimately aligning */
+		       FALSE,  /* we're not rescanning */
+		       TRUE,   /* be memory efficient */
+		       be_safe,
+		       NULL);  /* don't want the DP matrix back */
   esl_stopwatch_Stop(w);
   t_f = w->user;
 

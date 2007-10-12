@@ -1931,7 +1931,7 @@ cm2hmm_trans_probs_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, int k, 
     printf("hmm->t[%d][CTMM]: %f\n", k, hmm->t[k][CTMM]);
     printf("hmm->t[%d][CTMI]: %f\n", k, hmm->t[k][CTMI]);
     printf("hmm->t[%d][CTMD]: %f\n", k, hmm->t[k][CTMD]);
-    printf("hmm->t[%d][CTME]: %f\n", k, hmm->t[k][CTMD]);
+    printf("hmm->t[%d][CTMEL]: %f\n", k, hmm->t[k][CTMD]);
     printf("hmm->t[%d][CTIM]: %f\n", k, hmm->t[k][CTIM]);
     printf("hmm->t[%d][CTII]: %f\n", k, hmm->t[k][CTII]);
     printf("hmm->t[%d][CTID]: %f\n", k, hmm->t[k][CTID]);
@@ -2435,28 +2435,28 @@ debug_print_cp9_params(FILE *fp, struct cplan9_s *hmm, int print_scores)
 
   k=0;
   if(print_scores) {
-    fprintf(fp, "\tCTMM[%d] = %f | %d\n", k, hmm->t[0][CTMM], hmm->tsc[CTMM][0]);
-    fprintf(fp, "\tCTMI[%d] = %f | %d\n", k, hmm->t[0][CTMI], hmm->tsc[CTMI][0]);
-    fprintf(fp, "\tCTMD[%d] = %f | %d\n", k, hmm->t[0][CTMD], hmm->tsc[CTMD][0]);
-    fprintf(fp, "\tCTME[%d] = %f | %d\n", k, hmm->t[0][CTME], hmm->tsc[CTME][0]);
-    fprintf(fp, "\tCTIM[%d] = %f | %d\n", k, hmm->t[0][CTIM], hmm->tsc[CTIM][0]);
-    fprintf(fp, "\tCTII[%d] = %f | %d\n", k, hmm->t[0][CTII], hmm->tsc[CTII][0]);
-    fprintf(fp, "\tCTID[%d] = %f | %d\n", k, hmm->t[0][CTID], hmm->tsc[CTID][0]);
-    fprintf(fp, "\tCTDM[%d] = %f | %d\n", k, hmm->t[0][CTDM], hmm->tsc[CTDM][0]);
-    fprintf(fp, "\tCTDI[%d] = %f | %d\n", k, hmm->t[0][CTDI], hmm->tsc[CTDI][0]);
-    fprintf(fp, "\tCTDD[%d] = %f | %d\n", k, hmm->t[0][CTDD], hmm->tsc[CTDD][0]);
+    fprintf(fp, "\tCTMM[%d]  = %f | %d\n", k, hmm->t[0][CTMM], hmm->tsc[CTMM][0]);
+    fprintf(fp, "\tCTMI[%d]  = %f | %d\n", k, hmm->t[0][CTMI], hmm->tsc[CTMI][0]);
+    fprintf(fp, "\tCTMD[%d]  = %f | %d\n", k, hmm->t[0][CTMD], hmm->tsc[CTMD][0]);
+    fprintf(fp, "\tCTMEL[%d] = %f | %d\n", k, hmm->t[0][CTMEL], hmm->tsc[CTMEL][0]);
+    fprintf(fp, "\tCTIM[%d]  = %f | %d\n", k, hmm->t[0][CTIM], hmm->tsc[CTIM][0]);
+    fprintf(fp, "\tCTII[%d]  = %f | %d\n", k, hmm->t[0][CTII], hmm->tsc[CTII][0]);
+    fprintf(fp, "\tCTID[%d]  = %f | %d\n", k, hmm->t[0][CTID], hmm->tsc[CTID][0]);
+    fprintf(fp, "\tCTDM[%d]  = %f | %d\n", k, hmm->t[0][CTDM], hmm->tsc[CTDM][0]);
+    fprintf(fp, "\tCTDI[%d]  = %f | %d\n", k, hmm->t[0][CTDI], hmm->tsc[CTDI][0]);
+    fprintf(fp, "\tCTDD[%d]  = %f | %d\n", k, hmm->t[0][CTDD], hmm->tsc[CTDD][0]);
   }  
-  else {
-    fprintf(fp, "\tCTMM[%d] = %f\n", k, hmm->t[0][CTMM]);
-    fprintf(fp, "\tCTMI[%d] = %f\n", k, hmm->t[0][CTMI]);
-    fprintf(fp, "\tCTMD[%d] = %f\n", k, hmm->t[0][CTMD]);
-    fprintf(fp, "\tCTME[%d] = %f\n", k, hmm->t[0][CTME]);
-    fprintf(fp, "\tCTIM[%d] = %f\n", k, hmm->t[0][CTIM]);
-    fprintf(fp, "\tCTII[%d] = %f\n", k, hmm->t[0][CTII]);
-    fprintf(fp, "\tCTID[%d] = %f\n", k, hmm->t[0][CTID]);
-    fprintf(fp, "\tCTDM[%d] = %f\n", k, hmm->t[0][CTDM]);
-    fprintf(fp, "\tCTDI[%d] = %f\n", k, hmm->t[0][CTDI]);
-    fprintf(fp, "\tCTDD[%d] = %f\n", k, hmm->t[0][CTDD]);
+  else  {
+    fprintf(fp, "\tCTMM[%d]  = %f\n", k, hmm->t[0][CTMM]);
+    fprintf(fp, "\tCTMI[%d]  = %f\n", k, hmm->t[0][CTMI]);
+    fprintf(fp, "\tCTMD[%d]  = %f\n", k, hmm->t[0][CTMD]);
+    fprintf(fp, "\tCTMEL[%d] = %f\n", k, hmm->t[0][CTMEL]);
+    fprintf(fp, "\tCTIM[%d]  = %f\n", k, hmm->t[0][CTIM]);
+    fprintf(fp, "\tCTII[%d]  = %f\n", k, hmm->t[0][CTII]);
+    fprintf(fp, "\tCTID[%d]  = %f\n", k, hmm->t[0][CTID]);
+    fprintf(fp, "\tCTDM[%d]  = %f\n", k, hmm->t[0][CTDM]);
+    fprintf(fp, "\tCTDI[%d]  = %f\n", k, hmm->t[0][CTDI]);
+    fprintf(fp, "\tCTDD[%d]  = %f\n", k, hmm->t[0][CTDD]);
   }
   for(k = 1; k <= hmm->M; k++)
     {      
@@ -2477,32 +2477,32 @@ debug_print_cp9_params(FILE *fp, struct cplan9_s *hmm, int print_scores)
 	}
       fprintf(fp, "\n");
       if(print_scores) { 
-	fprintf(fp, "\tCTMM[%d] = %f | %d\n", k, hmm->t[k][CTMM], hmm->tsc[CTMM][k]);
-	fprintf(fp, "\tCTMI[%d] = %f | %d\n", k, hmm->t[k][CTMI], hmm->tsc[CTMI][k]);
-	fprintf(fp, "\tCTMD[%d] = %f | %d\n", k, hmm->t[k][CTMD], hmm->tsc[CTMD][k]);
-	fprintf(fp, "\tCTME[%d] = %f | %d\n", k, hmm->t[k][CTME], hmm->tsc[CTME][k]);
-	fprintf(fp, "\tCTIM[%d] = %f | %d\n", k, hmm->t[k][CTIM], hmm->tsc[CTIM][k]);
-	fprintf(fp, "\tCTII[%d] = %f | %d\n", k, hmm->t[k][CTII], hmm->tsc[CTII][k]);
-	fprintf(fp, "\tCTID[%d] = %f | %d\n", k, hmm->t[k][CTID], hmm->tsc[CTID][k]);
-	fprintf(fp, "\tCTDM[%d] = %f | %d\n", k, hmm->t[k][CTDM], hmm->tsc[CTDM][k]);
-	fprintf(fp, "\tCTDI[%d] = %f | %d\n", k, hmm->t[k][CTDI], hmm->tsc[CTDI][k]);
-	fprintf(fp, "\tCTDD[%d] = %f | %d\n", k, hmm->t[k][CTDD], hmm->tsc[CTDD][k]);
-	fprintf(fp, "\t beg[%d] = %f | %d\n", k, hmm->begin[k], hmm->bsc[k]);
-	fprintf(fp, "\t end[%d] = %f | %d\n", k, hmm->end[k], hmm->esc[k]);
+	fprintf(fp, "\tCTMM[%d]  = %f | %d\n", k, hmm->t[k][CTMM], hmm->tsc[CTMM][k]);
+	fprintf(fp, "\tCTMI[%d]  = %f | %d\n", k, hmm->t[k][CTMI], hmm->tsc[CTMI][k]);
+	fprintf(fp, "\tCTMD[%d]  = %f | %d\n", k, hmm->t[k][CTMD], hmm->tsc[CTMD][k]);
+	fprintf(fp, "\tCTMEL[%d] = %f | %d\n", k, hmm->t[k][CTMEL], hmm->tsc[CTMEL][k]);
+	fprintf(fp, "\tCTIM[%d]  = %f | %d\n", k, hmm->t[k][CTIM], hmm->tsc[CTIM][k]);
+	fprintf(fp, "\tCTII[%d]  = %f | %d\n", k, hmm->t[k][CTII], hmm->tsc[CTII][k]);
+	fprintf(fp, "\tCTID[%d]  = %f | %d\n", k, hmm->t[k][CTID], hmm->tsc[CTID][k]);
+	fprintf(fp, "\tCTDM[%d]  = %f | %d\n", k, hmm->t[k][CTDM], hmm->tsc[CTDM][k]);
+	fprintf(fp, "\tCTDI[%d]  = %f | %d\n", k, hmm->t[k][CTDI], hmm->tsc[CTDI][k]);
+	fprintf(fp, "\tCTDD[%d]  = %f | %d\n", k, hmm->t[k][CTDD], hmm->tsc[CTDD][k]);
+	fprintf(fp, "\t beg[%d]  = %f | %d\n", k, hmm->begin[k], hmm->bsc[k]);
+	fprintf(fp, "\t end[%d]  = %f | %d\n", k, hmm->end[k], hmm->esc[k]);
       }
       else {
-	fprintf(fp, "\tCTMM[%d] = %f\n", k, hmm->t[k][CTMM]);
-	fprintf(fp, "\tCTMI[%d] = %f\n", k, hmm->t[k][CTMI]);
-	fprintf(fp, "\tCTMD[%d] = %f\n", k, hmm->t[k][CTMD]);
-	fprintf(fp, "\tCTME[%d] = %f\n", k, hmm->t[k][CTME]);
-	fprintf(fp, "\tCTIM[%d] = %f\n", k, hmm->t[k][CTIM]);
-	fprintf(fp, "\tCTII[%d] = %f\n", k, hmm->t[k][CTII]);
-	fprintf(fp, "\tCTID[%d] = %f\n", k, hmm->t[k][CTID]);
-	fprintf(fp, "\tCTDM[%d] = %f\n", k, hmm->t[k][CTDM]);
-	fprintf(fp, "\tCTDI[%d] = %f\n", k, hmm->t[k][CTDI]);
-	fprintf(fp, "\tCTDD[%d] = %f\n", k, hmm->t[k][CTDD]);
-	fprintf(fp, "\t beg[%d] = %f\n", k, hmm->begin[k]);
-	fprintf(fp, "\t end[%d] = %f\n", k, hmm->end[k]);
+	fprintf(fp, "\tCTMM[%d]  = %f\n", k, hmm->t[k][CTMM]);
+	fprintf(fp, "\tCTMI[%d]  = %f\n", k, hmm->t[k][CTMI]);
+	fprintf(fp, "\tCTMD[%d]  = %f\n", k, hmm->t[k][CTMD]);
+	fprintf(fp, "\tCTMEL[%d] = %f\n", k, hmm->t[k][CTMEL]);
+	fprintf(fp, "\tCTIM[%d]  = %f\n", k, hmm->t[k][CTIM]);
+	fprintf(fp, "\tCTII[%d]  = %f\n", k, hmm->t[k][CTII]);
+	fprintf(fp, "\tCTID[%d]  = %f\n", k, hmm->t[k][CTID]);
+	fprintf(fp, "\tCTDM[%d]  = %f\n", k, hmm->t[k][CTDM]);
+	fprintf(fp, "\tCTDI[%d]  = %f\n", k, hmm->t[k][CTDI]);
+	fprintf(fp, "\tCTDD[%d]  = %f\n", k, hmm->t[k][CTDD]);
+	fprintf(fp, "\t beg[%d]  = %f\n", k, hmm->begin[k]);
+	fprintf(fp, "\t end[%d]  = %f\n", k, hmm->end[k]);
       }
       fprintf(fp, "\n");
     }

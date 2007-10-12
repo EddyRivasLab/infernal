@@ -264,7 +264,7 @@ CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
 	  if((cm->cp9->flags & CPLAN9_EL) && cm->cp9->has_el[k]) /* not all HMM nodes have an EL state (for ex: 
 								    HMM nodes that map to right half of a MATP_MP) */
 	    {
-	      if((tmp_sc = mmx[cur][k] + cm->cp9->tsc[CTME][k]) > elmx[cur][k]) /* transitioned from cur node's match state */
+	      if((tmp_sc = mmx[cur][k] + cm->cp9->tsc[CTMEL][k]) > elmx[cur][k]) /* transitioned from cur node's match state */
 
 		elmx[cur][k] = tmp_sc;
 	      if((tmp_sc = elmx[prv][k] + cm->cp9->el_selfsc) > elmx[cur][k]) /* transitioned from cur node's EL state emitted ip on transition */
@@ -665,7 +665,7 @@ CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
 	  if((cm->cp9->flags & CPLAN9_EL) && cm->cp9->has_el[k]) /* not all HMM nodes have an EL state (for ex: 
 							    HMM nodes that map to right half of a MATP_MP) */
 	    {
-	      elmx[cur][k] = ILogsum(mmx[cur][k] + cm->cp9->tsc[CTME][k], 
+	      elmx[cur][k] = ILogsum(mmx[cur][k] + cm->cp9->tsc[CTMEL][k], 
 				     /* transitioned from cur node's match state */
 				     elmx[prv][k] + cm->cp9->el_selfsc);
 	      /* transitioned from cur node's EL state emitted ip on transition */
@@ -1062,7 +1062,7 @@ CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **r
    * either way we don't have to modify it */
 
   mmx[cur][cm->cp9->M]  = 0. + 
-    ILogsum(elmx[cur][cm->cp9->M] + cm->cp9->tsc[CTME][cm->cp9->M],/* M_M<-EL_M<-E, with 0 self loops in EL_M */
+    ILogsum(elmx[cur][cm->cp9->M] + cm->cp9->tsc[CTMEL][cm->cp9->M],/* M_M<-EL_M<-E, with 0 self loops in EL_M */
 	    cm->cp9->esc[cm->cp9->M]);                             /* M_M<-E ... everything ends in E (the 0; 2^0=1.0) */
   mmx[cur][cm->cp9->M] += cm->cp9->msc[dsq[i]][cm->cp9->M];  /* ... + emitted match symbol */
   imx[cur][cm->cp9->M]  = 0. + cm->cp9->tsc[CTIM][cm->cp9->M];     /* I_M<-E ... everything ends in E (the 0; 2^0=1.0) */
@@ -1080,7 +1080,7 @@ CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **r
       mmx[cur][k]  = 0 + cm->cp9->esc[k];  /*M_k<- E */
       mmx[cur][k]  = ILogsum(mmx[cur][k], dmx[cur][k+1] + cm->cp9->tsc[CTMD][k]);
       if(cm->cp9->flags & CPLAN9_EL)
-	mmx[cur][k]  = ILogsum(mmx[cur][k], elmx[cur][k] + cm->cp9->tsc[CTME][k]);
+	mmx[cur][k]  = ILogsum(mmx[cur][k], elmx[cur][k] + cm->cp9->tsc[CTMEL][k]);
       mmx[cur][k] += cm->cp9->msc[dsq[i]][k];
 
       /*******************************************************************
@@ -1150,7 +1150,7 @@ CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **r
 
 	  if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[cm->cp9->M]))
 	    mmx[cur][cm->cp9->M] = ILogsum(mmx[cur][cm->cp9->M], 
-					   elmx[cur][cm->cp9->M] + cm->cp9->tsc[CTME][cm->cp9->M]);
+					   elmx[cur][cm->cp9->M] + cm->cp9->tsc[CTMEL][cm->cp9->M]);
 
 	  imx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + cm->cp9->tsc[CTII][cm->cp9->M];
 	  imx[cur][cm->cp9->M] += cm->cp9->isc[dsq[i]][cm->cp9->M];
@@ -1197,7 +1197,7 @@ CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **r
 	      
 	      mmx[cur][cm->cp9->M]  =  
 		ILogsum(mmx[cur][cm->cp9->M], 
-			ILogsum(elmx[cur][cm->cp9->M] + cm->cp9->tsc[CTME][cm->cp9->M],/* M_M<-EL_M<-E, with 0 selfs in EL_M */
+			ILogsum(elmx[cur][cm->cp9->M] + cm->cp9->tsc[CTMEL][cm->cp9->M],/* M_M<-EL_M<-E, with 0 selfs in EL_M */
 				cm->cp9->esc[cm->cp9->M]));                             /* M_M<-E ... */
 	      ///mmx[cur][cm->cp9->M] += cm->cp9->msc[dsq[i]][cm->cp9->M]; /* ... + emitted match symbol */
 	      /* DO NOT add contribution of emitting i from M, it's been added above */
@@ -1245,7 +1245,7 @@ CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **r
 					     (imx[prv][k]   + cm->cp9->tsc[CTMI][k])),
 				     (dmx[cur][k+1] + cm->cp9->tsc[CTMD][k]));
 	      if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[k]))
-		mmx[cur][k] = ILogsum(mmx[cur][k], elmx[cur][k] + cm->cp9->tsc[CTME][k]); /* penalty for entering EL */
+		mmx[cur][k] = ILogsum(mmx[cur][k], elmx[cur][k] + cm->cp9->tsc[CTMEL][k]); /* penalty for entering EL */
 	      mmx[cur][k] += cm->cp9->msc[dsq[i]][k];
 
 	      imx[cur][k]  = ILogsum(ILogsum((mmx[prv][k+1] + cm->cp9->tsc[CTIM][k]),

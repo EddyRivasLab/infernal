@@ -126,7 +126,7 @@ AllocCP9Bands(CM_t *cm, struct cplan9_s *hmm)
   return cp9bands;
 
  ERROR:
-  esl_fatal("Memory allocation error.\n");
+  cm_Fail("Memory allocation error.\n");
   return NULL; /* never reached */
 }
 
@@ -214,17 +214,17 @@ CP9_seq2bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b,
 
   /* Contract checks */
   if(cm->cp9 == NULL)
-    esl_fatal("ERROR in CP9_seq2bands, but cm->cp9 is NULL.\n");
+    cm_Fail("in CP9_seq2bands, but cm->cp9 is NULL.\n");
   if(cm->cp9map == NULL)
-    esl_fatal("ERROR in CP9_seq2bands, but cm->cp9map is NULL.\n");
+    cm_Fail("in CP9_seq2bands, but cm->cp9map is NULL.\n");
   if((cm->align_opts & CM_ALIGN_HBANDED) && (cm->search_opts & CM_SEARCH_HBANDED)) 
-    esl_fatal("ERROR in CP9_seq2bands, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
+    cm_Fail("in CP9_seq2bands, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
   if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED))) 
-    esl_fatal("ERROR in CP9_seq2bands, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
+    cm_Fail("in CP9_seq2bands, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
   if((cm->search_opts & CM_SEARCH_HMMSCANBANDS) && (!(cm->search_opts & CM_SEARCH_HBANDED))) 
-    esl_fatal("ERROR in CP9_seq2bands, CM_SEARCH_HMMSCANBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
+    cm_Fail("in CP9_seq2bands, CM_SEARCH_HMMSCANBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
   if(dsq == NULL) 
-    esl_fatal("ERROR in CP9_seq2bands, dsq is NULL.");
+    cm_Fail("in CP9_seq2bands, dsq is NULL.");
   
   use_sums = FALSE;
   if((cm->align_opts & CM_ALIGN_SUMS) || (cm->search_opts & CM_SEARCH_SUMS))
@@ -292,7 +292,7 @@ CP9_seq2bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b,
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.\n");
+  cm_Fail("Memory allocation error.\n");
 }
 
 /*
@@ -327,15 +327,15 @@ CP9_seq2posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_
 				  * that we'll use for a CM scan */
   /* Contract checks */
   if(dsq == NULL)
-    esl_fatal("ERROR in CP9_seq2posteriors(), dsq is NULL.");
+    cm_Fail("in CP9_seq2posteriors(), dsq is NULL.");
   if(cm->cp9 == NULL)
-    esl_fatal("ERROR in CP9_seq2posteriors, but cm->cp9 is NULL.\n");
+    cm_Fail("in CP9_seq2posteriors, but cm->cp9 is NULL.\n");
   if(cm->cp9map == NULL)
-    esl_fatal("ERROR in CP9_seq2posteriors, but cm->cp9map is NULL.\n");
+    cm_Fail("in CP9_seq2posteriors, but cm->cp9map is NULL.\n");
   if((cm->align_opts & CM_ALIGN_HBANDED) && (cm->search_opts & CM_SEARCH_HBANDED)) 
-    esl_fatal("ERROR in CP9_seq2posteriors, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
+    cm_Fail("in CP9_seq2posteriors, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
   if((cm->align_opts & CM_SEARCH_HMMSCANBANDS) && (! (cm->search_opts & CM_SEARCH_HBANDED))) 
-    esl_fatal("ERROR in CP9_seq2posteriors, CM_SEARCH_HMMSCANBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
+    cm_Fail("in CP9_seq2posteriors, CM_SEARCH_HMMSCANBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
 
   if(cm->search_opts & CM_SEARCH_HMMSCANBANDS)
     do_scan2bands = TRUE;
@@ -426,7 +426,7 @@ CP9ForwardAlign(ESL_DSQ *dsq, int i0, int j0, struct cplan9_s *hmm,
 	      struct cp9_dpmatrix_s **ret_mx)
 {
   if(dsq == NULL) 
-    esl_fatal("In CP9ForwardAlign() dsq is NULL.");
+    cm_Fail("In CP9ForwardAlign() dsq is NULL.");
   struct cp9_dpmatrix_s *mx;
   int **mmx;
   int **imx;
@@ -530,7 +530,7 @@ CP9ViterbiAlign(ESL_DSQ *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_d
 	      CP9trace_t **ret_tr)
 {
   if(dsq == NULL)
-    esl_fatal("ERROR in CP9ViterbiAlign(), dsq is NULL.");
+    cm_Fail("in CP9ViterbiAlign(), dsq is NULL.");
 
   CP9trace_t  *tr;
   int **mmx;
@@ -644,7 +644,7 @@ CP9ViterbiAlign(ESL_DSQ *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_d
 	  if((hmm->flags & CPLAN9_EL) && hmm->has_el[k]) /* not all HMM nodes have an EL state (for ex: 
 							    HMM nodes that map to right half of a MATP_MP) */
 	    {
-	      if((sc = mmx[ip][k] + hmm->tsc[CTME][k]) > elmx[ip][k])
+	      if((sc = mmx[ip][k] + hmm->tsc[CTMEL][k]) > elmx[ip][k])
 		elmx[ip][k] = sc; /* transitioned from cur node's match state */
 	      if((sc = elmx[ip-1][k] + hmm->el_selfsc) > elmx[ip][k])
 		elmx[ip][k] = sc; /* transitioned from cur node's EL state emitted ip on transition */
@@ -704,7 +704,7 @@ float
 CP9BackwardAlign(ESL_DSQ *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_dpmatrix_s **ret_mx)
 {
   if(dsq == NULL)
-    esl_fatal("ERROR in CP9BackwardAlign(), dsq is NULL.");
+    cm_Fail("in CP9BackwardAlign(), dsq is NULL.");
 
   struct cp9_dpmatrix_s *mx;
   int **mmx;
@@ -868,7 +868,7 @@ CP9Posterior(ESL_DSQ *dsq, int i0, int j0,
 	     struct cp9_dpmatrix_s *mx)
 {
   if(dsq == NULL)
-    esl_fatal("ERROR in CP9Posterior(), dsq is NULL.");
+    cm_Fail("in CP9Posterior(), dsq is NULL.");
 
   int i;
   int k;
@@ -1230,9 +1230,9 @@ hmm2ij_bands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
   int doing_search; /* TRUE if bands will be used to accelerate search, FALSE for alignment */
   /* Contract checks */
   if((cm->align_opts & CM_ALIGN_HBANDED) && (cm->search_opts & CM_SEARCH_HBANDED)) 
-    esl_fatal("ERROR in hmm2ij_bands(), CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
+    cm_Fail("in hmm2ij_bands(), CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
   if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED))) 
-    esl_fatal("ERROR in hmm2ij_bands(), CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
+    cm_Fail("in hmm2ij_bands(), CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
 
   if(cm->search_opts & CM_SEARCH_HBANDED)
     doing_search = TRUE;
@@ -2042,7 +2042,7 @@ hmm2ij_bands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.\n");
+  cm_Fail("Memory allocation error.\n");
 }
 
 /**************************************************************************
@@ -2533,7 +2533,7 @@ ij_banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax,
   return;
   
  ERROR:
-  esl_fatal("Memory allocation error.\n");
+  cm_Fail("Memory allocation error.\n");
 }
 
 
@@ -2698,7 +2698,7 @@ ijd_banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax,
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.\n");
+  cm_Fail("Memory allocation error.\n");
 }
 
 
@@ -2729,7 +2729,7 @@ debug_check_CP9_FB(struct cp9_dpmatrix_s *fmx, struct cp9_dpmatrix_s *bmx,
 		   struct cplan9_s *hmm, float sc, int i0, int j0, ESL_DSQ *dsq)
 {
   if(dsq == NULL)
-    esl_fatal("ERROR in debug_check_CP9_FB(), dsq is NULL.");
+    cm_Fail("in debug_check_CP9_FB(), dsq is NULL.");
 
   int k, i;
   float max_diff;  /* maximum allowed difference between sc and 
@@ -3335,7 +3335,7 @@ P7_map_cm2hmm_and_hmm2cm(CM_t *cm, struct plan7_s *hmm, int *node_cc_left, int *
   *ret_hns2cs_map = hns2cs_map;
   return;
  ERROR:
-  esl_fatal("Memory allocation error.\n");
+  cm_Fail("Memory allocation error.\n");
 }
 
 /*****************************************************************************

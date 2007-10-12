@@ -149,6 +149,11 @@ AllocCPlan9Body(struct cplan9_s *hmm, int M, const ESL_ALPHABET *abc)
   hmm->bsc = hmm->bsc_mem;
   hmm->esc = hmm->esc_mem;
 
+  /* end[0], begin[0], esc[0] and bsc[0] are never
+   * used, set them to 0. and -INFTY */
+  hmm->end[0] = hmm->begin[0] = -INFTY;
+  hmm->esc[0] = hmm->bsc[0] = -INFTY;
+  
   ESL_ALLOC(hmm->has_el,     (M+1) * sizeof(int));
   ESL_ALLOC(hmm->el_from_ct, (M+2) * sizeof(int));
   ESL_ALLOC(hmm->el_from_idx,(M+2) * sizeof(int *));
@@ -318,7 +323,7 @@ CP9Logoddsify(CP9_t *hmm)
       hmm->tsc[CTMM][k] = Prob2Score(hmm->t[k][CTMM], 1.0);
       hmm->tsc[CTMI][k] = Prob2Score(hmm->t[k][CTMI], 1.0);
       hmm->tsc[CTMD][k] = Prob2Score(hmm->t[k][CTMD], 1.0);
-      hmm->tsc[CTME][k] = Prob2Score(hmm->t[k][CTME], 1.0);
+      hmm->tsc[CTMEL][k] = Prob2Score(hmm->t[k][CTMEL], 1.0);
       hmm->tsc[CTIM][k] = Prob2Score(hmm->t[k][CTIM], 1.0);
       hmm->tsc[CTII][k] = Prob2Score(hmm->t[k][CTII], 1.0);
       hmm->tsc[CTID][k] = Prob2Score(hmm->t[k][CTID], 1.0);
@@ -406,12 +411,12 @@ CPlan9Renormalize(struct cplan9_s *hmm)
     esl_vec_FNorm(hmm->ins[k], hmm->abc->K);
 
 				/* begin transitions */
-  d = esl_vec_FSum(hmm->begin+1, hmm->M) + hmm->t[0][CTMI] + hmm->t[0][CTMD] + hmm->t[0][CTME]; 
-  /* hmm->t[0][CTME] should always be 0., can't local end from the M_0 == B state */
+  d = esl_vec_FSum(hmm->begin+1, hmm->M) + hmm->t[0][CTMI] + hmm->t[0][CTMD] + hmm->t[0][CTMEL]; 
+  /* hmm->t[0][CTMEL] should always be 0., can't local end from the M_0 == B state */
   esl_vec_FScale(hmm->begin+1, hmm->M, 1./d);
   hmm->t[0][CTMI] /= d;
   hmm->t[0][CTMD] /= d;
-  hmm->t[0][CTME] /= d;
+  hmm->t[0][CTMEL] /= d;
 
   esl_vec_FNorm(hmm->t[0]+4, 3);	        /* transitions out of insert for node 0 (state N)*/
   esl_vec_FSet( hmm->t[0]+7, 3, 0.);    
@@ -720,8 +725,8 @@ CPlan9SWConfig(struct cplan9_s *hmm, float pentry, float pexit)
     printf("before anything: end[%d]: %f\n", k, hmm->end[k]);*/
   /* Configure entry.
    */
-  hmm->begin[1] = (1. - pentry) * (1. - (hmm->t[0][CTMI] + hmm->t[0][CTMD] + hmm->t[0][CTME]));
-  esl_vec_FSet(hmm->begin+2, hmm->M-1, (pentry * (1.- (hmm->t[0][CTMI] + hmm->t[0][CTMD] + hmm->t[0][CTME]))) 
+  hmm->begin[1] = (1. - pentry) * (1. - (hmm->t[0][CTMI] + hmm->t[0][CTMD] + hmm->t[0][CTMEL]));
+  esl_vec_FSet(hmm->begin+2, hmm->M-1, (pentry * (1.- (hmm->t[0][CTMI] + hmm->t[0][CTMD] + hmm->t[0][CTMEL]))) 
        / (float)(hmm->M-1));
   
   /* Configure exit.
@@ -796,7 +801,7 @@ CPlan9CMLocalBeginConfig(CM_t *cm)
   hmm_begin_end_prob = cm->begin[cm->nodemap[1]];
   /***************************************************/
   /* BELOW IS INCOMPLETE! */
-  /*cm->cp9->t[0][CTMI] = cm->cp9->t[0][CTMD] = cm->cp9->t[0][CTME] = 0.;
+  /*cm->cp9->t[0][CTMI] = cm->cp9->t[0][CTMD] = cm->cp9->t[0][CTMEL] = 0.;
   cm->cp9->begin[1] = hmm_begin_end_prob;
   esl_vec_FSet(cm->cp9->begin+2, cm->cp9->M-1, ((hmm_begin_end_prob/2.) / (float)(cm->cp9->M-1)));*/
 
@@ -882,13 +887,13 @@ CPlan9ELConfig(CM_t *cm)
     } 
 
   /* transitions from HMM node 0 to EL is impossible */
-  cm->cp9->t[0][CTME] = 0.;
+  cm->cp9->t[0][CTMEL] = 0.;
   for(k = 1; k <= cm->cp9->M; k++) 
     {
       if(cm->cp9->has_el[k])
 	{
-	  cm->cp9->t[k][CTME] = to_el_prob;
-	  norm_factor = 1. - (cm->cp9->t[k][CTME] / (1. - cm->cp9->end[k]));
+	  cm->cp9->t[k][CTMEL] = to_el_prob;
+	  norm_factor = 1. - (cm->cp9->t[k][CTMEL] / (1. - cm->cp9->end[k]));
 	  cm->cp9->t[k][CTMM] *= norm_factor;
 	  cm->cp9->t[k][CTMI] *= norm_factor;
 	  cm->cp9->t[k][CTMD] *= norm_factor;
@@ -930,7 +935,7 @@ CPlan9NoEL(CM_t *cm)
   int k;                     /* counter over HMM nodes */
 
   for(k = 0; k <= cm->cp9->M; k++) 
-    cm->cp9->t[k][CTME] = 0.;
+    cm->cp9->t[k][CTMEL] = 0.;
   CPlan9RenormalizeExits(cm->cp9, 1);
 
   cm->cp9->flags &= ~CPLAN9_HASBITS;	/* clear the log-odds ready flag */
@@ -1073,7 +1078,7 @@ CPlan9GlobalConfig(struct cplan9_s *hmm)
    * Exactly 3 ways to start, B->M_1 (hmm->begin[1]), B->I_0 (hmm->t[0][CTMI]),
    *                      and B->D_1 (hmm->t[0][CTMD])
    */
-  hmm->begin[1] = 1. - (hmm->t[0][CTMI] + hmm->t[0][CTMD] + hmm->t[0][CTME]); 
+  hmm->begin[1] = 1. - (hmm->t[0][CTMI] + hmm->t[0][CTMD] + hmm->t[0][CTMEL]); 
   /* this is okay, hmm->t[0] is never changed, even during local
    * configuration */
   esl_vec_FSet(hmm->begin+2, hmm->M-1, 0.);
@@ -1083,10 +1088,10 @@ CPlan9GlobalConfig(struct cplan9_s *hmm)
   CPlan9RenormalizeExits(hmm, 1);
 
   /* Make all transitions to EL impossible, node 0, M special and should 
-   * always have CTME transition as impossible. */
+   * always have CTMEL transition as impossible. */
   for(k = 1; k < hmm->M; k++)
     {
-      hmm->t[k][CTME] = 0.;
+      hmm->t[k][CTMEL] = 0.;
       esl_vec_FNorm(hmm->t[k], 4); /* renormalize transitions out of node k */
     }
   hmm->flags       &= ~CPLAN9_HASBITS; /* reconfig invalidates log-odds scores */
@@ -1133,7 +1138,7 @@ CPlan9SWConfigEnforce(struct cplan9_s *hmm, float pentry, float pexit,
    * To match CM, we enforce the only way out of the B state (M_0)
    * is through a local begin into a match state 
    */
-  hmm->t[0][CTMI] = hmm->t[0][CTMD] = hmm->t[0][CTME] = 0.;
+  hmm->t[0][CTMI] = hmm->t[0][CTMD] = hmm->t[0][CTMEL] = 0.;
   hmm->begin[1] = 1. - pentry;
   for (k = 2; k <= enf_start_pos; k++)
     hmm->begin[k] = pentry / (float)(enf_start_pos-1);
@@ -1196,9 +1201,9 @@ CPlan9RenormalizeExits(struct cplan9_s *hmm, int spos)
 	}
     }
   /* Take care of hmm->M node, which is special */
-  d = hmm->t[hmm->M][CTMI] + hmm->t[hmm->M][CTME]; /* CTMD is IMPOSSIBLE, CTMM is hmm->end[hmm-M] */
+  d = hmm->t[hmm->M][CTMI] + hmm->t[hmm->M][CTMEL]; /* CTMD is IMPOSSIBLE, CTMM is hmm->end[hmm-M] */
   hmm->t[hmm->M][CTMI] *= (1.-hmm->end[hmm->M])/d;
-  hmm->t[hmm->M][CTME] *= (1.-hmm->end[hmm->M])/d;
+  hmm->t[hmm->M][CTMEL] *= (1.-hmm->end[hmm->M])/d;
   return;
 }
 
@@ -1397,7 +1402,7 @@ CP9_reconfig2sub(struct cplan9_s *hmm, int spos, int epos, int spos_nd,
       hmm->t[spos_nd-1][CTMI] =   (orig_phi[spos-1][HMMINSERT] * (1. - hmm->t[spos-1][CTII]));
       hmm->t[spos_nd-1][CTMD] =    orig_phi[spos  ][HMMDELETE] - (orig_phi[spos-1][HMMINSERT] * hmm->t[spos-1][CTID]);
       hmm->t[spos_nd-1][CTMM] = 0.; /* probability of going from B(M_0) to M_1 is begin[1] */
-      hmm->t[spos_nd-1][CTME] = 0.; /* can't go to EL from B(M_0) */
+      hmm->t[spos_nd-1][CTMEL] = 0.; /* can't go to EL from B(M_0) */
       hmm->t[spos_nd-1][CTDM] = 0.; /* D_0 doesn't exist */
       hmm->t[spos_nd-1][CTDI] = 0.; /* D_0 doesn't exist */
       hmm->t[spos_nd-1][CTDD] = 0.; /* D_0 doesn't exist */
@@ -1405,7 +1410,7 @@ CP9_reconfig2sub(struct cplan9_s *hmm, int spos, int epos, int spos_nd,
       hmm->bsc[spos_nd]       = Prob2Score(hmm->begin[1], 1.0);
 
       hmm->tsc[CTMM][spos_nd-1] = -INFTY; /* probability of going from B(M_0) to M_1 is begin[1] */
-      hmm->tsc[CTME][spos_nd-1] = -INFTY; 
+      hmm->tsc[CTMEL][spos_nd-1] = -INFTY; 
       hmm->tsc[CTDM][spos_nd-1] = -INFTY; /* D_0 doesn't exist */
       hmm->tsc[CTDI][spos_nd-1] = -INFTY; /* D_0 doesn't exist */
       hmm->tsc[CTDD][spos_nd-1] = -INFTY; /* D_0 doesn't exist */
@@ -1420,7 +1425,7 @@ CP9_reconfig2sub(struct cplan9_s *hmm, int spos, int epos, int spos_nd,
       hmm->t[epos_nd][CTDM] += hmm->t[epos][CTDD];
       hmm->t[epos_nd][CTIM] += hmm->t[epos][CTID];
       hmm->t[epos_nd][CTMM]  = 0.; /* M->E is actually end[M] */
-      hmm->t[epos_nd][CTME]  = 0.; 
+      hmm->t[epos_nd][CTMEL]  = 0.; 
       hmm->t[epos_nd][CTMD]  = 0.; /* D_M+1 doesn't exist */
       hmm->t[epos_nd][CTDD]  = 0.; /* D_M+1 doesn't exist */
       hmm->t[epos_nd][CTID]  = 0.; /* D_M+1 doesn't exist */
@@ -1429,7 +1434,7 @@ CP9_reconfig2sub(struct cplan9_s *hmm, int spos, int epos, int spos_nd,
       hmm->tsc[CTDM][epos_nd] = Prob2Score(hmm->t[epos_nd][CTDM], 1.0);
       hmm->tsc[CTIM][epos_nd] = Prob2Score(hmm->t[epos_nd][CTIM], 1.0);
       hmm->tsc[CTMM][epos_nd] = -INFTY; /* M->E is actually end[M] */
-      hmm->tsc[CTME][epos_nd] = -INFTY; 
+      hmm->tsc[CTMEL][epos_nd] = -INFTY; 
       hmm->tsc[CTMD][epos_nd] = -INFTY; /* D_M+1 doesn't exist */
       hmm->tsc[CTDD][epos_nd] = -INFTY; /* D_M+1 doesn't exist */
       hmm->tsc[CTID][epos_nd] = -INFTY; /* D_M+1 doesn't exist */
@@ -1945,7 +1950,7 @@ CP9TransitionScoreLookup(struct cplan9_s *hmm, char st1, int k1,
     case CSTI: return hmm->tsc[CTMI][k1];
     case CSTD: return hmm->tsc[CTMD][k1];
     case CSTE: return hmm->esc[k1];
-    case CSTEL: return hmm->tsc[CTME][k1];
+    case CSTEL: return hmm->tsc[CTMEL][k1];
     default:      esl_fatal("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
     }
     break;
@@ -2252,7 +2257,7 @@ CP9ViterbiTrace(struct cplan9_s *hmm, ESL_DSQ *dsq, int i0, int j0,
 	  tr->nodeidx[tpos]   = k;
 	  tr->pos[tpos]       = i--;
 	}
-      else if(sc  == mmx[i+1][k]   + hmm->tsc[CTME][k])    /* M->EL->M with 0 self loops in EL */
+      else if(sc  == mmx[i+1][k]   + hmm->tsc[CTMEL][k])    /* M->EL->M with 0 self loops in EL */
 	{
 	  tr->statetype[tpos] = CSTM;
 	  tr->nodeidx[tpos]   = k--;
@@ -2861,7 +2866,7 @@ DuplicateCP9(CM_t *src_cm, CM_t *dest_cm)
       dest_cm->cp9->t[k][CTMM] = src_cm->cp9->t[k][CTMM];
       dest_cm->cp9->t[k][CTMI] = src_cm->cp9->t[k][CTMI];
       dest_cm->cp9->t[k][CTMD] = src_cm->cp9->t[k][CTMD];
-      dest_cm->cp9->t[k][CTME] = src_cm->cp9->t[k][CTME];
+      dest_cm->cp9->t[k][CTMEL] = src_cm->cp9->t[k][CTMEL];
 
 
       dest_cm->cp9->t[k][CTIM] = src_cm->cp9->t[k][CTIM];

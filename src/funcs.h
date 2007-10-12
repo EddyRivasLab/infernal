@@ -643,9 +643,6 @@ extern seqs_to_aln_t *RandomEmitSeqsToAln(ESL_RANDOMNESS *r, const ESL_ALPHABET 
 /* from logsum.c: (stolen from HMMER3 dev code) EPN, Fri Sep  7 16:56:45 2007 */
 
 /* from cplan9.c: functions stolen from HMMER-2.4::mathsupport.c */
-#if USE_OLDLOGSUM
-extern int   ILogsum(int p1, int p2);
-#endif
 extern int   Prob2Score(float p, float null);
 extern float Score2Prob(int sc, float null);
 extern float Scorify(int sc);
@@ -764,6 +761,8 @@ extern void     CP9_WriteBinHMM(FILE *fp, CP9_t *hmm);
 /* from logsum.c */
 extern void  init_ilogsum(void);
 extern int   ILogsum(int s1, int s2);
+extern int   ILogsumNI(int s1, int s2);
+extern int   ILogsumNI_diff(int s1a, int s1b, int s2a, int s2b, int db);
 
 #if USE_NEWLOGSUM
 extern void  FLogsumInit(void);
@@ -775,3 +774,12 @@ extern float LogSum2(float p1, float p2);
 extern float cp9_FastViterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
 			     int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, 
 			     int be_efficient, CP9_dpmatrix_t **ret_mx, CP9trace_t **ret_tr);
+extern float cp9_FastForward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
+			     int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, int doing_rescan,
+			     int be_efficient, CP9_dpmatrix_t **ret_mx);
+extern float cp9_EXPTLFastForward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
+				  int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, int doing_rescan,
+				  int be_efficient, int be_safe, CP9_dpmatrix_t **ret_mx);
+extern float cp9_WorstForward(CM_t *cm, int thresh, int doing_scan, int doing_align);
+extern int   cp9_CheckTransitionGuarantees(CP9_t *cp9);
+extern int   cp9_GetLocalityMode(CP9_t *cp9);

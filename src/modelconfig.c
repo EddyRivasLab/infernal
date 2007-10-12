@@ -102,10 +102,10 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
 	  /*swexit = ((cm->cp9->M)-1.)/cm->cp9->M;*/ /* all end   pts equiprobable, including M */
 	}
       CPlan9SWConfig(cm->cp9, swentry, swexit);
-      if(cm->config_opts & CM_CONFIG_HMMEL)
-	CPlan9ELConfig(cm);
       CP9Logoddsify(cm->cp9);
     }
+  if(cm->config_opts & CM_CONFIG_HMMEL)
+    CPlan9ELConfig(cm);
 
   /*
     FILE *fp;

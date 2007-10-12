@@ -227,7 +227,7 @@ typedef struct cplan9_s {
 #define CTMM  0
 #define CTMI  1
 #define CTMD  2
-#define CTME  3
+#define CTMEL 3
 #define CTIM  4
 #define CTII  5
 #define CTID  6
@@ -1119,6 +1119,15 @@ enum cp9o_tsc_e {
   cp9O_MEL=11 
 };
 #define cp9O_NTRANS 12
+
+enum cp9_locality_e {
+  CP9_LOCAL_BEGIN_END_OFF_AND_EL_OFF = 0,
+  CP9_LOCAL_BEGIN_END_OFF_AND_EL_ON  = 1,
+  CP9_LOCAL_BEGIN_END_ON_AND_EL_OFF  = 2,
+  CP9_LOCAL_BEGIN_END_ON_AND_EL_ON   = 3
+};
+#define nCP9_LOCALITIES 4
+
 
 #endif /*STRUCTSH_INCLUDED*/
 

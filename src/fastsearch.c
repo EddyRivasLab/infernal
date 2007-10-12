@@ -22,7 +22,7 @@
 #include "funcs.h"
 #include "structs.h"
 
-#define TSC(s,k) (tsc[(v) * MAXCONNECT + (s)])
+#define TSC(s,k)   (tsc[(v) * MAXCONNECT + (s)])
 #define AMX(j,v,d) (alphap[(j * cm->M * (W+1)) + ((v) * (W+1) + d)])
 
 /* Function: FastCYKScan()
@@ -53,7 +53,7 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 	    search_results_t *results, float **ret_vsc, float *ret_best_hit_sc)
 {
   int       status;
-  float  ***alpha;              /* CYK DP score matrix, [v][j][d] */
+  float  ***alpha;              /* CYK DP score matrix, [j][v][d] */
   float  ***alpha_begl; 
   float    *vsc;                /* best score for each state (float) */
   float     vsc_root;           /* best overall score (score at ROOT_S) */
@@ -392,7 +392,8 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 	      /* careful: y is in alpha (all children of a BEGL_S must be non BEGL_S) */
 	    }
 	  }
-	  else { /* if cm->sttype[v] != B_st */
+	  /* make this first if() statement */
+	  else { /* if cm->sttype[v] != B_st || BEGL_S st */
 	    y    = cm->cfirst[v];
 	    dp_y = dn - sd; /* initial dp_y, we increment it at end of 'for(d = ...' loop */
 	    i    = j-dn+1;  /* initial i,    we decrement it when we access it, inside each possible case of the switch (cnum) below */

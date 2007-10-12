@@ -59,6 +59,7 @@
 #include "config.h"
 
 #include <math.h>
+#include <assert.h>
 
 #include "funcs.h"
 #include "structs.h"
@@ -85,6 +86,47 @@ ILogsum(int s1, int s2)
   const int max = ESL_MAX(-INFTY, ESL_MAX(s1, s2));
   const int min = ESL_MIN(s1, s2);
   return  (min <= -INFTY || (max-min) >= LOGSUM_TBL) ? max : max + ilogsum_lookup[max-min];
+} 
+
+/* guaranteed s1 >= -INFTY, s2 >= -INFTY */
+int 
+ILogsumNI(int s1, int s2)
+{
+  ESL_DASSERT1((s1 > -INFTY));
+  ESL_DASSERT1((s2 > -INFTY));
+  /*assert(s1 > -INFTY);
+    assert(s2 > -INFTY);*/
+
+  const int max = ESL_MAX(s1, s2);
+  const int min = ESL_MIN(s1, s2);
+  return  ((max-min) >= LOGSUM_TBL) ? max : max + ilogsum_lookup[max-min];
+  /* about 10% slower 
+     if(s1 > s2) 
+    return  ((s1-s2) >= LOGSUM_TBL) ? s1 : s1 + ilogsum_lookup[s1-s2];
+    else
+    return  ((s2-s1) >= LOGSUM_TBL) ? s2 : s2 + ilogsum_lookup[s2-s1];
+  */
+} 
+
+/* guaranteed s1 >= -INFTY, s2 >= -INFTY */
+int 
+ILogsumNI_diff(int s1a, int s1b, int s2a, int s2b, int db)
+{
+  /* db = s1b - s2b */
+  ESL_DASSERT1((s1a > -INFTY));
+  ESL_DASSERT1((s1b > -INFTY));
+  ESL_DASSERT1((s2a > -INFTY));
+  ESL_DASSERT1((s2b > -INFTY));
+  /*const int d = s1a-s2a+db;
+  if      (d >=  LOGSUM_TBL) return s1a + s1b;
+  else if (d > 0)            return s1a + s1b + ilogsum_lookup[d];
+  else if (d <= -LOGSUM_TBL) return s2a + s2b;
+  else                       return s2a + s2b + ilogsum_lookup[-d];*/
+  const int d = s1a-s2a+db;
+  if(d > 0) 
+    return  (d >= LOGSUM_TBL) ? s1a + s1b : s1a + s1b + ilogsum_lookup[d];
+  else
+    return  (d <= LOGSUM_TBL) ? s2a + s2b : s2a + s2b + ilogsum_lookup[-d];
 } 
 
 static float flogsum_lookup[LOGSUM_TBL];
@@ -143,30 +185,39 @@ static int ilogsum_lookup[LOGSUM_TBL];
 static void 
 init_ilogsum(void)
 {
+  static int firsttime = 1;
+  if (firsttime) return;
+  firsttime = FALSE;
+
   int i;
   for (i = 0; i < LOGSUM_TBL; i++) 
     ilogsum_lookup[i] = (int) (INTSCALE * 1.44269504 * 
-	   (log(1.+exp(0.69314718 * (float) -i/INTSCALE))));
+			       (log(1.+exp(0.69314718 * (float) -i/INTSCALE))));
 }
 int 
-ILogsum(int p1, int p2)
+ILogsum(int s1, int s2)
 {
-  int    diff;
-#ifdef HMMER_THREADS
-  static pthread_once_t firsttime = PTHREAD_ONCE_INIT;
-  pthread_once(&firsttime, init_ilogsum);
-#else
-  static int firsttime = 1;
-  if (firsttime) { init_ilogsum(); firsttime = 0; }
-#endif
-  if(p1 == -INFTY) return p2; /* EPN */
-  if(p2 == -INFTY) return p1; /* EPN */
+  if(s1 == -INFTY) return s2; /* EPN */
+  if(s2 == -INFTY) return s1; /* EPN */
 
-  diff = p1-p2;
-  if      (diff >=  LOGSUM_TBL) return p1;
-  else if (diff <= -LOGSUM_TBL) return p2;
-  else if (diff > 0)            return p1 + ilogsum_lookup[diff];
-  else                          return p2 + ilogsum_lookup[-diff];
+  const int diff = s1-s2;
+  if      (diff >=  LOGSUM_TBL) return s1;
+  else if (diff > 0)            return s1 + ilogsum_lookup[diff];
+  else if (diff <= -LOGSUM_TBL) return s2;
+  else                          return s2 + ilogsum_lookup[-diff];
+} 
+
+/* guaranteed s1 >= -INFTY, p2 >= -INFTY */
+int
+ILogsumNI(int s1, int s2)
+{
+  ESL_DASSERT1((s1 >= -INFTY));
+  ESL_DASSERT1((s2 >= -INFTY));
+  const int diff = s1-s2;
+  if      (diff >=  LOGSUM_TBL) return s1;
+  else if (diff <= -LOGSUM_TBL) return s2;
+  else if (diff > 0)            return s1 + ilogsum_lookup[diff];
+  else                          return s2 + ilogsum_lookup[-diff];
 } 
 
 /* Function: LogSum2()
@@ -234,9 +285,9 @@ static char usage[]  = "[-options]";
 static char banner[] = "benchmark driver for logsum functions()";
 
 static float 
-naive1(float s1, float s2)
+naive1(float s1, float p2)
 {
-  return log(exp(s1) + exp(s2));
+  return log(exp(s1) + exp(p2));
 }
 
 static float 
